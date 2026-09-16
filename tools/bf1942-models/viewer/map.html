@@ -5679,7 +5679,12 @@ function updateCrosshair() {
   if (crosshairEl.classList.contains('ch-icon') !== icon) {
     crosshairEl.classList.toggle('ch-icon', icon);
   }
-  const height = stageHeight || 800;
+  // The renderer's own backing store, not `stageHeight`: a headless capture
+  // resizes the renderer through `__renderOnce` and never touches the page,
+  // so the cached page height is stale there and the crosshair gap came out
+  // scaled for a window nobody is looking at. Same reasoning, and the same
+  // source, as the HUD canvas's own size in `frame()`.
+  const height = renderer.domElement.height / renderer.getPixelRatio() || 800;
   const floor = (hw.model.floor?.() ?? 0) * DEG_TO_RAD;
   const dev = Math.max(0, hw.model.current() * DEG_TO_RAD - floor);
   const px = 0.5 * height * Math.tan(dev) / Math.tan(camera.fov * DEG_TO_RAD / 2);
