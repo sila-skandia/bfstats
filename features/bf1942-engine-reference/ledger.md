@@ -341,6 +341,42 @@ plus `discover_level_sounds` for the 23 published levels):
 
 ---
 
+## Teams, factions and sides (`.con`) — all open, never opened the binary
+
+Nothing below has been checked against the engine. These rows are here because
+the assumptions are load-bearing for the viewer's browse facets and are stated
+as fact in our code, which is exactly what this ledger is for. Every claim in
+the Evidence column is from the shipped `.con` data, not from a function.
+
+| # | Assumption in our code | Where | Status | Evidence |
+|---|---|---|---|---|
+| SIDE-1 | A faction belongs to one of two sides, and the split is Axis vs Allied | [roster.py:100,176](../../tools/bf1942-models/bf42/roster.py#L100) `AXIS_NATIONS`, `side_of` | open | Never checked against the binary, and there is likely nothing to check: no symbol in [symbols.json](symbols.json) matches `team` at all. The level files know only numbers — `game.setTeamSkin <1\|2> <soldier>` in `Init.con` and `setObjectTemplate <1\|2> <vehicle>` in `Conquest/ObjectSpawnTemplates.con`. "Axis" and "Allied" are our words, mapped from a nation label we ourselves derived; the engine never names a side. `side_of` returns Allied for anything not listed, so a missing label is silently wrong rather than absent — which is how XPack2's whole elite-soldier line came out Allied until 2026-09-16 (`5d3594c`) |
+| SIDE-2 | The two-sided WWII frame describes every mod | same | **refuted by the data** (2026-09-16) | Eve of Destruction has 18 kit-path nations and 14 team skins, and *every one* resolves to Allied — Viet Cong, NVA and Pathet Lao alongside ARVN, US, Navy SEALs and Special Forces. Both belligerents land on the same side, so the facet carries no information for that mod. [extract_kits.py:65-88](../../tools/bf1942-models/extract_kits.py#L65) already refuses the metaphor and returns no side outside a hardcoded WWII nation list, but `roster.py` — which is what `models.json` and the browse facets use — still forces the binary. The two disagree by construction |
+| SIDE-3 | A template's nation is recoverable from kit-path and soldier-skin name tokens | [roster.py:33,113-114](../../tools/bf1942-models/bf42/roster.py#L33) `NATION_LABELS`, `KIT_SOURCE`, `SOLDIER_NATION` | open | A hand-maintained string table, so its failures are silent and per-mod. Unresolved tokens as of 2026-09-16: bf1918 loses its entire Central Powers side (`austrian_`, `bulgaria_`, `romania_`, `serbia_`, `turkish_`, `kuk`, plus `anz`, `bel`, `frz`, `senegal`, and near-misses `english_`, `rus_`, `japan_`, `usa`); FH `fmgerman`; DesertCombat `iraq`; FinnWars `finsummer`, `russummer`; EoD `aus` and four skins — `ARVNForces`, `AustralianForces`, `NavySeals`, `SpecialForces` — that `SOLDIER_NATION` cannot match because it requires the name to end in `soldier`. An unresolved token yields *no* faction, which is at least honest; only a resolved label can be mis-sided |
+
+### Why SIDE-1 and SIDE-2 are worth a row rather than a fix
+
+A team number is per level. The same vehicle is team 1 on one map and team 2 on
+another, and XPack2's Essen spawns an identical vehicle list for *both* teams,
+so a side cannot be attached to a template by reading one level. Our nation
+table exists to give the browse grid a stable per-template answer, and that is
+a product decision, not something the engine can settle.
+
+The open question is therefore what to show, not what is true:
+
+- Widening `AXIS_NATIONS` to cover the Vietnam communist factions would fix the
+  split and print the word "Axis" beside a Viet Cong model.
+- Returning `None` outside a known WWII roster — what `extract_kits.py` does —
+  drops the facet for every non-WWII mod instead of lying about it.
+- Naming the pair per mod (the level's own two teams) would be accurate and
+  costs a schema change in `models.json` and the viewer's facet code at
+  [index.html:4739,5331](../../tools/bf1942-models/viewer/index.html#L4739).
+
+Until one is chosen, `roster.py` and `extract_kits.py` answer differently for
+the same nation, and EoD's facet stays uninformative.
+
+---
+
 ## Parse failures worth explaining (explained 2026-09-16)
 
 Ten meshes across the installed mods fail to parse outright. None is a gap in
