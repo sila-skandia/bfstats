@@ -1065,5 +1065,341 @@ ObjectTemplate.setInputToYaw c_PIMouseLookX
         self.assertIsNone(library.object("ShermanTower").physics())
 
 
+class HudSupplyAndSoldierWordsTests(unittest.TestCase):
+    """SupplyDepot, vehicle/hand-weapon HUD, kit HUD and soldier constants.
+
+    Every snippet below is verbatim from vanilla's `Objects.rfa` (F1 round,
+    2026-09-16) unless the docstring says otherwise.
+    """
+
+    def library(self, path: str, text: str) -> ObjectLibrary:
+        library = ObjectLibrary()
+        library.add_con(path, text)
+        return library
+
+    def test_supply_depot_words_are_read_from_the_ammobox_bundle(self) -> None:
+        # Objects/Buildings/Common/Ammobox/Objects.con, verbatim: a Bundle
+        # nesting two SupplyDepot templates, one soldier-facing and one
+        # vehicle-facing.
+        library = self.library(
+            "Objects/Buildings/Common/Ammobox/Objects.con",
+            """
+ObjectTemplate.create Bundle Ammobox
+ObjectTemplate.geometry Ammobox_m1
+ObjectTemplate.addTemplate AmmoboxSupplyDepot
+ObjectTemplate.setPosition 0/0/0
+ObjectTemplate.setRotation 0/0/0
+ObjectTemplate.addTemplate AmmoboxVehicleSupplyDepot
+ObjectTemplate.setPosition 0/0/0
+ObjectTemplate.setRotation 0/0/0
+
+ObjectTemplate.create SupplyDepot AmmoboxSupplyDepot
+ObjectTemplate.radius 3
+ObjectTemplate.team 0
+ObjectTemplate.setHealth 0 0 0
+ObjectTemplate.addAmmoType 1 -1 15 0
+ObjectTemplate.addAmmoType 2 -1 1.2 0
+ObjectTemplate.addAmmoType 3 -1 1.2 0
+ObjectTemplate.workOnVehicles 0
+ObjectTemplate.workOnSoldiers 1
+ObjectTemplate.loadSoundScript ../../../Common/Sounds/SupplyDepot.ssc
+
+ObjectTemplate.create SupplyDepot AmmoboxVehicleSupplyDepot
+ObjectTemplate.radius 15
+ObjectTemplate.team 0
+ObjectTemplate.setHealth 0 0 0
+ObjectTemplate.addAmmoType 0 -1 20 0
+ObjectTemplate.workOnVehicles 1
+ObjectTemplate.workOnSoldiers 0
+ObjectTemplate.loadSoundScript ../../../Common/Sounds/SupplyDepot.ssc
+""")
+        soldier_depot = library.object("AmmoboxSupplyDepot")
+        vehicle_depot = library.object("AmmoboxVehicleSupplyDepot")
+
+        self.assertEqual(3.0, soldier_depot.supply_radius)
+        self.assertEqual(0, soldier_depot.supply_team)
+        self.assertEqual((0.0, 0.0, 0.0), soldier_depot.supply_set_health)
+        self.assertEqual(
+            [(1.0, -1.0, 15.0, 0.0), (2.0, -1.0, 1.2, 0.0), (3.0, -1.0, 1.2, 0.0)],
+            soldier_depot.supply_ammo_types)
+        self.assertFalse(soldier_depot.supply_work_on_vehicles)
+        self.assertTrue(soldier_depot.supply_work_on_soldiers)
+        self.assertEqual("../../../Common/Sounds/SupplyDepot.ssc",
+                         soldier_depot.sound_script)
+
+        self.assertEqual(15.0, vehicle_depot.supply_radius)
+        self.assertEqual([(0.0, -1.0, 20.0, 0.0)], vehicle_depot.supply_ammo_types)
+        self.assertTrue(vehicle_depot.supply_work_on_vehicles)
+        self.assertFalse(vehicle_depot.supply_work_on_soldiers)
+
+    def test_supply_depot_radius_does_not_collide_with_a_projectiles_splash_radius(self) -> None:
+        # `radius` is spelled identically on a SupplyDepot (work range) and a
+        # Projectile (splash radius) -- the parser must route it by kind.
+        library = self.library(
+            "Objects/Buildings/Common/mediclocker/Objects.con",
+            """
+ObjectTemplate.create SupplyDepot mediclockerRepairpoint
+ObjectTemplate.radius 2
+ObjectTemplate.team 0
+ObjectTemplate.workOnVehicles 0
+ObjectTemplate.workOnSoldiers 1
+ObjectTemplate.setHealth -1 4.0 0
+
+ObjectTemplate.create Projectile TestShell
+ObjectTemplate.radius 8
+""")
+        depot = library.object("mediclockerRepairpoint")
+        shell = library.object("TestShell")
+
+        self.assertEqual(2.0, depot.supply_radius)
+        self.assertIsNone(depot.explosion_radius)
+        self.assertEqual((-1.0, 4.0, 0.0), depot.supply_set_health)
+        self.assertEqual(8.0, shell.explosion_radius)
+        self.assertIsNone(shell.supply_radius)
+
+    def test_repair_depot_carries_vehicle_types_not_ammo_types(self) -> None:
+        # Objects/Buildings/Common/landrep1_supply/Objects.con, trimmed to
+        # three vehicle types plus the trailing addAmmoType every land depot
+        # also carries (for a stray soldier's rifle ammo).
+        library = self.library(
+            "Objects/Buildings/Common/landrep1_supply/Objects.con",
+            """
+ObjectTemplate.create SupplyDepot repairpoint
+ObjectTemplate.radius 5
+ObjectTemplate.team 0
+ObjectTemplate.addVehicleType tiger -1 4 0
+ObjectTemplate.addVehicleType Panzeriv -1 4 0
+ObjectTemplate.addVehicleType sherman -1 4 0
+ObjectTemplate.addAmmoType 0 -1 10 0
+ObjectTemplate.workOnVehicles 1
+ObjectTemplate.workOnSoldiers 0
+""")
+        depot = library.object("repairpoint")
+
+        self.assertEqual(
+            [("tiger", -1.0, 4.0, 0.0), ("Panzeriv", -1.0, 4.0, 0.0),
+             ("sherman", -1.0, 4.0, 0.0)],
+            depot.supply_vehicle_types)
+        self.assertEqual([(0.0, -1.0, 10.0, 0.0)], depot.supply_ammo_types)
+
+    def test_vehicle_hud_words_are_read_off_the_playercontrolobject_root(self) -> None:
+        # Objects/Vehicles/Land/Defgun/Objects.con and
+        # Objects/Vehicles/Land/Sherman/Objects.con, trimmed to the HUD block.
+        library = self.library(
+            "Objects/Vehicles/Land/Defgun/Objects.con",
+            """
+ObjectTemplate.create PlayerControlObject Defgun
+ObjectTemplate.hitpoints 50
+ObjectTemplate.maxhitpoints 50
+ObjectTemplate.setVehicleIcon "Vehicle/Icon_defgun.tga"
+ObjectTemplate.setPrimaryAmmoIcon "Ammo/Icon_cannon.tga"
+ObjectTemplate.setPrimaryAmmoBar ABAmmoBarReloadBar
+
+ObjectTemplate.create PlayerControlObject Sherman
+ObjectTemplate.hitpoints 100
+ObjectTemplate.maxhitpoints 100
+ObjectTemplate.setVehicleIcon "Vehicle/Icon_sherman.tga"
+ObjectTemplate.setPrimaryAmmoIcon "Ammo/Icon_cannon.tga"
+ObjectTemplate.setPrimaryAmmoBar ABAmmoBarReloadBar
+ObjectTemplate.setSecondaryAmmoIcon "Ammo/Icon_bullet.tga"
+ObjectTemplate.setSecondaryAmmoBar ABAmmoBarHeatBar
+""")
+        defgun = library.object("Defgun")
+        sherman = library.object("Sherman")
+
+        self.assertEqual("Vehicle/Icon_defgun.tga", defgun.vehicle_icon)
+        self.assertEqual("Ammo/Icon_cannon.tga", defgun.vehicle_primary_ammo_icon)
+        self.assertEqual("ABAmmoBarReloadBar", defgun.vehicle_primary_ammo_bar)
+        self.assertIsNone(defgun.vehicle_secondary_ammo_bar)
+
+        self.assertEqual("Vehicle/Icon_sherman.tga", sherman.vehicle_icon)
+        self.assertEqual("ABAmmoBarReloadBar", sherman.vehicle_primary_ammo_bar)
+        self.assertEqual("Ammo/Icon_bullet.tga", sherman.vehicle_secondary_ammo_icon)
+        self.assertEqual("ABAmmoBarHeatBar", sherman.vehicle_secondary_ammo_bar)
+        self.assertEqual(100.0, sherman.hitpoints)
+        self.assertEqual(100.0, sherman.max_hitpoints)
+
+    def test_vehicle_firearms_carry_magazine_reload_and_heat_words(self) -> None:
+        # Objects/Vehicles/Land/Defgun/Weapons.con (no heat -- a single-shot
+        # cannon) and Objects/Stationary_Weapons/Coaxial_Browning/Objects.con
+        # (a machine gun: magazine *and* heat, independently of each other).
+        library = self.library(
+            "Objects/Vehicles/Land/Defgun/Weapons.con",
+            """
+ObjectTemplate.create FireArms DefgunGunBarrel
+ObjectTemplate.projectileTemplate Defgun_Projectile
+ObjectTemplate.magSize 499
+ObjectTemplate.numOfMag 999
+ObjectTemplate.velocity 125
+ObjectTemplate.reloadtime 5
+ObjectTemplate.roundOfFire 0.2
+
+ObjectTemplate.create FireArms Coaxial_browning
+ObjectTemplate.projectileTemplate Browning_Projectile
+ObjectTemplate.magSize 400
+ObjectTemplate.numOfMag 1
+ObjectTemplate.magType 0
+ObjectTemplate.reloadtime 0.1
+ObjectTemplate.roundOfFire 12
+ObjectTemplate.autoReload 1
+objectTemplate.heatAddWhenFire 0.05
+objectTemplate.coolDownPerSec 0.3
+objectTemplate.timeDelayOnOverHeat 2
+""")
+        cannon = library.object("DefgunGunBarrel")
+        mg = library.object("Coaxial_browning")
+
+        self.assertEqual(499, cannon.mag_size)
+        self.assertEqual(999, cannon.num_of_mag)
+        self.assertEqual(5.0, cannon.reload_time)
+        self.assertIsNone(cannon.heat_add_when_fire)
+
+        self.assertEqual(400, mg.mag_size)
+        self.assertEqual(1, mg.num_of_mag)
+        self.assertEqual(0, mg.mag_type)
+        self.assertEqual(0.1, mg.reload_time)
+        self.assertTrue(mg.auto_reload)
+        self.assertEqual(0.05, mg.heat_add_when_fire)
+        self.assertEqual(0.3, mg.cool_down_per_sec)
+        self.assertEqual(2.0, mg.time_delay_on_overheat)
+
+    def test_hand_weapon_hud_words_and_the_shipped_amom_typo(self) -> None:
+        # Objects/HandWeapons/M1Garand/Objects.con spells the position words
+        # correctly; Objects/HandWeapons/K98/Objects.con -- like 13 of
+        # vanilla's 16 hand weapons that declare a position at all -- ships
+        # `setAmomBarPosX/Y` / `setAmomBarTextPosX/Y`. Both must resolve to
+        # the same fields or most of vanilla's weapons report no position.
+        library = self.library(
+            "Objects/HandWeapons/M1Garand/Objects.con",
+            """
+ObjectTemplate.create HandFireArms M1Garand
+ObjectTemplate.setHudAmmoType ATAmmoBar
+ObjectTemplate.setAmmoBar "Ingame/Magbar_Rifle_empty_32x64.tga"
+ObjectTemplate.setAmmoBarFill "Ingame/Magbar_Rifle_full_32x64.tga"
+ObjectTemplate.setAmmoBarSize 20
+ObjectTemplate.setAmmoBarPosX 6
+ObjectTemplate.setAmmoBarPosY -17
+ObjectTemplate.setAmmoBarTextPosX 5
+ObjectTemplate.setAmmoBarTextPosY 10
+
+ObjectTemplate.create HandFireArms K98
+ObjectTemplate.setHudAmmoType ATAmmoBar
+ObjectTemplate.setAmmoBar "Ingame/Magbar_Rifle_empty_32x64.tga"
+ObjectTemplate.setAmmoBarFill "Ingame/Magbar_Rifle_full_32x64.tga"
+ObjectTemplate.setAmmoBarSize 20
+ObjectTemplate.setAmomBarPosX 6
+ObjectTemplate.setAmomBarPosY -17
+ObjectTemplate.setAmomBarTextPosX 5
+ObjectTemplate.setAmomBarTextPosY 10
+
+ObjectTemplate.create HandFireArms Bazooka
+ObjectTemplate.setHudAmmoType ATIcon
+ObjectTemplate.setAmmoIcon "Ammo/Icon_bazooka_64x32.tga"
+""")
+        garand = library.object("M1Garand")
+        k98 = library.object("K98")
+        bazooka = library.object("Bazooka")
+
+        for weapon in (garand, k98):
+            self.assertEqual("ATAmmoBar", weapon.hud_ammo_type)
+            self.assertEqual("Ingame/Magbar_Rifle_empty_32x64.tga", weapon.hud_ammo_bar)
+            self.assertEqual("Ingame/Magbar_Rifle_full_32x64.tga", weapon.hud_ammo_bar_fill)
+            self.assertEqual(20.0, weapon.hud_ammo_bar_size)
+            self.assertEqual(6.0, weapon.hud_ammo_bar_pos_x)
+            self.assertEqual(-17.0, weapon.hud_ammo_bar_pos_y)
+            self.assertEqual(5.0, weapon.hud_ammo_bar_text_pos_x)
+            self.assertEqual(10.0, weapon.hud_ammo_bar_text_pos_y)
+
+        self.assertEqual("Ammo/Icon_bazooka_64x32.tga", bazooka.hud_ammo_icon)
+
+    def test_weapon_stats_carries_the_new_hud_block(self) -> None:
+        library = self.library(
+            "Objects/HandWeapons/M1Garand/Objects.con",
+            """
+ObjectTemplate.create HandFireArms M1Garand
+ObjectTemplate.setAmmoBar "Ingame/Magbar_Rifle_empty_32x64.tga"
+ObjectTemplate.setAmmoBarFill "Ingame/Magbar_Rifle_full_32x64.tga"
+ObjectTemplate.setAmmoBarSize 20
+ObjectTemplate.setAmmoBarPosX 6
+ObjectTemplate.setAmmoBarPosY -17
+ObjectTemplate.setAmmoBarTextPosX 5
+ObjectTemplate.setAmmoBarTextPosY 10
+""")
+        stats = library.object("M1Garand").weapon_stats()
+
+        self.assertEqual({
+            "ammoBar": "Ingame/Magbar_Rifle_empty_32x64.tga",
+            "ammoBarFill": "Ingame/Magbar_Rifle_full_32x64.tga",
+            "ammoBarSize": 20.0,
+            "posX": 6.0,
+            "posY": -17.0,
+            "textPosX": 5.0,
+            "textPosY": 10.0,
+        }, stats["hud"])
+
+    def test_kit_hud_icons_and_weapon_icon_row(self) -> None:
+        # Objects/Items/USKit/Medic/Objects.con, verbatim.
+        library = self.library(
+            "Objects/Items/USKit/Medic/Objects.con",
+            """
+ObjectTemplate.create Kit  US_Medic
+ObjectTemplate.setType Medic
+ObjectTemplate.setKitTeam 2
+ObjectTemplate.addTemplate Medic_helm_us
+ObjectTemplate.setHealthBarIcon "Ingame/Healthbar_empty_medic_64x64.tga"
+ObjectTemplate.setHealthBarFullIcon "Ingame/Healthbar_full_medic_64x64.tga"
+ObjectTemplate.addWeaponIcon "Weapon/Icon_alliesKnife.tga"
+ObjectTemplate.addWeaponIcon "Weapon/Icon_colt.tga"
+ObjectTemplate.addWeaponIcon "Weapon/Icon_thompson.tga"
+ObjectTemplate.addWeaponIcon "Weapon/Icon_grenadeallies.tga"
+ObjectTemplate.addWeaponIcon "Weapon/Icon_medpack.tga"
+ObjectTemplate.setKitIcon 3 "kits/Icon_medic_allies_selected.tga"
+ObjectTemplate.addTemplate Thompson
+ObjectTemplate.addTemplate Colt
+""")
+        kit = library.object("US_Medic")
+
+        self.assertEqual("Ingame/Healthbar_empty_medic_64x64.tga", kit.kit_health_bar_icon)
+        self.assertEqual("Ingame/Healthbar_full_medic_64x64.tga", kit.kit_health_bar_full_icon)
+        self.assertEqual((3, "kits/Icon_medic_allies_selected.tga"), kit.kit_icon)
+        self.assertEqual([
+            "Weapon/Icon_alliesKnife.tga", "Weapon/Icon_colt.tga",
+            "Weapon/Icon_thompson.tga", "Weapon/Icon_grenadeallies.tga",
+            "Weapon/Icon_medpack.tga",
+        ], kit.kit_weapon_icons)
+
+    def test_soldier_constants_off_the_spliced_common_soldier_data(self) -> None:
+        # `include ../Common/CommonSoldierData.inc` is not a `Namespace.cmd`
+        # directive, so the parser never sees it: the caller has to splice
+        # the included file's text in before `add_con` runs (see
+        # `extract_models._inline_includes`). This test feeds the parser the
+        # already-spliced result -- CommonSoldierData.inc's own body, kept
+        # verbatim -- to prove the *words* parse once that has happened.
+        library = self.library(
+            "Objects/Soldiers/USSoldier/Objects.con",
+            """
+ObjectTemplate.create BFSoldier USSoldier
+ObjectTemplate.createSkeleton animations/USSoldier.ske
+
+ObjectTemplate.HasArmor 1
+ObjectTemplate.HitPoints 30
+ObjectTemplate.MaxHitPoints 30
+ObjectTemplate.repairDistance 2.0
+ObjectTemplate.healDistance 10.0
+objectTemplate.healFactor 0.25
+objectTemplate.selfHealFactor 0.15
+objectTemplate.repairFactor 0.15
+""")
+        soldier = library.object("USSoldier")
+
+        self.assertEqual(30.0, soldier.hitpoints)
+        self.assertEqual(30.0, soldier.max_hitpoints)
+        self.assertEqual(10.0, soldier.heal_distance)
+        self.assertEqual(0.25, soldier.heal_factor)
+        self.assertEqual(0.15, soldier.self_heal_factor)
+        self.assertEqual(2.0, soldier.repair_distance)
+        self.assertEqual(0.15, soldier.repair_factor)
+
+
 if __name__ == "__main__":
     unittest.main()
