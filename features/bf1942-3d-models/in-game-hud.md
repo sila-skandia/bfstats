@@ -198,6 +198,31 @@ kit-driven weapon a normal spawn would pick 404s.
 
 ## Round 3: parity audit against the retail screenshot
 
+| element | retail | ours (before) | ours (after) | verdict | action |
+|---|---|---|---|---|---|
+| Soldier health bar (fill dir/extremes) | segmented, bottom-anchored, fills up | correct (1/30 sliver pixel-confirmed) | unchanged | MATCH | none |
+| Health-bar kit glyph | scope/cross/wrench/etc per kit | correct, confirmed on live respawn | unchanged | MATCH | none |
+| Stance figure (stand/crouch/prone) | 3 distinct sprites | correct, all 3 resolve | unchanged | MATCH | none |
+| Hand-weapon magazine bar (art + fillOrder) | per-weapon art, depletes top-down | correct (BAR1918 curved mag, fillOrder:false) | unchanged | MATCH | none |
+| Ammo digit formats (2/3-digit, -1 sentinel) | no clipping, box hides only the digit | correct | unchanged | MATCH | none |
+| Reload state | 0 rounds, empty bar, no overlay | correct, matches R1-24 | unchanged | MATCH | none |
+| Vehicle icon (Defgun/Sherman) | small photoreal render | painted correctly, hidden by a scale bug in the *checker* | unchanged (the checker was fixed) | MATCH (test bug, not product) | fixed frame()'s hudW/hudH |
+| Vehicle health bar | distinct olive art | correct | unchanged | MATCH | none |
+| Seated ammo panel number (Defgun, 1-weapon) | shows the loaded count | icon+bar only, no digit | "499" renders | BUG -> FIXED | fed `Ammo/PrimaryAmmoText` |
+| Seated ammo panel numbers (Sherman Browning seat, manned) | shows the loaded count | icon+bar only, no digit | "500" renders | BUG -> FIXED | fed `Ammo/{Primary,Secondary}AmmoText` |
+| Seated ammo panel numbers (Sherman root, 2-weapon drivetrain) | shows live count/heat/reload | icon+bar-type only (correct), no live numbers | unchanged | GAP, pre-existing | left open — needs `drive()` to fire through a gated `FireState`, outside this track's files |
+| Turret-turn dial (vehicleIcon group) | rotating top-down turret indicator | never drawn | unchanged | GAP, open | left open — R2-18's trigger condition and angle convention are both unsettled |
+| Headless HUD/3D-scene scale under `__renderOnce` | n/a (never seen live) | HUD painted ~76px short of the 3D frame | matches exactly | BUG -> FIXED | `frame()` now reads the renderer's own backing store |
+
+Crops: `scratchpad/t3/before_after_defgun_ammo_sidebyside.png` (the ammo-number
+fix, before/after in one image), `01-onfoot-standing_bl_zoom.png`/`_br_zoom.png`
+(baseline vs retail's own `retail_a1_bl_zoom.png`/`_br_zoom.png`),
+`06-health-near-empty_bl_zoom.png` (low-HP extreme), `12-kit-respawned-
+{scout,medic}_bl_zoom.png` (kit-glyph swap), `08-ammo-{100-12,7--1}_br_zoom.png`
+(digit-format extremes), `10-reloading_br_zoom.png` (reload state),
+`61-hudonly-defgun.png` (isolated HUD canvas proving the vehicle icon painted
+even before the scale fix).
+
 Track T3. The user's reference (BRIEFING.md's own record of it: a 2000x1125
 retail capture, Japanese soldier on a carrier deck) was never saved to a file
 in this repo — it was shown directly in an earlier session. In its place this
