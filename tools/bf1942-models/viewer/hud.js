@@ -416,12 +416,25 @@ export class Hud {
     const scaled = frac * size;
     let bx = x, by = y, bw = w, bh = h;
     if (!horizontal) {
-      // R1-30, data-confirmed for the health bar and re-derived from scratch
-      // by the verifier: the fillable span is the bottom `size` texels of
-      // the picture. FillOrder true anchors its BOTTOM edge (fills upward,
-      // the segmented health-bar look); false anchors the span's own TOP
-      // edge instead and grows downward toward the picture's bottom.
-      if (fillOrder) { by = (y + size) - scaled; bh = scaled; }
+      // R1-30, data-confirmed for the health bar (size == h there, so both
+      // formulas below coincide and the confirmed case cannot distinguish
+      // them): the fillable window is the bottom `size` texels of the
+      // picture, flush with the picture's own bottom edge (y + h) --
+      // FillOrder switches which way the fill grows WITHIN that shared
+      // window. true grows it upward from nothing (the segmented
+      // health-bar look), pinning the window's bottom at y + h; false
+      // grows it downward from nothing at the window's own top edge
+      // (y + h - size) toward the picture's bottom. An earlier version of
+      // the true branch pinned the bottom at y + size instead of y + h --
+      // identical when size == h, but for size < h it put the whole window
+      // flush with the picture's TOP, contradicting this same comment's
+      // "bottom `size` texels" and the false branch's own bottom-flush
+      // placement. APPROXIMATION: no leaf that ships this round has
+      // size < h on this branch (Recover's and the heat/reload bars are
+      // P2/P3's, unfed), so the bottom-flush choice itself is this file's
+      // read of "bottom-anchored" taken literally, not independently
+      // data-confirmed the way the health bar's fill DIRECTION is.
+      if (fillOrder) { by = (y + h) - scaled; bh = scaled; }
       else { by = (y + h) - size; bh = scaled; }
     } else {
       // R1-31 verified: FillOrder has NO effect on a horizontal bar (the

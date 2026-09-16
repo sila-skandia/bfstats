@@ -157,6 +157,19 @@ seat.
   edge is fixed was never decompiled).** Moot for every leaf this round
   actually feeds — none is horizontal — so `hud.js`'s own horizontal branch is
   an unexercised placeholder (see its code comment), not a reproduction.
+- **Which edge a vertical bar's `size`-tall window sits flush against when
+  `size < h` (found during round-2 review, R1-30 territory).** The health bar
+  is the only FillOrder-true leaf any current feed reaches, and it has
+  `size == h` (64 == 64), so it cannot tell "flush with the picture's real
+  bottom edge" apart from "flush with a point `size` down from the top" — the
+  review pass caught `_drawFillPicture`'s true-branch doing the latter (only
+  correct by coincidence at `size == h`) while its own comment and the
+  false-branch both assumed the former, and fixed it to the bottom-flush
+  reading consistently. Recover's bar and the soldier ammo panel's own
+  heat/reload fills all ship `size < h` with `fillOrder: true` and are P2/P3's
+  to feed, so this is the first round anyone will actually see the corrected
+  edge — still an approximation, not a data-confirmed one, until a verifier
+  reads it.
 
 ## Verifying it
 
