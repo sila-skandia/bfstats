@@ -206,6 +206,25 @@ class SeatsModuleTests(unittest.TestCase):
     def test_unlimited_ammo_sentinel_never_blocks_on_ammo(self) -> None:
         self.assertTrue(self.results["fireState"]["unlimitedNeverBlocksOnAmmo"])
 
+    # --- held trigger x rate-of-fire, ticked in real time (round 3's bug
+    # report: "held the trigger for 25 stepped frames ... ammo stayed at 499
+    # of 499") -----------------------------------------------------------
+
+    def test_held_trigger_fires_immediately_not_after_a_full_period(self) -> None:
+        # `GunFire.setFiring`'s own "first round leaves immediately": a
+        # 5-second-cadence gun (roundOfFire 0.2, the Defgun's own number)
+        # still spends its first round well inside a 25-frame (0.42s) window,
+        # not only once a whole period has elapsed.
+        self.assertEqual(498, self.results["heldTriggerCadence"]["after25Frames"])
+
+    def test_held_trigger_fires_the_second_round_only_after_its_own_period(self) -> None:
+        # 400 frames is ~6.7s, past the Defgun's 5s cadence -- exactly one
+        # more round than the 25-frame check, not a burst of them.
+        self.assertEqual(497, self.results["heldTriggerCadence"]["after400Frames"])
+
+    def test_releasing_the_trigger_stops_the_cadence(self) -> None:
+        self.assertEqual(497, self.results["heldTriggerCadence"]["afterRelease"])
+
     # --- chainOnShot and readWorldPose: the small plumbing helpers ----------
 
     def test_chainOnShot_calls_the_previous_handler_then_the_new_one(self) -> None:
