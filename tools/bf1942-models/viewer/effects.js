@@ -13,7 +13,7 @@
 import * as THREE from 'three';
 import {
   basisFromNormal, EmitterClock, spawnParticle, integrateParticle,
-  evalParticle, GRAVITY,
+  evalParticle, atlasGrid, frameIndex, GRAVITY,
 } from './effects-core.js';
 
 // Lids. The engine keeps 127 decals per emitter ring (`DecalEmitter::addDecal`,
@@ -51,6 +51,31 @@ function quaternionFrame(q) {
     up: [e[4], e[5], e[6]],
     dof: [-e[8], -e[9], -e[10]],
   };
+}
+
+/**
+ * Move a flipbook sprite's quad onto its current atlas cell (ledger SPR-6):
+ * writes straight into `geometry`'s own UV attribute, no allocation, so this
+ * is safe on the per-frame draw path (features/mesh-viewer-performance, rule
+ * 5). `geometry` must be a private clone of the shared template quad — see
+ * `#acquire` below — since every other sprite sharing that quad would move
+ * with it otherwise. Vertex order matches `_sprite_quad_mesh` in assemble.py
+ * (bottom-left, bottom-right, top-right, top-left); that quad's v=0 is the
+ * texture's top row and v=1 its bottom, so a cell's own bottom edge is the
+ * larger v within it. Which corner of the atlas frame 0 sits in, and whether
+ * frames run row-major, was not read from the engine (open, see the doc) —
+ * this is the ordinary convention.
+ */
+function writeAtlasUv(geometry, col, row, cell) {
+  const uv = geometry.attributes.uv;
+  const u0 = col * cell, u1 = u0 + cell;
+  const vTop = row * cell, vBottom = vTop + cell;
+  const a = uv.array;
+  a[0] = u0; a[1] = vBottom;
+  a[2] = u1; a[3] = vBottom;
+  a[4] = u1; a[5] = vTop;
+  a[6] = u0; a[7] = vTop;
+  uv.needsUpdate = true;
 }
 
 /**
@@ -350,7 +375,13 @@ export class EffectPlayer {
     if (p.kind === 'sprite') {
       const source = template.isMesh ? template : template.children.find(c => c.isMesh);
       if (!source) return null;
-      const key = source.material.uuid;
+      // A flipbook (SPR-6) needs its own UV rect per live instance, so it
+      // gets its own pool and its own cloned geometry; every other sprite
+      // keeps sharing the template's, exactly as before. Keyed apart from a
+      // plain sprite on the same texture so a pool never mixes shared and
+      // private geometry even if two templates happen to name one texture.
+      const animated = p.spec.numAnimationFrames > 1;
+      const key = source.material.uuid + (animated ? ':anim' : '');
       let pool = this.spritePool.get(key);
       if (!pool) { pool = []; this.spritePool.set(key, pool); }
       let mesh = pool.pop();
@@ -363,7 +394,8 @@ export class EffectPlayer {
           material.blending = THREE.AdditiveBlending;
         }
         this.onMaterial?.(material);
-        mesh = new THREE.Mesh(source.geometry, material);
+        const geometry = animated ? source.geometry.clone() : source.geometry;
+        mesh = new THREE.Mesh(geometry, material);
         mesh.userData.poolKey = key;
         mesh.frustumCulled = false;
         this.root.add(mesh);
@@ -451,6 +483,14 @@ export class EffectPlayer {
       const material = mesh.material;
       if (look.color) material.color.setRGB(look.color[0], look.color[1], look.color[2]);
       material.opacity = look.opacity;
+      if (p.spec.numAnimationFrames > 1) {
+        // The spec is the shared template's `particle` object (one per
+        // emitter, not per particle), so caching the grid there costs
+        // nothing extra on the frames this doesn't change.
+        const grid = p.spec._atlasGrid ??= atlasGrid(p.spec.numAnimationFrames);
+        const idx = frameIndex(p);
+        writeAtlasUv(mesh.geometry, idx % grid.columns, Math.floor(idx / grid.columns), grid.cell);
+      }
     } else {
       const rot = p.emitter.spec.rotationalSpeed;
       if (rot && (rot.dof || rot.up || rot.right)) {

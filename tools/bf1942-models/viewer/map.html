@@ -4238,6 +4238,7 @@ async function loadHandWeapon(name, soldierName = null) {
     cool: 0,         // seconds until a semi-auto weapon has cycled
     pulse: false,    // a one-frame trigger pulse is in flight
     fire: null,      // { spec, buffer } once firePromise (above) resolves
+    fireRetry: false, // the shot path has already asked again for a missing report
     zoomed: false,   // the press-toggle latch (`altFireOnce`)
     rezoom: 0,       // seconds of `UnZoomBetweenFireTime` un-zoom left
     fovCur: 1,       // the eased ARMS FOV factor, 1 hip .. `zoom.soldierFov` zoomed
@@ -4275,10 +4276,12 @@ async function loadHandWeapon(name, soldierName = null) {
     playViewmodelClip(hw, 'deploy', { restart: true });
   }
   // The fetch has been in flight since the top of this function; attach it
-  // to `hw` whenever it lands. Same guard as before: a slow decode landing
-  // after the soldier has already switched weapons again must not hand a
-  // Thompson its predecessor's report.
-  firePromise.then(fire => { if (fire && handWeapon === hw) hw.fire = fire; });
+  // to `hw` whenever it lands. The guard is the load token, not
+  // `handWeapon === hw`: a report that beats the glb home would otherwise be
+  // dropped for the very weapon about to be published, while the token still
+  // keeps one from landing on a weapon the soldier has already swapped away
+  // from.
+  firePromise.then(fire => { if (fire && weaponToken === token) hw.fire = fire; });
   updateAmmoHud();
   return hw;
 }
@@ -4411,7 +4414,12 @@ function weaponSoundsManifest() {
   if (!weaponSoundsIndex) {
     weaponSoundsIndex = fetch(`${MODELS_BASE}/sounds/weapons.json${bust()}`)
       .then(r => (r.ok ? r.json() : null))
-      .catch(() => null);
+      .catch(() => null)
+      // A fetch that lost its race with the page's own load storm must not
+      // memoise silence for the rest of the session: drop the cached promise
+      // so the next weapon — or the next shot, through `refetchHandFireSound`
+      // — asks again. Only a manifest that actually arrived is kept.
+      .then(doc => { if (!doc) weaponSoundsIndex = null; return doc; });
   }
   return weaponSoundsIndex;
 }
@@ -4426,6 +4434,18 @@ async function fetchHandFireSound(name) {
   if (!spec) return null;   // a quiet weapon (binoculars), or a mod without the tree
   const buffer = await modelSoundBuffer(`sounds/${spec.file}`);
   return buffer ? { spec, buffer } : null;
+}
+
+/** One more try for a weapon whose report never landed, asked from the shot
+ *  path. Once per weapon: a fetch is cheap, but a round is not the place to
+ *  queue one every time the trigger falls. */
+function refetchHandFireSound(hw) {
+  if (hw.fireRetry) return;
+  hw.fireRetry = true;
+  const token = weaponToken;
+  fetchHandFireSound(hw.name).then(fire => {
+    if (fire && weaponToken === token) hw.fire = fire;
+  });
 }
 
 function ensureHandFireBus(ctx) {
@@ -4472,6 +4492,11 @@ function releaseHandFireLoop() {
 function playHandFire(fire) {
   if (!fire || !audioListener || masterVolume() <= 0) return;
   const ctx = audioListener.context;
+  // A context built before the first gesture starts suspended and stays that
+  // way until something resumes it. Pulling a trigger is a gesture, and when
+  // the listener was created by a load rather than by a click this is the
+  // difference between an audible session and a silent one.
+  if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   // A looped fire patch is trigger-held, not per-round: `onShot` only has to
   // make sure the loop is running.
   if (fire.spec.loop) {
@@ -4505,6 +4530,10 @@ function playHandFire(fire) {
 guns.onShot = group => {
   const hw = handWeapon;
   if (!hw || group !== hw.group) return;
+  // A report that never arrived — a manifest or an mp3 that failed while the
+  // page was still pulling the level down — is asked for once more here
+  // rather than leaving this weapon silent for the rest of its life.
+  if (!hw.fire) refetchHandFireSound(hw);
   playHandFire(hw.fire);
   // The arms answer the round: fire is a one-shot per shot, blended in at
   // the fire state's own morph factor (4.0 — a quarter second, so the first
