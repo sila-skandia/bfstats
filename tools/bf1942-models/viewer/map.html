@@ -3905,6 +3905,14 @@ function feedVehicleHud() {
   // only, one Armor shared by every seat — never a nested seat's own value.
   setHudVar('Vehicle/VehicleHitPoints', rootHud?.hitpoints ?? null);
   setHudVar('Vehicle/VehicleMaxHitPoints', rootHud?.maxHitpoints ?? null);
+  // Which copy of the ammo panel `menu/InGame` paints: the layout gates every
+  // primary leaf on `NumberOfWeaponIcons == 1` and every secondary one on
+  // `== 2` (VHUD, verify-r2.md R2-13), so a seat that never feeds it shows no
+  // ammo at all. `setNumberOfWeaponIcons` is the seat's own word; the fallback
+  // covers scenes extracted before it was carried — a declared secondary
+  // means two panels, anything else one.
+  setHudVar('Ammo/NumberOfWeaponIcons', seatHud?.numberOfWeaponIcons
+    ?? (seatHud?.secondaryAmmoIcon || seatHud?.secondaryAmmoBar ? 2 : 1));
   setHudVar('Ammo/PrimaryAmmoIcon', seatHud?.primaryAmmoIcon ?? null);
   setHudVar('Ammo/PrimaryAmmoBar', ammoBarCode(seatHud?.primaryAmmoBar));
   setHudVar('Ammo/SecondaryAmmoIcon', seatHud?.secondaryAmmoIcon ?? null);
