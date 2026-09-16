@@ -14,6 +14,7 @@
 
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
+import { selectGait } from './gait-select.js';
 
 // --- conventions --------------------------------------------------------------
 
@@ -568,9 +569,58 @@ function hpAt(life, t) {
 
 const isReplicated = (life, t) => life.replicated.some(([from, to]) => t >= from && t < to);
 
+// --- soldier gait animation: placeholder selection -------------------------------
+//
+// The recording has no signal for which weapon a soldier is holding: kit
+// pickups (raw 0x23) name a world kit box's network id, not the player who
+// took it or what they now carry, and nothing else in the format ties a
+// weapon template to a soldier life (checked against every raw event this
+// parser reads, and against replay_20260915-213110.ndjson directly -- no
+// per-life weapon signal exists today). Real weapon detection is therefore
+// out of reach for both this task and the parallel gait-selection work
+// without a recorder change, so every soldier plays one fixed weapon's upper
+// gait for now. Swap placeholderWeaponFor's body when that changes.
+const PLACEHOLDER_WEAPON = 'Colt';
+function placeholderWeaponFor(life) {
+  return PLACEHOLDER_WEAPON;
+}
+
+// Gait selection (idle/walk/run) is `gait-select.js`'s job: ground speed and
+// heading (forward/strafe/backward) from the life's own recorded samples,
+// with hysteresis so a noisy single tick can't flip the animation. See that
+// module's header and features/soldier-locomotion-animation/README.md for
+// why a heading-aware threshold is necessary, not just a nicety -- a
+// standing strafe measures almost exactly on top of a naive forward-only
+// walk/run boundary.
+
+// Phase-offset each soldier so a squad doesn't move in lockstep. The engine's
+// own primitive (setUserRandomStartTime / State.random_start, already parsed
+// by bf42/animstates.py -- see soldier-locomotion-animation/README.md section
+// 6) never reaches the viewer: extract_pose.py's gait export writes only
+// state/clip/speed/frames/period per gait into extras (checked directly
+// against the live lower.gait.glb), not random_start or morph_factor, and
+// adding it means extending that extractor and bf42/gltf.py's extras writer
+// -- real pipeline work, not a viewer-side fix. Falls back to a per-life
+// pseudo-random phase seeded off the soldier's network id, stable for the
+// life's whole duration and already on hand.
+function phaseFor(nid) {
+  const x = Math.sin(nid * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+// Same investigate-then-fall-back call for the transition itself: the
+// engine's setMorphFactor / State.morph_factor (also already parsed by
+// bf42/animstates.py) is equally absent from the gait extras, so a real
+// per-state crossfade rate isn't reachable either. A fixed fade, short
+// against both gait periods (run 0.625 s/cycle, walk 1.0 s/cycle), stands in.
+const CROSSFADE_DURATION = 0.2;   // seconds
+
 // --- drawing --------------------------------------------------------------------
 
 const modelCache = new Map();
+const posePairCache = new Map();     // "Soldier|Weapon" -> Promise<{scene, animations} | null>
+const gaitBundleCache = new Map();   // relative sidecar path -> Promise<AnimationClip[]>
+let gaitsManifestPromise = null;     // Promise<gaits.json>, fetched once and shared
 
 // Out-of-range objects are drawn in this: announced and placed, but not updated.
 const ghostMaterial = new THREE.MeshBasicMaterial({
@@ -622,38 +672,65 @@ class ReplayPlayer {
     const models = new Map();
     let done = 0;
     this.ui.status(`loading ${templates.length} models`);
-    await Promise.all(templates.map(async name => {
-      const [normal, wreck] = await Promise.all([this.model(name), this.model(`${name}.wreck`)]);
-      models.set(name, { normal, wreck });
-      this.ui.status(`loading models ${++done}/${templates.length}`);
-    }));
+    // One (soldier, weapon) pose pair per distinct soldier template present
+    // (today, one pair per template -- every soldier gets the same
+    // placeholder weapon), plus its gait clips. Both are cached per pair/grip
+    // (posePair / gaitClipsFor above), so this never refetches per soldier
+    // instance, only per distinct pair actually seen in the recording.
+    const soldierPairs = [...new Set(
+      drawable.filter(l => l.soldier).map(l => `${l.tmpl}|${placeholderWeaponFor(l)}`),
+    )];
+    let poseDone = 0;
+    const poses = new Map();
+    await Promise.all([
+      ...templates.map(async name => {
+        const [normal, wreck] = await Promise.all([this.model(name), this.model(`${name}.wreck`)]);
+        models.set(name, { normal, wreck });
+        this.ui.status(`loading models ${++done}/${templates.length}`);
+      }),
+      ...soldierPairs.map(async key => {
+        const [soldier, weapon] = key.split('|');
+        const [pose, gaitClips] = await Promise.all([this.posePair(soldier, weapon), this.gaitClipsFor(weapon)]);
+        poses.set(key, pose ? { pose, gaitClips } : null);
+        this.ui.status(`loading gaits ${++poseDone}/${soldierPairs.length}`);
+      }),
+    ]);
     for (const life of drawable) {
-      const model = models.get(life.tmpl);
-      if (!model?.normal) continue;
-      // A wrapper group carries the recorded transform, so a model keeps any
-      // rotation of its own on its root (the soldier's does).
-      //
-      // Plain Object3D.clone() shares one Skeleton (and its bones) across
-      // every clone (three.js SkinnedMesh.copy() copies the reference, not
-      // the bones), so every soldier but the first read bone transforms off
-      // an unparented template that never gets updateMatrixWorld() -- the
-      // hand (the bone farthest from the root) is the most visibly wrong.
-      // SkeletonUtils.clone() rebuilds a parallel bone hierarchy per clone.
       const group = new THREE.Group();
       group.name = `replay ${life.tmpl} ${life.nid}`;
       group.visible = false;
-      const normal = skeletonClone(model.normal);
-      group.add(normal);
+      const rigged = life.soldier ? poses.get(`${life.tmpl}|${placeholderWeaponFor(life)}`) : null;
+      let normal;
       let wreck = null;
-      if (model.wreck) {
-        wreck = skeletonClone(model.wreck);
-        wreck.visible = false;
-        group.add(wreck);
+      let anim = null;
+      if (rigged) {
+        // A wrapper group carries the recorded transform, so the pose keeps
+        // its own root orientation (see SOLDIER_YAW_FLIP in place()).
+        //
+        // Plain Object3D.clone() shares one Skeleton (and its bones) across
+        // every clone (three.js SkinnedMesh.copy() copies the reference, not
+        // the bones), so every soldier but the first would read bone
+        // transforms off an unparented template that never gets
+        // updateMatrixWorld() -- the hand (farthest from the root) is the
+        // most visibly wrong. SkeletonUtils.clone() rebuilds a parallel bone
+        // hierarchy per clone, same fix as the plain-model path below.
+        normal = skeletonClone(rigged.pose.scene);
+        anim = this.buildGaitRig(normal, rigged.pose.animations, rigged.gaitClips, phaseFor(life.nid));
+      } else {
+        const model = models.get(life.tmpl);
+        if (!model?.normal) continue;
+        normal = skeletonClone(model.normal);
+        if (model.wreck) {
+          wreck = skeletonClone(model.wreck);
+          wreck.visible = false;
+        }
       }
+      group.add(normal);
+      if (wreck) group.add(wreck);
       const meshes = [];
       group.traverse(obj => { if (obj.isMesh) meshes.push({ mesh: obj, material: obj.material }); });
       this.root.add(group);
-      this.entities.push({ life, group, normal, wreck, meshes, ghost: false, label: null, hp: null });
+      this.entities.push({ life, group, normal, wreck, meshes, anim, ghost: false, label: null, hp: null });
     }
     this.buildMarkers();
     const aligned = this.alignment
@@ -681,6 +758,159 @@ class ReplayPlayer {
       }).catch(() => null));
     }
     return modelCache.get(name);
+  }
+
+  // --- soldier gait animation: loading and retargeting ---------------------
+  //
+  // models/<Template>.glb (model() above) is rigid, unskinned geometry for a
+  // soldier -- extract_models.py bakes a fixed part arrangement with no
+  // skeleton at all (verified against the live asset: 5 nodes, 0 skins,
+  // "USMarine3PBody" etc. as static children). There is nothing a clip could
+  // bind onto. The only soldier asset with a skeleton is the weapon-pose
+  // matrix poses.html already animates --
+  // models/poses/<Soldier>__<Weapon>.pose.glb, mesh + skin + stance clips
+  // (verified: its skeleton's node names are a strict superset of
+  // gaits/lower.gait.glb's 67 joint names). A soldier life's drawable mesh
+  // comes from there instead of the plain body model now, falling back to
+  // the plain model if the pose pair fails to load -- never a broken page.
+  //
+  // Retargeting the shared lower.gait.glb / <grip>.gait.glb clips onto that
+  // skeleton is the identical name-based binding poses.html already proved:
+  // three.js resolves a clip's tracks by node NAME against whatever root the
+  // AnimationMixer holds, so a sidecar carrying only a joint hierarchy binds
+  // straight onto a different file's skinned scene, no track rewriting.
+
+  posesBase() {
+    return `${this.ctx.modelsBase}/poses`;
+  }
+
+  gaitsManifest() {
+    if (!gaitsManifestPromise) {
+      gaitsManifestPromise = fetch(`${this.posesBase()}/gaits/gaits.json${this.ctx.bust()}`)
+        .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+        .catch(() => ({ lower: null, grips: {}, weaponGrip: {} }));
+    }
+    return gaitsManifestPromise;
+  }
+
+  gaitBundle(relative) {
+    if (!gaitBundleCache.has(relative)) {
+      const url = `${this.posesBase()}/${relative}${this.ctx.bust()}`;
+      gaitBundleCache.set(relative, this.ctx.loader.loadAsync(url)
+        .then(gltf => gltf.animations ?? [])
+        .catch(() => []));
+    }
+    return gaitBundleCache.get(relative);
+  }
+
+  // The shared lower-body clips plus the two upper-body clips for whatever
+  // grip `weapon` resolves to (gaits.json mirrors copyState's donor sharing:
+  // 23 grips, not one per weapon), cached per grip so soldiers sharing a
+  // weapon -- or sharing a donor grip -- fetch its bundle once.
+  async gaitClipsFor(weapon) {
+    const manifest = await this.gaitsManifest();
+    const grip = manifest.weaponGrip?.[weapon] ?? weapon;
+    const gripPath = manifest.grips?.[grip];
+    if (!manifest.lower || !gripPath) return [];
+    const [lower, upper] = await Promise.all([this.gaitBundle(manifest.lower), this.gaitBundle(gripPath)]);
+    return [...lower, ...upper];
+  }
+
+  // Mesh + skeleton + stance clips for one (soldier, weapon) pair, cached --
+  // several lives sharing a pair (every soldier gets the same placeholder
+  // weapon today) fetch it once. Never thrown: a missing pair resolves to
+  // null so load() can fall back to the plain body model.
+  posePair(soldier, weapon) {
+    const key = `${soldier}|${weapon}`;
+    if (!posePairCache.has(key)) {
+      const url = `${this.posesBase()}/${soldier}__${weapon}.pose.glb${this.ctx.bust()}`;
+      posePairCache.set(key, this.ctx.loader.loadAsync(url).then(gltf => {
+        gltf.scene.traverse(obj => {
+          const data = obj.userData || {};
+          if (data.effect || data.projectileMesh || data.projectileTrail
+              || data.collision || /collision/i.test(obj.name || '')) obj.visible = false;
+        });
+        this.ctx.shadeModel?.(gltf.scene);
+        return { scene: gltf.scene, animations: gltf.animations ?? [] };
+      }).catch(() => null));
+    }
+    return posePairCache.get(key);
+  }
+
+  // Builds the per-instance animation rig on a freshly skeletonClone()'d pose
+  // scene: one mixer, the pose's own `stand` stance clip for idle, and
+  // whichever of walk/run resolved a complete lower+upper pair. Actions are
+  // created once, played and parked at weight 0 -- same shape as poses.html's
+  // stance/gait actions -- then driven every frame by setGaitPose() below,
+  // never through mixer.update(dt): the replay clock is the single source of
+  // truth (round-replay-capture README section 12, "seeking is only setting
+  // it"), so each action's .time is set as a pure function of the recording
+  // time, not accumulated from frame deltas.
+  buildGaitRig(scene, poseClips, gaitClips, phase) {
+    const mixer = new THREE.AnimationMixer(scene);
+    const action = name => {
+      const clip = THREE.AnimationClip.findByName(name === 'stand' ? poseClips : gaitClips, name);
+      if (!clip) return null;
+      const a = mixer.clipAction(clip);
+      a.setLoop(THREE.LoopRepeat, Infinity);
+      a.play();
+      a.setEffectiveWeight(0);
+      a.paused = true;   // time is set explicitly from the replay clock, below
+      return a;
+    };
+    const actions = {
+      stand: action('stand'),
+      runLower: action('run.lower'), runUpper: action('run.upper'),
+      walkLower: action('walk.lower'), walkUpper: action('walk.upper'),
+    };
+    // A gait only counts when both halves resolved: half a body running
+    // while the other holds still is worse than not running at all.
+    if (!actions.runLower || !actions.runUpper) actions.runLower = actions.runUpper = null;
+    if (!actions.walkLower || !actions.walkUpper) actions.walkLower = actions.walkUpper = null;
+    return { mixer, actions, phase, currentGait: 'idle', fadeFrom: null, fadeStart: null };
+  }
+
+  // Advances one soldier's gait mixer to the pose for absolute replay time
+  // `t`. Every quantity here is a pure function of `t` (and the entity's
+  // fixed phase offset) except which gait is "current" and when the last
+  // change happened, which is unavoidable for a crossfade -- blending FROM
+  // something needs to remember what that was. A seek that jumps back across
+  // an old transition can therefore replay a stale 200 ms fade; harmless and
+  // not worth the bookkeeping a fully stateless crossfade would need, since
+  // continuous playback (the common case) is exactly right.
+  setGaitPose(entity, t) {
+    const { anim, life } = entity;
+    let desired = selectGait(life, t).gait;
+    if (desired === 'run' && !anim.actions.runLower) desired = 'walk';
+    if (desired === 'walk' && !anim.actions.walkLower) desired = 'idle';
+
+    if (desired !== anim.currentGait) {
+      anim.fadeFrom = anim.currentGait;
+      anim.fadeStart = t;
+      anim.currentGait = desired;
+    }
+    const elapsed = anim.fadeFrom !== null ? t - anim.fadeStart : -Infinity;
+    const fading = elapsed >= 0 && elapsed < CROSSFADE_DURATION;
+    const k = fading ? elapsed / CROSSFADE_DURATION : 1;
+    const weights = { idle: 0, walk: 0, run: 0 };
+    weights[anim.currentGait] = k;
+    if (fading) weights[anim.fadeFrom] += 1 - k;
+    else anim.fadeFrom = null;
+
+    const setHalf = (lowerAction, upperAction, weight) => {
+      if (!lowerAction) return;
+      if (weight <= 0) { lowerAction.setEffectiveWeight(0); upperAction.setEffectiveWeight(0); return; }
+      const lowerPeriod = lowerAction.getClip().duration;
+      const upperPeriod = upperAction.getClip().duration;
+      lowerAction.time = (t + anim.phase * lowerPeriod) % lowerPeriod;
+      upperAction.time = (t + anim.phase * upperPeriod) % upperPeriod;
+      lowerAction.setEffectiveWeight(weight);
+      upperAction.setEffectiveWeight(weight);
+    };
+    setHalf(anim.actions.runLower, anim.actions.runUpper, weights.run);
+    setHalf(anim.actions.walkLower, anim.actions.walkUpper, weights.walk);
+    if (anim.actions.stand) anim.actions.stand.setEffectiveWeight(weights.idle);
+    anim.mixer.update(0);
   }
 
   buildMarkers() {
@@ -770,6 +1000,7 @@ class ReplayPlayer {
     const wrecked = Boolean(entity.wreck) && hp !== null && hp <= 0;
     entity.normal.visible = !wrecked;
     if (entity.wreck) entity.wreck.visible = wrecked;
+    if (entity.anim && !wrecked) this.setGaitPose(entity, t);
   }
 
   /** The followed player's controlled object: their soldier, their vehicle,
