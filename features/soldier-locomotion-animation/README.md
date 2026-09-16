@@ -411,6 +411,138 @@ the symptom.
 
 ---
 
+## 7. Stance capture (2026-09-16)
+
+**Confirmed, not assumed: the current recorder cannot tell crouch or prone
+from standing.** A replay-viewer gait selector (`tools/bf1942-models/viewer/
+gait-select.js`) can therefore only ever answer idle/walk/run. This section is
+the evidence for that, and what a *future* recorder change would need — no
+change to bf42plus was made here; that needs a real build+install+play cycle
+on the LAN server, which only the project owner can run (this repo's own
+convention for BF1942 asset/tooling work — see this file's own history of
+being verified live rather than assumed).
+
+### What the recorder actually samples
+
+`bf42plus/src/replay.cpp`'s per-object sampler (`sampleObjects`, called from
+`replay_onFrame` at up to 10 Hz) keeps exactly this much state per networked
+object:
+
+```cpp
+struct ObjectState {
+    Pos3 pos;
+    Quat rot;
+    int occupant;   // declared, never written past its -1 default
+    bool seenThisSample;
+    bool hasArmor;
+    float hitPoints;
+    int lastHitPlayer;
+};
+```
+
+and writes `pos`/`rot` (from `getAbsoluteTransformation()`) and the Armor
+fields (`readArmor`, via `IObject::queryComponent(IID_IArmor, IID_IArmor)`,
+`IID_IArmor = 0xc4a4`) to the `s`/`a`/`o` records
+(`features/round-replay-capture/README.md` sec 9). There is no third
+category. Grepping all of `bf42plus/src` and `bf42plus/include` for
+`pose|crouch|prone|stance|c_Sst` turns up nothing but coincidental substring
+matches on `distance`. `viewer/soldier.js`/`physics.js`'s own
+`POSE_FLAG_CROUCH`/`POSE_FLAG_PRONE`/`poseFromFlags` — the client's real
+0x20/0x40 stance bits, reverse-engineered independently of this recorder for
+the standalone movement viewer — describe a byte the *retail client* reads
+internally; bf42plus's recorder never reads or writes anything resembling it.
+So: every recording made with the recorder as it ships today (format v1
+through v3) has no field to read a stance out of, for any life, full stop.
+
+This also settles a subtler question worth stating explicitly: **even a
+perfect speed-based classifier could not recover stance from position alone**,
+because the speed bands overlap. `soldier.js`'s `GAIT_SPEED` gives crouch a
+top speed of 2 m/s — identical to standing walk's 2 m/s — and prone tops out
+at 1 m/s, which is not obviously distinguishable from a standing soldier
+moving slowly for some other reason (e.g. mid-turn, or the first tick of
+acceleration). Stance is not merely unrecorded; it is not recoverable
+after the fact from what *is* recorded. It has to be captured at the source.
+
+### Two candidate reads, and the precedent to hold either one to
+
+Hit points are the recorder's one precedent for adding a field that is not
+position/rotation, and the bar it set is worth restating exactly, because a
+stance field should clear the same bar before it ships: `readArmor` does not
+trust a hardcoded offset blind. `armorVtableMatches` disassembles the actual
+getter machine code at four vtable slots (5, 7, 11, 30) *every time a new
+vtable is seen* and only then trusts the fixed offsets `+0x38`/`+0x3C`/`+0xF0`/
+`+0x14` — checked once per vtable, cached, and logged (`debuglogt`) the one
+time it fails. The offsets themselves were cross-checked against the Linux
+dedicated server's symbolised binary before being trusted at all. Nothing
+below should ship without the same two things: a runtime signature check
+before trusting an offset, and a second binary (or a live LAN server session)
+to check it against.
+
+**Path A — the pose-flags byte.** `soldier.js`'s `poseFromFlags` cites a real
+engine function, `0x005013f8` (`pose = (flags & 0x20) ? 1 : (flags & 0x40) >>
+5`), that takes a flags byte and returns a pose index — so the bits exist in
+BF1942.exe. What is *not* established is where that byte lives between
+frames. `features/bf1942-engine-reference/ledger.md` **PHY-1** is the direct
+caution here: tracing the jump bit (0x80) of the same byte led to "a word at
+`[esp+0x2c]`" inside `BFSoldier::handlePlayerInput` — a stack temporary,
+recomputed every call from the crouch/prone/action inputs of that frame, not
+demonstrated to be parked anywhere `sampleObjects`'s separate, later,
+once-per-10Hz-tick walk over `ObjectManager_getAllRegisteredObjects()` could
+independently re-read. Crouch and prone (0x20/0x40) were not traced by that
+entry and may sit differently than jump does — genuinely open — but "the byte
+`poseFromFlags` reads" and "a field on the live object" are not yet known to
+be the same claim, and treating them as interchangeable without checking
+would be exactly the kind of assumption this document's confidence ladder
+exists to catch.
+
+**Path B — the lower-body animation state.** `ledger.md`'s "Soldier camera
+shake / view bob" section already places and cross-checks something more
+promising: a `BFSoldier` holds four `AnimationStateMachineInstance`s, 68 bytes
+each, at a fixed offset confirmed on *both* binaries — `+0x2c0` on the client
+(the binary bf42plus hooks), `+0x294` on the Linux dedicated server — slot 0
+being the lower body, the exact machine that owns every `Lb_Stand`/
+`Lb_Crouch*`/`Lb_Lie*` state (the same vocabulary `extract_pose.py`'s `GAITS`
+table and `bf42/animstates.py` already resolve gait names through on the
+extraction side). If that instance exposes its current state's name or id at
+some sub-offset — not yet located; the ledger's own account of this struct
+stops at "a fourth [slot] that... nothing here has read" — a recorder could
+read it the same way `sampleObjects` already walks live objects: downcast the
+generic `IObject*` to `BFSoldier` via its template's class id
+(`CID_BFSoldierTemplate = 0x9493`, `bf42plus/src/bf/generic.h:6`), then read
+the lower-body instance's state and map its name to a stance exactly the way
+gait names are already mapped to clips — a name lookup, not a bit test. This
+is more speculative than Path A (the field to read is not yet found at all)
+but more likely to be *stable* if found, since it is the same kind of
+per-instance state a gait itself already comes from, rather than a
+per-frame-recomputed input flag.
+
+**Either path is `open`, not `working`**, in this document's own terms
+(`features/round-replay-capture/README.md`'s confidence ladder). Neither
+should be wired into `replay.cpp` without first: (1) confirming on a live
+session (Ghidra bridge or the LAN server, per `round-replay-capture/
+README.md` sec 6) that the candidate field is populated and stable across at
+least one full crouch/stand and prone/stand cycle while the object is *not*
+being polled via `handlePlayerInput`, the way `armorVtableMatches` confirms
+Armor's vtable before every read; and (2) a real build+install+play recording
+that shows the new field changing exactly when the recording player's own
+stance changes and not otherwise. Both are out of scope here.
+
+### What the recorder change would look like, once a field clears that bar
+
+One more value per soldier object, written only on change — the same shape
+`a` (hit points) already uses, not a new record kind: e.g. a stance code
+(0 stand / 1 crouch / 2 prone, matching `physics.js`'s own `poseFromFlags`
+encoding so the two conventions do not diverge) appended to the `s` record's
+per-object tuple, or its own `st`-keyed record parallel to `a`. Format version
+bumps to 4. Whichever field wins, `gait-select.js`'s job gets strictly easier,
+not harder: with a real stance signal, gait selection stops being "infer
+idle/walk/run from position deltas and hope" and becomes "read the stance,
+then use the matching one of `GAIT_SPEED`'s four (not two) speed tables" —
+the hysteresis and heading-direction logic this module already has would
+carry over unchanged.
+
+---
+
 ## Reproduce
 
 ```bash
