@@ -509,6 +509,74 @@ class ObjectTemplate:
     critical_damage: float | None = None
     hp_lost_while_critical_damage: float | None = None
 
+    # -- SupplyDepot --------------------------------------------------------- #
+    # Radius a soldier or vehicle has to be within to be worked on, which team
+    # it services, and the ammo/vehicle types it restocks. Kept exactly as
+    # authored -- `setHealth`/`addAmmoType`/`addVehicleType`'s argument
+    # meanings beyond declaration order are not established by anything in
+    # `features/bf1942-engine-reference/` yet (lnxded names
+    # `SupplyDepotTemplate::setHealth(int, float, float)` /
+    # `addAmmoType(int, int, float, float)` / `addVehicleType(std::string,
+    # int, float, float)`, but the disassembly gives argument *types*, not
+    # names). `radius` is a bare `ObjectTemplate.radius <n>` -- the same
+    # spelling a Projectile's splash radius uses -- so it is routed by kind
+    # rather than folded into that bucket below; every other SupplyDepot word
+    # here is unique to it.
+    supply_radius: float | None = None
+    supply_team: int | None = None
+    supply_set_health: tuple[float, float, float] | None = None
+    supply_ammo_types: list[tuple[float, float, float, float]] = field(default_factory=list)
+    supply_vehicle_types: list[tuple[str, float, float, float]] = field(default_factory=list)
+    supply_work_on_soldiers: bool | None = None
+    supply_work_on_vehicles: bool | None = None
+
+    # -- Vehicle HUD ----------------------------------------------------------#
+    # Declared on the vehicle's own `PlayerControlObject` root -- 13678 of
+    # 13699 `setVehicleIcon` uses across the 14 installed mods' `Objects.rfa`
+    # land on that kind, surveyed per enclosing template, not on a FireArms
+    # child -- so these ride the same node as `hitpoints`/`max_hitpoints`
+    # above, not `_fire_arms`'s extras. `setVehicleIcon` is the "vehicle icon
+    # word" the briefing could not name; nothing in vanilla's own con scan
+    # turned up a spelling for it. Primary/secondary ammo *bar* is an enum
+    # name off a small HUD-side vocabulary (`ABAmmoBar`, `ABHeatBarOnly`,
+    # `ABAmmoBarHeatBar`, `ABAmmoBarReloadBar`, ...), not a texture path;
+    # kept as authored like `grip`/`vehicle_type` above.
+    vehicle_icon: str | None = None
+    vehicle_primary_ammo_icon: str | None = None
+    vehicle_primary_ammo_bar: str | None = None
+    vehicle_secondary_ammo_icon: str | None = None
+    vehicle_secondary_ammo_bar: str | None = None
+
+    # -- Kit HUD --------------------------------------------------------------#
+    # `setHealthBarIcon`/`setHealthBarFullIcon` are the segmented bar a
+    # soldier wearing this kit draws bottom-left; `setKitIcon <n> <path>` is
+    # the small class glyph at its foot (`<n>` kept as authored -- every
+    # vanilla and mod use is one call per kit, and nothing in the data
+    # establishes what the index selects between). `addWeaponIcon` is
+    # repeatable, one icon per carried item in declaration order -- the row
+    # the spawn screen paints under the kit portrait. Distinct from a hand
+    # weapon's own `setAmmoIcon` below (`hud_ammo_icon`): scanning every
+    # installed mod's `Objects.rfa` for a command carrying a `Weapon/Icon_*`
+    # picture turned up only this one word, and it lives on the Kit, never on
+    # a HandFireArms -- see the module's HUD-word survey.
+    kit_health_bar_icon: str | None = None
+    kit_health_bar_full_icon: str | None = None
+    kit_icon: tuple[int, str] | None = None
+    kit_weapon_icons: list[str] = field(default_factory=list)
+
+    # -- Soldier constants ----------------------------------------------------#
+    # `CommonSoldierData.inc`, reached through the bare `include <path>`
+    # directive every nation's `Objects.con` uses -- see
+    # `extract_models._inline_includes`, which splices it into the text
+    # before this parser ever sees it. Identical across all five vanilla
+    # soldiers (10.0 / 0.25 / 0.15 / 2.0 / 0.15); kept per-template rather
+    # than hoisted to a constant since a mod's BFSoldier could vary it.
+    heal_distance: float | None = None
+    heal_factor: float | None = None
+    self_heal_factor: float | None = None
+    repair_distance: float | None = None
+    repair_factor: float | None = None
+
     # FireArms. Plane guns are meshless FireArms with one `addFireArmsPosition
     # <pos> <ypr>` per muzzle (the Spitfire's ±1.6° yaw is gun convergence);
     # tank guns are a FireArms *with* geometry (the barrel) whose flash is an
@@ -761,6 +829,35 @@ class ObjectTemplate:
     # the reference the sound extraction resolves; the script itself stays in
     # `Objects.rfa` and is never read here.
     sound_script: str | None = None
+
+    # -- Hand-weapon HUD ------------------------------------------------------#
+    # The ammo bar a HandFireArms paints bottom-right, distinct from
+    # `hud_ammo_type` above (`setHudAmmoType`): `setAmmoBar`/`setAmmoBarFill`
+    # are texture paths (`Ingame/Magbar_<type>_{empty,full}_32x64.tga`), not
+    # the vehicle side's enum names. Position and text-position are two
+    # separate directives per axis in the data, so they stay separate fields
+    # rather than a synthesised vector. `setAmmoIcon` is the icon beside the
+    # bar (`Ammo/Icon_*`) -- the kit's own `addWeaponIcon` spawn-screen row
+    # above (`kit_weapon_icons`) is a different word entirely.
+    hud_ammo_bar: str | None = None
+    hud_ammo_bar_fill: str | None = None
+    hud_ammo_bar_size: float | None = None
+    hud_ammo_bar_pos_x: float | None = None
+    hud_ammo_bar_pos_y: float | None = None
+    hud_ammo_bar_text_pos_x: float | None = None
+    hud_ammo_bar_text_pos_y: float | None = None
+    hud_ammo_icon: str | None = None
+    # Sustained-fire heat: `heatAddWhenFire` per round fired,
+    # `coolDownPerSec` the drain rate once firing stops, `timeDelayOnOverheat`
+    # the lockout once it maxes out (vanilla's `Coaxial_Browning` and `Mg42`
+    # declare all three together; a survey for only "heat"/"reload"/"mag"/
+    # "ammo" substrings misses `coolDownPerSec` entirely, which is how this
+    # one very nearly stayed unparsed). Declared on both `FireArms`
+    # (Browning, MG42 -- vanilla's `ABHeatBarOnly` gun mounts) and
+    # `HandFireArms` (the M249 LMG in mods that carry one).
+    heat_add_when_fire: float | None = None
+    cool_down_per_sec: float | None = None
+    time_delay_on_overheat: float | None = None
 
     # Effect chain: EffectBundle -> Emitter (`ObjectTemplate.template` names
     # the payload) -> Particle (mesh) or SpriteParticle (textured quad).
@@ -1063,6 +1160,20 @@ class ObjectTemplate:
             "hasForce": self.has_recoil_force,
             "goBack": self.go_back_on_recoil,
         })
+        # The bottom-right ammo bar/icon a soldier holding this weapon draws.
+        # `hudAmmo` below (`setHudAmmoType`) already had a top-level home
+        # before this HUD round; the bar texture, its size/position and the
+        # icon beside it are new and grouped the way `zoom`/`magazine` are.
+        hud = prune({
+            "ammoBar": self.hud_ammo_bar,
+            "ammoBarFill": self.hud_ammo_bar_fill,
+            "ammoBarSize": self.hud_ammo_bar_size,
+            "posX": self.hud_ammo_bar_pos_x,
+            "posY": self.hud_ammo_bar_pos_y,
+            "textPosX": self.hud_ammo_bar_text_pos_x,
+            "textPosY": self.hud_ammo_bar_text_pos_y,
+            "icon": self.hud_ammo_icon,
+        })
         stats = prune({
             "roundOfFire": self.round_of_fire,
             "fireOnce": self.fire_once,
@@ -1077,6 +1188,7 @@ class ObjectTemplate:
             "view": view or None,
             "deviation": deviation or None,
             "recoil": recoil or None,
+            "hud": hud or None,
         })
         return stats or None
 
@@ -1267,6 +1379,85 @@ class ObjectLibrary:
                         "maxhitpoints": "max_hitpoints",
                         "criticaldamage": "critical_damage",
                         "hplostwhilecriticaldamage": "hp_lost_while_critical_damage",
+                    }[cmd], value)
+                # -- SupplyDepot. `radius` is spelled exactly like a
+                # Projectile's splash radius (both a bare
+                # `ObjectTemplate.radius <n>`), so it has to be routed by
+                # kind ahead of the generic bucket below, which would
+                # otherwise claim it for every kind including this one.
+                elif cmd == "radius" and obj.kind.lower() == "supplydepot":
+                    try:
+                        obj.supply_radius = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                elif cmd == "team":
+                    try:
+                        obj.supply_team = int(float(args.split()[0]))
+                    except (ValueError, IndexError):
+                        continue
+                elif cmd == "sethealth":
+                    if (values := floats(args)) is not None and len(values) >= 3:
+                        obj.supply_set_health = (values[0], values[1], values[2])
+                elif cmd == "addammotype":
+                    if (values := floats(args)) is not None and len(values) >= 4:
+                        obj.supply_ammo_types.append(
+                            (values[0], values[1], values[2], values[3]))
+                elif cmd == "addvehicletype":
+                    tokens = args.split()
+                    if len(tokens) >= 4:
+                        try:
+                            rest = tuple(float(t) for t in tokens[1:4])
+                        except ValueError:
+                            continue
+                        obj.supply_vehicle_types.append((tokens[0], *rest))
+                elif cmd in ("workonsoldiers", "workonvehicles"):
+                    if (value := truthy(args)) is not None:
+                        setattr(obj, {
+                            "workonsoldiers": "supply_work_on_soldiers",
+                            "workonvehicles": "supply_work_on_vehicles",
+                        }[cmd], value)
+                # -- Vehicle HUD, on the PlayerControlObject root.
+                elif cmd in ("setvehicleicon", "setprimaryammoicon", "setprimaryammobar",
+                             "setsecondaryammoicon", "setsecondaryammobar"):
+                    if token := args.strip().strip('"'):
+                        setattr(obj, {
+                            "setvehicleicon": "vehicle_icon",
+                            "setprimaryammoicon": "vehicle_primary_ammo_icon",
+                            "setprimaryammobar": "vehicle_primary_ammo_bar",
+                            "setsecondaryammoicon": "vehicle_secondary_ammo_icon",
+                            "setsecondaryammobar": "vehicle_secondary_ammo_bar",
+                        }[cmd], token.split()[0])
+                # -- Kit HUD.
+                elif cmd in ("sethealthbaricon", "sethealthbarfullicon"):
+                    if token := args.strip().strip('"'):
+                        setattr(obj,
+                                "kit_health_bar_icon" if cmd == "sethealthbaricon"
+                                else "kit_health_bar_full_icon", token)
+                elif cmd == "setkiticon":
+                    tokens = args.split(None, 1)
+                    if len(tokens) == 2:
+                        try:
+                            index = int(float(tokens[0]))
+                        except ValueError:
+                            continue
+                        if icon := tokens[1].strip().strip('"'):
+                            obj.kit_icon = (index, icon)
+                elif cmd == "addweaponicon":
+                    if token := args.strip().strip('"'):
+                        obj.kit_weapon_icons.append(token)
+                # -- Soldier constants, off `CommonSoldierData.inc`.
+                elif cmd in ("healdistance", "healfactor", "selfhealfactor",
+                             "repairdistance", "repairfactor"):
+                    try:
+                        value = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                    setattr(obj, {
+                        "healdistance": "heal_distance",
+                        "healfactor": "heal_factor",
+                        "selfhealfactor": "self_heal_factor",
+                        "repairdistance": "repair_distance",
+                        "repairfactor": "repair_factor",
                     }[cmd], value)
                 # -- Physics. See the `physics()` field block: which of these
                 # a template may legally declare is decided by its kind, so
@@ -1474,7 +1665,9 @@ class ObjectLibrary:
                 # the correct rule rather than a bug waiting to be found.
                 elif cmd in ("reloadtime", "zoomfov", "soldierzoomfov",
                              "unzoombetweenfiretime", "setmindev",
-                             "mindeviation", "maxdeviation", "set1pfov"):
+                             "mindeviation", "maxdeviation", "set1pfov",
+                             "heataddwhenfire", "cooldownpersec",
+                             "timedelayonoverheat"):
                     try:
                         value = float(args.split()[0])
                     except (ValueError, IndexError):
@@ -1488,6 +1681,9 @@ class ObjectLibrary:
                         "mindeviation": "min_deviation",
                         "maxdeviation": "max_deviation",
                         "set1pfov": "fov_1p",
+                        "heataddwhenfire": "heat_add_when_fire",
+                        "cooldownpersec": "cool_down_per_sec",
+                        "timedelayonoverheat": "time_delay_on_overheat",
                     }[cmd], value)
                 elif cmd in ("fireonce", "autoreload", "usescope",
                              "setsnipersight", "sethasrecoilforce",
@@ -1531,6 +1727,39 @@ class ObjectLibrary:
                             "setcrosshairtype": "cross_hair_type",
                             "sethudammotype": "hud_ammo_type",
                         }[cmd], token.split()[0])
+                elif cmd in ("setammobar", "setammobarfill", "setammoicon"):
+                    # Texture paths, quoted like `setScopeIcon` above.
+                    if token := args.strip().strip('"'):
+                        setattr(obj, {
+                            "setammobar": "hud_ammo_bar",
+                            "setammobarfill": "hud_ammo_bar_fill",
+                            "setammoicon": "hud_ammo_icon",
+                        }[cmd], token.split()[0])
+                elif cmd in ("setammobarsize", "setammobarposx", "setammobarposy",
+                             "setammobartextposx", "setammobartextposy",
+                             # `setAmom...` is not a mod's typo: 13 of vanilla's
+                             # 16 hand weapons that declare a bar position at
+                             # all ship it spelled this way (K98, No4, Thompson,
+                             # Mp40, Sg44, ...) and only 3 (M1Garand, Type5,
+                             # JohnsonLMG) use `setAmmo...`. The size/fill/bar
+                             # words are never affected, only these four.
+                             "setamombarposx", "setamombarposy",
+                             "setamombartextposx", "setamombartextposy"):
+                    try:
+                        value = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                    setattr(obj, {
+                        "setammobarsize": "hud_ammo_bar_size",
+                        "setammobarposx": "hud_ammo_bar_pos_x",
+                        "setammobarposy": "hud_ammo_bar_pos_y",
+                        "setammobartextposx": "hud_ammo_bar_text_pos_x",
+                        "setammobartextposy": "hud_ammo_bar_text_pos_y",
+                        "setamombarposx": "hud_ammo_bar_pos_x",
+                        "setamombarposy": "hud_ammo_bar_pos_y",
+                        "setamombartextposx": "hud_ammo_bar_text_pos_x",
+                        "setamombartextposy": "hud_ammo_bar_text_pos_y",
+                    }[cmd], value)
                 elif cmd == "timetolive":
                     # First declaration wins: `timeToLive` restated after an
                     # `addTemplate` is a per-instance override on that child
