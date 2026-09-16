@@ -157,7 +157,8 @@ for a mod.
   in place every `onFoot` call rather than reallocated (`features/mesh-viewer-performance/README.md` rule 5).
   `refillAmmo` closes over `handWeapon`, so it always acts on whatever is
   currently in hand.
-- `hudBridge = { vars: {} }`: this worktree was cut before P1's `hud.js`
+- `hudBridge`: a getter onto the painter's own `vars` table (`gameHud.vars`).
+  Before P1's `hud.js` landed this worktree was cut without it,
   existed, so per the round briefing this file builds the same surface
   itself (`hud.vars['Engine/Var'] = x`) under the name `hudBridge` (`hud`
   already names the on-screen hint line). Written here:

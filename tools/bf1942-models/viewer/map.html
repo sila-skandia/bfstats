@@ -3883,15 +3883,11 @@ const LETHAL_FALL_HEIGHT = LETHAL_FALL_SPEED * LETHAL_FALL_SPEED / (2 * Math.abs
 let fallPeakY = null;   // highest y seen since last leaving the ground; null while grounded
 let wasGrounded = true;
 
-/** The stand-in for P1's `hud.js` contract: `hud.vars['Engine/Var'] = x`,
- *  read by the painter's own `hud-layout.json` bindings. This worktree was
- *  cut before `hud.js` existed, so per the round-2 briefing this file
- *  builds the same shape itself, named `hudBridge` because `hud` (the
- *  on-screen hint line, above) already owns that identifier. When P1's real
- *  painter lands, point it at (or merge it with) this object — the keys
- *  below are the engine's own variable names either way, so nothing that
- *  writes them needs to change. */
-const hudBridge = { vars: {} };
+/** The supply and health side of the in-game HUD writes the engine's own
+ *  variable names straight into the painter's table, the same one
+ *  `updateSoldierHud` fills; `gameHud` is declared with the painter further
+ *  down, and every write below happens inside a call, never at load. */
+const hudBridge = { get vars() { return gameHud.vars; } };
 
 /** Fill the flag picker from the level's own control points.
  *
