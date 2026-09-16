@@ -123,11 +123,12 @@ same seeded dice (`__seedRandom`), headless:
 | `minimap.png` (188x188) | 0 (0.000%) | 0 (0.000%) | 0 |
 | `settled.png` (240 frames after release) | 18 (0.001%) | 18 (0.001%) | 178 |
 
-Arms and minimap are pixel-identical. `burst`/`settled` carry the same tiny,
-already-diagnosed discrepancy the previous agent found isolating the warm-up
-commit alone (HANDOFF.md: "burst capture differs 0.008% of pixels (flash
-first frame)") — a handful of pixels on the muzzle flash's first rendered
-frame, not a new regression from anything landed since. Workload counters
+Arms and minimap are pixel-identical. `burst`/`settled` were read here as "a
+handful of pixels on the muzzle flash's first rendered frame, not a new
+regression". **That reading was wrong, and it was a regression** — warm-up was
+building its pooled decals opaque. See "Rule 6 is closed" below: against
+`93105a2`, the commit before warm-up, the fixed build is pixel-identical on all
+four captures. Workload counters
 matched exactly between the two captures (7 shots, 5 particles, 3 decals),
 which is the part that has to be exact for the pixel diff to mean anything.
 
@@ -269,11 +270,9 @@ stall for either build. The headed `first-burst-4s` program count is the
 one number that moved in the fix's favor either way: before, `programs`
 stayed flat at 19 through the burst (this session); final grew 24 → 25 — one
 program still linked mid-burst even after warm-up, though without the
-multi-second stall that used to come with it. So warm-up is not linking
-*everything* the pool needs before the first shot; it is closer than before,
-and nothing this session stalled because of it, but rule 6 is not fully
-closed out. Worth another look at which single material is still missing
-from `EffectPlayer.warm()`/`GunFire.warm()`'s pooled set.
+multi-second stall that used to come with it. That one program has since been identified and
+fixed — an opaque decal, not a missing material — and rule 6 is now closed;
+see "Rule 6 is closed" below.
 
 Independently of whether warm-up holds up, `map.html` no longer goes
 silently black when a context loss happens anyway. Verified with a forced
@@ -310,9 +309,11 @@ press/release from `e.buttons` via a button-to-bit lookup rather than
 trusting which listener fired. The pointer-move handler skips `lookDelta`
 entirely for a button-change event. A fresh press is gated as before —
 captured, on foot, a live soldier, pointer-locked, with a `?shots` bypass
-(`pointerLocked()`) standing the query param in for real pointer lock the
-same way `canFire` already stands it in for `captured`, since headless
-Chromium never grants pointer lock. **A release is not gated** (`bedcfc2`,
+(`pointerLocked()`) standing the query param in for real pointer lock the same
+way `canFire` already stands it in for `captured`. (That bypass was added
+because headless Chromium was believed never to grant pointer lock. It does —
+the headless shell without a gesture, new headless on a real click — and the
+chord has since been re-checked under real pointer lock.) **A release is not gated** (`bedcfc2`,
 found in review): the original code gated both directions identically, so a
 release arriving after death or a redeploy nulled `soldier` out from under
 it (see the `soldier = null` sites) and `triggerHeld` stuck true into the
@@ -336,33 +337,227 @@ session the page would have to request, which this pass didn't add). A
 `beforeunload` handler now asks for confirmation, scoped to mid-play
 (captured, on foot, a live soldier) so it never fires over the gate screen or
 a free-fly pan. Logic-verified against the same gate `footButtonChange` uses.
-Still not live-tested against a real Ctrl+W: a native `beforeunload`
-confirmation dialog is the one check in this pass genuinely awkward to
-assert headless (Playwright treats it as a browser-level dialog it
-auto-dismisses rather than page state to read back), so this one stayed a
-logic check rather than a live one. **Dylan should confirm the "Leave site?"
+Still not live-tested against a real Ctrl+W: this stayed a logic check rather than a live one,
+on the belief that Playwright merely auto-dismisses such a dialog. **That
+belief was wrong** — `page.on('dialog')` with `page.close({ runBeforeUnload:
+true })` reads it, and the guard has since been driven through Chrome's own
+Ctrl+W accelerator, 12/12. **Dylan should confirm the "Leave site?"
 prompt appears while firing/crouched and does not appear before capture or
 in fly mode.**
 
+## Second pass: the open items, measured
+
+Five agents took one open item each, in their own worktrees, sharing a lock so
+that only one timed run had the GPU at a time. Every claim below was re-checked
+by the coordinator on the merged tree before it landed.
+
+### Rule 6 is closed: the mid-burst program was a decal, and an opaque one
+
+`EffectPlayer.warm()` handed `#acquire` the *emitter* spec where a spawn hands it
+the emitter's `particle` block. Every decal was therefore pre-built opaque, and
+every sprite pooled under a key no sprite spawn ever looks up: 300 pooled meshes,
+none of them in the sprite pools. The program that still linked mid-burst was
+`Decal_metal_m1_Material0`, whose key differed from the warmed one in exactly one
+field, `opaque`.
+
+That also settles the misdiagnosis above. Those burst/settled pixels were not the
+muzzle flash's first frame; they were warm-up rendering decals opaque. Against
+`93105a2` — the commit before warm-up — the fixed build is pixel-identical on all
+four captures, so the fix removes a regression rather than adding one.
+
+A survey of every gameplay path the `?shots` hooks reach found four more first-use
+classes: level materials and textures, bone textures, the cockpit graft, and the
+third-person muzzle flash. Warm-up now covers all of them.
+
+| | before | after |
+|---|---|---|
+| cold first burst | 1 program, 3 first-uses | **0 programs, 0 textures** |
+| all 59 library bundles, cold | 1 program | 0 |
+| level switch to Aberdeen | 14 programs, 10 on drawn frames | 17, all inside the warm-up compile |
+| enter the Corsair, fire from chase | 1 program each | 0 |
+
+Warm-up's own span grows by about 170 ms. `worldReady` does not move, so the
+loading bar is unchanged; the extra time lands after it.
+
+Two premises this document stated were wrong. `first-burst-4s` runs *before* the
+stepped firing phases in both modes, so the headless "flat 25 → 25" was never a
+cold burst reading — it was length-based counting with frame 0 dropped. Count
+programs by id and key, never by `renderer.info.programs.length`: three releases a
+program whose `usedTimes` reaches 0, so one release plus one link reads as flat.
+
+### Renderer settings are a 20% lever, not the cause
+
+`EXT_disjoint_timer_query_webgl2` turns out to be exposed here with no flags, so
+both passes can be timed on the GPU directly. At DPR 2 the whole GPU frame — level
+pass, arms pass, resolve, present — is 2.0-3.4 ms, of which roughly 0.15 ms/MP is
+fill. The main pass is about 1.3 ms fixed plus 0.15 ms/MP, the near pass 5-8% of
+the GPU frame, and firing adds at most 0.6 ms of overdraw.
+
+| ratio | MP | frame, MSAA off | frame, MSAA on |
+|---|---|---|---|
+| 1 | 1.32 | 2.29 ms | 2.58 ms |
+| 1.5 | 2.97 | 2.67 ms | 3.18 ms |
+| 2 | 5.27 | 3.44 ms | 3.84 ms |
+
+The frame is CPU-bound at every setting: unthrottled, the page's own loop callback
+is 2.08-3.47 ms of a 2.29-3.84 ms frame. The defaults stay as they are; `?aa=0`
+and `?dpr=<ratio>` exist now so the trade can be measured, and a "low" preset would
+buy about 1.1 ms unthrottled at DPR 2.
+
+**Every DPR 2 number in this document describes a hi-DPI visitor, not this
+machine.** Dylan's displays are all `<scale>1</scale>` with text scaling 1.0, so his
+own `devicePixelRatio` is 1.
+
+MSAA does nothing for palm fronds or barbed wire — they are glTF `MASK` cutouts,
+where only the pixel ratio helps. It does visible work on shallow silhouettes:
+ridge lines, the hangar roof, the Thompson's rear sight.
+
+**Dynamic resolution through `setPixelRatio` is not an option here.** Each switch
+cost a 38-78 ms frame, and 2 of 4 runs lost the WebGL context. Doing it properly
+means rendering to a resizable target and blitting.
+
+### Rule 7's gate, finally measured
+
+0.30 ms/frame while the player stands still, 1-2 ms with the full map open, and
+nothing in pacing: while the view turns, 91-100% of frames repaint anyway. The
+gate's own key costs 0.013 ms. Keep it; do not expect frames from it.
+
+### The instanced sprite pool is not worth building
+
+Effects are 42.6 of 503 draw calls while firing, 8.5%. Removing them entirely is
+worth 2.66 ms at the heaviest moment measured — 190 live sprites under a Bazooka's
+`e_rocketFume` — and an instanced pool would capture only part of that.
+
+Most of it is available for one line instead. Three renders a transparent
+`DoubleSide` material in two passes, bumping `material.version` before each, so
+every sprite draws twice and re-resolves its program each time. `forceSinglePass`
+on sprite materials removes half the sprite draws and all that churn: 1.91 ms of
+the 2.66, pixel-identical across four captures. It is **not** safe on level
+transparent geometry, where 151 pixels differ.
+
+The bigger prize is the level itself. 430 opaque draws per firing frame collapse to
+115 instancing keys or 66 merge keys, vegetation alone is 185.7 draws, and every
+level draw is currently a material switch because `bindDynamicShading` builds a new
+material per mesh. That is a build, not a flag: it needs per-instance range and
+frustum culling.
+
+### Audio is not a pacing problem
+
+0.4-1.3% of frame JS (30-280 µs/frame) across idle, firing, driving and flying, and
+a headed A/B with audio removed at the source shows no pacing difference. The audio
+render thread peaks at 13% of its callback budget — six panners in the Corsair,
+where `PannerHandler::Process` is 61% of the thread — with no underruns. Nothing
+grows while the context runs: five minutes firing, five driving and three flying
+leave calls per frame, live nodes, JS heap and both RSS figures flat.
+
+This document's "on foot there is no engine or weapon patch running, only
+`Audio.setVolume` per area audio per frame" was wrong. Of the 24 automation calls a
+frame on foot, 21 are three's own ramps — 9 from `AudioListener.updateMatrixWorld`,
+12 from two area `PositionalAudio`s — and 3 are `setVolume`.
+
+One real defect was found and fixed: `soundBuffer`/`modelSoundBuffer` looked the
+cache up before their `await` and stored only the finished buffer, so two
+overlapping setups both missed and fetched the same wav twice — nine of the
+Corsair's engine wavs on a re-entry. The pending decode now goes into the cache.
+
+One growth mechanism was measured and deliberately **not** fixed. While the
+AudioContext is *suspended* — which is what a page is before its first click —
+Chromium retires no automation events, so the per-frame ramps pile up at about
+150 B each with insertion cost rising: roughly +0.14 ms/frame and +16 MB per minute
+on the gate screen. The obvious fix (keep the listener and area anchors out of the
+graph while suspended) made the resume transient consistently worse in the
+prototype, unexplained, so it needs repeating before it ships.
+
+### Keyboard Lock, prototyped behind `?kblock`
+
+`navigator.keyboard.lock()` can reserve Ctrl+W, but only inside a fullscreen
+session the page requests itself. Measured in both Chromium 141 and Chrome 149:
+
+- `requestFullscreen()` consumes the click's transient activation while
+  `requestPointerLock()` and `keyboard.lock()` do not — and Chrome 149 rejects a
+  pointer lock requested after fullscreen in the same gesture, so pointer-first
+  ordering is mandatory.
+- `keyboard.lock()` resolves when the browser *registers* the request, fullscreen
+  or not, so the promise is no evidence that any key is reserved.
+- `requestFullscreen({ keyboardLock })` is documented but not implemented.
+- With Escape locked, a short Escape reaches the page and fullscreen survives; a
+  1.5 s hold exits. A tab switch drops the lock for good.
+
+`?kblock`, off by default, asks for pointer, then fullscreen, then the lock, on
+on-foot capture only. `beforeunload` is untouched and stays the guard everywhere
+else, including Firefox and Safari, which have no Keyboard Lock at all.
+
+### Both input fixes, re-checked as deeply as automation reaches
+
+- The chord now runs through Playwright's real mouse API into the renderer **under
+  real pointer lock**: 19/19 on the fixed build against 14/19 on the pre-fix build,
+  failing exactly the symptoms the fix targets. The checks discriminate.
+- The Ctrl+W prompt was driven through **Chrome's own Ctrl+W accelerator** actually
+  closing the tab: 12/12 across the gate, fly mode, mid-play, crouch-walking while
+  firing, the deploy screen and after Escape, including rows with no `?shots` on the
+  page at all.
+
+Also worth knowing for any future check here: `page.evaluate` carries
+`userGesture: true`, so a hook-driven read silently creates user activation. Raw
+CDP `Runtime.evaluate` does not.
+
+### A frozen vehicle, and a graft that never composed
+
+The post-merge rule 2 sweep found two bugs older than this work:
+
+1. `Vehicle`'s constructor reparents the driven seat out of `spawners` before
+   `setPilot` thaws it, and `thawVehicle`/`freezeVehicle` looked the vehicle up
+   through `spawners` alone. A driven vehicle was therefore never thawed and never
+   re-frozen: propeller spin and control surfaces reached the screen a frame late,
+   and the pose a parked vehicle is left in was never committed at all.
+   `__matrixDrift` read 1.7694 on a parked Corsair's propeller.
+2. `attachCockpit` grafts the interior into the vehicle's tree and then only
+   toggles `visible`. Nothing composes a matrix, so an interior arriving after the
+   seat was vacated keeps the cockpit glb's own world matrix — on Wake, 1441 m from
+   its own seat. Hidden, but one `setFirstPerson(true)` from being drawn there.
+
+Both are fixed. The second matters beyond itself: a standing drift of 1441 masks
+every smaller drift underneath it, which is how the propeller lag stayed hidden.
+
+### `__matrixDrift` has false positives
+
+Found independently by two agents. The visible-only matrix walks leave parked
+pooled emitters and the hidden soldier rig under the viewmodel root carrying stale
+matrices, and neither is a frozen static that moved. A drift named `Em_*` or `Mesh`,
+or sitting under `vm/Scene/viewmodel root`, is noise. The hook should skip hidden
+pool children, and the viewmodel scene when the rig is not drawn.
+
 ## Open items
 
-- **Live confirmation of the mouse-chord fix and the Ctrl+W prompt with real
-  hardware.** Everything else in this pass that needed a browser was
-  re-verified this session (real-time pacing, pixel parity, the repaint/
-  deploy/warm-up functional checks, a forced context loss) — these two are
-  the ones only a person at a real keyboard and mouse can close out.
-- **Rule 6 (warm-up) is not fully closed.** The headed final build's first
-  burst still linked one program mid-burst (`programs` 24 → 25) — see The
-  Iris Xe context loss above. Worth finding which material `EffectPlayer.warm()`/
-  `GunFire.warm()`'s pooled set is still missing.
-- **Instanced sprite pool** for draw-call count itself was designed during
-  this pass but not built — needs per-instance opacity via
-  `onBeforeCompile` and a per-pool depth sort.
-- **Renderer settings** (MSAA, DPR 2 fill cost) were never isolated from
-  everything else measured at DPR 2.
-- **Keyboard Lock in fullscreen** (`navigator.keyboard.lock(['ControlLeft',
-  ...])`) could reserve Ctrl+W from the browser entirely, but only inside a
-  fullscreen session the page would have to request; noted, not built.
-- **Audio automation cost** (engine/weapon patches) was flagged as
-  unmeasured going in and stayed that way — on foot there is no engine or
-  weapon patch running, only `Audio.setVolume` per area audio per frame.
+- **The real-hardware pass is Dylan's, and it is the last thing standing.** The
+  14-step list is in `MANUAL-CHECK.md` beside this file: the chord with a real
+  mouse (the view snap especially — CDP cannot produce the bogus `movementX` a real
+  mouse did), the Ctrl+W prompt in and out of scope, and whether `?kblock` actually
+  holds Ctrl+W. Automation cannot close that last one: CDP injects below the layer
+  that marks locked keys, so a native-keycode Ctrl+W closes the tab even with the
+  lock held.
+- **`forceSinglePass` on sprite materials** — one line, 1.91 ms of the 2.66 ms
+  sprite cost at 190 live sprites, pixel-identical. Measured, not applied; it wants
+  its own commit and a parity capture.
+- **Instancing or merging the level's repeated statics and vegetation** — the
+  biggest measured win (430 draws to about 115 keys) and a real build: per-instance
+  range culling, frustum culling, `textureFade`. Needs a decision before anyone
+  starts.
+- **Sharing materials in `bindDynamicShading`**, level meshes only — the effects
+  path must keep per-mesh materials or per-particle opacity breaks. 430 material
+  switches a frame down to about 65. Inferred; the arm was built but never run.
+- **Suspended-context automation growth** — fix known, prototype made the resume
+  transient worse for reasons nobody explained. Repeat before shipping.
+- **Gating the deploy SPAWN button on warm-up** — `worldReady` enables SPAWN about
+  520 ms before warm-up lands, so a player who spawns and fires inside that window
+  can still link a program. A UX change, so it needs a decision.
+- **Parked vehicles draw their tracer streaks** — `show()` hides `effect`,
+  `projectileMesh` and `projectileTrail`, but not `tracerMesh`. Looks like a
+  one-line omission.
+- **Hand-weapon projectile bodies, trails and baked streaks never appear in the
+  world** — they are cloned from rig nodes carrying `VIEWMODEL_LAYER`, which the
+  main camera does not draw, so a bazooka rocket and its puffs are invisible.
+- **`__matrixDrift`'s false positives** want fixing in the hook, so the canary stays
+  readable.
+- **Texture memory**, if this ever runs on a smaller GPU: warm-up now uploads every
+  level texture (Wake: 290 textures, about 116 MB, +58 MB over the old lazy path).
