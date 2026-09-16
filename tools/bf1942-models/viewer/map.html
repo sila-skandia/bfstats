@@ -652,12 +652,20 @@ const FOOT_KEYS = new Set([
 // screenshot tooling; off by default because it costs a buffer copy per frame.
 // `&nopreserve` gives the perf harness the hooks without the copy, so it can
 // measure the page a player gets.
+//
+// `?aa=0` and `?dpr=<ratio>` put the renderer settings on the bench's matrix
+// (features/mesh-viewer-performance, renderer settings). MSAA is a context
+// attribute (`antialias`, handed to `getContext` in three's constructor), so
+// it can only be picked here, before the context exists. `dpr` replaces the
+// cap for the WebGL canvas alone; the 2D map surfaces keep their own. Absent,
+// both leave the defaults exactly as they were.
+const renderQuery = new URLSearchParams(location.search);
 const renderer = new THREE.WebGLRenderer({
-  antialias: true,
-  preserveDrawingBuffer: new URLSearchParams(location.search).has('shots')
-    && !new URLSearchParams(location.search).has('nopreserve'),
+  antialias: renderQuery.get('aa') !== '0',
+  preserveDrawingBuffer: renderQuery.has('shots') && !renderQuery.has('nopreserve'),
 });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const dprOverride = Number(renderQuery.get('dpr'));
+renderer.setPixelRatio(dprOverride > 0 && dprOverride <= 4 ? dprOverride : Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 const stage = document.getElementById('stage');
 stage.appendChild(renderer.domElement);
@@ -5424,10 +5432,14 @@ function drawMinimapChrome(ctx, size, ratio) {
 // the flown vehicle's position for a camera planted away from it in fly-by
 // — and a 250 ms ceiling catches what has no key, a captured flag's colour.
 const mapSurfaceLast = new Map();   // canvas -> { key, at }
+// Off only through `__mapGate(false)` under ?shots: the bench that puts a
+// number on what the gate saves sets it against the every-frame repaint it
+// replaced, on the same page.
+let mapGate = true;
 function mapSurfaceStale(canvas, key, force) {
   const last = mapSurfaceLast.get(canvas);
   const now = performance.now();
-  if (!force && last && last.key === key && now - last.at < 250) return false;
+  if (mapGate && !force && last && last.key === key && now - last.at < 250) return false;
   mapSurfaceLast.set(canvas, { key, at: now });
   return true;
 }
@@ -6714,6 +6726,13 @@ if (params.has('shots')) {
   // walk (freezeStatics), and this is the proof that nothing frozen has
   // moved since. Returns the worst absolute element difference, the object
   // it was found on, how many objects were checked and how many are frozen.
+  // The map surfaces' repaint gate (features/mesh-viewer-performance, rule
+  // 7), switchable so a bench can set every-frame repaints -- the page before
+  // dd165c5 -- against it without a reload. No argument reads it back.
+  window.__mapGate = on => {
+    if (on !== undefined) mapGate = !!on;
+    return mapGate;
+  };
   window.__matrixDrift = () => {
     const local = new THREE.Matrix4();
     const expect = new THREE.Matrix4();

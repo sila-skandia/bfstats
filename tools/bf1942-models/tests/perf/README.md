@@ -29,6 +29,33 @@ Playwright comes from `ui/node_modules` (the main checkout's when run from a
 worktree; `PLAYWRIGHT_MODULES` overrides). Every phase prints one JSON line;
 `--out` keeps the whole record with per-frame counters.
 
+Renderer settings and the map repaint gate, for isolating what a frame's
+pixels cost (`--dpr` stays the window's device scale factor):
+
+```bash
+# Uncapped, GPU-timed: MSAA off, the WebGL canvas at ratio 1.5 in a DPR 2 window.
+node perfbench.cjs bench --headed --uncap --gpu-timer --skip-stepped --dpr 2 \
+  --pixel-ratio 1.5 --aa 0 --realtime 20 --out x.json
+```
+
+- `--aa 0` / `--pixel-ratio <r>` load the page with `?aa=0` / `?dpr=<r>`; the
+  `renderer` line records what the context actually came up with (MSAA
+  samples, `preserveDrawingBuffer`, pixel ratio, drawing-buffer size).
+- `--uncap` adds `--disable-gpu-vsync --disable-frame-rate-limit`, so a frame's
+  interval is its cost rather than the next vsync.
+- `--gpu-timer` wraps both render passes in `EXT_disjoint_timer_query_webgl2`
+  queries: `gpuMs.main` (level), `near` (arms), `tail` (from the arms pass to
+  the next frame: MSAA resolve, compositors, idle). Every real-time run also
+  reports `loopCpuMs` (the page's whole loop callback), CPU inside each
+  render call, and per-thread CPU from `/proc` (`cpu`).
+- `--fire 0` releases the trigger; `--still` stops walking, turning and
+  crouching. `--mapgate 0` calls `__mapGate(false)`: the minimap and full map
+  repaint every frame, as before rule 7; `mapRepaints` counts repaints either way.
+- `--cpuprofile <file>` saves the stepped phases' raw profile for DevTools or
+  for inclusive time under one function.
+- The stepped phases resize the renderer to `--width` x `--height`, so the
+  real-time phase draws `width x height x ratio^2` pixels whatever the stage is.
+
 What to compare, and what not to:
 
 - **Workload counters** (draw calls, triangles, particles, spawns, ticks,
