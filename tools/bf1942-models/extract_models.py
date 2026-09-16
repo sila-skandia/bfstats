@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import posixpath
 import re
 import sys
 from concurrent.futures import ProcessPoolExecutor
@@ -217,6 +218,63 @@ def discover_levels(chain: list[Path]) -> list[tuple[str, Path]]:
 RE_FOLDER = re.compile(r"^\s*rem\s+folder\s*=\s*(.+)$", re.IGNORECASE)
 RE_SAUCE = re.compile(r"^\s*rem\s+sauce\s*=\s*(.+)$", re.IGNORECASE)
 
+# Refractor's `.con` grammar has exactly one directive outside the
+# `Namespace.command` shape `con.py`'s `_COMMAND` parses: a bare
+# `include <path>`, relative to the including file's own folder, that runs
+# the target file in the same interpreter session. See `_inline_includes`.
+_INCLUDE = re.compile(r"^[ \t]*include[ \t]+(.+?)[ \t]*$",
+                      re.IGNORECASE | re.MULTILINE)
+_MAX_INCLUDE_DEPTH = 8
+
+
+def _inline_includes(objects: ArchivePool, path: str, text: str,
+                     _seen: frozenset[str] = frozenset()) -> str:
+    """Splice every bare `include <relpath>` directive's target in place.
+
+    Every nation's soldier pulls its hit points and its heal/repair/sound
+    constants this way (`include ../Common/CommonSoldierData.inc`,
+    `include ../Common/Sounds/SoldierSound.inc`) -- 2147 uses across the 14
+    installed mods' `Objects.rfa`, 2144 of them naming a `.inc`. `.inc` and
+    `.tweak` files carry no `ObjectTemplate.create` of their own (confirmed:
+    neither `CommonSoldierData.inc` nor `SoldierSound.inc` nests a further
+    `include`), which is exactly why `build_library` below is right to skip
+    them as top-level entries -- but their bare `ObjectTemplate.HitPoints 30`
+    directives have to land on whichever template the includer had open, and
+    without this they are never read by anything: `USSoldier.hitpoints` was
+    `None` before this function existed. Comments are stripped before the
+    scan (`con.strip_comments` already runs on the merged result inside
+    `add_con`, so this only has to guard against a `rem`/`beginrem` line that
+    happens to start with the word "include" being mistaken for a directive).
+    """
+    # Cheap rejection first: the overwhelming majority of files never
+    # mention "include" at all, and stripping comments is a full regex pass
+    # this loop otherwise pays for every one of them a second time (`add_con`
+    # already strips comments on whatever text it is finally handed).
+    if "include" not in text.lower() or len(_seen) >= _MAX_INCLUDE_DEPTH:
+        return text
+    text = con_mod.strip_comments(text)
+    if not _INCLUDE.search(text):
+        return text
+    folder = path.rsplit("/", 1)[0] if "/" in path else ""
+    out_lines = []
+    for line in text.splitlines():
+        match = _INCLUDE.match(line)
+        if not match:
+            out_lines.append(line)
+            continue
+        target = match.group(1).strip().strip('"').replace("\\", "/")
+        resolved = (posixpath.normpath(f"{folder}/{target}")
+                    if folder else target)
+        key = resolved.lower()
+        if key in _seen:
+            continue  # a cycle; skip rather than recurse forever
+        included = objects.try_read(resolved)
+        if included is None:
+            continue  # unresolved include -- fails soft, same as a missing texture
+        inner = included.decode("latin-1", "replace")
+        out_lines.append(_inline_includes(objects, resolved, inner, _seen | {key}))
+    return "\n".join(out_lines)
+
 
 def build_library(objects: ArchivePool) -> con_mod.ObjectLibrary:
     library = con_mod.ObjectLibrary()
@@ -225,7 +283,7 @@ def build_library(objects: ArchivePool) -> con_mod.ObjectLibrary:
             continue
         if (blob := objects.try_read(name)) is None:
             continue
-        text = blob.decode("latin-1")
+        text = _inline_includes(objects, name, blob.decode("latin-1"))
         if "compressed.con" in name.lower() and "rem folder =" in text.lower():
             parts = name.replace("\\", "/").split("/")
             pack_idx = next((i for i, p in enumerate(parts) if p.lower().startswith("!_pack")), None)
