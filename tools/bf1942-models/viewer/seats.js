@@ -483,7 +483,15 @@ export class FireState {
     this.stats = stats;
     this.unlimited = stats.magSize == null || stats.magSize < 0;
     this.ammo = this.unlimited ? Infinity : stats.magSize;
-    this.magsLeft = stats.numOfMag == null || stats.numOfMag < 0 ? Infinity : stats.numOfMag;
+    // `numOfMag` counts the loaded magazine, not the spares beside it — the
+    // same reading `map.html`'s hand weapon already ships ("`magazines 5` is
+    // read as the loaded magazine plus the spares", `hw.mags = magazines -
+    // 1`, which is what puts a Thompson's confirmed 30/4 on the HUD instead
+    // of 30/5). Counted as the spares here too, so `Ammo/PrimaryMag` means
+    // the same thing in a seat as it does on foot and a Sherman carries the
+    // 30 shells its `.con` declares rather than 30 plus a free reload.
+    this.magsLeft = stats.numOfMag == null || stats.numOfMag < 0
+      ? Infinity : Math.max(0, stats.numOfMag - 1);
     this.hasHeat = stats.heatAddWhenFire != null;
     this.heat = 0;
     this.reloadRemaining = 0;

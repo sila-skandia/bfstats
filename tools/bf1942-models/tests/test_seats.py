@@ -33,6 +33,13 @@ HARNESS = Path(__file__).resolve().parent / "test_seats_harness.mjs"
 
 MODULES = {
     "seats.js": VIEWER / "seats.js",
+    # `gunfire.js` and the three modules it imports, so the rate-of-fire
+    # cadence below is measured against the real `GunFire.advance`/`setFiring`
+    # the page loads rather than a re-implementation of them in the harness.
+    "gunfire.js": VIEWER / "gunfire.js",
+    "collision.js": VIEWER / "collision.js",
+    "physics.js": VIEWER / "physics.js",
+    "effects-core.js": VIEWER / "effects-core.js",
     "node_modules/three/three.module.js": VIEWER / "vendor" / "three.module.js",
 }
 THREE_PACKAGE = json.dumps({
@@ -235,7 +242,12 @@ class SeatsModuleTests(unittest.TestCase):
         self.assertTrue(self.results["fireState"]["reloadTookAboutReloadTime"])
         after = self.results["fireState"]["afterReload"]
         self.assertEqual(3, after["ammo"])
-        self.assertEqual(1, after["magsLeft"])
+        # `numOfMag 2` is two magazines in total, not two spares beside a
+        # third in the gun — the same reading map.html's hand weapon has
+        # always used (`hw.mags = magazines - 1`, which is what puts a
+        # Thompson's confirmed 30/4 on the HUD rather than 30/5). So the
+        # fixture starts with one spare and the reload spends it.
+        self.assertEqual(0, after["magsLeft"])
         self.assertTrue(after["canFire"])
 
     def test_heat_clamps_at_one_and_blocks_fire_there(self) -> None:
@@ -274,6 +286,23 @@ class SeatsModuleTests(unittest.TestCase):
 
     def test_releasing_the_trigger_stops_the_cadence(self) -> None:
         self.assertEqual(497, self.results["heldTriggerCadence"]["afterRelease"])
+
+    def test_tapping_the_trigger_cannot_outrun_the_rate_of_fire(self) -> None:
+        # The defect this pair of assertions exists for: `setFiring` used to
+        # zero the cooldown on every rising edge, so a Sherman's cannon
+        # (roundOfFire 0.35, one shell every 2.86 s) fired 28 shells in a
+        # second of tapping — its whole magazine. Tapping and holding must
+        # now agree, because the timer is the gun's, not the trigger's.
+        cadence = self.results["triggerCadence"]
+        self.assertEqual(1, cadence["tappedShotsInOneSecond"])
+        self.assertEqual(4, cadence["heldShotsInTenSeconds"])
+
+    def test_a_rested_gun_is_ready_on_the_press_and_owes_no_backlog(self) -> None:
+        # The other half of not resetting on the edge: a gun left idle for
+        # ten periods must not have banked ten rounds for the `while` inside
+        # `advance` to fire off in the frame the trigger goes down. One shot
+        # to start it, one on the press ten seconds later, and no more.
+        self.assertEqual(2, self.results["triggerCadence"]["shotsAfterRestingTenSeconds"])
 
     # --- chainOnShot and readWorldPose: the small plumbing helpers ----------
 
