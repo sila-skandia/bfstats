@@ -71,6 +71,7 @@ from bf42.level import (  # noqa: E402
     find_level_archives,
     load_gameplay_objects,
     load_level_files,
+    load_tickets,
     parse_cubemap_rcm,
     parse_init_con,
     parse_sound_scripts,
@@ -1641,6 +1642,23 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
     # those strings are not in BF1942.exe.
     fog_end = info.fog_end if info.fog_end is not None else view_distance
     fog_start = info.fog_start if info.fog_start is not None else view_distance * 0.5
+
+    # Load ticket configuration from GameTypes/*.con if present.
+    tickets_data = load_tickets(files, info.gameplay.mode)
+    tickets = None
+    if tickets_data and (tickets_data.team1 is not None or tickets_data.team2 is not None):
+        tickets = {"mode": tickets_data.mode}
+        if tickets_data.team1 is not None:
+            tickets["team1"] = tickets_data.team1
+        if tickets_data.team2 is not None:
+            tickets["team2"] = tickets_data.team2
+        if tickets_data.loss_per_min_team1 is not None or tickets_data.loss_per_min_team2 is not None:
+            tickets["lossPerMin"] = {}
+            if tickets_data.loss_per_min_team1 is not None:
+                tickets["lossPerMin"]["team1"] = tickets_data.loss_per_min_team1
+            if tickets_data.loss_per_min_team2 is not None:
+                tickets["lossPerMin"]["team2"] = tickets_data.loss_per_min_team2
+
     extras = {
         "level": info.name,
         "worldSize": info.terrain.world_size,
@@ -1665,6 +1683,7 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
         "controlPoints": _control_point_report(info, placed_flags),
         "soldierSpawns": _soldier_spawn_report(info),
         "objectSpawns": _object_spawn_report(info),
+        "tickets": tickets,
         # `image` is filled in by `write_minimap` once the art is decoded; the
         # projection is known from the con files alone and stands on its own.
         "minimap": {"image": None, "worldToImage": _world_to_image(info)},
