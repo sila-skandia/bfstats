@@ -59,11 +59,23 @@ def merge_index(listing: dict[str, dict], rows: list[dict]) -> None:
     directory and the viewer's fetch both use. Re-extracting a level replaces
     its own row and leaves every other mod-mate alone, which is what makes a
     resumed or partial run additive rather than truncating.
+
+    Keys only present on the previous row — notably `loading` from
+    `extract_loading_assets.py` — are kept, otherwise every re-extract drops
+    every map back to the Western beach fallback in the viewer.
     """
     for row in rows:
         name = row.get("name")
-        if name:
-            listing[name.lower()] = row
+        if not name:
+            continue
+        key = name.lower()
+        prior = listing.get(key)
+        merged = dict(row)
+        if isinstance(prior, dict):
+            for k, v in prior.items():
+                if k not in merged:
+                    merged[k] = v
+        listing[key] = merged
 
 
 def promote(staging: Path, out: Path) -> int:
