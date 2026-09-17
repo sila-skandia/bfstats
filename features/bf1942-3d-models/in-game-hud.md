@@ -436,11 +436,18 @@ rather than a re-implementation of its cadence.
 
 ### Still missing from the vehicle HUD
 
-- **The turret-turn dial** (`vehicleIcon`'s three sprites, VHUD-7's rects) is
-  still never drawn, and now for a concrete reason rather than an unread one:
-  a tank's turret does not traverse from the driver's seat in this viewer at
-  all (see `ground-vehicles.md`'s open gaps), so there is no angle to feed
-  `IconLookRotation` even setting aside VHUD-9's open unit/sign/pivot.
+- ~~**The turret-turn dial**~~ — **drawn as of 2026-09-17**, once a tank's
+  driver could actually traverse (`seats-and-manned-guns.md`). Fed as
+  `Vehicle/ShowTurretIcon` plus `IconLookRotation` in radians, gated on the
+  active seat having a traverse at all, so a seat with only elevation or none
+  leaves all three leaves culled as before. VHUD-9 is still open on what the
+  engine sets `ShowTurretIcon` from and on the angle's unit, sign and pivot;
+  the sign here was settled by looking at it. The dial's fixed barrel points
+  up, i.e. screen-up is where the gun looks, so with the turret 90 degrees
+  right the hull belongs at 9 o'clock — which on a canvas whose positive
+  rotation is clockwise is the traverse itself, not its negative.
+  `angleMultiplier` is carried by the extractor and still unread, so it is not
+  applied.
 - **The seat-occupancy dots** (`vehicleSeats`) are unfed. The five states are
   known (VHUD-2) and this page knows which seat is occupied, but the dots'
   *positions* are live-bound per vehicle (`VehiclePosX1..6`/`PosY1..6`,

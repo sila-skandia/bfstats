@@ -547,11 +547,10 @@ regressed — that both can steer at all.
   harness) rather than losing a little. The couple cancels exactly; the
   residual comes from the friction ellipse scaling the two sides' totals
   differently once their lateral forces diverge.
-- **A tank's turret does not traverse from the driver's seat.**
-  `VehicleOccupancy.setActiveSeat` only builds a `TurretRig` for a seat that
-  classifies as `'gun'`, and a drivetrain root classifies as `'tank'`, so
-  `ShermanTower`'s own declared yaw axis (`c_PIMouseLookX`, free, 35 deg/s)
-  and `ShermanGunBase`'s pitch (−20..+5 at 20 deg/s) are never driven —
-  `applyRig` poses both from an input nothing writes, i.e. straight ahead,
-  every frame. The data is all there; the wiring is not. This is also what
-  blocks the HUD's turret dial (see `in-game-hud.md`).
+- ~~**A tank's turret does not traverse from the driver's seat.**~~ **Fixed
+  2026-09-17** — `seats-and-manned-guns.md` has the five things that were in
+  the way, including an inverted aim that turned out to affect every manned
+  gun in the viewer, not only tanks. What is still open from it: the external
+  camera modes (chase/front) frame the hull's heading rather than the
+  turret's, so cycling away from the cockpit on a tank gives a view that does
+  not follow the gun.

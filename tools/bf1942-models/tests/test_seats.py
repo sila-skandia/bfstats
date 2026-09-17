@@ -191,14 +191,75 @@ class SeatsModuleTests(unittest.TestCase):
         self.assertTrue(occ["driveIsFakeInstance"])
         self.assertEqual("tank", occ["rootKind"])
 
-    def test_turret_exists_only_for_a_gun_seat(self) -> None:
+    def test_a_gunner_seat_gets_its_own_rig(self) -> None:
+        # Was `test_turret_exists_only_for_a_gun_seat`, whose other half
+        # asserted that a tank's ROOT never gets one. That was true of the
+        # code and false of the game — see
+        # `test_a_tanks_driving_seat_aims_its_own_main_gun`.
         occ = self.results["occupancy"]
-        self.assertTrue(occ["rootTurretNull"])
         self.assertTrue(occ["gunnerTurretIsRig"])
         self.assertEqual(1, occ["gunnerAxisCount"])
 
     def test_active_fire_arms_scope_to_the_active_seat_only(self) -> None:
         self.assertEqual(["Browning"], self.results["occupancy"]["gunnerFireArms"])
+
+    def test_a_tanks_driving_seat_aims_its_own_main_gun(self) -> None:
+        # The defect this closes: `setActiveSeat` asked `classifySeat` for
+        # `'gun'`, which is exactly the answer an Engine at the root takes
+        # away, so a Sherman's driver got no aim rig — and `applyRig` re-posed
+        # `ShermanTower`/`ShermanGunBase` to hull-forward every frame from a
+        # surface table nothing writes `c_PIMouseLookX/Y` into. Both axes are
+        # in our own extracted data and always were: a free 35 deg/s traverse
+        # and a -20..+5 elevation, under the tank's OWN control.
+        occ = self.results["occupancy"]
+        self.assertEqual("tank", occ["rootKind"])
+        self.assertTrue(occ["rootTurretIsRig"])
+        self.assertEqual(["pitch", "yaw"], occ["rootTurretAxes"])
+        self.assertTrue(occ["rootTurretFreeYaw"])
+
+    def test_the_rig_claims_the_mouse_axes_and_leaves_the_steering_alone(self) -> None:
+        # A seat can declare both. The V-100's driving seat carries a turret
+        # and a steered front axle, and thirteen vehicles across vanilla and
+        # the mods have that shape. The rig takes the two the mouse reaches
+        # and no others; the steering bundles stay `applyRig`'s to pose.
+        sel = self.results["aimAxisSelection"]
+        self.assertEqual(["c_PIMouseLookX", "c_PIMouseLookY"], sel["aimInputs"])
+        self.assertTrue(sel["mixedHasAim"])
+        self.assertEqual(["pitch", "yaw"], sel["mixedRigAxes"])
+        self.assertEqual(["c_PIMouseLookX", "c_PIMouseLookY"], sel["mixedRigInputs"])
+        self.assertEqual(["V-100GunBase", "V-100Turret"], sel["mixedRigNodes"])
+
+    def test_an_aim_axis_beats_a_non_aim_one_for_the_same_slot(self) -> None:
+        # `surveyVehicle` keeps one bundle per axis NAME. First-wins handed
+        # the V-100's `yaw` slot to whichever front wheel it traversed first
+        # and left the turret unreachable; an axis the mouse actually reaches
+        # now takes the slot from one it does not.
+        self.assertEqual("V-100Turret",
+                         self.results["aimAxisSelection"]["mixedYawSlotNode"])
+
+    def test_a_vehicle_with_nothing_to_aim_gets_no_rig(self) -> None:
+        # Willy steers and nothing else, so the mouse stays the camera's.
+        sel = self.results["aimAxisSelection"]
+        self.assertFalse(sel["jeepHasAim"])
+        self.assertTrue(sel["jeepTurretNull"])
+
+    def test_a_turret_stays_where_it_was_left_across_a_seat_switch(self) -> None:
+        # Rebuilding the rig on every seat change lost the angle: climb from
+        # a Sherman's driving seat to its hull gun and back and the tower
+        # snapped to hull-forward. One rig per seat, kept.
+        across = self.results["turretAcrossSeats"]
+        self.assertGreater(across["traversed"], 30.0)
+        self.assertTrue(across["rigWhileAwayIsTheGunners"])
+        self.assertTrue(across["sameRigOnReturn"])
+        self.assertEqual(across["traversed"], across["angleOnReturn"])
+
+    def test_the_mouse_pushed_right_traverses_right(self) -> None:
+        # `lookDelta` used to negate before calling `aim`, borrowed from the
+        # soldier's own `look()` whose yaw counts the other way, and that
+        # landed on top of RIG_SIGN's flip inside `_apply`. The two together
+        # inverted both axes on every manned gun in the viewer. +X is the
+        # vehicle's own right (TANK-10/12's `side` convention).
+        self.assertGreater(self.results["aimSense"]["rightwardsX"], 0.1)
 
     def test_hitpoints_hud_is_the_roots_shared_by_every_seat(self) -> None:
         # R2-31 (verify-r2.md, corrected): one Armor per vehicle, not per seat.

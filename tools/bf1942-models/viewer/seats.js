@@ -20,6 +20,23 @@ import * as THREE from 'three';
 
 const AXES = ['yaw', 'pitch', 'roll'];
 
+/** The two inputs a player's mouse actually reaches an aim axis through
+ *  (GUN-2). Everything else a `RotationalBundle` can bind — a steered front
+ *  wheel's `c_PIYaw`, a minigun barrel's `c_PIFire` spin — is somebody else's
+ *  to pose, and `TurretRig`/`hasAimAxes` both key off exactly this pair. */
+export const AIM_INPUTS = ['c_PIMouseLookX', 'c_PIMouseLookY'];
+const isAimAxis = spec => AIM_INPUTS.includes(spec?.input);
+
+/** Does this seat give the player something to aim with the mouse? True for
+ *  every manned gun, and also for a tank's own driving seat — a Sherman's
+ *  driver traverses `ShermanTower` (`c_PIMouseLookX`, free, 35 deg/s) and
+ *  elevates `ShermanGunBase` (`c_PIMouseLookY`, -20..+5 at 20 deg/s) off the
+ *  same mouse, which is why this asks what the seat is WIRED to rather than
+ *  what `classifySeat` calls it. */
+export function hasAimAxes(seat) {
+  return !!seat && AXES.some(name => isAimAxis(seat.axes?.[name]?.spec));
+}
+
 /**
  * Every seat of one vehicle, keyed by the name of the `PlayerControlObject`
  * that owns it -- the root's own name for the root seat, a nested PCO's own
@@ -104,9 +121,19 @@ export function surveyVehicle(root) {
     } else if (kind === 'RotationalBundle' && data.rig?.axes) {
       const seat = seatFor(owner);
       for (const axis of AXES) {
-        if (data.rig.axes[axis] && !seat.axes[axis]) {
-          seat.axes[axis] = { node: obj, spec: data.rig.axes[axis] };
-        }
+        const spec = data.rig.axes[axis];
+        if (!spec) continue;
+        // First bundle per axis name wins, EXCEPT that an axis the mouse
+        // actually reaches beats one it does not. A seat can carry both — the
+        // V-100's driving seat declares a turret elevation and a steered
+        // front wheel, and both are `RotationalBundle`s under the same control
+        // — and first-wins gave the wheel the slot, leaving the turret
+        // unaimable. Losing this slot costs the wheel nothing: `seat.axes` is
+        // only ever read by the aim rig, and `Vehicle.collect`/`applyRig`
+        // pose every declared bundle independently of it.
+        const held = seat.axes[axis];
+        if (held && !(isAimAxis(spec) && !isAimAxis(held.spec))) continue;
+        seat.axes[axis] = { node: obj, spec };
       }
     } else if (kind === 'FireArms' && data.fireArms) {
       seatFor(owner).fireArms.push(obj);
@@ -263,7 +290,13 @@ export class VehicleOccupancy {
     this.rootKind = classifySeat(survey.seats.get(this.rootId), true);
     this.drive = null;          // Aircraft | GroundVehicle | TrackedVehicle, once built
     this.activeSeatId = null;
-    this.turret = null;         // TurretRig, only while the active seat is a 'gun'
+    this.turret = null;         // TurretRig, whenever the active seat has one
+    /** One rig per seat, kept for as long as this occupancy lives. Rebuilding
+     *  it on every seat change would lose the angle the player left the turret
+     *  at — climb from a Sherman's driver's seat to its hull gun and back and
+     *  the tower snapped to hull-forward — and would also re-capture the
+     *  node's rest pose from a node that may not be at rest yet. */
+    this.turrets = new Map();
   }
 
   seatInfo(id) { return this.survey.seats.get(id); }
@@ -280,12 +313,48 @@ export class VehicleOccupancy {
     return this.drive;
   }
 
-  /** Seat, root or nested, currently manned -- switches build/drop the aim rig. */
+  /** Seat, root or nested, currently manned -- switches select the aim rig.
+   *
+   * Keyed on what the seat is WIRED to, not on what `classifySeat` calls it.
+   * This used to ask for `'gun'`, which is the classification an Engine at the
+   * root takes away: a Sherman's driving seat declares `ShermanTower`'s free
+   * `c_PIMouseLookX` traverse at 35 deg/s and `ShermanGunBase`'s
+   * `c_PIMouseLookY` elevation over -20..+5 — the real game's tank aiming,
+   * sitting in our own extracted data — and classified as `'tank'`, so nothing
+   * ever drove them and `applyRig` re-posed both to hull-forward every frame.
+   * `hasAimAxes` asks the question the rig itself answers. */
   setActiveSeat(id) {
     this.activeSeatId = id;
     const seat = this.seatInfo(id);
-    this.turret = seat && this.seatKind(id) === 'gun' ? new TurretRig(seat) : null;
+    if (!seat || !hasAimAxes(seat)) {
+      this.turret = null;
+      return null;
+    }
+    let rig = this.turrets.get(id);
+    if (!rig) {
+      rig = new TurretRig(seat);
+      this.turrets.set(id, rig);
+    }
+    // The nodes have been sitting wherever `applyRig` left them while this
+    // seat was empty; put the rig's own angles back on before anything reads
+    // a world pose off them this frame.
+    rig.apply();
+    this.turret = rig;
     return this.turret;
+  }
+
+  /** Re-assert every seat's aim rig on the scene graph.
+   *
+   * Called once a frame, right after the drivetrain's own `integrate` — which
+   * ends in `applyRig`, and `applyRig` re-poses every declared
+   * `RotationalBundle` from a surface table that never carries
+   * `c_PIMouseLookX/Y`, i.e. back to hull-forward. Stepping only the ACTIVE
+   * rig after that leaves every other seat's gun snapping to rest for as long
+   * as nobody is sitting in it: climb out of a Sherman's driving seat with the
+   * tower traversed 90 degrees and the tower whipped round to face front,
+   * then back again when you returned. A turret stays where it was left. */
+  applyTurrets() {
+    for (const rig of this.turrets.values()) rig.apply();
   }
 
   /** 1-based position -> seat id, root first (see `surveyVehicle`'s note on `order`). */
@@ -362,9 +431,21 @@ export const TURRET_RAMP_TIME = 1.0;
 // units. The real register's units are a raw Windows mouse delta at whatever
 // pointer-speed setting the client read; the ratio between that and a
 // pointer-locked `movementX` in a browser is not recoverable from any of the
-// data this round has, so this is tuned to feel right against the +-40
-// clamp and +-1.0 deadzone GUN-3 pins exactly, not derived from them.
-export const TURRET_SENSITIVITY = 0.05;
+// data this round has, so this is tuned against the +-40 clamp and +-1.0
+// deadzone GUN-3 pins exactly, not derived from them.
+//
+// Raised from 0.05 once a tank's own turret started answering to it
+// (2026-09-17), because the arithmetic at that value does not reach a usable
+// rate at any speed a hand moves. `step` turns a sample into
+// `sample * SENS / 40 * maxSpeed` deg/s, so at 0.05 a Sherman's 35 deg/s
+// traverse ran at `sample * 0.044` deg/s: an ordinary 40 px frame gave
+// 1.75 deg/s and a hard flick at 120 px gave 5.3, i.e. a quarter-minute to
+// come round 90 degrees while swiping continuously. At 0.35 the clamp
+// saturates at 114 px in a frame — a brisk flick reaches the gun's own
+// declared maximum and nothing exceeds it — while a 40 px frame asks for a
+// third of it. Still a feel number, and it applies to every manned gun, not
+// only to tanks.
+export const TURRET_SENSITIVITY = 0.35;
 
 const _euler = new THREE.Euler();
 const _quat = new THREE.Quaternion();
@@ -446,11 +527,33 @@ export class TurretAxis {
  */
 export class TurretRig {
   constructor(seat) {
+    // Only the axes this rig actually drives. It used to take every axis the
+    // seat had and then feed none but the mouse-look pair, which pinned the
+    // rest to their rest pose every frame instead of leaving them to
+    // `applyRig`. Harmless while this was built for manned guns only — the
+    // six vanilla/mod seats that mix inputs all pair mouse-look with a
+    // `c_PIFire` barrel-spin axis nothing feeds either way — but not once a
+    // drivetrain root can have one: the V-100's driving seat carries a turret
+    // pitch beside `V-100FrontWheelR`'s own `c_PIYaw`, and claiming that
+    // second axis would weld its front wheels straight.
     this.axes = AXES
-      .filter(name => seat.axes[name])
+      .filter(name => isAimAxis(seat.axes[name]?.spec))
       .map(name => new TurretAxis(name, seat.axes[name].node, seat.axes[name].spec));
   }
 
+  /**
+   * Feed one frame's mouse motion in, in the browser's own screen sense:
+   * `dx` positive rightwards, `dy` positive downwards, exactly as
+   * `movementX`/`movementY` report them.
+   *
+   * NOT negated by the caller. It used to be — `lookDelta` passed
+   * `(-dx, -dy)`, borrowed from the soldier's own `look()`, whose yaw counts
+   * the other way — and the negation landed on top of `RIG_SIGN`'s own flip
+   * inside `_apply`, so the sum of the two inverted both axes: the mouse
+   * pushed right swung a gun left, and pushed down raised it. Measured on the
+   * Sherman's hull Browning as well as its main gun, so this was wrong for
+   * every manned gun in the viewer, not just the tank that exposed it.
+   */
   aim(dx, dy) {
     for (const axis of this.axes) {
       if (axis.spec.input === 'c_PIMouseLookX') axis.feed(dx);
@@ -460,6 +563,29 @@ export class TurretRig {
 
   step(dt) {
     for (const axis of this.axes) axis.step(dt);
+  }
+
+  /** The traverse this rig currently sits at, in radians, in the same sense
+   *  the node itself is rotated about its own up axis — i.e. already through
+   *  `RIG_SIGN`, so a caller does not have to know this file's convention.
+   *  Zero when the seat has no yaw axis to traverse (a fixed mount that only
+   *  elevates). Read by `map.html` to drive the HUD's turret dial. */
+  headingRadians() {
+    for (const axis of this.axes) {
+      if (axis.axisName === 'yaw') {
+        return THREE.MathUtils.degToRad(axis.angle * RIG_SIGN.yaw);
+      }
+    }
+    return 0;
+  }
+
+  /** Re-assert every axis's current angle on its node without advancing time.
+   *  `applyRig` overwrites these nodes from the vehicle's own surface table
+   *  every frame, so a rig that is not being stepped this frame — one whose
+   *  seat has just become active again — needs this before anything reads a
+   *  world pose off it. */
+  apply() {
+    for (const axis of this.axes) axis._apply();
   }
 }
 
