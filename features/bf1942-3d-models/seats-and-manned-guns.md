@@ -270,3 +270,93 @@ gun roots, no drivetrain), Stationary_Browning (a 1.1 m entry radius, the
 tightest on the map), and the Sherman (tank root, seat-switch to
 `shermanBrowning_PCO1` and back, firing scoped to whichever is active). See
 this track's final report for the exact runs and pixel evidence captured.
+
+## 2026-09-17: a tank's driver aims his own gun
+
+Follow-on from the Sherman round (`ground-vehicles.md`, `in-game-hud.md`). A
+tank in the viewer drove with its gun welded forward: the mouse swung the
+camera and the turret never moved. Everything needed was already in the
+extracted data — `Sherman.glb` declares `ShermanTower` as a *free*
+`c_PIMouseLookX` traverse at 35 deg/s and `ShermanGunBase` as a
+`c_PIMouseLookY` elevation over −20..+5 at 20 deg/s, both under the tank's own
+control, with the driver's `ShermanCamera` parented under the gun base exactly
+as retail has it. Five things were in the way.
+
+**`setActiveSeat` asked the wrong question.** It built a `TurretRig` when
+`classifySeat` returned `'gun'` — and an Engine at the root is precisely what
+takes that classification away (GUN-10: "an Engine wins at the root"). So a
+drivetrain seat never got one, `applyRig` re-posed both bundles from a surface
+table nothing writes `c_PIMouseLookX/Y` into, and the turret was pinned
+forward every frame. It now asks `hasAimAxes(seat)` — is this seat *wired* to
+something the mouse reaches — which is the question the rig itself answers.
+
+**`TurretRig` claimed axes it never drives.** It took every axis on the seat
+and then fed only the mouse-look pair, which pinned the rest to their rest
+pose instead of leaving them to `applyRig`. Harmless while only manned guns
+had rigs (the six mixed seats in the corpus all pair mouse-look with a
+`c_PIFire` barrel-spin axis nothing feeds either way) but not once a driving
+seat can have one: the V-100's carries a turret *and* a steered front axle.
+
+**`surveyVehicle` gave the slot to the wrong bundle.** It keeps one bundle per
+axis *name*, first-wins — and the V-100 traverses `V-100FrontWheelR`,
+`V-100FrontWheelL`, then `V-100Turret`, so the wheel took `yaw` and the turret
+was unreachable. Thirteen vehicles across vanilla and the mods have this
+shape (M3GMC's turret against its steering; the M113 family's and the LVT4's
+`pitch` against a gun-hatch or ramp animation). An axis the mouse reaches now
+takes the slot from one it does not; the losing bundle keeps being posed by
+`applyRig`, which is the only thing that ever posed it.
+
+**Every manned gun in the viewer was inverted.** `lookDelta` passed
+`(-dx, -dy)` to `aim`, borrowed from the soldier's own `look()` whose yaw
+counts the other way, and that negation landed on top of `RIG_SIGN`'s own flip
+inside `_apply`. The two together meant the mouse pushed right swung a gun
+left and pushed down raised it. Measured on the Sherman's hull Browning as
+well as its main gun, so this was never tank-specific — it had simply never
+been driven far enough to notice. `aim` now documents that it takes the
+browser's screen sense directly.
+
+**`TURRET_SENSITIVITY` was 20x too small to reach a usable rate.** `step`
+turns a sample into `sample * SENS / 40 * maxSpeed` deg/s, so at 0.05 a
+Sherman's 35 deg/s traverse ran at `sample * 0.044` deg/s: an ordinary 40 px
+frame gave 1.75 deg/s and a hard flick at 120 px gave 5.3 — a quarter-minute
+of continuous swiping to come round 90 degrees. At 0.35 the register's own
+±40 clamp saturates at 114 px in a frame, so a brisk flick reaches the gun's
+declared maximum and nothing exceeds it. Still a feel number about browser
+mouse units, and its own comment says so; GUN-3's ±40 clamp and ±1.0 deadzone
+are untouched, and `test_seats.py`'s deadzone fixture is now written in
+register units so it stops depending on this constant at all.
+
+**A turret now stays where it was left.** Rigs are cached per seat on the
+occupancy rather than rebuilt on every `setActiveSeat`, and `applyTurrets()`
+re-asserts *all* of them right after the drivetrain's `integrate` — because
+`integrate` ends in `applyRig`, which would otherwise snap every unmanned
+seat's gun to rest. Climb from a Sherman's driving seat to its hull gun and
+back and the tower is still pointed where you left it.
+
+The camera needed nothing: `ShermanCamera` hangs off the gun base, so it
+follows the traverse and the elevation for free, which is how retail gets it
+too.
+
+### What it does now
+
+- Mouse right traverses right, mouse up elevates; 35 deg/s saturated, its own
+  declared rate.
+- The gun base honours its own −20..+5, i.e. 20 degrees of elevation and 5 of
+  depression.
+- Shells leave the muzzle wherever the turret is pointed (the muzzle's world
+  position tracks the traverse).
+- The HUD's turret dial draws for the first time — see `in-game-hud.md`.
+
+### Still open
+
+- **The external camera modes still hang off the hull, not the turret.**
+  `VehicleCamera.followFrame` builds its frame from `state.orientation`, so
+  cycling to chase/front on a tank frames the hull's heading while the mouse
+  turns the turret. Cockpit — the default, and the one the tank spawns in — is
+  correct because it reads the camera node.
+- **A seat can still only hold one bundle per axis name.** The preference rule
+  picks the right one of the two; a hypothetical seat with two aim axes on the
+  same name would still lose one.
+- Everything GUN-3 already left open about the integrator (the accumulator
+  product's closed form, `automaticReset`) is unchanged — this round only
+  changed who gets a rig, which axes it claims, and which way it points.
