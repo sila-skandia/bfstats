@@ -216,9 +216,8 @@ under it — `GroundVehicle`'s per-tick work lives in true (`#`-private)
 methods, which JavaScript does not let a subclass reach — sharing the
 module's constants and the `Wheel` bookkeeping class instead.
 
-**Not wired into `viewer/map.html` by this change.** Wiring an entered
-`c_ETTank` PCO to this class instead of leaving it as furniture is a
-follow-on step against `classifyVehicle`/`enterVehicle`, outside this file.
+**Wired into `viewer/map.html`.** `VehicleOccupancy.ensureDrive` picks
+`TrackedVehicle` for `c_ETTank` roots (same cockpit graft path as Aircraft).
 
 ### What `verify-r7.md` confirmed, byte for byte
 
@@ -410,9 +409,6 @@ and stiffness does not.
 
 ### Open gaps (`TrackedVehicle`)
 
-- **Not wired into `map.html`.** A page still classifies every `c_ETTank`
-  PCO as furniture; entering one and driving it is the next, separate step,
-  against `classifyVehicle`/`enterVehicle` — outside this file.
 - **The shared-key collision** between a half-track's front-axle steering
   and its Engine's own body-lean axis (`Vehicle.servoAxes()`'s dedupe, see
   Decisions above) is worked around here, not fixed. A real fix touches
@@ -421,10 +417,9 @@ and stiffness does not.
   for Willy: nothing in the `mu`/`corneringStiffness`/`trackResistance`/
   `angularDamping` table above is a recorded drive against the real game.
 - **The exact retail force law a tracked wheel's own friction applies** is
-  still unread (verify-r7.md's own Open section, PHY-2/PHY-4) — `driveAccel`
-  is this file's bridge between two confirmed-but-separate formulas
-  (TANK-10's per-side split, `PhysicsEngine::updatePhysics`'s whole-body
-  thrust law), not a third confirmed one.
+  still unread (verify-r7.md's own Open section, PHY-2/PHY-4) — body thrust
+  is applied once per step (TANK-7); EngineGrip builds a target-velocity
+  band rather than a second copy of that thrust.
 - **Vertical-ray suspension and no hull collision**, inherited unchanged from
   `GroundVehicle`'s own open gaps — everything said there about a tank's
   much larger hull applies at least as much as it does to a jeep's.

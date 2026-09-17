@@ -71,17 +71,16 @@ from extract_pose import (
 # (There is no authoring rate to declare any more: clip_span() below is the
 # engine's own 1/|speed|, read out of updateState/applyOnSkeleton.)
 
-# key, upper-body state family (`Ub_<family><Weapon>`), loop flag. The weapon
-# channel is not listed here because it is data, not convention: a state that
-# plays one names it via `setOtherState c_AsmWeaponState` and the parser
-# carries it as `State.weapon_state`.
-FAMILIES: tuple[tuple[str, str, bool], ...] = (
-    ("idle", "StandAim", True),
-    ("walk", "WalkForward", True),
-    ("run", "RunForward", True),
-    ("fire", "Fire", True),
-    ("reload", "StandReload", False),
-    ("deploy", "StandRaiseWeapon", False),
+# key, upper-body state family (`Ub_<family><Weapon>`). Loop comes from the
+# state's 1P clip (`c_AsmPlayOnce` / `c_AsmLooping`), not a hardcoded flag —
+# bolt rifles are PlayOnce→StandReload (ANIM-7); Thompson fire is Looping.
+FAMILIES: tuple[tuple[str, str], ...] = (
+    ("idle", "StandAim"),
+    ("walk", "WalkForward"),
+    ("run", "RunForward"),
+    ("fire", "Fire"),
+    ("reload", "StandReload"),
+    ("deploy", "StandRaiseWeapon"),
 )
 PRIMARY = "idle"
 
@@ -177,12 +176,14 @@ def resolve_families(machine: animstates.StateMachine, weapon: str,
     """Per family: the 1P clip ref and any declared weapon-channel clip ref."""
     resolved: dict[str, dict] = {}
     report: dict[str, dict] = {}
-    for key, family, loop in FAMILIES:
+    for key, family in FAMILIES:
         state = machine.state(f"Ub_{family}{weapon}")
         clip_ref = state.clip_1p() if state else None
         if clip_ref is None:
             report[key] = {"error": f"no Ub_{family}{weapon} state with a 1P clip"}
             continue
+        # ANIM-7: honour c_AsmPlayOnce vs c_AsmLooping from the ASM clip word.
+        loop = clip_loops(clip_ref)
         entry: dict = {"ref": clip_ref, "loop": loop, "weaponRef": None,
                        "morphFactor": state.morph_factor,
                        "returnTo": state.return_to}

@@ -243,6 +243,13 @@ export class GunFire {
     // (`MaterialManager.materialDamage` on the attacker's material) before
     // the projectile's own distance falloff.
     this.materials = null;
+    // `damage.json`'s `damageMod` matrix, attacker group -> defender group.
+    // This is the term that makes a rifle round bounce off a Tiger and a
+    // Panzerfaust open it: `bf42/damage.py`'s own docstring gives the engine's
+    // formula as `materialDamage(att) * damageMod(att, def) * cos(angle) *
+    // distanceMod`, and until this table was wired the record carried only the
+    // first and last of those four.
+    this.modifiers = null;
     // An `EffectPlayer` (effects.js) holding the baked impact library. With
     // one set, a hit plays the authored bundle the material table names —
     // the ricochet burst, the dust, the bullet-hole decal — and a projectile
@@ -365,7 +372,7 @@ export class GunFire {
       let tracerMesh = null;
       obj.traverse(node => {
         if (node.userData?.muzzle) muzzles.push(node);
-        if (node.userData?.projectileMesh) projectileMesh = node;
+        if (node.userData?.projectileMesh || ((node.isMesh || (node.children && node.children.some(c => c.isMesh))) && (/rocket|projectile/i.test(node.name) || /rocket|projectile/i.test(node.userData?.geometry || '')))) projectileMesh = node;
         if (node.userData?.projectileTrail) trailQuad = node;
         if (node.userData?.tracerMesh) tracerMesh = node;
         const spec = node.userData?.effect;
@@ -520,8 +527,11 @@ export class GunFire {
     for (const emitter of group.emitters) {
       if (emitter.spec.view && emitter.spec.view !== view) continue;
       if (emitter.muzzle && emitter.muzzle !== muzzle) continue;
-      emitter.age = 0;
-      emitter.node.visible = true;
+      // R2 / V-R2: Em_Shell792D* delay 2.0 s — age starts negative so the
+      // casing is not strobed with the muzzle flash (T2).
+      const delay = emitter.spec.delay || 0;
+      emitter.age = -delay;
+      emitter.node.visible = delay <= 0;
       // The engine rolls each flash particle (`startRotation CRD_UNIFORM
       // 0/180`), which is what keeps a held burst from looking like one frame.
       emitter.spin = this.rand() * Math.PI * 2;
@@ -543,15 +553,16 @@ export class GunFire {
         && group.projectileMesh) {
       this.#spawnProjectile(muzzle, group, spec);
     } else if (spec && spec.kind === 'bullet') {
-      // The game draws nothing between tracer rounds — a Spitfire's
-      // projectile has no geometry at all, and only every traceInterval-th
-      // round carries the TLight streak. But a round that is never spawned
-      // never sweeps and never hits, and a hand weapon declares no tracer at
-      // all — so the eye-line path flies the dim stand-in instead, which is
-      // the round existing with a whisper of a streak on it. Vehicle guns
-      // (no `aimRay`) keep the old contract untouched.
-      if (tracerRound) this.#spawnTracer(muzzle, group, true);
-      else if (group.aimRay) this.#spawnTracer(muzzle, group, false);
+      // GUN-10 / V-R2: rifle projectiles are `invisible 1` — retail draws no
+      // body. Tracer rounds still get the bright TLight streak. Every other
+      // round still needs a ballistic in `tracers` so `#sweep` / `#impact`
+      // run: hand weapons declare no tracer interval, so dropping the dim
+      // stand-in without a hidden hit-test round killed every surface FX.
+      this.#spawnTracer(muzzle, group, !!tracerRound);
+      if (!tracerRound) {
+        const tracer = this.tracers[this.tracers.length - 1];
+        if (tracer) tracer.mesh.visible = false;
+      }
     } else if (group.stats.velocity > 0) {
       // Stale GLB (`projectile` is a bare template name, or the drawn body
       // failed to bake): the old streak per round.
@@ -715,8 +726,25 @@ export class GunFire {
     const authored = group.stats.velocity || 100;
     const speed = this.#displaySpeed(group, authored);
     const velocity = this.#muzzleVelocity(muzzle, group, speed, new THREE.Vector3());
-    const mesh = group.projectilePool.pop() || group.projectileMesh.clone();
+    let mesh = group.projectilePool.pop();
+    if (!mesh) {
+      if (group.projectileMesh.quaternion &&
+          (Math.abs(group.projectileMesh.quaternion.x) > 1e-4 ||
+           Math.abs(group.projectileMesh.quaternion.y) > 1e-4 ||
+           Math.abs(group.projectileMesh.quaternion.z) > 1e-4 ||
+           Math.abs(group.projectileMesh.quaternion.w - 1) > 1e-4)) {
+        const container = new THREE.Group();
+        const inner = group.projectileMesh.clone();
+        inner.position.set(0, 0, 0);
+        inner.visible = true;
+        container.add(inner);
+        mesh = container;
+      } else {
+        mesh = group.projectileMesh.clone();
+      }
+    }
     mesh.visible = true;
+    mesh.traverse(o => { o.visible = true; });
     mesh.scale.setScalar(1);
     mesh.position.copy(_origin);
     // The baked body was Z-mirrored like every vehicle mesh, so its nose
@@ -846,6 +874,25 @@ export class GunFire {
     // the falloff over the distance the round has flown since it left.
     const base = this.materials?.[attacker]?.damage ?? null;
     const factor = damageFactor(spec?.damage, travelled);
+    // The two terms that were missing. `damageMod` is keyed by the attacker's
+    // and defender's *groups*, not their material ids — most materials use
+    // their own id for both, which is why a keyed-by-id lookup mostly works and
+    // then silently doesn't on the ones that differ.
+    const attGroup = this.materials?.[attacker]?.attGroup ?? attacker;
+    const defGroup = this.materials?.[hit.material]?.defGroup ?? hit.material;
+    const mod = this.modifiers?.[attGroup]?.[defGroup] ?? null;
+    // `cos(angle)`: a round that arrives square on does full damage, one that
+    // grazes does almost none. The engine's own term is the cosine between the
+    // round's path and the face normal, so take the absolute dot of the two
+    // unit vectors — the sign only says which side of the face we came from.
+    let incidence = 1;
+    if (velocity) {
+      const len = velocity.length();
+      if (len > 0) {
+        incidence = Math.abs((velocity.x * hit.nx + velocity.y * hit.ny
+                              + velocity.z * hit.nz) / len);
+      }
+    }
     const record = {
       kind: hit.kind,
       material: hit.material,
@@ -865,7 +912,18 @@ export class GunFire {
       firer: group.owner,
       travelled,
       damageFactor: factor,
-      damage: base === null ? null : base * factor,
+      // The attacker/defender group pair and the two new terms, kept beside the
+      // product so a readout can show why a round did what it did.
+      attGroup,
+      defGroup,
+      damageMod: mod,
+      incidence,
+      // The engine's whole direct-hit formula. `damageMod` genuinely absent
+      // (no table loaded) leaves the base damage alone rather than zeroing it;
+      // a table that *does* load and says 0.0 for this pairing means exactly
+      // that, and the round bounces.
+      damage: base === null ? null
+        : base * (mod === null ? 1 : mod) * incidence * factor,
       played: false,
     };
     this.hits.unshift(record);
@@ -920,19 +978,29 @@ export class GunFire {
     this.casts = 0;
     for (const group of this.groups) {
       for (const emitter of group.emitters) {
-        if (!emitter.node.visible) continue;
+        // Idle emitters stay at age Infinity. Fired ones tick even while a
+        // positive `delay` keeps them invisible (shell eject at 2.0 s).
+        if (emitter.age === Infinity) continue;
         emitter.age += dt;
         const ttl = emitter.spec.timeToLive || 0.1;
-        if (emitter.age >= ttl) {
+        if (emitter.age < 0) {
           emitter.node.visible = false;
+          active = true;
           continue;
         }
+        if (emitter.age >= ttl) {
+          emitter.node.visible = false;
+          emitter.age = Infinity;
+          continue;
+        }
+        emitter.node.visible = true;
         active = true;
         const phase = (emitter.age / ttl) * 100;
         // `sizeOverTime` is the absolute size ramp; a bare `size` is the fixed
         // size of particles that declare no ramp. Capped: the ramp's tail was
         // authored for particles streaming away from the muzzle, not for one
-        // node parked on it.
+        // node parked on it. Mesh muzzle flashes (fx_1p_MuzzGun size 0.2) must
+        // not fall back to 1 — that alone made 1P flashes ~5× retail (T2/V-R2).
         const size = emitter.spec.sizeOverTime
           ? sampleCurve(emitter.spec.sizeOverTime, phase)[0]
           : (emitter.spec.size ?? 1);

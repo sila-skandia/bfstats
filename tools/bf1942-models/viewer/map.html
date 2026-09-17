@@ -566,7 +566,7 @@
     </button>
   </div>
   <canvas id="hud-canvas" aria-hidden="true"></canvas>
-  <div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; M map &middot; Esc</div>
+  <div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; CapsLock spawn &middot; M map &middot; Esc</div>
   <div id="crosshair" hidden><span class="ch-dot"></span><span class="ch-n"></span><span class="ch-s"></span><span class="ch-w"></span><span class="ch-e"></span></div>
   <div id="gate"><span>Tap or click to fly</span></div>
   <div id="gl-lost" hidden>
@@ -623,9 +623,11 @@ import { buildHeightfield, buildCollisionIndex, WorldCollider } from './collisio
 import { Soldier, spawnFlags, pickSpawn, spawnYaw,
          FOV_DEG as FOOT_FOV, JUMP_SPEED, GRAVITY } from './soldier.js';
 import { DeviationModel } from './deviation.js';
+import { wantViewmodelClip } from './viewmodel-anim.js';
 import { createReplayController, recordingLevel } from './replay.js';
 import { Hud } from './hud.js';
 import { Armor } from './armor.js';
+import { VehicleDamageSet } from './vehicle-damage.js';
 import { SupplyDepot, SupplyField } from './supply.js';
 
 // Which game's levels this page serves, and the directory they hang off:
@@ -746,7 +748,7 @@ const lmCache = new Map();
 // Hosted on the stage, not the body: .ld-overlay is inset:0 absolute, and
 // body is unpositioned, so on the body it would resolve against the viewport
 // and paint over the shared nav bar. #stage is the 3D view's positioned box.
-const overlay = createLoadOverlay(stage);
+const overlay = createLoadOverlay(stage, { assetBase: MAPS_BASE });
 
 const keys = new Set();
 const look = { yaw: 0, pitch: -0.15 };
@@ -2776,11 +2778,10 @@ function engineControl(dt) {
   }
   return {
     dt,
-    // The already-spooled engine value, NOT the stick. `c_PIThrottle` reaches
-    // full in a second; `state.throttle` chases it at the rate Physics.con
-    // declares (maxSpeed.roll 500 over maxRotation.roll 5000, a tenth of the
-    // range per second), so the note takes the same ten seconds to come up
-    // that the real one does.
+    // The already-spooled engine value, NOT the stick. Aircraft chase the
+    // pedal at Physics.con's slew rate; cars write gearbox revs (with a
+    // stationary pedal floor); tanks write the feedbackLoop load reading.
+    // Land `.ssc` scripts read the same value as controlSource Default.
     rpm: state ? state.throttle : 0,
     speed,
     acceleration: engineAccel,
@@ -3210,6 +3211,170 @@ let car = null;
 // page keeps working unchanged; `occupancy` is what is new, and what a bare
 // gun/seat root or a nested seat (a manned gun) runs on alone.
 let occupancy = null;
+
+// ---------------------------------------------------------------------------
+// Vehicle damage: shoot a tank, watch it smoke, burn and explode.
+//
+// The simulation is `vehicle-damage.js`, which is framework-free and tested
+// under node (`tests/test_vehicle_damage.py`). Everything here is the scene
+// half: which placed object owns which Armor, where a tier's effect hangs, and
+// what a wreck looks like.
+//
+// What the engine does and does not do, from `features/bf1942-engine-reference/`:
+//
+//   - **A collision costs nothing** (ledger HP-6). Driving a tank into a wall
+//     or flying a plane into a hill does not touch hit points — only a
+//     projectile damages anything. There is deliberately no crash-damage path
+//     below; the engine has none to copy.
+//   - **A living vehicle re-evaluates its tier every tick** (ARM-1), so this
+//     polls rather than latching, and stops polling once the thing is dead.
+// ---------------------------------------------------------------------------
+
+const vehicleDamage = new VehicleDamageSet();
+// owner id -> { node, anchors: Map<effectName, Object3D>, handles: [] }, the
+// scene-side bookkeeping a tier change needs to undo.
+const damageVisuals = new Map();
+
+/**
+ * Register every placed object that carries an `armor` extras block. Most of a
+ * level has none — a palm and a sandbag have no Armor at all (ARM-3) — so this
+ * is a handful of vehicles and stationary guns out of hundreds of objects.
+ */
+function registerDamageables(ownerRoots) {
+  clearDamageVisuals();
+  vehicleDamage.clear();
+  for (let owner = 0; owner < ownerRoots.length; owner++) {
+    const node = ownerRoots[owner];
+    const extras = node?.userData?.armor;
+    const vehicle = vehicleDamage.add(owner, extras, { name: node?.name || null });
+    if (vehicle) damageVisuals.set(owner, { node, anchors: new Map(), handles: [] });
+  }
+}
+
+/** Drop every running tier effect. Call on a level change. */
+function clearDamageVisuals() {
+  for (const visual of damageVisuals.values()) {
+    for (const handle of visual.handles) handle.stop?.();
+    visual.handles.length = 0;
+    for (const anchor of visual.anchors.values()) anchor.parent?.remove(anchor);
+    visual.anchors.clear();
+  }
+  damageVisuals.clear();
+}
+
+/**
+ * An empty node at an `addArmorEffect` offset, parented to the vehicle so the
+ * effect rides with it. `EffectPlayer.play`'s `attach` follows an object's world
+ * transform and takes no local offset of its own, so the offset has to be a
+ * node — which is also what the engine does with these vectors.
+ */
+function damageAnchor(visual, name, offset) {
+  let anchor = visual.anchors.get(name);
+  if (!anchor) {
+    anchor = new THREE.Object3D();
+    anchor.name = `damage:${name}`;
+    visual.node.add(anchor);
+    visual.anchors.set(name, anchor);
+  }
+  anchor.position.set(offset?.[0] || 0, offset?.[1] || 0, offset?.[2] || 0);
+  anchor.updateMatrixWorld(true);
+  return anchor;
+}
+
+/** Start the tier's bundles on this vehicle, having stopped whatever ran before. */
+function showDamageTier(vehicle, tier) {
+  const visual = damageVisuals.get(vehicle.owner);
+  if (!visual) return;
+  for (const handle of visual.handles) handle.stop?.();
+  visual.handles.length = 0;
+  if (!tier) return;
+  for (const name of tier.names) {
+    // Case is not a concern here even though it looks like one: a Sherman
+    // authors `e_scrapmetal` and the bundle bakes as `e_ScrapMetal`, but
+    // `EffectLibrary` keys on the lowercased name and `get` lowercases its
+    // argument — the same case-insensitivity the console language itself has
+    // (ledger HP-4, RFA-1).
+    const entry = vehicle.effects.find(
+      e => e.effect === name && e.hp === tier.threshold);
+    const anchor = damageAnchor(visual, name, entry?.offset);
+    const handle = effects.play(name, { attach: { object: anchor } });
+    if (handle) visual.handles.push(handle);
+  }
+}
+
+/**
+ * A vehicle just died: show the death tier, and swap in the wreck if the model
+ * shipped one. The wreck geometry mechanism in the engine is still unread (the
+ * corpus's own open item), so this is the extraction pipeline's convention — a
+ * `wreck` configuration alternative under the same node — and nothing more.
+ */
+function wreckVehicle(vehicle) {
+  const visual = damageVisuals.get(vehicle.owner);
+  if (!visual?.node) return;
+  let normal = null;
+  let wreck = null;
+  for (const child of visual.node.children) {
+    const configuration = child.userData?.configuration;
+    if (configuration === 'wreck') wreck = child;
+    else if (configuration === 'complex' || configuration === undefined) {
+      if (!normal && child.type !== 'Object3D') normal = child;
+    }
+  }
+  if (wreck) {
+    wreck.visible = true;
+    for (const child of visual.node.children) {
+      if (child !== wreck && !child.name?.startsWith('damage:')) child.visible = false;
+    }
+  }
+}
+
+/**
+ * The Armor of the vehicle the player is in, or null. Matched by scene node
+ * rather than by seat: hit points live on the root object and are shared by
+ * every seat (VHUD-8, R2-31), so the driver and the hull gunner read the same
+ * number.
+ */
+function occupiedVehicleDamage() {
+  if (!occupancy?.root) return null;
+  for (const [owner, visual] of damageVisuals) {
+    if (visual.node === occupancy.root) return vehicleDamage.get(owner);
+  }
+  return null;
+}
+
+// The HP last pushed into the HUD, so a moving bar costs one compare per frame
+// rather than a full `feedVehicleHud()`.
+let fedVehicleHp = null;
+
+/** Step every damageable thing and reconcile what it is drawing. */
+function stepVehicleDamage(dt) {
+  if (!vehicleDamage.size) return;
+  for (const change of vehicleDamage.update(dt)) {
+    if (change.changed) showDamageTier(change.vehicle, change.tier);
+    if (change.died) wreckVehicle(change.vehicle);
+  }
+  // `feedVehicleHud` runs on entry and on a seat switch, not per tick for a
+  // driver — so without this the bar of the tank you are sitting in would stay
+  // where it was when you climbed in while the thing burned down under you.
+  const live = occupiedVehicleDamage();
+  const hp = live ? live.hitPoints : null;
+  if (hp !== fedVehicleHp) {
+    fedVehicleHp = hp;
+    if (live) feedVehicleHud();
+  }
+}
+
+/** A round landed. Apply it, and reconcile the tier on the same frame. */
+function applyVehicleHit(record) {
+  const landed = vehicleDamage.applyHit(record);
+  if (!landed) return;
+  // Straight to `update(0)` rather than waiting for the next frame: a killing
+  // shot should explode on the frame it lands, not one frame later. A zero dt
+  // cannot advance the burn accumulator, so this only re-picks the tier.
+  const result = landed.vehicle.update(0);
+  if (result.changed) showDamageTier(landed.vehicle, result.tier);
+  if (result.died) wreckVehicle(landed.vehicle);
+}
 const AIR_KEYS = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'Space',
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
@@ -3290,6 +3455,11 @@ const guns = new GunFire({
 // `_shared/effects.glb` by `effects` below. `?impacts=debug` draws the marker
 // as well, `?effects=off` leaves the library unloaded.
 guns.impactMarkers = params.get('impacts') === 'debug';
+// Every round that stops anywhere comes through here. Most land on terrain or a
+// building and cost nothing; one that lands on something with an Armor takes
+// hit points off it (ledger HP-6: a projectile is the only thing that damages
+// anything in this engine).
+guns.onImpact = record => applyVehicleHit(record);
 // The game's own impact, trail and explosion bundles. Loaded once per mod
 // beside `damage.json`; a level change keeps it. Until it lands (or when it
 // is absent) a hit is recorded and nothing is drawn at the spot.
@@ -3513,6 +3683,11 @@ function buildCollider(root) {
     else ownerRoots.push(child);
   }
   const statics = buildCollisionIndex(root, { ownerRoots });
+  // Every damageable thing in the level, keyed by the same owner id the
+  // collision index just handed out — which is what a hit record names, so a
+  // round that lands resolves to the vehicle it landed on with one lookup and
+  // no scene walk. `ownerRoots[i]` is owner `i` by construction.
+  registerDamageables(ownerRoots);
   collider = (heightfield || statics || Number.isFinite(extras?.waterLevel))
     ? new WorldCollider({ heightfield, statics, waterLevel: extras?.waterLevel })
     : null;
@@ -3520,6 +3695,11 @@ function buildCollider(root) {
   guns.damageEffects = damageTables?.effects || null;
   guns.projectileMaterials = damageTables?.projectiles || null;
   guns.materials = damageTables?.materials || null;
+  // The `damageMod` matrix. Without it a round's damage is only its material's
+  // base times the distance falloff, which is the same number for a rifle
+  // shooting a Tiger as for a Panzerfaust — the modifier is the whole reason
+  // small arms do not kill armour.
+  guns.modifiers = damageTables?.modifiers || null;
   // Pools and all: a mesh particle's materials are built under the level's
   // lighting, and show() warms a fresh set once this level's fog is up.
   effects.flush();
@@ -3807,7 +3987,11 @@ function drive(dt) {
   // firing the moment the seat switched away.
   guns.firstPerson = car.firstPerson;
   for (const group of vehicleGuns) {
-    guns.setFiring(group, driving && car.input(group.stats.input || 'c_PIFire') > 0);
+    const state = fireStateFor(group.node);
+    if (driving) state.step(dt);
+    guns.setFiring(group, driving
+      && car.input(group.stats.input || 'c_PIFire') > 0
+      && state.canFire);
   }
 
   if (!driving) return;
@@ -3973,8 +4157,15 @@ function feedVehicleHud() {
   setHudVar('Vehicle/VehicleIcon', seatHud?.vehicleIcon ?? null);
   // R2-31 (corrected, verify-r2.md): hitpoints/armor live on the root PCO
   // only, one Armor shared by every seat — never a nested seat's own value.
-  setHudVar('Vehicle/VehicleHitPoints', rootHud?.hitpoints ?? null);
-  setHudVar('Vehicle/VehicleMaxHitPoints', rootHud?.maxHitpoints ?? null);
+  //
+  // Live when this vehicle is one the damage set knows about, and the template's
+  // static number otherwise. Before the Armor existed this could only ever print
+  // the authored maximum, so the bar never moved no matter what hit you.
+  const live = occupiedVehicleDamage();
+  setHudVar('Vehicle/VehicleHitPoints',
+            live ? live.hitPoints : (rootHud?.hitpoints ?? null));
+  setHudVar('Vehicle/VehicleMaxHitPoints',
+            live ? live.maxHitPoints : (rootHud?.maxHitpoints ?? null));
   // Which copy of the ammo panel `menu/InGame` paints: the layout gates every
   // primary leaf on `NumberOfWeaponIcons == 1` and every secondary one on
   // `== 2` (VHUD, verify-r2.md R2-13), so a seat that never feeds it shows no
@@ -3987,12 +4178,9 @@ function feedVehicleHud() {
   setHudVar('Ammo/PrimaryAmmoBar', ammoBarCode(seatHud?.primaryAmmoBar));
   setHudVar('Ammo/SecondaryAmmoIcon', seatHud?.secondaryAmmoIcon ?? null);
   setHudVar('Ammo/SecondaryAmmoBar', ammoBarCode(seatHud?.secondaryAmmoBar));
-  // Live ammo/heat only for a seat `manned()` itself is stepping. An
-  // aircraft/car's own FireArms have no `FireState` here: `drive()`/`pilot()`
-  // (outside this track) fire `vehicleGuns` unconditionally and were never
-  // gated on one, so building one just for the HUD read would decrement on
-  // every shot (`chainOnShot` is global) without anything ever stepping it
-  // back — an orphaned, silently-wrong counter, worse than an absent one.
+  // Live ammo/heat: manned seats via `manned()`; drivetrain roots via
+  // `drive()`/`pilot()` (T4a) — both step FireState and gate `canFire`, so
+  // `chainOnShot` is not orphaning counters on the Sherman cannon/coax.
   //
   // A seat's `fireArms` array can hold two nodes (R2-30: the Sherman's root
   // declares `NumberOfWeaponIcons 2`, cannon then coax) — `nodes[0]`/`[1]` is
@@ -4000,7 +4188,12 @@ function feedVehicleHud() {
   // same declaration-order assumption SEAT-22's own seat-position map already
   // rests on; the extracted data has no independent primary/secondary tag to
   // cross-check it against.
-  const nodes = mannedActive() ? occupancy.activeFireArmsNodes() : [];
+  let nodes = [];
+  if (mannedActive()) {
+    nodes = occupancy.activeFireArmsNodes();
+  } else if (occupancy.isActiveRoot() && (aircraft || car)) {
+    nodes = occupancy.seatInfo(occupancy.rootId)?.fireArms || [];
+  }
   const primary = nodes[0] ? fireStateFor(nodes[0]) : null;
   const secondary = nodes[1] ? fireStateFor(nodes[1]) : null;
   // `hud-layout.json`'s vehicle-skin ammo panel prints `Ammo/{Primary,Secondary}
@@ -4565,7 +4758,7 @@ function setOnFoot(on) {
 // `let`: under `?kblock` the Escape hint changes for as long as the
 // fullscreen session lasts (kbLockEnter). Without it this never changes.
 let HUD_FOOT ='WASD move · Shift walk · Ctrl crouch · Z prone · Space jump · '
-  + 'LMB fire · RMB aim · R reload · M redeploy · Esc';
+  + 'LMB fire · RMB aim · R reload · CapsLock / M redeploy · Esc';
 const HUD_FOOT_PLAIN = HUD_FOOT;
 const HUD_FOOT_KBLOCK = `${HUD_FOOT_PLAIN} release · hold Esc exits full screen`;
 
@@ -5144,17 +5337,24 @@ async function loadHandWeapon(name, soldierName = null) {
     if (token !== weaponToken) return;
     rig.visible = armsShown && !(optPilot.checked && (aircraft || car));
   });
-  // The six baked families become mixer actions. Locomotion loops; the
-  // one-shots clamp on their last frame — the clamped fire pose is what
-  // "holds between shots" against the 0.1 s cycle (§11 step 4), and a
-  // clamped deploy or reload simply waits for the crossfade home.
+  // The six baked families become mixer actions. Locomotion loops; one-shots
+  // clamp on their last frame. Fire follows the ASM loop bit in extras
+  // (Thompson Looping vs sniper PlayOnce) — ANIM-7 / T2.
   let mixer = null;
   const actions = {};
   if (fp && gltf.animations?.length) {
     mixer = new THREE.AnimationMixer(gltf.scene);
+    const clipExtras = doc.clips ?? {};
     for (const clip of gltf.animations) {
       const action = mixer.clipAction(clip);
-      if (LOCO_LOOP.has(clip.name)) {
+      const meta = clipExtras[clip.name];
+      // ANIM-7: fire→StandReload (returnTo) is PlayOnce even if a stale
+      // extract still wrote loop=true (No4Sniper / K98Sniper).
+      let loop = meta?.loop ?? LOCO_LOOP.has(clip.name);
+      if (clip.name === 'fire' && /reload/i.test(meta?.returnTo || '')) {
+        loop = false;
+      }
+      if (loop) {
         action.setLoop(THREE.LoopRepeat, Infinity);
       } else {
         action.setLoop(THREE.LoopOnce, 1);
@@ -5245,10 +5445,8 @@ function ensureHandWeapon(flag) {
   loadHandWeapon(name, who);
 }
 
-// How a gait names a locomotion clip. Walk and run are one baked clip at two
-// rates — the export carries both names so the distinction stays data (§11).
-// Crouch and prone fall back to the aim until their families are baked.
-const LOCO_CLIP = { run: 'run', walk: 'walk', stand: 'idle', crouch: 'idle', prone: 'idle' };
+// Walk/run are one baked clip at two rates (§11). Crouch/prone fall back to
+// idle until those families are baked. LOCO_CLIP lives in viewmodel-anim.js.
 const LOCO_LOOP = new Set(['idle', 'walk', 'run']);
 
 /**
@@ -5274,6 +5472,13 @@ function playViewmodelClip(hw, name, { restart = false, timeScale = 1,
   to.enabled = true;
   to.play();
   if (from) {
+    // Idle settles in ~1.4 s (morphFactor 0.7). crossFadeFrom alone would
+    // leave LoopRepeat fire evaluating — and shaking — for that whole fade.
+    // The engine leaves the fire state; freeze fire's clock so the last pose
+    // holds while idle/walk morphs in. Reload already snaps via fade === 0.
+    const leavingLoopFire = hw.active === 'fire'
+      && from.loop === THREE.LoopRepeat;
+    if (leavingLoopFire) from.setEffectiveTimeScale(0);
     if (fade > 0) {
       to.crossFadeFrom(from, fade, false);
     } else {
@@ -5287,38 +5492,52 @@ function playViewmodelClip(hw, name, { restart = false, timeScale = 1,
 }
 
 /**
- * The clip this frame owes, then the mixer tick. Priority is the engine's
- * upper-body machine read off this page's own state: a reload in progress
- * owns the arms; a deploy still raising, or a clamped fire pose inside the
- * shot cycle, holds; otherwise the gait chooses the locomotion loop.
+ * The clip this frame owes, then the mixer tick. Selection is
+ * `wantViewmodelClip` (viewmodel-anim.js): looping fire follows the trigger
+ * latch, PlayOnce finishes its punch, bolt rifles ANIM-7 into StandReload.
+ * Never hold fire for the ROF `cool` window (that was the sniper dip).
  */
 function updateViewmodelAnimation(hw, dt) {
   if (!hw.mixer) return;
-  let want;
+  const fireAction = hw.actions.fire;
+  const fireRunning = !!(fireAction && fireAction.isRunning());
+  const fireReturnsToReload = /reload/i.test(hw.clips?.fire?.returnTo || '');
+  // Looping fire (Thompson / BAR) — not bolt rifles whose returnTo is
+  // StandReload even when a stale extract still marks fire.loop true.
+  const fireLoops = !!(hw.clips?.fire?.loop) && !fireReturnsToReload;
+  const decision = wantViewmodelClip({
+    reload: hw.reload,
+    reloadPlayed: hw.reloadPlayed,
+    reloadRunning: !!hw.actions.reload?.isRunning(),
+    deployRunning: !!hw.actions.deploy?.isRunning(),
+    active: hw.active,
+    fireRunning,
+    fireLoops,
+    fireReturnsToReload,
+    firing: !!hw.group?.firing,
+    hasFire: !!fireAction,
+    hasReload: !!hw.actions.reload,
+    gait: soldier?.gait,
+  });
   // Keyed on the magazine change, not on which clip holds the arms: a change
-  // begun while the last reload clip is still clamped rewinds it.
-  if (hw.reload > 0 && !hw.reloadPlayed) {
-    // The clip runs at the engine's own span — one pass is 1/speed seconds,
-    // 4.76 s for the Thompson's tweaked 0.21 against its 4.8 s `reloadTime`
-    // (DICE fitted the rate to the timer in 1pAnimationsTweaking.con). When
-    // the one-shot's phase passes 1, `AnimationState::update` (lnxded
-    // 0x08329f00) hands the machine its `addTransitionWhenDone` state and
-    // the sights settle back in over the aim state's 1/0.7 s. The earlier
-    // `bakedSpan / reloadTime` stretch was a fit against a 25 fps reading
-    // the engine does not have; it landed because the data already fits.
-    hw.reloadPlayed = true;
+  // begun while the last reload clip is still clamped rewinds it. The clip
+  // runs at the engine's own span (1/speed); DICE fitted rates in
+  // 1pAnimationsTweaking.con so one pass matches reloadTime.
+  if (decision.markReloadPlayed) hw.reloadPlayed = true;
+  if (decision.startReload) {
     playViewmodelClip(hw, 'reload', { restart: true });
-    want = 'reload';
-  } else if (hw.active === 'reload' && hw.actions.reload?.isRunning()) {
-    want = 'reload';
-  } else if (hw.active === 'deploy' && hw.actions.deploy?.isRunning()) {
-    want = 'deploy';
-  } else if (hw.active === 'fire' && hw.cool > 0) {
-    want = 'fire';
-  } else {
-    want = LOCO_CLIP[soldier?.gait] || 'idle';
+  } else if (decision.startFire) {
+    playViewmodelClip(hw, 'fire', { restart: true });
+  } else if (decision.want !== hw.active) {
+    playViewmodelClip(hw, decision.want);
   }
-  if (want !== hw.active) playViewmodelClip(hw, want);
+  // Belt: selection already matches want (idle) but LoopRepeat fire is still
+  // scheduled from a prior fade — freeze its clock so the clip cannot keep
+  // shaking after hw.active has already flipped. Weight still drains via any
+  // in-flight crossfade / fadeOut from playViewmodelClip.
+  if (decision.stopLoopFire && fireAction) {
+    fireAction.setEffectiveTimeScale(0);
+  }
   hw.mixer.update(dt);
 }
 
@@ -5479,12 +5698,13 @@ guns.onShot = group => {
   // rather than leaving this weapon silent for the rest of its life.
   if (!hw.fire) refetchHandFireSound(hw);
   playHandFire(hw.fire);
-  // The arms answer the round: fire is a one-shot per shot, blended in at
-  // the fire state's own morph factor (4.0 — a quarter second, so the first
-  // rounds of a burst do smear in, as in the game) and clamped on its last
-  // frame so a burst holds the pose between rounds. The clip's pass is
-  // 1/speed = 0.1 s, the 600 rpm cycle itself.
-  playViewmodelClip(hw, 'fire', { restart: true });
+  // PlayOnce arms: one restart per round, blended at the fire state's morph
+  // factor and clamped between shots. Looping fire (BAR / Thompson) is owned
+  // by updateViewmodelAnimation + the trigger latch — restarting it here
+  // would un-freeze a just-released LoopRepeat and keep the post-fire shake.
+  const fireReturnsToReload = /reload/i.test(hw.clips?.fire?.returnTo || '');
+  const fireLoops = !!(hw.clips?.fire?.loop) && !fireReturnsToReload;
+  if (!fireLoops) playViewmodelClip(hw, 'fire', { restart: true });
   if (Number.isFinite(hw.rounds)) hw.rounds = Math.max(0, hw.rounds - 1);
   hw.model.onShot();
   hw.cool = 1 / (hw.data?.roundOfFire || 1);
@@ -5781,10 +6001,16 @@ function updateSoldierHud() {
   // per disposeHandWeapon's own comment on the old #ammo element — so the
   // vehicle check has to be explicit here too.
   const onFootActive = optOnFoot.checked && !!soldier && !inVehicle;
-  vars['Soldier/ShowSoldierIcon'] = onFootActive;
+  // T4a / V-R4: retail keeps the soldier stance icon inside vehicles.
+  vars['Soldier/ShowSoldierIcon'] = !!soldier && (onFootActive || inVehicle);
   vars['Vehicle/ShowVehicleIcon'] = inVehicle;
   vars['Weapon/ShowWeaponIcon'] = onFootActive && !!handWeapon;
-  if (!onFootActive) return;
+
+  if (!soldier) {
+    vars['CrossHair/ShowCrossHair'] = false;
+    vars['CrossHair/ScopeIndex'] = 0;
+    return;
+  }
 
   const iconNation = stanceNation(deployTeamId);
   const stanceWord = STANCE_TEXTURE[soldier.stance] || 'standing';
@@ -5807,8 +6033,45 @@ function updateSoldierHud() {
   vars['Soldier/SoldierMaxHitPoints'] ??= 30;
   vars['Soldier/SoldierHitPoints'] ??= 30;
 
+  // SCOPE-1 / V-R5: CrossHair/* is owned here (T5). Off-foot, drop the overlay
+  // so ScopeIndex cannot stick into a seat; Submarine/ShowPeriscope stays
+  // untouched for whatever later feeds a real periscope. Soldier art above
+  // already ran for the seated case (T4a).
+  if (!onFootActive) {
+    vars['CrossHair/ShowCrossHair'] = false;
+    vars['CrossHair/ScopeIndex'] = 0;
+    return;
+  }
+  vars['Submarine/ShowPeriscope'] = false;
+
   const hw = handWeapon;
-  if (!hw) return;
+  if (!hw) {
+    vars['CrossHair/ShowCrossHair'] = false;
+    vars['CrossHair/ScopeIndex'] = 0;
+    return;
+  }
+  // SCOPE-1 / V-R5: FireArms::setZoom writes ScopeIndex 0/1 when useScope;
+  // weapon sync copies ScopeIcon / SniperSight / SightIcon. spriteKeyFromRef
+  // in hud.js turns `sniper.tga` into atlas key `sniper`.
+  // Hip fire keeps ShowCrossHair false so layout leaves 10–13 (four fill
+  // ticks gated only on ShowCrossHair) do not draw a black box over the DOM
+  // `#crosshair`; the scope overlay is the only layout CrossHair consumer.
+  const zoom = hw.data?.zoom;
+  const scoped = !!(zoom?.scope && isZoomed());
+  if (scoped) {
+    vars['CrossHair/ShowCrossHair'] = true;
+    vars['CrossHair/ScopeIndex'] = 1;
+    vars['CrossHair/SniperSight'] = !!zoom.sniperSight;
+    vars['CrossHair/ScopeIcon'] = zoom.icon || 'sniper.tga';
+    if (!zoom.sniperSight) {
+      // Binoculars branch (SCOPE-3): ring via SightIcon. sightIcon is not yet
+      // extracted on weaponStats — fall back to the layout's authored default.
+      vars['CrossHair/SightIcon'] = zoom.sightIcon || 'scout_ring_128x128.tga';
+    }
+  } else {
+    vars['CrossHair/ShowCrossHair'] = false;
+    vars['CrossHair/ScopeIndex'] = 0;
+  }
   const magazine = hw.data?.magazine;
   const hudAmmo = (hw.data?.hudAmmo || '').toLowerCase();
   const ammoHud = hw.data?.hud;
@@ -5937,7 +6200,11 @@ function pilot(dt) {
   // fires them rather than staying latched at whatever they were doing.
   guns.firstPerson = aircraft.firstPerson;
   for (const group of vehicleGuns) {
-    guns.setFiring(group, flying && aircraft.input(group.stats.input || 'c_PIFire') > 0);
+    const state = fireStateFor(group.node);
+    if (flying) state.step(dt);
+    guns.setFiring(group, flying
+      && aircraft.input(group.stats.input || 'c_PIFire') > 0
+      && state.canFire);
   }
 
   if (!flying) return;
@@ -6922,6 +7189,7 @@ function selectDeployFlag(index) {
   // other side's flag switches the column with it.
   const team = flags[index].team;
   if ((team === 1 || team === 2) && team !== deployTeamId) setDeployTeam(team, false);
+  if (deployActive()) drawFullMap(true);
   return true;
 }
 
@@ -7005,8 +7273,8 @@ function deploySpawn() {
 
 // Clicking the art is clicking a ring: the nearest one of the chosen side's
 // within a finger's width, measured in CSS pixels so the target does not
-// shrink on a hidpi display. Clicking the ring already chosen is the commit.
-// Touch arrives here as the same click event.
+// shrink on a hidpi display. A click only selects — Enter or DONE/SUICIDE
+// commits, matching the game. Touch arrives here as the same click event.
 fullmapCanvas.addEventListener('click', e => {
   if (!deployActive()) return;       // the plain map still closes, above
   e.stopPropagation();
@@ -7028,16 +7296,13 @@ fullmapCanvas.addEventListener('click', e => {
     }
   }
   if (best < 0) return;
-  const chosen = Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1);
-  if (best === chosen) deploySpawn();
-  else selectDeployFlag(best);
+  selectDeployFlag(best);
 });
 
-// The footer. SUICIDE is the game's own way of getting back to a spawn
-// point, so here it is the commit; RESUME is the cancel; SCORE BOARD has no
-// board to show and stays a button in name only. Focus must not stay on any
-// of them: Space is the jump the instant the screen closes, and a focused
-// button turns it back into a click.
+// The footer. DONE (join) / SUICIDE (redeploy) is the commit; RESUME / CLOSE
+// cancels; SCORE BOARD has no board to show and stays a button in name only.
+// Focus must not stay on any of them: Space is the jump the instant the
+// screen closes, and a focused button turns it back into a click.
 deploySuicideBtn.addEventListener('click', e => {
   e.stopPropagation();
   deploySuicideBtn.blur();
@@ -7059,7 +7324,14 @@ async function show(entry) {
   const timing = warmups.timing = { showStart: performance.now() };
   let settleLevelWarmup;
   warmups.level = new Promise(resolve => { settleLevelWarmup = resolve; });
-  const load = overlay.begin(entry.name);
+  const loading = entry.loading || {};
+  const load = overlay.begin(entry.name, {
+    title: loading.title,
+    background: loading.background,
+    music: loading.music,
+    theme: loading.theme,
+    assetBase: MAPS_BASE,
+  });
   load.step('report', { label: 'level report', weight: 1 });
   // Weighted by what the bytes actually are: one ~70 MB scene against a couple
   // of MB of loose textures and a 2 KB report.
@@ -7191,7 +7463,12 @@ async function show(entry) {
   entryPoints = null;
   nearEntry = null;
   if (optPilot.checked) setPilot(true);
-  if (optOnFoot.checked) setOnFoot(true);
+  // Joining is the spawn screen, not an instant teleport — clear a leftover
+  // on-foot tick from the previous level so openDeploy owns the join.
+  if (optOnFoot.checked) {
+    optOnFoot.checked = false;
+    setOnFoot(false);
+  }
   applyFar();
   if (!skyRoot) await loadSky(entry);
   applyFog();
@@ -7239,6 +7516,8 @@ async function show(entry) {
   worldReady = true;
   timing.worldReady = performance.now();
   syncDeployReady();
+  // Direct-to-spawn: skip the briefing dialog and land on the deploy screen.
+  if (!optPilot.checked) openDeploy();
 
   // Every texture this level needs has been queued by now, so a queue that is
   // already drained (or was never filled) means the load is done — texReport
@@ -7300,6 +7579,10 @@ replayController = createReplayController({
   // The engine's vehicle lighting, as the level's own vehicles get it.
   // Not bindTextureFade: that one resets the level's list of fading meshes.
   shadeModel: root => bindDynamicShading(root),
+  guns,
+  effects,
+  fetchHandFireSound,
+  playHandFire,
 });
 if (replayUrl) {
   replayController.openFromUrl(replayUrl, params.get('serverlog'))
@@ -7380,6 +7663,11 @@ function frame(dt) {
   // Unconditional: rounds already in the air have to finish their flight even
   // if the trigger, the pilot mode or the whole aircraft has gone away.
   guns.advance(dt);
+  // After `advance`, so a round that landed this frame is already accounted for
+  // when the tier is picked. Unconditional for the same reason `advance` is: a
+  // tank set alight before the player climbed out keeps burning down to nothing
+  // whatever the camera is doing.
+  stepVehicleDamage(dt);
   // After `advance`, not before: a manned gun's `Ammo/PrimaryAmmo` etc. must
   // reflect whatever `advance` just fired this frame, the same way the
   // on-foot `updateSoldierHud()` below already does for `hw.rounds`. `manned()`
@@ -7973,6 +8261,31 @@ if (params.has('shots')) {
   window.__mapGate = on => {
     if (on !== undefined) mapGate = !!on;
     return mapGate;
+  };
+  // Every damageable thing in the level and what it is currently showing, for a
+  // headless check: shoot a tank, step frames, read the tier back.
+  window.__vehicles = () => [...vehicleDamage.byOwner.entries()].map(([owner, v]) => ({
+    owner, name: v.name, hp: Math.round(v.hitPoints * 100) / 100,
+    max: v.maxHitPoints, critical: v.critical, destroyed: v.destroyed,
+    criticalDamage: v.criticalDamage,
+    tier: v.shown ? { threshold: v.shown.threshold, names: v.shown.names } : null,
+    running: damageVisuals.get(owner)?.handles.length ?? 0,
+    tiers: v.effects.map(e => ({ hp: e.hp, effect: e.effect })),
+  }));
+  // Hurt one by owner id without having to hit it with a round — the same
+  // generic entry point `window.__damage(n)` is for the soldier. Negative heals,
+  // the way `SimpleObject::handleDamage` dispatches on the sign of its argument
+  // (ledger HP-7).
+  window.__damageVehicle = (owner, amount) => {
+    const vehicle = vehicleDamage.get(owner);
+    if (!vehicle) return null;
+    if (amount > 0) vehicle.damage(amount);
+    else vehicle.heal(-amount);
+    const result = vehicle.update(0);
+    if (result.changed) showDamageTier(vehicle, result.tier);
+    if (result.died) wreckVehicle(vehicle);
+    return { hp: vehicle.hitPoints, destroyed: vehicle.destroyed,
+             tier: vehicle.shown };
   };
   window.__matrixDrift = () => {
     const local = new THREE.Matrix4();

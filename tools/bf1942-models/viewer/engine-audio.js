@@ -74,10 +74,12 @@ function controlValue(source, c) {
     case 'distance': return c.distance;
     case 'time': return c.time;
     case 'timerelease': return c.released ? c.timeRelease : null;
-    // `Default` is a constant for the one-shot idiom; the handful of car
-    // scripts that ramp on it are unresolved and none of them are vehicles the
-    // viewer flies.
-    case 'default': return 1;
+    // Land engines (Willy, Sherman, …) author Pitch/Volume on `Default` instead
+    // of `Extern #map<Engine::Rpm>` — a survey of Objects.rfa puts 257 land
+    // pitch effects on Default vs 206 air pitch effects on Engine::Rpm. The
+    // one-shot idiom `Linear p1 0` is still a constant under either reading,
+    // so feeding the same normalised rpm channel serves both.
+    case 'default': return c.rpm;
     default: return null;
   }
 }
@@ -269,7 +271,8 @@ export class EngineAudio {
    * = 5000, which for the viewer's flight model is the already-spooled
    * `state.throttle` rather than the stick), `speed` and `acceleration` in m/s
    * and m/s^2, `diveAngle` normalised, and the source and listener positions in
-   * world space.
+   * world space. Land `.ssc` scripts bind the same rpm channel as `Default`
+   * (see `controlValue`); air scripts use `Engine::Rpm` explicitly.
    */
   update(control) {
     if (this.disposed) return;
