@@ -1,0 +1,91 @@
+"""`viewer/hud.js`'s fill-picture geometry, driven headless by `hud_harness.mjs`.
+
+Only the bar-window arithmetic is covered here -- the part that decides which
+band of a `fill-picture` leaf the fill layer is clipped to. Everything else in
+that module needs a real canvas, a sprite pack and a font atlas; this needs
+none of them, and it is where the bug was.
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+VIEWER = ROOT / "viewer"
+HARNESS = Path(__file__).with_name("hud_harness.mjs")
+MODULES = {"hud.js": VIEWER / "hud.js"}
+
+
+def run_harness() -> dict:
+    if shutil.which("node") is None:
+        raise unittest.SkipTest("node is not installed")
+    for source in MODULES.values():
+        if not source.exists():
+            raise unittest.SkipTest(f"{source.name} is not in the tree")
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp)
+        for name, source in MODULES.items():
+            shutil.copyfile(source, work / name)
+        (work / "package.json").write_text('{"type":"module"}\n')
+        shutil.copyfile(HARNESS, work / "harness.mjs")
+        proc = subprocess.run(
+            ["node", str(work / "harness.mjs")],
+            capture_output=True, text=True, timeout=120)
+    if proc.returncode != 0:
+        raise AssertionError(f"harness failed:\n{proc.stderr}")
+    return json.loads(proc.stdout)
+
+
+class FillPictureGeometryTests(unittest.TestCase):
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+
+    def test_a_short_bar_fills_the_band_its_art_actually_occupies(self) -> None:
+        # `reloadtimebar_*_32x64.png` is opaque over rows 0..41 of a 64-row
+        # texture -- exactly the `size: 42` its leaf declares, top-anchored,
+        # and its leaf is `fillOrder: true` like every other top-anchored bar
+        # in `hud-layout.json`. So a full bar covers y 547..589 of the rect,
+        # not 547+22..547+64. Drawn the old way the fill was clipped into
+        # rows 22..64, which on this art is 20 rows of bar and 22 rows of
+        # transparent padding: nothing below a fraction of 0.52 drew at all.
+        bar = self.results["reloadBar"]
+        self.assertEqual([549, 547, 32, 42], bar["full"]["clip"])
+        self.assertEqual([549, 568, 32, 21], bar["half"]["clip"])
+        self.assertEqual([549, 578.5, 32, 10.5], bar["quarter"]["clip"])
+
+    def test_an_empty_bar_draws_only_its_empty_layer(self) -> None:
+        bar = self.results["reloadBar"]
+        self.assertIsNone(bar["empty"]["clip"])
+        self.assertEqual(1, bar["empty"]["layers"])
+
+    def test_the_health_bar_is_unchanged_because_size_equals_height(self) -> None:
+        # The one leaf a live feed had already confirmed (R1-30): bottom
+        # anchored, fills upward. At `size == h` the corrected formula is the
+        # old one term for term, which is what makes the fix safe.
+        health = self.results["healthBar"]
+        self.assertEqual([47, 525, 64, 64], health["full"]["clip"])
+        self.assertEqual([47, 557, 64, 32], health["half"]["clip"])
+        x, y, w, h = health["sliver"]["clip"]
+        self.assertAlmostEqual(589 - 64 / 30, y, places=4)
+        self.assertAlmostEqual(64 / 30, h, places=4)
+
+    def test_a_fillOrder_false_bar_still_hangs_off_the_bottom_edge(self) -> None:
+        # `magbar_rifle_*`'s art really is bottom-anchored (opaque rows
+        # 44..63 = its `size: 20`), and it is the file's only
+        # `fillOrder: false` leaf. It depletes downward from the window's own
+        # top edge, y + h - size.
+        mag = self.results["magBar"]
+        self.assertEqual([696, 561, 32, 20], mag["full"]["clip"])
+        self.assertEqual([696, 561, 32, 10], mag["half"]["clip"])
+
+
+if __name__ == "__main__":
+    unittest.main()
