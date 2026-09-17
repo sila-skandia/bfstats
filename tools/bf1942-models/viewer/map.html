@@ -1108,9 +1108,15 @@ addEventListener('keydown', e => {
     else release();
     return;
   }
+  // Caps Lock toggles the spawn menu even while a sidebar control is focused,
+  // matching Escape's privilege over form focus.
+  if (e.code === 'CapsLock' && !e.repeat) {
+    if (deployActive()) cancelDeploy();
+    else if (!optPilot.checked) openDeploy();
+    return;
+  }
   if (uiFocused()) return;
-  // M is the map, which is `c_PIMap` bound to IDKey_M in every one of the
-  // game's own control maps. N (`c_PIZoomMap`) is left free for a zoom cycle.
+  // Caps Lock is also handled above; M is `c_PIMap` in the game's own maps.
   // On foot the map opens in its deploy state — the game's own map is also
   // its spawn screen — and Escape or M again puts it away without moving you.
   if (e.code === 'KeyM' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -1124,7 +1130,7 @@ addEventListener('keydown', e => {
     return;
   }
   // While the deploy screen is up it owns the number row and the commit key:
-  // 1-9 are the flags in list order, Enter is the button.
+  // 1-9 are the flags in list order, Enter confirms the chosen spawn.
   if (deployActive()) {
     if (e.code === 'Enter' && !e.repeat) {
       deploySpawn();
@@ -3302,30 +3308,113 @@ function showDamageTier(vehicle, tier) {
   }
 }
 
+// How long a wreck lies there before it fades, and how long the fade takes.
+//
+// **Not engine numbers.** What removes a wreck in Refractor, and when, is one of
+// the corpus's own open items — `subsystems/hitpoints-and-damage.md` lists the
+// wreck lifetime as untraced, and a vanilla level's respawn timing lives in the
+// spawner rather than the vehicle. These two are chosen to read right and are
+// labelled so nobody mistakes them for findings.
+const WRECK_LINGER = 6;   // seconds of wreck before the fade starts  [HOUSE RULE]
+const WRECK_FADE = 2.5;   // seconds of fade                          [HOUSE RULE]
+
+// Wreck glbs, by template name, shared across every vehicle of that type.
+const wreckModels = new Map();
+
 /**
- * A vehicle just died: show the death tier, and swap in the wreck if the model
- * shipped one. The wreck geometry mechanism in the engine is still unread (the
- * corpus's own open item), so this is the extraction pipeline's convention — a
- * `wreck` configuration alternative under the same node — and nothing more.
+ * The template name behind a placed node. GLTFLoader suffixes duplicate names,
+ * so Wake's three Shermans arrive as `Sherman`, `Sherman_1` and `Sherman_2` and
+ * all three want `Sherman.wreck.glb`.
  */
-function wreckVehicle(vehicle) {
+function templateNameOf(node) {
+  return (node?.name || '').replace(/_\d+$/, '');
+}
+
+/**
+ * A vehicle just died: hide the live model, put its wreck in the same place, and
+ * start the linger-then-fade.
+ *
+ * The wreck is a glb of its own (`models/<Template>.wreck.glb`) — the same file
+ * `replay.js` fetches — not an alternative inside the level scene, which ships
+ * only the `complex` configuration. Loading is async and death is not, so the
+ * live model is hidden immediately and the wreck appears when it lands; a
+ * vehicle with no wreck exported still disappears rather than sitting there
+ * pristine.
+ */
+async function wreckVehicle(vehicle) {
   const visual = damageVisuals.get(vehicle.owner);
-  if (!visual?.node) return;
-  let normal = null;
-  let wreck = null;
+  if (!visual?.node || visual.wrecked) return;
+  visual.wrecked = true;
+  visual.wreckAge = 0;
+  // Hide everything that was the intact vehicle, keeping the damage anchors so
+  // the death effects keep playing from where they were.
+  visual.hidden = [];
   for (const child of visual.node.children) {
-    const configuration = child.userData?.configuration;
-    if (configuration === 'wreck') wreck = child;
-    else if (configuration === 'complex' || configuration === undefined) {
-      if (!normal && child.type !== 'Object3D') normal = child;
-    }
+    if (child.name?.startsWith('damage:')) continue;
+    if (child.visible) { child.visible = false; visual.hidden.push(child); }
   }
-  if (wreck) {
-    wreck.visible = true;
-    for (const child of visual.node.children) {
-      if (child !== wreck && !child.name?.startsWith('damage:')) child.visible = false;
+  const template = templateNameOf(visual.node);
+  try {
+    if (!wreckModels.has(template)) {
+      wreckModels.set(template, loader.loadAsync(
+        `${MODELS_BASE}/${template}.wreck.glb${bust()}`).then(g => g.scene, () => null));
     }
+    const scene = await wreckModels.get(template);
+    // The vehicle may have been cleared (level change) while the glb was in
+    // flight, and `damageVisuals` is rebuilt per level — so re-check.
+    if (!scene || damageVisuals.get(vehicle.owner) !== visual) return;
+    const wreck = scene.clone(true);
+    wreck.name = `wreck:${template}`;
+    // `Object3D.clone` shares materials with the source, so every wreck of a
+    // type would fade together — and the source is cached for the next one.
+    // Own them here, once, rather than trying to un-share them mid-fade.
+    wreck.traverse(obj => {
+      if (!obj.material) return;
+      obj.material = Array.isArray(obj.material)
+        ? obj.material.map(m => m.clone()) : obj.material.clone();
+    });
+    bindDynamicShading(wreck);
+    visual.node.add(wreck);
+    visual.wreck = wreck;
+  } catch {
+    // No wreck for this template: the hidden live model is the whole effect.
   }
+}
+
+/**
+ * Advance the linger-and-fade of every wreck, and remove one once it has gone.
+ * Called from `stepVehicleDamage`, so it runs on the same clock as the burn.
+ */
+function stepWrecks(dt) {
+  for (const [owner, visual] of damageVisuals) {
+    if (!visual.wrecked || visual.removed) continue;
+    visual.wreckAge += dt;
+    const into = visual.wreckAge - WRECK_LINGER;
+    if (into <= 0) continue;
+    const opacity = Math.max(0, 1 - into / WRECK_FADE);
+    if (visual.wreck) fadeNode(visual.wreck, opacity);
+    if (opacity > 0) continue;
+    // Gone: drop the wreck, stop the death effects, and leave the node empty.
+    visual.removed = true;
+    if (visual.wreck) { visual.node.remove(visual.wreck); visual.wreck = null; }
+    for (const handle of visual.handles) handle.stop?.();
+    visual.handles.length = 0;
+  }
+}
+
+/** Fade a subtree. Its materials are this wreck's own — see `wreckVehicle`. */
+function fadeNode(root, opacity) {
+  root.traverse(obj => {
+    if (!obj.material) return;
+    const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+    for (const material of materials) {
+      material.transparent = true;
+      material.opacity = opacity;
+      // An opaque wreck still writes depth; a fading one must not, or it punches
+      // a hole in whatever is behind it.
+      material.depthWrite = opacity > 0.99;
+    }
+  });
 }
 
 /**
@@ -3353,6 +3442,7 @@ function stepVehicleDamage(dt) {
     if (change.changed) showDamageTier(change.vehicle, change.tier);
     if (change.died) wreckVehicle(change.vehicle);
   }
+  stepWrecks(dt);
   // `feedVehicleHud` runs on entry and on a seat switch, not per tick for a
   // driver — so without this the bar of the tank you are sitting in would stay
   // where it was when you climbed in while the thing burned down under you.
