@@ -289,20 +289,38 @@ class SeatsModuleTests(unittest.TestCase):
     def test_an_axis_winds_up_at_its_own_declared_acceleration(self) -> None:
         # GUN-3's velocity register accumulates `|acceleration|*dt`, and
         # `setAcceleration`'s magnitude is that number — deg/s^2, confirmed,
-        # vanilla magnitudes 30–150. `con.py` emits it as of 2026-09-17; an
-        # axis that carries it reaches its cap in maxSpeed/acceleration
-        # seconds, here 35/350 = a tenth of a second.
-        wind = self.results["windUp"]
-        self.assertEqual(wind["maxSpeed"], wind["ownAtTenth"])
+        # vanilla magnitudes 30–150. `con.py` emits it as of 2026-09-17, so an
+        # axis that carries it winds up at exactly its own figure: 350 deg/s^2
+        # is 35 deg/s after a tenth of a second.
+        self.assertAlmostEqual(35.0, self.results["windUp"]["ownAtTenth"], delta=0.5)
 
     def test_an_axis_without_one_falls_back_and_is_slower(self) -> None:
         # Every glb baked before that emission. The fallback is the middle of
-        # the confirmed band, 90 deg/s^2, so the same gun needs 0.39 s rather
-        # than 0.1 — visibly slower, and still far quicker than the flat one
-        # second every gun in the game used to share.
+        # the confirmed band, 90 deg/s^2 — a quarter of the fixture's own
+        # figure, and still far quicker than the flat one second per gun that
+        # preceded it.
         wind = self.results["windUp"]
-        self.assertLess(wind["fallbackAtTenth"], wind["maxSpeed"])
-        self.assertEqual(wind["maxSpeed"], wind["fallbackAtHalf"])
+        self.assertAlmostEqual(9.0, wind["fallbackAtTenth"], delta=0.5)
+        self.assertAlmostEqual(45.0, wind["fallbackAtHalf"], delta=0.5)
+
+    def test_the_mouse_gets_the_travel_it_asks_for(self) -> None:
+        # The correction two rounds of tuning could not reach: the input
+        # register `manned-guns.md` §3 describes ACCUMULATES, and this class
+        # used to drain its sample to zero every step. That threw away both
+        # everything a fast frame asked for and the whole of a flick the
+        # moment the hand stopped, so the turret could only ever move at "how
+        # fast is the mouse moving right now" — reported twice from play as
+        # far slower than the game. Banked instead: an ask inside what the
+        # axis can deliver comes out 1:1, the same as a soldier's own look.
+        axis = self.results["turretAxis"]
+        self.assertAlmostEqual(axis["askedDegrees"], axis["trackedDegrees"], delta=0.1)
+
+    def test_a_flick_past_what_it_can_deliver_is_bounded_not_hoarded(self) -> None:
+        # The other half: a bank with no ceiling would keep a turret swinging
+        # for seconds after a hard flick. GUN-3's register is hard-clamped and
+        # so is this one.
+        axis = self.results["turretAxis"]
+        self.assertEqual(axis["pendingClamp"], axis["bankedAfterAFlick"])
 
     # --- FireState: gate order, heat/overheat, reload (GUN-12) --------------
 
