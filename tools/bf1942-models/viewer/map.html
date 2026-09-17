@@ -622,7 +622,7 @@ import { GunFire } from './gunfire.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { buildHeightfield, buildCollisionIndex, WorldCollider } from './collision.js';
 import { Soldier, spawnFlags, pickSpawn, spawnYaw,
-         FOV_DEG as FOOT_FOV, JUMP_SPEED, GRAVITY } from './soldier.js';
+         FOV_DEG as FOOT_FOV, GRAVITY } from './soldier.js';
 import { DeviationModel } from './deviation.js';
 import { wantViewmodelClip } from './viewmodel-anim.js';
 import { createReplayController, recordingLevel } from './replay.js';
@@ -3684,10 +3684,35 @@ function occupiedVehicleDamage() {
 // rather than a full `feedVehicleHud()`.
 let fedVehicleHp = null;
 
+/** Scratch for `stepVehicleDamage`'s world-position reads. */
+const waterCheckPos = new THREE.Vector3();
+
 /** Step every damageable thing and reconcile what it is drawing. */
 function stepVehicleDamage(dt) {
   if (!vehicleDamage.size) return;
-  for (const change of vehicleDamage.update(dt)) {
+  // Determine which vehicles are in water for the drowning damage tick
+  // (HP-5). A vehicle is "in water" when the water plane is the surface its
+  // wheels rest on (not terrain), or when its own centre has dropped to or
+  // below that plane. Boats are skipped by `DamageableVehicle.damageFromWater`
+  // being false on them, so no owner check is needed here.
+  const waterLevel = collider?.waterLevel;
+  let inWaterOwners = null;
+  if (Number.isFinite(waterLevel)) {
+    inWaterOwners = new Set();
+    for (const [owner, visual] of damageVisuals) {
+      if (visual?.wrecked || visual?.removed) continue;
+      const pos = visual.node.getWorldPosition(waterCheckPos);
+      if (pos.y <= waterLevel) {
+        inWaterOwners.add(owner);
+      } else {
+        const surface = collider.surfaceHeight(pos.x, pos.z);
+        if (Math.abs(surface - waterLevel) < 0.01) {
+          inWaterOwners.add(owner);
+        }
+      }
+    }
+  }
+  for (const change of vehicleDamage.update(dt, { inWaterOwners })) {
     if (change.changed) showDamageTier(change.vehicle, change.tier);
     if (change.died) wreckVehicle(change.vehicle);
   }
@@ -4189,7 +4214,7 @@ function setPilot(on, node = null, seatId = null) {
       // for the fuselage when it lands (flight.js); warmed before the swap
       // shows it, so the first cockpit frame links nothing (rule 6).
       const cockpit = { prepareCockpit: root => warmSubtree(root) };
-      const vehicle = occupancy.ensureDrive(currentRoot, { groundHeight, ...cockpit });
+      const vehicle = occupancy.ensureDrive(currentRoot, { groundHeight, collider, ...cockpit });
       if (kind === 'air') {
         aircraft = vehicle;
         aircraft.groundHeight = groundHeight;
@@ -4248,12 +4273,19 @@ function setPilot(on, node = null, seatId = null) {
     // descendant of the same frozen root.
     thawVehicle(occupancy.root);
     feedVehicleHud();
+    // Render the seated soldier (passenger seats only — driver seats have no
+    // poseAnimation and skip the load). Awaited here so the cockpit frame the
+    // player sees is never the first external one with an empty seat.
+    if (aircraft || car || occupancy.rootKind === 'gun') {
+      loadSeatPose();
+    }
   }
   if (!on && occupancy) {
     if (aircraft || car) {
       const vehicle = aircraft || car;
       stopEngineAudio();
       releaseGuns();
+      disposeSeatPose();
       vehicle.reset();
       // `reset()` only restores the exterior when it owns the swap, and it
       // no longer does. Vacating the seat has to put the fuselage back
@@ -4318,14 +4350,20 @@ function drive(dt) {
   if (driving) {
     const held = captured ? keys : EMPTY_KEYS;
 
-    // One axis, three jobs — accelerate, brake, reverse — which is exactly the
-    // split `ground.js` reads off `c_PIThrottle`. Unlike the aircraft's
-    // latching quadrant this springs back to centre: a lifted pedal is engine
-    // braking, not a held power setting.
-    car.setInput('c_PIThrottle', axisToward(car.input('c_PIThrottle'),
-      (held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0), dt));
-    car.setInput('c_PIYaw', axisToward(car.input('c_PIYaw'),
-      (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0), dt));
+    // Ground vehicles take keyboard input directly — the game's PhysicsEngine
+    // samples c_PIThrottle/c_PIYaw and the Engine's own RotationalBundle servo
+    // (setMaxSpeed/setAcceleration) rate-limits steering. The aircraft-style
+    // `axisToward` smoothing (0.4 s to full deflection) made every land vehicle
+    // feel like it was driving in molasses: throttle that takes half a second
+    // to floor, steering that lags half a wheel-turn behind the hand. A jeep that
+    // can't turn its front axle in time plows into the next corner sideways,
+    // and a Sherman's differential steer answers like a drunk tank. Drive feels
+    // snappy when the pedal and the rack answer at once and the engine's own
+    // servo is the only governor.
+    car.setInput('c_PIThrottle',
+      (held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0));
+    car.setInput('c_PIYaw',
+      (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0));
     // A Willys carries no guns, but the inputs cost nothing and whatever
     // armed car arrives next inherits both triggers with them. `c_PIAltFire`
     // is the one that was missing: a Sherman's coaxial machine gun declares
@@ -4464,16 +4502,15 @@ function switchSeat(position) {
   if (!occupancy) return;
   const seatId = occupancy.seatIdAt(position);
   if (seatId === undefined || seatId === occupancy.activeSeatId) return;
+  // Discard the previous seat's soldier pose (if any) before loading the new
+  // one — a driver→passenger switch on a Willy, or vice-versa.
+  disposeSeatPose();
   occupancy.setActiveSeat(seatId);
   collectMannedGuns();
-  // Same reasoning as `setPilot`'s own post-`collectGuns` call: this seat's
-  // FireArms just got freshly-cloned flash materials from `collect()`, and
-  // switching seats is exactly the "already mid-play" moment rule 6 is about
-  // — the newly active seat's first shot must not be the first draw call
-  // that program ever sees.
   warmSubtree(occupancy.root);
   feedVehicleHud();
   hud.textContent = mannedActive() ? HUD_MANNED : car ? HUD_DRIVE : HUD_PILOT;
+  loadSeatPose();
 }
 
 // --- feeding the vehicle/gun HUD variables (BRIEFING2.md's contract) -------
@@ -4996,6 +5033,7 @@ function leaveManned() {
   // replacing it (`collectMannedGuns` on the next entry only clears whatever
   // is still in `mannedGuns`, which this function is about to empty).
   releaseGuns();
+  disposeSeatPose();
   disposeEngineAudio();
   freezeVehicle(occupancy.root);
   clearVehicleHud();
@@ -5031,6 +5069,7 @@ function exitManned() {
 // and the presentation layer.
 
 let soldier = null;
+let seatSoldier = null;   // the seated soldier pose scene, if one is loaded
 let flags = [];
 let prone = false;           // `c_PILie` is a toggle, not a hold
 const FLY_FOV = camera.fov;
@@ -5076,33 +5115,51 @@ let supplyDepotsRoot = null;
  *  a closure over it, so it always acts on whatever is currently in hand. */
 const supplyTarget = { x: 0, y: 0, z: 0, team: 2, armor: null, refillAmmo: null };
 
-// Fall damage (`verify-r4.md` R4-18): no height/speed-to-damage formula
-// exists anywhere `Armor`'s own code, `handleCollision` or `handleDamage`
-// reach — two independent passes (research and verify) read all three in
-// full and found nothing. This is therefore a **viewer approximation**, not
-// the engine's law: ordinary traversal (a jump's own landing speed,
-// `JUMP_SPEED`, doubled, so stepping off a low ledge is always free) costs
-// nothing; a fall at or past `LETHAL_FALL_SPEED` is fatal; damage ramps
-// linearly between the two. Open question this approximation stands on:
-// R4-18 — replace this ramp if the real formula ever surfaces.
+// Fall damage — engine-faithful, replaces the invented R4-18 ramp.
+// `verify-r4.md` R4-18 and ledger HP-6 once claimed *no* fall-damage formula
+// existed and this page ran a hand-tuned “safe 4 m / lethal 21 m linear ramp”
+// (SAFE_FALL_SPEED = 2×JUMP_SPEED, LETHAL_FALL_SPEED = 25). That was wrong:
+// HP-6 was **refuted on 2026-09-18** — the engine does damage soldiers who
+// fall. GameServer::handleCollisionLandOrWater's soldier branch (CID ==
+// CID_BFSoldierTemplate) computes a fall severity and delivers it through the
+// object-level `*0x15c` dispatch, which is `BFSoldier::handleDamage`
+// (0x08270980) → `SimpleObject::handleDamage` → `Armor::damage` (subtracts
+// HP). See `features/bf1942-3d-models/fall-damage-research-groundwork-2026-09-17.md`.
 //
-// Tracked as a height, not a sampled velocity: `SoldierBody#settle()` zeroes
-// `velocity.y` in the very same `step()` call that flips `grounded` true (it
-// has to, to plant the body on the floor), so a peak read from
+// Confirmed engine law (decoded 2026-09-18): the landed severity is
+//
+//   severity = cos³θ · (S_obj · |v|²) · M1 · M2
+//
+// where θ is the impact angle off the surface normal, |v| the landing speed,
+// and S_obj/M1/M2 are per-surface MaterialManager damage scalars. For a
+// straight-down foot fall cosθ = 1 and |v|² = 2|g|h, so the damage is the
+// classic kinetic `½µv²` collision law — it scales with impact speed SQUARED,
+// which is exactly why the first engine-faithful pass (a linear
+// `(drop − 1.0) × damping`) under-fit ~15x: a Wake-airstrip ledge fall costs
+// the soldier his whole health bar in-game, but read as ~2 HP with the linear
+// model. The one scalar the binary leaves to the damage tables (the combined
+// S_obj·M1·M2 for a ground/terrain surface) is calibrated here against that
+// measured lethal fall.
+//
+// Tracking stays a height, not a sampled velocity: `SoldierBody#settle()`
+// zeroes `velocity.y` in the very same `step()` call that flips `grounded`
+// true (it has to, to plant the body on the floor), so a peak read from
 // `soldier.velocityY` *after* `step()` returns always misses the last
 // partial tick's own acceleration — verified against this file's own
 // `__dropFromHeight` hook, which under-reported a 12 m drop's damage by
 // about 5% versus the closed-form prediction. A soldier's drag is inert
 // enough over any survivable drop (`physics.js`'s own terminal-velocity
-// note, ~730 m/s) that `v^2 = 2|g|h` inverts cleanly, so the two speed
-// thresholds are converted once to the heights that produce them, and the
-// quantity actually tracked below is the drop itself — exact at any tick
-// rate, since a landed body's `y` is the ground height exactly, never a
-// clamped derivative of it.
-const SAFE_FALL_SPEED = JUMP_SPEED * 2;     // ~10.8 m/s, ~4 m of drop
-const LETHAL_FALL_SPEED = 25;               // m/s, ~21 m of drop
-const SAFE_FALL_HEIGHT = SAFE_FALL_SPEED * SAFE_FALL_SPEED / (2 * Math.abs(GRAVITY));
-const LETHAL_FALL_HEIGHT = LETHAL_FALL_SPEED * LETHAL_FALL_SPEED / (2 * Math.abs(GRAVITY));
+// note, ~730 m/s) that `v² = 2|g|h` inverts cleanly, so the quantity
+// actually tracked below is the drop — exact at any tick rate, since a
+// landed body's `y` is the ground height exactly, never a clamped
+// derivative of it.
+const FALL_FREE_TOLERANCE = 1.0;   // m — engine free-fall tolerance before any HP severity
+const KIT_FALL_DAMPING = 1.0;      // vanilla kits set no damping; default unmodified
+// hp per unit of kinetic measure `|v|²`/|g| (v² = 2|g|h => kinetic = 2h).
+// Calibrated so the user's measured Wake airstrip ledge fall (~3 m in the
+// viewer's height accounting) is lethal (≥ the soldier's 30 max HP) on the
+// confirmed kinetic law — see the groundwork doc's 'Empirical calibration'.
+const FALL_KINETIC_HP = 10;        // ≈ hit points per metre of fall at |g|=14.73
 let fallPeakY = null;   // highest y seen since last leaving the ground; null while grounded
 let wasGrounded = true;
 
@@ -5265,18 +5322,28 @@ function onFoot(dt) {
   };
   soldier.step(dt, input);
 
-  // Fall damage — an approximation; see `SAFE_FALL_HEIGHT`'s own comment
-  // above (R4-18). Tracks the highest y seen while airborne (a jump's own
-  // apex, when it was a jump) and judges the drop from it the instant the
-  // body reports grounded again.
+  // Fall damage — engine-faithful; see `FALL_KINETIC_HP`'s own comment
+  // (HP-6 refuted 2026-09-18; the R4-18 “no formula” approximation and the
+  // first linear pass are both gone). Tracks the highest y seen while
+  // airborne (a jump's own apex, when it was a jump) and judges the drop
+  // from it the instant the body reports grounded again. The engine law is
+  // kinetic — `severity = cos³θ · (S·|v|²) · M1·M2`, i.e. HP ∝ impact speed
+  // squared — which for a vertical foot fall is `∝ 2|g|·h`. So damage scales
+  // with the DROP (the height exactly, `v² = 2|g|h`), not with a fixed per-
+  // metre linear term at some one speed.
   if (!soldier.grounded) {
     fallPeakY = fallPeakY === null ? soldier.y : Math.max(fallPeakY, soldier.y);
   } else {
     if (!wasGrounded && soldierArmor && fallPeakY !== null) {
       const dropped = fallPeakY - soldier.y;
-      if (dropped > SAFE_FALL_HEIGHT) {
-        const ramp = (dropped - SAFE_FALL_HEIGHT) / (LETHAL_FALL_HEIGHT - SAFE_FALL_HEIGHT);
-        soldierArmor.applyDamage(Math.min(1, ramp) * soldierArmor.maxHitPoints);
+      // The engine's free-fall tolerance: a fall this short costs nothing.
+      if (dropped > FALL_FREE_TOLERANCE) {
+        // `FALL_KINETIC_HP` already folds the engine's `2|g|` and the
+        // calibrated material scalar; multiplying the (drop − tolerance)
+        // fall by it reproduces the kinetic damage without needing a
+        // velocity read. Kit damping multiplies as in the engine's chain.
+        const dmg = (dropped - FALL_FREE_TOLERANCE) * KIT_FALL_DAMPING * FALL_KINETIC_HP;
+        if (dmg > 0) soldierArmor.applyDamage(dmg);
       }
     }
     fallPeakY = null;
@@ -5761,6 +5828,103 @@ function disposeHandWeapon() {
   if (optOnFoot.checked && soldier) {
     camera.fov = FOOT_FOV;
     camera.updateProjectionMatrix();
+  }
+}
+
+/** Load the seat-pose glb for the active seat, if one is declared.
+ *
+ * A passenger seat's `extras.seat.poseAnimation` (SEAT-9, extracted by
+ * `extract_pose.py --seat-poses`) names the animation states the engine's own
+ * `setUseSeat` resolves — `Ub_PassengerInWilly`/`Lb_PassengerInWilly` — which
+ * map to `${soldier}__${poseName}.pose.glb` in the poses tree. The driver's
+ * seat declares none and falls back to the soldier's own template, so no glb is
+ * loaded and no rendered soldier appears in the cockpit view.
+ *
+ * The glb is parented to the seat's first EntryPoint so it rides the vehicle's
+ * own motion, and an AnimationMixer plays the `seat.lower`+`seat.upper` clips
+ * the extractor baked in. Visibility follows the camera mode: hidden in
+ * cockpit (first-person), shown in every external view (C). */
+const seatPoseLoader = new GLTFLoader();
+let seatPoseMixer = null;
+let seatPoseActions = null;
+
+async function loadSeatPose() {
+  disposeSeatPose();
+  if (!occupancy || !optPilot.checked) return;
+  const seat = occupancy.seatInfo(occupancy.activeSeatId);
+  if (!seat?.poseAnimation?.upperBody) return;     // driver / manned gun — no glb
+  const poseName = seat.poseAnimation.upperBody.startsWith('Ub_')
+    ? seat.poseAnimation.upperBody.slice(3)
+    : seat.poseAnimation.upperBody;
+  const soldierName = soldierTemplateFor(
+    flags.find(f => f.team === deployTeamId) || { team: deployTeamId });
+  const url = `${MODELS_BASE}/poses/${soldierName}__${poseName}.pose.glb${bust()}`;
+  let gltf;
+  try {
+    gltf = await seatPoseLoader.loadAsync(url);
+  } catch {
+    // Pose glb not extracted for this soldier/pose — fall back to no rendered
+    // soldier (the pre-existing behaviour).
+    return;
+  }
+  const soldierScene = gltf.scene;
+  soldierScene.traverse(obj => {
+    if (obj.isSkinnedMesh) obj.frustumCulled = false;
+  });
+  soldierScene.userData.seatPose = true;
+
+  // Parent on the seat's first EntryPoint so the figure moves with the vehicle.
+  const entry = seat.entryPoints[0];
+  if (entry) {
+    entry.add(soldierScene);
+    // The entry point's own local position/orientation is where the soldier
+    // stands relative to its parent — zero the soldier's local transform so it
+    // inherits exactly that, not an offset on top of it.
+    soldierScene.position.set(0, 0, 0);
+    soldierScene.quaternion.set(0, 0, 0, 1);
+  } else {
+    scene.add(soldierScene);
+    soldierScene.position.set(0, 0, 0);
+  }
+
+  seatSoldier = soldierScene;
+  seatSoldier.visible = !view?.firstPerson;
+
+  // Play the lower + upper seat clips the extractor wrote. They are independent
+  // state machines (like gaits), so two actions at full weight compose.
+  const clips = gltf.animations || [];
+  const lowerClip = THREE.AnimationClip.findByName(clips, 'seat.lower');
+  const upperClip = THREE.AnimationClip.findByName(clips, 'seat.upper');
+  if (lowerClip || upperClip) {
+    seatPoseMixer = new THREE.AnimationMixer(soldierScene);
+    seatPoseActions = {};
+    if (lowerClip) {
+      seatPoseActions.lower = seatPoseMixer.clipAction(lowerClip);
+      seatPoseActions.lower.play();
+    }
+    if (upperClip) {
+      seatPoseActions.upper = seatPoseMixer.clipAction(upperClip);
+      seatPoseActions.upper.play();
+    }
+  }
+}
+
+function disposeSeatPose() {
+  if (seatPoseMixer) { seatPoseMixer.stopAllAction(); seatPoseMixer = null; }
+  seatPoseActions = null;
+  if (seatSoldier) {
+    seatSoldier.traverse(obj => {
+      if (obj.isSkinnedMesh && obj.skeleton?.dispose) obj.skeleton.dispose();
+    });
+    seatSoldier.removeFromParent?.();
+    if (seatSoldier.parent) seatSoldier.parent.remove(seatSoldier);
+    seatSoldier = null;
+  }
+}
+
+function updateSeatPoseVisibility() {
+  if (seatSoldier) {
+    seatSoldier.visible = !view?.firstPerson;
   }
 }
 
@@ -6715,6 +6879,9 @@ function showView(mode) {
   hudViewTimer = setTimeout(() => {
     if (optPilot.checked) hud.textContent = car ? HUD_DRIVE : HUD_PILOT;
   }, 2200);
+  // Seat poses only draw in external views — hide in the cockpit (CVMInside),
+  // since the player is looking out from the pilot's eyes, not at the seat.
+  updateSeatPoseVisibility();
 }
 
 /**
@@ -8317,6 +8484,7 @@ function frame(dt) {
   // Unconditional: rounds already in the air have to finish their flight even
   // if the trigger, the pilot mode or the whole aircraft has gone away.
   guns.advance(dt);
+  if (seatPoseMixer && optPilot.checked) seatPoseMixer.update(dt);
   // After `advance`, so a round that landed this frame is already accounted for
   // when the tier is picked. Unconditional for the same reason `advance` is: a
   // tank set alight before the player climbed out keeps burning down to nothing

@@ -221,6 +221,14 @@ export class GroundVehicle extends Vehicle {
     this.revs = 0;
     this.collectChassis();
 
+    // Hull collision against static objects (buildings, walls, other vehicles).
+    // `k.boundingRadius` is the same value the drag equation uses — large enough
+    // to keep the body off a wall without catching on every kerb. The owner id
+    // is the collision index's slot for this vehicle's own hull, which must be
+    // skipped in the sweep or the vehicle collides with itself.
+    this._hullRadius = this.spec.boundingRadius;
+    this._collisionOwner = this.collider?.statics?.ownerOf(node) ?? -1;
+
     // Body-frame inertia, diagonal. A box is symmetric enough for a jeep.
     this._inertia = new THREE.Vector3(
       this.spec.inertiaPitch, this.spec.inertiaYaw, this.spec.inertiaRoll);
@@ -529,6 +537,7 @@ export class GroundVehicle extends Vehicle {
     // vanilla level.
     const kDrag = Math.PI * k.boundingRadius * k.boundingRadius * k.drag / k.mass;
     accel.addScaledVector(s.velocity, -kDrag);
+    const prevX = s.position.x, prevY = s.position.y, prevZ = s.position.z;
     s.velocity.addScaledVector(accel, h);
     s.position.addScaledVector(s.velocity, h);
 
@@ -549,6 +558,44 @@ export class GroundVehicle extends Vehicle {
       s.position.y = under + 0.05;
       if (s.velocity.y < 0) s.velocity.y = 0;
       s.grounded = true;
+    }
+
+    // Hull collision against static objects (walls, buildings, parked
+    // vehicles). Wheels see the heightfield via `groundHeight`; without this
+    // sweep the body would pass straight through any hull that does not also
+    // sit on the heightfield — a building wall, a pier — because nothing else
+    // checks the static mesh against the body's volume. `WorldCollider`
+    // already does this for the soldier (`physics.js`); the vehicle just was
+    // never wired in. A SKIN offset keeps the body from vibrating against the
+    // surface it is butted up to. `skipOwner` of -1 (no match) skips nothing,
+    // so a test collider with no owner index still works.
+    if (this.collider && this._hullRadius > 0) {
+      const dx = s.position.x - prevX;
+      const dy = s.position.y - prevY;
+      const dz = s.position.z - prevZ;
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist > 1e-6) {
+        const len = 1 / dist;
+        const hit = this.collider.sweepSphere(
+          prevX, prevY, prevZ, dx * len, dy * len, dz * len,
+          dist, this._hullRadius, this._collisionOwner);
+        if (hit) {
+          const backOff = Math.max(0, hit.t - 0.02);
+          s.position.x = prevX + dx * len * backOff;
+          s.position.y = prevY + dy * len * backOff;
+          s.position.z = prevZ + dz * len * backOff;
+          // Kill the velocity component into the surface normal (it points
+          // from the hull toward the vehicle centre). Lateral and tangential
+          // components are preserved so the vehicle slides along the wall.
+          const vDotN = s.velocity.x * hit.nx + s.velocity.y * hit.ny
+                      + s.velocity.z * hit.nz;
+          if (vDotN < 0) {
+            s.velocity.x -= vDotN * hit.nx;
+            s.velocity.y -= vDotN * hit.ny;
+            s.velocity.z -= vDotN * hit.nz;
+          }
+        }
+      }
     }
   }
 
@@ -1028,6 +1075,10 @@ export class TrackedVehicle extends Vehicle {
     // read against `w.x/y/z`'s own meaning in `#step` below.
     this._inertia = new THREE.Vector3((l2 + h2) / 12, (w2 + l2) / 12, (w2 + h2) / 12);
 
+    // Hull collision against static objects — same as `GroundVehicle`.
+    this._hullRadius = this._boundingRadius;
+    this._collisionOwner = this.collider?.statics?.ownerOf(node) ?? -1;
+
     // Scratch, so a tick allocates nothing — the same set `GroundVehicle`
     // keeps, for the same reason.
     this._q = new THREE.Quaternion();
@@ -1472,6 +1523,7 @@ export class TrackedVehicle extends Vehicle {
     accel.y += GRAVITY;
     const kDrag = Math.PI * this._boundingRadius * this._boundingRadius * this.drag / this.mass;
     accel.addScaledVector(s.velocity, -kDrag);
+    const prevX = s.position.x, prevY = s.position.y, prevZ = s.position.z;
     s.velocity.addScaledVector(accel, h);
     s.position.addScaledVector(s.velocity, h);
 
@@ -1494,6 +1546,35 @@ export class TrackedVehicle extends Vehicle {
       s.position.y = under + 0.05;
       if (s.velocity.y < 0) s.velocity.y = 0;
       s.grounded = true;
+    }
+
+    // Hull collision against static objects — same sweep as `GroundVehicle`.
+    // skipOwner of -1 skips nothing, so the sweep works even with a mock
+    // collider that has no owner index.
+    if (this.collider && this._hullRadius > 0) {
+      const dx = s.position.x - prevX;
+      const dy = s.position.y - prevY;
+      const dz = s.position.z - prevZ;
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist > 1e-6) {
+        const len = 1 / dist;
+        const hit = this.collider.sweepSphere(
+          prevX, prevY, prevZ, dx * len, dy * len, dz * len,
+          dist, this._hullRadius, this._collisionOwner);
+        if (hit) {
+          const backOff = Math.max(0, hit.t - 0.02);
+          s.position.x = prevX + dx * len * backOff;
+          s.position.y = prevY + dy * len * backOff;
+          s.position.z = prevZ + dz * len * backOff;
+          const vDotN = s.velocity.x * hit.nx + s.velocity.y * hit.ny
+                      + s.velocity.z * hit.nz;
+          if (vDotN < 0) {
+            s.velocity.x -= vDotN * hit.nx;
+            s.velocity.y -= vDotN * hit.ny;
+            s.velocity.z -= vDotN * hit.nz;
+          }
+        }
+      }
     }
   }
 

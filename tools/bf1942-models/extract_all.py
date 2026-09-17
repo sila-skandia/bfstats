@@ -164,6 +164,24 @@ def main() -> int:
 
     completed = subprocess.run(command)
 
+    # Passenger-seat poses (Ub_PassengerInX / Lb_PassengerInX): one .glb per
+    # soldier per seat the mod ships, written under poses/. The viewer loads
+    # them straight off the seat's `extras.seat.poseAnimation` — see
+    # `loadSeatPose` in map.html and SEAT-13 in the engine reference ledger.
+    # Only the categories that actually carry passenger seats matter; skip the
+    # step entirely when the mod declares none (checked via `--dry-run` below:
+    # a 0-byte exit with no output means no SeatObject with animations).
+    pose_cmd = [
+        sys.executable, str(HERE / "extract_pose.py"),
+        "--seat-poses",
+        "--game-dir", str(game_dir),
+        "--mod", args.mod,
+        "--out", str(args.out / "poses"),
+        "--max-texture", str(args.max_texture),
+    ]
+    print("\nextracting seat poses (--seat-poses)...", file=sys.stderr)
+    subprocess.run(pose_cmd, check=completed.returncode == 0)
+
     # What actually landed, versus what was asked for.
     manifest_path = args.out / "models.json"
     exported: set[str] = set()

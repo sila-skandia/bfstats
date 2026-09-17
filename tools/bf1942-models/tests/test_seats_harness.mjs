@@ -376,7 +376,12 @@ function shermanWithRenamedGunnerNode() {
   const held = new VehicleOccupancy(sherman(), { GroundVehicle: FakeDrive });
   held.setActiveSeat(held.rootId);
   const towerAxis = held.turret.axes.find(a => a.axisName === 'yaw');
-  for (let i = 0; i < 120; i++) { held.turret.aim(120, 0); held.turret.step(1 / 60); }
+  // 60 frames at full right: with the 4x-scaled acceleration the turret
+  // reaches ~140 deg/s in under half a second, so 60 frames (~2 s) puts it
+  // well past the 30-deg threshold the test below asserts on, without wrapping
+  // the free yaw axis past its ±180 bound (which 120 frames did once the ramp
+  // got faster).
+  for (let i = 0; i < 60; i++) { held.turret.aim(120, 0); held.turret.step(1 / 60); }
   const traversed = round(towerAxis.angle, 2);
   held.setActiveSeat(held.seatIdAt(1));
   const rigWhileAway = held.turret;
@@ -477,8 +482,10 @@ function shermanWithRenamedGunnerNode() {
   // Wind-up: an axis that carries its own `setAcceleration` ramps at that
   // number, and one that does not falls back to TURRET_ACCELERATION. Both
   // driven at a saturating sample, so the only thing between rest and the
-  // declared `maxSpeed` is the wind-up itself. Sampled at the moment each
-  // should have just reached its cap.
+  // declared `maxSpeed` is the wind-up itself. The acceleration is scaled by
+  // `speedScale` (4) in `step`, so the effective ramp rate is 4× — without it
+  // the cap (maxSpeed*4) is 4× further away but the ramp rate stays the game's
+  // value, and every turret takes 4× longer to answer a flick than it should.
   function windUp(spec, seconds) {
     const a = new TurretAxis('yaw', node('WindUp', {}), spec);
     const ticks = Math.round(seconds * 60);
@@ -488,9 +495,11 @@ function shermanWithRenamedGunnerNode() {
     for (let i = 0; i < ticks; i++) { a.feed(1e5); a.step(1 / 60); }
     return a.velocity;
   }
-  // 35 deg/s at 350 deg/s^2 is a tenth of a second to the cap.
+  // 140 deg/s (35 * speedScale) at 1400 deg/s^2 (350 * speedScale) is a tenth
+  // of a second to the cap — the game's own 0.1 s ratio, preserved.
   const ownAccel = { free: true, maxSpeed: 35, direction: 1, acceleration: 350 };
-  // Same gun without the number: the fallback's own 90 deg/s^2 needs 0.39 s.
+  // Same gun without the number: the fallback 90 * speedScale = 360 deg/s^2
+  // needs ~0.39 s to reach the 140 deg/s cap.
   const fallbackAccel = { free: true, maxSpeed: 35, direction: 1 };
   results.windUp = {
     ownAtTenth: round(windUp(ownAccel, 0.1), 1),
@@ -669,6 +678,49 @@ function cadenceRig(stats) {
   parent.position.set(10, 0, 5);
   readWorldPose(child, pos, quat);
   results.readWorldPose = { before, after: pos.toArray() };
+}
+
+// --- seat pose animation strings (SEAT-9) ----------------------------------
+//
+// `Ub_PassengerInWilly`/`Lb_PassengerInWilly` name the animation states the
+// engine's own `setUseSeat` resolves for a passenger seat. The driver seat has
+// neither — it falls back to the soldier's own template. The survey must carry
+// the strings through unchanged and leave them null on a seat that declares
+// none.
+
+{
+  const passengerSeat = node('WillyPassengerSeat', {
+    control: 'WillyPassenger', templateKind: 'SeatObject',
+    seat: {
+      control: 'WillyPassenger', entryRadius: 2.3,
+      poseAnimation: { upperBody: 'Ub_PassengerInWilly', lowerBody: 'Lb_PassengerInWilly' },
+    },
+  });
+  const entry = node('WillyEntry', {
+    control: 'WillyPassenger', templateKind: 'EntryPoint',
+    seat: { control: 'WillyPassenger', entryRadius: 2.3 },
+  });
+  const camera = node('WillyCamera', {
+    control: 'WillyPassenger', templateKind: 'Camera',
+    cameraView: { control: 'WillyPassenger', cvm: { CVMInside: true, CVMChase: false } },
+  });
+  const root = node('WillyPassengerSeatObj', {
+    control: 'WillyPassenger', templateKind: 'SeatObject',
+    seat: { control: 'WillyPassenger' },
+  }, passengerSeat, entry, camera);
+  const { seats } = surveyVehicle(root);
+  const seat = seats.get('WillyPassenger');
+  results.seatPose = {
+    hasPoseAnimation: !!seat?.poseAnimation,
+    upperBody: seat?.poseAnimation?.upperBody,
+    lowerBody: seat?.poseAnimation?.lowerBody,
+    cameraViewModes: seat?.cameraViewModes,
+  };
+
+  // The bare driver seat (from the jeep fixture) declares none.
+  const { seats: driverSeats } = surveyVehicle(jeep());
+  const driver = driverSeats.get('Willy');
+  results.seatPose.driverHasNoPose = driver?.poseAnimation === null;
 }
 
 process.stdout.write(JSON.stringify(results, null, 2));

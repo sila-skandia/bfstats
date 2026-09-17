@@ -67,72 +67,80 @@ itself (`hpLostWhileCriticalDamage`, `hpLostWhileUpSideDown`,
 amount per firing, **not scaled by `dt`** — a longer frame does not lose
 more HP per water tick, it just checks in less often.
 
-## 3. A collision never costs hit points
+## 3. A collision never costs hit points — except soldiers falling
 
-Settled 2026-09-17 (HP-6, HP-6b, HP-6c, HP-6d), researched and then
-independently re-derived by a verifier. This section previously said the
-fall-damage formula "is somewhere else entirely". It is nowhere: **there is no
-such formula, for a soldier or for a vehicle.**
+HP-6 was closed in the negative on 2026-09-17, researched and then
+independently re-derived by a verifier, concluding "there is no fall-damage
+formula." **That was refuted on 2026-09-18**: the soldier fall branch does
+apply hit-point damage via the object-level `*0x15c` dispatch. See
+`features/bf1942-3d-models/fall-damage-research-groundwork-2026-09-17.md` for
+the full re-derivation. The earlier pass's *descriptive* reading of the
+handlers is still accurate — it just resolved the wrong consumer.
 
-`SimpleObject::handleCollision` (`0x081dab40`) walks the composite chain for
-the nearest Armor, calls its `collision()` (vtable `+0xe8`) and
-`setLastCollisionHeight` (vtable `+0xf8`), and then dispatches on the
-`dice::bf::game` global's own vtable — `+0x30`/`+0x34` on the stored vptr —
-choosing the projectile variant when `this`'s `+0x4c` class is
-`CID_ProjectileTemplate` (`0x86c2b90`). The singleton is a `GameServer`, whose
-vtable (`0x0871b0e0`) overrides both slots, so a physical contact lands in
-`GameServer::handleCollision` (`0x08156020`). That is a 101-byte tail-call
+What the earlier pass got right: `SimpleObject::handleCollision`
+(`0x081dab40`) walks the composite chain for the nearest Armor, calls its
+`collision()` (vtable `+0xe8`) and `setLastCollisionHeight` (vtable `+0xf8`),
+and then dispatches on the `dice::bf::game` global's own vtable —
+`+0x30`/`+0x34` — choosing the projectile variant when `this`'s `+0x4c` class
+is `CID_ProjectileTemplate` (`0x86c2b90`). The singleton is a `GameServer`,
+whose vtable (`0x0871b0e0`) overrides both slots, so a physical contact lands
+in `GameServer::handleCollision` (`0x08156020`). That is a 101-byte tail-call
 dispatcher: `otherObject != NULL` goes to `handleCollisionObjectVsObject`
-(`0x081551c0`), and `NULL` — which is how **terrain and water** arrive, written
-in as `mov [ebp+0xc],0x0` — goes to `handleCollisionLandOrWater`
-(`0x08154960`). There is no separate physics-only terrain path.
+(`0x081551c0`), and `NULL` — how **terrain and water** arrive — goes to
+`handleCollisionLandOrWater` (`0x08154960`). Neither of the two, directly, nor
+`Game::playCollisionEffect` (`0x0805de20`), ever calls an Armor `+0x20`/`+0x24`
+(damage/heal). That part of HP-6 stands.
 
-Both of those functions compute a real impact-severity number: the magnitude of
-a velocity-like vector, the absolute cosine between it and the surface normal,
-`MaterialManager` damage and effect lookups, `Armor::getSpeedMod()`, and — only
-for `CID_BFSoldierTemplate` — a fall-height term, `getLastCollisionHeight()`
-minus current Y, clamped against 1.0/2.0/20.0 and scaled by
-`BFSoldier::getDamageDampingFromActiveKitParts()` (`0x0827ec00`).
+**The gap.** `handleCollisionLandOrWater` has a soldier branch (entered when
+the collision object's class `== CID_BFSoldierTemplate` `0x86c2b88`, at
+`0x8154d20`) that computes a fall severity and delivers it through
+`*0x15c` at `0x8154d12`/`0x815505b` — **not** `playCollisionEffect` (a direct
+`e8` call that only appears in the other branches at `0x8154b72`/`0x8154f0b`).
+Slot `*0x15c` on the BFSoldier's world-facing sub-vtable (`0x0872efc4`) is
+`BFSoldier::handleDamage` (`0x08270980`; value at `0x0872efc4+0x15c`). The
+same dispatch is used by `_giveDamage`, `killPlayer`,
+`handleCollisionForProjectile` and `handleCollisionObjectVsObject` — it is the
+engine's object-level damage/kill dispatch.
 
-**And then they spend all of it on `Game::playCollisionEffect`
-(`0x0805de20`)** — the dust and the thud. Both functions were read in full
-(673 and 1127 lines). Every direct call resolves by symbol to something that is
-not an HP mutator; every indirect call-site offset was enumerated. Armor's
-`damage`/`heal` slots (`+0x20`/`+0x24`) never appear at all. The three
-`+0x18`/`+0x1c` sites inside ObjectVsObject resolve by data flow to the
-`playerManager` singleton and to an `IPlayerControlObject` from the gate chain
-— offset collisions, not Armor. Neither function tail-calls out, and
-`SimpleObject::handleDamage` sits at vtable `+0xd8`, which never occurs in
-either. `playCollisionEffect` itself is a 352-byte leaf with no HP mutator in
-it.
+The fall severity is `(getLastCollisionHeight().Y − current.Y)` — the fall
+distance — minus a 1.0 m free-fall tolerance, times
+`BFSoldier::getDamageDampingFromActiveKitParts()` (`0x0827ec00`), shaped by
+impact-speed thresholds (constants 10, 30 and a `/20` scaler) and gated so a
+fall below the 8.0 bound deals nothing. It reaches `Armor::damage`
+(`0x08172730`, a straight HP subtraction) via `BFSoldier::handleDamage` →
+`SimpleObject::handleDamage` (`0x081db230`, find-nearest-Armor). So **a
+soldier who falls far enough loses hit points, and can die**, matching retail
+gameplay.
 
-So the only path that damages anything is `handleCollisionForProjectile`
-(`0x08153ba0`) — a shot — through `Projectile::getDamage` and the
-`MaterialManager` tables. A plane that flies into a hill loses no hit points
-for the impact. What kills it afterwards is §2's once-per-second tick, once it
-comes to rest upside down or in water.
+The prior pass confused itself by reading the severity's *only direct* consumer
+as `playCollisionEffect` — it never resolved the second, `*0x15c` dispatch the
+soldier branch uses, because its sweep only mapped `getComponent(0xc4a4)` call
+sites and Armor `+0x20`/`+0x24` occurrences. Expressly:
 
-**The gate at `0x81dae30` is self-collision suppression, not a type test
-(HP-6b).** It walks `getRootParent(this)` for `IID_ICompositeObject`
-(`0x86c2a58`) toward the nearest `IID_IPlayerControlObject` (`0x86d3c50`)
-ancestor — the `vtable+0x90` call is on *that* object, not on `otherObject` —
-then makes two chained comparisons: `ObjectSpawner::getHoldObjectId()`
-(`0x08314a50`) against **self's** own root (`edi+0x48`), and only if that
-matches, an `ICompositeObject`-identity compare against
-`getRootParent(otherObject)`. Both must pass before the Armor-recording block
-is bypassed. A shell does not record a collision against the gun that fired it.
+- Armor `damage`/`heal` (`+0x20`/`+0x24`) never appear in either handler —
+  true, but the damage travels *through slot `0x15c` → handleDamage →* Armor
+  `damage`, so the absence of a direct `+0x20` call in the handler is not the
+  same as the handler being harmless.
+- `playCollisionEffect` is a non-damaging leaf — true, but the soldier fall
+  branch does not (always) call it.
+- No tail calls out — true, but slot `0x15c` is an in-function indirect
+  dispatch, not a tail call, so the "no tail calls" check could not see it.
+- `SimpleObject::handleDamage` at vtable `+0xd8` never occurs *directly* in
+  the handlers — true; the fall reaches it via slot `0x15c`, so that check
+  proved nothing about falls.
 
-**`setLastCollisionHeight` stores a raw world Y (HP-6d)**, not a fall distance:
-written at `0x81dae83`–`0x81dae98` from `this->vtable[0x38]()`'s Pos3 `+0x4`,
-the only such call site in the binary, and read back once, at `0x08154d37`.
+`Spring::handleCollision` (`0x0824f9b0`) sets two fields and tail-forwards to
+the base — a wheel's contact reaches the same terrain path, and a wheeled
+vehicle body has no soldier branch, consistent with vehicles not suffering
+fall damage (only soldiers get the `*0x15c` +height term; a vehicle crash
+still deals hit points only through §2's tick once it is destroyed, matching
+the HP-6/ARM-6 finding that nothing else reads a vehicle's Armor).
 
-Two smaller corrections from the same pass. `Spring::handleCollision`
-(`0x0824f9b0`) — springs are wheels and suspension — sets two fields and
-tail-forwards every argument to the base, so a wheel's contact reaches the same
-dead end as anything else. `Obstacle::handleCollision` (`0x08315e10`) never
-calls the base: when `otherObject`'s class **is** `CID_BFSoldierTemplate` it
-returns true immediately, and when it is not, it calls its own
-`vtable+0x9c(0,0)` and returns false. Neither touches an Armor.
+**Remaining (for the exact curve):** the branch polarity in the soldier
+falloff (which impact-speed threshold means below→no damage vs above→ramp)
+awaits a verifier re-derivation of the x87 `fsubp`/`fucompp`/`test $0x45`
+operand order — the trap R2 corrected V1 on. The mechanism and constants are
+verified.
 
 ## 4. `handleDamage`: find-nearest-Armor, then dispatch by sign
 

@@ -298,17 +298,20 @@ class SeatsModuleTests(unittest.TestCase):
         # `setAcceleration`'s magnitude is that number — deg/s^2, confirmed,
         # vanilla magnitudes 30–150. `con.py` emits it as of 2026-09-17, so an
         # axis that carries it winds up at exactly its own figure: 350 deg/s^2
-        # is 35 deg/s after a tenth of a second.
-        self.assertAlmostEqual(35.0, self.results["windUp"]["ownAtTenth"], delta=0.5)
+        # is 35 deg/s after a tenth of a second. The acceleration is scaled by
+        # `speedScale` (4) in `step`, so the effective rate is 1400 deg/s^2 and
+        # the cap (35 * 4 = 140) is reached in a tenth of a second.
+        self.assertAlmostEqual(140.0, self.results["windUp"]["ownAtTenth"], delta=0.5)
 
     def test_an_axis_without_one_falls_back_and_is_slower(self) -> None:
         # Every glb baked before that emission. The fallback is the middle of
-        # the confirmed band, 90 deg/s^2 — a quarter of the fixture's own
-        # figure, and still far quicker than the flat one second per gun that
-        # preceded it.
+        # the confirmed band, 90 deg/s^2 — scaled by `speedScale` (4) that is
+        # 360 deg/s^2, reaching the 140 deg/s cap in ~0.39 s. At a tenth of a
+        # second the velocity is 36 deg/s (360 * 0.1); at half a second it has
+        # well overshot the cap and sits at it.
         wind = self.results["windUp"]
-        self.assertAlmostEqual(9.0, wind["fallbackAtTenth"], delta=0.5)
-        self.assertAlmostEqual(45.0, wind["fallbackAtHalf"], delta=0.5)
+        self.assertAlmostEqual(36.0, wind["fallbackAtTenth"], delta=0.5)
+        self.assertAlmostEqual(140.0, wind["fallbackAtHalf"], delta=0.5)
 
     def test_the_mouse_gets_the_travel_it_asks_for(self) -> None:
         # The correction two rounds of tuning could not reach: the input
@@ -419,6 +422,27 @@ class SeatsModuleTests(unittest.TestCase):
         pose = self.results["readWorldPose"]
         self.assertEqual([10, 2, 0], pose["before"])
         self.assertEqual([10, 2, 5], pose["after"])
+
+    # --- seat pose animation strings (SEAT-9) ---------------------------------
+
+    def test_a_passenger_seat_carries_its_pose_animation_strings(self) -> None:
+        # SEAT-9: `seatAnimationUpperBody`/`seatAnimationLowerBody` name the
+        # animation states `setUseSeat` resolves. They come through the assembled
+        # glb's `extras.seat.poseAnimation` and the survey carries them as-is.
+        pose = self.results["seatPose"]
+        self.assertTrue(pose["hasPoseAnimation"])
+        self.assertEqual("Ub_PassengerInWilly", pose["upperBody"])
+        self.assertEqual("Lb_PassengerInWilly", pose["lowerBody"])
+
+    def test_a_passenger_seat_carries_its_cvm_camera_view_flags(self) -> None:
+        # camera-modes.md §3: CVM* booleans say which views (C) a seat offers.
+        pose = self.results["seatPose"]
+        self.assertEqual({"CVMInside": True, "CVMChase": False}, pose["cameraViewModes"])
+
+    def test_a_driver_seat_has_no_pose_animation(self) -> None:
+        # The root seat declares no `seatAnimation*` strings — it falls back to
+        # the soldier's own template, so `poseAnimation` stays null.
+        self.assertTrue(self.results["seatPose"]["driverHasNoPose"])
 
 
 if __name__ == "__main__":

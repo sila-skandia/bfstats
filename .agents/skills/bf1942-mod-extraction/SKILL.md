@@ -291,6 +291,16 @@ Anything worked out goes back into `symbols.json` and `ledger.md` in the same br
 Never promote a symbol without evidence, and never name a field on a plausible guess — an
 invented name is worse than `reserved`, because the next agent will trust it.
 
+**Gameplay-sim facts (hit points, fall damage, soldier death) are settled against the
+Linux dedicated server** (`bf1942_lnxded.static`), not the client — the server is
+authoritative for HP. Fall damage is real (a soldier who falls far enough loses HP via
+`BFSoldier::handleDamage` → `Armor::damage`), kinetic (`HP ∝ impact speed²`), and the
+soldier-fall branch of `GameServer::handleCollisionLandOrWater` (`0x08154960`,
+`0x8154d20`) is the exact code. The full re-derivation, the `*0x15c` dispatch
+identification, the constants, and the one remaining unknown (the per-surface
+MaterialManager scalar — how to resume) are written down in
+`features/bf1942-3d-models/fall-damage-research-groundwork-2026-09-17.md`.
+
 ---
 
 ## 10. UI, HUD and Menu Art: Where the Real Designs Live

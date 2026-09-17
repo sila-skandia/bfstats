@@ -259,10 +259,21 @@ where this aircraft's flash was always meant to be seen.
   the gap in the meantime.
 - **`vehicleFov` is parsed by nothing.** Vanilla never sets it, so the viewer is
   correct today, but an FHSW or bg42 extract would want it (§5a).
-- **`CVM*` is read by nothing.** Every vehicle currently offers all four modes. A
-  seat that declares `CVMChase 0` should have chase skipped in the cycle; it costs a
-  parser field and a filter in `CAMERA_MODES`, and nothing in vanilla exercises it.
 - **`setPivotPosition`** — 17 vanilla Camera uses, mostly `0/0/0` with a ~0.25 m
   nudge on open-top land vehicles. Not modelled; its effect on a first-person view
   is presumably the rotation centre of the look, which our camera takes as the node
   origin.
+
+## 10. Extracted (2026-09-17)
+
+`CVM*` is now parsed (`con.py`) and emitted as `extras.cameraView.cvm` on the
+Camera node — a dict of the *declared* flags only, e.g. `{"CVMINSIDE": true,
+"CVMCHASE": false}`. An empty/absent dict means "all modes available" (the
+omission-means-on rule from §3). `viewer/seats.js` captures it as
+`seat.cameraViewModes` so `CAMERA_MODES` can filter the C cycle per seat.
+
+Nothing in vanilla actually writes a disabling flag on a vehicle camera — every
+vehicle camera omits the CVM* block and gets the full default cycle — but FinnWars
+locks 67 cameras to first person with `CVMChase 0 / CVMFrontChase 0 / CVMFlyBy 0 /
+CVMTrace 0` (§3), so the field earns its keep on mods even if vanilla never
+exercises it.

@@ -14,6 +14,8 @@ const out = {};
 const SHERMAN = {
   hitpoints: 100, maxHitpoints: 100,
   criticalDamage: 12, hpLostWhileCriticalDamage: 1.5,
+  hpLostWhileDamageFromWater: 10, hpLostWhileUpSideDown: 10,
+  damageFromWater: true,
   effects: [
     { hp: 50, effect: 'e_PanzDamage', offset: [0, 0.9, -1.8] },
     { hp: 12, effect: 'e_PanzFire', offset: [0, 1.2, -1.4] },
@@ -29,11 +31,26 @@ const SHERMAN = {
 const SPITFIRE = {
   hitpoints: 100, maxHitpoints: 100,
   criticalDamage: 20, hpLostWhileCriticalDamage: 1.5,
+  hpLostWhileDamageFromWater: 10, damageFromWater: true,
   effects: [
     { hp: 65, effect: 'em_StukaDamage', offset: [0, 0.102, 2.11] },
     { hp: 65, effect: 'em_PlaneDamage', offset: [0, 0.103, 2.11] },
     { hp: 20, effect: 'e_StukaFire', offset: [0, 0.6, 2.11] },
     { hp: 0, effect: 'e_ExplGas', offset: [0, 0, 0] },
+    { hp: -1, effect: 'WaterWaterExplosion', offset: [0, 0, 0] },
+  ],
+};
+
+// A boat: damageFromWater is false, so it does not drown even in water.
+const BOAT = {
+  hitpoints: 500, maxHitpoints: 500,
+  criticalDamage: 350, hpLostWhileCriticalDamage: null,
+  hpLostWhileDamageFromWater: null, damageFromWater: false,
+  effects: [
+    { hp: 350, effect: 'em_LcvpDamage', offset: [0, 1, 0] },
+    { hp: 200, effect: 'waterBoatSinkSmall', offset: [0, 0, 0] },
+    { hp: 125, effect: 'waterBoatSinkLarge', offset: [0, 0, 0] },
+    { hp: 0, effect: 'e_scrapmetal', offset: [0, 0, 0] },
     { hp: -1, effect: 'WaterWaterExplosion', offset: [0, 0, 0] },
   ],
 };
@@ -144,6 +161,63 @@ out.waterDeathFallback = deathTier(
     secondDied: second.died, secondChanged: second.changed,
     destroyed: v.destroyed,
   };
+}
+
+// Water damage: a Sherman in water loses hpLostWhileDamageFromWater (10)
+// per second, starting immediately, flat (not scaled by dt).
+{
+  const v = new DamageableVehicle(SHERMAN);
+  v.update(1.0, { inWater: true });          // first tick: 10 HP gone
+  out.waterTick1 = { hp: v.hitPoints, acc: v.waterAccumulator };
+  v.update(1.0, { inWater: true });          // second tick: another 10
+  out.waterTick2 = { hp: v.hitPoints, acc: v.waterAccumulator };
+  v.update(1.0, { inWater: true });          // third tick
+  out.waterTick3 = { hp: v.hitPoints, acc: v.waterAccumulator };
+}
+
+// A long water frame does not over-damage: two whole seconds cost two ticks,
+// not one.
+{
+  const v = new DamageableVehicle(SHERMAN);
+  v.update(2.0, { inWater: true });          // 2s in one call
+  out.waterLongFrame = { hp: v.hitPoints, acc: v.waterAccumulator };
+}
+
+// Leaving water resets the accumulator: re-entering starts a fresh second.
+{
+  const v = new DamageableVehicle(SHERMAN);
+  v.update(0.5, { inWater: true });          // half-accumulated, no tick yet
+  out.waterExitMid = { hp: v.hitPoints, acc: v.waterAccumulator };
+  v.update(1 / 30, { inWater: false });       // dry: accumulator cleared
+  out.waterExitDry = { acc: v.waterAccumulator };
+}
+
+// A boat (damageFromWater false) never drowns, even in water.
+{
+  const v = new DamageableVehicle(BOAT);
+  v.update(3.0, { inWater: true });
+  out.boatNoWaterDamage = { hp: v.hitPoints, acc: v.waterAccumulator };
+}
+
+// The set: inWaterOwners routes the flag per vehicle, tank sinks, boat floats.
+{
+  const set = new VehicleDamageSet();
+  set.add(3, SHERMAN, { name: 'Sherman' });
+  set.add(4, BOAT, { name: 'LCVP' });
+  set.update(3.0, { inWaterOwners: new Set([3, 4]) });
+  out.setWater = {
+    shermanHp: set.get(3).hitPoints,
+    boatHp: set.get(4).hitPoints,
+    shermanAcc: set.get(3).waterAccumulator,
+  };
+}
+
+// The set: without inWaterOwners nothing burns underwater.
+{
+  const set = new VehicleDamageSet();
+  set.add(3, SHERMAN, { name: 'Sherman' });
+  set.update(3.0);
+  out.setNoWater = { shermanHp: set.get(3).hitPoints };
 }
 
 // The set: register by owner id, apply a hit record, step everything.

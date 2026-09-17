@@ -125,6 +125,45 @@ Barkasse, Riverboat, Sampan, CDNRaft, Sturmboot, and others) — the pattern
 holds without a single exception in the survey, though `exitTimer`'s
 consuming function itself was not found.
 
+## 7. Extracted (2026-09-17)
+
+**Seat pose animation strings (SEAT-9).** `seatAnimationUpperBody` and
+`seatAnimationLowerBody` are now parsed (`con.py`) and emitted as
+`extras.seat.poseAnimation` on the SeatObject node: `{upperBody: "Ub_…",
+lowerBody: "Lb_…"}`. Only passenger seats declare them — a survey of all 14
+installed mods turns up 34 uses, all on passenger seats in vehicles, never on a
+driver's seat or a manned gun's. Names like `Ub_PassengerInWilly`,
+`Lb_PassengerInHanomag`, `Ub_PassengerInKubelWagen` resolve directly off the
+animation state machine (`animations/AnimationStates*.con`), so a pose extractor
+can retarget them without inventing a mapping. `viewer/seats.js` captures them as
+`seat.poseAnimation` via `surveyVehicle`, null when absent (the driver seat fall-
+back case).
+
+**Seat pose models.** `extract_pose.py --seat-poses` resolves each upper-state
+name to its `.baf` clip through the state machine (e.g.
+`Ub_PassengerInWilly` → `animations/Vehicle/3pSitWillyPassUpper.baf`) and
+bakes the soldier's body/head/hands into `${soldier}__${PoseName}.pose.glb`
+under `viewer/models/poses/`. Four vanilla poses × 8 soldiers = 32 files;
+`extract_all.py` runs the step automatically and writes `seat-poses.json` next
+to them. When the mod pairs a non-matching lower (e.g. Black Medal's
+`Ub_PassengerInWilly` + `Lb_PassengerInHanomag`) the matching pair from another
+seat wins (`discover_seat_poses`). Vanilla declares none: `extract_all.py` still
+runs the scan and finds them.
+
+**Camera view modes (CVM*).** The `CVMInside`/`CVMChase`/`CVMFrontChase`/
+`CVMFlyBy`/`CVMTrace`/`CVMExternTrace` booleans on Camera templates are parsed
+and emitted as `extras.cameraView.cvm`, a dict of only the declared flags (absence
+= "all on", per SEAT-10/camera-modes.md §3). `viewer/seats.js` captures them as
+`seat.cameraViewModes`.
+
+**Viewer wiring.** `map.html`'s `loadSeatPose` looks up the active seat's
+`poseAnimation`, resolves the soldier template from the kit loadout, fetches
+`${MODELS_BASE}/poses/${soldier}__${PoseName}.pose.glb`, parents it on the seat's
+first EntryPoint so it moves with the vehicle, and drives the `seat.lower`/
+`seat.upper` clips with an `AnimationMixer`. The soldier is hidden in the
+cockpit (first-person, `CVMInside`) and shown in every external view (chase,
+front, fly-by) — matching the game's own `C` cycle.
+
 ## Open
 
 - **SEAT-11**: which call site actually passes `force = true` to steal an

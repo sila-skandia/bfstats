@@ -465,6 +465,7 @@ export class EffectPlayer {
         material.transparent = true;
         material.depthWrite = false;
         material.side = THREE.DoubleSide;
+        material.forceSinglePass = true;
         // SPR-5 (verify-r8.md, corrected): srcBlendMode/destBlendMode are
         // the engine's own D3DBLEND ordinals (R8-1/R8-2 — an unset word
         // falls back to `geom::ParticleSystemTemplate`'s ctor default,

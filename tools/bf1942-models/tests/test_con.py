@@ -1407,6 +1407,73 @@ objectTemplate.repairFactor 0.15
         self.assertEqual(2.0, soldier.repair_distance)
         self.assertEqual(0.15, soldier.repair_factor)
 
+    def test_seat_animation_pose_strings_are_parsed(self) -> None:
+        # SEAT-9: `seatAnimationUpperBody`/`seatAnimationLowerBody` name the
+        # animation states `BFSoldier::setUseSeat` resolves for a passenger
+        # seat. Only passenger seats declare them (Objects/Vehicles/Land/Willy:
+        # `WillyPassengerSeat`), the driver seat leaves both empty.
+        library = self.library(
+            "Objects/Vehicles/Land/Willy/Objects.con",
+            """
+ObjectTemplate.create PlayerControlObject Willy
+ObjectTemplate.addTemplate WillyCamera
+ObjectTemplate.addTemplate WillySeat
+ObjectTemplate.addTemplate WillyEntry
+ObjectTemplate.addTemplate WillyPassengerSeat
+
+ObjectTemplate.create SeatObject WillySeat
+ObjectTemplate.seatFlags c_SeatShowFullBodySoldier
+ObjectTemplate.seatFlags c_SeatIsOutside
+
+ObjectTemplate.create SeatObject WillyPassengerSeat
+ObjectTemplate.seatFlags c_SeatShowFullBodySoldier
+ObjectTemplate.seatFlags c_SeatIsOutside
+ObjectTemplate.seatAnimationUpperBody Ub_PassengerInWilly
+ObjectTemplate.seatAnimationLowerBody Lb_PassengerInWilly
+""")
+        driver = library.object("WillySeat")
+        passenger = library.object("WillyPassengerSeat")
+
+        self.assertIsNone(driver.seat_animation_upper_body)
+        self.assertIsNone(driver.seat_animation_lower_body)
+        self.assertEqual("Ub_PassengerInWilly", passenger.seat_animation_upper_body)
+        self.assertEqual("Lb_PassengerInWilly", passenger.seat_animation_lower_body)
+
+    def test_cvm_camera_view_flags_are_parsed(self) -> None:
+        # camera-modes.md §2/§3: CVM* booleans on a Camera declare which views
+        # (C) the seat offers. Omission means on, so only declared flags land
+        # here. `SoldierCamera` is the one vanilla template that spells the
+        # whole set out.
+        library = self.library(
+            "Objects/Soldiers/Common/Objects.con",
+            """
+ObjectTemplate.create Camera SoldierCamera
+ObjectTemplate.setPivotPosition 0/0/0
+ObjectTemplate.setMaxSpeed 0/0/0
+ObjectTemplate.setHasTarget 0
+ObjectTemplate.CVMInside 1
+ObjectTemplate.CVMChase 0
+ObjectTemplate.CVMFrontChase 0
+ObjectTemplate.CVMFlyBy 0
+ObjectTemplate.CVMTrace 0
+ObjectTemplate.CVMExternTrace 0
+""")
+        camera = library.object("SoldierCamera")
+        self.assertEqual({"CVMINSIDE": True},
+                         {k: v for k, v in camera.camera_view_modes.items() if v})
+        self.assertFalse(camera.camera_view_modes["CVMCHASE"])
+
+    def test_camera_without_cvm_flags_has_no_view_modes(self) -> None:
+        # A vehicle camera that omits all CVM flags gets the full default cycle
+        # — `camera_view_modes` stays None so the viewer knows "all on".
+        library = self.library(
+            "Objects/Vehicles/Land/Tank/Objects.con",
+            """
+ObjectTemplate.create Camera TankCamera
+ObjectTemplate.setInputToYaw c_PIMouseLookX
+""")
+        self.assertIsNone(library.object("TankCamera").camera_view_modes)
+
 
 if __name__ == "__main__":
     unittest.main()
