@@ -1806,6 +1806,15 @@
    "note": "Created at prologue (2308 bytes). Client EmitterTemplate: template +0x3dc, looping +0x1e0, addEmitterSpeed +0x1e1, emitterSpeedScale +0x1e4 (1.0), startAtCreation +0x1e8, startProbability +0x1ec (1.0), IntensityAtSpeed +0x1f0, delay CRD +0x1fc, timeToLive +0x210, intensity +0x224, useCameraOrientation +0x3f8, relativePositionInDof/Up/Right +0x414/+0x428/+0x43c, positionalSpeedInDof/Up/Right +0x450/+0x464/+0x478, rotationalSpeedInDof/Up/Right +0x48c/+0x4a0/+0x4b4, startRotation +0x4c8, hasOverDamage +0x4d8, noPhysics +0x4d9, addChild +0x4da, showInFirstPerson +0x4db, showInThirdPerson +0x4dc, moveToWaterSurface +0x4dd, IsSpawnEffect +0x4de. Twin of lnxded 0x081e61c0."
   },
   {
+   "address": "0x0050dc84",
+   "name": "BObject_defaultFlags_store_client",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-17-phy4",
+   "note": "Immediate 0x2090400 embedded in client BObject-family ctor (also 0x0050e0a4, 0x0050eba4). Same default flags as lnxded 0x08191811. Drag-selector bit 0x4000000 not set."
+  },
+  {
    "address": "0x0050ee00",
    "name": "FireArms__isZoomed",
    "kind": "function",
@@ -1813,6 +1822,24 @@
    "confidence": "verified",
    "source": "ghidra",
    "note": "HandFireArms vtable 0x008f9750 slot +0xf8 (read at 0x008f9848); twin of lnxded FireArms::isZoomed() 0x08290160. Called as the gate at the zoom camera-mode switch 0x004fc887 and the zoomed mouse-scale site 0x0050094e."
+  },
+  {
+   "address": "0x005241c0",
+   "name": "BlendMode_operator<<",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-17-spr5",
+   "note": "ostream<< of BM enum; same 1..0xb map as 0x005bd830. Ledger SPR-5."
+  },
+  {
+   "address": "0x00524340",
+   "name": "BlendMode_operator>>",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-17-spr5",
+   "note": "istream>> parser for BM* names into D3DBLEND ordinals 1..0xb. Ledger SPR-5."
   },
   {
    "address": "0x005384d0",
@@ -1910,8 +1937,8 @@
    "kind": "function",
    "subsystem": "physics",
    "confidence": "verified",
-   "source": "research-2026-09-16-drag-advanced",
-   "note": "Client twin of lnxded 0x082543d0; undefined in Ghidra, read with objdump. Tests [compositeObject+0x4] & 0x4000000 at 0x00540b17 (the server's byte +0x7 bit 0x4): set -> updatePositionalDragSimple 0x0053f4e0 with 0.1 and 1.0 pushed; clear -> the box law. For that it asks the object's geometry (vtable +0x10, then +0x24 with IID 0x492fe0fe from 0x00903490 pushed twice) for two bounding-box corners, takes extents DX, DY (vertical), DZ, and passes updatePositionalDragAdvanced 0x0053f5f0 and updateRotationalDragAdvanced 0x0053f7c0 the arguments a1 = 0.785*DX*DY, a2 = 0.785*DX*DZ, a3 = 0.785*DY*DZ (0.785 at 0x008f733c) and a4 = 1 + 24*min([this+0x8c]/DY, 1) (1.0 at 0x008c53c8, 25.0 at 0x008f7210)."
+   "source": "research-2026-09-17-phy4",
+   "note": "Client twin of lnxded 0x082543d0; undefined in Ghidra, read with objdump. Tests [compositeObject+0x4] & 0x4000000 at 0x00540b17 (the server's byte +0x7 bit 0x4): set -> updatePositionalDragSimple 0x0053f4e0 with 0.1 and 1.0 pushed; clear -> the box law. For that it asks the object's geometry (vtable +0x10, then +0x24 with IID 0x492fe0fe from 0x00903490 pushed twice) for two bounding-box corners, takes extents DX, DY (vertical), DZ, and passes updatePositionalDragAdvanced 0x0053f5f0 and updateRotationalDragAdvanced 0x0053f7c0 the arguments a1 = 0.785*DX*DY, a2 = 0.785*DX*DZ, a3 = 0.785*DY*DZ (0.785 at 0x008f733c) and a4 = 1 + 24*min([this+0x8c]/DY, 1) (1.0 at 0x008c53c8, 25.0 at 0x008f7210). PHY-4 settled 2026-09-17: the selector bit is never set on any live object (ctors write 0x2090400; no or of 0x4000000 into object flags); every PhysicsNode always takes the box/Advanced branch."
   },
   {
    "address": "0x00541a60",
@@ -2598,6 +2625,15 @@
    "note": "fastcall(stage, value), 0x005b85e0-0x005b865e, holding the TEXCOORDINDEX write at 0x005b85fe. Per the 2026-09-15 research decompile (not re-verified): SetTextureStageState(stage, TEXCOORDINDEX, value) through a shadow cache, also recorded at [0x009c017c + 0x804 + stage*4] for RendPCDX8_flushDeferredState 0x00604750 to restore. Its callers (FUN_005b8700 and others) set up envmap reflection matrices, not lightmaps."
   },
   {
+   "address": "0x005bd830",
+   "name": "BlendMode_enumToString",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-17-spr5",
+   "note": "switch(in_EAX): 1 BMZero .. 0xb BMSourceAlphaSaturate. Identity with D3DBLEND. Twins: operator<< 0x005241c0, operator>> 0x00524340. Ledger SPR-5."
+  },
+  {
    "address": "0x005bee20",
    "name": "StandardMeshSubShader_resetRenderState",
    "kind": "function",
@@ -2751,6 +2787,15 @@
    "note": "Client. Name from its call shape only: draw 0x0060a0e0 calls it twice as (curve block, int index, float fraction, out buffer) and reads four consecutive floats back after the colorRGBAOverTime call. Body not traced."
   },
   {
+   "address": "0x00609ea0",
+   "name": "geom::Particle_ctor",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-17-spr5",
+   "note": "Client particle instance ctor (0xa8 bytes). Installs render-record vtbl 0x00914c00 at +0x34; stores the material/blend descriptor pointer (template+0x5b0 from addParticle) at +0x78. RET 0x4c. Ledger SPR-5."
+  },
+  {
    "address": "0x0060a0e0",
    "name": "geom::ParticleSystem::draw",
    "kind": "function",
@@ -2856,7 +2901,7 @@
    "subsystem": "effects",
    "confidence": "verified",
    "source": "research-2026-09-16-sprite-client",
-   "note": "Client: builds the template first if needed, then stores the blend mode at +0x5c4. setDestBlendMode 0x006182e0 stores +0x5c8. lnxded twins 0x083aa890 / 0x083aa8c0 (fields +0x590 / +0x594). SpriteParticleNewTemplate::makeScript skips parsing destBlendMode when the src field (+0x5c4) holds 6 (ledger SPR-5)."
+   "note": "Client: builds the template first if needed, then stores the blend mode at +0x5c4. setDestBlendMode 0x006182e0 stores +0x5c8. These are +0x14/+0x18 of the embedded block at template +0x5b0 (passed to each particle as +0x78). Values are raw D3DBLEND ordinals (SPR-5). Ctor defaults 5/6. lnxded twins 0x083aa890 / 0x083aa8c0 (fields +0x590 / +0x594). makeScript 0x00567c30 skips emitting destBlendMode when src (+0x5c4) holds 6."
   },
   {
    "address": "0x00618350",
@@ -2965,6 +3010,24 @@
    "confidence": "verified",
    "source": "research-2026-09-15-lightmap-stage",
    "note": "vtbl_StandardMeshRenderer slot +0x20 (function created in Ghidra 2026-09-15). Sets g_meshPassId (0x009c9be4) = 1 and walks the transparent list (this+0x58) with StandardMeshRenderer_drawMeshList 0x0062c930 - the mirror of drawOpaque (pass 0, list +0x48). Its argument is a context/list pointer dereferenced as a vector, not the bool the lnxded slot order suggested."
+  },
+  {
+   "address": "0x0062cf20",
+   "name": "SpriteParticle_applyBlendRenderState",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-17-spr5",
+   "note": "Called from vtable 0x00914c00 slot0 (0x0062e870). Reads descriptor EDI+0x14/+0x18 and issues IDirect3DDevice8::SetRenderState(0x13 SRCBLEND / 0x14 DESTBLEND) via g_pD3DDevice8+0xc8. For sprites EDI is *(particle+0x78)=template+0x5b0, so +0x14/+0x18 are template +0x5c4/+0x5c8 (srcBlendMode/destBlendMode). Also binds the per-mode vertex shader from this+0x6c+index*4. Ledger SPR-5."
+  },
+  {
+   "address": "0x0062e870",
+   "name": "SpriteParticle_flushQueuedParticle",
+   "kind": "function",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-17-spr5",
+   "note": "Vtbl 0x00914c00 +0. this is the object at particle+0x34 (installed by particle ctor 0x00609ea0). Pushes *(this+0x44)=*(particle+0x78) into SpriteParticle_applyBlendRenderState 0x0062cf20, then builds quads via 0x0062d300 and draws triangle list (primitive 4). Ledger SPR-5."
   },
   {
    "address": "0x00632478",
@@ -4830,6 +4893,15 @@
    "note": "engine type-name string; xref it to reach the code that registers this type"
   },
   {
+   "address": "0x00914c00",
+   "name": "SpriteParticle_renderRecord__vftable",
+   "kind": "vtable",
+   "subsystem": "effects",
+   "confidence": "verified",
+   "source": "research-2026-09-17-spr5",
+   "note": "Embedded at particle+0x34 by FUN_00609ea0. Slot0=0x0062e870. draw (0x0060a0e0) queues this object through RendPCDX8+0x90 (0x00667830 point-size bucket). Distinct from geom::ParticleSystem__vftable 0x00914c14. Ledger SPR-5."
+  },
+  {
    "address": "0x00914c14",
    "name": "geom::ParticleSystem__vftable",
    "kind": "vtable",
@@ -5460,6 +5532,15 @@
    "note": "lnxded, per-sample-point occlusion test; body not decompiled."
   },
   {
+   "address": "0x0815cd7e",
+   "name": "PlayerAction_or_input_0x4000000",
+   "kind": "instruction",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-17-phy4",
+   "note": "Only or-immediate of 0x4000000 in lnxded .text that writes a live field: PlayerAction::get ORs into player-input dword at +0xdc, not IObject+0x4. Negative evidence for PHY-4 \u2014 the constant exists but never targets object flags."
+  },
+  {
    "address": "0x08164570",
    "name": "dice::ref2::world::BCompositeObject<dice::ref2::world::IPlayerObject>::updateFlags(unsigned int, unsigned int)",
    "kind": "function",
@@ -5649,6 +5730,24 @@
    "note": "lnxded. Picks nearest in-range EntryPoint, excluding the player's own current vehicle's entry. See ledger SEAT-3."
   },
   {
+   "address": "0x08191700",
+   "name": "dice::ref2::world::BObject<ICompositeObject>::BObject(IObjectTemplate const*)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-17-phy4",
+   "note": "lnxded. Writes default object flags [this+0x4] = 0x2090400 at 0x08191811 (byte +0x7 = 0x02: drag-selector bit 0x4 clear). Twin PlayerObject path at 0x08191940 / 0x08191a51. Client writes the same constant at 0x0050dc84, 0x0050e0a4, 0x0050eba4. Ledger PHY-4."
+  },
+  {
+   "address": "0x08191811",
+   "name": "BObject_defaultFlags_store",
+   "kind": "instruction",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-17-phy4",
+   "note": "lnxded mov dword [edi+0x4], 0x2090400 inside BObject<ICompositeObject> ctor. Establishes that compositeObject byte +0x7 bit 0x4 starts clear. Client equivalents embed the same immediate at 0x0050dc84 / 0x0050e0a4 / 0x0050eba4."
+  },
+  {
    "address": "0x081a1a10",
    "name": "ObjectManager::removeSupplyDepot",
    "kind": "function",
@@ -5719,6 +5818,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-seats",
    "note": "lnxded. Unconditionally returns 1."
+  },
+  {
+   "address": "0x081d4c90",
+   "name": "dice::ref2::world::ObjectTemplate::updateFlags(unsigned int, unsigned int)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-17-phy4",
+   "note": "template+0x14 = (flags|set) & ~clear. All 14 direct callers push small masks only (0x2, 0x20, 0x40, 0x42) \u2014 never 0x4000000. Template flags default to 0 in ObjectTemplate ctor 0x081d45f0."
   },
   {
    "address": "0x081d7490",
@@ -5845,6 +5953,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-hitpoints",
    "note": "lnxded. NOT a parent-vs-root dispatcher: walks the composite chain for the nearest Armor, then dispatches by sign(amt) -- >0.0 damages, <=0.0 heals the SAME Armor (sign-bit XOR on amt's own byte). See ledger HP-7."
+  },
+  {
+   "address": "0x081dd490",
+   "name": "dice::ref2::world::SimpleObjectTemplate::setPhysicsNodeComponent(ICompositeObject*) const",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-17-phy4",
+   "note": "Reads template +0x70: bit0 must be set; bit3 set -> allocates PointPhysicsNode (0x08255ef0), attaches it, then object updateFlags(set=0x8, clear=0) at 0x081dd4f6 \u2014 flag 0x8, NOT drag-selector 0x4000000. hasPointPhysics console property drives this path. Confirms PHY-4: point-physics selection is a different switch from the PhysicsNode drag-law bit."
   },
   {
    "address": "0x081ddae0",
@@ -6023,8 +6140,8 @@
    "kind": "function",
    "subsystem": "physics",
    "confidence": "verified",
-   "source": "research-2026-09-15-drag; research-2026-09-16-drag-advanced",
-   "note": "lnxded; client twin 0x00540920. Starts by delegating to the root: when this is not getRootNode() (0x082548d0) and a virtual predicate (vtable +0xcc) holds, it hands its force and torque to the root (vtable +0xdc, +0xd8), zeroes its own accumulators (+0x10, +0x1c, +0x28, +0x34, +0x40, +0x4c, +0x64) and returns - no drag and no gravity for that node on that tick. Otherwise, if drag(+0x68) > 0 (asserting when mass +0x6c < 1e-5): bit 0x4 of byte +0x7 of compositeObject(+0xc) set -> updatePositionalDragSimple(this, r = 0.1, scale = 1.0) from literal pushes; clear -> updatePositionalDragAdvanced 0x08252f50 then updateRotationalDragAdvanced 0x08253280 with the object's bounding box (physics.md section 3). Nothing found writes that bit: no .con word, no or of it in either binary, and not SimpleObjectTemplate::setPhysicsNodeComponent 0x081dd490, which only picks the node class from template +0x70. The same bit is read in updateRotationalPhysics 0x08253c3c, Emitter::handleUpdate 0x081e43f9 and Particle::handleUpdate 0x0820adec."
+   "source": "research-2026-09-17-phy4",
+   "note": "lnxded; client twin 0x00540920. Starts by delegating to the root: when this is not getRootNode() (0x082548d0) and a virtual predicate (vtable +0xcc) holds, it hands its force and torque to the root (vtable +0xdc, +0xd8), zeroes its own accumulators (+0x10, +0x1c, +0x28, +0x34, +0x40, +0x4c, +0x64) and returns - no drag and no gravity for that node on that tick. Otherwise, if drag(+0x68) > 0 (asserting when mass +0x6c < 1e-5): bit 0x4 of byte +0x7 of compositeObject(+0xc) set -> updatePositionalDragSimple(this, r = 0.1, scale = 1.0) from literal pushes; clear -> updatePositionalDragAdvanced 0x08252f50 then updateRotationalDragAdvanced 0x08253280 with the object's bounding box (physics.md section 3). Nothing found writes that bit: no .con word, no or of it in either binary, and not SimpleObjectTemplate::setPhysicsNodeComponent 0x081dd490, which only picks the node class from template +0x70. The same bit is read in updateRotationalPhysics 0x08253c3c, Emitter::handleUpdate 0x081e43f9 and Particle::handleUpdate 0x0820adec. PHY-4 settled 2026-09-17: the selector bit is never set on any live object (ctors write 0x2090400; no or of 0x4000000 into object flags); every PhysicsNode always takes the box/Advanced branch."
   },
   {
    "address": "0x08255e80",

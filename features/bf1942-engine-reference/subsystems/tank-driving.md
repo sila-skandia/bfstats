@@ -140,7 +140,8 @@ turning in place needs a small nonzero throttle nudge, always.
   re-observed matching the original description exactly; its purpose (a
   sound trigger? a network dirty flag?) is still unresolved.
 - [physics.md](physics.md) PHY-4 (which drag law a vehicle gets) is
-  untouched by this subsystem, as before.
+  settled separately (2026-09-17): every `PhysicsNode` always uses box/Advanced
+  drag; this subsystem did not need that result.
 - The exact Coulomb friction force magnitude at a single wheel contact
   remains open ([physics.md](physics.md) PHY-2) — this round narrows
   *where* the left/right asymmetry is injected (the differential-RPM stage,
