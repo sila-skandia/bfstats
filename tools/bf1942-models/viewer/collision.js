@@ -244,9 +244,25 @@ export class CollisionIndex {
     this.cellMaxY = null;
     this._stamp = new Int32Array(this.count);
     this._query = 0;
+    // Owners whose hull should not block walking or rounds — a faded wreck
+    // whose visual is gone but whose triangles are still in the bake.
+    this._disabled = new Uint8Array(ownerNodes.length);
     // Measured per-query work, for the budget in the feature doc. Reset by
     // whoever is reading it.
     this.stats = { queries: 0, cells: 0, candidates: 0, tests: 0 };
+  }
+
+  /** Stop (or restore) an owner's baked hull without rebuilding the index. */
+  disableOwner(id) {
+    if (id >= 0 && id < this._disabled.length) this._disabled[id] = 1;
+  }
+
+  enableOwner(id) {
+    if (id >= 0 && id < this._disabled.length) this._disabled[id] = 0;
+  }
+
+  ownerDisabled(id) {
+    return id >= 0 && id < this._disabled.length && this._disabled[id] !== 0;
   }
 
   /**
@@ -324,6 +340,7 @@ export class CollisionIndex {
               this._stamp[tri] = stamp;
               stats.candidates++;
               if (skipOwner >= 0 && this.owners[tri] === skipOwner) continue;
+              if (this._disabled[this.owners[tri]]) continue;
               stats.tests++;
               const t = this.#intersect(tri, ox, oy, oz, dx, dy, dz, best);
               if (t >= 0 && t < best) {
@@ -415,6 +432,7 @@ export class CollisionIndex {
           this._stamp[tri] = stamp;
           stats.candidates++;
           if (skipOwner >= 0 && this.owners[tri] === skipOwner) continue;
+          if (this._disabled[this.owners[tri]]) continue;
           // Box reject before the swept test. A ray gets away without one — the
           // per-cell Y band plus Moller-Trumbore is already cheap — but a sweep
           // costs a plane crossing, three edge quadratics and three corner
