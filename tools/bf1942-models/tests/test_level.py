@@ -16,6 +16,7 @@ from bf42.level import (  # noqa: E402
     parse_spawn_templates,
     parse_static_objects,
     parse_terrain_con,
+    parse_tickets,
     spawn_vehicle,
     tile_world_origin,
     LevelInfo,
@@ -743,6 +744,92 @@ class LevelArchiveLookupTests(unittest.TestCase):
             self._install(root, "bf1942", "Archives", ["Tobruk.rfa"])
 
             self.assertEqual([], find_level_archives(root, "EoD", "Tobruk"))
+
+
+class TicketParsingTests(unittest.TestCase):
+    def test_conquest_tickets_are_read_from_both_teams(self) -> None:
+        info = parse_tickets("""
+Game.setNumberOfTickets 1 200
+Game.setNumberOfTickets 2 150
+""")
+
+        self.assertEqual(200, info.team1)
+        self.assertEqual(150, info.team2)
+
+    def test_ticket_loss_per_minute_is_read(self) -> None:
+        info = parse_tickets("""
+Game.setNumberOfTickets 1 250
+Game.setNumberOfTickets 2 250
+Game.setTicketLostPerMin 1 2
+Game.setTicketLostPerMin 2 3
+""")
+
+        self.assertEqual(250, info.team1)
+        self.assertEqual(250, info.team2)
+        self.assertEqual(2, info.loss_per_min_team1)
+        self.assertEqual(3, info.loss_per_min_team2)
+
+    def test_decimal_tickets_are_cast_to_int(self) -> None:
+        # The dossier script handles float() first, so match that.
+        info = parse_tickets("""
+Game.setNumberOfTickets 1 200.5
+Game.setNumberOfTickets 2 150.8
+""")
+
+        self.assertEqual(200, info.team1)
+        self.assertEqual(150, info.team2)
+
+    def test_missing_tickets_leave_fields_none(self) -> None:
+        info = parse_tickets("""
+Game.setNumberOfTickets 1 100
+""")
+
+        self.assertEqual(100, info.team1)
+        self.assertIsNone(info.team2)
+        self.assertIsNone(info.loss_per_min_team1)
+        self.assertIsNone(info.loss_per_min_team2)
+
+    def test_empty_file_yields_all_none(self) -> None:
+        info = parse_tickets("")
+
+        self.assertIsNone(info.team1)
+        self.assertIsNone(info.team2)
+        self.assertIsNone(info.loss_per_min_team1)
+        self.assertIsNone(info.loss_per_min_team2)
+
+    def test_case_insensitive_command_matching(self) -> None:
+        # The engine and con_mod both treat commands case-insensitively.
+        info = parse_tickets("""
+game.SETNUMBEROFTICKETS 1 300
+GAME.setTicketLostPerMin 1 5
+""")
+
+        self.assertEqual(300, info.team1)
+        self.assertEqual(5, info.loss_per_min_team1)
+
+    def test_comments_are_ignored(self) -> None:
+        info = parse_tickets("""
+rem Game.setNumberOfTickets 1 999
+Game.setNumberOfTickets 1 100
+rem This is a comment
+Game.setNumberOfTickets 2 80
+""")
+
+        self.assertEqual(100, info.team1)
+        self.assertEqual(80, info.team2)
+
+    def test_malformed_values_are_skipped_softly(self) -> None:
+        info = parse_tickets("""
+Game.setNumberOfTickets 1 not_a_number
+Game.setNumberOfTickets 2 200
+Game.setTicketLostPerMin 1 invalid
+Game.setTicketLostPerMin 2 4
+""")
+
+        self.assertIsNone(info.team1)
+        self.assertEqual(200, info.team2)
+        self.assertIsNone(info.loss_per_min_team1)
+        self.assertEqual(4, info.loss_per_min_team2)
 
 
 if __name__ == "__main__":
