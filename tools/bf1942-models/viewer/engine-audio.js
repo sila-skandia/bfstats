@@ -163,7 +163,15 @@ class Voice {
  * thrown away without ever having made a sound.
  */
 export class EngineAudio {
-  constructor(spec, layers, buffers, listener, headroom = BUS_HEADROOM) {
+  /**
+   * @param {boolean} [oneShotsOnTrigger] - hold every non-looping layer back
+   *   from `start()` and play it from `trigger()` instead. That is what a gun
+   *   patch is: its layers are the report of one round, not a machine that
+   *   runs while the vehicle exists. An engine patch leaves this false, so its
+   *   starter cough still fires the moment the engine does.
+   */
+  constructor(spec, layers, buffers, listener, headroom = BUS_HEADROOM,
+              oneShotsOnTrigger = false) {
     this.spec = spec;
     this.headroom = headroom;
     this.listener = listener;
@@ -177,6 +185,7 @@ export class EngineAudio {
     // the page is in before the user has clicked anything — and a `Time` attack
     // ramp read off a frozen clock would hold every layer at zero forever.
     this.elapsed = 0;
+    this.oneShotsOnTrigger = !!oneShotsOnTrigger;
     this.sinceRelease = 0;
 
     this.bus = this.ctx.createGain();
@@ -231,8 +240,56 @@ export class EngineAudio {
     const t0 = this.ctx.currentTime;
     for (const voice of this.voices) {
       if (voice.layer.trigger === 'release') continue;
+      // A gun's one-shots belong to a round, not to the moment the patch was
+      // built -- see `oneShotsOnTrigger`. Playing them here is what made every
+      // vehicle weapon in the viewer silent: the Sherman's cannon is twenty
+      // layers and every one of them is `loop: false`, so `start()` fired the
+      // lot once, inaudibly (the patch's master is 0 until the trigger is
+      // pulled), `onended` cleared each voice, and there was nothing left
+      // running for a gain gate to un-mute ever again.
+      if (this.oneShotsOnTrigger && !voice.layer.loop) continue;
       this.#play(voice, t0);
     }
+  }
+
+  /**
+   * One round: replay every one-shot in this patch from the top.
+   *
+   * The patch's own clock restarts with it, because a gun `.ssc` sequences
+   * itself off `Time` — a Sherman's twenty layers are the muzzle blast, the
+   * shell casing, the crew reloading and the breech closing, each with its own
+   * ramp measured from the shot. A layer that declares `trigger Volume` is
+   * left to `update`'s own gate, which that same clock reset re-arms.
+   *
+   * A one-shot already sounding is not cut: the previous source is orphaned to
+   * play out while a new one takes the voice's slot, so a burst stacks instead
+   * of clipping its own tail. `#play`'s `onended` only clears the slot it
+   * still owns, which is what makes that safe.
+   *
+   * @returns {number} how many layers actually started.
+   */
+  trigger() {
+    if (!this.started || this.disposed || this.released) return 0;
+    const now = this.ctx.currentTime;
+    this.elapsed = 0;
+    let played = 0;
+    for (const voice of this.voices) {
+      if (voice.layer.loop) continue;
+      if (voice.layer.trigger === 'release' || voice.layer.trigger === 'volume') continue;
+      const previous = voice.source;
+      voice.source = null;
+      this.#play(voice, now);
+      if (voice.source) played += 1;
+      else voice.source = previous;
+    }
+    return played;
+  }
+
+  /** Does this patch run on loops, or is it a one-shot event? A gun with no
+   *  looping layer at all is silent between rounds, so a caller has no reason
+   *  to gate its master on the trigger. */
+  get hasLoops() {
+    return this.voices.some(voice => voice.layer.loop);
   }
 
   #play(voice, when) {
@@ -458,7 +515,8 @@ export class EngineAudio {
  * instead of two copies drifting apart.
  */
 export async function loadEngineAudio(spec, { listener, getBuffer,
-                                              headroom = BUS_HEADROOM }) {
+                                              headroom = BUS_HEADROOM,
+                                              oneShotsOnTrigger = false }) {
   if (!spec || !spec.layers || !spec.layers.length || !listener) return null;
   const buffers = new Map();
   for (const layer of spec.layers) {
@@ -467,7 +525,8 @@ export async function loadEngineAudio(spec, { listener, getBuffer,
   }
   const layers = spec.layers.filter(l => buffers.get(l.file));
   if (!layers.length) return null;
-  return new EngineAudio(spec, layers, buffers, listener, headroom);
+  return new EngineAudio(spec, layers, buffers, listener, headroom,
+                         oneShotsOnTrigger);
 }
 
 /**
@@ -503,4 +562,53 @@ export function findWeaponSpecs(report, template) {
     level: vehicle.level,
     layers: weapon.layers,
   }));
+}
+
+/**
+ * Look up gun patches by FireArms node name across every vehicle in the
+ * report. Bare furniture mounts (Stationary MG42 / Browning) have no Engine
+ * entry of their own, so `findWeaponSpecs(template)` is empty — but the same
+ * `.ssc` was often extracted next to a tank or ship that carries that gun
+ * (Hatsuzuki → `MG42_unlimited`, Sherman → `Browning`).
+ *
+ * `names` may include `_unlimited` variants; a bare `Browning` layer matches
+ * `Browning_unlimited` when the exact name is missing.
+ */
+export function findWeaponSpecsByFireArms(report, names) {
+  const list = report?.sounds?.vehicles;
+  if (!list?.length || !names?.length) return [];
+  const want = [...new Set(names)];
+  const byName = new Map();
+  for (const vehicle of list) {
+    for (const weapon of vehicle.weapons || []) {
+      if (!byName.has(weapon.fireArms)) {
+        byName.set(weapon.fireArms, {
+          template: vehicle.template,
+          engine: weapon.fireArms,
+          fireArms: weapon.fireArms,
+          script: weapon.script,
+          level: vehicle.level,
+          layers: weapon.layers,
+        });
+      }
+    }
+  }
+  const found = [];
+  const claimed = new Set();
+  for (const name of want) {
+    const exact = byName.get(name);
+    if (exact) {
+      found.push(exact);
+      claimed.add(name);
+      continue;
+    }
+    if (name.endsWith('_unlimited')) {
+      const bare = byName.get(name.slice(0, -'_unlimited'.length));
+      if (bare && !claimed.has(name)) {
+        found.push(bare);
+        claimed.add(name);
+      }
+    }
+  }
+  return found;
 }

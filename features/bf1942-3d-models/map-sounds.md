@@ -91,3 +91,55 @@ Code: `extract_sounds` / `transcode_to_mp3` in `extract_map.py`, driven by
 `--shared-sounds`, `--audio-format` and `--final-out`. Tests:
 `tests/test_map_sounds.py`. Measurements:
 `features/mesh-mod-assets/audio-compression.md`.
+
+## 2026-09-17: no vehicle gun has ever made a sound
+
+Reported from play: the Sherman's shell and machine gun are both silent. The
+patches were not missing and nothing failed to load — `scene.json` carries all
+three of the Sherman's guns (`ShermanGunBarrel` with twenty layers,
+`Coaxial_browning`, `Browning`), every wav decoded, every panner was built and
+`started: true`. What the live snapshot showed was `voices: 0` and every layer
+`playing: false`, and the reason is one line of shape:
+
+**Every layer of every vehicle weapon on the map is `loop: false`.** The gun
+path was written on the assumption that they are loops:
+
+> The vehicle guns hold a muted loop and gate it with gain because their fire
+> is authored as a loop patch on a vehicle that outlives any burst
+
+That is true of an engine and of nothing else here. `EngineAudio.start()`
+plays every non-`release` voice once, immediately, which for a one-shot means
+it fired at the moment the patch was built — inaudibly, because the gun's
+master is held at 0 until the trigger — and `onended` then cleared each voice.
+After that there was nothing running for a gain gate to un-mute, ever, and
+`setMaster(firing ? master : 0)` was toggling silence against silence.
+
+Fixed by giving a gun what it actually is, a one-shot event patch:
+
+- `EngineAudio` takes `oneShotsOnTrigger`. With it set, `start()` holds every
+  non-looping layer back, and a new `trigger()` plays them. An engine patch
+  leaves it false, so a starter cough still fires when the engine does.
+- `trigger()` restarts the patch's own clock, because a gun `.ssc` sequences
+  itself off `Time`: a Sherman's twenty layers are the muzzle blast, the
+  casing, the crew reloading and the breech closing, each with its own ramp
+  measured from the shot. Layers that declare `trigger Volume` are left to
+  `update`'s own gate, which that clock reset re-arms — which is why the
+  reload comes in a beat after the bang rather than on top of it.
+- A round in flight is not cut short by the next one: the previous source is
+  orphaned to play out while a new one takes the voice's slot, so a burst
+  stacks. Same reasoning as the hand weapon's own shared bus.
+- `map.html` splices `trigger()` onto `guns.onShot` beside the ammo/heat
+  bookkeeping, so the round is what plays the sound — the shot that leaves the
+  muzzle and the sound are the same event, as they already are for a soldier's
+  rifle. The master gate now applies only to a patch that `hasLoops`; holding a
+  one-shot patch at 0 between rounds would mute the shot it had just started.
+
+Measured after, counting real `AudioBufferSourceNode.start()` calls: one shell
+starts **13** sources (the cannon's immediate layers; the rest arrive on their
+own `Time` ramps), and an eight-round burst on the coaxial starts **8**.
+Before, both were 0.
+
+`tests/test_engine_audio_default.mjs` covers the new behaviour — and now runs:
+it was the only `test_*` in that directory with no Python wrapper, so
+`unittest discover` and `verify.sh` had been walking straight past it.
+`tests/test_engine_audio.py` is that wrapper.

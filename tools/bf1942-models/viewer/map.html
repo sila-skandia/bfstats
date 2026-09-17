@@ -617,7 +617,7 @@ import {
   setTurretSpeedScale, turretSpeedScale,
 } from './seats.js';
 import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
-         WEAPON_HEADROOM } from './engine-audio.js';
+         findWeaponSpecsByFireArms, WEAPON_HEADROOM } from './engine-audio.js';
 import { GunFire } from './gunfire.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { buildHeightfield, buildCollisionIndex, WorldCollider } from './collision.js';
@@ -2745,44 +2745,79 @@ async function setupEngineAudio() {
   engineAudio = built;
   engineAudio.setMaster(masterVolume());
   engineAudio.start();
-  await setupWeaponAudio(gen, dir, template);
+  await setupWeaponAudio(gen, dir, template, vehicle.node);
 }
 
 /**
- * Build and start every gun patch this vehicle carries.
+ * Build and start every gun patch this vehicle (or bare manned mount) carries.
  *
  * Shares the engine's generation counter rather than keeping its own: the guns
- * are only ever set up and torn down with the vehicle they are bolted to, so a
+ * are only ever set up and torn down with the seat they are bolted to, so a
  * second counter would be two names for one fact.
+ *
+ * `visualRoot` is the drivetrain's node or a furniture gun's occupancy root —
+ * the FireArms names hang under either the same way.
  */
-async function setupWeaponAudio(gen, dir, template) {
-  const specs = findWeaponSpecs(extras, template);
-  if (!specs.length) return;
+async function setupWeaponAudio(gen, dir, template, visualRoot, specs) {
+  const list = specs ?? findWeaponSpecs(extras, template);
+  if (!list.length || !visualRoot) return;
   const built = [];
-  for (const spec of specs) {
+  for (const spec of list) {
     const audio = await loadEngineAudio(spec, {
       listener: ensureListener(),
       getBuffer: (relPath) => soundBuffer(dir, relPath),
       headroom: WEAPON_HEADROOM,
+      // A gun patch is the report of one round, so its one-shots wait for
+      // `trigger()` (spliced onto `guns.onShot` below) instead of firing once
+      // at setup and leaving nothing behind to un-mute.
+      oneShotsOnTrigger: true,
     });
     if (audio) built.push({ spec, audio, node: null });
   }
   // Decoding took several awaits. Nothing has been started, so a superseded
   // load is dropped without ever having made a sound.
-  const vehicle = aircraft || car;
-  if (gen !== engineGeneration || !vehicle) {
+  if (gen !== engineGeneration || !(aircraft || car || occupancy)) {
     for (const weapon of built) weapon.audio.dispose();
     return;
   }
   for (const weapon of built) {
     // The voices belong on the gun, not the vehicle origin: a Corsair's guns
     // are 2.2 m out each wing, and the panner is what puts the rattle there.
-    weapon.node = vehicle.node.getObjectByName(weapon.spec.fireArms)
-      || vehicle.node;
+    weapon.node = visualRoot.getObjectByName(weapon.spec.fireArms)
+      || visualRoot;
     weapon.audio.setMaster(0);   // silent until the trigger is pulled
     weapon.audio.start();
   }
   weaponAudio = built;
+}
+
+/**
+ * Bare furniture mounts (MG42 / Browning) have no Engine `.ssc`, so the map
+ * report never lists them under `sounds.vehicles`. Reuse layers already
+ * extracted for the same FireArms on a tank/ship, then start them the same
+ * way a drivetrain's guns start.
+ */
+async function setupMannedWeaponAudio() {
+  if (!occupancy || AUDIO_OFF) return;
+  disposeEngineAudio();
+  const gen = engineGeneration;
+  const root = occupancy.root;
+  const template = root.userData?.control || root.name;
+  let specs = findWeaponSpecs(extras, template);
+  if (!specs.length) {
+    const arms = occupancy.activeFireArmsNodes()
+      .map(n => n.name?.replace(/_\d+$/, ''))
+      .filter(Boolean);
+    // Alias layers (Sherman's `Browning`) onto this mount's real node name
+    // (`Browning_unlimited`) so getObjectByName and the firing lookup agree.
+    specs = findWeaponSpecsByFireArms(extras, arms).map(spec => {
+      const local = arms.find(a =>
+        a === spec.fireArms || a === `${spec.fireArms}_unlimited`);
+      return local ? { ...spec, fireArms: local } : spec;
+    });
+  }
+  if (!specs.length) return;
+  await setupWeaponAudio(gen, currentDir, template, root, specs);
 }
 
 /**
@@ -2866,9 +2901,16 @@ function updateAudio(dt = 0) {
   for (const weapon of weaponAudio) {
     // The trigger comes from the gun runtime rather than the key, so a weapon
     // that has run its magazine dry or is not the seat's gun stays quiet for
-    // the same reason it stops drawing tracers.
-    const group = vehicleGuns.find(g => g.node.name === weapon.spec.fireArms);
-    weapon.audio.setMaster(group?.firing ? master : 0);
+    // the same reason it stops drawing tracers. Nested / bare seats fire from
+    // `mannedGuns`, not `vehicleGuns` — looking only at the latter silenced
+    // every hull Browning and stationary MG.
+    const group = vehicleGuns.find(g => g.node.name === weapon.spec.fireArms)
+      || mannedGuns.find(g => g.node.name === weapon.spec.fireArms);
+    // A gain gate is only meaningful for a patch that has something running to
+    // gate. A gun built entirely out of one-shots — which is every gun on this
+    // map — is silent between rounds on its own, and holding its master at 0
+    // between them would mute the very shot `trigger()` just started.
+    weapon.audio.setMaster(weapon.audio.hasLoops && !group?.firing ? 0 : master);
     if (weapon.node) {
       weapon.node.getWorldPosition(weaponWorldPos);
       weapon.node.getWorldQuaternion(weaponWorldQuat);
@@ -3361,7 +3403,9 @@ function showDamageTier(vehicle, tier) {
 // wreck lifetime as untraced, and a vanilla level's respawn timing lives in the
 // spawner rather than the vehicle. These two are chosen to read right and are
 // labelled so nobody mistakes them for findings.
-const WRECK_LINGER = 6;   // seconds of wreck before the fade starts  [HOUSE RULE]
+// Linger matches the measured ~10 s wreck lifetime from a live round capture
+// (features/round-replay-capture/README.md); fade is still a house rule.
+const WRECK_LINGER = 10;  // seconds of wreck before the fade starts
 const WRECK_FADE = 2.5;   // seconds of fade                          [HOUSE RULE]
 
 // Wreck glbs, by template name, shared across every vehicle of that type.
@@ -3373,32 +3417,29 @@ const wreckModels = new Map();
  * all three want `Sherman.wreck.glb`.
  */
 function templateNameOf(node) {
-  return (node?.name || '').replace(/_\d+$/, '');
+  // Prefer the control tag: GLTFLoader suffixes duplicate scene names
+  // (`Sherman_1`), while `userData.control` stays the template the wreck URL
+  // was published under.
+  return (node?.userData?.control || node?.name || '').replace(/_\d+$/, '');
 }
 
 /**
- * A vehicle just died: hide the live model, put its wreck in the same place, and
- * start the linger-then-fade.
+ * A vehicle just died: put its wreck in the same place and start the
+ * linger-then-fade.
  *
  * The wreck is a glb of its own (`models/<Template>.wreck.glb`) — the same file
  * `replay.js` fetches — not an alternative inside the level scene, which ships
- * only the `complex` configuration. Loading is async and death is not, so the
- * live model is hidden immediately and the wreck appears when it lands; a
- * vehicle with no wreck exported still disappears rather than sitting there
- * pristine.
+ * only the `complex` configuration. The live mesh stays visible until the
+ * wreck is parented (or the load fails), so a slow fetch never blanks the pad.
+ * Parked vehicles are frozen for perf — anything added under them must call
+ * `updateMatrixWorld(true)` or the wreck draws at the identity.
  */
 async function wreckVehicle(vehicle) {
   const visual = damageVisuals.get(vehicle.owner);
   if (!visual?.node || visual.wrecked) return;
   visual.wrecked = true;
   visual.wreckAge = 0;
-  // Hide everything that was the intact vehicle, keeping the damage anchors so
-  // the death effects keep playing from where they were.
   visual.hidden = [];
-  for (const child of visual.node.children) {
-    if (child.name?.startsWith('damage:')) continue;
-    if (child.visible) { child.visible = false; visual.hidden.push(child); }
-  }
   const template = templateNameOf(visual.node);
   try {
     if (!wreckModels.has(template)) {
@@ -3420,10 +3461,20 @@ async function wreckVehicle(vehicle) {
         ? obj.material.map(m => m.clone()) : obj.material.clone();
     });
     bindDynamicShading(wreck);
+    // Hide the intact mesh only once the wreck is ready to replace it.
+    for (const child of visual.node.children) {
+      if (child.name?.startsWith('damage:')) continue;
+      if (child.visible) { child.visible = false; visual.hidden.push(child); }
+    }
     visual.node.add(wreck);
     visual.wreck = wreck;
+    // Frozen parked vehicles opt out of the per-frame matrix walk; force one
+    // recompute so the wreck inherits the spawn pose (same contract as
+    // `damageAnchor`).
+    visual.node.updateMatrixWorld(true);
   } catch {
-    // No wreck for this template: the hidden live model is the whole effect.
+    // No wreck for this template: leave the live mesh up for the linger/fade
+    // rather than blanking the pad.
   }
 }
 
@@ -3439,10 +3490,18 @@ function stepWrecks(dt) {
     if (into <= 0) continue;
     const opacity = Math.max(0, 1 - into / WRECK_FADE);
     if (visual.wreck) fadeNode(visual.wreck, opacity);
+    else {
+      // No wreck GLB: fade the intact mesh that stayed visible instead.
+      for (const child of visual.node.children) {
+        if (child.name?.startsWith('damage:')) continue;
+        fadeNode(child, opacity);
+      }
+    }
     if (opacity > 0) continue;
     // Gone: drop the wreck, stop the death effects, and leave the node empty.
     visual.removed = true;
     if (visual.wreck) { visual.node.remove(visual.wreck); visual.wreck = null; }
+    for (const child of visual.hidden) child.visible = false;
     for (const handle of visual.handles) handle.stop?.();
     visual.handles.length = 0;
   }
@@ -4033,6 +4092,12 @@ function setPilot(on, node = null, seatId = null) {
       // no engine to loop audio for at all.
       ensureAudioContext();
       setupEngineAudio();
+    } else {
+      // Furniture MG / Browning: no drivetrain voice, but the FireArms still
+      // have patches (often already extracted next to a tank/ship that
+      // carries the same gun).
+      ensureAudioContext();
+      setupMannedWeaponAudio();
     }
     // Back into three's matrix walk for the ride (freezeStatics) — the whole
     // vehicle, not just the seat, since a nested seat's own turret is a
@@ -4058,6 +4123,7 @@ function setPilot(on, node = null, seatId = null) {
       // Splices `mannedGuns` out of `guns.groups` too (see `leaveManned`'s
       // own comment on why a bare `setFiring(false)` loop is not enough).
       releaseGuns();
+      disposeEngineAudio();
     }
     freezeVehicle(occupancy.root);   // parked at its spawn: furniture again
     clearVehicleHud();
@@ -4213,6 +4279,10 @@ function manned(dt) {
   readWorldPose(occupancy.cameraNode(), mannedCamPos, mannedCamQuat);
   camera.position.copy(mannedCamPos);
   camera.quaternion.copy(mannedCamQuat);
+
+  // Gunner cameras are always first-person — the 1P muzzle emitter, not the
+  // mesh-mounted third-person flash that sits metres ahead of the eye.
+  guns.firstPerson = true;
 
   const held = captured ? keys : EMPTY_KEYS;
   // Per weapon, not one trigger for the seat: a gunner's position can carry
@@ -4782,6 +4852,7 @@ function leaveManned() {
   // replacing it (`collectMannedGuns` on the next entry only clears whatever
   // is still in `mannedGuns`, which this function is about to empty).
   releaseGuns();
+  disposeEngineAudio();
   freezeVehicle(occupancy.root);
   clearVehicleHud();
   occupancy = null;
@@ -5715,8 +5786,8 @@ function viewmodelFade(hw, name) {
 function playViewmodelClip(hw, name, { restart = false, timeScale = 1,
                                        fade = viewmodelFade(hw, name) } = {}) {
   const to = hw?.actions?.[name];
-  if (!to || !hw.mixer) return;
-  if (hw.active === name && !restart) return;
+  if (!to || !hw.mixer) return false;
+  if (hw.active === name && !restart) return true;
   const from = hw.active && hw.active !== name ? hw.actions[hw.active] : null;
   if (restart) to.reset();
   to.setEffectiveTimeScale(timeScale);
@@ -5740,6 +5811,7 @@ function playViewmodelClip(hw, name, { restart = false, timeScale = 1,
     to.setEffectiveWeight(1);
   }
   hw.active = name;
+  return true;
 }
 
 /**
@@ -5756,10 +5828,17 @@ function updateViewmodelAnimation(hw, dt) {
   // Looping fire (Thompson / BAR) — not bolt rifles whose returnTo is
   // StandReload even when a stale extract still marks fire.loop true.
   const fireLoops = !!(hw.clips?.fire?.loop) && !fireReturnsToReload;
+  // LoopOnce + clampWhenFinished leaves the action scheduled but paused;
+  // isRunning() is false then, which used to drop the reload keep-alive.
+  const reloadAction = hw.actions.reload;
+  const reloadRunning = !!(reloadAction
+    && (typeof reloadAction.isScheduled === 'function'
+      ? reloadAction.isScheduled()
+      : reloadAction.isRunning()));
   const decision = wantViewmodelClip({
     reload: hw.reload,
     reloadPlayed: hw.reloadPlayed,
-    reloadRunning: !!hw.actions.reload?.isRunning(),
+    reloadRunning,
     deployRunning: !!hw.actions.deploy?.isRunning(),
     active: hw.active,
     fireRunning,
@@ -5774,9 +5853,13 @@ function updateViewmodelAnimation(hw, dt) {
   // begun while the last reload clip is still clamped rewinds it. The clip
   // runs at the engine's own span (1/speed); DICE fitted rates in
   // 1pAnimationsTweaking.con so one pass matches reloadTime.
-  if (decision.markReloadPlayed) hw.reloadPlayed = true;
+  // Latch only after a successful play — a no-op (bare weapon, missing clip)
+  // must not burn the one attempt for this magazine.
   if (decision.startReload) {
-    playViewmodelClip(hw, 'reload', { restart: true });
+    hw.actions.fire?.stop();
+    if (playViewmodelClip(hw, 'reload', { restart: true })) {
+      if (decision.markReloadPlayed) hw.reloadPlayed = true;
+    }
   } else if (decision.startFire) {
     playViewmodelClip(hw, 'fire', { restart: true });
   } else if (decision.want !== hw.active) {
@@ -5991,6 +6074,26 @@ guns.onShot = group => {
 // never built a `FireState` for (the aircraft/car path has no magazine model
 // of its own yet; the hand weapon manages its own `hw.rounds` above).
 chainOnShot(guns, group => fireStates.get(group.node)?.registerShot());
+// And the report. A gun `.ssc` is a one-shot event patch — the muzzle blast,
+// the casing, the crew reloading, the breech — so the round is what plays it,
+// exactly as a hand weapon's own `playHandFire` works two screens up. Chained
+// rather than assigned, for the reason the block above spells out.
+chainOnShot(guns, group => weaponAudioFor(group)?.audio.trigger());
+
+/** The gun patch bolted to the FireArms node this group fires, or null.
+ *  Matched on the node's own name, tolerating the scene-wide `_N` suffix the
+ *  exporter gives the second and later instance of a vehicle — `weaponAudio`
+ *  is keyed on the template's bare FireArms name. A plain loop, not `find`:
+ *  this runs once per round fired. */
+function weaponAudioFor(group) {
+  const name = group?.node?.name;
+  if (!name || !weaponAudio.length) return null;
+  const bare = name.replace(/_\d+$/, '');
+  for (const weapon of weaponAudio) {
+    if (weapon.spec.fireArms === name || weapon.spec.fireArms === bare) return weapon;
+  }
+  return null;
+}
 
 /**
  * One frame of the weapon: aim blend and FOV, deviation state, the reload

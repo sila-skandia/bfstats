@@ -18,7 +18,8 @@ function stubCtx() {
     disconnect() {},
     ...extra,
   });
-  return {
+  const ctx = {
+    started: [],
     currentTime: 0,
     createGain() { return node({ gain: param(0) }); },
     createPanner() {
@@ -33,16 +34,18 @@ function stubCtx() {
       });
     },
     createBufferSource() {
-      return node({
+      const source = node({
         buffer: null,
         loop: false,
         playbackRate: param(1),
-        start() {},
-        stop() {},
+        start() { ctx.started.push(this); },
+        stop() { this.stopped = true; },
         onended: null,
       });
+      return source;
     },
   };
+  return ctx;
 }
 
 function fakeListener(ctx) {
@@ -117,6 +120,94 @@ const WILLY_HI = layer('hi.wav', [
   assert.ok(full.snapshot().layers[0].gain > 0.9,
     `hi-rpm layer must be up at Default 1, got ${full.snapshot().layers[0].gain}`);
   full.dispose();
+}
+
+// --- a gun patch is a one-shot event, not a loop to un-mute -----------------
+//
+// Every layer of every vehicle weapon on Aberdeen is `loop: false` (the
+// Sherman's cannon is twenty of them: muzzle blast, casing, crew, breech).
+// `start()` used to fire the lot once, inaudibly, at the moment the patch was
+// built, `onended` cleared each voice, and the gain gate in `map.html` then
+// had nothing running left to un-mute -- so no vehicle gun in the viewer ever
+// made a sound. `oneShotsOnTrigger` holds them back for `trigger()`.
+
+function shot(file) {
+  return {
+    file, loop: false, volume: 1, modulators: [],
+    randomStartPitch: [0, 0], relativePosition: [0, 0, 0], doppler: false,
+  };
+}
+
+function gunPatch(layers, { oneShotsOnTrigger = true } = {}) {
+  const ctx = stubCtx();
+  const buffers = new Map(layers.map(l => [l.file, fakeBuffer()]));
+  const audio = new EngineAudio(
+    { template: 'Sherman', engine: 'ShermanGunBarrel', layers },
+    layers, buffers, fakeListener(ctx), 1, oneShotsOnTrigger,
+  );
+  return { ctx, audio };
+}
+
+{
+  const { ctx, audio } = gunPatch([shot('bang.wav'), shot('breech.wav')]);
+  audio.start();
+  assert.equal(ctx.started.length, 0,
+    'a gun patch must make no sound until a round is fired');
+  const played = audio.trigger();
+  assert.equal(played, 2, `a round plays every one-shot, got ${played}`);
+  assert.equal(ctx.started.length, 2, 'both layers must actually start');
+  audio.dispose();
+}
+
+{
+  // The old behaviour is still what an ENGINE patch needs: a starter cough
+  // fires the moment the engine does.
+  const { ctx, audio } = gunPatch([shot('starter.wav')], { oneShotsOnTrigger: false });
+  audio.start();
+  assert.equal(ctx.started.length, 1,
+    'an engine one-shot must still play on start()');
+  audio.dispose();
+}
+
+{
+  // A burst stacks rather than cutting its own tail: the previous source is
+  // orphaned to play out while a new one takes the voice's slot.
+  const { ctx, audio } = gunPatch([shot('mg.wav')]);
+  audio.start();
+  audio.trigger();
+  audio.trigger();
+  audio.trigger();
+  assert.equal(ctx.started.length, 3, 'every round starts its own source');
+  assert.ok(!ctx.started.some(s => s.stopped),
+    'a round in flight must not be cut short by the next one');
+  audio.dispose();
+}
+
+{
+  // The patch's own clock restarts with the round, because a gun `.ssc`
+  // sequences its layers off `Time` measured from the shot.
+  const { audio } = gunPatch([shot('bang.wav')]);
+  audio.start();
+  audio.update({
+    dt: 0.5, rpm: 0, speed: 0, acceleration: 0, diveAngle: 0,
+    position: { x: 0, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 },
+    listenerPosition: { x: 0, y: 0, z: 0 },
+  });
+  assert.ok(audio.snapshot().elapsed > 0.4, 'the clock runs between rounds');
+  audio.trigger();
+  assert.equal(audio.snapshot().elapsed, 0, 'and restarts with the round');
+  audio.dispose();
+}
+
+{
+  // `hasLoops` is what tells `map.html` whether gating the master on the
+  // trigger means anything for this patch.
+  const oneShots = gunPatch([shot('bang.wav')]);
+  assert.equal(oneShots.audio.hasLoops, false);
+  oneShots.audio.dispose();
+  const looped = gunPatch([WILLY_MAIN]);
+  assert.equal(looped.audio.hasLoops, true);
+  looped.audio.dispose();
 }
 
 console.log('test_engine_audio_default.mjs: ok');
