@@ -152,6 +152,15 @@ results.nearestWins = struck && struck.material === 92;
 // The firing object's own hull is skipped, so the round reaches the second wall.
 const through = world.cast(0, 5, -5, 1, 0, 0, 16, statics.ownerOf(near));
 results.ownerSkipped = through && { t: through.t, material: through.material };
+// A faded wreck: disable the near wall and the round reaches the far one.
+statics.disableOwner(statics.ownerOf(near));
+const pastDisabled = world.cast(0, 5, -5, 1, 0, 0, 16, -1);
+results.disabledOwnerSkipped = pastDisabled && {
+  material: pastDisabled.material, owner: pastDisabled.owner,
+};
+statics.enableOwner(statics.ownerOf(near));
+const restored = world.cast(0, 5, -5, 1, 0, 0, 16, -1);
+results.disabledOwnerRestored = restored && restored.material === 92;
 // Short of the wall: no hit, and the segment length is respected.
 results.shortOfWall = world.cast(0, 5, -5, 1, 0, 0, 4, -1) === null;
 // Backwards.

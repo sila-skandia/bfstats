@@ -1213,6 +1213,29 @@ class Assembler:
                             "effectBundle": {"name": node.template.name}}
             if (raw := props.get("timetolive")) and (ttl := con_mod.crd4(raw.split()[0])):
                 extras["effectBundle"]["timeToLive"] = ttl
+            if node.template.work_on_materials:
+                extras["effectBundle"]["workOnMaterials"] = list(
+                    node.template.work_on_materials)
+            if (raw := props.get("mindistanceunderwatersurface", "").strip()):
+                try:
+                    extras["effectBundle"]["minDistanceUnderwaterSurface"] = float(
+                        raw.split()[0])
+                except ValueError:
+                    pass
+            if (raw := props.get("maxdistanceunderwatersurface", "").strip()):
+                try:
+                    extras["effectBundle"]["maxDistanceUnderwaterSurface"] = float(
+                        raw.split()[0])
+                except ValueError:
+                    pass
+            if (raw := props.get("loddistance", "").strip()):
+                try:
+                    extras["effectBundle"]["lodDistance"] = float(raw.split()[0])
+                except ValueError:
+                    pass
+            if (raw := props.get("setstartoneffects", "").strip()):
+                if (flag := con_mod.truthy(raw)) is not None:
+                    extras["effectBundle"]["startOnEffects"] = flag
             return builder.add_node(gltf.Node(
                 name=node.template.name,
                 translation=node.position,

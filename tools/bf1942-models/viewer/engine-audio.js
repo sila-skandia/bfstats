@@ -198,6 +198,19 @@ export class EngineAudio {
     this.groups = new Map();
     this.voices = [];
     for (const layer of layers) {
+      // `stereo` marks a sample for non-spatialised playback (cockpit gun
+      // layers): HRTF at 1.2 m is wrong when the data says 2D. Connect those
+      // straight to the bus; everything else keeps a panner group keyed by
+      // relativePosition.
+      if (layer.stereo) {
+        const voice = new Voice(this.ctx, layer, buffers.get(layer.file), this.bus);
+        voice.group = {
+          panner: null, offset: [0, 0, 0],
+          distance: 0, radial: 0, primed: true,
+        };
+        this.voices.push(voice);
+        continue;
+      }
       const offset = layer.relativePosition || [0, 0, 0];
       const key = offset.join(',');
       let group = this.groups.get(key);
@@ -369,7 +382,7 @@ export class EngineAudio {
       group.radial = dt > 0 && group.primed ? (distance - group.distance) / dt : 0;
       group.primed = true;
       group.distance = distance;
-      this.#placePanner(group.panner, wx, wy, wz, now);
+      if (group.panner) this.#placePanner(group.panner, wx, wy, wz, now);
     }
 
     const base = {
@@ -464,7 +477,7 @@ export class EngineAudio {
       try { voice.gain.disconnect(); } catch (_) {}
     }
     for (const group of this.groups.values()) {
-      try { group.panner.disconnect(); } catch (_) {}
+      try { group.panner?.disconnect(); } catch (_) {}
     }
     try { this.bus.disconnect(); } catch (_) {}
     this.voices.length = 0;

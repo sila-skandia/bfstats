@@ -71,9 +71,21 @@ ObjectTemplate.addEmitterSpeed 1
 ObjectTemplate.emitterSpeedScale 1
 ObjectTemplate.timeToLive CRD_UNIFORM/0.1/0/0
 ObjectTemplate.intensity CRD_UNIFORM/-2/2/1
+ObjectTemplate.hasOverDamage 1
+ObjectTemplate.intensityOverTime 0/1|100/0.5
 ObjectTemplate.positionalSpeedInUp CRD_UNIFORM/2/0/0
 ObjectTemplate.positionalSpeedInRight CRD_UNIFORM/3/-3/0
 ObjectTemplate.rotationalSpeedInUp CRD_UNIFORM/1/10/0
+
+ObjectTemplate.create EffectBundle e_wdustPanz
+ObjectTemplate.saveInSeparateFile 1
+ObjectTemplate.addTemplate Em_richoBasic
+ObjectTemplate.timeToLive CRD_NONE/-1/0/0
+ObjectTemplate.addWorkOnMaterial 2
+ObjectTemplate.addWorkOnMaterial 3
+ObjectTemplate.addWorkOnMaterial 11
+ObjectTemplate.minDistanceUnderwaterSurface 0
+ObjectTemplate.maxDistanceUnderwaterSurface 0.01
 
 ObjectTemplate.create Particle Fx_richoStone
 ObjectTemplate.geometry Richo_meshBrown_m1
@@ -216,6 +228,35 @@ class SpecTests(unittest.TestCase):
         self.assertEqual(["u", 15.0, 1.0, 0], particle["timeToLive"])
         self.assertEqual([1.0, 1.0, 1.0], particle["sizeModifier"])
         self.assertEqual([[0.0, 1.0], [70.0, 1.0], [100.0, 0.0]], particle["alphaOverTime"])
+
+    def test_emitter_spec_maps_has_over_damage_and_intensity_over_time(self) -> None:
+        """Remaining high-count Emitter words after intensity itself landed.
+
+        `hasOverDamage` (33 vanilla emitters) gates damage-tier smoke; 
+        `intensityOverTime` (23) ramps particles/second over the emitter life.
+        Both sit in `EmitterTemplate` (client strings at 0x008eba18 / 0x008ebc04).
+        """
+        lib = library()
+        spec = effects.emitter_spec(lib.object("Em_richoStone"),
+                                    lib.object("Fx_richoStone"))
+        self.assertTrue(spec["hasOverDamage"])
+        self.assertEqual([[0.0, 1.0], [100.0, 0.5]], spec["intensityOverTime"])
+        self.assertEqual(["u", -2.0, 2.0, 1], spec["intensity"])
+
+    def test_effect_bundle_keeps_work_on_materials_after_add_template(self) -> None:
+        """`addWorkOnMaterial` is written after `addTemplate` and must accumulate.
+
+        The raw-prop capture used to require `child is None`, so every material
+        filter on dust/wake bundles (48 lines in vanilla) was dropped.
+        """
+        lib = library()
+        bundle = lib.object("e_wdustPanz")
+        self.assertEqual([2, 3, 11], bundle.work_on_materials)
+        self.assertEqual("0", bundle.effect_props["mindistanceunderwatersurface"])
+        self.assertEqual("0.01", bundle.effect_props["maxdistanceunderwatersurface"])
+        # Child-instance timeToLive after addTemplate must not overwrite the
+        # bundle's own effect_props (there is none authored before addTemplate).
+        self.assertNotIn("timetolive", bundle.effect_props)
 
     def test_sprite_blend_follows_dest_blend_mode(self) -> None:
         lib = library()

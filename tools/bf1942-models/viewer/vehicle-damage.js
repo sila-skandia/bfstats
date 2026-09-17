@@ -136,6 +136,14 @@ export class DamageableVehicle {
     return this.armor.heal(amount);
   }
 
+  /** Pad respawn: full HP, clear death latch, no burn smoke until damaged again. */
+  reset() {
+    this.armor.reset();
+    this.shown = null;
+    this.criticalAccumulator = 0;
+    this.deathAnnounced = false;
+  }
+
   /**
    * One simulation step. Runs the critical-damage burn — `Armor::update`'s
    * accumulator, which fires a flat `hpLostWhileCriticalDamage` once per whole

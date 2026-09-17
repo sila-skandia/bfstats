@@ -37,6 +37,16 @@ _REM_BLOCK = re.compile(r"^\s*beginrem\b.*?^\s*endrem\b", re.IGNORECASE | re.MUL
 # that follows an argument-less command such as `renderer.endGlobalCluster`.
 _EFFECT_KINDS = frozenset({"effectbundle", "emitter", "particle", "spriteparticle",
                            "spriteparticlenew"})
+# EffectBundle properties that belong to the bundle even when written after
+# `addTemplate` (which otherwise parks subsequent commands on the child).
+# `timeToLive` / `setPosition` / `setRotation` after addTemplate stay child-
+# scoped and are intentionally absent here.
+_EFFECT_BUNDLE_SCOPED = frozenset({
+    "saveinseparatefile", "loadsoundscript",
+    "addworkonmaterial",
+    "mindistanceunderwatersurface", "maxdistanceunderwatersurface",
+    "loddistance", "setstartoneffects",
+})
 _COMMAND = re.compile(r"^(\w+)\.(\w+)(?:[ \t]+(.*?))?[ \t]*$")
 
 
@@ -907,6 +917,10 @@ class ObjectTemplate:
     # typing each one here would triple this class for one consumer. Read by
     # `bf42.effects`, which owns the vocabulary and the CRD semantics.
     effect_props: dict[str, str] = field(default_factory=dict)
+    # `ObjectTemplate.addWorkOnMaterial <id>` on an EffectBundle — the effect
+    # only plays when the struck / hosting surface is one of these material
+    # ids. Accumulates; `e_wdustPanz` lists a dozen terrain materials.
+    work_on_materials: list[int] = field(default_factory=list)
 
     # `ObjectTemplate.lodSelector <name>` — which `LodSelectorTemplate` block
     # decides between this LodObject's alternatives.
@@ -1270,11 +1284,23 @@ class ObjectLibrary:
             ns, cmd, args = match.group(1).lower(), match.group(2).lower(), match.group(3) or ""
 
             if ns == "objecttemplate":
-                if (cmd != "create" and obj is not None and child is None
-                        and obj.kind.lower() in _EFFECT_KINDS):
-                    # Raw, last wins, template scope only: a `timeToLive`
-                    # after an `addTemplate` belongs to that child instance.
-                    obj.effect_props[cmd] = args.strip()
+                if (cmd != "create" and obj is not None
+                        and obj.kind.lower() in _EFFECT_KINDS
+                        and (child is None
+                             or (obj.kind.lower() == "effectbundle"
+                                 and cmd in _EFFECT_BUNDLE_SCOPED))):
+                    # Raw capture for the effect player. Template scope only
+                    # unless the command is one of the EffectBundle words that
+                    # the data writes after `addTemplate` (materials filter,
+                    # underwater band, lod). A `timeToLive` after addTemplate
+                    # still belongs to the child instance and is skipped here.
+                    if cmd == "addworkonmaterial":
+                        try:
+                            obj.work_on_materials.append(int(args.split()[0]))
+                        except (ValueError, IndexError):
+                            pass
+                    else:
+                        obj.effect_props[cmd] = args.strip()
                 if cmd == "create":
                     parts = args.split()
                     if len(parts) < 2:

@@ -159,6 +159,19 @@ Object.absolutePosition 120/10/210
         self.assertEqual((0.932941, 0.935059, 0.990118), instances[0].scale)
         self.assertIsNone(instances[1].scale)
 
+    def test_geometry_color_survives_its_second_dot(self) -> None:
+        instances = parse_static_objects(
+            """
+Object.create birch1_M1
+Object.absolutePosition 100/10/200
+Object.geometry.color 0.6/0.7/0.5
+Object.create birch1_M1
+Object.absolutePosition 120/10/210
+"""
+        )
+        self.assertEqual((0.6, 0.7, 0.5), instances[0].color)
+        self.assertIsNone(instances[1].color)
+
     def test_set_team_belongs_to_the_spawn(self) -> None:
         instances = parse_static_objects(
             """
@@ -192,6 +205,23 @@ ObjectTemplate.teamOnVehicle 2
         self.assertEqual("panzeriv", spawn_vehicle("lighttankspawner", 1, templates))
         self.assertEqual("Willy", spawn_vehicle("ScoutCarSpawner", 1, templates))
         self.assertIsNone(spawn_vehicle("AAGunSpawner", 2, templates))
+
+    def test_respawn_window_from_min_max_and_single_delay(self) -> None:
+        templates = parse_spawn_templates(
+            """
+ObjectTemplate.create ObjectSpawner HeavyTankSpawner
+ObjectTemplate.setObjectTemplate 2 sherman
+ObjectTemplate.MinSpawnDelay 70
+ObjectTemplate.MaxSpawnDelay 110
+ObjectTemplate.create ObjectSpawner MachinegunSpawner
+ObjectTemplate.setObjectTemplate 2 Stationary_browning
+ObjectTemplate.SpawnDelay 60
+"""
+        )
+        self.assertEqual((70.0, 110.0),
+                         templates["heavytankspawner"].respawn_window())
+        self.assertEqual((60.0, 60.0),
+                         templates["machinegunspawner"].respawn_window())
 
 
 class CubemapTests(unittest.TestCase):
@@ -245,8 +275,8 @@ class InitConTests(unittest.TestCase):
         parse_init_con(
             """
 renderer.fogColorVec 0.8/0.718/0.531
-renderer.fogLinearStart 150
-renderer.fogLinearEnd 300
+renderer.fogStart 150
+renderer.fogEnd 300
 sky.sunLightDirectionVec -0.778/0.58/-0.234
 game.setActiveCombatArea 1024 0 2048 2048
 game.setBeforeSpawnCameraPosition 1 1983.37/69.94/688.15
@@ -262,6 +292,49 @@ water.color 0.63/0.59/0.33
                          (info.combat.min_x, info.combat.min_z, info.combat.size_x, info.combat.size_z))
         self.assertEqual((1983.37, 69.94, 688.15), info.camera)
         self.assertEqual((0.63, 0.59, 0.33), info.water_color)
+
+    def test_dead_fog_spellings_are_ignored(self) -> None:
+        # fogLinear* and setFogColorVec ship in Init.con but are not registered
+        # in BF1942.exe — honouring them fogged Tobruk to authored-dead 150/300
+        # and Midway to a colour the engine never applies.
+        info = LevelInfo(name="Tobruk", terrain=parse_terrain_con(""))
+        parse_init_con(
+            """
+renderer.fogColorVec 0.8/0.718/0.531
+renderer.fogLinearStart 150
+renderer.fogLinearEnd 300
+renderer.setFogColorVec 0.1/0.2/0.3
+Game.setViewDistance 300
+""",
+            info,
+        )
+        self.assertEqual((0.8, 0.718, 0.531), info.fog_color)
+        self.assertIsNone(info.fog_start)
+        self.assertIsNone(info.fog_end)
+
+        midway = LevelInfo(name="Midway", terrain=parse_terrain_con(""))
+        parse_init_con(
+            "renderer.setFogColorVec 0.812/0.832/0.921\nGame.setViewDistance 500\n",
+            midway,
+        )
+        self.assertEqual((0.7, 0.7, 0.7), midway.fog_color)
+
+    def test_live_fogstart_beats_dead_foglinear(self) -> None:
+        # Kharkov writes both; only fogstart/fogend reach Setup.
+        info = LevelInfo(name="Kharkov", terrain=parse_terrain_con(""))
+        parse_init_con(
+            """
+renderer.fogLinearStart 120
+renderer.fogLinearEnd 200
+renderer.fogColorVec 0.75/0.738/0.726
+Game.setViewDistance 400
+renderer.fogstart -40
+renderer.fogend 400
+""",
+            info,
+        )
+        self.assertEqual(-40.0, info.fog_start)
+        self.assertEqual(400.0, info.fog_end)
 
 
 class SkyAndSunTests(unittest.TestCase):
