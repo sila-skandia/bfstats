@@ -614,6 +614,7 @@ import * as GroundModule from './ground.js';
 import {
   VehicleOccupancy, findAllVehicleRoots, listEntryPoints, classifyRoot,
   FireState, chainOnShot, readWorldPose, pickNearest,
+  setTurretSpeedScale, turretSpeedScale,
 } from './seats.js';
 import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
          WEAPON_HEADROOM } from './engine-audio.js';
@@ -4069,6 +4070,14 @@ function setPilot(on, node = null, seatId = null) {
     : (optOnFoot.checked && soldier ? HUD_FOOT
       : isTouchDevice ? getTouchHudText() : HUD_FLY);
 }
+
+// `?turret=<scale>` multiplies every aim axis's declared `setMaxSpeed` to get
+// the rate it actually traverses at. It is a knob and not a setting because
+// nothing in the corpus closes out what `setMaxSpeed` means for a
+// RotationalBundle on screen (`seats.js`'s `TURRET_SPEED_SCALE` has the
+// citations), so the number wants settling by playing rather than by another
+// guess. `window.__turretScale()` reads and writes it live.
+if (params.has('turret')) setTurretSpeedScale(params.get('turret'));
 
 const HUD_PILOT = 'W/S throttle · A/D rudder · arrows pitch and roll · LMB guns · RMB bombs · '
   + 'C view · mouse look around · R reset · 1-9 seats · E out on the ground · Esc';
@@ -8397,6 +8406,10 @@ if (params.has('shots')) {
   // vehicle's `c_PIFire`, right its `c_PIAltFire`. Named apart from
   // `__setTrigger` because that one is the soldier's, and a seated player's
   // is a different input on a different object.
+  // The traverse-rate scale, live: call with no argument to read it, with a
+  // number to try one. Same knob as `?turret=`.
+  window.__turretScale = value => (value === undefined
+    ? turretSpeedScale() : setTurretSpeedScale(value));
   window.__setSeatFire = (main, alt = false) => {
     seatFire = !!main;
     seatAltFire = !!alt;

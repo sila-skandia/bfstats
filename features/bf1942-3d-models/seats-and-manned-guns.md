@@ -132,12 +132,13 @@ nailed down"). Two gaps stand between that and this viewer:
 2. Even given that magnitude, the closed form itself is unsettled.
 
 The corrected report's own recipe names the way through both: approximate
-with a tunable ease rather than ship the wrong formula. `TurretAxis` chases an
-input-scaled target velocity at a fixed fraction of the axis's own real
-`maxSpeed` per second (`TURRET_RAMP_TIME`, `TURRET_SENSITIVITY` — both named
-as tuned-to-feel-right, not measured, in `seats.js`'s own comments). The
-deadzone's asymmetric `<-1.0` branch the verifier flagged as unexplained is
-not reproduced either (a plain zero for both signs is used).
+with a tunable ease rather than ship the wrong formula. `TurretAxis` banks the
+angle the mouse asks for and spends it as fast as the axis allows — see the
+2026-09-17 follow-up below for why it stopped chasing an input-scaled *rate*,
+and which constants are named as tuned-to-feel-right rather than measured in
+`seats.js`'s own comments. The deadzone's asymmetric `<-1.0` branch the
+verifier flagged as unexplained is not reproduced either (a plain zero for
+both signs is used).
 
 **Open**: both gaps above are the verifier's own open items, not this
 viewer's invention — closing either needs a further disassembly pass this
@@ -315,16 +316,11 @@ well as its main gun, so this was never tank-specific — it had simply never
 been driven far enough to notice. `aim` now documents that it takes the
 browser's screen sense directly.
 
-**`TURRET_SENSITIVITY` was 20x too small to reach a usable rate.** `step`
-turns a sample into `sample * SENS / 40 * maxSpeed` deg/s, so at 0.05 a
-Sherman's 35 deg/s traverse ran at `sample * 0.044` deg/s: an ordinary 40 px
-frame gave 1.75 deg/s and a hard flick at 120 px gave 5.3 — a quarter-minute
-of continuous swiping to come round 90 degrees. At 0.35 the register's own
-±40 clamp saturates at 114 px in a frame, so a brisk flick reaches the gun's
-declared maximum and nothing exceeds it. Still a feel number about browser
-mouse units, and its own comment says so; GUN-3's ±40 clamp and ±1.0 deadzone
-are untouched, and `test_seats.py`'s deadzone fixture is now written in
-register units so it stops depending on this constant at all.
+**A sensitivity constant was tuned twice and neither value helped**, which is
+what eventually pointed at the model rather than the numbers — see the rate
+section below. `test_seats.py`'s deadzone fixture is now written in degrees of
+ask and converted, so it stops failing every time a feel constant moves for a
+reason that has nothing to do with the deadzone it is about.
 
 **A turret now stays where it was left.** Rigs are cached per seat on the
 occupancy rather than rebuilt on every `setActiveSeat`, and `applyTurrets()`
@@ -367,36 +363,58 @@ the same reason a driver's does. Space still works and still means
 `c_PIFire`. A Corsair gets the pair for free: its guns declare the first and
 its bombs the second.
 
-**The wind-up, not the cap, was what made the traverse feel slow.**
-`TURRET_RAMP_TIME` was one shared second from rest to any gun's own
-`maxSpeed`, so a short flick spent all of itself still accelerating. That
-number was never in the data — but its real counterpart is:
+**The traverse was slow because the mouse was asking for a rate, not an
+angle.** Two rounds of tuning constants did not fix it, and could not have:
+the model was wrong. `TurretAxis` drained its input sample to zero on every
+`step`, so the only thing it could ever know was "how fast is the hand moving
+*right now*" — everything a fast frame asked for above the clamp was
+discarded, and the whole of a flick vanished the instant the hand stopped.
+
+`manned-guns.md` §3 states the correction outright and it had been read past:
+the input register at `+0x128` **accumulates**. So `feed` now banks degrees of
+ask and `step` spends them as fast as the axis allows, taking what it spends
+off the bank. The scale is `map.html`'s own `LOOK_SENS` in degrees — a
+gunner's hand asks a turret for the same travel it asks a soldier's head for,
+and the turret's own rate is then the only thing that makes one heavier than
+the other. The bank is clamped (`TURRET_PENDING_CLAMP`, 90 degrees), which is
+GUN-3's own hard-clamped register in this file's units: it bounds a flick
+rather than letting one keep the turret swinging for seconds.
+
+Measured on the page, against what the same hand movement turns a soldier:
+
+| sustained sweep | mouse asked for | turret delivered |
+|---|---|---|
+| 5 px/frame for 0.5 s | 18.9° | **18.9°** |
+| 10 px/frame | 37.8° | **37.8°** |
+| 20 px/frame | 75.6° | **75.6°** |
+| 40 px/frame | 151.3° | 100.9° |
+| 80 px/frame | 302.5° | 122.6° |
+
+Ordinary aiming is now 1:1 with the pointer, exactly as it is on foot, and
+the axis's own limits only bite on a sweep faster than 20 px a frame. Before
+this, 40 px/frame for half a second moved the turret 11 degrees.
+
+**`setMaxSpeed` is not confirmed to be a deg/s ceiling, and is no longer
+treated as one.** §3 says the ±40 input clamp is "not the template's
+`maxSpeed`", that `automaticReset` branches on whether `|acceleration|`
+multiplies `maxRotation` or `maxSpeed` and that "this downstream use was not
+closed out", and that the closed form of `angle += reg[0x110] × reg[0x128]`
+is open. Taken literally, a Sherman's `setMaxSpeed 35` is about nine times
+slower than the same hand movement turns a soldier's head. It is now a rate
+cap times `TURRET_SPEED_SCALE` (4), tunable live with **`?turret=<scale>`**
+or `window.__turretScale(n)`, because that number wants settling by playing
+rather than by another guess. At 4 it is no longer the binding constraint at
+any hand speed measured above — the bank clamp and the wind-up are.
+
+**The wind-up is still GUN-3's, and now has real data behind it.**
 `setAcceleration`'s magnitude is deg/s² of servo acceleration
-(flight-model.md §2a, confirmed, vanilla magnitudes 30–150), and it is
-exactly the `|acceleration|·dt` GUN-3 has the velocity register accumulating.
-`con.py` emitted only its *sign* (as `direction`) and threw the magnitude
-away. It now emits both, `TurretAxis` ramps at the axis's own number when the
-extract carries it, and `TURRET_ACCELERATION` (90 deg/s², the middle of the
-confirmed band) is the fallback for every glb baked before today — 0.39 s to
-the cap on a Sherman, against the old flat 1.0 s.
-
-`TURRET_SENSITIVITY` went 0.35 → **1.0**, one register unit per pixel, which
-makes the whole chain readable: the register's own ±40 clamp saturates in a
-40 px frame, so ordinary aiming motion asks for the gun's declared maximum and
-nothing can ask for more, and GUN-3's ±1.0 deadzone lands on one pixel.
-
-Measured after, on the real page: 35 deg/s sustained — the Sherman's own
-declared `maxSpeed`, reached and held — 11 degrees from half a second at
-40 px/frame, 5.3 from a 0.15 s flick. A left click puts a shell out and resets
-the reload bar; a second of right button puts 12 coax rounds out, drops the
-secondary count 400 → 388 and takes the heat bar to 0.295.
-
-**If it still reads slow, the remaining number is data.** `ShermanTower`
-declares `setMaxSpeed 35`, and the traverse now reaches and holds exactly
-that. Going faster means either the extract is wrong or the engine does not
-cap at `setMaxSpeed` the way this rig assumes — neither of which is settled
-here. Re-extracting the models would at least replace the fallback wind-up
-with each gun's own `setAcceleration`.
+(flight-model.md §2a, confirmed, vanilla magnitudes 30–150) and is exactly
+the `|acceleration|·dt` §3 has the velocity register accumulating. `con.py`
+emitted only its *sign* (as `direction`) and threw the magnitude away; it now
+emits both, `TurretAxis` ramps at the axis's own number where the extract
+carries it, and `TURRET_ACCELERATION` (90 deg/s², the middle of the confirmed
+band) is the fallback for every glb baked before today — against the flat
+1.0 s per gun that preceded it.
 
 ### Still open
 

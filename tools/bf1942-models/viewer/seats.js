@@ -440,34 +440,81 @@ const RIG_SIGN = { yaw: -1, pitch: -1, roll: 1 };       // (unexported there; ke
 // a measurement -- the fix is to re-extract, after which the gun's own number
 // wins.
 export const TURRET_ACCELERATION = 90;
-// Mouse pixels (this viewer's own unit) per tick -> the input register's
-// units. The real register's units are a raw Windows mouse delta at whatever
-// pointer-speed setting the client read; the ratio between that and a
-// pointer-locked `movementX` in a browser is not recoverable from any of the
-// data this round has, so this is tuned against the +-40 clamp and +-1.0
-// deadzone GUN-3 pins exactly, not derived from them.
+// Degrees of aim the mouse asks for, per pixel of pointer-locked
+// `movementX/Y`. This is `map.html`'s own `LOOK_SENS` (0.0022 rad/px) in
+// degrees, on purpose: a gunner's hand should ask a turret for the same
+// travel it asks a soldier's head for, and the turret's own rate cap is then
+// the only thing that makes aiming one heavier than the other.
+export const TURRET_DEGREES_PER_PIXEL = 0.0022 * 180 / Math.PI;
+
+// How much aim can be BANKED, in degrees, waiting for the axis to deliver it.
+// GUN-3's input register is hard-clamped to +-40 and this is that clamp, in
+// this file's own units. Its job is to bound a flick, not to stop one: a
+// player who throws the mouse across the pad asks for more travel than any
+// turret can produce in one frame, and everything past this is dropped.
+export const TURRET_PENDING_CLAMP = 90;
+
+// The deadzone, GUN-3's own +-1.0 on the register: below this much banked
+// aim, nothing moves.
+export const TURRET_DEADZONE = 0.05;
+
+// What multiplies an axis's declared `setMaxSpeed` to get the rate it will
+// actually turn at.
 //
-// Raised from 0.05 once a tank's own turret started answering to it
-// (2026-09-17), because the arithmetic at that value does not reach a usable
-// rate at any speed a hand moves. `step` turns a sample into
-// `sample * SENS / 40 * maxSpeed` deg/s, so at 0.05 a Sherman's 35 deg/s
-// traverse ran at `sample * 0.044` deg/s: an ordinary 40 px frame gave
-// 1.75 deg/s and a hard flick at 120 px gave 5.3, i.e. a quarter-minute to
-// come round 90 degrees while swiping continuously.
+// It exists because `maxSpeed` as a literal deg/s ceiling does not survive
+// contact with the game. `manned-guns.md` §3 is explicit that the +-40 input
+// clamp is "not the template's `maxSpeed`", that `automaticReset` branches
+// on whether `|acceleration|` multiplies `maxRotation` or `maxSpeed` and that
+// "this downstream use was not closed out", and that the closed form of
+// `angle += reg[0x110] * reg[0x128]` is open. So nothing confirms that a
+// Sherman's `setMaxSpeed 35` is 35 degrees of traverse per second on screen,
+// and taken literally it is roughly nine times slower than the same hand
+// movement turns a soldier's head — reported twice from play as the turret
+// being far slower than the game's.
 //
-// 1.0 is one register unit per pixel, which makes the whole chain readable:
-// the register's own +-40 clamp saturates in a 40 px frame, so ordinary
-// aiming motion asks for the gun's declared maximum and nothing can ask for
-// more, and GUN-3's +-1.0 deadzone lands on one pixel. 0.35 (saturating at
-// 114 px) was the first attempt and was still reported as much slower than
-// the game. Still a feel number about browser mouse units, and it applies to
-// every manned gun, not only to tanks.
-export const TURRET_SENSITIVITY = 1.0;
+// Tunable live with `?turret=<scale>` so a number can be settled by playing
+// rather than by another guess. [free]
+export const TURRET_SPEED_SCALE = 4;
+
+let speedScale = TURRET_SPEED_SCALE;
+
+/** Override the traverse-rate scale (`?turret=`). Returns what took effect. */
+export function setTurretSpeedScale(value) {
+  const scale = Number(value);
+  if (Number.isFinite(scale) && scale > 0) speedScale = scale;
+  return speedScale;
+}
+
+export function turretSpeedScale() { return speedScale; }
 
 const _euler = new THREE.Euler();
 const _quat = new THREE.Quaternion();
 
-/** One RotationalBundle node, integrated per GUN-3's confirmed shape. */
+/** One RotationalBundle node, integrated per GUN-3's confirmed shape.
+ *
+ * The mouse asks for an ANGLE, not a rate. That is the correction this class
+ * needed, and `manned-guns.md` §3 states the part of it that is confirmed
+ * outright: the input register at `+0x128` *accumulates* raw input. This
+ * class used to drain its sample to zero on every `step`, which threw away
+ * two things at once — everything a fast frame asked for above the clamp, and
+ * the whole of a flick the instant the hand stopped moving. A turret that can
+ * only ever turn at "how fast is the mouse moving right now" cannot feel
+ * connected to a hand, however the constants are tuned, and two rounds of
+ * tuning it said so.
+ *
+ * So `feed` banks degrees and `step` spends them, as fast as the axis's own
+ * rate allows, and what it spends it takes off the bank. Ordinary aiming
+ * lands 1:1 with the pointer because the bank clears inside a frame or two;
+ * a flick keeps the turret swinging after the hand has stopped, which is what
+ * the accumulating register buys. The ramp between rates is still GUN-3's
+ * `|acceleration|` accumulation, and the +-180 wrap and the min/max clamp are
+ * still the confirmed ones.
+ *
+ * Open, and unchanged: the closed form of `angle += reg[0x110] * reg[0x128]`,
+ * and therefore what the two registers' units really are. This is the
+ * "tunable eased approach toward an input-scaled target" §3 asks for, not a
+ * transcription.
+ */
 export class TurretAxis {
   constructor(axisName, node, spec) {
     this.axisName = axisName;
@@ -476,39 +523,40 @@ export class TurretAxis {
     this.base = node.quaternion.clone();
     this.angle = 0;      // degrees, relative to the authored rest pose
     this.velocity = 0;   // degrees/second, current
-    this.sample = 0;     // pending raw input this tick, drained by `step`
+    this.pending = 0;    // degrees of aim asked for and not yet delivered
   }
 
-  /** Mouse motion arrives here, possibly several times before the next `step`. */
-  feed(delta) { this.sample += delta; }
+  /** Mouse motion arrives here, possibly several times before the next
+   *  `step`, and is banked rather than replacing what was already asked for.
+   *  `direction` is folded in here so everything downstream is in the node's
+   *  own sense. */
+  feed(delta) {
+    const asked = delta * TURRET_DEGREES_PER_PIXEL * (this.spec.direction || 1);
+    this.pending = Math.max(-TURRET_PENDING_CLAMP,
+      Math.min(TURRET_PENDING_CLAMP, this.pending + asked));
+  }
 
   step(dt) {
-    // The input register: GUN-3's own hardcoded +-40 clamp and +-1.0
-    // deadzone, confirmed exactly (verify-r6.md, `.rodata` 0x86c866c/70 and
-    // 0x86b05ec). The asymmetric "<-1.0 gets +1.0" branch the verifier flagged
-    // as unexplained is not reproduced -- a plain zero in the deadzone is used
-    // for both signs, which only differs from the real engine in that one
-    // corner the verifier itself could not account for.
-    const reg = Math.max(-40, Math.min(40, this.sample * TURRET_SENSITIVITY));
-    this.sample = 0;
-    const driven = Math.abs(reg) > 1 ? reg : 0;
-    // OPEN (GUN-3): the confirmed mechanism from here is `angle +=
-    // velocityRegister*inputRegister`, where `velocityRegister` accumulates
-    // `|acceleration|*dt`; this viewer has no per-axis acceleration magnitude
-    // to accumulate (see the module comment above) and the verifier could not
-    // close out the automaticReset-dependent step regardless. Approximated as
-    // a rate-limited ease: velocity chases an input-scaled target at a fixed
-    // fraction of the axis's own real `maxSpeed` per second.
-    const maxSpeed = this.spec.maxSpeed || 0;
-    const target = (driven / 40) * maxSpeed * this.spec.direction;
+    if (!(dt > 0)) return;
+    const pending = Math.abs(this.pending) > TURRET_DEADZONE ? this.pending : 0;
+    // The rate the bank is asking for, held to what this axis can do.
+    const cap = Math.abs(this.spec.maxSpeed || 0) * speedScale;
+    const want = Math.max(-cap, Math.min(cap, pending / dt));
     // GUN-3's velocity register: it winds up at the axis's OWN
     // `setAcceleration` when the extract carries it, and at the fallback
-    // otherwise -- see `TURRET_ACCELERATION` for why that stopped being a
-    // shared ramp time.
+    // otherwise -- see `TURRET_ACCELERATION`.
     const maxStep = (this.spec.acceleration || TURRET_ACCELERATION) * dt;
-    const delta = target - this.velocity;
-    this.velocity += Math.max(-maxStep, Math.min(maxStep, delta));
-    this.angle += this.velocity * dt;
+    const change = want - this.velocity;
+    this.velocity += Math.max(-maxStep, Math.min(maxStep, change));
+    let step = this.velocity * dt;
+    // Never turn further than was asked for: overshooting the bank would
+    // make the axis drift on after the hand stopped instead of settling.
+    if (Math.abs(step) > Math.abs(this.pending)) {
+      step = this.pending;
+      this.velocity = step / dt;
+    }
+    this.angle += step;
+    this.pending -= step;
     if (this.spec.free) {
       // Confirmed as-is (GUN-3): an unlimited axis (min==max, or neither
       // declared) wraps through +-180 instead of clamping.
@@ -517,8 +565,10 @@ export class TurretAxis {
     } else {
       const lo = Math.min(this.spec.min, this.spec.max);
       const hi = Math.max(this.spec.min, this.spec.max);
-      if (this.angle > hi) { this.angle = hi; this.velocity = 0; }
-      else if (this.angle < lo) { this.angle = lo; this.velocity = 0; }
+      // Pending is cleared at a stop too: aim banked against a wall would
+      // otherwise sit there and snap the axis the moment it turned back.
+      if (this.angle > hi) { this.angle = hi; this.velocity = 0; this.pending = 0; }
+      else if (this.angle < lo) { this.angle = lo; this.velocity = 0; this.pending = 0; }
     }
     this._apply();
   }
