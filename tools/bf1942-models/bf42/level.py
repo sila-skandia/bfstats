@@ -1521,8 +1521,59 @@ def parse_area_con(text: str) -> AreaSoundTemplate | None:
     return tmpl
 
 
-def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance]) -> LevelSounds:
-    """Extract ambient environment sound and placed area/coastline sounds."""
+def _find_template_sound_script(template_name: str, library, objects) -> tuple[str, str] | None:
+    """Find loadSoundScript in template tree (template itself or any child).
+
+    Returns (source_con_path, script_path) if found, None otherwise.
+    Walks the template tree breadth-first to find the first sound script.
+    """
+    if library is None or objects is None:
+        return None
+
+    visited: set[str] = set()
+    queue: list = [template_name]
+
+    while queue:
+        current = queue.pop(0)
+        key = current.lower()
+        if key in visited:
+            continue
+        visited.add(key)
+
+        tmpl = library.object(current)
+        if tmpl is None:
+            continue
+
+        # Check if this template's source .con file has sound scripts
+        if tmpl.source:
+            con_hit = objects.find(tmpl.source)
+            if con_hit:
+                con_text = objects.read(con_hit).decode("latin-1", "replace")
+                scripts = parse_sound_scripts(con_text)
+                if key in scripts:
+                    return tmpl.source, scripts[key][1]
+
+        # Add children to queue
+        for child_ref in tmpl.children:
+            if child_ref.template.lower() not in visited:
+                queue.append(child_ref.template)
+
+    return None
+
+
+def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance],
+                         library=None, objects=None) -> LevelSounds:
+    """Extract ambient environment sound and placed area/coastline sounds.
+
+    Args:
+        files: Level archive files
+        static_objects: Placed static instances from StaticObjects.con
+        library: ObjectLibrary for template lookups (optional)
+        objects: ArchivePool for reading .con/.ssc files (optional)
+
+    When library and objects are provided, also harvests loadSoundScript from
+    building statics (windmills, factories, guard towers, etc.).
+    """
     sounds = LevelSounds()
 
     # 1. Global Ambient Sound from Sounds/Environment.con -> Environment.ssc.
@@ -1631,6 +1682,79 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
             far_distance=far_dist,
             points=gltf_points,
         ))
+
+    # 4. Building sounds from static objects with loadSoundScript in their template tree
+    if library is not None and objects is not None:
+        # Cache parsed sound info per template to avoid re-parsing
+        template_sounds: dict[str, tuple[str, float, float, float] | None] = {}
+
+        for inst in static_objects:
+            template_key = inst.template.lower()
+
+            # Check cache first
+            if template_key not in template_sounds:
+                # Find sound script in this template or its children
+                script_info = _find_template_sound_script(inst.template, library, objects)
+                if script_info is None:
+                    template_sounds[template_key] = None
+                    continue
+
+                source_con, script_path = script_info
+                # Resolve script path relative to the .con file
+                ssc_path = resolve_ssc_path(source_con, script_path)
+
+                # Try to read the .ssc file from objects pool
+                ssc_hit = objects.find(ssc_path)
+                if ssc_hit is None:
+                    template_sounds[template_key] = None
+                    continue
+
+                try:
+                    ssc_txt = objects.read(ssc_hit).decode("latin-1", "replace")
+                    patches = parse_ssc(ssc_txt)
+                except Exception:
+                    template_sounds[template_key] = None
+                    continue
+
+                # Find first non-silence patch
+                patch = None
+                for p in patches:
+                    if p.file and not p.file.lower().endswith("silence.wav"):
+                        patch = p
+                        break
+                if patch is None:
+                    template_sounds[template_key] = None
+                    continue
+
+                # Default sound parameters for building ambience
+                # Most building sounds are continuous loops with modest range
+                near_dist = patch.near_distance if patch.near_distance is not None else 10.0
+                far_dist = patch.far_distance if patch.far_distance is not None else 40.0
+                vol = patch.volume if patch.volume > 0 else (
+                    patch.ramp_start_val if patch.ramp_start_val is not None and patch.ramp_start_val > 0 else 0.5
+                )
+
+                # Cache the sound info
+                template_sounds[template_key] = (patch.file, vol, near_dist, far_dist)
+
+            # Get cached sound info
+            sound_info = template_sounds[template_key]
+            if sound_info is None:
+                continue
+
+            sound_file, vol, near_dist, far_dist = sound_info
+            ox, oy, oz = inst.position
+            # Point emitter at the building's position
+            gltf_points = [[round(ox, 3), round(oy, 3), round(-oz, 3)]]
+
+            sounds.areas.append(PlacedAreaSound(
+                name=f"{inst.template}_static",
+                file=sound_file,
+                volume=vol,
+                near_distance=near_dist,
+                far_distance=far_dist,
+                points=gltf_points,
+            ))
 
     return sounds
 

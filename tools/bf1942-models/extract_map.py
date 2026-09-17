@@ -1781,6 +1781,9 @@ def main() -> int:
             if cpt:
                 library.add_con(cpt, files.read(cpt).decode("latin-1", "replace"))
                 detach_flag_cloth(library, info)
+        # Re-discover sounds with library available to harvest building ambience
+        # (windmills, watermills, factories with loadSoundScript in their templates)
+        info.sounds = discover_level_sounds(files, info.static_objects, library, objects)
         lightmaps = write_object_lightmaps(files, out_dir)
         # Collision hulls ride along. They are never drawn — `map.html` hides
         # anything carrying `extras.collision` on load — and they are what a
