@@ -251,7 +251,8 @@ class GlbBuilder:
                      double_sided: bool = False, alpha_cutoff: float | None = None,
                      blend: bool = False, base_color=(1.0, 1.0, 1.0, 1.0),
                      unlit: bool = False, emissive_floor: float = 0.0,
-                     additive: bool = False, texture_fade: bool = False) -> int:
+                     additive: bool = False, texture_fade: bool = False,
+                     envmap: bool = False) -> int:
         pbr: dict = {"baseColorFactor": list(base_color),
                      "metallicFactor": 0.0, "roughnessFactor": 0.85}
         if texture is not None:
@@ -266,13 +267,14 @@ class GlbBuilder:
             # honours it without knowing anything about trees.
             mat["emissiveTexture"] = {"index": texture}
             mat["emissiveFactor"] = [emissive_floor] * 3
+        extras = {}
         if additive:
             # glTF has no additive blend mode. BLEND plus an extras flag is the
             # closest legal spelling: any viewer renders a sane translucent
             # fallback, and ours reads the flag (GLTFLoader lands extras in
             # material.userData) and switches to real additive blending.
             mat["alphaMode"] = "BLEND"
-            mat["extras"] = {"additive": True}
+            extras["additive"] = True
         elif texture_fade:
             # `textureFade true;` — Refractor fades this surface with camera
             # distance (the black_o darkness plane in every doorway). glTF has
@@ -280,7 +282,15 @@ class GlbBuilder:
             # naive viewer draws something translucent-capable, and ours reads
             # the flag and drives opacity from range.
             mat["alphaMode"] = "BLEND"
-            mat["extras"] = {"textureFade": True}
+            extras["textureFade"] = True
+        if envmap:
+            # `envmap true;` — Refractor reflects environment (cubemap) on this
+            # surface. 435 vanilla materials declare it (all aircraft painted
+            # metal, glass canopies, vehicle windows). The viewer binds the
+            # cubemap via THREE.MeshStandardMaterial.envMap when it sees this.
+            extras["envmap"] = True
+        if extras:
+            mat["extras"] = extras
         elif alpha_cutoff is not None:
             mat["alphaMode"] = "MASK"
             mat["alphaCutoff"] = alpha_cutoff
