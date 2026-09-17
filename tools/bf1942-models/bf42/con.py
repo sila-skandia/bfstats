@@ -499,6 +499,11 @@ class ObjectTemplate:
     # Engine's accumulated spin never reaches them visually (a Corsair's
     # landing gear hangs off its Engine yet does not turn with the propeller).
     has_mobile_physics: bool = False
+    # `setHasCollisionPhysics 1` — template +0x70 bit1 → instance flag 0x200
+    # (TM-5 / V-R1). TreeMesh hulls are exported only when this is set **and**
+    # the `.tm` carries a SimpleCollisionMesh; HCP=0+SCM bushes stay
+    # fly-through.
+    has_collision_physics: bool = False
     # `setContinousRotationSpeed y/p/r` — ambient deg/s the engine applies
     # unconditionally (windmill wings, radar dishes, the CH-47's parked rotor).
     continuous_rotation: tuple[float, float, float] | None = None
@@ -508,6 +513,22 @@ class ObjectTemplate:
     material: int | None = None
     critical_damage: float | None = None
     hp_lost_while_critical_damage: float | None = None
+    # `addArmorEffect <hp> <effectTemplate> <x/y/z>` — the smoke, fire and
+    # death tiers, in declaration order. 430 uses in vanilla, 2,271 templates
+    # across the 14 installed mods. The first word is a plain HP threshold and
+    # the effect is active while `hitPoints <= threshold`; a vehicle's fire
+    # tier is authored at exactly its own `critical_damage` on 10 of 10 sampled
+    # vanilla land and air vehicles, but that is a convention, not a rule the
+    # engine enforces — boats carry no fire tier at all and run a sink sequence
+    # instead. `0` and `-1` are the death and water-death tiers.
+    #
+    # The engine folds these into an `std::map<int, DamageEffects*>` on the
+    # Armor and looks up the nearest threshold at or below `ceil(hitPoints)`
+    # every simulation tick for as long as the object is alive (ledger ARM-1,
+    # `subsystems/hitpoints-and-damage.md` §8). The vector is an object-space
+    # attach offset.
+    armor_effects: list[tuple[float, str, tuple[float, float, float]]] = field(
+        default_factory=list)
 
     # -- SupplyDepot --------------------------------------------------------- #
     # Radius a soldier or vehicle has to be within to be worked on, which team
@@ -1352,6 +1373,10 @@ class ObjectLibrary:
                     obj.invisible = args.strip().startswith("1")
                 elif cmd == "hasmobilephysics":
                     obj.has_mobile_physics = args.strip().startswith("1")
+                elif cmd == "sethascollisionphysics":
+                    # TM-5: bit1 of template +0x70; palms are 1, Afri_bush1 is 0
+                    # even when the `.tm` still embeds an SCM.
+                    obj.has_collision_physics = args.strip().startswith("1")
                 elif cmd == "setcontinousrotationspeed":
                     try:
                         obj.continuous_rotation = vec3_lenient(args.split()[0])
@@ -1365,6 +1390,29 @@ class ObjectLibrary:
                         continue
                 elif cmd == "hasarmor":
                     obj.has_armor = args.strip().startswith("1")
+                elif cmd == "addarmoreffect":
+                    # `<hp> <effectTemplate> <x/y/z>`. Vanilla ships runs of
+                    # two spaces between the fields (`-1 WaterWaterExplosion
+                    # 0/0/0`), so split on whitespace rather than a single gap,
+                    # and accept a `,`-separated vector the way the animated
+                    # texture branch above does.
+                    parts = args.split()
+                    if len(parts) < 2:
+                        continue
+                    try:
+                        threshold = float(parts[0])
+                    except ValueError:
+                        continue
+                    offset = (0.0, 0.0, 0.0)
+                    if len(parts) >= 3:
+                        try:
+                            x, y, z = (
+                                float(v) for v in
+                                parts[2].replace(",", "/").split("/")[:3])
+                            offset = (x, y, z)
+                        except (ValueError, IndexError):
+                            offset = (0.0, 0.0, 0.0)
+                    obj.armor_effects.append((threshold, parts[1], offset))
                 elif cmd == "material":
                     try:
                         obj.material = int(float(args.split()[0]))

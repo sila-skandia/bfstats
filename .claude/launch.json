@@ -21,6 +21,16 @@
       ],
       "autoPort": true,
       "port": 5273
+    },
+    {
+      "name": "physics-viewer",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "python3 -m http.server \"$PORT\" --directory .claude/worktrees/refractor-physics/tools/bf1942-models/viewer"
+      ],
+      "autoPort": true,
+      "port": 5373
     }
   ]
 }

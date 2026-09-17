@@ -278,16 +278,10 @@ export class Hud {
     this.requestRepaint();
   }
 
-  /** Virtual-to-stage mapping, the same rule `map.html`'s `deployScale` uses
-   *  for the spawn screen: the game stretches 800x600 to the screen, and a
-   *  portrait viewport gets a uniform letterboxed scale instead so a corner
-   *  HUD element never turns into a sliver. */
+  /** Virtual-to-stage mapping: the engine stretches 800x600 independently on
+   *  each axis (VHUD-11). Portrait letterboxing here was wrong vs retail. */
   _scaleFor(W, H) {
     const [vw, vh] = this.layout?.virtual || DEFAULT_VIRTUAL;
-    if (W / H < 1) {
-      const s = Math.min(W / vw, H / vh);
-      return { sx: s, sy: s, ox: (W - vw * s) / 2, oy: (H - vh * s) / 2 };
-    }
     return { sx: W / vw, sy: H / vh, ox: 0, oy: 0 };
   }
 
