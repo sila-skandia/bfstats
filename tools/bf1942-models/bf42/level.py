@@ -781,6 +781,79 @@ def load_gameplay_objects(files: LevelFiles, mode: str | None = None) -> Gamepla
     return out
 
 
+@dataclass
+class TicketInfo:
+    """Starting tickets and per-minute ticket loss for a gameplay mode."""
+
+    mode: str = ""
+    team1: int | None = None
+    team2: int | None = None
+    loss_per_min_team1: int | None = None
+    loss_per_min_team2: int | None = None
+
+
+def parse_tickets(text: str) -> TicketInfo:
+    """Parse ticket counts from a GameTypes/*.con file.
+
+    Returns starting tickets and ticket loss per minute for each team.
+    The engine reads `Game.setNumberOfTickets <team> <count>` and
+    `Game.setTicketLostPerMin <team> <rate>`. Team is typically 1 or 2.
+    """
+    out = TicketInfo()
+    for ns, cmd, args in _commands(text):
+        if ns != "game":
+            continue
+        tokens = args.split()
+        if cmd == "setnumberoftickets" and len(tokens) >= 2:
+            team_str, count_str = tokens[0], tokens[1]
+            try:
+                team = int(team_str)
+                count = int(float(count_str))
+                if team == 1:
+                    out.team1 = count
+                elif team == 2:
+                    out.team2 = count
+            except (ValueError, IndexError):
+                pass
+        elif cmd == "setticketlostpermin" and len(tokens) >= 2:
+            team_str, rate_str = tokens[0], tokens[1]
+            try:
+                team = int(team_str)
+                rate = int(float(rate_str))
+                if team == 1:
+                    out.loss_per_min_team1 = rate
+                elif team == 2:
+                    out.loss_per_min_team2 = rate
+            except (ValueError, IndexError):
+                pass
+    return out
+
+
+def load_tickets(files: LevelFiles, mode: str | None = None) -> TicketInfo | None:
+    """Read ticket configuration from a level's GameTypes/<mode>.con.
+
+    Returns None if the file doesn't exist or contains no ticket data.
+    Falls back through GAMEPLAY_MODES if no mode is specified.
+    """
+    modes_to_try = [mode] if mode else GAMEPLAY_MODES
+    for try_mode in modes_to_try:
+        if not try_mode:
+            continue
+        path = f"GameTypes/{try_mode}.con"
+        hit = files.find(path)
+        if not hit:
+            continue
+        try:
+            text = files.read(hit).decode("latin-1", "replace")
+            info = parse_tickets(text)
+            if info.team1 is not None or info.team2 is not None:
+                info.mode = try_mode
+                return info
+        except Exception:
+            continue
+    return None
+
+
 def parse_spawn_templates(text: str) -> dict[str, SpawnTemplate]:
     """`ObjectSpawner` name -> the vehicle each team gets from it."""
     out: dict[str, SpawnTemplate] = {}
