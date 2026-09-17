@@ -13,6 +13,7 @@ from bf42.assemble import (  # noqa: E402
     Assembler,
     Report,
     browse_rig,
+    is_foreign_skeleton_part,
     reaches_first_person,
 )
 from bf42.con import ObjectLibrary, ObjectTemplate  # noqa: E402
@@ -1827,6 +1828,64 @@ GeometryTemplate.create StandardMesh Smg_m1
         projectile = {n["name"]: n for n in document["nodes"]}[
             "RocketRamp"]["extras"]["fireArms"]["projectile"]
         self.assertEqual("rocket", projectile["kind"])
+
+
+class ForeignSkeletonPartTests(unittest.TestCase):
+    """`is_foreign_skeleton_part`: the soldier's parachute, and not his face.
+
+    The predicate exists because `CommonSoldierData.inc` gives every soldier an
+    `addTemplate Parachute`, the parachute is skinned, and so anything walking a
+    soldier's skinned children picked it up as a body part and baked 13.5 m of
+    canopy onto his head. It only became visible once CON-1's include-dropping
+    fix let that `.inc` reach the extractor.
+
+    The two obvious rules are both wrong and both are asserted here, because
+    both were shipped briefly and the second one exported a faceless soldier.
+    """
+
+    @staticmethod
+    def _template(name: str, skeleton: str | None) -> ObjectTemplate:
+        template = ObjectTemplate(name=name, kind="AnimatedBundle")
+        template.skeleton = skeleton
+        return template
+
+    def setUp(self) -> None:
+        self.soldier = self._template("BritishSoldier", "animations/UsSoldier.ske")
+        self.soldier.kind = "BFSoldier"
+
+    def test_the_parachute_is_foreign(self) -> None:
+        parachute = self._template("Parachute", "animations/Parachute.ske")
+        self.assertTrue(is_foreign_skeleton_part(parachute, self.soldier))
+
+    def test_the_face_is_not_foreign_though_its_skeleton_differs(self) -> None:
+        # The trap: the head re-declares a skeleton, and it is not the root's.
+        # A "differs from the parent" rule drops it and the soldier loses his
+        # face — which is exactly what happened.
+        head = self._template("BritSoldierComplexHead1", "animations/UsFace.ske")
+        self.assertNotEqual(head.skeleton, self.soldier.skeleton)
+        self.assertFalse(is_foreign_skeleton_part(head, self.soldier))
+
+    def test_a_part_with_no_skeleton_of_its_own_is_not_foreign(self) -> None:
+        # Body and hands declare none at all and bind to the soldier's.
+        body = self._template("BritSoldier3PBody", None)
+        self.assertFalse(is_foreign_skeleton_part(body, self.soldier))
+
+    def test_a_part_re_declaring_the_parents_own_skeleton_is_not_foreign(self) -> None:
+        # An AnimatedBundle re-declares the skeleton it binds to, so matching the
+        # parent exactly is normal and must not be treated as foreign.
+        part = self._template("SomeBundle", "animations/UsSoldier.ske")
+        self.assertFalse(is_foreign_skeleton_part(part, self.soldier))
+
+    def test_case_is_not_significant(self) -> None:
+        part = self._template("SomeBundle", "ANIMATIONS/UsSoldier.SKE")
+        self.assertFalse(is_foreign_skeleton_part(part, self.soldier))
+        face = self._template("Head", "animations/UsFACE.ske")
+        self.assertFalse(is_foreign_skeleton_part(face, self.soldier))
+
+    def test_a_parent_with_no_skeleton_still_rejects_a_foreign_child(self) -> None:
+        rootless = self._template("Thing", None)
+        parachute = self._template("Parachute", "animations/Parachute.ske")
+        self.assertTrue(is_foreign_skeleton_part(parachute, rootless))
 
 
 if __name__ == "__main__":

@@ -174,6 +174,37 @@ class SpecTests(unittest.TestCase):
         self.assertEqual(["e_RichoStone"], [b.template.name for b in tree.bundles])
         self.assertEqual(2, tree.bundles[0].count())
 
+    def test_a_bare_emitter_name_bakes_as_a_one_emitter_bundle(self) -> None:
+        """`addArmorEffect` names Emitters directly, not only EffectBundles.
+
+        Every aircraft and ship damage-smoke tier does it — `em_PlaneDamage`,
+        `em_StukaDamage`, `em_LcvpDamage` and 17 more in vanilla, each created as
+        `ObjectTemplate.create Emitter` and never wrapped. `bundle_tree` used to
+        require an EffectBundle and returned None for all of them, so a damaged
+        plane baked no smoke at all while a tank baked its `e_PanzDamage`.
+        """
+        # `Em_richoStone` is an Emitter in the fixture, named directly here the
+        # way a vehicle's damage tier names its own.
+        tree = effects.bundle_tree(library(), "Em_richoStone")
+        self.assertIsNotNone(tree, "a bare Emitter must bake, not vanish")
+        self.assertEqual(1, tree.count())
+        self.assertEqual([], tree.bundles)
+        self.assertEqual("em_richostone", tree.emitters[0][1].name.lower())
+        # And it carries a real spec, not an empty shell.
+        self.assertIn("particle", tree.emitters[0][3])
+
+    def test_an_emitter_with_no_payload_still_declines(self) -> None:
+        lib = library()
+        orphan = con_mod.ObjectTemplate(name="em_Orphan", kind="Emitter")
+        lib.objects["em_orphan"] = orphan
+        self.assertIsNone(effects.bundle_tree(lib, "em_Orphan"))
+
+    def test_a_non_effect_template_still_declines(self) -> None:
+        lib = library()
+        gun = con_mod.ObjectTemplate(name="SomeGun", kind="HandFireArms")
+        lib.objects["somegun"] = gun
+        self.assertIsNone(effects.bundle_tree(lib, "SomeGun"))
+
     def test_decal_spec_is_a_fading_mesh_particle(self) -> None:
         tree = effects.bundle_tree(library(), "RichoStoneDecal")
         spec = tree.emitters[0][3]
