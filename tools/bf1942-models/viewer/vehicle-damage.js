@@ -87,7 +87,8 @@ function namesAt(effects, threshold) {
  *
  * `extras` is the `armor` block the assembler now ships on a placed vehicle's
  * node — `hitpoints`, `maxHitpoints`, `criticalDamage`,
- * `hpLostWhileCriticalDamage`, `effects`.
+ * `hpLostWhileCriticalDamage`, `hpLostWhileDamageFromWater`,
+ * `hpLostWhileUpSideDown`, `damageFromWater`, `effects`.
  */
 export class DamageableVehicle {
   constructor(extras, { name = null, owner = -1 } = {}) {
@@ -101,12 +102,23 @@ export class DamageableVehicle {
     this.hpLostWhileCriticalDamage =
       Number.isFinite(extras?.hpLostWhileCriticalDamage)
         ? extras.hpLostWhileCriticalDamage : null;
+    this.hpLostWhileDamageFromWater =
+      Number.isFinite(extras?.hpLostWhileDamageFromWater)
+        ? extras.hpLostWhileDamageFromWater : null;
+    this.hpLostWhileUpSideDown =
+      Number.isFinite(extras?.hpLostWhileUpSideDown)
+        ? extras.hpLostWhileUpSideDown : null;
+    this.damageFromWater = Boolean(extras?.damageFromWater);
     this.name = name;
     this.owner = owner;
     /** The tier the caller has been told to draw, or null. */
     this.shown = null;
     /** Seconds accumulated toward the next critical tick (HP-5's `+0xe8`). */
     this.criticalAccumulator = 0;
+    /** Seconds accumulated toward the next water-damage tick. */
+    this.waterAccumulator = 0;
+    /** Seconds accumulated toward the next upside-down tick. */
+    this.upsideDownAccumulator = 0;
     /** Set once the caller has been handed the death tier, so it fires once. */
     this.deathAnnounced = false;
   }
@@ -141,6 +153,8 @@ export class DamageableVehicle {
     this.armor.reset();
     this.shown = null;
     this.criticalAccumulator = 0;
+    this.waterAccumulator = 0;
+    this.upsideDownAccumulator = 0;
     this.deathAnnounced = false;
   }
 
@@ -159,7 +173,7 @@ export class DamageableVehicle {
    * `damage()`, outside any `update`, so a flag scoped to this call would never
    * fire for the one case that matters and the explosion would never play.
    */
-  update(dt, { inWater = false } = {}) {
+  update(dt, { inWater = false, upsideDown = false } = {}) {
     if (!this.armor.destroyed && this.critical
         && this.hpLostWhileCriticalDamage !== null) {
       this.criticalAccumulator += dt;
@@ -172,6 +186,32 @@ export class DamageableVehicle {
     } else if (!this.critical) {
       // Recovered above the threshold: the next burn starts its second over.
       this.criticalAccumulator = 0;
+    }
+
+    // Water damage: a flat hpLostWhileDamageFromWater once per whole second,
+    // not scaled by dt (HP-5). Only vehicles with `damageFromWater` set take
+    // it — boats are excluded (they have a water death tier, not drowning).
+    if (!this.armor.destroyed && inWater && this.damageFromWater
+        && this.hpLostWhileDamageFromWater !== null) {
+      this.waterAccumulator += dt;
+      while (this.waterAccumulator >= 1 && !this.armor.destroyed) {
+        this.waterAccumulator -= 1;
+        this.armor.damage(this.hpLostWhileDamageFromWater);
+      }
+    } else if (!inWater) {
+      this.waterAccumulator = 0;
+    }
+
+    // Upside-down damage: same accumulator cadence, independent clock.
+    if (!this.armor.destroyed && upsideDown
+        && this.hpLostWhileUpSideDown !== null) {
+      this.upsideDownAccumulator += dt;
+      while (this.upsideDownAccumulator >= 1 && !this.armor.destroyed) {
+        this.upsideDownAccumulator -= 1;
+        this.armor.damage(this.hpLostWhileUpSideDown);
+      }
+    } else if (!upsideDown) {
+      this.upsideDownAccumulator = 0;
     }
 
     const died = this.armor.destroyed && !this.deathAnnounced;
@@ -242,12 +282,13 @@ export class VehicleDamageSet {
   }
 
   /** Step every vehicle. Returns only those whose drawing needs to change. */
-  update(dt) {
+  update(dt, { inWaterOwners = null } = {}) {
     const changes = [];
-    for (const vehicle of this.byOwner.values()) {
+    for (const [owner, vehicle] of this.byOwner) {
       // A destroyed vehicle with nothing left to announce costs one branch.
       if (vehicle.destroyed && vehicle.deathAnnounced) continue;
-      const result = vehicle.update(dt);
+      const inWater = inWaterOwners?.has(owner) ?? false;
+      const result = vehicle.update(dt, { inWater });
       if (result.changed || result.died) changes.push({ vehicle, ...result });
     }
     return changes;

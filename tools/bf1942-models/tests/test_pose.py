@@ -329,5 +329,63 @@ class RestReconstructionTests(unittest.TestCase):
             self.assertLess(math.dist(got, want), 1e-6)
 
 
+# -- seat pose discovery ----------------------------------------------------- #
+
+from extract_pose import discover_seat_poses  # noqa: E402
+from bf42.con import ObjectTemplate  # noqa: E402
+
+
+class SeatPoseDiscoveryTests(unittest.TestCase):
+    def _template(self, name, upper=None, lower=None, kind="SeatObject"):
+        t = ObjectTemplate(name, kind, "objects/test.con")
+        t.seat_animation_upper_body = upper
+        t.seat_animation_lower_body = lower
+        return t
+
+    def test_pairs_each_upper_state_with_its_matching_lower(self) -> None:
+        from bf42.con import ObjectLibrary
+        lib = ObjectLibrary()
+        lib.objects["WillyPassengerSeat"] = self._template(
+            "WillyPassengerSeat", "Ub_PassengerInWilly", "Lb_PassengerInWilly")
+        lib.objects["HanomagPassenger"] = self._template(
+            "HanomagPassenger", "Ub_PassengerInHanomag", "Lb_PassengerInHanomag")
+        lib.objects["DriverSeat"] = self._template(
+            "DriverSeat", kind="SeatObject")  # no animations
+        lib.objects["PlainSeat"] = self._template(
+            "PlainSeat", kind="SeatObject")  # no animations
+        poses = discover_seat_poses(lib)
+        self.assertEqual([("Ub_PassengerInWilly", "Lb_PassengerInWilly"),
+                          ("Ub_PassengerInHanomag", "Lb_PassengerInHanomag")], poses)
+
+    def test_prefers_matching_pair_when_mod_mismatches(self) -> None:
+        # Black Medal pairs Ub_PassengerInWilly with Lb_PassengerInHanomag;
+        # the Willy's own matching pair should win.
+        from bf42.con import ObjectLibrary
+        lib = ObjectLibrary()
+        lib.objects["BlackMedalPassenger"] = self._template(
+            "BlackMedalPassenger", "Ub_PassengerInWilly",
+            "Lb_PassengerInHanomag")
+        lib.objects["WillyPassenger"] = self._template(
+            "WillyPassenger", "Ub_PassengerInWilly", "Lb_PassengerInWilly")
+        poses = discover_seat_poses(lib)
+        self.assertEqual(1, len(poses))
+        self.assertEqual(("Ub_PassengerInWilly", "Lb_PassengerInWilly"), poses[0])
+
+    def test_lower_falls_back_to_Lb_Stand(self) -> None:
+        from bf42.con import ObjectLibrary
+        lib = ObjectLibrary()
+        lib.objects["OnlyUpper"] = self._template(
+            "OnlyUpper", "Ub_PassengerInWilly", None)
+        poses = discover_seat_poses(lib)
+        self.assertEqual([("Ub_PassengerInWilly", "Lb_Stand")], poses)
+
+    def test_no_seat_animations_yields_empty(self) -> None:
+        from bf42.con import ObjectLibrary
+        lib = ObjectLibrary()
+        lib.objects["PlainSeat"] = self._template("PlainSeat")
+        lib.objects["PlainCamera"] = self._template("PlainCamera", kind="Camera")
+        self.assertEqual([], discover_seat_poses(lib))
+
+
 if __name__ == "__main__":
     unittest.main()

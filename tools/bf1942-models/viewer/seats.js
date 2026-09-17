@@ -74,6 +74,7 @@ export function surveyVehicle(root) {
       seat = {
         id, node: node || null, entryPoints: [], seatObjects: [],
         camera: null, axes: {}, fireArms: [], engineType: null, hud: null,
+        poseAnimation: null, cameraViewModes: null,
       };
       seats.set(id, seat);
       order.push(id);
@@ -114,10 +115,23 @@ export function surveyVehicle(root) {
     if (kind === 'EntryPoint') {
       seatFor(owner).entryPoints.push(obj);
     } else if (kind === 'SeatObject') {
-      seatFor(owner).seatObjects.push(obj);
+      const seat = seatFor(owner);
+      seat.seatObjects.push(obj);
+      // SEAT-9: the passenger seat's own pose animation strings, if declared.
+      // `extras.seat.poseAnimation` comes straight off `seatAnimationUpperBody/`
+      // `seatAnimationLowerBody` in the `.con` — the same names
+      // `BFSoldier::setUseSeat` resolves (engine reference SEAT-9). Empty on a
+      // driver seat or a manned gun: those fall back to the soldier's own
+      // template, and `poseAnimation` staying null is the "no override" signal.
+      if (data.seat?.poseAnimation && !seat.poseAnimation) {
+        seat.poseAnimation = data.seat.poseAnimation;
+      }
     } else if (kind === 'Camera') {
       const seat = seatFor(owner);
       if (!seat.camera) seat.camera = obj;   // first one wins, same rule Vehicle.collect() uses
+      // camera-modes.md §3: CVM* booleans say which views the seat offers.
+      // Omitted flags default on; only the ones actually declared land here.
+      if (data.cameraView?.cvm) seat.cameraViewModes = data.cameraView.cvm;
     } else if (kind === 'RotationalBundle' && data.rig?.axes) {
       const seat = seatFor(owner);
       for (const axis of AXES) {
@@ -446,6 +460,12 @@ const RIG_SIGN = { yaw: -1, pitch: -1, roll: 1 };       // (unexported there; ke
 // the Sherman's own 35 deg/s that is 0.39 s to the cap. Still a fallback, not
 // a measurement -- the fix is to re-extract, after which the gun's own number
 // wins.
+//
+// CRITICAL: `step` multiplies this by `speedScale` before applying it, so the
+// wind-up time is maxSpeed/acceleration (the game's own ratio) regardless of
+// how much the cap has been scaled up. Without the scale, a Defgun with
+// speedScale=4 reaches 360 deg/s in 360/90 = 4 s instead of 360/360 = 1 s —
+// the "moves very slowly, then builds up momentum" complaint, root-caused.
 export const TURRET_ACCELERATION = 90;
 // Degrees of aim the mouse asks for, per pixel of pointer-locked
 // `movementX/Y`. This is `map.html`'s own `LOOK_SENS` (0.0022 rad/px) in
@@ -459,11 +479,31 @@ export const TURRET_DEGREES_PER_PIXEL = 0.0022 * 180 / Math.PI;
 // this file's own units. Its job is to bound a flick, not to stop one: a
 // player who throws the mouse across the pad asks for more travel than any
 // turret can produce in one frame, and everything past this is dropped.
-export const TURRET_PENDING_CLAMP = 90;
+//
+// Reduced from 90 — the old value banked nearly half a degree-second at the
+// Defgun's cap (360 deg/s), so a fast flick left ~90 deg of aim still wound up
+// in the register, the turret kept swinging at full rate for a quarter second
+// after the hand stopped, and every short aim overshot its mark. 40 matches
+// GUN-3's own clamp (manned-guns.md §3) and keeps the coast to a snap.
+export const TURRET_PENDING_CLAMP = 40;
 
 // The deadzone, GUN-3's own +-1.0 on the register: below this much banked
 // aim, nothing moves.
 export const TURRET_DEADZONE = 0.05;
+
+// --- idle decay for the pending bank -----------------------------------------
+
+// Frames of no mouse input before the pending bank starts draining. At 60 Hz
+// this is ~50 ms — too short for the eye to notice on active aiming (pointer-
+// lock delivers movement every frame), long enough that a single missed
+// `movementX/Y` event on a fast swipe does not zero the bank.
+export const TURRET_IDLE_DECAY_FRAMES = 3;
+
+// Exponential decay rate (1/s) applied to the pending bank once the idle
+// threshold is crossed. With the clamp at 40 deg and the Defgun's cap at 360
+// deg/s, this drains a post-flick bank in ~0.15 s — the turret settles to a
+// stop instead of coasting the rest of a quarter-second. [free]
+export const TURRET_IDLE_DECAY = 12;
 
 // What multiplies an axis's declared `setMaxSpeed` to get the rate it will
 // actually turn at.
@@ -531,20 +571,40 @@ export class TurretAxis {
     this.angle = 0;      // degrees, relative to the authored rest pose
     this.velocity = 0;   // degrees/second, current
     this.pending = 0;    // degrees of aim asked for and not yet delivered
+    // Frames since the mouse last fed this axis. When it grows past the idle
+    // threshold (`TURRET_IDLE_DECAY_FRAMES`), the pending bank decays — see
+    // `step` for why.
+    this._idleFrames = 0;
   }
 
   /** Mouse motion arrives here, possibly several times before the next
    *  `step`, and is banked rather than replacing what was already asked for.
    *  `direction` is folded in here so everything downstream is in the node's
-   *  own sense. */
+   *  own sense. Resets the idle counter so the bank is not decayed while the
+   *  hand is moving.
+   */
   feed(delta) {
     const asked = delta * TURRET_DEGREES_PER_PIXEL * (this.spec.direction || 1);
     this.pending = Math.max(-TURRET_PENDING_CLAMP,
       Math.min(TURRET_PENDING_CLAMP, this.pending + asked));
+    this._idleFrames = 0;
   }
 
   step(dt) {
     if (!(dt > 0)) return;
+    this._idleFrames += 1;
+    // When the mouse has been idle for a few frames, let the banked aim decay
+    // — GUN-3's input register (+0x128) carries the accumulated sample, and
+    // without a drain a flick leaves it sitting there, the turret swinging
+    // through the full pending clamp at full rate after the hand has stopped.
+    // Reported from play as "overshoot": the axis keeps coasting long after
+    // the pointer did. During active aiming `feed` resets `_idleFrames` to 0
+    // every frame, so the decay never fights a living hand — it only fires in
+    // the gap between the last `movementX/Y` and the next, which is the same
+    // silence the game's own `automaticReset` branch answers.
+    if (this._idleFrames > TURRET_IDLE_DECAY_FRAMES) {
+      this.pending *= Math.exp(-dt * TURRET_IDLE_DECAY);
+    }
     const pending = Math.abs(this.pending) > TURRET_DEADZONE ? this.pending : 0;
     // The rate the bank is asking for, held to what this axis can do.
     const cap = Math.abs(this.spec.maxSpeed || 0) * speedScale;
@@ -552,7 +612,13 @@ export class TurretAxis {
     // GUN-3's velocity register: it winds up at the axis's OWN
     // `setAcceleration` when the extract carries it, and at the fallback
     // otherwise -- see `TURRET_ACCELERATION`.
-    const maxStep = (this.spec.acceleration || TURRET_ACCELERATION) * dt;
+    //
+    // The acceleration is scaled by `speedScale` just like the cap — without it
+    // the ramp is 4× too slow (speedScale=4 means 360 deg/s cap but 90 deg/s²
+    // ramp, so a Defgun takes a full 4 s to answer a flick instead of the
+    // game's ~0.6–1.0 s). Scaling both keeps the wind-up time at
+    // maxSpeed/acceleration, the game's own ratio.
+    const maxStep = (this.spec.acceleration || TURRET_ACCELERATION) * speedScale * dt;
     const change = want - this.velocity;
     this.velocity += Math.max(-maxStep, Math.min(maxStep, change));
     let step = this.velocity * dt;

@@ -2,14 +2,16 @@
 
 The engine side is settled in `features/bf1942-engine-reference/` — ledger rows
 HP-1/HP-2/HP-5 for the Armor and the burn cadence, ARM-1/ARM-2 for the
-`addArmorEffect` tiers — and nothing asserted here is invented. Two of those
-findings are the whole point of the module and are asserted directly:
+`addArmorEffect` tiers — and nothing asserted here is invented. Assertions:
 
   - the burn is a flat `hpLostWhileCriticalDamage` once per whole second, **not**
     scaled by `dt` (HP-5), so a Sherman critical at 12 HP takes exactly 8 ticks;
   - a living vehicle's tier is re-evaluated continuously (ARM-1) and clears
     again when it is repaired, because the engine's `Armor+0x128` byte is a
-    death latch rather than a first-run latch.
+    death latch rather than a first-run latch;
+  - water damage is a flat `hpLostWhileDamageFromWater` once per second while
+    `inWater` (HP-5), and only for vehicles with `damageFromWater` set — boats
+    do not drown (HP-12, parity-audit GAP D-2).
 
 Like `test_armor.py`, this copies the module plus `armor.js` into a temp dir and
 runs `node harness.mjs` — the module imports nothing else, so no vendored
@@ -207,6 +209,51 @@ class DamageSetTests(unittest.TestCase):
         self.assertEqual("Sherman", changes[0]["name"])
         self.assertEqual(50, changes[0]["threshold"])
         self.assertFalse(changes[0]["died"])
+
+
+class WaterDamageTests(unittest.TestCase):
+    """HP-5: water damage is a flat `hpLostWhileDamageFromWater` per whole
+    second, independent of `dt`, and only for vehicles with `damageFromWater`
+    set — boats are excluded (HP-12)."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+
+    def test_flat_tick_per_second(self) -> None:
+        # Sherman: 100 HP, hpLostWhileDamageFromWater 10. One second per tick.
+        self.assertEqual(90, self.results["waterTick1"]["hp"])
+        self.assertEqual(80, self.results["waterTick2"]["hp"])
+        self.assertEqual(70, self.results["waterTick3"]["hp"])
+        # The accumulator drains whole seconds and never carries a fraction.
+        self.assertEqual(0, self.results["waterTick3"]["acc"])
+
+    def test_long_frame_checks_in_less_often(self) -> None:
+        # HP-5: a 2 s step costs two ticks (20 HP), never 2 s worth of scaled loss.
+        self.assertEqual(80, self.results["waterLongFrame"]["hp"])
+        self.assertEqual(0, self.results["waterLongFrame"]["acc"])
+
+    def test_leaving_water_resets_the_countdown(self) -> None:
+        # Half a second accumulates but does not tick; going dry resets.
+        self.assertEqual(100, self.results["waterExitMid"]["hp"])
+        self.assertAlmostEqual(0.5, self.results["waterExitMid"]["acc"])
+        self.assertEqual(0, self.results["waterExitDry"]["acc"])
+
+    def test_boats_do_not_drown(self) -> None:
+        # damageFromWater is false on the boat template. Armor caps max at 128.
+        self.assertEqual(128, self.results["boatNoWaterDamage"]["hp"])
+
+    def test_set_routes_in_water_per_owner(self) -> None:
+        # Both owner 3 (Sherman) and 4 (boat) marked in-water; only the Sherman
+        # loses HP. Boat max is capped at 128.
+        self.assertEqual(70, self.results["setWater"]["shermanHp"])
+        self.assertEqual(128, self.results["setWater"]["boatHp"])
+        self.assertEqual(0, self.results["setWater"]["shermanAcc"])
+
+    def test_set_without_in_water_flag_loses_nothing(self) -> None:
+        self.assertEqual(100, self.results["setNoWater"]["shermanHp"])
 
 
 if __name__ == "__main__":

@@ -900,4 +900,73 @@ for (const [key, builder] of [['shermanHardTurn', shermanNode], ['m3a1HardTurn',
   };
 }
 
+// --- hull collision against static objects -----------------------------------
+//
+// A wall in front of the jeep: the vehicle must not drive through it. The mock
+// collider reports a single static plane at z = -10 (facing +Z toward the
+// vehicle).
+{
+  const WALL_Z = -10;
+  const COLLISION_RADIUS = WILLYS.boundingRadius; // 1.8 m
+  const mockCollider = {
+    waterLevel: -Infinity,
+    statics: { ownerOf: () => -1 },
+    sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner) {
+      // Wall normal faces +Z (toward the vehicle). Sphere centre touches when
+      // z = WALL_Z + radius (for a wall facing +Z, the sphere centre at contact
+      // is `radius` ahead of the wall plane).
+      if (dz !== 0) {
+        const t = (WALL_Z + radius - oz) / dz;
+        if (t >= 0 && t <= maxDist) {
+          return {
+            t,
+            x: ox + dx * t, y: oy + dy * t, z: oz + dz * t,
+            nx: 0, ny: 0, nz: 1,
+            material: 0, owner: 0, kind: 'object',
+          };
+        }
+      }
+      return null;
+    },
+  };
+
+  const truck = new GroundVehicle(willyNode(), null, {
+    cockpit: false, groundHeight: () => 0, collider: mockCollider,
+  });
+  const s = truck.state;
+  s.position.set(0, 0.6, 0);
+  s.velocity.set(0, 0, -10);                   // ~36 km/h into the wall
+
+  drive(truck, 5, holding({ c_PIThrottle: 1 }));
+
+  results.hullCollision = {
+    stoppedAtZ: round(truck.state.position.z, 2),
+    wallZ: WALL_Z,
+    // The collision radius plus a 2 cm skin means the centre stops just short
+    // of WALL_Z + radius.
+    stoppedShortOfWall: truck.state.position.z > WALL_Z,
+    vz: round(truck.state.velocity.z, 3),
+    // It is not embedded past the wall.
+    clear: truck.state.position.z >= WALL_Z + COLLISION_RADIUS - 0.5,
+  };
+}
+
+// Without a collider the jeep drives straight through — the old behaviour.
+{
+  const truck = new GroundVehicle(willyNode(), null, {
+    cockpit: false, groundHeight: () => 0,
+  });
+  const s = truck.state;
+  s.position.set(0, 0.6, 0);
+  s.velocity.set(0, 0, -10);
+
+  drive(truck, 5, holding({ c_PIThrottle: 1 }));
+
+  results.hullCollisionNoCollider = {
+    stoppedAtZ: round(truck.state.position.z, 2),
+    // Past the wall — no collision without the collider.
+    throughWall: truck.state.position.z < -10,
+  };
+}
+
 process.stdout.write(JSON.stringify(results, null, 2));

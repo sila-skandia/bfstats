@@ -280,6 +280,14 @@ export class Vehicle {
     node.userData.spawnPosition = node.position.clone();
     node.userData.spawnOrientation = node.quaternion.clone();
 
+    /**
+     * The WorldCollider (collision.js), used for hull-vs-statics sweeps. Optional:
+     * the flight harness stands the vehicle up without a scene, so this stays null
+     * unless the page hands one in. When set, `GroundVehicle`/`TrackedVehicle`
+     * sweep against static hulls so a jeep can't drive through a wall.
+     */
+    this.collider = options.collider || null;
+
     this.parts = [];
     this.cameraNode = null;
     this.propellerBlurPairs = [];

@@ -5,6 +5,15 @@
     python3 extract_pose.py --matrix
     python3 extract_pose.py --matrix --export --out ./viewer/models
 
+    --seat-poses extracts every passenger-seat pose the mod ships, one
+    `<Soldier>__<PoseName>.pose.glb` per soldier per seat (e.g.
+    `USSoldier__PassengerInWilly.pose.glb`), resolving the upper/lower state
+    names off `extras.seat.poseAnimation` through the animation state machine.
+    The viewer's `map.html` loads them straight onto a seat's EntryPoint when
+    that seat is occupied, so pressing E into a Willy's passenger door shows the
+    soldier posed by `Ub_PassengerInWilly`/`Lb_PassengerInWilly` instead of an
+    empty seat. `--soldiers` restricts the rows (default: every BfSoldier).
+
 Positional arguments are soldier/weapon pairs. Each pair comes out as
 `<Soldier>__<Weapon>.pose.glb`: the soldier's body, head and hands skinned to
 the `UsSoldier.ske` skeleton posed by `Lb_Stand` + `Ub_StandAim<Weapon>`, and
@@ -901,6 +910,160 @@ def export_pose(soldier: str, weapon: str, *, machine, meshes, textures,
     return result
 
 
+def resolve_seat_pose(machine: animstates.StateMachine, meshes: ArchivePool,
+                      upper_state: str, lower_state: str, frame: int,
+                      ) -> tuple[dict[str, tuple[ske_mod.Matrix3, ske_mod.Vector3]],
+                                 str, str]:
+    """One seat's bone locals plus the two clip paths that made them.
+
+    Unlike stances — which build the upper name as `Ub_<family><Weapon>` — seat
+    poses name their state explicitly (`Ub_PassengerInWilly`,
+    `Lb_PassengerInWilly`), so both halves are looked up directly on the state
+    machine. A passenger seat that omits `seatAnimationLowerBody` (rare, but
+    the data has it) falls back to `Lb_Stand` — the engine does the same, the
+    lower body is just standing legs under the seated upper body.
+    """
+    lower_st = machine.state(lower_state)
+    if lower_st is None and lower_state != "Lb_Stand":
+        lower_st = machine.state("Lb_Stand")
+    lower_ref = lower_st.clip_3p() if lower_st else None
+    if lower_ref is None:
+        raise PoseError(f"state machine has no {lower_state} clip")
+    upper_st = machine.state(upper_state)
+    upper_ref = upper_st.clip_3p() if upper_st else None
+    if upper_ref is None:
+        raise PoseError(f"state machine has no {upper_state} clip")
+    lower = read_clip(meshes, lower_ref.path)
+    if lower is None:
+        raise PoseError(f"lower clip unreadable: {lower_ref.path}")
+    upper = read_clip(meshes, upper_ref.path)
+    if upper is None:
+        raise PoseError(f"upper clip unreadable: {upper_ref.path}")
+    locals_map = lower.local_pose(frame)
+    locals_map.update(upper.local_pose(frame))
+    return locals_map, lower_ref.path, upper_ref.path
+
+
+def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
+                     machine, meshes, textures, objects, library, frame: int,
+                     max_texture: int, out: Path | None,
+                     ) -> dict:
+    """A soldier posed in a seat — no weapon, one animation clip.
+
+    The pose glb carries the soldier's body/head/hands skinned to the skeleton,
+    baked at `frame` of the seat's `Ub_`/`Lb_` clips (frame 0 = cycle start, the
+    engine's `int(phase * N) % N`). The node tree holds a single
+    `AnimationClip` named `seat` so a viewer can play the full seated animation;
+    the root node's static transform is the frame-0 pose for viewers that ignore
+    clips.
+
+    The filename strips the `Ub_` prefix: `Ub_PassengerInWilly` ->
+    `USSoldier__PassengerInWilly.pose.glb`, matching what `map.html` looks up from
+    `extras.seat.poseAnimation.upperBody`.
+    """
+    result: dict = {"soldier": soldier, "upperState": upper_state,
+                    "lowerState": lower_state}
+
+    root_template = library.object(soldier)
+    parts = soldier_parts(library, soldier)
+    if not root_template.skeleton:
+        raise PoseError(f"{soldier} declares no skeleton")
+    skeleton = read_skeleton(meshes, root_template.skeleton)
+    if skeleton is None:
+        raise PoseError(f"skeleton unreadable: {root_template.skeleton}")
+
+    locals_map, lower_path, upper_path = resolve_seat_pose(
+        machine, meshes, upper_state, lower_state, frame)
+    locals_map = pose_mod.align_clip_roots(skeleton, locals_map)
+    result["lowerClip"] = lower_path
+    result["upperClip"] = upper_path
+
+    if out is None:
+        return result
+
+    builder = gltf.GlbBuilder()
+    assembler = Assembler(meshes, textures, objects, library,
+                          max_texture=max_texture, include_collision=False,
+                          include_effects=False)
+    report = Report(root=f"{soldier}+seat:{upper_state}", configuration="pose",
+                    lod=0)
+
+    joint_nodes: dict[str, int] = {}
+    children_of: dict[int, list[int]] = {}
+    order: list[tuple[int, int]] = []
+    for index, bone in enumerate(skeleton.bones):
+        local = locals_map.get(ske_mod.canonical(bone.name),
+                               (bone.rotation, bone.translation))
+        node = builder.add_node(gltf.Node(
+            name=bone.name,
+            translation=local[1],
+            rotation=gltf.quat_from_matrix(local[0]),
+            extras={"joint": True},
+        ))
+        joint_nodes[ske_mod.canonical(bone.name)] = node
+        order.append((index, node))
+        if 0 <= bone.parent < index:
+            children_of.setdefault(bone.parent, []).append(node)
+    for bone_index, node_index in order:
+        builder._nodes[node_index].children = children_of.get(bone_index, [])
+
+    part_report: dict = {}
+    root_children = [node for (bone_index, node) in order
+                     if skeleton.bones[bone_index].parent < 0]
+    skinned_roots: list[int] = []
+    for template in parts:
+        node = build_skinned_part(builder, assembler, meshes, skeleton,
+                                  template, joint_nodes, report, part_report)
+        if node is not None:
+            skinned_roots.append(node)
+
+    # Bind-pose soldier meshes stand along +Z; pitch the root onto +Y the
+    # same way the stance pose export does.
+    root = builder.add_node(gltf.Node(
+        name=f"{soldier} in {upper_state}",
+        rotation=gltf.quat_from_ypr(0.0, -90.0, 0.0),
+        children=root_children,
+        extras={"soldier": soldier, "upperState": upper_state,
+                "lowerState": lower_state, "poseKind": "seat"},
+    ))
+
+    # One looping animation clip per half — the lower and upper clips are
+    # independent state machines with independent periods, mirroring how gaits
+    # ship. A viewer drives both at full weight; bones neither half animates
+    # hold the static (frame-0) node transform.
+    lower_st = machine.state(lower_state) or machine.state("Lb_Stand")
+    lower_ref = lower_st.clip_3p() if lower_st else None
+    upper_st = machine.state(upper_state)
+    upper_ref = upper_st.clip_3p() if upper_st else None
+    lower_clip = read_clip(meshes, lower_ref.path) if lower_ref else None
+    upper_clip = read_clip(meshes, upper_ref.path) if upper_ref else None
+    for half, clip, ref, label in [
+        ("lower", lower_clip, lower_ref, "seat.lower"),
+        ("upper", upper_clip, upper_ref, "seat.upper"),
+    ]:
+        if clip is None or ref is None:
+            continue
+        frames, period = clip_timeline(clip, ref.speed, skeleton)
+        tracks = timeline_tracks(frames, period, joint_nodes)
+        if tracks:
+            builder.add_animation(label, tracks)
+
+    result["soldierParts"] = part_report
+    result["texturesMissing"] = sorted(set(report.missing_textures))
+
+    out.mkdir(parents=True, exist_ok=True)
+    pose_name = upper_state[len("Ub_"):] if upper_state.startswith("Ub_") else upper_state
+    target = out / f"{soldier}__{pose_name}.pose.glb"
+    extras = {key: value for key, value in result.items()
+              if key not in ("metrics", "stances")}
+    target.write_bytes(builder.build([root] + skinned_roots,
+                                     extras=extras))
+    result["glb"] = target.name
+    (out / f"{soldier}__{pose_name}.pose.report.json").write_text(
+        json.dumps(result, indent=2))
+    return result
+
+
 def weld_metrics(library, meshes, parts, posed_by_stance, attach, weapon,
                  ) -> dict[str, dict]:
     """How far each palm is from the weapon surface, in metres, per stance.
@@ -1039,17 +1202,24 @@ def main() -> int:
     ap.add_argument("--export", action="store_true",
                     help="with --matrix: also write every .glb")
     ap.add_argument("--soldiers", nargs="*", default=None,
-                    help="with --matrix: restrict the rows to these soldiers "
-                         "(default: every BfSoldier the mod declares)")
+                    help="restrict to these soldiers (--matrix or --seat-poses; "
+                         "default: every BfSoldier the mod declares)")
     ap.add_argument("--weapons", nargs="*", default=None,
                     help="with --matrix: restrict the columns to these weapons. "
                          "A mod's armoury is not vanilla's 28 — EoD declares 77 "
                          "weapons with a stand-aim state, and the full product "
                          "is a long run for a sample of it.")
+    ap.add_argument("--seat-poses", action="store_true",
+                    help="extract every passenger-seat pose (Ub_PassengerInX / "
+                         "Lb_PassengerInX) the mod ships, one .glb per soldier per "
+                         "pose. Named after the seat, not a weapon — "
+                         "USSoldier__PassengerInWilly.pose.glb — so map.html looks "
+                         "them up straight off extras.seat.poseAnimation.")
     args = ap.parse_args()
 
-    if not args.matrix and (not args.pairs or len(args.pairs) % 2):
-        ap.error("give soldier/weapon pairs, or --matrix")
+    if not args.matrix and not args.seat_poses and (
+            not args.pairs or len(args.pairs) % 2):
+        ap.error("give soldier/weapon pairs, or --matrix, or --seat-poses")
 
     game_dir = args.game_dir.expanduser()
     chain = mod_chain(game_dir, args.mod)
@@ -1062,9 +1232,16 @@ def main() -> int:
                    frame=args.frame, max_texture=args.max_texture,
                    gait_mode=args.gaits)
 
+    if args.seat_poses:
+        return extract_seat_poses(machine, meshes, textures, objects, library,
+                                  args)
+
     if args.matrix:
         declared = machine.weapons(f"{UPPER_PREFIX}{args.state}")
-        soldiers = soldier_templates(library)
+    soldiers = soldier_templates(library)
+    if args.soldiers is not None:
+        keep = {s.lower() for s in args.soldiers}
+        soldiers = [s for s in soldiers if s.lower() in keep]
         weapons = [w for w in declared if library.object(w) is not None]
         skipped = [w for w in declared if library.object(w) is None]
         if args.soldiers is not None:
@@ -1198,6 +1375,92 @@ def main() -> int:
         m = result["metrics"]
         print(f"{soldier} + {weapon}: palm R {m.get('palmR')} m, "
               f"L {m.get('palmL')} m -> {result.get('glb')}", file=sys.stderr)
+    return 1 if failures else 0
+
+
+def discover_seat_poses(library: con_mod.ObjectLibrary
+                        ) -> list[tuple[str, str]]:
+    """Every (upperState, lowerState) pair a SeatObject declares, in use order.
+
+    Scans all `SeatObject` templates for `seatAnimationUpperBody` strings. When
+    a seat declares only the upper string and leaves lower empty, the engine
+    falls back to `Lb_Stand` (SEAT-9), so we pair it with that. When a mod pairs
+    a non-matching lower (e.g. Black Medal's `Ub_PassengerInWilly` +
+    `Lb_PassengerInHanomag`) the matching pair from the same-named seat in
+    another mod is preferred; only when no match exists is the non-matching pair
+    kept, since the game's own state machine still plays it. The viewer keys off
+    the upper state's suffix (`Ub_PassengerInWilly` -> `PassengerInWilly`).
+    """
+    all_pairs: list[tuple[str, str, bool]] = []
+    by_upper: dict[str, list[tuple[str, bool]]] = {}
+    for template in library.objects.values():
+        if template.kind.lower() != "seatobject":
+            continue
+        upper = template.seat_animation_upper_body
+        if not upper:
+            continue
+        lower = template.seat_animation_lower_body or "Lb_Stand"
+        suffix = upper[len(UPPER_PREFIX):] if upper.startswith(UPPER_PREFIX) else upper
+        lower_suffix = lower[len("Lb_"):] if lower.startswith("Lb_") else lower
+        matched = suffix == lower_suffix
+        pair = (upper, lower)
+        if pair not in all_pairs:
+            all_pairs.append((upper, lower, matched))
+        by_upper.setdefault(upper, []).append((lower, matched))
+    # Prefer a matching upper/lower pair per upper state; fall back to the first
+    # non-matching one when no match exists.
+    seen: list[tuple[str, str]] = []
+    for upper, lower, matched in all_pairs:
+        if any(u == upper for u, _ in seen):
+            continue
+        candidates = by_upper[upper]
+        match = next((c[0] for c in candidates if c[1]), None)
+        seen.append((upper, match if match else lower))
+    return seen
+
+
+def extract_seat_poses(machine, meshes, textures, objects, library,
+                       args) -> int:
+    """Export one seat-pose glb per soldier per discovered pose name."""
+    poses = discover_seat_poses(library)
+    if not poses:
+        print("no seat poses found in this mod", file=sys.stderr)
+        return 0
+    soldiers = soldier_templates(library)
+    if args.soldiers is not None:
+        keep = {s.lower() for s in args.soldiers}
+        soldiers = [s for s in soldiers if s.lower() in keep]
+    args.out.mkdir(parents=True, exist_ok=True)
+    failures = 0
+    manifest = []
+    for upper, lower in poses:
+        pose_name = upper[len(UPPER_PREFIX):] if upper.startswith(UPPER_PREFIX) else upper
+        for soldier in soldiers:
+            try:
+                result = export_seat_pose(
+                    soldier, upper, lower,
+                    out=args.out, machine=machine, meshes=meshes,
+                    textures=textures, objects=objects, library=library,
+                    frame=args.frame, max_texture=args.max_texture)
+                manifest.append({"soldier": soldier, "pose": pose_name,
+                                 "upperState": upper, "lowerState": lower,
+                                 "glb": result.get("glb")})
+                if "error" in result:
+                    failures += 1
+                    print(f"{soldier} / {pose_name}: {result['error']}",
+                          file=sys.stderr)
+                else:
+                    print(f"{soldier} / {pose_name} -> {result.get('glb')}",
+                          file=sys.stderr)
+            except PoseError as exc:
+                failures += 1
+                print(f"{soldier} / {pose_name}: {exc}", file=sys.stderr)
+    (args.out / "seat-poses.json").write_text(
+        json.dumps({"poses": manifest}, indent=2))
+    total = len(soldiers) * len(poses)
+    ok = total - failures
+    print(f"\n{ok}/{total} seat poses resolved; "
+          f"manifest in {args.out / 'seat-poses.json'}", file=sys.stderr)
     return 1 if failures else 0
 
 

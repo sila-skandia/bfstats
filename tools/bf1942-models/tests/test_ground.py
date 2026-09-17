@@ -587,6 +587,20 @@ class TrackedVehicleTests(unittest.TestCase):
         self.assertAlmostEqual(0.0, spin["leftConsistent"], places=2)
         self.assertAlmostEqual(0.0, spin["rightConsistent"], places=2)
 
+    # --- hull collision against static objects ---------------------------------
+
+    def test_hull_collision_stops_the_vehicle_at_the_wall(self) -> None:
+        # With a collider, the jeep must not drive through the wall at z=-10.
+        col = self.results["hullCollision"]
+        self.assertTrue(col["stoppedShortOfWall"])
+        self.assertLess(col["vz"], 0.1)
+
+    def test_no_collider_drives_through_walls(self) -> None:
+        # Without a collider, the jeep retains the old behaviour: it drives
+        # straight through the static hull.
+        col = self.results["hullCollisionNoCollider"]
+        self.assertTrue(col["throughWall"])
+
 
 if __name__ == "__main__":
     unittest.main()
