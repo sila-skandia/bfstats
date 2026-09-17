@@ -96,12 +96,9 @@ def _truthy(text: str) -> bool:
     return bool(con_mod.truthy(text))
 
 
-# geom::rend::BlendMode's own stream operators (verify-r8.md R8-1: three
-# independent client functions — 0x005bd830 enum->string, 0x005241c0
-# operator<<, 0x00524340 operator>>, each decompiled in full and
-# cross-checked) map these names identically onto Direct3D 8's own D3DBLEND
-# ordinals. Confirmed for these three functions only; it is not a claim that
-# no other translation exists anywhere in the client — see `_blend`'s note.
+# BM* names map onto Direct3D 8 D3DBLEND ordinals 1..11 (0x005bd830 /
+# 0x005241c0 / 0x00524340). Ledger SPR-5 confirmed the sprite draw path
+# feeds those same ordinals to SetRenderState with no remap — see `_blend`.
 _BLEND_ORDINAL = {
     "bmzero": 1, "bmone": 2, "bmsourcecolor": 3, "bminvsourcecolor": 4,
     "bmsourcealpha": 5, "bminvsourcealpha": 6, "bmdestalpha": 7,
@@ -147,28 +144,14 @@ def _blend(props: dict[str, str]) -> dict:
     source-over regardless (`destBlendMode`, not `srcBlendMode`, is what
     made the old rule usually right).
 
-    The identity mapping (R8-1) is confirmed only for the three stream/string
-    functions that read/write a template's own `+0x5c4`/`+0x5c8` fields
-    (R8-2) — it is not, by itself, proof of what a *sprite particle's draw*
-    sends to the D3D device. The verifier found the client pairs
-    `SetRenderState(SRCBLEND/DESTBLEND)` at three sites, not the one place
-    the original research report named (R8-4): (1) `StandardMeshSubShader_
-    applyRenderState` (0x005bf690), for `.rs` mesh materials, unrelated to
-    sprites; (2) `FUN_0062cf20`/`FUN_0062e870` (0x0062cf20/0x0062e870), a
-    per-particle vtable `geom::ParticleSystem::addParticle`'s own helper
-    (`FUN_00609ea0`, R8-6) installs on *every* spawned particle and reaches
-    through a deferred/transparent draw queue next to `StandardMeshRenderer::
-    drawTransparent` — this is the sprite-reachable site, but R8-6 could not
-    close the last link: the descriptor it reads its src/dest from
-    (`particle+0x78`, +0x14/+0x18) was traced back only as far as
-    `template+0x5b0` (`+0x14=+0x5c4`, `+0x18=+0x5c8` — an exact arithmetic
-    match to `srcBlendMode`/`destBlendMode`), not confirmed byte-identical.
-    So using `_BLEND_ORDINAL` for a sprite's own render state is the
-    best-evidenced choice, not a fully closed one — R8-6 is marked
-    **inferred**, not verified, in verify-r8.md; (3) `FUN_00664560`, whose own
-    resolver `FUN_006640e0` is a genuine *non-identity* permutation (R8-4c) —
-    not proven reachable from sprites (open in verify-r8.md), so it is not
-    applied here.
+    Ledger SPR-5 (2026-09-17) closed the draw path: BM names are D3DBLEND
+    ordinals 1–11 (`0x005bd830` / `0x005241c0` / `0x00524340`);
+    `addParticle` passes `template+0x5b0` into the particle ctor
+    (`0x00609ea0`) as `particle+0x78`; flush via vtable `0x00914c00` →
+    `0x0062e870` → `0x0062cf20` issues `SetRenderState(SRCBLEND/DESTBLEND)`
+    from `*(particle+0x78)+0x14/+0x18` (= template `+0x5c4`/`+0x5c8`) with
+    no remap. `FUN_00664560`'s non-identity blend permute is not on this
+    path and is not applied here.
     """
     src = _blend_ordinal(props, "srcblendmode", _DEFAULT_SRC_BLEND)
     dest = _blend_ordinal(props, "destblendmode", _DEFAULT_DEST_BLEND)
@@ -332,7 +315,32 @@ def bundle_tree(library: con_mod.ObjectLibrary, name: str, *,
     the root and let the hierarchy do the rest.
     """
     template = library.object(name)
-    if template is None or template.kind.lower() != "effectbundle" or depth > 6:
+    if template is None or depth > 6:
+        return None
+    if template.kind.lower() == "emitter":
+        # A name can be a bare `Emitter` rather than a bundle, and `addArmorEffect`
+        # is where that happens: every aircraft and ship damage-smoke tier names
+        # one directly (`em_PlaneDamage`, `em_StukaDamage`, `em_LcvpDamage`,
+        # `em_ShokakuDamage`, … — 20 of them in vanilla), created as
+        # `ObjectTemplate.create Emitter`, never wrapped in an EffectBundle.
+        # The engine plays an emitter perfectly well on its own; this reader
+        # required a bundle and so reported every one of them missing, which is
+        # why a damaged plane or ship baked no smoke while tanks baked theirs.
+        #
+        # Wrap it in a synthetic single-emitter bundle so the rest of the
+        # pipeline — the baker, the manifest, the viewer's clone-per-play — sees
+        # the same shape it always has.
+        payload = library.object(template.emitter_template) if template.emitter_template else None
+        if payload is None:
+            return None
+        spec = emitter_spec(template, payload)
+        if spec is None:
+            return None
+        node = BundleNode(template=template, position=position, rotation=rotation)
+        node.emitters.append(
+            (con_mod.ChildRef(template=template.name), template, payload, spec))
+        return node
+    if template.kind.lower() != "effectbundle":
         return None
     node = BundleNode(template=template, position=position, rotation=rotation)
     for ref in template.children:
