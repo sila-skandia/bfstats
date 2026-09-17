@@ -157,9 +157,8 @@ export const WILLYS = {
   // number. Fallback only; the live value comes off the node. [data]
   maxSteer: 30,
 
-  // s^-1 ease on `state.throttle`, which is the audio/blur output rather than
-  // the drive input — a car answers its pedal at once, but the engine *note*
-  // swelling over a third of a second reads right. [free, presentation only]
+  // s^-1 ease on the audio rpm written to `state.throttle` (gearbox revs /
+  // pedal floor) — the drive itself answers the pedal at once. [free]
   throttleEase: 3,
 };
 
@@ -373,17 +372,26 @@ export class GroundVehicle extends Vehicle {
     let reverse = false;
     if (cmd > 0.01 && vf < -k.reverseBelow) {
       braking = cmd;
+      this.#drivetrain(Math.abs(vf), false);
     } else if (cmd < -0.01 && vf > k.reverseBelow) {
       braking = -cmd;
+      this.#drivetrain(Math.abs(vf), true);
     } else if (Math.abs(cmd) > 0.01) {
       reverse = cmd < 0;
       drive = this.#drivetrain(Math.abs(vf), reverse) * Math.abs(cmd);
     } else {
-      this.#drivetrain(Math.abs(vf), vf < 0);   // keep revs honest for audio
+      this.#drivetrain(Math.abs(vf), vf < 0);
     }
 
-    // The audio/blur output eases; the drive itself already answered.
-    const wanted = Math.min(1, Math.abs(cmd));
+    // `state.throttle` is what map.html feeds as Engine::Rpm / `.ssc` Default.
+    // A car's Engine roll snaps to the pedal in <0.1 s (Willy: maxSpeed 55000
+    // over ±5000), so pedal alone is a step; gearbox revs are what climb and
+    // drop through the gears. A fading pedal floor covers the stationary
+    // blip where road speed is still zero.
+    const revRpm = Math.min(1, this.revs / Math.max(k.revLimit, 1e-6));
+    const pedal = Math.min(1, Math.abs(cmd));
+    const stationary = Math.max(0, 1 - Math.abs(vf) / 2);
+    const wanted = Math.max(revRpm, pedal * stationary);
     const gap = wanted - s.throttle;
     const ease = k.throttleEase * h;
     s.throttle = Math.abs(gap) <= ease ? wanted : s.throttle + Math.sign(gap) * ease;
@@ -744,42 +752,44 @@ export function differentialRPM(throttle, yaw, side) {
 }
 
 /**
- * The one piece of this file with no disassembly behind it at all: how much
- * forward force a side's `differentialRPM` demands.
+ * `PhysicsEngine::updatePhysics` body thrust (TANK-7, client `0x0057bfb0` /
+ * lnxded `0x0824cbb0`) — the same law `Aircraft.step` already carries:
  *
- * `Aircraft.step` in this repo already carries the confirmed shape verbatim
- * (`PhysicsEngine::updatePhysics`, `0x0057bfb0` — see its own comment for the
- * citation): `e = throttle - rho*(vel.fwd)/fadeSpeed`, `K = 0.1*|throttle| +
- * e*|e|`, `F = fwd * K * ratio`. That function is shared code — every
- * Engine-derived vehicle runs it, not only aircraft — but it was only ever
- * read for the single whole-body throttle a plane or a car presents, because
- * neither ever binds `setInputToYaw`. TANK-10 is what parametrises throttle
- * *by side*; evaluating the identical confirmed shape once per side, with
- * that side's own `differentialRPM` standing in for the whole-vehicle
- * throttle the confirmed function reads, is this file's own bridge between
- * the two confirmed formulas — not itself a byte reading. It degenerates to
- * exactly the confirmed whole-body case when `yaw == 0`, where every side's
- * `differentialRPM` is the same `throttle`. [free]
+ *   e = thr − ρ(v·fwd) / fadeSpeed
+ *   K = 0.1|thr| + e|e|
+ *   a = fwd * K * ratio
  *
- * The result is an acceleration (mass already inside, this codebase's
- * standing convention for anything descended from `setTorque`), meant to be
- * applied at that side's driven wheels and clamped by their own friction
- * circle — not, as `Aircraft.step` applies its twin, as an unconstrained
- * body force. A tank's tractive effort is bounded by what its tracks can
- * grip, the same as a Willys' rear axle; an aircraft's thrust is not bounded
- * by anything the wheels touch.
+ * Applied **once** per simulation step at the engine node, from the
+ * undivided throttle (`+0xa0`). Yaw never enters this formula — steering
+ * while moving splits only the EngineGrip contact-speed targets via
+ * `differentialRPM` (TANK-2 / TANK-9). An earlier viewer mistake evaluated
+ * this per driven side and summed both tracks → ~8.8 m/s² at yaw 0 instead
+ * of the retail ~4.4 (V-R3 claim 22).
  *
- * At `throttle == 0` while still moving, `e` is `-v/fadeSpeed` (nonzero), so
- * this returns a small deceleration for free — no separate "engine braking"
- * constant needed, unlike `GroundVehicle`'s.
+ * `rho` defaults to 1 (ground vehicles sit well below the aircraft density
+ * ceiling). Units are acceleration; mass is already inside, matching the
+ * rest of this codebase's `setTorque`-descended convention.
  *
- * @returns {number} m/s^2, mass already inside
+ * @returns {number} m/s^2 along hull forward
  */
-export function driveAccel(throttle, yaw, side, forwardSpeed, ratio,
-    fadeSpeed = FADE_SPEED_DEFAULT) {
-  const d = differentialRPM(throttle, yaw, side);
-  const e = d - forwardSpeed / fadeSpeed;
-  return (0.1 * Math.abs(d) + e * Math.abs(e)) * ratio;
+export function bodyThrust(throttle, forwardSpeed, ratio,
+    fadeSpeed = FADE_SPEED_DEFAULT, rho = 1) {
+  const e = throttle - rho * forwardSpeed / fadeSpeed;
+  return (0.1 * Math.abs(throttle) + e * Math.abs(e)) * ratio;
+}
+
+/**
+ * EngineGrip contact-speed target (TANK-9): 
+ * `v_tgt = (1 − 0.5·b) * ratio * getCurrentDifferentialRPM(side)` with
+ * engine `+0xb8` defaulting to 1 → factor **0.5**. Sherman at full throttle
+ * / yaw 0 → 2.0 m/s. Friction pulls the contact toward this; it is **not** a
+ * second copy of body thrust. Coulomb magnitudes remain open (PHY-2).
+ */
+const ENGINE_GRIP_SPEED_FACTOR = 0.5;
+
+export function engineGripTarget(throttle, yaw, side, ratio,
+    factor = ENGINE_GRIP_SPEED_FACTOR) {
+  return factor * ratio * differentialRPM(throttle, yaw, side);
 }
 
 /**
@@ -852,16 +862,11 @@ export const TANK = {
   // The half-track's free-rolling front axle only (TANK-15) — never an
   // engine-connected wheel, so no separate "engine braking" belongs with it.
   rollingResistance: 0.5,
-  // A driven wheel's own resistance, N per (m/s) per unit load — see
-  // `#step`'s own comment on why this, not the confirmed thrust law's
-  // governor term, is what actually closes the top-speed equation at a
-  // tank-appropriate speed. Fitted so the two vanilla tanks land in a
-  // plausible band (Sherman ~9 m/s / 33 km/h, M3A1 ~31 m/s / 112 km/h) while
-  // still showing the corrected ratio's real effect — M3A1 markedly
-  // livelier than Sherman, matching both vehicles' real top speeds being in
-  // that order. Not a measurement; there is no recorded reference drive for
-  // either tank the way `ground-vehicles.md`'s own open gaps ask for one.
-  // [free]
+  // EngineGrip slip damper toward `engineGripTarget` (TANK-9), N per (m/s)
+  // per unit load — provisional until Coulomb magnitudes (PHY-2) are known.
+  // Open assumption (PLAN T3): this opposition, not fadeSpeed, is the real
+  // top-speed governor; do not invent fadeSpeed changes if cruise still
+  // overshoots the soft retail band. [free]
   trackResistance: 0.8,
 
   // s^-1, on the body rates. Willy needs only 0.8 for the same job (mopping
@@ -939,8 +944,8 @@ export class TrackedVehicle extends Vehicle {
     // mirroring the retail engine never writing `gear` past its seed of 1.
     this.ratio = engineRatio(this.engine.differential, this.engine.numberOfGears);
 
-    /** Driven wheels sharing each side, so the per-side drive force below
-     * splits evenly the same way `GroundVehicle` already splits its own. */
+    /** Driven wheels sharing each side — used for diagnostics / harnesses;
+     * longitudinal thrust is no longer split per side (TANK-7). */
     this.drivenBySide = { '-1': 0, '0': 0, '1': 0 };
     for (const wheel of this.wheels) {
       if (wheel.driven) this.drivenBySide[wheel.side] += 1;
@@ -977,6 +982,7 @@ export class TrackedVehicle extends Vehicle {
     this._force = new THREE.Vector3();
     this._torque = new THREE.Vector3();
     this._accel = new THREE.Vector3();
+    this._fwd = new THREE.Vector3();
     this._susp = new THREE.Vector3();
     this._fTyre = new THREE.Vector3();
     this._arm = new THREE.Vector3();
@@ -1132,12 +1138,20 @@ export class TrackedVehicle extends Vehicle {
     // this file's ownership this round.
     const throttle = s.surfaces.get(this._throttleKey) ?? 0;
     const yaw = s.surfaces.get(this._yawKey) ?? 0;
-    s.throttle = Math.min(1, Math.abs(throttle));
 
+    // TANK-7: one whole-body thrust from undivided throttle — not per side.
     const fadeSpeed = this.engine.fadeSpeed;
-    const accelPos = driveAccel(throttle, yaw, 1, vf, this.ratio, fadeSpeed);
-    const accelNeg = driveAccel(throttle, yaw, -1, vf, this.ratio, fadeSpeed);
-    const accelZero = driveAccel(throttle, yaw, 0, vf, this.ratio, fadeSpeed);
+    const thrust = bodyThrust(throttle, vf, this.ratio, fadeSpeed);
+
+    // Audio rpm for `.ssc` Default / Engine::Rpm. Land scripts modulate on
+    // Default; `PhysicsEngine::feedbackLoop` (0x0057be90) folds
+    // getCurrentRatio()*K / getCurrentTorque() into the engine's RPM state
+    // and that is the channel the note follows. `thrust` is already K*ratio.
+    const engineTorque = Math.max(this.engine.torque || 4, 1e-3);
+    const loadRpm = Math.min(1, Math.abs(thrust) / engineTorque);
+    const pedal = Math.min(1, Math.abs(throttle));
+    const wanted = Math.max(loadRpm, pedal * 0.25);
+    s.throttle += (wanted - s.throttle) * Math.min(1, 8 * h);
 
     // --- wheels -------------------------------------------------------------
     const force = this._force.set(0, 0, 0);
@@ -1222,30 +1236,15 @@ export class TrackedVehicle extends Vehicle {
         const moving = Math.tanh(uLong / 0.3);
         fLong -= moving * k.rollingResistance * gShare;
       } else if (wheel.driven) {
-        // TANK-10's own per-side split, `driveAccel`'s confirmed-formula
-        // extension (see its own comment): every driven wheel on a side
-        // shares that side's demanded force evenly, then the friction
-        // circle below still has the final word — a demand the tracks
-        // cannot grip is clamped exactly the way an overpowered rear axle
-        // already is on a jeep.
-        const count = this.drivenBySide[wheel.side] || 1;
-        const accel = wheel.side > 0 ? accelPos : wheel.side < 0 ? accelNeg : accelZero;
-        fLong = accel / count;
-        // Rolling resistance, always on once moving — `GroundVehicle`'s own
-        // shape, and load-bearing here in a way it is not there. The
-        // confirmed force law's own governor term (`driveAccel`'s `e`) only
-        // meaningfully opposes `throttle` once speed is a sizeable fraction
-        // of `fadeSpeed` (100 m/s, TANK-5's confirmed default): read alone
-        // it would let a tank accelerate toward aircraft-scale speeds before
-        // ever feeling it. Nothing in verify-r7.md gives a ground vehicle's
-        // top speed the way a car's `revLimit` does for `GroundVehicle`, so
-        // this term — not the confirmed formula — is what actually closes
-        // the equation at a tank-scale speed; the corrected `ratio` still
-        // drives the *comparison* between vehicles (a higher ratio settles
-        // faster and higher against the same resistance), which is the
-        // property this whole track exists to get right. [free]
+        // TANK-9: EngineGrip builds a contact-speed target from
+        // differentialRPM (yaw splits left/right); friction pulls toward
+        // it. This is **not** a second copy of body thrust (TANK-7) —
+        // earlier code applied `K*ratio` per side here and doubled launch
+        // accel at yaw 0. Coulomb magnitudes open (PHY-2); `trackResistance`
+        // is the provisional damper (PLAN T3 open governor assumption).
+        const vTgt = engineGripTarget(throttle, yaw, wheel.side, this.ratio);
         const gShare = load / -GRAVITY;
-        fLong -= uLong * k.trackResistance * gShare;
+        fLong = -(uLong - vTgt) * k.trackResistance * gShare;
       }
       // A dummy (spin-only) wheel gets no longitudinal force at all —
       // TANK-14's reading, and its own zero strength/damping already leaves
@@ -1269,13 +1268,12 @@ export class TrackedVehicle extends Vehicle {
       torque.add(this._arm.cross(fTyre));
 
       // Visual roll: a driven wheel spins at its own side's commanded rate
-      // (TANK-10 again — the two tracks visibly move at different speeds
-      // mid-turn, which is the entire point of this steering law), so it can
-      // read slightly ahead of or behind the hull's own integrated motion
-      // exactly where the two mechanisms disagree — see `driveAccel`'s own
-      // comment. Everything else, dummy rollers included, rolls off its own
-      // actual contact speed the way `GroundVehicle`'s wheels all do, which
-      // costs nothing extra since `uLong` above is geometry, not load.
+      // (TANK-2 — the two tracks visibly move at different speeds mid-turn,
+      // which is the entire point of this steering law; SpinWheel is
+      // visual-only per TANK-8), so it can read slightly ahead of or behind
+      // the hull's own integrated motion. Everything else, dummy rollers
+      // included, rolls off its own actual contact speed the way
+      // `GroundVehicle`'s wheels all do.
       wheel.angle += (wheel.driven
         ? this.ratio * differentialRPM(throttle, yaw, wheel.side)
         : uLong / wheel.radius) * h;
@@ -1285,8 +1283,19 @@ export class TrackedVehicle extends Vehicle {
     s.airspeed = speed;
 
     // --- integrate ------------------------------------------------------------
-    // Semi-implicit Euler, `GroundVehicle`'s own shape, unchanged.
+    // Semi-implicit Euler, `GroundVehicle`'s own shape, plus TANK-7 body
+    // thrust applied once along hull forward (not per track).
     const accel = this._accel.copy(force).applyQuaternion(q);
+    this._fwd.set(0, 0, -1).applyQuaternion(q);
+    accel.addScaledVector(this._fwd, thrust);
+    // Body-level EngineGrip remainder (TANK-9 / PLAN T3 open governor):
+    // wheel `trackResistance` toward `v_tgt` is Coulomb-capped (`mu*load`),
+    // so a high-ratio hull (M3A1's 17.5) still outruns the soft retail band
+    // and rolls in a hard turn. The same damper on the free body — toward
+    // the undivided yaw-0 target — closes what the patches cannot without
+    // touching fadeSpeed.
+    const vNom = engineGripTarget(throttle, 0, 0, this.ratio);
+    accel.addScaledVector(this._fwd, -(vf - vNom) * k.trackResistance);
     accel.y += GRAVITY;
     const kDrag = Math.PI * this._boundingRadius * this._boundingRadius * this.drag / this.mass;
     accel.addScaledVector(s.velocity, -kDrag);

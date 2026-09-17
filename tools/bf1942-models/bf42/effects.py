@@ -372,6 +372,19 @@ def effect_names_for_projectiles(library: con_mod.ObjectLibrary) -> set[str]:
     return names
 
 
+def effect_names_for_armor(library: con_mod.ObjectLibrary) -> set[str]:
+    """Bundles a damaged object shows: every `addArmorEffect` tier in the set.
+
+    The smoke, fire and death tiers (`e_PanzDamage`, `e_PanzFire`, `e_ExplGas`,
+    `e_scrapmetal*`, the boats' `e_waterBoatSink*`). None of these reach the
+    bake through the MaterialManager's impact matrix or a projectile's own
+    effects, which is why `_shared/effects.glb` shipped without a single one of
+    them until this was added.
+    """
+    return {name for template in library.objects.values()
+            for _, name, _ in template.armor_effects}
+
+
 def projectile_trail_bundle(library: con_mod.ObjectLibrary,
                             projectile: con_mod.ObjectTemplate) -> str | None:
     """The bundle a projectile drags along in flight, if it declares one."""

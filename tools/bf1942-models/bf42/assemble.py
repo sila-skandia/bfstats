@@ -277,6 +277,21 @@ class Report:
         }
 
 
+def _armor_effect_offset(offset: tuple[float, float, float]) -> list[float]:
+    """An `addArmorEffect` attach offset, converted to the space the glb is in.
+
+    Refractor is left-handed and glTF is not, so `gltf.py` negates Z on every
+    position, normal and **node translation** it writes. `extras` are passed
+    through verbatim, which means an authored vector shipped as data has to make
+    the same trip itself or it lands mirrored down the vehicle's long axis — a
+    Sherman authors its engine smoke at Z -1.8, and without this the smoke pours
+    out of the bonnet instead of the engine deck. Same reason
+    `animatedTextureSpeed` negates its U above.
+    """
+    x, y, z = offset
+    return [x, y, -z]
+
+
 class Assembler:
     def __init__(self, meshes: ArchivePool, textures: ArchivePool,
                  objects: ArchivePool, library: con_mod.ObjectLibrary, *,
@@ -597,6 +612,43 @@ class Assembler:
             "detailed",
         )]
 
+    def _treemesh_collision_indices(
+            self, builder: gltf.GlbBuilder, mesh_file: str,
+            collision: treemesh.TreeCollision, report: Report,
+    ) -> list[tuple[int, int, str]]:
+        """One glTF collision mesh from a TreeMesh SimpleCollisionMesh (TM-2).
+
+        Same `extras.collision` / `defenseMaterial` shape as StandardMesh
+        statics so `viewer/collision.js` indexes palms without a special path.
+        """
+        layer = stdmesh.CollisionLayer(
+            unknown=(0, 5),
+            vertices=list(collision.vertices),
+            vertex_unknown=[0.0] * len(collision.vertices),
+            faces=collision.collision_faces(),
+        )
+        mesh = stdmesh.StandardMesh(
+            name=mesh_file,
+            version=5,
+            bounds_min=(0.0, 0.0, 0.0),
+            bounds_max=(0.0, 0.0, 0.0),
+            collision_layers=[layer],
+            lods=[],
+        )
+        return self._collision_mesh_indices(builder, mesh_file, mesh, report)
+
+    def _parse_treemesh_collision(
+            self, mesh_file: str,
+    ) -> treemesh.TreeCollision | None:
+        entry = self.meshes.resolve_ext(f"treeMesh/{mesh_file}", (".tm",))
+        if not entry:
+            return None
+        try:
+            tree = treemesh.parse(self.meshes.read(entry), entry)
+        except (stdmesh.MeshError, ValueError, struct.error):
+            return None
+        return tree.collision
+
     def _collision_for_geometry(self, builder: gltf.GlbBuilder,
                                 geometry_name: str, report: Report,
                                 ) -> list[tuple[int, int, str]]:
@@ -615,6 +667,10 @@ class Assembler:
         `.sm` for its collision block only and never touches materials,
         textures or LOD triangles, so pulling a house's interior hull in does
         not also pull its interior *walls* into the glb.
+
+        TreeMesh: the SCM lives in the `.tm` (TM-2). Callers that attach the
+        result still apply the TM-5 gate (`setHasCollisionPhysics 1`); this
+        method only resolves the hull when an SCM is present.
         """
         cache_key = geometry_name.lower()
         if cache_key in self._geom_collisions:
@@ -624,12 +680,20 @@ class Assembler:
             return []
 
         template = self.library.geometry(geometry_name)
-        if template is None or template.kind.lower() == "treemesh":
-            # TreeMesh hulls live in the `.tm`'s own collision block, which
-            # `treemesh.py` recognises and skips; palms are fly-through until
-            # that is promoted to a parser.
+        if template is None:
             self._geom_collisions[cache_key] = []
             return []
+
+        if template.kind.lower() == "treemesh":
+            collision = self._parse_treemesh_collision(template.mesh_file)
+            if collision is None or not collision.faces:
+                self._geom_collisions[cache_key] = []
+                return []
+            result = self._treemesh_collision_indices(
+                builder, template.mesh_file, collision, report)
+            self._geom_collisions[cache_key] = result
+            return result
+
         entry = self.meshes.resolve_ext(
             f"standardMesh/{template.mesh_file}", (".sm",))
         if not entry:
@@ -674,19 +738,39 @@ class Assembler:
             return self._geom_collision_faces[cache_key]
         count = 0
         template = self.library.geometry(geometry_name)
-        if template is not None and template.kind.lower() != "treemesh":
-            entry = self.meshes.resolve_ext(
-                f"standardMesh/{template.mesh_file}", (".sm",))
-            if entry:
-                try:
-                    mesh = stdmesh.parse(self.meshes.read(entry), entry)
-                    count = max(
-                        (len(layer.faces) for layer in mesh.collision_layers),
-                        default=0)
-                except stdmesh.MeshError:
-                    count = 0
+        if template is not None:
+            if template.kind.lower() == "treemesh":
+                collision = self._parse_treemesh_collision(template.mesh_file)
+                count = collision.triangle_count if collision else 0
+            else:
+                entry = self.meshes.resolve_ext(
+                    f"standardMesh/{template.mesh_file}", (".sm",))
+                if entry:
+                    try:
+                        mesh = stdmesh.parse(self.meshes.read(entry), entry)
+                        count = max(
+                            (len(layer.faces) for layer in mesh.collision_layers),
+                            default=0)
+                    except stdmesh.MeshError:
+                        count = 0
         self._geom_collision_faces[cache_key] = count
         return count
+
+    def _object_emits_geometry_collision(
+            self, template: con_mod.ObjectTemplate) -> bool:
+        """Whether this object template's geometry hull should be attached.
+
+        StandardMesh buildings hang the hull off the Bundle regardless of a
+        per-object HCP bit in practice. TreeMesh is different (TM-5): emit
+        only when `setHasCollisionPhysics 1` **and** the `.tm` has an SCM —
+        the SCM half is resolved when the mesh is built; this gate is HCP.
+        """
+        if not template.geometry:
+            return False
+        geom = self.library.geometry(template.geometry)
+        if geom is not None and geom.kind.lower() == "treemesh":
+            return template.has_collision_physics
+        return True
 
     def _collision_only_node(self, builder: gltf.GlbBuilder, template_name: str,
                              report: Report, *, position, rotation,
@@ -708,20 +792,22 @@ class Assembler:
         stack = stack | {key}
 
         children: list[int] = []
-        for mesh_index, layer, role in (
-                self._collision_for_geometry(builder, template.geometry, report)
-                if template.geometry else []):
-            children.append(builder.add_node(gltf.Node(
-                name=f"{template.name} collision {layer}",
-                mesh=mesh_index,
-                extras={
-                    "collision": True,
-                    "collisionLayer": layer,
-                    "collisionRole": role,
-                    "sourceTemplate": template.name,
-                    "sourceGeometry": template.geometry,
-                },
-            )))
+        if (template.geometry
+                and self._object_emits_geometry_collision(template)):
+            for mesh_index, layer, role in (
+                    self._collision_for_geometry(
+                        builder, template.geometry, report)):
+                children.append(builder.add_node(gltf.Node(
+                    name=f"{template.name} collision {layer}",
+                    mesh=mesh_index,
+                    extras={
+                        "collision": True,
+                        "collisionLayer": layer,
+                        "collisionRole": role,
+                        "sourceTemplate": template.name,
+                        "sourceGeometry": template.geometry,
+                    },
+                )))
         child_refs = template.children
         if template.is_lod_selector and child_refs:
             child_refs = [self._collision_alternative(child_refs)]
@@ -766,8 +852,22 @@ class Assembler:
             return None, 0
 
         if template.kind.lower() == "treemesh":
-            result = self._treemesh_index(builder, template.mesh_file, report)
+            mesh_index, triangles, collision = self._treemesh_index(
+                builder, template.mesh_file, report)
+            result = (mesh_index, triangles)
             self._geom_mesh[cache_key] = result
+            # TM-5 / T1: SCM hull lands in the same extras.collision cache as
+            # StandardMesh so callers that only asked for a draw mesh still
+            # leave the collider available to `_collision_for_geometry`.
+            if self.include_collision and cache_key not in self._geom_collisions:
+                if collision is not None and collision.faces:
+                    self._geom_collisions[cache_key] = (
+                        self._treemesh_collision_indices(
+                            builder, template.mesh_file, collision, report))
+                else:
+                    self._geom_collisions[cache_key] = []
+            elif not self.include_collision:
+                self._geom_collisions[cache_key] = []
             return result
 
         mesh_file = template.mesh_file
@@ -835,16 +935,17 @@ class Assembler:
         return result
 
     def _treemesh_index(self, builder: gltf.GlbBuilder, mesh_file: str,
-                         report: Report) -> tuple[int | None, int]:
+                         report: Report,
+                         ) -> tuple[int | None, int, treemesh.TreeCollision | None]:
         entry = self.meshes.resolve_ext(f"treeMesh/{mesh_file}", (".tm",))
         if not entry:
             report.missing_meshes.append(mesh_file)
-            return None, 0
+            return None, 0, None
         try:
             tree = treemesh.parse(self.meshes.read(entry), entry)
         except (stdmesh.MeshError, ValueError, struct.error) as exc:
             report.missing_meshes.append(f"{mesh_file} ({exc})")
-            return None, 0
+            return None, 0, None
 
         primitives: list[gltf.Primitive] = []
         triangles = 0
@@ -882,8 +983,8 @@ class Assembler:
                     emissive_floor=floor),
             ))
         if not primitives:
-            return None, 0
-        return builder.add_mesh(mesh_file, primitives), triangles
+            return None, 0, tree.collision
+        return builder.add_mesh(mesh_file, primitives), triangles, tree.collision
 
     # -- effects (muzzle flashes) ------------------------------------------- #
 
@@ -978,6 +1079,12 @@ class Assembler:
                 # path picks it up, so no filter is needed here.
                 mesh_index, _ = self._mesh_index(builder, payload.geometry, report)
                 effect["kind"] = "mesh"
+                # EMT-6 / V-R2: mesh particles carry `ObjectTemplate.size` the
+                # same field sprites do (`sprite_size` here). `fx_1p_MuzzGun`
+                # is size 0.2 — omitting it left gunfire.js at the default
+                # scale of 1 (~5× retail frame coverage).
+                if payload.sprite_size is not None:
+                    effect["size"] = payload.sprite_size
             if mesh_index is None:
                 continue
             effect["timeToLive"] = (payload.time_to_live
@@ -997,6 +1104,13 @@ class Assembler:
                 effect["offsetInDof"] = emitter.relative_position_in_dof
             if emitter.positional_speed_in_dof:
                 effect["speedInDof"] = emitter.positional_speed_in_dof
+            # R2 / V-R2: shell-eject emitters declare `delay` (2.0 s on 1P
+            # Em_Shell792D1P). Without it, gunfire strobes the casing at the
+            # same instant as the flash and it reads as a lingering muzzle.
+            if (raw := (emitter.effect_props or {}).get("delay")):
+                delay = con_mod.crd(raw.split()[0])
+                if delay is not None and delay > 0:
+                    effect["delay"] = delay
             nodes.append(builder.add_node(gltf.Node(
                 name=ref.template,
                 translation=ref.position,
@@ -1761,8 +1875,11 @@ class Assembler:
         if (template.geometry
                 and geometry_is_first_person(template.geometry) == self.first_person):
             mesh_index, triangles = self._mesh_index(builder, template.geometry, report)
-            collision_meshes = self._geom_collisions.get(
-                template.geometry.lower(), [])
+            # TM-5: TreeMesh hulls only when HCP∧SCM — same gate as
+            # `_collision_only_node`. StandardMesh still attaches freely.
+            if self._object_emits_geometry_collision(template):
+                collision_meshes = self._geom_collisions.get(
+                    template.geometry.lower(), [])
 
         children_refs = template.children
         lod_swap: dict | None = None
@@ -2045,6 +2162,28 @@ class Assembler:
                 extras["hud"] = hud
                 report.vehicle_hud.append(
                     f"{template.name}: " + ", ".join(f"{k}={v}" for k, v in hud.items()))
+            # The Armor block, beside the HUD block and on the same node, so a
+            # placed vehicle in a level scene carries what it takes to run one:
+            # the tiers a burning tank shows, the threshold it burns from, and
+            # the per-second loss once it does. `hud` already carries the two
+            # hitpoint words the seated HUD prints; these are the ones the
+            # simulation needs and nothing read before.
+            armor = {key: value for key, value in {
+                "hitpoints": template.hitpoints,
+                "maxHitpoints": template.max_hitpoints,
+                "criticalDamage": template.critical_damage,
+                "hpLostWhileCriticalDamage": template.hp_lost_while_critical_damage,
+                "splashMaterial": template.material,
+            }.items() if value is not None}
+            if template.armor_effects:
+                armor["effects"] = [
+                    {"hp": threshold, "effect": name,
+                     "offset": _armor_effect_offset(offset)}
+                    for threshold, name, offset in template.armor_effects]
+            if template.has_armor:
+                armor["hasArmor"] = True
+            if armor:
+                extras["armor"] = armor
         if physics:
             # Raw `.con` values in `.con` units, on the part that declared
             # them. Nothing is summed onto the body: a Sherman's drive
@@ -2278,6 +2417,11 @@ class Assembler:
                 }.items()
                 if value is not None
             }
+            if template.armor_effects:
+                report.armor["effects"] = [
+                    {"hp": threshold, "effect": name,
+                     "offset": _armor_effect_offset(offset)}
+                    for threshold, name, offset in template.armor_effects]
             if template.kind.lower() == "handfirearms":
                 report.weapon = template.weapon_stats() or {}
         self._visible_springs = self._has_visible_spring(root_template)
