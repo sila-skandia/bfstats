@@ -18,7 +18,7 @@ where a section below says so explicitly.
 |---|---|
 | `viewer/armor.js` | The generic hit-point model (`Armor` class): clamp, death threshold, and the signed `applyDamage` a fall or a heal both go through. Framework-free — no three.js, no DOM. |
 | `viewer/supply.js` | `SupplyDepot` (one instance's eligibility + leaky-bucket + dispatch) and `SupplyField` (a level's whole set, ticked and queried together). Also framework-free. |
-| `viewer/map.html` | The only place that (a) walks the loaded scene graph for `SupplyDepot` nodes and resolves their world position, (b) owns the on-foot soldier's `Armor` instance and its lifecycle (spawn = full HP), (c) implements the fall-damage approximation, and (d) publishes `Soldier/SoldierHitPoints`, `Soldier/SoldierMaxHitPoints`, `ShowHealIcon`, `ShowReloadIcon` into the HUD variable bridge. |
+| `viewer/map.html` | The only place that (a) walks the loaded scene graph for `SupplyDepot` nodes and resolves their world position, (b) owns the on-foot soldier's `Armor` instance and its lifecycle (spawn = full HP), (c) implements the engine-faithful fall damage (`FALL_FREE_TOLERANCE` block; R4-18 closed), and (d) publishes `Soldier/SoldierHitPoints`, `Soldier/SoldierMaxHitPoints`, `ShowHealIcon`, `ShowReloadIcon` into the HUD variable bridge. |
 | `tests/test_armor.py`, `tests/armor_harness.mjs` | 10 node-driven tests: clamp/death/sign-dispatch, exercised the same way `test_effects.py` runs `effects-core.js`. |
 | `tests/test_supply.py`, `tests/supply_harness.mjs` | 10 node-driven tests against Wake's own depot archetypes (Ammobox, mediclocker, the M3A1's hybrid depot), transcribed verbatim from `scene.glb`'s extras. |
 
@@ -46,42 +46,55 @@ every spawn/redeploy (`spawnAtFlag`, the one reset point) and drops to `null`
 the instant the soldier leaves on-foot mode (a stale number would otherwise
 flash on the next spawn's first frame).
 
-## Fall damage — a viewer approximation (R4-18 is open)
+## Fall damage — the engine rule (R4-18 closed 2026-09-18)
 
-Two independent passes (research and verify) read `Armor`'s own code,
-`SimpleObject::handleCollision` and `SimpleObject::handleDamage` in full and
-found **no height/speed-to-damage formula anywhere** — R4-18 stands open in
-`verify-r4.md`. This viewer therefore approximates:
+R4-18 said the soldiers' fall damage was a viewer approximation because two
+passes found **no height/speed-to-damage formula** in `Armor`'s own code,
+`SimpleObject::handleCollision` and `SimpleObject::handleDamage`. That was
+wrong: the formula lives in `GameServer::handleCollisionLandOrWater`'s
+soldier branch and is delivered through the object-level `*0x15c` dispatch
+(slot `0x15c` = `BFSoldier::handleDamage` on the soldier world vtable) into
+`Armor::damage` — the passes missed it because it is not a direct
+`playCollisionEffect` or `Armor +0x20/+0x24` call. Ledger HP-6 was refuted
+for soldiers. Full re-derivation:
+`features/bf1942-3d-models/fall-damage-research-groundwork-2026-09-17.md`.
+
+The confirmed engine law (decoded 2026-09-18; see the groundwork doc's
+'Decode result'):
 
 ```
-SAFE_FALL_SPEED   = JUMP_SPEED * 2   ≈ 10.8 m/s  (~4 m of drop)
-LETHAL_FALL_SPEED = 25 m/s                        (~21 m of drop)
+severity = cos³θ · (S_obj · |v|²) · M1 · M2     → BFSoldier::handleDamage → Armor::damage
 ```
 
-Both thresholds are converted once to the heights that produce them
-(`v^2 = 2|g|h`; a soldier's drag is inert enough over any survivable drop —
-`physics.js`'s own terminal-velocity note, ~730 m/s — that this inversion is
-exact to the precision this ramp needs). `onFoot()` tracks the highest `y`
-seen while airborne (a jump's own apex, when it was a jump) and, the instant
-`soldier.grounded` reports true again, ramps `0..1` linearly between
-`SAFE_FALL_HEIGHT` and `LETHAL_FALL_HEIGHT` against the actual drop and
-applies `ramp * maxHitPoints` as damage — ordinary traversal costs nothing, a
-hard fall is progressively worse, and anything past `LETHAL_FALL_SPEED` is a
-kill. **Open question this approximation stands on: R4-18** — replace this
-ramp outright if the real formula ever surfaces (the same two leads it was
-last seen from: `ResponsePhysics::addFriction` `0x0825b6e0`,
-`PhysicsNode::updatePhysics` `0x082543d0`).
+For a straight-down foot fall cosθ = 1 and `|v|² = 2|g|h`, so the damage is
+the classic kinetic collision law — **HP ∝ impact speed squared**. It is not
+linear in height at a fixed speed, which is why the first engine-faithful
+pass (a linear `(drop − 1.0) × damping`, fatal at 30 m/s) under-fit ~15×: a
+Wake-airstrip ledge fall is lethal in-game (whole 30-HP health bar) but read
+as ~2 HP with the linear model. `S_obj·M1·M2` are the per-surface
+MaterialManager damage scalars, calibrated in the viewer against that
+measured lethal fall as `FALL_KINETIC_HP = 10` HP per metre (the `2|g|scalar`
+folded together). `FALL_FREE_TOLERANCE = 1.0` m and `KIT_FALL_DAMPING = 1.0`
+(vanilla kits set no damping) still hold.
+
+The viewer (`FALL_KINETIC_HP` block in `map.html`) implements this: it tracks
+the highest `y` seen while airborne (a jump's own apex, when it was a jump)
+and, the instant `soldier.grounded` reports true again, deals
+`(drop − 1.0) × damping × FALL_KINETIC_HP` HP — free below the 1.0 m
+tolerance, and lethal once the drop clears ~3 m, matching retail.
+A soldier's drag is inert enough over any survivable drop
+(`physics.js`'s terminal-velocity note, ~730 m/s) that the height→speed
+inversion is exact to the precision this needs.
 
 Tracked as a height rather than a sampled velocity on the adversarial
-reviewer's pass over this round: `SoldierBody#settle()` zeroes `velocity.y`
-in the very same `step()` call that flips `grounded` true (it has to, to
-plant the body on the floor), so a peak read from `soldier.velocityY`
-*after* `step()` returns always misses the last partial tick's own
-acceleration — this was the round's own first cut, and it under-reported a
-12 m drop's damage by about 5% against the closed-form prediction (see
-Known issues). A landed body's `y` is the ground height exactly, never a
-clamped derivative of it, so the height the body actually fell is exact at
-any tick rate.
+reviewer's pass: `SoldierBody#settle()` zeroes `velocity.y` in the very
+same `step()` call that flips `grounded` true (it has to, to plant the body
+on the floor), so a peak read from `soldier.velocityY` *after* `step()`
+returns always misses the last partial tick's own acceleration — this was
+the round's own first cut, and it under-reported a 12 m drop's damage by
+about 5% against the closed-form prediction (see Known issues). A landed
+body's `y` is the ground height exactly, never a clamped derivative of it,
+so the height the body actually fell is exact at any tick rate.
 
 `window.__damage(n)` (the round briefing's own ask) goes through the same
 `applyDamage` sign dispatch, so a test can move HP without waiting on a

@@ -477,6 +477,18 @@ class ObjectTemplate:
     # without these the node says where but never how close or who is drawn.
     entry_radius: float | None = None
     seat_flags: list[str] = field(default_factory=list)
+    # `seatAnimationUpperBody` / `seatAnimationLowerBody` on a SeatObject: the
+    # animation state names the engine's `setUseSeat` (lnxded 0x08271950, the
+    # BFSoldier call identified in SEAT-9) resolves for the occupant's upper
+    # and lower body. Only passenger seats declare them — the driver's seat and
+    # every manned-gun seat leave them empty and fall back to the soldier's own
+    # template (numeric ids at +0x294/+0x298/+0x29c); an empty upper string
+    # means "no upper-body override" rather than "no animation". The strings
+    # name states in `animations/AnimationStates*.con` (e.g. `Ub_PassengerInWilly`,
+    # `Lb_PassengerInHanomag`), so a pose extractor can retarget them straight
+    # off the state machine without inventing a mapping.
+    seat_animation_upper_body: str | None = None
+    seat_animation_lower_body: str | None = None
     automatic_reset: bool = False
     skeleton: str | None = None
     # Which bone of that skeleton the object's own origin sits on. Weapon
@@ -906,6 +918,11 @@ class ObjectTemplate:
     dest_blend_mode: str | None = None
     show_in_first_person: bool = False
     show_in_third_person: bool = False
+    # CVM* booleans on a Camera template (camera-modes.md §2/§3): which of the
+    # four views (C) the seat offers. Omission means on — a vehicle camera that
+    # declares none gets the full cycle — so this is null when no flag was ever
+    # written, and otherwise a dict of the ones that were, in declaration order.
+    camera_view_modes: dict[str, bool] | None = None
     # Emitter motion: where particles spawn along the direction of fire
     # (`relativePositionInDof`) and how fast they drift along it
     # (`positionalSpeedInDof`, negative = receding behind the muzzle).
@@ -1396,6 +1413,14 @@ class ObjectLibrary:
                     # declare several.
                     if flag := args.split()[0] if args.split() else None:
                         obj.seat_flags.append(flag)
+                elif cmd == "seatanimationupperbody":
+                    # SEAT-9: the animation state name that drives the seated
+                    # soldier's upper body (e.g. Ub_PassengerInWilly). Single
+                    # string, last write wins — a template declares it once.
+                    obj.seat_animation_upper_body = args.split()[0] if args.split() else None
+                elif cmd == "seatanimationlowerbody":
+                    # SEAT-9: the lower-body analogue (e.g. Lb_PassengerInHanomag).
+                    obj.seat_animation_lower_body = args.split()[0] if args.split() else None
                 elif cmd == "setautomaticreset":
                     obj.automatic_reset = args.strip().startswith("1")
                 elif cmd == "createskeleton":
@@ -1879,6 +1904,17 @@ class ObjectLibrary:
                             "show_in_first_person" if cmd == "showinfirstperson"
                             else "show_in_third_person",
                             args.strip().startswith("1"))
+                elif cmd in ("cvminside", "cvmchase", "cvmfrontchase",
+                             "cvmflyby", "cvmtrace", "cvmexterntrace"):
+                    # CVM* booleans on a Camera template (camera-modes.md §2).
+                    # Omission means on, so only declared flags land here. Last
+                    # write wins — the data never restates one.
+                    value = truthy(args)
+                    if value is None:
+                        continue
+                    if obj.camera_view_modes is None:
+                        obj.camera_view_modes = {}
+                    obj.camera_view_modes[cmd.upper()] = value
                 elif child is None:
                     continue
                 elif cmd == "setisfirstpersonpart":

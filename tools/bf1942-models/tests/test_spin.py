@@ -420,6 +420,48 @@ GeometryTemplate.create StandardMesh Tank_Hull_M1
         # A mesh-less, child-less camera never grows a rig slider.
         self.assertNotIn("rig", cameras["TankCamera"].get("extras", {}))
 
+    def test_camera_cvm_flags_survive_in_extras(self) -> None:
+        # A Camera that declares CVM* booleans carries them through to
+        # `extras.cameraView.cvm`; one that omits them gets no `cvm` key at all
+        # (camera-modes.md §3: omission means on, so no key = "all modes available").
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Land/Tank/Objects.con",
+            """
+ObjectTemplate.create PlayerControlObject Tank
+ObjectTemplate.addTemplate TankCamera
+ObjectTemplate.addTemplate CVMOnlyCamera
+ObjectTemplate.addTemplate PlainCamera
+
+ObjectTemplate.create Camera TankCamera
+ObjectTemplate.setInputToYaw c_PIMouseLookX
+ObjectTemplate.CVMInside 1
+ObjectTemplate.CVMChase 0
+
+ObjectTemplate.create Camera CVMOnlyCamera
+ObjectTemplate.setInputToYaw c_PIMouseLookX
+ObjectTemplate.CVMExternTrace 1
+
+ObjectTemplate.create Camera PlainCamera
+ObjectTemplate.setInputToYaw c_PIMouseLookX
+""",
+        )
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        builder = gltf.GlbBuilder()
+        report = Report(root="Tank", configuration="complex", lod=0)
+        node = assembler.build_node(builder, "Tank", report)
+        document = glb_document(builder.build([node], extras=report.as_dict()))
+
+        by_name = {n["name"]: n for n in document["nodes"]}
+        tank_cam = by_name["TankCamera"]["extras"]["cameraView"]
+        self.assertEqual({"CVMINSIDE": True, "CVMCHASE": False}, tank_cam["cvm"])
+        cvm_only = by_name["CVMOnlyCamera"]["extras"]["cameraView"]
+        self.assertEqual({"CVMEXTERNTRACE": True}, cvm_only["cvm"])
+        # No CVM flags declared → no `cvm` key, not an empty dict.
+        plain = by_name["PlainCamera"]["extras"]["cameraView"]
+        self.assertNotIn("cvm", plain)
+
     def test_camera_alone_does_not_resurrect_an_empty_bundle(self) -> None:
         library = ObjectLibrary()
         library.add_con(
