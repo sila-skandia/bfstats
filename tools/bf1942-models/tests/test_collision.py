@@ -164,6 +164,14 @@ class CollisionModuleTests(unittest.TestCase):
         self.assertAlmostEqual(12.0, hit["t"], places=4)
         self.assertEqual(85, hit["material"])
 
+    def test_a_disabled_owner_stops_blocking(self) -> None:
+        # After a wreck fades the pad must be walkable; disableOwner drops that
+        # hull from cast/sweep without rebuilding the index.
+        past = self.results["disabledOwnerSkipped"]
+        self.assertIsNotNone(past)
+        self.assertEqual(85, past["material"])
+        self.assertTrue(self.results["disabledOwnerRestored"])
+
     def test_the_segment_length_is_respected(self) -> None:
         self.assertTrue(self.results["shortOfWall"])
         self.assertTrue(self.results["behindMiss"])

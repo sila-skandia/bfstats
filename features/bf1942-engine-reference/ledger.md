@@ -84,6 +84,19 @@ Survey: `python3 features/bf1942-engine-reference/surveys/stride_vs_flags.py`.
 
 ---
 
+## Fog console words (settled 2026-09-17)
+
+Level `Init.con` fog. Full write-up:
+[gap-research-fog-2026-09-17.md](../bf1942-3d-models/gap-research-fog-2026-09-17.md).
+
+| # | Assumption | Status | Evidence |
+|---|---|---|---|
+| FOG-1 | `fogLinearStart` / `fogLinearEnd` are aliases of `fogStart` / `fogEnd` | **refuted** | Neither string exists in `BF1942.exe` or `BF1942_w32ded.exe`. Live registrars: `fogStart` 0x008cf99c, `fogEnd` 0x008cfa0c, `fogColorVec` 0x008cfa7c. Nine vanilla levels still write the dead Linear spellings. |
+| FOG-2 | `setFogColorVec` is an alternate spelling of `fogColorVec` | **refuted** | Absent from both Windows binaries. Midway's only colour line is therefore inert; keep Setup/default grey `(0.7,0.7,0.7)`. lnxded `Setup::setFogColorVec` is a stub `ret` (0x080c6f60). |
+| FOG-3 | Undeclared fog range is `0.5 * Game.setViewDistance` → VD | **confirmed** (factor) | Setup ctor defaults fogStart/fogEnd to 1.0 / 2.0 (lnxded 0x080b868e / 0x080b8698). `Setup::setViewDistance` 0x080c6e20 retunes using 0.5f at 0x86b05e8 (and 0.33f at 0x86ba8c4). Exporter matches the 0.5 start fraction. |
+
+---
+
 ## Dynamic-mesh lighting (settled 2026-09-13)
 
 How the engine lights vehicles and non-lightmapped statics, settled for the
@@ -219,7 +232,7 @@ every address: [subsystems/handweapon-view-and-deviation.md](subsystems/handweap
 
 ---
 
-## Menu node graphs — `MemeFile 2.0` (format settled 2026-09-15; minimap, button actions and the HUD font settled 2026-09-16; MEME-10 open)
+## Menu node graphs — `MemeFile 2.0` (format settled 2026-09-15; minimap, button actions and the HUD font settled 2026-09-16; MEME-10 settled 2026-09-17)
 
 `menu/InGame` and the other extensionless entries in `menu.rfa` are the
 serialized `dice::meme::*` object graphs behind the HUD, spawn screen,
@@ -242,7 +255,7 @@ frame layout then read out of the engine's own reader and writer.
 | MEME-7 | `BfButtonNode` draws its plate at texture size; Width/Height is the pointer region | **confirmed by measurement** | `FUN_007d9b50` reads two pictures then Width/Height; the `knapp*` art occupies (3,1)-(110,26) of a 128x128 sheet against W/H 109x25 |
 | MEME-8 | The spawn map's rectangle is in the data | **refuted** | the `ShowMap` cull holds an empty `ClipNode`; the map picture is hot-swapped at runtime. The viewer's rect is measured from a capture and marked so |
 | MEME-9 | The strings the InGame text nodes show come from `lexiconAll.dat` | **confirmed** | `u32 count, u32 columns, then key + 8 UTF-16LE NUL-terminated translations per record`; `RESPAWN_AT` = `ANTI-TANK` |
-| MEME-10 | The spawn screen dims the map pane (the capture shows a black sea and a faint grid; the art is full colour) | **open** | Not in the data: `ShowMap` is `SplitNode > [CullNode(ShowMap), empty ClipNode]`, with no `EffectNode` near it. Nor in `minimap_resolveMapPath` 0x0045d7c0 (read 2026-09-16): that is BfMenu's screen-path switch, and its only map work is installing the level's picture into the placeholder (`getMap()` vtable +0x4c) — no colour, blend or rectangle code. The one alpha found is BfMap's own: +0x4c eases toward +0x50 (both 1.0 at construction) and is the colour alpha of the icon draw `FUN_00468870` in `BfMap__update` 0x0046a680. What writes +0x50, and whether the map quad itself uses it, is unread, so any link to `game.setMinimapTransparency` is unproven. The viewer's 0.3 spawn-screen dim is hand-tuned |
+| MEME-10 | The spawn screen dims the map pane (the capture shows a black sea and a faint grid; the art is full colour) | **confirmed** (2026-09-17) | No menu `EffectNode`. Open-map quad alpha in `BfMap__update` 0x0046a680 is `(+0x4c)×0.8×(+0x54)` (closed HUD uses `1×(+0x54)`); 0.8 at 0x008d6290. `+0x54` is `game.setMinimapTransparency`: registrar 0x006b8ad0, apply `FUN_006d5650` writes `1−T×0.01` via `FUN_00467930`. `+0x50` is only the show/hide fade target (0/1) from `FUN_00467920` ← HUD frame 0x006ada70; `+0x4c` eases to it in `BfMap__animate` 0x00468fb0. Default T=20 → spawn alpha **0.64**. See [gap-research-meme10-2026-09-17.md](../bf1942-3d-models/gap-research-meme10-2026-09-17.md) |
 | MEME-11 | Classes with unread trailing fields (`ActionListAction`, `CallFunctionAction`, `CullEventActionNode` and the other event nodes) can be skipped to their frame end without losing layout | **confirmed**, and the fields are now read (2026-09-16) | Each class's `read` (its real vtable +0x30, reached from the class-name string through its registration and `ClassInfo` +0x08 `createInstance`) gives the field list. `ActionListAction` (0x007f0ab0) is a run of `Action` frames with no count, read until its frame ends (`ClassIStream` +0x58). `CullEventActionNode` (0x007e3a80) and `CullVariableAndEventActionNode` (0x007e3bf0) end with an `Event` object. `SetPathAction` (0x007e6e50) — path node, destination node, in/out time, in/out wait, paint-over flag — is the page transition every mod uses; none of the twelve `Navigate…Action` classes occurs in a shipped menu. `BfNavigationButtonNode` (0x007d9db0) and `IndexDataData` (0x007ef4b0) are the tab and row selectors, and `AnyKeyEvent`, `ExtendedButtonEvent` and the empty `RemoveEventAction` complete the set. A button calls the `Function` object it names — `Function` has no fields (its `read` is the stub 0x007f8570) — most often `Sound/PlayMenuHighLight` (475), `Sound/PlayMenuOk` (398) and `Kit/OnSpawnButtonMouseOver` (255) of 2,796 calls. **`meme.py` bug:** the "Event type" of `TypeEvent` / `ButtonEvent` is 1 byte on the wire, where "Button type" at the same +0x5c slot is 4. With that fixed and these fields added, this row's ten classes plus the Event-width fix raise the number of pages that read to zero leftover bytes from 11 to **80 of 230** (16 archives) — the remainder needs other classes' own ledger rows (`BfSliderNode`, `BfCreditsNode`, `PathNode`, `BfCenterStyle`, `BfEditNodeInt`, `DataListData`, `DisableNode`, `BfBinkNode`, `PointerXData`/`PointerYData`, `BfAddSubEffectNode`, and `BfNewListBoxNode`'s own pre-existing schema, short by a constant 57 bytes everywhere it's used — none of which this row named). `menu/InternetMenu` and `menu/LocalMenu` still desync near `BfTransformNodeSize`, cause open |
 | MEME-12 | The HUD minimap has no rect of its own in `menu/InGame` | **confirmed by data** | Same empty `ClipNode` as MEME-8. Its neighbours are declared: `ShowTicket` (620,4) 256x32, `Coordinates/ShowMapCoordinates` (627,185) 50x20 in `Style/InGameLatin11`, `ControlPoint/ShowControlPoints` (620,207) 256x16 |
 | MEME-13 | The minimap's size and its small/large toggle are runtime values | **confirmed** (2026-09-16) | `BfMap` is a `TransformNode` (its ctor 0x0046e230 calls 0x007e95b0 first), and `BfMap__animate` 0x00468fb0 rewrites the inherited position (+0xc) and size (+0x14) every frame from the zoom fraction z (+0x40): x = 400 + 220(1−z) − 120z, y = 30, width = height = 175 + 337z. A top-right square, 175 units closed and 512 open, in 800×600 space. The small/large toggle is the zoom (MMAP-1). Closed it sits at (620, 30): the same x as `ShowTicket`, ending two units above `ShowControlPoints` |
