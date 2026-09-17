@@ -1,0 +1,176 @@
+// Drives `viewer/vehicle-damage.js` outside a browser and prints one JSON blob.
+// The module imports only `armor.js`, which itself imports nothing, so the two
+// copied files are the whole harness — no vendored three.js (contrast
+// `ground_harness.mjs`).
+import {
+  activeTier, deathTier, DamageableVehicle, VehicleDamageSet,
+  TIER_DEATH, TIER_WATER_DEATH,
+} from './vehicle-damage.mjs';
+
+const out = {};
+
+// The Sherman's own tiers, verbatim from `objects/vehicles/land/sherman/
+// objects.con` and reproduced by the assembler into the scene's `armor` extras.
+const SHERMAN = {
+  hitpoints: 100, maxHitpoints: 100,
+  criticalDamage: 12, hpLostWhileCriticalDamage: 1.5,
+  effects: [
+    { hp: 50, effect: 'e_PanzDamage', offset: [0, 0.9, -1.8] },
+    { hp: 12, effect: 'e_PanzFire', offset: [0, 1.2, -1.4] },
+    { hp: 0, effect: 'e_ExplGas', offset: [0, 0, 0] },
+    { hp: 0, effect: 'e_scrapmetal', offset: [0, 0, 0] },
+    { hp: 0, effect: 'e_scrapmetalsmoke', offset: [0, 0, 0] },
+    { hp: -1, effect: 'WaterWaterExplosion', offset: [0, 0, 0] },
+  ],
+};
+
+// The Spitfire, which declares TWO effects at one threshold — the case a
+// "one effect per tier" reading would drop.
+const SPITFIRE = {
+  hitpoints: 100, maxHitpoints: 100,
+  criticalDamage: 20, hpLostWhileCriticalDamage: 1.5,
+  effects: [
+    { hp: 65, effect: 'em_StukaDamage', offset: [0, 0.102, 2.11] },
+    { hp: 65, effect: 'em_PlaneDamage', offset: [0, 0.103, 2.11] },
+    { hp: 20, effect: 'e_StukaFire', offset: [0, 0.6, 2.11] },
+    { hp: 0, effect: 'e_ExplGas', offset: [0, 0, 0] },
+    { hp: -1, effect: 'WaterWaterExplosion', offset: [0, 0, 0] },
+  ],
+};
+
+out.constants = { TIER_DEATH, TIER_WATER_DEATH };
+
+// Which tier is active across the Sherman's whole HP range.
+out.shermanTiers = [100, 51, 50, 49, 13, 12, 11, 1].map(hp => {
+  const tier = activeTier(SHERMAN.effects, hp);
+  return { hp, threshold: tier?.threshold ?? null, names: tier?.names ?? [] };
+});
+
+// Two effects at one threshold both play.
+out.spitfireAt65 = activeTier(SPITFIRE.effects, 65);
+
+// The death tiers, dry and wet.
+out.death = deathTier(SHERMAN.effects);
+out.waterDeath = deathTier(SHERMAN.effects, { inWater: true });
+// A template with no water tier falls back to the dry one.
+out.waterDeathFallback = deathTier(
+  [{ hp: 0, effect: 'e_ExplGas' }], { inWater: true });
+
+// A vehicle that spawns full shows nothing and is not critical.
+{
+  const v = new DamageableVehicle(SHERMAN, { name: 'Sherman' });
+  out.spawn = {
+    hp: v.hitPoints, max: v.maxHitPoints, critical: v.critical,
+    destroyed: v.destroyed, tier: v.update(1 / 30).tier,
+  };
+}
+
+// Shot down to the smoke tier, then to the fire tier.
+{
+  const v = new DamageableVehicle(SHERMAN);
+  v.damage(60);                                  // 40 HP
+  const smoke = v.update(1 / 30);
+  v.damage(30);                                  // 10 HP
+  const fire = v.update(1 / 30);
+  out.tierChanges = {
+    smoke: { hp: v.hitPoints + 30, threshold: smoke.tier?.threshold,
+             names: smoke.tier?.names, changed: smoke.changed },
+    fire: { hp: v.hitPoints, threshold: fire.tier?.threshold,
+            names: fire.tier?.names, changed: fire.changed,
+            critical: v.critical },
+  };
+}
+
+// The burn: 12 HP at 1.5/s is 8 whole seconds, and the loss is per firing, not
+// scaled by dt. Step at 30 Hz from exactly critical and count.
+{
+  const v = new DamageableVehicle(SHERMAN);
+  v.damage(88);                                   // exactly 12 HP: critical
+  let elapsed = 0;
+  let died = false;
+  // Sample on the tick, not on the harness's own clock: summing 1/30 thirty
+  // times lands just under 1.0 in binary floating point, so a second counted
+  // here and a second counted inside the module drift apart by one step and a
+  // by-the-clock sample would show a duplicate followed by a double loss.
+  const ticks = [];
+  let previous = v.hitPoints;
+  for (let i = 0; i < 30 * 20 && !died; i++) {
+    const result = v.update(1 / 30);
+    elapsed += 1 / 30;
+    if (v.hitPoints !== previous) {
+      ticks.push({ at: Math.round(elapsed * 1000) / 1000,
+                   hp: Math.round(v.hitPoints * 100) / 100 });
+      previous = v.hitPoints;
+    }
+    if (result.died) died = true;
+  }
+  out.burn = {
+    startedAt: 12, died, seconds: Math.round(elapsed * 100) / 100,
+    tickCount: ticks.length, ticks, finalTier: v.shown,
+  };
+}
+
+// A long frame checks in less often; it does not burn more. One 2 s step costs
+// exactly two ticks.
+{
+  const v = new DamageableVehicle(SHERMAN);
+  v.damage(88);
+  v.update(2);
+  out.longFrame = { hp: Math.round(v.hitPoints * 100) / 100 };
+}
+
+// Repaired back above the threshold: the tier clears and the burn resets.
+{
+  const v = new DamageableVehicle(SHERMAN);
+  v.damage(90);                                   // 10 HP, burning
+  v.update(1 / 30);
+  const burning = v.shown?.threshold ?? null;
+  v.heal(80);                                     // 90 HP
+  const healed = v.update(1 / 30);
+  out.repair = {
+    burning, afterHeal: healed.tier, changed: healed.changed,
+    critical: v.critical, accumulator: v.criticalAccumulator,
+  };
+}
+
+// Death is announced once, then frozen.
+{
+  const v = new DamageableVehicle(SHERMAN);
+  v.damage(100);
+  const first = v.update(1 / 30);
+  const second = v.update(1 / 30);
+  out.deathOnce = {
+    firstDied: first.died, firstNames: first.tier?.names ?? [],
+    secondDied: second.died, secondChanged: second.changed,
+    destroyed: v.destroyed,
+  };
+}
+
+// The set: register by owner id, apply a hit record, step everything.
+{
+  const set = new VehicleDamageSet();
+  set.add(3, SHERMAN, { name: 'Sherman' });
+  set.add(4, SPITFIRE, { name: 'Spitfire' });
+  // A palm has no armor block at all, and a building one with no hit points.
+  const palm = set.add(5, null);
+  const noHp = set.add(6, { effects: [{ hp: 0, effect: 'e_ExplGas' }] });
+
+  // A round that names a non-damageable owner, then one that lands on the tank.
+  const missed = set.applyHit({ owner: 99, damage: 40 });
+  const landed = set.applyHit({ owner: 3, damage: 60 });
+  // A hit with no damage (a bounced rifle round: damageMod 0.0) costs nothing.
+  const bounced = set.applyHit({ owner: 3, damage: 0 });
+
+  const changes = set.update(1 / 30);
+  out.set = {
+    size: set.size, palm, noHp,
+    missed, landedLost: landed?.lost ?? null, bounced,
+    changes: changes.map(c => ({
+      name: c.vehicle.name, threshold: c.tier?.threshold ?? null,
+      names: c.tier?.names ?? [], died: c.died,
+    })),
+    shermanHp: set.get(3).hitPoints,
+  };
+}
+
+process.stdout.write(JSON.stringify(out, null, 1));
