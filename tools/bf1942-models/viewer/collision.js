@@ -757,6 +757,7 @@ export class WorldCollider {
     this.heightfield = heightfield;
     this.waterLevel = Number.isFinite(waterLevel) ? waterLevel : null;
     this.statics = statics;
+    this.dynamicCast = null;
     this.hit = {
       t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0,
       dx: 0, dy: 0, dz: 0,
@@ -827,6 +828,20 @@ export class WorldCollider {
     if (this.statics && best > 0) {
       const object = this.statics.cast(ox, oy, oz, dx, dy, dz, best, skipOwner, out);
       if (object) { best = object.t; kind = 'object'; }
+    }
+    if (this.dynamicCast && best > 0) {
+      const dyn = this.dynamicCast(ox, oy, oz, dx, dy, dz, best, skipOwner);
+      if (dyn && dyn.t < best) {
+        best = dyn.t;
+        kind = 'object';
+        out.t = dyn.t;
+        out.x = dyn.x; out.y = dyn.y; out.z = dyn.z;
+        out.nx = dyn.nx; out.ny = dyn.ny; out.nz = dyn.nz;
+        out.material = dyn.material ?? 61;
+        out.owner = dyn.owner ?? -1;
+        out.triangle = -1;
+        out.kind = 'object';
+      }
     }
     this.elapsed += (performance.now() - started) * 1000;
     this.casts++;

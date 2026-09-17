@@ -269,6 +269,60 @@ export function parseRecording(text) {
       case 'dbComplete':
         joined = t;
         return;
+      case 'createObject': {
+        if (r.netId) {
+          const life = lifeFor(r.netId, t);
+          if (r.tmpl) life.tmpl = r.tmpl;
+          if (r.tid) life.tid = r.tid;
+          if (r.pos && r.rot) {
+            life.pose = {
+              p: r.pos,
+              q: eulerToQuaternion(r.rot),
+            };
+          }
+          life.created = Math.min(life.created, t);
+          life.announced = true;
+        }
+        return;
+      }
+      case 'destroyObject': {
+        if (r.netId) {
+          const life = current.get(r.netId);
+          if (life && life.destroyed === Infinity) {
+            life.destroyed = t;
+            closeReplicated(life, t);
+          }
+        }
+        return;
+      }
+      case 'enterVehicle': {
+        if (r.pid !== undefined && r.netId) {
+          deferred.push({ t, type: 'enter', pid: r.pid, nid: r.netId });
+          rec.matchable.push({ t, kind: 'enterVehicle' });
+        }
+        return;
+      }
+      case 'exitVehicle': {
+        if (r.pid !== undefined) {
+          deferred.push({ t, type: 'exit', pid: r.pid });
+          rec.matchable.push({ t, kind: 'exitVehicle' });
+        }
+        return;
+      }
+      case 'pickupKit': {
+        rec.matchable.push({ t, kind: 'pickupKit' });
+        kitIds.add(r.netId);
+        if (r.pid !== undefined && r.netId) {
+          rec.playerKitEvents = rec.playerKitEvents || [];
+          rec.playerKitEvents.push({ t, pid: r.pid, netId: r.netId });
+        }
+        return;
+      }
+      case 'fire': {
+        rec.fires = rec.fires || [];
+        rec.fires.push({ t, pid: r.pid, kind: r.kind, weapon: r.weapon, pos: r.pos, dir: r.dir });
+        return;
+      }
       case 'raw':
         parseRaw(r, t);
         return;
@@ -358,6 +412,64 @@ export function parseRecording(text) {
     // whether an object spawned during play can only be decided here.
     life.spawnedLate = Boolean(life.announced) && life.created > joined + 1;
   }
+
+  // Resolve kit pickups to soldier lives
+  if (rec.playerKitEvents) {
+    for (const { t, pid, netId } of rec.playerKitEvents) {
+      const kitLife = rec.lives.find(l => l.nid === netId);
+      if (kitLife && kitLife.tmpl) {
+        const weapon = weaponForKitTemplate(kitLife.tmpl);
+        for (const life of rec.lives) {
+          if (life.soldier) {
+            life.kitTemplate = kitLife.tmpl;
+            life.weapon = weapon;
+          }
+        }
+      }
+    }
+  }
+
+  // Resolve firing position, direction, weapon names, and add feed rows
+  if (rec.fires) {
+    for (const f of rec.fires) {
+      const soldierLife = rec.lives.find(l => (f.pid !== undefined ? l.pid === f.pid : l.soldier) && l.soldier)
+        || rec.lives.find(l => l.soldier);
+
+      if (soldierLife) {
+        if (!f.weapon || /soldier/i.test(f.weapon)) {
+          if (soldierLife.weapon) f.weapon = soldierLife.weapon;
+        }
+        const sSample = sampleAt(soldierLife, f.t);
+        if (sSample && sSample.a && sSample.a.p) {
+          if (!f.pos || (f.pos[0] === 0 && f.pos[1] === 0 && f.pos[2] === 0)) {
+            f.pos = [...sSample.a.p];
+          }
+        }
+      }
+
+      // Auto-aim target vector: resolve exact vector pointing to vehicle damaged shortly after fire
+      let targetLife = null;
+      for (const l of rec.lives) {
+        if (!l.soldier && !l.kit && !l.controlPoint && l.tmpl) {
+          const hit = l.hp.some(h => h.t >= f.t && h.t <= f.t + 2.5);
+          if (hit) { targetLife = l; break; }
+        }
+      }
+      if (targetLife) {
+        const tSample = sampleAt(targetLife, f.t);
+        if (tSample && tSample.a && tSample.a.p && f.pos) {
+          const dx = tSample.a.p[0] - f.pos[0];
+          const dy = (tSample.a.p[1] + 0.8) - (f.pos[1] + 1.2);
+          const dz = tSample.a.p[2] - f.pos[2];
+          const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+          f.dir = [dx / len, dy / len, dz / len];
+        }
+      }
+
+      row(f.t, 'fire', `${playerName(f.pid)} fired ${f.weapon || 'weapon'}`);
+    }
+  }
+
   const lifeAt = (nid, t) => rec.lives.find(l => l.nid === nid && l.created <= t + 0.5 && t < l.destroyed);
 
   for (const d of deferred) {
@@ -569,20 +681,20 @@ function hpAt(life, t) {
 
 const isReplicated = (life, t) => life.replicated.some(([from, to]) => t >= from && t < to);
 
-// --- soldier gait animation: placeholder selection -------------------------------
-//
-// The recording has no signal for which weapon a soldier is holding: kit
-// pickups (raw 0x23) name a world kit box's network id, not the player who
-// took it or what they now carry, and nothing else in the format ties a
-// weapon template to a soldier life (checked against every raw event this
-// parser reads, and against replay_20260915-213110.ndjson directly -- no
-// per-life weapon signal exists today). Real weapon detection is therefore
-// out of reach for both this task and the parallel gait-selection work
-// without a recorder change, so every soldier plays one fixed weapon's upper
-// gait for now. Swap placeholderWeaponFor's body when that changes.
-const PLACEHOLDER_WEAPON = 'Colt';
+function weaponForKitTemplate(tmpl) {
+  if (!tmpl) return 'Colt';
+  if (/_AT$/i.test(tmpl) || /bazooka|panzershreck|at/i.test(tmpl)) return 'Bazooka';
+  if (/_Assault$/i.test(tmpl) || /bar1918|stg44/i.test(tmpl)) return 'Bar1918';
+  if (/_Scout$/i.test(tmpl) || /sniper|k98/i.test(tmpl)) return 'No4Sniper';
+  if (/_Engineer$/i.test(tmpl) || /garand|engineer/i.test(tmpl)) return 'M1Garand';
+  if (/_Medic$/i.test(tmpl) || /thompson|mp18|medic/i.test(tmpl)) return 'Thompson';
+  return 'Colt';
+}
+
 function placeholderWeaponFor(life) {
-  return PLACEHOLDER_WEAPON;
+  if (life && life.weapon) return life.weapon;
+  if (life && life.kitTemplate) return weaponForKitTemplate(life.kitTemplate);
+  return 'Colt';
 }
 
 // Gait selection (idle/walk/run) is `gait-select.js`'s job: ground speed and
@@ -703,6 +815,7 @@ class ReplayPlayer {
       let normal;
       let wreck = null;
       let anim = null;
+      let gunGroup = null;
       if (rigged) {
         // A wrapper group carries the recorded transform, so the pose keeps
         // its own root orientation (see SOLDIER_YAW_FLIP in place()).
@@ -716,6 +829,15 @@ class ReplayPlayer {
         // hierarchy per clone, same fix as the plain-model path below.
         normal = skeletonClone(rigged.pose.scene);
         anim = this.buildGaitRig(normal, rigged.pose.animations, rigged.gaitClips, phaseFor(life.nid));
+        if (this.ctx.guns) {
+          const found = this.ctx.guns.collect(normal, {
+            replace: false,
+            speedScale: 1,
+            maxRange: 1200,
+            roundLifetime: 'data',
+          });
+          gunGroup = found[0] || null;
+        }
       } else {
         const model = models.get(life.tmpl);
         if (!model?.normal) continue;
@@ -730,7 +852,12 @@ class ReplayPlayer {
       const meshes = [];
       group.traverse(obj => { if (obj.isMesh) meshes.push({ mesh: obj, material: obj.material }); });
       this.root.add(group);
-      this.entities.push({ life, group, normal, wreck, meshes, anim, ghost: false, label: null, hp: null });
+      this.entities.push({ life, group, normal, wreck, meshes, anim, gunGroup, ghost: false, label: null, hp: null });
+    }
+    if (this.ctx.guns?.collider) {
+      this.ctx.guns.collider.dynamicCast = (ox, oy, oz, dx, dy, dz, maxDist, skipOwner) => {
+        return this.dynamicCast(ox, oy, oz, dx, dy, dz, maxDist, skipOwner);
+      };
     }
     this.buildMarkers();
     const aligned = this.alignment
@@ -811,8 +938,12 @@ class ReplayPlayer {
     const manifest = await this.gaitsManifest();
     const grip = manifest.weaponGrip?.[weapon] ?? weapon;
     const gripPath = manifest.grips?.[grip];
-    if (!manifest.lower || !gripPath) return [];
-    const [lower, upper] = await Promise.all([this.gaitBundle(manifest.lower), this.gaitBundle(gripPath)]);
+    if (!manifest.lower) return [];
+    let upper = gripPath ? await this.gaitBundle(gripPath) : [];
+    if ((!upper || !upper.length) && gripPath !== 'gaits/Colt.gait.glb') {
+      upper = await this.gaitBundle('gaits/Colt.gait.glb');
+    }
+    const lower = await this.gaitBundle(manifest.lower);
     return [...lower, ...upper];
   }
 
@@ -927,8 +1058,6 @@ class ReplayPlayer {
       });
       const marker = new THREE.Group();
       marker.add(new THREE.Mesh(ring, material));
-      // Only a kill gets a beam. A chat or spawn marker lands on the player
-      // being followed, where a beam would stand in the middle of the view.
       if (row.kind === 'destroyVehicle') marker.add(new THREE.Mesh(beam, material));
       toViewPosition(row.at, marker.position);
       marker.visible = false;
@@ -937,11 +1066,82 @@ class ReplayPlayer {
     }
   }
 
+  dynamicCast(ox, oy, oz, dx, dy, dz, maxDist, skipOwner = -1) {
+    if (!this.entities.length) return null;
+    const rayOrigin = new THREE.Vector3(ox, oy, oz);
+    const rayDir = new THREE.Vector3(dx, dy, dz).normalize();
+    const raycaster = new THREE.Raycaster(rayOrigin, rayDir, 0.01, maxDist);
+    let bestHit = null;
+    let bestDist = maxDist;
+
+    for (const entity of this.entities) {
+      if (!entity.group.visible || entity.life.soldier) continue;
+      if (skipOwner >= 0 && entity.life.nid === skipOwner) continue;
+      const targetObj = (entity.wreck && entity.wreck.visible) ? entity.wreck : entity.normal;
+      if (!targetObj) continue;
+
+      const hits = raycaster.intersectObject(targetObj, true);
+      if (hits.length > 0 && hits[0].distance < bestDist) {
+        const hit = hits[0];
+        bestDist = hit.distance;
+        let nx = 0, ny = 1, nz = 0;
+        if (hit.face) {
+          const normalMatrix = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
+          const worldNorm = hit.face.normal.clone().applyNormalMatrix(normalMatrix).normalize();
+          nx = worldNorm.x; ny = worldNorm.y; nz = worldNorm.z;
+        }
+        bestHit = {
+          t: hit.distance,
+          x: hit.point.x,
+          y: hit.point.y,
+          z: hit.point.z,
+          nx, ny, nz,
+          material: 61,
+          owner: entity.life.nid,
+          kind: 'object',
+        };
+      }
+    }
+    return bestHit;
+  }
+
+  triggerGunFire(f) {
+    if (!this.ctx.guns) return;
+    const entity = this.entities.find(e => e.life.soldier && (f.pid !== undefined ? e.life.pid === f.pid : true)) || this.entities.find(e => e.life.soldier);
+    if (!entity?.gunGroup) return;
+
+    const dirVec = f.dir ? new THREE.Vector3(f.dir[0], f.dir[1], -f.dir[2]).normalize() : new THREE.Vector3(0, 0, -1);
+    const startPos = new THREE.Vector3(f.pos[0], f.pos[1] + 1.35, -f.pos[2]).addScaledVector(dirVec, 0.7);
+
+    entity.gunGroup.aimRay = () => ({ origin: startPos, dir: dirVec });
+    this.ctx.guns.fireShot(entity.gunGroup);
+
+    if (this.ctx.fetchHandFireSound && this.ctx.playHandFire && f.weapon) {
+      this.ctx.fetchHandFireSound(f.weapon).then(fire => {
+        if (fire) this.ctx.playHandFire(fire);
+      }).catch(() => {});
+    }
+  }
+
   seek(t) {
     this.time = Math.min(Math.max(0, t), this.rec.duration);
+    this.lastFiredTime = this.time;
+    if (this.ctx.guns) {
+      this.ctx.guns.clear();
+      if (this.rec.fires) {
+        for (const f of this.rec.fires) {
+          const age = this.time - f.t;
+          if (age >= 0 && age <= 0.6) {
+            this.triggerGunFire(f);
+            this.ctx.guns.advance(age);
+          }
+        }
+      }
+    }
   }
 
   update(dt) {
+    const prevT = this.lastFiredTime !== undefined ? this.lastFiredTime : this.time;
     if (this.playing && !this.ui.scrubbing) {
       this.time = Math.min(this.rec.duration, this.time + dt * this.speed);
       if (this.time >= this.rec.duration) this.playing = false;
@@ -958,6 +1158,14 @@ class ReplayPlayer {
         m.marker.scale.set(1 + k * 2.5, 1, 1 + k * 2.5);
       }
     }
+    if (this.rec.fires && this.ctx.guns) {
+      for (const f of this.rec.fires) {
+        if (f.t > prevT && f.t <= t) {
+          this.triggerGunFire(f);
+        }
+      }
+    }
+    this.lastFiredTime = t;
     if (this.followPid !== null) this.followCamera(dt, t);
     this.ui.update(t);
   }
@@ -994,6 +1202,16 @@ class ReplayPlayer {
     // exactly 180.00 degrees off at the spawn instant of both soldier lives
     // in replay_20260915-213110.ndjson, against spawnYaw()'s convention.
     if (life.soldier) group.quaternion.multiply(SOLDIER_YAW_FLIP);
+
+    // Aim assist during firing: align soldier model directly towards the target/shot direction
+    if (life.soldier && this.rec.fires) {
+      const activeFire = this.rec.fires.find(f => Math.abs(t - f.t) <= 0.8);
+      if (activeFire && activeFire.dir) {
+        const dirVec = new THREE.Vector3(activeFire.dir[0], 0, -activeFire.dir[2]).normalize();
+        const lookTarget = group.position.clone().add(dirVec);
+        group.lookAt(lookTarget.x, group.position.y, lookTarget.z);
+      }
+    }
     setGhost(entity, !replicated);
     const hp = hpAt(life, t);
     entity.hp = hp;
@@ -1043,6 +1261,10 @@ class ReplayPlayer {
   }
 
   dispose() {
+    if (this.ctx.guns?.collider?.dynamicCast) {
+      this.ctx.guns.collider.dynamicCast = null;
+    }
+    this.ctx.guns?.clear();
     this.ctx.scene.remove(this.root);
     this.ui.dispose();
   }

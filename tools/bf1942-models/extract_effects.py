@@ -34,6 +34,7 @@ def effect_names(tables, library, extra: list[str]) -> set[str]:
     if tables is not None:
         names.update(tables.effects.values())
     names.update(effects_mod.effect_names_for_projectiles(library))
+    names.update(effects_mod.effect_names_for_armor(library))
     return names
 
 

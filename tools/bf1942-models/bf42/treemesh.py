@@ -23,10 +23,12 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass, field
 
-from .stdmesh import MeshError, _Cursor
+from .stdmesh import CollisionFace, MeshError, _Cursor
 
 
 COL_MAGIC = struct.unpack("<I", bytes([250, 194, 151, 235]))[0]
+# CID_SimpleCollisionMesh — lnxded 0x086e9e08; TM-1 / TM-7.
+CID_SIMPLE_COLLISION_MESH = COL_MAGIC
 
 
 @dataclass
@@ -40,10 +42,36 @@ class TreePart:
 
 
 @dataclass
+class TreeCollision:
+    """SimpleCollisionMesh block inside a `.tm` (TM-2 / TM-4 / TM-7).
+
+    Face `material_u16` is the SM-6 material word; `defenseMaterial` for the
+    viewer is `material_u16 & 0xFF`, same as StandardMesh collision faces.
+    """
+    vertices: list[tuple[float, float, float]]
+    faces: list[tuple[int, int, int, int]]  # i0, i1, i2, material_u16
+
+    @property
+    def triangle_count(self) -> int:
+        return len(self.faces)
+
+    def collision_faces(self) -> list[CollisionFace]:
+        return [
+            CollisionFace(
+                vertices=(i0, i1, i2),
+                material_id=material_u16 & 0xFF,
+                flags=0,
+            )
+            for i0, i1, i2, material_u16 in self.faces
+        ]
+
+
+@dataclass
 class TreeMesh:
     name: str
     angle_count: int
     parts: list[TreePart] = field(default_factory=list)
+    collision: TreeCollision | None = None
 
     @property
     def triangle_count(self) -> int:
@@ -75,7 +103,7 @@ def parse(data: bytes, name: str = "<mem>") -> TreeMesh:
             meshes.append((index_start, num_faces, texture))
         groups.append(meshes)
 
-    _skip_collision(c, name)
+    collision = _parse_collision(c, name)
 
     vertex_count = c.u32()
     if vertex_count > 200_000:
@@ -142,7 +170,9 @@ def parse(data: bytes, name: str = "<mem>") -> TreeMesh:
                 uvs=uvs,
                 indices=face_idx,
             ))
-    return TreeMesh(name=name, angle_count=angle_count, parts=parts)
+    return TreeMesh(
+        name=name, angle_count=angle_count, parts=parts, collision=collision,
+    )
 
 
 def _consume_start(groups: list[list[tuple[int, int, str]]], kind: int,
@@ -163,32 +193,55 @@ def _consume_start(groups: list[list[tuple[int, int, str]]], kind: int,
     return cursor
 
 
-def _skip_collision(c: _Cursor, name: str) -> None:
-    """TM-1: this word is a collider class id for `SmartItf<IVectorCollider>
-    ::create` (lnxded `TreeMeshTemplate::load` 0x083bd380, the id read at
-    0x083bd651 and consumed at 0x083bd85d), not a magic-or-vertex-count
-    switch. 0 means no collider - bushes store four zero bytes here instead
-    of a collision mesh. `COL_MAGIC` (0xEB97C2FA) is `CID_SimpleCollisionMesh`
-    (lnxded 0x086e9e08); every non-zero id across 401 installed tree meshes
-    is that one, so any other id is unsupported rather than a vertex count to
-    rewind onto - the engine never rewinds here, and nothing reads a fourth
-    class of collider today.
+def _parse_collision(c: _Cursor, name: str) -> TreeCollision | None:
+    """Parse the TreeMesh SimpleCollisionMesh block, or None if CID is 0.
+
+    TM-1 / TM-7: the word is a collider class id for
+    `SmartItf<IVectorCollider>::create` (lnxded `TreeMeshTemplate::load`
+    0x083bd380, id read at 0x083bd651, consumed at 0x083bd85d), not a
+    magic-or-vertex-count switch. 0 means no collider — bushes store four
+    zero bytes here. `COL_MAGIC` (0xEB97C2FA) is `CID_SimpleCollisionMesh`
+    (lnxded 0x086e9e08); every non-zero id across installed tree meshes is
+    that one. Any other id is unsupported — the engine never rewinds here.
+
+    Layout (version 5): 16-byte verts (xyz + u32 bake), 8-byte faces
+    (3×u16 index + u16 material), then BSP skipped after parse (TM-7).
+    Soft AABB-vs-header mismatches are authoring slack; indices are the
+    ship criterion.
     """
     if c.pos + 4 > len(c.data):
-        return
+        return None
     magic = c.u32()
     if magic == 0:
-        return
+        return None
     if magic != COL_MAGIC:
-        raise MeshError(f"{name}: unsupported collider class id 0x{magic:08X} at {c.pos - 4}")
+        raise MeshError(
+            f"{name}: unsupported collider class id 0x{magic:08X} at {c.pos - 4}")
     version = c.u32()
     if version != 5:
         raise MeshError(f"{name}: unexpected collision version {version}")
     vert_count = c.u32()
-    c.pos += vert_count * 16  # 3f + 2 bytes + 2 pad
+    if vert_count > 200_000:
+        raise MeshError(f"{name}: implausible collision vertex count {vert_count}")
+    vertices: list[tuple[float, float, float]] = []
+    for _ in range(vert_count):
+        x, y, z = c.f32x3()
+        c.pos += 4  # face-material bake in low 16 (SM-6); not needed for export
+        vertices.append((x, y, z))
     face_count = c.u32()
-    c.pos += face_count * 8  # 3u16 indices + u16 material
+    if face_count > 2_000_000:
+        raise MeshError(f"{name}: implausible collision face count {face_count}")
+    faces: list[tuple[int, int, int, int]] = []
+    for _ in range(face_count):
+        i0, i1, i2, material_u16 = struct.unpack_from("<4H", c.data, c.pos)
+        c.pos += 8
+        if max(i0, i1, i2) >= vert_count:
+            raise MeshError(
+                f"{name}: collision face references a vertex outside "
+                f"0..{vert_count - 1}")
+        faces.append((i0, i1, i2, material_u16))
     _skip_bsp(c)
+    return TreeCollision(vertices=vertices, faces=faces)
 
 
 def _skip_bsp(c: _Cursor) -> None:
