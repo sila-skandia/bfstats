@@ -54,7 +54,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bf42 import animstates, baf, con as con_mod, gltf, pose as pose_mod
 from bf42 import roster as roster_mod
 from bf42 import ske as ske_mod, skin as skin_mod, stdmesh
-from bf42.assemble import Assembler, Report, geometry_is_first_person
+from bf42.assemble import (Assembler, Report, geometry_is_first_person,
+                          is_foreign_skeleton_part)
 from bf42.rfa import ArchivePool
 from extract_models import DEFAULT_GAME_DIR, build_library, build_pools, discover_levels, mod_chain
 
@@ -207,41 +208,12 @@ def soldier_parts(library: con_mod.ObjectLibrary, soldier: str,
         geom = library.geometry(child.geometry)
         if geom is None or not geom.skin:
             continue
-        # A part that brings its own skeleton is not part of the soldier's body.
-        # `CommonSoldierData.inc` gives every soldier an `addTemplate Parachute`,
-        # and the parachute is skinned (`animations/Parachute.skn`) — so it passes
-        # the skin test above and arrived here as a fifth "body part", posed by a
-        # skeleton that cannot drive it. Baked in, it draws a 13.5 m canopy
-        # standing on the soldier's head with its rigging lines fanning out past
-        # the weapon.
-        #
-        # It only started appearing when CON-1's `include`-dropping fix let
-        # `CommonSoldierData.inc` reach the extractor at all — the same fix that
-        # first delivered the soldier's own `HitPoints 30` — so every bake from
-        # that point carries it and every earlier one does not.
-        #
-        # The discriminator is a foreign skeleton, and it takes some care, because
-        # an `AnimatedBundle` re-declares the skeleton it binds to (see
-        # `Assembler._skeleton_scope`). Three values occur: the body and hands
-        # declare none, the head declares the face skeleton (`UsFace.ske`) and is
-        # a real part, and the parachute declares `Parachute.ske`. Testing merely
-        # for the *presence* of a skeleton drops the head — that was the first
-        # attempt here, and it exported a faceless soldier — and testing only
-        # "differs from the root" drops it too, since the face genuinely differs.
-        #
-        # Swept across all 15 installed mods: the only skinned soldier child with
-        # a skeleton that is neither absent, nor the root's, nor a face skeleton
-        # is `Parachute`, in every one of them. So this selects exactly the
-        # parachute today without hardcoding its name, and a mod that adds a
-        # genuinely posable part with its own skeleton would need the same
-        # treatment the face gets rather than being silently dropped.
-        #
-        # A parachute feature wants this geometry back, attached to its own
-        # skeleton and hidden until the soldier is falling — not posed as a limb.
-        if (child.skeleton
-                and "face" not in child.skeleton.lower()
-                and (root.skeleton is None
-                     or child.skeleton.lower() != root.skeleton.lower())):
+        # The soldier's parachute and anything else bound to a skeleton this
+        # soldier cannot pose. The predicate — and the cross-mod sweep behind it,
+        # and the two wrong versions that came before it — lives in
+        # `bf42.assemble.is_foreign_skeleton_part`, shared with the model
+        # exporter's own child walk so the two cannot drift apart.
+        if is_foreign_skeleton_part(child, root):
             continue
         parts.append(child)
     if not parts:
