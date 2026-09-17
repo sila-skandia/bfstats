@@ -286,6 +286,24 @@ class SeatsModuleTests(unittest.TestCase):
     def test_a_free_axis_stays_inside_the_wrap_range(self) -> None:
         self.assertTrue(self.results["turretAxis"]["freeStaysInWrapRange"])
 
+    def test_an_axis_winds_up_at_its_own_declared_acceleration(self) -> None:
+        # GUN-3's velocity register accumulates `|acceleration|*dt`, and
+        # `setAcceleration`'s magnitude is that number — deg/s^2, confirmed,
+        # vanilla magnitudes 30–150. `con.py` emits it as of 2026-09-17; an
+        # axis that carries it reaches its cap in maxSpeed/acceleration
+        # seconds, here 35/350 = a tenth of a second.
+        wind = self.results["windUp"]
+        self.assertEqual(wind["maxSpeed"], wind["ownAtTenth"])
+
+    def test_an_axis_without_one_falls_back_and_is_slower(self) -> None:
+        # Every glb baked before that emission. The fallback is the middle of
+        # the confirmed band, 90 deg/s^2, so the same gun needs 0.39 s rather
+        # than 0.1 — visibly slower, and still far quicker than the flat one
+        # second every gun in the game used to share.
+        wind = self.results["windUp"]
+        self.assertLess(wind["fallbackAtTenth"], wind["maxSpeed"])
+        self.assertEqual(wind["maxSpeed"], wind["fallbackAtHalf"])
+
     # --- FireState: gate order, heat/overheat, reload (GUN-12) --------------
 
     def test_firing_decrements_ammo_one_per_shot(self) -> None:

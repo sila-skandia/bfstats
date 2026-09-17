@@ -421,12 +421,25 @@ export class VehicleOccupancy {
 const RIG_AXIS = { yaw: 'y', pitch: 'x', roll: 'z' };   // flight.js's own convention, mirrored
 const RIG_SIGN = { yaw: -1, pitch: -1, roll: 1 };       // (unexported there; kept identical here)
 
-// Seconds from rest to the axis's own declared `maxSpeed` -- GUN-8's
-// illustrative Defgun numbers (1.8s yaw / 0.67s pitch, from real
-// `acceleration`/`maxSpeed` values this viewer's data does not carry) sit on
-// either side of this, so it is the right order of magnitude without
-// claiming to reproduce either gun's real figure. Tunable; not measured.
-export const TURRET_RAMP_TIME = 1.0;
+// How fast an axis's velocity register winds up toward its commanded rate,
+// deg/s^2 -- GUN-3's own `|acceleration|*dt` accumulation, which is
+// `setAcceleration`'s magnitude and nothing else. An axis whose extract
+// carries that number uses it (`spec.acceleration`, emitted by `con.py` from
+// 2026-09-17); this is only the fallback for one that does not, which is
+// every glb baked before then.
+//
+// Replaces a shared `TURRET_RAMP_TIME = 1.0` s, i.e. "every gun in the game
+// takes one second to reach its own top rate". That is roughly right for the
+// heavy mounts GUN-8 illustrates (a Defgun's real figures work out at 1.8 s
+// yaw / 0.67 s pitch) and badly wrong for a tank turret, which is the
+// complaint that produced this: a Sherman's 35 deg/s traverse spent the whole
+// of a short flick still winding up, so the turret crawled where the game
+// swings it. 90 deg/s^2 is the middle of the 30-150 band `setAcceleration`
+// actually occupies across vanilla (flight-model.md §2a, confirmed), and at
+// the Sherman's own 35 deg/s that is 0.39 s to the cap. Still a fallback, not
+// a measurement -- the fix is to re-extract, after which the gun's own number
+// wins.
+export const TURRET_ACCELERATION = 90;
 // Mouse pixels (this viewer's own unit) per tick -> the input register's
 // units. The real register's units are a raw Windows mouse delta at whatever
 // pointer-speed setting the client read; the ratio between that and a
@@ -440,12 +453,16 @@ export const TURRET_RAMP_TIME = 1.0;
 // `sample * SENS / 40 * maxSpeed` deg/s, so at 0.05 a Sherman's 35 deg/s
 // traverse ran at `sample * 0.044` deg/s: an ordinary 40 px frame gave
 // 1.75 deg/s and a hard flick at 120 px gave 5.3, i.e. a quarter-minute to
-// come round 90 degrees while swiping continuously. At 0.35 the clamp
-// saturates at 114 px in a frame — a brisk flick reaches the gun's own
-// declared maximum and nothing exceeds it — while a 40 px frame asks for a
-// third of it. Still a feel number, and it applies to every manned gun, not
-// only to tanks.
-export const TURRET_SENSITIVITY = 0.35;
+// come round 90 degrees while swiping continuously.
+//
+// 1.0 is one register unit per pixel, which makes the whole chain readable:
+// the register's own +-40 clamp saturates in a 40 px frame, so ordinary
+// aiming motion asks for the gun's declared maximum and nothing can ask for
+// more, and GUN-3's +-1.0 deadzone lands on one pixel. 0.35 (saturating at
+// 114 px) was the first attempt and was still reported as much slower than
+// the game. Still a feel number about browser mouse units, and it applies to
+// every manned gun, not only to tanks.
+export const TURRET_SENSITIVITY = 1.0;
 
 const _euler = new THREE.Euler();
 const _quat = new THREE.Quaternion();
@@ -484,8 +501,11 @@ export class TurretAxis {
     // fraction of the axis's own real `maxSpeed` per second.
     const maxSpeed = this.spec.maxSpeed || 0;
     const target = (driven / 40) * maxSpeed * this.spec.direction;
-    const rampPerSecond = maxSpeed / Math.max(TURRET_RAMP_TIME, 1e-3);
-    const maxStep = rampPerSecond * dt;
+    // GUN-3's velocity register: it winds up at the axis's OWN
+    // `setAcceleration` when the extract carries it, and at the fallback
+    // otherwise -- see `TURRET_ACCELERATION` for why that stopped being a
+    // shared ramp time.
+    const maxStep = (this.spec.acceleration || TURRET_ACCELERATION) * dt;
     const delta = target - this.velocity;
     this.velocity += Math.max(-maxStep, Math.min(maxStep, delta));
     this.angle += this.velocity * dt;
