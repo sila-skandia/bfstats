@@ -1791,8 +1791,15 @@ def main() -> int:
             listing = json.loads(maps_index.read_text())
         except json.JSONDecodeError:
             listing = []
+    # Keep prior `loading` (and any other keys) from extract_loading_assets —
+    # rewriting the whole entry here used to drop every map back to the
+    # Western beach fallback in progress.js.
+    prior = next(
+        (e for e in listing if e.get("name", "").lower() == info.name.lower()),
+        None,
+    )
     listing = [e for e in listing if e.get("name", "").lower() != info.name.lower()]
-    listing.append({
+    entry = {
         "name": info.name,
         "mod": args.mod,
         "glb": f"{info.name.lower()}/scene.glb",
@@ -1800,7 +1807,12 @@ def main() -> int:
         "worldSize": info.terrain.world_size,
         "tiles": extras["terrain"]["tiles"],
         "objects": extras["objects"]["placed"],
-    })
+    }
+    if isinstance(prior, dict):
+        for key, value in prior.items():
+            if key not in entry:
+                entry[key] = value
+    listing.append(entry)
     listing.sort(key=lambda e: e["name"].lower())
     maps_index.write_text(json.dumps(listing, indent=2))
 
