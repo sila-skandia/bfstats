@@ -15,8 +15,8 @@ import { GunFire } from './gunfire.js';
 import {
   surveyVehicle, classifySeat, classifyRoot, findAllVehicleRoots,
   listEntryPoints, pickNearest, TIE_EPSILON, VehicleOccupancy, TurretAxis,
-  TurretRig, FireState, chainOnShot, readWorldPose, TURRET_SENSITIVITY,
-  AIM_INPUTS, hasAimAxes,
+  TurretRig, FireState, chainOnShot, readWorldPose, AIM_INPUTS, hasAimAxes,
+  TURRET_DEGREES_PER_PIXEL, TURRET_PENDING_CLAMP, TURRET_DEADZONE,
 } from './seats.js';
 
 const results = {};
@@ -385,26 +385,39 @@ function shermanWithRenamedGunnerNode() {
   const spec = { min: -90, max: 90, free: false, maxSpeed: 90, direction: 1 };
   const rig = node('Axis', {});
   const axis = new TurretAxis('yaw', rig, spec);
-  // GUN-3's own hardcoded ±1.0 deadzone on the ±40-clamped input register,
-  // which is the confirmed fact here. The fixtures below are written in
-  // REGISTER units and converted, rather than in the pixels one particular
-  // `TURRET_SENSITIVITY` happens to make them: that constant is an admitted
-  // feel number about browser mouse units (its own comment says as much), and
-  // pinning a raw 6 px here made this test fail the moment it was retuned —
-  // for a reason that has nothing to do with the deadzone it is about.
-  const px = register => register / TURRET_SENSITIVITY;
-  axis.feed(px(0.5));
+  // GUN-3's own deadzone: below it, banked aim moves nothing. Written in
+  // DEGREES of ask and converted to pixels rather than pinned as a raw pixel
+  // count, because the pixels-per-degree ratio is an admitted feel number
+  // (its own comment says as much) and a fixture written in its units fails
+  // the moment it is retuned, for a reason that has nothing to do with the
+  // deadzone it is about.
+  const px = degrees => degrees / TURRET_DEGREES_PER_PIXEL;
+  axis.feed(px(TURRET_DEADZONE / 2));
   axis.step(1 / 60);
   const belowDeadzone = axis.angle;
 
-  // Sustained, past the deadzone but well short of the register's own ±40
-  // ceiling: the axis must actually move, and in the fed direction's sign
-  // convention (whichever `TurretAxis` picks -- asserted for stability, not
-  // re-derived here). The target velocity a register of 1.5 drives is a small
-  // fraction of `maxSpeed`, which is why this runs for two seconds; the clamp
-  // test below feeds a saturating value instead.
+  // Sustained and well past the deadzone: the axis must actually move, and in
+  // the fed direction's sign convention (whichever `TurretAxis` picks --
+  // asserted for stability, not re-derived here).
   for (let i = 0; i < 120; i++) { axis.feed(px(1.5)); axis.step(1 / 60); }
   const movedAngle = axis.angle;
+
+  // What the mouse asks for is what it gets, while the ask stays inside what
+  // the axis can deliver: this is the whole point of banking the input rather
+  // than draining it every tick. Half a degree a frame for a second is 30
+  // degrees, and 30 degrees is what comes out.
+  const tracker = new TurretAxis('yaw', node('Tracker', {}),
+    { min: -180, max: 180, free: false, maxSpeed: 90, direction: 1 });
+  for (let i = 0; i < 60; i++) { tracker.feed(px(0.5)); tracker.step(1 / 60); }
+  for (let i = 0; i < 30; i++) tracker.step(1 / 60);   // let the bank drain
+  const tracked = round(tracker.angle, 2);
+
+  // And an ask far past what it can deliver is bounded, not banked for ever:
+  // TURRET_PENDING_CLAMP is the ceiling on how much aim can be owed.
+  const flicked = new TurretAxis('yaw', node('Flick', {}),
+    { free: true, maxSpeed: 90, direction: 1 });
+  flicked.feed(px(10000));
+  const bankedAfterAFlick = round(flicked.pending, 2);
 
   // Pinned at the input register's own ±40 ceiling (feed far exceeds it),
   // so the target velocity is the full `maxSpeed` and the ramp
@@ -424,7 +437,10 @@ function shermanWithRenamedGunnerNode() {
   function windUp(spec, seconds) {
     const a = new TurretAxis('yaw', node('WindUp', {}), spec);
     const ticks = Math.round(seconds * 60);
-    for (let i = 0; i < ticks; i++) { a.feed(2000); a.step(1 / 60); }
+    // Asking for far more travel than the axis can give, every tick, so the
+    // demanded rate is pinned at the cap and the wind-up is the only thing
+    // between rest and it.
+    for (let i = 0; i < ticks; i++) { a.feed(1e5); a.step(1 / 60); }
     return a.velocity;
   }
   // 35 deg/s at 350 deg/s^2 is a tenth of a second to the cap.
@@ -447,6 +463,10 @@ function shermanWithRenamedGunnerNode() {
     belowDeadzone: round(belowDeadzone),
     movedNonZero: Math.abs(movedAngle) > 1,
     movedSameSignAsInput: Math.sign(movedAngle) === Math.sign(1.5),
+    trackedDegrees: tracked,
+    askedDegrees: 30,
+    bankedAfterAFlick,
+    pendingClamp: TURRET_PENDING_CLAMP,
     clampedAtMax: round(clampedAngle) === 90,
     freeStaysInWrapRange: freeAngle <= 180 && freeAngle >= -180,
   };
