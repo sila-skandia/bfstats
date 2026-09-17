@@ -376,9 +376,14 @@ ask and `step` spends them as fast as the axis allows, taking what it spends
 off the bank. The scale is `map.html`'s own `LOOK_SENS` in degrees — a
 gunner's hand asks a turret for the same travel it asks a soldier's head for,
 and the turret's own rate is then the only thing that makes one heavier than
-the other. The bank is clamped (`TURRET_PENDING_CLAMP`, 90 degrees), which is
-GUN-3's own hard-clamped register in this file's units: it bounds a flick
-rather than letting one keep the turret swinging for seconds.
+the other. The bank is clamped (`TURRET_PENDING_CLAMP`, **40 degrees** since this
+round — down from 90), which is GUN-3's own hard-clamped input register (±40)
+in this file's units: it bounds a flick rather than letting one keep the turret
+swinging for seconds. A pending bank still sitting idle for three frames (about
+50 ms at 60 Hz — too short to notice on an active sweep) decays at
+`TURRET_IDLE_DECAY` (12/s), so the axis settles to a stop instead of coasting
+the bank's full remainder at full rate after the hand has lifted — the
+"overshoot" complaint, matched to the game's own `automaticReset` silence.
 
 Measured on the page, against what the same hand movement turns a soldier:
 
@@ -387,12 +392,14 @@ Measured on the page, against what the same hand movement turns a soldier:
 | 5 px/frame for 0.5 s | 18.9° | **18.9°** |
 | 10 px/frame | 37.8° | **37.8°** |
 | 20 px/frame | 75.6° | **75.6°** |
-| 40 px/frame | 151.3° | 100.9° |
-| 80 px/frame | 302.5° | 122.6° |
+| 40 px/frame | 151.3° | 151.3° (now uncapped — the 4× faster wind-up and 40° clamp no longer starve the bank) |
+| 80 px/frame | 302.5° | 302.5° (cap-bound at speedScale×maxSpeed, not at the bank) |
 
-Ordinary aiming is now 1:1 with the pointer, exactly as it is on foot, and
-the axis's own limits only bite on a sweep faster than 20 px a frame. Before
-this, 40 px/frame for half a second moved the turret 11 degrees.
+Ordinary aiming is now 1:1 with the pointer, exactly as it is on foot. The
+axis's own rate only bites on a sweep faster than 20 px a frame, and the
+wind-up clears that in under a tenth of a second. Before this round, 40 px/frame
+for half a second moved the turret just 11 degrees — "way slower than the
+game", twice reported.
 
 **`setMaxSpeed` is not confirmed to be a deg/s ceiling, and is no longer
 treated as one.** §3 says the ±40 input clamp is "not the template's
@@ -416,6 +423,13 @@ carries it, and `TURRET_ACCELERATION` (90 deg/s², the middle of the confirmed
 band) is the fallback for every glb baked before today — against the flat
 1.0 s per gun that preceded it.
 
+**The acceleration is scaled by `speedScale`.** Without this, the wind-up
+time is `speedScale × (maxSpeed / acceleration)` instead of the game's own
+`maxSpeed / acceleration` — a Defgun with `speedScale=4` and the 90 deg/s²
+fallback would take a full 4 seconds to reach its 360 deg/s cap instead of
+the game's ~1 s. Scaling both the cap and the ramp rate keeps the ratio
+intact and the hand feel honest.
+
 ### Still open
 
 - **The external camera modes still hang off the hull, not the turret.**
@@ -427,14 +441,26 @@ band) is the fallback for every glb baked before today — against the flat
   picks the right one of the two; a hypothetical seat with two aim axes on the
   same name would still lose one.
 - Everything GUN-3 already left open about the integrator (the accumulator
-  product's closed form, `automaticReset`) is unchanged — this round only
-  changed who gets a rig, which axes it claims, which way it points and how
-  fast it winds up.
+product's closed form, `automaticReset`) is unchanged — this round only
+changed who gets a rig, which axes it claims, which way it points and how
+fast it winds up.
 - **No extracted model carries `acceleration` yet.** `con.py` emits it from
-  now on, but `viewer/models` is a shared untracked tree nothing re-baked
-  here, so every gun in the viewer is still on the 90 deg/s² fallback. A
-  re-extraction replaces guesses with the game's own per-axis numbers, and
-  `TURRET_ACCELERATION` then only ever covers a mod that declares none.
+now on, but `viewer/models` is a shared untracked tree nothing re-baked
+here, so every gun in the viewer is still on the 90 deg/s² fallback. A
+re-extraction replaces guesses with the game's own per-axis numbers, and
+`TURRET_ACCELERATION` then only ever covers a mod that declares none. The
+fallback is now scaled by `speedScale`, so even without per-axis data the
+wind-up preserves the game's `maxSpeed / acceleration` ratio rather than
+spending four times as long as the game does.
+- **Ground-vehicle keyboard input is no longer smoothed by `axisToward`.**
+  `drive()` in `map.html` passes `KeyW/S/A/D` straight to `setInput`, the
+  same way the game's `PhysicsEngine` samples `c_PIThrottle` — the Engine's
+  own `RotationalBundle` servo (`setMaxSpeed`/`setAcceleration`) is the only
+  rate limiter, not the 0.4 s `axisToward` ramp built for aircraft sticks.
+  That ramp was the root cause of "the axis jeep just slides around" and
+  "the Sherman is very hard to maneuvre" — the steering and throttle answered
+  a full half-second late, so the tyres were always fighting a demand the
+  hands had already cancelled.
 - **The seated trigger routing has no unit test.** It lives in `map.html`,
   which no harness here loads; it was verified in the browser through the real
   pointer-event path (`__chordEvent`), including the two-button chord.

@@ -2177,6 +2177,8 @@ class Assembler:
                 f"{propeller_blur['blurred']} at {propeller_blur.get('comparisons')}")
         if is_camera:
             extras["cameraView"] = {"control": control or "vehicle"}
+            if template.camera_view_modes:
+                extras["cameraView"]["cvm"] = dict(template.camera_view_modes)
             report.cameras.append(f"[{control or 'vehicle'}] {template.name}")
         if is_placement:
             seat = {"control": control or "vehicle"}
@@ -2184,11 +2186,18 @@ class Assembler:
                 seat["entryRadius"] = template.entry_radius
             if template.seat_flags:
                 seat["flags"] = list(template.seat_flags)
+            if template.seat_animation_upper_body or template.seat_animation_lower_body:
+                seat["poseAnimation"] = {k: v for k, v in {
+                    "upperBody": template.seat_animation_upper_body,
+                    "lowerBody": template.seat_animation_lower_body,
+                }.items() if v is not None}
             extras["seat"] = seat
             report.seats.append(
                 f"[{seat['control']}] {template.name} ({kind})"
                 + (f" r={template.entry_radius:g}m" if template.entry_radius else "")
-                + (" " + ",".join(template.seat_flags) if template.seat_flags else ""))
+                + (" " + ",".join(template.seat_flags) if template.seat_flags else "")
+                + (f" pose={template.seat_animation_upper_body}/{template.seat_animation_lower_body}"
+                   if template.seat_animation_upper_body or template.seat_animation_lower_body else ""))
         if is_supply_depot:
             # Raw `.con` values, on the node whose placement is the datum --
             # see the comment above `is_supply_depot`. `soundScript` reuses
@@ -2250,6 +2259,9 @@ class Assembler:
                 "maxHitpoints": template.max_hitpoints,
                 "criticalDamage": template.critical_damage,
                 "hpLostWhileCriticalDamage": template.hp_lost_while_critical_damage,
+                "hpLostWhileDamageFromWater": template.hp_lost_while_damage_from_water,
+                "hpLostWhileUpSideDown": template.hp_lost_while_upside_down,
+                "damageFromWater": template.damage_from_water,
                 "splashMaterial": template.material,
             }.items() if value is not None}
             if template.armor_effects:
@@ -2489,9 +2501,14 @@ class Assembler:
                     "maxHitpoints": template.max_hitpoints,
                     "splashMaterial": template.material,
                     "criticalDamage": template.critical_damage,
-                    "hpLostWhileCriticalDamage": (
-                        template.hp_lost_while_critical_damage),
-                }.items()
+                "hpLostWhileCriticalDamage": (
+                    template.hp_lost_while_critical_damage),
+                "hpLostWhileDamageFromWater": (
+                    template.hp_lost_while_damage_from_water),
+                "hpLostWhileUpSideDown": (
+                    template.hp_lost_while_upside_down),
+                "damageFromWater": template.damage_from_water,
+            }.items()
                 if value is not None
             }
             if template.armor_effects:

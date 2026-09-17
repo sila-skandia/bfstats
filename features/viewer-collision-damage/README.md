@@ -79,13 +79,16 @@ What it settled:
   relevant to the tree-collision track, which should not conclude "trees are
   indestructible" without the mod caveat.
 
-### Open decision for a human
+### Open decision for a human — RESOLVED 2026-09-18
 
-R1 recommends **deleting** the invented fall-damage ramp at `map.html:4422`
-rather than correcting it, since retail has no such rule. That is a gameplay
-change, not a fidelity fix, and has not been made. The options are: delete it
-for engine fidelity, or keep it and relabel the comment as a deliberate house
-rule. Nobody has decided.
+R1 recommended **deleting** the invented fall-damage ramp at `map.html:4422`
+because it assumed retail had no fall-damage rule. That assumption was wrong:
+fall damage **is real** (ledger HP-6 was refuted — the soldier fall branch
+delivers severity through the object `*0x15c` dispatch into `Armor::damage`;
+see `features/bf1942-3d-models/fall-damage-research-groundwork-2026-09-17.md`).
+The invented safe/lethal ramp has therefore been replaced with an
+engine-faithful fall model on the confirmed engine constants (see the
+`FALL_FREE_TOLERANCE` block in `map.html`), not deleted.
 
 ---
 
@@ -95,9 +98,13 @@ rule. Nobody has decided.
   **only the on-foot soldier has one**. It deliberately omits the
   critical-damage, upside-down and water ticks because the engine skips those
   for soldiers.
-- `map.html:4422` applies fall damage to the soldier through an **invented**
-  safe-height/lethal-speed ramp, labelled as an approximation because the real
-  rule was never found.
+- `map.html:4422` — the soldier's fall damage. The original **invented**
+  safe-height/lethal-speed ramp (labelled an approximation) is replaced with an
+  engine-faithful model: the engine DOES damage soldiers who fall, via the
+  collision `*0x15c` → `BFSoldier::handleDamage` → `Armor::damage` path, on the
+  confirmed **kinetic law** `severity ∝ cos³θ · (S·|v|²) · M1·M2` (HP ∝ impact
+  speed squared), calibrated against the user's measured Wake-airstrip lethal
+  fall as `FALL_KINETIC_HP = 10` HP per metre (1.0 m free-fall tolerance).
 - No vehicle has an Armor. `feedVehicleHud` (`map.html:3967`) prints
   `Vehicle/VehicleHitPoints` straight from the glb's static template extras, so
   the HUD shows a number that can never move.
