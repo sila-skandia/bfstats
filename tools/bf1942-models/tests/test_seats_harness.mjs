@@ -11,6 +11,7 @@
 // but the same shape `bf42/assemble.py`/`con.py` produce for them.
 
 import * as THREE from 'three';
+import { GunFire } from './gunfire.js';
 import {
   surveyVehicle, classifySeat, classifyRoot, findAllVehicleRoots,
   listEntryPoints, pickNearest, TIE_EPSILON, VehicleOccupancy, TurretAxis,
@@ -340,28 +341,44 @@ function shermanWithRenamedGunnerNode() {
 // --- held trigger + rate-of-fire: the Defgun's own numbers, ticked in real
 // time rather than one `registerShot()` per attempt (round 3's own bug
 // report: "held the trigger for 25 stepped frames, ammo stayed at 499 of
-// 499"). `gunfire.js`'s `advance()` is the rate-of-fire gate -- a cooldown
-// accumulator reset to 0 on the rising edge (`GunFire.setFiring`'s own "first
-// round leaves immediately") and re-armed at `1/roundOfFire` seconds per
-// round thereafter -- and `manned()` is what drives it from `state.canFire`.
-// Reproduced here without a browser: same two pieces, same order, ticked at
-// the page's own 1/60 s frame.
+// 499"). The rate-of-fire gate lives in `gunfire.js`'s `advance()`, so that
+// is what is driven here -- the real class, imported, not a second copy of
+// its cadence written out in the harness; an earlier version of this block
+// simulated it and therefore agreed with itself no matter what the shipped
+// file actually did. `manned()`/`drive()` are what supply `state.canFire` on
+// the page, and the loops below stand in for them at its own 1/60 s frame.
+//
+// A bare group is enough: `advance` only reads `firing`/`cooldown`/`stats`,
+// and `fireShot` only needs a muzzle to cycle and no projectile to launch.
+
+function cadenceRig(stats) {
+  const guns = new GunFire({
+    scene: new THREE.Scene(),
+    camera: new THREE.PerspectiveCamera(),
+    viewportHeight: () => 800,
+  });
+  const barrel = new THREE.Object3D();
+  barrel.name = 'HarnessBarrel';
+  const group = {
+    node: barrel, stats: { projectile: null, tracer: null, ...stats },
+    muzzles: [barrel], emitters: [], firing: false, cooldown: 0, shots: 0,
+    tracerMeshPool: [], projectileMesh: null, recoil: null,
+    speedScale: 1, maxRange: 1500, platformVelocity: null, aimRay: null,
+    spreadDeg: null,
+  };
+  guns.groups.push(group);
+  return { guns, group };
+}
 
 {
   const state = new FireState({ magSize: 499, numOfMag: 999, roundOfFire: 0.2 });
+  const { guns, group } = cadenceRig({ roundOfFire: 0.2 });
   const DT = 1 / 60;
-  const period = 1 / 0.2;   // 5s between rounds once firing -- the Defgun's own cadence
-  let firing = false;
-  let cooldown = 0;
+  guns.onShot = () => state.registerShot();
   function tick(trigger) {
     state.step(DT);
-    const wantsFire = trigger && state.canFire;
-    if (wantsFire && !firing) cooldown = 0;   // setFiring's rising-edge reset
-    firing = wantsFire;
-    if (firing) {
-      cooldown -= DT;
-      while (cooldown <= 0) { state.registerShot(); cooldown += period; }
-    }
+    guns.setFiring(group, trigger && state.canFire);
+    guns.advance(DT);
   }
   for (let i = 0; i < 25; i++) tick(true);
   const after25Frames = state.ammo;
@@ -370,6 +387,42 @@ function shermanWithRenamedGunnerNode() {
   for (let i = 0; i < 60; i++) tick(false);   // trigger released
   const afterRelease = state.ammo;
   results.heldTriggerCadence = { after25Frames, after400Frames, afterRelease };
+}
+
+// --- the same gate with the trigger TAPPED rather than held. The gun is a
+// Sherman's cannon: `roundOfFire 0.35`, one shell every 2.86 s. `setFiring`
+// used to zero the cooldown on every rising edge, so releasing and
+// re-pressing bought a fresh round each time and a second of tapping emptied
+// the whole 30-round magazine (28 shells, reproduced in the browser). One
+// second of tapping is one shell; ten seconds of holding is four, 2.86 s
+// apart. GUN-5 puts the fire-rate timer in `isReadyToUseFire`'s own gate list
+// beside the reload and overheat timers, not on the trigger edge.
+
+{
+  const DT = 1 / 60;
+  const tap = cadenceRig({ roundOfFire: 0.35 });
+  for (let i = 0; i < 60; i++) {
+    tap.guns.setFiring(tap.group, i % 2 === 0);
+    tap.guns.advance(DT);
+  }
+  const held = cadenceRig({ roundOfFire: 0.35 });
+  held.guns.setFiring(held.group, true);
+  for (let i = 0; i < 600; i++) held.guns.advance(DT);
+  // An idle gun is still ready the instant the trigger goes down: the timer
+  // floors at zero rather than running negative into a backlog the `while`
+  // inside `advance` would then fire off in one frame.
+  const rested = cadenceRig({ roundOfFire: 0.35 });
+  rested.guns.setFiring(rested.group, true);
+  rested.guns.advance(DT);
+  rested.guns.setFiring(rested.group, false);
+  for (let i = 0; i < 600; i++) rested.guns.advance(DT);
+  rested.guns.setFiring(rested.group, true);
+  rested.guns.advance(DT);
+  results.triggerCadence = {
+    tappedShotsInOneSecond: tap.group.shots,
+    heldShotsInTenSeconds: held.group.shots,
+    shotsAfterRestingTenSeconds: rested.group.shots,
+  };
 }
 
 // --- chainOnShot: wraps without discarding whatever ran first ---------------

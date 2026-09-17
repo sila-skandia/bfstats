@@ -344,3 +344,107 @@ vehicle icon itself — `Vehicle/Icon_defgun.tga`/`Vehicle/Icon_sherman.tga`
 are small photorealistic-style renders of the vehicle, not abstract symbols,
 which is exactly why a misaligned first look mistook one for real scene
 geometry.
+
+## 2026-09-17: the vehicle panel's reload bar, and the `size < h` question
+
+Reported from play, alongside the drivetrain (see `ground-vehicles.md`): the
+Sherman's HUD "doesn't look right", and "firing is unlimited projectiles —
+in game they fire, then it reloads for a few seconds, then fire again."
+
+### `size < h` is settled by the sprite pack, not left open
+
+The round-2 notes above list "which edge a vertical bar's `size`-tall window
+sits flush against when `size < h`" as an approximation, on the grounds that
+the health bar (the only leaf any feed reached) has `size == h == 64`, where
+every candidate formula coincides. The vehicle panel's heat and reload bars
+are the first leaves to actually reach it, and measuring the opaque rows of
+every bar sprite the layout names answers it outright:
+
+| sprite | opaque rows of 64 | leaf's `size` | leaf's `fillOrder` |
+|---|---|---|---|
+| `reloadtimebar_empty/full_32x64` | 0..41 (top) | 42 | true |
+| `heatbar_empty/full_32x64` | 0..41 (top) | 42 | true |
+| `rocketpackbar_full_32x64`, `staminabar_full_64x32` | 0..41 (top) | 42 | true |
+| `magbar_rifle_empty/full_32x64` | 44..63 (bottom) | 20 | **false** |
+| `ammobar`, `healthbar`, `vehicle_healthbar`, `medicbar` | 0..63 | 64 | true (decides nothing) |
+
+No exceptions across the file, and `magbar_rifle` is the layout's only
+`fillOrder: false` leaf. So FillOrder picks both the window's flush edge and
+the direction the fill grows inside it: **true anchors the window to the
+rect's top** and grows the fill up from the window's own bottom; false anchors
+it to the bottom and grows the fill down from the window's top. At `size == h`
+the true branch is `y + h - scaled`, term for term what `hud.js` already had,
+so the health bar and every other confirmed leaf is unchanged.
+
+What it fixes: a 42-tall bar in a 64-tall rect was clipping its fill into rows
+22..64, which on top-anchored art is 20 rows of real bar and 22 rows of
+transparent padding. The vehicle panel's reload bar could not draw a fraction
+below 0.52 at all, and drew the rest at half height — which is why, with the
+variable fed, it still looked like a bar that never moved.
+`tests/test_hud.py` + `hud_harness.mjs` cover the geometry headlessly (a
+recording 2D-context stub; `hud.js` imports nothing, so no assets are needed).
+
+### `Ammo/ReloadTime` is a readiness bar, not a magazine-reload bar
+
+`reloadFraction` read `state.reloadRemaining / reloadTime` alone. On a tank
+cannon that is a bar which never moves: a Sherman's `reloadTime` is 0.35 s and
+only runs once its whole 30-round magazine is out. What the player waits
+through between shells is the `roundOfFire` cooldown — 1/0.35 s = 2.86 s —
+which lives on the `GunFire` group, not on `FireState`. `readyFraction` now
+takes whichever of the reload, overheat and fire-rate timers is still
+running, which is the same set GUN-5 has `isReadyToUseFire` gating on.
+
+Two details worth keeping:
+
+- **Which group's clock.** A drivetrain root's FireArms end up in *both*
+  `mannedGuns` and `vehicleGuns`, because `collectMannedGuns()` collects
+  whatever `occupancy.activeFireArmsNodes()` names and for the root seat that
+  is the same pair of nodes `collectGuns()` already put in `vehicleGuns`.
+  Only one copy is ever fired, so reading the idle one's `cooldown` is reading
+  a clock nothing winds — the bar came back "ready" a frame after the shell
+  left. `fireGroupFor` asks `mannedActive()` first, the same test `frame()`
+  uses.
+- **Direction is a choice, not a reproduction.** It fills as the weapon
+  becomes ready, empty right after the shot. Nothing in verify-r2.md or
+  `hud-layout.json` settles which way this bar runs (VHUD-10 is open on the
+  whole live-value question for a driver's own weapons). Chosen this way round
+  because the alternative draws a *full* bar at the exact moment the gun
+  cannot fire, which reads as "loaded" at a glance.
+
+### `numOfMag` counts the loaded magazine
+
+`FireState` read it as the spares *beside* the loaded one, so a Sherman
+(`magSize 30`, `numOfMag 1`) carried 30 shells plus a free reload and put
+`Ammo/PrimaryMag: 1` on the panel. `map.html`'s hand weapon has always read it
+the other way (`hw.mags = magazines - 1`, which is what puts a Thompson's
+confirmed 30/4 on the HUD rather than 30/5); the seat path now agrees, so the
+variable means the same thing in a seat as it does on foot.
+
+### The firing bug behind "unlimited projectiles"
+
+Not a HUD bug at all: `GunFire.setFiring` zeroed the rate-of-fire cooldown on
+every rising trigger edge, on the reading that "the first round leaves
+immediately" — true, but only once the gun already owes you one. Because the
+timer only ran while the trigger was held, releasing and re-pressing handed
+back a fresh round every time, and tapping fired a Sherman's whole 30-round
+magazine in a single second (28 shells in 60 frames, reproduced headless).
+The timer now runs with the trigger released too, floored at zero. GUN-5 lists
+the `roundOfFire` cooldown as one of `isReadyToUseFire`'s own gates beside the
+reload and overheat timers, not as something a trigger edge clears. Covered by
+`test_seats.py`'s `triggerCadence` block, which drives the real `GunFire`
+rather than a re-implementation of its cadence.
+
+### Still missing from the vehicle HUD
+
+- **The turret-turn dial** (`vehicleIcon`'s three sprites, VHUD-7's rects) is
+  still never drawn, and now for a concrete reason rather than an unread one:
+  a tank's turret does not traverse from the driver's seat in this viewer at
+  all (see `ground-vehicles.md`'s open gaps), so there is no angle to feed
+  `IconLookRotation` even setting aside VHUD-9's open unit/sign/pivot.
+- **The seat-occupancy dots** (`vehicleSeats`) are unfed. The five states are
+  known (VHUD-2) and this page knows which seat is occupied, but the dots'
+  *positions* are live-bound per vehicle (`VehiclePosX1..6`/`PosY1..6`,
+  VHUD-7's `(192+X[i], 452+Y[i])`) and nothing in the extracted data carries
+  them. Feeding states against the layout's own sample rects would draw six
+  dots in a diagonal staircase over every vehicle icon, which is inventing
+  placement — the one thing this painter's own rule says not to do.

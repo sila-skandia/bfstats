@@ -849,11 +849,18 @@ export const TANK = {
   suspensionTravel: 0.35,
   bumpStiffness: 5,
 
-  // Tracks resist sliding sideways far harder than a tyre; stiffened well
-  // past Willy's own 7 on that basis, not a measurement. mu close to Willy's
-  // for lack of any tank-specific reading. [free]
+  // `mu` is the LONGITUDINAL friction limit: grousers biting, close to
+  // Willy's for lack of any tank-specific reading. `lateralMu` is the same
+  // limit across the track, and it is deliberately much lower — a track
+  // skids sideways, and `#step`'s friction-ellipse comment has the roll
+  // arithmetic that says 1.1 in this direction is above the model's own
+  // static rollover threshold. `corneringStiffness` is how quickly that
+  // lateral limit is reached, no longer how large it is: at 30 the tracks
+  // reached it inside a tenth of a degree of slip, which read as a hull
+  // welded to its heading. [free]
   mu: 1.1,
-  corneringStiffness: 30,
+  lateralMu: 0.55,
+  corneringStiffness: 12,
   // The half-track's own front axle only: an ordinary tyre, not a track —
   // Willy's own value (`WILLYS.corneringStiffness`), transcribed rather than
   // imported so this file's two vehicle specs stay independently readable.
@@ -866,30 +873,74 @@ export const TANK = {
   // per unit load — provisional until Coulomb magnitudes (PHY-2) are known.
   // Open assumption (PLAN T3): this opposition, not fadeSpeed, is the real
   // top-speed governor; do not invent fadeSpeed changes if cruise still
-  // overshoots the soft retail band. [free]
-  trackResistance: 0.8,
+  // overshoots the soft retail band.
+  //
+  // Re-fitted from 0.8 to put both hulls back in the band this file was
+  // originally tuned to and `ground-vehicles.md` still quotes — Sherman
+  // ~9 m/s / 33 km/h, M3A1 ~31 m/s / 112 km/h. The TANK-7 correction (body
+  // thrust applied once at the hull instead of per driven side) halved the
+  // propulsion this number was fitted against and nothing re-fitted it
+  // afterwards, so the Sherman had quietly been sitting at 18.5 km/h — a
+  // tank a player reads as broken before it has turned a corner. 0.25
+  // lands 33.7 and 114.5 km/h. Still fitted, still not a measurement. [free]
+  trackResistance: 0.25,
 
-  // s^-1, on the body rates. Willy needs only 0.8 for the same job (mopping
-  // up yaw and the airborne case); a tank's wheels sit much farther from the
-  // root than a jeep's (the M3A1's own front axle 3 m ahead of it), so the
-  // same yaw rate puts a far larger torque through the identical suspension
-  // formula. Found by driving one through a sustained turn and watching it
-  // roll itself onto its roof — twice: held from a stand-still it tipped
-  // somewhere between yaw input 0.2 and 0.3 (fixed at 5.0), and a second,
-  // harder case survived that fix and still rolled the M3A1 at yaw 0.6
-  // entered from its own straight-line top speed (~31 m/s) rather than
-  // accelerating into the turn — the extra speed alone very nearly doubles
-  // the centripetal load a held turn puts through the suspension. 12.0 was
-  // the lowest value that survived both; this carries margin above it.
-  // corneringStiffness made no difference to either case at any value
-  // tried. [free]
+  // The same damper's gain on the part of the target that DIFFERS between
+  // the two tracks — i.e. on the steering signal alone (`#step`). Kept apart
+  // from `trackResistance` because the two are not the same job: that one
+  // decides how fast the hull ends up going, this one decides how hard a
+  // track is driven against its opposite number, and a single shared value
+  // could only ever buy one at the other's expense. Sized against the grip
+  // actually available: the friction circle caps a track at `mu * load`, and
+  // a tank that never gets near that cap cannot out-torque its own tracks'
+  // sideways scrub, which is exactly how a Sherman ended up taking four
+  // minutes to turn around. Fitted, like every other number in this block,
+  // against the two vanilla hulls' turn rate with the rollover cases still
+  // surviving. [free]
+  trackDifferential: 20.0,
+
+  // s^-1, on the *roll and pitch* body rates. Willy needs only 0.8 for the
+  // same job (mopping up the airborne case); a tank's wheels sit much
+  // farther from the root than a jeep's (the M3A1's own front axle 3 m ahead
+  // of it), so the same body rate puts a far larger torque through the
+  // identical suspension formula. Found by driving one through a sustained
+  // turn and watching it roll itself onto its roof — twice: held from a
+  // stand-still it tipped somewhere between yaw input 0.2 and 0.3 (fixed at
+  // 5.0), and a second, harder case survived that fix and still rolled the
+  // M3A1 at yaw 0.6 entered from its own straight-line top speed (~31 m/s)
+  // rather than accelerating into the turn — the extra speed alone very
+  // nearly doubles the centripetal load a held turn puts through the
+  // suspension. 12.0 was the lowest value that survived both; this carries
+  // margin above it. corneringStiffness made no difference to either case at
+  // any value tried. [free]
   angularDamping: 15.0,
+
+  // s^-1, on the **yaw** rate alone, and much lighter than the roll/pitch
+  // figure above. Both rollover cases `angularDamping` was fitted against
+  // are failures about the *roll* axis — the hull going over on its side —
+  // and nothing in that tuning record ever measured what 15.0 did to
+  // heading. What it did was flatten differential steering to nothing: a
+  // tank's only yaw authority is the small left/right split in track force
+  // `differentialRPM` produces, and dividing its steady state by 15 left the
+  // Sherman turning 1.4 deg/s at full lock — a 4-minute 360, which is what a
+  // player reads as "the drivetrain doesn't work". Yaw is damped on its own
+  // term now, sized so the two vanilla tracked hulls turn at a believable
+  // rate while both rollover cases above still survive (they are asserted in
+  // tests/test_ground.py and were re-run against this value). Still fitted,
+  // not measured — the same standing ask every other [free] constant here
+  // carries. [free]
+  yawDamping: 2.0,
 
   // A steered front axle's lock, used only if its own bundle somehow
   // declares no min/max at all to measure. M3A1's own is +-40 (TANK-15),
   // read off the node before this ever applies.
   maxSteer: 40,
 };
+
+/** Sub-steps per second `TrackedVehicle.integrate` clamps to — the engine's
+ * own 30 Hz tick x 4 `PointPhysicsNode` substeps (`physics.md` §3); see
+ * `integrate` for the limit cycle that made the rate worth pinning. */
+const SUBSTEP_HZ = 120;
 
 /** A tank or half-track: `c_PGFEngineGrip` wheels driven in a differential
  * pair per verify-r7.md, instead of Willy's steered wheel pair. Same
@@ -950,6 +1001,15 @@ export class TrackedVehicle extends Vehicle {
     for (const wheel of this.wheels) {
       if (wheel.driven) this.drivenBySide[wheel.side] += 1;
     }
+    /** The load on the least-loaded grounded driven wheel, carried one
+     * sub-step. The steering couple in `#step` is sized and capped against
+     * this single shared number rather than each wheel's own live load — see
+     * its comment for why that is what keeps the two tracks' halves equal and
+     * opposite. Seeded to the hull's static share so the first sub-step after
+     * a spawn has something sane; no driven wheels leaves it 0 and the couple
+     * simply vanishes. */
+    const drivenCount = this.wheels.reduce((n, w) => n + (w.driven ? 1 : 0), 0);
+    this._coupleLoad = drivenCount > 0 ? -GRAVITY / drivenCount : 0;
 
     // A box estimate for aero drag and roll/pitch/yaw inertia, same
     // reconstruction `WILLYS` uses a guessed box for — except the footprint
@@ -1083,11 +1143,36 @@ export class TrackedVehicle extends Vehicle {
 
   /** One step. Same public contract as `GroundVehicle.integrate`: clamps its
    * own rate into engine-sized sub-steps regardless of what `THREE.Clock`
-   * hands it. */
+   * hands it.
+   *
+   * At `SUBSTEP_HZ`, not one step per rendered frame. A tank's suspension is
+   * far stiffer in roll than a jeep's — a Sherman's whole 25 t rests on four
+   * springs at `strength 18` only 1.01 m either side of the centreline — and
+   * the class shipped with an uncapped lateral tyre force four times Willy's
+   * stiffness on top of that, which put explicit integration of the pair
+   * past its stability limit at one step per frame. It did not merely
+   * wobble: driven at full lock the model settled into a textbook period-2
+   * limit cycle, body roll rate flipping -15.08 deg/s / +14.91 deg/s and the
+   * four wheel loads swapping sides ([5.39, 4.37, 3.00, 1.98] <-> [3.22,
+   * 2.18, 5.22, 4.18]) on alternate frames, for ever. That is the judder a
+   * player sees, and it also scrambles the differential this whole class
+   * exists to model, since the loads the track forces scale with are the
+   * ones oscillating.
+   *
+   * What actually cured it is `#step`'s friction ellipse (`lateralMu`) —
+   * measured: the cycle is gone at 60 Hz with that in place, and 60/120/240/
+   * 480 Hz now agree to four decimals on every figure the harness reports.
+   * This is margin, not the fix, and it is not free margin either, so it is
+   * set to what the engine itself runs rather than to the largest number
+   * that helped: `physics.md` §3's fixed 30 Hz tick with four
+   * `PointPhysicsNode` substeps inside it is exactly 120 Hz. The margin is
+   * worth buying because neither the stiffness a mod's vehicle declares nor
+   * the frame time this is handed (`dt` is only clamped at 0.1 s upstream)
+   * is under this file's control. */
   integrate(dt) {
     if (!(dt > 0)) return;
     if (this.autoFirstPerson && !this.firstPerson) this.setFirstPerson(true);
-    const steps = Math.max(1, Math.ceil(dt * 60));
+    const steps = Math.max(1, Math.ceil(dt * SUBSTEP_HZ));
     const h = dt / steps;
     for (let i = 0; i < steps; i++) this.#step(h);
     this.applyTransform();
@@ -1157,6 +1242,12 @@ export class TrackedVehicle extends Vehicle {
     const force = this._force.set(0, 0, 0);
     const torque = this._torque.set(0, 0, 0);
     let loaded = 0;
+    // The steering couple's budget for the NEXT sub-step, gathered as the
+    // loop goes rather than in a second pass over the same wheels: the
+    // weakest driven track that is actually on the ground. A wheel in the air
+    // answers nothing, so it is skipped rather than zeroing the split for the
+    // whole hull the moment one roller crests a bump.
+    let nextCoupleLoad = Infinity;
     const speed = s.velocity.length();
     const authority = Math.min(1, speed / 2);
 
@@ -1190,6 +1281,7 @@ export class TrackedVehicle extends Vehicle {
       wheel.compression = compression;
       wheel.load = load;
       loaded += 1;
+      if (wheel.driven && load > 0 && load < nextCoupleLoad) nextCoupleLoad = load;
 
       // No steer angle for a track wheel — `dir` stays nose-forward, exactly
       // `GroundVehicle`'s own `!wheel.steered` branch. The one wheel this
@@ -1242,19 +1334,98 @@ export class TrackedVehicle extends Vehicle {
         // earlier code applied `K*ratio` per side here and doubled launch
         // accel at yaw 0. Coulomb magnitudes open (PHY-2); `trackResistance`
         // is the provisional damper (PLAN T3 open governor assumption).
+        //
+        // Split into the two jobs one constant used to do. The part common
+        // to both tracks (`vMean`, the yaw-0 target) is the top-speed
+        // governor and keeps `trackResistance` exactly as it was; the part
+        // that DIFFERS between the tracks — the whole of the steering
+        // signal, and nothing else — gets its own gain, because tying the
+        // two together made turn rate hostage to top speed: every unit of
+        // steering authority bought a proportional loss of cruise, so the
+        // fitted governor left the Sherman at 0.4 deg/s of yaw at full lock.
+        // At `yaw == 0` the two targets are equal and this reduces, term for
+        // term, to the line it replaces — so acceleration, top speed,
+        // reverse and TANK-17's own no-pivot-from-rest (differentialRPM is
+        // 0 on both sides at zero throttle, so both targets are 0 together)
+        // are all bit-identical to before. `differentialRPM`/`engineRatio`
+        // are untouched: this only changes how hard the split they compute
+        // is pushed, which was never anything but [free] to begin with.
+        //
+        // Split into the two jobs one constant used to do, and the steering
+        // half made a COUPLE rather than a brake. `vMean` — the yaw-0 target
+        // both tracks share — carries the top-speed governor and keeps
+        // `trackResistance` doing exactly what it always did. What each track
+        // asks for either side of that mean carries the steering, at its own
+        // gain, because tying the two together made turn rate hostage to top
+        // speed: every unit of steering authority cost a proportional unit of
+        // cruise, and the fitted governor left the Sherman at 0.4 deg/s of
+        // yaw at full lock.
+        //
+        // A couple, not a brake, because `differentialRPM` clamps the outer
+        // track at 1.0 — so read literally, the split only ever *slows* the
+        // inner track, and at the gain that actually turns a 25-tonne hull
+        // that brake is several times `bodyThrust`: a held full-lock turn
+        // dragged the Sherman from 32 km/h down to walking pace and stayed
+        // there. `diff` is each track's own deviation from the mean of the
+        // two, so one track gains exactly what the other gives up, the hull's
+        // net tractive effort is untouched, and what a turn genuinely costs
+        // comes out of the lateral scrub below instead.
+        //
+        // The couple is sized and capped off ONE shared number — the least
+        // loaded driven wheel that is on the ground, as of the previous
+        // sub-step (`_coupleLoad`) — and never off this wheel's own live
+        // load, so both halves come out identical in magnitude however the
+        // weight has just shifted. That is what keeps it a couple. Written
+        // against the live load it is heavier on the outer track, the one a
+        // turn loads up, so the pair stopped summing to zero and the residual
+        // read as a net forward push: a Sherman gaining speed to 61 km/h
+        // mid-turn, an M3A1 to 178 and onto its roof. Sizing it off the
+        // hull's static weight share instead fixed the tank and not the
+        // half-track, whose driven tracks carry only part of its weight (a
+        // free-rolling front axle carries the rest), so a static share
+        // over-drove them past the grip they actually had. The weakest driven
+        // track is the honest budget for a split that has to be answered
+        // equally at both ends. The governor above still reads this wheel's
+        // own live load, because that half is a real friction-scaled contact
+        // force rather than a split of engine effort.
+        const vMean = engineGripTarget(throttle, 0, 0, this.ratio);
         const vTgt = engineGripTarget(throttle, yaw, wheel.side, this.ratio);
+        const vOther = engineGripTarget(throttle, yaw, -wheel.side, this.ratio);
         const gShare = load / -GRAVITY;
-        fLong = -(uLong - vTgt) * k.trackResistance * gShare;
+        const coupleLoad = this._coupleLoad;
+        const coupleCap = k.mu * coupleLoad;
+        let diff = (vTgt - vOther) * 0.5 * k.trackDifferential
+          * (coupleLoad / -GRAVITY);
+        if (diff > coupleCap) diff = coupleCap;
+        else if (diff < -coupleCap) diff = -coupleCap;
+        fLong = -(uLong - vMean) * k.trackResistance * gShare + diff;
       }
       // A dummy (spin-only) wheel gets no longitudinal force at all —
       // TANK-14's reading, and its own zero strength/damping already leaves
       // it nothing to spend one on regardless.
 
-      const cap = k.mu * load;
-      const demand = Math.hypot(fLong, fLat);
-      if (demand > cap && demand > 1e-9) {
-        fLong *= cap / demand;
-        fLat *= cap / demand;
+      // The friction limit is an ELLIPSE here, not the circle a tyre gets.
+      // That is the defining property of a track and the one this class was
+      // still borrowing from `GroundVehicle`: steel grousers bite hard along
+      // the track's length and the same track slides sideways comparatively
+      // freely, which is the entire reason a tracked vehicle can steer by
+      // scrubbing at all. An isotropic circle at the tracks' own high `mu`
+      // gets both halves wrong at once — it starves the differential (the
+      // only yaw authority a tank has) of the longitudinal force it needs,
+      // while handing every hull a lateral force big enough to roll it: at
+      // `mu` 1.1 against GRAVITY 14.73 a full-lock turn asks 10.9 of roll
+      // moment about the contact patches where the springs can answer at
+      // most `sum(load) * halfWidth` = 12.5, i.e. the model could out-grip
+      // its own track width, and the M3A1 duly went onto its roof the
+      // moment anything let it turn quickly. `lateralMu` is below that
+      // threshold by a real margin and `mu` is untouched. [free]
+      const capLong = k.mu * load;
+      const capLat = k.lateralMu * load;
+      const demand = capLong > 1e-9 && capLat > 1e-9
+        ? Math.hypot(fLong / capLong, fLat / capLat) : 0;
+      if (demand > 1) {
+        fLong /= demand;
+        fLat /= demand;
       }
 
       const suspension = this._susp.set(0, load, 0).applyQuaternion(qInv);
@@ -1279,6 +1450,8 @@ export class TrackedVehicle extends Vehicle {
         : uLong / wheel.radius) * h;
     }
 
+    this._coupleLoad = nextCoupleLoad < Infinity ? nextCoupleLoad : 0;
+
     s.grounded = loaded > 0;
     s.airspeed = speed;
 
@@ -1302,8 +1475,13 @@ export class TrackedVehicle extends Vehicle {
     s.velocity.addScaledVector(accel, h);
     s.position.addScaledVector(s.velocity, h);
 
+    // Roll and pitch keep the heavy damper the rollover fit asked for; yaw
+    // gets its own, far lighter one, because differential steering IS the
+    // yaw torque and the rollover cases were never about heading — see
+    // `TANK.yawDamping`.
+    const yawDamping = k.yawDamping ?? k.angularDamping;
     w.x += (torque.x / this._inertia.x - k.angularDamping * w.x) * h;
-    w.y += (torque.y / this._inertia.y - k.angularDamping * w.y) * h;
+    w.y += (torque.y / this._inertia.y - yawDamping * w.y) * h;
     w.z += (torque.z / this._inertia.z - k.angularDamping * w.z) * h;
     if (w.lengthSq() > 0) {
       this._spin.setFromEuler(this._euler.set(w.x * h, w.y * h, w.z * h, 'XYZ'));
@@ -1351,6 +1529,11 @@ export class TrackedVehicle extends Vehicle {
       wheel.node.position.copy(wheel.basePosition);
       wheel.node.quaternion.copy(wheel.baseQuaternion);
     }
+    // Back to the constructor's seed, not the last sub-step's reading: every
+    // wheel's load was just zeroed above, and a parked vehicle's first step
+    // should size its steering couple off a hull standing on its own weight.
+    const driven = this.wheels.reduce((n, w) => n + (w.driven ? 1 : 0), 0);
+    this._coupleLoad = driven > 0 ? -GRAVITY / driven : 0;
     s.position.copy(this.node.userData.spawnPosition || s.position);
     s.orientation.copy(this.node.userData.spawnOrientation || s.orientation);
   }

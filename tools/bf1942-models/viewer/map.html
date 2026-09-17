@@ -586,16 +586,16 @@
         </div>
       </div>
       <canvas id="deploy-chrome" class="fm-chrome" aria-hidden="true"></canvas>
-      <button type="button" class="fm-hit fm-tab" data-team="1" aria-label="Axis"></button>
-      <button type="button" class="fm-hit fm-tab" data-team="2" aria-label="Allied"></button>
-      <button type="button" class="fm-hit fm-kit" data-kit="scout" aria-label="Scout"></button>
-      <button type="button" class="fm-hit fm-kit" data-kit="assault" aria-label="Assault"></button>
-      <button type="button" class="fm-hit fm-kit" data-kit="antitank" aria-label="Anti-tank"></button>
-      <button type="button" class="fm-hit fm-kit" data-kit="medic" aria-label="Medic"></button>
-      <button type="button" class="fm-hit fm-kit" data-kit="engineer" aria-label="Engineer"></button>
-      <button type="button" id="deploy-suicide" class="fm-hit" aria-label="Suicide"></button>
-      <button type="button" id="deploy-score" class="fm-hit" aria-label="Score board"></button>
-      <button type="button" id="deploy-resume" class="fm-hit" aria-label="Resume"></button>
+      <button type="button" class="fm-hit fm-tab" data-team="1" tabindex="-1" aria-label="Axis"></button>
+      <button type="button" class="fm-hit fm-tab" data-team="2" tabindex="-1" aria-label="Allied"></button>
+      <button type="button" class="fm-hit fm-kit" data-kit="scout" tabindex="-1" aria-label="Scout"></button>
+      <button type="button" class="fm-hit fm-kit" data-kit="assault" tabindex="-1" aria-label="Assault"></button>
+      <button type="button" class="fm-hit fm-kit" data-kit="antitank" tabindex="-1" aria-label="Anti-tank"></button>
+      <button type="button" class="fm-hit fm-kit" data-kit="medic" tabindex="-1" aria-label="Medic"></button>
+      <button type="button" class="fm-hit fm-kit" data-kit="engineer" tabindex="-1" aria-label="Engineer"></button>
+      <button type="button" id="deploy-suicide" class="fm-hit" tabindex="-1" aria-label="Suicide"></button>
+      <button type="button" id="deploy-score" class="fm-hit" tabindex="-1" aria-label="Score board"></button>
+      <button type="button" id="deploy-resume" class="fm-hit" tabindex="-1" aria-label="Resume"></button>
     </div>
   </div>
 </div>
@@ -1115,6 +1115,23 @@ addEventListener('keydown', e => {
     else if (!optPilot.checked) openDeploy();
     return;
   }
+  // Deploy owns Enter and 1-9 even when a sidebar INPUT/SELECT is focused:
+  // otherwise Enter toggles `#onfoot` or activates RESUME and the commit
+  // either never runs or is immediately undone into fly-through.
+  if (deployActive()) {
+    if (e.code === 'Enter' && !e.repeat) {
+      e.preventDefault();
+      e.stopPropagation();
+      deploySpawn();
+      return;
+    }
+    const digit = /^Digit([1-9])$/.exec(e.code);
+    if (digit) {
+      e.preventDefault();
+      selectDeployFlag(Number(digit[1]) - 1);
+      return;
+    }
+  }
   if (uiFocused()) return;
   // Caps Lock is also handled above; M is `c_PIMap` in the game's own maps.
   // On foot the map opens in its deploy state — the game's own map is also
@@ -1128,19 +1145,6 @@ addEventListener('keydown', e => {
       openDeploy();
     } else toggleFullMap();
     return;
-  }
-  // While the deploy screen is up it owns the number row and the commit key:
-  // 1-9 are the flags in list order, Enter confirms the chosen spawn.
-  if (deployActive()) {
-    if (e.code === 'Enter' && !e.repeat) {
-      deploySpawn();
-      return;
-    }
-    const digit = /^Digit([1-9])$/.exec(e.code);
-    if (digit) {
-      selectDeployFlag(Number(digit[1]) - 1);
-      return;
-    }
   }
   // Seated in anything, the same row switches seats instead (SEAT-23/24,
   // verify-r5.md's `c_PIMenuSelect1..9`) — checked after the deploy screen's
@@ -4320,16 +4324,71 @@ function feedVehicleHud() {
   // an approximation: counts down from full (just started) to empty (ready).
   // `reloadFraction` is a module-level function, not a closure allocated here,
   // for the same per-tick reason as `heated` above.
-  setHudVar('Ammo/ReloadTime', reloadFraction(primary));
-  setHudVar('Ammo/ReloadTimeSecondary', reloadFraction(secondary));
+  setHudVar('Ammo/ReloadTime', readyFraction(primary, nodes[0]));
+  setHudVar('Ammo/ReloadTimeSecondary', readyFraction(secondary, nodes[1]));
 }
 
-/** `state.reloadRemaining/reloadTime` as a `[0,1]` fraction, or `null` when
- *  there is nothing to show — see `feedVehicleHud`'s own comment on why this
- *  lives at module scope instead of being defined inside it. */
-function reloadFraction(state) {
-  return state && state.stats.reloadTime > 0
-    ? state.reloadRemaining / state.stats.reloadTime : null;
+/** The `GunFire` group that actually fires this FireArms node — `mannedGuns`
+ *  for a seat someone is sitting in, `vehicleGuns` for the drivetrain root's
+ *  own.
+ *
+ *  Which list is asked first matters, and is not a detail: a drivetrain
+ *  root's own FireArms end up in BOTH, because `collectMannedGuns()` collects
+ *  whatever `occupancy.activeFireArmsNodes()` names and for the root seat
+ *  that is the same pair of nodes `collectGuns()` already put in
+ *  `vehicleGuns`. Only one of the two copies is ever fired — `manned()` and
+ *  `drive()` each own their own list — so reading the idle copy's `cooldown`
+ *  is reading a clock nothing winds, which is exactly how the reload bar came
+ *  back "ready" a frame after the shell left. `mannedActive()` is the same
+ *  test `frame()` uses to pick which of the two runs.
+ *
+ *  Plain loops rather than `find`, because this runs from `feedVehicleHud` on
+ *  every tick and an arrow predicate would allocate a closure a frame
+ *  (features/mesh-viewer-performance, rule 5). */
+function fireGroupFor(node) {
+  if (!node) return null;
+  const live = mannedActive() ? mannedGuns : vehicleGuns;
+  for (const group of live) if (group.node === node) return group;
+  const other = live === mannedGuns ? vehicleGuns : mannedGuns;
+  for (const group of other) if (group.node === node) return group;
+  return null;
+}
+
+/** How ready this weapon is to fire again, `0` (just fired) to `1` (ready),
+ *  or `null` when there is no weapon in that slot at all.
+ *
+ *  This used to read `state.reloadRemaining / reloadTime` alone, and on a
+ *  tank cannon that is a bar which never moves: a Sherman's `reloadTime` is
+ *  0.35 s and only runs once its whole 30-round magazine is out. What the
+ *  player actually waits through between shells is the `roundOfFire`
+ *  cooldown — 1/0.35 s = 2.86 s — which lives on the `GunFire` group, not on
+ *  `FireState`. GUN-5 has the engine's own `isReadyToUseFire` gating on the
+ *  eject-clip timer, the reload timer, the overheat timer AND the fire-rate
+ *  timer together, so the bar takes whichever of them is still running: it
+ *  is a readiness bar, and readiness is the last gate to clear.
+ *
+ *  Direction: fills as the weapon becomes ready, empty right after the shot.
+ *  Neither verify-r2.md nor `hud-layout.json` settles which way this bar
+ *  runs (VHUD-10 is still open on the whole live-value question for a
+ *  driver's own weapons), so this is a choice, not a reproduction — made
+ *  this way round because the alternative draws a FULL bar at the exact
+ *  moment the gun cannot fire, which reads as "loaded" to anyone glancing at
+ *  it, and because every other gauge in this layout is full when the thing
+ *  it measures is in good shape. Module scope, not a closure inside
+ *  `feedVehicleHud`, for that function's own stated per-tick reason. */
+function readyFraction(state, node) {
+  if (!state) return null;
+  const reloadWindow = state.stats.reloadTime > 0 ? state.stats.reloadTime : 0;
+  let remaining = reloadWindow > 0 ? state.reloadRemaining / reloadWindow : 0;
+  const group = fireGroupFor(node);
+  const rate = group?.stats.roundOfFire;
+  if (group && rate > 0) {
+    remaining = Math.max(remaining, group.cooldown * rate);
+  }
+  if (state.hasHeat && state.overheatRemaining > 0 && state.stats.timeDelayOnOverheat > 0) {
+    remaining = Math.max(remaining, state.overheatRemaining / state.stats.timeDelayOnOverheat);
+  }
+  return 1 - Math.max(0, Math.min(1, remaining));
 }
 
 // --- walking up to a seat ----------------------------------------------------
@@ -4757,7 +4816,10 @@ function buildSpawnFlags() {
     spawnFlagSelect.appendChild(option);
   }
   if (kept !== '' && Number(kept) < flags.length) spawnFlagSelect.value = kept;
-  spawnFlagSelect.hidden = !flags.length || !optOnFoot.checked;
+  // The sidebar picker is a debug aid; the deploy screen is the real join
+  // path (Caps Lock / auto-open). Keep the select populated whenever there
+  // are flags so a later commit can read it, and only hide it when empty.
+  spawnFlagSelect.hidden = !flags.length;
   return flags.length;
 }
 
@@ -6855,7 +6917,8 @@ function drawMinimap() {
 function drawFullMap(force = false) {
   if (fullmapBox.hidden) return;
   const here = projectToArt(camera.position.x, camera.position.z) || { u: 0, v: 0 };
-  const key = `${mapSurfaceKey(fullmapCanvas, here, 1)},${deployActive()},${deployRejoin}`;
+  const key = `${mapSurfaceKey(fullmapCanvas, here, 1)},${deployActive()},${deployRejoin},`
+    + `${deployTeamId},${spawnFlagSelect.value}`;
   if (!mapSurfaceStale(fullmapCanvas, key, force)) return;
   // Bigger sprites than the HUD widget: this surface is several times the
   // size. In the deploy state the art dims to the spawn screen's silhouette
@@ -7225,6 +7288,24 @@ function deployFlagIndices() {
   return own.length ? own : flags.map((_, index) => index);
 }
 
+/** Fresh join: pick the side that actually has spawn choices. Liberation of
+ *  Caen's Allied tab is a single Canadian_Base in empty fields; Axis owns
+ *  the bridge and town. Tobruk is the reverse. A rejoin keeps the life's
+ *  own team. */
+function preferredDeployTeam() {
+  let axis = 0;
+  let allied = 0;
+  for (const flag of flags) {
+    if (flag.team === 1) axis++;
+    else if (flag.team === 2) allied++;
+  }
+  if (axis && !allied) return 1;
+  if (allied && !axis) return 2;
+  if (axis > allied) return 1;
+  if (allied > axis) return 2;
+  return 2;
+}
+
 /** The checkbox's on-edge. Joining became a choice rather than a teleport:
  *  the deploy screen opens when the level has flags to choose between, and
  *  the instant path — with its refusal message for a level that declares no
@@ -7245,8 +7326,23 @@ function openDeploy() {
   if (!flags.length && !buildSpawnFlags()) return false;
   deployRejoin = !!soldier;
   deployKept = spawnFlagSelect.value;
-  const chosen = flags[Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1)];
-  setDeployTeam(chosen?.team === 1 ? 1 : 2, false);
+  // Drop sidebar / footer focus so Enter commits spawn rather than toggling
+  // `#onfoot` or synthesising a RESUME click.
+  if (document.activeElement && document.activeElement !== document.body) {
+    document.activeElement.blur();
+  }
+  if (deployRejoin) {
+    const chosen = flags[Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1)];
+    setDeployTeam(chosen?.team === 1 ? 1 : 2, false);
+  } else {
+    const team = preferredDeployTeam();
+    setDeployTeam(team, false);
+    const first = deployFlagIndices()[0];
+    if (first != null) {
+      spawnFlagSelect.value = String(first);
+      spawnIndex = 0;
+    }
+  }
   fullmapBox.classList.add('deploy');
   syncDeployReady();
   toggleFullMap(true);
@@ -7255,6 +7351,11 @@ function openDeploy() {
 }
 
 function cancelDeploy() {
+  // deploySpawn closes the overlay first; a focused RESUME button can still
+  // receive the Enter key's synthetic click afterward. Refuse unless the
+  // deploy chrome is actually up, or that click tears down the soldier we
+  // just built and dumps the camera into fly-through.
+  if (!deployActive()) return;
   const rejoin = deployRejoin;
   const kept = deployKept;
   toggleFullMap(false);
@@ -7302,6 +7403,7 @@ function setDeployTeam(team, reselect = true) {
     }
   }
   paintDeployChrome();
+  if (deployActive()) drawFullMap(true);
 }
 
 for (const tab of deployTabs) {
@@ -7351,6 +7453,14 @@ function syncDeployReady() {
 function deploySpawn() {
   if (!deployActive() || !worldReady) return false;
   const rejoin = deployRejoin;
+  // Arm on-foot without firing `change` — that handler calls requestOnFoot
+  // and would reopen this screen. Without the box ticked the frame loop
+  // keeps flying even after setOnFoot builds a soldier (Caps Lock / auto
+  // join never checked it).
+  optOnFoot.checked = true;
+  if (document.activeElement && document.activeElement !== document.body) {
+    document.activeElement.blur();
+  }
   toggleFullMap(false);
   const spawned = (rejoin && soldier) ? spawnAtFlag() : (setOnFoot(true), !!soldier);
   // The click that commits is a user gesture, which is the only currency
@@ -7358,6 +7468,7 @@ function deploySpawn() {
   // world is a trigger pull, not a mysterious dead click that only grabs
   // the mouse.
   if (spawned) capture();
+  else if (!soldier) optOnFoot.checked = false;
   return spawned;
 }
 

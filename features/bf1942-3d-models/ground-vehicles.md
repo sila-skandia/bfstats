@@ -425,3 +425,133 @@ and stiffness does not.
   much larger hull applies at least as much as it does to a jeep's.
 - **A wreck/destroyed state** is not modelled; `state.destroyed` exists on
   `VehicleState` but nothing here ever sets it.
+
+## 2026-09-17: the Sherman would not steer, and juddered while it failed to
+
+Reported from play: "the drive train doesn't work, it's very stilted."
+Measured, before any change — a Sherman at full throttle on Aberdeen:
+**18.5 km/h** in a straight line and **1.4 deg/s** of yaw at full lock, which
+is a four-minute 360. Four separate defects, each found by measurement rather
+than by reading:
+
+**1. A period-2 limit cycle, every frame, for as long as the turn was held.**
+Driven at full lock the model settled into a textbook alternating
+oscillation: body roll rate flipping −15.08 deg/s / +14.91 deg/s and the four
+wheel loads swapping sides (`[5.39, 4.37, 3.00, 1.98]` ↔
+`[3.22, 2.18, 5.22, 4.18]`) on alternate frames, indefinitely. That is the
+judder, and because every track force here scales with the load it is applied
+at, it also scrambled the differential the class exists to model. The cure was
+the friction ellipse below — measured, not assumed: the cycle is gone at 60 Hz
+with that in place, and 60/120/240/480 Hz now agree to four decimals on every
+figure the harness reports. `TrackedVehicle.integrate` sub-steps at 120 Hz
+regardless, which is the engine's own rate (`physics.md` §3: a fixed 30 Hz
+tick with four `PointPhysicsNode` substeps), as margin against a mod's
+stiffer numbers and against the 0.1 s `dt` clamp upstream. `tankSteadyTurn`
+in the harness counts roll-rate sign changes over a second of a settled turn:
+0 now, one per frame before.
+
+**2. An isotropic friction circle on a tracked vehicle.** The class inherited
+`GroundVehicle`'s single `mu` for both axes. That is a tyre's property, not a
+track's — steel grousers bite hard along the track and the same track slides
+sideways comparatively freely, which is the entire reason a tracked vehicle
+can steer by scrubbing. One circle at the tracks' own high `mu` got both
+halves wrong at once: it starved the differential of the longitudinal force
+that is a tank's only yaw authority, while handing every hull a lateral force
+big enough to roll it. At `mu` 1.1 against GRAVITY 14.73 a full-lock turn
+asks 10.9 of roll moment about the contact patches where the springs can
+answer at most `sum(load) * halfWidth` = 12.5 — the model could out-grip its
+own track width, and the M3A1 duly went onto its roof the moment anything let
+it turn quickly. `lateralMu` (0.55) is a separate, lower limit; `mu` (1.1) is
+untouched. `corneringStiffness` drops 30 → 12, which is now only how fast
+that limit is reached, not how large it is: at 30 the tracks reached it
+inside a tenth of a degree of slip, which read as a hull welded to its
+heading.
+
+**3. Steering authority was hostage to the top-speed governor.** One
+constant, `trackResistance`, was both the EngineGrip damper that closes the
+top-speed equation and the thing that made the two tracks' targets differ, so
+every unit of turn rate cost a proportional unit of cruise. Split: the part
+of the target both tracks share (`vMean`, the yaw-0 target) keeps
+`trackResistance`; the part that differs between them — the whole of the
+steering signal — gets `trackDifferential` (20.0). At `yaw == 0` they are
+equal and the whole term reduces, term for term, to the line it replaces, so
+acceleration, top speed, reverse and TANK-17's no-pivot-from-rest are
+unchanged; `differentialRPM` and `engineRatio` are untouched.
+
+The steering half is a **couple**, not a brake, and that took three attempts
+worth recording:
+
+  - *Brake* (each track damped toward its own lower target) is what reading
+    TANK-2 literally gives, since `differentialRPM` clamps the outer track at
+    1.0 and only ever slows the inner one. At the gain that actually turns a
+    25-tonne hull, that brake is several times `bodyThrust`: a held full-lock
+    turn dragged the Sherman from 32 km/h to walking pace and kept it there.
+  - *Couple sized off each wheel's live load* sums to zero only while the
+    load is even. A turn loads the outer track, so the pair stopped
+    cancelling and the residual was a net forward push — Sherman gaining
+    speed to 61 km/h mid-turn, M3A1 to 178 and onto its roof.
+  - *Couple sized off the hull's static weight share* fixed the tank and not
+    the half-track, whose driven tracks carry only part of its weight (a
+    free-rolling front axle carries the rest), so a static share over-drove
+    them past the grip they had.
+
+  What shipped: sized and capped off one shared number, `_coupleLoad` — the
+  least-loaded *grounded* driven wheel as of the previous sub-step — so both
+  halves are identical in magnitude however the weight has shifted. The
+  governor half still reads each wheel's own live load, because that half is
+  a real friction-scaled contact force rather than a split of engine effort.
+
+**4. `angularDamping` 15.0 was damping yaw as well as roll.** Both rollover
+cases it was fitted against are failures about the *roll* axis; nothing in
+that tuning record measured what it did to heading. What it did was divide
+differential steering by 15. `yawDamping` (2.0) is now its own term; roll and
+pitch keep 15.0.
+
+`trackResistance` was also re-fitted, 0.8 → 0.25, to put both hulls back in
+the band this file already quotes (Sherman ~9 m/s / 33 km/h, M3A1 ~31 m/s /
+112 km/h). The TANK-7 correction — body thrust applied once at the hull
+instead of per driven side — halved the propulsion that number was fitted
+against and nothing re-fitted it afterwards, which is why the Sherman had
+quietly been sitting at 18.5 km/h.
+
+### What it measures now (`tests/ground_harness.mjs`)
+
+| | before | after |
+|---|---|---|
+| Sherman straight line | 18.5 km/h | **33.7 km/h** |
+| Sherman yaw, half lock held | 1.4 deg/s | **27.6 deg/s** |
+| Sherman turn radius at a matched 8 m/s | ~340 m | **16.1 m** |
+| M3A1 straight line | 67.4 km/h | **114.5 km/h** |
+| M3A1 yaw, half lock held | 18.0 deg/s | **10.9 deg/s** |
+| Roll-rate sign flips per second, settled full-lock turn | ~59 | **0** |
+| Worst `up.y` across every stability case | 0.99 | **0.946** |
+| Pivot from a dead stop on yaw alone (TANK-17) | 0 | **0** |
+
+One test changed its premise rather than its threshold:
+`test_the_m3a1s_front_axle_turns_it_tighter_than_the_sherman` compared the
+two hulls' yaw rate at full throttle — i.e. a 34 km/h vehicle against a
+114 km/h one, where the faster is grip-limited, so it answered a question
+about top speed rather than about the front axle. Replaced by
+`test_both_hulls_turn_at_a_vehicles_radius_at_a_matched_speed`, which holds
+both at ~8 m/s and reads turn radius: 16.1 m and 20.3 m, neither tighter by a
+margin worth asserting, so what is asserted is the thing that actually
+regressed — that both can steer at all.
+
+### Still open after this
+
+- Every constant above is still `[free]`. `lateralMu`, `trackDifferential`
+  and `yawDamping` join `mu`/`corneringStiffness`/`trackResistance`/
+  `angularDamping` on the standing ask for a recorded drive against the real
+  game; nothing here is a measurement of retail.
+- The Sherman gains a little speed in a hard turn (33.7 → ~39 km/h in the
+  harness) rather than losing a little. The couple cancels exactly; the
+  residual comes from the friction ellipse scaling the two sides' totals
+  differently once their lateral forces diverge.
+- **A tank's turret does not traverse from the driver's seat.**
+  `VehicleOccupancy.setActiveSeat` only builds a `TurretRig` for a seat that
+  classifies as `'gun'`, and a drivetrain root classifies as `'tank'`, so
+  `ShermanTower`'s own declared yaw axis (`c_PIMouseLookX`, free, 35 deg/s)
+  and `ShermanGunBase`'s pitch (−20..+5 at 20 deg/s) are never driven —
+  `applyRig` poses both from an input nothing writes, i.e. straight ahead,
+  every frame. The data is all there; the wiring is not. This is also what
+  blocks the HUD's turret dial (see `in-game-hud.md`).

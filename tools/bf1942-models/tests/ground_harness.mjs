@@ -732,6 +732,74 @@ for (const [key, builder] of [['shermanTurn', shermanNode], ['m3a1Turn', m3a1Nod
   }
 }
 
+// The period-2 limit cycle guard. Driven at full lock at one sub-step per
+// rendered frame, the model used to settle into a textbook alternating
+// oscillation — body roll rate flipping -15.08 / +14.91 deg/s and the four
+// wheel loads swapping sides on alternate frames, for ever — which is the
+// judder a player sees and is also what scrambles the differential, since
+// the loads the track forces scale with are the ones oscillating. Recorded
+// as the sign changes in the roll rate over a second of a settled turn: a
+// converged integrator gives 0 or 1, the limit cycle gives one per frame.
+{
+  const t = tank(shermanNode, { y: 0.5 });
+  drive(t, 4);
+  drive(t, 8, holding({ c_PIThrottle: 1, c_PIYaw: 1 }));
+  let flips = 0;
+  let previous = Math.sign(t.state.angularVelocity.z);
+  let worst = 0;
+  const loadSwing = [];
+  drive(t, 1, tt => {
+    holding({ c_PIThrottle: 1, c_PIYaw: 1 })(tt);
+    const sign = Math.sign(tt.state.angularVelocity.z);
+    if (sign !== 0 && previous !== 0 && sign !== previous) flips += 1;
+    if (sign !== 0) previous = sign;
+    worst = Math.max(worst, Math.abs(tt.state.angularVelocity.z));
+    loadSwing.push(tt.wheels.filter(w => w.load > 0).map(w => w.load));
+  });
+  // How far a single wheel's load moves between consecutive frames, as a
+  // fraction of its own value: the limit cycle swung them ~40% every frame.
+  let worstLoadStep = 0;
+  for (let i = 1; i < loadSwing.length; i++) {
+    for (let j = 0; j < loadSwing[i].length; j++) {
+      const a = loadSwing[i - 1][j];
+      const b = loadSwing[i][j];
+      if (a > 0.1) worstLoadStep = Math.max(worstLoadStep, Math.abs(b - a) / a);
+    }
+  }
+  results.tankSteadyTurn = {
+    rollSignFlipsPerSecond: flips,
+    worstRollRateDeg: round(worst * DEG, 2),
+    worstLoadStep: round(worstLoadStep, 4),
+  };
+}
+
+// The steered front axle's own contribution, measured the only way it means
+// anything: at a MATCHED speed. Comparing the two hulls' yaw rate at full
+// throttle compares a 34 km/h vehicle against a 114 km/h one (the corrected
+// ratio, TANK-3, really is 4.4x), and the faster one is grip-limited, so the
+// yaw-rate comparison that used to live here answered a question about top
+// speed, not about the front axle. Held instead at a common ~8 m/s by a
+// bang-bang throttle, and read as turn RADIUS (v / yawRate), which is what
+// "turns tighter" actually means.
+results.tankMatchedTurn = [];
+for (const [name, builder] of [['sherman', shermanNode], ['m3a1', m3a1Node]]) {
+  const t = tank(builder, { y: 0.5 });
+  const hold = tt => {
+    tt.setInput('c_PIThrottle', tt.state.velocity.length() < 8 ? 1 : 0);
+    tt.setInput('c_PIYaw', 1);
+  };
+  drive(t, 4, tt => tt.setInput('c_PIThrottle', tt.state.velocity.length() < 8 ? 1 : 0));
+  drive(t, 12, hold);
+  const v = t.state.velocity.length();
+  const w = Math.abs(t.state.angularVelocity.y);
+  results.tankMatchedTurn.push({
+    name,
+    speed: round(v, 2),
+    yawRateDeg: round(t.state.angularVelocity.y * DEG, 2),
+    radius: w > 1e-4 ? round(v / w, 1) : null,
+  });
+}
+
 // A wider sweep, Sherman and M3A1 both, purely as the stability regression
 // guard: every one of these must come out with the vehicle still upright.
 results.tankStability = [];

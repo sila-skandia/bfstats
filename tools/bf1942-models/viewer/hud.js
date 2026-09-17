@@ -410,25 +410,37 @@ export class Hud {
     const scaled = frac * size;
     let bx = x, by = y, bw = w, bh = h;
     if (!horizontal) {
-      // R1-30, data-confirmed for the health bar (size == h there, so both
-      // formulas below coincide and the confirmed case cannot distinguish
-      // them): the fillable window is the bottom `size` texels of the
-      // picture, flush with the picture's own bottom edge (y + h) --
-      // FillOrder switches which way the fill grows WITHIN that shared
-      // window. true grows it upward from nothing (the segmented
-      // health-bar look), pinning the window's bottom at y + h; false
-      // grows it downward from nothing at the window's own top edge
-      // (y + h - size) toward the picture's bottom. An earlier version of
-      // the true branch pinned the bottom at y + size instead of y + h --
-      // identical when size == h, but for size < h it put the whole window
-      // flush with the picture's TOP, contradicting this same comment's
-      // "bottom `size` texels" and the false branch's own bottom-flush
-      // placement. APPROXIMATION: no leaf that ships this round has
-      // size < h on this branch (Recover's and the heat/reload bars are
-      // P2/P3's, unfed), so the bottom-flush choice itself is this file's
-      // read of "bottom-anchored" taken literally, not independently
-      // data-confirmed the way the health bar's fill DIRECTION is.
-      if (fillOrder) { by = (y + h) - scaled; bh = scaled; }
+      // Which end of the rect the `size`-tall fillable window sits flush
+      // against, for the leaves where `size < h`. This was an open question
+      // while nothing that shipped exercised it (the health bar, the only
+      // fed leaf, has size == h == 64, where every candidate formula
+      // coincides); the vehicle panel's heat and reload bars are the first
+      // leaves to reach it, and the sprite pack answers it outright.
+      //
+      // Measured: the opaque rows of every bar sprite the layout names.
+      // `reloadtimebar_empty/full_32x64`, `heatbar_empty/full_32x64`,
+      // `rocketpackbar_full_32x64` and `staminabar_full_64x32` all carry art
+      // in rows 0..41 of a 64-row texture -- exactly the `size: 42` their
+      // leaves declare, TOP-anchored, and every one of those leaves is
+      // `fillOrder: true`. `magbar_rifle_empty/full_32x64` carries art in
+      // rows 44..63 -- exactly the `size: 20` its leaf declares,
+      // BOTTOM-anchored -- and that leaf is the layout's only
+      // `fillOrder: false` one. `ammobar`/`healthbar`/`vehicle_healthbar`/
+      // `medicbar` are all opaque over the full 64 with size 64, so they
+      // decide nothing either way. No exceptions across the file.
+      //
+      // So FillOrder picks both the window's flush edge and the direction
+      // the fill grows inside it: true anchors the window to the rect's TOP
+      // and grows the fill up from the window's own bottom; false anchors it
+      // to the BOTTOM and grows the fill down from the window's top. At
+      // size == h the true branch is `y + h - scaled`, term for term what it
+      // was before, so the health bar and every other confirmed leaf is
+      // unchanged. What it fixes is the case that was wrong: a bar with
+      // size 42 in a 64-tall rect was clipping its fill into rows 22..64,
+      // which on top-anchored art is 20 rows of real bar and 22 rows of
+      // transparent padding -- the vehicle panel's reload bar could not draw
+      // a fraction below 0.52 at all, and drew the rest at half height.
+      if (fillOrder) { by = (y + size) - scaled; bh = scaled; }
       else { by = (y + h) - size; bh = scaled; }
     } else {
       // R1-31 verified: FillOrder has NO effect on a horizontal bar (the

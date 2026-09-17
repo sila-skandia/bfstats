@@ -496,11 +496,24 @@ export class GunFire {
     return found;
   }
 
-  /** Hold or release the trigger. Idempotent, so it can be driven per frame. */
+  /** Hold or release the trigger. Idempotent, so it can be driven per frame.
+   *
+   * Engaging the trigger does NOT reset `cooldown`. It used to, on the
+   * reading that "the first round leaves immediately" — true, but only once
+   * the gun already owes you one. Because the timer only ran while the
+   * trigger was held, releasing and re-pressing handed back a fresh round
+   * every time: a Sherman's cannon is `roundOfFire 0.35`, one shell every
+   * 2.86 s, and tapping Space fired its whole 30-round magazine in a single
+   * second (reproduced headless: 28 shells in 60 frames). `advance` now runs
+   * the timer whether or not the trigger is held and floors it at zero, so
+   * an idle gun is still ready the instant you press — and a gun that fired
+   * 0.2 s ago still owes 2.66 s no matter how many times you press. That is
+   * also the engine's own order: GUN-5 lists the `roundOfFire` cooldown as
+   * one of `isReadyToUseFire`'s gates in its own right, alongside the reload
+   * and overheat timers, not as something the trigger edge clears. */
   setFiring(group, on) {
     if (!group || group.firing === !!on) return false;
     group.firing = !!on;
-    if (group.firing) group.cooldown = 0;   // first round leaves immediately
     return true;
   }
 
@@ -1051,6 +1064,17 @@ export class GunFire {
           this.fireShot(group);
           group.cooldown += period;
         }
+      } else if (group.cooldown > 0) {
+        // The rate-of-fire timer keeps running with the trigger released —
+        // see `setFiring` for why. The held branch above is untouched, down
+        // to keeping its own fractional remainder across the `+= period`, so
+        // a gun's pacing while you hold the trigger is bit-identical to what
+        // it always was; this only stops a release from parking the clock.
+        // Floored at zero rather than left to run negative so a gun idle for
+        // a minute does not owe a burst the `while` above would then fire in
+        // one frame.
+        group.cooldown = Math.max(0, group.cooldown - dt);
+        active = true;
       }
     }
     // Metres per pixel at one metre from the eye; the floor below scales it by
