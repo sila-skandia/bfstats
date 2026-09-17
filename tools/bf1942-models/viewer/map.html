@@ -1986,7 +1986,32 @@ function bindLightmaps(root, dir) {
 // detail combine above: round-trip through sRGB and multiply in the space
 // the engine used. Not modelled: the optional specular term
 // (lightingSpecular, ~1/3 of materials) and the envmap reflection stage.
+// Per-placement `Object.geometry.color` lands on the instance root as
+// `extras.color` (GLTFLoader → userData.color). Walk ancestors so every
+// mesh under a tinted tree/bush multiplies its base colour once.
+function applyInstanceColors(root) {
+  root.traverse(obj => {
+    if (!obj.isMesh || !obj.material) return;
+    let tint = null;
+    for (let n = obj; n; n = n.parent) {
+      const c = n.userData?.color;
+      if (Array.isArray(c) && c.length >= 3) { tint = c; break; }
+    }
+    if (!tint) return;
+    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+    for (const m of mats) {
+      if (!m?.color || m.userData?.instanceTinted) continue;
+      m.color.r *= tint[0];
+      m.color.g *= tint[1];
+      m.color.b *= tint[2];
+      m.userData = m.userData || {};
+      m.userData.instanceTinted = true;
+    }
+  });
+}
+
 function bindDynamicShading(root) {
+  applyInstanceColors(root);
   const lit = extras.lighting || {};
   const amb = lit.ambient || [0.2, 0.2, 0.2];
   const glob = lit.globalAmbient || [0.2, 0.2, 0.2];
@@ -3339,10 +3364,56 @@ function registerDamageables(ownerRoots) {
   vehicleDamage.clear();
   for (let owner = 0; owner < ownerRoots.length; owner++) {
     const node = ownerRoots[owner];
-    const extras = node?.userData?.armor;
-    const vehicle = vehicleDamage.add(owner, extras, { name: node?.name || null });
-    if (vehicle) damageVisuals.set(owner, { node, anchors: new Map(), handles: [] });
+    const armorExtras = node?.userData?.armor;
+    const vehicle = vehicleDamage.add(owner, armorExtras, { name: node?.name || null });
+    if (vehicle) {
+      damageVisuals.set(owner, {
+        node,
+        anchors: new Map(),
+        handles: [],
+        spawnDelay: spawnDelayForNode(node),
+      });
+    }
   }
+}
+
+/**
+ * Match a placed spawner node to its ObjectSpawner respawn window.
+ * Prefer the glb's own `userData.spawner` (stamped at extract); else nearest
+ * `objectSpawns` entry in scene.json by vehicle name + position.
+ */
+function spawnDelayForNode(node) {
+  const stamped = node?.userData?.spawner;
+  if (stamped && (Number.isFinite(stamped.minSpawnDelay)
+                  || Number.isFinite(stamped.maxSpawnDelay))) {
+    const min = stamped.minSpawnDelay ?? stamped.maxSpawnDelay;
+    const max = stamped.maxSpawnDelay ?? min;
+    return { min, max };
+  }
+  const spawns = extras?.objectSpawns;
+  if (!Array.isArray(spawns) || !spawns.length) return null;
+  const want = templateNameOf(node).toLowerCase();
+  const pos = node.getWorldPosition(new THREE.Vector3());
+  let best = null;
+  let bestDist = Infinity;
+  for (const spawn of spawns) {
+    if ((spawn.vehicle || '').toLowerCase() !== want) continue;
+    if (!Number.isFinite(spawn.minSpawnDelay) && !Number.isFinite(spawn.maxSpawnDelay)) {
+      continue;
+    }
+    const [x, y, z] = spawn.position || [];
+    const dist = Number.isFinite(x)
+      ? Math.hypot(pos.x - x, pos.y - (y || 0), pos.z - z)
+      : 0;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = spawn;
+    }
+  }
+  if (!best) return null;
+  const min = best.minSpawnDelay ?? best.maxSpawnDelay;
+  const max = best.maxSpawnDelay ?? min;
+  return { min, max };
 }
 
 /** Drop every running tier effect. Call on a level change. */
@@ -3452,6 +3523,12 @@ async function wreckVehicle(vehicle) {
     if (!scene || damageVisuals.get(vehicle.owner) !== visual) return;
     const wreck = scene.clone(true);
     wreck.name = `wreck:${template}`;
+    // Wreck GLBs ship the same armour-region collision hulls as the live
+    // model. The models page shows those behind a checkbox; the map always
+    // hides them (see `indexScene`). This load path never hit that walk.
+    wreck.traverse(obj => {
+      if (isCollision(obj)) obj.visible = false;
+    });
     // `Object3D.clone` shares materials with the source, so every wreck of a
     // type would fade together — and the source is cached for the next one.
     // Own them here, once, rather than trying to un-share them mid-fade.
@@ -3481,9 +3558,18 @@ async function wreckVehicle(vehicle) {
 /**
  * Advance the linger-and-fade of every wreck, and remove one once it has gone.
  * Called from `stepVehicleDamage`, so it runs on the same clock as the burn.
+ *
+ * When the wreck is gone the pad must be walkable again — the collision index
+ * still holds the vehicle's baked hull at the spawn pose — and a respawn timer
+ * (ObjectSpawner Min/MaxSpawnDelay) starts so a fresh vehicle returns later.
  */
 function stepWrecks(dt) {
   for (const [owner, visual] of damageVisuals) {
+    if (visual.respawnIn != null) {
+      visual.respawnIn -= dt;
+      if (visual.respawnIn <= 0) respawnVehicle(owner);
+      continue;
+    }
     if (!visual.wrecked || visual.removed) continue;
     visual.wreckAge += dt;
     const into = visual.wreckAge - WRECK_LINGER;
@@ -3498,13 +3584,71 @@ function stepWrecks(dt) {
       }
     }
     if (opacity > 0) continue;
-    // Gone: drop the wreck, stop the death effects, and leave the node empty.
+    // Gone: drop the wreck, open the pad for walking, start the respawn clock.
     visual.removed = true;
     if (visual.wreck) { visual.node.remove(visual.wreck); visual.wreck = null; }
     for (const child of visual.hidden) child.visible = false;
     for (const handle of visual.handles) handle.stop?.();
     visual.handles.length = 0;
+    collider?.statics?.disableOwner?.(owner);
+    visual.respawnIn = spawnDelayFor(visual);
   }
+}
+
+/** Seconds until a fresh vehicle replaces this pad, from ObjectSpawner data. */
+function spawnDelayFor(visual) {
+  const d = visual.spawnDelay;
+  if (d) {
+    const min = Number.isFinite(d.min) ? d.min : 30;
+    const max = Number.isFinite(d.max) ? d.max : min;
+    return min + Math.random() * Math.max(0, max - min);
+  }
+  // Maps extracted before objectSpawns landed: a mid-range house rule.
+  return 40;
+}
+
+/**
+ * Restore a pad after its respawn timer: full HP, live mesh, collision back on.
+ * The vehicle sits at its original spawn pose — the engine replaces the object
+ * at the ObjectSpawner, it does not drag a wreck home.
+ */
+function respawnVehicle(owner) {
+  const visual = damageVisuals.get(owner);
+  const vehicle = vehicleDamage.get(owner);
+  if (!visual) return;
+  // Someone is still sitting in the empty pad — wait a beat rather than
+  // materialising a hull around them.
+  if (occupancy?.root === visual.node) {
+    visual.respawnIn = 1;
+    return;
+  }
+  visual.respawnIn = null;
+  visual.wrecked = false;
+  visual.removed = false;
+  visual.wreckAge = 0;
+  if (visual.wreck) {
+    visual.node.remove(visual.wreck);
+    visual.wreck = null;
+  }
+  for (const child of visual.hidden) {
+    child.visible = true;
+    // No-wreck fallthrough fades these in place; undo that.
+    child.traverse(obj => {
+      if (!obj.material) return;
+      const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+      for (const material of materials) {
+        if (!(material.opacity < 1)) continue;
+        material.opacity = 1;
+        material.transparent = false;
+        material.depthWrite = true;
+      }
+    });
+  }
+  visual.hidden = [];
+  vehicle?.reset();
+  if (vehicle) showDamageTier(vehicle, null);
+  collider?.statics?.enableOwner?.(owner);
+  visual.node.updateMatrixWorld(true);
 }
 
 /** Fade a subtree. Its materials are this wreck's own — see `wreckVehicle`. */
@@ -5232,6 +5376,99 @@ const FALLBACK_SOLDIERS = {
   us: 'USSoldier', brit: 'BritishSoldier', rus: 'RussianSoldier',
   ger: 'GermanSoldier', jp: 'JapaneseSoldier',
 };
+
+/** Refractor YPR degrees → glTF quaternion (same conjugation as bf42/gltf.py). */
+function quatFromYpr(yawDeg, pitchDeg, rollDeg) {
+  const y = (-yawDeg * Math.PI / 180) * 0.5;
+  const p = (-pitchDeg * Math.PI / 180) * 0.5;
+  const r = (rollDeg * Math.PI / 180) * 0.5;
+  const qy = [0, Math.sin(y), 0, Math.cos(y)];
+  const qx = [Math.sin(p), 0, 0, Math.cos(p)];
+  const qz = [0, 0, Math.sin(r), Math.cos(r)];
+  const mul = (a, b) => [
+    a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+    a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+    a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+    a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
+  ];
+  return mul(mul(qy, qx), qz);
+}
+
+// Decorative 3P soldiers at soldierSpawns — one pose (or bare skin) per team,
+// cloned to every pad. Without this the flythrough has flags and vehicles but
+// no people. Paratrooper pads are skipped (they are mid-air).
+const spawnSoldierCache = new Map();
+let spawnSoldiersRoot = null;
+
+function spawnSoldierUrl(team) {
+  const nation = teamNation(team) || (team === 1 ? 'ger' : 'us');
+  const soldier = FALLBACK_SOLDIERS[nation] || (team === 1 ? 'GermanSoldier' : 'USSoldier');
+  // Assault row (index 1) — the most common kit at a flag.
+  const weapon = FALLBACK_PRIMARIES[nation]?.[1] || 'Thompson';
+  return {
+    pose: `${MODELS_BASE}/poses/${soldier}__${weapon}.pose.glb`,
+    bare: `${MODELS_BASE}/${soldier}.glb`,
+  };
+}
+
+async function loadSpawnSoldierTemplate(team) {
+  const key = String(team);
+  if (spawnSoldierCache.has(key)) return spawnSoldierCache.get(key);
+  const urls = spawnSoldierUrl(team);
+  const pending = loader.loadAsync(`${urls.pose}${bust()}`)
+    .then(g => g.scene, () => loader.loadAsync(`${urls.bare}${bust()}`).then(g => g.scene, () => null))
+    .then(scene => {
+      if (!scene) { spawnSoldierCache.set(key, null); return null; }
+      scene.traverse(obj => {
+        if (obj.isMesh) {
+          obj.castShadow = false;
+          obj.receiveShadow = false;
+        }
+      });
+      spawnSoldierCache.set(key, scene);
+      return scene;
+    });
+  spawnSoldierCache.set(key, pending);
+  return pending;
+}
+
+async function placeSpawnSoldiers(root, report) {
+  if (spawnSoldiersRoot) {
+    if (spawnSoldiersRoot.parent) {
+      spawnSoldiersRoot.parent.remove(spawnSoldiersRoot);
+      dispose(spawnSoldiersRoot);
+    }
+    spawnSoldiersRoot = null;
+  }
+  const spawns = (report?.soldierSpawns || []).filter(s => !s.paratrooper && s.team);
+  if (!spawns.length) return;
+  const group = new THREE.Group();
+  group.name = 'soldierSpawns';
+  const byTeam = new Map();
+  for (const s of spawns) {
+    if (!byTeam.has(s.team)) byTeam.set(s.team, []);
+    byTeam.get(s.team).push(s);
+  }
+  await Promise.all([...byTeam.keys()].map(async team => {
+    const template = await loadSpawnSoldierTemplate(team);
+    if (!template) return;
+    for (const s of byTeam.get(team)) {
+      const node = template.clone(true);
+      const [x, y, z] = s.position || [0, 0, 0];
+      node.position.set(x, y, z);
+      const [yaw = 0, pitch = 0, roll = 0] = s.rotation || [];
+      const q = quatFromYpr(yaw, pitch, roll);
+      node.quaternion.set(q[0], q[1], q[2], q[3]);
+      node.userData.spawnSoldier = true;
+      group.add(node);
+    }
+  }));
+  if (!group.children.length) return;
+  bindDynamicShading(group);
+  root.add(group);
+  spawnSoldiersRoot = group;
+}
+
 // The extracted first-person arms rigs — `<Soldier>__<Weapon>.fp.glb` under
 // models/viewmodels (§11) — one per soldier and weapon the vanilla levels
 // pair, because the sleeves are the nation's camo and the hands are welded
@@ -6851,6 +7088,11 @@ function cameraHeading() {
   return Math.atan2(headingVec.x, -headingVec.z);
 }
 
+/** Open-map quad alpha from BfMap__update: (+0x4c)*0.8*(+0x54), with
+ *  +0x54 = 1 - setMinimapTransparency/100 (default 20 → 0.80). Steady
+ *  visible fade (+0x4c→1) gives 0.64. Ledger MEME-10 / gap-research-meme10. */
+const SPAWN_MAP_ALPHA = 0.8 * (1 - 20 / 100);
+
 /** The art, three ways. The spawn screen dims it to a silhouette on
  *  near-black; the HUD widget leaves the world showing through, the game's
  *  own `setMinimapTransparency` default; the plain M map draws it as is. */
@@ -6864,7 +7106,7 @@ function drawArt(ctx, size, u0, v0, span, opts) {
   const sy = v0 * mapArt.height;
   const sw = span * mapArt.width;
   const sh = span * mapArt.height;
-  ctx.globalAlpha = opts.dim ? 0.3 : opts.translucent ? 0.85 : 1;
+  ctx.globalAlpha = opts.dim ? SPAWN_MAP_ALPHA : opts.translucent ? 0.85 : 1;
   ctx.drawImage(mapArt, sx, sy, sw, sh, 0, 0, size, size);
   ctx.globalAlpha = 1;
 }
@@ -7774,6 +8016,7 @@ async function show(entry) {
   guns.groups.length = 0;
   vehicleGuns = [];
   dispose(currentRoot);
+  spawnSoldiersRoot = null;
   disposeSky();
   disposeSounds();
   currentRoot = gltf.scene;
@@ -7851,6 +8094,10 @@ async function show(entry) {
   }
   indexScene(currentRoot);
   collectTerrain(currentRoot);
+  // Decorative kit soldiers at the pads — async, after the scene is already
+  // visible, so a missing pose tree never blocks the flythrough.
+  placeSpawnSoldiers(currentRoot, extras).catch(err =>
+    console.warn('spawn soldiers unavailable', err));
   // Both tables are small (damage.json 154 KB shared across every level,
   // materials.png a couple of KB) and both are needed before the first shot,
   // not before the first frame.

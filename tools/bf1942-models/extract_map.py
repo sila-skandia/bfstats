@@ -339,25 +339,38 @@ def find_weapon_scripts(library, objects: ArchivePool,
 
 # `silence.wav` is how a gun script says "this patch is not used". Every vanilla
 # weapon script declares the full six-patch set — Fire, Reload, Release, Shell
-# Bounce, MG distance, Fire Loop — and an MG fills only the last of them, so a
-# patch is "real" exactly when something other than silence survives.
+# Bounce, MG distance, Fire Loop. Aircraft MGs leave the middle slots silent,
+# so "first sounding patch" lands on Fire Loop; stationary MG42 / Browning fill
+# Release and MG-distance with one-shots *before* the loop, so that rule alone
+# ships a distant report instead of the sustained fire the viewer gain-gates.
 _SILENCE = "silence.wav"
 
 
-def _firing_patch(patches):
-    """The patch a held trigger plays: the first with a non-silence sample.
+def _non_silence(samples):
+    return [s for s in samples
+            if not s.file.replace("\\", "/").lower().endswith(_SILENCE)]
 
-    For a machine gun that is the Fire Loop, five silent patches down. For a
-    single-shot weapon whose Fire patch carries the report it is the first,
-    which is the same rule reaching the other answer rather than a special
-    case.
+
+def _firing_patch(patches):
+    """The patch a held trigger plays.
+
+    Prefer a patch that carries a looping sample (the Fire Loop). Fall back to
+    the first sounding patch for single-shot weapons whose Fire slot is the
+    report. When the Fire Loop wins, keep only its looping layers — that patch
+    also stacks shell-eject and distance one-shots the continuous gain-gate
+    path cannot play.
     """
+    first = None
     for patch in patches:
-        samples = [s for s in patch.samples
-                   if not s.file.replace("\\", "/").lower().endswith(_SILENCE)]
-        if samples:
-            return samples
-    return []
+        samples = _non_silence(patch.samples)
+        if not samples:
+            continue
+        if first is None:
+            first = samples
+        loops = [s for s in samples if s.loop]
+        if loops:
+            return loops
+    return first or []
 
 
 def _modulator_report(effect) -> dict:
@@ -605,6 +618,10 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
     `.ssc`. The one interpretation baked in here is the coordinate flip on
     `relativePosition`, which is the exporter's own Z mirror, so the viewer
     never has to know Refractor is left-handed.
+
+    Templates with FireArms but no Engine (Stationary MG42 / Browning) still
+    get an entry: empty `layers`, weapons filled. The viewer looks those up by
+    template the same way it looks up a tank's guns.
     """
     def read_script(path: str) -> str | None:
         hit = objects.find(path)
@@ -613,30 +630,28 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
     out: list[dict] = []
     for template in vehicles:
         found = find_engine_script(library, objects, template)
-        if found is None:
-            continue
-        script_path, engine_name = found
-        text = read_script(script_path)
-        if text is None:
-            continue
-        patches = parse_ssc(text, level=VEHICLE_SOUND_LEVEL,
-                            include=read_script, source=script_path)
-        # An Engine is a single-patch object: triggered while it runs, released
-        # when it stops. Anything past the first patch is not engine sound.
-        samples = patches[0].samples if patches else []
-        layers = _sound_layers(samples, sounds, write)
-        if not layers:
-            continue
-        entry = {
-            "template": template,
-            "engine": engine_name,
-            "script": script_path,
-            "level": VEHICLE_SOUND_LEVEL,
-            "layers": layers,
-        }
-        # The guns ride along with the vehicle that carries them: one lookup in
-        # the viewer, and a weapon patch can never outlive the engine it was
-        # found next to.
+        entry: dict | None = None
+        if found is not None:
+            script_path, engine_name = found
+            text = read_script(script_path)
+            if text is not None:
+                patches = parse_ssc(text, level=VEHICLE_SOUND_LEVEL,
+                                    include=read_script, source=script_path)
+                # An Engine is a single-patch object: triggered while it runs,
+                # released when it stops. Anything past the first patch is not
+                # engine sound.
+                samples = patches[0].samples if patches else []
+                layers = _sound_layers(samples, sounds, write)
+                if layers:
+                    entry = {
+                        "template": template,
+                        "engine": engine_name,
+                        "script": script_path,
+                        "level": VEHICLE_SOUND_LEVEL,
+                        "layers": layers,
+                    }
+        # The guns ride along with the vehicle that carries them — or alone,
+        # for a furniture mount that has no drivetrain voice of its own.
         weapons: list[dict] = []
         for arms_name, _, arms_script in find_weapon_scripts(
                 library, objects, template):
@@ -655,6 +670,16 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
                 "script": arms_script,
                 "layers": arms_layers,
             })
+        if entry is None and weapons:
+            entry = {
+                "template": template,
+                "engine": None,
+                "script": None,
+                "level": VEHICLE_SOUND_LEVEL,
+                "layers": [],
+            }
+        if entry is None:
+            continue
         if weapons:
             entry["weapons"] = weapons
         out.append(entry)
@@ -1278,6 +1303,36 @@ def _soldier_spawn_report(info: LevelInfo) -> list[dict]:
     return out
 
 
+def _object_spawn_report(info: LevelInfo) -> list[dict]:
+    """Per-pad ObjectSpawner record: vehicle + respawn window + world pose.
+
+    The viewer matches these to the baked spawner nodes by vehicle name and
+    nearest position, then uses Min/MaxSpawnDelay (or SpawnDelay) after a wreck
+    clears so the pad is walkable until the vehicle returns.
+    """
+    out: list[dict] = []
+    for inst in info.spawn_objects:
+        vehicle = spawn_vehicle(inst.template, inst.team, info.spawn_templates)
+        if vehicle is None:
+            continue
+        spec = info.spawn_templates.get(inst.template.lower())
+        window = spec.respawn_window() if spec else None
+        entry: dict = {
+            "spawner": inst.template,
+            "vehicle": vehicle,
+            "team": inst.team,
+            "position": _to_gltf_vec(inst.position),
+            "rotation": list(inst.rotation),
+        }
+        if window is not None:
+            entry["minSpawnDelay"] = window[0]
+            entry["maxSpawnDelay"] = window[1]
+        if spec and spec.spawn_delay_at_start is not None:
+            entry["spawnDelayAtStart"] = spec.spawn_delay_at_start
+        out.append(entry)
+    return out
+
+
 def _place_template(assembler: Assembler, builder, name: str, inst, report,
                      seen_fail: set[str]) -> int | None:
     key = name.lower()
@@ -1296,6 +1351,13 @@ def _place_template(assembler: Assembler, builder, name: str, inst, report,
     # node after assembly so every child inherits it.
     if getattr(inst, "scale", None):
         builder.node(node).scale = inst.scale
+    # Per-placement foliage tint — carried as node extras so a re-extract
+    # does not need a material clone per tree; the viewer multiplies it in.
+    if getattr(inst, "color", None):
+        n = builder.node(node)
+        extras = dict(n.extras or {})
+        extras["color"] = list(inst.color)
+        n.extras = extras
     return node
 
 
@@ -1471,6 +1533,21 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
                 if vehicle not in object_report["skipped"]:
                     object_report["skipped"].append(vehicle)
                 continue
+            # Respawn timing lives on the ObjectSpawner, not the vehicle. Stamp
+            # it onto the placed node so a map that never rewrote scene.json
+            # still carries the window in the glb extras.
+            spec = info.spawn_templates.get(inst.template.lower())
+            window = spec.respawn_window() if spec else None
+            if window is not None:
+                placed = builder.node(node)
+                extras_node = placed.extras if isinstance(placed.extras, dict) else {}
+                extras_node = dict(extras_node)
+                extras_node["spawner"] = {
+                    "name": inst.template,
+                    "minSpawnDelay": window[0],
+                    "maxSpawnDelay": window[1],
+                }
+                placed.extras = extras_node
             spawner_nodes.append(node)
             object_report["spawners"] += 1
         if spawner_nodes:
@@ -1557,12 +1634,11 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
     # is a raw renderer poke only Tobruk carries — and the game overrides it
     # there (Game VD 300 vs the stray 700; the in-game haze wall sits at 300).
     view_distance = info.game_view_distance or info.view_distance or 700.0
-    # A level with no declared fogLinearStart/End still fogs in-game: the
-    # engine hazes to the view distance (all levels set vertexFogEnable 1 and
-    # DICE paints fogColorVec into the sky's below-horizon band to meet it).
-    # Derive an undeclared range from the view distance; the 0.5 start
-    # fraction is DICE's own habit in the five levels that do declare one
-    # (Tobruk 0.50, Kasserine 0.50, Stalingrad 0.56, Gazala 0.59, Kharkov 0.60).
+    # A level with no live fogStart/fogEnd still fogs in-game: Setup defaults
+    # are 1/2 m, then Game.setViewDistance (lnxded 0x080c6e20) retunes the
+    # range using a 0.5f factor (0x86b05e8). Derive an undeclared range from
+    # the view distance the same way. Do not honour fogLinearStart/End —
+    # those strings are not in BF1942.exe.
     fog_end = info.fog_end if info.fog_end is not None else view_distance
     fog_start = info.fog_start if info.fog_start is not None else view_distance * 0.5
     extras = {
@@ -1588,6 +1664,7 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
         "gameplayMode": info.gameplay.mode or None,
         "controlPoints": _control_point_report(info, placed_flags),
         "soldierSpawns": _soldier_spawn_report(info),
+        "objectSpawns": _object_spawn_report(info),
         # `image` is filled in by `write_minimap` once the art is decoded; the
         # projection is known from the con files alone and stands on its own.
         "minimap": {"image": None, "worldToImage": _world_to_image(info)},

@@ -90,4 +90,10 @@ export class Armor {
     if (amount > 0) this.damage(amount);
     else this.heal(-amount);
   }
+
+  /** Restore full HP after a pad respawn. Death is otherwise final. */
+  reset() {
+    this.hitPoints = this.maxHitPoints;
+    this.destroyed = false;
+  }
 }

@@ -50,6 +50,9 @@ class StaticInstance:
     # template. 8,596 of vanilla's 18,258 placed statics carry one; it is how
     # one birch mesh becomes a forest of different trees.
     scale: tuple[float, float, float] | None = None
+    # `Object.geometry.color r/g/b` — per-placement vertex tint (5,123 vanilla
+    # placements). Same dotted-command grammar as scale.
+    color: tuple[float, float, float] | None = None
 
 
 @dataclass
@@ -57,6 +60,26 @@ class SpawnTemplate:
     name: str
     vehicles: dict[int, str] = field(default_factory=dict)
     owner_team: int | None = None
+    # ObjectSpawner respawn window after the wreck is cleared. Some templates
+    # use a single `SpawnDelay` instead of Min/Max (ships, MGs).
+    min_spawn_delay: float | None = None
+    max_spawn_delay: float | None = None
+    spawn_delay: float | None = None
+    spawn_delay_at_start: float | None = None
+    time_to_live: float | None = None
+    distance: float | None = None
+    damage_when_lost: float | None = None
+
+    def respawn_window(self) -> tuple[float, float] | None:
+        """`(min, max)` seconds until a fresh vehicle replaces a lost one."""
+        if self.min_spawn_delay is not None or self.max_spawn_delay is not None:
+            lo = self.min_spawn_delay if self.min_spawn_delay is not None else (
+                self.max_spawn_delay or 0.0)
+            hi = self.max_spawn_delay if self.max_spawn_delay is not None else lo
+            return (min(lo, hi), max(lo, hi))
+        if self.spawn_delay is not None:
+            return (self.spawn_delay, self.spawn_delay)
+        return None
 
 
 @dataclass
@@ -344,13 +367,12 @@ class LevelInfo:
     terrain: TerrainInfo
     combat: CombatArea | None = None
     fog_color: tuple[float, float, float] = (0.7, 0.7, 0.7)
-    # None = the level declares no `renderer.fogLinearStart/End`. Only 5 of 23
-    # vanilla levels declare a range; the engine fogs the rest to their view
-    # distance (every level sets `vertexFogEnable 1`, and the in-game haze
-    # wall always sits at the far plane, which DICE matches by painting
-    # `fogColorVec` into the sky mesh's below-horizon band). The consumer
-    # derives an undeclared range from the view distance rather than
-    # inventing a fixed one.
+    # None = no live `renderer.fogStart` / `fogEnd`. Nine vanilla levels write
+    # the dead `fogLinearStart` / `fogLinearEnd` spellings (absent from
+    # BF1942.exe); those must stay None so the exporter derives the range from
+    # `Game.setViewDistance`. Live fogStart/fogEnd appear on 14 Init.con lines
+    # (e.g. Omaha -50/290, Battle of Britain 100/500). Midway's only colour
+    # line is dead `setFogColorVec` — keep the (0.7,0.7,0.7) default.
     fog_start: float | None = None
     fog_end: float | None = None
     sun_direction: tuple[float, float, float] = (-0.4, 0.7, -0.4)
@@ -565,6 +587,11 @@ def parse_static_objects(text: str) -> list[StaticInstance]:
         elif cmd == "geometry.scale":
             try:
                 current.scale = con_mod.vec3(args.split()[0])
+            except (ValueError, IndexError):
+                continue
+        elif cmd == "geometry.color":
+            try:
+                current.color = con_mod.vec3(args.split()[0])
             except (ValueError, IndexError):
                 continue
         elif cmd == "setteam":
@@ -784,6 +811,41 @@ def parse_spawn_templates(text: str) -> dict[str, SpawnTemplate]:
                 continue
             if team in (1, 2):
                 current.owner_team = team
+        elif cmd == "minspawndelay" and tokens:
+            try:
+                current.min_spawn_delay = float(tokens[0])
+            except ValueError:
+                pass
+        elif cmd == "maxspawndelay" and tokens:
+            try:
+                current.max_spawn_delay = float(tokens[0])
+            except ValueError:
+                pass
+        elif cmd == "spawndelay" and tokens:
+            try:
+                current.spawn_delay = float(tokens[0])
+            except ValueError:
+                pass
+        elif cmd == "spawndelayatstart" and tokens:
+            try:
+                current.spawn_delay_at_start = float(tokens[0])
+            except ValueError:
+                pass
+        elif cmd == "timetolive" and tokens:
+            try:
+                current.time_to_live = float(tokens[0])
+            except ValueError:
+                pass
+        elif cmd == "distance" and tokens:
+            try:
+                current.distance = float(tokens[0])
+            except ValueError:
+                pass
+        elif cmd == "damagewhenlost" and tokens:
+            try:
+                current.damage_when_lost = float(tokens[0])
+            except ValueError:
+                pass
     return out
 
 
@@ -862,18 +924,21 @@ def parse_init_con(text: str, info: LevelInfo) -> None:
                 info.sky.cloud_mesh = pending_geometry_file
             pending_geometry_create = None
         elif ns == "renderer":
-            # Fog has two spellings per knob and vanilla uses both:
-            # `fogColorVec` (38) vs `setFogColorVec` (3), `fogLinearStart/End`
-            # (9 each) vs `fogstart/fogend` (14 each). Missing the second
-            # spelling left 8 levels fogged to defaults and 2 fogged grey.
-            if cmd in ("fogcolorvec", "setfogcolorvec") and tokens:
+            # Live console words only — confirmed against BF1942.exe string table
+            # and Setup registrars (fogStart 0x008cf99c, fogEnd 0x008cfa0c,
+            # fogColorVec 0x008cfa7c). `fogLinearStart` / `fogLinearEnd` /
+            # `setFogColorVec` appear in level Init.con files but are absent
+            # from the client and w32ded binaries; treating them as live fogged
+            # Tobruk/Gazala/Stalingrad/Kasserine to authored dead values and
+            # Midway to a colour the engine never applies.
+            if cmd == "fogcolorvec" and tokens:
                 try:
                     info.fog_color = con_mod.vec3(tokens[0])
                 except ValueError:
                     pass
-            elif cmd in ("foglinearstart", "fogstart") and tokens:
+            elif cmd == "fogstart" and tokens:
                 info.fog_start = float(tokens[0])
-            elif cmd in ("foglinearend", "fogend") and tokens:
+            elif cmd == "fogend" and tokens:
                 info.fog_end = float(tokens[0])
             elif cmd == "setviewdistance" and tokens:
                 info.view_distance = float(tokens[0])

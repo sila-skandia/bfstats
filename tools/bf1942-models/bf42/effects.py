@@ -52,6 +52,12 @@ _EMITTER_FLOAT = {
     "startprobability": "startProbability",
     "loddistance": "lodDistance",
 }
+# Rate ramp over the emitter's own life (percent of timeToLive), same grammar
+# as particle `sizeOverTime`. Authoring sometimes leaves the word bare
+# (`ObjectTemplate.intensityOverTime` with no points) — those are no-ops.
+_EMITTER_CURVE = {
+    "intensityovertime": "intensityOverTime",
+}
 _EMITTER_BOOL = {
     "looping": "looping",
     "startatcreation": "startAtCreation",
@@ -60,6 +66,10 @@ _EMITTER_BOOL = {
     "nophysics": "noPhysics",
     "movetowatersurface": "moveToWaterSurface",
     "usecameraorientation": "useCameraOrientation",
+    # Gate the emitter on the host's over-damage tier (armor smoke/fire).
+    "hasoverdamage": "hasOverDamage",
+    # Raft/spawn emitters that create real objects rather than particles.
+    "isspawneffect": "isSpawnEffect",
 }
 _PARTICLE_CRD = {
     "timetolive": "timeToLive",
@@ -277,6 +287,9 @@ def emitter_spec(emitter: con_mod.ObjectTemplate,
                 spec[key] = float(raw.split()[0])
             except ValueError:
                 pass
+    for cmd, key in _EMITTER_CURVE.items():
+        if (raw := props.get(cmd, "").strip()) and (curve := con_mod.curve(raw.split()[0])):
+            spec[key] = curve
     for cmd, key in _EMITTER_BOOL.items():
         if cmd in props:
             spec[key] = _truthy(props[cmd])
