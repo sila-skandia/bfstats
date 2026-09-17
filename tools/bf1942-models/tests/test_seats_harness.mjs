@@ -408,13 +408,35 @@ function shermanWithRenamedGunnerNode() {
 
   // Pinned at the input register's own ±40 ceiling (feed far exceeds it),
   // so the target velocity is the full `maxSpeed` and the ramp
-  // (`TURRET_RAMP_TIME`) is the only thing left standing between rest and
+  // (`TURRET_ACCELERATION`, or the axis's own) is the only thing left between rest and
   // the clamp -- 5 real seconds is comfortably past both. Must sit exactly
   // at the declared max, never beyond it (GUN-4: setState's clamp,
   // reproduced per-tick by TurretAxis.step itself here rather than a
   // separate setState call).
   for (let i = 0; i < 300; i++) { axis.feed(2000); axis.step(1 / 60); }
   const clampedAngle = axis.angle;
+
+  // Wind-up: an axis that carries its own `setAcceleration` ramps at that
+  // number, and one that does not falls back to TURRET_ACCELERATION. Both
+  // driven at a saturating sample, so the only thing between rest and the
+  // declared `maxSpeed` is the wind-up itself. Sampled at the moment each
+  // should have just reached its cap.
+  function windUp(spec, seconds) {
+    const a = new TurretAxis('yaw', node('WindUp', {}), spec);
+    const ticks = Math.round(seconds * 60);
+    for (let i = 0; i < ticks; i++) { a.feed(2000); a.step(1 / 60); }
+    return a.velocity;
+  }
+  // 35 deg/s at 350 deg/s^2 is a tenth of a second to the cap.
+  const ownAccel = { free: true, maxSpeed: 35, direction: 1, acceleration: 350 };
+  // Same gun without the number: the fallback's own 90 deg/s^2 needs 0.39 s.
+  const fallbackAccel = { free: true, maxSpeed: 35, direction: 1 };
+  results.windUp = {
+    ownAtTenth: round(windUp(ownAccel, 0.1), 1),
+    fallbackAtTenth: round(windUp(fallbackAccel, 0.1), 1),
+    fallbackAtHalf: round(windUp(fallbackAccel, 0.5), 1),
+    maxSpeed: 35,
+  };
 
   // A free (min==max) axis wraps through ±180 instead of clamping.
   const freeAxis = new TurretAxis('yaw', node('FreeAxis', {}), { free: true, maxSpeed: 90, direction: 1 });

@@ -347,6 +347,57 @@ too.
   position tracks the traverse).
 - The HUD's turret dial draws for the first time — see `in-game-hud.md`.
 
+### Follow-up the same day: rate, and the two triggers
+
+Reported back from play: "it rotates much slower than in-game, and it isn't
+firing: left click is the tank shell, right is the machine gun."
+
+**The coaxial machine gun had no input at all.** `Sherman.con` gives the
+cannon `c_PIFire` and `Coaxial_browning` `c_PIAltFire`, and this page's only
+vehicle trigger was Space, wired to `c_PIFire`. So the coax was collected, had
+a `FireState`, drew its own ammo panel and heat bar — and could never be
+fired, from any seat, because nothing ever wrote the input it declares. The
+mouse buttons now drive both: left is `c_PIFire`, right is `c_PIAltFire`,
+through the same chord machine the soldier's own buttons already use
+(`footButtonChange`, now `buttonChange`, which handles a second button
+pressed while the first is held — the browser reports that as a `pointermove`
+carrying the changed button, not a `pointerdown`). `manned()` routes per
+weapon rather than per seat, off each FireArms node's own declared input, for
+the same reason a driver's does. Space still works and still means
+`c_PIFire`. A Corsair gets the pair for free: its guns declare the first and
+its bombs the second.
+
+**The wind-up, not the cap, was what made the traverse feel slow.**
+`TURRET_RAMP_TIME` was one shared second from rest to any gun's own
+`maxSpeed`, so a short flick spent all of itself still accelerating. That
+number was never in the data — but its real counterpart is:
+`setAcceleration`'s magnitude is deg/s² of servo acceleration
+(flight-model.md §2a, confirmed, vanilla magnitudes 30–150), and it is
+exactly the `|acceleration|·dt` GUN-3 has the velocity register accumulating.
+`con.py` emitted only its *sign* (as `direction`) and threw the magnitude
+away. It now emits both, `TurretAxis` ramps at the axis's own number when the
+extract carries it, and `TURRET_ACCELERATION` (90 deg/s², the middle of the
+confirmed band) is the fallback for every glb baked before today — 0.39 s to
+the cap on a Sherman, against the old flat 1.0 s.
+
+`TURRET_SENSITIVITY` went 0.35 → **1.0**, one register unit per pixel, which
+makes the whole chain readable: the register's own ±40 clamp saturates in a
+40 px frame, so ordinary aiming motion asks for the gun's declared maximum and
+nothing can ask for more, and GUN-3's ±1.0 deadzone lands on one pixel.
+
+Measured after, on the real page: 35 deg/s sustained — the Sherman's own
+declared `maxSpeed`, reached and held — 11 degrees from half a second at
+40 px/frame, 5.3 from a 0.15 s flick. A left click puts a shell out and resets
+the reload bar; a second of right button puts 12 coax rounds out, drops the
+secondary count 400 → 388 and takes the heat bar to 0.295.
+
+**If it still reads slow, the remaining number is data.** `ShermanTower`
+declares `setMaxSpeed 35`, and the traverse now reaches and holds exactly
+that. Going faster means either the extract is wrong or the engine does not
+cap at `setMaxSpeed` the way this rig assumes — neither of which is settled
+here. Re-extracting the models would at least replace the fallback wind-up
+with each gun's own `setAcceleration`.
+
 ### Still open
 
 - **The external camera modes still hang off the hull, not the turret.**
@@ -359,4 +410,13 @@ too.
   same name would still lose one.
 - Everything GUN-3 already left open about the integrator (the accumulator
   product's closed form, `automaticReset`) is unchanged — this round only
-  changed who gets a rig, which axes it claims, and which way it points.
+  changed who gets a rig, which axes it claims, which way it points and how
+  fast it winds up.
+- **No extracted model carries `acceleration` yet.** `con.py` emits it from
+  now on, but `viewer/models` is a shared untracked tree nothing re-baked
+  here, so every gun in the viewer is still on the 90 deg/s² fallback. A
+  re-extraction replaces guesses with the game's own per-axis numbers, and
+  `TURRET_ACCELERATION` then only ever covers a mod that declares none.
+- **The seated trigger routing has no unit test.** It lives in `map.html`,
+  which no harness here loads; it was verified in the browser through the real
+  pointer-event path (`__chordEvent`), including the two-button chord.

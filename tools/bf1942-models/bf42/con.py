@@ -968,6 +968,17 @@ class ObjectTemplate:
                 "driver": "rate" if span is not None and span > ACCUMULATOR_SPAN else "position",
                 "maxSpeed": (self.max_speed or (0.0, 0.0, 0.0))[index],
                 "direction": -1.0 if accel < 0 else 1.0,
+                # The MAGNITUDE as well as the sign, which this emitted alone
+                # until now. deg/s^2, the servo's acceleration toward its
+                # commanded deflection (flight-model.md §2a, confirmed;
+                # vanilla magnitudes 30-150), and the same number GUN-3 has
+                # the turret's own velocity register accumulating. A rig that
+                # only knows `maxSpeed` has to guess how long a gun takes to
+                # reach it, and `viewer/seats.js` was guessing one shared
+                # second for every gun in the game. Zero (or an absent
+                # `setAcceleration`) stays absent rather than being emitted as
+                # a 0 that reads as "never gets moving".
+                **({"acceleration": abs(accel)} if accel else {}),
             }
         for axis, spec in gear.items():
             axes.setdefault(axis, spec)

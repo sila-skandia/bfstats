@@ -669,6 +669,26 @@ GeometryTemplate.create StandardMesh Fletcher_Hull
         self.assertEqual(1.0, stern["rig"]["axes"]["pitch"]["direction"])
         self.assertEqual(15.0, stern["rig"]["axes"]["pitch"]["maxSpeed"])
 
+    def test_the_servo_carries_how_fast_it_winds_up_not_only_which_way(self) -> None:
+        """`setAcceleration`'s MAGNITUDE, which used to be thrown away.
+
+        It is deg/s^2 and confirmed (flight-model.md 2a, vanilla magnitudes
+        30-150): the servo's acceleration toward its commanded deflection, and
+        the same number GUN-3 has a turret's velocity register accumulating.
+        Emitting only the sign left `viewer/seats.js` guessing one shared
+        wind-up time for every gun in the game, which is far too slow for a
+        tank turret and about right for a coastal gun.
+        """
+        nodes, _ = self.ship()
+
+        bow = nodes["Fletcher_HullWing"]["extras"]["rig"]["axes"]["pitch"]
+        stern = nodes["Fletcher_rudder"]["extras"]["rig"]["axes"]["pitch"]
+        # Magnitude only: the sign still lives in `direction`, and the two
+        # surfaces differ there and agree here.
+        self.assertEqual(10.0, bow["acceleration"])
+        self.assertEqual(10.0, stern["acceleration"])
+        self.assertEqual(-1.0, bow["direction"])
+
     def test_a_camera_pivot_is_physics_data_but_not_a_rig(self) -> None:
         """The exemption that lets a meshless Wing keep its servo is keyed on
         the class, so it does not hand a rig to the eight vanilla Cameras that

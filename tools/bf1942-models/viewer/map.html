@@ -1265,6 +1265,15 @@ mapFabBtn?.addEventListener('click', e => {
   setSideCollapsed(false);
 });
 
+/** The seated player's two triggers, straight off the mouse: left is the
+ *  vehicle's `c_PIFire`, right its `c_PIAltFire`. Which weapon either one
+ *  reaches is the weapon's own business — a Sherman's cannon declares the
+ *  first and its coaxial machine gun the second, a Corsair's guns the first
+ *  and its bombs the second — so nothing here names a gun. Space still works
+ *  and still means `c_PIFire`; it was the only binding there was. */
+let seatFire = false;
+let seatAltFire = false;
+
 const gate = document.getElementById('gate');
 function setFly(on) {
   captured = on;
@@ -1280,6 +1289,8 @@ function setFly(on) {
     triggerHeld = false;
     clickQueued = false;
     aimHeld = false;
+    seatFire = false;
+    seatAltFire = false;
     if (document.pointerLockElement === renderer.domElement) {
       document.exitPointerLock();
     }
@@ -1432,14 +1443,26 @@ function pointerLocked() {
 // A fresh press still needs the full gate -- there is no weapon, no rig and
 // no meaning to "zoomed" without one. Zoom is never touched on a release;
 // `altFireOnce` only toggles on a fresh press.
-function footButtonChange(e) {
+function buttonChange(e) {
   const pressed = !!(e.buttons & BUTTON_BIT[e.button]);
   if (!pressed) {
-    if (e.button === 0) triggerHeld = false;
-    else if (e.button === 2) aimHeld = false;
+    if (e.button === 0) { triggerHeld = false; seatFire = false; }
+    else if (e.button === 2) { aimHeld = false; seatAltFire = false; }
     return;
   }
-  if (!(captured && optOnFoot.checked && soldier && pointerLocked())) return;
+  if (!(captured && pointerLocked())) return;
+  // Seated, the two buttons are the vehicle's own two triggers rather than
+  // the soldier's. `Sherman.con` is the case that makes this matter: the
+  // cannon declares `c_PIFire` and `Coaxial_browning` declares `c_PIAltFire`,
+  // so with only Space wired to `c_PIFire` the coaxial machine gun had no
+  // input at all and could never be fired from the driver's seat — the guns
+  // were collected, the FireState existed, and nothing ever pulled it.
+  if (optPilot.checked && occupancy) {
+    if (e.button === 0) seatFire = true;
+    else if (e.button === 2) seatAltFire = true;
+    return;
+  }
+  if (!(optOnFoot.checked && soldier)) return;
   if (e.button === 0) {
     triggerHeld = true;
     clickQueued = true;
@@ -1493,8 +1516,11 @@ renderer.domElement.addEventListener('pointerdown', e => {
   // being a drag and become the game's own bindings — `c_PIFire` on the left,
   // `c_PIAltFire` (aim) on the right, `Infantry.con` — so the very first
   // click still captures and only the clicks after it pull the trigger.
-  if (captured && optOnFoot.checked && soldier && pointerLocked()) {
-    footButtonChange(e);
+  // Seated players get the same gate: the buttons are triggers, not a drag,
+  // and must not fall through to the orbit/pan branch below.
+  if (captured && pointerLocked() && ((optPilot.checked && occupancy)
+      || (optOnFoot.checked && soldier))) {
+    buttonChange(e);
     return;
   }
   if (e.button === 0) {
@@ -1552,10 +1578,10 @@ renderer.domElement.addEventListener('pointerup', e => {
 
   dragging = false;
   isPanning = false;
-  // Same gate and the same function as the press: `footButtonChange` reads
+  // Same gate and the same function as the press: `buttonChange` reads
   // `pressed` off `e.buttons`, which is already false for the button that
   // just came up, so this clears the right one without repeating the check.
-  footButtonChange(e);
+  buttonChange(e);
   try {
     if (renderer.domElement.hasPointerCapture(e.pointerId)) {
       renderer.domElement.releasePointerCapture(e.pointerId);
@@ -1597,12 +1623,12 @@ document.addEventListener('pointermove', e => {
   if (!captured) return;
   if (pointerLocked()) {
     // `e.button !== -1` means this move is really a chorded button change
-    // (see `footButtonChange` above), not the cursor moving: `movementX/Y`
+    // (see `buttonChange` above), not the cursor moving: `movementX/Y`
     // on that kind of event can be a large synthetic delta rather than real
     // mouse travel, and feeding it to `lookDelta` is what snapped the view
     // ~90 degrees when a second button joined one already held.
     if (e.button !== -1) {
-      footButtonChange(e);
+      buttonChange(e);
       return;
     }
     lookDelta(e.movementX, e.movementY);
@@ -4044,11 +4070,11 @@ function setPilot(on, node = null, seatId = null) {
       : isTouchDevice ? getTouchHudText() : HUD_FLY);
 }
 
-const HUD_PILOT = 'W/S throttle · A/D rudder · arrows pitch and roll · Space guns · '
+const HUD_PILOT = 'W/S throttle · A/D rudder · arrows pitch and roll · LMB guns · RMB bombs · '
   + 'C view · mouse look around · R reset · 1-9 seats · E out on the ground · Esc';
-const HUD_DRIVE = 'W/S drive and brake · A/D steer · C view · mouse look around · '
+const HUD_DRIVE = 'W/S drive and brake · A/D steer · mouse aims · LMB main gun · RMB coax · C view · '
   + 'R reset · 1-9 seats · E get out · Esc';
-const HUD_MANNED = 'Mouse aims · Space fires · 1-9 seats · E get out · Esc';
+const HUD_MANNED = 'Mouse aims · LMB fires · 1-9 seats · E get out · Esc';
 
 /**
  * Read the keyboard into the car and step the drive model.
@@ -4081,9 +4107,13 @@ function drive(dt) {
       (held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0), dt));
     car.setInput('c_PIYaw', axisToward(car.input('c_PIYaw'),
       (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0), dt));
-    // A Willys carries no guns, but the input costs nothing and whatever
-    // armed car arrives next inherits the trigger with it.
-    car.setInput('c_PIFire', held.has('Space') ? 1 : 0);
+    // A Willys carries no guns, but the inputs cost nothing and whatever
+    // armed car arrives next inherits both triggers with them. `c_PIAltFire`
+    // is the one that was missing: a Sherman's coaxial machine gun declares
+    // it, so until the right mouse button reached this line the gun had no
+    // input and could not be fired at all.
+    car.setInput('c_PIFire', (held.has('Space') || seatFire) ? 1 : 0);
+    car.setInput('c_PIAltFire', seatAltFire ? 1 : 0);
   }
 
   car.integrate(dt);
@@ -4176,18 +4206,19 @@ function manned(dt) {
   camera.quaternion.copy(mannedCamQuat);
 
   const held = captured ? keys : EMPTY_KEYS;
-  // Space, not LMB: this page already binds vehicle fire to Space for both
-  // the aircraft and the car (HUD_PILOT/HUD_DRIVE), and a manned gun is
-  // riding a vehicle exactly as they are. `FireState`/`gunfire.js` do not
-  // know or care which key asked; wiring the on-foot mousedown state machine
-  // instead (`triggerHeld`/`clickQueued`/`footFire`) would mean editing code
-  // scoped to the hand weapon, outside this track's ownership.
-  const trigger = held.has('Space');
+  // Per weapon, not one trigger for the seat: a gunner's position can carry
+  // two guns declaring different inputs exactly as a driver's can, and the
+  // seat has no business deciding which button reaches which. Space is still
+  // `c_PIFire` (it was this page's only vehicle trigger before the mouse
+  // buttons were wired, and HUD_MANNED still offers it).
+  const fire = held.has('Space') || seatFire;
   for (const node of occupancy.activeFireArmsNodes()) {
     const state = fireStateFor(node);
     state.step(dt);
     const group = mannedGuns.find(g => g.node === node);
-    if (group) guns.setFiring(group, trigger && state.canFire);
+    if (!group) continue;
+    const trigger = node.userData?.fireArms?.input === 'c_PIAltFire' ? seatAltFire : fire;
+    guns.setFiring(group, trigger && state.canFire);
   }
   // Not fed here: `guns.advance(dt)` — which actually calls `fireShot`
   // (`chainOnShot`'s `registerShot()`, decrementing `state.ammo`) — has not
@@ -4559,6 +4590,10 @@ function enterVehicle(entry) {
   triggerHeld = false;
   clickQueued = false;
   aimHeld = false;
+  // A button held through the climb in must not arrive already pulling the
+  // vehicle's trigger — nor, on the way back out, the soldier's.
+  seatFire = false;
+  seatAltFire = false;
   crosshairEl.hidden = true;
   camera.fov = FLY_FOV;
   camera.near = FLY_NEAR;
@@ -6387,7 +6422,8 @@ function pilot(dt) {
     // given input pulls is the gun's own business: `CorsairGuns` declares
     // `c_PIFire` and `CorsairBombDummy` declares `c_PIAltFire`, and the extractor
     // ships both, so nothing here names either one.
-    aircraft.setInput('c_PIFire', held.has('Space') ? 1 : 0);
+    aircraft.setInput('c_PIFire', (held.has('Space') || seatFire) ? 1 : 0);
+    aircraft.setInput('c_PIAltFire', seatAltFire ? 1 : 0);
   }
 
   aircraft.integrate(dt);
@@ -8357,6 +8393,15 @@ if (params.has('shots')) {
     triggerHeld = !!on;
     if (on) clickQueued = true;
   };
+  // The seated player's two mouse triggers, for a headless check: left is the
+  // vehicle's `c_PIFire`, right its `c_PIAltFire`. Named apart from
+  // `__setTrigger` because that one is the soldier's, and a seated player's
+  // is a different input on a different object.
+  window.__setSeatFire = (main, alt = false) => {
+    seatFire = !!main;
+    seatAltFire = !!alt;
+    return { seatFire, seatAltFire };
+  };
   // A full pouch again, for the perf harness: a Thompson carries 150 rounds
   // and a several-minute burst phase would otherwise fall silent at 15 s.
   window.__refill = () => {
@@ -8453,7 +8498,7 @@ if (params.has('shots')) {
   };
   // Fires a real pointerdown/pointerup/pointermove at the real listeners --
   // pointerdown, pointerup and a chorded pointermove all resolve through
-  // `footButtonChange` -- so a check exercises the actual wiring instead of
+  // `buttonChange` -- so a check exercises the actual wiring instead of
   // a re-implementation of it. `pointerLocked()` stands `?shots` in for
   // real pointer lock (headless Chromium never grants it), the same way
   // `__setTrigger` already stands in for the mouse. `kind` is 'down' | 'up'
