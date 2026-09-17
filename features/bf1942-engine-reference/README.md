@@ -219,8 +219,9 @@ recorded here. Settled:
   (FONT-1); the minimap's size, zoom and rotation (MEME-13, MMAP-1, MMAP-2).
 - **Rendering** — the object-lightmap combine (LM-1…LM-4).
 - **Physics and effects** — particle drag is an acceleration, not an
-  exponential (EMT-5), and vehicles have a second, box-shaped drag law
-  (physics.md §3, PHY-4); the first spawn and `startRotation`'s degrees (EMT-2,
+  exponential (EMT-5), and every `PhysicsNode` vehicle always runs the box-shaped
+  drag law (the sphere-`r = 0.1` selector bit is never set; physics.md §3, PHY-4);
+  the first spawn and `startRotation`'s degrees (EMT-2,
   EMT-3); the client's sprite particles (SPR-2…SPR-6), including 791 flipbook
   sprites our pipeline ignores; wheel grip and `submarineData` (PHY-2, PHY-3);
   the client's jump gate, down to its `c_SstJump` sound-trigger test (PHY-1); the anti-tank deviation words the engine
@@ -231,7 +232,7 @@ The corpus itself had five things wrong: +0x31 of a StandardMesh sub-shader is
 `updateFlags` and publishes no component 0x5000; `cameraShakeFactor` lies in
 zero-filled `.data`; a `BFSoldier` holds four animation machines, not three; and
 `c_SstJump` is sound trigger 4, not a name for the jump bit 0x80. Still open from the round: MEME-10, SM-5, LM-3's
-apply/reset pairing, jump velocity, what selects `PhysicsNode`'s Advanced drag,
+apply/reset pairing, jump velocity,
 and the blend-mode mapping (SPR-5).
 
 **SM-1/SM-2 are settled** ([subsystems/standardmesh-vertex-format.md](subsystems/standardmesh-vertex-format.md)):
