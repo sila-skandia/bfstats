@@ -101,5 +101,59 @@ class AnimationEmissionTests(unittest.TestCase):
         self.assertNotIn("animations", doc)
 
 
+class MaterialExtrasTests(unittest.TestCase):
+    """Material extras flags: additive, textureFade, envmap."""
+
+    def test_envmap_flag_in_extras(self) -> None:
+        builder = gltf.GlbBuilder()
+        texture_idx = builder.add_image_png(b"PNG", name="test.png")
+        mat_idx = builder.add_material(
+            name="zero_canopy_m1_Material0",
+            texture=texture_idx,
+            double_sided=True,
+            envmap=True,
+        )
+        node_idx = builder.add_node(gltf.Node("test"))
+        doc, _blob = unpack_glb(builder.build([node_idx]))
+
+        material = doc["materials"][mat_idx]
+        self.assertEqual("zero_canopy_m1_Material0", material["name"])
+        self.assertTrue(material["doubleSided"])
+        self.assertIn("extras", material)
+        self.assertTrue(material["extras"]["envmap"])
+
+    def test_envmap_false_omits_extras(self) -> None:
+        builder = gltf.GlbBuilder()
+        texture_idx = builder.add_image_png(b"PNG", name="test.png")
+        mat_idx = builder.add_material(
+            name="standard_material",
+            texture=texture_idx,
+            envmap=False,
+        )
+        node_idx = builder.add_node(gltf.Node("test"))
+        doc, _blob = unpack_glb(builder.build([node_idx]))
+
+        material = doc["materials"][mat_idx]
+        self.assertNotIn("extras", material)
+
+    def test_additive_and_texture_fade_coexist_with_envmap(self) -> None:
+        builder = gltf.GlbBuilder()
+        texture_idx = builder.add_image_png(b"PNG", name="test.png")
+        # Test additive + envmap together (though unlikely in practice)
+        mat_idx = builder.add_material(
+            name="multi_extras",
+            texture=texture_idx,
+            additive=True,
+            envmap=True,
+        )
+        node_idx = builder.add_node(gltf.Node("test"))
+        doc, _blob = unpack_glb(builder.build([node_idx]))
+
+        material = doc["materials"][mat_idx]
+        self.assertIn("extras", material)
+        self.assertTrue(material["extras"]["additive"])
+        self.assertTrue(material["extras"]["envmap"])
+
+
 if __name__ == "__main__":
     unittest.main()
