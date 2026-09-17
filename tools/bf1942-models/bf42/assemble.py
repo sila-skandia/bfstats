@@ -204,6 +204,9 @@ class Report:
     resolved_textures: dict[str, str] = field(default_factory=dict)
     unresolved_templates: list[str] = field(default_factory=list)
     skipped_lod_alternatives: list[str] = field(default_factory=list)
+    # Children dropped because they are bound to a skeleton their parent
+    # cannot pose — the soldier's parachute. See `is_foreign_skeleton_part`.
+    skipped_foreign_skeletons: list[str] = field(default_factory=list)
     selected_lod_alternatives: list[str] = field(default_factory=list)
     # Cockpit exports only: which LodObject node each 1P alternative grafts
     # onto, and what it hides there.
@@ -275,6 +278,44 @@ class Report:
             "fireArms": self.fire_arms,
             "weapon": self.weapon or None,
         }
+
+
+def is_foreign_skeleton_part(child: con_mod.ObjectTemplate,
+                             parent: con_mod.ObjectTemplate) -> bool:
+    """Is this child bound to a skeleton its parent cannot pose?
+
+    The case this exists for is the soldier's parachute. `CommonSoldierData.inc`
+    gives every soldier an `addTemplate Parachute`, the parachute is skinned, and
+    it declares `animations/Parachute.ske` — so anything that walks a soldier's
+    skinned children picks it up as a body part and bakes 13.5 m of canopy
+    standing on the soldier's head, rigging fanning past the weapon.
+
+    It only appears in bakes made after CON-1's `include`-dropping fix let that
+    `.inc` reach the extractor at all (the same fix that first delivered the
+    soldier's own `HitPoints 30`).
+
+    Three values occur among a soldier's skinned children and only the third is
+    foreign: the body and hands declare no skeleton, the head declares the face
+    skeleton (`UsFace.ske`) and is a real part, and the parachute declares its
+    own. So neither "has a skeleton" nor "differs from the parent" will do —
+    the first drops the head, the second drops it too, because the face
+    genuinely differs. Both were tried; the first exported a faceless soldier.
+
+    Swept across all 15 installed mods: the only skinned soldier child matching
+    this predicate is `Parachute`, in every one of them. A mod that adds a
+    genuinely posable part with its own skeleton would need the same handling the
+    face gets rather than being dropped here.
+
+    A parachute feature wants this geometry back, on its own skeleton and hidden
+    until the soldier is falling, rather than posed as a limb.
+    """
+    if not child.skeleton:
+        return False
+    if "face" in child.skeleton.lower():
+        return False
+    if parent.skeleton and child.skeleton.lower() == parent.skeleton.lower():
+        return False
+    return True
 
 
 def _armor_effect_offset(offset: tuple[float, float, float]) -> list[float]:
@@ -1918,6 +1959,19 @@ class Assembler:
             # export this one gets grafted onto, under the same names.
             if self.first_person and not self._reaches_first_person(child_name):
                 continue
+            # The soldier's parachute, and anything else bound to a skeleton this
+            # parent cannot pose — see `is_foreign_skeleton_part`. Scoped to
+            # soldiers because that is where the sweep behind that predicate was
+            # done; a vehicle's animated parts are a different question nobody
+            # has asked yet.
+            if template.kind.lower() == "bfsoldier":
+                child_template = self.library.object(child_name)
+                if (child_template is not None
+                        and is_foreign_skeleton_part(child_template, template)):
+                    report.skipped_foreign_skeletons.append(
+                        f"{child_name}: skeleton {child_template.skeleton} is not "
+                        f"{template.name}'s to pose")
+                    continue
             child = self.build_node(
                 builder, child_name, report,
                 position=ref.position, rotation=ref.rotation,
