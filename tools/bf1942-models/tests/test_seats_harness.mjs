@@ -174,6 +174,47 @@ function jeep() {
   }, engine, steer, entry);
 }
 
+/** Stationary Browning: Point is traversed first and declares both axes, but
+ *  pitch is a dummy (`maxSpeed: 0`). Rotation owns the real elevation. Without
+ *  a maxSpeed preference the pitch slot sticks on Point and elevation is dead. */
+function stationaryBrowning() {
+  const point = node('StationaryBrowningPoint', {
+    control: 'Stationary_Browning', templateKind: 'RotationalBundle',
+    rig: {
+      axes: {
+        yaw: { input: 'c_PIMouseLookX', min: -70, max: 70, free: false, maxSpeed: 90, direction: 1 },
+        pitch: { input: 'c_PIMouseLookY', min: null, max: null, free: true, maxSpeed: 0, direction: 1 },
+      },
+    },
+  });
+  const rotation = node('StationaryBrowningRotation', {
+    control: 'Stationary_Browning', templateKind: 'RotationalBundle',
+    rig: {
+      axes: {
+        yaw: { input: 'c_PIMouseLookX', min: null, max: null, free: true, maxSpeed: 0, direction: 1 },
+        pitch: { input: 'c_PIMouseLookY', min: -70, max: 30, free: false, maxSpeed: 90, direction: 1 },
+      },
+    },
+  });
+  const arms = node('Browning_unlimited', {
+    control: 'Stationary_Browning', templateKind: 'FireArms',
+    fireArms: { input: 'c_PIFire', magSize: -1 },
+  });
+  const cam = node('StationaryBrowningCamera', {
+    control: 'Stationary_Browning', templateKind: 'Camera',
+  });
+  const entry = node('StationaryBrowningEntry', {
+    control: 'Stationary_Browning', templateKind: 'EntryPoint',
+    seat: { control: 'Stationary_Browning', entryRadius: 2 },
+  });
+  point.add(rotation);
+  rotation.add(arms);
+  rotation.add(cam);
+  return node('Stationary_Browning', {
+    control: 'Stationary_Browning', templateKind: 'PlayerControlObject',
+  }, point, entry);
+}
+
 // --- classification: GUN-10's own definition ---------------------------------
 
 {
@@ -363,6 +404,8 @@ function shermanWithRenamedGunnerNode() {
   mixed.setActiveSeat(mixed.rootId);
   const jeepOcc = new VehicleOccupancy(jeep(), { GroundVehicle: FakeDrive });
   jeepOcc.setActiveSeat(jeepOcc.rootId);
+  const browning = new VehicleOccupancy(stationaryBrowning());
+  browning.setActiveSeat(browning.rootId);
   results.aimAxisSelection = {
     shermanRootHasAim: hasAimAxes(occ.seatInfo(occ.rootId)),
     mixedHasAim: hasAimAxes(mixed.seatInfo(mixed.rootId)),
@@ -376,6 +419,8 @@ function shermanWithRenamedGunnerNode() {
     jeepHasAim: hasAimAxes(jeepOcc.seatInfo(jeepOcc.rootId)),
     jeepTurretNull: jeepOcc.turret === null,
     aimInputs: AIM_INPUTS,
+    browningYawNode: browning.seatInfo(browning.rootId).axes.yaw.node.name,
+    browningPitchNode: browning.seatInfo(browning.rootId).axes.pitch.node.name,
   };
 }
 

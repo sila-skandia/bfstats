@@ -123,16 +123,23 @@ export function surveyVehicle(root) {
       for (const axis of AXES) {
         const spec = data.rig.axes[axis];
         if (!spec) continue;
-        // First bundle per axis name wins, EXCEPT that an axis the mouse
-        // actually reaches beats one it does not. A seat can carry both — the
-        // V-100's driving seat declares a turret elevation and a steered
-        // front wheel, and both are `RotationalBundle`s under the same control
-        // — and first-wins gave the wheel the slot, leaving the turret
-        // unaimable. Losing this slot costs the wheel nothing: `seat.axes` is
-        // only ever read by the aim rig, and `Vehicle.collect`/`applyRig`
-        // pose every declared bundle independently of it.
+        // First bundle per axis name wins, EXCEPT:
+        // 1. An axis the mouse actually reaches beats one it does not (V-100:
+        //    turret vs steered front wheel under the same control).
+        // 2. A movable aim axis (`maxSpeed > 0`) beats a zero-speed dummy on
+        //    the same input (Stationary Browning: Point declares pitch at
+        //    maxSpeed 0; Rotation owns the real elevation). First-wins alone
+        //    bound pitch to Point and left elevation dead.
+        // Losing the `seat.axes` slot costs the other bundle nothing:
+        // `Vehicle.collect`/`applyRig` pose every declared bundle on their own.
         const held = seat.axes[axis];
-        if (held && !(isAimAxis(spec) && !isAimAxis(held.spec))) continue;
+        if (held) {
+          const aimUpgrade = isAimAxis(spec) && !isAimAxis(held.spec);
+          const speedUpgrade = isAimAxis(spec) && isAimAxis(held.spec)
+            && Math.abs(held.spec.maxSpeed || 0) === 0
+            && Math.abs(spec.maxSpeed || 0) > 0;
+          if (!aimUpgrade && !speedUpgrade) continue;
+        }
         seat.axes[axis] = { node: obj, spec };
       }
     } else if (kind === 'FireArms' && data.fireArms) {

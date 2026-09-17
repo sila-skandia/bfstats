@@ -237,6 +237,13 @@ class SeatsModuleTests(unittest.TestCase):
         self.assertEqual("V-100Turret",
                          self.results["aimAxisSelection"]["mixedYawSlotNode"])
 
+    def test_stationary_browning_pitch_prefers_the_movable_axis(self) -> None:
+        # Point is first and declares pitch at maxSpeed 0; Rotation owns the
+        # real elevation. Without a maxSpeed preference, elevation stays dead.
+        sel = self.results["aimAxisSelection"]
+        self.assertEqual("StationaryBrowningPoint", sel["browningYawNode"])
+        self.assertEqual("StationaryBrowningRotation", sel["browningPitchNode"])
+
     def test_a_vehicle_with_nothing_to_aim_gets_no_rig(self) -> None:
         # Willy steers and nothing else, so the mouse stays the camera's.
         sel = self.results["aimAxisSelection"]
