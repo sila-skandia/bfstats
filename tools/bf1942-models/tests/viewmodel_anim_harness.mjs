@@ -99,8 +99,18 @@ check('reload in progress starts clip', {
   reload: 1.2, reloadPlayed: false, active: 'idle',
 }, { want: 'reload', markReloadPlayed: true, startReload: true });
 
+// After LoopOnce clamps, isRunning() is false but the magazine timer still
+// owns the arms — keep reload rather than falling through to idle.
+check('reload timer still running after clip clamped → keep reload', {
+  reload: 0.8, reloadPlayed: true, reloadRunning: false, active: 'idle',
+}, { want: 'reload', startReload: true });
+
+check('reload timer + clip still scheduled → hold reload', {
+  reload: 0.8, reloadPlayed: true, reloadRunning: true, active: 'reload',
+}, { want: 'reload' });
+
 check('walk gait loco', {
   active: 'idle', gait: 'walk',
 }, { want: 'walk' });
 
-console.log(JSON.stringify({ ok: true, cases: 13 }));
+console.log(JSON.stringify({ ok: true, cases: 15 }));

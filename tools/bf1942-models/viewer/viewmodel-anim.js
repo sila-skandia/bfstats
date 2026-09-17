@@ -44,8 +44,19 @@ export const LOCO_CLIP = {
  */
 export function wantViewmodelClip(s) {
   const loco = LOCO_CLIP[s.gait] || 'idle';
-  if (s.reload > 0 && !s.reloadPlayed) {
-    return { want: 'reload', markReloadPlayed: true, startReload: true };
+  // Own the arms for the whole magazine timer, not only until LoopOnce
+  // clamps. Three.js sets paused after clampWhenFinished, so isRunning()
+  // goes false while reloadTime is still counting — falling through to idle
+  // mid-reload looked like a missing animation. Prefer isScheduled() (or
+  // equivalent) for reloadRunning at the call site.
+  if (s.reload > 0) {
+    if (!s.reloadPlayed) {
+      return { want: 'reload', markReloadPlayed: true, startReload: true };
+    }
+    return {
+      want: 'reload',
+      startReload: s.active !== 'reload' || !s.reloadRunning,
+    };
   }
   if (s.active === 'reload' && s.reloadRunning) return { want: 'reload' };
   if (s.active === 'deploy' && s.deployRunning) return { want: 'deploy' };
