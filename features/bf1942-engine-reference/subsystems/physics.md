@@ -134,8 +134,18 @@ scale = 1 + 24·min(depth / DY, 1)                // depth at client +0x8c; DY v
 as X, Y, Z is inferred from how the areas pair with them). The box comes from the
 object's geometry, queried with IID 0x492fe0fe — one of the interfaces
 `BStandardMesh::queryInterface` answers with itself. `dragOffset` is read by
-neither law, and nothing calls its setter. What sets the selector bit is not
-known (Still open).
+neither law, and nothing calls its setter.
+
+**The selector bit is never set (ledger PHY-4, settled 2026-09-17).** Object
+ctors write default flags `0x2090400` at `+0x4` (lnxded `0x08191811` /
+`0x08191a51`; client `0x0050dc84` family) — byte `+0x7` bit `0x4` clear. No
+instruction in either binary ORs `0x4000000` into object flags; no
+`ObjectTemplate::updateFlags` caller pushes it; `hasPointPhysics` is a different
+switch (`setPhysicsNodeComponent` `0x081dd490` builds a `PointPhysicsNode` and
+sets object flag `0x8`). So every live `PhysicsNode` takes the box branch; the
+sphere-`r = 0.1` arm is dead. Vehicles in the viewer therefore need the box law,
+not `−drag·v` (`flight.js`) and not the PointPhysics sphere form (`ground.js` /
+`physics.js`).
 
 ---
 
@@ -383,6 +393,6 @@ shakes are unaffected.
 | ~~Whether the frame timer clamps `dt` before `World::update`~~ | **closed 2026-09-15** — there is no frame `dt` to clamp: the dispatch is `GameClient::simulateFrame(1/30)` run `nTicks` times per frame (§3); the tick *count* is clamped (>10 → 1 in `InputManager::update`, >9 → 1 in `GameClient::update`) |
 | ~~`submarineData`'s 7 parameters~~ | **closed 2026-09-16** for five of them (ledger PHY-3): the 6th is the crush depth, the 5th the depth below which oxygen drains (with the 4th, the periscope pair), the 1st the drain rate and the 2nd the refill rate, capped at 1.0. The 3rd and 7th (suffocation and crush damage) are not re-verified |
 | ~~Drag's `r` and `scale` factors~~ | **closed 2026-09-16** — `r` = `getBoundingRadius()`, delegated to the composite object; `scale = 1 + 24·min(underWater/r, 1)`, clamped above only, `underWater` = +0x44 (§3) |
-| What selects `PhysicsNode`'s Advanced drag | the two laws are read (§3, 2026-09-16), but not what sets the composite object's byte +0x7 bit 0x4: no `.con` word, no `or` of that bit anywhere in either binary, and not `SimpleObjectTemplate::setPhysicsNodeComponent`, which only picks the node class. It decides which drag an aircraft really gets (see features/flyable-vehicles/flight-model.md) |
+| ~~What selects `PhysicsNode`'s Advanced drag~~ | **closed 2026-09-17** (ledger PHY-4): the bit is never set, so every `PhysicsNode` always runs Advanced/box drag; sphere `r = 0.1` is unreachable. `hasPointPhysics` selects `PointPhysicsNode` (flag `0x8`), a separate path (§3) |
 | A spawned particle's mass and bounding radius | the body defaults to mass 1.0; the radius a sprite or mesh particle reports is unread — the blocker for replacing `effects-core.js`'s exponential drag |
 | B17 `setDifferential` tension | 4 nacelles at 1.9 = 7.6 vs a fighter's 5. Code reading is quadruple-anchored, so this is evidence about the `.con` data or the gear table — **do not re-tune on it** |
