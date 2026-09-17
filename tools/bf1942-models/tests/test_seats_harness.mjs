@@ -15,7 +15,8 @@ import { GunFire } from './gunfire.js';
 import {
   surveyVehicle, classifySeat, classifyRoot, findAllVehicleRoots,
   listEntryPoints, pickNearest, TIE_EPSILON, VehicleOccupancy, TurretAxis,
-  TurretRig, FireState, chainOnShot, readWorldPose,
+  TurretRig, FireState, chainOnShot, readWorldPose, TURRET_SENSITIVITY,
+  AIM_INPUTS, hasAimAxes,
 } from './seats.js';
 
 const results = {};
@@ -56,8 +57,16 @@ function defgun() {
   }, yawAxis, entry);
 }
 
-/** Root (tank, no rig data needed for classification) + one nested gunner
- *  seat -- the Sherman's own shape (SEAT-24: driver=position0, gunner=1). */
+/** Root (a tank, with the turret its own driving seat really declares) plus
+ *  one nested gunner seat -- the Sherman's own shape (SEAT-24: driver=
+ *  position0, gunner=1). The tower and gun base are transcribed from
+ *  `Sherman.glb`'s extras: a free `c_PIMouseLookX` traverse at 35 deg/s and a
+ *  `c_PIMouseLookY` elevation over -20..+5 at 20 deg/s, both under the
+ *  Sherman's OWN control, with the cannon and the driver's camera hanging off
+ *  the gun base exactly as the real tree has them. The fixture used to leave
+ *  the root rigless with a note that classification needed no rig data --
+ *  true of classification, and the reason nothing noticed the driver's gun
+ *  could not be aimed. */
 function sherman() {
   const engine = node('ShermanEngine', {
     templateKind: 'Engine', physics: { engineType: 'c_ETTank' },
@@ -65,6 +74,15 @@ function sherman() {
   const cannon = node('ShermanGunBarrel', {
     templateKind: 'FireArms', fireArms: { magSize: 30, numOfMag: 1, roundOfFire: 0.5 },
   });
+  const driverCamera = node('ShermanCamera', { templateKind: 'Camera', control: 'Sherman' });
+  const gunBase = node('ShermanGunBase', {
+    control: 'Sherman', templateKind: 'RotationalBundle',
+    rig: { axes: { pitch: { input: 'c_PIMouseLookY', min: -20, max: 5, free: false, maxSpeed: 20, direction: 1 } } },
+  }, cannon, driverCamera);
+  const tower = node('ShermanTower', {
+    control: 'Sherman', templateKind: 'RotationalBundle',
+    rig: { axes: { yaw: { input: 'c_PIMouseLookX', min: null, max: null, free: true, maxSpeed: 35, direction: 1 } } },
+  }, gunBase);
   const rootEntryA = node('ShermanEntry', {
     control: 'Sherman', templateKind: 'EntryPoint',
     seat: { control: 'Sherman', entryRadius: 3.6 },
@@ -94,7 +112,66 @@ function sherman() {
   return node('Sherman', {
     control: 'Sherman', templateKind: 'PlayerControlObject',
     hud: { hitpoints: 105, maxHitpoints: 105, vehicleIcon: 'Vehicle/Icon_sherman.tga' },
-  }, engine, cannon, rootEntryA, hullGunner);
+  }, engine, tower, rootEntryA, hullGunner);
+}
+
+/** The V-100's own shape, and the reason `surveyVehicle` has a preference
+ *  rule at all: one driving seat declaring a steered front axle AND a turret,
+ *  with the wheels traversed first. Both are `RotationalBundle`s under the
+ *  same control and both want the `yaw` slot, so first-wins handed it to
+ *  `V-100FrontWheelR` and left `V-100Turret` unreachable. Thirteen vehicles
+ *  across vanilla and the mods have this shape (M3GMC's turret against its
+ *  steering; the M113 family's and the LVT4's `pitch` against a gun-hatch or
+ *  ramp animation), so it is a rule, not a one-off. The elevation axis is
+ *  here too, to pin what the rig may and may not claim. */
+function mixedAxisCar() {
+  const engine = node('V-100Engine', {
+    control: 'V-100', templateKind: 'Engine', physics: { engineType: 'c_ETCar' },
+  });
+  const wheelR = node('V-100FrontWheelR', {
+    control: 'V-100', templateKind: 'RotationalBundle',
+    rig: { axes: { yaw: { input: 'c_PIYaw', min: -40, max: 40, free: false, maxSpeed: 2, direction: 1 } } },
+  });
+  const wheelL = node('V-100FrontWheelL', {
+    control: 'V-100', templateKind: 'RotationalBundle',
+    rig: { axes: { yaw: { input: 'c_PIYaw', min: -40, max: 40, free: false, maxSpeed: 2, direction: 1 } } },
+  });
+  // Declared LAST, exactly as the glb traverses it.
+  const turret = node('V-100Turret', {
+    control: 'V-100', templateKind: 'RotationalBundle',
+    rig: { axes: { yaw: { input: 'c_PIMouseLookX', min: null, max: null, free: true, maxSpeed: 50, direction: 1 } } },
+  });
+  const gunBase = node('V-100GunBase', {
+    control: 'V-100', templateKind: 'RotationalBundle',
+    rig: { axes: { pitch: { input: 'c_PIMouseLookY', min: -15, max: 40, free: false, maxSpeed: 40, direction: 1 } } },
+  });
+  const entry = node('V-100Entry', {
+    control: 'V-100', templateKind: 'EntryPoint',
+    seat: { control: 'V-100', entryRadius: 3 },
+  });
+  turret.add(gunBase);
+  return node('V-100', {
+    control: 'V-100', templateKind: 'PlayerControlObject',
+  }, engine, wheelR, wheelL, turret, entry);
+}
+
+/** A jeep: a steered front axle and nothing the mouse reaches. Willy's shape,
+ *  the negative case for `hasAimAxes`. */
+function jeep() {
+  const engine = node('WillyEngine', {
+    control: 'Willy', templateKind: 'Engine', physics: { engineType: 'c_ETCar' },
+  });
+  const steer = node('WillyWheel1', {
+    control: 'Willy', templateKind: 'RotationalBundle',
+    rig: { axes: { yaw: { input: 'c_PIYaw', min: -35, max: 35, free: false, maxSpeed: 2, direction: 1 } } },
+  });
+  const entry = node('WillyEntry', {
+    control: 'Willy', templateKind: 'EntryPoint',
+    seat: { control: 'Willy', entryRadius: 2.3 },
+  });
+  return node('Willy', {
+    control: 'Willy', templateKind: 'PlayerControlObject',
+  }, engine, steer, entry);
 }
 
 // --- classification: GUN-10's own definition ---------------------------------
@@ -237,7 +314,11 @@ function shermanWithRenamedGunnerNode() {
     beforeDriveNull: beforeDrive === null,
     driveIsFakeInstance: drive instanceof FakeDrive,
     rootKind: occ.rootKind,
-    rootTurretNull: rootTurret === null,          // the tank root has no RotationalBundle rig of its own here
+    // The driving seat of a tank aims its own main gun: two axes, the tower's
+    // free traverse and the gun base's elevation, both `c_PIMouseLookX/Y`.
+    rootTurretIsRig: rootTurret instanceof TurretRig,
+    rootTurretAxes: rootTurret ? rootTurret.axes.map(a => a.axisName).sort() : null,
+    rootTurretFreeYaw: !!rootTurret?.axes.find(a => a.axisName === 'yaw')?.spec.free,
     gunnerTurretIsRig: gunnerTurret instanceof TurretRig,
     gunnerAxisCount: gunnerTurret.axes.length,
     gunnerFireArms,
@@ -247,6 +328,55 @@ function shermanWithRenamedGunnerNode() {
     gunnerHudSameAsRoot: gunnerHud === rootHud,
     exitLocationFallsBackToRoot: occ.exitLocationNode() === occ.root,
   };
+
+  // A rig per seat, kept: traverse the tower, climb to the hull gun and back,
+  // and the tower must still be where it was left. Before the rigs were
+  // cached, `setActiveSeat` built a fresh one whose angle started at zero.
+  const held = new VehicleOccupancy(sherman(), { GroundVehicle: FakeDrive });
+  held.setActiveSeat(held.rootId);
+  const towerAxis = held.turret.axes.find(a => a.axisName === 'yaw');
+  for (let i = 0; i < 120; i++) { held.turret.aim(120, 0); held.turret.step(1 / 60); }
+  const traversed = round(towerAxis.angle, 2);
+  held.setActiveSeat(held.seatIdAt(1));
+  const rigWhileAway = held.turret;
+  held.setActiveSeat(held.rootId);
+  results.turretAcrossSeats = {
+    traversed,
+    rigWhileAwayIsTheGunners: rigWhileAway !== held.turret,
+    sameRigOnReturn: held.turret.axes.find(a => a.axisName === 'yaw') === towerAxis,
+    angleOnReturn: round(held.turret.axes.find(a => a.axisName === 'yaw').angle, 2),
+  };
+
+  // Mouse right traverses right. `aim` takes the browser's screen sense, and
+  // `_apply` puts the node's own rotation through RIG_SIGN; negating at the
+  // call site as well (which `lookDelta` used to do) inverted every gun.
+  const sense = new VehicleOccupancy(sherman(), { GroundVehicle: FakeDrive });
+  sense.setActiveSeat(sense.rootId);
+  const towerNode = sense.turret.axes.find(a => a.axisName === 'yaw').node;
+  for (let i = 0; i < 60; i++) { sense.turret.aim(120, 0); sense.turret.step(1 / 60); }
+  const facing = new THREE.Vector3(0, 0, -1).applyQuaternion(towerNode.quaternion);
+  // +X is the vehicle's own right (TANK-10/12's `side` convention).
+  results.aimSense = { rightwardsX: round(facing.x, 3) };
+
+  // What the rig claims, and what it leaves alone.
+  const mixed = new VehicleOccupancy(mixedAxisCar(), { GroundVehicle: FakeDrive });
+  mixed.setActiveSeat(mixed.rootId);
+  const jeepOcc = new VehicleOccupancy(jeep(), { GroundVehicle: FakeDrive });
+  jeepOcc.setActiveSeat(jeepOcc.rootId);
+  results.aimAxisSelection = {
+    shermanRootHasAim: hasAimAxes(occ.seatInfo(occ.rootId)),
+    mixedHasAim: hasAimAxes(mixed.seatInfo(mixed.rootId)),
+    mixedRigAxes: mixed.turret.axes.map(a => a.axisName).sort(),
+    mixedRigInputs: mixed.turret.axes.map(a => a.spec.input).sort(),
+    mixedRigNodes: mixed.turret.axes.map(a => a.node.name).sort(),
+    // The steering bundles are still there for `applyRig` to pose; losing the
+    // `seat.axes` slot costs them nothing, because nothing but the aim rig
+    // reads that map.
+    mixedYawSlotNode: mixed.seatInfo(mixed.rootId).axes.yaw.node.name,
+    jeepHasAim: hasAimAxes(jeepOcc.seatInfo(jeepOcc.rootId)),
+    jeepTurretNull: jeepOcc.turret === null,
+    aimInputs: AIM_INPUTS,
+  };
 }
 
 // --- TurretAxis: deadzone, clamp, and the free-axis wrap ---------------------
@@ -255,23 +385,25 @@ function shermanWithRenamedGunnerNode() {
   const spec = { min: -90, max: 90, free: false, maxSpeed: 90, direction: 1 };
   const rig = node('Axis', {});
   const axis = new TurretAxis('yaw', rig, spec);
-  // Below the ~20px/tick deadzone at the shipped TURRET_SENSITIVITY (0.05):
-  // GUN-3's own hardcoded ±1.0 deadzone on the ±40-clamped input register.
-  axis.feed(6);
+  // GUN-3's own hardcoded ±1.0 deadzone on the ±40-clamped input register,
+  // which is the confirmed fact here. The fixtures below are written in
+  // REGISTER units and converted, rather than in the pixels one particular
+  // `TURRET_SENSITIVITY` happens to make them: that constant is an admitted
+  // feel number about browser mouse units (its own comment says as much), and
+  // pinning a raw 6 px here made this test fail the moment it was retuned —
+  // for a reason that has nothing to do with the deadzone it is about.
+  const px = register => register / TURRET_SENSITIVITY;
+  axis.feed(px(0.5));
   axis.step(1 / 60);
   const belowDeadzone = axis.angle;
 
-  // Sustained, well past the deadzone: the axis must actually move, and in
-  // the fed direction's sign convention (whichever `TurretAxis` picks --
-  // asserted for stability, not re-derived here). A single `feed(30)` per
-  // tick clears the deadzone (30*TURRET_SENSITIVITY=1.5) but barely: the
-  // input register (`driven`) is small relative to its own ±40 ceiling, so
-  // the target velocity this drives is a small fraction of `maxSpeed` --
-  // real play accumulates several mousemove events (several `feed()` calls)
-  // between two rendered frames, which this single-feed-per-tick loop does
-  // not reproduce. Good enough to prove direction; the clamp test below
-  // feeds a saturating value instead, so it does not depend on this nuance.
-  for (let i = 0; i < 120; i++) { axis.feed(30); axis.step(1 / 60); }
+  // Sustained, past the deadzone but well short of the register's own ±40
+  // ceiling: the axis must actually move, and in the fed direction's sign
+  // convention (whichever `TurretAxis` picks -- asserted for stability, not
+  // re-derived here). The target velocity a register of 1.5 drives is a small
+  // fraction of `maxSpeed`, which is why this runs for two seconds; the clamp
+  // test below feeds a saturating value instead.
+  for (let i = 0; i < 120; i++) { axis.feed(px(1.5)); axis.step(1 / 60); }
   const movedAngle = axis.angle;
 
   // Pinned at the input register's own ±40 ceiling (feed far exceeds it),
@@ -292,7 +424,7 @@ function shermanWithRenamedGunnerNode() {
   results.turretAxis = {
     belowDeadzone: round(belowDeadzone),
     movedNonZero: Math.abs(movedAngle) > 1,
-    movedSameSignAsInput: Math.sign(movedAngle) === Math.sign(30),
+    movedSameSignAsInput: Math.sign(movedAngle) === Math.sign(1.5),
     clampedAtMax: round(clampedAngle) === 90,
     freeStaysInWrapRange: freeAngle <= 180 && freeAngle >= -180,
   };

@@ -1056,8 +1056,23 @@ function lookDelta(dx, dy) {
   // before the plain aircraft/car branch below ever runs, or a manned-only
   // seat's mouse motion falls through into the on-foot soldier-look branch
   // instead (the soldier is merely suspended, not unmounted, while seated).
+  // A turret takes the mouse from whichever seat owns it, driving seat
+  // included. `mannedActive()` alone was enough while only gunners had one;
+  // a tank's driver aims his own main gun in this engine (`ShermanTower` /
+  // `ShermanGunBase` are declared under the Sherman's own control), so the
+  // test is now "is there a turret" rather than "is this a gunner". A
+  // drivetrain seat with no turret — a jeep, an aircraft — still falls
+  // through to `view.turn` below and swings the camera as it always did.
+  if (optPilot.checked && occupancy?.turret) {
+    // Unnegated, unlike the soldier's own `look()` below: `TurretRig.aim`
+    // takes the browser's screen sense directly — see its own comment for the
+    // double flip that used to invert every manned gun in the viewer.
+    occupancy.turret.aim(dx, dy);
+    return;
+  }
   if (optPilot.checked && mannedActive()) {
-    occupancy.turret?.aim(-dx, -dy);
+    // A manned seat with no aim rig at all: a passenger position. Nothing to
+    // turn, and falling through would hand the mouse to the driver's camera.
     return;
   }
   if (optPilot.checked && (aircraft || car)) {
@@ -4073,6 +4088,21 @@ function drive(dt) {
 
   car.integrate(dt);
 
+  // After `integrate`, never before: `applyRig` inside it re-poses every
+  // declared `RotationalBundle` from the vehicle's own surface table, and
+  // nothing ever writes `c_PIMouseLookX/Y` into that table, so it puts the
+  // turret back at hull-forward each frame. Stepping the aim rig afterwards
+  // is what leaves the traverse where the player pointed it — the same order
+  // `manned()` has always relied on for a gunner's seat, which runs after
+  // this function for exactly the same reason.
+  //
+  // Every rig re-asserted, only the active one stepped: `occupancy.turret`
+  // belongs to whichever seat is active, and when that is a nested gunner it
+  // is `manned()`'s to step, not ours — but an unmanned seat's gun still has
+  // to stay pointed where its last occupant left it.
+  occupancy.applyTurrets();
+  if (driving) occupancy.turret?.step(dt);
+
   // Kept unconditional rather than folded into `if (driving)` above: a
   // vehicle's own weapon must stop the instant nobody is in the seat that
   // fires it, and gating the *value* passed to `setFiring` on `driving` (not
@@ -4204,6 +4234,7 @@ function switchSeat(position) {
 // honest table rather than an invented zero.
 const HUD_VEHICLE_VARS = [
   'Vehicle/ShowVehicleIcon', 'Vehicle/VehicleIcon',
+  'Vehicle/ShowTurretIcon', 'IconLookRotation',
   'Vehicle/VehicleHitPoints', 'Vehicle/VehicleMaxHitPoints',
   'Ammo/NumberOfWeaponIcons',
   'Ammo/PrimaryAmmoIcon', 'Ammo/PrimaryAmmoBar',
@@ -4249,6 +4280,30 @@ function feedVehicleHud() {
   const seatHud = occupancy.activeHud();
   setHudVar('Vehicle/ShowVehicleIcon', true);
   setHudVar('Vehicle/VehicleIcon', seatHud?.vehicleIcon ?? null);
+  // The turret dial (`vehicleIcon`'s other three sprites, VHUD-7's rects): a
+  // fixed back plate and barrel with the hull's own icon rotating underneath,
+  // which is how a tank commander reads where the hull is pointing relative
+  // to where he is looking. Gated on there being a traverse to show at all —
+  // a seat with only elevation, or none, leaves both variables absent and
+  // `hud.js` culls all three leaves, which is also what every seat did until
+  // the driver's own turret started turning.
+  //
+  // APPROXIMATION, and VHUD-9 is why: neither what the engine sets
+  // `ShowTurretIcon` from nor `IconLookRotation`'s unit, sign and pivot were
+  // ever read. Fed here in radians, because canvas `rotate()` takes radians
+  // and `hud.js` passes the value straight through; `angleMultiplier` is
+  // carried by the extractor and still unread, so it is not applied.
+  //
+  // The sign was settled by looking at it rather than by reading anything.
+  // The dial's fixed barrel points up, i.e. screen-up is where the gun is
+  // looking, and the hull icon spins underneath it — so with the turret
+  // traversed 90 degrees right the hull sits 90 degrees to the gun's LEFT and
+  // its nose belongs at 9 o'clock, which on a canvas whose positive rotation
+  // is clockwise is the traverse itself, not its negative. `headingRadians()`
+  // is already signed in the node's own sense, so it goes in unchanged.
+  const heading = occupancy.turret?.headingRadians();
+  setHudVar('Vehicle/ShowTurretIcon', heading === undefined ? null : true);
+  setHudVar('IconLookRotation', heading === undefined ? null : heading);
   // R2-31 (corrected, verify-r2.md): hitpoints/armor live on the root PCO
   // only, one Armor shared by every seat — never a nested seat's own value.
   //
@@ -6336,6 +6391,9 @@ function pilot(dt) {
   }
 
   aircraft.integrate(dt);
+  // Same reason `drive()` does it: `integrate` ends in `applyRig`, which puts
+  // every turret on the airframe back to rest. A B17's gunners keep theirs.
+  occupancy.applyTurrets();
 
   // After `integrate`, so a round leaves this frame's muzzle pose rather than
   // last frame's — at 55 m/s that is a metre of lag, and it shows as tracers
