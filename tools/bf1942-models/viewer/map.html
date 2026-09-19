@@ -373,6 +373,13 @@
   .map-controls-fab:hover { border-color: var(--accent); }
   .map-controls-fab[hidden] { display: none !important; }
 
+  /* The sidebar is debug gear — fog, wireframe, the pilot and on-foot hacks —
+     so it starts pulled away on every screen size and the fab brings it back.
+     The touch block below only re-homes it. */
+  #side.side-collapsed { display: none; }
+  .controls-collapse-btn { display: inline-flex; }
+  .map-controls-fab { display: inline-flex; }
+
   .speed-control,
   .map-actions {
     position: absolute;
@@ -622,7 +629,7 @@ import { GunFire } from './gunfire.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { buildHeightfield, buildCollisionIndex, WorldCollider } from './collision.js';
 import { Soldier, spawnFlags, pickSpawn, spawnYaw,
-         FOV_DEG as FOOT_FOV, JUMP_SPEED, GRAVITY } from './soldier.js';
+         FOV_DEG as FOOT_FOV, JUMP_SPEED, GRAVITY } from './soldier.js?v=2';
 import { DeviationModel } from './deviation.js';
 import { wantViewmodelClip } from './viewmodel-anim.js';
 import { createReplayController, recordingLevel } from './replay.js';
@@ -1265,6 +1272,8 @@ mapFabBtn?.addEventListener('click', e => {
   e.stopPropagation();
   setSideCollapsed(false);
 });
+// Debug options start pulled away on every screen size; the fab restores them.
+setSideCollapsed(true);
 
 /** The seated player's two triggers, straight off the mouse: left is the
  *  vehicle's `c_PIFire`, right its `c_PIAltFire`. Which weapon either one
@@ -5143,7 +5152,8 @@ function spawnAtFlag(advance = false) {
   if (!soldier || !flags.length) return false;
   const flag = flags[Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1)];
   if (advance) spawnIndex++;
-  const spawn = pickSpawn(flag, spawnIndex, { groundAt: groundHeight });
+  const spawn = pickSpawn(flag, spawnIndex,
+    { groundAt: groundHeight, group: flag.vehicle ? activeDeployGroup(flag) : null });
   if (!spawn) return false;
   soldier.collider = collider;
   soldier.spawn(spawn.position[0], spawn.position[1], spawn.position[2],
@@ -6983,7 +6993,12 @@ async function loadHudPack() {
     img.onload = () => {
       hudPack.sprites.set(name, name === 'minimap_icon_ring_32x32'
         ? tintPlayerRing(img) : img);
-      if (deployActive()) paintDeploySoon();
+      if (deployActive()) {
+        paintDeploySoon();
+        // The spawn rings draw with these sprites (with a stroked-circle
+        // fallback); once the real ring lands, put it on the map at once.
+        drawFullMap(true);
+      }
     };
     img.onerror = () => {};
     img.src = `${HUD_BASE}/${entry.file}${bust()}`;
@@ -7052,7 +7067,13 @@ function loadMapArt(dir) {
   minimapBox.hidden = !extras.minimap;
   if (!rel) return;
   const img = new Image();
-  img.onload = () => { if (token === mapArtToken) mapArt = img; };
+  img.onload = () => {
+    if (token !== mapArtToken) return;
+    mapArt = img;
+    // The deploy screen may already be up over a half-decoded art: repaint
+    // rather than wait for the 250 ms staleness gate.
+    if (deployActive()) drawFullMap(true);
+  };
   // A level with no art still gets markers on a blank grid, so a failed
   // decode is not worth surfacing.
   img.onerror = () => {};
@@ -7183,24 +7204,36 @@ function drawPlayer(ctx, px, py, sc) {
 /** The spawn screen's targets: one `map_circle` per flag the chosen side can
  *  spawn at, never one per spawn entry. The chosen one is drawn larger and
  *  solid; the rest sit back. */
+/** The map spots a flag draws: one per spawn group on a ship (the game draws
+ *  one ring per group down the hull), one for the flag itself otherwise. */
+function flagMapSpots(flag) {
+  if (flag?.groups?.length) {
+    return flag.groups.map(g => ({ group: g.group, position: g.position }));
+  }
+  return flag?.position ? [{ group: null, position: flag.position }] : [];
+}
+
 function drawSpawnRings(ctx, toPx, sc) {
   const chosen = Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1);
   for (const index of deployFlagIndices()) {
     const flag = flags[index];
-    if (!flag.position) continue;
-    const p = projectToArt(flag.position[0], flag.position[2]);
-    if (!p) continue;
-    const q = toPx(p);
-    const active = index === chosen;
-    if (!drawSprite(ctx, 'map_circle', q.x, q.y, sc * (active ? 1.4 : 1.05),
-                    { alpha: active ? 1 : 0.7 })) {
-      ctx.strokeStyle = active ? '#ffffff' : 'rgba(255,255,255,.6)';
-      ctx.lineWidth = Math.max(1, sc);
-      ctx.beginPath();
-      ctx.arc(q.x, q.y, 8 * sc, 0, Math.PI * 2);
-      ctx.stroke();
+    for (const spot of flagMapSpots(flag)) {
+      if (!spot.position) continue;
+      const p = projectToArt(spot.position[0], spot.position[2]);
+      if (!p) continue;
+      const q = toPx(p);
+      const active = index === chosen
+        && (spot.group == null || spot.group === activeDeployGroup(flag));
+      if (!drawSprite(ctx, 'map_circle', q.x, q.y, sc * (active ? 1.4 : 1.05),
+                      { alpha: active ? 1 : 0.7 })) {
+        ctx.strokeStyle = active ? '#ffffff' : 'rgba(255,255,255,.6)';
+        ctx.lineWidth = Math.max(1, sc);
+        ctx.beginPath();
+        ctx.arc(q.x, q.y, 8 * sc, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      if (active) drawSprite(ctx, 'map_dot', q.x, q.y, sc * 0.7);
     }
-    if (active) drawSprite(ctx, 'map_dot', q.x, q.y, sc * 0.7);
   }
 }
 
@@ -7366,7 +7399,7 @@ function drawFullMap(force = false) {
   if (fullmapBox.hidden) return;
   const here = projectToArt(camera.position.x, camera.position.z) || { u: 0, v: 0 };
   const key = `${mapSurfaceKey(fullmapCanvas, here, 1)},${deployActive()},${deployRejoin},`
-    + `${deployTeamId},${spawnFlagSelect.value}`;
+    + `${deployTeamId},${spawnFlagSelect.value},${flags.length}`;
   if (!mapSurfaceStale(fullmapCanvas, key, force)) return;
   // Bigger sprites than the HUD widget: this surface is several times the
   // size. In the deploy state the art dims to the spawn screen's silhouette
@@ -7436,6 +7469,9 @@ let deployKept = '';
 // The tab: 1 Axis, 2 Allied — the game's `Kit/ShowKit`. Follows the chosen
 // flag and filters the rings.
 let deployTeamId = 2;
+// The deck spot chosen on a ship flag, as the spawn group its ring stands
+// for. Null for an island flag — their single ring carries no group.
+let deployGroup = null;
 let deployKit = 'assault';
 // The `Kit/MouseOver/*` flag the pointer currently holds true, and the footer
 // button under it, for the mouse-over plate.
@@ -7636,8 +7672,9 @@ function layoutDeploy() {
     if (el.kind === 'hit' && el.label === 'RESPAWN_ALLIED') placeHit(deployTabs[1], el.rect, s);
   }
   rows.forEach((el, i) => { if (deployKitHits[i]) placeHit(deployKitHits[i], el.rect, s); });
-  const buttons = { RESPAWN_SUICIDE: deploySuicideBtn, RESPAWN_SCOREBOARD: deployScoreBtn,
-                    RESPAWN_RESUME: deployResumeBtn };
+  const buttons = { RESPAWN_SUICIDE: deploySuicideBtn, RESPAWN_CLOSE: deploySuicideBtn,
+                    RESPAWN_RESUME: deployResumeBtn, RESPAWN_DONE: deployResumeBtn,
+                    RESPAWN_SCOREBOARD: deployScoreBtn };
   for (const el of group.elements) {
     if (el.kind === 'button' && buttons[el.id]) placeHit(buttons[el.id], el.rect, s);
   }
@@ -7771,9 +7808,16 @@ function requestOnFoot() {
 }
 
 function openDeploy() {
-  if (!flags.length && !buildSpawnFlags()) return false;
+  // Rebuilt on every open, not only when empty: `flags` otherwise survives a
+  // level switch, and the rings would be drawn from the previous level's
+  // flags — off the current map, or not anywhere at all. Rebuilding is a few
+  // DOM options; the kept choice rides the select through it.
+  if (!buildSpawnFlags()) return false;
   deployRejoin = !!soldier;
   deployKept = spawnFlagSelect.value;
+  // The deck-spot choice belongs to the life it was made on; a fresh screen
+  // starts with whole flags again (the rejoin path re-derives it below).
+  deployGroup = null;
   // Drop sidebar / footer focus so Enter commits spawn rather than toggling
   // `#onfoot` or synthesising a RESUME click.
   if (document.activeElement && document.activeElement !== document.body) {
@@ -7818,12 +7862,22 @@ function cancelDeploy() {
   placeCamera();
 }
 
-function selectDeployFlag(index) {
+/** The group of `flag` the current selection points at: the chosen deck
+ *  spot when one was clicked, else the ship's first group. */
+function activeDeployGroup(flag) {
+  if (deployGroup != null && flag?.groups?.some(g => g.group === deployGroup)) {
+    return deployGroup;
+  }
+  return flag?.groups?.[0]?.group ?? null;
+}
+
+function selectDeployFlag(index, group = null) {
   if (!Number.isInteger(index) || index < 0 || index >= flags.length) return false;
   spawnFlagSelect.value = String(index);
   // A fresh choice starts at the flag's first spawn, as the select's own
   // change handler would have it.
   spawnIndex = 0;
+  deployGroup = group;
   // The tab follows the flag: a number key or a harness call naming the
   // other side's flag switches the column with it.
   const team = flags[index].team;
@@ -7847,6 +7901,7 @@ function setDeployTeam(team, reselect = true) {
       if (first != null) {
         spawnFlagSelect.value = String(first);
         spawnIndex = 0;
+        deployGroup = null;
       }
     }
   }
@@ -7894,7 +7949,11 @@ for (const [btn, id] of [[deploySuicideBtn, 'suicide'], [deployScoreBtn, 'score'
  *  the gate, exactly as it does today. */
 // The commit button reads LOADING and refuses while the scene streams.
 function syncDeployReady() {
-  deploySuicideBtn.disabled = !worldReady;
+  // Only the commit button reads LOADING and refuses while the scene streams;
+  // which button that is depends on the side of the screen the footer puts it
+  // on (left with a life behind the screen, right without).
+  deploySuicideBtn.disabled = deployRejoin && !worldReady;
+  deployResumeBtn.disabled = !deployRejoin && !worldReady;
   paintDeployChrome();
 }
 
@@ -7932,20 +7991,23 @@ fullmapCanvas.addEventListener('click', e => {
   const u = (e.clientX - rect.left) / rect.width;
   const v = (e.clientY - rect.top) / rect.height;
   let best = -1;
+  let bestGroup = null;
   let bestDist = 26;
   for (const index of deployFlagIndices()) {
-    const flag = flags[index];
-    if (!flag.position) continue;
-    const p = projectToArt(flag.position[0], flag.position[2]);
-    if (!p) continue;
-    const d = Math.hypot((p.u - u) * rect.width, (p.v - v) * rect.height);
-    if (d < bestDist) {
-      bestDist = d;
-      best = index;
+    for (const spot of flagMapSpots(flags[index])) {
+      if (!spot.position) continue;
+      const p = projectToArt(spot.position[0], spot.position[2]);
+      if (!p) continue;
+      const d = Math.hypot((p.u - u) * rect.width, (p.v - v) * rect.height);
+      if (d < bestDist) {
+        bestDist = d;
+        best = index;
+        bestGroup = spot.group;
+      }
     }
   }
   if (best < 0) return;
-  selectDeployFlag(best);
+  selectDeployFlag(best, bestGroup);
 });
 
 // The footer. DONE (join) / SUICIDE (redeploy) is the commit; RESUME / CLOSE
@@ -7955,12 +8017,19 @@ fullmapCanvas.addEventListener('click', e => {
 deploySuicideBtn.addEventListener('click', e => {
   e.stopPropagation();
   deploySuicideBtn.blur();
-  deploySpawn();
+  // The left hit region changes hats with `Kit/IsAlive`: SUICIDE — deploy
+  // again — with a life behind the screen, CLOSE — put it away — without one.
+  if (deployRejoin) deploySpawn();
+  else cancelDeploy();
 });
 deployResumeBtn.addEventListener('click', e => {
   e.stopPropagation();
   deployResumeBtn.blur();
-  cancelDeploy();
+  // And the right one: RESUME cancels a redeploy; DONE commits a fresh join —
+  // the click-dead button a fresh join used to have, since only SUICIDE /
+  // RESUME's rectangles were wired.
+  if (deployRejoin) cancelDeploy();
+  else deploySpawn();
 });
 deployScoreBtn.addEventListener('click', e => {
   e.stopPropagation();
