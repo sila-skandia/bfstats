@@ -71,28 +71,30 @@ export const WILLYS = {
   differential: 7,
   // `setNumberOfGears 5`, `setGearUp 0.95`, `setGearDown 0.4`: the gear count
   // and the shift points as fractions of maximum revs. This is the whole of
-  // what the game declares about the gearbox — there is no per-gear ratio
-  // anywhere in the vanilla data, we looked. [data]
+  // what the game *authors* about the gearbox — but it is no longer the whole
+  // of what the game knows, because the ratio ladder is a curve compiled into
+  // `EngineTemplate`'s constructor rather than a `.con` word (TANK-3). See
+  // `GEAR_RATIO_CURVE` and `gearLadder`. [data]
   numberOfGears: 5,
   gearUp: 0.95,
   gearDown: 0.4,
-  // The ratio ladder the data does not have. Five steps from a 3.8 crawler to
-  // a 1.0 top, roughly geometric, chosen so the post-upshift revs land at
-  // 0.65-0.76 of the limit — comfortably above the 0.4 downshift point, so
-  // the automatic never hunts. Reverse borrows first. [free]
-  gearRatios: [3.8, 2.6, 1.8, 1.25, 1.0],
-  reverseRatio: 3.8,
-  // Engine speed ceiling, rad/s. The one number that closes the top-speed
-  // equation: v = revLimit x wheelRadius / (differential x topGear), and 356
-  // puts that at 18.5 m/s (66.6 km/h) before resistance, 18.3 after — inside
-  // the 60-70 km/h band the game's Willys is remembered to do. 356 rad/s is
-  // 3,400 rpm, which is even the right neighbourhood for the real vehicle's
-  // Go-Devil engine, though nothing here leans on that. [free]
-  revLimit: 356,
-  // Torque fades linearly over the last (1 - gearUp) of the rev range, the
-  // same shape `setNoPropellerEffectAtSpeed` gives an aircraft: top speed is
-  // where faded drive meets resistance, not a hard wall. [free, shape only —
-  // the endpoints are gearUp and revLimit above]
+  // There is no `gearRatios`, no `reverseRatio` and no `revLimit` here any
+  // more. All three were inventions and all three are now derived (TANK-3,
+  // TANK-9):
+  //
+  //   the ladder      `gearLadder(differential, numberOfGears)` — the engine's
+  //                   own `getCurrentRatio()` per gear, for any gear count.
+  //   reverse         gear 1's ratio, which is what `reverseRatio 3.8` was
+  //                   standing in for (it equalled `gearRatios[0]`).
+  //   the rev ceiling  revs are a fraction of full, and full is the speed the
+  //                   engine's own EngineGrip target reaches at that ratio:
+  //                   `ENGINE_GRIP_SPEED_FACTOR * ratio`. `revLimit 356` was
+  //                   fitted to put top gear at 18.5 m/s; the read relation
+  //                   puts it at 13.0 m/s and owes nothing to a fit.
+  //
+  // Torque still fades linearly over the last (1 - gearUp) of the rev range so
+  // that top speed is an equilibrium rather than a wall. That shape is still a
+  // viewer choice; its endpoints are now both data. [free, shape only]
   //
   // --- wheels ---------------------------------------------------------------
   // Measured off `Willy_WheelR_M1`'s vertex bounds in the glb: the tyre spans
@@ -217,9 +219,20 @@ export class GroundVehicle extends Vehicle {
     };
     /** Current gear, 1-based; `reverse` is a mode rather than a gear slot. */
     this.gear = 1;
-    /** Engine speed, rad/s, derived from the driven axle each tick. */
+    /** Engine speed as a fraction of full, 0..1 — the quantity `setGearUp`
+     * and `setGearDown` are fractions *of*, and the same normalised rev the
+     * engine's own torque curve is indexed by (TANK-4). It used to be rad/s
+     * against a fitted `revLimit`. */
     this.revs = 0;
     this.collectChassis();
+
+    /** `getCurrentRatio()` for gear 1..numberOfGears (TANK-3), built from the
+     * engine's own compiled curve rather than an authored ladder — because
+     * there is no authored ladder. Willy (`differential 7`, `numberOfGears 5`)
+     * comes out 7.000 / 11.136 / 16.333 / 22.273 / 26.064. Any gear count gets
+     * a real ratio, and above five gears the ladder is **not monotonic**; see
+     * `gearLadder`. */
+    this.ladder = gearLadder(this.engine.differential, this.engine.numberOfGears);
 
     // Hull collision against static objects (buildings, walls, other vehicles).
     // `k.boundingRadius` is the same value the drag equation uses — large enough
@@ -298,33 +311,54 @@ export class GroundVehicle extends Vehicle {
    * The gearbox this tick: derive revs from road speed, shift on the declared
    * thresholds, and say how much drive is available.
    *
-   * `setGearUp 0.95` / `setGearDown 0.4` are fractions of maximum revs, which
-   * is the one reading that makes both numbers work as an automatic's
-   * hysteresis: after an upshift the ratio step drops revs to 0.65-0.76, above
-   * the downshift line, so the box never hunts. Drive per gear is
-   * `setTorque` scaled by ratio — first gear gets the full 10.5 — and it
-   * fades linearly over the last five percent of the rev range, so top speed
-   * is an equilibrium rather than a wall.
+   * `setGearUp 0.95` / `setGearDown 0.4` are fractions of maximum revs, and
+   * revs are now a 0..1 fraction outright, so both read literally. The speed a
+   * gear reaches at full revs is the engine's own EngineGrip target for that
+   * gear, `ENGINE_GRIP_SPEED_FACTOR * ratio` (TANK-9) — Willy's five gears top
+   * out at 3.50 / 5.57 / 8.17 / 11.14 / 13.03 m/s, and the automatic's
+   * hysteresis still works out: an upshift at 0.95 lands the next gear at
+   * 0.60-0.81, well above the 0.4 downshift line, so the box never hunts.
+   *
+   * THE TRAP, and it is the easy bug in this file (TANK-3): there are two
+   * ladders and they run in opposite directions.
+   *
+   *   `getCurrentRatio()` RISES with gear — Willy 7.00 -> 26.06. It is a
+   *   *speed* multiplier: the engine's surface-speed target, and the thing
+   *   `bodyThrust` scales.
+   *
+   *   the DRIVE share falls with gear — 1.000 / 0.629 / 0.429 / 0.314 / 0.269
+   *   for any five-speed. It is the curve *sample* normalised to first gear,
+   *   `ladder[0] / ladder[g-1]`, and it is what the deleted `gearRatios`
+   *   ladder (3.8 / 2.6 / 1.8 / 1.25 / 1.0, normalised 1.000 / 0.684 / 0.474 /
+   *   0.329 / 0.263) was an eyeballed approximation of.
+   *
+   * Drive per gear is `setTorque` at its share, shaped by the engine's own
+   * torque curve (TANK-4, peak at 60 % revs, 0.70 at both ends) and faded over
+   * the last five percent of the rev range so top speed is an equilibrium.
    */
   #drivetrain(speed, reverse) {
-    const k = this.spec;
     const e = this.engine;
-    const gears = k.gearRatios;
-    const top = Math.min(e.numberOfGears, gears.length);
-    const revsIn = gear => speed * e.differential * gear / k.wheelRadius;
+    const ladder = this.ladder;
+    const top = ladder.length;
+    // Full revs in a gear is the EngineGrip target that ratio reaches, so the
+    // rev fraction is simply road speed measured against it.
+    const revsIn = ratio => Math.min(1, speed / Math.max(1e-6,
+      ENGINE_GRIP_SPEED_FACTOR * ratio));
     if (reverse) {
+      // Reverse borrows first gear, which is what the deleted `reverseRatio`
+      // did — it was authored equal to `gearRatios[0]`.
       this.gear = 1;
-      this.revs = revsIn(k.reverseRatio);
+      this.revs = revsIn(ladder[0]);
     } else {
-      this.revs = revsIn(gears[this.gear - 1]);
-      if (this.gear < top && this.revs > e.gearUp * k.revLimit) this.gear += 1;
-      else if (this.gear > 1 && this.revs < e.gearDown * k.revLimit) this.gear -= 1;
-      this.revs = revsIn(gears[this.gear - 1]);
+      this.revs = revsIn(ladder[this.gear - 1]);
+      if (this.gear < top && this.revs > e.gearUp) this.gear += 1;
+      else if (this.gear > 1 && this.revs < e.gearDown) this.gear -= 1;
+      this.revs = revsIn(ladder[this.gear - 1]);
     }
-    const ratio = reverse ? k.reverseRatio : gears[this.gear - 1];
-    const span = Math.max(1e-6, (1 - e.gearUp) * k.revLimit);
-    const fade = Math.max(0, Math.min(1, (k.revLimit - this.revs) / span));
-    return e.torque * (ratio / gears[0]) * fade;
+    const share = ladder[0] / ladder[this.gear - 1];
+    const span = Math.max(1e-6, 1 - e.gearUp);
+    const fade = Math.max(0, Math.min(1, (1 - this.revs) / span));
+    return e.torque * share * engineTorqueFraction(this.revs) * fade;
   }
 
   /**
@@ -396,7 +430,7 @@ export class GroundVehicle extends Vehicle {
     // over ±5000), so pedal alone is a step; gearbox revs are what climb and
     // drop through the gears. A fading pedal floor covers the stationary
     // blip where road speed is still zero.
-    const revRpm = Math.min(1, this.revs / Math.max(k.revLimit, 1e-6));
+    const revRpm = Math.min(1, Math.max(0, this.revs));
     const pedal = Math.min(1, Math.abs(cmd));
     const stationary = Math.max(0, 1 - Math.abs(vf) / 2);
     const wanted = Math.max(revRpm, pedal * stationary);
@@ -442,9 +476,12 @@ export class GroundVehicle extends Vehicle {
       if (compression <= 0) {
         wheel.compression = 0;
         wheel.load = 0;
-        // An airborne driven wheel spins against nothing.
+        // An airborne driven wheel spins against nothing — at the surface
+        // speed the engine is commanding for this gear (TANK-9's EngineGrip
+        // target), over the wheel's own radius.
         if (wheel.driven && drive !== 0) {
-          wheel.angle += (reverse ? -1 : 1) * (this.revs / this.engine.differential) * h;
+          const commanded = ENGINE_GRIP_SPEED_FACTOR * this.ladder[this.gear - 1];
+          wheel.angle += (reverse ? -1 : 1) * (commanded / k.wheelRadius) * h;
         }
         continue;
       }
@@ -664,19 +701,23 @@ export class GroundVehicle extends Vehicle {
 // node, parent, options)` in `GroundVehicle`'s place) while sharing the
 // module's constants and the `Wheel` bookkeeping class.
 //
-// THE CORRECTION THIS TRACK EXISTS TO CARRY: `getCurrentRatio()` samples a
-// full 101-entry array (`GEAR_RATIO_CURVE` below), not five control points on
-// a spline. verify-r7.md's researcher read it as the latter and got the
-// M3A1 wrong; the verifier decompiled `EngineTemplate`'s constructor directly
-// and found every slot but five defaults to 1.0. `idx = trunc(gear /
-// numberOfGears * 100)` with `gear` permanently 1 (seeded once, never written
-// again by any code path found in either binary — TANK-7), so only
-// `numberOfGears` of 1 or 5 ever land on an authored index; every other
-// integer count reduces the whole curve lookup to exactly `3.5 *
-// differential`. Sherman and Willy (5 gears) land on index 20 — an authored
-// point — and get 4.0 and 7.0; the M3A1 (4 gears) lands on index 25, nowhere
-// near one, and gets 17.5, not the ~5.5 a smooth interpolation between the
-// *named* points would suggest.
+// THE CORRECTION THIS TRACK EXISTS TO CARRY, now itself corrected (TANK-3,
+// 2026-09-19): `getCurrentRatio()` samples a full 101-entry array, and that
+// array is **piecewise-linear between its control points**, not flat at 1.0
+// between them. A 2026-09-16 reading found the constructor's default-fill loop
+// and its five stores, never followed the eleven `CALL`s to
+// `OverTimeDistribution::generateDistribution` that follow them, and concluded
+// that every slot but five holds 1.0 — which put the M3A1 at 17.5 and reduced
+// every gear count but 1 and 5 to exactly `3.5 * differential`. Both are
+// refuted. Sherman and Willy (5 gears, index 20) keep 4.0 and 7.0; the M3A1
+// (4 gears, index 25, `curve[25] = 3.175`) is **5.512**, near enough the ~5.5 a
+// smooth interpolation suggests because the curve genuinely is one. See
+// `overTimeDistribution` and `gearLadder` below.
+//
+// `gear` is still seeded to 1 and no code path read so far writes it again
+// (TANK-7), so a tracked hull runs on `ladder[0]` for its whole life — but the
+// ladder itself is computed for every gear, because a car shifts and because
+// pinning the full ladder is what keeps the curve honest.
 //
 // WHAT IS PROVISIONAL HERE, same disclaimer `GroundVehicle` carries for its
 // own tyre model and worth repeating because this one goes further: the
@@ -715,62 +756,146 @@ const ENGINE_RATIO_SCALE = 3.5;
 const FADE_SPEED_DEFAULT = 100.0;
 
 /**
- * The gear-ratio curve `EngineTemplate`'s constructor (`0x005715d0`) actually
- * lays down: 101 slots, all 1.0 except the five `EngineTemplate` writes by
- * hand (TANK-3/6, byte-verified immediates). `flight.js`'s own `GEAR_RATIO =
- * 0.94` is the special case of this same table at `numberOfGears = 1` (no
- * aircraft ever declares a gearbox, so its index is always exactly 100); a
- * vehicle with a real gearbox needs the whole table, because the "smooth
- * five-point spline" a curve drawn through just the named points suggests is
- * wrong for any `numberOfGears` that is not exactly 1 or 5 (the M3A1 worked
- * example in `engineRatio` below).
+ * `OverTimeDistribution::generateDistribution`, lnxded `0x081e7830`
+ * (client twin `FUN_005094b0`), as `EngineTemplate::EngineTemplate`
+ * `0x0823efc0` drives it: 101 slots, seeded to the constructor's default and
+ * then filled **piecewise-linearly** between the authored control points.
+ *
+ *   v[j] = ((hi - j) * v[lo] + (j - lo) * v[hi]) / (hi - lo)   for j in lo..hi
+ *
+ * with two edge rules that both matter here:
+ *
+ *   - index 0 participates as a control point whether or not it is authored.
+ *     The ratio curve does not author it, so slots 0..20 ramp from the ctor
+ *     default 1.0 up to 3.5 — which is the whole reason the gear ladder is
+ *     non-monotonic above five gears.
+ *   - after the last authored index the value is held flat (the tail case at
+ *     `0x081e78b8`). Moot for both curves below, which author index 100.
+ *
+ * THE CORRECTION THIS FUNCTION EXISTS TO CARRY (TANK-3, 2026-09-19): the
+ * previous reading of this file had the curve as "1.0 everywhere except five
+ * authored slots", which came from reading the constructor's default-fill loop
+ * and the five stores and never following the eleven `CALL`s after them. That
+ * model put the M3A1 at 17.5 and reduced every gear count but 1 and 5 to
+ * exactly `3.5 * differential`. Both are wrong. Do not restore it.
+ *
+ * @param {Array<[number, number]>} points authored (index, value) pairs
+ * @param {number} fallback the constructor's default, used for index 0 when
+ *   the template does not author it
  */
-const GEAR_RATIO_CURVE = new Array(101).fill(1.0);
-GEAR_RATIO_CURVE[20] = 3.5;
-GEAR_RATIO_CURVE[40] = 2.2;
-GEAR_RATIO_CURVE[60] = 1.5;
-GEAR_RATIO_CURVE[80] = 1.1;
-GEAR_RATIO_CURVE[100] = 0.94;
+function overTimeDistribution(points, fallback = 1.0) {
+  const curve = new Array(101).fill(fallback);
+  const authored = [...points].sort((a, b) => a[0] - b[0]);
+  for (const [index, value] of authored) curve[index] = value;
+  // Index 0 is always a knot; its value is whatever it already holds (the
+  // authored one, or the ctor default).
+  const knots = authored[0]?.[0] === 0 ? authored.map(p => p[0]) : [0, ...authored.map(p => p[0])];
+  for (let n = 0; n < knots.length - 1; n++) {
+    const lo = knots[n], hi = knots[n + 1];
+    const span = hi - lo;
+    for (let j = lo + 1; j < hi; j++) {
+      curve[j] = ((hi - j) * curve[lo] + (j - lo) * curve[hi]) / span;
+    }
+  }
+  const last = knots[knots.length - 1];
+  for (let j = last + 1; j <= 100; j++) curve[j] = curve[last];
+  return curve;
+}
 
 /**
- * `PhysicsEngine::getCurrentRatio()`, exactly (TANK-3/6/7, corrected).
+ * `getCurrentRatio`'s curve (TANK-3). Control points 20 -> 3.5, 40 -> 2.2,
+ * 60 -> 1.5, 80 -> 1.1, 100 -> 0.94; index 0 unauthored, so the first fifth of
+ * it climbs from the constructor's 1.0. Sampled every ten slots it reads
+ * 1.000 2.250 3.500 2.850 2.200 1.850 1.500 1.300 1.100 1.020 0.940.
+ */
+const GEAR_RATIO_CURVE = overTimeDistribution(
+  [[20, 3.5], [40, 2.2], [60, 1.5], [80, 1.1], [100, 0.94]]);
+
+/**
+ * `getCurrentTorque`'s curve (TANK-4), a *different* 101-slot distribution at
+ * a different offset, indexed by a normalised rev fraction rather than by the
+ * gear. Control points 0 -> 0.70, 10 -> 0.80, 30 -> 0.90, 60 -> 1.00,
+ * 85 -> 0.85, 100 -> 0.70: peak drive at 60 % revs, 70 % of peak at both ends.
+ * Every ten slots: 0.700 0.800 0.850 0.900 0.9333 0.9667 1.000 0.940 0.880
+ * 0.800 0.700.
  *
- * `gear` is folded in as the literal 1 it is seeded to and never written
- * again anywhere in either binary (TANK-7) — no vehicle this corpus has read
- * ever shifts it, tank or otherwise, so it is not threaded through as a
- * parameter. The division is done in floating point and truncated exactly
- * the way the client's own `_ftol` helper does (`0x00804af0`, TANK-7's
- * correction from an earlier "round" reading), then linearly interpolated
- * against the next slot up — which only ever matters, for an integer
- * `numberOfGears`, when the division lands exactly on a multiple of 20 (no
- * interpolation needed, the fractional part is zero) or somewhere the curve
- * is flat at 1.0 on both sides anyway. Both cases the byte-exact worked
- * examples below hit.
+ * Its only caller is `PhysicsEngine::feedbackLoop`, which runs inside both
+ * `updatePhysics` and `addFriction`. An earlier note in this corpus called it
+ * "engine-sound RPM only"; that was never established and TANK-4 retired it.
+ */
+const ENGINE_TORQUE_CURVE = overTimeDistribution(
+  [[0, 0.70], [10, 0.80], [30, 0.90], [60, 1.00], [85, 0.85], [100, 0.70]]);
+
+/** Sample a 101-slot distribution at `t` in 0..100 the way both getters do:
+ * truncate toward zero for the slot, lerp into the next one. */
+function sampleDistribution(curve, t) {
+  const x = t < 0 ? 0 : t > 100 ? 100 : t;
+  const i = Math.min(100, Math.trunc(x));
+  const frac = x - i;
+  const lo = curve[i];
+  const hi = curve[Math.min(100, i + 1)];
+  return lo + (hi - lo) * frac;
+}
+
+/**
+ * `PhysicsEngine::getCurrentRatio()`, lnxded `0x0824ca70` / client
+ * `FUN_0057bd90` (TANK-3, re-read and corrected 2026-09-19):
  *
- * Worked examples verify-r7.md hand-checked against the corrected array
- * (TANK-8): Sherman (`differential 4`, `numberOfGears 5`) and Willy
- * (`differential 7`, `numberOfGears 5`) both land on index 20 — an authored
- * control point — giving 3.5*4/3.5 = **4.0** and 3.5*7/3.5 = **7.0**. The
- * M3A1 (`differential 5`, `numberOfGears 4`) lands on index 25 — not a
- * control point, not adjacent to one — giving 3.5*5/1.0 = **17.5**, not the
- * ~5.5 a spline through the five named points would give. The only gear
- * counts that ever touch the curve's authored shape at all are 1 and 5;
- * every other integer count reduces to exactly `3.5 * differential`.
+ *   idxf  = gear / numberOfGears * 100
+ *   i     = trunc(idxf)                       // toward zero, the exe's _ftol
+ *   ratio = 3.5 * differential / lerp(curve[i], curve[i+1], idxf - i)
+ *
+ * The 3.5 is a multiplier on `differential`, not a curve value and not a
+ * divisor — it is numerically equal to `curve[20]`, which is exactly why a
+ * five-speed's first gear comes out at the raw `differential`.
+ *
+ * Worked examples, all re-derived from the control points:
+ *
+ *   Sherman  `differential 4, numberOfGears 5`   4.000  6.364  9.333 12.727 14.894
+ *   Willy    `differential 7, numberOfGears 5`   7.000 11.136 16.333 22.273 26.064
+ *   M3A1     `differential 5, numberOfGears 4`   5.512  9.459 14.583 18.617
+ *
+ * The M3A1's first gear is **5.512**, not the 17.5 this file used to carry.
  *
  * @param {number} differential `setDifferential`
- * @param {number} numberOfGears `setNumberOfGears`, default 1
- * @returns {number} the fixed drivetrain ratio — compute once, the gearbox
- *   never shifts
+ * @param {number} [gear] 1-based; the engine seeds it to 1 and no code path
+ *   read so far writes it again (TANK-7), so a tracked hull passes 1 — but the
+ *   curve is indexed by it, so it is a parameter, not a folded constant.
+ * @param {number} [numberOfGears] `setNumberOfGears`, default 1
  */
-export function engineRatio(differential, numberOfGears) {
+export function engineRatio(differential, gear = 1, numberOfGears = 1) {
   const gears = numberOfGears > 0 ? numberOfGears : 1;
-  const t = Math.max(0, Math.min(100, (1 / gears) * 100));
-  const idx = Math.min(100, Math.trunc(t));
-  const frac = t - idx;
-  const lo = GEAR_RATIO_CURVE[idx];
-  const hi = GEAR_RATIO_CURVE[Math.min(100, idx + 1)];
-  const curve = lo + (hi - lo) * frac;
-  return (ENGINE_RATIO_SCALE * differential) / curve;
+  return (ENGINE_RATIO_SCALE * differential)
+    / sampleDistribution(GEAR_RATIO_CURVE, (gear / gears) * 100);
+}
+
+/**
+ * The whole ladder, gear 1..numberOfGears, for any gear count — installed mods
+ * reach `numberOfGears 8` and `50`, and every one of those gears now gets a
+ * real ratio instead of collapsing to `3.5 * differential`.
+ *
+ * **The ladder is not monotonic above five gears, and that is correct.**
+ * Because the curve climbs from 1.0 to 3.5 across indices 0..20, a gear that
+ * lands below index 20 samples a *smaller* divisor than first-of-a-five-speed
+ * and so gets a *larger* ratio: `numberOfGears 8, differential 5` gives
+ * g1 = 6.829 but g2 = 5.512. Do not sort it, clamp it or otherwise "fix" it.
+ */
+export function gearLadder(differential, numberOfGears) {
+  const gears = Math.max(1, Math.round(numberOfGears > 0 ? numberOfGears : 1));
+  const out = new Array(gears);
+  for (let g = 1; g <= gears; g++) out[g - 1] = engineRatio(differential, g, gears);
+  return out;
+}
+
+/**
+ * `PhysicsEngine::getCurrentTorque()`'s curve factor (TANK-4), without the
+ * `x torque` the engine applies on top: `lerp` into `ENGINE_TORQUE_CURVE` at
+ * `min(|revs|, 1.0) * 100`.
+ *
+ * @param {number} revs engine speed as a fraction of full, signed or not
+ */
+export function engineTorqueFraction(revs) {
+  return sampleDistribution(ENGINE_TORQUE_CURVE, Math.min(Math.abs(revs), 1) * 100);
 }
 
 /**
@@ -1023,12 +1148,14 @@ export class TrackedVehicle extends Vehicle {
 
     this.wheels = [];
     /** Engine declarations off the `Engine` node; `torque` is kept for
-     * report/API parity with `GroundVehicle` and for anything downstream
-     * that wants it (engine audio, say) but this class never spends it —
-     * TANK-9 reads it as feeding only engine *sound*, a separate 101-slot
-     * curve this file has no reason to carry. There is deliberately no
-     * `gearUp`/`gearDown` here: a tank's `gear` never leaves 1 (TANK-7), so
-     * there is nothing to shift toward. */
+     * report/API parity with `GroundVehicle` and for the engine audio, and
+     * this class still does not spend it as drive — `bodyThrust` carries the
+     * propulsion. What it is NOT is sound-only: TANK-4 retired that claim,
+     * because `getCurrentTorque`'s caller runs inside `updatePhysics` and
+     * `addFriction`, and the second 101-slot curve is carried here now
+     * (`ENGINE_TORQUE_CURVE`). There is deliberately no `gearUp`/`gearDown`:
+     * a tank's `gear` never leaves 1 (TANK-7), so there is nothing to shift
+     * toward. */
     this.engine = {
       differential: this.spec.differential,
       numberOfGears: this.spec.numberOfGears,
@@ -1038,9 +1165,15 @@ export class TrackedVehicle extends Vehicle {
     this._extent = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
     this.collectChassis();
 
-    // getCurrentRatio(), TANK-3/6/7/8: fixed for the vehicle's life, exactly
-    // mirroring the retail engine never writing `gear` past its seed of 1.
-    this.ratio = engineRatio(this.engine.differential, this.engine.numberOfGears);
+    /** The whole ladder (TANK-3), for any gear count — the Sherman's
+     * 4.000/6.364/9.333/12.727/14.894 and the M3A1's
+     * 5.512/9.459/14.583/18.617. A tracked hull never shifts, so only
+     * `ladder[0]` is ever spent; it is built in full because that is what the
+     * corrected curve is pinned against. */
+    this.ladder = gearLadder(this.engine.differential, this.engine.numberOfGears);
+    // getCurrentRatio() at gear 1, TANK-3/6/7/8: fixed for the vehicle's life,
+    // exactly mirroring the retail engine never writing `gear` past its seed.
+    this.ratio = this.ladder[0];
 
     /** Driven wheels sharing each side — used for diagnostics / harnesses;
      * longitudinal thrust is no longer split per side (TANK-7). */
