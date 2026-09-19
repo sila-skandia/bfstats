@@ -10832,6 +10832,16 @@ if (params.has('shots')) {
       fuse: shot.fuse,
       resting: shot.resting,
       position: shot.mesh.position.toArray(),
+      // COL-2, and the three numbers a bounce check needs: where it is going,
+      // how many contacts it has resolved, and which material pair it is
+      // resolving them against. A rest position alone cannot tell a round
+      // that skidded from one that was teleported.
+      velocity: shot.velocity.toArray(),
+      contacts: shot.body?.contacts ?? 0,
+      contactMaterial: shot.body?.material ?? null,
+      surface: shot.body?.contact?.material ?? null,
+      pair: shot.body?.contact
+        ? shot.body.pairWith(shot.body.contact.material) : null,
     })),
     pooled: guns.tracerPool.length,
     // Baked streaks recycle into their own group's pool, not the shared
