@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from bf42 import pose, ske, skin  # noqa: E402
+from bf42 import gltf, pose, ske, skin  # noqa: E402
 
 IDENTITY = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
 
@@ -424,6 +424,89 @@ class SeatPoseDiscoveryTests(unittest.TestCase):
         self.assertEqual([], discover_seat_poses(lib))
 
 
+class SeatStateNotInTheMachineTests(unittest.TestCase):
+    """Road to Rome's `M3GMCPassengerSeat` names a state no mod declares.
+
+    `Ub_PassengerInM3GMC`/`Lb_PassengerInM3GMC` appear in exactly one file in
+    the whole install -- `objects/Vehicles/Land/M3GMC/Objects.con` in XPack1's
+    `objects.rfa` -- and in no `AnimationStates` file anywhere. The mod path is
+    being read: vanilla's `animations/AnimationStates.con` ends with `run
+    AnimationStatesMod`, XPack1 ships `Animations/AnimationStatesMod.con`, and
+    parsing XPack1 yields 1,636 states against vanilla's 1,458 with no missing
+    runs. The states simply do not exist, which is a bug in the mod.
+
+    The engine leaves the animation slot alone in that case
+    (`setAnimationState` `0x0826cee0` -> `findState` `0x08328610` returns -1 ->
+    return at `0x0826cf12`), so the occupant is still drawn. Falling back to
+    the engine's default seat pose is the drawable version of that.
+    """
+
+    def _machine(self, *names):
+        from bf42 import animstates
+        m = animstates.StateMachine()
+        for n in names:
+            m.states[n.lower()] = animstates.State(n)
+        return m
+
+    def _seat(self, name, upper, lower, flags=()):
+        t = ObjectTemplate(name, "SeatObject", "objects/test.con")
+        t.seat_animation_upper_body = upper
+        t.seat_animation_lower_body = lower
+        t.seat_flags = list(flags)
+        return t
+
+    def test_a_state_the_machine_lacks_falls_back_to_the_default(self) -> None:
+        machine = self._machine("Ub_SitInVehicle", "Lb_SitInVehicle",
+                                "Lb_StandInVehicle")
+        seat = self._seat("M3GMCPassengerSeat", "Ub_PassengerInM3GMC",
+                          "Lb_PassengerInM3GMC",
+                          flags=["c_SeatShowFullBodySoldier"])
+        self.assertEqual(("Ub_SitInVehicle", "Lb_SitInVehicle"),
+                         resolve_seat_states(seat, machine))
+
+    def test_the_standing_flag_still_picks_the_standing_default(self) -> None:
+        machine = self._machine("Ub_SitInVehicle", "Lb_SitInVehicle",
+                                "Lb_StandInVehicle")
+        seat = self._seat("Bench", "Ub_Nope", "Lb_Nope",
+                          flags=["c_SeatShowStandingSoldier"])
+        self.assertEqual(("Ub_SitInVehicle", "Lb_StandInVehicle"),
+                         resolve_seat_states(seat, machine))
+
+    def test_only_the_half_that_is_missing_falls_back(self) -> None:
+        machine = self._machine("Ub_SitInVehicle", "Lb_SitInVehicle",
+                                "Lb_StandInVehicle", "Lb_PassengerInWilly")
+        seat = self._seat("Half", "Ub_Nope", "Lb_PassengerInWilly")
+        self.assertEqual(("Ub_SitInVehicle", "Lb_PassengerInWilly"),
+                         resolve_seat_states(seat, machine))
+
+    def test_without_a_machine_the_declared_names_are_trusted(self) -> None:
+        seat = self._seat("Any", "Ub_PassengerInM3GMC", "Lb_PassengerInM3GMC")
+        self.assertEqual(("Ub_PassengerInM3GMC", "Lb_PassengerInM3GMC"),
+                         resolve_seat_states(seat))
+
+    def test_the_substitution_is_reported_rather_than_swallowed(self) -> None:
+        from bf42.con import ObjectLibrary
+        from extract_pose import seat_substitutions
+        machine = self._machine("Ub_SitInVehicle", "Lb_SitInVehicle",
+                                "Lb_StandInVehicle")
+        lib = ObjectLibrary()
+        lib.objects["M3GMCPassengerSeat"] = self._seat(
+            "M3GMCPassengerSeat", "Ub_PassengerInM3GMC", "Lb_PassengerInM3GMC")
+        self.assertEqual(
+            [("M3GMCPassengerSeat", "Ub_PassengerInM3GMC", "Ub_SitInVehicle"),
+             ("M3GMCPassengerSeat", "Lb_PassengerInM3GMC", "Lb_SitInVehicle")],
+            seat_substitutions(lib, machine))
+
+    def test_a_seat_naming_only_known_states_reports_nothing(self) -> None:
+        from bf42.con import ObjectLibrary
+        from extract_pose import seat_substitutions
+        machine = self._machine("Ub_PassengerInWilly", "Lb_PassengerInWilly")
+        lib = ObjectLibrary()
+        lib.objects["WillyPassengerSeat"] = self._seat(
+            "WillyPassengerSeat", "Ub_PassengerInWilly", "Lb_PassengerInWilly")
+        self.assertEqual([], seat_substitutions(lib, machine))
+
+
 class SeatAnchorTests(unittest.TestCase):
     """A seat pose's origin is the soldier's hips, not the ground under him.
 
@@ -474,40 +557,85 @@ class SeatAnchorTests(unittest.TestCase):
         self.assertIsNone(seat_root_offset(self._skeleton(), {}))
 
 
+def _qapply(q, v):
+    """A glTF `[x, y, z, w]` quaternion applied to a vector."""
+    x, y, z, w = q
+    vx, vy, vz = v
+    tx = 2 * (y * vz - z * vy)
+    ty = 2 * (z * vx - x * vz)
+    tz = 2 * (x * vy - y * vx)
+    return (vx + w * tx + y * tz - z * ty,
+            vy + w * ty + z * tx - x * tz,
+            vz + w * tz + x * ty - y * tx)
+
+
 class SeatPoseOrientationTests(unittest.TestCase):
     """The root rotation that stands a seat pose up and faces it forward.
 
-    **This constant is empirical, not derived.** It was chosen by loading real
-    exported poses into the map page on Wake and measuring the bones: with
-    `ypr(180, 0, 0)` — what the export shipped from the day the seat path was
-    written — the soldier lies on his back with his knees in the air, and with
-    `ypr(180, -90, 0)` his pelvis sits 0.03 m from the seat node, his head
-    0.641 m above it, his knees 0.467 m forward (-Z) and his feet 0.224 m below
-    the pelvis and 0.751 m forward. Captures either side of the change are in
-    this track's report.
+    It is **derived**, from the two frames it has to reconcile, and measured
+    bone directions agree with the derivation to three decimals.
 
-    Working it out on paper instead needs a model of how three sign
-    conventions compose — the `.ske`'s Z-mirror, the `.baf`'s conjugate
-    quaternion and clip-world yaw, and glTF's own mirror in `add_node` — and
-    two attempts at that model disagreed with what the page draws. Rather than
-    ship an assertion derived from a model that did not survive contact, this
-    pins the value so it cannot drift silently, and says where the evidence
-    is. What *is* settled arithmetically is next door: the IK triples convert
-    with the same `quat_from_ypr` every placed node uses, and
-    `test_seat_ik.py` checks the JS port of that against the Python.
+    *What the file holds.* A seat pose's joint hierarchy is written in the
+    space `ske.parse` produces, which is the `.ske`'s own space mirrored in Z.
+    In that space the soldier's spine runs along **-Z** and, for a sitting
+    clip, his thighs run along **+Y**. Measured on every seat pose vanilla
+    ships, `head - pelvis` has z between -0.92 and -1.00 and `knee - hip` has
+    y between +0.85 and +0.99; `Lb_StandInVehicle` is the one exception and it
+    is the informative one — its thigh runs along +Z, down the spine, because
+    a standing lower body has no bend to measure.
+
+    *What glTF wants.* Up is +Y. The node this pose is parented to is a
+    `SeatObject` in the vehicle's own exported tree, and `gltf.py` mirrors
+    Refractor's +Z forward to **-Z**, so an occupant facing the way the
+    vehicle faces must face -Z.
+
+    So the root rotation R is fixed by two images: `R(-Z) = +Y` and
+    `R(+Y) = -Z`. A rotation matrix with `y -> -z` and `z -> -y` must take
+    `x -> -x` for its determinant to stay +1; that matrix is symmetric with
+    trace -1, so it is a half turn, about the axis `(0, 1, -1)/sqrt(2)`. Both
+    tests below check exactly that, and `quat_from_ypr(180, -90, 0)` is it.
+
+    The pure yaw the export shipped until this branch, `ypr(180, 0, 0)`, leaves
+    the spine along Z: the soldier lies on his back with his knees in the air,
+    which is what the page drew for every passenger in the game.
     """
 
-    def test_the_seat_root_rotation_is_pinned(self) -> None:
+    SPINE_IN_FILE = (0.0, 0.0, -1.0)     # head - pelvis, measured
+    THIGH_IN_FILE = (0.0, 1.0, 0.0)      # knee - hip, measured
+
+    def _assert_close(self, got, want, places=6):
+        for g, w in zip(got, want):
+            self.assertAlmostEqual(g, w, places=places)
+
+    def test_the_root_rotation_stands_him_up_and_faces_him_forward(self) -> None:
+        q = gltf.quat_from_ypr(180.0, -90.0, 0.0)
+        self._assert_close(_qapply(q, self.SPINE_IN_FILE), (0.0, 1.0, 0.0))
+        self._assert_close(_qapply(q, self.THIGH_IN_FILE), (0.0, 0.0, -1.0))
+
+    def test_it_is_a_half_turn_about_the_y_minus_z_diagonal(self) -> None:
+        q = gltf.quat_from_ypr(180.0, -90.0, 0.0)
+        half = math.sqrt(0.5)
+        self.assertAlmostEqual(q[3], 0.0, places=6)          # 180 degrees
+        self.assertAlmostEqual(abs(q[0]), 0.0, places=6)     # no x component
+        # The axis is (0, 1, -1)/sqrt(2) up to the sign of the whole
+        # quaternion, which names the same rotation.
+        self.assertAlmostEqual(abs(q[1]), half, places=6)
+        self.assertAlmostEqual(abs(q[2]), half, places=6)
+        self.assertAlmostEqual(q[1], -q[2], places=6)
+
+    def test_the_pure_yaw_leaves_him_on_his_back(self) -> None:
+        q = gltf.quat_from_ypr(180.0, 0.0, 0.0)
+        spine = _qapply(q, self.SPINE_IN_FILE)
+        self.assertAlmostEqual(spine[1], 0.0, places=6)      # not up at all
+        self.assertAlmostEqual(abs(spine[2]), 1.0, places=6)  # flat along Z
+        knee = _qapply(q, self.THIGH_IN_FILE)
+        self.assertAlmostEqual(knee[1], 1.0, places=6)       # knees in the air
+
+    def test_the_export_uses_the_derived_rotation(self) -> None:
         import inspect
         import extract_pose
         source = inspect.getsource(extract_pose.export_seat_pose)
         self.assertIn("quat_from_ypr(180.0, -90.0, 0.0)", source)
-
-    def test_it_is_not_the_pure_yaw_that_laid_him_on_his_back(self) -> None:
-        import inspect
-        import extract_pose
-        source = inspect.getsource(extract_pose.export_seat_pose)
-        self.assertNotIn("quat_from_ypr(180.0, 0.0, 0.0)", source)
 
 
 if __name__ == "__main__":

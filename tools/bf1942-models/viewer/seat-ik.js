@@ -235,6 +235,24 @@ export function resolveSeatStates(seatObjects) {
   return { upperBody: upper, lowerBody: lower };
 }
 
+/**
+ * The pose a seat falls back to when the one it names does not exist.
+ *
+ * A seat can name an animation state the game never shipped: Road to Rome's
+ * two `M3GMCPassengerSeat`s ask for `Ub_PassengerInM3GMC`, which no
+ * `AnimationStates` file in any mod declares, so `extract_pose.py` cannot
+ * write that glb and the fetch 404s. The engine's own answer is to leave the
+ * soldier's animation slot alone (`setAnimationState` `0x0826cee0` gets -1
+ * from `findState` and returns at `0x0826cf12`) — he sits there in whatever he
+ * was playing, but he *is* drawn. Drawing him in the engine's default seat
+ * pose is the closest we can get, and much closer than an empty seat.
+ */
+export function defaultSeatPoseName(mask) {
+  return seatPoseName('Ub_SitInVehicle',
+    (mask & SEAT_FLAG_BITS[SEAT_STANDING]) ? 'Lb_StandInVehicle'
+                                           : 'Lb_SitInVehicle');
+}
+
 /** The pose asset name for a resolved pair — `extract_pose.seat_pose_name`. */
 export function seatPoseName(upper, lower) {
   const u = upper.startsWith('Ub_') ? upper.slice(3) : upper;
