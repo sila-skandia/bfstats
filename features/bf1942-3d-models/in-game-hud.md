@@ -135,18 +135,18 @@ seat.
   `.con` word or client write-site for this flag turned up in R1's survey.
   Fed true whenever a magazine weapon is equipped so the spare-count readout
   ever shows at all — an assumption, not a confirmed default.
-- ~~**`Ammo/AmmoType` for `ATIcon` weapons (fed as `6`, R1-18 open)**~~ —
-  **settled 2026-09-19 (ledger HUD-10): an `ATIcon` weapon is `2`, and it
-  should show its rounds.** The `.meme` value and `setHudAmmoType`'s `.con`
-  value are the **same** enumeration — there is no converter — and `2` selects
-  the `{2,3,4,5}` panel copy, whose rounds text is gated `ne 4 && ne 5 && ne 6`
-  and therefore *draws* for 2. Feeding `6` instead puts a Bazooka in the
-  MedPack's icon-plus-heat-bar branch with no rocket count, which is not
-  identical after all. `map.html` already branches on the weapon's own
-  `hudAmmo` (`con.py` has parsed `setHudAmmoType` all along) and already feeds
-  `1` for `atammobar`; the single change is `aticon` → `2`, and grenades
-  (`ATIconAndStrengthBar`) → `3`, `RepairPack` → `4`, `MedPack` → `6`, knives
-  (`ATNone`) → `0`.
+- ~~**`Ammo/AmmoType` for `ATIcon` weapons (fed as `6`, R1-18 open).**~~
+  **Closed and corrected 2026-09-19 — it is `2`.** This bullet used to say the
+  layout's icon-only branch covered both 6 and 7, that either painted
+  identically, and that 6 was picked arbitrarily. HUD-10 read the client's own
+  `operator>>` (`0x004c4cd0`) in full and re-walked the layout, and the
+  premise was wrong: 6 is `ATIconAndHeatBar` (vanilla's MedPack alone) and it
+  lands in the `{6,7}` panel, which has **no rounds text at all**, while
+  `ATIcon` = 2 lands in the `{2,3,4,5}` panel, which prints one. So every AT
+  weapon in the game — Bazooka, Panzerschreck, ExpPack, Detonator, Landmine —
+  was drawing a rocket icon with no count beside it. See
+  [2026-09-19 (stream C)](#2026-09-19-stream-c-the-dial-the-dots-and-the-ammo-enum)
+  below.
 - **Per-weapon `SoldierAmmoPosX`/`PosY` overrides are not applied.**
   `hud-layout.json`'s rect is baked once from `menu/InGame`'s own defaults
   (`(696,517)`), not a live-bound position — only one surveyed weapon
@@ -456,6 +456,10 @@ rather than a re-implementation of its cadence.
 
 ### Still missing from the vehicle HUD
 
+> Both bullets below were closed on 2026-09-19 — see
+> [2026-09-19 (stream C)](#2026-09-19-stream-c-the-dial-the-dots-and-the-ammo-enum).
+> Kept as written because each one's own reasoning is part of the correction.
+
 - ~~**The turret-turn dial**~~ — **drawn as of 2026-09-17**, once a tank's
   driver could actually traverse (`seats-and-manned-guns.md`). Fed as
   `Vehicle/ShowTurretIcon` plus `IconLookRotation` in radians, gated on the
@@ -467,35 +471,19 @@ rather than a re-implementation of its cadence.
   right the hull belongs at 9 o'clock — which on a canvas whose positive
   rotation is clockwise is the traverse itself, not its negative.
   `angleMultiplier` is carried by the extractor and still unread, so it is not
-  applied.
-
-  **VHUD-9 closed, 2026-09-19.** The trigger is
-  `(seatCamera->getViewMode() == 3) && pcoTemplate->getHasTurretIcon()`, so the
-  gate belongs on the root/seat template's `setHasTurretIcon` (a `.con` word
-  `con.py` does not yet parse) **and** on an inside view — not on "the seat has
-  a traverse", which lights the dial for the Wespe/StuG class and keeps it in
-  chase views. The angle is
-  `atan2(dot(pcoRight, camForward), dot(pcoForward, camForward))` in radians,
-  positive to the PCO's right, about the *controlled* PCO's axes. The picture
-  here is right but **the number on the wire is the negative of the engine's**:
-  `RotateEffect` is counter-clockwise-positive and canvas `rotate(+θ)` is
-  clockwise, and `headingRadians()` already flips the sign via `RIG_SIGN.yaw`,
-  so two errors cancel. Fixing it means `hud.js` → `ctx.rotate(-angle)` **and**
-  `map.html` feeding the un-negated engine angle **in the same commit**, or the
-  dial mirrors. `angleMultiplier` stays unapplied and now has a reason: it
-  scales a draw-context scalar, not the bound variable, and all seven vanilla
-  `RotateEffect`s author it as 0.
-- **The seat-occupancy dots** (`vehicleSeats`) are unfed. The five states are
-  known (VHUD-2) and this page knows which seat is occupied. ~~The dots'
-  *positions* are live-bound per vehicle and nothing in the extracted data
-  carries them.~~ **Corrected 2026-09-19 (ledger VHUD-11): the data is carried,
-  by `ObjectTemplate.setVehicleIconPos <x>/<y>`** — a `Vec2` the root and every
-  seat PCO each declare, giving that seat's dot position inside the 128×128
-  vehicle-icon texture, which is exactly the space VHUD-7's
-  `(192+X[i], 452+Y[i])` anchor works in (Sherman root `54/103` → `(246,555)`,
-  inside the icon). 19,089 declarations across 17 mods, vanilla 183. The only
-  thing missing is the parse: `con.py` has no `setvehicleiconpos` case. Once it
-  does, the dots can be placed from data rather than invented.
+  applied. **(The picture that argument reaches is right; the arithmetic is
+  not — `RotateEffect` is counter-clockwise, and it was `headingRadians()`'s
+  own sign flip that was cancelling the error. VHUD-9, below.)**
+- ~~**The seat-occupancy dots** (`vehicleSeats`) are unfed.~~ The five states
+  are known (VHUD-2) and this page knows which seat is occupied, but the dots'
+  *positions* are live-bound per vehicle (`VehiclePosX1..6`/`PosY1..6`,
+  VHUD-7's `(192+X[i], 452+Y[i])`) and nothing in the extracted data carries
+  them. Feeding states against the layout's own sample rects would draw six
+  dots in a diagonal staircase over every vehicle icon, which is inventing
+  placement — the one thing this painter's own rule says not to do. **(The
+  reasoning stands; the premise does not. `setVehicleIconPos` is a `Vec2` on
+  every PlayerControlObject template and `con.py` simply had no hit for the
+  word — VHUD-11, below.)**
 
 ## 2026-09-19 (stream D): two more groups, and the painter learned to wrap
 
@@ -621,3 +609,227 @@ differenced pixel for pixel on Wake:
 That bounding box is the warning text leaf's own rect and nothing else: the
 plate under it is pixel-identical in both builds, and so is every other leaf
 on all three surfaces. No leaf that existed before this round moved.
+
+## 2026-09-19 (stream C): the dial, the dots, and the ammo enum
+
+Three things this file recorded as open or approximate were closed against the
+binary in the parity round, and one of them was wrong in a way that had been
+invisible because a second error was cancelling it.
+
+### VHUD-9: the dial's trigger is the word, not the rig
+
+```
+ShowTurretIcon = (activeSeatCamera.getViewMode() == 3) && pcoTemplate.getHasTurretIcon()
+```
+
+Client `0x006ae597`–`0x006ae5d1`. Both halves were missing here: the dial was
+gated on "the active seat has a traverse", in any view. What that turns off:
+
+- **A casemate hull.** The Wespe, the Priest and the StuG class aim inside a
+  mantlet and never declare `setHasTurretIcon` — no vanilla casemate does.
+  They got a dial; they no longer do.
+- **Every chase view.** `viewMode == 3` is the inside view; the enum's own
+  numbering was not derived, only that 3 is the one that shows the dial. The
+  page passes `mannedActive() ? true : !!view?.firstPerson` — a manned gun has
+  no view cycle at all, which is the one view retail gives it.
+- **A nested seat.** The engine queries the **controlled** PCO's template, and
+  the word lives on vehicle roots only, so a Sherman's hull gunner gets none.
+  `activeHud()`'s root fallback is deliberately not used for this.
+
+`setHasTurretIcon` is new in `bf42/con.py` — 10 sites on 7 distinct vanilla
+templates (Sherman, Tiger, PanzerIV, T34, T34-85, M10, Chi-ha), 4,158
+declarations across 18 installs, always on the root PCO. A scene baked before
+this shows no dial at all until it is re-extracted, which is the right
+failure: the alternative is keeping the wrong dial on every casemate hull.
+
+### VHUD-9: the dial turned the wrong way, and looked right anyway
+
+`RotateEffect` computes `x' = x·cos + y·sin`, `y' = −x·sin + y·cos` about the
+pivot (client `0x007edbf0`), so on the HUD's y-down frame `(0,−1)` at +90°
+becomes `(−1,0)`: **the sprite's top goes left, counter-clockwise on screen.**
+HTML canvas `rotate(+θ)` is clockwise. `hud.js` had the wrong one — and the
+picture was still right, because `map.html` fed it through
+`TurretRig.headingRadians()`, which carries `seats.js`'s own
+`RIG_SIGN.yaw = −1`. Two errors cancelling.
+
+They are now separated, in one commit because half of it mirrors the dial:
+`hud.js` rotates by `−angle`, where the convention mismatch actually is, and
+`map.html` feeds `turretYawRadians()` — the engine's own value, positive to
+the controlled PCO's right. The previous bullet's "settled by looking at it"
+argument reached the right picture by the wrong arithmetic and is corrected
+above rather than deleted.
+
+The unit is **radians**, confirmed twice (the engine's value is an `FPATAN`
+result), so the old OPEN comment is gone. `angleMultiplier` is still not
+applied, and now for a reason: it scales a draw-context scalar rather than the
+bound variable, and all seven vanilla `RotateEffect`s author it as `0`.
+
+**Proved identical, not argued identical.** The dial was captured off the real
+painted `hud-canvas` at turret yaw +90° and −90° before and after the pair,
+from two servers differing only in those files, and the crops differenced.
+
+### VHUD-11: the dots' positions were carried all along
+
+`ObjectTemplate.setVehicleIconPos <x>/<y>` is a `Vec2` on the
+**PlayerControlObject** template — the root and every seat carry their own —
+giving that seat's dot position inside the 128×128 vehicle-icon texture. That
+is exactly the space VHUD-7's `(192 + X, 452 + Y)` anchor works in: Sherman's
+root `54/103` lands at (246, 555), inside an icon panel that starts at
+(200, 462). `con.py` had **zero hits** for the word; that, not the engine, is
+why this file said the positions were "live-bound per vehicle".
+
+Surveyed across 18 installs: **18,352 declarations**, of which all but three
+are a single `x/y` token (two space-separated, one empty — an empty one is
+dropped rather than read as 0/0, or every dot stacks in one corner). Vanilla
+range X 12…99, Y 43…120.
+
+States are VHUD-2's own five-entry table (`BfOccupiedVehicleData`'s vtable
+`0x0093f300`, read as raw bytes): 0 blank, 1 `vehicledot_local`, 2
+`vehicledot_empty`, 3 `vehicledot_friend`, 4 `vehicledot_enemy`. **Which live
+state a given seat resolves to was never read**, and this page does not
+pretend otherwise: the seat you are in is 1, every other declared seat is 2,
+and nothing invents a 3 or a 4 — there are no other occupants on this page to
+be one. A seat whose extract has no position pair keeps the layout's own
+literal rect.
+
+### HUD-10: `ATIcon` is 2, so a bazooka shows its rocket count
+
+The `.con` word and the `.meme` value are **the same enumeration** — the
+client's `operator>>` (`0x004c4cd0`) was decompiled in full and every stored
+value read — so there is no converter to write and the weapon's own declared
+type goes straight through:
+
+| `setHudAmmoType` | fed | draws |
+|---|---|---|
+| `ATNone` | 0 | nothing (the two knives) |
+| `ATAmmoBar` | 1 | magazine panel, fill bar, rounds, mag box |
+| `ATIcon` | **2** | panel, icon, **rounds** — Bazooka, Panzerschreck, ExpPack, Detonator, Landmine |
+| `ATIconAndStrengthBar` | 3 | panel, icon, rounds, bar — grenades |
+| `ATIconAndReloadBar` | 4 | panel, icon, reload bar, no rounds — RepairPack |
+| `ATIconNoText` | 5 | panel, icon |
+| `ATIconAndHeatBar` | 6 | panel, icon, heat bar — MedPack |
+
+The old reasoning — "6 and 7 paint identically, so the choice is arbitrary" —
+had the wrong premise. 6 lands in the `{6,7}` panel, which has **no rounds
+text**; 2 lands in `{2,3,4,5}`, whose rounds text is gated `ne 4 && ne 5 &&
+ne 6`. Which types print a count is therefore read off the layout rather than
+chosen: `test_hud_layout.py` asserts the real archive's own `when` list, and
+`hud_harness.mjs` runs `hud.js`'s own evaluator over it, and exactly 2 and 3
+survive.
+
+Both tables live in `hud.js` beside the rest of the layout's vocabulary so the
+node harness can drive them. Nothing was added to the extractor:
+`setHudAmmoType` has been parsed since before this round (`con.py:1875`–`1883`
+→ `hud_ammo_type`, emitted as `hudAmmo`), and the claim that it was a missing
+word is false.
+
+### Still open here
+
+- Which live state a seat's dot resolves to (VHUD-2's second half). This page
+  can only ever answer "you" versus "not you".
+- The engine's `viewMode` enum numbering. Only "3 is the inside view" is
+  established; the page maps it onto its own first-person state.
+- VHUD-10's live writer: the heat/reload feeder writes **`1 − f`** and its
+  destination group is still `[this+0x14]`, unidentified. Nothing here feeds
+  it yet.
+
+### Verified on the page
+
+Served from this worktree on **5333** over a scratch re-extract of Kasserine
+Pass made with this branch's own `con.py` (the shared `viewer/maps` tree is
+read-only this round, and the dial's new gate needs `setHasTurretIcon` in the
+scene), with **5334** serving the identical tree at `f9f144d` — the commit
+before the sign pair — so the two differ only by the files under test.
+
+| check | before | after |
+|---|---|---|
+| dial crop at exactly +90° and −90° | | **byte-identical PNGs** |
+| what a +90° turret feeds | −1.5708 into `rotate(+θ)` | +1.5708 into `rotate(−θ)` |
+| Sherman driver, chase view | 4711 opaque texels | **0** |
+| Sherman hull gunner | 4711 | **0** |
+| Wespe gunner seat (two aim axes, no `setHasTurretIcon`) | 4711 | **0** |
+| Hanomag: six dots | absent | **39/75, 40/65, 30/59, 41/55, 20/49, 31/45**, local dot following the seat |
+
+And the ammo enum, measured as ink in `menu/InGame`'s own rounds-text rect
+(700,527,30,20) with `Ammo/PrimaryAmmo` fed 8:
+
+| `Ammo/AmmoType` | 2 | 3 | 4 | 5 | 6 | 7 | 2, nothing fed |
+|---|---|---|---|---|---|---|---|
+| ink texels | **103** | **103** | 0 | 0 | 0 | 0 | 0 |
+
+So the old `6` really did draw no count, `2` draws one, and every other type
+matches HUD-10's table. Spawned with the anti-tank kit, the Panzerschreck
+reaches the panel as `AmmoType 2`, `PrimaryAmmo 1` — its single loaded rocket.
+
+Two harness notes, because both cost a wrong measurement first:
+`Hud._scaleFor` is a **pure stretch** (`sx = W/800`, `sy = H/600`, no
+letterbox), so a crop assuming a uniform `min()` scale is 80 px out by
+x ≈ 700; and the page's rAF loop is **live in a visible headless tab**, so a
+forced `hud.vars` write and the read-back of its paint have to happen inside
+one `page.evaluate` or the live feed repaints over it first.
+
+### 2026-09-20 review: the dial's pair, the dots' placeholder, and the enum
+
+Re-run independently against a scratch re-extract of **Battle of the Bulge**
+and **Kasserine Pass** built from this branch's own `con.py`, served beside an
+otherwise identical tree with only the two VHUD-9 sign lines reverted
+(`hud.js` back to `ctx.rotate(angle)`, `map.html` back to
+`headingRadians()`), so the pair is the only variable.
+
+**The dial's sign pair is consistent, at four angles.** Each build was asked
+to paint the value *its own* pipeline feeds for a turret at exactly +90°,
+−90°, +45° and 180° — the convention read back from its live feed, not
+assumed (−1 on the reverted build, +1 on this one) — and all four crops are
+**byte-identical PNGs** (FNV hashes 1620480286, 1175657374, 3734543796,
+1996277156). +45 and 180 were added because a symmetric sprite could hide a
+pure mirror at ±90; they do not.
+
+**The trigger is the word and the view.** Sherman driver in cockpit: dial,
+4711 opaque texels. Same driver in chase: **0**. Sherman hull gunner
+(`shermanBrowning_PCO1`, which declares no `setHasTurretIcon`): **0**. Wespe
+gunner, which aims on two axes: **0**. A Stuka's rear gunner
+(`StukaRearGunControl`), also two axes: **0**.
+
+**`_drawPicture` negating is right for the other rotated leaves too.** The
+only other `rotation` in `hud-layout.json` is the `hitIndicator` group's seven
+wedges, whose angles are static literals (3.9, −3.14, 2.5, 1.57, 0.8, −0.8)
+authored in the engine's own `RotateEffect` sense — so the negation is the
+correct treatment for them as well. Nothing feeds `HitFromDir/HitFromDir`
+today, so the group never draws; whoever wires it inherits the right
+convention.
+
+**Seat dots: one defect, fixed.** Positions land where VHUD-11 says. Hanomag
+from the root seat: states `[1,2,2,2,2,2]`, positions 39/75, 40/65, 30/59,
+41/55, 20/49, 31/45, all inside the 128×128 icon at (200,462) once anchored at
+(192+x, 452+y); from the third seat the states become `[2,2,1,2,2,2]`. Sherman
+gets two, 54/103 and 32/61. Of VHUD-2's five states a single-player page can
+reach three — 0 (nothing drawn), 1 (you) and 2 (empty); 3 and 4 need an
+occupant that does not exist, and the live per-seat selector is still unread.
+
+The defect was the **fallback**: a scene baked before `con.py` learned
+`setVehicleIconPos` fed the state array but no positions, and `hud.js` fell
+back to each leaf's own rect — which is that variable pair's *authored
+placeholder*, a 5px diagonal staircase from (247,457). Measured on Kasserine's
+Hanomag: 0 texels of dot in that corner with the pairs fed, **66 with them
+deleted**. Since the whole shipped tree is in that state until the next
+re-extract, this would have painted a wrong six-seat layout on every vehicle.
+Now state 0 from `seatDots()` and an early return in `_drawOccupiedSeat`: 0
+either way, per dot, with the live dots byte-identical.
+
+**The ammo enum, every branch, on the page.** Walked all four kits'
+inventories with the weapon load awaited (`updateSoldierHud` returns early
+while `handWeapon` is null, so an un-awaited swap reads the previous weapon's
+panel):
+
+| weapon | `Ammo/AmmoType` | rounds fed | icon | bar |
+|---|---|---|---|---|
+| `KnifeAllies` | unset (`ATNone`) | — | — | — |
+| `Colt` / `No4` / `Thompson` / `Bar1918` | 1 | 8 / 5 / 30 / 20 | — | magbar |
+| **`Bazooka`** | **2** | **1** | `Icon_bazooka_64x32` | none |
+| `ExpPack` / `Landmine` / `Detonator` | 2 | 4 / 4 / −1 | own icon | none |
+| `GrenadeAllies` | 3 | 3 | `Icon_grenadeallies_64x32` | strength |
+| `RepairPack` | 4 | not fed | `Icon_repairkit_64x32` | none |
+| `MedPack` | 6 | not fed | `Icon_medkit_64x32` | none |
+
+`ATIconNoText` (5) is not reachable in vanilla — one declaration across all 18
+installs.

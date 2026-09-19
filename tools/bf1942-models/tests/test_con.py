@@ -171,6 +171,106 @@ ObjectTemplate.setInputToPitch 5
         self.assertTrue(rig["axes"]["yaw"]["free"])
         self.assertTrue(rig["axes"]["pitch"]["free"])
 
+    def test_the_wrap_gate_is_both_bounds_zero_not_a_zero_width_range(self) -> None:
+        # Ledger GUN-2: `calculateAndClipAngle`'s wrap gate tests
+        # `minRotation == 0 && maxRotation == 0` (lnxded `0x081d7645` +
+        # `0x081d765b`), the template default. It is NOT `lo == hi`, which is
+        # what this used to ask — and 151 input-bound axes across 13 installs
+        # author a non-zero zero-width range, three of them in vanilla
+        # (`Elco_ThrottleL` pitch 60/60 among them). The engine pins those;
+        # the old rule spun them. An explicit `0/0/0` pair is still free,
+        # because the gate is about the values, not about the declaration.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Test/Objects.con",
+            """
+ObjectTemplate.create RotationalBundle PinnedThrottle
+ObjectTemplate.setMinRotation 0/60/0
+ObjectTemplate.setMaxRotation 0/60/0
+ObjectTemplate.setInputToPitch c_PIThrottle
+
+ObjectTemplate.create RotationalBundle DeclaredZeroWindmill
+ObjectTemplate.setMinRotation 0/0/0
+ObjectTemplate.setMaxRotation 0/0/0
+ObjectTemplate.setInputToYaw c_PIMouseLookX
+
+ObjectTemplate.create RotationalBundle OnlyAMinimum
+ObjectTemplate.setMinRotation -70/0/0
+ObjectTemplate.setInputToYaw c_PIMouseLookX
+""",
+        )
+
+        pinned = library.object("PinnedThrottle").rig()["axes"]["pitch"]
+        windmill = library.object("DeclaredZeroWindmill").rig()["axes"]["yaw"]
+        # A component the `.con` leaves out is the template's own 0, so an
+        # axis with only a minimum clamps to [-70, 0] rather than spinning.
+        half = library.object("OnlyAMinimum").rig()["axes"]["yaw"]
+
+        self.assertFalse(pinned["free"])
+        self.assertEqual(60.0, pinned["min"])
+        self.assertEqual(60.0, pinned["max"])
+        self.assertTrue(windmill["free"])
+        self.assertFalse(half["free"])
+        self.assertEqual(-70.0, half["min"])
+        self.assertEqual(0.0, half["max"])
+
+    def test_continuous_rotation_speed_reaches_the_rig_per_axis(self) -> None:
+        # GUN-2: the servo adds `continousRotationSpeed * dt` every tick in
+        # the non-`automaticReset` path, so an input-bound axis that declares
+        # one turns while it is being aimed. Signed and per-axis; an axis with
+        # a zero component stays absent rather than carrying a 0.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Buildings/Test/Objects.con",
+            """
+ObjectTemplate.create RotationalBundle TestRadar
+ObjectTemplate.setMaxSpeed 110/60/0
+ObjectTemplate.setAcceleration 10/10/0
+ObjectTemplate.setContinousRotationSpeed 15/0/
+ObjectTemplate.setInputToYaw c_PIMouseLookX
+ObjectTemplate.setInputToPitch c_PIMouseLookY
+""",
+        )
+
+        axes = library.object("TestRadar").rig()["axes"]
+
+        self.assertEqual(15.0, axes["yaw"]["continuousRotation"])
+        self.assertNotIn("continuousRotation", axes["pitch"])
+
+    def test_the_two_player_control_object_hud_words_are_read(self) -> None:
+        # VHUD-9 / VHUD-11, neither of which `con.py` had a hit for. The icon
+        # position is ONE `x/y` token in 18,349 of 18,352 declarations across
+        # the installed mods; the space-separated spelling and an empty
+        # argument are the remaining three, and an empty one must NOT become
+        # 0/0 or every dot stacks on one spot.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Test/Objects.con",
+            """
+ObjectTemplate.create PlayerControlObject TestSherman
+ObjectTemplate.setHasTurretIcon 1
+ObjectTemplate.setVehicleIconPos 54/103
+
+ObjectTemplate.create PlayerControlObject TestCasemate
+ObjectTemplate.setHasTurretIcon 0
+ObjectTemplate.setVehicleIconPos 32 61
+
+ObjectTemplate.create PlayerControlObject TestEmpty
+ObjectTemplate.setVehicleIconPos
+""",
+        )
+
+        sherman = library.object("TestSherman")
+        casemate = library.object("TestCasemate")
+        empty = library.object("TestEmpty")
+
+        self.assertTrue(sherman.has_turret_icon)
+        self.assertEqual((54.0, 103.0), sherman.vehicle_icon_pos)
+        self.assertFalse(casemate.has_turret_icon)
+        self.assertEqual((32.0, 61.0), casemate.vehicle_icon_pos)
+        self.assertIsNone(empty.has_turret_icon)
+        self.assertIsNone(empty.vehicle_icon_pos)
+
     def test_rotation_span_distinguishes_rate_from_pose(self) -> None:
         library = ObjectLibrary()
         library.add_con(

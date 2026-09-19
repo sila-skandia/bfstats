@@ -859,7 +859,7 @@ import { fallDamageFor } from './fall-damage.js';
 import { DeviationModel } from './deviation.js';
 import { wantViewmodelClip } from './viewmodel-anim.js';
 import { createReplayController, recordingLevel } from './replay.js';
-import { Hud } from './hud.js';
+import { Hud, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS } from './hud.js';
 import { Armor } from './armor.js';
 import { VehicleDamageSet } from './vehicle-damage.js';
 import { SupplyDepot, SupplyField } from './supply.js';
@@ -5411,6 +5411,16 @@ const HUD_VEHICLE_VARS = [
   'Ammo/SecondaryAmmoIcon', 'Ammo/SecondaryAmmoBar',
   'Ammo/SecondaryAmmo', 'Ammo/SecondaryAmmoText', 'Ammo/MaxSecondaryAmmo',
   'Ammo/ReloadTime', 'Ammo/ReloadTimeSecondary', 'Overheat/OverHeat',
+  // VHUD-11/VHUD-2: the seat-occupancy dots. One shared `Occupied/OccupiedData`
+  // backs all six leaves (an array here, indexed by the leaf's own
+  // `position`), and each dot's place inside the 128x128 vehicle icon is a
+  // `Vehicle/VehiclePos/VehiclePosX<n>`/`Y<n>` pair — the layout's own
+  // spelling, which nests the group (`test_hud_layout.py` has it verbatim).
+  'Occupied/OccupiedData',
+  ...Array.from({ length: 6 }, (_, i) => [
+    `Vehicle/VehiclePos/VehiclePosX${i + 1}`,
+    `Vehicle/VehiclePos/VehiclePosY${i + 1}`,
+  ]).flat(),
 ];
 
 function setHudVar(name, value) {
@@ -5422,6 +5432,11 @@ function setHudVar(name, value) {
 
 function clearVehicleHud() {
   for (const name of HUD_VEHICLE_VARS) setHudVar(name, null);
+  // The dot feed's memo goes with them, or re-entering the same vehicle at
+  // the same seat would leave all thirteen variables deleted and never
+  // rewritten.
+  seatDotsFor = null;
+  seatDotsSeat = null;
 }
 
 // R2-8 (verify-r2.md's corrected report): the client's own case-sensitive
@@ -5435,6 +5450,51 @@ const AMMO_BAR_CODES = {
 };
 function ammoBarCode(name) {
   return name == null ? null : (AMMO_BAR_CODES[name] ?? 7);
+}
+
+/**
+ * `IconLookRotation` for the seat currently manned, in radians, or
+ * `undefined` when this seat has no dial to draw.
+ *
+ * Un-negated on purpose: this is the engine's own value, positive to the
+ * controlled PCO's right, and `hud.js` owns the canvas-versus-`RotateEffect`
+ * sign flip. See `feedVehicleHud`.
+ */
+function turretDialAngle() {
+  if (!occupancy?.showsTurretIcon(insideView())) return undefined;
+  return occupancy.turret?.turretYawRadians();
+}
+
+// The seat-dot feed's memo: the vehicle and the seat it was last written for.
+// Nothing in the table can change between seat switches — the positions are
+// template data and the states are only "you" versus "not you" — so this
+// rewrites 13 variables on a switch rather than on every frame.
+let seatDotsFor = null;
+let seatDotsSeat = null;
+
+function feedSeatDots() {
+  if (seatDotsFor === occupancy && seatDotsSeat === occupancy.activeSeatId) return;
+  seatDotsFor = occupancy;
+  seatDotsSeat = occupancy.activeSeatId;
+  const dots = occupancy.seatDots();
+  setHudVar('Occupied/OccupiedData', dots.map(d => d.state));
+  for (let i = 0; i < 6; i++) {
+    const dot = dots[i];
+    setHudVar(`Vehicle/VehiclePos/VehiclePosX${i + 1}`, dot?.x ?? null);
+    setHudVar(`Vehicle/VehiclePos/VehiclePosY${i + 1}`, dot?.y ?? null);
+  }
+}
+
+/**
+ * Is the camera in the engine's view mode 3 — the inside view?
+ *
+ * A driven vehicle has `VehicleCamera`'s own four-mode cycle and exactly one
+ * of them (`cockpit`) is first person. A manned gun has no cycle at all:
+ * `manned()` puts the eye on the seat's own Camera node and nothing else,
+ * which is the one view retail gives it, so it is always inside.
+ */
+function insideView() {
+  return mannedActive() ? true : !!view?.firstPerson;
 }
 
 /**
@@ -5452,27 +5512,47 @@ function feedVehicleHud() {
   // The turret dial (`vehicleIcon`'s other three sprites, VHUD-7's rects): a
   // fixed back plate and barrel with the hull's own icon rotating underneath,
   // which is how a tank commander reads where the hull is pointing relative
-  // to where he is looking. Gated on there being a traverse to show at all —
-  // a seat with only elevation, or none, leaves both variables absent and
-  // `hud.js` culls all three leaves, which is also what every seat did until
-  // the driver's own turret started turning.
+  // to where he is looking.
   //
-  // APPROXIMATION, and VHUD-9 is why: neither what the engine sets
-  // `ShowTurretIcon` from nor `IconLookRotation`'s unit, sign and pivot were
-  // ever read. Fed here in radians, because canvas `rotate()` takes radians
-  // and `hud.js` passes the value straight through; `angleMultiplier` is
-  // carried by the extractor and still unread, so it is not applied.
+  // The angle is the engine's own `IconLookRotation` (VHUD-9, client
+  // `0x006ae5d9`–`0x006ae616`):
   //
-  // The sign was settled by looking at it rather than by reading anything.
-  // The dial's fixed barrel points up, i.e. screen-up is where the gun is
-  // looking, and the hull icon spins underneath it — so with the turret
-  // traversed 90 degrees right the hull sits 90 degrees to the gun's LEFT and
-  // its nose belongs at 9 o'clock, which on a canvas whose positive rotation
-  // is clockwise is the traverse itself, not its negative. `headingRadians()`
-  // is already signed in the node's own sense, so it goes in unchanged.
-  const heading = occupancy.turret?.headingRadians();
+  //   IconLookRotation = atan2(dot(pcoRight, camForward),
+  //                            dot(pcoForward, camForward))     // radians
+  //
+  // positive to the PCO's right, about the CONTROLLED PCO's own axes — the
+  // hull, for a tank driver. For a seat whose camera rides the turret that is
+  // the turret's own traverse, which is what `turretYawRadians()` returns.
+  //
+  // It replaced `headingRadians()`, and the swap is one half of a PAIR: that
+  // accessor carries `seats.js`'s `RIG_SIGN.yaw = -1`, and `hud.js` used to
+  // rotate the sprite clockwise (canvas `rotate(+θ)`) where the engine's
+  // `RotateEffect` is counter-clockwise. Two errors cancelling, which is why
+  // the dial looked right. `hud.js` now rotates by `-angle`; feed it the
+  // negated value again and every dial mirrors.
+  //
+  // Gated, for now, on there being a traverse to show at all. VHUD-9's real
+  // trigger is `(seatCamera.viewMode == 3) && pcoTemplate.hasTurretIcon`, and
+  // `setHasTurretIcon` only reached the extract in this round's `con.py`
+  // change, so a scene baked before it has no field to read. Handled where
+  // the gate is, not here.
+  const heading = turretDialAngle();
   setHudVar('Vehicle/ShowTurretIcon', heading === undefined ? null : true);
   setHudVar('IconLookRotation', heading === undefined ? null : heading);
+  // The seat-occupancy dots (VHUD-11). `in-game-hud.md` used to record their
+  // positions as "live-bound per vehicle", i.e. carried by nothing the
+  // extractor could reach; they are `setVehicleIconPos` on each seat's own
+  // PlayerControlObject, and `con.py` simply had no hit for the word. Fed as
+  // one shared state array (`Occupied/OccupiedData`, which is what the layout
+  // binds — one `BfOccupiedVehicleData` object backs all six leaves) plus a
+  // position pair per dot. A seat whose extract predates the word feeds no
+  // pair and `hud.js` keeps the layout's own literal rect.
+  //
+  // Memoised on the vehicle and the seat, because `feedVehicleHud` runs every
+  // frame while occupied (rule 5) and nothing in the dot table can change
+  // between seat switches: the positions are template data and the states are
+  // "you" versus "not you".
+  feedSeatDots();
   // R2-31 (corrected, verify-r2.md): hitpoints/armor live on the root PCO
   // only, one Armor shared by every seat — never a nested seat's own value.
   //
@@ -8059,6 +8139,22 @@ function stanceNation(team) {
 // the area, hoisted so `updateSoldierHud` allocates nothing per frame.
 const IN_COMBAT_AREA = { countdown: 0 };
 
+// `setHudAmmoType` -> `Ammo/AmmoType`, and which of those print a round
+// count: both live in `hud.js` beside the rest of the layout's own
+// vocabulary, so `tests/hud_harness.mjs` can drive them under node. HUD-10.
+//
+// Every `soldierAmmo` variable this file writes, so a weapon swap starts from
+// nothing. The `Ammo/Primary*` names are shared with the vehicle panel, which
+// is fine: the two groups are mutually exclusive in the layout
+// (`Vehicle/ShowVehicleIcon` gates one and `NotData` of it the other), and
+// only one of them is fed at a time.
+const SOLDIER_AMMO_VARS = [
+  'Ammo/AmmoType', 'Ammo/PrimaryAmmo', 'Ammo/MaxPrimaryAmmo', 'Ammo/PrimaryMag',
+  'Ammo/SoldierAmmo/SoldierAmmoHasMag', 'Ammo/SoldierAmmo/SoldierAmmoIcon',
+  'Ammo/SoldierAmmo/SoldierAmmoBar', 'Ammo/SoldierAmmo/SoldierAmmoBarFill',
+  'Ammo/SoldierAmmo/SoldierAmmoBarSize',
+];
+
 function updateSoldierHud() {
   const vars = gameHud.vars;
   // Any seat at all, which `seats.js` answers for: `occupancy` is non-null
@@ -8191,6 +8287,15 @@ function updateSoldierHud() {
   const magazine = hw.data?.magazine;
   const hudAmmo = (hw.data?.hudAmmo || '').toLowerCase();
   const ammoHud = hw.data?.hud;
+  const ammoType = AMMO_TYPE_CODES[hudAmmo];
+  // Every branch below only ever WRITES, so without this a weapon swap left
+  // the previous weapon's leaves behind: switch off a bazooka and its rocket
+  // icon stayed in `SoldierAmmoIcon`, switch to a knife (`ATNone`, which no
+  // branch feeds) and the rifle's `AmmoType 1` kept the whole magazine panel
+  // on screen. Harmless while only two branches existed and only one of them
+  // fed an icon; not once every type in HUD-10's enum is reachable. Cleared
+  // to undefined rather than to a zero, which is the painter's own rule.
+  for (const name of SOLDIER_AMMO_VARS) delete vars[name];
   if (hudAmmo === 'atammobar' && magazine) {
     // R1-19/HUD-9, the magazine-bar branch. PrimaryAmmo is the loaded round
     // count (top-right, "14" in the retail shot); PrimaryMag is a SEPARATE
@@ -8211,19 +8316,31 @@ function updateSoldierHud() {
     if (ammoHud?.ammoBar) vars['Ammo/SoldierAmmo/SoldierAmmoBar'] = ammoHud.ammoBar;
     if (ammoHud?.ammoBarFill) vars['Ammo/SoldierAmmo/SoldierAmmoBarFill'] = ammoHud.ammoBarFill;
     if (ammoHud?.ammoBarSize) vars['Ammo/SoldierAmmo/SoldierAmmoBarSize'] = ammoHud.ammoBarSize;
-  } else if (hudAmmo === 'aticon') {
-    // The icon-only fallback (AmmoType 6 or 7 in hud-layout.json — OPEN
-    // [R1-18]: which of the two the engine actually uses for ATIcon weapons
-    // was never read, so 6 is picked arbitrarily. Both branches cull the same
-    // unfed heat/reload fill below, so the choice paints identically: icon
-    // and panel only, no numbers — matching the Viewer Recipe's "icon-only
-    // fallback" exactly either way.
-    vars['Ammo/AmmoType'] = 6;
+  } else if (ammoType >= 2) {
+    // Every icon-style type. HUD-10 closed the enum: the `.meme` value and
+    // the `.con` value are THE SAME enumeration, so the weapon's own
+    // `setHudAmmoType` goes straight through with no converter to write.
+    //
+    // The one real change is `ATIcon`, which this fed as **6** on the
+    // reasoning that 6 and 7 painted identically and the choice was
+    // arbitrary. It is 2, and it is not arbitrary: the layout's `{2,3,4,5}`
+    // group draws the rounds text (gated `ne 4 && ne 5 && ne 6`) where the
+    // `{6,7}` group does not, so a Bazooka, Panzerschreck, ExpPack,
+    // Detonator or Landmine was showing an icon with no rocket count beside
+    // it. 6 is `ATIconAndHeatBar`, which in vanilla is the MedPack alone.
+    //
+    // `Ammo/PrimaryAmmo` is fed for every type whose layout branch prints it,
+    // and left alone for the two that do not (4 `ATIconAndReloadBar`, the
+    // RepairPack; 5 `ATIconNoText`).
+    vars['Ammo/AmmoType'] = ammoType;
+    if (AMMO_TYPES_WITH_ROUNDS.has(ammoType)) vars['Ammo/PrimaryAmmo'] = hw.rounds;
     if (ammoHud?.icon) vars['Ammo/SoldierAmmo/SoldierAmmoIcon'] = ammoHud.icon;
   }
-  // Any other value (or none) leaves `Ammo/AmmoType` unset: every soldierAmmo
-  // leaf requires it, so the whole panel culls rather than guessing a shape
-  // for a weapon this file cannot classify.
+  // `ATNone` (0, the two knives) and anything unrecognised leave
+  // `Ammo/AmmoType` unset: every soldierAmmo leaf requires it, so the whole
+  // panel culls rather than guessing a shape for a weapon this file cannot
+  // classify. For a knife that is also what the engine does -- 0 is tested by
+  // no layout branch at all.
 }
 
 /** Announce the view C just selected, then fall back to the control list. */
