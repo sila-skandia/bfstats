@@ -355,7 +355,7 @@ The interface is data, so almost every item here is extraction or plumbing, not 
 | 3 | ~~Ticket counters not drawn~~ | **DONE 2026-09-19.** `paintDeployChrome` draws `spawn-layout.json`'s own `tickets` group beside the spawn group, fed from `scene.json.tickets` (`Game.setNumberOfTickets`, parsed since `parity/tickets`). Wake's spawn screen shows a US flag and a blue 100 against a Japanese flag and a red 100, flags resolved per level through `teamNation`. The same group is now in `hud-layout.json` too, so `hud.js` draws it in-game with no code of its own | Round-start values only; what a live bleed would need is in [`../bf1942-3d-models/tickets-hud.md`](../bf1942-3d-models/tickets-hud.md). `Ticket/*TicketBlink` is still unfed — what threshold sets it was not read |
 | 4 | HUD minimap frame chosen by the viewer | The widget's position and size are ours | No rect of its own (MEME-12), but its neighbours pin it: ticket bar `(620,4) 256x32`, grid readout `Coordinates/ShowMapCoordinates` `(627,185) 50x20` in `Style/InGameLatin11`, control-point strip `(620,207) 256x16`. So the art sits at x=620 between y=36 and y=207. Defaults: `game.setMinimapTransparency 20`, `game.setStaticMinimap 1` |
 | 5 | No minimap zoom (N) or rotating mode | Not implemented | Step values and rotation source unknown (MMAP-1, MMAP-2); likely in the undefined code range `0x0046a5c0-0x0046e230` |
-| 6 | Mod levels draw vanilla chrome | The pack, layout, fonts and strings come from `Mods/bf1942` only. The viewer tree holds 241 EoD, 8 XPack1 and 11 XPack2 levels | 16 installed mods ship their own `menu.rfa` and lexicon. Resolve along `game.addModPath` per mod, write `_shared/hud/<mod>/`, and pick by the level's mod |
+| 6 | ~~Mod levels draw vanilla chrome~~ | **DONE 2026-09-20.** The five extractors take `--mod` and read `menu.rfa`, `Font.rfa` and `lexiconAll.dat` through `bf42/modmenu.py`, which resolves them along `game.addModPath` nearest-child-first and merges the lexicon rather than replacing it. `extract_hud_mods.py` keeps only what differs from vanilla byte for byte, into `maps/mods/<id>/_shared/hud/` beside a `pack.json`; `viewer/hud-pack.js` resolves one path at a time against that list. See §9 | Fifteen mods are still unbuilt — only EoD, Road to Rome and Secret Weapons have level trees. `PathetLaosSoldier` (11 EoD control points, `flagpl_m1`) has no `conp_pl` in any installed `menu.rfa` and stays unmapped |
 | 7 | SCORE BOARD does nothing | Button only | `Scoreboard/SpawnScoreBoard` `(0,-15) 800x800` and `ScoreboardMapVote/MapVoteActive` decode with the same `Flattener`; art is `Voting/scoreboard_512x470` and `scoreboard_buttonframe_780x64`. The viewer has no player rows, so it would be an empty board |
 | 8 | Rest of the in-game HUD not drawn from data | The weapon and ammo readout is plain viewer text | `menu/InGame` declares about 50 top-level groups with rects: weapon bar `Weapon/SelectingWeapon` `(210,525) 512x64`, soldier and vehicle panels `(600,505) 233x83`, action icons at x=720 (heal, repair, reload, parachute), `Time/ShowTime`, chat, kill and status messages. Textures are under `menu/Texture/Ingame/`. Same method as the spawn screen |
 | 9 | Live-state layers unused | Capture ring, friend/enemy dots, medic/engineer calls | Need round state; not feasible from level data (`features/bf1942-3d-models/minimap-and-fullmap.md` §5) |
@@ -394,3 +394,280 @@ the same `hud.js`. It is not part of the spawn screen, but it is the first
 thing in this project to use the `Ingame/text-mess/` plates, which are now in
 the sprite pack — the 1- and 2-line ones with it, ready for the spawn-point
 and status messages that share the widget family and are still unfed.
+
+---
+
+## 9. The per-mod interface pack (2026-09-20)
+
+Item 6 above, closed. The viewer tree holds 239 Eve of Destruction levels, 6
+Road to Rome and 9 Secret Weapons, and every one of them drew its spawn
+screen, HUD, fonts and strings out of `Mods/bf1942`. So a Viet Cong base
+raised the Japanese rising sun, the deploy screen offered a SCOUT rather than
+a Sniper, and Anzio's Axis ticket counter flew the German war ensign because
+Italy was not a nation the pack had ever heard of.
+
+### The chain, not the archive
+
+`bf42/modmenu.py` is the whole of it. `MenuSources(mod_chain(game_dir, mod))`
+finds each of `menu.rfa`, `Font.rfa` and `lexiconAll.dat` along the mod's
+`game.addModPath` chain — casing of both the `Archives` directory and the file
+resolved case-insensitively, per the extraction skill's section 2 — and
+`LayeredArchive` addresses the archives as one namespace, nearest child first.
+
+**A one-mod chain is that one archive**, entry for entry and in its own order.
+That is deliberate and it is what the whole change rests on: it makes a vanilla
+extraction byte-identical to the one that came before any of this existed.
+
+The lexicon is *merged*, not replaced. Road to Rome's `lexiconAll.dat` holds
+122 records against vanilla's 1,656 and Secret Weapons' holds 374 — they are
+overlays of what those games changed. Reading only the nearest file would have
+left every unshipped key unresolved on the screen.
+
+### Three rules that were really "what vanilla happens to ship"
+
+| Was | Is |
+|---|---|
+| `NATIONS = us ger brit can jp rus`, hardcoded into the sprite list | `SPRITE_NATION_PREFIXES` globs `conp_*`, `baseflag_conp_*`, `icon_flag_*` and `flag_ticket_*` at the root of `menu/Texture/`, so a mod's nations arrive without the extractor learning their names. On vanilla the glob finds exactly what the list already named, so nothing changes |
+| `SPRITE_DIR_RENAME`, the one `Ammo/`-vs-`Weapon/` basename collision | `dir_glob_renames` computes the set per chain. EoD files a `Molotov.dds` under both; on vanilla the rule reproduces the two hardcoded rows exactly, which `tests/test_modmenu.py` asserts |
+| `find_top` matching a `menu/InGame` group on signature **and** rect | Still exact for vanilla. For a mod's own file, two relaxations and no more: signature-only when it is unique in the file (EoD moved the weapon bar), and an empty group when nothing carries the signature at all (EoD has no CTF flag icon). Anything ambiguous still fails loudly |
+
+`SKIN_NATION` grew the mods' armies, and not one row was guessed from a name.
+Each is the nation the flag on that team's own control points resolves to,
+counted over every extracted level — `game.setTeamSkin` in the level's
+`Init.con` against the `flagMesh` of the control points it gives that team:
+
+```
+NVASoldier        flagge_m1 x233, flagjp_m1 x16   -> ger
+VietCongSoldier   flagjp_m1 x165, flagge_m1 x19   -> jp
+ARVNForces        flaguk_m1 x34,  flagus_m1 x1    -> brit
+AustralianForces  flagso_m1 x16                   -> rus
+SpecialForces     flagus_m1 x79                   -> us
+ItalianSoldier    flagit_m1 x10                   -> it
+FrenchSoldier     flagfr_m1 x13 (EoD) x2 (RtR)    -> fre
+PathetLaosSoldier flagpl_m1 x11                   -> nothing: no conp_pl exists
+```
+
+EoD reuses vanilla's nation *codes* and repaints the slots, which is why its
+armies map onto names that look wrong and are right: EoD's own `conp_ger` is
+the North Vietnamese flag, `conp_jp` the Viet Cong one, `conp_brit` South
+Vietnam's and `conp_rus` Australia's.
+
+`flagMeshNation` is corrected per pack for the same reason. Vanilla aliases
+`so` to `rus` because it ships no `conp_so`; EoD ships the whole `so` set, so
+`flagso_m1` stops going through the alias there. (Its `conp_so` and `conp_rus`
+are the same file, so the control-point marker is unchanged either way; the
+base flag and the ticket flag, which do differ, get the faithful one.)
+
+### The pack is the difference, and nothing else
+
+`extract_hud_mods.py` runs the five extractors for a mod into a scratch
+directory — which produces a *complete* pack, every sprite and layout whether
+the mod changed it or inherited it — then compares every file against
+vanilla's byte for byte and keeps only what differs.
+
+| | files of its own | identical to vanilla | sprites overridden | added | inherited | spawn-screen strings changed | its own `menu/InGame`? |
+|---|---|---|---|---|---|---|---|
+| Eve of Destruction | 581 | 220 | 69 | 254 | 191 | 10 | yes |
+| Road to Rome | 40 | 325 | **0** | 27 | 260 | **0** | no |
+| Secret Weapons | 49 | 325 | **0** | 35 | 260 | **0** | no |
+
+Road to Rome repaints nothing at all. Its 40 files are eight nation PNGs
+(France and Italy across the four flag prefixes), nineteen roster icons, its
+own `hud.json` and `minimap-icons.json`, its six level thumbnails, its
+background plate and its two menu flags. Because its `menu/InGame` and its
+`Font.rfa` are vanilla's, `spawn-layout.json`, `hud-layout.json` and every
+font file come out byte-identical and are left out of the pack entirely — the
+design costs a mod that overrides nothing exactly one failed `pack.json`
+request.
+
+`minimap-icons.json` is per-mod for a different reason: it is read from the
+mod's own `Objects.rfa` chain. 110 templates in vanilla, 390 in EoD, 126 in
+Road to Rome, 138 in Secret Weapons.
+
+### How the page picks
+
+`viewer/hud-pack.js`. One rule: a pack-relative path the mod's `pack.json`
+lists resolves against the mod's directory, anything else against vanilla's.
+So Road to Rome's own `hud.json` sits beside vanilla's fonts and vanilla's
+spawn layout without either being copied. Vanilla fetches no manifest at all,
+and a mod whose pack 404s — a tree published before this — resolves everything
+to vanilla's, which is exactly the behaviour this replaced.
+
+The console font is the one asymmetry: vanilla's stays at `viewer/fonts/`,
+which is baked into the image, while a mod's has to travel with the mod and so
+goes in the pack under `console/`. Only five of the 18 installed mods ship a
+`Font.rfa` at all, and none of the three with level trees is one of them.
+
+### Building and verifying
+
+```bash
+cd tools/bf1942-models
+python3 extract_hud_pack.py                       # vanilla, unchanged
+python3 extract_hud_mods.py --mod EoD             # -> maps/mods/eod/_shared/hud
+python3 extract_hud_mods.py --mod XPack1
+python3 extract_hud_mods.py --mod XPack2
+```
+
+The byte-identity check that has to keep passing: extract the whole vanilla
+pack from `main`'s code and from the working tree into two scratch directories
+and diff them. All 330 files matched on 2026-09-20.
+
+### Still open
+
+* Fifteen mods have no level tree yet, so no pack has been built for them.
+  `extract_hud_mods.py --mod <name>` is all it takes once one exists.
+* `PathetLaosSoldier` has no flag art anywhere; the run says so rather than
+  inventing a row.
+* `hud.js`'s `spriteKeyFromRef` resolves a live texture path by basename, so a
+  directory-qualified sprite (`ammo_molotov`, `weapon_molotov`) is reachable
+  only by its qualified name. Nothing binds one today; whoever wires the ammo
+  panel's icon has to key on the source directory too.
+
+## 10. Adversarial review of section 9 (2026-09-20)
+
+Section 9 was re-derived from the archives by a second pass. Vanilla holds:
+the five extractors run from `main`'s code and from this branch's produce the
+same 330 files, byte for byte, with and without `--mod bf1942`. The per-mod
+counts hold too: 581 / 40 / 49 reproduced exactly, every file in each
+`pack.json` on disk and every file on disk listed. Four things did not hold.
+
+### `menu_001.rfa` — Road to Rome patches its menu and we were not reading it
+
+`bf42/rfa.py` has known since it was written that a Refractor patch is
+`<name>_001.rfa` layered over `<name>.rfa`, and `ArchivePool.add_dir`
+registers patches first for `objects` and `standardMesh` everywhere. The menu
+chain did not: `modmenu._archive_in` matched the exact filename and nothing
+else. `XPack1/Archives/menu_001.rfa` (3,599 bytes, Jan 2004, the 1.6 patch) is
+the one installed case, and it holds two files that are in **no other archive
+of any installed mod**:
+
+```
+menu/Texture/Kits/Icon_assault_breda_axis_selected.dds
+menu/Texture/Kits/Icon_medic_stengun_allies_selected.dds
+```
+
+`XPack1/_shared/loadouts.json` binds both by name. `_archives_in` now returns
+the patch ahead of its base, so `MenuSources` for XPack1 opens
+`menu_001.rfa`, `Menu.rfa`, `menu.rfa` in that order. Vanilla ships no
+`menu_001.rfa` or `Font_001.rfa`, so a vanilla chain is still one archive and
+its output is unchanged.
+
+### `extract_hud_mods.py --mod bf1942` deleted the vanilla pack
+
+`hud_dir_for("bf1942")` returns `viewer/maps/_shared/hud` — the shared tree
+itself, and in a worktree a symlink into the main checkout. Running the pack
+builder for `bf1942` compared the vanilla build against itself, found nothing
+differing, and took the "this mod overrides nothing, remove its pack" branch:
+`shutil.rmtree(out)`. Reproduced in a sandbox: 331 files in, directory gone.
+The stale-file loop had the same shape, unlinking anything in `out` it had not
+just written.
+
+Now: building for `bf1942` is refused outright, building into a directory that
+*is* the vanilla pack is refused, and the only files that may be removed are
+the ones a previous `pack.json` in that directory claims. A directory with no
+`pack.json` was not written by this script and nothing in it is touched.
+
+### The mod did not survive the launch
+
+`play/index.html` resolves its mod from `?mod=` alone. `START` built
+`../map.html?map=…&team=…` and dropped it, so a level picked on Road to
+Rome's Instant Battle screen was looked for in vanilla's tree unless
+`localStorage` happened to hold the same choice. `map.html`'s new bare-map
+redirect dropped it the same way, so `map.html?mod=xpack1` landed the player
+on vanilla's level list. Both now carry `mod` (and so does the `game.disconnect`
+word, which uses the same URL).
+
+### `AustralianForces` flew the wrong flag on this screen
+
+`SKIN_NATION` routed it through vanilla's `so -> rus` alias. That alias is
+already switched off for the in-game HUD, because `flag_mesh_nations` sees
+EoD's own `so` art and maps `so -> so` in its `hud.json`. The two flag
+families are not interchangeable: `conp_so` and `conp_rus` are the same bytes
+in EoD, but decoded, `icon_flag_so` is the Australian blue ensign and
+`icon_flag_rus` is the Stars and Stripes. So on the 14 EoD levels with
+Australians the Instant Battle screen drew a US flag beside Australia while
+the ticket counter on the same level drew the Australian one. The row is now
+`so`; the EoD pack gains `menu/textures/icon_flag_so.png` and goes 581 -> 582.
+
+### Two defects left for the lead, not fixed here
+
+**A mod's own kit photographs are never extracted.** `SPRITES` names the 15
+vanilla `menu/Texture/Kits/*_selected` files and there is no glob for that
+directory. EoD ships 87 kit photographs, every one under a nation
+subdirectory (`Kits/NVA/assault_selected.dds`, `Kits/ARVN/medic_selected.dds`,
+…) and **none** at the `Kits/` root, so the EoD pack carries no kit
+photograph at all — its spawn screen shows vanilla's Wehrmacht and GI
+pictures for NVA and Viet Cong kits. Secret Weapons ships six
+(`Kit_AlliesAssault_Bren`, `Kit_AxisScout_G43`, …); Road to Rome ships the two
+in its patch archive. Fixing it needs three things together: a glob over
+`Kits/**`, the directory-qualified rename rule extended to it (87 files across
+9 nations collide on basenames like `assault_selected`), and `map.html`'s
+`kitPhoto()` — today a hardcoded `{jp,rus,can}` variant table — reading the
+kit's own `icon` out of `loadouts.json`, which already records it.
+
+**A team's nation is a property of the level, not of its soldier skin.**
+`map.html` already gets this right: `teamNation()` tallies the level's own
+control-point `flagMesh`. The Instant Battle screen instead maps
+`game.setTeamSkin` through the global `SKIN_NATION`, and the two disagree on
+**30 EoD team/level rows** and one vanilla one. Cross-checking every extracted
+level's `scene.json` against its `Init.con`:
+
+| level | team | skin | `SKIN_NATION` says | the level's own main base flies |
+|---|---|---|---|---|
+| `xa_loi_pagoda` | allied | `ARVNForces` | `brit` (South Vietnam) | `flagus_m1` (US) |
+| `hidden_airfield`, `hill916`, `pushing_charly` | axis | `NVASoldier` | `ger` (NVA) | `flagjp_m1` (Viet Cong) |
+| `the_bay`, `battle_of_can_tho`, `+6 more` | axis | `VietCongSoldier` | `jp` (Viet Cong) | `flagge_m1` (NVA) |
+| `h_mong`, `ho_chi_minh_trail`, `laos_boundary_dispute` | axis | `PathetLaosSoldier` | (nothing) | `flagpl_m1` |
+| `liberation_of_caen` (vanilla) | allied | `BritishSoldier` | `brit` | `flagcan_m1` (Canada) |
+
+Reproduce with the script in this round's scratch, or by walking
+`controlPoints[].flagMesh` per team out of each `scene.json`. Correcting it
+means the menu screen deriving its two flags from the level the same way the
+in-game screen does — which would also move vanilla's Caen, so it is the
+lead's call, not a reviewer's.
+
+**Where PathetLao actually lands.** The Instant Battle screen is safe: the
+record carries `"flag": null` and `paintPreviewFlags` skips it, so no flag is
+drawn. In-game is not: `cpNation()` falls back to `cp.team === 1 ? 'ger' :
+'us'` for a code it does not know, and in EoD's repainted art `ger` is the
+North Vietnamese flag. So a Pathet Lao base flies an NVA flag on the minimap
+and in the ticket counter, silently, on three levels.
+
+### The verifier keeps most of its teeth, and loses one case
+
+Three deliberately broken models built in scratch from real vanilla exports:
+
+* Thompson with its root scaled 2x -> **BROKEN** (`length 1.629 m vs 0.850 m
+  real`).
+* Willy with a `GeometryTemplate` its own part tree wants and nothing
+  declares -> **BROKEN** (mesh file and geometry template unresolved).
+* Sherman with every node transform zeroed — the total collapse —
+  -> `origin_pile` names 26 parts.
+
+The miss is the realistic one. Zeroing only the *body parts'* transforms
+leaves 27 of them (all fourteen road wheels, `ShermanTower`, the hull hatch,
+the pintle Browning) piled on the hull's own origin at y = -0.8 rather than
+the scene origin. `main`'s verifier calls that **BROKEN**, exit 1; this one
+calls it **ok**, exit 0. Two gates are responsible: `collapsed()` tests
+`world_translation` against the *scene* origin within 1e-4, and the new
+`model_size` centroid radius then drops the parts that do land there but are
+authored in parent space. The centroid gate is not itself the problem — over
+the four real catalogues it suppresses 0 vanilla, 0 XPack1, 0 XPack2 and 10
+EoD readings, and the 10 are genuine false alarms (`BTR60CockpitExternal`
+instanced five times at the hull origin, `EoD_HueyRocketPods`,
+`LVT4_SprocketGuide`). The anchor is. A collapse onto a parent that is not at
+the scene origin is invisible to both readings, and `main` caught this one
+only by accident, through the three parts that happened to sit at zero.
+
+Everything else about the verifier checked out: the four catalogue tallies
+reproduce exactly (94/2/0 exit 0, 221/56/8 exit 1, 13/2/0 exit 0, 25/4/0 exit
+0), node classification really does read the exporter's extras and not names
+(the one documented exception is `is_collision`'s name fallback for older
+`.glb` files; `SILHOUETTE_AUTHORED` and `MATERIALS_WITHOUT_SHADER_AUTHORED`
+are name-keyed vanilla-fact tables, gated off for mods), and two of the eight
+EoD verdicts were re-derived against EoD's own `.con` files: `Cammo_Raft`'s
+`CammoRaftEngineModel` declares `ObjectTemplate.geometry CammoRaft_Motor_M1`
+and no `GeometryTemplate.create` anywhere in the chain declares it (while its
+siblings `Cammo_Hull_M1` and `USRaft_prop_M1` are declared, so the check
+discriminates); `M79`'s `M79`, `remingtonMag` and `remingtonTrigger` are
+likewise referenced and never declared.

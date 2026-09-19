@@ -263,7 +263,14 @@ class TriageTests(unittest.TestCase):
         fail = verify.SilhouetteResult(aggregate=0.30, per_part={})
         self.assertEqual("clean", verify.triage_report("K98", None, silhouette=ok).status)
         self.assertEqual("degraded", verify.triage_report("K98", None, silhouette=warn).status)
-        self.assertEqual("broken", verify.triage_report("K98", None, silhouette=fail).status)
+        # One weapon reading high against a coarse or borrowed shadow is a
+        # degradation to look at; it is the *catalogue* reading high that has
+        # the shape of the mirrored-`.ske` regression.
+        self.assertEqual("degraded", verify.triage_report("K98", None, silhouette=fail).status)
+        self.assertEqual(
+            "broken",
+            verify.triage_report("K98", None, silhouette=fail,
+                                 silhouette_fatal=True).status)
 
     def test_authored_silhouette_ceilings_apply_to_vanilla_only(self) -> None:
         # The Type5 measures 58.8% against the K98 shadow vanilla lends it.
@@ -272,7 +279,7 @@ class TriageTests(unittest.TestCase):
             "clean",
             verify.triage_report("Type5", None, silhouette=measured).status)
         self.assertEqual(
-            "broken",
+            "degraded",
             verify.triage_report("Type5", None, silhouette=measured,
                                  vanilla_facts=False).status)
         past_ceiling = verify.SilhouetteResult(aggregate=0.80, per_part={})
@@ -281,9 +288,11 @@ class TriageTests(unittest.TestCase):
             verify.triage_report("Type5", None, silhouette=past_ceiling).status)
 
     def test_an_explained_origin_pile_is_degraded_an_unexplained_one_broken(self) -> None:
+        # Small parts sitting on the origin, which is what a lost placement
+        # leaves behind: the geometry is on the origin too, not just the node.
         pile = [
             verify.Part(name=f"P{i}", world_translation=(0, 0, 0),
-                        triangles=[((0, 0, 0), (1, 0, 0), (0, 1, 0))])
+                        triangles=[((-0.01, 0, 0), (0.01, 0, 0), (0, 0.01, 0))])
             for i in range(3)
         ]
         explained = verify.triage_report(

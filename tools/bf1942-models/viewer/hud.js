@@ -315,13 +315,18 @@ export class Hud {
    * @param {(name: string) => (HTMLImageElement|HTMLCanvasElement|null)} opts.sprite
    *   - the packed-sprite lookup map.html's own `loadHudPack` already builds
    *     (`hud.json`'s 257 entries); shared, not reloaded here.
-   * @param {string} [opts.base] - the shared HUD asset directory.
+   * @param {string|((rel: string) => string)} [opts.base] - the HUD asset
+   *   directory, or a resolver for one pack-relative path at a time. The
+   *   function form is what a mod needs: its pack holds only the files it
+   *   overrode, so `hud-layout.json` may come from the mod's directory while
+   *   the fonts beside it still come from vanilla's (`hud-pack.js`).
    * @param {() => string} [opts.bust] - cache-busting query string, if any.
    */
   constructor({ canvas, sprite, base = 'maps/_shared/hud', bust = () => '' }) {
     this.canvas = canvas;
     this.sprite = sprite;
     this.base = base;
+    this.url = typeof base === 'function' ? base : rel => `${base}/${rel}`;
     this.bust = bust;
     this.vars = Object.create(null);   // the published contract surface
     this.layout = null;
@@ -344,7 +349,7 @@ export class Hud {
   async load() {
     let data;
     try {
-      data = await fetch(`${this.base}/hud-layout.json${this.bust()}`).then(r => r.json());
+      data = await fetch(`${this.url('hud-layout.json')}${this.bust()}`).then(r => r.json());
     } catch (error) {
       console.warn('hud layout unavailable', error);
       return;
@@ -361,7 +366,7 @@ export class Hud {
     await Promise.all(Object.entries(data.fontFiles || {}).map(async ([id, entry]) => {
       let meta;
       try {
-        meta = await fetch(`${this.base}/${entry.glyphs}${this.bust()}`).then(r => r.json());
+        meta = await fetch(`${this.url(entry.glyphs)}${this.bust()}`).then(r => r.json());
       } catch {
         return;
       }
@@ -369,7 +374,7 @@ export class Hud {
       await new Promise(resolve => {
         img.onload = resolve;
         img.onerror = resolve;
-        img.src = `${this.base}/${entry.file}${this.bust()}`;
+        img.src = `${this.url(entry.file)}${this.bust()}`;
       });
       this.fonts.set(id, { meta, img, tinted: new Map() });
     }));
