@@ -17,7 +17,10 @@
 // for the drop. No collider, no scene, no GL.
 
 import * as THREE from 'three';
-import { GroundVehicle, WILLYS, TrackedVehicle, TANK, engineRatio, differentialRPM } from './ground.js';
+import {
+  GroundVehicle, WILLYS, TrackedVehicle, TANK,
+  engineRatio, gearLadder, engineTorqueFraction, differentialRPM,
+} from './ground.js';
 import { GRAVITY } from './physics.js';
 
 const DEG = 180 / Math.PI;
@@ -355,20 +358,28 @@ results.constants = {
   wheelRadius: WILLYS.wheelRadius,
   springStrength: WILLYS.springStrength,
   springDamping: WILLYS.springDamping,
-  revLimit: WILLYS.revLimit,
   mu: WILLYS.mu,
   maxSteer: WILLYS.maxSteer,
+  // The three constants item 15 deleted. Asserted absent, because a later
+  // edit that reintroduces any of them has reintroduced an invention.
+  hasGearRatios: 'gearRatios' in WILLYS,
+  hasReverseRatio: 'reverseRatio' in WILLYS,
+  hasRevLimit: 'revLimit' in WILLYS,
 };
 
 {
   const k = WILLYS;
-  const top = k.gearRatios[k.gearRatios.length - 1];
+  const ladder = gearLadder(k.differential, k.numberOfGears);
   results.solved = {
-    // Rev-limited speed in top gear, m/s: revLimit x R / (diff x ratio).
-    revCapSpeed: round(k.revLimit * k.wheelRadius / (k.differential * top)),
-    // Per-gear rev-limited speeds, the ladder the automatic climbs.
-    gearSpeeds: k.gearRatios.map(r =>
-      round(k.revLimit * k.wheelRadius / (k.differential * r), 2)),
+    // Full-rev road speed in top gear, m/s: the engine's own EngineGrip
+    // target at that ratio (TANK-9), no fitted rev ceiling in it.
+    revCapSpeed: round(0.5 * ladder[ladder.length - 1]),
+    // Per-gear full-rev speeds, the ladder the automatic climbs.
+    gearSpeeds: ladder.map(r => round(0.5 * r, 2)),
+    // The ratio ladder itself, and the drive share each gear gets — the two
+    // that run in opposite directions.
+    ladder: ladder.map(r => round(r, 3)),
+    driveShare: ladder.map(r => round(ladder[0] / r, 3)),
     // Static compression under standing weight: four springs at 25 carry
     // 14.73, so the heave sits g / (4 x 25) in from rest.
     staticCompression: round(-GRAVITY / (4 * k.springStrength)),
@@ -580,8 +591,10 @@ results.constants = {
   drive(truck, 2);
   drive(truck, 20, holding({ c_PIThrottle: 1 }));
   const entry = round(alongOf(truck));
-  drive(truck, 15, holding({ c_PIThrottle: 0 }));
-  results.coast = { entry, after15s: round(alongOf(truck)) };
+  drive(truck, 3, holding({ c_PIThrottle: 0 }));
+  const after3s = round(alongOf(truck));
+  drive(truck, 12, holding({ c_PIThrottle: 0 }));
+  results.coast = { entry, after3s, after15s: round(alongOf(truck)) };
 }
 
 // --- the wheels turn ---------------------------------------------------------
@@ -616,17 +629,46 @@ results.constants = {
 
 // --- the corrected gear-ratio curve, in isolation ---------------------------
 //
-// The single most important regression guard in this file: verify-r7.md's
-// whole correction is that the M3A1 does *not* land on a smooth
-// interpolation between the curve's five named points (which would give
-// ~5.51) because its index (25) is nowhere near one.
+// The single most important regression guard in this file, and it has been
+// wrong once already. TANK-3 (2026-09-19) refuted the "flat at 1.0 between
+// five authored slots" model this file used to carry: the curve is filled
+// piecewise-linearly, so the M3A1 IS near the smooth interpolation (5.512),
+// every gear count gets a real ratio, and the ladder is non-monotonic above
+// five gears. 17.5 must never come back.
 results.tankRatios = {
-  sherman: round(engineRatio(4, 5), 4),   // idx=20, an authored point: 4.0
-  willy: round(engineRatio(7, 5), 4),     // idx=20 too: 7.0
-  m3a1: round(engineRatio(5, 4), 4),      // idx=25, not one: 17.5, not ~5.51
-  // Every numberOfGears but 1 and 5 must reduce to exactly 3.5*differential —
-  // sampled across the counts a mod could plausibly declare.
-  offCurve: [2, 3, 6, 7, 8, 9, 10].map(n => round(engineRatio(3.5, n), 4)),
+  // Full ladders, gear 1..n. The three the brief pins.
+  sherman: gearLadder(4, 5).map(r => round(r, 3)),
+  willy: gearLadder(7, 5).map(r => round(r, 3)),
+  m3a1: gearLadder(5, 4).map(r => round(r, 3)),
+  // First gear alone, the number a tracked hull actually spends (TANK-7).
+  shermanFirst: round(engineRatio(4, 1, 5), 4),
+  willyFirst: round(engineRatio(7, 1, 5), 4),
+  m3a1First: round(engineRatio(5, 1, 4), 4),
+  // The refuted model said every count but 1 and 5 reduces to 3.5*diff =
+  // 12.25 here. None of them does.
+  offCurve: [2, 3, 6, 7, 8, 9, 10].map(n => round(engineRatio(3.5, 1, n), 4)),
+  // A single gear is index 100, the aircraft case: 3.5*diff/0.94.
+  singleGear: round(engineRatio(1, 1, 1), 4),
+  // Non-monotonic above five gears: nGears 8, differential 5 -> g1 > g2.
+  eightSpeed: gearLadder(5, 8).map(r => round(r, 3)),
+  // A mod's 50-speed still lands on real, distinct ratios.
+  fiftySpeedEnds: [1, 2, 25, 50].map(g => round(engineRatio(4, g, 50), 3)),
+  // The curve itself, read at the decades: `engineRatio(1, i, 100)` is
+  // `3.5 / curve[i]`, so the sample is 3.5 over it. This is the shape
+  // `overTimeDistribution` fills, including the 0..20 ramp off the ctor
+  // default that the refuted model did not have.
+  curveByTen: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(i =>
+    round(3.5 / engineRatio(1, i, 100), 4)),
+};
+
+// --- the second curve (TANK-4), indexed by revs, not by the gear -----------
+results.torqueCurve = {
+  byTen: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    .map(r => round(engineTorqueFraction(r), 4)),
+  peak: round(engineTorqueFraction(0.6), 4),
+  // |revs| is clamped at 1.0 and the sign is dropped.
+  overRev: round(engineTorqueFraction(4.2), 4),
+  negative: round(engineTorqueFraction(-0.6), 4),
 };
 
 results.diffRPM = {
