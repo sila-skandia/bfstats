@@ -392,7 +392,13 @@ vCmd *= 0.0
 ```
 
 client `0x0050165c`–`0x005017ca`, lnxded `0x08274f86`–`0x08275126`. The `6.0` is
-`0x008eb25c` / `0x086d271c`, raw `40c00000` in both. Because
+`0x008eb25c` / `0x086d271c`, raw `40c00000` in both. Slot `+0x6c` is the same
+virtual index on every node class a soldier might carry — `PointPhysicsNode`
+(vtable `0x0872e080` → `0x08256650`), `PhysicsNode` (`0x0872df00` →
+`0x08255230`) and `StaticPhysicsNode` (`0x0872e340` → `0x0825e750`) — and the
+callee proves the argument order rather than leaving it assumed: it adds its
+*second* argument to `this+0x1c`, the acceleration accumulator, and ignores the
+first. Because
 `PointPhysicsNode::updatePositionalPhysics` (`0x082560c0`) runs four
 semi-implicit sub-steps of `dt/4` and then **zeroes the acceleration
 accumulator** (`0x082562aa`), the `×30` makes this exactly a one-tick impulse:
@@ -585,9 +591,10 @@ The `c_PGFRollGripWhenOccupied` rewrite reads the occupancy byte at
 `+0x44` in `PointPhysicsNode`'s drag scale is **submersion depth in metres**:
 `setUnderWater(float)` (`0x08256ad0`) writes it and `getUnderWater()`
 (`0x08256ae0`) reads it. The vehicle sibling keeps the same quantity at `+0x8c`
-(`PhysicsNode::setUnderWater` `0x0824d430`), which is why §3 has `+0x8c` for the
-box law, and `StaticPhysicsNode::setUnderWater` (`0x0825ead0`) is a pure no-op
-whose getter returns `fldz`. The law, re-derived at `0x082562f2`–`0x08256320`:
+(`PhysicsNode::setUnderWater` `0x0824d430`, getter `0x0824d450`), which is why
+§3 has `+0x8c` for the box law, and `StaticPhysicsNode::setUnderWater`
+(`0x0825ead0`) is a pure no-op whose getter returns `fldz`. The law, re-derived
+at `0x082562f2`–`0x08256320`:
 
 ```
 scale = 1 + min(underWater / getBoundingRadius(), 1) * (25.0 - 1)      // 25.0 = 0x086ccce0
