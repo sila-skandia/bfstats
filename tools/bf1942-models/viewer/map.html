@@ -1140,6 +1140,35 @@ function groundHeight(x, z) {
   return hit ? Math.max(hit.point.y, sea) : sea;
 }
 
+/**
+ * `MaterialManager.materialFriction` of the ground at a world (x, z) — what
+ * `ground.js` spends its Coulomb budget out of (PHY-2).
+ *
+ * Both halves already existed and were never joined up: the heightfield
+ * carries the level's own per-sample material id out of `terrain/materials.png`
+ * (the projectile impact path has been reading it for a while), and
+ * `damage.json`'s materials table now carries `materialFriction` beside
+ * `materialDamage`. This is the whole of the join.
+ *
+ * Below the water line the answer is water's 0.1 regardless of what the
+ * material map says the bed is made of, because that is the material the
+ * engine's own terrain pass hands a submerged contact.
+ *
+ * Fallback is `DEFAULT_MATERIAL_FRICTION`: a level with no material map, a
+ * mod with no `Game.rfa`, or an id the define file never mentions all resolve
+ * to material 0, which vanilla authors at 1.0.
+ */
+function surfaceFriction(x, z) {
+  const table = damageTables?.materials;
+  if (!table) return 1.0;
+  const sea = extras?.waterLevel;
+  let id = collider?.heightfield?.material(x, z);
+  if (Number.isFinite(sea) && groundHeight(x, z) <= sea) id = 1;
+  if (id === undefined || id === null) return 1.0;
+  const friction = table[String(id)]?.friction;
+  return typeof friction === 'number' ? friction : 1.0;
+}
+
 function collectTerrain(root) {
   terrainMeshes = [];
   terrainBBox.makeEmpty();
@@ -5002,7 +5031,8 @@ function setPilot(on, node = null, seatId = null) {
       // for the fuselage when it lands (flight.js); warmed before the swap
       // shows it, so the first cockpit frame links nothing (rule 6).
       const cockpit = { prepareCockpit: root => warmSubtree(root) };
-      const vehicle = occupancy.ensureDrive(currentRoot, { groundHeight, collider, ...cockpit });
+      const vehicle = occupancy.ensureDrive(currentRoot,
+        { groundHeight, surfaceFriction, collider, ...cockpit });
       if (kind === 'air') {
         aircraft = vehicle;
         aircraft.groundHeight = groundHeight;

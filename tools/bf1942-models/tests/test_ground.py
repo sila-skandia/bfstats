@@ -136,12 +136,76 @@ class GroundModelTests(unittest.TestCase):
         self.assertEqual([1.0, 0.629, 0.429, 0.314, 0.269], solved["driveShare"])
 
     def test_the_invented_drivetrain_constants_are_gone(self) -> None:
-        # Item 15 deleted all three. Reintroducing any is reintroducing an
-        # invention that the data now answers.
+        # Items 15 and 16 deleted all of these. Reintroducing any is
+        # reintroducing an invention that the data now answers.
         constants = self.results["constants"]
         self.assertFalse(constants["hasGearRatios"])
         self.assertFalse(constants["hasReverseRatio"])
         self.assertFalse(constants["hasRevLimit"])
+        self.assertFalse(constants["hasMu"])
+        self.assertFalse(constants["hasTankMu"])
+        self.assertFalse(constants["hasLateralMu"])
+
+    # --- material friction (PHY-2) -----------------------------------------
+
+    def test_the_coefficient_is_the_mean_of_the_two_materials(self) -> None:
+        # `impulseOn`'s tail writes 0.5*(friction(matA) + friction(matB)) into
+        # `ResponsePhysics+0xa8`. A Willy's wheels are material 37, which
+        # vanilla never defines, so they fall back to material 0 at 1.0 — the
+        # jeep runs at the mean of 1.0 and whatever it is standing on, never
+        # at the ground's own number.
+        surfaces = self.results["surfaceFriction"]
+        self.assertAlmostEqual(0.55, surfaces["water"]["pairMean"], places=4)
+        self.assertAlmostEqual(0.75, surfaces["mud"]["pairMean"], places=4)
+        self.assertAlmostEqual(0.80, surfaces["rock"]["pairMean"], places=4)
+        self.assertAlmostEqual(0.90, surfaces["grass"]["pairMean"], places=4)
+        self.assertAlmostEqual(0.90, surfaces["sand"]["pairMean"], places=4)
+        self.assertAlmostEqual(1.00, surfaces["dirtRoad"]["pairMean"], places=4)
+        self.assertAlmostEqual(1.05, surfaces["paved"]["pairMean"], places=4)
+        self.assertAlmostEqual(1.05, surfaces["gravel"]["pairMean"], places=4)
+
+    def test_the_surface_decides_how_hard_the_jeep_can_launch(self) -> None:
+        # Traction, not the brake pedal, is where the material shows. First
+        # gear asks 10.5 m/s^2 of two rear wheels carrying a third of the
+        # weight, so the launch runs at the Coulomb cap itself.
+        surfaces = self.results["surfaceFriction"]
+        water = surfaces["water"]["to10"]
+        mud = surfaces["mud"]["to10"]
+        grass = surfaces["grass"]["to10"]
+        paved = surfaces["paved"]["to10"]
+        self.assertGreater(water, mud)
+        self.assertGreater(mud, grass)
+        self.assertGreater(grass, paved)
+        # Water is more than half again as slow off the line as tarmac.
+        self.assertGreater(water, paved * 1.5)
+
+    def test_braking_is_pedal_limited_on_everything_but_water(self) -> None:
+        # The other half of the same fact, and the reason a straight-line
+        # brake test is the wrong place to look for the material: the free
+        # `brakeDecel 8` asks less than even mud's 0.75 x 14.73 = 11.0 cap,
+        # so every surface stops in the same distance.
+        surfaces = self.results["surfaceFriction"]
+        distances = [surfaces[name]["stopDistance"]
+                     for name in ("mud", "grass", "dirtRoad", "paved")]
+        for distance in distances:
+            self.assertAlmostEqual(distances[0], distance, delta=0.05)
+        # Water's 0.55 x 14.73 = 8.1 is the one that finally bites.
+        self.assertGreater(surfaces["water"]["stopDistance"], distances[0])
+
+    def test_the_static_latch_holds_a_parked_jeep_and_breaks_under_load(self) -> None:
+        # The 1.5:1 hysteresis is a state-dependent branch on the grip byte,
+        # not two passes: a body within its break-away budget applies its
+        # force in full and stays latched, one that exceeds it unlatches and
+        # is scaled to the sliding budget.
+        latch = self.results["gripLatch"]
+        self.assertTrue(all(latch["parked"]), "a parked jeep stands latched")
+        # Hard braking breaks the driven pair loose and leaves the fronts
+        # latched: the fronts carry two thirds of the weight, so the same
+        # demand share fits inside their budget and not inside the rears'.
+        self.assertIn(False, latch["braking"])
+        self.assertIn(True, latch["braking"])
+        # No contact clears the latch outright (0x0825b76b).
+        self.assertFalse(any(latch["airborne"]))
 
     # --- the chassis reads off the tree ------------------------------------
 
