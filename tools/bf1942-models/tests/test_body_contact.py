@@ -251,6 +251,64 @@ class BodyContactTests(unittest.TestCase):
         self.assertVec(self.results["springSolveClampHigh"], [0, 1, 0])
         self.assertVec(self.results["springSolveClampLow"], [0, 0, 0])
 
+    # --- checkFaceAndEdgeCollision's third axis branch (F11) -----------------
+    #
+    # Every other scene in this suite has a face normal with |n.y| >= 0.7
+    # (the "drop" scenes: (0,1,0)) or |n.z| <= 0.3 (the "headOn"/threeVertex
+    # scenes: (+-1,0,0)), so none of them reach F11's third ("else") branch
+    # of the 2-D point-in-triangle test. This closes that gap, and was added
+    # after a defect fix (removing a per-call closure from
+    # `checkFaceAndEdgeCollision` for the hot-path-allocation rule) that
+    # touched exactly this code -- reviewed by deliberately mutating the
+    # branch's axis choice and confirming these two scenes' results flip.
+
+    def test_third_axis_branch_finds_inside_hit(self) -> None:
+        r = self.results["thirdAxisSelectionBranch"]
+        self.assertEqual(1, r["insideCount"])
+        self.assertVec(r["insideNormal"], [0, 0.6, 0.8], places=3)
+        self.assertAlmostEqual(-0.05, r["insideDepth"], places=3)
+        self.assertVec(r["insidePos"], [0.5, 0.24, -0.18], places=3)
+
+    def test_third_axis_branch_rejects_outside_point(self) -> None:
+        # Same face, a vertex past the triangle's far edge: F10's face-collider
+        # loop must reject it via the (x,y) in-triangle test, not just via the
+        # single-sided cull -- a wrong axis choice here degenerates the
+        # projection and wrongly reports a hit (confirmed during review).
+        r = self.results["thirdAxisSelectionBranch"]
+        self.assertEqual(0, r["outsideCount"])
+
+    # --- hot-path scratch reuse doesn't leak state (defect: per-call ---------
+    # allocation in probe/collidePair/collideBodies/solve; fixed with
+    # preallocated module scratch) -----------------------------------------
+
+    def test_solve_reuses_scratch_but_computes_distinct_values(self) -> None:
+        r = self.results["solveScratchReuse"]
+        # The fix reuses one (point, accel) buffer pair across `solve()`
+        # calls instead of allocating fresh arrays each time -- confirm that
+        # directly (same array identity handed to addAccelerationAt twice)...
+        self.assertTrue(r["sameArrayReusedForPoint"])
+        self.assertTrue(r["sameArrayReusedForAccel"])
+        # ...and that reusing the buffer never leaks one call's numbers into
+        # the next: each call's synchronously-read snapshot is still correct.
+        self.assertVec(r["firstPointSnapshot"], [10, 1, 0])
+        self.assertVec(r["firstAccelSnapshot"], [30, 0, 0])
+        self.assertVec(r["secondPointSnapshot"], [0, 0, 22])
+        self.assertVec(r["secondAccelSnapshot"], [0, 0, 60])
+
+    def test_collide_bodies_pooled_grouping_does_not_leak_across_calls(self) -> None:
+        # The fix pools collideBodies' body->parts grouping and direction-plan
+        # scratch across calls instead of allocating a Map/array-of-tuples
+        # every tick. First tick exercises the pool with 2 body-pairs (4
+        # bodies) so the pool grows past a single entry; second tick reuses
+        # the pool with a disjoint set of bodies and must see only its own
+        # contact, not anything left over from the first tick.
+        r = self.results["collideBodiesPoolReuse"]
+        self.assertEqual(1, r["tick1SceneAHits"])
+        self.assertEqual(1, r["tick1SceneBHits"])
+        self.assertEqual(1, r["tick2Total"])
+        self.assertEqual(1, r["tick2Hits"])
+        self.assertVec(r["tick2PosAdjust"], [0, 0.05, 0])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -159,6 +159,10 @@ export function setAdjust(current, candidate) {
 
 // --- the response accumulator (§6.3, §6.4) ----------------------------------
 
+// `solve()`'s non-spring-branch scratch (see the comment at its call site):
+// never returned to the caller, so reused across every `Response` instance.
+const _solvePoint = [0, 0, 0], _solveAccel = [0, 0, 0];
+
 /**
  * One per collidable part (`ResponsePhysics`, §6). Accumulates this tick's
  * contacts via `impulseOn`, turns the accumulated push into a body correction
@@ -278,9 +282,18 @@ export class Response {
     } else {
       body.translate(this.posAdjust);
       const factor = SIMULATION_FPS * (1 + this.elasticity) * 0.5;
-      const point = [partPos[0] + this.avgRelPos[0], partPos[1] + this.avgRelPos[1], partPos[2] + this.avgRelPos[2]];
-      const accel = [this.speedAdjust[0] * factor, this.speedAdjust[1] * factor, this.speedAdjust[2] * factor];
-      body.addAccelerationAt(point, accel);
+      // Scratch, not returned to the caller (unlike the spring `result`
+      // below): `body.addAccelerationAt` is specified to consume `p`/`a`
+      // synchronously (IMPLEMENTATION.md: "acc += a; racc += cross(...)"),
+      // so reusing a persistent buffer here is safe and avoids allocating
+      // twice per non-spring `solve()` call.
+      _solvePoint[0] = partPos[0] + this.avgRelPos[0];
+      _solvePoint[1] = partPos[1] + this.avgRelPos[1];
+      _solvePoint[2] = partPos[2] + this.avgRelPos[2];
+      _solveAccel[0] = this.speedAdjust[0] * factor;
+      _solveAccel[1] = this.speedAdjust[1] * factor;
+      _solveAccel[2] = this.speedAdjust[2] * factor;
+      body.addAccelerationAt(_solvePoint, _solveAccel);
     }
 
     this.posAdjust[0] = this.posAdjust[1] = this.posAdjust[2] = 0;
@@ -345,6 +358,25 @@ export class CollisionPart {
 // --- §6.1: mass shares --------------------------------------------------
 
 /**
+ * Allocation-free core of `shares()` below: writes `[shareA, shareB]` into
+ * `out` and returns it, instead of allocating a fresh array — `collidePair`
+ * calls this directly (with a persistent module-scratch `out`) so it does
+ * not allocate per call. `shares()` is the public, tested wrapper: it
+ * allocates its own array each call, which is fine there (called at most
+ * once per pair, and its whole point as a public export is an independent,
+ * caller-owned result the caller may hold onto).
+ */
+function shareAB(massA, massB, hasNodeA, hasNodeB, out) {
+  if (!hasNodeA) { out[0] = 0; out[1] = LOW_SNAP_SHARE_B; return out; }
+  if (!hasNodeB) { out[0] = 1; out[1] = 0; return out; }
+  const s = massB / (massA + massB);
+  if (s > SHARE_SNAP_HIGH) { out[0] = 1; out[1] = 0; return out; }
+  if (s < SHARE_SNAP_LOW) { out[0] = 0; out[1] = LOW_SNAP_SHARE_B; return out; }
+  out[0] = s; out[1] = -(1 - s);
+  return out;
+}
+
+/**
  * `ResponsePhysics::checkObjectVsObject`'s share split (§6.1, C1, confirmed
  * by V0/V3 down to the raw opcodes). `hasNodeA`/`hasNodeB` are for the
  * engine's defensive "root object has no physics node at all" case — every
@@ -357,12 +389,7 @@ export class CollisionPart {
  *   §5.3 direction weight — `collidePair` does that.
  */
 export function shares(massA, massB, hasNodeA = true, hasNodeB = true) {
-  if (!hasNodeA) return [0, LOW_SNAP_SHARE_B];
-  if (!hasNodeB) return [1, 0];
-  const s = massB / (massA + massB);
-  if (s > SHARE_SNAP_HIGH) return [1, 0];
-  if (s < SHARE_SNAP_LOW) return [0, LOW_SNAP_SHARE_B];
-  return [s, -(1 - s)];
+  return shareAB(massA, massB, hasNodeA, hasNodeB, [0, 0]);
 }
 
 // --- §5.5: the narrow phase --------------------------------------------------
@@ -393,17 +420,19 @@ function checkFaceAndEdgeCollision(
 
   const hx = p0x + t * dx, hy = p0y + t * dy, hz = p0z + t * dz;
 
-  // Axis choice for the 2-D point-in-triangle test (F11).
+  // Axis choice for the 2-D point-in-triangle test (F11). Components are
+  // picked directly per branch (no per-call closure — this runs once per
+  // candidate face per probed vertex, a hot inner loop; see the module
+  // report's "hot-path allocation" note).
   const anx = Math.abs(nx), any = Math.abs(ny), anz = Math.abs(nz);
-  let iu, iv;
-  if (any >= 0.7) { iu = 0; iv = 2; }
-  else if (anz <= 0.3) { iu = 1; iv = 2; }
-  else { iu = 0; iv = 1; }
-  const comp = (idx, x, y, z) => (idx === 0 ? x : (idx === 1 ? y : z));
-  const hu = comp(iu, hx, hy, hz), hv = comp(iv, hx, hy, hz);
-  const v0u = comp(iu, v0x, v0y, v0z), v0v = comp(iv, v0x, v0y, v0z);
-  const v1u = comp(iu, v1x, v1y, v1z), v1v = comp(iv, v1x, v1y, v1z);
-  const v2u = comp(iu, v2x, v2y, v2z), v2v = comp(iv, v2x, v2y, v2z);
+  let hu, hv, v0u, v0v, v1u, v1v, v2u, v2v;
+  if (any >= 0.7) {              // (x, z)
+    hu = hx; hv = hz; v0u = v0x; v0v = v0z; v1u = v1x; v1v = v1z; v2u = v2x; v2v = v2z;
+  } else if (anz <= 0.3) {       // (y, z)
+    hu = hy; hv = hz; v0u = v0y; v0v = v0z; v1u = v1y; v1v = v1z; v2u = v2y; v2v = v2z;
+  } else {                       // (x, y)
+    hu = hx; hv = hy; v0u = v0x; v0v = v0y; v1u = v1x; v1v = v1y; v2u = v2x; v2v = v2y;
+  }
 
   const c0 = (v1u - v0u) * (hv - v0v) - (v1v - v0v) * (hu - v0u);
   const c1 = (v2u - v1u) * (hv - v1v) - (v2v - v1v) * (hu - v1u);
@@ -521,6 +550,7 @@ const _tsA = [0, 0, 0], _tsB = [0, 0, 0];
 const _vRel = [0, 0, 0], _vRelNeg = [0, 0, 0];
 const _relPosA = [0, 0, 0], _relPosB = [0, 0, 0];
 const _speedA = [0, 0, 0], _speedB = [0, 0, 0];
+const _shareScratch = [0, 0];
 
 /**
  * `ResponsePhysics::checkObjectVsObject`'s per-hit response (§6.2, C2,
@@ -546,8 +576,8 @@ export function collidePair(partA, partB, dt, weight, handlers) {
   if (hitCount === 0) return 0;
 
   const bodyA = partA.body, bodyB = partB.body;
-  const [shareARaw, shareBRaw] = shares(bodyA.mass, bodyB.mass, true, true);
-  const shareA = shareARaw * weight, shareB = shareBRaw * weight;
+  shareAB(bodyA.mass, bodyB.mass, true, true, _shareScratch);
+  const shareA = _shareScratch[0] * weight, shareB = _shareScratch[1] * weight;
 
   partA.worldPos(_posA);
   partB.worldPos(_posB);
@@ -597,42 +627,83 @@ function vertCount(part) {
   return L && L.vertices ? L.vertices.length / 3 : 0;
 }
 
+// Module-scratch output of `directionPlan`: up to 2 `(vertexPart, facePart,
+// weight)` entries, index 0 then 1 — read only `[0 .. returned count - 1]`.
+// Avoids allocating an array of tuples on every part-pair `collideBodies`
+// tests (see the module report's "hot-path allocation" note).
+const _dirVertex = [null, null], _dirFace = [null, null], _dirWeight = [0, 0];
+
 /**
  * §5.3's direction rule (F6, confirmed verbatim by V3 §2, including the
- * boundary being `<=` i.e. ratio `>= 4`). Returns 1 or 2 `[vertexPart,
- * facePart, weight]` triples in call order; both entries of a two-way split
- * run "back-to-back inside ONE iteration of the pair loop" (V3), i.e.
+ * boundary being `<=` i.e. ratio `>= 4`). Writes 1 or 2 `(vertexPart,
+ * facePart, weight)` entries into `_dirVertex`/`_dirFace`/`_dirWeight` (see
+ * above) in call order and returns the count; both entries of a two-way
+ * split run "back-to-back inside ONE iteration of the pair loop" (V3), i.e.
  * nothing is solved between them.
  */
 function directionPlan(partA, partB) {
   const bodyA = partA.body, bodyB = partB.body;
-  if (bodyB.isStatic) return [[partA, partB, 1.0]];
-  if (bodyA.isStatic) return [[partB, partA, 1.0]];
+  if (bodyB.isStatic) { _dirVertex[0] = partA; _dirFace[0] = partB; _dirWeight[0] = 1.0; return 1; }
+  if (bodyA.isStatic) { _dirVertex[0] = partB; _dirFace[0] = partA; _dirWeight[0] = 1.0; return 1; }
 
   const rAr = bodyA.boundingRadius, rBr = bodyB.boundingRadius;
   const solA = partA.kind === 'soldier', solB = partB.kind === 'soldier';
 
   if (rBr > rAr) {
     if (rAr <= SIZE_RATIO_SMALL * rBr || solA) {
-      return solB ? [[partB, partA, 1.0]] : [[partA, partB, 1.0]];
+      if (solB) { _dirVertex[0] = partB; _dirFace[0] = partA; } else { _dirVertex[0] = partA; _dirFace[0] = partB; }
+      _dirWeight[0] = 1.0;
+      return 1;
     }
-    return solB ? [[partB, partA, 1.0]] : [[partA, partB, 0.5], [partB, partA, 0.5]];
+    if (solB) { _dirVertex[0] = partB; _dirFace[0] = partA; _dirWeight[0] = 1.0; return 1; }
+    _dirVertex[0] = partA; _dirFace[0] = partB; _dirWeight[0] = 0.5;
+    _dirVertex[1] = partB; _dirFace[1] = partA; _dirWeight[1] = 0.5;
+    return 2;
   }
   if (rBr <= SIZE_RATIO_SMALL * rAr || solB) {
-    return solA ? [[partA, partB, 1.0]] : [[partB, partA, 1.0]];
+    if (solA) { _dirVertex[0] = partA; _dirFace[0] = partB; } else { _dirVertex[0] = partB; _dirFace[0] = partA; }
+    _dirWeight[0] = 1.0;
+    return 1;
   }
-  return solA ? [[partA, partB, 1.0]] : [[partB, partA, 0.5], [partA, partB, 0.5]];
+  if (solA) { _dirVertex[0] = partA; _dirFace[0] = partB; _dirWeight[0] = 1.0; return 1; }
+  _dirVertex[0] = partB; _dirFace[0] = partA; _dirWeight[0] = 0.5;
+  _dirVertex[1] = partA; _dirFace[1] = partB; _dirWeight[1] = 0.5;
+  return 2;
 }
 
+// Module-scratch grouping state for `groupPartsByBody`: a reused `Map` plus
+// a pool of `{body, parts}` group objects (their `parts` arrays truncated,
+// not reallocated, between calls). `collideBodies` runs once per tick, so
+// without this it would hand the GC a fresh `Map` and one fresh object per
+// body every tick.
+const _groupMap = new Map();
+const _groupPool = [];
+
+/**
+ * Buckets `parts` by their shared `body`, preserving first-seen order, into
+ * the module-scratch `_groupPool` above. Returns the number of live groups;
+ * read only `_groupPool[0 .. count - 1]`.
+ */
 function groupPartsByBody(parts) {
-  const groups = [];
-  const byBody = new Map();
+  _groupMap.clear();
+  let count = 0;
   for (const p of parts) {
-    let g = byBody.get(p.body);
-    if (!g) { g = { body: p.body, parts: [] }; byBody.set(p.body, g); groups.push(g); }
+    let g = _groupMap.get(p.body);
+    if (!g) {
+      if (count < _groupPool.length) {
+        g = _groupPool[count];
+        g.body = p.body;
+        g.parts.length = 0;
+      } else {
+        g = { body: p.body, parts: [] };
+        _groupPool.push(g);
+      }
+      _groupMap.set(p.body, g);
+      count++;
+    }
     g.parts.push(p);
   }
-  return groups;
+  return count;
 }
 
 const _wpA = [0, 0, 0], _wpB = [0, 0, 0];
@@ -657,13 +728,13 @@ const _wpA = [0, 0, 0], _wpB = [0, 0, 0];
  * @returns {number} total hits that produced a response, across every pair
  */
 export function collideBodies(parts, dt, handlers) {
-  const groups = groupPartsByBody(parts);
+  const groupCount = groupPartsByBody(parts);
   let total = 0;
 
-  for (let i = 0; i < groups.length; i++) {
-    const bodyA = groups[i].body;
-    for (let j = i + 1; j < groups.length; j++) {
-      const bodyB = groups[j].body;
+  for (let i = 0; i < groupCount; i++) {
+    const bodyA = _groupPool[i].body;
+    for (let j = i + 1; j < groupCount; j++) {
+      const bodyB = _groupPool[j].body;
 
       const mobileAwakeA = !bodyA.isStatic && !bodyA.sleeping;
       const mobileAwakeB = !bodyB.isStatic && !bodyB.sleeping;
@@ -672,8 +743,8 @@ export function collideBodies(parts, dt, handlers) {
       const marginA = lenSq3(bodyA.v) * dt * SPEED_MARGIN_FACTOR;  // rule 9, root speeds
       const marginB = lenSq3(bodyB.v) * dt * SPEED_MARGIN_FACTOR;
 
-      for (const partA of groups[i].parts) {
-        for (const partB of groups[j].parts) {
+      for (const partA of _groupPool[i].parts) {
+        for (const partB of _groupPool[j].parts) {
           if (!partA.isRoot && !partB.isRoot) continue;            // rule 7
 
           const rA = partA.shape.radius, rB = partB.shape.radius;
@@ -687,8 +758,9 @@ export function collideBodies(parts, dt, handlers) {
 
           if (vertCount(partA) < MIN_VERTEX_COUNT && vertCount(partB) < MIN_VERTEX_COUNT) continue;   // rule 10
 
-          for (const [vertexPart, facePart, weight] of directionPlan(partA, partB)) {
-            total += collidePair(vertexPart, facePart, dt, weight, handlers);
+          const dirCount = directionPlan(partA, partB);
+          for (let d = 0; d < dirCount; d++) {
+            total += collidePair(_dirVertex[d], _dirFace[d], dt, _dirWeight[d], handlers);
           }
         }
       }
