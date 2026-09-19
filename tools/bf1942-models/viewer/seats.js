@@ -154,7 +154,17 @@ export function surveyVehicle(root) {
             && Math.abs(spec.maxSpeed || 0) > 0;
           if (!aimUpgrade && !speedUpgrade) continue;
         }
-        seat.axes[axis] = { node: obj, spec };
+        // `automaticReset` is declared once per BUNDLE, not per axis (`con.py`
+        // emits it beside `axes`), but it selects the whole control law a
+        // `TurretAxis` runs under (GUN-2), so it is folded into the axis's own
+        // spec here rather than making every consumer carry the rig object
+        // alongside. A spec that already names it -- a hand-built test
+        // fixture -- keeps its own value.
+        seat.axes[axis] = {
+          node: obj,
+          spec: spec.automaticReset === undefined && data.rig.automaticReset
+            ? { ...spec, automaticReset: true } : spec,
+        };
       }
     } else if (kind === 'FireArms' && data.fireArms) {
       seatFor(owner).fireArms.push(obj);
@@ -405,67 +415,59 @@ export class VehicleOccupancy {
   }
 }
 
-// --- manned-gun aiming (GUN-2/GUN-3, verify-r6.md's corrected report) ---
+// --- manned-gun aiming (GUN-2, closed form; GUN-2b, the one open number) ---
 //
-// GUN-2 (verified): `RotationalBundle::handlePlayerInput` never reads its own
-// `dt` -- it just samples the bound `PlayerInput` channel each tick, x0.2 on
-// the mouse-look channels every real manned gun binds.
+// `RotationalBundle::calculateAndClipAngle` (lnxded `0x081d7490`) was read
+// end to end in the 2026-09-19 round -- all 361 instructions, re-traced
+// independently -- so the shape below is a transcription, not an
+// approximation. It is a **first-order velocity servo**, and the earlier
+// reading here ("two accumulators whose PRODUCT drives the angle", a +-40
+// input register, a +-1.0 deadzone, a `lo == hi` wrap) was wrong on every
+// one of those four points:
 //
-// GUN-3 (verified in shape, OPEN in closed form): the angle is NOT the raw
-// sample mapped straight to a pose the way this viewer's own `flight.js`
-// poses an aircraft control surface (`RiggedPart`/`axisAngle`, position-law,
-// correct for a surface, never verified against a gun). The real mechanism
-// is two per-axis accumulators -- an input register clamped to a hardcoded
-// +-40 and deadzoned against +-1.0, and a `|acceleration|*dt` register --
-// whose PRODUCT drives the angle, with an `automaticReset`-dependent step
-// selecting between `maxRotation` and `maxSpeed` that the verifier read
-// several instructions deeper than the first pass and explicitly could not
-// close out ("I did not close out where that product lands" / "the exact
-// per-tick algebra ... is still not nailed down").
+//   speed  ->  sign(acceleration) * input * maxSpeed,  ramped at
+//              |acceleration| deg/s^2
+//   angle  +=  speed * dt  +  continousRotationSpeed * dt
+//   then:  minRotation == 0 && maxRotation == 0  ->  a single +-360 wrap
+//          otherwise  angle > max -> max,  else  angle < min -> min
 //
-// Two gaps, both named where they bite in `TurretAxis.step`:
-//   1. `bf42/con.py`'s `rig()` (owned by another session this round; off
-//      limits) exports each axis's acceleration only as a SIGN
-//      (`direction`), never its degrees/second^2 MAGNITUDE, so the real
-//      per-axis ramp rate GUN-3's own accumulator would need is not present
-//      in this viewer's extracted data at all, independent of the algebra
-//      question below.
-//   2. Even given that magnitude, GUN-3's own closed form is unsettled.
+// Degrees throughout. Three consequences the viewer never had:
 //
-// The corrected report's own Viewer Recipe names the way through both: "a
-// tunable ease ... at a per-vehicle-tunable rate derived from
-// acceleration/maxSpeed ... rather than the specific accel.dt/clamp-to-
-// maxSpeed formula" -- ship the confirmed parts (the +-180 wrap when
-// unlimited, the min/max clamp otherwise, degrees straight off the `.con`,
-// no spring-to-centre) and approximate the ramp, not the wrap or the clamp.
+//   * `continousRotationSpeed * dt` is added EVERY tick, whatever the input
+//     is doing, in the non-`automaticReset` path.
+//   * `automaticReset` is a different control law entirely -- see
+//     `_stepAutomaticReset`. 221 vanilla templates declare it.
+//   * The wrap test is on the two bounds being ZERO, not on their being
+//     equal. `min == max == 45` pins the axis at 45; it does not spin.
+//
+// `direction = sign(acceleration)` (`con.py`) matches the engine's
+// `fchs`-on-negative-acceleration exactly and is kept.
+//
+// What is NOT closed is GUN-2b: `maxSpeed` is a **gain, deg/s per unit of
+// input**, and nobody has yet read what magnitude the client's mouse-look
+// axis delivers as `PlayerInput[c_PIMouseLookX/Y]`. Everything between a
+// pointer-lock pixel and that number is this file's own choice, and it is
+// made in one place (`step`'s input normalisation plus
+// `TURRET_SPEED_SCALE`), labelled as such.
 
 const RIG_AXIS = { yaw: 'y', pitch: 'x', roll: 'z' };   // flight.js's own convention, mirrored
 const RIG_SIGN = { yaw: -1, pitch: -1, roll: 1 };       // (unexported there; kept identical here)
 
-// How fast an axis's velocity register winds up toward its commanded rate,
-// deg/s^2 -- GUN-3's own `|acceleration|*dt` accumulation, which is
-// `setAcceleration`'s magnitude and nothing else. An axis whose extract
-// carries that number uses it (`spec.acceleration`, emitted by `con.py` from
-// 2026-09-17); this is only the fallback for one that does not, which is
-// every glb baked before then.
+// The ramp rate for an axis whose extract does not carry its own
+// `setAcceleration`, deg/s^2. An axis that does carry it uses that number
+// (`spec.acceleration`, emitted by `con.py` since 2026-09-17); this is the
+// fallback for every glb baked before then.
 //
-// Replaces a shared `TURRET_RAMP_TIME = 1.0` s, i.e. "every gun in the game
-// takes one second to reach its own top rate". That is roughly right for the
-// heavy mounts GUN-8 illustrates (a Defgun's real figures work out at 1.8 s
-// yaw / 0.67 s pitch) and badly wrong for a tank turret, which is the
-// complaint that produced this: a Sherman's 35 deg/s traverse spent the whole
-// of a short flick still winding up, so the turret crawled where the game
-// swings it. 90 deg/s^2 is the middle of the 30-150 band `setAcceleration`
-// actually occupies across vanilla (flight-model.md §2a, confirmed), and at
-// the Sherman's own 35 deg/s that is 0.39 s to the cap. Still a fallback, not
-// a measurement -- the fix is to re-extract, after which the gun's own number
-// wins.
+// 90 deg/s^2 is the middle of the 30-150 band `setAcceleration` occupies
+// across vanilla (flight-model.md §2a, confirmed). Still a fallback, not a
+// measurement -- the fix is to re-extract, after which the gun's own number
+// wins. A Sherman tower's real number is 1000, an MG42's 5000; at those
+// rates the ramp is essentially instant and the cap is what the hand feels.
 //
-// CRITICAL: `step` multiplies this by `speedScale` before applying it, so the
-// wind-up time is maxSpeed/acceleration (the game's own ratio) regardless of
-// how much the cap has been scaled up. Without the scale, a Defgun with
-// speedScale=4 reaches 360 deg/s in 360/90 = 4 s instead of 360/360 = 1 s —
-// the "moves very slowly, then builds up momentum" complaint, root-caused.
+// CRITICAL: `step` multiplies this by `speedScale` alongside the cap, so the
+// wind-up TIME stays `maxSpeed/acceleration` -- the game's own ratio --
+// however far `TURRET_SPEED_SCALE` moves the cap. Scale one without the
+// other and a Defgun takes four times as long to answer a flick.
 export const TURRET_ACCELERATION = 90;
 // Degrees of aim the mouse asks for, per pixel of pointer-locked
 // `movementX/Y`. This is `map.html`'s own `LOOK_SENS` (0.0022 rad/px) in
@@ -474,53 +476,39 @@ export const TURRET_ACCELERATION = 90;
 // the only thing that makes aiming one heavier than the other.
 export const TURRET_DEGREES_PER_PIXEL = 0.0022 * 180 / Math.PI;
 
-// How much aim can be BANKED, in degrees, waiting for the axis to deliver it.
-// GUN-3's input register is hard-clamped to +-40 and this is that clamp, in
-// this file's own units. Its job is to bound a flick, not to stop one: a
-// player who throws the mouse across the pad asks for more travel than any
-// turret can produce in one frame, and everything past this is dropped.
-//
-// Reduced from 90 — the old value banked nearly half a degree-second at the
-// Defgun's cap (360 deg/s), so a fast flick left ~90 deg of aim still wound up
-// in the register, the turret kept swinging at full rate for a quarter second
-// after the hand stopped, and every short aim overshot its mark. 40 matches
-// GUN-3's own clamp (manned-guns.md §3) and keeps the coast to a snap.
-export const TURRET_PENDING_CLAMP = 40;
-
-// The deadzone, GUN-3's own +-1.0 on the register: below this much banked
-// aim, nothing moves.
-export const TURRET_DEADZONE = 0.05;
-
-// --- idle decay for the pending bank -----------------------------------------
-
-// Frames of no mouse input before the pending bank starts draining. At 60 Hz
-// this is ~50 ms — too short for the eye to notice on active aiming (pointer-
-// lock delivers movement every frame), long enough that a single missed
-// `movementX/Y` event on a fast swipe does not zero the bank.
-export const TURRET_IDLE_DECAY_FRAMES = 3;
-
-// Exponential decay rate (1/s) applied to the pending bank once the idle
-// threshold is crossed. With the clamp at 40 deg and the Defgun's cap at 360
-// deg/s, this drains a post-flick bank in ~0.15 s — the turret settles to a
-// stop instead of coasting the rest of a quarter-second. [free]
-export const TURRET_IDLE_DECAY = 12;
-
 // What multiplies an axis's declared `setMaxSpeed` to get the rate it will
 // actually turn at.
 //
-// It exists because `maxSpeed` as a literal deg/s ceiling does not survive
-// contact with the game. `manned-guns.md` §3 is explicit that the +-40 input
-// clamp is "not the template's `maxSpeed`", that `automaticReset` branches
-// on whether `|acceleration|` multiplies `maxRotation` or `maxSpeed` and that
-// "this downstream use was not closed out", and that the closed form of
-// `angle += reg[0x110] * reg[0x128]` is open. So nothing confirms that a
-// Sherman's `setMaxSpeed 35` is 35 degrees of traverse per second on screen,
-// and taken literally it is roughly nine times slower than the same hand
-// movement turns a soldier's head — reported twice from play as the turret
-// being far slower than the game's.
+// GUN-2b is the reason it exists, and the reason it stays. `maxSpeed` is a
+// **gain** -- deg/s per unit of input -- so "a Sherman's `setMaxSpeed 35` is
+// 35 deg/s on screen" is only true if the mouse delivers an input of exactly
+// 1, and nothing establishes that it does:
+//
+//   * The +-1 clamp on the input lives inside the `rememberExcessInput`
+//     branch, and across 18 installs NOT ONE turret, manned gun, tank or
+//     `Objects.con` rotational bundle declares that flag (vanilla's 32 uses
+//     are all aircraft rudder and tail-flap `Wing` bundles). For every gun
+//     the input is raw and unclamped.
+//   * The wire format reserves headroom to **+-16**: `PlayerAction::set`
+//     packs every `PlayerInput` float with `floatToFixed(v, 12, 16.0f)` and
+//     `get` decodes `((n/4095)*2 - 1)*16.0`. An input normalised to +-1
+//     would leave fifteen sixteenths of the encoding dead.
+//   * The "a soldier's head turns nine times faster for the same hand
+//     movement" observation, which is what originally produced this number,
+//     compares two different control laws: `SoldierCamera` declares
+//     `setMaxSpeed 0/0/0` and so never enters `calculateAndClipAngle` at all.
+//
+// So the OPEN question this constant stands in for is narrow and stated:
+// **what magnitude the client's mouse-look axis delivers as
+// `PlayerInput[c_PIMouseLookX/Y]`.** The trail runs as far as the client's
+// `ControlMap.addAxisToAxisMapping` registrars (`FUN_006bba90` /
+// `FUN_006bbd90`) without reaching the multiply. Until someone reads it,
+// this is the viewer's stand-in for that gain and must be left alone --
+// removing it or "correcting it to 1" was checked against the binary and
+// refuted (ledger GUN-2b).
 //
 // Tunable live with `?turret=<scale>` so a number can be settled by playing
-// rather than by another guess. [free]
+// rather than by another guess.
 export const TURRET_SPEED_SCALE = 4;
 
 let speedScale = TURRET_SPEED_SCALE;
@@ -537,30 +525,31 @@ export function turretSpeedScale() { return speedScale; }
 const _euler = new THREE.Euler();
 const _quat = new THREE.Quaternion();
 
-/** One RotationalBundle node, integrated per GUN-3's confirmed shape.
+/**
+ * One RotationalBundle axis, run as the engine's own first-order velocity
+ * servo (GUN-2, lnxded `0x081d7490`).
  *
- * The mouse asks for an ANGLE, not a rate. That is the correction this class
- * needed, and `manned-guns.md` §3 states the part of it that is confirmed
- * outright: the input register at `+0x128` *accumulates* raw input. This
- * class used to drain its sample to zero on every `step`, which threw away
- * two things at once — everything a fast frame asked for above the clamp, and
- * the whole of a flick the instant the hand stopped moving. A turret that can
- * only ever turn at "how fast is the mouse moving right now" cannot feel
- * connected to a hand, however the constants are tuned, and two rounds of
- * tuning it said so.
+ * Two registers, both on the instance and both persisting between ticks:
+ * `angle` (engine `+0x104`, degrees from the authored rest pose) and `speed`
+ * (engine `+0x110`, deg/s). Each tick the servo ramps `speed` toward
+ * `sign(acceleration) * input * maxSpeed` at `|acceleration|` deg/s^2 and
+ * integrates it, plus the continuous term, into `angle`.
  *
- * So `feed` banks degrees and `step` spends them, as fast as the axis's own
- * rate allows, and what it spends it takes off the bank. Ordinary aiming
- * lands 1:1 with the pointer because the bank clears inside a frame or two;
- * a flick keeps the turret swinging after the hand has stopped, which is what
- * the accumulating register buys. The ramp between rates is still GUN-3's
- * `|acceleration|` accumulation, and the +-180 wrap and the min/max clamp are
- * still the confirmed ones.
+ * This replaced a bank-and-spend model in which `feed` accumulated DEGREES
+ * OF AIM into a `pending` register clamped to +-40 and `step` paid them out.
+ * Every part of that had a citation that turned out to be a misreading of the
+ * same function: the engine's `+0x128` register is an **input backlog in
+ * input units**, its +-40 clamp and its `-1.0` companion both live inside the
+ * `rememberExcessInput` branch, and **no** turret, manned gun or tank in any
+ * of 18 installs declares that flag -- so for every gun in this viewer that
+ * register does not exist at all. There is no deadzone, no idle decay and no
+ * "never turn further than was asked": those were feel patches compensating
+ * for a bank the engine never had.
  *
- * Open, and unchanged: the closed form of `angle += reg[0x110] * reg[0x128]`,
- * and therefore what the two registers' units really are. This is the
- * "tunable eased approach toward an input-scaled target" §3 asks for, not a
- * transcription.
+ * The one thing kept from the old model is that `feed` may be called several
+ * times before a `step` (pointer lock can deliver more than one `mousemove`
+ * per frame). The pixels accumulate and are converted to an input ONCE, in
+ * `step`, against that tick's own `dt`.
  */
 export class TurretAxis {
   constructor(axisName, node, spec) {
@@ -568,82 +557,124 @@ export class TurretAxis {
     this.node = node;
     this.spec = spec;
     this.base = node.quaternion.clone();
-    this.angle = 0;      // degrees, relative to the authored rest pose
-    this.velocity = 0;   // degrees/second, current
-    this.pending = 0;    // degrees of aim asked for and not yet delivered
-    // Frames since the mouse last fed this axis. When it grows past the idle
-    // threshold (`TURRET_IDLE_DECAY_FRAMES`), the pending bank decays — see
-    // `step` for why.
-    this._idleFrames = 0;
+    this.angle = 0;      // degrees from the authored rest pose (engine +0x104)
+    this.speed = 0;      // deg/s, the servo's velocity register (engine +0x110)
+    this._pixels = 0;    // this tick's un-consumed pointer motion
   }
 
-  /** Mouse motion arrives here, possibly several times before the next
-   *  `step`, and is banked rather than replacing what was already asked for.
-   *  `direction` is folded in here so everything downstream is in the node's
-   *  own sense. Resets the idle counter so the bank is not decayed while the
-   *  hand is moving.
-   */
+  /** Pointer motion for the coming tick, in the browser's own screen sense.
+   *  Accumulates; `step` consumes and zeroes it. */
   feed(delta) {
-    const asked = delta * TURRET_DEGREES_PER_PIXEL * (this.spec.direction || 1);
-    this.pending = Math.max(-TURRET_PENDING_CLAMP,
-      Math.min(TURRET_PENDING_CLAMP, this.pending + asked));
-    this._idleFrames = 0;
+    this._pixels += delta;
   }
 
-  step(dt) {
+  /**
+   * One tick.
+   *
+   * `inputScale` multiplies the sampled input before the servo sees it, which
+   * is exactly where the engine applies HP-15's damage penalty:
+   * `RotationalBundle::handlePlayerInput` (`0x081d834f`) scales all three
+   * axes by the double at `ds:0x86c8678` = **0.2** when `SimpleObject+0xee`
+   * is set, i.e. while the vehicle is critically damaged. `map.html` passes
+   * that 0.2 in; everything else passes nothing and gets 1.
+   */
+  step(dt, inputScale = 1) {
     if (!(dt > 0)) return;
-    this._idleFrames += 1;
-    // When the mouse has been idle for a few frames, let the banked aim decay
-    // — GUN-3's input register (+0x128) carries the accumulated sample, and
-    // without a drain a flick leaves it sitting there, the turret swinging
-    // through the full pending clamp at full rate after the hand has stopped.
-    // Reported from play as "overshoot": the axis keeps coasting long after
-    // the pointer did. During active aiming `feed` resets `_idleFrames` to 0
-    // every frame, so the decay never fights a living hand — it only fires in
-    // the gap between the last `movementX/Y` and the next, which is the same
-    // silence the game's own `automaticReset` branch answers.
-    if (this._idleFrames > TURRET_IDLE_DECAY_FRAMES) {
-      this.pending *= Math.exp(-dt * TURRET_IDLE_DECAY);
-    }
-    const pending = Math.abs(this.pending) > TURRET_DEADZONE ? this.pending : 0;
-    // The rate the bank is asking for, held to what this axis can do.
+    const pixels = this._pixels;
+    this._pixels = 0;
+
+    // GUN-2b, and the only invented quantity in this function. The engine's
+    // `input` is `PlayerInput[c_PIMouseLookX/Y]`, whose magnitude nobody has
+    // read; `maxSpeed` is the deg/s it buys per unit of it. This viewer's
+    // choice is that a hand asking for more travel per second than the axis's
+    // own scaled ceiling delivers input 1 -- so `maxSpeed * TURRET_SPEED_SCALE`
+    // is the viewer's traverse ceiling, which is the behaviour this file has
+    // shipped all along and the part players have already judged. Stated as a
+    // choice, not transcribed as a fact.
     const cap = Math.abs(this.spec.maxSpeed || 0) * speedScale;
-    const want = Math.max(-cap, Math.min(cap, pending / dt));
-    // GUN-3's velocity register: it winds up at the axis's OWN
-    // `setAcceleration` when the extract carries it, and at the fallback
-    // otherwise -- see `TURRET_ACCELERATION`.
-    //
-    // The acceleration is scaled by `speedScale` just like the cap — without it
-    // the ramp is 4× too slow (speedScale=4 means 360 deg/s cap but 90 deg/s²
-    // ramp, so a Defgun takes a full 4 s to answer a flick instead of the
-    // game's ~0.6–1.0 s). Scaling both keeps the wind-up time at
-    // maxSpeed/acceleration, the game's own ratio.
-    const maxStep = (this.spec.acceleration || TURRET_ACCELERATION) * speedScale * dt;
-    const change = want - this.velocity;
-    this.velocity += Math.max(-maxStep, Math.min(maxStep, change));
-    let step = this.velocity * dt;
-    // Never turn further than was asked for: overshooting the bank would
-    // make the axis drift on after the hand stopped instead of settling.
-    if (Math.abs(step) > Math.abs(this.pending)) {
-      step = this.pending;
-      this.velocity = step / dt;
+    const asked = pixels * TURRET_DEGREES_PER_PIXEL / dt;   // deg/s the hand wants
+    const unit = cap > 0 ? Math.max(-1, Math.min(1, asked / cap)) : 0;
+    // `direction` is `sign(acceleration)`, the engine's own
+    // `fchs`-on-negative-acceleration; `inputScale` is HP-15's 0.2.
+    const input = unit * (this.spec.direction || 1) * inputScale;
+
+    // `|acceleration|`. Scaled with the cap so the wind-up TIME is the game's
+    // ratio whatever `TURRET_SPEED_SCALE` is -- see `TURRET_ACCELERATION`.
+    // NOTE: `con.py` omits a zero `setAcceleration` rather than emitting 0, so
+    // the engine's own early-out (`acceleration == 0 && continousRotationSpeed
+    // == 0` returns without touching either register) cannot be told apart
+    // from "this glb predates the field". The fallback is applied in both
+    // cases, which is the pre-existing behaviour and the safe one.
+    const accel = Math.abs(this.spec.acceleration || TURRET_ACCELERATION);
+
+    if (this.spec.automaticReset) {
+      this._stepAutomaticReset(dt, input, accel);
+    } else {
+      // The servo proper. `speed` chases the commanded rate; `angle`
+      // integrates it AND the continuous term, which is added every tick
+      // whatever the input is doing -- that unconditional `+=` is the whole
+      // of `setContinousRotationSpeed`'s effect here.
+      const target = input * cap;
+      const maxStep = accel * speedScale * dt;
+      const change = target - this.speed;
+      this.speed += Math.max(-maxStep, Math.min(maxStep, change));
+      this.angle += this.speed * dt + (this.spec.continuousRotation || 0) * dt;
     }
-    this.angle += step;
-    this.pending -= step;
+    this._clip();
+    this._apply();
+  }
+
+  /**
+   * `automaticReset`'s law, which shares nothing with the servo but the
+   * clip: the angle ramps STRAIGHT toward `input * maxRotation` at
+   * `|acceleration|` **deg/s** -- a rate, not an acceleration -- with no
+   * velocity register and no continuous-rotation term. Release the input and
+   * the target is 0, so the part returns to rest at the same rate: that is
+   * what makes a steering wheel self-centre and why 221 vanilla templates
+   * (steering wheels and Engines) declare it.
+   *
+   * `maxRotation` is the per-axis `setMaxRotation` component, which `con.py`
+   * drops when the axis is free -- and free means both bounds are zero, so
+   * an absent `max` here really is the engine's 0 and the part ramps home.
+   *
+   * `speedScale` is deliberately NOT applied: it is a stand-in for the
+   * unknown input magnitude against `maxSpeed`'s gain (GUN-2b), and this law
+   * never reads `maxSpeed`.
+   */
+  _stepAutomaticReset(dt, input, accel) {
+    const target = input * (this.spec.max || 0);
+    const limit = accel * dt;
+    const delta = target - this.angle;
+    this.angle += Math.max(-limit, Math.min(limit, delta));
+    this.speed = 0;
+  }
+
+  /**
+   * The engine's own tail, in its own order (`0x081d7645` onward).
+   *
+   * The wrap gate is `minRotation == 0 && maxRotation == 0` -- the template
+   * default -- and NOT a zero-width range: `min == max == 45` clamps to 45.
+   * `con.py`'s `free` carries that test. When it fires it is a single +-360
+   * correction, not a modulo, which is why a tick big enough to travel more
+   * than a full turn is not normalised (the engine does not normalise it
+   * either).
+   *
+   * The clamp tests `> max` FIRST and `< min` second, on the authored
+   * components in the order the `.con` gave them -- it does not sort them.
+   * Nothing zeroes the velocity register at a bound, so an axis held against
+   * its stop keeps its speed and answers a reversed input by ramping through
+   * zero, exactly as it would in mid-travel.
+   */
+  _clip() {
     if (this.spec.free) {
-      // Confirmed as-is (GUN-3): an unlimited axis (min==max, or neither
-      // declared) wraps through +-180 instead of clamping.
       if (this.angle > 180) this.angle -= 360;
       else if (this.angle < -180) this.angle += 360;
     } else {
-      const lo = Math.min(this.spec.min, this.spec.max);
-      const hi = Math.max(this.spec.min, this.spec.max);
-      // Pending is cleared at a stop too: aim banked against a wall would
-      // otherwise sit there and snap the axis the moment it turned back.
-      if (this.angle > hi) { this.angle = hi; this.velocity = 0; this.pending = 0; }
-      else if (this.angle < lo) { this.angle = lo; this.velocity = 0; this.pending = 0; }
+      const hi = this.spec.max ?? 0;
+      const lo = this.spec.min ?? 0;
+      if (this.angle > hi) this.angle = hi;
+      else if (this.angle < lo) this.angle = lo;
     }
-    this._apply();
   }
 
   _apply() {
@@ -704,15 +735,25 @@ export class TurretRig {
     }
   }
 
-  step(dt) {
-    for (const axis of this.axes) axis.step(dt);
+  /**
+   * One tick for every axis this rig drives.
+   *
+   * `inputScale` is passed straight through to each `TurretAxis.step` and is
+   * HP-15's damage penalty: **0.2** while the vehicle is critically damaged,
+   * 1 otherwise. `map.html` owns deciding which, since it is the only thing
+   * that knows the hull's live Armor.
+   */
+  step(dt, inputScale = 1) {
+    for (const axis of this.axes) axis.step(dt, inputScale);
   }
 
   /** The traverse this rig currently sits at, in radians, in the same sense
    *  the node itself is rotated about its own up axis — i.e. already through
    *  `RIG_SIGN`, so a caller does not have to know this file's convention.
    *  Zero when the seat has no yaw axis to traverse (a fixed mount that only
-   *  elevates). Read by `map.html` to drive the HUD's turret dial. */
+   *  elevates).
+   *
+   *  NOT what the HUD's turret dial wants: see `turretYawRadians`. */
   headingRadians() {
     for (const axis of this.axes) {
       if (axis.axisName === 'yaw') {
@@ -720,6 +761,28 @@ export class TurretRig {
       }
     }
     return 0;
+  }
+
+  /**
+   * The same traverse, in the ENGINE's sign rather than three.js's — positive
+   * to the controlled PCO's right, which is what VHUD-9's
+   * `IconLookRotation = atan2(dot(pcoRight, camForward), dot(pcoForward,
+   * camForward))` measures for a tank driver whose camera rides the turret.
+   *
+   * It exists because `headingRadians()` has `RIG_SIGN.yaw = -1` baked in, and
+   * the HUD dial used to be fed from it. That was two errors cancelling: the
+   * engine's `RotateEffect` (`0x007edbf0`: `x' = x·c + y·s`, `y' = -x·s + y·c`)
+   * is **counter-clockwise** on a y-down HUD frame while canvas `rotate(+θ)`
+   * is clockwise, and the extra `-1` hid it. `hud.js` now rotates by `-angle`,
+   * so the value it is given has to be the un-negated engine one — the two
+   * halves only look right together. `undefined`, not 0, when the seat has no
+   * traverse, so `map.html` can tell "no dial" from "dial at twelve o'clock".
+   */
+  turretYawRadians() {
+    for (const axis of this.axes) {
+      if (axis.axisName === 'yaw') return THREE.MathUtils.degToRad(axis.angle);
+    }
+    return undefined;
   }
 
   /** Re-assert every axis's current angle on its node without advancing time.
