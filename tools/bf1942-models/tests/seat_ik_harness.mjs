@@ -4,7 +4,7 @@ import {
   add, cross, dot, length, normalize, sub,
   quatApply, quatAxisAngle, quatFromTo, quatMul,
   refractorPoint, refractorYpr,
-  seatBody, seatFlagMask, resolveSeatStates, seatPoseName,
+  seatBody, seatFlagMask, resolveSeatStates, seatPoseName, defaultSeatPoseName,
   ikTarget, solveTwoBone, elbowAngle, collectIkBindings,
   SEAT_FLAG_BITS,
 } from './seat-ik.mjs';
@@ -178,6 +178,15 @@ const loose = {
                    rotation: [-30, 80, 90], targetChild: -1 }],
   },
 };
+// The pose a seat drops to when the one it names was never declared -- Road
+// to Rome's `Ub_PassengerInM3GMC`. `map.html` asks for this when the declared
+// asset 404s, and `extract_pose.resolve_seat_states` writes the same pair.
+out.defaultPose = {
+  sitting: defaultSeatPoseName(seatFlagMask(['c_SeatShowFullBodySoldier'])),
+  standing: defaultSeatPoseName(seatFlagMask(['c_SeatShowStandingSoldier'])),
+  nothingDeclared: defaultSeatPoseName(0),
+};
+
 const resolve = (node, index) => node.children?.[index] || null;
 out.bindings = collectIkBindings([dummy, loose, { name: 'Plain', userData: {} }], resolve)
   .map(b => ({ node: b.node.name, target: b.target.name, bone: b.bone }));
