@@ -185,12 +185,30 @@ believed to be working end to end.
 
 1. **The root rotation was `ypr(180, 0, 0)`** — a pure yaw, which lays the
    soldier on his back with his knees in the air. It is now
-   `ypr(180, -90, 0)`. This value is **empirical**: it was chosen by loading
-   real exported poses in the page and measuring, because two attempts at
-   deriving it from the three sign conventions involved (the `.ske`'s
-   Z-mirror, the `.baf`'s conjugate quaternion and clip-world yaw, and glTF's
-   own mirror in `add_node`) disagreed with what the page draws. The test
-   pins it and says so.
+   `ypr(180, -90, 0)`, and it is **derived**, from the two frames it has to
+   reconcile rather than from a model of how three sign conventions compose.
+
+   *What the file holds.* A seat pose's joint hierarchy is written in the space
+   `ske.parse` produces — the `.ske`'s own space, mirrored in Z. In that space
+   the soldier's spine runs along **-Z** and, for a sitting clip, his thighs
+   run along **+Y**. Measured on all eight distinct poses vanilla ships,
+   `head - pelvis` has z between -0.92 and -1.00 and `knee - hip` has y between
+   +0.85 and +0.99. The one exception is the informative one:
+   `Lb_StandInVehicle`'s thigh runs along +Z, down the spine, because a
+   standing lower body has no bend to measure.
+
+   *What glTF wants.* Up is +Y, and the node the pose is parented to is a
+   `SeatObject` in the vehicle's own exported tree, where `gltf.py` has
+   mirrored Refractor's +Z forward to **-Z**. So an occupant facing the way the
+   vehicle faces must face -Z.
+
+   Two images therefore fix the rotation: `R(-Z) = +Y` and `R(+Y) = -Z`. A
+   rotation with `y -> -z` and `z -> -y` must take `x -> -x` to keep its
+   determinant +1; that matrix is symmetric with trace -1, hence a half turn,
+   about the axis `(0, 1, -1)/sqrt(2)`. `quat_from_ypr(180, -90, 0)` is exactly
+   that quaternion, and the page agrees with the derivation to three decimals.
+   `SeatPoseOrientationTests` now asserts the two images and the axis rather
+   than grepping the source for a constant.
 2. **A `.baf` seat clip's root track carries the standing origin-at-the-feet
    offset.** `3PWillySitLower` writes `Bip01` at `0/-0.1104/-0.8335`, the same
    0.83 m from the hips that `3PStandLower` writes (`0.004/-0.0075/-0.9992`)
@@ -223,6 +241,33 @@ Captures are in this track's scratch `shots/`: `willy-behind`, `willy-side`,
 `willy-behind-lock`, `sherman-gunner-side`, and the before-the-fix
 `willy-behind` showing the soldier on his back.
 
+### Re-checked on review
+
+Re-derived and re-driven independently in the `rc-occupant` scratch, against
+the **merged** tree (streams A and B are in `main`), the re-extracted Wake and
+a re-extracted Willys. The level matters: the published `maps/wake/scene.glb`
+carries **no** `skeletonIK` at all, so nothing binds until every level is
+re-extracted with this branch's `assemble.py`.
+
+| check | result |
+|---|---|
+| Willys passenger, **before** this branch (`:5273`, `main`'s poses) | spine `(-0.029, 0.112, 0.993)` — horizontal; knees `(-0.391, 0.910, 0.141)` — straight up; hips **0.837 m** from `WillyPassengerSeat` |
+| Willys passenger, **after** | spine `(-0.003, 0.994, -0.112)`; knees `(-0.371, 0.150, -0.916)` — forward; hips **0.031 m** from the seat |
+| Willys driver, hands | both **0.00000 m** from their targets; hands level with each other, 0.500 m apart, 0.39 m forward of the pelvis — nine and three |
+| Willys driver, seat | pelvis `(-0.394, 0.600, 0.720)` in the vehicle's frame against `WillySeat`'s declared `-0.399/0.6/-0.75`: 0.005 m; head 0.641 m above the seat |
+| M3A1 driver (`c_SeatShowHalfBodySoldier`) | drawn, pelvis scaled 1e-4, hips 0.03 m from `M3A1Seat` |
+| M3A1 Browning gunner (`c_SeatShowStandingSoldier`) | drawn standing — knees *below* the hips, `(-0.170, -0.898, 0.405)` — hips 0.01 m from the seat |
+| M3A1 bench passengers, PCO2 and PCO3 | upright, hips 0.012 m from their own seats, and their knee directions are **opposite** — `(-0.710, 0.195, -0.677)` against `(0.711, 0.191, 0.677)`. The same root rotation serves both, which is the point: the constant is a property of the pose file, and the seat's own world orientation is copied on at runtime |
+| six enter/leave cycles | scene returns to 0 seat soldiers, 0 kit parts, 0 IK chains, 9 scene children — after the `leaveVehicle` fix below |
+| seat switching, driver ↔ passenger | 2 IK chains → 0 → 2; the passenger seat declares none, correctly |
+| C cycle | `cockpit` hides the body; `chase`, `front`, `flyby` show it |
+| level change while seated | everything released: 0 soldiers, 0 kit parts, geometries 399 → 119 |
+
+Captures: `rc-occupant/shots/before-willy-passenger-side.png` (the passenger
+upside down with his boots out of the back) against
+`after-willy-passenger-side.png`, and `helmet-willy-driver-ref-close.png`
+taken from the owner's own camera in `models-work/willy-hands-wheel.png`.
+
 ## Still open
 
 - **Every seat pose in the published tree is wrong** and needs re-exporting —
@@ -231,10 +276,22 @@ Captures are in this track's scratch `shots/`: `willy-behind`, `willy-side`,
 - Seat poses were exported for three soldiers to verify (`USMarineSoldier`,
   `USSoldier`, `JapaneseSoldier`); the full catalogue is 8 pose pairs per
   soldier.
-- The seated soldier is **bare-headed** where the reference capture shows a
-  helmet. That is `soldier_parts`' head-variant choice
-  (`USSoldierComplexHead1`), shared with every other pose export and not
-  touched here.
+- ~~The seated soldier is **bare-headed** where the reference capture shows a
+  helmet.~~ **Done on review.** It is not the head variant: a `BFSoldier`
+  template declares a body, a head and two hands and nothing else, so every
+  soldier the extractor produces is bare-headed by construction. The helmet
+  belongs to the **kit**, and the engine hangs it off one of exactly three
+  bones of the wearer's own skeleton — `A` (a child of `Bip01 Head`, index 17
+  in `UsSoldier.ske`), `backpack` and `HipPack`. `kits.html` has grafted them
+  since the kit work landed; the convention moved into `viewer/kit-graft.js`
+  so `map.html` could dress a seated occupant the same way, and both pages now
+  read the per-slot rotations from one place. Those rotations were settled by
+  eye and stay pinned: three automated checks once passed that graft while
+  every helmet was upside down (`kits.md`).
+
+  Only the seated occupant is dressed. The spawn-pad soldiers and the on-foot
+  player load the same bare pose glbs and are still bare-headed; it is the
+  same call in three more places whenever someone wants it.
 - `Bip01_L_Foot` / `Bip01_R_Foot` IK (46 lines across the mods) goes through
   the same code path — the chain is the bone's two ancestors either way — but
   no vehicle on Wake declares one, so it is **untested**.
@@ -246,3 +303,63 @@ Captures are in this track's scratch `shots/`: `willy-behind`, `willy-side`,
   viewer composes in world space, which is the same answer, because the engine
   only detours through that frame to store into a skeleton expressed there.
   Noted rather than hidden.
+
+## Found on review, and fixed
+
+- **`leaveVehicle` never disposed the seat pose.** The E-key exit is the one
+  path that did not; the debug pilot toggle's did, and `exitManned` did. Once a
+  driver's seat had a soldier to leave behind, stepping out of a jeep left him
+  sitting in mid-air where the seat had been, with his IK still solved every
+  frame, until the next entry replaced him. Six enter/leave cycles left one
+  orphan scene and two live chains with the player standing on the grass; they
+  now leave nothing.
+- **A load still in flight could adopt itself into an empty world.**
+  `loadSeatPose` is not awaited at its call sites, so leaving before the glb
+  arrived produced the same orphan by a different route. A generation counter,
+  bumped by `disposeSeatPose` as well as by `loadSeatPose`, makes a stale load
+  discard what it fetched.
+- **The pose scene was never given back to the GPU.** `disposeSeatPose`
+  disposed skeletons and nothing else — no geometries, no materials, no
+  textures, no `mixer.uncacheRoot`. It now does what `disposeHandWeapon` does,
+  and skips the grafted kit parts, which are clones sharing cached geometry.
+- **A repeated `addSkeletonIK` kept the wrong frame.** The engine's overwrite
+  branch (`0x8266e1a`) writes the position and the baked matrix and nothing
+  else; it never reaches the `getNoTemplates()` call at `0x8266d98`, so the
+  target child stays what the *first* declaration recorded. We replaced the
+  whole entry. 24 lines across six mods are affected — FHSW's `Hotchkiss`
+  declares the same two lines before any child and again after two, and would
+  have measured from the shell ejector instead of the mount.
+- **Road to Rome resolved 40 of 50 seat poses.** `M3GMCPassengerSeat` names
+  `Ub_PassengerInM3GMC`, which appears in exactly one file in the whole install
+  (the M3GMC's own `Objects.con`) and in no `AnimationStates` file anywhere.
+  The mod path *is* being read — vanilla's `AnimationStates.con` ends with
+  `run AnimationStatesMod`, XPack1 ships `Animations/AnimationStatesMod.con`,
+  and parsing XPack1 yields 1,636 states against vanilla's 1,458 with no
+  missing runs — the states simply do not exist, which is a bug in the mod.
+  The engine leaves the slot alone in that case (`setAnimationState`
+  `0x0826cee0` → `findState` `0x08328610` returns -1 → return at `0x0826cf12`)
+  and still draws the occupant, so each unresolvable half now drops to the
+  engine's own default, the substitution is printed and recorded in
+  `seat-poses.json`, and the page asks for the same asset when the declared one
+  404s. 50 of 50.
+- **The IK rotation was re-baked every frame.** `refractorYpr` is six trig
+  calls per bound hand per frame; the engine bakes the triple once while
+  reading the `.con` (`0x8266d41`). `collectIkBindings` now does the same, and
+  the comment claiming the pass allocated nothing says what is true.
+
+### Left alone, with the reason
+
+- **Enter/leave leaks 6 geometries and 4 textures per cycle** — sampled always
+  outside the vehicle, everything warm: 357, 363, 369, 375, 381. It is **not**
+  this path: unchecking the pilot box, so `loadSeatPose` returns before
+  fetching anything, gives byte-identical numbers. Older code, on the on-foot
+  soldier / weapon-rig reload. Raised separately.
+- **Dying while seated** does nothing, because the page has no flow for it:
+  `soldierArmor` is only ticked in the on-foot branch, so `__damage` while in a
+  vehicle latches no death and opens no deploy screen. Nothing for this branch
+  to get wrong; worth a row of its own for whoever owns vehicle death.
+- **`Lb_StandInVehicle` for a half-body seat.** `setUseSeat` jumps straight to
+  `disableBoneTree` when the half-body bit is set (`0x8271a1d` → `0x8271b63`)
+  and never sets a lower-body state at all. We resolve one anyway; the legs are
+  hidden, so it cannot show, and having one name per pose keeps the asset
+  lookup a single path.
