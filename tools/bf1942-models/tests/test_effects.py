@@ -551,6 +551,167 @@ def run_harness() -> dict:
     return json.loads(proc.stdout)
 
 
+# A bundle tree whose sound is one level down, which is the shape 22 of
+# vanilla's 70 sounding impact bundles have: the MaterialManager names
+# `RichoStoneDecal`, and it is the `e_RichoStone` it wraps that owns the
+# script. Each template sits in its own directory so the relative
+# `Sounds/...` binding has to be resolved against the *owner's* `.con`.
+SOUND_CON_DECAL = """
+ObjectTemplate.create EffectBundle RichoStoneDecal
+ObjectTemplate.addTemplate e_RichoStone
+"""
+SOUND_CON_RICHO = """
+ObjectTemplate.create EffectBundle e_RichoStone
+ObjectTemplate.loadSoundScript Sounds/richostone.ssc
+"""
+SOUND_CON_OWN = """
+ObjectTemplate.create EffectBundle e_ExplGas
+ObjectTemplate.loadSoundScript Sounds/High.ssc
+ObjectTemplate.addTemplate e_RichoStone
+"""
+SOUND_CON_MUTE = """
+ObjectTemplate.create EffectBundle e_BuildingDust
+"""
+
+# `richostone.ssc` in miniature: one patch, four alternates closed with
+# `randomPlay 1`, each with the distance ramp that owns its volume.
+RICHOSTONE_SSC = """
+#templateLevel HIGH
+newPatch
+load @ROOT/Sound/@RTD/stoneimpact1.wav
+volume .9
+minDistance 5
+priority 4
+dopplerOff
+beginEffect
+controlSource Distance
+controlDestination Volume
+envelope Ramp
+param 6
+param 25
+param 1
+param -1
+endEffect
+load @ROOT/Sound/@RTD/stoneimpact2.wav
+volume .9
+minDistance 5
+priority 4
+randomPlay 1
+"""
+
+# Two patches, the second of which is a `trigger Volume` layer gated on a step
+# `Time` ramp — the speed-of-sound delay every explosion script uses.
+EXPLGAS_SSC = """
+#templateLevel HIGH
+newPatch
+load @ROOT/Sound/@RTD/explgas.wav
+volume 1
+minDistance 40
+newPatch
+load @ROOT/Sound/@RTD/explnrmsemi1.wav
+trigger Volume
+beginEffect
+controlSource Time
+controlDestination Volume
+envelope Ramp
+param 0.3
+param 0.3
+param 0
+param 1
+endEffect
+"""
+
+
+def sound_library() -> con_mod.ObjectLibrary:
+    lib = con_mod.ObjectLibrary()
+    lib.add_con("Objects/Effects/RichoStoneDecal/Objects.con", SOUND_CON_DECAL)
+    lib.add_con("Objects/Effects/e_RichoStone/Objects.con", SOUND_CON_RICHO)
+    lib.add_con("Objects/Effects/e_ExplGas/Objects.con", SOUND_CON_OWN)
+    lib.add_con("Objects/Effects/e_BuildingDust/Objects.con", SOUND_CON_MUTE)
+    return lib
+
+
+class BundleSoundTests(unittest.TestCase):
+    """`loadSoundScript` on an effect tree, and the layers it parses to."""
+
+    def test_a_bundle_takes_its_own_script(self) -> None:
+        found = effects.bundle_sound_script(sound_library(), "e_ExplGas")
+        self.assertEqual(("Objects/Effects/e_ExplGas/Sounds/High.ssc",
+                          "e_ExplGas", 0), found)
+
+    def test_a_wrapper_inherits_the_script_of_the_bundle_it_wraps(self) -> None:
+        """The 22-of-70 case. Reading only the named template finds nothing."""
+        lib = sound_library()
+        self.assertIsNone(lib.object("RichoStoneDecal").sound_script)
+        path, owner, depth = effects.bundle_sound_script(lib, "RichoStoneDecal")
+        # Resolved against e_RichoStone's own .con, not RichoStoneDecal's.
+        self.assertEqual("Objects/Effects/e_RichoStone/Sounds/richostone.ssc", path)
+        self.assertEqual("e_RichoStone", owner)
+        self.assertEqual(1, depth)
+
+    def test_a_bundle_with_no_script_anywhere_is_silent(self) -> None:
+        self.assertIsNone(
+            effects.bundle_sound_script(sound_library(), "e_BuildingDust"))
+
+    def test_an_unknown_name_is_silent_rather_than_an_error(self) -> None:
+        self.assertIsNone(
+            effects.bundle_sound_script(sound_library(), "NoSuchBundle"))
+
+    def test_a_cycle_terminates(self) -> None:
+        lib = con_mod.ObjectLibrary()
+        lib.add_con("Objects/Effects/a/Objects.con",
+                    "ObjectTemplate.create EffectBundle a\n"
+                    "ObjectTemplate.addTemplate b\n")
+        lib.add_con("Objects/Effects/b/Objects.con",
+                    "ObjectTemplate.create EffectBundle b\n"
+                    "ObjectTemplate.addTemplate a\n")
+        self.assertIsNone(effects.bundle_sound_script(lib, "a"))
+
+    def _layers(self, ssc: str) -> list[dict]:
+        from bf42.level import parse_ssc as _parse
+        patches = _parse(ssc, level="high")
+        return effects.sound_layers(
+            patches,
+            lambda ref: (Path(ref).name, b""),
+            lambda resolved: f"sounds/{Path(resolved[0]).stem}.mp3")
+
+    def test_layers_carry_the_patch_index_and_random_play(self) -> None:
+        layers = self._layers(RICHOSTONE_SSC)
+        self.assertEqual(2, len(layers))
+        self.assertEqual(["sounds/stoneimpact1.mp3", "sounds/stoneimpact2.mp3"],
+                         [l["file"] for l in layers])
+        # One patch, so one index; `randomPlay 1` closes it and reaches both.
+        self.assertEqual([0, 0], [l["patch"] for l in layers])
+        self.assertEqual([True, True], [l["randomPlay"] for l in layers])
+        self.assertEqual(0.9, layers[0]["volume"])
+        self.assertEqual(5.0, layers[0]["minDistance"])
+        self.assertEqual(4, layers[0]["priority"])
+        self.assertFalse(layers[0]["doppler"])
+
+    def test_layers_keep_the_distance_ramp_that_owns_the_volume(self) -> None:
+        mods = self._layers(RICHOSTONE_SSC)[0]["modulators"]
+        self.assertEqual(1, len(mods))
+        self.assertEqual("volume", mods[0]["dest"])
+        self.assertEqual("distance", mods[0]["source"])
+        self.assertEqual("ramp", mods[0]["envelope"])
+        self.assertEqual([6.0, 25.0, 1.0, -1.0], mods[0]["params"])
+
+    def test_separate_patches_keep_separate_indices(self) -> None:
+        layers = self._layers(EXPLGAS_SSC)
+        self.assertEqual([0, 1], [l["patch"] for l in layers])
+        self.assertEqual([False, False], [l["randomPlay"] for l in layers])
+        # The delayed distant layer: `trigger Volume` plus a step Time ramp.
+        self.assertEqual("volume", layers[1]["trigger"])
+        self.assertEqual([0.3, 0.3, 0.0, 1.0], layers[1]["modulators"][0]["params"])
+
+    def test_an_unresolvable_sample_is_dropped_not_faked(self) -> None:
+        from bf42.level import parse_ssc as _parse
+        patches = _parse(RICHOSTONE_SSC, level="high")
+        layers = effects.sound_layers(patches, lambda ref: None,
+                                      lambda resolved: "never")
+        self.assertEqual([], layers)
+
+
 class CoreModuleTests(unittest.TestCase):
     results: dict
 
