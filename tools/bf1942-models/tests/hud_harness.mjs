@@ -254,10 +254,42 @@ results.seatDots = {
     'Vehicle/VehiclePos/VehiclePosX1': 32,
     'Vehicle/VehiclePos/VehiclePosY1': 61,
   }),
-  // A scene baked before `setVehicleIconPos` was parsed feeds nothing, and
-  // the layout's own literal rect stands.
+  // A scene baked before `setVehicleIconPos` was parsed feeds nothing. The
+  // leaf's own rect is that variable pair's authored placeholder, not a seat
+  // position, so the dot is not drawn at all.
   unfed: dotAt({}),
   halfFed: dotAt({ 'Vehicle/VehiclePos/VehiclePosX1': 54 }),
+  // ...and nothing reaches the canvas for it, which is the claim that
+  // actually matters: `_drawOccupiedSeat` must return before `drawImage`.
+  unfedDrawsNothing: (() => {
+    const hud = new Hud({ canvas: null, sprite: () => ({ width: 8, height: 8 }) });
+    hud.vars['Occupied/OccupiedData'] = [1, 2, 2, 2, 2, 2];
+    let drawn = 0;
+    const ctx = { globalAlpha: 1, save() {}, restore() {}, translate() {},
+                  rotate() {}, drawImage() { drawn++; } };
+    const [x, y, w, h] = seatZero.rect;
+    hud._drawOccupiedSeat(ctx, seatZero, x, y, w, h);
+    return drawn;
+  })(),
+  fedDrawsOne: (() => {
+    const hud = new Hud({ canvas: null, sprite: () => ({ width: 8, height: 8 }) });
+    hud.vars['Occupied/OccupiedData'] = [1, 2, 2, 2, 2, 2];
+    hud.vars['Vehicle/VehiclePos/VehiclePosX1'] = 54;
+    hud.vars['Vehicle/VehiclePos/VehiclePosY1'] = 103;
+    const at = [];
+    const ctx = { globalAlpha: 1, save() {}, restore() {}, translate() {},
+                  rotate() {}, drawImage(_img, px, py) { at.push([px, py]); } };
+    const [x, y, w, h] = seatZero.rect;
+    hud._drawOccupiedSeat(ctx, seatZero, x, y, w, h);
+    return at;
+  })(),
+  // A leaf that binds no pair at all never claimed to be placed by a
+  // variable, so it keeps its own rect.
+  noBinding: (() => {
+    const hud = new Hud({ canvas: null, sprite: () => ({ width: 8, height: 8 }) });
+    const { posVar, ...bare } = seatZero;
+    return hud.seatDotPosition(bare, bare.rect[0], bare.rect[1]);
+  })(),
 };
 
 // --- the soldier ammo panel's type enum (HUD-10) -----------------------------
