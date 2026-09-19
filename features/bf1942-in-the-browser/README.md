@@ -400,10 +400,33 @@ game's own list filters on `singlePlayer`.
 
 ---
 
+## The bot settings are switched off (2026-09-20)
+
+The screen's left column - the CUSTOM / EASY / NORMAL / HARD list, OVERALL
+DIFFICULTY, the three AI sliders and the PERFORMANCE block - configures bots,
+and this site has none, so it was a panel of controls that changed nothing.
+`SHOW_BOT_SETTINGS` in `viewer/play/menu-screen.js` is `false`: the column
+neither paints nor takes a click, and the level list, preview and TEAM panel
+stay exactly where the game puts them. Nothing was deleted - the layout pack
+still carries every element, and the flag brings the game's screen back.
+
+It returns with the bots, and the bots are blocked on research: how the
+engine's AI works, and what `Skirmish/SkirmishAiSkill`, `SkirmishBotRatio`,
+`SkirmishNrOfLives`, `SkirmishOverallDifficulty` and the two
+`Options/General/SkirmishPercentageOf*` variables become when a battle starts,
+is not in `features/bf1942-engine-reference` yet.
+
 ## Launching
 
 START goes to `../map.html?map=<level>&team=<1|2>`. The map page is reached by
 a relative path: it is the same source file the mesh site serves, not a fork.
+
+The way back is the engine's own: `game.disconnect` in the console (`~`)
+returns to this screen. And a bare `map.html` hands over to it (2026-09-20):
+once `show.dev 1` hid the debug panel, the level list inside it went too, so a
+bare page opened the manifest's first level with nothing to change it with.
+`?map=`, `?replay=`, `?shots` and `?dev=1` stay on the map page; the mesh
+site's Maps tab now opens the menu. Pinned by `tests/test_map_entry.py`.
 
 `map.html` gained only the launch parameters. `?map=` it already honoured.
 `?team=` resolves to 1 (Axis) or 2 (Allied) — `Campaign/Team`'s own numbering,
