@@ -352,7 +352,7 @@ The interface is data, so almost every item here is extraction or plumbing, not 
 |---|---|---|---|
 | 1 | Spawn-map pane too bright | The capture dims it heavily (black sea, faint grid); the viewer draws full-colour art | Not in the layout: `ShowMap` holds an empty `ClipNode` (ledger MEME-10). Quick route: take a multiplier from `ref_02` by comparing sea and land pixels against `InGameMap`. Proper route: decompile `0x0045d7c0`, where the map is swapped in |
 | 2 | Map pane rect is measured | `(280,33) 512x512`, flagged `measured` in `spawn-layout.json` | Same function as item 1 (MEME-8) |
-| 3 | Ticket counters not drawn | `ShowTicket` is decoded into `spawn-layout.json` at `(620,4) 256x32`, with `flag_ticket_<nation>` and `icon_ticketbar` in the pack | Round-start tickets are static level data: `Game.setNumberOfTickets` in `GameTypes/Conquest.con`, already parsed per team by `scripts/extract_map_dossiers.py` (`tickets`). Carry them into `scene.json` on the next re-extract, or read the dossier |
+| 3 | ~~Ticket counters not drawn~~ | **DONE 2026-09-19.** `paintDeployChrome` draws `spawn-layout.json`'s own `tickets` group beside the spawn group, fed from `scene.json.tickets` (`Game.setNumberOfTickets`, parsed since `parity/tickets`). Wake's spawn screen shows a US flag and a blue 100 against a Japanese flag and a red 100, flags resolved per level through `teamNation`. The same group is now in `hud-layout.json` too, so `hud.js` draws it in-game with no code of its own | Round-start values only; what a live bleed would need is in [`../bf1942-3d-models/tickets-hud.md`](../bf1942-3d-models/tickets-hud.md). `Ticket/*TicketBlink` is still unfed — what threshold sets it was not read |
 | 4 | HUD minimap frame chosen by the viewer | The widget's position and size are ours | No rect of its own (MEME-12), but its neighbours pin it: ticket bar `(620,4) 256x32`, grid readout `Coordinates/ShowMapCoordinates` `(627,185) 50x20` in `Style/InGameLatin11`, control-point strip `(620,207) 256x16`. So the art sits at x=620 between y=36 and y=207. Defaults: `game.setMinimapTransparency 20`, `game.setStaticMinimap 1` |
 | 5 | No minimap zoom (N) or rotating mode | Not implemented | Step values and rotation source unknown (MMAP-1, MMAP-2); likely in the undefined code range `0x0046a5c0-0x0046e230` |
 | 6 | Mod levels draw vanilla chrome | The pack, layout, fonts and strings come from `Mods/bf1942` only. The viewer tree holds 241 EoD, 8 XPack1 and 11 XPack2 levels | 16 installed mods ship their own `menu.rfa` and lexicon. Resolve along `game.addModPath` per mod, write `_shared/hud/<mod>/`, and pick by the level's mod |
@@ -363,3 +363,34 @@ The interface is data, so almost every item here is extraction or plumbing, not 
 | 11 | Front-end menus undecoded | 91 layout files; only `InGame` groups are used | `meme.py` reads the whole format. Nothing in the viewer needs them yet |
 | 12 | Text is sharper than the game's | Nearest-neighbour glyphs; the game filters bilinearly | Cosmetic |
 | 13 | Non-Conquest layouts | Only `Conquest/` is read | See the open questions in `minimap-and-fullmap.md` |
+
+### 2026-09-19: what the spawn screen gained, and one correction
+
+Item 3 above is closed — see its row. Two notes beside it.
+
+**The counter belongs to both surfaces, not to the spawn screen.** `ShowTicket`
+gates a top-level entry of `menu/InGame`, a *sibling* of `Kit/ShowKit` rather
+than a child of it. That is why the game draws the same nine leaves over the
+deploy screen and over the live world, and it is what let this be wired once:
+`extract_hud_layout.py` now decodes the same top as its own `tickets` group, so
+`hud.js` paints it in-game generically, while `paintDeployChrome` paints the
+spawn-screen copy from `spawn-layout.json`. Decoding it twice was a free
+cross-check — the two flatteners agree on all nine leaves and all nine rects,
+differing only in that the HUD one classifies the two flag nodes as
+`variable-picture` (they carry a `var`) where this one calls them `picture`.
+
+**A trap for whoever feeds the next bound texture here.** `deployVars()` seeds
+its table from `spawn-layout.json`'s own `variables` block — the file's sample
+values. So a generic "if the variable is fed, use it" rule in `deployTexture`
+must sit *below* the existing per-level cases, or `ChangeTeam/AxisTeamFlag`'s
+sample (`Icon_flag_ger.tga`) beats the `icon_flag_<nation>` lookup and every
+team header goes German. The live path is there now, used by the two ticket
+flags, and it is ordered accordingly.
+
+**A separate warning surface now exists.** The combat-area countdown
+(`Outside/OutsideTime`, `menu/InGame` top-level entry #42, plate
+`textmessBG_3line_256x64` at `(305,171)`) draws over the live world through
+the same `hud.js`. It is not part of the spawn screen, but it is the first
+thing in this project to use the `Ingame/text-mess/` plates, which are now in
+the sprite pack — the 1- and 2-line ones with it, ready for the spawn-point
+and status messages that share the widget family and are still unfed.
