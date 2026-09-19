@@ -682,6 +682,31 @@ export class TurretRig {
     this.axes = AXES
       .filter(name => isAimAxis(seat.axes[name]?.spec))
       .map(name => new TurretAxis(name, seat.axes[name].node, seat.axes[name].spec));
+    /**
+     * A single multiplier on everything the player asks this rig for, set from
+     * outside — **HP-15**, and the one hook the vehicle's damage state needs
+     * in this file.
+     *
+     * `RotationalBundle::handlePlayerInput` (lnxded 0x081d834f) picks between
+     * two near-identical duplicated blocks; the one it takes when the object's
+     * `+0xee` byte is set multiplies each of the three input axes by the
+     * double at `ds:0x86c8678` = **0.2** (0x081d83af / 0x081d83b7). So a
+     * critically damaged vehicle still traverses, at a fifth of the rate. A
+     * destroyed one is a separate, harder gate one level up —
+     * `PlayerControlObject::handlePlayerInput` (0x08318920) returns before
+     * forwarding input to any child at all — and reaches here as **0**.
+     *
+     * It is deliberately a scale on the **input**, applied here rather than
+     * inside `TurretAxis`: the engine scales `PlayerInput` on its way into the
+     * bundle, not the servo's own maxSpeed or acceleration, so a critical
+     * turret's wind-up profile is unchanged and only the amount asked for
+     * shrinks. It also keeps the whole of HP-15 out of `TurretAxis`, whose
+     * servo is being replaced under GUN-2.
+     *
+     * `map.html` owns the value; `vehicle-damage.js`'s `inputGate` is the
+     * rule that produces it.
+     */
+    this.inputScale = 1;
   }
 
   /**
@@ -698,9 +723,14 @@ export class TurretRig {
    * every manned gun in the viewer, not just the tank that exposed it.
    */
   aim(dx, dy) {
+    // HP-15's single multiplier (see `inputScale`). 0 for a wreck, which takes
+    // no player input at all, so the rig is left exactly where its last
+    // occupant abandoned it rather than drifting or snapping home.
+    const scale = this.inputScale;
+    if (!(scale > 0)) return;
     for (const axis of this.axes) {
-      if (axis.spec.input === 'c_PIMouseLookX') axis.feed(dx);
-      else if (axis.spec.input === 'c_PIMouseLookY') axis.feed(dy);
+      if (axis.spec.input === 'c_PIMouseLookX') axis.feed(dx * scale);
+      else if (axis.spec.input === 'c_PIMouseLookY') axis.feed(dy * scale);
     }
   }
 
