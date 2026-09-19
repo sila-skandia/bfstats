@@ -179,7 +179,7 @@ table, and the StandardMesh anchors.
 
 ## Current state
 
-804 symbols across 25 subsystems: 225 from bf42plus, the rest read from the binaries — 138 in the first 2026-09-16 research round (formats, menus, rendering, physics, effects), 198 more (193 net new, plus five corrections to earlier entries) in the second, on the mechanics below, a further 10 (SSC-1/SSC-2/SSC-5's SoundScript addresses) from an unrelated fix landed the same day, and 25 more (plus five corrections) across two rounds on 2026-09-17, which closed HP-6 by proving a collision never costs hit points and settled what makes a vehicle burn — see [ledger](ledger.md) HP-6 and [subsystems/hitpoints-and-damage.md](subsystems/hitpoints-and-damage.md) §3.
+913 symbols across 25 subsystems: 225 from bf42plus, the rest read from the binaries — 138 in the first 2026-09-16 research round (formats, menus, rendering, physics, effects), 198 more (193 net new, plus five corrections to earlier entries) in the second, on the mechanics below, a further 10 (SSC-1/SSC-2/SSC-5's SoundScript addresses) from an unrelated fix landed the same day, 25 more (plus five corrections) across two rounds on 2026-09-17, and **96 (plus 14 corrections) from the 2026-09-19 parity round** on damage, the vehicle HUD and soldier movement. That 2026-09-17 pair closed HP-6 by proving a collision never costs hit points — which 2026-09-18 and then 2026-09-19 refuted outright; see [ledger](ledger.md) HP-6 and [subsystems/hitpoints-and-damage.md](subsystems/hitpoints-and-damage.md) §3. **The count above does not yet include the same-day collision round's own additions** (merged separately); recompute it after a merge with `python3 -c "import json;print(len(json.load(open('symbols.json'))['symbols']))"`.
 
 **The game loop is settled (2026-09-15).** The client is a fixed-step
 simulation at `g_simulationFps` = 30 Hz (`0x00957640`; the same 30.0 in the
@@ -306,6 +306,42 @@ flipbook sprites are implemented. Two new rows came out of the same work:
 hiding `CommonSoldierData.inc`'s hit points from every soldier template
 until fixed) and **MEME-14** (the in-game HUD's eleven-group top-level
 shape, flattened by the new `extract_hud_layout.py`).
+
+**Parity round, 2026-09-19 (damage, vehicle HUD and seats, soldier movement).**
+Three research streams, each re-derived from the binaries by an independent
+verifier before anything was recorded, and the verifier's text is what the
+corpus carries. Settled:
+
+- **Movement** — the soldier jump is **6.0 m/s**, applied as a one-tick
+  acceleration, and the *server* computes it too: the arming bit 0x40 is set at
+  lnxded `0x0827d566`, so the old "dead code behind an always-equal `0.0 == 0.0`
+  test" reading was the not-armed arm only (PHY-1). Wheel friction is Coulomb
+  with a material-sourced coefficient and a 1.5:1 static/kinetic hysteresis, and
+  a soldier has its own pair, 3.2× a vehicle's with a quintic falloff in contact
+  tilt (PHY-2). The car spring's force law, **and that there is no ray anywhere
+  on the wheel path** (PHY-5). Locomotion reaches the speed tables through a
+  signed-char ramp — 0.21 s up, 0.35 s down (PHY-6) — and `+0x44` is submersion
+  depth (PHY-7).
+- **Damage** — explosion falloff is linear, `1 − d/radius`, to the victim's
+  origin with no occlusion for anything but a soldier (HP-9); `hasCollisionEffect`
+  is the impact-versus-fuse discriminator, **not** a splash capability flag
+  (HP-9d); `defaultDamageMod` is 0.0 and unreachable, so an unlisted material
+  pair really does mean no damage (DMG-1); a soldier's impact speed has 8.0
+  subtracted before any fall damage, with an early return if that goes negative
+  (HP-14); and `SimpleObject+0xed`/`+0xee` are persistent wreck state that stops
+  a destroyed vehicle being driven and cuts a critical one's traverse to 0.2×,
+  which **retires ARM-6** (HP-13, HP-15).
+- **Vehicle HUD, seats and driving** — the turret dial's trigger and angle
+  (VHUD-9), the `Ammo` and `Overheat` registrar tables (VHUD-10),
+  `setVehicleIconPos` as the seat-dot positions the extractor never parsed
+  (VHUD-11), `setHudAmmoType`'s enumeration (HUD-10), the seat switch never
+  stealing a seat (SEAT-11), `RotationalBundle`'s closed form (GUN-2), and
+  **TANK-3 refuted**: the gear curve is piecewise-linear between its control
+  points, so M3A1 is 5.512, not 17.5.
+
+Four of the round's own recommendations were refuted by verification and are
+recorded as "do NOT" items in
+[`features/bf1942-parity-round-2026-09-19/viewer-changes.md`](../bf1942-parity-round-2026-09-19/viewer-changes.md).
 
 **779 symbols across 25 subsystems** (up from 576/22; 804 after the two 2026-09-17 collision rounds): this round recorded
 198 addresses (193 net new, five corrections to existing rows) for **769**;
