@@ -84,13 +84,20 @@ class ContactResponseTests(unittest.TestCase):
 
     def test_an_undefined_material_falls_back_to_material_zero(self) -> None:
         # The accessors ask `getMaterialPtr(id)`, then `getMaterialPtr(0)`,
-        # then push `fld1`. So 232 -- the landmine's own collision-vertex
-        # material, which vanilla never defines -- gets material 0's friction
-        # 1.0 and resistance 0.02, NOT the constructor's 0.01.
+        # then push `fld1`. A real miss -- 99, one of the gaps in
+        # `materialManagerdefine.con`, which declares 155 ids and not that one
+        # -- gets material 0's AUTHORED friction 1.0 and resistance 0.02, not
+        # the Material constructor's 0.01.
         lookup = self.results["lookup"]
         self.assertAlmostEqual(1.0, lookup["undefinedFriction"])
         self.assertAlmostEqual(0.02, lookup["undefinedResistance"])
         self.assertAlmostEqual(0.0, lookup["undefinedElasticity"])
+        # 195 and 232 are NOT misses: both are declared, each with a
+        # `materialDamage` and none of the three physical words, so each is a
+        # real Material carrying the constructor's 0.01. Reading them as
+        # fall-throughs would put material 0's 0.02 in a landmine's contact.
+        self.assertAlmostEqual(0.01, lookup["expackResistance"])
+        self.assertAlmostEqual(0.01, lookup["landmineResistance"])
         # No table at all, and a table with no material 0: `fld1`.
         self.assertEqual(1.0, lookup["noTable"])
         self.assertEqual(1.0, lookup["noZero"])
@@ -121,10 +128,16 @@ class ContactResponseTests(unittest.TestCase):
         self.assertAlmostEqual(1.4, pairs["grenadeOnGrass"]["friction"])
         self.assertAlmostEqual(1.0, pairs["grenadeOnGrass"]["elasticity"])
         self.assertAlmostEqual(1.04, pairs["grenadeOnGrass"]["resistance"])
-        # Landmine (material 232 -> material 0) on the same grass.
+        # Landmine (material 232: declared, bare, so 1.0 / 0 / 0.01) on the
+        # same grass. The resistance is 0.045, not the 0.05 a fall-through to
+        # material 0's authored 0.02 would give.
         self.assertAlmostEqual(0.9, pairs["landmineOnGrass"]["friction"])
         self.assertAlmostEqual(0.0, pairs["landmineOnGrass"]["elasticity"])
-        self.assertAlmostEqual(0.05, pairs["landmineOnGrass"]["resistance"])
+        self.assertAlmostEqual(0.045, pairs["landmineOnGrass"]["resistance"])
+        # The explosives pack's 195 lands on exactly the same three.
+        self.assertAlmostEqual(0.9, pairs["expackOnGrass"]["friction"])
+        self.assertAlmostEqual(0.0, pairs["expackOnGrass"]["elasticity"])
+        self.assertAlmostEqual(0.045, pairs["expackOnGrass"]["resistance"])
 
     def test_a_grenade_cancels_its_normal_velocity_and_does_not_rebound(self) -> None:
         # This is the whole finding. `(1 - e) / 2` with e = 1.0 is ZERO, so a
