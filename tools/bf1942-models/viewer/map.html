@@ -164,6 +164,10 @@
   body:not(.dev-on) .map-controls-fab {
     display: none !important;
   }
+  #flare-canvas {
+    z-index: 1;
+    pointer-events: none;
+  }
   #gate {
     z-index: 1;
     inset: 0;
@@ -785,6 +789,13 @@
       </div>
     </div>
   </div>
+  <!-- The sun's lens flare. Its own canvas rather than a layer of
+       `hud-canvas`: the flare moves with the camera every frame while the HUD
+       painter deliberately repaints only when a variable changed
+       (features/mesh-viewer-performance rule 7), and sharing one surface
+       would force that repaint 60 times a second. Below the HUD, above the
+       3D canvas: a lens flare is part of the picture, not part of the HUD. -->
+  <canvas id="flare-canvas" aria-hidden="true"></canvas>
   <canvas id="hud-canvas" aria-hidden="true"></canvas>
   <canvas id="console-canvas" aria-hidden="true" hidden></canvas>
   <div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; CapsLock spawn &middot; M map &middot; Esc</div>
@@ -852,6 +863,10 @@ import { Armor } from './armor.js';
 import { VehicleDamageSet } from './vehicle-damage.js';
 import { SupplyDepot, SupplyField } from './supply.js';
 import { GameConsole, paintConsole, loadConsoleFont } from './console.js';
+import { wantsEnvmap, cubeFaceUrls, envmapVertexPatch, envmapVertexBody,
+         envmapFragmentPatch, envmapFragmentApply } from './envmap.js';
+import { CombatArea, combatAreaRect } from './combat-area.js';
+import { flareSprites, flareTextureFiles, hasDrawableFlare } from './lens-flare.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -996,6 +1011,19 @@ let cloudMesh = null;
 let cloudUniforms = null;
 let waterUniforms = null;
 let waterAssets = [];     // textures owned by the water/cloud shaders
+// The level's environment cubemap. The engine loads it once per level into the
+// StandardMesh draw context's +0x18 (0x005c01dd) and binds it to texture stage
+// 1 for every `envmap true` material (0x005bfab3) — it is not the water's, the
+// water shader just happens to want the same six faces. Owned here so a level
+// with no water still reflects, and disposed with `waterAssets`.
+let levelEnvCube = null;
+// `game.setActiveCombatArea` — the warning, its countdown and the damage
+// after it. All the engine reading is in `combat-area.js`; this file only
+// steps it with the body's position and hands the result to the HUD and to
+// the soldier's Armor. Rebuilt per level (11 of the 23 vanilla levels declare
+// an area; the other 12 carry `combatArea: null` and this stays inert).
+let combatArea = new CombatArea(null);
+let combatFrame = null;
 let simTime = 0;
 // Drives everything the level glb animates. One mixer over the level root
 // plays every clip it carries: `FlagBlow <name>` per control point, over that
@@ -2683,6 +2711,9 @@ function bindDynamicShading(root) {
   // the onBeforeCompile SOURCE - identical closures with different level
   // values would collide across map switches without an explicit key.
   const cacheKey = `bf-dynamic-lit:${floorGlsl}|${sunGlsl}|${dirGlsl}`;
+  // `envmap true` adds texture stage 1 on top of the same stage-0 combine, so
+  // it is a second program, keyed apart from the plain one.
+  const envCacheKey = `${cacheKey}|envmap`;
   root.traverse(obj => {
     if (!obj.isMesh || !obj.material) return;
     // A muzzle flash is light, not a surface: the exporter bakes the sprite
@@ -2717,13 +2748,20 @@ function bindDynamicShading(root) {
       // 2*(ambient+globalAmbient), and in-game palms keep genuinely dark
       // shadow sides, so the crutch is dropped here rather than folded in -
       // keeping it would pin fronds at >=1.5x their texel on Tobruk.
-      mat.customProgramCacheKey = () => cacheKey;
+      // `envmap true` is texture stage 1 over the same stage-0 combine
+      // (envmap.js carries the engine addresses). Only bound when the level
+      // actually shipped six cube faces; without them the engine's own gate
+      // (ctx+0x18 != NULL, 0x005bfa8b) fails too and the material draws plain.
+      const env = wantsEnvmap(m) && levelEnvCube ? levelEnvCube : null;
+      mat.customProgramCacheKey = () => (env ? envCacheKey : cacheKey);
       mat.onBeforeCompile = (shader) => {
+        if (env) shader.uniforms.tBfEnv = { value: env };
         shader.vertexShader = shader.vertexShader
           .replace('void main() {',
-            'varying vec3 vBfNormal;\nvoid main() {')
+            `varying vec3 vBfNormal;\n${env ? envmapVertexPatch() : ''}void main() {`)
           .replace('#include <begin_vertex>',
             `vBfNormal = mat3( modelMatrix ) * normal;
+             ${env ? envmapVertexBody() : ''}
              #include <begin_vertex>`);
         shader.fragmentShader = shader.fragmentShader
           .replace('void main() {',
@@ -2738,6 +2776,7 @@ function bindDynamicShading(root) {
                    c * ( 1.0 / 12.92 ),
                    vec3( lessThanEqual( c, vec3( 0.04045 ) ) ) );
              }
+             ${env ? envmapFragmentPatch({ srgbFns: true }) : ''}
              void main() {`)
           .replace('#include <map_fragment>',
             `#include <map_fragment>
@@ -2749,7 +2788,11 @@ function bindDynamicShading(root) {
              vec3 bfLit = 2.0 * min( vec3( 1.0 ),
                  ${floorGlsl} + ${sunGlsl} * bfNdL );
              diffuseColor.rgb = bfFromSrgb( min( vec3( 1.0 ),
-                 bfToSrgb( diffuseColor.rgb ) * bfLit ) );`);
+                 bfToSrgb( diffuseColor.rgb ) * bfLit ) );
+             // Stage 1: the environment reflection, blended by the diffuse
+             // texture's own alpha (0x005bfcc6 BLENDCURRENTALPHA). Runs after
+             // stage 0 because CURRENT is stage 0's output.
+             ${env ? envmapFragmentApply() : ''}`);
       };
       mat.needsUpdate = true;
       return mat;
@@ -2833,6 +2876,18 @@ function disposeSky() {
   for (const tex of waterAssets) tex.dispose();
   waterAssets = [];
   waterUniforms = null;
+  levelEnvCube = null;
+}
+
+// The level cubemap, loaded once and shared by the envmap materials and the
+// water's fresnel term. Called before either wants it.
+function setupEnvCube(dir) {
+  const urls = cubeFaceUrls(extras, `${MAPS_BASE}/${dir}`);
+  if (!urls) { levelEnvCube = null; return null; }
+  levelEnvCube = cubeLoader.load(urls.map(u => `${u}${bust()}`));
+  levelEnvCube.colorSpace = THREE.SRGBColorSpace;
+  waterAssets.push(levelEnvCube);
+  return levelEnvCube;
 }
 
 function srgb(rgb, fallback) {
@@ -2945,13 +3000,10 @@ function setupWater(root, dir) {
   if (layer2) layer2.colorSpace = THREE.SRGBColorSpace;
   if (depth) depth.wrapS = depth.wrapT = THREE.ClampToEdgeWrapping;
   // The engine reflects ENVMAP_G_.rcm off the water via the shader-manager
-  // envmap parameter; the same six faces feed the fresnel term here.
-  let env = null;
-  if (extras.envmap?.length === 6) {
-    env = cubeLoader.load(extras.envmap.map(f => `${MAPS_BASE}/${dir}/${f}${bust()}`));
-    env.colorSpace = THREE.SRGBColorSpace;
-    waterAssets.push(env);
-  }
+  // envmap parameter; the same six faces feed the fresnel term here. Shared
+  // with the `envmap true` mesh materials (see setupEnvCube), one cube per
+  // level rather than one per consumer.
+  const env = levelEnvCube;
   const ld = w.lightDirection || [-0.3, 0.5, 0.65];
   waterUniforms = {
     tLayer1: { value: layer1 },
@@ -4379,6 +4431,53 @@ function stepVehicleDamage(dt) {
     fedVehicleHp = hp;
     if (live) feedVehicleHud();
   }
+}
+
+/** Scratch for `stepCombatArea`'s world-position read. */
+const combatAreaPos = new THREE.Vector3();
+
+/**
+ * The combat area, one step a frame, against whatever the player occupies.
+ *
+ * `combat-area.js` carries the engine reading. The part that matters here is
+ * WHO it applies to: `GameServer::gameStatusPlaying` tests
+ * `BFPlayer::getVehicle()`'s position (lnxded 0x081523a1) and hands the
+ * damage to that same object (0x08152490), branching at 0x0815243f on the
+ * entry-point index `BFPlayer+0x6c`. Seated, that is the VEHICLE — a plane
+ * that strays out burns down and the pilot is not touched directly. On foot
+ * it is the soldier. Which is why this cannot live inside `onFoot()`: a
+ * player leaves the area in a plane far more often than on his feet, and an
+ * on-foot-only check is inert for exactly the case the mechanic exists for.
+ *
+ * Free fly is the one state with no engine counterpart — there is no player
+ * object to accrue against — so the accumulator is reset rather than frozen,
+ * and `combatFrame` goes null, which culls the warning group.
+ */
+function stepCombatArea(dt) {
+  if (!combatArea.active) { combatFrame = null; return; }
+  if (optPilot.checked && occupancy?.root) {
+    const pos = occupancy.root.getWorldPosition(combatAreaPos);
+    combatFrame = combatArea.step(dt, pos.x, pos.z);
+    if (combatFrame.damage > 0) {
+      const hull = occupiedVehicleDamage();
+      // A wreck has already died; the engine's own `giveDamage` on a
+      // destroyed object is a no-op for the same reason.
+      if (hull && !hull.destroyed) {
+        hull.damage(combatFrame.damage);
+        reconcileDamaged(hull);
+      }
+    }
+    return;
+  }
+  if (optOnFoot.checked && soldier && !soldierDead) {
+    combatFrame = combatArea.step(dt, soldier.x, soldier.z);
+    if (combatFrame.damage > 0 && soldierArmor) {
+      soldierArmor.applyDamage(combatFrame.damage);
+    }
+    return;
+  }
+  combatFrame = null;
+  combatArea.reset();
 }
 
 /** Re-pick a just-damaged vehicle's tier on the frame the damage landed. */
@@ -7656,6 +7755,10 @@ function stanceNation(team) {
  * the nation and kit-art lookups are memoised above (rule 5), so the only
  * per-call allocation left is the display-string template literal itself.
  */
+// The "nothing to warn about" frame: what `CombatArea.step` returns inside
+// the area, hoisted so `updateSoldierHud` allocates nothing per frame.
+const IN_COMBAT_AREA = { countdown: 0 };
+
 function updateSoldierHud() {
   const vars = gameHud.vars;
   // Any seat at all, which `seats.js` answers for: `occupancy` is non-null
@@ -7670,6 +7773,22 @@ function updateSoldierHud() {
   // per disposeHandWeapon's own comment on the old #ammo element — so the
   // vehicle check has to be explicit here too.
   const onFootActive = optOnFoot.checked && !!soldier && !inVehicle;
+  // The ticket counter is not the soldier's, and its own `when` is only
+  // `ShowTicket`, so it would otherwise ride over a free-fly camera — where
+  // this viewer deliberately shows no HUD chrome at all and the game would
+  // not be in a round. Gate it on the player being in the world (on foot or
+  // in any seat), which is the same condition that raises the rest of the
+  // HUD. Fed before every early return below, because a soldier who has just
+  // died leaves `soldier` null while the counter is still up in the game.
+  feedTicketVars(vars);
+  if (!onFootActive && !inVehicle) vars['ShowTicket'] = false;
+  // The combat-area warning, drawn by the layout's own `outside` group.
+  // `stepCombatArea` leaves `combatFrame` null whenever nothing the engine
+  // would call a player is in the world, and its countdown is 0 while that
+  // player is inside — either way the group culls, the engine's own gate
+  // being `0 < Outside/OutsideTime`. Not gated on `onFootActive`: the warning
+  // is exactly as much the pilot's as the rifleman's.
+  combatArea.feed(vars, combatFrame || IN_COMBAT_AREA);
   // T4a / V-R4: retail keeps the soldier stance icon inside vehicles.
   vars['Soldier/ShowSoldierIcon'] = !!soldier && (onFootActive || inVehicle);
   vars['Vehicle/ShowVehicleIcon'] = inVehicle;
@@ -8122,6 +8241,111 @@ const sprite = name => hudPack.sprites.get(name) || null;
 // ...`, once those tracks land.
 const hudCanvas = document.getElementById('hud-canvas');
 const gameHud = new Hud({ canvas: hudCanvas, sprite, base: HUD_BASE, bust });
+
+/* The sun's lens flare. `lens-flare.js` carries the engine reading and the
+ * placement arithmetic; this is the painter and the texture cache.
+ *
+ * Nothing draws on a vanilla level, and that is correct rather than broken:
+ * the five textures all 21 vanilla declarations name ship in no vanilla
+ * archive (the module's header lists every place they were looked for and the
+ * two mod archives that do have them). The extractor records them in
+ * `missingTextures` and leaves each sprite's `file` null, so `hasDrawableFlare`
+ * is false and the whole pass is skipped.
+ */
+const flareCanvas = document.getElementById('flare-canvas');
+const flareImages = new Map();          // file -> HTMLImageElement, once loaded
+let flareData = null;
+
+function setupLensFlare(dir) {
+  flareData = null;
+  flareImages.clear();
+  const ctx = flareCanvas.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, flareCanvas.width, flareCanvas.height);
+  const data = extras.lensFlare;
+  if (!hasDrawableFlare(data)) return;
+  flareData = data;
+  for (const file of flareTextureFiles(data)) {
+    const img = new Image();
+    img.onload = () => flareImages.set(file, img);
+    img.onerror = () => {};
+    img.src = `${MAPS_BASE}/${dir}/${file}${bust()}`;
+  }
+}
+
+/** The sun's own screen position, and whether anything is in front of it.
+ *  The direction is the level's `sunLightDirectionVec`, the same vector the
+ *  DirectionalLight and the sky are aimed by; the sun itself is painted into
+ *  the sky box faces, so this is where that painted disc lands. */
+function sunScreenPosition() {
+  const sd = extras.sunDirection;
+  if (!sd) return null;
+  const norm = Math.hypot(sd[0], sd[1], sd[2]) || 1;
+  // `show()` places the light at -sunDirection * 400, i.e. the sun is in the
+  // direction the light points FROM.
+  const dir = new THREE.Vector3(-sd[0] / norm, sd[1] / norm, -sd[2] / norm);
+  // Is it in front of the camera? Asked in VIEW space, where -z is forward.
+  // Not by projecting a far-off point and testing its ndc z: the sun is
+  // effectively at infinity and every level's far plane is short (Berlin's is
+  // 105 m), so such a point is always past the far plane and its ndc z always
+  // reads > 1 — which is how this first drew nothing at all.
+  const view = dir.clone().applyMatrix3(
+    new THREE.Matrix3().setFromMatrix4(camera.matrixWorldInverse));
+  if (view.z >= 0) return null;
+  // Now project a point that is inside the frustum but along the same ray, so
+  // the perspective divide gives the direction's own screen position.
+  const projected = dir.clone()
+    .multiplyScalar(camera.near + (camera.far - camera.near) * 0.5)
+    .add(camera.position)
+    .project(camera);
+  const w = flareCanvas.width;
+  const h = flareCanvas.height;
+  const x = (projected.x * 0.5 + 0.5) * w;
+  const y = (-projected.y * 0.5 + 0.5) * h;
+  // How far off centre, normalised so the screen corner is 1 — what
+  // `setFlareDistFadeScale` fades against.
+  const dist = Math.hypot(x - w / 2, y - h / 2) / (Math.hypot(w, h) / 2);
+  return { sunX: x, sunY: y, sunDistance: dist, visible: true };
+}
+
+function paintLensFlare() {
+  if (!flareData) return;
+  const width = renderer.domElement.width;
+  const height = renderer.domElement.height;
+  if (flareCanvas.width !== width || flareCanvas.height !== height) {
+    flareCanvas.width = width;
+    flareCanvas.height = height;
+  }
+  const ctx = flareCanvas.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  const view = sunScreenPosition();
+  if (!view) return;
+  const sprites = flareSprites(flareData, {
+    ...view, width, height,
+    // Not a real occlusion test: nothing here traces the sun against the
+    // scene. Left at 1 rather than faked — a guessed occlusion would flicker
+    // the whole flare on geometry it never actually checked.
+    occlusion: 1,
+    textureSize: file => {
+      const img = flareImages.get(file);
+      return img ? Math.max(img.naturalWidth, img.naturalHeight) : 0;
+    },
+  });
+  for (const sprite of sprites) {
+    const img = flareImages.get(sprite.file);
+    if (!img) continue;
+    ctx.globalCompositeOperation = sprite.additive ? 'lighter' : 'source-over';
+    ctx.globalAlpha = sprite.color[3];
+    ctx.save();
+    ctx.translate(sprite.x, sprite.y);
+    if (sprite.rot) ctx.rotate(sprite.rot);
+    ctx.drawImage(img, -sprite.size / 2, -sprite.size / 2, sprite.size, sprite.size);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+}
 gameHud.load();
 window.__hud = gameHud;
 
@@ -8163,6 +8387,58 @@ function teamNation(team) {
   let best = null;
   for (const [n, count] of tally) if (!best || count > tally.get(best)) best = n;
   return best || nationFromVehicles(team) || (team === 1 ? 'ger' : 'us');
+}
+
+/* The ticket counter.
+ *
+ * `ShowTicket` gates one top-level entry of `menu/InGame` — a sibling of the
+ * spawn screen's `Kit/ShowKit`, not a child of it — so the game draws the same
+ * nine leaves over the live world and over the deploy screen. Both painters
+ * here read that one group: `hud.js` picks it up from `hud-layout.json`
+ * generically (the group is new there this round; `extract_hud_layout.py`),
+ * and `paintDeployChrome` draws it beside the spawn group.
+ *
+ * The counts are `scene.json.tickets`, parsed by `bf42/level.py` out of the
+ * level's own `GameTypes/<mode>.con` (`Game.setNumberOfTickets`). Team 1 is
+ * Axis and team 2 Allied, the reading this file already uses everywhere else
+ * (`flag.team === 1 ? 'Axis' : ...`).
+ *
+ * These are ROUND-START values and they do not move. What a live bleed would
+ * need is in `features/bf1942-3d-models/tickets-hud.md`; the short of it is
+ * that a ticket is lost per death and per `Game.setTicketLostPerMin` while the
+ * other side holds more than half the flags, neither of which this viewer
+ * simulates — so a counting-down number here would be a fiction, and a frozen
+ * one is at least the number the round genuinely starts at.
+ */
+function ticketFlagTexture(team) {
+  // The layout's own literal is `flag_ticket_ger.tga` and the pack ships
+  // brit/can/ger/jp/rus/us. `teamNation` answers in exactly those codes.
+  return `flag_ticket_${teamNation(team)}.tga`;
+}
+
+/** Fill in the `ShowTicket` group's variables on a table. Returns whether the
+ *  group will draw. */
+function feedTicketVars(vars) {
+  const t = extras.tickets;
+  // Both counts or none: the group draws two numbers side by side and a lone
+  // one would leave the layout's own sample literal ("300"/"500") showing
+  // next to a real value, which reads as data rather than as a gap.
+  if (!t || t.team1 == null || t.team2 == null) {
+    vars['ShowTicket'] = false;
+    return false;
+  }
+  vars['ShowTicket'] = true;
+  vars['AxisTicket'] = String(t.team1);
+  vars['AlliedTicket'] = String(t.team2);
+  vars['AxisTicketFlag'] = ticketFlagTexture(1);
+  vars['AlliedTicketFlag'] = ticketFlagTexture(2);
+  // The two red 50%-alpha quads over the numbers are the engine's low-ticket
+  // warning, and it is a live-round state on a timer nothing here runs.
+  // Fed false rather than left unfed so the leaves cull deterministically
+  // instead of on whatever happened to be in the table.
+  vars['Ticket/ShowAxisTicketBlink'] = false;
+  vars['Ticket/ShowAlliedTicketBlink'] = false;
+  return true;
 }
 
 function loadMapArt(dir) {
@@ -8789,8 +9065,7 @@ function deployVars() {
   vars['Kit/SelectedKit'] = Math.max(0, KITS.indexOf(deployKit));
   vars['Kit/IsAlive'] = deployRejoin;
   vars['ChangeTeam/ShowChangeTeam'] = true;
-  // No ticket counts to show: the level report carries none.
-  vars['ShowTicket'] = false;
+  feedTicketVars(vars);
   for (const k of Object.keys(vars)) if (k.startsWith('Kit/MouseOver/')) vars[k] = false;
   if (deployHoverVar) vars[deployHoverVar] = true;
   return vars;
@@ -8806,6 +9081,15 @@ function condOk(c, vars) {
     case 'ne': return !(v === want || Number(v) === Number(want));
     case 'lt': return Number(v) < Number(want);
     case 'le': return Number(v) <= Number(want);
+    // `gt`/`ge` come out of the extractor's own operand flip (`FLIP_CMP` in
+    // extract_hud_layout.py) whenever the MemeFile puts the literal on the
+    // left, e.g. `0 < Outside/OutsideTime`. Missing here they fell through to
+    // the permissive default and drew a leaf that should have been culled --
+    // the same bug fixed in hud.js's copy of this function. No group in
+    // `spawn-layout.json` uses either today; they are implemented so this
+    // evaluator and hud.js's stay the same function.
+    case 'gt': return Number(v) > Number(want);
+    case 'ge': return Number(v) >= Number(want);
     default: return true;
   }
 }
@@ -8814,7 +9098,7 @@ const elementVisible = (el, vars) => (el.when || []).every(c => condOk(c, vars))
 
 /** The sprite a picture leaf shows: the variable pictures are the team's
  *  flag and the kit photographs, resolved for this level's nations. */
-function deployTexture(el) {
+function deployTexture(el, vars) {
   if (!el.var) return el.texture;
   const nation = teamNation(deployTeamId);
   if (el.var === 'ChangeTeam/AxisTeamFlag' || el.var === 'ChangeTeam/AlliedTeamFlag') {
@@ -8822,17 +9106,38 @@ function deployTexture(el) {
   }
   const kit = /^Kit\/Icons\/KitIcon(\d)$/.exec(el.var);
   if (kit) return kitPhoto(KITS[Number(kit[1]) - 1], nation, deployTeamId);
+  // Anything else bound to a live variable resolves the way `hud.js` does it:
+  // strip the path and the extension, lower-case. This is only reached for
+  // leaves nothing above claims — today the two ticket flags. Note that
+  // `deployVars()` seeds the table from the layout's own sample values, so
+  // this must stay BELOW the cases that derive art from the level rather than
+  // from a variable, or a sample literal would win over a real lookup.
+  const live = vars && vars[el.var];
+  if (typeof live === 'string' && live) {
+    const base = live.slice(live.lastIndexOf('/') + 1);
+    const dot = base.lastIndexOf('.');
+    return (dot > 0 ? base.slice(0, dot) : base).toLowerCase();
+  }
   return el.texture;
 }
 
 /** The string a text leaf shows. The counts are the game's live player
  *  tallies, which are all zero for a man alone on the server; the commit
  *  button reads LOADING while the scene still streams. */
-function deployText(el) {
+function deployText(el, vars) {
   if (el.key === 'RESPAWN_SUICIDE' && !worldReady) return 'LOADING';
   if (el.var && /^Kit\/NrOf/.test(el.var)) return '0';
+  // A bound string the page actually feeds wins over the layout's own sample
+  // ("300"/"500" on the ticket counters). Only values this page wrote count:
+  // `deployVars()` seeds the table from those same samples, so an untouched
+  // key would otherwise look fed.
+  if (el.var && TICKET_TEXT_VARS.has(el.var) && vars && vars[el.var] != null) {
+    return String(vars[el.var]);
+  }
   return el.text || '';
 }
+
+const TICKET_TEXT_VARS = new Set(['AxisTicket', 'AlliedTicket']);
 
 // --- laying out and painting -------------------------------------------------
 
@@ -8904,7 +9209,13 @@ function paintDeployChrome() {
   const vars = deployVars();
   const buttonHover = { RESPAWN_SUICIDE: 'suicide', RESPAWN_CLOSE: 'suicide',
                         RESPAWN_SCOREBOARD: 'score', RESPAWN_RESUME: 'resume', RESPAWN_DONE: 'resume' };
-  for (const el of data.groups.spawn.elements) {
+  // The ticket counter is its own top-level entry of menu/InGame, gated by
+  // `ShowTicket` rather than by `Kit/ShowKit`, so it is a sibling of the spawn
+  // group in the file and is drawn alongside it here — in the file's own
+  // order, which puts it over the spawn plates the way the game draws it.
+  const chrome = [...data.groups.spawn.elements,
+                  ...(data.groups.tickets?.elements || [])];
+  for (const el of chrome) {
     if (!elementVisible(el, vars)) continue;
     const [x, y, w, h] = el.rect;
     const color = el.color || [1, 1, 1, 1];
@@ -8915,7 +9226,7 @@ function paintDeployChrome() {
         ctx.fillRect(x, y, w, h);
         break;
       case 'picture': {
-        const img = sprite(deployTexture(el));
+        const img = sprite(deployTexture(el, vars));
         if (!img) break;
         // Point art at its own size — the 16 px class glyphs — stays crisp;
         // the plates and photographs get the card's bilinear filtering.
@@ -8936,7 +9247,7 @@ function paintDeployChrome() {
       case 'text': {
         const font = spawnLayout.fonts.get(el.font);
         if (!font) break;
-        const text = deployText(el);
+        const text = deployText(el, vars);
         const width = measureText(font, text);
         const tx = el.align === 'center' ? x + (w - width) / 2
           : el.align === 'right' ? x + w - width : x;
@@ -9373,6 +9684,11 @@ async function show(entry) {
   unlightTerrain(currentRoot);
   bindTerrainDetail(currentRoot, dir);
   setupSky(currentRoot, dir);
+  // Before setupWater and bindDynamicShading: both read `levelEnvCube`.
+  setupEnvCube(dir);
+  setupLensFlare(dir);
+  combatArea = new CombatArea(extras);
+  combatFrame = null;
   setupWater(currentRoot, dir);
   setupSounds(extras, dir);
   loadMapArt(dir);
@@ -9649,6 +9965,11 @@ function frame(dt) {
     seatPoseTarget.getWorldQuaternion(seatSoldier.quaternion);
   }
   if (seatPoseMixer && optPilot.checked) seatPoseMixer.update(dt);
+  // Before `stepVehicleDamage`, so a hull the combat area just hurt has its
+  // tier and its HUD bar reconciled on the same frame. Outside the movement
+  // branches above because the engine's own check is per PLAYER, not per mode:
+  // it tests and damages whatever the player occupies, plane included.
+  stepCombatArea(dt);
   // After `advance`, so a round that landed this frame is already accounted for
   // when the tier is picked. Unconditional for the same reason `advance` is: a
   // tank set alight before the player climbed out keeps burning down to nothing
@@ -9775,6 +10096,10 @@ function frame(dt) {
   const hudH = renderer.domElement.height / renderer.getPixelRatio();
   updateSoldierHud();
   gameHud.paint(hudW, hudH);
+  // After the render: the sun's screen position comes from the camera the
+  // frame was just drawn with. A no-op on every vanilla level (see
+  // `setupLensFlare`).
+  paintLensFlare();
   paintGameConsole(hudW, hudH);
 }
 renderer.setAnimationLoop(() => frame(Math.min(clock.getDelta(), 0.1)));
@@ -10286,6 +10611,50 @@ if (params.has('shots')) {
   window.__mapGate = on => {
     if (on !== undefined) mapGate = !!on;
     return mapGate;
+  };
+  // The combat area and what it is doing to the body this frame: the rect the
+  // level declared, the engine's two constants, and the live accumulator. A
+  // headless check teleports out, steps frames and reads the countdown and
+  // the HP down the same path a walk would take.
+  //
+  // The two constants are settable here for the same reason `__setAmmo` and
+  // `__damage` exist: the engine's real allowance is 10 seconds, and under
+  // `__renderOnce` a frame is a capped 0.1 s of sim, so reaching the damage
+  // honestly costs 100 forced frames — more than SwiftShader survives in one
+  // session. Overriding them exercises the identical code path on a shorter
+  // clock; the engine's own values are what the module defaults to and what
+  // `tests/test_combat_area.py` pins.
+  const combatAreaState = () => ({
+    active: combatArea.active,
+    rect: combatArea.rect,
+    timeAllowed: combatArea.timeAllowed,
+    damagePerSecond: combatArea.damagePerSecond,
+    outsideFor: combatArea.outsideFor,
+    frame: combatFrame,
+    hud: {
+      time: gameHud.vars['Outside/OutsideTime'],
+      text: gameHud.vars['Outside/OutsideText'],
+    },
+  });
+  window.__combatArea = (options) => {
+    if (options && Number.isFinite(options.timeAllowed)) {
+      combatArea.timeAllowed = options.timeAllowed;
+    }
+    if (options && Number.isFinite(options.damagePerSecond)) {
+      combatArea.damagePerSecond = options.damagePerSecond;
+    }
+    // The rect is settable for the same reason the two constants are, and
+    // specifically so the SEATED case can be checked: a vehicle with a
+    // drivetrain writes its own `state.position` into its scene node every
+    // frame, so a check cannot drive one out of the area by moving the node,
+    // and flying 400 m under `__renderOnce` costs more forced frames than a
+    // browser session survives. Moving the boundary instead exercises the
+    // identical path on a shorter clock. `null` restores the level's own.
+    if (options && 'rect' in options) {
+      combatArea.rect = options.rect ? { ...options.rect } : combatAreaRect(extras);
+      combatArea.reset();
+    }
+    return combatAreaState();
   };
   // Every damageable thing in the level and what it is currently showing, for a
   // headless check: shoot a tank, step frames, read the tier back.
