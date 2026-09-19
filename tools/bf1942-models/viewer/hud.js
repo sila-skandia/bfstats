@@ -297,6 +297,10 @@ export const AMMO_TYPES_WITH_ROUNDS = new Set([2, 3]);
  *  variable's authored default (55,5), so the two agree. */
 const SEAT_DOT_ORIGIN = [192, 452];
 
+/** `seatDotPosition`'s scratch pair, reused so the six leaves do not allocate
+ *  one array each per painted frame. */
+const SEAT_DOT_AT = [0, 0];
+
 function rotationAngle(el, vars) {
   const r = el.rotation;
   if (!r) return 0;
@@ -661,6 +665,8 @@ export class Hud {
     const at = this.seatDotPosition(el, x, y);
     if (!at) return;
     ctx.drawImage(img, at[0], at[1], w, h);
+    // `at` aliases `SEAT_DOT_AT` and is only valid until the next call --
+    // never hold it past this line.
   }
 
   /** Where one `occupied-seat` leaf draws: the vehicle-icon panel's own
@@ -669,13 +675,23 @@ export class Hud {
    *  is not the rect. A leaf with no `posVar` at all (no shipped one, but a
    *  hand-built leaf could) keeps its own rect, because it never claimed to
    *  be placed by a variable. Split out so `tests/hud_harness.mjs` can read
-   *  the arithmetic without a canvas. */
+   *  the arithmetic without a canvas.
+   *
+   *  Returns `SEAT_DOT_AT`, filled in place: six leaves repaint every frame
+   *  the vehicle panel is up, and a fresh pair per dot is 360 two-element
+   *  arrays a second for arithmetic the caller consumes immediately. Copy it
+   *  if you need to keep it. */
   seatDotPosition(el, x, y) {
-    if (!el.posVar) return [x, y];
+    if (!el.posVar) {
+      SEAT_DOT_AT[0] = x; SEAT_DOT_AT[1] = y;
+      return SEAT_DOT_AT;
+    }
     const vx = this.vars[el.posVar.x];
     const vy = this.vars[el.posVar.y];
     if (typeof vx !== 'number' || typeof vy !== 'number') return null;
-    return [SEAT_DOT_ORIGIN[0] + vx, SEAT_DOT_ORIGIN[1] + vy];
+    SEAT_DOT_AT[0] = SEAT_DOT_ORIGIN[0] + vx;
+    SEAT_DOT_AT[1] = SEAT_DOT_ORIGIN[1] + vy;
+    return SEAT_DOT_AT;
   }
 
   /** The procedural crosshair (`BfCrosshairNode`), for the layout groups
