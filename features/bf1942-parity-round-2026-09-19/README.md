@@ -90,6 +90,37 @@ until the other session's corpus work is committed).
 | W2-C turrets and HUD | the velocity-servo `TurretAxis`, `continousRotationSpeed`, `automaticReset`, the wrap rule, `setHasTurretIcon`, `setVehicleIconPos` and the seat dots, the paired dial-sign fix, `aticon` feeds 2 (`seats.js`, `hud.js`, `con.py`) |
 | W2-D drivetrain | the gear ladder from the engine's curves, material-sourced friction with the 2.25 / 1.5 hysteresis, the spring law, a hull-collision plan (`ground.js`) |
 
+**Where wave 2 lands: branch `mesh-wave2`, not `main`.** The other session's
+collision round is uncommitted in the main checkout and touches
+`fall-damage-research-groundwork-2026-09-17.md`, `ledger.md`, `symbols.json`
+and four subsystem docs. W2-A edits the first of those, so git refuses the
+merge into `main` rather than overwrite live work, which is the right answer.
+Each reviewed wave-2 branch, and the corpus integration
+(`worktree-agent-aaac8884c2b77d036`), is merged and tested on `mesh-wave2`;
+it goes into `main` in one step once that work is committed.
+
+| On `mesh-wave2` | State |
+|---|---|
+| W2-A movement | **merged** `a13d229`, 1,384 green. Review fixed the jump's backward kick (it was taken off a velocity the friction stand-in had just overwritten, so a jump against a wall drove into it), proved the receding-contact skip cannot tunnel (0.1 m wall, concave corner, 128 probes on three levels against `main`), and showed `main` still has two failures this removes: a body frozen in mid-air at -10 m/s on Wake and an un-jumped 7.5 m/s launch in Berlin |
+
+Carried from that review, not yet acted on:
+- **The tick rate claim needs a second reader before it enters the corpus.** The
+  reviewer reads lnxded's `g_simulationFps` (30.0, `0x08716b5c`, never written)
+  as a scale constant that `Setup::initEngine` doubles into a 60 Hz main loop
+  whose frame dt is the *measured* elapsed time (`0x080bc632`, `0x080bc0b0`,
+  `0x080bc0f8`), with no fixed-step accumulator below it. If so, PHY-1's 1.12 m
+  apex and PHY-6's 0.212 s are the figures at 30 fps, not constants, and the
+  corpus README's "game loop settled (30 Hz)" needs qualifying. The viewer keeps
+  its own fixed 60 Hz soldier tick either way, now proved identical at 23.7, 30,
+  60 and 144 fps.
+- Landing on a building costs 3.3x landing on sand (materials 117/118 carry
+  `materialDamage 1.0` and `damageMod 0.1` against terrain's product of 0.030):
+  what the shipped tables say, newly visible now that the fitted constant is gone.
+- Wake's fleet flags (Shokaku, Hatsuzuki) put the soldier in the sea at y = 95
+  in both builds: the carriers are not in the static collision index at those
+  spawn points, so there is no deck to land on. `North_Base` and `South_Base`
+  refuse a jump in both builds. Both predate this round.
+
 ### Not yet assigned
 
 | Item | Status |
