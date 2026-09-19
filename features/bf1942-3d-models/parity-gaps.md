@@ -198,6 +198,7 @@ sounds, splash damage, or any damage bookkeeping when a round lands.
 |---|---|
 | Soldier animation is three frozen stills | **1,154 `.baf` clips, none of them single-frame; 1,458 state-machine states** covering walk, run, crouch, prone, jump, swim, ladder, parachute, death, ragdoll, vehicle entry and seated. The pipeline samples frame 0 of six of them |
 | No soldier anywhere in a level | `soldierSpawns` renders as 2D minimap dots; `map.html` never fetches from `models/` |
+| Vehicles are fixed walls to each other, and a crash costs nothing | The engine pushes both bodies by mass ratio, spins them from the contact point, and damages both by `speedMod x v^2` (a Willy at 15 m/s takes 45 HP off a parked Spitfire and loses 22.5). Read from the binary 2026-09-19: [collision-response.md](../bf1942-engine-reference/subsystems/collision-response.md); plan in [`features/vehicle-collision-physics/`](../vehicle-collision-physics/README.md). `viewer/vehicle-damage.js` still forbids a crash-damage path |
 | Ground vehicles are not drivable | The viewer drives **3 of 49** categorised vanilla vehicles, all fighters, all on one aircraft's hardcoded constants. Land vehicles are 61% of spawner slots |
 | Only Conquest is ever extracted | **1,420 vehicle-spawn and 1,736 soldier-spawn placements** in `SinglePlayer/`, `Tdm/`, `Ctf/` and `ObjectiveMode/` are never read |
 | No hand weapon can fire | Every hand-weapon report has `fireArms: []` — no muzzle nodes, and `poses.html` never imports `GunFire` |

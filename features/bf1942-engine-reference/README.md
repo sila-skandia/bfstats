@@ -221,7 +221,7 @@ reset), and adds
 a `collision` subsystem of about 200 symbols, server and client.
 
 
-804 symbols across 25 subsystems: 225 from bf42plus, the rest read from the binaries — 138 in the first 2026-09-16 research round (formats, menus, rendering, physics, effects), 198 more (193 net new, plus five corrections to earlier entries) in the second, on the mechanics below, a further 10 (SSC-1/SSC-2/SSC-5's SoundScript addresses) from an unrelated fix landed the same day, and 25 more (plus five corrections) across two rounds on 2026-09-17, which closed HP-6 by proving a collision never costs hit points and settled what makes a vehicle burn — see [ledger](ledger.md) HP-6 and [subsystems/hitpoints-and-damage.md](subsystems/hitpoints-and-damage.md) §3.
+1,024 symbols across 26 subsystems (817 across 25 before the 2026-09-19 collision round, which added 207 under a new `collision` subsystem): 225 from bf42plus, the rest read from the binaries — 138 in the first 2026-09-16 research round (formats, menus, rendering, physics, effects), 198 more (193 net new, plus five corrections to earlier entries) in the second, on the mechanics below, a further 10 (SSC-1/SSC-2/SSC-5's SoundScript addresses) from an unrelated fix landed the same day, and 25 more (plus five corrections) across two rounds on 2026-09-17, which closed HP-6 by proving a collision never costs hit points and settled what makes a vehicle burn — see [ledger](ledger.md) HP-6 and [subsystems/hitpoints-and-damage.md](subsystems/hitpoints-and-damage.md) §3.
 
 **The game loop is settled (2026-09-15).** The client is a fixed-step
 simulation at `g_simulationFps` = 30 Hz (`0x00957640`; the same 30.0 in the

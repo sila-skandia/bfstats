@@ -14,6 +14,39 @@ say exactly what a plane takes from sand, water, a bunker wall and a palm
 trunk, and the Corsair's own `.con` declares the full smoke -> fire ->
 explosion -> wreck chain.
 
+> **Read from the executable, 2026-09-19.** Everything this document marks
+> `strong inference` because "the final arbiter is the executable, which was
+> not opened" has now been read, in
+> [collision-response.md](../bf1942-engine-reference/subsystems/collision-response.md) (research round:
+> [`features/vehicle-collision-physics/`](../vehicle-collision-physics/README.md)).
+> The data side below stands. What changes:
+>
+> - **Which layer the engine uses** (section 1): a body's collision *vertices*
+>   always come from layer 0; the *faces* it is tested against are layer 1 when
+>   the vertex side is small (root bounding radius < 4.0 m), a soldier or a
+>   projectile, and layer 0 otherwise. Against terrain, a part's layer-0
+>   vertices are dropped on the heightfield. There is no third layer in any mod.
+> - **The speed and angle multiplier** (section 3) is not a curve to guess:
+>   terrain `damage = cos^3 x speedMod x v^2 x damageMod(att, def) x
+>   materialDamage(att)`; object against object the same with
+>   `angleMod + (1 - angleMod) sin(cos x pi/2)` in place of `cos^3`, times the
+>   attacker's `damageMod`. Applied only above 1.0.
+> - **It does not saturate "within a frame or two of sustained contact"**: one
+>   Armor takes collision damage from one other object - or from the terrain -
+>   **once per second**. It does not need to saturate: a Corsair-class plane
+>   (speedMod 2) nosing in at 40 m/s and 30 degrees takes 120 on a material-60
+>   vertex and 1,200 on a 61/63 vertex from a single event.
+> - Both sides of a contact bring their own material: the vertex side the u16
+>   stored on the collision **vertex** (which `stdmesh.py` currently reads as a
+>   float and drops), the face side the face's.
+> - `bf42/damage.py`'s 5,165 modifier pairs is 12 too many: it handles `rem`
+>   lines but not `beginRem`/`endRem` blocks (18 phantom cells, e.g. (227,90))
+>   and ignores `MaterialManager.setCell` (6 missing). The engine loads 5,153.
+>   None of the collision cells quoted below is affected. Two more rules the
+>   port needs: the table is keyed by the materials' att/def **group** (equal to
+>   the id except for 120 and 166), and an absent cell is 0 damage while a cell
+>   created only to carry an effect starts at 1.0.
+
 ---
 
 ## 1. Collision geometry
@@ -85,7 +118,10 @@ reference) is that the coarse layer serves object-vs-object physics and the
 detailed one projectile hits and per-face armour. Our assembler exports the
 detailed layer (it iterates `reversed(...)` and takes the first non-empty).
 Layer counts and contents `confirmed`; which layer the engine binds to which
-query `strong inference`.
+query was `strong inference` and is now read (note at the top): vertices from
+layer 0 always, faces from layer 1 for small bodies, soldiers and projectiles
+and from layer 0 for large ones - so the convention quoted above is close but
+not the rule.
 
 ### TreeMesh plants have hulls too — our reader currently skips them
 
@@ -285,9 +321,10 @@ ObjectTemplate.damageFromWater 1
 Every flyable plane in vanilla sets `speedMod 2` / `angleMod 1` (surveyed all
 `Vehicles/*/Objects.con`: planes 2/1; jeeps and light tanks 1; heavy tanks
 0.75; submarines 0.05). `speedMod`/`angleMod` scale collision damage received
-by impact speed and angle — the per-vehicle values are `confirmed`, the
-multiplier's exact curve lives in the executable (`strong inference`,
-consistent with the Mod Development Toolkit's ObjectTemplate reference).
+by impact speed and angle — the per-vehicle values are `confirmed`, and the
+multiplier is now read from the executable (note at the top): `speedMod x v^2`
+times an angle factor that `angleMod 1` pins at 1, which is why a glancing
+scrape costs a plane as much as a head-on hit.
 
 **The MaterialManager tables** — `Mods/bf1942/Archives/bf1942/Game.rfa`,
 loaded with our own [`bf42/damage.py`](../../tools/bf1942-models/bf42/damage.py)
@@ -347,8 +384,12 @@ Three design facts fall out:
    contact — while a slow taxi scrape really does cost a fraction of a
    hitpoint and a bounce (that is what `hasResponsePhysics` provides). So:
    proportional damage that saturates almost instantly at speed, not a
-   special case. The magnitudes are `confirmed`; the speed-multiplier shape
-   `strong inference`.
+   special case. The magnitudes are `confirmed`. **Corrected 2026-09-19:** the
+   multiplier is `cos^3 x speedMod x v^2`, and contact is *not* sustained
+   damage - one event per second per surface - so the slow taxi scrape costs
+   nothing at all below the 1.0 threshold (about 2.2 m/s square-on for a
+   plane against a wall's 0.1 cell; about 0.4 to 1.3 m/s against the ground,
+   whose `materialDamage` is 30) and the crash is one fatal event, not a ramp.
 
 Also relevant post-crash: `damageFromWater 1` + `hpLostWhileDamageFromWater
 10` (HP/s in water), `hpLostWhileUpSideDown 10` (HP/s inverted), and
