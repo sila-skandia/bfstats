@@ -47,6 +47,24 @@ results.lookup = {
   noZero: materialProperty({ '9': { friction: 0.5 } }, 232, 'friction'),
 };
 
+// A `damage.json` extracted BEFORE this round: `friction` and nothing else.
+// The engine cannot produce a Material missing a word, so the miss chain must
+// not be run on one -- `fld1` there would make every elasticity 1.0 and every
+// resistance 1.0, which turns the landmine into a grenade and over-damps the
+// lot. The constructor defaults are the honest answer.
+const STALE_MATERIALS = {
+  '0': { friction: 1.0 }, '3': { friction: 0.8 }, '70': { friction: 2.0 },
+};
+
+results.staleTable = {
+  friction: materialProperty(STALE_MATERIALS, 3, 'friction'),
+  grenadeElasticity: materialProperty(STALE_MATERIALS, 70, 'elasticity'),
+  grassResistance: materialProperty(STALE_MATERIALS, 3, 'resistance'),
+  undefinedElasticity: materialProperty(STALE_MATERIALS, 232, 'elasticity'),
+  grenadeOnGrass: contactPair(STALE_MATERIALS, 70, 3),
+  landmineOnGrass: contactPair(STALE_MATERIALS, 232, 3),
+};
+
 results.pairs = {
   grenadeOnGrass: contactPair(MATERIALS, 70, 3),
   grenadeOnRock: contactPair(MATERIALS, 70, 12),
