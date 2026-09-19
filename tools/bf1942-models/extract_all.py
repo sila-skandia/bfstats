@@ -180,7 +180,14 @@ def main() -> int:
         "--max-texture", str(args.max_texture),
     ]
     print("\nextracting seat poses (--seat-poses)...", file=sys.stderr)
-    subprocess.run(pose_cmd, check=completed.returncode == 0)
+    # Never fatal. Seat poses are an extra on top of the catalogue, and the
+    # step exits non-zero whenever one pairing does not resolve (Road to Rome:
+    # 40 of 50). Raising here skipped the thumbnails and the verifier, so a
+    # complete catalogue came out with no `thumb` on any entry.
+    posed = subprocess.run(pose_cmd)
+    if posed.returncode:
+        print(f"seat poses incomplete (exit {posed.returncode}); "
+              "the catalogue itself is unaffected", file=sys.stderr)
 
     # What actually landed, versus what was asked for.
     manifest_path = args.out / "models.json"

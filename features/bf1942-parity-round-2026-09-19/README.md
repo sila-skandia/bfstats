@@ -32,8 +32,8 @@ and findings in [`../bf1942-in-the-browser/README.md`](../bf1942-in-the-browser/
 
 | Item | Status |
 |---|---|
-| A new site, separate from `mesh.bfstats.io`, that serves the map page and its assets | open (A) |
-| The game's own Singleplayer > Instant Battle screen (`menu/SkirmishMenu`), drawn from the game's layout, textures, fonts and strings, that picks a level and a team and launches the map | open (A) |
+| The game's own Singleplayer > Instant Battle screen (`menu/SkirmishMenu`), drawn from the game's layout, textures, fonts and strings, that picks a level and a team and launches the map | **merged** `a02122c` (built, then reviewed: titles now come from the lexicon's English column, `?team=` wins over the flag tally, fonts proved against a real in-game frame). Page at `viewer/play/`; pack extracted to `maps/_shared/hud/menu` with `extract_menu_layout.py` |
+| A new site, separate from `mesh.bfstats.io`, at `play.bfstats.io` (hostname confirmed by the owner) | **decision pending.** The stream wrote a second nginx pod; held out of main by `458d62c` because memory limits already total 7,296Mi of 7,741Mi (445Mi headroom against the ~1.5Gi rule). The review recommends the existing mesh nginx answer both hostnames: it needs a second `server` block, a real `server_name mesh.bfstats.io` plus `listen 80 default_server` on the existing one, an HAProxy host ACL and a tunnel entry. Not written yet; nothing applied |
 | The map page's debug panel (level picker, fog, wireframe, vehicles, pilot, spawn on foot, sound) hidden from a regular player | open (B). The panel is collapsed behind a `Maps` fab as of today; it must disappear entirely |
 | The in-game console on the tilde key, reconstructed from the client, with `show.dev 1` (and `show.dev = 1`) revealing the debug panel | open (B) |
 
@@ -54,6 +54,18 @@ and findings in [`../bf1942-in-the-browser/README.md`](../bf1942-in-the-browser/
 | Sun lens flare and corona: 16 verbs on 21 of 23 levels, parsed by nothing | open (D) |
 
 ### Engine research (streams F1 to F3, then verifiers)
+
+**All three reported and all three were independently re-derived (2026-09-19).**
+The verdicts overturned several of the reports' own conclusions, so the
+verdicts, not the reports, are what is being integrated, on a branch, into
+`ledger.md`, `symbols.json` and the subsystem docs. The code changes that
+follow are being written up as [`viewer-changes.md`](viewer-changes.md), the
+brief for the next build wave. A second session ran a collision-response round
+the same evening (`subsystems/collision-response.md`, ledger COL-2 to COL-12);
+it independently confirmed the friction budgets and the fall-damage formula,
+closed the terrain-material half of the fall-damage question (terrain
+`materialDamage` = 30 for all 16 terrain ids), and gives "ground vehicles have
+no hull collision" an engine spec.
 
 The ledger has 200 rows. Ten are `open` and nine more are confirmed with an
 unread part. The Ghidra bridge is up and the hash matches.
@@ -84,13 +96,20 @@ unread part. The Ghidra bridge is up and the hash matches.
 | Deploy-screen kit row labels should come from `setKitName` | open |
 | `Water.baseTex`, `envmapcolor`; `aiMeshes.rfa` hulls; palm trunk collision; `c_CGProjectiles` / `c_CGLadders`; `LightmapShadowBits.lsb` (format unknown); Berlin's ground outside its four tiles | open |
 | Bar1918 round counter never decrements (`task_4b7d2a66`) | open, unreproduced |
+| `verify_models.py` is stale: on the 09-19 vanilla rebuild it calls 42 of 96 models broken, every one a false alarm. It counts projectile, tracer, trail, cockpit and emitter helper nodes as "unbound parts piled on the origin", measures a rifle's length across them (Bar1918 2.02 m against 1.19 m), and does not understand a skinned soldier. Checked by eye: `BritishSoldier`, `AichiVal` and `Bar1918` render correctly. A verifier that always says broken hides the day it is right | open |
 | Mod coverage: 18 mods installed; maps and models exist for vanilla, XPack1, XPack2 and EoD only | by choice, for now |
 
 ### The lead's own queue
 
-1. Rebuild `viewer/models` for vanilla, XPack1, XPack2 and EoD **from the
-   game** (running). The local vanilla `models.json` had been cut to one entry
-   by a subset extraction on 09-18 23:43.
+1. ~~Rebuild `viewer/models` for vanilla, XPack1, XPack2 and EoD from the
+   game.~~ **Done 2026-09-20 03:41**, 5 h 50 m, almost all of it EoD under
+   `--level-all`. 96 / 15 / 29 / 285 entries, every `glb` and `thumb` present,
+   44 / 6 / 10 / 74 cockpits. Seat poses: EoD 133 of 133; Road to Rome 40 of
+   50 (`PassengerInM3GMC`: "state machine has no Ub_PassengerInM3GMC clip",
+   with stream C's reviewer). `extract_all.py` treated that partial pass as
+   fatal and skipped the thumbnail stamp; fixed in `42f8f15`. The verifier's
+   verdicts are noise until it is fixed (vanilla 42 "broken" of 96, EoD 96 of
+   285, the same false alarms): see the wave 2 table.
 2. Re-extract every level once the streams' extractor changes are merged, so the
    tree picks up tickets, building sounds, `vehicleSoldierSpawns`,
    `splashMaterial`, `skeletonIK`, `envmap` and the widened emitter bake in one
