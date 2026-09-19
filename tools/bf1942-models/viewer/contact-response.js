@@ -124,6 +124,50 @@ export const NO_MATERIAL_TABLE = 1.0;
 export const GRENADE_MATERIAL = 70;
 
 /**
+ * The collision-vertex material of each vanilla fuse round, by projectile
+ * template name.
+ *
+ * **This is not `ObjectTemplate.material`, and the difference is load-bearing
+ * for one of the four.** A contact brings the material of the collision VERTEX
+ * that touched (collision-response.md section 9.4), which lives in the low 16
+ * bits of each `.sm` collision vertex's fourth float, and read out of the
+ * vanilla meshes it is:
+ *
+ *     gran_al_Base_m1.sm   6 col0 vertices   70    ObjectTemplate.material 70
+ *     granade_axis_m1.sm   6 col0 vertices   70    ObjectTemplate.material 70
+ *     demokit_m1.sm        6 col0 vertices   195   ObjectTemplate.material 70
+ *     landmine_m1.sm      12 col0 vertices   232   ObjectTemplate.material 230
+ *
+ * So the explosives pack's damage material is the grenade material and its
+ * CONTACT material is not — read `ObjectTemplate.material` for it and the pack
+ * would stop dead like a grenade instead of settling like a mine. 195 and 232
+ * are both undefined in `materialManagerdefine.con` and fall back to material
+ * 0, so both land on the same coefficients; the table exists to get there for
+ * the right reason.
+ *
+ * **The proper fix is an extractor word** — the collision material belongs on
+ * the projectile spec the same way `material2` and `radius` do — and until
+ * there is one this is four rows of verified data rather than a guess. A
+ * template not listed falls back to whatever material the caller passes,
+ * which for a mod is its own declared one.
+ */
+export const CONTACT_MATERIALS = Object.freeze({
+  grenadealliesprojectile: 70,
+  grenadeaxisprojectile: 70,
+  exppackprojectile: 195,
+  landmineprojectile: 232,
+});
+
+/** `CONTACT_MATERIALS` by template name, or `fallback`. */
+export function contactMaterialFor(template, fallback) {
+  if (typeof template === 'string') {
+    const known = CONTACT_MATERIALS[template.toLowerCase()];
+    if (Number.isFinite(known)) return known;
+  }
+  return fallback;
+}
+
+/**
  * One material's value for one of the three physical words, with the engine's
  * own fallback chain.
  *

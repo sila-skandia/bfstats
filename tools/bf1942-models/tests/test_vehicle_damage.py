@@ -447,5 +447,90 @@ class InputGateTests(unittest.TestCase):
         self.assertTrue(other["combatArea"]["blocked"])
 
 
+class SoldierSplashTests(unittest.TestCase):
+    """HP-10: the exposure term, and the soldier who was never splashed at all.
+
+    `handleExplosionOnObject` (lnxded 0x08156500) seeds the exposure with
+    `1.0f` at 0x08156505 and replaces it from `checkForHitOnSoldier`
+    (0x08156eb6) at 0x08156ece for a soldier victim only, short-circuits the
+    whole victim when it comes back 0.0 (0x08156ede), and otherwise multiplies
+    it into the distance falloff at 0x081566b4. The sampling itself is
+    `viewer/soldier-exposure.js` and `tests/test_soldier_exposure.py`; what is
+    pinned here is that `applySplash` spends it, and on whom.
+
+    The grenade's own numbers throughout: `material2 205`, `radius 15`,
+    `materialDamage(205)` 30 and `damageMod(205, 40)` 2.0 against a soldier's
+    material 40 and his 30 hit points.
+    """
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["soldierSplash"]
+
+
+    def test_a_grenade_at_a_soldiers_feet_kills_him(self) -> None:
+        # Until this round `applySplash` walked registered vehicles and the
+        # man on foot was not one, so a grenade at his feet cost him nothing.
+        # A soldier target carries his own Armor instead of an owner id.
+        # `materialDamage(205)` 30 x `damageMod(205, 40)` 2.0 = 60 HP at the
+        # centre, halved by a standing soldier's 0.5 cap -- still 30, which is
+        # exactly his hit points.
+        splash = self.results
+        self.assertEqual(30, splash["atFeetStanding"]["lost"])
+        self.assertTrue(splash["atFeetStanding"]["dead"])
+        self.assertEqual(30, splash["atFeetCrouching"]["lost"])
+        self.assertTrue(splash["atFeetCrouching"]["dead"])
+
+    def test_the_standing_cap_is_worth_fifteen_hit_points_at_half_radius(self) -> None:
+        # The clearest consequence of the 18-against-nine divisor: at 7.5 m
+        # inside a grenade's 15 m radius the falloff is 0.5, so 30 HP before
+        # exposure. A crouching man takes all of it and dies; a standing man
+        # takes half and walks away on 15.
+        splash = self.results
+        self.assertEqual(15, splash["sevenFiveStanding"]["lost"])
+        self.assertEqual(15, splash["sevenFiveStanding"]["hp"])
+        self.assertFalse(splash["sevenFiveStanding"]["dead"])
+        self.assertEqual(30, splash["sevenFiveCrouching"]["lost"])
+        self.assertTrue(splash["sevenFiveCrouching"]["dead"])
+
+    def test_partial_cover_scales_the_damage_by_the_sample_fraction(self) -> None:
+        # Two of nine samples through, standing: 2/18 of 30 HP.
+        barely = self.results["sevenFiveBarely"]
+        self.assertAlmostEqual(2 / 18, barely["exposure"])
+        self.assertAlmostEqual(30 * 2 / 18, barely["lost"], places=3)
+
+    def test_total_cover_short_circuits_before_the_damage_mod(self) -> None:
+        # `handleExplosionOnObject` returns at 0x08156ede on exposure 0.0
+        # rather than multiplying by it, which is why nothing is reported.
+        cover = self.results["inCover"]
+        self.assertEqual(30, cover["hp"])
+        self.assertEqual(0, cover["lost"])
+        self.assertIsNone(cover["exposure"])
+        # And the strict `radius > d` gate still applies on its own.
+        self.assertEqual(30, self.results["outside"]["hp"])
+
+    def test_a_non_soldier_victim_is_never_asked_for_an_exposure(self) -> None:
+        # `edi` is seeded 1.0f at 0x08156505 and only a soldier replaces it.
+        # There is no occlusion at all for anything else, so a tank behind a
+        # wall takes the full falloff.
+        not_a_soldier = self.results["notASoldier"]
+        self.assertFalse(not_a_soldier["asked"])
+        self.assertEqual(30, not_a_soldier["lost"])
+        # A soldier with no callback keeps the seeded 1.0 too.
+        self.assertEqual(1, self.results["noCallback"]["exposure"])
+
+    def test_the_exposure_callback_is_handed_the_target_and_the_blast(self) -> None:
+        # The blast point is the one `applySplash` measured from -- the
+        # `splashPoint` when there is one -- so the caller casts its rays from
+        # exactly where the damage came from.
+        calls = self.results["callbackArguments"]
+        self.assertEqual(1, len(calls))
+        self.assertEqual(2, calls[0]["pose"])
+        self.assertEqual([1, 2, 3], calls[0]["blast"])
+
+
+
 if __name__ == "__main__":
     unittest.main()
