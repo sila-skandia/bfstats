@@ -2203,9 +2203,14 @@ async function selectEnvLevel(name, { remember = true } = {}) {
   const params = new URLSearchParams(location.search);
   let wanted = params.get('env');
   if (!wanted) { try { wanted = localStorage.getItem(ENV_STORE_KEY); } catch { wanted = null; } }
+  // Matched case-insensitively: `maps.json` names a level `Wake`, while every
+  // other link into this viewer spells it the way `map.html?map=` does, in
+  // lower case. An exact match silently fell through to whichever level
+  // happened to ship a cubemap first, so `?env=wake` reflected Aberdeen.
+  const key = wanted ? String(wanted).toLowerCase() : null;
   const order = envState.levels.slice().sort((a, b) => {
-    if (a.name === wanted) return -1;
-    if (b.name === wanted) return 1;
+    if (a.name.toLowerCase() === key) return -1;
+    if (b.name.toLowerCase() === key) return 1;
     return 0;
   });
   for (const entry of order) {
@@ -4766,6 +4771,10 @@ async function show(entry, variant) {
   rigged.length = 0;
   inputValues.clear();
   envmapBound.clear();
+  // The uniform objects belong to the outgoing model's materials, which go
+  // with it; kept, the set would grow by a handful of entries for every model
+  // browsed and hold a cube texture alive behind each one.
+  envUniforms.clear();
   rateAngle.clear();
   const drivetrains = [];
   current.traverse(obj => {
