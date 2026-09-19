@@ -17,6 +17,50 @@
 export const AXIS = 1;
 export const ALLIED = 2;
 
+/** The bot settings: the CUSTOM / EASY / NORMAL / HARD list, OVERALL
+ *  DIFFICULTY, the AI SKILLS, PLAYER DEATH TICKET PENALTY and ENEMY VS.
+ *  FRIENDLY UNITS RATIO sliders, and the PERFORMANCE block (NUMBER OF BOTS,
+ *  CPU-TIME GIVEN TO AI), all under the INSTANT BATTLE tab. They are the
+ *  screen's whole left column, and every one of them configures bots.
+ *
+ *  Switched off, not removed. This site has no bots, so the column was a
+ *  panel of controls that changed nothing. It comes back with the bots, and
+ *  the bots wait on research that has not been done: how the engine's AI
+ *  works, and what `Skirmish/SkirmishAiSkill`, `SkirmishBotRatio`,
+ *  `SkirmishNrOfLives`, `SkirmishOverallDifficulty` and the two
+ *  `Options/General/SkirmishPercentageOf*` variables are turned into when a
+ *  battle starts, has to be documented in `features/bf1942-engine-reference`
+ *  before any of these controls can mean anything.
+ *
+ *  The layout pack still carries every one of these elements; set this to
+ *  `true` and the screen is the game's again. */
+export const SHOW_BOT_SETTINGS = false;
+
+/** The x the bot settings stop at. The flattened layout carries no group
+ *  names, so the column is told apart by where it sits: it is everything on
+ *  the Instant Battle page that starts left of the plate the level list sits
+ *  on - the right-most plate starting at or left of the list box. */
+export function botSettingsEdge(layout) {
+  const box = listBox(layout);
+  if (!box) return null;
+  let edge = null;
+  for (const el of layout.pages.skirmish?.elements || []) {
+    if (el.kind !== 'picture' || el.rect[0] > box.rect[0]) continue;
+    if (edge === null || el.rect[0] > edge) edge = el.rect[0];
+  }
+  return edge;
+}
+
+/** A page's elements, less the bot settings while they are switched off.
+ *  Painting and hit-testing both walk this, so what is not drawn cannot be
+ *  clicked either. */
+export function pageElements(layout, page, showBotSettings = SHOW_BOT_SETTINGS) {
+  const elements = layout.pages[page]?.elements || [];
+  if (showBotSettings || page !== 'skirmish') return elements;
+  const edge = botSettingsEdge(layout);
+  return edge === null ? elements : elements.filter(el => el.rect[0] >= edge);
+}
+
 /** The rectangle the level rows are drawn in.
  *
  *  `BfNewListBoxNode` has no rect of its own - it fills the transform it
@@ -166,7 +210,7 @@ export function drawBitmapText(ctx, font, tint, text, x, y, color) {
 export function paintMenu(ctx, layout, state, env) {
   const vars = menuVars(layout, state);
   for (const page of ['background', 'skirmish', 'navigation']) {
-    for (const el of layout.pages[page]?.elements || []) {
+    for (const el of pageElements(layout, page)) {
       if (!elementVisible(el, vars)) continue;
       paintElement(ctx, el, layout, state, env);
     }
@@ -321,7 +365,7 @@ export function hitTest(layout, state, x, y, count) {
     return null;
   }
   for (const page of ['skirmish', 'navigation']) {
-    for (const el of layout.pages[page]?.elements || []) {
+    for (const el of pageElements(layout, page)) {
       if (el.kind === 'hit' && el.sets?.some(s => s.var === 'Campaign/Team')
           && inRect(el.rect, x, y)) {
         return { kind: 'team', team: el.sets.find(s => s.var === 'Campaign/Team').value };
