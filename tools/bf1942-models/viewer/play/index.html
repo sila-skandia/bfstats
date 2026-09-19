@@ -15,12 +15,12 @@
   runtime, so they come from `menu-levels.json` joined against the levels
   this viewer actually has (`maps/maps.json`).
 
-  START loads `../map.html?map=<level>&team=<1|2>&mode=<SinglePlayer|Conquest>`,
-  which is the same map page the mesh site serves, not a copy of it. The game's
-  Instant Battle loads a level's SinglePlayer layout, so this does too wherever
-  the level ships one -- 19 of the 23 vanilla levels, recorded per level as
-  `singlePlayer` in `menu-levels.json`. See
-  `features/bf1942-3d-models/game-modes.md`.
+  START loads `../map.html?map=<level>&team=<1|2>` plus `mode=` and `mod=`
+  where they apply, which is the same map page the mesh site serves, not a
+  copy of it. The game's Instant Battle loads a level's SinglePlayer layout,
+  so this does too wherever the level list says it ships one -- 19 of the 23
+  vanilla levels, recorded per level as `singlePlayer` in `menu-levels.json`.
+  See `features/bf1942-3d-models/game-modes.md`.
 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -58,29 +58,36 @@
 
 <script type="module">
 import {
-  AXIS, ALLIED, hitTest, listBox, paintMenu, scrollTo, stageScale, toVirtual,
-  visibleRows,
+  AXIS, ALLIED, hitTest, inRect, listBox, paintMenu, scrollTo, stageScale,
+  toVirtual, visibleRows,
 } from './menu-screen.js';
-import { loadHudPaths } from '../hud-pack.js';
+import { loadMods, remember, servable, stored, VANILLA, withMod } from '../mods.js';
+import { createLoadingAudioController } from '../audio.js';
+import { loadHudPaths, hudPaths as plainHudPaths } from '../hud-pack.js';
+import {
+  hitTestPanel, paintPanel, panelBounds, placeInColumn,
+  scrollBy as pickerScrollBy,
+} from './mod-picker.js';
 
 const qs = new URLSearchParams(location.search);
 const bust = () => (qs.has('nocache') ? `?t=${Date.now()}` : '');
-// Which game's Instant Battle screen this is. `?mod=eod` lists that mod's
-// levels and draws whatever chrome it ships of its own; everything it did
-// not repaint still comes from the vanilla pack (`../hud-pack.js`). The
-// screen itself is vanilla's on every installed mod -- only Secret Weapons
-// ships a menu page at all, and not one of these three -- so in practice
-// what a mod changes here is the level list, its thumbnails, the background
-// plate and the nation flags on the preview.
-const MOD = (qs.get('mod') || 'bf1942').toLowerCase();
-const hudPaths = await loadHudPaths(MOD, { bust, root: '../' });
+// Which game's Instant Battle screen this is is `activeMod`, resolved in
+// `load()` by `mods.js`'s own precedence (`?mod=`, then the remembered one).
+// A mod lists its own levels and draws whatever chrome it ships of its own;
+// everything it did not repaint still comes from the vanilla pack
+// (`../hud-pack.js`). The screen itself is vanilla's on every installed mod
+// -- only Secret Weapons ships a menu page at all, and not one of these
+// three -- so in practice what a mod changes here is the level list, its
+// thumbnails, the background plate and the nation flags on the preview.
+// Until `load()` knows the mod this resolves everything to vanilla's pack.
+let hudPaths = plainHudPaths('bf1942', null, { root: '../' });
 // `?pack=` still points a checkout at a scratch build of the menu pack
-// without moving anything; it wins over the resolver, whole.
+// without moving anything; it wins over the resolver, whole. `?maps=` does
+// the same for the level tree.
 const SCRATCH_PACK = qs.get('pack');
 const packUrl = rel => (SCRATCH_PACK ? `${SCRATCH_PACK}/${rel}`
                                      : hudPaths.menuUrl(rel));
-const MAPS = qs.get('maps')
-  || (MOD === 'bf1942' ? '../maps' : `../maps/mods/${MOD}`);
+const MAPS_OVERRIDE = qs.get('maps');
 
 const canvas = document.getElementById('screen');
 const ctx = canvas.getContext('2d');
@@ -94,6 +101,29 @@ const state = { team: ALLIED, index: 0, scroll: 0, level: null };
 let layout = null;
 let levels = [];
 let hover = null;
+
+// The mod list: permanently drawn in the column `SHOW_BOT_SETTINGS = false`
+// leaves blank, not a modal - clicking a row applies it immediately (it
+// filters the level list below, it doesn't launch anything). `modLayout` is
+// `menu/CustomGameMenu` flattened by `extract_custom_game_layout.py` and
+// shifted into that column by `placeInColumn`; `activeMod` the record
+// `mods.js` resolved (its `?mod=`/localStorage precedence, unchanged - see
+// `mods.js`'s own header comment); `picker` the panel's own
+// selection/scroll/hover state.
+let modLayout = null;
+let activeMod = VANILLA;
+let picker = { mods: [VANILLA], activeId: VANILLA.id, scroll: 0, hover: null };
+// The active mod's own maps root - `../maps` for vanilla, `../maps/mods/<id>`
+// otherwise. Resolved in `load()`, before the level manifest fetch.
+let MAPS = '../maps';
+
+// The main menu's own loop - not the loading screen's `vehicle4.mp3`
+// (`progress.js`'s own controller, on `map.html`) and not the well-known
+// battle theme, but whatever a mod's `Game.setMenuMusicFilename` names
+// (`extract_menu_music.py`). Vanilla, RtR and SWoWWII all point at the same
+// file; EoD's is its own recording - `${MAPS}/_shared/music/menu.mp3`
+// already resolves to the right one because `MAPS` already does.
+const menuAudio = createLoadingAudioController();
 
 const json = url => fetch(url + bust()).then(r => {
   if (!r.ok) throw new Error(`${r.status} ${url}`);
@@ -118,8 +148,25 @@ const env = {
     const entry = layout?.textures?.[name];
     return entry ? ready(image(packUrl(entry.file))) : null;
   },
-  thumbnail: level =>
-    (level?.thumbnail ? ready(image(packUrl(level.thumbnail))) : null),
+  thumbnail: level => {
+    // The game's own menu thumbnail when the pack has one (vanilla's, or a
+    // mod's own through `hud-pack.js`); otherwise - a mod with no pack, see
+    // `buildLevels` - the level's own loading-screen background, which every
+    // `maps.json` entry carries.
+    if (level?.thumbnail) return ready(image(packUrl(level.thumbnail)));
+    if (level?.previewBg) return ready(image(`${MAPS}/${level.previewBg}`));
+    return null;
+  },
+  icon: mod => (mod?.icon ? ready(image(`../${mod.icon}`)) : null),
+  // The dialog's own `CustomGame/CustomGameUrl` / `...Info` var nodes: the
+  // file's shipped value is a placeholder (see `mod-picker.js`'s header
+  // comment), so the highlighted row's own facts stand in for it.
+  text: name => {
+    const mod = picker.mods.find(m => m.id === picker.activeId);
+    if (name === 'CustomGame/CustomGameUrl') return mod?.url || '';
+    if (name === 'CustomGame/CustomGameInfo') return mod?.info || 'No description available.';
+    return '';
+  },
   font: id => fonts.get(id) || null,
   tint: (font, rgb) => {
     const key = `${font.id}|${rgb.join(',')}`;
@@ -155,9 +202,27 @@ const env = {
  *
  *  Every extracted level is listed. The real game lists only the levels
  *  with bot support (`level.singlePlayer`); this site has no bots, and the
- *  four levels without that layout launch Conquest instead, so hiding them
- *  would only lose them. */
-function buildLevels(menuLevels, manifest) {
+ *  levels without that layout launch Conquest instead, so hiding them would
+ *  only lose them.
+ *
+ *  `menuLevels` is the active game's own list: vanilla's, or the one a
+ *  mod's pack carries (`hud-pack.js`). A mod with no pack has none - what
+ *  `packUrl` hands back then is vanilla's list, which never held its levels
+ *  - so `joined` is false, the join is skipped and its `maps.json` is listed
+ *  outright: no bot-support flag or nation flags to carry over, and no menu
+ *  thumbnail (`env.thumbnail` falls back to the loading-screen background
+ *  for those). Those records carry no `singlePlayer` either, which is what
+ *  `launchUrl` keys on - see its comment. */
+function buildLevels(menuLevels, manifest, joined) {
+  if (!joined) {
+    return manifest
+      .map(entry => ({
+        map: entry.name,
+        title: entry.loading?.title || entry.name,
+        previewBg: entry.loading?.background || null,
+      }))
+      .sort((a, b) => a.title.localeCompare(b.title));
+  }
   const have = new Map();
   for (const entry of manifest) {
     // `maps.json` names a level the way its directory does; the extractor
@@ -179,20 +244,53 @@ function buildLevels(menuLevels, manifest) {
 }
 
 async function load() {
-  layout = await json(packUrl('menu-layout.json'));
+  const available = servable(await loadMods(), 'maps');
+  const wanted = (qs.get('mod') || stored() || VANILLA.id).toLowerCase();
+  activeMod = available.find(mod => mod.id === wanted) || available[0];
+  // A `?mod=` this tab cannot serve (no maps uploaded yet) must not stick.
+  if (activeMod.id === wanted) remember(activeMod.id);
+  picker = { mods: available, activeId: activeMod.id, scroll: 0, hover: null };
+  MAPS = MAPS_OVERRIDE || `../${activeMod.paths.maps}`;
+  // One `pack.json` fetch; a mod without a pack resolves to vanilla's.
+  hudPaths = await loadHudPaths(activeMod.id, { bust, root: '../' });
+  menuAudio.attachUnmuteButton(document.body);
+  menuAudio.start(`${MAPS}/_shared/music/menu.mp3`, '../maps/_shared/music/menu.mp3');
+
+  const [skirmishLayout, rawModLayout] = await Promise.all([
+    json(packUrl('menu-layout.json')),
+    // Absent on a checkout that hasn't run extract_custom_game_layout.py -
+    // the panel just doesn't draw, same fallback shape as a mod with no
+    // maps.json.
+    json(packUrl('custom-game-layout.json')).catch(() => null),
+  ]);
+  layout = skirmishLayout;
+  // Into the column `SHOW_BOT_SETTINGS = false` leaves blank - the file
+  // places this dialog centered for a modal it is not being used as here.
+  modLayout = rawModLayout && placeInColumn(rawModLayout, 14, 100);
+  if (modLayout) {
+    layout.textures = { ...layout.textures, ...modLayout.textures };
+    layout.fontFiles = { ...layout.fontFiles, ...modLayout.fontFiles };
+  }
+  // The game's own list for this mod: vanilla's always, and a mod's when its
+  // pack carries one (`extract_hud_mods.py` writes it beside the thumbnails).
+  // A mod with no pack of its own lists its `maps.json` outright instead.
+  const hasMenuLevels = activeMod.id === VANILLA.id
+    || Boolean(SCRATCH_PACK) || hudPaths.owns('menu/menu-levels.json');
   const [menuLevels, manifest] = await Promise.all([
     json(packUrl('menu-levels.json')),
     json(`${MAPS}/maps.json`).catch(() => []),
   ]);
-  levels = buildLevels(menuLevels, manifest);
+  levels = buildLevels(menuLevels, manifest, hasMenuLevels);
   await Promise.all(Object.entries(layout.fontFiles || {}).map(async ([id, entry]) => {
     const meta = await json(packUrl(entry.glyphs));
     const img = image(packUrl(entry.file));
     await img.decode().catch(() => {});
     fonts.set(id, { id, meta, img });
   }));
-  // Every plate up front: the screen is 19 small textures and paints once.
+  // Every plate up front: the screen is a couple dozen small textures and
+  // paints once.
   for (const entry of Object.values(layout.textures || {})) image(packUrl(entry.file));
+  for (const mod of available) if (mod.icon) image(`../${mod.icon}`);
   select(0);
   status.textContent = levels.length ? ''
     : 'No levels. From tools/bf1942-models run: python3 extract_map.py Wake';
@@ -218,36 +316,66 @@ function setTeam(team) {
   paintSoon();
 }
 
-/** START. */
+/** START. The map page is the mesh site's own file; only the launch
+ *  parameters are ours. */
 function start() {
   if (!state.level) return;
   location.href = launchUrl();
 }
 
-/** Where START goes. The map page is the mesh site's own file; only the
- *  launch parameters are ours, and there are four of them.
+/** Where START goes. Two things travel with the level and the team.
  *
- *  The mod travels with it: this screen resolves its mod from `?mod=` alone,
- *  so a link someone was given (`play/?mod=xpack1`) has no other way to tell
- *  `map.html` which game it just picked a level from, and without it an Anzio
- *  launched from Road to Rome's screen would be looked for in vanilla's level
- *  tree.
+ *  The mod: without it an Anzio launched from Road to Rome's screen would be
+ *  looked for in vanilla's level tree whenever the remembered mod and the
+ *  link's disagree.
  *
- *  So does the game mode. Instant Battle is a singleplayer screen, and in the
- *  game it loads the level's `SinglePlayer` layout — its flags, its spawn
- *  points, its vehicle set — not the Conquest one. 19 of the 23 vanilla levels
- *  ship that layout; `menu-levels.json` records which as `singlePlayer`, and
- *  the four that do not (Aberdeen, Coral Sea, Invasion of the Philippines,
- *  Liberation of Caen) get Conquest, which is what the game falls back to for
- *  them as well. See `features/bf1942-3d-models/game-modes.md`. */
+ *  The game mode. Instant Battle is a singleplayer screen, and in the game it
+ *  loads the level's `SinglePlayer` layout — its flags, its spawn points, its
+ *  vehicle set — not the Conquest one. `menu-levels.json` records which levels
+ *  ship that layout as `singlePlayer` (19 of vanilla's 23; the four that do
+ *  not are Aberdeen, Coral Sea, Invasion of the Philippines and Liberation of
+ *  Caen, and they get Conquest, which is what the game falls back to for them
+ *  as well). A mod with no menu pack has no such list and its records carry
+ *  no flag at all — `undefined`, not `false` — so nothing is asked for and
+ *  `map.html` plays the level's own default layer, exactly as it did before
+ *  `?mode=` existed. Naming Conquest there would be a guess, and a wrong one
+ *  on the 27 FHSW levels that ship no Conquest layer.
+ *  See `features/bf1942-3d-models/game-modes.md`. */
 function launchUrl() {
   if (!state.level) return null;
   const url = new URL('../map.html', location.href);
   url.searchParams.set('map', state.level.map);
   url.searchParams.set('team', String(state.team));
-  url.searchParams.set('mode', state.level.singlePlayer ? 'SinglePlayer' : 'Conquest');
-  if (MOD !== 'bf1942') url.searchParams.set('mod', MOD);
+  if (state.level.singlePlayer !== undefined) {
+    url.searchParams.set('mode', state.level.singlePlayer ? 'SinglePlayer' : 'Conquest');
+  }
+  if (activeMod.id !== VANILLA.id) url.searchParams.set('mod', activeMod.id);
   return url.toString();
+}
+
+// --- mod list --------------------------------------------------------------
+
+/** Clicking a row: carries the choice the way the shell-mods `<select>` on
+ *  every other viewer page does - `remember()` then a reload, because every
+ *  page here resolves its mod once at module scope with top-level await
+ *  (`mods.js`'s own header comment). */
+function chooseMod(id) {
+  remember(id);
+  location.href = withMod(location.href, id);
+}
+
+function handlePanelHit(hit) {
+  if (!hit) return;
+  if (hit.kind === 'row') { chooseMod(picker.mods[hit.index].id); return; }
+  if (hit.kind === 'arrow') {
+    picker.scroll = pickerScrollBy(modLayout, picker, hit.by);
+    paintSoon();
+    return;
+  }
+  if (hit.kind === 'button' && hit.action === 'website') {
+    const url = picker.mods.find(m => m.id === picker.activeId)?.url;
+    if (url) window.open(url, '_blank', 'noopener,noreferrer');
+  }
 }
 
 // --- painting ----------------------------------------------------------------
@@ -276,6 +404,7 @@ function paint() {
   ctx.fillRect(0, 0, cw, chh);
   ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
   paintMenu(ctx, layout, state, env);
+  if (modLayout) paintPanel(ctx, modLayout, picker, env);
 }
 
 function resize() { paint(); }
@@ -289,9 +418,24 @@ function at(event) {
   return toVirtual(s, event.clientX - r.left, event.clientY - r.top);
 }
 
+/** The mod panel and the Skirmish screen are both live on the same canvas
+ *  at once - there is no modal to gate input on, just whether the pointer
+ *  is inside the panel's own bounds. */
+const overPanel = (x, y) => !!(modLayout && inRect(panelBounds(modLayout), x, y));
+
 canvas.addEventListener('pointermove', event => {
   if (!layout) return;
   const [x, y] = at(event);
+  if (overPanel(x, y)) {
+    if (hover) { hover = null; paintSoon(); }
+    const next = hitTestPanel(modLayout, picker, x, y);
+    const changed = JSON.stringify(next) !== JSON.stringify(picker.hover);
+    picker.hover = next;
+    canvas.style.cursor = next ? 'pointer' : 'default';
+    if (changed) paintSoon();
+    return;
+  }
+  if (picker.hover) { picker.hover = null; paintSoon(); }
   const next = hitTest(layout, state, x, y, levels.length);
   const changed = JSON.stringify(next) !== JSON.stringify(hover);
   hover = next;
@@ -299,14 +443,19 @@ canvas.addEventListener('pointermove', event => {
   if (changed) paintSoon();
 });
 
-canvas.addEventListener('pointerleave', () => { hover = null; paintSoon(); });
+canvas.addEventListener('pointerleave', () => {
+  hover = null;
+  picker.hover = null;
+  paintSoon();
+});
 
 canvas.addEventListener('click', event => {
   if (!layout) return;
   const [x, y] = at(event);
+  canvas.focus();
+  if (overPanel(x, y)) { handlePanelHit(hitTestPanel(modLayout, picker, x, y)); return; }
   const hit = hitTest(layout, state, x, y, levels.length);
   if (!hit) return;
-  canvas.focus();
   if (hit.kind === 'row') select(hit.index);
   else if (hit.kind === 'team') setTeam(hit.team);
   else if (hit.action === 'scroll') scrollBy(hit.by);
@@ -316,6 +465,7 @@ canvas.addEventListener('click', event => {
 canvas.addEventListener('dblclick', event => {
   if (!layout) return;
   const [x, y] = at(event);
+  if (overPanel(x, y)) return;
   // The list box's "Select action" is `Skirmish/StartSkirmish`: committing
   // a row starts the level.
   if (hitTest(layout, state, x, y, levels.length)?.kind === 'row') start();
@@ -331,6 +481,12 @@ function scrollBy(by) {
 
 canvas.addEventListener('wheel', event => {
   event.preventDefault();
+  const [x, y] = at(event);
+  if (overPanel(x, y)) {
+    picker.scroll = pickerScrollBy(modLayout, picker, Math.sign(event.deltaY));
+    paintSoon();
+    return;
+  }
   scrollBy(Math.sign(event.deltaY));
 }, { passive: false });
 
@@ -357,8 +513,13 @@ canvas.addEventListener('keydown', event => {
 window.__menu = {
   get state() { return { ...state, levels: levels.length }; },
   get levels() { return levels.map(l => l.title); },
-  select, setTeam, start, scrollBy,
-  launchUrl,
+  select, setTeam, start, scrollBy, launchUrl,
+  get mod() {
+    return { active: activeMod.id, available: picker.mods.map(m => m.id) };
+  },
+  get audio() { return menuAudio.state; },
+  unlockAudio: () => menuAudio.unlock(),
+  chooseMod,
   paint,
   ready: false,
 };
