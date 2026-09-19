@@ -599,6 +599,27 @@ class ObjectTemplate:
     vehicle_primary_ammo_bar: str | None = None
     vehicle_secondary_ammo_icon: str | None = None
     vehicle_secondary_ammo_bar: str | None = None
+    # `setHasTurretIcon <bool>` on the PlayerControlObject (VHUD-9). The HUD's
+    # turret dial is gated on `(activeSeatCamera.viewMode == 3) &&
+    # pcoTemplate->getHasTurretIcon()`, so the word is half of the trigger and
+    # nothing in the extract carried it before. Always on the vehicle ROOT
+    # PCO, never a seat, and exactly the turreted tanks: 10 sites on 7 distinct
+    # vanilla templates (Sherman, Tiger, PanzerIV, T34, T34-85, M10, Chi-ha,
+    # plus the per-level Kasserine copies), 4,158 declarations across the 18
+    # installed mods. A casemate hull -- Wespe, StuG, Hetzer -- never declares
+    # it, which is the whole point: those get no dial.
+    has_turret_icon: bool | None = None
+    # `setVehicleIconPos <x>/<y>` on the PlayerControlObject (VHUD-11): where
+    # this seat's occupancy dot sits inside the 128x128 vehicle-icon texture.
+    # ONE token, two integers separated by a slash -- 18,349 of 18,352
+    # declarations across the installed mods are spelled that way, 2 are
+    # space-separated and 1 is empty, so both spellings are read and an empty
+    # one is dropped. Declared once per PCO: the root AND every seat carry
+    # their own (Sherman root 54/103, `shermanBrowning_PCO1` 32/61; Hanomag
+    # root 39/75 plus five seat PCOs). Vanilla range X 12..99, Y 43..120,
+    # which is what makes VHUD-7's `(192 + X, 452 + Y)` anchor land inside the
+    # icon panel.
+    vehicle_icon_pos: tuple[float, float] | None = None
 
     # -- Kit HUD --------------------------------------------------------------#
     # `setHealthBarIcon`/`setHealthBarFullIcon` are the segmented bar a
@@ -969,10 +990,22 @@ class ObjectTemplate:
         Ranges are Yaw/Pitch/Roll triples in the same order as `setRotation`. Three
         things make this less obvious than it looks:
 
-        * **Absent limits mean unlimited, not zero.** A tank turret traverses a full
-          circle and simply declares no `setMinRotation`, so an axis must be treated
-          as free when its input is bound but no range was given. Requiring
-          `min != max` silently deletes every turret's traverse.
+        * **The wrap rule is `minRotation == 0 && maxRotation == 0` (GUN-2)**, not a
+          zero-width range. `calculateAndClipAngle`'s wrap gate (lnxded
+          `0x081d7645` + `0x081d765b`) tests both components against literal zero;
+          anything else clamps, `> max -> max` else `< min -> min`. Absent limits
+          are still free, because the template default read at `0x081d90c0` is
+          `(0,0,0)` -- so a tank turret that declares no `setMinRotation` wraps for
+          the same reason a bundle that declares `0/0/0` does, not for a different
+          one. What this is NOT is `lo == hi`: that read `min == max == 45` as
+          free-spinning, and **151 input-bound axes across 13 installs** author a
+          non-zero zero-width range -- vanilla's `Elco_ThrottleL` (pitch 60/60),
+          FH/DC's `H6ControlStick` (8/8), FHSW's `Remote*EngineSounder` roll
+          (5000/5000). The engine pins those at their value; the old rule spun them.
+        * A component the `.con` leaves out is zero, not unlimited: a bundle that
+          declares only `setMinRotation -70/0/0` has `maxRotation 0`, so its yaw
+          clamps to [-70, 0]. That follows the same template default, and it is why
+          this asks "are both zero" rather than "is either absent".
         * `setInputTo*` accepts the numeric id as readily as the symbolic name, and
           vanilla uses both — PanzerIV's MG mount says `setInputToPitch 5` where the
           Sherman's says `c_PIMouseLookY`.
@@ -995,17 +1028,37 @@ class ObjectTemplate:
                 continue
             lo = self.min_rotation[index] if self.min_rotation else None
             hi = self.max_rotation[index] if self.max_rotation else None
-            free = lo is None or hi is None or lo == hi
-            span = None if free else abs(hi - lo)
+            # GUN-2's wrap gate, with the template's own `(0,0,0)` default
+            # standing in for an undeclared component -- see the docstring.
+            free = (lo or 0.0) == 0.0 and (hi or 0.0) == 0.0
+            span = None if free else abs((hi or 0.0) - (lo or 0.0))
             # Which way a positive input deflects this axis. See `acceleration`:
             # a mirrored pair declares one identical range and two opposite
             # accelerations, so without this both halves of an aileron pair
             # deflect the same way and the aircraft visibly cannot roll.
             accel = (self.acceleration or (0.0, 0.0, 0.0))[index]
+            # `setContinousRotationSpeed <axis>`, deg/s, signed. GUN-2: the
+            # servo adds this term UNCONDITIONALLY every tick in the
+            # non-`automaticReset` path, alongside whatever the input asked
+            # for -- `angle += speed*dt + continousRotationSpeed*dt` -- so an
+            # axis that declares both turns while it is being aimed. Emitted
+            # only for an input-bound axis: a bundle with no binding at all
+            # (every vanilla windmill, watermill and radar dish) has no rig,
+            # and `assemble.py` already bakes it an `ambient` glTF clip that
+            # `map.html` plays. Carrying it in both places would turn those
+            # twice. 127 input-bound axes across the installed mods declare a
+            # non-zero one; none of them is in vanilla, and none is bound to
+            # `c_PIMouseLookX/Y`, so nothing in the viewer's aim rig reads a
+            # non-zero value today.
+            cont = (self.continuous_rotation or (0.0, 0.0, 0.0))[index]
             axes[axis] = {
                 "input": name,
-                "min": lo if not free else None,
-                "max": hi if not free else None,
+                # Resolved, not raw: a component the `.con` omits is the
+                # template's own 0 (GUN-2, defaults at `0x081d90c0`), and a
+                # bound axis has to carry a number for the clip to compare
+                # against. `None` stays reserved for "free, so no bound".
+                "min": None if free else (lo if lo is not None else 0.0),
+                "max": None if free else (hi if hi is not None else 0.0),
                 "free": free,
                 "driver": "rate" if span is not None and span > ACCUMULATOR_SPAN else "position",
                 "maxSpeed": (self.max_speed or (0.0, 0.0, 0.0))[index],
@@ -1021,6 +1074,7 @@ class ObjectTemplate:
                 # `setAcceleration`) stays absent rather than being emitted as
                 # a 0 that reads as "never gets moving".
                 **({"acceleration": abs(accel)} if accel else {}),
+                **({"continuousRotation": cont} if cont else {}),
             }
         for axis, spec in gear.items():
             axes.setdefault(axis, spec)
@@ -1620,6 +1674,22 @@ class ObjectLibrary:
                             "setsecondaryammoicon": "vehicle_secondary_ammo_icon",
                             "setsecondaryammobar": "vehicle_secondary_ammo_bar",
                         }[cmd], token.split()[0])
+                elif cmd == "sethasturreticon":
+                    # VHUD-9's half of the turret dial's trigger. See the
+                    # field comment; a plain bool on the vehicle root PCO.
+                    if (value := truthy(args)) is not None:
+                        obj.has_turret_icon = value
+                elif cmd == "setvehicleiconpos":
+                    # VHUD-11. One `x/y` token in all but three declarations
+                    # across 18 installs; the space-separated pair is read the
+                    # same way and an empty argument is dropped rather than
+                    # becoming 0/0, which would stack every dot on one spot.
+                    tokens = args.replace("/", " ").replace(",", " ").split()
+                    if len(tokens) >= 2:
+                        try:
+                            obj.vehicle_icon_pos = (float(tokens[0]), float(tokens[1]))
+                        except ValueError:
+                            pass
                 # -- Kit HUD.
                 elif cmd in ("sethealthbaricon", "sethealthbarfullicon"):
                     if token := args.strip().strip('"'):
