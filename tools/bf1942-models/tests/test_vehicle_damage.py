@@ -322,6 +322,37 @@ class BlastGeometryTests(unittest.TestCase):
         self.assertEqual(5, self.results["horizontalAtTwo"])
 
 
+class BlastCentreTests(unittest.TestCase):
+    """HP-9: where an explosion is centred, which is not the hit point.
+
+    `GameServer::handleCollisionForProjectile` builds the impact explosion's
+    position as `hitPos + 0.1 * normal` — the 0.1f is loaded at lnxded
+    0x08153f5e from `ds:0x086b1ca0` (`cdcccc3d`), multiplied into the normal at
+    0x08153f6b-0x08153f73, added at 0x08153f82-0x08153f8f and pushed at
+    0x08154026. The collision **effect** is played before all of that, at
+    0x08153e5b, on the raw hit point, so the two are different places and the
+    record carries both. The end-of-life explosion has no surface and no
+    offset: it stands on the projectile's own `getPos()` (0x0831f747).
+    """
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["blastCentre"]
+
+    def test_an_impact_blast_stands_off_the_struck_surface(self) -> None:
+        # Struck a wall at the origin with normal +X, so the blast sits at
+        # x = 0.1 and a victim 5 m out along +X is 4.9 m from it.
+        self.assertAlmostEqual(4.9, self.results["impact"], places=6)
+        self.assertEqual(5, self.results["unoffset"])
+
+    def test_an_end_of_life_blast_uses_the_projectile_position(self) -> None:
+        # No `splashPoint` on the record, so `point` is the centre: a grenade
+        # resting at x = 1 is 4 m from a victim at x = 5.
+        self.assertEqual(4, self.results["endOfLife"])
+
+
 class InputGateTests(unittest.TestCase):
     """HP-15, which **retired ARM-6**.
 
@@ -388,6 +419,20 @@ class InputGateTests(unittest.TestCase):
         # registered: full input.
         self.assertEqual({"blocked": False, "rotationalScale": 1},
                          self.results["unregistered"])
+
+    def test_the_result_object_can_be_caller_owned(self) -> None:
+        # The gate is polled every frame for as long as anyone is in a
+        # vehicle, so `map.html` hands it one object and it is filled in place
+        # rather than allocating a fresh pair of fields sixty times a second.
+        # The contract that matters is that every field is rewritten: a stale
+        # `blocked` from the previous vehicle would refuse the driver of a
+        # perfectly healthy one.
+        in_place = self.results["inPlace"]
+        self.assertTrue(in_place["sameObject"])
+        self.assertEqual({"blocked": True, "rotationalScale": 0},
+                         in_place["afterWreck"])
+        self.assertEqual({"blocked": False, "rotationalScale": 1},
+                         in_place["afterHealthy"])
 
     def test_a_hull_killed_by_anything_else_is_gated_the_same(self) -> None:
         # The gate reads the live Armor, so it does not care what emptied it.
