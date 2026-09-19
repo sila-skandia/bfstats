@@ -235,10 +235,10 @@ class HudLayoutGoldenTests(unittest.TestCase):
 
     # -- everything else the extractor is expected to produce ----------------
 
-    def test_all_twelve_groups_are_present_and_non_empty(self) -> None:
+    def test_all_thirteen_groups_are_present_and_non_empty(self) -> None:
         expected = {"soldierIcon", "soldierAmmo", "vehicleIcon", "vehicleHealth",
                     "vehicleSeats", "primaryAmmo", "secondaryAmmo", "supplyIcon",
-                    "hitIndicator", "weaponBar", "crosshair", "tickets"}
+                    "hitIndicator", "weaponBar", "crosshair", "tickets", "outside"}
         self.assertEqual(expected, set(self.hud["groups"]))
         for key in expected:
             self.assertTrue(self.group(key)["elements"], key)
@@ -315,6 +315,49 @@ class HudLayoutGoldenTests(unittest.TestCase):
                 if any("Allied" in t["var"] for t in nested["terms"])
                 else {"Ticket/AxisTicketBlink", "Ticket/ShowAxisTicketBlink"},
                 {t["var"] for t in nested["terms"]})
+
+    # -- the combat-area warning --------------------------------------------
+
+    def test_outside_group_is_gated_on_the_countdown_being_positive(self) -> None:
+        # Unlike every other group here the gate is a comparison, not a bool:
+        # `0 < Outside/OutsideTime`. So feeding a zero is how the page tells
+        # the layout to draw nothing, and there is no separate Show* flag.
+        group = self.group("outside")
+        self.assertEqual([305.0, 171.0, 256.0, 64.0], group["rect"])
+        for element in group["elements"]:
+            self.assertEqual(
+                [{"var": "Outside/OutsideTime", "op": "gt", "value": 0}],
+                element["when"])
+
+    def test_outside_group_is_a_plate_a_countdown_and_the_warning(self) -> None:
+        group = self.group("outside")
+        self.assertEqual(3, len(group["elements"]))
+        [plate] = self.elements_of_kind("outside", "picture")
+        self.assertEqual("textmessbg_3line_256x64", plate["texture"])
+        self.assertEqual([305.0, 171.0, 256.0, 64.0], plate["rect"])
+
+    def test_outside_countdown_is_a_right_aligned_integer_in_latin_eleven(self) -> None:
+        [count] = [t for t in self.elements_of_kind("outside", "text")
+                   if t["var"] == "Outside/OutsideTime"]
+        self.assertEqual([536.0, 189.0, 20.0, 20.0], count["rect"])
+        self.assertEqual("trebuchet_ms11_latin", count["font"])
+        self.assertEqual("right", count["align"])
+
+    def test_outside_warning_text_and_colour_come_from_the_data(self) -> None:
+        # The TextNode's own Wstring default, misspelling and all. The
+        # lexicon's `DESSERTION_MESSAGE` is a different wording; this node
+        # never reads it.
+        [warn] = [t for t in self.elements_of_kind("outside", "text")
+                  if t["var"] == "Outside/OutsideText"]
+        self.assertEqual(
+            "Warning! You are leaving the combat area! Desserters will be shot!",
+            warn["text"])
+        self.assertEqual("trebuchet_ms8", warn["font"])
+        self.assertEqual([310.0, 174.0, 230.0, 40.0], warn["rect"])
+        red, green, blue, _ = warn["color"]
+        self.assertAlmostEqual(0.8516, red, places=4)
+        self.assertAlmostEqual(0.3516, green, places=4)
+        self.assertAlmostEqual(0.3516, blue, places=4)
 
     def test_vehicle_health_bar_rect_and_binding(self) -> None:
         [health] = [e for e in self.elements_of_kind("vehicleHealth", "fill-picture")
