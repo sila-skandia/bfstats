@@ -835,19 +835,27 @@ Measured in the harness on flat ground (`tests/ground_harness.mjs`), main's
 
 | | main | this branch |
 |---|---|---|
-| Willys top speed | 65.8 km/h | **107.6 km/h** |
-| Willys 0 to 10 m/s | 2.2 s | 2.6 s |
-| Willys reverse | 17.5 km/h | **25.0 km/h** |
-| Willys full-lock circle at speed | 208 deg in 12 s | **109 deg**, at twice the speed |
-| Willys worst body roll, full lock | 4.6 deg | 5.0 deg |
+| Willys top speed | 18.30 m/s, 65.8 km/h | **29.90 m/s, 107.6 km/h** |
+| Willys at 5 s from rest | 17.60 m/s (already at 96 %) | 20.53 m/s (69 %) |
+| Willys reverse | 4.86 m/s, 17.5 km/h | **6.96 m/s, 25.0 km/h** |
+| Willys brake to a stop | 2.17 s from 18.29 m/s | 3.77 s from 29.89 m/s |
+| Willys coast, 15 s off the pedal | 3.11 m/s left | 18.49 m/s left |
+| Willys full lock, 12 s | 287.6 deg, 46.9 deg/s | **108.7 deg, 18.1 deg/s** |
+| Willys worst body roll, full lock | 12.9 deg | **5.0 deg** |
 | Sherman straight line | 33.7 km/h | 41.2 km/h |
 | M3A1 straight line | 114.5 km/h | 64.2 km/h |
-| parked drift, 10 s, Wake | 0.006 to 0.011 m | **0.000 m** |
+| landing after a 2 m step | -6.85 m/s worst vy | -6.93 m/s |
+| parked drift, 10 s, on Wake | 0.006 to 0.011 m | **0.000 m** |
 | per-surface 0 to 10 m/s | identical everywhere | water 3.8 s, mud 3.0, rock 2.9, grass 2.8, road 2.5 |
 
-The jeep is transformed: it now does most of a hundred km/h, it takes twice the
-room to turn at speed, and it no longer stops in a car length. The tanks are
-steadier than quicker. And a vehicle left alone is left alone.
+The jeep is transformed. It does most of a hundred km/h, it takes nearly three
+times the room to turn at full lock, and it leans **less** doing it — the turn
+is wider rather than harder, because the circle grows faster than the entry
+speed. It no longer stops in a car length, and it no longer coasts to a halt in
+fifteen seconds: that last row is the clearest thing in the table pointing at
+the fitted coast law, which was sized against a top speed that has since
+doubled. The tanks are steadier rather than quicker, the M3A1 markedly slower
+now that 17.5 is gone. And a vehicle left alone is left alone.
 
 ### Still open after this review
 
