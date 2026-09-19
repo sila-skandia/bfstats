@@ -127,6 +127,59 @@ FLAG_TEXTURES = [f"icon_flag_{n}" for n in ("us", "ger", "brit", "can", "jp", "r
 FLAG_SIZE = round(256 * 90 / 600, 1)
 
 
+def list_rows(layout: dict, out: Path) -> dict | None:
+    """Where the level list's rows go inside the list box.
+
+    `BfNewListBoxNode` has no rect of its own: it fills the 178x185
+    transform it shares with the scroll arrows and the scroll track. Rows
+    drawn from the top of that transform start four units above the LEVELS
+    heading's baseline and run past the plate, which is not what the game
+    shows - the rows sit in the recessed well the plate art has for them.
+
+    The well is not in the layout (the same way the spawn map's rect is not,
+    MEME-8), but it *is* in the shipped art, so it is read off the plate
+    rather than typed in: the run of dark, opaque rows down the middle of
+    `menu_singlepl_levellist_256x256`. That gives 11 rows of the file's own
+    14-unit pitch, which is what the reference capture shows.
+    """
+    page = layout["pages"]["skirmish"]["elements"]
+    box = next((el for el in page if el["kind"] == "listbox"), None)
+    if box is None:
+        return None
+    bx, by, bw, bh = box["rect"]
+    plate = None
+    for el in page:
+        if el["kind"] != "picture" or el.get("var"):
+            continue
+        px, py, pw, ph = el["rect"]
+        if px <= bx and py <= by and px + pw >= bx + bw and py + ph >= by + bh:
+            plate = el
+    if plate is None:
+        return None
+    entry = layout["textures"].get(plate["texture"])
+    if entry is None:
+        return None
+    try:
+        from PIL import Image
+    except ImportError:  # pragma: no cover - Pillow is a hard dep elsewhere
+        return None
+    with Image.open(out / "textures" / f"{plate['texture']}.png") as img:
+        pixels = img.convert("RGBA").load()
+        width, height = img.size
+    column = width // 4
+    dark = [y for y in range(height)
+            if (lambda p: p[3] > 8 and max(p[:3]) < 80)(pixels[column, y])]
+    if not dark:
+        return None
+    # The plate is drawn stretched from its own pixels to the element's rect.
+    px, py, pw, ph = plate["rect"]
+    top = py + dark[0] * ph / height
+    bottom = py + (dark[-1] + 1) * ph / height
+    count = int((bottom - top) // box["rowHeight"])
+    return {"fromPlateArt": plate["texture"],
+            "top": round(top, 2), "bottom": round(bottom, 2), "count": count}
+
+
 def flag_slots(layout: dict) -> dict | None:
     """Where the two nation flags go, from the preview slot's own rect."""
     for el in layout["pages"]["skirmish"]["elements"]:
@@ -282,6 +335,7 @@ class MenuFlattener(Flattener):
             border=bool(node["Border or not"]),
             scrollbarWidth=node["Scrollbar width"],
             scrollbarOffset=node["Scrollbar offset from border"],
+            showTooltip=bool(node["Show tooltip"]),
             background=[node[f"Background color {c}"] for c in
                         ("red", "green", "blue", "alpha")],
             frame=[node[f"Frame color {c}"] for c in ("red", "green", "blue", "alpha")],
@@ -478,9 +532,13 @@ def level_archives(archives: Path) -> dict[str, list[Path]]:
     return out
 
 
-def level_record(name: str, paths: list[Path], thumb_dir: Path,
+def level_record(name: str, paths: list[Path], thumb_dir: Path | None,
                  force: bool) -> dict | None:
-    """One level: its title, both sides' nations and its menu thumbnail."""
+    """One level: its title, both sides' nations and its menu thumbnail.
+
+    `thumb_dir` of None reads the record without decoding or writing the
+    thumbnail, which is what a caller that only wants the nations needs.
+    """
     skins: dict[int, str] = {}
     level_dir = name
     thumbnail = None
@@ -513,7 +571,7 @@ def level_record(name: str, paths: list[Path], thumb_dir: Path,
             if nation is None:
                 print(f"warning: {name}: no nation for team skin {skin!r}",
                       file=sys.stderr)
-    if thumbnail is not None:
+    if thumbnail is not None and thumb_dir is not None:
         path, entry = thumbnail
         dest = thumb_dir / f"{name}.png"
         if force or not dest.exists():
@@ -579,6 +637,7 @@ def main() -> None:
         out / "textures", args.force)
     layout["fontFiles"] = extract_fonts(font_rfa, font_handles(layout),
                                         out / "fonts", args.force)
+    layout["listRows"] = list_rows(layout, out)
     (out / "menu-layout.json").write_text(json.dumps(layout, indent=1) + "\n")
 
     levels = extract_levels(archives, out, args.force)

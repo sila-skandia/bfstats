@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<!--
+  BF1942 in the browser - the way in.
+
+  The game's own Singleplayer > Instant Battle screen: `menu/Background`,
+  `menu/SkirmishMenu` and `menu/SkirmishNavigation` out of
+  `Mods/bf1942/Archives/menu.rfa`, flattened by `extract_menu_layout.py` and
+  painted leaf by leaf into one canvas. Nothing here is CSS that resembles
+  the game - the plates, the bitmap faces, the strings, the rectangles and
+  the colours are all the shipped files. The page's own CSS is the black
+  field the canvas sits in and nothing else.
+
+  The rows of the level list are the one part the file does not hold: the
+  engine fills `Skirmish/SkirmishLevelsList` from the level archives at
+  runtime, so they come from `menu-levels.json` joined against the levels
+  this viewer actually has (`maps/maps.json`).
+
+  START loads `../map.html?map=<level>&team=<1|2>`, which is the same map
+  page the mesh site serves, not a copy of it.
+-->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Battlefield 1942</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+  }
+  /* The game's arrow cursor is the pointer's own; the canvas is the screen. */
+  #screen {
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: manipulation;
+  }
+  #status {
+    position: fixed;
+    inset: auto 0 0 0;
+    padding: 10px 14px;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #cfcfc4;
+    background: #000;
+  }
+  #status:empty { display: none; }
+  /* Focusable so the keyboard reaches the list the way the game's does. */
+  #screen:focus-visible { outline: 1px solid #7d8849; outline-offset: -1px; }
+</style>
+
+<canvas id="screen" tabindex="0" aria-label="Instant Battle"></canvas>
+<p id="status">Loading…</p>
+
+<script type="module">
+import {
+  AXIS, ALLIED, hitTest, listBox, paintMenu, scrollTo, stageScale, toVirtual,
+  visibleRows,
+} from './menu-screen.js';
+
+const qs = new URLSearchParams(location.search);
+// The pack the extractor writes. It ships to `maps/_shared/hud/menu/`,
+// beside the spawn screen's own; `?pack=` points a checkout at a scratch
+// build of it without moving anything.
+const PACK = qs.get('pack') || '../maps/_shared/hud/menu';
+const MAPS = qs.get('maps') || '../maps';
+const bust = () => (qs.has('nocache') ? `?t=${Date.now()}` : '');
+
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d');
+const status = document.getElementById('status');
+
+const images = new Map();
+const fonts = new Map();
+const tints = new Map();
+
+const state = { team: ALLIED, index: 0, scroll: 0, level: null };
+let layout = null;
+let levels = [];
+let hover = null;
+
+const json = url => fetch(url + bust()).then(r => {
+  if (!r.ok) throw new Error(`${r.status} ${url}`);
+  return r.json();
+});
+
+function image(url) {
+  if (images.has(url)) return images.get(url);
+  const img = new Image();
+  img.decoding = 'async';
+  img.onload = () => paintSoon();
+  img.onerror = () => images.set(url, null);
+  img.src = url + bust();
+  images.set(url, img);
+  return img;
+}
+
+const ready = img => (img && img.complete && img.naturalWidth ? img : null);
+
+const env = {
+  texture: name => {
+    const entry = layout?.textures?.[name];
+    return entry ? ready(image(`${PACK}/${entry.file}`)) : null;
+  },
+  thumbnail: level =>
+    (level?.thumbnail ? ready(image(`${PACK}/${level.thumbnail}`)) : null),
+  font: id => fonts.get(id) || null,
+  tint: (font, rgb) => {
+    const key = `${font.id}|${rgb.join(',')}`;
+    let c = tints.get(key);
+    if (c) return c;
+    const img = ready(font.img);
+    if (!img) return null;
+    c = document.createElement('canvas');
+    c.width = img.width;
+    c.height = img.height;
+    const g = c.getContext('2d');
+    g.drawImage(img, 0, 0);
+    g.globalCompositeOperation = 'source-in';
+    g.fillStyle = `rgb(${rgb.map(v => Math.round(v * 255)).join(',')})`;
+    g.fillRect(0, 0, c.width, c.height);
+    tints.set(key, c);
+    return c;
+  },
+  get levels() { return levels; },
+  get hover() { return hover; },
+};
+
+// --- loading -----------------------------------------------------------------
+
+/** The level list: what the extractor read out of the game, narrowed to the
+ *  levels this viewer actually has a scene for, in the order the game's own
+ *  list is in - alphabetical by the title it shows. */
+function buildLevels(menuLevels, manifest) {
+  const have = new Map();
+  for (const entry of manifest) {
+    // `maps.json` names a level the way its directory does; the extractor
+    // keys on the same lowercased name.
+    have.set(entry.name.toLowerCase(), entry);
+  }
+  const out = [];
+  for (const level of menuLevels.levels) {
+    const entry = have.get(level.dir) || have.get(level.level.toLowerCase());
+    if (!entry) continue;
+    out.push({ ...level, map: entry.name, title: entry.loading?.title || level.title });
+  }
+  out.sort((a, b) => a.title.localeCompare(b.title));
+  return out;
+}
+
+async function load() {
+  layout = await json(`${PACK}/menu-layout.json`);
+  const [menuLevels, manifest] = await Promise.all([
+    json(`${PACK}/menu-levels.json`),
+    json(`${MAPS}/maps.json`).catch(() => []),
+  ]);
+  levels = buildLevels(menuLevels, manifest);
+  await Promise.all(Object.entries(layout.fontFiles || {}).map(async ([id, entry]) => {
+    const meta = await json(`${PACK}/${entry.glyphs}`);
+    const img = image(`${PACK}/${entry.file}`);
+    await img.decode().catch(() => {});
+    fonts.set(id, { id, meta, img });
+  }));
+  // Every plate up front: the screen is 19 small textures and paints once.
+  for (const entry of Object.values(layout.textures || {})) image(`${PACK}/${entry.file}`);
+  select(0);
+  status.textContent = levels.length ? ''
+    : 'No levels. From tools/bf1942-models run: python3 extract_map.py Wake';
+  resize();
+}
+
+// --- selection ---------------------------------------------------------------
+
+function select(index) {
+  if (!levels.length) return;
+  state.index = Math.min(levels.length - 1, Math.max(0, index));
+  state.level = levels[state.index];
+  const box = listBox(layout);
+  if (box) state.scroll = scrollTo(layout, box, state.scroll, state.index, levels.length);
+  for (const level of [state.level]) {
+    if (level?.thumbnail) image(`${PACK}/${level.thumbnail}`);
+  }
+  paintSoon();
+}
+
+function setTeam(team) {
+  state.team = team === AXIS ? AXIS : ALLIED;
+  paintSoon();
+}
+
+/** START. The map page is the mesh site's own file; only the two launch
+ *  parameters are ours. */
+function start() {
+  if (!state.level) return;
+  const url = new URL('../map.html', location.href);
+  url.searchParams.set('map', state.level.map);
+  url.searchParams.set('team', String(state.team));
+  location.href = url.toString();
+}
+
+// --- painting ----------------------------------------------------------------
+
+let pending = false;
+function paintSoon() {
+  if (pending || !layout) return;
+  pending = true;
+  requestAnimationFrame(() => { pending = false; paint(); });
+}
+
+function paint() {
+  if (!layout) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  const cw = Math.round(w * dpr);
+  const chh = Math.round(h * dpr);
+  if (canvas.width !== cw || canvas.height !== chh) {
+    canvas.width = cw;
+    canvas.height = chh;
+  }
+  const s = stageScale(w, h, layout.virtual);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, cw, chh);
+  ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
+  paintMenu(ctx, layout, state, env);
+}
+
+function resize() { paint(); }
+new ResizeObserver(resize).observe(canvas);
+
+// --- input -------------------------------------------------------------------
+
+function at(event) {
+  const r = canvas.getBoundingClientRect();
+  const s = stageScale(r.width, r.height, layout.virtual);
+  return toVirtual(s, event.clientX - r.left, event.clientY - r.top);
+}
+
+canvas.addEventListener('pointermove', event => {
+  if (!layout) return;
+  const [x, y] = at(event);
+  const next = hitTest(layout, state, x, y, levels.length);
+  const changed = JSON.stringify(next) !== JSON.stringify(hover);
+  hover = next;
+  canvas.style.cursor = next ? 'pointer' : 'default';
+  if (changed) paintSoon();
+});
+
+canvas.addEventListener('pointerleave', () => { hover = null; paintSoon(); });
+
+canvas.addEventListener('click', event => {
+  if (!layout) return;
+  const [x, y] = at(event);
+  const hit = hitTest(layout, state, x, y, levels.length);
+  if (!hit) return;
+  canvas.focus();
+  if (hit.kind === 'row') select(hit.index);
+  else if (hit.kind === 'team') setTeam(hit.team);
+  else if (hit.action === 'scroll') scrollBy(hit.by);
+  else if (hit.action === 'start') start();
+});
+
+canvas.addEventListener('dblclick', event => {
+  if (!layout) return;
+  const [x, y] = at(event);
+  // The list box's "Select action" is `Skirmish/StartSkirmish`: committing
+  // a row starts the level.
+  if (hitTest(layout, state, x, y, levels.length)?.kind === 'row') start();
+});
+
+function scrollBy(by) {
+  const box = listBox(layout);
+  if (!box) return;
+  const max = Math.max(0, levels.length - visibleRows(layout, box));
+  state.scroll = Math.min(max, Math.max(0, state.scroll + by));
+  paintSoon();
+}
+
+canvas.addEventListener('wheel', event => {
+  event.preventDefault();
+  scrollBy(Math.sign(event.deltaY));
+}, { passive: false });
+
+canvas.addEventListener('keydown', event => {
+  const box = listBox(layout);
+  switch (event.key) {
+    case 'ArrowDown': select(state.index + 1); break;
+    case 'ArrowUp': select(state.index - 1); break;
+    case 'PageDown': select(state.index + (box ? visibleRows(layout, box) : 5)); break;
+    case 'PageUp': select(state.index - (box ? visibleRows(layout, box) : 5)); break;
+    case 'Home': select(0); break;
+    case 'End': select(levels.length - 1); break;
+    case 'Enter': start(); break;
+    case 'Tab': return;
+    default: return;
+  }
+  event.preventDefault();
+});
+
+// --- the harness -------------------------------------------------------------
+//
+// The same shape `map.html` offers: a headless check drives the screen and
+// reads its state back rather than screen-scraping a canvas.
+window.__menu = {
+  get state() { return { ...state, levels: levels.length }; },
+  get levels() { return levels.map(l => l.title); },
+  select, setTeam, start, scrollBy,
+  launchUrl() {
+    if (!state.level) return null;
+    const url = new URL('../map.html', location.href);
+    url.searchParams.set('map', state.level.map);
+    url.searchParams.set('team', String(state.team));
+    return url.toString();
+  },
+  paint,
+  ready: false,
+};
+
+load().then(() => { window.__menu.ready = true; })
+  .catch(error => {
+    status.textContent = `Instant Battle screen unavailable: ${error.message}. `
+      + 'From tools/bf1942-models run: python3 extract_menu_layout.py';
+    console.error(error);
+  });
+</script>
