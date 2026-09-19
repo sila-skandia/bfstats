@@ -44,45 +44,101 @@ degenerates to plain uniform throttle — the "tank steering formula" and
 "car steering" are the literal same code path, differing only in which
 axes the `.con` file wires up.
 
-## 3. The gear-ratio curve: a 101-slot array, authored at five points
+## 3. The two gear curves: piecewise-linear, authored at a handful of points
 
-`getCurrentRatio()` (client `0x0057bd90`, TANK-3) computes
-`ratio = differential × 3.5 / curve[idx]`, where
-`idx = trunc(gear / numberOfGears × 100)`. **The truncation is genuine —
-the MSVC `_ftol` idiom (`0x00804af0`) rounds to nearest and then applies a
-residual-sign ±1 correction to convert that into truncation-toward-zero.**
-This corrects an earlier reading that assumed `round()`.
+> **Rewritten 2026-09-19. The previous reading of this section was wrong.** It
+> described the ratio curve as a fully materialized array that is `1.0`
+> everywhere except five control points, and concluded that only
+> `numberOfGears ∈ {1,5}` ever touches its shape and that M3A1's ratio is 17.5.
+> The constructor's flat fill is real, but it is only the *starting point*:
+> every control-point store is followed by a call to
+> `OverTimeDistribution::generateDistribution`, which interpolates the slots
+> between the authored indices. The earlier pass read the fill loop and the
+> five stores and never followed the eleven `CALL`s. There is also a **lerp**
+> at the read site, which it missed as well.
 
-`curve` is a **fully materialized 101-float array**
-(`EngineTemplate::EngineTemplate`, `0x005715d0`, hand-disassembled in full
-to confirm the exact fill pattern), `1.0` at every index except five
-authored control points:
+`getCurrentRatio()` (lnxded `0x0824ca70`, client `0x0057bd90`, TANK-3):
 
-| idx | 20 | 40 | 60 | 80 | 100 |
+```
+idxf  = gear / numberOfGears * 100          // gear and numberOfGears are ints
+i     = trunc(idxf)                         // genuine round-toward-zero
+frac  = idxf - i
+ratio = 3.5 * differential / lerp(curve[i], curve[i+1], frac)
+```
+
+The truncation is genuine on both binaries — lnxded sets round-toward-zero with
+`fldcw 0x0c00` before `fist`, and the client uses the MSVC `_ftol` idiom
+(`0x00804af0`). The `3.5` (`ds:0x86d0ce0`, read as bytes `00 00 60 40`;
+client `0x008fdfa8`) is a **numerator multiplier on `differential`**, not a
+divisor and not a curve value — though it is numerically equal to `curve[20]`,
+which is exactly why the first gear of a 5-speed comes out at `differential`.
+
+The curve is an `OverTimeDistribution` (ctor `0x081e7800`, 101 floats from
+`+0x4`, a 128-bit authored mask at `+0x198`) built in
+`EngineTemplate::EngineTemplate` (lnxded `0x0823efc0`, client `0x005715d0`) at
+`tmpl+0x378` for the ratio and `tmpl+0x1b8` for the torque, with
+`generateDistribution` (`0x081e7830`, client twin `FUN_005094b0`) called after
+**every** control point — eleven calls in all. That function scans forward for
+the next authored index and fills `v[j] = ((hi−j)·v[lo] + (j−lo)·v[hi]) /
+(hi−lo)`; when nothing above `lo` is authored it holds the value flat to the
+end instead.
+
+Authored points, each index cross-checked against both its store offset and its
+mask bit:
+
+| ratio idx | 20 | 40 | 60 | 80 | 100 |
 |---|---|---|---|---|---|
 | value | 3.5 | 2.2 | 1.5 | 1.1 | 0.94 |
 
-**Only `numberOfGears ∈ {1, 5}` ever lands `idx` on one of those five
-control points.** For any other integer gear count, `100 / numberOfGears`
-never equals 20, 40, 60, 80 or 100, so `curve[idx]` is the default `1.0`
-and the whole formula reduces to exactly `ratio = 3.5 × differential`.
+| torque idx | 0 | 10 | 30 | 60 | 85 | 100 |
+|---|---|---|---|---|---|---|
+| value | 0.70 | 0.80 | 0.90 | 1.00 | 0.85 | 0.70 |
 
-Concrete consequence, the one number in this subsystem that actually
-changes viewer behaviour: **Sherman = 4.0, Willy = 7.0** (both
-`numberOfGears = 5`, so `idx = 20`, a genuine control point) — but
-**M3A1 = 17.5, not the ≈5.5 a smooth-curve assumption would give.** M3A1
-does not use 5 gears; its `idx` lands away from any control point, `curve[idx]`
-is the default `1.0`, and `ratio` falls straight out to `3.5 × differential`
-with `differential = 5.0`. Implement the full 101-slot table (or at minimum
-its five real control points plus the `1.0` default), never a smooth
-5-point spline — a spline gives every non-5-speed ground vehicle the wrong
-ratio.
+**Index 0 of the ratio curve is not authored**, so slots 0–20 ramp from the
+constructor's default 1.0 up to 3.5. Recomputed from the control points alone
+in extended precision, ratio idx 0..100 by 10 is
 
-**A second, unrelated 101-float curve feeds only engine sound (TANK-4).**
-`getCurrentTorque()` (`0x0057be10`) samples a separate curve at the
-engine's own `+0x26c` (the ratio curve lives at `+0x42c`), same `idx`,
-`× torque`. It feeds engine-sound RPM only and has no bearing on drive or
-steering; its own control-point values were not read in detail.
+```
+1.000 2.250 3.500 2.850 2.200 1.850 1.500 1.300 1.100 1.020 0.940
+ratio[25] = 3.175   ratio[50] = 1.850   ratio[75] = 1.200
+```
+
+so **every** gear count gets a real ratio, not just 1 and 5. The ladders:
+
+| vehicle | nGears | differential | gears |
+|---|---|---|---|
+| Sherman | 5 | 4 | 4.000, 6.364, 9.333, 12.727, 14.894 |
+| Willy | 5 | 7 | 7.000, 11.136, 16.333, 22.273, 26.064 |
+| M3A1 | 4 | 5 | **5.512**, 9.459, 14.583, 18.617 |
+
+**M3A1 is 5.512, not 17.5** — `idx = 25`, `curve[25] = 3.175`. Sherman 4.0 and
+Willy 7.0 stand.
+
+**Warning for anyone implementing it: the ladder is not monotonic.** Because
+the curve *rises* from 1.0 to 3.5 across indices 0–20, any gear that lands
+below index 20 gets a *higher* ratio than first-of-a-5-speed. `numberOfGears 8,
+differential 5` gives g1 = 6.83 but g2 = 5.51. A viewer that assumes gears
+descend will mis-model an 8- or 50-gear mod template, and both exist.
+
+No `.con` word authors either curve: `EngineTemplate::makeScript`
+(`0x0823f580`) emits only the twelve Engine words and no rodata string matches a
+gear-curve setter. Constructor defaults are `numberOfGears = 1`,
+`differential = 10.0`, `torque = 60.0`.
+
+**`getCurrentRatio` is load-bearing physics, not sound.** Five call sites:
+`PhysicsEngine::feedbackLoop` `0x0824c87a`, `PhysicsEngine::updatePhysics`
+`0x0824cfe6` (the result multiplies a Vec3 handed to `[esi+0x68]`),
+`ResponsePhysics::addFriction` `0x0825c252` and `0x0825c6fc`, and
+`AnimatedBundle::updateAnimations` `0x082665ff`.
+
+**The second curve (TANK-4).** `getCurrentTorque()` (lnxded `0x0824cb10`,
+client `0x0057be10`) samples the torque curve with a **different index**:
+`min(|engine[+0xa0]|, 1.0) × 100`, a normalised throttle/rev fraction, **not**
+the gear — an earlier note here said "same `idx`", which is wrong. Peak at 60%
+revs, 70% of peak at both ends. Its only caller is `feedbackLoop`, itself called
+from `updatePhysics` and `addFriction`, and its return value is discarded, the
+lasting effect being the rev state at `+0xa4`/`+0xac` — so the old claim that it
+"feeds engine-sound RPM only" is **not established** and should not be repeated.
 
 **Field offsets, and why the two readings disagree by exactly 4 (TANK-5).**
 The M-frame (`EngineTemplate::makeScript`, `0x00571290`) places

@@ -58,9 +58,32 @@ near-vestigial: `enter` ignores both of its parameters and simply forwards
 to the linked PCO's `init()`; `exit` unconditionally returns `1`.
 `PlayerControlObject::enter(player, force)` (`0x08316f00`) refuses only when
 the seat is already occupied **and** `force == false` — so a caller that
-passes `force = true` steals an occupied seat outright (SEAT-11: which call
-site actually passes `true` for a live seat-switch was not traced this
-round — treat as open, not as "never happens").
+passes `force = true` steals an occupied seat outright.
+
+**Who passes `true` (SEAT-11, closed 2026-09-19): only `exitVehicle`.**
+`enter` is reachable only through `IPlayerControlObject` vptr+0x20 (the thunk
+`0x0831ab50` at `vtable for PlayerControlObject` `0x0873eec0` + 0x1d8, the
+secondary vptr being sym+0x1b8), and its single call site is `0x0814e90a`
+inside `GameServer::enterVehicle(BFPlayer*, IPlayerObject*, bool, bool)`
+(`0x0814e860`, itself `GameServer` vtable vptr+0x6c), which forwards its
+**fourth** declared parameter as `force` (`[ebp+0x18]` → `[ebp-0x16a]` at
+`0x0814e87b`; the third goes to `[ebp-0x169]` and is not it). Reading the five
+callers' push order:
+
+| caller | `force` |
+|---|---|
+| `checkPlayerTriggers` — the seat switch (`c_PIMenuSelect`) | **false** |
+| `toggleEntryPoint` — `c_PIUse` entry | **false** |
+| `spawnPlayer` | false |
+| `killPlayer` | false |
+| `exitVehicle` — re-entering the player's own soldier | **true** |
+
+So **a seat switch into an occupied seat is refused, not stolen**, and so is
+ordinary entry. A viewer that keeps refusing an occupied seat is matching
+retail, and this row stops being a hazard the viewer has to hedge against. (No
+direct call to `enter` or its thunk exists anywhere in the disassembly; that
+`0x0814e90a` is the only *indirect* `call [reg+0x20]` reaching it was not
+exhaustively proved, and no counter-example surfaced.)
 
 ## 4. Switching seats: a map built once, at spawn, root PCO only
 
@@ -166,8 +189,9 @@ front, fly-by) — matching the game's own `C` cycle.
 
 ## Open
 
-- **SEAT-11**: which call site actually passes `force = true` to steal an
-  occupied seat — not traced.
+- ~~**SEAT-11**: which call site actually passes `force = true`~~ — **closed
+  2026-09-19** (§3): only `GameServer::exitVehicle`. The seat switch and
+  `c_PIUse` entry both pass `false`.
 - The client-side (`BF1942.exe`) dispatch address for any of this — every
   function in this doc is lnxded-only; no client twin was located this
   round.

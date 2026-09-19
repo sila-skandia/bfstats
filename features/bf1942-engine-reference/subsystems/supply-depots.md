@@ -148,29 +148,80 @@ template, but not universally: FHSW's `LST-1_MovableRampKiller`/
 finite-reserve clamp branch. Do not assume every `addVehicleType` reserve is
 `-1` once a mod's content is in play.
 
-## 6. What is not consumed, and what was not re-examined
+## 6. The five properties this class does not consume: the medic pack and the wrench
 
 `healDistance`, `healFactor`, `selfHealFactor`, `repairDistance` and
 `repairFactor` (`Objects/Soldiers/Common/CommonSoldierData.inc`) are real,
-registered console properties — but **no consuming method exists anywhere
-in `SupplyDepot` or `SupplyDepotTemplate`** (SUP-15), confirmed both by
-reading every core `SupplyDepot` function and by an exhaustive `nm`
-symbol-table search for all five names. Whatever consumes them — most
-likely self-heal or a repair-tool item, a different subsystem entirely — is
-unfound.
+registered console properties, and **no consuming method exists anywhere in
+`SupplyDepot` or `SupplyDepotTemplate`** (SUP-15) — confirmed by reading every
+core `SupplyDepot` function and by an exhaustive `nm` search for all five
+names. **Closed 2026-09-19: they are `BFSoldierTemplate` properties**, which is
+precisely why the exhaustive search of this class found nothing. Each accessor
+resolves through `getActiveTemplate(CID_BFSoldierTemplate 0x86c2b88)`:
 
-The client-side draw path that lights an ammo/heal/repair icon in the 3-D
-world (as opposed to the menu-prompt eligibility test of §3) was not
-located this round (SUP-17) — it needs client-binary work, not more time on
-the server copy.
+| property | offset | ctor default | vanilla | accessor |
+|---|---|---|---|---|
+| `healFactor` | `+0x2d8` | 0.1 | **0.25** | `0x082bc7b0` |
+| `selfHealFactor` | `+0x2dc` | 0.1 | **0.15** | `0x082bcbc0` |
+| `repairFactor` | `+0x2e0` | 0.1 | **0.15** | `0x082bcfd0` |
+| `repairDistance` | `+0x2ec` | 3.0 | **2.0** | `0x082bd3e0` |
+| `healDistance` | `+0x2f4` | 5.0 | **10.0** | `0x082bdc00` |
+
+The consumers are the two hand items, both called from
+`BFSoldier::handleMessage` (`0x08277720` and `0x08277796`) behind an ammo test:
+
+- **`BFSoldier::useMedPack()`** (`0x082768d0`) sweeps
+  `objectManager->vtable[0x30](getPos(), healDistance, &out,
+  ObjectFlagPredicator(0x2000000))` — the same spatial query `handleExplosion`
+  uses — then per candidate of the same template id requires
+  `distanceSqr <= healDistance²`, an Armor, `!isDestroyed()` and
+  `hitPoints < maxHitPoints`, and calls `target->vtable[0xd8](−healFactor)`; a
+  negative argument routes through `SimpleObject::handleDamage` to
+  `Armor::heal` (hitpoints-and-damage.md §4). Its self-heal fallback uses
+  `selfHealFactor` the same way.
+- **`BFSoldier::useRepairPack()`** (`0x08276100`) sweeps
+  `max(repairDistance, template+0x2f0)` and gates each candidate on
+  `distanceSqr <= (target->getRadius() + repairDistance)²` — `repairDistance`
+  is added to the *target's own* radius, so a big hull is reachable from its
+  skin — then calls `Armor::heal(repairFactor)` directly, not through
+  `handleDamage`.
+
+**The factors are HP per invocation, and that is all that is established.** A
+HP-per-second figure needs the cadence of the `handleMessage` post while the
+pack is held, which nobody has read; an earlier "≈7.5 HP/s at 30 Hz" was an
+assumption stacked on an assumption and must not ship.
+
+### The in-world icons are named (SUP-17, half closed)
+
+The client-side draw path (as opposed to §3's menu-prompt eligibility test) is
+still not located, but the variables it feeds are. Three booleans are registered
+back to back on consecutive members of one HUD object, through the generic bool
+registrar `0x0069b810`: **`ShowRepairIcon`** (`+0x2b`, registration
+`0x006e3174`–`0x006e3193`, name string `0x00925940`), **`ShowHealIcon`**
+(`+0x2c`, `0x006e31bb`, `0x00925930`) and **`ShowReloadIcon`** (`0x006e3202`,
+`0x00925920`). The neighbouring strings in the same block —
+`ShowControlPoints`, `ShowNonTakeableFlagIcon`, `ShowFlagIcon`, `CameraPlaced`,
+`EngineerNeeded`, `MedicNeeded`, `ShowParachute` — identify it as the world-icon
+group, and VHUD-7's `IconLookRotation` site sits in the same block. The three
+names map one-for-one onto this class's `show*IconInMenu` predicates, so §3's
+eligibility rule is what they surface.
+
+**Not closed, and not independently re-derived:** who writes `+0x2b`/`+0x2c`/
+`+0x2d` each frame, and the identity of the registrar's owning object. The
+verifier of that round spent its budget on the server-side priorities, so this
+identification is the research pass's reading alone.
 
 ## Open
 
 - **SUP-8**: `FireArms::reloadAmmo`'s exact per-magazine fill formula.
 - **SUP-10**: the finite shared heal-budget clamp's exact arithmetic (moot
   in shipped content, but present in the code).
-- **SUP-17**: the client HUD draw path for the in-world ammo/heal/repair
-  icon.
+- **SUP-17**: the per-frame writers of `ShowRepairIcon`/`ShowHealIcon`/
+  `ShowReloadIcon` (`+0x2b`/`+0x2c`/`+0x2d`) and the identity of the HUD object
+  that owns them. The variables themselves are named as of 2026-09-19 (§6).
+- **SUP-15's rate**: how often `BFSoldier::handleMessage` posts the med-pack
+  and repair-pack messages while the item is held. Without it the per-invocation
+  factors cannot be turned into HP per second.
 - From the R3 verifier, not yet promoted to a row: whether
   `workOnSoldiers()`'s player-collection walk is the same container type as
   `workOnVehicles()`'s PCO map (it shows no `_M_increment` call, unlike the

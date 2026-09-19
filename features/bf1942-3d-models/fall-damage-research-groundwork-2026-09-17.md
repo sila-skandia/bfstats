@@ -348,3 +348,151 @@ Still to settle: the exact value of `S_obj` / the MaterialManager M1·M2
 scalars for ground/terrain (the per-surface DamageMod from the damage tables),
 and the `test $0x45` exact truth table. Viewer model: use the kinetic shape
 and calibrate the scalar against the user's measured Wake-airstrip lethal fall.
+
+---
+
+## Correction and closure, 2026-09-19 (parity round, stream F1 + verifier V1)
+
+Everything this document reaches for is now read. Three corrections and the
+numbers, in the order they matter.
+
+**1. The dispatch slot.** `*0x15c` is **not** `BFSoldier::handleDamage` on a
+soldier sub-vtable. The receiver at every site is `this`, the **GameServer**
+(`mov esi,[ebp+0x8]` `0x08154cb3`; `mov ebx,[esi]` `0x08154cee`; `push esi`
+`0x08154d11`; `add esp,0x30` = 12 words, matching a 9-argument signature and not
+`handleDamage(float)`'s 2), and slot `+0x15c` of the GameServer vtable
+(`0x0871b0e0`) is
+`GameServer::giveDamage(IObject*, float, int, int, int, Pos3, int, bool, bool)`
+`0x0814b2e0`. The actual call is
+`giveDamage(getRootParent(obj), severity, -1, -1, -1, hitPos, attMaterial, false, true)`.
+The conclusion — a falling soldier loses hit points — stands; only the mechanism
+was misidentified, and it is *not* soldier-specific: **vehicles take collision
+and ground-impact damage through the same call** (see
+`features/bf1942-engine-reference/subsystems/collision-response.md` §9, read
+independently the same day).
+
+**2. The 8.0 is on the soldier path after all**, and it is the reason this
+document's calibration attempts kept over-fitting. The soldier branch starts
+*earlier* than the range read here: the `CID_BFSoldierTemplate` test at
+`0x08154a81` jumps to `0x08155189`, which does `fsub ds:0x86c08c0` (the 8.0),
+**overwrites `|v|` with the reduced value**, and **returns with no damage at all
+if the result is negative**. Every downstream use — the `speedMod·|v|²` kinetic
+term, the 30.0 saturation, the 10/20 lerp — then uses `|v| − 8`.
+
+**3. There are two formulas.** `arg6 == 1` (material 1 = Water) branches at
+`0x08154a89` to a duplicate of the whole path at `0x08154e4f` whose only
+difference is a single `fmul st,st(0)`: `A = |cosθ|²` in water,
+`|cosθ|³` on land. That is what "LandOrWater" in the function name means.
+
+The settled soldier formula, with the height term this document only had in
+part, and the branch polarity it flagged as unresolved:
+
+```
+|v| -= 8.0 ;  if (|v| < 0) return
+F   = getLastCollisionHeight() - pos.y
+X   = (F < 2) ? 1 : F - 1
+Q   = max(1, X * getDamageDampingFromActiveKitParts())
+A   = |cos|^3 (land) or |cos|^2 (water), lerped to 1 over 2 <= F < 3 and over 10 < |v| <= 30
+severity = Q^2 * A * (Armor.speedMod * |v|^2) * damageMod(att, def) * materialDamage(att)
+applied only when severity > 1.0        // fucom vs 1.0 at 0x08154c6b, je taken on >
+```
+
+The `Q²` is `d8 ca` then `de ca` at `0x08154dbb`/`0x08154dbd` with `Q` in
+`st(2)` — unusual, flagged for a verifier by the research pass, and confirmed.
+
+**The scalars this document lists as outstanding.** `S_obj` is
+`ObjectTemplate.speedMod` on the victim's Armor (`Armor::getSpeedMod`, vtable
+`+0x4c`, `0x08173fc0`) — **0.5** for a vanilla soldier. Extracted from
+`Game.rfa`, for **every** terrain material 0–15,
+`damageMod(ground, 40) = 0.001` and `materialDamage(ground) = 30`, so
+**M1·M2 = 0.030**; water is `1.5e-05`, i.e. `0.00045`, about 67× gentler. That
+independently corroborates this document's fitted `M1·M2 ≈ 0.026`.
+
+**Where the live version lives now.** Ledger row **HP-14**, and
+`features/bf1942-engine-reference/subsystems/hitpoints-and-damage.md` §5, which
+carries the formula and a worked table at the engine's own `g = −14.73`:
+nothing below ~3.5 m, first damage at ~4 m, death at ~7.5 m for a 30 HP
+soldier landing flat. The vehicle and object-versus-object cases are ledger
+COL-3/COL-4 and `collision-response.md` §9.3–9.5. This document is history from
+here.
+
+Still genuinely open: whether `Armor+0x28` tracks the apex of a fall rather
+than the last contact height.
+
+## Closed (2026-09-20, wave-2 stream A): the scalars were in the damage tables all along
+
+The two things this document left open are settled, and the viewer no longer
+carries a fitted constant. Ledger **HP-14** is the row; the verified brief is
+`features/bf1942-parity-round-2026-09-19/viewer-changes.md` item 23.
+
+**The missing 8.0.** `0x086c08c0` was on the "confirmed constants" list above
+but not in the model. It is subtracted from `|v|` *first* — `fsub ds:0x86c08c0`
+at `0x08155189` overwrites the speed at `0x0815519b` and the function returns
+at `0x0815519e` when the result is negative — so the kinetic term, the 30.0
+saturation and the 10/20 lerp all read the **reduced** speed, and an arrival
+under 8 m/s does no damage at all. That single omission is most of why the
+first magnitude reading missed: without it the formula is about 8x too severe
+at 5 m, which is the error the fitted constant was quietly cancelling.
+
+**`S_obj` and `M1·M2` are ordinary table entries.** `S_obj` is
+`Armor::getSpeedMod` (vtable `+0x4c`, `0x08173fc0`) and the vanilla soldier
+declares `SpeedMod 0.5`. `M1` and `M2` are `damageMod(att, def)` and
+`materialDamage(att)` with the **ground** as attacker and the soldier's
+`Material 40` as defender — which the extractor has been writing into
+`_shared/damage.json` since long before this question was asked. Read out of
+the shipped file: for **every** terrain material 0–15,
+`materialDamage = 30` and `damageMod = 0.001`, so `M1·M2 = 0.030`. Water
+(material 1) is `1.5e-05`, about 67x gentler, and takes `cos²θ` instead of
+`cos³θ` through the duplicated path at `0x08154e4f`.
+
+The old fitted `FALL_KINETIC_HP = 10` implied about 0.026. It was close because
+0.030 is the real number; it was wrong because one scalar cannot also carry the
+8.0, the squared height term, the angle and the water case.
+
+**Two more terms the groundwork did not have.** `Q = max(1, X·kitDamping)` with
+`X = 1` below a 2 m fall and `F − 1` above it, and **`Q` is squared**
+(`fmul st,st(2)`, `fmulp st(2),st` at `0x08154dbb`/`0x08154dbd`). And the whole
+severity is delivered only when it exceeds **1.0**.
+
+### Where it lives now
+
+`tools/bf1942-models/viewer/fall-damage.js` — the formula, the constants and
+the table lookup, importing nothing so it tests under node.
+`tests/test_fall_damage.py` is 15 assertions over
+`tests/fall_damage_harness.mjs`.
+
+`SoldierBody` supplies the inputs, and two of them needed the body's help:
+the impact speed has to be sampled **before** `#settle` zeroes `velocity.y` to
+plant the feet, and the height is `getLastCollisionHeight() − pos.y` — the
+height of the last *contact*, not the airborne apex the viewer used to track.
+That difference is visible: a jump straight up is billed `F = 0`, and a jump
+off a ledge is billed the ledge rather than the apex above it.
+
+### Measured
+
+Driven on the page (`map.html?mod=bf1942&map=wake&shots`, The Airfield, dry
+sand, 30 HP, no kit damping, `g = −14.73`), health restored between drops:
+
+| drop | HP lost | HP left |
+|---|---|---|
+| 1.0 – 3.9 m | 0 | 30 |
+| 4.0 m | 1.19 | 28.81 |
+| 4.5 m | 2.19 | 27.81 |
+| 5.0 m | 4.18 | 25.82 |
+| 6.0 m | 10.86 | 19.14 |
+| 7.0 m | 21.74 | 8.26 |
+| 7.4 m | 28.63 | 1.37 |
+| 7.6 m | 30 | **dead** |
+
+By bisection in the node harness: first damage at **3.97 m**, death at
+**7.55 m**. The same 10 m drop into water costs **1.55 HP** against 103 on
+land — the 67x the two `damageMod`s predict.
+
+### Still open
+
+`Armor.speedMod` is read from the vanilla soldier's `.con` rather than from a
+per-template field the viewer tracks, so a mod declaring a different `SpeedMod`
+is not yet honoured. `kitDamping` is 1.0 because no vanilla kit declares
+`DamageDamping`; `BFSoldier::getDamageDampingFromActiveKitParts` `0x0827ec00`
+has not been read, so what a kit that *did* declare it would produce is
+unverified. Neither affects any vanilla fall.
