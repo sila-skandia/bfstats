@@ -101,9 +101,15 @@ unread part. The Ghidra bridge is up and the hash matches.
 
 ### The lead's own queue
 
-1. Rebuild `viewer/models` for vanilla, XPack1, XPack2 and EoD **from the
-   game** (running). The local vanilla `models.json` had been cut to one entry
-   by a subset extraction on 09-18 23:43.
+1. ~~Rebuild `viewer/models` for vanilla, XPack1, XPack2 and EoD from the
+   game.~~ **Done 2026-09-20 03:41**, 5 h 50 m, almost all of it EoD under
+   `--level-all`. 96 / 15 / 29 / 285 entries, every `glb` and `thumb` present,
+   44 / 6 / 10 / 74 cockpits. Seat poses: EoD 133 of 133; Road to Rome 40 of
+   50 (`PassengerInM3GMC`: "state machine has no Ub_PassengerInM3GMC clip",
+   with stream C's reviewer). `extract_all.py` treated that partial pass as
+   fatal and skipped the thumbnail stamp; fixed in `42f8f15`. The verifier's
+   verdicts are noise until it is fixed (vanilla 42 "broken" of 96, EoD 96 of
+   285, the same false alarms): see the wave 2 table.
 2. Re-extract every level once the streams' extractor changes are merged, so the
    tree picks up tickets, building sounds, `vehicleSoldierSpawns`,
    `splashMaterial`, `skeletonIK`, `envmap` and the widened emitter bake in one
