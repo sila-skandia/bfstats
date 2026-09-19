@@ -177,6 +177,27 @@ class FillPictureGeometryTests(unittest.TestCase):
     def test_an_unrotated_picture_still_takes_the_plain_path(self) -> None:
         self.assertTrue(self.results["turretDial"]["unrotatedTakesThePlainPath"])
 
+    # --- the seat dots' placement (ledger VHUD-11, VHUD-7) -----------------
+
+    def test_a_dot_sits_at_the_panel_origin_plus_its_seats_own_offset(self) -> None:
+        # VHUD-7 draws the six dots at `(192 + VehiclePosX[i+1],
+        # 452 + VehiclePosY[i+1])`, and VHUD-11 found what feeds those: each
+        # PlayerControlObject's own `setVehicleIconPos`. Sherman root 54/103
+        # lands at (246, 555) — inside the 128x128 icon panel, which starts at
+        # (200, 462). That geometry check is what turned the row from "the
+        # data is not carried" into "the data was never parsed".
+        dots = self.results["seatDots"]
+        self.assertEqual([246, 555], dots["shermanRoot"])
+        self.assertEqual([224, 513], dots["shermanGunner"])
+
+    def test_an_unfed_dot_keeps_the_layouts_own_rect(self) -> None:
+        # A scene extracted before the word was parsed has no pair to feed,
+        # and six dots stacked at the panel's corner would be worse than the
+        # layout's authored defaults. Half a pair is treated the same way.
+        dots = self.results["seatDots"]
+        self.assertEqual(dots["layoutRect"][:2], dots["unfed"])
+        self.assertEqual(dots["layoutRect"][:2], dots["halfFed"])
+
 
 if __name__ == "__main__":
     unittest.main()

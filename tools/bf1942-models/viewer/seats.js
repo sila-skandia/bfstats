@@ -407,6 +407,76 @@ export class VehicleOccupancy {
     return this.seatInfo(this.activeSeatId)?.hud || this.seatInfo(this.rootId)?.hud || null;
   }
 
+  /**
+   * VHUD-9's trigger for the HUD's turret dial:
+   *
+   *   ShowTurretIcon = (seatCamera.getViewMode() == 3)
+   *                    && pcoTemplate.getHasTurretIcon()
+   *
+   * read at client `0x006ae597`–`0x006ae5d1`. Both halves matter, and the
+   * viewer had neither: it showed the dial for any seat with a traverse, in
+   * any view.
+   *
+   * The template queried is the **controlled** PCO's, not the vehicle root's
+   * — `arg0`'s own `queryInterface(IID_IPlayerControlObjectTemplate)`. That
+   * distinction is load-bearing: `setHasTurretIcon` is declared on vehicle
+   * ROOTS only (7 vanilla templates, all turreted tanks; never a casemate
+   * hull like the Wespe or StuG, which is why those must stop getting a
+   * dial), so a Sherman's hull gunner — whose controlled PCO is
+   * `shermanBrowning_PCO1` — gets none either. `activeHud()`'s root fallback
+   * is therefore deliberately NOT used here.
+   *
+   * `viewMode == 3` is the inside view; the enum's own numbering was not
+   * derived, only that 3 is the one that shows the dial and that chase views
+   * do not (`ingame-hud.md`: "it needs the template's own `setHasTurretIcon`
+   * and an inside view"). `map.html` passes its own first-person state.
+   *
+   * A scene baked before `con.py` learned the word carries no
+   * `hasTurretIcon` at all and so shows no dial until it is re-extracted.
+   * That is the correct failure: the alternative is keeping the wrong dial on
+   * every casemate hull.
+   */
+  showsTurretIcon(insideView) {
+    if (!insideView) return false;
+    return this.seatInfo(this.activeSeatId)?.hud?.hasTurretIcon === true;
+  }
+
+  /**
+   * The seat-occupancy dots, VHUD-11's data and VHUD-2's states, for the six
+   * slots `hud-layout.json` draws.
+   *
+   * Each returned entry is `{ state, x, y }`. `x`/`y` come straight from the
+   * seat's own PCO template (`setVehicleIconPos`, parsed by `con.py` since
+   * this round) and are positions inside the 128x128 vehicle-icon texture —
+   * the same space VHUD-7's `(192 + X, 452 + Y)` anchor works in, so the
+   * Sherman's root `54/103` lands at (246, 555), inside the icon. A seat whose
+   * extract has no position yields `null` for it and `hud.js` falls back to
+   * the layout's own literal rect.
+   *
+   * `state` is `BfOccupiedVehicleData`'s five-entry icon table (VHUD-2,
+   * vtable `0x0093f300` read as raw bytes): 0 draws nothing, 1
+   * `vehicledot_local`, 2 `vehicledot_empty`, 3 `vehicledot_friend`, 4
+   * `vehicledot_enemy`. **Which live state a given seat resolves to was NOT
+   * read** — that half of VHUD-2 is still open — so this viewer answers the
+   * only question it can: the seat you are sitting in is 1 and every other
+   * declared seat is 2. There are no other occupants to be a 3 or a 4, and
+   * inventing one would be a guess dressed as engine behaviour.
+   *
+   * Seats past the sixth get no dot: the layout has six `occupied-seat`
+   * leaves and the engine has six `VehiclePosX1..6`/`Y1..6` pairs.
+   */
+  seatDots() {
+    return this.order.slice(0, 6).map(id => {
+      const seat = this.seatInfo(id);
+      const pos = seat?.hud?.vehicleIconPos;
+      return {
+        state: id === this.activeSeatId ? 1 : 2,
+        x: Array.isArray(pos) ? pos[0] : null,
+        y: Array.isArray(pos) ? pos[1] : null,
+      };
+    });
+  }
+
   /** The node whose `physics.soldierExitLocation` (if any) should place the
    *  soldier stepping out of the currently manned seat. */
   exitLocationNode() {
