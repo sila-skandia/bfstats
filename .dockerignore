@@ -28,3 +28,6 @@ README.md
 tools/bf1942-models/viewer/models/
 tools/bf1942-models/viewer/maps/
 tools/bf1942-models/shots*/
+# A worktree-only symlink into a scratch build of the Instant Battle screen's
+# pack, for `play/index.html?pack=pack-dev`. Never part of an image.
+tools/bf1942-models/viewer/play/pack-dev
