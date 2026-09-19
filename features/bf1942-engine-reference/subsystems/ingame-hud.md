@@ -121,17 +121,51 @@ variables rather than file constants — vanilla's own data reads
 `ColorEffect(0,0,0,1)`), gated visible by `SoldierAmmoHasMag` and hidden
 outright when `PrimaryMag == -1` (HUD-9).
 
-**Two unresolved wirings (HUD-10).** `Ammo/AmmoType`'s `.meme`-side value
-(1–7) is not the same enumeration as `setHudAmmoType`'s `.con`-side six-value
-enum (`operator>>` `0x004c4cd0`: `ATNone`…`ATIconAndHeatBar`, invalid → 7) —
-something converts one into the other, and that converter was not found.
-Separately, `AmmoHud::registerVariables` (`0x006e9f30`) is reached only
-through a data vtable slot inside the HUD singleton `0x00a5f1a8`
+**The two enumerations are one enumeration (HUD-10, closed 2026-09-19).**
+`Ammo/AmmoType`'s `.meme`-side value and `setHudAmmoType`'s `.con`-side value
+are the **same** enum, and there is no converter to find — the row's premise was
+wrong. `operator>>` (`0x004c4cd0`), decompiled in full, gives **seven** named
+values plus a fallback:
+
+| value | name | what the panel draws |
+|---|---|---|
+| 0 | `ATNone` | nothing (no leaf tests 0) — vanilla's knives |
+| 1 | `ATAmmoBar` | magazine panel + fill bar + rounds + mag box |
+| 2 | `ATIcon` | panel + icon + **rounds text**, no bar — Bazooka, Panzerschreck, ExpPack, Detonator, Landmine |
+| 3 | `ATIconAndStrengthBar` | panel + icon + rounds + bar (heatbar art) — grenades |
+| 4 | `ATIconAndReloadBar` | panel + icon + reload bar, **no** rounds — RepairPack |
+| 5 | `ATIconNoText` | panel + icon only |
+| 6 | `ATIconAndHeatBar` | panel + icon + heat bar — MedPack |
+| 7 | anything unrecognised | panel + icon + reload bar |
+
+`menu/InGame` gates three mutually exclusive copies of the soldier panel on the
+numeric value directly: `eq 1`; `∈ {2,3,4,5}` with the rounds text gated
+`ne 4 && ne 5 && ne 6` and `eq 3`/`eq 4` selecting the strength/reload bar; and
+`∈ {6,7}` with `eq 6`/`eq 7` doing the same. So **2 is tested** — as a member of
+that group; an earlier reading that "0 and 2 are tested by nothing" was wrong —
+and a **dead `eq 6` leaf nested inside the `{2,3,4,5}` group** can never fire.
+The shifted-by-one hypothesis is excluded because `.meme 1` draws a magazine
+panel and would otherwise have to be `ATNone`.
+
+The practical consequence is one line in the viewer: feed the weapon's own
+value, so an `aticon` weapon gets **2** and shows its rocket count, not 6, which
+is the MedPack's heat bar. `setHudAmmoType` has been parsed by `bf42/con.py`
+(as `hud_ammo_type`, emitted `hudAmmo`) since before this round — the claim that
+it is a missing extractor word is false.
+
+Survey across all archives of 18 installs: `ATAmmoBar` 1076, `ATIcon` 542,
+`ATIconAndStrengthBar` 379, `ATNone` 229, `ATIconAndHeatBar` 54,
+`ATIconAndReloadBar` 23, `ATIconNoText` 1; vanilla declares 37.
+
+**Still open from that row:** `AmmoHud::registerVariables` (`0x006e9f30`) is
+reached only through a data vtable slot inside the HUD singleton `0x00a5f1a8`
 (offset `0x9260fc`), never a direct constructor call, so which of that
-singleton's roughly eighteen slots actually *owns* the Ammo group is still
-open. A weak lead — `0x00a5f1a8[0xc]`'s own object (`0x006ccc20`, fifteen
-embedded string slots) — looks more like a multi-weapon vehicle row than a
-plausible home for one ammo-type integer.
+singleton's roughly eighteen slots actually *owns* the Ammo group is unresolved.
+A weak lead — `0x00a5f1a8[0xc]`'s own object (`0x006ccc20`, fifteen embedded
+string slots) — looks more like a multi-weapon vehicle row than a plausible home
+for one ammo-type integer. Note also that the weapon-icon registrar puts
+`NumberOfWeaponIcons` at `+0xc` of a *different* object in the same `"Ammo"`
+group, so `+0xc` alone does not identify the owner.
 
 ## 6. Vehicle and manned-gun HUD
 
@@ -202,6 +236,108 @@ two-icon primary/secondary at (600,514)/(720,514); one-icon fallback at
 background (shown when `NotData(Vehicle/ShowVehicleIcon)`) sits at
 (589,525).
 
+### The turret dial: its trigger, its angle, and which way it turns (VHUD-9, closed 2026-09-19)
+
+Both values are written by the per-frame HUD updater `FUN_006ad0a0` — HUD-3's
+function, so once per rendered frame, not per sim tick.
+
+**`Vehicle/ShowTurretIcon` = `(seatCamera->getViewMode() == 3) &&
+pcoTemplate->getHasTurretIcon()`.** Client `0x006ae597`–`0x006ae5d1`:
+`CALL [EBX_vt+0x34]` (getCameras) → `CALL [+0x14]` (getViewMode) → `CMP EAX,3`,
+and on equality `CALL [ESI+0x60]` where `ESI` is
+`template->queryInterface(*0x008de480)`; `AL` goes to `HUD_singleton[3] + 0xac`.
+**`*0x008de480` is `0xc4c4` = `IID_IPlayerControlObjectTemplate`** (lnxded names
+it at `0x086d3c4c`) — an earlier report proposed an invented
+`IID_BFArmorOrHudAspect_c4a4` with a guessed value here, which is wrong on both
+counts. Dumping that interface's group of `vtable for
+PlayerControlObjectTemplate` (`0x0873eba0`, vptr = sym+0x20c) puts
+`getHasTurretIcon()` at exactly **vptr+0x60**, matching the client instruction;
+the same table gives `getVehicleIconPos()` at vptr+0x30 and `getCrossHairType()`
+at vptr+0x68 (**not** the +0x78 that report claimed).
+
+So the dial is not "any seat with a traverse": it needs the template's own
+`setHasTurretIcon` **and** an inside view. In vanilla that word appears on seven
+templates — Sherman, Tiger, PanzerIV, T34, T34-85, M10, Chi-ha — always on the
+vehicle **root** PCO, never on a casemate hull; 4,195 declarations across 18
+installs, 4,160 of them `1`. `bf42/con.py` does not parse it.
+
+**`IconLookRotation` is `atan2(dot(pcoRight, camForward), dot(pcoForward,
+camForward))`, in radians**, positive to the PCO's right, pivoted on the
+*controlled* PCO's own axes — the hull, for a tank driver. Client
+`0x006ae5d9`–`0x006ae616`: two dots, an `FCHS`, `FPATAN`, another `FCHS`, then
+`FSTP [EBP+0x320]`. The rows come from `pco->getAbsoluteTransformation()` at
+`0x006ad5df` (`+0x20` → row 2 = forward; no offset → row 0 = right; `+0x30` →
+translation). Note the layout's own variable name is the bare
+`IconLookRotation`, not `Vehicle/IconLookRotation` as this doc and the ledger
+used to write it.
+
+**The rotation senses are opposite.** `RotateEffect` ends in
+`meme_rotateQuadAboutPivot` (`0x007edbf0`), which computes
+`x' = x·cos + y·sin`, `y' = −x·sin + y·cos`: on a y-down HUD frame, `(0,−1)` at
++90° maps to `(−1,0)` — top to the left, **counter-clockwise**. HTML canvas
+`ctx.rotate(+θ)` sends top to the right. A viewer that puts the engine's own
+value on the wire must therefore rotate by `−angle`, and the two changes have to
+land together or the dial mirrors.
+
+`angleMultiplier` scales a draw-context scalar (`drawCtx[+0x18]`, identity
+unverified), not the bound variable, and `hud-layout.json`'s seven `rotation`
+blocks all author it as **0** — six with static angles (3.9, −3.14, 1.57, 2.5,
+0.8, −0.8) and one bound to `IconLookRotation`. Leaving it unapplied is correct.
+
+### The `Ammo` and `Overheat` registrar tables (VHUD-10, corrected 2026-09-19)
+
+Re-read from raw bytes with their name strings, because both registrar
+functions have vanished from the Ghidra project since the last round.
+
+The weapon-icon registrar (`0x006e8ca0`, group name `"Ammo"`) registers
+**thirteen** variables, not twelve: `NumberOfWeaponIcons` +0xc,
+`PrimaryAmmoBar` +0x10, `PrimaryAmmoIcon` +0x14, `PrimaryAmmoText` +0x34,
+`RedrawPrimaryAmmo` +0x38, `SecondaryAmmo` +0x3c, `SecondaryAmmoBar` +0x40,
+**`SecondaryAmmoIcon` +0x44**, `SecondaryAmmoText` +0x64, `MaxSecondaryAmmo`
++0x68, `RedrawSecondaryAmmo` +0x6c, **`UnlimitedPrimaryAmmo` +0x6d** and
+**`UnlimitedSecondaryAmmo` +0x6e**. The last two close this document's own
+open item: the `Unlimited*` variables do exist, as bools on the weapon-icon
+group.
+
+The overheat registrar (`0x006e9820`, group name `"Overheat"`) registers
+exactly three: `OverHeat` float +0x8, `ShowRecover` **int** +0xc, `Recover`
+float +0x10. **`SniperSight` (bool +0x84) is not one of them** — it belongs to
+the `"CrossHair"` group, registered by a different function at `0x006e9a60`.
+
+One shared feeder, `FUN_006d6af0`, computes
+`f = heat > 0.1 ? heat/heatMax : (reload > 0.1 ? reload/reloadMax : 0)` and
+stores **`1 − f`** into `[this+0x14]+0x8` (selector 1) or `+0xc` (selector 2):
+inverted, heat wins, a strict 0.1 dead band on the raw values. **Do not record
+field names for those destinations.** `[this+0x14]` is an unidentified group
+object — its only caller passes a container of group pointers and reads
+`[EDI+0xc]` as the weapon-icon group — and a float written to `+0xc` is
+inconsistent with the Overheat group's `int` there.
+
+Also corrected: lnxded's `FireArmsBundle::getAmmo` (`0x08290cd0`) is **not** an
+ammo accessor. Its body is the inlined `std::vector::erase(begin,end)` idiom on
+`this+0x110` and it reports no count while destructively emptying the vector;
+`FireArmsBundle::getTotalAmmo` (`0x08290d20`) is the real reader. Still open:
+the client instruction that writes `PrimaryAmmoText` for a drivetrain root, and
+which FireArm fills primary versus secondary.
+
+### The seat dots' positions are in the data after all (VHUD-11)
+
+This document recorded that "the dots' positions are live-bound per vehicle and
+nothing in the extracted data carries them". They are carried — by
+`ObjectTemplate.setVehicleIconPos <x>/<y>`, a `Vec2` on the
+**PlayerControlObject template** that the root and every seat PCO declares for
+itself (setter lnxded `0x0831b5f0`, getter `0x0831b620` at
+`IPlayerControlObjectTemplate` vptr+0x2c/+0x30). The values are positions inside
+the 128×128 vehicle-icon texture, which is exactly the space VHUD-7's dot anchor
+works in: Sherman's root `54/103` lands at `(192+54, 452+103) = (246, 555)`,
+inside the icon's `(200,462)`–`(328,590)` rect.
+
+19,089 declarations across 17 mods, 19,085 of them a single `x/y` token; vanilla
+183, all integers, X 12…99 and Y 43…120. Sherman root `54/103` and
+`shermanBrowning_PCO1` `32/61`; Yamato root `66/78` with Rear `32/57`, Left
+`57/62`, Right `37/73`; Willy root `40/79` and passenger `21/84`. `con.py` does
+not parse the word.
+
 **Hit points are not per seat (VHUD-8).** Naval AA mounts are uniformly
 `ABIconOnly`; big naval guns are `ABReloadBarOnly`; land/deck MGs are
 `ABHeatBarOnly`; torpedo tubes are `ABAmmoBarReloadBar` — every seat of a
@@ -222,14 +358,22 @@ switching seats within one vehicle never changes the displayed HP (see also
 - **HUD-4**: the nation key that selects `Icon_<nation>_soldier_<pose>.tga`.
 - **HUD-8**: `TransformNode::draw`'s sixth-parameter branch, confirmed
   irrelevant to every static HUD rect measured but not itself traced.
-- **HUD-10**: the `AmmoType` enum converter, and which slot of the
-  `0x00a5f1a8` singleton owns `AmmoHud`.
+- **HUD-10**: ~~the `AmmoType` enum converter~~ (closed 2026-09-19 — there is
+  none; it is one enumeration, §5), and which slot of the `0x00a5f1a8`
+  singleton owns `AmmoHud`, which is still open.
 - **VHUD-2**: `BfOccupiedVehicleData`'s live per-seat state selector — the
-  table is read, the code that indexes into it per seat is not.
+  table is read, the code that indexes into it per seat is not. (The dots'
+  *positions* are no longer open: VHUD-11, §6.)
+- **VHUD-10**: the client instruction that writes `Ammo/PrimaryAmmoText` for a
+  drivetrain root, which FireArm fills primary versus secondary under
+  `NumberOfWeaponIcons 2`, and the identity of `[this+0x14]` in
+  `FUN_006d6af0`. The registrar tables themselves are closed (§6).
 - **From the R2 verifier, not yet promoted to their own ledger rows**:
-  `IconLookRotation`'s writer and unit (pushed value confirmed real, the
-  writer is not); `Overheat/OverHeat`'s own registration function;
-  `UnlimitedPrimaryAmmo`/`UnlimitedSecondaryAmmo`'s source (no match under
-  any spelling, exhaustively re-checked); the sniper-scope's non-sniper
+  ~~`IconLookRotation`'s writer and unit~~ (closed, VHUD-9);
+  ~~`Overheat/OverHeat`'s own registration function~~ (`0x006e9820`, §6);
+  ~~`UnlimitedPrimaryAmmo`/`UnlimitedSecondaryAmmo`'s source~~ (bools at
+  weapon-icon group `+0x6d`/`+0x6e`, §6); the sniper-scope's non-sniper
   "ring icon" branch (`SplitNode`@84626/`CullNode`@84618) was found but not
   traced.
+- `RotateEffect`'s `drawCtx[+0x18]` — the scalar `angleMultiplier` multiplies.
+  Moot for vanilla, which authors the multiplier as 0 everywhere.
