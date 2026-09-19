@@ -15,7 +15,7 @@ corpus in `features/bf1942-engine-reference/` has read it.
         u32 blockSize
         u32 unknown[2]
         u32 vertexCount
-          per vertex: f32 position[3], f32 unknown
+          per vertex: f32 position[3], u16 material, u16 pad
         u32 faceCount
           per face: i16 vertex[3], u8 defensiveMaterial, u8 flags
         remaining acceleration data up to blockSize
@@ -239,8 +239,19 @@ class CollisionFace:
 class CollisionLayer:
     unknown: tuple[int, int]
     vertices: list[tuple[float, float, float]]
+    # collision-response.md #5.4 / R3 F10: the 16-byte collision vertex record
+    # is xyz **+ a u16 material + a u16 pad**, not a 4th float — the "unknown"
+    # this field's name remembers reading it as before the fix. `vertex_unknown`
+    # now holds that trailing pad word (cast to float only so old callers that
+    # iterate it as floats keep working); the material is `vertex_materials`.
+    # This is the "vertex side" of a contact (collision-response.md #9.4): the
+    # engine reads `checkObjectVsObject` `uVar13 = *(ushort*)(vertexArray +
+    # 0xc + i*0x10)` and passes it as `matSelf`, while the struck FACE's own
+    # `material_id` below supplies `matOther` — so a hit's two materials come
+    # from two different arrays, one per side.
     vertex_unknown: list[float]
     faces: list[CollisionFace]
+    vertex_materials: list[int] = field(default_factory=list)
 
     @property
     def triangle_count(self) -> int:
@@ -342,11 +353,13 @@ def parse(data: bytes, name: str = "<mem>") -> StandardMesh:
                 f"vertex count {vertex_count}")
         vertices: list[tuple[float, float, float]] = []
         vertex_unknown: list[float] = []
+        vertex_materials: list[int] = []
         for _ in range(vertex_count):
-            x, y, z, w = struct.unpack_from("<4f", data, c.pos)
+            x, y, z, material_id, pad = struct.unpack_from("<3fHH", data, c.pos)
             c.pos += 16
             vertices.append((x, y, z))
-            vertex_unknown.append(w)
+            vertex_materials.append(material_id)
+            vertex_unknown.append(float(pad))
 
         if c.pos + 4 > block_end:
             raise MeshError(f"{name}: truncated collision layer {layer_index}")
@@ -374,6 +387,7 @@ def parse(data: bytes, name: str = "<mem>") -> StandardMesh:
             vertices=vertices,
             vertex_unknown=vertex_unknown,
             faces=faces,
+            vertex_materials=vertex_materials,
         ))
         c.pos = block_end
 
