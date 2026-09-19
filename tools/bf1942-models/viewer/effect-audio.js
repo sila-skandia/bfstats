@@ -260,17 +260,39 @@ export class EffectAudio {
       { template: script.script, level: 'high' }, layers, buffers,
       this.listener, this.headroom, true, this.rand);
     audio.setMaster(this.master);
-    audio.start();
+    // Deliberately NOT started here. `EngineAudio.start()` holds a one-shot
+    // back but plays every *looping* layer immediately, and a handful of
+    // these scripts are loops: a wreck's fire (`e_PanzFire`, three `vefr*.wav`
+    // crackles) and the sinking-boat siren. Starting them when the pool warms
+    // put a fire burning at the world origin from the moment anything primed
+    // the bundle, audible on an untouched map — caught by the Playwright run,
+    // which saw `e_PanzFire` report a play with zero new sources because its
+    // loop had already begun during `prime`. The patch starts at its first
+    // impact instead, which is where the engine starts it.
     const slot = new Slot(audio, script);
     script.slots.push(slot);
     return slot;
   }
 
-  /** Live sources across every pooled patch — what the budget is spent on. */
+  /** Live sources across every pooled patch — what the mixer is summing. */
   get sources() {
     let total = 0;
     for (const script of this.scripts.values()) {
       for (const slot of script.slots) total += slot.audio.sources;
+    }
+    return total;
+  }
+
+  /**
+   * What the budget is actually spent against: live sources plus the delayed
+   * layers already promised. See `EngineAudio.committed` — spending only
+   * against what is sounding lets a burst overshoot the cap by however many
+   * speed-of-sound-delayed layers happen to be in flight.
+   */
+  get committed() {
+    let total = 0;
+    for (const script of this.scripts.values()) {
+      for (const slot of script.slots) total += slot.audio.committed;
     }
     return total;
   }
@@ -322,7 +344,15 @@ export class EffectAudio {
     // own `Volume <- Distance` ramp — audibly wrong for the first frame of a
     // ricochet that lasts three.
     this.#place(slot, 0);
-    const played = slot.audio.trigger();
+    // First impact on this slot: `start()` is what releases a looping layer,
+    // and `trigger()` will not run on a patch that has never started.
+    let played = 0;
+    if (!slot.audio.started) {
+      const before = slot.audio.sources;
+      slot.audio.start();
+      played = slot.audio.sources - before;
+    }
+    played += slot.audio.trigger();
     this.plays += 1;
     return played;
   }
@@ -343,13 +373,13 @@ export class EffectAudio {
     // function and it was wrong in the case that matters: a script with three
     // idle pooled slots would hand one out however full the mixer already
     // was, so the cap bound one bundle at a time instead of the level.
-    if (this.sources >= this.budget && !this.#steal(script, distance)) {
+    if (this.committed >= this.budget && !this.#steal(script, distance)) {
       return null;
     }
     for (const slot of script.slots) {
       if (!slot.busy) return slot;
     }
-    if (script.slots.length < this.perScript && this.sources < this.budget) {
+    if (script.slots.length < this.perScript && this.committed < this.budget) {
       // Grow in the background; this play still has to find a slot now.
       this.#grow(script).catch(() => {});
     }
@@ -411,11 +441,19 @@ export class EffectAudio {
     const step = Math.max(dt || 0, 0);
     for (const script of this.scripts.values()) {
       for (const slot of script.slots) {
+        const was = slot.since;
         slot.since += step;
         // An idle slot still gets a frame: its bus gain has to reach the
         // master it will play at, or the first round out of a cold slot comes
         // in under a ramp that has not finished.
         this.#place(slot, step);
+        // The round's window has closed: spend whatever latches did not fire.
+        // See `EngineAudio.disarmPending` — a latch left armed is both a voice
+        // permanently missing from the budget and an explosion that can go
+        // off later when someone walks into its distance band.
+        if (was < script.hold && slot.since >= script.hold) {
+          slot.audio.disarmPending();
+        }
       }
     }
   }
@@ -466,7 +504,9 @@ export class EffectAudio {
     return {
       budget: this.budget,
       sources: this.sources,
+      committed: this.committed,
       bundles: this.bundles.size,
+      listenerPosition: { ...this.listenerPosition },
       plays: this.plays,
       dropped: this.dropped,
       stolen: this.stolen,
