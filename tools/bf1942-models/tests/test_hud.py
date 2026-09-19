@@ -225,13 +225,23 @@ class FillPictureGeometryTests(unittest.TestCase):
         self.assertEqual([2, 3], ammo["roundsTextAdmits"])
         self.assertEqual(ammo["roundsTextAdmits"], ammo["withRounds"])
 
-    def test_an_unfed_dot_keeps_the_layouts_own_rect(self) -> None:
-        # A scene extracted before the word was parsed has no pair to feed,
-        # and six dots stacked at the panel's corner would be worse than the
-        # layout's authored defaults. Half a pair is treated the same way.
+    def test_an_unfed_dot_is_not_drawn_at_the_layouts_placeholder(self) -> None:
+        # A scene extracted before the word was parsed feeds no pair, and the
+        # leaf's own rect is that pair's AUTHORED DEFAULT -- the six leaves
+        # are a 5px diagonal staircase from (247,457), i.e. the panel origin
+        # plus (55,5)..(85,30). Drawing there claims a seat layout the data
+        # does not have. Measured on the page (Kasserine Hanomag): 0 texels
+        # of dot in that corner with the pairs fed, 66 with them deleted.
+        # Half a pair is treated the same way.
         dots = self.results["seatDots"]
-        self.assertEqual(dots["layoutRect"][:2], dots["unfed"])
-        self.assertEqual(dots["layoutRect"][:2], dots["halfFed"])
+        self.assertIsNone(dots["unfed"])
+        self.assertIsNone(dots["halfFed"])
+        self.assertEqual(0, dots["unfedDrawsNothing"])
+        # ...and a fed one does reach the canvas, at the anchored position.
+        self.assertEqual([[246, 555]], dots["fedDrawsOne"])
+        # A leaf binding no pair at all keeps its own rect: it never claimed
+        # to be placed by a variable.
+        self.assertEqual(dots["layoutRect"][:2], dots["noBinding"])
 
 
 if __name__ == "__main__":

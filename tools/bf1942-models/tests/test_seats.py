@@ -342,11 +342,23 @@ class SeatsModuleTests(unittest.TestCase):
                          [(d["x"], d["y"]) for d in dots])
         self.assertEqual([2, 2, 1, 2, 2, 2], [d["state"] for d in dots])
 
-    def test_a_seat_with_no_extracted_position_yields_nulls(self) -> None:
-        # So `hud.js` can fall back to the layout's own literal rect instead
-        # of stacking every dot at the icon panel's top-left corner.
+    def test_a_seat_with_no_extracted_position_draws_no_dot_at_all(self) -> None:
+        # VHUD-2's state 0 is "draws nothing", and that is the honest answer
+        # for a scene baked before `con.py` learned `setVehicleIconPos`: the
+        # layout's own rects are the variable pair's authored placeholders (a
+        # 5px staircase from (247,457)), not seat positions, so a dot drawn
+        # there asserts a seat layout the data does not carry.
         dots = self.results["seatDots"]["defgunDots"]
         self.assertEqual([(None, None)], [(d["x"], d["y"]) for d in dots])
+        self.assertEqual([0], [d["state"] for d in dots])
+
+    def test_a_mixed_vehicle_drops_only_the_seats_that_have_no_position(self)\
+            -> None:
+        # Per dot, not per vehicle: a half-re-extracted tree must still place
+        # the seats it does carry.
+        dots = self.results["seatDots"]["mixedFromTheRoot"]
+        self.assertEqual([(54, 103), (None, None)], [(d["x"], d["y"]) for d in dots])
+        self.assertEqual([1, 0], [d["state"] for d in dots])
 
     # --- TurretAxis: the engine's velocity servo (ledger GUN-2) -------------
     #

@@ -124,6 +124,17 @@ function sherman() {
   }, engine, tower, rootEntryA, hullGunner);
 }
 
+/** The same Sherman with the hull gunner's `setVehicleIconPos` stripped: a
+ *  half-re-extracted tree, where one PCO carries a position and one does
+ *  not. The seat-dot decision is per dot, not per vehicle. */
+function shermanWithOneUnplacedSeat() {
+  const root = sherman();
+  root.traverse(o => {
+    if (o.name === 'shermanBrowning_PCO1') delete o.userData.hud.vehicleIconPos;
+  });
+  return root;
+}
+
 /** A casemate hull: a fixed gun in the glacis, no turret, and so no
  *  `setHasTurretIcon` anywhere in its `.con` -- the Wespe's own shape, whose
  *  root declares `setVehicleIconPos 55/94` and nothing else of interest here.
@@ -553,9 +564,17 @@ function shermanWithRenamedGunnerNode() {
     hanomagFromTheThirdSeat: apc.seatDots(),
     // Six leaves in the layout, six `VehiclePosX1..6` pairs in the engine.
     hanomagSeatCount: apc.order.length,
-    // A seat with no position in its extract yields nulls, and `hud.js` falls
-    // back to the layout's own literal rect rather than stacking it at 0/0.
+    // A seat with no position in its extract is VHUD-2's state 0 -- "draws
+    // nothing" -- not a live dot with a null position. The layout's own rects
+    // are that variable pair's authored placeholders, not seat positions.
     defgunDots: stale.seatDots(),
+    // Half a re-extract: the root carries its position, the seat does not.
+    // The decision is per dot.
+    mixedFromTheRoot: (() => {
+      const mixed = new VehicleOccupancy(shermanWithOneUnplacedSeat());
+      mixed.setActiveSeat(mixed.rootId);
+      return mixed.seatDots();
+    })(),
   };
 }
 

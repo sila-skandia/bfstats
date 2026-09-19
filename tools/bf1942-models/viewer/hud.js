@@ -638,10 +638,16 @@ export class Hud {
    * vehicle-icon panel, so the dot sits at VHUD-7's `(192 + X, 452 + Y)`:
    * Sherman's root `54/103` lands at (246, 555), inside the icon.
    *
-   * `el.rect` is the layout's own literal, built from the same variables'
-   * small authored defaults (55..85 / 5..30), so it is the right fallback for
-   * a seat whose extract has no position -- not a stack of six dots at one
-   * corner.
+   * `el.rect` is NOT a fallback position. It is this variable pair's own
+   * authored default -- the six leaves are a 5px diagonal staircase from
+   * (247,457), which is the panel origin plus (55,5)..(85,30) -- so a leaf
+   * drawn there is drawn at a placeholder, not at a seat. Every PCO in the
+   * game declares `setVehicleIconPos`, so the only thing that reaches an
+   * unfed pair is a scene baked before `con.py` learned the word, and for
+   * that scene the honest answer is no dot at all: six of them in a
+   * staircase assert a seat layout the data does not carry. Measured on the
+   * page (Kasserine Hanomag, six seats): with the pairs fed, the staircase
+   * corner holds 0 texels of dot; with them deleted, 66.
    */
   _drawOccupiedSeat(ctx, el, x, y, w, h) {
     const table = this.vars[el.dataRef];
@@ -652,18 +658,23 @@ export class Hud {
       : state === 4 ? 'icon_vehicledot_enemy' : null;
     const img = key && this.sprite(key);
     if (!img) return;
-    const [px, py] = this.seatDotPosition(el, x, y);
-    ctx.drawImage(img, px, py, w, h);
+    const at = this.seatDotPosition(el, x, y);
+    if (!at) return;
+    ctx.drawImage(img, at[0], at[1], w, h);
   }
 
   /** Where one `occupied-seat` leaf draws: the vehicle-icon panel's own
-   *  origin plus this seat's fed offset, or the layout's literal rect when
-   *  the pair is absent. Split out so `tests/hud_harness.mjs` can read the
-   *  arithmetic without a canvas. */
+   *  origin plus this seat's fed offset, or `null` when the leaf binds a
+   *  position pair and nothing fed it -- see `_drawOccupiedSeat` for why that
+   *  is not the rect. A leaf with no `posVar` at all (no shipped one, but a
+   *  hand-built leaf could) keeps its own rect, because it never claimed to
+   *  be placed by a variable. Split out so `tests/hud_harness.mjs` can read
+   *  the arithmetic without a canvas. */
   seatDotPosition(el, x, y) {
-    const vx = el.posVar && this.vars[el.posVar.x];
-    const vy = el.posVar && this.vars[el.posVar.y];
-    if (typeof vx !== 'number' || typeof vy !== 'number') return [x, y];
+    if (!el.posVar) return [x, y];
+    const vx = this.vars[el.posVar.x];
+    const vy = this.vars[el.posVar.y];
+    if (typeof vx !== 'number' || typeof vy !== 'number') return null;
     return [SEAT_DOT_ORIGIN[0] + vx, SEAT_DOT_ORIGIN[1] + vy];
   }
 
