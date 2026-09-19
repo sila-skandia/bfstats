@@ -61,14 +61,26 @@ import {
   AXIS, ALLIED, hitTest, listBox, paintMenu, scrollTo, stageScale, toVirtual,
   visibleRows,
 } from './menu-screen.js';
+import { loadHudPaths } from '../hud-pack.js';
 
 const qs = new URLSearchParams(location.search);
-// The pack the extractor writes. It ships to `maps/_shared/hud/menu/`,
-// beside the spawn screen's own; `?pack=` points a checkout at a scratch
-// build of it without moving anything.
-const PACK = qs.get('pack') || '../maps/_shared/hud/menu';
-const MAPS = qs.get('maps') || '../maps';
 const bust = () => (qs.has('nocache') ? `?t=${Date.now()}` : '');
+// Which game's Instant Battle screen this is. `?mod=eod` lists that mod's
+// levels and draws whatever chrome it ships of its own; everything it did
+// not repaint still comes from the vanilla pack (`../hud-pack.js`). The
+// screen itself is vanilla's on every installed mod -- only Secret Weapons
+// ships a menu page at all, and not one of these three -- so in practice
+// what a mod changes here is the level list, its thumbnails, the background
+// plate and the nation flags on the preview.
+const MOD = (qs.get('mod') || 'bf1942').toLowerCase();
+const hudPaths = await loadHudPaths(MOD, { bust, root: '../' });
+// `?pack=` still points a checkout at a scratch build of the menu pack
+// without moving anything; it wins over the resolver, whole.
+const SCRATCH_PACK = qs.get('pack');
+const packUrl = rel => (SCRATCH_PACK ? `${SCRATCH_PACK}/${rel}`
+                                     : hudPaths.menuUrl(rel));
+const MAPS = qs.get('maps')
+  || (MOD === 'bf1942' ? '../maps' : `../maps/mods/${MOD}`);
 
 const canvas = document.getElementById('screen');
 const ctx = canvas.getContext('2d');
@@ -104,10 +116,10 @@ const ready = img => (img && img.complete && img.naturalWidth ? img : null);
 const env = {
   texture: name => {
     const entry = layout?.textures?.[name];
-    return entry ? ready(image(`${PACK}/${entry.file}`)) : null;
+    return entry ? ready(image(packUrl(entry.file))) : null;
   },
   thumbnail: level =>
-    (level?.thumbnail ? ready(image(`${PACK}/${level.thumbnail}`)) : null),
+    (level?.thumbnail ? ready(image(packUrl(level.thumbnail))) : null),
   font: id => fonts.get(id) || null,
   tint: (font, rgb) => {
     const key = `${font.id}|${rgb.join(',')}`;
@@ -167,20 +179,20 @@ function buildLevels(menuLevels, manifest) {
 }
 
 async function load() {
-  layout = await json(`${PACK}/menu-layout.json`);
+  layout = await json(packUrl('menu-layout.json'));
   const [menuLevels, manifest] = await Promise.all([
-    json(`${PACK}/menu-levels.json`),
+    json(packUrl('menu-levels.json')),
     json(`${MAPS}/maps.json`).catch(() => []),
   ]);
   levels = buildLevels(menuLevels, manifest);
   await Promise.all(Object.entries(layout.fontFiles || {}).map(async ([id, entry]) => {
-    const meta = await json(`${PACK}/${entry.glyphs}`);
-    const img = image(`${PACK}/${entry.file}`);
+    const meta = await json(packUrl(entry.glyphs));
+    const img = image(packUrl(entry.file));
     await img.decode().catch(() => {});
     fonts.set(id, { id, meta, img });
   }));
   // Every plate up front: the screen is 19 small textures and paints once.
-  for (const entry of Object.values(layout.textures || {})) image(`${PACK}/${entry.file}`);
+  for (const entry of Object.values(layout.textures || {})) image(packUrl(entry.file));
   select(0);
   status.textContent = levels.length ? ''
     : 'No levels. From tools/bf1942-models run: python3 extract_map.py Wake';
@@ -196,7 +208,7 @@ function select(index) {
   const box = listBox(layout);
   if (box) state.scroll = scrollTo(layout, box, state.scroll, state.index, levels.length);
   for (const level of [state.level]) {
-    if (level?.thumbnail) image(`${PACK}/${level.thumbnail}`);
+    if (level?.thumbnail) image(packUrl(level.thumbnail));
   }
   paintSoon();
 }
@@ -206,27 +218,36 @@ function setTeam(team) {
   paintSoon();
 }
 
-/** The launch URL. The map page is the mesh site's own file; only the launch
- *  parameters are ours.
- *
- *  Instant Battle is a singleplayer screen, and in the game it loads the
- *  level's `SinglePlayer` layout — its flags, its spawn points, its vehicle
- *  set — not the Conquest one. 19 of the 23 vanilla levels ship that layout;
- *  `menu-levels.json` records which as `singlePlayer`, and the four that do
- *  not (Aberdeen, Coral Sea, Invasion of the Philippines, Liberation of Caen)
- *  get Conquest, which is what the game falls back to for them as well. */
-function launchUrl(level, team) {
-  const url = new URL('../map.html', location.href);
-  url.searchParams.set('map', level.map);
-  url.searchParams.set('team', String(team));
-  url.searchParams.set('mode', level.singlePlayer ? 'SinglePlayer' : 'Conquest');
-  return url.toString();
-}
-
 /** START. */
 function start() {
   if (!state.level) return;
-  location.href = launchUrl(state.level, state.team);
+  location.href = launchUrl();
+}
+
+/** Where START goes. The map page is the mesh site's own file; only the
+ *  launch parameters are ours, and there are four of them.
+ *
+ *  The mod travels with it: this screen resolves its mod from `?mod=` alone,
+ *  so a link someone was given (`play/?mod=xpack1`) has no other way to tell
+ *  `map.html` which game it just picked a level from, and without it an Anzio
+ *  launched from Road to Rome's screen would be looked for in vanilla's level
+ *  tree.
+ *
+ *  So does the game mode. Instant Battle is a singleplayer screen, and in the
+ *  game it loads the level's `SinglePlayer` layout — its flags, its spawn
+ *  points, its vehicle set — not the Conquest one. 19 of the 23 vanilla levels
+ *  ship that layout; `menu-levels.json` records which as `singlePlayer`, and
+ *  the four that do not (Aberdeen, Coral Sea, Invasion of the Philippines,
+ *  Liberation of Caen) get Conquest, which is what the game falls back to for
+ *  them as well. See `features/bf1942-3d-models/game-modes.md`. */
+function launchUrl() {
+  if (!state.level) return null;
+  const url = new URL('../map.html', location.href);
+  url.searchParams.set('map', state.level.map);
+  url.searchParams.set('team', String(state.team));
+  url.searchParams.set('mode', state.level.singlePlayer ? 'SinglePlayer' : 'Conquest');
+  if (MOD !== 'bf1942') url.searchParams.set('mod', MOD);
+  return url.toString();
 }
 
 // --- painting ----------------------------------------------------------------
@@ -337,9 +358,7 @@ window.__menu = {
   get state() { return { ...state, levels: levels.length }; },
   get levels() { return levels.map(l => l.title); },
   select, setTeam, start, scrollBy,
-  launchUrl() {
-    return state.level ? launchUrl(state.level, state.team) : null;
-  },
+  launchUrl,
   paint,
   ready: false,
 };
