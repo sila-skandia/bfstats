@@ -57,6 +57,20 @@ MaterialManager.materialAttGroup 206
 MaterialManager.materialDefGroup 206
 MaterialManager.materialDamage 8
 
+rem *** Terrain ***
+MaterialManager.material 2
+MaterialManager.materialAttGroup 2
+MaterialManager.materialDefGroup 2
+MaterialManager.materialDamage 30
+MaterialManager.materialFriction 0.8
+
+rem *** Paved road ***
+MaterialManager.material 15
+MaterialManager.materialAttGroup 15
+MaterialManager.materialDefGroup 15
+MaterialManager.materialDamage 30
+MaterialManager.materialFriction 1.1
+
 rem an alias whose groups differ from its id
 MaterialManager.material 300
 MaterialManager.materialAttGroup 236
@@ -122,6 +136,18 @@ class LoadTablesTests(unittest.TestCase):
         self.assertEqual("ALLIED LIGHT TANK", tank_round.label)
         # A decorative rem line of asterisks is not a heading.
         self.assertEqual("Armor", self.tables.materials[50].label)
+
+    def test_material_friction_is_read_and_defaults_to_one(self) -> None:
+        # PHY-2: `MaterialManager.materialFriction` is the Coulomb
+        # coefficient `ResponsePhysics::addFriction` spends. Only the terrain
+        # materials (plus grenades and stairs) author it; everything else
+        # keeps the `Material` constructor's 1.0, which is also what an id
+        # the define file never mentions falls back to through material 0.
+        self.assertAlmostEqual(0.8, self.tables.materials[2].friction)
+        self.assertAlmostEqual(1.1, self.tables.materials[15].friction)
+        self.assertAlmostEqual(1.0, self.tables.materials[50].friction)
+        self.assertEqual(0.8, self.tables.materials[2].as_dict()["friction"])
+        self.assertEqual(1.0, self.tables.materials[236].as_dict()["friction"])
 
     def test_modifier_is_keyed_by_group_not_material_id(self) -> None:
         self.assertEqual(10.0, self.tables.modifier(236, 50))
