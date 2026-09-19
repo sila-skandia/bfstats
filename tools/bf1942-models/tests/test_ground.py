@@ -108,12 +108,45 @@ class GroundModelTests(unittest.TestCase):
         self.assertEqual(5, constants["springDamping"])
         self.assertEqual(30, constants["maxSteer"])
 
-    def test_the_shipped_dampers_are_exactly_critical(self) -> None:
-        # The units case for setStrength/setDamping: four wheels give the
-        # heave mode 2*sqrt(4*25) = 20 of critical damping and 4*5 = 20 is
-        # what the data supplies. If either constant moves, this coincidence
-        # — and the argument built on it — is gone.
-        self.assertAlmostEqual(1.0, self.results["solved"]["heaveDampingRatio"], places=3)
+    def test_every_spring_acts_at_one_and_a_half_times_its_setStrength(self) -> None:
+        # PHY-5: `accel = -(strength * g * (-1/9.82) * D + ...)`. The
+        # `-1/9.82` makes the sag gravity-invariant, and at the shipped
+        # -14.73 the factor is exactly 1.5 — so a Willy's `setStrength 25`
+        # springs act at 37.5 and the hull sits 0.098 m in rather than 0.147.
+        # `bf42/con.py` exports the authored number on purpose and leaves the
+        # law to the runtime; `ground.js` is that runtime.
+        solved = self.results["solved"]
+        self.assertAlmostEqual(1.5, solved["springScale"], places=3)
+        self.assertAlmostEqual(0.098, solved["staticCompression"], places=3)
+
+    def test_the_shipped_dampers_land_just_under_critical(self) -> None:
+        # This used to assert exactly 1.0, on the argument that four wheels
+        # give the heave mode 2*sqrt(4*25) = 20 of critical damping and 4*5 =
+        # 20 is what the data supplies — "somebody at DICE tuned this
+        # critically damped". That coincidence depended on reading
+        # `setStrength` as the literal per-mass stiffness, which PHY-5
+        # refutes. With the 1.5 the ratio is 1/sqrt(1.5) = 0.816, which is
+        # both a perfectly ordinary road-car damping ratio and still a tidy
+        # enough number that the tuning argument survives in weaker form.
+        self.assertAlmostEqual(0.816, self.results["solved"]["heaveDampingRatio"], places=3)
+
+    def test_the_spring_probes_down_the_hulls_axis_not_the_worlds(self) -> None:
+        # PHY-5: `SpringTemplate`'s constructor writes `axisFixation = (0,1,0)`
+        # and nothing in 18 installed mods authors `setAxisFixation` over it,
+        # so every spring everywhere runs along the object's own up — which
+        # leans with the body and is never world-vertical. On a 16.7 degree
+        # slope the jeep sits pitched with the ground, and the probe reaches
+        # 1/cos(lean) further than a vertical drop would.
+        slope = self.results["slope"]
+        self.assertTrue(slope["grounded"])
+        self.assertAlmostEqual(slope["slopeDeg"], slope["pitchDeg"], delta=1.0)
+        self.assertGreater(slope["axisStretch"], 1.0)
+        # All four wheels still carry it, and the total is the component of
+        # weight along the (now leaning) spring axis: g x cos(lean).
+        for load in slope["loads"]:
+            self.assertGreater(load, 1.0)
+        self.assertAlmostEqual(14.73 * slope["axisStretch"] ** -1,
+                               slope["totalLoad"], delta=0.3)
 
     def test_the_top_speed_arithmetic(self) -> None:
         # No fitted rev ceiling any more (TANK-3/TANK-9). Full revs in a gear
