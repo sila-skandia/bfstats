@@ -440,10 +440,48 @@ intact and the hand feel honest.
 - **A seat can still only hold one bundle per axis name.** The preference rule
   picks the right one of the two; a hypothetical seat with two aim axes on the
   same name would still lose one.
-- Everything GUN-3 already left open about the integrator (the accumulator
-product's closed form, `automaticReset`) is unchanged — this round only
-changed who gets a rig, which axes it claims, which way it points and how
-fast it winds up.
+- ~~Everything GUN-3 already left open about the integrator (the accumulator
+product's closed form, `automaticReset`) is unchanged~~ — **the closed form
+was read on 2026-09-19 (ledger GUN-2, `subsystems/manned-guns.md` §3).** It is
+a **first-order velocity servo**, not a product of two accumulators:
+`+0x110` is an angular-speed register in deg/s ramped toward
+`sign(acceleration) · input · maxSpeed` at `|acceleration|` deg/s², and
+`angle += speed·dt + continousRotationSpeed·dt` every tick. Four things follow
+for this viewer, and all four are safe:
+  - **`continousRotationSpeed·dt` is added unconditionally** and this viewer
+    adds it nowhere — 29 vanilla declarations (windmills, watermills, radar
+    towers) never turn.
+  - **`automaticReset` is a whole separate law** — the angle ramps straight
+    toward `input × maxRotation` at `|acceleration|` **deg/s**, no velocity
+    register, no continuous term. 221 vanilla declarations (steering wheels,
+    Engines) currently run under the wrong law. `con.py` already emits the
+    flag; `seats.js` ignores it.
+  - **The ±40 register is an input backlog that only exists under
+    `rememberExcessInput`**, spending `clamp(backlog, ±1)` per tick and
+    carrying the rest, zeroed outright on a sign flip. Vanilla declares that
+    word on **no** turret, manned gun or tank — its 32 uses are aircraft
+    rudder and tail-flap `Wing` bundles — so for every gun the register is
+    dead and `TURRET_PENDING_CLAMP = 40` is a coincidence of the number, not
+    of the quantity (the viewer's `pending` is degrees of aim; the engine's is
+    input units).
+  - **The ±180 wrap needs `min == 0 && max == 0`**, not a zero-width range.
+    `con.py:998`'s `free = lo is None or hi is None or lo == hi` treats a
+    template declaring `min == max == 45` as free-spinning; the engine pins it
+    at 45. 346 axes across 16 installs are affected, three of them in vanilla.
+
+- **`TURRET_SPEED_SCALE` keeps its value and loses its justification.** The
+research pass concluded that `maxSpeed` is the literal deg/s ceiling and that
+every vanilla gun therefore traverses four times too fast; **verification
+refuted that**, and the scale must be left alone. `maxSpeed` is a *gain* —
+deg/s per unit of input — and nothing establishes the input's unit: the ±1
+clamp is inside the `rememberExcessInput` branch no turret uses, the wire
+format quantises every `PlayerInput` float over **±16** (`floatToFixed(v, 12,
+16.0f)`), a critically damaged vehicle's input is scaled by 0.2, and the
+"nine times slower than a soldier's head" comparison is between two different
+control laws (`SoldierCamera` declares `setMaxSpeed 0/0/0`, so it never enters
+this function at all). What the scale now needs is not another guess but the
+client's mouse-axis → `PlayerInput` multiply, which nobody has read; the trail
+ends at `FUN_006bba90` / `FUN_006bbd90`. Recorded as ledger **GUN-2b**.
 - **No extracted model carries `acceleration` yet.** `con.py` emits it from
 now on, but `viewer/models` is a shared untracked tree nothing re-baked
 here, so every gun in the viewer is still on the 90 deg/s² fallback. A

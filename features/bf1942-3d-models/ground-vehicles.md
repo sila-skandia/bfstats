@@ -127,14 +127,37 @@ over 15 s.
 - **Grip classes.** `c_PGFRollGrip` vs `c_PGFEngineGrip` (and vanilla's other
   two, `c_PGFEngineDummyGrip`, `c_PGFRollGripWhenOccupied`) are read only as
   driven/free markers; whatever friction difference the engine gives them is
-  unread. One `mu` covers everything.
+  unread. One `mu` covers everything. **Closed 2026-09-19 (ledger PHY-2):
+  `mu` is not a free constant — it is `MaterialManager.materialFriction`,**
+  the mean of the two contacting materials' values, and the engine clamps a
+  per-tick tangential velocity change to `A·1.5·9.82·L/30` m/s (×1.5 while the
+  static latch holds), isotropically on the tangential plane. Vanilla's table
+  runs 0.1 water, 0.5 mud, 0.6 rock, 0.8 grass and sand, 1.0 dirt road, 1.1
+  gravel and paved; 13 installed mods carry the word and Interstate 82 ships a
+  wholly different set. There is **no slip-angle curve and no `lateralMu`** in
+  the engine at all.
 - **The exe's car integrator is unread.** The point-body integrator, gravity
   and the drag equation are decompiled fact (`physics.js`); the spring/tyre/
-  gearbox path is not, and this model's shape is reconstruction. The spring
-  solver noted at `0x0057f0d0` (it divides by 9.82) is the place to start.
-- **Vertical-ray suspension.** Rays are world-vertical, correct on the flats
-  and increasingly wrong past ~20° of lean; slopes also need the heightfield
-  normal for the contact frame. Fine for v1, wrong on a dune face.
+  gearbox path is not, and this model's shape is reconstruction.
+  **Closed 2026-09-19 for the spring (ledger PHY-5) and the gearbox
+  (TANK-3):** the spring is
+  `accel = −(strength·g·(−1/9.82)·D + damping·(D − D_prev)/dt)` applied to the
+  **root** at a root-relative position, `D` a displacement from an authored
+  mount offset and `D_prev` a one-tick backward difference; and the gear
+  ratios are read data, not ours (below). The tyre path is PHY-2 above; what is
+  still unread is `ResponsePhysics::solveImpulse` and `impulseOn`'s restitution
+  and penetration handling.
+- **Vertical-ray suspension — and there is no ray in the engine at all.**
+  Our rays are world-vertical, correct on the flats and increasingly wrong past
+  ~20° of lean; slopes also need the heightfield normal for the contact frame.
+  Fine for v1, wrong on a dune face. **What 2026-09-19 settled is that the
+  engine casts nothing** (ledger PHY-5): `Spring::handleCollision` only records
+  that the wheel is touching and which material it touched, contacts come from
+  `checkVsTerrain` walking the collision mesh's own vertices and faces, and the
+  binary's single line-versus-triangle routine has two callers, both in AI
+  pathfinding. The spring's axis is authored data (`setAxisFixation`), never
+  world-vertical. So the ray is a viewer approximation of a vertex-contact
+  solver, and it should be labelled as one rather than as the engine's shape.
 - **No hull collision.** Wheels see the ground function; the body sees only a
   belly failsafe. Driving into a wall, another vehicle, or Wake's pier is not
   resolved. `WorldCollider.sweepSphere` is sitting there for it. *(Since wired:
@@ -266,6 +289,30 @@ construction, never resampled — the retail engine never resamples it either.
 | Sherman | 4 | 5 | 20 (authored) | **4.0** |
 | Willy | 7 | 5 | 20 (authored) | **7.0** |
 | M3A1 | 5 | 4 | 25 (not authored, not adjacent to one) | **17.5**, not the ~5.5 a smooth 5-point spline would give |
+
+> **The paragraph and table above are wrong, and were corrected on 2026-09-19
+> (ledger TANK-3, `subsystems/tank-driving.md` §3).** The 101-slot array is
+> real, but the constructor's flat fill is only its starting point: each
+> control-point store is followed by a call to
+> `OverTimeDistribution::generateDistribution`, which **interpolates the slots
+> between the authored indices**, and there is a **lerp at the read site** as
+> well. The earlier pass read the fill loop and the five stores and never
+> followed the eleven `CALL`s. The real formula is
+> `ratio = 3.5·differential / lerp(curve[i], curve[i+1], frac)`, and index 0 of
+> the ratio curve is *not* authored, so slots 0–20 ramp up from 1.0 to 3.5.
+>
+> Sherman 4.0 and Willy 7.0 stand. **M3A1 is 5.512, not 17.5** — `idx = 25`,
+> `curve[25] = 3.175` — and its four gears are 5.512 / 9.459 / 14.583 / 18.617.
+> Every gear count gets a real ratio, so `numberOfGears` of 4, 8 or 50 are not
+> degenerate cases. **And the ladder is not monotonic:** because the curve rises
+> over indices 0–20, a gear landing below index 20 gets a *higher* ratio than
+> first-of-a-5-speed (`nGears 8, differential 5` → g1 6.83, g2 5.51). Rebuild
+> `GEAR_RATIO_CURVE` from the five control points with the piecewise-linear fill
+> rather than from the flat default, and stop assuming five gears.
+>
+> The second curve (`getCurrentTorque`) is indexed by a **normalised rev
+> fraction**, `min(|engine[+0xa0]|, 1.0)·100`, not the gear; its control points
+> are 0→0.70, 10→0.80, 30→0.90, 60→1.00, 85→0.85, 100→0.70.
 
 ### What the glb carries, extended for a tracked chassis
 

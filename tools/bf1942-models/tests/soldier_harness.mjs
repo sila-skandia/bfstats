@@ -47,9 +47,9 @@ import {
 import {
   Soldier, spawnFlags, pickSpawn, spawnYaw,
   EYE, HEIGHT, GAIT_SPEED, BODY_RADIUS, STEP_HEIGHT, MAX_GROUND_SLOPE,
-  JUMP_SPEED, GRAVITY, DIRECTIONAL_SPEED, STRAFE_SPEED, WALK_SPEED_FACTOR,
+  JUMP_IMPULSE, GRAVITY, DIRECTIONAL_SPEED, STRAFE_SPEED, WALK_SPEED_FACTOR,
   PITCH_LIMIT_DEG, FOV_DEG, BOB, CAMERA_SHAKE_FACTOR, STEP_PERIOD,
-  STANCE_TRANSITION,
+  STANCE_TRANSITION, RAMP_ACCEL, RAMP_LIMIT, ENGINE_TICK_RATE,
 } from './soldier.js';
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
@@ -143,7 +143,7 @@ const results = { constants: {
   eye: EYE, height: HEIGHT, gaitSpeed: GAIT_SPEED,
   radius: BODY_RADIUS, stepHeight: STEP_HEIGHT,
   maxSlopeDeg: Math.acos(MAX_GROUND_SLOPE) * 180 / Math.PI,
-  jumpSpeed: JUMP_SPEED, gravity: GRAVITY,
+  jumpSpeed: JUMP_IMPULSE, gravity: GRAVITY,
   directional: [...DIRECTIONAL_SPEED], strafe: [...STRAFE_SPEED],
   walkFactor: WALK_SPEED_FACTOR,
   pitchLimitDeg: PITCH_LIMIT_DEG, fovDeg: FOV_DEG,
@@ -153,6 +153,26 @@ const results = { constants: {
 } };
 
 const DT = 1 / 60;
+
+/**
+ * Seconds of full-speed travel the movement ramp costs a standing start.
+ *
+ * PHY-6's register climbs `RAMP_ACCEL * 30 * DT` a frame and clamps at
+ * `RAMP_LIMIT`, and the speed is the table times `state / 127`, so the distance
+ * lost against an instant start is the area over the ramp — which is a pure
+ * time, independent of which table row is in play. Every distance figure below
+ * is short by `speed * this`, and the tests subtract it rather than carrying a
+ * second set of magic distances.
+ */
+const RAMP_DEFICIT_SECONDS = (() => {
+  const step = RAMP_ACCEL * ENGINE_TICK_RATE * DT;
+  let lost = 0;
+  for (let state = 0; state < RAMP_LIMIT; ) {
+    state = Math.min(state + step, RAMP_LIMIT);
+    lost += (1 - state / RAMP_LIMIT) * DT;
+  }
+  return lost;
+})();
 
 /** Run `frames` steps of the same input and hand back the soldier. */
 function walk(soldier, input, frames) {
@@ -224,6 +244,15 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
     crouchStrafe: sideways({ crouch: true }),
   };
   results.shiftIsSlower = results.travel.walk < results.travel.run;
+  // What a standing start costs, so the tests can subtract it once instead of
+  // carrying a second set of distances.
+  results.rampDeficitSeconds = RAMP_DEFICIT_SECONDS;
+  // Cruising: the same second of input with the ramp already saturated.
+  const cruised = runway();
+  walk(cruised, { forward: 1 }, 60);
+  const fromZ = cruised.z;
+  walk(cruised, { forward: 1 }, 60);
+  results.travelCruising = fromZ - cruised.z;
   // The HUD speed is the body's ground speed, not a distance divided by a dt.
   const running = runway();
   walk(running, { forward: 1 }, 60);
@@ -275,12 +304,13 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
 {
   // The 0.30 m kerb spans x 13..15, so a walk from 11.5 crosses it and steps off
   // the far side again — the height while *on* it is what matters, not the end.
-  // Forty frames is 4 m at a run, which clears the kerb and stops short of the
-  // 0.80 m one at x = 16.
+  // Forty-four frames is 3.84 m at a run *after* the movement ramp's own
+  // 0.098 s (PHY-6), which clears the kerb and stops short of the 0.80 m one
+  // at x = 16 -- whose near face is met at 15.7, one body radius out.
   const low = fresh(11.5, 0.5, -10);
   low.yaw = Math.PI / 2;
   let lowPeak = 0, climbedAt = 0;
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 44; i++) {
     low.step(DT, { forward: 1 });
     if (low.y > lowPeak) { lowPeak = low.y; climbedAt = low.x; }
   }
@@ -323,13 +353,14 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
 // --- walking off a ledge ---------------------------------------------------
 
 {
-  // Stand on the 4 m platform and walk off its northern edge. Two seconds, not
-  // four: a run covers 12 m in that, and another 12 would take him off the end
-  // of the 64 m tile and into a fall with no floor under it.
+  // Stand on the 4 m platform and walk off its northern edge. Two and a half
+  // seconds, not four: a run covers 14.4 m in that once the movement ramp's
+  // 0.59 m is paid (PHY-6), and another 14 would take him off the end of the
+  // 64 m tile and into a fall with no floor under it.
   const s = fresh(15, 4.2, -42, NORTH);
   const ys = [];
   let airborne = 0;
-  for (let i = 0; i < 120; i++) {
+  for (let i = 0; i < 150; i++) {
     s.step(DT, { forward: 1 });
     ys.push(s.y);
     if (!s.grounded) airborne++;
@@ -350,9 +381,76 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
   // Predicted under the engine's gravity, not Earth's. The two differ by half
   // again: the same take-off speed peaks at 1.49 m under 9.81 and 0.99 m here.
   results.jump = { apex, landed: s.grounded, y: s.y,
-                   predicted: (JUMP_SPEED * JUMP_SPEED) / (2 * Math.abs(GRAVITY)),
-                   underEarthGravity: (JUMP_SPEED * JUMP_SPEED) / (2 * 9.81) };
+                   predicted: (JUMP_IMPULSE * JUMP_IMPULSE) / (2 * Math.abs(GRAVITY)),
+                   underEarthGravity: (JUMP_IMPULSE * JUMP_IMPULSE) / (2 * 9.81) };
 }
+
+// --- the same jump on a 30 fps phone and a 144 Hz monitor ------------------
+//
+// `Soldier.step` takes a **frame** dt and spends it through a `FixedStep`
+// accumulator that runs whole 60 Hz ticks of the body, leaving `clock.alpha`
+// for the render to interpolate with. The sim is therefore already independent
+// of the frame rate, which is the property that matters: the engine's own
+// `Setup::mainLoop` (lnxded `0x080bc0b0`) rate-limits to `1 / (2 *
+// g_simulationFps)` and then integrates with the **measured** elapsed time, so
+// retail's own jump does move with the frame rate. This viewer deliberately
+// does not, because a recorded input stream has to replay to the same position
+// on any machine.
+//
+// Apex is sampled once per frame, so a 30 fps run sees every second tick and a
+// 144 Hz run sees each tick more than once; near the apex a tick moves the body
+// about 2 mm, which is the whole tolerance these need.
+function jumpAtFrameRate(fps, seconds = 2) {
+  const s = runway();
+  const dt = 1 / fps;
+  let apex = 0, airFrames = 0, left = false;
+  s.step(dt, { jump: true });
+  for (let i = 0; i < Math.round(seconds * fps); i++) {
+    s.step(dt, {});
+    apex = Math.max(apex, s.y);
+    if (!s.grounded) { airFrames++; left = true; } else if (left) break;
+  }
+  return { fps, apex, airTime: airFrames * dt, landed: s.grounded, y: s.y,
+           ticks: s.clock.ticks };
+}
+results.frameRateJump = [jumpAtFrameRate(30), jumpAtFrameRate(60),
+                         jumpAtFrameRate(144), jumpAtFrameRate(23.7)];
+
+// And the landing a fall-damage caller reads. This one must be *exact*: the
+// landing happens on one particular tick whatever the frames around it were,
+// so the impact speed and the drop the formula is fed cannot move at all.
+function fallAtFrameRate(fps, height = 8) {
+  const s = runway();
+  const dt = 1 / fps;
+  s.step(dt, {});
+  // The page's own `__dropFromHeight`: lift the settled body, zero its
+  // vertical speed and tell it the last thing it touched was up there.
+  s.body.position.y += height;
+  s.body.velocity.y = 0;
+  s.body.grounded = false;
+  s.body.lastCollisionHeight += height;
+  let landing = null;
+  for (let i = 0; i < Math.round(6 * fps) && !landing; i++) {
+    s.step(dt, {});
+    landing = s.landing;
+  }
+  return landing && { fps, impactSpeed: landing.impactSpeed,
+                      fallHeight: landing.fallHeight,
+                      cosTheta: landing.cosTheta, material: landing.material };
+}
+results.frameRateFall = [fallAtFrameRate(30), fallAtFrameRate(60),
+                         fallAtFrameRate(144), fallAtFrameRate(23.7)];
+
+// The ramp too: a second of held W covers the same ground at any frame rate.
+function rampAtFrameRate(fps, seconds = 1) {
+  const s = runway();
+  const dt = 1 / fps;
+  const from = s.z;
+  for (let i = 0; i < Math.round(seconds * fps); i++) s.step(dt, { forward: 1 });
+  return { fps, travelled: from - s.z, speed: s.speed };
+}
+results.frameRateRamp = [rampAtFrameRate(30), rampAtFrameRate(60),
+                         rampAtFrameRate(144), rampAtFrameRate(23.7)];
 
 // --- a held Space jumps once -----------------------------------------------
 
