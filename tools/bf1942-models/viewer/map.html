@@ -854,6 +854,7 @@ import { SupplyDepot, SupplyField } from './supply.js';
 import { collectIkBindings, defaultSeatPoseName, ikTarget, resolveSeatStates,
          seatBody, seatPoseName, solveTwoBone } from './seat-ik.js';
 import { GameConsole, paintConsole, loadConsoleFont } from './console.js';
+import { bonePattern, kitsByTemplate, wornGrafts } from './kit-graft.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -6771,6 +6772,12 @@ async function loadSeatPose() {
   scene.add(soldierScene);
   seatSoldier = soldierScene;
   seatSoldier.visible = !view?.firstPerson;
+  // The helmet. A BFSoldier template declares a body, a head and two hands and
+  // nothing else, so the exported soldier is bare-headed; the helmet belongs
+  // to the kit the player deployed with and hangs off bone `A`. The driver in
+  // `models-work/willy-hands-wheel.png` is wearing one.
+  dressSeatOccupant(soldierScene, seat).catch(err =>
+    console.warn('seat kit:', err));
 
   // Play the lower + upper seat clips the extractor wrote. They are independent
   // state machines (like gaits), so two actions at full weight compose.
@@ -6795,6 +6802,56 @@ async function loadSeatPose() {
   }
 }
 
+// `models/kits.json`, fetched once: which worn meshes each kit hangs off which
+// bone. `kits.html` browses the same file; the graft convention itself lives in
+// `kit-graft.js` so both read it from one place.
+let kitManifest = null;
+const kitPartCache = new Map();
+
+async function kitsIndex() {
+  if (!kitManifest) {
+    kitManifest = fetch(`${MODELS_BASE}/kits.json${bust()}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(kitsByTemplate, () => new Map());
+  }
+  return kitManifest;
+}
+
+async function loadKitPart(glb) {
+  if (!kitPartCache.has(glb)) {
+    kitPartCache.set(glb, seatPoseLoader
+      .loadAsync(`${MODELS_BASE}/${glb}${bust()}`)
+      .then(g => g.scene, () => null));
+  }
+  return kitPartCache.get(glb);
+}
+
+/** Hang the deploy kit's worn meshes on the seated soldier's own bones.
+ *
+ * Only the seated occupant for now: the spawn-pad soldiers and the on-foot
+ * player load the same bare pose glbs and are bare-headed too, and dressing
+ * all three is the same call in three more places once someone wants it. */
+async function dressSeatOccupant(soldierScene, seat) {
+  const index = await kitsIndex();
+  const { kit: kitName } = kitLoadout(deployTeamId, deployKit);
+  const kit = kitName && index.get(String(kitName).toLowerCase());
+  if (!kit) return;
+  for (const graft of wornGrafts(kit)) {
+    // The seat may have been left while the part was in flight.
+    if (soldierScene !== seatSoldier) return;
+    const source = await loadKitPart(graft.glb);
+    if (!source || soldierScene !== seatSoldier) return;
+    const bone = findBoneMatching(soldierScene, graft.bone);
+    if (!bone) continue;          // no such bone on this figure: silently bare
+    const node = source.clone(true);
+    node.quaternion.set(...graft.quaternion);
+    node.position.set(...graft.position);
+    node.userData.seatKitPart = true;
+    node.traverse(obj => { if (obj.isMesh) obj.frustumCulled = false; });
+    bone.add(node);
+  }
+}
+
 /** `c_SeatShowHalfBodySoldier` — `setUseSeat` hides `Bip01 Pelvis` and its
  *  subtree. */
 function hideBelowPelvis(soldierScene) {
@@ -6808,6 +6865,14 @@ function findBone(root, name) {
   const want = boneKey(name);
   let found = null;
   root.traverse(obj => { if (!found && boneKey(obj.name) === want) found = obj; });
+  return found;
+}
+
+/** The same, for a bone the kit manifest names (`A`, `backpack`, `HipPack`). */
+function findBoneMatching(root, want) {
+  const pattern = bonePattern(want);
+  let found = null;
+  root.traverse(obj => { if (!found && pattern.test(obj.name)) found = obj; });
   return found;
 }
 
@@ -6943,6 +7008,12 @@ function applyWorldDelta(bone, quat) {
  * a session spent hopping in and out of a jeep used to leak every copy. */
 function disposeSeatScene(root) {
   if (!root) return;
+  // A grafted kit part is a `clone(true)` of a cached scene, so its geometry
+  // and materials belong to `kitPartCache` and are still wanted by the next
+  // occupant. Unhook those first; only the pose's own meshes are freed.
+  const borrowed = [];
+  root.traverse(obj => { if (obj.userData?.seatKitPart) borrowed.push(obj); });
+  for (const node of borrowed) node.removeFromParent();
   root.traverse(obj => {
     obj.geometry?.dispose();
     obj.skeleton?.dispose?.();
