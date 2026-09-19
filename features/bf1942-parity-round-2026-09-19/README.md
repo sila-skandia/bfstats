@@ -120,7 +120,28 @@ Carried from that review, not yet acted on:
   spawn points, so there is no deck to land on. `North_Base` and `South_Base`
   refuse a jump in both builds. Both predate this round.
 
+### Wave 3, running (launched 2026-09-20)
+
+From `viewer-changes.md`'s "Open after wave 2" and the table below. Same
+shape as before: each build gets an adversarial review, each research claim a
+second reader, and nothing merges untested.
+
+| Stream | Owns |
+|---|---|
+| W3-A drivetrain | a tank driven through its tracks (the EngineGrip target on its bogies with the `& 4` differential, capped at 1.0; no hull thrust exists for a ground vehicle), revs as the engine's per-tick filtered state, the 1.2 ceiling gated on engine type, RollGrip in place of the invented cornering stiffness (`ground.js`) |
+| W3-B blasts | an explosion hurts a soldier, by the engine's exposure sampling; a grenade bounces, from `materialElasticity` and the projectile's own collision response; the combat area's terrain-material half (the viewer does carry the material map) |
+| W3-C game modes | every mode directory a level ships, as a gameplay layer over the shared scene; `map.html?mode=`; Instant Battle launching `SinglePlayer` where a level has one |
+| W3-D sounds | the sound scripts on effect bundles: impacts, ricochets, explosions, vehicle deaths, with a bounded voice count |
+| W3-E mod chrome | per-mod HUD pack, layouts, fonts and strings along `game.addModPath` (EoD's nations above all); and `verify_models.py` made to tell the truth |
+| W3-F research | LOOP-1's second reader (what the simulation's time step really is, server and client), GUN-2b (mouse counts to `PlayerInput`, and whether `TURRET_SPEED_SCALE = 4` is explained), the console's open items |
+
 ### Not yet assigned
+
+Hull collision between ground vehicles and the world has an engine spec
+(`subsystems/collision-response.md`, the other session's round) and a plan
+(`features/viewer-ground-hull-collision/README.md`); it is the largest piece
+left and is not in wave 3.
+
 
 | Item | Status |
 |---|---|
