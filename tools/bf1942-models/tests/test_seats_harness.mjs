@@ -16,8 +16,7 @@ import {
   surveyVehicle, classifySeat, classifyRoot, findAllVehicleRoots,
   listEntryPoints, pickNearest, TIE_EPSILON, VehicleOccupancy, TurretAxis,
   TurretRig, FireState, chainOnShot, readWorldPose, AIM_INPUTS, hasAimAxes,
-  TURRET_DEGREES_PER_PIXEL, TURRET_ACCELERATION, TURRET_SPEED_SCALE,
-  turretSpeedScale,
+  TURRET_ACCELERATION,
 } from './seats.js';
 
 const results = {};
@@ -578,12 +577,13 @@ function shermanWithRenamedGunnerNode() {
   };
 }
 
-// --- TurretAxis: the engine's velocity servo (GUN-2) -------------------------
+// --- TurretAxis: the engine's velocity servo (GUN-2 + GUN-2b) ---------------
 
 {
-  const DT = 1 / 60;
-  const px = degrees => degrees / TURRET_DEGREES_PER_PIXEL;
-  const scale = turretSpeedScale();
+  // The engine's own step. LOOP-1: a fixed 30 Hz tick, `dt = 1/30` exactly,
+  // and `map.html` now runs the servo on it rather than on the render dt.
+  const DT = 1 / 30;
+  const TICKS = seconds => Math.round(seconds * 30);
 
   // The real numbers, read out of `Objects.rfa` this round:
   //   ShermanTower        setMaxSpeed 35/25/0  setAcceleration 1000/0/0
@@ -598,11 +598,18 @@ function shermanWithRenamedGunnerNode() {
     input: 'c_PIMouseLookX', free: false, min: -70, max: 70,
     maxSpeed: 70, acceleration: 5000, direction: 1,
   };
+  // `PlayerInput[c_PIMouseLookX]` for a hand moving `counts` a second at the
+  // shipped LandSea sensitivity: `0.001 * counts * (5*0.25 + 0.1)`. Every
+  // stationary weapon and gunner seat in vanilla is on that profile
+  // (`mouse-input.js`, the `setVehicleCategory` survey).
+  const SHIPPED_SCALE = 5 * 0.25 + 0.1;
+  const axisAt = counts => 0.001 * counts * SHIPPED_SCALE;
 
-  /** Hold a steady pointer rate for `seconds`, then let go for `coast`.
-   *  Travel is accumulated per tick and unwrapped so a free axis's ±360
-   *  correction does not truncate it. */
-  function drive(spec, pxPerFrame, seconds, coast = 0) {
+  /** Hold a steady axis value for `seconds`, then let go for `coast`.
+   *  The value is SET, not accumulated: the engine hands the same number to
+   *  every tick of a frame and replaces it at the next pump. Travel is
+   *  unwrapped so a free axis's +-360 correction does not truncate it. */
+  function drive(spec, input, seconds, coast = 0) {
     const axis = new TurretAxis('yaw', node('Driven', {}), spec);
     let travel = 0, prev = 0, held = 0;
     const tick = () => {
@@ -612,39 +619,50 @@ function shermanWithRenamedGunnerNode() {
       travel += Math.abs(d);
       prev = axis.angle;
     };
-    for (let i = 0; i < Math.round(seconds * 60); i++) { axis.feed(pxPerFrame); tick(); }
+    axis.setInput(input);
+    for (let i = 0; i < TICKS(seconds); i++) tick();
     held = travel;
-    for (let i = 0; i < Math.round(coast * 60); i++) tick();
+    axis.setInput(0);
+    for (let i = 0; i < TICKS(coast); i++) tick();
     return { axis, travel, held, coast: travel - held };
   }
 
-  // The servo's steady state: a saturating hand pins the input at the
-  // viewer's ±1 and the axis runs at `maxSpeed * TURRET_SPEED_SCALE`.
-  const shermanFlat = drive(SHERMAN_YAW, 400, 2.0);
-  // Half a second for the MG42: at 280 deg/s a full two would run it into the
-  // ±180 bound of this widened copy and measure the stop, not the rate.
-  const mg42Flat = drive({ ...MG42_YAW, min: -180, max: 180 }, 400, 0.5);
+  // The servo's steady state: `speed -> input * maxSpeed`, with no clamp on
+  // the input at all. Input 1 is exactly `maxSpeed`; the shipped scale at
+  // 1000 counts a second is 1.35, so a Sherman tower really is commanded at
+  // 47.25 deg/s and an MG42 at 94.5.
+  const shermanUnit = drive(SHERMAN_YAW, 1, 2.0);
+  const shermanThousand = drive(SHERMAN_YAW, axisAt(1000), 2.0);
+  // Half a second for the MG42: at 94.5 deg/s a full two would run this
+  // widened copy into its +-180 bound and measure the stop, not the rate.
+  const mg42Thousand = drive({ ...MG42_YAW, min: -180, max: 180 },
+    axisAt(1000), 0.5);
+  // ...and an input above 1 commands MORE than `setMaxSpeed`, right up to the
+  // wire's own +-16. The old model clamped here and could not.
+  const shermanFast = drive(SHERMAN_YAW, 4, 1.0);
 
-  // The ramp: `speed` winds up at |acceleration|, scaled alongside the cap so
-  // the wind-up TIME is the game's own maxSpeed/acceleration ratio. An axis
-  // with no `setAcceleration` in its extract falls back.
-  function speedAfter(spec, seconds) {
+  // The ramp: `speed` winds up at |acceleration| deg/s^2 -- the axis's own
+  // `setAcceleration`, unscaled by anything now -- until it reaches the
+  // commanded rate. An axis with no `setAcceleration` in its extract falls
+  // back to `TURRET_ACCELERATION`.
+  function speedAfter(spec, seconds, input = 1) {
     const a = new TurretAxis('yaw', node('WindUp', {}), spec);
-    for (let i = 0; i < Math.round(seconds * 60); i++) { a.feed(1e5); a.step(DT); }
+    a.setInput(input);
+    for (let i = 0; i < TICKS(seconds); i++) a.step(DT);
     return a.speed;
   }
   const ownAccel = { free: true, maxSpeed: 35, direction: 1, acceleration: 350 };
   const fallbackAccel = { free: true, maxSpeed: 35, direction: 1 };
 
   // Release: the engine has no bank, so the only thing left after the hand
-  // stops is the velocity register ramping down. Compared against the same
-  // input in the tracking regime.
+  // stops is the velocity register ramping down.
   const flick = new TurretAxis('yaw', node('Flick', {}), SHERMAN_YAW);
-  flick.feed(px(10000));
+  flick.setInput(1);
   flick.step(DT);
   const flickTick = flick.angle;
+  flick.setInput(0);
   let flickAfter = 0, prevF = flick.angle;
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 30; i++) {
     flick.step(DT);
     flickAfter += Math.abs(flick.angle - prevF);
     prevF = flick.angle;
@@ -652,11 +670,12 @@ function shermanWithRenamedGunnerNode() {
 
   // The clamp, in the engine's own order: `> max` first, `< min` second, on
   // the authored components, with nothing zeroing the speed register.
-  const clamped = drive(MG42_YAW, 2000, 5.0);
+  const clamped = drive(MG42_YAW, 5, 5.0);
   const clampedAtMax = round(clamped.axis.angle, 4);
   // ...and the reverse works straight off the stop: one second back at
-  // 280 deg/s would cover 280 degrees, so it runs into the far bound.
-  for (let i = 0; i < 60; i++) { clamped.axis.feed(-2000); clamped.axis.step(DT); }
+  // 350 deg/s would cover 350 degrees, so it runs into the far bound.
+  clamped.axis.setInput(-5);
+  for (let i = 0; i < 30; i++) clamped.axis.step(DT);
   const afterReverse = round(clamped.axis.angle, 2);
 
   // The wrap gate is BOTH BOUNDS ZERO, not a zero-width range (GUN-2). A
@@ -664,10 +683,12 @@ function shermanWithRenamedGunnerNode() {
   // free, and `_clip` is what acts on it.
   const freeAxis = new TurretAxis('yaw', node('FreeAxis', {}),
     { free: true, min: null, max: null, maxSpeed: 90, direction: 1 });
-  for (let i = 0; i < 400; i++) { freeAxis.feed(2000); freeAxis.step(DT); }
+  freeAxis.setInput(1);
+  for (let i = 0; i < 400; i++) freeAxis.step(DT);
   const pinned = new TurretAxis('yaw', node('Pinned', {}),
     { free: false, min: 45, max: 45, maxSpeed: 90, direction: 1 });
-  for (let i = 0; i < 400; i++) { pinned.feed(2000); pinned.step(DT); }
+  pinned.setInput(1);
+  for (let i = 0; i < 400; i++) pinned.step(DT);
 
   // `continousRotationSpeed * dt`, added every tick in the non-automaticReset
   // path whatever the input is doing (GUN-2). Fed nothing at all here, so the
@@ -676,7 +697,7 @@ function shermanWithRenamedGunnerNode() {
     { free: true, min: null, max: null, maxSpeed: 110, acceleration: 10,
       direction: 1, continuousRotation: 12 });
   let windmillTravel = 0, prevW = 0;
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 30; i++) {
     windmill.step(DT);
     let d = windmill.angle - prevW;
     if (d > 180) d -= 360; else if (d < -180) d += 360;
@@ -684,13 +705,13 @@ function shermanWithRenamedGunnerNode() {
     prevW = windmill.angle;
   }
   // ...and it rides ON TOP of an input-driven traverse rather than replacing
-  // it: same axis, same second, with the hand held over.
+  // it: same axis, same second, with a 60 deg/s ask held over.
   const both = new TurretAxis('yaw', node('Both', {}),
     { free: true, min: null, max: null, maxSpeed: 110, acceleration: 1e6,
       direction: 1, continuousRotation: 12 });
+  both.setInput(60 / 110);
   let bothTravel = 0, prevB = 0;
-  for (let i = 0; i < 60; i++) {
-    both.feed(px(1));
+  for (let i = 0; i < 30; i++) {
     both.step(DT);
     let d = both.angle - prevB;
     if (d > 180) d -= 360; else if (d < -180) d += 360;
@@ -702,35 +723,34 @@ function shermanWithRenamedGunnerNode() {
   // |acceleration| deg/s (a rate, not an acceleration), with no velocity
   // register and no continuous term -- and returns to zero at the same rate
   // when the hand lets go. A steering wheel, in other words.
-  const wheel = new TurretAxis('yaw', node('Wheel', {}), {
+  const wheelSpec = {
     input: 'c_PIMouseLookX', free: false, min: -60, max: 60,
     maxSpeed: 100, acceleration: 120, direction: 1, automaticReset: true,
-  });
-  for (let i = 0; i < 60; i++) { wheel.feed(2000); wheel.step(DT); }
+  };
+  const wheel = new TurretAxis('yaw', node('Wheel', {}), wheelSpec);
+  wheel.setInput(1);
+  for (let i = 0; i < 30; i++) wheel.step(DT);
   const wheelHeld = round(wheel.angle, 2);
   const wheelSpeedRegister = wheel.speed;
-  for (let i = 0; i < 30; i++) wheel.step(DT);
+  wheel.setInput(0);
+  for (let i = 0; i < 8; i++) wheel.step(DT);
   const wheelHalfWayHome = round(wheel.angle, 2);
-  for (let i = 0; i < 60; i++) wheel.step(DT);
+  for (let i = 0; i < 30; i++) wheel.step(DT);
   const wheelHome = round(wheel.angle, 2);
   // One tick from rest moves exactly `|acceleration| * dt` degrees, which is
   // what makes this a rate law rather than an acceleration one.
-  const wheelOne = new TurretAxis('yaw', node('WheelOne', {}), {
-    input: 'c_PIMouseLookX', free: false, min: -60, max: 60,
-    maxSpeed: 100, acceleration: 120, direction: 1, automaticReset: true,
-  });
-  wheelOne.feed(2000);
+  const wheelOne = new TurretAxis('yaw', node('WheelOne', {}), wheelSpec);
+  wheelOne.setInput(1);
   wheelOne.step(DT);
 
   // HP-15: `RotationalBundle::handlePlayerInput` scales all three axes by 0.2
   // while the vehicle is critically damaged. The servo sees the scaled input,
   // so the steady rate is one fifth -- `map.html` passes the multiplier in.
-  const healthy = drive(SHERMAN_YAW, 400, 2.0);
+  const healthy = drive(SHERMAN_YAW, 1, 2.0);
   const hurt = new TurretAxis('yaw', node('Hurt', {}), SHERMAN_YAW);
+  hurt.setInput(1);
   let hurtTravel = 0, prevH = 0;
-  for (let i = 0; i < 120; i++) {
-    hurtTravel += 0;
-    hurt.feed(400);
+  for (let i = 0; i < 60; i++) {
     hurt.step(DT, 0.2);
     let d = hurt.angle - prevH;
     if (d > 180) d -= 360; else if (d < -180) d += 360;
@@ -739,21 +759,27 @@ function shermanWithRenamedGunnerNode() {
   }
 
   // The same penalty at the RIG, the way `map.html` really drives it: the page
-  // sets `rig.inputScale` from the hull's live Armor and calls `step(dt)` with
-  // no argument. Two streams each added the 0.2 -- one on the pixels in
-  // `aim()`, one on the normalised input in `step()` -- and git merged both
-  // without a conflict. Scaled on the pixels, a saturating hand (400 px a
-  // frame against a 140 deg/s cap) loses nothing to the penalty at all; spent
-  // once in `step`, it is a fifth whatever the hand does. Built without a
+  // sets `rig.inputScale` from the hull's live Armor, calls `rig.aim(x, y)`
+  // once per pumped frame with the engine axis pair, and then `step(dt)` with
+  // no argument for each tick of that frame. Two wave-2 streams each added the
+  // 0.2 -- one in `aim()`, one in `step()` -- and git merged both without a
+  // conflict. Spent twice it would be 0.04; spent once it is 0.2 whatever the
+  // hand is doing, which is what these three numbers pin. Built without a
   // seat: the rig is only its axes and its scale here.
-  const rigTravel = (inputScale, px) => {
+  // The first 60 ticks are thrown away so the velocity register has settled:
+  // a Sherman's 1000 deg/s^2 takes 0.56 s to reach the 560 deg/s that input 16
+  // commands, and a ramp counted into the total is a ratio that is nearly but
+  // not exactly a fifth.
+  const rigTravel = (inputScale, input) => {
     const rig = Object.create(TurretRig.prototype);
     rig.axes = [new TurretAxis('yaw', node('RigYaw', {}), SHERMAN_YAW)];
     rig.inputScale = inputScale;
     let travel = 0, prev = 0;
     for (let i = 0; i < 120; i++) {
-      rig.aim(px, 0);
+      rig.aim(input, 0);
       rig.step(DT);
+      if (i === 59) { prev = rig.axes[0].angle; continue; }
+      if (i < 60) continue;
       let d = rig.axes[0].angle - prev;
       if (d > 180) d -= 360; else if (d < -180) d += 360;
       travel += Math.abs(d);
@@ -761,22 +787,29 @@ function shermanWithRenamedGunnerNode() {
     }
     return travel;
   };
-  const rigHealthyFast = rigTravel(1, 400);
-  const rigCriticalFast = rigTravel(0.2, 400);
-  const rigCriticalSlow = rigTravel(0.2, 10) / rigTravel(1, 10);
-  const rigWreck = rigTravel(0, 400);
+  // 16 is the wire's own ceiling, i.e. the fastest hand the engine can encode.
+  const rigHealthyFast = rigTravel(1, 16);
+  const rigCriticalFast = rigTravel(0.2, 16);
+  const rigCriticalSlow = rigTravel(0.2, 0.2) / rigTravel(1, 0.2);
+  const rigWreck = rigTravel(0, 16);
 
   results.turretServo = {
     rigCriticalFastRatio: round(rigCriticalFast / rigHealthyFast, 3),
     rigCriticalSlowRatio: round(rigCriticalSlow, 3),
     rigWreckDegrees: round(rigWreck, 4),
-    speedScale: scale,
-    // 35 * 4 = 140 deg/s and 70 * 4 = 280 deg/s, held flat for 2 s minus the
-    // sliver spent ramping.
-    shermanDegPerSec: round(shermanFlat.travel / 2.0, 1),
-    shermanCap: 35 * scale,
-    mg42DegPerSec: round(mg42Flat.travel / 0.5, 1),
-    mg42Cap: 70 * scale,
+    // Input 1 is exactly `setMaxSpeed`; 1000 counts a second at the shipped
+    // sensitivity is 1.35 of them.
+    shippedAxisAtThousandCounts: round(axisAt(1000), 6),
+    shermanUnitDegPerSec: round(shermanUnit.travel / 2.0, 1),
+    shermanMaxSpeed: 35,
+    shermanThousandDegPerSec: round(shermanThousand.travel / 2.0, 2),
+    shermanThousandExpected: round(35 * axisAt(1000), 2),
+    mg42ThousandDegPerSec: round(mg42Thousand.travel / 0.5, 1),
+    mg42ThousandExpected: round(70 * axisAt(1000), 2),
+    // No +-1 clamp: input 4 really is four times `setMaxSpeed`. Read off the
+    // velocity register, which is the commanded rate exactly once the ramp has
+    // finished, rather than off the travel, which still carries it.
+    shermanFastSteadySpeed: round(shermanFast.axis.speed, 4),
     ownAccelAtTenth: round(speedAfter(ownAccel, 0.1), 1),
     fallbackAccelAtTenth: round(speedAfter(fallbackAccel, 0.1), 1),
     fallbackAccelAtHalf: round(speedAfter(fallbackAccel, 0.5), 1),

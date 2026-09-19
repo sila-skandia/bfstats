@@ -499,7 +499,7 @@ export class VehicleOccupancy {
   }
 }
 
-// --- manned-gun aiming (GUN-2, closed form; GUN-2b, the one open number) ---
+// --- manned-gun aiming (GUN-2 and GUN-2b, both closed) ---------------------
 //
 // `RotationalBundle::calculateAndClipAngle` (lnxded `0x081d7490`) was read
 // end to end in the 2026-09-19 round -- all 361 instructions, re-traced
@@ -527,12 +527,33 @@ export class VehicleOccupancy {
 // `direction = sign(acceleration)` (`con.py`) matches the engine's
 // `fchs`-on-negative-acceleration exactly and is kept.
 //
-// What is NOT closed is GUN-2b: `maxSpeed` is a **gain, deg/s per unit of
-// input**, and nobody has yet read what magnitude the client's mouse-look
-// axis delivers as `PlayerInput[c_PIMouseLookX/Y]`. Everything between a
-// pointer-lock pixel and that number is this file's own choice, and it is
-// made in one place (`step`'s input normalisation plus
-// `TURRET_SPEED_SCALE`), labelled as such.
+// **GUN-2b is now closed too, and this file no longer owns any part of it.**
+// `maxSpeed` is a gain -- deg/s per unit of input -- and the magnitude of
+// `PlayerInput[c_PIMouseLookX/Y]` has been read end to end out of the client's
+// DX8 mouse device: it is a RATE,
+//
+//     input = 0.001 x (mouse counts per second) x (5 x sensitivity + 0.1)
+//
+// computed once per pumped frame, held for every simulation tick of that
+// frame, then clamped to +-16 and quantised on the way into the simulation.
+// `viewer/mouse-input.js` is that whole stage, with the addresses; a Sherman
+// tower (`setMaxSpeed 35`) at the shipped 0.25 is therefore commanded at
+// **47.25 deg/s for 1000 counts a second**, saturating at about 11,852.
+//
+// So the two constants this file used to carry -- `TURRET_DEGREES_PER_PIXEL`,
+// which turned a pixel into degrees of ask, and `TURRET_SPEED_SCALE = 4`,
+// which multiplied every declared `setMaxSpeed` to make the result feel right
+// -- are **gone**. There was never anything in the engine behind either of
+// them; between them they were a hand-fitted stand-in for the 0.001-per-count
+// rate, and the saturating normalisation they needed ("a hand asking for more
+// than the ceiling delivers input 1") had the side effect of making every fast
+// hand identical. It does not any more: an input above 1 really does command
+// more than `maxSpeed`, exactly as the engine's servo does, up to the wire's
+// +-16.
+//
+// `step` now takes the engine's own number. The one tunable left is
+// `countsPerPixel` in `mouse-input.js` -- whether a browser `movementX` pixel
+// is one DirectInput count -- and `?turret=` multiplies that.
 
 const RIG_AXIS = { yaw: 'y', pitch: 'x', roll: 'z' };   // flight.js's own convention, mirrored
 const RIG_SIGN = { yaw: -1, pitch: -1, roll: 1 };       // (unexported there; kept identical here)
@@ -548,63 +569,11 @@ const RIG_SIGN = { yaw: -1, pitch: -1, roll: 1 };       // (unexported there; ke
 // wins. A Sherman tower's real number is 1000, an MG42's 5000; at those
 // rates the ramp is essentially instant and the cap is what the hand feels.
 //
-// CRITICAL: `step` multiplies this by `speedScale` alongside the cap, so the
-// wind-up TIME stays `maxSpeed/acceleration` -- the game's own ratio --
-// however far `TURRET_SPEED_SCALE` moves the cap. Scale one without the
-// other and a Defgun takes four times as long to answer a flick.
+// It used to be scaled alongside the cap, to hold the wind-up TIME at the
+// game's `maxSpeed/acceleration` ratio while `TURRET_SPEED_SCALE` moved the
+// cap. Both are gone: the ratio is now simply the game's, because neither
+// number is scaled by anything.
 export const TURRET_ACCELERATION = 90;
-// Degrees of aim the mouse asks for, per pixel of pointer-locked
-// `movementX/Y`. This is `map.html`'s own `LOOK_SENS` (0.0022 rad/px) in
-// degrees, on purpose: a gunner's hand should ask a turret for the same
-// travel it asks a soldier's head for, and the turret's own rate cap is then
-// the only thing that makes aiming one heavier than the other.
-export const TURRET_DEGREES_PER_PIXEL = 0.0022 * 180 / Math.PI;
-
-// What multiplies an axis's declared `setMaxSpeed` to get the rate it will
-// actually turn at.
-//
-// GUN-2b is the reason it exists, and the reason it stays. `maxSpeed` is a
-// **gain** -- deg/s per unit of input -- so "a Sherman's `setMaxSpeed 35` is
-// 35 deg/s on screen" is only true if the mouse delivers an input of exactly
-// 1, and nothing establishes that it does:
-//
-//   * The +-1 clamp on the input lives inside the `rememberExcessInput`
-//     branch, and across 18 installs NOT ONE turret, manned gun, tank or
-//     `Objects.con` rotational bundle declares that flag (vanilla's 32 uses
-//     are all aircraft rudder and tail-flap `Wing` bundles). For every gun
-//     the input is raw and unclamped.
-//   * The wire format reserves headroom to **+-16**: `PlayerAction::set`
-//     packs every `PlayerInput` float with `floatToFixed(v, 12, 16.0f)` and
-//     `get` decodes `((n/4095)*2 - 1)*16.0`. An input normalised to +-1
-//     would leave fifteen sixteenths of the encoding dead.
-//   * The "a soldier's head turns nine times faster for the same hand
-//     movement" observation, which is what originally produced this number,
-//     compares two different control laws: `SoldierCamera` declares
-//     `setMaxSpeed 0/0/0` and so never enters `calculateAndClipAngle` at all.
-//
-// So the OPEN question this constant stands in for is narrow and stated:
-// **what magnitude the client's mouse-look axis delivers as
-// `PlayerInput[c_PIMouseLookX/Y]`.** The trail runs as far as the client's
-// `ControlMap.addAxisToAxisMapping` registrars (`FUN_006bba90` /
-// `FUN_006bbd90`) without reaching the multiply. Until someone reads it,
-// this is the viewer's stand-in for that gain and must be left alone --
-// removing it or "correcting it to 1" was checked against the binary and
-// refuted (ledger GUN-2b).
-//
-// Tunable live with `?turret=<scale>` so a number can be settled by playing
-// rather than by another guess.
-export const TURRET_SPEED_SCALE = 4;
-
-let speedScale = TURRET_SPEED_SCALE;
-
-/** Override the traverse-rate scale (`?turret=`). Returns what took effect. */
-export function setTurretSpeedScale(value) {
-  const scale = Number(value);
-  if (Number.isFinite(scale) && scale > 0) speedScale = scale;
-  return speedScale;
-}
-
-export function turretSpeedScale() { return speedScale; }
 
 const _euler = new THREE.Euler();
 const _quat = new THREE.Quaternion();
@@ -630,10 +599,13 @@ const _quat = new THREE.Quaternion();
  * "never turn further than was asked": those were feel patches compensating
  * for a bank the engine never had.
  *
- * The one thing kept from the old model is that `feed` may be called several
- * times before a `step` (pointer lock can deliver more than one `mousemove`
- * per frame). The pixels accumulate and are converted to an input ONCE, in
- * `step`, against that tick's own `dt`.
+ * The accumulate-pixels-then-normalise half of the old model is gone with it.
+ * `setInput` is handed the engine's own `PlayerInput[c_PIMouseLookX/Y]` for
+ * the current frame, already a rate and already quantised
+ * (`viewer/mouse-input.js`), and it is NOT consumed by `step`: the engine
+ * hands the same value to every tick of a frame, so several ticks of one
+ * frame read it unchanged, and the next pump replaces it -- with 0 when the
+ * hand stopped.
  */
 export class TurretAxis {
   constructor(axisName, node, spec) {
@@ -643,14 +615,17 @@ export class TurretAxis {
     this.base = node.quaternion.clone();
     this.angle = 0;      // degrees from the authored rest pose (engine +0x104)
     this.speed = 0;      // deg/s, the servo's velocity register (engine +0x110)
-    this._pixels = 0;    // this tick's un-consumed pointer motion
+    this._input = 0;     // this frame's axis value, held for all of its ticks
   }
 
-  /** Pointer motion for the coming tick, in the browser's own screen sense.
-   *  Accumulates; `step` consumes and zeroes it. */
-  feed(delta) {
-    this._pixels += delta;
+  /** This frame's `PlayerInput[c_PIMouseLookX/Y]`, in engine units. Replaces;
+   *  `step` reads it without clearing it. */
+  setInput(value) {
+    this._input = Number.isFinite(value) ? value : 0;
   }
+
+  /** What the last pump handed this axis. */
+  get input() { return this._input; }
 
   /**
    * One tick.
@@ -664,26 +639,19 @@ export class TurretAxis {
    */
   step(dt, inputScale = 1) {
     if (!(dt > 0)) return;
-    const pixels = this._pixels;
-    this._pixels = 0;
 
-    // GUN-2b, and the only invented quantity in this function. The engine's
-    // `input` is `PlayerInput[c_PIMouseLookX/Y]`, whose magnitude nobody has
-    // read; `maxSpeed` is the deg/s it buys per unit of it. This viewer's
-    // choice is that a hand asking for more travel per second than the axis's
-    // own scaled ceiling delivers input 1 -- so `maxSpeed * TURRET_SPEED_SCALE`
-    // is the viewer's traverse ceiling, which is the behaviour this file has
-    // shipped all along and the part players have already judged. Stated as a
-    // choice, not transcribed as a fact.
-    const cap = Math.abs(this.spec.maxSpeed || 0) * speedScale;
-    const asked = pixels * TURRET_DEGREES_PER_PIXEL / dt;   // deg/s the hand wants
-    const unit = cap > 0 ? Math.max(-1, Math.min(1, asked / cap)) : 0;
+    // GUN-2b, transcribed rather than invented now: the engine's `input` is
+    // `PlayerInput[c_PIMouseLookX/Y]` exactly as `mouse-input.js` produces it
+    // -- a rate, unnormalised, already saturated at the wire's +-16 -- and
+    // `maxSpeed` is the deg/s it buys per unit of it. No clamp to +-1 here:
+    // that clamp lives only inside the engine's `rememberExcessInput` branch,
+    // which no turret, manned gun or tank in any of 18 installs declares.
+    const cap = Math.abs(this.spec.maxSpeed || 0);
     // `direction` is `sign(acceleration)`, the engine's own
     // `fchs`-on-negative-acceleration; `inputScale` is HP-15's 0.2.
-    const input = unit * (this.spec.direction || 1) * inputScale;
+    const input = this._input * (this.spec.direction || 1) * inputScale;
 
-    // `|acceleration|`. Scaled with the cap so the wind-up TIME is the game's
-    // ratio whatever `TURRET_SPEED_SCALE` is -- see `TURRET_ACCELERATION`.
+    // `|acceleration|`, the axis's own `setAcceleration`, unscaled.
     // NOTE: `con.py` omits a zero `setAcceleration` rather than emitting 0, so
     // the engine's own early-out (`acceleration == 0 && continousRotationSpeed
     // == 0` returns without touching either register) cannot be told apart
@@ -699,7 +667,7 @@ export class TurretAxis {
       // whatever the input is doing -- that unconditional `+=` is the whole
       // of `setContinousRotationSpeed`'s effect here.
       const target = input * cap;
-      const maxStep = accel * speedScale * dt;
+      const maxStep = accel * dt;
       const change = target - this.speed;
       this.speed += Math.max(-maxStep, Math.min(maxStep, change));
       this.angle += this.speed * dt + (this.spec.continuousRotation || 0) * dt;
@@ -720,10 +688,6 @@ export class TurretAxis {
    * `maxRotation` is the per-axis `setMaxRotation` component, which `con.py`
    * drops when the axis is free -- and free means both bounds are zero, so
    * an absent `max` here really is the engine's 0 and the part ramps home.
-   *
-   * `speedScale` is deliberately NOT applied: it is a stand-in for the
-   * unknown input magnitude against `maxSpeed`'s gain (GUN-2b), and this law
-   * never reads `maxSpeed`.
    */
   _stepAutomaticReset(dt, input, accel) {
     const target = input * (this.spec.max || 0);
@@ -825,27 +789,32 @@ export class TurretRig {
   }
 
   /**
-   * Feed one frame's mouse motion in, in the browser's own screen sense:
-   * `dx` positive rightwards, `dy` positive downwards, exactly as
-   * `movementX`/`movementY` report them.
+   * This frame's mouse-look axis pair, in ENGINE units -- what
+   * `mouse-input.js`'s `pump()` just produced, not pixels. Called once per
+   * pumped frame, before the frame's ticks; the value is held for all of them
+   * because that is what the engine does (`mouse-input.js`'s header for the
+   * `dt <= 0` gate that makes it so).
    *
-   * NOT negated by the caller. It used to be — `lookDelta` passed
-   * `(-dx, -dy)`, borrowed from the soldier's own `look()`, whose yaw counts
-   * the other way — and the negation landed on top of `RIG_SIGN`'s own flip
-   * inside `_apply`, so the sum of the two inverted both axes: the mouse
-   * pushed right swung a gun left, and pushed down raised it. Measured on the
-   * Sherman's hull Browning as well as its main gun, so this was wrong for
-   * every manned gun in the viewer, not just the tank that exposed it.
+   * `x` positive rightwards, `y` positive downwards, in the browser's own
+   * screen sense and in DirectInput's, which agree. NOT negated by the caller:
+   * `lookDelta` used to pass `(-dx, -dy)`, borrowed from the soldier's own
+   * `look()`, whose yaw counts the other way, and the negation landed on top
+   * of `RIG_SIGN`'s own flip inside `_apply`, so the sum of the two inverted
+   * both axes -- the mouse pushed right swung a gun left, and pushed down
+   * raised it. Measured on the Sherman's hull Browning as well as its main
+   * gun, so it was wrong for every manned gun in the viewer.
    */
-  aim(dx, dy) {
-    // HP-15: a wreck takes no player input at all, so its pixels are not even
-    // accumulated and the rig is left exactly where its last occupant
-    // abandoned it. The CRITICAL vehicle's 0.2 is deliberately NOT applied
-    // here -- see `step`.
-    if (!(this.inputScale > 0)) return;
+  aim(x, y) {
+    // HP-15: a wreck takes no player input at all --
+    // `PlayerControlObject::handlePlayerInput` (0x08318920) returns before
+    // forwarding anything to a child. Zeroed rather than skipped, because the
+    // value is now HELD rather than consumed: leaving the last frame's rate in
+    // place would spin the gun forever. The CRITICAL vehicle's 0.2 is
+    // deliberately NOT applied here -- see `step`.
+    const dead = !(this.inputScale > 0);
     for (const axis of this.axes) {
-      if (axis.spec.input === 'c_PIMouseLookX') axis.feed(dx);
-      else if (axis.spec.input === 'c_PIMouseLookY') axis.feed(dy);
+      if (axis.spec.input === 'c_PIMouseLookX') axis.setInput(dead ? 0 : x);
+      else if (axis.spec.input === 'c_PIMouseLookY') axis.setInput(dead ? 0 : y);
     }
   }
 
@@ -857,18 +826,17 @@ export class TurretRig {
    * 1 otherwise. `map.html` owns deciding which, since it is the only thing
    * that knows the hull's live Armor, and it sets it on `this.inputScale`.
    *
-   * It is spent HERE, on the normalised input, not on the pixels in `aim()`.
-   * The engine scales the `PlayerInput` entering the bundle
-   * (`RotationalBundle::handlePlayerInput` `0x081d834f`, x0.2 from
-   * `ds:0x86c8678`), and this file's analogue of that input is `unit` inside
-   * `TurretAxis.step` -- AFTER the saturating clamp, not before it. Scaling
-   * the pixels is equivalent only while the hand asks for less than the
-   * axis's own ceiling; above it the clamp eats the penalty. Measured on a
-   * Sherman tower (140 deg/s cap): pixel-scaled gives 60.5 deg/s at
-   * 40 px/frame where this gives 28, and the full 138.7 at 100 px/frame and
-   * beyond -- no penalty at all for exactly the fast hand a fight produces.
+   * It is spent HERE, on the axis value entering the servo, not on the
+   * pointer motion in `aim()`. That is where the engine spends it:
+   * `RotationalBundle::handlePlayerInput` (`0x081d834f`) multiplies the three
+   * `PlayerInput` axes by the double at `ds:0x86c8678` = 0.2 as they enter the
+   * bundle, i.e. after the wire's own clamp and quantisation, never before.
    * Two wave-2 streams each added the multiplier, in the two shapes, and git
-   * merged them without a conflict; this is the one that survives.
+   * merged them without a conflict; this is the one that survives. It matters
+   * less than it did -- the viewer no longer saturates the input at +-1, so
+   * the two shapes now differ only above the wire's own +-16 -- but "the
+   * engine scales what enters the bundle" is the reason, and it has not
+   * changed.
    *
    * An explicit argument still wins, so a caller can ask for a scale the rig
    * is not carrying.
