@@ -7537,6 +7537,15 @@ function updateSoldierHud() {
   // per disposeHandWeapon's own comment on the old #ammo element — so the
   // vehicle check has to be explicit here too.
   const onFootActive = optOnFoot.checked && !!soldier && !inVehicle;
+  // The ticket counter is not the soldier's, and its own `when` is only
+  // `ShowTicket`, so it would otherwise ride over a free-fly camera — where
+  // this viewer deliberately shows no HUD chrome at all and the game would
+  // not be in a round. Gate it on the player being in the world (on foot or
+  // in any seat), which is the same condition that raises the rest of the
+  // HUD. Fed before every early return below, because a soldier who has just
+  // died leaves `soldier` null while the counter is still up in the game.
+  feedTicketVars(vars);
+  if (!onFootActive && !inVehicle) vars['ShowTicket'] = false;
   // T4a / V-R4: retail keeps the soldier stance icon inside vehicles.
   vars['Soldier/ShowSoldierIcon'] = !!soldier && (onFootActive || inVehicle);
   vars['Vehicle/ShowVehicleIcon'] = inVehicle;
@@ -8030,6 +8039,58 @@ function teamNation(team) {
   let best = null;
   for (const [n, count] of tally) if (!best || count > tally.get(best)) best = n;
   return best || nationFromVehicles(team) || (team === 1 ? 'ger' : 'us');
+}
+
+/* The ticket counter.
+ *
+ * `ShowTicket` gates one top-level entry of `menu/InGame` — a sibling of the
+ * spawn screen's `Kit/ShowKit`, not a child of it — so the game draws the same
+ * nine leaves over the live world and over the deploy screen. Both painters
+ * here read that one group: `hud.js` picks it up from `hud-layout.json`
+ * generically (the group is new there this round; `extract_hud_layout.py`),
+ * and `paintDeployChrome` draws it beside the spawn group.
+ *
+ * The counts are `scene.json.tickets`, parsed by `bf42/level.py` out of the
+ * level's own `GameTypes/<mode>.con` (`Game.setNumberOfTickets`). Team 1 is
+ * Axis and team 2 Allied, the reading this file already uses everywhere else
+ * (`flag.team === 1 ? 'Axis' : ...`).
+ *
+ * These are ROUND-START values and they do not move. What a live bleed would
+ * need is in `features/bf1942-3d-models/tickets-hud.md`; the short of it is
+ * that a ticket is lost per death and per `Game.setTicketLostPerMin` while the
+ * other side holds more than half the flags, neither of which this viewer
+ * simulates — so a counting-down number here would be a fiction, and a frozen
+ * one is at least the number the round genuinely starts at.
+ */
+function ticketFlagTexture(team) {
+  // The layout's own literal is `flag_ticket_ger.tga` and the pack ships
+  // brit/can/ger/jp/rus/us. `teamNation` answers in exactly those codes.
+  return `flag_ticket_${teamNation(team)}.tga`;
+}
+
+/** Fill in the `ShowTicket` group's variables on a table. Returns whether the
+ *  group will draw. */
+function feedTicketVars(vars) {
+  const t = extras.tickets;
+  // Both counts or none: the group draws two numbers side by side and a lone
+  // one would leave the layout's own sample literal ("300"/"500") showing
+  // next to a real value, which reads as data rather than as a gap.
+  if (!t || t.team1 == null || t.team2 == null) {
+    vars['ShowTicket'] = false;
+    return false;
+  }
+  vars['ShowTicket'] = true;
+  vars['AxisTicket'] = String(t.team1);
+  vars['AlliedTicket'] = String(t.team2);
+  vars['AxisTicketFlag'] = ticketFlagTexture(1);
+  vars['AlliedTicketFlag'] = ticketFlagTexture(2);
+  // The two red 50%-alpha quads over the numbers are the engine's low-ticket
+  // warning, and it is a live-round state on a timer nothing here runs.
+  // Fed false rather than left unfed so the leaves cull deterministically
+  // instead of on whatever happened to be in the table.
+  vars['Ticket/ShowAxisTicketBlink'] = false;
+  vars['Ticket/ShowAlliedTicketBlink'] = false;
+  return true;
 }
 
 function loadMapArt(dir) {
@@ -8656,8 +8717,7 @@ function deployVars() {
   vars['Kit/SelectedKit'] = Math.max(0, KITS.indexOf(deployKit));
   vars['Kit/IsAlive'] = deployRejoin;
   vars['ChangeTeam/ShowChangeTeam'] = true;
-  // No ticket counts to show: the level report carries none.
-  vars['ShowTicket'] = false;
+  feedTicketVars(vars);
   for (const k of Object.keys(vars)) if (k.startsWith('Kit/MouseOver/')) vars[k] = false;
   if (deployHoverVar) vars[deployHoverVar] = true;
   return vars;
@@ -8681,7 +8741,7 @@ const elementVisible = (el, vars) => (el.when || []).every(c => condOk(c, vars))
 
 /** The sprite a picture leaf shows: the variable pictures are the team's
  *  flag and the kit photographs, resolved for this level's nations. */
-function deployTexture(el) {
+function deployTexture(el, vars) {
   if (!el.var) return el.texture;
   const nation = teamNation(deployTeamId);
   if (el.var === 'ChangeTeam/AxisTeamFlag' || el.var === 'ChangeTeam/AlliedTeamFlag') {
@@ -8689,17 +8749,38 @@ function deployTexture(el) {
   }
   const kit = /^Kit\/Icons\/KitIcon(\d)$/.exec(el.var);
   if (kit) return kitPhoto(KITS[Number(kit[1]) - 1], nation, deployTeamId);
+  // Anything else bound to a live variable resolves the way `hud.js` does it:
+  // strip the path and the extension, lower-case. This is only reached for
+  // leaves nothing above claims — today the two ticket flags. Note that
+  // `deployVars()` seeds the table from the layout's own sample values, so
+  // this must stay BELOW the cases that derive art from the level rather than
+  // from a variable, or a sample literal would win over a real lookup.
+  const live = vars && vars[el.var];
+  if (typeof live === 'string' && live) {
+    const base = live.slice(live.lastIndexOf('/') + 1);
+    const dot = base.lastIndexOf('.');
+    return (dot > 0 ? base.slice(0, dot) : base).toLowerCase();
+  }
   return el.texture;
 }
 
 /** The string a text leaf shows. The counts are the game's live player
  *  tallies, which are all zero for a man alone on the server; the commit
  *  button reads LOADING while the scene still streams. */
-function deployText(el) {
+function deployText(el, vars) {
   if (el.key === 'RESPAWN_SUICIDE' && !worldReady) return 'LOADING';
   if (el.var && /^Kit\/NrOf/.test(el.var)) return '0';
+  // A bound string the page actually feeds wins over the layout's own sample
+  // ("300"/"500" on the ticket counters). Only values this page wrote count:
+  // `deployVars()` seeds the table from those same samples, so an untouched
+  // key would otherwise look fed.
+  if (el.var && TICKET_TEXT_VARS.has(el.var) && vars && vars[el.var] != null) {
+    return String(vars[el.var]);
+  }
   return el.text || '';
 }
+
+const TICKET_TEXT_VARS = new Set(['AxisTicket', 'AlliedTicket']);
 
 // --- laying out and painting -------------------------------------------------
 
@@ -8771,7 +8852,13 @@ function paintDeployChrome() {
   const vars = deployVars();
   const buttonHover = { RESPAWN_SUICIDE: 'suicide', RESPAWN_CLOSE: 'suicide',
                         RESPAWN_SCOREBOARD: 'score', RESPAWN_RESUME: 'resume', RESPAWN_DONE: 'resume' };
-  for (const el of data.groups.spawn.elements) {
+  // The ticket counter is its own top-level entry of menu/InGame, gated by
+  // `ShowTicket` rather than by `Kit/ShowKit`, so it is a sibling of the spawn
+  // group in the file and is drawn alongside it here — in the file's own
+  // order, which puts it over the spawn plates the way the game draws it.
+  const chrome = [...data.groups.spawn.elements,
+                  ...(data.groups.tickets?.elements || [])];
+  for (const el of chrome) {
     if (!elementVisible(el, vars)) continue;
     const [x, y, w, h] = el.rect;
     const color = el.color || [1, 1, 1, 1];
@@ -8782,7 +8869,7 @@ function paintDeployChrome() {
         ctx.fillRect(x, y, w, h);
         break;
       case 'picture': {
-        const img = sprite(deployTexture(el));
+        const img = sprite(deployTexture(el, vars));
         if (!img) break;
         // Point art at its own size — the 16 px class glyphs — stays crisp;
         // the plates and photographs get the card's bilinear filtering.
@@ -8803,7 +8890,7 @@ function paintDeployChrome() {
       case 'text': {
         const font = spawnLayout.fonts.get(el.font);
         if (!font) break;
-        const text = deployText(el);
+        const text = deployText(el, vars);
         const width = measureText(font, text);
         const tx = el.align === 'center' ? x + (w - width) / 2
           : el.align === 'right' ? x + w - width : x;
