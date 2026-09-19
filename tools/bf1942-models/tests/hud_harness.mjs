@@ -223,4 +223,41 @@ results.turretDial = {
   })(),
 };
 
+// --- the seat-occupancy dots' placement (VHUD-11, VHUD-7) --------------------
+
+/** Seat 0's leaf, verbatim from `hud-layout.json` (`test_hud_layout.py` has
+ *  the same rect and the same pair of variable names). */
+const seatZero = {
+  kind: 'occupied-seat', position: 0, rect: [247, 457, 8, 8],
+  dataRef: 'Occupied/OccupiedData',
+  posVar: { x: 'Vehicle/VehiclePos/VehiclePosX1', y: 'Vehicle/VehiclePos/VehiclePosY1' },
+};
+
+function dotAt(vars) {
+  const hud = new Hud({ canvas: null, sprite: () => ({ width: 8, height: 8 }) });
+  Object.assign(hud.vars, vars);
+  const [x, y] = seatZero.rect;
+  return hud.seatDotPosition(seatZero, x, y);
+}
+
+results.seatDots = {
+  layoutRect: seatZero.rect,
+  // Sherman's root declares `setVehicleIconPos 54/103`, and VHUD-7 anchors
+  // the dots at (192, 452) -- so this one lands at (246, 555), inside the
+  // 128x128 icon panel that starts at (200, 462).
+  shermanRoot: dotAt({
+    'Vehicle/VehiclePos/VehiclePosX1': 54,
+    'Vehicle/VehiclePos/VehiclePosY1': 103,
+  }),
+  // `shermanBrowning_PCO1`'s own 32/61.
+  shermanGunner: dotAt({
+    'Vehicle/VehiclePos/VehiclePosX1': 32,
+    'Vehicle/VehiclePos/VehiclePosY1': 61,
+  }),
+  // A scene baked before `setVehicleIconPos` was parsed feeds nothing, and
+  // the layout's own literal rect stands.
+  unfed: dotAt({}),
+  halfFed: dotAt({ 'Vehicle/VehiclePos/VehiclePosX1': 54 }),
+};
+
 console.log(JSON.stringify(results));

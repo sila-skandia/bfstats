@@ -5353,6 +5353,16 @@ const HUD_VEHICLE_VARS = [
   'Ammo/SecondaryAmmoIcon', 'Ammo/SecondaryAmmoBar',
   'Ammo/SecondaryAmmo', 'Ammo/SecondaryAmmoText', 'Ammo/MaxSecondaryAmmo',
   'Ammo/ReloadTime', 'Ammo/ReloadTimeSecondary', 'Overheat/OverHeat',
+  // VHUD-11/VHUD-2: the seat-occupancy dots. One shared `Occupied/OccupiedData`
+  // backs all six leaves (an array here, indexed by the leaf's own
+  // `position`), and each dot's place inside the 128x128 vehicle icon is a
+  // `Vehicle/VehiclePos/VehiclePosX<n>`/`Y<n>` pair — the layout's own
+  // spelling, which nests the group (`test_hud_layout.py` has it verbatim).
+  'Occupied/OccupiedData',
+  ...Array.from({ length: 6 }, (_, i) => [
+    `Vehicle/VehiclePos/VehiclePosX${i + 1}`,
+    `Vehicle/VehiclePos/VehiclePosY${i + 1}`,
+  ]).flat(),
 ];
 
 function setHudVar(name, value) {
@@ -5388,7 +5398,20 @@ function ammoBarCode(name) {
  * sign flip. See `feedVehicleHud`.
  */
 function turretDialAngle() {
-  return occupancy?.turret?.turretYawRadians();
+  if (!occupancy?.showsTurretIcon(insideView())) return undefined;
+  return occupancy.turret?.turretYawRadians();
+}
+
+/**
+ * Is the camera in the engine's view mode 3 — the inside view?
+ *
+ * A driven vehicle has `VehicleCamera`'s own four-mode cycle and exactly one
+ * of them (`cockpit`) is first person. A manned gun has no cycle at all:
+ * `manned()` puts the eye on the seat's own Camera node and nothing else,
+ * which is the one view retail gives it, so it is always inside.
+ */
+function insideView() {
+  return mannedActive() ? true : !!view?.firstPerson;
 }
 
 /**
@@ -5433,6 +5456,21 @@ function feedVehicleHud() {
   const heading = turretDialAngle();
   setHudVar('Vehicle/ShowTurretIcon', heading === undefined ? null : true);
   setHudVar('IconLookRotation', heading === undefined ? null : heading);
+  // The seat-occupancy dots (VHUD-11). `in-game-hud.md` used to record their
+  // positions as "live-bound per vehicle", i.e. carried by nothing the
+  // extractor could reach; they are `setVehicleIconPos` on each seat's own
+  // PlayerControlObject, and `con.py` simply had no hit for the word. Fed as
+  // one shared state array (`Occupied/OccupiedData`, which is what the layout
+  // binds — one `BfOccupiedVehicleData` object backs all six leaves) plus a
+  // position pair per dot. A seat whose extract predates the word feeds no
+  // pair and `hud.js` keeps the layout's own literal rect.
+  const dots = occupancy.seatDots();
+  setHudVar('Occupied/OccupiedData', dots.map(d => d.state));
+  for (let i = 0; i < 6; i++) {
+    const dot = dots[i];
+    setHudVar(`Vehicle/VehiclePos/VehiclePosX${i + 1}`, dot?.x ?? null);
+    setHudVar(`Vehicle/VehiclePos/VehiclePosY${i + 1}`, dot?.y ?? null);
+  }
   // R2-31 (corrected, verify-r2.md): hitpoints/armor live on the root PCO
   // only, one Armor shared by every seat — never a nested seat's own value.
   //
