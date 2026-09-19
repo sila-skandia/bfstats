@@ -492,3 +492,52 @@ export function damageFactor(damage, distance) {
   if (distance >= end || end <= start) return min;
   return min + (1 - min) * (end - distance) / (end - start);
 }
+
+/** Engine ProjectileTemplate default splash radius when `.con` omits `radius`. */
+export const DEFAULT_SPLASH_RADIUS = 10;
+
+/**
+ * Splash half of a projectile's damage block, or null when this round has no
+ * area pass.
+ *
+ * `damageType 1` is the HE/splash path (`Game::handleCollisionForProjectile`).
+ * Older baked GLBs may carry `material2` without `damageType`; treat a
+ * non-negative `material2` as splash-capable in that case. `material2 -1` is
+ * the authored "no splash" (fighter MGs).
+ */
+export function splashSpec(damage) {
+  if (!damage) return null;
+  const material2 = damage.material2;
+  if (!(Number.isFinite(material2) && material2 >= 0)) return null;
+  const damageType = damage.damageType;
+  if (damageType === 0) return null;
+  if (damageType !== 1 && damageType != null) return null;
+  const radius = Number.isFinite(damage.radius) && damage.radius > 0
+    ? damage.radius
+    : DEFAULT_SPLASH_RADIUS;
+  return { material2, radius, damageType: damageType ?? 1 };
+}
+
+/**
+ * Splash HP: `materialDamage(att2) * damageMod(att2, splashMaterial) * (1 - d/radius)`.
+ * Same formula as `bf42/damage.py` `splash_damage`. Returns 0 when the tables
+ * have no entry for the pairing (a Sherman splash vs tank armour).
+ */
+export function splashDamage(material2, splashMaterial, distance, radius,
+                             materials, modifiers) {
+  if (!(radius > 0) || !(distance >= 0) || distance >= radius) return 0;
+  const base = materials?.[material2]?.damage ?? materials?.[String(material2)]?.damage;
+  if (!(base > 0)) return 0;
+  const attGroup = materials?.[material2]?.attGroup
+    ?? materials?.[String(material2)]?.attGroup
+    ?? material2;
+  const defGroup = materials?.[splashMaterial]?.defGroup
+    ?? materials?.[String(splashMaterial)]?.defGroup
+    ?? splashMaterial;
+  const mod = modifiers?.[attGroup]?.[defGroup]
+    ?? modifiers?.[String(attGroup)]?.[String(defGroup)]
+    ?? modifiers?.[attGroup]?.[String(defGroup)]
+    ?? modifiers?.[String(attGroup)]?.[defGroup];
+  if (mod == null) return 0;
+  return base * mod * Math.max(0, 1 - distance / radius);
+}

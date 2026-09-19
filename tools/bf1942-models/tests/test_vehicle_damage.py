@@ -13,8 +13,9 @@ HP-1/HP-2/HP-5 for the Armor and the burn cadence, ARM-1/ARM-2 for the
     `inWater` (HP-5), and only for vehicles with `damageFromWater` set — boats
     do not drown (HP-12, parity-audit GAP D-2).
 
-Like `test_armor.py`, this copies the module plus `armor.js` into a temp dir and
-runs `node harness.mjs` — the module imports nothing else, so no vendored
+Like `test_armor.py`, this copies the module plus the two it imports
+(`armor.js`, and `effects-core.js` for the splash formula) into a temp dir and
+runs `node harness.mjs` — neither import pulls anything further, so no vendored
 three.js is needed.
 """
 
@@ -33,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 ROOT = Path(__file__).resolve().parents[1]
 MODULE = ROOT / "viewer" / "vehicle-damage.js"
 ARMOR = ROOT / "viewer" / "armor.js"
+EFFECTS_CORE = ROOT / "viewer" / "effects-core.js"
 HARNESS = Path(__file__).resolve().parent / "vehicle_damage_harness.mjs"
 
 
@@ -41,9 +43,12 @@ def run_harness() -> dict:
         raise unittest.SkipTest("node is not installed")
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
-        module = MODULE.read_text().replace("from './armor.js'", "from './armor.mjs'")
+        module = (MODULE.read_text()
+                  .replace("from './armor.js'", "from './armor.mjs'")
+                  .replace("from './effects-core.js'", "from './effects-core.mjs'"))
         (work / "vehicle-damage.mjs").write_text(module)
         shutil.copyfile(ARMOR, work / "armor.mjs")
+        shutil.copyfile(EFFECTS_CORE, work / "effects-core.mjs")
         shutil.copyfile(HARNESS, work / "harness.mjs")
         proc = subprocess.run(["node", str(work / "harness.mjs")],
                               capture_output=True, text=True, timeout=60)
@@ -209,6 +214,38 @@ class DamageSetTests(unittest.TestCase):
         self.assertEqual("Sherman", changes[0]["name"])
         self.assertEqual(50, changes[0]["threshold"])
         self.assertFalse(changes[0]["died"])
+
+
+class SplashDamageTests(unittest.TestCase):
+    """The area pass: `damageType 1` rounds hurt what stands near the blast."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["splash"]
+
+    def test_falloff_is_linear_in_distance(self) -> None:
+        # materialDamage(236) 10 x damageMod(236, 50) 2 x (1 - 5/10) = 10.
+        self.assertEqual(self.results["hurt"],
+                         [{"name": "Near", "lost": 10, "distance": 5}])
+
+    def test_the_firer_is_spared(self) -> None:
+        self.assertEqual(self.results["firerHp"], 100)
+
+    def test_who_a_blast_cannot_reach(self) -> None:
+        # `Edge` sits exactly on the radius (a hard cutoff, HP-9), `Immune`'s
+        # pairing is 0.0 in the table, `OldExtract` predates `splashMaterial`,
+        # and owner 99 is not damageable at all. None of them may appear.
+        names = {row["name"] for row in self.results["hurt"]}
+        self.assertEqual(names, {"Near"})
+
+    def test_a_round_with_no_area_pass(self) -> None:
+        self.assertEqual(self.results["directOnly"], 0)
+        self.assertEqual(self.results["noSplashMaterial"], 0)
+
+    def test_missing_tables_cost_nothing(self) -> None:
+        self.assertEqual(self.results["noTables"], 0)
 
 
 class WaterDamageTests(unittest.TestCase):
