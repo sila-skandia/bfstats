@@ -17,6 +17,34 @@ from bf42.con import (  # noqa: E402
 
 
 class ObjectLibraryTests(unittest.TestCase):
+    def test_add_skeleton_ik_keeps_the_bone_and_both_triples(self) -> None:
+        # The Willys' own two lines, verbatim. The bone is written with
+        # underscores where the skeleton has spaces, the same loose rule
+        # `bindToSkeletonPart` follows.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Land/Willy/Objects.con",
+            """
+ObjectTemplate.create AnimatedBundle WillySteeringDummy
+ObjectTemplate.addSkeletonIK Bip01_R_Hand 0.24/-0.1/-0.82 -80/60/50
+ObjectTemplate.addSkeletonIK Bip01_L_Hand -0.26/-0.1/-0.82 -80/-60/50
+ObjectTemplate.addSkeletonIK Bip01_Head not/a/number 0/0/0
+ObjectTemplate.addSkeletonIK Bip01_Spine
+""",
+        )
+
+        dummy = library.object("WillySteeringDummy")
+
+        self.assertEqual(
+            [
+                {"bone": "Bip01 R Hand", "position": (0.24, -0.1, -0.82),
+                 "rotation": (-80.0, 60.0, 50.0)},
+                {"bone": "Bip01 L Hand", "position": (-0.26, -0.1, -0.82),
+                 "rotation": (-80.0, -60.0, 50.0)},
+            ],
+            dummy.skeleton_ik_bones,
+        )
+
     def test_argumentless_command_does_not_consume_geometry_declaration(self) -> None:
         library = ObjectLibrary()
         library.add_con(
