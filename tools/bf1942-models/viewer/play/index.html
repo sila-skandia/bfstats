@@ -217,10 +217,21 @@ function setTeam(team) {
  *  parameters are ours. */
 function start() {
   if (!state.level) return;
+  location.href = launchUrl();
+}
+
+/** Where START goes. The mod travels with it: this screen resolves its mod
+ *  from `?mod=` alone, so a link someone was given (`play/?mod=xpack1`) has
+ *  no other way to tell `map.html` which game it just picked a level from,
+ *  and without it an Anzio launched from Road to Rome's screen would be
+ *  looked for in vanilla's level tree. */
+function launchUrl() {
+  if (!state.level) return null;
   const url = new URL('../map.html', location.href);
   url.searchParams.set('map', state.level.map);
   url.searchParams.set('team', String(state.team));
-  location.href = url.toString();
+  if (MOD !== 'bf1942') url.searchParams.set('mod', MOD);
+  return url.toString();
 }
 
 // --- painting ----------------------------------------------------------------
@@ -331,13 +342,7 @@ window.__menu = {
   get state() { return { ...state, levels: levels.length }; },
   get levels() { return levels.map(l => l.title); },
   select, setTeam, start, scrollBy,
-  launchUrl() {
-    if (!state.level) return null;
-    const url = new URL('../map.html', location.href);
-    url.searchParams.set('map', state.level.map);
-    url.searchParams.set('team', String(state.team));
-    return url.toString();
-  },
+  launchUrl,
   paint,
   ready: false,
 };
