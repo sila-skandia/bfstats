@@ -11349,6 +11349,18 @@ if (params.has('shots')) {
   }) : null);
   window.__stepBodies = dt => stepVehicleBodies(dt);
   window.__crashLog = () => (crashLog ??= []);
+  // The aircraft under the player, for a stepped test: inputs, state, a pose.
+  window.__plane = () => (aircraft ? {
+    setInput: (name, value) => aircraft.setInput(name, value),
+    state: () => ({ position: { ...aircraft.state.position }, velocity: { ...aircraft.state.velocity },
+      grounded: aircraft.state.grounded, throttle: aircraft.state.throttle }),
+    place: (x, y, z, vx, vy, vz) => {
+      aircraft.state.position.set(x, y, z);
+      aircraft.state.velocity.set(vx, vy, vz);
+      aircraft.applyTransform();
+    },
+    integrate: dt => aircraft.integrate(dt),
+  } : null);
   window.__wakeBody = owner => { const e = bodyWorld?.get(owner); e?.parked?.body.wake(); return !!e?.parked; };
   // Climb into a placed vehicle by owner id, and put the driven one somewhere
   // facing something: what a ramming test needs and a keyboard cannot give.

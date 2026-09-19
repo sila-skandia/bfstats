@@ -139,9 +139,16 @@ the reviewers and the integration caught:
 | vehicles are settled at load rather than on spawn | same resting pose, no visible drop |
 | statics are still met by the swept sphere | a driven vehicle against a building stops as before; only vehicle-vs-vehicle goes through the solver |
 
-**Not done yet:** crash damage for the *driven* vehicle against the ground (a
-plane flown into a hill, a jeep landing on its hull) — the parked path has it,
-the drive models still own their terrain contact; parked bodies against static
+The driven vehicle takes the ground's crash damage too (spec 9.5), without
+the response: its drive model still owns the contact, so only the damage half
+of `checkVsTerrain` runs for it. Measured: a Corsair set down at 30 m/s sinking
+1.5 m/s takes nothing; nosed in at 35 m/s and 30 degrees its propeller (material
+45) is what touches first and costs 57 of its 100 HP, after which the limiter
+and the flight model's own ground clamp spare it a second event.
+
+**Not done yet:** the drive models' *response* to a crash (a plane that noses
+in is levelled out by `flight.js`'s ground clamp instead of tumbling, so it
+survives what the game would finish off); parked bodies against static
 buildings; tanks never quite fall asleep on a slope (they creep a few
 centimetres a minute); the soldier is not yet a body, so being run over is
 still the old code; mods need their own `collision-meshes.json`
