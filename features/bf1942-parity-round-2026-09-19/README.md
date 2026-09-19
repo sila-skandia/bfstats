@@ -168,7 +168,14 @@ binding one where the two differ.
 Queued from this: a viewer stream that replaces `TURRET_SPEED_SCALE` with the
 rate formula at the input stage (`seats.js`, the mouse handler in `map.html`),
 with the +-16 clamp, per-seat-class sensitivity, and the same value fed to
-every tick of a frame. Held until a wave 3 slot frees.
+every tick of a frame. **Launched as W3-G** once W3-B and W3-D reported; it
+also researches what `BFSoldier` does with the mouse-look axis on foot, so
+`LOOK_SENS` can go the same way if the law can be read.
+
+W3-B (blasts) and W3-D (sounds) have reported and are each with an adversarial
+reviewer in their worktrees. W3-B's reviewer is told to settle, from the
+binary, where the combat area's material-7 compare gets its material from
+before that half ships on: it covers 84% of Berlin's rectangle.
 
 ### Not yet assigned
 
