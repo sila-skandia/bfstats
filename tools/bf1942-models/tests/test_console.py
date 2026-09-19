@@ -58,8 +58,8 @@ class ConsoleHarnessTests(unittest.TestCase):
     # ------------------------------------------------------------ constants
 
     def test_constructor_defaults_match_the_binaries(self) -> None:
-        """Client ctor `0x005a2230`: prompt `"> "`, `param_1[0x4e] = 0x4d`
-        (77, the edit buffer's size), `param_1[0x57] = 8` (the PageUp step).
+        """Client ctor `0x005a2230`: prompt `"> "`, `[esi+0x138] = 0x4d`
+        (77, the edit buffer's size), `[esi+0x15c] = 8` (the PageUp step).
         The drawer `FUN_00464ee0` asks `getLines` for 0x14 = 20 lines at
         `0x00464f96`.  The scrolled-up marker is the sixty `+` at
         `0x00903448`."""
@@ -70,6 +70,20 @@ class ConsoleHarnessTests(unittest.TestCase):
         self.assertEqual(20, c["viewLines"])
         self.assertEqual(60, c["scrollMarkerLength"])
         self.assertEqual("+", c["scrollMarkerChars"])
+
+    def test_the_two_deque_caps_are_1024_and_10(self) -> None:
+        """Not 10000.  `setMaxHistorySize` (lnxded `0x083edf60`) writes
+        `this+0x2c`, which is what `output` compares the scrollback deque
+        against before popping (`0x083dd018`); the constructor sets it to
+        `0x400` (lnxded `0x083dc037`, client `0x005a224c`).
+        `setMaxCommandHistorySize` (`0x083edff0`) writes `this+0x5c`, the cap
+        of the Up/Down deque, and the constructor sets that to 10 (lnxded
+        `0x083dc09c`, client `0x005a226e`).  The 10000 the constructor also
+        writes (`[edi+0x1bc]` / `[esi+0x2fc]`) is neither of them: no reader
+        in `handleCommand`, `output` or `getLines` touches it."""
+        c = self.results["constants"]
+        self.assertEqual(1024, c["maxScrollback"])
+        self.assertEqual(10, c["maxCommandHistory"])
 
     # -------------------------------------------------------------- capture
 
@@ -88,10 +102,34 @@ class ConsoleHarnessTests(unittest.TestCase):
             "> ",
         ], self.results["capture"]["tail"])
 
-    def test_the_line_counter_is_bumped_after_the_error_prints(self) -> None:
-        """lnxded `0x083e9f89` sits past the switch, so the number printed is
-        how many lines the console had already run, not counting this one."""
-        self.assertEqual(3, self.results["capture"]["lineNumberAfter"])
+    def test_a_typed_line_does_not_move_the_line_counter(self) -> None:
+        """The increment at lnxded `0x083e9f89` sits past the dispatch switch
+        AND behind `cmp BYTE PTR [ebp-0x8b5],0` (`0x083e9f7d`) -- the fifth
+        bool parameter of `executeLine`, stored from `ebp+0x24` at
+        `0x083e9b0d`.  The client is the same, incrementing `[esi+0x328]`
+        behind `cmp byte ptr [ESP+0x768]` at `0x005a12a5`.
+
+        `updateAsciiKey`'s Enter branch pushes `0, 0, 1, 1, 1` (lnxded
+        `0x083eabe5`, client `0x005a1381`), so that bool is false for every
+        line a player types.  Only `run` passes it true (`0x083ecafd`) -- and
+        `run` saves, zeroes and restores the counter around the file
+        (`0x083ec6d3` / `0x083ec6f1` / `0x083ecbac`), as does `include`.
+
+        So `Error  (N):` is a line number inside a running `.con` file, and
+        at the prompt it is a constant: the same N on every error."""
+        cap = self.results["capture"]
+        self.assertEqual(2, cap["lineNumberAfter"])
+        self.assertEqual("Error  (2): game.showHud", cap["secondError"])
+
+    def test_a_fresh_console_prints_zero_and_keeps_printing_zero(self) -> None:
+        """Which is what the page itself does.  The owner's capture reads (2)
+        because that client's counter held 2; this reconstruction cannot
+        derive that value, and inventing a starting number would be a lie
+        about a counter that does not count."""
+        f = self.results["freshCounter"]
+        self.assertEqual(["Error  (0): game.showHud",
+                          "Error  (0): game.showHud"], f["lines"])
+        self.assertEqual(0, f["lineNumber"])
 
     # ---------------------------------------------------------- the parser
 
@@ -127,10 +165,27 @@ class ConsoleHarnessTests(unittest.TestCase):
         self.assertEqual(["a", "b"], self.results["args"]["runs"])
 
     def test_an_equals_between_method_and_argument_is_dropped(self) -> None:
-        """The viewer's one deliberate divergence.  `getArgs` has no `=`
-        case, so the real engine would hand `show.dev = 1` two arguments;
-        the page accepts the spelling its own users were told to type."""
-        self.assertEqual(["1"], self.results["parse"]["equals"]["args"])
+        """The viewer's one deliberate divergence.  The whole server binary
+        compares a token against the `"="` literal (`0x086e6da4`) in three
+        places, all in `handleCommand` and all on the `var` / `const` /
+        `v_`-assignment paths: `0x083e14c3`, `0x083e1a43`, `0x083e78ce`.
+        There is no `cmp ...,0x3d` in `handleCommand` at all, and `getArgs`
+        tests only 0x20 and 0x22 -- so the real engine hands `show.dev = 1`
+        two arguments.  The page accepts the spelling its own users were
+        told to type."""
+        p = self.results["parse"]
+        self.assertEqual(["1"], p["equals"]["args"])
+        self.assertEqual([], p["equalsAlone"]["args"])
+
+    def test_the_equals_divergence_cannot_touch_any_other_line(self) -> None:
+        """It is stripped off the raw argument text by a regex anchored at
+        the start and requiring whitespace or end after it, so a quoted
+        `"="`, an `=` glued to its value and an `=` in any later position all
+        reach the method exactly as the engine would pass them."""
+        p = self.results["parse"]
+        self.assertEqual(["=", "tail"], p["equalsQuoted"]["args"])
+        self.assertEqual(["=1"], p["equalsGlued"]["args"])
+        self.assertEqual(["x", "=", "y"], p["equalsLater"]["args"])
 
     # -------------------------------------------------------- the dispatcher
 
@@ -183,6 +238,14 @@ class ConsoleHarnessTests(unittest.TestCase):
                           "a.b 2", "a.b 3", ""], h["walk"])
         self.assertEqual(3, h["size"])
 
+    def test_the_command_history_keeps_only_the_last_ten(self) -> None:
+        """The constructor's `[edi+0x5c] = 0xa` (lnxded `0x083dc09c`, client
+        `[esi+0x34]` `0x005a226e`), the member `setMaxCommandHistorySize`
+        writes."""
+        h = self.results["history"]
+        self.assertEqual(10, h["cappedSize"])
+        self.assertEqual("a.b 15", h["cappedOldest"])
+
     def test_backspace_drops_one_character_and_delete_clears_the_line(self) -> None:
         """There is no cursor in this console: Backspace (`0x083eab93`)
         decrements the length, Delete (`0x083eab80`) zeroes it."""
@@ -204,13 +267,46 @@ class ConsoleHarnessTests(unittest.TestCase):
         self.assertEqual([0, 1, 2, 6, 0], s["steps"])
         self.assertEqual(7, s["pages"])
 
-    def test_scrolling_up_replaces_the_prompt_with_the_plus_marker(self) -> None:
-        """lnxded `0x083ec170` drops one scrollback line when the offset is
-        non-zero and `0x083ec28f` pushes the sixty `+` in the prompt's
-        place."""
+    def test_scrolling_up_adds_the_plus_marker_above_the_prompt(self) -> None:
+        """Not in the prompt's place.  lnxded `0x083ec170` drops one
+        scrollback line when the offset is non-zero and `0x083ec28f` pushes
+        the sixty `+`; then the marker block falls out at `0x083ec2cd` into
+        the same `0x083ec1ff` the unscrolled path reaches, which appends the
+        edit buffer to the prompt and pushes that too.  The client agrees:
+        `0x005a2037` skips only the marker, `0x005a2060` always runs.  So the
+        view is still `n` lines and you can still see what you are typing."""
         s = self.results["scroll"]
-        self.assertEqual("+" * 60, s["scrolledTail"])
-        self.assertEqual("> ", s["bottomTail"])
+        self.assertEqual(20, s["scrolledCount"])
+        self.assertEqual("+" * 60, s["scrolledMarker"])
+        self.assertEqual("> typing", s["scrolledTail"])
+        self.assertEqual("> typing", s["bottomTail"])
+
+    def test_any_other_key_snaps_the_view_back_to_the_bottom(self) -> None:
+        """The common tail at lnxded `0x083ea973` multiplies the scroll
+        offset by `(ch == 0x02 || ch == 0x06)` and the history index by
+        `(ch == 0x10 || ch == 0x0e)` -- the two `imul` at `0x083ea9a0` and
+        `0x083ea98b`.  Every branch of `updateAsciiKey` reaches it, Enter
+        (`0x083eac29`) and Tab (`0x083eab77`) included."""
+        t = self.results["tailResets"]
+        self.assertEqual(1, t["scrolled"])
+        self.assertEqual(0, t["afterTyping"])
+        self.assertEqual(0, t["afterBackspace"])
+        self.assertEqual(0, t["pageKeysKeepIt"])   # up then down, back to 0
+        self.assertEqual(0, t["afterHistory"])
+        self.assertEqual("a.b 1", t["historyLine"])
+
+    def test_output_splits_on_newlines_and_at_the_line_size(self) -> None:
+        """`OldConsole::output` (lnxded `0x083dcf50`) closes the current line
+        on NUL, on `\\n` (`0x083dcf9c`) and on the buffer filling -- `cmp
+        ecx,[edi+0x160]` / `jle` at `0x083dcfce`, where `[edi+0x160]` is
+        `maxLineSize`.  The `jle` is why a chunk is 78 characters and not 77.
+        Then the deque is trimmed from the front against `this+0x2c`
+        (`0x083dd018`)."""
+        o = self.results["output"]
+        self.assertEqual(["one", "two"], o["newlines"])
+        self.assertEqual([78, 78, 3], o["wrapped"])
+        self.assertEqual(1024, o["capped"])
+        self.assertEqual("l30", o["oldestKept"])
 
     # ---------------------------------------------------------- the band
 
@@ -275,6 +371,16 @@ class ConsoleHarnessTests(unittest.TestCase):
                          c["ambiguous"]["printed"])
         self.assertFalse(c["none"]["took"])
 
+    def test_tab_is_swallowed_even_when_nothing_completes(self) -> None:
+        """`updateAsciiKey`'s 0x09 branch (`0x083eab6e`) calls
+        `autoCompletion` and returns through the same tail as every other
+        key: the game never sees Tab.  Neither may the browser -- an
+        unprevented Tab moves focus into the hidden `#side` panel sitting
+        behind the console."""
+        c = self.results["completion"]
+        self.assertTrue(c["noneKey"])
+        self.assertTrue(c["noneEvent"])
+
     # ------------------------------------------------------------- input
 
     def test_an_open_console_swallows_game_keys_and_a_closed_one_does_not(self) -> None:
@@ -300,6 +406,31 @@ class ConsoleHarnessTests(unittest.TestCase):
         self.assertTrue(s["isToggle"])
         self.assertFalse(s["isToggleRepeat"])
         self.assertFalse(s["isToggleOther"])
+
+    def test_the_toggle_is_the_physical_key_not_the_character(self) -> None:
+        """`event.code` is the physical key regardless of layout, which is
+        the right analogue of `IDKey_Grave`: the engine's control map names a
+        DirectInput scancode, not a character.  The key left of `1` prints a
+        superscript two on AZERTY and a circumflex on QWERTZ, and all three
+        layouts open the console there; a `~` produced by some other physical
+        key does not."""
+        s = self.results["swallow"]
+        self.assertTrue(s["isToggleAzerty"])
+        self.assertTrue(s["isToggleQwertz"])
+        self.assertFalse(s["isToggleTildeElsewhere"])
+
+    def test_every_game_key_is_eaten_while_the_console_is_up(self) -> None:
+        """WASD, use, fire, the view and map keys and the weapon row all
+        become characters in the edit line; modifiers and function keys stay
+        with the page, which is what lets Escape close the console and the
+        browser keep its own shortcuts."""
+        g = self.results["swallow"]["gameKeys"]
+        for code in ("KeyW", "KeyA", "KeyS", "KeyD", "KeyE", "Space",
+                     "KeyC", "KeyM", "KeyN", "Digit1", "Digit5"):
+            self.assertTrue(g[code], code)
+        for code in ("ShiftLeft", "ControlLeft", "F5", "Home"):
+            self.assertFalse(g[code], code)
+        self.assertEqual("wasde cmn15", self.results["swallow"]["typed"])
 
 
 if __name__ == "__main__":
