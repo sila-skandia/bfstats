@@ -59,20 +59,31 @@ import {
 } from './menu-screen.js';
 import { loadMods, remember, servable, stored, VANILLA, withMod } from '../mods.js';
 import { createLoadingAudioController } from '../audio.js';
+import { loadHudPaths, hudPaths as plainHudPaths } from '../hud-pack.js';
 import {
   hitTestPanel, paintPanel, panelBounds, placeInColumn,
   scrollBy as pickerScrollBy,
 } from './mod-picker.js';
 
 const qs = new URLSearchParams(location.search);
-// The pack the extractor writes. It ships to `maps/_shared/hud/menu/`,
-// beside the spawn screen's own; `?pack=` points a checkout at a scratch
-// build of it without moving anything.
-const PACK = qs.get('pack') || '../maps/_shared/hud/menu';
-// The active mod decides the real default (`?maps=` still wins outright,
-// for pointing a checkout at a scratch build the same way `?pack=` does).
-const MAPS_OVERRIDE = qs.get('maps');
 const bust = () => (qs.has('nocache') ? `?t=${Date.now()}` : '');
+// Which game's Instant Battle screen this is is `activeMod`, resolved in
+// `load()` by `mods.js`'s own precedence (`?mod=`, then the remembered one).
+// A mod lists its own levels and draws whatever chrome it ships of its own;
+// everything it did not repaint still comes from the vanilla pack
+// (`../hud-pack.js`). The screen itself is vanilla's on every installed mod
+// -- only Secret Weapons ships a menu page at all, and not one of these
+// three -- so in practice what a mod changes here is the level list, its
+// thumbnails, the background plate and the nation flags on the preview.
+// Until `load()` knows the mod this resolves everything to vanilla's pack.
+let hudPaths = plainHudPaths('bf1942', null, { root: '../' });
+// `?pack=` still points a checkout at a scratch build of the menu pack
+// without moving anything; it wins over the resolver, whole. `?maps=` does
+// the same for the level tree.
+const SCRATCH_PACK = qs.get('pack');
+const packUrl = rel => (SCRATCH_PACK ? `${SCRATCH_PACK}/${rel}`
+                                     : hudPaths.menuUrl(rel));
+const MAPS_OVERRIDE = qs.get('maps');
 
 const canvas = document.getElementById('screen');
 const ctx = canvas.getContext('2d');
@@ -131,14 +142,14 @@ const ready = img => (img && img.complete && img.naturalWidth ? img : null);
 const env = {
   texture: name => {
     const entry = layout?.textures?.[name];
-    return entry ? ready(image(`${PACK}/${entry.file}`)) : null;
+    return entry ? ready(image(packUrl(entry.file))) : null;
   },
   thumbnail: level => {
-    // Vanilla's own menu thumbnail when there is one; otherwise (every
-    // other mod - `menu-levels.json` only ever lists vanilla's levels, see
-    // `buildLevels`) the level's own loading-screen background, which every
+    // The game's own menu thumbnail when the pack has one (vanilla's, or a
+    // mod's own through `hud-pack.js`); otherwise - a mod with no pack, see
+    // `buildLevels` - the level's own loading-screen background, which every
     // `maps.json` entry carries.
-    if (level?.thumbnail) return ready(image(`${PACK}/${level.thumbnail}`));
+    if (level?.thumbnail) return ready(image(packUrl(level.thumbnail)));
     if (level?.previewBg) return ready(image(`${MAPS}/${level.previewBg}`));
     return null;
   },
@@ -189,15 +200,15 @@ const env = {
  *  with bot support (`level.singlePlayer`); this site has no bots and
  *  launches Conquest, so hiding the rest would only lose them.
  *
- *  `menuLevels` is `menu/SkirmishMenu`'s own `SkirmishLevelsList` - vanilla's
- *  levels, always, because it comes from `Mods/bf1942/Archives` regardless
- *  of which mod is active. A mod's own levels were never in it, so a mod
- *  other than vanilla skips the join and lists its own `maps.json` outright
- *  - no bot-support flag or nation flags to carry over, and no menu
+ *  `menuLevels` is the active game's own list: vanilla's, or the one a
+ *  mod's pack carries (`hud-pack.js`). A mod with no pack has none - what
+ *  `packUrl` hands back then is vanilla's list, which never held its levels
+ *  - so `joined` is false, the join is skipped and its `maps.json` is listed
+ *  outright: no bot-support flag or nation flags to carry over, and no menu
  *  thumbnail (`env.thumbnail` falls back to the loading-screen background
  *  for those). */
-function buildLevels(menuLevels, manifest, vanilla) {
-  if (!vanilla) {
+function buildLevels(menuLevels, manifest, joined) {
+  if (!joined) {
     return manifest
       .map(entry => ({
         map: entry.name,
@@ -234,15 +245,17 @@ async function load() {
   if (activeMod.id === wanted) remember(activeMod.id);
   picker = { mods: available, activeId: activeMod.id, scroll: 0, hover: null };
   MAPS = MAPS_OVERRIDE || `../${activeMod.paths.maps}`;
+  // One `pack.json` fetch; a mod without a pack resolves to vanilla's.
+  hudPaths = await loadHudPaths(activeMod.id, { bust, root: '../' });
   menuAudio.attachUnmuteButton(document.body);
   menuAudio.start(`${MAPS}/_shared/music/menu.mp3`, '../maps/_shared/music/menu.mp3');
 
   const [skirmishLayout, rawModLayout] = await Promise.all([
-    json(`${PACK}/menu-layout.json`),
+    json(packUrl('menu-layout.json')),
     // Absent on a checkout that hasn't run extract_custom_game_layout.py -
     // the panel just doesn't draw, same fallback shape as a mod with no
     // maps.json.
-    json(`${PACK}/custom-game-layout.json`).catch(() => null),
+    json(packUrl('custom-game-layout.json')).catch(() => null),
   ]);
   layout = skirmishLayout;
   // Into the column `SHOW_BOT_SETTINGS = false` leaves blank - the file
@@ -252,20 +265,25 @@ async function load() {
     layout.textures = { ...layout.textures, ...modLayout.textures };
     layout.fontFiles = { ...layout.fontFiles, ...modLayout.fontFiles };
   }
+  // The game's own list for this mod: vanilla's always, and a mod's when its
+  // pack carries one (`extract_hud_mods.py` writes it beside the thumbnails).
+  // A mod with no pack of its own lists its `maps.json` outright instead.
+  const hasMenuLevels = activeMod.id === VANILLA.id
+    || Boolean(SCRATCH_PACK) || hudPaths.owns('menu/menu-levels.json');
   const [menuLevels, manifest] = await Promise.all([
-    json(`${PACK}/menu-levels.json`),
+    json(packUrl('menu-levels.json')),
     json(`${MAPS}/maps.json`).catch(() => []),
   ]);
-  levels = buildLevels(menuLevels, manifest, activeMod.id === VANILLA.id);
+  levels = buildLevels(menuLevels, manifest, hasMenuLevels);
   await Promise.all(Object.entries(layout.fontFiles || {}).map(async ([id, entry]) => {
-    const meta = await json(`${PACK}/${entry.glyphs}`);
-    const img = image(`${PACK}/${entry.file}`);
+    const meta = await json(packUrl(entry.glyphs));
+    const img = image(packUrl(entry.file));
     await img.decode().catch(() => {});
     fonts.set(id, { id, meta, img });
   }));
   // Every plate up front: the screen is a couple dozen small textures and
   // paints once.
-  for (const entry of Object.values(layout.textures || {})) image(`${PACK}/${entry.file}`);
+  for (const entry of Object.values(layout.textures || {})) image(packUrl(entry.file));
   for (const mod of available) if (mod.icon) image(`../${mod.icon}`);
   select(0);
   status.textContent = levels.length ? ''
@@ -282,7 +300,7 @@ function select(index) {
   const box = listBox(layout);
   if (box) state.scroll = scrollTo(layout, box, state.scroll, state.index, levels.length);
   for (const level of [state.level]) {
-    if (level?.thumbnail) image(`${PACK}/${level.thumbnail}`);
+    if (level?.thumbnail) image(packUrl(level.thumbnail));
   }
   paintSoon();
 }
@@ -300,6 +318,9 @@ function start() {
   location.href = launchUrl();
 }
 
+/** Where START goes. The mod travels with it: without it an Anzio launched
+ *  from Road to Rome's screen would be looked for in vanilla's level tree
+ *  whenever the remembered mod and the link's disagree. */
 function launchUrl() {
   if (!state.level) return null;
   const url = new URL('../map.html', location.href);
