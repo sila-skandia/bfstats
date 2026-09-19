@@ -78,6 +78,50 @@ def vanilla_twin(rel: Path, vanilla_hud: Path, vanilla_fonts: Path) -> Path:
     return vanilla_hud / rel
 
 
+def previous_pack(out: Path) -> set[str] | None:
+    """What the last run of this script wrote into `out`, from its own
+    `pack.json`, or None if `out` holds no pack.
+
+    This is the only list of files this script is allowed to delete. A
+    directory with no `pack.json` was not written by a previous run, so
+    nothing in it is ours to remove -- see `prune`."""
+    manifest = out / "pack.json"
+    if not manifest.is_file():
+        return None
+    try:
+        files = json.loads(manifest.read_text()).get("files")
+    except (ValueError, OSError):
+        return None
+    return set(files) | {"pack.json"} if isinstance(files, list) else None
+
+
+def prune(out: Path, keep: set[str]) -> None:
+    """Remove the files a previous run wrote that this one does not, and
+    nothing else.
+
+    The old code walked `out` and unlinked everything it had not just
+    written, and `shutil.rmtree`'d the whole directory when a mod turned out
+    to differ from vanilla in nothing. Pointed at a directory that is not a
+    pack -- `--mod bf1942` resolved `--out` to the shared vanilla pack, which
+    in a worktree is a symlink into the main checkout -- that deleted 330
+    vanilla files and anything else living beside them. Now only what a
+    previous `pack.json` claims is ever unlinked.
+    """
+    previous = previous_pack(out)
+    if previous is None:
+        return
+    for rel in sorted(previous - keep):
+        path = out / rel
+        if path.is_file():
+            path.unlink()
+    for directory in sorted((p for p in out.rglob("*") if p.is_dir()),
+                            key=lambda p: len(p.parts), reverse=True):
+        if not any(directory.iterdir()):
+            directory.rmdir()
+    if out.is_dir() and not any(out.iterdir()):
+        out.rmdir()
+
+
 def run_steps(mod: str, game_dir: Path, staging: Path, force: bool) -> list[str]:
     """Run the five extractors into `staging`. Returns the steps that failed."""
     failed: list[str] = []
@@ -159,6 +203,12 @@ def string_diff(staging: Path, vanilla_hud: Path) -> dict:
 
 def build(mod: str, game_dir: Path, out: Path, vanilla_hud: Path,
           vanilla_fonts: Path, force: bool, keep: Path | None = None) -> dict:
+    if out.resolve() == vanilla_hud.resolve() or \
+            out.resolve() == vanilla_fonts.resolve():
+        sys.exit(f"refusing to write a mod pack into the vanilla pack itself "
+                 f"({out}). A pack is the difference from vanilla, so its "
+                 f"output directory can never be the thing it is compared "
+                 f"against.")
     staging_ctx = None
     if keep is not None:
         keep.mkdir(parents=True, exist_ok=True)
@@ -185,14 +235,12 @@ def build(mod: str, game_dir: Path, out: Path, vanilla_hud: Path,
             # fetches `pack.json`, gets a 404 and draws vanilla's chrome,
             # which is the right answer and costs one request.
             if out.exists():
-                shutil.rmtree(out)
+                prune(out, set())
             return manifest
         out.mkdir(parents=True, exist_ok=True)
         wanted = set(changed) | {"pack.json"}
-        for existing in sorted(out.rglob("*")):
-            if existing.is_file() and \
-                    existing.relative_to(out).as_posix() not in wanted:
-                existing.unlink()
+        prune(out, wanted)
+        out.mkdir(parents=True, exist_ok=True)
         for rel in changed:
             dest = out / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -225,6 +273,10 @@ def main() -> None:
 
     game_dir = args.game_dir.expanduser()
     mod_id = MenuSources(mod_chain(game_dir, args.mod)).mod_id
+    if mod_id == "bf1942":
+        sys.exit("bf1942 has no pack: the vanilla pack IS the baseline every "
+                 "mod pack is the difference from. Build it with the five "
+                 "extractors directly (extract_hud_pack.py and friends).")
     out = args.out or hud_dir_for(mod_id)
     manifest = build(args.mod, game_dir, out, args.vanilla,
                      args.vanilla_fonts, args.force, args.staging)
