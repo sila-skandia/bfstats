@@ -298,6 +298,13 @@ const STATIC_HOLD_SPIN = 0.05;
  */
 const STATIC_HOLD_SETTLE = 0.02;
 
+/**
+ * And it waits a whole second with all three of the above holding together,
+ * because a hull dropped onto a slope crosses every one of them transiently
+ * on the way down. Nothing in the engine has a dwell at all — its latch is a
+ * per-tick velocity constraint — so this is the viewer's own. [free,
+ * numerics]
+ */
 const STATIC_HOLD_DWELL = 1.0;
 
 function staticHold(vehicle, s, accel, h, drive, braking, loaded, budget,
@@ -1760,6 +1767,8 @@ export class EngineState {
     }
     // A frame longer than eight engine ticks is a stall, not a simulation;
     // drop the backlog rather than spending minutes of spool-up in one frame.
+    // The engine has no such cap (a stalled server just runs behind), so the
+    // 8 is this file's own. [free, numerics]
     if (ticks >= 8) this._clock = 0;
   }
 
