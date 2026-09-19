@@ -1062,19 +1062,19 @@ def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
         if node is not None:
             skinned_roots.append(node)
 
-    # A seat pose's own bind space has the spine along +Z and the knees along
-    # +Y — measured, not assumed: in `USMarineSoldier__SitInVehicle` with the
-    # root rotation dropped, the head sits 0.64 m from the pelvis in +Z and the
-    # foot 0.68 m in +Y. So the root has to take +Z to +Y (stand him up) and
-    # +Y to -Z (face him down the vehicle, which is Refractor +Z mirrored),
-    # and `ypr(0, 90, 0)` is the only one of the nine plausible candidates that
-    # does both.
+    # The rotation that stands a seat pose up and faces it down the vehicle.
     #
-    # This was `ypr(180, 0, 0)`, which stands him on his back with his knees in
+    # **Chosen by measurement in the map page, not derived.** This was
+    # `ypr(180, 0, 0)`, which lays the soldier on his back with his knees in
     # the air — every seat pose, passengers included, from the day the seat
-    # path was written. The comment it replaces reasoned about the *stance*
-    # export's bind space, which is a different one: that export pitches the
-    # other way and does not parent its skinned meshes under the root at all.
+    # path was written; the comment it replaces reasoned about the *stance*
+    # export's bind space, which is a different one (that export pitches the
+    # other way and does not parent its skinned meshes under the root at all).
+    # With the value below, loaded on Wake, the driver's pelvis sits 0.03 m
+    # from `WillySeat`, his head 0.641 m above it, his knees 0.467 m forward
+    # and his feet 0.224 m below the pelvis — and both hands solve onto the
+    # wheel with zero error. See `SeatPoseOrientationTests` for why it is
+    # pinned rather than computed.
     root = builder.add_node(gltf.Node(
         name=f"{soldier} in {upper_state}",
         rotation=gltf.quat_from_ypr(180.0, -90.0, 0.0),
