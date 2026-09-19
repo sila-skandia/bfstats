@@ -916,10 +916,11 @@ export class GroundVehicle extends Vehicle {
         aLat *= grip.scale;
       }
       // `feedbackLoop` sees the CLAMPED change, per engine tick, along this
-      // wheel's own forward axis (TANK-13). Every contacting part of an
-      // engine-bearing vehicle feeds it, so the two free-rolling fronts
-      // contribute the zeroes that halve a car's running mean.
-      engine.sample(aLong / ENGINE_TICK_HZ);
+      // wheel's own forward axis (TANK-13) — and only from a
+      // `c_PGFEngineGrip` wheel, because the grip dispatch at `0x0825bafe`
+      // sends only the `0x4` branch to the ancestor walk that finds the
+      // engine at all.
+      if (wheel.driven) engine.sample(aLong / ENGINE_TICK_HZ);
       const fLong = aLong * gShare;
       const fLat = aLat * gShare;
 
@@ -1664,11 +1665,20 @@ export class EngineState {
    * v4-gearbox verdict states them inverted. Physically the max is the one
    * that can hold an engine down, and the pair is symmetric in reverse.
    *
-   * `addFriction` calls this for **every** contacting part of an
-   * engine-bearing vehicle (`0x0825bc13` tests only that a `PhysicsEngine`
-   * was found, and both arms of the Coulomb clamp reach it), not only for
-   * driven wheels — so a jeep's two free-rolling RollGrip fronts, whose dV is
-   * purely lateral, feed two zeroes into the car's running mean and halve it.
+   * **Only a `c_PGFEngineGrip` wheel feeds it.** `addFriction` dispatches on
+   * the grip byte at `0x0825baf1`-`0x0825bafe` (`mov dl,[esi+0xb4];
+   * and eax,0x4; test al,al; jne 0x0825c1b0`), and the `0x4` branch is the
+   * only one that walks the node's ancestors for a `PhysicsEngine`
+   * (`0x0825c1b0`-`0x0825c1fa`, storing it at `0x0825c556`). A RollGrip wheel
+   * takes the `0x2` branch at `0x0825bb04` instead, so the pointer stays null
+   * and the guard at `0x0825bc19` skips the call. The load is therefore the
+   * mean over the DRIVEN wheels alone.
+   *
+   * Getting this wrong is not academic: counting a jeep's two free-rolling
+   * fronts as zero samples halves the load, which pins the revs at
+   * `2*(1 - 0.5)` = 1.0 — just above `gearUp 0.95` — so the box shifts
+   * straight to top under full wheelspin and stays there. On Wake that jeep
+   * never left second gear's worth of speed; it sat in fifth doing donuts.
    *
    * @param {number} dvLong metres per second per **engine tick**
    */
@@ -2336,10 +2346,11 @@ export class TrackedVehicle extends Vehicle {
         aLat *= grip.scale;
       }
       // `feedbackLoop` sees the CLAMPED change, as a per-engine-tick delta-v
-      // along this wheel's own forward axis (TANK-13). Every contacting part
-      // of an engine-bearing vehicle feeds it, so a free-rolling or dummy
-      // wheel contributes its honest zero.
-      engine.sample(aLong / ENGINE_TICK_HZ);
+      // along this wheel's own forward axis (TANK-13) — and only from a
+      // `c_PGFEngineGrip` wheel (the `0x4` branch at `0x0825bafe`), so a
+      // half-track's free-rolling front axle and every dummy roller are
+      // absent from it rather than present as zeroes.
+      if (wheel.driven && !wheel.dummy) engine.sample(aLong / ENGINE_TICK_HZ);
       const fLong = aLong * gShare;
       const fLat = aLat * gShare;
 
