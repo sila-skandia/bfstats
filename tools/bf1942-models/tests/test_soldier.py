@@ -155,13 +155,20 @@ class SoldierModuleTests(unittest.TestCase):
 
     def test_one_second_of_each_gait_covers_its_table_speed(self) -> None:
         # Measured through `Soldier.step`, over real ground, against a real
-        # collider — not read back off a constant. The shortfall in the third
-        # decimal is the soldier's own `drag 1.0`, which is shipped and real.
+        # collider — not read back off a constant. Two corrections, both real
+        # and both shipped: the soldier's own `drag 1.0` eats the third
+        # decimal, and PHY-6's movement ramp eats the first 0.098 s of every
+        # standing start, so a "second" of run is 0.902 s of it.
         travel = self.results["travel"]
-        for gait, expected in (("run", 6.0), ("back", 4.0), ("walk", 2.0),
-                               ("crouch", 2.0), ("prone", 1.0),
-                               ("strafe", 4.0), ("crouchStrafe", 2.0)):
-            self.assertAlmostEqual(expected, travel[gait], places=2, msg=gait)
+        clear = 1.0 - self.results["rampDeficitSeconds"]
+        for gait, table in (("run", 6.0), ("back", 4.0), ("walk", 2.0),
+                            ("crouch", 2.0), ("prone", 1.0),
+                            ("strafe", 4.0), ("crouchStrafe", 2.0)):
+            self.assertAlmostEqual(table * clear, travel[gait], places=2, msg=gait)
+
+    def test_a_second_at_cruise_is_the_table_speed_exactly(self) -> None:
+        # The same second once the ramp has saturated: no deficit, just drag.
+        self.assertAlmostEqual(6.0, self.results["travelCruising"], places=2)
 
     def test_the_backpedal_is_two_thirds_of_the_run(self) -> None:
         # The most visible single consequence of the real table, and the easiest
@@ -214,8 +221,10 @@ class SoldierModuleTests(unittest.TestCase):
         self.assertGreaterEqual(10 - slide["x"], 0.30)
         self.assertLessEqual(10 - slide["x"], 0.32)
         # The into-wall component is removed and the along-wall one survives at
-        # full speed: 6 / sqrt(2) = 4.24 m/s for three seconds is 12.7 m.
-        self.assertAlmostEqual(slide["alongSpeed"] * 3, slide["movedAlong"],
+        # full speed: 6 / sqrt(2) = 4.24 m/s for three seconds, less the
+        # movement ramp's own 0.098 s of standing start, is 12.3 m.
+        clear = 3.0 - self.results["rampDeficitSeconds"]
+        self.assertAlmostEqual(slide["alongSpeed"] * clear, slide["movedAlong"],
                                delta=0.05)
 
     def test_a_kerb_under_the_step_height_is_climbed(self) -> None:
@@ -235,9 +244,11 @@ class SoldierModuleTests(unittest.TestCase):
 
     def test_a_walkable_slope_is_climbed_and_the_feet_follow_it(self) -> None:
         ramp = self.results["rampClimb"]
-        # A hundred frames of run from x = 21 is 10 m, which is still on the
-        # 20-degree ramp (it spans x 20..32).
-        self.assertAlmostEqual(31.0, ramp["x"], delta=0.1)
+        # A hundred frames of run from x = 21 is 10 m, less the movement
+        # ramp's 0.59 m of standing start — still on the 20-degree ramp (it
+        # spans x 20..32), which is what the test is about.
+        clear = 100 / 60 - self.results["rampDeficitSeconds"]
+        self.assertAlmostEqual(21.0 + 6.0 * clear, ramp["x"], delta=0.1)
         self.assertAlmostEqual(ramp["expected"], ramp["y"], places=3)
 
     def test_a_slope_past_the_limit_is_refused(self) -> None:
@@ -274,13 +285,63 @@ class SoldierModuleTests(unittest.TestCase):
 
     def test_the_jump_arc_is_the_engines_gravity(self) -> None:
         jump = self.results["jump"]
-        # The take-off speed is a tunable and `physics.js` labels it as one.
-        # What is asserted is the arc that speed produces under this gravity:
-        # ~0.99 m, where Earth's would give 1.49 m. Euler at 60 Hz undershoots
-        # the closed form slightly, which is the engine's answer not calculus's.
-        self.assertAlmostEqual(jump["predicted"], jump["apex"], delta=0.04)
+        # PHY-1: the take-off is a read 6.0 m/s impulse, not a tunable. What is
+        # asserted here is the arc it produces under *this* gravity — 1.17 m at
+        # the viewer's 60 Hz, where Earth's would give 1.83 m. The engine's own
+        # 30 Hz figure (1.12 m) is pinned in `test_physics.py`, which can step
+        # the body at an arbitrary rate; this one rides `Soldier.step`.
+        self.assertAlmostEqual(1.166, jump["apex"], delta=0.02)
         self.assertLess(jump["apex"], jump["underEarthGravity"] - 0.4)
+        # And short of the continuum answer, because four sub-steps are not
+        # calculus.
+        self.assertLess(jump["apex"], jump["predicted"])
         self.assertTrue(jump["landed"])
+
+    def test_the_jump_is_the_same_on_a_phone_and_a_144hz_monitor(self) -> None:
+        # `Soldier.step` takes a frame dt and spends it through a `FixedStep`
+        # accumulator running whole 60 Hz ticks, so the sim is the frame
+        # rate's business only in how often it is *sampled*. Four rates, one
+        # apex. (Retail is not like this: `Setup::mainLoop` integrates with the
+        # measured elapsed time — see the harness comment. The divergence is
+        # deliberate and is what makes a recorded input stream replayable.)
+        runs = {r["fps"]: r for r in self.results["frameRateJump"]}
+        self.assertEqual({30, 60, 144, 23.7}, set(runs))
+        apexes = [r["apex"] for r in runs.values()]
+        self.assertAlmostEqual(min(apexes), max(apexes), places=2)
+        # 30, 60 and 144 all land whole ticks on frame boundaries, so those
+        # three are exact rather than merely close.
+        self.assertEqual(runs[30]["apex"], runs[60]["apex"])
+        self.assertEqual(runs[60]["apex"], runs[144]["apex"])
+        for fps, run in runs.items():
+            self.assertTrue(run["landed"], msg=str(fps))
+            self.assertAlmostEqual(0.0, run["y"], places=6, msg=str(fps))
+            self.assertAlmostEqual(0.79, run["airTime"], delta=0.04, msg=str(fps))
+
+    def test_a_fall_is_billed_the_same_at_any_frame_rate(self) -> None:
+        # Stronger than the jump, and it has to be: the landing happens on one
+        # particular tick whatever the frames around it were, so every number
+        # `fall-damage.js` is fed must be bit-identical. A frame rate that
+        # changed the drop or the impact speed would change how much health an
+        # 8 m fall costs, which is the most player-visible thing in HP-14.
+        runs = self.results["frameRateFall"]
+        self.assertEqual(4, len(runs))
+        for run in runs:
+            self.assertIsNotNone(run)
+            self.assertEqual(runs[0]["impactSpeed"], run["impactSpeed"])
+            self.assertEqual(runs[0]["fallHeight"], run["fallHeight"])
+            self.assertEqual(runs[0]["cosTheta"], run["cosTheta"])
+        self.assertAlmostEqual(8.0, runs[0]["fallHeight"], places=6)
+
+    def test_the_movement_ramp_covers_the_same_ground_at_any_frame_rate(self) -> None:
+        # PHY-6's register is stepped by `dt`, so a second of held W is a
+        # second of held W whether it arrives in 24 frames or 144. The
+        # tolerance is one tick of run, which is all the leftover accumulator
+        # can ever be worth.
+        runs = self.results["frameRateRamp"]
+        travelled = [r["travelled"] for r in runs]
+        self.assertAlmostEqual(min(travelled), max(travelled), delta=6.0 / 60)
+        for run in runs:
+            self.assertAlmostEqual(6.0, run["speed"], places=2)
 
     def test_you_cannot_stand_up_under_a_beam(self) -> None:
         under = self.results["headroom"]
@@ -439,11 +500,13 @@ class SoldierModuleTests(unittest.TestCase):
         # page must still be steerable rather than throwing every frame.
         free = self.results["noCollider"]
         self.assertTrue(free["finite"])
-        # Short of a full 6 m in the second, and correctly so: with no world
-        # there is no ground, so he is airborne the whole way and only
-        # `AIR_CONTROL` of the demanded velocity is applied per tick.
-        self.assertGreater(free["z"], 5.0)
-        self.assertLess(free["z"], 6.0)
+        # Far short of a full 6 m in the second, and correctly so: with no
+        # world there is no ground and no contact, so PHY-6's gate is open the
+        # whole way and the only horizontal drive is the engine's airborne
+        # `0.75 * vCmd` acceleration -- 4.5 m/s^2, which from rest is
+        # 0.5 * 4.5 * 1^2 = 2.25 m before the movement ramp is charged for.
+        self.assertGreater(free["z"], 1.5)
+        self.assertLess(free["z"], 2.25)
         # Dropped from y = 10, one second of -14.73 puts him at 2.6 m.
         self.assertAlmostEqual(10 - 0.5 * 14.73, free["y"], delta=0.1)
 
