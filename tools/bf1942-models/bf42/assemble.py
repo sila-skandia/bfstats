@@ -1376,16 +1376,25 @@ class Assembler:
             spec["gravity"] = projectile.gravity_modifier
         # What the round is worth on arrival. `material` keys the
         # MaterialManager's effect and damage tables; the falloff triple is
-        # `Projectile::getDamage`'s; `radius`/`material2` are the splash.
+        # `Projectile::getDamage`'s; `radius`/`material2`/`damageType` are the
+        # splash pass (`damageType 1`). Engine default radius is 10 when the
+        # `.con` omits it (ProjectileTemplate constructor).
         if projectile.material is not None:
             spec["material"] = projectile.material
+        radius = projectile.explosion_radius
+        if (radius is None
+                and projectile.damage_type == 1
+                and projectile.material2 is not None
+                and projectile.material2 >= 0):
+            radius = 10.0
         damage = {
             key: value for key, value in {
                 "minDamage": projectile.min_damage,
                 "distToStartLoseDamage": projectile.dist_to_start_lose_damage,
                 "distToMinDamage": projectile.dist_to_min_damage,
-                "radius": projectile.explosion_radius,
+                "radius": radius,
                 "material2": projectile.material2,
+                "damageType": projectile.damage_type,
             }.items() if value is not None
         }
         if damage:
@@ -2175,6 +2184,17 @@ class Assembler:
             report.propeller_blurs.append(
                 f"{template.name}: {propeller_blur['static']} / "
                 f"{propeller_blur['blurred']} at {propeller_blur.get('comparisons')}")
+        if template.skeleton_ik_bones:
+            # On the node that declares it, not gathered onto the vehicle root.
+            # The Willys writes both hands on `WillySteeringDummy`, the
+            # AnimatedBundle that turns with the wheel, and the offsets are in
+            # that part's frame: a viewer pins a hand by reading this node's
+            # live world pose, which it cannot do once the entries have been
+            # lifted off it (`AnimatedBundle::updateIk`, lnxded 0x08265880).
+            extras["skeletonIK"] = [
+                {"bone": ik["bone"], "position": list(ik["position"]),
+                 "rotation": list(ik["rotation"])}
+                for ik in template.skeleton_ik_bones]
         if is_camera:
             extras["cameraView"] = {"control": control or "vehicle"}
             if template.camera_view_modes:
