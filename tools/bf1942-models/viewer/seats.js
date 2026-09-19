@@ -464,15 +464,29 @@ export class VehicleOccupancy {
    *
    * Seats past the sixth get no dot: the layout has six `occupied-seat`
    * leaves and the engine has six `VehiclePosX1..6`/`Y1..6` pairs.
+   *
+   * A seat whose extract carries no `setVehicleIconPos` is state **0** — the
+   * table's own "draws nothing" — and NOT a 1 or a 2 with a null position.
+   * Every PlayerControlObject in the game declares the word (19,085 of
+   * 19,089 declarations across 18 installs), so the only way to reach this is
+   * a scene baked before `con.py` learned it, and for that scene there is no
+   * place to put the dot: `hud-layout.json`'s own rects are the variables'
+   * authored placeholders, a 5px diagonal staircase from (247,457), not six
+   * seat positions. Measured on the page: with the pairs fed, that corner
+   * holds 0 texels of dot; with them deleted, 66. Six dots in the wrong place
+   * assert a seat layout the data does not have, so nothing is drawn until
+   * the vehicle is re-extracted.
    */
   seatDots() {
     return this.order.slice(0, 6).map(id => {
       const seat = this.seatInfo(id);
       const pos = seat?.hud?.vehicleIconPos;
+      const placed = Array.isArray(pos)
+        && typeof pos[0] === 'number' && typeof pos[1] === 'number';
       return {
-        state: id === this.activeSeatId ? 1 : 2,
-        x: Array.isArray(pos) ? pos[0] : null,
-        y: Array.isArray(pos) ? pos[1] : null,
+        state: !placed ? 0 : id === this.activeSeatId ? 1 : 2,
+        x: placed ? pos[0] : null,
+        y: placed ? pos[1] : null,
       };
     });
   }
