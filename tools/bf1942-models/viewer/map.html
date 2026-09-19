@@ -5380,6 +5380,18 @@ function ammoBarCode(name) {
 }
 
 /**
+ * `IconLookRotation` for the seat currently manned, in radians, or
+ * `undefined` when this seat has no dial to draw.
+ *
+ * Un-negated on purpose: this is the engine's own value, positive to the
+ * controlled PCO's right, and `hud.js` owns the canvas-versus-`RotateEffect`
+ * sign flip. See `feedVehicleHud`.
+ */
+function turretDialAngle() {
+  return occupancy?.turret?.turretYawRadians();
+}
+
+/**
  * Push this vehicle's `Vehicle/*`/`Ammo/*` HUD block into `hud.vars`. Called
  * once on entry and every seat switch (icon/bar/hitpoints are effectively
  * static between those), and every tick from `manned()` so a manned gun's
@@ -5394,25 +5406,31 @@ function feedVehicleHud() {
   // The turret dial (`vehicleIcon`'s other three sprites, VHUD-7's rects): a
   // fixed back plate and barrel with the hull's own icon rotating underneath,
   // which is how a tank commander reads where the hull is pointing relative
-  // to where he is looking. Gated on there being a traverse to show at all —
-  // a seat with only elevation, or none, leaves both variables absent and
-  // `hud.js` culls all three leaves, which is also what every seat did until
-  // the driver's own turret started turning.
+  // to where he is looking.
   //
-  // APPROXIMATION, and VHUD-9 is why: neither what the engine sets
-  // `ShowTurretIcon` from nor `IconLookRotation`'s unit, sign and pivot were
-  // ever read. Fed here in radians, because canvas `rotate()` takes radians
-  // and `hud.js` passes the value straight through; `angleMultiplier` is
-  // carried by the extractor and still unread, so it is not applied.
+  // The angle is the engine's own `IconLookRotation` (VHUD-9, client
+  // `0x006ae5d9`–`0x006ae616`):
   //
-  // The sign was settled by looking at it rather than by reading anything.
-  // The dial's fixed barrel points up, i.e. screen-up is where the gun is
-  // looking, and the hull icon spins underneath it — so with the turret
-  // traversed 90 degrees right the hull sits 90 degrees to the gun's LEFT and
-  // its nose belongs at 9 o'clock, which on a canvas whose positive rotation
-  // is clockwise is the traverse itself, not its negative. `headingRadians()`
-  // is already signed in the node's own sense, so it goes in unchanged.
-  const heading = occupancy.turret?.headingRadians();
+  //   IconLookRotation = atan2(dot(pcoRight, camForward),
+  //                            dot(pcoForward, camForward))     // radians
+  //
+  // positive to the PCO's right, about the CONTROLLED PCO's own axes — the
+  // hull, for a tank driver. For a seat whose camera rides the turret that is
+  // the turret's own traverse, which is what `turretYawRadians()` returns.
+  //
+  // It replaced `headingRadians()`, and the swap is one half of a PAIR: that
+  // accessor carries `seats.js`'s `RIG_SIGN.yaw = -1`, and `hud.js` used to
+  // rotate the sprite clockwise (canvas `rotate(+θ)`) where the engine's
+  // `RotateEffect` is counter-clockwise. Two errors cancelling, which is why
+  // the dial looked right. `hud.js` now rotates by `-angle`; feed it the
+  // negated value again and every dial mirrors.
+  //
+  // Gated, for now, on there being a traverse to show at all. VHUD-9's real
+  // trigger is `(seatCamera.viewMode == 3) && pcoTemplate.hasTurretIcon`, and
+  // `setHasTurretIcon` only reached the extract in this round's `con.py`
+  // change, so a scene baked before it has no field to read. Handled where
+  // the gate is, not here.
+  const heading = turretDialAngle();
   setHudVar('Vehicle/ShowTurretIcon', heading === undefined ? null : true);
   setHudVar('IconLookRotation', heading === undefined ? null : heading);
   // R2-31 (corrected, verify-r2.md): hitpoints/armor live on the root PCO
