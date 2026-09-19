@@ -239,11 +239,19 @@ function drawBitmapText(ctx, font, text, x, y, rgb) {
 }
 
 /** `rotation.angle`, live-overridden by `rotation.angleVar` when bound and
- *  fed. OPEN [R2-18]: the turret-icon's own angle unit (radians vs degrees),
- *  sign and pivot were never confirmed -- `angleMultiplier` is recorded by
- *  the extractor but its role is unread, so it is not applied here. Canvas
- *  `rotate()` takes radians; the value is passed through unconverted, which
- *  is a guess, not a reproduction of the engine's own convention. */
+ *  fed.
+ *
+ *  The unit is **radians**, confirmed twice (VHUD-9): the engine's own
+ *  `IconLookRotation` is an `FPATAN` result (client `0x006ae612`), and canvas
+ *  `rotate()` takes radians too, so the value passes through unconverted.
+ *  That much the old OPEN comment guessed right.
+ *
+ *  `angleMultiplier` is still NOT applied, and now for a reason rather than
+ *  for want of one: it scales a draw-context scalar, not the bound variable,
+ *  and all seven vanilla `RotateEffect`s author it as `0`. Applying it would
+ *  freeze every dial at twelve o'clock.
+ *
+ *  The SIGN is `_drawPicture`'s business, not this function's -- see there. */
 function rotationAngle(el, vars) {
   const r = el.rotation;
   if (!r) return 0;
@@ -411,6 +419,25 @@ export class Hud {
     }
   }
 
+  /**
+   * A sprite, optionally spun about its own centre by a `RotateEffect`.
+   *
+   * **The rotation is applied counter-clockwise, and that is not a taste
+   * decision.** VHUD-9 read `RotateEffect`'s own transform at client
+   * `0x007edbf0`: `x' = x·cos + y·sin`, `y' = -x·sin + y·cos`, which on the
+   * HUD's y-down frame sends `(0,-1)` at +90 degrees to `(-1,0)` -- top to
+   * left, counter-clockwise on screen. HTML canvas `rotate(+θ)` is clockwise.
+   * The two conventions are opposite, so the engine's angle has to be negated
+   * here.
+   *
+   * This used to be `ctx.rotate(angle)` and the dial still looked right,
+   * because `map.html` fed it through `TurretRig.headingRadians()`, which
+   * carries `RIG_SIGN.yaw = -1`. Two errors cancelling. They are now
+   * separated: `map.html` feeds the un-negated engine value
+   * (`turretYawRadians`) and the negation lives here, where the convention
+   * mismatch actually is. **Change one without the other and every dial
+   * mirrors.**
+   */
   _drawPicture(ctx, el, x, y, w, h, img) {
     if (!img) return;
     const color = el.color;
@@ -419,7 +446,7 @@ export class Hud {
     if (angle) {
       ctx.save();
       ctx.translate(x + w / 2, y + h / 2);
-      ctx.rotate(angle);
+      ctx.rotate(-angle);
       ctx.drawImage(img, -w / 2, -h / 2, w, h);
       ctx.restore();
     } else {
