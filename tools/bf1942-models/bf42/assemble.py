@@ -134,8 +134,16 @@ def engine_spin_axes(template: con_mod.ObjectTemplate) -> dict[str, float]:
 
     * a rate span (`-3000..5000`, every vanilla aircraft): `rig()` already
       classifies the axis as an accumulator;
-    * no usable span at all (EoD helicopter tail rotors declare `100/100`),
-      where being bound to `c_PIThrottle` is the tell.
+    * no usable span at all (EoD helicopter tail rotors declare `100/100`,
+      vanilla aircraft simply declare no limits), where being bound to
+      `c_PIThrottle` is the tell.
+
+    That second case used to be spelled `spec["free"]`, which worked only
+    while `rig()` called a zero-WIDTH range free. GUN-2 corrected that gate to
+    "both bounds are zero" (a `100/100` axis is pinned at 100 by the engine,
+    not spun), so the degenerate-span tell is now asked for in its own terms:
+    an axis whose two bounds are equal, whether that is because they are both
+    zero or because the author wrote the same number twice.
 
     Tank Engines bind roll to throttle too, but over a +/-1 degree body-lean
     span — neither rate nor free, so they never land here (spinning the hull
@@ -149,7 +157,8 @@ def engine_spin_axes(template: con_mod.ObjectTemplate) -> dict[str, float]:
         return {}
     axes: dict[str, float] = {}
     for axis, spec in rig["axes"].items():
-        if spec["driver"] == "rate" or (spec["free"] and spec["input"] == "c_PIThrottle"):
+        degenerate = spec["free"] or spec["min"] == spec["max"]
+        if spec["driver"] == "rate" or (degenerate and spec["input"] == "c_PIThrottle"):
             declared = abs(spec.get("maxSpeed") or 0.0) or 360.0
             axes[axis] = min(max(declared * SPIN_DISPLAY_SCALE, SPIN_MIN_DEG_PER_SEC),
                              SPIN_MAX_DEG_PER_SEC)
@@ -2354,6 +2363,16 @@ class Assembler:
                 "primaryAmmoBar": template.vehicle_primary_ammo_bar,
                 "secondaryAmmoIcon": template.vehicle_secondary_ammo_icon,
                 "secondaryAmmoBar": template.vehicle_secondary_ammo_bar,
+                # VHUD-9: half of the turret dial's trigger (the other half is
+                # the seat camera being in view mode 3). Only the turreted
+                # tanks declare it, so a casemate hull -- Wespe, StuG -- now
+                # correctly shows no dial where it used to get one.
+                "hasTurretIcon": template.has_turret_icon,
+                # VHUD-11: this PCO's own seat-occupancy dot, in the 128x128
+                # vehicle-icon texture's space. Carried for the root AND every
+                # seat, because each declares its own.
+                "vehicleIconPos": (list(template.vehicle_icon_pos)
+                                   if template.vehicle_icon_pos else None),
             }.items() if value is not None}
             if hud:
                 extras["hud"] = hud
