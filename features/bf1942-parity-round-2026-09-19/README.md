@@ -184,6 +184,13 @@ Hull collision between ground vehicles and the world has an engine spec
 (`features/viewer-ground-hull-collision/README.md`); it is the largest piece
 left and is not in wave 3.
 
+**Vehicle against vehicle is built (2026-09-20, the other session).** A rammed
+vehicle is a rigid body on its own wheel springs: it is pushed, spun and hurt,
+and so is whoever hit it, by the engine's own contact solver and crash-damage
+formulas. Record and open items in `features/vehicle-collision-physics/README.md`.
+What that leaves of the piece above is the driven hull against *statics*, which
+still stops on the swept sphere, and a drive model that tumbles when it crashes.
+
 
 | Item | Status |
 |---|---|
