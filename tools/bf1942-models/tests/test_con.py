@@ -909,9 +909,38 @@ ObjectTemplate.setGearChangeTime 0.05
         self.assertEqual(
             {"engineType": "c_ETTank", "torque": 4.0, "differential": 4.0,
              "numberOfGears": 5, "gearUp": 0.95, "gearDown": 0.45,
-             "gearChangeTime": 0.05},
+             "gearChangeTime": 0.05, "maxRotation": [1.0, 0.0, 1.0]},
             library.object("ShermanEngine").physics(),
         )
+
+    def test_engine_carries_its_own_rotation_limits_and_rates(self) -> None:
+        """TANK-12: `T1 = clippedRollAngle / maxRotation.z` is the throttle term.
+
+        The whole of `Objects/Vehicles/Land/Willy/Physics.con`'s Engine
+        rotation block. `maxSpeed` and `acceleration` are separate keys
+        because 475 of the 1,421 car/tank Engines across the 18 installs
+        author them differently, so neither stands in for the other.
+        """
+        library = self.library("""
+ObjectTemplate.create Engine WillyEngine
+ObjectTemplate.setMinRotation 0/0/-5000
+ObjectTemplate.setMaxRotation 0/0/5000
+ObjectTemplate.setMaxSpeed 0/0/55000
+ObjectTemplate.setAcceleration 0/0/55000
+ObjectTemplate.setInputToRoll c_PIThrottle
+ObjectTemplate.setAutomaticReset 1
+ObjectTemplate.setEngineType c_ETCar
+ObjectTemplate.setTorque 10.5
+ObjectTemplate.setDifferential 7
+""")
+
+        physics = library.object("WillyEngine").physics()
+        self.assertEqual([0.0, 0.0, 5000.0], physics["maxRotation"])
+        self.assertEqual([0.0, 0.0, 55000.0], physics["maxSpeed"])
+        self.assertEqual([0.0, 0.0, 55000.0], physics["acceleration"])
+        # Yaw/Pitch/Roll in the .con's own order, un-negated: these are
+        # angles, not positions, so the exporter's Z mirror does not apply.
+        self.assertEqual(5000.0, physics["maxRotation"][2])
 
     def test_ship_engine_declares_a_thrust_zero_speed_and_no_gearbox(self) -> None:
         # Objects/Vehicles/Sea/fletcher/Physics.con:28-40.
