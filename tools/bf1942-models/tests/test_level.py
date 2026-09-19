@@ -832,5 +832,192 @@ Game.setTicketLostPerMin 2 4
         self.assertEqual(4, info.loss_per_min_team2)
 
 
+class LensFlareParsingTests(unittest.TestCase):
+    """`ObjectTemplate.create LensFlare` and the ~16 verbs under it.
+
+    Shapes come from the survey over every installed mod
+    (`survey_flare.py`): 319 levels in 11 mods declare flares, 21 of the 23
+    vanilla ones among them, with one uniform vocabulary. Wake's own block is
+    the fixture -- five flares, two coronas -- because it is the exact text
+    the extractor has to read.
+    """
+
+    WAKE = """
+ObjectTemplate.create LensFlare TSun
+ObjectTemplate.setLensFlareCount 5
+ObjectTemplate.setBackFlareCount 0
+ObjectTemplate.setCoronaCount 2
+ObjectTemplate.initLensFlares
+ObjectTemplate.setVisibilityAngleDeg 360
+
+REM *** Falre no:1 ***
+ObjectTemplate.setFlareSrcBlend BMSourceAlpha 0
+ObjectTemplate.setFlareDestBlend BMOne 0
+ObjectTemplate.setFlareTexture ring5.tga 0
+ObjectTemplate.setFlareSize 3 0
+ObjectTemplate.setFlareScale -1.5 0
+ObjectTemplate.setFlareRot 0 0
+ObjectTemplate.setFlareColor 255/255/255/50 0
+ObjectTemplate.setFlareDistFadeScale 1 0
+
+REM *** Falre no:2 > LittleDot***
+ObjectTemplate.setFlareTexture ring3.tga 1
+ObjectTemplate.setFlareSize 0.5 1
+ObjectTemplate.setFlareColor 255/255/255/200 1
+
+REM *** Corona no:1 - Red aura***
+ObjectTemplate.setCoronaTexture sunflare9.tga 1
+ObjectTemplate.setCoronaSize 5 1
+ObjectTemplate.setCoronaScale 5 1
+ObjectTemplate.setCoronaColor 255/150/0/100 1
+
+Object.create TSun
+Object.isSaveable 0
+Object.name sun
+ObjectTemplate.setflarefadeall 0.1
+ObjectTemplate.setcoronafadeall 0.3
+
+Sky.setSun sun
+"""
+
+    def parse(self, text: str) -> LevelInfo:
+        info = LevelInfo(name="Test", terrain=parse_terrain_con(""))
+        parse_init_con(text, info)
+        return info
+
+    def test_the_template_its_counts_and_its_object_are_read(self) -> None:
+        info = self.parse(self.WAKE)
+        self.assertEqual("sun", info.sun_object)
+        self.assertEqual({"sun": "TSun"}, info.flare_objects)
+        flare = info.lens_flares["TSun"]
+        self.assertEqual(5, flare.flare_count)
+        self.assertEqual(0, flare.back_flare_count)
+        self.assertEqual(2, flare.corona_count)
+        self.assertEqual(360.0, flare.visibility_angle_deg)
+
+    def test_the_two_fade_all_verbs_are_read_whatever_their_case(self) -> None:
+        # Vanilla writes them lower-case (`setflarefadeall`), FHSW and
+        # bfheroes camel-case (`setFlareFadeAll`); both appear in the survey.
+        info = self.parse(self.WAKE)
+        flare = info.lens_flares["TSun"]
+        self.assertAlmostEqual(0.1, flare.flare_fade_all)
+        self.assertAlmostEqual(0.3, flare.corona_fade_all)
+        camel = self.parse(self.WAKE.replace("setflarefadeall", "setFlareFadeAll")
+                           .replace("setcoronafadeall", "setCoronaFadeAll"))
+        self.assertAlmostEqual(0.1, camel.lens_flares["TSun"].flare_fade_all)
+        self.assertAlmostEqual(0.3, camel.lens_flares["TSun"].corona_fade_all)
+
+    def test_the_trailing_index_addresses_the_sprite(self) -> None:
+        info = self.parse(self.WAKE)
+        flares = info.lens_flares["TSun"].ordered("flare")
+        self.assertEqual(2, len(flares))
+        self.assertEqual("ring5.tga", flares[0].texture)
+        self.assertEqual("ring3.tga", flares[1].texture)
+        self.assertEqual(3.0, flares[0].size)
+        self.assertEqual(0.5, flares[1].size)
+        self.assertEqual(-1.5, flares[0].scale)
+
+    def test_colours_are_rgba_out_of_255(self) -> None:
+        info = self.parse(self.WAKE)
+        flares = info.lens_flares["TSun"].ordered("flare")
+        r, g, b, a = flares[0].color
+        self.assertEqual((1.0, 1.0, 1.0), (r, g, b))
+        self.assertAlmostEqual(50 / 255, a)
+        # The alpha is genuinely load-bearing: vanilla's five sun flares run
+        # 50, 200, 155, 50 and 100, which is most of what shapes the effect.
+        self.assertAlmostEqual(200 / 255, flares[1].color[3])
+
+    def test_coronas_are_a_separate_indexed_list(self) -> None:
+        info = self.parse(self.WAKE)
+        coronas = info.lens_flares["TSun"].ordered("corona")
+        self.assertEqual(1, len(coronas))
+        self.assertEqual("sunflare9.tga", coronas[0].texture)
+        self.assertEqual(5.0, coronas[0].size)
+        self.assertAlmostEqual(150 / 255, coronas[0].color[1])
+
+    def test_blend_words_are_kept_verbatim(self) -> None:
+        info = self.parse(self.WAKE)
+        flare = info.lens_flares["TSun"].ordered("flare")[0]
+        self.assertEqual("BMSourceAlpha", flare.src_blend)
+        self.assertEqual("BMOne", flare.dest_blend)
+        self.assertEqual(1.0, flare.dist_fade_scale)
+
+    def test_a_lower_case_object_template_prefix_still_parses(self) -> None:
+        # `objectTemplate.setFlareColor2` and friends appear in bf1918 and
+        # FHSW; the con reader lower-cases the namespace, so this is really a
+        # check that nothing downstream re-introduces case sensitivity.
+        info = self.parse(self.WAKE.replace("ObjectTemplate.setFlareSize 3 0",
+                                            "objectTemplate.setFlareSize 3 0"))
+        self.assertEqual(3.0, info.lens_flares["TSun"].ordered("flare")[0].size)
+
+    def test_the_rare_second_endpoint_verbs_are_read(self) -> None:
+        # `setFlareSize2` / `setFlareColor2` / `setCoronaSize2` /
+        # `setCoronaColor2` / `setFlareFadeAngleFactor` appear only in FHSW's
+        # `On_the_moon-1969` car headlights and in bfheroes, but the client
+        # registers them, so they are read rather than silently dropped.
+        info = self.parse("""
+ObjectTemplate.create LensFlare FX_CarFlare1
+ObjectTemplate.setFlareTexture glow.tga 0
+ObjectTemplate.setFlareSize 0.1 0
+ObjectTemplate.setFlareSize2 0.010 0
+ObjectTemplate.setFlareColor 200/180/50/255 0
+objectTemplate.setFlareColor2 200/180/50/0 0
+ObjectTemplate.setFlareFadeAngleFactor 0.7 0
+ObjectTemplate.setCoronaSize2 0.02 0
+ObjectTemplate.setCoronaColor2 255/0/0/80 0
+""")
+        flare = info.lens_flares["FX_CarFlare1"].ordered("flare")[0]
+        self.assertEqual(0.01, flare.size2)
+        self.assertEqual(0.0, flare.color2[3])
+        self.assertEqual(0.7, flare.fade_angle_factor)
+        corona = info.lens_flares["FX_CarFlare1"].ordered("corona")[0]
+        self.assertEqual(0.02, corona.size2)
+        self.assertAlmostEqual(80 / 255, corona.color2[3])
+
+    def test_a_second_template_does_not_absorb_the_firsts_verbs(self) -> None:
+        # FHSW declares several LensFlare templates in one file. A `create`
+        # of any kind closes the block, so a `GeometryTemplate` between two
+        # of them cannot leak either.
+        info = self.parse("""
+ObjectTemplate.create LensFlare A
+ObjectTemplate.setFlareTexture a.tga 0
+ObjectTemplate.create LensFlare B
+ObjectTemplate.setFlareTexture b.tga 0
+""")
+        self.assertEqual("a.tga", info.lens_flares["A"].ordered("flare")[0].texture)
+        self.assertEqual("b.tga", info.lens_flares["B"].ordered("flare")[0].texture)
+
+    def test_verbs_outside_a_lens_flare_block_are_ignored(self) -> None:
+        info = self.parse("""
+ObjectTemplate.create SimpleObject NotAFlare
+ObjectTemplate.setFlareTexture stray.tga 0
+""")
+        self.assertEqual({}, info.lens_flares)
+
+    def test_a_level_with_no_flare_block_reads_clean(self) -> None:
+        info = self.parse("Sky.initSky\n")
+        self.assertEqual({}, info.lens_flares)
+        self.assertEqual("", info.sun_object)
+
+    def test_a_malformed_value_is_skipped_rather_than_raising(self) -> None:
+        info = self.parse("""
+ObjectTemplate.create LensFlare T
+ObjectTemplate.setFlareSize wide 0
+ObjectTemplate.setFlareColor 255/255 0
+ObjectTemplate.setFlareTexture ok.tga 0
+""")
+        flare = info.lens_flares["T"].ordered("flare")[0]
+        self.assertIsNone(flare.size)
+        self.assertIsNone(flare.color)
+        self.assertEqual("ok.tga", flare.texture)
+
+    def test_a_verb_with_no_index_addresses_sprite_zero(self) -> None:
+        info = self.parse("""
+ObjectTemplate.create LensFlare T
+ObjectTemplate.setFlareTexture only.tga
+""")
+        self.assertEqual("only.tga", info.lens_flares["T"].ordered("flare")[0].texture)
+
+
 if __name__ == "__main__":
     unittest.main()

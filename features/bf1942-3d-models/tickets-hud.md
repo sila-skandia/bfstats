@@ -182,3 +182,154 @@ The base `Tobruk.rfa` archive declares different values (team1: 60, team2: 40, b
 - **Dossier script**: `scripts/extract_map_dossiers.py` (lines 658–661) parses the same commands for tournament intel.
 - **Gameplay objects**: `bf42/level.py` ~line 758, `load_gameplay_objects` — ticket loading follows the same pattern.
 - **Archive overlay**: `bf42/level.py` ~line 419, `LevelFiles` class — patch files override base files in the merged view.
+
+---
+
+# Drawn (2026-09-19, stream D)
+
+The pipeline above landed and `map.html` answered it with one line:
+
+```js
+// No ticket counts to show: the level report carries none.
+vars['ShowTicket'] = false;
+```
+
+Both painters now draw the counter, from the layout's own group.
+
+## The group is one thing, drawn in two places
+
+`ShowTicket` gates a **top-level entry of `menu/InGame`** — a sibling of the
+spawn screen's `Kit/ShowKit`, not a child of it. That is why the game shows
+the same counter over the live world and over the deploy screen, and it is
+what let this be wired without a second implementation:
+
+- `extract_spawn_layout.py` already decoded the group into
+  `spawn-layout.json` (`authentic-spawn-map/README.md` section 8, item 3,
+  "decoded but not drawn"). `paintDeployChrome` now draws
+  `data.groups.tickets.elements` alongside the spawn group, in the file's own
+  order.
+- `extract_hud_layout.py` gained the same top as a `tickets` group, which is
+  all `hud.js`'s generic painter needs to draw it in-game — **no change to
+  `hud.js` itself**.
+
+Decoding the same top twice turned out to be a free cross-check. The two
+flatteners agree on all nine leaves and all nine rects, with one difference:
+`extract_hud_layout.py` classifies the two flag nodes as `variable-picture`
+(they carry a `var`) where `extract_spawn_layout.py` calls them `picture`.
+The HUD one is the more precise reading and is the one `hud.js` resolves
+tolerantly.
+
+### The nine leaves
+
+Rect `(620, 4) 256x32`, every leaf gated on `ShowTicket == true`:
+
+| leaf | rect | detail |
+|---|---|---|
+| `icon_ticketbar` | (620,4) 256x32 | the bar plate |
+| Allied flag | (625,9) 16x16 | `variable-picture`, var `AlliedTicketFlag`, literal `flag_ticket_ger` |
+| Allied count, shadow | (639,5) 45x20 | black, `Trebuchet MS14 - Latin`, right-aligned |
+| Allied count | (638,4) 45x20 | `(0.328, 0.559, 0.914)` — blue |
+| Allied blink | (623,7) 63x17 | red at 0.5 alpha, needs `Ticket/AlliedTicketBlink` AND `Ticket/ShowAlliedTicketBlink` |
+| Axis flag | (733,9) 16x16 | var `AxisTicketFlag` |
+| Axis count, shadow | (747,5) 45x20 | black |
+| Axis count | (746,4) 45x20 | `(0.836, 0.176, 0.176)` — red |
+| Axis blink | (730,7) 63x18 | as above |
+
+Each count is drawn twice, one pixel apart: a black drop shadow behind the
+team-coloured glyphs. Both leaves bind the same variable, so one feed fills
+both.
+
+## The feed
+
+`feedTicketVars(vars)` in `map.html`, called from `deployVars()` for the spawn
+screen and from `updateSoldierHud()` for the HUD:
+
+| variable | value |
+|---|---|
+| `ShowTicket` | true when the level declares both counts |
+| `AxisTicket` / `AlliedTicket` | `tickets.team1` / `tickets.team2` as strings |
+| `AxisTicketFlag` / `AlliedTicketFlag` | `flag_ticket_<nation>.tga` from `teamNation(team)` |
+| `Ticket/ShowAxisTicketBlink` / `...Allied...` | false |
+
+Three decisions in that table:
+
+1. **Team 1 is Axis, team 2 Allied** — the reading `map.html` already uses
+   everywhere else (`flag.team === 1 ? 'Axis' : flag.team === 2 ? 'Allied'`).
+2. **Both counts or neither.** A single real number beside the layout's own
+   sample literal ("300"/"500") reads as data rather than as a gap. All 23
+   vanilla levels declare both, so this only ever fires on a malformed mod.
+3. **The blink is fed false, not left unfed.** It is a live-round state on a
+   timer nothing here runs; feeding false makes the two leaves cull
+   deterministically instead of on whatever happened to be in the table.
+
+The flags come from `teamNation`, so Wake shows a US flag against a Japanese
+one and Stalingrad a Soviet against a German one — not the layout's German
+sample on both sides.
+
+`deployTexture` and `deployText` gained a live-variable path for this, placed
+**below** the existing per-level cases on purpose: `deployVars()` seeds its
+table from the layout's own sample values, so a generic "the variable wins"
+rule placed first would have made `ChangeTeam/AxisTeamFlag`'s sample
+(`Icon_flag_ger.tga`) beat the `icon_flag_<nation>` lookup and put a German
+flag on every team header.
+
+## Gated on being in the world
+
+The in-game group's only condition is `ShowTicket`, so left alone it would
+ride over the free-fly camera, where this viewer deliberately shows no HUD
+chrome at all and the game would not be in a round. `updateSoldierHud` clears
+it unless the player is on foot or in a seat — the same condition that raises
+the rest of the HUD. The spawn screen draws it unconditionally, as the game
+does.
+
+## Verified
+
+Wake, served from this worktree on 5314, re-extracted into a scratch
+directory (the published tree predates the `tickets` field):
+
+- `scene.json.tickets` = `{mode: Conquest, team1: 100, team2: 100, lossPerMin: {5, 30}}`
+- Spawn screen (`tickets-spawn.png`, read off `#deploy-chrome` alone, so no 3D
+  frame or page CSS in the way): the ticket bar top right, US flag + blue
+  "100", Japanese flag + red "100", drop shadows visible.
+- In-game HUD (`tickets-hud.png`, read off `window.__hud.canvas`): the same
+  bar over the live world, beside the health bar and the magazine.
+- `window.__hud.vars` after spawning: `ShowTicket: true`,
+  `AxisTicket: "100"`, `AlliedTicket: "100"`,
+  `AxisTicketFlag: "flag_ticket_jp.tga"`, `AlliedTicketFlag: "flag_ticket_us.tga"`,
+  both blinks false.
+- `hud.js` reports 13 groups, `tickets` among them; `sprite('icon_ticketbar')`,
+  `sprite('flag_ticket_jp')` and `sprite('flag_ticket_us')` all resolve.
+- Back to free fly: `ShowTicket` goes false.
+- Stalingrad (`combat-hud.png`): Soviet and German flags, 100/100.
+
+Tests: `tests/test_hud_layout.py` gained five cases over the `tickets` group —
+its rect and gate, the nine leaves by kind, the bound flags and their German
+literal fallback, the drop-shadow pair's one-pixel offset and shared variable,
+and the blink quads' two-variable AND.
+
+## What a live bleed would need
+
+The counters are the round-start numbers and they do not move. Three things
+are missing before they could:
+
+1. **A death count.** Conquest loses a ticket per death (`setTicketLosePerDeath`,
+   `GameServer` 0x0813d700). Nothing here tracks deaths; the viewer has one
+   soldier and no opposing team.
+2. **A flag-majority timer.** `Game.setTicketLostPerMin <team> <rate>` — parsed
+   and carried in `scene.json.lossPerMin`, unread — only drains while the
+   *other* side holds more than half the control points. The viewer has no
+   capture mechanic, so every level would sit at its round-start flag split
+   for ever and the drain would either never start or never stop.
+3. **Somewhere to put the result.** The counter is one of several things that
+   want a round state (the score board opens nothing, the capture rings are
+   unfed, `Ticket/*TicketBlink` has nobody to set it). A ticket counter alone
+   would be the only moving number in a round that otherwise does not exist.
+
+Until then a counting-down number would be a fiction. A frozen one is at
+least the number the round genuinely starts at, and the value the level's own
+`GameTypes/<mode>.con` declares.
+
+The blink is the other half of this: `Ticket/AxisTicketBlink` and
+`Ticket/ShowAxisTicketBlink` are two separate variables ANDed together, which
+suggests one is "this side is low" and the other the blink phase — but what
+threshold sets the first was not read, so neither is fed.

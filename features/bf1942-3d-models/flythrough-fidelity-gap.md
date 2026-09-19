@@ -356,3 +356,280 @@ machine).
   previously calibrated respectively; not retuned against JPEG impressions.
 - **`LightmapShadowBits.lsb`** (terrain cast shadows) — still the documented
   ceiling from map-parity.md, unchanged by this pass.
+
+---
+
+## 2026-09-19 (stream D): the sun's lens flare and corona
+
+The sky, the fog and the water above were matched against the game. The sun's
+own flare never was, because nothing parsed it. Every vanilla
+`Init/SkyAndSun.con` opens with a `LensFlare` block — 21 of the 23 levels have
+one (Midway and Coral Sea do not) — and it was read by nothing at all.
+
+### The survey
+
+`survey_flare.py` over every `.rfa` under every installed mod's `levels/`
+directory. 319 levels across 11 mods declare flares, with one uniform
+vocabulary:
+
+| verb | vanilla | all mods | levels |
+|---|---:|---:|---:|
+| `setFlareTexture` / `Size` / `Scale` / `Rot` / `Color` / `SrcBlend` / `DestBlend` | 91 each | ~1,500 each | 319 |
+| `setFlareDistFadeScale` | 55 | 907 | 315 |
+| `setCorona{Texture,Size,Scale,Rot,Color,SrcBlend,DestBlend}` | 36 each | ~600 each | 297 |
+| `setCoronaCount` / `setflarefadeall` / `setcoronafadeall` | 21 each | 741 / 740 / 740 | 735 |
+| `setFlareSize2` / `setFlareColor2` / `setCoronaSize2` / `setCoronaColor2` | 0 | 38 / 38 / 13 / 13 | 4 |
+| `setFlareFadeAngleFactor` | 0 | 4 | 1 |
+
+The `*2` verbs and `fadeAngleFactor` appear only in FHSW's
+`On_the_moon-1969` car-headlight flares and in bfheroes, but the client
+registers them (`setCoronaSize2`, `setCoronaColor2`,
+`setCoronaFadeAngleFactor` are all in BF1942.exe's string table), so the
+parser reads them rather than dropping them. Case varies freely —
+`objectTemplate.`, `setflarefadeall`, `setCoronasize2` — and the con reader
+already lower-cases both halves.
+
+Vanilla's `TSun`: 5 flares, 0 back flares, 2 coronas, visibility angle 360,
+`setflarefadeall 0.1`, `setcoronafadeall 0.3`, and the per-sprite alphas
+50, 200, 155, 50, 100 / 225, 100 out of 255 — the alpha is most of what shapes
+the effect, so it is kept rather than folded away.
+
+### The art does not ship with vanilla
+
+This is the headline, and it was checked rather than assumed. All 21 vanilla
+declarations name five textures: `ring3.tga`, `ring4.tga`, `ring5.tga`,
+`sunflare7.tga`, `sunflare9.tga`. **Every one of the 1,775 `.rfa` archives in
+this installation was opened and searched by entry stem.** Those five names
+exist in exactly two places:
+
+```
+Mods/bfheroes/Archives/Texture.rfa
+    Texture/ring3.tga (1068 b)  ring4.tga (4140 b)  ring5.tga (4140 b)
+    Texture/sunflare7.tga (65580 b)  sunflare9.tga (65580 b)
+Mods/bf1918/Archives/bf1942/levels/montblainville.rfa
+    bf1942/levels/montblainville/Texture/ring3.dds (496 b)  ring4.dds  ring5.dds
+    .../Texture/sunflare7.dds (22000 b)  sunflare9.dds
+```
+
+Neither is vanilla, and neither is reachable from a vanilla level's archive
+pool. Substring searches for `sunflare` and `/ring` across all 72 archives of
+`Mods/bf1942`, all 23 of `Mods/XPack1` and all 19 of `Mods/XPack2` return
+**nothing**. The only flare-related entry vanilla ships at all is the vertex
+shader `Archives/shaders.rfa :: shaders/FlareShader.vso`.
+
+So the engine's own TextureManager cannot resolve these names on a vanilla
+level either, and the viewer drawing nothing there is the faithful outcome —
+the same class of finding as `Sky.addCloud` above, where the layer is declared
+on all 23 levels and the geometry it needs is REM'd out on all 23. The audit's
+suspicion ("only recoverable from another mod's archive") is confirmed, with
+the two archives named.
+
+The five names go into `scene.json.lensFlare.missingTextures` rather than
+being silently dropped, so nobody has to re-derive this.
+
+### What landed
+
+- **`bf42/level.py`**: `FlareElement` and `LensFlare` dataclasses;
+  `LevelInfo.lens_flares` / `flare_objects` / `sun_object`. The block is
+  opened by `ObjectTemplate.create LensFlare <name>` and closed by the next
+  `create` of any kind; `Object.create` + `Object.name` records the instance
+  so `Sky.setSun <object>` resolves back to a template. Indices are the last
+  token, colours are `R/G/B/A` out of 255, malformed values are skipped
+  softly. 13 tests in `tests/test_level.py::LensFlareParsingTests`.
+- **`extract_map.py`**: `write_lens_flare` emits the resolved template with
+  each sprite's texture written to `flare/<stem>.png` where it resolves, and
+  `missingTextures` where it does not. It also scans `Init/*.con` and
+  `objects/LensFlares/*.con` for flare blocks **only** — bfheroes declares its
+  sun in `Init/Lenz.con` and FHSW puts headlight flares under
+  `objects/LensFlares/`, neither of which this reader parses. Flares only,
+  into a throwaway `LevelInfo`: parsing those files wholesale would let a
+  stray `renderer.fogEnd` somewhere in a mod's init chain override the fog the
+  two authoritative files set, which is the exact class of bug the fog section
+  above was written about.
+- **`viewer/lens-flare.js`**: the placement, free of `three`, 10 tests.
+- **`viewer/map.html`**: `#flare-canvas`, its own surface below the HUD and
+  above the 3D canvas. Not a layer of `hud-canvas`, because the flare moves
+  with the camera every frame while the HUD painter deliberately repaints only
+  on a changed variable (mesh-viewer-performance rule 7).
+
+### The placement is inferred, and says so
+
+Nobody read the renderer's flare pass. `FUN_00570ea0` is the only referrer of
+the `Shaders/FlareShader` string and is a constructor for a different,
+shader-based sun object; the `setFlare*` registrars were not traced to a draw.
+Anyone re-deriving this should start there. What the implementation rests on:
+
+- **Position.** `screen = centre + (sun - centre) * scale`, the classic ghost
+  multiplier. Vanilla's five scales are -1.5, 1, 1.5, -2, -2: one ghost on the
+  sun, one just past it, three mirrored across the centre. The level authors'
+  own REM labels say the same — `*** Falre no:2 > LittleDot***` (scale 1, size
+  0.5), `*** Falre no:4 :Twins***` and `no:5 :Twins` (both scale -2).
+- **Coronas are drawn at the sun**, whatever their `scale` — vanilla's are 1
+  and 5, and 5 read as a position is off screen. `setCoronaScale` is left
+  unread and unused rather than invented into a second meaning.
+- **Size multiplies the texture's own pixels**, not the viewport. `ring3` is
+  16x16 and its flare is size 0.5, which is the 8-pixel "LittleDot" the author
+  labelled; `sunflare9` is 128x128 at size 5, the "Red aura" wash. Read as a
+  viewport fraction instead, that last one would be five screens across. (The
+  sizes come from the only copies of these files that exist: bfheroes'
+  uncompressed TGAs, where 1068, 4140 and 65580 bytes are 16x16, 32x32 and
+  128x128 RGBA plus a 44-byte header.) Then scaled out of the engine's own
+  800x600 into the real viewport, as every other 800x600-authored surface in
+  this viewer is — also inferred.
+- **`setFlareRot`** is 0 on every vanilla sprite but one (flare 4, rot 1), so
+  the data constrains its unit not at all. Passed through as turns, the one
+  reading under which the single non-zero value is indistinguishable from 0 —
+  i.e. the reading that changes nothing anyone has seen. UNVERIFIED.
+- **`setflarefadeall` / `setcoronafadeall`** multiply their side's per-sprite
+  alpha. How the engine combines them was not read; multiplying is the reading
+  that cannot brighten anything.
+- **Occlusion is not modelled.** A real flare dims when something crosses the
+  sun. Nothing here traces the sun against the scene, so the factor is fed 1
+  rather than faked — a guessed occlusion would flicker the whole flare on
+  geometry it never checked. The hook is in the module's `view.occlusion`.
+
+### Verifying it
+
+Wake re-extracted into a scratch directory: `scene.json.lensFlare` carries
+`template: "TSun"`, `object: "sun"`, 5 flares, 2 coronas, the counts, both
+fade-alls, the visibility angle, and `missingTextures` listing exactly the
+five names above. `hasDrawableFlare` is false, so `setupLensFlare` skips the
+whole pass and `paintLensFlare` is a no-op — which is what a vanilla level
+should do.
+
+The draw path itself is covered by `tests/test_lens_flare.py` against a
+fixture with the art present: coronas first at the sun, a scale-1 ghost on the
+sun, a scale -1.5 ghost mirrored to (-100, 450) from a (900,200) sun on a
+1000x600 canvas, sizes 8 / 96 / 256 px from textures 16 / 32 / 128, occlusion
+and `distFadeScale` scaling alpha, and zero-size and undecoded sprites
+skipped. And by a live capture on the one level in this installation that declares a
+flare **and** ships its art: bfheroes' `Coastal_Clash_Winter`, whose
+`Init/Lenz.con` declares 11 flares and 4 coronas over `P_Ring1/2/3`, `Ring3`,
+`Ring6`, `sunflare1`, `sunflare9` and `SunDisc` — all eight resolved out of
+`Mods/bfheroes/Archives/Texture.rfa`, `missingTextures` absent. Camera aimed
+along the level's own `sunDirection`, `#flare-canvas` read back on its own:
+81,672 pixels above alpha 4, peak alpha 129, a warm corona wash with the ring
+ghosts stacked on the sun (`scratchpad/d-wiring/flare-layer.png`). They stack
+because bfheroes sets no `setFlareScale` at all — the survey shows zero
+occurrences in that mod — so every flare takes the default 1 and sits on the
+sun. That is the data, not the placement: vanilla's own -1.5/1/1.5/-2/-2 is
+what would spread them, and no level that ships art also sets it.
+
+One bug this capture caught, worth recording because it would have been
+invisible otherwise. The first version found the sun's screen position by
+projecting a point 1e5 m along the sun direction and rejecting `ndc.z > 1` as
+"behind the camera". Every level's far plane is short — this one's is 157 m,
+Berlin's 105 — so that point is always **past the far plane**, where `ndc.z`
+also reads > 1, and the flare was rejected on every frame of every level. The
+front/behind test is now asked in view space (`z < 0`), and the projected
+point sits halfway between near and far along the same ray.
+
+## 2026-09-20 review: the combat area, re-derived
+
+Every address below is from the unstripped Linux server
+(`bf1942_lnxded-1.61-patched/bf1942/bf1942_lnxded.static`), the block at
+`GameServer::gameStatusPlaying+0x1540`..`+0x17a0`.
+
+**The four floats are origin and size, and the engine says so.** No argument
+from Berlin's numbers is needed: the moment `gameStatusPlaying` reads them
+back through `Game::getActiveCombatArea` (0x08061870), it *adds* the third to
+the first and the fourth to the second —
+
+```
+0x0815237a  fld  [x0]  ; 0x08152383  fadd [sizeX] ; 0x08152389  fstp -> maxX
+0x0815238f  fld  [z0]  ; 0x08152395  fadd [sizeZ] ; 0x0815239b  fstp -> maxZ
+```
+
+— and compares the position against `x0/z0` and those two sums. Checked
+against seven vanilla levels' raw `.con` values and the extracted
+`scene.json.combatArea` (z negated by the glTF frame): Berlin `1536 1536 512
+512`, Stalingrad `320 52 416 416`, Liberation_of_Caen `360 460 1229 1229`,
+Omaha_Beach `512 512 1024 1024`, Market_Garden `256 256 1792 1792`, Truk
+`0 0 2048 2048` and Tobruk `1024 0 2048 2048`. Tobruk is the one that would
+have hidden a wrong reading: as origin+size it is x 1024..3072 on a 2048 m
+world — the area runs off the east edge — and as a corner pair it would read
+as an innocent-looking x 1024..2048.
+
+When a level declares no area the same block falls through to 0x08152575,
+which zeroes both origins and calls the terrain's own `getSizeX`/`getSizeZ`
+(`PatchTerrain` vtable +0x0c/+0x10) for the far corner. The "combat area" is
+then the whole terrain.
+
+**The count is 11 of 23**, not "all 23". Read straight off the shared tree:
+every vanilla `scene.json` carries a `combatArea` key, and twelve of them
+carry it as `null` (aberdeen, battleaxe, bocage, coral_sea, el_alamein,
+gazala, guadalcanal, iwo_jima, kharkov, kursk, midway, wake). A key that is
+present but null is not data. Across all 277 extracted `scene.json` files,
+including the mods, 250 are non-null.
+
+**Edge polarity, read rather than assumed.** Four `fucomp`/`fucom` +
+`test ah,0x45` pairs; the branch is taken only when ah&0x45 == 0, i.e. when
+ST(0) is strictly greater than the operand:
+
+| address | comparison | taken means |
+|---|---|---|
+| 0x081523c1 | `minX` vs `pos.x` | `minX > x` -> outside |
+| 0x081523d7 | `minZ` vs `pos.z` | `minZ > z` -> outside |
+| 0x081523ec | `pos.x` vs `maxX` | `x > maxX` -> outside |
+| 0x08152403 | `pos.z` vs `maxZ` | *not* taken -> inside branch |
+
+So inside is `minX <= x <= maxX && minZ <= z <= maxZ`, **inclusive on all four
+edges**. Only the position's `+0` (x) and `+8` (z) are ever loaded:
+**altitude is never bounded**, which is why a bomber orbiting at 400 m over
+the middle of the area is safe and one that drifts sideways is not.
+
+**The damage threshold is strict**, and the accumulator is clamped. The
+`jne 0x0815251a` at 0x08152437 takes the no-damage path on `<=` as well as
+`<`, so damage begins only once the total is strictly past the allowance; and
+after each damage frame the allowance itself is written back into
+player+0x178 (0x081524a8 `mov al,[ecx+0x6c]`, 0x081524ac `fild`, 0x081524b2
+`fstp`), so a player who has been outside for a minute reads 10, not 60. It
+costs no HP — the next frame re-crosses by its own dt — but it is what the
+engine holds.
+
+**CA-5 was wrong: it is not a team check.** Even inside the rectangle the
+engine asks the terrain for the material under the player —
+`dice::ref2::geom::terrainBase` (0x087435f0), vtable +0x4c =
+`PatchTerrain::getMaterial(float, float)` (0x083d6800) — and compares it at
+0x08152540 with `GameServer+0x474`. That field is `materialToGiveDamage`:
+setter `GameServer::setMaterialToGiveDamage(unsigned char)` 0x0813dff0, getter
+0x0813e020, **default 7** from the constructor at 0x0812f287. On a match the
+code jumps to the same accumulate path the out-of-rect tests reach; only a
+mismatch zeroes the accumulator. It is a second, non-geometric way to be
+"outside", and this viewer has no terrain material channel, so it is noted and
+not modelled.
+
+**Who takes the damage: the vehicle.** The position tested at 0x081523a1 is
+`BFPlayer::getVehicle()`'s (vtable +0x3c = 0x080560c0, returning
+BFPlayer+0x4c), so a seated player is tested where his vehicle is. The damage
+goes to the same object: 0x0815243f branches on `BFPlayer+0x6c`, the
+entry-point index, which the constructor sets to -1 (0x08050b1e) and
+`GameServer::exitVehicle` restores (0x0814e5c2). In a vehicle,
+`GameServer::giveDamage` (vtable +0x15c, 0x0814b2e0) is handed
+`getVehicle()` — the hull burns and the pilot is untouched. On foot it is
+handed BFPlayer+0x68, the default vehicle `setDefaultVehicle` stores
+(0x08055879), which is the soldier.
+
+The viewer stepped the area only inside `onFoot()`, so leaving it in a plane
+or a tank did nothing at all. Moved out to `frame()` as `stepCombatArea`, it
+reads the occupied root's world position and takes the damage through the
+hull's own `Armor`.
+
+### Verified live
+
+Berlin, port 5324, allowance overridden to 1 s so a headless session reaches
+the damage.
+
+- **On foot.** Inside: countdown 0, group culled. Teleported 60 m west of
+  `minX`: countdown 1, the warning up, distance 60 m, no damage yet. Seventy
+  more frames at 4 HP/s: HP 30 -> 27.33, `outsideFor` sitting at exactly 1 —
+  the clamp. Teleported back inside: `outsideFor` 0, countdown 0, group
+  culled, HP kept.
+- **Seated.** Climbed into the PanzerIV through the game's own entry point,
+  then moved the boundary (a drivetrain rewrites its node's transform every
+  frame, so a check cannot drive a vehicle out by moving the node): countdown
+  1 at 414 m outside, then hull 100 -> 83.7 while **the occupant's own 30 HP
+  never moved** — the engine's rule, on screen. Boundary restored: countdown
+  0, accumulator 0, the hull stops losing HP.
+- **Free fly.** No player object, so nothing accrues and the group stays
+  culled.

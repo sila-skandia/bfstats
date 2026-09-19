@@ -178,6 +178,7 @@ def load_level(game_dir: Path, mod: str, level: str,
         parse_init_con(_read_text(files, "Init.con"), info)
     if files.find("Init/SkyAndSun.con"):
         parse_init_con(_read_text(files, "Init/SkyAndSun.con"), info)
+    _load_extra_lens_flares(files, info)
     if files.find("StaticObjects.con"):
         info.static_objects = parse_static_objects(_read_text(files, "StaticObjects.con"))
     info.sounds = discover_level_sounds(files, info.static_objects)
@@ -774,6 +775,152 @@ def prepare_sky(info: LevelInfo, meshes, textures):
     if not any(image for _, _, image in faces):
         return None
     return faces
+
+
+def _load_extra_lens_flares(files, info: LevelInfo) -> None:
+    """Pick up `LensFlare` templates declared outside the two init files this
+    extractor reads.
+
+    The engine `run`s every script `Init.con` names; this reader deliberately
+    only parses `Init.con` and `Init/SkyAndSun.con`, which is where all 23
+    vanilla levels put theirs. Mods do not: bfheroes' `Coastal_Clash_Winter`
+    declares an eleven-flare, four-corona sun in `Init/Lenz.con`, and FHSW's
+    `On_the_moon-1969` puts car headlight flares under `objects/LensFlares/`.
+
+    So the extra files are scanned for flares ONLY, into a throwaway
+    `LevelInfo` whose other fields are discarded. Parsing them wholesale
+    would let a stray `renderer.fogEnd` in some mod's init chain override the
+    fog the two authoritative files set, which is a regression risk this
+    change has no reason to take.
+    """
+    for name in files.names():
+        key = name.lower()
+        if not key.endswith(".con"):
+            continue
+        if key.endswith("init.con") or key.endswith("init/skyandsun.con"):
+            continue
+        if "/init/" not in f"/{key}" and "/lensflares/" not in f"/{key}":
+            continue
+        try:
+            text = _read_text(files, name)
+        except Exception:
+            continue
+        if "lensflare" not in text.lower():
+            continue
+        scratch = LevelInfo(name=info.name, terrain=info.terrain)
+        try:
+            parse_init_con(text, scratch)
+        except Exception:
+            continue
+        for template, flare in scratch.lens_flares.items():
+            info.lens_flares.setdefault(template, flare)
+        for obj, template in scratch.flare_objects.items():
+            info.flare_objects.setdefault(obj, template)
+
+
+def _flare_element_json(element, written: dict[str, str | None]) -> dict:
+    out: dict = {"texture": element.texture or None,
+                 "file": written.get(element.texture.lower()) if element.texture else None}
+    for key, value in (("size", element.size), ("size2", element.size2),
+                       ("scale", element.scale), ("rot", element.rot),
+                       ("distFadeScale", element.dist_fade_scale),
+                       ("fadeAngleFactor", element.fade_angle_factor)):
+        if value is not None:
+            out[key] = value
+    if element.color is not None:
+        out["color"] = list(element.color)
+    if element.color2 is not None:
+        out["color2"] = list(element.color2)
+    if element.src_blend:
+        out["srcBlend"] = element.src_blend
+    if element.dest_blend:
+        out["destBlend"] = element.dest_blend
+    return out
+
+
+def write_lens_flare(info: LevelInfo, files, textures, out_dir: Path) -> dict | None:
+    """The level's sun lens flare: `ObjectTemplate.create LensFlare` and the
+    ~16 `setFlare*` / `setCorona*` verbs under it, resolved to the template
+    `Sky.setSun` actually points at, with each sprite's texture written out
+    where it can be found.
+
+    21 of the 23 vanilla levels declare a flare (Midway and Coral Sea do not).
+    **Vanilla ships none of the textures.** Searched every one of the 1,775
+    `.rfa` archives in this installation by stem: `ring3`, `ring4`, `ring5`,
+    `sunflare7` and `sunflare9` exist only in `Mods/bfheroes/Archives/
+    Texture.rfa` (as `.tga`) and inside `Mods/bf1918/Archives/bf1942/levels/
+    montblainville.rfa` (as `.dds`). Substring searches for `sunflare` and
+    `/ring` across `Mods/bf1942`, `Mods/XPack1` and `Mods/XPack2` return
+    nothing; the only flare-related entry vanilla has at all is the vertex
+    shader `Archives/shaders.rfa :: shaders/FlareShader.vso`.
+
+    So the data is emitted whether or not the art resolves, with `file: null`
+    on the sprites whose texture is missing and the missing names listed — the
+    viewer draws what resolves and nothing else, which is also what the real
+    engine's TextureManager would do. A mod level that ships its own flare art
+    (bf1918's montblainville is the case in point) gets a drawn flare from the
+    same code path with no special casing.
+    """
+    template_name = info.flare_objects.get(info.sun_object) or ""
+    flare = info.lens_flares.get(template_name)
+    if flare is None:
+        # A level may declare the template and never name an object for it;
+        # with exactly one declared, that one is unambiguous.
+        if len(info.lens_flares) != 1:
+            return None
+        template_name, flare = next(iter(info.lens_flares.items()))
+    if not flare.flares and not flare.coronas:
+        return None
+
+    dest = out_dir / "flare"
+    written: dict[str, str | None] = {}
+    missing: list[str] = []
+    for element in list(flare.ordered("flare")) + list(flare.ordered("corona")):
+        name = element.texture
+        if not name or name.lower() in written:
+            continue
+        stem = name.rsplit(".", 1)[0]
+        image = None
+        for candidate in (f"texture/{stem}", stem, f"Textures/{stem}"):
+            try:
+                image = _decode_pool_image(textures, candidate)
+            except Exception:
+                image = None
+            if image is None:
+                try:
+                    image = _decode_pool_image(files, candidate)
+                except Exception:
+                    image = None
+            if image is not None:
+                break
+        if image is None:
+            written[name.lower()] = None
+            missing.append(name)
+            continue
+        width, height, rgba = image
+        dest.mkdir(parents=True, exist_ok=True)
+        rel = f"flare/{stem.lower()}.png"
+        (out_dir / rel).write_bytes(encode_png(width, height, rgba, drop_alpha=False))
+        written[name.lower()] = rel
+
+    out = {
+        "template": template_name or None,
+        "object": info.sun_object or None,
+        "flareCount": flare.flare_count,
+        "backFlareCount": flare.back_flare_count,
+        "coronaCount": flare.corona_count,
+        "flares": [_flare_element_json(e, written) for e in flare.ordered("flare")],
+        "coronas": [_flare_element_json(e, written) for e in flare.ordered("corona")],
+    }
+    if flare.visibility_angle_deg is not None:
+        out["visibilityAngleDeg"] = flare.visibility_angle_deg
+    if flare.flare_fade_all is not None:
+        out["flareFadeAll"] = flare.flare_fade_all
+    if flare.corona_fade_all is not None:
+        out["coronaFadeAll"] = flare.corona_fade_all
+    if missing:
+        out["missingTextures"] = missing
+    return out
 
 
 def write_cloud_assets(info: LevelInfo, meshes, textures, out_dir: Path) -> dict | None:
@@ -1943,6 +2090,7 @@ def main() -> int:
     extras["envmap"] = write_skybox(files, out_dir)
     if not sky_faces:
         extras["skybox"] = extras["envmap"]
+    extras["lensFlare"] = write_lens_flare(info, files, textures, out_dir)
     extras["water"] = write_water_assets(
         info, heightmap, textures, out_dir, args.max_texture)
     # Merged into the terrain block rather than sitting beside it: the material
