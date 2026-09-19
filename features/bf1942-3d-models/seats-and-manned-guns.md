@@ -656,3 +656,132 @@ assumed — and the two PNGs match byte for byte. `dial-exact-plus90.png` shows
 the hull silhouette at nine o'clock under a gun that points up, which is
 VHUD-9's counter-clockwise `RotateEffect` and the picture the old comment
 described by the wrong arithmetic.
+
+## 2026-09-20 review (stream C)
+
+An adversarial re-run of the build against GUN-2's closed form, the two places
+stream C departed from the brief, and the seam with stream B. Everything below
+was re-derived rather than read off the report; the survey script is
+`scratchpad/rw2c-review/axis_survey.py` and the servo measurements come from
+`measure.mjs` run against `fcf0131`'s `seats.js` and this branch's, in the
+same temp package `tests/test_seats.py` builds.
+
+### The two departures both hold
+
+**The windmills already turn.** Confirmed on the page, not from the code:
+Battle of the Bulge's `scene.glb` carries `ambient`, `ambient.1` and
+`ambient.2`, targeting `eu_watermillWheel`, `euwindmillStone` and
+`euwindmillWings`; `map.html` plays every non-`spin*` clip, and all three node
+quaternions move between samples 1.5 s apart. So the brief's "29 vanilla
+windmills never turn" is false **for this viewer**, and the unconditional
+`continousRotationSpeed` term in the servo is not what fixes them.
+
+**The steering wheels are not the servo's.** Entered a Willy on the same level
+and drove it: `WillySteering` is a `c_PIYaw` **roll** axis (−60..60,
+`automaticReset` on its bundle) and it reaches ±60° under A and D — while the
+rig `TurretRig` built for that seat is **empty**. `applyRig`/`flight.js` poses
+it; no `TurretAxis` exists for it. And `automaticReset` paired with a
+mouse-look binding is **5 templates across 18 installs** (FHSW 3, GCMOD 2),
+**all `Engine`s**, and `surveyVehicle` only builds axes from
+`RotationalBundle` — so `_stepAutomaticReset` is unreachable from the aim rig
+with the shipped data. Implemented and dormant, exactly as the report says.
+
+**No double rotation.** `assemble.py` bakes the `ambient` clip off
+`template.continuous_rotation` regardless of input binding, and `con.py` now
+also carries `continuousRotation` onto a rig axis — so the two could in
+principle turn one part twice. They cannot today: **127 input-bound axes
+declare a non-zero `setContinousRotationSpeed`, all in FHSW, all
+`c_PIThrottle`, and 0 of them are bound to `c_PIMouseLookX/Y`**, which is the
+only binding `TurretAxis` is built for. Nothing else reads the field.
+
+### `free`, and what the resolved bounds change
+
+Stream C implemented GUN-2's prose (`min == 0 && max == 0`, with an omitted
+component resolving to the template's own 0) rather than the brief's literal
+snippet (`lo is None or hi is None or ...`). That is right, and it matters:
+
+- **338 input-bound axes across 16 installs** (9 in vanilla) declare exactly
+  one of the two vectors with a non-zero component on a bound axis. The
+  snippet calls every one of them free-spinning; the resolved rule clamps
+  them against the template's 0. Vanilla's own `B17_MG2` is the clean case —
+  `setMaxRotation 0/50/0`, no `setMinRotation` — and the glb extras change
+  from `free: true` to `min: 0, max: 50`, which is a ventral gunner that
+  elevates 50° instead of spinning through a full circle.
+- The 151-vs-346 disagreement is a filter, not a contradiction. Counting
+  every axis with `min[i] == max[i] != 0` gives **345 across 16 installs**
+  (the verdict's 346); counting only the ones with an input binding — the
+  only ones `rig()` emits an axis for at all — gives **150 across 12** (the
+  report's 151). The ~195 difference is axes on bundles with no binding,
+  which never reach a rig.
+
+### One behaviour change worth naming: inverted bounds
+
+`_clip` now tests `> max` then `< min` in the authored order, where the old
+code sorted the pair. Four input-bound axes author `min > max`
+(`152mm_SecondaryGun_140_XPBL`/`XPBLI`/`XBL_alt` in FHSW, yaw 48/−48 on
+`c_PIMouseLookX`; FinnWars' `76rk27camera`). Measured in the harness: such an
+axis sat still at 0 before and now alternates −48, +48, −48, +48 every tick.
+That is what the engine's own clip does with an inverted pair, so it is left
+alone — and none of the four is in a published mod, nor is the Camera one ever
+a `TurretAxis`.
+
+### The servo, re-measured
+
+Same scripted input, `fcf0131` vs this branch, real `.con` numbers
+(`ShermanTower` maxSpeed 35 / accel 1000, free; `StationaryMG42Point` 70 /
+5000, ±70):
+
+| same input | before | after |
+|---|---|---|
+| Sherman through 90°, saturating | 0.6667 s | 0.6667 s |
+| MG42 through 90°, saturating | 0.3333 s | 0.3333 s |
+| MG42 to its 70° stop | 0.2500 s | 0.2500 s |
+| Sherman through 90°, tracking 10 px/frame | 1.200 s | 1.200 s |
+| MG42 through 90°, tracking | 1.200 s | 1.200 s |
+| coast after releasing a saturating sweep | 19.44° | **1.33°** |
+| coast after a one-frame 2000 px flick | 19.66° | **0°** |
+
+Identical times are the right answer, not a sign the old path survived. Under
+a saturating hand both laws solve the same recurrence: the old `want =
+clamp(pending/dt, ±cap)` pins at `cap` every tick because the bank never
+empties, and the new `unit = clamp(asked/cap, ±1)` pins at 1 — same target,
+same `accel · speedScale` ramp, same trajectory. In the tracking regime the
+old bank converges to the fixed point where the tick spends exactly what the
+tick asked, which *is* the new law's target, reached in two ticks instead of
+asymptotically (0.149° of difference over three seconds). The whole of the
+change lives at release, where the old model had degrees banked to pay out and
+the new one has only a velocity register decelerating at `accel · speedScale`
+— 140 ÷ 66.7 ≈ 2.1 ticks, i.e. the 1.33° measured. `TURRET_SPEED_SCALE` is 4
+before and after, and `TURRET_DEGREES_PER_PIXEL` is untouched.
+
+The engine's early return (`acceleration == 0 && continousRotationSpeed == 0`)
+is not implemented, and is unreachable: **10 axes across 3 installs** declare
+`setAcceleration` with a zero component on a bound, moving axis, and every one
+of them is a `Camera`, `Engine` or `Wing` — **zero** are a `RotationalBundle`
+mouse-look axis, which is the only thing `TurretAxis` is built for. (XPack2's
+`C47Camera` is the one that would bite a future camera rig: `setMaxSpeed
+90/90/0` with `setAcceleration 5000/0/0`, so its pitch is frozen in retail.)
+
+### The stream B seam — fixed at merge, not here
+
+Both streams added a damage multiplier and `git merge-tree` reports no
+conflict, so both would land silently. B scales the **pixels** in
+`TurretRig.aim()`; C scales the **normalised input** in `TurretAxis.step()`.
+Below the axis's own ceiling they agree exactly; above it they cannot, because
+B's scale is applied before the saturating clamp. Measured on the merged tree,
+one second of a Sherman tower's traverse with `inputScale = 0.2`:
+
+| hand | healthy | plain merge (B's path) | C's path |
+|---|---|---|---|
+| 10 px/frame | 75.5 °/s | 15.1 | 15.1 |
+| 40 px/frame | 138.7 | 60.5 | **28** |
+| 100 px/frame | 138.7 | **138.7** | **28** |
+| 400 px/frame | 138.7 | **138.7** | **28** |
+
+and on the page, driving a Sherman down to 11 of 105 hit points: the plain
+merge traverses a critical tank at the full **140 °/s** (ratio 1.0), the
+patched merge at **28 °/s** (ratio 0.200). The engine scales the `PlayerInput`
+entering the bundle (HP-15), and this file's analogue of that input is `unit`
+— after the clamp — so C's shape is the one that should survive, carried by
+B's field. The patch is in the review's final message and was verified in a
+scratch three-way merge (`mesh-wave2` + C + B), suite 1,447 green.
