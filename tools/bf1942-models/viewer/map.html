@@ -829,6 +829,7 @@ import { VehicleDamageSet } from './vehicle-damage.js';
 import { SupplyDepot, SupplyField } from './supply.js';
 import { wantsEnvmap, cubeFaceUrls, envmapVertexPatch, envmapVertexBody,
          envmapFragmentPatch, envmapFragmentApply } from './envmap.js';
+import { CombatArea } from './combat-area.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -979,6 +980,13 @@ let waterAssets = [];     // textures owned by the water/cloud shaders
 // water shader just happens to want the same six faces. Owned here so a level
 // with no water still reflects, and disposed with `waterAssets`.
 let levelEnvCube = null;
+// `game.setActiveCombatArea` — the warning, its countdown and the damage
+// after it. All the engine reading is in `combat-area.js`; this file only
+// steps it with the body's position and hands the result to the HUD and to
+// the soldier's Armor. Rebuilt per level (11 of the 23 vanilla levels declare
+// an area; the other 12 carry `combatArea: null` and this stays inert).
+let combatArea = new CombatArea(null);
+let combatFrame = null;
 let simTime = 0;
 // Drives everything the level glb animates. One mixer over the level root
 // plays every clip it carries: `FlagBlow <name>` per control point, over that
@@ -5967,6 +5975,20 @@ function onFoot(dt) {
   }
   wasGrounded = soldier.grounded;
 
+  // Out of the combat area. `combat-area.js` carries the engine reading; all
+  // that happens here is stepping it with the body's position and taking the
+  // damage it returns through the same Armor the fall above uses, so the
+  // death cam and the deploy screen below pick it up unchanged. A dead body
+  // stops accruing: the engine's own accumulator lives on a live player.
+  if (!soldierDead && combatArea.active) {
+    combatFrame = combatArea.step(dt, soldier.x, soldier.z);
+    if (combatFrame.damage > 0 && soldierArmor) {
+      soldierArmor.applyDamage(combatFrame.damage);
+    }
+  } else if (!combatArea.active) {
+    combatFrame = null;
+  }
+
   // Death cam → deploy. When the on-foot body's Armor dies (fall damage,
   // `window.__damage(n)`, a future projectile), latch the dead state and hold
   // a short camera beat over/by the corpse (the game's death cam) before the
@@ -7523,6 +7545,10 @@ function stanceNation(team) {
  * the nation and kit-art lookups are memoised above (rule 5), so the only
  * per-call allocation left is the display-string template literal itself.
  */
+// The "nothing to warn about" frame: what `CombatArea.step` returns inside
+// the area, hoisted so `updateSoldierHud` allocates nothing per frame.
+const IN_COMBAT_AREA = { countdown: 0 };
+
 function updateSoldierHud() {
   const vars = gameHud.vars;
   // Any seat at all, which `seats.js` answers for: `occupancy` is non-null
@@ -7546,6 +7572,10 @@ function updateSoldierHud() {
   // died leaves `soldier` null while the counter is still up in the game.
   feedTicketVars(vars);
   if (!onFootActive && !inVehicle) vars['ShowTicket'] = false;
+  // The combat-area warning, drawn by the layout's own `outside` group. The
+  // countdown is 0 whenever the body is inside, or has no body, which culls
+  // the whole group — the engine's own gate is `0 < Outside/OutsideTime`.
+  combatArea.feed(vars, (onFootActive && combatFrame) || IN_COMBAT_AREA);
   // T4a / V-R4: retail keeps the soldier stance icon inside vehicles.
   vars['Soldier/ShowSoldierIcon'] = !!soldier && (onFootActive || inVehicle);
   vars['Vehicle/ShowVehicleIcon'] = inVehicle;
@@ -9305,6 +9335,8 @@ async function show(entry) {
   setupSky(currentRoot, dir);
   // Before setupWater and bindDynamicShading: both read `levelEnvCube`.
   setupEnvCube(dir);
+  combatArea = new CombatArea(extras);
+  combatFrame = null;
   setupWater(currentRoot, dir);
   setupSounds(extras, dir);
   loadMapArt(dir);
@@ -10199,6 +10231,39 @@ if (params.has('shots')) {
   window.__mapGate = on => {
     if (on !== undefined) mapGate = !!on;
     return mapGate;
+  };
+  // The combat area and what it is doing to the body this frame: the rect the
+  // level declared, the engine's two constants, and the live accumulator. A
+  // headless check teleports out, steps frames and reads the countdown and
+  // the HP down the same path a walk would take.
+  //
+  // The two constants are settable here for the same reason `__setAmmo` and
+  // `__damage` exist: the engine's real allowance is 10 seconds, and under
+  // `__renderOnce` a frame is a capped 0.1 s of sim, so reaching the damage
+  // honestly costs 100 forced frames — more than SwiftShader survives in one
+  // session. Overriding them exercises the identical code path on a shorter
+  // clock; the engine's own values are what the module defaults to and what
+  // `tests/test_combat_area.py` pins.
+  const combatAreaState = () => ({
+    active: combatArea.active,
+    rect: combatArea.rect,
+    timeAllowed: combatArea.timeAllowed,
+    damagePerSecond: combatArea.damagePerSecond,
+    outsideFor: combatArea.outsideFor,
+    frame: combatFrame,
+    hud: {
+      time: gameHud.vars['Outside/OutsideTime'],
+      text: gameHud.vars['Outside/OutsideText'],
+    },
+  });
+  window.__combatArea = (options) => {
+    if (options && Number.isFinite(options.timeAllowed)) {
+      combatArea.timeAllowed = options.timeAllowed;
+    }
+    if (options && Number.isFinite(options.damagePerSecond)) {
+      combatArea.damagePerSecond = options.damagePerSecond;
+    }
+    return combatAreaState();
   };
   // Every damageable thing in the level and what it is currently showing, for a
   // headless check: shoot a tank, step frames, read the tier back.
