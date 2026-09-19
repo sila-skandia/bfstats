@@ -277,60 +277,102 @@ class SeatsModuleTests(unittest.TestCase):
     def test_exit_location_falls_back_to_the_root_when_the_seat_has_none(self) -> None:
         self.assertTrue(self.results["occupancy"]["exitLocationFallsBackToRoot"])
 
-    # --- TurretAxis: deadzone, direction, clamp, free wrap ------------------
+    # --- TurretAxis: the engine's velocity servo (ledger GUN-2) -------------
+    #
+    # Every assertion below pins one clause of GUN-2's closed form, read out
+    # of `RotationalBundle::calculateAndClipAngle` (lnxded `0x081d7490`, all
+    # 361 instructions re-traced independently in the 2026-09-19 round).
 
-    def test_small_input_stays_inside_the_deadzone(self) -> None:
-        self.assertEqual(0, self.results["turretAxis"]["belowDeadzone"])
+    def test_a_saturated_hand_runs_the_axis_at_its_scaled_maxSpeed(self) -> None:
+        # GUN-2: `speed -> sign(acceleration) * input * maxSpeed`. `maxSpeed`
+        # is a GAIN, deg/s per unit of input, and what magnitude the client's
+        # mouse axis delivers is GUN-2b, still open — so the viewer's own
+        # choice is that a saturating hand is input 1 and the ceiling is
+        # `maxSpeed * TURRET_SPEED_SCALE`. Sherman 35 * 4 = 140 deg/s, MG42
+        # 70 * 4 = 280, both minus the sliver spent ramping to it.
+        servo = self.results["turretServo"]
+        self.assertAlmostEqual(servo["shermanCap"], servo["shermanDegPerSec"], delta=1.0)
+        self.assertAlmostEqual(servo["mg42Cap"], servo["mg42DegPerSec"], delta=3.0)
 
-    def test_sustained_input_moves_the_axis_the_way_it_was_pushed(self) -> None:
-        axis = self.results["turretAxis"]
-        self.assertTrue(axis["movedNonZero"])
-        self.assertTrue(axis["movedSameSignAsInput"])
-
-    def test_a_bounded_axis_clamps_at_its_declared_max(self) -> None:
-        self.assertTrue(self.results["turretAxis"]["clampedAtMax"])
-
-    def test_a_free_axis_stays_inside_the_wrap_range(self) -> None:
-        self.assertTrue(self.results["turretAxis"]["freeStaysInWrapRange"])
-
-    def test_an_axis_winds_up_at_its_own_declared_acceleration(self) -> None:
-        # GUN-3's velocity register accumulates `|acceleration|*dt`, and
-        # `setAcceleration`'s magnitude is that number — deg/s^2, confirmed,
-        # vanilla magnitudes 30–150. `con.py` emits it as of 2026-09-17, so an
-        # axis that carries it winds up at exactly its own figure: 350 deg/s^2
-        # is 35 deg/s after a tenth of a second. The acceleration is scaled by
-        # `speedScale` (4) in `step`, so the effective rate is 1400 deg/s^2 and
-        # the cap (35 * 4 = 140) is reached in a tenth of a second.
-        self.assertAlmostEqual(140.0, self.results["windUp"]["ownAtTenth"], delta=0.5)
+    def test_the_velocity_register_ramps_at_its_own_acceleration(self) -> None:
+        # `|acceleration|` deg/s^2, the axis's own `setAcceleration` when the
+        # extract carries it. Scaled alongside the cap so the wind-up TIME is
+        # `maxSpeed/acceleration`, the game's own ratio: 350 deg/s^2 against a
+        # 35 deg/s cap is a tenth of a second either way.
+        servo = self.results["turretServo"]
+        self.assertAlmostEqual(140.0, servo["ownAccelAtTenth"], delta=0.5)
 
     def test_an_axis_without_one_falls_back_and_is_slower(self) -> None:
-        # Every glb baked before that emission. The fallback is the middle of
-        # the confirmed band, 90 deg/s^2 — scaled by `speedScale` (4) that is
-        # 360 deg/s^2, reaching the 140 deg/s cap in ~0.39 s. At a tenth of a
-        # second the velocity is 36 deg/s (360 * 0.1); at half a second it has
-        # well overshot the cap and sits at it.
-        wind = self.results["windUp"]
-        self.assertAlmostEqual(36.0, wind["fallbackAtTenth"], delta=0.5)
-        self.assertAlmostEqual(140.0, wind["fallbackAtHalf"], delta=0.5)
+        # Every glb baked before `con.py` started emitting the magnitude. The
+        # fallback is the middle of the confirmed 30–150 band, 90 deg/s^2 —
+        # scaled that is 360 deg/s^2, reaching the 140 deg/s cap in ~0.39 s.
+        servo = self.results["turretServo"]
+        self.assertEqual(90, servo["fallbackAcceleration"])
+        self.assertAlmostEqual(36.0, servo["fallbackAccelAtTenth"], delta=0.5)
+        self.assertAlmostEqual(140.0, servo["fallbackAccelAtHalf"], delta=0.5)
 
-    def test_the_mouse_gets_the_travel_it_asks_for(self) -> None:
-        # The correction two rounds of tuning could not reach: the input
-        # register `manned-guns.md` §3 describes ACCUMULATES, and this class
-        # used to drain its sample to zero every step. That threw away both
-        # everything a fast frame asked for and the whole of a flick the
-        # moment the hand stopped, so the turret could only ever move at "how
-        # fast is the mouse moving right now" — reported twice from play as
-        # far slower than the game. Banked instead: an ask inside what the
-        # axis can deliver comes out 1:1, the same as a soldier's own look.
-        axis = self.results["turretAxis"]
-        self.assertAlmostEqual(axis["askedDegrees"], axis["trackedDegrees"], delta=0.1)
+    def test_there_is_no_input_bank_so_a_flick_does_not_coast(self) -> None:
+        # The `+0x128` register a previous reading of this file modelled as a
+        # ±40 degree bank of aim is an INPUT BACKLOG in input units, and it
+        # exists only under `rememberExcessInput` — which no turret, manned
+        # gun or tank in any of 18 installs declares. So a one-frame flick
+        # turns the axis by exactly one tick of servo and what follows is only
+        # the velocity register ramping down: 1.11 deg in the tick, and under
+        # two degrees of travel in the whole second after. The bank model gave
+        # the same flick 19.7 deg of coast.
+        servo = self.results["turretServo"]
+        self.assertAlmostEqual(1.111, servo["flickOneTickDegrees"], delta=0.01)
+        self.assertLess(servo["flickCoastDegrees"], 2.0)
 
-    def test_a_flick_past_what_it_can_deliver_is_bounded_not_hoarded(self) -> None:
-        # The other half: a bank with no ceiling would keep a turret swinging
-        # for seconds after a hard flick. GUN-3's register is hard-clamped and
-        # so is this one.
-        axis = self.results["turretAxis"]
-        self.assertEqual(axis["pendingClamp"], axis["bankedAfterAFlick"])
+    def test_a_bounded_axis_clamps_at_its_declared_bounds(self) -> None:
+        # `angle > max -> max`, else `angle < min -> min`, on the authored
+        # components and in that order. Nothing zeroes the velocity register
+        # at a bound, so a reversed input answers straight off the stop.
+        servo = self.results["turretServo"]
+        self.assertEqual(servo["declaredMax"], servo["clampedAtMax"])
+        self.assertEqual(servo["declaredMin"], servo["afterReverse"])
+
+    def test_the_wrap_gate_is_both_bounds_zero_not_a_zero_width_range(self) -> None:
+        # GUN-2's correction, and the one with the most data behind it: the
+        # engine wraps only when `minRotation == 0 && maxRotation == 0` (the
+        # template default). `min == max == 45` PINS at 45 — 151 input-bound
+        # axes across 13 installs author such a range, three of them in
+        # vanilla, and the old `lo == hi` rule spun every one of them.
+        servo = self.results["turretServo"]
+        self.assertTrue(servo["freeWrapped"])
+        self.assertEqual(45, servo["zeroWidthRangePins"])
+
+    def test_continuous_rotation_is_added_every_tick(self) -> None:
+        # `angle += speed*dt + continousRotationSpeed*dt`, unconditionally, in
+        # the non-`automaticReset` path. Fed no input at all, an axis carrying
+        # `setContinousRotationSpeed 12` turns 12 degrees in a second; fed a
+        # 60 deg/s ask as well, it turns 72 — the term rides on top of the
+        # traverse rather than replacing it.
+        servo = self.results["turretServo"]
+        self.assertAlmostEqual(12.0, servo["continuousOnlyDegrees"], delta=0.2)
+        self.assertAlmostEqual(72.0, servo["continuousPlusInputDegrees"], delta=0.5)
+
+    def test_automatic_reset_is_a_rate_law_that_returns_to_rest(self) -> None:
+        # A different control law, not a variation: the angle ramps straight
+        # toward `input * maxRotation` at `|acceleration|` deg/s — a RATE, so
+        # one tick from rest moves exactly `acceleration * dt` — with no
+        # velocity register and no continuous term. Release and the target is
+        # zero, so the part drives itself home at the same rate. That is what
+        # a steering wheel is, and 221 vanilla templates declare it.
+        servo = self.results["turretServo"]
+        self.assertEqual(servo["wheelRatePerTick"], servo["wheelOneTickDegrees"])
+        self.assertEqual(servo["wheelMaxRotation"], servo["wheelHeld"])
+        self.assertTrue(servo["wheelSpeedRegisterStaysZero"])
+        self.assertEqual(0, servo["wheelHome"])
+
+    def test_a_critically_damaged_vehicle_traverses_at_one_fifth(self) -> None:
+        # HP-15, which retires ARM-6. `RotationalBundle::handlePlayerInput`
+        # multiplies all three input axes by the double at `ds:0x86c8678` =
+        # 0.2 while `SimpleObject+0xee` is set. `step`'s `inputScale` is that
+        # multiplier's seam; `map.html` supplies it.
+        servo = self.results["turretServo"]
+        self.assertAlmostEqual(0.2, servo["criticallyDamagedDegrees"] / servo["healthyDegrees"],
+                               delta=0.01)
 
     # --- FireState: gate order, heat/overheat, reload (GUN-12) --------------
 
