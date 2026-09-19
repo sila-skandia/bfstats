@@ -83,10 +83,26 @@ function collectWhenVars(conds, out) {
   }
 }
 
-/** `when` conditions, evaluated exactly as `spawn-layout.json`'s consumer
- *  already does (map.html's `condOk`) -- only ever called once every var it
- *  touches is already known to be present (`_visible`, below), so there is
- *  no "what does undefined compare as" question to answer here. */
+/** Every comparison `extract_hud_layout.py` can put in a `when` list.
+ *
+ *  The extractor's own vocabulary is `EqualData`/`NotEqualData`/`LessData`/
+ *  `LessEqualData` (its `ops` table), and it then runs them through `negate`
+ *  (`NEG_CMP`) and through the operand flip it applies when the LITERAL is
+ *  the left-hand side (`FLIP_CMP`: `lt`->`gt`, `le`->`ge`). So `gt` and `ge`
+ *  are as much a part of the format as `lt` and `le` — the combat-area
+ *  warning's gate is the MemeFile's `0 < Outside/OutsideTime`, which flips to
+ *  `{Outside/OutsideTime, gt, 0}`, and the weapon-select bar's fifth and
+ *  sixth slots are `{Weapon/NumberOfItems, ge, 5|6}`.
+ *
+ *  Both were missing here and fell through to the permissive default, which
+ *  does not cull: the warning drew over every level's HUD with a countdown of
+ *  zero, and a four-item kit's weapon bar drew six slots.
+ *  `tests/test_hud_layout.py` now asserts the extractor cannot emit an
+ *  operator this switch does not answer, so the next one cannot fail open.
+ *
+ *  Only ever called once every var it touches is known to be present
+ *  (`_visible`, below), so there is no "what does undefined compare as"
+ *  question to answer here. */
 function condOk(c, vars) {
   if (c.op === 'and') return c.terms.every(t => condOk(t, vars));
   if (c.op === 'or') return c.terms.some(t => condOk(t, vars));
@@ -97,6 +113,8 @@ function condOk(c, vars) {
     case 'ne': return !(v === want || Number(v) === Number(want));
     case 'lt': return Number(v) < Number(want);
     case 'le': return Number(v) <= Number(want);
+    case 'gt': return Number(v) > Number(want);
+    case 'ge': return Number(v) >= Number(want);
     default: return true;
   }
 }
