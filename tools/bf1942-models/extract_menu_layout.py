@@ -55,13 +55,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from extract_models import DEFAULT_GAME_DIR  # noqa: E402
+from extract_models import DEFAULT_GAME_DIR, mod_chain  # noqa: E402
+from extract_hud_pack import hud_dir_for  # noqa: E402
 from extract_loading_assets import format_map_title  # noqa: E402
 from extract_spawn_layout import (  # noqa: E402
     Flattener, VIRTUAL, data_value, extract_fonts, font_handles, font_id,
-    load_lexicon, texture_key,
+    load_chain_lexicon, load_lexicon, texture_key,
 )
 from bf42 import meme  # noqa: E402
+from bf42.modmenu import MenuSources  # noqa: E402
 from bf42.rfa import RfaArchive, find_archives_dir  # noqa: E402
 
 sys.path.insert(0, str(Path.home() / ".claude/skills/bf1942-map-images/scripts"))
@@ -101,6 +103,48 @@ SKIN_NATION: dict[str, str] = {
     "britishdesertsoldier": "brit",
     "canadiansoldier": "can",
     "russiansoldier": "rus",
+
+    # --- the mods' own armies. Not guessed from the name: each row is the
+    # nation the flag on that team's own control points resolves to, counted
+    # over every extracted level of that mod (`game.setTeamSkin <team> <skin>`
+    # in the level's Init.con against the `flagMesh` of the control points it
+    # gives that team, through `hud.json`'s flagMeshNation). The counts below
+    # are that tally; where a skin flies two flags the majority is taken and
+    # the minority is recorded.
+    #
+    # Road to Rome and Secret Weapons keep vanilla's nation art and add to
+    # it, so these read naturally.
+    "italiansoldier": "it",             # flagit_m1 x10
+    "britishcommandosoldier": "brit",   # flaguk_m1 x6
+    "frenchsoldier": "fre",             # flagfr_m1 x2 (RtR), x13 (EoD)
+    #
+    # Eve of Destruction reuses vanilla's *codes* and repaints the art: its
+    # own conp_ger is the North Vietnamese flag, conp_jp the Viet Cong one,
+    # conp_brit South Vietnam's and conp_rus Australia's. So the nation code
+    # a Vietnam-era army maps to looks wrong and is right -- it names the
+    # slot, and the slot holds EoD's own flag.
+    "nvasoldier": "ger",                # flagge_m1 x233, flagjp_m1 x16
+    "vietcongsoldier": "jp",            # flagjp_m1 x165, flagge_m1 x19
+    "vcfemalesoldier": "jp",            # flagjp_m1 x31
+    "civilvc_soldier": "jp",            # flagjp_m1 x18, flagge_m1 x1
+    "arvnforces": "brit",               # flaguk_m1 x34, flagus_m1 x1
+    # `flagso_m1` x16, and the row is `so`, not the `rus` vanilla's
+    # FLAG_MESH_NATION aliases `so` to. EoD ships its own `so` art, so
+    # `flag_mesh_nations` already stops aliasing it for the in-game HUD
+    # (hud.json's flagMeshNation: `so -> so`), and the two flag families do
+    # not agree: `conp_so` and `conp_rus` are the same bytes, but decoded,
+    # EoD's `icon_flag_so` is the Australian blue ensign while its
+    # `icon_flag_rus` is the Stars and Stripes. Routing AustralianForces
+    # through `rus` therefore drew a US flag beside Australia on this
+    # screen for the 14 EoD levels that field them, while the in-game
+    # ticket counter on the same level drew the Australian one.
+    "australianforces": "so",           # flagso_m1 x16
+    "specialforces": "us",              # flagus_m1 x79
+    "navyseals": "us",                  # flagus_m1 x15
+    "rambosoldier": "us",               # flagus_m1 x2
+    # `PathetLaosSoldier` flies flagpl_m1 on 11 control points and no
+    # installed menu.rfa holds a `conp_pl`, so it stays off this table and
+    # the run says so.
 }
 
 #: BF1942 numbers team 1 Axis and team 2 Allied everywhere: `ObjectTemplate.team 1`
@@ -110,8 +154,21 @@ AXIS, ALLIED = 1, 2
 
 TEAM_SKIN_RE = re.compile(r"(?im)^\s*game\.setTeamSkin\s+([12])\s+([A-Za-z0-9_]+)")
 
-#: The nation flags, which every level needs two of.
+#: The nation flags, which every level needs two of. A mod's levels may fly
+#: nations vanilla never had, so `level_flags` adds whatever theirs name; this
+#: is the floor, and on vanilla it is the whole set.
 FLAG_TEXTURES = [f"icon_flag_{n}" for n in ("us", "ger", "brit", "can", "jp", "rus")]
+
+
+def level_flags(levels: dict) -> set[str]:
+    """Every `icon_flag_<nation>` the extracted level list actually names."""
+    out: set[str] = set()
+    for level in levels.get("levels", []):
+        for key in ("axis", "allied"):
+            flag = (level.get(key) or {}).get("flag")
+            if flag:
+                out.add(flag)
+    return out
 
 #: NOT IN THE DATA. The reference capture shows the two sides' flags in the
 #: top corners of the level preview, the Allied nation's left and the Axis
@@ -415,34 +472,44 @@ def decode_page(data: bytes, lexicon: dict[str, str],
     }
 
 
-def decode_layout(menu_rfa: Path, lexicon: dict[str, str]) -> dict:
+def decode_layout(menu, lexicon: dict[str, str]) -> dict:
+    """`menu` is the mod's layered `menu.rfa` view (`MenuSources.open_menu`).
+
+    Of the 16 installed mods only Secret Weapons ships any of the three pages
+    below, and that one only `menu/MainLogo`, which is not one of them — so
+    in practice every mod's Instant Battle screen is vanilla's, and what
+    changes is the level list beside it. Resolving through the chain means a
+    mod that *does* restyle the screen gets its own without this file
+    learning about it.
+    """
     pages: dict[str, dict] = {}
     variables: dict[str, object] = {}
     strings: dict[str, str] = {}
     fonts: set[str] = set()
-    with RfaArchive(menu_rfa) as arch:
-        index = {e.lower(): e for e in arch.entries}
-        for key, entry in PAGES:
-            real = index.get(entry.lower())
-            if real is None:
-                sys.exit(f"{menu_rfa.name} has no {entry}")
-            page = decode_page(arch.read(real), lexicon,
-                               BACKGROUND_RECTS if key == "background" else None)
-            for warning in page["warnings"]:
-                # `menu/Background` also carries the main menu's Bink player
-                # (`BfBinkNode`, no schema, MEME-11's remainder). It is
-                # outside BACKGROUND_RECTS, so it costs this screen nothing.
-                print(f"warning: {entry}: {warning}", file=sys.stderr)
-            pages[key] = {"source": entry, "elements": page["elements"]}
-            variables.update(page["variables"])
-            variables.update(page["settled"])
-            strings.update(page["strings"])
-            fonts.update(el["font"] for el in page["elements"]
-                         if el.get("font") and el["kind"] in ("text", "listbox"))
+    owners: set[str] = set()
+    index = {e.lower(): e for e in menu.entries}
+    for key, entry in PAGES:
+        real = index.get(entry.lower())
+        if real is None:
+            sys.exit(f"the {'/'.join(menu.labels)} menu chain has no {entry}")
+        owners.add(menu.owner(real) or "")
+        page = decode_page(menu.read(real), lexicon,
+                           BACKGROUND_RECTS if key == "background" else None)
+        for warning in page["warnings"]:
+            # `menu/Background` also carries the main menu's Bink player
+            # (`BfBinkNode`, no schema, MEME-11's remainder). It is
+            # outside BACKGROUND_RECTS, so it costs this screen nothing.
+            print(f"warning: {entry}: {warning}", file=sys.stderr)
+        pages[key] = {"source": entry, "elements": page["elements"]}
+        variables.update(page["variables"])
+        variables.update(page["settled"])
+        strings.update(page["strings"])
+        fonts.update(el["font"] for el in page["elements"]
+                     if el.get("font") and el["kind"] in ("text", "listbox"))
     return {
         "virtual": list(VIRTUAL),
         "source": f"{', '.join(e for _, e in PAGES)} (MemeFile 2.0) in "
-                  f"Mods/bf1942/Archives/{menu_rfa.name}",
+                  f"Mods/{'+'.join(sorted(owners))}/Archives/menu.rfa",
         "fonts": sorted(fonts),
         "strings": dict(sorted(strings.items())),
         "variables": dict(sorted(variables.items())),
@@ -473,45 +540,46 @@ def layout_textures(layout: dict) -> set[str]:
     return names
 
 
-def extract_textures(menu_rfa: Path, names: set[str], out_dir: Path,
+def extract_textures(menu, names: set[str], out_dir: Path,
                      force: bool) -> dict:
     """Decode every plate the layout names, by basename, out of `menu.rfa`.
 
     The layout spells `Menu/knapp3_N.tga`; the archive holds
     `menu/Texture/Menu/knapp3_n.dds`. Neither the case nor the extension in
     the data can be trusted, so both are resolved against the entry table
-    (the same rule `extract_hud_pack.py` follows).
+    (the same rule `extract_hud_pack.py` follows). `menu` is the layered
+    chain, so a mod's own plate wins over vanilla's of the same name.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest: dict[str, dict] = {}
     missing: list[str] = []
-    with RfaArchive(menu_rfa) as arch:
-        by_stem: dict[str, list[str]] = {}
-        for entry in arch.entries:
-            leaf = entry.rsplit("/", 1)[-1]
-            if "." not in leaf:
-                continue
-            by_stem.setdefault(leaf.rsplit(".", 1)[0].lower(), []).append(entry)
-        for name in sorted(names):
-            candidates = by_stem.get(name, [])
-            entry = next((c for c in candidates if c.lower().endswith(".dds")),
-                         next(iter(candidates), None))
-            if entry is None:
-                missing.append(name)
-                continue
-            raw = arch.read(entry)
-            if entry.lower().endswith(".dds"):
-                width, height, rgba = decode_dds(raw)
-            else:
-                width, height, rgba = decode_tga(raw)
-            dest = out_dir / f"{name}.png"
-            if force or not dest.exists():
-                dest.write_bytes(encode_png(width, height, rgba, drop_alpha=False))
-            manifest[name] = {"file": f"textures/{name}.png",
-                              "size": [width, height], "source": entry}
+    by_stem: dict[str, list[str]] = {}
+    for entry in menu.entries:
+        leaf = entry.rsplit("/", 1)[-1]
+        if "." not in leaf:
+            continue
+        by_stem.setdefault(leaf.rsplit(".", 1)[0].lower(), []).append(entry)
+    for name in sorted(names):
+        candidates = by_stem.get(name, [])
+        entry = next((c for c in candidates if c.lower().endswith(".dds")),
+                     next(iter(candidates), None))
+        if entry is None:
+            missing.append(name)
+            continue
+        raw = menu.read(entry)
+        if entry.lower().endswith(".dds"):
+            width, height, rgba = decode_dds(raw)
+        else:
+            width, height, rgba = decode_tga(raw)
+        dest = out_dir / f"{name}.png"
+        if force or not dest.exists():
+            dest.write_bytes(encode_png(width, height, rgba, drop_alpha=False))
+        manifest[name] = {"file": f"textures/{name}.png",
+                          "size": [width, height], "source": entry}
     if missing:
-        print(f"warning: {len(missing)} textures not in {menu_rfa.name}: "
-              f"{', '.join(missing)}", file=sys.stderr)
+        print(f"warning: {len(missing)} textures not in the "
+              f"{'/'.join(menu.labels)} menu chain: {', '.join(missing)}",
+              file=sys.stderr)
     return manifest
 
 
@@ -636,10 +704,34 @@ def level_record(name: str, paths: list[Path], thumb_dir: Path | None,
     return record
 
 
-def extract_levels(archives: Path, out_dir: Path, force: bool,
+def chain_level_archives(chain: list[Path]) -> dict[str, list[Path]]:
+    """`level_archives` over a whole mod path.
+
+    Furthest parent first, so `level_record`'s later-wins reading leaves the
+    nearest mod's `Init.con` and thumbnail in place. A mod that ships its own
+    Aberdeen (Eve of Destruction does) lists its own; a mod that inherits a
+    level whole still lists it, which is what the viewer's `maps.json` for
+    that mod holds too (`extract_models.discover_levels` walks the same
+    chain).
+    """
+    merged: dict[str, list[Path]] = {}
+    for mod_dir in reversed(chain):
+        archives = find_archives_dir(mod_dir)
+        if archives is None:
+            continue
+        for name, paths in level_archives(archives).items():
+            merged.setdefault(name, []).extend(paths)
+    return merged
+
+
+def extract_levels(archives, out_dir: Path, force: bool,
                    titles: dict[str, tuple[str, str]] | None = None) -> dict:
+    """`archives` is either one `Archives` directory or a name -> archives
+    mapping already merged over a mod chain."""
+    by_name = (archives if isinstance(archives, dict)
+               else level_archives(archives))
     levels = []
-    for name, paths in sorted(level_archives(archives).items()):
+    for name, paths in sorted(by_name.items()):
         record = level_record(name, paths, out_dir / "thumbnails", force, titles)
         if record is not None:
             levels.append(record)
@@ -672,46 +764,50 @@ def extract_levels(archives: Path, out_dir: Path, force: bool,
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--game-dir", type=Path, default=DEFAULT_GAME_DIR)
-    parser.add_argument("--out", type=Path, default=VIEWER_MENU_DIR)
+    parser.add_argument("--mod", default="bf1942",
+                        help="mod whose menu chain and levels to read "
+                             "(default: bf1942)")
+    parser.add_argument("--out", type=Path, default=None,
+                        help="output directory (default: the mod's own "
+                             f"pack dir, {VIEWER_MENU_DIR} for vanilla)")
     parser.add_argument("--force", action="store_true",
                         help="re-encode textures, thumbnails and font atlases")
     args = parser.parse_args()
 
     game_dir = args.game_dir.expanduser()
-    mod = game_dir / "Mods" / "bf1942"
-    archives = find_archives_dir(mod)
-    if archives is None:
-        sys.exit(f"no Archives directory under {mod}")
-    by_name = {c.name.lower(): c for c in archives.iterdir()}
-    menu_rfa, font_rfa = by_name.get("menu.rfa"), by_name.get("font.rfa")
-    if not menu_rfa or not font_rfa:
-        sys.exit(f"menu.rfa / Font.rfa not found under {archives}")
-    lexicon_path = next((c for c in mod.iterdir()
-                         if c.name.lower() == "lexiconall.dat"), None)
-    lexicon = load_lexicon(lexicon_path) if lexicon_path else {}
+    sources = MenuSources(mod_chain(game_dir, args.mod))
+    out = args.out or (hud_dir_for(sources.mod_id) / "menu")
+
+    lexicon = load_chain_lexicon(sources.lexicon_paths)
     if not lexicon:
         print("warning: lexiconAll.dat not found, locale keys stay unresolved",
               file=sys.stderr)
 
-    out = args.out
     out.mkdir(parents=True, exist_ok=True)
-    layout = decode_layout(menu_rfa, lexicon)
-    layout["previewFlags"] = flag_slots(layout)
-    layout["textures"] = extract_textures(
-        menu_rfa, layout_textures(layout) | set(FLAG_TEXTURES),
-        out / "textures", args.force)
-    layout["fontFiles"] = extract_fonts(font_rfa, font_handles(layout),
-                                        out / "fonts", args.force)
-    layout["listRows"] = list_rows(layout, out)
-    (out / "menu-layout.json").write_text(json.dumps(layout, indent=1) + "\n")
 
     # The level titles read the same file, but a level's own key can occur
     # twice (`Omaha_Beach` is a level title at record 976 and a control
     # point at 1332), and there the first record is the title.
-    titles = (title_index(load_lexicon(lexicon_path, keep="first"))
-              if lexicon_path else {})
-    levels = extract_levels(archives, out, args.force, titles)
+    titles = title_index(load_chain_lexicon(sources.lexicon_paths, keep="first"))
+    levels = extract_levels(chain_level_archives(sources.chain), out,
+                            args.force, titles)
     (out / "menu-levels.json").write_text(json.dumps(levels, indent=1) + "\n")
+
+    # Decoded after the levels, because which nation flags the screen needs
+    # is a property of the level list. On vanilla `level_flags` is a subset
+    # of `FLAG_TEXTURES` and the set is unchanged.
+    with sources.open_menu() as menu:
+        layout = decode_layout(menu, lexicon)
+        layout["previewFlags"] = flag_slots(layout)
+        layout["textures"] = extract_textures(
+            menu,
+            layout_textures(layout) | set(FLAG_TEXTURES) | level_flags(levels),
+            out / "textures", args.force)
+    with sources.open_font() as fonts:
+        layout["fontFiles"] = extract_fonts(fonts, font_handles(layout),
+                                            out / "fonts", args.force)
+    layout["listRows"] = list_rows(layout, out)
+    (out / "menu-layout.json").write_text(json.dumps(layout, indent=1) + "\n")
 
     elements = sum(len(p["elements"]) for p in layout["pages"].values())
     print(f"{elements} elements over {len(layout['pages'])} pages, "
