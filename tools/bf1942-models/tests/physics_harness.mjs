@@ -597,6 +597,79 @@ results.cannotJumpOffWater = {
   floatY, after: swimmer.position.y, armed: swimmer.jumpArmed,
   rose: swimmer.position.y - floatY,
 };
+// --- thin geometry, and a body that starts inside it -----------------------
+//
+// `sweepCapsule` skips contacts the motion is already travelling away from.
+// That is narrower than it sounds -- `#sweepTriangle` rejects a receding
+// *face* before it computes anything (`nv >= -1e-9`), so the only contacts the
+// skip can reach are edge and corner ones, whose separating direction can
+// point anywhere. The thing to prove is that it did not open a hole: nothing
+// that could stop the motion is dropped, so a 10 cm wall stays solid whether
+// you walk into it, start overlapping it, or are put down inside it -- which
+// is what leaving a seat beside a wall does (`map.html`'s `exitVehicle` trusts
+// `soldierExitLocation` and lets `spawn()` settle it).
+const FENCE_X0 = 9.95, FENCE_X1 = 10.05;
+const fence = new WorldCollider({
+  heightfield: field,
+  statics: buildCollisionIndex(group([box(FENCE_X0, 0, -48, FENCE_X1, 3, -16)])),
+});
+function pushAt(startX, forward, seconds = 3) {
+  const r = walk(fence, { forward }, seconds, { start: { x: startX, y: 0, z: -32 } });
+  return { x: r.x, y: r.y, z: r.z, grounded: r.grounded,
+           speed: Math.hypot(r.soldier.velocity.x, r.soldier.velocity.z),
+           contacts: r.soldier.contacts };
+}
+results.thinWall = {
+  bounds: [FENCE_X0, FENCE_X1],
+  radius: BODY_RADIUS,
+  // A clean run-up from 6 m away: stopped one radius short, on the near side.
+  runUp: pushAt(4, 1),
+  // Already overlapping the near face when the tick starts (centre 5 cm out,
+  // which is inside the 30 cm sphere). This is the case the receding skip
+  // touches, because the sphere is resting on the face's edge.
+  fromInsideNear: pushAt(FENCE_X0 - 0.05, 1),
+  // Put down dead centre *in* the wall, as an exit point inside a fence would
+  // be, then told to walk into it.
+  fromDeadCentre: pushAt((FENCE_X0 + FENCE_X1) / 2, 1),
+  // And the mirror: overlapping the far face, walking back the other way.
+  fromInsideFar: pushAt(FENCE_X1 + 0.05, -1),
+};
+
+// An inside corner: the push-out from one face moves the body along the other.
+// Four slide passes have to settle it rather than shuttling between the two.
+// Yaw pi/4 heads (+X, +Z), so the two faces that meet it are at x = 20 and
+// z = -12 and the inside corner is the point (20, -12).
+const CORNER_X = 20, CORNER_Z = -12;
+const cornerWorld = new WorldCollider({
+  heightfield: field,
+  statics: buildCollisionIndex(group([
+    box(CORNER_X, 0, -60, 40, 3, -4),        // face at x = 20
+    box(0, 0, CORNER_Z, 40, 3, -4),          // face at z = -12
+  ])),
+});
+{
+  // Facing into the corner at 45 degrees from open ground.
+  const s = new SoldierBody({ world: cornerWorld, yaw: Math.PI / 4 });
+  s.place(4, 0, -28, Math.PI / 4);
+  s.step(TICK_DT, {});
+  let peakSpeed = 0, maxY = 0;
+  const samples = [];
+  for (let i = 0; i < 300; i++) {
+    s.step(TICK_DT, { forward: 1 });
+    peakSpeed = Math.max(peakSpeed, Math.hypot(s.velocity.x, s.velocity.z));
+    maxY = Math.max(maxY, s.position.y);
+    if (i >= 290) samples.push([+s.position.x.toFixed(5), +s.position.z.toFixed(5)]);
+  }
+  // How far the last ten ticks wandered: a limit cycle shows up here.
+  const xs = samples.map(p => p[0]), zs = samples.map(p => p[1]);
+  results.insideCorner = {
+    x: s.position.x, z: s.position.z, y: s.position.y, maxY, peakSpeed,
+    grounded: s.grounded,
+    wanderX: Math.max(...xs) - Math.min(...xs),
+    wanderZ: Math.max(...zs) - Math.min(...zs),
+  };
+}
+
 // --- the kick lands on the ACTUAL velocity (PHY-1, item 1's third "do NOT") -
 //
 // A soldier pressed into `tooTall`'s 2.5 m face with the ramp saturated: his
