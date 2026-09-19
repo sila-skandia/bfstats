@@ -64,8 +64,17 @@
 //
 //     gran_al_Base_m1.sm   col0  6 verts   material 70    <- the only 70
 //     granade_axis_m1.sm   col0  6 verts   material 70
-//     demokit_m1.sm        col0  6 verts   material 195   (undefined -> material 0)
-//     landmine_m1.sm       col0 12 verts   material 232   (undefined -> material 0)
+//     demokit_m1.sm        col0  6 verts   material 195   (declared, bare)
+//     landmine_m1.sm       col0 12 verts   material 232   (declared, bare)
+//
+// 195 and 232 ARE declared in `materialManagerdefine.con` — they carry a
+// `materialDamage` and nothing else — so the engine builds a Material for each
+// and `getMaterialPtr` never misses on them. What they get is the Material
+// CONSTRUCTOR's friction 1.0, elasticity 0 and resistance **0.01**, not
+// material 0's authored 0.02, and `bf42/damage.py` writes exactly those three
+// into `damage.json` for every declared id. (155 ids are declared; the misses
+// that really do fall through to material 0 are the gaps, 16-38, 71, 73-78,
+// 99 and so on.)
 //
 // So the arithmetic comes out at:
 //
@@ -141,9 +150,12 @@ export const GRENADE_MATERIAL = 70;
  * So the explosives pack's damage material is the grenade material and its
  * CONTACT material is not — read `ObjectTemplate.material` for it and the pack
  * would stop dead like a grenade instead of settling like a mine. 195 and 232
- * are both undefined in `materialManagerdefine.con` and fall back to material
- * 0, so both land on the same coefficients; the table exists to get there for
- * the right reason.
+ * are both DECLARED in `materialManagerdefine.con` with a `materialDamage` and
+ * none of the three physical words, so each is a real Material carrying the
+ * constructor's 1.0 / 0 / 0.01 — not a miss that falls through to material 0,
+ * and not material 0's authored resistance of 0.02. Both land on the same
+ * coefficients either way; the distinction is 0.01 against 0.02 of resistance,
+ * and it is what `damage.json` now carries.
  *
  * **The proper fix is an extractor word** — the collision material belongs on
  * the projectile spec the same way `material2` and `radius` do — and until

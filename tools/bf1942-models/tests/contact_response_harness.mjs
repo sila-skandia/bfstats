@@ -23,25 +23,34 @@ results.constants = {
 
 // The vanilla numbers, as `damage.json` carries them after this round's
 // extractor change. 0 is "Default", 3 "Juicy grass", 12 "Rock", 70 "Grenades".
+// 195 and 232 are the explosives pack's and the landmine's collision-vertex
+// materials: both ARE declared in `materialManagerdefine.con`, with a
+// `materialDamage` and none of the three physical words, so the extractor
+// writes them with the Material constructor's 1.0 / 0 / 0.01. 99 is a real gap
+// in the define file and is what an actual miss looks like.
 const MATERIALS = {
   '0': { friction: 1.0, elasticity: 0.0, resistance: 0.02 },
   '1': { friction: 0.1, elasticity: 0.0, resistance: 0.1 },
   '3': { friction: 0.8, elasticity: 0.0, resistance: 0.08 },
   '12': { friction: 0.6, elasticity: 0.0, resistance: 0.01 },
   '70': { friction: 2.0, elasticity: 2.0, resistance: 2.0 },
-  '195': { friction: 1.0, elasticity: 0.0, resistance: 0.01, damage: 1 },
+  '195': { friction: 1.0, elasticity: 0.0, resistance: 0.01, damage: 0 },
+  '232': { friction: 1.0, elasticity: 0.0, resistance: 0.01, damage: 30 },
 };
 
 results.lookup = {
   grenadeElasticity: materialProperty(MATERIALS, 70, 'elasticity'),
   grassElasticity: materialProperty(MATERIALS, 3, 'elasticity'),
-  // 232 is the landmine's collision-vertex material and vanilla never defines
-  // it, so it falls through to material 0, NOT to the constructor defaults.
-  undefinedFriction: materialProperty(MATERIALS, 232, 'friction'),
-  undefinedResistance: materialProperty(MATERIALS, 232, 'resistance'),
-  undefinedElasticity: materialProperty(MATERIALS, 232, 'elasticity'),
-  // 195 is the explosives pack's; it IS defined here, with its own resistance.
+  // 99 is a gap in `materialManagerdefine.con`: a real `getMaterialPtr` miss,
+  // which falls through to material 0's AUTHORED values, not to the
+  // constructor's.
+  undefinedFriction: materialProperty(MATERIALS, 99, 'friction'),
+  undefinedResistance: materialProperty(MATERIALS, 99, 'resistance'),
+  undefinedElasticity: materialProperty(MATERIALS, 99, 'elasticity'),
+  // 195 and 232 are the fuse rounds' own; both ARE declared, bare, so both
+  // carry the constructor's 0.01 rather than material 0's 0.02.
   expackResistance: materialProperty(MATERIALS, 195, 'resistance'),
+  landmineResistance: materialProperty(MATERIALS, 232, 'resistance'),
   noTable: materialProperty(null, 3, 'friction'),
   // No material 0 either: the accessor's `fld1`.
   noZero: materialProperty({ '9': { friction: 0.5 } }, 232, 'friction'),
@@ -98,7 +107,7 @@ const WALL = { nx: -1, ny: 0, nz: 0 };
 results.singleContact = {
   // A grenade arriving at 10 m/s down and 15 m/s forward on flat ground.
   grenadeFlat: oneContact(70, 3, { x: 15, y: -10, z: 0 }, FLAT),
-  // The same arrival for a landmine (material 232 -> material 0, e = 0).
+  // The same arrival for a landmine (material 232, declared bare, e = 0).
   landmineFlat: oneContact(232, 3, { x: 15, y: -10, z: 0 }, FLAT),
   // A grenade into a vertical wall: N.y = 0, so no Coulomb budget at all.
   grenadeWall: oneContact(70, 12, { x: 12, y: -3, z: 0 }, WALL),
