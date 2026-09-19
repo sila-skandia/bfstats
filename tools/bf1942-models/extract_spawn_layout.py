@@ -58,10 +58,21 @@ MAP_RECT = [280, 33, 512, 512]
 
 # --------------------------------------------------------------------- lexicon
 
-def load_lexicon(path: Path) -> dict[str, str]:
+def load_lexicon(path: Path, keep: str = "last") -> dict[str, str]:
     """`lexiconAll.dat`: u32 record count, u32 columns, then per record the
     key and one UTF-16LE NUL-terminated string per language. English is the
-    first language column."""
+    first language column.
+
+    The file is not a map: 31 of the vanilla file's 1,693 keys occur twice
+    and seven of those pairs hold different strings, so which occurrence
+    wins is a choice. `keep="last"` is the reader's long-standing one and
+    stays the default; `keep="first"` is for callers that want the earlier
+    record. None of the seven differing pairs is a key any spawn-screen
+    element names, so `menu/InGame` reads the same either way - the level
+    titles in `extract_menu_layout.py` are the caller that cares
+    (`Omaha_Beach` is "OMAHA BEACH" at record 976, inside the level-title
+    block 958..979, and "Omaha Beach" at record 1332, inside a block of
+    control-point labels)."""
     data = path.read_bytes()
     count, cols = struct.unpack_from("<II", data, 0)
     pos = 8
@@ -79,6 +90,8 @@ def load_lexicon(path: Path) -> dict[str, str]:
     for _ in range(count):
         key = read()
         values = [read() for _ in range(cols - 1)]
+        if keep == "first" and key in out:
+            continue
         out[key] = values[0]
     return out
 
@@ -172,6 +185,12 @@ class Flattener:
         self.variables: dict[str, object] = {}
         self.strings: dict[str, str] = {}
 
+    def effect_color(self, effect):
+        """The multiplier an `EffectNode`'s effect applies. A method so a
+        subclass can resolve effects whose channels are bound to variables;
+        the base is the module function, unchanged."""
+        return effect_color(effect)
+
     def note_variables(self, obj) -> None:
         if isinstance(obj, meme.Obj):
             if obj.name and obj.cls in ("BoolData", "IntData", "FloatData", "StringData"):
@@ -191,7 +210,7 @@ class Flattener:
                 if cond:
                     when.append(cond)
             elif cls == "EffectNode":
-                c = effect_color(node["Effect"])
+                c = self.effect_color(node["Effect"])
                 if c:
                     color = mul_color(color, c)
             elif cls == "TransformNode":
@@ -208,7 +227,21 @@ class Flattener:
             elif cls in ("CullEventActionNode", "CullVariableAndEventActionNode"):
                 self.emit_hit(node, nodes, rect, when)
             else:
-                self.run(node.children(), ox, oy, rect, color, when)
+                ox, oy, color, when = self.extend(node, nodes, ox, oy, rect, color, when)
+
+    def extend(self, node, siblings, ox, oy, rect, color, when):
+        """Every class the cases above do not name. The base walks into the
+        node's own children, which is what `menu/InGame` needs and all it
+        ever needed.
+
+        A subclass overrides this to add classes without restating the
+        dispatch. Like `CullNode` and `EffectNode`, a class here may be
+        sibling-scoped rather than a leaf (`TranslateNode` shifts the origin
+        for everything after it in the same list), so the hook returns the
+        state the loop carries forward.
+        """
+        self.run(node.children(), ox, oy, rect, color, when)
+        return ox, oy, color, when
 
     def leaf(self, kind, rect, color, when, **extra) -> dict:
         el = {"kind": kind, "rect": [round(v, 2) for v in rect]}
