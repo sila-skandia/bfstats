@@ -583,5 +583,210 @@ class CoreModuleTests(unittest.TestCase):
         self.assertEqual(0, atlas["notAnimated"])
 
 
+class EffectEmitterNodesTests(unittest.TestCase):
+    """Tests for the widened _effect_emitter_nodes vehicle bake path."""
+    
+    def test_non_additive_sprites_are_baked(self) -> None:
+        """BMInvSourceAlpha smoke/dust sprites are now accepted."""
+        smoke_con = """
+ObjectTemplate.create EffectBundle e_BuildingSmoke
+ObjectTemplate.addTemplate em_BuildingSmoke
+
+ObjectTemplate.create Emitter em_BuildingSmoke
+ObjectTemplate.template Fx_BuildingSmoke
+ObjectTemplate.timeToLive CRD_NONE/1/0/0
+ObjectTemplate.intensity CRD_NONE/5/0/0
+
+ObjectTemplate.create SpriteParticle Fx_BuildingSmoke
+ObjectTemplate.texture e_muzs1_I
+ObjectTemplate.timeToLive CRD_NONE/2/0/0
+ObjectTemplate.size CRD_NONE/1.5/0/0
+ObjectTemplate.destBlendMode BMInvSourceAlpha
+        """
+        lib = con_mod.ObjectLibrary()
+        lib.add_con("smoke.con", smoke_con)
+        pool = ArchivePool()
+        asm = Assembler(pool, pool, pool, lib)
+        builder = gltf.GlbBuilder()
+        report = Report(root="test", configuration="complex", lod=0)
+        # Pre-seed sprite mesh cache to avoid texture lookup
+        asm._sprite_mesh_cache["e_muzs1_i#alpha"] = builder.add_mesh("test", [])
+        
+        bundle = lib.object("e_BuildingSmoke")
+        nodes = asm._effect_emitter_nodes(builder, bundle, report)
+        
+        self.assertEqual(1, len(nodes), "alpha-blended sprite should bake")
+        node = builder.node(nodes[0])
+        self.assertEqual("sprite", node.extras["effect"]["kind"])
+    
+    def test_nested_bundles_are_recursed(self) -> None:
+        """Cascade bundles with nested EffectBundle children are walked."""
+        cascade_con = """
+ObjectTemplate.create EffectBundle BazookaCascadesStone
+ObjectTemplate.addTemplate e_ExplBazooka
+ObjectTemplate.addTemplate e_ScrapMetalBazook
+
+ObjectTemplate.create EffectBundle e_ExplBazooka
+ObjectTemplate.addTemplate em_ExplCore
+rem setPosition/setRotation 0.0/90.0/0.0
+
+ObjectTemplate.create Emitter em_ExplCore
+ObjectTemplate.template Fx_ExplCore
+ObjectTemplate.timeToLive CRD_NONE/0.3/0/0
+ObjectTemplate.intensity CRD_NONE/10/0/0
+
+ObjectTemplate.create SpriteParticle Fx_ExplCore
+ObjectTemplate.texture e_explfire_I
+ObjectTemplate.timeToLive CRD_NONE/0.5/0/0
+ObjectTemplate.size CRD_NONE/4.0/0/0
+ObjectTemplate.destBlendMode BMOne
+
+ObjectTemplate.create EffectBundle e_ScrapMetalBazook
+ObjectTemplate.addTemplate em_ScrapDebris
+
+ObjectTemplate.create Emitter em_ScrapDebris
+ObjectTemplate.template Fx_ScrapDebris
+ObjectTemplate.timeToLive CRD_NONE/0.2/0/0
+ObjectTemplate.intensity CRD_NONE/8/0/0
+
+ObjectTemplate.create Particle Fx_ScrapDebris
+ObjectTemplate.geometry Richo_meshBrown_m1
+ObjectTemplate.timeToLive CRD_UNIFORM/3/1/0
+ObjectTemplate.gravityModifier CRD_NONE/1/0/0
+
+GeometryTemplate.create StandardMesh Richo_meshBrown_m1
+        """
+        lib = con_mod.ObjectLibrary()
+        lib.add_con("cascade.con", cascade_con)
+        pool = ArchivePool()
+        asm = Assembler(pool, pool, pool, lib)
+        builder = gltf.GlbBuilder()
+        report = Report(root="test", configuration="complex", lod=0)
+        # Pre-seed caches
+        mesh_idx = builder.add_mesh("test", [])
+        asm._sprite_mesh_cache["e_explfire_i"] = mesh_idx
+        asm._geom_mesh["richo_meshbrown_m1"] = (mesh_idx, 1)
+        
+        bundle = lib.object("BazookaCascadesStone")
+        nodes = asm._effect_emitter_nodes(builder, bundle, report)
+        
+        self.assertGreater(len(nodes), 0, "nested bundles should produce nodes")
+        # Should have 2 nested bundle containers
+        bundle_nodes = [n for n in nodes if builder.node(n).extras.get("effect", {}).get("kind") == "bundle"]
+        self.assertEqual(2, len(bundle_nodes), "both nested bundles should be present")
+    
+    def test_sound_only_emitters_are_excluded(self) -> None:
+        """Emitters with no texture or geometry should not bake."""
+        sound_con = """
+ObjectTemplate.create EffectBundle e_collision_metal
+ObjectTemplate.loadSoundScript Sounds/collision.ssc
+ObjectTemplate.addTemplate Em_Silent
+
+ObjectTemplate.create Emitter Em_Silent
+ObjectTemplate.template Fx_Silent
+ObjectTemplate.timeToLive CRD_NONE/0.1/0/0
+ObjectTemplate.intensity CRD_NONE/1/0/0
+
+ObjectTemplate.create SpriteParticle Fx_Silent
+ObjectTemplate.timeToLive CRD_NONE/0.1/0/0
+rem no texture
+        """
+        lib = con_mod.ObjectLibrary()
+        lib.add_con("sound.con", sound_con)
+        pool = ArchivePool()
+        asm = Assembler(pool, pool, pool, lib)
+        builder = gltf.GlbBuilder()
+        report = Report(root="test", configuration="complex", lod=0)
+        
+        bundle = lib.object("e_collision_metal")
+        nodes = asm._effect_emitter_nodes(builder, bundle, report)
+        
+        self.assertEqual(0, len(nodes), "sound-only emitters should be excluded")
+    
+    def test_view_gating_is_preserved(self) -> None:
+        """showInFirstPerson-gated emitters keep their view restriction."""
+        view_con = """
+ObjectTemplate.create EffectBundle e_MuzzTest
+ObjectTemplate.addTemplate em_3P_Flash
+ObjectTemplate.addTemplate em_1P_Flash
+
+ObjectTemplate.create Emitter em_3P_Flash
+ObjectTemplate.template Fx_Flash
+ObjectTemplate.showInThirdPerson 1
+ObjectTemplate.showInFirstPerson 0
+ObjectTemplate.timeToLive CRD_NONE/0.1/0/0
+ObjectTemplate.intensity CRD_NONE/1/0/0
+
+ObjectTemplate.create Emitter em_1P_Flash
+ObjectTemplate.template Fx_Flash_1P
+ObjectTemplate.showInThirdPerson 0
+ObjectTemplate.showInFirstPerson 1
+ObjectTemplate.timeToLive CRD_NONE/0.1/0/0
+ObjectTemplate.intensity CRD_NONE/1/0/0
+
+ObjectTemplate.create SpriteParticle Fx_Flash
+ObjectTemplate.texture e_muzflash_I
+ObjectTemplate.timeToLive CRD_NONE/0.05/0/0
+ObjectTemplate.size CRD_NONE/2.0/0/0
+ObjectTemplate.destBlendMode BMOne
+
+ObjectTemplate.create SpriteParticle Fx_Flash_1P
+ObjectTemplate.texture e_muzflash_I
+ObjectTemplate.timeToLive CRD_NONE/0.05/0/0
+ObjectTemplate.size CRD_NONE/0.4/0/0
+ObjectTemplate.destBlendMode BMOne
+        """
+        lib = con_mod.ObjectLibrary()
+        lib.add_con("view.con", view_con)
+        pool = ArchivePool()
+        asm = Assembler(pool, pool, pool, lib)
+        builder = gltf.GlbBuilder()
+        report = Report(root="test", configuration="complex", lod=0)
+        # Pre-seed sprite cache
+        mesh_idx = builder.add_mesh("test", [])
+        asm._sprite_mesh_cache["e_muzflash_i"] = mesh_idx
+        
+        bundle = lib.object("e_MuzzTest")
+        nodes = asm._effect_emitter_nodes(builder, bundle, report)
+        
+        self.assertEqual(2, len(nodes))
+        views = [builder.node(n).extras["effect"].get("view") for n in nodes]
+        self.assertIn("third", views)
+        self.assertIn("first", views)
+    
+    def test_debris_payloads_are_baked(self) -> None:
+        """SimpleObject debris meshes (scrap metal, shell casings) are accepted."""
+        debris_con = """
+ObjectTemplate.create EffectBundle e_ScrapMetal_iron
+ObjectTemplate.addTemplate em_ScrapIron
+
+ObjectTemplate.create Emitter em_ScrapIron
+ObjectTemplate.template Gibb_iron_m1
+ObjectTemplate.timeToLive CRD_NONE/0.2/0/0
+ObjectTemplate.intensity CRD_NONE/5/0/0
+
+ObjectTemplate.create SimpleObject Gibb_iron_m1
+ObjectTemplate.geometry Gibb_iron_m1
+
+GeometryTemplate.create StandardMesh Gibb_iron_m1
+        """
+        lib = con_mod.ObjectLibrary()
+        lib.add_con("debris.con", debris_con)
+        pool = ArchivePool()
+        asm = Assembler(pool, pool, pool, lib)
+        builder = gltf.GlbBuilder()
+        report = Report(root="test", configuration="complex", lod=0)
+        # Pre-seed mesh cache
+        mesh_idx = builder.add_mesh("test", [])
+        asm._geom_mesh["gibb_iron_m1"] = (mesh_idx, 1)
+        
+        bundle = lib.object("e_ScrapMetal_iron")
+        nodes = asm._effect_emitter_nodes(builder, bundle, report)
+        
+        self.assertEqual(1, len(nodes), "SimpleObject debris should bake")
+        node = builder.node(nodes[0])
+        self.assertEqual("mesh", node.extras["effect"]["kind"])
+
+
 if __name__ == "__main__":
     unittest.main()
