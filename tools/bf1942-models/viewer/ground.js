@@ -41,6 +41,104 @@ const DEG = Math.PI / 180;
 /** The two grips a wheel declares, and what they mean to the drivetrain. */
 const GRIP_DRIVEN = 'c_PGFEngineGrip';
 
+// --- Coulomb friction, PHY-2 ------------------------------------------------
+//
+// `ResponsePhysics::addFriction` lnxded `0x0825b6e0` spends a per-tick
+// tangential velocity budget, with no force and no mass anywhere in it:
+//
+//   limKinetic = A * 1.50 * 9.82 * L / 30      m/s of delta-v, one 30 Hz tick
+//   limStatic  = 1.50 * limKinetic  =  A * 2.25 * 9.82 * L / 30
+//
+// read from `0x086be4d0` (1.5), `0x086d16e0` (2.25), `0x086d16e4` (9.82) and
+// `0x08716b5c` (30), formed at `0x0825b7c9`. `1.5 * 9.82` is 14.73, which is
+// the shipped gravity — so as an acceleration the kinetic budget is exactly
+// `A * |g| * L` and the static one is half again.
+//
+// L, and this was the round's one open disagreement: it is the **y of the
+// averaged contact normal**, `ResponsePhysics+0x6c`. Settled here by reading
+// `impulseOn` `0x08258900`, whose tail at `0x08258a6a`-`0x08258abb` maintains
+// `+0x68` as a running mean of its third Vec3 argument (the contact normal)
+// — `mean = (mean*count + n)/(count+1)`, count at `+0xa4` — while `posAdjust`
+// lives at `+0x14` and `speedAdjust` at `+0x2c`. There is no impulse
+// accumulator at `+0x68`. `addFriction`'s branch at `0x0825b7a2` sends a
+// `CID_BFSoldierTemplate` object to `0x0825c63e`, which points the load read
+// at `+0x98` instead; everything else, a vehicle part included, falls through
+// to `0x0825b7ae` and reads `+0x68`.
+//
+// A is NOT the surface's own coefficient: `impulseOn`'s tail
+// (`0x08258b6a`-`0x08258ba0`) stores `0.5 * (friction(matA) + friction(matB))`
+// into `+0xa8`. A wheel on grass runs at `0.5*(1.0 + 0.8) = 0.9`.
+const COULOMB_SLIDING = 1.50;
+const COULOMB_BREAKAWAY = 2.25;
+const COULOMB_GRAVITY = 9.82;
+
+/**
+ * `MaterialManager.materialFriction` for a contact surface the level does not
+ * name. An id the define file never mentions falls back to material 0, which
+ * vanilla authors at 1.0, and that is also the `Material` constructor's own
+ * default — so every path lands on the same number.
+ */
+export const DEFAULT_MATERIAL_FRICTION = 1.0;
+
+/**
+ * The wheel's own side of the pair. A Willy's wheels are material 37 and a
+ * tank's road wheels 38 / 178; vanilla defines none of them, so all three fall
+ * back to material 0 at 1.0 (collision-response.md section 9.4). Mods that
+ * define them would change this, which is why it is a named constant and not
+ * an inlined 1.
+ */
+const WHEEL_MATERIAL_FRICTION = 1.0;
+
+/**
+ * The two caps a contact is tested against, as accelerations rather than as
+ * per-tick velocity steps — the viewer integrates at its own rate, and
+ * `1.5 * 9.82 / 14.73` is exactly 1, so the kinetic cap really is `A * load`.
+ *
+ * `load` stands in for the engine's `|g| * L`: the viewer's per-wheel spring
+ * loads sum to `|g|` when the vehicle is standing, so summed over the
+ * contacts the budget is the engine's whole-vehicle one. **Approximation,
+ * named:** the engine takes a mean over touching parts of one normal's y and
+ * the viewer distributes the same total by spring load, so the two agree on
+ * flat ground and diverge on a slope, where the viewer's split follows the
+ * suspension rather than a single averaged normal.
+ */
+function coulombCaps(friction, load) {
+  const g = -GRAVITY;
+  const kinetic = friction * (COULOMB_SLIDING * COULOMB_GRAVITY / g) * load;
+  const breakaway = friction * (COULOMB_BREAKAWAY * COULOMB_GRAVITY / g) * load;
+  return { kinetic, breakaway };
+}
+
+/**
+ * Clamp a tangential demand into the Coulomb budget, with the engine's
+ * **state-dependent hysteresis** — not two passes, the two arms of one branch
+ * (`0x0825bb72 mov dl,[esi+0xb4]; test dl,dl; jns 0x0825bebc`):
+ *
+ *   latched static  |demand| > breakaway -> latch breaks, scale to kinetic
+ *                   otherwise            -> apply in full, up to 1.5x kinetic
+ *   not latched     |demand| > kinetic   -> scale to kinetic, stay sliding
+ *                   otherwise            -> the latch sets
+ *
+ * The clamp is **isotropic on the tangential plane** — a vector scale and
+ * nothing more. There is no slip-angle curve anywhere in the engine, and no
+ * separate lateral coefficient; where this file keeps either, it says so.
+ *
+ * @returns {{scale: number, latched: boolean}} the factor to apply to both
+ *   components of the demand, and the latch state for the next tick
+ */
+function coulombClamp(demand, caps, latched) {
+  if (latched) {
+    if (demand > caps.breakaway && demand > 1e-9) {
+      return { scale: caps.kinetic / demand, latched: false };
+    }
+    return { scale: 1, latched: true };
+  }
+  if (demand > caps.kinetic && demand > 1e-9) {
+    return { scale: caps.kinetic / demand, latched: false };
+  }
+  return { scale: 1, latched: true };
+}
+
 /**
  * Willys jeep numbers. Every one is either read from the shipped data (and the
  * glb now carries it, so the fallback here should never fire on a current
@@ -115,18 +213,36 @@ export const WILLYS = {
   bumpStiffness: 5,
 
   // --- tyres ----------------------------------------------------------------
-  // Friction coefficient against the declared grip classes. The classes
-  // themselves (`c_PGFRollGrip` fronts, `c_PGFEngineGrip` rears) are data;
-  // the coefficient behind them is not readable, so one mu covers both. At
-  // 1.0 the jeep corners at up to one BF-gravity (14.73 m/s^2) and launches
-  // traction-limited at about 6 m/s^2 on its rear axle. [free]
-  mu: 1.0,
-  // Lateral force per radian of slip, per unit of that wheel's normal load.
-  // Saturates against mu at 1/7 rad (8 degrees) of slip. Load-proportional
-  // stiffness makes this jeep neutral-steer in the textbook sense; the
-  // understeer you feel at the limit comes from the friction circle eating
-  // the driven axle's lateral grip. [free]
+  // There is no `mu` here any more. The coefficient is material data (PHY-2):
+  // `0.5 * (materialFriction[wheel] + materialFriction[ground])`, looked up
+  // per wheel through the `surfaceFriction` the page injects. A jeep runs at
+  // 0.9 on grass, 0.75 in mud, 1.05 on a paved road and 0.55 in water,
+  // instead of at a flat fitted 1.0 everywhere — and it breaks away at 1.5x
+  // that before it starts sliding. `DEFAULT_MATERIAL_FRICTION` is what a
+  // level with no material map falls back to, which is also what the old
+  // constant happened to be.
+  //
+  // Lateral force per radian of slip, per unit of that wheel's normal load,
+  // saturating against the Coulomb cap at about 8 degrees of slip.
+  // **INVENTION, and now known to be one.** The engine has no slip-angle
+  // curve anywhere: its clamp is a plain isotropic vector scale on the
+  // tangential plane, and a rolling wheel only ever asks for lateral
+  // correction in the first place. This is kept because it is what gives the
+  // jeep a steering feel a player can drive, not because anything backs it.
+  // [free, invented]
   corneringStiffness: 7,
+  // How much of the Coulomb budget the lateral axis may reach, the same
+  // invented anisotropy the tracked class carries and for a sharper reason
+  // here. `corneringStiffness` above was fitted against a flat isotropic
+  // `mu * load` circle with no hysteresis; PHY-2's 1.5:1 break-away raised
+  // the ceiling a *latched* wheel may pull by half, and the jeep promptly
+  // rolled itself onto its roof at full lock (89 degrees, from 12). 1/1.5
+  // puts the break-away ceiling back exactly where the fitted circle was and
+  // leaves the sliding ceiling below it — so the hysteresis is observable in
+  // the direction the invented stiffness does not dominate (traction) and
+  // neutral in the one where it does. Re-fitting the stiffness instead would
+  // have hidden the change inside another free number. [free, invented]
+  lateralGripFraction: 1 / 1.5,
   // Slip angles are read against a floored longitudinal speed and faded in
   // below walking pace, because a tyre model with real authority at zero
   // speed is a numerical oscillator, not a tyre. [free, numerics]
@@ -186,6 +302,13 @@ class Wheel {
     this.load = 0;
     /** Rolled angle, radians, for the visual spin. */
     this.angle = 0;
+    /** The live half of `ResponsePhysics`'s grip byte `+0xb4`: bit 0x80, the
+     * static latch. A parked vehicle stands on latched contacts (a parked
+     * aircraft is the engine's own worked example), so it starts set. */
+    this.staticGrip = true;
+    /** The material coefficient this wheel last found under itself, kept for
+     * the harness to read. `0.5 * (wheel + ground)`, PHY-2. */
+    this.friction = DEFAULT_MATERIAL_FRICTION;
   }
 }
 
@@ -207,6 +330,14 @@ export class GroundVehicle extends Vehicle {
      * (bound), a test passes arithmetic.
      */
     this.groundHeight = options.groundHeight || (() => -Infinity);
+    /**
+     * `MaterialManager.materialFriction` of the ground under a world (x, z),
+     * injected exactly the way `groundHeight` is so this module still runs
+     * under node with no collider and no textures. The page builds it from
+     * the level's own `terrain/materials.png` and `_shared/damage.json`; a
+     * test passes a constant or a stripe. PHY-2.
+     */
+    this.surfaceFriction = options.surfaceFriction || (() => DEFAULT_MATERIAL_FRICTION);
 
     this.wheels = [];
     /** Engine declarations off the `Engine` node, spec values as fallback. */
@@ -476,6 +607,8 @@ export class GroundVehicle extends Vehicle {
       if (compression <= 0) {
         wheel.compression = 0;
         wheel.load = 0;
+        // No contact this tick clears the static latch (`0x0825b76b`).
+        wheel.staticGrip = false;
         // An airborne driven wheel spins against nothing — at the surface
         // speed the engine is commanding for this gear (TANK-9's EngineGrip
         // target), over the wheel's own radius.
@@ -498,6 +631,10 @@ export class GroundVehicle extends Vehicle {
       wheel.compression = compression;
       wheel.load = load;
       loaded += 1;
+      // The Coulomb coefficient this contact spends: the mean of the wheel's
+      // own material and the ground's (PHY-2), sampled where the tyre is.
+      wheel.friction = 0.5 * (WHEEL_MATERIAL_FRICTION
+        + this.surfaceFriction(attach.x, attach.z));
 
       // The tyre's own frame: forward steered or straight, lateral to its
       // right. Rotation about +Y, so a negative steer angle points the wheel
@@ -534,15 +671,19 @@ export class GroundVehicle extends Vehicle {
         fLong -= moving * k.engineBraking / drivenCount;
       }
 
-      // The friction circle: a tyre carrying `load` has mu x load to spend,
-      // shared between going and turning. Scaling the pair keeps the
-      // direction of the demand, which is what makes a drive-saturated axle
-      // understeer instead of doing something creative.
-      const cap = k.mu * load;
-      const demand = Math.hypot(fLong, fLat);
-      if (demand > cap && demand > 1e-9) {
-        fLong *= cap / demand;
-        fLat *= cap / demand;
+      // The friction circle, now with the engine's own coefficient and its
+      // 1.5:1 break-away hysteresis (PHY-2). The budget is the mean of the
+      // two contacting materials, so the same jeep has 0.9 on grass and 0.75
+      // in mud; the clamp scales the pair and so keeps the direction of the
+      // demand, which is what makes a drive-saturated axle understeer instead
+      // of doing something creative.
+      const caps = coulombCaps(wheel.friction, load);
+      const demand = Math.hypot(fLong, fLat / k.lateralGripFraction);
+      const grip = coulombClamp(demand, caps, wheel.staticGrip);
+      wheel.staticGrip = grip.latched;
+      if (grip.scale !== 1) {
+        fLong *= grip.scale;
+        fLat *= grip.scale;
       }
 
       // Suspension pushes along world up; the tyre works in the body's
@@ -1021,17 +1162,25 @@ export const TANK = {
   suspensionTravel: 0.35,
   bumpStiffness: 5,
 
-  // `mu` is the LONGITUDINAL friction limit: grousers biting, close to
-  // Willy's for lack of any tank-specific reading. `lateralMu` is the same
-  // limit across the track, and it is deliberately much lower — a track
-  // skids sideways, and `#step`'s friction-ellipse comment has the roll
-  // arithmetic that says 1.1 in this direction is above the model's own
-  // static rollover threshold. `corneringStiffness` is how quickly that
-  // lateral limit is reached, no longer how large it is: at 30 the tracks
-  // reached it inside a tenth of a degree of slip, which read as a hull
-  // welded to its heading. [free]
-  mu: 1.1,
-  lateralMu: 0.55,
+  // `mu 1.1` is gone: a track wheel's material (38, 178) is as undefined in
+  // vanilla as a jeep's 37, so all of them fall back to material 0 at 1.0 and
+  // the coefficient comes from the ground, per wheel, like everyone else's
+  // (PHY-2). There never was a tank-specific reading to lose.
+  //
+  // What survives is the ANISOTROPY, and it is now labelled for what it is:
+  // an invention. The engine's clamp is isotropic on the tangential plane and
+  // has no separate lateral coefficient at all. This file keeps one because a
+  // track that slides sideways as reluctantly as it grips lengthwise rolls
+  // itself over — at a Coulomb cap of 1.1x14.73 a full-lock turn asks 10.9 of
+  // roll moment about the contact patches where the springs can answer at
+  // most `sum(load) * halfWidth` = 12.5, and the M3A1 duly went onto its roof
+  // the moment anything let it turn quickly. Expressed as a fraction of the
+  // material cap rather than as a coefficient of its own, so the material
+  // data drives the magnitude and only the shape is fitted. [free, invented]
+  lateralGripFraction: 0.5,
+  // How quickly that lateral limit is reached, not how large it is: at 30 the
+  // tracks reached it inside a tenth of a degree of slip, which read as a hull
+  // welded to its heading. Same invention as Willy's. [free, invented]
   corneringStiffness: 12,
   // The half-track's own front axle only: an ordinary tyre, not a track —
   // Willy's own value (`WILLYS.corneringStiffness`), transcribed rather than
@@ -1129,6 +1278,9 @@ export class TrackedVehicle extends Vehicle {
     super(node, parent, options);
     this.spec = options.spec || TANK;
     this.groundHeight = options.groundHeight || (() => -Infinity);
+    /** The ground's `materialFriction` under a world (x, z) — injected the
+     * same way `groundHeight` is. See `GroundVehicle`'s own field. PHY-2. */
+    this.surfaceFriction = options.surfaceFriction || (() => DEFAULT_MATERIAL_FRICTION);
 
     // `this.control` never changes after construction, so the two
     // `s.surfaces` keys `#step` reads every sub-step are built once here
@@ -1190,6 +1342,9 @@ export class TrackedVehicle extends Vehicle {
      * simply vanishes. */
     const drivenCount = this.wheels.reduce((n, w) => n + (w.driven ? 1 : 0), 0);
     this._coupleLoad = drivenCount > 0 ? -GRAVITY / drivenCount : 0;
+    /** And the material coefficient that wheel found, so the couple's cap is
+     * the ground's rather than a constant (PHY-2). */
+    this._coupleFriction = DEFAULT_MATERIAL_FRICTION;
 
     // A box estimate for aero drag and roll/pitch/yaw inertia, same
     // reconstruction `WILLYS` uses a guessed box for — except the footprint
@@ -1343,7 +1498,8 @@ export class TrackedVehicle extends Vehicle {
    * exists to model, since the loads the track forces scale with are the
    * ones oscillating.
    *
-   * What actually cured it is `#step`'s friction ellipse (`lateralMu`) —
+   * What actually cured it is `#step`'s friction ellipse
+   * (`lateralGripFraction`) —
    * measured: the cycle is gone at 60 Hz with that in place, and 60/120/240/
    * 480 Hz now agree to four decimals on every figure the harness reports.
    * This is margin, not the fix, and it is not free margin either, so it is
@@ -1432,6 +1588,7 @@ export class TrackedVehicle extends Vehicle {
     // answers nothing, so it is skipped rather than zeroing the split for the
     // whole hull the moment one roller crests a bump.
     let nextCoupleLoad = Infinity;
+    let nextCoupleFriction = DEFAULT_MATERIAL_FRICTION;
     const speed = s.velocity.length();
     const authority = Math.min(1, speed / 2);
 
@@ -1445,6 +1602,7 @@ export class TrackedVehicle extends Vehicle {
       if (compression <= 0) {
         wheel.compression = 0;
         wheel.load = 0;
+        wheel.staticGrip = false;   // no contact clears the latch (PHY-2)
         // Airborne and driven: the track keeps moving at its commanded rate
         // against nothing, same convention `GroundVehicle` uses.
         if (wheel.driven) {
@@ -1465,7 +1623,12 @@ export class TrackedVehicle extends Vehicle {
       wheel.compression = compression;
       wheel.load = load;
       loaded += 1;
-      if (wheel.driven && load > 0 && load < nextCoupleLoad) nextCoupleLoad = load;
+      wheel.friction = 0.5 * (WHEEL_MATERIAL_FRICTION
+        + this.surfaceFriction(attach.x, attach.z));
+      if (wheel.driven && load > 0 && load < nextCoupleLoad) {
+        nextCoupleLoad = load;
+        nextCoupleFriction = wheel.friction;
+      }
 
       // No steer angle for a track wheel — `dir` stays nose-forward, exactly
       // `GroundVehicle`'s own `!wheel.steered` branch. The one wheel this
@@ -1577,7 +1740,7 @@ export class TrackedVehicle extends Vehicle {
         const vOther = engineGripTarget(throttle, yaw, -wheel.side, this.ratio);
         const gShare = load / -GRAVITY;
         const coupleLoad = this._coupleLoad;
-        const coupleCap = k.mu * coupleLoad;
+        const coupleCap = coulombCaps(this._coupleFriction, coupleLoad).kinetic;
         let diff = (vTgt - vOther) * 0.5 * k.trackDifferential
           * (coupleLoad / -GRAVITY);
         if (diff > coupleCap) diff = coupleCap;
@@ -1588,28 +1751,31 @@ export class TrackedVehicle extends Vehicle {
       // TANK-14's reading, and its own zero strength/damping already leaves
       // it nothing to spend one on regardless.
 
-      // The friction limit is an ELLIPSE here, not the circle a tyre gets.
-      // That is the defining property of a track and the one this class was
-      // still borrowing from `GroundVehicle`: steel grousers bite hard along
-      // the track's length and the same track slides sideways comparatively
-      // freely, which is the entire reason a tracked vehicle can steer by
-      // scrubbing at all. An isotropic circle at the tracks' own high `mu`
-      // gets both halves wrong at once — it starves the differential (the
-      // only yaw authority a tank has) of the longitudinal force it needs,
-      // while handing every hull a lateral force big enough to roll it: at
-      // `mu` 1.1 against GRAVITY 14.73 a full-lock turn asks 10.9 of roll
-      // moment about the contact patches where the springs can answer at
-      // most `sum(load) * halfWidth` = 12.5, i.e. the model could out-grip
-      // its own track width, and the M3A1 duly went onto its roof the
-      // moment anything let it turn quickly. `lateralMu` is below that
-      // threshold by a real margin and `mu` is untouched. [free]
-      const capLong = k.mu * load;
-      const capLat = k.lateralMu * load;
-      const demand = capLong > 1e-9 && capLat > 1e-9
-        ? Math.hypot(fLong / capLong, fLat / capLat) : 0;
-      if (demand > 1) {
-        fLong /= demand;
-        fLat /= demand;
+      // The friction limit is an ELLIPSE here, not the circle a tyre gets —
+      // and PHY-2 says plainly that the engine's is a circle for both, so
+      // this is the viewer's, kept for a reason rather than for parity. An
+      // isotropic budget starves the differential (the only yaw authority a
+      // tank has) of longitudinal force while handing the hull a lateral
+      // force big enough to roll it: on a paved road the cap is 1.05x14.73
+      // and a full-lock turn asks ~10.4 of roll moment about the contact
+      // patches where the springs can answer at most `sum(load) * halfWidth`
+      // = 12.5. The M3A1 duly went onto its roof the moment anything let it
+      // turn quickly. `lateralGripFraction` sits below that threshold by a
+      // real margin and the longitudinal budget is untouched.
+      //
+      // The magnitude is the material's (PHY-2) and so is the 1.5:1
+      // break-away hysteresis; only the ellipse's SHAPE is this file's own,
+      // and `lateralGripFraction` says so in its own comment. Stretching the
+      // lateral axis by that fraction turns the ellipse test back into the
+      // same scalar compare the isotropic clamp does, so both classes run one
+      // `coulombClamp`.
+      const caps = coulombCaps(wheel.friction, load);
+      const demand = Math.hypot(fLong, fLat / k.lateralGripFraction);
+      const grip = coulombClamp(demand, caps, wheel.staticGrip);
+      wheel.staticGrip = grip.latched;
+      if (grip.scale !== 1) {
+        fLong *= grip.scale;
+        fLat *= grip.scale;
       }
 
       const suspension = this._susp.set(0, load, 0).applyQuaternion(qInv);
@@ -1635,6 +1801,8 @@ export class TrackedVehicle extends Vehicle {
     }
 
     this._coupleLoad = nextCoupleLoad < Infinity ? nextCoupleLoad : 0;
+    this._coupleFriction = nextCoupleLoad < Infinity
+      ? nextCoupleFriction : DEFAULT_MATERIAL_FRICTION;
 
     s.grounded = loaded > 0;
     s.airspeed = speed;
@@ -1748,6 +1916,7 @@ export class TrackedVehicle extends Vehicle {
     // should size its steering couple off a hull standing on its own weight.
     const driven = this.wheels.reduce((n, w) => n + (w.driven ? 1 : 0), 0);
     this._coupleLoad = driven > 0 ? -GRAVITY / driven : 0;
+    this._coupleFriction = DEFAULT_MATERIAL_FRICTION;
     s.position.copy(this.node.userData.spawnPosition || s.position);
     s.orientation.copy(this.node.userData.spawnOrientation || s.orientation);
   }
