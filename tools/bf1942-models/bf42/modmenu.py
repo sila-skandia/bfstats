@@ -27,24 +27,45 @@ already answered for.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from .rfa import RfaArchive, find_archives_dir
 
 
-def _archive_in(archives: Path, name: str) -> Path | None:
-    """A file in an `Archives` directory, matched case-insensitively.
+def _archives_in(archives: Path, name: str) -> list[Path]:
+    """`<name>.rfa` and its patch archives in an `Archives` directory, patch
+    first, matched case-insensitively.
 
     Casing varies by mod -- `menu.rfa` and `Menu.rfa` both ship -- and the
     directory itself is `archives` in EoD and Interstate 82 (skill section 2),
     which `find_archives_dir` already handles.
+
+    A Refractor patch is `<name>_001.rfa` and overrides the base `<name>.rfa`
+    entry for entry, which is why `ArchivePool.add_dir` registers patches
+    first everywhere else in this codebase. Road to Rome is the one installed
+    mod that patches its menu: `XPack1/Archives/menu_001.rfa` (the 1.6 patch,
+    Jan 2004) holds the two kit photographs
+    `Icon_assault_breda_axis_selected` and `Icon_medic_stengun_allies_selected`
+    and they are in no other archive of any installed mod, so reading only
+    `Menu.rfa` loses them outright. Vanilla ships no `menu_001.rfa` or
+    `Font_001.rfa`, so this adds nothing to a vanilla chain and its output is
+    unchanged.
     """
     if archives is None or not archives.is_dir():
-        return None
-    for child in archives.iterdir():
-        if child.is_file() and child.name.lower() == name:
-            return child
-    return None
+        return []
+    stem = re.escape(name.rsplit(".", 1)[0])
+    pattern = re.compile(rf"(?i)^{stem}(_\d+)?\.rfa$")
+    found = [child for child in archives.iterdir()
+             if child.is_file() and pattern.match(child.name)]
+    # `foo_001` sorts after `foo`; reverse so the patch is layered over it.
+    return sorted(found, key=lambda p: p.name.lower(), reverse=True)
+
+
+def _archive_in(archives: Path, name: str) -> Path | None:
+    """The base archive alone. Kept for callers that want one path."""
+    found = _archives_in(archives, name)
+    return found[-1] if found else None
 
 
 def _file_in(mod_dir: Path, name: str) -> Path | None:
@@ -151,14 +172,17 @@ class MenuSources:
     # -- files -------------------------------------------------------------
 
     def _pairs(self, kind: str) -> list[tuple[Path, Path]]:
+        """Every file of this kind along the chain, nearest mod first and,
+        within one mod, its patch archives ahead of the base they patch."""
         out: list[tuple[Path, Path]] = []
         for mod_dir in self.chain:
             if kind == "lexicon":
                 found = _file_in(mod_dir, "lexiconall.dat")
-            else:
-                found = _archive_in(find_archives_dir(mod_dir), kind)
-            if found is not None:
-                out.append((mod_dir, found))
+                if found is not None:
+                    out.append((mod_dir, found))
+                continue
+            for path in _archives_in(find_archives_dir(mod_dir), kind):
+                out.append((mod_dir, path))
         return out
 
     @property
