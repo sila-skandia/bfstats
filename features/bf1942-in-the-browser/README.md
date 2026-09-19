@@ -19,6 +19,8 @@ streams A and B.
 4. **The console**, on the tilde key, reconstructed from the binary. It does not
    exist in the viewer yet.
 
+Items 1 and 2 are built (stream A, below). Items 3 and 4 are stream B's.
+
 ## The Instant Battle screen, from the user's capture
 
 The agents cannot see the capture, so this is what it shows.
@@ -58,6 +60,10 @@ Found by `strings` on `Mods/bf1942/Archives/menu.rfa`:
 | Level previews | each level's own menu art; `extract_loading_assets.py` and the `bf1942-map-images` skill already cover thumbnails |
 | Which flag a side flies | the level's `Init.con` team nations, already in `scene.json` |
 
+Two of those rows were wrong, and the corrections are below: the backdrop is a
+third page (`menu/Background`), and the team nations are **not** in
+`scene.json`.
+
 `extract_spawn_layout.py`'s `Flattener` is the thing to extend, not rewrite. The
 front-end list-box class (`BfNewListBoxNode`) is one of the classes ledger row
 MEME-11 says `meme.py` still reads 57 bytes short, so expect to fix the reader
@@ -65,6 +71,249 @@ before the layout comes out clean.
 
 In the real game Instant Battle loads a level's `SinglePlayer` layout with
 bots. The viewer extracts Conquest only, so the first version launches Conquest.
+
+---
+
+# What was built (stream A, 2026-09-19)
+
+## The pieces
+
+| Piece | Where |
+|---|---|
+| The reader fix the screen needed | `tools/bf1942-models/bf42/meme.py` |
+| The extractor | `tools/bf1942-models/extract_menu_layout.py` |
+| The page | `tools/bf1942-models/viewer/play/index.html` |
+| Its renderer, testable under node | `tools/bf1942-models/viewer/play/menu-screen.js` |
+| The launch hook in the map page | `viewer/map.html`, `launchTeam` + `preferredDeployTeam` |
+| Tests | `tests/test_menu_layout.py`, `tests/test_menu_screen.mjs`, `tests/test_meme.py` |
+| Deployment, **not applied** | `play/Dockerfile`, `play/nginx.conf`, `deploy/app/play-deployment.yaml`, the ingress ACL and the tunnel entry |
+
+### The command that produces the pack
+
+```
+cd tools/bf1942-models
+python3 extract_menu_layout.py --out viewer/maps/_shared/hud/menu
+```
+
+It writes `menu-layout.json`, `menu-levels.json`, `textures/` (19 plates),
+`thumbnails/` (one per level) and `fonts/` (4 faces) — 82 elements over 3
+pages, under 400 KB in total. The page loads it from
+`../maps/_shared/hud/menu` by default, beside the spawn screen's own pack, and
+`?pack=<url>` points a checkout at a scratch build instead.
+
+**The shared tree is the lead's to populate.** Nothing in this stream wrote to
+it; every run during development used a scratch `--out`.
+
+## The reader fix
+
+MEME-11 named `BfNewListBoxNode` as short by a constant 57 bytes, and that
+class is the level list on this screen. Its own `read` (client `0x007cfeb0`)
+carries fourteen fields after `Border or not`:
+
+| Field | Width |
+|---|---|
+| `Background color red/green/blue/alpha` | 4 x 4 |
+| `Scrollbar width` | 4 |
+| `Frame color red/green/blue/alpha` | 4 x 4 |
+| `Select color red/green/blue/alpha` | 4 x 4 |
+| `Show tooltip` | 1 |
+| `Scrollbar offset from border` | 4 |
+
+16 + 4 + 16 + 16 + 1 + 4 = **57**, exactly the shortfall the ledger measured.
+The two faces the class then loads (`Outlands_2.dif`, `Outlands_2_inv.dif`) are
+hard-coded, not on the wire.
+
+An independent check that the field list is right, not merely the right total
+length: seven of those fields come back holding `BfNewListBoxNode`'s own
+constructor defaults (`0x007d1200`) — frame colour 1/1/1/0 at `+0x8c..+0x98`
+and select colour 0/0.1875/0.5390 at `+0x9c..+0xa4`. A schema one field out
+would not reproduce those.
+
+The same route settled four more classes the Singleplayer pages use and
+`meme.py` had no schema for at all. `menu/SkirmishMenu` went from 25 warnings
+to none, and pages reading to zero leftover bytes across the 16 installed
+`menu.rfa` archives went from **80 of 230 to 110 of 230**.
+
+## The screen, element by element
+
+Captured at 1600x1200 by driving the page with Playwright on port 5311
+(`?pack=pack-dev`). Rects below are the file's own 800x600 virtual units.
+
+![The Instant Battle screen as this site draws it](instant-battle.webp)
+
+| The description says | This site draws | Source | Match |
+|---|---|---|---|
+| Dark olive, faintly camouflaged background | `Menu/Background.tga` at `(0,85) 800x450` over a black `(0,0) 800x600` fill | `menu/Background`, tops 3 and 5 | yes |
+| Three light grey bevelled plates with rounded corners | `menu_creategame_karta_256x128`, `menu_singlepl_levellist_256x256`, `menu_campaign_team_256x128` | `menu/SkirmishMenu` | yes — the bevels and corners are the shipped art |
+| Preview top left | `(385,125) 256x128`, with the level's own `Menu/thumbnail.dds` at `(390,130) 172x128` | `VariablePictureNode` on `Skirmish/SkirmishMap` | yes |
+| LEVELS bottom left | `(385,237) 256x256`, same x as the preview, below it | — | yes |
+| TEAM to the right | `(585,237) 256x128` | — | yes |
+| Allied flag left, Axis flag right, in the preview's top corners, ~90/600 of the plate | `icon_flag_<nation>` at `(390,130)` and `(523.6,130)`, 38.4 units = 90/600 x 256 | **not in any layout file** — see below | art and nations from the game; the rectangle is ours and is marked `fromCapture` |
+| The Allied nation is the US flag, the Axis the Japanese rising sun (on the pictured level) | Midway: `game.setTeamSkin 1 JapaneseSoldier`, `2 USMarineSoldier` → `jp` right, `us` left | each level's `Init.con` | yes — see `instant-battle-midway.webp` |
+| LEVELS heading, black, wide-spaced capitals | `CREATE_GAME_LEVELS` = "LEVELS", `Trebuchet MS8.dif`, `ColorEffect(0,0,0,1)`, at `(397,245)` | lexicon + `Style/HeadingStyle` | yes |
+| Near-black list box | `Background color` is `(0,0,0,0)` — the box paints nothing; the near-black is the plate's own recessed well | `BfNewListBoxNode`, the 57-byte trailer | yes, by a different mechanism than the description assumes |
+| Titles in pale grey capitals, same wide face, left-aligned with an indent | `standard6.dif` (an all-caps face), indented by the box's `Scrollbar offset from border` = 4 | `BfNewListBoxNode.Font` | yes |
+| **Eleven rows show** | 11 | derived: the plate's well is `264..422`, over the file's `Row height` 14 | yes |
+| Scroll bar: up and down arrows | `menu_scrollpilupp_16x8` at `(555,263)`, `menu_scrollpilner_16x8` at `(555,409)`, each with its `_MC_` mouse-over plate | `BfButtonNode` | yes |
+| A white thumb about half the track tall | rows on screen / rows in the list = 11/23 = 0.478 of the `(555,272) 10x145` track | track from the file; the thumb is drawn, see below | yes |
+| TEAM heading, same style | `SINGLEPLAYER_TEAM` = "TEAM", same face and colour | lexicon | yes |
+| Two rows, `AXIS` and `ALLIED` | `SINGLEPLAYER_TEAM_AXIS` = "AXIS" at `(597,268)`, `SINGLEPLAYER_TEAM_ALLIES` = "ALLIED" at `(597,286)` | lexicon | yes |
+| The selected row filled olive across its full width | `ColorEffect(0.4922, 0.5352, 0.2891, 1)` over an empty `PictureNode`, `169` units wide, gated on `EqualData(Campaign/Team, 1\|2)` | `menu/SkirmishMenu` | yes, and the gate is the game's own |
+| The game's arrow cursor | the browser's `default` / `pointer` cursor | — | **no.** The game's cursor art was not extracted |
+| Titles alphabetical by display name | sorted by the title shown | — | yes |
+| "BATTLE OF MIDWAY" | **"MIDWAY"** | — | **no.** See below |
+| (not mentioned) | A fourth panel: the difficulty and performance settings at `(25,125) 512x512`, headed "INSTANT BATTLE" | `menu/SkirmishMenu` top 2, child 0 | drawn, because the file places it |
+| (not mentioned) | A green `knapp3` START button at `(670,535) 109x25`, labelled `MENU_START` | `menu/SkirmishNavigation` | drawn, because the file places it |
+
+### The three things this screen does not take from the data
+
+Each is marked in the JSON so the next reader is not misled.
+
+1. **The two nation flags.** No menu page places a flag picture — searching
+   every `MemeFile` in `menu.rfa` for a picture whose name contains "flag"
+   finds only `menu/InGame`'s four control-point markers — and `icon_flag` is
+   not in `BF1942.exe`'s string table either. Some code draws them and it was
+   not traced. The art (`icon_flag_<nation>`) and the nations
+   (`game.setTeamSkin`) are the game's; only the rectangle is ours, sized
+   90/600 of the plate from the description, and it carries
+   `"fromCapture": true`.
+2. **Where the list's rows start.** `BfNewListBoxNode` has no rect of its own;
+   it fills the 178x185 transform it shares with the scroll arrows, and rows
+   drawn from the top of that transform land over the LEVELS heading and
+   overrun the plate. The plate art has a recessed well for them, so
+   `list_rows` reads the well off the shipped texture rather than hard-coding
+   an inset: `264..422`, which is 11 rows of the file's own 14-unit pitch —
+   the count the description gives. Carried as `listRows.fromPlateArt`. The
+   engine's own row origin is **UNVERIFIED**.
+3. **The scroll thumb.** The track is in the file; the thumb is not. It is
+   drawn white at `rows visible / rows total`, which the description's "about
+   half" (11 of 23) agrees with.
+
+### Where this site and the description disagree
+
+- **"BATTLE OF MIDWAY".** This site shows "MIDWAY". The title comes from
+  `extract_loading_assets.format_map_title`, which is what the loading screen
+  already uses, so one level has one name across the site. No source for
+  "Battle of Midway" was found anywhere in the install: not in
+  `lexiconAll.dat` (1,656 records), not in any level's `Menu/init.con` (whose
+  complete verb list carries no name verb), not in the level archive names
+  (`Midway.rfa`, directory `Midway`), and not in `BF1942.exe`'s strings.
+  The engine fills `Skirmish/SkirmishLevelsList` at runtime; the function that
+  does it was reached (`0x006dc6a7` constructs the `ListBoxData`) but the row
+  text was **not** traced to its source. So either the capture's list is from
+  an install with different level archives, or the transcription is off, or
+  the engine prettifies a name in a way not yet found. Unresolved; the visible
+  consequence is one row's text.
+- **The selected level row is blue, not olive.** That is the file's own
+  `Select color`: `(0, 0.1875, 0.5390, 1)`, three of the values being the
+  class's constructor defaults. The TEAM rows are olive because the TEAM rows
+  are `ColorEffect` fills, which is a different mechanism. Drawing the level
+  list olive to match would be exactly the invention this screen is supposed
+  to avoid, so the file's colour stands. If the real game shows olive there,
+  it is drawn by code, and that is the thing to go and find.
+- **The arrow cursor** is the browser's. The game's cursor art was not
+  extracted.
+- **Phone width.** Below 4:3 the screen scales uniformly and letterboxes — the
+  same rule `map.html` uses for the spawn screen — so at 420x820 the whole
+  screen is legible but small. The game has no portrait layout to copy.
+
+## Launching
+
+START goes to `../map.html?map=<level>&team=<1|2>`. The map page is reached by
+a relative path: it is the same source file the mesh site serves, not a fork.
+
+`map.html` gained only the launch parameters. `?map=` it already honoured.
+`?team=` resolves to 1 (Axis) or 2 (Allied) — `Campaign/Team`'s own numbering,
+which `menu/SkirmishMenu`'s TEAM rows write — and `preferredDeployTeam()`
+returns it, so the deploy screen opens on that side. Names (`axis`, `allied`)
+are accepted too.
+
+The launch team yields to the existing flag tally only when the chosen side has
+no flag and the other does, which is the one-sided-extract case the tally was
+written for. A stricter guard broke Midway, whose control points all start
+neutral: neither side owns a flag there, so both launches fell back to Allied.
+
+Verified by driving six launches with Playwright against the worktree on 5311:
+
+| URL | Deploy team | First flag |
+|---|---|---|
+| `map.html?map=Midway&team=1` | 1 | Airfield (neutral) |
+| `map.html?map=Midway&team=2` | 2 | Airfield (neutral) |
+| `map.html?map=Berlin&team=axis` | 1 | German_Mitte_HQ |
+| `map.html?map=Berlin&team=2` | 2 | Soviet_HQ |
+| `map.html?map=Tobruk&team=1` | 1 | German_Base |
+| `map.html?map=Wake&team=2` | 2 | Landing_Beach |
+
+## Tests
+
+`python3 -m unittest discover -s tests` from `tools/bf1942-models`: **1,161
+green**, from 1,116 at the start of the round.
+
+- `tests/test_meme.py` — the five classes' field lists, the 57-byte
+  arithmetic, the real `menu/SkirmishMenu` reading clean, and the survey floor
+  raised from 70 to 100 clean pages.
+- `tests/test_menu_layout.py` — the extractor against the installed game: the
+  three panels' rects, the headings, the list box's decoded fields, the team
+  rows, the START button, every level's two nations, and the synthetic halves
+  (`TranslateNode`'s sibling scope, the settled-value resolution, the
+  `Flattener.extend` hook's unchanged base behaviour).
+- `tests/test_menu_screen.mjs` — the renderer under node against a stub 2D
+  context: the rows in the well, the eleven-row count, the thumb fraction, hit
+  testing on rows and team rows and arrows, the game's conditions, the stage
+  scaling, and that a leaf the file switches off never paints. Run by
+  `test_menu_layout.py` so `discover` reaches it.
+
+## Deployment
+
+**Confirmed 2026-09-19: the hostname is `play.bfstats.io`.** It is used as the
+real host in the nginx config, the HAProxy ACL, the tunnel entry and this doc.
+The DNS record is the owner's to create. Nothing here was applied.
+
+`play/Dockerfile` is the mesh image's shape: static nginx, the viewer tree,
+`models` and `maps` from `bf42-stats-pvc-v2` at the same two subPaths,
+read-only, so no asset is copied. It leaves out `index.html`, `poses.html` and
+`kits.html`; nginx 301s those three paths to `mesh.bfstats.io`, because
+`map.html`'s nav bar links them and that file is shared with the mesh site.
+Built and run locally: 65.6 MB image, 3.1 MB of served files, `/` 302s to
+`/play/`, `/map.html` and `/vendor/` serve, the three browser paths redirect.
+
+`deploy/app/ingress/deployment.yaml` gains the host ACL and a `play_frontend`
+backend; `cloudflared-tunnel.yml` gains the hostname. The backend server line
+carries `init-addr last,libc,none` deliberately: the play Service does not
+exist yet, and HAProxy 3.2 treats an unresolvable server address as a **fatal**
+startup error, so applying the ConfigMap without it would take `bfstats.io`
+down. Checked against `haproxy:3.2-alpine -c`, which downgrades exactly that
+one line to `NOTICE ... disabling server` while every other backend still
+alerts.
+
+The Jenkins stage exists but is gated on `PLAY_ENABLED`, which is `'false'`.
+
+### The node does not have room for this yet
+
+Measured across `deploy/app/` on 2026-09-19:
+
+| | Mi |
+|---|---|
+| Sum of declared memory limits | 7296 |
+| Node | 7741 |
+| Headroom | 445 |
+| `CLAUDE.md` asks for | ~1536 |
+
+The node is already about 1.06 Gi past the headroom rule **before** this site
+is counted; a second 64Mi nginx takes it to 381Mi. So the manifest is written
+and the pipeline stage is switched off, and the budget has to be recovered
+before either is used.
+
+The cheapest recovery is not to add a container. This image and the mesh image
+are the same nginx over the same two PVC subPaths, differing only in which
+pages they carry and one `server` block. HAProxy already routes on the Host
+header, so one container can answer both hostnames: give the mesh image a
+second `server` block for `play.bfstats.io` with this site's `location` rules,
+point `play_frontend` at `bfstats-mesh-service`, and the whole site costs 0Mi.
+What that gives up is the separation the request asked for — one rollout, one
+blast radius, and the play site's pages riding the mesh site's deploy cadence.
+That is a call for the owner, which is why both shapes are written down and
+neither is applied.
 
 ## The console, from the user's capture
 
@@ -93,25 +342,29 @@ Taken at 2000x1124 with the console open over the spawn view on Wake.
 Everything else (the key, the drop animation, history, completion, how a line is
 parsed, what the `(2)` counts) is for stream B to read out of the client.
 
-## Deployment shape
+## Notes for the other streams
 
-`mesh.bfstats.io` is `deploy/app/mesh-deployment.yaml`: one nginx container,
-`anskia/bfstats-mesh`, 16Mi requested and 64Mi limit, with `assets/mesh/models`
-and `assets/mesh/maps` mounted from `bf42-stats-pvc-v2`. Routing is an HAProxy
-host ACL in `deploy/app/ingress/deployment.yaml` plus a hostname in
-`cloudflared-tunnel.yml`.
-
-The new site is a second deployment of the same shape over the same two
-subPaths, read-only, so no asset is copied and the memory budget moves by 64Mi.
-Its image carries the menu page, `map.html` and the modules it imports, and not
-the model, pose and kit browsers.
-
-**Assumption to confirm:** the hostname. `play.bfstats.io` is used as a
-placeholder in the files. DNS and the tunnel entry are the owner's to create,
-and nothing here is applied by an agent.
+- **Stream B** owns the debug panel's visibility and the console. This stream
+  added nothing to `map.html` but `launchTeam` and three lines inside
+  `preferredDeployTeam`, so the `#side` panel is untouched. `play/index.html`
+  exposes `window.__menu` the way `map.html` exposes `window.__deploy`.
+- **Stream D** may want `menu-levels.json`: it carries each level's two
+  nations, which `scene.json` does not. The design doc's claim that the team
+  nations are "already in `scene.json`" is wrong — `scene.json` has no
+  `teams`/`nations` key, and `game.setTeamSkin` is read straight out of each
+  level's `Init.con` here.
+- **The lead**: the pack has to be extracted into
+  `viewer/maps/_shared/hud/menu/` and published before the site works in
+  production. The command is above.
 
 ## Open questions
 
 - Whether the mesh site keeps a Maps tab that links out, or drops it.
 - Whether the map page should start in the deploy screen on the chosen team
-  (it does today for whichever team is first) or drop straight in.
+  (it does today, on the launched team) or drop straight in.
+- Whether to spend the 64Mi or share the mesh container (above).
+- Where "BATTLE OF MIDWAY" comes from, if it is real.
+- Whether the level list's selected row is blue in the real game, as the file
+  says, or olive.
+- Mod coverage: the pack is vanilla-only, like the spawn screen's. 16 installed
+  mods ship their own `menu.rfa` and lexicon.
