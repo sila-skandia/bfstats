@@ -1381,10 +1381,13 @@ export function bodyThrust(throttle, forwardSpeed, ratio,
  * term's `1 - 0.5*b` (`fsubr ds:0x86ba8d4` = 1.0) and again at `0x0825c3b1`
  * for the second; the two are summed at `0x0825c3d7`-`0x0825c407`.
  *
- * `b` is engine `+0xb8`, and it is **the gear-change timer, not a constant**:
+ * `b` is **PhysicsEngine** `+0xb8` (the object at `Engine+0x60`, not the
+ * Engine itself), and it is **a one-shot lockout, not a constant**:
  * `Engine::handleUpdate` `0x0823e120` counts it down by `dt/gearChangeTime`
- * to zero (`0x0823e24f`/`0x0823e25a`) and nothing on the server re-arms it,
- * so after the first `gearChangeTime` of a vehicle's life `b = 0` and
+ * to zero (`0x0823e24f`/`0x0823e25a`), and a whole-binary store scan finds no
+ * other writer at all -- not even a gear change re-arms it (ledger TANK-9,
+ * TANK-12). So after the first `gearChangeTime` of a vehicle's life (0.05 s
+ * for the Sherman and M3A1, the constructor's 1.0 s for the Willys) `b = 0` and
  *
  *   T = ratio * differentialRPM(side)      -> dV = T - Vt, zero at v = T
  *
@@ -1408,19 +1411,32 @@ export function engineGripTarget(throttle, yaw, side, ratio,
 /**
  * The engine's own rev ceiling, and the number `revLimit 356` was standing in
  * for. `Engine::handleUpdate` `0x0823e120` runs the rev state as a first-order
- * filter on the pedal and the drivetrain load,
+ * filter on the throttle and the drivetrain load,
  *
- *   revs += 0.05 * ((pedal - load) - 0.5*revs)     // fixed point 2*(pedal-load)
- *   revs  = min(1.2, max(-1.0, revs))              // 0x0823e2bf onward
+ *   revs += 0.05 * ((T1 - load) - 0.5*revs)        // 0x0823e2bf; fixed point 2*(T1-load)
+ *   revs  = min(1.2, max(-1.0, revs))              // 0x0823e2f4 (ceiling), 0x0823e30b (floor)
  *
- * so a closed throttle against no load pins revs at **1.2**, not 1. That is
+ * `T1` is not the raw pedal: it is the engine's clipped RotationalBundle roll
+ * angle over `maxRotation.z` (`0x0823e1e0`-`0x0823e1f4`), which reaches 1.0
+ * within about 0.1 s of full throttle on all three vanilla drivetrains. The
+ * 0.05 is per engine tick, NOT scaled by dt. This class does not carry that
+ * filter: it inverts `speed / ratio` kinematically, which gives the same
+ * ceiling and not the same spool-up (a named approximation, ledger TANK-12).
+ *
+ * The 1.2 is a CAR's ceiling. `getCurrentDifferentialRPM` `0x0824c990` returns
+ * revs unclamped only when `(engineType & 4) == 0`; a `c_ETTank` takes the
+ * differential branch and is clamped to 1.0 there. Every wheeled vanilla
+ * vehicle is `c_ETCar`, so this is right for all of them; a mod's wheeled
+ * `c_ETTank` would come out 20% fast until the type is carried in.
+ *
+ * So an open throttle against no load pins revs at **1.2**, not 1. That is
  * what puts a Willy's top gear at `1.2 * 26.064` = 31.3 m/s rather than at
  * `ladder[top]`. The asymmetric floor of -1.0 is the engine's too, and is why
  * reverse is slower than first.
  */
 export const ENGINE_REV_CEILING = 1.2;
 
-/** The same clamp's lower arm, `0x0823e2bf` onward: revs floor at -1.0. */
+/** The same clamp's lower arm, `0x0823e30b`-`0x0823e31e`: revs floor at -1.0. */
 export const ENGINE_REV_FLOOR = 1.0;
 
 /**
