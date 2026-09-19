@@ -41,8 +41,8 @@ and findings in [`../bf1942-in-the-browser/README.md`](../bf1942-in-the-browser/
 
 | Item | Status |
 |---|---|
-| A driver or a gunner is not drawn: `loadSeatPose` bails when a seat has no `poseAnimation` | open (C), [plan](../bf1942-3d-models/vehicle-occupant-pose-plan.md) steps 3 to 6 |
-| Hands follow the steering wheel (`addSkeletonIK`) | data (C) |
+| A driver or a gunner is drawn, and his hands stay on the wheel | **merged** `fcf0131`. `addSkeletonIK`'s offsets are in the frame of the child added most recently before the line (IK-1), yaw/pitch/roll in degrees (IK-2), solved as a two-bone reach then a hand-rotation override (IK-3). A seat draws its occupant iff its PCO subtree reaches a `SeatObject` (SEAT-25), which is why a Sherman's driver is invisible and its hull gunner shows from the waist. The occupant wears his kit (`viewer/kit-graft.js`). **Re-extract** needed: the published scenes carry no `skeletonIK` nodes |
+| Every published seat pose lay on its back, 0.84 m off its seat | **fixed** in the same merge (root rotation derived as a half turn about (0,1,-1)/sqrt2; the `.baf` root track's standing offset dropped). Passengers were affected as much as drivers. **Re-export** running. Road to Rome now resolves 50 of 50 (its `PassengerInM3GMC` state exists in no animation file; the engine's fallback is reproduced) |
 
 ### Viewer wiring for data that now exists (stream D)
 
@@ -78,7 +78,19 @@ unread part. The Ghidra bridge is up and the hash matches.
 | F3, movement | **PHY-1** where a jump becomes upward velocity (the client predicts it; the server computes none); **PHY-2** friction force magnitudes per grip class; the car spring and tyre integrator starting at client `0x0057f0d0` |
 | Wave 2 | **MMAP-1/2** who writes the minimap zoom and yaw; **LM-3**; **SM-5**; **MEME-11** (80 of 230 menu pages read clean); SIDE-1, SIDE-3 |
 
-### Wave 2, not yet assigned
+### Wave 2, running (launched 2026-09-20)
+
+Built from the verified brief, `viewer-changes.md` (on the integrator's branch
+until the other session's corpus work is committed).
+
+| Stream | Owns |
+|---|---|
+| W2-A movement | jump impulse 6.0 and its arming, the speed ramp, fall damage from the damage tables (`physics.js`, `soldier.js`, the on-foot code in `map.html`) |
+| W2-B damage | the two-path explosion rule, integer radius, wreck and critical input gating (`effects-core.js`, `gunfire.js`, `vehicle-damage.js`, `assemble.py`) |
+| W2-C turrets and HUD | the velocity-servo `TurretAxis`, `continousRotationSpeed`, `automaticReset`, the wrap rule, `setHasTurretIcon`, `setVehicleIconPos` and the seat dots, the paired dial-sign fix, `aticon` feeds 2 (`seats.js`, `hud.js`, `con.py`) |
+| W2-D drivetrain | the gear ladder from the engine's curves, material-sourced friction with the 2.25 / 1.5 hysteresis, the spring law, a hull-collision plan (`ground.js`) |
+
+### Not yet assigned
 
 | Item | Status |
 |---|---|
