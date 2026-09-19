@@ -540,3 +540,43 @@ showing Soviet 100 against German 100
 (`scratchpad/d-wiring/combat-hud.png`). `window.__hud.layout.groups` reports
 thirteen groups. Back in the area, `Outside/OutsideTime` goes to 0 and the
 group culls whole.
+
+### 2026-09-20 review: the group was never culling
+
+The verification above read `Outside/OutsideTime` going to 0 and stopped
+there. It does go to 0 — and the group still drew, on every level, including
+the twelve vanilla ones that declare no combat area at all. Captured on Wake
+(no area, countdown permanently 0) at `scratchpad/rd-wiring/out/`
+`wake-soldier-head.png`: the plate and all 65 characters of the warning sit
+across the middle of the soldier HUD and the vehicle HUD.
+
+The cause is in this file's own condition evaluator, not in the group. This
+is the first group whose gate is a comparison, and the extractor renders
+`0 < Outside/OutsideTime` as `{var, op: "gt", value: 0}` — its `FLIP_CMP`
+table turns a `LessData` with the literal on the left into `gt`. `condOk`
+answered `eq`/`ne`/`lt`/`le` and ended in `default: return true`, which does
+not cull. So did `ge`, which the weapon-select bar has used for its fifth and
+sixth slots since that group landed: a four-item kit drew six slots.
+
+Both operators are implemented now, in `hud.js` and in `map.html`'s copy, and
+`tests/test_hud_layout.py` reads the operator names back out of both sources
+and fails if the extractor can emit one they do not name. The permissive
+default cannot be relied on to cull, so nothing should ever reach it again.
+
+### 2026-09-20 review: the wrap change, proved against the old painter
+
+The wrap is safe, and this is the measurement rather than the argument. The
+same page was served twice — `viewer/` at HEAD on 5324, and an identical tree
+with only `hud.js` replaced by its `e1186ff` copy on 5325 — and the deploy
+screen, the soldier HUD and the vehicle HUD were rendered and their canvases
+differenced pixel for pixel on Wake:
+
+| surface | differing pixels | where |
+|---|---|---|
+| `#deploy-chrome` | **0** of 1280x724 | — |
+| `#hud-canvas`, on foot | 2,865 of 1280x800 (0.28%) | x 496..1069, y 232..256 |
+| `#hud-canvas`, in a seat | 2,865, identical bbox | same |
+
+That bounding box is the warning text leaf's own rect and nothing else: the
+plate under it is pixel-identical in both builds, and so is every other leaf
+on all three surfaces. No leaf that existed before this round moved.
