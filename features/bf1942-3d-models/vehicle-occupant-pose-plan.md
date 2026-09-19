@@ -42,6 +42,25 @@ Vanilla declares 64 SeatObjects and never uses `c_SeatShowHeadOfSoldier`. Two
 `c_SeatHalfBodySoldier` — missing the "Show" — which is not in the table and
 therefore contributes nothing.
 
+That the jump table only *prints* five values is by itself weak evidence that
+there are only five, so it was checked the other way: of the fifteen distinct
+`seatFlags` spellings that appear across all 16 mods, only those five occur as
+strings anywhere in the binary at all. The other ten —
+`c_SeatShowCrouchingSoldier` (11 uses), `c_SeatIsOutSide`, `c_SeatisOutiside`,
+`c_SeatShowSittingSoldier`, `c_SeatHalfBodySoldier`, `c_SeatForceSittingSoldier`,
+`c_ShowHalfBodySoldier` and three case variants — are unknown to the engine.
+One GCMOD seat (`snowspeederCoPilotSeat`) has no recognised flag at all. Those
+seats are still drawn, because drawing is gated on reaching a `SeatObject`,
+not on a flag; they just get the full body.
+
+`dice::ref2::world::hasSeatObject(IPlayerControlObject*)` at `0x0831dc00` is
+the engine's own name for the predicate — `internalFindFirstChildOfCID` over
+the PCO's subtree, then `queryInterface(IID_ISeatObject)` — but it has **no
+caller in lnxded**, which is what you would expect of a drawing concern on a
+dedicated server. The rule is therefore confirmed as a predicate the engine
+carries and as consistent with every vanilla vehicle, and **its call site is
+unread**: closing that needs the client.
+
 ### Which pose a seat plays
 
 `BFSoldier::setUseSeat(SeatFlags, const string& lower, const string& upper)`
@@ -98,19 +117,64 @@ Three details of it matter to a reader:
   meaning the declaring node itself: `Vehicles/Common`'s four `Attach_*`
   bundles, and the Sherman's own `Browning`.
 - **A second line for one bone replaces the first** (`0x8266d70` scans by name
-  id, `0x8266e1a` overwrites) rather than appending.
+  id, `0x8266e1a` overwrites) rather than appending — but it overwrites **only
+  the position (`slot+0x0c`) and the baked matrix (`slot+0x18`)**. That branch
+  never reaches the `getNoTemplates()` call at `0x8266d98`, so `slot+0x04`
+  keeps the target child the *first* declaration recorded, however many
+  children were added in between. 24 lines across six mods hit this; FHSW's
+  `Hotchkiss` declares the same two lines before any child and again after
+  two, and the engine measures both from the mount.
+
+Which reading of the frame is right was checked against the data as well as
+the instructions. 2,097 live lines: 1,423 have no child before them and the
+two readings agree; 540 have one placed at the parent's origin, where they
+also agree numerically; **134 genuinely differ**, over 70 declaring templates.
+Where they differ, the child reading is the one that puts a hand somewhere:
+
+- `25mmAA_handle2_grip` (FH, FHSW, WarFront) — the only child is
+  `25mmAA_Crank` at `0.27/0/0` and the right hand's offset is `0.0/0.0/-0.05`,
+  so the child reading puts that hand exactly on the crank handle. The
+  declaring-node reading puts it 0.27 m off it, on the mount.
+- `BMG_Browning` (FH) — the children are two muzzle emitters at `±0.08/.05/.77`
+  and the offsets are `±/0.04/-1.3`. Against the muzzle that is `-0.53` behind
+  the pivot, the spade grips, and within 0.15 m of the `0.12/0.08/-0.68` every
+  other Browning in the corpus uses with no child at all. Against the node it
+  is 1.3 m back, behind the gunner.
+- `BTR60SteeringDummy` (EoD) and every steering dummy like it — the child sits
+  at the parent's origin but *rotates*, so the two readings differ only in what
+  happens when the wheel turns, and only the child reading turns the hands with
+  it. That is the visible behaviour the reference capture shows.
+
+It is not universally respected by content: `GunboatGRohr` (bf1918) copies the
+stock `0.12/0.08/-0.68` onto a template whose only child is a muzzle 1.1 m
+forward, so the engine puts that gunner's hands up at the muzzle. The rule is
+the engine's; the mod is wrong.
 
 **The second triple is Refractor yaw/pitch/roll in degrees.**
 `addSkeletonIK` bakes it with `dice::ref2::setRotation(Mat4&, const Vec3&)`
 (`0x08060d30`), which is the *same* helper `BundleTemplate::setRotation`
-(`0x081a9085`) uses for `ObjectTemplate.setRotation`. That helper sets the 3x3
-to identity and then applies `yaw` about the matrix's own Y row, `pitch` about
-its X row and `roll` about its Z row (`0x08061db0` / `0x08061dd0` /
-`0x08061df0`), each through `rotateAboutLine` → `rotateZDeg` (`0x080625f0`) —
-hence degrees, and hence exactly the convention `bf42/gltf.py`'s
-`quat_from_ypr` already converts for every placed node in the export. Vanilla's
-values run to ±180 (`-80/60/50` on the Willys' right hand), which no radian
-reading survives.
+(`0x081a9050`, calling it at `0x081a9085`) uses for
+`ObjectTemplate.setRotation`. That helper sets the 3x3 to identity and then
+applies `yaw`, `pitch` and `roll` in that order (`0x08061db0` / `0x08061dd0` /
+`0x08061df0`) — each of which is `rotateAboutLine(m, axis, angle)`
+(`0x08061e10`) about **the matrix's own row**: `yaw` about `m+0x10` (its Y
+row), `pitch` about `m+0x00` (its X row), `roll` about `m+0x20` (its Z row).
+So it is an intrinsic, body-fixed Y-X'-Z'' composition, which is the same
+rotation as the extrinsic `Ry * Rx * Rz` that `quat_from_ypr` builds.
+
+(An earlier reading had each of the three going through `rotateZDeg`
+(`0x080625f0`). That is a different helper and is not on this path; the
+conclusion is unaffected, because what settles the convention is the shared
+call to `0x08060d30`.)
+
+That shared call is the whole argument: `ObjectTemplate.setRotation`'s
+arguments are unambiguously degrees in every `.con` in the game
+(`WillySteeringDummy` itself is placed with `setRotation 0/34/0`), and
+`addSkeletonIK`'s triple goes through the identical helper on the identical
+type. Hence degrees, and hence exactly the convention `bf42/gltf.py`'s
+`quat_from_ypr` already converts for every placed node in the export.
+Vanilla's values run to ±180 (`-80/60/50` on the Willys' right hand), which no
+radian reading survives.
 
 ### What kind of solve it is: both
 
@@ -137,10 +201,18 @@ chain for an interface and checking the object's template class id against
 The solve is in `Skeleton::transform` (`0x083420f0`): a bone carrying a handle
 goes through `Skeleton::applyIK2BoneSolver` (`0x083418f0`), a wrapper over
 `maya::applyIK2BoneSolver(const Vec3&, ..., Mat4&, Mat4&)` (`0x08332e10`),
-using the bone array entries at `i-1` and `i-2` — 232 bytes apart, read at
-negative offsets from the bone — i.e. the forearm and the upper arm. **Then the
-bone's world rotation rows are overwritten outright** with the handle's
+using the bone array entries at `i-1` and `i-2` — 232 bytes apart (`edx` is
+built as `base + 232*i` at `0x08341908`, then read at `-0xa0`/`-0x90`/`-0x80`
+and `-0x1d0`) — i.e. the forearm and the upper arm. **Then the bone's world
+rotation rows are overwritten outright** with the handle's
 (`0x8342233`–`0x83422a7`), keeping the translation the solve produced.
+
+That `i-1`/`i-2` is an *array* walk, not a parent walk, and the two only agree
+if the skeleton stores each bone right after its parent. In `UsSoldier.ske`
+they do, for all four bones the data ever names: `Bip01 R Hand` is 44 with
+`R Forearm` 43 and `R UpperArm` 42, `Bip01 L Hand` is 21 with 20 and 19,
+`Bip01 L Foot` is 4 with `L Calf` 3 and `L Thigh` 2, `Bip01 R Foot` is 8 with
+7 and 6. So the viewer's hierarchical `end.parent.parent` is the same chain.
 
 So the plan's open question — "a two-bone reach up the arm, or a plain override
 of the hand bone?" — is **both, in that order**: the arm reaches, and the hand
