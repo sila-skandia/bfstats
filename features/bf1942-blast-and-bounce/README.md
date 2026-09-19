@@ -265,8 +265,11 @@ what `terrain/materials.png` already ships.
 ### What material 7 turns out to be
 
 `materialManagerdefine.con` heads it **"Reserved (Outside map)"**, and the
-extracted material maps say it is nothing of the kind. Eleven of the 23 vanilla
-levels paint it, and several paint it over most of their own rectangle:
+extracted material maps say that is exactly what it is — the out-of-map
+surround of a single playable pocket, with no patches inside the pocket. What
+makes it worth modelling is that the pocket is usually far smaller than the
+rectangle the level declares. Eleven of the 23 vanilla levels paint it, and
+several paint it over most of their own rectangle:
 
 | level | mat-7 samples | inside its own combat area |
 |---|---|---|
@@ -280,19 +283,33 @@ levels paint it, and several paint it over most of their own rectangle:
 | battle_of_britain | 21.1 % | 21.1 % |
 | aberdeen / kharkov / kursk | 33–37 % | *no rectangle at all* |
 
-Taken at face value that would make most of Berlin lethal. What settles what it
-means is where the control points stand: on all seven of those levels **every
-control point sits on a different id** — Berlin's four on 8 "Gravel" and 14
-"Dirt road", Tobruk's seven on 10 "Dry sand", Caen's six on 3 and 5, Omaha's on
-3 and 11, Stalingrad's on 4, 6 and 8, Bulge's on 6 and 9, Market Garden's on 3
-and 14.
+Taken as "most of Berlin's box", that reads as though the ground between the
+streets were lethal. It is not what the channel says. Berlin's 2,607 non-7
+samples form **one connected pocket** of about 200 x 270 m in the south-east of
+the 2048 m world, and inside it there is no material 7 at all — the streets,
+the courtyards and the ground under the buildings are all 4 "Dry dirt",
+8 "Gravel" and 14 "Dirt road", and 7 starts where the level does. Rendered
+coarsely, aberdeen, battle_of_britain, berlin, stalingrad, omaha_beach,
+liberation_of_caen and market_garden are all the same picture: a clean ring of
+7 around clean non-7 ground.
 
-So material 7 is a **second, painted, non-rectangular combat boundary**: the
-ground the designer does not want you standing on, inside a rectangle that is
-only ever a box. On a city level it is most of the box and the streets are the
-part that is not painted. That is how Berlin can declare a 512 m square and
-still keep you in the streets, and it is why a viewer that models the rectangle
-alone lets a player walk through the rubble.
+What the level's own data adds is that the pocket is the playable area. Across
+all 23 extracted vanilla levels, **0 of 749 soldier spawns, 0 of 115 control
+points and 0 of 724 object spawns stand on material 7** — the only two "on 7"
+object spawns are battle_of_britain rows whose position is literally `0,0,0`.
+Straight lines between neighbouring control points are 0 % material 7 on 19 of
+the 23; the four exceptions are single pairs whose straight line leaves the
+pocket and comes back (berlin 30 m, stalingrad 59 m, caen 9 m, aberdeen 174 m),
+which is not a route a player walks in the real game either, and at 5 HP/s
+after a 10 s grace only aberdeen's is long enough to cost a man on foot
+anything.
+
+So material 7 is a **second, painted, non-rectangular combat boundary** — the
+map edge, painted rather than declared. It is worth modelling because it is
+**tighter than the rectangle**: Berlin's pocket is a fifth of its 512 m box,
+Market Garden declares the whole map, and aberdeen, kharkov and kursk paint 7
+while declaring no rectangle at all. A viewer that models the rectangle alone
+lets a player walk hundreds of metres past the edge of the level.
 
 ### Wired
 
