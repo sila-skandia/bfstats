@@ -158,6 +158,13 @@ Files are named for what they describe, not for addresses — `symbols.json` is
 the address index and `xref.py sym 0x…` is the lookup. One file per address
 would be unreadable and would not survive a second binary.
 
+`symbols.json` is written as `json.dumps(doc, indent=1) + "\n"` and **sorted by
+address**, which is what `xref.py add` does on every write. Some hand-merged
+rounds have left it unsorted; the 2026-09-20 integration re-sorted it, which is
+why that commit's diff is large for 65 new entries. Merge it **by address, in
+Python** — never by text, and never by replacing an entry: an existing address
+keeps its name and gets its note extended.
+
 ### Confidence
 
 Recorded per symbol, and the reason this corpus is worth anything:
@@ -205,6 +212,47 @@ table, and the StandardMesh anchors.
 
 ## Current state
 
+**The drivetrain, the console, IK and the combat area, 2026-09-20.** A second
+integration pass carried in the build streams of two waves, the reviewers who
+re-derived their work from the binaries, and a dedicated verifier who settled
+the gearbox. Four new ledger sections — the in-game console
+([subsystems/console.md](subsystems/console.md), CON-2…CON-13), skeleton IK
+([subsystems/skeleton-ik.md](subsystems/skeleton-ik.md), IK-1…IK-4),
+environment maps (EM-1…EM-3, written up beside the lightmap combine in
+[subsystems/standardmesh-vertex-format.md](subsystems/standardmesh-vertex-format.md))
+and the combat area
+([subsystems/combat-area.md](subsystems/combat-area.md), CA-1…CA-7, which is
+where level-scope rules live now) — plus the round's largest reversal:
+
+- **`engineType` is a bit field read at nine virtual call sites, and bit 0
+  makes `PhysicsEngine::updatePhysics` return at its second instruction for a
+  car or a tank.** TANK-1's "no simulation code calls `getEngineType()`" came
+  from a grep that could not see a virtual call, and TANK-7's hull-thrust model
+  is refuted with it: **a ground vehicle is propelled by the same EngineGrip
+  contact-speed target a car uses** (TANK-9, whose "×½" was a countdown's seed
+  mistaken for its steady value). The gearbox itself —
+  `Engine::handleUpdate`, its per-call rev filter, the roll angle that is not
+  the pedal, and the load feedback whose divisor is TANK-4's torque curve — had
+  never been opened: TANK-12 and TANK-13.
+  [subsystems/tank-driving.md](subsystems/tank-driving.md) is rewritten around
+  it, with the fleet's top speeds against the real vehicles.
+- **Damage**: the contact recycle that decides which rounds ever reach a fuse
+  (HP-9e), the three flak shells whose flag is not dead after all (HP-9f), the
+  blast centre 0.1 m up the normal (HP-9), and what a tank HE round really
+  splashes — no ground armour at all, but 150 HP on an aircraft (DMG-2).
+- **One thing was opened rather than closed.** LOOP-1 records a single
+  reader's finding that **lnxded**'s own loop targets 60 Hz with a measured
+  frame dt, which would make PHY-1's apex and PHY-6's ramp times frame-rate
+  figures rather than constants. It is one reader, it is not re-derived, and
+  the 30 Hz section below — read on the **client** — is deliberately left
+  standing. Both rows now carry an "if LOOP-1 holds" qualifier; the row itself
+  says what a second reader must check.
+
+All 29 items of the parity round's
+[`viewer-changes.md`](../bf1942-parity-round-2026-09-19/viewer-changes.md) are
+now built and marked with their merge commits, and that file's new "Open after
+wave 2" is the queue a later round should start from.
+
 **Rigid-body collisions, 2026-09-19.** How two vehicles collide - contact
 finding, the mass-ratio push, the integrator and its box inertia, sleeping,
 the friction solver and crash damage - is written up in
@@ -221,7 +269,7 @@ reset), and adds
 a `collision` subsystem of about 200 symbols, server and client.
 
 
-1,119 symbols across 26 subsystems (817 across 25 before the two 2026-09-19 rounds): 225 from bf42plus, the rest read from the binaries — 138 in the first 2026-09-16 research round (formats, menus, rendering, physics, effects), 198 more (193 net new, plus five corrections to earlier entries) in the second, on the mechanics below, a further 10 (SSC-1/SSC-2/SSC-5's SoundScript addresses) from an unrelated fix landed the same day, 25 more (plus five corrections) across two rounds on 2026-09-17, and **96 (plus 14 corrections) from the 2026-09-19 parity round** on damage, the vehicle HUD and soldier movement. That 2026-09-17 pair closed HP-6 by proving a collision never costs hit points — which 2026-09-18 and then 2026-09-19 refuted outright; see [ledger](ledger.md) HP-6 and [subsystems/hitpoints-and-damage.md](subsystems/hitpoints-and-damage.md) §3. The same evening's collision round added **207 more** (the `collision` subsystem, plus 21 extended notes); the two were merged by address on 2026-09-20 with one overlap (`0x08173fc0`, `Armor::getSpeedMod`, which keeps the collision round's entry and carries the parity round's evidence in its note). Recompute with `python3 -c "import json;print(len(json.load(open('symbols.json'))['symbols']))"`.
+1,184 symbols across 26 subsystems (1,119 before the second 2026-09-20 integration; 817 across 25 before the two 2026-09-19 rounds): 225 from bf42plus, the rest read from the binaries — 138 in the first 2026-09-16 research round (formats, menus, rendering, physics, effects), 198 more (193 net new, plus five corrections to earlier entries) in the second, on the mechanics below, a further 10 (SSC-1/SSC-2/SSC-5's SoundScript addresses) from an unrelated fix landed the same day, 25 more (plus five corrections) across two rounds on 2026-09-17, and **96 (plus 14 corrections) from the 2026-09-19 parity round** on damage, the vehicle HUD and soldier movement. That 2026-09-17 pair closed HP-6 by proving a collision never costs hit points — which 2026-09-18 and then 2026-09-19 refuted outright; see [ledger](ledger.md) HP-6 and [subsystems/hitpoints-and-damage.md](subsystems/hitpoints-and-damage.md) §3. The same evening's collision round added **207 more** (the `collision` subsystem, plus 21 extended notes); the two were merged by address on 2026-09-20 with one overlap (`0x08173fc0`, `Armor::getSpeedMod`, which keeps the collision round's entry and carries the parity round's evidence in its note). The same day's second integration added **65 more** (the console class in both binaries, the skeleton-IK chain, the combat area, the projectile contact recycle and the gearbox) **and extended 17 existing notes**, one of which — `getEngineType` `0x0823fd00` — had been carrying a refuted claim. Recompute with `python3 -c "import json;print(len(json.load(open('symbols.json'))['symbols']))"`.
 
 **The game loop is settled (2026-09-15).** The client is a fixed-step
 simulation at `g_simulationFps` = 30 Hz (`0x00957640`; the same 30.0 in the
