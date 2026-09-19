@@ -1,0 +1,33 @@
+{
+  "_comment": "A hand-picked subset of viewer/maps/_shared/damage.json (materialManagerdefine.con + materialManagerSettings.con, own extraction) — only the rows tests/test_crash_damage.py needs. Verified against the live file and features/vehicle-collision-physics/reports/V4-verification-of-R4.md section 3 and 6. materials[37] and materials[99] are deliberately ABSENT (the engine never defines them; 37 is the no-damage material, 99 the kill material, both engine-special per spec section 9.1).",
+
+  "materials": {
+    "0":   { "attGroup": 0,   "defGroup": 0,   "damage": 30.0, "friction": 1.0 },
+    "1":   { "attGroup": 1,   "defGroup": 1,   "damage": 30.0, "friction": 0.1 },
+    "12":  { "attGroup": 12,  "defGroup": 12,  "damage": 30.0, "friction": 0.6 },
+    "40":  { "attGroup": 40,  "defGroup": 40,  "damage": 10.0, "friction": 1.0 },
+    "45":  { "attGroup": 45,  "defGroup": 45,  "damage": 1.0,  "friction": 1.0 },
+    "50":  { "attGroup": 50,  "defGroup": 50,  "damage": 1.0,  "friction": 1.0 },
+    "51":  { "attGroup": 51,  "defGroup": 51,  "damage": 1.0,  "friction": 1.0 },
+    "52":  { "attGroup": 52,  "defGroup": 52,  "damage": 1.0,  "friction": 1.0 },
+    "60":  { "attGroup": 60,  "defGroup": 60,  "damage": 1.0,  "friction": 1.0 },
+    "61":  { "attGroup": 61,  "defGroup": 61,  "damage": 1.0,  "friction": 1.0 },
+    "63":  { "attGroup": 63,  "defGroup": 63,  "damage": 1.0,  "friction": 1.0 },
+    "90":  { "attGroup": 90,  "defGroup": 90,  "damage": 1.0,  "friction": 1.0 },
+    "178": { "attGroup": 178, "defGroup": 178, "damage": 1.0,  "friction": 1.0 }
+  },
+
+  "modifiers": {
+    "0":   { "45": 0.01, "50": 0.01, "51": 0.01, "52": 0.01, "60": 0.01, "61": 0.1, "63": 0.1, "40": 0.001 },
+    "1":   { "45": 0.5,  "60": 0.01, "61": 0.1,  "40": 1.5e-05 },
+    "12":  { "45": 0.01, "61": 0.5 },
+    "45":  { "60": 0.1, "61": 0.1, "63": 0.1, "50": 0.1, "51": 0.1, "52": 0.1, "40": 1.0 },
+    "50":  { "45": 0.1, "60": 0.1, "61": 0.1, "63": 0.1 },
+    "51":  { "45": 0.1 },
+    "52":  { "45": 0.1 },
+    "60":  { "45": 0.1, "50": 0.1 },
+    "61":  { "45": 0.1 },
+    "63":  { "45": 0.1 },
+    "90":  { "45": 0.1 }
+  }
+}

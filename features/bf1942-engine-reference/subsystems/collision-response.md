@@ -22,6 +22,12 @@ against a model (§4). Anything that did not get that treatment is marked
 [`features/vehicle-collision-physics/`](../../vehicle-collision-physics/README.md).
 Addresses are in [symbols.json](../symbols.json) (`./xref.py list collision`).
 
+**Implemented in the viewer, 2026-09-20** — `viewer/rigid-body.js` (§4),
+`body-contact.js` (§5–6), `body-ground.js` and `body-friction.js` (§7–8 and the
+wheel spring), `crash-damage.js` (§9), driven by `body-world.js` in the order of
+§2. What the port does differently, and why, is in
+[`features/vehicle-collision-physics/README.md`](../../vehicle-collision-physics/README.md).
+
 Notation: `dt` = 1/30 s, the fixed tick ([physics.md](physics.md) §3). `g` =
 −14.73. Matrices are row-vector: rows 0, 1, 2 of an absolute transformation are
 the body's X, Y, Z axes in world space, row 3 the position.
@@ -444,6 +450,8 @@ Only when `posAdjust ≠ 0`:
 
 ```
 wheel (SpringTemplate): node.pos += clamp(posAdjust·n̄ − rootCopy·n̄, 0, 1) · n̄    // suspension only, no velocity
+                        (next tick PhysicsSpring reads that offset as its compression, pushes the root
+                         along n̄ by it, and snaps the wheel back to rest: physics.md section 6)
 otherwise, on the ROOT's node (a child part's contact is applied to its root):
     pos += posAdjust
     addAccelerationAtAbsolutePosition(part.pos + avgContactRelPos,
