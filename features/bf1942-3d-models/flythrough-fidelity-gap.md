@@ -523,3 +523,113 @@ Berlin's 105 — so that point is always **past the far plane**, where `ndc.z`
 also reads > 1, and the flare was rejected on every frame of every level. The
 front/behind test is now asked in view space (`z < 0`), and the projected
 point sits halfway between near and far along the same ray.
+
+## 2026-09-20 review: the combat area, re-derived
+
+Every address below is from the unstripped Linux server
+(`bf1942_lnxded-1.61-patched/bf1942/bf1942_lnxded.static`), the block at
+`GameServer::gameStatusPlaying+0x1540`..`+0x17a0`.
+
+**The four floats are origin and size, and the engine says so.** No argument
+from Berlin's numbers is needed: the moment `gameStatusPlaying` reads them
+back through `Game::getActiveCombatArea` (0x08061870), it *adds* the third to
+the first and the fourth to the second —
+
+```
+0x0815237a  fld  [x0]  ; 0x08152383  fadd [sizeX] ; 0x08152389  fstp -> maxX
+0x0815238f  fld  [z0]  ; 0x08152395  fadd [sizeZ] ; 0x0815239b  fstp -> maxZ
+```
+
+— and compares the position against `x0/z0` and those two sums. Checked
+against seven vanilla levels' raw `.con` values and the extracted
+`scene.json.combatArea` (z negated by the glTF frame): Berlin `1536 1536 512
+512`, Stalingrad `320 52 416 416`, Liberation_of_Caen `360 460 1229 1229`,
+Omaha_Beach `512 512 1024 1024`, Market_Garden `256 256 1792 1792`, Truk
+`0 0 2048 2048` and Tobruk `1024 0 2048 2048`. Tobruk is the one that would
+have hidden a wrong reading: as origin+size it is x 1024..3072 on a 2048 m
+world — the area runs off the east edge — and as a corner pair it would read
+as an innocent-looking x 1024..2048.
+
+When a level declares no area the same block falls through to 0x08152575,
+which zeroes both origins and calls the terrain's own `getSizeX`/`getSizeZ`
+(`PatchTerrain` vtable +0x0c/+0x10) for the far corner. The "combat area" is
+then the whole terrain.
+
+**The count is 11 of 23**, not "all 23". Read straight off the shared tree:
+every vanilla `scene.json` carries a `combatArea` key, and twelve of them
+carry it as `null` (aberdeen, battleaxe, bocage, coral_sea, el_alamein,
+gazala, guadalcanal, iwo_jima, kharkov, kursk, midway, wake). A key that is
+present but null is not data. Across all 277 extracted `scene.json` files,
+including the mods, 250 are non-null.
+
+**Edge polarity, read rather than assumed.** Four `fucomp`/`fucom` +
+`test ah,0x45` pairs; the branch is taken only when ah&0x45 == 0, i.e. when
+ST(0) is strictly greater than the operand:
+
+| address | comparison | taken means |
+|---|---|---|
+| 0x081523c1 | `minX` vs `pos.x` | `minX > x` -> outside |
+| 0x081523d7 | `minZ` vs `pos.z` | `minZ > z` -> outside |
+| 0x081523ec | `pos.x` vs `maxX` | `x > maxX` -> outside |
+| 0x08152403 | `pos.z` vs `maxZ` | *not* taken -> inside branch |
+
+So inside is `minX <= x <= maxX && minZ <= z <= maxZ`, **inclusive on all four
+edges**. Only the position's `+0` (x) and `+8` (z) are ever loaded:
+**altitude is never bounded**, which is why a bomber orbiting at 400 m over
+the middle of the area is safe and one that drifts sideways is not.
+
+**The damage threshold is strict**, and the accumulator is clamped. The
+`jne 0x0815251a` at 0x08152437 takes the no-damage path on `<=` as well as
+`<`, so damage begins only once the total is strictly past the allowance; and
+after each damage frame the allowance itself is written back into
+player+0x178 (0x081524a8 `mov al,[ecx+0x6c]`, 0x081524ac `fild`, 0x081524b2
+`fstp`), so a player who has been outside for a minute reads 10, not 60. It
+costs no HP — the next frame re-crosses by its own dt — but it is what the
+engine holds.
+
+**CA-5 was wrong: it is not a team check.** Even inside the rectangle the
+engine asks the terrain for the material under the player —
+`dice::ref2::geom::terrainBase` (0x087435f0), vtable +0x4c =
+`PatchTerrain::getMaterial(float, float)` (0x083d6800) — and compares it at
+0x08152540 with `GameServer+0x474`. That field is `materialToGiveDamage`:
+setter `GameServer::setMaterialToGiveDamage(unsigned char)` 0x0813dff0, getter
+0x0813e020, **default 7** from the constructor at 0x0812f287. On a match the
+code jumps to the same accumulate path the out-of-rect tests reach; only a
+mismatch zeroes the accumulator. It is a second, non-geometric way to be
+"outside", and this viewer has no terrain material channel, so it is noted and
+not modelled.
+
+**Who takes the damage: the vehicle.** The position tested at 0x081523a1 is
+`BFPlayer::getVehicle()`'s (vtable +0x3c = 0x080560c0, returning
+BFPlayer+0x4c), so a seated player is tested where his vehicle is. The damage
+goes to the same object: 0x0815243f branches on `BFPlayer+0x6c`, the
+entry-point index, which the constructor sets to -1 (0x08050b1e) and
+`GameServer::exitVehicle` restores (0x0814e5c2). In a vehicle,
+`GameServer::giveDamage` (vtable +0x15c, 0x0814b2e0) is handed
+`getVehicle()` — the hull burns and the pilot is untouched. On foot it is
+handed BFPlayer+0x68, the default vehicle `setDefaultVehicle` stores
+(0x08055879), which is the soldier.
+
+The viewer stepped the area only inside `onFoot()`, so leaving it in a plane
+or a tank did nothing at all. Moved out to `frame()` as `stepCombatArea`, it
+reads the occupied root's world position and takes the damage through the
+hull's own `Armor`.
+
+### Verified live
+
+Berlin, port 5324, allowance overridden to 1 s so a headless session reaches
+the damage.
+
+- **On foot.** Inside: countdown 0, group culled. Teleported 60 m west of
+  `minX`: countdown 1, the warning up, distance 60 m, no damage yet. Seventy
+  more frames at 4 HP/s: HP 30 -> 27.33, `outsideFor` sitting at exactly 1 —
+  the clamp. Teleported back inside: `outsideFor` 0, countdown 0, group
+  culled, HP kept.
+- **Seated.** Climbed into the PanzerIV through the game's own entry point,
+  then moved the boundary (a drivetrain rewrites its node's transform every
+  frame, so a check cannot drive a vehicle out by moving the node): countdown
+  1 at 414 m outside, then hull 100 -> 83.7 while **the occupant's own 30 HP
+  never moved** — the engine's rule, on screen. Boundary restored: countdown
+  0, accumulator 0, the hull stops losing HP.
+- **Free fly.** No player object, so nothing accrues and the group stays
+  culled.
