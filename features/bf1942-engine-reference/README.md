@@ -11,6 +11,52 @@ against the code that actually reads the format, and where the answer stays.
 
 ---
 
+## Start here
+
+This README is the single entry point for engine work: aim an agent at it and
+everything else is a link from here. The corpus says what the engine does. A
+piece of the viewer built from it keeps its own record — what was built, how it
+was checked and **what is still open** — in its own feature folder, and is
+listed in this table.
+
+| Built from this corpus | The engine's side, here | Build record and open items |
+|---|---|---|
+| **Vehicle collision physics** (2026-09-20). A rammed vehicle is a rigid body on its own wheel springs: pushed, spun and hurt, and so is whoever hit it | [subsystems/collision-response.md](subsystems/collision-response.md) is the spec, and its "Still open" table is the research queue; the wheel spring is [subsystems/physics.md](subsystems/physics.md) §6 and §10; ledger COL-2…COL-12, HP-6, PHY-2, PHY-5 | [`../vehicle-collision-physics/README.md`](../vehicle-collision-physics/README.md): what is built, measured results, deliberate differences from the engine, "Not done yet". [`IMPLEMENTATION.md`](../vehicle-collision-physics/IMPLEMENTATION.md) beside it is the briefing the implementers shared (interfaces, coordinates, test pattern) |
+| Everything else in flight across the viewer | | [`../bf1942-parity-round-2026-09-19/README.md`](../bf1942-parity-round-2026-09-19/README.md), the live open list |
+
+**Next on collisions**, split by what each item needs first.
+
+*An engine read, because the corpus does not have it:*
+
+- **Ships.** `PhysicsFloatingBundle` is named in physics.md and nowhere read, so
+  ships are left out of the body world (a woken destroyer would sink). Buoyancy,
+  how it meets the spring/contact path, and what a ship-to-ship ram does.
+- **The wake-up bounce.** A sleeping `PhysicsSpring` is skipped (PHY-5). Whether
+  the wheel keeps its compressed position and `D_prev` through the sleep, and
+  what detection does on the tick the root falls asleep, decides whether the
+  one-tick bounce the viewer shows on first touch is the engine's.
+- Everything in collision-response.md's "Still open": the client's
+  `handleCollision` override, where `getSpeedDamageMod()` is consumed, the
+  soldier-vs-soldier push signs, whether a body resting on contact alone ever
+  sleeps.
+
+*Building only, the spec is complete:*
+
+- **The driven vehicle's crash response.** `ground.js` and `flight.js` keep their
+  own integrators and take the solver's push through an adapter
+  (`vehicle-bodies.js` `DrivenBody`), so a plane that noses in is levelled out
+  rather than tumbling. The end state is one `RigidBody` per vehicle, driven or
+  not (spec §3, §4, §8; [subsystems/tank-driving.md](subsystems/tank-driving.md)
+  for propulsion through EngineGrip).
+- **Bodies against statics.** The spec's direction rule already covers it
+  (§5.3: a static is always the face side); only vehicle-against-vehicle goes
+  through the solver today, and a building still stops a hull on the swept sphere.
+- **The soldier as a body**: the crash-damage soldier branch (§9) is built and
+  unused, because being run over is still the old code (PHY-6 for how a soldier
+  moves under contact).
+
+---
+
 ## The binary
 
 Addresses are meaningless without the exact image they came from.
@@ -267,6 +313,11 @@ integrates, one step per tick; `+0xcc` is `isSleeping`), names the
 `responsePhysicsManager` vtable (`update` is `+0x14`; `+0x1c` is the cache
 reset), and adds
 a `collision` subsystem of about 200 symbols, server and client.
+**Built 2026-09-20**: the viewer now runs that solver for every parked vehicle
+and for whatever the player rams it with. The build record, its measured
+results and its open items are in
+[`features/vehicle-collision-physics/README.md`](../vehicle-collision-physics/README.md),
+and "Start here" at the top of this file carries the queue that follows from it.
 
 
 1,184 symbols across 26 subsystems (1,119 before the second 2026-09-20 integration; 817 across 25 before the two 2026-09-19 rounds): 225 from bf42plus, the rest read from the binaries — 138 in the first 2026-09-16 research round (formats, menus, rendering, physics, effects), 198 more (193 net new, plus five corrections to earlier entries) in the second, on the mechanics below, a further 10 (SSC-1/SSC-2/SSC-5's SoundScript addresses) from an unrelated fix landed the same day, 25 more (plus five corrections) across two rounds on 2026-09-17, and **96 (plus 14 corrections) from the 2026-09-19 parity round** on damage, the vehicle HUD and soldier movement. That 2026-09-17 pair closed HP-6 by proving a collision never costs hit points — which 2026-09-18 and then 2026-09-19 refuted outright; see [ledger](ledger.md) HP-6 and [subsystems/hitpoints-and-damage.md](subsystems/hitpoints-and-damage.md) §3. The same evening's collision round added **207 more** (the `collision` subsystem, plus 21 extended notes); the two were merged by address on 2026-09-20 with one overlap (`0x08173fc0`, `Armor::getSpeedMod`, which keeps the collision round's entry and carries the parity round's evidence in its note). The same day's second integration added **65 more** (the console class in both binaries, the skeleton-IK chain, the combat area, the projectile contact recycle and the gearbox) **and extended 17 existing notes**, one of which — `getEngineType` `0x0823fd00` — had been carrying a refuted claim. Recompute with `python3 -c "import json;print(len(json.load(open('symbols.json'))['symbols']))"`.

@@ -135,12 +135,113 @@ second reader, and nothing merges untested.
 | W3-E mod chrome | per-mod HUD pack, layouts, fonts and strings along `game.addModPath` (EoD's nations above all); and `verify_models.py` made to tell the truth |
 | W3-F research | LOOP-1's second reader (what the simulation's time step really is, server and client), GUN-2b (mouse counts to `PlayerInput`, and whether `TURRET_SPEED_SCALE = 4` is explained), the console's open items |
 
+**W3-F has reported and been verified (2026-09-20).** Reports:
+`scratchpad/reports/w3f-research.md` and `w3f-verdict.md`. Not in the corpus
+yet - it goes in with wave 3's corpus pass, and the verifier's wording is the
+binding one where the two differ.
+
+- **LOOP-1 closes: fixed 30 Hz, `dt = 1/30` exactly, on both binaries.** The
+  first reader found the frame loop (`Setup::mainLoop`, measured dt) and missed
+  the accumulator one call below it (`Setup::updateInputs` `0x080bc540`,
+  client `InputManager::update` `0x0049ce70`). Only the tick dt reaches
+  `simulateFrame`; the frame dt reaches `handleFrameUpdate` (object vtable
+  `+0x50`, one slot below `handleUpdate`) and an FPS ring. A backlog above 9-10
+  ticks collapses to one; dt is never stretched. The "if LOOP-1 holds"
+  qualifiers on PHY-1 and PHY-6 come off.
+- **GL-2**: the ledger has `0x00466e31` (60.0f) and `0x00466e43` (100.0f) swapped.
+- **GUN-2b closes, and not the way the researcher wrote it.** The verifier read
+  the DX8 mouse device (`update` `0x0066ffe0`): the axis is a **rate**,
+  `input = 0.001 x counts-per-second x (5 x sensitivity + 0.1)`, held for every
+  tick of the frame (a `dt = 0` pump leaves the registers alone), then clamped
+  to +-16 and quantised to 4096 steps for local players too. Defaults 0.25 on
+  foot, land and sea (scale 1.35), **0.75 in aircraft** (3.85). The
+  researcher's per-frame-count formula, "one tick per frame gets the mouse" and
+  "4 is 5.4 under-fitted" are all refuted. `TURRET_SPEED_SCALE = 4` has no
+  basis; the scale belongs at the input stage. Still unproven: that a browser
+  `movementX` pixel is one DirectInput count.
+- Refuted details that must not be pasted: `BasicPhysicsSystem::update` is a
+  live (empty) vtable slot, not unreferenced; `+0x64` is
+  `getUpdateFrequencyType`, not `getUpdateFrequency`; the server's 15 ms yield
+  depends on `Setup+0x216`.
+- The console's open items were not reached.
+
+Queued from this: a viewer stream that replaces `TURRET_SPEED_SCALE` with the
+rate formula at the input stage (`seats.js`, the mouse handler in `map.html`),
+with the +-16 clamp, per-seat-class sensitivity, and the same value fed to
+every tick of a frame. **Launched as W3-G** once W3-B and W3-D reported; it
+also researches what `BFSoldier` does with the mouse-look axis on foot, so
+`LOOK_SENS` can go the same way if the law can be read.
+
+**W3-A (drivetrain) was reviewed: DO NOT MERGE, sent back to its author**
+(2026-09-20). Reports: `w3a-drivetrain.md`, `w3a-review.md`; the reviewer's
+comparison scripts are in `scratchpad/r3a/`.
+- The research held: TANK-13 is MAX for `revs >= 0` and MIN below (the earlier
+  gearbox verifier had it inverted), only an EngineGrip wheel feeds the load,
+  `F*30` is the engine's gain and the drivetrain is frame-rate independent
+  (Willys 111.2, Sherman 53.6, M3A1 67.2 km/h reproduced exactly).
+- Blocker W: on a 0.35 m / 12 m washboard the Willys reaches a 148 m apex and
+  454 km/h (main: 1.13 m / 58 km/h). The tyre frame is the hull's plane, not the
+  contact's, and a buried axle reads metres of spring compression.
+- Blocker E: on today's assets no tracked vehicle steers, because
+  `physics.maxRotation` is absent from every shipped `scene.glb` and steering
+  has no fallback. **Levels as well as models must be re-extracted** once this
+  lands (the drivable hull is built from the level scene).
+- Brake is 2x too long; the engine's tyre-friction accumulator is a running mean
+  (`addFrictionAtAbsolutePosition` `0x08254e50`; springs sum, tyres mean), but
+  the mean alone rolls the M3A1 over, so more of the rule is unread.
+- A parked jeep rolls down a 5 degree slope; roll chatter at full lock.
+
+**W3-B (blasts) is merged** (`cf7f352`, 2026-09-20), reviewer's verdict MERGE
+WITH FIXES, four fixes committed. Reports: `w3b-blasts.md`, `w3b-review.md`.
+- The painted combat boundary is safe and ships on. The engine samples the
+  terrain material under the occupied object's x/z every tick (no contact
+  needed), shares the rectangle's 10 s timer and resets it when you step off.
+  Material 7 is the map edge painted as a ring round one playable pocket: across
+  23 levels 0 of 749 soldier spawns, 0 of 115 control points and 0 of 724 object
+  spawns stand on it. The stream's wording ("the streets are what is not
+  painted") was refuted and rewritten; the mechanic was confirmed.
+- Confirmed from bytes: crouching in the open takes double a standing man's
+  splash (identical 9-sample tables, divisors 9 and 18); the sample offsets are
+  never rotated; `v_n' = v_n (1 - e) / 2` with a constant 0.5 and no mass, so a
+  grenade (pair e = 1.0) never rebounds and skids on its tangential speed.
+- Refuted and fixed: materials 195 and 232 ARE declared, so they carry the
+  Material constructor's 0.01 resistance, not material 0's 0.02.
+- Merge note: main (the collision session) had already added `elasticity` /
+  `resistance` to `bf42/damage.py` as optional, emitted only when authored. That
+  shape won; the consumers own the constructor fallback.
+
+**W3-D (sounds) is merged** (`cca9822`, 2026-09-20), verdict MERGE WITH FIXES.
+Reports: `w3d-sounds.md`, `w3d-review.md`.
+- Extracted into the local shared tree: `python3 extract_effects.py --mod bf1942
+  --out viewer/maps/_shared` -> 83 sounding bundles, 46 scripts, 677 layers,
+  192 samples, 2,283,777 B, `_shared/sounds` 156 -> 348 files. Checked on Wake:
+  pack loads, a grenade blast starts its sources inside the budget.
+- Reviewer fixes: `silence()` left `trigger Volume` latches armed (ghost
+  explosions after a level change); ten vanilla bundles carry two scripts in
+  their tree and only one played; `effects.glb` was not reproducible run to run.
+- **The 26-voice budget is the viewer's arithmetic, not the engine's**: the
+  32-voice hardware limit is proven, the subtraction of the 2D reservations is
+  not (SND-2b), and drop-versus-steal is a viewer choice (SND-1). `randomPlay`
+  as "pick one" is a reading of the data (SND-6).
+- To publish with the rest: `_shared/effects.glb`, `effects.report.json`,
+  `effects.sounds.json` and the 192 new files under `_shared/sounds`.
+- Left open: wreck fire never ends (holds 3 voices), sounds queued while the
+  AudioContext is suspended fire together on resume, vehicle guns still do not
+  get `randomPlay` (needs `extract_map._sound_layers` and a level re-extract).
+
 ### Not yet assigned
 
 Hull collision between ground vehicles and the world has an engine spec
 (`subsystems/collision-response.md`, the other session's round) and a plan
 (`features/viewer-ground-hull-collision/README.md`); it is the largest piece
 left and is not in wave 3.
+
+**Vehicle against vehicle is built (2026-09-20, the other session).** A rammed
+vehicle is a rigid body on its own wheel springs: it is pushed, spun and hurt,
+and so is whoever hit it, by the engine's own contact solver and crash-damage
+formulas. Record and open items in `features/vehicle-collision-physics/README.md`.
+What that leaves of the piece above is the driven hull against *statics*, which
+still stops on the swept sphere, and a drive model that tumbles when it crashes.
 
 
 | Item | Status |

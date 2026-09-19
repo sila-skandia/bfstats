@@ -33,7 +33,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Callable
 
-from .con import _COMMAND
+from .con import _COMMAND, _REM_BLOCK
 
 SETTINGS_SCRIPT = "bf1942/game/materialManagerSettings.con"
 
@@ -43,11 +43,30 @@ Resolver = Callable[[str], bytes | None]
 
 @dataclass
 class Material:
+    """One `MaterialManager.material <id>` block.
+
+    The three physical words are the contact solver's, not the damage
+    system's, and they are read by three neighbouring accessors off the same
+    struct: `getFrictionForMaterial` (lnxded `0x081751b0`) reads `Material+0x0c`,
+    `getElasticityForMaterial` (`0x081751f0`) `+0x10` and
+    `getResistanceForMaterial` (`0x08175230`) `+0x14`. All three share the same
+    fallback: an id the define file never mentions resolves through
+    `getMaterialPtr(0)` to **material 0**, and only if material 0 is also
+    missing does the accessor push `fld1` = 1.0. The defaults below are the
+    `Material` constructor's, per collision-response.md section 8.
+    """
     id: int
     att_group: int
     def_group: int
     damage: float = 0.0
     friction: float = 1.0
+    # `Material::Material()` (`0x08174550`) also zeroes elasticity and sets
+    # resistance to 0.01 — but unlike friction, vanilla only authors these for
+    # a minority of materials (the 16 terrain rows and a handful more), so
+    # `None` distinguishes "not authored" from "authored as zero" and the
+    # fallback lives with the consumer, not baked in here.
+    elasticity: float | None = None
+    resistance: float | None = None
     label: str | None = None
 
     def as_dict(self) -> dict:
@@ -57,6 +76,10 @@ class Material:
             "damage": self.damage,
             "friction": self.friction,
         }
+        if self.elasticity is not None:
+            out["elasticity"] = self.elasticity
+        if self.resistance is not None:
+            out["resistance"] = self.resistance
         if self.label:
             out["label"] = self.label
         return out
@@ -163,6 +186,15 @@ class DamageTables:
         So do not "fix" this to return a default. Returning the field would
         either change nothing or introduce a bug, and the recommendation to do
         so was checked and refuted.
+
+        A cell that exists only because a script hung an effect on it with
+        `setEffectTemplate` and never wrote `damageMod` is not "no entry" —
+        `MMCell::MMCell` (`0x081745f0`) sets a created cell's damageMod to
+        **1.0**, not 0.0 — so `_parse_script` seeds such a cell at 1.0 as soon
+        as it is created and this method never has to special-case it: "no
+        cell" (returns None, above) and "cell created only for its effect"
+        (returns 1.0) come out of the same `self.modifiers` lookup correctly
+        either way.
         """
         return self.modifiers.get((self.att_group(att_material), self.def_group(def_material)))
 
@@ -311,6 +343,15 @@ def _parse_script(tables: DamageTables, text: str, script: str,
     def_group: int | None = None
     heading: str | None = None
 
+    # `BeginRem`/`EndRem` bracket a whole block as dead script the same way a
+    # single `rem` line does (both are engine keywords, not a convention) —
+    # vanilla uses this for six weapons' abandoned experiments (katyusha,
+    # bazooka, destroyer, Torpedo, twice in NoArmor, once in PlaneArmor) and a
+    # parser that only skips single `rem` lines reads straight through them,
+    # producing cells nothing ever writes (e.g. (227,90)). Reuses `con.py`'s
+    # block regex rather than a second implementation of the same rule.
+    text = _REM_BLOCK.sub("", text)
+
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped:
@@ -360,6 +401,37 @@ def _parse_script(tables: DamageTables, text: str, script: str,
             value = _number(args)
             if value is not None:
                 material.friction = value
+        elif cmd == "materialelasticity" and material is not None:
+            # The restitution term `ResponsePhysics::solveImpulse` spends
+            # (COL-2): the acceleration it hands the root is
+            # `speedAdjust * 30 * (1 + elasticity) * 0.5` (`fld1; fadd
+            # [edx+0xac]` at lnxded 0x08258ed4/0x08258ed6, the 30.0 at
+            # `ds:0x8716b5c`, the 0.5 at `ds:0x86b05e8`), and `impulseOn`
+            # stored `+0xac` as the MEAN of the two contacting materials
+            # (0x08258bd0). Over one 30 Hz tick that leaves the normal
+            # velocity at `v * (1 - e) / 2`.
+            #
+            # Vanilla authors a non-zero value on **exactly one** material:
+            # 70 "Grenades", at 2.0 — which against any surface (every other
+            # vanilla material is 0) means a pair mean of 1.0 and a normal
+            # velocity of exactly zero. So a grenade does not rebound; it
+            # cancels its into-surface speed and keeps its along-surface
+            # speed. Surveyed across all 18 installs: 70 is 2.0 everywhere it
+            # is declared, GCMOD adds 543, interstate adds 11 (0.1) and 45
+            # (-1.0), bfheroes adds 2011 (15.0) and 2012 (1.5).
+            value = _number(args)
+            if value is not None:
+                material.elasticity = value
+        elif cmd == "materialresistance" and material is not None:
+            # `ResponsePhysics::addFriction`'s viscous term: the root is given
+            # `-resistance * Vt` through `addAccelerationAtRelativePosition`,
+            # i.e. a velocity change of `-resistance * Vt / 30` a tick, on top
+            # of the Coulomb clamp. Also a pair mean (`impulseOn` 0x08258c00).
+            # Vanilla authors 0.01-0.1 for the 16 terrain materials, 1.0 for
+            # the three stair materials 96-98, and 2.0 for grenades.
+            value = _number(args)
+            if value is not None:
+                material.resistance = value
         elif cmd == "attgroup":
             value = _number(args)
             att_group = int(value) if value is not None else None
@@ -367,10 +439,33 @@ def _parse_script(tables: DamageTables, text: str, script: str,
             value = _number(args)
             def_group = int(value) if value is not None else None
         elif cmd == "damagemod" and att_group is not None and def_group is not None:
+            # `MaterialManager.damageMod` (`0x08179c10`): `getCreateCell()`
+            # then an unconditional write — always the cell's final value for
+            # everything read so far, in `run` order.
             value = _number(args)
             if value is not None:
                 tables.modifiers[(att_group, def_group)] = value
+        elif cmd == "setcell" and att_group is not None:
+            # `MaterialManager.setCell <defGroup> <damageMod>` (`0x081752b0`):
+            # `getCreateCell(attGroup, defGroup)` where `defGroup` is this
+            # command's own first argument, not the `defGroup` cursor — vanilla
+            # uses it 9 times (bombs.con, Big_bombs.con, wespe.con) always
+            # right after an `attGroup` line and never an explicit `defGroup`.
+            parts = args.split()
+            if len(parts) >= 2:
+                def_g, value = _number(parts[0]), _number(parts[1])
+                if def_g is not None and value is not None:
+                    tables.modifiers[(att_group, int(def_g))] = value
         elif cmd == "seteffecttemplate" and att_group is not None and def_group is not None:
+            # `setEffectTemplate` also calls `getCreateCell()` — a cell it
+            # creates with no `damageMod` line anywhere starts at the
+            # `MMCell` constructor's 1.0, not the "no cell" default of 0.0.
+            # `setdefault` is order-independent: whichever of this line or an
+            # explicit `damageMod`/`setCell` for the same pair runs first
+            # creates the cell, and the other (if it runs later) still applies
+            # normally — an explicit value always overwrites unconditionally,
+            # while this only fills a gap.
+            tables.modifiers.setdefault((att_group, def_group), 1.0)
             if args.strip():
                 tables.effects[(att_group, def_group)] = args.split()[0]
 
