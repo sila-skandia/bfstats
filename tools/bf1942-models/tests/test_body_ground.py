@@ -378,21 +378,56 @@ class BodyGroundTests(unittest.TestCase):
         self.assertLess(c["wAfterStep"][1], -0.01)
         self.assertAlmostEqual(0.0, c["wAfterStep"][2], places=2)
 
-    # --- (d) 10-degree slope: static friction holds, no creep ---------------
+    # --- (d) 10-degree slope: a REALISTIC vehicle -----------------------------
+    #
+    # tools/bf1942-models/tests/body_ground_harness.mjs builds a jeep-like
+    # 2500 kg body (box 1.7 x 1.5 x 3.6, wheels at (+-0.6,-0.14,-0.75) and
+    # (+-0.6,-0.12,1.46), strength 25, damping 5, ContactGrip, friction 1.0)
+    # nose-down a 10 degree slope and runs it 1000 ticks (33 s) against the
+    # REAL spring law, then a further 300 ticks (10 s) to measure creep. The
+    # implementer's earlier report, against the OLD invented spring law and an
+    # oversized inertia box, found a vehicle this size "tips... and runs
+    # away". Re-tested here against the corrected law and this track's actual
+    # box: it settles cleanly (see test_slope_settles_but_never_sleeps below)
+    # and holds with negligible creep (test_slope_no_creep_once_settled) --
+    # but it never reaches `body.sleeping`, and that is not a bug: see the
+    # derivation in test_slope_settles_but_never_sleeps.
 
-    def test_slope_settles(self) -> None:
+    def test_slope_settles_but_never_sleeps(self) -> None:
         s = self.results["slope"]
-        self.assertGreater(s["settleTicks"], 0, "never fell asleep on the slope")
-        self.assertTrue(s["finalSleeping"])
+        # Physically at rest: both speed and angular speed have decayed to a
+        # tiny fraction of the sleep countdown's own thresholds (0.25 each,
+        # §4.3) by the time the fixed settle budget (1000 ticks / 33 s) runs
+        # out.
+        self.assertLess(s["speedSqAtSettle"], 1e-4)
+        self.assertLess(s["angSpeedSqAtSettle"], 1e-4)
 
-    def test_slope_no_creep_once_asleep(self) -> None:
-        # This is exactly what `V.y += GRAVITY/30` (§8) is for: without it,
-        # the static latch would be computed against the CURRENT tick's
-        # speed only, missing that gravity is about to add a small downhill
-        # component next tick, and the body would creep. With it, once
-        # asleep the position must not drift at all over many more ticks.
+        # And yet it never sleeps -- confirmed, not papered over. The wheel
+        # spring's restoring force is strictly along the terrain's CONTACT
+        # NORMAL (this file's WheelSpring tests, body-ground.js's own header
+        # comment): it can cancel gravity's component along that normal, but
+        # structurally can never touch the TANGENTIAL (along-slope)
+        # component -- only friction does that, through `fr`, an accumulator
+        # the sleep countdown never reads (§4.3: "the accumulator as it
+        # stands before drag: gravity + springs + impulses"). So `acc` is
+        # left holding |g|*sin(10 deg) forever, tiny orientation noise aside:
+        tangential_g = abs(GRAVITY) * math.sin(math.radians(s["slopeDeg"]))
+        self.assertAlmostEqual(tangential_g, math.sqrt(s["accSqAfterAccumulate"]), delta=0.05)
+        # ... which exceeds the wake test's own sqrt(2.5) m/s^2 threshold
+        # (collision-response.md §4.3, R2-integrator.md F8: "a body can only
+        # sleep while something cancels gravity to within 1.58 m/s^2") for
+        # any slope steeper than about 6.16 degrees -- 10 is one of them.
+        self.assertGreater(math.sqrt(s["accSqAfterAccumulate"]), math.sqrt(2.5))
+        self.assertFalse(s["finalSleeping"])
+
+    def test_slope_no_creep_once_settled(self) -> None:
+        # Static friction genuinely holds it: displacement over a further 10
+        # seconds, measured well after the initial touchdown transient, stays
+        # well under a centimetre -- even though (see the test above)
+        # `body.sleeping` itself never goes true, so this cannot be phrased
+        # as "no drift once asleep" the way the flat-ground shove test can.
         s = self.results["slope"]
-        self.assertEqual(0.0, s["drift"])
+        self.assertLess(s["drift"], 0.005)
 
 
 if __name__ == "__main__":
