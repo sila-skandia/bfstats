@@ -265,7 +265,10 @@ Python level instead of relying on the deploy screen's flag list.
 
 - Wake's Japanese spawn from the carrier. `spawnFlags` only lists control
   points with soldier spawns; a spawn group attached to a ship is a separate
-  piece of work.
+  piece of work. *(Done — `features/deploy-screen-spawn-points/README.md`:
+  the ships' deck spawn points are emitted as `vehicleSoldierSpawns` and
+  become fleet flags, and the group side comes from
+  `spawnPointManager.groupTeam`.)*
 - The deploy screen's row labels are the page's five names; the game reads
   them from each kit's `setKitName`. A mod whose slot 2 is not anti-tank will
   spawn the right weapon under the wrong caption.
