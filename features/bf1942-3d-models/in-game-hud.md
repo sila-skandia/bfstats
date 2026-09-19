@@ -753,3 +753,69 @@ letterbox), so a crop assuming a uniform `min()` scale is 80 px out by
 x ≈ 700; and the page's rAF loop is **live in a visible headless tab**, so a
 forced `hud.vars` write and the read-back of its paint have to happen inside
 one `page.evaluate` or the live feed repaints over it first.
+
+### 2026-09-20 review: the dial's pair, the dots' placeholder, and the enum
+
+Re-run independently against a scratch re-extract of **Battle of the Bulge**
+and **Kasserine Pass** built from this branch's own `con.py`, served beside an
+otherwise identical tree with only the two VHUD-9 sign lines reverted
+(`hud.js` back to `ctx.rotate(angle)`, `map.html` back to
+`headingRadians()`), so the pair is the only variable.
+
+**The dial's sign pair is consistent, at four angles.** Each build was asked
+to paint the value *its own* pipeline feeds for a turret at exactly +90°,
+−90°, +45° and 180° — the convention read back from its live feed, not
+assumed (−1 on the reverted build, +1 on this one) — and all four crops are
+**byte-identical PNGs** (FNV hashes 1620480286, 1175657374, 3734543796,
+1996277156). +45 and 180 were added because a symmetric sprite could hide a
+pure mirror at ±90; they do not.
+
+**The trigger is the word and the view.** Sherman driver in cockpit: dial,
+4711 opaque texels. Same driver in chase: **0**. Sherman hull gunner
+(`shermanBrowning_PCO1`, which declares no `setHasTurretIcon`): **0**. Wespe
+gunner, which aims on two axes: **0**. A Stuka's rear gunner
+(`StukaRearGunControl`), also two axes: **0**.
+
+**`_drawPicture` negating is right for the other rotated leaves too.** The
+only other `rotation` in `hud-layout.json` is the `hitIndicator` group's seven
+wedges, whose angles are static literals (3.9, −3.14, 2.5, 1.57, 0.8, −0.8)
+authored in the engine's own `RotateEffect` sense — so the negation is the
+correct treatment for them as well. Nothing feeds `HitFromDir/HitFromDir`
+today, so the group never draws; whoever wires it inherits the right
+convention.
+
+**Seat dots: one defect, fixed.** Positions land where VHUD-11 says. Hanomag
+from the root seat: states `[1,2,2,2,2,2]`, positions 39/75, 40/65, 30/59,
+41/55, 20/49, 31/45, all inside the 128×128 icon at (200,462) once anchored at
+(192+x, 452+y); from the third seat the states become `[2,2,1,2,2,2]`. Sherman
+gets two, 54/103 and 32/61. Of VHUD-2's five states a single-player page can
+reach three — 0 (nothing drawn), 1 (you) and 2 (empty); 3 and 4 need an
+occupant that does not exist, and the live per-seat selector is still unread.
+
+The defect was the **fallback**: a scene baked before `con.py` learned
+`setVehicleIconPos` fed the state array but no positions, and `hud.js` fell
+back to each leaf's own rect — which is that variable pair's *authored
+placeholder*, a 5px diagonal staircase from (247,457). Measured on Kasserine's
+Hanomag: 0 texels of dot in that corner with the pairs fed, **66 with them
+deleted**. Since the whole shipped tree is in that state until the next
+re-extract, this would have painted a wrong six-seat layout on every vehicle.
+Now state 0 from `seatDots()` and an early return in `_drawOccupiedSeat`: 0
+either way, per dot, with the live dots byte-identical.
+
+**The ammo enum, every branch, on the page.** Walked all four kits'
+inventories with the weapon load awaited (`updateSoldierHud` returns early
+while `handWeapon` is null, so an un-awaited swap reads the previous weapon's
+panel):
+
+| weapon | `Ammo/AmmoType` | rounds fed | icon | bar |
+|---|---|---|---|---|
+| `KnifeAllies` | unset (`ATNone`) | — | — | — |
+| `Colt` / `No4` / `Thompson` / `Bar1918` | 1 | 8 / 5 / 30 / 20 | — | magbar |
+| **`Bazooka`** | **2** | **1** | `Icon_bazooka_64x32` | none |
+| `ExpPack` / `Landmine` / `Detonator` | 2 | 4 / 4 / −1 | own icon | none |
+| `GrenadeAllies` | 3 | 3 | `Icon_grenadeallies_64x32` | strength |
+| `RepairPack` | 4 | not fed | `Icon_repairkit_64x32` | none |
+| `MedPack` | 6 | not fed | `Icon_medkit_64x32` | none |
+
+`ATIconNoText` (5) is not reachable in vanilla — one declaration across all 18
+installs.
