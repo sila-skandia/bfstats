@@ -129,153 +129,74 @@ export function terrainContact(part, terrain, handlers) {
   return contacts;
 }
 
-// --- physics.md §6: the wheel suspension spring -----------------------------
+// --- the wheel suspension spring --------------------------------------------
+//
+// Read from `PhysicsSpring::updatePhysics` (lnxded `0x0824ddd0`, decompiled
+// 2026-09-20), which settles what physics.md section 6 left as a scalar
+// formula. Per tick, for each wheel:
+//
+//   anchor = the wheel's authored relative position, through its parent's
+//            absolute transformation                       (a world point)
+//   D      = anchor - wheelNode.absolutePosition           (a world VECTOR)
+//   store D as next tick's "previous"                      (asleep or not)
+//   if the root is awake:
+//     reset the wheel's relative transformation to its authored position
+//     a = -( strength * D * (g * -0.101833)  +  damping * (D - Dprev) / dt )
+//     root.addAccelerationAtRelativePosition(anchor - root.pos, a)
+//
+// So the wheel **snaps back to its rest position every tick**, and the only
+// thing that ever moves it is `solveImpulse`'s spring branch, which pushes it
+// along the averaged contact normal by `clamp(penetration, 0, 1)` during the
+// resolve pass. D is therefore minus that push: the compression is measured
+// afresh each tick as how far the rest-pose wheel sank into the ground, it is
+// a vector along the *ground's* normal rather than the body's up axis (a
+// taildragger standing nose-high is not pushed backwards by its own springs),
+// and there is no travel limit and no relaxation state to invent.
+// `g * -0.101833` is 1.49999 at the shipped gravity.
 
-/** `strength * g * (-1/9.82)`: 1.5 at the shipped gravity, gravity-invariant
- *  by construction (physics.md §6's own framing) — the same derivation
- *  `viewer/ground.js`'s `SPRING_GRAVITY_SCALE` uses, from the SAME `GRAVITY`
- *  this module imports rather than a re-typed `-14.73`. */
-const SPRING_GRAVITY_SCALE = -GRAVITY / 9.82;
-
-/**
- * INVENTED, not read off the binary — flagged per this track's briefing
- * rather than folded in silently; see this track's report.
- *
- * The corpus documents the spring's restoring FORCE from a KNOWN
- * displacement (physics.md §6, R1 F5's engine-target-velocity note) and
- * that `solveImpulse`'s clamp is what ever changes a wheel's compression in
- * the first place (§6.4: "wheel (SpringTemplate): node.pos += clamp(...)").
- * It says nothing about what that stored compression does across a tick
- * that adds no fresh contact at all — a wheel has no `PhysicsNode` of its
- * own to fall under §3's ordinary "everything zeroes and copies the root"
- * rule, and the corpus's own "Still open" table carries no line for it.
- *
- * Simplest rule consistent with the documented law, using no new tunable
- * number: while unsupported, let the wheel's stored compression decay back
- * toward its rest length (0) at the SAME natural angular frequency
- * `sqrt(strength * |g| / 9.82)` the force law above already implies for
- * THIS wheel — reusing `strength` and `GRAVITY`, inventing nothing but the
- * choice to use them this way. Damping is deliberately left out of the
- * decay itself (adding it would mean inventing a damping RATIO, not reusing
- * an authored number) — the wheel still stops relaxing exactly where the
- * force law's own damping term already made it stop oscillating on the way
- * down, since `apply` recomputes `rate` from the same `displacement` this
- * function returns.
- *
- * Isolated here, alone, so a future pass that pins the real behaviour down
- * (or decides "freeze" — the literal-minimal reading — is more honest) can
- * replace it without hunting through `WheelSpring`.
- */
-function relaxDisplacement(displacement, strength, dt) {
-  const omegaSq = strength * SPRING_GRAVITY_SCALE;
-  if (!(omegaSq > 0)) return displacement; // authored zero/negative strength: nothing pulls it back
-  const decay = Math.max(0, 1 - Math.sqrt(omegaSq) * dt);
-  return displacement * decay;
-}
+const SPRING_GRAVITY_SCALE = GRAVITY * -0.101833;
 
 const _springAccel = [0, 0, 0];
 
-/**
- * One `PhysicsSpring` wheel's compression state and the force it exerts on
- * the root through that compression (physics.md §6). `displacement` is the
- * engine's `D` recast as a non-negative "how compressed" scalar (0 = rest
- * length, `travel` = fully bottomed out) rather than the raw signed
- * `anchor - wheel.getAbsolutePosition()` vector the decompile shows —
- * matching `viewer/ground.js`'s own established `compression`/`travel`
- * convention (its `Wheel` class, `PHY-5`) rather than the spec prose's own
- * sign, because that convention is what makes the force law apply
- * POSITIVELY along "up" with no outer negation — see `apply`'s own doc
- * comment for the full reconciliation. `strength`/`damping`/`travel` come
- * from the wheel's `physics` extras exactly as `viewer/ground.js`'s
- * `collectChassis`/`Wheel` read them off the glb (`strength`/`damping`
- * fields; `travel` has no glb equivalent — `ground.js` gets it from a
- * per-vehicle spec table, so this class takes it as a plain constructor
- * argument rather than inventing a default).
- */
 export class WheelSpring {
-  constructor({ strength, damping, travel }) {
+  constructor({ strength, damping }) {
     this.strength = strength;
     this.damping = damping;
-    this.travel = travel;
-    /** 0..`travel`; 0 = rest length. */
-    this.displacement = 0;
-    /** Last tick's `displacement`, for the damper's one-tick backward
-     *  difference (physics.md §6's `d(displacement)/dt`). */
-    this.previous = 0;
-    this._compressedThisCycle = false;
+    /** This tick's push from `Response.solve` (world vector along the contact normal). */
+    this.push = [0, 0, 0];
+    /** Last tick's D, for the damper's backward difference. */
+    this.previous = [0, 0, 0];
   }
 
-  /**
-   * `Response.solve`'s spring branch (`body-contact.js` §6.4) returns the
-   * clamped suspension push for a `kind === 'spring'` part — a 3-vector
-   * already `d * avgNormal`, `d = clamp(posAdjust.avgNormal -
-   * rootPosAdjustCopy.avgNormal, 0, 1)` (metres, at most 1 per tick). This
-   * ADDS that push's magnitude to the running `displacement`, clamped to
-   * `[0, travel]` — the vector's own direction is not otherwise used here;
-   * for the common single-contact case (`avgNormal` a single unit normal,
-   * not a multi-contact mean) the magnitude equals `d` exactly, which is
-   * the engine's own `node.pos +=` scalar addition along its slider axis.
-   */
+  /** `solveImpulse`'s spring branch moved the wheel by `push` this tick. */
   compress(push) {
-    const mag = Math.hypot(push[0], push[1], push[2]);
-    this.displacement = clamp(this.displacement + mag, 0, this.travel);
-    this._compressedThisCycle = true;
+    this.push[0] = push[0]; this.push[1] = push[1]; this.push[2] = push[2];
+  }
+
+  /** How far the wheel is compressed right now, metres. */
+  get displacement() {
+    return Math.hypot(this.push[0], this.push[1], this.push[2]);
   }
 
   /**
-   * `PhysicsSpring::updatePhysics` (physics.md §6): `accel = -(strength *
-   * displacement * |g|/9.82 + damping * d(displacement)/dt)`, applied to
-   * the ROOT at the wheel's (fixed, rest) attach point along the spring
-   * axis (`up` — the hull's own +Y, per PHY-5, NOT world-vertical).
-   *
-   * **Sign reconciliation, read carefully.** The spec's literal formula
-   * carries a leading minus and is written against a SIGNED `displacement`
-   * (negative while the wheel sags away from its anchor) — textbook
-   * Hooke's law, `F = -k*x` about a rest point. This class's own
-   * `displacement` is instead the non-negative "how compressed" magnitude
-   * `viewer/ground.js` already established and this track's briefing
-   * points at directly ("take the same fields... spring strength,
-   * damping..."). Under THAT sign convention the restoring push must come
-   * out POSITIVE (supports the vehicle) as compression grows, which is
-   * exactly `viewer/ground.js`'s own long-working, spec-cited
-   * implementation (`load = SPRING_GRAVITY_SCALE*strength*compression +
-   * damping*rate`, applied with NO outer negation — see its `integrate`).
-   * So: `accelScalar = strength*displacement*SPRING_GRAVITY_SCALE +
-   * damping*rate`, no leading minus, `rate` positive while compressING.
-   * This is the identical physical law, expressed in the sign convention
-   * this class's own state already uses — not a different formula.
-   *
-   * Deliberately NOT ported from `ground.js`: its `load < 0 -> load = 0`
-   * clamp and its `overrun*bumpStiffness` bump-stop, both flagged there as
-   * "the viewer's, only the force law is read" — i.e. `ground.js`'s own
-   * practical additions, not the spec. Leaving the clamp out keeps this a
-   * literal, symmetric damped spring (a damper that also resists rapid
-   * REBOUND is correct, stable damped-oscillator behaviour, not a bug);
-   * `WheelSpring`'s own `[0, travel]` clamp on `displacement` already
-   * stops the compression side from running away without a bump-stop.
-   *
-   * Then relaxes — see `relaxDisplacement`'s own doc comment; only when
-   * `compress` was NOT called since the last `apply` (i.e. the wheel had
-   * no ground contact to resolve last tick), matching this track's
-   * briefing framing the open question as "how the displacement relaxes
-   * WHEN THE WHEEL LEAVES THE GROUND" rather than "every tick, contact or
-   * not" — a wheel in continuous contact is governed entirely by
-   * `compress`'s own accumulation and the geometry it feeds back into (see
-   * `ParkedVehicle.detectGround`), with nothing here fighting it.
+   * One `PhysicsSpring::updatePhysics`. `anchorWorld` is the wheel's rest
+   * position in world space; `asleep` skips the force but still rolls the
+   * damper's history forward, as the engine does.
    */
-  apply(body, attachWorldPos, up, dt) {
-    const rate = (this.displacement - this.previous) / dt;
-    const accelScalar = this.strength * this.displacement * SPRING_GRAVITY_SCALE + this.damping * rate;
-    _springAccel[0] = up[0] * accelScalar;
-    _springAccel[1] = up[1] * accelScalar;
-    _springAccel[2] = up[2] * accelScalar;
-    body.addAccelerationAt(attachWorldPos, _springAccel);
-
-    this.previous = this.displacement;
-    if (!this._compressedThisCycle) {
-      this.displacement = relaxDisplacement(this.displacement, this.strength, dt);
+  apply(body, anchorWorld, dt = TICK, asleep = false) {
+    const prev = this.previous, push = this.push;
+    // D = anchor - wheelPos, and the wheel sits at anchor + push.
+    const dx = -push[0], dy = -push[1], dz = -push[2];
+    if (!asleep) {
+      const k = this.strength * SPRING_GRAVITY_SCALE, c = this.damping / dt;
+      _springAccel[0] = -(k * dx + c * (dx - prev[0]));
+      _springAccel[1] = -(k * dy + c * (dy - prev[1]));
+      _springAccel[2] = -(k * dz + c * (dz - prev[2]));
+      body.addAccelerationAt(anchorWorld, _springAccel);
+      // The wheel is reset to its rest position: nothing carries over.
+      push[0] = push[1] = push[2] = 0;
     }
-    this._compressedThisCycle = false;
+    prev[0] = dx; prev[1] = dy; prev[2] = dz;
   }
 }
 
@@ -292,6 +213,7 @@ function toWorldPoint(body, localOffset, out) {
 
 const _attach = [0, 0, 0];
 const _partPosPV = [0, 0, 0];
+const _rootSnapshot = { posAdjust: [0, 0, 0] };
 
 /**
  * A parked, unoccupied vehicle: one `RigidBody` root, its `CollisionPart`s
@@ -313,19 +235,11 @@ const _partPosPV = [0, 0, 0];
  * (physics.md §6, R1 F9) for good, not re-derived every tick the way the
  * engine's own `PhysicsSpring` does for a vehicle that can be entered.
  *
- * A wheel's collision probe is kept at its FIXED rest offset for the
- * `WheelSpring`'s own force calculation (`attachWorldPos`, matching the
- * engine's `anchor`, itself computed from the template's authored, unmoving
- * offset — §6's `PhysicsSpring::updatePhysics`), but `detectGround` writes
- * the CURRENT `displacement` into the part's own `offset` before testing it
- * against the ground. This is not an added embellishment: without it, a
- * wheel's compression would grow without bound (the engine's own
- * `node.pos +=` correction moves the wheel's collision vertices too, which
- * is what makes next tick's penetration test shrink as the wheel settles —
- * see this track's report for the worked-through reasoning). It also means
- * an object-vs-object pass run by the lead against this same part sees a
- * geometrically correct, currently-compressed wheel, not a phantom one
- * pinned at rest height.
+ * A wheel's collision part stays at its authored rest offset, always: the
+ * engine snaps the wheel back there every tick (`PhysicsSpring::updatePhysics`
+ * resets its relative transformation), so the penetration `detectGround`
+ * finds is the whole compression, measured afresh, and the spring's force
+ * follows from it on the next `accumulate`.
  */
 export class ParkedVehicle {
   /**
@@ -362,11 +276,10 @@ export class ParkedVehicle {
   /** Springs push the root (physics.md §6) — skipped while the body sleeps
    *  (§4.3: "a sleeping root... its springs and floats skip their force"). */
   accumulate(dt = TICK) {
-    if (this.body.sleeping) return;
-    const up = this.body.axes[1];
+    const asleep = this.body.sleeping;
     for (const w of this.wheels) {
       toWorldPoint(this.body, w.restOffset, _attach);
-      w.spring.apply(this.body, _attach, up, dt);
+      w.spring.apply(this.body, _attach, dt, asleep);
     }
   }
 
@@ -376,10 +289,6 @@ export class ParkedVehicle {
    *  class's own doc comment for why. */
   detectGround(terrain, handlers) {
     if (this.body.sleeping) return;
-    for (const w of this.wheels) {
-      const o = w.part.offset, r = w.restOffset;
-      o[0] = r[0]; o[1] = r[1] + w.spring.displacement; o[2] = r[2];
-    }
     for (const part of this.parts) terrainContact(part, terrain, handlers);
   }
 
@@ -397,9 +306,16 @@ export class ParkedVehicle {
    *   goal; supplied for a caller that wants to exercise the other grips.
    */
   resolve(frictionOptsFor) {
-    const rootResponse = this.rootPart.response;
+    // `impulseOn` copies the root's positional adjust while contacts are still
+    // being found; by the time a wheel is solved here the root's own `solve`
+    // has already spent it, so the wheels are handed a snapshot.
+    const root = this.rootPart.response.posAdjust;
+    _rootSnapshot.posAdjust[0] = root[0];
+    _rootSnapshot.posAdjust[1] = root[1];
+    _rootSnapshot.posAdjust[2] = root[2];
     for (const part of this.parts) {
       part.worldPos(_partPosPV);
+      const rootResponse = part === this.rootPart ? part.response : _rootSnapshot;
       const push = part.response.solve(this.body, _partPosPV, rootResponse);
       if (push) {
         const w = this._wheelByPart.get(part);
