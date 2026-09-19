@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Extract the shared HUD/menu sprite pack the map viewer draws with.
 
-Two artifacts, both one-time and shared by every level:
+Two artifacts, both one-time and shared by every level of one mod:
 
   viewer/maps/_shared/hud/*.png + hud.json
       The map sprites and spawn-screen chrome out of
-      `Mods/bf1942/Archives/menu.rfa`: the `conp_<nation>` /
+      `Mods/<mod>/Archives/menu.rfa` and its parents': the `conp_<nation>` /
       `baseflag_conp_<nation>` flag markers, the `map_circle` spawn ring,
       the `minimap_icon_*` vehicle-class silhouettes, the vehicle dots, the
       Objective capture-ring frames, the `icon_mapbar_small` bezel, the
@@ -22,6 +22,13 @@ Two artifacts, both one-time and shared by every level:
       (directory prefix dropped, extension dropped, lowercased); the engine's
       own strings say `.tga` while the shipped files are `.dds`, so the name
       is normalised rather than trusted.
+
+`--mod` picks the game. Every archive this reads is resolved along the mod's
+`game.addModPath` chain, nearest child first (`bf42.modmenu.MenuSources`), so
+Eve of Destruction's NVA control-point flags and Road to Rome's Italian ones
+come out of their own `menu.rfa` and everything they do not override still
+comes out of vanilla's. With `--mod bf1942` the chain is one archive long and
+this reads exactly what it always read.
 
 The sprite list itself comes from `features/authentic-spawn-map/README.md`
 section 2, which was verified against the archives on this machine.
@@ -49,8 +56,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from extract_models import DEFAULT_GAME_DIR  # noqa: E402
-from bf42.rfa import ArchivePool, RfaArchive, find_archives_dir  # noqa: E402
+from extract_models import DEFAULT_GAME_DIR, mod_chain  # noqa: E402
+from bf42.modmenu import MenuSources  # noqa: E402
+from bf42.rfa import ArchivePool, find_archives_dir  # noqa: E402
 
 sys.path.insert(0, str(Path.home() / ".claude/skills/bf1942-map-images/scripts"))
 from extract_map_images import decode_dds, encode_png  # noqa: E402
@@ -58,7 +66,16 @@ from extract_map_images import decode_dds, encode_png  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from extract_hud_assets import decode_tga  # noqa: E402
 
-VIEWER_HUD_DIR = Path(__file__).resolve().parent / "viewer" / "maps" / "_shared" / "hud"
+VIEWER_MAPS_DIR = Path(__file__).resolve().parent / "viewer" / "maps"
+VIEWER_HUD_DIR = VIEWER_MAPS_DIR / "_shared" / "hud"
+
+
+def hud_dir_for(mod_id: str) -> Path:
+    """Where a mod's pack lands: vanilla's is the shared one every page falls
+    back to, a mod's sits inside its own level tree beside `maps.json`."""
+    if mod_id == "bf1942":
+        return VIEWER_HUD_DIR
+    return VIEWER_MAPS_DIR / "mods" / mod_id / "_shared" / "hud"
 
 # Everything the viewer draws, as archive paths under `menu/`. Output name is
 # the lowercased basename with the extension swapped for `.png`.
@@ -188,18 +205,70 @@ SPRITES: list[str] = [
 # machine).
 SPRITE_DIR_GLOBS: list[str] = ["Texture/Soldier", "Texture/Ammo", "Texture/Weapon", "Texture/Vehicle"]
 
+# Nation art beyond the six `NATIONS` names. `SPRITES` lists the nations the
+# base game ships, because they are the ones the base game's levels fly; a mod
+# brings its own, and files them under the same four prefixes directly beneath
+# `menu/Texture/`. Road to Rome adds France and Italy (8 files); Eve of
+# Destruction adds those plus a separate Soviet set (12).
+#
+# Globbing the prefixes rather than extending a hardcoded nation list means a
+# mod's nations arrive without this file ever learning their names. On vanilla
+# the glob finds exactly the files `SPRITES` already named — checked: no
+# `conp_*`, `baseflag_conp_*`, `icon_flag_*` or `flag_ticket_*` sits at the
+# root of vanilla's `menu/Texture/` that is not in the list above — so it adds
+# nothing and the vanilla manifest is unchanged, key for key and in order.
+SPRITE_NATION_PREFIXES: tuple[str, ...] = (
+    "conp_", "baseflag_conp_", "icon_flag_", "flag_ticket_")
+
 # `Ammo/Icon_demokit.dds` (the HUD ammo-panel icon a weapon's `setAmmoIcon`
 # can point at) and `Weapon/Icon_demokit.dds` (the weapon-select bar icon a
 # kit's `addWeaponIcon` can point at) are two different images (2176 vs 4224
 # bytes, different sha1) that happen to share a basename — the one collision
-# among the ~260 sprites this script extracts, found by hashing every file
-# under the four directories above. Every other entry is keyed by lowercased
-# basename alone, matching the sprites above; these two are the sole
-# exception, qualified by their source directory so neither is lost.
+# among the ~260 sprites this script extracts from vanilla, found by hashing
+# every file under the four directories above. Every other entry is keyed by
+# lowercased basename alone, matching the sprites above; these two are the
+# sole vanilla exception, qualified by their source directory so neither is
+# lost.
+#
+# It is the *rule* that is applied, not this pair, because a mod brings its
+# own: Eve of Destruction files a `Molotov.dds` under both `Ammo/` and
+# `Weapon/`. `dir_glob_renames` recomputes the set per chain, and on vanilla
+# it reproduces exactly the two rows below — asserted in
+# `tests/test_extract_hud_pack.py`.
+#
+# Known limitation, unchanged by this: `hud.js`'s `spriteKeyFromRef` resolves
+# a live texture path by basename, so a qualified sprite is reachable only by
+# its qualified name. Nothing binds these two today; whoever wires the ammo
+# panel's icon has to key on the source directory too.
 SPRITE_DIR_RENAME: dict[str, str] = {
     "menu/texture/ammo/icon_demokit.dds": "ammo_icon_demokit",
     "menu/texture/weapon/icon_demokit.dds": "weapon_icon_demokit",
 }
+
+
+def dir_glob_renames(entries) -> dict[str, str]:
+    """Lowered entry name -> qualified sprite name, for every basename that
+    `SPRITE_DIR_GLOBS` would otherwise file twice.
+
+    One archive's `Ammo/X` and another's `Weapon/X` are two different images
+    under one key, which would silently clobber one of them; qualifying both
+    with their directory keeps both. A basename that occurs in only one of the
+    four directories is untouched, which is all but one of them in vanilla.
+    """
+    seen: dict[str, list[tuple[str, str]]] = {}
+    for prefix in SPRITE_DIR_GLOBS:
+        low_prefix = f"menu/{prefix}/".lower()
+        leaf = prefix.rsplit("/", 1)[-1].lower()
+        for entry in entries:
+            if entry.lower().startswith(low_prefix):
+                seen.setdefault(Path(entry).stem.lower(), []).append((leaf, entry))
+    out: dict[str, str] = {}
+    for name, hits in seen.items():
+        if len({leaf for leaf, _ in hits}) < 2:
+            continue
+        for leaf, entry in hits:
+            out[entry.lower()] = f"{leaf}_{name}"
+    return out
 
 # `flag(us|ge|uk|Jp|so|can)_m1` in a control point's `flagMesh` names the flag
 # cloth the level hoists there; the map sprite set uses different codes.
@@ -207,6 +276,49 @@ SPRITE_DIR_RENAME: dict[str, str] = {
 FLAG_MESH_NATION = {
     "us": "us", "ge": "ger", "uk": "brit", "jp": "jp", "so": "rus", "can": "can",
 }
+
+# Flag-mesh codes the mod levels fly that the table above does not hold, each
+# matched to the nation art the mod's own `menu.rfa` ships. Counted over every
+# `controlPoints[].flagMesh` in the extracted level trees:
+#
+#   flagfr_m1   Road to Rome 2, Eve of Destruction 13   -> conp_fre
+#   flagit_m1   Road to Rome 10                         -> conp_it
+#   flagpl_m1   Eve of Destruction 11                   -> no `conp_pl` in any
+#               installed menu.rfa, so it stays unmapped and the viewer falls
+#               back the way it already does for a code it does not know.
+#
+# A row is only merged in when the art it names is actually in this mod's
+# layered archives, so vanilla's table comes out exactly as it is above.
+MOD_FLAG_MESH_NATION = {"fr": "fre", "it": "it"}
+
+
+def flag_mesh_nations(sprites: dict) -> dict[str, str]:
+    """`FLAG_MESH_NATION`, corrected and extended for this pack's own art.
+
+    Two passes, in this order:
+
+    1. A code whose *own* art the pack ships stops going through an alias.
+       Vanilla maps `so` to `rus` because it has no `conp_so`; Eve of
+       Destruction ships the whole `so` set, so `flagso_m1` resolves to it
+       there. (EoD's `conp_so` and `conp_rus` are the same file -- both the
+       Australian flag, which is what `AustralianForces` flies on its 16
+       `flagso_m1` control points -- so the control-point marker is unchanged
+       either way and only the base flag and the ticket flag, which do
+       differ, get the faithful one.)
+    2. A code not in the table at all takes its `MOD_FLAG_MESH_NATION` row,
+       if the art that row names is in the pack.
+
+    Vanilla ships neither `conp_so`, `conp_fre` nor `conp_it`, so neither
+    pass fires and its table comes out exactly as written above.
+    """
+    table = dict(FLAG_MESH_NATION)
+    for code, nation in list(table.items()):
+        if nation != code and f"conp_{code}" in sprites:
+            table[code] = code
+    for code, nation in MOD_FLAG_MESH_NATION.items():
+        if code not in table and f"conp_{nation}" in sprites:
+            table[code] = nation
+    return table
 
 
 def sprite_ref(stem: str) -> str:
@@ -226,66 +338,85 @@ def sprite_ref_from_entry(entry: str) -> str:
     return rel.rsplit(".", 1)[0] + ".tga"
 
 
-def extract_sprites(menu_rfa: Path, out_dir: Path, force: bool) -> dict:
-    """Decode the sprite list to PNGs, returning the manifest dict."""
+def extract_sprites(menu, out_dir: Path, force: bool) -> dict:
+    """Decode the sprite list to PNGs, returning the manifest dict.
+
+    `menu` is the mod's layered `menu.rfa` view (`MenuSources.open_menu`).
+    With a one-mod chain that is the single archive, entry for entry and in
+    its own order, which is what keeps the vanilla manifest unchanged.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest: dict[str, dict] = {}
-    with RfaArchive(menu_rfa) as arch:
-        # Casing varies and the declared extension cannot be trusted, so
-        # resolve both against the real entry table.
-        index = {e.lower(): e for e in arch.entries}
+    # Casing varies and the declared extension cannot be trusted, so resolve
+    # both against the real entry table.
+    index = {e.lower(): e for e in menu.entries}
 
-        def decode_and_write(name: str, entry: str, ref: str) -> None:
-            existing = manifest.get(name)
-            if existing is not None and existing["source"] != entry:
-                # A silent basename collision would clobber one sprite with
-                # another under the same key; SPRITE_DIR_RENAME is the only
-                # place that is expected to happen, and it never reuses a
-                # name — so reaching this for any name means a new,
-                # unhandled collision has shown up (a mod, or a future
-                # archive update) and needs a rename of its own.
-                sys.exit(f"sprite name collision: {name!r} is both "
-                         f"{existing['source']!r} and {entry!r}")
-            dest = out_dir / f"{name}.png"
-            raw = arch.read(entry)
-            if entry.lower().endswith(".dds"):
-                width, height, rgba = decode_dds(raw)
-            else:
-                width, height, rgba = decode_tga(raw)
-            if force or not dest.exists():
-                # `drop_alpha` defaults True in the shared encoder (map art is
-                # opaque); these are cut-out sprites, so the alpha is the point.
-                dest.write_bytes(encode_png(width, height, rgba, drop_alpha=False))
-            manifest[name] = {
-                "file": f"{name}.png",
-                "size": [width, height],
-                "source": entry,
-                "ref": ref,
-            }
+    def decode_and_write(name: str, entry: str, ref: str) -> None:
+        existing = manifest.get(name)
+        if existing is not None and existing["source"] != entry:
+            # A silent basename collision would clobber one sprite with
+            # another under the same key; SPRITE_DIR_RENAME is the only
+            # place that is expected to happen, and it never reuses a
+            # name -- so reaching this for any name means a new,
+            # unhandled collision has shown up (a mod, or a future
+            # archive update) and needs a rename of its own.
+            sys.exit(f"sprite name collision: {name!r} is both "
+                     f"{existing['source']!r} and {entry!r}")
+        dest = out_dir / f"{name}.png"
+        raw = menu.read(entry)
+        if entry.lower().endswith(".dds"):
+            width, height, rgba = decode_dds(raw)
+        else:
+            width, height, rgba = decode_tga(raw)
+        if force or not dest.exists():
+            # `drop_alpha` defaults True in the shared encoder (map art is
+            # opaque); these are cut-out sprites, so the alpha is the point.
+            dest.write_bytes(encode_png(width, height, rgba, drop_alpha=False))
+        manifest[name] = {
+            "file": f"{name}.png",
+            "size": [width, height],
+            "source": entry,
+            "ref": ref,
+        }
 
-        missing: list[str] = []
-        for stem in SPRITES:
-            entry = None
-            for ext in (".dds", ".tga"):
-                entry = index.get(f"menu/{stem}{ext}".lower())
-                if entry:
-                    break
-            if not entry:
-                missing.append(stem)
+    missing: list[str] = []
+    for stem in SPRITES:
+        entry = None
+        for ext in (".dds", ".tga"):
+            entry = index.get(f"menu/{stem}{ext}".lower())
+            if entry:
+                break
+        if not entry:
+            missing.append(stem)
+            continue
+        decode_and_write(Path(stem).name.lower(), entry, sprite_ref(stem))
+
+    # The mod's own nations, if it has any beyond the ones `SPRITES` names.
+    # The root of `menu/Texture/` only -- these four prefixes are the whole of
+    # the per-nation art, and nothing under a subdirectory shares them.
+    root = "menu/texture/"
+    for entry in menu.entries:
+        low = entry.lower()
+        if not low.startswith(root) or "/" in entry[len(root):]:
+            continue
+        name = Path(entry).stem.lower()
+        if name in manifest or not name.startswith(SPRITE_NATION_PREFIXES):
+            continue
+        decode_and_write(name, entry, sprite_ref_from_entry(entry))
+
+    renames = dir_glob_renames(menu.entries)
+    for prefix in SPRITE_DIR_GLOBS:
+        low_prefix = f"menu/{prefix}/".lower()
+        for entry in menu.entries:
+            if not entry.lower().startswith(low_prefix):
                 continue
-            decode_and_write(Path(stem).name.lower(), entry, sprite_ref(stem))
+            name = renames.get(entry.lower(), Path(entry).stem.lower())
+            decode_and_write(name, entry, sprite_ref_from_entry(entry))
 
-        for prefix in SPRITE_DIR_GLOBS:
-            low_prefix = f"menu/{prefix}/".lower()
-            for entry in arch.entries:
-                if not entry.lower().startswith(low_prefix):
-                    continue
-                name = SPRITE_DIR_RENAME.get(entry.lower(), Path(entry).stem.lower())
-                decode_and_write(name, entry, sprite_ref_from_entry(entry))
-
-        if missing:
-            print(f"warning: {len(missing)} sprites not in {menu_rfa.name}: "
-                  f"{', '.join(missing)}", file=sys.stderr)
+    if missing:
+        print(f"warning: {len(missing)} sprites not in the "
+              f"{'/'.join(menu.labels)} menu chain: {', '.join(missing)}",
+              file=sys.stderr)
     return manifest
 
 
@@ -301,18 +432,28 @@ def icon_key(path: str) -> str:
     return leaf.rsplit(".", 1)[0].lower()
 
 
-def extract_icon_map(game_dir: Path) -> dict[str, dict]:
+def extract_icon_map(chain: list[Path]) -> dict[str, dict]:
     """template (lowercased) -> {icon, size} from every Objects archive.
 
     `size` is the engine's `setMinimapIconSize` draw size in pixels where one
     is declared (the 32/64 px ship icons), and absent otherwise — the default
     is the sprite's own 16 px.
+
+    `chain` is the mod path, nearest first, so a mod's own `Objects.rfa` both
+    adds its templates and overrides the vanilla ones it redefines — the same
+    first-hit rule `ArchivePool` applies everywhere else.
     """
-    archives = find_archives_dir(game_dir / "Mods" / "bf1942")
-    if archives is None:
-        sys.exit(f"no Archives directory under {game_dir}/Mods/bf1942")
     pool = ArchivePool()
-    pool.add_dir(archives, ("objects",))
+    found = False
+    for mod_dir in chain:
+        archives = find_archives_dir(mod_dir)
+        if archives is None:
+            continue
+        pool.add_dir(archives, ("objects",))
+        found = True
+    if not found:
+        sys.exit(f"no Archives directory anywhere in "
+                 f"{[d.name for d in chain]}")
     templates: dict[str, dict] = {}
     for entry in pool.names():
         if not entry.lower().endswith(".con"):
@@ -337,32 +478,30 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--game-dir", type=Path, default=DEFAULT_GAME_DIR,
                         help=f"BF1942 install (default: {DEFAULT_GAME_DIR})")
-    parser.add_argument("--out", type=Path, default=VIEWER_HUD_DIR,
-                        help=f"output directory (default: {VIEWER_HUD_DIR})")
+    parser.add_argument("--mod", default="bf1942",
+                        help="mod whose menu chain to read (default: bf1942)")
+    parser.add_argument("--out", type=Path, default=None,
+                        help="output directory (default: the mod's own pack "
+                             f"dir, {VIEWER_HUD_DIR} for vanilla)")
     parser.add_argument("--force", action="store_true",
                         help="re-encode PNGs that already exist")
     args = parser.parse_args()
 
     game_dir = args.game_dir.expanduser()
-    menu_rfa = None
-    archives = find_archives_dir(game_dir / "Mods" / "bf1942")
-    if archives:
-        for child in archives.iterdir():
-            if child.name.lower() == "menu.rfa":
-                menu_rfa = child
-                break
-    if menu_rfa is None:
-        sys.exit(f"menu.rfa not found under {game_dir}/Mods/bf1942")
+    sources = MenuSources(mod_chain(game_dir, args.mod))
+    out = args.out or hud_dir_for(sources.mod_id)
 
-    sprites = extract_sprites(menu_rfa, args.out, args.force)
-    (args.out / "hud.json").write_text(json.dumps({
+    with sources.open_menu() as menu:
+        sprites = extract_sprites(menu, out, args.force)
+    (out / "hud.json").write_text(json.dumps({
         "sprites": sprites,
-        "flagMeshNation": FLAG_MESH_NATION,
+        "flagMeshNation": flag_mesh_nations(sprites),
     }, indent=1) + "\n")
-    icons = extract_icon_map(game_dir)
-    (args.out / "minimap-icons.json").write_text(
+    icons = extract_icon_map(sources.chain)
+    (out / "minimap-icons.json").write_text(
         json.dumps(icons, indent=1) + "\n")
-    print(f"{len(sprites)} sprites and {len(icons)} template icons -> {args.out}")
+    print(f"{sources.mod_id}: {len(sprites)} sprites and {len(icons)} "
+          f"template icons -> {out}")
 
 
 if __name__ == "__main__":
