@@ -588,6 +588,14 @@ RAW_TOPS: dict[str, tuple[list[tuple[str, str]], tuple]] = {
     "supplyReload":    ([("is", "ShowReloadIcon")], (720.0, 442.0, 64.0, 64.0)),
     "supplyFlag":       ([("is", "ShowFlagIcon")], (None, None, None, None)),
     "supplyNonTakeable": ([("is", "ShowNonTakeableFlagIcon")], (None, None, None, None)),
+    # The ticket counter. It is a top-level entry of menu/InGame like every
+    # other widget here -- gated by `ShowTicket`, not by `Kit/ShowKit` -- so
+    # the game draws it both on the spawn screen and over the live world.
+    # `extract_spawn_layout.py` already decodes this same top for the spawn
+    # screen; decoding it here as well is what lets `hud.js`'s generic painter
+    # draw it in-game with no code of its own, the way every other group in
+    # this file works.
+    "tickets":          ([("is", "ShowTicket")], (620.0, 4.0, 256.0, 32.0)),
 }
 
 SUPPLY_KEYS = ("supplyCtf", "supplyParachute", "supplyRepair", "supplyHeal",
@@ -616,6 +624,7 @@ def decode_hud(ingame: bytes, lexicon: dict[str, str]) -> dict:
         "hitIndicator": raw["hitIndicator"],
         "weaponBar": raw["weaponBar"],
         "crosshair": raw["crosshair"],
+        "tickets": raw["tickets"],
     }
 
     out_groups = {}

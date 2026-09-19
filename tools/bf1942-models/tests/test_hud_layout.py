@@ -235,13 +235,86 @@ class HudLayoutGoldenTests(unittest.TestCase):
 
     # -- everything else the extractor is expected to produce ----------------
 
-    def test_all_eleven_groups_are_present_and_non_empty(self) -> None:
+    def test_all_twelve_groups_are_present_and_non_empty(self) -> None:
         expected = {"soldierIcon", "soldierAmmo", "vehicleIcon", "vehicleHealth",
                     "vehicleSeats", "primaryAmmo", "secondaryAmmo", "supplyIcon",
-                    "hitIndicator", "weaponBar", "crosshair"}
+                    "hitIndicator", "weaponBar", "crosshair", "tickets"}
         self.assertEqual(expected, set(self.hud["groups"]))
         for key in expected:
             self.assertTrue(self.group(key)["elements"], key)
+
+    # -- the ticket counter --------------------------------------------------
+
+    def test_ticket_group_rect_and_gate(self) -> None:
+        # `ShowTicket` is a top-level entry of menu/InGame in its own right, a
+        # sibling of the spawn screen's `Kit/ShowKit` rather than a child of
+        # it, which is why the game draws the counter over the live world as
+        # well as over the deploy screen. Its rect is the one the spawn-screen
+        # extractor independently decodes for the same top, and the one
+        # `authentic-spawn-map/README.md` section 8 measured against the
+        # capture: (620, 4) 256x32.
+        group = self.group("tickets")
+        self.assertEqual([620.0, 4.0, 256.0, 32.0], group["rect"])
+        for element in group["elements"]:
+            self.assertIn({"var": "ShowTicket", "op": "eq", "value": True},
+                          element["when"])
+
+    def test_ticket_group_has_both_sides_flag_number_and_blink(self) -> None:
+        group = self.group("tickets")
+        # Nine leaves: the bar plate, then per side a flag, a black drop
+        # shadow, the coloured number, and the low-ticket blink quad.
+        self.assertEqual(9, len(group["elements"]))
+        kinds = [e["kind"] for e in group["elements"]]
+        self.assertEqual(1, kinds.count("picture"))          # icon_ticketbar
+        self.assertEqual(2, kinds.count("variable-picture"))  # the two flags
+        self.assertEqual(4, kinds.count("text"))              # 2 numbers + 2 shadows
+        self.assertEqual(2, kinds.count("fill"))              # the blink quads
+
+    def test_ticket_flags_are_bound_and_default_to_the_german_art(self) -> None:
+        # The live game swaps these per side and per level; the literal the
+        # data ships is the fallback `hud.js` draws when a page has not fed
+        # the variable (HUD-1).
+        flags = self.elements_of_kind("tickets", "variable-picture")
+        self.assertEqual({"AlliedTicketFlag", "AxisTicketFlag"},
+                         {f["var"] for f in flags})
+        for flag in flags:
+            self.assertEqual("flag_ticket_ger", flag["texture"])
+            self.assertEqual([16.0, 16.0], flag["rect"][2:])
+
+    def test_ticket_numbers_are_drawn_twice_for_a_drop_shadow(self) -> None:
+        # Each side's count is two text leaves one pixel apart: black behind,
+        # the team colour in front. Both bind the same variable, so a feed
+        # that writes one writes both.
+        texts = self.elements_of_kind("tickets", "text")
+        allied = [t for t in texts if t["var"] == "AlliedTicket"]
+        axis = [t for t in texts if t["var"] == "AxisTicket"]
+        self.assertEqual(2, len(allied))
+        self.assertEqual(2, len(axis))
+        for pair in (allied, axis):
+            shadow = [t for t in pair if t["color"][:3] == [0.0, 0.0, 0.0]]
+            self.assertEqual(1, len(shadow))
+            [front] = [t for t in pair if t is not shadow[0]]
+            # The shadow sits one pixel down and right of the coloured glyph.
+            self.assertEqual(front["rect"][0] + 1, shadow[0]["rect"][0])
+            self.assertEqual(front["rect"][1] + 1, shadow[0]["rect"][1])
+            self.assertEqual("trebuchet_ms14_latin", front["font"])
+            self.assertEqual("right", front["align"])
+
+    def test_ticket_blink_quads_need_both_blink_variables(self) -> None:
+        # The low-ticket warning is a live-round state. Both its variables
+        # must hold for the quad to draw, so a page that feeds neither gets a
+        # culled leaf rather than a permanent red wash.
+        fills = self.elements_of_kind("tickets", "fill")
+        self.assertEqual(2, len(fills))
+        for fill in fills:
+            self.assertEqual([1.0, 0.0, 0.0, 0.5], fill["color"])
+            [_, nested] = fill["when"]
+            self.assertEqual("and", nested["op"])
+            self.assertEqual(
+                {"Ticket/AlliedTicketBlink", "Ticket/ShowAlliedTicketBlink"}
+                if any("Allied" in t["var"] for t in nested["terms"])
+                else {"Ticket/AxisTicketBlink", "Ticket/ShowAxisTicketBlink"},
+                {t["var"] for t in nested["terms"]})
 
     def test_vehicle_health_bar_rect_and_binding(self) -> None:
         [health] = [e for e in self.elements_of_kind("vehicleHealth", "fill-picture")
