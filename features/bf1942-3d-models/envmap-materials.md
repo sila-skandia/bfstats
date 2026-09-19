@@ -151,7 +151,7 @@ cross-read against `objdump -d -M intel` on the retail client.
 | | 0x005bfcc6 | `COLOROP = 0x10` — **`D3DTOP_BLENDCURRENTALPHA`** |
 | | 0x005bfce1 / 0x005bfcf2 | `COLORARG1 = D3DTA_CURRENT`, `COLORARG2 = D3DTA_TEXTURE` |
 | stage 2 | 0x005bfd03 | `COLOROP` / `ALPHAOP = D3DTOP_DISABLE` |
-| undo | 0x005bee20 (+0x14) | restores stage 1 `TEXTURETRANSFORMFLAGS = 0` (0x005bef06) and `TEXCOORDINDEX = 1` (0x005bef17), gated on the same +0x30 byte it reads at 0x005beed4 |
+| undo | 0x005bee20 (+0x14) | restores stage 1 `TEXTURETRANSFORMFLAGS = 0` (0x005beef3) and `TEXCOORDINDEX = 1` (0x005bef17), gated on the same +0x30 byte it reads at 0x005beed4 |
 
 `D3DTOP_BLENDCURRENTALPHA` is `Arg1 * A + Arg2 * (1 - A)`, where A is the
 alpha of CURRENT — i.e. whatever comes out of stage 0. **Stage 0's alpha op is
@@ -279,3 +279,102 @@ is right, and is what `setupEnvCube` does.
   materials) is still not modelled; it is a separate stage-0 term.
 - Whether anything ever installs a `D3DTS_TEXTURE1` matrix (see above).
 - LM-3's call-site pairing: see the round report.
+
+## 2026-09-20 review: re-derived, with two corrections
+
+Every address in the stage reading above was re-derived from the shipped
+binary with `objdump -d -M intel` rather than through Ghidra, so it can be
+reproduced with one command:
+
+```
+objdump -d -M intel --start-address=0x005bfa70 --stop-address=0x005bfd20 \
+  "$HOME/.wine/drive_c/EA Games/Battlefield 1942/BF1942.exe"
+```
+
+The stage is `SetTextureStageState(stage, state, value)` through the device
+vtable's `+0xfc`, arguments pushed right to left, and it reads out exactly as
+claimed once you notice `ebp = 1` (set at 0x005bf6ca and again at 0x005bf903)
+is both the stage index and, where it appears as a state, `D3DTSS_COLOROP`:
+
+| address | call | meaning |
+|---|---|---|
+| 0x005bfad1 | stage 1, state 0x18, value `ebx`=3 | `TEXTURETRANSFORMFLAGS = D3DTTFF_COUNT3` |
+| 0x005bfaf7 | stage 1, state 0x0b, value `ecx`=0x30000 | `TEXCOORDINDEX = D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR` |
+| 0x005bfc61 | stage 1, state 4, value `esi`=2 | `ALPHAOP = D3DTOP_SELECTARG1` |
+| 0x005bfc83 | stage 1, state 5, value 1 | `ALPHAARG1 = D3DTA_CURRENT` |
+| 0x005bfc95 | stage 1, state 6, value 0 | `ALPHAARG2 = D3DTA_DIFFUSE` |
+| 0x005bfcc6 | stage 1, state 1, value 0x10 | `COLOROP = D3DTOP_BLENDCURRENTALPHA` |
+| 0x005bfce1 | stage 1, state 2, value 1 | `COLORARG1 = D3DTA_CURRENT` |
+| 0x005bfcfd | stage 1, state 3, value 2 | `COLORARG2 = D3DTA_TEXTURE` |
+
+The shadow tables the report named check out as bases plus `stage * 4`:
+colour op/arg1/arg2 at 0x009c92cc / 0x009c92dc / 0x009c92ec, alpha at
+0x009c92fc / 0x009c930c / 0x009c931c — the stage-1 writes above land on
+0x009c92d0 / 0x009c92e0 / 0x009c92f0 and 0x009c9300 / 0x009c9310 / 0x009c9320,
+which is what the binary does.
+
+**The blend direction is right**, and it now rests on the enum's own
+documentation rather than recollection. `D3DTOP_BLENDCURRENTALPHA = 16`
+(= 0x10, counted from `D3DTOP_DISABLE = 1` in wine's
+`/usr/include/wine/windows/d3d8types.h:884-899`) sits directly under the
+comment `// Linear alpha blend: Arg1*(Alpha) + Arg2*(1-Alpha)` in Microsoft's
+own `d3dtypes.h` (Windows Kit 10, `um/d3dtypes.h:1676-1682`). ARG1 is CURRENT,
+the lit surface, so an OPAQUE texel (A = 1) shows paint and a TRANSPARENT one
+shows the cubemap. If it ran the other way every aircraft in the game would be
+a mirror; it does not, and measured Zero paint alpha of 242..255 really is at
+most 5% reflection. `D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR = 0x30000` is the
+same header, line 82.
+
+**Correction 1 — the undo addresses were one operand out.** The sibling at
+0x005bee20 does restore stage 1, gated on the same `+0x30` byte it reads at
+0x005beed4, but the transform-flags write is **0x005beef3**
+(`mov DWORD PTR ds:0x9c93a0,0x0`, with the D3D call pushing value 0, state
+0x18, stage 1). 0x005bef06 — the address the first pass named — is the
+`cmp DWORD PTR ds:0x9c93b0,esi` that guards the *TEXCOORDINDEX* restore, whose
+write is 0x005bef17. The shadow read that guards the transform-flags restore
+is 0x005beedb.
+
+**Correction 2 — stage 0's alpha op is not set "once".** 0x005c0201 does set
+`SELECTARG1(TEXTURE, DIFFUSE)` beside the cubemap load, and that is the value
+the blend factor comes from. But the sibling reset re-asserts the same three
+values at 0x005bee8e / 0x005bee94 / 0x005bee9a whenever the `+0x31` byte is
+set, and two other sub-shaders write the same stage-0 alpha shadow
+(0x009c92fc): 0x0062e370 sets `D3DTOP_MODULATE`, 0x0064ce63 the same
+`SELECTARG1`. Every writer on the StandardMesh path agrees, so the conclusion
+stands — but "set once for the whole path" is not what the image says.
+
+### The transparency question
+
+A canopy is both reflective and see-through, and in the engine **one alpha
+does both jobs**: stage 1's `ALPHAOP = SELECTARG1(CURRENT)` passes stage 0's
+alpha straight through, so the fragment alpha that reaches the frame-buffer
+blend (or the alpha test) is the same texture alpha that chose how much
+cubemap to mix in. The viewer reproduces that without having to try: the patch
+mixes on `diffuseColor.a` and leaves `gl_FragColor.a` alone, and three writes
+that same value out. A texel that is half mirror is half transparent, as in
+the game. The one divergence worth recording is that three's `diffuseColor.a`
+is `opacity * texel.a` rather than `texel.a`, so a material whose `opacity` is
+below 1 would reflect more than the engine gives it; no extracted `envmap`
+material carries one today (checked on the Zero and the Corsair in the model
+browser: `transparent: false`, `alphaTest: 0`, `opacity: 1` on all 19 flagged
+instances).
+
+### Cost, measured
+
+Wake, `renderer.info.programs.length` after the level settles, hardware GL:
+**26 without the binding, 28 with it** — two programs, because the flagged
+materials fall into two parameter classes, not two per material. Twenty more
+forced `__renderOnce` frames leave both counts unmoved, so nothing recompiles
+per frame. `onBeforeCompile` is reached once per material, and `tBfEnv` is
+attached to that material's own uniform set, which is why one shared program
+still samples the right cube.
+
+### `?env=` was case-sensitive
+
+`maps.json` names the level `Wake`; every other link into this viewer spells
+it the way `map.html?map=` does. `?env=wake` therefore matched nothing and
+fell through to whichever level shipped a cubemap first — the model browser
+said "3 materials reflect **Aberdeen's** sky" for a link that asked for Wake.
+Matched case-insensitively now. `envUniforms` was also never cleared between
+models, so it grew by a few entries per model browsed and held a cube alive
+behind each.
