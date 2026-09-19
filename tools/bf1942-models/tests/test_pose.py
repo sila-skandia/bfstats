@@ -331,15 +331,18 @@ class RestReconstructionTests(unittest.TestCase):
 
 # -- seat pose discovery ----------------------------------------------------- #
 
-from extract_pose import discover_seat_poses  # noqa: E402
+from extract_pose import (discover_seat_poses, resolve_seat_states,  # noqa: E402
+                          seat_pose_name)
 from bf42.con import ObjectTemplate  # noqa: E402
 
 
 class SeatPoseDiscoveryTests(unittest.TestCase):
-    def _template(self, name, upper=None, lower=None, kind="SeatObject"):
+    def _template(self, name, upper=None, lower=None, kind="SeatObject",
+                  flags=()):
         t = ObjectTemplate(name, kind, "objects/test.con")
         t.seat_animation_upper_body = upper
         t.seat_animation_lower_body = lower
+        t.seat_flags = list(flags)
         return t
 
     def test_pairs_each_upper_state_with_its_matching_lower(self) -> None:
@@ -349,17 +352,46 @@ class SeatPoseDiscoveryTests(unittest.TestCase):
             "WillyPassengerSeat", "Ub_PassengerInWilly", "Lb_PassengerInWilly")
         lib.objects["HanomagPassenger"] = self._template(
             "HanomagPassenger", "Ub_PassengerInHanomag", "Lb_PassengerInHanomag")
-        lib.objects["DriverSeat"] = self._template(
-            "DriverSeat", kind="SeatObject")  # no animations
-        lib.objects["PlainSeat"] = self._template(
-            "PlainSeat", kind="SeatObject")  # no animations
         poses = discover_seat_poses(lib)
         self.assertEqual([("Ub_PassengerInWilly", "Lb_PassengerInWilly"),
                           ("Ub_PassengerInHanomag", "Lb_PassengerInHanomag")], poses)
 
-    def test_prefers_matching_pair_when_mod_mismatches(self) -> None:
-        # Black Medal pairs Ub_PassengerInWilly with Lb_PassengerInHanomag;
-        # the Willy's own matching pair should win.
+    def test_a_seat_that_declares_no_animation_takes_the_engine_default(self) -> None:
+        # `WillySeat` and every other driver's seat in vanilla. Before this,
+        # such a seat yielded nothing and the driver was never drawn.
+        from bf42.con import ObjectLibrary
+        lib = ObjectLibrary()
+        lib.objects["WillySeat"] = self._template(
+            "WillySeat", flags=["c_SeatShowFullBodySoldier", "c_SeatIsOutside"])
+        self.assertEqual([("Ub_SitInVehicle", "Lb_SitInVehicle")],
+                         discover_seat_poses(lib))
+
+    def test_a_standing_seat_takes_the_standing_lower_default(self) -> None:
+        # setUseSeat 0x8271a33: the only flag that changes a default.
+        seat = self._template(
+            "StationaryBrowningSeat",
+            flags=["c_SeatShowStandingSoldier", "c_SeatIsOutside"])
+        self.assertEqual(("Ub_SitInVehicle", "Lb_StandInVehicle"),
+                         resolve_seat_states(seat))
+
+    def test_half_body_does_not_change_which_states_are_played(self) -> None:
+        # `c_SeatShowHalfBodySoldier` hides the legs (disableBoneTree on
+        # "Bip01 Pelvis", 0x8271b63); it does not pick a different clip.
+        seat = self._template(
+            "ShermanBrowningSeat",
+            flags=["c_SeatShowHalfBodySoldier", "c_SeatIsOutside"])
+        self.assertEqual(("Ub_SitInVehicle", "Lb_SitInVehicle"),
+                         resolve_seat_states(seat))
+
+    def test_a_declared_upper_still_takes_the_sit_lower_default(self) -> None:
+        seat = self._template("Odd", "Ub_PassengerInWilly", None)
+        self.assertEqual(("Ub_PassengerInWilly", "Lb_SitInVehicle"),
+                         resolve_seat_states(seat))
+
+    def test_a_mismatched_pair_is_kept_and_gets_its_own_name(self) -> None:
+        # Black Medal pairs Ub_PassengerInWilly with Lb_PassengerInHanomag.
+        # That is what the game plays, so it is what is exported — under a name
+        # that cannot collide with the Willy's own matching pair.
         from bf42.con import ObjectLibrary
         lib = ObjectLibrary()
         lib.objects["BlackMedalPassenger"] = self._template(
@@ -367,23 +399,28 @@ class SeatPoseDiscoveryTests(unittest.TestCase):
             "Lb_PassengerInHanomag")
         lib.objects["WillyPassenger"] = self._template(
             "WillyPassenger", "Ub_PassengerInWilly", "Lb_PassengerInWilly")
-        poses = discover_seat_poses(lib)
-        self.assertEqual(1, len(poses))
-        self.assertEqual(("Ub_PassengerInWilly", "Lb_PassengerInWilly"), poses[0])
+        self.assertEqual([("Ub_PassengerInWilly", "Lb_PassengerInHanomag"),
+                          ("Ub_PassengerInWilly", "Lb_PassengerInWilly")],
+                         discover_seat_poses(lib))
+        self.assertEqual("PassengerInWilly-PassengerInHanomag",
+                         seat_pose_name("Ub_PassengerInWilly",
+                                        "Lb_PassengerInHanomag"))
 
-    def test_lower_falls_back_to_Lb_Stand(self) -> None:
+    def test_matching_and_Lb_Stand_pairs_keep_their_existing_asset_names(self) -> None:
+        self.assertEqual("PassengerInWilly",
+                         seat_pose_name("Ub_PassengerInWilly", "Lb_PassengerInWilly"))
+        self.assertEqual("PassengerInWilly",
+                         seat_pose_name("Ub_PassengerInWilly", "Lb_Stand"))
+        self.assertEqual("SitInVehicle",
+                         seat_pose_name("Ub_SitInVehicle", "Lb_SitInVehicle"))
+        self.assertEqual("SitInVehicle-StandInVehicle",
+                         seat_pose_name("Ub_SitInVehicle", "Lb_StandInVehicle"))
+
+    def test_only_SeatObjects_are_considered(self) -> None:
         from bf42.con import ObjectLibrary
         lib = ObjectLibrary()
-        lib.objects["OnlyUpper"] = self._template(
-            "OnlyUpper", "Ub_PassengerInWilly", None)
-        poses = discover_seat_poses(lib)
-        self.assertEqual([("Ub_PassengerInWilly", "Lb_Stand")], poses)
-
-    def test_no_seat_animations_yields_empty(self) -> None:
-        from bf42.con import ObjectLibrary
-        lib = ObjectLibrary()
-        lib.objects["PlainSeat"] = self._template("PlainSeat")
         lib.objects["PlainCamera"] = self._template("PlainCamera", kind="Camera")
+        lib.objects["Entry"] = self._template("Entry", kind="EntryPoint")
         self.assertEqual([], discover_seat_poses(lib))
 
 
