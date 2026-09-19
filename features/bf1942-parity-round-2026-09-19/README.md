@@ -34,8 +34,8 @@ and findings in [`../bf1942-in-the-browser/README.md`](../bf1942-in-the-browser/
 |---|---|
 | The game's own Singleplayer > Instant Battle screen (`menu/SkirmishMenu`), drawn from the game's layout, textures, fonts and strings, that picks a level and a team and launches the map | **merged** `a02122c` (built, then reviewed: titles now come from the lexicon's English column, `?team=` wins over the flag tally, fonts proved against a real in-game frame). Page at `viewer/play/`; pack extracted to `maps/_shared/hud/menu` with `extract_menu_layout.py` |
 | A new site, separate from `mesh.bfstats.io`, at `play.bfstats.io` (hostname confirmed by the owner) | **decision pending.** The stream wrote a second nginx pod; held out of main by `458d62c` because memory limits already total 7,296Mi of 7,741Mi (445Mi headroom against the ~1.5Gi rule). The review recommends the existing mesh nginx answer both hostnames: it needs a second `server` block, a real `server_name mesh.bfstats.io` plus `listen 80 default_server` on the existing one, an HAProxy host ACL and a tunnel entry. Not written yet; nothing applied |
-| The map page's debug panel (level picker, fog, wireframe, vehicles, pilot, spawn on foot, sound) hidden from a regular player | open (B). The panel is collapsed behind a `Maps` fab as of today; it must disappear entirely |
-| The in-game console on the tilde key, reconstructed from the client, with `show.dev 1` (and `show.dev = 1`) revealing the debug panel | open (B) |
+| The map page's debug panel hidden from a regular player | **merged** `9ee8289`: panel and fab are absent until `show.dev 1` (or `?dev=1`); the controls stay in the DOM so every headless hook still works |
+| The in-game console on the tilde key, with `show.dev 1`, `show.dev = 1`, `show.dev 0` | **merged** `9ee8289`, reconstructed from both binaries ([console.md](../bf1942-in-the-browser/console.md)): no animation, band = `(lineHeight+1)·lines+4` px over at most 20 lines, `white.tga` at alpha 0.8, the game's own `BF1942.font`, the two-line error with an empty working file, a counter that stays constant at the prompt. `=` is a documented one-token tolerance; the engine accepts none. **Open, the owner's call:** the game binds the console to Caps Lock as well as tilde, 1.61 has no spawn-screen key at all, and the page uses Caps Lock for redeploy |
 
 ### Vehicle occupants (stream C)
 
@@ -48,10 +48,11 @@ and findings in [`../bf1942-in-the-browser/README.md`](../bf1942-in-the-browser/
 
 | Item | Status |
 |---|---|
-| `envmap true` on 435 materials (aircraft painted metal first, glass second): exported as `material.extras.envmap`, no viewer binding | data (D) |
-| Ticket counters: `scene.json.tickets` exists after re-extract; `map.html` hardcodes `ShowTicket = false` | data (D) |
-| The combat-area boundary is in all 23 `scene.json` files and the 3D view never reads it | data (D) |
-| Sun lens flare and corona: 16 verbs on 21 of 23 levels, parsed by nothing | open (D) |
+| `envmap true` on 435 materials | **merged** `bf212b8`. The renderer has no reflectivity constant: `out = lit·A + cube·(1−A)` with A the diffuse texture's own alpha (`D3DTOP_BLENDCURRENTALPHA`, ledger EM-1), camera-space reflection vector (EM-2). Paint reflects under 5%, the Zero's canopy about half. Two shader programs added on Wake, none per frame |
+| Ticket counters | **merged**, drawn through the layout's own `ShowTicket` group on the spawn screen and the HUD with the level's nations. **Re-extract** needed for the published levels to carry `tickets`. A live bleed needs a death count and a flag-majority timer the viewer does not have |
+| The combat area | **merged.** It is real data in **11 of 23** vanilla levels, not 23: the key is present and `null` in the other twelve. Server rule: 10 s allowance, then 5 HP/s, strictly past the allowance, to the object the player occupies (the hull when seated, CA-7), inclusive edges, altitude never bounded (CA-6). The warning is `menu/InGame`'s own string, misspelling included. Not modelled: the terrain-material test (`materialToGiveDamage`, default 7, CA-5) |
+| Sun lens flare and corona | **merged**: parsed for 319 levels in 11 mods. **No vanilla, XPack1 or XPack2 archive ships any of the five flare textures** (all 1,775 archives searched), so the real game shows no ring ghosts either; drawn only where the art exists (bfheroes). Placement is inferred, not read |
+| A HUD leaf gated by `>` or `>=` was drawn unconditionally (`condOk` fell through to `true`) | **fixed** in the same merge. It would have put the combat-area warning across every HUD, and had been drawing six weapon-bar slots for a four-item kit |
 
 ### Engine research (streams F1 to F3, then verifiers)
 
