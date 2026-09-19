@@ -440,4 +440,147 @@ function bigYFace(localX, normalSign, materialId) {
   out.springSolveClampLow = r3.solve(body, [0, 0, 0], root3);
 }
 
+// --- 11. checkFaceAndEdgeCollision's third axis-selection branch (F11) -----
+//
+// F11's 2-D point-in-triangle test picks (x,z) when |n.y|>=0.7 (every "drop"
+// scene above: normal (0,1,0)), or (y,z) when |n.z|<=0.3 (every "headOn"
+// scene above: normal (+-1,0,0), nz=0) -- nothing above exercises the third
+// ("else") branch, (x,y), which fires when neither threshold is met.
+//
+// Triangle v0=(0,0,0), v1=(2,0,0), v2=(0,1.6,-1.2), normal (0,0.6,0.8):
+// any=0.6 (<0.7) and anz=0.8 (not <=0.3) -> else branch. v0 and v1 share
+// y=0,z=0, so projecting onto the WRONG axis pair (y,z) collapses the
+// triangle to a degenerate sliver (v0 and v1 land on the same point) --
+// a probed vertex placed just past v1 (outside the real 3-D triangle) must
+// be rejected by the correct (x,y) projection, but a broken axis choice
+// that degenerates to (y,z) reports it as a hit instead (verified by
+// deliberately mutating the axis selection and re-running this exact scene
+// during review: correct -> 0 hits, mutated -> 1 hit).
+
+function tiltedTriFace(materialId) {
+  return {
+    layers: [{
+      vertices: new Float32Array([0, 0, 0, 2, 0, 0, 0, 1.6, -1.2]),
+      vertexMaterials: new Uint16Array([0, 0, 0]),
+      faces: new Uint32Array([0, 1, 2]),
+      faceMaterials: new Uint16Array([materialId]),
+      normals: new Float32Array([0, 0.6, 0.8]),
+      min: new Float32Array([-5, -5, -5]),
+      max: new Float32Array([5, 5, 5]),
+    }],
+    radius: 5,
+  };
+}
+
+{
+  const bodyB = new FakeBody({ mass: 1e12, isStatic: true, pos: [0, 0, 0], boundingRadius: 5 });
+  const partB = new CollisionPart({ body: bodyB, shape: tiltedTriFace(20), response: new Response() });
+
+  // Inside the triangle (u=0.5, w=0.3 in the (v1,v2) basis): expect a hit,
+  // hand-derived exactly like the corner-drop scene (depth -0.05, hit at the
+  // probed point, world normal == the supplied face normal since B is
+  // axis-aligned at the origin).
+  const bodyAIn = new FakeBody({ pos: [0.5, 0.21, -0.22], v: [0, -1.8, -2.4] });
+  const partAIn = new CollisionPart({ body: bodyAIn, shape: singleVertexShape(5), response: new Response(), isRoot: true });
+  const hitsIn = [];
+  const countIn = probe(partAIn, partB, 1 / 30, hitsIn);
+
+  // Outside the triangle (past v1's u=2 edge along the same u axis): no hit.
+  const bodyAOut = new FakeBody({ pos: [3, -0.03, -0.04], v: [0, -1.8, -2.4] });
+  const partAOut = new CollisionPart({ body: bodyAOut, shape: singleVertexShape(5), response: new Response(), isRoot: true });
+  const hitsOut = [];
+  const countOut = probe(partAOut, partB, 1 / 30, hitsOut);
+
+  out.thirdAxisSelectionBranch = {
+    insideCount: countIn,
+    insideNormal: countIn === 1 ? hitsIn[0].normal : null,
+    insideDepth: countIn === 1 ? hitsIn[0].depth : null,
+    insidePos: countIn === 1 ? hitsIn[0].pos : null,
+    outsideCount: countOut,
+  };
+}
+
+// --- 12. hot-path scratch reuse doesn't leak state across calls ------------
+//
+// body-contact.js's fix: probe/collidePair/collideBodies/solve preallocate
+// their scratch instead of allocating per call (module report, "hot-path
+// allocation"). The risk that fix introduces is stale data leaking between
+// calls via the shared buffers -- these scenes exercise exactly that.
+
+// 12a. solve()'s non-spring branch reuses one scratch pair (point, accel)
+// across every Response instance instead of allocating fresh arrays; prove
+// that by checking two consecutive calls hand the SAME array references to
+// addAccelerationAt (a body that captures the reference, not a copy) while
+// still computing distinct, correct values each time.
+{
+  class RefCapturingBody {
+    constructor(pos) { this.pos = pos; this.translateCalls = []; this.accelCalls = []; }
+    translate(dp) { this.pos[0] += dp[0]; this.pos[1] += dp[1]; this.pos[2] += dp[2]; this.translateCalls.push(dp); }
+    addAccelerationAt(p, a) { this.accelCalls.push({ p, a, pSnapshot: [p[0], p[1], p[2]], aSnapshot: [a[0], a[1], a[2]] }); }
+  }
+  const body = new RefCapturingBody([0, 0, 0]);
+  const r1 = new Response('body');
+  r1.posAdjust = [1, 0, 0];
+  r1.speedAdjust = [2, 0, 0];
+  r1.avgRelPos = [0, 1, 0];
+  r1.solve(body, [10, 0, 0], r1);
+
+  const r2 = new Response('body');
+  r2.posAdjust = [0, 0, 1];
+  r2.speedAdjust = [0, 0, 4];
+  r2.avgRelPos = [0, 0, 2];
+  r2.solve(body, [0, 0, 20], r2);
+
+  out.solveScratchReuse = {
+    sameArrayReusedForPoint: body.accelCalls[0].p === body.accelCalls[1].p,
+    sameArrayReusedForAccel: body.accelCalls[0].a === body.accelCalls[1].a,
+    // Despite reusing the buffer, each call's SNAPSHOT (taken synchronously,
+    // like a real addAccelerationAt implementation would) is correct and
+    // independent of the other call.
+    firstPointSnapshot: body.accelCalls[0].pSnapshot,   // [10,0,0]+[0,1,0] = [10,1,0]
+    firstAccelSnapshot: body.accelCalls[0].aSnapshot,   // [2,0,0]*30*0.5 = [30,0,0]
+    secondPointSnapshot: body.accelCalls[1].pSnapshot,  // [0,0,20]+[0,0,2] = [0,0,22]
+    secondAccelSnapshot: body.accelCalls[1].aSnapshot,  // [0,0,4]*30*0.5 = [0,0,60]
+  };
+}
+
+// 12b. collideBodies pools its body->parts grouping and direction-plan
+// scratch across calls (once per tick in real use). Call it twice in the
+// SAME tick-shaped invocation with THREE distinct bodies -- so the pool
+// holds more than one group and more than one direction-plan entry at once
+// -- then call it again with a DIFFERENT, disjoint set of bodies and check
+// the second call's results reflect only the second scene, not leftover
+// state from the first (which would show up as extra/wrong contacts).
+{
+  function makeStaticFloorPair(xOffset) {
+    const bodyA = new FakeBody({ mass: 2500, pos: [xOffset, -0.05, 0], v: [0, -3, 0], boundingRadius: 1 });
+    const bodyB = new FakeBody({ mass: 1e12, isStatic: true, pos: [xOffset, 0, 0], boundingRadius: 70 });
+    const partA = new CollisionPart({ body: bodyA, shape: singleVertexShape(5), response: new Response(), isRoot: true });
+    const partB = new CollisionPart({ body: bodyB, shape: bigFlatFace(20), response: new Response(), isRoot: true });
+    return { bodyA, bodyB, partA, partB };
+  }
+
+  // First tick: three bodies (two falling onto two separate static floors,
+  // sharing none of the same body objects) -- exercises groupCount > 2 and
+  // more than one direction-plan entry within a single collideBodies call.
+  const sceneA1 = makeStaticFloorPair(0);
+  const sceneA2 = makeStaticFloorPair(100);
+  const partsTick1 = [sceneA1.partA, sceneA1.partB, sceneA2.partA, sceneA2.partB];
+  collideBodies(partsTick1, 1 / 30, handlers());
+
+  // Second tick: an entirely different pair of bodies. If pooled group/
+  // direction scratch leaked, this could see extra hits from tick 1's
+  // bodies or apply results to the wrong response.
+  const sceneB = makeStaticFloorPair(0);
+  const total = collideBodies([sceneB.partA, sceneB.partB], 1 / 30, handlers());
+
+  out.collideBodiesPoolReuse = {
+    tick1SceneAHits: sceneA1.partA.response.count,
+    tick1SceneBHits: sceneA2.partA.response.count,
+    tick2Total: total,
+    tick2Hits: sceneB.partA.response.count,       // must be 1, not accumulated with tick 1's state
+    tick2PosAdjust: sceneB.partA.response.posAdjust,
+  };
+}
+
 process.stdout.write(JSON.stringify(out, null, 2));
