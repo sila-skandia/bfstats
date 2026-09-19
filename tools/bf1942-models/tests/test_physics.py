@@ -416,6 +416,31 @@ class PhysicsModuleTests(unittest.TestCase):
         self.assertGreater(run["airPeak"], run["before"])
         self.assertAlmostEqual(8.0, run["airPeak"], delta=0.2)
 
+    def test_jumping_into_a_wall_kicks_the_body_off_it(self) -> None:
+        # The same rule where it actually bites. A soldier pressed into a wall
+        # has a velocity of ~0 (the resolver strips it every tick) and a
+        # command of a full 6 m/s into the wall, so the engine's
+        # `-0.25 * vCmd` is 1.5 m/s *backward, off the wall*. Anything that
+        # reads the kick off the command instead of the velocity -- including
+        # assigning `v = vCmd` first and then kicking, which looks innocent --
+        # sends him 4.5 m/s *into* the wall, the resolver eats it, and he rises
+        # straight up still touching it. The sign is the test.
+        wall = self.results["jumpOffAWall"]
+        self.assertEqual(127, wall["pressed"]["ramp"])       # command saturated
+        self.assertAlmostEqual(0.0, wall["pressed"]["vx"], places=6)  # velocity not
+        self.assertGreaterEqual(wall["pressed"]["contacts"], 1)
+        self.assertAlmostEqual(-1.5, wall["awayX"], places=3)
+        self.assertGreater(wall["vy"], 5.0)
+        self.assertFalse(wall["grounded"])
+
+    def test_the_open_ground_jump_is_untouched_by_that_ordering(self) -> None:
+        # Every measured figure in the report comes from an unblocked runner,
+        # whose velocity already equals his command when the tick begins. The
+        # ordering must be invisible there: 6.0 still becomes 4.5.
+        run = self.results["jumpInTheOpen"]
+        self.assertAlmostEqual(0.75, run["ratio"], places=3)
+        self.assertAlmostEqual(4.5, run["after"], delta=0.02)
+
     def test_air_control_is_the_engines_acceleration_not_a_lerp(self) -> None:
         # PHY-6's `0.75 * vCmd` with no `* 30`: at a 6 m/s command that is
         # 4.5 m/s^2, so the horizontal speed climbs linearly instead of

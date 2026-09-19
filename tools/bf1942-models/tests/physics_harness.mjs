@@ -597,6 +597,49 @@ results.cannotJumpOffWater = {
   floatY, after: swimmer.position.y, armed: swimmer.jumpArmed,
   rose: swimmer.position.y - floatY,
 };
+// --- the kick lands on the ACTUAL velocity (PHY-1, item 1's third "do NOT") -
+//
+// A soldier pressed into `tooTall`'s 2.5 m face with the ramp saturated: his
+// velocity is ~0 because the resolver strips it every tick, his command is a
+// full 6 m/s into the wall, and the engine's `-0.25 * vCmd` is therefore a
+// 1.5 m/s kick **backward, off the wall**. Reading it as `vCmd *= 0.75` — or
+// arriving at the same thing by assigning `v = vCmd` before applying it —
+// gives him 4.5 m/s *into* the wall instead, which the resolver then strips to
+// nothing, and he rises straight up still touching it. The sign of `awayX` is
+// the whole test.
+function jumpFromAWall(world, yaw = Math.PI / 2) {
+  const s = new SoldierBody({ world, yaw });
+  s.place(4, 0, -32, yaw);
+  // Two seconds is a run to the wall plus a second of standing on it, which
+  // saturates the ramp while the velocity stays stripped.
+  for (let i = 0; i < 120; i++) s.step(TICK_DT, { forward: 1 });
+  const pressed = { x: s.position.x, vx: s.velocity.x, ramp: s.forwardRamp,
+                    contacts: s.contacts };
+  s.jump();
+  s.step(TICK_DT, { forward: 1 });
+  return {
+    pressed,
+    // Positive = into the wall (+X at yaw pi/2), negative = off it.
+    awayX: s.velocity.x,
+    vy: s.velocity.y,
+    grounded: s.grounded,
+  };
+}
+results.jumpOffAWall = jumpFromAWall(tooTall);
+// The same body with nothing in front of it: the velocity already equals the
+// command when the tick begins, so the assignment was a no-op either way and
+// 6.0 still becomes 4.5. This is the case every measured figure comes from,
+// and it must not have moved.
+results.jumpInTheOpen = (() => {
+  const s = new SoldierBody({ world: ground, yaw: Math.PI / 2 });
+  s.place(4, 0, -32, Math.PI / 2);
+  for (let i = 0; i < 120; i++) s.step(TICK_DT, { forward: 1 });
+  const before = s.velocity.x;
+  s.jump();
+  s.step(TICK_DT, { forward: 1 });
+  return { before, after: s.velocity.x, ratio: s.velocity.x / before };
+})();
+
 // Prone bodies do not jump.
 const prone = new SoldierBody({ world: ground, yaw: 0 });
 prone.place(4, 0, -32);
