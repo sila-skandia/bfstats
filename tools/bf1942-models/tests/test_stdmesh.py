@@ -3,11 +3,19 @@ from __future__ import annotations
 import struct
 import sys
 import unittest
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bf42 import stdmesh  # noqa: E402
+from bf42.rfa import ArchivePool  # noqa: E402
+
+# The real vanilla install, if this machine has one -- same pattern as
+# `test_damage.py`'s `GAME_RFA`.
+BF1942_ARCHIVES = (Path.home() / ".wine/drive_c/EA Games/Battlefield 1942/Mods"
+                   "/bf1942/Archives")
+STANDARD_MESH_RFA = BF1942_ARCHIVES / "standardMesh.rfa"
 
 
 def material_lod(name: str, scale: float, *, flags: int = stdmesh.VF_STANDARD,
@@ -46,13 +54,14 @@ def material_lod(name: str, scale: float, *, flags: int = stdmesh.VF_STANDARD,
 
 def collision_layer() -> bytes:
     payload = bytearray(struct.pack("<3I", 0xEB97C3BA, 5, 4))
-    payload += struct.pack(
-        "<16f",
-        -1.0, 0.0, -1.0, 1.0,
-        1.0, 0.0, -1.0, 1.0,
-        1.0, 0.0, 1.0, 1.0,
-        -1.0, 0.0, 1.0, 1.0,
-    )
+    # xyz f32 + material u16 + pad u16, per vertex (collision-response.md #5.4).
+    for x, y, z, material_id, pad in (
+        (-1.0, 0.0, -1.0, 50, 0),
+        (1.0, 0.0, -1.0, 50, 0),
+        (1.0, 0.0, 1.0, 52, 7),
+        (-1.0, 0.0, 1.0, 52, 7),
+    ):
+        payload += struct.pack("<3fHH", x, y, z, material_id, pad)
     payload += struct.pack("<I", 2)
     payload += struct.pack("<3hBB", 0, 1, 2, 50, 0)
     payload += struct.pack("<3hBB", 0, 2, 3, 52, 4)
@@ -94,6 +103,17 @@ class StandardMeshTests(unittest.TestCase):
         self.assertEqual((0, 2, 3), layer.faces[1].vertices)
         self.assertEqual(52, layer.faces[1].material_id)
         self.assertEqual(4, layer.faces[1].flags)
+
+    def test_collision_vertex_is_position_plus_u16_material_not_a_4th_float(self) -> None:
+        # R3 F10 / V4 #22: a collision vertex is `f32 x,y,z` then a u16
+        # material and a u16 pad -- the "4th float" earlier readers took it
+        # for. The vertex side of a contact and the face side can carry
+        # different materials (collision-response.md #9.4), so both must
+        # come out of the reader.
+        layer = stdmesh.parse(standard_mesh_fixture()).collision_layers[0]
+
+        self.assertEqual([50, 50, 52, 52], layer.vertex_materials)
+        self.assertEqual([0.0, 0.0, 7.0], layer.vertex_unknown[:3])
 
     def test_reads_positions_normals_uvs_and_indices(self) -> None:
         material = stdmesh.parse(standard_mesh_fixture()).lods[1].materials[0]
@@ -239,6 +259,50 @@ class StandardMeshTests(unittest.TestCase):
         self.assertEqual([], material.positions())
         self.assertIsNone(material.normals())
         self.assertIsNone(material.uvs())
+
+
+@unittest.skipUnless(STANDARD_MESH_RFA.exists(), "needs the BF1942 install")
+class VanillaCollisionVertexMaterialTests(unittest.TestCase):
+    """collision-response.md #5.4 / R3 F10's own three worked examples.
+
+    Also the V4 verifier's `v4-sm.py` numbers: the moving object's VERTEX
+    material set is a strict subset of the struck object's FACE material set,
+    and it is not always the same id the face side uses (Sherman is
+    50/51/52, not just 50).
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        pool = ArchivePool()
+        pool.add_dir(BF1942_ARCHIVES, ("standardmesh",))
+        cls.pool = pool
+
+    def mesh(self, name: str) -> stdmesh.StandardMesh:
+        entry = self.pool.resolve_ext(f"standardMesh/{name}", (".sm",))
+        self.assertIsNotNone(entry, f"{name}.sm not found")
+        return stdmesh.parse(self.pool.read(entry), entry)
+
+    def test_willy_hull_layer0_is_16_vertices_all_material_45(self) -> None:
+        layer = self.mesh("Willy_Hul_M1").collision_layers[0]
+        self.assertEqual(16, len(layer.vertices))
+        self.assertEqual({45: 16}, dict(Counter(layer.vertex_materials)))
+
+    def test_spitfire_fuselage_layer0_vertex_materials(self) -> None:
+        layer = self.mesh("Spitfire_Fus_M1").collision_layers[0]
+        self.assertEqual({60: 4, 61: 5, 63: 7}, dict(Counter(layer.vertex_materials)))
+
+    def test_sherman_hull_layer0_vertex_materials(self) -> None:
+        layer = self.mesh("Sherman_Hull_M1").collision_layers[0]
+        self.assertEqual({50: 7, 51: 6, 52: 1}, dict(Counter(layer.vertex_materials)))
+
+    def test_vertex_material_set_is_a_subset_of_the_face_material_set(self) -> None:
+        for geometry in ("Willy_Hul_M1", "Spitfire_Fus_M1", "Sherman_Hull_M1"):
+            for layer in self.mesh(geometry).collision_layers:
+                vertex_ids = set(layer.vertex_materials)
+                face_ids = {face.material_id for face in layer.faces}
+                self.assertTrue(vertex_ids <= face_ids,
+                                f"{geometry}: vertex materials {vertex_ids} "
+                                f"not a subset of face materials {face_ids}")
 
 
 if __name__ == "__main__":
