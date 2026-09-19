@@ -1211,3 +1211,74 @@ heightfield and material map, `mu` 0.9 on grass):
   shared, and not a drivetrain problem.
 - **A reference drive in the real game** remains the one measurement that would
   settle the absolute numbers.
+
+## 2026-09-20 (wave 3, post-review): the solver works in the contact plane
+
+Five defects came back from review. Four are closed against the bytes.
+
+**The tyre frame is the contact plane, not the hull's.** `addFriction`'s
+RollGrip branch (`0x0825bf99`) takes the node's transform row 0 — the axle —
+and projects it: `0x0825c14b`-`0x0825c171` forms `s = (axle . N)/|N|^2`
+against the averaged contact normal at `ResponsePhysics+0x68`, and
+`0x0825bfff`-`0x0825c021` computes `axle - s*N`, with `|N|^2 == 0`
+(`0x0825bfe4`) and `|proj|^2 == 0` (`0x0825c063`) both zeroing that contact's
+demand. `collision-response.md` section 8 says the same of EngineGrip's
+forward axis ("tangent to N") and of `Vt`. Proved here for RollGrip; taken
+from section 8 for EngineGrip. This file had been using the hull's own XZ
+plane, so a Coulomb-saturated longitudinal demand on a pitched hull was
+largely world-vertical thrust — the jeep reached 453.7 km/h and a 148 m apex
+on a 0.35 m washboard. With the frame in the contact plane it is 3.32 m and
+120.0, against `main`'s 1.13 m and 58.0.
+
+**Springs sum, tyres mean.** `PhysicsNode::addFrictionAtAbsolutePosition`
+`0x08254e50` keeps a running mean over the tick's contacts (linear `+0x40`,
+`0x08254eab`-`0x08254f35`; angular `+0x4c` with `r x v`,
+`0x08254fc0`-`0x0825503f`; count `+0x64`, `0x08255042`; cleared
+`0x08253dcd`-`0x08253ddc`), where `addAccelerationAtAbsolutePosition`
+`0x08255110` plain-sums at `0x08255156`. **No normal load enters the
+tangential solve anywhere.** The load-weighted sum this file used braked a
+rear-wheel-drive jeep at 0.34 of budget instead of 0.50, and — worse — let a
+washboard load spike of 100 against a standing 4.9 multiply the budget
+sevenfold. Brake 8.38 s / 128.5 m to 4.48 / 68.7 (`main` 3.88 / 56.5).
+
+Three read facts make the mean stable where a first attempt at it rolled the
+M3A1 over: the budget's own `N.y` (`0x0825b80c fld [eax+0x4]`), the contact
+plane above, and **a dummy roller not counting**. `c_PGFEngineDummyGrip`
+(0x24) leaves through `SpinWheel` at `0x0825c669`/`0x0825c680` and never
+reaches the accumulator, so a Sherman's eight dummies were dividing its whole
+answer by three — brake 1.18 s to 3.35 s, and a 25-degree slope into a 146 m
+slide. A plain `c_PGFDummyGrip` (0x20) is *not* excluded.
+
+**`V.y += g/30`.** Section 8's own line, with its own reason — "so a held body
+does not creep" — had never been implemented, so the solver only ever saw the
+velocity gravity had already produced. Both tanks now hold at every angle
+measured (Sherman 25 degrees 2.27 m to 0.000; M3A1 2.63 to 0.052).
+
+**The pre-extract path.** `maxRotation`, `maxSpeed` and `acceleration` reach
+`extras.physics` only with this branch's `con.py`, and every published tree
+predates it. Throttle degraded safely; steering degraded to a dead stick, and
+a tracked hull's steering *is* the differential — a Sherman turned 0.0 degrees
+in six seconds of full lock on the assets that exist today. Both terms now
+fall back to the raw input and `EngineState.stale` says which path a vehicle
+is on.
+
+### Still open
+
+- **The M3A1 leans 39 degrees** entering a full-lock turn from its own top
+  speed (`up.y` 0.769, against 5 degrees on `main`), and turns 22 degrees
+  where `main` turns 121. It does not go over anywhere in the yaw sweep. This
+  is the price of the mean: a barely-loaded contact answers at the full
+  `A*N.y*|g|`, and a half-track has six counting contacts with most of its
+  weight on four. Reported rather than tuned away.
+- **Roll reversals at full lock**: 28 a second for the jeep against `main`'s
+  0.6, at a lower peak roll (4.85 against 4.62). Same root.
+- **A jeep on a slope at zero throttle still rolls** (7.6 m in 10 s at 5
+  degrees). The mechanism is the engine's own filter — at zero throttle the
+  steady state is `revs = -2L`, so the load feedback drives the revs negative
+  and the EngineGrip target commands the roll — and only a jeep's two driven
+  wheels carry a longitudinal demand at all. The read answer for an
+  *unoccupied* vehicle is `Engine+0x142`, the engine-on flag that pins the
+  revs to 0 (`0x0823e2d3`, `0x0823e2e6`-`0x0823e2ec`), now carried as
+  `EngineState.running`; `map.html` never steps an unoccupied hull, so it
+  cannot be exercised from the page. The occupied case is **unverified
+  against retail**.
