@@ -720,7 +720,7 @@
     <span class="shell-brand"><img class="shell-brand-sigil" src="./bfstats-logo.webp" alt="bfstats.io" width="26" height="26"><b>mesh</b></span>
     <span class="shell-tabs">
       <a href="./index.html">Models</a>
-      <a href="./map.html" aria-current="page">Maps</a>
+      <a href="./play/index.html" aria-current="page">Maps</a>
       <a href="./poses.html">Poses</a>
       <a href="./kits.html">Kits</a>
     </span>
@@ -1041,6 +1041,19 @@ let levelClips = [];
 let flagMixer = null;
 
 const params = new URLSearchParams(location.search);
+
+/** The Instant Battle screen in `play/` is where a level is chosen. */
+const MENU_URL = new URL('./play/index.html', location.href);
+
+// A bare `map.html` names no level, and the level list sits in the debug
+// panel a player never sees, so there would be nothing here to choose with.
+// Anything that names a level or a recording, asks for the debug panel, or is
+// a headless run stays on this page.
+if (!params.has('map') && !params.has('replay') && !params.has('shots')
+    && params.get('dev') !== '1') {
+  location.replace(MENU_URL);
+  await new Promise(() => {});
+}
 
 const optGameFog = document.getElementById('game-fog');
 const optWire = document.getElementById('wire');
@@ -1931,6 +1944,15 @@ gameConsole.register({
     if (!args.length) return devMode ? 1 : 0;
     return setDevMode(args[0] !== '0' && args[0].toLowerCase() !== 'false') ? 1 : 0;
   },
+});
+
+/** `game.disconnect` is the engine's own word (it sits in the `game` object's
+ *  method table beside `toggleGamePause` and `ticketRatio`), and it does what
+ *  it does there: leaves the battle for the menu. */
+gameConsole.register({
+  object: 'game', method: 'disconnect',
+  minArgs: 0, maxArgs: 0, argTypes: [],
+  run: () => { location.assign(MENU_URL); },
 });
 
 function setConsoleOpen(on) {

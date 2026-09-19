@@ -11,8 +11,9 @@
 import assert from 'node:assert/strict';
 import {
   ALLIED, AXIS, condOk, elementVisible, hitTest, inRect, listBox, measureText,
-  menuVars, paintMenu, rowArea, rowAt, scrollTo, stageScale, thumbSpan,
-  toVirtual, trackRect, visibleRows,
+  menuVars, pageElements, paintMenu, rowArea, rowAt, scrollTo, stageScale,
+  thumbSpan, toVirtual, trackRect, visibleRows,
+  SHOW_BOT_SETTINGS, botSettingsEdge,
 } from '../viewer/play/menu-screen.js';
 
 // --- a stand-in for the extracted pack --------------------------------------
@@ -308,6 +309,40 @@ assert.ok(box, 'the layout has a list box');
   // count the distinct row baselines instead.
   const rows = new Set(atlas.map(c => c.rest[5]));
   assert.ok(rows.size >= 11, `expected at least 11 row baselines, got ${rows.size}`);
+}
+
+{
+  // The bot settings are switched off until there are bots: the left column
+  // neither paints nor takes a click, and everything right of it is untouched.
+  assert.equal(SHOW_BOT_SETTINGS, false);
+  const column = [
+    { kind: 'picture', rect: [25, 152, 512, 512], texture: 'menu_campaignxl_512x512' },
+    { kind: 'text', rect: [37, 133, 100, 20], color: [0, 0, 0, 1], font: 'trebuchet_ms8',
+      align: 'left', text: 'INSTANT BATTLE' },
+    { kind: 'fill', rect: [194, 153, 148, 16], color: [1, 0, 1, 1] },
+    { kind: 'button', rect: [300, 400, 16, 8], texture: 'menu_scrollpilner_16x8' },
+  ];
+  const full = {
+    ...layout,
+    pages: { ...layout.pages,
+             skirmish: { elements: [...column, ...layout.pages.skirmish.elements] } },
+  };
+  assert.equal(botSettingsEdge(full), 385, "the level list's own plate");
+  assert.deepEqual(pageElements(full, 'skirmish'), layout.pages.skirmish.elements);
+  assert.equal(pageElements(full, 'skirmish', true).length,
+               full.pages.skirmish.elements.length, 'the pack still holds them');
+  assert.equal(pageElements(full, 'navigation'), full.pages.navigation.elements);
+
+  const ctx = stubCtx();
+  paintMenu(ctx, full, { team: AXIS, index: 0, scroll: 0, level: LEVELS[0] }, stubEnv());
+  const images = ctx.calls.filter(c => c.op === 'drawImage').map(c => c.img);
+  assert.ok(!images.includes('menu_campaignxl_512x512'), 'the column plate is not drawn');
+  assert.equal(ctx.calls.filter(c => c.fill === 'rgb(255,0,255)').length, 0);
+  assert.ok(images.includes('menu_singlepl_levellist_256x256'), 'the LEVELS plate still is');
+  assert.equal(hitTest(full, { scroll: 0 }, 305, 403, LEVELS.length), null,
+               'a control that is not drawn cannot be clicked');
+  assert.deepEqual(hitTest(full, { scroll: 0 }, 600, 270, LEVELS.length),
+                   { kind: 'team', team: AXIS });
 }
 
 {
