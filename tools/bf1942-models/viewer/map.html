@@ -8082,10 +8082,21 @@ function sunScreenPosition() {
   const norm = Math.hypot(sd[0], sd[1], sd[2]) || 1;
   // `show()` places the light at -sunDirection * 400, i.e. the sun is in the
   // direction the light points FROM.
-  const point = new THREE.Vector3(-sd[0] / norm, sd[1] / norm, -sd[2] / norm)
-    .multiplyScalar(1e5).add(camera.position);
-  const projected = point.project(camera);
-  if (projected.z > 1) return null;     // behind the camera
+  const dir = new THREE.Vector3(-sd[0] / norm, sd[1] / norm, -sd[2] / norm);
+  // Is it in front of the camera? Asked in VIEW space, where -z is forward.
+  // Not by projecting a far-off point and testing its ndc z: the sun is
+  // effectively at infinity and every level's far plane is short (Berlin's is
+  // 105 m), so such a point is always past the far plane and its ndc z always
+  // reads > 1 — which is how this first drew nothing at all.
+  const view = dir.clone().applyMatrix3(
+    new THREE.Matrix3().setFromMatrix4(camera.matrixWorldInverse));
+  if (view.z >= 0) return null;
+  // Now project a point that is inside the frustum but along the same ray, so
+  // the perspective divide gives the direction's own screen position.
+  const projected = dir.clone()
+    .multiplyScalar(camera.near + (camera.far - camera.near) * 0.5)
+    .add(camera.position)
+    .project(camera);
   const w = flareCanvas.width;
   const h = flareCanvas.height;
   const x = (projected.x * 0.5 + 0.5) * w;

@@ -502,5 +502,24 @@ fixture with the art present: coronas first at the sun, a scale-1 ghost on the
 sun, a scale -1.5 ghost mirrored to (-100, 450) from a (900,200) sun on a
 1000x600 canvas, sizes 8 / 96 / 256 px from textures 16 / 32 / 128, occlusion
 and `distFadeScale` scaling alpha, and zero-size and undecoded sprites
-skipped. A live capture on a mod level that ships its own art is the one thing
-this round did not get to — see the round report.
+skipped. And by a live capture on the one level in this installation that declares a
+flare **and** ships its art: bfheroes' `Coastal_Clash_Winter`, whose
+`Init/Lenz.con` declares 11 flares and 4 coronas over `P_Ring1/2/3`, `Ring3`,
+`Ring6`, `sunflare1`, `sunflare9` and `SunDisc` — all eight resolved out of
+`Mods/bfheroes/Archives/Texture.rfa`, `missingTextures` absent. Camera aimed
+along the level's own `sunDirection`, `#flare-canvas` read back on its own:
+81,672 pixels above alpha 4, peak alpha 129, a warm corona wash with the ring
+ghosts stacked on the sun (`scratchpad/d-wiring/flare-layer.png`). They stack
+because bfheroes sets no `setFlareScale` at all — the survey shows zero
+occurrences in that mod — so every flare takes the default 1 and sits on the
+sun. That is the data, not the placement: vanilla's own -1.5/1/1.5/-2/-2 is
+what would spread them, and no level that ships art also sets it.
+
+One bug this capture caught, worth recording because it would have been
+invisible otherwise. The first version found the sun's screen position by
+projecting a point 1e5 m along the sun direction and rejecting `ndc.z > 1` as
+"behind the camera". Every level's far plane is short — this one's is 157 m,
+Berlin's 105 — so that point is always **past the far plane**, where `ndc.z`
+also reads > 1, and the flare was rejected on every frame of every level. The
+front/behind test is now asked in view space (`z < 0`), and the projected
+point sits halfway between near and far along the same ray.
