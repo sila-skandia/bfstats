@@ -948,6 +948,45 @@ def resolve_seat_pose(machine: animstates.StateMachine, meshes: ArchivePool,
     return locals_map, lower_ref.path, upper_ref.path
 
 
+def seat_anchored(skeleton: ske_mod.Skeleton,
+                  locals_by_name: dict[str, tuple],
+                  ) -> dict[str, tuple]:
+    """Move a seat pose's origin from the soldier's feet onto his hips.
+
+    A `.baf` root track is the one transform expressed in the clip's own world
+    (`baf.ROOT_ALIGN`'s note), and for a seat clip it carries the *standing*
+    soldier's origin-at-the-feet convention: `3PWillySitLower` writes
+    `Bip01` at `0/-0.1104/-0.8335`, 0.83 m from the hips, which is the same
+    0.9992 m `3PStandLower` writes for a man standing on the ground.
+
+    A `SeatObject` is the sit position — `WillySeat` sits 0.6 m up inside the
+    Willys' body, where the cushion is, not 0.83 m under it — so a pose
+    parented there has to have its hips at its origin, or the whole soldier
+    rides that far out of the vehicle and his arms cannot reach anything. The
+    root's rotation is kept; only the translation goes, and the offset it
+    carried is recorded in the report so nothing is silently lost.
+    """
+    out = dict(locals_by_name)
+    for bone in skeleton.bones:
+        if bone.parent >= 0:
+            continue
+        key = ske_mod.canonical(bone.name)
+        if key in out:
+            out[key] = (out[key][0], (0.0, 0.0, 0.0))
+    return out
+
+
+def seat_root_offset(skeleton: ske_mod.Skeleton,
+                     locals_by_name: dict[str, tuple]) -> list[float] | None:
+    """The translation `seat_anchored` drops, for the report."""
+    for bone in skeleton.bones:
+        if bone.parent < 0:
+            key = ske_mod.canonical(bone.name)
+            if key in locals_by_name:
+                return [round(v, 5) for v in locals_by_name[key][1]]
+    return None
+
+
 def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
                      machine, meshes, textures, objects, library, frame: int,
                      max_texture: int, out: Path | None,
@@ -978,7 +1017,9 @@ def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
 
     locals_map, lower_path, upper_path = resolve_seat_pose(
         machine, meshes, upper_state, lower_state, frame)
-    locals_map = pose_mod.align_clip_roots(skeleton, locals_map)
+    aligned = pose_mod.align_clip_roots(skeleton, locals_map)
+    result["rootOffsetDropped"] = seat_root_offset(skeleton, aligned)
+    locals_map = seat_anchored(skeleton, aligned)
     result["lowerClip"] = lower_path
     result["upperClip"] = upper_path
 
@@ -1021,13 +1062,22 @@ def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
         if node is not None:
             skinned_roots.append(node)
 
-    # Bind-pose soldier meshes stand along +Z (Refractor forward). Stance poses
-    # pitch -90 on X so the soldier faces the side-on camera; a seat pose stands
-    # the soldier upright facing the vehicle's own forward, which glTF reads as
-    # -Z — a 180-degree yaw, not a coordinate-system pitch.
+    # A seat pose's own bind space has the spine along +Z and the knees along
+    # +Y — measured, not assumed: in `USMarineSoldier__SitInVehicle` with the
+    # root rotation dropped, the head sits 0.64 m from the pelvis in +Z and the
+    # foot 0.68 m in +Y. So the root has to take +Z to +Y (stand him up) and
+    # +Y to -Z (face him down the vehicle, which is Refractor +Z mirrored),
+    # and `ypr(0, 90, 0)` is the only one of the nine plausible candidates that
+    # does both.
+    #
+    # This was `ypr(180, 0, 0)`, which stands him on his back with his knees in
+    # the air — every seat pose, passengers included, from the day the seat
+    # path was written. The comment it replaces reasoned about the *stance*
+    # export's bind space, which is a different one: that export pitches the
+    # other way and does not parent its skinned meshes under the root at all.
     root = builder.add_node(gltf.Node(
         name=f"{soldier} in {upper_state}",
-        rotation=gltf.quat_from_ypr(180.0, 0.0, 0.0),
+        rotation=gltf.quat_from_ypr(180.0, -90.0, 0.0),
         children=root_children,
         extras={"soldier": soldier, "upperState": upper_state,
                 "lowerState": lower_state, "poseKind": "seat"},
@@ -1050,6 +1100,10 @@ def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
         if clip is None or ref is None:
             continue
         frames, period = clip_timeline(clip, ref.speed, skeleton)
+        # The same re-anchoring the static hierarchy got, every frame: a mixer
+        # writes the clip's own root translation back over the node's and
+        # would put the soldier's feet on the seat again.
+        frames = [seat_anchored(skeleton, f) for f in frames]
         tracks = timeline_tracks(frames, period, joint_nodes)
         if tracks:
             builder.add_animation(label, tracks)
