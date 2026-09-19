@@ -58,6 +58,36 @@ MOD_NAMES = {
     "xpack2": ("Secret Weapons of WWII", "SWoWWII"),
 }
 
+# (version, url, info) for the Custom Game dialog - see
+# `extract_custom_game_layout.py`, which decodes the dialog's chrome but not
+# this table. Each mod's own `init.con` sets these with
+# `game.setCustomGameVersion` / `...Url` / `...Info` (case and the leading
+# `set` both drift between mods); `...Info` is sometimes a literal string and
+# sometimes a `lexiconAll.dat` key in that mod's own lexicon, resolved by
+# hand here. Vanilla ships no `setCustomGameInfo` at all - the real game
+# falls back to `menu/CustomGameMenu`'s own placeholder text, which is
+# editor lorem ipsum DICE never replaced, so a real line is written for it
+# here instead of reproducing that.
+MOD_INFO = {
+    "bf1942": ("1.61", "http://www.battlefield1942.com",
+              "The original game: 23 maps across five theaters."),
+    "eod": ("2.50", "http://www.eodmod.com",
+            "Gooooooooooooood Morning Vietnaaaaaaaaaaaam !"),
+    "desertcombat": ("0.7", "http://www.DesertCombat.com",
+                     "Developed by Trauma Studios, Inc."),
+    "dc_final": ("0.8", None, "The final installment of Desert Combat."),
+    "fh": ("0.7", "http://www.fhmod.org", None),
+    "fhsw": ("0.73", "http://wbmuse.blog89.fc2.com/", None),
+    "gcmod": ("8.5", "http://www.galacticconquest.rf.gd",
+             "It is a period of civil war. The Galactic Empire faces a "
+             "constant threat from Rebel forces, who wish to bring freedom "
+             "to all those oppressed by the Empire."),
+    "bf1918": ("3.4b", "https://www.moddb.com/mods/battlefield-1918", None),
+    "interstate": ("1.8", "http://www.bf1982.com", "Shoot or Race"),
+    "xpack1": ("1.6", "http://www.battlefield1942.com", None),
+    "xpack2": ("1.6", "http://www.battlefield1942.com", None),
+}
+
 
 def _count(path: Path, key: str | None = None) -> int:
     """Entries in a manifest file, or 0 if it is absent or unreadable."""
@@ -85,6 +115,13 @@ def describe(mod_id: str, models_dir: Path, maps_dir: Path, viewer: Path | None 
             "poses": poses_dir.as_posix(),
         },
     }
+    version, url, info = MOD_INFO.get(mod_id, (None, None, None))
+    if version:
+        entry["version"] = version
+    if url:
+        entry["url"] = url
+    if info:
+        entry["info"] = info
     if viewer is not None:
         mod_icon = models_dir / "icon.png"
         static_icon = Path("icons") / "mods" / f"{mod_id}.png"
