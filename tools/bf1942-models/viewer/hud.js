@@ -180,6 +180,30 @@ function measureText(font, text) {
   return w;
 }
 
+/** Greedy word wrap in a bitmap font. A single word wider than the box is
+ *  left to overflow rather than split mid-word: the one string this is for
+ *  has none, and hyphenating a bitmap font invents glyph metrics.
+ *
+ *  Exported for `tests/hud_harness.mjs`: everything else in the text path
+ *  goes through a tinted glyph atlas, which needs a real canvas, and this is
+ *  the part with a decision in it. */
+export function wrapText(font, text, width) {
+  const words = String(text).split(' ');
+  const lines = [];
+  let line = '';
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && measureText(font, next) > width) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = next;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
 function drawBitmapText(ctx, font, text, x, y, rgb) {
   const atlas = tintedAtlas(font, rgb);
   const base = font.meta.baseline;
@@ -470,10 +494,30 @@ export class Hud {
     if (!font) return;
     const text = String(this.vars[el.var]);
     const color = el.color || [1, 1, 1, 1];
+    const rgb = color.slice(0, 3);
+    const line = font.meta.lineHeight || 0;
+    // A leaf whose string is wider than its own rect, in a rect with room for
+    // another line, wraps. Every leaf fed before the combat-area warning was
+    // a short number or a name that fits, so this changes nothing for them --
+    // and the warning's own plate settles that the engine wraps rather than
+    // overflows: `menu/InGame` backs it with `textmessBG_3LINE_256x64`, three
+    // lines of art for a 65-character string in a 230 px rect.
+    if (line > 0 && h >= line * 2 && measureText(font, text) > w) {
+      const lines = wrapText(font, text, w);
+      const room = Math.max(1, Math.floor(h / line));
+      for (let i = 0; i < Math.min(lines.length, room); i++) {
+        this._drawTextLine(ctx, el, lines[i], font, x, y + i * line, w, rgb);
+      }
+      return;
+    }
+    this._drawTextLine(ctx, el, text, font, x, y, w, rgb);
+  }
+
+  _drawTextLine(ctx, el, text, font, x, y, w, rgb) {
     const width = measureText(font, text);
     const tx = el.align === 'center' ? x + (w - width) / 2
       : el.align === 'right' ? x + w - width : x;
-    drawBitmapText(ctx, font, text, Math.round(tx), y, color.slice(0, 3));
+    drawBitmapText(ctx, font, text, Math.round(tx), y, rgb);
   }
 
   _drawFill(ctx, el) {

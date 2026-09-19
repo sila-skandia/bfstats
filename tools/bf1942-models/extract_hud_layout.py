@@ -596,6 +596,12 @@ RAW_TOPS: dict[str, tuple[list[tuple[str, str]], tuple]] = {
     # draw it in-game with no code of its own, the way every other group in
     # this file works.
     "tickets":          ([("is", "ShowTicket")], (620.0, 4.0, 256.0, 32.0)),
+    # The combat-area warning. Its leading cull is a comparison rather than a
+    # bool -- `0 < Outside/OutsideTime`, a LessData with no symbol of its own,
+    # which `leading_culls` reports as the anonymous ("?", "") -- so the rect
+    # is what picks it out. `flatten` still records the real condition, so the
+    # painter culls the group whenever the countdown is not running.
+    "outside":          ([("?", "")], (310.0, 174.0, 230.0, 40.0)),
 }
 
 SUPPLY_KEYS = ("supplyCtf", "supplyParachute", "supplyRepair", "supplyHeal",
@@ -625,6 +631,7 @@ def decode_hud(ingame: bytes, lexicon: dict[str, str]) -> dict:
         "weaponBar": raw["weaponBar"],
         "crosshair": raw["crosshair"],
         "tickets": raw["tickets"],
+        "outside": raw["outside"],
     }
 
     out_groups = {}
