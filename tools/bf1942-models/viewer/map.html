@@ -8830,16 +8830,15 @@ const launchTeam = (() => {
  *  own team.
  *
  *  A launch from the Instant Battle screen names the side instead, and it
- *  wins — `deployFlagIndices` already offers every flag to a side that owns
- *  none, which is how Midway works at all (its control points all start
- *  neutral). It yields only when the chosen side has no flag and the other
- *  does: a one-sided extract has nothing to put on that tab. */
+ *  wins outright. The tally is only a guess at which side has somewhere to
+ *  stand, and it is not needed here: `deployFlagIndices` already offers
+ *  every flag to a side that owns none. That is how Midway works at all
+ *  (its control points all start neutral), and it is what makes Wake
+ *  playable from the Japanese side — all five of its flags are Allied at
+ *  the start, so a tally-based guard would answer ALLIED to a player who
+ *  picked AXIS on the screen before this one. */
 function preferredDeployTeam() {
-  if (launchTeam) {
-    const mine = flags.some(f => f.team === launchTeam);
-    const theirs = flags.some(f => f.team === (launchTeam === 1 ? 2 : 1));
-    if (mine || !theirs) return launchTeam;
-  }
+  if (launchTeam) return launchTeam;
   let axis = 0;
   let allied = 0;
   for (const flag of flags) {
