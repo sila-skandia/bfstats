@@ -1441,11 +1441,32 @@ class ObjectLibrary:
                 elif cmd == "addskeletonik":
                     # addSkeletonIK <bone> <pos_x/pos_y/pos_z> <rot_x/rot_y/rot_z>
                     # Pins a skeleton bone to a vehicle node's world pose.
-                    # Position and rotation are in the declaring object's local
-                    # frame.  The bone name carries underscores for spaces
-                    # ("Bip01_R_Hand" → "Bip01 R Hand") and trailing whitespace
-                    # is stripped — matching the same loose rules as
-                    # bindToSkeletonPart.
+                    #
+                    # `AnimatedBundleTemplate::addSkeletonIK` (lnxded
+                    # `0x08266cb0`) builds an 88-byte `SkeletonIkInfo`:
+                    #   +0x00 short  bone-name id (BoneManager::getBoneNameIndex)
+                    #   +0x04 int    target child index
+                    #   +0x08 int    cached bone index, -1 unresolved
+                    #   +0x0c Vec3   position
+                    #   +0x18 Mat4   rotation, baked by `setRotation`
+                    # and three details of it matter to a reader:
+                    #
+                    # * The bone name has `_` replaced by a space in place
+                    #   (`0x8266e43: mov BYTE PTR [edx],0x20`), so
+                    #   `Bip01_R_Hand` is the bone `Bip01 R Hand`.
+                    # * **The offsets are not in the declaring node's frame.**
+                    #   `+0x04` is `BundleTemplate::getNoTemplates() - 1`
+                    #   (`0x8266d98`, vptr+0x8c), i.e. the index of the child
+                    #   added most recently *before this line* — so the Willys'
+                    #   two entries, written after `addTemplate WillySteering`
+                    #   on `WillySteeringDummy`, are relative to `WillySteering`,
+                    #   the wheel that actually turns. A template that declares
+                    #   IK before any child gets -1, meaning the declaring node
+                    #   itself (`Attach_R_Hand` in `Vehicles/Common`, and
+                    #   `updateIk`'s `js` at `0x82659f2`).
+                    # * A second declaration for the same bone **replaces** the
+                    #   first rather than appending (`0x8266d70` scans the vector
+                    #   by name id and overwrites at `0x8266e1a`).
                     parts = args.split() if args else []
                     if len(parts) >= 3:
                         bone = parts[0].replace("_", " ").strip()
@@ -1456,8 +1477,28 @@ class ObjectLibrary:
                             rot = _xyz(parts[2])
                         except (ValueError, IndexError):
                             continue
-                        obj.skeleton_ik_bones.append(
-                            {"bone": bone, "position": pos, "rotation": rot})
+                        for existing in obj.skeleton_ik_bones:
+                            if existing["bone"] != bone:
+                                continue
+                            # A repeat for a bone already declared overwrites
+                            # the position and the rotation **and nothing
+                            # else**: the branch at `0x8266e1a` writes
+                            # `slot+0x0c` (Vec3) and `slot+0x18` (Mat4) and
+                            # never reaches the `getNoTemplates()` call at
+                            # `0x8266d98`, so `slot+0x04` keeps the target
+                            # child the *first* declaration measured from.
+                            # FHSW's `Hotchkiss` is the case that shows it:
+                            # the same two lines appear before any child and
+                            # again after two, and the engine keeps the first
+                            # reading for both.
+                            existing["position"] = pos
+                            existing["rotation"] = rot
+                            break
+                        else:
+                            obj.skeleton_ik_bones.append(
+                                {"bone": bone, "position": pos,
+                                 "rotation": rot,
+                                 "targetChild": len(obj.children) - 1})
                 elif cmd in ("createinvisible", "invisible"):
                     # `createInvisible` hides a placed object; `invisible 1` on
                     # a Projectile is the engine's own "never draw the body"
