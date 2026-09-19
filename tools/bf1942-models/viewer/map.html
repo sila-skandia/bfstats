@@ -1158,15 +1158,42 @@ function groundHeight(x, z) {
  * mod with no `Game.rfa`, or an id the define file never mentions all resolve
  * to material 0, which vanilla authors at 1.0.
  */
+// `surfaceFriction` runs once per wheel per sub-step — up to sixteen times a
+// tick for a half-track — so it walks a flat numeric array rather than
+// re-deriving a string key and two property lookups each time. The array is
+// built once per level, when the tables land.
+let materialFrictionById = null;
+
+function buildMaterialFrictionTable(tables) {
+  const materials = tables?.materials;
+  if (!materials) return null;
+  let top = -1;
+  for (const key of Object.keys(materials)) {
+    const id = Number(key);
+    if (Number.isInteger(id) && id >= 0 && id > top) top = id;
+  }
+  if (top < 0) return null;
+  const out = new Float64Array(top + 1).fill(DEFAULT_SURFACE_FRICTION);
+  for (const [key, entry] of Object.entries(materials)) {
+    const id = Number(key);
+    if (!Number.isInteger(id) || id < 0) continue;
+    if (typeof entry?.friction === 'number') out[id] = entry.friction;
+  }
+  return out;
+}
+
+const DEFAULT_SURFACE_FRICTION = 1.0;
+
 function surfaceFriction(x, z) {
-  const table = damageTables?.materials;
-  if (!table) return 1.0;
+  const table = materialFrictionById;
+  if (!table) return DEFAULT_SURFACE_FRICTION;
   const sea = extras?.waterLevel;
   let id = collider?.heightfield?.material(x, z);
   if (Number.isFinite(sea) && groundHeight(x, z) <= sea) id = 1;
-  if (id === undefined || id === null) return 1.0;
-  const friction = table[String(id)]?.friction;
-  return typeof friction === 'number' ? friction : 1.0;
+  if (!Number.isInteger(id) || id < 0 || id >= table.length) {
+    return DEFAULT_SURFACE_FRICTION;
+  }
+  return table[id];
 }
 
 function collectTerrain(root) {
@@ -10031,6 +10058,7 @@ async function show(entry) {
   [terrainMaterials, damageTables] = await Promise.all([
     loadTerrainMaterials(dir), loadDamageTables(dir),
   ]);
+  materialFrictionById = buildMaterialFrictionTable(damageTables);
   const collision = buildCollider(currentRoot);
   // A new level means a new scene graph; the old aircraft's node is gone, and
   // the view rig holds a reference to it. So are every cached door.
@@ -11007,6 +11035,31 @@ if (params.has('shots')) {
     running: damageVisuals.get(owner)?.handles.length ?? 0,
     tiers: v.effects.map(e => ({ hp: e.hp, effect: e.effect })),
   }));
+  // The land vehicle the player is currently driving, for a headless drive.
+  // Reading its state is not enough to *test* one: the renderer manages a
+  // couple of frames a second on a real level under SwiftShader, which pins
+  // `dt` at the page's 0.1 s clamp and makes a real-time drive meaningless.
+  // So this also hands back the two calls `frame()` makes — the same object,
+  // the same level collider, the same material map — and a check can step
+  // them synchronously at whatever rate it wants.
+  window.__drive = () => (car ? {
+    state: () => ({
+      speed: car.state.velocity.length(),
+      along: car.state.velocity.dot(
+        new THREE.Vector3(0, 0, -1).applyQuaternion(car.state.orientation)),
+      position: { ...car.state.position },
+      velocity: { ...car.state.velocity },
+      grounded: car.state.grounded,
+      gear: car.gear ?? null,
+      revs: car.revs ?? null,
+      wheels: car.wheels.map(w => ({
+        compression: w.compression, load: w.load,
+        friction: w.friction, latched: w.staticGrip, driven: w.driven,
+      })),
+    }),
+    setInput: (name, value) => car.setInput(name, value),
+    integrate: dt => car.integrate(dt),
+  } : null);
   // Hurt one by owner id without having to hit it with a round — the same
   // generic entry point `window.__damage(n)` is for the soldier. Negative heals,
   // the way `SimpleObject::handleDamage` dispatches on the sign of its argument
