@@ -120,7 +120,28 @@ Carried from that review, not yet acted on:
   spawn points, so there is no deck to land on. `North_Base` and `South_Base`
   refuse a jump in both builds. Both predate this round.
 
+### Wave 3, running (launched 2026-09-20)
+
+From `viewer-changes.md`'s "Open after wave 2" and the table below. Same
+shape as before: each build gets an adversarial review, each research claim a
+second reader, and nothing merges untested.
+
+| Stream | Owns |
+|---|---|
+| W3-A drivetrain | a tank driven through its tracks (the EngineGrip target on its bogies with the `& 4` differential, capped at 1.0; no hull thrust exists for a ground vehicle), revs as the engine's per-tick filtered state, the 1.2 ceiling gated on engine type, RollGrip in place of the invented cornering stiffness (`ground.js`) |
+| W3-B blasts | an explosion hurts a soldier, by the engine's exposure sampling; a grenade bounces, from `materialElasticity` and the projectile's own collision response; the combat area's terrain-material half (the viewer does carry the material map) |
+| W3-C game modes | every mode directory a level ships, as a gameplay layer over the shared scene; `map.html?mode=`; Instant Battle launching `SinglePlayer` where a level has one |
+| W3-D sounds | the sound scripts on effect bundles: impacts, ricochets, explosions, vehicle deaths, with a bounded voice count |
+| W3-E mod chrome | per-mod HUD pack, layouts, fonts and strings along `game.addModPath` (EoD's nations above all); and `verify_models.py` made to tell the truth |
+| W3-F research | LOOP-1's second reader (what the simulation's time step really is, server and client), GUN-2b (mouse counts to `PlayerInput`, and whether `TURRET_SPEED_SCALE = 4` is explained), the console's open items |
+
 ### Not yet assigned
+
+Hull collision between ground vehicles and the world has an engine spec
+(`subsystems/collision-response.md`, the other session's round) and a plan
+(`features/viewer-ground-hull-collision/README.md`); it is the largest piece
+left and is not in wave 3.
+
 
 | Item | Status |
 |---|---|
@@ -140,6 +161,7 @@ Carried from that review, not yet acted on:
 | `Water.baseTex`, `envmapcolor`; `aiMeshes.rfa` hulls; palm trunk collision; `c_CGProjectiles` / `c_CGLadders`; `LightmapShadowBits.lsb` (format unknown); Berlin's ground outside its four tiles | open |
 | Bar1918 round counter never decrements (`task_4b7d2a66`) | open, unreproduced |
 | `verify_models.py` is stale: on the 09-19 vanilla rebuild it calls 42 of 96 models broken, every one a false alarm. It counts projectile, tracer, trail, cockpit and emitter helper nodes as "unbound parts piled on the origin", measures a rifle's length across them (Bar1918 2.02 m against 1.19 m), and does not understand a skinned soldier. Checked by eye: `BritishSoldier`, `AichiVal` and `Bar1918` render correctly. A verifier that always says broken hides the day it is right | open |
+| Bots. Nothing about the engine's AI is in the corpus: how a bot is spawned, driven and given a kit, what `aiMeshes.rfa` and a level's `AI/` and `AIPathFinding/` hold, and what the Instant Battle screen's difficulty variables become when a battle starts. Until it is documented the screen's whole left column is switched off (`SHOW_BOT_SETTINGS` in `viewer/play/menu-screen.js`, owner's call 2026-09-20) | open, research first |
 | Mod coverage: 18 mods installed; maps and models exist for vanilla, XPack1, XPack2 and EoD only | by choice, for now |
 
 ### The lead's own queue
