@@ -393,6 +393,13 @@ The two Tobruk rows are the backward-compatibility proof against real published
 data, not a fixture: that `scene.json` and that `scene.glb` were written before
 any of this existed.
 
+And the Instant Battle screen, driven through `window.__menu` over all 23
+levels: **19 launch `mode=SinglePlayer`, 4 launch `mode=Conquest`** — Coral
+Sea, Invasion of the Philippines, Liberation of Caen and Aberdeen, which are
+exactly the four with `singlePlayer: false` and exactly the four the game does
+not list under Instant Battle. `map.html?mode=SinglePlayer` with no `map=`
+still lands on `play/index.html`: the bare-page guard is untouched.
+
 ### Instant Battle
 
 `viewer/play/index.html` launches `mode=SinglePlayer` where the level ships
