@@ -133,4 +133,36 @@ results.overridden = {
                        [1, 1000, -1800], [1, 1000, -1800]]),
 };
 
+// The accumulator is written back to the allowance on every damage frame
+// (0x081524a8 / 0x081524ac / 0x081524b2), not left to grow. A player who has
+// been out for a minute reads 10, and the damage is unchanged because each
+// later frame re-crosses by its own dt.
+const clamped = new CombatArea(berlinReal);
+const clampFrames = run(clamped, Array.from({ length: 60 }, () => [1, 1000, -1800]));
+results.clamp = {
+  // Frame 11 is the first past the 10 s allowance.
+  atFirstDamage: clampFrames[10],
+  afterSixtySeconds: {
+    outsideFor: clamped.outsideFor,
+    damage: clampFrames[59].damage,
+    countdown: clampFrames[59].countdown,
+  },
+  // Every frame from the eleventh on damages, so the clamp costs no HP.
+  damagingFrames: clampFrames.filter(f => f.damage > 0).length,
+  totalDamage: Math.round(clampFrames.reduce((s, f) => s + f.damage, 0) * 1000) / 1000,
+};
+
+// Edge inclusivity, now read rather than assumed: the four x87 comparisons
+// only leave the area when a coordinate is strictly beyond an edge.
+const edge = new CombatArea(berlinReal);
+results.edges = {
+  // Berlin is x 1536..2048, z 1536..2048 -> gltf min/max after the z flip.
+  minCorner: edge.step(1, 1536, -1536).inside,
+  maxCorner: edge.step(1, 2048, -2048).inside,
+  justOutsideMinX: edge.step(1, 1535.9, -1600).inside,
+  justOutsideMaxX: edge.step(1, 2048.1, -1600).inside,
+  justOutsideMinZ: edge.step(1, 1600, -1535.9).inside,
+  justOutsideMaxZ: edge.step(1, 1600, -2048.1).inside,
+};
+
 console.log(JSON.stringify(results));
