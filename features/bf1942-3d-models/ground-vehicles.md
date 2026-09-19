@@ -857,6 +857,34 @@ the fitted coast law, which was sized against a top speed that has since
 doubled. The tanks are steadier rather than quicker, the M3A1 markedly slower
 now that 17.5 is gone. And a vehicle left alone is left alone.
 
+### The two lateral inventions earn their keep, and what they stand in for
+
+Item 16 says to keep `corneringStiffness` and the lateral anisotropy only if
+they earn it. Measured, jeep at full lock for twelve seconds from 103 km/h:
+
+| | turned in 12 s | exit speed | worst body roll |
+|---|---|---|---|
+| as shipped | 60 deg | 33 km/h | 4.6 deg |
+| `lateralGripFraction` 1 (the engine's isotropic clamp) | **16 deg** | 26 km/h | 8.8 deg |
+| `corneringStiffness` 0 | 78 deg | **133 km/h** | 0.1 deg |
+| `corneringStiffness` 3 | **+36 deg** (the wrong way) | 22 km/h | 8.8 deg |
+
+Both keep their places. Isotropic, the jeep understeers to nearly straight and
+leans twice as hard doing it. Without the slip force at all it is a sled: it
+yaws from the steer torque, slides sideways without scrubbing, and *gains*
+30 km/h through the corner. And the constant is not a smooth dial — at 3 the
+turn inverts.
+
+What they are standing in for is a real omission rather than a taste. The
+Coulomb clamp only **limits** a tangential demand; it never creates one. In the
+engine the lateral demand comes from the grip modes themselves — RollGrip asks
+for `dV = -(the component of Vt along the wheel's own axle)`, and ContactGrip
+for `dV = -Vt` — so a rolling wheel is *continuously* asked to cancel its own
+sideways slip, and the clamp is only what bounds the answer. The viewer
+implements the clamp and not the ask, and `corneringStiffness` is the hole that
+leaves. Implementing RollGrip is what would retire both constants, and it is the
+same job as replacing `bodyThrust` on the tracked hull.
+
 ### Still open after this review
 
 - **`TrackedVehicle`'s propulsion** is `bodyThrust`, which the engine-type gate
