@@ -5,20 +5,17 @@
 // rows HP-1/HP-2/HP-5, ARM-1/ARM-2, HP-9/HP-9d and HP-15, and
 // `subsystems/hitpoints-and-damage.md` §8. The findings that shape this file:
 //
-//   - **A collision DOES cost hit points** — HP-6's "a collision never costs
-//     hit points" was REFUTED on 2026-09-18/19. Both collision handlers reach
+//   - **A collision costs hit points** — HP-6's "a collision never costs hit
+//     points" was refuted on 2026-09-18/19. Both collision handlers reach
 //     `GameServer::giveDamage` through the GameServer's own vtable slot
-//     `+0x15c`, the engine's shared object-level damage dispatch; the soldier
-//     fall branch of `handleCollisionLandOrWater` (0x08154960) delivers a fall
-//     severity through it, and so does the vehicle-versus-vehicle path.
-//     See `subsystems/collision-response.md` §9.
-//
-//     **The vehicle crash path itself is not implemented here, and must not be
-//     guessed from this file.** Its formulas, its once-per-second-per-pair rate
-//     limiter and its material tables are COL-3/COL-4/COL-5 and belong to the
-//     collision round; the soldier half is HP-14, in `map.html`. What this
-//     module owns is projectile damage — direct and splash — plus the standing
-//     damage clocks below.
+//     `+0x15c`; see `subsystems/collision-response.md` §9. The vehicle crash
+//     path is **not in this file**: its formulas, material rules and
+//     once-a-second limiter (COL-3/COL-4/COL-5) are `crash-damage.js`, and the
+//     contacts that feed it come from `body-world.js`. What arrives here is a
+//     plain `damage(amount)`, exactly as a round's does, so everything below —
+//     tiers, the critical tick, death — follows a crash for free. The soldier
+//     half is HP-14, in `map.html`. What this module owns is projectile damage,
+//     direct and splash, plus the standing damage clocks below.
 //   - **A living object re-evaluates its effect tier every tick** (ARM-1). The
 //     `Armor+0x128` byte the engine keeps is a *death* latch, not a first-run
 //     latch, so there is no once-per-lifetime behaviour to reproduce: poll, and

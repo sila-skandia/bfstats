@@ -33,7 +33,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Callable
 
-from .con import _COMMAND
+from .con import _COMMAND, _REM_BLOCK
 
 SETTINGS_SCRIPT = "bf1942/game/materialManagerSettings.con"
 
@@ -48,6 +48,13 @@ class Material:
     def_group: int
     damage: float = 0.0
     friction: float = 1.0
+    # `Material::Material()` (`0x08174550`) also zeroes elasticity and sets
+    # resistance to 0.01 — but unlike friction, vanilla only authors these for
+    # a minority of materials (the 16 terrain rows and a handful more), so
+    # `None` distinguishes "not authored" from "authored as zero" and the
+    # fallback lives with the consumer, not baked in here.
+    elasticity: float | None = None
+    resistance: float | None = None
     label: str | None = None
 
     def as_dict(self) -> dict:
@@ -57,6 +64,10 @@ class Material:
             "damage": self.damage,
             "friction": self.friction,
         }
+        if self.elasticity is not None:
+            out["elasticity"] = self.elasticity
+        if self.resistance is not None:
+            out["resistance"] = self.resistance
         if self.label:
             out["label"] = self.label
         return out
@@ -163,6 +174,15 @@ class DamageTables:
         So do not "fix" this to return a default. Returning the field would
         either change nothing or introduce a bug, and the recommendation to do
         so was checked and refuted.
+
+        A cell that exists only because a script hung an effect on it with
+        `setEffectTemplate` and never wrote `damageMod` is not "no entry" —
+        `MMCell::MMCell` (`0x081745f0`) sets a created cell's damageMod to
+        **1.0**, not 0.0 — so `_parse_script` seeds such a cell at 1.0 as soon
+        as it is created and this method never has to special-case it: "no
+        cell" (returns None, above) and "cell created only for its effect"
+        (returns 1.0) come out of the same `self.modifiers` lookup correctly
+        either way.
         """
         return self.modifiers.get((self.att_group(att_material), self.def_group(def_material)))
 
@@ -311,6 +331,15 @@ def _parse_script(tables: DamageTables, text: str, script: str,
     def_group: int | None = None
     heading: str | None = None
 
+    # `BeginRem`/`EndRem` bracket a whole block as dead script the same way a
+    # single `rem` line does (both are engine keywords, not a convention) —
+    # vanilla uses this for six weapons' abandoned experiments (katyusha,
+    # bazooka, destroyer, Torpedo, twice in NoArmor, once in PlaneArmor) and a
+    # parser that only skips single `rem` lines reads straight through them,
+    # producing cells nothing ever writes (e.g. (227,90)). Reuses `con.py`'s
+    # block regex rather than a second implementation of the same rule.
+    text = _REM_BLOCK.sub("", text)
+
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped:
@@ -360,6 +389,14 @@ def _parse_script(tables: DamageTables, text: str, script: str,
             value = _number(args)
             if value is not None:
                 material.friction = value
+        elif cmd == "materialelasticity" and material is not None:
+            value = _number(args)
+            if value is not None:
+                material.elasticity = value
+        elif cmd == "materialresistance" and material is not None:
+            value = _number(args)
+            if value is not None:
+                material.resistance = value
         elif cmd == "attgroup":
             value = _number(args)
             att_group = int(value) if value is not None else None
@@ -367,10 +404,33 @@ def _parse_script(tables: DamageTables, text: str, script: str,
             value = _number(args)
             def_group = int(value) if value is not None else None
         elif cmd == "damagemod" and att_group is not None and def_group is not None:
+            # `MaterialManager.damageMod` (`0x08179c10`): `getCreateCell()`
+            # then an unconditional write — always the cell's final value for
+            # everything read so far, in `run` order.
             value = _number(args)
             if value is not None:
                 tables.modifiers[(att_group, def_group)] = value
+        elif cmd == "setcell" and att_group is not None:
+            # `MaterialManager.setCell <defGroup> <damageMod>` (`0x081752b0`):
+            # `getCreateCell(attGroup, defGroup)` where `defGroup` is this
+            # command's own first argument, not the `defGroup` cursor — vanilla
+            # uses it 9 times (bombs.con, Big_bombs.con, wespe.con) always
+            # right after an `attGroup` line and never an explicit `defGroup`.
+            parts = args.split()
+            if len(parts) >= 2:
+                def_g, value = _number(parts[0]), _number(parts[1])
+                if def_g is not None and value is not None:
+                    tables.modifiers[(att_group, int(def_g))] = value
         elif cmd == "seteffecttemplate" and att_group is not None and def_group is not None:
+            # `setEffectTemplate` also calls `getCreateCell()` — a cell it
+            # creates with no `damageMod` line anywhere starts at the
+            # `MMCell` constructor's 1.0, not the "no cell" default of 0.0.
+            # `setdefault` is order-independent: whichever of this line or an
+            # explicit `damageMod`/`setCell` for the same pair runs first
+            # creates the cell, and the other (if it runs later) still applies
+            # normally — an explicit value always overwrites unconditionally,
+            # while this only fills a gap.
+            tables.modifiers.setdefault((att_group, def_group), 1.0)
             if args.strip():
                 tables.effects[(att_group, def_group)] = args.split()[0]
 
