@@ -718,3 +718,38 @@ word is false.
 - VHUD-10's live writer: the heat/reload feeder writes **`1 − f`** and its
   destination group is still `[this+0x14]`, unidentified. Nothing here feeds
   it yet.
+
+### Verified on the page
+
+Served from this worktree on **5333** over a scratch re-extract of Kasserine
+Pass made with this branch's own `con.py` (the shared `viewer/maps` tree is
+read-only this round, and the dial's new gate needs `setHasTurretIcon` in the
+scene), with **5334** serving the identical tree at `f9f144d` — the commit
+before the sign pair — so the two differ only by the files under test.
+
+| check | before | after |
+|---|---|---|
+| dial crop at exactly +90° and −90° | | **byte-identical PNGs** |
+| what a +90° turret feeds | −1.5708 into `rotate(+θ)` | +1.5708 into `rotate(−θ)` |
+| Sherman driver, chase view | 4711 opaque texels | **0** |
+| Sherman hull gunner | 4711 | **0** |
+| Wespe gunner seat (two aim axes, no `setHasTurretIcon`) | 4711 | **0** |
+| Hanomag: six dots | absent | **39/75, 40/65, 30/59, 41/55, 20/49, 31/45**, local dot following the seat |
+
+And the ammo enum, measured as ink in `menu/InGame`'s own rounds-text rect
+(700,527,30,20) with `Ammo/PrimaryAmmo` fed 8:
+
+| `Ammo/AmmoType` | 2 | 3 | 4 | 5 | 6 | 7 | 2, nothing fed |
+|---|---|---|---|---|---|---|---|
+| ink texels | **103** | **103** | 0 | 0 | 0 | 0 | 0 |
+
+So the old `6` really did draw no count, `2` draws one, and every other type
+matches HUD-10's table. Spawned with the anti-tank kit, the Panzerschreck
+reaches the panel as `AmmoType 2`, `PrimaryAmmo 1` — its single loaded rocket.
+
+Two harness notes, because both cost a wrong measurement first:
+`Hud._scaleFor` is a **pure stretch** (`sx = W/800`, `sy = H/600`, no
+letterbox), so a crop assuming a uniform `min()` scale is 80 px out by
+x ≈ 700; and the page's rAF loop is **live in a visible headless tab**, so a
+forced `hud.vars` write and the read-back of its paint have to happen inside
+one `page.evaluate` or the live feed repaints over it first.

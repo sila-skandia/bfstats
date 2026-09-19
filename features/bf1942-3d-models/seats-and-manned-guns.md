@@ -495,18 +495,39 @@ zero and the speed register ramps down to meet it.
 
 - **`continousRotationSpeed · dt` is added unconditionally**, every tick, in
   the non-`automaticReset` path — alongside whatever the input asks for, not
-  instead of it. `con.py` now carries it per axis. In vanilla no input-bound
-  axis declares a non-zero one (the windmills, watermills and radar dishes
-  that do have no input binding at all, and reach the viewer as `assemble.py`'s
-  baked `ambient` glTF clip, which `map.html` already plays); 127 input-bound
-  axes across the installed mods do, none of them mouse-look.
+  instead of it. `con.py` now carries it per axis, and `TurretAxis` integrates
+  it.
+
+  **Two corrections to the research pass's framing, both measured.** First,
+  "29 vanilla declarations — windmills, watermills, radar towers — currently
+  never turn" is **not true of this viewer**: those templates declare no input
+  binding at all, so `assemble.py` bakes each one as an `ambient` glTF clip
+  and `map.html` plays every clip that is not `spin*`. Verified on the page:
+  loading Battle of the Bulge and sampling `euwindmillWings`,
+  `euwindmillStone` and `eu_watermillWheel` 1.5 s apart, all three
+  quaternions change. Second, the servo's term therefore only ever reaches an
+  axis that has *both* a binding and a non-zero continuous speed — 127 such
+  axes across the installed mods, **none in vanilla and none bound to
+  mouse-look** — so in the viewer today it is exercised by the tests and not
+  by any shipped vehicle. Emitting it only for input-bound axes is what keeps
+  the two paths from turning the same windmill twice.
 - **`automaticReset` is a different control law.** The angle ramps *straight*
   toward `input × maxRotation` at `|acceleration|` **deg/s** — a rate, so one
   tick from rest moves exactly `acceleration · dt` — with no velocity
   register and no continuous term. Release and the target is zero, so the part
   drives itself home at the same rate. That is what makes a steering wheel
-  self-centre, and 221 vanilla templates (steering wheels and Engines) were
-  running under the wrong law.
+  self-centre.
+
+  **What it does NOT do is fix vanilla's 221 steering wheels.** They are
+  `c_PIYaw`/`c_PIThrottle` parts, and `TurretRig` only ever claims the
+  mouse-look pair (GUN-2's own finding about what a player's aim reaches), so
+  those are still posed by `flight.js`'s position-law `RiggedPart` through
+  `applyRig`. Surveying every `.con` and `.inc` in all 18 installs for a
+  template that pairs `setAutomaticReset 1` with a mouse-look axis finds
+  **five**, all of them `Engine`s (FHSW's three gunner-traverse engines,
+  GCMOD's probe droid) and none in vanilla — and `surveyVehicle` only collects
+  `RotationalBundle` rigs, so not even those reach it. The law is implemented
+  where the servo runs, and it is dormant until something declares it there.
 - **The wrap gate is `minRotation == 0 && maxRotation == 0`**, the template
   default, not a zero-width range. `con.py`'s `free` rule asked `lo == hi`,
   which read `min == max == 45` as free-spinning. **151 input-bound axes
@@ -589,3 +610,49 @@ only thing that knows the hull's live Armor; the two call sites are
 - The clamp follows the engine in NOT sorting `min`/`max`: it tests `> max`
   first and `< min` second on the authored components. An inverted authored
   range would pin the angle, which is what the engine does.
+
+### Verified on the page
+
+Served from this worktree on **5333**, with `maps/kasserine_pass` overlaid
+from a scratch re-extract made with this branch's own `con.py` (the shared
+`viewer/maps` tree is read-only this round, and a scene baked before
+`setHasTurretIcon` has no field for the dial to read). A second server on
+**5334** runs the identical tree with `hud.js`, `map.html` and `seats.js` as
+they stood at `f9f144d`, the commit before the dial's sign pair, so a capture
+from each differs only by the change under test.
+
+Driven with Playwright through the page's own hooks and its own keydown
+handler — `__setOnFoot`, `__deploy.spawn`, `__setFly`, `__teleport` beside the
+hull, a real `KeyE`, then `__lookDelta` for the aim and `__switchSeat` for the
+seat. Two things about that harness are worth writing down for the next
+stream:
+
+- **`Hud._scaleFor` is a pure stretch**, `sx = W/800`, `sy = H/600`, no
+  letterbox offsets. A crop that assumes a uniform `min(W/800, H/600)` scale
+  happens to land within a texel of the truth near x ≈ 400 and is 80 px out
+  by x ≈ 700 — which is how a first attempt at the rounds-text measurement
+  read zero ink for every ammo type.
+- **The rAF loop is live in a visible headless tab**, `?shots` or not. A
+  forced `hud.vars` write and the read-back of its paint must happen in ONE
+  `page.evaluate`, or the page repaints from the live feed in between and you
+  measure the feed instead of the thing you set.
+
+What the captures show:
+
+| check | before | after |
+|---|---|---|
+| Sherman driver, cockpit: dial | drawn | drawn |
+| dial crop at exactly +90° and −90° | | **byte-identical PNGs** |
+| value fed for a +90° turret | −1.5708 into `rotate(+θ)` | +1.5708 into `rotate(−θ)` |
+| Sherman driver, chase view | dial drawn (4711 opaque texels) | **none (0)** |
+| Sherman hull gunner | dial drawn (4711) | **none (0)** |
+| Wespe gunner seat, which aims on two axes | dial drawn (4711) | **none (0)** |
+| Hanomag, six seats | no dots | **six, at 39/75, 40/65, 30/59, 41/55, 20/49, 31/45** |
+
+The dial's identity is the load-bearing one, and it is a comparison of
+pixels, not of reasoning: each build was asked to paint what *its own*
+pipeline feeds for a turret at exactly ±90 — read back from its live feed, not
+assumed — and the two PNGs match byte for byte. `dial-exact-plus90.png` shows
+the hull silhouette at nine o'clock under a gun that points up, which is
+VHUD-9's counter-clockwise `RotateEffect` and the picture the old comment
+described by the wrong arithmetic.
