@@ -1,10 +1,15 @@
-# Vehicle collision physics — research round, 2026-09-19
+# Vehicle collision physics — researched 2026-09-19, built 2026-09-20
 
 **The ask.** In the map viewer a jeep that drives into a plane is simply
 stopped, as if the plane were a wall. In the game the jeep pushes the plane
 and both take damage. Find out, from the binaries, what the engine actually
-does — the end state being that engine re-created in the browser. This round
-researches and documents; it implements nothing.
+does — the end state being that engine re-created in the browser. The first
+round researched and documented; the second built it ("Implemented", below).
+
+**Reached from** the engine corpus's entry point,
+[`features/bf1942-engine-reference/README.md`](../bf1942-engine-reference/README.md)
+"Start here", which also carries the queue of what to investigate or build next.
+Aim new work at that file, not this one.
 
 **The answer** is one document:
 [`features/bf1942-engine-reference/subsystems/collision-response.md`](../bf1942-engine-reference/subsystems/collision-response.md).
