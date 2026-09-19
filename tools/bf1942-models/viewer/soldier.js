@@ -325,6 +325,7 @@ export class Soldier {
     // (eight `3PSwim*` clips, `setSwimFrequency 1`), which is not this stage —
     // this flag exists so the page can say so rather than quietly lie.
     this.onWater = false;
+    this.landing = null;
 
     // Bob output, applied to the camera after the eye pose.
     this.bobUp = 0; this.bobSide = 0; this.bobYaw = 0;
@@ -366,6 +367,7 @@ export class Soldier {
     this.bobUp = 0; this.bobSide = 0; this.bobYaw = 0;
     this.blocked = false;
     this.onWater = false;
+    this.landing = null;
     this.clock.reset();
     this.settle();
     return this;
@@ -469,9 +471,23 @@ export class Soldier {
     const startX = this.x, startZ = this.z;
     const ticks = this.clock.advance(frameDt);
     let contacts = 0;
+    // A landing is per-*tick* state and a frame may run several ticks, so it is
+    // latched here rather than read off the body afterwards — otherwise a frame
+    // that straddled the landing would drop the fall on the floor. Cleared each
+    // frame; a caller reads it once, right after `step`.
+    this.landing = null;
     for (let i = 0; i < ticks; i++) {
       this.body.step(this.clock.dt, this._tickInput);
       contacts += this.body.contacts;
+      if (this.body.landed) {
+        this.landing = {
+          impactSpeed: this.body.impactSpeed,
+          fallHeight: this.body.fallHeight,
+          cosTheta: this.body.impactCosTheta,
+          normalY: this.body.impactNormalY,
+          material: this.body.impactMaterial,
+        };
+      }
     }
 
     const travelled = Math.hypot(this.x - startX, this.z - startZ);
