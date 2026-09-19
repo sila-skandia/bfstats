@@ -208,15 +208,20 @@ what belongs here is what it means for the impact table.
 |---|---|
 | impact bundles in `damage.json`'s effects matrix | **73**, of which **70** carry an `ObjectTemplate.loadSoundScript` |
 | …whose script is on a **nested child**, not the named bundle | **22** — `RichoStoneDecal` defers to the `e_richoStone` it wraps |
+| …whose tree carries **two** scripts, neither on the parent | **10** across the whole named set — `MajorImpact_Sand` is `e_Explani02` (the blast) + `e_ExplDrySand` (the rain of sand) |
 | distinct `.ssc` behind those 70 | **38** |
 | the three with no script anywhere in their tree | `e_ExplWater01`, `e_RichoPHeavy`, `e_richoPHeavy` |
 
-The nesting is the finding. `bf42.effects.bundle_sound_script` walks the
-`addTemplate` tree depth-first and resolves the path against the **owner's**
+The nesting is the finding. `bf42.effects.bundle_sound_scripts` walks the
+`addTemplate` tree depth-first and resolves each path against the **owner's**
 own `.con`; reading only the named template's `sound_script` finds 48 of the
 70 and silences every ricochet-that-leaves-a-decal, every cascade and both
 water explosions. The composites are exactly the bundles the material table
-names most often.
+names most often — and a composite can be composite twice over: the six
+`*Cascades*` bundles, the three `MajorImpact_*` and `WaterExplosionTorpedo`
+each hang two sounding children off one parent, and the engine, which
+instantiates both, plays both. Stopping at the first was a blast with its
+debris rain missing (corrected 2026-09-20).
 
 The thirteen bundles `extract_effects.py` reports as **missing** are not all
 missing. Nine of them are pure-sound bundles that bake no geometry because
