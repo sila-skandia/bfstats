@@ -1575,5 +1575,132 @@ ObjectTemplate.setInputToYaw c_PIMouseLookX
         self.assertIsNone(library.object("TankCamera").camera_view_modes)
 
 
+class ProjectileExplosionWordsTests(unittest.TestCase):
+    """`hasCollisionEffect`, `YModOnExplosion` and the integer `radius`.
+
+    Ledger **HP-9** and **HP-9d**. Every snippet is verbatim from vanilla's
+    `Objects.rfa` unless the docstring says otherwise.
+    """
+
+    def library(self, path: str, text: str) -> ObjectLibrary:
+        library = ObjectLibrary()
+        library.add_con(path, text)
+        return library
+
+    def test_has_collision_effect_is_parsed_as_a_bool(self) -> None:
+        # HP-9d. The flag is the impact-versus-fuse discriminator, so the
+        # parser must carry it separately from `damageType` — a round with
+        # `damageType 1` and the flag clear is a fuse weapon, not a dud.
+        library = self.library(
+            "Objects/Projectiles/Objects.con",
+            """
+ObjectTemplate.create Projectile ShermanProjectile
+ObjectTemplate.damageType 1
+ObjectTemplate.hasCollisionEffect 1
+ObjectTemplate.material2 206
+
+ObjectTemplate.create Projectile GrenadeAlliesProjectile
+ObjectTemplate.damageType 1
+ObjectTemplate.hasCollisionEffect 0
+ObjectTemplate.radius 15
+ObjectTemplate.material2 205
+""")
+        shell = library.object("ShermanProjectile")
+        grenade = library.object("GrenadeAlliesProjectile")
+        self.assertIs(True, shell.has_collision_effect)
+        self.assertIs(False, grenade.has_collision_effect)
+        # Both are `damageType 1`: the type alone cannot tell them apart.
+        self.assertEqual(1, shell.damage_type)
+        self.assertEqual(1, grenade.damage_type)
+
+    def test_a_projectile_that_omits_the_flag_leaves_it_unset(self) -> None:
+        # None means "the .con said nothing", which `assemble.py` must be able
+        # to tell apart from an authored 0.
+        library = self.library(
+            "Objects/Projectiles/Objects.con",
+            """
+ObjectTemplate.create Projectile QuietProjectile
+ObjectTemplate.damageType 1
+""")
+        self.assertIsNone(library.object("QuietProjectile").has_collision_effect)
+
+    def test_landmine_is_damage_type_4(self) -> None:
+        # HP-9d: `damageType 4` explodes ONLY at end of life, never on impact,
+        # and does not test the flag. Vanilla's four are the landmine and three
+        # flak shells; the survey over the installed mods found 46 more.
+        library = self.library(
+            "Objects/Projectiles/Objects.con",
+            """
+ObjectTemplate.create Projectile LandmineProjectile
+ObjectTemplate.damageType 4
+ObjectTemplate.hasCollisionEffect 0
+ObjectTemplate.radius 4
+ObjectTemplate.material2 232
+""")
+        mine = library.object("LandmineProjectile")
+        self.assertEqual(4, mine.damage_type)
+        self.assertEqual(4.0, mine.explosion_radius)
+        self.assertIs(False, mine.has_collision_effect)
+
+    def test_radius_is_truncated_toward_zero_at_parse(self) -> None:
+        # HP-9: `ProjectileTemplate.radius` is a console **int** — the parser
+        # is `istream >> int` (lnxded 0x082df83f) and the value is `fild`ed
+        # into the float field (0x082df8ef), so a fractional radius is lost
+        # before the engine ever sees it. FH's `BismarckFatProjectile 17.63`
+        # becomes 17; DC's `50calSniper_Projectile 0.25` becomes **0**, which
+        # with the engine's strictly `radius > d` gate means no splash at all.
+        library = self.library(
+            "Objects/Projectiles/Objects.con",
+            """
+ObjectTemplate.create Projectile BismarckFatProjectile
+ObjectTemplate.radius 17.63
+
+ObjectTemplate.create Projectile 50calSniper_Projectile
+ObjectTemplate.radius 0.25
+
+ObjectTemplate.create Projectile NegativeProjectile
+ObjectTemplate.radius -0.5
+""")
+        self.assertEqual(17.0, library.object("BismarckFatProjectile").explosion_radius)
+        self.assertEqual(0.0, library.object("50calSniper_Projectile").explosion_radius)
+        # Truncation is toward zero, not floor: -0.5 is 0, not -1.
+        self.assertEqual(0.0, library.object("NegativeProjectile").explosion_radius)
+
+    def test_y_mod_on_explosion_is_parsed_as_a_float(self) -> None:
+        # HP-9: only the Y term of the blast distance is scaled by this
+        # (lnxded 0x08156613). Engine default is 1.0; every one of the 629
+        # `2.0` declarations surveyed sits on a bomb.
+        library = self.library(
+            "Objects/Projectiles/Objects.con",
+            """
+ObjectTemplate.create Projectile MK82Bomb
+ObjectTemplate.damageType 1
+ObjectTemplate.hasCollisionEffect 1
+ObjectTemplate.YModOnExplosion 2.0
+ObjectTemplate.radius 20
+""")
+        bomb = library.object("MK82Bomb")
+        self.assertEqual(2.0, bomb.y_mod_on_explosion)
+        # Unset elsewhere, so the viewer can apply the engine's own 1.0.
+        self.assertIsNone(
+            self.library("Objects/Projectiles/Objects.con",
+                         "ObjectTemplate.create Projectile Plain\n")
+            .object("Plain").y_mod_on_explosion)
+
+    def test_supply_depot_radius_is_still_not_truncated(self) -> None:
+        # The truncation is a property of `ProjectileTemplate.radius` only —
+        # `SupplyDepot.radius` is a float work range and `mediclocker`'s 2.5 m
+        # must survive intact. The parser routes `radius` by kind.
+        library = self.library(
+            "Objects/Buildings/Common/mediclocker/Objects.con",
+            """
+ObjectTemplate.create SupplyDepot mediclockerRepairpoint
+ObjectTemplate.radius 2.5
+""")
+        depot = library.object("mediclockerRepairpoint")
+        self.assertEqual(2.5, depot.supply_radius)
+        self.assertIsNone(depot.explosion_radius)
+
+
 if __name__ == "__main__":
     unittest.main()
