@@ -123,6 +123,34 @@ export class BodyWorld {
     return n;
   }
 
+  /**
+   * `checkVsTerrain`'s damage half for a vehicle whose response is someone
+   * else's: each hull part's layer-0 vertices against the heightfield (one
+   * vertex when the layer has three or fewer), `handleCollision` with the
+   * root's speed at the contact when its square exceeds 0.1. The once-a-second
+   * limiter lives in `CrashDamage`, keyed on the terrain as `null`.
+   */
+  #drivenTerrainDamage(entry) {
+    const { terrain, handlers } = this;
+    const body = entry.driven;
+    for (const part of entry.parts) {
+      const layer = part.shape.layers[0];
+      let n = layer.vertices.length / 3;
+      if (n <= 3) n = Math.min(n, 1);
+      for (let i = 0; i < n; i++) {
+        part.worldVertex(0, i, _vertex);
+        const h = terrain.height(_vertex[0], _vertex[2]);
+        if (!(_vertex[1] - h <= 0)) continue;
+        _contact[0] = _vertex[0]; _contact[1] = h; _contact[2] = _vertex[2];
+        body.tangentSpeed(_contact, _speed);
+        if (!(_speed[0] * _speed[0] + _speed[1] * _speed[1] + _speed[2] * _speed[2] > 0.1)) continue;
+        terrain.normal(_vertex[0], _vertex[2], _normal);
+        handlers.onTerrain(part, _speed, _normal, _contact,
+          layer.vertexMaterials[i], terrain.material(_vertex[0], _vertex[2]));
+      }
+    }
+  }
+
   tick() {
     this.ticks++;
     if (this._partsDirty) {
@@ -145,6 +173,13 @@ export class BodyWorld {
       if (entry.parked) entry.parked.detectGround(terrain, handlers);
     }
 
+    // The driven vehicle's drive model owns its contact with the ground, so
+    // there is no impulse to find here - but hitting the ground still costs
+    // hit points (spec 9.5), and that is this module's to say.
+    for (const entry of this.entries.values()) {
+      if (entry.driven) this.#drivenTerrainDamage(entry);
+    }
+
     // Resolve (pass 2): no sleeping test, by design.
     for (const entry of this.entries.values()) {
       if (entry.parked) { entry.parked.resolve(wheelFrictionOpts); continue; }
@@ -162,3 +197,7 @@ export class BodyWorld {
 }
 
 const _pos = [0, 0, 0];
+const _vertex = [0, 0, 0];
+const _contact = [0, 0, 0];
+const _speed = [0, 0, 0];
+const _normal = [0, 1, 0];
