@@ -80,18 +80,50 @@
  *     / 0x081524ac `fild` / 0x081524b2 `fstp [esi+0x178]`), so it sits at 10
  *     and every later frame re-crosses by its own dt.
  *
- *     There is a SECOND way to be outside, and it is not geometric. The
- *     in-bounds branch at 0x08152525 asks the terrain for the material under
- *     the player — `dice::ref2::geom::terrainBase` (0x087435f0), vtable +0x4c
- *     = `PatchTerrain::getMaterial(float, float)` (0x083d6800) — and compares
- *     it with `GameServer+0x474` (0x08152540). That field is
- *     `materialToGiveDamage`: `setMaterialToGiveDamage(unsigned char)`
- *     0x0813dff0, `getMaterialToGiveDamage` 0x0813e020, DEFAULT 7 from the
- *     GameServer constructor at 0x0812f287. On a match the code jumps to the
- *     SAME accumulate path the out-of-rect tests reach; only a mismatch
- *     zeroes the accumulator. This viewer has no terrain material channel, so
- *     it models the rectangle only, and a level that paints material 7 inside
- *     its own area will look safe here where the game would be counting down.
+ *     There is a SECOND way to be outside, and it is not geometric — CA-5,
+ *     and it is modelled now. The in-bounds branch at 0x08152525 asks the
+ *     terrain for the material under the player —
+ *     `dice::ref2::geom::terrainBase` (0x087435f0), vtable +0x4c =
+ *     `PatchTerrain::getMaterial(float, float)` (0x083d6800) — and compares it
+ *     with `GameServer+0x474`:
+ *
+ *       0x08152535  call [edx+0x4c]        ; getMaterial(this, pos.x, pos.z)
+ *       0x0815253b  xor  edx,edx
+ *       0x08152540  mov  dl,[ecx+0x474]    ; materialToGiveDamage
+ *       0x08152546  cmp  eax,edx
+ *       0x08152548  je   0x08152414        ; MATCH -> the accumulate path
+ *       0x0815254e  eax = 0
+ *       0x08152553  [esi+0x178] = 0        ; mismatch -> zero the accumulator
+ *
+ *     `materialToGiveDamage` is `setMaterialToGiveDamage(unsigned char)`
+ *     0x0813dff0 / `getMaterialToGiveDamage` 0x0813e020, and its DEFAULT IS 7,
+ *     written by both GameServer constructors (0x0812f287, 0x0812f7c7). Those
+ *     three instructions are the only writers of the byte in the whole binary,
+ *     and although `materialToGiveDamage` IS a registered console word
+ *     (.rodata 0x66a389 — the earlier reading listed only three words and
+ *     missed it), **no `.con` in any of the 18 installed mods sets it**. So 7
+ *     stands.
+ *
+ *     WHAT 7 IS. `materialManagerdefine.con` heads it "Reserved (Outside
+ *     map)", and the extracted material maps say it is not reserved at all:
+ *     11 of the 23 vanilla levels paint it, several of them over most of their
+ *     own combat area — Berlin 84% of the samples inside its rectangle,
+ *     Tobruk 68%, Caen 67%, Bulge 61%, Stalingrad 58%, Omaha 50%, Market
+ *     Garden 47%. It is not a border ring and it is not the map edge. What
+ *     settles what it means is where the control points sit: on all seven of
+ *     those levels, EVERY control point stands on a different id — Berlin on
+ *     8 "Gravel" and 14 "Dirt road", Tobruk on 10 "Dry sand", Caen on 3 and 5,
+ *     Omaha on 3 and 11, Stalingrad on 4, 6 and 8, Bulge on 6 and 9.
+ *
+ *     So material 7 is a SECOND, PAINTED, NON-RECTANGULAR combat boundary: the
+ *     ground the designer does not want you standing on, inside a rectangle
+ *     that is only ever a box. On a city level it is most of the box, and the
+ *     streets are the part that is not painted. That is why Berlin can declare
+ *     a 512 m square and still keep you in the streets.
+ *
+ *     The material is read at the SAME position the rectangle is tested at
+ *     (section 4 below), so a plane over painted ground burns exactly as one
+ *     outside the box does.
  *
  *     WHO TAKES THE DAMAGE. The position tested is `BFPlayer::getVehicle()`'s
  *     (vtable +0x3c = 0x080560c0, returning BFPlayer+0x4c), read at
@@ -120,8 +152,6 @@
  *   will be shot." — a near-identical string this node does not use.
  *
  * NOT MODELLED, and marked as such rather than guessed:
- *   - the terrain-material half of the test (above). We have no material
- *     channel in the extracted scene, so only the rectangle is checked.
  *   - what the client shows in `Outside/OutsideTime`. The countdown below is
  *     the remaining seconds rounded UP, which is this viewer's own choice;
  *     the number the retail client writes into that variable was not read.
@@ -134,6 +164,19 @@
 /** The engine's own defaults, both from `GameServer::init`. */
 export const DEFAULT_TIME_ALLOWED = 10;      // seconds, Game+0x6c, 0x08131dbb
 export const DEFAULT_DAMAGE_PER_SECOND = 5;  // GameServer+0x2e8, 0x08131db1
+
+/**
+ * `GameServer::materialToGiveDamage` — the terrain material that counts as
+ * outside however far inside the rectangle you are (CA-5).
+ *
+ * The byte at `GameServer+0x474`. Both constructors write 7
+ * (`mov BYTE PTR [edi+0x474],0x7` at 0x0812f287 and 0x0812f7c7) and the only
+ * other writer in the binary is `setMaterialToGiveDamage` (0x0813dff9), which
+ * no shipped `.con` calls in any of the 18 installed mods — so 7 is the value
+ * every level runs with. `materialManagerdefine.con` calls it
+ * "Reserved (Outside map)".
+ */
+export const DEFAULT_MATERIAL_TO_GIVE_DAMAGE = 7;
 
 /** `scene.json.combatArea` -> a rect in the viewer's own coordinates, or null.
  *
@@ -161,10 +204,29 @@ export function combatAreaRect(extras) {
 /** Is this world position inside the area? x/z only — the engine loads the
  *  position's +0 and +8 and never its +4, so altitude is unbounded. Inclusive
  *  on all four edges, which is what the x87 polarity at 0x081523c1 /
- *  0x081523d7 / 0x081523ec / 0x08152403 reads as (module note above). */
+ *  0x081523d7 / 0x081523ec / 0x08152403 reads as (module note above).
+ *
+ *  **The rectangle alone.** The material half is a separate test that only
+ *  ever runs when this one says inside, so it is a separate function. */
 export function isInside(rect, x, z) {
   if (!rect) return true;
   return x >= rect.minX && x <= rect.maxX && z >= rect.minZ && z <= rect.maxZ;
+}
+
+/** Does the terrain material under the player count as outside (CA-5)?
+ *
+ *  A plain `==` against the byte, which is what `cmp eax,edx` at 0x08152546
+ *  is: `getMaterial` returns a nibble (`PatchTerrain::getMaterial` masks to
+ *  0..15 at 0x083d68e1 / 0x083d68e9) and `materialToGiveDamage` is an
+ *  `unsigned char`, so there is no range to get wrong.
+ *
+ *  A `material` that is null or not an integer is a level with no material
+ *  channel — the test cannot run and the answer is "not outside", which is
+ *  exactly the behaviour every level had before this was wired. */
+export function isDamagingMaterial(material, materialToGiveDamage) {
+  if (!Number.isInteger(material)) return false;
+  if (!Number.isInteger(materialToGiveDamage)) return false;
+  return material === materialToGiveDamage;
 }
 
 /** Metres to the nearest edge from outside; 0 when inside. Not an engine
@@ -191,6 +253,8 @@ export class CombatArea {
    * @param {object}      [options]
    * @param {number}      [options.timeAllowed]     seconds before damage starts
    * @param {number}      [options.damagePerSecond] HP per second after that
+   * @param {number}      [options.materialToGiveDamage] the CA-5 terrain id;
+   *        pass `null` to run the rectangle alone
    */
   constructor(extras, options = {}) {
     this.rect = combatAreaRect(extras);
@@ -198,11 +262,29 @@ export class CombatArea {
       ? options.timeAllowed : DEFAULT_TIME_ALLOWED;
     this.damagePerSecond = Number.isFinite(options.damagePerSecond)
       ? options.damagePerSecond : DEFAULT_DAMAGE_PER_SECOND;
+    this.materialToGiveDamage =
+      options.materialToGiveDamage === null ? null
+        : (Number.isInteger(options.materialToGiveDamage)
+            ? options.materialToGiveDamage
+            : DEFAULT_MATERIAL_TO_GIVE_DAMAGE);
     this.reset();
   }
 
-  /** True when this level declared an area at all. */
-  get active() { return this.rect !== null; }
+  /**
+   * True when anything here can fire on this level.
+   *
+   * **The rectangle is no longer the only reason to be active.** A level with
+   * `combatArea: null` still has one — the heightfield itself, which nothing
+   * on the map can be outside of — but it can still paint material 7, and
+   * three of the twelve vanilla levels that declare no area do exactly that
+   * (aberdeen 33% of its samples, kharkov 37%, kursk 35%). So a level with no
+   * rectangle is active iff the material half can run, and `step` handles the
+   * missing rect by treating every position as inside it.
+   */
+  get active() { return this.rect !== null || this.materialToGiveDamage !== null; }
+
+  /** True when this level declared a rectangle of its own. */
+  get hasRect() { return this.rect !== null; }
 
   reset() {
     // The engine's player+0x178: seconds spent outside, zeroed on re-entry.
@@ -214,7 +296,16 @@ export class CombatArea {
    * One frame. Returns a plain record — no side effects, no allocation
    * beyond the record itself.
    *
-   *   inside        was the position inside this frame
+   * `material` is the terrain material id under the same position — the
+   * viewer's `Heightfield.material(x, z)`. Omit it, or pass a non-integer, and
+   * only the rectangle is tested, which is what every level did before CA-5
+   * was wired and what a level with no `terrain/materials.png` still does.
+   *
+   *   inside        was the position inside this frame, by BOTH tests
+   *   inRect        was it inside the rectangle (false only for the geometric
+   *                 half, so a readout can say which of the two caught you)
+   *   material      the id that was tested, or null
+   *   onDamagingMaterial  did the material half fire
    *   outsideFor    seconds accumulated outside (0 when inside)
    *   remaining     seconds left before the damage starts, floor 0
    *   countdown     what the HUD's `Outside/OutsideTime` integer shows:
@@ -225,15 +316,25 @@ export class CombatArea {
    *                 allowance is spent, else 0
    *   entered/left  the transitions, for a one-shot sound or log
    */
-  step(dt, x, z) {
+  step(dt, x, z, material = null) {
     const step = Number.isFinite(dt) && dt > 0 ? dt : 0;
-    const inside = isInside(this.rect, x, z);
+    const inRect = isInside(this.rect, x, z);
+    // The material is only ever read on the in-bounds branch (0x08152525 is
+    // reached by `jne` from the last rectangle test), so a position already
+    // outside the box never asks the terrain anything.
+    const id = Number.isInteger(material) ? material : null;
+    const onDamagingMaterial =
+      inRect && isDamagingMaterial(id, this.materialToGiveDamage);
+    const inside = inRect && !onDamagingMaterial;
     const wasInside = this.inside;
     this.inside = inside;
     if (!this.active || inside) {
       this.outsideFor = 0;
       return {
         inside: true,
+        inRect: true,
+        material: id,
+        onDamagingMaterial: false,
         outsideFor: 0,
         remaining: this.timeAllowed,
         countdown: 0,
@@ -261,13 +362,19 @@ export class CombatArea {
     if (damage > 0) this.outsideFor = this.timeAllowed;
     return {
       inside: false,
+      inRect,
+      material: id,
+      onDamagingMaterial,
       outsideFor: this.outsideFor,
       remaining,
       countdown: Math.ceil(remaining),
       damage,
       entered: false,
       left: wasInside,
-      distance: distanceOutside(this.rect, x, z),
+      // Metres to the nearest edge of the rectangle. Zero when the material
+      // half is what caught you: there is no edge to be a distance from, and
+      // saying 0 is honest where saying "you are 400 m in" would not be.
+      distance: onDamagingMaterial ? 0 : distanceOutside(this.rect, x, z),
     };
   }
 
