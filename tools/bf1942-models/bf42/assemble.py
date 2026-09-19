@@ -1071,15 +1071,16 @@ class Assembler:
 
     def _effect_emitter_nodes(self, builder: gltf.GlbBuilder,
                               bundle: con_mod.ObjectTemplate,
-                              report: Report) -> list[int]:
+                              report: Report, *, depth: int = 0) -> list[int]:
         """The bakeable emitters of an EffectBundle, as tagged hidden nodes.
 
         Each Emitter child names its payload with `ObjectTemplate.template`:
         a Particle (an ordinary `.sm` mesh — `MuzzHeavy_m1`) or a
-        SpriteParticle (a textured quad). Only additive payloads
-        (`destBlendMode BMOne`, or an `.rs` declaring `blendDest one`) are
-        baked: those are the flash's light. Alpha-blended payloads are smoke
-        and dust, which a strobed still image cannot sell.
+        SpriteParticle (a textured quad). As of this change, all sprite blend
+        modes are baked (BMOne additive flashes, BMInvSourceAlpha smoke/dust),
+        and nested EffectBundle children are recursed with their transforms.
+        Sound-only emitters (no texture, no geometry) are excluded, as are
+        emitters with no payload at all.
 
         Emitters restricted to one view carry it in `effect.view`. The engine
         draws a *different* muzzle flash to the man in the seat: `e_MuzzHeavy`,
@@ -1094,24 +1095,59 @@ class Assembler:
         a flythrough flown from the pilot's seat used to wear the third-person
         fireball at arm's length.
         """
+        from . import effects as effects_mod
         nodes: list[int] = []
+        
+        # Guard against infinite recursion
+        if depth > 6:
+            return nodes
+        
         for ref in bundle.children:
-            emitter = self.library.object(ref.template)
-            if emitter is None or emitter.emitter_template is None:
+            child = self.library.object(ref.template)
+            if child is None:
                 continue
+            
+            child_kind = child.kind.lower()
+            
+            # Recurse into nested EffectBundles, preserving their placement
+            if child_kind == "effectbundle":
+                nested = self._effect_emitter_nodes(builder, child, report, depth=depth + 1)
+                if nested:
+                    # Wrap the nested bundle's emitters in a container node
+                    # that carries the child bundle's placement
+                    nested_node = builder.add_node(gltf.Node(
+                        name=ref.template,
+                        translation=ref.position,
+                        rotation=gltf.quat_from_ypr(*ref.rotation),
+                        children=nested,
+                        extras={"templateKind": child_kind,
+                                "effect": {"kind": "bundle"}},
+                    ))
+                    nodes.append(nested_node)
+                continue
+            
+            # Process Emitter children
+            if child_kind != "emitter" or child.emitter_template is None:
+                continue
+            
+            emitter = child
             payload = self.library.object(emitter.emitter_template)
             if payload is None:
                 continue
+            
             kind = payload.kind.lower()
             mesh_index: int | None = None
             effect: dict = {}
+            
             if kind == "spriteparticle":
-                if (payload.dest_blend_mode or "").lower() != "bmone":
-                    continue
+                # Accept any sprite that has a texture, not just BMOne
                 if not payload.sprite_texture:
                     continue
+                # Determine blend mode for material setup
+                dest_blend = (payload.dest_blend_mode or "").lower()
+                is_additive = dest_blend == "bmone"
                 mesh_index = self._sprite_quad_mesh(
-                    builder, payload.sprite_texture, report)
+                    builder, payload.sprite_texture, report, additive=is_additive)
                 effect["kind"] = "sprite"
                 effect["billboard"] = True
                 if payload.sprite_size is not None:
@@ -1127,8 +1163,16 @@ class Assembler:
                 # scale of 1 (~5× retail frame coverage).
                 if payload.sprite_size is not None:
                     effect["size"] = payload.sprite_size
+            elif kind in ("simpleobject", "bundle") and payload.geometry:
+                # Debris: cascade bundles throw real SimpleObjects as mesh particles
+                mesh_index, _ = self._mesh_index(builder, payload.geometry, report)
+                effect["kind"] = "mesh"
+                if payload.sprite_size is not None:
+                    effect["size"] = payload.sprite_size
+            
             if mesh_index is None:
                 continue
+            
             effect["timeToLive"] = (payload.time_to_live
                                     or emitter.time_to_live or 0.1)
             if emitter.show_in_first_person != emitter.show_in_third_person:
