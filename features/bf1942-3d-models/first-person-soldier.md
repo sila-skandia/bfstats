@@ -1678,19 +1678,37 @@ changed its preferred reading from 1.56 to 1.65; both are inferences off
   plays `1pRun` at 0.5 (a 2.0 s stride cycle) and the run at its tweaked
   1.40 (0.71 s), whatever `setWalkFrequency` / `setRunFrequency` say about
   the footstep sounds.
-- **Jump impulse, step-up height, slope limit, movement capsule radius.** None
-  exist in vanilla data and none were found in the client either — the jump
-  state (pose flag 0x80; its states carry sound trigger `c_SstJump` = 4) exists in the state machine at
-  `0x005013f8` but only the flag is read there, and the impulse is not in either
-  speed table nor in `CommonSoldierData.inc`. Ours to choose; `physics.js`
-  labels all four. The jump is the one worth measuring and it is an evening's
-  work in wine: time a flat-ground hop from leaving the floor to landing and
-  read `v = |g| · t / 2`.
-- **What field `+0x44` holds in the drag scale** at `0x00578990`, which
-  multiplies velocity by up to 25x before the wind is subtracted. Water
-  submersion depth is the standing suspicion. Every caller in this viewer passes
-  zero, so the factor is inert, and `physics.js` says not to treat it as
-  verified.
+- ~~**Jump impulse**~~ — **settled in the binary, 2026-09-19 (ledger PHY-1).**
+  It is not a value in any table or `.con`: the jump branch of
+  `BFSoldier::handlePlayerInput` (client `0x00500190`, lnxded `0x08273c70`)
+  computes an acceleration and hands it to
+  `addAccelerationAtRelativePosition(Vec3::zero, accel)`, where
+  `accel.y = min(1 + dot(horizontalDir, N), 1) · N.y · 6.0 − 0.25·vCmd.y`, all
+  multiplied by `g_simulationFps`. The `6.0` is `0x008eb25c` (lnxded
+  `0x086d271c`). Because the integrator zeroes its acceleration accumulator
+  every tick, the `×30` makes it a **one-tick impulse of +6.0 m/s** on flat
+  ground — a **1.12 m apex and 0.80 s airtime** under `g = −14.73`, not the
+  continuum 1.222 m / 0.815 s. The jump tick also bleeds `−0.25·vCmd` off the
+  actual velocity and then zeroes `vCmd` outright, which at 6 m/s forward costs
+  1.5 m/s. No wine measurement needed; `physics.js:374`'s 5.4 is superseded.
+  Arming is a contact with `normal.y > 0.1` on a material that is not water,
+  cleared every tick, on **both** binaries — the server's jump block is live.
+- **Step-up height, slope limit, movement capsule radius — still ours, and now
+  known to have no engine counterpart at all.** There is no step code, no
+  walk-slope limit (the only threshold in soldier movement is the jump's 0.1)
+  and no movement capsule: the collider is the object's `SimpleCollisionMesh`
+  vertices swept by `ResponsePhysics::checkVsTerrain` (`0x0825a960`).
+  `physics.js`'s `MAX_GROUND_SLOPE` is also *stricter* than the engine, which is
+  why a real BF1942 soldier climbs dunes.
+- ~~**What field `+0x44` holds in the drag scale**~~ — **settled 2026-09-19
+  (ledger PHY-7): it is water submersion depth in metres.** The Linux server
+  names it outright: `PointPhysicsNode::setUnderWater(float)` `0x08256ad0`
+  writes `+0x44` and `getUnderWater()` `0x08256ae0` reads it; the vehicle
+  sibling keeps the same quantity at `+0x8c` and the static one is a no-op. The
+  law, re-derived, is `scale = 1 + min(underWater/boundingRadius, 1)·(25.0 − 1)`
+  with the 25.0 at `0x086ccce0`. `physics.js`'s "do not treat as verified"
+  comment on that factor can be retired; the bounding radius below stays
+  inferred.
 - **The soldier's bounding radius for the drag term.** Read from a virtual
   getter, not from any `.con`. 0.8 m is inferred because it makes the drag
   equation reproduce `setParachuteSpeed 30.00` from `setParachuteDrag 24.00` to

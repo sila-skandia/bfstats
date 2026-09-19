@@ -1748,8 +1748,8 @@
    "kind": "function",
    "subsystem": "physics",
    "confidence": "verified",
-   "source": "research-2026-09-15-soldier-physics",
-   "note": "Client twin of lnxded BFSoldier::handlePlayerInput 0x08273c70: BFSoldier vtable 0x008eb128 slot +0x94 (the ctor 0x004ff440 installs the vtable at 0x004ff46a). Function created in Ghidra 2026-09-15, body 0x00500190-0x00501c3d. Builds the tick's animation-state flags (on the server seeded from AnimationStateMachineInstance::getCurrentStateFlags); sets the jump flag 0x80 at 0x0050067a, and later passes the flags through vtable +0xdc for each entry of a soldier-attached list (0x00501613). viewer/physics.js cites 0x005013f8, inside this body."
+   "source": "ghidra-session-2026-09-15; research-2026-09-16-jump-velocity; closed research-2026-09-19-movement",
+   "note": "Client twin of lnxded BFSoldier::handlePlayerInput 0x08273c70: BFSoldier vtable 0x008eb128 slot +0x94. JUMP CLOSED 2026-09-19: PlayerInput[9] (c_PIAction) non-zero selects the jump branch at 0x00501647, which computes accel = ((0, min(1 + dot(horizontalDir, N), 1) * N.y * 6.0, 0) - 0.25*vCmd) * g_simulationFps and calls addAccelerationAtRelativePosition(Vec3::zero, accel) at 0x005017a1, then zeroes vCmd (x0.0). Jump speed 6.0 at 0x008eb25c (fmul at 0x005016e4/0x005016ea); the commanded direction is normalised with y forced to 0 by an explicit mov DWORD [esp+0x1c],0 at 0x0050166c. Because the integrator zeroes its acceleration accumulator each tick, the x30 makes it a one-tick impulse of +6.0 m/s: a 1.12 m apex, 0.80 s airtime. The ordinary branch (impulse count +0xa4 == 0, tested at 0x005017d3) applies 0.75*vCmd with NO x30. See ledger PHY-1, PHY-6."
   },
   {
    "address": "0x0050067a",
@@ -2108,8 +2108,8 @@
    "kind": "function",
    "subsystem": "physics",
    "confidence": "verified",
-   "source": "research-2026-09-16-tank-drive",
-   "note": "client, hand-disassembled in full. Confirms the gear-ratio curve's exact base (E+0x42c), fill pattern (1.0 default), and all 5 control-point positions/values (20/40/60/80/100 -> 3.5/2.2/1.5/1.1/0.94) byte-for-byte. See ledger TANK-3, TANK-5."
+   "source": "research-2026-09-16-tank-drive; corrected research-2026-09-19-vehicle-hud",
+   "note": "client, hand-disassembled in full. Writes the eleven gear-curve control points (ESI = this+0x268 torque, EDI = this+0x428 ratio) at ESI+0x4/0x2c/0x7c/0xf4/0x158/0x194 and EDI+0x54/0xa4/0xf4/0x144/0x194. CORRECTED 2026-09-19: each store is followed by CALL 0x005094b0 = OverTimeDistribution::generateDistribution, which the earlier pass did not follow - so the '1.0 default everywhere else' reading of the array is wrong and the slots between control points are interpolated. lnxded twin EngineTemplate::EngineTemplate 0x0823efc0. See ledger TANK-3."
   },
   {
    "address": "0x005721e0",
@@ -2180,8 +2180,8 @@
    "kind": "function",
    "subsystem": "physics",
    "confidence": "verified",
-   "source": "research-2026-09-16-tank-drive",
-   "note": "client. ratio = differential*3.5/curve[idx], idx=trunc(gear/numberOfGears*100) against a fully materialized 101-slot array (1.0 default, real values only at indices 20/40/60/80/100). Sherman=4.0, Willy=7.0 (idx=20, a control point); M3A1=17.5, NOT ~5.5 (idx=25, default fill) -- corrected 2026-09-16, supersedes the prior 'round(), curve untested' note. Only numberOfGears in {1,5} ever touch the curve's shape. lnxded twin 0x0824ca70. See ledger TANK-3."
+   "source": "research-2026-09-16-tank-drive; corrected research-2026-09-19-vehicle-hud",
+   "note": "client. ratio = 3.5*differential / lerp(curve[i], curve[i+1], frac), idxf = gear/numberOfGears*100, i = trunc(idxf) via _ftol 0x00804af0, frac = idxf - i. CORRECTED 2026-09-19: the 101-slot curve is NOT flat outside its control points and there is a lerp - the ctor's flat fill is followed by OverTimeDistribution::generateDistribution (client FUN_005094b0) after each of the five points, filling 20->3.5, 40->2.2, 60->1.5, 80->1.1, 100->0.94 piecewise-linearly, with index 0 unauthored so 0..20 ramps up from 1.0. Constants 0x008fdfa8 = 3.5, 0x008c3e80 = 100.0, 0x008c53c8 = 1.0; curve base tmpl+0x42c. Sherman 4.0 and Willy 7.0 stand; M3A1 = 5.512, NOT 17.5. lnxded twin 0x0824ca70. See ledger TANK-3."
   },
   {
    "address": "0x0057be10",
@@ -2189,8 +2189,8 @@
    "kind": "function",
    "subsystem": "physics",
    "confidence": "verified",
-   "source": "research-2026-09-16-tank-drive",
-   "note": "client. Second, separate 101-float curve at E+0x26c (vs the ratio curve's E+0x42c), identical idx, *torque(E+0x418) -- feeds only engine-sound RPM via feedbackLoop. Curve's own control-point values unread. See ledger TANK-4."
+   "source": "research-2026-09-16-tank-drive; corrected research-2026-09-19-vehicle-hud",
+   "note": "client. torque = lerp(curve[i], curve[i+1], frac) * torque(E+0x418) over a second 101-float curve at E+0x26c. CORRECTED 2026-09-19: the index is min(|engine[+0xa0]|, 1.0)*100, a normalised throttle/rev fraction, NOT the gear; the curve's authored points are 0->0.70, 10->0.80, 30->0.90, 60->1.00, 85->0.85, 100->0.70, piecewise-linear between. 'Feeds engine-sound RPM only' is UNVERIFIED and must not be repeated: the only caller is PhysicsEngine::feedbackLoop, itself called from updatePhysics and addFriction, and the return value is discarded - the lasting effect is the rev state at +0xa4/+0xac. lnxded twin 0x0824cb10. See ledger TANK-4."
   },
   {
    "address": "0x0057be90",
@@ -2216,8 +2216,8 @@
    "kind": "function",
    "subsystem": "physics",
    "confidence": "verified",
-   "source": "decompiled; assert strings 'Root parent not mobile in spring.', 'Child not composite object in spring.'",
-   "note": "Spring accel = -(setStrength * displacement * getGravity()*(-0.101833 = -1/9.82) + setDamping * d(displacement)/dt), applied at wheel contact via addAccelerationAt (virtual +0x6c). Gravity-normalized: at default g=-14.73 springs act at 1.5x .con strength. Also: c_PGFRollGripWhenOccupied wheels get grip rewritten to 10 (Roll|?) when vehicle occupied (+0x11e), 9 (Contact|?) when empty - parked vehicles do not roll away."
+   "source": "ghidra-session-2026-09-15; corrected research-2026-09-19-movement",
+   "note": "client twin of lnxded PhysicsSpring::updatePhysics 0x0824ddd0. accel = -(strength * (-1/9.82) * g * D + damping * (D - D_prev)/dt), D = anchor - this->getAbsolutePosition(). CORRECTED 2026-09-19, two errors in the old note: the call is addAccelerationAtRelativePosition (slot +0x6c), NOT AtAbsolutePosition, and the position argument is relative to the ROOT node (anchor - rootPos), not the wheel contact. D_prev is a one-tick backward difference of the displacement, read before the store, not a node velocity. There is no ray anywhere on this path. See ledger PHY-5."
   },
   {
    "address": "0x0057fa90",
@@ -3260,8 +3260,8 @@
    "kind": "function",
    "subsystem": "ui",
    "confidence": "verified",
-   "source": "research-2026-09-16-soldier-hud",
-   "note": "Generic HUD bool-variable registrar."
+   "source": "research-2026-09-16-soldier-hud; extended research-2026-09-19-damage",
+   "note": "Generic HUD bool-variable registrar. 2026-09-19: also registers the in-world icon group - ShowRepairIcon (esi+0x2b, 0x006e3174), ShowHealIcon (esi+0x2c, 0x006e31bb) and ShowReloadIcon (0x006e3202) - alongside ShowControlPoints, ShowFlagIcon, EngineerNeeded, MedicNeeded and ShowParachute. See ledger SUP-17."
   },
   {
    "address": "0x0069b880",
@@ -3926,8 +3926,8 @@
    "kind": "function",
    "subsystem": "ui",
    "confidence": "verified",
-   "source": "research-2026-09-16-soldier-hud",
-   "note": "Registers Ammo/AmmoType plus the 8 Ammo/SoldierAmmo/* words (SoldierAmmoPosX/Y, TextPosX/Y, Bar, BarFill, BarSize, HasMag). Reached only via a data vtable slot (0x9260fc) inside the 0x00a5f1a8 singleton; which slot owns it is unresolved. See ledger HUD-10."
+   "source": "research-2026-09-16-soldier-hud; extended research-2026-09-19-vehicle-hud",
+   "note": "Registers Ammo/AmmoType (int, +0xc, name string 0x009261b4 at 0x006e9f73) plus the 8 Ammo/SoldierAmmo/* words (SoldierAmmoPosX/Y, TextPosX/Y, Bar, BarFill, BarSize, HasMag). Reached only via a data vtable slot inside the HUD singleton 0x00a5f1a8; which slot owns it is still unresolved. 2026-09-19: AmmoType's .meme value and setHudAmmoType's .con value are the SAME enumeration with no converter (ledger HUD-10) - ATNone 0, ATAmmoBar 1, ATIcon 2, ATIconAndStrengthBar 3, ATIconAndReloadBar 4, ATIconNoText 5, ATIconAndHeatBar 6, anything else 7. Note the weapon-icon registrar 0x006e8ca0 puts NumberOfWeaponIcons at +0xc of a DIFFERENT object in the same 'Ammo' group."
   },
   {
    "address": "0x006ea3e0",
@@ -5510,8 +5510,8 @@
    "kind": "function",
    "subsystem": "hitpoints",
    "confidence": "verified",
-   "source": "research-2026-09-16-hitpoints",
-   "note": "lnxded. Branches soldier (checkForHitOnSoldier) vs non-soldier (chain-walk to nearest Armor, hard-radius cutoff, MaterialManager::getDamageMod, calcDamage) at entry. Self-exclusion by Armor-pointer identity is inert for a dying object's own explosion (sourceArmor=NULL on that path). See ledger HP-8, HP-9."
+   "source": "research-2026-09-16-hitpoints; closed research-2026-09-19-damage",
+   "note": "lnxded. FALLOFF CLOSED 2026-09-19: t = clamp((radius - d) * A, 0, 1) with A = 1/radius passed by the caller at BOTH call sites, i.e. linear t = 1 - d/radius (falloff 0x08156664-0x0815668f; 1.0f at 0x086ba8d4). d is the distance to the victim's getPos() ORIGIN (IObject vtable +0x38 at 0x081565c2), with only the Y term scaled by YModOnExplosion (0x08156613); no bounding box, no nearest surface point. The cutoff at 0x08156655/0x0815665b continues only when radius > d strictly, which makes both clamps dead. Non-soldiers get NO occlusion at all: edi is seeded 1.0f at 0x08156505 and only a soldier replaces it from checkForHitOnSoldier 0x08156eb6 (exposure == 0.0 short-circuits at 0x08156ede), folded in by fmulp at 0x081566b4. It then QUEUES rather than applies: six parallel vectors at GameServer + [this+0x2b4]*12 + 0x224/0x23c/0x254/0x26c/0x284/0x29c (0x081567b9-0x0815690a); its bool return only gates BFPlayer::addBulletsGivingDamage. See ledger HP-9, HP-9b."
   },
   {
    "address": "0x08156ef0",
@@ -5834,8 +5834,8 @@
    "kind": "function",
    "subsystem": "weapons",
    "confidence": "verified",
-   "source": "research-2026-09-16-manned-guns",
-   "note": "lnxded. Two cooperating per-axis registers (+0x110 accel accumulator, +0x128 hard-+-40-clamped deadzoned input accumulator) drive the angle at +0x104; zero-width [min,max] wraps at 180/360/-180. Exact closed-form magnitude still open. See ledger GUN-2."
+   "source": "research-2026-09-16-manned-guns; corrected research-2026-09-19-vehicle-hud",
+   "note": "lnxded. CORRECTED 2026-09-19 (all 361 instructions re-traced independently): a FIRST-ORDER VELOCITY SERVO, not a product of two accumulators. +0x110 is an angular-speed register (deg/s) ramped toward sign(acceleration)*input*maxSpeed at |acceleration| deg/s^2 (0x081d7768-0x081d7821); angle (+0x104) += speed*dt + continousRotationSpeed*dt every tick (0x081d77b6-0x081d77d0). +0x128 is an input BACKLOG in input units, clamped +-40 (0x86c866c/0x86c8670), existing only under rememberExcessInput: it spends clamp(backlog, +-1) per tick and carries the rest (0x081d7589), and is zeroed on an input sign flip (0x081d7518 -> 0x081d78a6). 0x86b05ec = -1.0 is that clamp's LOWER END, not a deadzone. automaticReset (tmpl+0x1a4) is a different law: angle ramps straight to input*maxRotation at |acceleration| deg/s, no velocity register, no continuous term (0x081d75ed-0x081d7763). The +-180 wrap needs minRotation == 0 AND maxRotation == 0 (0x081d7645 + 0x081d765b), not a zero-width range. Early return only when acceleration == 0 && continousRotationSpeed == 0. See ledger GUN-2."
   },
   {
    "address": "0x081d78e0",
@@ -5843,8 +5843,8 @@
    "kind": "function",
    "subsystem": "physics",
    "confidence": "verified",
-   "source": "ghidra-session",
-   "note": "Linux. The one place a Refractor node is posed from setMinRotation/setMaxRotation/setMaxSpeed: calls calculateAndClipAngle (0x081d7490) once per axis, then setRotation(Matrix4,Vec3) (0x8060d30), Matrix4::mult, Bundle::getBundleTransformation (0x81a7440), Matrix4::mult, then the node's own vtable+0x78 setter. Anything that does NOT inherit this - PhysicsEngine, which is a PhysicsNode - does not pose itself from its declared axes, whatever its template's makeScript accepted."
+   "source": "ghidra; research-2026-09-19-vehicle-hud",
+   "note": "Linux. Calls calculateAndClipAngle (0x081d7490) per axis only when tmpl+0x174/178/17c (maxSpeed) != 0 (tests 0x081d79b0/79c6/79dc, calls 0x081d7c04 axis 0 / 0x081d7be3 axis 1 / 0x081d7bc8 axis 2), passing its own float argument as dt, and sets [this+0x141] = 1 at 0x081d798b; it skips the whole block when all three maxSpeed components are 0, which is the mechanism behind ledger GUN-7. calculateAndClipAngle has EIGHT call sites, not three: Engine::handleUpdate 0x0823e588/5a3/5be (same maxSpeed gate), FloatingBundle::handleUpdate 0x082401cd (axis 1, gated on maxRotation.y instead) and Wing::handleUpdate 0x0825099b (axis 1, ungated). A second handleUpdate branch gated on lesserYawAtSpeed (tmpl+0x1a8) at 0x081d7978 -> 0x081d7c17 is unread but dead: setLesserYawAtSpeed has 0 uses across 18 installs."
   },
   {
    "address": "0x081d8110",
@@ -5861,8 +5861,8 @@
    "kind": "function",
    "subsystem": "weapons",
    "confidence": "verified",
-   "source": "research-2026-09-16-manned-guns",
-   "note": "lnxded. Never references its own dt parameter; per-channel input from PlayerInput[channel], scaled x0.2 when instance flag +0xee is set."
+   "source": "research-2026-09-16-manned-guns; extended research-2026-09-19-damage",
+   "note": "lnxded. Never references its own dt parameter; writes this+0x11c/0x120/0x124 from PlayerInput[tmpl->inputToYaw/Pitch/Roll], gated on a 64-bit present mask at PlayerInput+0xdc/+0xe0 (absent, or id > 54, yields a literal 0.0). 2026-09-19: the +0xee branch at 0x081d834f selects between TWO near-identical duplicated blocks (0x081d835c, 0x081d8487) that both decode the input and write this+0x11c; the +0xee != 0 one additionally multiplies all three axes by ds:0x86c8678 = 9a9999999999c93f = the double 0.2 (0x081d83af/0x081d83b7). So a critically damaged vehicle traverses at 20% input, not zero - see ledger HP-15, which retires ARM-6."
   },
   {
    "address": "0x081d89f0",
@@ -6338,8 +6338,8 @@
    "kind": "function",
    "subsystem": "seat",
    "confidence": "verified",
-   "source": "research-2026-09-16-seats; extended research-2026-09-17-effect-cadence",
-   "note": "lnxded. Refuses only when isOccupied(+0x110) AND force==false. Queries Armor::isCriticalDamaged() (+0xcc) at 0x8317095 on [this+0x60] and, on true, getHpLostWhileCriticalDamage() (+0xd4) at 0x83172b9 before rejoining the normal flow at 0x83170a6 (2026-09-17). The consequence is OPEN: the float's consumer is untraced. See ledger ARM-7."
+   "source": "research-2026-09-16-seats; closed research-2026-09-19-vehicle-hud",
+   "note": "lnxded. Refuses only when isOccupied(+0x110) AND force == false. Queries Armor::isCriticalDamaged() (+0xcc) at 0x8317095 on [this+0x60] and, on true, getHpLostWhileCriticalDamage() (+0xd4) at 0x83172b9. SEAT-11 CLOSED 2026-09-19: reachable only through IPlayerControlObject vptr+0x20 (thunk 0x0831ab50 at vtable 0x0873eec0 + 0x1d8, secondary vptr = sym+0x1b8), with a single call site 0x0814e90a inside GameServer::enterVehicle 0x0814e860, which forwards its FOURTH parameter as force. Only GameServer::exitVehicle passes true; the seat switch, c_PIUse entry, spawn and kill all pass false, so a c_PIMenuSelect to an occupied seat is refused, not stolen."
   },
   {
    "address": "0x08317490",
@@ -6491,8 +6491,8 @@
    "kind": "function",
    "subsystem": "ui",
    "confidence": "verified",
-   "source": "research-2026-09-16-vehicle-hud",
-   "note": "lnxded. Separate Vec2 (own vtable+type-tag, distinct from setVehicleIcon's) -- consistent with a minimap/overview dot position, not the fixed HUD rect. Only DC_Final's .con files use it in a 13-mod survey."
+   "source": "research-2026-09-16-vehicle-hud; closed research-2026-09-19-vehicle-hud",
+   "note": "lnxded, PlayerControlObjectTemplate::setVehicleIconPos(dice::ref2::Vec2 const&), IPlayerControlObjectTemplate vptr+0x2c (getter 0x0831b620 at vptr+0x30). CLOSED 2026-09-19: it is the SEAT-DOT POSITION inside the 128x128 vehicle-icon texture, which is what Vehicle/VehiclePosX<n>/PosY<n> feed - the root and every seat PCO each declare their own. Grammar: one token, two integers separated by '/' (ObjectTemplate.setVehicleIconPos <x>/<y>), 19085 of 19089 declarations across 17 mods; vanilla 183, range X 12..99, Y 43..120. Sherman root 54/103, shermanBrowning_PCO1 32/61; Yamato root 66/78, Rear 32/57, Left 57/62, Right 37/73. Geometry check: VHUD-7 draws the dots at (192+X, 452+Y) and the icon is 128x128 at (200,462), so 54/103 lands at (246,555), inside the icon. bf42/con.py does not parse the word. See ledger VHUD-11."
   },
   {
    "address": "0x0831b710",
@@ -7364,8 +7364,8 @@
    "kind": "vtable",
    "subsystem": "seat",
    "confidence": "verified",
-   "source": "research-2026-09-16-seats",
-   "note": "lnxded, full 88-slot table read and resolved by name, incl. +0x140=getSubPos."
+   "source": "research-2026-09-16-seats; extended research-2026-09-19-vehicle-hud",
+   "note": "lnxded, full 88-slot table read and resolved by name, incl. +0x140 = getSubPos. 2026-09-19: the secondary group (offset-to-top 0xfffffefc, typeinfo 0x0873f120) starts at sym+0x1b0, so the IPlayerControlObject VPTR is sym+0x1b8 - enter(IPlayer*, bool) is at vptr+0x20 (sym+0x1d8, the thunk 0x0831ab50) and getCameras() at vptr+0x34 (sym+0x1ec). See ledger SEAT-11 and VHUD-9."
   },
   {
    "address": "0x087435a0",
@@ -7401,7 +7401,7 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [R1] F4"
+   "note": "lnxded. [R1] F4 [2026-09-19 parity round: +0xa8 = 0.5*(getFrictionForMaterial(matA)+getFrictionForMaterial(matB)) at 0x08258b6a-0x08258ba0 (0.5 at 0x086b05e8), seeded 1.0 by both ctors (0x08258256, 0x082583b6); the same tail refreshes the live grip byte as (old & 0x80) | getPermanentGrip() at 0x08258b57-0x08258b64 (verified V3)]"
   },
   {
    "address": "0x08258ca0",
@@ -8787,7 +8787,7 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [R4] briefing table, cross-used"
+   "note": "lnxded. [R4] briefing table, cross-used [2026-09-19 parity round: offsets are relative to the vptr, symbol+8: +0x58 getFrictionForMaterial, +0x5c getElasticityForMaterial, +0x60 getResistanceForMaterial (verified V3)]"
   },
   {
    "address": "0x0824d2b0",
@@ -9210,7 +9210,7 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [lead] Armor vtable +0x4c; .con ObjectTemplate.speedMod, default 0.05. The VICTIM's value scales collision damage by |v|^2."
+   "note": "lnxded. [lead] Armor vtable +0x4c; .con ObjectTemplate.speedMod, default 0.05. The VICTIM's value scales collision damage by |v|^2. [2026-09-19 parity round, verified V1: lnxded, Armor vtable +0x4c, reads Armor+0x4c. The .con word ObjectTemplate.speedMod, one of setArmorComponent's 23 copied setters (setter at vtable +0x48); the VICTIM's value scales fall and collision severity by |v|^2. Vanilla soldier 0.5 (CommonSoldierData.inc). Called at 0x08154c06.]"
   },
   {
    "address": "0x08173fa0",
@@ -9237,7 +9237,862 @@
    "subsystem": "collision",
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [lead] +0x18 impulseOn, +0x1c solveImpulse, +0x20 addFriction, +0x24 checkVsTerrain, +0x58 getFaceCollision, +0x5c getVertexCollision, +0x60 checkObjectVsObject; client twin 0x008fd770 matches slot for slot."
+   "note": "lnxded. [lead] +0x18 impulseOn, +0x1c solveImpulse, +0x20 addFriction, +0x24 checkVsTerrain, +0x58 getFaceCollision, +0x5c getVertexCollision, +0x60 checkObjectVsObject; client twin 0x008fd770 matches slot for slot. [2026-09-19 parity round: fuller slot map: +0x6c/+0x70 get/setPermanentGrip -> the authored byte +0xb5; +0x74/+0x78 set/getSurfacePositionalSpeed -> +0x50; +0x7c getPositionalAdjusts -> +0x14; the live grip byte is +0xb4 (verified V3)]"
+  },
+  {
+   "address": "0x008eb25c",
+   "name": "soldier jump speed (6.0)",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "Client .rdata, raw bytes 40c00000. Multiplied by the contact normal's y then by K = min(1 + dot(horizontalDir, N), 1) at 0x005016e4/0x005016ea, then by g_simulationFps, giving a one-tick Delta-v of 6.0 m/s on flat ground - a 1.12 m apex and 0.80 s airtime under the engine's four-sub-step integrator (the continuum 1.222 m / 0.815 s is not what the discrete integrator produces). lnxded twin 0x086d271c. Replaces the viewer's unmeasured JUMP_SPEED = 5.4. See ledger PHY-1."
+  },
+  {
+   "address": "0x086d271c",
+   "name": "soldier jump speed (6.0), lnxded twin",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded .rodata, raw bytes 40c00000, read at 0x08274fff and multiplied by [edx+0x3d4] (N.y) at 0x0827500a, then folded with K at 0x08275017. Same constant and same role as client 0x008eb25c."
+  },
+  {
+   "address": "0x004fa764",
+   "name": "BFSoldier::handleCollision jump-arming bit set (client)",
+   "kind": "patch_site",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "OR byte ptr [ESI+0x416],0x40, gated on normal.y > 0.1 (0x008c53cc; strict - fcomp then test ah,0x41 then jne) and on the last int argument (a material id) != 1, which is Water. Cleared every tick at 0x00501bb6 (and byte 0xbf). The enclosing function is not bracketed in Ghidra."
+  },
+  {
+   "address": "0x0827d566",
+   "name": "BFSoldier::handleCollision jump-arming bit set (lnxded)",
+   "kind": "patch_site",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "or WORD PTR [edi+0x3e6],0x40, inside BFSoldier::handleCollision 0x0827d3b0, under the identical gate (N.y > 0.1 against 0x086b1ca0, and [ebp+0x20] != 1). Found by grepping all 60 accesses to +0x3e6; it is the only or-0x40 among them. THE SERVER'S JUMP BLOCK IS THEREFORE LIVE, not dead: the old 'dead code behind an always-equal 0.0 == 0.0 test' reading was the not-armed arm only, and the armed arm at 0x082741ad -> 0x08275f86 reaches the real PlayerInput[9] through getSoundTrigger() != c_SstJump. Cleared each tick at 0x08274d29. See ledger PHY-1."
+  },
+  {
+   "address": "0x0827d3b0",
+   "name": "dice::ref2::world::BFSoldier::handleCollision",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded. Stores the 2nd Vec3& argument (the surface normal) at soldier +0x3d0..+0x3d8 (0x0827d50a) and mirrors it into IResponsePhysics +0x98 (0x0827d52f) - but only when the impulse count +0xa4 is 0, or when the new normal.y exceeds the stored one (0x0827d4d5-0x0827d503), so it keeps the MOST UPWARD normal of the frame. Also ORs the jump-arming bit 0x40 into the state word (0x0827d566)."
+  },
+  {
+   "address": "0x08256650",
+   "name": "dice::ref2::world::PointPhysicsNode::addAccelerationAtRelativePosition",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded, PointPhysicsNode vtable 0x0872e080 slot +0x6c (+0x68 is the AtAbsolutePosition sibling). Reads [ebp+0x10] (argument 2) into the acceleration accumulator this+0x1c and IGNORES [ebp+0xc] - which is how the jump's 'Vec3::zero, accel' argument order was proved from the callee rather than assumed. The same virtual index carries the same method on PhysicsNode (0x08255230) and StaticPhysicsNode (0x0825e750)."
+  },
+  {
+   "address": "0x0825e750",
+   "name": "dice::ref2::world::StaticPhysicsNode::addAccelerationAtRelativePosition",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded, StaticPhysicsNode vtable 0x0872e340 slot +0x6c. Present so that the soldier jump's slot-+0x6c call resolves whatever node class the soldier carries."
+  },
+  {
+   "address": "0x0872e080",
+   "name": "vtable for dice::ref2::world::PointPhysicsNode (symbol; vptr = symbol+8)",
+   "kind": "vtable",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded. +0x68 addAccelerationAtAbsolutePosition, +0x6c addAccelerationAtRelativePosition 0x08256650. Dumped from symbol+8 with every slot resolved against nm -C."
+  },
+  {
+   "address": "0x0872e340",
+   "name": "vtable for dice::ref2::world::StaticPhysicsNode (symbol; vptr = symbol+8)",
+   "kind": "vtable",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded. +0x68 0x0825e740, +0x6c 0x0825e750. Dumped from symbol+8."
+  },
+  {
+   "address": "0x082560c0",
+   "name": "dice::ref2::world::PointPhysicsNode::updatePositionalPhysics",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded. h = 0.25*dt (fld [0x086c08ac]; fmul [ebp+0xc] at 0x082560c8), then FOUR semi-implicit sub-steps v += a*h; p += v*h, so a tick's total is Delta-v = a*dt. It then ZEROES the acceleration accumulator at 0x082562aa-0x082562b0 ([ebx+0x1c] = [esi+0x4] = [esi+0x8] = 0), which is the first of the three locks that make the jump exactly one tick. Client twin 0x00578aa0 region; see physics.md section 3."
+  },
+  {
+   "address": "0x086c08ac",
+   "name": "integrator sub-step factor and view-ease constant (0.25)",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded. Used as h = 0.25*dt by PointPhysicsNode::updatePositionalPhysics 0x082560c8 and as the -0.25*vCmd bleed in the soldier jump branch. Client twin 0x008d5c04."
+  },
+  {
+   "address": "0x0825c5d2",
+   "name": "ResponsePhysics::addFriction soldier friction branch",
+   "kind": "patch_site",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded. A CID_BFSoldierTemplate test at 0x0825b83e diverts here and recomputes both Coulomb budgets as mu_hi = A*7.2*9.82*n.y^5/30 (break-away, 7.2 at 0x086d16e8) and mu_lo = A*4.8*9.82*n.y^5/30 (sliding, 4.8 at 0x086d16ec) instead of the vehicle's 2.25/1.5 pair - same 1.5:1 hysteresis, 3.2x the magnitude, and a QUINTIC falloff in contact-normal tilt (n.y is duplicated at 0x0825c5fb and multiplied in at 0x0825c615/0x0825c61f/0x0825c623/0x0825c627/0x0825c62b). The 9.82 is present: it arrives live on the x87 stack through [ebp-0x218] (parked 0x0825b832, reloaded 0x0825b844). n.y is IResponsePhysics+0x9c, the normal BFSoldier::handleCollision writes. On flat ground with A = 1 the caps are 2.357 and 1.571 m/s of tangential Delta-v per tick. The accumulator vectors are swapped for a soldier at 0x0825c63e. See ledger PHY-2."
+  },
+  {
+   "address": "0x086d16e8",
+   "name": "soldier break-away friction constant (7.2)",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded. The static/break-away half of the soldier's Coulomb pair at 0x0825c5d2; 4.8 (0x086d16ec) is the sliding half. 7.2/4.8 = 1.5, the same hysteresis ratio as the vehicle's 2.25/1.5, and 7.2/2.25 = 4.8/1.5 = 3.2, so a soldier's grip is 3.2x a vehicle part's."
+  },
+  {
+   "address": "0x086d16ec",
+   "name": "soldier sliding friction constant (4.8)",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded. The kinetic half of the soldier pair; see 0x086d16e8 and ledger PHY-2."
+  },
+  {
+   "address": "0x086d16e0",
+   "name": "vehicle break-away friction constant (2.25)",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded. mu_hi = A*2.25*9.82*L/30 at 0x0825b7c9; the sliding constant 1.5 sits at 0x086be4d0 and 9.82 at 0x086d16e4. Both budgets are m/s of tangential Delta-v per 30 Hz tick, and they are the two ARMS OF A BRANCH on the live StaticFriction bit (0x0825bb72 test dl,dl; jns), not two sequential passes."
+  },
+  {
+   "address": "0x086be4d0",
+   "name": "vehicle sliding friction constant (1.5)",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded. The kinetic half of the vehicle pair; see 0x086d16e0."
+  },
+  {
+   "address": "0x086b05e8",
+   "name": "friction-mean and digital-input constant (0.5)",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded. ResponsePhysics::impulseOn multiplies the two getFrictionForMaterial results by it at 0x08258b6a-0x08258ba0 to form the contact friction scalar IResponsePhysics+0xa8. The same constant is the digital threshold for c_PIUse in GameServer::checkPlayerTriggers (ledger SEAT-1)."
+  },
+  {
+   "address": "0x086d139c",
+   "name": "friction no-op epsilon (1e-6)",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded. addFriction's mu_lo arm treats |Delta-v|^2 <= this as already stopped and sets StaticFriction (0x0825bf47)."
+  },
+  {
+   "address": "0x0824ddd0",
+   "name": "dice::bf::PhysicsSpring::updatePhysics(float)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded, the named twin of client 0x0057f0d0. anchor = parentPos + rot(parentTransform)*offset; D = anchor - this->getAbsolutePosition() (this reloaded at 0x0824e0c8 before the call at 0x0824e11c); accel = -(strength * g * (-1/9.82) * D + damping * (D - D_prev)/dt), applied as root->addAccelerationAtRelativePosition(anchor - rootPos, accel) at 0x0824e3bd with the root from getRootParent 0x0824de5c. strength (+0xd4) multiplies the three g*C*D terms at 0x0824e325 and damping (+0xd0) the three difference terms at 0x0824e340 - the pairing that could have been backwards and is not. D_prev is read at 0x0824df7f before the store at 0x0824e192, so the damping is a one-tick backward difference. Skipped when isSleeping() (+0xcc) after setSleepiness(root->getSleepiness()). See ledger PHY-5."
+  },
+  {
+   "address": "0x0824dda0",
+   "name": "dice::bf::PhysicsSpring::setRelationToParentPosition(Vec3 const&)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded. Writes the spring's mount offset at +0xb8. Its ONLY caller in the whole binary is 0x0824f5ce inside Spring::init 0x0824f590 (verified by grepping every call in the 2.36M-line disassembly), so the offset is derived from the object hierarchy and there is no .con word behind it."
+  },
+  {
+   "address": "0x0824f590",
+   "name": "dice::bf::Spring::init",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded. Computes the spring's mount offset and hands it to setRelationToParentPosition at 0x0824f5ce."
+  },
+  {
+   "address": "0x0824fe30",
+   "name": "dice::bf::SpringTemplate::makeScript",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded. Emits ObjectTemplate.setPositionalFixation from +0x150 (string 0x086d0f80) and ObjectTemplate.setAxisFixation from +0x15c (0x086d0fc0), then strength (+0x16c) and damping (+0x168). The spring axis is authored data at +0x15c and is never world-vertical - the viewer's vertical-ray model has no engine counterpart."
+  },
+  {
+   "address": "0x082503c0",
+   "name": "dice::bf::SpringTemplate::getStrength",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded, returns template +0x16c; bound into the instance at +0xd4 by the ctor at 0x0824dd7d."
+  },
+  {
+   "address": "0x082503f0",
+   "name": "dice::bf::SpringTemplate::getDamping",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded, returns template +0x168; bound into the instance at +0xd0 by the ctor at 0x0824dd8b."
+  },
+  {
+   "address": "0x086d0e8c",
+   "name": "spring gravity normaliser (-1/9.82 = -0.10183300077915192)",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded. Makes suspension sag gravity-invariant by design, so at the shipped g = -14.73 every spring acts at 1.5x its .con strength. Client twin 0x008c53d0 region; see physics.md section 6 and ledger PHY-5."
+  },
+  {
+   "address": "0x082807a0",
+   "name": "dice::bf::applyMovementFactors(float, char, char, char&)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded, mangled signature gives the types. Called twice from BFSoldier::handlePlayerInput - 0x0827475a (forward, state byte this+0x58d) and 0x0827477f (strafe, this+0x58c) - with accel = 20 (0x0872ee14, the 2nd argument) and decel = 12 (0x0872ee18, the 3rd), both movsx-loaded. Three arms: input == 0 && state != 0 decays toward 0 by decel; input > 0 gives min(max(state,0) + accel, +127); input < 0 gives max(min(state,0) - accel, -127). The state is then MULTIPLIED by 1/127 (0x086d2718) at 0x082747c6 before indexing directionalSpeed. At 30 Hz: 0.212 s to full speed, 0.353 s to a stop. See ledger PHY-6."
+  },
+  {
+   "address": "0x0872ee14",
+   "name": "BFSoldierTemplate movement ramp accel rate (20)",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded, a signed char in a 4-byte slot, loaded with movsx, immediately after walkSpeedFactor 0x0872ee10 (1/3). The decel rate 12 is at 0x0872ee18. 20 is the SECOND argument to applyMovementFactors and 12 the third."
+  },
+  {
+   "address": "0x0872ee18",
+   "name": "BFSoldierTemplate movement ramp decel rate (12)",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded, signed char, movsx-loaded; the third argument to applyMovementFactors. 127/12 = 10.6 ticks = 0.353 s to a full stop at 30 Hz."
+  },
+  {
+   "address": "0x086d2718",
+   "name": "soldier movement ramp scale (1/127)",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded, 0.0078740157186985016 - the nearest float32 to 1/127, checked with struct.pack. The +-127 ramp byte is MULTIPLIED by it (fmul at 0x082747c6 and 0x08274888) before it scales directionalSpeed/strafeSpeed. An earlier wording said 'divided by 1/127', which is the reciprocal of what the instruction does."
+  },
+  {
+   "address": "0x0872edec",
+   "name": "lnxded directionalSpeed / strafeSpeed table",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded, [6, 4, 2, 2, 1, 1, 4, 2] - byte-identical to the client's 0x009581b4. Indexed at 0x08274800 as directionalSpeed[pose*2 + (ramp <= 0)] with eax = (ramp<=0) + pose*2, and the back/forward slot is chosen from the RAMP BYTE, not the raw input (0x082747e0 cmp BYTE [ecx+0x58d],0; setle). walkSpeedFactor 1/3 at 0x0872ee10, then the two ramp rates."
+  },
+  {
+   "address": "0x08256ad0",
+   "name": "dice::ref2::world::PointPhysicsNode::setUnderWater(float)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded, mov DWORD PTR [eax+0x44],edx - this NAMES the +0x44 field the drag scale reads (getter 0x08256ae0, fld [eax+0x44]). The drag law re-derived at 0x082562f2-0x08256320: scale = 1 + min(underWater/getBoundingRadius(), 1) * (25.0 - 1) = 1 + 24*min(uw/r, 1), with 25.0 at 0x086ccce0. Closes first-person-soldier.md section 7's open item. See ledger PHY-7."
+  },
+  {
+   "address": "0x08256ae0",
+   "name": "dice::ref2::world::PointPhysicsNode::getUnderWater() const",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded, fld DWORD PTR [eax+0x44]."
+  },
+  {
+   "address": "0x0824d430",
+   "name": "dice::ref2::world::PhysicsNode::setUnderWater(float)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded, mov DWORD PTR [eax+0x8c],edx - the vehicle sibling keeps the same quantity at a different offset, which is why physics.md section 3 has +0x8c for the box drag law. Getter 0x0824d450."
+  },
+  {
+   "address": "0x0824d450",
+   "name": "dice::ref2::world::PhysicsNode::getUnderWater() const",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded, fld DWORD PTR [eax+0x8c]."
+  },
+  {
+   "address": "0x0825ead0",
+   "name": "dice::ref2::world::StaticPhysicsNode::setUnderWater(float)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded. A pure no-op (push ebp; mov ebp,esp; pop ebp; ret) whose getter returns fldz: a static body never submerges."
+  },
+  {
+   "address": "0x086ccce0",
+   "name": "PointPhysicsNode submersion drag factor (25.0)",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded. scale = 1 + min(underWater/boundingRadius, 1) * (25.0 - 1), formed at 0x08256304-0x08256320 and handed to the simple positional drag. So the often-quoted '1 + 24x' is this 25.0 minus one."
+  },
+  {
+   "address": "0x086ba8cc",
+   "name": "soldier locomotion force factor (0.75)",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded. The ordinary movement branch applies accel = 0.75*vCmd at 0x08274a09 and does NOT multiply by g_simulationFps, so Delta-v = vCmd/40 per tick - the asymmetry with the jump's x30 is exactly why the jump is an impulse. Applied only when IResponsePhysics+0xa4 == 0 (no impulse resolved this tick), which is why a soldier standing on the ground is actually moved by the friction path (ledger PHY-2, PHY-6)."
+  },
+  {
+   "address": "0x086c5288",
+   "name": "soldier swim force factor (5.0)",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-movement",
+   "note": "lnxded. accel = 5.0*vCmd at 0x08274b6f under state-flag bit 0x8. It is NOT under the +0xa4 == 0 gate: the jne at 0x08274a03 lands past the 0.75 block but before the swim test at 0x08274b5f."
+  },
+  {
+   "address": "0x08155189",
+   "name": "handleCollisionLandOrWater soldier impact-speed reduction (-8.0)",
+   "kind": "patch_site",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded. Reached from the CID_BFSoldierTemplate test at 0x08154a81. fsub DWORD PTR ds:0x86c08c0 (8.0f), fldz, fucomp st(1), fstp [ebp-0x180] - which OVERWRITES |v| - then test ah,0x45 and je 0x08154c78: a soldier whose impact speed is below 8 m/s takes NO damage at all and the function returns, and every downstream use of |v| (the speedMod*|v|^2 kinetic term, the 30.0 saturation, the 10/20 lerp) uses the REDUCED value. The research pass read the soldier branch from 0x08154d20 onward and so missed this, overstating severity by roughly 8x at h = 5 m. See ledger HP-14."
+  },
+  {
+   "address": "0x086c08c0",
+   "name": "soldier impact-speed free allowance (8.0)",
+   "kind": "data",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded .rodata, raw bytes 00 00 00 41 at file offset 0x6788c0. Subtracted from a soldier's impact speed at 0x08155189 before any collision or fall damage is computed."
+  },
+  {
+   "address": "0x08154e4f",
+   "name": "handleCollisionLandOrWater water duplicate path",
+   "kind": "patch_site",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded. arg6 == 1 at 0x08154a89 branches to a duplicate of the whole severity path in which the angle factor is |cos|^2 - one fmul st,st(0) at 0x08154e60, stored at 0x08154e65 - instead of the land path's |cos|^3. Material 1 is Water in materialManagerdefine.con, which is what 'LandOrWater' in the function name means. Everything else (M1, K, M2, the soldier Q^2 block, the giveDamage through *0x15c at 0x0815505b) has the same shape, and the 8.0 subtraction happens before the split, so it applies to both. See ledger HP-14 and collision-response.md section 9.5."
+  },
+  {
+   "address": "0x08174490",
+   "name": "dice::ref2::world::Armor::getLastCollisionHeight() const",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded, Armor vtable +0xfc, returns the plain float at Armor+0x28 that setLastCollisionHeight (+0xf8) wrote as the colliding object's raw world Y. Read back at 0x08154d37 in the soldier fall branch to form F = lastCollisionHeight - pos.y. Whether that field tracks the apex of a fall was not verified."
+  },
+  {
+   "address": "0x08176190",
+   "name": "dice::ref2::world::MaterialManager::setDefaultDamageMod(float)",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded, writes MaterialManager+0x24 (mov [eax+0x24],edx). THE FIELD IS 0.0 FOR THE LIFE OF THE PROCESS: both constructors write 0 (0x0817485e, 0x0817491e), this setter's only occurrence in the whole file as data is MaterialManager vtable slot 0x0871d3cc and nothing calls it (no direct call, and no call [reg+0x24] in any function referencing the materialManager global 0x0871d43c), and there is NO console property for it - the complete registered MaterialManager name block at .rodata 0x086c235b-0x086c2417 holds fourteen words and defaultDamageMod is not among them. So getDamageMod's fallback really does mean no damage, and viewer/effects-core.js's 'mod == null -> 0' is already right. See ledger DMG-1."
+  },
+  {
+   "address": "0x081750d0",
+   "name": "dice::ref2::world::MaterialManager::getEffectTemplate(unsigned, unsigned, float)",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded, MaterialManager vtable +0x50. The per-cell map<float,...> keyed by the clamped cosine (MMCell::getEffectTemplate 0x081746a0); one entry per cell in vanilla, so the cosine key is inert. See ledger IMP-2 and SM-7."
+  },
+  {
+   "address": "0x081742c0",
+   "name": "dice::ref2::world::Armor::getExplosionForceMod()",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded, Armor vtable +0xb4, read by handleExplosionOnObject at 0x081569cb. The explosion FORCE path is separate from the damage path and reads the VICTIM's Armor; it is clamped to getExplosionForceMax (0x081742f0, vtable +0xbc) at 0x08156a0d/0x08156e09. Below a separation of 0.001 (double at 0x086c0b90) the impulse direction is the terrain normal at the explosion point instead of the separation vector (0x08156a64); a soldier's impulse is additionally scaled by 0.1f (0x086b1ca0) and by finalDamage/rawDamage (0x08156e5a)."
+  },
+  {
+   "address": "0x081742f0",
+   "name": "dice::ref2::world::Armor::getExplosionForceMax()",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded, Armor vtable +0xbc; the clamp ceiling for the explosion impulse. See 0x081742c0."
+  },
+  {
+   "address": "0x086ba8d4",
+   "name": "explosion falloff numerator (1.0)",
+   "kind": "data",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded .rodata, raw bytes 00 00 80 3f at file offset 0x6728d4. GameServer::handleExplosion divides it by the radius at 0x08156f5c (fld radius; fdivr) to form A = 1/radius and pushes A at BOTH calls to handleExplosionOnObject (0x081570e4/0x081570ed and 0x08157262/0x08157271), which is what makes the falloff exactly 1 - d/radius. See ledger HP-9."
+  },
+  {
+   "address": "0x0831f590",
+   "name": "dice::ref2::world::Projectile::startEndEffect()",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded. The end-of-life explosion: tests damageType == 1 at 0x0831f6bb and == 4 at 0x0831f6c0, both jumping to the same handleExplosion call at 0x0831f768, with sourceArmor pushed as 0 at 0x0831f727 and the radius UNTRUNCATED at 0x0831f73e. It does NOT test hasCollisionEffect - which is why requiring that flag for splash generally would delete grenade, satchel, expack and landmine splash. See ledger HP-9d."
+  },
+  {
+   "address": "0x0831f3c0",
+   "name": "dice::ref2::world::Projectile::getDamage(int, Pos3)",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded, the twin of client 0x00542e80 already in this corpus under ledger IMP-6: materialDamage(projectile material) scaled by the distance falloff triple. Recorded here because the F1 round re-read it beside startEndEffect and handleExplosionOnObject."
+  },
+  {
+   "address": "0x08153ea9",
+   "name": "handleCollisionForProjectile hasCollisionEffect gate",
+   "kind": "patch_site",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded, cmp BYTE [eax+0x1a4],0; je skip - the impact explosion's second gate, after cmp [eax+0x160],1 (damageType) at 0x08153e79. Two further pairs of the same test sit at 0x0815428e/0x0815429b and 0x08154600/0x08154631. ObjectTemplate.hasCollisionEffect is ProjectileTemplate+0x1a4, default false (accessor 0x082dd7d0). See ledger HP-9d."
+  },
+  {
+   "address": "0x0831f8d0",
+   "name": "dice::ref2::world::ProjectileTemplate::ProjectileTemplate",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded. Constructor defaults read out in full: damageType +0x160 = 0, radius +0x190 = 0x41200000 = 10.0 (written at 0x0831f9b3), minDamage +0x194 = 1.0, hasCollisionEffect +0x1a4 = 0, forceOnExplosion +0x1b0 = 150.0, YModOnExplosion +0x1b4 = 1.0, material2 +0x1b8 = -1, gravityModifier +0x164 = 1.0. Six vanilla tank rounds set no radius at all and ride the 10.0, so bf42/assemble.py's 10.0 default is correct. See ledger HP-9."
+  },
+  {
+   "address": "0x082df8b0",
+   "name": "ConsoleClass ProjectileTemplate.radius accessor",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded. getActiveTemplate(CID_ProjectileTemplate 0x86c2b90) then writes +0x190. The property is declared INT - its own ConsoleClass instance carries the name at +0x0c and the type at +0x4c, and of the six registrations of the name 'radius' only this one is an int - so it is parsed by istream >> int at 0x082df83f and fild-ed into the float field at 0x082df8ef. A .con therefore cannot give a projectile a fractional radius: 340 mod templates write one and every one truncates at parse (FH BismarckFatProjectile 17.63 -> 17; DC 50calSniper_Projectile 0.25 -> 0, which with the strict radius > d gate means no splash at all). The impact path's own truncation at 0x08153f23-0x08153f58 is real code but a no-op in practice. See ledger HP-9."
+  },
+  {
+   "address": "0x081935c0",
+   "name": "BPlayerObject<IPlayerObject>::handleMessage(TemplateMessage, IPlayer*)",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded, IPlayerObject vtable +0x9c (read at 0x0871fa40+8+0x9c; the IID the call site queries, 0x086c2a60, is IID_IPlayerObject). This is what Armor::status's 0x13/0x14/0x15 travel on: TemplateMessages on the object's own in-process bus, NOT network or HUD messages. See ledger HP-13."
+  },
+  {
+   "address": "0x081db820",
+   "name": "dice::ref2::world::SimpleObject::handleMessage",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded, the 0x13/0x14/0x15 handler, all three gated on finding an Armor up the composite chain and on Armor::isSendingMessage() (vtable +0x94). 0x13 (recovered) -> +0xee = 0 (0x081db8c2), +0xed = 0 (0x081db8c9). 0x14 (critical) -> +0xee = 1 (0x081dba6b), then falls into +0xed = 0. 0x15 (DESTROYED, not 'entering critical' as the old ledger row said) -> setComponent(IID_IWeapon 0x086f52e8, NULL) and setComponent(IID_IAIObject 0x086f52e4, NULL) through IObject vtable +0x24 at 0x081db8f9/0x081db90b, then +0xed = 1 (0x081db97c), leaving +0xee alone. Both bytes are seeded at construction from SimpleObjectTemplate+0x105 (0x081da112/0x081da11e) = the console property ObjectTemplate.destroyed. See ledger HP-13, HP-15."
+  },
+  {
+   "address": "0x081db2e0",
+   "name": "dice::ref2::world::SimpleObject::handleUpdate(float, unsigned)",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded. THE WRECK-RESPAWN TIMER, not a per-frame flag clear: the writes of 0 to +0xed/+0xee at 0x081db3f1/0x081db3f8 sit behind six conditions - +0xed != 0 (0x081db33e), template+0x107 == 0, +0x100 already latched by a previous update, a countdown [this+0xfc] -= dt falling below zero (0x081db39f-0x081db3b1), template+0xd0 != 0, and an Armor present - and are followed by Armor::setHitPoints(Armor::getMaxHitPoints()) (vtable +0x18/+0x14) and a reload of the timer from template+0xc4. So +0xed/+0xee are PERSISTENT state for the whole wrecked lifetime, which is what makes ledger HP-15 retire ARM-6."
+  },
+  {
+   "address": "0x08318920",
+   "name": "PlayerControlObject::handlePlayerInput destroyed-input gate",
+   "kind": "patch_site",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded, cmp BYTE [ebx+0xed],0; jne <return> at 0x08318920/0x08318927, epilogue 0x08318952. A destroyed PCO returns BEFORE forwarding the player's input to any child, so a wreck cannot be driven at all. With RotationalBundle::handlePlayerInput's 0.2x scale under +0xee, this is the pair that retires ARM-6. See ledger HP-15."
+  },
+  {
+   "address": "0x086c8678",
+   "name": "RotationalBundle critical-damage input scale (double 0.2)",
+   "kind": "data",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded, raw bytes 9a9999999999c93f. RotationalBundle::handlePlayerInput multiplies all three input axes by it (0x081d83af/0x081d83b7) when SimpleObject+0xee is set, i.e. a critically damaged vehicle traverses at 20% input. That a x0.2 is applied at all is also evidence that the raw PlayerInput value is not already normalised to +-1. See ledger HP-15 and GUN-2b."
+  },
+  {
+   "address": "0x081a74b0",
+   "name": "dice::ref2::world::Bundle::handleMessage",
+   "kind": "function",
+   "subsystem": "hitpoints",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded. PlayerControlObject::handleMessage tail-calls it; it iterates the children and invokes IPlayerObject::handleMessage (+0x9c) on each, which is how Armor's 0x13/0x14/0x15 reach child bundles such as a turret's RotationalBundle. See ledger HP-13, HP-15."
+  },
+  {
+   "address": "0x082768d0",
+   "name": "dice::bf::BFSoldier::useMedPack()",
+   "kind": "function",
+   "subsystem": "supplydepot",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded. Requires this+0x3e8 != 0, then sweeps objectManager->vtable[0x30](getPos(), healDistance, &out, ObjectFlagPredicator(0x2000000)) at 0x08276949 - the same spatial query handleExplosion uses. Per candidate of the same template id: distanceSqr <= healDistance^2 (0x08276bd0), an Armor, !isDestroyed(), hitPoints < maxHitPoints (0x08276c4e), then target->vtable[0xd8](-healFactor) at 0x08276c6f (sign flip xor eax,0x80000000 at 0x08276c68; a negative argument routes to Armor::heal by ledger HP-7). Self-heal fallback at 0x082769c4/0x08276a05 with selfHealFactor. The factors are HP PER INVOCATION; the HP-per-second figure needs the message cadence, which is unread. See ledger SUP-15."
+  },
+  {
+   "address": "0x08276100",
+   "name": "dice::bf::BFSoldier::useRepairPack()",
+   "kind": "function",
+   "subsystem": "supplydepot",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded. Sweep radius max(repairDistance, template+0x2f0) at 0x0827613d-0x08276158; per-candidate gate distanceSqr <= (candidate->vtable[0x48]() + repairDistance)^2 at 0x08276762-0x0827678a, so repairDistance is added to the TARGET's own radius and a big hull is reachable from its skin; then Armor::heal(repairFactor) directly through vtable +0x24 at 0x082761f3, not through handleDamage. See ledger SUP-15."
+  },
+  {
+   "address": "0x08277720",
+   "name": "BFSoldier::handleMessage repair/heal dispatch sites",
+   "kind": "patch_site",
+   "subsystem": "supplydepot",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "lnxded. useRepairPack is called at 0x08277720 and useMedPack at 0x08277796, each behind an ammo test (cmp [edx],eax; jle skip). Because both run from handleMessage rather than a timed update, healFactor/repairFactor are per-invocation amounts and the cadence of the message is what a HP-per-second figure would need. See ledger SUP-15."
+  },
+  {
+   "address": "0x006e3174",
+   "name": "client ShowRepairIcon HUD-variable registration",
+   "kind": "patch_site",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "Client BF1942.exe. Registers the world-icon boolean ShowRepairIcon (name string 0x00925940) against member esi+0x2b through the generic bool registrar 0x0069b810, with this = [esi+0x4] and the group-name literal 0x008c3846; the std::string ctor/dtor imports are ds:0x008c3134 / ds:0x008c311c. Registration spans 0x006e3174-0x006e3193. ShowHealIcon (0x006e31bb, esi+0x2c) and ShowReloadIcon (0x006e3202) follow. These three are the in-world supply icons of ledger SUP-17; their per-frame writers are still unfound, and this identification was not independently re-derived."
+  },
+  {
+   "address": "0x006e31bb",
+   "name": "client ShowHealIcon HUD-variable registration",
+   "kind": "patch_site",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "Client. Name string 0x00925930, member esi+0x2c; see 0x006e3174 and ledger SUP-17."
+  },
+  {
+   "address": "0x006e3202",
+   "name": "client ShowReloadIcon HUD-variable registration",
+   "kind": "patch_site",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-19-damage",
+   "note": "Client. Name string 0x00925920, the member after ShowHealIcon's; see 0x006e3174 and ledger SUP-17. Neighbouring strings in the same block - ShowControlPoints, ShowNonTakeableFlagIcon, ShowFlagIcon, CameraPlaced, EngineerNeeded, MedicNeeded, ShowParachute - identify it as the world-icon group, and VHUD-7's IconLookRotation site 0x006e2013 is in the same block."
+  },
+  {
+   "address": "0x008de480",
+   "name": "dice::ref2::world::IID_IPlayerControlObjectTemplate (0xc4c4)",
+   "kind": "data",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "Client. The dword is 0xc4c4, and lnxded names it at 0x086d3c4c. An earlier report proposed 'IID_BFArmorOrHudAspect_c4a4' with an inferred value of 0xc4a4 for this address - that is WRONG on both counts and must not be recorded. The client queries this IID on a PCO TEMPLATE (0x006ae46e-0x006ae47e) and then calls vptr+0x60; dumping the IPlayerControlObjectTemplate group of vtable for PlayerControlObjectTemplate 0x0873eba0 puts getHasTurretIcon() at exactly vptr+0x60, an instruction-for-instruction match. The same table gives getVehicleIconPos() at vptr+0x30 and getCrossHairType() at vptr+0x68 (not the +0x78 that report claimed). See ledger VHUD-9."
+  },
+  {
+   "address": "0x008de484",
+   "name": "dice::ref2::world::IID_IPlayerControlObject (0xc4c5)",
+   "kind": "data",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "Client. Value 0xc4c5, matching lnxded's own IID_IPlayerControlObject."
+  },
+  {
+   "address": "0x0873eba0",
+   "name": "vtable for dice::ref2::world::PlayerControlObjectTemplate (symbol; IPCOTemplate vptr = sym+0x20c)",
+   "kind": "vtable",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "lnxded. The IPlayerControlObjectTemplate group starts at sym+0x204, so its vptr is sym+0x20c: getVehicleIconPos() at vptr+0x30 (setter vptr+0x2c), getHasTurretIcon() at vptr+0x60, getCrossHairType() at vptr+0x68. Read as raw bytes and resolved against nm -C. See ledger VHUD-9, VHUD-11."
+  },
+  {
+   "address": "0x0831b620",
+   "name": "dice::ref2::world::PlayerControlObjectTemplate::getVehicleIconPos()",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "lnxded, IPlayerControlObjectTemplate vptr+0x30; returns the Vec2 that setVehicleIconPos 0x0831b5f0 stored. See ledger VHUD-11."
+  },
+  {
+   "address": "0x0831b850",
+   "name": "dice::ref2::world::PlayerControlObjectTemplate::getHasTurretIcon()",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "lnxded, IPlayerControlObjectTemplate vptr+0x60 - the slot the client calls at 0x006ae5b9 after querying IID 0xc4c4 on the template. The .con word setHasTurretIcon is declared on 7 distinct vanilla templates (Sherman, Tiger, PanzerIV, T34, T34-85, M10, Chi-ha; 10 sites with the per-level Kasserine copies) and 4195 times across 18 installs, 4160 of them 1 and 35 of them 0, always on the vehicle ROOT PCO template. bf42/con.py does not parse it. See ledger VHUD-9."
+  },
+  {
+   "address": "0x006ae5d1",
+   "name": "VehicleHud ShowTurretIcon write",
+   "kind": "patch_site",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "Client, inside the per-frame HUD updater FUN_006ad0a0 (ledger HUD-3). MOV byte ptr [EDX+0xac],AL where AL = (seatCamera->getViewMode() == 3) && pcoTemplate->getHasTurretIcon(): CALL [EBX_vt+0x34] (getCameras) at 0x006ae5a2, CALL [+0x14] (getViewMode) at 0x006ae5a9, CMP EAX,3, then CALL [ESI+0x60] at 0x006ae5b9 on template->queryInterface(*0x008de480). EDX is HUD_singleton[3]. Caveat: the client is MSVC and getCameras at +0x34 is inference-by-shape - the semantics are solid, the name for that client slot is not. See ledger VHUD-9."
+  },
+  {
+   "address": "0x006ae616",
+   "name": "VehicleHud IconLookRotation write",
+   "kind": "patch_site",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "Client. FSTP float ptr [EBP+0x320] after FPATAN (0x006ae612) and FCHS: IconLookRotation = +atan2(dot(pcoRight, camForward), dot(pcoForward, camForward)), in RADIANS, positive to the PCO's right, pivoted on the controlled PCO's own axes (the hull for a tank driver). The rows are identified at 0x006ad5df - first getAbsoluteTransformation call then ADD EAX,0x20 into [ESP+0x30..0x38] = row 2 = forward; second call with no offset into [ESP+0x3c..0x44] = row 0 = right; third with +0x30 = translation. The layout's own variable name is the unqualified 'IconLookRotation'. See ledger VHUD-9."
+  },
+  {
+   "address": "0x007e2300",
+   "name": "meme RotateEffect::apply",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "Client. angle = Angle + drawCtx[+0x18] * AngleMultiplier, then calls 0x007edbf0. The identity of drawCtx[+0x18] is UNVERIFIED, and all seven vanilla RotateEffects author angleMultiplier 0, so leaving the multiplier unapplied is correct."
+  },
+  {
+   "address": "0x007e23a0",
+   "name": "meme RotateEffect::read",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "Client. Reads Angle into this+4 and 'Angle multiplyer' (string 0x00940570) into this+8. hud-layout.json holds exactly 7 rotation blocks: six static angles (3.9, -3.14, 1.57, 2.5, 0.8, -0.8) and one bound to IconLookRotation with angle 0.0 - all seven with angleMultiplier 0."
+  },
+  {
+   "address": "0x007edbf0",
+   "name": "meme rotateQuadAboutPivot",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "Client. Per vertex about the pivot: x' = x*cos + y*sin, y' = -x*sin + y*cos (traced 0x007edc09-0x007edc4b). On a y-down HUD frame that is COUNTER-CLOCKWISE: (0,-1) at +90 degrees maps to (-1,0), top to left. HTML canvas ctx.rotate(+theta) is the opposite (top to right), so a viewer feeding the engine's own angle must rotate by -angle. See ledger VHUD-9."
+  },
+  {
+   "address": "0x006e8ca0",
+   "name": "WeaponIconHud registerVariables (the 'Ammo' group)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "Client, re-read from raw bytes with its name strings because the function no longer exists in the Ghidra project. THIRTEEN registrations, group name string 'Ammo': NumberOfWeaponIcons int +0xc (0x006e8da4), PrimaryAmmoText int +0x34 (0x006e8dd2), PrimaryAmmoBar int +0x10 (0x006e8e00), RedrawPrimaryAmmo bool +0x38 (0x006e8e2e), SecondaryAmmo int +0x3c (0x006e8e5c), SecondaryAmmoText int +0x64 (0x006e8e8a), MaxSecondaryAmmo int +0x68 (0x006e8eb8), SecondaryAmmoBar int +0x40 (0x006e8ee6), RedrawSecondaryAmmo bool +0x6c (0x006e8f14), UnlimitedPrimaryAmmo bool +0x6d (0x006e8f42), UnlimitedSecondaryAmmo bool +0x6e (0x006e8f70), PrimaryAmmoIcon pic +0x14 (0x006e8f9e), SecondaryAmmoIcon pic +0x44 (0x006e8fcf). The Unlimited* pair closes in-game-hud.md's separate open item; SecondaryAmmoIcon was missing from the first reading. See ledger VHUD-10."
+  },
+  {
+   "address": "0x006e9820",
+   "name": "OverheatHud registerVariables (the 'Overheat' group)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "Client. Group name string 0x00926038 = 'Overheat', and it registers exactly three: OverHeat float +0x8 (0x006e9934), ShowRecover INT +0xc (0x006e9971), Recover float +0x10 (0x006e999f). SniperSight is NOT in this group - see 0x006e9a60. See ledger VHUD-10."
+  },
+  {
+   "address": "0x006e9a60",
+   "name": "CrossHairHud registerVariables (the 'CrossHair' group)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "Client. Group name string 0x008deab4 = 'CrossHair'; registers SniperSight bool +0x84 at 0x006e9a98. An earlier reading filed SniperSight under the Overheat group, which is wrong. See ledger VHUD-10."
+  },
+  {
+   "address": "0x006d6af0",
+   "name": "Hud_setHeatOrReloadBar",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "Client, decompiled and confirmed verbatim. f = heat > 0.1 ? heat/heatMax : (reload > 0.1 ? reload/reloadMax : 0.0); selector 1 writes 1 - f to *(float*)([this+0x14]+0x8) and selector 2 to +0xc. Inverted feed, heat wins, a strict 0.1 dead band on the raw values. DO NOT record field names for the destinations: [this+0x14] is an unidentified group object (its single caller 0x006d71ad passes ECX = EDI and reads [EDI+0xc] as the weapon-icon group, so EDI is a container of group pointers), and +0xc being written as a float is inconsistent with the Overheat group's int at +0xc. See ledger VHUD-10."
+  },
+  {
+   "address": "0x08290cd0",
+   "name": "dice::ref2::world::FireArmsBundle::getAmmo",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "lnxded. NOT an ammo accessor as the symbol suggests: the body read instruction by instruction (0x08290cd9-0x08290d10) is the inlined gcc std::vector::erase(begin, end) idiom on this+0x110 - edi = [this+0x110], ebx = ([this+0x114] - edi) & ~3, memmove@plt with n = 0 at 0x08290cf7, [this+0x114] -= ebx, return &this->[0x110]. It reports no count and destructively empties the vector. Whether this is identical-code-folding or a misattributed symbol is open; the real reader is getTotalAmmo 0x08290d20. See ledger VHUD-10."
+  },
+  {
+   "address": "0x08290d20",
+   "name": "dice::ref2::world::FireArmsBundle::getTotalAmmo()",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "lnxded. call [vt+0x7c], then queryInterface(IID_IPlayerObject 0xc378 at 0x086c2a60), then walks [ebx+0x54] comparing [ebx+0x4c]->getClassID() against ds:0x86c2b8c and accumulating. This is the function that actually reads a bundle's ammo. See ledger VHUD-10."
+  },
+  {
+   "address": "0x0814e860",
+   "name": "dice::bf::GameServer::enterVehicle(BFPlayer*, IPlayerObject*, bool, bool)",
+   "kind": "function",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "lnxded, GameServer vtable vptr+0x6c. Its FOURTH declared parameter is the force forwarded to PlayerControlObject::enter at 0x0814e90a ([ebp+0x18] -> [ebp-0x16a] at 0x0814e87b; the third goes to [ebp-0x169] and is not the force). Callers, push order decoded: seat switch 0x0814fbb8 (false,false), toggleEntryPoint 0x0814f193 (false,false), spawnPlayer 0x0814cdcc (true,false), killPlayer 0x0814db4c (true,false), exitVehicle 0x0814e67b (false,true). See ledger SEAT-11."
+  },
+  {
+   "address": "0x0814fbb8",
+   "name": "seat-switch enterVehicle call site",
+   "kind": "patch_site",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "lnxded, inside GameServer::checkPlayerTriggers' c_PIMenuSelect path: enterVehicle(player, pco, false, false), i.e. force = FALSE. A seat switch into an occupied seat is refused, not stolen. See ledger SEAT-11."
+  },
+  {
+   "address": "0x0814e67b",
+   "name": "exitVehicle enterVehicle call site (the only force = true)",
+   "kind": "patch_site",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "lnxded: enterVehicle(player, pco, false, true) - the single path in the binary that passes force = true, re-entering the player's own soldier on exit. See ledger SEAT-11."
+  },
+  {
+   "address": "0x087209a0",
+   "name": "vtable for dice::ref2::world::Camera (symbol; ICameraObject vptr = sym+0x150)",
+   "kind": "vtable",
+   "subsystem": "seat",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "lnxded. The ICameraObject group starts at sym+0x148, so its vptr is sym+0x150 and getViewMode() const is at vptr+0x14 - the slot the client calls to test == 3 for ShowTurretIcon. See ledger VHUD-9 and SEAT-10."
+  },
+  {
+   "address": "0x081e7800",
+   "name": "dice::ref2::OverTimeDistribution::OverTimeDistribution(float)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "lnxded. +0x0 default value, 101 floats from +0x4, a 128-bit authored mask at +0x198. EngineTemplate constructs both gear curves with a default of 1.0 (push 0x3f800000 at 0x0823f00b and 0x0823f054). The flat fill is only the starting point - see generateDistribution 0x081e7830. See ledger TANK-3."
+  },
+  {
+   "address": "0x081e7830",
+   "name": "dice::ref2::OverTimeDistribution::generateDistribution",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "lnxded, all 41 instructions hand-traced. Scans forward from lo for the next set bit of the mask at +0x198 (0x081e7848-0x081e7866), then for j = lo..hi writes v[j] = ((hi-j)*v[lo] + (j-lo)*v[hi]) / (hi-lo) (0x081e7880-0x081e78a8). Tail case at 0x081e78b8: when no authored index remains above lo it sets v[100] = v[lo] first and fills flat, so the curve is held CONSTANT after the last authored point (moot for the gear curves, where index 100 is authored). This is the function the earlier TANK-3 pass did not follow, and why the 'fully materialized 1.0 array' reading was wrong. Client twin FUN_005094b0. See ledger TANK-3, TANK-4."
+  },
+  {
+   "address": "0x005094b0",
+   "name": "OverTimeDistribution generateDistribution (client twin)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "Client. The same ((hi-j)*v[lo] + (j-lo)*v[hi]) / (hi-lo) fill, unrolled x4 (0x00509527-0x0050964b), with the same flat-tail case (test byte [eax+0x1a4],0x10 then mov [eax+0x194],...). Called 11 times from FUN_005715d0, once after every gear-curve control point. See ledger TANK-3."
+  },
+  {
+   "address": "0x0824ca70",
+   "name": "dice::ref2::world::PhysicsEngine::getCurrentRatio (lnxded)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "lnxded. fild [this+0xbc] (gear, an int) / fild [tmpl+0x360] (numberOfGears, an int), fdivrp; fld ds:0x86d0ce0 (bytes 00 00 60 40 = 3.5); fmul [tmpl+0x364] (differential); fmul ds:0x86b01ac (100.0); fldcw 0x0c00 + fist (genuine round toward zero); then frac*curve[i+1] (fmul [ecx+eax*4+0x8]) + (1-frac)*curve[i] (fmul [ecx+eax*4+0x4]), faddp, fdivp. So ratio = 3.5*differential / lerp(curve[i], curve[i+1], frac) and the 3.5 is a numerator multiplier on differential, not a divisor. FIVE call sites, so it is load-bearing drivetrain physics rather than sound: feedbackLoop 0x0824c87a, PhysicsEngine::updatePhysics 0x0824cfe6, ResponsePhysics::addFriction 0x0825c252 and 0x0825c6fc, AnimatedBundle::updateAnimations 0x082665ff. See ledger TANK-3."
+  },
+  {
+   "address": "0x0824cb10",
+   "name": "dice::ref2::world::PhysicsEngine::getCurrentTorque (lnxded)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "lnxded. Input is min(|engine[+0xa0]|, 1.0) * 100 - a normalised throttle/rev fraction, NOT the gear (clamp at 0x0824cb51-0x0824cb63, flag mask decoded: the fall-through replaces with 1.0 on >). Lerp at 0x0824cb98/0x0824cb9e, then fmul [ecx+0x368] = torque. Its only caller is PhysicsEngine::feedbackLoop 0x0824c88a, called from updatePhysics 0x0824cfc1 and addFriction 0x0825bc45; the return value is discarded at 0x0824cfc6 and the lasting effect is the rev state at +0xa4/+0xac, so 'sound only' is UNVERIFIED. See ledger TANK-4."
+  },
+  {
+   "address": "0x0823efc0",
+   "name": "dice::ref2::world::EngineTemplate::EngineTemplate (lnxded)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "lnxded. Builds both gear curves: torque OTD at tmpl+0x1b8 (slot i at +0x1bc+4i, mask at +0x350) with points 0->0.70, 10->0.80, 30->0.90, 60->1.00, 85->0.85, 100->0.70; ratio OTD at tmpl+0x378 (slot i at +0x37c+4i, mask at +0x510) with 20->3.5, 40->2.2, 60->1.5, 80->1.1, 100->0.94. Index 0 of the RATIO curve is never authored, so slots 0-20 ramp from the ctor default 1.0 up to 3.5. generateDistribution is called after EVERY control point - eleven calls at 0x0823f0b4/0d8/0fc/120/144/165/18a/1af/1d4/1f8 and the tail jump 0x0823f224. Ctor defaults numberOfGears = 1 (0x0823f018), differential = 10.0, torque = 60.0 at tmpl+0x360/364/368. makeScript 0x0823f580 emits no gear-curve setter, so no .con word can author either curve. See ledger TANK-3, TANK-4."
+  },
+  {
+   "address": "0x086d0ce0",
+   "name": "gear-ratio numerator constant (3.5)",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "lnxded .rodata, raw bytes 00 00 60 40. getCurrentRatio multiplies differential by it. It is numerically equal to ratio curve[20], which is exactly why the first gear of a 5-speed comes out at differential. Client twin 0x008fdfa8."
+  },
+  {
+   "address": "0x086b01ac",
+   "name": "gear-curve index scale (100.0)",
+   "kind": "data",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "lnxded, raw bytes 00 00 c8 42. Both getCurrentRatio and getCurrentTorque multiply their normalised input by it before the round-toward-zero that indexes the 101-slot curve. Client twin 0x008c3e80."
+  },
+  {
+   "address": "0x08113480",
+   "name": "dice::bf::floatToFixed(float, int, float)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "lnxded. Every PlayerInput float on the wire is packed 12-bit over a range of +-16.0 by PlayerAction::set 0x081128a0 (push 0x41800000 = 16.0 at every one of the 55 sites) and unpacked by PlayerAction::get 0x0815c5a0 as ((n/4095)*2 - 1)*16.0 (0x86c0cf0 = 4095.0, 0x86c0cf8 = 16.0, both doubles). The protocol deliberately reserves four bits of headroom above 1.0, which is one of the three reasons 'maxSpeed is the literal deg/s ceiling' is not safe to assume. See ledger GUN-2b."
+  },
+  {
+   "address": "0x081128a0",
+   "name": "dice::bf::PlayerAction::set",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "lnxded. Packs each PlayerInput float through floatToFixed(v, 12, 16.0f). See 0x08113480 and ledger GUN-2b."
+  },
+  {
+   "address": "0x0815c5a0",
+   "name": "dice::bf::PlayerAction::get",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "research-2026-09-19-vehicle-hud",
+   "note": "lnxded. Decodes ((n/4095)*2 - 1)*16.0 back into a PlayerInput float. See 0x08113480 and ledger GUN-2b."
   }
  ]
 }
