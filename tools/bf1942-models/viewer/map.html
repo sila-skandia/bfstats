@@ -5374,6 +5374,11 @@ function setHudVar(name, value) {
 
 function clearVehicleHud() {
   for (const name of HUD_VEHICLE_VARS) setHudVar(name, null);
+  // The dot feed's memo goes with them, or re-entering the same vehicle at
+  // the same seat would leave all thirteen variables deleted and never
+  // rewritten.
+  seatDotsFor = null;
+  seatDotsSeat = null;
 }
 
 // R2-8 (verify-r2.md's corrected report): the client's own case-sensitive
@@ -5400,6 +5405,26 @@ function ammoBarCode(name) {
 function turretDialAngle() {
   if (!occupancy?.showsTurretIcon(insideView())) return undefined;
   return occupancy.turret?.turretYawRadians();
+}
+
+// The seat-dot feed's memo: the vehicle and the seat it was last written for.
+// Nothing in the table can change between seat switches — the positions are
+// template data and the states are only "you" versus "not you" — so this
+// rewrites 13 variables on a switch rather than on every frame.
+let seatDotsFor = null;
+let seatDotsSeat = null;
+
+function feedSeatDots() {
+  if (seatDotsFor === occupancy && seatDotsSeat === occupancy.activeSeatId) return;
+  seatDotsFor = occupancy;
+  seatDotsSeat = occupancy.activeSeatId;
+  const dots = occupancy.seatDots();
+  setHudVar('Occupied/OccupiedData', dots.map(d => d.state));
+  for (let i = 0; i < 6; i++) {
+    const dot = dots[i];
+    setHudVar(`Vehicle/VehiclePos/VehiclePosX${i + 1}`, dot?.x ?? null);
+    setHudVar(`Vehicle/VehiclePos/VehiclePosY${i + 1}`, dot?.y ?? null);
+  }
 }
 
 /**
@@ -5464,13 +5489,12 @@ function feedVehicleHud() {
   // binds — one `BfOccupiedVehicleData` object backs all six leaves) plus a
   // position pair per dot. A seat whose extract predates the word feeds no
   // pair and `hud.js` keeps the layout's own literal rect.
-  const dots = occupancy.seatDots();
-  setHudVar('Occupied/OccupiedData', dots.map(d => d.state));
-  for (let i = 0; i < 6; i++) {
-    const dot = dots[i];
-    setHudVar(`Vehicle/VehiclePos/VehiclePosX${i + 1}`, dot?.x ?? null);
-    setHudVar(`Vehicle/VehiclePos/VehiclePosY${i + 1}`, dot?.y ?? null);
-  }
+  //
+  // Memoised on the vehicle and the seat, because `feedVehicleHud` runs every
+  // frame while occupied (rule 5) and nothing in the dot table can change
+  // between seat switches: the positions are template data and the states are
+  // "you" versus "not you".
+  feedSeatDots();
   // R2-31 (corrected, verify-r2.md): hitpoints/armor live on the root PCO
   // only, one Armor shared by every seat — never a nested seat's own value.
   //
@@ -8094,6 +8118,18 @@ const IN_COMBAT_AREA = { countdown: 0 };
 // `setHudAmmoType` -> `Ammo/AmmoType`, and which of those print a round
 // count: both live in `hud.js` beside the rest of the layout's own
 // vocabulary, so `tests/hud_harness.mjs` can drive them under node. HUD-10.
+//
+// Every `soldierAmmo` variable this file writes, so a weapon swap starts from
+// nothing. The `Ammo/Primary*` names are shared with the vehicle panel, which
+// is fine: the two groups are mutually exclusive in the layout
+// (`Vehicle/ShowVehicleIcon` gates one and `NotData` of it the other), and
+// only one of them is fed at a time.
+const SOLDIER_AMMO_VARS = [
+  'Ammo/AmmoType', 'Ammo/PrimaryAmmo', 'Ammo/MaxPrimaryAmmo', 'Ammo/PrimaryMag',
+  'Ammo/SoldierAmmo/SoldierAmmoHasMag', 'Ammo/SoldierAmmo/SoldierAmmoIcon',
+  'Ammo/SoldierAmmo/SoldierAmmoBar', 'Ammo/SoldierAmmo/SoldierAmmoBarFill',
+  'Ammo/SoldierAmmo/SoldierAmmoBarSize',
+];
 
 function updateSoldierHud() {
   const vars = gameHud.vars;
@@ -8228,6 +8264,14 @@ function updateSoldierHud() {
   const hudAmmo = (hw.data?.hudAmmo || '').toLowerCase();
   const ammoHud = hw.data?.hud;
   const ammoType = AMMO_TYPE_CODES[hudAmmo];
+  // Every branch below only ever WRITES, so without this a weapon swap left
+  // the previous weapon's leaves behind: switch off a bazooka and its rocket
+  // icon stayed in `SoldierAmmoIcon`, switch to a knife (`ATNone`, which no
+  // branch feeds) and the rifle's `AmmoType 1` kept the whole magazine panel
+  // on screen. Harmless while only two branches existed and only one of them
+  // fed an icon; not once every type in HUD-10's enum is reachable. Cleared
+  // to undefined rather than to a zero, which is the painter's own rule.
+  for (const name of SOLDIER_AMMO_VARS) delete vars[name];
   if (hudAmmo === 'atammobar' && magazine) {
     // R1-19/HUD-9, the magazine-bar branch. PrimaryAmmo is the loaded round
     // count (top-right, "14" in the retail shot); PrimaryMag is a SEPARATE
