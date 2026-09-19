@@ -914,5 +914,159 @@ endEffect
         self.assertEqual([110.0, 95.0, -180.0], area.points[0])
 
 
+class BuildingSoundTests(unittest.TestCase):
+    """Building sounds harvested from loadSoundScript in static templates."""
+
+    def test_windmill_sound_extracted(self):
+        """A windmill with loadSoundScript in its rotator produces a point sound."""
+        from bf42.con import ObjectLibrary
+        from bf42.rfa import ArchivePool
+
+        # Mock ObjectLibrary with windmill template tree
+        library = ObjectLibrary()
+        # Parent bundle
+        library.add_con("Objects/Statics/windmill.con", """
+ObjectTemplate.create Bundle euwindmill
+ObjectTemplate.addTemplate euwindmillWings
+""")
+        # Child rotator with sound script
+        library.add_con("Objects/Statics/windmill.con", """
+ObjectTemplate.create RotationalBundle euwindmillWings
+ObjectTemplate.loadSoundScript Sounds/windmill.ssc
+""")
+
+        # Mock ArchivePool that can find the .con and .ssc
+        class MockPool:
+            def find(self, path):
+                if "windmill.con" in path.lower() or "windmill.ssc" in path.lower():
+                    return path
+                return None
+
+            def read(self, path):
+                if "windmill.con" in path.lower():
+                    return b"""
+ObjectTemplate.create RotationalBundle euwindmillWings
+ObjectTemplate.loadSoundScript Sounds/windmill.ssc
+"""
+                elif "windmill.ssc" in path.lower():
+                    return b"""
+newPatch
+load windmill_loop.wav
+volume 0.4
+loop
+beginEffect
+controlSource Distance
+controlDestination Volume
+envelope Ramp
+param 8.0
+param 30.0
+param 0.4
+param -0.4
+endEffect
+"""
+                return b""
+
+        objects = MockPool()
+
+        # Mock level files (no area sounds)
+        class MockFiles:
+            def find(self, path):
+                return None
+            def names(self):
+                return []
+            def read(self, path):
+                return b""
+
+        mock_files = MockFiles()
+
+        # Static instance of windmill
+        statics = [
+            StaticInstance(
+                template="euwindmill",
+                position=(100.0, 5.0, 200.0),
+                rotation=(0.0, 0.0, 0.0),
+            )
+        ]
+
+        sounds = discover_level_sounds(mock_files, statics, library, objects)
+
+        # Should find one building sound
+        building_sounds = [s for s in sounds.areas if "_static" in s.name]
+        self.assertEqual(1, len(building_sounds))
+
+        sound = building_sounds[0]
+        self.assertEqual("windmill_loop.wav", sound.file)
+        self.assertAlmostEqual(0.4, sound.volume)
+        self.assertEqual(8.0, sound.near_distance)
+        self.assertEqual(30.0, sound.far_distance)
+        # Point emitter at windmill position (Z negated for glTF)
+        self.assertEqual([[100.0, 5.0, -200.0]], sound.points)
+
+    def test_multiple_instances_same_template(self):
+        """Multiple windmills share template but each emits own point sound."""
+        from bf42.con import ObjectLibrary
+
+        library = ObjectLibrary()
+        library.add_con("Objects/Statics/windmill.con", """
+ObjectTemplate.create Bundle euwindmill
+ObjectTemplate.addTemplate euwindmillWings
+
+ObjectTemplate.create RotationalBundle euwindmillWings
+ObjectTemplate.loadSoundScript Sounds/windmill.ssc
+""")
+
+        class MockPool:
+            def find(self, path):
+                return path if "windmill" in path.lower() else None
+            def read(self, path):
+                if ".ssc" in path.lower():
+                    return b"""
+newPatch
+load windmill.wav
+volume 0.5
+loop
+"""
+                return b"""
+ObjectTemplate.create RotationalBundle euwindmillWings
+ObjectTemplate.loadSoundScript Sounds/windmill.ssc
+"""
+
+        class MockFiles:
+            def find(self, _): return None
+            def names(self): return []
+            def read(self, _): return b""
+
+        statics = [
+            StaticInstance("euwindmill", (10.0, 0.0, 20.0), (0.0, 0.0, 0.0)),
+            StaticInstance("euwindmill", (30.0, 0.0, 40.0), (0.0, 0.0, 0.0)),
+            StaticInstance("euwindmill", (50.0, 0.0, 60.0), (0.0, 0.0, 0.0)),
+        ]
+
+        sounds = discover_level_sounds(MockFiles(), statics, library, MockPool())
+        building_sounds = [s for s in sounds.areas if "_static" in s.name]
+
+        # Should have 3 point sounds, one per windmill
+        self.assertEqual(3, len(building_sounds))
+        positions = [s.points[0] for s in building_sounds]
+        expected = [[10.0, 0.0, -20.0], [30.0, 0.0, -40.0], [50.0, 0.0, -60.0]]
+        self.assertEqual(sorted(expected), sorted(positions))
+
+    def test_no_sound_without_library(self):
+        """Without library/objects, building sounds are not extracted."""
+        class MockFiles:
+            def find(self, _): return None
+            def names(self): return []
+            def read(self, _): return b""
+
+        statics = [
+            StaticInstance("euwindmill", (100.0, 5.0, 200.0), (0.0, 0.0, 0.0))
+        ]
+
+        # Call without library/objects (backward compat)
+        sounds = discover_level_sounds(MockFiles(), statics)
+        building_sounds = [s for s in sounds.areas if "_static" in s.name]
+        self.assertEqual(0, len(building_sounds))
+
+
 if __name__ == "__main__":
     unittest.main()
