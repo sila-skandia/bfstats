@@ -95,6 +95,26 @@ class ContactResponseTests(unittest.TestCase):
         self.assertEqual(1.0, lookup["noTable"])
         self.assertEqual(1.0, lookup["noZero"])
 
+    def test_a_table_that_predates_the_two_new_words_is_not_read_as_a_miss(self) -> None:
+        # `elasticity` and `resistance` only joined `bf42/damage.py` this
+        # round, so an asset tree extracted before it carries `friction`
+        # alone. The engine has no such state -- a Material always holds all
+        # three -- so running the miss chain on it would answer `fld1` and
+        # make every elasticity 1.0 (a landmine would stop dead like a
+        # grenade) and every resistance 1.0 (twenty times material 0's).
+        stale = self.results["staleTable"]
+        self.assertAlmostEqual(0.8, stale["friction"])
+        self.assertAlmostEqual(0.0, stale["grenadeElasticity"])
+        self.assertAlmostEqual(0.01, stale["grassResistance"])
+        self.assertAlmostEqual(0.0, stale["undefinedElasticity"])
+        # Both rounds then behave as the pre-round viewer's materials would:
+        # no elasticity anywhere, so `v_n / 2` for both.
+        self.assertAlmostEqual(0.0, stale["grenadeOnGrass"]["elasticity"])
+        self.assertAlmostEqual(0.0, stale["landmineOnGrass"]["elasticity"])
+        self.assertAlmostEqual(0.01, stale["landmineOnGrass"]["resistance"])
+        # `friction` is in the stale table, so it is untouched by the guard.
+        self.assertAlmostEqual(1.4, stale["grenadeOnGrass"]["friction"])
+
     def test_a_pair_is_the_mean_of_the_two_materials(self) -> None:
         pairs = self.results["pairs"]
         # Grenade (2.0 / 2.0 / 2.0) on juicy grass (0.8 / 0 / 0.08).

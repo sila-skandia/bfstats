@@ -179,6 +179,20 @@ export function contactMaterialFor(template, fallback) {
  * misses too, push **1.0**. So an id the define file never mentions is not the
  * constructor default — it is material 0's authored value, which for friction
  * is 1.0 and for resistance is 0.02, not 0.01.
+ *
+ * ONE CASE THE ENGINE CANNOT HAVE, AND THIS TABLE CAN. In the engine a
+ * `Material` always carries all three words — the constructor writes 1.0 / 0 /
+ * 0.01 and the `.con` overrides what it names — so "the material exists but
+ * this word does not" is not a state `getMaterialPtr` can return. It IS a
+ * state `damage.json` can be in: `elasticity` and `resistance` only joined
+ * `bf42/damage.py` in this round, so any asset tree extracted before it (a mod
+ * subtree under `maps/mods/<id>/` that has not been re-extracted, say) carries
+ * `friction` alone. Running the engine's own miss chain on that gives **1.0**
+ * for every elasticity and every resistance in the game, which silently turns
+ * a landmine into a grenade and over-damps everything by a factor of twenty.
+ * So a table whose material 0 is present but lacks the word is read as the
+ * pre-round table it is, and answers the engine's CONSTRUCTOR default. A table
+ * with no material 0 at all still answers `fld1`, which is the real chain.
  */
 export function materialProperty(materials, id, key) {
   if (!materials) return NO_MATERIAL_TABLE;
@@ -188,8 +202,16 @@ export function materialProperty(materials, id, key) {
   const zero = materials[0] ?? materials['0'];
   const fallback = zero?.[key];
   if (typeof fallback === 'number' && Number.isFinite(fallback)) return fallback;
+  if (zero && key in CONSTRUCTOR_DEFAULTS) return CONSTRUCTOR_DEFAULTS[key];
   return NO_MATERIAL_TABLE;
 }
+
+/** `Material`'s own constructor values, for the pre-round-table case above. */
+const CONSTRUCTOR_DEFAULTS = Object.freeze({
+  friction: DEFAULT_FRICTION,
+  elasticity: DEFAULT_ELASTICITY,
+  resistance: DEFAULT_RESISTANCE,
+});
 
 /**
  * The three contact coefficients for a material pair, each the plain mean.
