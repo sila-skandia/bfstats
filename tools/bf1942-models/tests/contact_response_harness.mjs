@@ -74,6 +74,25 @@ results.staleTable = {
   landmineOnGrass: contactPair(STALE_MATERIALS, 232, 3),
 };
 
+// A table where the two fuse-round ids are present but bare, which is the
+// state a hand-merged `_shared/damage.json` can be in and the state the engine
+// itself is in for a declaration that names no physical word. Material 0 here
+// DOES carry its authored 0.02, so only the declared-but-bare rule can give
+// the constructor's 0.01.
+const BARE_MATERIALS = {
+  '0': { friction: 1.0, elasticity: 0.0, resistance: 0.02 },
+  '3': { friction: 0.8, elasticity: 0.0, resistance: 0.08 },
+  '232': { friction: 1.0, damage: 30 },
+};
+
+results.declaredBare = {
+  resistance: materialProperty(BARE_MATERIALS, 232, 'resistance'),
+  elasticity: materialProperty(BARE_MATERIALS, 232, 'elasticity'),
+  friction: materialProperty(BARE_MATERIALS, 232, 'friction'),
+  // 99 is still absent from this table, so it is still a real miss.
+  missResistance: materialProperty(BARE_MATERIALS, 99, 'resistance'),
+};
+
 results.pairs = {
   grenadeOnGrass: contactPair(MATERIALS, 70, 3),
   grenadeOnRock: contactPair(MATERIALS, 70, 12),

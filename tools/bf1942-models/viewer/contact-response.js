@@ -192,25 +192,34 @@ export function contactMaterialFor(template, fallback) {
  * constructor default — it is material 0's authored value, which for friction
  * is 1.0 and for resistance is 0.02, not 0.01.
  *
- * ONE CASE THE ENGINE CANNOT HAVE, AND THIS TABLE CAN. In the engine a
+ * A MATERIAL THAT IS DECLARED BUT BARE IS NOT A MISS. In the engine a
  * `Material` always carries all three words — the constructor writes 1.0 / 0 /
- * 0.01 and the `.con` overrides what it names — so "the material exists but
- * this word does not" is not a state `getMaterialPtr` can return. It IS a
- * state `damage.json` can be in: `elasticity` and `resistance` only joined
- * `bf42/damage.py` in this round, so any asset tree extracted before it (a mod
- * subtree under `maps/mods/<id>/` that has not been re-extracted, say) carries
- * `friction` alone. Running the engine's own miss chain on that gives **1.0**
- * for every elasticity and every resistance in the game, which silently turns
- * a landmine into a grenade and over-damps everything by a factor of twenty.
- * So a table whose material 0 is present but lacks the word is read as the
- * pre-round table it is, and answers the engine's CONSTRUCTOR default. A table
- * with no material 0 at all still answers `fld1`, which is the real chain.
+ * 0.01 and the `.con` overrides only what it names — so a declaration that
+ * names none of them, which is what `materialManagerdefine.con` does for 195
+ * and 232 among others, is a real Material holding the constructor's values.
+ * `getMaterialPtr` never misses on it and material 0's authored numbers never
+ * come into it. In JSON that state is an entry with no such key, so an entry
+ * that exists answers `CONSTRUCTOR_DEFAULTS` rather than falling through.
+ *
+ * That also makes the module safe against a `damage.json` older than this
+ * round. `elasticity` and `resistance` only joined `bf42/damage.py` here, so
+ * an asset tree extracted before it (a mod subtree under `maps/mods/<id>/`
+ * that has not been re-extracted, say) carries `friction` alone; running the
+ * miss chain on that would answer **1.0** for every elasticity and every
+ * resistance in the game, silently turning a landmine into a grenade and
+ * over-damping everything by a factor of twenty.
  */
 export function materialProperty(materials, id, key) {
   if (!materials) return NO_MATERIAL_TABLE;
   const own = materials[id] ?? materials[String(id)];
-  const value = own?.[key];
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (own) {
+    const value = own[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    // Declared, and this word unauthored: the Material constructor's.
+    if (key in CONSTRUCTOR_DEFAULTS) return CONSTRUCTOR_DEFAULTS[key];
+    return NO_MATERIAL_TABLE;
+  }
+  // A real `getMaterialPtr` miss: material 0's AUTHORED value, then `fld1`.
   const zero = materials[0] ?? materials['0'];
   const fallback = zero?.[key];
   if (typeof fallback === 'number' && Number.isFinite(fallback)) return fallback;
@@ -218,7 +227,7 @@ export function materialProperty(materials, id, key) {
   return NO_MATERIAL_TABLE;
 }
 
-/** `Material`'s own constructor values, for the pre-round-table case above. */
+/** `Material`'s own constructor values, for a declaration that names none. */
 const CONSTRUCTOR_DEFAULTS = Object.freeze({
   friction: DEFAULT_FRICTION,
   elasticity: DEFAULT_ELASTICITY,
