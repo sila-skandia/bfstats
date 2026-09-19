@@ -237,6 +237,10 @@ export class EngineAudio {
       voice.group = group;
       this.voices.push(voice);
     }
+    // `trigger Volume` fires on the volume's *first* rise, once. An engine
+    // patch is armed from the start; a gun patch only by a round, so nothing
+    // sounds when the patch is built and its clock runs past the step ramps.
+    for (const voice of this.voices) voice.volumeArmed = !this.oneShotsOnTrigger;
   }
 
   /**
@@ -253,6 +257,8 @@ export class EngineAudio {
     const t0 = this.ctx.currentTime;
     for (const voice of this.voices) {
       if (voice.layer.trigger === 'release') continue;
+      // A `trigger Volume` layer waits for `update`'s gate, never for this.
+      if (voice.layer.trigger === 'volume') continue;
       // A gun's one-shots belong to a round, not to the moment the patch was
       // built -- see `oneShotsOnTrigger`. Playing them here is what made every
       // vehicle weapon in the viewer silent: the Sherman's cannon is twenty
@@ -272,7 +278,7 @@ export class EngineAudio {
    * itself off `Time` — a Sherman's twenty layers are the muzzle blast, the
    * shell casing, the crew reloading and the breech closing, each with its own
    * ramp measured from the shot. A layer that declares `trigger Volume` is
-   * left to `update`'s own gate, which that same clock reset re-arms.
+   * left to `update`'s own gate, which this re-arms for exactly one play.
    *
    * A one-shot already sounding is not cut: the previous source is orphaned to
    * play out while a new one takes the voice's slot, so a burst stacks instead
@@ -288,7 +294,11 @@ export class EngineAudio {
     let played = 0;
     for (const voice of this.voices) {
       if (voice.layer.loop) continue;
-      if (voice.layer.trigger === 'release' || voice.layer.trigger === 'volume') continue;
+      if (voice.layer.trigger === 'volume') {
+        voice.volumeArmed = true;
+        continue;
+      }
+      if (voice.layer.trigger === 'release') continue;
       const previous = voice.source;
       voice.source = null;
       this.#play(voice, now);
@@ -411,9 +421,26 @@ export class EngineAudio {
       // `trigger Volume` is the delayed-start gate: the sample waits until its
       // computed volume first goes non-zero. Vanilla uses it with step `Time`
       // ramps to delay distant explosion layers by the speed of sound.
-      if (!voice.source && voice.layer.trigger === 'volume'
-          && voice.targetGain > 0 && this.started && !this.released) {
-        this.#play(voice, now);
+      //
+      // First, and once. A step ramp stays at 1 after it trips, so gating on
+      // "no source and some volume" replayed the sample every time it ended:
+      // a PanzerIV's cannon is 22 such layers, and each one looped its own
+      // one-shot for as long as the patch lived. The latch is spent by the
+      // play. A gun re-arms it per round in `trigger()`; anything else re-arms
+      // when the volume falls back to zero, so the next rise is a new event.
+      // A gun deliberately does not re-arm on zero: walking across a layer's
+      // distance band long after the shot must not set the shot off again.
+      if (voice.layer.trigger === 'volume') {
+        if (voice.targetGain <= 0) {
+          if (!this.oneShotsOnTrigger) voice.volumeArmed = true;
+        } else if (voice.volumeArmed && this.started && !this.released) {
+          voice.volumeArmed = false;
+          // Stack on a tail still sounding, the way `trigger()` does.
+          const previous = voice.source;
+          voice.source = null;
+          this.#play(voice, now);
+          if (!voice.source) voice.source = previous;
+        }
       }
 
       this.#ramp(voice.gain.gain, voice.targetGain, now, GAIN_TAU);
