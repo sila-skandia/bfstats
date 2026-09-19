@@ -172,10 +172,43 @@ every tick of a frame. **Launched as W3-G** once W3-B and W3-D reported; it
 also researches what `BFSoldier` does with the mouse-look axis on foot, so
 `LOOK_SENS` can go the same way if the law can be read.
 
-W3-B (blasts) and W3-D (sounds) have reported and are each with an adversarial
-reviewer in their worktrees. W3-B's reviewer is told to settle, from the
-binary, where the combat area's material-7 compare gets its material from
-before that half ships on: it covers 84% of Berlin's rectangle.
+**W3-B (blasts) is merged** (`cf7f352`, 2026-09-20), reviewer's verdict MERGE
+WITH FIXES, four fixes committed. Reports: `w3b-blasts.md`, `w3b-review.md`.
+- The painted combat boundary is safe and ships on. The engine samples the
+  terrain material under the occupied object's x/z every tick (no contact
+  needed), shares the rectangle's 10 s timer and resets it when you step off.
+  Material 7 is the map edge painted as a ring round one playable pocket: across
+  23 levels 0 of 749 soldier spawns, 0 of 115 control points and 0 of 724 object
+  spawns stand on it. The stream's wording ("the streets are what is not
+  painted") was refuted and rewritten; the mechanic was confirmed.
+- Confirmed from bytes: crouching in the open takes double a standing man's
+  splash (identical 9-sample tables, divisors 9 and 18); the sample offsets are
+  never rotated; `v_n' = v_n (1 - e) / 2` with a constant 0.5 and no mass, so a
+  grenade (pair e = 1.0) never rebounds and skids on its tangential speed.
+- Refuted and fixed: materials 195 and 232 ARE declared, so they carry the
+  Material constructor's 0.01 resistance, not material 0's 0.02.
+- Merge note: main (the collision session) had already added `elasticity` /
+  `resistance` to `bf42/damage.py` as optional, emitted only when authored. That
+  shape won; the consumers own the constructor fallback.
+
+**W3-D (sounds) is merged** (`cca9822`, 2026-09-20), verdict MERGE WITH FIXES.
+Reports: `w3d-sounds.md`, `w3d-review.md`.
+- Extracted into the local shared tree: `python3 extract_effects.py --mod bf1942
+  --out viewer/maps/_shared` -> 83 sounding bundles, 46 scripts, 677 layers,
+  192 samples, 2,283,777 B, `_shared/sounds` 156 -> 348 files. Checked on Wake:
+  pack loads, a grenade blast starts its sources inside the budget.
+- Reviewer fixes: `silence()` left `trigger Volume` latches armed (ghost
+  explosions after a level change); ten vanilla bundles carry two scripts in
+  their tree and only one played; `effects.glb` was not reproducible run to run.
+- **The 26-voice budget is the viewer's arithmetic, not the engine's**: the
+  32-voice hardware limit is proven, the subtraction of the 2D reservations is
+  not (SND-2b), and drop-versus-steal is a viewer choice (SND-1). `randomPlay`
+  as "pick one" is a reading of the data (SND-6).
+- To publish with the rest: `_shared/effects.glb`, `effects.report.json`,
+  `effects.sounds.json` and the 192 new files under `_shared/sounds`.
+- Left open: wreck fire never ends (holds 3 voices), sounds queued while the
+  AudioContext is suspended fire together on resume, vehicle guns still do not
+  get `randomPlay` (needs `extract_map._sound_layers` and a level re-extract).
 
 ### Not yet assigned
 
