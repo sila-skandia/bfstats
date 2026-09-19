@@ -746,6 +746,8 @@ export class SoldierBody {
     this.landed = false;         // did this tick end a fall?
     this.impactSpeed = 0;        // |v| at the moment of that landing
     this.impactNormalY = 1;      // and the surface it arrived on
+    this.impactCosTheta = 1;     // cos of the angle off that surface normal
+    this.impactMaterial = -1;    // the material struck, the fall's attacker
     this.fallHeight = 0;         // lastCollisionHeight - y, the engine's `F`
     this.lastCollisionHeight = this.body.position.y;
     this._offsets = [];
@@ -1014,8 +1016,16 @@ export class SoldierBody {
     if (this.grounded && !wasGrounded) {
       this.landed = true;
       this.impactSpeed = Math.hypot(ivx, ivy, ivz);
-      this.impactNormalY = this._bestNormalY > -Infinity
-        ? this.contactNormal.y : 1;
+      const n = this.contactNormal;
+      this.impactNormalY = this._bestNormalY > -Infinity ? n.y : 1;
+      // `cos(theta)` off the surface normal, which HP-14 raises to the third
+      // power on land and the second in water. Straight down onto the flat is
+      // 1; a glancing arrival along a slope is small, and the whole severity
+      // goes with its cube.
+      this.impactCosTheta = this.impactSpeed > 1e-9
+        ? Math.abs((ivx * n.x + ivy * n.y + ivz * n.z) / this.impactSpeed)
+        : 1;
+      this.impactMaterial = this.contactMaterial;
       this.fallHeight = this.lastCollisionHeight - this.body.position.y;
     }
     this.jumpArmed = this._armed;

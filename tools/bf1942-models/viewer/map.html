@@ -855,6 +855,7 @@ import { EffectLibrary, EffectPlayer } from './effects.js';
 import { buildHeightfield, buildCollisionIndex, WorldCollider } from './collision.js';
 import { Soldier, spawnFlags, pickSpawn, spawnYaw,
          FOV_DEG as FOOT_FOV, GRAVITY } from './soldier.js';
+import { fallDamageFor } from './fall-damage.js';
 import { DeviationModel } from './deviation.js';
 import { wantViewmodelClip } from './viewmodel-anim.js';
 import { createReplayController, recordingLevel } from './replay.js';
@@ -5947,53 +5948,40 @@ let supplyDepotsRoot = null;
  *  a closure over it, so it always acts on whatever is currently in hand. */
 const supplyTarget = { x: 0, y: 0, z: 0, team: 2, armor: null, refillAmmo: null };
 
-// Fall damage — engine-faithful, replaces the invented R4-18 ramp.
-// `verify-r4.md` R4-18 and ledger HP-6 once claimed *no* fall-damage formula
-// existed and this page ran a hand-tuned “safe 4 m / lethal 21 m linear ramp”
-// (SAFE_FALL_SPEED = 2×JUMP_SPEED, LETHAL_FALL_SPEED = 25). That was wrong:
-// HP-6 was **refuted on 2026-09-18** — the engine does damage soldiers who
-// fall. GameServer::handleCollisionLandOrWater's soldier branch (CID ==
-// CID_BFSoldierTemplate) computes a fall severity and delivers it through the
-// object-level `*0x15c` dispatch, which is `BFSoldier::handleDamage`
-// (0x08270980) → `SimpleObject::handleDamage` → `Armor::damage` (subtracts
-// HP). See `features/bf1942-3d-models/fall-damage-research-groundwork-2026-09-17.md`.
+// Fall damage — the engine's own formula, in `fall-damage.js`.
 //
-// Confirmed engine law (decoded 2026-09-18): the landed severity is
+// Ledger **HP-14**, `GameServer::handleCollisionLandOrWater` lnxded
+// `0x08154960`, delivered through the object-level `*0x15c` dispatch:
+// `BFSoldier::handleDamage` (0x08270980) -> `SimpleObject::handleDamage` ->
+// `Armor::damage`. HP-6's "the engine does not damage falling soldiers" was
+// refuted in 2026-09-18 and the hand-tuned R4-18 ramp it justified is long
+// gone; what this replaces is the *second* approximation, a single fitted
+// `FALL_KINETIC_HP = 10` calibrated against one measured Wake ledge fall.
 //
-//   severity = cos³θ · (S_obj · |v|²) · M1 · M2
+// Three things the fitted version could not do, and the module now does:
 //
-// where θ is the impact angle off the surface normal, |v| the landing speed,
-// and S_obj/M1/M2 are per-surface MaterialManager damage scalars. For a
-// straight-down foot fall cosθ = 1 and |v|² = 2|g|h, so the damage is the
-// classic kinetic `½µv²` collision law — it scales with impact speed SQUARED,
-// which is exactly why the first engine-faithful pass (a linear
-// `(drop − 1.0) × damping`) under-fit ~15x: a Wake-airstrip ledge fall costs
-// the soldier his whole health bar in-game, but read as ~2 HP with the linear
-// model. The one scalar the binary leaves to the damage tables (the combined
-// S_obj·M1·M2 for a ground/terrain surface) is calibrated here against that
-// measured lethal fall.
+//   - **The 8.0 m/s subtraction and its early return.** Nothing under
+//     8 m/s of arrival costs anything at all, and every term downstream uses
+//     the reduced speed. The fitted ramp had a 1.0 m tolerance instead, which
+//     is why it had to be eight times too gentle per metre to compensate.
+//   - **The two per-surface scalars are read, not fitted.** They are ordinary
+//     MaterialManager numbers and `_shared/damage.json` has carried them all
+//     along: `materialDamage = 30` and `damageMod(ground, 40) = 0.001` for
+//     every terrain material, so their product is 0.030. The old constant
+//     implied about 0.026, which is why it was close.
+//   - **Water, and the impact angle.** A fall into the sea is about 67x
+//     gentler and squares the cosine instead of cubing it.
 //
-// Tracking stays a height, not a sampled velocity: `SoldierBody#settle()`
-// zeroes `velocity.y` in the very same `step()` call that flips `grounded`
-// true (it has to, to plant the body on the floor), so a peak read from
-// `soldier.velocityY` *after* `step()` returns always misses the last
-// partial tick's own acceleration — verified against this file's own
-// `__dropFromHeight` hook, which under-reported a 12 m drop's damage by
-// about 5% versus the closed-form prediction. A soldier's drag is inert
-// enough over any survivable drop (`physics.js`'s own terminal-velocity
-// note, ~730 m/s) that `v² = 2|g|h` inverts cleanly, so the quantity
-// actually tracked below is the drop — exact at any tick rate, since a
-// landed body's `y` is the ground height exactly, never a clamped
-// derivative of it.
-const FALL_FREE_TOLERANCE = 1.0;   // m — engine free-fall tolerance before any HP severity
-const KIT_FALL_DAMPING = 1.0;      // vanilla kits set no damping; default unmodified
-// hp per unit of kinetic measure `|v|²`/|g| (v² = 2|g|h => kinetic = 2h).
-// Calibrated so the user's measured Wake airstrip ledge fall (~3 m in the
-// viewer's height accounting) is lethal (≥ the soldier's 30 max HP) on the
-// confirmed kinetic law — see the groundwork doc's 'Empirical calibration'.
-const FALL_KINETIC_HP = 10;        // ≈ hit points per metre of fall at |g|=14.73
-let fallPeakY = null;   // highest y seen since last leaving the ground; null while grounded
-let wasGrounded = true;
+// The height tracked is no longer the airborne peak. The engine's `F` is
+// `getLastCollisionHeight() - pos.y` — the height of the last *contact* — so a
+// jump straight up is billed 0 and a jump off a ledge is billed the ledge
+// rather than the apex above it. `SoldierBody` keeps that, and captures the
+// impact speed before `#settle` zeroes `velocity.y` to plant the feet;
+// `Soldier.step` latches the landing for the frame. All this page does is read
+// it and hand it to the formula.
+//
+// Measured on flat ground at g = -14.73, 30 HP, no kit damping: nothing below
+// 3.97 m, 1.2 HP at 4 m, 10.9 at 6 m, 21.7 at 7 m, lethal at 7.55 m.
 
 // The death cam: on the on-foot soldier's death (HP ≤ 0) the game holds the
 // camera floating above/by the corpse for a short beat before the deploy
@@ -6054,8 +6042,6 @@ function spawnAtFlag(advance = false) {
   // beside `kitLoadout` below) — every spawn and every redeploy passes
   // through here, so this is the one reset point.
   soldierArmor = new Armor(soldierMaxHp(flag));
-  fallPeakY = null;
-  wasGrounded = true;
   // Respawn clears the death cam: the fresh body is alive, so the latch
   // must not hold the corpse cam over the new soldier.
   soldierDead = false;
@@ -6180,33 +6166,14 @@ function onFoot(dt) {
   }
   soldier.step(dt, input);
 
-  // Fall damage — engine-faithful; see `FALL_KINETIC_HP`'s own comment
-  // (HP-6 refuted 2026-09-18; the R4-18 “no formula” approximation and the
-  // first linear pass are both gone). Tracks the highest y seen while
-  // airborne (a jump's own apex, when it was a jump) and judges the drop
-  // from it the instant the body reports grounded again. The engine law is
-  // kinetic — `severity = cos³θ · (S·|v|²) · M1·M2`, i.e. HP ∝ impact speed
-  // squared — which for a vertical foot fall is `∝ 2|g|·h`. So damage scales
-  // with the DROP (the height exactly, `v² = 2|g|h`), not with a fixed per-
-  // metre linear term at some one speed.
-  if (!soldier.grounded) {
-    fallPeakY = fallPeakY === null ? soldier.y : Math.max(fallPeakY, soldier.y);
-  } else {
-    if (!wasGrounded && soldierArmor && fallPeakY !== null) {
-      const dropped = fallPeakY - soldier.y;
-      // The engine's free-fall tolerance: a fall this short costs nothing.
-      if (dropped > FALL_FREE_TOLERANCE) {
-        // `FALL_KINETIC_HP` already folds the engine's `2|g|` and the
-        // calibrated material scalar; multiplying the (drop − tolerance)
-        // fall by it reproduces the kinetic damage without needing a
-        // velocity read. Kit damping multiplies as in the engine's chain.
-        const dmg = (dropped - FALL_FREE_TOLERANCE) * KIT_FALL_DAMPING * FALL_KINETIC_HP;
-        if (dmg > 0) soldierArmor.applyDamage(dmg);
-      }
-    }
-    fallPeakY = null;
+  // Fall damage — HP-14, the whole formula in `fall-damage.js`. The body has
+  // already done the hard part: `soldier.landing` is the frame's landing, with
+  // the impact speed sampled before the ground clamp and the drop measured
+  // from the last contact rather than from the airborne apex.
+  if (soldier.landing && soldierArmor) {
+    const hp = fallDamageFor(soldier.landing, damageTables);
+    if (hp > 0) soldierArmor.applyDamage(hp);
   }
-  wasGrounded = soldier.grounded;
 
   // Death cam → deploy. When the on-foot body's Armor dies (fall damage,
   // `window.__damage(n)`, a future projectile), latch the dead state and hold
@@ -10792,9 +10759,15 @@ if (params.has('shots')) {
   // before and after stepping frames until `grounded` is true again.
   window.__dropFromHeight = extraHeight => {
     if (!soldier) return false;
-    soldier.body.position.y += Number(extraHeight) || 0;
+    const lift = Number(extraHeight) || 0;
+    soldier.body.position.y += lift;
     soldier.body.velocity.y = 0;
     soldier.body.grounded = false;
+    // HP-14's `F` is `getLastCollisionHeight() - pos.y`, so the body has to
+    // believe it last touched ground at the height it is being dropped from.
+    // Without this the lift is free: the fall would be billed a drop of zero
+    // and every height would cost the same nothing.
+    soldier.body.lastCollisionHeight += lift;
     return true;
   };
   // Drive a low-ammo state directly, the same way `__damage(n)` drives a
