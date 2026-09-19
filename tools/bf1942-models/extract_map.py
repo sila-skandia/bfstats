@@ -1481,6 +1481,45 @@ def _pose_key(inst) -> tuple:
             round(inst.rotation[1], 2), round(inst.rotation[2], 2))
 
 
+def _modes_report(info: LevelInfo, placed_flags: set[str] | None,
+                  combat_area: dict | None,
+                  vehicle_soldier_spawns: dict[str, list[dict]]) -> dict[str, dict]:
+    """`scene.json.modes` — one entry per gameplay layer the archive ships.
+
+    The terrain, the statics, the lightmaps and the glb are shared between
+    modes; only these six keys differ, so a level with four layers costs four
+    small blocks of json and nothing else. Measured on Wake: 47 KB against a
+    42 MB scene.
+
+    The top-level `controlPoints` / `soldierSpawns` / `objectSpawns` /
+    `vehicleSoldierSpawns` / `tickets` / `combatArea` stay the default layer's
+    and are not touched, so a reader that knows nothing about modes reads what
+    it always did — and `modes[default]` is the same data again, which is what
+    makes "no `?mode=`" and "before this change" the same picture.
+    """
+    out: dict[str, dict] = {}
+    for name, layer in info.modes.items():
+        out[name] = {
+            # Which of the menu's game types load this layer. Empty for a
+            # layer directory the archive ships but no GameTypes script runs
+            # (Wake's `Tdm/`, and 73 other levels across the installed mods).
+            "gameTypes": sorted(gt.name for gt in info.game_types.values()
+                                if gt.mode.lower() == name.lower()),
+            "controlPoints": _control_point_report(info, placed_flags, layer),
+            "soldierSpawns": _soldier_spawn_report(info, layer),
+            "objectSpawns": _object_spawn_report(info, layer),
+            "vehicleSoldierSpawns": vehicle_soldier_spawns.get(name, []),
+            "tickets": _tickets_report(tickets_for_mode(info.game_types, name)),
+            # No level in any installed mod declares `game.setActiveCombatArea`
+            # inside a mode directory or a GameTypes script — measured over all
+            # 1,302 level archives — so this is the level-wide area every time.
+            # It is written per mode anyway so the merge is one uniform rule
+            # and a mod that does scope one has somewhere to put it.
+            "combatArea": combat_area,
+        }
+    return out
+
+
 def _tickets_report(data) -> dict | None:
     """A `TicketInfo` as scene.json carries it, or None when it declares none."""
     if data is None or (data.team1 is None and data.team2 is None):
@@ -2056,31 +2095,11 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
         "max": _to_gltf_vec((info.combat.max_x, 0.0, info.combat.max_z)),
     }
 
-    # One entry per gameplay layer the archive ships. The terrain, the
-    # statics, the lightmaps and the glb are shared; only these keys differ,
-    # so a level with four modes costs four small blocks of json and nothing
-    # else. The top-level `controlPoints` / `soldierSpawns` / `objectSpawns` /
-    # `vehicleSoldierSpawns` / `tickets` stay the default mode's, unchanged,
-    # so a reader that knows nothing about modes reads what it always did.
-    modes_report: dict[str, dict] = {}
-    for name, layer in info.modes.items():
-        modes_report[name] = {
-            "gameTypes": sorted(gt.name for gt in info.game_types.values()
-                                if gt.mode.lower() == name.lower()),
-            "controlPoints": _control_point_report(info, placed_flags, layer),
-            "soldierSpawns": _soldier_spawn_report(info, layer),
-            "objectSpawns": _object_spawn_report(info, layer),
-            "vehicleSoldierSpawns": (
-                vehicle_soldier_spawns_by_mode.get(name, [])
-                if vehicle_soldier_spawns_by_mode is not None
-                else (vehicle_soldier_spawns or [])),
-            "tickets": _tickets_report(tickets_for_mode(info.game_types, name)),
-            # No level in any installed mod declares `game.setActiveCombatArea`
-            # inside a mode directory or a GameTypes script — measured over all
-            # 1,302 level archives — so this is the level-wide area every time.
-            # It is written per mode anyway so the merge is one uniform rule.
-            "combatArea": combat_area,
-        }
+    modes_report = _modes_report(
+        info, placed_flags, combat_area,
+        vehicle_soldier_spawns_by_mode
+        if vehicle_soldier_spawns_by_mode is not None
+        else {(info.gameplay.mode or "Conquest"): (vehicle_soldier_spawns or [])})
     game_types_report = {
         gt.name: {"mode": gt.mode, "tickets": _tickets_report(gt.tickets)}
         for gt in info.game_types.values()
