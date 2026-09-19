@@ -356,3 +356,151 @@ machine).
   previously calibrated respectively; not retuned against JPEG impressions.
 - **`LightmapShadowBits.lsb`** (terrain cast shadows) — still the documented
   ceiling from map-parity.md, unchanged by this pass.
+
+---
+
+## 2026-09-19 (stream D): the sun's lens flare and corona
+
+The sky, the fog and the water above were matched against the game. The sun's
+own flare never was, because nothing parsed it. Every vanilla
+`Init/SkyAndSun.con` opens with a `LensFlare` block — 21 of the 23 levels have
+one (Midway and Coral Sea do not) — and it was read by nothing at all.
+
+### The survey
+
+`survey_flare.py` over every `.rfa` under every installed mod's `levels/`
+directory. 319 levels across 11 mods declare flares, with one uniform
+vocabulary:
+
+| verb | vanilla | all mods | levels |
+|---|---:|---:|---:|
+| `setFlareTexture` / `Size` / `Scale` / `Rot` / `Color` / `SrcBlend` / `DestBlend` | 91 each | ~1,500 each | 319 |
+| `setFlareDistFadeScale` | 55 | 907 | 315 |
+| `setCorona{Texture,Size,Scale,Rot,Color,SrcBlend,DestBlend}` | 36 each | ~600 each | 297 |
+| `setCoronaCount` / `setflarefadeall` / `setcoronafadeall` | 21 each | 741 / 740 / 740 | 735 |
+| `setFlareSize2` / `setFlareColor2` / `setCoronaSize2` / `setCoronaColor2` | 0 | 38 / 38 / 13 / 13 | 4 |
+| `setFlareFadeAngleFactor` | 0 | 4 | 1 |
+
+The `*2` verbs and `fadeAngleFactor` appear only in FHSW's
+`On_the_moon-1969` car-headlight flares and in bfheroes, but the client
+registers them (`setCoronaSize2`, `setCoronaColor2`,
+`setCoronaFadeAngleFactor` are all in BF1942.exe's string table), so the
+parser reads them rather than dropping them. Case varies freely —
+`objectTemplate.`, `setflarefadeall`, `setCoronasize2` — and the con reader
+already lower-cases both halves.
+
+Vanilla's `TSun`: 5 flares, 0 back flares, 2 coronas, visibility angle 360,
+`setflarefadeall 0.1`, `setcoronafadeall 0.3`, and the per-sprite alphas
+50, 200, 155, 50, 100 / 225, 100 out of 255 — the alpha is most of what shapes
+the effect, so it is kept rather than folded away.
+
+### The art does not ship with vanilla
+
+This is the headline, and it was checked rather than assumed. All 21 vanilla
+declarations name five textures: `ring3.tga`, `ring4.tga`, `ring5.tga`,
+`sunflare7.tga`, `sunflare9.tga`. **Every one of the 1,775 `.rfa` archives in
+this installation was opened and searched by entry stem.** Those five names
+exist in exactly two places:
+
+```
+Mods/bfheroes/Archives/Texture.rfa
+    Texture/ring3.tga (1068 b)  ring4.tga (4140 b)  ring5.tga (4140 b)
+    Texture/sunflare7.tga (65580 b)  sunflare9.tga (65580 b)
+Mods/bf1918/Archives/bf1942/levels/montblainville.rfa
+    bf1942/levels/montblainville/Texture/ring3.dds (496 b)  ring4.dds  ring5.dds
+    .../Texture/sunflare7.dds (22000 b)  sunflare9.dds
+```
+
+Neither is vanilla, and neither is reachable from a vanilla level's archive
+pool. Substring searches for `sunflare` and `/ring` across all 72 archives of
+`Mods/bf1942`, all 23 of `Mods/XPack1` and all 19 of `Mods/XPack2` return
+**nothing**. The only flare-related entry vanilla ships at all is the vertex
+shader `Archives/shaders.rfa :: shaders/FlareShader.vso`.
+
+So the engine's own TextureManager cannot resolve these names on a vanilla
+level either, and the viewer drawing nothing there is the faithful outcome —
+the same class of finding as `Sky.addCloud` above, where the layer is declared
+on all 23 levels and the geometry it needs is REM'd out on all 23. The audit's
+suspicion ("only recoverable from another mod's archive") is confirmed, with
+the two archives named.
+
+The five names go into `scene.json.lensFlare.missingTextures` rather than
+being silently dropped, so nobody has to re-derive this.
+
+### What landed
+
+- **`bf42/level.py`**: `FlareElement` and `LensFlare` dataclasses;
+  `LevelInfo.lens_flares` / `flare_objects` / `sun_object`. The block is
+  opened by `ObjectTemplate.create LensFlare <name>` and closed by the next
+  `create` of any kind; `Object.create` + `Object.name` records the instance
+  so `Sky.setSun <object>` resolves back to a template. Indices are the last
+  token, colours are `R/G/B/A` out of 255, malformed values are skipped
+  softly. 13 tests in `tests/test_level.py::LensFlareParsingTests`.
+- **`extract_map.py`**: `write_lens_flare` emits the resolved template with
+  each sprite's texture written to `flare/<stem>.png` where it resolves, and
+  `missingTextures` where it does not. It also scans `Init/*.con` and
+  `objects/LensFlares/*.con` for flare blocks **only** — bfheroes declares its
+  sun in `Init/Lenz.con` and FHSW puts headlight flares under
+  `objects/LensFlares/`, neither of which this reader parses. Flares only,
+  into a throwaway `LevelInfo`: parsing those files wholesale would let a
+  stray `renderer.fogEnd` somewhere in a mod's init chain override the fog the
+  two authoritative files set, which is the exact class of bug the fog section
+  above was written about.
+- **`viewer/lens-flare.js`**: the placement, free of `three`, 10 tests.
+- **`viewer/map.html`**: `#flare-canvas`, its own surface below the HUD and
+  above the 3D canvas. Not a layer of `hud-canvas`, because the flare moves
+  with the camera every frame while the HUD painter deliberately repaints only
+  on a changed variable (mesh-viewer-performance rule 7).
+
+### The placement is inferred, and says so
+
+Nobody read the renderer's flare pass. `FUN_00570ea0` is the only referrer of
+the `Shaders/FlareShader` string and is a constructor for a different,
+shader-based sun object; the `setFlare*` registrars were not traced to a draw.
+Anyone re-deriving this should start there. What the implementation rests on:
+
+- **Position.** `screen = centre + (sun - centre) * scale`, the classic ghost
+  multiplier. Vanilla's five scales are -1.5, 1, 1.5, -2, -2: one ghost on the
+  sun, one just past it, three mirrored across the centre. The level authors'
+  own REM labels say the same — `*** Falre no:2 > LittleDot***` (scale 1, size
+  0.5), `*** Falre no:4 :Twins***` and `no:5 :Twins` (both scale -2).
+- **Coronas are drawn at the sun**, whatever their `scale` — vanilla's are 1
+  and 5, and 5 read as a position is off screen. `setCoronaScale` is left
+  unread and unused rather than invented into a second meaning.
+- **Size multiplies the texture's own pixels**, not the viewport. `ring3` is
+  16x16 and its flare is size 0.5, which is the 8-pixel "LittleDot" the author
+  labelled; `sunflare9` is 128x128 at size 5, the "Red aura" wash. Read as a
+  viewport fraction instead, that last one would be five screens across. (The
+  sizes come from the only copies of these files that exist: bfheroes'
+  uncompressed TGAs, where 1068, 4140 and 65580 bytes are 16x16, 32x32 and
+  128x128 RGBA plus a 44-byte header.) Then scaled out of the engine's own
+  800x600 into the real viewport, as every other 800x600-authored surface in
+  this viewer is — also inferred.
+- **`setFlareRot`** is 0 on every vanilla sprite but one (flare 4, rot 1), so
+  the data constrains its unit not at all. Passed through as turns, the one
+  reading under which the single non-zero value is indistinguishable from 0 —
+  i.e. the reading that changes nothing anyone has seen. UNVERIFIED.
+- **`setflarefadeall` / `setcoronafadeall`** multiply their side's per-sprite
+  alpha. How the engine combines them was not read; multiplying is the reading
+  that cannot brighten anything.
+- **Occlusion is not modelled.** A real flare dims when something crosses the
+  sun. Nothing here traces the sun against the scene, so the factor is fed 1
+  rather than faked — a guessed occlusion would flicker the whole flare on
+  geometry it never checked. The hook is in the module's `view.occlusion`.
+
+### Verifying it
+
+Wake re-extracted into a scratch directory: `scene.json.lensFlare` carries
+`template: "TSun"`, `object: "sun"`, 5 flares, 2 coronas, the counts, both
+fade-alls, the visibility angle, and `missingTextures` listing exactly the
+five names above. `hasDrawableFlare` is false, so `setupLensFlare` skips the
+whole pass and `paintLensFlare` is a no-op — which is what a vanilla level
+should do.
+
+The draw path itself is covered by `tests/test_lens_flare.py` against a
+fixture with the art present: coronas first at the sun, a scale-1 ghost on the
+sun, a scale -1.5 ghost mirrored to (-100, 450) from a (900,200) sun on a
+1000x600 canvas, sizes 8 / 96 / 256 px from textures 16 / 32 / 128, occlusion
+and `distFadeScale` scaling alpha, and zero-size and undecoded sprites
+skipped. A live capture on a mod level that ships its own art is the one thing
+this round did not get to — see the round report.
