@@ -23,6 +23,13 @@
 //     `Armor+0x128` byte the engine keeps is a *death* latch, not a first-run
 //     latch, so there is no once-per-lifetime behaviour to reproduce: poll, and
 //     stop polling when it dies.
+//   - **A soldier IS splashed, and through a mechanism of his own** (HP-10).
+//     `applySplash` walks registered vehicles, and the man on foot is not one;
+//     what reaches him instead is a target carrying its own `Armor` plus an
+//     exposure callback, because the engine multiplies his distance falloff by
+//     the fraction of line-of-sight samples that got through
+//     (`checkForHitOnSoldier`, `viewer/soldier-exposure.js`). Nothing that is
+//     not a soldier has any occlusion at all.
 //   - **A wreck takes no player input and a critical vehicle traverses at
 //     0.2x** (HP-15, superseding the retired ARM-6). That is two persistent
 //     bytes on the engine's object, not per-frame flags, and it lasts the whole
@@ -376,8 +383,21 @@ export class VehicleDamageSet {
    * `record.splashYMod` scales the **Y** term of the distance and nothing else
    * (HP-9, 0x08156613), so a bomb's 2.0 halves its vertical reach. Absent
    * means the engine's own 1.0.
+   *
+   * **Soldiers.** A target may carry its own `armor` (an `Armor`, not a
+   * `DamageableVehicle`) instead of an owner id the set knows about, which is
+   * how the man on foot — who is not a registered vehicle and never will be —
+   * gets splashed at all. A target marked `soldier: true` also gets HP-10's
+   * exposure: `options.exposure(target, blast)` is called for it and the
+   * result multiplies the distance falloff, exactly as the engine's
+   * `checkForHitOnSoldier` result multiplies it at `0x081566b4`. An exposure
+   * of 0 short-circuits the victim (`0x08156ede`) and is not even asked for a
+   * damage mod. Everything that is not a soldier keeps exposure 1: there is no
+   * occlusion at all for a non-soldier victim, so a tank behind a wall really
+   * does take the full falloff.
    */
-  applySplash(record, targets, { materials = null, modifiers = null } = {}) {
+  applySplash(record, targets,
+              { materials = null, modifiers = null, exposure = null } = {}) {
     const material2 = record?.splashMaterial2;
     const radius = record?.splashRadius;
     if (!(Number.isFinite(material2) && material2 >= 0) || !(radius > 0)) {
@@ -396,9 +416,16 @@ export class VehicleDamageSet {
     const yMod = record.splashYMod;
     const out = [];
     for (const target of targets) {
-      if (target.owner === record.firer) continue;
-      const vehicle = this.get(target.owner);
-      if (!vehicle || vehicle.destroyed) continue;
+      // A soldier carries his own Armor; a placed object is looked up by the
+      // collision index's owner id. `target.armor` wins, so a caller can
+      // splash anything with hit points without registering it.
+      const victim = target.armor ?? this.get(target.owner);
+      if (!victim || victim.destroyed) continue;
+      // The firer is excluded by owner id — but a soldier target has no owner
+      // id worth excluding, and the end-of-life blast passes `firer -1`
+      // anyway, which is how your own grenade hurts you (`sourceArmor = NULL`
+      // at 0x0831f727).
+      if (!target.armor && target.owner === record.firer) continue;
       // Distance to the victim's transform ORIGIN — not a bounding box, not
       // the nearest surface (HP-9) — with only Y scaled.
       const distance = blastDistance(target.x - bx, target.y - by,
@@ -406,18 +433,25 @@ export class VehicleDamageSet {
       if (distance >= radius) continue;
       const splashMaterial = Number.isFinite(target.splashMaterial)
         ? target.splashMaterial
-        : vehicle.splashMaterial;
+        : victim.splashMaterial;
       if (!Number.isFinite(splashMaterial)) continue;
-      // Exposure is left at 1: `checkForHitOnSoldier`'s cover term is
-      // soldier-only in the engine, and there is no vehicle equivalent to
-      // reproduce (see `splashDamage`'s own note). There is no occlusion at
-      // all for a non-soldier victim, so a tank behind a wall really does take
-      // the full falloff here, exactly as it does in the game.
+      // HP-10, and soldier-only. `handleExplosionOnObject` seeds `edi` with
+      // 1.0f at 0x08156505 and only a soldier victim replaces it
+      // (0x08156ece); 0.0 short-circuits at 0x08156ede before any damage mod
+      // is looked up, which is why this `continue`s rather than multiplying
+      // by zero.
+      let seen = 1;
+      if (target.soldier && exposure) {
+        seen = exposure(target, [bx, by, bz]);
+        if (!(seen > 0)) continue;
+      }
       const amount = splashHp(material2, splashMaterial, distance, radius,
-                              materials, modifiers);
+                              materials, modifiers, seen);
       if (!(amount > 0)) continue;
-      const lost = vehicle.damage(amount);
-      if (lost > 0) out.push({ vehicle, lost, distance });
+      const lost = victim.damage(amount);
+      if (lost > 0) {
+        out.push({ vehicle: victim, target, lost, distance, exposure: seen });
+      }
     }
     return out;
   }

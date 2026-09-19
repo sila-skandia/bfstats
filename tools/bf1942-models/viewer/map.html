@@ -870,6 +870,11 @@ import { bonePattern, kitsByTemplate, wornGrafts } from './kit-graft.js';
 import { wantsEnvmap, cubeFaceUrls, envmapVertexPatch, envmapVertexBody,
          envmapFragmentPatch, envmapFragmentApply } from './envmap.js';
 import { CombatArea, combatAreaRect } from './combat-area.js';
+// HP-10's sampling, and the one metre `setCharacterHeight -1.00` puts between
+// a soldier's feet and his object origin — the point the engine measures a
+// blast to and adds its sample offsets from.
+import { soldierExposure, worldBlocker, POSE_STAND } from './soldier-exposure.js';
+import { CHARACTER_HEIGHT } from './physics.js';
 import { flareSprites, flareTextureFiles, hasDrawableFlare } from './lens-flare.js';
 
 // Which game's levels this page serves, and the directory they hang off:
@@ -4616,11 +4621,32 @@ function reconcileDamaged(vehicle) {
 const splashPos = new THREE.Vector3();
 
 /**
+ * `MaterialManager.material 40` — the soldier's own defending material, the
+ * one `damageMod(205, 40)` keys a grenade's splash off. Same constant
+ * `fall-damage.js` uses for the ground-versus-soldier pair.
+ */
+const SOLDIER_SPLASH_MATERIAL = 40;
+
+/**
  * Everything with an Armor that a blast could reach, as `applySplash` wants it:
  * world positions, because `vehicle-damage.js` stays free of three.js. The
  * distance is to the object's origin, which is what the engine measures too
  * (`handleExplosionOnObject`, HP-9) — a tank is not hurt less for being hit on
  * the far corner of its hull.
+ *
+ * Soldiers arrive carrying their own `Armor` and `soldier: true`, which is what
+ * earns them HP-10's exposure term. Two kinds:
+ *
+ *   - the player, when he is on foot and alive. He is not a placed object and
+ *     has no owner id, which is exactly why `applySplash` used to miss him.
+ *   - the decorative 3P figures on the spawn pads. They are clones of a pose
+ *     glb with no Armor of their own, so `placeSpawnSoldiers` gives each one
+ *     the same 30 HP a real soldier has — the cheapest way to make the
+ *     mechanic visible on the page, and the thing a headless check counts.
+ *
+ * A soldier's **object origin** is one metre above his feet
+ * (`setCharacterHeight -1.00`, `physics.js`'s `CHARACTER_HEIGHT`), and that is
+ * the point both the distance and the exposure samples are measured from.
  */
 function splashTargets() {
   const targets = [];
@@ -4629,7 +4655,33 @@ function splashTargets() {
     const pos = visual.node.getWorldPosition(splashPos);
     targets.push({ owner, x: pos.x, y: pos.y, z: pos.z });
   }
+  if (soldier && soldierArmor && !soldierDead && optOnFoot.checked) {
+    targets.push({
+      owner: -1, armor: soldierArmor, soldier: true, pose: soldier.pose,
+      splashMaterial: SOLDIER_SPLASH_MATERIAL,
+      x: soldier.x, y: soldier.y + CHARACTER_HEIGHT, z: soldier.z,
+    });
+  }
+  for (const pad of spawnSoldierTargets) {
+    if (pad.armor.destroyed) continue;
+    targets.push(pad);
+  }
   return targets;
+}
+
+/**
+ * HP-10's exposure for one soldier target: the fraction of
+ * `checkForHitOnSoldier`'s samples with a clear line to the blast.
+ *
+ * `soldier-exposure.js` carries the tables and the addresses; this only hands
+ * it the collider. The firer is excluded from the ray the way the engine's own
+ * filter holds the source object's root parent (0x0815b616).
+ */
+function soldierExposureFor(target, blast) {
+  if (!collider) return 1;
+  const blocked = worldBlocker(collider, { skipOwner: -1 });
+  return soldierExposure({ x: blast[0], y: blast[1], z: blast[2] },
+                         target, target.pose ?? 0, blocked);
 }
 
 /**
@@ -4643,8 +4695,18 @@ function applyVehicleHit(record) {
   if (!(record?.splashRadius > 0)) return;
   const splashed = vehicleDamage.applySplash(record, splashTargets(), {
     materials: guns.materials, modifiers: guns.modifiers,
+    exposure: soldierExposureFor,
   });
-  for (const hit of splashed) reconcileDamaged(hit.vehicle);
+  for (const hit of splashed) {
+    // A soldier target has no tier to re-pick and no wreck to build; what it
+    // has is a figure that should stop standing there. The player's own death
+    // is already handled where every other cause of it is.
+    if (hit.target?.soldier) {
+      if (hit.target.node && hit.vehicle.destroyed) hit.target.node.visible = false;
+      continue;
+    }
+    reconcileDamaged(hit.vehicle);
+  }
 }
 const AIR_KEYS = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'Space',
@@ -6543,6 +6605,19 @@ function quatFromYpr(yawDeg, pitchDeg, rollDeg) {
 // no people. Paratrooper pads are skipped (they are mid-air).
 const spawnSoldierCache = new Map();
 let spawnSoldiersRoot = null;
+/**
+ * The decorative figures as splash targets: `{ node, armor, soldier, pose,
+ * splashMaterial, x, y, z }`, rebuilt with them.
+ *
+ * They are clones of a pose glb and carry no Armor of their own, so each gets
+ * the 30 HP a vanilla soldier has (`CommonSoldierData.inc`). The position is
+ * the **object origin**, one metre above the pad the figure stands on, which
+ * is where `checkForHitOnSoldier` adds its sample offsets from.
+ */
+let spawnSoldierTargets = [];
+/** What a decorative figure is worth: the same `SOLDIER_MAX_HP_FALLBACK` a
+ *  spawned player gets when no kit template says otherwise. */
+const SPAWN_SOLDIER_HIT_POINTS = SOLDIER_MAX_HP_FALLBACK;
 
 function spawnSoldierUrl(team) {
   const nation = teamNation(team) || (team === 1 ? 'ger' : 'us');
@@ -6584,6 +6659,7 @@ async function placeSpawnSoldiers(root, report) {
     }
     spawnSoldiersRoot = null;
   }
+  spawnSoldierTargets = [];
   const spawns = (report?.soldierSpawns || []).filter(s => !s.paratrooper && s.team);
   if (!spawns.length) return;
   const group = new THREE.Group();
@@ -6605,6 +6681,15 @@ async function placeSpawnSoldiers(root, report) {
       node.quaternion.set(q[0], q[1], q[2], q[3]);
       node.userData.spawnSoldier = true;
       group.add(node);
+      // An Armor and a splash target, so a grenade thrown into a spawn pad
+      // does what a grenade does. The pose is standing — the figures are, and
+      // it is also the pose with the engine's 0.5 exposure cap, so what the
+      // page shows is the cap in play rather than an invented full exposure.
+      spawnSoldierTargets.push({
+        node, armor: new Armor(SPAWN_SOLDIER_HIT_POINTS), soldier: true,
+        pose: POSE_STAND, splashMaterial: SOLDIER_SPLASH_MATERIAL,
+        x, y: y + CHARACTER_HEIGHT, z,
+      });
     }
   }));
   if (!group.children.length) return;
@@ -11240,6 +11325,24 @@ if (params.has('shots')) {
       combatArea.reset();
     }
     return combatAreaState();
+  };
+  // Every soldier a blast can reach, and what HP-10 would give him from a
+  // given point. The exposure is the thing worth reading back: it is the one
+  // term in the splash product that a screenshot cannot show, and a check that
+  // wants to prove a wall works needs the same number from both sides of it.
+  window.__soldiers = (blast) => {
+    const from = Array.isArray(blast) && blast.length === 3 ? blast : null;
+    return splashTargets().filter(t => t.soldier).map(t => ({
+      player: !t.node,
+      pose: t.pose,
+      hp: Math.round(t.armor.hitPoints * 1000) / 1000,
+      max: t.armor.maxHitPoints,
+      destroyed: t.armor.destroyed,
+      visible: t.node ? t.node.visible : true,
+      origin: [Math.round(t.x * 100) / 100, Math.round(t.y * 100) / 100,
+               Math.round(t.z * 100) / 100],
+      exposure: from ? soldierExposureFor(t, from) : null,
+    }));
   };
   // Every damageable thing in the level and what it is currently showing, for a
   // headless check: shoot a tank, step frames, read the tier back.
