@@ -118,16 +118,39 @@ const WHEEL_MATERIAL_FRICTION = 1.0;
  * force and no mass in this solver"). At `N.y = 1` on the flat that is
  * `A * 14.73`.
  *
- * **Where the viewer differs, named:** the engine sums nothing — it takes the
- * **mean** over touching parts, so a whole vehicle's Coulomb budget is
- * `A * |g|` however many wheels touch. This file instead scales each
- * contact's answer by that wheel's share of standing weight (`load / |g|`,
- * which sums to 1) and sums those, which reaches the same whole-vehicle total
- * on flat ground and additionally makes an unloading wheel lose its share.
- * The two genuinely disagree where the driven wheels carry a different
- * fraction of the weight than of the part count: a jeep is rear-wheel drive,
- * so the engine's mean gives its two driven wheels half the budget while this
- * file gives them the third of the weight they actually carry.
+ * **Where the viewer differs, named — and the engine's side of it is now
+ * read, not inferred.** `addFriction` ends by handing the ROOT node (the
+ * `getParent()` walk at `0x0825b852`-`0x0825b873`) its clamped `dV * 30`
+ * through `PhysicsNode::addFrictionAtAbsolutePosition` `0x08254e50`, and that
+ * function is a **running mean over the tick's calls**, not a sum:
+ * `0x08254eab`-`0x08254f35` writes `positionalFriction = (positionalFriction
+ * * n + v) / (n + 1)` into `+0x40`; `0x08254fc0`-`0x0825503f` does the same
+ * for `rotationalFriction` `+0x4c` with `(pos - nodePos) x v`; `0x08255042`
+ * increments the count `+0x64`. (`setPositionalFriction` `0x0824d270` and
+ * `setRotationalFriction` `0x0824d290` fix the two offsets;
+ * `updateRotationalPhysics` clears all three at `0x08253dcd`-`0x08253ddc`.)
+ * The sibling `addAccelerationAtAbsolutePosition` `0x08255110` is a plain
+ * `fadd` accumulate at `0x08255156`-`0x08255170` — so in the engine **the
+ * springs sum and the tyres mean**, and a whole vehicle's Coulomb budget is
+ * `A * |g|` however many wheels touch.
+ *
+ * This file instead scales each contact's answer by that wheel's share of
+ * standing weight (`load / |g|`, which sums to 1) and sums those. It reaches
+ * the same whole-vehicle total on flat ground and additionally makes an
+ * unloading wheel lose its share. The two disagree wherever the driven wheels
+ * carry a different fraction of the weight than of the contact count: a jeep
+ * is rear-wheel drive and its rear pair carries 34 % of the standing weight,
+ * so this file brakes it at 0.34 of budget where the engine's mean would give
+ * the same pair 0.50 — measured, 8.4 s and 128 m from 30.9 m/s here against
+ * about 4.5 s and 69 m under the mean.
+ *
+ * **Do not swap the rule in on its own.** Tried 2026-09-20: it fixes the
+ * brake and leaves every top speed alone, but with the load weighting gone a
+ * barely-loaded contact answers at full budget, which doubles a Sherman's
+ * settled yaw rate and **rolls the M3A1 over** (`up.y` to -0.02 in a
+ * full-lock turn). The mean needs the contact test, the inertia tensor and
+ * the roll damping revisited with it, and it needs the launch defect above
+ * `SPRING_AXIS_FLOOR` fixed first.
  */
 function coulombCaps(friction) {
   return {
@@ -205,6 +228,27 @@ const SPRING_GRAVITY_SCALE = GRAVITY * (-1 / 9.82);
  * is asked to divide by nearly nothing and its Newton step runs away. A hull
  * that far over is not driving anyway, so it falls back to a vertical drop.
  * Numerics, not engine. [free]
+ *
+ * **KNOWN DEFECT, measured 2026-09-20, not fixed here.** That fall-back is
+ * where a tumbling jeep launches itself. Once the hull is past about 60
+ * degrees of pitch the vertical `drop` stops meaning anything: an axle that
+ * has swung under the ground reads a `compression` of metres, the bump stop
+ * multiplies it by `bumpStiffness`, and the whole load is pushed along the
+ * hull's own +Y, which at that attitude points sideways or down — so the
+ * spring drives the hull further in instead of holding it up. The second half
+ * of the same defect is that `dir`/`lat` are the hull's XZ plane rather than
+ * the contact plane, so a saturated longitudinal demand on a steeply pitched
+ * hull is mostly world-vertical thrust.
+ *
+ * On the harness's synthetic washboard (0.35 m every 12 m, gentler than
+ * Wake's dunes) a full-throttle Willy reaches an apex of **148 m** and
+ * **454 km/h**; on `main` the same run stays at 1.13 m and 58 km/h. Tanks and
+ * half-tracks stay bounded (1.3 m / 2.2 m) because they never tumble.
+ * Returning `Infinity` here instead of `drop` takes 148 m down to 37 m and
+ * capping the bump-stop overrun at 0.5 m takes it to 4.9 m, but neither
+ * removes the 160-plus km/h, because the thrust half is untouched. The fix is
+ * to project the tyre frame onto the contact plane; it is a physics change,
+ * not a guard.
  */
 const SPRING_AXIS_FLOOR = 0.2;
 
@@ -1651,8 +1695,8 @@ export class EngineState {
    *
    *   L0 = dot(dV, fwd) * getCurrentRatio() / getCurrentTorque()
    *   (type & 2)  ->  L0 clamped to [-1, +1]              (car AND tank)
-   *   (type & 4)  ->  L is the frame MAX when revs > 0, the frame MIN when
-   *                   revs <= 0                            (tank)
+   *   (type & 4)  ->  L is the frame MAX when revs >= 0, the frame MIN when
+   *                   revs < 0                             (tank)
    *   else        ->  L = (L*n + L0) * 0.99 / (n + 1)      (car)
    *
    * **The min/max are that way round**, decoded from `0x0824c91f`'s
@@ -1660,6 +1704,12 @@ export class EngineState {
    * `0x0824c942`, whose `fucom` keeps `L0` only when `L0 > L`). The
    * v4-gearbox verdict states them inverted. Physically the max is the one
    * that can hold an engine down, and the pair is symmetric in reverse.
+   *
+   * **`revs == 0` takes the MAX arm, not the MIN.** `fucompp` sets C3 on
+   * equality, `test ah,0x45` is then non-zero, and the `jne` at `0x0824c926`
+   * is taken to `0x0824c942` — the same branch `revs > 0` takes. Only the
+   * fall-through at `0x0824c928`, which is `0.0 > revs`, is the MIN. It is
+   * one tick of one sample, but it is the tick a tank pulls away on.
    *
    * **Only a `c_PGFEngineGrip` wheel feeds it.** `addFriction` dispatches on
    * the grip byte at `0x0825baf1`-`0x0825bafe` (`mov dl,[esi+0xb4];
@@ -1683,7 +1733,7 @@ export class EngineState {
     if (!Number.isFinite(l0)) return;
     if (this.bits & ENGINE_BIT_LOAD_CLAMP) l0 = clamp(l0, -1, 1);
     if (this.bits & ENGINE_BIT_DIFFERENTIAL) {
-      if (this.revs > 0) { if (l0 > this.load) this.load = l0; }
+      if (this.revs >= 0) { if (l0 > this.load) this.load = l0; }
       else if (l0 < this.load) this.load = l0;
       return;
     }

@@ -1214,8 +1214,8 @@ class DrivetrainConstantTests(unittest.TestCase):
         self.assertAlmostEqual(0.99, load["clampedCar"], places=5)
 
     def test_a_tank_keeps_the_frames_extreme_and_a_car_its_mean(self) -> None:
-        # `& 4` at `0x0824c90f`: the frame MAX of `L0` while revs > 0 and the
-        # MIN while revs <= 0. Decoded from `0x0824c91f`'s `fldz; fucompp`
+        # `& 4` at `0x0824c90f`: the frame MAX of `L0` while revs >= 0 and
+        # the MIN while revs < 0. Decoded from `0x0824c91f`'s `fldz; fucompp`
         # (ST = 0.0, SRC = revs, so revs > 0 takes the `jne` to `0x0824c942`,
         # whose `fucom` keeps `L0` only when `L0 > L`). **The v4-gearbox
         # verdict states this pair the other way round**; the max is the one
@@ -1227,6 +1227,16 @@ class DrivetrainConstantTests(unittest.TestCase):
                                places=5)
         # The car is a running mean scaled by `ds:0x86d0cdc` = 0.99f.
         self.assertAlmostEqual(0.99, load["meanScale"], places=4)
+
+    def test_a_tank_at_exactly_zero_revs_keeps_the_max(self) -> None:
+        # The boundary of the same branch, and it is the MAX arm: `fucompp`
+        # sets C3 on equality, `test ah,0x45` at `0x0824c923` is then
+        # non-zero, and the `jne` at `0x0824c926` goes to `0x0824c942` — the
+        # branch revs > 0 takes. Only `0.0 > revs` falls through to
+        # `0x0824c928`'s MIN. Samples -0.3, +0.2, -0.1 at revs = 0 therefore
+        # leave +0.2 behind, not -0.3.
+        load = self.results["load"]
+        self.assertGreater(load["tankAtZeroRevsKeepsMax"], 0)
 
     def test_every_contacting_part_feeds_the_cars_mean(self) -> None:
         # `addFriction` calls `feedbackLoop` for any part with an `Engine`
