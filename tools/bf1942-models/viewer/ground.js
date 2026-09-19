@@ -1511,22 +1511,18 @@ const ENGINE_DEFAULTS = {
  * The engine's own simulation tick, and the rate `EngineState.advance` steps
  * the filter at.
  *
- * `g_simulationFps` (`0x08716b5c`, raw `0000f041` = 30.0) is the corpus's
- * settled figure and the one the friction budget above already spends.
- * **Ledger LOOP-1 is open against it**: one 2026-09-20 reading of lnxded's
- * `Setup::mainLoop` says the loop targets `2 * g_simulationFps` = 60 Hz and
- * stores a *measured* frame time as `dt`, which would make every per-call
- * quantity in the corpus — this file's `0.05` included — per frame rather
- * than per 1/30 s. That row has one reader, is explicitly marked "do not
- * build on it", and the client (where the 30 Hz claim was read) may genuinely
- * differ from the server.
+ * `g_simulationFps` (`0x08716b5c`, raw `0000f041` = 30.0) is the figure the
+ * friction budget above already spends, and **ledger LOOP-1 is CLOSED on it**
+ * (2026-09-20): the simulation is a fixed 30 Hz tick, `dt = 1/30` exactly, on
+ * client and server alike — `Setup::updateInputs` `0x080bc540` is an
+ * accumulator, and the only `dt` that ever reaches `simulateFrame` is the
+ * tick's own. The earlier "the loop targets `2 * g_simulationFps` and stores
+ * a measured frame time" reading was of the render loop, not the simulation,
+ * and nothing in this file hedges against it any more.
  *
- * So this runs at 30 Hz, on an accumulator independent of the viewer's own
- * sub-step rate, because that is what the corpus says and because it makes
- * spool-up frame-rate independent either way. **If LOOP-1 closes at 60 Hz
- * this constant is the only thing that changes**, and the effect is a rev
- * filter that settles in 0.67 s instead of 1.33 s — the ceilings, ladders and
- * top speeds are all unaffected, because they are the filter's steady state.
+ * So the filter runs at 30 Hz on an accumulator independent of the viewer's
+ * own sub-step rate, which is also what makes spool-up frame-rate
+ * independent. The 40-tick time constant is 1.33 s of wall clock.
  */
 const ENGINE_TICK_SECONDS = 1 / ENGINE_TICK_HZ;
 
