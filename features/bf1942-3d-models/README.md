@@ -20,6 +20,7 @@ work that came later, and each carries its own reproduce commands:
 | [`kits.md`](kits.md) | Why every extracted soldier was bare-headed, and what it took not to be. `KitPart` + `setBoneName`, the three bones that exist, and a kit browser separate from the pose viewer. Built — `extract_kits.py`. |
 | [`parity-gaps.md`](parity-gaps.md) | What the game does that we do not. Seven audits ([`parity-audit/`](parity-audit/)), what two or three of them found independently, where they disagree, and which repo docs they falsified. |
 | [`projectile-collision.md`](projectile-collision.md) | Rounds that stop. The heightfield, the sea and 21k collision triangles behind one swept query — what the game collides against, what the export carries, and the measured cost (1.7 us per cast). |
+| [`death-cam-deploy.md`](death-cam-deploy.md) | The death cam → spawn screen: the client opens deploy synchronously on local death (`FUN_004933d0` → `SpawnScreenStuff::setVisible(true)`), and the viewer's death → corpse float → deploy flow built on it. |
 | [`../mesh-viewer-performance/README.md`](../mesh-viewer-performance/README.md) | Why the map page was choppy while firing, and the hot-path rules that came out of fixing it: what a frame paid for the near pass, static matrices, forced layout, particle churn and mid-burst shader links, measured before and after with `tests/perf/perfbench.cjs`. |
 
 ```bash

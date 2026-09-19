@@ -113,4 +113,57 @@ check('walk gait loco', {
   active: 'idle', gait: 'walk',
 }, { want: 'walk' });
 
-console.log(JSON.stringify({ ok: true, cases: 15 }));
+// --- idle fidgets (ANIM-6): the aim state's 4-7 s dwell picks one of the
+// --- registered Ub_Idle<W>1..3 one-shots; each returns to the aim state.
+
+check('dwell expired → start the picked fidget', {
+  active: 'idle', fidget: null, fidgetRunning: false,
+  fidgetDue: true, fidgetPick: 'idle2',
+}, { want: 'idle2', startFidget: true });
+
+check('fidget playing → keep it', {
+  active: 'idle2', fidget: 'idle2', fidgetRunning: true,
+  fidgetDue: false, fidgetPick: null,
+}, { want: 'idle2' });
+
+check('fidget clamped → back to idle + endFidget', {
+  active: 'idle2', fidget: 'idle2', fidgetRunning: false,
+  fidgetDue: false, fidgetPick: null, gait: 'stand',
+}, { want: 'idle', endFidget: true });
+
+check('fidget clamped while walking → walk + endFidget', {
+  active: 'idle2', fidget: 'idle2', fidgetRunning: false,
+  fidgetDue: false, fidgetPick: null, gait: 'walk',
+}, { want: 'walk', endFidget: true });
+
+check('no fidget due → plain idle', {
+  active: 'idle', fidget: null, fidgetRunning: false,
+  fidgetDue: false, fidgetPick: null,
+}, { want: 'idle' });
+
+// Fire outranks the fidget exactly as the engine's input transitions leave it.
+check('fidget due but trigger held → fire wins', {
+  active: 'idle', fidget: null, fidgetRunning: false,
+  fidgetDue: true, fidgetPick: 'idle1',
+  fireLoops: true, firing: true,
+}, { want: 'fire', startFire: true });
+
+check('fidget playing, trigger held → fire wins', {
+  active: 'idle2', fidget: 'idle2', fidgetRunning: true,
+  fidgetDue: false, fidgetPick: null,
+  fireLoops: true, firing: true,
+}, { want: 'fire', startFire: true });
+
+check('fidget playing, reload begun → reload wins', {
+  active: 'idle2', fidget: 'idle2', fidgetRunning: true,
+  fidgetDue: false, fidgetPick: null,
+  reload: 1.0, reloadPlayed: false,
+}, { want: 'reload', markReloadPlayed: true, startReload: true });
+
+check('fidget chosen but deploy owns the arms → deploy wins', {
+  active: 'deploy', fidget: 'idle2', fidgetRunning: true,
+  fidgetDue: false, fidgetPick: null,
+  deployRunning: true,
+}, { want: 'deploy' });
+
+console.log(JSON.stringify({ ok: true, cases: 24 }));

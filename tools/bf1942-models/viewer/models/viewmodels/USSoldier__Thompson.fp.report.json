@@ -57,6 +57,36 @@
       "returnTo": "_POSE_",
       "frames": 29,
       "duration": 1.0
+    },
+    "idle1": {
+      "fidgetState": "Ub_IdleThompson1",
+      "upperClip": "Animations/WeaponHandling/1p/Thompson/1pIdle1Thompson.baf",
+      "speed": 0.52,
+      "loop": false,
+      "morphFactor": 5.0,
+      "returnTo": "Ub_StandAimThompson",
+      "frames": 66,
+      "duration": 1.9231
+    },
+    "idle2": {
+      "fidgetState": "Ub_IdleThompson2",
+      "upperClip": "Animations/WeaponHandling/1p/Thompson/1pIdle2Thompson.baf",
+      "speed": 0.39,
+      "loop": false,
+      "morphFactor": 5.0,
+      "returnTo": "Ub_StandAimThompson",
+      "frames": 112,
+      "duration": 2.5641
+    },
+    "idle3": {
+      "fidgetState": "Ub_IdleThompson3",
+      "upperClip": "Animations/WeaponHandling/1p/Thompson/1pIdle3Thompson.baf",
+      "speed": 0.5,
+      "loop": false,
+      "morphFactor": 5.0,
+      "returnTo": "Ub_StandAimThompson",
+      "frames": 79,
+      "duration": 2.0
     }
   },
   "view": {

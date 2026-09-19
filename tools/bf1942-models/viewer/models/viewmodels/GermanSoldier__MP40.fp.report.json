@@ -57,6 +57,36 @@
       "returnTo": "_POSE_",
       "frames": 31,
       "duration": 1.0
+    },
+    "idle1": {
+      "fidgetState": "Ub_IdleMp401",
+      "upperClip": "Animations/WeaponHandling/1p/Mp40/1pIdle1Mp40.baf",
+      "speed": 0.26,
+      "loop": false,
+      "morphFactor": 5.0,
+      "returnTo": "Ub_StandAimMp40",
+      "frames": 161,
+      "duration": 3.8462
+    },
+    "idle2": {
+      "fidgetState": "Ub_IdleMp402",
+      "upperClip": "Animations/WeaponHandling/1p/Mp40/1pIdle2Mp40.baf",
+      "speed": 0.6,
+      "loop": false,
+      "morphFactor": 5.0,
+      "returnTo": "Ub_StandAimMp40",
+      "frames": 111,
+      "duration": 1.6667
+    },
+    "idle3": {
+      "fidgetState": "Ub_IdleMp403",
+      "upperClip": "Animations/WeaponHandling/1p/Mp40/1pIdle3Mp40.baf",
+      "speed": 0.36,
+      "loop": false,
+      "morphFactor": 5.0,
+      "returnTo": "Ub_StandAimMp40",
+      "frames": 51,
+      "duration": 2.7778
     }
   },
   "view": {
@@ -152,6 +182,15 @@
       ],
       "hasForce": true,
       "goBack": true
+    },
+    "hud": {
+      "ammoBar": "Ingame/Magbar_SMG_empty_32x64.tga",
+      "ammoBarFill": "Ingame/Magbar_SMG_full_32x64.tga",
+      "ammoBarSize": 46.0,
+      "posX": 4.0,
+      "posY": -11.0,
+      "textPosX": 8.0,
+      "textPosY": 4.0
     }
   },
   "soldierParts": {
