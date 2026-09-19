@@ -214,6 +214,12 @@ instead of trying.
 | degraded | 1 | GrenadeAllies |
 | broken | 0 | — |
 
+On the 2026-09-20 rebuild the same sweep over 96 models reads **94 clean, 2
+degraded, 0 broken, exit 0** — the second degradation is `No4Sniper`, which
+measures 14.4% outside `Shad_No4_Scope`, its trigger 33% and its scope 25%.
+Whether that is the shadow being coarse around the scope mount or a real
+placement is not settled; it is the one vanilla weapon worth a look.
+
 GrenadeAllies is the README's corrupt `.ske` (header claims version 278; no
 byte offset parses). Its pin and spoon sit at the weapon origin — inside the
 8 cm grenade body, so the render is mildly rather than grotesquely wrong — and
@@ -261,7 +267,13 @@ python3 verify_models.py --models ./out --only Thompson Sg44 Mp18
 python3 verify_models.py --strict --json findings.json
 ```
 
-Five checks per model, folded into one clean / degraded / broken verdict:
+Five checks per model, folded into one clean / degraded / broken verdict.
+
+**Every one of them asks the extras the exporter stamps on a node what that
+node is, and none of them reads its name.** That is the whole of the
+2026-09-20 repair and it is worth stating first, because for a while it was
+not true and the verifier was useless as a result — see *When it cried wolf*
+below.
 
 1. **Silhouette** (hand weapons): assemble nothing, trust nothing — read the
    bound parts' world-space triangles back out of the `.glb`, read the
@@ -270,41 +282,140 @@ Five checks per model, folded into one clean / degraded / broken verdict:
    bound area that falls outside. Side view only, because the shadows are
    near-flat cutouts (the Colt's is 3 cm wide) — a front projection of one is
    a line, and any part with sideways offset reads 100% outside of it.
-2. **Origin pile**: three or more *unbound* visible parts on the origin. The
-   qualifiers earn their keep — vanilla stacks bound parts on purpose (the
-   Type99's mag and bolt bones rest exactly on its base bone; every soldier's
-   body and head share a bind), so the check only counts parts no skeleton
-   vouches for, and forgives a pile the report itself explains.
-3. **Report findings**: unresolved meshes and geometry templates are broken
-   (the part is absent); unresolved textures, shaderless materials, unreadable
-   skeletons are degraded; the recorded vanilla facts are info. `--mod`
-   other than bf1942 voids the fact lists — a mod's template names can collide
-   with vanilla's without sharing its data.
-4. **Dimensions**: measured longest side against real-world figures for the
-   52 templates where the real figure is unambiguous (`KNOWN_LENGTHS_M`),
-   18% tolerance. Entries deliberately omitted where the game leaves the
-   variant ambiguous (PanzerIV barrel length, T34 vs T34-85) — a wrong
-   expectation is worse than none.
+
+   Two things decide what the reading *means*. First, the premise is checked:
+   a shadow mesh is a low-poly stand-in, so the check only runs where the
+   simple LOD is at most 35% of the model's triangles. Vanilla's JohnsonLMG
+   points its Simple alternative at the weapon's own body (1,183 against
+   1,520) and Secret Weapons' Gewehr43_zf4 at 1,285 of 1,555; comparing a
+   weapon against itself measures the trigger-guard hole, and read the G43's
+   trigger, bolt and clip as 85-90% outside on a perfectly good model.
+   Second, one weapon reading high is a *degradation*, because vanilla itself
+   borrows shadows between weapons; it is the **catalogue's median** reading
+   high that is broken, which is the shape the mirrored-`.ske` bug has.
+   Vanilla's median is 3.0% over 19 weapons, EoD's 3.2% over 28.
+2. **Origin pile**: three or more *unexplained* parts collapsed onto the
+   origin. Four kinds of node are explained and do not count: a part with a
+   `boundBone` (a skeleton put it there — the Type99's mag and bolt rest
+   exactly on its base bone), a part with a `skin` (authored in bind space,
+   which is why every soldier's body, head and two hands sit on the origin),
+   the exporter's own collision hulls, emitters, tracers and projectile
+   previews, and any part the report already reports as a bind it could not
+   apply.
+
+   "Collapsed" means both halves: the node is at the origin *and* the part's
+   own geometry is, within 5% of the model's longest side. A `.con` gives a
+   sub-part no `setPosition` whenever the mesh already sits where it belongs,
+   which is how most mod vehicles are built — EoD's LCT-Mk6 has five such
+   parts and their geometry is 1.6 m, 8.7 m, 7.5 m, 17.3 m and 13.8 m from
+   the origin of a 35 m craft. A sub-part whose placement was genuinely lost
+   is authored around its own local origin, so it lands on the model origin
+   too: a rifle trigger is 2 cm of mesh, a centimetre from the origin of a
+   1.1 m weapon.
+3. **Report findings**: an unresolved mesh or geometry template is weighed by
+   *what in that model's own template tree wanted it*, walked through the
+   library from the model's root including `projectileTemplate` edges. EoD's
+   BF109 reports `Big_Bomb_M1` unresolved and the only thing naming it is
+   `FighterBomb`, the bomb the rack fires — degraded, the aeroplane is whole.
+   Per model and not globally, because vanilla's `IlyushinDummyBomb` carries
+   that very mesh under the Il-2's wing as a drawn part, and the Il-2 losing
+   it would be a hole. Unresolved textures, shaderless materials and
+   unreadable skeletons are degraded; the recorded vanilla facts are info.
+   `--mod` other than bf1942 voids the per-model fact lists — a mod's template
+   names can collide with vanilla's without sharing its data — but not
+   `BASE_GAME_ABSENT_MESHES`, which is a statement about a *file* every mod
+   chain inherits.
+
+   A bound part naming a bone its skeleton lacks is broken only when no bind
+   on that model applied at all; beside binds that did apply, the skeleton was
+   read and the gap is the game's own data (EoD's M40 inherits the No4's
+   `Block` and `Mag` sub-parts without their bones).
+4. **Dimensions**: longest side **of the model's own geometry** against
+   real-world figures for the templates where the real figure is unambiguous
+   (`KNOWN_LENGTHS_M`), 18% tolerance. Measuring the whole file is what
+   produced a 3.56 m Browning (its muzzle flash reaches 2.56 m from a 1.65 m
+   gun) and a 2.02 m Bar1918 against 1.19 m real. Entries deliberately
+   omitted where the game leaves the variant ambiguous (PanzerIV barrel
+   length, T34 vs T34-85) — a wrong expectation is worse than none, which is
+   also why `Stationary_mg42` no longer has one: it is the gun on its Lafette
+   42 mount, and the mount is the longest side.
 5. **Geometry health**: non-finite vertices are broken; more than 2%
    zero-area triangles is degraded.
 
-Broken exits non-zero; `--strict` promotes degraded. The full vanilla sweep is
-the baseline: **93 clean, 1 degraded, 0 broken, exit 0.**
+Broken exits non-zero; `--strict` promotes degraded.
 
-Proof it catches what it claims to, by reintroducing both historical bind bugs
+### When it cried wolf, and what it says now
+
+The 2026-09-19 rebuild produced this:
+
+| catalogue | before | after |
+|---|---|---|
+| vanilla (96) | 53 clean, 1 degraded, **42 broken** | 94 clean, 2 degraded, **0 broken** |
+| Eve of Destruction (285) | 152 clean, 37 degraded, **96 broken** | 221 clean, 56 degraded, **8 broken** |
+| Road to Rome (15) | 9 clean, 0 degraded, **6 broken** | 13 clean, 2 degraded, **0 broken** |
+| Secret Weapons (29) | 20 clean, 2 degraded, **7 broken** | 25 clean, 4 degraded, **0 broken** |
+
+Every one of the 151 "broken" verdicts on the left was checked by eye and was
+wrong, and four things accounted for all of them:
+
+| class | count | what it really was |
+|---|---|---|
+| origin pile | 88 | the exporter's muzzle-flash emitters, tracers, projectile previews and cockpit meshes, all spawned at the object's own origin; and every soldier's four skinned meshes |
+| length | 48 | measured across those same emitters — Browning 3.56 m against 1.65 m real, Bar1918 2.02 m against 1.19 m |
+| `bodycollision_m1` | 31 | a `SkeletonCollisionMesh` every `BFSoldier` references and no archive of a complete install ships; a hitbox, not render geometry |
+| silhouette / unresolved geometry | 24 | coarse or borrowed shadow meshes, simple LODs that are the weapon itself, and geometry only a projectile wanted |
+
+The eight that remain in Eve of Destruction are true positives, each a
+`GeometryTemplate` its own `.con` files reference and never declare, confirmed
+by resolving the name against the whole EoD mod chain:
+
+| model | unresolved | what is missing |
+|---|---|---|
+| `M79` | `M79`, `remingtonMag`, `remingtonTrigger` | the launcher body, magazine and trigger |
+| `M79Flare`, `M79smoke` | `M79Smoke`, `remingtonMag`, `remingtonTrigger` | the same three |
+| `Vietcong_Grenadelauncher` | `Vietcong_Grenadelauncher`, `remingtonMag`, `remingtonTrigger` | the body has a `.sm` but no `GeometryTemplate` declares it |
+| `M125Mortar` | `M125_TurretMG` | the turret machine gun |
+| `Cammo_Raft` | `CammoRaft_Motor_M1` | the outboard motor |
+| `EoD_Raft` | `EoD_Raft_Motor_M1` | the outboard motor |
+| `EoD_LCT-Mk6_ChopperCarrier` | `EoD_LCT-Mk6CC-Ramp` | the bow ramp (the two sibling LCTs declare theirs and are clean) |
+
+And one true positive against this project rather than the game: the
+`Stationary_mg42` row of `KNOWN_LENGTHS_M` gave the emplacement the bare gun's
+1.22 m, while the model is the gun on its tripod and measures 1.715 m. The row
+is gone. `Stationary_Browning` keeps its row because the M2HB is still the
+longest side of that assembly (measured 1.756 m, 6.2% over).
+
+### Does it still catch the bugs it was built for?
+
+The original proof, run in 2026-09 by reintroducing both historical bind bugs
 against five weapons (K98, Colt, Thompson, Sg44, Mp18):
 
-| Drill | Result |
+| Drill | Result then |
 |---|---|
 | `.ske` read unmirrored | 4 of 5 broken by silhouette (41-76% outside); Colt also by length (+37%) |
 | `bindToSkeletonPart` ignored | 5 of 5 broken by origin pile |
 
-The one that slips the first drill is instructive: the Mp18's bones are
-rotated almost purely about X, where the mirror conjugation barely shows — the
-exact trap the README's `.ske` section documents — so its unmirrored render
-measures only 4.6% outside. One check missing one weapon under one bug is why
-there are five checks; the same bug expressed as unparsed binds trips all
-five weapons at once.
+Read against the severities as they now stand, without re-running the drill:
+
+* **Unparsed binds** still trip the origin pile on all five. The sub-parts a
+  lost bind leaves behind are authored around their own bone, so their
+  geometry lands on the model origin — which is exactly what the tightened
+  check requires, and `tests/test_verify_false_alarms.py` asserts on a
+  synthetic weapon built that way.
+* **A mirrored `.ske`** throws 41-76% outside on four of five weapons, so the
+  median of a real catalogue is far over the 12% that makes a high reading
+  fatal. A *whole-catalogue* run is therefore still broken, and so is an exit
+  code of 1. A targeted `--only` run over fewer than eight weapons with a
+  shadow has no median worth the name and reports degraded instead: it still
+  exits 1 under `--strict`, and the numbers are still in the output, but the
+  verdict is weaker. Run the whole catalogue when the question is whether an
+  extraction is sound.
+* The one that slipped the first drill is still instructive: the Mp18's bones
+  are rotated almost purely about X, where the mirror conjugation barely
+  shows — the exact trap the README's `.ske` section documents — so its
+  unmirrored render measured only 4.6% outside. One check missing one weapon
+  under one bug is why there are five checks; the same bug expressed as
+  unparsed binds trips all five weapons at once.
 
 ### `texture_coverage.py` — the table above, on demand
 
@@ -315,21 +426,29 @@ and diff against the table here.
 ## Verification
 
 Everything the new modules parse or compute is covered
-installation-independently in `tests/test_verify.py` and
-`tests/test_extract_all.py` — glb round-trips built with the project's own
-`GlbBuilder`, synthetic silhouettes with known overlap fractions, the
-origin-pile qualifiers (soldier stack allowed, Type99-style bound stack
-allowed, unbound pile flagged), the authored-fact gating on and off vanilla,
-the shadow-geometry walk over a synthetic `.con` library, and the effects-only
-skip rule:
+installation-independently in `tests/test_verify.py`,
+`tests/test_verify_false_alarms.py` and `tests/test_extract_all.py` — glb
+round-trips built with the project's own `GlbBuilder`, synthetic silhouettes
+with known overlap fractions, the origin-pile qualifiers (soldier stack
+allowed, Type99-style bound stack allowed, unbound pile flagged), the
+authored-fact gating on and off vanilla, the shadow-geometry walk over a
+synthetic `.con` library, and the effects-only skip rule:
 
 ```bash
-python3 -m unittest discover -s tools/bf1942-models/tests -v   # 150 tests
+python3 -m unittest discover -s tools/bf1942-models/tests   # 1,566 tests
 ```
 
-The silhouette thresholds themselves (warn 7%, fail 10%) are not delicate:
-correct weapons measure 0-6%, the bug measured 15-60%, and nothing vanilla
-sits in between.
+`test_verify_false_alarms.py` is one test per class of thing the verifier used
+to get wrong, each built as a small synthetic `.glb` carrying the extras the
+exporter really writes — a weapon with its muzzle flash and tracer, a
+four-part skinned soldier, a landing craft whose sub-parts are modelled in
+hull space, a weapon whose sub-parts genuinely collapsed. Each one asserts
+both halves: the false alarm is gone *and* the real failure still fails.
+
+The silhouette thresholds themselves are not delicate: correct weapons measure
+0-6% and the mirror bug measured 15-60%, with the per-catalogue median at
+3.0% (vanilla) and 3.2% (EoD) against the 12% that makes a high reading
+fatal.
 
 ## What the verifier does not check
 
