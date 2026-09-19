@@ -20,6 +20,7 @@ import * as THREE from 'three';
 import {
   GroundVehicle, WILLYS, TrackedVehicle, TANK,
   engineRatio, gearLadder, engineTorqueFraction, differentialRPM,
+  engineGripTarget, ENGINE_REV_CEILING, ENGINE_REV_FLOOR,
 } from './ground.js';
 import { GRAVITY } from './physics.js';
 
@@ -376,10 +377,24 @@ results.constants = {
   const ladder = gearLadder(k.differential, k.numberOfGears);
   results.solved = {
     // Full-rev road speed in top gear, m/s: the engine's own EngineGrip
-    // target at that ratio (TANK-9), no fitted rev ceiling in it.
-    revCapSpeed: round(0.5 * ladder[ladder.length - 1]),
+    // target at that ratio (TANK-9 as corrected), taken at the engine's own
+    // rev clamp. No fitted rev ceiling in it.
+    revCapSpeed: round(ENGINE_REV_CEILING * ladder[ladder.length - 1]),
     // Per-gear full-rev speeds, the ladder the automatic climbs.
-    gearSpeeds: ladder.map(r => round(0.5 * r, 2)),
+    gearSpeeds: ladder.map(r => round(ENGINE_REV_CEILING * r, 2)),
+    // The rev clamp itself, both arms — asymmetric, and reverse runs on the
+    // lower one.
+    revCeiling: ENGINE_REV_CEILING,
+    revFloor: ENGINE_REV_FLOOR,
+    reverseCapSpeed: round(ENGINE_REV_FLOOR * ladder[0], 3),
+    // The EngineGrip target at the two ends of the gear-change blend. `b`
+    // is the gear-change timer; it is 0 in all steady driving, and the whole
+    // 46.5 km/h reading came from taking its constructor seed of 1 for the
+    // steady value.
+    gripTargetSteady: round(engineGripTarget(1, 0, 0, ladder[0]), 3),
+    gripTargetMidChange: round(engineGripTarget(1, 0, 0, ladder[0], 1, 0), 3),
+    gripTargetMidChangeAtSpeed:
+      round(engineGripTarget(1, 0, 0, ladder[0], 1, 4), 3),
     // The ratio ladder itself, and the drive share each gear gets — the two
     // that run in opposite directions.
     ladder: ladder.map(r => round(r, 3)),
@@ -440,6 +455,71 @@ results.constants = {
   const truck = jeep({ y: 0.8 });
   for (let t = 0; t < 6; t += 0.1) truck.integrate(0.1);
   results.settleCoarse = snapshot(truck);
+}
+
+// --- parked, and the damper's first tick -------------------------------------
+//
+// Ten seconds standing still after ten seconds of settling. Nothing may sink
+// (every wheel's compression identical at both marks) and nothing may creep
+// off on its own. Since PHY-5 the spring axis leans with the hull, so a hull
+// on its static rake has a real horizontal component of suspension force and
+// only the parking hold answers it; this is the scenario that catches the
+// hold being sized in the wrong units.
+results.parked = {};
+for (const [name, make] of [
+  ['willy', () => jeep({ y: 0.6 })],
+  ['sherman', () => tank(shermanNode, { y: 1.2 })],
+  ['m3a1', () => tank(m3a1Node, { y: 1.5 })],
+]) {
+  const truck = make();
+  drive(truck, 10);
+  const p0 = truck.state.position.clone();
+  const y0 = p0.y;
+  const first = truck.wheels.map(w => round(w.compression, 5));
+  drive(truck, 10);
+  results.parked[name] = {
+    drift: round(Math.hypot(truck.state.position.x - p0.x,
+      truck.state.position.z - p0.z), 4),
+    sink: round(truck.state.position.y - y0, 6),
+    speed: round(truck.state.velocity.length(), 4),
+    compressionsHeld:
+      JSON.stringify(first) === JSON.stringify(truck.wheels.map(w => round(w.compression, 5))),
+    contacts: first.filter(c => c > 0).length,
+  };
+}
+
+// How often a wheel comes back into contact having been airborne — the ticks
+// on which the damper has no backward difference to take. Zeroing its rate
+// there (rather than seeding it from the axle's closing speed) turns the
+// damper off on every one of these, which is why the count matters.
+{
+  const bumps = (x, z) => 0.35 * Math.sin(z * 0.8) + 0.2 * Math.sin(z * 0.31 + 1);
+  results.recontacts = {};
+  for (const [name, make] of [
+    ['willy', () => jeep({ ground: bumps, y: 0.6 })],
+    ['m3a1', () => tank(m3a1Node, { ground: bumps, y: 1.5 })],
+  ]) {
+    let contacts = 0;
+    let recontacts = 0;
+    const probe = make();
+    for (let i = 0; i < Math.round(20 / DT); i++) {
+      holding({ c_PIThrottle: 1 })(probe);
+      const before = probe.wheels.map(w => w.prevCompression);
+      probe.integrate(DT);
+      probe.wheels.forEach((w, k) => {
+        if (w.compression <= 0) return;
+        contacts += 1;
+        if (before[k] === null) recontacts += 1;
+      });
+    }
+    results.recontacts[name] = {
+      contacts,
+      recontacts,
+      share: round(recontacts / Math.max(1, contacts), 4),
+      finite: Number.isFinite(probe.state.position.y),
+      apex: round(probe.state.position.y, 2),
+    };
+  }
 }
 
 // --- full throttle -----------------------------------------------------------

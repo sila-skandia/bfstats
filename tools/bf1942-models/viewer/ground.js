@@ -87,6 +87,14 @@ const PARKING_HOLD_SPEED = 3.0;
  * (`addFrictionAtAbsolutePosition(F * 30)`). So a grip mode that asks for a
  * velocity change of `dV` is asking for `dV * 30` m/s^2, and the Coulomb
  * clamp is what decides how much of that the ground can actually answer.
+ *
+ * Where a grip mode asks for a whole velocity back **this tick**, the 30 is
+ * `1/dt` and not a number — this file substeps at `h <= 1/60`, so the faithful
+ * translation of "all of it, this tick" is `1/h`, and that is what the parking
+ * holds below spend. Writing 30 there instead asked for half the correction
+ * the engine asks for and left a parked M3A1 creeping at 0.054 m/s; with `1/h`
+ * it is 0.014 (a residual the file's other comment explains). The constant
+ * stays here because the *budget* side of the solver really is a fixed 30.
  */
 const ENGINE_TICK_HZ = 30;
 
@@ -257,11 +265,14 @@ export const WILLYS = {
   //                   own `getCurrentRatio()` per gear, for any gear count.
   //   reverse         gear 1's ratio, which is what `reverseRatio 3.8` was
   //                   standing in for (it equalled `gearRatios[0]`).
-  //   the rev ceiling  revs are a fraction of full, and full is the speed the
-  //                   engine's own EngineGrip target reaches at that ratio:
-  //                   `ENGINE_GRIP_SPEED_FACTOR * ratio`. `revLimit 356` was
-  //                   fitted to put top gear at 18.5 m/s; the read relation
-  //                   puts it at 13.0 m/s and owes nothing to a fit.
+  //   the rev ceiling  revs are a fraction of full, and the road speed a gear
+  //                   reaches at a given rev fraction is the engine's own
+  //                   EngineGrip target, `ratio * revs`. Full is not 1:
+  //                   `Engine::handleUpdate` clamps revs to
+  //                   `ENGINE_REV_CEILING` (1.2), so top gear tops out at
+  //                   `1.2 * ladder[top]`. `revLimit 356` was fitted to put
+  //                   that at 18.5 m/s; the read relation puts it at 31.3 and
+  //                   owes nothing to a fit.
   //
   // Torque still fades linearly over the last (1 - gearUp) of the rev range so
   // that top speed is an equilibrium rather than a wall. That shape is still a
@@ -388,8 +399,14 @@ class Wheel {
      * means the wheel was not in contact last tick — the engine never needs
      * that case because its wheel is a body whose displacement is continuous,
      * while a probe's compression jumps from nothing to its full depth in one
-     * step and a backward difference reads that as tens of metres a second.
-     * The first contact tick therefore damps nothing. [free, numerics] */
+     * step and a backward difference against zero reads that as tens of
+     * metres a second. The first contact tick therefore takes its rate from
+     * the axle's own closing speed along the spring axis instead, which is
+     * what a continuous displacement would have been changing at. It is NOT
+     * zeroed: this flag is cleared on every airborne tick, so zeroing it
+     * turned the damper off for a tick every time a wheel re-landed — 3 % of
+     * a jeep's contacts and 8 % of a half-track's over rough ground, i.e.
+     * exactly when the damper matters. [free, numerics] */
     this.prevCompression = null;
   }
 }
@@ -548,12 +565,13 @@ export class GroundVehicle extends Vehicle {
    * thresholds, and say how much drive is available.
    *
    * `setGearUp 0.95` / `setGearDown 0.4` are fractions of maximum revs, and
-   * revs are now a 0..1 fraction outright, so both read literally. The speed a
-   * gear reaches at full revs is the engine's own EngineGrip target for that
-   * gear, `ENGINE_GRIP_SPEED_FACTOR * ratio` (TANK-9) — Willy's five gears top
-   * out at 3.50 / 5.57 / 8.17 / 11.14 / 13.03 m/s, and the automatic's
-   * hysteresis still works out: an upshift at 0.95 lands the next gear at
-   * 0.60-0.81, well above the 0.4 downshift line, so the box never hunts.
+   * revs are a fraction outright, so both read literally. The road speed a
+   * gear reaches at a rev fraction is the engine's own EngineGrip target for
+   * that gear, `ratio * revs` (TANK-9 as corrected) — and revs runs to
+   * `ENGINE_REV_CEILING` = 1.2, not 1, so Willy's five gears top out at
+   * 8.40 / 13.36 / 19.60 / 26.73 / 31.28 m/s. The automatic's hysteresis
+   * still works out: an upshift at 0.95 lands the next gear at 0.60-0.81,
+   * well above the 0.4 downshift line, so the box never hunts.
    *
    * THE TRAP, and it is the easy bug in this file (TANK-3): there are two
    * ladders and they run in opposite directions.
@@ -576,10 +594,15 @@ export class GroundVehicle extends Vehicle {
     const e = this.engine;
     const ladder = this.ladder;
     const top = ladder.length;
-    // Full revs in a gear is the EngineGrip target that ratio reaches, so the
-    // rev fraction is simply road speed measured against it.
-    const revsIn = ratio => Math.min(1, speed / Math.max(1e-6,
-      ENGINE_GRIP_SPEED_FACTOR * ratio));
+    // The EngineGrip target for a gear is `ratio * revs`, so the rev fraction
+    // is simply road speed over the ratio — capped at the engine's own
+    // ceiling rather than at 1.
+    // Reverse runs against the clamp's other arm, which is NOT symmetric:
+    // `Engine::handleUpdate` floors revs at -1.0 and ceils them at +1.2, so
+    // reverse in first is 1/1.2 of forward in first, by the engine's own
+    // arithmetic rather than by a separate `reverseRatio`.
+    const ceiling = reverse ? ENGINE_REV_FLOOR : ENGINE_REV_CEILING;
+    const revsIn = ratio => Math.min(ceiling, speed / Math.max(1e-6, ratio));
     if (reverse) {
       // Reverse borrows first gear, which is what the deleted `reverseRatio`
       // did — it was authored equal to `gearRatios[0]`.
@@ -592,8 +615,8 @@ export class GroundVehicle extends Vehicle {
       this.revs = revsIn(ladder[this.gear - 1]);
     }
     const share = ladder[0] / ladder[this.gear - 1];
-    const span = Math.max(1e-6, 1 - e.gearUp);
-    const fade = Math.max(0, Math.min(1, (1 - this.revs) / span));
+    const span = Math.max(1e-6, ceiling - e.gearUp);
+    const fade = Math.max(0, Math.min(1, (ceiling - this.revs) / span));
     return e.torque * share * engineTorqueFraction(this.revs) * fade;
   }
 
@@ -718,11 +741,17 @@ export class GroundVehicle extends Vehicle {
         // speed the engine is commanding for this gear (TANK-9's EngineGrip
         // target), over the wheel's own radius.
         if (wheel.driven && drive !== 0) {
-          const commanded = ENGINE_GRIP_SPEED_FACTOR * this.ladder[this.gear - 1];
+          // Unloaded, the rev filter pins at the ceiling, so an airborne
+          // driven wheel spins at the redline surface speed for this gear.
+          const commanded = ENGINE_REV_CEILING * this.ladder[this.gear - 1];
           wheel.angle += (reverse ? -1 : 1) * (commanded / k.wheelRadius) * h;
         }
         continue;
       }
+
+      // Contact-patch velocity in the body frame. Hoisted above the spring
+      // because the damper's first tick needs its vertical component.
+      const u = this._u.copy(vBody).add(this._arm.crossVectors(w, wheel.rest));
 
       // Suspension, PHY-5: spring on travel at 1.5x the authored strength,
       // damper on the one-tick backward difference of the displacement, bump
@@ -732,8 +761,20 @@ export class GroundVehicle extends Vehicle {
       // probe itself are the viewer's, only the force law is read.
       const travel = Math.min(compression, k.suspensionTravel);
       const overrun = compression - travel;
+      // On a wheel that had no contact last tick there is no backward
+      // difference to take, and taking one against zero reads the whole
+      // penetration depth as one tick's worth of closing speed. The engine
+      // never meets that case because its wheel is a body whose displacement
+      // is continuous; the honest stand-in is the speed the axle is actually
+      // closing on the ground along the spring axis, which is what a
+      // continuous displacement would have been changing at. The spring axis
+      // is the hull's own +Y (PHY-5), so in the body frame that is simply
+      // `-u.y`. A wheel settling gently gets nearly nothing, a wheel landing
+      // hard gets its real closing rate, and the damper is no longer blind
+      // for a tick every time a wheel re-lands — which on rough ground is 3 %
+      // of a jeep's contacts and 8 % of a half-track's. [free, numerics]
       const rate = wheel.prevCompression === null
-        ? 0 : (compression - wheel.prevCompression) / h;
+        ? Math.max(0, -u.y) : (compression - wheel.prevCompression) / h;
       let load = SPRING_GRAVITY_SCALE * wheel.strength
         * (travel + overrun * k.bumpStiffness)
         + wheel.damping * rate;
@@ -754,8 +795,6 @@ export class GroundVehicle extends Vehicle {
       if (!wheel.steered) dir.set(0, 0, -1);
       const lat = this._lat.crossVectors(dir, UP);
 
-      // Contact-patch velocity in the body frame.
-      const u = this._u.copy(vBody).add(this._arm.crossVectors(w, wheel.rest));
       const uLong = u.dot(dir);
       const uLat = u.dot(lat);
 
@@ -802,8 +841,22 @@ export class GroundVehicle extends Vehicle {
         // instead of standing world-vertical — and nothing fitted was strong
         // enough to resist it. A parked jeep crept at 0.1 m/s and a parked
         // M3A1 rolled away at 2.2.
+        //
+        // IT DOES NOT STOP IT DEAD, and the reason is structural rather than a
+        // matter of gain. This is a velocity-proportional force answering a
+        // constant one, so it settles where the two balance: the residual is
+        // the rake acceleration times one substep — 0.005 m/s for the jeep and
+        // 0.014 for the M3A1, i.e. 5 and 14 cm over ten parked seconds. Nothing
+        // sinks: every wheel's compression is identical at t=10 s and t=20 s.
+        // The engine has no such residual because its latched static contact is
+        // a **velocity constraint**, not a force — "F = dV in full" cancels the
+        // whole tangential velocity and keeps cancelling whatever the rake
+        // re-injects. Expressing that here means projecting the horizontal
+        // force out of a latched, stopped, closed-throttle contact after the
+        // forces are summed, which is a change to the integrator rather than to
+        // this term. [free, numerics]
         const hold = Math.max(0, 1 - Math.abs(uLong) / PARKING_HOLD_SPEED);
-        fLong -= uLong * ENGINE_TICK_HZ * hold / drivenCount;
+        fLong -= uLong * (1 / h) * hold / drivenCount;
       }
 
       // The friction circle, now with the engine's own coefficient and its
@@ -1232,18 +1285,59 @@ export function bodyThrust(throttle, forwardSpeed, ratio,
 }
 
 /**
- * EngineGrip contact-speed target (TANK-9): 
- * `v_tgt = (1 − 0.5·b) * ratio * getCurrentDifferentialRPM(side)` with
- * engine `+0xb8` defaulting to 1 → factor **0.5**. Sherman at full throttle
- * / yaw 0 → 2.0 m/s. Friction pulls the contact toward this; it is **not** a
- * second copy of body thrust. Coulomb magnitudes remain open (PHY-2).
+ * EngineGrip contact-speed target, re-derived 2026-09-20 (TANK-9 corrected).
+ * The engine's expression, `addFriction` lnxded `0x0825c2ed`-`0x0825c407`, is
+ *
+ *   T = (1 - 0.5*b) * ratio * differentialRPM(side) * fwd
+ *       + 0.5*b * (Vt . fwd) fwd                        // the SAME fwd axis
+ *
+ * — a **blend between the commanded surface speed and the wheel's own
+ * contact speed**, not a scale on the target. `0.5*b` is formed at
+ * `0x0825c32b` (`fld ds:0x86b05e8` = 0.5, `fmul [edx+0xb8]`) for the first
+ * term's `1 - 0.5*b` (`fsubr ds:0x86ba8d4` = 1.0) and again at `0x0825c3b1`
+ * for the second; the two are summed at `0x0825c3d7`-`0x0825c407`.
+ *
+ * `b` is engine `+0xb8`, and it is **the gear-change timer, not a constant**:
+ * `Engine::handleUpdate` `0x0823e120` counts it down by `dt/gearChangeTime`
+ * to zero (`0x0823e24f`/`0x0823e25a`) and nothing on the server re-arms it,
+ * so after the first `gearChangeTime` of a vehicle's life `b = 0` and
+ *
+ *   T = ratio * differentialRPM(side)      -> dV = T - Vt, zero at v = T
+ *
+ * The old reading took the constructor's seed `+0xb8 = 1.0` (`0x0824c756`
+ * region) for the steady value and landed on a factor of **0.5**, which made
+ * every gear's ceiling half what the engine gives. `differentialRPM` returns
+ * the engine's **rev state** `+0xa0` (`0x0824c990`), not the pedal, so the
+ * ceiling is `ratio * revs` and revs runs to `ENGINE_REV_CEILING`.
+ *
+ * @param {number} [blend] the live gear-change timer `+0xb8`, 1 at the
+ *   instant of a change and 0 in all steady driving
+ * @param {number} [contactSpeed] `Vt . fwd`, the second term's input
  */
-const ENGINE_GRIP_SPEED_FACTOR = 0.5;
-
 export function engineGripTarget(throttle, yaw, side, ratio,
-    factor = ENGINE_GRIP_SPEED_FACTOR) {
-  return factor * ratio * differentialRPM(throttle, yaw, side);
+    blend = 0, contactSpeed = 0) {
+  const b = Math.max(0, Math.min(1, blend));
+  return (1 - 0.5 * b) * ratio * differentialRPM(throttle, yaw, side)
+    + 0.5 * b * contactSpeed;
 }
+
+/**
+ * The engine's own rev ceiling, and the number `revLimit 356` was standing in
+ * for. `Engine::handleUpdate` `0x0823e120` runs the rev state as a first-order
+ * filter on the pedal and the drivetrain load,
+ *
+ *   revs += 0.05 * ((pedal - load) - 0.5*revs)     // fixed point 2*(pedal-load)
+ *   revs  = min(1.2, max(-1.0, revs))              // 0x0823e2bf onward
+ *
+ * so a closed throttle against no load pins revs at **1.2**, not 1. That is
+ * what puts a Willy's top gear at `1.2 * 26.064` = 31.3 m/s rather than at
+ * `ladder[top]`. The asymmetric floor of -1.0 is the engine's too, and is why
+ * reverse is slower than first.
+ */
+export const ENGINE_REV_CEILING = 1.2;
+
+/** The same clamp's lower arm, `0x0823e2bf` onward: revs floor at -1.0. */
+export const ENGINE_REV_FLOOR = 1.0;
 
 /**
  * A wheel's rolling radius, measured off its own mesh — generalising the
@@ -1751,14 +1845,20 @@ export class TrackedVehicle extends Vehicle {
         continue;
       }
 
+      // Contact-patch velocity, hoisted for the damper's first tick exactly
+      // as `GroundVehicle` hoists its own.
+      const u = this._u.copy(vBody).add(this._arm.crossVectors(w, wheel.rest));
+
       // Suspension: `GroundVehicle`'s own spring/damper/bump-stop shape,
-      // unchanged — including PHY-5's 1.5x gravity-invariance factor and the
-      // backward-difference damper, and its disclaimer about what a probe
-      // down the spring axis is and is not.
+      // unchanged — including PHY-5's 1.5x gravity-invariance factor, the
+      // backward-difference damper and its first-contact closing-speed seed,
+      // and its disclaimer about what a probe down the spring axis is and is
+      // not. A tracked hull needs the seed more than a jeep does: on rough
+      // ground 8 % of its contacts are a wheel re-landing.
       const travel = Math.min(compression, k.suspensionTravel);
       const overrun = compression - travel;
       const rate = wheel.prevCompression === null
-        ? 0 : (compression - wheel.prevCompression) / h;
+        ? Math.max(0, -u.y) : (compression - wheel.prevCompression) / h;
       let load = SPRING_GRAVITY_SCALE * wheel.strength
         * (travel + overrun * k.bumpStiffness)
         + wheel.damping * rate;
@@ -1787,7 +1887,6 @@ export class TrackedVehicle extends Vehicle {
       }
       const lat = this._lat.crossVectors(dir, UP);
 
-      const u = this._u.copy(vBody).add(this._arm.crossVectors(w, wheel.rest));
       const uLong = u.dot(dir);
       const uLat = u.dot(lat);
 
@@ -1899,7 +1998,7 @@ export class TrackedVehicle extends Vehicle {
         // decides what the ground gives back.
         if (Math.abs(throttle) < 0.01) {
           const hold = Math.max(0, 1 - Math.abs(uLong) / PARKING_HOLD_SPEED);
-          fLong -= uLong * ENGINE_TICK_HZ * hold * gShare;
+          fLong -= uLong * (1 / h) * hold * gShare;
         }
       }
       // A dummy (spin-only) wheel gets no longitudinal force at all —
