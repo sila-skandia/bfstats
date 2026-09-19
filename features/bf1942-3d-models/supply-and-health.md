@@ -52,11 +52,13 @@ R4-18 said the soldiers' fall damage was a viewer approximation because two
 passes found **no height/speed-to-damage formula** in `Armor`'s own code,
 `SimpleObject::handleCollision` and `SimpleObject::handleDamage`. That was
 wrong: the formula lives in `GameServer::handleCollisionLandOrWater`'s
-soldier branch and is delivered through the object-level `*0x15c` dispatch
-(slot `0x15c` = `BFSoldier::handleDamage` on the soldier world vtable) into
+soldier branch and is delivered through a `*0x15c` virtual call into
 `Armor::damage` — the passes missed it because it is not a direct
-`playCollisionEffect` or `Armor +0x20/+0x24` call. Ledger HP-6 was refuted
-for soldiers. Full re-derivation:
+`playCollisionEffect` or `Armor +0x20/+0x24` call. (Corrected 2026-09-19: that
+call is made on the **GameServer**, and the slot is `GameServer::giveDamage`,
+not `BFSoldier::handleDamage` — which is why it damages vehicles too. Ledger
+HP-6 is refuted outright; exact soldier formula with its branch polarities in
+`features/bf1942-engine-reference/subsystems/collision-response.md` §9.3–9.5.) Full re-derivation:
 `features/bf1942-3d-models/fall-damage-research-groundwork-2026-09-17.md`.
 
 The confirmed engine law (decoded 2026-09-18; see the groundwork doc's

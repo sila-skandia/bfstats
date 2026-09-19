@@ -137,7 +137,18 @@ over 15 s.
   normal for the contact frame. Fine for v1, wrong on a dune face.
 - **No hull collision.** Wheels see the ground function; the body sees only a
   belly failsafe. Driving into a wall, another vehicle, or Wake's pier is not
-  resolved. `WorldCollider.sweepSphere` is sitting there for it.
+  resolved. `WorldCollider.sweepSphere` is sitting there for it. *(Since wired:
+  the hull is swept as a sphere against the static collider and stops dead —
+  so another vehicle is a fixed wall. What the engine does instead — a
+  mass-ratio push applied at the contact point, a friction pass, and crash
+  damage to both — is read from the binary in
+  [collision-response.md](../bf1942-engine-reference/subsystems/collision-response.md), 2026-09-19, with an
+  ordered implementation plan in
+  [`features/vehicle-collision-physics/`](../vehicle-collision-physics/README.md).
+  The same document closes the two items above it: there is no ray in the
+  engine's wheel path — a wheel is a spring node whose layer-0 collision
+  vertices are dropped on the heightfield — and the tyre model is a per-tick
+  velocity-change request clamped to `mu x N.y x 14.73/30`, section 8.)*
 - **Tanks and half-tracks.** Addressed below (`TrackedVehicle`) rather than
   open any more: `c_ETTank` steers by differential, not a steered wheel pair,
   and `ShermanEngine`/`M3A1Engine` do bind `setInputToYaw` (yaw and roll both
