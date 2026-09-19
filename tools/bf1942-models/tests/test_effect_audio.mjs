@@ -218,6 +218,32 @@ assert.equal(scriptHold(richoLayers()), 0.25,
                'and exactly once: the per-round latch is spent by the play');
 }
 
+// --- a latch that never fires does not hold a voice forever ---------------
+
+{
+  // An explosion played close by arms its distant layers and none of them
+  // ever rises, because their *distance* gates read zero from here. Left
+  // armed they are voices permanently missing from the budget, and they are
+  // also an explosion waiting to go off if anyone walks into the band.
+  const { ctx, audio } = await build();
+  audio.update(0, { x: 0, y: 0, z: 0 });
+  audio.play('e_ExplGas', [0, 0, 4]);      // 4 m: the 100->130 gate is shut
+  assert.equal(ctx.started.length, 1, 'only the near layer sounds');
+  const held = audio.committed - audio.sources;
+  assert.ok(held >= 1, 'the distant layer is armed and counted while it is due');
+  const hold = scriptHold(EXPL_LAYERS);
+  for (let i = 0; i < Math.ceil(hold * 60) + 5; i += 1) {
+    audio.update(1 / 60, { x: 0, y: 0, z: 0 });
+  }
+  assert.equal(audio.committed - audio.sources, 0,
+               'and the latch is spent once the round\'s window has closed');
+  // Walking into the band afterwards must not set the old bang off.
+  const before = ctx.started.length;
+  for (let i = 0; i < 30; i += 1) audio.update(1 / 60, { x: 0, y: 0, z: -110 });
+  assert.equal(ctx.started.length, before,
+               'a stale latch does not fire when the listener moves');
+}
+
 // --- inaudible is not a voice --------------------------------------------
 
 {
@@ -269,6 +295,51 @@ assert.equal(scriptHold(richoLayers()), 0.25,
   }
   assert.ok(peak <= audio.budget,
             `peak ${peak} live sources within the budget ${audio.budget}`);
+}
+
+// --- a looping bundle does not burn before anything is hit -----------------
+
+{
+  // A wreck's fire (`e_PanzFire`) is three crackle loops closed with
+  // `randomPlay 1`. `EngineAudio.start()` releases a looping layer even in
+  // one-shot mode, so warming the pool used to set a fire burning at the
+  // world origin on an untouched map — the Playwright run caught it as
+  // "a play that started no new sources", because the loop was already going.
+  const fire = {
+    ...manifest(),
+    scripts: {
+      ...manifest().scripts,
+      fire: {
+        script: 'fire.ssc', patches: 1,
+        layers: [1, 2, 3].map(i => ({
+          file: `sounds/vefr${i}.mp3`, patch: 0, randomPlay: true, loop: true,
+          volume: 1, minDistance: 3, priority: 1, trigger: null,
+          stereo: false, doppler: false, randomStartPitch: null,
+          relativePosition: null,
+          modulators: [{ dest: 'volume', source: 'distance', envelope: 'ramp',
+                         params: [5, 40, 1, -1] }],
+        })),
+      },
+    },
+    bundles: { ...manifest().bundles,
+               'e_panzfire': { name: 'e_PanzFire', script: 'fire' } },
+  };
+  const ctx = stubCtx();
+  const audio = new EffectAudio({
+    listener: listenerFor(ctx), getBuffer: async () => buffer(),
+    manifest: fire, rand: () => 0,
+  });
+  audio.setMaster(1);
+  await audio.prime('e_PanzFire');
+  for (let i = 0; i < 30; i += 1) audio.update(1 / 30, { x: 0, y: 0, z: 0 });
+  assert.equal(ctx.started.length, 0,
+               'warming the pool must not set a wreck alight');
+
+  const played = audio.play('e_PanzFire', [0, 0, 6]);
+  assert.equal(played, 1,
+               `the fire starts at the impact, one crackle of three, got ${played}`);
+  assert.equal(ctx.started.length, 1);
+  assert.ok(ctx.started[0].loop, 'and it is a loop');
 }
 
 // --- priority arbitration -------------------------------------------------

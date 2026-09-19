@@ -852,6 +852,7 @@ import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
          findWeaponSpecsByFireArms, WEAPON_HEADROOM } from './engine-audio.js';
 import { GunFire } from './gunfire.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
+import { EffectAudio } from './effect-audio.js';
 import { buildHeightfield, buildCollisionIndex, WorldCollider } from './collision.js';
 import { Soldier, spawnFlags, pickSpawn, spawnYaw,
          FOV_DEG as FOOT_FOV, GRAVITY } from './soldier.js';
@@ -4711,7 +4712,23 @@ guns.onImpact = record => applyVehicleHit(record);
 // is absent) a hit is recorded and nothing is drawn at the spot.
 // Mesh particles (the decals, the stone chips) are `lighting true` meshes and
 // get the same engine-combine shading as every other dynamic mesh here.
-const effects = new EffectPlayer({ scene, camera, onMesh: mesh => bindDynamicShading(mesh) });
+// The other half of a bundle: the sound it was authored with. Pooled per
+// sound script and budgeted against the game's own 32 hardware voices — see
+// `effect-audio.js`. `?effects=off` leaves it out with the pictures;
+// `?sound=off` silences it on its own.
+const _effectEar = new THREE.Vector3();
+const effectAudio = new EffectAudio({
+  listener: null,
+  getBuffer: relPath => soundBuffer('_shared', relPath),
+});
+// The hook is one call at the point a bundle plays, which is also the point
+// the engine plays its own — `Game::playCollisionEffect` sounds the bundle
+// where it stands it up.
+const effects = new EffectPlayer({
+  scene, camera,
+  onMesh: mesh => bindDynamicShading(mesh),
+  onSound: (name, position) => effectAudio.play(name, position),
+});
 guns.effects = effects;
 let effectsLoad = null;
 function loadEffectLibrary() {
@@ -4719,7 +4736,31 @@ function loadEffectLibrary() {
   effectsLoad = EffectLibrary.load(`${MAPS_BASE}/_shared/effects.glb${bust()}`, loader)
     .then(library => { effects.library = library; return library; })
     .catch(err => { console.warn('effects library unavailable', err); return null; });
+  loadEffectSounds();
   return effectsLoad;
+}
+let effectSoundsLoad = null;
+function loadEffectSounds() {
+  if (effectSoundsLoad || AUDIO_OFF || params.get('sound') === 'off') {
+    return effectSoundsLoad;
+  }
+  effectSoundsLoad = fetch(`${MAPS_BASE}/_shared/effects.sounds.json${bust()}`)
+    .then(r => (r.ok ? r.json() : null))
+    .then(manifest => {
+      // A tree published before the sound pack exists simply stays quiet;
+      // `setManifest` on null leaves every lookup a miss and every play a
+      // no-op, which is what a missing file should look like.
+      if (!manifest) return null;
+      effectAudio.listener = ensureListener();
+      effectAudio.setManifest(manifest);
+      effectAudio.setMaster(masterVolume());
+      return manifest;
+    })
+    .catch(err => {
+      console.warn('effect sounds unavailable', err);
+      return null;
+    });
+  return effectSoundsLoad;
 }
 let vehicleGuns = [];
 // The active seat's own FireArms groups, for a vehicle occupancy is driving
@@ -10491,6 +10532,13 @@ function frame(dt) {
   if (occupancy) feedVehicleHud();
   effects.firstPerson = guns.firstPerson;
   effects.advance(dt);
+  // The ear is the camera's, the same listener every other voice on the page
+  // hangs off, so an impact is placed against the head the player is looking
+  // out of in every camera mode.
+  if (effectAudio.listener) {
+    effectAudio.setMaster(masterVolume());
+    effectAudio.update(dt, camera.getWorldPosition(_effectEar));
+  }
   applyVisibility();
   updateTextureFade();
   advanceSim(dt);
@@ -10647,6 +10695,18 @@ if (params.has('shots')) {
   // question the moving-vehicle port exists to answer: a tracer's position must
   // diverge from the muzzle it left, not travel with it.
   window.__effects = () => effects.stats();
+  // The sound pool: budget, live sources, what was played, dropped, stolen or
+  // ruled inaudible. A voice-count check reads this beside its own patched
+  // `AudioBufferSourceNode.start` counter, and the two must agree.
+  window.__effectAudio = () => (effectAudio.listener
+    ? effectAudio.snapshot() : { loaded: false });
+  window.__effectSoundsReady = async () => {
+    await effectSoundsLoad;
+    return effectAudio.listener ? effectAudio.bundles.size : 0;
+  };
+  // Decode a bundle's samples ahead of a check, so the first round is not the
+  // silent one a cold pool gives.
+  window.__primeEffectSound = name => effectAudio.prime(name);
   // Rule 6's resolve signal (features/mesh-viewer-performance): every warm-up
   // the page has started for this level and for the weapon in hand, awaited,
   // then show()'s clock readings. A check snapshots `renderer.info.programs`
