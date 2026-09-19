@@ -24,9 +24,11 @@ Four artifacts, all under `--out`:
                       height, font, the frame/background/select colours
                       that `BfNewListBoxNode::read` turned out to hold).
   menu-levels.json    one record per level in the game's own level
-                      archives: the title the loading screen uses, the two
-                      sides' nations from `game.setTeamSkin`, and the
-                      level's menu thumbnail.
+                      archives: the title the game's own list shows (the
+                      level's `lexiconAll.dat` record, English column), the
+                      two sides' nations from `game.setTeamSkin`, the
+                      level's menu thumbnail, and whether the level has the
+                      bot support the real Instant Battle list requires.
   textures/*.png      every plate, button and flag the layout names.
   fonts/*.png+.json   the bitmap faces the text nodes name.
 
@@ -532,22 +534,59 @@ def level_archives(archives: Path) -> dict[str, list[Path]]:
     return out
 
 
+def title_index(lexicon: dict[str, str]) -> dict[str, tuple[str, str]]:
+    """The lexicon keyed the way a level directory is spelled.
+
+    `lexiconAll.dat` holds one record per level under the level's own
+    directory name, and its first translation column is English:
+    `Midway` -> "BATTLE OF MIDWAY", `Market_Garden` -> "OPERATION MARKET
+    GARDEN", `Wake` -> "WAKE ISLAND". The casing of the key is not the
+    directory's (`ABERDEEN`, `berlin`), so the index is lowercased; where
+    two records lowercase to the same key the earlier one wins, which is
+    the same rule `load_lexicon(keep="first")` follows and for the same
+    reason."""
+    index: dict[str, tuple[str, str]] = {}
+    for key, value in lexicon.items():
+        index.setdefault(key.lower(), (key, value))
+    return index
+
+
+def level_title(level_dir: str, titles: dict[str, tuple[str, str]] | None) -> tuple[str, str]:
+    """`(title, where it came from)` for one level.
+
+    The game's own list shows the lexicon title. Two levels that shipped
+    after the lexicon was last built - `Kasserine_Pass` and `Truk` - have
+    no record at all, and they fall back to the loading screen's table."""
+    entry = (titles or {}).get(level_dir.lower())
+    if entry:
+        return entry[1], f"lexiconAll.dat:{entry[0]}"
+    return format_map_title(level_dir), "extract_loading_assets.format_map_title"
+
+
 def level_record(name: str, paths: list[Path], thumb_dir: Path | None,
-                 force: bool) -> dict | None:
+                 force: bool, titles: dict[str, tuple[str, str]] | None = None
+                 ) -> dict | None:
     """One level: its title, both sides' nations and its menu thumbnail.
 
     `thumb_dir` of None reads the record without decoding or writing the
     thumbnail, which is what a caller that only wants the nations needs.
+    `titles` is `title_index(load_lexicon(..., keep="first"))`; without it
+    the title falls back to the loading screen's table.
     """
     skins: dict[int, str] = {}
     level_dir = name
     thumbnail = None
+    modes: set[str] = set()
     for path in paths:
         with RfaArchive(path) as arch:
             for entry in arch.entries:
                 low = entry.lower()
+                parts = entry.split("/")
+                # `bf1942/levels/<Level>/<Mode>/...`: a mode is a directory,
+                # so something has to follow it.
+                if len(parts) >= 5 and parts[1].lower() == "levels":
+                    modes.add(parts[3].lower())
                 if low.endswith("/init.con") and "/menu/" not in low:
-                    parts = entry.split("/")
                     if len(parts) >= 3:
                         level_dir = parts[2]
                     for team, skin in TEAM_SKIN_RE.findall(
@@ -557,10 +596,20 @@ def level_record(name: str, paths: list[Path], thumb_dir: Path | None,
                     thumbnail = (path, entry)
     if not skins and thumbnail is None:
         return None
+    title, source = level_title(level_dir, titles)
     record: dict = {
         "dir": name,
         "level": level_dir,
-        "title": format_map_title(level_dir),
+        "title": title,
+        "titleSource": source,
+        # What the loading screen calls it, which is a different table and
+        # for four levels a different string.
+        "loadingTitle": format_map_title(level_dir),
+        # Whether the real game's Instant Battle list would hold this level:
+        # it lists the levels with bot support, and bot support is a
+        # `SinglePlayer` mode directory in the level archive. This site
+        # lists every extracted level anyway - see `inGameList` below.
+        "singlePlayer": "singleplayer" in modes,
     }
     for team, key in ((AXIS, "axis"), (ALLIED, "allied")):
         skin = skins.get(team)
@@ -587,17 +636,33 @@ def level_record(name: str, paths: list[Path], thumb_dir: Path | None,
     return record
 
 
-def extract_levels(archives: Path, out_dir: Path, force: bool) -> dict:
+def extract_levels(archives: Path, out_dir: Path, force: bool,
+                   titles: dict[str, tuple[str, str]] | None = None) -> dict:
     levels = []
     for name, paths in sorted(level_archives(archives).items()):
-        record = level_record(name, paths, out_dir / "thumbnails", force)
+        record = level_record(name, paths, out_dir / "thumbnails", force, titles)
         if record is not None:
             levels.append(record)
+    listed = sum(1 for level in levels if level["singlePlayer"])
     return {
         "source": "bf1942/levels/*.rfa: game.setTeamSkin from each level's "
-                  "Init.con, Menu/thumbnail.[dds|tga], title by "
+                  "Init.con, Menu/thumbnail.[dds|tga], title from "
+                  "lexiconAll.dat keyed on the level's directory name "
+                  "(English column), falling back to "
                   "extract_loading_assets.format_map_title",
         "teams": {"axis": AXIS, "allied": ALLIED},
+        # The rule the real game's list follows, and this site's departure
+        # from it. Recorded per level as `singlePlayer`.
+        "inGameList": {
+            "rule": "Instant Battle lists the levels with bot support, which "
+                    "is a SinglePlayer mode directory in the level archive. "
+                    "Conquest-only levels are not offered.",
+            "checked": f"{listed} of {len(levels)} level archives ship one",
+            "departure": "this site lists every extracted level. It has no "
+                         "bots and launches Conquest, so hiding a playable "
+                         "level would only lose it. Filter on `singlePlayer` "
+                         "to draw the list the game would draw.",
+        },
         "levels": levels,
     }
 
@@ -640,7 +705,12 @@ def main() -> None:
     layout["listRows"] = list_rows(layout, out)
     (out / "menu-layout.json").write_text(json.dumps(layout, indent=1) + "\n")
 
-    levels = extract_levels(archives, out, args.force)
+    # The level titles read the same file, but a level's own key can occur
+    # twice (`Omaha_Beach` is a level title at record 976 and a control
+    # point at 1332), and there the first record is the title.
+    titles = (title_index(load_lexicon(lexicon_path, keep="first"))
+              if lexicon_path else {})
+    levels = extract_levels(archives, out, args.force, titles)
     (out / "menu-levels.json").write_text(json.dumps(levels, indent=1) + "\n")
 
     elements = sum(len(p["elements"]) for p in layout["pages"].values())

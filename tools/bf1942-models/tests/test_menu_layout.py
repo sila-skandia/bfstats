@@ -22,10 +22,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import extract_menu_layout as eml  # noqa: E402
 from bf42 import meme  # noqa: E402
 from bf42.rfa import RfaArchive, find_archives_dir  # noqa: E402
+from extract_spawn_layout import load_lexicon  # noqa: E402
 
 GAME_DIR = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942"
 MOD_DIR = GAME_DIR / "Mods/bf1942"
 MENU_RFA = MOD_DIR / "Archives/menu.rfa"
+LEXICON = MOD_DIR / "lexiconAll.dat"
 
 NODE_SUITE = Path(__file__).with_name("test_menu_screen.mjs")
 
@@ -196,11 +198,14 @@ class LevelRecordTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         archives = find_archives_dir(MOD_DIR)
         cls.by_name = eml.level_archives(archives)
+        cls.titles = eml.title_index(load_lexicon(LEXICON, keep="first"))
         cls.records = {}
-        for name in ("midway", "berlin", "el_alamein", "wake"):
+        for name in ("midway", "berlin", "el_alamein", "wake", "market_garden",
+                     "omaha_beach", "aberdeen", "coral_sea"):
             paths = cls.by_name.get(name)
             if paths:
-                cls.records[name] = eml.level_record(name, paths, None, False)
+                cls.records[name] = eml.level_record(name, paths, None, False,
+                                                     cls.titles)
 
     def test_every_vanilla_level_is_found(self) -> None:
         # 23 levels ship with 1.61; the patch archives fold into their base.
@@ -218,7 +223,7 @@ class LevelRecordTests(unittest.TestCase):
         # and the Japanese rising sun right; `game.setTeamSkin` is where that
         # comes from, and team 1 is Axis.
         m = self.records["midway"]
-        self.assertEqual("MIDWAY", m["title"])
+        self.assertEqual("BATTLE OF MIDWAY", m["title"])
         self.assertEqual("JapaneseSoldier", m["axis"]["skin"])
         self.assertEqual("jp", m["axis"]["nation"])
         self.assertEqual("us", m["allied"]["nation"])
@@ -231,10 +236,51 @@ class LevelRecordTests(unittest.TestCase):
         self.assertEqual(("ger", "brit"), (self.records["el_alamein"]["axis"]["nation"],
                                            self.records["el_alamein"]["allied"]["nation"]))
 
-    def test_titles_use_the_loading_screen_convention(self) -> None:
-        # `Wake` is "WAKE ISLAND", not "WAKE": the same table the loading
-        # screen uses, so one level has one name across the site.
+    def test_titles_come_from_the_level_s_own_lexicon_record(self) -> None:
+        # `lexiconAll.dat` keys a record on the level's directory name and
+        # its first translation column is English, which is what the game's
+        # own list shows. The loading screen's table is a different string
+        # for four of the 23, and it is kept beside the title rather than
+        # used as it.
+        self.assertEqual("BATTLE OF MIDWAY", self.records["midway"]["title"])
+        self.assertEqual("MIDWAY", self.records["midway"]["loadingTitle"])
+        self.assertEqual("lexiconAll.dat:Midway",
+                         self.records["midway"]["titleSource"])
+        self.assertEqual("OPERATION MARKET GARDEN",
+                         self.records["market_garden"]["title"])
         self.assertEqual("WAKE ISLAND", self.records["wake"]["title"])
+        # The key's casing is not the directory's: `aberdeen` is `ABERDEEN`.
+        self.assertEqual("OPERATION ABERDEEN", self.records["aberdeen"]["title"])
+
+    def test_a_level_title_beats_a_control_point_of_the_same_name(self) -> None:
+        # `Omaha_Beach` is in the lexicon twice: record 976, inside the
+        # level-title block, is "OMAHA BEACH"; record 1332, inside a block
+        # of control-point labels, is "Omaha Beach". The first wins.
+        self.assertEqual("OMAHA BEACH", self.records["omaha_beach"]["title"])
+
+    def test_levels_the_lexicon_has_never_heard_of_fall_back(self) -> None:
+        # `Kasserine_Pass.rfa` and `Truk.rfa` were dropped into this install
+        # on 2026-09-07; they are not retail 1.61 levels and have no lexicon
+        # record. The loading screen's table answers for them.
+        for name in ("kasserine_pass", "truk"):
+            if name not in self.by_name:
+                continue
+            record = eml.level_record(name, self.by_name[name], None, False,
+                                      self.titles)
+            self.assertEqual("extract_loading_assets.format_map_title",
+                             record["titleSource"])
+            self.assertEqual(record["loadingTitle"], record["title"])
+
+    def test_bot_support_is_what_the_real_list_holds(self) -> None:
+        # The game's Instant Battle list offers the levels with bots, and
+        # bot support is a `SinglePlayer` mode directory in the level
+        # archive. Aberdeen, Coral Sea, Invasion of the Philippines and
+        # Liberation of Caen ship Conquest only, and the reference capture
+        # has none of them.
+        self.assertTrue(self.records["midway"]["singlePlayer"])
+        self.assertTrue(self.records["wake"]["singlePlayer"])
+        self.assertFalse(self.records["aberdeen"]["singlePlayer"])
+        self.assertFalse(self.records["coral_sea"]["singlePlayer"])
 
     def test_every_level_resolves_both_nations(self) -> None:
         missing = []
@@ -410,6 +456,60 @@ class ExtendHookTests(unittest.TestCase):
         node = meme.Obj(cls="SomethingNode", fields={"Next node": None})
         state = flat.extend(node, [node], 3.0, 4.0, [0, 0, 8, 8], [1, 1, 1, 1], [])
         self.assertEqual((3.0, 4.0, [1, 1, 1, 1], []), state)
+
+
+class LexiconDuplicateTests(unittest.TestCase):
+    """`lexiconAll.dat` is not a map: 31 of the vanilla file's keys occur
+    twice and seven of those pairs differ. Which one wins is a choice, and
+    the two callers make it differently on purpose."""
+
+    @staticmethod
+    def write(path: Path, records: list[tuple[str, list[str]]]) -> Path:
+        import struct
+
+        cols = len(records[0][1]) + 1
+        blob = struct.pack("<II", len(records), cols)
+        for key, values in records:
+            for s in (key, *values):
+                blob += s.encode("utf-16-le") + b"\0\0"
+        path.write_bytes(blob)
+        return path
+
+    def setUp(self) -> None:
+        import tempfile
+
+        self.dir = Path(tempfile.mkdtemp())
+        self.path = self.write(self.dir / "lexiconAll.dat", [
+            ("Midway", ["BATTLE OF MIDWAY", "MIDWAY"]),
+            ("Omaha_Beach", ["OMAHA BEACH", "OMAHA BEACH"]),
+            ("Omaha_Beach", ["Omaha Beach", "Omaha Beach"]),
+        ])
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_the_default_is_unchanged(self) -> None:
+        # The spawn screen's pack has been built with last-wins since the
+        # reader was written; none of the seven differing pairs is a key it
+        # names, but the default must not move under it regardless.
+        self.assertEqual("Omaha Beach", load_lexicon(self.path)["Omaha_Beach"])
+
+    def test_first_wins_is_opt_in(self) -> None:
+        self.assertEqual("OMAHA BEACH",
+                         load_lexicon(self.path, keep="first")["Omaha_Beach"])
+
+    def test_english_is_the_first_translation_column(self) -> None:
+        self.assertEqual("BATTLE OF MIDWAY", load_lexicon(self.path)["Midway"])
+
+    def test_the_title_index_is_case_insensitive_and_keeps_the_key(self) -> None:
+        index = eml.title_index({"ABERDEEN": "OPERATION ABERDEEN"})
+        self.assertEqual(("OPERATION ABERDEEN", "lexiconAll.dat:ABERDEEN"),
+                         eml.level_title("aberdeen", index))
+
+    def test_a_level_with_no_record_falls_back(self) -> None:
+        title, source = eml.level_title("Kasserine_Pass", {})
+        self.assertEqual("KASSERINE PASS", title)
+        self.assertEqual("extract_loading_assets.format_map_title", source)
 
 
 class NodeSuiteTests(unittest.TestCase):

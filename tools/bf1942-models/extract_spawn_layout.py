@@ -58,10 +58,21 @@ MAP_RECT = [280, 33, 512, 512]
 
 # --------------------------------------------------------------------- lexicon
 
-def load_lexicon(path: Path) -> dict[str, str]:
+def load_lexicon(path: Path, keep: str = "last") -> dict[str, str]:
     """`lexiconAll.dat`: u32 record count, u32 columns, then per record the
     key and one UTF-16LE NUL-terminated string per language. English is the
-    first language column."""
+    first language column.
+
+    The file is not a map: 31 of the vanilla file's 1,693 keys occur twice
+    and seven of those pairs hold different strings, so which occurrence
+    wins is a choice. `keep="last"` is the reader's long-standing one and
+    stays the default; `keep="first"` is for callers that want the earlier
+    record. None of the seven differing pairs is a key any spawn-screen
+    element names, so `menu/InGame` reads the same either way - the level
+    titles in `extract_menu_layout.py` are the caller that cares
+    (`Omaha_Beach` is "OMAHA BEACH" at record 976, inside the level-title
+    block 958..979, and "Omaha Beach" at record 1332, inside a block of
+    control-point labels)."""
     data = path.read_bytes()
     count, cols = struct.unpack_from("<II", data, 0)
     pos = 8
@@ -79,6 +90,8 @@ def load_lexicon(path: Path) -> dict[str, str]:
     for _ in range(count):
         key = read()
         values = [read() for _ in range(cols - 1)]
+        if keep == "first" and key in out:
+            continue
         out[key] = values[0]
     return out
 
