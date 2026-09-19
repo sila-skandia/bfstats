@@ -6,6 +6,19 @@ hit registers as an effect and nothing else happens. This folder holds the
 **agent prompt** for finding out what the engine does, precisely enough to
 implement it.
 
+> **Superseded in part, 2026-09-19.** This round's headline — "a collision never
+> costs hit points" — is wrong for vehicles as well as soldiers. Both collision
+> handlers call `GameServer::giveDamage` (the `*0x15c` slot is on the
+> GameServer, not on the colliding object), so a vehicle that hits another
+> vehicle or the ground loses hit points by
+> `speedMod x |v|^2 x angle factor x material-pair table`, at most once a
+> second per pair. Row 1 and the "What it settled" bullet below are corrected
+> in place. Rows 2-4 were not re-examined by that round (a parallel parity
+> round on the same day reports ARM-6 - "nothing gates driving on damage" - as
+> false; see the ledger for its verdict).
+> See `features/bf1942-engine-reference/subsystems/collision-response.md` §9
+> and `features/vehicle-collision-physics/README.md`.
+
 **Both rounds are done — see [Outcome](#outcome).** R1 researched, V1 verified,
 R2 followed up on the client binary and corrected V1 on one load-bearing point,
 and the lead re-derived that correction from `objdump` before merging. All of it
@@ -28,7 +41,7 @@ where round 1 left each one:
 
 | # | Reported | Verdict |
 |---|---|---|
-| 1 | A plane that hits the ground or a tree explodes, or takes enough damage to start burning | **Not in the engine.** A collision never costs hit points — ledger HP-6, closed in the negative. Only a projectile damages anything. What kills a crashed plane is the once-per-second upside-down tick after it comes to rest |
+| 1 | A plane that hits the ground or a tree explodes, or takes enough damage to start burning | **In the engine** (corrected 2026-09-19; this row said "not in the engine"). Ground: `cos^3 x speedMod x |v|^2 x getDamageMod(matTerrain, matSelf) x 30`, applied above 1.0 — a Spitfire nosing in at 40 m/s takes 120 to 1,200 against 100 HP. A tree has no Armor and takes nothing, but it is an attacker like any other: the plane takes the object-vs-object formula with whatever cell the tree's material has against the fuselage's (not surveyed). The upside-down tick is a second, slower killer |
 | 2 | Most vehicles burn below a hit-point threshold and cannot be driven, until they explode | **Burning is real** (`criticalDamage` plus the 1 Hz tick — Sherman 12 HP at 1.5/s, 8.0 s). **"Cannot be driven" is not** — nothing in the drivetrain reads Armor at all (ledger ARM-6) |
 | 3 | A burning tank has limited turret movement | **Not in the engine.** The turret path never queries Armor either (ARM-6). The nearest real mechanic is `damageAllAttachedSoldiers`, which keeps hurting the crew of a vehicle under some per-frame condition — you bail, which feels like "it won't drive" |
 | 4 | A Sherman burns from about 8 HP | **12**, not 8 — and 8.0 is the burn's duration in seconds. `criticalDamage 12`, `hpLostWhileCriticalDamage 1.5` |
@@ -56,10 +69,12 @@ briefing warns about cost two rounds here.
 
 What it settled:
 
-- **A collision never costs hit points.** The chain below `handleCollision`
-  computes a real impact-severity number and spends all of it on
-  `Game::playCollisionEffect`. Confirmed by enumerating every indirect
-  call-site offset in both handlers, not just the direct calls.
+- ~~**A collision never costs hit points.**~~ **Wrong** (2026-09-18 for
+  soldiers, 2026-09-19 for everything): the severity number also goes to
+  `GameServer::giveDamage` through vtable slot `+0x15c` of the *game* object,
+  which the enumeration of "Armor slots" could not see because it is not an
+  Armor call. Two passes read that call as harmless; see
+  `subsystems/hitpoints-and-damage.md` §3 for how.
 - **`addArmorEffect` is the burning mechanic**, fully mapped, and the cadence is
   simply **the 30 Hz tick** for as long as the vehicle is alive. The
   `Armor+0x128` byte is a *death* latch, not a first-run latch — V1 read that
