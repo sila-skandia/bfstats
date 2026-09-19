@@ -374,6 +374,11 @@ results.args = {
     isToggleAzerty: GameConsole.isToggleKey(ev('Backquote', '²')),
     isToggleQwertz: GameConsole.isToggleKey(ev('Backquote', '^')),
     isToggleTildeElsewhere: GameConsole.isToggleKey(ev('BracketRight', '~')),
+    // No `code` at all (remote desktop, an on-screen keyboard, browser
+    // automation): only then does the character decide.
+    isToggleNoCodeGrave: GameConsole.isToggleKey({ code: '', key: '`' }),
+    isToggleNoCodeTilde: GameConsole.isToggleKey({ code: '', key: '~' }),
+    isToggleNoCodeOther: GameConsole.isToggleKey({ code: '', key: 'w' }),
   };
 }
 
