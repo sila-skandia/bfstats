@@ -23,12 +23,6 @@ data:
       # change, and the node keeps the 64Mi a second cloudflared would cost.
       - hostname: mesh.bfstats.io
         service: http://haproxy-service.haproxy:80
-      # BF1942 in the browser. Same reasoning as mesh.bfstats.io above:
-      # HAProxy routes on the Host header and carries the play ACL, so this
-      # rule is the whole tunnel change and no second cloudflared is needed.
-      # The DNS record for play.bfstats.io is the owner's to create.
-      - hostname: play.bfstats.io
-        service: http://haproxy-service.haproxy:80
       - hostname: seq.bfstats.io
         service: http://seq-service.seq:5341
       - service: http_status:404
