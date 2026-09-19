@@ -32,8 +32,8 @@ and findings in [`../bf1942-in-the-browser/README.md`](../bf1942-in-the-browser/
 
 | Item | Status |
 |---|---|
-| A new site, separate from `mesh.bfstats.io`, that serves the map page and its assets | open (A) |
-| The game's own Singleplayer > Instant Battle screen (`menu/SkirmishMenu`), drawn from the game's layout, textures, fonts and strings, that picks a level and a team and launches the map | open (A) |
+| The game's own Singleplayer > Instant Battle screen (`menu/SkirmishMenu`), drawn from the game's layout, textures, fonts and strings, that picks a level and a team and launches the map | **merged** `a02122c` (built, then reviewed: titles now come from the lexicon's English column, `?team=` wins over the flag tally, fonts proved against a real in-game frame). Page at `viewer/play/`; pack extracted to `maps/_shared/hud/menu` with `extract_menu_layout.py` |
+| A new site, separate from `mesh.bfstats.io`, at `play.bfstats.io` (hostname confirmed by the owner) | **decision pending.** The stream wrote a second nginx pod; held out of main by `458d62c` because memory limits already total 7,296Mi of 7,741Mi (445Mi headroom against the ~1.5Gi rule). The review recommends the existing mesh nginx answer both hostnames: it needs a second `server` block, a real `server_name mesh.bfstats.io` plus `listen 80 default_server` on the existing one, an HAProxy host ACL and a tunnel entry. Not written yet; nothing applied |
 | The map page's debug panel (level picker, fog, wireframe, vehicles, pilot, spawn on foot, sound) hidden from a regular player | open (B). The panel is collapsed behind a `Maps` fab as of today; it must disappear entirely |
 | The in-game console on the tilde key, reconstructed from the client, with `show.dev 1` (and `show.dev = 1`) revealing the debug panel | open (B) |
 
@@ -54,6 +54,18 @@ and findings in [`../bf1942-in-the-browser/README.md`](../bf1942-in-the-browser/
 | Sun lens flare and corona: 16 verbs on 21 of 23 levels, parsed by nothing | open (D) |
 
 ### Engine research (streams F1 to F3, then verifiers)
+
+**All three reported and all three were independently re-derived (2026-09-19).**
+The verdicts overturned several of the reports' own conclusions, so the
+verdicts, not the reports, are what is being integrated, on a branch, into
+`ledger.md`, `symbols.json` and the subsystem docs. The code changes that
+follow are being written up as [`viewer-changes.md`](viewer-changes.md), the
+brief for the next build wave. A second session ran a collision-response round
+the same evening (`subsystems/collision-response.md`, ledger COL-2 to COL-12);
+it independently confirmed the friction budgets and the fall-damage formula,
+closed the terrain-material half of the fall-damage question (terrain
+`materialDamage` = 30 for all 16 terrain ids), and gives "ground vehicles have
+no hull collision" an engine spec.
 
 The ledger has 200 rows. Ten are `open` and nine more are confirmed with an
 unread part. The Ghidra bridge is up and the hash matches.
