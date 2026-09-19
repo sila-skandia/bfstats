@@ -6,6 +6,7 @@ import {
   activeTier, deathTier, DamageableVehicle, VehicleDamageSet,
   TIER_DEATH, TIER_WATER_DEATH, inputGate, CRITICAL_INPUT_SCALE,
 } from './vehicle-damage.mjs';
+import { Armor } from './armor.mjs';
 
 const out = {};
 
@@ -330,6 +331,88 @@ out.waterDeathFallback = deathTier(
     unoffset: centre({ ...blast, point: [0, 0, 0] }),
     // A fuse round: `point` only, and it is used.
     endOfLife: centre({ ...blast, point: [1, 0, 0] }),
+  };
+
+  // --- HP-10: the soldier half --------------------------------------------
+  //
+  // A grenade's own numbers: `material2 205`, `radius 15`, and
+  // `damageMod(205, 40)` = 2.0 against the soldier's material 40 with
+  // `materialDamage(205)` = 30. A soldier is not a registered vehicle, so he
+  // arrives carrying his own Armor.
+  const soldierTables = {
+    materials: {
+      205: { attGroup: 205, defGroup: 205, damage: 30 },
+      40: { attGroup: 40, defGroup: 40, damage: 1 },
+    },
+    modifiers: { 205: { 40: 2 } },
+  };
+  const grenade = {
+    point: [0, 0, 0], firer: -1, splashMaterial2: 205, splashRadius: 15,
+  };
+  const splashSoldier = (distance, exposureValue, options = {}) => {
+    const set = new VehicleDamageSet();
+    const armor = new Armor(30);
+    const target = {
+      owner: -1, armor, soldier: true, splashMaterial: 40,
+      x: distance, y: 0, z: 0, ...options,
+    };
+    const hurt = set.applySplash(grenade, [target], {
+      ...soldierTables,
+      exposure: () => exposureValue,
+    });
+    return {
+      hp: Math.round(armor.hitPoints * 1e4) / 1e4,
+      lost: hurt.length ? Math.round(hurt[0].lost * 1e4) / 1e4 : 0,
+      exposure: hurt.length ? hurt[0].exposure : null,
+      dead: armor.destroyed,
+    };
+  };
+  out.soldierSplash = {
+    // At the blast, standing (0.5) and crouching (1.0): 60 HP before
+    // exposure, so 30 and 60 -- a grenade at your feet kills either way.
+    atFeetStanding: splashSoldier(0, 0.5),
+    atFeetCrouching: splashSoldier(0, 1.0),
+    // Half the radius out: 60 * 0.5 falloff = 30, times exposure.
+    sevenFiveStanding: splashSoldier(7.5, 0.5),
+    sevenFiveCrouching: splashSoldier(7.5, 1.0),
+    // Two of nine samples through, standing: 2/18.
+    sevenFiveBarely: splashSoldier(7.5, 2 / 18),
+    // Exposure 0 short-circuits -- no damage at all, however close.
+    inCover: splashSoldier(0, 0),
+    // Outside the radius: the strict `radius > d` gate.
+    outside: splashSoldier(15, 1.0),
+    // No exposure callback at all: the term stays at the seeded 1.0.
+    noCallback: (() => {
+      const set = new VehicleDamageSet();
+      const armor = new Armor(30);
+      const hurt = set.applySplash(grenade, [{
+        owner: -1, armor, soldier: true, splashMaterial: 40, x: 7.5, y: 0, z: 0,
+      }], soldierTables);
+      return { lost: Math.round(hurt[0].lost * 1e4) / 1e4, exposure: hurt[0].exposure };
+    })(),
+    // A target that is NOT marked a soldier never asks for exposure, however
+    // loudly the callback would have answered: there is no occlusion at all
+    // for a non-soldier victim.
+    notASoldier: (() => {
+      const set = new VehicleDamageSet();
+      const armor = new Armor(100);
+      let asked = false;
+      const hurt = set.applySplash(grenade, [{
+        owner: -1, armor, splashMaterial: 40, x: 7.5, y: 0, z: 0,
+      }], { ...soldierTables, exposure: () => { asked = true; return 0; } });
+      return { asked, lost: Math.round(hurt[0].lost * 1e4) / 1e4 };
+    })(),
+    // The blast point is handed to the callback, so a caller can cast from it.
+    callbackArguments: (() => {
+      const set = new VehicleDamageSet();
+      const seen = [];
+      set.applySplash({ ...grenade, splashPoint: [1, 2, 3] }, [{
+        owner: -1, armor: new Armor(30), soldier: true, splashMaterial: 40,
+        pose: 2, x: 1, y: 2, z: 3,
+      }], { ...soldierTables,
+            exposure: (target, blast) => { seen.push({ pose: target.pose, blast }); return 1; } });
+      return seen;
+    })(),
   };
 }
 
