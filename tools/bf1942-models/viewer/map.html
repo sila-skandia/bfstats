@@ -851,8 +851,8 @@ import { Hud } from './hud.js';
 import { Armor } from './armor.js';
 import { VehicleDamageSet } from './vehicle-damage.js';
 import { SupplyDepot, SupplyField } from './supply.js';
-import { collectIkBindings, ikTarget, resolveSeatStates, seatBody,
-         seatPoseName, solveTwoBone } from './seat-ik.js';
+import { collectIkBindings, defaultSeatPoseName, ikTarget, resolveSeatStates,
+         seatBody, seatPoseName, solveTwoBone } from './seat-ik.js';
 import { GameConsole, paintConsole, loadConsoleFont } from './console.js';
 
 // Which game's levels this page serves, and the directory they hang off:
@@ -6712,24 +6712,38 @@ let seatPoseMixer = null;
 let seatPoseActions = null;
 let seatPoseTarget = null;   // the seat node whose world pose we follow
 let seatIkChains = [];       // per-frame arm work, built by `bindSeatIk`
+let seatPoseGeneration = 0;  // which load is still the current one
 
 async function loadSeatPose() {
   disposeSeatPose();
   if (!occupancy || !optPilot.checked) return;
+  const mine = ++seatPoseGeneration;
   const seat = occupancy.seatInfo(occupancy.activeSeatId);
   const body = seatBody(seat?.seatObjects);
   if (!body.draw) return;             // no SeatObject: the game draws nobody
   const states = resolveSeatStates(seat.seatObjects);
-  const poseName = seatPoseName(states.upperBody, states.lowerBody);
   const soldierName = soldierTemplateFor(
     flags.find(f => f.team === deployTeamId) || { team: deployTeamId });
-  const url = `${MODELS_BASE}/poses/${soldierName}__${poseName}.pose.glb${bust()}`;
+  const assetFor = name =>
+    `${MODELS_BASE}/poses/${soldierName}__${name}.pose.glb${bust()}`;
   let gltf;
   try {
-    gltf = await seatPoseLoader.loadAsync(url);
+    gltf = await seatPoseLoader.loadAsync(
+      assetFor(seatPoseName(states.upperBody, states.lowerBody)));
   } catch {
-    return;
+    // The seat names a state the game never declared, so no glb was written
+    // for it. The engine still draws the occupant — see `defaultSeatPoseName`.
+    const fallback = defaultSeatPoseName(body.mask);
+    try {
+      gltf = await seatPoseLoader.loadAsync(assetFor(fallback));
+    } catch {
+      return;
+    }
   }
+  // Leaving the seat, or switching to another, while the glb was in flight:
+  // `disposeSeatPose` has already run and this scene must not be adopted, or
+  // it hangs in the world for ever with nothing left holding a reference.
+  if (mine !== seatPoseGeneration) { disposeSeatScene(gltf.scene); return; }
   const soldierScene = gltf.scene;
   try {
     soldierScene.traverse(obj => {
@@ -6917,17 +6931,39 @@ function applyWorldDelta(bone, quat) {
   bone.quaternion.premultiply(_ikDelta);
 }
 
+/** Give one loaded seat-pose scene back to the GPU, the same way
+ *  `disposeHandWeapon` gives back a weapon rig.
+ *
+ * A soldier pose is a skinned mesh with its own geometry, materials, textures
+ * and bone texture, and entering and leaving a seat loads a fresh one every
+ * time. Dropping the reference frees none of that: only `dispose()` does, and
+ * a session spent hopping in and out of a jeep used to leak every copy. */
+function disposeSeatScene(root) {
+  if (!root) return;
+  root.traverse(obj => {
+    obj.geometry?.dispose();
+    obj.skeleton?.dispose?.();
+    for (const m of [obj.material].flat().filter(Boolean)) {
+      m.map?.dispose();
+      m.dispose();
+    }
+  });
+  root.removeFromParent?.();
+  if (root.parent) root.parent.remove(root);
+}
+
 function disposeSeatPose() {
-  if (seatPoseMixer) { seatPoseMixer.stopAllAction(); seatPoseMixer = null; }
+  // The mixer first, while its bindings still resolve, then the GPU half.
+  if (seatPoseMixer) {
+    seatPoseMixer.stopAllAction();
+    seatPoseMixer.uncacheRoot(seatPoseMixer.getRoot());
+    seatPoseMixer = null;
+  }
   seatPoseActions = null;
   seatPoseTarget = null;
   seatIkChains = [];
   if (seatSoldier) {
-    seatSoldier.traverse(obj => {
-      if (obj.isSkinnedMesh && obj.skeleton?.dispose) obj.skeleton.dispose();
-    });
-    seatSoldier.removeFromParent?.();
-    if (seatSoldier.parent) seatSoldier.parent.remove(seatSoldier);
+    disposeSeatScene(seatSoldier);
     seatSoldier = null;
   }
 }

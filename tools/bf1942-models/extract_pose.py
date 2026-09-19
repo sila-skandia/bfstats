@@ -1464,7 +1464,9 @@ LOWER_PREFIX = "Lb_"
 STANDING_FLAG = "c_seatshowstandingsoldier"
 
 
-def resolve_seat_states(template: con_mod.ObjectTemplate) -> tuple[str, str]:
+def resolve_seat_states(template: con_mod.ObjectTemplate,
+                        machine: animstates.StateMachine | None = None,
+                        ) -> tuple[str, str]:
     """The (upper, lower) animation states one SeatObject actually plays.
 
     `BFSoldier::setUseSeat` (lnxded `0x08271950`) in full. The seat's own two
@@ -1474,10 +1476,30 @@ def resolve_seat_states(template: con_mod.ObjectTemplate) -> tuple[str, str]:
     ground state, and the two branches that pick a default read template
     +0x294 (`Lb_SitInVehicle`) and +0x29c (`Lb_StandInVehicle`), resolved by
     name in `BFSoldierTemplate::init` at `0x0827acaf` and `0x0827ad4f`.
+
+    **A name the state machine does not have falls back to the same default.**
+    A seat may name a state the game never shipped: Road to Rome's two
+    `M3GMCPassengerSeat`s ask for `Ub_PassengerInM3GMC`/`Lb_PassengerInM3GMC`,
+    which no `AnimationStates` file in any mod declares — the mod's own
+    `AnimationStatesMod.con` is read (vanilla's `AnimationStates.con` ends with
+    `run AnimationStatesMod`, and it contributes XPack1's 178 other states), it
+    simply never defines these two. The engine's own answer is to leave the
+    slot alone: `setAnimationState` (`0x0826cee0`) calls `findState`
+    (`0x08328610`), gets -1 and returns at `0x0826cf12` without writing, so an
+    M3GMC passenger keeps whatever he was playing. We cannot export "whatever
+    he was playing", and exporting nothing would draw an empty seat that the
+    game fills, so each half that cannot resolve drops to the engine default
+    for that half. The substitution is not silent: `discover_seat_poses`
+    reports it and `seat-poses.json` records it.
     """
-    upper = template.seat_animation_upper_body or "Ub_SitInVehicle"
+    def known(name: str | None) -> bool:
+        return bool(name) and (machine is None or machine.state(name) is not None)
+
+    upper = template.seat_animation_upper_body
+    if not known(upper):
+        upper = "Ub_SitInVehicle"
     lower = template.seat_animation_lower_body
-    if not lower:
+    if not known(lower):
         standing = any(f.strip().lower() == STANDING_FLAG
                        for f in template.seat_flags)
         lower = "Lb_StandInVehicle" if standing else "Lb_SitInVehicle"
@@ -1502,7 +1524,8 @@ def seat_pose_name(upper: str, lower: str) -> str:
     return f"{upper_suffix}-{lower_suffix}"
 
 
-def discover_seat_poses(library: con_mod.ObjectLibrary
+def discover_seat_poses(library: con_mod.ObjectLibrary,
+                        machine: animstates.StateMachine | None = None,
                         ) -> list[tuple[str, str]]:
     """Every (upperState, lowerState) pair the mod's seats resolve to.
 
@@ -1517,24 +1540,53 @@ def discover_seat_poses(library: con_mod.ObjectLibrary
     than being corrected towards a matching one: it is what the game plays,
     and `seat_pose_name` now gives it a file of its own instead of colliding
     with the Willys'.
+
+    Pass `machine` and a seat naming a state the game never declared drops to
+    the engine's default for that half instead of producing a pose name that
+    can only fail; the substitutions come back in `seat_substitutions`.
     """
     seen: list[tuple[str, str]] = []
     for template in library.objects.values():
         if template.kind.lower() != "seatobject":
             continue
-        pair = resolve_seat_states(template)
+        pair = resolve_seat_states(template, machine)
         if pair not in seen:
             seen.append(pair)
     return seen
 
 
+def seat_substitutions(library: con_mod.ObjectLibrary,
+                       machine: animstates.StateMachine,
+                       ) -> list[tuple[str, str, str]]:
+    """(seat, declared state, state used instead) for every name the game lacks.
+
+    Worth printing rather than swallowing: a seat asking for a state no mod
+    declares is a bug in that mod's content, and the reader should be told
+    which pose the occupant is wearing in its place.
+    """
+    out: list[tuple[str, str, str]] = []
+    for template in library.objects.values():
+        if template.kind.lower() != "seatobject":
+            continue
+        upper, lower = resolve_seat_states(template, machine)
+        for declared, used in ((template.seat_animation_upper_body, upper),
+                               (template.seat_animation_lower_body, lower)):
+            if declared and machine.state(declared) is None:
+                out.append((template.name, declared, used))
+    return out
+
+
 def extract_seat_poses(machine, meshes, textures, objects, library,
                        args) -> int:
     """Export one seat-pose glb per soldier per discovered pose name."""
-    poses = discover_seat_poses(library)
+    poses = discover_seat_poses(library, machine)
     if not poses:
         print("no seat poses found in this mod", file=sys.stderr)
         return 0
+    substitutions = seat_substitutions(library, machine)
+    for seat, declared, used in substitutions:
+        print(f"{seat}: no {declared} in the state machine; using {used}",
+              file=sys.stderr)
     soldiers = soldier_templates(library)
     if args.soldiers is not None:
         keep = {s.lower() for s in args.soldiers}
@@ -1564,8 +1616,10 @@ def extract_seat_poses(machine, meshes, textures, objects, library,
             except PoseError as exc:
                 failures += 1
                 print(f"{soldier} / {pose_name}: {exc}", file=sys.stderr)
-    (args.out / "seat-poses.json").write_text(
-        json.dumps({"poses": manifest}, indent=2))
+    (args.out / "seat-poses.json").write_text(json.dumps(
+        {"poses": manifest,
+         "substitutions": [{"seat": s, "declared": d, "used": u}
+                           for s, d, u in substitutions]}, indent=2))
     total = len(soldiers) * len(poses)
     ok = total - failures
     print(f"\n{ok}/{total} seat poses resolved; "

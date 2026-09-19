@@ -246,5 +246,47 @@ class BindingTests(SeatIkHarness):
             self.assertEqual(row["node"], row["target"])
 
 
+class DefaultPoseFallbackTests(SeatIkHarness):
+    """A seat naming a state the game never declared still draws somebody.
+
+    Road to Rome's `M3GMCPassengerSeat` asks for `Ub_PassengerInM3GMC`, which
+    no `AnimationStates` file in any mod defines, so no glb carries that name
+    and the fetch 404s. `map.html` then asks for this instead, and
+    `extract_pose.resolve_seat_states` picks the same pair, so the asset the
+    page asks for is the asset the exporter wrote.
+    """
+
+    def test_a_sitting_seat_drops_to_the_sit_pose(self) -> None:
+        self.assertEqual("SitInVehicle", self.results["defaultPose"]["sitting"])
+
+    def test_a_standing_seat_drops_to_the_standing_pose(self) -> None:
+        self.assertEqual("SitInVehicle-StandInVehicle",
+                         self.results["defaultPose"]["standing"])
+
+    def test_a_seat_with_no_usable_flag_still_sits(self) -> None:
+        # The two vanilla boat seats that spell `c_SeatHalfBodySoldier`
+        # without "Show" record a mask of 0; they are still drawn, sitting.
+        self.assertEqual("SitInVehicle",
+                         self.results["defaultPose"]["nothingDeclared"])
+
+    def test_it_matches_what_the_exporter_writes(self) -> None:
+        import extract_pose
+        from bf42.con import ObjectTemplate
+        from bf42 import animstates
+        machine = animstates.StateMachine()
+        for name in ("Ub_SitInVehicle", "Lb_SitInVehicle", "Lb_StandInVehicle"):
+            machine.states[name.lower()] = animstates.State(name)
+        for flags, want in ((["c_SeatShowFullBodySoldier"], "sitting"),
+                            (["c_SeatShowStandingSoldier"], "standing"),
+                            ([], "nothingDeclared")):
+            seat = ObjectTemplate("S", "SeatObject", "objects/test.con")
+            seat.seat_animation_upper_body = "Ub_PassengerInM3GMC"
+            seat.seat_animation_lower_body = "Lb_PassengerInM3GMC"
+            seat.seat_flags = list(flags)
+            upper, lower = extract_pose.resolve_seat_states(seat, machine)
+            self.assertEqual(self.results["defaultPose"][want],
+                             extract_pose.seat_pose_name(upper, lower))
+
+
 if __name__ == "__main__":
     unittest.main()
