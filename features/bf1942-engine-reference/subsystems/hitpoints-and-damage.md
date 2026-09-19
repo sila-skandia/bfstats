@@ -196,6 +196,13 @@ entry and nothing on the non-soldier path touches it. And a soldier gets
 (`fmulp` at `0x081566b4`), with an exposure of exactly 0.0 short-circuiting to
 no damage. HP-10's "not distance falloff" is true of the exposure term alone.
 
+**The force path is separate, and reads the victim's Armor.**
+`getExplosionForceMod` (vtable `+0xb4`, `0x081742c0`) is read at `0x081569cb`
+and clamped to `getExplosionForceMax` (vtable `+0xbc`, `0x081742f0`). Below a
+separation of 0.001 the impulse direction is the **terrain normal** at the
+explosion point rather than the separation vector, and a soldier's impulse is
+additionally scaled by `0.1` and by `finalDamage/rawDamage`.
+
 `handleExplosionOnObject` does not apply the damage: it appends
 `{objectId, damage, …, Pos3}` to six parallel double-buffered vectors on the
 GameServer (HP-9b) and returns a bool that only gates a shot-accuracy stat. Who

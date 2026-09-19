@@ -251,9 +251,11 @@ it at `0x086d3c4c`) — an earlier report proposed an invented
 `IID_BFArmorOrHudAspect_c4a4` with a guessed value here, which is wrong on both
 counts. Dumping that interface's group of `vtable for
 PlayerControlObjectTemplate` (`0x0873eba0`, vptr = sym+0x20c) puts
-`getHasTurretIcon()` at exactly **vptr+0x60**, matching the client instruction;
-the same table gives `getVehicleIconPos()` at vptr+0x30 and `getCrossHairType()`
-at vptr+0x68 (**not** the +0x78 that report claimed).
+`getHasTurretIcon()` (`0x0831b850`) at exactly **vptr+0x60**, matching the
+client instruction; the same table gives `getVehicleIconPos()` at vptr+0x30 and
+`getCrossHairType()` at vptr+0x68 (**not** the +0x78 that report claimed). The
+neighbouring dword `0x008de484` is `IID_IPlayerControlObject` = `0xc4c5`, which
+*is* correct as the corpus had it — only the `0x008de480` entry was wrong.
 
 So the dial is not "any seat with a traverse": it needs the template's own
 `setHasTurretIcon` **and** an inside view. In vanilla that word appears on seven
@@ -279,9 +281,12 @@ used to write it.
 value on the wire must therefore rotate by `−angle`, and the two changes have to
 land together or the dial mirrors.
 
-`angleMultiplier` scales a draw-context scalar (`drawCtx[+0x18]`, identity
-unverified), not the bound variable, and `hud-layout.json`'s seven `rotation`
-blocks all author it as **0** — six with static angles (3.9, −3.14, 1.57, 2.5,
+`angleMultiplier` scales a draw-context scalar, not the bound variable:
+`RotateEffect::read` (`0x007e23a0`) reads `Angle` into `this+4` and
+`"Angle multiplyer"` into `this+8`, and `RotateEffect::apply` (`0x007e2300`)
+computes `Angle + drawCtx[+0x18] × AngleMultiplier` before calling the quad
+rotator — the identity of `drawCtx[+0x18]` is unverified. `hud-layout.json`'s
+seven `rotation` blocks all author the multiplier as **0** — six with static angles (3.9, −3.14, 1.57, 2.5,
 0.8, −0.8) and one bound to `IconLookRotation`. Leaving it unapplied is correct.
 
 ### The `Ammo` and `Overheat` registrar tables (VHUD-10, corrected 2026-09-19)
