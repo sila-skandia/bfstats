@@ -30,7 +30,8 @@
 
 import * as THREE from 'three';
 import { impactEffect, materialFamily } from './collision.js';
-import { damageFactor, splashSpec } from './effects-core.js';
+import { damageFactor, IMPACT_BLAST_OFFSET, isFuseRound, roundTimeToLive,
+         splashSpec } from './effects-core.js';
 // The world's downward acceleration, signed, taken from the module that owns
 // it rather than declared again here. It is -14.73 m/s^2 and not Earth's
 // -9.81: `BasicPhysicsSystem`'s constructor at `0x00578f00` writes 0xC16BAE14
@@ -764,6 +765,15 @@ export class GunFire {
     // points down -Z — the muzzle's own forward.
     mesh.quaternion.copy(_aim);
     this.scene.add(mesh);
+    // A **fuse** round (HP-9d, HP-9e): end-of-life explosion, no impact
+    // explosion, and — the condition that is easy to drop — it survives
+    // contact. Vanilla's are exactly the two grenades, the explosives pack and
+    // the landmine; the three flak shells pass the first two and fail the
+    // third. Contact must neither detonate a fuse round nor end it, or its
+    // only blast is deleted and a grenade thrown into the open does nothing at
+    // all, which is what this viewer did until now. `isFuseRound` in
+    // `effects-core.js` carries the rule and the addresses.
+    const fuse = isFuseRound(spec?.damage);
     const shot = {
       mesh,
       group,
@@ -782,12 +792,20 @@ export class GunFire {
       // so this is inert for tank guns and live only for the five naval guns
       // fast enough to be scaled and heavy enough to fall.
       gravityScale: (speed / authored) ** 2,
-      ttl: Math.min(spec.timeToLive || 10, 20),
+      // A fuse round runs its authored fuse; everything else is held to the
+      // viewer's own flight ceiling. `roundTimeToLive` carries why — in short,
+      // the ceiling was written when `timeToLive` only recycled a mesh, and
+      // clamping an explosives pack's 240 s to 20 s now drops 12 m of real
+      // splash on the player twenty seconds after he puts the charge down.
+      ttl: roundTimeToLive(spec.timeToLive, spec?.damage),
       trail: group.trailQuad ? spec.trail : null,
       run: null,
       age: 0,
       travelled: 0,
       sincePuff: 0,
+      fuse,
+      // Set when a fuse round has come to rest on a surface; see `advance`.
+      resting: false,
     };
     // The authored trail — `e_rocketFume` riding the bazooka round as an
     // `addTemplate` child: a looping smoke emitter at 100/s whose puffs
@@ -939,13 +957,33 @@ export class GunFire {
         : base * (mod === null ? 1 : mod) * incidence * factor,
       played: false,
     };
-    // Splash / HE area pass (`damageType 1`). Direct HP is already in
-    // `damage`; these fields tell the map page who else to hurt within
-    // `radius` of the blast centre. Null when the round is direct-only.
+    // Splash / HE area pass. Direct HP is already in `damage`; these fields
+    // tell the map page who else to hurt within `radius` of the blast centre.
+    //
+    // This is the **impact** explosion, and the engine gives it only to a
+    // round with `damageType == 1` AND `hasCollisionEffect` (HP-9d, gates
+    // 0x08153e79 / 0x08153ea9) — `splashSpec.impact` is that conjunction. A
+    // grenade, satchel, explosives pack or landmine reaches this function with
+    // `impact` false and gets no area pass here at all; its blast is the
+    // end-of-life one in `#detonate`. The radius is the truncated integer
+    // (HP-9), which is what the impact path holds.
     const splash = splashSpec(spec?.damage);
-    if (splash) {
+    if (splash?.impact) {
+      record.blast = 'impact';
       record.splashMaterial2 = splash.material2;
       record.splashRadius = splash.radius;
+      record.splashYMod = splash.yMod;
+      // The blast is centred 0.1 m off the surface, along the collision
+      // normal — `hitPos + 0.1 * normal`, lnxded 0x08153f5e-0x08153f8f, pushed
+      // at 0x08154026 (see `IMPACT_BLAST_OFFSET`). Kept as its own field
+      // rather than moving `point`, because `point` is where the **collision
+      // effect** goes and the engine plays that one at the raw hit position,
+      // before this offset is computed (0x08153e5b).
+      record.splashPoint = [
+        hit.x + hit.nx * IMPACT_BLAST_OFFSET,
+        hit.y + hit.ny * IMPACT_BLAST_OFFSET,
+        hit.z + hit.nz * IMPACT_BLAST_OFFSET,
+      ];
     }
     this.hits.unshift(record);
     if (this.hits.length > 16) this.hits.length = 16;
@@ -959,6 +997,77 @@ export class GunFire {
     }
     this.#spawnImpact(hit, family);
     this.onImpact?.(record, hit);
+  }
+
+  /**
+   * The **end-of-life** explosion: the one a fuse weapon gets, and the one a
+   * round that simply runs out of `timeToLive` in mid-air gets.
+   *
+   * `Projectile::startEndEffect` (lnxded 0x0831f590) fires it for
+   * `damageType == 1` (test at 0x0831f6bb) **or** `damageType == 4`
+   * (0x0831f6c0), and tests `hasCollisionEffect` at neither — which is the
+   * whole point of HP-9d's two-path rule. Three differences from `#impact`,
+   * all read rather than assumed:
+   *
+   *   - the radius skips the impact path's second truncation (0x0831f73e vs
+   *     0x08153f23), which is a no-op either way because the property is a
+   *     console `int` truncated at parse — `splashSpec`'s own comment has the
+   *     whole of why, and why handing this path a fractional radius would be
+   *     wrong rather than faithful.
+   *   - `sourceArmor` is pushed as **NULL** (0x0831f727), where the impact
+   *     path passes the firer's. So this does not exclude the thrower, which
+   *     is why your own grenade hurts you. UNVERIFIED, and named as such:
+   *     what that argument actually gates downstream was not re-derived this
+   *     round, only the fact that it is null here.
+   *   - there is no surface: the engine stands the effect on world up,
+   *     `startEndEffect` passing (0, 1, 0), so there is no material pair, no
+   *     incidence cosine and no direct-hit HP — an end-of-life blast is
+   *     splash and nothing else.
+   *
+   * Returns the record, or null when this round has no end-of-life blast.
+   */
+  #detonate(group, spec, position, travelled = 0) {
+    const splash = splashSpec(spec?.damage);
+    if (!splash?.endOfLife) return null;
+    const attacker = this.attackerMaterial(spec);
+    const record = {
+      kind: 'endOfLife',
+      material: null,
+      family: null,
+      attacker,
+      // `endEffectTemplate` — `e_ExplGranade` on both grenades. Stood up on
+      // world up, not on a surface normal.
+      effect: spec?.endEffect ?? null,
+      point: [position.x, position.y, position.z],
+      normal: [0, 1, 0],
+      gun: group.node.name,
+      distance: 0,
+      // Nothing was struck, so there is no owner to name and no firer to
+      // exclude (`sourceArmor = NULL`, above).
+      owner: -1,
+      firer: -1,
+      travelled,
+      damageFactor: 1,
+      attGroup: this.materials?.[attacker]?.attGroup ?? attacker,
+      defGroup: null,
+      damageMod: null,
+      incidence: 1,
+      damage: null,
+      blast: 'endOfLife',
+      splashMaterial2: splash.material2,
+      splashRadius: splash.radius,
+      splashYMod: splash.yMod,
+      played: false,
+    };
+    if (this.effects && record.effect) {
+      record.played = !!this.effects.play(record.effect, {
+        position: record.point, normal: record.normal, speed: 0,
+      });
+    }
+    this.hits.unshift(record);
+    if (this.hits.length > 16) this.hits.length = 16;
+    this.onImpact?.(record, null);
+    return record;
   }
 
   #spawnImpact(hit, family) {
@@ -1137,45 +1246,89 @@ export class GunFire {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const shot = this.projectiles[i];
       shot.age += dt;
-      if (shot.kind === 'rocket') {
-        const speed = shot.velocity.length();
-        shot.velocity.multiplyScalar((speed + ROCKET_ACCEL * dt) / speed);
+      let step = 0;
+      // A fuse round that has come to rest is only running its fuse down: no
+      // gravity, no motion, no sweep, until `timeToLive` detonates it below.
+      if (!shot.resting) {
+        if (shot.kind === 'rocket') {
+          const speed = shot.velocity.length();
+          shot.velocity.multiplyScalar((speed + ROCKET_ACCEL * dt) / speed);
+        }
+        // `GRAVITY` is signed downward, so this adds. `gravityModifier` scales
+        // it per projectile: 0 on every bullet (a tracer never reaches this
+        // loop at all), 0.5 on the Panzer IV's and the Chi-ha's rounds, and
+        // unset — so 1 — on every other tank gun, howitzer, naval gun, bomb
+        // and torpedo.
+        if (shot.gravity) {
+          shot.velocity.y += GRAVITY * shot.gravity * shot.gravityScale * dt;
+        }
+        step = shot.velocity.length() * dt;
+        shot.travelled += step;
+        shot.mesh.position.addScaledVector(shot.velocity, dt);
+        // Nose (local -Z) along the velocity, so shells arc over.
+        _aimBack.copy(shot.mesh.position).sub(shot.velocity);
+        shot.mesh.lookAt(_aimBack);
+        const struck = this.#sweep(shot.group, shot.mesh.position,
+                                   shot.velocity, step, 0);
+        if (struck && shot.fuse) {
+          // HP-9d: a fuse round takes NO impact path. `hasCollisionEffect` is
+          // clear, which is literally "play no collision effect", and the
+          // explosion gate that same flag serves is why there is no blast here
+          // either — a grenade bouncing off a wall does nothing at all. So
+          // neither `#impact` nor removal: the round lives on, and its
+          // `timeToLive` is what ends it.
+          //
+          // **The resting is an approximation, and a deliberate one.** The
+          // engine's grenade is a rigid body (`setHasCollisionPhysics 1`,
+          // `setHasResponsePhysics 1`) that genuinely bounces, and the contact
+          // solver that would bounce it here belongs to the concurrent
+          // collision round (COL-2..COL-12), not to this one. Rather than
+          // invent a restitution coefficient, the round stops on the surface
+          // it met and runs its fuse down there. Its own authored word for
+          // this is `dieAfterColl 0` — on 2,311 templates across the installed
+          // mods, but NOT aligned with `hasCollisionEffect` (1,676 templates
+          // carry the flag set *and* `dieAfterColl 0`), and what the engine
+          // does with it was not read. Recorded as the lead it is; not
+          // consumed.
+          shot.mesh.position.set(struck.x + struck.nx * 0.05,
+                                 struck.y + struck.ny * 0.05,
+                                 struck.z + struck.nz * 0.05);
+          shot.velocity.set(0, 0, 0);
+          shot.resting = true;
+        } else if (struck) {
+          shot.mesh.position.set(struck.x, struck.y, struck.z);
+          this.#impact(shot.group, shot.group.stats.projectile, struck,
+                       shot.velocity, shot.travelled - step + struck.t);
+          shot.run?.stop();
+          this.scene.remove(shot.mesh);
+          shot.mesh.visible = false;
+          shot.group.projectilePool.push(shot.mesh);
+          this.projectiles.splice(i, 1);
+          continue;
+        }
       }
-      // `GRAVITY` is signed downward, so this adds. `gravityModifier` scales it
-      // per projectile: 0 on every bullet (a tracer never reaches this loop at
-      // all), 0.5 on the Panzer IV's and the Chi-ha's rounds, and unset — so 1
-      // — on every other tank gun, howitzer, naval gun, bomb and torpedo.
-      if (shot.gravity) {
-        shot.velocity.y += GRAVITY * shot.gravity * shot.gravityScale * dt;
-      }
-      const step = shot.velocity.length() * dt;
-      shot.travelled += step;
-      shot.mesh.position.addScaledVector(shot.velocity, dt);
-      // Nose (local -Z) along the velocity, so shells arc over.
-      _aimBack.copy(shot.mesh.position).sub(shot.velocity);
-      shot.mesh.lookAt(_aimBack);
-      const struck = this.#sweep(shot.group, shot.mesh.position,
-                                 shot.velocity, step, 0);
-      if (struck) {
-        shot.mesh.position.set(struck.x, struck.y, struck.z);
-        this.#impact(shot.group, shot.group.stats.projectile, struck,
-                     shot.velocity, shot.travelled - step + struck.t);
+      const expired = shot.age > shot.ttl;
+      if (expired || shot.travelled > shot.group.maxRange) {
         shot.run?.stop();
-        this.scene.remove(shot.mesh);
-        shot.mesh.visible = false;
-        shot.group.projectilePool.push(shot.mesh);
-        this.projectiles.splice(i, 1);
-        continue;
-      }
-      if (shot.age > shot.ttl || shot.travelled > shot.group.maxRange) {
-        shot.run?.stop();
-        // `Projectile::detonate` at the end of `timeToLive`: the
-        // `endEffectTemplate`, stood up on world up (`startEndEffect` passes
-        // (0, 1, 0)). Most rounds declare none and simply vanish.
         const spec = shot.group.stats.projectile;
-        if (this.effects && spec?.endEffect) {
-          const at = shot.mesh.position;
-          this.effects.play(spec.endEffect, { position: [at.x, at.y, at.z], normal: [0, 1, 0] });
+        // The end-of-life explosion (HP-9d): `damageType` 1 or 4, no
+        // `hasCollisionEffect` test, an untruncated radius. This is how a
+        // grenade, an explosives pack and a landmine deal every point of
+        // damage they ever deal, and until now the viewer gave them none.
+        // `#detonate` plays the `endEffectTemplate` itself; a round with no
+        // end-of-life blast still gets its effect through the fallback.
+        //
+        // Only on `timeToLive`, never on the range cap: `maxRange` is this
+        // viewer's own recycling guard (1,500 m on the map page, further than
+        // any vanilla round's `timeToLive` carries it), not the engine's fuse,
+        // and exploding there would invent a blast at an arbitrary distance.
+        if (!(expired && this.#detonate(shot.group, spec, shot.mesh.position,
+                                        shot.travelled))) {
+          if (this.effects && spec?.endEffect) {
+            const at = shot.mesh.position;
+            this.effects.play(spec.endEffect,
+                              { position: [at.x, at.y, at.z], normal: [0, 1, 0] });
+          }
         }
         this.scene.remove(shot.mesh);
         shot.mesh.visible = false;

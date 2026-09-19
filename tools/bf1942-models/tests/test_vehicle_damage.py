@@ -293,5 +293,159 @@ class WaterDamageTests(unittest.TestCase):
         self.assertEqual(100, self.results["setNoWater"]["shermanHp"])
 
 
+class BlastGeometryTests(unittest.TestCase):
+    """HP-9: only the **Y** term of the blast distance is scaled, by
+    `YModOnExplosion` (lnxded 0x08156613 multiplies `dy` and nothing else).
+    The distance itself is to the victim's transform **origin**."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["yMod"]
+
+    def test_the_engine_default_is_one(self) -> None:
+        # A target 5 m straight up sits 5 m away when the field is absent, the
+        # same as when it is authored 1.0 — the `ProjectileTemplate` default.
+        self.assertEqual(5, self.results["absent"])
+        self.assertEqual(5, self.results["one"])
+
+    def test_a_bomb_halves_its_vertical_reach(self) -> None:
+        # 629 of the 642 declarations surveyed are `2.0` and every one is on a
+        # bomb: 5 m up reads as 10 m, which is the whole radius, so the target
+        # is outside a blast it would otherwise have been well inside.
+        self.assertIsNone(self.results["two"])
+
+    def test_the_horizontal_terms_are_never_scaled(self) -> None:
+        # X and Z are untouched: a target 5 m sideways is 5 m away whatever
+        # `YModOnExplosion` says.
+        self.assertEqual(5, self.results["horizontalAtTwo"])
+
+
+class BlastCentreTests(unittest.TestCase):
+    """HP-9: where an explosion is centred, which is not the hit point.
+
+    `GameServer::handleCollisionForProjectile` builds the impact explosion's
+    position as `hitPos + 0.1 * normal` — the 0.1f is loaded at lnxded
+    0x08153f5e from `ds:0x086b1ca0` (`cdcccc3d`), multiplied into the normal at
+    0x08153f6b-0x08153f73, added at 0x08153f82-0x08153f8f and pushed at
+    0x08154026. The collision **effect** is played before all of that, at
+    0x08153e5b, on the raw hit point, so the two are different places and the
+    record carries both. The end-of-life explosion has no surface and no
+    offset: it stands on the projectile's own `getPos()` (0x0831f747).
+    """
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["blastCentre"]
+
+    def test_an_impact_blast_stands_off_the_struck_surface(self) -> None:
+        # Struck a wall at the origin with normal +X, so the blast sits at
+        # x = 0.1 and a victim 5 m out along +X is 4.9 m from it.
+        self.assertAlmostEqual(4.9, self.results["impact"], places=6)
+        self.assertEqual(5, self.results["unoffset"])
+
+    def test_an_end_of_life_blast_uses_the_projectile_position(self) -> None:
+        # No `splashPoint` on the record, so `point` is the centre: a grenade
+        # resting at x = 1 is 4 m from a victim at x = 5.
+        self.assertEqual(4, self.results["endOfLife"])
+
+
+class InputGateTests(unittest.TestCase):
+    """HP-15, which **retired ARM-6**.
+
+    ARM-6 said a critically damaged vehicle drives and traverses exactly as a
+    healthy one. It does not:
+
+      - `hitPoints < criticalDamage` scales every rotational bundle's input by
+        **0.2** (`RotationalBundle::handlePlayerInput` 0x081d834f, the double at
+        `ds:0x86c8678`);
+      - destroyed stops input reaching **any** child at all
+        (`PlayerControlObject::handlePlayerInput` 0x08318920, epilogue
+        0x08318952).
+
+    Both are persistent state for the whole wrecked lifetime, cleared only when
+    the wreck-respawn timer expires — so the rule is polled against the live
+    Armor, never latched when a shell lands.
+    """
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["inputGate"]
+
+    def state(self, label: str) -> dict:
+        return next(s for s in self.results["states"] if s["label"] == label)
+
+    def test_the_scale_is_the_engines_own_zero_point_two(self) -> None:
+        self.assertEqual(0.2, self.results["scale"])
+
+    def test_a_healthy_or_merely_damaged_vehicle_is_not_gated(self) -> None:
+        # 40 of 100 HP is well into the smoke tier and still nowhere near
+        # `criticalDamage 12`: full input, which is the half of ARM-6 that
+        # survives.
+        for label in ("healthy", "damaged"):
+            with self.subTest(label):
+                self.assertFalse(self.state(label)["blocked"])
+                self.assertEqual(1, self.state(label)["rotationalScale"])
+
+    def test_a_critical_vehicle_traverses_at_a_fifth_and_still_drives(self) -> None:
+        critical = self.state("critical")
+        self.assertTrue(critical["critical"])
+        self.assertFalse(critical["destroyed"])
+        # Not blocked: a burning tank still answers the throttle. The research
+        # pass that read the 0.2 block as an all-or-nothing gate was wrong.
+        self.assertFalse(critical["blocked"])
+        self.assertEqual(0.2, critical["rotationalScale"])
+
+    def test_a_wreck_accepts_nothing(self) -> None:
+        destroyed = self.state("destroyed")
+        self.assertTrue(destroyed["blocked"])
+        self.assertEqual(0, destroyed["rotationalScale"])
+
+    def test_the_gate_lifts_when_the_wreck_respawns(self) -> None:
+        # `reset()` is the pad respawn — the viewer's stand-in for the six
+        # conditions inside `SimpleObject::handleUpdate` that end in
+        # `setHitPoints(getMaxHitPoints())`. Both bytes clear together.
+        respawned = self.state("respawned")
+        self.assertFalse(respawned["blocked"])
+        self.assertEqual(1, respawned["rotationalScale"])
+
+    def test_something_with_no_armor_is_not_gated(self) -> None:
+        # A bare manned gun, a palm, anything `VehicleDamageSet` never
+        # registered: full input.
+        self.assertEqual({"blocked": False, "rotationalScale": 1},
+                         self.results["unregistered"])
+
+    def test_the_result_object_can_be_caller_owned(self) -> None:
+        # The gate is polled every frame for as long as anyone is in a
+        # vehicle, so `map.html` hands it one object and it is filled in place
+        # rather than allocating a fresh pair of fields sixty times a second.
+        # The contract that matters is that every field is rewritten: a stale
+        # `blocked` from the previous vehicle would refuse the driver of a
+        # perfectly healthy one.
+        in_place = self.results["inPlace"]
+        self.assertTrue(in_place["sameObject"])
+        self.assertEqual({"blocked": True, "rotationalScale": 0},
+                         in_place["afterWreck"])
+        self.assertEqual({"blocked": False, "rotationalScale": 1},
+                         in_place["afterHealthy"])
+
+    def test_a_hull_killed_by_anything_else_is_gated_the_same(self) -> None:
+        # The gate reads the live Armor, so it does not care what emptied it.
+        # A tank that burned itself down on `hpLostWhileCriticalDamage`, and
+        # one the combat area's own 5 HP/s `giveDamage` killed, both refuse the
+        # driver exactly as one killed by a shell does.
+        other = self.results["byOtherCauses"]
+        self.assertEqual(0.2, other["whileBurning"]["rotationalScale"])
+        self.assertTrue(other["burnedDown"]["destroyed"])
+        self.assertTrue(other["burnedDown"]["blocked"])
+        self.assertTrue(other["combatArea"]["destroyed"])
+        self.assertTrue(other["combatArea"]["blocked"])
+
+
 if __name__ == "__main__":
     unittest.main()
