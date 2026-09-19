@@ -161,6 +161,33 @@ subshader "pacificfarm1_m1_Material4" "StandardMesh/Default" {
         self.assertFalse(rs.parse('shader "M" { texture "texture/x"; }')
                          ["m"].texture_fade)
 
+    def test_envmap_is_read(self) -> None:
+        # Aircraft painted metal and glass canopies: 435 vanilla materials
+        # declare `envmap true` for environment reflection (cubemap).
+        # Census shows only the bare `envmap true;` form exists.
+        shaders = rs.parse(
+            """
+subshader "zero_canopy_m1_Material0" "StandardMesh/Default" {
+  lighting true;
+  lightingSpecular true;
+  materialDiffuse 1 1 1;
+  materialSpecular 0.12549 0.12549 0.12549;
+  materialSpecularPower 12.5;
+  transparent true;
+  twosided true;
+  envmap true;
+  texture "texture/Zero02_o";
+}
+"""
+        )
+        shader = rs.lookup(shaders, "zero_canopy_m1_Material0")
+        self.assertTrue(shader.envmap)
+        self.assertTrue(shader.transparent)
+        self.assertTrue(shader.twosided)
+        # Default is false
+        self.assertFalse(rs.parse('shader "M" { texture "texture/x"; }')
+                         ["m"].envmap)
+
 
 if __name__ == "__main__":
     unittest.main()
