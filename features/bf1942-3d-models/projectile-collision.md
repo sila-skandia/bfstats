@@ -292,9 +292,19 @@ Named honestly, because each one is a separate piece of work.
 - **A fuse round does not bounce.** It stops where it first touches and runs
   its `timeToLive` down there, which reproduces the damage exactly and the
   trajectory only approximately. The contact solver belongs to the collision
-  round (COL-2..COL-12). `dieAfterColl` is the authored word for it — 2,311
-  declarations across the installed mods, **not** aligned with
-  `hasCollisionEffect` — and what the engine does with it has not been read.
+  round (COL-2..COL-12). What a player sees, and the numbers, are in
+  [`impact-effects.md`](impact-effects.md).
+
+  `dieAfterColl` is **no longer unread** (corrected 2026-09-20). It is
+  `ProjectileTemplate+0x1a7`, and `Projectile::handleCollision` (`0x0831ee80`)
+  recycles the round when it or `hasCollisionEffect` is set — tests at
+  `0x0831ef4b` and `0x0831ef54`, kill through `resetProjectile` (`0x0831e720`),
+  which despawns without calling `startEndEffect`. So it is not a restatement
+  of the flag, it is the other half of the same question, and only a round with
+  **neither** word is entitled to rest and burst on its fuse. `con.py` parses
+  it and `assemble.py` emits it. Three neighbours in the same chain are named
+  and not consumed: `dieAtObjectHit` `+0x1a8`, `isSticky` `+0x1ab` (the
+  engine's own bounce-free rest) and `detonateOnWaterCollision` `+0x1ac`.
 - **Collision groups are still dropped** (gap C-4). `c_CGProjectiles` and
   `c_CGLadders` are 47 declarations the extractor does not parse, so a wire
   fence stops a round exactly like a wall.
