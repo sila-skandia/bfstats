@@ -113,36 +113,31 @@ Sherman's hull-gunner door were all unreachable before this, confirmed via
   seat to leave costs nothing, matching `toggleEntryPoint`'s own
   success-path-only refresh.
 
-## Aiming: GUN-3's two registers, and where this stops short of them
+## Aiming: the engine's velocity servo (GUN-2)
 
-`TurretAxis.step` (`seats.js`) ships the parts of GUN-3 (verify-r6.md's
-corrected report) the verifier fully confirmed: degrees straight off the
-`.con`, the ±180° wrap when an axis is unlimited (`min==max`), a direct clamp
-otherwise, no spring-to-centre. The verifier's real mechanism is two
-per-axis accumulators — an input register clamped to a hardcoded ±40 and
-deadzoned against ±1.0, and an `|acceleration|·dt` register — whose *product*
-drives the angle, plus an `automaticReset`-dependent step the verifier
-explicitly could not close out ("the exact per-tick algebra... is still not
-nailed down"). Two gaps stand between that and this viewer:
+> **Superseded, 2026-09-19.** This section used to describe GUN-3's "two
+> per-axis accumulators whose *product* drives the angle", a ±40 bank of aim
+> and a ±1.0 deadzone. All of that was a misreading of one function, and the
+> 2026-09-19 round read that function end to end. What it actually is, and
+> what changed in the viewer, is in
+> [2026-09-19: the servo, the dial and the dots](#2026-09-19-the-servo-the-dial-and-the-dots)
+> below. The paragraphs immediately after this one are kept only because the
+> two 2026-09-17 sections argue against them.
 
-1. `bf42/con.py`'s `rig()` (another track's file this round, off limits)
-   exports each axis's acceleration only as a *sign*, never a magnitude — the
-   real per-axis ramp rate the confirmed formula needs is not in this
-   viewer's extracted data at all, independent of the algebra question.
-2. Even given that magnitude, the closed form itself is unsettled.
+`TurretAxis.step` (`seats.js`) is `RotationalBundle::calculateAndClipAngle`
+(lnxded `0x081d7490`), whose 361 instructions were traced in full and then
+re-traced independently:
 
-The corrected report's own recipe names the way through both: approximate
-with a tunable ease rather than ship the wrong formula. `TurretAxis` banks the
-angle the mouse asks for and spends it as fast as the axis allows — see the
-2026-09-17 follow-up below for why it stopped chasing an input-scaled *rate*,
-and which constants are named as tuned-to-feel-right rather than measured in
-`seats.js`'s own comments. The deadzone's asymmetric `<-1.0` branch the
-verifier flagged as unexplained is not reproduced either (a plain zero for
-both signs is used).
+```
+speed  ->  sign(acceleration) * input * maxSpeed,  ramped at |acceleration| deg/s^2
+angle  +=  speed * dt  +  continousRotationSpeed * dt
+then:  minRotation == 0 && maxRotation == 0  ->  one +-360 correction
+       otherwise  angle > max -> max,  else  angle < min -> min
+```
 
-**Open**: both gaps above are the verifier's own open items, not this
-viewer's invention — closing either needs a further disassembly pass this
-round did not do, named exactly in `verify-r6.md`'s own `## Open` section.
+Degrees throughout, two registers that persist between ticks, and
+`automaticReset` a different law entirely. The one number that is still this
+viewer's own is what a pointer-lock pixel is worth as `input` — GUN-2b.
 
 ## Camera and firing
 
@@ -502,3 +497,329 @@ spending four times as long as the game does.
 - **The seated trigger routing has no unit test.** It lives in `map.html`,
   which no harness here loads; it was verified in the browser through the real
   pointer-event path (`__chordEvent`), including the two-button chord.
+
+## 2026-09-19: the servo, the dial and the dots
+
+The parity round read `RotationalBundle::calculateAndClipAngle` (lnxded
+`0x081d7490`) instruction by instruction, twice and independently, and closed
+GUN-2. Four things this file had recorded as confirmed were wrong, and they
+were wrong together because they were all readings of the same function.
+
+### What the servo actually is
+
+```
+speed  ->  sign(acceleration) * input * maxSpeed,  ramped at |acceleration| deg/s^2
+angle  +=  speed * dt  +  continousRotationSpeed * dt
+```
+
+A first-order velocity servo: one angle register (`+0x104`), one speed
+register (`+0x110`), both persisting between ticks. Not a product of two
+accumulators.
+
+**There is no bank of aim.** `+0x128`, which this file modelled as "degrees
+of ask, clamped to ±40", is an **input backlog in input units**, and both it
+and the `-1.0` constant beside it live inside the `rememberExcessInput`
+branch. A survey of every `.con` and `.inc` in every archive of all 18
+installs finds 1,468 declarations of that flag and **not one on a turret,
+manned gun, tank or `Objects.con` rotational bundle** — vanilla's 32 are all
+aircraft rudder and tail-flap `Wing` bundles. For every gun in this viewer
+the register does not exist, so `TURRET_PENDING_CLAMP`, `TURRET_DEADZONE`,
+`TURRET_IDLE_DECAY` and `TURRET_IDLE_DECAY_FRAMES` are all gone. The "settles
+to a stop instead of coasting" behaviour those were tuned to produce now
+falls out of the servo for free: when the hand stops, the commanded rate is
+zero and the speed register ramps down to meet it.
+
+### Three things the servo brings that were never there
+
+- **`continousRotationSpeed · dt` is added unconditionally**, every tick, in
+  the non-`automaticReset` path — alongside whatever the input asks for, not
+  instead of it. `con.py` now carries it per axis, and `TurretAxis` integrates
+  it.
+
+  **Two corrections to the research pass's framing, both measured.** First,
+  "29 vanilla declarations — windmills, watermills, radar towers — currently
+  never turn" is **not true of this viewer**: those templates declare no input
+  binding at all, so `assemble.py` bakes each one as an `ambient` glTF clip
+  and `map.html` plays every clip that is not `spin*`. Verified on the page:
+  loading Battle of the Bulge and sampling `euwindmillWings`,
+  `euwindmillStone` and `eu_watermillWheel` 1.5 s apart, all three
+  quaternions change. Second, the servo's term therefore only ever reaches an
+  axis that has *both* a binding and a non-zero continuous speed — 127 such
+  axes across the installed mods, **none in vanilla and none bound to
+  mouse-look** — so in the viewer today it is exercised by the tests and not
+  by any shipped vehicle. Emitting it only for input-bound axes is what keeps
+  the two paths from turning the same windmill twice.
+- **`automaticReset` is a different control law.** The angle ramps *straight*
+  toward `input × maxRotation` at `|acceleration|` **deg/s** — a rate, so one
+  tick from rest moves exactly `acceleration · dt` — with no velocity
+  register and no continuous term. Release and the target is zero, so the part
+  drives itself home at the same rate. That is what makes a steering wheel
+  self-centre.
+
+  **What it does NOT do is fix vanilla's 221 steering wheels.** They are
+  `c_PIYaw`/`c_PIThrottle` parts, and `TurretRig` only ever claims the
+  mouse-look pair (GUN-2's own finding about what a player's aim reaches), so
+  those are still posed by `flight.js`'s position-law `RiggedPart` through
+  `applyRig`. Surveying every `.con` and `.inc` in all 18 installs for a
+  template that pairs `setAutomaticReset 1` with a mouse-look axis finds
+  **five**, all of them `Engine`s (FHSW's three gunner-traverse engines,
+  GCMOD's probe droid) and none in vanilla — and `surveyVehicle` only collects
+  `RotationalBundle` rigs, so not even those reach it. The law is implemented
+  where the servo runs, and it is dormant until something declares it there.
+- **The wrap gate is `minRotation == 0 && maxRotation == 0`**, the template
+  default, not a zero-width range. `con.py`'s `free` rule asked `lo == hi`,
+  which read `min == max == 45` as free-spinning. **151 input-bound axes
+  across 13 installs** author a non-zero zero-width range — three in vanilla
+  (`Elco_ThrottleL` pitch 60/60 among them), 87 in FHSW, 33 in GCMOD — and the
+  engine pins every one of them where the viewer spun it. A component the
+  `.con` omits is that same template 0, so an axis declaring only
+  `setMinRotation -70/0/0` clamps to [-70, 0] rather than spinning; the rule
+  is "are both zero", not "is either absent".
+
+### `TURRET_SPEED_SCALE` stays at 4
+
+The research pass recommended removing it, on the reading that `maxSpeed` is
+the literal deg/s ceiling. That was **refuted three ways** and the constant is
+left alone; only its justification changes, because the old one cited the
+now-corrected "±40 is not the template's `maxSpeed`" wording.
+
+`maxSpeed` is a **gain — deg/s per unit of input**, and nothing establishes
+the input's unit. The ±1 clamp lives inside `rememberExcessInput`, which no
+gun declares. The wire format reserves headroom to **±16**:
+`PlayerAction::set` packs every `PlayerInput` float with
+`floatToFixed(v, 12, 16.0f)` and `get` decodes `((n/4095)·2 − 1)·16.0`, so an
+input normalised to ±1 would leave fifteen sixteenths of the encoding dead.
+And the "a soldier's head turns nine times faster for the same hand movement"
+observation that produced the constant compares two different control laws —
+`SoldierCamera` declares `setMaxSpeed 0/0/0` and never enters this function.
+
+**The open question is now stated narrowly (ledger GUN-2b): what magnitude the
+client's mouse-look axis delivers as `PlayerInput[c_PIMouseLookX/Y]`.** The
+trail runs as far as the client's `ControlMap.addAxisToAxisMapping` registrars
+(`FUN_006bba90` / `FUN_006bbd90`) without reaching the multiply. Until someone
+reads it, `seats.js` makes its stand-in explicit in one place: a hand asking
+for more travel per second than `maxSpeed · TURRET_SPEED_SCALE` delivers
+input 1, so that product is the viewer's traverse ceiling — which is the
+behaviour this page has shipped all along and the part players have judged.
+
+### What the rewrite changes to the feel: nothing you aim with
+
+Measured in the node harness against the two guns' real `.con` numbers —
+`ShermanTower` `setMaxSpeed 35/25/0`, `setAcceleration 1000/0/0`;
+`StationaryMG42Point` `setMaxSpeed 70/0/0`, `setAcceleration 5000/0/0` — under
+the same scripted pointer input, before and after:
+
+| same scripted input | before (bank) | after (servo) |
+|---|---|---|
+| Sherman turret through 90°, saturating (40 px/frame) | **0.667 s** | **0.667 s** |
+| MG42 through 90°, saturating | **0.333 s** | **0.333 s** |
+| MG42 to its real 70° stop, saturating | **0.250 s** | **0.250 s** |
+| Sherman through 90°, tracking (10 px/frame) | **1.200 s** | **1.200 s** |
+| MG42 through 90°, tracking | **1.200 s** | **1.200 s** |
+| Sherman coast after a one-frame 2000 px flick | **19.7°** | **0°** |
+| Sherman coast after releasing a saturating sweep | 19.4° | 1.3° |
+
+Every time through 90 degrees is identical to the tick, which is the answer to
+"does this change how every gun in the viewer feels": sustained aiming, the
+thing a player actually does, is unchanged. What goes is the coast — the bank
+kept paying out ~20 degrees after the hand stopped, and the idle decay was a
+patch on exactly that. The servo's own ramp-down covers it in 1.3 degrees,
+because a Sherman tower's 1000 deg/s² (4000 scaled) takes two ticks to bleed
+140 deg/s.
+
+### `inputScale`, for the damaged-vehicle hook
+
+`TurretAxis.step(dt, inputScale = 1)` and `TurretRig.step(dt, inputScale = 1)`
+multiply the sampled input before the servo sees it. That is exactly where the
+engine applies HP-15: `RotationalBundle::handlePlayerInput` (`0x081d834f`)
+scales all three axes by the double at `ds:0x86c8678` = **0.2** while
+`SimpleObject+0xee` is set, i.e. for the whole wrecked lifetime of a
+critically damaged vehicle. `map.html` owns deciding which, since it is the
+only thing that knows the hull's live Armor; the two call sites are
+`drive()`'s `occupancy.turret?.step(dt)` and `manned()`'s.
+
+### Still open after this round
+
+- GUN-2b, above: the mouse-axis magnitude.
+- `con.py` drops a zero `setAcceleration` rather than emitting `0`, so the
+  engine's own early-out (`acceleration == 0 && continousRotationSpeed == 0`
+  returns without touching either register) cannot be told apart from "this
+  glb predates the field". The fallback is applied in both cases.
+- The clamp follows the engine in NOT sorting `min`/`max`: it tests `> max`
+  first and `< min` second on the authored components. An inverted authored
+  range would pin the angle, which is what the engine does.
+
+### Verified on the page
+
+Served from this worktree on **5333**, with `maps/kasserine_pass` overlaid
+from a scratch re-extract made with this branch's own `con.py` (the shared
+`viewer/maps` tree is read-only this round, and a scene baked before
+`setHasTurretIcon` has no field for the dial to read). A second server on
+**5334** runs the identical tree with `hud.js`, `map.html` and `seats.js` as
+they stood at `f9f144d`, the commit before the dial's sign pair, so a capture
+from each differs only by the change under test.
+
+Driven with Playwright through the page's own hooks and its own keydown
+handler — `__setOnFoot`, `__deploy.spawn`, `__setFly`, `__teleport` beside the
+hull, a real `KeyE`, then `__lookDelta` for the aim and `__switchSeat` for the
+seat. Two things about that harness are worth writing down for the next
+stream:
+
+- **`Hud._scaleFor` is a pure stretch**, `sx = W/800`, `sy = H/600`, no
+  letterbox offsets. A crop that assumes a uniform `min(W/800, H/600)` scale
+  happens to land within a texel of the truth near x ≈ 400 and is 80 px out
+  by x ≈ 700 — which is how a first attempt at the rounds-text measurement
+  read zero ink for every ammo type.
+- **The rAF loop is live in a visible headless tab**, `?shots` or not. A
+  forced `hud.vars` write and the read-back of its paint must happen in ONE
+  `page.evaluate`, or the page repaints from the live feed in between and you
+  measure the feed instead of the thing you set.
+
+What the captures show:
+
+| check | before | after |
+|---|---|---|
+| Sherman driver, cockpit: dial | drawn | drawn |
+| dial crop at exactly +90° and −90° | | **byte-identical PNGs** |
+| value fed for a +90° turret | −1.5708 into `rotate(+θ)` | +1.5708 into `rotate(−θ)` |
+| Sherman driver, chase view | dial drawn (4711 opaque texels) | **none (0)** |
+| Sherman hull gunner | dial drawn (4711) | **none (0)** |
+| Wespe gunner seat, which aims on two axes | dial drawn (4711) | **none (0)** |
+| Hanomag, six seats | no dots | **six, at 39/75, 40/65, 30/59, 41/55, 20/49, 31/45** |
+
+The dial's identity is the load-bearing one, and it is a comparison of
+pixels, not of reasoning: each build was asked to paint what *its own*
+pipeline feeds for a turret at exactly ±90 — read back from its live feed, not
+assumed — and the two PNGs match byte for byte. `dial-exact-plus90.png` shows
+the hull silhouette at nine o'clock under a gun that points up, which is
+VHUD-9's counter-clockwise `RotateEffect` and the picture the old comment
+described by the wrong arithmetic.
+
+## 2026-09-20 review (stream C)
+
+An adversarial re-run of the build against GUN-2's closed form, the two places
+stream C departed from the brief, and the seam with stream B. Everything below
+was re-derived rather than read off the report; the survey script is
+`scratchpad/rw2c-review/axis_survey.py` and the servo measurements come from
+`measure.mjs` run against `fcf0131`'s `seats.js` and this branch's, in the
+same temp package `tests/test_seats.py` builds.
+
+### The two departures both hold
+
+**The windmills already turn.** Confirmed on the page, not from the code:
+Battle of the Bulge's `scene.glb` carries `ambient`, `ambient.1` and
+`ambient.2`, targeting `eu_watermillWheel`, `euwindmillStone` and
+`euwindmillWings`; `map.html` plays every non-`spin*` clip, and all three node
+quaternions move between samples 1.5 s apart. So the brief's "29 vanilla
+windmills never turn" is false **for this viewer**, and the unconditional
+`continousRotationSpeed` term in the servo is not what fixes them.
+
+**The steering wheels are not the servo's.** Entered a Willy on the same level
+and drove it: `WillySteering` is a `c_PIYaw` **roll** axis (−60..60,
+`automaticReset` on its bundle) and it reaches ±60° under A and D — while the
+rig `TurretRig` built for that seat is **empty**. `applyRig`/`flight.js` poses
+it; no `TurretAxis` exists for it. And `automaticReset` paired with a
+mouse-look binding is **5 templates across 18 installs** (FHSW 3, GCMOD 2),
+**all `Engine`s**, and `surveyVehicle` only builds axes from
+`RotationalBundle` — so `_stepAutomaticReset` is unreachable from the aim rig
+with the shipped data. Implemented and dormant, exactly as the report says.
+
+**No double rotation.** `assemble.py` bakes the `ambient` clip off
+`template.continuous_rotation` regardless of input binding, and `con.py` now
+also carries `continuousRotation` onto a rig axis — so the two could in
+principle turn one part twice. They cannot today: **127 input-bound axes
+declare a non-zero `setContinousRotationSpeed`, all in FHSW, all
+`c_PIThrottle`, and 0 of them are bound to `c_PIMouseLookX/Y`**, which is the
+only binding `TurretAxis` is built for. Nothing else reads the field.
+
+### `free`, and what the resolved bounds change
+
+Stream C implemented GUN-2's prose (`min == 0 && max == 0`, with an omitted
+component resolving to the template's own 0) rather than the brief's literal
+snippet (`lo is None or hi is None or ...`). That is right, and it matters:
+
+- **338 input-bound axes across 16 installs** (9 in vanilla) declare exactly
+  one of the two vectors with a non-zero component on a bound axis. The
+  snippet calls every one of them free-spinning; the resolved rule clamps
+  them against the template's 0. Vanilla's own `B17_MG2` is the clean case —
+  `setMaxRotation 0/50/0`, no `setMinRotation` — and the glb extras change
+  from `free: true` to `min: 0, max: 50`, which is a ventral gunner that
+  elevates 50° instead of spinning through a full circle.
+- The 151-vs-346 disagreement is a filter, not a contradiction. Counting
+  every axis with `min[i] == max[i] != 0` gives **345 across 16 installs**
+  (the verdict's 346); counting only the ones with an input binding — the
+  only ones `rig()` emits an axis for at all — gives **150 across 12** (the
+  report's 151). The ~195 difference is axes on bundles with no binding,
+  which never reach a rig.
+
+### One behaviour change worth naming: inverted bounds
+
+`_clip` now tests `> max` then `< min` in the authored order, where the old
+code sorted the pair. Four input-bound axes author `min > max`
+(`152mm_SecondaryGun_140_XPBL`/`XPBLI`/`XBL_alt` in FHSW, yaw 48/−48 on
+`c_PIMouseLookX`; FinnWars' `76rk27camera`). Measured in the harness: such an
+axis sat still at 0 before and now alternates −48, +48, −48, +48 every tick.
+That is what the engine's own clip does with an inverted pair, so it is left
+alone — and none of the four is in a published mod, nor is the Camera one ever
+a `TurretAxis`.
+
+### The servo, re-measured
+
+Same scripted input, `fcf0131` vs this branch, real `.con` numbers
+(`ShermanTower` maxSpeed 35 / accel 1000, free; `StationaryMG42Point` 70 /
+5000, ±70):
+
+| same input | before | after |
+|---|---|---|
+| Sherman through 90°, saturating | 0.6667 s | 0.6667 s |
+| MG42 through 90°, saturating | 0.3333 s | 0.3333 s |
+| MG42 to its 70° stop | 0.2500 s | 0.2500 s |
+| Sherman through 90°, tracking 10 px/frame | 1.200 s | 1.200 s |
+| MG42 through 90°, tracking | 1.200 s | 1.200 s |
+| coast after releasing a saturating sweep | 19.44° | **1.33°** |
+| coast after a one-frame 2000 px flick | 19.66° | **0°** |
+
+Identical times are the right answer, not a sign the old path survived. Under
+a saturating hand both laws solve the same recurrence: the old `want =
+clamp(pending/dt, ±cap)` pins at `cap` every tick because the bank never
+empties, and the new `unit = clamp(asked/cap, ±1)` pins at 1 — same target,
+same `accel · speedScale` ramp, same trajectory. In the tracking regime the
+old bank converges to the fixed point where the tick spends exactly what the
+tick asked, which *is* the new law's target, reached in two ticks instead of
+asymptotically (0.149° of difference over three seconds). The whole of the
+change lives at release, where the old model had degrees banked to pay out and
+the new one has only a velocity register decelerating at `accel · speedScale`
+— 140 ÷ 66.7 ≈ 2.1 ticks, i.e. the 1.33° measured. `TURRET_SPEED_SCALE` is 4
+before and after, and `TURRET_DEGREES_PER_PIXEL` is untouched.
+
+The engine's early return (`acceleration == 0 && continousRotationSpeed == 0`)
+is not implemented, and is unreachable: **10 axes across 3 installs** declare
+`setAcceleration` with a zero component on a bound, moving axis, and every one
+of them is a `Camera`, `Engine` or `Wing` — **zero** are a `RotationalBundle`
+mouse-look axis, which is the only thing `TurretAxis` is built for. (XPack2's
+`C47Camera` is the one that would bite a future camera rig: `setMaxSpeed
+90/90/0` with `setAcceleration 5000/0/0`, so its pitch is frozen in retail.)
+
+### The stream B seam — fixed at merge, not here
+
+Both streams added a damage multiplier and `git merge-tree` reports no
+conflict, so both would land silently. B scales the **pixels** in
+`TurretRig.aim()`; C scales the **normalised input** in `TurretAxis.step()`.
+Below the axis's own ceiling they agree exactly; above it they cannot, because
+B's scale is applied before the saturating clamp. Measured on the merged tree,
+one second of a Sherman tower's traverse with `inputScale = 0.2`:
+
+| hand | healthy | plain merge (B's path) | C's path |
+|---|---|---|---|
+| 10 px/frame | 75.5 °/s | 15.1 | 15.1 |
+| 40 px/frame | 138.7 | 60.5 | **28** |
+| 100 px/frame | 138.7 | **138.7** | **28** |
+| 400 px/frame | 138.7 | **138.7** | **28** |
+
+and on the page, driving a Sherman down to 11 of 105 hit points: the plain
+merge traverses a critical tank at the full **140 °/s** (ratio 1.0), the
+patched merge at **28 °/s** (ratio 0.200). The engine scales the `PlayerInput`
+entering the bundle (HP-15), and this file's analogue of that input is `unit`
+— after the clamp — so C's shape is the one that should survive, carried by
+B's field. The patch is in the review's final message and was verified in a
+scratch three-way merge (`mesh-wave2` + C + B), suite 1,447 green.
