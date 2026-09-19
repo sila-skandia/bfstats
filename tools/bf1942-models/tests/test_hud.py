@@ -48,6 +48,33 @@ class FillPictureGeometryTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.results = run_harness()
 
+    def test_the_combat_area_warning_wraps_into_its_own_plate(self) -> None:
+        # The first leaf whose string is wider than its rect. `menu/InGame`
+        # backs it with `textmessBG_3LINE_256x64` -- three lines of art for a
+        # 65-character string in a 230 px box -- so the engine wraps rather
+        # than letting it run off the plate, which is what the painter did
+        # before this. Two lines at Trebuchet MS8's real metrics.
+        self.assertEqual(
+            ["Warning! You are leaving the combat area!",
+             "Desserters will be shot!"],
+            self.results["wrap"]["warning"])
+
+    def test_a_string_that_fits_is_left_on_one_line(self) -> None:
+        # Every leaf fed before this one -- ammo counts, ticket counts, kit
+        # names -- is short, and none of them may start wrapping.
+        wrap = self.results["wrap"]
+        self.assertEqual(["30"], wrap["short"])
+        self.assertEqual(1, len(wrap["exact"]))
+        self.assertEqual([], wrap["empty"])
+
+    def test_a_word_wider_than_the_box_overflows_rather_than_splitting(self) -> None:
+        # Hyphenating a bitmap font means inventing glyph metrics. The string
+        # this exists for has no such word.
+        wrap = self.results["wrap"]
+        self.assertEqual(1, len(wrap["longWord"]))
+        self.assertEqual(["a" * 120, "tail"], wrap["longWordThenMore"])
+        self.assertEqual(["a" * 46, "b"], wrap["overByOne"])
+
     def test_a_short_bar_fills_the_band_its_art_actually_occupies(self) -> None:
         # `reloadtimebar_*_32x64.png` is opaque over rows 0..41 of a 64-row
         # texture -- exactly the `size: 42` its leaf declares, top-anchored,

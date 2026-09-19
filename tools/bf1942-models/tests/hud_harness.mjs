@@ -9,7 +9,7 @@
 // is enough to read back exactly which band of the picture the fill was
 // clipped to, which is the whole of what the bug was about.
 
-import { Hud } from './hud.js';
+import { Hud, wrapText } from './hud.js';
 
 function recordingContext() {
   const calls = { images: [], clips: [] };
@@ -83,6 +83,28 @@ const magBar = {
 results.magBar = {
   full: clipFor(magBar, 10),
   half: clipFor(magBar, 5),
+};
+
+// --- text wrapping -----------------------------------------------------
+// The combat-area warning is the first leaf whose string does not fit its own
+// rect. A fixed-width stand-in font keeps the arithmetic readable: every
+// glyph advances 5 units, so a word of N characters measures 5N and a line of
+// K words measures 5*(chars + spaces).
+const fixed = { meta: { lineHeight: 11, glyphs: {} } };
+for (let code = 32; code < 127; code++) fixed.meta.glyphs[code] = [0, 5, 0, 8, 0, 0, 5, 8];
+
+results.wrap = {
+  // 230 px at 5 px a glyph is 46 characters a line.
+  warning: wrapText(fixed, 'Warning! You are leaving the combat area! '
+    + 'Desserters will be shot!', 230),
+  // A string that already fits comes back as one line, untouched.
+  short: wrapText(fixed, '30', 230),
+  exact: wrapText(fixed, 'a'.repeat(46), 230),
+  overByOne: wrapText(fixed, `${'a'.repeat(46)} b`, 230),
+  // A single word wider than the box overflows rather than being split.
+  longWord: wrapText(fixed, 'a'.repeat(120), 230),
+  longWordThenMore: wrapText(fixed, `${'a'.repeat(120)} tail`, 230),
+  empty: wrapText(fixed, '', 230),
 };
 
 console.log(JSON.stringify(results));
