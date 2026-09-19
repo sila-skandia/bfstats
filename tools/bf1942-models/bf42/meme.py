@@ -133,10 +133,51 @@ SCHEMAS: dict[str, list[tuple[str, str]]] = {
     "BfEditNode": [("Next node", OBJ), ("Font", PSTR), ("String", OBJ),
                    ("Max characters", INT), ("Select action", OBJ), ("Editbox data", OBJ),
                    ("Focus", BOOL)],
+    # MEME-11 named `BfNewListBoxNode` as short by a constant 57 bytes wherever
+    # it is used. Its own read (client 0x007cfeb0, reached from the class-name
+    # string 0x0093cbac -> registrar 0x007cfd05 -> ClassInfo vtable 0x0093ca64
+    # -> createInstance 0x007d4160 -> ctor 0x007d1200 -> object vtable
+    # 0x0093cde8 +0x30) carries fourteen more fields after "Border or not":
+    # four background-colour floats, the scrollbar width, four frame-colour
+    # floats, four select-colour floats, a "Show tooltip" bool and the
+    # scrollbar's offset from the border. 4*4 + 4 + 4*4 + 4*4 + 1 + 4 = 57.
+    # The two faces the class then loads by name ("Outlands_2.dif" and
+    # "Outlands_2_inv.dif", 0x007cff9a) are hard-coded, not on the wire.
     "BfNewListBoxNode": [("Next node", OBJ), ("Listbox data", OBJ), ("Font", PSTR),
                          ("Select action", OBJ), ("Focus action", OBJ), ("Step sound", PSTR),
                          ("Select sound", PSTR), ("Failed select sound", PSTR),
-                         ("Row height", F32), ("IsSelectable", BOOL), ("Border or not", BOOL)],
+                         ("Row height", F32), ("IsSelectable", BOOL), ("Border or not", BOOL),
+                         ("Background color red", F32), ("Background color green", F32),
+                         ("Background color blue", F32), ("Background color alpha", F32),
+                         ("Scrollbar width", F32),
+                         ("Frame color red", F32), ("Frame color green", F32),
+                         ("Frame color blue", F32), ("Frame color alpha", F32),
+                         ("Select color red", F32), ("Select color green", F32),
+                         ("Select color blue", F32), ("Select color alpha", F32),
+                         ("Show tooltip", BOOL), ("Scrollbar offset from border", F32)],
+    # The four classes the Singleplayer pages use that had no schema at all.
+    # Same route as above; `read` addresses in the comments.
+    # BfEditNodeInt 0x007dfff0 (vtable 0x0093f770): the numeric edit box in the
+    # skirmish difficulty panel. "Int" and "Font" are label pointers
+    # (0x0091973c, 0x0093cdcc), not fields of their own.
+    "BfEditNodeInt": [("Next node", OBJ), ("Font", PSTR), ("Int", OBJ), ("String", OBJ),
+                      ("Min value (-1 = no limit)", INT), ("Max value (-1 = no limit)", INT),
+                      ("Select action", OBJ), ("Editbox data", OBJ), ("Focus", BOOL)],
+    # BfSliderNode 0x007d7250 (vtable 0x0093d880) and BfFixedSliderNode
+    # 0x007d73a0 (vtable 0x0093d798) differ only by the trailing "Interval".
+    # "Cursor node" comes through +0x84, the node-pointer slot.
+    "BfSliderNode": [("Next node", OBJ), ("Cursor node", OBJ), ("Data", OBJ),
+                     ("Minimum value", F32), ("Maximum value", F32), ("Number visible", F32)],
+    "BfFixedSliderNode": [("Next node", OBJ), ("Cursor node", OBJ), ("Data", OBJ),
+                          ("Minimum value", F32), ("Maximum value", F32),
+                          ("Number visible", F32), ("Interval", F32)],
+    # BfAddSubEffectNode 0x007d54d0 (vtable 0x0093d1f0) is the page-transition
+    # tweener: eight data pointers, all through +0x6c. It is the sibling of
+    # BfAddSubNextEffectNode below, which ends with Loop / Next action / Reset
+    # where this one ends with Up / Go (labels 0x0093d07c, 0x0093d078).
+    "BfAddSubEffectNode": [("Next node", OBJ), ("Value", OBJ), ("End value", OBJ),
+                           ("Start time", OBJ), ("Start percentage", OBJ), ("End time", OBJ),
+                           ("Delay", OBJ), ("Up", OBJ), ("Go", OBJ)],
     # Data
     "BoolData": [("Value", BOOL)],
     "IntData": [("Value", INT)],
