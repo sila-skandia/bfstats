@@ -213,6 +213,37 @@ class CombatAreaTests(unittest.TestCase):
         self.assertEqual([2, 1, 0, 0, 0], [f["countdown"] for f in over["frames"]])
         self.assertEqual([0, 0, 0, 300, 300], [f["damage"] for f in over["frames"]])
 
+    def test_the_accumulator_is_clamped_back_to_the_allowance(self) -> None:
+        # The engine writes the allowance itself into player+0x178 on every
+        # damage frame (`mov al,[ecx+0x6c]` 0x081524a8, `fild` 0x081524ac,
+        # `fstp [esi+0x178]` 0x081524b2) instead of letting the total grow.
+        # A minute out of the area therefore reads 10, not 60.
+        clamp = self.results["clamp"]
+        self.assertEqual(10, clamp["afterSixtySeconds"]["outsideFor"])
+        self.assertEqual(10, clamp["atFirstDamage"]["outsideFor"])
+
+    def test_the_clamp_costs_no_damage(self) -> None:
+        # Each later frame re-crosses the allowance by its own dt, so the
+        # clamp is bookkeeping: 50 of the 60 one-second frames damage, at the
+        # engine's 5 HP a second.
+        clamp = self.results["clamp"]
+        self.assertEqual(50, clamp["damagingFrames"])
+        self.assertEqual(250.0, clamp["totalDamage"])
+        self.assertEqual(5, clamp["afterSixtySeconds"]["damage"])
+        self.assertEqual(0, clamp["afterSixtySeconds"]["countdown"])
+
+    def test_the_area_is_inclusive_on_all_four_edges(self) -> None:
+        # Read out of the four x87 comparisons at 0x081523c1 / 0x081523d7 /
+        # 0x081523ec / 0x08152403: each branch leaves the area only on a
+        # strict `>`, so standing exactly on an edge is still inside.
+        edges = self.results["edges"]
+        self.assertTrue(edges["minCorner"])
+        self.assertTrue(edges["maxCorner"])
+        self.assertFalse(edges["justOutsideMinX"])
+        self.assertFalse(edges["justOutsideMaxX"])
+        self.assertFalse(edges["justOutsideMinZ"])
+        self.assertFalse(edges["justOutsideMaxZ"])
+
 
 if __name__ == "__main__":
     unittest.main()
