@@ -418,6 +418,10 @@ class ConsoleHarnessTests(unittest.TestCase):
         self.assertTrue(s["isToggleAzerty"])
         self.assertTrue(s["isToggleQwertz"])
         self.assertFalse(s["isToggleTildeElsewhere"])
+        # A key event with no `code` falls back on the character.
+        self.assertTrue(s["isToggleNoCodeGrave"])
+        self.assertTrue(s["isToggleNoCodeTilde"])
+        self.assertFalse(s["isToggleNoCodeOther"])
 
     def test_every_game_key_is_eaten_while_the_console_is_up(self) -> None:
         """WASD, use, fire, the view and map keys and the weapon row all
