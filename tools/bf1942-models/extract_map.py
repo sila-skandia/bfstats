@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import subprocess
@@ -79,6 +80,8 @@ from bf42.level import (  # noqa: E402
     parse_ssc,
     parse_static_objects,
     parse_terrain_con,
+    parse_soldier_spawn_templates,
+    _commands,
     resolve_ssc_path,
     spawn_vehicle,
 )
@@ -1334,6 +1337,104 @@ def _object_spawn_report(info: LevelInfo) -> list[dict]:
     return out
 
 
+def _global_spawn_group_teams(game) -> dict[int, int]:
+    """`Game.rfa`'s GlobalSpawnGroups.con: which side each ship-borne spawn
+    group lists under. Read once per level; a mod without the file (or a
+    game pool that could not open it) yields an empty map.
+    """
+    try:
+        text = game.read("Bf1942/Game/GlobalSpawnGroups.con").decode("latin-1")
+    except Exception:
+        return {}
+    from bf42.level import parse_spawn_point_manager
+    return parse_spawn_point_manager(text)
+
+
+def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game) -> list[dict]:
+    """The fleet's deck spawn points, reconstructed from the vehicle templates.
+
+    A ship's own `Objects/Vehicles/Sea/<ship>/Objects.con` adds `SpawnPoint`
+    children — Wake's carrier carries three groups (the helm point and the
+    deck points by the boats and the aircraft), its destroyer two — and
+    `Game/GlobalSpawnGroups.con` binds each group to a side, so a team with no
+    flag of its own still has somewhere to spawn: Wake's Japanese round opens
+    on their ships. Each child is `addTemplate`-ed into the ship's bundle with
+    its own `setPosition` offset along the hull, so the points are spread
+    down the deck the way the spawn screen draws them, and the world position
+    here is the spawner's pad pose with that offset rotated through it.
+    """
+    global_teams = _global_spawn_group_teams(game)
+    out: list[dict] = []
+    seen_pads = set()
+    for inst in info.spawn_objects:
+        vehicle = spawn_vehicle(inst.template, inst.team, info.spawn_templates)
+        if vehicle is None:
+            continue
+        blob = None
+        for rel in (f"Objects/Vehicles/Sea/{vehicle}/Objects.con",
+                    # Coral Sea's carriers live in the level's own archive,
+                    # directly under `Objects/` — no Vehicles/Sea rung.
+                    f"Objects/{vehicle}/Objects.con"):
+            blob = objects.try_read(rel)
+            if blob is not None:
+                break
+        if blob is None:
+            continue
+        text = blob.decode("latin-1", "replace")
+        templates = parse_soldier_spawn_templates(text)
+        # `addTemplate <SpawnPoint>` followed by the `setPosition` that places
+        # that instance in the ship's local frame. A template added twice —
+        # every deck point is — yields one entry per add, port and starboard.
+        offsets: dict[str, list[tuple[float, float, float]]] = {}
+        pending: str | None = None
+        for ns, cmd, args in _commands(text):
+            if ns != "objecttemplate":
+                continue
+            if cmd == "addtemplate":
+                tokens = args.split()
+                pending = tokens[0].lower() if tokens else None
+            elif cmd == "setposition" and pending is not None:
+                parts = args.split("/")
+                try:
+                    lx, ly, lz = (float(v) for v in parts[:3])
+                except ValueError:
+                    pending = None
+                    continue
+                offsets.setdefault(pending, []).append((lx, ly, lz))
+                pending = None
+        # One transform per pad: the ships spawn at their spawner's pose.
+        ox, oy, oz = inst.position
+        yaw_rad = math.radians(inst.rotation[0] or 0.0)
+        cos_y, sin_y = math.cos(yaw_rad), math.sin(yaw_rad)
+        pad = (vehicle, round(ox, 3), round(oy, 3), round(oz, 3))
+        if pad in seen_pads:
+            continue
+        seen_pads.add(pad)
+        pad_id = len(seen_pads)   # stable within one level report
+        for name, tpl in templates.items():
+            # A live `setEnterOnSpawn 1` is a seat-entry point, not a place to
+            # stand; the helm points the fleet ships leave remmed are kept.
+            if tpl.enter_on_spawn or tpl.group is None:
+                continue
+            for lx, ly, lz in offsets.get(name, [(0.0, 0.0, 0.0)]):
+                wx = ox + (lx * cos_y - lz * sin_y)
+                wz = oz + (lx * sin_y + lz * cos_y)
+                entry = {
+                    "vehicle": vehicle,
+                    "spawner": inst.template,
+                    "pad": pad_id,
+                    "name": name,
+                    "group": tpl.group,
+                    "team": global_teams.get(tpl.group) or inst.team,
+                    "position": [round(wx, 3), round(oy + ly, 3), round(-wz, 3)],
+                    "rotation": list(inst.rotation),
+                }
+                if tpl.paratrooper:
+                    entry["paratrooper"] = True
+                out.append(entry)
+    return out
+
+
 def _place_template(assembler: Assembler, builder, name: str, inst, report,
                      seen_fail: set[str]) -> int | None:
     key = name.lower()
@@ -1367,6 +1468,7 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
                  out_dir: Path | None = None,
                  lightmaps: dict[tuple[str, int, int, int], str] | None = None,
                  sky_faces: list | None = None,
+                 vehicle_soldier_spawns: list[dict] | None = None,
                  ) -> tuple[bytes, dict]:
     builder = gltf.GlbBuilder(generator="bfstats bf1942 level extractor")
     roots: list[int] = []
@@ -1682,6 +1784,7 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
         "gameplayMode": info.gameplay.mode or None,
         "controlPoints": _control_point_report(info, placed_flags),
         "soldierSpawns": _soldier_spawn_report(info),
+        "vehicleSoldierSpawns": vehicle_soldier_spawns or [],
         "objectSpawns": _object_spawn_report(info),
         "tickets": tickets,
         # `image` is filled in by `write_minimap` once the art is decoded; the
@@ -1817,10 +1920,15 @@ def main() -> int:
             lightmaps=lightmaps)
 
     sky_faces = prepare_sky(info, meshes, textures)
+    # The fleet's deck spawn points, before the scene builds — `build_scene`
+    # writes them into the report beside the level's own soldier spawns.
+    vehicle_soldier_spawns = ([] if args.terrain_only else
+                              _vehicle_soldier_spawn_report(info, objects, game))
     glb, extras = build_scene(
         files, info, heightmap, assembler,
         max_texture=args.max_texture, include_objects=not args.terrain_only,
         lightmaps=lightmaps, sky_faces=sky_faces, out_dir=out_dir,
+        vehicle_soldier_spawns=vehicle_soldier_spawns,
     )
     if sky_faces:
         extras["sky"] = {
