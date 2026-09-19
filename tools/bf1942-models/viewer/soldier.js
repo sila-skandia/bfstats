@@ -25,9 +25,11 @@
 import {
   SoldierBody, FixedStep,
   EYE_HEIGHT, BODY_HEIGHT, BODY_RADIUS, STEP_HEIGHT, MAX_GROUND_SLOPE,
-  DIRECTIONAL_SPEED, STRAFE_SPEED, WALK_SPEED_FACTOR, GRAVITY, JUMP_SPEED,
+  DIRECTIONAL_SPEED, STRAFE_SPEED, WALK_SPEED_FACTOR, GRAVITY, JUMP_IMPULSE,
   POSE_STAND, POSE_CROUCH, POSE_PRONE, POSE_FLAG_CROUCH, POSE_FLAG_PRONE,
-  POSE_FLAG_JUMP, directionalSpeed,
+  POSE_FLAG_JUMP, directionalSpeed, MATERIAL_WATER,
+  RAMP_ACCEL, RAMP_DECEL, RAMP_LIMIT, RAMP_SCALE, ENGINE_TICK_RATE,
+  RAMP_TO_FULL_SECONDS, RAMP_TO_STOP_SECONDS,
 } from './physics.js';
 
 // Re-exported so a caller that already has `soldier.js` does not have to reach
@@ -36,8 +38,10 @@ import {
 // second declaration.
 export {
   EYE_HEIGHT, BODY_HEIGHT, BODY_RADIUS, STEP_HEIGHT, MAX_GROUND_SLOPE,
-  DIRECTIONAL_SPEED, STRAFE_SPEED, WALK_SPEED_FACTOR, GRAVITY, JUMP_SPEED,
-  directionalSpeed,
+  DIRECTIONAL_SPEED, STRAFE_SPEED, WALK_SPEED_FACTOR, GRAVITY, JUMP_IMPULSE,
+  directionalSpeed, MATERIAL_WATER,
+  RAMP_ACCEL, RAMP_DECEL, RAMP_LIMIT, RAMP_SCALE, ENGINE_TICK_RATE,
+  RAMP_TO_FULL_SECONDS, RAMP_TO_STOP_SECONDS,
 };
 
 // -- what the game declares --------------------------------------------------
@@ -409,7 +413,13 @@ export class Soldier {
     if (Number.isFinite(ground) && ground <= from && ground > best) best = ground;
     if (Number.isFinite(best)) {
       this.body.place(this.x, best, this.z, this.yaw);
-      this.body.grounded = true;
+      // `plant`, not a poke at `.grounded`: PHY-1's jump gate is the previous
+      // tick's *contact*, and spawn placement runs off the tick, so the body
+      // has to be told it is resting on something or it refuses its first
+      // jump. Water spawns stay unarmed, which is what `plant` checks for.
+      const level = collider.waterLevel;
+      const onWater = level != null && Math.abs(best - level) <= 1e-6;
+      this.body.plant(1, onWater ? MATERIAL_WATER : -1);
     }
     return this;
   }
@@ -558,7 +568,15 @@ export class Soldier {
    * accumulator alone; the sine therefore never jumps mid-stride.
    */
   #advanceBob(dt, travelled) {
-    const moving = travelled > 1e-5 && this.body.grounded;
+    // The gait is the engine's criterion, not the distance: `Lb_*` states carry
+    // the shake and an idle state carries none, so entering the idle state is
+    // what stops it. That used to be indistinguishable from `travelled == 0`,
+    // because the body stopped on the frame the key came up. It is not any
+    // more — PHY-6's ramp coasts a released soldier for 0.35 s — and without
+    // the gait test a stop now restarts the bob faintly as a *walk* shake for
+    // a third of a second. `travelled` stays as the second half of the test so
+    // that running into a wall still kills the bob.
+    const moving = this.gait !== 'stand' && travelled > 1e-5 && this.body.grounded;
     const shake = BOB[this.gait] || BOB.walk;
     if (!moving) {
       this.bobPhase = 0;
