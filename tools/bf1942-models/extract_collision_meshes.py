@@ -13,6 +13,12 @@ JS body can look either up the same way.
 
     python3 extract_collision_meshes.py --mod bf1942 --out viewer/maps/_shared
 
+The file is `{"meshes": {<lowercase mesh file>: {bbox, layers}}, "geometries":
+{<lowercase GeometryTemplate name>: <lowercase mesh file>}}`. The second map is
+there because a glb collision node names its source by geometry *template*
+(`sourceGeometry: "Willy_Hull_M1"`) while the mesh *file* it loads is
+`Willy_Hul_M1.sm`; aliases collapse onto one mesh entry.
+
 Coordinates match the glb bit for bit: Z negated and triangle winding flipped
 the way `bf42/gltf.py::add_mesh` converts Refractor's left-handed space to
 glTF's right-handed one (see `_to_viewer_vertex`/`_viewer_face` below). Per-face
@@ -73,11 +79,30 @@ def collect_geometry_refs(library: con_mod.ObjectLibrary) -> dict[str, str]:
     same way `assemble.py::_mesh_index` collapses them (two geometry names
     that load the same `.sm` are one entry, not two).
     """
+    mesh_files, _aliases = _walk_geometry(library)
+    return mesh_files
+
+
+def collect_geometry_aliases(library: con_mod.ObjectLibrary) -> dict[str, str]:
+    """Lowercase `GeometryTemplate` name -> lowercase mesh-file name.
+
+    The scene glb names a collision node's source by its *geometry template*
+    (`sourceGeometry: "Willy_Hull_M1"`), while this file is keyed by the mesh
+    *file* that template loads (`Willy_Hul_M1.sm`) so that aliases collapse.
+    The viewer needs the step between the two.
+    """
+    _mesh_files, aliases = _walk_geometry(library)
+    return aliases
+
+
+def _walk_geometry(library: con_mod.ObjectLibrary
+                   ) -> tuple[dict[str, str], dict[str, str]]:
     roots = [t for t in library.objects.values()
             if t.source.replace("\\", "/").lower().startswith(ROOT_PREFIXES)]
 
     visited_templates: set[str] = set()
     mesh_files: dict[str, str] = {}
+    aliases: dict[str, str] = {}
 
     def walk(template_name: str, depth: int = 0) -> None:
         if depth > 64:
@@ -96,12 +121,13 @@ def collect_geometry_refs(library: con_mod.ObjectLibrary) -> dict[str, str]:
             # it the way `_mesh_index` does rather than assume that forever.
             if geom is not None and geom.kind.lower() != "treemesh":
                 mesh_files.setdefault(geom.mesh_file.lower(), geom.mesh_file)
+                aliases.setdefault(template.geometry.lower(), geom.mesh_file.lower())
         for child in template.children:
             walk(child.template, depth + 1)
 
     for root in roots:
         walk(root.name)
-    return mesh_files
+    return mesh_files, aliases
 
 
 def _to_viewer_vertex(p: tuple[float, float, float]) -> tuple[float, float, float]:
@@ -252,10 +278,13 @@ def main() -> int:
 
     mesh_files = collect_geometry_refs(library)
     collision_meshes, stats = build_collision_meshes(meshes, mesh_files)
+    aliases = {name: mesh for name, mesh in collect_geometry_aliases(library).items()
+               if mesh in collision_meshes}
 
     args.out.mkdir(parents=True, exist_ok=True)
     out_path = args.out / "collision-meshes.json"
-    text = json.dumps(collision_meshes, separators=(",", ":"))
+    text = json.dumps({"meshes": collision_meshes, "geometries": aliases},
+                      separators=(",", ":"))
     out_path.write_text(text)
 
     print(f"{len(collision_meshes)} geometries, {stats['layers']} layers, "
