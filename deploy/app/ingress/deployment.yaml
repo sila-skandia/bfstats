@@ -32,6 +32,7 @@ data:
       # ACL definitions
       acl host_staging_bfstats req.hdr(host) -i staging.bfstats.io
       acl host_mesh_bfstats req.hdr(host) -i mesh.bfstats.io
+      acl host_play_bfstats req.hdr(host) -i play.bfstats.io
       acl is_stats path_beg /stats
       acl is_hub path_beg /hub
 
@@ -40,6 +41,11 @@ data:
 
       # Dedicated mesh viewer host — before the shared /stats and default UI routes
       use_backend mesh_frontend if host_mesh_bfstats
+
+      # BF1942 in the browser. Its own host so the map page is reached
+      # without the model browser's nav; same assets volume, own image.
+      # Backend not yet deployed — see deploy/app/play-deployment.yaml.
+      use_backend play_frontend if host_play_bfstats
 
       # Route /stats to stats API
       use_backend stats_api if is_stats
@@ -63,6 +69,15 @@ data:
 
     backend mesh_frontend
       server mesh bfstats-mesh-service.bf42-stats:80
+
+    backend play_frontend
+      # `init-addr last,libc,none`: the play deployment is written but not
+      # applied, so this name does not resolve yet. Without it HAProxy 3.2
+      # treats an unresolvable server address as a fatal startup error, and
+      # applying this ConfigMap before the deployment would take bfstats.io
+      # down with it. With it, HAProxy starts, the server sits DOWN, and
+      # play.bfstats.io answers 503 until the backend exists.
+      server play bfstats-play-service.bf42-stats:80 init-addr last,libc,none
 
     backend staging_frontend
       server staging bfstats-ui-service.bfstats-ui:80
