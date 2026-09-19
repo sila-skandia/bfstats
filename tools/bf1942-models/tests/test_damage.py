@@ -73,6 +73,17 @@ MaterialManager.materialAttGroup 15
 MaterialManager.materialDefGroup 15
 MaterialManager.materialDamage 30
 MaterialManager.materialFriction 1.1
+MaterialManager.materialElasticity 0
+MaterialManager.materialResistance 0.01
+
+rem Grenades
+MaterialManager.material 70
+MaterialManager.materialAttGroup 70
+MaterialManager.materialDefGroup 70
+MaterialManager.materialDamage 30
+MaterialManager.materialFriction 2.0
+MaterialManager.materialElasticity 2.0
+MaterialManager.materialResistance 2.0
 
 rem an alias whose groups differ from its id
 MaterialManager.material 300
@@ -218,6 +229,29 @@ class LoadTablesTests(unittest.TestCase):
         self.assertAlmostEqual(1.0, self.tables.materials[50].friction)
         self.assertEqual(0.8, self.tables.materials[2].as_dict()["friction"])
         self.assertEqual(1.0, self.tables.materials[236].as_dict()["friction"])
+
+    def test_the_grenade_material_carries_the_one_authored_elasticity(self) -> None:
+        # COL-2. `getElasticityForMaterial` (lnxded 0x081751f0) reads
+        # `Material+0x10` and `getResistanceForMaterial` (0x08175230) `+0x14`.
+        # The constructor defaults are elasticity 0 and resistance 0.01, and
+        # a material that declares neither is emitted WITHOUT the words (see
+        # the two tests above): the fallback lives with the consumer --
+        # `contact-response.js`'s `materialProperty` and `crash-damage.js`'s
+        # `definedField` -- and it is the constructor's, NOT friction's 1.0.
+        self.assertAlmostEqual(0.0, self.tables.materials[2].elasticity)
+        self.assertAlmostEqual(0.02, self.tables.materials[2].resistance)
+        self.assertAlmostEqual(0.01, self.tables.materials[15].resistance)
+        # Material 70 "Grenades" is the one vanilla material with a non-zero
+        # elasticity, and 2.0 is exactly the value that makes the pair mean
+        # 1.0 against any surface -- so `v * (1 - e) / 2` is zero and a
+        # grenade cancels its into-surface velocity rather than rebounding.
+        grenade = self.tables.materials[70]
+        self.assertAlmostEqual(2.0, grenade.elasticity)
+        self.assertAlmostEqual(2.0, grenade.friction)
+        self.assertAlmostEqual(2.0, grenade.resistance)
+        emitted = grenade.as_dict()
+        self.assertEqual(2.0, emitted["elasticity"])
+        self.assertEqual(2.0, emitted["resistance"])
 
     def test_modifier_is_keyed_by_group_not_material_id(self) -> None:
         self.assertEqual(10.0, self.tables.modifier(236, 50))

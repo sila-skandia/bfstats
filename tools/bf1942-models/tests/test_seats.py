@@ -33,13 +33,14 @@ HARNESS = Path(__file__).resolve().parent / "test_seats_harness.mjs"
 
 MODULES = {
     "seats.js": VIEWER / "seats.js",
-    # `gunfire.js` and the three modules it imports, so the rate-of-fire
+    # `gunfire.js` and the four modules it imports, so the rate-of-fire
     # cadence below is measured against the real `GunFire.advance`/`setFiring`
     # the page loads rather than a re-implementation of them in the harness.
     "gunfire.js": VIEWER / "gunfire.js",
     "collision.js": VIEWER / "collision.js",
     "physics.js": VIEWER / "physics.js",
     "effects-core.js": VIEWER / "effects-core.js",
+    "contact-response.js": VIEWER / "contact-response.js",
     "node_modules/three/three.module.js": VIEWER / "vendor" / "three.module.js",
 }
 THREE_PACKAGE = json.dumps({
