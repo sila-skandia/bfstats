@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -23,6 +24,7 @@ import extract_hud_layout as ehl  # noqa: E402
 import extract_hud_mods as ehm  # noqa: E402
 import extract_hud_pack as ehp  # noqa: E402
 import extract_menu_layout as eml  # noqa: E402
+from bf42 import modmenu  # noqa: E402
 from bf42.modmenu import LayeredArchive, MenuSources  # noqa: E402
 from bf42.rfa import RfaArchive  # noqa: E402
 from extract_models import mod_chain  # noqa: E402
@@ -474,6 +476,113 @@ class SkinNationTests(unittest.TestCase):
     def test_every_key_is_lowercased_because_lookup_lowercases(self) -> None:
         for key in eml.SKIN_NATION:
             self.assertEqual(key, key.lower())
+
+    def test_australia_takes_eods_own_so_art_not_vanillas_rus_alias(self) -> None:
+        # `conp_so` and `conp_rus` are the same bytes in EoD, but
+        # `icon_flag_so` is the Australian ensign and `icon_flag_rus` the US
+        # flag, and this screen draws the `icon_flag_*` family. The in-game
+        # HUD already resolves `flagso_m1` to `so` through
+        # `flag_mesh_nations`; this row is what makes the two agree.
+        self.assertEqual("so", eml.SKIN_NATION["australianforces"])
+
+
+# ------------------------------------------------------------ patch archives
+
+class PatchArchiveTests(unittest.TestCase):
+    """`<name>_001.rfa` overlays `<name>.rfa`, the way `ArchivePool.add_dir`
+    already does it for `objects` and `standardMesh` everywhere else."""
+
+    def test_a_patch_is_listed_ahead_of_the_base_it_patches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            archives = Path(tmp) / "Archives"
+            archives.mkdir()
+            for name in ("Menu.rfa", "menu_001.rfa", "menu_002.rfa",
+                         "menuOther.rfa", "Font.rfa"):
+                (archives / name).write_bytes(b"")
+            found = [p.name for p in modmenu._archives_in(archives, "menu.rfa")]
+        self.assertEqual(["menu_002.rfa", "menu_001.rfa", "Menu.rfa"], found)
+
+    def test_an_unrelated_archive_sharing_the_prefix_is_not_swept_in(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            archives = Path(tmp) / "archives"
+            archives.mkdir()
+            for name in ("menu.rfa", "menu_extra.rfa", "menucustom.rfa"):
+                (archives / name).write_bytes(b"")
+            found = [p.name for p in modmenu._archives_in(archives, "menu.rfa")]
+        self.assertEqual(["menu.rfa"], found)
+
+    @unittest.skipUnless(HAVE_GAME, "needs the BF1942 install")
+    def test_vanilla_ships_no_patch_so_its_chain_is_one_archive(self) -> None:
+        sources = MenuSources(mod_chain(GAME_DIR, "bf1942"))
+        self.assertEqual(["menu.rfa"], [p.name for p in sources.menu_paths])
+        self.assertEqual(["Font.rfa"], [p.name for p in sources.font_paths])
+
+    @unittest.skipUnless((GAME_DIR / "Mods/XPack1/Archives/menu_001.rfa").exists(),
+                         "needs Road to Rome installed")
+    def test_road_to_romes_patched_kit_photographs_are_reachable(self) -> None:
+        # The 1.6 patch is the only archive of any installed mod that holds
+        # these two; reading `Menu.rfa` alone loses them outright.
+        sources = MenuSources(mod_chain(GAME_DIR, "XPack1"))
+        self.assertEqual("menu_001.rfa", sources.menu_paths[0].name)
+        with sources.open_menu() as menu:
+            for entry in ("menu/Texture/Kits/Icon_assault_breda_axis_selected.dds",
+                          "menu/Texture/Kits/Icon_medic_stengun_allies_selected.dds"):
+                self.assertIn(entry, menu)
+                self.assertEqual("XPack1", menu.owner(entry))
+
+
+# ------------------------------------------------------- what a pack may delete
+
+class PackWriteScopeTests(unittest.TestCase):
+    """`extract_hud_mods.py` may only ever remove what a previous run of
+    itself wrote, and may never target the vanilla pack.
+
+    Before this, `--mod bf1942` resolved `--out` to `viewer/maps/_shared/hud`
+    -- in a worktree a symlink into the main checkout -- compared the vanilla
+    build against itself, found nothing differing and `rmtree`'d all 330
+    vanilla files plus whatever else lived beside them.
+    """
+
+    def test_a_directory_with_no_pack_json_is_never_touched(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "hud"
+            (out / "menu").mkdir(parents=True)
+            (out / "hud.json").write_text("{}")
+            (out / "menu" / "plate.png").write_bytes(b"x")
+            ehm.prune(out, set())
+        # (the directory is gone with the tempdir, so assert inside it)
+            self.assertTrue((out / "hud.json").is_file())
+            self.assertTrue((out / "menu" / "plate.png").is_file())
+
+    def test_only_files_the_last_pack_listed_are_removed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "hud"
+            out.mkdir()
+            (out / "pack.json").write_text(json.dumps({"files": ["a.png", "b.png"]}))
+            for name in ("a.png", "b.png", "stranger.png"):
+                (out / name).write_bytes(b"x")
+            ehm.prune(out, {"a.png", "pack.json"})
+            self.assertTrue((out / "a.png").is_file())
+            self.assertFalse((out / "b.png").is_file())
+            self.assertTrue((out / "stranger.png").is_file(),
+                            "a file no pack.json claimed is not ours to delete")
+
+    def test_an_emptied_pack_directory_goes_away(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "hud"
+            (out / "menu").mkdir(parents=True)
+            (out / "pack.json").write_text(json.dumps({"files": ["menu/x.png"]}))
+            (out / "menu" / "x.png").write_bytes(b"x")
+            ehm.prune(out, set())
+            self.assertFalse(out.exists())
+
+    def test_building_into_the_vanilla_pack_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            vanilla = Path(tmp) / "vanilla"
+            vanilla.mkdir()
+            with self.assertRaises(SystemExit):
+                ehm.build("XPack1", GAME_DIR, vanilla, vanilla,
+                          Path(tmp) / "fonts", False)
 
 
 if __name__ == "__main__":
