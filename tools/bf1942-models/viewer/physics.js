@@ -899,7 +899,38 @@ export class SoldierBody {
     }
 
     const v = body.velocity;
-    if (this.grounded) {
+    // The jump is resolved **first**, and that ordering is load-bearing.
+    //
+    // PHY-1's `-0.25 * vCmd` lands on the **actual** velocity. Run the ground
+    // arm below first and it does not: that arm assigns `v = vCmd`, so the
+    // kick would always land on a velocity equal to the command and would
+    // always read as `0.75 * vCmd` — the refuted form, item 1's third "do
+    // NOT", arrived at by the back door. It coincides only while the body is
+    // already travelling at its commanded speed, which is exactly the case
+    // the refutation warns about.
+    //
+    // The case where they part is a soldier pressed into a wall: his actual
+    // velocity is ~0 because the resolver strips it, his command is a full
+    // 6 m/s into the wall, and the engine's kick is therefore 1.5 m/s
+    // **backward, off the wall**. Assigning first gave him 6.0 into the wall,
+    // took 1.5 off it, and handed the resolver 4.5 m/s to strip — so he rose
+    // straight up, stayed in contact, and PHY-6's gate kept the airborne
+    // force switched off for the whole hop. Measured on Berlin
+    // (Bernauer_Strasse_HQ, yaw pi) and Wake (The_Airfield, yaw pi/4): the
+    // body never left the wall.
+    //
+    // Nothing changes for an unblocked runner, who is the case every measured
+    // figure comes from: his velocity already equals his command when the tick
+    // begins, so the assignment was a no-op and 6.0 still becomes 4.5.
+    const jumped = this.#tryJump(dt, cmdX, cmdZ);
+    if (jumped) {
+      // `vCmd` is zeroed outright, not damped, and the engine's jump branch
+      // forward-jumps clean over the locomotion block — so a jump tick carries
+      // no locomotion force and no friction assignment at all. The next tick
+      // rebuilds both.
+      cmdX = 0;
+      cmdZ = 0;
+    } else if (this.grounded) {
       // **The deliberate divergence, and the reason it is deliberate.**
       //
       // In the engine a soldier on the ground is moved by the friction solver,
@@ -950,48 +981,6 @@ export class SoldierBody {
       // air-strafe carries almost none — the asymmetry retail has and the
       // lerp did not.
       body.addAcceleration(LOCOMOTION_GAIN * cmdX, 0, LOCOMOTION_GAIN * cmdZ);
-    }
-
-    if (this._jumpQueued) {
-      this._jumpQueued = false;
-      // The gate is the previous tick's contact, not `grounded` and not
-      // `MAX_GROUND_SLOPE` (PHY-1, item 2). The pose test is a viewer choice
-      // and stays one: the engine's own refusal to re-jump comes from the
-      // sound trigger still being `c_SstJump`, which `soldier.js` models as a
-      // press edge.
-      if (this.jumpArmed && this.pose === POSE_STAND) {
-        const n = this.contactNormal;
-        // `d_hat` is the commanded movement with **y forced to zero before**
-        // normalising (client `0x0050166c`), so only the normal's horizontal
-        // part can enter the dot. Running into a rise gives a negative dot and
-        // a weaker jump; running down one clamps back to 1.
-        const len = Math.hypot(cmdX, cmdZ);
-        const dot = len > 1e-9 ? (cmdX / len) * n.x + (cmdZ / len) * n.z : 0;
-        const K = Math.min(1 + dot, 1);
-        // Through the **accumulator**, not onto the velocity, and this is the
-        // detail that decides the apex. The engine scales the whole vector by
-        // `g_simulationFps` and adds it to the same accumulator gravity was
-        // already seeded into, so the four sub-steps spend the jump and the
-        // tick's own gravity together. The `* fps` is `/ dt` at the engine's
-        // own rate; written as `/ dt` it delivers exactly `JUMP_IMPULSE` of
-        // delta-v from the jump term at any tick rate.
-        //
-        // Setting `v.y = 6.0` instead skips gravity's share of that first tick
-        // and lands the apex at 1.197 m rather than 1.122 m. See the constant.
-        const inv = 1 / dt;
-        body.addAcceleration(
-          (-JUMP_COMMAND_KICK * cmdX) * inv,
-          (K * n.y * JUMP_IMPULSE) * inv,
-          (-JUMP_COMMAND_KICK * cmdZ) * inv);
-        // `vCmd` is zeroed outright, not damped — the engine's jump branch
-        // forward-jumps clean over the `0.75 * vCmd` block, so a jump tick
-        // carries no locomotion force at all. The next tick rebuilds it.
-        cmdX = 0;
-        cmdZ = 0;
-        this.grounded = false;
-        this.jumpArmed = false;
-        this.poseFlags |= POSE_FLAG_JUMP;
-      }
     }
 
     // --- the engine's update ----------------------------------------------
@@ -1051,6 +1040,51 @@ export class SoldierBody {
     out.y = lerp(q.y, p.y, alpha) + lerp(this.previousEyeHeight, this.eyeHeight, alpha);
     out.z = lerp(q.z, p.z, alpha);
     return out;
+  }
+
+  /**
+   * Spend a queued jump, if this tick's gate allows one. True if it fired.
+   *
+   * The gate is the previous tick's contact, not `grounded` and not
+   * `MAX_GROUND_SLOPE` (PHY-1, item 2). The pose test is a viewer choice and
+   * stays one: the engine's own refusal to re-jump comes from the sound
+   * trigger still being `c_SstJump`, which `soldier.js` models as a press edge.
+   *
+   * `cmdX`/`cmdZ` are this tick's commanded movement — `vCmd` — which the
+   * caller has not yet spent on anything, so both terms below land where the
+   * engine puts them.
+   */
+  #tryJump(dt, cmdX, cmdZ) {
+    if (!this._jumpQueued) return false;
+    this._jumpQueued = false;
+    if (!this.jumpArmed || this.pose !== POSE_STAND) return false;
+    const n = this.contactNormal;
+    // `d_hat` is the commanded movement with **y forced to zero before**
+    // normalising (client `0x0050166c`), so only the normal's horizontal part
+    // can enter the dot. Running into a rise gives a negative dot and a weaker
+    // jump; running down one clamps back to 1.
+    const len = Math.hypot(cmdX, cmdZ);
+    const dot = len > 1e-9 ? (cmdX / len) * n.x + (cmdZ / len) * n.z : 0;
+    const K = Math.min(1 + dot, 1);
+    // Through the **accumulator**, not onto the velocity, and this is the
+    // detail that decides the apex. The engine scales the whole vector by
+    // `g_simulationFps` and adds it to the same accumulator gravity was
+    // already seeded into, so the four sub-steps spend the jump and the tick's
+    // own gravity together. The `* fps` is `/ dt` at the engine's own rate;
+    // written as `/ dt` it delivers exactly `JUMP_IMPULSE` of delta-v from the
+    // jump term at any tick rate.
+    //
+    // Setting `v.y = 6.0` instead skips gravity's share of that first tick and
+    // lands the apex at 1.197 m rather than 1.122 m. See the constant.
+    const inv = 1 / dt;
+    this.body.addAcceleration(
+      (-JUMP_COMMAND_KICK * cmdX) * inv,
+      (K * n.y * JUMP_IMPULSE) * inv,
+      (-JUMP_COMMAND_KICK * cmdZ) * inv);
+    this.grounded = false;
+    this.jumpArmed = false;
+    this.poseFlags |= POSE_FLAG_JUMP;
+    return true;
   }
 
   /**

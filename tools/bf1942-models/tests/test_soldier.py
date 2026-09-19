@@ -297,6 +297,52 @@ class SoldierModuleTests(unittest.TestCase):
         self.assertLess(jump["apex"], jump["predicted"])
         self.assertTrue(jump["landed"])
 
+    def test_the_jump_is_the_same_on_a_phone_and_a_144hz_monitor(self) -> None:
+        # `Soldier.step` takes a frame dt and spends it through a `FixedStep`
+        # accumulator running whole 60 Hz ticks, so the sim is the frame
+        # rate's business only in how often it is *sampled*. Four rates, one
+        # apex. (Retail is not like this: `Setup::mainLoop` integrates with the
+        # measured elapsed time — see the harness comment. The divergence is
+        # deliberate and is what makes a recorded input stream replayable.)
+        runs = {r["fps"]: r for r in self.results["frameRateJump"]}
+        self.assertEqual({30, 60, 144, 23.7}, set(runs))
+        apexes = [r["apex"] for r in runs.values()]
+        self.assertAlmostEqual(min(apexes), max(apexes), places=2)
+        # 30, 60 and 144 all land whole ticks on frame boundaries, so those
+        # three are exact rather than merely close.
+        self.assertEqual(runs[30]["apex"], runs[60]["apex"])
+        self.assertEqual(runs[60]["apex"], runs[144]["apex"])
+        for fps, run in runs.items():
+            self.assertTrue(run["landed"], msg=str(fps))
+            self.assertAlmostEqual(0.0, run["y"], places=6, msg=str(fps))
+            self.assertAlmostEqual(0.79, run["airTime"], delta=0.04, msg=str(fps))
+
+    def test_a_fall_is_billed_the_same_at_any_frame_rate(self) -> None:
+        # Stronger than the jump, and it has to be: the landing happens on one
+        # particular tick whatever the frames around it were, so every number
+        # `fall-damage.js` is fed must be bit-identical. A frame rate that
+        # changed the drop or the impact speed would change how much health an
+        # 8 m fall costs, which is the most player-visible thing in HP-14.
+        runs = self.results["frameRateFall"]
+        self.assertEqual(4, len(runs))
+        for run in runs:
+            self.assertIsNotNone(run)
+            self.assertEqual(runs[0]["impactSpeed"], run["impactSpeed"])
+            self.assertEqual(runs[0]["fallHeight"], run["fallHeight"])
+            self.assertEqual(runs[0]["cosTheta"], run["cosTheta"])
+        self.assertAlmostEqual(8.0, runs[0]["fallHeight"], places=6)
+
+    def test_the_movement_ramp_covers_the_same_ground_at_any_frame_rate(self) -> None:
+        # PHY-6's register is stepped by `dt`, so a second of held W is a
+        # second of held W whether it arrives in 24 frames or 144. The
+        # tolerance is one tick of run, which is all the leftover accumulator
+        # can ever be worth.
+        runs = self.results["frameRateRamp"]
+        travelled = [r["travelled"] for r in runs]
+        self.assertAlmostEqual(min(travelled), max(travelled), delta=6.0 / 60)
+        for run in runs:
+            self.assertAlmostEqual(6.0, run["speed"], places=2)
+
     def test_you_cannot_stand_up_under_a_beam(self) -> None:
         under = self.results["headroom"]
         self.assertEqual("crouch", under["stance"])
