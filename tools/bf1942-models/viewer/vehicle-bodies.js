@@ -21,7 +21,9 @@
 // the body's X, Y, Z axes in world space — which for a three.js matrix are its
 // first three columns.
 
-import { boxInertia, TICK } from './rigid-body.js';
+import { boxInertia, RigidBody, TICK } from './rigid-body.js';
+import { CollisionPart, Response } from './body-contact.js';
+import { ParkedVehicle, WheelSpring } from './body-ground.js';
 
 /** Acceleration clamp shared with `rigid-body.js` (spec 4.2): |a| <= 1000. */
 const ACCEL_LIMIT = 1000;
@@ -330,3 +332,73 @@ export class DrivenBody {
     racc[0] = racc[1] = racc[2] = 0;
   }
 }
+
+// --- building bodies out of a description --------------------------------------
+
+/**
+ * How far a parked wheel may compress. The engine has no such number — a
+ * spring's push is clamped per tick (0..1 m) and nothing else — and `ground.js`
+ * keeps its own per-vehicle figure for the driven case. This only has to be
+ * larger than any static sag (a Willy rests at about 0.1 m, a B-17 at 0.2).
+ */
+const PARKED_SPRING_TRAVEL = 0.6;
+
+/** ContactGrip: what a part with no authored grip gets (template default 1). */
+const DEFAULT_GRIP = 1;
+
+/** `CollisionPart`s (and their `Response`s) for a described vehicle on `body`. */
+export function collisionPartsFor(spec, body, { hullOnly = false } = {}) {
+  const parts = [];
+  for (const desc of spec.parts) {
+    if (hullOnly && desc.kind !== 'body') continue;
+    const grip = desc.kind === 'spring' ? (desc.spring?.gripFlags ?? DEFAULT_GRIP) : DEFAULT_GRIP;
+    const part = new CollisionPart({
+      body, shape: desc.shape, response: new Response(desc.kind, grip),
+      isRoot: desc.isRoot, offset: desc.offset.slice(), rot: desc.rot.map(r => r.slice()),
+      kind: desc.kind,
+    });
+    part.node = desc.node;
+    part.spring = desc.spring;
+    parts.push(part);
+  }
+  return parts;
+}
+
+/**
+ * A described vehicle standing on its own springs at `position` / `axes`.
+ *
+ * `asleep` parks it the way a level finds it: nothing integrates until a
+ * contact wakes it (spec 4.3). Pass false for a vehicle the player has just
+ * stepped out of, which should settle where it was left.
+ */
+export function buildParkedVehicle(spec, { position, axes, asleep = true }) {
+  const body = new RigidBody({
+    mass: spec.mass, inertiaModifier: spec.inertiaModifier, box: spec.box,
+    position, axes,
+  });
+  body.boundingRadius = spec.boundingRadius;
+  if (asleep) body.setSleepiness(0);
+  const parts = collisionPartsFor(spec, body);
+  const wheels = parts.filter(p => p.kind === 'spring').map(part => ({
+    part,
+    spring: new WheelSpring({
+      strength: part.spring?.strength ?? 0,
+      damping: part.spring?.damping ?? 0,
+      travel: PARKED_SPRING_TRAVEL,
+    }),
+  }));
+  return new ParkedVehicle({ body, parts, wheels });
+}
+
+/** The world axle of a wheel part: its own X axis, for RollGrip friction. */
+export function wheelFrictionOpts(part) {
+  if (part.kind !== 'spring') return undefined;
+  const a = part.body.axes, r = part.rot[0];
+  _axle[0] = r[0] * a[0][0] + r[1] * a[1][0] + r[2] * a[2][0];
+  _axle[1] = r[0] * a[0][1] + r[1] * a[1][1] + r[2] * a[2][1];
+  _axle[2] = r[0] * a[0][2] + r[1] * a[1][2] + r[2] * a[2][2];
+  _frictionOpts.axle = _axle;
+  return _frictionOpts;
+}
+const _axle = [0, 0, 0];
+const _frictionOpts = { axle: _axle, engineSurfaceSpeed: [0, 0, 0] };
