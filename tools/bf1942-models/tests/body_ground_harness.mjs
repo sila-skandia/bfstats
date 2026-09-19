@@ -17,7 +17,7 @@
 //    `Response` and `CollisionPart` from the copied modules, ticked forward
 //    with `vehicle.accumulate/body.step/vehicle.detectGround/vehicle.resolve`
 //    in the spec's own §2 order, on an analytic flat or sloped terrain.
-import { RigidBody, TICK } from './rigid-body.mjs';
+import { RigidBody, TICK, GRAVITY } from './rigid-body.mjs';
 import { Response, CollisionPart } from './body-contact.mjs';
 import { contactMaterialValues } from './crash-damage.mjs';
 import {
@@ -216,12 +216,90 @@ out.addFriction = {};
 }
 
 // =============================================================================
+// (a2) WheelSpring.apply directly, against PhysicsSpring::updatePhysics's own
+// law (body-ground.js's header comment above WheelSpring, decompiled
+// 2026-09-20): a = -(strength*D*(g*-0.101833) + damping*(D-Dprev)/dt), where
+// D = -push (a world vector along the contact normal, NOT the body's up
+// axis) and D is rolled into "previous" every tick, asleep or not, while the
+// force itself and the clearing of `push` only happen while awake.
+// =============================================================================
+
+class SpringFakeBody {
+  constructor() { this.calls = []; }
+  addAccelerationAt(p, a) { this.calls.push({ p: [p[0], p[1], p[2]], a: [a[0], a[1], a[2]] }); }
+}
+
+const SPRING_STRENGTH = 25, SPRING_DAMPING = 5;
+
+out.wheelSpring = {};
+
+// The static term alone: prime `previous` to equal this tick's D so the
+// damping term (which reads D - previous) is exactly zero, isolating
+// -(strength * D * |g|*0.101833).
+{
+  const spring = new WheelSpring({ strength: SPRING_STRENGTH, damping: SPRING_DAMPING });
+  spring.compress([0, 0.1, 0]);           // this tick's push -> D = (0, -0.1, 0)
+  spring.previous[0] = 0; spring.previous[1] = -0.1; spring.previous[2] = 0;
+  const body = new SpringFakeBody();
+  spring.apply(body, [2, 0, 3], TICK, false);
+  out.wheelSpring.staticTerm = { calls: body.calls };
+}
+
+// Damping opposes further compression: D grows (more negative Y, sinking
+// further) from the previous tick's D -> the damper ADDS to the static push.
+{
+  const spring = new WheelSpring({ strength: SPRING_STRENGTH, damping: SPRING_DAMPING });
+  spring.previous[0] = 0; spring.previous[1] = -0.05; spring.previous[2] = 0;
+  spring.compress([0, 0.1, 0]);
+  const body = new SpringFakeBody();
+  spring.apply(body, [0, 0, 0], TICK, false);
+  out.wheelSpring.compressing = { calls: body.calls };
+}
+
+// Damping opposes rebound: the task's own named case — a wheel that leaves
+// the ground this tick (nothing calls `compress()`, so `push` — and so D —
+// stays zero) right after a compressed previous tick (Dprev != 0). The
+// damper alone produces a force, and it points the OPPOSITE way from the
+// compressing case above.
+{
+  const spring = new WheelSpring({ strength: SPRING_STRENGTH, damping: SPRING_DAMPING });
+  spring.previous[0] = 0; spring.previous[1] = -0.1; spring.previous[2] = 0;
+  const body = new SpringFakeBody();
+  spring.apply(body, [0, 0, 0], TICK, false);
+  out.wheelSpring.rebound = { calls: body.calls, pushAfter: [...spring.push] };
+}
+
+// The push this tick's `compress()` stored is cleared once an awake `apply`
+// has consumed it — nothing carries a displacement forward.
+{
+  const spring = new WheelSpring({ strength: SPRING_STRENGTH, damping: SPRING_DAMPING });
+  spring.compress([0.02, 0.2, -0.01]);
+  const body = new SpringFakeBody();
+  spring.apply(body, [0, 0, 0], TICK, false);
+  out.wheelSpring.clearedAfterAwake = { pushAfter: [...spring.push] };
+}
+
+// Asleep: no force posted (s.4.3 "springs... skip their force" while the
+// root sleeps) but `previous` still rolls forward from the CURRENT push, and
+// the push itself is untouched (only an awake apply clears it).
+{
+  const spring = new WheelSpring({ strength: SPRING_STRENGTH, damping: SPRING_DAMPING });
+  spring.compress([0, 0.2, 0]);
+  const body = new SpringFakeBody();
+  spring.apply(body, [0, 0, 0], TICK, true);
+  out.wheelSpring.asleep = {
+    callCount: body.calls.length,
+    pushAfter: [...spring.push],
+    prevAfter: [...spring.previous],
+  };
+}
+
+// =============================================================================
 // (b)-(d) ParkedVehicle integration: real RigidBody/Response/CollisionPart
 // =============================================================================
 
 const STRENGTH = 25;
 const DAMPING = 5;
-const TRAVEL = 0.3;
 const REST_Y = -0.5;
 const SPREAD_WHEEL_OFFSETS = [
   [1, REST_Y, 1.5], [-1, REST_Y, 1.5], [1, REST_Y, -1.5], [-1, REST_Y, -1.5],
@@ -253,7 +331,7 @@ function buildVehicle({ position, wheelOffsets = SPREAD_WHEEL_OFFSETS, authoredW
     const part = new CollisionPart({
       body, shape: oneVertexShape(0), response, isRoot: false, offset: off.slice(), kind: 'spring',
     });
-    const spring = new WheelSpring({ strength: STRENGTH, damping: DAMPING, travel: TRAVEL });
+    const spring = new WheelSpring({ strength: STRENGTH, damping: DAMPING });
     wheels.push({ part, spring });
     parts.push(part);
   }
@@ -295,10 +373,21 @@ const DROP_HEIGHT = 0.5;
 const settled = buildVehicle({ position: [0, DROP_HEIGHT - REST_Y, 0] });
 
 let settleTicks = -1;
+// The wheels' own `push` is a TRANSIENT, this-tick-only reading: an awake
+// `accumulate()` always clears it right after consuming it, and it is only
+// ever refreshed by `detectGround` -> `resolve`, which stop running the
+// instant the body sleeps. So the tick body.sleeping FIRST reads true is
+// already one tick past the last real ground-contact reading — `displacement`
+// sampled after that point is a structural zero, not the equilibrium
+// compression. Capture it on the LAST AWAKE tick instead, where detectGround
+// still ran and the springs are at (or extremely close to) equilibrium after
+// 100+ consecutive quiet ticks.
+let restDisplacements = null;
 const SETTLE_MAX_TICKS = 3000;
 for (let t = 1; t <= SETTLE_MAX_TICKS; t++) {
   tickOnce(settled.vehicle, settled.body, flatTerrain, handlers);
   if (settled.body.sleeping) { settleTicks = t; break; }
+  restDisplacements = settled.wheels.map(w => w.spring.displacement);
 }
 
 let staysAsleep = settleTicks > 0;
@@ -310,11 +399,12 @@ if (staysAsleep) {
 }
 
 out.settle = {
-  strength: STRENGTH, damping: DAMPING, travel: TRAVEL, restOffsetY: REST_Y,
+  strength: STRENGTH, damping: DAMPING, restOffsetY: REST_Y,
   wheelCount: SPREAD_WHEEL_OFFSETS.length, dropHeight: DROP_HEIGHT,
   settleTicks, staysAsleep,
   finalBodyPos: [...settled.body.pos],
-  finalDisplacements: settled.wheels.map(w => w.spring.displacement),
+  restDisplacements,
+  postSleepDisplacements: settled.wheels.map(w => w.spring.displacement),
   finalSleepiness: settled.body.sleepiness,
   grippAfterConstruction: settled.wheels.map(w => w.part.response.grip),
 };
@@ -324,33 +414,57 @@ out.settle = {
 const shoveResults = { attempted: settleTicks > 0 };
 if (settleTicks > 0) {
   const { body, vehicle } = settled;
-  body.addAccelerationAt([body.pos[0], body.pos[1], body.pos[2]], [8, 0, 0]);
+  // A real ram, not a nudge. `addAccelerationAt` is a one-tick acceleration
+  // (rigid-body.js: no /mass anywhere), so a Dv worth testing needs a large
+  // one-tick value: 150 m/s^2 for 1/30 s is Dv = 5 m/s. The vehicle has been
+  // asleep long enough beforehand (the 30-tick staysAsleep loop above) that
+  // every wheel's `push`/`previous` have decayed to exactly zero — see the
+  // WheelSpring unit tests' "asleep" case and (b)'s displacement comment —
+  // so accumulate()'s FIRST tick after waking contributes no spring force at
+  // all (D and Dprev both read zero); only from the second tick on, once
+  // `detectGround`/`resolve` have refreshed `push` from real terrain contact,
+  // does the spring see the sudden 0 -> real-penetration jump in one tick and
+  // produce a sharp, genuine one-tick vertical "resync" transient. That
+  // transient is real (the engine's own checkVsTerrain is skipped for a
+  // sleeping part, spec s.2/s.4.3), but it is a SUSPENSION effect, not a
+  // friction one, so it must not be read as part of "deceleration bounded by
+  // friction" below.
+  const SHOVE_ACCEL = 150;
+  body.addAccelerationAt([body.pos[0], body.pos[1], body.pos[2]], [SHOVE_ACCEL, 0, 0]);
   body.wake();
 
-  const speeds = [];
-  let maxDecelPerTick = 0;
+  // addFriction's own Vt strips the contact normal's component out of V
+  // before the Coulomb clamp ever sees it (collision-response.md s.8) — on
+  // flat ground (N = (0,1,0)) that means friction NEVER touches vertical
+  // speed at all. So "decel bounded by mu*g*N.y" is a horizontal-speed
+  // question; folding the springs' own vertical resync transient (above)
+  // into the same number would bound the wrong thing.
+  const horizSpeeds = [];
+  let maxHorizDecelPerTick = 0;
   let cameToRestTick = -1;
   let resleptTick = -1;
-  let prevSpeed = null;
+  let prevHorizSpeed = null;
+  let finalSpeed3 = 0;
   const SHOVE_MAX_TICKS = 3000;
   for (let t = 1; t <= SHOVE_MAX_TICKS; t++) {
     tickOnce(vehicle, body, flatTerrain, handlers);
-    const speed = Math.hypot(body.v[0], body.v[1], body.v[2]);
-    speeds.push(speed);
-    if (prevSpeed !== null && speed < prevSpeed) {
-      const decel = (prevSpeed - speed) / TICK;
-      if (decel > maxDecelPerTick) maxDecelPerTick = decel;
+    const horizSpeed = Math.hypot(body.v[0], body.v[2]);
+    horizSpeeds.push(horizSpeed);
+    if (prevHorizSpeed !== null && horizSpeed < prevHorizSpeed) {
+      const decel = (prevHorizSpeed - horizSpeed) / TICK;
+      if (decel > maxHorizDecelPerTick) maxHorizDecelPerTick = decel;
     }
-    prevSpeed = speed;
-    if (cameToRestTick < 0 && speed < 0.02) cameToRestTick = t;
+    prevHorizSpeed = horizSpeed;
+    finalSpeed3 = Math.hypot(body.v[0], body.v[1], body.v[2]);
+    if (cameToRestTick < 0 && finalSpeed3 < 0.02) cameToRestTick = t;
     if (body.sleeping) { resleptTick = t; break; }
   }
 
-  shoveResults.peakSpeed = Math.max(...speeds);
-  shoveResults.finalSpeed = speeds[speeds.length - 1];
+  shoveResults.peakSpeed = Math.max(...horizSpeeds);
+  shoveResults.finalSpeed = finalSpeed3;
   shoveResults.cameToRestTick = cameToRestTick;
   shoveResults.resleptTick = resleptTick;
-  shoveResults.maxDecelPerTick = maxDecelPerTick;
+  shoveResults.maxDecelPerTick = maxHorizDecelPerTick;
   shoveResults.movedAtAll = shoveResults.peakSpeed > 0.5;
 
   // Off-centre impulse at one wheel's world position: yaws the body.
