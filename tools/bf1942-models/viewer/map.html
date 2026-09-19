@@ -8880,6 +8880,15 @@ function condOk(c, vars) {
     case 'ne': return !(v === want || Number(v) === Number(want));
     case 'lt': return Number(v) < Number(want);
     case 'le': return Number(v) <= Number(want);
+    // `gt`/`ge` come out of the extractor's own operand flip (`FLIP_CMP` in
+    // extract_hud_layout.py) whenever the MemeFile puts the literal on the
+    // left, e.g. `0 < Outside/OutsideTime`. Missing here they fell through to
+    // the permissive default and drew a leaf that should have been culled --
+    // the same bug fixed in hud.js's copy of this function. No group in
+    // `spawn-layout.json` uses either today; they are implemented so this
+    // evaluator and hud.js's stay the same function.
+    case 'gt': return Number(v) > Number(want);
+    case 'ge': return Number(v) >= Number(want);
     default: return true;
   }
 }
