@@ -4415,9 +4415,12 @@ function occupiedVehicleDamage() {
  * covers a destroyed plane too. Its turret input IS already scaled, because
  * that goes through the same rig.
  */
-let vehicleInput = { blocked: false, rotationalScale: 1 };
+const vehicleInput = { blocked: false, rotationalScale: 1 };
 function stepVehicleInputGate() {
-  vehicleInput = inputGate(occupiedVehicleDamage());
+  // Filled in place: this runs once per frame for the whole time anyone is in
+  // a vehicle, and `inputGate`'s own note says why it takes the object rather
+  // than returning a new one.
+  inputGate(occupiedVehicleDamage(), vehicleInput);
   if (occupancy?.turret) occupancy.turret.inputScale = vehicleInput.rotationalScale;
   return vehicleInput;
 }
@@ -8292,9 +8295,27 @@ function axisToward(current, demand, dt) {
  */
 function pilot(dt) {
   if (!aircraft) return;
-  const flying = occupancy.isActiveRoot();
+  // HP-15, the same gate `drive()` takes and for the same reason: the engine's
+  // early return is `PlayerControlObject::handlePlayerInput`'s (lnxded
+  // 0x08318920, epilogue 0x08318952), and a PlayerControlObject is what an
+  // aeroplane is too — nothing in that function knows or cares whether the
+  // object it is refusing to forward input to has wheels or wings. A destroyed
+  // plane still answering the stick under full control was a visible hole:
+  // `frame()` routes to `pilot()` rather than `drive()` purely on which
+  // drivetrain the root carries, so the wreck rule has to be on both sides of
+  // that fork or it is on neither.
+  //
+  // Forced false rather than returning, exactly as in `drive()`: the airframe
+  // still integrates, so a killed plane keeps its momentum and falls instead
+  // of stopping dead in the air, and the gun loop below still runs with
+  // `flying` gating its *value*, which is what turns the guns off the same
+  // frame — HP-13's `0x15` strips `IID_IWeapon` off a destroyed object, so a
+  // wreck has no weapons at all. The latched inputs are deliberately left
+  // where they were: the engine does not zero them either, it just stops
+  // delivering new ones.
+  const flying = occupancy.isActiveRoot() && !vehicleInput.blocked;
   if (flying) {
-    const held = captured ? keys : new Set();
+    const held = captured ? keys : EMPTY_KEYS;
 
     // W/S throttle. It latches rather than springs — you set a power setting and
     // it stays there, which is what a throttle quadrant does.
