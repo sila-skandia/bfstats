@@ -443,19 +443,34 @@ the same vehicles in different arrangements.
 
 ### Time
 
-Wall clock on a whole extract cannot resolve this. The same level with
-byte-identical output ran in 293.8 s and 374.1 s on two passes (OS page cache
-on the `.rfa`, plus texture and audio work this change does not touch), and
-Aberdeen — one layer, identical output — came out 10.5% "faster" on its second
-run. A ±30% envelope on identical work.
+Wall clock on a whole extract cannot resolve this, on this machine. El Alamein
+with byte-identical output ran in 293.8 s and 374.1 s on two passes, and
+Aberdeen — one layer, identical output either way — came out 10.5% "faster" on
+one of its runs and 2.6% on another. That is a ±30% envelope on work that did
+not change, from OS page cache on the `.rfa` files and from the other extracts
+sharing the box.
 
 So the added CPU is timed directly instead, in one warm process, alternating
-and repeated (`cost_time.py`):
+and repeated, median of three (`cost_time.py` in the scratch directory):
 
-<!-- TIME TABLE -->
+| level | layers | parse default layer | parse all layers | scene build, default | scene build, all | delta |
+|---|---|---|---|---|---|---|
+| Wake | 4 | 3.4 ms | 14.6 ms | 50.03 s | 55.50 s | **+10.9%** |
+| Berlin | 4 | 2.8 ms | 12.5 ms | 13.98 s | 14.34 s | **+2.6%** |
+| Kursk | 4 | 2.9 ms | 13.0 ms | 48.73 s | 49.58 s | **+1.8%** |
 
-Everything else in an extract — terrain, statics, lightmaps, textures, sounds —
-is byte-identical either way and takes exactly as long as it did.
+Reading three extra mode directories costs about **11 ms per level** — under
+three seconds across the whole 277-level tree, and nothing at all next to
+opening the archives.
+
+The real cost is assembling the extra vehicle and flag nodes, and it tracks the
+glb growth for the same reason: Wake pays 10.9% because SinglePlayer brings a
+hull no other layer has, Kursk pays 1.8% because its layers rearrange vehicles
+the Conquest layer already placed. Single-digit percent of the object-assembly
+phase, zero on the rest of an extract — terrain, lightmaps, textures and sounds
+are byte-identical either way and take exactly as long as they did. A
+single-layer level — Aberdeen, and 309 of the 1,301 across the mods — pays
+nothing at all.
 
 ---
 
