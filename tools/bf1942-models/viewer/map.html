@@ -11243,6 +11243,23 @@ if (params.has('shots')) {
     }),
     setInput: (name, value) => car.setInput(name, value),
     integrate: dt => car.integrate(dt),
+    // Stand it somewhere exact, stopped and pointing at a heading — the same
+    // job `__teleport` does for the soldier, and needed for the same reason.
+    // A measured top speed or brake distance is only a measurement if the
+    // run had room: every land spawn on Wake is a few tens of metres from a
+    // building or the sea, so a 40-second full-throttle run from one reads
+    // the collision sweep rather than the drivetrain. Drops it a little clear
+    // of the ground and lets the springs take it, exactly as a spawn does.
+    place: (x, y, z, yaw = 0) => {
+      car.state.position.set(x, y, z);
+      car.state.velocity.set(0, 0, 0);
+      car.state.angularVelocity.set(0, 0, 0);
+      car.state.orientation.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+      return { ...car.state.position };
+    },
+    // Where the level's heightfield and material map put the ground under a
+    // world (x, z): the two functions the drivetrain itself is handed.
+    ground: (x, z) => ({ height: groundHeight(x, z), friction: surfaceFriction(x, z) }),
   } : null);
   // HP-15, for a headless check: what the occupied hull's damage state is
   // letting through this frame, and what the aim rig is actually scaling by.
