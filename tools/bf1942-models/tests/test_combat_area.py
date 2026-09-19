@@ -137,12 +137,27 @@ class CombatAreaTests(unittest.TestCase):
 
     # ---- the timer and the damage ----------------------------------------
 
-    def test_a_level_with_no_area_never_warns_or_damages(self) -> None:
+    def test_a_level_with_no_area_and_no_material_never_warns_or_damages(self) -> None:
         inert = self.results["inert"]
-        self.assertFalse(inert["active"])
+        # `active` now means "either half could fire", because three of the
+        # twelve vanilla levels with `combatArea: null` paint material 7
+        # (aberdeen 33% of their samples, kharkov 37%, kursk 35%). What used
+        # to be `active` is `hasRect`.
+        self.assertFalse(inert["hasRect"])
+        self.assertTrue(inert["active"])
+        self.assertEqual(7, inert["materialToGiveDamage"])
+        # Nothing happens all the same, because no material is fed.
         for frame in inert["frames"]:
             self.assertTrue(frame["inside"])
             self.assertEqual(0, frame["countdown"])
+            self.assertEqual(0, frame["damage"])
+
+    def test_the_material_half_can_be_switched_off_entirely(self) -> None:
+        off = self.results["rectOnly"]
+        self.assertIsNone(off["materialToGiveDamage"])
+        self.assertFalse(off["active"])
+        for frame in off["frames"]:
+            self.assertTrue(frame["inside"])
             self.assertEqual(0, frame["damage"])
 
     def test_the_countdown_runs_down_from_the_allowance(self) -> None:
@@ -243,6 +258,80 @@ class CombatAreaTests(unittest.TestCase):
         self.assertFalse(edges["justOutsideMaxX"])
         self.assertFalse(edges["justOutsideMinZ"])
         self.assertFalse(edges["justOutsideMaxZ"])
+
+
+    # ---- CA-5, the painted half ------------------------------------------
+
+    def test_the_material_test_is_a_plain_byte_equality(self) -> None:
+        # `cmp eax,edx` at 0x08152546 against the zero-extended byte at
+        # `GameServer+0x474`, whose constructor default is 7 (0x0812f287).
+        material = self.results["material"]
+        self.assertEqual(7, material["defaultId"])
+        self.assertTrue(material["matches"])
+        self.assertFalse(material["misses"])
+        # A level with no `terrain/materials.png` feeds null and is unaffected.
+        self.assertFalse(material["nullMaterial"])
+        self.assertFalse(material["undefinedMaterial"])
+        self.assertFalse(material["testOff"])
+
+    def test_painted_ground_inside_the_rectangle_starts_the_countdown(self) -> None:
+        # Berlin paints material 7 over 84% of the samples inside its own
+        # 512 m box and puts every control point on 8 "Gravel" or 14 "Dirt
+        # road", so this is the level's own shape: the streets are safe and
+        # the ground beside them is not.
+        frames = self.results["paintedGround"]["frames"]
+        self.assertTrue(frames[0]["inside"])
+        self.assertFalse(frames[1]["inside"])
+        self.assertTrue(frames[1]["onDamagingMaterial"])
+        self.assertTrue(frames[1]["inRect"], "the rectangle still says inside")
+        self.assertEqual(9, frames[1]["countdown"])
+        self.assertEqual(8, frames[2]["countdown"])
+        # Step back onto the road and the accumulator is zeroed (0x08152553).
+        self.assertTrue(frames[3]["inside"])
+        self.assertEqual(0, frames[3]["countdown"])
+        self.assertEqual(9, frames[4]["countdown"])
+
+    def test_painted_ground_damages_on_the_same_schedule_as_the_rectangle(self) -> None:
+        painted = self.results["paintedDamage"]
+        # Ten seconds of warning, then 5 HP a second -- it reaches the SAME
+        # accumulate path (`je 0x08152414`), so there is nothing separate to
+        # get wrong.
+        # Every frame here starts already standing on 7, so the first is
+        # already an accumulating frame -- ten seconds of warning, then
+        # 5 HP a second for the remaining six.
+        self.assertEqual([9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0],
+                         painted["countdowns"])
+        self.assertEqual([0] * 10 + [5] * 6, painted["damage"])
+        self.assertEqual(30.0, painted["total"])
+        self.assertTrue(painted["everyFrameIsInsideTheRect"])
+        self.assertTrue(painted["distanceIsZero"])
+
+    def test_a_level_that_paints_no_seven_behaves_exactly_as_before(self) -> None:
+        # The guarantee the feature has to make: twelve of the 23 vanilla
+        # levels paint no 7 at all, and on those the frames must be
+        # bit-identical with and without the material channel.
+        unpainted = self.results["unpainted"]
+        self.assertEqual(unpainted["withoutMaterial"], unpainted["withMaterial"])
+
+    def test_a_level_with_no_rectangle_still_gets_the_painted_half(self) -> None:
+        # aberdeen, kharkov and kursk all carry `combatArea: null` and paint
+        # 7 over a third of their terrain.
+        painted = self.results["noRectPainted"]
+        self.assertFalse(painted["hasRect"])
+        self.assertTrue(painted["active"])
+        frames = painted["frames"]
+        self.assertTrue(frames[0]["inside"])
+        self.assertFalse(frames[1]["inside"])
+        self.assertTrue(frames[1]["onDamagingMaterial"])
+        self.assertEqual(8, frames[2]["countdown"])
+
+    def test_a_position_already_outside_never_consults_the_material(self) -> None:
+        # 0x08152525 is only reached by `jne` from the last rectangle test, so
+        # safe ground outside the box is still outside.
+        frame = self.results["outsideIgnoresMaterial"][0]
+        self.assertFalse(frame["inside"])
+        self.assertFalse(frame["inRect"])
+        self.assertFalse(frame["onDamagingMaterial"])
 
 
 if __name__ == "__main__":
