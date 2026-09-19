@@ -117,6 +117,41 @@ supplies a numeric fallback id: `+0x294` (lower body, non-standing),
 `+0x298` (upper body, always used regardless of stance), `+0x29c` (lower
 body, standing).
 
+**Those three fallbacks are named states, and none of them is `Lb_Stand`**
+(read 2026-09-19): `+0x294` is `Lb_SitInVehicle`, `+0x298` is
+`Ub_SitInVehicle`, `+0x29c` is `Lb_StandInVehicle`. `BFSoldierTemplate::init`
+resolves all three by name at `0x0827acaf` / `0x0827acff` / `0x0827ad4f`, and
+`setUseSeat` spends them at `0x8271a02` / `0x8271a40` / `0x8271b43`. A
+reconstruction that falls back to the standing idle poses a passenger wrongly —
+on his back, with his knees in the air.
+
+**Who gets drawn at all is data, not naming (SEAT-25).** A seat draws an
+occupant **iff its PCO subtree reaches a `SeatObject`**, and `seatFlags` only
+says how much of him. That is the whole of "a Sherman's driver is invisible":
+the Sherman's root declares EntryPoints, a Camera and the turret and **no
+`SeatObject`**, while `shermanBrowning_PCO1` reaches `ShermanBrowningSeat`
+(`c_SeatShowHalfBodySoldier`). For that flag `setUseSeat` skips the lower-body
+state entirely (`0x8271a1d` → `0x8271b63`) and calls
+`disableBoneTree(getBoneNameIndex("Bip01 Pelvis"))` instead.
+
+The predicate the engine carries for this is `hasSeatObject(IPlayerControlObject*)`
+(`0x0831dc00`) — it does exactly what the rule says, and it has **no caller in
+lnxded**, which is what you would expect of a drawing concern on a dedicated
+server. The call site needs the client.
+
+**Only five `seatFlags` spellings exist as far as the engine is concerned.** Of
+the fifteen distinct spellings across 16 mods, only `c_SeatShowCrouchingSoldier`
+(11 uses), `c_SeatHalfBodySoldier` (6, two of them vanilla —
+`Elco80SideGunnerSeat` and `Type38SideGunnerSeat`), `c_SeatShowSittingSoldier`,
+`c_SeatForceSittingSoldier` and `c_ShowHalfBodySoldier` occur as strings
+anywhere in the binary; the case variants and the rest declare nothing at all.
+
+**Where a seated soldier's hands go is a separate subsystem.**
+`addSkeletonIK`'s frame, units and solver are in
+[skeleton-ik.md](skeleton-ik.md) (ledger IK-1…IK-4) — it is the animation
+system's mechanism, applies to feet as well as hands, and no `SeatObject`
+appears in its chain.
+
 **Camera type 3 forces first person — and anything else explicitly forces
 it off (SEAT-10, confirmed both directions).** `setUseSeat` compares a
 seat's first camera-list entry's reporting type against the literal `3`,
