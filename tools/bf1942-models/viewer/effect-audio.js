@@ -28,17 +28,26 @@
 // second under a Thompson. A pool of instances per script, each repositioned
 // and re-triggered, allocates once.
 //
-// **The voice budget is the game's own number.** `.ssc` has no instance-limit
-// word at all — a census of every directive in vanilla's 985 scripts finds
-// `priority` (4,180 uses, range -12..11) and nothing else that arbitrates. The
-// cap lives in the settings: `Sound.setHardwareVoiceLimit 32` in
-// `Mods/bf1942/Settings/Default.con`, which is also the `SoundSetup`
-// constructor's own default before any `.con` is read (lnxded
-// `dice::bf::SoundSetup::SoundSetup` 0x080d51c0, `mov DWORD PTR [ebx+0x50],
-// 0x20` at 0x080d520a), with `reserve2dMonoChans 4/4/4` and
-// `reserve2dStereoChans 2/2/2` holding six back for non-spatialised playback.
-// So 26 spatialised voices, arbitrated by `priority`, is what the engine
-// gives a firefight, and it is what this gives one.
+// **The voice budget is built on the game's own numbers, but the arithmetic
+// is ours.** `.ssc` has no instance-limit word at all — a census of every
+// directive in vanilla's 985 scripts finds `priority` (4,180 uses, range
+// -12..11) and nothing else that arbitrates. The cap lives in the settings:
+// `Sound.setHardwareVoiceLimit 32` in `Mods/bf1942/Settings/Default.con`,
+// which is also the `SoundSetup` constructor's own default before any `.con`
+// is read (lnxded `dice::bf::SoundSetup::SoundSetup` 0x080d51c0, `mov DWORD
+// PTR [ebx+0x50],0x20` at 0x080d520a). That 32 is proven.
+//
+// The 26 is not. `reserve2dMonoChans 4/4/4` and `reserve2dStereoChans 2/2/2`
+// read as six voices held back for non-spatialised playback, but nothing in
+// lnxded computes a budget from them — a dedicated server has no mixer, and
+// all four accessors have zero call sites in the binary. A stereo reservation
+// may also cost two voices rather than one, and `game.setChannels` is a
+// separate, larger knob (16 / 32 / 64 across the shipped tiers and profiles)
+// whose relationship to the hardware limit is unread. So 26 spatialised
+// voices is this viewer's reading, carried in the manifest as 32 minus 6 so
+// the arithmetic stays visible. Dropping a request that outbids nothing,
+// rather than stealing the quietest voice, is likewise a choice: `.ssc` says
+// what a sound's priority is and not what a full mixer does with it.
 
 import { EngineAudio } from './engine-audio.js';
 
@@ -48,9 +57,12 @@ export const SPEED_OF_SOUND = 340;
 /**
  * Concurrent sources an effect may sum to.
  *
- * 32 hardware voices less the 6 reserved for 2D. The manifest carries both
- * numbers so this is a fallback for a tree published before it did, not a
- * constant anyone should tune.
+ * 32 hardware voices less the 6 that `reserve2dMonoChans` and
+ * `reserve2dStereoChans` name. The 32 is the game's; the subtraction is this
+ * viewer's reading of the two settings' names and is not proven against the
+ * engine — see the header. The manifest carries both numbers so the
+ * arithmetic can be changed there rather than here; this is the fallback for
+ * a tree published before it did.
  */
 export const DEFAULT_VOICE_BUDGET = 26;
 
