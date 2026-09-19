@@ -125,10 +125,15 @@ turning in place needs a small nonzero throttle nudge, always.
   (very likely a debug console or HUD readout) and is ruled out as an
   `addFriction` candidate, and the true function entry for the remaining
   two boundary-less addresses (`0x00576d96`/`0x005770aa`, both ≤
-  `0x00576b60`) is still unbracketed.
-- `SpinWheel`'s own internal gate (`getPermanentGrip() & (EngineGrip |
-  RollGrip)`) — inherited as inferred from the original research pass, not
-  independently re-checked this round.
+  `0x00576b60`) is still unbracketed. **Closed 2026-09-19:** the client's
+  `ResponsePhysics::addFriction` is `0x00576c50` (vtable `0x008fd770` slot
+  +0x20, read from the live binary; Ghidra defines no function there yet), both
+  sites fall between it and the next vtable function at `0x00577740`, and the
+  server's `addFriction` makes exactly two `getCurrentRatio` calls — the
+  EngineGrip path and the EngineDummyGrip early exit.
+- ~~`SpinWheel`'s own internal gate~~ — **confirmed 2026-09-19**:
+  `getPermanentGrip() & 4` or `& 2` (lnxded `0x0825b455`–`0x0825b470`), and the
+  object must have a geometry. `SpinWheel` is purely visual.
 - The `bit & 4` gate inside `getCurrentDifferentialRPM` — the same
   `queryInterface` pattern as `getCurrentRatio`/`getCurrentTorque`, testing
   the result of a further vtable call; plausibly an occupied/live-input
@@ -137,13 +142,16 @@ turning in place needs a small nonzero throttle nudge, always.
   steering or drive, relevant only to engine-sound fidelity.
 - The `PhysicsEngine::updatePhysics` preamble (`FUN_0053f250()`, vtable
   slots `0xd4`/`0xd8`/`0xdc`, gated on `|throttle| ≥ 0.05`) — independently
-  re-observed matching the original description exactly; its purpose (a
-  sound trigger? a network dirty flag?) is still unresolved.
+  re-observed matching the original description exactly. **Resolved
+  2026-09-19:** those slots are `setIsAwake` / `setSleepiness` /
+  `getSleepiness`. An engine with |input| ≥ 0.05 wakes the root physics node
+  (unless its sleepiness is negative); otherwise the engine node copies the
+  root's sleepiness ([collision-response.md](collision-response.md) §4.3).
 - [physics.md](physics.md) PHY-4 (which drag law a vehicle gets) is
   settled separately (2026-09-17): every `PhysicsNode` always uses box/Advanced
   drag; this subsystem did not need that result.
-- The exact Coulomb friction force magnitude at a single wheel contact
-  remains open ([physics.md](physics.md) PHY-2) — this round narrows
-  *where* the left/right asymmetry is injected (the differential-RPM stage,
-  now fully confirmed), not the downstream per-wheel force law. A viewer's
-  own tyre model here is exactly as speculative as Willy's.
+- ~~The exact Coulomb friction force magnitude at a single wheel contact~~ —
+  **closed 2026-09-19** ([collision-response.md](collision-response.md) §8): a
+  per-tick velocity-change request clamped as a vector to `μ·N.y·14.73/30`
+  m/s (1.5× while latched static), averaged over the touching parts. The
+  differential-RPM stage sets the *target velocity* of that request.

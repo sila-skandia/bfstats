@@ -112,9 +112,16 @@ this is also the particle drag law (ledger EMT-5). The viewer's `physics.js`
 implements it; its comments still call `r` and `scale` unproven.
 
 `PhysicsNode` — vehicles and their engines, wings and springs — is less simple
-(lnxded `0x082543d0`). A non-root node for which a virtual predicate (vtable
-+0xcc) holds hands its force and torque to the root and skips drag and gravity
-for that tick. Otherwise bit 0x4 of the composite object's byte +0x7 chooses:
+(lnxded `0x082543d0`), and it is **not** this integrator: a `PhysicsNode` takes
+one semi-implicit Euler step per tick, linear then angular, with no sub-steps
+([collision-response.md](collision-response.md) §4 — the four sub-steps above
+are `PointPhysicsNode` only). **Only the root node integrates.** A node that is
+asleep (vtable +0xcc is `isSleeping`) or is not the root copies the root's
+sleepiness, zeroes its own speeds and accumulators and returns, with no drag
+and no gravity seeded; nothing is handed to the root at that point (an earlier
+reading here said it was). Engine, wing, spring and float nodes reach the root
+by calling its `addAcceleration…` themselves. For an awake root, bit 0x4 of the
+composite object's byte +0x7 chooses the drag law:
 set, the same formula with fixed `r = 0.1`, `scale = 1`; clear, an "Advanced"
 pair that treats the object as a box (client `0x0053f5f0` / `0x0053f7c0`,
 lnxded `0x08252f50` / `0x08253280`, read 2026-09-16):
@@ -283,21 +290,31 @@ bit does is read out of `ResponsePhysics::addFriction` (lnxded `0x0825b6e0`,
 2026-09-16; ledger PHY-2), which tests the live byte at +0xb4:
 
 - **EngineGrip** (4) spins the wheel from the engine: `getCurrentRatio` ×
-  `getCurrentDifferentialRPM` into `SpinWheel`.
+  `getCurrentDifferentialRPM` into `SpinWheel` — and, corrected 2026-09-19,
+  that same surface speed is the friction solve's *target velocity*, which is
+  the only traction there is.
 - **RollGrip** (2) removes the contact velocity along the wheel's own axis, so
   the wheel rolls freely and resists sideways.
-- **Neither** — plain contact — takes a Coulomb friction direction, and the
-  solver sets **StaticFriction** (0x80) itself once sliding slows below a
-  threshold: kinetic friction latching to static.
+- **Neither** — plain contact — asks for the whole tangential velocity to
+  stop. The solver sets **StaticFriction** (0x80) itself once the wanted change
+  fits inside the kinetic limit, and breaks it above 1.5× that — in **all
+  three** grip modes, not only this one (corrected 2026-09-19).
 - **DummyGrip** (0x20) is read from the authored byte +0xb5
-  (`getPermanentGrip`), not the live one, and bypasses the friction solve; with
-  EngineGrip also set, only the wheel spin is driven.
+  (`getPermanentGrip`), not the live one. It bypasses the friction solve only
+  together with EngineGrip (0x24), where just the visual wheel spin is driven; a
+  bare 0x20 runs the ordinary contact path (corrected 2026-09-19).
 - **RollGripWhenOccupied** (8) never reaches the solver: `PhysicsSpring`
   rewrites it first (above).
 
-There is no slip-angle curve. The force magnitudes — what actually produces
-the BF1942 power slide — were not read, and `ground.js`'s single-`mu` tyre
-model is not what the engine does.
+There is no slip-angle curve, and `ground.js`'s single-`mu` tyre model is not
+what the engine does. The magnitudes were read on 2026-09-19
+([collision-response.md](collision-response.md) §8): there is no force and no
+mass in the friction solver. Each touching part asks for the velocity change
+its grip wants, the *vector* is clamped to a Coulomb disc of radius
+`μ·N.y·|g|/30` m/s per tick (1.5× that while the static latch holds), and the
+result goes to the root at the contact point. The power slide is that clamp
+acting on the whole vector: a spinning driven wheel spends its budget
+longitudinally and has no lateral grip left.
 
 ---
 
@@ -389,7 +406,7 @@ shakes are unaffected.
 | | |
 |---|---|
 | Jump impulse velocity | the client's gate is read and three places are ruled out (§8, ledger PHY-1): no `.con` word, no `AnimationState` primitive, no velocity write in `handlePlayerInput` or the server's `handleFrameUpdate`; the per-list call (lnxded `0x082751bf`, client `0x00501613` by shape) is `ActiveKitPart::update`. Next: `BFSoldier::updateAnimations` (`0x004fb150`), the class of the physics node at `IObject+0x60`, and the client's own `handleFrameUpdate` |
-| ~~Per-bit grip force semantics~~ | **closed 2026-09-16** for what each bit selects (§6, ledger PHY-2); the force magnitudes behind the power slide remain unread |
+| ~~Per-bit grip force semantics~~ | **closed 2026-09-16** for what each bit selects (§6, ledger PHY-2); the magnitudes **closed 2026-09-19** ([collision-response.md](collision-response.md) §8) |
 | ~~Whether the frame timer clamps `dt` before `World::update`~~ | **closed 2026-09-15** — there is no frame `dt` to clamp: the dispatch is `GameClient::simulateFrame(1/30)` run `nTicks` times per frame (§3); the tick *count* is clamped (>10 → 1 in `InputManager::update`, >9 → 1 in `GameClient::update`) |
 | ~~`submarineData`'s 7 parameters~~ | **closed 2026-09-16** for five of them (ledger PHY-3): the 6th is the crush depth, the 5th the depth below which oxygen drains (with the 4th, the periscope pair), the 1st the drain rate and the 2nd the refill rate, capped at 1.0. The 3rd and 7th (suffocation and crush damage) are not re-verified |
 | ~~Drag's `r` and `scale` factors~~ | **closed 2026-09-16** — `r` = `getBoundingRadius()`, delegated to the composite object; `scale = 1 + 24·min(underWater/r, 1)`, clamped above only, `underWater` = +0x44 (§3) |

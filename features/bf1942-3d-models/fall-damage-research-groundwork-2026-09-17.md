@@ -1,5 +1,17 @@
 # Fall damage — groundwork + resolution (2026-09-17→18, lead's binary reading)
 
+> **Corrected 2026-09-19.** The conclusion below — a falling soldier loses hit
+> points — stands, but the mechanism it names does not. The `*0x15c` call is
+> made on the **GameServer** (`this`), not on the colliding object, and slot
+> `+0x15c` of the GameServer vtable is `GameServer::giveDamage` `0x0814b2e0`;
+> the BFSoldier sub-vtable reading was a coincidence that happened to reach a
+> true conclusion. The consequence it missed: vehicles are damaged the same
+> way. The exact soldier formula, with every branch polarity settled in
+> `objdump`, and the per-surface scalars this file lists as outstanding
+> (terrain `materialDamage` = 30 for all 16 terrain materials; the cell
+> terrain -> soldier material from `materialManagerSettings.con`) are in
+> `features/bf1942-engine-reference/subsystems/collision-response.md` §9.3-9.5.
+
 Trigger: the user reports that a soldier **dies on any fall from height** in
 retail BF1942. This contradicts ledger row **HP-6** ("a collision never costs
 hit points… only a projectile damages anything", closed in the negative
