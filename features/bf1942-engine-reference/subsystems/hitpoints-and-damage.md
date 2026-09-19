@@ -142,13 +142,79 @@ call, so this specific exclusion mechanism is inert on exactly the path
 that most needs it — how a dying Sherman avoids re-damaging its own wreck is
 unresolved.
 
-**Vehicle and gun explosion falloff (HP-9):** a hard cutoff at the
-configured `explosionRadius`, combined with a material-pair multiplier from
-`MaterialManager::getDamageMod` (`0x08175040`) feeding `calcDamage`
-(`0x0814b520`). The cutoff, the multiply, and the overall dispatch are
-confirmed twice now (independently, by two passes); the exact within-radius
-falloff shape is not — it may be linear, it may not be, and nobody has
-walked `handleExplosionOnObject`'s own arithmetic far enough to say.
+**Vehicle and gun explosion falloff (HP-9) — closed 2026-09-19. It is
+linear.** `handleExplosionOnObject` computes
+
+```
+d = sqrt(dx^2 + (YModOnExplosion*dy)^2 + dz^2)      // to the victim's getPos() ORIGIN
+if (!(radius > d)) return 0;                        // strict, 0x08156655
+t = clamp((radius - d) * A, 0, 1)                   // A = 1/radius, from the caller
+damage = t * explosionDamage
+       * getDamageMod(explosionMaterial, victim.material)
+       * exposure                                   // 1.0 unless the victim is a soldier
+       -> calcDamage(...)                           // friendly fire only
+```
+
+and `GameServer::handleExplosion` computes `A = 1.0f / radius` once
+(`0x08156f5c`, the 1.0f at `0x086ba8d4`) and passes it at **both** call sites,
+so `t = 1 − d/radius` exactly and both clamps are dead given the strict gate.
+The Mod Development Toolkit's linear formula, which our code already shipped,
+is the engine's.
+
+Three things about that which are easy to get wrong. The distance is to the
+victim's **transform origin**, not to a bounding box or the nearest surface
+point, and **only the Y term is scaled**, by `YModOnExplosion` (a projectile's
+own; a vehicle's on-death explosion pushes a hard 1.0). There is **no occlusion
+at all** for anything that is not a soldier — `edi` is seeded `1.0f` at function
+entry and nothing on the non-soldier path touches it. And a soldier gets
+**both**: HP-10's line-of-sight exposure *multiplies* the distance falloff
+(`fmulp` at `0x081566b4`), with an exposure of exactly 0.0 short-circuiting to
+no damage. HP-10's "not distance falloff" is true of the exposure term alone.
+
+**The force path is separate, and reads the victim's Armor.**
+`getExplosionForceMod` (vtable `+0xb4`, `0x081742c0`) is read at `0x081569cb`
+and clamped to `getExplosionForceMax` (vtable `+0xbc`, `0x081742f0`). Below a
+separation of 0.001 the impulse direction is the **terrain normal** at the
+explosion point rather than the separation vector, and a soldier's impulse is
+additionally scaled by `0.1` and by `finalDamage/rawDamage`.
+
+`handleExplosionOnObject` does not apply the damage: it appends
+`{objectId, damage, …, Pos3}` to six parallel double-buffered vectors on the
+GameServer (HP-9b) and returns a bool that only gates a shot-accuracy stat. Who
+drains that queue is unread. `calcDamage` (`0x0814b520`) is **friendly-fire
+scaling only** — no material, no distance (HP-9c).
+
+**What explodes, and when (HP-9d).** `damageType == 1` **and**
+`ObjectTemplate.hasCollisionEffect` gives the explosion on impact;
+`damageType ∈ {1,4}` gives the explosion at end of life, through
+`Projectile::startEndEffect` (`0x0831f590`), which tests neither
+`hasCollisionEffect` nor the impact path's radius truncation and passes
+`sourceArmor = NULL`. **`hasCollisionEffect` is the impact-versus-fuse
+discriminator, not a splash capability flag**, and treating it as one deletes
+the most-used splash in the game: in vanilla, 25 of the 28 `damageType 1`
+projectiles set it and the three that do not are exactly `ExpPackProjectile`,
+`GrenadeAlliesProjectile` and `GrenadeAxisProjectile`, with
+`LandmineProjectile` sitting at `damageType 4`. Across 16 installed mods: 3,267
+`damageType 1` (3,016 with the flag) and 49 `damageType 4`.
+
+`ProjectileTemplate.radius` is an **`int`** console property — of the six
+registrations of the name `radius`, only the projectile one is typed int — so
+it is parsed by `istream >> int` and a `.con` cannot give a projectile a
+fractional radius at all. 340 mod templates try: FH's `BismarckFatProjectile
+17.63` becomes 17, and DC's `50calSniper_Projectile 0.25` becomes **0**, which
+with the strict `radius > d` gate means that round has no splash whatever. The
+impact path's own truncation code is therefore real but a no-op. Six vanilla
+tank rounds set no radius at all and ride the constructor's **10.0**, so that
+default is load-bearing.
+
+**`defaultDamageMod` is 0.0 and unreachable (DMG-1).** `getDamageMod` does fall
+back to `MaterialManager+0x24` when a pair has no cell or a material id is
+unknown — but both constructors write 0 there, the setter (`0x08176190`) is a
+vtable slot nothing calls, and the complete registered MaterialManager console
+name block contains no word for it, so no mod can set it either. **An unlisted
+material pair really does mean no damage**, and a viewer that returns 0 for a
+missing pair is already right. This refutes the research pass's recommendation
+to return the field instead.
 
 **Soldier explosion exposure is multi-point sampling, not distance falloff
 (HP-10) — and it is a deliberately asymmetric mechanism, not a bug.**
@@ -161,6 +227,69 @@ soldier can score at most **0.5**, exactly half of prone or crouch's
 possible 1.0. This is the complete mechanism (one sample loop, confirmed —
 there is no missing second loop to find), and the 0.5 cap is a deliberate
 design choice baked into the divisor, not an open question.
+
+### A soldier's fall, with a worked example (HP-14, 2026-09-19)
+
+Not splash, but the same Damage-System product, and this is where the number
+the fall-damage groundwork was hunting turns out to live. Inside
+`handleCollisionLandOrWater` (`0x08154960`), for a `CID_BFSoldierTemplate`
+victim:
+
+```
+|v| -= 8.0 ;  if (|v| < 0) return                  // 0x08155189, constant 0x086c08c0
+A    = |cos(theta)|^3                              // land;  |cos|^2 in water (material 1)
+F    = Armor::getLastCollisionHeight() - pos.y
+X    = (F < 2) ? 1 : F - 1
+Q    = max(1, X * kitDamping)
+A   -> 1 linearly over 2 <= F < 3, saturated at F >= 3
+A   -> 1 linearly over 10 < |v| <= 30, saturated above 30
+severity = Q^2 * A * (Armor.speedMod * |v|^2) * damageMod(att, def) * materialDamage(att)
+if (severity > 1.0) giveDamage(...)                // 0x08154c6b
+```
+
+Two of those lines are the corrections that matter. **The 8.0 subtraction comes
+first, with an early return** — the research pass read the branch from
+`0x08154d20` onward and never saw it, and its worked example was consequently
+about 8× too severe. And every later use of `|v|` — the kinetic term, the 30.0
+saturation, the 10/20 lerp — uses the **reduced** value. The `Q²` is real: it is
+`d8 ca` then `de ca` at `0x08154dbb`/`0x08154dbd` with `Q` in `st(2)`, traced
+twice by different agents.
+
+The water path is a **duplicate of the whole function** entered at `0x08154e4f`
+when the collision material is 1, differing only in a single `fmul st,st(0)`
+that makes `A = |cos|²` instead of `|cos|³`. The 8.0 subtraction precedes the
+split, so it applies to both.
+
+The per-surface scalars are the ordinary MaterialManager tables our
+`bf42/damage.py` already extracts. Extracted from vanilla's `Game.rfa`, for
+**every** terrain material 0–15, `damageMod(ground, 40) = 0.001` and
+`materialDamage(ground) = 30`, so `M1·M2 = 0.030` — water is the outlier at
+`1.5e-05`, i.e. `M1·M2 = 0.00045`, making a fall into water about 67× gentler.
+
+**Worked example.** A vanilla soldier (`HitPoints 30`, `SpeedMod 0.5`,
+`Material 40`), landing flat (`|cosθ| = 1`, so `A = 1` throughout) with no kit
+damping, at the engine's own `g = −14.73` so `|v| = sqrt(29.46·h)`:
+
+| h (m) | \|v\| | \|v\| − 8 | Q | severity | applied? |
+|---|---|---|---|---|---|
+| 2.5 | 8.58 | 0.58 | 1.5 | 0.01 | no |
+| 3 | 9.40 | 1.40 | 2 | 0.12 | no |
+| 4 | 10.86 | 2.86 | 3 | **1.1** | yes, barely |
+| 5 | 12.14 | 4.14 | 4 | **4.1** | yes |
+| 6 | 13.30 | 5.30 | 5 | **10.5** | yes |
+| 7 | 14.36 | 6.36 | 6 | **21.8** | yes |
+| 7.5 | 14.87 | 6.87 | 6.5 | **29.9** | lethal |
+| 10 | 17.16 | 9.16 | 9 | **102** | lethal |
+
+So: nothing at all below about 3.5 m, first damage at about 4 m, and death at
+about 7.5 m. Two things remain unverified — whether `Armor+0x28` really tracks
+the apex of a fall rather than the last contact height, and which material index
+the physics layer supplies as the attacker (`collision-response.md` §9.4 answers
+the second for the general case: the vertex side brings the u16 on the collision
+vertex, the face side the material of the face it hit).
+
+The vehicle case, the object-versus-object twin and the full material tables are
+[collision-response.md](collision-response.md) §9.3–9.5 and ledger COL-3/COL-4.
 
 ## 6. Numbers worth shipping as data
 
@@ -188,15 +317,76 @@ to the occupied vehicle's own **root-object** Armor — sentinel `-1.0`
 independent confirmation of [ingame-hud.md](ingame-hud.md) VHUD-8: Armor is
 not per-seat.
 
-## 7. Status messages the client is told about
+## 7. The three Armor status messages, and what they actually do
 
 `Armor::status()`'s non-death branches send one of three message ids to the
-player through `IPlayerObject`'s vtable `+0x9c` (HP-13, all three call
-sites address-confirmed inside `0x081739e0`): `0x14` on reviving into
-critical, `0x13` on recovering out of critical, `0x15` on newly entering
-critical from a safe state. What a client HUD actually does on receipt of
-each id was not read — this is a server-side finding about *when* a signal
-fires, not what it looks like.
+player through `IPlayerObject`'s vtable `+0x9c` (HP-13, all three call sites
+address-confirmed inside `0x081739e0`). **Corrected 2026-09-19 on two counts,
+and they turn out to be load-bearing for driving.**
+
+First, they are not network or HUD messages. `IPlayerObject` vtable `+0x9c` is
+`BPlayerObject<IPlayerObject>::handleMessage(TemplateMessage, IPlayer*)`
+(`0x081935c0`, read out of the vtable at `0x0871fa40+8+0x9c`; the IID the call
+site queries, `0x086c2a60`, is `IID_IPlayerObject`), so these are
+**TemplateMessages on the object's own in-process bus**, delivered on whichever
+host is running `Armor::status`.
+
+Second, `0x15` is **destruction**, not "entering critical from safe". Read with
+the side effects around each call site:
+
+| id | site | what `status()` does around it | meaning |
+|---|---|---|---|
+| `0x14` | `0x08173ad6` | then `+0x110 = 0`, `+0x111 = 1`, `+0x128 = 0` | revived from destroyed **into critical** |
+| `0x13` | `0x08173bfd` | then `+0x110 = 0`, `+0x111 = 0` | recovered **to safe** |
+| `0x15` | `0x08173d62` | reached **after** `+0x110 = 1, +0x111 = 1`, immediately before the on-death explosion | **destroyed** |
+
+`SimpleObject::handleMessage` (`0x081db820`) receives them, each gated on
+finding an Armor up the composite chain and on `Armor::isSendingMessage()`
+(vtable `+0x94`):
+
+- `0x13` → `+0xee = 0`, `+0xed = 0`.
+- `0x14` → `+0xee = 1`, then falls into `+0xed = 0`.
+- `0x15` → `setComponent(IID_IWeapon, NULL)` and
+  `setComponent(IID_IAIObject, NULL)` — a wreck loses its weapons and its AI —
+  then `+0xed = 1`, leaving `+0xee` alone.
+
+Both bytes are seeded at construction from `SimpleObjectTemplate+0x105`, which
+the console registers as **`ObjectTemplate.destroyed`** (bool, default false).
+`Wing`, `FloatingBundle` and `Spring`'s own `handleMessage` write the same two
+bytes, and the messages reach child bundles because
+`PlayerControlObject::handleMessage` tail-calls `Bundle::handleMessage`
+(`0x081a74b0`), which invokes `+0x9c` on each child.
+
+### `+0xed` and `+0xee`: persistent wreck state (HP-15)
+
+These two bytes are what §9's ARM-6 could not see, and they are **not**
+per-frame edge flags:
+
+| state | `+0xed` | `+0xee` | effect |
+|---|---|---|---|
+| healthy | 0 | 0 | full control |
+| critical (`0x14`) | 0 | 1 | drives, but **every rotational bundle traverses at 0.2× input** |
+| destroyed (`0x15`) | 1 | unchanged | **no player input reaches any child at all**; weapons and AI stripped |
+
+`PlayerControlObject::handlePlayerInput` returns at `0x08318927` before
+forwarding anything when `+0xed` is set. `RotationalBundle::handlePlayerInput`
+selects between **two near-identical duplicated blocks** (`0x081d835c`,
+`0x081d8487`) that both decode the input and write `this+0x11c`; the one taken
+when `+0xee` is set additionally multiplies all three axes by the double `0.2`
+at `ds:0x86c8678`. So `+0xee` means *traverse at one fifth*, not *no input* —
+an earlier reading had the block running only when the flag was set, with the
+two readers at opposite polarity, and concluded nothing could be built on it.
+
+They are cleared only by the **wreck-respawn timer**:
+`SimpleObject::handleUpdate` (`0x081db2e0`) clears both behind six conditions —
+`+0xed != 0`, `template+0x107 == 0`, `+0x100` already latched, a countdown
+`[this+0xfc] -= dt` falling below zero, `template+0xd0 != 0`, and an Armor
+present — and then calls `Armor::setHitPoints(Armor::getMaxHitPoints())` and
+reloads the timer from `template+0xc4`. So the state lasts the whole wrecked
+lifetime. `EngineNetworkable::updateStateMask` reads `+0xee`, so it is
+replicated.
+
+What a client HUD does on receipt of the three ids is still unread.
 
 ### Client: local-player death opens the deploy screen synchronously (2026-09-18)
 
@@ -314,9 +504,21 @@ argument pair of `getComponent(0xc4a4, 0xc4a4)` — to its enclosing symbol.
 **Nothing in the drivetrain or the turret path is among them (ARM-6).** Not
 `PhysicsEngine::updatePhysics`, not `getCurrentDifferentialRPM` or
 `getCurrentRatio`, not `RotationalBundle::calculateAndClipAngle`, `setState` or
-`handlePlayerInput`. A critically damaged vehicle therefore drives and traverses
-exactly as a healthy one; what ends it is §2's once-per-second tick. If a player
-remembers a burning tank as sluggish or stiff, that is not this engine doing it.
+`handlePlayerInput`.
+
+> **ARM-6's conclusion is retired as false (2026-09-19).** The sweep above is
+> sound and its literal finding still holds — no drivetrain or `RotationalBundle`
+> function queries the Armor *component*. But the conclusion drawn from it, "a
+> critically damaged vehicle drives and traverses exactly as a healthy one", is
+> wrong, and so is the advice that a player's memory of a sluggish burning tank
+> is not the engine. **A destroyed vehicle accepts no player input at all and a
+> critically damaged one traverses at 0.2× input.** The Armor's state reaches
+> the input path not as a component query but as two bytes on the object,
+> `SimpleObject+0xed` and `+0xee`, written by the `0x14`/`0x15` messages of §7 —
+> which a `getComponent(0xc4a4)` sweep cannot see by construction. See §7 and
+> ledger HP-15.
+
+What ends a burning vehicle on its own is still §2's once-per-second tick.
 
 Five physics subnodes do query an Armor and look, at first glance, like where
 such a rule would live — `Engine`, `Wing`, `Spring`, `Bundle` and
@@ -356,8 +558,13 @@ call `setLastCollisionHeight` (`+0xf8`).
   It is the best remaining candidate for why a burning vehicle *feels*
   undriveable: its crew keeps taking damage and the player bails.
 - **HP-13**: what the client does on receipt of `0x13`/`0x14`/`0x15`. Still
-  unread after two rounds; the client budget went to the Armor class and the
-  entry gates.
+  unread after three rounds; the client budget went to the Armor class and the
+  entry gates. The **server** side is closed (§7): they are in-process
+  TemplateMessages, `0x15` is destruction, and the two bytes they write gate
+  driving and traverse.
+- **HP-9b**: who drains the six-vector deferred damage queue
+  `handleExplosionOnObject` appends to (`GameServer + [this+0x2b4]*12 +
+  0x224/…`). Next step: find readers of `GameServer+0x224`.
 - **The wreck**: what `status()` does past setting `isDestroyed` — whether the
   wreck is a configuration swap on the same object, a separately spawned
   template, or a flag-selected alternative; how long it lives; whether it stays
@@ -369,11 +576,13 @@ call `setLastCollisionHeight` (`+0xf8`).
   `handleExplosion`'s own spatial-query step filters the source object
   before per-target processing even starts, using a `sourceObj` parameter
   not examined this round.
-- **HP-9**: the exact within-radius falloff shape for vehicle/gun splash —
-  `[ebp+0x1c]` vs `[ebp+0x20]`'s roles inside `handleExplosion`'s forwarding
-  call, not yet re-derived by anyone.
+- ~~**HP-9**: the exact within-radius falloff shape~~ — **closed 2026-09-19**
+  (§5): it is linear, `1 − d/radius`, with `A = 1/radius` computed once in
+  `handleExplosion` and passed at both call sites.
 - **HP-4**: the console property case-insensitive compare routine, not
   isolated.
-- [supply-depots.md](supply-depots.md) SUP-15: `healDistance`/`healFactor`/
-  `selfHealFactor`/`repairDistance`/`repairFactor`'s consumer is not this
-  subsystem's code either — still nowhere.
+- ~~[supply-depots.md](supply-depots.md) SUP-15~~ — **found 2026-09-19**:
+  `healDistance`/`healFactor`/`selfHealFactor`/`repairDistance`/`repairFactor`
+  are `BFSoldierTemplate` properties consumed by `BFSoldier::useMedPack()` and
+  `useRepairPack()`, the medic pack and the wrench. See
+  [supply-depots.md](supply-depots.md) §6.

@@ -44,31 +44,93 @@ read by anything. An 18-install survey tallies `c_PIMouseLookY`/`X` at
 337 axes bound to `c_PIFire` — that last group was not traced into any
 specific weapon's firing code.
 
-## 3. The angle update: two accumulators, and an open closed form
+## 3. The angle update: a first-order velocity servo (closed 2026-09-19)
 
-`RotationalBundle::calculateAndClipAngle` (`0x081d7490`, GUN-2) drives the
-angle each tick from **two cooperating per-axis registers**, not a single
-accel/clamp formula:
+`RotationalBundle::calculateAndClipAngle` (`0x081d7490`, GUN-2) was read in
+full — all 361 instructions, with every `fnstsw` / `test ah` decoded from the
+flag encoding, and then re-traced independently by a verifier. It is **a
+first-order velocity servo**, not the product of two accumulators the 2026-09-16
+pass described:
 
-- `+0x110` accumulates `|acceleration| × dt`.
-- `+0x128` accumulates raw input, hard-clamped to **±40** (constants
-  `0x86c866c`/`0x86c8670` — not the template's `maxSpeed`) and deadzoned
-  against `±1.0` (`0x86b05ec`).
-- `angle += reg[0x110] × reg[0x128]`, plus a further term
-  `+= (…) × continuousRotationSpeed`.
-- `automaticReset` (`+0x1a4`) branches whether the sign-corrected
-  `|acceleration|` multiplies `maxRotation` or `maxSpeed` — this downstream
-  use was not closed out.
-- A **zero-width `[minRotation, maxRotation]` wraps the angle at ±180°**
-  (constants `0x86c031c`/`0x86c0320`/`0x86c0324` = 180/360/−180) instead of
-  clamping it — the engine's way of saying "this axis is unlimited."
+```
+if (acceleration[a] == 0 && continousRotationSpeed[a] == 0) return;
 
-**Do not ship the naive `accel·dt`, clamp-to-`maxSpeed` formula — it does
-not match the binary.** The exact closed form these two registers combine
-into is still open; what is confirmed is the structure (two registers, the
-wrap behaviour, the clamp targets, and that `dt` threads through). A viewer
-without the closed form should implement a tunable eased approach toward an
-input-scaled target, not a literal transcription of the wrong formula.
+X = rememberExcessInput ? spend(backlog) : rawInput[a]        // see below
+s = (acc > 0) ? +X : (acc < 0) ? -X : 0.0f                    // literal 0.0 when acc == 0
+
+if (automaticReset)                                           // a DIFFERENT law
+    angle -> s * maxRotation[a]   at |acc| deg/s, clamped at the target both ways
+else
+    speed(+0x110) -> s * maxSpeed[a]  at |acc| deg/s^2
+    angle(+0x104) += speed*dt + continousRotationSpeed*dt     // the second term is unconditional
+
+if (maxRotation[a] == 0 && minRotation[a] == 0)  single +-360 correction   // the WRAP
+else if (angle > max) angle = max; else if (angle < min) angle = min; else [this+0x141] = 0
+```
+
+Four corrections to the old reading, each of which changes what a viewer should
+do:
+
+- **`+0x110` is an angular-speed register in deg/s**, ramped toward
+  `sign(acceleration) · input · maxSpeed` at `|acceleration|` deg/s². The angle
+  is integrated from it. There is no "product of two registers".
+- **`+0x128` is an input *backlog*, and it only exists under
+  `rememberExcessInput`.** It accumulates raw input, is clamped to ±40
+  (`0x86c866c`/`0x86c8670`), spends `clamp(backlog, ±1)` per tick and carries
+  the rest, and is zeroed outright when the input's sign flips. `0x86b05ec` =
+  −1.0 is the **lower end of that clamp, not a deadzone**.
+- **`automaticReset` is a separate control law**, not a branch inside this one:
+  the angle ramps straight toward `input × maxRotation` at `|acceleration|`
+  **deg/s**, with no velocity register and no continuous-rotation term. 221
+  vanilla declarations (steering wheels, Engines) currently run under the wrong
+  law in our viewer.
+- **The ±180 wrap needs `minRotation == 0 && maxRotation == 0`** — the template
+  default, i.e. "this axis was never given a range" — not merely a zero-width
+  range. A template declaring `min == max == 45` is *pinned at 45* by the
+  engine; 346 axes across 16 installs do exactly that, three of them in vanilla.
+
+`handleUpdate` (`0x081d78e0`) calls it per axis only when that axis's
+`maxSpeed != 0`, and skips the block entirely when all three are zero — which is
+the mechanism behind GUN-7. It has **eight** call sites, not three:
+`Engine::handleUpdate` gates the same way, **`FloatingBundle::handleUpdate`
+(`0x082401cd`) gates on `maxRotation.y` instead**, and **`Wing::handleUpdate`
+(`0x0825099b`) does not gate at all**. A second `handleUpdate` branch gated on
+`lesserYawAtSpeed` is unread but dead: `setLesserYawAtSpeed` has zero uses
+across all 18 installs.
+
+### The one thing still open: what an input unit is (GUN-2b)
+
+The closed form gives the *shape*. It does not give the rate a Sherman's turret
+actually turns at, because **`maxSpeed` is a gain — deg/s per unit of input —
+and nothing establishes that the input is normalised to ±1**:
+
+- The ±1 clamp lives **inside the `rememberExcessInput` branch only**, and of
+  1,468 declarations of that word across 18 installs, **vanilla's 32 are all
+  aircraft rudder and tail-flap `Wing` bundles**. Not one turret, manned gun,
+  tank or `Objects.con` rotational bundle declares it. For every turret, `X` is
+  the raw input.
+- The wire format reserves headroom to **±16**: `PlayerAction::set`
+  (`0x081128a0`) packs each `PlayerInput` float with `floatToFixed(v, 12,
+  16.0f)` and `PlayerAction::get` (`0x0815c5a0`) decodes
+  `((n/4095)·2 − 1)·16.0`. A ±1 quantity would leave 15/16 of the encoding dead.
+- `RotationalBundle::handlePlayerInput` multiplies the input by 0.2 for a
+  critically damaged vehicle (hitpoints-and-damage.md §7). Scaling a
+  already-normalised unit that way would be odd.
+- And the observation that motivated the viewer's own `TURRET_SPEED_SCALE` — "a
+  soldier's head turns about nine times faster for the same hand movement" —
+  compares two different control laws: `SoldierCamera` declares
+  `setMaxSpeed 0/0/0`, so `handleUpdate` never enters this function for it, and
+  `game.setInfMouseSensitivity` and `setLandSeaMouseSensitivity` are both 0.25
+  by default.
+
+So the claim that every vanilla gun traverses four times too fast is **not
+safe**, and the scale must be left alone until someone reads the client's
+mouse-axis → `PlayerInput` multiply. The trail runs as far as the
+`ControlMap.addAxisToAxisMapping` registrars (`FUN_006bba90` / `FUN_006bbd90`,
+strings `0x00920abc` / `0x00920bb4`). *If* `|input| ≤ 1` held, `ShermanTower`'s
+`setMaxSpeed 35/25/0` with `setAcceleration 1000/0/0` would put a quarter turn
+at 2.59 s and a full circle at 10.3 s; that is not obviously wrong for BF1942,
+but it is not what `maxSpeed` guarantees either.
 
 `RotationalBundle::setState()` (`0x081d8110`, GUN-3) — the function
 `automaticReset` actually drives — **clamps** a stored angle into
@@ -140,11 +202,14 @@ is what closes that gap.
 
 ## Open
 
-- **GUN-2**: the exact closed-form magnitude of the two-register angle
-  update — structure, wrap, and clamp targets are confirmed; the final
-  formula the two registers combine into is not. Best next step: trace
-  where the `automaticReset`-branch's `signedAccel × {maxRotation |
-  maxSpeed}` product is actually consumed.
+- ~~**GUN-2**: the exact closed form~~ — **closed 2026-09-19** (§3): a
+  first-order velocity servo, `automaticReset` a separate law, the backlog a
+  spend-and-carry that only `rememberExcessInput` enables.
+- **GUN-2b**: what magnitude the client's mouse-look axis delivers as
+  `PlayerInput[c_PIMouseLookX/Y]`. Until that is read, `maxSpeed` is a gain
+  with no known unit and no absolute traverse rate can be quoted (§3). Next
+  step: the client's `ControlMap.addAxisToAxisMapping` pipeline from
+  `FUN_006bba90` / `FUN_006bbd90`.
 - **GUN-5**: the two unidentified fire-gate flags at `+0x1fc`/`+0x20c` and
   the third at `+0x294`; what `getHasHeat`'s two compared fields represent.
 - `automaticYawStabilization`/`automaticPitchStabilization` (`+0x1a5`/
@@ -156,6 +221,7 @@ is what closes that gap.
   `handlePlayerInput`/`calculateAndClipAngle`/`setState`, or for
   `CameraTemplate`'s constructor — everything in §2–§4 is lnxded-only so
   far.
-- [ingame-hud.md](ingame-hud.md)'s open items: `IconLookRotation`'s writer
-  and unit for the turret-dial HUD icon feed off this subsystem's rotation
-  state but were not traced from this side either.
+- ~~[ingame-hud.md](ingame-hud.md)'s open items: `IconLookRotation`'s writer
+  and unit~~ — **closed 2026-09-19** from the HUD side (VHUD-9): it is not read
+  off this subsystem's rotation state at all, but recomputed each frame as
+  `atan2(dot(pcoRight, camForward), dot(pcoForward, camForward))` in radians.
