@@ -424,5 +424,91 @@ class SeatPoseDiscoveryTests(unittest.TestCase):
         self.assertEqual([], discover_seat_poses(lib))
 
 
+class SeatAnchorTests(unittest.TestCase):
+    """A seat pose's origin is the soldier's hips, not the ground under him.
+
+    A `.baf` root track is the one transform in clip world, and a seat clip
+    carries the standing origin-at-the-feet convention in it:
+    `3PWillySitLower` writes `Bip01` at `0/-0.1104/-0.8335`, against
+    `3PStandLower`'s `0.004/-0.0075/-0.9992` for a man on the ground. A
+    `SeatObject` is the cushion — `WillySeat` sits 0.6 m up inside the Willys'
+    body — so a pose parented there with that offset still in it rides 0.83 m
+    out of the vehicle, which put the driver's shoulder 1.25 m from a wheel
+    0.60 m of arm away and left both hands hanging in the air.
+    """
+
+    def _skeleton(self) -> ske.Skeleton:
+        return ske.parse(pack_ske([
+            ("Bip01", -1, IDENTITY, (0.0, 0.0, 0.9)),
+            ("Bip01 Pelvis", 0, IDENTITY, (0.03, 0.0, 0.0)),
+            ("Bip01 Spine", 1, IDENTITY, (0.1, 0.0, 0.0)),
+        ]), "s.ske")
+
+    def test_the_root_translation_goes_and_its_rotation_stays(self) -> None:
+        from extract_pose import seat_anchored
+        turned = ((0.0, -1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0))
+        locals_map = {"bip01": (turned, (0.0, -0.1104, -0.8335)),
+                      "bip01 pelvis": (IDENTITY, (0.0312, -0.0045, 0.0))}
+
+        out = seat_anchored(self._skeleton(), locals_map)
+
+        self.assertEqual((0.0, 0.0, 0.0), out["bip01"][1])
+        self.assertEqual(turned, out["bip01"][0])
+        # Nothing below the root is touched: only the root's local is in
+        # clip world, so only the root's offset is the one being dropped.
+        self.assertEqual((0.0312, -0.0045, 0.0), out["bip01 pelvis"][1])
+
+    def test_a_root_the_clip_never_wrote_is_left_alone(self) -> None:
+        from extract_pose import seat_anchored
+        locals_map = {"bip01 pelvis": (IDENTITY, (0.03, 0.0, 0.0))}
+
+        out = seat_anchored(self._skeleton(), locals_map)
+
+        self.assertNotIn("bip01", out)
+
+    def test_the_dropped_offset_is_reported_not_silently_lost(self) -> None:
+        from extract_pose import seat_root_offset
+        locals_map = {"bip01": (IDENTITY, (0.0, -0.1104, 0.8335))}
+        self.assertEqual([0.0, -0.1104, 0.8335],
+                         seat_root_offset(self._skeleton(), locals_map))
+        self.assertIsNone(seat_root_offset(self._skeleton(), {}))
+
+
+class SeatPoseOrientationTests(unittest.TestCase):
+    """The root rotation that stands a seat pose up and faces it forward.
+
+    **This constant is empirical, not derived.** It was chosen by loading real
+    exported poses into the map page on Wake and measuring the bones: with
+    `ypr(180, 0, 0)` — what the export shipped from the day the seat path was
+    written — the soldier lies on his back with his knees in the air, and with
+    `ypr(180, -90, 0)` his pelvis sits 0.03 m from the seat node, his head
+    0.641 m above it, his knees 0.467 m forward (-Z) and his feet 0.224 m below
+    the pelvis and 0.751 m forward. Captures either side of the change are in
+    this track's report.
+
+    Working it out on paper instead needs a model of how three sign
+    conventions compose — the `.ske`'s Z-mirror, the `.baf`'s conjugate
+    quaternion and clip-world yaw, and glTF's own mirror in `add_node` — and
+    two attempts at that model disagreed with what the page draws. Rather than
+    ship an assertion derived from a model that did not survive contact, this
+    pins the value so it cannot drift silently, and says where the evidence
+    is. What *is* settled arithmetically is next door: the IK triples convert
+    with the same `quat_from_ypr` every placed node uses, and
+    `test_seat_ik.py` checks the JS port of that against the Python.
+    """
+
+    def test_the_seat_root_rotation_is_pinned(self) -> None:
+        import inspect
+        import extract_pose
+        source = inspect.getsource(extract_pose.export_seat_pose)
+        self.assertIn("quat_from_ypr(180.0, -90.0, 0.0)", source)
+
+    def test_it_is_not_the_pure_yaw_that_laid_him_on_his_back(self) -> None:
+        import inspect
+        import extract_pose
+        source = inspect.getsource(extract_pose.export_seat_pose)
+        self.assertNotIn("quat_from_ypr(180.0, 0.0, 0.0)", source)
+
+
 if __name__ == "__main__":
     unittest.main()
