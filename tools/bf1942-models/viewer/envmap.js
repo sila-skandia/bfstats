@@ -27,17 +27,33 @@
  *             0x005bfce1  COLORARG1 = 1 D3DTA_CURRENT
  *             0x005bfcf2  COLORARG2 = 2 D3DTA_TEXTURE
  *   stage 2   0x005bfd03  COLOROP / ALPHAOP = 1 D3DTOP_DISABLE
- *   undo      0x005bef06  the sibling vtable slot +0x14 (0x005bee20) puts
- *             0x005bef17  TEXTURETRANSFORMFLAGS back to 0 and TEXCOORDINDEX
- *                         back to 1, gated on the same +0x30 byte it read at
- *                         0x005beed4
+ *   undo      0x005beef3  the sibling vtable slot +0x14 (0x005bee20) puts
+ *             0x005bef17  stage 1's TEXTURETRANSFORMFLAGS back to 0 and its
+ *                         TEXCOORDINDEX back to 1, both gated on the same
+ *                         +0x30 byte it reads at 0x005beed4. (The shadow
+ *                         compares that guard those two writes are at
+ *                         0x005beedb and 0x005bef06 — 0x005bef06 is the
+ *                         TEXCOORDINDEX compare, not the transform-flags
+ *                         write.)
  *
  * D3DTOP_BLENDCURRENTALPHA is `Arg1 * A + Arg2 * (1 - A)` with A the alpha of
- * CURRENT, i.e. the alpha coming out of stage 0. Stage 0's alpha op is set
- * once, for the whole StandardMesh path, at 0x005c0201:
+ * CURRENT, i.e. the alpha coming out of stage 0 — the direction is not folk
+ * memory, it is the enum's own documentation: `D3DTOP_BLENDCURRENTALPHA = 16`
+ * sits under the comment "Linear alpha blend: Arg1*(Alpha) + Arg2*(1-Alpha)"
+ * in Microsoft's `d3dtypes.h` (Windows Kit 10, um/d3dtypes.h:1676-1682), and
+ * 0x10 counts to it from `D3DTOP_DISABLE = 1` in wine's `d3d8types.h:884-899`.
+ * So ARG1 = CURRENT is the lit surface and an OPAQUE texel shows it; ARG2 =
+ * TEXTURE is the cubemap and a TRANSPARENT texel shows that.
+ *
+ * Stage 0's alpha op is set at 0x005c0201:
  * `setAlphaOp(stage 0, D3DTOP_SELECTARG1, D3DTA_TEXTURE, D3DTA_DIFFUSE)` —
  * three instructions after the same function loads the level cubemap into
- * ctx+0x18 (0x005c01dd), by the name at 0x009061c0. So:
+ * ctx+0x18 (0x005c01dd), by the name at 0x009061c0 — and the sibling reset
+ * re-asserts exactly those three values at 0x005bee8e/0x005bee94/0x005bee9a
+ * whenever the +0x31 byte is set. (It is not the only writer of the stage-0
+ * alpha shadow 0x009c92fc in the image: 0x0062e370 sets D3DTOP_MODULATE and
+ * 0x0064ce63 the same SELECTARG1. Both belong to other sub-shaders; every
+ * writer on the StandardMesh path agrees on SELECTARG1(TEXTURE).) So:
  *
  *     A          = the material's own diffuse-texture ALPHA CHANNEL
  *     out.rgb    = lit.rgb * A + cube.rgb * (1 - A)

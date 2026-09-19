@@ -840,7 +840,7 @@ import { VehicleDamageSet } from './vehicle-damage.js';
 import { SupplyDepot, SupplyField } from './supply.js';
 import { wantsEnvmap, cubeFaceUrls, envmapVertexPatch, envmapVertexBody,
          envmapFragmentPatch, envmapFragmentApply } from './envmap.js';
-import { CombatArea } from './combat-area.js';
+import { CombatArea, combatAreaRect } from './combat-area.js';
 import { flareSprites, flareTextureFiles, hasDrawableFlare } from './lens-flare.js';
 
 // Which game's levels this page serves, and the directory they hang off:
@@ -10434,6 +10434,17 @@ if (params.has('shots')) {
     }
     if (options && Number.isFinite(options.damagePerSecond)) {
       combatArea.damagePerSecond = options.damagePerSecond;
+    }
+    // The rect is settable for the same reason the two constants are, and
+    // specifically so the SEATED case can be checked: a vehicle with a
+    // drivetrain writes its own `state.position` into its scene node every
+    // frame, so a check cannot drive one out of the area by moving the node,
+    // and flying 400 m under `__renderOnce` costs more forced frames than a
+    // browser session survives. Moving the boundary instead exercises the
+    // identical path on a shorter clock. `null` restores the level's own.
+    if (options && 'rect' in options) {
+      combatArea.rect = options.rect ? { ...options.rect } : combatAreaRect(extras);
+      combatArea.reset();
     }
     return combatAreaState();
   };
