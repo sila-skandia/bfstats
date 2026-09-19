@@ -1050,8 +1050,14 @@ let flagMixer = null;
 
 const params = new URLSearchParams(location.search);
 
-/** The Instant Battle screen in `play/` is where a level is chosen. */
+/** The Instant Battle screen in `play/` is where a level is chosen. The mod
+ *  travels with the redirect: that screen reads `?mod=` and nothing else, so
+ *  a bare `map.html?mod=xpack1` that dropped it would land the player on
+ *  vanilla's level list having asked for Road to Rome's. */
 const MENU_URL = new URL('./play/index.html', location.href);
+if (params.get('mod') && params.get('mod') !== 'bf1942') {
+  MENU_URL.searchParams.set('mod', params.get('mod'));
+}
 
 // A bare `map.html` names no level, and the level list sits in the debug
 // panel a player never sees, so there would be nothing here to choose with.
