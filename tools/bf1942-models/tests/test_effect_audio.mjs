@@ -295,6 +295,41 @@ assert.equal(scriptHold(richoLayers()), 0.25,
   assert.ok(ctx.live <= audio.budget, 'and the cap still holds');
 }
 
+// --- a tree with two scripts sounds both ----------------------------------
+
+{
+  // `MajorImpact_Sand` is `addTemplate e_Explani02` + `addTemplate
+  // e_ExplDrySand`: the blast and the rain of sand, a script each, both
+  // ordinary child instances, so the engine stands both up. 10 of vanilla's
+  // 159 named bundles have this shape (all six `*Cascades*`, the three
+  // `MajorImpact_*` and `WaterExplosionTorpedo`) and every one of them was
+  // playing only its first script.
+  const spec = manifest();
+  spec.bundles.majorimpact_sand = {
+    name: 'MajorImpact_Sand', script: 'expl', scripts: ['expl', 'richo'],
+    soundOwners: ['e_Explani02', 'e_ExplDrySand'],
+  };
+  const { ctx, audio } = await build({ spec, rand: sequence([0.0]) });
+  const played = audio.play('MajorImpact_Sand', [0, 0, 4]);
+  assert.equal(played, 2,
+               `the blast layer and one sand alternate, got ${played}`);
+  assert.equal(ctx.started.length, 2);
+  const snap = audio.snapshot();
+  assert.ok(snap.scripts.find(s => s.script === 'ExplGas.ssc').plays === 1
+            && snap.scripts.find(s => s.script === 'richostone.ssc').plays === 1,
+            'one play landed on each of the two scripts');
+}
+
+{
+  // And a manifest published before this — `script` only, no `scripts` — still
+  // plays, because a tree already on the assets volume must not go silent.
+  const spec = manifest();
+  delete spec.bundles.richostonedecal.scripts;
+  const { audio } = await build({ spec, rand: sequence([0.0]) });
+  assert.equal(audio.play('RichoStoneDecal', [0, 0, 4]), 1,
+               'an older single-valued manifest is still read');
+}
+
 // --- inaudible is not a voice --------------------------------------------
 
 {

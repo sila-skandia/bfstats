@@ -86,6 +86,13 @@ def build_sound_manifest(names, library, objects: ArchivePool,
     script. The viewer builds one voice graph per script and shares it across
     every bundle that names it, which is also what keeps its voice pool small.
 
+    A bundle names a *list*: 10 vanilla trees carry two scripts, none of them
+    on the parent (`MajorImpact_Sand` is `e_Explani02` + `e_ExplDrySand`, the
+    blast and the sand rain, and the six `*Cascades*` bundles are the same
+    shape). Both children are ordinary `addTemplate` instances, so the engine
+    stands both up. `script` is kept beside `scripts` as the first of them,
+    for a viewer reading a manifest older than this.
+
     Bundle keys are lower-cased, matching `EffectLibrary`'s own lookup.
     """
     seen: dict[str, str] = {}
@@ -123,34 +130,46 @@ def build_sound_manifest(names, library, objects: ArchivePool,
     bundles: dict[str, dict] = {}
     silent: dict[str, str] = {}
     for name in sorted(names):
-        found = effects_mod.bundle_sound_script(library, name)
-        if found is None:
+        found = effects_mod.bundle_sound_scripts(library, name)
+        if not found:
             silent[name] = "no loadSoundScript in the bundle tree"
             continue
-        path, owner, depth = found
-        key = path.lower()
-        if key not in scripts:
-            text = read_script(path)
-            if text is None:
-                silent[name] = f"sound script missing: {path}"
+        keys: list[str] = []
+        owners: list[tuple[str, int]] = []
+        why: list[str] = []
+        for path, owner, depth in found:
+            key = path.lower()
+            if key in keys:
                 continue
-            patches = parse_ssc(text, level=EFFECT_SOUND_LEVEL,
-                                include=read_script, source=path)
-            layers = effects_mod.sound_layers(patches, resolve, write)
-            if not layers:
-                silent[name] = f"no sample resolved from {path}"
-                continue
-            scripts[key] = {
-                "script": path,
-                "patches": len(patches),
-                "layers": layers,
-            }
-        entry = {"name": name, "script": key}
+            if key not in scripts:
+                text = read_script(path)
+                if text is None:
+                    why.append(f"sound script missing: {path}")
+                    continue
+                patches = parse_ssc(text, level=EFFECT_SOUND_LEVEL,
+                                    include=read_script, source=path)
+                layers = effects_mod.sound_layers(patches, resolve, write)
+                if not layers:
+                    why.append(f"no sample resolved from {path}")
+                    continue
+                scripts[key] = {
+                    "script": path,
+                    "patches": len(patches),
+                    "layers": layers,
+                }
+            keys.append(key)
+            owners.append((owner, depth))
+        if not keys:
+            silent[name] = "; ".join(why) or "no sound resolved"
+            continue
+        entry = {"name": name, "script": keys[0], "scripts": keys}
         # Worth keeping: it is the difference between "this bundle is noisy"
         # and "this bundle borrows its noise from the thing it wraps", which
         # is true of 22 of vanilla's 70 and is not obvious from the name.
-        if depth:
-            entry["soundOwner"] = owner
+        if owners[0][1]:
+            entry["soundOwner"] = owners[0][0]
+        if len(keys) > 1:
+            entry["soundOwners"] = [owner for owner, _ in owners]
         bundles[name.lower()] = entry
 
     return {

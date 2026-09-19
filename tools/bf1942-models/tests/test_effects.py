@@ -573,6 +573,24 @@ SOUND_CON_MUTE = """
 ObjectTemplate.create EffectBundle e_BuildingDust
 """
 
+# The 10-of-159 case: two child bundles, a script each, neither on the parent.
+# `MajorImpact_Sand` is the blast (`e_Explani02`) and the rain of sand
+# (`e_ExplDrySand`); both are ordinary `addTemplate` instances, so the engine
+# stands both up and both sound.
+SOUND_CON_MAJOR = """
+ObjectTemplate.create EffectBundle MajorImpact_Sand
+ObjectTemplate.addTemplate e_Explani02
+ObjectTemplate.addTemplate e_ExplDrySand
+"""
+SOUND_CON_ANI02 = """
+ObjectTemplate.create EffectBundle e_Explani02
+ObjectTemplate.loadSoundScript Sounds/ExplAni02.ssc
+"""
+SOUND_CON_DRYSAND = """
+ObjectTemplate.create EffectBundle e_ExplDrySand
+ObjectTemplate.loadSoundScript Sounds/ExplDrySand.ssc
+"""
+
 # `richostone.ssc` in miniature: one patch, four alternates closed with
 # `randomPlay 1`, each with the distance ramp that owns its volume.
 RICHOSTONE_SSC = """
@@ -628,6 +646,9 @@ def sound_library() -> con_mod.ObjectLibrary:
     lib.add_con("Objects/Effects/e_RichoStone/Objects.con", SOUND_CON_RICHO)
     lib.add_con("Objects/Effects/e_ExplGas/Objects.con", SOUND_CON_OWN)
     lib.add_con("Objects/Effects/e_BuildingDust/Objects.con", SOUND_CON_MUTE)
+    lib.add_con("Objects/Effects/MajorImpact_Sand/Objects.con", SOUND_CON_MAJOR)
+    lib.add_con("Objects/Effects/e_Explani02/Objects.con", SOUND_CON_ANI02)
+    lib.add_con("Objects/Effects/e_ExplDrySand/Objects.con", SOUND_CON_DRYSAND)
     return lib
 
 
@@ -656,6 +677,40 @@ class BundleSoundTests(unittest.TestCase):
     def test_an_unknown_name_is_silent_rather_than_an_error(self) -> None:
         self.assertIsNone(
             effects.bundle_sound_script(sound_library(), "NoSuchBundle"))
+
+    def test_a_tree_with_two_scripts_yields_both(self) -> None:
+        """The 10-of-159 case. Taking only the first is a blast with no
+        debris rain — and `bundle_sound_script`'s old docstring said the case
+        did not occur, which the data refutes."""
+        found = effects.bundle_sound_scripts(sound_library(),
+                                             "MajorImpact_Sand")
+        self.assertEqual(
+            [("Objects/Effects/e_Explani02/Sounds/ExplAni02.ssc",
+              "e_Explani02", 1),
+             ("Objects/Effects/e_ExplDrySand/Sounds/ExplDrySand.ssc",
+              "e_ExplDrySand", 1)],
+            found)
+
+    def test_the_single_valued_lookup_takes_the_first(self) -> None:
+        self.assertEqual(
+            ("Objects/Effects/e_Explani02/Sounds/ExplAni02.ssc",
+             "e_Explani02", 1),
+            effects.bundle_sound_script(sound_library(), "MajorImpact_Sand"))
+
+    def test_a_parents_own_script_comes_before_its_children(self) -> None:
+        found = effects.bundle_sound_scripts(sound_library(), "e_ExplGas")
+        self.assertEqual(
+            ["Objects/Effects/e_ExplGas/Sounds/High.ssc",
+             "Objects/Effects/e_RichoStone/Sounds/richostone.ssc"],
+            [path for path, _, _ in found])
+
+    def test_a_template_reached_twice_is_counted_once(self) -> None:
+        lib = sound_library()
+        lib.add_con("Objects/Effects/Doubled/Objects.con",
+                    "ObjectTemplate.create EffectBundle Doubled\n"
+                    "ObjectTemplate.addTemplate e_RichoStone\n"
+                    "ObjectTemplate.addTemplate e_RichoStone\n")
+        self.assertEqual(1, len(effects.bundle_sound_scripts(lib, "Doubled")))
 
     def test_a_cycle_terminates(self) -> None:
         lib = con_mod.ObjectLibrary()

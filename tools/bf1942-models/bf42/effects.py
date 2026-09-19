@@ -438,21 +438,37 @@ def projectile_trail_bundle(library: con_mod.ObjectLibrary,
 #    that owns `richostone.ssc`. Reading only the named template's own
 #    `sound_script` finds 48 of the 70 and silences every ricochet-with-decal,
 #    every cascade and both water explosions. So the lookup walks the tree.
+#
+# 3. **And a tree can carry more than one.** The first shape of this said it
+#    could not, and the data says otherwise: **10** of the 159 named vanilla
+#    bundles have two distinct scripts under them, none of them on the parent.
+#    `MajorImpact_Sand` is `addTemplate e_Explani02` + `addTemplate
+#    e_ExplDrySand`, and those own `ExplAni02.ssc` and `ExplDrySand.ssc`
+#    respectively; `BazookaCascades*`, `Exp2Cascades*`, `MajorImpact_Metal`,
+#    `MajorImpact_Stone` and `WaterExplosionTorpedo` are the same shape. Both
+#    children are ordinary `addTemplate` instances, so the engine stands both
+#    up and both sound. Taking only the first is a blast without its debris
+#    rain. Reproduce with `bundle_sound_scripts` over `effect_names`, counting
+#    the entries with `len(...) > 1`.
 
 
-def bundle_sound_script(library: con_mod.ObjectLibrary, name: str, *,
-                        depth: int = 0,
-                        seen: set[str] | None = None
-                        ) -> tuple[str, str, int] | None:
-    """`(script path relative to the archive root, owner template, depth)`.
+def bundle_sound_scripts(library: con_mod.ObjectLibrary, name: str, *,
+                         depth: int = 0,
+                         seen: set[str] | None = None
+                         ) -> list[tuple[str, str, int]]:
+    """Every `(script path, owner template, depth)` in a bundle's tree.
 
     Depth-first in `addTemplate` order, which is the order the engine builds
-    the bundle in, so a composite that declares its own script keeps it and
-    one that does not takes its first child's. Nothing in vanilla has two
-    scripts in one tree; `owner` is emitted so the case can be spotted rather
-    than guessed at.
+    the bundle in: the named template's own script first, then each child's,
+    and a child that declares one is still descended into because its own
+    children are instantiated too.
 
-    The path is resolved against the *owner's* own `.con`, not the named
+    A template reached twice is counted once. That is a deliberate narrowing
+    of the engine, which would stand up two instances for two `addTemplate`
+    lines naming the same child: doubling a sample is far more audible than
+    dropping the second copy, and nothing in vanilla does it.
+
+    Each path is resolved against the *owner's* own `.con`, not the named
     bundle's — `RichoStoneDecal` lives in `Objects/Effects/RichoStoneDecal`
     and `e_richoStone` in `Objects/Effects/e_RichoStone`, and the binding
     `Sounds/richostone.ssc` is relative to the latter.
@@ -462,20 +478,31 @@ def bundle_sound_script(library: con_mod.ObjectLibrary, name: str, *,
     seen = seen if seen is not None else set()
     key = (name or "").lower()
     if not key or key in seen or depth > 6:
-        return None
+        return []
     seen.add(key)
     template = library.object(name)
     if template is None:
-        return None
+        return []
+    found: list[tuple[str, str, int]] = []
     if template.sound_script:
-        return (resolve_ssc_path(template.source, template.sound_script),
-                template.name, depth)
+        found.append((resolve_ssc_path(template.source, template.sound_script),
+                      template.name, depth))
     for ref in template.children:
-        found = bundle_sound_script(library, ref.template,
-                                    depth=depth + 1, seen=seen)
-        if found is not None:
-            return found
-    return None
+        found.extend(bundle_sound_scripts(library, ref.template,
+                                          depth=depth + 1, seen=seen))
+    return found
+
+
+def bundle_sound_script(library: con_mod.ObjectLibrary, name: str
+                        ) -> tuple[str, str, int] | None:
+    """The first script in a bundle's tree, or None.
+
+    The bundle's own when it has one, else the first its children offer. Kept
+    for callers that want a single answer; `bundle_sound_scripts` is what the
+    extractor uses, because a tree can carry two.
+    """
+    found = bundle_sound_scripts(library, name)
+    return found[0] if found else None
 
 
 def sound_layers(patches, resolve, write) -> list[dict]:
