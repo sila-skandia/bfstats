@@ -244,6 +244,57 @@ assert.equal(scriptHold(richoLayers()), 0.25,
                'a stale latch does not fire when the listener moves');
 }
 
+// --- and a *cut* patch loses its promises too ------------------------------
+
+{
+  // The window-close above is the only thing that spends a latch, and a slot
+  // that is silenced is parked at `since = Infinity`, so the close never comes
+  // round again for it. Before `silence()` disarmed, both halves of the bug
+  // came back through the two callers that silence a patch — a level change
+  // and a voice steal: the armed layer stayed counted against the budget for
+  // the life of the page, and it could still fire when the listener walked
+  // into its distance band.
+  const { ctx, audio } = await build();
+  audio.update(0, { x: 0, y: 0, z: 0 });
+  audio.play('e_ExplGas', [0, 0, 4]);
+  assert.ok(audio.committed > audio.sources, 'the distant layer is armed');
+  audio.silence();
+  assert.equal(audio.committed, 0,
+               'a silenced patch owes the budget nothing');
+  for (let i = 0; i < 200; i += 1) audio.update(1 / 30, { x: 0, y: 0, z: 0 });
+  assert.equal(audio.committed, 0,
+               'and never gets its reservation back');
+  const before = ctx.started.length;
+  for (let i = 0; i < 30; i += 1) audio.update(1 / 30, { x: 150, y: 0, z: 0 });
+  assert.equal(ctx.started.length, before,
+               'nor does the cut explosion go off when someone walks past');
+}
+
+{
+  // The same through `#steal`, which is where it actually bites: the victim
+  // belongs to another script and may never be played again, so its dead
+  // latches would be permanently missing voices in a firefight.
+  const { ctx, audio } = await build({ budget: 3 });
+  audio.play('e_ExplGas', [0, 0, 120]);
+  audio.update(1 / 30, { x: 0, y: 0, z: 0 });
+  while (audio.committed < audio.budget && audio.plays < 20) {
+    audio.play('e_ExplGas', [0, 0, 120]);
+    audio.update(1 / 30, { x: 0, y: 0, z: 0 });
+  }
+  const stolenBefore = audio.stolen;
+  audio.play('e_ExplGas', [0, 0, 120]);
+  if (audio.stolen > stolenBefore) {
+    for (const script of audio.scripts.values()) {
+      for (const slot of script.slots) {
+        if (slot.since !== Infinity) continue;
+        assert.equal(slot.audio.armed, 0,
+                     'a stolen slot holds no armed latch');
+      }
+    }
+  }
+  assert.ok(ctx.live <= audio.budget, 'and the cap still holds');
+}
+
 // --- inaudible is not a voice --------------------------------------------
 
 {
