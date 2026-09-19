@@ -172,6 +172,25 @@ every tick of a frame. **Launched as W3-G** once W3-B and W3-D reported; it
 also researches what `BFSoldier` does with the mouse-look axis on foot, so
 `LOOK_SENS` can go the same way if the law can be read.
 
+**W3-A (drivetrain) was reviewed: DO NOT MERGE, sent back to its author**
+(2026-09-20). Reports: `w3a-drivetrain.md`, `w3a-review.md`; the reviewer's
+comparison scripts are in `scratchpad/r3a/`.
+- The research held: TANK-13 is MAX for `revs >= 0` and MIN below (the earlier
+  gearbox verifier had it inverted), only an EngineGrip wheel feeds the load,
+  `F*30` is the engine's gain and the drivetrain is frame-rate independent
+  (Willys 111.2, Sherman 53.6, M3A1 67.2 km/h reproduced exactly).
+- Blocker W: on a 0.35 m / 12 m washboard the Willys reaches a 148 m apex and
+  454 km/h (main: 1.13 m / 58 km/h). The tyre frame is the hull's plane, not the
+  contact's, and a buried axle reads metres of spring compression.
+- Blocker E: on today's assets no tracked vehicle steers, because
+  `physics.maxRotation` is absent from every shipped `scene.glb` and steering
+  has no fallback. **Levels as well as models must be re-extracted** once this
+  lands (the drivable hull is built from the level scene).
+- Brake is 2x too long; the engine's tyre-friction accumulator is a running mean
+  (`addFrictionAtAbsolutePosition` `0x08254e50`; springs sum, tyres mean), but
+  the mean alone rolls the M3A1 over, so more of the rule is unread.
+- A parked jeep rolls down a 5 degree slope; roll chatter at full lock.
+
 **W3-B (blasts) is merged** (`cf7f352`, 2026-09-20), reviewer's verdict MERGE
 WITH FIXES, four fixes committed. Reports: `w3b-blasts.md`, `w3b-review.md`.
 - The painted combat boundary is safe and ships on. The engine samples the
