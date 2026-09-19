@@ -1513,6 +1513,70 @@ results.fleetCeilings = Object.fromEntries(
     }];
   }));
 
+
+// --- the pre-extract path: a tree older than the code that reads it -------
+//
+// `maxRotation`, `maxSpeed` and `acceleration` only started reaching
+// `extras.physics` with this branch's `bf42/con.py`. Every published
+// `scene.glb` today predates it, and `map.html` builds the drivable hull from
+// the LEVEL scene, so until the lead re-extracts, none of the three is
+// present. Throttle always degraded safely; steering degraded to a dead stick
+// and a tracked hull's steering IS the differential. Both now fall back to
+// the raw input, and this is the regression that says so.
+{
+  const strip = root => {
+    root.traverse(n => {
+      const phys = n.userData && n.userData.physics;
+      if (phys && n.userData.templateKind === 'Engine') {
+        delete phys.maxRotation; delete phys.maxSpeed; delete phys.acceleration;
+      }
+    });
+    return root;
+  };
+  const yawOf = truck => new THREE.Euler()
+    .setFromQuaternion(truck.state.orientation, 'YXZ').y;
+  const lap = (truck, seconds) => {
+    let acc = 0;
+    let prev = yawOf(truck);
+    drive(truck, seconds, t => {
+      t.setInput('c_PIThrottle', 1);
+      t.setInput('c_PIYaw', 1);
+      let d = yawOf(t) - prev;
+      prev = yawOf(t);
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      acc += d;
+    });
+    return acc * DEG;
+  };
+  results.preExtract = {};
+  for (const [name, build] of [
+    ['sherman', () => tank(shermanNode, { y: 0.5 })],
+    ['m3a1', () => tank(m3a1Node, { y: 0.5 })],
+    ['willy', () => jeep()],
+    ['shermanStale', () => new TrackedVehicle(strip(shermanNode()), null,
+      { cockpit: false, groundHeight: () => 0 })],
+    ['m3a1Stale', () => new TrackedVehicle(strip(m3a1Node()), null,
+      { cockpit: false, groundHeight: () => 0 })],
+    ['willyStale', () => new GroundVehicle(strip(willyNode()), null,
+      { cockpit: false, groundHeight: () => 0 })],
+  ]) {
+    const truck = build();
+    truck.state.position.set(0, name.startsWith('willy') ? 0.6 : 1.2, 0);
+    drive(truck, 3);
+    let top = 0;
+    drive(truck, 14, t => {
+      t.setInput('c_PIThrottle', 1);
+      top = Math.max(top, alongOf(t));
+    });
+    results.preExtract[name] = {
+      stale: truck.engine.stale,
+      topKmh: round(top * 3.6, 1),
+      yawDeg: round(lap(truck, 6), 1),
+    };
+  }
+}
+
 // --- hull collision against static objects -----------------------------------
 //
 // A wall in front of the jeep: the vehicle must not drive through it. The mock
