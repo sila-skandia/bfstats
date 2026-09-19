@@ -48,6 +48,33 @@ class FillPictureGeometryTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.results = run_harness()
 
+    def test_the_combat_area_warning_wraps_into_its_own_plate(self) -> None:
+        # The first leaf whose string is wider than its rect. `menu/InGame`
+        # backs it with `textmessBG_3LINE_256x64` -- three lines of art for a
+        # 65-character string in a 230 px box -- so the engine wraps rather
+        # than letting it run off the plate, which is what the painter did
+        # before this. Two lines at Trebuchet MS8's real metrics.
+        self.assertEqual(
+            ["Warning! You are leaving the combat area!",
+             "Desserters will be shot!"],
+            self.results["wrap"]["warning"])
+
+    def test_a_string_that_fits_is_left_on_one_line(self) -> None:
+        # Every leaf fed before this one -- ammo counts, ticket counts, kit
+        # names -- is short, and none of them may start wrapping.
+        wrap = self.results["wrap"]
+        self.assertEqual(["30"], wrap["short"])
+        self.assertEqual(1, len(wrap["exact"]))
+        self.assertEqual([], wrap["empty"])
+
+    def test_a_word_wider_than_the_box_overflows_rather_than_splitting(self) -> None:
+        # Hyphenating a bitmap font means inventing glyph metrics. The string
+        # this exists for has no such word.
+        wrap = self.results["wrap"]
+        self.assertEqual(1, len(wrap["longWord"]))
+        self.assertEqual(["a" * 120, "tail"], wrap["longWordThenMore"])
+        self.assertEqual(["a" * 46, "b"], wrap["overByOne"])
+
     def test_a_short_bar_fills_the_band_its_art_actually_occupies(self) -> None:
         # `reloadtimebar_*_32x64.png` is opaque over rows 0..41 of a 64-row
         # texture -- exactly the `size: 42` its leaf declares, top-anchored,
@@ -85,6 +112,41 @@ class FillPictureGeometryTests(unittest.TestCase):
         mag = self.results["magBar"]
         self.assertEqual([696, 561, 32, 20], mag["full"]["clip"])
         self.assertEqual([696, 561, 32, 10], mag["half"]["clip"])
+
+    # --- `when` comparisons ------------------------------------------------
+
+    def test_the_combat_area_warning_is_culled_until_the_countdown_runs(self) -> None:
+        # `menu/InGame`'s gate is `0 < Outside/OutsideTime`, which the
+        # extractor flips to `{Outside/OutsideTime, gt, 0}`. `condOk` did not
+        # implement `gt` and its default does not cull, so the plate, the
+        # 65-character warning and the countdown drew over every level's HUD
+        # -- including the 12 vanilla levels that declare no combat area at
+        # all, where the countdown can never be anything but zero.
+        c = self.results["conditions"]
+        self.assertFalse(c["outsideAtZero"])
+        self.assertTrue(c["outsideAtOne"])
+        self.assertTrue(c["outsideAtTen"])
+
+    def test_the_weapon_bar_shows_only_the_slots_the_kit_has(self) -> None:
+        # The same fail-open default, on a pre-existing group: the fifth and
+        # sixth weapon-select slots are `{Weapon/NumberOfItems, ge, 5|6}`.
+        c = self.results["conditions"]
+        self.assertFalse(c["slotFiveWithFour"])
+        self.assertTrue(c["slotFiveWithFive"])
+        self.assertTrue(c["slotFiveWithSix"])
+
+    def test_the_operators_that_already_worked_are_unmoved(self) -> None:
+        c = self.results["conditions"]
+        self.assertTrue(c["ltTrue"])
+        self.assertFalse(c["ltFalse"])
+        self.assertTrue(c["leTrue"])
+        self.assertTrue(c["eqTrue"])
+        self.assertTrue(c["neTrue"])
+
+    def test_a_nested_or_recurses_through_the_new_operators(self) -> None:
+        c = self.results["conditions"]
+        self.assertTrue(c["nested"])
+        self.assertFalse(c["nestedFalse"])
 
 
 if __name__ == "__main__":

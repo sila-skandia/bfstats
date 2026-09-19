@@ -588,6 +588,20 @@ RAW_TOPS: dict[str, tuple[list[tuple[str, str]], tuple]] = {
     "supplyReload":    ([("is", "ShowReloadIcon")], (720.0, 442.0, 64.0, 64.0)),
     "supplyFlag":       ([("is", "ShowFlagIcon")], (None, None, None, None)),
     "supplyNonTakeable": ([("is", "ShowNonTakeableFlagIcon")], (None, None, None, None)),
+    # The ticket counter. It is a top-level entry of menu/InGame like every
+    # other widget here -- gated by `ShowTicket`, not by `Kit/ShowKit` -- so
+    # the game draws it both on the spawn screen and over the live world.
+    # `extract_spawn_layout.py` already decodes this same top for the spawn
+    # screen; decoding it here as well is what lets `hud.js`'s generic painter
+    # draw it in-game with no code of its own, the way every other group in
+    # this file works.
+    "tickets":          ([("is", "ShowTicket")], (620.0, 4.0, 256.0, 32.0)),
+    # The combat-area warning. Its leading cull is a comparison rather than a
+    # bool -- `0 < Outside/OutsideTime`, a LessData with no symbol of its own,
+    # which `leading_culls` reports as the anonymous ("?", "") -- so the rect
+    # is what picks it out. `flatten` still records the real condition, so the
+    # painter culls the group whenever the countdown is not running.
+    "outside":          ([("?", "")], (310.0, 174.0, 230.0, 40.0)),
 }
 
 SUPPLY_KEYS = ("supplyCtf", "supplyParachute", "supplyRepair", "supplyHeal",
@@ -616,6 +630,8 @@ def decode_hud(ingame: bytes, lexicon: dict[str, str]) -> dict:
         "hitIndicator": raw["hitIndicator"],
         "weaponBar": raw["weaponBar"],
         "crosshair": raw["crosshair"],
+        "tickets": raw["tickets"],
+        "outside": raw["outside"],
     }
 
     out_groups = {}

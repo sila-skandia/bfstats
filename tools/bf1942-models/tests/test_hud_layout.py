@@ -235,13 +235,129 @@ class HudLayoutGoldenTests(unittest.TestCase):
 
     # -- everything else the extractor is expected to produce ----------------
 
-    def test_all_eleven_groups_are_present_and_non_empty(self) -> None:
+    def test_all_thirteen_groups_are_present_and_non_empty(self) -> None:
         expected = {"soldierIcon", "soldierAmmo", "vehicleIcon", "vehicleHealth",
                     "vehicleSeats", "primaryAmmo", "secondaryAmmo", "supplyIcon",
-                    "hitIndicator", "weaponBar", "crosshair"}
+                    "hitIndicator", "weaponBar", "crosshair", "tickets", "outside"}
         self.assertEqual(expected, set(self.hud["groups"]))
         for key in expected:
             self.assertTrue(self.group(key)["elements"], key)
+
+    # -- the ticket counter --------------------------------------------------
+
+    def test_ticket_group_rect_and_gate(self) -> None:
+        # `ShowTicket` is a top-level entry of menu/InGame in its own right, a
+        # sibling of the spawn screen's `Kit/ShowKit` rather than a child of
+        # it, which is why the game draws the counter over the live world as
+        # well as over the deploy screen. Its rect is the one the spawn-screen
+        # extractor independently decodes for the same top, and the one
+        # `authentic-spawn-map/README.md` section 8 measured against the
+        # capture: (620, 4) 256x32.
+        group = self.group("tickets")
+        self.assertEqual([620.0, 4.0, 256.0, 32.0], group["rect"])
+        for element in group["elements"]:
+            self.assertIn({"var": "ShowTicket", "op": "eq", "value": True},
+                          element["when"])
+
+    def test_ticket_group_has_both_sides_flag_number_and_blink(self) -> None:
+        group = self.group("tickets")
+        # Nine leaves: the bar plate, then per side a flag, a black drop
+        # shadow, the coloured number, and the low-ticket blink quad.
+        self.assertEqual(9, len(group["elements"]))
+        kinds = [e["kind"] for e in group["elements"]]
+        self.assertEqual(1, kinds.count("picture"))          # icon_ticketbar
+        self.assertEqual(2, kinds.count("variable-picture"))  # the two flags
+        self.assertEqual(4, kinds.count("text"))              # 2 numbers + 2 shadows
+        self.assertEqual(2, kinds.count("fill"))              # the blink quads
+
+    def test_ticket_flags_are_bound_and_default_to_the_german_art(self) -> None:
+        # The live game swaps these per side and per level; the literal the
+        # data ships is the fallback `hud.js` draws when a page has not fed
+        # the variable (HUD-1).
+        flags = self.elements_of_kind("tickets", "variable-picture")
+        self.assertEqual({"AlliedTicketFlag", "AxisTicketFlag"},
+                         {f["var"] for f in flags})
+        for flag in flags:
+            self.assertEqual("flag_ticket_ger", flag["texture"])
+            self.assertEqual([16.0, 16.0], flag["rect"][2:])
+
+    def test_ticket_numbers_are_drawn_twice_for_a_drop_shadow(self) -> None:
+        # Each side's count is two text leaves one pixel apart: black behind,
+        # the team colour in front. Both bind the same variable, so a feed
+        # that writes one writes both.
+        texts = self.elements_of_kind("tickets", "text")
+        allied = [t for t in texts if t["var"] == "AlliedTicket"]
+        axis = [t for t in texts if t["var"] == "AxisTicket"]
+        self.assertEqual(2, len(allied))
+        self.assertEqual(2, len(axis))
+        for pair in (allied, axis):
+            shadow = [t for t in pair if t["color"][:3] == [0.0, 0.0, 0.0]]
+            self.assertEqual(1, len(shadow))
+            [front] = [t for t in pair if t is not shadow[0]]
+            # The shadow sits one pixel down and right of the coloured glyph.
+            self.assertEqual(front["rect"][0] + 1, shadow[0]["rect"][0])
+            self.assertEqual(front["rect"][1] + 1, shadow[0]["rect"][1])
+            self.assertEqual("trebuchet_ms14_latin", front["font"])
+            self.assertEqual("right", front["align"])
+
+    def test_ticket_blink_quads_need_both_blink_variables(self) -> None:
+        # The low-ticket warning is a live-round state. Both its variables
+        # must hold for the quad to draw, so a page that feeds neither gets a
+        # culled leaf rather than a permanent red wash.
+        fills = self.elements_of_kind("tickets", "fill")
+        self.assertEqual(2, len(fills))
+        for fill in fills:
+            self.assertEqual([1.0, 0.0, 0.0, 0.5], fill["color"])
+            [_, nested] = fill["when"]
+            self.assertEqual("and", nested["op"])
+            self.assertEqual(
+                {"Ticket/AlliedTicketBlink", "Ticket/ShowAlliedTicketBlink"}
+                if any("Allied" in t["var"] for t in nested["terms"])
+                else {"Ticket/AxisTicketBlink", "Ticket/ShowAxisTicketBlink"},
+                {t["var"] for t in nested["terms"]})
+
+    # -- the combat-area warning --------------------------------------------
+
+    def test_outside_group_is_gated_on_the_countdown_being_positive(self) -> None:
+        # Unlike every other group here the gate is a comparison, not a bool:
+        # `0 < Outside/OutsideTime`. So feeding a zero is how the page tells
+        # the layout to draw nothing, and there is no separate Show* flag.
+        group = self.group("outside")
+        self.assertEqual([305.0, 171.0, 256.0, 64.0], group["rect"])
+        for element in group["elements"]:
+            self.assertEqual(
+                [{"var": "Outside/OutsideTime", "op": "gt", "value": 0}],
+                element["when"])
+
+    def test_outside_group_is_a_plate_a_countdown_and_the_warning(self) -> None:
+        group = self.group("outside")
+        self.assertEqual(3, len(group["elements"]))
+        [plate] = self.elements_of_kind("outside", "picture")
+        self.assertEqual("textmessbg_3line_256x64", plate["texture"])
+        self.assertEqual([305.0, 171.0, 256.0, 64.0], plate["rect"])
+
+    def test_outside_countdown_is_a_right_aligned_integer_in_latin_eleven(self) -> None:
+        [count] = [t for t in self.elements_of_kind("outside", "text")
+                   if t["var"] == "Outside/OutsideTime"]
+        self.assertEqual([536.0, 189.0, 20.0, 20.0], count["rect"])
+        self.assertEqual("trebuchet_ms11_latin", count["font"])
+        self.assertEqual("right", count["align"])
+
+    def test_outside_warning_text_and_colour_come_from_the_data(self) -> None:
+        # The TextNode's own Wstring default, misspelling and all. The
+        # lexicon's `DESSERTION_MESSAGE` is a different wording; this node
+        # never reads it.
+        [warn] = [t for t in self.elements_of_kind("outside", "text")
+                  if t["var"] == "Outside/OutsideText"]
+        self.assertEqual(
+            "Warning! You are leaving the combat area! Desserters will be shot!",
+            warn["text"])
+        self.assertEqual("trebuchet_ms8", warn["font"])
+        self.assertEqual([310.0, 174.0, 230.0, 40.0], warn["rect"])
+        red, green, blue, _ = warn["color"]
+        self.assertAlmostEqual(0.8516, red, places=4)
+        self.assertAlmostEqual(0.3516, green, places=4)
+        self.assertAlmostEqual(0.3516, blue, places=4)
 
     def test_vehicle_health_bar_rect_and_binding(self) -> None:
         [health] = [e for e in self.elements_of_kind("vehicleHealth", "fill-picture")
@@ -304,6 +420,59 @@ class HudLayoutGoldenTests(unittest.TestCase):
         from extract_spawn_layout import font_handles
         handles = font_handles(self.hud)
         self.assertEqual(set(self.hud["fonts"]), set(handles))
+
+
+class ConditionOperatorCoverageTests(unittest.TestCase):
+    """Every operator this extractor can emit must be answered by the two
+    evaluators that read the file.
+
+    `viewer/hud.js`'s `condOk` and `map.html`'s copy of it end in
+    `default: return true`, which does NOT cull. An operator the switch does
+    not name therefore draws a leaf the data said to hide -- which is exactly
+    what happened when the combat-area group arrived carrying `gt` (the
+    MemeFile's `0 < Outside/OutsideTime`, flipped by `FLIP_CMP`): the warning
+    plate and its 65-character string drew over every level's HUD, on levels
+    with no combat area included. `ge` had been failing open the same way for
+    the weapon-select bar's fifth and sixth slots since that group landed.
+
+    Reading the operator names back out of the two sources is deliberately
+    crude and deliberately source-level: it fails the moment the extractor
+    grows an operator a viewer does not handle, which is the only way to stop
+    the next one silently drawing.
+    """
+
+    VIEWER = Path(__file__).resolve().parents[1] / "viewer"
+
+    def emittable_operators(self) -> set[str]:
+        ops = set(hud.FLIP_CMP) | set(hud.FLIP_CMP.values())
+        ops |= set(hud.NEG_CMP) | set(hud.NEG_CMP.values())
+        # The comparison classes the flattener starts from.
+        ops |= {"eq", "ne", "lt", "le"}
+        return ops
+
+    def implemented_operators(self, source: Path) -> set[str]:
+        import re
+        text = source.read_text()
+        start = text.index("function condOk(")
+        end = text.index("\n}", start)
+        body = text[start:end]
+        return set(re.findall(r"case '([a-z]+)':", body))
+
+    def test_the_extractor_emits_six_comparisons(self) -> None:
+        self.assertEqual({"eq", "ne", "lt", "le", "gt", "ge"},
+                         self.emittable_operators())
+
+    def test_hud_js_answers_every_one_of_them(self) -> None:
+        missing = self.emittable_operators() - self.implemented_operators(
+            self.VIEWER / "hud.js")
+        self.assertEqual(set(), missing,
+                         f"viewer/hud.js condOk falls open on {sorted(missing)}")
+
+    def test_map_html_answers_every_one_of_them(self) -> None:
+        missing = self.emittable_operators() - self.implemented_operators(
+            self.VIEWER / "map.html")
+        self.assertEqual(set(), missing,
+                         f"map.html condOk falls open on {sorted(missing)}")
 
 
 if __name__ == "__main__":
