@@ -511,3 +511,19 @@ class VanillaCollisionMeshTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class GeometryAliasTests(unittest.TestCase):
+    """`collect_geometry_aliases`: the glb names a geometry template, the file
+    is keyed by mesh file; this is the step between them."""
+
+    def test_willy_hull_template_resolves_to_its_mesh_file(self):
+        from extract_collision_meshes import collect_geometry_aliases
+        from extract_models import DEFAULT_GAME_DIR, build_library, build_pools, mod_chain
+        if not DEFAULT_GAME_DIR.is_dir():
+            self.skipTest("game not installed")
+        chain = mod_chain(DEFAULT_GAME_DIR, "bf1942")
+        _meshes, _textures, objects, _game = build_pools(chain, [])
+        aliases = collect_geometry_aliases(build_library(objects))
+        self.assertEqual("willy_hul_m1", aliases["willy_hull_m1"])
