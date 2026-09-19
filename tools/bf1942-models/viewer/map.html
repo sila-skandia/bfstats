@@ -871,6 +871,8 @@ import { wantsEnvmap, cubeFaceUrls, envmapVertexPatch, envmapVertexBody,
          envmapFragmentPatch, envmapFragmentApply } from './envmap.js';
 import { CombatArea, combatAreaRect } from './combat-area.js';
 import { flareSprites, flareTextureFiles, hasDrawableFlare } from './lens-flare.js';
+import { isUnknownMode, modeNames, pruneToMode, selectGameMode,
+         spawnerWindow } from './game-modes.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -4148,7 +4150,8 @@ function registerDamageables(ownerRoots) {
  * `objectSpawns` entry in scene.json by vehicle name + position.
  */
 function spawnDelayForNode(node) {
-  const stamped = node?.userData?.spawner;
+  // `byMode` on the stamp when two modes time one pad differently.
+  const stamped = spawnerWindow(node?.userData?.spawner, extras?.gameplayMode);
   if (stamped && (Number.isFinite(stamped.minSpawnDelay)
                   || Number.isFinite(stamped.maxSpawnDelay))) {
     const min = stamped.minSpawnDelay ?? stamped.maxSpawnDelay;
@@ -10109,7 +10112,16 @@ async function show(entry) {
     settleLevelWarmup(null);
     throw error;
   }
-  extras = report;
+  // `?mode=` picks one of the level's gameplay layers; with no parameter this
+  // resolves to the default layer, whose arrays are the top-level ones, so the
+  // page is unchanged. A report from before `modes` existed passes straight
+  // through. See `viewer/game-modes.js`.
+  const wantedMode = params.get('mode');
+  extras = selectGameMode(report, wantedMode);
+  if (isUnknownMode(report, wantedMode)) {
+    console.warn(`no "${wantedMode}" layer on ${report.level}; `
+      + `showing ${extras.gameplayMode}. Has: ${modeNames(report).join(', ')}`);
+  }
   // Before the old root is disposed: every gun is indexed off a node in it, and
   // the rounds in the air are clones of nodes it owns.
   releaseGuns();
@@ -10123,6 +10135,10 @@ async function show(entry) {
   disposeSky();
   disposeSounds();
   currentRoot = gltf.scene;
+  // The glb holds every mode's vehicles and flags; drop the ones this mode
+  // does not park. Before anything indexes the scene, so the vehicle list, the
+  // occupancy roots and the cull set never see them.
+  pruneToMode(currentRoot, extras.gameplayMode);
   // Baked fire-effect payloads (muzzle flashes, projectile bodies, trail
   // quads) ride every assembled vehicle; only the model viewer animates
   // them, so here they must stay hidden or they render parked on the guns.
@@ -11167,6 +11183,30 @@ if (params.has('shots')) {
   // `__renderOnce` a frame is a capped 0.1 s of sim, so reaching the damage
   // honestly costs 100 forced frames — more than SwiftShader survives in one
   // session. Overriding them exercises the identical code path on a shorter
+  // Which gameplay layer `?mode=` landed on, and what else the level ships —
+  // enough for a headless check to prove the flags, spawns and vehicles it is
+  // looking at belong to the mode it asked for.
+  window.__gameMode = () => ({
+    active: extras?.gameplayMode || null,
+    requested: params.get('mode'),
+    available: modeNames(extras),
+    gameTypes: Object.fromEntries(
+      Object.entries(extras?.gameTypes || {}).map(([k, v]) => [k, v?.mode])),
+    controlPoints: (extras?.controlPoints || []).map(
+      cp => ({ name: cp.name, team: cp.team, position: cp.position })),
+    soldierSpawns: (extras?.soldierSpawns || []).length,
+    spawnTeams: (extras?.soldierSpawns || []).reduce((acc, s) => {
+      const key = String(s.team);
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {}),
+    objectSpawns: (extras?.objectSpawns || []).length,
+    tickets: extras?.tickets || null,
+    vehicles: spawnersRoot
+      ? spawnersRoot.children.map(v => v.name).sort()
+      : [],
+  });
+
   // clock; the engine's own values are what the module defaults to and what
   // `tests/test_combat_area.py` pins.
   const combatAreaState = () => ({
