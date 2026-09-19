@@ -4,3 +4,8 @@ viewer/maps
 out*/
 __pycache__/
 viewer/replays
+# A scratch build of the Instant Battle screen's pack, for
+# `play/index.html?pack=pack-dev`. The shipped pack lives on the assets
+# volume; this is a checkout's local copy and belongs in neither the repo
+# nor an image (`.dockerignore` names it too).
+viewer/play/pack-dev
