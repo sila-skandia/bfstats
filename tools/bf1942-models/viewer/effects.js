@@ -183,9 +183,18 @@ export class EffectLibrary {
  */
 export class EffectPlayer {
   constructor({ scene, camera, library = null, gravity = GRAVITY,
-                onMaterial = null, onMesh = null, firstPerson = false } = {}) {
+                onMaterial = null, onMesh = null, onSound = null,
+                firstPerson = false } = {}) {
     this.scene = scene;
     this.camera = camera;
+    // Called with `(bundleName, [x, y, z])` the instant a bundle is played,
+    // before anything is looked up in the geometry library. Before the
+    // library, deliberately: nine of the thirteen bundles that bake no
+    // geometry at all are the `e_Collision_*` family, which is sound and
+    // nothing else — a round hitting a man, a grenade bouncing off concrete,
+    // metal debris landing, two hulls grinding. Hanging the sound off a
+    // successful geometry lookup would silence exactly those.
+    this.onSound = onSound;
     this.root = new THREE.Group();
     this.root.name = 'effects';
     // The group never moves, so it never forces its children, and only the
@@ -232,6 +241,13 @@ export class EffectPlayer {
    * ends when its particles have.
    */
   play(name, { position = null, normal = null, attach = null, speed = 0 } = {}) {
+    // Sound first, and independent of the geometry library: see `onSound`.
+    // A bundle attached to a moving object (a rocket's trail) is placed by the
+    // object, so only a placed bundle has a point to sound at here; the
+    // trail's own motor loop is the engine path's business, not an impact.
+    if (this.onSound && position) {
+      try { this.onSound(name, position); } catch (_) {}
+    }
     const bundle = this.library?.get(name);
     if (!bundle) return null;
     const run = {
