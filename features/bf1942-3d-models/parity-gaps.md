@@ -1,5 +1,12 @@
 # Parity gaps: what the game does that we do not
 
+> **Status moved (2026-09-19).** The ranked list below is a snapshot from
+> 2026-09-15 and most of it has since landed: every keystone, most of "high
+> impact, small", and four more rows on 09-19. The live, code-verified list of
+> what is open and who has it is
+> [`../bf1942-parity-round-2026-09-19/README.md`](../bf1942-parity-round-2026-09-19/README.md).
+> The audit findings, corrections and method here still stand.
+
 A deliberate sweep for unimplemented functionality, run before the gaps could be
 found one at a time by looking at the viewer and noticing something missing.
 Seven independent audits, each given one axis, the installed game, the archives
