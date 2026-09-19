@@ -247,6 +247,10 @@ export class CollisionIndex {
     // Owners whose hull should not block walking or rounds — a faded wreck
     // whose visual is gone but whose triangles are still in the bake.
     this._disabled = new Uint8Array(ownerNodes.length);
+    // Owners the rigid-body world simulates (`body-world.js`). A body's own
+    // hull sweep leaves them to the contact solver; everything else - a
+    // round, a soldier - still meets them here.
+    this._body = new Uint8Array(ownerNodes.length);
     // Measured per-query work, for the budget in the feature doc. Reset by
     // whoever is reading it.
     this.stats = { queries: 0, cells: 0, candidates: 0, tests: 0 };
@@ -268,6 +272,10 @@ export class CollisionIndex {
     if (id >= 0 && id < this._disabled.length) this._disabled[id] = 0;
   }
 
+  /** Mark (or unmark) an owner as a simulated body; see `sweepSphere`'s `skipBodies`. */
+  setBodyOwner(id, on = true) {
+    if (id >= 0 && id < this._body.length) this._body[id] = on ? 1 : 0;
+  }
   ownerDisabled(id) {
     return id >= 0 && id < this._disabled.length && this._disabled[id] !== 0;
   }
@@ -404,7 +412,8 @@ export class CollisionIndex {
    * `out.nx/ny/nz` points from the hull toward the centre, which is the
    * direction that separates them.
    */
-  sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, out, onlyOwner = -1) {
+  sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, out, onlyOwner = -1,
+              skipBodies = false) {
     if (!this.cellStart || maxDist <= 0) return null;
     const stats = this.stats;
     stats.queries++;
@@ -447,6 +456,7 @@ export class CollisionIndex {
           } else {
             if (skipOwner >= 0 && this.owners[tri] === skipOwner) continue;
             if (this._disabled[this.owners[tri]]) continue;
+            if (skipBodies && this._body[this.owners[tri]]) continue;
           }
           // Box reject before the swept test. A ray gets away without one — the
           // per-cell Y band plus Moller-Trumbore is already cheap — but a sweep
@@ -846,12 +856,15 @@ export class WorldCollider {
    * against a lattice. `physics.js` does that clamp, and `map.html` composes the
    * two. The sea is not solid and never appears in a sweep at all.
    */
-  sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner = -1) {
+  sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner = -1, skipBodies = false) {
     if (!this.statics) return null;
     const started = performance.now();
     let out = this.statics.sweepSphere(
-      ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, this.sweepHit);
-    if (this.moved.size) {
+      ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, this.sweepHit, -1, skipBodies);
+    // `skipBodies`: the caller is itself a simulated body, and what it does to
+    // another one is the contact solver's business (a push, a spin, damage on
+    // both sides), not a dead stop against a swept sphere.
+    if (this.moved.size && !skipBodies) {
       let best = out ? out.t : maxDist;
       for (const [owner, m] of this.moved) {
         if (owner === skipOwner) continue;

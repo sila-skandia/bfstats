@@ -193,6 +193,14 @@ class CollisionModuleTests(unittest.TestCase):
         self.assertAlmostEqual(8.0, back["x"], places=6)
         self.assertEqual(92, back["material"])
 
+    def test_a_body_sweep_leaves_other_bodies_to_the_contact_solver(self) -> None:
+        past = self.results["bodySweepSkipsBodies"]
+        self.assertAlmostEqual(11.5, past["x"], places=4)     # far wall at x = 12
+        self.assertEqual(1, past["owner"])
+        still = self.results["soldierSweepStillHitsBodies"]
+        self.assertAlmostEqual(7.5, still["x"], places=4)     # near wall at x = 8
+        self.assertEqual(0, still["owner"])
+
     def test_a_disabled_owner_stops_blocking(self) -> None:
         # After a wreck fades the pad must be walkable; disableOwner drops that
         # hull from cast/sweep without rebuilding the index.

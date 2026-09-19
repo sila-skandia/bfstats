@@ -193,6 +193,14 @@ results.disabledOwnerRestored = restored && restored.material === 92;
     t: turned.t, z: turned.z, owner: turned.owner, normal: [turned.nx, turned.ny, turned.nz],
   };
   world.clearMovedOwner(owner);
+  // A simulated body's own hull sweep leaves other bodies to the contact
+  // solver: with the near wall marked as a body the sweep reaches the far one.
+  statics.setBodyOwner(owner, true);
+  const past = world.sweepSphere(0, 5, -5, 1, 0, 0, 16, 0.5, -1, true);
+  results.bodySweepSkipsBodies = past && { x: past.x, owner: past.owner };
+  const still = world.sweepSphere(0, 5, -5, 1, 0, 0, 16, 0.5, -1);
+  results.soldierSweepStillHitsBodies = still && { x: still.x, owner: still.owner };
+  statics.setBodyOwner(owner, false);
   const back = world.cast(0, 5, -5, 1, 0, 0, 16, -1);
   results.movedOwnerCleared = back && { x: back.x, material: back.material };
 }
