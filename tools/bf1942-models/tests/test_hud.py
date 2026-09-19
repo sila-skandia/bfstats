@@ -148,6 +148,101 @@ class FillPictureGeometryTests(unittest.TestCase):
         self.assertTrue(c["nested"])
         self.assertFalse(c["nestedFalse"])
 
+    # --- the turret dial's rotation sense (ledger VHUD-9) -------------------
+
+    def test_the_dial_turns_counter_clockwise_like_RotateEffect(self) -> None:
+        # The engine's `RotateEffect` (client `0x007edbf0`) computes
+        # `x' = x·cos + y·sin`, `y' = -x·sin + y·cos` about the pivot, so on
+        # the HUD's y-down frame `(0,-1)` at +90 degrees becomes `(-1,0)`:
+        # the sprite's top goes LEFT. Canvas `rotate(+θ)` would send it right,
+        # which is why `_drawPicture` negates.
+        dial = self.results["turretDial"]
+        cx, cy = dial["centre"]
+        self.assertEqual([cx, cy - 16], [dial["atZero"]["topX"], dial["atZero"]["topY"]])
+        self.assertEqual([cx - 16, cy],
+                         [dial["atPlus90"]["topX"], dial["atPlus90"]["topY"]])
+        self.assertEqual([cx + 16, cy],
+                         [dial["atMinus90"]["topX"], dial["atMinus90"]["topY"]])
+
+    def test_the_canvas_rotation_is_the_negated_engine_angle(self) -> None:
+        # Stated on its own because it is half of a PAIR: `map.html` feeds the
+        # un-negated engine value (`TurretRig.turretYawRadians`), and it used
+        # to feed `headingRadians()`, which carries `seats.js`'s
+        # `RIG_SIGN.yaw = -1`. Two errors cancelling. Change one side without
+        # the other and every dial in the game mirrors.
+        dial = self.results["turretDial"]
+        self.assertAlmostEqual(-1.570796, dial["atPlus90"]["canvasRotation"], places=5)
+        self.assertAlmostEqual(1.570796, dial["atMinus90"]["canvasRotation"], places=5)
+
+    def test_an_unrotated_picture_still_takes_the_plain_path(self) -> None:
+        self.assertTrue(self.results["turretDial"]["unrotatedTakesThePlainPath"])
+
+    # --- the seat dots' placement (ledger VHUD-11, VHUD-7) -----------------
+
+    def test_a_dot_sits_at_the_panel_origin_plus_its_seats_own_offset(self) -> None:
+        # VHUD-7 draws the six dots at `(192 + VehiclePosX[i+1],
+        # 452 + VehiclePosY[i+1])`, and VHUD-11 found what feeds those: each
+        # PlayerControlObject's own `setVehicleIconPos`. Sherman root 54/103
+        # lands at (246, 555) — inside the 128x128 icon panel, which starts at
+        # (200, 462). That geometry check is what turned the row from "the
+        # data is not carried" into "the data was never parsed".
+        dots = self.results["seatDots"]
+        self.assertEqual([246, 555], dots["shermanRoot"])
+        self.assertEqual([224, 513], dots["shermanGunner"])
+
+    # --- the soldier ammo panel's type enum (ledger HUD-10) ----------------
+
+    def test_an_at_icon_weapon_feeds_2_so_a_bazooka_shows_its_rockets(self) -> None:
+        # The one real change HUD-10 asks for. `map.html` fed 6 for `ATIcon`,
+        # on the reasoning that 6 and 7 painted the same and the choice was
+        # arbitrary. It is neither: 6 is `ATIconAndHeatBar` (the MedPack), and
+        # the `{6,7}` panel has no rounds text at all — so every AT weapon in
+        # the game showed an icon with no count beside it. 2 lands in the
+        # `{2,3,4,5}` panel, which prints one.
+        ammo = self.results["ammoType"]
+        self.assertEqual(2, ammo["bazooka"])
+        self.assertEqual(6, ammo["medPack"])
+
+    def test_the_con_word_and_the_meme_value_are_one_enumeration(self) -> None:
+        # No converter to write: the client's own `operator>>` (`0x004c4cd0`)
+        # stores the same seven values the layout tests. Every vanilla hand
+        # weapon, through the table.
+        ammo = self.results["ammoType"]
+        self.assertEqual(
+            {"atnone": 0, "atammobar": 1, "aticon": 2, "aticonandstrengthbar": 3,
+             "aticonandreloadbar": 4, "aticonnotext": 5, "aticonandheatbar": 6},
+            ammo["codes"])
+        self.assertEqual(1, ammo["thompson"])
+        self.assertEqual(3, ammo["grenade"])
+        self.assertEqual(4, ammo["repairPack"])
+        self.assertEqual(0, ammo["knife"])
+
+    def test_which_types_print_rounds_is_read_off_the_layouts_own_gate(self) -> None:
+        # `AMMO_TYPES_WITH_ROUNDS` is not a choice: run the layout's real
+        # `when` list for the `Ammo/PrimaryAmmo` text through `hud.js`'s own
+        # condition evaluator and exactly 2 and 3 survive it.
+        ammo = self.results["ammoType"]
+        self.assertEqual([2, 3], ammo["roundsTextAdmits"])
+        self.assertEqual(ammo["roundsTextAdmits"], ammo["withRounds"])
+
+    def test_an_unfed_dot_is_not_drawn_at_the_layouts_placeholder(self) -> None:
+        # A scene extracted before the word was parsed feeds no pair, and the
+        # leaf's own rect is that pair's AUTHORED DEFAULT -- the six leaves
+        # are a 5px diagonal staircase from (247,457), i.e. the panel origin
+        # plus (55,5)..(85,30). Drawing there claims a seat layout the data
+        # does not have. Measured on the page (Kasserine Hanomag): 0 texels
+        # of dot in that corner with the pairs fed, 66 with them deleted.
+        # Half a pair is treated the same way.
+        dots = self.results["seatDots"]
+        self.assertIsNone(dots["unfed"])
+        self.assertIsNone(dots["halfFed"])
+        self.assertEqual(0, dots["unfedDrawsNothing"])
+        # ...and a fed one does reach the canvas, at the anchored position.
+        self.assertEqual([[246, 555]], dots["fedDrawsOne"])
+        # A leaf binding no pair at all keeps its own rect: it never claimed
+        # to be placed by a variable.
+        self.assertEqual(dots["layoutRect"][:2], dots["noBinding"])
+
 
 if __name__ == "__main__":
     unittest.main()

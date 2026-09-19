@@ -374,6 +374,18 @@ module's constants and the `Wheel` bookkeeping class instead.
 
 ### What `verify-r7.md` confirmed, byte for byte
 
+> **Corrected 2026-09-20 (ledger TANK-1, TANK-7, TANK-9).** The first sentence
+> below is wrong and the rest of the paragraph is right. `engineType` **is**
+> consulted — it is a bit field read at nine *virtual* call sites, which the
+> exhaustive grep behind "no tank-specific code path" could not see — and its
+> bit 0 makes `PhysicsEngine::updatePhysics` return at its second instruction
+> for a car or a tank, so **neither gets a hull thrust** and `TrackedVehicle`'s
+> `bodyThrust` model is wrong at the root. The wheel formula below survives
+> intact, and it is now the *whole* of a ground vehicle's propulsion; its `& 4`
+> branch is the engine-type test, and it brings the ±1 clamp that caps a tank.
+> See [subsystems/tank-driving.md](../bf1942-engine-reference/subsystems/tank-driving.md)
+> §1 and §5.
+
 The engine has no tank-specific code path anywhere. Any `c_PGFEngineGrip`
 wheel's commanded spin is `getCurrentRatio() * engine.getCurrentDifferentialRPM
 (side)`, reading the same `roll` (throttle) / `yaw` (steer) axes any Engine

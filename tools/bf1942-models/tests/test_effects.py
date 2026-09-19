@@ -405,6 +405,137 @@ ObjectTemplate.roundOfFire 1
         self.assertEqual("e_rocketFume", spec["trailBundle"])
         self.assertEqual(0.2, spec["gravity"])
 
+    def test_projectile_spec_carries_the_two_path_explosion_rule(self) -> None:
+        # HP-9d: `hasCollisionEffect` is what tells an impact round from a fuse
+        # round, so it has to reach the viewer. Without it `effects-core.js`
+        # would be inferring the difference from `material2`, which carries
+        # none of it. `yModOnExplosion` rides along (HP-9).
+        lib = library()
+        lib.add_con("Objects/HandWeapons/Grenade/Objects.con", """
+ObjectTemplate.create HandFireArms GrenadeAllies
+ObjectTemplate.projectileTemplate GrenadeAlliesProjectile
+ObjectTemplate.velocity 15
+
+ObjectTemplate.create Projectile GrenadeAlliesProjectile
+ObjectTemplate.geometry projectile_m1
+ObjectTemplate.timeToLive CRD_NONE/3/0/0
+ObjectTemplate.material 227
+ObjectTemplate.material2 205
+ObjectTemplate.damageType 1
+ObjectTemplate.hasCollisionEffect 0
+ObjectTemplate.dieAfterColl 0
+ObjectTemplate.radius 15
+ObjectTemplate.YModOnExplosion 2.0
+""")
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, lib)
+        builder = gltf.GlbBuilder()
+        report = Report(root="GrenadeAllies", configuration="complex", lod=0)
+        spec, _nodes = assembler._projectile_spec(
+            builder, lib.object("GrenadeAllies"), report)
+        # An authored `hasCollisionEffect 0` must survive the emit filter —
+        # `False is not None`, so it does, and the viewer can see that this
+        # round takes the fuse path and NOT the impact path. `dieAfterColl 0`
+        # is the same shape, and is the word that says the round is still
+        # there after the bounce to take that fuse path at all (HP-9e).
+        self.assertEqual(
+            {"radius": 15.0, "material2": 205, "damageType": 1,
+             "hasCollisionEffect": False, "dieAfterColl": False,
+             "yModOnExplosion": 2.0},
+            spec["damage"])
+
+    def test_a_flak_shell_carries_the_word_that_ends_it_on_contact(self) -> None:
+        # HP-9e, and the regression this word exists for. `damageType 4` gives
+        # the shell an end-of-life explosion and no impact explosion, so on
+        # `splashSpec` alone the viewer would rest it where it landed and burst
+        # 20 m of material2-199 splash there. `hasCollisionEffect 1` (and, on
+        # two of the three, `dieAfterColl 1`) is what actually happens: the
+        # engine recycles the round on contact through `resetProjectile`
+        # without ever calling `startEndEffect`, so it bursts neither way.
+        # Both words have to reach the viewer for it to know that.
+        lib = library()
+        lib.add_con("Objects/Vehicles/Land/AA_Allies/Objects.con", """
+ObjectTemplate.create FireArms AA_AlliesGun
+ObjectTemplate.projectileTemplate AA_Allies_Projectile
+ObjectTemplate.velocity 300
+
+ObjectTemplate.create Projectile AA_Allies_Projectile
+ObjectTemplate.geometry projectile_m1
+ObjectTemplate.timeToLive CRD_UNIFORM/0.8/1.4/0
+ObjectTemplate.material 228
+ObjectTemplate.material2 199
+ObjectTemplate.damageType 4
+ObjectTemplate.hasCollisionEffect 1
+ObjectTemplate.dieAfterColl 1
+ObjectTemplate.radius 20
+""")
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, lib)
+        builder = gltf.GlbBuilder()
+        report = Report(root="AA_AlliesGun", configuration="complex", lod=0)
+        spec, _nodes = assembler._projectile_spec(
+            builder, lib.object("AA_AlliesGun"), report)
+        self.assertEqual(
+            {"radius": 20.0, "material2": 199, "damageType": 4,
+             "hasCollisionEffect": True, "dieAfterColl": True},
+            spec["damage"])
+
+    def test_the_ten_metre_default_covers_damage_type_four_too(self) -> None:
+        # HP-9: the 10.0 is the `ProjectileTemplate` constructor's own default
+        # (lnxded 0x0831f9b3) and the constructor does not consult
+        # `damageType`, so a `damageType 4` round that omits `radius` gets it
+        # as well. Six vanilla tank rounds ride the default on the
+        # `damageType 1` side; vanilla's four `damageType 4` templates all
+        # author a radius, so this is for mods.
+        lib = library()
+        lib.add_con("Objects/HandWeapons/Mine/Objects.con", """
+ObjectTemplate.create HandFireArms Landmine
+ObjectTemplate.projectileTemplate LandmineProjectile
+ObjectTemplate.velocity 5
+
+ObjectTemplate.create Projectile LandmineProjectile
+ObjectTemplate.geometry projectile_m1
+ObjectTemplate.material 231
+ObjectTemplate.material2 232
+ObjectTemplate.damageType 4
+""")
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, lib)
+        builder = gltf.GlbBuilder()
+        report = Report(root="Landmine", configuration="complex", lod=0)
+        spec, _nodes = assembler._projectile_spec(
+            builder, lib.object("Landmine"), report)
+        self.assertEqual(10.0, spec["damage"]["radius"])
+        self.assertEqual(4, spec["damage"]["damageType"])
+
+    def test_a_fractional_radius_reaches_the_viewer_already_truncated(self) -> None:
+        # HP-9: the truncation happens at parse because the property is a
+        # console `int`. DC's `50calSniper_Projectile radius 0.25` is 0 by the
+        # time the assembler sees it, and 0 with the engine's `radius > d`
+        # gate is no splash at all — the assembler must NOT then treat the 0
+        # as "unset" and hand back the 10.0 default.
+        lib = library()
+        lib.add_con("Objects/HandWeapons/Sniper/Objects.con", """
+ObjectTemplate.create HandFireArms 50calSniper
+ObjectTemplate.projectileTemplate 50calSniper_Projectile
+ObjectTemplate.velocity 900
+
+ObjectTemplate.create Projectile 50calSniper_Projectile
+ObjectTemplate.geometry bullet_m1
+ObjectTemplate.material 216
+ObjectTemplate.material2 216
+ObjectTemplate.damageType 1
+ObjectTemplate.hasCollisionEffect 1
+ObjectTemplate.radius 0.25
+""")
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, lib)
+        builder = gltf.GlbBuilder()
+        report = Report(root="50calSniper", configuration="complex", lod=0)
+        spec, _nodes = assembler._projectile_spec(
+            builder, lib.object("50calSniper"), report)
+        self.assertEqual(0.0, spec["damage"]["radius"])
+
 
 def run_harness() -> dict:
     if shutil.which("node") is None:
@@ -581,6 +712,234 @@ class CoreModuleTests(unittest.TestCase):
         self.assertEqual(3, atlas["wrapPositive"])
         self.assertEqual(15, atlas["wrapNegative"])
         self.assertEqual(0, atlas["notAnimated"])
+
+
+class TwoPathExplosionTests(unittest.TestCase):
+    """**HP-9d**: the engine has two explosions and `damageType` alone does not
+    say which a round gets.
+
+        impact, on collision:   damageType == 1 && hasCollisionEffect
+        end of life, on fuse:   damageType in {1, 4}, flag NOT tested
+
+    `hasCollisionEffect` is the impact-versus-fuse **discriminator**, not a
+    splash-capability flag. Requiring it for splash generally — the F1 report's
+    recommendation, refuted by a verifier — would silently delete grenade,
+    explosives-pack, satchel and landmine splash, which is the most-used splash
+    damage in the game.
+    """
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["splashSpec"]
+
+    def test_a_tank_shell_takes_both_paths(self) -> None:
+        # `damageType 1` with the flag. The Sherman authors no radius at all,
+        # so this is also the 10.0 constructor default (HP-9) arriving intact.
+        sherman = self.results["sherman"]
+        self.assertTrue(sherman["impact"])
+        self.assertTrue(sherman["endOfLife"])
+        self.assertEqual(10, sherman["radius"])
+
+    def test_a_grenade_has_no_impact_path_at_all(self) -> None:
+        # The case the refuted recommendation would have broken: `damageType 1`
+        # without the flag is a FUSE weapon, not a dud. Its 15 m blast is real
+        # and arrives only when `timeToLive` ends.
+        for name in ("grenade", "expack"):
+            with self.subTest(name):
+                spec = self.results[name]
+                self.assertFalse(spec["impact"])
+                self.assertTrue(spec["endOfLife"])
+                self.assertGreater(spec["radius"], 0)
+
+    def test_damage_type_four_never_bursts_on_impact(self) -> None:
+        # The landmine has the flag clear; vanilla's three flak shells have it
+        # SET, and for the EXPLOSION it still does not matter — the flag is not
+        # consulted for type 4. What it does decide for them is whether the
+        # round survives the contact at all, which is `diesOnContact` below.
+        for name in ("landmine", "flak"):
+            with self.subTest(name):
+                spec = self.results[name]
+                self.assertEqual(4, spec["damageType"])
+                self.assertFalse(spec["impact"])
+                self.assertTrue(spec["endOfLife"])
+
+    def test_a_round_with_no_area_pass(self) -> None:
+        # `material2 -1` is the authored "no splash" (fighter MGs); type 0 is
+        # direct-only; type 3 (binoculars) takes neither path.
+        for name in ("noSplash", "direct", "binoculars", "none"):
+            with self.subTest(name):
+                self.assertIsNone(self.results[name])
+
+    def test_a_fractional_radius_is_no_splash_on_either_path(self) -> None:
+        # HP-9: the radius is a console `int` truncated at parse, so DC's
+        # `50calSniper_Projectile radius 0.25` is 0 and the strictly
+        # `radius > d` gate reaches nothing. The end-of-life path's
+        # "untruncated" radius is an ABSENT SECOND TRUNCATION, not a surviving
+        # fraction — handing it 0.25 would resurrect a splash the engine has
+        # never had, so the fuse case must be None too.
+        self.assertIsNone(self.results["fractional"])
+        self.assertIsNone(self.results["fractionalFuse"])
+
+    def test_an_old_bakes_fractional_radius_is_repaired(self) -> None:
+        # FH's `BismarckFatProjectile 17.63` from a glb baked before `con.py`
+        # truncated: 17 here, the same integer the engine holds.
+        self.assertEqual(17, self.results["oldBake"]["radius"])
+
+    def test_a_glb_baked_before_either_word_behaves_as_it_always_did(self) -> None:
+        # No `damageType`, no `hasCollisionEffect`. Assumed 1 and true
+        # respectively, which is what 2,935 of 3,161 surveyed templates are —
+        # so a stale asset keeps its splash instead of silently losing it.
+        legacy = self.results["legacy"]
+        self.assertEqual(1, legacy["damageType"])
+        self.assertTrue(legacy["impact"])
+        self.assertTrue(legacy["endOfLife"])
+
+
+class SurvivingContactTests(unittest.TestCase):
+    """HP-9e: which rounds live through a contact, and which are recycled.
+
+    `Projectile::handleCollision` (lnxded 0x0831ee80) kills the round when
+    `dieAfterColl` (0x0831ef4b) **or** `hasCollisionEffect` (0x0831ef54) is
+    set, through `Projectile::resetProjectile` (0x0831e720, called at
+    0x0831f00a), which sets the detonate latch `Projectile+0x10d` and despawns
+    it **without** calling `startEndEffect`. So a round that dies on contact
+    explodes neither way, and one that survives is free to burst on its fuse.
+    """
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["diesOnContact"]
+
+    def test_the_four_vanilla_fuse_weapons_survive_contact(self) -> None:
+        # Both grenades, the explosives pack and the landmine write
+        # `hasCollisionEffect 0` and `dieAfterColl 0`. This is what lets a
+        # grenade bounce off a wall and go off three seconds later.
+        for name in ("grenade", "expack", "landmine"):
+            with self.subTest(name):
+                self.assertFalse(self.results[name])
+
+    def test_a_flak_shell_dies_on_contact_and_bursts_neither_way(self) -> None:
+        # The regression this class exists for. All three vanilla flak rounds
+        # (`AA_Allies_Projectile`, `Carrier_AA_Projectile`, `Flak38_Projectile`)
+        # are `damageType 4` — so `splashSpec` gives them an end-of-life blast
+        # and no impact blast — and all three set `hasCollisionEffect 1`. Read
+        # the flag as "dead on a type-4 round" and the viewer rests the shell
+        # where it landed and detonates 20 m of material2-199 splash there,
+        # which is a blast the game never has: the engine deletes the round.
+        self.assertTrue(self.results["flakBoth"])
+        self.assertTrue(self.results["flakFlagOnly"])
+
+    def test_either_word_alone_is_enough(self) -> None:
+        self.assertTrue(self.results["sherman"])   # the flag alone
+        self.assertTrue(self.results["dieOnly"])   # dieAfterColl alone
+
+    def test_only_four_vanilla_templates_are_fuse_rounds(self) -> None:
+        # The whole three-condition rule on the real vanilla numbers: an
+        # end-of-life blast, no impact blast, and surviving contact. A tank
+        # shell and a bomb fail the second; the flak shells fail the third.
+        fuse = run_harness()["fuseRound"]
+        self.assertEqual(
+            {"grenade": True, "expack": True, "landmine": True,
+             "sherman": False, "bomb": False,
+             "flakAllies": False, "flak38": False},
+            fuse)
+
+    def test_an_old_bake_assumes_the_round_ends_at_the_wall(self) -> None:
+        # Neither word on the block, or no block at all. Assuming survival
+        # would leave every tank shell in a stale extract lying on the ground
+        # running a fuse down; assuming death is what 25 of vanilla's 28
+        # `damageType 1` templates actually do.
+        self.assertTrue(self.results["legacy"])
+        self.assertTrue(self.results["none"])
+
+
+class BlastGeometryTests(unittest.TestCase):
+    """HP-9: the distance, its Y scale, the falloff, and DMG-1's unlisted pair."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+
+    def test_only_the_y_term_is_scaled(self) -> None:
+        # lnxded 0x08156613 multiplies `dy` and nothing else.
+        d = self.results["blastDistance"]
+        self.assertEqual(5, d["plainUp"])
+        self.assertEqual(10, d["scaledUp"])
+        self.assertEqual(5, d["sideways"])
+        # 3 across, 4 up at yMod 2 -> hypot(3, 8) = 8.544004.
+        self.assertAlmostEqual(8.544004, d["diagonal"], places=5)
+
+    def test_a_fuse_round_lives_out_its_authored_fuse(self) -> None:
+        # The 20 s ceiling is a viewer recycling guard for a round that is
+        # still FLYING. It became load-bearing the moment the fuse started
+        # firing a blast: `ExpPackProjectile` authors 240 s and
+        # `LandmineProjectile` 360 s, and the engine really does detonate them
+        # then (`Projectile::handleUpdate` 0x0831e940 -> `detonate`
+        # 0x0831e680). Clamping those to 20 s does not expire them early in
+        # some harmless cosmetic sense — it drops 12 m and 4 m of real splash
+        # on the player twenty seconds after he puts the charge down.
+        life = self.results["lifetime"]
+        self.assertEqual(240, life["expack"])
+        self.assertEqual(360, life["landmine"])
+        self.assertEqual(3, life["grenade"])
+        self.assertEqual(600, life["longFuse"])
+
+    def test_a_flying_round_is_still_held_to_the_ceiling(self) -> None:
+        # Nothing vanilla flies for twenty seconds, but a mod round with a
+        # huge fuse and a slow muzzle would sail on forever, and that is what
+        # the ceiling is for. A flak shell is NOT a fuse round, so it keeps
+        # the ceiling too — though its own fuse is under a second anyway.
+        life = self.results["lifetime"]
+        self.assertEqual(20, self.results["flightCeiling"])
+        self.assertEqual(20, life["longFlier"])
+        self.assertEqual(3, life["sherman"])
+        self.assertAlmostEqual(0.8, life["flakAllies"])
+        self.assertEqual(10, life["unspecified"])   # the no-timeToLive default
+
+    def test_the_impact_blast_is_centred_off_the_surface(self) -> None:
+        # `hitPos + 0.1 * normal`, lnxded 0x08153f5e (`ds:0x086b1ca0` =
+        # `cdcccc3d` = 0.1f) through 0x08153f8f, pushed as the explosion
+        # position at 0x08154026. The collision EFFECT is played earlier, at
+        # 0x08153e5b, on the raw hit point — the two are not the same place.
+        self.assertEqual(0.1, self.results["impactBlastOffset"])
+
+    def test_truncation_is_toward_zero(self) -> None:
+        t = self.results["truncate"]
+        self.assertEqual(15, t["exact"])
+        self.assertEqual(17, t["down"])
+        self.assertEqual(0, t["toZero"])
+        self.assertEqual(0, t["negative"])   # not -1: toward zero, not floor
+        self.assertEqual(10, t["default"])
+
+    def test_the_falloff_is_linear_to_a_hard_cutoff(self) -> None:
+        # `t = clamp((radius - d)/radius, 0, 1)`, and the gate is a strict
+        # `radius > d`, so a victim exactly on the radius takes nothing.
+        s = self.results["splashDamage"]
+        self.assertEqual(20, s["centre"])
+        self.assertEqual(10, s["half"])
+        self.assertEqual(0, s["edge"])
+
+    def test_an_unlisted_material_pair_really_means_no_damage(self) -> None:
+        # DMG-1: the engine's fallback is `defaultDamageMod`, which is 0.0 from
+        # both constructors, has a setter nothing calls and no console word —
+        # so no mod can change it either. Returning the base damage instead
+        # (the F1 report's recommendation) is refuted.
+        self.assertEqual(0, self.results["splashDamage"]["unlistedPair"])
+
+    def test_exposure_multiplies_and_zero_short_circuits(self) -> None:
+        # The soldier-only cover term (`checkForHitOnSoldier`, 0x08156eb6,
+        # short-circuit at 0x08156ede). Callers in this viewer pass 1 because
+        # there is no soldier-limb volume to sample; the parameter exists so
+        # the gap is visible rather than silently folded away.
+        s = self.results["splashDamage"]
+        self.assertEqual(10, s["halfExposed"])
+        self.assertEqual(0, s["noExposure"])
 
 
 class EffectEmitterNodesTests(unittest.TestCase):

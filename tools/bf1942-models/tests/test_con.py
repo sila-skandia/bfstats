@@ -171,6 +171,106 @@ ObjectTemplate.setInputToPitch 5
         self.assertTrue(rig["axes"]["yaw"]["free"])
         self.assertTrue(rig["axes"]["pitch"]["free"])
 
+    def test_the_wrap_gate_is_both_bounds_zero_not_a_zero_width_range(self) -> None:
+        # Ledger GUN-2: `calculateAndClipAngle`'s wrap gate tests
+        # `minRotation == 0 && maxRotation == 0` (lnxded `0x081d7645` +
+        # `0x081d765b`), the template default. It is NOT `lo == hi`, which is
+        # what this used to ask — and 151 input-bound axes across 13 installs
+        # author a non-zero zero-width range, three of them in vanilla
+        # (`Elco_ThrottleL` pitch 60/60 among them). The engine pins those;
+        # the old rule spun them. An explicit `0/0/0` pair is still free,
+        # because the gate is about the values, not about the declaration.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Test/Objects.con",
+            """
+ObjectTemplate.create RotationalBundle PinnedThrottle
+ObjectTemplate.setMinRotation 0/60/0
+ObjectTemplate.setMaxRotation 0/60/0
+ObjectTemplate.setInputToPitch c_PIThrottle
+
+ObjectTemplate.create RotationalBundle DeclaredZeroWindmill
+ObjectTemplate.setMinRotation 0/0/0
+ObjectTemplate.setMaxRotation 0/0/0
+ObjectTemplate.setInputToYaw c_PIMouseLookX
+
+ObjectTemplate.create RotationalBundle OnlyAMinimum
+ObjectTemplate.setMinRotation -70/0/0
+ObjectTemplate.setInputToYaw c_PIMouseLookX
+""",
+        )
+
+        pinned = library.object("PinnedThrottle").rig()["axes"]["pitch"]
+        windmill = library.object("DeclaredZeroWindmill").rig()["axes"]["yaw"]
+        # A component the `.con` leaves out is the template's own 0, so an
+        # axis with only a minimum clamps to [-70, 0] rather than spinning.
+        half = library.object("OnlyAMinimum").rig()["axes"]["yaw"]
+
+        self.assertFalse(pinned["free"])
+        self.assertEqual(60.0, pinned["min"])
+        self.assertEqual(60.0, pinned["max"])
+        self.assertTrue(windmill["free"])
+        self.assertFalse(half["free"])
+        self.assertEqual(-70.0, half["min"])
+        self.assertEqual(0.0, half["max"])
+
+    def test_continuous_rotation_speed_reaches_the_rig_per_axis(self) -> None:
+        # GUN-2: the servo adds `continousRotationSpeed * dt` every tick in
+        # the non-`automaticReset` path, so an input-bound axis that declares
+        # one turns while it is being aimed. Signed and per-axis; an axis with
+        # a zero component stays absent rather than carrying a 0.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Buildings/Test/Objects.con",
+            """
+ObjectTemplate.create RotationalBundle TestRadar
+ObjectTemplate.setMaxSpeed 110/60/0
+ObjectTemplate.setAcceleration 10/10/0
+ObjectTemplate.setContinousRotationSpeed 15/0/
+ObjectTemplate.setInputToYaw c_PIMouseLookX
+ObjectTemplate.setInputToPitch c_PIMouseLookY
+""",
+        )
+
+        axes = library.object("TestRadar").rig()["axes"]
+
+        self.assertEqual(15.0, axes["yaw"]["continuousRotation"])
+        self.assertNotIn("continuousRotation", axes["pitch"])
+
+    def test_the_two_player_control_object_hud_words_are_read(self) -> None:
+        # VHUD-9 / VHUD-11, neither of which `con.py` had a hit for. The icon
+        # position is ONE `x/y` token in 18,349 of 18,352 declarations across
+        # the installed mods; the space-separated spelling and an empty
+        # argument are the remaining three, and an empty one must NOT become
+        # 0/0 or every dot stacks on one spot.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Test/Objects.con",
+            """
+ObjectTemplate.create PlayerControlObject TestSherman
+ObjectTemplate.setHasTurretIcon 1
+ObjectTemplate.setVehicleIconPos 54/103
+
+ObjectTemplate.create PlayerControlObject TestCasemate
+ObjectTemplate.setHasTurretIcon 0
+ObjectTemplate.setVehicleIconPos 32 61
+
+ObjectTemplate.create PlayerControlObject TestEmpty
+ObjectTemplate.setVehicleIconPos
+""",
+        )
+
+        sherman = library.object("TestSherman")
+        casemate = library.object("TestCasemate")
+        empty = library.object("TestEmpty")
+
+        self.assertTrue(sherman.has_turret_icon)
+        self.assertEqual((54.0, 103.0), sherman.vehicle_icon_pos)
+        self.assertFalse(casemate.has_turret_icon)
+        self.assertEqual((32.0, 61.0), casemate.vehicle_icon_pos)
+        self.assertIsNone(empty.has_turret_icon)
+        self.assertIsNone(empty.vehicle_icon_pos)
+
     def test_rotation_span_distinguishes_rate_from_pose(self) -> None:
         library = ObjectLibrary()
         library.add_con(
@@ -1573,6 +1673,171 @@ ObjectTemplate.create Camera TankCamera
 ObjectTemplate.setInputToYaw c_PIMouseLookX
 """)
         self.assertIsNone(library.object("TankCamera").camera_view_modes)
+
+
+class ProjectileExplosionWordsTests(unittest.TestCase):
+    """`hasCollisionEffect`, `YModOnExplosion` and the integer `radius`.
+
+    Ledger **HP-9** and **HP-9d**. Every snippet is verbatim from vanilla's
+    `Objects.rfa` unless the docstring says otherwise.
+    """
+
+    def library(self, path: str, text: str) -> ObjectLibrary:
+        library = ObjectLibrary()
+        library.add_con(path, text)
+        return library
+
+    def test_has_collision_effect_is_parsed_as_a_bool(self) -> None:
+        # HP-9d. The flag is the impact-versus-fuse discriminator, so the
+        # parser must carry it separately from `damageType` — a round with
+        # `damageType 1` and the flag clear is a fuse weapon, not a dud.
+        library = self.library(
+            "Objects/Projectiles/Objects.con",
+            """
+ObjectTemplate.create Projectile ShermanProjectile
+ObjectTemplate.damageType 1
+ObjectTemplate.hasCollisionEffect 1
+ObjectTemplate.material2 206
+
+ObjectTemplate.create Projectile GrenadeAlliesProjectile
+ObjectTemplate.damageType 1
+ObjectTemplate.hasCollisionEffect 0
+ObjectTemplate.radius 15
+ObjectTemplate.material2 205
+""")
+        shell = library.object("ShermanProjectile")
+        grenade = library.object("GrenadeAlliesProjectile")
+        self.assertIs(True, shell.has_collision_effect)
+        self.assertIs(False, grenade.has_collision_effect)
+        # Both are `damageType 1`: the type alone cannot tell them apart.
+        self.assertEqual(1, shell.damage_type)
+        self.assertEqual(1, grenade.damage_type)
+
+    def test_a_projectile_that_omits_the_flag_leaves_it_unset(self) -> None:
+        # None means "the .con said nothing", which `assemble.py` must be able
+        # to tell apart from an authored 0.
+        library = self.library(
+            "Objects/Projectiles/Objects.con",
+            """
+ObjectTemplate.create Projectile QuietProjectile
+ObjectTemplate.damageType 1
+""")
+        self.assertIsNone(library.object("QuietProjectile").has_collision_effect)
+
+    def test_landmine_is_damage_type_4(self) -> None:
+        # HP-9d: `damageType 4` explodes ONLY at end of life, never on impact,
+        # and does not test the flag. Vanilla's four are the landmine and three
+        # flak shells; the survey over the installed mods found 46 more.
+        library = self.library(
+            "Objects/Projectiles/Objects.con",
+            """
+ObjectTemplate.create Projectile LandmineProjectile
+ObjectTemplate.damageType 4
+ObjectTemplate.hasCollisionEffect 0
+ObjectTemplate.radius 4
+ObjectTemplate.material2 232
+""")
+        mine = library.object("LandmineProjectile")
+        self.assertEqual(4, mine.damage_type)
+        self.assertEqual(4.0, mine.explosion_radius)
+        self.assertIs(False, mine.has_collision_effect)
+
+    def test_die_after_coll_is_parsed_as_a_bool(self) -> None:
+        # HP-9e. `dieAfterColl` is `ProjectileTemplate+0x1a7`, and together
+        # with `hasCollisionEffect` it is what decides whether a round survives
+        # a contact at all: `Projectile::handleCollision` (lnxded 0x0831ee80)
+        # recycles it through `resetProjectile` when EITHER is set (tests at
+        # 0x0831ef4b and 0x0831ef54). The three vanilla flak shells are the
+        # reason the viewer needs it — they are `damageType 4`, so they have no
+        # impact explosion, but they set the flag and so die on contact
+        # instead of resting where they land and bursting on their fuse.
+        library = self.library(
+            "Objects/Projectiles/Objects.con",
+            """
+ObjectTemplate.create Projectile AA_Allies_Projectile
+ObjectTemplate.damageType 4
+ObjectTemplate.hasCollisionEffect 1
+ObjectTemplate.dieAfterColl 1
+ObjectTemplate.radius 20
+ObjectTemplate.material2 199
+
+ObjectTemplate.create Projectile GrenadeAxisProjectile
+ObjectTemplate.damageType 1
+ObjectTemplate.hasCollisionEffect 0
+ObjectTemplate.dieAfterColl 0
+ObjectTemplate.radius 15
+ObjectTemplate.material2 205
+""")
+        flak = library.object("AA_Allies_Projectile")
+        grenade = library.object("GrenadeAxisProjectile")
+        self.assertIs(True, flak.die_after_coll)
+        self.assertIs(False, grenade.die_after_coll)
+        # Unset means the .con said nothing, which the engine reads as its own
+        # constructor default (false) — `Flak38_Projectile` is exactly that,
+        # and its `hasCollisionEffect 1` alone still ends the round.
+        self.assertIsNone(
+            self.library("Objects/Projectiles/Objects.con",
+                         "ObjectTemplate.create Projectile Plain\n")
+            .object("Plain").die_after_coll)
+
+    def test_radius_is_truncated_toward_zero_at_parse(self) -> None:
+        # HP-9: `ProjectileTemplate.radius` is a console **int** — the parser
+        # is `istream >> int` (lnxded 0x082df83f) and the value is `fild`ed
+        # into the float field (0x082df8ef), so a fractional radius is lost
+        # before the engine ever sees it. FH's `BismarckFatProjectile 17.63`
+        # becomes 17; DC's `50calSniper_Projectile 0.25` becomes **0**, which
+        # with the engine's strictly `radius > d` gate means no splash at all.
+        library = self.library(
+            "Objects/Projectiles/Objects.con",
+            """
+ObjectTemplate.create Projectile BismarckFatProjectile
+ObjectTemplate.radius 17.63
+
+ObjectTemplate.create Projectile 50calSniper_Projectile
+ObjectTemplate.radius 0.25
+
+ObjectTemplate.create Projectile NegativeProjectile
+ObjectTemplate.radius -0.5
+""")
+        self.assertEqual(17.0, library.object("BismarckFatProjectile").explosion_radius)
+        self.assertEqual(0.0, library.object("50calSniper_Projectile").explosion_radius)
+        # Truncation is toward zero, not floor: -0.5 is 0, not -1.
+        self.assertEqual(0.0, library.object("NegativeProjectile").explosion_radius)
+
+    def test_y_mod_on_explosion_is_parsed_as_a_float(self) -> None:
+        # HP-9: only the Y term of the blast distance is scaled by this
+        # (lnxded 0x08156613). Engine default is 1.0; every one of the 629
+        # `2.0` declarations surveyed sits on a bomb.
+        library = self.library(
+            "Objects/Projectiles/Objects.con",
+            """
+ObjectTemplate.create Projectile MK82Bomb
+ObjectTemplate.damageType 1
+ObjectTemplate.hasCollisionEffect 1
+ObjectTemplate.YModOnExplosion 2.0
+ObjectTemplate.radius 20
+""")
+        bomb = library.object("MK82Bomb")
+        self.assertEqual(2.0, bomb.y_mod_on_explosion)
+        # Unset elsewhere, so the viewer can apply the engine's own 1.0.
+        self.assertIsNone(
+            self.library("Objects/Projectiles/Objects.con",
+                         "ObjectTemplate.create Projectile Plain\n")
+            .object("Plain").y_mod_on_explosion)
+
+    def test_supply_depot_radius_is_still_not_truncated(self) -> None:
+        # The truncation is a property of `ProjectileTemplate.radius` only —
+        # `SupplyDepot.radius` is a float work range and `mediclocker`'s 2.5 m
+        # must survive intact. The parser routes `radius` by kind.
+        library = self.library(
+            "Objects/Buildings/Common/mediclocker/Objects.con",
+            """
+ObjectTemplate.create SupplyDepot mediclockerRepairpoint
+ObjectTemplate.radius 2.5
+""")
+        depot = library.object("mediclockerRepairpoint")
+        self.assertEqual(2.5, depot.supply_radius)
+        self.assertIsNone(depot.explosion_radius)
 
 
 if __name__ == "__main__":

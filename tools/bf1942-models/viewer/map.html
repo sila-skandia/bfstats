@@ -720,7 +720,7 @@
     <span class="shell-brand"><img class="shell-brand-sigil" src="./bfstats-logo.webp" alt="bfstats.io" width="26" height="26"><b>mesh</b></span>
     <span class="shell-tabs">
       <a href="./index.html">Models</a>
-      <a href="./map.html" aria-current="page">Maps</a>
+      <a href="./play/index.html" aria-current="page">Maps</a>
       <a href="./poses.html">Poses</a>
       <a href="./kits.html">Kits</a>
     </span>
@@ -859,12 +859,11 @@ import { fallDamageFor } from './fall-damage.js';
 import { DeviationModel } from './deviation.js';
 import { wantViewmodelClip } from './viewmodel-anim.js';
 import { createReplayController, recordingLevel } from './replay.js';
-import { Hud } from './hud.js';
+import { Hud, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS } from './hud.js';
 import { Armor } from './armor.js';
-import { VehicleDamageSet } from './vehicle-damage.js';
+import { VehicleDamageSet, inputGate } from './vehicle-damage.js';
 import { BodyWorld } from './body-world.js';
-import { buildParkedVehicle, collisionPartsFor, describeVehicleParts, DrivenBody,
-         quaternionFromAxes } from './vehicle-bodies.js';
+import { buildParkedVehicle, collisionPartsFor, describeVehicleParts, DrivenBody } from './vehicle-bodies.js';
 import { SupplyDepot, SupplyField } from './supply.js';
 import { collectIkBindings, defaultSeatPoseName, ikTarget, resolveSeatStates,
          seatBody, seatPoseName, solveTwoBone } from './seat-ik.js';
@@ -1042,6 +1041,19 @@ let levelClips = [];
 let flagMixer = null;
 
 const params = new URLSearchParams(location.search);
+
+/** The Instant Battle screen in `play/` is where a level is chosen. */
+const MENU_URL = new URL('./play/index.html', location.href);
+
+// A bare `map.html` names no level, and the level list sits in the debug
+// panel a player never sees, so there would be nothing here to choose with.
+// Anything that names a level or a recording, asks for the debug panel, or is
+// a headless run stays on this page.
+if (!params.has('map') && !params.has('replay') && !params.has('shots')
+    && params.get('dev') !== '1') {
+  location.replace(MENU_URL);
+  await new Promise(() => {});
+}
 
 const optGameFog = document.getElementById('game-fog');
 const optWire = document.getElementById('wire');
@@ -1932,6 +1944,15 @@ gameConsole.register({
     if (!args.length) return devMode ? 1 : 0;
     return setDevMode(args[0] !== '0' && args[0].toLowerCase() !== 'false') ? 1 : 0;
   },
+});
+
+/** `game.disconnect` is the engine's own word (it sits in the `game` object's
+ *  method table beside `toggleGamePause` and `ticketRatio`), and it does what
+ *  it does there: leaves the battle for the menu. */
+gameConsole.register({
+  object: 'game', method: 'disconnect',
+  minArgs: 0, maxArgs: 0, argTypes: [],
+  run: () => { location.assign(MENU_URL); },
 });
 
 function setConsoleOpen(on) {
@@ -4472,7 +4493,6 @@ const _bodyParentInv = new THREE.Matrix4();
 const _bodyFwd = new THREE.Matrix4();
 const _bodyInv = new THREE.Matrix4();
 const _bodyScale = new THREE.Vector3();
-const _bodyQuat = { x: 0, y: 0, z: 0, w: 1 };
 
 async function loadCollisionMeshes(dir) {
   if (collisionMeshes) return collisionMeshes;
@@ -4733,6 +4753,43 @@ function occupiedVehicleDamage() {
     if (visual.node === occupancy.root) return vehicleDamage.get(owner);
   }
   return null;
+}
+
+/**
+ * HP-15's gate for the vehicle the player is in, re-read every frame:
+ * `{ blocked, rotationalScale }`.
+ *
+ * `vehicle-damage.js`'s `inputGate` is the rule and carries the addresses. The
+ * two things this function is responsible for are WHEN and WHERE:
+ *
+ *   - **When.** Every frame, against the live Armor, never latched when a
+ *     shell landed. The engine's own two bytes (`SimpleObject+0xed`/`+0xee`)
+ *     are persistent state cleared only by the wreck-respawn timer, so polling
+ *     matches them — and it is also what makes the gate apply to a hull killed
+ *     some *other* way. A vehicle burnt down by `hpLostWhileCriticalDamage`,
+ *     drowned, or killed by the combat area's own per-frame `giveDamage`
+ *     (which damages the occupied hull through this same `Armor`) refuses the
+ *     driver exactly as one killed by a shell does, because none of them are
+ *     special-cased: all four write hit points and this reads them back.
+ *   - **Where.** `occupancy.turret.inputScale` is the single multiplier
+ *     `seats.js` spends (its own `TurretRig.inputScale` comment says why it
+ *     lands on the input rather than on the servo), which covers the driver's
+ *     turret in `drive()` and a gunner's in `manned()` alike. The harder
+ *     destroyed gate is `drive()`'s, below.
+ *
+ * Aircraft are the known gap: `pilot()` does not consult this yet, though
+ * `PlayerControlObject::handlePlayerInput`'s early return is per-PCO and so
+ * covers a destroyed plane too. Its turret input IS already scaled, because
+ * that goes through the same rig.
+ */
+const vehicleInput = { blocked: false, rotationalScale: 1 };
+function stepVehicleInputGate() {
+  // Filled in place: this runs once per frame for the whole time anyone is in
+  // a vehicle, and `inputGate`'s own note says why it takes the object rather
+  // than returning a new one.
+  inputGate(occupiedVehicleDamage(), vehicleInput);
+  if (occupancy?.turret) occupancy.turret.inputScale = vehicleInput.rotationalScale;
+  return vehicleInput;
 }
 
 // The HP last pushed into the HUD, so a moving bar costs one compare per frame
@@ -5487,7 +5544,16 @@ const HUD_MANNED = 'Mouse aims · LMB fires · 1-9 seats · E get out · Esc';
  */
 function drive(dt) {
   if (!car) return;
-  const driving = occupancy.isActiveRoot();
+  // HP-15: a wreck cannot be driven. `PlayerControlObject::handlePlayerInput`
+  // (lnxded 0x08318920) returns at 0x08318952 **before forwarding input to any
+  // child**, so this is not a throttle cut or a steering lock — a destroyed
+  // vehicle receives nothing at all, and keeps receiving nothing until the
+  // wreck-respawn timer clears the byte. `driving` is forced false rather than
+  // returning outright, so the hull still integrates and coasts to a stop
+  // under its own momentum (the same reason this function runs every frame
+  // whether or not the driver's seat is the active one) and the rigs are still
+  // re-asserted; what stops is the reading of the keyboard.
+  const driving = occupancy.isActiveRoot() && !vehicleInput.blocked;
   if (driving) {
     const held = captured ? keys : EMPTY_KEYS;
 
@@ -5642,13 +5708,19 @@ function manned(dt) {
   // seat has no business deciding which button reaches which. Space is still
   // `c_PIFire` (it was this page's only vehicle trigger before the mouse
   // buttons were wired, and HUD_MANNED still offers it).
-  const fire = held.has('Space') || seatFire;
+  // HP-15: no player input reaches any child of a destroyed PCO, and a gun is
+  // a child — so a wreck's manned gun cannot be fired either. Its traverse is
+  // already gated, by `inputScale` on the same rig `stepVehicleInputGate` set.
+  // A bare gun with no Armor of its own is unaffected: `inputGate(null)` lets
+  // everything through.
+  const fire = (held.has('Space') || seatFire) && !vehicleInput.blocked;
   for (const node of occupancy.activeFireArmsNodes()) {
     const state = fireStateFor(node);
     state.step(dt);
     const group = mannedGuns.find(g => g.node === node);
     if (!group) continue;
-    const trigger = node.userData?.fireArms?.input === 'c_PIAltFire' ? seatAltFire : fire;
+    const trigger = node.userData?.fireArms?.input === 'c_PIAltFire'
+      ? (seatAltFire && !vehicleInput.blocked) : fire;
     guns.setFiring(group, trigger && state.canFire);
   }
   // Not fed here: `guns.advance(dt)` — which actually calls `fireShot`
@@ -5705,6 +5777,16 @@ const HUD_VEHICLE_VARS = [
   'Ammo/SecondaryAmmoIcon', 'Ammo/SecondaryAmmoBar',
   'Ammo/SecondaryAmmo', 'Ammo/SecondaryAmmoText', 'Ammo/MaxSecondaryAmmo',
   'Ammo/ReloadTime', 'Ammo/ReloadTimeSecondary', 'Overheat/OverHeat',
+  // VHUD-11/VHUD-2: the seat-occupancy dots. One shared `Occupied/OccupiedData`
+  // backs all six leaves (an array here, indexed by the leaf's own
+  // `position`), and each dot's place inside the 128x128 vehicle icon is a
+  // `Vehicle/VehiclePos/VehiclePosX<n>`/`Y<n>` pair — the layout's own
+  // spelling, which nests the group (`test_hud_layout.py` has it verbatim).
+  'Occupied/OccupiedData',
+  ...Array.from({ length: 6 }, (_, i) => [
+    `Vehicle/VehiclePos/VehiclePosX${i + 1}`,
+    `Vehicle/VehiclePos/VehiclePosY${i + 1}`,
+  ]).flat(),
 ];
 
 function setHudVar(name, value) {
@@ -5716,6 +5798,11 @@ function setHudVar(name, value) {
 
 function clearVehicleHud() {
   for (const name of HUD_VEHICLE_VARS) setHudVar(name, null);
+  // The dot feed's memo goes with them, or re-entering the same vehicle at
+  // the same seat would leave all thirteen variables deleted and never
+  // rewritten.
+  seatDotsFor = null;
+  seatDotsSeat = null;
 }
 
 // R2-8 (verify-r2.md's corrected report): the client's own case-sensitive
@@ -5729,6 +5816,51 @@ const AMMO_BAR_CODES = {
 };
 function ammoBarCode(name) {
   return name == null ? null : (AMMO_BAR_CODES[name] ?? 7);
+}
+
+/**
+ * `IconLookRotation` for the seat currently manned, in radians, or
+ * `undefined` when this seat has no dial to draw.
+ *
+ * Un-negated on purpose: this is the engine's own value, positive to the
+ * controlled PCO's right, and `hud.js` owns the canvas-versus-`RotateEffect`
+ * sign flip. See `feedVehicleHud`.
+ */
+function turretDialAngle() {
+  if (!occupancy?.showsTurretIcon(insideView())) return undefined;
+  return occupancy.turret?.turretYawRadians();
+}
+
+// The seat-dot feed's memo: the vehicle and the seat it was last written for.
+// Nothing in the table can change between seat switches — the positions are
+// template data and the states are only "you" versus "not you" — so this
+// rewrites 13 variables on a switch rather than on every frame.
+let seatDotsFor = null;
+let seatDotsSeat = null;
+
+function feedSeatDots() {
+  if (seatDotsFor === occupancy && seatDotsSeat === occupancy.activeSeatId) return;
+  seatDotsFor = occupancy;
+  seatDotsSeat = occupancy.activeSeatId;
+  const dots = occupancy.seatDots();
+  setHudVar('Occupied/OccupiedData', dots.map(d => d.state));
+  for (let i = 0; i < 6; i++) {
+    const dot = dots[i];
+    setHudVar(`Vehicle/VehiclePos/VehiclePosX${i + 1}`, dot?.x ?? null);
+    setHudVar(`Vehicle/VehiclePos/VehiclePosY${i + 1}`, dot?.y ?? null);
+  }
+}
+
+/**
+ * Is the camera in the engine's view mode 3 — the inside view?
+ *
+ * A driven vehicle has `VehicleCamera`'s own four-mode cycle and exactly one
+ * of them (`cockpit`) is first person. A manned gun has no cycle at all:
+ * `manned()` puts the eye on the seat's own Camera node and nothing else,
+ * which is the one view retail gives it, so it is always inside.
+ */
+function insideView() {
+  return mannedActive() ? true : !!view?.firstPerson;
 }
 
 /**
@@ -5746,27 +5878,47 @@ function feedVehicleHud() {
   // The turret dial (`vehicleIcon`'s other three sprites, VHUD-7's rects): a
   // fixed back plate and barrel with the hull's own icon rotating underneath,
   // which is how a tank commander reads where the hull is pointing relative
-  // to where he is looking. Gated on there being a traverse to show at all —
-  // a seat with only elevation, or none, leaves both variables absent and
-  // `hud.js` culls all three leaves, which is also what every seat did until
-  // the driver's own turret started turning.
+  // to where he is looking.
   //
-  // APPROXIMATION, and VHUD-9 is why: neither what the engine sets
-  // `ShowTurretIcon` from nor `IconLookRotation`'s unit, sign and pivot were
-  // ever read. Fed here in radians, because canvas `rotate()` takes radians
-  // and `hud.js` passes the value straight through; `angleMultiplier` is
-  // carried by the extractor and still unread, so it is not applied.
+  // The angle is the engine's own `IconLookRotation` (VHUD-9, client
+  // `0x006ae5d9`–`0x006ae616`):
   //
-  // The sign was settled by looking at it rather than by reading anything.
-  // The dial's fixed barrel points up, i.e. screen-up is where the gun is
-  // looking, and the hull icon spins underneath it — so with the turret
-  // traversed 90 degrees right the hull sits 90 degrees to the gun's LEFT and
-  // its nose belongs at 9 o'clock, which on a canvas whose positive rotation
-  // is clockwise is the traverse itself, not its negative. `headingRadians()`
-  // is already signed in the node's own sense, so it goes in unchanged.
-  const heading = occupancy.turret?.headingRadians();
+  //   IconLookRotation = atan2(dot(pcoRight, camForward),
+  //                            dot(pcoForward, camForward))     // radians
+  //
+  // positive to the PCO's right, about the CONTROLLED PCO's own axes — the
+  // hull, for a tank driver. For a seat whose camera rides the turret that is
+  // the turret's own traverse, which is what `turretYawRadians()` returns.
+  //
+  // It replaced `headingRadians()`, and the swap is one half of a PAIR: that
+  // accessor carries `seats.js`'s `RIG_SIGN.yaw = -1`, and `hud.js` used to
+  // rotate the sprite clockwise (canvas `rotate(+θ)`) where the engine's
+  // `RotateEffect` is counter-clockwise. Two errors cancelling, which is why
+  // the dial looked right. `hud.js` now rotates by `-angle`; feed it the
+  // negated value again and every dial mirrors.
+  //
+  // Gated, for now, on there being a traverse to show at all. VHUD-9's real
+  // trigger is `(seatCamera.viewMode == 3) && pcoTemplate.hasTurretIcon`, and
+  // `setHasTurretIcon` only reached the extract in this round's `con.py`
+  // change, so a scene baked before it has no field to read. Handled where
+  // the gate is, not here.
+  const heading = turretDialAngle();
   setHudVar('Vehicle/ShowTurretIcon', heading === undefined ? null : true);
   setHudVar('IconLookRotation', heading === undefined ? null : heading);
+  // The seat-occupancy dots (VHUD-11). `in-game-hud.md` used to record their
+  // positions as "live-bound per vehicle", i.e. carried by nothing the
+  // extractor could reach; they are `setVehicleIconPos` on each seat's own
+  // PlayerControlObject, and `con.py` simply had no hit for the word. Fed as
+  // one shared state array (`Occupied/OccupiedData`, which is what the layout
+  // binds — one `BfOccupiedVehicleData` object backs all six leaves) plus a
+  // position pair per dot. A seat whose extract predates the word feeds no
+  // pair and `hud.js` keeps the layout's own literal rect.
+  //
+  // Memoised on the vehicle and the seat, because `feedVehicleHud` runs every
+  // frame while occupied (rule 5) and nothing in the dot table can change
+  // between seat switches: the positions are template data and the states are
+  // "you" versus "not you".
+  feedSeatDots();
   // R2-31 (corrected, verify-r2.md): hitpoints/armor live on the root PCO
   // only, one Armor shared by every seat — never a nested seat's own value.
   //
@@ -8354,6 +8506,22 @@ function stanceNation(team) {
 // the area, hoisted so `updateSoldierHud` allocates nothing per frame.
 const IN_COMBAT_AREA = { countdown: 0 };
 
+// `setHudAmmoType` -> `Ammo/AmmoType`, and which of those print a round
+// count: both live in `hud.js` beside the rest of the layout's own
+// vocabulary, so `tests/hud_harness.mjs` can drive them under node. HUD-10.
+//
+// Every `soldierAmmo` variable this file writes, so a weapon swap starts from
+// nothing. The `Ammo/Primary*` names are shared with the vehicle panel, which
+// is fine: the two groups are mutually exclusive in the layout
+// (`Vehicle/ShowVehicleIcon` gates one and `NotData` of it the other), and
+// only one of them is fed at a time.
+const SOLDIER_AMMO_VARS = [
+  'Ammo/AmmoType', 'Ammo/PrimaryAmmo', 'Ammo/MaxPrimaryAmmo', 'Ammo/PrimaryMag',
+  'Ammo/SoldierAmmo/SoldierAmmoHasMag', 'Ammo/SoldierAmmo/SoldierAmmoIcon',
+  'Ammo/SoldierAmmo/SoldierAmmoBar', 'Ammo/SoldierAmmo/SoldierAmmoBarFill',
+  'Ammo/SoldierAmmo/SoldierAmmoBarSize',
+];
+
 function updateSoldierHud() {
   const vars = gameHud.vars;
   // Any seat at all, which `seats.js` answers for: `occupancy` is non-null
@@ -8486,6 +8654,15 @@ function updateSoldierHud() {
   const magazine = hw.data?.magazine;
   const hudAmmo = (hw.data?.hudAmmo || '').toLowerCase();
   const ammoHud = hw.data?.hud;
+  const ammoType = AMMO_TYPE_CODES[hudAmmo];
+  // Every branch below only ever WRITES, so without this a weapon swap left
+  // the previous weapon's leaves behind: switch off a bazooka and its rocket
+  // icon stayed in `SoldierAmmoIcon`, switch to a knife (`ATNone`, which no
+  // branch feeds) and the rifle's `AmmoType 1` kept the whole magazine panel
+  // on screen. Harmless while only two branches existed and only one of them
+  // fed an icon; not once every type in HUD-10's enum is reachable. Cleared
+  // to undefined rather than to a zero, which is the painter's own rule.
+  for (const name of SOLDIER_AMMO_VARS) delete vars[name];
   if (hudAmmo === 'atammobar' && magazine) {
     // R1-19/HUD-9, the magazine-bar branch. PrimaryAmmo is the loaded round
     // count (top-right, "14" in the retail shot); PrimaryMag is a SEPARATE
@@ -8506,19 +8683,31 @@ function updateSoldierHud() {
     if (ammoHud?.ammoBar) vars['Ammo/SoldierAmmo/SoldierAmmoBar'] = ammoHud.ammoBar;
     if (ammoHud?.ammoBarFill) vars['Ammo/SoldierAmmo/SoldierAmmoBarFill'] = ammoHud.ammoBarFill;
     if (ammoHud?.ammoBarSize) vars['Ammo/SoldierAmmo/SoldierAmmoBarSize'] = ammoHud.ammoBarSize;
-  } else if (hudAmmo === 'aticon') {
-    // The icon-only fallback (AmmoType 6 or 7 in hud-layout.json — OPEN
-    // [R1-18]: which of the two the engine actually uses for ATIcon weapons
-    // was never read, so 6 is picked arbitrarily. Both branches cull the same
-    // unfed heat/reload fill below, so the choice paints identically: icon
-    // and panel only, no numbers — matching the Viewer Recipe's "icon-only
-    // fallback" exactly either way.
-    vars['Ammo/AmmoType'] = 6;
+  } else if (ammoType >= 2) {
+    // Every icon-style type. HUD-10 closed the enum: the `.meme` value and
+    // the `.con` value are THE SAME enumeration, so the weapon's own
+    // `setHudAmmoType` goes straight through with no converter to write.
+    //
+    // The one real change is `ATIcon`, which this fed as **6** on the
+    // reasoning that 6 and 7 painted identically and the choice was
+    // arbitrary. It is 2, and it is not arbitrary: the layout's `{2,3,4,5}`
+    // group draws the rounds text (gated `ne 4 && ne 5 && ne 6`) where the
+    // `{6,7}` group does not, so a Bazooka, Panzerschreck, ExpPack,
+    // Detonator or Landmine was showing an icon with no rocket count beside
+    // it. 6 is `ATIconAndHeatBar`, which in vanilla is the MedPack alone.
+    //
+    // `Ammo/PrimaryAmmo` is fed for every type whose layout branch prints it,
+    // and left alone for the two that do not (4 `ATIconAndReloadBar`, the
+    // RepairPack; 5 `ATIconNoText`).
+    vars['Ammo/AmmoType'] = ammoType;
+    if (AMMO_TYPES_WITH_ROUNDS.has(ammoType)) vars['Ammo/PrimaryAmmo'] = hw.rounds;
     if (ammoHud?.icon) vars['Ammo/SoldierAmmo/SoldierAmmoIcon'] = ammoHud.icon;
   }
-  // Any other value (or none) leaves `Ammo/AmmoType` unset: every soldierAmmo
-  // leaf requires it, so the whole panel culls rather than guessing a shape
-  // for a weapon this file cannot classify.
+  // `ATNone` (0, the two knives) and anything unrecognised leave
+  // `Ammo/AmmoType` unset: every soldierAmmo leaf requires it, so the whole
+  // panel culls rather than guessing a shape for a weapon this file cannot
+  // classify. For a knife that is also what the engine does -- 0 is tested by
+  // no layout branch at all.
 }
 
 /** Announce the view C just selected, then fall back to the control list. */
@@ -8562,9 +8751,27 @@ function axisToward(current, demand, dt) {
  */
 function pilot(dt) {
   if (!aircraft) return;
-  const flying = occupancy.isActiveRoot();
+  // HP-15, the same gate `drive()` takes and for the same reason: the engine's
+  // early return is `PlayerControlObject::handlePlayerInput`'s (lnxded
+  // 0x08318920, epilogue 0x08318952), and a PlayerControlObject is what an
+  // aeroplane is too — nothing in that function knows or cares whether the
+  // object it is refusing to forward input to has wheels or wings. A destroyed
+  // plane still answering the stick under full control was a visible hole:
+  // `frame()` routes to `pilot()` rather than `drive()` purely on which
+  // drivetrain the root carries, so the wreck rule has to be on both sides of
+  // that fork or it is on neither.
+  //
+  // Forced false rather than returning, exactly as in `drive()`: the airframe
+  // still integrates, so a killed plane keeps its momentum and falls instead
+  // of stopping dead in the air, and the gun loop below still runs with
+  // `flying` gating its *value*, which is what turns the guns off the same
+  // frame — HP-13's `0x15` strips `IID_IWeapon` off a destroyed object, so a
+  // wreck has no weapons at all. The latched inputs are deliberately left
+  // where they were: the engine does not zero them either, it just stops
+  // delivering new ones.
+  const flying = occupancy.isActiveRoot() && !vehicleInput.blocked;
   if (flying) {
-    const held = captured ? keys : new Set();
+    const held = captured ? keys : EMPTY_KEYS;
 
     // W/S throttle. It latches rather than springs — you set a power setting and
     // it stays there, which is what a throttle quadrant does.
@@ -10522,6 +10729,10 @@ function frame(dt) {
     // existing momentum rather than freezing it. A bare gun/seat root has no
     // drivetrain to step either way — `aircraft`/`car` both stay null for
     // one — so neither call does anything for it.
+    // HP-15, before anything reads an input this frame: how much of the
+    // player's input the occupied hull's damage state lets through. One call,
+    // because `drive()` and `manned()` both spend the same answer.
+    stepVehicleInputGate();
     if (aircraft) pilot(dt);
     else if (car) drive(dt);
     if (mannedActive()) {
@@ -10820,6 +11031,18 @@ if (params.has('shots')) {
     hits: guns.hits,
     impacts: guns.impacts.length,
     projectiles: guns.projectiles.length,
+    // HP-9d, for a headless check: a **fuse** round is one the engine gives an
+    // end-of-life explosion but no impact explosion, and `resting` says it has
+    // met a surface and is running its fuse down where it landed rather than
+    // having detonated there.
+    inFlight: guns.projectiles.map(shot => ({
+      gun: shot.group.node.name,
+      age: shot.age,
+      ttl: shot.ttl,
+      fuse: shot.fuse,
+      resting: shot.resting,
+      position: shot.mesh.position.toArray(),
+    })),
     pooled: guns.tracerPool.length,
     // Baked streaks recycle into their own group's pool, not the shared
     // cylinder pool, so a leak there is invisible to `pooled` alone.
@@ -11304,6 +11527,14 @@ if (params.has('shots')) {
     owner, name: v.name, hp: Math.round(v.hitPoints * 100) / 100,
     max: v.maxHitPoints, critical: v.critical, destroyed: v.destroyed,
     criticalDamage: v.criticalDamage,
+    // Where it stands, which is also the point a blast measures its distance
+    // to (HP-9: the transform origin, not a bounding box). A check that wants
+    // to stand a man beside one, or to know which neighbour a shell should
+    // have caught, needs this and has had to guess at it until now.
+    pos: damageVisuals.get(owner)?.node
+      ? damageVisuals.get(owner).node.getWorldPosition(splashPos).toArray()
+        .map(n => Math.round(n * 100) / 100)
+      : null,
     tier: v.shown ? { threshold: v.shown.threshold, names: v.shown.names } : null,
     running: damageVisuals.get(owner)?.handles.length ?? 0,
     tiers: v.effects.map(e => ({ hp: e.hp, effect: e.effect })),
@@ -11333,6 +11564,18 @@ if (params.has('shots')) {
     setInput: (name, value) => car.setInput(name, value),
     integrate: dt => car.integrate(dt),
   } : null);
+  // HP-15, for a headless check: what the occupied hull's damage state is
+  // letting through this frame, and what the aim rig is actually scaling by.
+  window.__inputGate = () => ({
+    blocked: vehicleInput.blocked,
+    rotationalScale: vehicleInput.rotationalScale,
+    turretInputScale: occupancy?.turret?.inputScale ?? null,
+    occupied: occupiedVehicleDamage()
+      ? { hp: occupiedVehicleDamage().hitPoints,
+          critical: occupiedVehicleDamage().critical,
+          destroyed: occupiedVehicleDamage().destroyed }
+      : null,
+  });
   // Hurt one by owner id without having to hit it with a round — the same
   // generic entry point `window.__damage(n)` is for the soldier. Negative heals,
   // the way `SimpleObject::handleDamage` dispatches on the sign of its argument
