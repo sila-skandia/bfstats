@@ -271,12 +271,40 @@ Named honestly, because each one is a separate piece of work.
   `RichoWoodDecal` are 15 authored templates with real geometry and a
   `relativePositionInUp 0.001` lift; a pooled decal ring buffer is the cheapest
   possible proof that collision is real, and it is not built.
-- **No explosion or splash damage** (gap E-1). `radius` on 29 projectiles and
-  `material2` on 49 are parsed into `damage.json`'s weapon list but nothing
-  detonates.
-- **Vehicles and soldiers are collidable, but nothing is damaged** (gap C-7).
-  Rounds stop on a parked vehicle's hull and report its `defenseMaterial`; the
-  damage tables are loaded in the same page and are not consulted.
+- ~~**No explosion or splash damage** (gap E-1).~~ **Closed 2026-09-20.** A
+  round now takes whichever of the engine's **two** explosions its data says
+  (ledger HP-9/HP-9d) — impact iff `damageType == 1 && hasCollisionEffect`,
+  end-of-life iff `damageType ∈ {1, 4}` — and `vehicle-damage.js` applies the
+  falloff to everything with an Armor inside the radius. See
+  [`impact-effects.md`](impact-effects.md) for the rule, the survey behind it
+  and the measured page runs. Three things that were easy to get wrong and are
+  written down there rather than here: `hasCollisionEffect` is the
+  impact-versus-fuse **discriminator** and not a splash-capability flag;
+  `radius` is a console `int` truncated at parse, so a fractional one below 1
+  is no splash at all; and the distance is to the victim's **origin** with only
+  the Y term scaled. What is still open is the soldier half — `applySplash`
+  walks registered vehicles only, and the engine's soldier-only exposure term
+  is passed as 1.
+- ~~**Vehicles and soldiers are collidable, but nothing is damaged** (gap
+  C-7).~~ Closed for vehicles: a round's direct HP and its splash both land,
+  and the tier/wreck machinery is `vehicle-damage.js`. Soldiers still take
+  direct fire only.
+- **A fuse round does not bounce.** It stops where it first touches and runs
+  its `timeToLive` down there, which reproduces the damage exactly and the
+  trajectory only approximately. The contact solver belongs to the collision
+  round (COL-2..COL-12). What a player sees, and the numbers, are in
+  [`impact-effects.md`](impact-effects.md).
+
+  `dieAfterColl` is **no longer unread** (corrected 2026-09-20). It is
+  `ProjectileTemplate+0x1a7`, and `Projectile::handleCollision` (`0x0831ee80`)
+  recycles the round when it or `hasCollisionEffect` is set — tests at
+  `0x0831ef4b` and `0x0831ef54`, kill through `resetProjectile` (`0x0831e720`),
+  which despawns without calling `startEndEffect`. So it is not a restatement
+  of the flag, it is the other half of the same question, and only a round with
+  **neither** word is entitled to rest and burst on its fuse. `con.py` parses
+  it and `assemble.py` emits it. Three neighbours in the same chain are named
+  and not consumed: `dieAtObjectHit` `+0x1a8`, `isSticky` `+0x1ab` (the
+  engine's own bounce-free rest) and `detonateOnWaterCollision` `+0x1ac`.
 - **Collision groups are still dropped** (gap C-4). `c_CGProjectiles` and
   `c_CGLadders` are 47 declarations the extractor does not parse, so a wire
   fence stops a round exactly like a wall.

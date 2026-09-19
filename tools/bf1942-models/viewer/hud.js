@@ -239,11 +239,68 @@ function drawBitmapText(ctx, font, text, x, y, rgb) {
 }
 
 /** `rotation.angle`, live-overridden by `rotation.angleVar` when bound and
- *  fed. OPEN [R2-18]: the turret-icon's own angle unit (radians vs degrees),
- *  sign and pivot were never confirmed -- `angleMultiplier` is recorded by
- *  the extractor but its role is unread, so it is not applied here. Canvas
- *  `rotate()` takes radians; the value is passed through unconverted, which
- *  is a guess, not a reproduction of the engine's own convention. */
+ *  fed.
+ *
+ *  The unit is **radians**, confirmed twice (VHUD-9): the engine's own
+ *  `IconLookRotation` is an `FPATAN` result (client `0x006ae612`), and canvas
+ *  `rotate()` takes radians too, so the value passes through unconverted.
+ *  That much the old OPEN comment guessed right.
+ *
+ *  `angleMultiplier` is still NOT applied, and now for a reason rather than
+ *  for want of one: it scales a draw-context scalar, not the bound variable,
+ *  and all seven vanilla `RotateEffect`s author it as `0`. Applying it would
+ *  freeze every dial at twelve o'clock.
+ *
+ *  The SIGN is `_drawPicture`'s business, not this function's -- see there. */
+/**
+ * `setHudAmmoType`'s value, lower-cased, to the `Ammo/AmmoType` integer the
+ * layout keys the soldier ammo panel on.
+ *
+ * HUD-10 closed this: the `.con` word and the `.meme` variable are **the same
+ * enumeration** — the client's own `operator>>` (`0x004c4cd0`) was decompiled
+ * in full and every stored value read — so a weapon's declared type goes
+ * straight through and there is no converter to write.
+ *
+ *   0 ATNone               nothing draws                  KnifeAllies/Axis
+ *   1 ATAmmoBar            magazine panel, bar, rounds, mag box
+ *   2 ATIcon               panel, icon, ROUNDS            Bazooka, Panzershreck,
+ *                                                         ExpPack, Detonator, Landmine
+ *   3 ATIconAndStrengthBar panel, icon, rounds, bar       grenades
+ *   4 ATIconAndReloadBar   panel, icon, reload bar        RepairPack
+ *   5 ATIconNoText         panel, icon
+ *   6 ATIconAndHeatBar     panel, icon, heat bar          MedPack
+ *
+ * Anything unrecognised is the client's own 7. Surveyed across all 18
+ * installs: ATAmmoBar 1017, ATIcon 512, ATIconAndStrengthBar 367, ATNone 218,
+ * ATIconAndHeatBar 51, ATIconAndReloadBar 19, ATIconNoText 1; 37 declarations
+ * in vanilla, every one matching the table above.
+ */
+export const AMMO_TYPE_CODES = {
+  atnone: 0, atammobar: 1, aticon: 2, aticonandstrengthbar: 3,
+  aticonandreloadbar: 4, aticonnotext: 5, aticonandheatbar: 6,
+};
+
+/**
+ * Which of the icon-family types print a round count.
+ *
+ * `menu/InGame`'s `{2,3,4,5}` panel gates its `Ammo/PrimaryAmmo` text on
+ * `ne 4 && ne 5 && ne 6` on top of the group's own membership test, so 2 and
+ * 3 print and 4 and 5 do not. This is why `ATIcon` had to be 2 and not 6: a
+ * Bazooka fed 6 landed in the `{6,7}` panel, which has no rounds text at all,
+ * and showed a rocket icon with no count beside it.
+ */
+export const AMMO_TYPES_WITH_ROUNDS = new Set([2, 3]);
+
+/** The 800x600 point the seat-occupancy dots are offset from (VHUD-7): the
+ *  six 8x8 leaves draw at `(192 + VehiclePosX[i+1], 452 + VehiclePosY[i+1])`.
+ *  It is also exactly `hud-layout.json`'s own seat-0 rect (247,457) minus that
+ *  variable's authored default (55,5), so the two agree. */
+const SEAT_DOT_ORIGIN = [192, 452];
+
+/** `seatDotPosition`'s scratch pair, reused so the six leaves do not allocate
+ *  one array each per painted frame. */
+const SEAT_DOT_AT = [0, 0];
+
 function rotationAngle(el, vars) {
   const r = el.rotation;
   if (!r) return 0;
@@ -411,6 +468,25 @@ export class Hud {
     }
   }
 
+  /**
+   * A sprite, optionally spun about its own centre by a `RotateEffect`.
+   *
+   * **The rotation is applied counter-clockwise, and that is not a taste
+   * decision.** VHUD-9 read `RotateEffect`'s own transform at client
+   * `0x007edbf0`: `x' = x·cos + y·sin`, `y' = -x·sin + y·cos`, which on the
+   * HUD's y-down frame sends `(0,-1)` at +90 degrees to `(-1,0)` -- top to
+   * left, counter-clockwise on screen. HTML canvas `rotate(+θ)` is clockwise.
+   * The two conventions are opposite, so the engine's angle has to be negated
+   * here.
+   *
+   * This used to be `ctx.rotate(angle)` and the dial still looked right,
+   * because `map.html` fed it through `TurretRig.headingRadians()`, which
+   * carries `RIG_SIGN.yaw = -1`. Two errors cancelling. They are now
+   * separated: `map.html` feeds the un-negated engine value
+   * (`turretYawRadians`) and the negation lives here, where the convention
+   * mismatch actually is. **Change one without the other and every dial
+   * mirrors.**
+   */
   _drawPicture(ctx, el, x, y, w, h, img) {
     if (!img) return;
     const color = el.color;
@@ -419,7 +495,7 @@ export class Hud {
     if (angle) {
       ctx.save();
       ctx.translate(x + w / 2, y + h / 2);
-      ctx.rotate(angle);
+      ctx.rotate(-angle);
       ctx.drawImage(img, -w / 2, -h / 2, w, h);
       ctx.restore();
     } else {
@@ -547,15 +623,36 @@ export class Hud {
     ctx.globalAlpha = 1;
   }
 
-  /** One seat-occupancy dot. verify-r2.md R2-5/R2-6 confirm one shared
-   *  `Occupied/OccupiedData` object backs all six seats and its five states
-   *  (0 blank, 1 you, 2 empty, 3 teammate, 4 enemy) pick one of five dot
-   *  textures, but which live state a given seat is in was left OPEN (R2's
-   *  own "selector" claim) -- there is no engine-confirmed variable to key
-   *  this on. This file's own contract, not a corpus fact, pending whatever
-   *  P2/seats.js actually feeds at integration: `vars[el.dataRef]` is an
-   *  array indexed by `el.position`, holding one of R2-6's five state ints.
-   *  Never exercised this round (nothing sets `Occupied/OccupiedData`). */
+  /**
+   * One seat-occupancy dot.
+   *
+   * VHUD-2 read `BfOccupiedVehicleData`'s vtable (`0x0093f300`) as raw bytes:
+   * one shared object backs all six leaves and its five-entry icon table is
+   * 0 blank, 1 `vehicledot_local`, 2 `vehicledot_empty`, 3
+   * `vehicledot_friend`, 4 `vehicledot_enemy`. **Which live state a given
+   * seat resolves to is still unread**, so `vars[el.dataRef]` being an array
+   * indexed by `el.position` is this file's contract with `map.html`, not a
+   * corpus fact.
+   *
+   * The POSITION is a corpus fact now, and it used to be the blocker.
+   * VHUD-11: `el.posVar` names a `Vehicle/VehiclePos/VehiclePosX<n>`/`Y<n>`
+   * pair, and those carry the seat's own `setVehicleIconPos` -- a Vec2 on
+   * every PlayerControlObject template, root and seats alike, which nothing
+   * parsed until this round. They are texel offsets inside the 128x128
+   * vehicle-icon panel, so the dot sits at VHUD-7's `(192 + X, 452 + Y)`:
+   * Sherman's root `54/103` lands at (246, 555), inside the icon.
+   *
+   * `el.rect` is NOT a fallback position. It is this variable pair's own
+   * authored default -- the six leaves are a 5px diagonal staircase from
+   * (247,457), which is the panel origin plus (55,5)..(85,30) -- so a leaf
+   * drawn there is drawn at a placeholder, not at a seat. Every PCO in the
+   * game declares `setVehicleIconPos`, so the only thing that reaches an
+   * unfed pair is a scene baked before `con.py` learned the word, and for
+   * that scene the honest answer is no dot at all: six of them in a
+   * staircase assert a seat layout the data does not carry. Measured on the
+   * page (Kasserine Hanomag, six seats): with the pairs fed, the staircase
+   * corner holds 0 texels of dot; with them deleted, 66.
+   */
   _drawOccupiedSeat(ctx, el, x, y, w, h) {
     const table = this.vars[el.dataRef];
     const state = Array.isArray(table) ? table[el.position] : undefined;
@@ -564,7 +661,37 @@ export class Hud {
       : state === 3 ? 'icon_vehicledot_friend'
       : state === 4 ? 'icon_vehicledot_enemy' : null;
     const img = key && this.sprite(key);
-    if (img) ctx.drawImage(img, x, y, w, h);
+    if (!img) return;
+    const at = this.seatDotPosition(el, x, y);
+    if (!at) return;
+    ctx.drawImage(img, at[0], at[1], w, h);
+    // `at` aliases `SEAT_DOT_AT` and is only valid until the next call --
+    // never hold it past this line.
+  }
+
+  /** Where one `occupied-seat` leaf draws: the vehicle-icon panel's own
+   *  origin plus this seat's fed offset, or `null` when the leaf binds a
+   *  position pair and nothing fed it -- see `_drawOccupiedSeat` for why that
+   *  is not the rect. A leaf with no `posVar` at all (no shipped one, but a
+   *  hand-built leaf could) keeps its own rect, because it never claimed to
+   *  be placed by a variable. Split out so `tests/hud_harness.mjs` can read
+   *  the arithmetic without a canvas.
+   *
+   *  Returns `SEAT_DOT_AT`, filled in place: six leaves repaint every frame
+   *  the vehicle panel is up, and a fresh pair per dot is 360 two-element
+   *  arrays a second for arithmetic the caller consumes immediately. Copy it
+   *  if you need to keep it. */
+  seatDotPosition(el, x, y) {
+    if (!el.posVar) {
+      SEAT_DOT_AT[0] = x; SEAT_DOT_AT[1] = y;
+      return SEAT_DOT_AT;
+    }
+    const vx = this.vars[el.posVar.x];
+    const vy = this.vars[el.posVar.y];
+    if (typeof vx !== 'number' || typeof vy !== 'number') return null;
+    SEAT_DOT_AT[0] = SEAT_DOT_ORIGIN[0] + vx;
+    SEAT_DOT_AT[1] = SEAT_DOT_ORIGIN[1] + vy;
+    return SEAT_DOT_AT;
   }
 
   /** The procedural crosshair (`BfCrosshairNode`), for the layout groups
