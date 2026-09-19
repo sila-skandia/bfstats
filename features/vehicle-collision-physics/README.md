@@ -95,6 +95,12 @@ Nothing here is built. When it is, in the order that pays:
    (`Game.rfa`, run order matters), and the **per-vertex and per-face collision
    materials** (`stdmesh.py` reads the face byte and discards the vertex's
    u16). Replace the header comment in `viewer/vehicle-damage.js`.
+   `bf42/damage.py` already loads the tables but needs three fixes first: it
+   reads inside `beginRem`/`endRem` blocks (18 phantom cells) and ignores
+   `MaterialManager.setCell` (6 missing), so it reports 5,165 pairs where the
+   engine loads 5,153; it keys cells by material id where the engine keys them
+   by att/def *group* (differs for 120 and 166); and an effect-only cell must
+   start at 1.0, an absent one at 0.
 2. **Make the struck vehicle a body.** Today a parked vehicle is part of the
    static collider. The minimum faithful version: every spawned vehicle is a
    root body with `mass`, box inertia × `inertiaModifier`, the §4 step, and the
@@ -110,6 +116,21 @@ Nothing here is built. When it is, in the order that pays:
 
 The per-track reports each end with JavaScript notes for a fixed 30 Hz tick;
 R2's is a complete `updatePhysics`.
+
+## Where the findings were written into existing docs
+
+So that nobody planning viewer work meets the old story first:
+
+| Doc | What changed |
+|---|---|
+| `features/bf1942-engine-reference/README.md` | the `lnxded/` tooling, a Current-state paragraph, the symbol count |
+| `.../ledger.md` | HP-6 rewritten; COL-1 and PHY-2 amended; new section COL-2 to COL-12 |
+| `.../subsystems/hitpoints-and-damage.md` §3, `physics.md` §3 and §6, `tank-driving.md` Open | rewritten or corrected in place |
+| `features/viewer-collision-damage/README.md` | superseded-in-part note; verdict row 1 and the headline bullet corrected |
+| `features/bf1942-3d-models/fall-damage-research-groundwork-2026-09-17.md`, `supply-and-health.md` | the `*0x15c` receiver corrected (GameServer, `giveDamage`) |
+| `features/flyable-vehicles/collision-and-crash.md`, `README.md` | every `strong inference` about the executable replaced by what was read: layer use, the speed/angle multiplier, the once-per-second limiter, `damage.py`'s pair count |
+| `features/bf1942-3d-models/ground-vehicles.md`, `parity-gaps.md` | "no hull collision" now points at the engine spec; a new parity-gap row for vehicle-vs-vehicle push and crash damage |
+| `features/bf1942-parity-round-2026-09-19/README.md` | left to that round's lead session, which has the suggested row |
 
 ## Open
 
