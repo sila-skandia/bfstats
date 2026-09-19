@@ -113,6 +113,41 @@ class FillPictureGeometryTests(unittest.TestCase):
         self.assertEqual([696, 561, 32, 20], mag["full"]["clip"])
         self.assertEqual([696, 561, 32, 10], mag["half"]["clip"])
 
+    # --- `when` comparisons ------------------------------------------------
+
+    def test_the_combat_area_warning_is_culled_until_the_countdown_runs(self) -> None:
+        # `menu/InGame`'s gate is `0 < Outside/OutsideTime`, which the
+        # extractor flips to `{Outside/OutsideTime, gt, 0}`. `condOk` did not
+        # implement `gt` and its default does not cull, so the plate, the
+        # 65-character warning and the countdown drew over every level's HUD
+        # -- including the 12 vanilla levels that declare no combat area at
+        # all, where the countdown can never be anything but zero.
+        c = self.results["conditions"]
+        self.assertFalse(c["outsideAtZero"])
+        self.assertTrue(c["outsideAtOne"])
+        self.assertTrue(c["outsideAtTen"])
+
+    def test_the_weapon_bar_shows_only_the_slots_the_kit_has(self) -> None:
+        # The same fail-open default, on a pre-existing group: the fifth and
+        # sixth weapon-select slots are `{Weapon/NumberOfItems, ge, 5|6}`.
+        c = self.results["conditions"]
+        self.assertFalse(c["slotFiveWithFour"])
+        self.assertTrue(c["slotFiveWithFive"])
+        self.assertTrue(c["slotFiveWithSix"])
+
+    def test_the_operators_that_already_worked_are_unmoved(self) -> None:
+        c = self.results["conditions"]
+        self.assertTrue(c["ltTrue"])
+        self.assertFalse(c["ltFalse"])
+        self.assertTrue(c["leTrue"])
+        self.assertTrue(c["eqTrue"])
+        self.assertTrue(c["neTrue"])
+
+    def test_a_nested_or_recurses_through_the_new_operators(self) -> None:
+        c = self.results["conditions"]
+        self.assertTrue(c["nested"])
+        self.assertFalse(c["nestedFalse"])
+
 
 if __name__ == "__main__":
     unittest.main()

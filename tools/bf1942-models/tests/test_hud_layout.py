@@ -422,5 +422,58 @@ class HudLayoutGoldenTests(unittest.TestCase):
         self.assertEqual(set(self.hud["fonts"]), set(handles))
 
 
+class ConditionOperatorCoverageTests(unittest.TestCase):
+    """Every operator this extractor can emit must be answered by the two
+    evaluators that read the file.
+
+    `viewer/hud.js`'s `condOk` and `map.html`'s copy of it end in
+    `default: return true`, which does NOT cull. An operator the switch does
+    not name therefore draws a leaf the data said to hide -- which is exactly
+    what happened when the combat-area group arrived carrying `gt` (the
+    MemeFile's `0 < Outside/OutsideTime`, flipped by `FLIP_CMP`): the warning
+    plate and its 65-character string drew over every level's HUD, on levels
+    with no combat area included. `ge` had been failing open the same way for
+    the weapon-select bar's fifth and sixth slots since that group landed.
+
+    Reading the operator names back out of the two sources is deliberately
+    crude and deliberately source-level: it fails the moment the extractor
+    grows an operator a viewer does not handle, which is the only way to stop
+    the next one silently drawing.
+    """
+
+    VIEWER = Path(__file__).resolve().parents[1] / "viewer"
+
+    def emittable_operators(self) -> set[str]:
+        ops = set(hud.FLIP_CMP) | set(hud.FLIP_CMP.values())
+        ops |= set(hud.NEG_CMP) | set(hud.NEG_CMP.values())
+        # The comparison classes the flattener starts from.
+        ops |= {"eq", "ne", "lt", "le"}
+        return ops
+
+    def implemented_operators(self, source: Path) -> set[str]:
+        import re
+        text = source.read_text()
+        start = text.index("function condOk(")
+        end = text.index("\n}", start)
+        body = text[start:end]
+        return set(re.findall(r"case '([a-z]+)':", body))
+
+    def test_the_extractor_emits_six_comparisons(self) -> None:
+        self.assertEqual({"eq", "ne", "lt", "le", "gt", "ge"},
+                         self.emittable_operators())
+
+    def test_hud_js_answers_every_one_of_them(self) -> None:
+        missing = self.emittable_operators() - self.implemented_operators(
+            self.VIEWER / "hud.js")
+        self.assertEqual(set(), missing,
+                         f"viewer/hud.js condOk falls open on {sorted(missing)}")
+
+    def test_map_html_answers_every_one_of_them(self) -> None:
+        missing = self.emittable_operators() - self.implemented_operators(
+            self.VIEWER / "map.html")
+        self.assertEqual(set(), missing,
+                         f"map.html condOk falls open on {sorted(missing)}")
+
+
 if __name__ == "__main__":
     unittest.main()
