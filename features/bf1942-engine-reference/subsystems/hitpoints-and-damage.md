@@ -184,12 +184,73 @@ GameServer (HP-9b) and returns a bool that only gates a shot-accuracy stat. Who
 drains that queue is unread. `calcDamage` (`0x0814b520`) is **friendly-fire
 scaling only** — no material, no distance (HP-9c).
 
+**The impact explosion is centred at `hitPos + 0.1 · normal`** (HP-9, added
+2026-09-19), not at the hit point: `0.1f` at `ds:0x086b1ca0` loaded
+`0x08153f5e`, multiplied into the normal `0x08153f6b`–`0x08153f73`, added
+`0x08153f82`–`0x08153f8f`, pushed `0x08154026`/`0x08154030`/`0x08154037`, with
+the same shape at `0x0815434e` and `0x081546f2`. The collision **effect** is
+played earlier, at `0x08153e5b`, on the raw unoffset point, and the end-of-life
+explosion has no offset at all (`startEndEffect` pushes `getPos()` at
+`0x0831f747`). Worth about 1% of the falloff — free to model, and read rather
+than guessed.
+
 **What explodes, and when (HP-9d).** `damageType == 1` **and**
 `ObjectTemplate.hasCollisionEffect` gives the explosion on impact;
 `damageType ∈ {1,4}` gives the explosion at end of life, through
 `Projectile::startEndEffect` (`0x0831f590`), which tests neither
 `hasCollisionEffect` nor the impact path's radius truncation and passes
-`sourceArmor = NULL`. **`hasCollisionEffect` is the impact-versus-fuse
+`sourceArmor = NULL`.
+
+### The contact recycle: which rounds ever reach their fuse (HP-9e, HP-9f)
+
+Read 2026-09-20, and it changes which projectiles are fuse weapons at all.
+
+`Projectile::handleCollision` (`0x0831ee80`) **recycles a round when
+`dieAfterColl` OR `hasCollisionEffect` is set** — `dieAfterColl` is
+`ProjectileTemplate+0x1a7` (bool, `ConsoleClass385`, instance `0x087a4fc0`,
+accessor `0x082de400`), tested at `0x0831ef4b`, and `hasCollisionEffect`
+(`+0x1a4`) at `0x0831ef54`. The kill branch `0x0831ef5d` → `0x0831f006` calls
+`resetProjectile` (`0x0831e720`), which sets the detonate latch
+`Projectile+0x10d` (`0x0831e753`) and despawns **without** calling
+`startEndEffect`. So such a round explodes **neither way**, and a later
+`detonate()` returns on the latch.
+
+`Projectile::detonate` (`0x0831e680`) is the **only** caller of
+`startEndEffect`, and its five call sites — `handleUpdate` (timeToLive),
+`handleMessage`, `FireArms::detonateProjectiles`,
+`FireArms::placeScoutCamera`, `ProjectileNetworkable::setNetUpdate` — are all
+timers or messages. **None is a collision path.**
+
+`SimpleObject::handleCollision` runs first (`0x081ef01`), so the direct hit and
+any impact explosion still land before the recycle.
+
+**Only a round with neither word survives contact to reach its fuse.** In
+vanilla that is exactly `GrenadeAlliesProjectile`, `GrenadeAxisProjectile`,
+`ExpPackProjectile` and `LandmineProjectile`.
+
+`dieAfterColl` is **not** a restatement of `hasCollisionEffect`: 2,311
+declarations across 18 installs (values 0 and 1 only), and **1,676 templates
+carry `damageType 1` + `hasCollisionEffect 1` + `dieAfterColl 0`**, including
+every vanilla bomb. Named in the same chain and not consumed: `dieAtObjectHit`
+`+0x1a8` (`0x0831ef3c`), `isSticky` `+0x1ab` (`0x0831ef16`, attaches to the
+struck object and disables physics) and `detonateOnWaterCollision` `+0x1ac`
+(`0x0831f3ae`; without it `handleCollision` returns immediately on water) — no
+vanilla projectile sets any of the three.
+
+**Vanilla has four `damageType 4` templates, not one** (HP-9f):
+`LandmineProjectile` (flag 0, `dieAfterColl 0`, radius 4, material2 232, ttl
+360) plus `AA_Allies_Projectile` and `Carrier_AA_Projectile` (flag 1,
+`dieAfterColl 1`) and `Flak38_Projectile` (flag 1, `dieAfterColl` unset) — the
+three flak shells, all radius 20, material2 199, ttl `CRD_UNIFORM/0.8/1.4`.
+
+A type-4 round gets no impact explosion — the gate at `0x08153e79`
+(`cmp [eax+0x160],1; je`) sends anything but 1 to the no-explosion tail at
+`0x08153e82` — **but the flag on the flak shells is not dead**, which a first
+reading claimed. It is consulted by the recycle above and deletes the round on
+contact: a flak shell that touches an aircraft, the ground or a wall takes its
+direct hit, plays its collision effect and vanishes. **The flag is what makes a
+timed airburst behave like one**, and a reconstruction that read it as dead
+burst flak shells where they landed. **`hasCollisionEffect` is the impact-versus-fuse
 discriminator, not a splash capability flag**, and treating it as one deletes
 the most-used splash in the game: in vanilla, 25 of the 28 `damageType 1`
 projectiles set it and the three that do not are exactly `ExpPackProjectile`,
@@ -200,12 +261,47 @@ projectiles set it and the three that do not are exactly `ExpPackProjectile`,
 `ProjectileTemplate.radius` is an **`int`** console property — of the six
 registrations of the name `radius`, only the projectile one is typed int — so
 it is parsed by `istream >> int` and a `.con` cannot give a projectile a
-fractional radius at all. 340 mod templates try: FH's `BismarckFatProjectile
+fractional radius at all. **And there is no rejection path** (read
+2026-09-20): `ConsoleClass390::setArgFromString` (`0x082df7b0`) builds a
+`basic_stringbuf` over the argument, runs `std::istream::operator>>(int&)`
+(`0x082df83f`) into the function-local static at `0x087debbc`, and **returns
+void having never consulted the stream state** — no `fail()`, no `rdstate()`,
+no branch on the result. `ConsoleObjectBaseImpl::execute` (`0x08359460`)
+ignores the return and unconditionally calls `executeObjectMethod`
+(`0x082df8b0`), which `fild`s that int into `ProjectileTemplate+0x190`. `>> int`
+takes the `0`, stops at the `.`, sets no failbit. `0.25` really is 0, and `7.5`
+is 7, silently. 340 mod templates try: FH's `BismarckFatProjectile
 17.63` becomes 17, and DC's `50calSniper_Projectile 0.25` becomes **0**, which
 with the strict `radius > d` gate means that round has no splash whatever. The
 impact path's own truncation code is therefore real but a no-op. Six vanilla
 tank rounds set no radius at all and ride the constructor's **10.0**, so that
 default is load-bearing.
+
+### What a tank's HE round actually splashes (DMG-2, 2026-09-20)
+
+A consequence of DMG-1 worth stating with numbers, because both halves of it
+are counter-intuitive and the first reading got the second half backwards.
+
+`damageMod(206, 50)` and `damageMod(207, 50)` have **no cell**, and neither
+attacker row has a cell for **any** of def-groups **45–59 or 72** — every
+vanilla ground vehicle, gun, artillery piece, ship and PT boat. So by DMG-1 a
+tank's HE round does **nothing** to armour on the ground: it kills another tank
+by direct hit alone. (Reproduced on a rebuilt scene: a Sherman round took
+exactly its direct damage off a Priest and no splash.)
+
+**But "it splashes soldiers only" is false.** Both rows' *largest* cell is
+def-group **60/61/62**, which every vanilla aircraft carries (B17, Corsair,
+Zero, Spitfire = material 60), at **15.0** for 206 and **5.0** for 207; with
+`materialDamage(206) = 10` that is 150 HP at a plane's origin before falloff.
+
+The split is also not the one a first pass gave: **206 = Sherman, PanzerIV,
+T34-85, Chi-ha** and **207 = Tiger, T34, M10** (base 4.0).
+
+Other attackers against def-group 50: artillery 201 → 5.0, bombs 202/203 → 6.0,
+explosives pack 204 → 3.5, grenades 205 → 2.0, naval 208 → 6.0, and the
+landmine's 232 → **100.0**. The `attGroup`/`defGroup` indirection changes
+nothing here: only two vanilla materials are non-identity (120→119, 166→165),
+and neither is a splash attacker or armour.
 
 **`defaultDamageMod` is 0.0 and unreachable (DMG-1).** `getDamageMod` does fall
 back to `MaterialManager+0x24` when a pair has no cell or a material id is
