@@ -35,9 +35,26 @@ export const PROMPT = '> ';
  *  it is a fixed 77 and not a growing string. */
 export const MAX_LINE = 0x4d;
 
-/** Scrollback cap: client ctor `param_1[0xbf] = 10000`, lnxded
- *  `0x083dc14c` `[edi+0x1bc] = 0x2710`. */
-export const MAX_SCROLLBACK = 10000;
+/** Scrollback cap: **1024 lines**, not 10000. `setMaxHistorySize` (lnxded
+ *  `0x083edf60`) writes `this+0x2c`, and `this+0x2c` is exactly what
+ *  `OldConsole::output` compares the scrollback deque's size against before
+ *  it pops from the front (`0x083dd018`). The constructor sets it to `0x400`
+ *  — lnxded `0x083dc037` `[edi+0x2c] = 0x400`, client `0x005a224c`
+ *  `[esi+0x18] = 0x400`.
+ *
+ *  The 10000 the constructor also writes (lnxded `0x083dc14c`
+ *  `[edi+0x1bc]`, client `0x005a22ea` `[esi+0x2fc]`) is a different member:
+ *  nothing in `handleCommand`, `output` or `getLines` reads it, and neither
+ *  history setter writes it. */
+export const MAX_SCROLLBACK = 1024;
+
+/** Command-history cap: **10 lines**. `setMaxCommandHistorySize` (lnxded
+ *  `0x083edff0`) writes `this+0x5c`, the cap of the second deque
+ *  (`this+0x3c`..`this+0x5c`) that `updateAsciiKey`'s Up/Down walk reads at
+ *  `0x083eaa35`. The constructor sets it to 10 — lnxded `0x083dc09c`
+ *  `[edi+0x5c] = 0xa`, client `0x005a226e` `[esi+0x34] = 0xa`. So the retail
+ *  console remembers ten commands, not ten thousand. */
+export const MAX_COMMAND_HISTORY = 10;
 
 /** Lines PageUp / PageDown move by: client ctor `param_1[0x57] = 8`,
  *  lnxded `0x083dc0d6` `[edi+0x16c] = 8`. */
@@ -51,8 +68,13 @@ export const PAGE_LINES = 8;
 export const VIEW_LINES = 20;
 
 /** The scrolled-up marker. When the scroll offset is non-zero `getLines`
- *  drops the prompt line and pushes this instead: lnxded `0x083ec28f`
- *  pushes `0x86e38e0`, sixty `+` characters (client copy `0x00903448`). */
+ *  drops one scrollback line and pushes this **in front of** the prompt
+ *  line, not in its place: lnxded `0x083ec28f` pushes `0x86e38e0` (sixty
+ *  `+`), and both the pushed-marker path (`0x083ec2cd`) and the
+ *  no-marker path (`0x083ec1f6`) converge on `0x083ec1ff`, which appends the
+ *  edit buffer to the prompt and pushes that too. The client is the same
+ *  shape: `0x005a2037` skips the marker, `0x005a2060` always runs. So a
+ *  scrolled console still shows what you are typing. */
 export const SCROLL_MARKER = '+'.repeat(60);
 
 /** The wash the console lays over the scene. `FUN_004649f0` — run by the
@@ -141,15 +163,21 @@ const KEYWORD_SET = new Set(KEYWORDS.map(k => k.toLowerCase()));
  * at `0x083e4244`); everything before it is the object, everything after is
  * the method. A token with no dot at all is a keyword or a syntax error.
  *
- * `=` is NOT part of this. The only `=` the engine's dispatcher understands
- * is the one in `var v_x = 1` / `const c_x = 1` and in assignment to an
- * existing `v_` variable (lnxded `0x083e14c3` and `0x083e78ce`, both leading
- * to `setVariable`); `OldConsole::getArgs` (`0x083de4d0`) reads arguments as
- * plain whitespace- or quote-delimited tokens and has no `=` case, so in the
- * real game `show.dev = 1` would hand the method two arguments. The viewer
- * accepts it anyway, because that is the spelling the page's own users were
- * told to type: `dropEquals` below drops a single leading `=` argument and
- * nothing else. That is this module's one deliberate divergence.
+ * `=` is NOT part of this. The whole binary compares a token against `"="`
+ * (the literal at lnxded `0x086e6da4`) in exactly three places, all inside
+ * `handleCommand` and all on the `var` / `const` / `v_`-assignment paths:
+ * `0x083e14c3`, `0x083e1a43` and `0x083e78ce`. There is no `cmp ...,0x3d`
+ * anywhere in `handleCommand`, and `OldConsole::getArgs` (`0x083de4d0`)
+ * tests only 0x20 and 0x22, so in the real game `show.dev = 1` hands the
+ * method two arguments and fails the argument count.
+ *
+ * The viewer accepts it anyway, because that is the spelling the page's own
+ * users were told to type. The divergence is confined to a single bare `=`
+ * token stripped off the **raw** argument text by `EQUALS_PREFIX` below: it
+ * has to match at the very start (so a quoted `"="` cannot match, because
+ * the first non-space character is then `"`) and has to be followed by
+ * whitespace or end of line (so `=1` stays the one argument `=1`, as in the
+ * engine). Nothing else about argument parsing changes.
  */
 export function splitCommand(line) {
   const text = String(line ?? '').trim();
@@ -170,9 +198,13 @@ export function splitCommand(line) {
     kind: 'call',
     object: token.slice(0, dot),
     method: token.slice(dot + 1),
-    args: dropEquals(parseArgs(rest)),
+    args: parseArgs(rest.replace(EQUALS_PREFIX, '')),
   };
 }
+
+/** The viewer's one divergence from the engine: see `splitCommand`. A lone
+ *  `=` at the head of the argument text, and nothing else. */
+const EQUALS_PREFIX = /^\s*=(?=\s|$)/;
 
 /**
  * `OldConsole::getArgs` (lnxded `0x083de4d0`): arguments come off an
@@ -201,11 +233,6 @@ export function parseArgs(rest) {
     }
   }
   return out;
-}
-
-/** The viewer's one divergence from the engine: see `splitCommand`. */
-function dropEquals(args) {
-  return args.length && args[0] === '=' ? args.slice(1) : args;
 }
 
 // ------------------------------------------------------------- the registry
@@ -305,11 +332,28 @@ export class GameConsole {
 
   // ------------------------------------------------------------ scrollback
 
-  /** `OldConsole::output` (lnxded `0x083dcf50`, console vtable slot `+0x10`).
-   *  A message with newlines in it becomes one scrollback line each. */
+  /**
+   * `OldConsole::output` (lnxded `0x083dcf50`, console vtable slot `+0x10`).
+   *
+   * It copies the message into a stack buffer one character at a time and
+   * closes the current scrollback line on three conditions (`0x083dcf94`
+   * onward): a NUL, a `\n` (0x0a, `0x083dcf9c`), or the buffer filling —
+   * `cmp ecx, [edi+0x160]` / `jle` at `0x083dcfce`, where `[edi+0x160]` is
+   * `maxLineSize`. The `jle` is why the chunk is `MAX_LINE + 1` characters
+   * and not `MAX_LINE`: index 77 is still written, and the terminator lands
+   * at 78.
+   *
+   * So a long line — `Error  (0): ` plus a 77-character command, say — is
+   * two scrollback lines in the real console, and the band is that much
+   * taller. Then the deque is trimmed from the front against `this+0x2c`
+   * (`0x083dd018`), which the constructor sets to 1024.
+   */
   output(text) {
     for (const part of String(text ?? '').split('\n')) {
-      this.scrollback.push(part);
+      if (!part.length) { this.scrollback.push(part); continue; }
+      for (let i = 0; i < part.length; i += MAX_LINE + 1) {
+        this.scrollback.push(part.slice(i, i + MAX_LINE + 1));
+      }
     }
     while (this.scrollback.length > MAX_SCROLLBACK) this.scrollback.shift();
     this.version++;
@@ -320,11 +364,18 @@ export class GameConsole {
    * vtable slot 7. It hands back at most `n` strings:
    *
    *   - the last `n - 1` scrollback lines (fewer if there are fewer), offset
-   *     upwards by `scroll * PAGE_LINES`;
-   *   - then, as the final line, either `prompt + editLine` when the view is
-   *     at the bottom, or `SCROLL_MARKER` when it is scrolled up — in which
-   *     case one fewer scrollback line is emitted to make room
-   *     (`0x083ec170` `dec edi`).
+   *     upwards by `scroll * PAGE_LINES`; one fewer when the view is
+   *     scrolled, to make room (`0x083ec170` `dec edi`);
+   *   - then `SCROLL_MARKER`, but only when it is scrolled (`0x083ec1f6`
+   *     `jne` into the marker block at `0x083ec287`);
+   *   - then, **always**, `prompt + editLine`. The marker block falls
+   *     through to the same `0x083ec1ff` the unscrolled path reaches, which
+   *     appends the edit buffer at `this+0x60` to a copy of the prompt and
+   *     pushes it. The client is the same: `0x005a2037` may skip the marker,
+   *     `0x005a2060` never is skipped.
+   *
+   * The count is therefore `n` either way, which is why the band does not
+   * change height when you page up.
    */
   getLines(n = this.viewLines) {
     const out = [];
@@ -336,7 +387,8 @@ export class GameConsole {
     }
     if (this.scroll !== 0) count = Math.max(0, count - 1);
     for (let i = 0; i < count; i++) out.push(this.scrollback[first + i]);
-    out.push(this.scroll !== 0 ? SCROLL_MARKER : this.prompt + this.line);
+    if (this.scroll !== 0) out.push(SCROLL_MARKER);
+    out.push(this.prompt + this.line);
     return out;
   }
 
@@ -417,15 +469,36 @@ export class GameConsole {
    * with the pieces being the literals `"Error "` (`0x086e38c8`), `" ("`
    * (`0x08706306`), `"): "` (`0x086b9c63`) and `": "` (`0x086f24a2`). With
    * `workingFile` empty — which is what a line typed at the console has —
-   * the first reads `Error  (2): game.showHud`, two spaces because `"Error "`
+   * the first reads `Error  (0): game.showHud`, two spaces because `"Error "`
    * ends in one and `" ("` starts with one, and the second reads
    * `Error : Unknown object or method!`.
    *
-   * The counter is bumped after the dispatch, not before (`0x083e9f89` sits
-   * past the switch), so the number printed is how many lines this console
-   * had already run.
+   * `count` is `executeLine`'s **fifth bool parameter**, and it is the whole
+   * story of the number in `Error  (N):`. The increment at `0x083e9f89` sits
+   * past the dispatch switch and behind `cmp BYTE PTR [ebp-0x8b5],0`
+   * (`0x083e9f7d`), where `ebp-0x8b5` is that parameter (stored from
+   * `ebp+0x24` at `0x083e9b0d`); the client is the same shape at
+   * `0x005a12a5`, incrementing `[esi+0x328]`.
+   *
+   * Who passes what:
+   *
+   *   `updateAsciiKey`'s Enter branch — the console keyboard — pushes
+   *   `0, 0, 1, 1, 1` (lnxded `0x083eabe5`, client `0x005a1381`), so the
+   *   fifth bool is **false** and a typed line never bumps the counter.
+   *   `executeLines` (`0x083ea83b`) passes false too.
+   *
+   *   `OldConsole::run` pushes `1, 0, 0, 0, 0` (`0x083ecafd`), so the fifth
+   *   bool is **true** — and `run` also saves the counter (`0x083ec6d3`),
+   *   zeroes it (`0x083ec6f1`) and restores it (`0x083ecbac`), as does
+   *   `include` (`0x083ed3f1` / `0x083ed415` / `0x083ed8d3`).
+   *
+   * So the number is a line number **within a `.con` file being run**, and
+   * at the interactive prompt it is simply whatever ambient value the
+   * console holds — the same number on every error of the session, not a
+   * running count. For a client that has finished its boot scripts that is
+   * 0, which is what this page prints.
    */
-  executeLine(line, { echo = true, echoErrors = true, count = true } = {}) {
+  executeLine(line, { echo = true, echoErrors = true, count = false } = {}) {
     const text = String(line ?? '');
     if (echo) this.output(this.prompt + text);
 
@@ -493,26 +566,50 @@ export class GameConsole {
    *   0x10 / 0x0e     history back / forward (`0x083eaa35`)
    *   0x02 / 0x06     scroll a page up / down (`0x083ea9bf`)
    *   anything else   append, up to MAX_LINE
+   *
+   * Every one of those branches then falls into the common tail at
+   * `0x083ea973`, which does two things this reconstruction has to do too:
+   *
+   *   `[this+0x174] = (ch == 0x10 || ch == 0x0e) ? [this+0x174] : 0`
+   *   `[this+0x170] = (ch == 0x02 || ch == 0x06) ? [this+0x170] : 0`
+   *
+   * (the two `imul` by a 0/1 flag at `0x083ea98b` and `0x083ea9a0`). In
+   * words: typing anything at all snaps the view back to the bottom of the
+   * scrollback, and anything that is not Up/Down drops you out of the
+   * history walk. Enter reaches the same tail (`0x083eac29` `jg 83ea973`),
+   * and so does Tab (`0x083eab77`).
    */
   asciiKey(ch) {
     const code = typeof ch === 'number' ? ch : String(ch).charCodeAt(0);
+    let took;
     switch (code) {
-      case 0x0d: return this.commit();
+      case 0x0d: took = this.commit(); break;
       case 0x08:
         if (this.line.length) this.setLine(this.line.slice(0, -1));
-        return true;
-      case 0x7f: this.setLine(''); return true;
-      case 0x09: return this.autoComplete();
-      case 0x10: return this.historyStep(-1);
-      case 0x0e: return this.historyStep(+1);
-      case 0x02: return this.scrollBy(+1);
-      case 0x06: return this.scrollBy(-1);
+        took = true;
+        break;
+      case 0x7f: this.setLine(''); took = true; break;
+      // The engine consumes Tab whether or not anything completed: the key
+      // never reaches the game, so it must never reach the browser either.
+      case 0x09: this.autoComplete(); took = true; break;
+      case 0x10: took = this.historyStep(-1); break;
+      case 0x0e: took = this.historyStep(+1); break;
+      case 0x02: took = this.scrollBy(+1); break;
+      case 0x06: took = this.scrollBy(-1); break;
       default:
         if (code < 0x20) return false;
-        if (this.line.length >= MAX_LINE) return true;
-        this.setLine(this.line + String.fromCharCode(code));
-        return true;
+        took = true;
+        if (this.line.length < MAX_LINE) {
+          this.setLine(this.line + String.fromCharCode(code));
+        }
     }
+    // The common tail, `0x083ea973`.
+    if (code !== 0x10 && code !== 0x0e) this.historyIndex = this.history.length;
+    if (code !== 0x02 && code !== 0x06 && this.scroll !== 0) {
+      this.scroll = 0;
+      this.version++;
+    }
+    return took;
   }
 
   /**
@@ -539,16 +636,18 @@ export class GameConsole {
     }
   }
 
+  /** Enter. `updateAsciiKey`'s `0x083eaba7` branch appends `'\n'`, hands the
+   *  buffer to `executeLine` with the fifth bool **false** (see
+   *  `executeLine`, so the line counter does not move), then zeroes the
+   *  buffer's length at `0x083eac0c`. */
   commit() {
     const text = this.line;
     if (text.trim()) {
       this.history.push(text);
-      while (this.history.length > MAX_SCROLLBACK) this.history.shift();
+      while (this.history.length > MAX_COMMAND_HISTORY) this.history.shift();
     }
-    this.historyIndex = this.history.length;
-    this.scroll = 0;
     this.setLine('');
-    this.executeLine(text);
+    this.executeLine(text, { count: false });
     return true;
   }
 
@@ -624,11 +723,11 @@ export class GameConsole {
     const next = Boolean(on);
     if (next === this.open) return false;
     this.open = next;
-    // Opening rebuilds the wash quad in the engine (`FUN_00464af0` calls
-    // `FUN_004649f0`) and leaves the edit line where it was; closing keeps
-    // the scrollback. Only the scroll offset is reset, so a reopened console
-    // is at the bottom.
-    this.scroll = 0;
+    // The engine's show/hide (`FUN_00464af0`) writes one byte and rebuilds
+    // the wash quad through `FUN_004649f0`. It touches no console state at
+    // all: not the edit line, not the scrollback, not the scroll offset. So
+    // a console reopened after paging up is still paged up, exactly as it
+    // was left — and the first key typed snaps it back (see `asciiKey`).
     this.version++;
     return true;
   }
