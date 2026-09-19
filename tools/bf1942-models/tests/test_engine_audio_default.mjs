@@ -210,4 +210,74 @@ function gunPatch(layers, { oneShotsOnTrigger = true } = {}) {
   looped.audio.dispose();
 }
 
+{
+  // `trigger Volume` plays on the volume's first rise, once per round. The
+  // shape is a PanzerIV cannon layer's own: a step `Time` ramp that trips at
+  // 0.06 s and then stays at 1. The old gate ("no source, some volume")
+  // replayed it every time the sample ended, for as long as the patch lived.
+  const delayed = {
+    ...shot('blast.wav'), trigger: 'volume',
+    modulators: [
+      { dest: 'volume', source: 'time', envelope: 'ramp', params: [0.06, 0.06, 0, 1] },
+    ],
+  };
+  const { ctx, audio } = gunPatch([delayed]);
+  const tick = dt => audio.update({
+    dt, rpm: 0, speed: 0, acceleration: 0, diveAngle: 0,
+    position: { x: 0, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 },
+    listenerPosition: { x: 0, y: 0, z: 0 },
+  });
+  const endAll = () => {
+    for (const source of ctx.started) source.onended?.();
+  };
+  audio.start();
+  tick(1);
+  assert.equal(ctx.started.length, 0,
+    'a gun patch built long ago must not sound before its first round');
+  audio.trigger();
+  assert.equal(ctx.started.length, 0, 'the layer waits for its own ramp');
+  tick(0.03);
+  assert.equal(ctx.started.length, 0, 'still inside the delay');
+  tick(0.05);
+  assert.equal(ctx.started.length, 1, 'and plays as the ramp trips');
+  endAll();
+  tick(0.5);
+  tick(0.5);
+  assert.equal(ctx.started.length, 1,
+    'a sample that has ended must not replay while its volume stays up');
+  audio.trigger();
+  tick(0.1);
+  assert.equal(ctx.started.length, 2, 'the next round plays it again, once');
+  audio.dispose();
+}
+
+{
+  // Off a gun, the latch re-arms when the volume falls back to zero: each
+  // rise is its own event, and one rise is still one play.
+  const gated = {
+    ...shot('whine.wav'), trigger: 'volume',
+    modulators: [
+      { dest: 'volume', source: 'default', envelope: 'ramp', params: [0.5, 0.5, 0, 1] },
+    ],
+  };
+  const { ctx, audio } = gunPatch([gated], { oneShotsOnTrigger: false });
+  const tick = rpm => audio.update({
+    dt: 1 / 30, rpm, speed: 0, acceleration: 0, diveAngle: 0,
+    position: { x: 0, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 },
+    listenerPosition: { x: 0, y: 0, z: 0 },
+  });
+  audio.start();
+  tick(0);
+  assert.equal(ctx.started.length, 0, 'silent below the ramp');
+  tick(1);
+  assert.equal(ctx.started.length, 1, 'plays on the rise');
+  for (const source of ctx.started) source.onended?.();
+  tick(1);
+  assert.equal(ctx.started.length, 1, 'and not again while it stays up');
+  tick(0);
+  tick(1);
+  assert.equal(ctx.started.length, 2, 'a second rise is a second event');
+  audio.dispose();
+}
+
 console.log('test_engine_audio_default.mjs: ok');
