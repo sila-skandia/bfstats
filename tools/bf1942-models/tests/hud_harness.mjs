@@ -237,7 +237,10 @@ function dotAt(vars) {
   const hud = new Hud({ canvas: null, sprite: () => ({ width: 8, height: 8 }) });
   Object.assign(hud.vars, vars);
   const [x, y] = seatZero.rect;
-  return hud.seatDotPosition(seatZero, x, y);
+  // Copied: the painter hands back a shared scratch pair so six leaves cost
+  // no allocation per frame, and holding it would alias every case below.
+  const at = hud.seatDotPosition(seatZero, x, y);
+  return at && [at[0], at[1]];
 }
 
 results.seatDots = {
@@ -288,7 +291,8 @@ results.seatDots = {
   noBinding: (() => {
     const hud = new Hud({ canvas: null, sprite: () => ({ width: 8, height: 8 }) });
     const { posVar, ...bare } = seatZero;
-    return hud.seatDotPosition(bare, bare.rect[0], bare.rect[1]);
+    const at = hud.seatDotPosition(bare, bare.rect[0], bare.rect[1]);
+    return at && [at[0], at[1]];
   })(),
 };
 
