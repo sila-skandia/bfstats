@@ -130,7 +130,16 @@ const env = {
 
 /** The level list: what the extractor read out of the game, narrowed to the
  *  levels this viewer actually has a scene for, in the order the game's own
- *  list is in - alphabetical by the title it shows. */
+ *  list is in - alphabetical by the title it shows.
+ *
+ *  The title is the level's own `lexiconAll.dat` record, which is what the
+ *  game's list shows ("BATTLE OF MIDWAY", "OPERATION MARKET GARDEN"), not
+ *  the loading screen's table in `maps.json` - the two differ on four
+ *  levels and this is the game's screen.
+ *
+ *  Every extracted level is listed. The real game lists only the levels
+ *  with bot support (`level.singlePlayer`); this site has no bots and
+ *  launches Conquest, so hiding the rest would only lose them. */
 function buildLevels(menuLevels, manifest) {
   const have = new Map();
   for (const entry of manifest) {
@@ -142,7 +151,11 @@ function buildLevels(menuLevels, manifest) {
   for (const level of menuLevels.levels) {
     const entry = have.get(level.dir) || have.get(level.level.toLowerCase());
     if (!entry) continue;
-    out.push({ ...level, map: entry.name, title: entry.loading?.title || level.title });
+    out.push({
+      ...level,
+      map: entry.name,
+      title: level.title || entry.loading?.title || entry.name,
+    });
   }
   out.sort((a, b) => a.title.localeCompare(b.title));
   return out;
