@@ -135,6 +135,41 @@ second reader, and nothing merges untested.
 | W3-E mod chrome | per-mod HUD pack, layouts, fonts and strings along `game.addModPath` (EoD's nations above all); and `verify_models.py` made to tell the truth |
 | W3-F research | LOOP-1's second reader (what the simulation's time step really is, server and client), GUN-2b (mouse counts to `PlayerInput`, and whether `TURRET_SPEED_SCALE = 4` is explained), the console's open items |
 
+**W3-F has reported and been verified (2026-09-20).** Reports:
+`scratchpad/reports/w3f-research.md` and `w3f-verdict.md`. Not in the corpus
+yet - it goes in with wave 3's corpus pass, and the verifier's wording is the
+binding one where the two differ.
+
+- **LOOP-1 closes: fixed 30 Hz, `dt = 1/30` exactly, on both binaries.** The
+  first reader found the frame loop (`Setup::mainLoop`, measured dt) and missed
+  the accumulator one call below it (`Setup::updateInputs` `0x080bc540`,
+  client `InputManager::update` `0x0049ce70`). Only the tick dt reaches
+  `simulateFrame`; the frame dt reaches `handleFrameUpdate` (object vtable
+  `+0x50`, one slot below `handleUpdate`) and an FPS ring. A backlog above 9-10
+  ticks collapses to one; dt is never stretched. The "if LOOP-1 holds"
+  qualifiers on PHY-1 and PHY-6 come off.
+- **GL-2**: the ledger has `0x00466e31` (60.0f) and `0x00466e43` (100.0f) swapped.
+- **GUN-2b closes, and not the way the researcher wrote it.** The verifier read
+  the DX8 mouse device (`update` `0x0066ffe0`): the axis is a **rate**,
+  `input = 0.001 x counts-per-second x (5 x sensitivity + 0.1)`, held for every
+  tick of the frame (a `dt = 0` pump leaves the registers alone), then clamped
+  to +-16 and quantised to 4096 steps for local players too. Defaults 0.25 on
+  foot, land and sea (scale 1.35), **0.75 in aircraft** (3.85). The
+  researcher's per-frame-count formula, "one tick per frame gets the mouse" and
+  "4 is 5.4 under-fitted" are all refuted. `TURRET_SPEED_SCALE = 4` has no
+  basis; the scale belongs at the input stage. Still unproven: that a browser
+  `movementX` pixel is one DirectInput count.
+- Refuted details that must not be pasted: `BasicPhysicsSystem::update` is a
+  live (empty) vtable slot, not unreferenced; `+0x64` is
+  `getUpdateFrequencyType`, not `getUpdateFrequency`; the server's 15 ms yield
+  depends on `Setup+0x216`.
+- The console's open items were not reached.
+
+Queued from this: a viewer stream that replaces `TURRET_SPEED_SCALE` with the
+rate formula at the input stage (`seats.js`, the mouse handler in `map.html`),
+with the +-16 clamp, per-seat-class sensitivity, and the same value fed to
+every tick of a frame. Held until a wave 3 slot frees.
+
 ### Not yet assigned
 
 Hull collision between ground vehicles and the world has an engine spec
