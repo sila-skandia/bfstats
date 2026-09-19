@@ -139,6 +139,18 @@ to none, and pages reading to zero leftover bytes across the 16 installed
 Captured at 1600x1200 by driving the page with Playwright on port 5311
 (`?pack=pack-dev`). Rects below are the file's own 800x600 virtual units.
 
+The capture is the canvas 1:1 — the element screenshot is 1600x1200 and so is
+the backing store, with no page chrome to stretch it — so pixels sampled out
+of it are the colours the layout asked for, not a resampling of them. Sampled
+with `getImageData` at load, on the ALLIED default:
+
+| Where | Sampled | Expected | From |
+|---|---|---|---|
+| Middle of the ALLIED row | `rgb(126,136,74)` | `0.4922, 0.5352, 0.2891` x 255 = `125.5, 136.5, 73.7` | `ColorEffect` in `menu/SkirmishMenu` |
+| Middle of the AXIS row | `rgb(42,42,36)` | the bare plate | its `CullNode` is false |
+| Top of the scroll track | `rgb(255,255,255)` | the thumb | drawn, not in the file |
+| Track below the thumb | `rgb(27,27,27)` | black at alpha 0.8 over the plate | `ColorEffect(0,0,0,0.8)` |
+
 ![The Instant Battle screen as this site draws it](instant-battle.webp)
 
 | The description says | This site draws | Source | Match |
