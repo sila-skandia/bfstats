@@ -171,15 +171,22 @@ export class EngineAudio {
    *   starter cough still fires the moment the engine does.
    */
   constructor(spec, layers, buffers, listener, headroom = BUS_HEADROOM,
-              oneShotsOnTrigger = false) {
+              oneShotsOnTrigger = false, rand = Math.random) {
     this.spec = spec;
     this.headroom = headroom;
     this.listener = listener;
     this.ctx = listener.context;
+    this.rand = rand;
     this.disposed = false;
     this.started = false;
     this.released = false;
     this.master = 0;
+    // Every source this patch has running, orphans included. A voice slot
+    // holds only its *newest* source (`trigger()` deliberately leaves the
+    // previous one to play out so a burst stacks), so `voices` undercounts
+    // what the mixer is actually summing. A caller with a voice budget to
+    // spend needs the real number, which is this one.
+    this.live = new Set();
     // The patch clock is the simulation clock, not `ctx.currentTime`. The two
     // diverge whenever the context is suspended — which is exactly the state
     // the page is in before the user has clicked anything — and a `Time` attack
@@ -241,6 +248,128 @@ export class EngineAudio {
     // patch is armed from the start; a gun patch only by a round, so nothing
     // sounds when the patch is built and its clock runs past the step ramps.
     for (const voice of this.voices) voice.volumeArmed = !this.oneShotsOnTrigger;
+
+    // `randomPlay 1` closes a patch to say **pick one**, not "play them all",
+    // and 244 vanilla scripts say it — 114 of the 136 EffectBundle patches
+    // among them. An 8-alternate ricochet played as 8 layers is a wall of
+    // noise where the engine plays one crack; three `vefr*.wav` wreck-fire
+    // loops played together are a roar where the engine picks a crackle.
+    // Layers carry their own patch index, so the grouping needs no second
+    // table, and a spec whose layers carry neither key behaves exactly as
+    // before: every patch group is "not random" and every voice plays.
+    this.patches = new Map();
+    for (const voice of this.voices) {
+      const key = voice.layer.patch ?? -1;
+      let group = this.patches.get(key);
+      if (!group) {
+        group = { random: false, voices: [] };
+        this.patches.set(key, group);
+      }
+      if (voice.layer.randomPlay) group.random = true;
+      group.voices.push(voice);
+    }
+    this.#rollRandomPlay();
+  }
+
+  /**
+   * Pick this round's alternate for every `randomPlay` patch.
+   *
+   * Re-rolled per trigger, which is what makes eight ricochet samples read as
+   * eight different ricochets rather than one on repeat. A patch that is not
+   * `randomPlay` admits all of its voices.
+   */
+  #rollRandomPlay() {
+    this.chosen = new Set();
+    for (const group of this.patches.values()) {
+      if (!group.random) {
+        for (const voice of group.voices) this.chosen.add(voice);
+        continue;
+      }
+      if (!group.voices.length) continue;
+      const pick = Math.min(group.voices.length - 1,
+                            Math.floor(this.rand() * group.voices.length));
+      this.chosen.add(group.voices[pick]);
+    }
+  }
+
+  /** Live sources, orphaned tails included — what the mixer is really summing. */
+  get sources() {
+    return this.live.size;
+  }
+
+  /**
+   * Live sources **plus** the ones this patch has promised but not yet
+   * started: its armed `trigger Volume` layers.
+   *
+   * A distant explosion layer held back 0.75 s by a step ramp is not a voice
+   * yet and is not optional either — the patch that started its near layer
+   * has already committed to it. A voice budget spent only against what is
+   * currently sounding will therefore be over by exactly the number of
+   * delayed layers in flight when they land, which is what a first
+   * measurement of a 200-round burst showed (27 live against a cap of 26).
+   * Counting the promise is what makes the cap hold.
+   */
+  get committed() {
+    return this.live.size + this.armed;
+  }
+
+  /** Armed `trigger Volume` layers: promised, not yet started. */
+  get armed() {
+    let pending = 0;
+    for (const voice of this.voices) {
+      if (voice.layer.trigger !== 'volume') continue;
+      if (voice.volumeArmed && this.chosen.has(voice)) pending += 1;
+    }
+    return pending;
+  }
+
+  /**
+   * Spend every unfired `trigger Volume` latch on this patch.
+   *
+   * Called by a one-shot caller once the round's own window has passed. Two
+   * things go wrong without it, both measured on the page:
+   *
+   * 1. **A latch that never fires holds a voice reservation forever.** An
+   *    `e_ExplGas` played at 4 m arms its 100 m, 200 m and 400 m layers and
+   *    none of them ever rises, because their *distance* gates read zero at
+   *    4 m. Counted as committed they were three voices of a 26-voice budget
+   *    permanently spent — a 200-round burst measured 186 drops against 14
+   *    plays with three explosions' worth of dead latches held.
+   * 2. **A stale latch fires late.** The layer is gated on distance as well as
+   *    time, so a listener who walks into the 100 m band a minute after the
+   *    bang would set off an explosion that finished long ago.
+   */
+  disarmPending() {
+    for (const voice of this.voices) {
+      if (voice.layer.trigger === 'volume') voice.volumeArmed = false;
+    }
+  }
+
+  /**
+   * Cut every source this patch has running, keeping the graph reusable.
+   *
+   * This is voice stealing: a caller at its budget silences a patch outright
+   * rather than letting the sum grow. `dispose()` is the other half and takes
+   * the nodes with it; this one leaves an instance a pool can trigger again.
+   *
+   * The promises go with the sources. A patch that is cut still holds its
+   * armed `trigger Volume` latches, and `EffectAudio` parks a silenced slot at
+   * `since = Infinity`, so the window-close that calls `disarmPending` never
+   * comes round again for it: the latch stays armed forever. That is both a
+   * voice permanently missing from the budget — measured: one `silence()` of
+   * an `e_ExplGas` played at 4 m leaves `committed` stuck at 1 through 200
+   * frames — and, worse, an explosion that goes off later, when the listener
+   * walks into the distance band the cut layer was gated on. Cutting a patch
+   * has to cancel what it had promised as well as what it was playing.
+   */
+  silence() {
+    for (const source of [...this.live]) {
+      try { source.onended = null; source.stop(); } catch (_) {}
+      try { source.disconnect(); } catch (_) {}
+    }
+    this.live.clear();
+    for (const voice of this.voices) voice.source = null;
+    this.disarmPending();
   }
 
   /**
@@ -259,6 +388,8 @@ export class EngineAudio {
       if (voice.layer.trigger === 'release') continue;
       // A `trigger Volume` layer waits for `update`'s gate, never for this.
       if (voice.layer.trigger === 'volume') continue;
+      // This round's `randomPlay` pick; every voice of an ordinary patch.
+      if (!this.chosen.has(voice)) continue;
       // A gun's one-shots belong to a round, not to the moment the patch was
       // built -- see `oneShotsOnTrigger`. Playing them here is what made every
       // vehicle weapon in the viewer silent: the Sherman's cannon is twenty
@@ -291,13 +422,27 @@ export class EngineAudio {
     if (!this.started || this.disposed || this.released) return 0;
     const now = this.ctx.currentTime;
     this.elapsed = 0;
+    // A fresh alternate and a fresh pitch offset per round: `randomStartPitch`
+    // is rolled once per *play* in the engine, and a one-shot voice that kept
+    // the offset it was built with would give every ricochet in a burst the
+    // identical pitch — the flanging `randomStartPitch` exists to prevent.
+    this.#rollRandomPlay();
+    for (const voice of this.voices) {
+      if (voice.layer.loop) continue;
+      const [up = 0, down = 0] = voice.layer.randomStartPitch || [];
+      if (up || down) voice.jitter = 1 + (this.rand() * (up + down) - down);
+    }
     let played = 0;
     for (const voice of this.voices) {
       if (voice.layer.loop) continue;
       if (voice.layer.trigger === 'volume') {
-        voice.volumeArmed = true;
+        // Armed only if this round picked it — and explicitly *dis*armed
+        // otherwise, or an alternate armed by an earlier round would still be
+        // waiting to fire on its own ramp and the pick would leak.
+        voice.volumeArmed = this.chosen.has(voice);
         continue;
       }
+      if (!this.chosen.has(voice)) continue;
       if (voice.layer.trigger === 'release') continue;
       const previous = voice.source;
       voice.source = null;
@@ -331,8 +476,10 @@ export class EngineAudio {
       return;
     }
     voice.source = source;
+    this.live.add(source);
     if (!source.loop) {
       source.onended = () => {
+        this.live.delete(source);
         if (voice.source === source) voice.source = null;
       };
     }
@@ -433,7 +580,8 @@ export class EngineAudio {
       if (voice.layer.trigger === 'volume') {
         if (voice.targetGain <= 0) {
           if (!this.oneShotsOnTrigger) voice.volumeArmed = true;
-        } else if (voice.volumeArmed && this.started && !this.released) {
+        } else if (voice.volumeArmed && this.chosen.has(voice)
+                   && this.started && !this.released) {
           voice.volumeArmed = false;
           // Stack on a tail still sounding, the way `trigger()` does.
           const previous = voice.source;
@@ -495,6 +643,9 @@ export class EngineAudio {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    // Orphaned tails first: a voice slot has already let go of them, so the
+    // loop below would leave them running on a disconnected graph.
+    this.silence();
     for (const voice of this.voices) {
       if (voice.source) {
         try { voice.source.onended = null; voice.source.stop(); } catch (_) {}
@@ -530,6 +681,8 @@ export class EngineAudio {
       busGain: this.bus.gain.value,
       // The count that must not drift: a duplicated voice is the 319a794 bug.
       voices: this.voices.filter(v => v.playing).length,
+      // And what the mixer is really summing, orphaned tails included.
+      sources: this.live.size,
       panners: this.groups.size,
       layers: this.voices.map(v => ({
         file: v.layer.file,
@@ -556,7 +709,8 @@ export class EngineAudio {
  */
 export async function loadEngineAudio(spec, { listener, getBuffer,
                                               headroom = BUS_HEADROOM,
-                                              oneShotsOnTrigger = false }) {
+                                              oneShotsOnTrigger = false,
+                                              rand = Math.random }) {
   if (!spec || !spec.layers || !spec.layers.length || !listener) return null;
   const buffers = new Map();
   for (const layer of spec.layers) {
@@ -566,7 +720,7 @@ export async function loadEngineAudio(spec, { listener, getBuffer,
   const layers = spec.layers.filter(l => buffers.get(l.file));
   if (!layers.length) return null;
   return new EngineAudio(spec, layers, buffers, listener, headroom,
-                         oneShotsOnTrigger);
+                         oneShotsOnTrigger, rand);
 }
 
 /**

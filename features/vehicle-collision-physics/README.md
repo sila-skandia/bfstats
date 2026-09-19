@@ -1,10 +1,15 @@
-# Vehicle collision physics — research round, 2026-09-19
+# Vehicle collision physics — researched 2026-09-19, built 2026-09-20
 
 **The ask.** In the map viewer a jeep that drives into a plane is simply
 stopped, as if the plane were a wall. In the game the jeep pushes the plane
 and both take damage. Find out, from the binaries, what the engine actually
-does — the end state being that engine re-created in the browser. This round
-researches and documents; it implements nothing.
+does — the end state being that engine re-created in the browser. The first
+round researched and documented; the second built it ("Implemented", below).
+
+**Reached from** the engine corpus's entry point,
+[`features/bf1942-engine-reference/README.md`](../bf1942-engine-reference/README.md)
+"Start here", which also carries the queue of what to investigate or build next.
+Aim new work at that file, not this one.
 
 **The answer** is one document:
 [`features/bf1942-engine-reference/subsystems/collision-response.md`](../bf1942-engine-reference/subsystems/collision-response.md).
@@ -84,7 +89,101 @@ document are right; the reports are kept as the record, not as reference.
 
 ---
 
-## For the implementation round
+## Implemented, 2026-09-20
+
+Ram a parked plane on Wake and it is shoved, rolled and damaged, and so is the
+jeep. Measured in the page with the real drive model: a Willy at 11.7 m/s into
+a Corsair's wing loses 13 HP, moves the plane 1.3 m and tips it; the wing is
+material 90 and takes nothing, the fuselage would have taken about 27; a
+second later the scraping hull costs the plane 32 more against the grass.
+
+| Module (`tools/bf1942-models/viewer/`) | What it ports | Tested by |
+|---|---|---|
+| `rigid-body.js` | the root integrator, sleep counter and accumulators (spec 3-4) | `test_rigid_body.py`, golden ticks from the binary-validated model (agreement to 1e-17) |
+| `body-contact.js` | pair filter, vertex/face direction rule, the probe, shares, `impulseOn`, `setAdjust`, `solveImpulse` (5-6) | `test_body_contact.py` |
+| `body-ground.js`, `body-friction.js` | terrain contact, the wheel spring, `addFriction` (7-8) | `test_body_ground.py` |
+| `crash-damage.js` | both damage formulas, the soldier branch, the 16-slot one-second limiter, the material rules (9) | `test_crash_damage.py`, the verified worked numbers |
+| `body-world.js` | one 30 Hz tick in the engine's order (2) | `test_vehicle_bodies.py` |
+| `vehicle-bodies.js` | a placed vehicle's nodes + the sidecar as collision parts; `DrivenBody`, the player's vehicle seen as a body | `test_vehicle_bodies.py` |
+| `collision.js` | moved owners: a shoved hull is still hit by rounds and boots, without rebuilding the index; a body's own hull sweep skips other bodies | `test_collision.py` |
+| `map.html` | settle at load, enter/leave hand-over, per-frame step, wreck and respawn, crash damage into `VehicleDamageSet` | in the browser, on Wake |
+
+Extractor: `bf42/damage.py` now agrees with the engine (158 materials, 5,153
+cells, elasticity and resistance carried), `bf42/stdmesh.py` reads the
+per-vertex collision material, and `extract_collision_meshes.py` writes
+`_shared/collision-meshes.json` — every collision layer of every vehicle mesh,
+in viewer coordinates, with a geometry-template to mesh-file map.
+
+**How it was built.** Four Sonnet implementers in parallel worktrees on one
+briefing ([IMPLEMENTATION.md](IMPLEMENTATION.md)) with the interfaces fixed up
+front, a Sonnet reviewer per module, the lead on design and integration. What
+the reviewers and the integration caught:
+
+- The wheel spring. Its track had no source for how a compressed wheel relaxes
+  and invented a rule; the lead decompiled `PhysicsSpring::updatePhysics`
+  instead. The wheel snaps back to rest every tick and the force follows the
+  ground's normal (now in `physics.md` section 6). With the invented version a
+  parked Corsair crept backwards forever and never slept; with the read one it
+  settles in four seconds.
+- Spawn height. A placed vehicle's authored pose hangs its wheels clear of the
+  ground (0.2 m for a Willy); the engine's vehicles are born awake and drop.
+  The page now settles every vehicle once at load, before the collision index
+  bakes the hulls, so a first touch does not make a parked plane fall.
+- Per-tick allocations in the contact solver's hot path (reviewer).
+- A collision-mesh normal is not what the flipped glTF winding implies: the
+  Z-mirror reverses orientation, so the sidecar ships normals ready-made.
+
+**Deliberate differences from the engine**, all marked in the code:
+
+| | |
+|---|---|
+| the low mass-share snap uses `-1.0` | the binary's `+1.0` pushes a light body toward a much heavier one (spec 6.1) |
+| the driven vehicle keeps its own drive model | `DrivenBody` applies the solver's push to it immediately instead of a tick late; its contact friction is dropped, its own tyres stand |
+| pair de-duplication is an `i < j` loop | equivalent to the engine's per-tick stamp |
+| ships are not bodies | nothing here models a `FloatingBundle`; a woken destroyer would sink |
+| vehicles are settled at load rather than on spawn | same resting pose, no visible drop |
+| statics are still met by the swept sphere | a driven vehicle against a building stops as before; only vehicle-vs-vehicle goes through the solver |
+
+The driven vehicle takes the ground's crash damage too (spec 9.5), without
+the response: its drive model still owns the contact, so only the damage half
+of `checkVsTerrain` runs for it. Measured: a Corsair set down at 30 m/s sinking
+1.5 m/s takes nothing; nosed in at 35 m/s and 30 degrees its propeller (material
+45) is what touches first and costs 57 of its 100 HP, after which the limiter
+and the flight model's own ground clamp spare it a second event.
+
+**Not done yet:** the drive models' *response* to a crash (a plane that noses
+in is levelled out by `flight.js`'s ground clamp instead of tumbling, so it
+survives what the game would finish off); parked bodies against static
+buildings; the soldier is not yet a body, so being run over is still the old
+code.
+
+**A vehicle parked on a slope never sleeps, and that is the engine's rule, not
+a defect.** The wheel spring pushes along the contact normal, so it cancels
+only gravity's normal component; the downhill component, `14.73 x sin(slope)`,
+stays in the acceleration accumulator because friction never enters it
+(`collision-response.md` 4.3). Sleep needs `acc^2 < 2.5`, so anything steeper
+than about 6.2 degrees stays awake for good. Measured on a 10 degree slope
+with a realistic 2,500 kg box: parked nose-down it settles within a second and
+drifts 2 mm in the next ten; parked broadside it rocks on its narrow track for
+minutes. `test_slope_settles_but_never_sleeps` holds both halves. The cost is
+a few awake bodies per map stepping their springs each tick.
+
+One wake-up transient is known and left alone: a body that has slept has an
+uncompressed wheel and a stale damper history, so its first awake tick gets no
+static support and the second a hard damper kick - a visible bounce when a
+parked vehicle is first touched. The engine skips a sleeping spring's update
+the same way, so it is likely there too; nobody has measured it in the game.
+
+**Assets.** A mod's levels look for `collision-meshes.json` beside that mod's
+own `damage.json`, and without one its vehicles stay the fixed hulls they were.
+Baked and published 2026-09-20 for vanilla (1.3 MB), The Road to Rome (1.5 MB),
+Secret Weapons (1.7 MB) and Eve of Destruction (5.1 MB); a newly extracted mod needs
+`extract_collision_meshes.py --mod <Mod> --out viewer/maps/mods/<mod>/_shared`,
+which takes seconds. The refreshed `damage.json` (45 cells differ, elasticity
+and resistance added) is backward compatible: the old one still works, with
+0 / 0.01 standing in for the missing pair.
+
+## For the implementation round (as planned on 2026-09-19)
 
 Nothing here is built. When it is, in the order that pays:
 

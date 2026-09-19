@@ -161,6 +161,49 @@ results.disabledOwnerSkipped = pastDisabled && {
 statics.enableOwner(statics.ownerOf(near));
 const restored = world.cast(0, 5, -5, 1, 0, 0, 16, -1);
 results.disabledOwnerRestored = restored && restored.material === 92;
+// A shoved vehicle: the near wall (baked at x = 8) now stands 3 m further on.
+// The index is not rebuilt; the collider asks again in the wall's baked frame.
+{
+  const owner = statics.ownerOf(near);
+  // Column-major rigid transforms: baked -> world is +3 on x, and back.
+  const fwd = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 3, 0, 0, 1];
+  const inv = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -3, 0, 0, 1];
+  world.setMovedOwner(owner, fwd, inv, 11, 5, -5, 8);
+  const moved = world.cast(0, 5, -5, 1, 0, 0, 16, -1);
+  results.movedOwnerCast = moved && {
+    t: moved.t, x: moved.x, material: moved.material, owner: moved.owner,
+    normal: [moved.nx, moved.ny, moved.nz],
+  };
+  // Its old place is empty: a 10 m segment no longer finds anything at x = 8.
+  results.movedOwnerOldPlaceEmpty = world.cast(0, 5, -5, 1, 0, 0, 10, -1) === null;
+  // The body query follows it too: a 0.5 m sphere stops half a metre short of x = 11.
+  const swept = world.sweepSphere(0, 5, -5, 1, 0, 0, 16, 0.5, -1);
+  results.movedOwnerSweep = swept && { t: swept.t, x: swept.x, px: swept.px, owner: swept.owner };
+  // Its own rounds still skip it.
+  const own = world.cast(0, 5, -5, 1, 0, 0, 16, owner);
+  results.movedOwnerSkipsSelf = own && own.material;
+  // Turned a quarter turn about y (baked x -> world -z, baked z -> world x):
+  // the wall now lies in the plane z = -8 over x in [-10, 0], and a round
+  // fired along -z from (-5, 5, 0) meets it 8 m out, normal facing the round.
+  const turnFwd = [0, 0, -1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1];
+  const turnInv = [0, 0, 1, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 0, 1];
+  world.setMovedOwner(owner, turnFwd, turnInv, -5, 5, -8, 8);
+  const turned = world.cast(-5, 5, 0, 0, 0, -1, 16, -1);
+  results.movedOwnerTurned = turned && {
+    t: turned.t, z: turned.z, owner: turned.owner, normal: [turned.nx, turned.ny, turned.nz],
+  };
+  world.clearMovedOwner(owner);
+  // A simulated body's own hull sweep leaves other bodies to the contact
+  // solver: with the near wall marked as a body the sweep reaches the far one.
+  statics.setBodyOwner(owner, true);
+  const past = world.sweepSphere(0, 5, -5, 1, 0, 0, 16, 0.5, -1, true);
+  results.bodySweepSkipsBodies = past && { x: past.x, owner: past.owner };
+  const still = world.sweepSphere(0, 5, -5, 1, 0, 0, 16, 0.5, -1);
+  results.soldierSweepStillHitsBodies = still && { x: still.x, owner: still.owner };
+  statics.setBodyOwner(owner, false);
+  const back = world.cast(0, 5, -5, 1, 0, 0, 16, -1);
+  results.movedOwnerCleared = back && { x: back.x, material: back.material };
+}
 // Short of the wall: no hit, and the segment length is respected.
 results.shortOfWall = world.cast(0, 5, -5, 1, 0, 0, 4, -1) === null;
 // Backwards.
