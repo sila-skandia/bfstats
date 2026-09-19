@@ -17,7 +17,7 @@
 //    `Response` and `CollisionPart` from the copied modules, ticked forward
 //    with `vehicle.accumulate/body.step/vehicle.detectGround/vehicle.resolve`
 //    in the spec's own §2 order, on an analytic flat or sloped terrain.
-import { RigidBody, TICK } from './rigid-body.mjs';
+import { RigidBody, TICK, GRAVITY } from './rigid-body.mjs';
 import { Response, CollisionPart } from './body-contact.mjs';
 import { contactMaterialValues } from './crash-damage.mjs';
 import {
@@ -216,12 +216,90 @@ out.addFriction = {};
 }
 
 // =============================================================================
+// (a2) WheelSpring.apply directly, against PhysicsSpring::updatePhysics's own
+// law (body-ground.js's header comment above WheelSpring, decompiled
+// 2026-09-20): a = -(strength*D*(g*-0.101833) + damping*(D-Dprev)/dt), where
+// D = -push (a world vector along the contact normal, NOT the body's up
+// axis) and D is rolled into "previous" every tick, asleep or not, while the
+// force itself and the clearing of `push` only happen while awake.
+// =============================================================================
+
+class SpringFakeBody {
+  constructor() { this.calls = []; }
+  addAccelerationAt(p, a) { this.calls.push({ p: [p[0], p[1], p[2]], a: [a[0], a[1], a[2]] }); }
+}
+
+const SPRING_STRENGTH = 25, SPRING_DAMPING = 5;
+
+out.wheelSpring = {};
+
+// The static term alone: prime `previous` to equal this tick's D so the
+// damping term (which reads D - previous) is exactly zero, isolating
+// -(strength * D * |g|*0.101833).
+{
+  const spring = new WheelSpring({ strength: SPRING_STRENGTH, damping: SPRING_DAMPING });
+  spring.compress([0, 0.1, 0]);           // this tick's push -> D = (0, -0.1, 0)
+  spring.previous[0] = 0; spring.previous[1] = -0.1; spring.previous[2] = 0;
+  const body = new SpringFakeBody();
+  spring.apply(body, [2, 0, 3], TICK, false);
+  out.wheelSpring.staticTerm = { calls: body.calls };
+}
+
+// Damping opposes further compression: D grows (more negative Y, sinking
+// further) from the previous tick's D -> the damper ADDS to the static push.
+{
+  const spring = new WheelSpring({ strength: SPRING_STRENGTH, damping: SPRING_DAMPING });
+  spring.previous[0] = 0; spring.previous[1] = -0.05; spring.previous[2] = 0;
+  spring.compress([0, 0.1, 0]);
+  const body = new SpringFakeBody();
+  spring.apply(body, [0, 0, 0], TICK, false);
+  out.wheelSpring.compressing = { calls: body.calls };
+}
+
+// Damping opposes rebound: the task's own named case — a wheel that leaves
+// the ground this tick (nothing calls `compress()`, so `push` — and so D —
+// stays zero) right after a compressed previous tick (Dprev != 0). The
+// damper alone produces a force, and it points the OPPOSITE way from the
+// compressing case above.
+{
+  const spring = new WheelSpring({ strength: SPRING_STRENGTH, damping: SPRING_DAMPING });
+  spring.previous[0] = 0; spring.previous[1] = -0.1; spring.previous[2] = 0;
+  const body = new SpringFakeBody();
+  spring.apply(body, [0, 0, 0], TICK, false);
+  out.wheelSpring.rebound = { calls: body.calls, pushAfter: [...spring.push] };
+}
+
+// The push this tick's `compress()` stored is cleared once an awake `apply`
+// has consumed it — nothing carries a displacement forward.
+{
+  const spring = new WheelSpring({ strength: SPRING_STRENGTH, damping: SPRING_DAMPING });
+  spring.compress([0.02, 0.2, -0.01]);
+  const body = new SpringFakeBody();
+  spring.apply(body, [0, 0, 0], TICK, false);
+  out.wheelSpring.clearedAfterAwake = { pushAfter: [...spring.push] };
+}
+
+// Asleep: no force posted (s.4.3 "springs... skip their force" while the
+// root sleeps) but `previous` still rolls forward from the CURRENT push, and
+// the push itself is untouched (only an awake apply clears it).
+{
+  const spring = new WheelSpring({ strength: SPRING_STRENGTH, damping: SPRING_DAMPING });
+  spring.compress([0, 0.2, 0]);
+  const body = new SpringFakeBody();
+  spring.apply(body, [0, 0, 0], TICK, true);
+  out.wheelSpring.asleep = {
+    callCount: body.calls.length,
+    pushAfter: [...spring.push],
+    prevAfter: [...spring.previous],
+  };
+}
+
+// =============================================================================
 // (b)-(d) ParkedVehicle integration: real RigidBody/Response/CollisionPart
 // =============================================================================
 
 const STRENGTH = 25;
 const DAMPING = 5;
-const TRAVEL = 0.3;
 const REST_Y = -0.5;
 const SPREAD_WHEEL_OFFSETS = [
   [1, REST_Y, 1.5], [-1, REST_Y, 1.5], [1, REST_Y, -1.5], [-1, REST_Y, -1.5],
@@ -253,7 +331,7 @@ function buildVehicle({ position, wheelOffsets = SPREAD_WHEEL_OFFSETS, authoredW
     const part = new CollisionPart({
       body, shape: oneVertexShape(0), response, isRoot: false, offset: off.slice(), kind: 'spring',
     });
-    const spring = new WheelSpring({ strength: STRENGTH, damping: DAMPING, travel: TRAVEL });
+    const spring = new WheelSpring({ strength: STRENGTH, damping: DAMPING });
     wheels.push({ part, spring });
     parts.push(part);
   }
@@ -295,10 +373,21 @@ const DROP_HEIGHT = 0.5;
 const settled = buildVehicle({ position: [0, DROP_HEIGHT - REST_Y, 0] });
 
 let settleTicks = -1;
+// The wheels' own `push` is a TRANSIENT, this-tick-only reading: an awake
+// `accumulate()` always clears it right after consuming it, and it is only
+// ever refreshed by `detectGround` -> `resolve`, which stop running the
+// instant the body sleeps. So the tick body.sleeping FIRST reads true is
+// already one tick past the last real ground-contact reading — `displacement`
+// sampled after that point is a structural zero, not the equilibrium
+// compression. Capture it on the LAST AWAKE tick instead, where detectGround
+// still ran and the springs are at (or extremely close to) equilibrium after
+// 100+ consecutive quiet ticks.
+let restDisplacements = null;
 const SETTLE_MAX_TICKS = 3000;
 for (let t = 1; t <= SETTLE_MAX_TICKS; t++) {
   tickOnce(settled.vehicle, settled.body, flatTerrain, handlers);
   if (settled.body.sleeping) { settleTicks = t; break; }
+  restDisplacements = settled.wheels.map(w => w.spring.displacement);
 }
 
 let staysAsleep = settleTicks > 0;
@@ -310,11 +399,12 @@ if (staysAsleep) {
 }
 
 out.settle = {
-  strength: STRENGTH, damping: DAMPING, travel: TRAVEL, restOffsetY: REST_Y,
+  strength: STRENGTH, damping: DAMPING, restOffsetY: REST_Y,
   wheelCount: SPREAD_WHEEL_OFFSETS.length, dropHeight: DROP_HEIGHT,
   settleTicks, staysAsleep,
   finalBodyPos: [...settled.body.pos],
-  finalDisplacements: settled.wheels.map(w => w.spring.displacement),
+  restDisplacements,
+  postSleepDisplacements: settled.wheels.map(w => w.spring.displacement),
   finalSleepiness: settled.body.sleepiness,
   grippAfterConstruction: settled.wheels.map(w => w.part.response.grip),
 };
@@ -324,33 +414,57 @@ out.settle = {
 const shoveResults = { attempted: settleTicks > 0 };
 if (settleTicks > 0) {
   const { body, vehicle } = settled;
-  body.addAccelerationAt([body.pos[0], body.pos[1], body.pos[2]], [8, 0, 0]);
+  // A real ram, not a nudge. `addAccelerationAt` is a one-tick acceleration
+  // (rigid-body.js: no /mass anywhere), so a Dv worth testing needs a large
+  // one-tick value: 150 m/s^2 for 1/30 s is Dv = 5 m/s. The vehicle has been
+  // asleep long enough beforehand (the 30-tick staysAsleep loop above) that
+  // every wheel's `push`/`previous` have decayed to exactly zero — see the
+  // WheelSpring unit tests' "asleep" case and (b)'s displacement comment —
+  // so accumulate()'s FIRST tick after waking contributes no spring force at
+  // all (D and Dprev both read zero); only from the second tick on, once
+  // `detectGround`/`resolve` have refreshed `push` from real terrain contact,
+  // does the spring see the sudden 0 -> real-penetration jump in one tick and
+  // produce a sharp, genuine one-tick vertical "resync" transient. That
+  // transient is real (the engine's own checkVsTerrain is skipped for a
+  // sleeping part, spec s.2/s.4.3), but it is a SUSPENSION effect, not a
+  // friction one, so it must not be read as part of "deceleration bounded by
+  // friction" below.
+  const SHOVE_ACCEL = 150;
+  body.addAccelerationAt([body.pos[0], body.pos[1], body.pos[2]], [SHOVE_ACCEL, 0, 0]);
   body.wake();
 
-  const speeds = [];
-  let maxDecelPerTick = 0;
+  // addFriction's own Vt strips the contact normal's component out of V
+  // before the Coulomb clamp ever sees it (collision-response.md s.8) — on
+  // flat ground (N = (0,1,0)) that means friction NEVER touches vertical
+  // speed at all. So "decel bounded by mu*g*N.y" is a horizontal-speed
+  // question; folding the springs' own vertical resync transient (above)
+  // into the same number would bound the wrong thing.
+  const horizSpeeds = [];
+  let maxHorizDecelPerTick = 0;
   let cameToRestTick = -1;
   let resleptTick = -1;
-  let prevSpeed = null;
+  let prevHorizSpeed = null;
+  let finalSpeed3 = 0;
   const SHOVE_MAX_TICKS = 3000;
   for (let t = 1; t <= SHOVE_MAX_TICKS; t++) {
     tickOnce(vehicle, body, flatTerrain, handlers);
-    const speed = Math.hypot(body.v[0], body.v[1], body.v[2]);
-    speeds.push(speed);
-    if (prevSpeed !== null && speed < prevSpeed) {
-      const decel = (prevSpeed - speed) / TICK;
-      if (decel > maxDecelPerTick) maxDecelPerTick = decel;
+    const horizSpeed = Math.hypot(body.v[0], body.v[2]);
+    horizSpeeds.push(horizSpeed);
+    if (prevHorizSpeed !== null && horizSpeed < prevHorizSpeed) {
+      const decel = (prevHorizSpeed - horizSpeed) / TICK;
+      if (decel > maxHorizDecelPerTick) maxHorizDecelPerTick = decel;
     }
-    prevSpeed = speed;
-    if (cameToRestTick < 0 && speed < 0.02) cameToRestTick = t;
+    prevHorizSpeed = horizSpeed;
+    finalSpeed3 = Math.hypot(body.v[0], body.v[1], body.v[2]);
+    if (cameToRestTick < 0 && finalSpeed3 < 0.02) cameToRestTick = t;
     if (body.sleeping) { resleptTick = t; break; }
   }
 
-  shoveResults.peakSpeed = Math.max(...speeds);
-  shoveResults.finalSpeed = speeds[speeds.length - 1];
+  shoveResults.peakSpeed = Math.max(...horizSpeeds);
+  shoveResults.finalSpeed = finalSpeed3;
   shoveResults.cameToRestTick = cameToRestTick;
   shoveResults.resleptTick = resleptTick;
-  shoveResults.maxDecelPerTick = maxDecelPerTick;
+  shoveResults.maxDecelPerTick = maxHorizDecelPerTick;
   shoveResults.movedAtAll = shoveResults.peakSpeed > 0.5;
 
   // Off-centre impulse at one wheel's world position: yaws the body.
@@ -368,64 +482,92 @@ if (settleTicks > 0) {
 }
 out.shove = shoveResults;
 
-// --- (d) 10-degree slope: static friction holds, no creep -------------------
-
+// --- (d) 10-degree slope: a REALISTIC jeep-like vehicle -----------------
+//
+// A small, human-scale vehicle this time (unlike (b)/(c)'s box [2,1,3] —
+// this one is a jeep-like 2500 kg body, box 1.7 x 1.5 x 3.6, four wheels at
+// (+-0.6, -0.14, -0.75) and (+-0.6, -0.12, 1.46), the realistic dimensions
+// this track's briefing asked for after the implementer's earlier report
+// found a normal-sized box "tips, keeps tipping... and runs away" — tested
+// again here against the CORRECTED spring law (this file's WheelSpring
+// section), not the invented one that report was written against.
+//
+// The wheel offsets' long axis is Z (-0.75 .. 1.46, the wheelbase); at the
+// body's identity starting orientation, body-local Z is also world Z. So the
+// slope is built to vary height with Z, not X: the vehicle is parked
+// nose-down (or up) the hill, the ordinary way anyone parks on a real slope,
+// not broadside to it. Broadside (the slope varying with X instead, tried
+// first) puts the vehicle's much narrower TRACK width, not its wheelbase,
+// against the tipping moment, and it genuinely does tip and slowly spin for
+// minutes before the residual angular speed decays into the noise floor —
+// a real but different rotational-equilibrium question from the one this
+// test is about (s.8's translational creep-prevention), exactly as the old
+// COLLOCATED_OFFSETS comment already argued when it engineered rotation away
+// entirely. Nose-down is the natural case and, as the numbers below show,
+// isolates the same question cleanly without engineering the geometry away.
 const SLOPE_DEG = 10;
 const slopeRad = SLOPE_DEG * Math.PI / 180;
 const slopeTerrain = {
-  height: (x) => -x * Math.tan(slopeRad),
-  normal: (x, z, o) => { o[0] = Math.sin(slopeRad); o[1] = Math.cos(slopeRad); o[2] = 0; return o; },
+  height: (x, z) => -z * Math.tan(slopeRad),
+  normal: (x, z, o) => { o[0] = 0; o[1] = Math.cos(slopeRad); o[2] = Math.sin(slopeRad); return o; },
   material: () => 0,
   waterLevel: -Infinity,
 };
 
-// Collocated wheels: every wheel at the same (x, z) footprint, so the slope
-// (which varies height with x) does not need the hull to roll/pitch to
-// settle — isolates the friction/creep question this test is about from the
-// unrelated question of a tilted hull's own rotational equilibrium.
-//
-// A very large `box` (-> very large rotational inertia, §4.2's box-shaped
-// inertia scales with the extents) is used for THIS vehicle only: friction
-// applied below the centre of mass (every wheel sits at `REST_Y`) is a real
-// lever arm and DOES produce a genuine roll torque on a slope — confirmed by
-// instrumenting a normal-sized box, which tips, keeps tipping as its own
-// "up" axis leans away from vertical, and runs away long before anything
-// related to `addFriction`'s creep-prevention gets a fair test. That
-// rotational settling question is real but unrelated to what test (d) is
-// about (§8's `V.y += g/30` term, a per-part translational effect) and the
-// corpus does not pin down a vehicle's rotational equilibrium on a slope at
-// all — so it is deliberately engineered away here rather than chased.
-// `test_body_ground.py`'s shove test already exercises real, human-scale
-// rotation (the off-centre-impulse yaw) with the ordinary `box`.
-const COLLOCATED_OFFSETS = [[0, REST_Y, 0], [0, REST_Y, 0], [0, REST_Y, 0], [0, REST_Y, 0]];
+const JEEP_WHEEL_OFFSETS = [
+  [0.6, -0.14, -0.75], [-0.6, -0.14, -0.75],
+  [0.6, -0.12, 1.46], [-0.6, -0.12, 1.46],
+];
 const onSlope = buildVehicle({
-  position: [0, 0.2 - REST_Y, 0], wheelOffsets: COLLOCATED_OFFSETS, box: [20, 20, 20],
+  position: [0, 1.0, 0], wheelOffsets: JEEP_WHEEL_OFFSETS, box: [1.7, 1.5, 3.6],
+  authoredWheelGrip: GRIP_CONTACT,
 });
 
-let slopeSettleTicks = -1;
-const SLOPE_MAX_TICKS = 3000;
-for (let t = 1; t <= SLOPE_MAX_TICKS; t++) {
+// It settles fast (well under the old 3000-tick/100s budget) but — see
+// test_body_ground.py's derivation — it structurally never reaches
+// `body.sleeping`, so there is no sleep transition to loop for. Run a fixed,
+// generous budget instead, then read the speeds directly.
+const SLOPE_SETTLE_TICKS = 1000;
+for (let t = 1; t <= SLOPE_SETTLE_TICKS; t++) {
   tickOnce(onSlope.vehicle, onSlope.body, slopeTerrain, handlers);
-  if (onSlope.body.sleeping) { slopeSettleTicks = t; break; }
 }
 
-const xAtSleep = onSlope.body.pos[0];
-let xAfterExtra = xAtSleep;
-if (slopeSettleTicks > 0) {
-  const EXTRA_TICKS = 300;
-  for (let i = 0; i < EXTRA_TICKS; i++) {
-    tickOnce(onSlope.vehicle, onSlope.body, slopeTerrain, handlers);
-  }
-  xAfterExtra = onSlope.body.pos[0];
+const posAtSettle = [...onSlope.body.pos];
+const speedSqAtSettle = onSlope.body.v[0] ** 2 + onSlope.body.v[1] ** 2 + onSlope.body.v[2] ** 2;
+const angSpeedSqAtSettle = onSlope.body.w[0] ** 2 + onSlope.body.w[1] ** 2 + onSlope.body.w[2] ** 2;
+
+// No creep: displacement over a further 10 seconds, well after the initial
+// touchdown transient has died out.
+const DRIFT_WINDOW_TICKS = 300;
+for (let i = 0; i < DRIFT_WINDOW_TICKS; i++) {
+  tickOnce(onSlope.vehicle, onSlope.body, slopeTerrain, handlers);
 }
+const posAfterDrift = onSlope.body.pos;
+const drift = Math.hypot(
+  posAfterDrift[0] - posAtSettle[0], posAfterDrift[1] - posAtSettle[1], posAfterDrift[2] - posAtSettle[2]);
+
+// The reason it never sleeps, with the actual number: one more accumulate()
+// (springs only, no step -- this is a read, not a further tick) shows what
+// the s.4.3 wake test itself sees. The spring's restoring force is strictly
+// along the contact NORMAL (this file's WheelSpring section), so it can only
+// ever cancel the NORMAL component of gravity; the along-slope (tangential)
+// component -- |g|*sin(10 deg) -- is left standing in `acc` every tick
+// forever, and only FRICTION cancels that (via `fr`, an accumulator the wake
+// test never reads, s.4.3 "the accumulator... before drag: gravity + springs
+// + impulses"). |g|*sin(10 deg) exceeds the wake test's sqrt(2.5) threshold
+// for any slope steeper than about 6.16 degrees.
+onSlope.vehicle.accumulate(TICK);
+const accSqAfterAccumulate =
+  onSlope.body.acc[0] ** 2 + onSlope.body.acc[1] ** 2 + onSlope.body.acc[2] ** 2;
 
 out.slope = {
   slopeDeg: SLOPE_DEG,
-  settleTicks: slopeSettleTicks,
-  xAtSleep, xAfterExtra,
-  drift: Math.abs(xAfterExtra - xAtSleep),
-  finalBodyPos: [...onSlope.body.pos],
+  settleTicks: SLOPE_SETTLE_TICKS,
+  speedSqAtSettle, angSpeedSqAtSettle,
+  posAtSettle, posAfterDrift: [...posAfterDrift],
+  drift,
   finalSleeping: onSlope.body.sleeping,
+  accSqAfterAccumulate,
 };
 
 process.stdout.write(JSON.stringify(out));
