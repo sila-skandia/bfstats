@@ -339,20 +339,97 @@ xref (`0x004f1302`), so it is mutable at runtime.
 `aiTemplatePlugIn.maxSpeed 5.0` is the **AI plugin's** number and is not the
 player's. A walk mode built to that line is visibly wrong.
 
-**Jump velocity is still `open`**, but the trigger is read and three hiding
-places are ruled out (2026-09-16, ledger PHY-1). In the client's
-`handlePlayerInput` (`0x00500190`) the jump bit 0x80 is set only when the
-soldier is standing (0x60 clear), Action is held, the soldier has a +0x140
-pointer and a non-zero word at `[esp+0x2c]`, and `BFSoldier::getSoundTrigger`
-(`0x004f5c60`) is not `c_SstJump`: the upper body's current sound trigger, or
-the lower body's when the upper has none, so a soldier already in a jump state
-cannot jump again. Sound triggers are console constants, identical in both
-binaries — `c_SstStand` 1, `c_SstWalk` 2, `c_SstRun` 3, `c_SstJump` 4, then
-`c_SstToCrouch` 6 through `c_SstClimbLadder` 23 (table in symbols `0x08298280`).
-The server's copy of the gate is dead code. No `.con` word in any mod sets a jump strength,
-`AnimationState` has no velocity primitive, and neither `handlePlayerInput` nor
-the server's `handleFrameUpdate` writes the velocity of the soldier's physics
-node (`IObject+0x60`).
+### The table is reached through a ramp (2026-09-19, ledger PHY-6)
+
+The speed is not applied the instant a key goes down. `applyMovementFactors`
+(lnxded `0x082807a0`, the mangled signature `(float, char, char, char&)` fixing
+the types) keeps a **signed byte** per axis — forward at `this+0x58d`, strafe at
+`this+0x58c` — and `handlePlayerInput` calls it twice, at `0x0827475a` and
+`0x0827477f`, with `accel = 20` (`0x0872ee14`) and `decel = 12` (`0x0872ee18`),
+both `movsx`-loaded from beside `walkSpeedFactor`:
+
+```
+input == 0 && state != 0 : state moves toward 0 by decel
+input >  0               : state = min(max(state, 0) + accel, +127)
+input <  0               : state = max(min(state, 0) - accel, -127)
+```
+
+The byte is then **multiplied by 1/127** (`0x086d2718`, the nearest float32 to
+1/127; `fmul` at `0x082747c6`) and scales
+`directionalSpeed[pose*2 + (ramp <= 0)]` at `0x08274800`. At 30 Hz that is
+**0.212 s to full speed and 0.353 s to a stop** — and the forward/backward slot
+is chosen from the **ramp byte, not the raw input** (`0x082747e0 cmp BYTE
+[ecx+0x58d],0; setle`), so the table does not flip the instant the key does.
+
+Two things about how that speed is applied. The result is a **force**, `accel =
+0.75·vCmd` (`0x08274a09`, `0x086ba8cc`) with **no** `×30`, so `Δv = vCmd/40` per
+tick — and it runs **only when `IResponsePhysics+0xa4 == 0`**, i.e. only on a
+tick where the collision solver resolved no impulse. A soldier standing on the
+ground is therefore not moved by this at all; it is moved by the friction path
+(§10). The swimming `5.0·vCmd` (`0x08274b6f`, `0x086c5288`, state bit `0x8`) is
+**not** under that gate — `0x08274a03`'s `jne` lands past the 0.75 block but
+before the swim test at `0x08274b5f`.
+
+### The jump: 6.0 m/s, one tick, and the server computes it too (2026-09-19, ledger PHY-1)
+
+The gate is as read in 2026-09-16: in the client's `handlePlayerInput`
+(`0x00500190`) the jump bit 0x80 is set only when the soldier is standing (0x60
+clear), Action is held, the soldier has a +0x140 pointer and a non-zero word at
+`[esp+0x2c]`, and `BFSoldier::getSoundTrigger` (`0x004f5c60`) is not
+`c_SstJump` — the upper body's current sound trigger, or the lower body's when
+the upper has none, so a soldier already in a jump state cannot jump again.
+Sound triggers are console constants, identical in both binaries: `c_SstStand`
+1, `c_SstWalk` 2, `c_SstRun` 3, `c_SstJump` 4, then `c_SstToCrouch` 6 through
+`c_SstClimbLadder` 23 (table in symbols `0x08298280`).
+
+What is new is the impulse itself:
+
+```
+K     = min(1 + dot(normalise(vCmd with y = 0), N), 1.0)
+accel = ( -0.25*vCmd.x ,  K*N.y*6.0 - 0.25*vCmd.y ,  -0.25*vCmd.z ) * g_simulationFps
+node->addAccelerationAtRelativePosition(Vec3::zero, accel)      // slot +0x6c
+vCmd *= 0.0
+```
+
+client `0x0050165c`–`0x005017ca`, lnxded `0x08274f86`–`0x08275126`. The `6.0` is
+`0x008eb25c` / `0x086d271c`, raw `40c00000` in both. Because
+`PointPhysicsNode::updatePositionalPhysics` (`0x082560c0`) runs four
+semi-implicit sub-steps of `dt/4` and then **zeroes the acceleration
+accumulator** (`0x082562aa`), the `×30` makes this exactly a one-tick impulse:
+`Δv = +6.0 m/s` on flat ground. Under `g = −14.73` and that same integrator the
+apex is **1.12 m and the airtime 0.80 s** — not the continuum `v²/2g` figures of
+1.222 m and 0.815 s, which the discrete integrator does not produce.
+
+Three details a reader will want. The commanded direction is normalised **with
+y forced to zero**, by an explicit `mov DWORD [esp+0x1c],0` in the client
+(`0x0050166c`) and, in lnxded, by storing the `fldz` the branch's own compare
+left on the x87 stack (`0x08274fa2`) — grep for the `mov` in the server and you
+will not find it. The `−0.25·vCmd` lands on the **actual velocity** and then
+`vCmd` is set to zero outright, so at 6 m/s forward the jump tick costs 1.5 m/s
+of speed: a backward kick ten times the size of a normal tick's forward gain.
+And `N` is not simply the last collision normal — `BFSoldier::handleCollision`
+(`0x0827d3b0`) keeps the **most upward** normal of the frame
+(`0x0827d4d5`–`0x0827d503`).
+
+**The server's block is live.** The 2026-09-16 reading called it dead code
+behind an always-equal `0.0 == 0.0` test; that is the *not-armed* arm. Arming
+bit `0x40` is set on **both** binaries when a contact's `normal.y > 0.1` and the
+contact material is not 1 (Water) — client `0x004fa764`, lnxded `0x0827d566`
+(`or WORD PTR [edi+0x3e6],0x40`, found by grepping all 60 accesses to `+0x3e6`;
+it is the only one) — and cleared every tick (client `0x00501bb6`, lnxded
+`0x08274d29`). When it is set, `0x082741ad` jumps to `0x08275f86`, which calls
+`getSoundTrigger` and, when the answer is not `c_SstJump`, skips the `fldz`
+that would have zeroed the input. One tick is enforced three ways: the
+accumulator is cleared each tick, the arming bit is cleared each tick and needs
+a fresh upward contact (and after a jump tick the soldier is rising at ~5.5 m/s,
+so there is none), and `c_SstJump` blocks a repeat.
+
+That `0.1` is **the only slope threshold in soldier movement**. There is no
+walk-slope limit, no step-up code and no movement capsule: the collider is the
+object's `SimpleCollisionMesh` vertices swept by `ResponsePhysics::checkVsTerrain`
+(`0x0825a960`). The viewer's `MAX_GROUND_SLOPE` (cos 60°), `STEP_HEIGHT` and
+`BODY_RADIUS` remain viewer choices, and the slope one is *stricter* than the
+engine — which is why a real BF1942 soldier climbs dunes.
 
 There is no ragdoll because the bones were never dynamics:
 `setSkeletonCollisionBone` capsules are hit regions for damage only.
@@ -384,11 +461,149 @@ shakes are unaffected.
 
 ---
 
+## 10. Friction magnitudes, the spring, and submersion (2026-09-19)
+
+Three things §3 and §6 left as "not read", closed by the movement round and its
+verifier. The general friction solver — what each grip mode asks for, the ×30,
+the mean over touching parts, the dead six float arguments and the
+`−resistance·Vt` sum — is written up in
+[collision-response.md](collision-response.md) §8, which was read independently
+the same day and agrees on the budgets; this section records what is specific to
+the soldier, the spring, and the drag field.
+
+### The Coulomb budgets, and the soldier's own pair
+
+`ResponsePhysics::addFriction` (lnxded `0x0825b6e0`) forms two per-tick caps on
+the tangential velocity change, at `0x0825b7c9`:
+
+```
+mu_hi = A * 2.25 * 9.82 * L / 30      (break-away / static)     2.25 = 0x086d16e0
+mu_lo = A * 1.50 * 9.82 * L / 30      (sliding / kinetic)       1.5  = 0x086be4d0
+```
+
+both in **m/s of Δv per 30 Hz tick**. They are the two **arms of a branch**, not
+two passes: `0x0825bb72 mov dl,[esi+0xb4]; test dl,dl; jns 0x0825bebc` sends a
+body that already holds `StaticFriction` to the break-away test and one that
+does not to the re-latch test. Exceeding `mu_hi` scales the demand down to it
+(`fsqrt` `0x0825bbdd`, `fdivrp` `0x0825bbec`) and clears the latch; staying
+inside `mu_lo` sets it. Break away at 2.25, re-latch at 1.5.
+
+`A` is the contact's friction scalar, `IResponsePhysics+0xa8`, written by
+`impulseOn` (`0x08258900`, tail `0x08258b6a`–`0x08258ba0`) as
+`0.5·(getFrictionForMaterial(matA) + getFrictionForMaterial(matB))` — the mean
+of the two surfaces' `MaterialManager.materialFriction`. That lookup
+(`0x081751b0`, MaterialManager vptr+0x58) returns `material+0xc`, falling back
+to material 0 and then to a hard 1.0. The same tail refreshes the live grip byte
+as `(old & 0x80) | getPermanentGrip()`, so the static latch survives the
+refresh, and both constructors seed `+0xa8 = 1.0`.
+
+Vanilla's table, re-surveyed: 0 default 1.0, 1 water 0.1, 2/3 grass 0.8, 4 dry
+dirt 1.0, 5 wet dirt 0.8, 6 mud 0.5, 7 outside-map 0.5, 8 gravel 1.1, 9 frozen
+0.8, 10/11 sand 0.8, 12 rock 0.6, 13/14 roads 1.0, 15 paved 1.1, 70 grenades
+2.0, 96/97/98 stairs 10.0. **13** installed mods carry the word, over a range of
+**0.0 to 100.0** (EoD's `damage_system/APMinePCO.con` has the 100.0), and
+Interstate 82 ships an entirely different set — 0.3, 0.75, 0.9, 1.4, 1.6 — which
+matters the moment a viewer keys off the table per mod.
+
+**A soldier gets its own pair.** A second `CID_BFSoldierTemplate` test at
+`0x0825b83e` diverts to `0x0825c5d2`, which recomputes both budgets as
+
+```
+mu_hi = A * 7.2 * 9.82 * n.y^5 / 30        7.2 = 0x086d16e8   (break-away)
+mu_lo = A * 4.8 * 9.82 * n.y^5 / 30        4.8 = 0x086d16ec   (sliding)
+```
+
+with `n.y` the contact normal at `IResponsePhysics+0x9c` that
+`BFSoldier::handleCollision` writes. The 9.82 is present — it arrives live on
+the x87 stack through `[ebp-0x218]` (parked `0x0825b832`, reloaded
+`0x0825b844`), which is why a first reading came out without it. Same 1.5:1
+hysteresis, **3.2× the vehicle's magnitude**, and a **quintic** — not linear —
+falloff with contact tilt, formed by duplicating `n.y` at `0x0825c5fb` and
+multiplying it in at `0x0825c615`/`61f`/`623`/`627`/`62b`. On flat ground with
+`A = 1` the caps are **2.357 and 1.571 m/s of Δv per tick**, far above a
+soldier's 6 m/s top speed: friction cancels tangential slip outright and the
+soldier sticks. With §8's locomotion force gated off whenever contacts exist,
+**this is what moves a soldier standing on the ground.**
+
+One imprecision worth carrying: `getPermanentGrip() & 0x20` jumps to
+`0x0825c660`, which is *not* simply the spin-only path — it re-tests `& 0x4` and
+falls back into the normal path at `0x0825b761` when EngineGrip is absent. The
+`NoGrip` early-out (`+0xa4 == 0` or `getPermanentGrip() == 0` → live grip byte 0,
+return, `0x0825b76b`) is exactly as described.
+
+Which accumulator supplies `L` is the one point on which two same-day readings
+differ: this one reads `impulse_avg.y` (`+0x68`/`+0x6c`) for a vehicle part and
+`normal_avg.y` (`+0x98`/`+0x9c`) for a soldier, swapped at `0x0825c63e`, while
+collision-response.md §8 describes the general case as the averaged normal.
+Settle it before either number is used as an absolute.
+
+### The spring, and why there is no ray (ledger PHY-5)
+
+`PhysicsSpring::updatePhysics` (lnxded `0x0824ddd0`, client `0x0057f0d0`):
+
+```
+anchor = parentPos + rot(parentTransform) * offset          // offset = +0xb8
+D      = anchor - this->getAbsolutePosition()
+accel  = -( strength * g * (-1/9.82) * D  +  damping * (D - D_prev) / dt )
+root->addAccelerationAtRelativePosition(anchor - rootPos, accel)
+```
+
+`strength` (`+0xd4` ← `SpringTemplate::getStrength` `0x082503c0`, template
+`+0x16c`) multiplies the three `g·C·D` terms at `0x0824e325`; `damping`
+(`+0xd0` ← `getDamping` `0x082503f0`, `+0x168`) multiplies the three difference
+terms at `0x0824e340` — the pairing that could have been backwards and is not,
+confirmed independently by the constructor's own bindings. `D_prev` is read at
+`0x0824df7f` **before** the new `D` is stored at `0x0824e192`, so the damping
+term is a one-tick backward difference of the displacement, not a node velocity.
+The whole thing is skipped when `isSleeping()` (`+0xcc`), after
+`setSleepiness(root->getSleepiness())`.
+
+Two corrections to this corpus's old note on the client twin: the call is
+`addAccelerationAtRelativePosition` (slot `+0x6c`), **not**
+`AtAbsolutePosition`, and the position is relative to the **root** node, not to
+the wheel contact.
+
+**There is no ray**, along any axis — as far as a negative can be confirmed.
+`Spring::handleCollision` (`0x0824f9b0`) writes only `+0x103` (touching) and
+`+0x10c` (the material id) and tail-calls the base; contacts come from
+`checkVsTerrain` (`0x0825a960`) walking `getVertexCollision` (`+0x5c`) and
+`getFaceCollision` (`+0x58`); and the binary's only line-versus-triangle
+primitive, `lineIntersection` (`0x08603b40`), has exactly two callers, both
+inside AI pathfinding's object map. The spring's axis is authored data
+(`SpringTemplate+0x15c`, `setAxisFixation`, printed by `makeScript`
+`0x0824fe30` beside `setPositionalFixation` at `+0x150`) and is never
+world-vertical. The mount offset `+0xb8` has one writer,
+`setRelationToParentPosition` (`0x0824dda0`), whose only caller in the whole
+binary is `Spring::init` at `0x0824f5ce` — so there is no `.con` word behind it.
+
+The `c_PGFRollGripWhenOccupied` rewrite reads the occupancy byte at
+**compositeObject `+0x105`** (`0x0824de24`), not `+0x11e`, under a mask of
+`0x8`, and sets permanent grip 10 when occupied and 9 when empty.
+
+### Submersion drag (ledger PHY-7)
+
+`+0x44` in `PointPhysicsNode`'s drag scale is **submersion depth in metres**:
+`setUnderWater(float)` (`0x08256ad0`) writes it and `getUnderWater()`
+(`0x08256ae0`) reads it. The vehicle sibling keeps the same quantity at `+0x8c`
+(`PhysicsNode::setUnderWater` `0x0824d430`), which is why §3 has `+0x8c` for the
+box law, and `StaticPhysicsNode::setUnderWater` (`0x0825ead0`) is a pure no-op
+whose getter returns `fldz`. The law, re-derived at `0x082562f2`–`0x08256320`:
+
+```
+scale = 1 + min(underWater / getBoundingRadius(), 1) * (25.0 - 1)      // 25.0 = 0x086ccce0
+```
+
+i.e. the familiar `1 + 24·min(uw/r, 1)`, with the 25.0 now read out of the
+binary. `first-person-soldier.md` §7's entry can be closed; the soldier's own
+bounding radius stays inferred.
+
+---
+
 ## Still open
 
 | | |
 |---|---|
-| Jump impulse velocity | the client's gate is read and three places are ruled out (§8, ledger PHY-1): no `.con` word, no `AnimationState` primitive, no velocity write in `handlePlayerInput` or the server's `handleFrameUpdate`; the per-list call (lnxded `0x082751bf`, client `0x00501613` by shape) is `ActiveKitPart::update`. Next: `BFSoldier::updateAnimations` (`0x004fb150`), the class of the physics node at `IObject+0x60`, and the client's own `handleFrameUpdate` |
+| ~~Jump impulse velocity~~ | **closed 2026-09-19** (§8, ledger PHY-1): **6.0 m/s**, applied as a one-tick acceleration through `addAccelerationAtRelativePosition` on both binaries, giving a 1.12 m apex and 0.80 s airtime. The server's block is live, not dead. It was never a velocity write, which is why the three ruled-out hiding places were all genuinely empty |
 | ~~Per-bit grip force semantics~~ | **closed 2026-09-16** for what each bit selects (§6, ledger PHY-2); the force magnitudes behind the power slide remain unread |
 | ~~Whether the frame timer clamps `dt` before `World::update`~~ | **closed 2026-09-15** — there is no frame `dt` to clamp: the dispatch is `GameClient::simulateFrame(1/30)` run `nTicks` times per frame (§3); the tick *count* is clamped (>10 → 1 in `InputManager::update`, >9 → 1 in `GameClient::update`) |
 | ~~`submarineData`'s 7 parameters~~ | **closed 2026-09-16** for five of them (ledger PHY-3): the 6th is the crush depth, the 5th the depth below which oxygen drains (with the 4th, the periscope pair), the 1st the drain rate and the 2nd the refill rate, capped at 1.0. The 3rd and 7th (suffocation and crush damage) are not re-verified |
