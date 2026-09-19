@@ -15,11 +15,24 @@
  *     sets Game+0x6d (`useActiveCombatArea`) true, so declaring the area is
  *     what turns it on — there is no separate enable in any vanilla con.
  *
- *   The four floats are ORIGIN then SIZE, not two corners. Berlin settles it
- *   on its own: `game.setActiveCombatArea 1536 1536 512 512` on a 2048 m
- *   world is x 1536..2048, z 1536..2048 as origin+size and the impossible
- *   x 1536..512 as a corner pair. Liberation_of_Caen's `360 460 1229 1229`
- *   and Stalingrad's `320 52 416 416` read the same way.
+ *   The four floats are ORIGIN then SIZE, not two corners, and the ENGINE
+ *   ITSELF says so: the moment `gameStatusPlaying` reads them back through
+ *   `getActiveCombatArea` (0x08061870) it ADDS the third to the first and
+ *   the fourth to the second to get the far corner —
+ *
+ *       0x0815237a  fld  [x0] ; 0x08152383 fadd [sizeX] ; 0x08152389 fstp -> maxX
+ *       0x0815238f  fld  [z0] ; 0x08152395 fadd [sizeZ] ; 0x0815239b fstp -> maxZ
+ *
+ *   — and then compares the player against x0/z0 and those two sums. A corner
+ *   pair would never be summed. The level numbers agree: Berlin's
+ *   `1536 1536 512 512` on a 2048 m world is x 1536..2048 and the impossible
+ *   x 1536..512 read as corners; Liberation_of_Caen's `360 460 1229 1229` and
+ *   Stalingrad's `320 52 416 416` read the same way.
+ *
+ *   When a level declares NO area, the same block falls through to
+ *   0x08152575, which zeroes the two origins and calls the terrain's own
+ *   `getSizeX`/`getSizeZ` (PatchTerrain vtable +0x0c/+0x10) for the far
+ *   corner — the "combat area" is then the whole terrain.
  *
  *   dice::bf::Game::setTimeAllowedOutSideWorld(unsigned char)
  *     0x08061800 -> Game+0x6c. DEFAULT 10 seconds, written by
@@ -35,15 +48,61 @@
  *     one installed mod does — bfheroes, 120 to 350 per level.
  *
  *   dice::bf::GameServer::gameStatusPlaying(float dt)
- *     The per-frame check, inlined. 0x081523ce-0x0815240c compares the player
+ *     The per-frame check, inlined. 0x081523b2-0x0815240c compares the
  *     position against the area; 0x0815241f adds dt to a per-player
- *     accumulator at player+0x178; 0x0815241c-0x08152434 compares that total
+ *     accumulator at player+0x178; 0x0815242e-0x08152437 compares that total
  *     against the byte at Game+0x6c; the in-bounds branch zeroes the
  *     accumulator (0x08152553, `mov DWORD PTR [esi+0x178], 0`). Past the
  *     allowance, 0x0815247b-0x08152480 computes `dt * [GameServer+0x2e8]` and
- *     passes it to a virtual call on the player object. So the damage is a
- *     RATE, integrated every frame, not a lump at the buzzer: 5 HP per second
- *     against a soldier's 30 HP is six more seconds to die, sixteen in all.
+ *     passes it to `GameServer::giveDamage` (vtable +0x15c, 0x0814b2e0). So
+ *     the damage is a RATE, integrated every frame, not a lump at the buzzer:
+ *     5 HP per second against a soldier's 30 HP is six more seconds to die,
+ *     sixteen in all.
+ *
+ *     The four comparisons are `fucomp`/`fucom` + `test ah,0x45`, and the
+ *     polarity reads out cleanly once the fxch shuffles are tracked (the
+ *     branch is taken on ah&0x45 == 0, i.e. only when ST0 > STi):
+ *
+ *       0x081523c1  minX > pos.x   -> outside   (je 0x0815256e)
+ *       0x081523d7  minZ > pos.z   -> outside   (je 0x08152565)
+ *       0x081523ec  pos.x > maxX   -> outside   (je 0x0815255e)
+ *       0x08152403  pos.z > maxZ   -> outside   (jne 0x08152525 = inside)
+ *
+ *     so inside is `minX <= x <= maxX && minZ <= z <= maxZ`: INCLUSIVE on all
+ *     four edges. Only the position's x (offset +0) and z (offset +8) are
+ *     ever loaded — ALTITUDE IS NOT BOUNDED, a plane at 400 m over the middle
+ *     of the area is inside it.
+ *
+ *     The threshold is a STRICT `>`: `jne 0x0815251a` at 0x08152437 takes the
+ *     no-damage path whenever the total is less than OR EQUAL to the
+ *     allowance. And after a damage frame the accumulator is written back to
+ *     the allowance itself, not left to grow (0x081524a8 `mov al,[ecx+0x6c]`
+ *     / 0x081524ac `fild` / 0x081524b2 `fstp [esi+0x178]`), so it sits at 10
+ *     and every later frame re-crosses by its own dt.
+ *
+ *     There is a SECOND way to be outside, and it is not geometric. The
+ *     in-bounds branch at 0x08152525 asks the terrain for the material under
+ *     the player — `dice::ref2::geom::terrainBase` (0x087435f0), vtable +0x4c
+ *     = `PatchTerrain::getMaterial(float, float)` (0x083d6800) — and compares
+ *     it with `GameServer+0x474` (0x08152540). That field is
+ *     `materialToGiveDamage`: `setMaterialToGiveDamage(unsigned char)`
+ *     0x0813dff0, `getMaterialToGiveDamage` 0x0813e020, DEFAULT 7 from the
+ *     GameServer constructor at 0x0812f287. On a match the code jumps to the
+ *     SAME accumulate path the out-of-rect tests reach; only a mismatch
+ *     zeroes the accumulator. This viewer has no terrain material channel, so
+ *     it models the rectangle only, and a level that paints material 7 inside
+ *     its own area will look safe here where the game would be counting down.
+ *
+ *     WHO TAKES THE DAMAGE. The position tested is `BFPlayer::getVehicle()`'s
+ *     (vtable +0x3c = 0x080560c0, returning BFPlayer+0x4c), read at
+ *     0x081523a1, so a seated player is tested at the VEHICLE's position. And
+ *     the damage goes to the same object: at 0x0815243f the code branches on
+ *     `BFPlayer+0x6c` (the entry-point index, -1 when on foot — the
+ *     constructor sets it at 0x08050b1e and `GameServer::exitVehicle` puts it
+ *     back at 0x0814e5c2). In a vehicle (+0x6c != -1) `giveDamage` is handed
+ *     `getVehicle()` — THE VEHICLE BURNS, not the man in it. On foot it is
+ *     handed BFPlayer+0x68, the default vehicle `setDefaultVehicle` stores
+ *     (0x08055879), i.e. the soldier.
  *
  *   menu/InGame top-level entry #42 is what the player sees:
  *     gate      `0 < Outside/OutsideTime` (a LessData cull)
@@ -60,16 +119,12 @@
  *   `DESSERTION_MESSAGE` = "Warning! You are leaving combat area. Deserters
  *   will be shot." — a near-identical string this node does not use.
  *
- * NOT READ, and marked as such rather than guessed:
- *   - whether the area test is inclusive at the edge (the x87 comparisons at
- *     0x081523d7/0x081523ec/0x08152403 are `fucomp`/`fucom` pairs whose branch
- *     polarity was not fully disentangled). Treated as inclusive here.
- *   - whether the height (y) is bounded at all. `setActiveCombatArea` stores
- *     four floats and the con verb passes four, so this is a 2D test in x/z;
- *     nothing was found that bounds altitude.
- *   - the team check at 0x08152540 (`[ecx+0x474]` against a vtable +0x4c
- *     result). Something team-dependent gates the reset branch. Not modelled.
- *   - whether a vehicle takes the damage or its occupant does.
+ * NOT MODELLED, and marked as such rather than guessed:
+ *   - the terrain-material half of the test (above). We have no material
+ *     channel in the extracted scene, so only the rectangle is checked.
+ *   - what the client shows in `Outside/OutsideTime`. The countdown below is
+ *     the remaining seconds rounded UP, which is this viewer's own choice;
+ *     the number the retail client writes into that variable was not read.
  *
  * This module is deliberately free of `three` and of the DOM: it is the rect
  * test and the two timers, so `tests/combat_area_harness.mjs` runs the real
@@ -103,9 +158,10 @@ export function combatAreaRect(extras) {
   return rect;
 }
 
-/** Is this world position inside the area? x/z only: the con verb passes four
- *  numbers and the engine stores four, so altitude is unbounded. Inclusive at
- *  the edge (see the module note — the branch polarity was not read). */
+/** Is this world position inside the area? x/z only — the engine loads the
+ *  position's +0 and +8 and never its +4, so altitude is unbounded. Inclusive
+ *  on all four edges, which is what the x87 polarity at 0x081523c1 /
+ *  0x081523d7 / 0x081523ec / 0x08152403 reads as (module note above). */
 export function isInside(rect, x, z) {
   if (!rect) return true;
   return x >= rect.minX && x <= rect.maxX && z >= rect.minZ && z <= rect.maxZ;
@@ -188,15 +244,27 @@ export class CombatArea {
       };
     }
     // `fadd [esi+0x178]` at 0x0815241f: dt first, the test after, so the very
-    // frame that crosses the allowance is already a damage frame.
+    // frame that crosses the allowance is already a damage frame. The test is
+    // a strict `>` (0x08152437's `jne` takes the no-damage path on <= as well
+    // as <).
     this.outsideFor += step;
     const remaining = Math.max(0, this.timeAllowed - this.outsideFor);
+    const damage = this.outsideFor > this.timeAllowed
+      ? step * this.damagePerSecond : 0;
+    // On a damage frame the engine writes the allowance itself back into the
+    // accumulator rather than letting it grow (0x081524a8 / 0x081524ac /
+    // 0x081524b2), so a player who has been out for a minute reads 10, not
+    // 60. It changes no damage — the next frame's own dt re-crosses — but it
+    // is what `__combatArea().outsideFor` should say, and a future track that
+    // keys anything off the total would otherwise key off a number the engine
+    // never holds.
+    if (damage > 0) this.outsideFor = this.timeAllowed;
     return {
       inside: false,
       outsideFor: this.outsideFor,
       remaining,
       countdown: Math.ceil(remaining),
-      damage: this.outsideFor > this.timeAllowed ? step * this.damagePerSecond : 0,
+      damage,
       entered: false,
       left: wasInside,
       distance: distanceOutside(this.rect, x, z),
