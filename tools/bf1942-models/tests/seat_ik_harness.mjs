@@ -5,7 +5,7 @@ import {
   quatApply, quatAxisAngle, quatFromTo, quatMul,
   refractorPoint, refractorYpr,
   seatBody, seatFlagMask, resolveSeatStates, seatPoseName, defaultSeatPoseName,
-  ikTarget, solveTwoBone, elbowAngle, collectIkBindings,
+  ikTarget, prepareIkEntry, solveTwoBone, elbowAngle, collectIkBindings,
   SEAT_FLAG_BITS,
 } from './seat-ik.mjs';
 
@@ -194,5 +194,19 @@ out.bindings = collectIkBindings([dummy, loose, { name: 'Plain', userData: {} }]
 // the same as the engine's negative case.
 out.bindingsNoResolver = collectIkBindings([dummy], null)
   .map(b => ({ node: b.node.name, target: b.target.name }));
+
+// The offset and the baked rotation are computed once, at bind time, the way
+// the engine bakes them once at parse time. A prepared entry and a raw one
+// must give the same target.
+const rawEntry = dummy.userData.skeletonIK[0];
+const prepared = collectIkBindings([dummy], resolve)[0].entry;
+out.prepared = {
+  hasPrepared: !!prepared.prepared,
+  rawHasPrepared: !!rawEntry.prepared,
+  matches: JSON.stringify(ikTarget(prepared, [1, 2, 3], [0, 0, 0, 1]))
+        === JSON.stringify(ikTarget(rawEntry, [1, 2, 3], [0, 0, 0, 1])),
+  baked: prepareIkEntry(rawEntry).baked.map(n => +n.toFixed(6)),
+  offset: prepareIkEntry(rawEntry).offset,
+};
 
 console.log(JSON.stringify(out, null, 1));

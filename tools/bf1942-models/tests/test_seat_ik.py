@@ -246,6 +246,33 @@ class BindingTests(SeatIkHarness):
             self.assertEqual(row["node"], row["target"])
 
 
+class PreparedEntryTests(SeatIkHarness):
+    """The constant half of an entry is baked once, not once a frame.
+
+    The engine bakes the rotation triple into a matrix while it reads the
+    `.con` (`addSkeletonIK` calls `setRotation` at lnxded `0x8266d41`), and
+    only the target node's live pose varies per frame. `refractorYpr` is six
+    trig calls, and the step runs once per bound hand per frame.
+    """
+
+    def test_a_binding_carries_the_baked_entry(self) -> None:
+        self.assertTrue(self.results["prepared"]["hasPrepared"])
+
+    def test_the_exported_entry_itself_is_not_mutated(self) -> None:
+        self.assertFalse(self.results["prepared"]["rawHasPrepared"])
+
+    def test_baking_changes_no_answer(self) -> None:
+        self.assertTrue(self.results["prepared"]["matches"])
+
+    def test_the_baked_rotation_is_the_pythons(self) -> None:
+        from bf42 import gltf
+        want = [round(v, 6) for v in gltf.quat_from_ypr(-80.0, 60.0, 50.0)]
+        self.assertEqual(want, self.results["prepared"]["baked"])
+
+    def test_the_offset_is_mirrored_about_z(self) -> None:
+        self.assertEqual([0.24, -0.1, 0.82], self.results["prepared"]["offset"])
+
+
 class DefaultPoseFallbackTests(SeatIkHarness):
     """A seat naming a state the game never declared still draws somebody.
 
