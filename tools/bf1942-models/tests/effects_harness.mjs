@@ -5,7 +5,8 @@ import {
   sampleCrd, sampleCurve, basisFromNormal, basisFromAxes, rollBasis, inFrame,
   EmitterClock, spawnParticle, integrateParticle, evalParticle, damageFactor,
   atlasGrid, frameIndex, splashSpec, splashDamage, truncateRadius,
-  blastDistance, diesOnContact, DEFAULT_SPLASH_RADIUS, IMPACT_BLAST_OFFSET,
+  blastDistance, diesOnContact, isFuseRound, roundTimeToLive,
+  DEFAULT_SPLASH_RADIUS, IMPACT_BLAST_OFFSET, FLIGHT_TTL_CEILING,
 } from './effects-core.mjs';
 
 // A deterministic generator so the assertions are exact.
@@ -271,6 +272,35 @@ out.diesOnContact = {
   none: diesOnContact(null),
 };
 out.impactBlastOffset = IMPACT_BLAST_OFFSET;
+// The four vanilla fuse weapons and the three that only look like them, each
+// with the `timeToLive` its own `.con` authors — so the lifetime rule is
+// asserted on the real numbers rather than on invented ones.
+{
+  const VANILLA = {
+    sherman: { ttl: 3, damage: { material2: 206, damageType: 1, hasCollisionEffect: true, dieAfterColl: false } },
+    grenade: { ttl: 3, damage: { material2: 205, damageType: 1, radius: 15, hasCollisionEffect: false, dieAfterColl: false } },
+    expack: { ttl: 240, damage: { material2: 204, damageType: 1, radius: 12, hasCollisionEffect: false, dieAfterColl: false } },
+    landmine: { ttl: 360, damage: { material2: 232, damageType: 4, radius: 4, hasCollisionEffect: false, dieAfterColl: false } },
+    flakAllies: { ttl: 0.8, damage: { material2: 199, damageType: 4, radius: 20, hasCollisionEffect: true, dieAfterColl: true } },
+    flak38: { ttl: 0.8, damage: { material2: 199, damageType: 4, radius: 20, hasCollisionEffect: true } },
+    bomb: { ttl: 20, damage: { material2: 202, damageType: 1, radius: 20, hasCollisionEffect: true, yModOnExplosion: 2 } },
+  };
+  out.fuseRound = {};
+  out.lifetime = {};
+  for (const [name, { ttl, damage }] of Object.entries(VANILLA)) {
+    out.fuseRound[name] = isFuseRound(damage);
+    out.lifetime[name] = roundTimeToLive(ttl, damage);
+  }
+  // A mod round with an absurd fuse that still flies: held to the ceiling,
+  // because the ceiling exists for exactly that.
+  out.lifetime.longFlier = roundTimeToLive(600, VANILLA.sherman.damage);
+  // And the same absurd fuse on a fuse round: its own, because a rested round
+  // is not what the ceiling is guarding against.
+  out.lifetime.longFuse = roundTimeToLive(600, VANILLA.landmine.damage);
+  // No `timeToLive` at all on the spec.
+  out.lifetime.unspecified = roundTimeToLive(undefined, VANILLA.sherman.damage);
+  out.flightCeiling = FLIGHT_TTL_CEILING;
+}
 out.truncate = {
   exact: truncateRadius(15),
   down: truncateRadius(17.63),
