@@ -252,6 +252,12 @@ function drawBitmapText(ctx, font, text, x, y, rgb) {
  *  freeze every dial at twelve o'clock.
  *
  *  The SIGN is `_drawPicture`'s business, not this function's -- see there. */
+/** The 800x600 point the seat-occupancy dots are offset from (VHUD-7): the
+ *  six 8x8 leaves draw at `(192 + VehiclePosX[i+1], 452 + VehiclePosY[i+1])`.
+ *  It is also exactly `hud-layout.json`'s own seat-0 rect (247,457) minus that
+ *  variable's authored default (55,5), so the two agree. */
+const SEAT_DOT_ORIGIN = [192, 452];
+
 function rotationAngle(el, vars) {
   const r = el.rotation;
   if (!r) return 0;
@@ -574,15 +580,30 @@ export class Hud {
     ctx.globalAlpha = 1;
   }
 
-  /** One seat-occupancy dot. verify-r2.md R2-5/R2-6 confirm one shared
-   *  `Occupied/OccupiedData` object backs all six seats and its five states
-   *  (0 blank, 1 you, 2 empty, 3 teammate, 4 enemy) pick one of five dot
-   *  textures, but which live state a given seat is in was left OPEN (R2's
-   *  own "selector" claim) -- there is no engine-confirmed variable to key
-   *  this on. This file's own contract, not a corpus fact, pending whatever
-   *  P2/seats.js actually feeds at integration: `vars[el.dataRef]` is an
-   *  array indexed by `el.position`, holding one of R2-6's five state ints.
-   *  Never exercised this round (nothing sets `Occupied/OccupiedData`). */
+  /**
+   * One seat-occupancy dot.
+   *
+   * VHUD-2 read `BfOccupiedVehicleData`'s vtable (`0x0093f300`) as raw bytes:
+   * one shared object backs all six leaves and its five-entry icon table is
+   * 0 blank, 1 `vehicledot_local`, 2 `vehicledot_empty`, 3
+   * `vehicledot_friend`, 4 `vehicledot_enemy`. **Which live state a given
+   * seat resolves to is still unread**, so `vars[el.dataRef]` being an array
+   * indexed by `el.position` is this file's contract with `map.html`, not a
+   * corpus fact.
+   *
+   * The POSITION is a corpus fact now, and it used to be the blocker.
+   * VHUD-11: `el.posVar` names a `Vehicle/VehiclePos/VehiclePosX<n>`/`Y<n>`
+   * pair, and those carry the seat's own `setVehicleIconPos` -- a Vec2 on
+   * every PlayerControlObject template, root and seats alike, which nothing
+   * parsed until this round. They are texel offsets inside the 128x128
+   * vehicle-icon panel, so the dot sits at VHUD-7's `(192 + X, 452 + Y)`:
+   * Sherman's root `54/103` lands at (246, 555), inside the icon.
+   *
+   * `el.rect` is the layout's own literal, built from the same variables'
+   * small authored defaults (55..85 / 5..30), so it is the right fallback for
+   * a seat whose extract has no position -- not a stack of six dots at one
+   * corner.
+   */
   _drawOccupiedSeat(ctx, el, x, y, w, h) {
     const table = this.vars[el.dataRef];
     const state = Array.isArray(table) ? table[el.position] : undefined;
@@ -591,7 +612,20 @@ export class Hud {
       : state === 3 ? 'icon_vehicledot_friend'
       : state === 4 ? 'icon_vehicledot_enemy' : null;
     const img = key && this.sprite(key);
-    if (img) ctx.drawImage(img, x, y, w, h);
+    if (!img) return;
+    const [px, py] = this.seatDotPosition(el, x, y);
+    ctx.drawImage(img, px, py, w, h);
+  }
+
+  /** Where one `occupied-seat` leaf draws: the vehicle-icon panel's own
+   *  origin plus this seat's fed offset, or the layout's literal rect when
+   *  the pair is absent. Split out so `tests/hud_harness.mjs` can read the
+   *  arithmetic without a canvas. */
+  seatDotPosition(el, x, y) {
+    const vx = el.posVar && this.vars[el.posVar.x];
+    const vy = el.posVar && this.vars[el.posVar.y];
+    if (typeof vx !== 'number' || typeof vy !== 'number') return [x, y];
+    return [SEAT_DOT_ORIGIN[0] + vx, SEAT_DOT_ORIGIN[1] + vy];
   }
 
   /** The procedural crosshair (`BfCrosshairNode`), for the layout groups
