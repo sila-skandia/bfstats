@@ -349,6 +349,66 @@ def stub_meshes(assembler: Assembler, builder: gltf.GlbBuilder, *names: str) -> 
             builder.add_mesh(name, [triangle]), 1)
 
 
+class SkeletonIkExportTests(unittest.TestCase):
+    def test_ik_stays_on_the_part_that_declares_it(self) -> None:
+        # The Willys pins both hands on `WillySteeringDummy`, the part that
+        # turns with the wheel, and the offsets are in that part's frame. An
+        # earlier pass gathered them onto the vehicle root, where a viewer can
+        # no longer tell what they are relative to -- and gathered them once
+        # per child of the declaring part, so a part with three children wrote
+        # six hands and a leaf wrote none.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Land/Willy/Objects.con",
+            """
+ObjectTemplate.create PlayerControlObject Willy
+ObjectTemplate.geometry Willy_Hull_M1
+ObjectTemplate.addTemplate WillySteeringDummy
+
+ObjectTemplate.create AnimatedBundle WillySteeringDummy
+ObjectTemplate.addSkeletonIK Bip01_R_Hand 0.24/-0.1/-0.82 -80/60/50
+ObjectTemplate.addSkeletonIK Bip01_L_Hand -0.26/-0.1/-0.82 -80/-60/50
+ObjectTemplate.addTemplate WillyWheel
+ObjectTemplate.addTemplate WillyColumn
+ObjectTemplate.addTemplate WillyHorn
+
+ObjectTemplate.create SimpleObject WillyWheel
+ObjectTemplate.geometry Willy_Wheel_M1
+ObjectTemplate.create SimpleObject WillyColumn
+ObjectTemplate.geometry Willy_Column_M1
+ObjectTemplate.create SimpleObject WillyHorn
+ObjectTemplate.geometry Willy_Horn_M1
+
+GeometryTemplate.create StandardMesh Willy_Hull_M1
+GeometryTemplate.create StandardMesh Willy_Wheel_M1
+GeometryTemplate.create StandardMesh Willy_Column_M1
+GeometryTemplate.create StandardMesh Willy_Horn_M1
+""",
+        )
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library, include_collision=False)
+        builder = gltf.GlbBuilder()
+        stub_meshes(assembler, builder, "Willy_Hull_M1", "Willy_Wheel_M1",
+                    "Willy_Column_M1", "Willy_Horn_M1")
+        report = Report(root="Willy", configuration="complex", lod=0)
+
+        root = assembler.build_node(builder, "Willy", report)
+        self.assertIsNotNone(root)
+        nodes = {node["name"]: node
+                 for node in glb_document(builder.build([root], extras={}))["nodes"]}
+
+        self.assertNotIn("skeletonIK", nodes["Willy"].get("extras", {}))
+        self.assertEqual(
+            [
+                {"bone": "Bip01 R Hand", "position": [0.24, -0.1, -0.82],
+                 "rotation": [-80.0, 60.0, 50.0]},
+                {"bone": "Bip01 L Hand", "position": [-0.26, -0.1, -0.82],
+                 "rotation": [-80.0, -60.0, 50.0]},
+            ],
+            nodes["WillySteeringDummy"]["extras"]["skeletonIK"],
+        )
+
+
 class CockpitExportTests(unittest.TestCase):
     def test_reaches_first_person_sees_through_lod_alternatives(self) -> None:
         library = cockpit_library()
