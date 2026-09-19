@@ -105,21 +105,32 @@
  *     stands.
  *
  *     WHAT 7 IS. `materialManagerdefine.con` heads it "Reserved (Outside
- *     map)", and the extracted material maps say it is not reserved at all:
- *     11 of the 23 vanilla levels paint it, several of them over most of their
- *     own combat area — Berlin 84% of the samples inside its rectangle,
- *     Tobruk 68%, Caen 67%, Bulge 61%, Stalingrad 58%, Omaha 50%, Market
- *     Garden 47%. It is not a border ring and it is not the map edge. What
- *     settles what it means is where the control points sit: on all seven of
- *     those levels, EVERY control point stands on a different id — Berlin on
- *     8 "Gravel" and 14 "Dirt road", Tobruk on 10 "Dry sand", Caen on 3 and 5,
- *     Omaha on 3 and 11, Stalingrad on 4, 6 and 8, Bulge on 6 and 9.
+ *     map)", and that is exactly what the extracted material maps show it to
+ *     be: on every one of the 11 vanilla levels that paint it, 7 is the
+ *     SURROUND of a single playable pocket, with no patches inside the pocket
+ *     at all. Rendered coarsely, aberdeen, battle_of_britain, berlin,
+ *     stalingrad, omaha_beach, liberation_of_caen and market_garden are all
+ *     the same picture: a clean ring of 7 around clean non-7 ground.
  *
- *     So material 7 is a SECOND, PAINTED, NON-RECTANGULAR combat boundary: the
- *     ground the designer does not want you standing on, inside a rectangle
- *     that is only ever a box. On a city level it is most of the box, and the
- *     streets are the part that is not painted. That is why Berlin can declare
- *     a 512 m square and still keep you in the streets.
+ *     What makes it worth modelling is that it is NOT the rectangle. The
+ *     pocket is usually far smaller than the declared box — Berlin's playable
+ *     ground is about 200 x 270 m of a 512 m square (84% of the box is 7, and
+ *     99% of the whole 2048 m terrain), Market Garden declares the whole map,
+ *     and aberdeen, kharkov and kursk paint 7 while declaring no rectangle at
+ *     all. So the painted half is the tighter and more accurate boundary, and
+ *     a viewer that models the box alone lets a player walk hundreds of metres
+ *     past the edge of the level.
+ *
+ *     That the pocket is the playable area is what the level's own data says:
+ *     across all 23 extracted vanilla levels, **0 of 749 soldier spawns, 0 of
+ *     115 control points and 0 of 724 object spawns stand on material 7** (the
+ *     only two "on 7" object spawns are battle_of_britain rows whose position
+ *     is literally 0,0,0). Straight lines between neighbouring control points
+ *     are 0% material 7 on 19 of the 23; the four exceptions are single pairs
+ *     whose straight line leaves the pocket and comes back (berlin 30 m,
+ *     stalingrad 59 m, caen 9 m, aberdeen 174 m), which is not a route a
+ *     player walks in the real game either. At 5 HP/s after a 10 s grace, only
+ *     aberdeen's is long enough to cost a man on foot anything.
  *
  *     The material is read at the SAME position the rectangle is tested at
  *     (section 4 below), so a plane over painted ground burns exactly as one
