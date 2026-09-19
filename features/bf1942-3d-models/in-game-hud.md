@@ -455,3 +455,88 @@ rather than a re-implementation of its cadence.
   them. Feeding states against the layout's own sample rects would draw six
   dots in a diagonal staircase over every vehicle icon, which is inventing
   placement — the one thing this painter's own rule says not to do.
+
+## 2026-09-19 (stream D): two more groups, and the painter learned to wrap
+
+Two top-level entries of `menu/InGame` that `extract_hud_layout.py` had never
+decoded now come through as groups, which is all this file's generic painter
+needs to draw them — neither needed a line of `hud.js` beyond the wrap below.
+`RAW_TOPS` is now thirteen entries.
+
+### `tickets`
+
+`(620,4) 256x32`, gated on `ShowTicket`. Nine leaves: the bar plate, and per
+side a flag, a black drop shadow, the team-coloured count and a low-ticket
+blink quad. Fed from `scene.json.tickets` by `feedTicketVars` in `map.html`;
+the whole story is in [`tickets-hud.md`](tickets-hud.md). Worth noting here
+only because it is the first group this painter drew that the spawn screen
+draws too — the counter is a sibling of `Kit/ShowKit` in the file, not a child
+of it, so the same nine leaves serve both surfaces.
+
+### `outside` — the combat-area warning
+
+`(305,171) 256x64`. The first group in this file whose gate is a **comparison
+rather than a bool**: `0 < Outside/OutsideTime`, a `LessData` cull with no
+symbol of its own, which `leading_culls` reports as the anonymous `("?", "")`.
+So `RAW_TOPS` picks it out by rect. There is no `Show*` flag; feeding a zero
+countdown is how the layout is told to draw nothing.
+
+Three leaves:
+
+| leaf | rect | detail |
+|---|---|---|
+| plate | (305,171) 256x64 | `textmessbg_3line_256x64` |
+| countdown | (536,189) 20x20 | `Outside/OutsideTime`, right-aligned, `Trebuchet MS11 - Latin` |
+| warning | (310,174) 230x40 | `Outside/OutsideText`, `Trebuchet MS8`, colour `Outside/Color/{Red,Green,Blue}` = `(0.8516, 0.3516, 0.3516)` |
+
+The warning's own Wstring default is
+`"Warning! You are leaving the combat area! Desserters will be shot!"` —
+misspelling included, and **not** the lexicon's `DESSERTION_MESSAGE`
+("Warning! You are leaving combat area. Deserters will be shot."), which is a
+different wording this node never reads. Both strings exist; only one is on
+screen.
+
+What feeds it, and what the game does after the countdown reaches zero, is in
+`viewer/combat-area.js` and its own header — a ten-second allowance
+(`Game::setTimeAllowedOutSideWorld`, default at 0x08131dbb) and then 5 HP a
+second (`GameServer::setDamageForBeingOutSideWorld`, default at 0x08131db1),
+applied as `dt * damage` every frame. `hud.js` needs none of that; it gets an
+integer and a string.
+
+The three plates (`textmessBG_1line_256x32`, `_2line_256x32`,
+`_3line_256x64`) were added to `extract_hud_pack.py`'s `SPRITES`. The 1- and
+2-line ones back the spawn-point and status messages that share the widget
+family and are not fed yet; they came across together because the set is one
+thing.
+
+### The painter wraps now
+
+The warning is the first leaf whose string does not fit its own rect: 65
+characters of Trebuchet MS8 in a 230 px box. Drawn on one line it ran a third
+of the way off its own plate — and the plate settles the question, because the
+data names it `textmessBG_**3line**_256x64`: three lines of art for one
+string.
+
+`_drawText` now wraps when the string measures wider than the rect **and** the
+rect has room for another line (`h >= lineHeight * 2`). Both conditions
+matter: every leaf this file fed before — ammo counts, kit names, ticket
+counts — is short and single-line-height, so none of them can start wrapping.
+A single word wider than the box is left to overflow rather than split,
+because hyphenating a bitmap font means inventing glyph metrics and the one
+string this exists for has no such word.
+
+`wrapText` is exported for the harness: everything else in the text path goes
+through a tinted glyph atlas, which needs a real canvas, and the wrap is the
+part with a decision in it. `tests/test_hud.py` covers the warning's own two
+lines, the no-op cases, and the long-word case, against a fixed-width
+stand-in font.
+
+### Verified
+
+Stalingrad, on foot, teleported outside the combat area, read off
+`window.__hud.canvas`: the plate, the warning wrapped into two lines inside
+it, the countdown right-aligned in its corner, and the ticket bar above
+showing Soviet 100 against German 100
+(`scratchpad/d-wiring/combat-hud.png`). `window.__hud.layout.groups` reports
+thirteen groups. Back in the area, `Outside/OutsideTime` goes to 0 and the
+group culls whole.
