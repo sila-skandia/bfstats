@@ -622,10 +622,22 @@ for (const [name, make] of [
   drive(truck, 8, holding({ c_PIThrottle: 1, c_PIYaw: 0.4 }));
   const turning = round(truck.state.angularVelocity.y * DEG, 2);
   drive(truck, 4, holding({ c_PIThrottle: 1, c_PIYaw: 0 }));
+  const held = round(truck.state.angularVelocity.y * DEG, 2);
+  drive(truck, 4, holding({ c_PIThrottle: 0, c_PIYaw: 0 }));
   results.straighten = {
     turningRate: turning,
+    // Wheel centred, throttle still floored. It does NOT come straight, and
+    // it gets worse with time rather than better: a half-lock turn at 31 m/s
+    // lifts the inside rear clear of the ground (its load reads 0), so the
+    // whole of the tractive effort is on one side of the hull and the couple
+    // that makes keeps the slide going for as long as the throttle does.
+    throttleHeld: held,
+    // Lift off and it unwinds: the revs decay, the target falls to the road
+    // speed, the rear axle gets its circle back and the front axle — which
+    // never spends any of its own on drive — straightens the hull.
     yawRate: round(truck.state.angularVelocity.y * DEG, 2),
     roll: round(rollDeg(truck), 2),
+    speed: round(alongOf(truck), 2),
   };
 }
 // The same, floored from rest — and then with the throttle lifted as well,

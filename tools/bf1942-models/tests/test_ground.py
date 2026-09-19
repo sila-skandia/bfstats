@@ -491,6 +491,29 @@ class GroundModelTests(unittest.TestCase):
         self.assertLess(abs(straighten["yawRate"]), 2.0)
         self.assertLess(abs(straighten["roll"]), 2.0)
 
+    def test_a_floored_jeep_does_not_come_out_of_a_hard_turn_by_itself(self) -> None:
+        """Pinned as a measurement, not defended as a fidelity claim.
+
+        Wheel centred but throttle still floored out of a half-lock turn at
+        31 m/s, the hull keeps sliding — 28 deg/s of yaw after four seconds
+        and more, not less, after ten. The mechanism is visible in the
+        harness's own wheel loads: the inside rear reads 0, i.e. it is off
+        the ground, so the whole tractive effort is on one side of the hull.
+        Whether the engine does the same is **OPEN**, and turns on a detail
+        this viewer does not reproduce: `addFriction` hands each part's force
+        to `addFrictionAtAbsolutePosition` at that part's own contact point,
+        but `collision-response.md` section 8 reads the root's accumulator as
+        a MEAN over parts, and a mean that averages the application points
+        too would cancel exactly this couple. This file sums per-wheel forces
+        weighted by standing load instead (see `coulombCaps`), which keeps
+        the couple. Lifting the throttle ends it either way.
+        """
+        straighten = self.results["straighten"]
+        self.assertGreater(abs(straighten["throttleHeld"]), 10.0)
+        # And lifting off recovers, which is what makes it a slide rather
+        # than a divergence.
+        self.assertLess(abs(straighten["yawRate"]), 2.0)
+
     def test_flooring_it_into_a_turn_from_rest_is_a_power_slide(self) -> None:
         """PHY-2's own power slide, and it is a consequence, not a tuning.
 
