@@ -9,7 +9,7 @@
 // is enough to read back exactly which band of the picture the fill was
 // clipped to, which is the whole of what the bug was about.
 
-import { Hud, wrapText } from './hud.js';
+import { Hud, wrapText, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS } from './hud.js';
 
 function recordingContext() {
   const calls = { images: [], clips: [] };
@@ -258,6 +258,49 @@ results.seatDots = {
   // the layout's own literal rect stands.
   unfed: dotAt({}),
   halfFed: dotAt({ 'Vehicle/VehiclePos/VehiclePosX1': 54 }),
+};
+
+// --- the soldier ammo panel's type enum (HUD-10) -----------------------------
+//
+// The `when` list below is transcribed VERBATIM from vanilla `menu/InGame`'s
+// own `Ammo/PrimaryAmmo` rounds text in the `{2,3,4,5}` panel --
+// `tests/test_hud_layout.py` asserts the transcription still matches the real
+// archive, so this can run `hud.js`'s real `_visible` against it without a
+// game install. The three gating leaves (`ShowSoldierIcon`,
+// `ShowWeaponIcon`, not-`ShowVehicleIcon`) are dropped; only the AmmoType
+// arithmetic is under test.
+const ROUNDS_TEXT_WHEN = [
+  { op: 'or', terms: [
+    { op: 'or', terms: [
+      { var: 'Ammo/AmmoType', op: 'eq', value: 2 },
+      { var: 'Ammo/AmmoType', op: 'eq', value: 5 },
+    ] },
+    { op: 'or', terms: [
+      { var: 'Ammo/AmmoType', op: 'eq', value: 3 },
+      { var: 'Ammo/AmmoType', op: 'eq', value: 4 },
+    ] },
+  ] },
+  { var: 'Ammo/AmmoType', op: 'ne', value: 4 },
+  { var: 'Ammo/AmmoType', op: 'ne', value: 5 },
+  { var: 'Ammo/AmmoType', op: 'ne', value: 6 },
+];
+
+results.ammoType = {
+  codes: AMMO_TYPE_CODES,
+  withRounds: [...AMMO_TYPES_WITH_ROUNDS].sort(),
+  // Every vanilla hand weapon's own `setHudAmmoType`, surveyed out of
+  // `Objects.rfa` this round, mapped through the table.
+  bazooka: AMMO_TYPE_CODES.aticon,
+  thompson: AMMO_TYPE_CODES.atammobar,
+  grenade: AMMO_TYPE_CODES.aticonandstrengthbar,
+  repairPack: AMMO_TYPE_CODES.aticonandreloadbar,
+  medPack: AMMO_TYPE_CODES.aticonandheatbar,
+  knife: AMMO_TYPE_CODES.atnone,
+  // Which types the layout's rounds text actually admits, run through the
+  // painter's own condition evaluator.
+  roundsTextAdmits: [0, 1, 2, 3, 4, 5, 6, 7]
+    .filter(n => visibleUnder(ROUNDS_TEXT_WHEN, { 'Ammo/AmmoType': n })),
+  roundsTextWhen: ROUNDS_TEXT_WHEN,
 };
 
 console.log(JSON.stringify(results));
