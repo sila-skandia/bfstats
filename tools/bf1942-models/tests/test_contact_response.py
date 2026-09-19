@@ -102,6 +102,21 @@ class ContactResponseTests(unittest.TestCase):
         self.assertEqual(1.0, lookup["noTable"])
         self.assertEqual(1.0, lookup["noZero"])
 
+    def test_a_declared_but_bare_material_is_not_a_miss(self) -> None:
+        # The engine's Material constructor writes 1.0 / 0 / 0.01 and the
+        # `.con` overrides only the words it names, so a declaration naming
+        # none of the three -- 195 and 232 among others -- is a real Material
+        # holding those values. `getMaterialPtr` never misses on it and
+        # material 0's authored 0.02 never comes into it. In JSON that state
+        # is an entry with no such key.
+        bare = self.results["declaredBare"]
+        self.assertAlmostEqual(0.01, bare["resistance"])
+        self.assertAlmostEqual(0.0, bare["elasticity"])
+        self.assertAlmostEqual(1.0, bare["friction"])
+        # An id that is not in the table at all is still a real miss, and
+        # still takes material 0's authored 0.02.
+        self.assertAlmostEqual(0.02, bare["missResistance"])
+
     def test_a_table_that_predates_the_two_new_words_is_not_read_as_a_miss(self) -> None:
         # `elasticity` and `resistance` only joined `bf42/damage.py` this
         # round, so an asset tree extracted before it carries `friction`
