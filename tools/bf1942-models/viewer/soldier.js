@@ -607,9 +607,12 @@ export function stanceForPose(pose) { return POSE_STANCE[pose] || 'stand'; }
  * `controlPoints[].spawnGroupId` and `soldierSpawns[].group` — because
  * `extract_map.py` has emitted them since `spawn-points.md`.
  *
- * `team` 0 is a flag that starts neutral, and a group no control point claims
- * (a carrier's, from `GlobalSpawnGroups.con`) simply has no flag and is left
- * out rather than guessed at.
+ * `team` 0 is a flag that starts neutral. A group no control point claims
+ * still spawns if the fleet owns it: a ship's own template carries deck
+ * `SpawnPoint`s (`setGroup` 64+) and `Game/GlobalSpawnGroups.con` binds those
+ * groups to a side, so Wake's Japanese round opens on their carrier and
+ * destroyer. The extractor reconstructs them at the spawner pads in
+ * `vehicleSoldierSpawns`, and each ship instance becomes one flag here.
  */
 export function spawnFlags(extras) {
   const points = extras?.controlPoints || [];
@@ -621,17 +624,59 @@ export function spawnFlags(extras) {
     byGroup.get(spawn.group).push(spawn);
   }
   const flags = [];
+  const claimed = new Set();
   for (const point of points) {
     const group = point?.spawnGroupId;
     const owned = group == null ? null : byGroup.get(group);
     if (!owned || !owned.length) continue;
+    claimed.add(group);
     flags.push({
       name: point.displayName || point.name || `flag ${group}`,
-      team: point.team ?? null,
+      // The side the spawn screen lists the group under is the engine's own
+      // `spawnPointManager.groupTeam`, which the extractor has already folded
+      // into each spawn's `team`. The control point's start team is only the
+      // fallback for data extracted before that (Wake's landing beach starts
+      // `team 2` but its group is `groupTeam 1` — the Japanese landing).
+      team: owned.find(s => s.team === 1 || s.team === 2)?.team ?? point.team ?? null,
       group,
       position: point.position || null,
       uncapturable: !!point.unableToChangeTeam,
       spawns: owned,
+    });
+  }
+  // The fleet. One flag per ship instance — the picker names the ship — but
+  // the map draws one ring per spawn *group* on that hull, the way the game
+  // does: Wake's carrier shows three rings down its deck, its destroyer two.
+  // Each ring carries its group so a click selects that spot on the deck.
+  const ships = new Map();
+  for (const spawn of extras?.vehicleSoldierSpawns || []) {
+    if (spawn?.group == null || claimed.has(spawn.group) || !spawn.position) continue;
+    const key = spawn.pad != null ? `pad${spawn.pad}`
+      : `${spawn.vehicle}|${spawn.spawner}|${spawn.rotation?.join(',') ?? ''}`;
+    if (!ships.has(key)) ships.set(key, []);
+    ships.get(key).push(spawn);
+  }
+  for (const points of ships.values()) {
+    const first = points[0];
+    const groups = [];
+    const seen = new Map();
+    for (const p of points) {
+      if (!seen.has(p.group)) {
+        const entry = { group: p.group, position: p.position };
+        seen.set(p.group, entry);
+        groups.push(entry);
+      }
+    }
+    flags.push({
+      name: (first.vehicle || 'ship').charAt(0).toUpperCase()
+        + (first.vehicle || 'ship').slice(1),
+      team: points.find(p => p.team === 1 || p.team === 2)?.team ?? null,
+      group: first.group,
+      position: first.position,
+      uncapturable: true,
+      vehicle: true,
+      groups,
+      spawns: points,
     });
   }
   return flags;
@@ -648,18 +693,27 @@ export function spawnFlags(extras) {
  * a spawn sitting more than `airborne` metres above the ground under it is
  * treated as one too. That keeps already-shipped maps correct without a
  * re-extract.
+ *
+ * A ship flag's points arrive with their real deck heights (the extractor
+ * resolves the vehicle template's local offsets), so no lift is applied and
+ * the airborne heuristic is skipped — a deck is always well above the sea
+ * under the hull, and none of these points is a parachute drop.
  */
-export function pickSpawn(flag, index = 0, { groundAt = null, airborne = 12 } = {}) {
-  const spawns = flag?.spawns || [];
-  const usable = spawns.filter(spawn => {
+export function pickSpawn(flag, index = 0, { groundAt = null, airborne = 12, group = null } = {}) {
+  let pool = flag?.spawns || [];
+  if (group != null) {
+    const inGroup = pool.filter(spawn => spawn.group === group);
+    if (inGroup.length) pool = inGroup;
+  }
+  const usable = pool.filter(spawn => {
     if (spawn.paratrooper) return false;
-    if (!groundAt || !spawn.position) return true;
+    if (flag?.vehicle || !groundAt || !spawn.position) return true;
     const ground = groundAt(spawn.position[0], spawn.position[2]);
     return !Number.isFinite(ground) || spawn.position[1] - ground < airborne;
   });
-  const pool = usable.length ? usable : spawns;
-  if (!pool.length) return null;
-  return pool[((index % pool.length) + pool.length) % pool.length];
+  const finalPool = usable.length ? usable : pool;
+  if (!finalPool.length) return null;
+  return finalPool[((index % finalPool.length) + finalPool.length) % finalPool.length];
 }
 
 /**

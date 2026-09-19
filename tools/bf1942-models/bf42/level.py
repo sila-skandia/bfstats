@@ -150,6 +150,12 @@ class SoldierSpawnTemplate:
     # Market Garden 36, Liberation of Caen 6, Coral Sea 1; every other
     # declaration is an explicit zero.
     paratrooper: bool = False
+    # `setEnterOnSpawn 1` puts the spawner straight into a vehicle seat at the
+    # point — a helm, a flak pit — rather than on the deck beside it. Those are
+    # vehicle-entry points, not standing spawn points, and a deploy screen must
+    # not list them. Remmed out on nearly every template (the fleet ships all
+    # leave it off), so a bare soldier spawn is the norm.
+    enter_on_spawn: bool = False
 
 
 @dataclass
@@ -705,7 +711,36 @@ def parse_soldier_spawn_templates(text: str) -> dict[str, SoldierSpawnTemplate]:
             current.group = _opt_int(tokens)
         elif cmd == "setspawnasparatroper":
             current.paratrooper = bool(tokens) and tokens[0].lower() not in ("0", "c_false")
+        elif cmd == "setenteronspawn":
+            current.enter_on_spawn = bool(tokens) and tokens[0].lower() not in ("0", "c_false")
     return out
+
+
+def parse_spawn_point_manager(text: str) -> dict[int, int]:
+    """`spawnPointManagerSettings.con`: which side each spawn group belongs to.
+
+    The spawn screen keys on this, not on the control point that happens to
+    declare the group: `spawnPointManager.group N` / `groupTeam T` says which
+    tab the group's spawn points list under. Wake is the proof it matters — its
+    group 1 is the landing beach, `groupTeam 1`, while the control point that
+    declares `spawnGroupId 1` starts `team 2`. Deriving the side from the flag
+    alone put the Japanese landing spawn on the wrong side of the screen.
+    `groupTeam 0` (CTF's shared groups) is no side and is not recorded.
+    """
+    teams: dict[int, int] = {}
+    current: int | None = None
+    for ns, cmd, args in _commands(text):
+        if ns != "spawnpointmanager":
+            continue
+        tokens = args.split()
+        if cmd == "group":
+            current = _opt_int(tokens)
+        elif cmd == "groupteam" and current is not None:
+            team = _opt_int(tokens)
+            if team in (1, 2):
+                teams[current] = team
+            current = None
+    return teams
 
 
 # A level ships one directory per game mode it supports and the same flag can
@@ -737,18 +772,27 @@ class GameplayObjects:
     control_point_templates: dict[str, ControlPointTemplate] = field(default_factory=dict)
     soldier_spawns: list[StaticInstance] = field(default_factory=list)
     soldier_spawn_templates: dict[str, SoldierSpawnTemplate] = field(default_factory=dict)
+    # From `<mode>/spawnPointManagerSettings.con`: group -> side (1 or 2).
+    spawn_group_teams: dict[int, int] = field(default_factory=dict)
 
     def template_for(self, inst: StaticInstance) -> ControlPointTemplate | None:
         return self.control_point_templates.get(inst.template.lower())
 
     def team_of_group(self, group: int | None) -> int | None:
-        """Which side owns a spawn group, via the flag that declares it.
+        """Which side a spawn group lists under on the spawn screen.
 
-        A soldier spawn carries no team of its own — it inherits from the
-        control point whose `spawnGroupId` matches its `setGroup`.
+        The engine's own binding is `spawnPointManager.groupTeam` — that is
+        what decides which tab the group shows on, wherever the group came
+        from. The control point whose `spawnGroupId` matches is only the
+        fallback for the levels (all of the CTF set, mostly) that ship no
+        manager settings: a flag carrying the group puts it on the flag's
+        side.
         """
         if group is None:
             return None
+        own = self.spawn_group_teams.get(group)
+        if own is not None:
+            return own
         for tpl in self.control_point_templates.values():
             if group in (tpl.spawn_group_id, tpl.second_spawn_group_id):
                 return tpl.team
@@ -778,6 +822,8 @@ def load_gameplay_objects(files: LevelFiles, mode: str | None = None) -> Gamepla
     out.soldier_spawns = parse_static_objects(text(f"{mode}/SoldierSpawns.con"))
     out.soldier_spawn_templates = parse_soldier_spawn_templates(
         text(f"{mode}/SoldierSpawnTemplates.con"))
+    out.spawn_group_teams = parse_spawn_point_manager(
+        text(f"{mode}/spawnPointManagerSettings.con"))
     return out
 
 
