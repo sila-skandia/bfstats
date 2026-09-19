@@ -348,3 +348,83 @@ Still to settle: the exact value of `S_obj` / the MaterialManager M1·M2
 scalars for ground/terrain (the per-surface DamageMod from the damage tables),
 and the `test $0x45` exact truth table. Viewer model: use the kinetic shape
 and calibrate the scalar against the user's measured Wake-airstrip lethal fall.
+
+---
+
+## Closed (2026-09-20, wave-2 stream A): the scalars were in the damage tables all along
+
+The two things this document left open are settled, and the viewer no longer
+carries a fitted constant. Ledger **HP-14** is the row; the verified brief is
+`features/bf1942-parity-round-2026-09-19/viewer-changes.md` item 23.
+
+**The missing 8.0.** `0x086c08c0` was on the "confirmed constants" list above
+but not in the model. It is subtracted from `|v|` *first* — `fsub ds:0x86c08c0`
+at `0x08155189` overwrites the speed at `0x0815519b` and the function returns
+at `0x0815519e` when the result is negative — so the kinetic term, the 30.0
+saturation and the 10/20 lerp all read the **reduced** speed, and an arrival
+under 8 m/s does no damage at all. That single omission is most of why the
+first magnitude reading missed: without it the formula is about 8x too severe
+at 5 m, which is the error the fitted constant was quietly cancelling.
+
+**`S_obj` and `M1·M2` are ordinary table entries.** `S_obj` is
+`Armor::getSpeedMod` (vtable `+0x4c`, `0x08173fc0`) and the vanilla soldier
+declares `SpeedMod 0.5`. `M1` and `M2` are `damageMod(att, def)` and
+`materialDamage(att)` with the **ground** as attacker and the soldier's
+`Material 40` as defender — which the extractor has been writing into
+`_shared/damage.json` since long before this question was asked. Read out of
+the shipped file: for **every** terrain material 0–15,
+`materialDamage = 30` and `damageMod = 0.001`, so `M1·M2 = 0.030`. Water
+(material 1) is `1.5e-05`, about 67x gentler, and takes `cos²θ` instead of
+`cos³θ` through the duplicated path at `0x08154e4f`.
+
+The old fitted `FALL_KINETIC_HP = 10` implied about 0.026. It was close because
+0.030 is the real number; it was wrong because one scalar cannot also carry the
+8.0, the squared height term, the angle and the water case.
+
+**Two more terms the groundwork did not have.** `Q = max(1, X·kitDamping)` with
+`X = 1` below a 2 m fall and `F − 1` above it, and **`Q` is squared**
+(`fmul st,st(2)`, `fmulp st(2),st` at `0x08154dbb`/`0x08154dbd`). And the whole
+severity is delivered only when it exceeds **1.0**.
+
+### Where it lives now
+
+`tools/bf1942-models/viewer/fall-damage.js` — the formula, the constants and
+the table lookup, importing nothing so it tests under node.
+`tests/test_fall_damage.py` is 15 assertions over
+`tests/fall_damage_harness.mjs`.
+
+`SoldierBody` supplies the inputs, and two of them needed the body's help:
+the impact speed has to be sampled **before** `#settle` zeroes `velocity.y` to
+plant the feet, and the height is `getLastCollisionHeight() − pos.y` — the
+height of the last *contact*, not the airborne apex the viewer used to track.
+That difference is visible: a jump straight up is billed `F = 0`, and a jump
+off a ledge is billed the ledge rather than the apex above it.
+
+### Measured
+
+Driven on the page (`map.html?mod=bf1942&map=wake&shots`, The Airfield, dry
+sand, 30 HP, no kit damping, `g = −14.73`), health restored between drops:
+
+| drop | HP lost | HP left |
+|---|---|---|
+| 1.0 – 3.9 m | 0 | 30 |
+| 4.0 m | 1.19 | 28.81 |
+| 4.5 m | 2.19 | 27.81 |
+| 5.0 m | 4.18 | 25.82 |
+| 6.0 m | 10.86 | 19.14 |
+| 7.0 m | 21.74 | 8.26 |
+| 7.4 m | 28.63 | 1.37 |
+| 7.6 m | 30 | **dead** |
+
+By bisection in the node harness: first damage at **3.97 m**, death at
+**7.55 m**. The same 10 m drop into water costs **1.55 HP** against 103 on
+land — the 67x the two `damageMod`s predict.
+
+### Still open
+
+`Armor.speedMod` is read from the vanilla soldier's `.con` rather than from a
+per-template field the viewer tracks, so a mod declaring a different `SpeedMod`
+is not yet honoured. `kitDamping` is 1.0 because no vanilla kit declares
+`DamageDamping`; `BFSoldier::getDamageDampingFromActiveKitParts` `0x0827ec00`
+has not been read, so what a kit that *did* declare it would produce is
+unverified. Neither affects any vanilla fall.

@@ -13,7 +13,11 @@ import {
   poseFromFlags, POSE_STAND, POSE_CROUCH, POSE_PRONE,
   POSE_FLAG_CROUCH, POSE_FLAG_PRONE, EYE_HEIGHT, BODY_RADIUS,
   SOLDIER_MASS, SOLDIER_BOUNDING_RADIUS, PARACHUTE_DRAG, PARACHUTE_SPEED,
-  JUMP_SPEED, STEP_HEIGHT,
+  JUMP_IMPULSE, JUMP_COMMAND_KICK, JUMP_CONTACT_NORMAL_Y, MATERIAL_WATER,
+  LOCOMOTION_GAIN, MAX_GROUND_SLOPE, STEP_HEIGHT,
+  RAMP_ACCEL, RAMP_DECEL, RAMP_LIMIT, RAMP_SCALE, ENGINE_TICK_RATE,
+  RAMP_TO_FULL_SECONDS, RAMP_TO_STOP_SECONDS,
+  applyMovementFactors, rampedDirectionalSpeed, rampedStrafeSpeed,
 } from './physics.mjs';
 import {
   buildHeightfield, buildCollisionIndex, WorldCollider,
@@ -102,7 +106,11 @@ results.constants = {
   strafe: [...STRAFE_SPEED],
   walkFactor: WALK_SPEED_FACTOR,
   eyeHeights: [...EYE_HEIGHT],
-  jumpSpeed: JUMP_SPEED,
+  jumpImpulse: JUMP_IMPULSE,
+  jumpCommandKick: JUMP_COMMAND_KICK,
+  jumpContactNormalY: JUMP_CONTACT_NORMAL_Y,
+  locomotionGain: LOCOMOTION_GAIN,
+  materialWater: MATERIAL_WATER,
 };
 
 // The table indexing at 0x005013f8, over every pose and both signs of input.
@@ -275,10 +283,31 @@ function walk(world, input, seconds, { yaw = Math.PI / 2, start = null,
   };
 }
 
+/**
+ * The same, but with the movement ramp already saturated before the clock
+ * starts — so the distance is the table speed rather than the table speed
+ * minus a ramp-up. `warm` seconds of the same input are spent first.
+ */
+function cruise(world, input, seconds, opts = {}) {
+  const yaw = opts.yaw ?? Math.PI / 2;
+  const soldier = new SoldierBody({ world, yaw });
+  soldier.place(opts.start?.x ?? 4, opts.start?.y ?? 0, opts.start?.z ?? -32, yaw);
+  if (opts.pose === POSE_CROUCH) soldier.setCrouch(true);
+  if (opts.pose === POSE_PRONE) soldier.setProne(true);
+  soldier.step(TICK_DT, {});
+  for (let i = 0; i < Math.round((opts.warm ?? 1) * 60); i++) soldier.step(TICK_DT, input);
+  const from = { ...soldier.position };
+  for (let i = 0; i < Math.round(seconds * 60); i++) soldier.step(TICK_DT, input);
+  return Math.hypot(soldier.position.x - from.x, soldier.position.z - from.z);
+}
+
 // Yaw pi/2 faces +X, which is into the level rather than out of it.
 results.walkSpeeds = {
   standForward: walk(ground, { forward: 1 }, 1).travelled,
-  standBack: walk(ground, { forward: -1 }, 1).travelled,
+  // Backwards runs start deeper into the field: yaw pi/2 walks -X, and the
+  // 64 m lattice ends at x = 0. Off its edge `surfaceHeight` is NaN, the body
+  // goes airborne, and the air-control law then accelerates it past the table.
+  standBack: walk(ground, { forward: -1 }, 1, { start: { x: 40, y: 0, z: -32 } }).travelled,
   standStrafe: walk(ground, { strafe: 1 }, 1).travelled,
   standWalking: walk(ground, { forward: 1, walk: true }, 1).travelled,
   crouchForward: walk(ground, { forward: 1 }, 1, { pose: POSE_CROUCH }).travelled,
@@ -286,6 +315,90 @@ results.walkSpeeds = {
   proneForward: walk(ground, { forward: 1 }, 1, { pose: POSE_PRONE }).travelled,
   // Diagonal must not beat the table by sqrt(2).
   diagonal: walk(ground, { forward: 1, strafe: 1 }, 1).travelled,
+};
+
+// The same second of input once the ramp is saturated: now the table speed.
+results.topSpeeds = {
+  standForward: cruise(ground, { forward: 1 }, 1),
+  standBack: cruise(ground, { forward: -1 }, 1, { start: { x: 40, y: 0, z: -32 } }),
+  standStrafe: cruise(ground, { strafe: 1 }, 1),
+  standWalking: cruise(ground, { forward: 1, walk: true }, 1),
+  crouchForward: cruise(ground, { forward: 1 }, 1, { pose: POSE_CROUCH }),
+  crouchStrafe: cruise(ground, { strafe: 1 }, 1, { pose: POSE_CROUCH }),
+  proneForward: cruise(ground, { forward: 1 }, 1, { pose: POSE_PRONE }),
+  diagonal: cruise(ground, { forward: 1, strafe: 1 }, 1),
+};
+
+// --- the movement ramp (PHY-6) ---------------------------------------------
+
+/** Step a body at `rate` Hz and report its ramp register each tick. */
+function rampLadder(rate, ticks, input, warm = null) {
+  const dt = 1 / rate;
+  const soldier = new SoldierBody({ world: ground, yaw: Math.PI / 2 });
+  soldier.place(4, 0, -32);
+  soldier.step(dt, {});
+  if (warm) for (let i = 0; i < warm.ticks; i++) soldier.step(dt, warm.input);
+  const out = [];
+  for (let i = 0; i < ticks; i++) {
+    soldier.step(dt, input);
+    out.push(Number(soldier.forwardRamp.toFixed(6)));
+  }
+  return out;
+}
+
+/** Ticks at `rate` Hz before the register saturates, and before it empties. */
+function rampTiming(rate) {
+  const dt = 1 / rate;
+  const soldier = new SoldierBody({ world: ground, yaw: Math.PI / 2 });
+  soldier.place(4, 0, -32);
+  soldier.step(dt, {});
+  let up = 0;
+  while (Math.abs(soldier.forwardRamp) < RAMP_LIMIT - 1e-9 && up < 1000) {
+    soldier.step(dt, { forward: 1 }); up++;
+  }
+  let down = 0;
+  while (Math.abs(soldier.forwardRamp) > 1e-9 && down < 1000) {
+    soldier.step(dt, {}); down++;
+  }
+  return { rate, upTicks: up, downTicks: down, up: up * dt, down: down * dt };
+}
+
+results.ramp = {
+  accel: RAMP_ACCEL, decel: RAMP_DECEL, limit: RAMP_LIMIT,
+  scale: RAMP_SCALE, engineRate: ENGINE_TICK_RATE,
+  nominalToFull: RAMP_TO_FULL_SECONDS, nominalToStop: RAMP_TO_STOP_SECONDS,
+  // At the engine's own 30 Hz the register must walk the exact integer ladder
+  // `applyMovementFactors` produces: +20 a tick to a 127 clamp, -12 a tick to a
+  // hard zero. Any rate scaling that is not exact shows up here first.
+  up30: rampLadder(30, 9, { forward: 1 }),
+  down30: rampLadder(30, 12, {}, { ticks: 20, input: { forward: 1 } }),
+  // Reversal snaps through zero rather than decelerating through it:
+  // `max(min(state, 0) - 20, -127)` from a saturated +127 is -20, not +107.
+  reversal30: rampLadder(30, 1, { forward: -1 },
+                         { ticks: 20, input: { forward: 1 } })[0],
+  timing: [rampTiming(30), rampTiming(60), rampTiming(120)],
+};
+
+// The table slot is chosen from the ramp byte, not the raw input: a soldier
+// still coasting forward on a positive register reads the forward row even
+// with the key released, and only flips to the backward row once it is <= 0.
+results.rampChoosesTheSlot = {
+  forwardAtFullRamp: rampedDirectionalSpeed(POSE_STAND, RAMP_LIMIT),
+  backAtFullRamp: rampedDirectionalSpeed(POSE_STAND, -RAMP_LIMIT),
+  // Half a register is half the speed, off the same row.
+  forwardAtHalf: rampedDirectionalSpeed(POSE_STAND, RAMP_LIMIT / 2),
+  // Zero takes the "not forward" row, but scales it to nothing.
+  atZero: rampedDirectionalSpeed(POSE_STAND, 0),
+  walkingAtFull: rampedDirectionalSpeed(POSE_STAND, RAMP_LIMIT, true),
+  strafeAtFull: rampedStrafeSpeed(POSE_STAND, RAMP_LIMIT),
+};
+
+// Only the sign of the input is read: a half-pressed axis ramps at the same
+// rate and to the same ceiling as a fully pressed one.
+results.rampReadsTheSignOnly = {
+  full: applyMovementFactors(1, 0, 1 / 30),
+  quarter: applyMovementFactors(0.25, 0, 1 / 30),
+  negative: applyMovementFactors(-0.25, 0, 1 / 30),
 };
 
 // Direction, not just distance: +X at yaw pi/2, -Z at yaw pi.
@@ -359,23 +472,247 @@ const tooTall = new WorldCollider({
 const blocked = walk(tooTall, { forward: 1 }, 2);
 results.doesNotClimbAWall = { x: blocked.x, y: blocked.y };
 
-// Jump: leaves the ground, peaks near the documented apex, and comes back.
-const jumper = new SoldierBody({ world: ground, yaw: 0 });
-jumper.place(4, 0, -32);
-jumper.step(TICK_DT, {});
-jumper.jump();
-let apex = 0;
-let airborne = 0;
-for (let i = 0; i < 120; i++) {
-  jumper.step(TICK_DT, {});
-  apex = Math.max(apex, jumper.position.y);
-  if (!jumper.grounded) airborne++;
+// Jump: leaves the ground, peaks at the documented apex, and comes back.
+//
+// `rate` matters and is the whole point of taking it as a parameter. PHY-1's
+// 1.12 m / 0.80 s are what the engine's four sub-steps of `dt/4` produce at its
+// own 30 Hz, and they come out only if the impulse goes through the
+// acceleration accumulator beside gravity. The viewer's 60 Hz step integrates
+// nearer the continuum and lands a little higher; both are reported so the
+// parity figure is asserted separately from the regression figure.
+function jumpArc(rate, world = ground, input = {}) {
+  const dt = 1 / rate;
+  const jumper = new SoldierBody({ world, yaw: 0 });
+  jumper.place(4, 0, -32);
+  for (let i = 0; i < 4; i++) jumper.step(dt, input);
+  jumper.jump();
+  let apex = 0, airborne = 0, left = false;
+  for (let i = 0; i < Math.round(4 * rate); i++) {
+    jumper.step(dt, input);
+    apex = Math.max(apex, jumper.position.y);
+    if (!jumper.grounded) { airborne++; left = true; } else if (left) break;
+  }
+  return {
+    rate, apex, airborne, airTime: airborne * dt,
+    landed: jumper.grounded, y: jumper.position.y,
+    // The continuum figures the discrete integrator must NOT reproduce.
+    continuumApex: (JUMP_IMPULSE * JUMP_IMPULSE) / (2 * Math.abs(GRAVITY)),
+    continuumAir: 2 * JUMP_IMPULSE / Math.abs(GRAVITY),
+  };
 }
-results.jump = {
-  apex, airborne, landed: jumper.grounded, y: jumper.position.y,
-  // The apex a v0 of JUMP_SPEED reaches under this gravity.
-  predicted: (JUMP_SPEED * JUMP_SPEED) / (2 * Math.abs(GRAVITY)),
+results.jump = jumpArc(60);
+results.jump30 = jumpArc(30);
+
+// A running jump: the `-0.25 * vCmd` kick lands on the velocity, so a soldier
+// at a full 6 m/s leaves the ground at 4.5 m/s and then claws it back through
+// the airborne `0.75 * vCmd` force. Sampled the tick after take-off.
+const runner = new SoldierBody({ world: ground, yaw: Math.PI / 2 });
+runner.place(4, 0, -32, Math.PI / 2);
+runner.step(TICK_DT, {});
+for (let i = 0; i < 60; i++) runner.step(TICK_DT, { forward: 1 });
+const beforeJump = runner.groundSpeed;
+runner.jump();
+runner.step(TICK_DT, { forward: 1 });
+const afterJump = runner.groundSpeed;
+let airPeak = afterJump;
+for (let i = 0; i < 120 && !runner.grounded; i++) {
+  runner.step(TICK_DT, { forward: 1 });
+  airPeak = Math.max(airPeak, runner.groundSpeed);
+}
+results.runningJump = {
+  before: beforeJump, after: afterJump, airPeak,
+  // What the kick costs, as a fraction of the commanded speed.
+  fraction: afterJump / beforeJump,
 };
+
+// Air control is the engine's `0.75 * vCmd` acceleration, not a lerp: from a
+// standing jump with forward held, the horizontal speed climbs linearly at
+// 4.5 m/s^2 rather than snapping to the table speed.
+const airborneSteer = new SoldierBody({ world: ground, yaw: Math.PI / 2 });
+airborneSteer.place(4, 40, -32, Math.PI / 2);
+airborneSteer.step(TICK_DT, {});
+const steerSamples = [];
+for (let i = 1; i <= 60; i++) {
+  airborneSteer.step(TICK_DT, { forward: 1 });
+  if (i % 20 === 0) {
+    steerSamples.push({ t: i / 60, speed: airborneSteer.groundSpeed });
+  }
+}
+results.airControl = {
+  samples: steerSamples,
+  gain: LOCOMOTION_GAIN,
+  // 0.75 * 6 m/s, the acceleration a full forward command buys in the air.
+  predictedAccel: LOCOMOTION_GAIN * DIRECTIONAL_SPEED[0],
+};
+
+// --- the jump gate is a contact normal, not a slope limit (PHY-1) ----------
+
+// A face at 80 degrees: normal.y = cos(80) = 0.174, which clears the engine's
+// 0.1 but is far past `MAX_GROUND_SLOPE` (cos 60 = 0.5). The engine arms a jump
+// there; a `grounded` test would not.
+function armingFor(ny, material) {
+  const soldier = new SoldierBody({ world: ground, yaw: 0 });
+  soldier.place(4, 0, -32);
+  soldier.step(TICK_DT, {});
+  // Drive the arming the way a contact does, through the same private path the
+  // resolver uses: a synthetic world whose settle reports this normal.
+  const flat = Math.sqrt(Math.max(0, 1 - ny * ny));
+  const faked = new SoldierBody({
+    world: {
+      waterLevel: null,
+      surfaceHeight: () => 0,
+      heightfield: {
+        normal: (x, z, out) => { out[0] = flat; out[1] = ny; out[2] = 0; return out; },
+        material: () => material,
+      },
+    },
+    yaw: 0,
+  });
+  faked.place(4, 0, -32);
+  faked.step(TICK_DT, {});
+  return { armed: faked.jumpArmed, grounded: faked.grounded, ny };
+}
+results.jumpGate = {
+  threshold: JUMP_CONTACT_NORMAL_Y,
+  maxGroundSlope: MAX_GROUND_SLOPE,
+  flat: armingFor(1.0, 4),
+  // 80 degrees: armed, and deliberately not `grounded` by the viewer's own
+  // stricter walk test.
+  steep: armingFor(Math.cos(80 * Math.PI / 180), 4),
+  // 87 degrees: normal.y = 0.052, under the threshold. No jump.
+  tooSteep: armingFor(Math.cos(87 * Math.PI / 180), 4),
+  // Flat, but material 1 is Water. Treading water never arms a jump.
+  water: armingFor(1.0, MATERIAL_WATER),
+};
+
+// And the gate really governs: a body standing on water cannot jump.
+const sea2 = new WorldCollider({ heightfield: field, waterLevel: 3 });
+const swimmer = new SoldierBody({ world: sea2, yaw: 0 });
+swimmer.place(4, 20, -32);
+for (let i = 0; i < 180; i++) swimmer.step(TICK_DT, {});
+const floatY = swimmer.position.y;
+swimmer.jump();
+for (let i = 0; i < 10; i++) swimmer.step(TICK_DT, {});
+results.cannotJumpOffWater = {
+  floatY, after: swimmer.position.y, armed: swimmer.jumpArmed,
+  rose: swimmer.position.y - floatY,
+};
+// --- thin geometry, and a body that starts inside it -----------------------
+//
+// `sweepCapsule` skips contacts the motion is already travelling away from.
+// That is narrower than it sounds -- `#sweepTriangle` rejects a receding
+// *face* before it computes anything (`nv >= -1e-9`), so the only contacts the
+// skip can reach are edge and corner ones, whose separating direction can
+// point anywhere. The thing to prove is that it did not open a hole: nothing
+// that could stop the motion is dropped, so a 10 cm wall stays solid whether
+// you walk into it, start overlapping it, or are put down inside it -- which
+// is what leaving a seat beside a wall does (`map.html`'s `exitVehicle` trusts
+// `soldierExitLocation` and lets `spawn()` settle it).
+const FENCE_X0 = 9.95, FENCE_X1 = 10.05;
+const fence = new WorldCollider({
+  heightfield: field,
+  statics: buildCollisionIndex(group([box(FENCE_X0, 0, -48, FENCE_X1, 3, -16)])),
+});
+function pushAt(startX, forward, seconds = 3) {
+  const r = walk(fence, { forward }, seconds, { start: { x: startX, y: 0, z: -32 } });
+  return { x: r.x, y: r.y, z: r.z, grounded: r.grounded,
+           speed: Math.hypot(r.soldier.velocity.x, r.soldier.velocity.z),
+           contacts: r.soldier.contacts };
+}
+results.thinWall = {
+  bounds: [FENCE_X0, FENCE_X1],
+  radius: BODY_RADIUS,
+  // A clean run-up from 6 m away: stopped one radius short, on the near side.
+  runUp: pushAt(4, 1),
+  // Already overlapping the near face when the tick starts (centre 5 cm out,
+  // which is inside the 30 cm sphere). This is the case the receding skip
+  // touches, because the sphere is resting on the face's edge.
+  fromInsideNear: pushAt(FENCE_X0 - 0.05, 1),
+  // Put down dead centre *in* the wall, as an exit point inside a fence would
+  // be, then told to walk into it.
+  fromDeadCentre: pushAt((FENCE_X0 + FENCE_X1) / 2, 1),
+  // And the mirror: overlapping the far face, walking back the other way.
+  fromInsideFar: pushAt(FENCE_X1 + 0.05, -1),
+};
+
+// An inside corner: the push-out from one face moves the body along the other.
+// Four slide passes have to settle it rather than shuttling between the two.
+// Yaw pi/4 heads (+X, +Z), so the two faces that meet it are at x = 20 and
+// z = -12 and the inside corner is the point (20, -12).
+const CORNER_X = 20, CORNER_Z = -12;
+const cornerWorld = new WorldCollider({
+  heightfield: field,
+  statics: buildCollisionIndex(group([
+    box(CORNER_X, 0, -60, 40, 3, -4),        // face at x = 20
+    box(0, 0, CORNER_Z, 40, 3, -4),          // face at z = -12
+  ])),
+});
+{
+  // Facing into the corner at 45 degrees from open ground.
+  const s = new SoldierBody({ world: cornerWorld, yaw: Math.PI / 4 });
+  s.place(4, 0, -28, Math.PI / 4);
+  s.step(TICK_DT, {});
+  let peakSpeed = 0, maxY = 0;
+  const samples = [];
+  for (let i = 0; i < 300; i++) {
+    s.step(TICK_DT, { forward: 1 });
+    peakSpeed = Math.max(peakSpeed, Math.hypot(s.velocity.x, s.velocity.z));
+    maxY = Math.max(maxY, s.position.y);
+    if (i >= 290) samples.push([+s.position.x.toFixed(5), +s.position.z.toFixed(5)]);
+  }
+  // How far the last ten ticks wandered: a limit cycle shows up here.
+  const xs = samples.map(p => p[0]), zs = samples.map(p => p[1]);
+  results.insideCorner = {
+    x: s.position.x, z: s.position.z, y: s.position.y, maxY, peakSpeed,
+    grounded: s.grounded,
+    wanderX: Math.max(...xs) - Math.min(...xs),
+    wanderZ: Math.max(...zs) - Math.min(...zs),
+  };
+}
+
+// --- the kick lands on the ACTUAL velocity (PHY-1, item 1's third "do NOT") -
+//
+// A soldier pressed into `tooTall`'s 2.5 m face with the ramp saturated: his
+// velocity is ~0 because the resolver strips it every tick, his command is a
+// full 6 m/s into the wall, and the engine's `-0.25 * vCmd` is therefore a
+// 1.5 m/s kick **backward, off the wall**. Reading it as `vCmd *= 0.75` — or
+// arriving at the same thing by assigning `v = vCmd` before applying it —
+// gives him 4.5 m/s *into* the wall instead, which the resolver then strips to
+// nothing, and he rises straight up still touching it. The sign of `awayX` is
+// the whole test.
+function jumpFromAWall(world, yaw = Math.PI / 2) {
+  const s = new SoldierBody({ world, yaw });
+  s.place(4, 0, -32, yaw);
+  // Two seconds is a run to the wall plus a second of standing on it, which
+  // saturates the ramp while the velocity stays stripped.
+  for (let i = 0; i < 120; i++) s.step(TICK_DT, { forward: 1 });
+  const pressed = { x: s.position.x, vx: s.velocity.x, ramp: s.forwardRamp,
+                    contacts: s.contacts };
+  s.jump();
+  s.step(TICK_DT, { forward: 1 });
+  return {
+    pressed,
+    // Positive = into the wall (+X at yaw pi/2), negative = off it.
+    awayX: s.velocity.x,
+    vy: s.velocity.y,
+    grounded: s.grounded,
+  };
+}
+results.jumpOffAWall = jumpFromAWall(tooTall);
+// The same body with nothing in front of it: the velocity already equals the
+// command when the tick begins, so the assignment was a no-op either way and
+// 6.0 still becomes 4.5. This is the case every measured figure comes from,
+// and it must not have moved.
+results.jumpInTheOpen = (() => {
+  const s = new SoldierBody({ world: ground, yaw: Math.PI / 2 });
+  s.place(4, 0, -32, Math.PI / 2);
+  for (let i = 0; i < 120; i++) s.step(TICK_DT, { forward: 1 });
+  const before = s.velocity.x;
+  s.jump();
+  s.step(TICK_DT, { forward: 1 });
+  return { before, after: s.velocity.x, ratio: s.velocity.x / before };
+})();
+
 // Prone bodies do not jump.
 const prone = new SoldierBody({ world: ground, yaw: 0 });
 prone.place(4, 0, -32);
