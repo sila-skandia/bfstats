@@ -457,6 +457,18 @@ class SeatsModuleTests(unittest.TestCase):
         self.assertAlmostEqual(0.2, servo["criticallyDamagedDegrees"] / servo["healthyDegrees"],
                                delta=0.01)
 
+    def test_the_penalty_is_spent_once_and_a_fast_hand_cannot_outrun_it(self) -> None:
+        # The seam between two wave-2 streams. Each added HP-15's 0.2, in a
+        # different shape, and git merged both silently. Applied to the pixels
+        # before the saturating clamp, a fast hand on a critical Sherman kept
+        # the full 140 deg/s (measured, ratio 1.00); applied twice it would be
+        # 0.04. It is 0.2 at the rig, whatever the hand, and a wreck (scale 0)
+        # does not move at all.
+        servo = self.results["turretServo"]
+        self.assertAlmostEqual(0.2, servo["rigCriticalFastRatio"], delta=0.01)
+        self.assertAlmostEqual(0.2, servo["rigCriticalSlowRatio"], delta=0.01)
+        self.assertEqual(0, servo["rigWreckDegrees"])
+
     # --- FireState: gate order, heat/overheat, reload (GUN-12) --------------
 
     def test_firing_decrements_ammo_one_per_shot(self) -> None:

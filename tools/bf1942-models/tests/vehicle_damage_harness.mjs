@@ -4,7 +4,7 @@
 // three.js (contrast `ground_harness.mjs`).
 import {
   activeTier, deathTier, DamageableVehicle, VehicleDamageSet,
-  TIER_DEATH, TIER_WATER_DEATH,
+  TIER_DEATH, TIER_WATER_DEATH, inputGate, CRITICAL_INPUT_SCALE,
 } from './vehicle-damage.mjs';
 
 const out = {};
@@ -287,6 +287,116 @@ out.waterDeathFallback = deathTier(
     noSplashMaterial: fresh().applySplash(
       { ...blast, splashMaterial2: -1 }, targets, tables).length,
     noTables: fresh().applySplash(blast, targets).length,
+  };
+
+  // HP-9: only the Y term of the blast distance is scaled, by
+  // `YModOnExplosion`. A target 5 m straight up is inside a 10 m blast at the
+  // default 1.0 and outside it at 2.0.
+  const above = [{ owner: 2, x: 0, y: 5, z: 0 }];
+  const withMod = (yMod) => {
+    const set = fresh();
+    const hit = set.applySplash({ ...blast, splashYMod: yMod }, above, tables);
+    return hit.length ? Math.round(hit[0].distance * 1e6) / 1e6 : null;
+  };
+  out.yMod = {
+    absent: withMod(undefined),   // 5 m: the plain distance
+    one: withMod(1),              // 5 m
+    two: withMod(2),              // 10 m -> at the radius, so out
+    // A horizontal target is untouched by the scale: X and Z are never
+    // multiplied (0x08156613 multiplies dy alone).
+    horizontalAtTwo: (() => {
+      const set = fresh();
+      const hit = set.applySplash({ ...blast, splashYMod: 2 },
+                                  [{ owner: 2, x: 5, y: 0, z: 0 }], tables);
+      return hit.length ? Math.round(hit[0].distance * 1e6) / 1e6 : null;
+    })(),
+  };
+
+  // HP-9: an IMPACT blast is centred `hitPos + 0.1 * normal`, not on the hit
+  // point (lnxded 0x08153f5e-0x08153f8f). `gunfire.js` puts that on the record
+  // as `splashPoint`; the hit point stays on `point`, because that is where
+  // the collision effect goes. An end-of-life blast carries no `splashPoint`
+  // and falls back to `point`, which is the projectile's own position.
+  const centre = (record) => {
+    const set = fresh();
+    const hit = set.applySplash(record, [{ owner: 2, x: 5, y: 0, z: 0 }], tables);
+    return hit.length ? Math.round(hit[0].distance * 1e6) / 1e6 : null;
+  };
+  out.blastCentre = {
+    // Struck a wall at the origin, normal +X: the blast is at x = 0.1, so a
+    // victim 5 m out along +X is 4.9 m away, not 5.
+    impact: centre({ ...blast, point: [0, 0, 0], splashPoint: [0.1, 0, 0] }),
+    // The same record without the offset, for the contrast.
+    unoffset: centre({ ...blast, point: [0, 0, 0] }),
+    // A fuse round: `point` only, and it is used.
+    endOfLife: centre({ ...blast, point: [1, 0, 0] }),
+  };
+}
+
+// HP-15: the input gate. A wreck takes no input at all; a critically damaged
+// vehicle's rotational bundles take 0.2x.
+{
+  const set = new VehicleDamageSet();
+  const sherman = set.add(1, SHERMAN, { name: 'Sherman' });
+  const states = [];
+  const snap = (label) => states.push({
+    label, hp: sherman.hitPoints, critical: sherman.critical,
+    destroyed: sherman.destroyed, ...inputGate(sherman),
+  });
+  snap('healthy');
+  sherman.damage(60);            // 40 HP: damaged, tier shown, not critical
+  snap('damaged');
+  sherman.damage(30);            // 10 HP: below criticalDamage 12
+  snap('critical');
+  sherman.damage(100);           // dead
+  snap('destroyed');
+  sherman.reset();               // the wreck-respawn timer's effect
+  snap('respawned');
+  out.inputGate = {
+    states,
+    scale: CRITICAL_INPUT_SCALE,
+    // An object with no Armor registered at all — a palm, a bare manned gun —
+    // is not gated.
+    unregistered: inputGate(null),
+    // The caller-owned result object `map.html` passes every frame: filled in
+    // place, returned, and the SAME object each time, so polling the gate
+    // sixty times a second allocates nothing.
+    inPlace: (() => {
+      const slot = { blocked: false, rotationalScale: 1 };
+      const dead = new VehicleDamageSet().add(1, SHERMAN, { name: 'Wreck' });
+      dead.damage(200);
+      const first = inputGate(dead, slot);
+      // Snapshot before the next call: `first` IS `slot`, which is the point.
+      const afterWreck = { ...first };
+      const healthy = new VehicleDamageSet().add(1, SHERMAN, { name: 'Fresh' });
+      const second = inputGate(healthy, slot);
+      return {
+        sameObject: first === slot && second === slot,
+        // And it is genuinely rewritten, not just returned: the wreck's
+        // `blocked` must not survive into the healthy read.
+        afterWreck,
+        afterHealthy: { ...second },
+      };
+    })(),
+  };
+
+  // The gate is read from the live Armor, so a hull killed by something other
+  // than a shell is gated identically. The combat area's own per-frame
+  // `giveDamage` lands on this same `Armor` (`stepCombatArea` in map.html),
+  // and so does the critical burn's own `hpLostWhileCriticalDamage` tick.
+  const burned = new VehicleDamageSet().add(1, SHERMAN, { name: 'Burner' });
+  burned.damage(89);                       // 11 HP: critical, burning
+  const whileBurning = inputGate(burned);
+  for (let t = 0; t < 12; t++) burned.update(1);   // 1.5 HP/s for 12 s
+  out.inputGate.byOtherCauses = {
+    whileBurning,
+    burnedDown: { destroyed: burned.destroyed, ...inputGate(burned) },
+    // Combat-area damage, the same path `stepCombatArea` takes.
+    combatArea: (() => {
+      const v = new VehicleDamageSet().add(1, SHERMAN, { name: 'Strayed' });
+      for (let t = 0; t < 30; t++) v.damage(5);    // 5 HP/s, the engine default
+      return { destroyed: v.destroyed, ...inputGate(v) };
+    })(),
   };
 }
 
