@@ -8,12 +8,6 @@ pipeline {
   parameters {
     booleanParam(name: 'BUILD_ALL', defaultValue: false, description: 'Build and deploy all services, ignoring changeset detection')
   }
-  environment {
-    // play.bfstats.io is built and written but not deployed: the node has no
-    // memory headroom for a second nginx (deploy/app/play-deployment.yaml
-    // carries the arithmetic). Set this to 'true' once that is reclaimed.
-    PLAY_ENABLED = 'false'
-  }
   triggers {
     githubPush()
     pollSCM('H/5 * * * *')
@@ -56,7 +50,6 @@ pipeline {
               env.UI_CHANGED = 'true'
               env.NOTIFICATIONS_CHANGED = 'true'
               env.MESH_CHANGED = 'true'
-              env.PLAY_CHANGED = 'true'
           } else {
               env.API_CHANGED = changedFiles.any { it.startsWith('api/') } ? 'true' : 'false'
               env.UI_CHANGED = changedFiles.any { it.startsWith('ui/') } ? 'true' : 'false'
@@ -64,14 +57,9 @@ pipeline {
               env.MESH_CHANGED = changedFiles.any {
                   it.startsWith('mesh/') || it.startsWith('tools/bf1942-models/viewer/')
               } ? 'true' : 'false'
-              // play.bfstats.io ships the same viewer tree, so anything that
-              // rebuilds the mesh image rebuilds this one too.
-              env.PLAY_CHANGED = changedFiles.any {
-                  it.startsWith('play/') || it.startsWith('tools/bf1942-models/viewer/')
-              } ? 'true' : 'false'
           }
-
-          echo "API_CHANGED=${env.API_CHANGED}, UI_CHANGED=${env.UI_CHANGED}, NOTIFICATIONS_CHANGED=${env.NOTIFICATIONS_CHANGED}, MESH_CHANGED=${env.MESH_CHANGED}, PLAY_CHANGED=${env.PLAY_CHANGED}"
+          
+          echo "API_CHANGED=${env.API_CHANGED}, UI_CHANGED=${env.UI_CHANGED}, NOTIFICATIONS_CHANGED=${env.NOTIFICATIONS_CHANGED}, MESH_CHANGED=${env.MESH_CHANGED}"
         }
       }
     }
@@ -390,100 +378,6 @@ pipeline {
                           "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache"
                       fi
                       echo "Cloudflare cache purged for mesh.bfstats.io."
-                    '''
-                  }
-                }
-              }
-            }
-          }
-        }
-        // play.bfstats.io — BF1942 in the browser.
-        //
-        // DISABLED until the node has room for a second nginx: the sum of
-        // memory limits in deploy/app/ is already 7296Mi of 7741Mi, and
-        // CLAUDE.md asks for ~1.5Gi of headroom. Flip PLAY_ENABLED to true
-        // once that is reclaimed (deploy/app/play-deployment.yaml carries
-        // the arithmetic, and features/bf1942-in-the-browser/README.md the
-        // zero-cost alternative). Left as a stage rather than a note so the
-        // difference is one word, not a rewrite.
-        stage('Play Pipeline') {
-          when {
-            allOf {
-              expression { env.PLAY_ENABLED == 'true' }
-              anyOf { expression { env.PLAY_CHANGED == 'true' }; expression { params.BUILD_ALL } }
-            }
-          }
-          stages {
-            stage('Build Play Docker Image') {
-              agent {
-                kubernetes {
-                  cloud 'Local k8s'
-                  yamlFile 'deploy/pod.yaml'
-                  nodeSelector 'kubernetes.io/hostname=bethany'
-                }
-              }
-              steps {
-                container('dind') {
-                  withCredentials([
-                    usernamePassword(credentialsId: 'jenkins-bf1942-stats-dockerhub-pat', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')
-                  ]) {
-                    sh '''
-                      echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-
-                      docker buildx create --name multiarch-builder-play --driver docker-container --use || true
-                      docker buildx use multiarch-builder-play
-
-                      DOCKER_BUILDKIT=1 docker buildx build -f play/Dockerfile . \
-                        --platform linux/arm64 \
-                        --build-arg BUILDKIT_PROGRESS=plain \
-                        --cache-from type=registry,ref=anskia/bfstats-play:buildcache \
-                        --cache-to type=registry,ref=anskia/bfstats-play:buildcache,mode=max \
-                        --push \
-                        -t anskia/bfstats-play:latest
-                    '''
-                  }
-                }
-              }
-            }
-            stage('Deploy Play') {
-              agent {
-                kubernetes {
-                  cloud 'Local k8s'
-                  yamlFile 'deploy/pod.yaml'
-                  nodeSelector 'kubernetes.io/hostname=bethany'
-                }
-              }
-              steps {
-                container('kubectl') {
-                  withCredentials([
-                    file(credentialsId: 'bf42-stats-k3s-kubeconfig', variable: 'KUBECONFIG_FILE'),
-                    string(credentialsId: 'bfstats-cloudflare-api-token', variable: 'CF_API_TOKEN'),
-                    string(credentialsId: 'bfstats-cloudflare-zone-id', variable: 'CF_ZONE_ID')
-                  ]) {
-                    sh '''
-                      set -euo pipefail
-                      export KUBECONFIG="$KUBECONFIG_FILE"
-                      kubectl -n bf42-stats apply -f deploy/app/play-deployment.yaml
-                      kubectl -n bf42-stats rollout restart deployment/bfstats-play
-                      kubectl -n bf42-stats rollout status deployment/bfstats-play --timeout=120s
-
-                      # Same reason as the mesh purge above: the image carries
-                      # the pages, so a deploy must not leave the edge serving
-                      # the previous ones. Scoped to the one host.
-                      echo "Purging Cloudflare cache for play.bfstats.io..."
-                      if command -v curl >/dev/null 2>&1; then
-                        curl -s -f -X POST "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
-                          -H "Authorization: Bearer ${CF_API_TOKEN}" \
-                          -H "Content-Type: application/json" \
-                          --data '{"hosts":["play.bfstats.io"]}'
-                      else
-                        wget -qO- \
-                          --header="Authorization: Bearer ${CF_API_TOKEN}" \
-                          --header="Content-Type: application/json" \
-                          --post-data='{"hosts":["play.bfstats.io"]}' \
-                          "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache"
-                      fi
-                      echo "Cloudflare cache purged for play.bfstats.io."
                     '''
                   }
                 }
