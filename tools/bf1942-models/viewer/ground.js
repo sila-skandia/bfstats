@@ -207,6 +207,80 @@ const SPRING_GRAVITY_SCALE = GRAVITY * (-1 / 9.82);
  */
 const SPRING_AXIS_FLOOR = 0.2;
 
+/**
+ * What a latched static contact really is: a **velocity constraint**, not a
+ * force. `collision-response.md` section 8's "latched static: F = dV in full"
+ * cancels the whole tangential velocity every tick and keeps cancelling
+ * whatever is re-injected, so a parked vehicle in the engine does not creep.
+ *
+ * The per-wheel parking hold in the loops above cannot do that on its own: it
+ * is a velocity-proportional force answering a constant one (PHY-5 leans the
+ * spring axis with the hull, so a hull on its static rake pushes itself
+ * along), and it settles where the two balance rather than at zero. On flat
+ * analytic ground the residual is 5 mm of drift over ten parked seconds; on
+ * Wake's real terrain, where the rake is bigger, it was 0.74 m for a jeep and
+ * 0.30 m for a Sherman — visible wandering, against a main checkout that does
+ * not move at all.
+ *
+ * So the constraint is applied where it belongs: after the forces are summed,
+ * on a hull that is stopped, idle and standing entirely on latched contacts,
+ * the **horizontal** acceleration and velocity are zeroed — but only while the
+ * demand fits inside the summed break-away budget, which is what keeps this a
+ * Coulomb result rather than glue. Past that budget (a slope steeper than
+ * `atan(mu)`) it lets go and slides, exactly as the engine's latch does.
+ *
+ * Vertical motion is untouched: a hull still settles on its springs, and
+ * anything that lifts a wheel clears its latch and so this hold with it.
+ */
+const STATIC_HOLD_SPEED = 0.35;
+
+/**
+ * And it waits for the hull to stop turning as well as stop moving. A vehicle
+ * settling onto a slope pitches and slides at the same time, and freezing the
+ * slide while the pitch is still coming round leaves it sitting a degree or so
+ * off the ground it is standing on. [free, numerics]
+ */
+const STATIC_HOLD_SPIN = 0.05;
+
+/**
+ * And it waits for the springs to stop moving. A hull dropped onto a slope
+ * settles by pitching and sliding together, and its velocity passes through
+ * small values on the way; the thing that separates "still settling" from
+ * "parked" is whether the suspension is still travelling. Holding before it
+ * has stopped leaves a jeep sitting a degree and a quarter off the slope it is
+ * standing on, which is exactly what this threshold was added to stop.
+ * [free, numerics]
+ */
+const STATIC_HOLD_SETTLE = 0.02;
+
+const STATIC_HOLD_DWELL = 1.0;
+
+function staticHold(vehicle, s, accel, h, drive, braking, loaded, budget,
+    allLatched, springRate) {
+  const quiet = loaded && allLatched && budget > 0
+    && drive === 0 && braking === 0
+    && springRate <= STATIC_HOLD_SETTLE
+    && s.velocity.lengthSq() <= STATIC_HOLD_SPEED * STATIC_HOLD_SPEED
+    && s.angularVelocity.lengthSq() <= STATIC_HOLD_SPIN * STATIC_HOLD_SPIN;
+  // A hull dropped onto a slope crosses every one of those thresholds
+  // transiently on the way down, so the hold waits for them to hold together
+  // for a whole second before it takes effect. A genuinely parked vehicle
+  // passes that in a second; a settling one never does.
+  vehicle._staticQuiet = quiet ? (vehicle._staticQuiet ?? 0) + h : 0;
+  if (vehicle._staticQuiet < STATIC_HOLD_DWELL) return false;
+  // What the contacts are being asked to hold, this substep: the horizontal
+  // acceleration plus the horizontal velocity already on the hull, expressed
+  // as one acceleration so both are measured against the same budget.
+  const ax = accel.x + s.velocity.x / h;
+  const az = accel.z + s.velocity.z / h;
+  if (Math.hypot(ax, az) > budget) return false;
+  accel.x = 0;
+  accel.z = 0;
+  s.velocity.x = 0;
+  s.velocity.z = 0;
+  return true;
+}
+
 function coulombClamp(demand, caps, latched) {
   if (latched) {
     if (demand > caps.breakaway && demand > 1e-9) {
@@ -712,6 +786,11 @@ export class GroundVehicle extends Vehicle {
     const force = this._force.set(0, 0, 0);      // body frame, per mass
     const torque = this._torque.set(0, 0, 0);    // body frame
     let loaded = 0;
+    // `staticHold`'s two inputs: the summed break-away budget of the contacts
+    // and whether every one of them is latched.
+    let staticBudget = 0;
+    let allLatched = true;
+    let springRate = 0;
 
     // Per-wheel drive and brake are found before the loop so the friction
     // circle can be applied per contact: total demand, split over the axle by
@@ -778,6 +857,7 @@ export class GroundVehicle extends Vehicle {
       let load = SPRING_GRAVITY_SCALE * wheel.strength
         * (travel + overrun * k.bumpStiffness)
         + wheel.damping * rate;
+      springRate = Math.max(springRate, Math.abs(rate));
       wheel.prevCompression = compression;
       if (load < 0) load = 0;
       wheel.compression = compression;
@@ -869,6 +949,8 @@ export class GroundVehicle extends Vehicle {
       const demand = Math.hypot(fLong, fLat / k.lateralGripFraction);
       const grip = coulombClamp(demand, caps, wheel.staticGrip);
       wheel.staticGrip = grip.latched;
+      if (!grip.latched) allLatched = false;
+      staticBudget += caps.breakaway;
       if (grip.scale !== 1) {
         fLong *= grip.scale;
         fLat *= grip.scale;
@@ -901,6 +983,8 @@ export class GroundVehicle extends Vehicle {
     // first, position with the updated velocity.
     const accel = this._accel.copy(force).applyQuaternion(q);
     accel.y += GRAVITY;
+    staticHold(this, s, accel, h, drive, braking, loaded, staticBudget,
+      allLatched, springRate);
     // The exe's drag equation, coefficients from `Objects.con`: see
     // `PointBody.applyDrag` for the disassembly. Wind is zero in every
     // vanilla level.
@@ -1814,6 +1898,10 @@ export class TrackedVehicle extends Vehicle {
     const force = this._force.set(0, 0, 0);
     const torque = this._torque.set(0, 0, 0);
     let loaded = 0;
+    // `staticHold`'s two inputs, exactly as `GroundVehicle` gathers them.
+    let staticBudget = 0;
+    let allLatched = true;
+    let springRate = 0;
     // The steering couple's budget for the NEXT sub-step, gathered as the
     // loop goes rather than in a second pass over the same wheels: the
     // weakest driven track that is actually on the ground. A wheel in the air
@@ -1862,6 +1950,7 @@ export class TrackedVehicle extends Vehicle {
       let load = SPRING_GRAVITY_SCALE * wheel.strength
         * (travel + overrun * k.bumpStiffness)
         + wheel.damping * rate;
+      springRate = Math.max(springRate, Math.abs(rate));
       wheel.prevCompression = compression;
       if (load < 0) load = 0;
       wheel.compression = compression;
@@ -2027,6 +2116,8 @@ export class TrackedVehicle extends Vehicle {
       const demand = Math.hypot(fLong, fLat / k.lateralGripFraction);
       const grip = coulombClamp(demand, caps, wheel.staticGrip);
       wheel.staticGrip = grip.latched;
+      if (!grip.latched) allLatched = false;
+      staticBudget += caps.breakaway;
       if (grip.scale !== 1) {
         fLong *= grip.scale;
         fLat *= grip.scale;
@@ -2078,6 +2169,8 @@ export class TrackedVehicle extends Vehicle {
     const vNom = engineGripTarget(throttle, 0, 0, this.ratio);
     accel.addScaledVector(this._fwd, -(vf - vNom) * k.trackResistance);
     accel.y += GRAVITY;
+    staticHold(this, s, accel, h, Math.abs(throttle) < 0.01 ? 0 : 1, 0,
+      loaded, staticBudget, allLatched, springRate);
     const kDrag = Math.PI * this._boundingRadius * this._boundingRadius * this.drag / this.mass;
     accel.addScaledVector(s.velocity, -kDrag);
     const prevX = s.position.x, prevY = s.position.y, prevZ = s.position.z;

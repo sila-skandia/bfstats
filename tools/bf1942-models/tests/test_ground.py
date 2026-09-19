@@ -335,17 +335,32 @@ class GroundModelTests(unittest.TestCase):
         # Ten parked seconds after ten settling ones. Sinking is the failure
         # the spring must never have; creeping is the one PHY-5 introduced,
         # because the spring axis leans with the hull and a hull on its static
-        # rake therefore pushes itself along. Only the parking hold answers
-        # that, and it is a velocity-proportional force against a constant
-        # one, so it settles at `rake * substep` rather than at zero: these
-        # bounds are what that residual is, not what a constraint would give.
-        for name, limit in (("willy", 0.08), ("sherman", 0.08), ("m3a1", 0.20)):
+        # rake therefore pushes itself along. The per-wheel parking hold could
+        # only ever balance that (a velocity-proportional force against a
+        # constant one settles at `rake * substep`, which was 5 mm here and
+        # 0.74 m on Wake's real slopes); `staticHold` makes it what the engine
+        # makes it, a velocity constraint on latched contacts, and the answer
+        # is then exactly zero rather than nearly zero.
+        for name in ("willy", "sherman", "m3a1"):
             parked = self.results["parked"][name]
             self.assertGreater(parked["contacts"], 3, name)
             self.assertTrue(parked["compressionsHeld"], name)
-            self.assertAlmostEqual(0.0, parked["sink"], places=4, msg=name)
-            self.assertLess(parked["drift"], limit, name)
-            self.assertLess(parked["speed"], 0.02, name)
+            self.assertEqual(0.0, parked["sink"], name)
+            self.assertEqual(0.0, parked["drift"], name)
+            self.assertEqual(0.0, parked["speed"], name)
+
+    def test_the_static_hold_does_not_freeze_a_hull_that_is_still_settling(self) -> None:
+        # The trap in a constraint like that: a hull dropped onto a slope
+        # crosses every "is it parked" threshold transiently on the way down,
+        # and freezing it there leaves it sitting more than a degree off the
+        # ground it is standing on with the wrong load on its springs. The
+        # dwell is what stops that, and this is the case that proves it — the
+        # jeep ends up pitched with the ramp and carrying `g x cos(lean)`,
+        # which is what it did before any hold existed.
+        slope = self.results["slope"]
+        self.assertAlmostEqual(slope["slopeDeg"], slope["pitchDeg"], delta=1.0)
+        self.assertAlmostEqual(14.73 * slope["axisStretch"] ** -1,
+                               slope["totalLoad"], delta=0.3)
 
     def test_the_damper_is_not_blind_on_a_re_contact(self) -> None:
         # A wheel that was airborne last tick has no backward difference to
