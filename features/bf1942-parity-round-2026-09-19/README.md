@@ -90,18 +90,17 @@ until the other session's corpus work is committed).
 | W2-C turrets and HUD | the velocity-servo `TurretAxis`, `continousRotationSpeed`, `automaticReset`, the wrap rule, `setHasTurretIcon`, `setVehicleIconPos` and the seat dots, the paired dial-sign fix, `aticon` feeds 2 (`seats.js`, `hud.js`, `con.py`) |
 | W2-D drivetrain | the gear ladder from the engine's curves, material-sourced friction with the 2.25 / 1.5 hysteresis, the spring law, a hull-collision plan (`ground.js`) |
 
-**Where wave 2 lands: branch `mesh-wave2`, not `main`.** The other session's
-collision round is uncommitted in the main checkout and touches
-`fall-damage-research-groundwork-2026-09-17.md`, `ledger.md`, `symbols.json`
-and four subsystem docs. W2-A edits the first of those, so git refuses the
-merge into `main` rather than overwrite live work, which is the right answer.
-Each reviewed wave-2 branch, and the corpus integration
-(`worktree-agent-aaac8884c2b77d036`), is merged and tested on `mesh-wave2`;
-it goes into `main` in one step once that work is committed.
+**Wave 2 lands on `main`.** The collision round's files were committed and
+pushed by their own session on 2026-09-20 (`47b273d`, `465ac93`), which unblocked
+everything parked on `mesh-wave2`.
 
-| On `mesh-wave2` | State |
+| Merged | State |
 |---|---|
-| W2-A movement | **merged** `a13d229`, 1,384 green. Review fixed the jump's backward kick (it was taken off a velocity the friction stand-in had just overwritten, so a jump against a wall drove into it), proved the receding-contact skip cannot tunnel (0.1 m wall, concave corner, 128 probes on three levels against `main`), and showed `main` still has two failures this removes: a body frozen in mid-air at -10 m/s on Wake and an un-jumped 7.5 m/s launch in Berlin |
+| W2-A movement | `11042c0`. The review fixed the jump's backward kick (it was taken off a velocity the friction stand-in had just overwritten, so a jump against a wall drove into it), proved the receding-contact skip cannot tunnel, and showed the old `main` had two failures this removes: a body frozen in mid-air at -10 m/s on Wake and an un-jumped 7.5 m/s launch in Berlin |
+| The verified research corpus | `5224262`, merged beside the collision round's. `symbols.json` merged by address from the three versions, not by text: 14 corrections, 95 new, one overlap, **1,119 symbols**; 222 ledger rows, no duplicate ids. PHY-2's one open disagreement is settled in the row: a vehicle's friction load term is the averaged contact **normal** at `+0x68` (the collision round had it right, an earlier label had it wrong) |
+| W2-D drivetrain | `db7b9b9`. Gear ladder from the engine's two curves; per-surface friction from `materialFriction` with the 2.25 / 1.5 hysteresis; springs at 1.5x along the hull's own +Y. The review retracted a wrong claim (a soldier's friction load is NOT always zero: `BFSoldier::handleCollision` writes it at `0x0827d52f` by integer `mov`, invisible to the scan that said otherwise), fixed a parked-vehicle creep (0.74 m / 10 s -> 0.000) and a damper that went blind on every re-contact. **Top speed was then re-derived by a dedicated verifier**, because the reviewer's own reading of `Engine::handleUpdate` moved the Willys from 46.5 to 108 km/h: confirmed. `T = ratio x revs` in metres per second, no wheel radius; a car's revs run to 1.2, a tank's are clamped to 1.0 in `getCurrentDifferentialRPM`. Willys 112.6 km/h, M3A1 67.0, Sherman 53.6, Tiger 46.9 against real 105 / 72 / 48 / 45. TANK-1 and TANK-7 are refuted (ledger rows pending integration): `getEngineType()` is virtual and called nine times, and `updatePhysics` returns at once for a car or a tank. `_shared/damage.json` regenerated in all four trees with `friction` |
+| W2-C turrets and HUD | `7032b3e`. `TurretAxis` is the engine's velocity servo; every time through 90 degrees is identical before and after (Sherman 0.667 s, MG42 0.333 s) and post-flick coast falls from 19.7 to 0 degrees. Dial sign fixed as a pair, byte-identical at +90, -90, +45 and 180; dial only for `setHasTurretIcon` hulls in the inside view; seat dots from `setVehicleIconPos`; `aticon` feeds 2. The review stopped stale extracts from drawing six dots in a placeholder staircase. **Needs one more re-extract of vehicles** for `hasTurretIcon` and `vehicleIconPos` to reach the page |
+| W2-B damage | in review. **Merge hazard, already solved:** W2-B and W2-C each added the critical-vehicle 0.2x to `seats.js` in different shapes and git merges them silently; plain-merged, a critical Sherman traverses at the full 140 deg/s under a fast hand because one shape scales before the speed clamp. The patch that makes it 28 deg/s is in W2-C's review (`reports/rw2c-turrets.review.md`) and is applied when W2-B merges |
 
 Carried from that review, not yet acted on:
 - **The tick rate claim needs a second reader before it enters the corpus.** The
