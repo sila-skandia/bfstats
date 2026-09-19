@@ -335,14 +335,6 @@ export class DrivenBody {
 
 // --- building bodies out of a description --------------------------------------
 
-/**
- * How far a parked wheel may compress. The engine has no such number — a
- * spring's push is clamped per tick (0..1 m) and nothing else — and `ground.js`
- * keeps its own per-vehicle figure for the driven case. This only has to be
- * larger than any static sag (a Willy rests at about 0.1 m, a B-17 at 0.2).
- */
-const PARKED_SPRING_TRAVEL = 0.6;
-
 /** ContactGrip: what a part with no authored grip gets (template default 1). */
 const DEFAULT_GRIP = 1;
 
@@ -384,7 +376,6 @@ export function buildParkedVehicle(spec, { position, axes, asleep = true }) {
     spring: new WheelSpring({
       strength: part.spring?.strength ?? 0,
       damping: part.spring?.damping ?? 0,
-      travel: PARKED_SPRING_TRAVEL,
     }),
   }));
   return new ParkedVehicle({ body, parts, wheels });

@@ -76,6 +76,13 @@ def run_harness() -> dict:
 class BodyGroundTests(unittest.TestCase):
     results: dict
 
+    # `PhysicsSpring::updatePhysics`'s own coefficient: -0.101833 normalises
+    # to earth gravity (physics.md §6), so at the shipped |g| = 14.73 this is
+    # 14.73*0.101833 ~= 1.5 -- kept spelled out here, not rounded to 1.5, so
+    # the WheelSpring tests below match the harness's own arithmetic bit for
+    # bit rather than an idealised constant.
+    SPRING_K_COEFF = 14.73 * 0.101833
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.results = run_harness()
@@ -214,6 +221,63 @@ class BodyGroundTests(unittest.TestCase):
         self.assertFalse(r["smallSpeedWoke"])  # |0.1|^2 = 0.01 <= 0.1 threshold
         self.assertFalse(r["heldNotWoken"])    # sleepiness < 0: never woken
 
+    # --- (a2) WheelSpring.apply directly, against PhysicsSpring::updatePhysics's
+    # own law (body-ground.js's header comment above WheelSpring): a =
+    # -(strength*D*(g*-0.101833) + damping*(D-Dprev)/dt), D = -push, rolled into
+    # "previous" every tick whether awake or not; only the force and the
+    # clearing of `push` are gated on being awake.
+
+    def test_wheel_spring_static_term(self) -> None:
+        # `previous` primed to equal this tick's D, so the damping term
+        # (proportional to D - previous) is exactly zero: only
+        # -(strength * D * SPRING_K_COEFF) reaches the body.
+        r = self.results["wheelSpring"]["staticTerm"]
+        self.assertEqual(1, len(r["calls"]))
+        k = 25 * self.SPRING_K_COEFF
+        # push = (0, 0.1, 0) -> D = (0, -0.1, 0) -> a = -(k*D) = (0, k*0.1, 0).
+        self.assertVec(r["calls"][0]["a"], [0, k * 0.1, 0], places=4)
+        self.assertVec(r["calls"][0]["p"], [2, 0, 3], places=6)  # posted at the anchor
+
+    def test_wheel_spring_damping_opposes_compression(self) -> None:
+        # The wheel sinks further this tick (D more negative than Dprev): the
+        # damper ADDS to the static push, on top of test_wheel_spring_static_term.
+        r = self.results["wheelSpring"]["compressing"]
+        k = 25 * self.SPRING_K_COEFF
+        c = 5 / (1 / 30)
+        # D=(0,-0.1,0), Dprev=(0,-0.05,0) -> a = -(k*D + c*(D-Dprev))
+        expected_y = -(k * -0.1 + c * (-0.1 - -0.05))
+        self.assertVec(r["calls"][0]["a"], [0, expected_y, 0], places=4)
+        self.assertGreater(expected_y, k * 0.1, "damping should push harder than the static term alone")
+
+    def test_wheel_spring_damping_opposes_rebound(self) -> None:
+        # The task's own named case: a wheel that leaves the ground this tick
+        # (nothing compressed it, so D = 0) right after a compressed previous
+        # tick (Dprev != 0). The damper alone fires, and its sign is the
+        # OPPOSITE of the compressing case above -- it resists the release,
+        # not the sinking.
+        r = self.results["wheelSpring"]["rebound"]
+        c = 5 / (1 / 30)
+        # D=(0,0,0), Dprev=(0,-0.1,0) -> a = -(0 + c*(0 - -0.1)) = -c*0.1
+        expected_y = -(c * 0.1)
+        self.assertVec(r["calls"][0]["a"], [0, expected_y, 0], places=4)
+        self.assertLess(expected_y, 0)
+        compressing_y = self.results["wheelSpring"]["compressing"]["calls"][0]["a"][1]
+        self.assertTrue((expected_y < 0) != (compressing_y < 0), "rebound and compression push opposite ways")
+        self.assertVec(r["pushAfter"], [0, 0, 0], places=9)  # nothing to clear -- push was already zero
+
+    def test_wheel_spring_push_cleared_after_awake_apply(self) -> None:
+        r = self.results["wheelSpring"]["clearedAfterAwake"]
+        self.assertVec(r["pushAfter"], [0, 0, 0], places=9)
+
+    def test_wheel_spring_asleep_applies_no_force_but_rolls_previous(self) -> None:
+        r = self.results["wheelSpring"]["asleep"]
+        self.assertEqual(0, r["callCount"])
+        # push is untouched (only an AWAKE apply clears it) ...
+        self.assertVec(r["pushAfter"], [0, 0.2, 0], places=9)
+        # ... but `previous` still advances to -push, asleep or not (§4.3:
+        # "springs... skip their force", not their D/Dprev bookkeeping).
+        self.assertVec(r["prevAfter"], [0, -0.2, 0], places=9)
+
     # --- (b) drop, settle on springs, sleep -----------------------------------
 
     def test_settles_and_sleeps_within_bounded_ticks(self) -> None:
@@ -232,18 +296,33 @@ class BodyGroundTests(unittest.TestCase):
 
     def test_settle_rest_height_matches_the_spring_law(self) -> None:
         s = self.results["settle"]
-        # physics.md §6's static equilibrium: strength*d_eq*|g|/9.82, summed
-        # over N equal wheels sharing the load equally, cancels |g| exactly:
-        #   N * strength * d_eq * |g|/9.82 = |g|  =>  d_eq = 9.82 / (N*strength)
-        # (the |g| on both sides cancels -- "suspension sag is
-        # gravity-invariant by design", physics.md §6).
+        # The real spring law (body-ground.js's WheelSpring, this file's (a2)
+        # tests): at rest D and Dprev are equal (nothing is still moving), so
+        # the damping term vanishes and each wheel contributes a pure static
+        # push of strength*penetration*SPRING_K_COEFF (~= 1.5*strength*
+        # penetration, see SPRING_K_COEFF above). Summed over n identical
+        # wheels sharing the load equally, that cancels gravity exactly:
+        #   n * strength * SPRING_K_COEFF * penetration = |g|
+        #   penetration = |g| / (n * strength * SPRING_K_COEFF)
         n = s["wheelCount"]
         strength = s["strength"]
-        d_eq = 9.82 / (n * strength)
-        self.assertAlmostEqual(0.0982, d_eq, places=6)
+        d_eq = abs(GRAVITY) / (n * strength * self.SPRING_K_COEFF)
+        self.assertAlmostEqual(0.0982, d_eq, places=3)
 
-        for displacement in s["finalDisplacements"]:
+        # Sampled on the LAST AWAKE tick (see run_harness/the harness's own
+        # comment): `push` is a this-tick-only reading that a still-awake
+        # `accumulate()` always clears right after consuming it and only
+        # `detectGround` -> `resolve` ever refill, so reading it any later --
+        # once the body is actually asleep and ground detection has stopped
+        # running -- reads a structural zero, not the equilibrium compression.
+        for displacement in s["restDisplacements"]:
             self.assertAlmostEqual(d_eq, displacement, places=3)
+
+        # ... which is exactly what happens: once asleep, `push` really does
+        # read zero (ties together this class's own WheelSpring unit tests
+        # above with this integration scenario).
+        for displacement in s["postSleepDisplacements"]:
+            self.assertEqual(0.0, displacement)
 
         # body.pos.y = restOffsetY's negation, minus the equilibrium sag:
         # the wheel's rest offset is -0.5 (0.5 m below the hull origin), and
@@ -269,10 +348,24 @@ class BodyGroundTests(unittest.TestCase):
         # §8: "maximum Coulomb deceleration of a whole vehicle is mu*g*N.y
         # however many wheels touch" (friction is a MEAN over touching
         # parts, not a sum) -- mu=1, N.y=1 on flat ground -> mu*|g| = 14.73
-        # m/s^2. Resistance (0.02/tick, an acceleration in its own right) and
-        # the coupling with vertical settling add a small amount on top; the
-        # bound below is generous but still well short of "unbounded".
-        bound = 1.0 * abs(GRAVITY) + 0.02 * c["peakSpeed"] + 3.0
+        # m/s^2. Resistance (0.02/tick, an acceleration in its own right) adds
+        # a small amount on top.
+        #
+        # This is measured on HORIZONTAL speed only (the harness's own
+        # comment on the shove section explains why): addFriction's own Vt
+        # strips the contact normal's component out of V before the Coulomb
+        # clamp ever sees it, so on flat ground friction never touches
+        # vertical speed at all. The vertical axis carries a real, separate
+        # transient instead -- waking a long-asleep vehicle finds every
+        # wheel's spring state (`push`/`previous`) decayed to exactly zero
+        # (this file's WheelSpring "asleep" test), so the FIRST tick after
+        # waking contributes no spring force, and only once `detectGround`
+        # refreshes `push` from real terrain contact does the spring see a
+        # sudden 0 -> real-penetration jump and produce a sharp one-tick
+        # vertical kick. That is a genuine suspension effect, not a friction
+        # one, and folding it into this bound would be testing the wrong
+        # thing -- so it is excluded by construction, not by a looser number.
+        bound = 1.0 * abs(GRAVITY) + 0.02 * c["peakSpeed"] + 1.0
         self.assertLessEqual(c["maxDecelPerTick"], bound)
 
     def test_off_centre_impulse_yaws_the_body(self) -> None:
@@ -285,21 +378,56 @@ class BodyGroundTests(unittest.TestCase):
         self.assertLess(c["wAfterStep"][1], -0.01)
         self.assertAlmostEqual(0.0, c["wAfterStep"][2], places=2)
 
-    # --- (d) 10-degree slope: static friction holds, no creep ---------------
+    # --- (d) 10-degree slope: a REALISTIC vehicle -----------------------------
+    #
+    # tools/bf1942-models/tests/body_ground_harness.mjs builds a jeep-like
+    # 2500 kg body (box 1.7 x 1.5 x 3.6, wheels at (+-0.6,-0.14,-0.75) and
+    # (+-0.6,-0.12,1.46), strength 25, damping 5, ContactGrip, friction 1.0)
+    # nose-down a 10 degree slope and runs it 1000 ticks (33 s) against the
+    # REAL spring law, then a further 300 ticks (10 s) to measure creep. The
+    # implementer's earlier report, against the OLD invented spring law and an
+    # oversized inertia box, found a vehicle this size "tips... and runs
+    # away". Re-tested here against the corrected law and this track's actual
+    # box: it settles cleanly (see test_slope_settles_but_never_sleeps below)
+    # and holds with negligible creep (test_slope_no_creep_once_settled) --
+    # but it never reaches `body.sleeping`, and that is not a bug: see the
+    # derivation in test_slope_settles_but_never_sleeps.
 
-    def test_slope_settles(self) -> None:
+    def test_slope_settles_but_never_sleeps(self) -> None:
         s = self.results["slope"]
-        self.assertGreater(s["settleTicks"], 0, "never fell asleep on the slope")
-        self.assertTrue(s["finalSleeping"])
+        # Physically at rest: both speed and angular speed have decayed to a
+        # tiny fraction of the sleep countdown's own thresholds (0.25 each,
+        # §4.3) by the time the fixed settle budget (1000 ticks / 33 s) runs
+        # out.
+        self.assertLess(s["speedSqAtSettle"], 1e-4)
+        self.assertLess(s["angSpeedSqAtSettle"], 1e-4)
 
-    def test_slope_no_creep_once_asleep(self) -> None:
-        # This is exactly what `V.y += GRAVITY/30` (§8) is for: without it,
-        # the static latch would be computed against the CURRENT tick's
-        # speed only, missing that gravity is about to add a small downhill
-        # component next tick, and the body would creep. With it, once
-        # asleep the position must not drift at all over many more ticks.
+        # And yet it never sleeps -- confirmed, not papered over. The wheel
+        # spring's restoring force is strictly along the terrain's CONTACT
+        # NORMAL (this file's WheelSpring tests, body-ground.js's own header
+        # comment): it can cancel gravity's component along that normal, but
+        # structurally can never touch the TANGENTIAL (along-slope)
+        # component -- only friction does that, through `fr`, an accumulator
+        # the sleep countdown never reads (§4.3: "the accumulator as it
+        # stands before drag: gravity + springs + impulses"). So `acc` is
+        # left holding |g|*sin(10 deg) forever, tiny orientation noise aside:
+        tangential_g = abs(GRAVITY) * math.sin(math.radians(s["slopeDeg"]))
+        self.assertAlmostEqual(tangential_g, math.sqrt(s["accSqAfterAccumulate"]), delta=0.05)
+        # ... which exceeds the wake test's own sqrt(2.5) m/s^2 threshold
+        # (collision-response.md §4.3, R2-integrator.md F8: "a body can only
+        # sleep while something cancels gravity to within 1.58 m/s^2") for
+        # any slope steeper than about 6.16 degrees -- 10 is one of them.
+        self.assertGreater(math.sqrt(s["accSqAfterAccumulate"]), math.sqrt(2.5))
+        self.assertFalse(s["finalSleeping"])
+
+    def test_slope_no_creep_once_settled(self) -> None:
+        # Static friction genuinely holds it: displacement over a further 10
+        # seconds, measured well after the initial touchdown transient, stays
+        # well under a centimetre -- even though (see the test above)
+        # `body.sleeping` itself never goes true, so this cannot be phrased
+        # as "no drift once asleep" the way the flat-ground shove test can.
         s = self.results["slope"]
-        self.assertEqual(0.0, s["drift"])
+        self.assertLess(s["drift"], 0.005)
 
 
 if __name__ == "__main__":
