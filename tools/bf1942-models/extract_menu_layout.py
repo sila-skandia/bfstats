@@ -128,7 +128,17 @@ SKIN_NATION: dict[str, str] = {
     "vcfemalesoldier": "jp",            # flagjp_m1 x31
     "civilvc_soldier": "jp",            # flagjp_m1 x18, flagge_m1 x1
     "arvnforces": "brit",               # flaguk_m1 x34, flagus_m1 x1
-    "australianforces": "rus",          # flagso_m1 x16
+    # `flagso_m1` x16, and the row is `so`, not the `rus` vanilla's
+    # FLAG_MESH_NATION aliases `so` to. EoD ships its own `so` art, so
+    # `flag_mesh_nations` already stops aliasing it for the in-game HUD
+    # (hud.json's flagMeshNation: `so -> so`), and the two flag families do
+    # not agree: `conp_so` and `conp_rus` are the same bytes, but decoded,
+    # EoD's `icon_flag_so` is the Australian blue ensign while its
+    # `icon_flag_rus` is the Stars and Stripes. Routing AustralianForces
+    # through `rus` therefore drew a US flag beside Australia on this
+    # screen for the 14 EoD levels that field them, while the in-game
+    # ticket counter on the same level drew the Australian one.
+    "australianforces": "so",           # flagso_m1 x16
     "specialforces": "us",              # flagus_m1 x79
     "navyseals": "us",                  # flagus_m1 x15
     "rambosoldier": "us",               # flagus_m1 x2
