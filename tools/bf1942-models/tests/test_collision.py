@@ -164,6 +164,35 @@ class CollisionModuleTests(unittest.TestCase):
         self.assertAlmostEqual(12.0, hit["t"], places=4)
         self.assertEqual(85, hit["material"])
 
+    def test_a_moved_owner_is_hit_where_it_now_stands(self) -> None:
+        # A parked vehicle shoved 3 m along x: the index is not rebuilt, the
+        # collider asks again in the hull's baked frame (`setMovedOwner`).
+        moved = self.results["movedOwnerCast"]
+        self.assertAlmostEqual(11.0, moved["t"], places=6)
+        self.assertAlmostEqual(11.0, moved["x"], places=6)
+        self.assertEqual(92, moved["material"])
+        self.assertEqual(0, moved["owner"])
+        self.assertEqual([-1, 0, 0], [round(c) for c in moved["normal"]])
+        self.assertTrue(self.results["movedOwnerOldPlaceEmpty"])
+        swept = self.results["movedOwnerSweep"]
+        self.assertAlmostEqual(10.5, swept["x"], places=4)
+        self.assertAlmostEqual(11.0, swept["px"], places=4)
+        self.assertEqual(0, swept["owner"])
+        # Fired by the moved owner itself: skipped, the far wall (85) is next.
+        self.assertEqual(85, self.results["movedOwnerSkipsSelf"])
+
+    def test_a_moved_owner_can_be_turned(self) -> None:
+        turned = self.results["movedOwnerTurned"]
+        self.assertAlmostEqual(8.0, turned["t"], places=6)
+        self.assertAlmostEqual(-8.0, turned["z"], places=6)
+        self.assertEqual(0, turned["owner"])
+        self.assertEqual([0, 0, 1], [round(c) for c in turned["normal"]])
+
+    def test_clearing_a_moved_owner_puts_its_baked_hull_back(self) -> None:
+        back = self.results["movedOwnerCleared"]
+        self.assertAlmostEqual(8.0, back["x"], places=6)
+        self.assertEqual(92, back["material"])
+
     def test_a_disabled_owner_stops_blocking(self) -> None:
         # After a wreck fades the pad must be walkable; disableOwner drops that
         # hull from cast/sweep without rebuilding the index.
