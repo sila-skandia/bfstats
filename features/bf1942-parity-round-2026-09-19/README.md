@@ -172,6 +172,29 @@ every tick of a frame. **Launched as W3-G** once W3-B and W3-D reported; it
 also researches what `BFSoldier` does with the mouse-look axis on foot, so
 `LOOK_SENS` can go the same way if the law can be read.
 
+**W3-E (mod chrome) is merged** (`cba208f`, 2026-09-20), verdict MERGE WITH
+FIXES. Reports: `w3e-modchrome.md`, `w3e-review.md`. Merged by hand with another
+session's mod picker (`7d536e8`), which had rewritten the same Instant Battle
+page: its mod resolution won, the stream's per-mod pack resolver fills in behind
+it, and `buildLevels` joins against a mod's own `menu-levels.json` when its pack
+carries one. Checked in the browser for bf1942, xpack1 and eod.
+- Extracted into the local shared tree (from the merged code):
+  `extract_hud_mods.py --mod EoD|XPack1|XPack2` -> 582 / 40 / 49 files plus a
+  `pack.json` each under `maps/mods/<id>/_shared/hud`. To publish: those three
+  directories only; nothing under `maps/_shared` changes.
+- Reviewer fixes: `extract_hud_mods.py --mod bf1942` would have deleted the
+  vanilla pack; `_001` patch archives were never layered for menu.rfa; the mod
+  was dropped on START and on the bare-page redirect; Australia drew a US flag.
+- Left open (in `features/authentic-spawn-map/README.md` section 10): mod kit
+  photographs are never extracted (87 in EoD, all under nation subdirectories);
+  a team's nation is a LEVEL property, not a skin property (30 EoD team/level
+  rows and vanilla's Caen disagree with `SKIN_NATION`); Pathet Lao bases fly the
+  NVA flag in-game; `verify_models.py`'s origin-pile check is anchored on the
+  scene origin and misses a Sherman whose 27 parts collapse onto the hull.
+
+**W3-C (game modes) has reported and is in review** (`w3c-gamemodes.md`). **W3-G
+(mouse input) has reported and is in review** (`w3g-mouse.md`).
+
 **W3-A (drivetrain) was reviewed: DO NOT MERGE, sent back to its author**
 (2026-09-20). Reports: `w3a-drivetrain.md`, `w3a-review.md`; the reviewer's
 comparison scripts are in `scratchpad/r3a/`.
