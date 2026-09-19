@@ -149,9 +149,25 @@ and the flight model's own ground clamp spare it a second event.
 **Not done yet:** the drive models' *response* to a crash (a plane that noses
 in is levelled out by `flight.js`'s ground clamp instead of tumbling, so it
 survives what the game would finish off); parked bodies against static
-buildings; tanks never quite fall asleep on a slope (they creep a few
-centimetres a minute); the soldier is not yet a body, so being run over is
-still the old code.
+buildings; the soldier is not yet a body, so being run over is still the old
+code.
+
+**A vehicle parked on a slope never sleeps, and that is the engine's rule, not
+a defect.** The wheel spring pushes along the contact normal, so it cancels
+only gravity's normal component; the downhill component, `14.73 x sin(slope)`,
+stays in the acceleration accumulator because friction never enters it
+(`collision-response.md` 4.3). Sleep needs `acc^2 < 2.5`, so anything steeper
+than about 6.2 degrees stays awake for good. Measured on a 10 degree slope
+with a realistic 2,500 kg box: parked nose-down it settles within a second and
+drifts 2 mm in the next ten; parked broadside it rocks on its narrow track for
+minutes. `test_slope_settles_but_never_sleeps` holds both halves. The cost is
+a few awake bodies per map stepping their springs each tick.
+
+One wake-up transient is known and left alone: a body that has slept has an
+uncompressed wheel and a stale damper history, so its first awake tick gets no
+static support and the second a hard damper kick - a visible bounce when a
+parked vehicle is first touched. The engine skips a sleeping spring's update
+the same way, so it is likely there too; nobody has measured it in the game.
 
 **Assets.** A mod's levels look for `collision-meshes.json` beside that mod's
 own `damage.json`, and without one its vehicles stay the fixed hulls they were.
