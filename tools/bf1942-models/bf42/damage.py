@@ -47,10 +47,16 @@ class Material:
     att_group: int
     def_group: int
     damage: float = 0.0
+    friction: float = 1.0
     label: str | None = None
 
     def as_dict(self) -> dict:
-        out: dict = {"attGroup": self.att_group, "defGroup": self.def_group, "damage": self.damage}
+        out: dict = {
+            "attGroup": self.att_group,
+            "defGroup": self.def_group,
+            "damage": self.damage,
+            "friction": self.friction,
+        }
         if self.label:
             out["label"] = self.label
         return out
@@ -341,6 +347,19 @@ def _parse_script(tables: DamageTables, text: str, script: str,
             value = _number(args)
             if value is not None:
                 material.damage = value
+        elif cmd == "materialfriction" and material is not None:
+            # The Coulomb coefficient `ResponsePhysics::addFriction` spends
+            # (PHY-2). `impulseOn` stores the MEAN of the two contacting
+            # materials' values, so a wheel on grass runs at
+            # 0.5*(1.0 + 0.8) = 0.9 rather than at 0.8. Vanilla authors it for
+            # the 16 terrain materials plus grenades and stairs; everything
+            # else keeps the `Material` constructor's 1.0, which is also what
+            # an id the define file never mentions falls back to (via material
+            # 0, itself authored 1.0). 13 installed mods carry the word over a
+            # 0.0-100.0 range, so this is read, never clamped.
+            value = _number(args)
+            if value is not None:
+                material.friction = value
         elif cmd == "attgroup":
             value = _number(args)
             att_group = int(value) if value is not None else None

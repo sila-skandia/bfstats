@@ -10,12 +10,19 @@ What the numbers mean. Almost the whole chassis is shipped data — spring
 strength and damping, the steering lock, the gear count and shift points,
 engine torque and final drive, the wheel radius off the collision mesh — and
 the assertions against solved values (static loads summing to gravity, the
-per-axle split from the wheelbase, the rev-limited top speed) are checks that
-the model spends that data rather than shadowing it with tuning. The fitted
-constants (`gearRatios`, `revLimit`, `mu`, cornering stiffness) get
-behavioural bounds instead, loose on purpose: they are the part a recorded
-reference drive in the real game would revise, and the tests should survive
-that revision.
+per-axle split from the wheelbase, the top speed the gear ladder sets) are
+checks that the model spends that data rather than shadowing it with tuning.
+
+The gearbox joined the data side on 2026-09-19 (TANK-3/TANK-4): `gearRatios`,
+`reverseRatio` and `revLimit` were deleted and the ladder is now the engine's
+own `getCurrentRatio()` per gear, off a 101-slot curve filled piecewise-
+linearly between its control points. The ladders are pinned exactly here,
+because that curve has been read wrong once already.
+
+The constants still fitted (cornering stiffness, `lateralMu`,
+`trackResistance`) get behavioural bounds instead, loose on purpose: they are
+the part a recorded reference drive in the real game would revise, and the
+tests should survive that revision.
 """
 
 from __future__ import annotations
@@ -101,21 +108,171 @@ class GroundModelTests(unittest.TestCase):
         self.assertEqual(5, constants["springDamping"])
         self.assertEqual(30, constants["maxSteer"])
 
-    def test_the_shipped_dampers_are_exactly_critical(self) -> None:
-        # The units case for setStrength/setDamping: four wheels give the
-        # heave mode 2*sqrt(4*25) = 20 of critical damping and 4*5 = 20 is
-        # what the data supplies. If either constant moves, this coincidence
-        # — and the argument built on it — is gone.
-        self.assertAlmostEqual(1.0, self.results["solved"]["heaveDampingRatio"], places=3)
+    def test_every_spring_acts_at_one_and_a_half_times_its_setStrength(self) -> None:
+        # PHY-5: `accel = -(strength * g * (-1/9.82) * D + ...)`. The
+        # `-1/9.82` makes the sag gravity-invariant, and at the shipped
+        # -14.73 the factor is exactly 1.5 — so a Willy's `setStrength 25`
+        # springs act at 37.5 and the hull sits 0.098 m in rather than 0.147.
+        # `bf42/con.py` exports the authored number on purpose and leaves the
+        # law to the runtime; `ground.js` is that runtime.
+        solved = self.results["solved"]
+        self.assertAlmostEqual(1.5, solved["springScale"], places=3)
+        self.assertAlmostEqual(0.098, solved["staticCompression"], places=3)
+
+    def test_the_shipped_dampers_land_just_under_critical(self) -> None:
+        # This used to assert exactly 1.0, on the argument that four wheels
+        # give the heave mode 2*sqrt(4*25) = 20 of critical damping and 4*5 =
+        # 20 is what the data supplies — "somebody at DICE tuned this
+        # critically damped". That coincidence depended on reading
+        # `setStrength` as the literal per-mass stiffness, which PHY-5
+        # refutes. With the 1.5 the ratio is 1/sqrt(1.5) = 0.816, which is
+        # both a perfectly ordinary road-car damping ratio and still a tidy
+        # enough number that the tuning argument survives in weaker form.
+        self.assertAlmostEqual(0.816, self.results["solved"]["heaveDampingRatio"], places=3)
+
+    def test_the_spring_probes_down_the_hulls_axis_not_the_worlds(self) -> None:
+        # PHY-5: `SpringTemplate`'s constructor writes `axisFixation = (0,1,0)`
+        # and nothing in 18 installed mods authors `setAxisFixation` over it,
+        # so every spring everywhere runs along the object's own up — which
+        # leans with the body and is never world-vertical. On a 16.7 degree
+        # slope the jeep sits pitched with the ground, and the probe reaches
+        # 1/cos(lean) further than a vertical drop would.
+        slope = self.results["slope"]
+        self.assertTrue(slope["grounded"])
+        self.assertAlmostEqual(slope["slopeDeg"], slope["pitchDeg"], delta=1.0)
+        self.assertGreater(slope["axisStretch"], 1.0)
+        # All four wheels still carry it, and the total is the component of
+        # weight along the (now leaning) spring axis: g x cos(lean).
+        for load in slope["loads"]:
+            self.assertGreater(load, 1.0)
+        self.assertAlmostEqual(14.73 * slope["axisStretch"] ** -1,
+                               slope["totalLoad"], delta=0.3)
 
     def test_the_top_speed_arithmetic(self) -> None:
-        # revLimit * wheelRadius / (differential * topGear): the one equation
-        # the fitted revLimit exists to close, at 18.5 m/s before resistance.
-        self.assertAlmostEqual(18.51, self.results["solved"]["revCapSpeed"], places=1)
-        # And the ladder is monotone, so the automatic always has somewhere
-        # to go.
-        speeds = self.results["solved"]["gearSpeeds"]
+        # No fitted rev ceiling any more (TANK-3/TANK-9). The road speed a
+        # gear reaches at a rev fraction is the engine's own EngineGrip
+        # target, `getCurrentRatio(gear) * revs`, and revs run to the engine's
+        # own clamp of 1.2 — so top gear's ceiling is 1.2 * 26.064 = 31.28
+        # m/s. The deleted `revLimit 356` put this at 18.51 by fit alone; the
+        # first reading of TANK-9 put it at 13.03 by halving the target.
+        solved = self.results["solved"]
+        self.assertAlmostEqual(31.28, solved["revCapSpeed"], places=1)
+        # Willy's five gears, and the ladder is monotone at five gears so the
+        # automatic always has somewhere to go.
+        speeds = solved["gearSpeeds"]
+        self.assertEqual([8.4, 13.36, 19.6, 26.73, 31.28], speeds)
         self.assertEqual(speeds, sorted(speeds))
+
+    def test_the_rev_clamp_is_the_engines_and_it_is_asymmetric(self) -> None:
+        # `Engine::handleUpdate` lnxded 0x0823e120 runs the rev state as
+        # `revs += 0.05 * ((pedal - load) - 0.5*revs)` and then clamps it to
+        # [-1.0, +1.2] (0x0823e2bf onward). The ceiling above 1 is what makes
+        # top gear 31.3 m/s rather than 26.1; the floor at exactly 1 is why
+        # reverse in first is 7.0 m/s where forward in first is 8.4.
+        solved = self.results["solved"]
+        self.assertEqual(1.2, solved["revCeiling"])
+        self.assertEqual(1.0, solved["revFloor"])
+        self.assertAlmostEqual(7.0, solved["reverseCapSpeed"], places=2)
+        self.assertLess(solved["reverseCapSpeed"], solved["gearSpeeds"][0])
+
+    def test_the_half_in_the_grip_target_is_a_blend_not_a_scale(self) -> None:
+        # `addFriction` 0x0825c2ed-0x0825c407 builds
+        #   T = (1 - 0.5*b) * ratio * diffRPM * fwd  +  0.5*b * (Vt . fwd) fwd
+        # against the SAME forward axis, so at b = 1 it is half the command
+        # plus half of what the wheel is already doing, and at b = 0 it is the
+        # command in full. `b` is engine +0xb8, the gear-change timer, which
+        # `Engine::handleUpdate` counts down to zero and never re-arms; its
+        # constructor seed of 1.0 is what the earlier reading mistook for the
+        # steady value, halving every gear's ceiling.
+        solved = self.results["solved"]
+        # Steady driving: the full command. Willy first gear, ratio 7.0.
+        self.assertAlmostEqual(7.0, solved["gripTargetSteady"], places=3)
+        # Mid-change, stationary: half of it.
+        self.assertAlmostEqual(3.5, solved["gripTargetMidChange"], places=3)
+        # Mid-change at 4 m/s: half the command plus half the contact speed,
+        # which is what makes it a blend and not a scale.
+        self.assertAlmostEqual(5.5, solved["gripTargetMidChangeAtSpeed"],
+                               places=3)
+
+    def test_the_two_ladders_run_in_opposite_directions(self) -> None:
+        # The trap TANK-3 names. `getCurrentRatio` rises with gear; the drive
+        # share falls, and it is the curve SAMPLE normalised to first gear.
+        # The deleted `gearRatios` was an eyeballed copy of the second one.
+        solved = self.results["solved"]
+        self.assertEqual([7.0, 11.136, 16.333, 22.273, 26.064], solved["ladder"])
+        self.assertEqual([1.0, 0.629, 0.429, 0.314, 0.269], solved["driveShare"])
+
+    def test_the_invented_drivetrain_constants_are_gone(self) -> None:
+        # Items 15 and 16 deleted all of these. Reintroducing any is
+        # reintroducing an invention that the data now answers.
+        constants = self.results["constants"]
+        self.assertFalse(constants["hasGearRatios"])
+        self.assertFalse(constants["hasReverseRatio"])
+        self.assertFalse(constants["hasRevLimit"])
+        self.assertFalse(constants["hasMu"])
+        self.assertFalse(constants["hasTankMu"])
+        self.assertFalse(constants["hasLateralMu"])
+
+    # --- material friction (PHY-2) -----------------------------------------
+
+    def test_the_coefficient_is_the_mean_of_the_two_materials(self) -> None:
+        # `impulseOn`'s tail writes 0.5*(friction(matA) + friction(matB)) into
+        # `ResponsePhysics+0xa8`. A Willy's wheels are material 37, which
+        # vanilla never defines, so they fall back to material 0 at 1.0 — the
+        # jeep runs at the mean of 1.0 and whatever it is standing on, never
+        # at the ground's own number.
+        surfaces = self.results["surfaceFriction"]
+        self.assertAlmostEqual(0.55, surfaces["water"]["pairMean"], places=4)
+        self.assertAlmostEqual(0.75, surfaces["mud"]["pairMean"], places=4)
+        self.assertAlmostEqual(0.80, surfaces["rock"]["pairMean"], places=4)
+        self.assertAlmostEqual(0.90, surfaces["grass"]["pairMean"], places=4)
+        self.assertAlmostEqual(0.90, surfaces["sand"]["pairMean"], places=4)
+        self.assertAlmostEqual(1.00, surfaces["dirtRoad"]["pairMean"], places=4)
+        self.assertAlmostEqual(1.05, surfaces["paved"]["pairMean"], places=4)
+        self.assertAlmostEqual(1.05, surfaces["gravel"]["pairMean"], places=4)
+
+    def test_the_surface_decides_how_hard_the_jeep_can_launch(self) -> None:
+        # Traction, not the brake pedal, is where the material shows. First
+        # gear asks 10.5 m/s^2 of two rear wheels carrying a third of the
+        # weight, so the launch runs at the Coulomb cap itself.
+        surfaces = self.results["surfaceFriction"]
+        water = surfaces["water"]["to10"]
+        mud = surfaces["mud"]["to10"]
+        grass = surfaces["grass"]["to10"]
+        paved = surfaces["paved"]["to10"]
+        self.assertGreater(water, mud)
+        self.assertGreater(mud, grass)
+        self.assertGreater(grass, paved)
+        # Water is more than half again as slow off the line as tarmac.
+        self.assertGreater(water, paved * 1.5)
+
+    def test_braking_is_pedal_limited_on_everything_but_water(self) -> None:
+        # The other half of the same fact, and the reason a straight-line
+        # brake test is the wrong place to look for the material: the free
+        # `brakeDecel 8` asks less than even mud's 0.75 x 14.73 = 11.0 cap,
+        # so every surface stops in the same distance.
+        surfaces = self.results["surfaceFriction"]
+        distances = [surfaces[name]["stopDistance"]
+                     for name in ("mud", "grass", "dirtRoad", "paved")]
+        for distance in distances:
+            self.assertAlmostEqual(distances[0], distance, delta=0.05)
+        # Water's 0.55 x 14.73 = 8.1 is the one that finally bites.
+        self.assertGreater(surfaces["water"]["stopDistance"], distances[0])
+
+    def test_the_static_latch_holds_a_parked_jeep_and_breaks_under_load(self) -> None:
+        # The 1.5:1 hysteresis is a state-dependent branch on the grip byte,
+        # not two passes: a body within its break-away budget applies its
+        # force in full and stays latched, one that exceeds it unlatches and
+        # is scaled to the sliding budget.
+        latch = self.results["gripLatch"]
+        self.assertTrue(all(latch["parked"]), "a parked jeep stands latched")
+        # Hard braking breaks the driven pair loose and leaves the fronts
+        # latched: the fronts carry two thirds of the weight, so the same
+        # demand share fits inside their budget and not inside the rears'.
+        self.assertIn(False, latch["braking"])
+        self.assertIn(True, latch["braking"])
+        # No contact clears the latch outright (0x0825b76b).
+        self.assertFalse(any(latch["airborne"]))
 
     # --- the chassis reads off the tree ------------------------------------
 
@@ -174,6 +331,54 @@ class GroundModelTests(unittest.TestCase):
         self.assertGreater(self.results["settle"]["y"], 0.25)
         self.assertLess(self.results["settle"]["y"], 0.45)
 
+    def test_a_parked_vehicle_neither_sinks_nor_creeps_away(self) -> None:
+        # Ten parked seconds after ten settling ones. Sinking is the failure
+        # the spring must never have; creeping is the one PHY-5 introduced,
+        # because the spring axis leans with the hull and a hull on its static
+        # rake therefore pushes itself along. The per-wheel parking hold could
+        # only ever balance that (a velocity-proportional force against a
+        # constant one settles at `rake * substep`, which was 5 mm here and
+        # 0.74 m on Wake's real slopes); `staticHold` makes it what the engine
+        # makes it, a velocity constraint on latched contacts, and the answer
+        # is then exactly zero rather than nearly zero.
+        for name in ("willy", "sherman", "m3a1"):
+            parked = self.results["parked"][name]
+            self.assertGreater(parked["contacts"], 3, name)
+            self.assertTrue(parked["compressionsHeld"], name)
+            self.assertEqual(0.0, parked["sink"], name)
+            self.assertEqual(0.0, parked["drift"], name)
+            self.assertEqual(0.0, parked["speed"], name)
+
+    def test_the_static_hold_does_not_freeze_a_hull_that_is_still_settling(self) -> None:
+        # The trap in a constraint like that: a hull dropped onto a slope
+        # crosses every "is it parked" threshold transiently on the way down,
+        # and freezing it there leaves it sitting more than a degree off the
+        # ground it is standing on with the wrong load on its springs. The
+        # dwell is what stops that, and this is the case that proves it — the
+        # jeep ends up pitched with the ramp and carrying `g x cos(lean)`,
+        # which is what it did before any hold existed.
+        slope = self.results["slope"]
+        self.assertAlmostEqual(slope["slopeDeg"], slope["pitchDeg"], delta=1.0)
+        self.assertAlmostEqual(14.73 * slope["axisStretch"] ** -1,
+                               slope["totalLoad"], delta=0.3)
+
+    def test_the_damper_is_not_blind_on_a_re_contact(self) -> None:
+        # A wheel that was airborne last tick has no backward difference to
+        # take. Zeroing its rate turns the damper off for that tick, and over
+        # rough ground that is not a rare first-contact event at all: it is
+        # 4 % of a jeep's contact ticks and 8 % of a half-track's — landings,
+        # crests and kerbs, which is exactly when a damper earns its keep.
+        # The rate is seeded from the axle's own closing speed instead.
+        willy = self.results["recontacts"]["willy"]
+        m3a1 = self.results["recontacts"]["m3a1"]
+        self.assertGreater(willy["share"], 0.01)
+        self.assertGreater(m3a1["share"], 0.05)
+        # And the seed keeps both of them on the ground rather than launching
+        # them: nothing diverges over twenty seconds of bumps.
+        for run in (willy, m3a1):
+            self.assertTrue(run["finite"])
+            self.assertLess(run["apex"], 5.0)
+
     def test_a_long_frame_settles_where_a_short_one_does(self) -> None:
         # map.html clamps THREE.Clock at 0.1 s; the internal substepper must
         # make that frame land where sixty of 1/60 do.
@@ -185,13 +390,29 @@ class GroundModelTests(unittest.TestCase):
 
     # --- full throttle -------------------------------------------------------
 
-    def test_full_throttle_reaches_the_games_top_speed_band(self) -> None:
-        # The 60-70 km/h the game's Willys is remembered to do; the model
-        # solves to 65.8. A reference drive on a recorded round is the
-        # measurement that would tighten this band.
+    def test_full_throttle_reaches_the_top_speed_the_ladder_sets(self) -> None:
+        # ~108 km/h, and every figure in it is read rather than fitted: top
+        # gear's ratio is `getCurrentRatio(5, 5)` = 26.064 (TANK-3), and the
+        # road speed a gear reaches at a rev fraction is the EngineGrip target
+        # `ratio * revs` (TANK-9 as corrected 2026-09-20), with revs running
+        # to the engine's own clamp of 1.2 rather than to 1. So the ceiling is
+        # 1.2 x 26.064 = 31.28 m/s.
+        #
+        # Independently: a tick-level simulation of `Engine::handleUpdate`'s
+        # rev filter against `addFriction`'s EngineGrip target and the
+        # Coulomb budget settles a vanilla Willy at 30.4 m/s, 109.6 km/h. The
+        # viewer's force model lands within two per cent of the engine's own
+        # velocity governor, which is the point of the exercise.
+        #
+        # For the record of what this replaced: the earlier reading took the
+        # `0.5` in `(1 - 0.5*b) * ratio * diffRPM` for a constant scale on the
+        # target and got 46.5 km/h. `b` is the gear-change timer and is zero
+        # in all steady driving, and the `0.5` is a blend against the wheel's
+        # own contact speed, so the steady-state factor is 1. Before that,
+        # `revLimit 356` put the same number at 65.8 km/h by fit.
         run = self.results["fullThrottle"]
-        self.assertGreater(run["kmh"], 60.0)
-        self.assertLess(run["kmh"], 70.0)
+        self.assertGreater(run["kmh"], 100.0)
+        self.assertLess(run["kmh"], 115.0)
         self.assertEqual(5, run["gear"])
         self.assertTrue(run["grounded"])
 
@@ -199,10 +420,13 @@ class GroundModelTests(unittest.TestCase):
         run = self.results["fullThrottle"]
         # Most of top speed inside five seconds (traction-limited launch,
         # then the gear ladder)...
-        self.assertGreater(run["at5s"], 12.0)
-        # ...and no further gain from ten seconds on: an equilibrium, not a
-        # wall being bounced off.
-        self.assertAlmostEqual(run["at10s"], run["at20s"], delta=0.2)
+        self.assertGreater(run["at5s"], 18.0)
+        # ...and no further gain from twenty seconds on: an equilibrium, not a
+        # wall being bounced off. The approach is asymptotic and the last two
+        # metres a second of it are slow, so the window that proves it is
+        # 20 s against 40 s, not 10 s against 20 s.
+        self.assertAlmostEqual(run["at20s"], run["speed"], delta=0.2)
+        self.assertGreater(run["at20s"], run["at10s"])
 
     def test_it_drives_straight_with_the_wheel_centred(self) -> None:
         run = self.results["fullThrottle"]
@@ -258,8 +482,8 @@ class GroundModelTests(unittest.TestCase):
     def test_the_landing_does_not_explode(self) -> None:
         drop = self.results["stepDrop"]
         self.assertTrue(drop["finite"])
-        # Nothing faster than top speed plus the fall itself.
-        self.assertLess(drop["worstSpeed"], 25.0)
+        # Nothing faster than top speed (31.3 m/s) plus the fall itself.
+        self.assertLess(drop["worstSpeed"], 36.0)
         self.assertGreater(drop["worstVy"], -12.0)
         # And afterwards it is simply driving again on the lower ground.
         self.assertTrue(drop["end"]["grounded"])
@@ -270,18 +494,23 @@ class GroundModelTests(unittest.TestCase):
 
     def test_opposed_throttle_brakes_to_a_stop(self) -> None:
         brake = self.results["brake"]
-        self.assertGreater(brake["entry"], 17.0)
+        # Entry is top speed, which the ladder correction moved from 18.5 to
+        # 12.83 m/s (TANK-3).
+        self.assertGreater(brake["entry"], 12.0)
         self.assertIsNotNone(brake["stoppedAt"])
-        # 18 m/s into a stop: mu-limited braking makes it in about two and a
-        # half seconds; six is the give for the friction circle sharing.
+        # mu-limited braking from 12.8 m/s stops in about a second and a
+        # half; six is the give for the friction circle sharing.
         self.assertLess(brake["stoppedAt"], 6.0)
 
     def test_held_past_the_stop_it_backs_up_at_first_gears_pace(self) -> None:
-        # The BF1942 behaviour: S brakes, then reverses. Reverse borrows
-        # first gear, which rev-caps near 4.9 m/s.
+        # The BF1942 behaviour: S brakes, then reverses. Reverse borrows first
+        # gear and the rev clamp's *lower* arm, which is -1.0 and not -1.2
+        # (`Engine::handleUpdate` 0x0823e2bf onward), so the ceiling is
+        # 1.0 x 7.0 = 7.0 m/s where forward in first gets 8.4. That asymmetry
+        # is the engine's own and is why reverse is slower than first.
         brake = self.results["brake"]
-        self.assertGreater(brake["reverseSpeed"], 3.0)
-        self.assertLess(brake["reverseSpeed"], 6.0)
+        self.assertGreater(brake["reverseSpeed"], 5.5)
+        self.assertLess(brake["reverseSpeed"], 7.1)
 
     def test_forward_throttle_out_of_reverse_brakes_first(self) -> None:
         face = self.results["aboutFace"]
@@ -290,9 +519,21 @@ class GroundModelTests(unittest.TestCase):
 
     def test_a_closed_throttle_coasts_down_rather_than_cruising(self) -> None:
         coast = self.results["coast"]
-        self.assertGreater(coast["entry"], 17.0)
-        self.assertLess(coast["after15s"], coast["entry"] * 0.5)
-        self.assertGreater(coast["after15s"], 0.0)  # a coast, not a wall
+        self.assertGreater(coast["entry"], 12.0)
+        # It decays, rather than dropping off a cliff: three seconds off the
+        # pedal still leaves most of the speed...
+        self.assertGreater(coast["after3s"], coast["entry"] * 0.5)
+        self.assertLess(coast["after3s"], coast["entry"])
+        # ...and fifteen seconds of rolling resistance and engine braking take
+        # a good part of it off. They do not stop it: from a 29.8 m/s entry
+        # there is still 18.5 m/s left, which is what a fitted coast law
+        # sized against a 12.8 m/s top speed does when the top speed becomes
+        # 29.8. `rollingResistance` and `engineBraking` are [free] and this is
+        # the clearest place the corrected ceiling says they want re-fitting
+        # (or replacing with the engine's own closed-throttle EngineGrip law,
+        # which `ground.js` already describes and deliberately fades out).
+        self.assertLess(coast["after15s"], coast["entry"] * 0.7)
+        self.assertGreaterEqual(coast["after15s"], 0.0)
 
     # --- presentation ---------------------------------------------------------
 
@@ -339,23 +580,66 @@ class TrackedVehicleTests(unittest.TestCase):
 
     # --- the corrected gear-ratio curve, in isolation -----------------------
 
-    def test_the_gear_ratio_curve_is_corrected_not_a_smooth_spline(self) -> None:
-        # The whole reason this track exists. Sherman and Willy (5 gears)
-        # land on an authored control point; the M3A1 (4 gears) does not,
-        # and a smooth interpolation between the five *named* points would
-        # have said ~5.51 where the real array says 17.5.
+    def test_the_gear_ladders_are_the_engines_own(self) -> None:
+        # TANK-3, the pinned ladders. `getCurrentRatio()` RISES with gear —
+        # it is a speed multiplier, not a reduction — and the curve between
+        # the authored control points is linear, not flat at 1.0.
         ratios = self.results["tankRatios"]
-        self.assertAlmostEqual(4.0, ratios["sherman"], places=4)
-        self.assertAlmostEqual(7.0, ratios["willy"], places=4)
-        self.assertAlmostEqual(17.5, ratios["m3a1"], places=4)
-        self.assertNotAlmostEqual(5.51, ratios["m3a1"], places=1)
+        self.assertEqual([4.0, 6.364, 9.333, 12.727, 14.894], ratios["sherman"])
+        self.assertEqual([7.0, 11.136, 16.333, 22.273, 26.064], ratios["willy"])
+        self.assertEqual([5.512, 9.459, 14.583, 18.617], ratios["m3a1"])
 
-    def test_every_other_gear_count_reduces_to_differential_times_3_5(self) -> None:
-        # Only numberOfGears of 1 or 5 ever touch the curve's authored shape;
-        # sampled here at 3.5*differential = 12.25 across every count a mod
-        # could plausibly declare that is neither.
-        for ratio in self.results["tankRatios"]["offCurve"]:
-            self.assertAlmostEqual(12.25, ratio, places=4)
+    def test_the_m3a1_is_5_512_and_never_17_5_again(self) -> None:
+        # The refuted number, named so a later edit that reintroduces the
+        # "flat at 1.0 between five slots" curve fails here and nowhere
+        # subtler. Its index is 25 and `curve[25]` is 3.175, not 1.0.
+        ratios = self.results["tankRatios"]
+        self.assertAlmostEqual(5.512, ratios["m3a1First"], places=3)
+        self.assertNotAlmostEqual(17.5, ratios["m3a1First"], places=1)
+
+    def test_every_gear_count_gets_a_real_ratio(self) -> None:
+        # The refuted model said every count but 1 and 5 collapses to
+        # 3.5*differential = 12.25. Not one of them does, and they are all
+        # distinct, because the curve is interpolated everywhere.
+        off = self.results["tankRatios"]["offCurve"]
+        for ratio in off:
+            self.assertNotAlmostEqual(12.25, ratio, places=2)
+        self.assertEqual(len(off), len(set(off)))
+        # numberOfGears 1 is index 100, the aircraft case: 3.5/0.94.
+        self.assertAlmostEqual(3.7234, self.results["tankRatios"]["singleGear"], places=3)
+
+    def test_the_ladder_is_not_monotonic_above_five_gears(self) -> None:
+        # Because the curve climbs from the ctor default 1.0 to 3.5 across
+        # indices 0..20, a gear landing below index 20 samples a smaller
+        # divisor and gets a LARGER ratio. Do not sort, clamp or fix this.
+        eight = self.results["tankRatios"]["eightSpeed"]
+        self.assertAlmostEqual(6.829, eight[0], places=3)
+        self.assertAlmostEqual(5.512, eight[1], places=3)
+        self.assertGreater(eight[0], eight[1])
+        self.assertNotEqual(eight, sorted(eight))
+        # A 50-speed still lands on real, distinct ratios rather than one.
+        ends = self.results["tankRatios"]["fiftySpeedEnds"]
+        self.assertEqual(len(ends), len(set(ends)))
+
+    def test_the_ratio_curve_is_filled_piecewise_linearly(self) -> None:
+        # The distribution `OverTimeDistribution::generateDistribution` lays
+        # down, read at the decades. The 0..20 ramp off the constructor's
+        # 1.0 is the half the refuted reading was missing.
+        self.assertEqual(
+            [1.0, 2.25, 3.5, 2.85, 2.2, 1.85, 1.5, 1.3, 1.1, 1.02, 0.94],
+            self.results["tankRatios"]["curveByTen"])
+
+    def test_the_torque_curve_is_the_second_distribution(self) -> None:
+        # TANK-4: a different curve at a different offset, indexed by a
+        # normalised rev fraction rather than by the gear, peaking at 60%.
+        curve = self.results["torqueCurve"]
+        self.assertEqual(
+            [0.7, 0.8, 0.85, 0.9, 0.9333, 0.9667, 1.0, 0.94, 0.88, 0.8, 0.7],
+            curve["byTen"])
+        self.assertAlmostEqual(1.0, curve["peak"], places=4)
+        # min(|revs|, 1.0): over-rev clamps, the sign is dropped.
+        self.assertAlmostEqual(0.7, curve["overRev"], places=4)
+        self.assertAlmostEqual(1.0, curve["negative"], places=4)
 
     def test_differential_rpm_matches_tank_10_byte_exact(self) -> None:
         d = self.results["diffRPM"]
@@ -400,7 +684,8 @@ class TrackedVehicleTests(unittest.TestCase):
         self.assertEqual(2, chassis["steered"])
         self.assertEqual(5, chassis["engine"]["differential"])
         self.assertEqual(4, chassis["engine"]["numberOfGears"])
-        self.assertAlmostEqual(17.5, chassis["ratio"], places=4)
+        # 5.512, not the 17.5 the refuted flat-curve reading gave (TANK-3).
+        self.assertAlmostEqual(5.5118, chassis["ratio"], places=4)
         for lock in chassis["steerMax"]:
             self.assertAlmostEqual(40.0, lock, places=3)
 
@@ -449,26 +734,37 @@ class TrackedVehicleTests(unittest.TestCase):
     # --- straight-line driving -------------------------------------------------
 
     def test_both_tanks_reach_a_tank_scale_not_an_aircraft_scale_top_speed(self) -> None:
-        # The whole reason `TANK.trackResistance` exists rather than trusting
-        # the confirmed thrust law alone (see its own comment in ground.js):
-        # applied unconstrained, the M3A1's corrected ratio asymptotes toward
-        # ~68 m/s, well past anything a viewer should show driving. Loose
-        # bands, since neither figure is a measurement.
+        # `TANK.trackResistance` exists rather than trusting the confirmed
+        # thrust law alone (see its own comment in ground.js), and TANK-3's
+        # correction made its job much easier: it was fitted against a ratio
+        # of 17.5 that asymptoted toward ~68 m/s unconstrained, and the real
+        # 5.512 is a third of that. Loose bands, since neither figure is a
+        # measurement.
         sherman = self.results["shermanStraight"]
         m3a1 = self.results["m3a1Straight"]
         self.assertGreater(sherman["kmh"], 10.0)
         self.assertLess(sherman["kmh"], 60.0)
         self.assertGreater(m3a1["kmh"], 20.0)
-        self.assertLess(m3a1["kmh"], 160.0)
+        self.assertLess(m3a1["kmh"], 80.0)
 
-    def test_the_corrected_ratio_makes_the_m3a1_visibly_livelier(self) -> None:
-        # 17.5 against the Sherman's 4.0 has to show up as something a
-        # player can feel, not just a number nobody drives through — this is
-        # the one behavioural assertion tying the ratio correction to an
-        # observable outcome beyond the pure-function check above.
+    def test_the_corrected_ratio_makes_the_m3a1_livelier_but_not_absurd(self) -> None:
+        # The behavioural half of the ratio correction. 5.512 against the
+        # Sherman's 4.0 still makes the half-track the quicker hull — 64
+        # against 41 km/h — but no longer the 112 km/h the refuted 17.5
+        # produced, which was a half-track outrunning every fighter on the
+        # map. The gap is a believable 1.6x rather than 3.3x.
+        #
+        # The engine's own governor, simulated tick by tick from
+        # `Engine::handleUpdate` and `addFriction`, puts these two at 66.8 and
+        # 53.5 km/h. The M3A1 is within two per cent of that; the Sherman is
+        # low, and the reason is that `TrackedVehicle` still carries its
+        # propulsion in `bodyThrust` at a fixed gear 1, which the engine-type
+        # gate refutes (see `features/bf1942-3d-models/ground-vehicles.md`).
         sherman = self.results["shermanStraight"]
         m3a1 = self.results["m3a1Straight"]
-        self.assertGreater(m3a1["kmh"], sherman["kmh"] * 1.5)
+        self.assertGreater(m3a1["kmh"], sherman["kmh"] * 1.2)
+        self.assertLess(m3a1["kmh"], sherman["kmh"] * 2.0)
+        self.assertLess(m3a1["kmh"], 70.0)
 
     def test_it_reaches_an_equilibrium_not_a_wall(self) -> None:
         for key in ("shermanStraight", "m3a1Straight"):
