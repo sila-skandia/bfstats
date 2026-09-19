@@ -496,6 +496,10 @@ class ObjectTemplate:
     # soldier, not where its geometry is centred — so bound parts are measured
     # against this bone rather than the root.
     skeleton_main: str | None = None
+    # `addSkeletonIK <bone> <pos_xyz> <rot_xyz>`: pins a bone to a node's
+    # world pose each frame (vehicle IK). Stores the declared bone name and
+    # the raw position/rotation deltas so a viewer can re-parent the hand.
+    skeleton_ik_bones: list[dict] = field(default_factory=list)
     # `setBoneName <bone>` — a KitPart's attachment point on the *wearer's*
     # skeleton. This is the whole of Refractor's kit-appearance channel: a
     # soldier's own template declares a body, a head and two hands and nothing
@@ -602,8 +606,11 @@ class ObjectTemplate:
     # the small class glyph at its foot (`<n>` kept as authored -- every
     # vanilla and mod use is one call per kit, and nothing in the data
     # establishes what the index selects between). `addWeaponIcon` is
-    # repeatable, one icon per carried item in declaration order -- the row
-    # the spawn screen paints under the kit portrait. Distinct from a hand
+    # repeatable, one icon per carried weapon in *slot* order -- the weapon
+    # bar row the game paints while a weapon is being selected, which is not
+    # the `addTemplate` declaration order (the vanilla US_Medic file declares
+    # Thompson, Colt, Knife, MedPack, Grenade but its icons run knife, colt,
+    # thompson, grenade, medpack; EoD's do the same). Distinct from a hand
     # weapon's own `setAmmoIcon` below (`hud_ammo_icon`): scanning every
     # installed mod's `Objects.rfa` for a command carrying a `Weapon/Icon_*`
     # picture turned up only this one word, and it lives on the Kit, never on
@@ -666,6 +673,10 @@ class ObjectTemplate:
     dist_to_min_damage: float | None = None
     explosion_radius: float | None = None
     material2: int | None = None
+    # `damageType 1` is the splash/HE pass (`Game::handleCollisionForProjectile`);
+    # default 0 is direct-only. Engine template default for `radius` is 10 when
+    # the `.con` omits it — see projectiles-and-impacts.md.
+    damage_type: int | None = None
     end_effect_template: str | None = None
     # `setEngineType c_ETRocket` marks an Engine that accelerates its parent
     # after launch (the Katyusha rocket's motor), vs. propellers and wheels.
@@ -1427,6 +1438,26 @@ class ObjectLibrary:
                     obj.skeleton = args.split()[0] if args else None
                 elif cmd == "useskeletonpartasmain":
                     obj.skeleton_main = args.split()[0] if args else None
+                elif cmd == "addskeletonik":
+                    # addSkeletonIK <bone> <pos_x/pos_y/pos_z> <rot_x/rot_y/rot_z>
+                    # Pins a skeleton bone to a vehicle node's world pose.
+                    # Position and rotation are in the declaring object's local
+                    # frame.  The bone name carries underscores for spaces
+                    # ("Bip01_R_Hand" → "Bip01 R Hand") and trailing whitespace
+                    # is stripped — matching the same loose rules as
+                    # bindToSkeletonPart.
+                    parts = args.split() if args else []
+                    if len(parts) >= 3:
+                        bone = parts[0].replace("_", " ").strip()
+                        def _xyz(s: str) -> tuple[float, ...]:
+                            return tuple(float(v) for v in s.split("/"))
+                        try:
+                            pos = _xyz(parts[1])
+                            rot = _xyz(parts[2])
+                        except (ValueError, IndexError):
+                            continue
+                        obj.skeleton_ik_bones.append(
+                            {"bone": bone, "position": pos, "rotation": rot})
                 elif cmd in ("createinvisible", "invisible"):
                     # `createInvisible` hides a placed object; `invisible 1` on
                     # a Projectile is the engine's own "never draw the body"
@@ -1737,13 +1768,15 @@ class ObjectLibrary:
                             "relativepositionindof": "relative_position_in_dof",
                         }[cmd], value)
                 elif cmd in ("mindamage", "disttostartlosedamage", "disttomindamage",
-                             "radius", "material2"):
+                             "radius", "material2", "damagetype"):
                     try:
                         value = float(args.split()[0])
                     except (ValueError, IndexError):
                         continue
                     if cmd == "material2":
                         obj.material2 = int(value)
+                    elif cmd == "damagetype":
+                        obj.damage_type = int(value)
                     else:
                         setattr(obj, {
                             "mindamage": "min_damage",
