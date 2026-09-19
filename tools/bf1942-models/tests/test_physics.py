@@ -209,9 +209,10 @@ class PhysicsModuleTests(unittest.TestCase):
     # --- a body that walks -------------------------------------------------
 
     def test_a_walking_body_moves_at_the_table_speed(self) -> None:
-        # A second of held input over flat ground, in metres. The shortfall in
-        # the last digit is the soldier's own drag 1.0, which is real.
-        speeds = self.results["walkSpeeds"]
+        # A second of held input over flat ground once the movement ramp has
+        # saturated, in metres. The shortfall in the last digit is the
+        # soldier's own drag 1.0, which is real.
+        speeds = self.results["topSpeeds"]
         self.assertAlmostEqual(6.0, speeds["standForward"], places=2)
         self.assertAlmostEqual(4.0, speeds["standBack"], places=2)
         self.assertAlmostEqual(4.0, speeds["standStrafe"], places=2)
@@ -220,19 +221,101 @@ class PhysicsModuleTests(unittest.TestCase):
         self.assertAlmostEqual(2.0, speeds["crouchStrafe"], places=2)
         self.assertAlmostEqual(1.0, speeds["proneForward"], places=2)
 
+    def test_the_first_second_is_short_by_exactly_the_ramp(self) -> None:
+        # PHY-6: a soldier does not reach the table on the frame he presses the
+        # key. The register climbs 10 a tick at 60 Hz and clamps at 127, so the
+        # first second covers less than the table speed by the area under the
+        # ramp -- sum(1 - state_k / 127) ticks' worth of it.
+        ramp = self.results["ramp"]
+        step = ramp["accel"] * ramp["engineRate"] / 60.0
+        deficit_ticks = sum(
+            1.0 - min(step * k, ramp["limit"]) / ramp["limit"]
+            for k in range(1, 1 + int(self.results["ramp"]["timing"][1]["upTicks"]))
+        )
+        for key, table in (("standForward", 6.0), ("standBack", 4.0),
+                           ("standStrafe", 4.0), ("proneForward", 1.0)):
+            first = self.results["walkSpeeds"][key]
+            top = self.results["topSpeeds"][key]
+            predicted = table * deficit_ticks / 60.0
+            self.assertAlmostEqual(predicted, top - first, places=2, msg=key)
+            # And it really is a shortfall, not a rounding wobble.
+            self.assertLess(first, top, key)
+
     def test_a_diagonal_does_not_beat_the_table(self) -> None:
         # Forward 6 and strafe 4 summed would be 7.2 m/s, faster than anything
         # the engine's tables allow. The resultant is capped at the larger.
-        self.assertAlmostEqual(6.0, self.results["walkSpeeds"]["diagonal"], places=2)
+        self.assertAlmostEqual(6.0, self.results["topSpeeds"]["diagonal"], places=2)
 
     def test_the_body_walks_where_it_is_facing(self) -> None:
-        # Yaw 0 faces +Z, matching the viewer's own look vector.
+        # Yaw 0 faces +Z, matching the viewer's own look vector. The distance
+        # is a ramped first second (see the ramp test); the axis is the point.
+        forward_first_second = self.results["walkSpeeds"]["standForward"]
         east = self.results["walkHeading"]
-        self.assertAlmostEqual(6.0, east["dx"], places=2)
+        self.assertAlmostEqual(forward_first_second, east["dx"], places=6)
         self.assertAlmostEqual(0.0, east["dz"], places=4)
         south = self.results["walkHeadingPi"]
         self.assertAlmostEqual(0.0, south["dx"], places=4)
-        self.assertAlmostEqual(-6.0, south["dz"], places=2)
+        self.assertAlmostEqual(-forward_first_second, south["dz"], places=6)
+
+    # --- the ramp that reaches those tables (PHY-6) ------------------------
+
+    def test_the_ramp_constants_are_the_engines(self) -> None:
+        ramp = self.results["ramp"]
+        # lnxded 0x0872ee14 and 0x0872ee18, movsx'd by both call sites.
+        self.assertEqual(20, ramp["accel"])
+        self.assertEqual(12, ramp["decel"])
+        self.assertEqual(127, ramp["limit"])
+        self.assertEqual(30, ramp["engineRate"])
+        self.assertAlmostEqual(1.0 / 127.0, ramp["scale"], places=15)
+        # 127/20 and 127/12 ticks at 30 Hz.
+        self.assertAlmostEqual(0.2117, ramp["nominalToFull"], places=4)
+        self.assertAlmostEqual(0.3528, ramp["nominalToStop"], places=4)
+
+    def test_at_the_engines_own_rate_the_ramp_walks_the_integer_ladder(self) -> None:
+        # The whole point of carrying the register as a rate: at dt = 1/30 the
+        # float arithmetic has to land on the engine's signed-byte sequence
+        # exactly, or the rate scaling is wrong.
+        ramp = self.results["ramp"]
+        self.assertEqual([20, 40, 60, 80, 100, 120, 127, 127, 127], ramp["up30"])
+        self.assertEqual([115, 103, 91, 79, 67, 55, 43, 31, 19, 7, 0, 0],
+                         ramp["down30"])
+
+    def test_a_reversal_snaps_the_register_through_zero(self) -> None:
+        # `max(min(state, 0) - accel, -127)`: from a saturated +127 one
+        # backward tick gives -20, not +107. A reversal costs one ramp-up, not
+        # a ramp-down and a ramp-up.
+        self.assertEqual(-20, self.results["ramp"]["reversal30"])
+
+    def test_the_ramp_keeps_its_wall_clock_at_every_tick_rate(self) -> None:
+        # The discretisation gives with the rate; the time constants must not.
+        for timing in self.results["ramp"]["timing"]:
+            self.assertAlmostEqual(0.212, timing["up"], delta=0.025, msg=timing)
+            self.assertAlmostEqual(0.353, timing["down"], delta=0.015, msg=timing)
+        by_rate = {t["rate"]: t for t in self.results["ramp"]["timing"]}
+        # At 30 Hz the ladder needs 7 whole ticks up and 11 down.
+        self.assertEqual(7, by_rate[30]["upTicks"])
+        self.assertEqual(11, by_rate[30]["downTicks"])
+
+    def test_the_table_slot_comes_from_the_ramp_not_the_input(self) -> None:
+        # 0x082747e0 `cmp BYTE [ecx+0x58d],0; setle` -- the row is chosen by
+        # the register's sign, so releasing W does not drop a still-coasting
+        # soldier onto the backward row.
+        slots = self.results["rampChoosesTheSlot"]
+        self.assertAlmostEqual(6.0, slots["forwardAtFullRamp"], places=6)
+        self.assertAlmostEqual(-4.0, slots["backAtFullRamp"], places=6)
+        # The register scales the table linearly.
+        self.assertAlmostEqual(3.0, slots["forwardAtHalf"], places=6)
+        self.assertAlmostEqual(0.0, slots["atZero"], places=6)
+        # walkSpeedFactor 1/3, off the same row.
+        self.assertAlmostEqual(2.0, slots["walkingAtFull"], places=6)
+        # strafeSpeed is indexed by pose alone -- no forward/back row.
+        self.assertAlmostEqual(4.0, slots["strafeAtFull"], places=6)
+
+    def test_the_ramp_reads_only_the_sign_of_the_input(self) -> None:
+        # There is no analogue term: a quarter-pressed axis ramps at 20 too.
+        signs = self.results["rampReadsTheSignOnly"]
+        self.assertEqual(signs["full"], signs["quarter"])
+        self.assertEqual(-signs["full"], signs["negative"])
 
     def test_a_dropped_body_lands_on_the_heightfield_and_stops(self) -> None:
         landed = self.results["landsOnTerrain"]
@@ -266,10 +349,11 @@ class PhysicsModuleTests(unittest.TestCase):
 
     def test_a_body_slides_along_a_wall_it_hits_at_an_angle(self) -> None:
         # 45 degrees into a wall at 6 m/s for two seconds: blocked in x, and the
-        # along-wall component (6/sqrt(2) = 4.24 m/s) carried it 8.5 m in z.
+        # along-wall component (6/sqrt(2) = 4.24 m/s) carries it up the face.
+        # Short of the full 8.49 m by the movement ramp's first 0.22 s.
         slide = self.results["slidesAlongTheWall"]
         self.assertLess(slide["x"], 8.0)
-        self.assertAlmostEqual(8.49, slide["movedAlong"], places=1)
+        self.assertAlmostEqual(8.07, slide["movedAlong"], places=1)
 
     def test_a_body_steps_onto_a_kerb_but_not_over_a_wall(self) -> None:
         kerb = self.results["stepsOntoAKerb"]
@@ -280,16 +364,164 @@ class PhysicsModuleTests(unittest.TestCase):
         self.assertLess(blocked["x"], 8.0)
         self.assertAlmostEqual(0.0, blocked["y"], places=6)
 
-    def test_a_jump_leaves_the_ground_and_comes_back(self) -> None:
-        # The jump *speed* is a tunable and is labelled as one in the module.
-        # What is asserted here is that the arc it produces is the arc this
-        # gravity gives it, which is the part that is not a guess.
-        jump = self.results["jump"]
-        self.assertGreater(jump["apex"], 0.5)
-        self.assertLess(abs(jump["apex"] - jump["predicted"]), 0.05)
-        self.assertGreater(jump["airborne"], 30)
+    # --- the jump (PHY-1) --------------------------------------------------
+
+    def test_the_jump_constants_are_read_not_fitted(self) -> None:
+        c = self.results["constants"]
+        # 0x008eb25c / 0x086d271c, raw 40c00000.
+        self.assertEqual(6.0, c["jumpImpulse"])
+        # 0x008d5c04 / 0x086c08ac.
+        self.assertEqual(0.25, c["jumpCommandKick"])
+        # 0x008c53cc / 0x086b1ca0 -- the only slope threshold in soldier
+        # movement, and nothing like `MAX_GROUND_SLOPE`.
+        self.assertEqual(0.1, c["jumpContactNormalY"])
+        # 0x086ba8cc, and deliberately not multiplied by g_simulationFps.
+        self.assertEqual(0.75, c["locomotionGain"])
+
+    def test_the_jump_arc_at_the_engines_own_rate_is_the_ledgers(self) -> None:
+        # **The parity assertion.** PHY-1 records a 1.12 m apex and 0.80 s of
+        # air from the engine's four sub-steps of dt/4 at 30 Hz. Those figures
+        # come out only if the impulse is added to the acceleration
+        # accumulator beside gravity: a `v.y = 6.0` velocity set skips
+        # gravity's share of the jump tick and peaks at 1.197 m instead.
+        jump = self.results["jump30"]
+        self.assertAlmostEqual(1.12, jump["apex"], delta=0.01)
+        self.assertAlmostEqual(0.80, jump["airTime"], delta=0.04)
         self.assertTrue(jump["landed"])
         self.assertAlmostEqual(0.0, jump["y"], places=6)
+        # And it is NOT the continuum answer -- that is 1.222 m, 9% higher.
+        self.assertLess(jump["apex"], jump["continuumApex"] - 0.08)
+
+    def test_a_jump_leaves_the_ground_and_comes_back(self) -> None:
+        # The viewer's own 60 Hz step. A finer sub-step integrates nearer the
+        # continuum, so the apex sits between the engine's 1.12 and the
+        # closed-form 1.222 -- the same rate divergence the module header owns.
+        jump = self.results["jump"]
+        self.assertAlmostEqual(1.166, jump["apex"], delta=0.01)
+        self.assertGreater(jump["apex"], self.results["jump30"]["apex"])
+        self.assertLess(jump["apex"], jump["continuumApex"])
+        self.assertAlmostEqual(0.80, jump["airTime"], delta=0.04)
+        self.assertTrue(jump["landed"])
+        self.assertAlmostEqual(0.0, jump["y"], places=6)
+
+    def test_the_jump_kicks_a_quarter_of_the_command_backwards(self) -> None:
+        # The `-0.25 * vCmd` lands on the *velocity*, so a soldier at a full
+        # 6 m/s leaves the ground at 4.5. Writing it as `vCmd *= 0.75` is the
+        # refuted form; this asserts the ratio the real one produces.
+        run = self.results["runningJump"]
+        self.assertAlmostEqual(0.75, run["fraction"], places=3)
+        self.assertAlmostEqual(4.5, run["after"], delta=0.02)
+        # And then the airborne locomotion force claws it back and more: a
+        # running jump lands faster than a run, which is retail's behaviour.
+        self.assertGreater(run["airPeak"], run["before"])
+        self.assertAlmostEqual(8.0, run["airPeak"], delta=0.2)
+
+    def test_a_ten_centimetre_wall_is_solid_from_either_side(self) -> None:
+        # `sweepCapsule` now skips contacts the motion is travelling away
+        # from. The question that buys is whether anything that could have
+        # stopped the body got dropped with them, and the answer has to hold
+        # for a body that starts *overlapping* the geometry -- a fence, a
+        # hangar door, or the spot beside a vehicle that `exitVehicle` puts
+        # you down on without checking.
+        wall = self.results["thinWall"]
+        near, far = wall["bounds"]
+        radius = wall["radius"]
+        # A clean run-up parks one radius short, on the near side.
+        self.assertAlmostEqual(near - radius, wall["runUp"]["x"], delta=0.02)
+        # Starting 5 cm inside the near face: it does not advance, and above
+        # all it does not come out the far side.
+        self.assertLess(wall["fromInsideNear"]["x"], near)
+        # Put down dead centre in the wall and told to walk into it: still on
+        # the near side of the far face. (It cannot walk out along X either --
+        # both faces block, one each way -- which is a pre-existing property
+        # of a wall thinner than the body, not something the skip changed. It
+        # can always slide out along the wall.)
+        self.assertLess(wall["fromDeadCentre"]["x"], far)
+        # And the mirror.
+        self.assertGreater(wall["fromInsideFar"]["x"], near)
+        for case in ("runUp", "fromInsideNear", "fromDeadCentre", "fromInsideFar"):
+            self.assertTrue(wall[case]["grounded"], msg=case)
+            self.assertLess(wall[case]["speed"], 6.1, msg=case)
+            self.assertAlmostEqual(0.0, wall[case]["y"], places=6, msg=case)
+
+    def test_an_inside_corner_settles_instead_of_shuttling(self) -> None:
+        # Two faces at right angles, walked into at 45 degrees. The push-out
+        # from one moves the body along the other, which is exactly the shape
+        # that can shuttle between them forever -- so the assertion is that
+        # the last ten ticks do not move at all, and that nothing was climbed
+        # or launched on the way in.
+        corner = self.results["insideCorner"]
+        self.assertAlmostEqual(0.0, corner["wanderX"], places=4)
+        self.assertAlmostEqual(0.0, corner["wanderZ"], places=4)
+        self.assertAlmostEqual(0.0, corner["maxY"], places=6)
+        self.assertLessEqual(corner["peakSpeed"], 6.0)
+        self.assertTrue(corner["grounded"])
+        # One radius plus the skin off each face, which is where a body that
+        # resolved both contacts belongs.
+        self.assertAlmostEqual(19.69, corner["x"], delta=0.02)
+        self.assertAlmostEqual(-12.31, corner["z"], delta=0.02)
+
+    def test_jumping_into_a_wall_kicks_the_body_off_it(self) -> None:
+        # The same rule where it actually bites. A soldier pressed into a wall
+        # has a velocity of ~0 (the resolver strips it every tick) and a
+        # command of a full 6 m/s into the wall, so the engine's
+        # `-0.25 * vCmd` is 1.5 m/s *backward, off the wall*. Anything that
+        # reads the kick off the command instead of the velocity -- including
+        # assigning `v = vCmd` first and then kicking, which looks innocent --
+        # sends him 4.5 m/s *into* the wall, the resolver eats it, and he rises
+        # straight up still touching it. The sign is the test.
+        wall = self.results["jumpOffAWall"]
+        self.assertEqual(127, wall["pressed"]["ramp"])       # command saturated
+        self.assertAlmostEqual(0.0, wall["pressed"]["vx"], places=6)  # velocity not
+        self.assertGreaterEqual(wall["pressed"]["contacts"], 1)
+        self.assertAlmostEqual(-1.5, wall["awayX"], places=3)
+        self.assertGreater(wall["vy"], 5.0)
+        self.assertFalse(wall["grounded"])
+
+    def test_the_open_ground_jump_is_untouched_by_that_ordering(self) -> None:
+        # Every measured figure in the report comes from an unblocked runner,
+        # whose velocity already equals his command when the tick begins. The
+        # ordering must be invisible there: 6.0 still becomes 4.5.
+        run = self.results["jumpInTheOpen"]
+        self.assertAlmostEqual(0.75, run["ratio"], places=3)
+        self.assertAlmostEqual(4.5, run["after"], delta=0.02)
+
+    def test_air_control_is_the_engines_acceleration_not_a_lerp(self) -> None:
+        # PHY-6's `0.75 * vCmd` with no `* 30`: at a 6 m/s command that is
+        # 4.5 m/s^2, so the horizontal speed climbs linearly instead of
+        # snapping to the table. The first sample is still inside the ramp.
+        air = self.results["airControl"]
+        self.assertAlmostEqual(4.5, air["predictedAccel"], places=6)
+        samples = air["samples"]
+        self.assertEqual(3, len(samples))
+        # Between the second and third samples the ramp is saturated and the
+        # slope must be the predicted acceleration, bar a little drag.
+        dt = samples[2]["t"] - samples[1]["t"]
+        slope = (samples[2]["speed"] - samples[1]["speed"]) / dt
+        self.assertAlmostEqual(4.5, slope, delta=0.1)
+        # Nowhere near the table speed after a third of a second, which an
+        # `AIR_CONTROL` lerp of 0.35 a tick would have been.
+        self.assertLess(samples[0]["speed"], 2.0)
+
+    def test_the_jump_gate_is_a_contact_normal_and_not_the_slope_limit(self) -> None:
+        gate = self.results["jumpGate"]
+        self.assertEqual(0.1, gate["threshold"])
+        # The engine's gate is five times more permissive than the viewer's
+        # own walk-slope choice, and that gap is the behaviour under test.
+        self.assertLess(gate["threshold"], gate["maxGroundSlope"])
+        self.assertTrue(gate["flat"]["armed"])
+        # 80 degrees: normal.y = 0.174, past cos(60) but over 0.1.
+        self.assertTrue(gate["steep"]["armed"])
+        self.assertLess(gate["steep"]["ny"], gate["maxGroundSlope"])
+        # 87 degrees: normal.y = 0.052, under it.
+        self.assertFalse(gate["tooSteep"]["armed"])
+        # Flat, but material 1 is Water.
+        self.assertFalse(gate["water"]["armed"])
+
+    def test_a_body_standing_on_water_cannot_jump(self) -> None:
+        sea = self.results["cannotJumpOffWater"]
+        self.assertFalse(sea["armed"])
+        self.assertAlmostEqual(0.0, sea["rose"], places=6)
 
     def test_a_prone_body_does_not_jump(self) -> None:
         self.assertTrue(self.results["proneDoesNotJump"])
