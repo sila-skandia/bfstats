@@ -196,10 +196,54 @@ recording once: in vanilla exactly two materials are not their own group —
 **120 → 119** and **166 → 165** — and neither is a splash attacker or any kind
 of armour.
 
+## Sound: the other half of a bundle (2026-09-20)
+
+An effect bundle in this engine is a picture **and** a sound, and until this
+round the viewer played only the picture. It now plays both. Full survey,
+byte cost and the playback rules are in
+[`map-sounds.md`](map-sounds.md#2026-09-20-an-effect-that-plays-also-sounds);
+what belongs here is what it means for the impact table.
+
+| | |
+|---|---|
+| impact bundles in `damage.json`'s effects matrix | **73**, of which **70** carry an `ObjectTemplate.loadSoundScript` |
+| …whose script is on a **nested child**, not the named bundle | **22** — `RichoStoneDecal` defers to the `e_richoStone` it wraps |
+| …whose tree carries **two** scripts, neither on the parent | **10** across the whole named set — `MajorImpact_Sand` is `e_Explani02` (the blast) + `e_ExplDrySand` (the rain of sand) |
+| distinct `.ssc` behind those 70 | **38** |
+| the three with no script anywhere in their tree | `e_ExplWater01`, `e_RichoPHeavy`, `e_richoPHeavy` |
+
+The nesting is the finding. `bf42.effects.bundle_sound_scripts` walks the
+`addTemplate` tree depth-first and resolves each path against the **owner's**
+own `.con`; reading only the named template's `sound_script` finds 48 of the
+70 and silences every ricochet-that-leaves-a-decal, every cascade and both
+water explosions. The composites are exactly the bundles the material table
+names most often — and a composite can be composite twice over: the six
+`*Cascades*` bundles, the three `MajorImpact_*` and `WaterExplosionTorpedo`
+each hang two sounding children off one parent, and the engine, which
+instantiates both, plays both. Stopping at the first was a blast with its
+debris rain missing (corrected 2026-09-20).
+
+The thirteen bundles `extract_effects.py` reports as **missing** are not all
+missing. Nine of them are pure-sound bundles that bake no geometry because
+they have none: `e_collision_Soldier` (a round hitting a man — 2 patches,
+12 alternates), the four `e_Collision_Granade_*` (a grenade bouncing off
+concrete, metal, sand or wood), the two `e_Collision_Debrie_*` (falling
+rubble landing), `e_Collision_ship` (two hulls grinding) and
+`e_waterBoatSink`. The bake's "missing" list should be read as "no geometry",
+not "not found".
+
+Two shipped authoring bugs, both left as they are rather than guessed at:
+`e_RichoGrass` binds `Sounds/richoSand.ssc` and ships `Richograss.ssc`;
+`e_waterBoatSinkSmall` binds `Sounds/e_waterBoatSinkef.ssc` and the file is
+in a **sibling** directory (`e_waterBoatSinkEf/Sounds/`). Both resolve to
+nothing, in this reader and — **UNVERIFIED** — presumably in the engine, which
+would make `e_RichoGrass` (22 references in the damage tables) silent in the
+real game too. A third, `e_ExplWindow`, resolves its script and finds no
+sample: every `load` in it is inside a `/* */` block, which by SSC-1..SSC-5 is
+a skipped region, so it is correctly silent.
+
 ## Still missing
 
-- **Sound.** Most bundles carry `loadSoundScript`; nothing plays. Same block
-  as before: the samples are not extracted.
 - **A soldier's exposure.** `splashDamage` takes the term and every caller
   passes 1, so a man in cover takes full splash here where the engine would
   give him some or all of it back. It needs per-limb soldier volumes and a ray
