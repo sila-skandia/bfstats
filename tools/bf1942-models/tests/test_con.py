@@ -93,6 +93,30 @@ ObjectTemplate.addSkeletonIK Bip01_R_Hand 2/0/0 10/0/0
         self.assertEqual((2.0, 0.0, 0.0), entries[0]["position"])
         self.assertEqual((10.0, 0.0, 0.0), entries[0]["rotation"])
 
+    def test_a_repeat_declaration_keeps_the_first_target_child(self) -> None:
+        # The overwrite branch (0x8266e1a) writes only `slot+0x0c` (the Vec3)
+        # and `slot+0x18` (the Mat4). It never reaches the `getNoTemplates()`
+        # call at 0x8266d98, so `slot+0x04` keeps whatever the *first*
+        # declaration measured from -- even though children were added in
+        # between. FHSW's `Hotchkiss` is the real case: the same two lines
+        # appear before any child and again after two.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Test/Objects.con",
+            """
+ObjectTemplate.create AnimatedBundle Hotchkiss
+ObjectTemplate.addSkeletonIK Bip01_R_Hand 0.04/-0.03/-0.47 0/80/90
+ObjectTemplate.addTemplate e_MuzzHeavyLight
+ObjectTemplate.setPosition 0/0.14/0.87
+ObjectTemplate.addTemplate e_shell792mm
+ObjectTemplate.setPosition 0.07/0.12/0.27
+ObjectTemplate.addSkeletonIK Bip01_R_Hand 0.04/-0.03/-0.47 0/80/90
+""",
+        )
+        entries = library.object("Hotchkiss").skeleton_ik_bones
+        self.assertEqual(1, len(entries))
+        self.assertEqual(-1, entries[0]["targetChild"])
+
     def test_argumentless_command_does_not_consume_geometry_declaration(self) -> None:
         library = ObjectLibrary()
         library.add_con(
