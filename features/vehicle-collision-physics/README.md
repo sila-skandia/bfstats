@@ -151,8 +151,16 @@ in is levelled out by `flight.js`'s ground clamp instead of tumbling, so it
 survives what the game would finish off); parked bodies against static
 buildings; tanks never quite fall asleep on a slope (they creep a few
 centimetres a minute); the soldier is not yet a body, so being run over is
-still the old code; mods need their own `collision-meshes.json`
-(`extract_collision_meshes.py --mod <Mod>`).
+still the old code.
+
+**Assets.** A mod's levels look for `collision-meshes.json` beside that mod's
+own `damage.json`, and without one its vehicles stay the fixed hulls they were.
+Baked and published 2026-09-20 for vanilla (1.3 MB), The Road to Rome (1.5 MB),
+Secret Weapons (1.7 MB) and Eve of Destruction (5.1 MB); a newly extracted mod needs
+`extract_collision_meshes.py --mod <Mod> --out viewer/maps/mods/<mod>/_shared`,
+which takes seconds. The refreshed `damage.json` (45 cells differ, elasticity
+and resistance added) is backward compatible: the old one still works, with
+0 / 0.01 standing in for the missing pair.
 
 ## For the implementation round (as planned on 2026-09-19)
 
