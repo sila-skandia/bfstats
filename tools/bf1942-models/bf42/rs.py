@@ -29,7 +29,7 @@ _BLOCK_START = re.compile(r'\b(sub)?shader\s+"([^"]+)"(?:\s+"([^"]+)")?\s*\{', r
 _TEXTURE = re.compile(r'\btexture\s+"([^"]+)"', re.IGNORECASE)
 # `lightingSpecular true;` does not match: `\blighting` needs whitespace after
 # it, and that line has none.
-_BOOL = re.compile(r'\b(twosided|transparent|lighting|textureFade)\s+(true|false)\s*;',
+_BOOL = re.compile(r'\b(twosided|transparent|lighting|textureFade|envmap)\s+(true|false)\s*;',
                    re.IGNORECASE)
 _ALPHATEST = re.compile(r'\balphaTest\s+(\w+)\s+([0-9.]+)\s*;', re.IGNORECASE)
 # The other spelling, and the commoner one inside `standardMesh/*.rs`:
@@ -60,6 +60,11 @@ class Shader:
     # opening; at range it fades in and the opening reads as solid dark.
     # Exported opaque it is the "black door" bug.
     texture_fade: bool = False
+    # `envmap true;` — the surface reflects the environment (cubemap). Declared
+    # on 435 vanilla materials (all aircraft painted metal, plus glass canopies
+    # and vehicle windows). The census found only the bare `envmap true;` form;
+    # no envColor, intensity, or stage context variations exist in vanilla.
+    envmap: bool = False
     alpha_test: float | None = None
     blend_src: str | None = None
     blend_dest: str | None = None
@@ -122,7 +127,11 @@ def parse(text: str) -> dict[str, Shader]:
             textures=[t.replace("\\", "/") for t in _TEXTURE.findall(body)],
         )
         for flag, value in _BOOL.findall(body):
-            attr = "texture_fade" if flag.lower() == "texturefade" else flag.lower()
+            flag_lower = flag.lower()
+            if flag_lower == "texturefade":
+                attr = "texture_fade"
+            else:
+                attr = flag_lower
             setattr(shader, attr, value.lower() == "true")
         if at := _ALPHATEST.search(body):
             shader.alpha_test = float(at.group(2))
