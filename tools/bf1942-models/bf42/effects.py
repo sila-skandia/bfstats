@@ -416,3 +416,120 @@ def projectile_trail_bundle(library: con_mod.ObjectLibrary,
         if child is not None and child.kind.lower() == "effectbundle":
             return child.name
     return None
+
+
+# --- the sound half of a bundle -------------------------------------------
+#
+# An impact in this engine is a bundle, and a bundle's noise is one
+# `ObjectTemplate.loadSoundScript` binding. Two measurements decided the shape
+# of everything below; both reproduce from
+# `features/bf1942-3d-models/impact-effects.md`'s survey commands.
+#
+# 1. **The script is on the EffectBundle, never on the emitter.** 2,419
+#    EffectBundle bindings against 2 Emitter bindings across all 18 installed
+#    mods (the two are FH/FHSW one-offs). So there is nothing to gather from
+#    the emitter or particle level and no per-emitter mixing to model: a
+#    bundle plays one script.
+#
+# 2. **But it is often on a bundle the material table never names.** 22 of
+#    vanilla's 70 sounding impact bundles carry no script of their own and
+#    inherit it from a nested child — `RichoStoneDecal` is
+#    `addTemplate e_richoStone` + a decal emitter, and it is `e_richoStone`
+#    that owns `richostone.ssc`. Reading only the named template's own
+#    `sound_script` finds 48 of the 70 and silences every ricochet-with-decal,
+#    every cascade and both water explosions. So the lookup walks the tree.
+
+
+def bundle_sound_script(library: con_mod.ObjectLibrary, name: str, *,
+                        depth: int = 0,
+                        seen: set[str] | None = None
+                        ) -> tuple[str, str, int] | None:
+    """`(script path relative to the archive root, owner template, depth)`.
+
+    Depth-first in `addTemplate` order, which is the order the engine builds
+    the bundle in, so a composite that declares its own script keeps it and
+    one that does not takes its first child's. Nothing in vanilla has two
+    scripts in one tree; `owner` is emitted so the case can be spotted rather
+    than guessed at.
+
+    The path is resolved against the *owner's* own `.con`, not the named
+    bundle's — `RichoStoneDecal` lives in `Objects/Effects/RichoStoneDecal`
+    and `e_richoStone` in `Objects/Effects/e_RichoStone`, and the binding
+    `Sounds/richostone.ssc` is relative to the latter.
+    """
+    from .level import resolve_ssc_path
+
+    seen = seen if seen is not None else set()
+    key = (name or "").lower()
+    if not key or key in seen or depth > 6:
+        return None
+    seen.add(key)
+    template = library.object(name)
+    if template is None:
+        return None
+    if template.sound_script:
+        return (resolve_ssc_path(template.source, template.sound_script),
+                template.name, depth)
+    for ref in template.children:
+        found = bundle_sound_script(library, ref.template,
+                                    depth=depth + 1, seen=seen)
+        if found is not None:
+            return found
+    return None
+
+
+def sound_layers(patches, resolve, write) -> list[dict]:
+    """One parsed `.ssc`'s samples as the viewer's layer dicts.
+
+    The same dict `extract_map._sound_layers` emits for an engine or a gun,
+    plus the two fields a one-shot event patch needs and a continuous one
+    does not:
+
+    * **`patch`** — which `newPatch` the layer belongs to. An engine patch is
+      read as one flat stack because it is one; an effect script is not.
+      `e_Collision_Soldier.ssc` is two patches of six alternates, and without
+      the index there is no way to tell "six alternates of one event" from
+      "twelve layers of one sound".
+    * **`randomPlay`** — the patch's own `randomPlay 1`, stamped onto each of
+      its layers so the viewer needs no second table. It means *pick one*:
+      244 vanilla `.ssc` files say it and 114 of the 136 EffectBundle patches
+      do. Played as layers instead of alternates, a 12-alternate ricochet is
+      twelve simultaneous cracks — a wall of noise where the engine plays one
+      crack.
+
+    `resolve` turns a `.ssc` `load` reference into `(basename, wav bytes)`;
+    `write` turns that into the path the viewer fetches. Both are the
+    caller's, so this function neither opens an archive nor writes a file and
+    the map pipeline's own dedup and transcode are reused unchanged.
+    """
+    layers: list[dict] = []
+    for index, patch in enumerate(patches):
+        for sample in patch.samples:
+            resolved = resolve(sample.file)
+            if resolved is None:
+                continue
+            layers.append({
+                "file": write(resolved),
+                "patch": index,
+                "randomPlay": bool(patch.random_play),
+                "loop": sample.loop,
+                "volume": sample.volume,
+                "minDistance": sample.min_distance,
+                "priority": sample.priority,
+                "trigger": sample.trigger or None,
+                "stop": sample.stop or None,
+                "stereo": sample.stereo,
+                "doppler": not sample.doppler_off,
+                "randomStartPitch": (list(sample.random_start_pitch)
+                                     if sample.random_start_pitch else None),
+                "relativePosition": (list(sample.relative_position)
+                                     if sample.relative_position else None),
+                "modulators": [{
+                    "dest": effect.destination,
+                    "source": effect.source,
+                    "extern": effect.extern,
+                    "envelope": effect.envelope,
+                    "params": effect.params,
+                } for effect in sample.effects],
+            })
+    return layers
