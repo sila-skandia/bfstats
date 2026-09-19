@@ -274,10 +274,27 @@ export function seatPoseName(upper, lower) {
  * into a skeleton whose bones are expressed there.
  */
 export function ikTarget(entry, targetPosition, targetQuaternion) {
-  const offset = refractorPoint(entry.position || [0, 0, 0]);
+  const prepared = entry.prepared || prepareIkEntry(entry);
   return {
-    position: add(targetPosition, quatApply(targetQuaternion, offset)),
-    quaternion: quatMul(targetQuaternion, refractorYpr(entry.rotation || [0, 0, 0])),
+    position: add(targetPosition, quatApply(targetQuaternion, prepared.offset)),
+    quaternion: quatMul(targetQuaternion, prepared.baked),
+  };
+}
+
+/**
+ * The half of an entry that never changes: the mirrored offset and the baked
+ * rotation.
+ *
+ * The engine bakes the rotation triple into a matrix **once, at parse time**
+ * (`addSkeletonIK` calls `setRotation` while reading the `.con`, lnxded
+ * `0x8266d41`), and only the target node's live pose varies per frame. Doing
+ * the same here is not just tidiness: `refractorYpr` is six trig calls, and
+ * `stepSeatIk` runs once per bound hand per frame.
+ */
+export function prepareIkEntry(entry) {
+  return {
+    offset: refractorPoint(entry?.position || [0, 0, 0]),
+    baked: refractorYpr(entry?.rotation || [0, 0, 0]),
   };
 }
 
@@ -366,7 +383,9 @@ export function collectIkBindings(nodes, resolveChild) {
       const index = Number.isInteger(entry.targetChild) ? entry.targetChild : -1;
       const target = (index >= 0 && resolveChild
         ? resolveChild(node, index, entry.targetNode) : null) || node;
-      bindings.push({ node, target, bone: entry.bone, entry });
+      // Baked here rather than per frame: see `prepareIkEntry`.
+      bindings.push({ node, target, bone: entry.bone,
+                      entry: { ...entry, prepared: prepareIkEntry(entry) } });
     }
   }
   return bindings;

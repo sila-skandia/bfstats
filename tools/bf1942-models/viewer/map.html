@@ -6853,7 +6853,10 @@ function bindSeatIk(seat, soldierScene, clips) {
   }
 }
 
-// Scratch, so a frame with four IK entries allocates nothing.
+// Scratch, so the three.js half of a frame's IK allocates nothing. The plain
+// arrays `seat-ik.js` returns are small and short-lived; what used to cost
+// real work each frame was re-baking the rotation triple, and `collectIkBindings`
+// now does that once (`prepareIkEntry`).
 const _ikPos = new THREE.Vector3();
 const _ikScale = new THREE.Vector3();
 const _ikQuat = new THREE.Quaternion();
