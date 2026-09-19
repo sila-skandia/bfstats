@@ -39,6 +39,9 @@
 // machine, because the end goal of this viewer is replaying captured rounds.
 // *Inside* a tick nothing diverges — the four sub-steps are the engine's.
 //
+// The dedicated server says the same thing, and says which rate to pick. See
+// `TICK_RATE`.
+//
 // Like `collision.js`, this module imports nothing. It takes a duck-typed
 // `world` with `surfaceHeight(x, z)`, `sweepSphere(...)` and `cast(...)` —
 // which is exactly what `WorldCollider` is — so `tests/physics_harness.mjs` can
@@ -64,7 +67,47 @@ export const WIND = Object.freeze({ x: 0, y: 0, z: 0 });
 /** Sub-steps per update, and the `h = dt * 0.25` at `0x00578aa8`. */
 export const SUB_STEPS = 4;
 
-/** Our fixed tick. Not the engine's — see the file header. */
+/**
+ * Our fixed tick, and why it is 60 and not the 30 the jump figures imply.
+ *
+ * PHY-1's **1.12 m apex and 0.80 s of air** are what the engine's four
+ * sub-steps produce at `dt = 1/30`, and the ledger reaches that `dt` from
+ * `g_simulationFps = 30.0`. But `g_simulationFps` is not the frame period: it
+ * is a fixed scale constant (lnxded `.data` `0x08716b5c`, raw `0000f041`, and
+ * **nothing in the binary writes it** — `objdump -d -M intel` over the whole
+ * file has no `fstp`/`mov` to that address, and it is not a console word:
+ * the only `simulationFps` string in the file is the symbol's own name). What
+ * the loop rate is built from is that constant **doubled**:
+ *
+ *     Setup::initEngine   0x080bc632  fld [0x08716b5c]   ; 30.0
+ *                         0x080bc63f  fadd st,st(0)      ; 60.0
+ *                         0x080bc641  fstp [ecx+0xc4]    ; the loop's rate
+ *
+ *     Setup::mainLoop     0x080bc0b0  fld1
+ *                         0x080bc0b2  fdiv [ebx+0xc4]    ; period = 1/60 s
+ *                         0x080bc0e3  je  0x080bc3b0     ; deadline not reached
+ *                         0x080bc3b2  (spin on System::getExactTime, 0x08418160)
+ *                         0x080bc0f6  fsubrp             ; dt = now - last
+ *                         0x080bc0f8  fstp [ebx+0xc8]    ; the frame dt, measured
+ *
+ * So the dedicated server targets **60 Hz** and integrates with the *measured*
+ * elapsed time, and `Game::updateWorld` (`0x0805d9b0`) hands that dt straight
+ * down — `BasicPhysicsSystem::update` (`0x08251ef0`) is an empty stub, so
+ * there is no accumulator anywhere below it either.
+ *
+ * Two things follow. The engine's own jump apex **moves with the frame rate**,
+ * so 1.12 m is the figure for a machine running at exactly 30 fps and not a
+ * universal constant; and 60 Hz, not 30, is the period the shipped loop aims
+ * at. Dropping this viewer to a 30 Hz tick to chase 1.12 m would therefore
+ * chase a frame-rate artefact, and it would halve the resolver's sampling —
+ * 0.2 m of travel per tick at a run instead of 0.1 — in the one part of this
+ * module with no engine provenance. `tests/test_soldier.py` pins the apex, the
+ * ramp and the fall a landing is billed as identical at 23.7, 30, 60 and
+ * 144 **frames** per second, which is the property that actually matters.
+ *
+ * Recorded as a finding rather than a ledger edit: PHY-1 and PHY-6 both state
+ * wall-clock figures that rest on `dt = 1/30`.
+ */
 export const TICK_RATE = 60;
 export const TICK_DT = 1 / TICK_RATE;
 
@@ -351,14 +394,20 @@ export function directionalSpeed(pose, forward) {
 // --- the ramp that reaches those tables (PHY-6) ------------------------------
 
 /**
- * The engine's tick, 30 Hz, and the only place this module needs it.
+ * `g_simulationFps`, 30, and the only place this module needs it.
  *
- * The ramp below is authored as integers *per engine tick*. This viewer runs a
- * 60 Hz fixed step on purpose (see the file header), so the ramp is carried as
- * a rate per second and stepped by `dt`. At `dt = 1/30` that reproduces the
- * engine's integer ladder exactly — `600 * (1/30)` is 20.0 and `360 * (1/30)`
- * is 12.0 in binary floating point, with no rounding — and at any other rate it
- * keeps the wall-clock time constants, which is the observable that matters.
+ * The ramp below is authored as integers *per call*, and `handlePlayerInput`
+ * is called once a frame — so its wall-clock time constants are the frame
+ * rate's, not a fixed tick's (see `TICK_RATE`: the dedicated server's loop
+ * targets `2 * g_simulationFps` and integrates with the measured elapsed
+ * time). **0.212 s to full speed is therefore the figure for a machine at
+ * exactly 30 fps**, the same caveat PHY-1's apex carries.
+ *
+ * This viewer runs a 60 Hz fixed step on purpose, so the ramp is carried as a
+ * rate per second and stepped by `dt`: the wall clock then holds at any rate,
+ * which is what a replay needs. At `dt = 1/30` it walks the engine's integer
+ * ladder exactly — `600 * (1/30)` is 20.0 and `360 * (1/30)` is 12.0 in binary
+ * floating point, with no rounding — which is what the tests assert against.
  */
 export const ENGINE_TICK_RATE = 30;
 
@@ -491,19 +540,25 @@ export const SOLDIER_BOUNDING_RADIUS = 0.8;
  *     is then set to zero rather than damped. Writing it as `vCmd *= 0.75` is
  *     the refuted form: it only coincides while the body is already at its
  *     commanded speed.
- *   - **The apex is 1.12 m and the hang is 0.80 s**, not 1.222 m / 0.815 s.
- *     Those are the continuum `v^2/2g` figures; four semi-implicit sub-steps of
- *     `dt/4` land lower. A viewer calibrated to 1.222 m is 9% high.
+ *   - **At `dt = 1/30` the apex is 1.12 m and the hang is 0.80 s**, not
+ *     1.222 m / 0.815 s. Those are the continuum `v^2/2g` figures; four
+ *     semi-implicit sub-steps of `dt/4` land lower. A viewer calibrated to
+ *     1.222 m is 9% high.
  *
  * That last figure is also the check on the second point. Stepping this
- * module's own integrator at the engine's 30 Hz reproduces **1.1221 m and
- * 0.8000 s** to four decimals, and it only does so when the impulse goes
- * through the accumulator: a `v.y = 6.0` velocity set gives 1.1971 m, because
- * it skips gravity's own share of the jump tick. The viewer's 60 Hz step lands
- * at 1.172 m / 0.817 s — a finer sub-step integrates nearer the continuum, the
- * same rate divergence the file header already owns, and the reason
- * `tests/test_physics.py` pins the 30 Hz figures as the parity assertion and
- * the 60 Hz ones only as a regression guard.
+ * module's own integrator at 30 Hz reproduces **1.1221 m and 0.8000 s** to four
+ * decimals, and it only does so when the impulse goes through the accumulator:
+ * a `v.y = 6.0` velocity set gives 1.1971 m, because it skips gravity's own
+ * share of the jump tick. `tests/test_physics.py` pins that as the parity
+ * assertion.
+ *
+ * The rate qualifier on it is not pedantry. The impulse is spent over one
+ * `dt`, so the apex rises with the tick: a shorter tick delivers the same
+ * `Delta v` sooner and loses less of it to the tick's own gravity, and 60 Hz
+ * lands at 1.166 m. That is a property of the engine too, whose loop
+ * integrates with the measured frame time (`TICK_RATE`) — 1.12 m is the figure
+ * for a machine at exactly 30 fps. This viewer picks one rate and holds it at
+ * any frame rate, which is the part a replay depends on.
  */
 export const JUMP_IMPULSE = 6.0;
 
