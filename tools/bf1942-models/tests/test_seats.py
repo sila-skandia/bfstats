@@ -366,33 +366,52 @@ class SeatsModuleTests(unittest.TestCase):
     # of `RotationalBundle::calculateAndClipAngle` (lnxded `0x081d7490`, all
     # 361 instructions re-traced independently in the 2026-09-19 round).
 
-    def test_a_saturated_hand_runs_the_axis_at_its_scaled_maxSpeed(self) -> None:
+    def test_maxSpeed_is_the_gain_one_unit_of_input_buys(self) -> None:
         # GUN-2: `speed -> sign(acceleration) * input * maxSpeed`. `maxSpeed`
-        # is a GAIN, deg/s per unit of input, and what magnitude the client's
-        # mouse axis delivers is GUN-2b, still open — so the viewer's own
-        # choice is that a saturating hand is input 1 and the ceiling is
-        # `maxSpeed * TURRET_SPEED_SCALE`. Sherman 35 * 4 = 140 deg/s, MG42
-        # 70 * 4 = 280, both minus the sliver spent ramping to it.
+        # is a GAIN, deg/s per unit of input, and GUN-2b now says what a unit
+        # of input is: `0.001 * counts-per-second * (5*sensitivity + 0.1)`.
+        # So input 1 is exactly `setMaxSpeed`, and a hand moving 1000 counts a
+        # second on the shipped 0.25 profile delivers 1.35 of them — 47.25
+        # deg/s on a Sherman tower, 94.5 on an MG42, both minus the sliver
+        # spent ramping to it.
         servo = self.results["turretServo"]
-        self.assertAlmostEqual(servo["shermanCap"], servo["shermanDegPerSec"], delta=1.0)
-        self.assertAlmostEqual(servo["mg42Cap"], servo["mg42DegPerSec"], delta=3.0)
+        self.assertAlmostEqual(1.35, servo["shippedAxisAtThousandCounts"], places=6)
+        self.assertAlmostEqual(servo["shermanMaxSpeed"], servo["shermanUnitDegPerSec"],
+                               delta=1.0)
+        self.assertAlmostEqual(47.25, servo["shermanThousandExpected"], places=2)
+        self.assertAlmostEqual(servo["shermanThousandExpected"],
+                               servo["shermanThousandDegPerSec"], delta=1.0)
+        self.assertAlmostEqual(94.5, servo["mg42ThousandExpected"], places=2)
+        self.assertAlmostEqual(servo["mg42ThousandExpected"],
+                               servo["mg42ThousandDegPerSec"], delta=3.0)
+
+    def test_an_input_above_one_really_does_exceed_maxSpeed(self) -> None:
+        # The retired `TURRET_SPEED_SCALE` model normalised the hand's ask into
+        # ±1 against a scaled ceiling, so every hand faster than that ceiling
+        # traversed at exactly the same rate. The engine has no such clamp
+        # outside its `rememberExcessInput` branch, which no turret, manned gun
+        # or tank in 18 installs declares — input 4 on a Sherman tower really
+        # is 140 deg/s, and the only ceiling is the wire's own ±16.
+        servo = self.results["turretServo"]
+        self.assertAlmostEqual(140.0, servo["shermanFastSteadySpeed"], places=4)
 
     def test_the_velocity_register_ramps_at_its_own_acceleration(self) -> None:
         # `|acceleration|` deg/s^2, the axis's own `setAcceleration` when the
-        # extract carries it. Scaled alongside the cap so the wind-up TIME is
-        # `maxSpeed/acceleration`, the game's own ratio: 350 deg/s^2 against a
-        # 35 deg/s cap is a tenth of a second either way.
+        # extract carries it, and now scaled by nothing at all: 350 deg/s^2
+        # reaches the 35 deg/s that input 1 commands in exactly a tenth of a
+        # second, which is the game's own `maxSpeed/acceleration` ratio.
         servo = self.results["turretServo"]
-        self.assertAlmostEqual(140.0, servo["ownAccelAtTenth"], delta=0.5)
+        self.assertAlmostEqual(35.0, servo["ownAccelAtTenth"], delta=0.5)
 
     def test_an_axis_without_one_falls_back_and_is_slower(self) -> None:
         # Every glb baked before `con.py` started emitting the magnitude. The
         # fallback is the middle of the confirmed 30–150 band, 90 deg/s^2 —
-        # scaled that is 360 deg/s^2, reaching the 140 deg/s cap in ~0.39 s.
+        # 9 deg/s after a tenth of a second, and it does not reach the 35 deg/s
+        # that input 1 asks for until ~0.39 s.
         servo = self.results["turretServo"]
         self.assertEqual(90, servo["fallbackAcceleration"])
-        self.assertAlmostEqual(36.0, servo["fallbackAccelAtTenth"], delta=0.5)
-        self.assertAlmostEqual(140.0, servo["fallbackAccelAtHalf"], delta=0.5)
+        self.assertAlmostEqual(9.0, servo["fallbackAccelAtTenth"], delta=0.5)
+        self.assertAlmostEqual(35.0, servo["fallbackAccelAtHalf"], delta=0.5)
 
     def test_there_is_no_input_bank_so_a_flick_does_not_coast(self) -> None:
         # The `+0x128` register a previous reading of this file modelled as a
@@ -459,11 +478,11 @@ class SeatsModuleTests(unittest.TestCase):
 
     def test_the_penalty_is_spent_once_and_a_fast_hand_cannot_outrun_it(self) -> None:
         # The seam between two wave-2 streams. Each added HP-15's 0.2, in a
-        # different shape, and git merged both silently. Applied to the pixels
-        # before the saturating clamp, a fast hand on a critical Sherman kept
-        # the full 140 deg/s (measured, ratio 1.00); applied twice it would be
-        # 0.04. It is 0.2 at the rig, whatever the hand, and a wreck (scale 0)
-        # does not move at all.
+        # different shape — one in `aim()`, one in `step()` — and git merged
+        # both silently. Spent twice the ratio would be 0.04; spent once it is
+        # 0.2 whatever the hand is doing, and a wreck (scale 0) does not move
+        # at all. The fast case runs at input 16, the wire's own ceiling and so
+        # the fastest hand the engine can encode.
         servo = self.results["turretServo"]
         self.assertAlmostEqual(0.2, servo["rigCriticalFastRatio"], delta=0.01)
         self.assertAlmostEqual(0.2, servo["rigCriticalSlowRatio"], delta=0.01)
