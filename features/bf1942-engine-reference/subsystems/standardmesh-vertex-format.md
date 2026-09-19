@@ -155,6 +155,77 @@ header bounds.
   numVertices, `+0x10` vertexFormat, `+0x14` blockFormat, `+0x18` bytes,
   `+0x1c` stride. The client twin is identical.
 
+## The envmap stage (settled 2026-09-19; ledger EM-1…EM-3)
+
+The lightmap combine (LM-1…LM-4) and the reflection are two branches of the
+same function, `StandardMeshSubShader_applyRenderState` (`0x005bf690`, vtable
+`0x009061a4` slot `+0x10`), so the envmap belongs beside it. 338 vanilla
+materials declare `envmap`. Every Direct3D enum below was checked against a
+header, not remembered.
+
+**There is no reflectivity constant anywhere in the stage.** The mix is the
+diffuse texture's own alpha:
+
+```
+out.rgb = lit.rgb * A  +  cube.rgb * (1 - A)         A = stage 0's TEXTURE alpha
+```
+
+Branch `0x005bfa80`–`0x005bfdc4`, re-derived straight from the shipped exe with
+`objdump -d -M intel --start-address=0x005bfa70 --stop-address=0x005bfd20`:
+
+| what | where |
+|---|---|
+| stage 1 = the level cubemap | `0x005bfab3` |
+| `TEXTURETRANSFORMFLAGS = 3` (`D3DTTFF_COUNT3`) | `0x005bfad1` |
+| `TEXCOORDINDEX = 0x30000` (`D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR`) | `0x005bfaf7` |
+| `COLOROP = 0x10` (`D3DTOP_BLENDCURRENTALPHA`) | `0x005bfcc6` |
+| `COLORARG1 = 1` (CURRENT) | `0x005bfce1` |
+| `COLORARG2 = 2` (TEXTURE) | **`0x005bfcfd`** (`0x005bfcf2` is the shadow load, not the call setup) |
+| `ALPHAOP = SELECTARG1(CURRENT, DIFFUSE)` | `0x005bfc61`/`83`/`95` |
+| stage 2 disabled | `0x005bfd03` |
+
+`SetTextureStageState` is the device vtable's `+0xfc` with arguments pushed
+right to left; `ebp = 1` (`0x005bf6ca`, `0x005bf903`) is both the stage index
+and, where it appears as a state, `D3DTSS_COLOROP`.
+
+**The blend direction rests on documentation, not memory.**
+`D3DTOP_BLENDCURRENTALPHA = 16` counts to `0x10` from `D3DTOP_DISABLE = 1` in
+wine's `d3d8types.h:884-899`, and it sits under Microsoft's own comment
+`Arg1*(Alpha) + Arg2*(1-Alpha)` in `um/d3dtypes.h:1676-1682`. ARG1 is CURRENT,
+the lit surface — so **an opaque texel is matte and a transparent one is the
+mirror**, which is why an aircraft's paint is dull and its canopy is not.
+
+`A` is stage 0's TEXTURE alpha, set by `setAlphaOp(0, SELECTARG1, TEXTURE,
+DIFFUSE)` at `0x005c0201`, three instructions after the same function loads the
+cubemap into the draw context's `+0x18` (`0x005c01dd`, name string `0x009061c0`
+= `"envmap"`). No vertex or TFACTOR alpha replaces it on this path. "Set once
+for the whole StandardMesh path" overstates the mechanism — the sibling reset
+re-asserts the same three values at `0x005bee8e`/`94`/`9a`, and two other
+sub-shaders write the same stage-0 alpha shadow `0x009c92fc` (`0x0062e370`
+`MODULATE`, `0x0064ce63` the same `SELECTARG1`) — but every writer on the
+StandardMesh path agrees, so the conclusion stands.
+
+**One alpha does both jobs.** Stage 1's `ALPHAOP = SELECTARG1(CURRENT)` passes
+stage 0's alpha through, so the fragment alpha feeding the frame-buffer blend
+or the alpha test is the same alpha that chose the mix. A renderer that
+multiplies its own `opacity` into the texel alpha before mixing would
+over-reflect a translucent material; no such material exists in the data today.
+
+**An envmap material gives up its texture-fade stage** (EM-3): the non-envmap
+branch at `0x005bfdcb` uses the same stage 1 for `MODULATE(CURRENT, TFACTOR)`.
+The two are exclusive.
+
+Measured on fresh extracts, since the strength lives in the art:
+`zero_fus_m1_Material0` (paint) has alpha 242–255 → at most 5% mirror;
+`zero_fus_m1_Material1` (canopy) 120–255 → 53%; `Corsair_hull_m1_Material0`
+119–255. Three of Wake's fourteen envmap materials — `militable`, `stebarrel1`,
+`planeeng` — ship flat 255 and correctly reflect nothing.
+
+**Still inferred:** the texture matrix. No `SetTransform(D3DTS_TEXTURE1)` was
+found anywhere on the path, so identity comes from `TEXTURETRANSFORMFLAGS` and
+`TEXCOORDINDEX` being the only things either function touches — an inference,
+not a reading.
+
 ## Open items
 
 - **Bit 29 (`0x20000000`).** `getStride` adds 16, the FVF builder adds 4 and
@@ -169,11 +240,22 @@ header bounds.
   elsewhere — the two undefined callers of `0x00672a40` at `0x00667d6c` and
   `0x00675c0e` are the place to start.
 - **Which texcoord set the lightmap stage samples** — mostly settled
-  2026-09-16 (ledger LM-1…LM-4). The lightmap is stage 1 and nothing on its
-  path writes stage 1's `D3DTSS_TEXCOORDINDEX`, so it samples set 1
-  (`uvs2()`) by Direct3D's default. What is left: the envmap branch overrides
-  that index, and its reset (`0x005bee20`, the next vtable slot) is not yet
-  shown to run after every envmap draw.
+  2026-09-16 (ledger LM-1…LM-4) and **narrowed 2026-09-19**. The lightmap is
+  stage 1 and nothing on its path writes stage 1's `D3DTSS_TEXCOORDINDEX`, so
+  it samples set 1 (`uvs2()`) by Direct3D's default. The override and the
+  restore are now known to be keyed off **the same `+0x30` envmap byte on the
+  same object**: the envmap branch writes `0x30000` at `0x005bfaf7`, and the
+  sibling reset `0x005bee20` restores `TEXTURETRANSFORMFLAGS = 0` at
+  **`0x005beef3`** (guard read `0x005beedb`) and `TEXCOORDINDEX = 1` at
+  `0x005bef17` (guard `0x005bef06`), all gated on that byte read at
+  `0x005beed4`. (An earlier note named `0x005bef06` as the transform-flags
+  write; that is the *guard* for the other restore, one operand out.) The
+  stage-1 TEXCOORDINDEX shadow cache `0x009c93b0` has exactly three writers in
+  the image: those two, and the generic state-block applier `FUN_00604750` at
+  `0x00605829`, which applies whatever a block says rather than restoring.
+  **What is left is only the call-site pairing** of vtable `+0x10` with `+0x14`
+  — a byte scan found 116 candidate pairs across the image and none in the
+  StandardMesh renderer was the right vtable.
 - The 12-byte POD before `primitive` and the trailing u32 are read and, on the
   server, dropped (SM-5 stays open with that evidence). `primitive` is read as
   a signed `int` and is the Direct3D `D3DPRIMITIVETYPE` (SM-3, confirmed

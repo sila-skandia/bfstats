@@ -94,6 +94,39 @@ So **retail physics is a fixed 30 Hz step, not frame-rate coupled**, and the
 1/120 s each. The earlier reading of "frame `dt` straight through, no clamp"
 was true of the dispatch itself but wrong about what it was handed.
 
+> **A single reader has since disputed this for the server, and the
+> disagreement is unresolved. Ledger LOOP-1, status `open`.**
+>
+> On 2026-09-20 one reading of **lnxded**'s own loop found: `g_simulationFps`
+> (`0x08716b5c`, `.data`, raw `0000f041` = 30.0) has **no writer anywhere** in
+> the file and no console word; `Setup::initEngine` **doubles** it into the
+> loop's target rate at `0x080bc632` (`fld [0x08716b5c]; fadd st,st(0);
+> fstp [ecx+0xc4]` = 60.0); and `Setup::mainLoop` (`0x080bc0b0`) computes
+> `fld1; fdiv [ebx+0xc4]` = a 1/60 s period, spins on `System::getExactTime`
+> until the deadline (`je 0x080bc3b0`, `0x080bc3b2`), then stores the
+> **measured** `now − last` as the frame dt (`0x080bc0f6 fsubrp`,
+> `0x080bc0f8 fstp [ebx+0xc8]`). Below it, `Game::updateWorld` (`0x0805d9b0`)
+> forwards that dt unchanged and `BasicPhysicsSystem::update` (`0x08251ef0`)
+> is an empty stub, so no accumulator re-quantises it.
+>
+> If that holds, the server steps at a nominal 60 Hz with a real, varying dt,
+> and **every per-call quantity in this corpus is per frame rather than per
+> 1/30 s** — the jump impulse (§8), the locomotion ramp (§8), deviation decay
+> ([handweapon-view-and-deviation.md](handweapon-view-and-deviation.md) §2) and
+> the gearbox's 0.05 rev filter
+> ([tank-driving.md](tank-driving.md) §4). PHY-1's 1.12 m apex and PHY-6's
+> 0.212 s would then be the figures for a machine at 30 fps, not engine
+> constants; both rows now carry that qualifier.
+>
+> **It is one reader and it is not re-derived, so nothing here is rewritten on
+> its strength.** The 30 Hz chain above was read on the **client**, and the two
+> binaries may genuinely differ. What a second reader must settle, in order:
+> (1) that `Setup+0xc4`/`+0xc8` really are the loop period and the frame dt, by
+> walking every reader of both offsets; (2) what the client does, since DEV-5,
+> GL-1 and GL-2 all rest on its tick accumulator; (3) whether anything between
+> `Setup::mainLoop` and `GameServer::simulateFrame` (`0x0815c2a0`) re-quantises
+> the dt the way the client's does.
+
 > The viewer's fixed outer tick is therefore the engine's own design, with one
 > number to correct: the engine ticks at 30 Hz, not 60. The four sub-steps
 > *inside* each tick stand.
@@ -586,6 +619,22 @@ Two corrections to this corpus's old note on the client twin: the call is
 `AtAbsolutePosition`, and the position is relative to the **root** node, not to
 the wheel contact.
 
+**The axis is authored data that nobody authors** (read 2026-09-19, PHY-5
+extended). `SpringTemplate`'s constructor (`0x0824fc40`) writes
+`axisFixation = (0, 1, 0)` at `+0x15c` — `0x0824fc50 mov ecx,0x3f800000`, stores
+`0x0824fc89`/`0x0824fc92`/`0x0824fc95` — and `positionalFixation = (0, 0, 0)` at
+`+0x150`, and **no `.con` in any of the 18 installed mods writes
+`setAxisFixation` or `setPositionalFixation`**: every objects archive was
+surveyed per mod, zero hits. So every spring in every install runs on **the
+object's own +Y**, which leans with the hull and is still never world-vertical.
+The same constructor seeds damping `+0x168 = 0.5` and strength `+0x16c = 1.0`.
+
+One consequence worth carrying, because it kills a tuning argument: at the
+shipped `g = −14.73` the `−1/9.82` makes every spring act at **1.5× its
+authored `strength`**, so the real heave damping ratio is `1/sqrt(1.5)` =
+**0.816**, not 1.0. "DICE tuned these critically damped" depended on dropping
+the 1.5.
+
 **There is no ray**, along any axis — as far as a negative can be confirmed.
 `Spring::handleCollision` (`0x0824f9b0`) writes only `+0x103` (touching) and
 `+0x10c` (the material id) and tail-calls the base; contacts come from
@@ -633,5 +682,6 @@ bounding radius stays inferred.
 | ~~`submarineData`'s 7 parameters~~ | **closed 2026-09-16** for five of them (ledger PHY-3): the 6th is the crush depth, the 5th the depth below which oxygen drains (with the 4th, the periscope pair), the 1st the drain rate and the 2nd the refill rate, capped at 1.0. The 3rd and 7th (suffocation and crush damage) are not re-verified |
 | ~~Drag's `r` and `scale` factors~~ | **closed 2026-09-16** — `r` = `getBoundingRadius()`, delegated to the composite object; `scale = 1 + 24·min(underWater/r, 1)`, clamped above only, `underWater` = +0x44 (§3) |
 | ~~What selects `PhysicsNode`'s Advanced drag~~ | **closed 2026-09-17** (ledger PHY-4): the bit is never set, so every `PhysicsNode` always runs Advanced/box drag; sphere `r = 0.1` is unreachable. `hasPointPhysics` selects `PointPhysicsNode` (flag `0x8`), a separate path (§3) |
+| **The server's tick rate (LOOP-1, opened 2026-09-20)** | **One reader** says lnxded's `Setup::mainLoop` (`0x080bc0b0`) targets **60 Hz** with a **measured** frame dt and no accumulator below it, `g_simulationFps` being a never-written scale constant that `Setup::initEngine` doubles (`0x080bc632`). That would make every per-call quantity in this corpus per *frame*, and PHY-1's apex and PHY-6's ramp times frame-rate figures. Not re-derived; §3 says what a second reader must check. **Do not build on it, and do not restate the 30 Hz claim as settled without reading it** |
 | A spawned particle's mass and bounding radius | the body defaults to mass 1.0; the radius a sprite or mesh particle reports is unread — the blocker for replacing `effects-core.js`'s exponential drag |
 | B17 `setDifferential` tension | 4 nacelles at 1.9 = 7.6 vs a fighter's 5. Code reading is quadruple-anchored, so this is evidence about the `.con` data or the gear table — **do not re-tune on it** |
