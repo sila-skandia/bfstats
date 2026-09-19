@@ -1477,14 +1477,28 @@ class ObjectLibrary:
                             rot = _xyz(parts[2])
                         except (ValueError, IndexError):
                             continue
-                        entry = {"bone": bone, "position": pos, "rotation": rot,
-                                 "targetChild": len(obj.children) - 1}
-                        for index, existing in enumerate(obj.skeleton_ik_bones):
-                            if existing["bone"] == bone:
-                                obj.skeleton_ik_bones[index] = entry
-                                break
+                        for existing in obj.skeleton_ik_bones:
+                            if existing["bone"] != bone:
+                                continue
+                            # A repeat for a bone already declared overwrites
+                            # the position and the rotation **and nothing
+                            # else**: the branch at `0x8266e1a` writes
+                            # `slot+0x0c` (Vec3) and `slot+0x18` (Mat4) and
+                            # never reaches the `getNoTemplates()` call at
+                            # `0x8266d98`, so `slot+0x04` keeps the target
+                            # child the *first* declaration measured from.
+                            # FHSW's `Hotchkiss` is the case that shows it:
+                            # the same two lines appear before any child and
+                            # again after two, and the engine keeps the first
+                            # reading for both.
+                            existing["position"] = pos
+                            existing["rotation"] = rot
+                            break
                         else:
-                            obj.skeleton_ik_bones.append(entry)
+                            obj.skeleton_ik_bones.append(
+                                {"bone": bone, "position": pos,
+                                 "rotation": rot,
+                                 "targetChild": len(obj.children) - 1})
                 elif cmd in ("createinvisible", "invisible"):
                     # `createInvisible` hides a placed object; `invisible 1` on
                     # a Projectile is the engine's own "never draw the body"
