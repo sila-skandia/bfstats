@@ -311,6 +311,26 @@ out.waterDeathFallback = deathTier(
       return hit.length ? Math.round(hit[0].distance * 1e6) / 1e6 : null;
     })(),
   };
+
+  // HP-9: an IMPACT blast is centred `hitPos + 0.1 * normal`, not on the hit
+  // point (lnxded 0x08153f5e-0x08153f8f). `gunfire.js` puts that on the record
+  // as `splashPoint`; the hit point stays on `point`, because that is where
+  // the collision effect goes. An end-of-life blast carries no `splashPoint`
+  // and falls back to `point`, which is the projectile's own position.
+  const centre = (record) => {
+    const set = fresh();
+    const hit = set.applySplash(record, [{ owner: 2, x: 5, y: 0, z: 0 }], tables);
+    return hit.length ? Math.round(hit[0].distance * 1e6) / 1e6 : null;
+  };
+  out.blastCentre = {
+    // Struck a wall at the origin, normal +X: the blast is at x = 0.1, so a
+    // victim 5 m out along +X is 4.9 m away, not 5.
+    impact: centre({ ...blast, point: [0, 0, 0], splashPoint: [0.1, 0, 0] }),
+    // The same record without the offset, for the contrast.
+    unoffset: centre({ ...blast, point: [0, 0, 0] }),
+    // A fuse round: `point` only, and it is used.
+    endOfLife: centre({ ...blast, point: [1, 0, 0] }),
+  };
 }
 
 // HP-15: the input gate. A wreck takes no input at all; a critically damaged
@@ -338,6 +358,26 @@ out.waterDeathFallback = deathTier(
     // An object with no Armor registered at all — a palm, a bare manned gun —
     // is not gated.
     unregistered: inputGate(null),
+    // The caller-owned result object `map.html` passes every frame: filled in
+    // place, returned, and the SAME object each time, so polling the gate
+    // sixty times a second allocates nothing.
+    inPlace: (() => {
+      const slot = { blocked: false, rotationalScale: 1 };
+      const dead = new VehicleDamageSet().add(1, SHERMAN, { name: 'Wreck' });
+      dead.damage(200);
+      const first = inputGate(dead, slot);
+      // Snapshot before the next call: `first` IS `slot`, which is the point.
+      const afterWreck = { ...first };
+      const healthy = new VehicleDamageSet().add(1, SHERMAN, { name: 'Fresh' });
+      const second = inputGate(healthy, slot);
+      return {
+        sameObject: first === slot && second === slot,
+        // And it is genuinely rewritten, not just returned: the wreck's
+        // `blocked` must not survive into the healthy read.
+        afterWreck,
+        afterHealthy: { ...second },
+      };
+    })(),
   };
 
   // The gate is read from the live Armor, so a hull killed by something other
