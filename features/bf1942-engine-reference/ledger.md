@@ -13,6 +13,15 @@ Status values:
 | `open` | stated as fact in our code, never checked against the binary |
 | `moot` | checked, and it turns out not to matter for extraction |
 
+Several sections — the rendering ones, and the newer engine-mechanics ones —
+instead use the symbol table's own words, `verified` and `inferred`, for the
+same idea: `verified` is `confirmed` with the code read rather than the
+behaviour matched, and `inferred` is short of both. A row whose claim a later
+reader overturned keeps its original text struck through and says so in place
+(ARM-6, TANK-1, TANK-7, PHY-2b, CA-5, SM-1). **Nothing is deleted**: the
+research reports that proposed the wrong reading are still on disk, and a row
+that vanishes is a row someone re-derives.
+
 `Evidence` is an address in [symbols.json](symbols.json) or a function in the
 binary — never "it looked right in the viewer". Rendering correctly is not
 evidence: most of these assumptions are true of vanilla data by coincidence and
