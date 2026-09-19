@@ -1302,7 +1302,13 @@ class Assembler:
                 extras=extras,
             ))
 
-        for name in sorted(set(names), key=str.lower):
+        # Case breaks the tie, or the bake is not reproducible: the damage
+        # table names both `e_collision_ship` and `e_Collision_ship`, a sort
+        # on lower-case alone leaves their order to the set's iteration, and
+        # Python re-seeds string hashing per process. Two fresh runs of
+        # `extract_effects.py --mod bf1942` gave two different `effects.glb`
+        # before this, which makes any byte comparison of the bake meaningless.
+        for name in sorted(set(names), key=lambda n: (n.lower(), n)):
             tree = effects_mod.bundle_tree(self.library, name)
             if tree is None:
                 missing.append(name)
