@@ -10548,6 +10548,18 @@ if (params.has('shots')) {
     hits: guns.hits,
     impacts: guns.impacts.length,
     projectiles: guns.projectiles.length,
+    // HP-9d, for a headless check: a **fuse** round is one the engine gives an
+    // end-of-life explosion but no impact explosion, and `resting` says it has
+    // met a surface and is running its fuse down where it landed rather than
+    // having detonated there.
+    inFlight: guns.projectiles.map(shot => ({
+      gun: shot.group.node.name,
+      age: shot.age,
+      ttl: shot.ttl,
+      fuse: shot.fuse,
+      resting: shot.resting,
+      position: shot.mesh.position.toArray(),
+    })),
     pooled: guns.tracerPool.length,
     // Baked streaks recycle into their own group's pool, not the shared
     // cylinder pool, so a leak there is invisible to `pooled` alone.
@@ -11026,6 +11038,14 @@ if (params.has('shots')) {
     owner, name: v.name, hp: Math.round(v.hitPoints * 100) / 100,
     max: v.maxHitPoints, critical: v.critical, destroyed: v.destroyed,
     criticalDamage: v.criticalDamage,
+    // Where it stands, which is also the point a blast measures its distance
+    // to (HP-9: the transform origin, not a bounding box). A check that wants
+    // to stand a man beside one, or to know which neighbour a shell should
+    // have caught, needs this and has had to guess at it until now.
+    pos: damageVisuals.get(owner)?.node
+      ? damageVisuals.get(owner).node.getWorldPosition(splashPos).toArray()
+        .map(n => Math.round(n * 100) / 100)
+      : null,
     tier: v.shown ? { threshold: v.shown.threshold, names: v.shown.names } : null,
     running: damageVisuals.get(owner)?.handles.length ?? 0,
     tiers: v.effects.map(e => ({ hp: e.hp, effect: e.effect })),
