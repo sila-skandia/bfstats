@@ -5620,6 +5620,12 @@ function leaveVehicle() {
   if (!vehicle) return;
   stopEngineAudio();
   releaseGuns();
+  // The seated occupant goes with the seat. This is the E-key exit; the debug
+  // pilot toggle's own path disposes him too, and `exitManned` does, but this
+  // one did not — so stepping out of a jeep left a soldier sitting in mid-air
+  // where the driver's seat had been, with his IK still being solved every
+  // frame, and only the *next* entry cleaned him up.
+  disposeSeatPose();
   vehicle.state.velocity.set(0, 0, 0);
   vehicle.state.angularVelocity.set(0, 0, 0);
   vehicle.state.throttle = 0;
@@ -7027,6 +7033,12 @@ function disposeSeatScene(root) {
 }
 
 function disposeSeatPose() {
+  // Any load still in flight is now stale. `loadSeatPose` is not awaited at
+  // its call sites, so leaving the vehicle before the glb arrives used to let
+  // the finished load adopt itself into an empty world: a soldier sitting in
+  // mid-air over the spot the jeep was, holding a reference nothing would ever
+  // drop. Bumping the generation here is what makes that load discard itself.
+  seatPoseGeneration++;
   // The mixer first, while its bindings still resolve, then the GPU half.
   if (seatPoseMixer) {
     seatPoseMixer.stopAllAction();
