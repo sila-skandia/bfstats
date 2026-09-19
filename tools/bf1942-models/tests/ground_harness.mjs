@@ -121,9 +121,10 @@ function willyNode() {
 }
 
 /** A jeep standing on (or dropped just above) analytic ground. */
-function jeep({ ground = () => 0, y = 0.6, speed = 0 } = {}) {
+function jeep({ ground = () => 0, y = 0.6, speed = 0, surface } = {}) {
   const truck = new GroundVehicle(willyNode(), null, {
     cockpit: false, groundHeight: ground,
+    ...(surface ? { surfaceFriction: surface } : {}),
   });
   const s = truck.state;
   s.position.set(0, y, 0);
@@ -286,9 +287,10 @@ function m3a1Node() {
 }
 
 /** A tank standing on (or dropped just above) analytic ground. */
-function tank(nodeFn, { ground = () => 0, y = 0.6, speed = 0 } = {}) {
+function tank(nodeFn, { ground = () => 0, y = 0.6, speed = 0, surface } = {}) {
   const truck = new TrackedVehicle(nodeFn(), null, {
     cockpit: false, groundHeight: ground,
+    ...(surface ? { surfaceFriction: surface } : {}),
   });
   const s = truck.state;
   s.position.set(0, y, 0);
@@ -358,10 +360,12 @@ results.constants = {
   wheelRadius: WILLYS.wheelRadius,
   springStrength: WILLYS.springStrength,
   springDamping: WILLYS.springDamping,
-  mu: WILLYS.mu,
   maxSteer: WILLYS.maxSteer,
-  // The three constants item 15 deleted. Asserted absent, because a later
-  // edit that reintroduces any of them has reintroduced an invention.
+  // The four constants items 15 and 16 deleted. Asserted absent, because a
+  // later edit that reintroduces any of them has reintroduced an invention.
+  hasMu: 'mu' in WILLYS,
+  hasTankMu: 'mu' in TANK,
+  hasLateralMu: 'lateralMu' in TANK,
   hasGearRatios: 'gearRatios' in WILLYS,
   hasReverseRatio: 'reverseRatio' in WILLYS,
   hasRevLimit: 'revLimit' in WILLYS,
@@ -541,6 +545,82 @@ results.constants = {
     finite: [s.position, s.velocity].every(v =>
       Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z)),
     end: snapshot(truck),
+  };
+}
+
+// --- material friction (PHY-2) ------------------------------------------------
+//
+// The whole point of item 16: the surface under the wheel decides the Coulomb
+// budget, and the mean of the two contacting materials is what the engine
+// spends. `materialFriction` of the vanilla terrain ids, as
+// `MaterialManagerdefine.con` authors them.
+const TERRAIN_FRICTION = {
+  water: 0.1, mud: 0.5, rock: 0.6, grass: 0.8, sand: 0.8,
+  dirtRoad: 1.0, defaultGround: 1.0, paved: 1.1, gravel: 1.1,
+};
+
+{
+  // A wheel's own material (37/38/178) is undefined in vanilla, so it falls
+  // back to material 0 at 1.0 and the pair means to 0.5*(1 + ground).
+  results.surfaceFriction = {};
+  for (const [name, value] of Object.entries(TERRAIN_FRICTION)) {
+    const truck = jeep({ surface: () => value });
+    drive(truck, 2);
+    results.surfaceFriction[name] = {
+      pairMean: round(truck.wheels[0].friction, 4),
+      // Braking distance from the same entry speed. The only thing that
+      // differs between these runs is the material under the tyre.
+      stopDistance: null,
+    };
+  }
+  // Brake-to-stop distance per surface, from a common 10 m/s entry.
+  for (const [name, value] of Object.entries(TERRAIN_FRICTION)) {
+    const truck = jeep({ surface: () => value, speed: 10 });
+    drive(truck, 0.5);
+    const startZ = truck.state.position.z;
+    let stopped = null;
+    drive(truck, 12, t => {
+      holding({ c_PIThrottle: -1 })(t);
+      if (stopped === null && alongOf(t) <= 0.05) {
+        stopped = round(Math.abs(t.state.position.z - startZ), 2);
+      }
+    });
+    results.surfaceFriction[name].stopDistance = stopped;
+  }
+  // Launch is where the surface genuinely bites. First gear asks 10.5 m/s^2
+  // of the two rear wheels, which carry only a third of the weight between
+  // them — far more than any of these materials can answer — so the jeep
+  // leaves the line at the Coulomb cap itself and the time to 10 m/s is a
+  // direct read of it.
+  for (const [name, value] of Object.entries(TERRAIN_FRICTION)) {
+    const truck = jeep({ surface: () => value });
+    drive(truck, 1);
+    let reached = null;
+    drive(truck, 25, (t, clock) => {
+      holding({ c_PIThrottle: 1 })(t);
+      if (reached === null && alongOf(t) >= 10) reached = round(clock - 1, 2);
+    });
+    results.surfaceFriction[name].to10 = reached;
+    results.surfaceFriction[name].launchAccel =
+      round(truck.wheels.filter(w => w.driven).length * 0.5 * (1 + value), 3);
+  }
+}
+
+{
+  // The 1.5:1 hysteresis, observed rather than asserted on a constant: a
+  // parked jeep stands on latched contacts, and a jeep that has just been
+  // braking hard does not.
+  const parked = jeep();
+  drive(parked, 2);
+  const rolling = jeep({ speed: 12 });
+  drive(rolling, 0.5);
+  drive(rolling, 1.5, holding({ c_PIThrottle: -1 }));
+  const airborne = jeep({ ground: () => -50, y: 5 });
+  drive(airborne, 0.5);
+  results.gripLatch = {
+    parked: parked.wheels.map(w => w.staticGrip),
+    braking: rolling.wheels.map(w => w.staticGrip),
+    airborne: airborne.wheels.map(w => w.staticGrip),
   };
 }
 
