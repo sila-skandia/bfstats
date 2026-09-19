@@ -290,12 +290,20 @@ function tierKey(tier) {
  * own `giveDamage`, drowning, burning down while empty — is gated identically.
  *
  * `null`/an unregistered vehicle is an undamaged one: full input.
+ *
+ * `out` is an optional caller-owned result object, filled in place and
+ * returned. This function is polled every frame by whoever is driving, and a
+ * fresh two-field object sixty times a second is a fresh two-field object
+ * sixty times a second; `map.html` keeps one and passes it. Omit it and you
+ * get a new object, which is what the tests want.
  */
-export function inputGate(vehicle) {
-  if (!vehicle) return { blocked: false, rotationalScale: 1 };
-  if (vehicle.destroyed) return { blocked: true, rotationalScale: 0 };
-  if (vehicle.critical) return { blocked: false, rotationalScale: CRITICAL_INPUT_SCALE };
-  return { blocked: false, rotationalScale: 1 };
+export function inputGate(vehicle, out = { blocked: false, rotationalScale: 1 }) {
+  out.blocked = !!vehicle?.destroyed;
+  out.rotationalScale = !vehicle ? 1
+    : vehicle.destroyed ? 0
+      : vehicle.critical ? CRITICAL_INPUT_SCALE
+        : 1;
+  return out;
 }
 
 /**
@@ -375,7 +383,15 @@ export class VehicleDamageSet {
     if (!(Number.isFinite(material2) && material2 >= 0) || !(radius > 0)) {
       return [];
     }
-    const [bx, by, bz] = record.point || [];
+    // `splashPoint` when the record carries one, `point` otherwise. They
+    // differ by design on the impact path: the engine centres that explosion
+    // 0.1 m off the struck surface along the collision normal
+    // (`hitPos + 0.1 * normal`, lnxded 0x08153f5e-0x08153f8f) while playing
+    // the collision effect at the raw hit point (0x08153e5b). The end-of-life
+    // explosion has no surface and no offset — it stands on the projectile's
+    // own position (0x0831f747) — so `#detonate` sets no `splashPoint` and
+    // this falls through to `point`, which is right.
+    const [bx, by, bz] = record.splashPoint || record.point || [];
     if (![bx, by, bz].every(Number.isFinite)) return [];
     const yMod = record.splashYMod;
     const out = [];
