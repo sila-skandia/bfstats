@@ -33,6 +33,10 @@ export const LOCO_CLIP = {
  *   hasFire: boolean,
  *   hasReload: boolean,
  *   gait: string | null | undefined,
+ *   fidget: string | null,
+ *   fidgetRunning: boolean,
+ *   fidgetDue: boolean,
+ *   fidgetPick: string | null,
  * }} s
  * @returns {{
  *   want: string,
@@ -40,6 +44,8 @@ export const LOCO_CLIP = {
  *   startReload?: boolean,
  *   startFire?: boolean,
  *   stopLoopFire?: boolean,
+ *   startFidget?: boolean,
+ *   endFidget?: boolean,
  * }}
  */
 export function wantViewmodelClip(s) {
@@ -77,5 +83,18 @@ export function wantViewmodelClip(s) {
   if (s.fireLoops && s.fireRunning && !s.firing) {
     return { want: loco, stopLoopFire: true };
   }
+  // The idle fidgets (ANIM-6): the aim state registers Ub_Idle<W>1..3, its
+  // 4-7 s dwell timer picks one at random, and each one-shot returns to the
+  // aim state through addTransitionWhenDone. Only the aim state's own timer
+  // fires — the fidget states register none — so a fidget owns the arms from
+  // `idle` only, fire/reload/moving interrupt it exactly like the engine's
+  // input transitions leave it, and its finish (LoopOnce clamp →
+  // fidgetRunning false) sends the arms back to idle, where the caller
+  // re-arms a fresh dwell.
+  if (s.fidget && s.active === s.fidget) {
+    if (s.fidgetRunning) return { want: s.fidget };
+    return { want: loco, endFidget: true };
+  }
+  if (s.fidgetDue) return { want: s.fidgetPick, startFidget: true };
   return { want: loco };
 }

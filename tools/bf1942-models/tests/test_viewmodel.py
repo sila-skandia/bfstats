@@ -118,8 +118,25 @@ ANIM_CON = """
 AnimationStateMachine.createState Ub_StandAimThompson
 AnimationStateMachine.addAnimation Animations/3p/Thompson/3PStandAim.baf 0.8 1
 AnimationStateMachine.addAnimation Animations/1p/Thompson/1PStandAim.baf 0.1 1
+AnimationStateMachine.addIdle Ub_IdleThompson1
+AnimationStateMachine.addIdle Ub_IdleThompson2
+AnimationStateMachine.addIdle Ub_IdleThompson3
 AnimationStateMachine.returnToState Ub_StandAimThompson
 AnimationStateMachine.setMorphFactor 0.7
+AnimationStateMachine.copyState2 Colt Thompson
+
+AnimationStateMachine.createState Ub_IdleThompson1
+AnimationStateMachine.addAnimation Animations/3p/Thompson/3pIdle1Thompson.baf 1.0 c_AsmPlayOnce
+AnimationStateMachine.addAnimation Animations/WeaponHandling/1p/Thompson/1pIdle1Thompson.baf 0.52 c_AsmPlayOnce
+AnimationStateMachine.addTransitionWhenDone Ub_StandAimThompson
+
+AnimationStateMachine.createState Ub_IdleThompson2
+AnimationStateMachine.addAnimation Animations/3p/Thompson/3pIdle2Thompson.baf 1.0 c_AsmPlayOnce
+AnimationStateMachine.addAnimation Animations/WeaponHandling/1p/Thompson/1pIdle2Thompson.baf 0.39 c_AsmPlayOnce
+AnimationStateMachine.addTransitionWhenDone Ub_StandAimThompson
+
+rem the third registered fidget is never declared — the engine cannot play it
+rem and neither may the export invent a clip for it
 
 AnimationStateMachine.createState WeaponReloadThompson
 AnimationStateMachine.addAnimation Animations/Weapons/Thompson/ThompsonReload.baf 0.4 c_AsmPlayOnce
@@ -196,7 +213,6 @@ class ResolveFamiliesTests(unittest.TestCase):
         self.assertAlmostEqual(3.0, colt.morph_factor)
         self.assertEqual("Ub_StandAimColt", colt.return_to)
         self.assertEqual("_POSE_", machine.state("Ub_FireThompson").return_to)
-        # The engine's constructor default when a state never sets one.
         self.assertAlmostEqual(5.0, machine.state("WeaponReloadThompson").morph_factor)
 
     def test_a_cloned_state_renames_its_weapon_channel(self) -> None:
@@ -205,6 +221,54 @@ class ResolveFamiliesTests(unittest.TestCase):
         state = machine.state("Ub_StandReloadColt")
         self.assertIsNotNone(state)
         self.assertEqual("WeaponReloadColt", state.weapon_state)
+
+
+class FidgetFamilyTests(unittest.TestCase):
+    """The idle fidgets resolve from the aim state's `addIdle` registrations
+    (ANIM-6), named `idle1..idleN` in registration order, each one-shot at
+    its own (tweaked) rate with the aim state as its return."""
+
+    def test_registered_fidgets_resolve_in_order(self) -> None:
+        resolved, report = extract_viewmodel.resolve_families(
+            parsed_machine(), "Thompson")
+
+        self.assertEqual(
+            ["Animations/WeaponHandling/1p/Thompson/1pIdle1Thompson.baf",
+             "Animations/WeaponHandling/1p/Thompson/1pIdle2Thompson.baf"],
+            [resolved[f"idle{index}"]["ref"].path for index in (1, 2)])
+        self.assertFalse(resolved["idle1"]["loop"])
+        self.assertAlmostEqual(0.52, resolved["idle1"]["ref"].speed)
+        self.assertAlmostEqual(0.39, resolved["idle2"]["ref"].speed)
+
+    def test_the_fidget_report_carries_its_state_and_return(self) -> None:
+        _resolved, report = extract_viewmodel.resolve_families(
+            parsed_machine(), "Thompson")
+
+        self.assertEqual("Ub_IdleThompson1", report["idle1"]["fidgetState"])
+        self.assertEqual("Ub_StandAimThompson", report["idle1"]["returnTo"])
+        # The engine's constructor default when a state never sets one — the
+        # fidget states declare no setMorphFactor of their own.
+        self.assertAlmostEqual(5.0, report["idle1"]["morphFactor"])
+
+    def test_a_registered_but_undeclared_fidget_is_skipped(self) -> None:
+        # The fixture registers idle3 and never declares it; the engine
+        # cannot play what the machine does not hold, so the export skips it
+        # rather than inventing a clip.
+        resolved, report = extract_viewmodel.resolve_families(
+            parsed_machine(), "Thompson")
+
+        self.assertNotIn("idle3", resolved)
+        self.assertIn("Ub_IdleThompson3", report["idle3"]["error"])
+
+    def test_a_cloned_weapon_reports_its_unclonable_fidgets(self) -> None:
+        # The Colt clone's aim state carries substituted registrations
+        # (Ub_IdleColt1..3) the fixture never declares: skip, with the gap
+        # visible in the report rather than silently dropped.
+        resolved, report = extract_viewmodel.resolve_families(
+            parsed_machine(), "Colt")
+
+        self.assertNotIn("idle1", resolved)
+        self.assertIn("Ub_IdleColt1", report["idle1"]["error"])
 
 
 class ClipTimesTests(unittest.TestCase):
@@ -364,7 +428,8 @@ class ThompsonViewmodelArtifactTests(unittest.TestCase):
 
     def test_every_family_bakes_an_animation(self) -> None:
         self.assertEqual(
-            ["idle", "walk", "run", "fire", "reload", "deploy"],
+            ["idle", "walk", "run", "fire", "reload", "deploy",
+             "idle1", "idle2", "idle3"],
             [anim["name"] for anim in self.doc["animations"]])
 
     def test_the_three_first_person_meshes_are_skinned(self) -> None:

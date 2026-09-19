@@ -223,6 +223,27 @@ critical from a safe state. What a client HUD actually does on receipt of
 each id was not read — this is a server-side finding about *when* a signal
 fires, not what it looks like.
 
+### Client: local-player death opens the deploy screen synchronously (2026-09-18)
+
+Researched in `BF1942.exe` (sha `60c9452d...` MATCH, Ghidra bridge) to recreate
+the death→respawn flow in the browser viewer. The client's kill/death message
+dispatcher `FUN_004933d0` (`0x004933d0`), message `0x2a` sub-switch `+0x3`, on
+`DEATH`: formats the kill banner, clears the player's alive byte at
+`BFPlayer+0xa9`, and — when the dying player **is** the local player
+(`[edi+0x170]`, comparison at `0x4946b2`–`0x4946c5`) — calls
+**`SpawnScreenStuff::setVisible(true)`** (`FUN_006cce20`, `0x6cce20`) directly
+(`0x4946c5`–`0x4946d4`): the spawn/deploy screen opens **immediately and
+synchronously** on the local player's death in this vanilla build — no
+client-side death-cam timer, camera dolly or delay constant precedes it. The
+`game.serverDeathCameraType` setting (`0x008d2fe8`, registrar `FUN_00425690`
+`0x00425690`, default table `0x008c596c`) is server-informed; its integer mode
+values and any per-mode client *camera* behavior (the floating-above-corpse
+death cam the user sees) were **not** decoded within budget — likely
+server-orchestrated / spectator surface rather than a client-timed beat before
+deploy. Viewer consequence: on `soldierArmor.destroyed` → open deploy. The
+brief camera-holds-over-the-corpse the user observes is reproduced as a short
+fade/hold beat before `openDeploy()`, not as a decoded client animation.
+
 ## 8. `addArmorEffect`: the smoke and fire tiers, and the tick that drives them
 
 Settled 2026-09-17 (ARM-1, ARM-2, ARM-4). This is the mechanism behind a

@@ -1017,11 +1017,13 @@ def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
         if node is not None:
             skinned_roots.append(node)
 
-    # Bind-pose soldier meshes stand along +Z; pitch the root onto +Y the
-    # same way the stance pose export does.
+    # Bind-pose soldier meshes stand along +Z (Refractor forward). Stance poses
+    # pitch -90 on X so the soldier faces the side-on camera; a seat pose stands
+    # the soldier upright facing the vehicle's own forward, which glTF reads as
+    # -Z — a 180-degree yaw, not a coordinate-system pitch.
     root = builder.add_node(gltf.Node(
         name=f"{soldier} in {upper_state}",
-        rotation=gltf.quat_from_ypr(0.0, -90.0, 0.0),
+        rotation=gltf.quat_from_ypr(180.0, 0.0, 0.0),
         children=root_children,
         extras={"soldier": soldier, "upperState": upper_state,
                 "lowerState": lower_state, "poseKind": "seat"},

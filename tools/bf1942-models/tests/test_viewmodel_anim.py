@@ -35,7 +35,7 @@ class ViewmodelAnimTests(unittest.TestCase):
             raise AssertionError(f"harness failed:\n{proc.stderr}\n{proc.stdout}")
         payload = json.loads(proc.stdout.strip())
         self.assertTrue(payload["ok"])
-        self.assertEqual(payload["cases"], 15)
+        self.assertEqual(payload["cases"], 24)
 
 
 if __name__ == "__main__":

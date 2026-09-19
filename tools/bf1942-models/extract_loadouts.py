@@ -85,6 +85,41 @@ def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
                         (library.object(item).name if library.object(item) else item)
                         for item in kit.carried]
                     kit_template = library.object(kit.template)
+                    # What the number keys select: every carried weapon's
+                    # `itemIndex` — the inventory slot, i.e. the number key
+                    # that raises it (kit.py's census: 1 knife, 2 pistol, 3
+                    # primary, 4 grenade, 5 medpack/binoculars/...). The kit's
+                    # own `addWeaponIcon` list is the weapon bar's row, also in
+                    # slot order — the game paints it in the order it raises
+                    # weapons, not the order `addTemplate` declares them (the
+                    # vanilla US_Medic file declares Thompson, Colt, Knife,
+                    # MedPack, Grenade but its icons run knife, colt,
+                    # thompson, grenade, medpack; EoD's do the same) — so an
+                    # icon pairs with the weapon at the same position in
+                    # slot order. A carried item that declares no
+                    # `itemIndex` (none in vanilla) cannot be selected and is
+                    # left out. The sort is stable, so the kit's declaration
+                    # order is the tie-break for a mod that files two weapons
+                    # at one slot (`GerKit`: "first the best weapons!").
+                    weapon_icons = (list(kit_template.kit_weapon_icons)
+                                    if kit_template else [])
+                    weapons = []
+                    for carry_index, item in enumerate(kit.carried):
+                        item_template = library.object(item)
+                        if item_template is None or item_template.item_index is None:
+                            continue
+                        weapons.append({
+                            "slot": item_template.item_index,
+                            "weapon": (item_template.name if item_template
+                                       else item),
+                            "carryIndex": carry_index,
+                        })
+                    weapons.sort(key=lambda entry: entry["slot"])
+                    for position, entry in enumerate(weapons):
+                        entry["icon"] = (weapon_icons[position]
+                                         if position < len(weapon_icons)
+                                         else None)
+                        del entry["carryIndex"]
                     hitpoints, max_hitpoints = _soldier_hit_points(
                         library, team.soldier)
                     rows[kit.template] = {
@@ -93,6 +128,7 @@ def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
                         "team": kit.team,
                         "primary": kit.primary,
                         "items": items,
+                        "weapons": weapons,
                         # The HUD health bar a soldier wearing this kit draws,
                         # and the row of icons the spawn screen shows under
                         # the kit portrait -- `setHealthBarIcon`/

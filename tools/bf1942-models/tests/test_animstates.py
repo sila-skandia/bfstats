@@ -152,5 +152,78 @@ class CloneResolutionTests(unittest.TestCase):
         self.assertEqual(6, len(machine.weapons("Ub_StandAim")))
 
 
+ANIM_CON = """\
+AnimationStateMachine.createState Ub_StandAimThompson
+AnimationStateMachine.addAnimation Animations/StandWalkRun/3p/Thompson/3PStandAimUpperThompson.baf 0.8 1
+AnimationStateMachine.addAnimation Animations/StandWalkRun/1p/Thompson/1PStandAimThompson.baf 0.1 1
+AnimationStateMachine.addIdle Ub_IdleThompson1
+AnimationStateMachine.addIdle Ub_IdleThompson2
+AnimationStateMachine.addIdle Ub_IdleThompson3
+rem *** AnimationStateMachine.addIdle Ub_IdleThompson4
+AnimationStateMachine.addTransitionOne c_PIFire 0.5 1 Ub_Fire
+include copyToallWeapons.inc Thompson
+
+AnimationStateMachine.createState Ub_IdleThompson1
+AnimationStateMachine.addAnimation Animations/WeaponHandling/3p/Thompson/3pIdle1Thompson.baf 1.0 c_AsmPlayOnce
+AnimationStateMachine.addAnimation Animations/WeaponHandling/1p/Thompson/1pIdle1Thompson.baf 1.0 c_AsmPlayOnce
+AnimationStateMachine.addTransitionWhenDone Ub_StandAimThompson
+include copyToallWeapons.inc Thompson
+
+AnimationStateMachine.set1pAnimationSpeed Ub_IdleColt1 0.52
+"""
+
+ANIM_FILES = {
+    "animations/animationstates.con": ANIM_CON,
+    "animations/copytoallweapons.inc": "AnimationStateMachine.copyState2 Colt v_arg1\n",
+}
+
+
+class AddIdleTests(unittest.TestCase):
+    """The fidget registration: `addIdle Ub_Idle<W>1..3` on the aim states
+    (ANIM-6 — the 4-7 s dwell that picks one and returns through
+    `addTransitionWhenDone`). The engine's own `Idle4` line sits commented
+    out in the vanilla data and must stay unregistered."""
+
+    def setUp(self) -> None:
+        self.machine = machine_from(ANIM_FILES)
+
+    def test_addidle_registers_on_the_aim_state_in_declaration_order(self) -> None:
+        self.assertEqual(
+            ["Ub_IdleThompson1", "Ub_IdleThompson2", "Ub_IdleThompson3"],
+            self.machine.state("Ub_StandAimThompson").idles)
+
+    def test_a_commented_out_addidle_is_not_a_registration(self) -> None:
+        # `rem *** AnimationStateMachine.addIdle Ub_IdleThompson4` — the
+        # vanilla file keeps a fourth fidget switched off.
+        self.assertEqual(
+            ["Ub_IdleThompson1", "Ub_IdleThompson2", "Ub_IdleThompson3"],
+            self.machine.state("Ub_StandAimThompson").idles)
+
+    def test_the_fidget_state_itself_resolves_like_any_other(self) -> None:
+        state = self.machine.state("Ub_IdleThompson1")
+        clip = state.clip_1p()
+        self.assertEqual(
+            "Animations/WeaponHandling/1p/Thompson/1pIdle1Thompson.baf",
+            clip.path)
+        self.assertTrue(clip.is_first_person)
+
+    def test_addidle_clones_with_the_weapon_substitution(self) -> None:
+        # `Ub_IdleThompson1` -> `Ub_IdleColt1` on the cloned aim state, so the
+        # engine picks per-weapon fidgets for every clone as it does for the
+        # longhand Thompson.
+        self.assertEqual(
+            ["Ub_IdleColt1", "Ub_IdleColt2", "Ub_IdleColt3"],
+            self.machine.state("Ub_StandAimColt").idles)
+        self.assertEqual(
+            "Animations/WeaponHandling/1p/Colt/1pIdle1Colt.baf",
+            self.machine.state("Ub_IdleColt1").clip_1p().path)
+
+    def test_the_tweaking_speed_lands_on_the_cloned_fidget(self) -> None:
+        # 1pAnimationsTweaking.con names the state outright; the clone's 1P
+        # clip must pick the override up like every other state's.
+        self.assertAlmostEqual(
+            0.52, self.machine.state("Ub_IdleColt1").clip_1p().speed)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -315,6 +315,20 @@ What the data says, and the viewer now does:
 - Everything is painted into one canvas from the flattened list, in the file's
   order, under the file's conditions; invisible buttons sit where the game's
   pointer regions are, so the harness selectors are unchanged.
+- Show/hide is the engine's own `BfMap` open/close (`BfMap__animate`
+  0x00468fb0; ledger MMAP-1/2, MEME-13): one zoom fraction z eases toward its
+  target as `z += (target − z)(1 − e^(−9·dt))` — pure exponential, ~0.11 s
+  time constant — and drives everything. The pane interpolates from the closed
+  minimap's `(620,30) 175x175` to the spawn map's measured `(280,33) 512x512`,
+  the art inside turns by `(1 − z) × cameraHeading()` (over-scaled by the
+  square's cover factor so the turned texture keeps the quad covered, the
+  pane's own edge staying axis-aligned as in the capture), the pane's opacity
+  rides the same fraction, and the chrome pops in fully formed when z crosses
+  0.7 — the capture's one-frame appearance ~0.13 s in (the chrome is plain
+  `CullNode` visibility, MEME-4). Closing runs the whole thing in reverse and
+  strips the chrome on the first frame. The deploy backdrop is transparent:
+  the live world shows around and through the screen as it does in the game,
+  the dim being the map pane's own (MEME-10).
 
 Still approximated or absent:
 
