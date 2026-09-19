@@ -113,36 +113,31 @@ Sherman's hull-gunner door were all unreachable before this, confirmed via
   seat to leave costs nothing, matching `toggleEntryPoint`'s own
   success-path-only refresh.
 
-## Aiming: GUN-3's two registers, and where this stops short of them
+## Aiming: the engine's velocity servo (GUN-2)
 
-`TurretAxis.step` (`seats.js`) ships the parts of GUN-3 (verify-r6.md's
-corrected report) the verifier fully confirmed: degrees straight off the
-`.con`, the ±180° wrap when an axis is unlimited (`min==max`), a direct clamp
-otherwise, no spring-to-centre. The verifier's real mechanism is two
-per-axis accumulators — an input register clamped to a hardcoded ±40 and
-deadzoned against ±1.0, and an `|acceleration|·dt` register — whose *product*
-drives the angle, plus an `automaticReset`-dependent step the verifier
-explicitly could not close out ("the exact per-tick algebra... is still not
-nailed down"). Two gaps stand between that and this viewer:
+> **Superseded, 2026-09-19.** This section used to describe GUN-3's "two
+> per-axis accumulators whose *product* drives the angle", a ±40 bank of aim
+> and a ±1.0 deadzone. All of that was a misreading of one function, and the
+> 2026-09-19 round read that function end to end. What it actually is, and
+> what changed in the viewer, is in
+> [2026-09-19: the servo, the dial and the dots](#2026-09-19-the-servo-the-dial-and-the-dots)
+> below. The paragraphs immediately after this one are kept only because the
+> two 2026-09-17 sections argue against them.
 
-1. `bf42/con.py`'s `rig()` (another track's file this round, off limits)
-   exports each axis's acceleration only as a *sign*, never a magnitude — the
-   real per-axis ramp rate the confirmed formula needs is not in this
-   viewer's extracted data at all, independent of the algebra question.
-2. Even given that magnitude, the closed form itself is unsettled.
+`TurretAxis.step` (`seats.js`) is `RotationalBundle::calculateAndClipAngle`
+(lnxded `0x081d7490`), whose 361 instructions were traced in full and then
+re-traced independently:
 
-The corrected report's own recipe names the way through both: approximate
-with a tunable ease rather than ship the wrong formula. `TurretAxis` banks the
-angle the mouse asks for and spends it as fast as the axis allows — see the
-2026-09-17 follow-up below for why it stopped chasing an input-scaled *rate*,
-and which constants are named as tuned-to-feel-right rather than measured in
-`seats.js`'s own comments. The deadzone's asymmetric `<-1.0` branch the
-verifier flagged as unexplained is not reproduced either (a plain zero for
-both signs is used).
+```
+speed  ->  sign(acceleration) * input * maxSpeed,  ramped at |acceleration| deg/s^2
+angle  +=  speed * dt  +  continousRotationSpeed * dt
+then:  minRotation == 0 && maxRotation == 0  ->  one +-360 correction
+       otherwise  angle > max -> max,  else  angle < min -> min
+```
 
-**Open**: both gaps above are the verifier's own open items, not this
-viewer's invention — closing either needs a further disassembly pass this
-round did not do, named exactly in `verify-r6.md`'s own `## Open` section.
+Degrees throughout, two registers that persist between ticks, and
+`automaticReset` a different law entirely. The one number that is still this
+viewer's own is what a pointer-lock pixel is worth as `input` — GUN-2b.
 
 ## Camera and firing
 
@@ -464,3 +459,133 @@ spending four times as long as the game does.
 - **The seated trigger routing has no unit test.** It lives in `map.html`,
   which no harness here loads; it was verified in the browser through the real
   pointer-event path (`__chordEvent`), including the two-button chord.
+
+## 2026-09-19: the servo, the dial and the dots
+
+The parity round read `RotationalBundle::calculateAndClipAngle` (lnxded
+`0x081d7490`) instruction by instruction, twice and independently, and closed
+GUN-2. Four things this file had recorded as confirmed were wrong, and they
+were wrong together because they were all readings of the same function.
+
+### What the servo actually is
+
+```
+speed  ->  sign(acceleration) * input * maxSpeed,  ramped at |acceleration| deg/s^2
+angle  +=  speed * dt  +  continousRotationSpeed * dt
+```
+
+A first-order velocity servo: one angle register (`+0x104`), one speed
+register (`+0x110`), both persisting between ticks. Not a product of two
+accumulators.
+
+**There is no bank of aim.** `+0x128`, which this file modelled as "degrees
+of ask, clamped to ±40", is an **input backlog in input units**, and both it
+and the `-1.0` constant beside it live inside the `rememberExcessInput`
+branch. A survey of every `.con` and `.inc` in every archive of all 18
+installs finds 1,468 declarations of that flag and **not one on a turret,
+manned gun, tank or `Objects.con` rotational bundle** — vanilla's 32 are all
+aircraft rudder and tail-flap `Wing` bundles. For every gun in this viewer
+the register does not exist, so `TURRET_PENDING_CLAMP`, `TURRET_DEADZONE`,
+`TURRET_IDLE_DECAY` and `TURRET_IDLE_DECAY_FRAMES` are all gone. The "settles
+to a stop instead of coasting" behaviour those were tuned to produce now
+falls out of the servo for free: when the hand stops, the commanded rate is
+zero and the speed register ramps down to meet it.
+
+### Three things the servo brings that were never there
+
+- **`continousRotationSpeed · dt` is added unconditionally**, every tick, in
+  the non-`automaticReset` path — alongside whatever the input asks for, not
+  instead of it. `con.py` now carries it per axis. In vanilla no input-bound
+  axis declares a non-zero one (the windmills, watermills and radar dishes
+  that do have no input binding at all, and reach the viewer as `assemble.py`'s
+  baked `ambient` glTF clip, which `map.html` already plays); 127 input-bound
+  axes across the installed mods do, none of them mouse-look.
+- **`automaticReset` is a different control law.** The angle ramps *straight*
+  toward `input × maxRotation` at `|acceleration|` **deg/s** — a rate, so one
+  tick from rest moves exactly `acceleration · dt` — with no velocity
+  register and no continuous term. Release and the target is zero, so the part
+  drives itself home at the same rate. That is what makes a steering wheel
+  self-centre, and 221 vanilla templates (steering wheels and Engines) were
+  running under the wrong law.
+- **The wrap gate is `minRotation == 0 && maxRotation == 0`**, the template
+  default, not a zero-width range. `con.py`'s `free` rule asked `lo == hi`,
+  which read `min == max == 45` as free-spinning. **151 input-bound axes
+  across 13 installs** author a non-zero zero-width range — three in vanilla
+  (`Elco_ThrottleL` pitch 60/60 among them), 87 in FHSW, 33 in GCMOD — and the
+  engine pins every one of them where the viewer spun it. A component the
+  `.con` omits is that same template 0, so an axis declaring only
+  `setMinRotation -70/0/0` clamps to [-70, 0] rather than spinning; the rule
+  is "are both zero", not "is either absent".
+
+### `TURRET_SPEED_SCALE` stays at 4
+
+The research pass recommended removing it, on the reading that `maxSpeed` is
+the literal deg/s ceiling. That was **refuted three ways** and the constant is
+left alone; only its justification changes, because the old one cited the
+now-corrected "±40 is not the template's `maxSpeed`" wording.
+
+`maxSpeed` is a **gain — deg/s per unit of input**, and nothing establishes
+the input's unit. The ±1 clamp lives inside `rememberExcessInput`, which no
+gun declares. The wire format reserves headroom to **±16**:
+`PlayerAction::set` packs every `PlayerInput` float with
+`floatToFixed(v, 12, 16.0f)` and `get` decodes `((n/4095)·2 − 1)·16.0`, so an
+input normalised to ±1 would leave fifteen sixteenths of the encoding dead.
+And the "a soldier's head turns nine times faster for the same hand movement"
+observation that produced the constant compares two different control laws —
+`SoldierCamera` declares `setMaxSpeed 0/0/0` and never enters this function.
+
+**The open question is now stated narrowly (ledger GUN-2b): what magnitude the
+client's mouse-look axis delivers as `PlayerInput[c_PIMouseLookX/Y]`.** The
+trail runs as far as the client's `ControlMap.addAxisToAxisMapping` registrars
+(`FUN_006bba90` / `FUN_006bbd90`) without reaching the multiply. Until someone
+reads it, `seats.js` makes its stand-in explicit in one place: a hand asking
+for more travel per second than `maxSpeed · TURRET_SPEED_SCALE` delivers
+input 1, so that product is the viewer's traverse ceiling — which is the
+behaviour this page has shipped all along and the part players have judged.
+
+### What the rewrite changes to the feel: nothing you aim with
+
+Measured in the node harness against the two guns' real `.con` numbers —
+`ShermanTower` `setMaxSpeed 35/25/0`, `setAcceleration 1000/0/0`;
+`StationaryMG42Point` `setMaxSpeed 70/0/0`, `setAcceleration 5000/0/0` — under
+the same scripted pointer input, before and after:
+
+| same scripted input | before (bank) | after (servo) |
+|---|---|---|
+| Sherman turret through 90°, saturating (40 px/frame) | **0.667 s** | **0.667 s** |
+| MG42 through 90°, saturating | **0.333 s** | **0.333 s** |
+| MG42 to its real 70° stop, saturating | **0.250 s** | **0.250 s** |
+| Sherman through 90°, tracking (10 px/frame) | **1.200 s** | **1.200 s** |
+| MG42 through 90°, tracking | **1.200 s** | **1.200 s** |
+| Sherman coast after a one-frame 2000 px flick | **19.7°** | **0°** |
+| Sherman coast after releasing a saturating sweep | 19.4° | 1.3° |
+
+Every time through 90 degrees is identical to the tick, which is the answer to
+"does this change how every gun in the viewer feels": sustained aiming, the
+thing a player actually does, is unchanged. What goes is the coast — the bank
+kept paying out ~20 degrees after the hand stopped, and the idle decay was a
+patch on exactly that. The servo's own ramp-down covers it in 1.3 degrees,
+because a Sherman tower's 1000 deg/s² (4000 scaled) takes two ticks to bleed
+140 deg/s.
+
+### `inputScale`, for the damaged-vehicle hook
+
+`TurretAxis.step(dt, inputScale = 1)` and `TurretRig.step(dt, inputScale = 1)`
+multiply the sampled input before the servo sees it. That is exactly where the
+engine applies HP-15: `RotationalBundle::handlePlayerInput` (`0x081d834f`)
+scales all three axes by the double at `ds:0x86c8678` = **0.2** while
+`SimpleObject+0xee` is set, i.e. for the whole wrecked lifetime of a
+critically damaged vehicle. `map.html` owns deciding which, since it is the
+only thing that knows the hull's live Armor; the two call sites are
+`drive()`'s `occupancy.turret?.step(dt)` and `manned()`'s.
+
+### Still open after this round
+
+- GUN-2b, above: the mouse-axis magnitude.
+- `con.py` drops a zero `setAcceleration` rather than emitting `0`, so the
+  engine's own early-out (`acceleration == 0 && continousRotationSpeed == 0`
+  returns without touching either register) cannot be told apart from "this
+  glb predates the field". The fallback is applied in both cases.
+- The clamp follows the engine in NOT sorting `min`/`max`: it tests `> max`
+  first and `< min` second on the authored components. An inverted authored
+  range would pin the angle, which is what the engine does.
