@@ -167,10 +167,16 @@ vertex's fourth float:
 | `demokit_m1.sm` | 6 | **195** | 70 |
 | `landmine_m1.sm` | 12 | **232** | 230 |
 
-195 and 232 are undefined in vanilla and fall back through `getMaterialPtr(0)`
-to **material 0** (friction 1.0, elasticity 0, resistance 0.02) — the accessors
-`0x081751b0` / `0x081751f0` / `0x08175230` read `Material+0x0c` / `+0x10` /
-`+0x14` and share that fallback, with `fld1` if material 0 is missing too.
+195 and 232 are **declared** in `materialManagerdefine.con` — each carries a
+`materialDamage` and none of the three physical words — so `getMaterialPtr`
+does not miss on them and neither falls through to material 0. Each is a real
+`Material` holding the constructor's friction 1.0, elasticity 0 and resistance
+**0.01**, which is what `bf42/damage.py` now writes for every declared id. The
+fall-through is real but it is for the *gaps*: the file declares 155 ids, and
+16–38, 71, 73–78, 99 and the rest of the holes are what reach
+`getMaterialPtr(0)` and material 0's authored 0.02. The accessors `0x081751b0`
+/ `0x081751f0` / `0x08175230` read `Material+0x0c` / `+0x10` / `+0x14` and
+share that chain, with `fld1` if material 0 is missing too.
 
 ### The answer, and it is not the one the brief expected
 
@@ -200,11 +206,15 @@ dead at first contact" rule and under the contact solver:
 |---|---|---|
 | before | **14.38 m** | frozen at the crossing |
 | grenade | **18.75 m** | μ 1.4, resistance 1.04 |
-| landmine | **25.53 m** | μ 0.9, resistance 0.05 |
+| landmine | **25.58 m** | μ 0.9, resistance 0.045 |
 | explosives pack | **25.58 m** | μ 0.9, resistance 0.045 |
 
+The landmine and the pack are identical to the millimetre, and they should be:
+195 and 232 are two bare declarations of the same three constructor values, so
+the pair against any one surface is the same pair.
+
 Against a wall 6 m out, all of them end at its **foot** (y = 0) rather than
-hanging where they touched; the grenade takes one contact to kill its
+hanging where they touched; the grenade takes two contacts to kill its
 into-wall speed, the landmine fourteen.
 
 Dropped from rest on a slope, `tan θ > μ` decides:
