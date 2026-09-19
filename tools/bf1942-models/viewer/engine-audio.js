@@ -298,6 +298,54 @@ export class EngineAudio {
   }
 
   /**
+   * Live sources **plus** the ones this patch has promised but not yet
+   * started: its armed `trigger Volume` layers.
+   *
+   * A distant explosion layer held back 0.75 s by a step ramp is not a voice
+   * yet and is not optional either — the patch that started its near layer
+   * has already committed to it. A voice budget spent only against what is
+   * currently sounding will therefore be over by exactly the number of
+   * delayed layers in flight when they land, which is what a first
+   * measurement of a 200-round burst showed (27 live against a cap of 26).
+   * Counting the promise is what makes the cap hold.
+   */
+  get committed() {
+    return this.live.size + this.armed;
+  }
+
+  /** Armed `trigger Volume` layers: promised, not yet started. */
+  get armed() {
+    let pending = 0;
+    for (const voice of this.voices) {
+      if (voice.layer.trigger !== 'volume') continue;
+      if (voice.volumeArmed && this.chosen.has(voice)) pending += 1;
+    }
+    return pending;
+  }
+
+  /**
+   * Spend every unfired `trigger Volume` latch on this patch.
+   *
+   * Called by a one-shot caller once the round's own window has passed. Two
+   * things go wrong without it, both measured on the page:
+   *
+   * 1. **A latch that never fires holds a voice reservation forever.** An
+   *    `e_ExplGas` played at 4 m arms its 100 m, 200 m and 400 m layers and
+   *    none of them ever rises, because their *distance* gates read zero at
+   *    4 m. Counted as committed they were three voices of a 26-voice budget
+   *    permanently spent — a 200-round burst measured 186 drops against 14
+   *    plays with three explosions' worth of dead latches held.
+   * 2. **A stale latch fires late.** The layer is gated on distance as well as
+   *    time, so a listener who walks into the 100 m band a minute after the
+   *    bang would set off an explosion that finished long ago.
+   */
+  disarmPending() {
+    for (const voice of this.voices) {
+      if (voice.layer.trigger === 'volume') voice.volumeArmed = false;
+    }
+  }
+
+  /**
    * Cut every source this patch has running, keeping the graph reusable.
    *
    * This is voice stealing: a caller at its budget silences a patch outright
