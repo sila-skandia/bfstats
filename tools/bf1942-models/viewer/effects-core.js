@@ -690,6 +690,65 @@ export function diesOnContact(damage) {
 }
 
 /**
+ * A **fuse** round: one whose only explosion is the end-of-life one, and
+ * which lives through a contact to reach it.
+ *
+ * Three conditions, and the third is the one that is easy to drop:
+ *
+ *   1. it has an end-of-life explosion (`damageType` 1 or 4);
+ *   2. it has NO impact explosion (so `hasCollisionEffect` is clear, or the
+ *      type is 4);
+ *   3. it SURVIVES contact (`diesOnContact` is false).
+ *
+ * In vanilla exactly four templates answer all three —
+ * `GrenadeAlliesProjectile`, `GrenadeAxisProjectile`, `ExpPackProjectile` and
+ * `LandmineProjectile`. The three flak shells pass 1 and 2 and fail 3, which
+ * is the whole reason the third condition exists.
+ */
+export function isFuseRound(damage) {
+  const splash = splashSpec(damage);
+  return !!(splash && !splash.impact && splash.endOfLife) && !diesOnContact(damage);
+}
+
+/**
+ * The viewer's own recycling ceiling for a round that is still **flying**.
+ *
+ * Nothing vanilla flies for twenty seconds; a mod round with a huge
+ * `timeToLive` and a slow muzzle would otherwise sail on forever. It is a
+ * viewer guard, not an engine number.
+ */
+export const FLIGHT_TTL_CEILING = 20;
+
+/** Fallback when a projectile spec carries no `timeToLive` at all. */
+export const DEFAULT_TIME_TO_LIVE = 10;
+
+/**
+ * How long the viewer lets a round live: its authored fuse for a **fuse**
+ * round, the flight ceiling for everything else.
+ *
+ * The distinction only started to matter when the fuse began firing a blast.
+ * `ExpPackProjectile` authors `timeToLive 240` and `LandmineProjectile` 360,
+ * and the engine really does detonate them then — `Projectile::handleUpdate`
+ * (lnxded 0x0831e940) calls `detonate` (0x0831e680) at the end of the fuse,
+ * which is where `startEndEffect` comes from. Clamping those to 20 s does not
+ * make them expire early in some harmless cosmetic sense, the way it did when
+ * `timeToLive` only recycled a mesh: it drops 12 m and 4 m of real splash on
+ * the player twenty seconds after he puts the charge down.
+ *
+ * The ceiling's own reason does not apply to a fuse round anyway. Such a round
+ * comes to rest, stops moving and stops sweeping, and costs one pooled mesh
+ * while its fuse runs down. What the ceiling is there to catch is a round that
+ * never stops travelling.
+ *
+ * Same principle as the range cap in `advance`: a guard the viewer invented
+ * must not invent a blast with it.
+ */
+export function roundTimeToLive(timeToLive, damage) {
+  const authored = timeToLive || DEFAULT_TIME_TO_LIVE;
+  return isFuseRound(damage) ? authored : Math.min(authored, FLIGHT_TTL_CEILING);
+}
+
+/**
  * Splash HP: `materialDamage(att2) * damageMod(att2, splashMaterial) * (1 - d/radius)`.
  * Same formula as `bf42/damage.py` `splash_damage`. Returns 0 when the tables
  * have no entry for the pairing (a Sherman splash vs tank armour).
