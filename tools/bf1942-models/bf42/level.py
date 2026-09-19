@@ -239,6 +239,61 @@ class LightingInfo:
 
 
 @dataclass
+class FlareElement:
+    """One sprite of a `LensFlare` template — a flare or a corona.
+
+    The verbs are `ObjectTemplate.set<Flare|Corona><Field> <value> <index>`:
+    the index is always the LAST token, and the fields are the same set on
+    both sides. Surveyed across every installed mod (`survey_flare.py`):
+    319 levels in 11 mods declare flares, with one uniform vocabulary. The
+    `*2` fields and `fadeAngleFactor` are rare — FHSW's `On_the_moon-1969`
+    car headlights and bfheroes — but the client registers them
+    (`setCoronaSize2`, `setCoronaColor2`, `setCoronaFadeAngleFactor` are in
+    BF1942.exe's string table), so they are read rather than dropped.
+    """
+
+    texture: str = ""
+    size: float | None = None
+    size2: float | None = None
+    scale: float | None = None
+    rot: float | None = None
+    color: tuple[float, float, float, float] | None = None
+    color2: tuple[float, float, float, float] | None = None
+    src_blend: str = ""
+    dest_blend: str = ""
+    dist_fade_scale: float | None = None
+    fade_angle_factor: float | None = None
+
+
+@dataclass
+class LensFlare:
+    """One `ObjectTemplate.create LensFlare <name>` and everything under it.
+
+    Vanilla declares exactly one per level — `TSun`, in `Init/SkyAndSun.con`,
+    with 5 flares and 2 coronas — and names the Object created from it `sun`,
+    which `Sky.setSun sun` then points the sky at.
+    """
+
+    name: str = ""
+    flare_count: int = 0            # setLensFlareCount
+    back_flare_count: int = 0       # setBackFlareCount
+    corona_count: int = 0           # setCoronaCount
+    visibility_angle_deg: float | None = None   # setVisibilityAngleDeg
+    flare_fade_all: float | None = None         # setFlareFadeAll
+    corona_fade_all: float | None = None        # setCoronaFadeAll
+    flares: dict[int, FlareElement] = field(default_factory=dict)
+    coronas: dict[int, FlareElement] = field(default_factory=dict)
+
+    def ordered(self, which: str) -> list[FlareElement]:
+        """The declared sprites in index order. A file that sets an index it
+        never declared a count for still gets its sprite: the count is the
+        engine's array allocation, and the levels do sometimes disagree with
+        themselves (bf1918 sets a texture on an index past its own count)."""
+        table = self.flares if which == "flare" else self.coronas
+        return [table[i] for i in sorted(table)]
+
+
+@dataclass
 class CombatArea:
     min_x: float
     min_z: float
@@ -400,6 +455,12 @@ class LevelInfo:
     game_view_distance: float | None = None  # Game.setViewDistance
     texture_alternative_path: str = ""      # textureManager.alternativePath
     sounds: LevelSounds = field(default_factory=LevelSounds)
+    # Every `ObjectTemplate.create LensFlare <name>` the level's con files
+    # declare, by template name, plus the `Object.create`/`Object.name` pairs
+    # that let `Sky.setSun <object>` be resolved back to one of them.
+    lens_flares: dict[str, LensFlare] = field(default_factory=dict)
+    flare_objects: dict[str, str] = field(default_factory=dict)  # object -> template
+    sun_object: str = ""                    # Sky.setSun
 
 
 @dataclass
@@ -1024,6 +1085,72 @@ def _vec2(tokens: list[str]) -> tuple[float, float]:
     return (float(a), float(b or 0.0))
 
 
+def _rgba255(token: str) -> tuple[float, float, float, float] | None:
+    """`255/150/0/100` — the engine's 0..255 RGBA, normalised to 0..1. Alpha
+    is genuinely used (vanilla's five sun flares run 50, 200, 155, 50, 100),
+    so it is kept rather than folded into the colour."""
+    parts = token.split("/")
+    if len(parts) != 4:
+        return None
+    try:
+        values = [float(p) for p in parts]
+    except ValueError:
+        return None
+    return tuple(v / 255.0 for v in values)   # type: ignore[return-value]
+
+
+# `ObjectTemplate.set<Flare|Corona><Field> <value> <index>`, the field names
+# lower-cased. Everything past the prefix is one of these.
+_FLARE_FIELDS = {
+    "texture": "texture",
+    "size": "size",
+    "size2": "size2",
+    "scale": "scale",
+    "rot": "rot",
+    "color": "color",
+    "color2": "color2",
+    "srcblend": "src_blend",
+    "destblend": "dest_blend",
+    "distfadescale": "dist_fade_scale",
+    "fadeanglefactor": "fade_angle_factor",
+}
+_FLARE_FLOATS = {"size", "size2", "scale", "rot", "dist_fade_scale",
+                 "fade_angle_factor"}
+
+
+def _parse_flare_verb(flare: LensFlare, which: str, field_key: str,
+                      tokens: list[str]) -> None:
+    """One `set<Flare|Corona><Field>` line onto its indexed sprite."""
+    attr = _FLARE_FIELDS.get(field_key)
+    if attr is None or not tokens:
+        return
+    # The index is the last token; a line that omits it addresses sprite 0.
+    index = 0
+    value_tokens = tokens
+    if len(tokens) >= 2:
+        try:
+            index = int(float(tokens[-1]))
+            value_tokens = tokens[:-1]
+        except ValueError:
+            index = 0
+    if index < 0:
+        return
+    table = flare.flares if which == "flare" else flare.coronas
+    element = table.setdefault(index, FlareElement())
+    raw = value_tokens[0] if value_tokens else ""
+    if attr in _FLARE_FLOATS:
+        try:
+            setattr(element, attr, float(raw))
+        except ValueError:
+            return
+    elif attr in ("color", "color2"):
+        rgba = _rgba255(raw)
+        if rgba is not None:
+            setattr(element, attr, rgba)
+    else:
+        setattr(element, attr, raw)
+
+
 def parse_init_con(text: str, info: LevelInfo) -> None:
     # `GeometryTemplate.file` is stateful: the file loaded right before
     # `Sky.initSky` is the sky box mesh. Comment lines are already stripped, so
@@ -1033,8 +1160,48 @@ def parse_init_con(text: str, info: LevelInfo) -> None:
     # leaves an active `GeometryTemplate.create ... Cloud` + `.file` pair.
     pending_geometry_file: str | None = None
     pending_geometry_create: str | None = None
+    # `ObjectTemplate.create LensFlare <name>` opens a block: every
+    # `ObjectTemplate.*` line after it belongs to that template until the next
+    # `create`. `Object.create <template>` / `Object.name <name>` then makes
+    # the instance `Sky.setSun` points at.
+    active_flare: LensFlare | None = None
+    pending_object_template: str | None = None
     for ns, cmd, args in _commands(text):
         tokens = args.split()
+        if ns == "objecttemplate":
+            if cmd == "create":
+                # Any other `create` closes the flare block, whatever it makes.
+                active_flare = None
+                if len(tokens) >= 2 and tokens[0].lower() == "lensflare":
+                    active_flare = info.lens_flares.setdefault(
+                        tokens[1], LensFlare(name=tokens[1]))
+                continue
+            if active_flare is None:
+                continue
+            if cmd == "setlensflarecount" and tokens:
+                active_flare.flare_count = int(float(tokens[0]))
+            elif cmd == "setbackflarecount" and tokens:
+                active_flare.back_flare_count = int(float(tokens[0]))
+            elif cmd == "setcoronacount" and tokens:
+                active_flare.corona_count = int(float(tokens[0]))
+            elif cmd == "setvisibilityangledeg" and tokens:
+                active_flare.visibility_angle_deg = float(tokens[0])
+            elif cmd == "setflarefadeall" and tokens:
+                active_flare.flare_fade_all = float(tokens[0])
+            elif cmd == "setcoronafadeall" and tokens:
+                active_flare.corona_fade_all = float(tokens[0])
+            elif cmd.startswith("setflare"):
+                _parse_flare_verb(active_flare, "flare", cmd[len("setflare"):], tokens)
+            elif cmd.startswith("setcorona"):
+                _parse_flare_verb(active_flare, "corona", cmd[len("setcorona"):], tokens)
+            continue
+        if ns == "object":
+            if cmd == "create" and tokens:
+                pending_object_template = tokens[0]
+            elif cmd == "name" and tokens and pending_object_template:
+                info.flare_objects[tokens[0]] = pending_object_template
+                pending_object_template = None
+            continue
         if ns == "geometrytemplate" and cmd == "create" and len(tokens) >= 2:
             pending_geometry_create = tokens[1]
         elif ns == "geometrytemplate" and cmd == "file" and tokens:
@@ -1095,6 +1262,8 @@ def parse_init_con(text: str, info: LevelInfo) -> None:
                 info.sky.cloud_ofs_height = float(tokens[0])
             elif cmd == "changeofsclouddist" and tokens:
                 info.sky.cloud_dist = float(tokens[0])
+            elif cmd == "setsun" and tokens:
+                info.sun_object = tokens[0]
         elif ns == "cloud":
             if cmd == "setspeed" and tokens:
                 try:

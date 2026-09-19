@@ -9,7 +9,7 @@
 // is enough to read back exactly which band of the picture the fill was
 // clipped to, which is the whole of what the bug was about.
 
-import { Hud } from './hud.js';
+import { Hud, wrapText } from './hud.js';
 
 function recordingContext() {
   const calls = { images: [], clips: [] };
@@ -83,6 +83,77 @@ const magBar = {
 results.magBar = {
   full: clipFor(magBar, 10),
   half: clipFor(magBar, 5),
+};
+
+// --- text wrapping -----------------------------------------------------
+// The combat-area warning is the first leaf whose string does not fit its own
+// rect. A fixed-width stand-in font keeps the arithmetic readable: every
+// glyph advances 5 units, so a word of N characters measures 5N and a line of
+// K words measures 5*(chars + spaces).
+const fixed = { meta: { lineHeight: 11, glyphs: {} } };
+for (let code = 32; code < 127; code++) fixed.meta.glyphs[code] = [0, 5, 0, 8, 0, 0, 5, 8];
+
+results.wrap = {
+  // 230 px at 5 px a glyph is 46 characters a line.
+  warning: wrapText(fixed, 'Warning! You are leaving the combat area! '
+    + 'Desserters will be shot!', 230),
+  // A string that already fits comes back as one line, untouched.
+  short: wrapText(fixed, '30', 230),
+  exact: wrapText(fixed, 'a'.repeat(46), 230),
+  overByOne: wrapText(fixed, `${'a'.repeat(46)} b`, 230),
+  // A single word wider than the box overflows rather than being split.
+  longWord: wrapText(fixed, 'a'.repeat(120), 230),
+  longWordThenMore: wrapText(fixed, `${'a'.repeat(120)} tail`, 230),
+  empty: wrapText(fixed, '', 230),
+};
+
+// --- `when` comparisons ------------------------------------------------
+// Every operator `extract_hud_layout.py` can emit, driven through the real
+// `_visible`. `gt` and `ge` were the two the evaluator did not answer, so
+// they fell through to the permissive default and drew leaves that should
+// have been culled: the combat-area warning over every level's HUD at a
+// countdown of zero, and the weapon-select bar's fifth and sixth slots on a
+// four-item kit.
+function visibleUnder(when, vars) {
+  const hud = new Hud({ canvas: null, sprite: () => null });
+  Object.assign(hud.vars, vars);
+  // `_requiredVars` is normally filled by `prepareElement` at load time; the
+  // gate under test is the `when` list, not the content-var check.
+  return hud._visible({ when, _requiredVars: [] });
+}
+
+const outsideGate = [{ var: 'Outside/OutsideTime', op: 'gt', value: 0 }];
+const slotFive = [
+  { var: 'Weapon/SelectingWeapon', op: 'eq', value: true },
+  { var: 'Weapon/NumberOfItems', op: 'ge', value: 5 },
+];
+results.conditions = {
+  // The combat-area warning: culled at 0, drawn from 1 up.
+  outsideAtZero: visibleUnder(outsideGate, { 'Outside/OutsideTime': 0 }),
+  outsideAtOne: visibleUnder(outsideGate, { 'Outside/OutsideTime': 1 }),
+  outsideAtTen: visibleUnder(outsideGate, { 'Outside/OutsideTime': 10 }),
+  // The weapon bar's fifth slot: only for a kit that has five items.
+  slotFiveWithFour: visibleUnder(slotFive,
+    { 'Weapon/SelectingWeapon': true, 'Weapon/NumberOfItems': 4 }),
+  slotFiveWithFive: visibleUnder(slotFive,
+    { 'Weapon/SelectingWeapon': true, 'Weapon/NumberOfItems': 5 }),
+  slotFiveWithSix: visibleUnder(slotFive,
+    { 'Weapon/SelectingWeapon': true, 'Weapon/NumberOfItems': 6 }),
+  // The operators that already worked, so the fix is shown not to move them.
+  ltTrue: visibleUnder([{ var: 'n', op: 'lt', value: 5 }], { n: 4 }),
+  ltFalse: visibleUnder([{ var: 'n', op: 'lt', value: 5 }], { n: 5 }),
+  leTrue: visibleUnder([{ var: 'n', op: 'le', value: 5 }], { n: 5 }),
+  eqTrue: visibleUnder([{ var: 'n', op: 'eq', value: true }], { n: true }),
+  neTrue: visibleUnder([{ var: 'n', op: 'ne', value: 0 }], { n: 3 }),
+  // A nested and/or still recurses through the new operators.
+  nested: visibleUnder([{ op: 'or', terms: [
+    { var: 'a', op: 'gt', value: 2 },
+    { var: 'b', op: 'ge', value: 7 },
+  ] }], { a: 1, b: 7 }),
+  nestedFalse: visibleUnder([{ op: 'or', terms: [
+    { var: 'a', op: 'gt', value: 2 },
+    { var: 'b', op: 'ge', value: 7 },
+  ] }], { a: 1, b: 6 }),
 };
 
 console.log(JSON.stringify(results));
