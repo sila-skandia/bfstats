@@ -15,8 +15,12 @@
   runtime, so they come from `menu-levels.json` joined against the levels
   this viewer actually has (`maps/maps.json`).
 
-  START loads `../map.html?map=<level>&team=<1|2>`, which is the same map
-  page the mesh site serves, not a copy of it.
+  START loads `../map.html?map=<level>&team=<1|2>&mode=<SinglePlayer|Conquest>`,
+  which is the same map page the mesh site serves, not a copy of it. The game's
+  Instant Battle loads a level's SinglePlayer layout, so this does too wherever
+  the level ships one -- 19 of the 23 vanilla levels, recorded per level as
+  `singlePlayer` in `menu-levels.json`. See
+  `features/bf1942-3d-models/game-modes.md`.
 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -138,8 +142,9 @@ const env = {
  *  levels and this is the game's screen.
  *
  *  Every extracted level is listed. The real game lists only the levels
- *  with bot support (`level.singlePlayer`); this site has no bots and
- *  launches Conquest, so hiding the rest would only lose them. */
+ *  with bot support (`level.singlePlayer`); this site has no bots, and the
+ *  four levels without that layout launch Conquest instead, so hiding them
+ *  would only lose them. */
 function buildLevels(menuLevels, manifest) {
   const have = new Map();
   for (const entry of manifest) {
@@ -201,14 +206,27 @@ function setTeam(team) {
   paintSoon();
 }
 
-/** START. The map page is the mesh site's own file; only the two launch
- *  parameters are ours. */
+/** The launch URL. The map page is the mesh site's own file; only the launch
+ *  parameters are ours.
+ *
+ *  Instant Battle is a singleplayer screen, and in the game it loads the
+ *  level's `SinglePlayer` layout — its flags, its spawn points, its vehicle
+ *  set — not the Conquest one. 19 of the 23 vanilla levels ship that layout;
+ *  `menu-levels.json` records which as `singlePlayer`, and the four that do
+ *  not (Aberdeen, Coral Sea, Invasion of the Philippines, Liberation of Caen)
+ *  get Conquest, which is what the game falls back to for them as well. */
+function launchUrl(level, team) {
+  const url = new URL('../map.html', location.href);
+  url.searchParams.set('map', level.map);
+  url.searchParams.set('team', String(team));
+  url.searchParams.set('mode', level.singlePlayer ? 'SinglePlayer' : 'Conquest');
+  return url.toString();
+}
+
+/** START. */
 function start() {
   if (!state.level) return;
-  const url = new URL('../map.html', location.href);
-  url.searchParams.set('map', state.level.map);
-  url.searchParams.set('team', String(state.team));
-  location.href = url.toString();
+  location.href = launchUrl(state.level, state.team);
 }
 
 // --- painting ----------------------------------------------------------------
@@ -320,11 +338,7 @@ window.__menu = {
   get levels() { return levels.map(l => l.title); },
   select, setTeam, start, scrollBy,
   launchUrl() {
-    if (!state.level) return null;
-    const url = new URL('../map.html', location.href);
-    url.searchParams.set('map', state.level.map);
-    url.searchParams.set('team', String(state.team));
-    return url.toString();
+    return state.level ? launchUrl(state.level, state.team) : null;
   },
   paint,
   ready: false,
