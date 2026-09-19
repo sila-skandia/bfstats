@@ -154,10 +154,20 @@ Carried from that review, not yet acted on:
    fatal and skipped the thumbnail stamp; fixed in `42f8f15`. The verifier's
    verdicts are noise until it is fixed (vanilla 42 "broken" of 96, EoD 96 of
    285, the same false alarms): see the wave 2 table.
-2. Re-extract every level once the streams' extractor changes are merged, so the
-   tree picks up tickets, building sounds, `vehicleSoldierSpawns`,
-   `splashMaterial`, `skeletonIK`, `envmap` and the widened emitter bake in one
-   pass rather than five.
+2. ~~Re-extract every level once wave 1 is merged.~~ **Done 2026-09-20
+   06:19** with `main` at `fcf0131`: 23 vanilla, 6 Road to Rome, 9 Secret
+   Weapons, 239 EoD, every one rewritten, no failures; seat poses re-exported
+   first (64 / 80 / 110 / 323, all resolved). Checked, not assumed: `tickets`
+   on all 277, sound areas 35 -> 1,290 on vanilla (Bocage 0 -> 36),
+   `vehicleSoldierSpawns` on 9 vanilla levels (Wake's Hatsuzuki deck among
+   them), `lensFlare` on 19, a real `combatArea` on 11, 29 `skeletonIK` nodes
+   and 32 `splashMaterial` armor blocks in Wake's scene. The page now draws
+   Wake's tickets (US 100, Japan 100). `extract_maps_all.py --mod XPack1/2`
+   also pulled in the 23 vanilla levels each pack inherits, which the published
+   trees have never held; pruned back to own levels. **Still stale:**
+   `_shared/damage.json` has no `friction` key until W2-D merges and it is
+   regenerated, and wave 2's `setHasTurretIcon` / `setVehicleIconPos` /
+   projectile words need one more pass over vehicles after it lands.
 3. Publish. Overwriting content on the assets volume is confirm-first.
 4. Integrate verified research into `ledger.md` and `symbols.json`.
 
