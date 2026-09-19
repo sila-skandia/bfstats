@@ -161,6 +161,7 @@ left and is not in wave 3.
 | `Water.baseTex`, `envmapcolor`; `aiMeshes.rfa` hulls; palm trunk collision; `c_CGProjectiles` / `c_CGLadders`; `LightmapShadowBits.lsb` (format unknown); Berlin's ground outside its four tiles | open |
 | Bar1918 round counter never decrements (`task_4b7d2a66`) | open, unreproduced |
 | `verify_models.py` is stale: on the 09-19 vanilla rebuild it calls 42 of 96 models broken, every one a false alarm. It counts projectile, tracer, trail, cockpit and emitter helper nodes as "unbound parts piled on the origin", measures a rifle's length across them (Bar1918 2.02 m against 1.19 m), and does not understand a skinned soldier. Checked by eye: `BritishSoldier`, `AichiVal` and `Bar1918` render correctly. A verifier that always says broken hides the day it is right | open |
+| Bots. Nothing about the engine's AI is in the corpus: how a bot is spawned, driven and given a kit, what `aiMeshes.rfa` and a level's `AI/` and `AIPathFinding/` hold, and what the Instant Battle screen's difficulty variables become when a battle starts. Until it is documented the screen's whole left column is switched off (`SHOW_BOT_SETTINGS` in `viewer/play/menu-screen.js`, owner's call 2026-09-20) | open, research first |
 | Mod coverage: 18 mods installed; maps and models exist for vanilla, XPack1, XPack2 and EoD only | by choice, for now |
 
 ### The lead's own queue
