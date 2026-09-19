@@ -405,6 +405,97 @@ ObjectTemplate.roundOfFire 1
         self.assertEqual("e_rocketFume", spec["trailBundle"])
         self.assertEqual(0.2, spec["gravity"])
 
+    def test_projectile_spec_carries_the_two_path_explosion_rule(self) -> None:
+        # HP-9d: `hasCollisionEffect` is what tells an impact round from a fuse
+        # round, so it has to reach the viewer. Without it `effects-core.js`
+        # would be inferring the difference from `material2`, which carries
+        # none of it. `yModOnExplosion` rides along (HP-9).
+        lib = library()
+        lib.add_con("Objects/HandWeapons/Grenade/Objects.con", """
+ObjectTemplate.create HandFireArms GrenadeAllies
+ObjectTemplate.projectileTemplate GrenadeAlliesProjectile
+ObjectTemplate.velocity 15
+
+ObjectTemplate.create Projectile GrenadeAlliesProjectile
+ObjectTemplate.geometry projectile_m1
+ObjectTemplate.timeToLive CRD_NONE/3/0/0
+ObjectTemplate.material 227
+ObjectTemplate.material2 205
+ObjectTemplate.damageType 1
+ObjectTemplate.hasCollisionEffect 0
+ObjectTemplate.radius 15
+ObjectTemplate.YModOnExplosion 2.0
+""")
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, lib)
+        builder = gltf.GlbBuilder()
+        report = Report(root="GrenadeAllies", configuration="complex", lod=0)
+        spec, _nodes = assembler._projectile_spec(
+            builder, lib.object("GrenadeAllies"), report)
+        # An authored `hasCollisionEffect 0` must survive the emit filter —
+        # `False is not None`, so it does, and the viewer can see that this
+        # round takes the fuse path and NOT the impact path.
+        self.assertEqual(
+            {"radius": 15.0, "material2": 205, "damageType": 1,
+             "hasCollisionEffect": False, "yModOnExplosion": 2.0},
+            spec["damage"])
+
+    def test_the_ten_metre_default_covers_damage_type_four_too(self) -> None:
+        # HP-9: the 10.0 is the `ProjectileTemplate` constructor's own default
+        # (lnxded 0x0831f9b3) and the constructor does not consult
+        # `damageType`, so a `damageType 4` round that omits `radius` gets it
+        # as well. Six vanilla tank rounds ride the default on the
+        # `damageType 1` side; vanilla's four `damageType 4` templates all
+        # author a radius, so this is for mods.
+        lib = library()
+        lib.add_con("Objects/HandWeapons/Mine/Objects.con", """
+ObjectTemplate.create HandFireArms Landmine
+ObjectTemplate.projectileTemplate LandmineProjectile
+ObjectTemplate.velocity 5
+
+ObjectTemplate.create Projectile LandmineProjectile
+ObjectTemplate.geometry projectile_m1
+ObjectTemplate.material 231
+ObjectTemplate.material2 232
+ObjectTemplate.damageType 4
+""")
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, lib)
+        builder = gltf.GlbBuilder()
+        report = Report(root="Landmine", configuration="complex", lod=0)
+        spec, _nodes = assembler._projectile_spec(
+            builder, lib.object("Landmine"), report)
+        self.assertEqual(10.0, spec["damage"]["radius"])
+        self.assertEqual(4, spec["damage"]["damageType"])
+
+    def test_a_fractional_radius_reaches_the_viewer_already_truncated(self) -> None:
+        # HP-9: the truncation happens at parse because the property is a
+        # console `int`. DC's `50calSniper_Projectile radius 0.25` is 0 by the
+        # time the assembler sees it, and 0 with the engine's `radius > d`
+        # gate is no splash at all — the assembler must NOT then treat the 0
+        # as "unset" and hand back the 10.0 default.
+        lib = library()
+        lib.add_con("Objects/HandWeapons/Sniper/Objects.con", """
+ObjectTemplate.create HandFireArms 50calSniper
+ObjectTemplate.projectileTemplate 50calSniper_Projectile
+ObjectTemplate.velocity 900
+
+ObjectTemplate.create Projectile 50calSniper_Projectile
+ObjectTemplate.geometry bullet_m1
+ObjectTemplate.material 216
+ObjectTemplate.material2 216
+ObjectTemplate.damageType 1
+ObjectTemplate.hasCollisionEffect 1
+ObjectTemplate.radius 0.25
+""")
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, lib)
+        builder = gltf.GlbBuilder()
+        report = Report(root="50calSniper", configuration="complex", lod=0)
+        spec, _nodes = assembler._projectile_spec(
+            builder, lib.object("50calSniper"), report)
+        self.assertEqual(0.0, spec["damage"]["radius"])
+
 
 def run_harness() -> dict:
     if shutil.which("node") is None:

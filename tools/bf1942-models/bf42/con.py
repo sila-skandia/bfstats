@@ -673,10 +673,31 @@ class ObjectTemplate:
     dist_to_min_damage: float | None = None
     explosion_radius: float | None = None
     material2: int | None = None
-    # `damageType 1` is the splash/HE pass (`Game::handleCollisionForProjectile`);
-    # default 0 is direct-only. Engine template default for `radius` is 10 when
-    # the `.con` omits it — see projectiles-and-impacts.md.
+    # `damageType` selects which of the engine's TWO explosions a round gets
+    # (HP-9d). `1` is the HE round that bursts on contact; `4` bursts only when
+    # its fuse ends. Default 0 is direct-only. Engine template default for
+    # `radius` is 10 when the `.con` omits it — see projectiles-and-impacts.md.
     damage_type: int | None = None
+    # `hasCollisionEffect` is the impact-versus-fuse discriminator, NOT a
+    # "can this round splash" flag (HP-9d, and the F1 report's reading of it as
+    # a capability flag is refuted): the impact explosion needs
+    # `damageType == 1 && hasCollisionEffect` (lnxded gates 0x08153e79 /
+    # 0x08153ea9), while the end-of-life explosion
+    # (`Projectile::startEndEffect` 0x0831f590, `== 1` at 0x0831f6bb and `== 4`
+    # at 0x0831f6c0) tests `damageType` alone. Vanilla's three `damageType 1`
+    # templates that omit the flag are exactly the fuse weapons —
+    # `ExpPackProjectile`, `GrenadeAlliesProjectile`, `GrenadeAxisProjectile` —
+    # so a parser that dropped this word would leave the viewer unable to tell
+    # a tank shell from a grenade. Surveyed across the 18 installed mods'
+    # `objects*.rfa`: 4,207 declarations, 3,557 of them `1`.
+    has_collision_effect: bool | None = None
+    # `YModOnExplosion` scales the Y term — and only the Y term — of the
+    # distance an explosion measures to a victim's transform origin (HP-9,
+    # lnxded 0x08156613). Engine default 1.0. 642 declarations across the
+    # installed mods, 629 of them `2.0` and every one of those on a bomb:
+    # halving a bomb's vertical reach is how the game keeps a 20 m airburst
+    # from killing everything on the floor below it.
+    y_mod_on_explosion: float | None = None
     end_effect_template: str | None = None
     # `setEngineType c_ETRocket` marks an Engine that accelerates its parent
     # after launch (the Katyusha rocket's motor), vs. propellers and wheels.
@@ -1809,7 +1830,8 @@ class ObjectLibrary:
                             "relativepositionindof": "relative_position_in_dof",
                         }[cmd], value)
                 elif cmd in ("mindamage", "disttostartlosedamage", "disttomindamage",
-                             "radius", "material2", "damagetype"):
+                             "radius", "material2", "damagetype",
+                             "hascollisioneffect", "ymodonexplosion"):
                     try:
                         value = float(args.split()[0])
                     except (ValueError, IndexError):
@@ -1818,12 +1840,32 @@ class ObjectLibrary:
                         obj.material2 = int(value)
                     elif cmd == "damagetype":
                         obj.damage_type = int(value)
+                    elif cmd == "hascollisioneffect":
+                        # The impact-versus-fuse discriminator (HP-9d). A bool
+                        # on the wire; every one of the 4,207 declarations
+                        # surveyed writes a bare 0 or 1.
+                        obj.has_collision_effect = value != 0
+                    elif cmd == "radius":
+                        # `ProjectileTemplate.radius` is a console **int**
+                        # (HP-9): the parser is `istream >> int` at lnxded
+                        # 0x082df83f and the value is `fild`ed into the float
+                        # field at 0x082df8ef, so the truncation happens at
+                        # PARSE, not at use. 384 templates across the installed
+                        # mods author a fractional radius and every one of them
+                        # is truncated toward zero before the engine ever sees
+                        # it — DC's `50calSniper_Projectile radius 0.25` really
+                        # does become 0, and with the engine's strictly
+                        # `radius > d` gate that means no splash at all.
+                        # `int()` on a float truncates toward zero, which is
+                        # what `istream >> int` does to `-0.5` as well as to
+                        # `17.63`.
+                        obj.explosion_radius = float(int(value))
                     else:
                         setattr(obj, {
                             "mindamage": "min_damage",
                             "disttostartlosedamage": "dist_to_start_lose_damage",
                             "disttomindamage": "dist_to_min_damage",
-                            "radius": "explosion_radius",
+                            "ymodonexplosion": "y_mod_on_explosion",
                         }[cmd], value)
                 elif cmd == "endeffecttemplate":
                     obj.end_effect_template = args.split()[0] if args else None
