@@ -317,9 +317,15 @@ function headOnScene(radiusA = 1, radiusB = 1) {
   const bodyB = new FakeBody({ mass: 2500, pos: [0.04, 0, 0], v: [-1.5, 0, 0], boundingRadius: 5 });
   const partA = new CollisionPart({ body: bodyA, shape: headOnFace(0.05, 1, 11), response: new Response(), isRoot: true });
   const partB = new CollisionPart({ body: bodyB, shape: bigYFace(-0.05, -1, 22), response: new Response(), isRoot: true });
-  collideBodies([partA, partB], 1 / 30, handlers());
+  partA.tag = 'small'; partB.tag = 'big';
+  const log = [];
+  collideBodies([partA, partB], 1 / 30, handlers({ log }));
   out.fiveXLargerOneDirection = {
     countA: partA.response.count, countB: partB.response.count,   // 1 each: exactly one direction ran
+    // `collidePair(vertexPart, facePart, ...)` calls the vertex part's own
+    // handler first — the log's first entry names whichever part supplied
+    // the probed vertex, independent of the parts array's own A/B order.
+    firstHandlerSelf: log[0].self,
   };
 }
 

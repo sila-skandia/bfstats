@@ -211,6 +211,9 @@ class BodyContactTests(unittest.TestCase):
         r = self.results["fiveXLargerOneDirection"]
         self.assertEqual(1, r["countA"])
         self.assertEqual(1, r["countB"])
+        # §5.3: root radii differ by more than 4x (1 vs 5 here) -> the
+        # smaller body is forced to be the vertex side.
+        self.assertEqual("small", r["firstHandlerSelf"])
 
     def test_static_face_side_takes_everything(self) -> None:
         r = self.results["staticBTakesEverything"]
