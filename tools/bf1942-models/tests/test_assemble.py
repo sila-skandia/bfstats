@@ -366,9 +366,9 @@ ObjectTemplate.geometry Willy_Hull_M1
 ObjectTemplate.addTemplate WillySteeringDummy
 
 ObjectTemplate.create AnimatedBundle WillySteeringDummy
+ObjectTemplate.addTemplate WillyWheel
 ObjectTemplate.addSkeletonIK Bip01_R_Hand 0.24/-0.1/-0.82 -80/60/50
 ObjectTemplate.addSkeletonIK Bip01_L_Hand -0.26/-0.1/-0.82 -80/-60/50
-ObjectTemplate.addTemplate WillyWheel
 ObjectTemplate.addTemplate WillyColumn
 ObjectTemplate.addTemplate WillyHorn
 
@@ -401,12 +401,86 @@ GeometryTemplate.create StandardMesh Willy_Horn_M1
         self.assertEqual(
             [
                 {"bone": "Bip01 R Hand", "position": [0.24, -0.1, -0.82],
-                 "rotation": [-80.0, 60.0, 50.0]},
+                 "rotation": [-80.0, 60.0, 50.0],
+                 "targetChild": 0, "targetNode": "WillyWheel"},
                 {"bone": "Bip01 L Hand", "position": [-0.26, -0.1, -0.82],
-                 "rotation": [-80.0, -60.0, 50.0]},
+                 "rotation": [-80.0, -60.0, 50.0],
+                 "targetChild": 0, "targetNode": "WillyWheel"},
             ],
             nodes["WillySteeringDummy"]["extras"]["skeletonIK"],
         )
+
+    def test_the_target_index_is_renumbered_past_an_unbuilt_child(self) -> None:
+        # `targetChild` as parsed counts every `addTemplate`; the export drops
+        # the children it does not build, so a raw index would land on the
+        # wrong node. Here the declaration is against `Console` -- the second
+        # `addTemplate` -- but the first names a template nothing declares, so
+        # the built children are [Console] and the index has to become 0.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Land/Test/Objects.con",
+            """
+ObjectTemplate.create PlayerControlObject Rig
+ObjectTemplate.geometry Rig_Hull_M1
+ObjectTemplate.addTemplate RigDummy
+
+ObjectTemplate.create AnimatedBundle RigDummy
+ObjectTemplate.addTemplate NoSuchTemplate
+ObjectTemplate.addTemplate Console
+ObjectTemplate.addSkeletonIK Bip01_R_Hand 1/2/3 0/0/0
+
+ObjectTemplate.create SimpleObject Console
+ObjectTemplate.geometry Rig_Console_M1
+
+GeometryTemplate.create StandardMesh Rig_Hull_M1
+GeometryTemplate.create StandardMesh Rig_Console_M1
+""",
+        )
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library, include_collision=False)
+        builder = gltf.GlbBuilder()
+        stub_meshes(assembler, builder, "Rig_Hull_M1", "Rig_Console_M1")
+        report = Report(root="Rig", configuration="complex", lod=0)
+
+        root = assembler.build_node(builder, "Rig", report)
+        nodes = {node["name"]: node
+                 for node in glb_document(builder.build([root], extras={}))["nodes"]}
+
+        self.assertEqual(1, library.object("RigDummy").skeleton_ik_bones[0]["targetChild"])
+        entry = nodes["RigDummy"]["extras"]["skeletonIK"][0]
+        self.assertEqual(0, entry["targetChild"])
+        self.assertEqual("Console", entry["targetNode"])
+
+    def test_an_unreachable_target_falls_back_to_the_declaring_node(self) -> None:
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Land/Test/Objects.con",
+            """
+ObjectTemplate.create PlayerControlObject Rig
+ObjectTemplate.geometry Rig_Hull_M1
+ObjectTemplate.addTemplate RigDummy
+
+ObjectTemplate.create AnimatedBundle RigDummy
+ObjectTemplate.addTemplate NoSuchTemplate
+ObjectTemplate.addSkeletonIK Bip01_R_Hand 1/2/3 0/0/0
+
+GeometryTemplate.create StandardMesh Rig_Hull_M1
+""",
+        )
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library, include_collision=False)
+        builder = gltf.GlbBuilder()
+        stub_meshes(assembler, builder, "Rig_Hull_M1")
+        report = Report(root="Rig", configuration="complex", lod=0)
+
+        root = assembler.build_node(builder, "Rig", report)
+        nodes = {node["name"]: node
+                 for node in glb_document(builder.build([root], extras={}))["nodes"]}
+
+        entry = nodes["RigDummy"]["extras"]["skeletonIK"][0]
+        self.assertEqual(-1, entry["targetChild"])
+        self.assertNotIn("targetNode", entry)
+        self.assertTrue(any("not built" in line for line in report.skeleton_ik))
 
 
 class CockpitExportTests(unittest.TestCase):
