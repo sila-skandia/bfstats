@@ -674,6 +674,140 @@ class CoreModuleTests(unittest.TestCase):
         self.assertEqual(0, atlas["notAnimated"])
 
 
+class TwoPathExplosionTests(unittest.TestCase):
+    """**HP-9d**: the engine has two explosions and `damageType` alone does not
+    say which a round gets.
+
+        impact, on collision:   damageType == 1 && hasCollisionEffect
+        end of life, on fuse:   damageType in {1, 4}, flag NOT tested
+
+    `hasCollisionEffect` is the impact-versus-fuse **discriminator**, not a
+    splash-capability flag. Requiring it for splash generally — the F1 report's
+    recommendation, refuted by a verifier — would silently delete grenade,
+    explosives-pack, satchel and landmine splash, which is the most-used splash
+    damage in the game.
+    """
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["splashSpec"]
+
+    def test_a_tank_shell_takes_both_paths(self) -> None:
+        # `damageType 1` with the flag. The Sherman authors no radius at all,
+        # so this is also the 10.0 constructor default (HP-9) arriving intact.
+        sherman = self.results["sherman"]
+        self.assertTrue(sherman["impact"])
+        self.assertTrue(sherman["endOfLife"])
+        self.assertEqual(10, sherman["radius"])
+
+    def test_a_grenade_has_no_impact_path_at_all(self) -> None:
+        # The case the refuted recommendation would have broken: `damageType 1`
+        # without the flag is a FUSE weapon, not a dud. Its 15 m blast is real
+        # and arrives only when `timeToLive` ends.
+        for name in ("grenade", "expack"):
+            with self.subTest(name):
+                spec = self.results[name]
+                self.assertFalse(spec["impact"])
+                self.assertTrue(spec["endOfLife"])
+                self.assertGreater(spec["radius"], 0)
+
+    def test_damage_type_four_never_bursts_on_impact(self) -> None:
+        # The landmine has the flag clear; vanilla's three flak shells have it
+        # SET, and it still does not matter — the flag is not consulted for
+        # type 4, which is why a flak round bursts on its fuse rather than on
+        # the aircraft it grazes.
+        for name in ("landmine", "flak"):
+            with self.subTest(name):
+                spec = self.results[name]
+                self.assertEqual(4, spec["damageType"])
+                self.assertFalse(spec["impact"])
+                self.assertTrue(spec["endOfLife"])
+
+    def test_a_round_with_no_area_pass(self) -> None:
+        # `material2 -1` is the authored "no splash" (fighter MGs); type 0 is
+        # direct-only; type 3 (binoculars) takes neither path.
+        for name in ("noSplash", "direct", "binoculars", "none"):
+            with self.subTest(name):
+                self.assertIsNone(self.results[name])
+
+    def test_a_fractional_radius_is_no_splash_on_either_path(self) -> None:
+        # HP-9: the radius is a console `int` truncated at parse, so DC's
+        # `50calSniper_Projectile radius 0.25` is 0 and the strictly
+        # `radius > d` gate reaches nothing. The end-of-life path's
+        # "untruncated" radius is an ABSENT SECOND TRUNCATION, not a surviving
+        # fraction — handing it 0.25 would resurrect a splash the engine has
+        # never had, so the fuse case must be None too.
+        self.assertIsNone(self.results["fractional"])
+        self.assertIsNone(self.results["fractionalFuse"])
+
+    def test_an_old_bakes_fractional_radius_is_repaired(self) -> None:
+        # FH's `BismarckFatProjectile 17.63` from a glb baked before `con.py`
+        # truncated: 17 here, the same integer the engine holds.
+        self.assertEqual(17, self.results["oldBake"]["radius"])
+
+    def test_a_glb_baked_before_either_word_behaves_as_it_always_did(self) -> None:
+        # No `damageType`, no `hasCollisionEffect`. Assumed 1 and true
+        # respectively, which is what 2,935 of 3,161 surveyed templates are —
+        # so a stale asset keeps its splash instead of silently losing it.
+        legacy = self.results["legacy"]
+        self.assertEqual(1, legacy["damageType"])
+        self.assertTrue(legacy["impact"])
+        self.assertTrue(legacy["endOfLife"])
+
+
+class BlastGeometryTests(unittest.TestCase):
+    """HP-9: the distance, its Y scale, the falloff, and DMG-1's unlisted pair."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+
+    def test_only_the_y_term_is_scaled(self) -> None:
+        # lnxded 0x08156613 multiplies `dy` and nothing else.
+        d = self.results["blastDistance"]
+        self.assertEqual(5, d["plainUp"])
+        self.assertEqual(10, d["scaledUp"])
+        self.assertEqual(5, d["sideways"])
+        # 3 across, 4 up at yMod 2 -> hypot(3, 8) = 8.544004.
+        self.assertAlmostEqual(8.544004, d["diagonal"], places=5)
+
+    def test_truncation_is_toward_zero(self) -> None:
+        t = self.results["truncate"]
+        self.assertEqual(15, t["exact"])
+        self.assertEqual(17, t["down"])
+        self.assertEqual(0, t["toZero"])
+        self.assertEqual(0, t["negative"])   # not -1: toward zero, not floor
+        self.assertEqual(10, t["default"])
+
+    def test_the_falloff_is_linear_to_a_hard_cutoff(self) -> None:
+        # `t = clamp((radius - d)/radius, 0, 1)`, and the gate is a strict
+        # `radius > d`, so a victim exactly on the radius takes nothing.
+        s = self.results["splashDamage"]
+        self.assertEqual(20, s["centre"])
+        self.assertEqual(10, s["half"])
+        self.assertEqual(0, s["edge"])
+
+    def test_an_unlisted_material_pair_really_means_no_damage(self) -> None:
+        # DMG-1: the engine's fallback is `defaultDamageMod`, which is 0.0 from
+        # both constructors, has a setter nothing calls and no console word —
+        # so no mod can change it either. Returning the base damage instead
+        # (the F1 report's recommendation) is refuted.
+        self.assertEqual(0, self.results["splashDamage"]["unlistedPair"])
+
+    def test_exposure_multiplies_and_zero_short_circuits(self) -> None:
+        # The soldier-only cover term (`checkForHitOnSoldier`, 0x08156eb6,
+        # short-circuit at 0x08156ede). Callers in this viewer pass 1 because
+        # there is no soldier-limb volume to sample; the parameter exists so
+        # the gap is visible rather than silently folded away.
+        s = self.results["splashDamage"]
+        self.assertEqual(10, s["halfExposed"])
+        self.assertEqual(0, s["noExposure"])
+
+
 class EffectEmitterNodesTests(unittest.TestCase):
     """Tests for the widened _effect_emitter_nodes vehicle bake path."""
     
