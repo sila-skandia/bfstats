@@ -636,3 +636,75 @@ parsed, what the `(2)` counts) is for stream B to read out of the client.
 - Where "BATTLE OF MIDWAY" comes from: `lexiconAll.dat`, keyed `Midway`.
 - Whether the narrow face on the headings is a bug: it is not.
 - Why ABERDEEN and CORAL SEA are not in the reference list: no bots.
+
+## Mod picker and menu music (2026-09-20)
+
+Closes the "mod coverage" open question above, for the four mods this viewer
+already has maps for (bf1942, eod, xpack1, xpack2 - `viewer/models/mods.json`).
+`play/index.html` picked a level for vanilla only; it now also picks *which*
+mod's levels, with the game's own CUSTOM GAME dialog as the reference, not a
+generic dropdown - the request was explicit that this should look and feel
+like the real screen, not a styled `<select>`.
+
+**The dialog is real data, not a mockup of one.** `menu.rfa` has a
+`menu/CustomGameMenu` page nobody had decoded yet: the icon frame, the NAME /
+VERSION / INFO column headers (real `lexiconAll.dat` strings), and the list
+box's own frame/select colours and row height. `extract_custom_game_layout.py`
+decodes it exactly the way `extract_menu_layout.py` decodes the Skirmish
+screen, and reuses that script's `decode_page`/`extract_textures` outright.
+`menu/CustomGameNavigation` (the real ACTIVATE / VISIT WEB PAGE buttons) was
+deliberately *not* decoded: ACTIVATE is CD-key activation, meaningless here,
+and both buttons already share `knapp3_n`/`knapp3_mo`, the same plate
+`SkirmishNavigation`'s START button uses and had already been extracted -
+`play/mod-picker.js` draws its own VISIT WEB PAGE button on that plate rather
+than pull a second page for a texture already on disk.
+
+**It is not a modal.** The request, mid-build, was to drop the popup-dialog
+UX and instead render the same dialog permanently inside the column
+`SHOW_BOT_SETTINGS = false` (`play/menu-screen.js`) already leaves blank -
+`mod-picker.js`'s `placeInColumn` translates the file's leaves from their
+shipped, centered-for-a-modal position into that column. Clicking a row
+applies immediately (`remember()` + reload, the same mechanism the
+shell-mods `<select>` on every other viewer page already uses) - there is no
+confirm step, because a mod here is a filter over the level list beside it,
+not a game to launch. The active mod's row carries the list box's own select
+colour at full strength; hovering another row tints it at 40%.
+
+**Per-mod facts are real, not invented**, the same way `menu-levels.json`'s
+level titles are: `game.setCustomGameVersion` / `...Url` / `...Info` in each
+mod's own `init.con` (`build_mods_manifest.py`'s `MOD_INFO` table, read once
+by hand out of the installed mods - EoD really is version 2.50, and its own
+description is a real line from EoD's own `init.con`, not filler). Vanilla
+never sets `setCustomGameInfo` at all — DICE's own dialog falls back to
+literal placeholder text ("dslfskf skdföl sdföl...") for it in the retail
+game — so a real line was written for vanilla instead of reproducing that.
+
+**A mod other than vanilla has no `menu-levels.json` of its own** (that file
+is vanilla's `SkirmishLevelsList`, from `Mods/bf1942/Archives` specifically),
+so `buildLevels` skips the join for a non-vanilla mod and lists its own
+`maps.json` directly - no bot-support flag, no menu thumbnail (falls back to
+the level's own loading-screen background image).
+
+**Menu music.** Separately requested: the main menu's own loop, not the
+loading screen's `vehicle4.mp3` (`progress.js`, on `map.html`) and not the
+well-known battle theme - whatever a mod's own `Game.setMenuMusicFilename`
+names. Every mod here happens to point that at `music/slaughter4.bik`, but
+`extract_menu_music.py` reads the directive out of each mod's `init.con`
+rather than assuming the filename, falling back to vanilla's directive for a
+mod that does not set one (XPack2). Output is `_shared/music/menu.mp3` per
+mod - named for the role, not the source file, since a mod's own recording
+under that name is not guaranteed to be `slaughter4.bik` in general even
+though today's four all are. Confirmed genuinely per-mod, not just
+per-directive: EoD's `menu.mp3` is a different recording (own md5) from
+vanilla/RtR/SWoWWII's, which are byte-identical to each other. Playback
+reuses `audio.js`'s `LoadingAudioController` outright (autoplay-gesture
+handling, fade, the unmute badge) rather than a second audio implementation;
+switching mods is a full page reload, so the new mod's own `menu.mp3` loads
+the same way a fresh page load always has.
+
+Not done: the real dialog's small per-row icon is very likely a native
+Win32 ListView icon (the retail font in a capture looks nothing like this
+screen's own bitmap face, and the scrollbar looks like a native one) rather
+than anything in `menu.rfa` - `viewer/icons/mods/*.png` stands in for it,
+already prepared for far more mods (16) than the four this viewer can
+currently serve maps for.
