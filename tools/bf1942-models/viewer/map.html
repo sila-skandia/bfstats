@@ -4268,6 +4268,53 @@ function stepVehicleDamage(dt) {
   }
 }
 
+/** Scratch for `stepCombatArea`'s world-position read. */
+const combatAreaPos = new THREE.Vector3();
+
+/**
+ * The combat area, one step a frame, against whatever the player occupies.
+ *
+ * `combat-area.js` carries the engine reading. The part that matters here is
+ * WHO it applies to: `GameServer::gameStatusPlaying` tests
+ * `BFPlayer::getVehicle()`'s position (lnxded 0x081523a1) and hands the
+ * damage to that same object (0x08152490), branching at 0x0815243f on the
+ * entry-point index `BFPlayer+0x6c`. Seated, that is the VEHICLE — a plane
+ * that strays out burns down and the pilot is not touched directly. On foot
+ * it is the soldier. Which is why this cannot live inside `onFoot()`: a
+ * player leaves the area in a plane far more often than on his feet, and an
+ * on-foot-only check is inert for exactly the case the mechanic exists for.
+ *
+ * Free fly is the one state with no engine counterpart — there is no player
+ * object to accrue against — so the accumulator is reset rather than frozen,
+ * and `combatFrame` goes null, which culls the warning group.
+ */
+function stepCombatArea(dt) {
+  if (!combatArea.active) { combatFrame = null; return; }
+  if (optPilot.checked && occupancy?.root) {
+    const pos = occupancy.root.getWorldPosition(combatAreaPos);
+    combatFrame = combatArea.step(dt, pos.x, pos.z);
+    if (combatFrame.damage > 0) {
+      const hull = occupiedVehicleDamage();
+      // A wreck has already died; the engine's own `giveDamage` on a
+      // destroyed object is a no-op for the same reason.
+      if (hull && !hull.destroyed) {
+        hull.damage(combatFrame.damage);
+        reconcileDamaged(hull);
+      }
+    }
+    return;
+  }
+  if (optOnFoot.checked && soldier && !soldierDead) {
+    combatFrame = combatArea.step(dt, soldier.x, soldier.z);
+    if (combatFrame.damage > 0 && soldierArmor) {
+      soldierArmor.applyDamage(combatFrame.damage);
+    }
+    return;
+  }
+  combatFrame = null;
+  combatArea.reset();
+}
+
 /** Re-pick a just-damaged vehicle's tier on the frame the damage landed. */
 function reconcileDamaged(vehicle) {
   // Straight to `update(0)` rather than waiting for the next frame: a killing
@@ -5987,20 +6034,6 @@ function onFoot(dt) {
   }
   wasGrounded = soldier.grounded;
 
-  // Out of the combat area. `combat-area.js` carries the engine reading; all
-  // that happens here is stepping it with the body's position and taking the
-  // damage it returns through the same Armor the fall above uses, so the
-  // death cam and the deploy screen below pick it up unchanged. A dead body
-  // stops accruing: the engine's own accumulator lives on a live player.
-  if (!soldierDead && combatArea.active) {
-    combatFrame = combatArea.step(dt, soldier.x, soldier.z);
-    if (combatFrame.damage > 0 && soldierArmor) {
-      soldierArmor.applyDamage(combatFrame.damage);
-    }
-  } else if (!combatArea.active) {
-    combatFrame = null;
-  }
-
   // Death cam → deploy. When the on-foot body's Armor dies (fall damage,
   // `window.__damage(n)`, a future projectile), latch the dead state and hold
   // a short camera beat over/by the corpse (the game's death cam) before the
@@ -7584,10 +7617,13 @@ function updateSoldierHud() {
   // died leaves `soldier` null while the counter is still up in the game.
   feedTicketVars(vars);
   if (!onFootActive && !inVehicle) vars['ShowTicket'] = false;
-  // The combat-area warning, drawn by the layout's own `outside` group. The
-  // countdown is 0 whenever the body is inside, or has no body, which culls
-  // the whole group — the engine's own gate is `0 < Outside/OutsideTime`.
-  combatArea.feed(vars, (onFootActive && combatFrame) || IN_COMBAT_AREA);
+  // The combat-area warning, drawn by the layout's own `outside` group.
+  // `stepCombatArea` leaves `combatFrame` null whenever nothing the engine
+  // would call a player is in the world, and its countdown is 0 while that
+  // player is inside — either way the group culls, the engine's own gate
+  // being `0 < Outside/OutsideTime`. Not gated on `onFootActive`: the warning
+  // is exactly as much the pilot's as the rifleman's.
+  combatArea.feed(vars, combatFrame || IN_COMBAT_AREA);
   // T4a / V-R4: retail keeps the soldier stance icon inside vehicles.
   vars['Soldier/ShowSoldierIcon'] = !!soldier && (onFootActive || inVehicle);
   vars['Vehicle/ShowVehicleIcon'] = inVehicle;
@@ -9722,6 +9758,11 @@ function frame(dt) {
     seatPoseTarget.getWorldQuaternion(seatSoldier.quaternion);
   }
   if (seatPoseMixer && optPilot.checked) seatPoseMixer.update(dt);
+  // Before `stepVehicleDamage`, so a hull the combat area just hurt has its
+  // tier and its HUD bar reconciled on the same frame. Outside the movement
+  // branches above because the engine's own check is per PLAYER, not per mode:
+  // it tests and damages whatever the player occupies, plane included.
+  stepCombatArea(dt);
   // After `advance`, so a round that landed this frame is already accounted for
   // when the tier is picked. Unconditional for the same reason `advance` is: a
   // tank set alight before the player climbed out keeps burning down to nothing
