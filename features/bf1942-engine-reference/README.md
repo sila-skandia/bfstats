@@ -158,6 +158,13 @@ Files are named for what they describe, not for addresses — `symbols.json` is
 the address index and `xref.py sym 0x…` is the lookup. One file per address
 would be unreadable and would not survive a second binary.
 
+`symbols.json` is written as `json.dumps(doc, indent=1) + "\n"` and **sorted by
+address**, which is what `xref.py add` does on every write. Some hand-merged
+rounds have left it unsorted; the 2026-09-20 integration re-sorted it, which is
+why that commit's diff is large for 65 new entries. Merge it **by address, in
+Python** — never by text, and never by replacing an entry: an existing address
+keeps its name and gets its note extended.
+
 ### Confidence
 
 Recorded per symbol, and the reason this corpus is worth anything:
