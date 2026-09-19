@@ -220,6 +220,9 @@ class Report:
     animated_parts: list[str] = field(default_factory=list)
     cameras: list[str] = field(default_factory=list)
     seats: list[str] = field(default_factory=list)
+    # One line per node carrying an `extras.skeletonIK` block: which bone, and
+    # which child node's live pose the offsets are measured from.
+    skeleton_ik: list[str] = field(default_factory=list)
     # One line per SupplyDepot / PlayerControlObject-with-a-hud-block node,
     # the same glance-able convention as `seats`/`physics_parts` above.
     supply_depots: list[str] = field(default_factory=list)
@@ -264,6 +267,7 @@ class Report:
             "animatedParts": self.animated_parts,
             "cameras": self.cameras,
             "seats": self.seats,
+            "skeletonIk": self.skeleton_ik,
             "supplyDepots": self.supply_depots,
             "vehicleHud": self.vehicle_hud,
             "physicsParts": self.physics_parts,
@@ -2204,8 +2208,13 @@ class Assembler:
         is_vehicle_root = kind == "playercontrolobject"
         is_physics_body = kind in con_mod.PHYSICS_TEMPLATE_KINDS
         physics = template.physics()
+        # A node carrying `addSkeletonIK` is a placement datum too: it is where
+        # a seated occupant's hand goes. `Vehicles/Common`'s four `Attach_*`
+        # bundles are meshless and childless and are nothing *but* that, so
+        # without this they would be dropped and their IK with them.
         if (mesh_index is None and not child_indices
-                and not (is_camera or is_placement or is_supply_depot or physics)):
+                and not (is_camera or is_placement or is_supply_depot or physics
+                         or template.skeleton_ik_bones)):
             return None
 
         if mesh_index is not None:
@@ -2232,14 +2241,51 @@ class Assembler:
         if template.skeleton_ik_bones:
             # On the node that declares it, not gathered onto the vehicle root.
             # The Willys writes both hands on `WillySteeringDummy`, the
-            # AnimatedBundle that turns with the wheel, and the offsets are in
-            # that part's frame: a viewer pins a hand by reading this node's
-            # live world pose, which it cannot do once the entries have been
-            # lifted off it (`AnimatedBundle::updateIk`, lnxded 0x08265880).
-            extras["skeletonIK"] = [
-                {"bone": ik["bone"], "position": list(ik["position"]),
-                 "rotation": list(ik["rotation"])}
-                for ik in template.skeleton_ik_bones]
+            # AnimatedBundle whose wheel turns, and a viewer pins a hand by
+            # reading a live world pose off this subtree — which it cannot do
+            # once the entries have been lifted onto the vehicle root
+            # (`AnimatedBundle::updateIk`, lnxded `0x08265880`).
+            #
+            # *Which* pose is `targetChild`: `updateIk` walks `getChild()` and
+            # then `targetChild` siblings (`0x82659f4`-`0x8265a1f`) and reads
+            # `getAbsoluteTransformation()` off what it lands on, or off the
+            # declaring node itself when the index is negative (`0x82659f2`).
+            # `con.py` records the engine's own `getNoTemplates() - 1`; here it
+            # is re-expressed as an index into the children this export
+            # actually built, since a LOD alternative the export drops would
+            # otherwise shift it. `targetNode` names the same child, for a
+            # reader that would rather match by name than count.
+            ik_entries = []
+            for ik in template.skeleton_ik_bones:
+                declared = ik.get("targetChild", -1)
+                ref = (template.children[declared]
+                       if 0 <= declared < len(template.children) else None)
+                built = next(
+                    ((index, child_name)
+                     for index, (child_ref, child_name, _node)
+                     in enumerate(built_children) if child_ref is ref),
+                    None)
+                entry = {"bone": ik["bone"], "position": list(ik["position"]),
+                         "rotation": list(ik["rotation"]),
+                         "targetChild": built[0] if built else -1}
+                if built:
+                    entry["targetNode"] = built[1]
+                    report.skeleton_ik.append(
+                        f"{template.name}: {ik['bone']} -> {built[1]} "
+                        f"(child {built[0]})")
+                elif ref is not None:
+                    # Declared against a child this configuration does not
+                    # build. Falling back to the declaring node is the same
+                    # thing the engine does for an index it cannot resolve,
+                    # and is the only frame still available here.
+                    report.skeleton_ik.append(
+                        f"{template.name}: {ik['bone']} -> child {declared} "
+                        f"({ref.template}) not built; pinned to the declaring node")
+                else:
+                    report.skeleton_ik.append(
+                        f"{template.name}: {ik['bone']} -> the declaring node")
+                ik_entries.append(entry)
+            extras["skeletonIK"] = ik_entries
         if is_camera:
             extras["cameraView"] = {"control": control or "vehicle"}
             if template.camera_view_modes:

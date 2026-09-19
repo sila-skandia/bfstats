@@ -5,14 +5,18 @@
     python3 extract_pose.py --matrix
     python3 extract_pose.py --matrix --export --out ./viewer/models
 
-    --seat-poses extracts every passenger-seat pose the mod ships, one
-    `<Soldier>__<PoseName>.pose.glb` per soldier per seat (e.g.
-    `USSoldier__PassengerInWilly.pose.glb`), resolving the upper/lower state
-    names off `extras.seat.poseAnimation` through the animation state machine.
-    The viewer's `map.html` loads them straight onto a seat's EntryPoint when
-    that seat is occupied, so pressing E into a Willy's passenger door shows the
-    soldier posed by `Ub_PassengerInWilly`/`Lb_PassengerInWilly` instead of an
-    empty seat. `--soldiers` restricts the rows (default: every BfSoldier).
+    --seat-poses extracts every seat pose the mod ships, one
+    `<Soldier>__<PoseName>.pose.glb` per soldier per pose (e.g.
+    `USSoldier__PassengerInWilly.pose.glb`, `USSoldier__SitInVehicle.pose.glb`),
+    resolving each SeatObject's upper/lower state names the way
+    `BFSoldier::setUseSeat` does — the seat's own `seatAnimationUpperBody` /
+    `LowerBody` where it declares them, the soldier template's
+    `Ub_SitInVehicle` / `Lb_SitInVehicle` / `Lb_StandInVehicle` where it does
+    not. The viewer's `map.html` loads them onto a seat when it is occupied, so
+    pressing E into a Willy's passenger door shows the soldier posed by
+    `Ub_PassengerInWilly`/`Lb_PassengerInWilly`, and into its *driver's* door
+    the `SitInVehicle` pair, instead of an empty seat. `--soldiers` restricts
+    the rows (default: every BfSoldier).
 
 Positional arguments are soldier/weapon pairs. Each pair comes out as
 `<Soldier>__<Weapon>.pose.glb`: the soldier's body, head and hands skinned to
@@ -957,9 +961,9 @@ def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
     the root node's static transform is the frame-0 pose for viewers that ignore
     clips.
 
-    The filename strips the `Ub_` prefix: `Ub_PassengerInWilly` ->
-    `USSoldier__PassengerInWilly.pose.glb`, matching what `map.html` looks up from
-    `extras.seat.poseAnimation.upperBody`.
+    The filename comes from `seat_pose_name`: `Ub_PassengerInWilly` +
+    `Lb_PassengerInWilly` -> `USSoldier__PassengerInWilly.pose.glb`, matching
+    what `map.html` derives from `extras.seat` through the same rule.
     """
     result: dict = {"soldier": soldier, "upperState": upper_state,
                     "lowerState": lower_state}
@@ -1054,7 +1058,7 @@ def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
     result["texturesMissing"] = sorted(set(report.missing_textures))
 
     out.mkdir(parents=True, exist_ok=True)
-    pose_name = upper_state[len("Ub_"):] if upper_state.startswith("Ub_") else upper_state
+    pose_name = seat_pose_name(upper_state, lower_state)
     target = out / f"{soldier}__{pose_name}.pose.glb"
     extras = {key: value for key, value in result.items()
               if key not in ("metrics", "stances")}
@@ -1380,44 +1384,93 @@ def main() -> int:
     return 1 if failures else 0
 
 
+# The engine's own seat poses, for the seats that name none. `BFSoldierTemplate
+# ::init` resolves all three by name (lnxded `0x0827acaf`/`0x0827acff`/
+# `0x0827ad4f`, stored at template +0x294/+0x298/+0x29c) and
+# `BFSoldier::setUseSeat` (`0x08271950`) spends them like this:
+#
+#   upper body := the seat's own `seatAnimationUpperBody`, else `Ub_SitInVehicle`
+#   lower body := the seat's own `seatAnimationLowerBody`,
+#                 else `Lb_StandInVehicle` when the seat is
+#                      `c_SeatShowStandingSoldier`,
+#                 else `Lb_SitInVehicle`
+#
+# Every driver's seat in the game takes the default pair: `WillySeat`,
+# `KubelwagenSeat`, `ShermanBrowningSeat` and 50 others declare `seatFlags` and
+# no animation at all, which is why the driver has never had a glb to load.
+# These are exported under the same `<Soldier>__<Pose>.pose.glb` naming as a
+# declared seat pose, so the viewer's lookup path is one path, not two.
+DEFAULT_SEAT_POSES: tuple[tuple[str, str], ...] = (
+    ("Ub_SitInVehicle", "Lb_SitInVehicle"),
+    ("Ub_SitInVehicle", "Lb_StandInVehicle"),
+)
+
+
+LOWER_PREFIX = "Lb_"
+STANDING_FLAG = "c_seatshowstandingsoldier"
+
+
+def resolve_seat_states(template: con_mod.ObjectTemplate) -> tuple[str, str]:
+    """The (upper, lower) animation states one SeatObject actually plays.
+
+    `BFSoldier::setUseSeat` (lnxded `0x08271950`) in full. The seat's own two
+    strings win where it declares them; where it does not, the soldier
+    template's three defaults do, and which lower default depends on one flag.
+    This is not `Lb_Stand`: no path in `setUseSeat` reaches a standing-on-the-
+    ground state, and the two branches that pick a default read template
+    +0x294 (`Lb_SitInVehicle`) and +0x29c (`Lb_StandInVehicle`), resolved by
+    name in `BFSoldierTemplate::init` at `0x0827acaf` and `0x0827ad4f`.
+    """
+    upper = template.seat_animation_upper_body or "Ub_SitInVehicle"
+    lower = template.seat_animation_lower_body
+    if not lower:
+        standing = any(f.strip().lower() == STANDING_FLAG
+                       for f in template.seat_flags)
+        lower = "Lb_StandInVehicle" if standing else "Lb_SitInVehicle"
+    return upper, lower
+
+
+def seat_pose_name(upper: str, lower: str) -> str:
+    """The asset name for one resolved pair, and the viewer's lookup key.
+
+    The upper half names it, as it always has (`Ub_PassengerInWilly` ->
+    `PassengerInWilly`), because in vanilla every seat that declares an upper
+    declares the matching lower. A pair whose halves disagree — a Kettenkrad
+    driver sitting in the Hanomag's legs, or the engine's own default upper
+    over `Lb_StandInVehicle` — carries both, so two genuinely different poses
+    cannot land on one file. `Lb_Stand` is treated as no lower at all, which
+    is how a mod that declares only the upper half used to be named.
+    """
+    upper_suffix = upper[len(UPPER_PREFIX):] if upper.startswith(UPPER_PREFIX) else upper
+    lower_suffix = lower[len(LOWER_PREFIX):] if lower.startswith(LOWER_PREFIX) else lower
+    if lower_suffix in (upper_suffix, "Stand"):
+        return upper_suffix
+    return f"{upper_suffix}-{lower_suffix}"
+
+
 def discover_seat_poses(library: con_mod.ObjectLibrary
                         ) -> list[tuple[str, str]]:
-    """Every (upperState, lowerState) pair a SeatObject declares, in use order.
+    """Every (upperState, lowerState) pair the mod's seats resolve to.
 
-    Scans all `SeatObject` templates for `seatAnimationUpperBody` strings. When
-    a seat declares only the upper string and leaves lower empty, the engine
-    falls back to `Lb_Stand` (SEAT-9), so we pair it with that. When a mod pairs
-    a non-matching lower (e.g. Black Medal's `Ub_PassengerInWilly` +
-    `Lb_PassengerInHanomag`) the matching pair from the same-named seat in
-    another mod is preferred; only when no match exists is the non-matching pair
-    kept, since the game's own state machine still plays it. The viewer keys off
-    the upper state's suffix (`Ub_PassengerInWilly` -> `PassengerInWilly`).
+    One entry per distinct pair, in declaration order, each run through
+    `resolve_seat_states` — so a seat that declares nothing at all (every
+    driver's seat in vanilla: `WillySeat`, `KubelwagenSeat`, 50 more) yields
+    the engine's own `Ub_SitInVehicle`/`Lb_SitInVehicle`, which is the pose
+    that was missing and the reason a driver was never drawn.
+
+    A mod that pairs halves from two different seats (Black Medal's
+    `Ub_PassengerInWilly` with `Lb_PassengerInHanomag`) keeps that pair rather
+    than being corrected towards a matching one: it is what the game plays,
+    and `seat_pose_name` now gives it a file of its own instead of colliding
+    with the Willys'.
     """
-    all_pairs: list[tuple[str, str, bool]] = []
-    by_upper: dict[str, list[tuple[str, bool]]] = {}
+    seen: list[tuple[str, str]] = []
     for template in library.objects.values():
         if template.kind.lower() != "seatobject":
             continue
-        upper = template.seat_animation_upper_body
-        if not upper:
-            continue
-        lower = template.seat_animation_lower_body or "Lb_Stand"
-        suffix = upper[len(UPPER_PREFIX):] if upper.startswith(UPPER_PREFIX) else upper
-        lower_suffix = lower[len("Lb_"):] if lower.startswith("Lb_") else lower
-        matched = suffix == lower_suffix
-        pair = (upper, lower)
-        if pair not in all_pairs:
-            all_pairs.append((upper, lower, matched))
-        by_upper.setdefault(upper, []).append((lower, matched))
-    # Prefer a matching upper/lower pair per upper state; fall back to the first
-    # non-matching one when no match exists.
-    seen: list[tuple[str, str]] = []
-    for upper, lower, matched in all_pairs:
-        if any(u == upper for u, _ in seen):
-            continue
-        candidates = by_upper[upper]
-        match = next((c[0] for c in candidates if c[1]), None)
-        seen.append((upper, match if match else lower))
+        pair = resolve_seat_states(template)
+        if pair not in seen:
+            seen.append(pair)
     return seen
 
 
@@ -1436,7 +1489,7 @@ def extract_seat_poses(machine, meshes, textures, objects, library,
     failures = 0
     manifest = []
     for upper, lower in poses:
-        pose_name = upper[len(UPPER_PREFIX):] if upper.startswith(UPPER_PREFIX) else upper
+        pose_name = seat_pose_name(upper, lower)
         for soldier in soldiers:
             try:
                 result = export_seat_pose(
