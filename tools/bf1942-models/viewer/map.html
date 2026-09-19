@@ -871,6 +871,7 @@ import { wantsEnvmap, cubeFaceUrls, envmapVertexPatch, envmapVertexBody,
          envmapFragmentPatch, envmapFragmentApply } from './envmap.js';
 import { CombatArea, combatAreaRect } from './combat-area.js';
 import { flareSprites, flareTextureFiles, hasDrawableFlare } from './lens-flare.js';
+import { loadHudPaths } from './hud-pack.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -985,6 +986,13 @@ const texLoader = new THREE.TextureLoader(texManager);
 const DEV_ORIGIN = ['localhost', '127.0.0.1', '[::1]', ''].includes(location.hostname);
 const NO_CACHE = DEV_ORIGIN || new URLSearchParams(location.search).has('nocache');
 const bust = () => (NO_CACHE ? `?t=${Date.now()}` : '');
+// Where every piece of the game's interface comes from for this mod: the
+// sprites, the spawn screen, the HUD layout, the bitmap fonts and the
+// console face. A mod's pack holds only what it changed, so `hudPaths.url`
+// answers with the mod's directory for those and vanilla's for the rest;
+// on vanilla nothing is fetched and every path is the one it always was.
+// See `hud-pack.js`.
+const hudPaths = await loadHudPaths(activeMod.id, { bust });
 const lmCache = new Map();
 
 // Hosted on the stage, not the body: .ld-overlay is inset:0 absolute, and
@@ -1944,7 +1952,9 @@ function setConsoleOpen(on) {
     seatAltFire = false;
     aimHeld = false;
     if (!consoleFont) {
-      loadConsoleFont('./fonts/bf1942').then(f => {
+      // `Font/BF1942.font` out of this mod's own Font.rfa chain where it has
+      // one (five of the installed mods do) and vanilla's otherwise.
+      loadConsoleFont(hudPaths.consoleFont()).then(f => {
         consoleFont = f;
         consolePainted = -1;
       });
@@ -8650,13 +8660,16 @@ let mapArtToken = 0;        // guards against a slow load landing after a switch
 // --- the sprite pack --------------------------------------------------------
 //
 // Every marker on every map surface is the game's own sprite out of
-// `menu.rfa`: `extract_hud_pack.py` decodes them once into
-// `maps/_shared/hud/`, shared by every mod because the menu art is vanilla's
-// even when the level tree hangs off `maps/mods/<mod>`. `hud.json` names the
-// sprites and carries the flag-mesh-to-nation table; `minimap-icons.json` is
-// `ObjectTemplate.setMinimapIcon` per vehicle template. They are point art
-// and are drawn unsmoothed at whole multiples where the surface allows.
-const HUD_BASE = 'maps/_shared/hud';
+// `menu.rfa`: `extract_hud_pack.py` decodes them into `maps/_shared/hud/`
+// for vanilla and into `maps/mods/<mod>/_shared/hud/` for whatever a mod
+// repaints, and `hudPaths` above picks between the two per file. So an Eve
+// of Destruction level flies the NVA and Viet Cong flags its own archives
+// hold, over the vanilla bezel and rings it never touched. `hud.json` names
+// the sprites and carries the flag-mesh-to-nation table (EoD's own, which
+// is why `flagso_m1` resolves differently there); `minimap-icons.json` is
+// `ObjectTemplate.setMinimapIcon` per vehicle template, read from the mod's
+// own `Objects.rfa` chain. They are point art and are drawn unsmoothed at
+// whole multiples where the surface allows.
 const hudPack = { sprites: new Map(), icons: {}, nations: {} };
 
 /** The player marker ships as a black cut-out — a solid arrowhead inside a
@@ -8688,8 +8701,8 @@ async function loadHudPack() {
   let manifest, icons;
   try {
     [manifest, icons] = await Promise.all([
-      fetch(`${HUD_BASE}/hud.json${bust()}`).then(r => r.json()),
-      fetch(`${HUD_BASE}/minimap-icons.json${bust()}`).then(r => r.json()),
+      fetch(`${hudPaths.url('hud.json')}${bust()}`).then(r => r.json()),
+      fetch(`${hudPaths.url('minimap-icons.json')}${bust()}`).then(r => r.json()),
     ]);
   } catch (error) {
     // The surfaces still draw — fallback dots, no chrome — so this is a
@@ -8712,7 +8725,7 @@ async function loadHudPack() {
       }
     };
     img.onerror = () => {};
-    img.src = `${HUD_BASE}/${entry.file}${bust()}`;
+    img.src = `${hudPaths.url(entry.file)}${bust()}`;
   }
 }
 loadHudPack();
@@ -8727,7 +8740,8 @@ const sprite = name => hudPack.sprites.get(name) || null;
 // their own variables through: `window.__hud.vars['Vehicle/VehicleIcon'] =
 // ...`, once those tracks land.
 const hudCanvas = document.getElementById('hud-canvas');
-const gameHud = new Hud({ canvas: hudCanvas, sprite, base: HUD_BASE, bust });
+const gameHud = new Hud({ canvas: hudCanvas, sprite,
+                          base: rel => hudPaths.url(rel), bust });
 
 /* The sun's lens flare. `lens-flare.js` carries the engine reading and the
  * placement arithmetic; this is the painter and the texture cache.
@@ -9473,19 +9487,19 @@ const spawnLayout = { data: null, fonts: new Map(), pending: false };
 async function loadSpawnLayout() {
   let data;
   try {
-    data = await fetch(`${HUD_BASE}/spawn-layout.json${bust()}`).then(r => r.json());
+    data = await fetch(`${hudPaths.url('spawn-layout.json')}${bust()}`).then(r => r.json());
   } catch (error) {
     console.warn('spawn layout unavailable', error);
     return;
   }
   spawnLayout.data = data;
   await Promise.all(Object.entries(data.fontFiles || {}).map(async ([id, entry]) => {
-    const meta = await fetch(`${HUD_BASE}/${entry.glyphs}${bust()}`).then(r => r.json());
+    const meta = await fetch(`${hudPaths.url(entry.glyphs)}${bust()}`).then(r => r.json());
     const img = new Image();
     await new Promise(resolve => {
       img.onload = resolve;
       img.onerror = resolve;
-      img.src = `${HUD_BASE}/${entry.file}${bust()}`;
+      img.src = `${hudPaths.url(entry.file)}${bust()}`;
     });
     spawnLayout.fonts.set(id, { meta, img, tinted: new Map() });
   }));
