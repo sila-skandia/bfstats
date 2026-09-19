@@ -957,6 +957,10 @@ same job as replacing `bodyThrust` on the tracked hull.
 
 ### Still open after this review
 
+> **All four of these were closed on 2026-09-20 by the wave-3 section at the
+> end of this file.** They are left as written because the reasoning that
+> opened them is what the closing had to answer.
+
 - **`TrackedVehicle`'s propulsion** is `bodyThrust`, which the engine-type gate
   refutes. Until it becomes the EngineGrip governor the Sherman will read low.
 - **The coast law.** `rollingResistance` and `engineBraking` are `[free]` and
@@ -974,3 +978,238 @@ same job as replacing `bodyThrust` on the tracked hull.
   settle the absolute numbers. It is now a much sharper question than it was:
   the engine's own code says 110 km/h for a Willy, and the only thing arguing
   for 60-70 is a memory.
+
+
+## 2026-09-20 (wave 3): the drivetrain is the engine's, and the wheels drive it
+
+Wave 2 left `ground.js` with a propulsion model that was wrong at the root and
+two lateral constants labelled as inventions. All four of the round's open
+drive items are closed here — items 1 to 4 of
+`features/bf1942-parity-round-2026-09-19/viewer-changes.md`, "Open after
+wave 2". Ledger rows: TANK-1, TANK-3, TANK-4, TANK-7, TANK-9, TANK-12,
+TANK-13, PHY-2, PHY-5.
+
+### What propels a ground vehicle, and what does not
+
+`PhysicsEngine::updatePhysics` (`0x0824cbb0`) **returns at its second
+instruction** for a car or a tank:
+
+```
+824cc04: mov  eax,[edi+0x9c]       ; the EngineTemplate PhysicsEngine::init cached
+824cc10: call [edx+0xa0]           ; getEngineType()  -- virtual slot +0xa0
+824cc16: and  eax,0x1
+824cc1e: jne  824cc28              ; ... the body
+824cc20: lea  esp,[ebp-0xc] ...    ; the epilogue
+```
+
+`c_ETCar` (2) and `c_ETTank` (6) clear bit 0. `TrackedVehicle.bodyThrust` was a
+transcription of the `& 1`-and-`& 8` propeller expression applied to a class
+that never reaches it, and it is **deleted** — the file now carries a comment
+where it stood saying so, because it is the kind of thing that grows back.
+
+What propels both is the **EngineGrip contact-speed target** on the
+`c_PGFEngineGrip` springs, `dV = T - Vt` with
+`T = getCurrentRatio() * getCurrentDifferentialRPM(side)` along the wheel's
+forward axis, asked for at the engine's own `F * 30` (`ds:0x8716b5c`, applied
+at `0x0825bc67`). A tank turns because its two sides' targets differ — nothing
+applies a yaw torque to the hull, and the hand-built steering couple
+`trackDifferential` is gone with the thrust it was compensating for.
+
+**The gain matters and is not free.** Writing `dV / h` instead of `dV * 30`
+makes the demand four times stiffer at this file's 120 Hz sub-step than the
+engine's is, saturates the Coulomb clamp every sub-step, pins the load at its
+own clamp of 1.0 and holds the revs below `gearUp` for ever: a Sherman that
+never leaves third at 30 km/h.
+
+### The gearbox is a filtered state with load feedback
+
+`Engine::handleUpdate` (`0x0823e120`) is the whole of it, and this viewer had
+none of it — `GroundVehicle` inverted `revs = speed / ratio` kinematically and
+`TrackedVehicle` had no rev state at all. It is now one shared `EngineState`:
+
+```
+T1    = clip(rollAngle, +-maxRotation.z) / maxRotation.z      NOT the pedal
+revs += 0.05 * ((T1 - L) - 0.5*revs),  clamped [-1.0, +1.2]   per TICK, not per second
+brake = (pedal < -0.1 && revs > 0) || (pedal > +0.1 && revs < 0)
+up    : revs > gearUp   AND blend == 0 AND gear < numberOfGears
+down  : revs < gearDown AND gear > 1                          no blend gate
+blend-= dt / gearChangeTime, floored at 0, and NOTHING re-arms it
+```
+
+and the load `L` is `feedbackLoop`'s (`0x0824c850`):
+
+```
+L0 = dot(dV_clamped, fwd) * getCurrentRatio() / getCurrentTorque()
+(type & 2)  L0 clamped to [-1, +1]                        car and tank alike
+(type & 4)  L = the frame MAX while revs > 0, MIN while revs <= 0
+else        L = (L*n + L0) * 0.99 / (n + 1)
+```
+
+That loop is the whole governor: hard acceleration makes `L` large, `L` pulls
+the revs down, low revs lower the target, and the target is the propulsion.
+It is also what makes `setTorque` load-bearing — as the **divisor of the
+load** (TANK-13), never as a multiplier on drive.
+
+Two readings had to be corrected against the `v4-gearbox` verdict, both
+hand-decoded here:
+
+- **The tank's min/max are the other way round.** `0x0824c91f`'s
+  `fldz; fucompp` compares 0.0 against the revs, so `revs > 0` takes the `jne`
+  to `0x0824c942`, whose `fucom` keeps `L0` only when `L0 > L` — a MAX. The
+  verdict states MIN for `revs > 0`. The max is the one that can hold an
+  engine down, and the pair is symmetric in reverse.
+- **Only a `c_PGFEngineGrip` wheel feeds the load at all.** `addFriction`
+  dispatches on the grip byte at `0x0825baf1`-`0x0825bafe`
+  (`mov dl,[esi+0xb4]; and eax,0x4; test al,al; jne 0x0825c1b0`) and only the
+  `0x4` branch walks the node's ancestors for a `PhysicsEngine`
+  (`0x0825c1b0`-`0x0825c1fa`, stored at `0x0825c556`); a RollGrip wheel takes
+  the `0x2` branch at `0x0825bb04` and the guard at `0x0825bc19` skips the
+  call. Getting this wrong cost a day: counting a jeep's two free-rolling
+  fronts as zero samples halves the load, which pins the revs at
+  `2*(1 - 0.5)` = 1.0, just above `gearUp 0.95`, so the box shifts straight to
+  top under full wheelspin and stays there. On Wake that jeep sat in fifth
+  doing donuts at walking pace.
+
+**`setGearChangeTime` is very nearly a dead word.** A whole-binary scan for
+stores to `[reg+0xb8]` finds four and no more — the two `PhysicsEngine`
+constructors seeding 1.0 and `handleUpdate`'s own countdown — so the lockout
+expires `gearChangeTime` into the object's life and is never re-armed. After
+that the box can shift one gear per tick. Reproduce with:
+
+```
+objdump -d -M intel bf1942_lnxded.static \
+  | grep -E '(fstp?|mov) +(DWORD PTR )?\[e..\+0xb8\]'
+```
+
+### The tick rate, and LOOP-1
+
+The filter's `0.05` is per call and **not** scaled by `dt` — the only uses of
+`dt` in `handleUpdate` are the lockout's `fdiv [esi+0x374]` at `0x0823e23f`
+and three `calculateAndClipAngle` calls. So the wall-clock spool-up follows
+the tick rate, and the viewer has to choose one.
+
+It runs at **30 Hz**, on an accumulator independent of the 60/120 Hz sub-step
+rate, because that is `g_simulationFps` and the figure the friction budget in
+this same file already spends. **Ledger LOOP-1 is open against it** — one
+2026-09-20 reading of lnxded's `Setup::mainLoop` says the loop targets
+`2 * g_simulationFps` and stores a measured frame time — and that row is
+explicitly marked "do not build on it". If it closes at 60 Hz,
+`ENGINE_TICK_HZ` is the only thing that changes and the effect is a filter
+that settles in 0.67 s instead of 1.33 s. **No ceiling, ladder or top speed
+moves**, because those are the filter's steady state, not its rate.
+
+### RollGrip, and the two inventions it retires
+
+`corneringStiffness`, `lateralGripFraction`, `slipFloor` and the tracked
+class's `frontAxleCorneringStiffness` are gone, and the friction limit is a
+**circle** again for both classes. What they stood in for is RollGrip's own
+demand, which this file had never written out:
+
+```
+RollGrip     dV = -(the component of Vt along the wheel's own axle)
+EngineGrip   dV = T - Vt          -- the same lateral term, plus drive
+```
+
+The previous reviewer deleted `corneringStiffness` without putting that in its
+place and measured the jeep turning 16 degrees in 12 s instead of 60, and kept
+the constants on the strength of it. The reason is exact: **the Coulomb clamp
+bounds a lateral demand and never creates one**, so with the stiffness gone
+there was no lateral force at all. With the demand written out the same jeep
+turns **120 degrees in 12 s** at 31 m/s, against 108 on `main` and 92 with the
+fitted model.
+
+The ellipse's other job was stopping a tank rolling itself over. That is
+answered too, and by the engine's own mechanism rather than a shape: the two
+demands now compete for one budget, so a wheel spending it on drive has none
+left to corner with — `collision-response.md` section 8's "power slide".
+Measured `worstUp >= 0.974` at every yaw from 0.3 to full lock on both hulls,
+and `>= 0.987` entering a turn from straight-line top speed, the two cases the
+ellipse was fitted against. The per-frame limit cycle is gone with it: 0 roll
+sign flips a second and a worst per-frame load step of 0.0000, against 59 and
+14 % before.
+
+### Every drive constant, and what it is now
+
+| constant | was | now |
+|---|---|---|
+| `bodyThrust()` | the propeller law on a hull | **gone** — `updatePhysics` is gated off for both ground types (TANK-7) |
+| `FADE_SPEED_DEFAULT` / `noPropellerEffectAtSpeed` | read off the Engine | **gone** from the drivetrain — it lives inside `& 1` AND `& 8`, which no ground vehicle reaches |
+| `trackResistance 0.25` | fitted damper toward the target | **gone** — it stood in for the engine's own `x30` on that term, and both things it was fitted against (a 17.5 M3A1 ratio, a body thrust) were refuted |
+| `trackDifferential 20.0` | hand-built steering couple | **gone** — the differential is in the two sides' targets |
+| `rollingResistance` | always-on drag | **gone** — the engine has none; a RollGrip wheel has no longitudinal demand at all |
+| `engineBraking 0.4` | closed-throttle drag | **gone** — the rev state decays and the target decays with it; that is the coast |
+| `brakeDecel 8` | brake force | **gone** — the brake byte discards the target, so the brake is `mu * \|g\|` |
+| `reverseBelow 0.5` | brake-to-reverse threshold | **gone** — the brake byte clears when the revs cross zero |
+| `PARKING_HOLD_SPEED 3.0` | low-speed hold fade | **gone** — the grip law asks for the whole correction at every speed |
+| `corneringStiffness`, `lateralGripFraction`, `slipFloor` | invented tyre model | **gone** — RollGrip's `dV = -(Vt along the axle)`, isotropic clamp |
+| `revs` | `speed / ratio`, kinematic | **read** — the filter, TANK-12 |
+| `gear` | 1..n for a car, pinned at 1 for a tank | **read** — `handleUpdate` writes `+0xbc` for both |
+| `engineType` | not carried | **read** — `extras.physics`, bits per TANK-1 |
+| `maxRotation` / `maxSpeed` / `acceleration` | rig only | **read** — `extras.physics`, TANK-12's `T1` and steer terms |
+| `ENGINE_REV_CEILING 1.2` / `_FLOOR 1.0` | read | **read**, and now known to be type-independent |
+| `ENGINE_REV_FILTER_GAIN 0.05` | absent | **read**, `ds:0x86c08a8`, per tick |
+| `ENGINE_LOAD_MEAN_SCALE 0.99` | absent | **read**, `ds:0x86d0cdc` |
+| `ENGINE_MAX_GEARS 5` | absent | **read** — `setNumberOfGears` `0x0823fd10` clamps [1,5] |
+| `ENGINE_DEFAULTS` | absent | **read** — `EngineTemplate::EngineTemplate` `0x0823efc0` |
+| `ENGINE_TICK_HZ 30` | the friction budget's | **read**, and now the filter's too — **still open** against LOOP-1 |
+| `COULOMB_SLIDING/_BREAKAWAY/_GRAVITY` | read (PHY-2) | read, unchanged; `coulombCaps` now returns the unweighted `A * \|g\|` |
+| `SPRING_*`, `suspensionTravel`, `bumpStiffness` | free / read (PHY-5) | unchanged — the force law is read, the travel and the bump stop are **still free** |
+| `STATIC_HOLD_*` | free, numerics | **still free**, and the settle test now gates entry only |
+| inertia, `angularDamping`, `yawDamping`, `boundingRadius`, `hullHalfHeight` | free | **still free** |
+
+### Measured, before and after
+
+Analytic flat ground, `tests/ground_harness.mjs`:
+
+| | main | wave 3 | the engine's own |
+|---|---|---|---|
+| Willys top | 107.6 km/h | **111.2** | 112.6 |
+| Sherman top | 41.2 | **53.6** | 53.6 |
+| M3A1 top | 64.2 | **67.2** | 67.0 |
+| Willys reverse | 25.0 | **25.1** | 25.2 |
+| Sherman reverse | — | **14.4** | 14.4 |
+| full-lock circle, 12 s at 31 m/s | 108.7 deg | **136.7 deg** | — |
+| worst body roll in it | 5.0 deg | **8.3 deg** | — |
+| brake to stop | 3.77 s from 29.9 | **8.25 s from 30.9** | driven axle only |
+| coast, 15 s off the pedal | 18.5 m/s left | **10.3 m/s left** | — |
+| parked creep, 10 s | 0.000 m | **0.000 m** | 0 |
+| tank rollovers, full yaw sweep | none | **none** (worstUp 0.974) | — |
+| roll sign flips per second, settled turn | 59 | **0** | — |
+
+On Wake itself, through `window.__drive()` stepped at 1/60 (the page's own
+heightfield and material map, `mu` 0.9 on grass):
+
+- All three hulls sit at their real spawns for ten seconds with **0.000 m** of
+  drift and every contact latched.
+- A Willy placed on a clear 220 m lane reads **74.5 / 84.9 / 92.2 / 102.3
+  km/h** at one-second marks, climbing gear 4 to 5 with the revs going
+  0.944 → 0.908 → 0.985 → 1.2. The lane then runs out.
+- Reverse **25.7 km/h**, brake-to-stop 3.5 s, full lock 94.6 deg/s.
+
+### Still open after this
+
+- **The brake is the driven axle's alone**, so a rear-wheel-drive Willy stops
+  at about `mu * \|g\| / 3` and takes 8 s from 31 m/s. That follows from
+  RollGrip having no longitudinal demand, which is read — but the size of it
+  depends on the viewer's load weighting, below.
+- **The friction accumulator is a MEAN over parts in the engine and a
+  load-weighted SUM here.** `coulombCaps`'s comment names it. The two agree on
+  flat ground for a fully-driven vehicle and disagree wherever the driven
+  wheels carry a different fraction of the weight than of the part count: the
+  engine gives a jeep's rear axle half the budget, this file gives it the
+  third of the weight it carries. It is also the likeliest explanation of the
+  one behaviour pinned as a measurement rather than defended — **a jeep held
+  at full throttle out of a half-lock turn at 31 m/s does not straighten**,
+  because its inside rear leaves the ground and the tractive effort is then
+  all on one side of the hull. A mean that averages the application points as
+  well as the forces would cancel exactly that couple. Lifting the throttle
+  ends it either way, and `test_a_floored_jeep_does_not_come_out_of_a_hard_turn_by_itself`
+  pins both halves.
+- **`bumpStiffness` and `suspensionTravel` are still free**, and they now meet
+  much higher speeds: the jeep's apex over the harness's synthetic washboard
+  went from 3 m at 18.5 m/s to 4.5 m at 31.
+- **Driving off the island** still accelerates downward for ever. Pre-existing,
+  shared, and not a drivetrain problem.
+- **LOOP-1**, above.
+- **A reference drive in the real game** remains the one measurement that would
+  settle the absolute numbers.
