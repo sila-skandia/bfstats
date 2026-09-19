@@ -385,6 +385,73 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
                    underEarthGravity: (JUMP_IMPULSE * JUMP_IMPULSE) / (2 * 9.81) };
 }
 
+// --- the same jump on a 30 fps phone and a 144 Hz monitor ------------------
+//
+// `Soldier.step` takes a **frame** dt and spends it through a `FixedStep`
+// accumulator that runs whole 60 Hz ticks of the body, leaving `clock.alpha`
+// for the render to interpolate with. The sim is therefore already independent
+// of the frame rate, which is the property that matters: the engine's own
+// `Setup::mainLoop` (lnxded `0x080bc0b0`) rate-limits to `1 / (2 *
+// g_simulationFps)` and then integrates with the **measured** elapsed time, so
+// retail's own jump does move with the frame rate. This viewer deliberately
+// does not, because a recorded input stream has to replay to the same position
+// on any machine.
+//
+// Apex is sampled once per frame, so a 30 fps run sees every second tick and a
+// 144 Hz run sees each tick more than once; near the apex a tick moves the body
+// about 2 mm, which is the whole tolerance these need.
+function jumpAtFrameRate(fps, seconds = 2) {
+  const s = runway();
+  const dt = 1 / fps;
+  let apex = 0, airFrames = 0, left = false;
+  s.step(dt, { jump: true });
+  for (let i = 0; i < Math.round(seconds * fps); i++) {
+    s.step(dt, {});
+    apex = Math.max(apex, s.y);
+    if (!s.grounded) { airFrames++; left = true; } else if (left) break;
+  }
+  return { fps, apex, airTime: airFrames * dt, landed: s.grounded, y: s.y,
+           ticks: s.clock.ticks };
+}
+results.frameRateJump = [jumpAtFrameRate(30), jumpAtFrameRate(60),
+                         jumpAtFrameRate(144), jumpAtFrameRate(23.7)];
+
+// And the landing a fall-damage caller reads. This one must be *exact*: the
+// landing happens on one particular tick whatever the frames around it were,
+// so the impact speed and the drop the formula is fed cannot move at all.
+function fallAtFrameRate(fps, height = 8) {
+  const s = runway();
+  const dt = 1 / fps;
+  s.step(dt, {});
+  // The page's own `__dropFromHeight`: lift the settled body, zero its
+  // vertical speed and tell it the last thing it touched was up there.
+  s.body.position.y += height;
+  s.body.velocity.y = 0;
+  s.body.grounded = false;
+  s.body.lastCollisionHeight += height;
+  let landing = null;
+  for (let i = 0; i < Math.round(6 * fps) && !landing; i++) {
+    s.step(dt, {});
+    landing = s.landing;
+  }
+  return landing && { fps, impactSpeed: landing.impactSpeed,
+                      fallHeight: landing.fallHeight,
+                      cosTheta: landing.cosTheta, material: landing.material };
+}
+results.frameRateFall = [fallAtFrameRate(30), fallAtFrameRate(60),
+                         fallAtFrameRate(144), fallAtFrameRate(23.7)];
+
+// The ramp too: a second of held W covers the same ground at any frame rate.
+function rampAtFrameRate(fps, seconds = 1) {
+  const s = runway();
+  const dt = 1 / fps;
+  const from = s.z;
+  for (let i = 0; i < Math.round(seconds * fps); i++) s.step(dt, { forward: 1 });
+  return { fps, travelled: from - s.z, speed: s.speed };
+}
+results.frameRateRamp = [rampAtFrameRate(30), rampAtFrameRate(60),
+                         rampAtFrameRate(144), rampAtFrameRate(23.7)];
+
 // --- a held Space jumps once -----------------------------------------------
 
 {
