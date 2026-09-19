@@ -8810,11 +8810,35 @@ function deployFlagIndices() {
   return own.length ? own : flags.map((_, index) => index);
 }
 
+/** The side the page was launched on, or null.
+ *
+ *  The Instant Battle screen in `play/` starts the map with `?team=`, which
+ *  is the `Campaign/Team` its TEAM list writes: 1 Axis, 2 Allied, the
+ *  numbering `menu/SkirmishMenu` itself uses. Names are accepted too so a
+ *  hand-typed link reads. The level comes in on `?map=`, which this page
+ *  already honoured. */
+const launchTeam = (() => {
+  const raw = (params.get('team') || '').trim().toLowerCase();
+  if (raw === '1' || raw === 'axis') return 1;
+  if (raw === '2' || raw === 'allied' || raw === 'allies') return 2;
+  return null;
+})();
+
 /** Fresh join: pick the side that actually has spawn choices. Liberation of
  *  Caen's Allied tab is a single Canadian_Base in empty fields; Axis owns
  *  the bridge and town. Tobruk is the reverse. A rejoin keeps the life's
- *  own team. */
+ *  own team.
+ *
+ *  A launch from the Instant Battle screen names the side instead, and it
+ *  wins outright. The tally is only a guess at which side has somewhere to
+ *  stand, and it is not needed here: `deployFlagIndices` already offers
+ *  every flag to a side that owns none. That is how Midway works at all
+ *  (its control points all start neutral), and it is what makes Wake
+ *  playable from the Japanese side — all five of its flags are Allied at
+ *  the start, so a tally-based guard would answer ALLIED to a player who
+ *  picked AXIS on the screen before this one. */
 function preferredDeployTeam() {
+  if (launchTeam) return launchTeam;
   let axis = 0;
   let allied = 0;
   for (const flag of flags) {
