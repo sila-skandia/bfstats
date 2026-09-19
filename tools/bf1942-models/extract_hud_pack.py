@@ -115,6 +115,12 @@ SPRITES: list[str] = [
       for k in ("scout", "assault", "at", "medic", "engineer")],
     "Texture/icon_ticketbar",
     *[f"Texture/flag_ticket_{n}" for n in NATIONS],
+    # The text-message plates. The 3-line one is the combat-area warning's
+    # own backdrop (menu/InGame's `Outside/OutsideTime` group); the 1- and
+    # 2-line ones back the spawn-point and status messages that share the
+    # same widget family, so the whole set comes across together.
+    *[f"Texture/Ingame/text-mess/textmessBG_{k}"
+      for k in ("1line_256x32", "2line_256x32", "3line_256x64")],
     # --- in-game HUD: soldier and vehicle health, ammo, heat, reload, medic,
     # stamina and rocket-pack bars; the two ammo-panel backdrops; the turret
     # orientation icon; the weapon bar (see extract_hud_layout.py). Casing
