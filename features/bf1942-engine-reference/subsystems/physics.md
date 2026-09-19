@@ -274,6 +274,32 @@ gravity-invariant **by design** — and at the shipped g every spring acts at
 **1.5× its `.con` strength**. Units: strength is m/s² per metre of displacement,
 damping m/s² per m/s.
 
+**What "displacement" is** (lnxded `0x0824ddd0` decompiled in full, 2026-09-20,
+for the viewer's parked-vehicle bodies). It is a world **vector**, not a scalar
+along the body's up axis:
+
+```
+anchor = the wheel's authored relative position, through its parent's absolute transformation
+D      = anchor − wheelNode.absolutePosition
+Dprev  = last tick's D (+0xc4);  D is stored whether or not the root is asleep
+if the root is awake:
+    wheel.setRelativeTransformation(identity, authored position)     // the wheel SNAPS BACK to rest, every tick
+    a = −( strength(+0xd4)·D·(g·−0.101833)  +  damping(+0xd0)·(D − Dprev)/dt )
+    root.addAccelerationAtRelativePosition(anchor − root.pos, a)
+```
+
+The only thing that ever moves a wheel off its anchor is `solveImpulse`'s spring
+branch in the resolve pass ([collision-response.md](collision-response.md) §6.4),
+which pushes it along the averaged contact normal by `clamp(penetration, 0, 1)`.
+So each tick's compression is simply how far the rest-pose wheel sank into
+whatever it is standing on, measured afresh; the force acts along the **ground's
+normal** (a taildragger standing nose-high is not pushed backwards by its own
+springs); there is no travel limit, no bump stop and no relaxation state. At
+rest `Σ 1.5·strength·penetration = |g|`: a Willy (four springs of 25) sinks
+0.098 m per wheel. A viewer model with accumulated compression and a force
+along body-up crept a parked Corsair backwards indefinitely; the read law
+settles it in four seconds.
+
 `c_PGFRollGripWhenOccupied` is mechanical, not descriptive: a wheel with bit 8
 set is rewritten every update to grip `10` (…|RollGrip) while occupied and `9`
 (…|ContactGrip) while empty. That is how parked vehicles stop creeping downhill.

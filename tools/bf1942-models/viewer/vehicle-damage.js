@@ -6,9 +6,12 @@
 // `subsystems/hitpoints-and-damage.md` §8. The two findings that shape this
 // file:
 //
-//   - **A collision never costs hit points** (HP-6). Nothing here is driven by
-//     an impact against terrain or a wall; only a projectile damages anything.
-//     Do not add a crash-damage path — the engine has none.
+//   - **A collision costs hit points** (HP-6, reversed 2026-09-19: both
+//     collision handlers call `GameServer::giveDamage`). The formula, the
+//     material tables and the once-a-second limiter live in `crash-damage.js`;
+//     the contacts that feed it come from `body-world.js`. What arrives here is
+//     a plain `damage(amount)`, exactly as a round's does, so everything below
+//     — tiers, the critical tick, death — follows a crash for free.
 //   - **A living object re-evaluates its effect tier every tick** (ARM-1). The
 //     `Armor+0x128` byte the engine keeps is a *death* latch, not a first-run
 //     latch, so there is no once-per-lifetime behaviour to reproduce: poll, and
