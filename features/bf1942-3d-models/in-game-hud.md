@@ -135,12 +135,18 @@ seat.
   `.con` word or client write-site for this flag turned up in R1's survey.
   Fed true whenever a magazine weapon is equipped so the spare-count readout
   ever shows at all — an assumption, not a confirmed default.
-- **`Ammo/AmmoType` for `ATIcon` weapons (fed as `6`, R1-18 open).** The
-  layout's icon-only branch covers both `6` and `7`; which the engine actually
-  uses for an `ATIcon` weapon (Bazooka, ExpPack, Detonator) was never read. `6`
-  is picked arbitrarily — both branches cull the same unfed heat/reload fill
-  this file deliberately never feeds for these weapons, so either value paints
-  identically: icon and panel only, no numbers, matching R1's Viewer Recipe.
+- ~~**`Ammo/AmmoType` for `ATIcon` weapons (fed as `6`, R1-18 open).**~~
+  **Closed and corrected 2026-09-19 — it is `2`.** This bullet used to say the
+  layout's icon-only branch covered both 6 and 7, that either painted
+  identically, and that 6 was picked arbitrarily. HUD-10 read the client's own
+  `operator>>` (`0x004c4cd0`) in full and re-walked the layout, and the
+  premise was wrong: 6 is `ATIconAndHeatBar` (vanilla's MedPack alone) and it
+  lands in the `{6,7}` panel, which has **no rounds text at all**, while
+  `ATIcon` = 2 lands in the `{2,3,4,5}` panel, which prints one. So every AT
+  weapon in the game — Bazooka, Panzerschreck, ExpPack, Detonator, Landmine —
+  was drawing a rocket icon with no count beside it. See
+  [2026-09-19 (stream C)](#2026-09-19-stream-c-the-dial-the-dots-and-the-ammo-enum)
+  below.
 - **Per-weapon `SoldierAmmoPosX`/`PosY` overrides are not applied.**
   `hud-layout.json`'s rect is baked once from `menu/InGame`'s own defaults
   (`(696,517)`), not a live-bound position — only one surveyed weapon
@@ -436,6 +442,10 @@ rather than a re-implementation of its cadence.
 
 ### Still missing from the vehicle HUD
 
+> Both bullets below were closed on 2026-09-19 — see
+> [2026-09-19 (stream C)](#2026-09-19-stream-c-the-dial-the-dots-and-the-ammo-enum).
+> Kept as written because each one's own reasoning is part of the correction.
+
 - ~~**The turret-turn dial**~~ — **drawn as of 2026-09-17**, once a tank's
   driver could actually traverse (`seats-and-manned-guns.md`). Fed as
   `Vehicle/ShowTurretIcon` plus `IconLookRotation` in radians, gated on the
@@ -447,14 +457,19 @@ rather than a re-implementation of its cadence.
   right the hull belongs at 9 o'clock — which on a canvas whose positive
   rotation is clockwise is the traverse itself, not its negative.
   `angleMultiplier` is carried by the extractor and still unread, so it is not
-  applied.
-- **The seat-occupancy dots** (`vehicleSeats`) are unfed. The five states are
-  known (VHUD-2) and this page knows which seat is occupied, but the dots'
+  applied. **(The picture that argument reaches is right; the arithmetic is
+  not — `RotateEffect` is counter-clockwise, and it was `headingRadians()`'s
+  own sign flip that was cancelling the error. VHUD-9, below.)**
+- ~~**The seat-occupancy dots** (`vehicleSeats`) are unfed.~~ The five states
+  are known (VHUD-2) and this page knows which seat is occupied, but the dots'
   *positions* are live-bound per vehicle (`VehiclePosX1..6`/`PosY1..6`,
   VHUD-7's `(192+X[i], 452+Y[i])`) and nothing in the extracted data carries
   them. Feeding states against the layout's own sample rects would draw six
   dots in a diagonal staircase over every vehicle icon, which is inventing
-  placement — the one thing this painter's own rule says not to do.
+  placement — the one thing this painter's own rule says not to do. **(The
+  reasoning stands; the premise does not. `setVehicleIconPos` is a `Vec2` on
+  every PlayerControlObject template and `con.py` simply had no hit for the
+  word — VHUD-11, below.)**
 
 ## 2026-09-19 (stream D): two more groups, and the painter learned to wrap
 
@@ -580,3 +595,126 @@ differenced pixel for pixel on Wake:
 That bounding box is the warning text leaf's own rect and nothing else: the
 plate under it is pixel-identical in both builds, and so is every other leaf
 on all three surfaces. No leaf that existed before this round moved.
+
+## 2026-09-19 (stream C): the dial, the dots, and the ammo enum
+
+Three things this file recorded as open or approximate were closed against the
+binary in the parity round, and one of them was wrong in a way that had been
+invisible because a second error was cancelling it.
+
+### VHUD-9: the dial's trigger is the word, not the rig
+
+```
+ShowTurretIcon = (activeSeatCamera.getViewMode() == 3) && pcoTemplate.getHasTurretIcon()
+```
+
+Client `0x006ae597`–`0x006ae5d1`. Both halves were missing here: the dial was
+gated on "the active seat has a traverse", in any view. What that turns off:
+
+- **A casemate hull.** The Wespe, the Priest and the StuG class aim inside a
+  mantlet and never declare `setHasTurretIcon` — no vanilla casemate does.
+  They got a dial; they no longer do.
+- **Every chase view.** `viewMode == 3` is the inside view; the enum's own
+  numbering was not derived, only that 3 is the one that shows the dial. The
+  page passes `mannedActive() ? true : !!view?.firstPerson` — a manned gun has
+  no view cycle at all, which is the one view retail gives it.
+- **A nested seat.** The engine queries the **controlled** PCO's template, and
+  the word lives on vehicle roots only, so a Sherman's hull gunner gets none.
+  `activeHud()`'s root fallback is deliberately not used for this.
+
+`setHasTurretIcon` is new in `bf42/con.py` — 10 sites on 7 distinct vanilla
+templates (Sherman, Tiger, PanzerIV, T34, T34-85, M10, Chi-ha), 4,158
+declarations across 18 installs, always on the root PCO. A scene baked before
+this shows no dial at all until it is re-extracted, which is the right
+failure: the alternative is keeping the wrong dial on every casemate hull.
+
+### VHUD-9: the dial turned the wrong way, and looked right anyway
+
+`RotateEffect` computes `x' = x·cos + y·sin`, `y' = −x·sin + y·cos` about the
+pivot (client `0x007edbf0`), so on the HUD's y-down frame `(0,−1)` at +90°
+becomes `(−1,0)`: **the sprite's top goes left, counter-clockwise on screen.**
+HTML canvas `rotate(+θ)` is clockwise. `hud.js` had the wrong one — and the
+picture was still right, because `map.html` fed it through
+`TurretRig.headingRadians()`, which carries `seats.js`'s own
+`RIG_SIGN.yaw = −1`. Two errors cancelling.
+
+They are now separated, in one commit because half of it mirrors the dial:
+`hud.js` rotates by `−angle`, where the convention mismatch actually is, and
+`map.html` feeds `turretYawRadians()` — the engine's own value, positive to
+the controlled PCO's right. The previous bullet's "settled by looking at it"
+argument reached the right picture by the wrong arithmetic and is corrected
+above rather than deleted.
+
+The unit is **radians**, confirmed twice (the engine's value is an `FPATAN`
+result), so the old OPEN comment is gone. `angleMultiplier` is still not
+applied, and now for a reason: it scales a draw-context scalar rather than the
+bound variable, and all seven vanilla `RotateEffect`s author it as `0`.
+
+**Proved identical, not argued identical.** The dial was captured off the real
+painted `hud-canvas` at turret yaw +90° and −90° before and after the pair,
+from two servers differing only in those files, and the crops differenced.
+
+### VHUD-11: the dots' positions were carried all along
+
+`ObjectTemplate.setVehicleIconPos <x>/<y>` is a `Vec2` on the
+**PlayerControlObject** template — the root and every seat carry their own —
+giving that seat's dot position inside the 128×128 vehicle-icon texture. That
+is exactly the space VHUD-7's `(192 + X, 452 + Y)` anchor works in: Sherman's
+root `54/103` lands at (246, 555), inside an icon panel that starts at
+(200, 462). `con.py` had **zero hits** for the word; that, not the engine, is
+why this file said the positions were "live-bound per vehicle".
+
+Surveyed across 18 installs: **18,352 declarations**, of which all but three
+are a single `x/y` token (two space-separated, one empty — an empty one is
+dropped rather than read as 0/0, or every dot stacks in one corner). Vanilla
+range X 12…99, Y 43…120.
+
+States are VHUD-2's own five-entry table (`BfOccupiedVehicleData`'s vtable
+`0x0093f300`, read as raw bytes): 0 blank, 1 `vehicledot_local`, 2
+`vehicledot_empty`, 3 `vehicledot_friend`, 4 `vehicledot_enemy`. **Which live
+state a given seat resolves to was never read**, and this page does not
+pretend otherwise: the seat you are in is 1, every other declared seat is 2,
+and nothing invents a 3 or a 4 — there are no other occupants on this page to
+be one. A seat whose extract has no position pair keeps the layout's own
+literal rect.
+
+### HUD-10: `ATIcon` is 2, so a bazooka shows its rocket count
+
+The `.con` word and the `.meme` value are **the same enumeration** — the
+client's `operator>>` (`0x004c4cd0`) was decompiled in full and every stored
+value read — so there is no converter to write and the weapon's own declared
+type goes straight through:
+
+| `setHudAmmoType` | fed | draws |
+|---|---|---|
+| `ATNone` | 0 | nothing (the two knives) |
+| `ATAmmoBar` | 1 | magazine panel, fill bar, rounds, mag box |
+| `ATIcon` | **2** | panel, icon, **rounds** — Bazooka, Panzerschreck, ExpPack, Detonator, Landmine |
+| `ATIconAndStrengthBar` | 3 | panel, icon, rounds, bar — grenades |
+| `ATIconAndReloadBar` | 4 | panel, icon, reload bar, no rounds — RepairPack |
+| `ATIconNoText` | 5 | panel, icon |
+| `ATIconAndHeatBar` | 6 | panel, icon, heat bar — MedPack |
+
+The old reasoning — "6 and 7 paint identically, so the choice is arbitrary" —
+had the wrong premise. 6 lands in the `{6,7}` panel, which has **no rounds
+text**; 2 lands in `{2,3,4,5}`, whose rounds text is gated `ne 4 && ne 5 &&
+ne 6`. Which types print a count is therefore read off the layout rather than
+chosen: `test_hud_layout.py` asserts the real archive's own `when` list, and
+`hud_harness.mjs` runs `hud.js`'s own evaluator over it, and exactly 2 and 3
+survive.
+
+Both tables live in `hud.js` beside the rest of the layout's vocabulary so the
+node harness can drive them. Nothing was added to the extractor:
+`setHudAmmoType` has been parsed since before this round (`con.py:1875`–`1883`
+→ `hud_ammo_type`, emitted as `hudAmmo`), and the claim that it was a missing
+word is false.
+
+### Still open here
+
+- Which live state a seat's dot resolves to (VHUD-2's second half). This page
+  can only ever answer "you" versus "not you".
+- The engine's `viewMode` enum numbering. Only "3 is the inside view" is
+  established; the page maps it onto its own first-person state.
+- VHUD-10's live writer: the heat/reload feeder writes **`1 − f`** and its
+  destination group is still `[this+0x14]`, unidentified. Nothing here feeds
+  it yet.
