@@ -416,6 +416,51 @@ class PhysicsModuleTests(unittest.TestCase):
         self.assertGreater(run["airPeak"], run["before"])
         self.assertAlmostEqual(8.0, run["airPeak"], delta=0.2)
 
+    def test_a_ten_centimetre_wall_is_solid_from_either_side(self) -> None:
+        # `sweepCapsule` now skips contacts the motion is travelling away
+        # from. The question that buys is whether anything that could have
+        # stopped the body got dropped with them, and the answer has to hold
+        # for a body that starts *overlapping* the geometry -- a fence, a
+        # hangar door, or the spot beside a vehicle that `exitVehicle` puts
+        # you down on without checking.
+        wall = self.results["thinWall"]
+        near, far = wall["bounds"]
+        radius = wall["radius"]
+        # A clean run-up parks one radius short, on the near side.
+        self.assertAlmostEqual(near - radius, wall["runUp"]["x"], delta=0.02)
+        # Starting 5 cm inside the near face: it does not advance, and above
+        # all it does not come out the far side.
+        self.assertLess(wall["fromInsideNear"]["x"], near)
+        # Put down dead centre in the wall and told to walk into it: still on
+        # the near side of the far face. (It cannot walk out along X either --
+        # both faces block, one each way -- which is a pre-existing property
+        # of a wall thinner than the body, not something the skip changed. It
+        # can always slide out along the wall.)
+        self.assertLess(wall["fromDeadCentre"]["x"], far)
+        # And the mirror.
+        self.assertGreater(wall["fromInsideFar"]["x"], near)
+        for case in ("runUp", "fromInsideNear", "fromDeadCentre", "fromInsideFar"):
+            self.assertTrue(wall[case]["grounded"], msg=case)
+            self.assertLess(wall[case]["speed"], 6.1, msg=case)
+            self.assertAlmostEqual(0.0, wall[case]["y"], places=6, msg=case)
+
+    def test_an_inside_corner_settles_instead_of_shuttling(self) -> None:
+        # Two faces at right angles, walked into at 45 degrees. The push-out
+        # from one moves the body along the other, which is exactly the shape
+        # that can shuttle between them forever -- so the assertion is that
+        # the last ten ticks do not move at all, and that nothing was climbed
+        # or launched on the way in.
+        corner = self.results["insideCorner"]
+        self.assertAlmostEqual(0.0, corner["wanderX"], places=4)
+        self.assertAlmostEqual(0.0, corner["wanderZ"], places=4)
+        self.assertAlmostEqual(0.0, corner["maxY"], places=6)
+        self.assertLessEqual(corner["peakSpeed"], 6.0)
+        self.assertTrue(corner["grounded"])
+        # One radius plus the skin off each face, which is where a body that
+        # resolved both contacts belongs.
+        self.assertAlmostEqual(19.69, corner["x"], delta=0.02)
+        self.assertAlmostEqual(-12.31, corner["z"], delta=0.02)
+
     def test_jumping_into_a_wall_kicks_the_body_off_it(self) -> None:
         # The same rule where it actually bites. A soldier pressed into a wall
         # has a velocity of ~0 (the resolver strips it every tick) and a
