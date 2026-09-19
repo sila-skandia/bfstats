@@ -713,9 +713,17 @@ export class GameConsole {
     }
   }
 
-  /** The tilde key, `IDKey_Grave`. */
+  /**
+   * The tilde key, `IDKey_Grave`: the physical key left of `1`, by `code`, so
+   * an AZERTY `²` and a QWERTZ `^` open it and a `~` typed elsewhere does not.
+   * A remote-desktop session, some on-screen keyboards and browser automation
+   * send keys with an empty `code`; only then does the character decide.
+   */
   static isToggleKey(event) {
-    return event.code === 'Backquote' && !event.ctrlKey && !event.metaKey
+    const grave = event.code
+      ? event.code === 'Backquote'
+      : event.key === '`' || event.key === '~';
+    return grave && !event.ctrlKey && !event.metaKey
       && !event.altKey && !event.repeat;
   }
 
