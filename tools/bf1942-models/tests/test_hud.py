@@ -148,6 +148,35 @@ class FillPictureGeometryTests(unittest.TestCase):
         self.assertTrue(c["nested"])
         self.assertFalse(c["nestedFalse"])
 
+    # --- the turret dial's rotation sense (ledger VHUD-9) -------------------
+
+    def test_the_dial_turns_counter_clockwise_like_RotateEffect(self) -> None:
+        # The engine's `RotateEffect` (client `0x007edbf0`) computes
+        # `x' = x·cos + y·sin`, `y' = -x·sin + y·cos` about the pivot, so on
+        # the HUD's y-down frame `(0,-1)` at +90 degrees becomes `(-1,0)`:
+        # the sprite's top goes LEFT. Canvas `rotate(+θ)` would send it right,
+        # which is why `_drawPicture` negates.
+        dial = self.results["turretDial"]
+        cx, cy = dial["centre"]
+        self.assertEqual([cx, cy - 16], [dial["atZero"]["topX"], dial["atZero"]["topY"]])
+        self.assertEqual([cx - 16, cy],
+                         [dial["atPlus90"]["topX"], dial["atPlus90"]["topY"]])
+        self.assertEqual([cx + 16, cy],
+                         [dial["atMinus90"]["topX"], dial["atMinus90"]["topY"]])
+
+    def test_the_canvas_rotation_is_the_negated_engine_angle(self) -> None:
+        # Stated on its own because it is half of a PAIR: `map.html` feeds the
+        # un-negated engine value (`TurretRig.turretYawRadians`), and it used
+        # to feed `headingRadians()`, which carries `seats.js`'s
+        # `RIG_SIGN.yaw = -1`. Two errors cancelling. Change one side without
+        # the other and every dial in the game mirrors.
+        dial = self.results["turretDial"]
+        self.assertAlmostEqual(-1.570796, dial["atPlus90"]["canvasRotation"], places=5)
+        self.assertAlmostEqual(1.570796, dial["atMinus90"]["canvasRotation"], places=5)
+
+    def test_an_unrotated_picture_still_takes_the_plain_path(self) -> None:
+        self.assertTrue(self.results["turretDial"]["unrotatedTakesThePlainPath"])
+
 
 if __name__ == "__main__":
     unittest.main()

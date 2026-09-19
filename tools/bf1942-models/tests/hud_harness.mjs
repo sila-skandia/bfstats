@@ -156,4 +156,71 @@ results.conditions = {
   ] }], { a: 1, b: 6 }),
 };
 
+// --- the turret dial's rotation sense (VHUD-9) -------------------------------
+//
+// `RotateEffect` is counter-clockwise on the HUD's y-down frame (client
+// `0x007edbf0`: `x' = x·cos + y·sin`, `y' = -x·sin + y·cos`, so `(0,-1)` at
+// +90 degrees becomes `(-1,0)` -- top to left). Canvas `rotate(+θ)` is
+// clockwise, so `_drawPicture` has to negate. The whole of the test is: feed
+// the engine's own angle and watch where the top of the sprite lands.
+
+/** The dial's rotating body, verbatim from `hud-layout.json` (VHUD-7: a 32x32
+ *  at (410,550), the one element in the file carrying a `RotateEffect`). */
+const dialBody = {
+  kind: 'picture', rect: [410, 550, 32, 32],
+  texture: 'icon_tank_turn_body_32x32',
+  rotation: { angle: 0, angleVar: 'IconLookRotation', angleMultiplier: 0 },
+};
+
+/** Paint the dial at one angle and report where the sprite's top-centre
+ *  texel ends up in screen space. A recording context composes the same
+ *  translate/rotate the painter issues. */
+function dialTopAt(angle) {
+  const hud = new Hud({ canvas: null, sprite: () => ({ width: 32, height: 32 }) });
+  hud.vars.IconLookRotation = angle;
+  const [x, y, w, h] = dialBody.rect;
+  // A zero angle takes `_drawPicture`'s plain path: no transform at all, the
+  // sprite straight down at its rect. Seed the frame with that so every angle
+  // is reported in the same screen coordinates.
+  let tx = x + w / 2, ty = y + h / 2, theta = 0;
+  const ctx = {
+    globalAlpha: 1,
+    save() {}, restore() {},
+    translate(cx, cy) { tx = cx; ty = cy; },
+    rotate(a) { theta = a; },
+    drawImage() {},
+  };
+  hud._drawPicture(ctx, dialBody, x, y, w, h, { width: 32, height: 32 });
+  // The sprite's own top-centre sits at (0, -h/2) in the rotated frame.
+  const px = 0 * Math.cos(theta) - (-h / 2) * Math.sin(theta) + tx;
+  const py = 0 * Math.sin(theta) + (-h / 2) * Math.cos(theta) + ty;
+  return {
+    canvasRotation: Number(theta.toFixed(6)),
+    topX: Number(px.toFixed(3)),
+    topY: Number(py.toFixed(3)),
+  };
+}
+
+const HALF_PI = Math.PI / 2;
+results.turretDial = {
+  centre: [dialBody.rect[0] + 16, dialBody.rect[1] + 16],
+  atZero: dialTopAt(0),
+  // The engine's +90 degrees: counter-clockwise, so the top goes LEFT.
+  atPlus90: dialTopAt(HALF_PI),
+  atMinus90: dialTopAt(-HALF_PI),
+  // An unrotated leaf must still take the cheap path, no transform at all.
+  unrotatedTakesThePlainPath: (() => {
+    const hud = new Hud({ canvas: null, sprite: () => ({ width: 32, height: 32 }) });
+    let rotated = false;
+    const ctx = {
+      globalAlpha: 1, save() {}, restore() {},
+      translate() { rotated = true; }, rotate() { rotated = true; },
+      drawImage() {},
+    };
+    hud._drawPicture(ctx, { kind: 'picture', rect: [0, 0, 8, 8] }, 0, 0, 8, 8,
+                     { width: 8, height: 8 });
+    return !rotated;
+  })(),
+};
+
 console.log(JSON.stringify(results));
