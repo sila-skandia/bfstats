@@ -686,3 +686,185 @@ regressed — that both can steer at all.
   camera modes (chase/front) frame the hull's heading rather than the
   turret's, so cycling away from the cockpit on a tank gives a view that does
   not follow the gun.
+
+## 2026-09-20: the review of the 2026-09-19 drivetrain change
+
+An adversarial re-derivation of what the 2026-09-19 round left. Three of its
+conclusions stood, three did not, and one whole ledger row about the engine
+turns out to be wrong in a way that matters to every ground vehicle.
+
+### The 0.5 in the EngineGrip target is a gear-change blend, not a scale
+
+`ResponsePhysics::addFriction` builds the target at lnxded `0x0825c2ed` to
+`0x0825c407`, and the expression is
+
+```
+T = (1 - 0.5*b) * ratio * getCurrentDifferentialRPM(side) * fwd
+    + 0.5*b * (Vt . fwd) fwd
+```
+
+against the **same** forward axis — a blend between the commanded surface speed
+and the wheel's own contact speed, not a halving of the command. `0.5*b` is
+formed twice, at `0x0825c32b` (`fld ds:0x86b05e8` = 0.5, `fmul [edx+0xb8]`,
+`fsubr ds:0x86ba8d4` = 1.0) and at `0x0825c3b1`, and the two terms are summed
+at `0x0825c3d7`-`0x0825c407`.
+
+`b` is engine `+0xb8`, and it is **the gear-change timer**. `Engine::handleUpdate`
+lnxded `0x0823e120` counts it down by `dt / gearChangeTime` to zero
+(`0x0823e24f`, `0x0823e25a`) and nothing on the server re-arms it, so after the
+first `gearChangeTime` of a vehicle's life `b = 0` and the target is the command
+in full. Its constructor seed of `1.0` (`0x0824c756` region) is what the earlier
+reading took for the steady value, and that is where 46.5 km/h came from.
+
+### The rev ceiling is 1.2, and the floor is 1.0
+
+The same `handleUpdate` is the whole gearbox:
+
+```
+revs += 0.05 * ((pedal - load) - 0.5*revs)      // fixed point 2*(pedal - load)
+revs  = min(1.2, max(-1.0, revs))               // 0x0823e2bf onward
+if (revs > gearUp   && gearChangeTimer == 0 && gear < numberOfGears) gear += 1
+if (revs < gearDown && gear > 1)                                     gear -= 1
+```
+
+`pedal` is the Engine's own roll angle over `getMaxRotation().z`; `load` is
+`+0xa4`, the running mean `feedbackLoop` `0x0824c850` leaves there from the
+friction the wheels actually delivered (`dot(fwd, F) * ratio / torque`, clamped),
+and `handleUpdate` zeroes it every tick. `setGearUp`, `setGearDown` and
+`setGearChangeTime` are read here and nowhere else, which is the first time
+anything in the corpus has shown them being read at all.
+
+So the road speed a gear reaches is `ratio * revs`, and revs run to **1.2**, not
+1. Top gear is `1.2 * ladder[top]`; reverse borrows first gear and the clamp's
+lower arm, which is exactly `-1.0`, so reverse is 1/1.2 of forward in first.
+
+| | `ladder[top]` | `x revs cap` | engine, simulated | viewer, harness |
+|---|---|---|---|---|
+| Willys (car) | 26.064 | 31.28 m/s = 112.6 km/h | 30.4 m/s, **109.6 km/h** | **107.6 km/h** |
+| Sherman (tank) | 14.894 | 14.89 m/s = 53.6 km/h | 14.85 m/s, **53.5 km/h** | 41.2 km/h |
+| M3A1 (tank) | 18.617 | 18.62 m/s = 67.0 km/h | 18.57 m/s, **66.8 km/h** | 64.2 km/h |
+
+The "engine, simulated" column is a tick-level simulation of `handleUpdate`'s
+rev filter against `addFriction`'s EngineGrip target and the Coulomb budget; it
+is robust to the surface coefficient and to the resistance term (109-112 km/h
+for the Willy across `mu` 0.6-1.1 and `resistance` 0.01-0.05). A tank's driven
+wheels carry a side, so `getCurrentDifferentialRPM` clamps their share to
+[-1, 1] and their ceiling is `1.0 * ratio` rather than `1.2 * ratio`.
+
+**And `revLimit 356` was never a measurement.** The comment that carried it said
+so: `[free]`, "fitted... to land inside the 60-70 km/h band the game's Willys is
+*remembered* to do", and the Open gaps section above still lists the reference
+drive that would settle it as not taken. Nothing in this repository measures a
+vanilla Willy's top speed. 65.8 km/h was a fit to a memory; 46.5 km/h was a
+misread constant; 109.6 km/h is what the engine's own code does.
+
+### `engineType` is load-bearing, and body thrust is gated off for ground vehicles
+
+`EngineTemplate::getEngineType()` is virtual slot `+0xa0`, and it is called from
+four places that all matter:
+
+- `PhysicsEngine::updatePhysics` `0x0824cbb0`: `if ((getEngineType() & 1) == 0)
+  return;` — the **entire body-thrust block**, the one `getCurrentRatio()`
+  multiplies a Vec3 in, runs only for `c_ETPlane` (1), `c_ETRocket` (0x11) and
+  `c_ETTorpedo` (0x19). `c_ETCar` (2) and `c_ETTank` (6) never reach it.
+- `getCurrentDifferentialRPM` `0x0824c990`: `& 4` gates differential steering —
+  tanks only. It also returns the **rev state `+0xa0`**, not the pedal.
+- `feedbackLoop` `0x0824c850`: `& 2` clamps its value to [-1, 1]; `& 4` chooses a
+  max-hold over a running mean.
+- `Engine::handleUpdate`: `& 0x10` pins the throttle at 1.0 — rocket and torpedo.
+
+Two ledger rows do not survive that. TANK-1's "no simulation code anywhere calls
+`getEngineType()`" missed the virtual dispatch (its grep was for direct `call`
+sites). TANK-7's "tank propulsion is shared `updatePhysics` body thrust" is the
+opposite of what the gate does: **a tank and a car get no body thrust at all**,
+and every newton of a ground vehicle's propulsion is the EngineGrip friction
+target. `noPropellerEffectAtSpeed` (template `+0x520`, default 100.0 at
+`0x0823f06e`) belongs to that block and so never touches a ground vehicle.
+
+`TrackedVehicle` still carries its propulsion in `bodyThrust` at a fixed gear 1,
+which is why the Sherman reads 41 km/h against the engine's 53.5. Replacing it
+with the EngineGrip governor — and re-deriving `trackResistance` from the
+engine's x30 at the same time, as the section above already asks — is the next
+piece of tracked-model work, and it is now a bigger one than "re-fit a constant".
+
+### The first-contact damper guard was guarding the wrong thing
+
+The claim was that an unguarded backward difference launched the M3A1 29 m into
+the air. It does — but only from a hull spawned 0.8 m **inside** the ground,
+which is what the harness's `y: 0.6` does to a tank whose resting height is
+1.403 m. From any height at or above its own rest the unguarded damper costs at
+most a 0.55 m overshoot, and from a real drop it costs nothing at all.
+
+What the guard did cost is the damper itself. `prevCompression` is set to `null`
+on **every** airborne tick, not only the first, so zeroing the rate there turned
+the damper off for a tick on every re-contact: 4 % of a jeep's contact ticks over
+rough ground and 8 % of a half-track's — landings, crests and kerbs, which is
+when a damper earns its keep. The rate is now seeded from the axle's own closing
+speed along the spring axis (`-u.y` in the body frame), which is what a
+continuous displacement would have been changing at.
+
+### A parked vehicle now stands still, because the latch is a constraint
+
+PHY-5 leaning the spring axis with the hull gives a parked vehicle a real
+horizontal component of suspension force. A velocity-proportional per-wheel hold
+can only balance that, not cancel it, so it settles at `rake x substep`: 5 mm of
+drift over ten parked seconds on flat analytic ground, and **0.74 m for a jeep
+and 0.30 m for a Sherman on Wake's own terrain**, against a main checkout that
+does not move at all. (The hold also asked for a whole velocity back per *engine*
+tick rather than per substep; `1/h` rather than 30 took the M3A1's creep from
+0.054 m/s to 0.014 on its own.)
+
+`collision-response.md` section 8 says what a latched static contact is — "F = dV
+in full", a velocity constraint, not a force. `staticHold` applies it where that
+belongs: after the forces are summed, a hull that is stopped, idle, settled and
+standing entirely on latched contacts has its horizontal acceleration and
+velocity zeroed, while the demand fits inside the summed break-away budget. Past
+that budget it lets go and slides, which is the latch's own rule. A one-second
+dwell keeps it off a hull that is still settling — a jeep dropped onto a 16.7
+degree ramp crosses every threshold transiently on the way down, and freezing it
+there left it 1.27 degrees off the slope with the wrong load on its springs.
+
+Parked drift on Wake, measured through a real `EntryPoint` entry and ten idle
+seconds: 0.000 m for all three hulls, with every wheel's compression identical
+across the window. Main: 0.006 to 0.011 m, compressions still moving.
+
+### What a driver feels, against main
+
+Measured in the harness on flat ground (`tests/ground_harness.mjs`), main's
+`ground.js` against this branch's:
+
+| | main | this branch |
+|---|---|---|
+| Willys top speed | 65.8 km/h | **107.6 km/h** |
+| Willys 0 to 10 m/s | 2.2 s | 2.6 s |
+| Willys reverse | 17.5 km/h | **25.0 km/h** |
+| Willys full-lock circle at speed | 208 deg in 12 s | **109 deg**, at twice the speed |
+| Willys worst body roll, full lock | 4.6 deg | 5.0 deg |
+| Sherman straight line | 33.7 km/h | 41.2 km/h |
+| M3A1 straight line | 114.5 km/h | 64.2 km/h |
+| parked drift, 10 s, Wake | 0.006 to 0.011 m | **0.000 m** |
+| per-surface 0 to 10 m/s | identical everywhere | water 3.8 s, mud 3.0, rock 2.9, grass 2.8, road 2.5 |
+
+The jeep is transformed: it now does most of a hundred km/h, it takes twice the
+room to turn at speed, and it no longer stops in a car length. The tanks are
+steadier than quicker. And a vehicle left alone is left alone.
+
+### Still open after this review
+
+- **`TrackedVehicle`'s propulsion** is `bodyThrust`, which the engine-type gate
+  refutes. Until it becomes the EngineGrip governor the Sherman will read low.
+- **The coast law.** `rollingResistance` and `engineBraking` are `[free]` and
+  were fitted against a 12.8 m/s top speed. From 29.8 m/s, fifteen seconds off
+  the pedal still leaves 18.5. The engine's own closed-throttle EngineGrip law
+  (`dV = -Vt`, which `ground.js` already describes and deliberately fades out)
+  is the thing that should replace them, and it is one job with the tracked
+  rewrite above.
+- **Driving off the island.** A hull that leaves Wake's terrain keeps
+  accelerating downward without ever finding water or a sea floor — 245 km/h on
+  main's `ground.js`, 300-700 on this branch, which only differs because a
+  faster vehicle reaches the edge sooner. Pre-existing, shared, and not a
+  drivetrain problem.
+- **A reference drive in the real game** remains the one measurement that would
+  settle the absolute numbers. It is now a much sharper question than it was:
+  the engine's own code says 110 km/h for a Willy, and the only thing arguing
+  for 60-70 is a memory.
