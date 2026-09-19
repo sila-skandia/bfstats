@@ -280,7 +280,10 @@
   #fullmap .fm-chrome, #fullmap .fm-hit { display: none; }
   #fullmap.deploy {
     place-items: stretch;
-    background: #05070b;
+    /* No backdrop: the capture shows the live world around and through the
+       screen — the dim is the map pane's own (drawArt's `dim` fill), not an
+       overlay. The engine keeps rendering behind the spawn screen. */
+    background: transparent;
     backdrop-filter: none;
     /* Over the flight-speed buttons too: the screen owns the whole stage. */
     z-index: 11;
@@ -296,6 +299,10 @@
     border: 0;
     background: none;
     box-shadow: none;
+    /* The open/close transition turns the art inside the pane (MMAP-2) with
+       enough over-scale to keep the quad covered; the engine clips its map
+       quad the same way, so nothing spills past the pane's edge. */
+    overflow: hidden;
   }
   #fullmap.deploy .fm-cap { display: none; }
   /* In deploy the map is the target surface, and the cursor should say so. */
@@ -304,7 +311,10 @@
     height: 100%;
     cursor: crosshair;
   }
-  #fullmap.deploy .fm-chrome {
+  /* The chrome is plain CullNode visibility (MEME-4) — the capture has it
+     appear fully formed about 0.13 s after the pane starts moving, which is
+     the eased zoom crossing ~0.7. `.deploy-ready` is that threshold. */
+  #fullmap.deploy.deploy-ready .fm-chrome {
     display: block;
     position: absolute;
     inset: 0;
@@ -312,7 +322,7 @@
     height: 100%;
     pointer-events: none;
   }
-  #fullmap.deploy .fm-hit {
+  #fullmap.deploy.deploy-ready .fm-hit {
     display: block;
     position: absolute;
     margin: 0;
@@ -447,12 +457,174 @@
     font-size: 10px;
   }
 
+  #mobile-controls {
+    position: absolute;
+    left: 12px; right: 12px; bottom: 72px;
+    z-index: 9;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 10px;
+    pointer-events: none;
+  }
+  #mobile-controls[hidden] { display: none; }
+  #mobile-pad {
+    position: relative;
+    flex: 0 0 128px;
+    width: 128px; height: 128px;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: rgba(18, 17, 14, 0.72);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.42), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+    pointer-events: auto;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #mobile-pad::before,
+  #mobile-pad::after {
+    content: '';
+    position: absolute;
+    background: rgba(190, 190, 175, 0.18);
+  }
+  #mobile-pad::before { left: 50%; top: 14px; bottom: 14px; width: 1px; }
+  #mobile-pad::after { top: 50%; left: 14px; right: 14px; height: 1px; }
+  #mobile-pad.is-active { border-color: var(--accent); }
+  #mobile-pad-puck {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 52px; height: 52px;
+    border: 1px solid var(--accent);
+    border-radius: 50%;
+    background: rgba(42, 42, 35, 0.94);
+    color: var(--text);
+    display: grid;
+    place-items: center;
+    font-size: 9px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.45);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+  #mobile-pad-puck.is-firing { border-color: var(--warn); color: var(--warn); }
+  .mobile-action-cluster {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 7px;
+    pointer-events: none;
+  }
+  .mobile-action-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    pointer-events: none;
+  }
+  .mobile-action-btn {
+    min-width: 64px;
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: rgba(18, 17, 14, 0.82);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: var(--text);
+    font: 10px var(--mm-font-mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+    pointer-events: auto;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: pointer;
+  }
+  .mobile-action-btn:hover { border-color: var(--accent); }
+  .mobile-action-btn:active,
+  .mobile-action-btn.is-active {
+    border-color: var(--accent);
+    background: rgba(72, 72, 58, 0.92);
+  }
+  .mobile-action-btn:disabled {
+    opacity: 0.38;
+    cursor: default;
+    border-color: var(--line);
+    background: rgba(18, 17, 14, 0.62);
+  }
+  .mobile-action-btn.fire-btn {
+    min-width: 76px;
+    height: 52px;
+    border-color: var(--warn);
+    color: var(--warn);
+  }
+  .mobile-action-btn.fire-btn.is-active {
+    background: rgba(105, 35, 25, 0.92);
+    color: #f4d7cf;
+  }
+  .mobile-action-btn[hidden],
+  .mobile-throttle[hidden],
+  #mobile-pad[hidden] { display: none; }
+  .mobile-throttle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 40px;
+    padding: 0 9px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: rgba(18, 17, 14, 0.82);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: var(--muted);
+    font: 9px var(--mm-font-mono);
+    letter-spacing: .08em;
+    pointer-events: auto;
+    touch-action: none;
+  }
+  .mobile-throttle input {
+    width: 92px;
+    accent-color: var(--accent);
+  }
+  .mobile-throttle output {
+    min-width: 25px;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
   @media (max-width: 720px) {
     #minimap {
       --mm-size: 110px;
       top: 10px;
       right: 10px;
     }
+    #mobile-controls {
+      bottom: 78px;
+      gap: 8px;
+    }
+    #mobile-pad {
+      flex-basis: 112px;
+      width: 112px;
+      height: 112px;
+    }
+    .mobile-action-btn {
+      min-width: 56px;
+      height: 38px;
+      padding: 0 8px;
+      font-size: 9px;
+    }
+    .mobile-action-btn.fire-btn {
+      min-width: 64px;
+      height: 48px;
+    }
+    .mobile-throttle input {
+      width: 76px;
+    }
+
     #side {
       top: auto;
       bottom: 16px;
@@ -539,7 +711,7 @@
     <label class="opt"><input type="checkbox" id="vehicles" checked> vehicles</label>
     <label class="opt"><input type="checkbox" id="entire-map"> render entire map</label>
     <label class="opt"><input type="checkbox" id="pilot"> pilot the plane</label>
-    <label class="opt"><input type="checkbox" id="onfoot"> spawn on foot</label>
+    <label class="opt" hidden><input type="checkbox" id="onfoot"> spawn on foot</label>
     <select id="spawn-flag" aria-label="Spawn point" hidden></select>
     <label class="opt"><input type="checkbox" id="sound" checked> sound</label>
     <label class="opt" style="display:flex;align-items:center;gap:6px;"><input type="range" id="sound-vol" min="0" max="1" step="0.05" value="0.7" style="flex:1;height:4px;accent-color:var(--accent);"> vol</label>
@@ -561,9 +733,27 @@
       <span class="action-hint mode-hint">Tap for pan</span>
     </button>
     <button type="button" id="reset-cam-btn" class="map-action-btn reset-cam-btn" aria-label="Reset camera position">
-      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9L2 6.5M2 2.5v4h4"/></svg>
+      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2.5 8a5.5 5.5 1 0 0 1.6-3.9L2 6.5M2 2.5v4h4"/></svg>
       <span>Reset</span>
     </button>
+  </div>
+  <div id="mobile-controls" hidden>
+    <div id="mobile-pad" aria-label="Movement control">
+      <div id="mobile-pad-puck"><span id="mobile-pad-label">MOVE</span></div>
+    </div>
+    <div class="mobile-action-cluster">
+      <div class="mobile-action-row">
+        <button type="button" id="mobile-fire-btn" class="mobile-action-btn fire-btn" aria-label="Fire weapon">FIRE</button>
+        <button type="button" id="mobile-use-btn" class="mobile-action-btn" aria-label="Enter or exit vehicle">ENTER</button>
+      </div>
+      <div class="mobile-action-row">
+        <button type="button" id="mobile-jump-btn" class="mobile-action-btn" aria-label="Jump" hidden>JUMP</button>
+        <button type="button" id="mobile-view-btn" class="mobile-action-btn" aria-label="Cycle camera view" hidden>VIEW</button>
+      </div>
+      <div class="mobile-action-row">
+        <label class="mobile-throttle" id="mobile-throttle-wrap" hidden>THR <input id="mobile-throttle" type="range" min="0" max="100" value="0" aria-label="Aircraft throttle"><output id="mobile-throttle-value" for="mobile-throttle">0</output></label>
+      </div>
+    </div>
   </div>
   <canvas id="hud-canvas" aria-hidden="true"></canvas>
   <div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; CapsLock spawn &middot; M map &middot; Esc</div>
@@ -800,11 +990,23 @@ const isTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0 
 const HUD_FLY = hud.textContent;
 let navMode = 'fly'; // 'fly' or 'pan'
 function getTouchHudText() {
+  if (optPilot.checked && occupancy) {
+    if (mannedActive()) return 'Pad aims · FIRE shoots · ENTER exits';
+    if (car) return 'Pad drives · FIRE main gun · ENTER exits';
+    if (aircraft) return 'Pad pitch/roll · THR power · FIRE guns · ENTER exits';
+  }
+  if (optOnFoot.checked && soldier) {
+    return 'Pad moves · drag scene to look · FIRE shoots · JUMP jumps · ENTER vehicles';
+  }
   return navMode === 'fly'
     ? 'Hold to fly · Drag to steer · 2-finger pan'
     : 'Drag to pan · Pinch to zoom';
 }
 function updateHud() {
+  if (isTouchDevice) {
+    hud.textContent = getTouchHudText();
+    return;
+  }
   if (optPilot.checked) {
     hud.textContent = car ? HUD_DRIVE : HUD_PILOT;
   } else if (optOnFoot.checked) {
@@ -1043,6 +1245,263 @@ mapActionsBar?.addEventListener('pointerdown', e => {
   e.stopPropagation();
 });
 
+const mobileControls = document.getElementById('mobile-controls');
+const mobilePad = document.getElementById('mobile-pad');
+const mobilePadPuck = document.getElementById('mobile-pad-puck');
+const mobilePadLabel = document.getElementById('mobile-pad-label');
+const mobileFireBtn = document.getElementById('mobile-fire-btn');
+const mobileUseBtn = document.getElementById('mobile-use-btn');
+const mobileViewBtn = document.getElementById('mobile-view-btn');
+const mobileJumpBtn = document.getElementById('mobile-jump-btn');
+const mobileThrottleWrap = document.getElementById('mobile-throttle-wrap');
+const mobileThrottleInput = document.getElementById('mobile-throttle');
+const mobileThrottleValue = document.getElementById('mobile-throttle-value');
+const MOBILE_PAD_RADIUS = 48;
+const MOBILE_AIM_PIXELS_PER_SECOND = 720;
+const mobilePadVector = { x: 0, y: 0 };
+let mobilePadPointerId = null;
+let mobilePadHeld = false;
+let mobileFireHeld = false;
+let mobileJumpHeld = false;
+let mobileThrottle = 0;
+let mobileThrottleTouched = false;
+let mobileControlsSignature = '';
+
+function clampMobileInput(value) {
+  return Math.max(-1, Math.min(1, value));
+}
+
+function mobilePadAxis(axis) {
+  return mobilePadHeld ? mobilePadVector[axis] : 0;
+}
+
+function feedMobileTurretAim(dt) {
+  if (!mobilePadHeld || !occupancy?.turret) return;
+  const pixels = MOBILE_AIM_PIXELS_PER_SECOND * Math.max(0, dt);
+  occupancy.turret.aim(mobilePadVector.x * pixels, -mobilePadVector.y * pixels);
+}
+
+function resetMobilePad() {
+  mobilePadPointerId = null;
+  mobilePadHeld = false;
+  mobilePadVector.x = 0;
+  mobilePadVector.y = 0;
+  mobilePadPuck.style.transform = 'translate(-50%, -50%)';
+  mobilePad.classList.remove('is-active');
+}
+
+function resetMobileControls() {
+  resetMobilePad();
+  mobileFireHeld = false;
+  mobileJumpHeld = false;
+  mobileThrottle = 0;
+  mobileThrottleTouched = false;
+  triggerHeld = false;
+  clickQueued = false;
+  seatFire = false;
+  seatAltFire = false;
+  mobileFireBtn.classList.remove('is-active');
+  mobileJumpBtn.classList.remove('is-active');
+  mobilePadPuck.classList.remove('is-firing');
+  mobileThrottleInput.value = '0';
+  mobileThrottleValue.value = '0';
+  if (aircraft) aircraft.setInput('c_PIThrottle', 0);
+  updateMobileControls();
+}
+
+function syncMobileThrottle() {
+  if (!aircraft) return;
+  const current = aircraft.input('c_PIThrottle');
+  if (!mobileThrottleTouched || Math.abs(current - mobileThrottle) > 0.01) {
+    mobileThrottle = Math.max(0, Math.min(1, current));
+    mobileThrottleInput.value = String(Math.round(mobileThrottle * 100));
+  }
+  mobileThrottleValue.value = String(Math.round(mobileThrottle * 100));
+}
+
+function updateMobileControls() {
+  if (!isTouchDevice) return;
+  const deployOpen = document.getElementById('fullmap')?.classList.contains('deploy');
+  const onFoot = optOnFoot.checked && soldier && !soldierDead;
+  const seated = optPilot.checked && occupancy;
+  const activeSeat = seated && occupancy.isActiveRoot();
+  const manned = seated && mannedActive();
+  const aimable = manned && occupancy.turret;
+  const driving = activeSeat && car;
+  const flying = activeSeat && aircraft;
+  const show = captured && !deployOpen && (onFoot || seated);
+  const padMode = flying ? 'STICK' : driving ? 'DRIVE' : aimable ? 'AIM' : onFoot ? 'MOVE' : 'SEAT';
+  const canFire = onFoot || (seated && (driving || flying || aimable)
+    && occupancy.activeFireArmsNodes().length > 0);
+  const signature = [
+    show, padMode, onFoot, seated, manned, driving, flying, aimable,
+    nearEntry?.control || '', mobileThrottleTouched,
+  ].join('|');
+  if (signature === mobileControlsSignature) return;
+  mobileControlsSignature = signature;
+
+  mobileControls.hidden = !show;
+  mobilePad.hidden = !(onFoot || driving || flying || aimable);
+  mobilePadLabel.textContent = padMode;
+  mobileFireBtn.hidden = !canFire;
+  mobileFireBtn.disabled = !canFire;
+  mobileFireBtn.classList.toggle('is-active', mobileFireHeld && canFire);
+  mobileJumpBtn.hidden = !onFoot;
+  mobileJumpBtn.classList.toggle('is-active', mobileJumpHeld && onFoot);
+  mobileUseBtn.hidden = !(onFoot || seated);
+  mobileUseBtn.disabled = onFoot ? !nearEntry : !seated;
+  mobileUseBtn.textContent = onFoot ? (nearEntry ? `ENTER ${nearEntry.control}` : 'ENTER') : 'EXIT';
+  mobileViewBtn.hidden = !(seated && view);
+  mobileThrottleWrap.hidden = !flying;
+  if (flying) syncMobileThrottle();
+  mobileControls.dataset.mode = padMode;
+}
+
+function updateMobilePad(event) {
+  const rect = mobilePad.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const dx = event.clientX - cx;
+  const dy = event.clientY - cy;
+  const dist = Math.hypot(dx, dy);
+  const clamped = Math.min(dist, MOBILE_PAD_RADIUS);
+  const angle = Math.atan2(dy, dx);
+  const px = Math.cos(angle) * clamped;
+  const py = Math.sin(angle) * clamped;
+  mobilePadVector.x = clampMobileInput(px / MOBILE_PAD_RADIUS);
+  mobilePadVector.y = clampMobileInput(-py / MOBILE_PAD_RADIUS);
+  mobilePadPuck.style.transform = `translate(calc(-50% + ${px.toFixed(1)}px), calc(-50% + ${py.toFixed(1)}px))`;
+  mobilePad.classList.add('is-active');
+}
+
+function releaseMobilePad(event) {
+  if (mobilePadPointerId !== null && event.pointerId !== mobilePadPointerId) return;
+  try {
+    if (mobilePad.hasPointerCapture(event.pointerId)) mobilePad.releasePointerCapture(event.pointerId);
+  } catch {}
+  resetMobilePad();
+}
+
+function setMobileFire(on) {
+  mobileFireHeld = on;
+  triggerHeld = on && optOnFoot.checked && !!soldier && !soldierDead;
+  clickQueued = triggerHeld;
+  seatFire = on && optPilot.checked && !!occupancy
+    && (occupancy.isActiveRoot() || mannedActive());
+  mobileFireBtn.classList.toggle('is-active', on);
+  mobilePadPuck.classList.toggle('is-firing', on);
+}
+
+function setMobileJump(on) {
+  mobileJumpHeld = on && optOnFoot.checked && !!soldier && !soldierDead;
+  mobileJumpBtn.classList.toggle('is-active', mobileJumpHeld);
+}
+
+function mobileSeatToggle() {
+  if (performance.now() - lastSeatToggle < SEAT_TOGGLE_COOLDOWN_MS) return;
+  if (optOnFoot.checked && soldier && nearEntry) {
+    setFly(true);
+    enterVehicle(nearEntry);
+    lastSeatToggle = performance.now();
+  } else if (optPilot.checked && mannedActive()) {
+    exitManned();
+    lastSeatToggle = performance.now();
+  } else if (optPilot.checked && (aircraft || car)) {
+    exitVehicle();
+    lastSeatToggle = performance.now();
+  }
+  resetMobileControls();
+}
+
+mobilePad.addEventListener('pointerdown', event => {
+  if (mobilePadPointerId !== null) return;
+  event.preventDefault();
+  event.stopPropagation();
+  setFly(true);
+  ensureAudioContext();
+  mobilePadPointerId = event.pointerId;
+  mobilePadHeld = true;
+  try { mobilePad.setPointerCapture(event.pointerId); } catch {}
+  updateMobilePad(event);
+  updateMobileControls();
+});
+
+mobilePad.addEventListener('pointermove', event => {
+  if (!mobilePadHeld || event.pointerId !== mobilePadPointerId) return;
+  event.preventDefault();
+  event.stopPropagation();
+  updateMobilePad(event);
+});
+
+mobilePad.addEventListener('pointerup', releaseMobilePad);
+mobilePad.addEventListener('pointercancel', releaseMobilePad);
+
+mobileFireBtn.addEventListener('pointerdown', event => {
+  if (mobileFireBtn.disabled) return;
+  event.preventDefault();
+  event.stopPropagation();
+  setFly(true);
+  ensureAudioContext();
+  try { mobileFireBtn.setPointerCapture(event.pointerId); } catch {}
+  setMobileFire(true);
+});
+
+function releaseMobileFire(event) {
+  try {
+    if (mobileFireBtn.hasPointerCapture(event.pointerId)) mobileFireBtn.releasePointerCapture(event.pointerId);
+  } catch {}
+  setMobileFire(false);
+}
+
+mobileFireBtn.addEventListener('pointerup', releaseMobileFire);
+mobileFireBtn.addEventListener('pointercancel', releaseMobileFire);
+
+mobileJumpBtn.addEventListener('pointerdown', event => {
+  if (mobileJumpBtn.disabled || mobileJumpBtn.hidden) return;
+  event.preventDefault();
+  event.stopPropagation();
+  setFly(true);
+  try { mobileJumpBtn.setPointerCapture(event.pointerId); } catch {}
+  setMobileJump(true);
+});
+
+function releaseMobileJump(event) {
+  try {
+    if (mobileJumpBtn.hasPointerCapture(event.pointerId)) mobileJumpBtn.releasePointerCapture(event.pointerId);
+  } catch {}
+  setMobileJump(false);
+}
+
+mobileJumpBtn.addEventListener('pointerup', releaseMobileJump);
+mobileJumpBtn.addEventListener('pointercancel', releaseMobileJump);
+
+mobileUseBtn.addEventListener('pointerdown', event => event.stopPropagation());
+mobileUseBtn.addEventListener('click', event => {
+  event.preventDefault();
+  event.stopPropagation();
+  setFly(true);
+  mobileSeatToggle();
+});
+
+mobileViewBtn.addEventListener('pointerdown', event => event.stopPropagation());
+mobileViewBtn.addEventListener('click', event => {
+  event.preventDefault();
+  event.stopPropagation();
+  setFly(true);
+  if (optPilot.checked && view) showView(view.cycle());
+});
+
+mobileThrottleWrap.addEventListener('pointerdown', event => event.stopPropagation());
+mobileThrottleInput.addEventListener('pointerdown', event => event.stopPropagation());
+mobileThrottleInput.addEventListener('input', () => {
+  mobileThrottle = Math.max(0, Math.min(1, Number(mobileThrottleInput.value) / 100 || 0));
+  mobileThrottleTouched = true;
+  mobileThrottleValue.value = String(Math.round(mobileThrottle * 100));
+  if (aircraft) aircraft.setInput('c_PIThrottle', mobileThrottle);
+});
+
+window.addEventListener('blur', resetMobileControls);
+
 function flySpeed() {
   return FLY_SPEED * (isSlow() ? FLY_SLOW : 1);
 }
@@ -1173,6 +1632,18 @@ addEventListener('keydown', e => {
       return;
     }
   }
+  // On foot the row raises kit weapons instead: `ObjectTemplate.itemIndex` is
+  // the inventory slot and the number key that selects it (1 knife .. 3
+  // primary .. 5 special), so a key with no such slot in the spawned kit's
+  // inventory does nothing, exactly as in the game.
+  if (optOnFoot.checked && soldier && !e.repeat
+      && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const kitDigit = /^Digit([1-9])$/.exec(e.code);
+    if (kitDigit) {
+      selectKitWeapon(Number(kitDigit[1]));
+      return;
+    }
+  }
   keys.add(e.code);
   if (e.code === 'KeyR') {
     // The seat is checked before the soldier: a driver who walked in on foot
@@ -1296,6 +1767,7 @@ function setFly(on) {
       document.exitPointerLock();
     }
   }
+  updateMobileControls();
 }
 function capture() {
   setFly(true);
@@ -1688,6 +2160,13 @@ document.addEventListener('pointermove', e => {
 document.addEventListener('wheel', e => {
   if (!captured) return;
   e.preventDefault();
+  // On foot the wheel walks the kit's inventory (slot order, wrapping) — the
+  // game's own mouse-wheel behaviour — instead of dollying. The free-fly
+  // dolly does nothing lasting on foot anyway: the soldier's own eye height
+  // sets camera.position.y every frame.
+  if (optOnFoot.checked && soldier && cycleKitWeapon(e.deltaY > 0 ? 1 : -1)) {
+    return;
+  }
   const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 80 : 1;
   camera.position.y -= e.deltaY * scale * 0.12 * (isSlow() ? FLY_SLOW : 1);
   clampAltitude();
@@ -3728,16 +4207,49 @@ function stepVehicleDamage(dt) {
   }
 }
 
-/** A round landed. Apply it, and reconcile the tier on the same frame. */
-function applyVehicleHit(record) {
-  const landed = vehicleDamage.applyHit(record);
-  if (!landed) return;
+/** Re-pick a just-damaged vehicle's tier on the frame the damage landed. */
+function reconcileDamaged(vehicle) {
   // Straight to `update(0)` rather than waiting for the next frame: a killing
   // shot should explode on the frame it lands, not one frame later. A zero dt
   // cannot advance the burn accumulator, so this only re-picks the tier.
-  const result = landed.vehicle.update(0);
-  if (result.changed) showDamageTier(landed.vehicle, result.tier);
-  if (result.died) wreckVehicle(landed.vehicle);
+  const result = vehicle.update(0);
+  if (result.changed) showDamageTier(vehicle, result.tier);
+  if (result.died) wreckVehicle(vehicle);
+}
+
+/** Scratch for `splashTargets`' world-position reads. */
+const splashPos = new THREE.Vector3();
+
+/**
+ * Everything with an Armor that a blast could reach, as `applySplash` wants it:
+ * world positions, because `vehicle-damage.js` stays free of three.js. The
+ * distance is to the object's origin, which is what the engine measures too
+ * (`handleExplosionOnObject`, HP-9) — a tank is not hurt less for being hit on
+ * the far corner of its hull.
+ */
+function splashTargets() {
+  const targets = [];
+  for (const [owner, visual] of damageVisuals) {
+    if (visual?.wrecked || visual?.removed) continue;
+    const pos = visual.node.getWorldPosition(splashPos);
+    targets.push({ owner, x: pos.x, y: pos.y, z: pos.z });
+  }
+  return targets;
+}
+
+/**
+ * A round landed. Apply the direct hit, then the area pass if the round has
+ * one (`damageType 1`: shells, bombs, grenades, the bazooka), and reconcile
+ * every tier that moved on the same frame.
+ */
+function applyVehicleHit(record) {
+  const landed = vehicleDamage.applyHit(record);
+  if (landed) reconcileDamaged(landed.vehicle);
+  if (!(record?.splashRadius > 0)) return;
+  const splashed = vehicleDamage.applySplash(record, splashTargets(), {
+    materials: guns.materials, modifiers: guns.modifiers,
+  });
+  for (const hit of splashed) reconcileDamaged(hit.vehicle);
 }
 const AIR_KEYS = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'Space',
@@ -4307,10 +4819,11 @@ function setPilot(on, node = null, seatId = null) {
   }
   stick.roll = 0;
   stick.pitch = 0;
-  hud.textContent = on
-    ? (mannedActive() ? HUD_MANNED : car ? HUD_DRIVE : HUD_PILOT)
-    : (optOnFoot.checked && soldier ? HUD_FOOT
-      : isTouchDevice ? getTouchHudText() : HUD_FLY);
+  hud.textContent = isTouchDevice ? getTouchHudText()
+    : on
+      ? (mannedActive() ? HUD_MANNED : car ? HUD_DRIVE : HUD_PILOT)
+      : (optOnFoot.checked && soldier ? HUD_FOOT : HUD_FLY);
+  updateMobileControls();
 }
 
 // `?turret=<scale>` multiplies every aim axis's declared `setMaxSpeed` to get
@@ -4361,9 +4874,13 @@ function drive(dt) {
     // snappy when the pedal and the rack answer at once and the engine's own
     // servo is the only governor.
     car.setInput('c_PIThrottle',
-      (held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0));
+      clampMobileInput(
+        ((held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0))
+        + mobilePadAxis('y')));
     car.setInput('c_PIYaw',
-      (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0));
+      clampMobileInput(
+        ((held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0))
+        + mobilePadAxis('x')));
     // A Willys carries no guns, but the inputs cost nothing and whatever
     // armed car arrives next inherits both triggers with them. `c_PIAltFire`
     // is the one that was missing: a Sherman's coaxial machine gun declares
@@ -4388,7 +4905,10 @@ function drive(dt) {
   // is `manned()`'s to step, not ours — but an unmanned seat's gun still has
   // to stay pointed where its last occupant left it.
   occupancy.applyTurrets();
-  if (driving) occupancy.turret?.step(dt);
+  if (driving) {
+    feedMobileTurretAim(dt);
+    occupancy.turret?.step(dt);
+  }
 
   // Kept unconditional rather than folded into `if (driving)` above: a
   // vehicle's own weapon must stop the instant nobody is in the seat that
@@ -4402,9 +4922,24 @@ function drive(dt) {
     if (driving) state.step(dt);
     guns.setFiring(group, driving
       && car.input(group.stats.input || 'c_PIFire') > 0
-      && state.canFire);
+       && state.canFire);
   }
 
+  // A non-driving seat (the Willy's passenger, a Sherman's hull gunner) still
+  // needs the camera — the VehicleCamera owns the C-cycle for every seat of a
+  // flyable vehicle, not only the root. The drivetrain step above is gated on
+  // `driving` for the same reason the throttle is: the passenger can't steer.
+  // But the camera pose is not steering, and letting it lapse here leaves the
+  // view pinned to wherever the passenger's `setFirstPerson` swap left it —
+  // exactly the "stuck in the passenger POV" bug SEAT-9 (camera-modes.md §3)
+  // describes. Manned guns keep their own camera in `manned()` below, so this
+  // only matters for the passenger seat of a drivable vehicle.
+  if (!driving && !mannedActive() && view) {
+    const pose = view.update(dt);
+    camera.position.copy(pose.position);
+    camera.quaternion.copy(pose.quaternion);
+    return;
+  }
   if (!driving) return;
   const pose = view.update(dt);
   camera.position.copy(pose.position);
@@ -4433,8 +4968,14 @@ const driveFwd = new THREE.Vector3();
 // the drivetrain's own momentum has to keep integrating even while `manned()`
 // holds the camera and the trigger for the seat you are actually sitting in.
 function mannedActive() {
-  if (!occupancy) return false;
-  return !(occupancy.isActiveRoot() && (aircraft || car));
+  if (!occupancy || !occupancy.activeSeatId) return false;
+  if (occupancy.isActiveRoot() && (aircraft || car)) return false;
+  // A passenger seat ('seat' kind: no guns, no aim axes) is NOT a manned gun —
+  // its camera belongs to VehicleCamera, not `manned()`, and forcing first-
+  // person here locks the view to the passenger's eye node. Let drive()'s
+  // non-driving branch claim the C-cycle instead (GUN-12).
+  if (occupancy.seatKind(occupancy.activeSeatId) === 'seat') return false;
+  return true;
 }
 
 const mannedCamPos = new THREE.Vector3();
@@ -4453,6 +4994,7 @@ const mannedCamQuat = new THREE.Quaternion();
  * reproduce the mechanism.
  */
 function manned(dt) {
+  feedMobileTurretAim(dt);
   occupancy.turret?.step(dt);
   // GUN-5/6 (verify-r6.md): a gunner Camera never aims itself, it only ever
   // rides the turret it is parented under — so the eye is just wherever that
@@ -4509,8 +5051,10 @@ function switchSeat(position) {
   collectMannedGuns();
   warmSubtree(occupancy.root);
   feedVehicleHud();
-  hud.textContent = mannedActive() ? HUD_MANNED : car ? HUD_DRIVE : HUD_PILOT;
+  hud.textContent = isTouchDevice ? getTouchHudText()
+    : mannedActive() ? HUD_MANNED : car ? HUD_DRIVE : HUD_PILOT;
   loadSeatPose();
+  updateMobileControls();
 }
 
 // --- feeding the vehicle/gun HUD variables (BRIEFING2.md's contract) -------
@@ -4825,9 +5369,12 @@ function scanForEntry(dt) {
   entryScan = ENTRY_SCAN_PERIOD;
   const near = nearestEntry();
   if (near?.vehicle !== nearEntry?.vehicle) {
-    hud.textContent = near ? `E — enter the ${near.control}` : HUD_FOOT;
+    hud.textContent = near
+      ? isTouchDevice ? `ENTER ${near.control}` : `E — enter the ${near.control}`
+      : isTouchDevice ? getTouchHudText() : HUD_FOOT;
   }
   nearEntry = near;
+  updateMobileControls();
 }
 
 /**
@@ -4874,8 +5421,9 @@ function enterVehicle(entry) {
     camera.near = 0.2;
     camera.updateProjectionMatrix();
     if (handWeapon) handWeapon.rig.visible = true;
-    hud.textContent = HUD_FOOT;
+    hud.textContent = isTouchDevice ? getTouchHudText() : HUD_FOOT;
   }
+  resetMobileControls();
 }
 
 /**
@@ -4964,13 +5512,14 @@ function exitVehicle() {
     camera.near = 0.2;
     camera.updateProjectionMatrix();
     if (handWeapon) handWeapon.rig.visible = true;
-    hud.textContent = HUD_FOOT;
+    hud.textContent = isTouchDevice ? getTouchHudText() : HUD_FOOT;
   } else {
     // Nobody was waiting in the seat — the pilot box was ticked from free
     // fly — so E hands back the free camera where the vehicle stopped.
     placeCamera();
     updateHud();
   }
+  resetMobileControls();
 }
 
 const exitWorldPos = new THREE.Vector3();
@@ -5054,11 +5603,12 @@ function exitManned() {
     camera.near = 0.2;
     camera.updateProjectionMatrix();
     if (handWeapon) handWeapon.rig.visible = true;
-    hud.textContent = HUD_FOOT;
+    hud.textContent = isTouchDevice ? getTouchHudText() : HUD_FOOT;
   } else {
     placeCamera();
     updateHud();
   }
+  resetMobileControls();
 }
 
 // --- on foot ----------------------------------------------------------------
@@ -5163,6 +5713,17 @@ const FALL_KINETIC_HP = 10;        // ≈ hit points per metre of fall at |g|=14
 let fallPeakY = null;   // highest y seen since last leaving the ground; null while grounded
 let wasGrounded = true;
 
+// The death cam: on the on-foot soldier's death (HP ≤ 0) the game holds the
+// camera floating above/by the corpse for a short beat before the deploy
+// screen opens (see hitpoints-and-damage.md §7 'Client: local-player death' —
+// `FUN_004933d0` → `SpawnScreenStuff::setVisible(true)`; the float is a brief
+// beat, not a decoded client animation). `soldierDead` latches until respawn
+// so a follow-up `__damage` on an already-dead body does not re-fire the flow.
+let soldierDead = false;
+let deathCamTimer = 0;    // seconds left floating over the corpse before openDeploy
+const DEATH_CAM_BEAT = 1.2;  // s — short float over the corpse before deploy shows
+const deathCamPos = new THREE.Vector3();
+
 /** The supply and health side of the in-game HUD writes the engine's own
  *  variable names straight into the painter's table, the same one
  *  `updateSoldierHud` fills; `gameHud` is declared with the painter further
@@ -5212,14 +5773,16 @@ function spawnAtFlag(advance = false) {
   soldierArmor = new Armor(soldierMaxHp(flag));
   fallPeakY = null;
   wasGrounded = true;
+  // Respawn clears the death cam: the fresh body is alive, so the latch
+  // must not hold the corpse cam over the new soldier.
+  soldierDead = false;
+  deathCamTimer = 0;
   // The weapon follows the flag: switching to the other side's spawn swaps
   // the SMG. A no-op when the right one is already in hand.
   ensureHandWeapon(flag);
   hud.textContent = `${flag.name} · ${spawn.name}`;
   clearTimeout(hudViewTimer);
-  hudViewTimer = setTimeout(() => {
-    if (optOnFoot.checked) hud.textContent = HUD_FOOT;
-  }, 2200);
+  hudViewTimer = setTimeout(updateHud, 2200);
   return true;
 }
 
@@ -5251,7 +5814,7 @@ function setOnFoot(on) {
     camera.near = 0.2;
     camera.updateProjectionMatrix();
     spawnFlagSelect.hidden = false;
-    hud.textContent = HUD_FOOT;
+    hud.textContent = isTouchDevice ? getTouchHudText() : HUD_FOOT;
   } else {
     // The deploy screen cannot outlive the mode it selects for: the pilot
     // checkbox's exclusivity and the on-foot box both land here with the
@@ -5276,6 +5839,7 @@ function setOnFoot(on) {
     // The fullscreen `?kblock` took for on-foot play goes with it.
     kbLockLeave();
   }
+  updateMobileControls();
 }
 
 // `let`: under `?kblock` the Escape hint changes for as long as the
@@ -5313,13 +5877,24 @@ function onFoot(dt) {
   // c_PIYaw values the body integrates — the engine's speed gates read the
   // *input*, not the achieved velocity.
   const input = {
-    forward: (held.has('KeyW') || touchFlying ? 1 : 0) - (held.has('KeyS') ? 1 : 0),
-    strafe: (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0),
+    forward: clampMobileInput(
+      ((held.has('KeyW') || touchFlying ? 1 : 0) - (held.has('KeyS') ? 1 : 0))
+      + mobilePadAxis('y')),
+    strafe: clampMobileInput(
+      ((held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0))
+      + mobilePadAxis('x')),
     walk: held.has('ShiftLeft') || held.has('ShiftRight'),
     crouch: held.has('ControlLeft') || held.has('ControlRight'),
     prone,
-    jump: held.has('Space'),
+    jump: held.has('Space') || mobileJumpHeld,
   };
+  // A dead body holds still: when `soldierDead` latches (death cam active)
+  // zero the steering/jump input so the corpse does not keep walking.
+  if (soldierDead) {
+    input.forward = input.strafe = 0;
+    input.jump = false;
+    input.crouch = input.prone = false;
+  }
   soldier.step(dt, input);
 
   // Fall damage — engine-faithful; see `FALL_KINETIC_HP`'s own comment
@@ -5350,6 +5925,28 @@ function onFoot(dt) {
   }
   wasGrounded = soldier.grounded;
 
+  // Death cam → deploy. When the on-foot body's Armor dies (fall damage,
+  // `window.__damage(n)`, a future projectile), latch the dead state and hold
+  // a short camera beat over/by the corpse (the game's death cam) before the
+  // deploy screen opens — `hitpoints-and-damage.md` §7 (client `FUN_004933d0`
+  // opens the spawn screen on local death). Latches so a follow-up damage tick
+  // cannot re-fire the flow, and is reset by `spawnAtFlag` on the next spawn.
+  if (soldierArmor && !soldierDead && soldierArmor.destroyed) {
+    soldierDead = true;
+    deathCamTimer = DEATH_CAM_BEAT;
+    // The corpse cam itself is applied downstream, where the eye pose is
+    // normally written (`soldierDead` branch) — this block only latches the
+    // state and runs the deploy timer.
+  }
+  if (soldierDead) {
+    deathCamTimer -= dt;
+    if (deathCamTimer <= 0 && !deployActive()) {
+      // The client opens the deploy screen the instant the local player dies;
+      // the beat above is the brief float, then the spawn screen takes over.
+      openDeploy();
+    }
+  }
+
   // Wake's SupplyDepot instances: collected once per level (a map switch
   // hands `currentRoot` a new object, caught here by reference), then ticked
   // at this hook's own call rate — `SupplyDepot.tick`'s internal 0.5s
@@ -5378,16 +5975,32 @@ function onFoot(dt) {
   // `step()` above, so drawing at the last tick would stutter on any monitor
   // that is not exactly 60 Hz. The bob's amplitudes are the game's
   // `setCameraShake*`; `soldier.js` has the citation.
+  // The camera: `soldier.eye()` is the eye pose with the bob already on it,
+  // interpolated between the last two 60 Hz ticks — the sim runs on a fixed
+  // step inside `step()` above, so drawing at the last tick would stutter on
+  // any monitor that is not exactly 60 Hz. The bob's amplitudes are the game's
+  // `setCameraShake*`; `soldier.js` has the citation. A dead body swaps in the
+  // death cam: the same eye base but parked a couple of metres above it and
+  // pitched down onto the corpse, so the view "floats over the dead player"
+  // for the beat before the deploy screen takes over.
   soldier.eye(footEye);
-  camera.position.set(footEye.x, footEye.y, footEye.z);
-  look.yaw = soldier.viewYaw;
-  look.pitch = soldier.pitch;
+  if (soldierDead) {
+    deathCamPos.set(footEye.x, footEye.y + 3.5, footEye.z);
+    camera.position.set(deathCamPos.x, deathCamPos.y, deathCamPos.z);
+    look.yaw = soldier.viewYaw;
+    look.pitch = -0.9;
+  } else {
+    camera.position.set(footEye.x, footEye.y, footEye.z);
+    look.yaw = soldier.viewYaw;
+    look.pitch = soldier.pitch;
+  }
   applyLook();
   // After the camera pose is final: the weapon fires down this frame's view
-  // axis, and the crosshair is drawn against this frame's FOV.
-  footFire(dt, input);
+  // axis, and the crosshair is drawn against this frame's FOV. A dead body
+  // cannot fire.
+  if (!soldierDead) footFire(dt, input);
   // And after everything the frame owed: is there a door within reach.
-  scanForEntry(dt);
+  if (!soldierDead) scanForEntry(dt);
 }
 
 const EMPTY_KEYS = new Set();
@@ -5792,6 +6405,70 @@ function soldierTemplateFor(flag) {
     || (team === 1 ? 'GermanSoldier' : 'USSoldier');
 }
 
+// --- kit rotation ------------------------------------------------------------
+//
+// The engine's soldier carries every kit item in an inventory slot and the
+// number keys raise one: 1 knife, 2 pistol, 3 primary, 4 grenade, then the
+// special items (5 medpack / binoculars / ...), each weapon's slot being its
+// own `ObjectTemplate.itemIndex` (kit.py's census). `PRIMARY_ITEM_INDEX` 3 is
+// the slot the engine selects on spawn — `weaponTemplateFor` above — and
+// these two bring the rest of the inventory: keys 1..N and the scroll wheel
+// cycle what the level's kit actually hands out, from `_shared/loadouts.json`'s
+// per-kit `weapons` list (slot, template, weapon-bar icon).
+
+let kitWeaponSlots = null;  // [{ slot, weapon, icon }] for the spawned kit
+let handSlot = null;        // the slot number currently in hand, or null
+// How long the weapon bar stays up after the last selection input. The
+// engine's own read is `Weapon/SelectingWeapon`, whose client write site was
+// never identified (the layout's gating var is certain, its lifetime is not);
+// ~2 s after the last input matches the retail rhythm of scroll-and-fade.
+const WEAPON_BAR_MS = 2000;
+let weaponBarUntil = 0;     // performance.now() deadline for the weapon bar
+// The weapon-bar icon variable names, built once (rule 5: nothing per frame).
+const WEAPON_ICON_VARS = Array.from({ length: 8 },
+  (_, i) => `Weapon/Icon/WeaponIcon${i + 1}`);
+
+/** The kit the level binds to `flag.team`'s chosen row, as slots. Null where
+ *  `_shared/loadouts.json` is absent, does not know the level, or does not
+ *  know the kit — the same "no data, fall back" shape `kitLoadout` has. */
+function kitSlotsFor(flag) {
+  const { kit } = kitLoadout(flag?.team, deployKit);
+  const weapons = kit ? loadouts?.kits?.[kit]?.weapons : null;
+  return Array.isArray(weapons) && weapons.length ? weapons : null;
+}
+
+/** Which slot number `template` occupies in `slots`, or null. Case-insensitive:
+ *  the kit files and the weapons' own `create` lines disagree on casing. */
+function slotOf(slots, template) {
+  const want = String(template || '').toLowerCase();
+  const found = slots.find(entry => entry.weapon.toLowerCase() === want);
+  return found ? found.slot : null;
+}
+
+/** Raise the weapon in `slot` (1..N) — the engine's
+ *  `c_PIMenuSelect<slot>` (`c_PIWeaponSelect1..6` on the MemeFile side).
+ *  Selecting the slot already in hand is a no-op, like the engine's. */
+function selectKitWeapon(slot) {
+  if (!optOnFoot.checked || !soldier || optPilot.checked) return false;
+  const entry = kitWeaponSlots?.find(w => w.slot === slot);
+  if (!entry) return false;
+  weaponBarUntil = performance.now() + WEAPON_BAR_MS;
+  if (entry.slot === handSlot) return true;
+  handSlot = entry.slot;
+  loadHandWeapon(entry.weapon, soldierTemplateFor({ team: deployTeamId }));
+  return true;
+}
+
+/** Scroll the inventory one entry `dir`(+1/-1) through slot order, wrapping —
+ *  the wheel's own behaviour in the game. */
+function cycleKitWeapon(dir) {
+  if (!kitWeaponSlots || kitWeaponSlots.length < 2) return false;
+  const order = kitWeaponSlots.map(w => w.slot);
+  const at = order.indexOf(handSlot ?? order[0]);
+  const next = order[(at + dir + order.length) % order.length];
+  return selectKitWeapon(next);
+}
+
 /** Tear down the viewmodel, its gun group and the HUD it owns. */
 function disposeHandWeapon() {
   releaseHandFireLoop();
@@ -5840,13 +6517,16 @@ function disposeHandWeapon() {
  * seat declares none and falls back to the soldier's own template, so no glb is
  * loaded and no rendered soldier appears in the cockpit view.
  *
- * The glb is parented to the seat's first EntryPoint so it rides the vehicle's
- * own motion, and an AnimationMixer plays the `seat.lower`+`seat.upper` clips
- * the extractor baked in. Visibility follows the camera mode: hidden in
- * cockpit (first-person), shown in every external view (C). */
+ * The glb is parented to the global `scene` (not to a node inside the vehicle's
+ * tree) to avoid disturbing the VehicleCamera's camera-node lookup, and its
+ * world position is synced to the seat node every frame. An AnimationMixer plays
+ * the `seat.lower`+`seat.upper` clips the extractor baked in. Visibility
+ * follows the camera mode: hidden in cockpit (first-person), shown in every
+ * external view (C). */
 const seatPoseLoader = new GLTFLoader();
 let seatPoseMixer = null;
 let seatPoseActions = null;
+let seatPoseTarget = null;   // the seat node whose world pose we follow
 
 async function loadSeatPose() {
   disposeSeatPose();
@@ -5863,30 +6543,27 @@ async function loadSeatPose() {
   try {
     gltf = await seatPoseLoader.loadAsync(url);
   } catch {
-    // Pose glb not extracted for this soldier/pose — fall back to no rendered
-    // soldier (the pre-existing behaviour).
     return;
   }
   const soldierScene = gltf.scene;
-  soldierScene.traverse(obj => {
-    if (obj.isSkinnedMesh) obj.frustumCulled = false;
-  });
-  soldierScene.userData.seatPose = true;
+  try {
+    soldierScene.traverse(obj => {
+      if (obj.isSkinnedMesh) obj.frustumCulled = false;
+    });
+    soldierScene.userData.seatPose = true;
 
-  // Parent on the seat's first EntryPoint so the figure moves with the vehicle.
-  const entry = seat.entryPoints[0];
-  if (entry) {
-    entry.add(soldierScene);
-    // The entry point's own local position/orientation is where the soldier
-    // stands relative to its parent — zero the soldier's local transform so it
-    // inherits exactly that, not an offset on top of it.
-    soldierScene.position.set(0, 0, 0);
-    soldierScene.quaternion.set(0, 0, 0, 1);
+  // The SeatObject node (e.g. `WillyPassengerSeat`) is the *sit* position; an
+  // EntryPoint is the door where the soldier spawns on enter. Sync to the
+  // SeatObject's world pose every frame so the rider moves with the vehicle
+  // without polluting the vehicle's node tree (which VehicleCamera traverses).
+  seatPoseTarget = seat.seatObjects?.[0] || seat.node;
+  if (seatPoseTarget) {
+    seatPoseTarget.getWorldPosition(soldierScene.position);
+    seatPoseTarget.getWorldQuaternion(soldierScene.quaternion);
   } else {
-    scene.add(soldierScene);
     soldierScene.position.set(0, 0, 0);
   }
-
+  scene.add(soldierScene);
   seatSoldier = soldierScene;
   seatSoldier.visible = !view?.firstPerson;
 
@@ -5907,11 +6584,15 @@ async function loadSeatPose() {
       seatPoseActions.upper.play();
     }
   }
+  } catch (err) {
+    console.error('loadSeatPose:', err);
+  }
 }
 
 function disposeSeatPose() {
   if (seatPoseMixer) { seatPoseMixer.stopAllAction(); seatPoseMixer = null; }
   seatPoseActions = null;
+  seatPoseTarget = null;
   if (seatSoldier) {
     seatSoldier.traverse(obj => {
       if (obj.isSkinnedMesh && obj.skeleton?.dispose) obj.skeleton.dispose();
@@ -6087,6 +6768,13 @@ async function loadHandWeapon(name, soldierName = null) {
     }
   }
   const magazine = data?.magazine || null;
+  // The idle fidgets this rig baked (`idle1..idleN` — §11's `addIdle`
+  // families): the names in slot order, the ANIM-6 dwell clock, and the
+  // fidget currently owning the arms.
+  const fidgetNames = fp
+    ? Object.keys(doc.clips ?? {}).filter(k => /^idle\d+$/.test(k))
+        .sort((a, b) => Number(a.slice(4)) - Number(b.slice(4)))
+    : [];
   const hw = {
     name, data, rig,
     soldier: soldierName,  // whose sleeves were asked for
@@ -6095,6 +6783,9 @@ async function loadHandWeapon(name, soldierName = null) {
     mixer, actions,        // the arms rig's state machine; both empty when bare
     clips: fp ? doc.clips ?? null : null,   // per-family frames/speed/span extras
     active: null,          // the clip currently owning the arms
+    fidgetNames,           // baked idle fidget families (`idle1..idleN`)
+    fidget: null,          // the fidget selected/playing, or null
+    fidgetTimer: null,     // seconds left of the ANIM-6 dwell, null = parked
     group: null,
     // The loaded magazine plus the spares. `magazines 5` is read as the
     // total carried, which is how the game's HUD counts them.
@@ -6154,9 +6845,14 @@ async function loadHandWeapon(name, soldierName = null) {
 
 /** The right weapon for `flag` and the chosen kit, loaded only if it is not
  *  already in hand — in the right sleeves: a redeploy across the team line
- *  with the same weapon still changes soldier, so the rig is compared too. */
+ *  with the same weapon still changes soldier, so the rig is compared too.
+ *  Also (re)arms the kit-rotation slots: the spawned kit's inventory, with
+ *  the slot in hand matching whatever `weaponTemplateFor` picked (slot 3 on
+ *  a normal spawn, `?weapon=`'s own slot under the override). */
 function ensureHandWeapon(flag) {
+  kitWeaponSlots = kitSlotsFor(flag);
   const name = weaponTemplateFor(flag);
+  handSlot = kitWeaponSlots ? slotOf(kitWeaponSlots, name) : null;
   const who = soldierTemplateFor(flag);
   if (handWeapon?.name === name
       && (handWeapon.rigFile || null) === (viewmodelRigFor(name, who) || null)
@@ -6236,6 +6932,28 @@ function updateViewmodelAnimation(hw, dt) {
     && (typeof reloadAction.isScheduled === 'function'
       ? reloadAction.isScheduled()
       : reloadAction.isRunning()));
+  // The idle-fidget dwell (ANIM-6, read out of `AnimationStateMachine::
+  // updateState` / `AnimationState::checkTransitions`): entering a state
+  // parks its timer at 1000 s and `updateState` re-arms it at
+  // `(rand & 3) + 4.0` s — 4..7 s — expiry picks `rand() % n` among the
+  // states the aim state registered through `addIdle`. Only the aim state
+  // has a timer, so the clock runs while idle is what holds the arms and the
+  // soldier stands still, and anything else (fire, reload, deploy, any gait
+  // off stand) parks it again. The fidget itself is a one-shot (LoopOnce,
+  // clamped): when it stops running, selection returns idle and the clock
+  // re-arms a fresh dwell — the engine's own rhythm, one fidget every 4-7 s
+  // of stillness.
+  if (hw.active === 'idle' && soldier?.gait === 'stand' && hw.fidgetNames.length
+      && hw.actions[hw.fidgetNames[0]]) {
+    if (hw.fidgetTimer == null) hw.fidgetTimer = 4 + Math.random() * 3;
+    hw.fidgetTimer -= dt;
+  } else {
+    hw.fidgetTimer = null;
+    // An interruption that did not go through selection (a shot's direct
+    // playViewmodelClip, a seat) leaves the fidget chosen but unowned.
+    if (hw.fidget && hw.active !== hw.fidget) hw.fidget = null;
+  }
+  const fidgetAction = hw.fidget ? hw.actions[hw.fidget] : null;
   const decision = wantViewmodelClip({
     reload: hw.reload,
     reloadPlayed: hw.reloadPlayed,
@@ -6249,6 +6967,12 @@ function updateViewmodelAnimation(hw, dt) {
     hasFire: !!fireAction,
     hasReload: !!hw.actions.reload,
     gait: soldier?.gait,
+    fidget: hw.fidget,
+    fidgetRunning: !!(fidgetAction && fidgetAction.isRunning()),
+    fidgetDue: hw.fidgetTimer != null && hw.fidgetTimer <= 0,
+    fidgetPick: hw.fidgetNames.length
+      ? hw.fidgetNames[Math.floor(Math.random() * hw.fidgetNames.length)]
+      : null,
   });
   // Keyed on the magazine change, not on which clip holds the arms: a change
   // begun while the last reload clip is still clamped rewinds it. The clip
@@ -6263,8 +6987,23 @@ function updateViewmodelAnimation(hw, dt) {
     }
   } else if (decision.startFire) {
     playViewmodelClip(hw, 'fire', { restart: true });
-  } else if (decision.want !== hw.active) {
-    playViewmodelClip(hw, decision.want);
+  } else if (decision.startFidget) {
+    // The pick lands in `hw.fidget` only once the clip actually owns the
+    // arms — a bare weapon or a rig without the family would otherwise
+    // re-fire the same no-op every frame.
+    if (playViewmodelClip(hw, decision.want, { restart: true })) {
+      hw.fidget = decision.want;
+    } else {
+      hw.fidgetNames.length = 0;   // park the clock; nothing to play
+    }
+  } else {
+    if (decision.endFidget) {
+      hw.fidget = null;
+      hw.fidgetTimer = null;   // back in idle: a fresh 4-7 s dwell arms
+    }
+    if (decision.want !== hw.active) {
+      playViewmodelClip(hw, decision.want);
+    }
   }
   // Belt: selection already matches want (idle) but LoopRepeat fire is still
   // scheduled from a prior fade — freeze its clock so the clip cannot keep
@@ -6760,6 +7499,19 @@ function updateSoldierHud() {
   vars['Soldier/ShowSoldierIcon'] = !!soldier && (onFootActive || inVehicle);
   vars['Vehicle/ShowVehicleIcon'] = inVehicle;
   vars['Weapon/ShowWeaponIcon'] = onFootActive && !!handWeapon;
+  // The weapon bar (the kit's inventory row the game paints while a weapon
+  // is being selected — layout group `weaponBar`, gated on this one var, so
+  // a stale true could draw it over a cockpit): up for a beat after the last
+  // selection input, on foot only. Written before every early return below.
+  const weaponBarUp = onFootActive && performance.now() < weaponBarUntil;
+  vars['Weapon/SelectingWeapon'] = weaponBarUp;
+  if (!weaponBarUp) {
+    // Only cleared here — the icon/slot values themselves may stay stale
+    // while the bar is down, because every weaponBar leaf is gated on
+    // SelectingWeapon and culls whole.
+    for (const key of WEAPON_ICON_VARS) vars[key] = null;
+    vars['Weapon/WeaponSelect'] = null;
+  }
 
   if (!soldier) {
     vars['CrossHair/ShowCrossHair'] = false;
@@ -6798,6 +7550,21 @@ function updateSoldierHud() {
     return;
   }
   vars['Submarine/ShowPeriscope'] = false;
+
+  // The weapon bar's own contents while it is up: the spawned kit's
+  // inventory — one icon per `addWeaponIcon` entry (slot order, loadouts'
+  // `weapons` list), painted at the slot's own numbered rect the way the
+  // engine raises it (a mod kit with no slot-2 weapon leaves that rect's
+  // variable unfed, so the layout's literal picture shows — HUD-1), and the
+  // highlighted fill on the slot in hand. The variable names come from the
+  // prebuilt WEAPON_ICON_VARS so nothing allocates per frame.
+  if (weaponBarUp && kitWeaponSlots) {
+    for (let slot = 1; slot <= WEAPON_ICON_VARS.length; slot++) {
+      const entry = kitWeaponSlots.find(w => w.slot === slot);
+      vars[WEAPON_ICON_VARS[slot - 1]] = entry ? (entry.icon || null) : null;
+    }
+    vars['Weapon/WeaponSelect'] = handSlot;
+  }
 
   const hw = handWeapon;
   if (!hw) {
@@ -6876,9 +7643,7 @@ let hudViewTimer = 0;
 function showView(mode) {
   hud.textContent = `view: ${VIEW_BLURB[mode]}`;
   clearTimeout(hudViewTimer);
-  hudViewTimer = setTimeout(() => {
-    if (optPilot.checked) hud.textContent = car ? HUD_DRIVE : HUD_PILOT;
-  }, 2200);
+  hudViewTimer = setTimeout(updateHud, 2200);
   // Seat poses only draw in external views — hide in the cockpit (CVMInside),
   // since the player is looking out from the pilot's eyes, not at the seat.
   updateSeatPoseVisibility();
@@ -6920,16 +7685,20 @@ function pilot(dt) {
         aircraft.input('c_PIThrottle') + power * dt)));
     }
 
-    // A/D rudder, arrows for the stick.
+    // A/D rudder, pad X for roll, pad Y for pitch.
     aircraft.setInput('c_PIYaw',
       axisToward(aircraft.input('c_PIYaw'),
         (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0), dt));
-    stick.roll = axisToward(stick.roll,
-      (held.has('ArrowRight') ? 1 : 0) - (held.has('ArrowLeft') ? 1 : 0), dt);
+    stick.roll = mobilePadHeld
+      ? mobilePadVector.x
+      : axisToward(stick.roll,
+        (held.has('ArrowRight') ? 1 : 0) - (held.has('ArrowLeft') ? 1 : 0), dt);
     // Pitch is inverted, which is a real stick and the game's own default for
     // aircraft: pull back to climb. Up arrow puts the nose down.
-    stick.pitch = axisToward(stick.pitch,
-      (held.has('ArrowUp') ? 1 : 0) - (held.has('ArrowDown') ? 1 : 0), dt);
+    stick.pitch = mobilePadHeld
+      ? mobilePadVector.y
+      : axisToward(stick.pitch,
+        (held.has('ArrowUp') ? 1 : 0) - (held.has('ArrowDown') ? 1 : 0), dt);
     aircraft.setInput('c_PIRoll', stick.roll);
     aircraft.setInput('c_PIPitch', stick.pitch);
 
@@ -6946,6 +7715,10 @@ function pilot(dt) {
   // Same reason `drive()` does it: `integrate` ends in `applyRig`, which puts
   // every turret on the airframe back to rest. A B17's gunners keep theirs.
   occupancy.applyTurrets();
+  if (flying) {
+    feedMobileTurretAim(dt);
+    occupancy.turret?.step(dt);
+  }
 
   // After `integrate`, so a round leaves this frame's muzzle pose rather than
   // last frame's — at 55 m/s that is a metre of lag, and it shows as tracers
@@ -7554,6 +8327,27 @@ function drawFullMap(force = false) {
 
 function toggleFullMap(on) {
   const want = on ?? fullmapBox.hidden;
+  // Deploy state: the game's own open/close — BfMap__animate easing the map
+  // between the minimap corner and the spawn-map rect (block below). The
+  // .deploy class stays on through the whole close so the keys and buttons
+  // keep working until the pane is actually gone.
+  if (want && fullmapBox.classList.contains('deploy')) {
+    if (fullmapBox.hidden) deployZ = 0;   // fresh open; reopening mid-close just flips the target
+    deployZTarget = 1;
+    fullmapBox.hidden = false;
+    applyDeployFrame();
+    // Holding the map is not flying. Releasing the pointer lock also stops the
+    // movement keys running under the overlay.
+    if (captured) release();
+    drawFullMap(true);
+    return;
+  }
+  if (!want && deployActive()) {
+    deployZTarget = 0;
+    if (deployZ === 0) finishDeployClose();  // a close requested before the first ease tick
+    else applyDeployFrame();
+    return;
+  }
   fullmapBox.hidden = !want;
   // Closing strips the deploy chrome with it, so a level switch or a plain
   // Escape can never leave the screen armed behind a hidden overlay.
@@ -7577,8 +8371,9 @@ fullmapBox.addEventListener('click', () => {
 //
 // The game never drops a joining player straight into the world: the round
 // opens on its spawn screen, and this is that screen — the kit column on the
-// left, the dimmed map with its spawn rings on the right, SUICIDE / SCORE
-// BOARD / RESUME underneath. Same canvas, same projection as the M map;
+// left, the dimmed map with its spawn rings on the right, footer buttons
+// underneath (SUICIDE/SCORE BOARD/RESUME when alive, CLOSE/SCORE BOARD/DONE
+// when dead). Same canvas, same projection as the M map;
 // `.deploy` on #fullmap is the whole of the state, and `toggleFullMap(false)`
 // strips it on any close. The column is the game's, row for row, and so is
 // what a row means: `deployKit` is read at spawn by `weaponTemplateFor`,
@@ -7608,6 +8403,79 @@ let deployKit = 'assault';
 // button under it, for the mouse-over plate.
 let deployHoverVar = null;
 let deployHoverBtn = null;
+
+// --- the open/close animation ------------------------------------------------
+//
+// The spawn map is the HUD minimap in the engine: one BfMap object, and
+// showing the deploy screen eases its zoom fraction z toward 1 as
+//   z += (target - z) * (1 - exp(-9*dt))
+// (BfMap__animate 0x00468fb0; ledger MMAP-1 — pure exponential, ~0.11 s time
+// constant, which is why the whole move reads in about 0.3 s). While z runs,
+// the map quad interpolates from the closed minimap's (620,30) 175x175 to the
+// spawn map's measured (280,33) 512x512 (MEME-13), and the displayed rotation
+// is (1 - z) x the heading (MMAP-2): the art enters turned with the camera
+// and settles north-up, while the quad's own edge stays axis-aligned — the
+// capture's grid is visibly tilted inside a vertical-edged pane. On the way
+// down everything runs in reverse, back onto the minimap corner. The engine
+// fades the open-map quad by the same easing (MEME-10's +0x4c), which here is
+// the pane's opacity: it comes up from nothing because the viewer's pane is
+// not the always-visible minimap widget the game starts from.
+const BFMAP_EASE_RATE = 9;
+const BFMAP_CLOSED_RECT = [620, 30, 175, 175];
+// The chrome is plain CullNode visibility (MEME-4) — the capture pops it in
+// fully formed about 0.13 s after the pane starts moving, which is z crossing
+// 0.7 (1 - exp(-9*0.134) ~= 0.7). `.deploy-ready` is that threshold.
+const BFMAP_CHROME_Z = 0.7;
+
+let deployZ = 0;        // the eased zoom fraction: 0 minimap, 1 spawn map
+let deployZTarget = 0;  // where BfMap__animate is easing it
+
+function deployTransitionActive() {
+  return deployZ !== deployZTarget;
+}
+
+/** One tick of the ease, then the pane rewritten from it. Runs from the
+ *  frame loop; a no-op once the fraction has landed on its target. */
+function deployAnimate(dt) {
+  if (deployZ === deployZTarget) return;
+  deployZ += (deployZTarget - deployZ) * (1 - Math.exp(-BFMAP_EASE_RATE * dt));
+  if (Math.abs(deployZTarget - deployZ) < 0.001) deployZ = deployZTarget;
+  applyDeployFrame();
+  if (deployZ === 0 && deployZTarget === 0) finishDeployClose();
+}
+
+/** Landed back on the minimap corner: gone for real, exactly what the
+ *  instant close used to do — chrome stripped so a level switch or a plain
+ *  Escape can never leave the screen armed behind a hidden overlay. */
+function finishDeployClose() {
+  fullmapBox.hidden = true;
+  fullmapBox.classList.remove('deploy', 'deploy-ready');
+  fullmapFrame.removeAttribute('style');
+  fullmapCanvas.style.transform = '';
+}
+
+/** The pane this tick: the interpolated rect, the game's (1 - z) x heading
+ *  content rotation — negated so the closed map reads with the camera's
+ *  forward up — over-scaled by the square's cover factor so the turned art
+ *  never shows a corner gap, and the fade. Flips the chrome on past the
+ *  threshold. */
+function applyDeployFrame() {
+  const s = deployScale();
+  const rect = spawnLayout.data?.map?.rect || [280, 33, 512, 512];
+  const [x, y, w, h] = BFMAP_CLOSED_RECT.map((c, i) => c + (rect[i] - c) * deployZ);
+  fullmapFrame.style.left = `${s.ox + x * s.sx}px`;
+  fullmapFrame.style.top = `${s.oy + y * s.sy}px`;
+  fullmapFrame.style.width = `${w * s.sx}px`;
+  fullmapFrame.style.height = `${h * s.sy}px`;
+  fullmapFrame.style.opacity = deployZ.toFixed(3);
+  const theta = -(1 - deployZ) * cameraHeading();
+  const cover = Math.abs(Math.cos(theta)) + Math.abs(Math.sin(theta));
+  fullmapCanvas.style.transform = `rotate(${theta}rad) scale(${cover.toFixed(4)})`;
+  // The threshold only arms on the way up: a close strips the chrome in the
+  // same breath that flips the target, exactly like the game's culls flip.
+  fullmapBox.classList.toggle('deploy-ready',
+    deployZTarget === 1 && deployZ >= BFMAP_CHROME_Z);
+}
 
 // The five rows in the game's order; the index is its `Kit/SelectedKit`.
 const KITS = ['scout', 'assault', 'antitank', 'medic', 'engineer'];
@@ -7795,7 +8663,9 @@ function layoutDeploy() {
   const data = spawnLayout.data;
   if (!data || !deployActive()) return;
   const s = deployScale();
-  placeHit(fullmapFrame, data.map.rect, s);
+  // While the open/close transition owns the pane (applyDeployFrame), its
+  // rect is the eased interpolation, not the layout's final one.
+  if (!deployTransitionActive()) placeHit(fullmapFrame, data.map.rect, s);
   const group = data.groups.spawn;
   const rows = group.elements.filter(el => el.kind === 'hit' && el.hover);
   for (const el of group.elements) {
@@ -8024,7 +8894,19 @@ function setDeployTeam(team, reselect = true) {
 for (const tab of deployTabs) {
   tab.addEventListener('click', e => {
     e.stopPropagation();
-    setDeployTeam(Number(tab.dataset.team));
+    const newTeam = Number(tab.dataset.team);
+    // Switching teams kills the current soldier, matching retail BF1942:
+    // a live player who changes sides on the deploy screen dies and
+    // rejoins from scratch on the new side.
+    if (deployRejoin && newTeam !== deployTeamId && soldier) {
+      soldier = null;
+      soldierArmor = null;
+      soldierDead = false;
+      deathCamTimer = 0;
+      deployRejoin = false;
+      disposeHandWeapon();
+    }
+    setDeployTeam(newTeam);
     tab.blur();
   });
 }
@@ -8115,19 +8997,24 @@ fullmapCanvas.addEventListener('click', e => {
   selectDeployFlag(best);
 });
 
-// The footer. DONE (join) / SUICIDE (redeploy) is the commit; RESUME / CLOSE
-// cancels; SCORE BOARD has no board to show and stays a button in name only.
+// The footer. The left and right buttons swap roles depending on whether a
+// life waits behind the screen (`deployRejoin`):
+//   alive (rejoin): SUICIDE (left) commits spawn, RESUME (right) cancels
+//   dead  (join):   CLOSE   (left) cancels,      DONE   (right) commits
+// SCORE BOARD has no board to show and stays a button in name only.
 // Focus must not stay on any of them: Space is the jump the instant the
 // screen closes, and a focused button turns it back into a click.
 deploySuicideBtn.addEventListener('click', e => {
   e.stopPropagation();
   deploySuicideBtn.blur();
-  deploySpawn();
+  if (deployRejoin) deploySpawn();
+  else cancelDeploy();
 });
 deployResumeBtn.addEventListener('click', e => {
   e.stopPropagation();
   deployResumeBtn.blur();
-  cancelDeploy();
+  if (deployRejoin) cancelDeploy();
+  else deploySpawn();
 });
 deployScoreBtn.addEventListener('click', e => {
   e.stopPropagation();
@@ -8441,6 +9328,7 @@ spawnFlagSelect.addEventListener('change', () => {
 
 const clock = new THREE.Clock();
 function frame(dt) {
+  updateMobileControls();
   if (optPilot.checked && occupancy) {
     // Round 3's first disclosed gap: the occupied vehicle's own drivetrain
     // physics steps every frame it exists, no matter which of its seats is
@@ -8484,6 +9372,13 @@ function frame(dt) {
   // Unconditional: rounds already in the air have to finish their flight even
   // if the trigger, the pilot mode or the whole aircraft has gone away.
   guns.advance(dt);
+  // Sync the seated soldier to its seat node's world pose — the glb is parented
+  // to `scene` (not the vehicle tree) so it can't disturb VehicleCamera's node
+  // traversal, so it must chase the seat's matrices here instead.
+  if (seatSoldier && seatPoseTarget && optPilot.checked) {
+    seatPoseTarget.getWorldPosition(seatSoldier.position);
+    seatPoseTarget.getWorldQuaternion(seatSoldier.quaternion);
+  }
   if (seatPoseMixer && optPilot.checked) seatPoseMixer.update(dt);
   // After `advance`, so a round that landed this frame is already accounted for
   // when the tier is picked. Unconditional for the same reason `advance` is: a
@@ -8576,6 +9471,7 @@ function frame(dt) {
     renderer.render(vmScene, vmCamera);
     renderer.autoClear = true;
   }
+  deployAnimate(dt);
   drawMinimap();
   drawFullMap();
   // Last, over everything: feed this frame's soldier-side variables, then
@@ -8827,6 +9723,15 @@ if (params.has('shots')) {
     },
     setTeam(team) {
       if (!deployActive() || (team !== 1 && team !== 2)) return false;
+      // Mirror the tab click: switching teams kills the current soldier.
+      if (deployRejoin && team !== deployTeamId && soldier) {
+        soldier = null;
+        soldierArmor = null;
+        soldierDead = false;
+        deathCamTimer = 0;
+        deployRejoin = false;
+        disposeHandWeapon();
+      }
       setDeployTeam(team);
       return true;
     },
@@ -8907,7 +9812,22 @@ if (params.has('shots')) {
     crosshairHidden: crosshairEl.hidden,
     crosshairGap: crosshairEl.style.getPropertyValue('--ch-gap') || null,
     fov: camera.fov,
+    // The idle-fidget state, so a headless check can step past the 4-7 s
+    // dwell and read which one-shot owns the arms.
+    fidget: handWeapon.fidget,
+    fidgetTimer: handWeapon.fidgetTimer,
+    fidgetNames: [...handWeapon.fidgetNames],
   });
+  // The kit-rotation inventory: the spawned kit's slots, the slot in hand,
+  // and the verbs a check needs — the same `selectKitWeapon` the number keys
+  // and the wheel run (headless Chromium grants neither reliably).
+  window.__kitRotation = () => ({
+    slots: kitWeaponSlots?.map(w => ({ ...w })) ?? null,
+    handSlot,
+    weaponBarUp: performance.now() < weaponBarUntil,
+  });
+  window.__selectKitWeapon = selectKitWeapon;
+  window.__cycleKitWeapon = cycleKitWeapon;
   // Stand the man somewhere exact — in front of a known wall — so a burst can
   // be fired at a surface the assertion names rather than wherever a flag
   // happened to put him.

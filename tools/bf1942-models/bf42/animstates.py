@@ -79,6 +79,14 @@ class State:
     # once its phase passes 1 (`AnimationState::update`, lnxded 0x08329f00).
     # `_POSE_` is the engine's sentinel for "the machine's base state".
     return_to: str | None = None
+    # `addIdle X` — the fidget states registered on this state
+    # (`AnimationStatesIdle.con`'s one-shots, replayed from the aim states).
+    # When the state's idle timer expires (`updateState` arms `(rand & 3) + 4.0`
+    # s on entry, ANIM-6), `AnimationState::checkTransitions` picks uniformly
+    # among these — the "shaking his grip hand" one-shots — and each returns
+    # here through its own `addTransitionWhenDone`. Declaration order is the
+    # vector's order; the engine's `rand() % n` indexes it directly.
+    idles: list[str] = field(default_factory=list)
     # `setUserRandomStartTime` — a looping clip starts at a random phase
     # (rand & 0xff) / 255 instead of 0 (lnxded 0x0832b413).
     random_start: bool = False
@@ -152,6 +160,10 @@ class StateMachine:
                       random_start=latest.random_start)
         if latest.return_to:
             clone.return_to = _substitute(latest.return_to, src_weapon, new_weapon)
+        # The aim states carry their fidget registrations into the clone the
+        # same way the clips follow: `Ub_IdleThompson1` -> `Ub_IdleColt1`.
+        clone.idles = [_substitute(name, src_weapon, new_weapon)
+                       for name in latest.idles]
         if latest.weapon_state:
             # The paired weapon-channel state follows the body state's name:
             # `WeaponReloadThompson` -> `WeaponReloadColt`. Donors do not
@@ -272,6 +284,11 @@ def parse(read: Callable[[str], str | None],
             elif command in ("returntostate", "addtransitionwhendone") \
                     and latest is not None and args:
                 latest.return_to = args[0]
+            elif command == "addidle" and latest is not None and args:
+                # `addIdle Ub_Idle<W>1..3` on an aim state. A commented-out
+                # line (`rem *** addIdle Ub_IdleThompson4`) never reaches here
+                # because `rem` lines are skipped above.
+                latest.idles.append(args[0])
             elif command == "setuserrandomstarttime" and latest is not None:
                 latest.random_start = True
             elif command == "copystate2" and len(args) >= 2:

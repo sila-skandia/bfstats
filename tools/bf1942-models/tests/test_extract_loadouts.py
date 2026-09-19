@@ -193,5 +193,88 @@ ObjectTemplate.maxhitpoints 30
         self.assertIsNone(row["maxHitpoints"])
 
 
+class KitWeaponSlotTests(unittest.TestCase):
+    """The kit's inventory as the number keys raise it: each carried weapon's
+    `itemIndex` slot with the weapon-bar icon at the same position of the
+    kit's slot-ordered `addWeaponIcon` row."""
+
+    def library(self) -> ObjectLibrary:
+        library = ObjectLibrary()
+        library.add_con("Objects/Items/USKit/Medic/Objects.con", """
+ObjectTemplate.create Kit US_Medic
+ObjectTemplate.setType Medic
+ObjectTemplate.setKitTeam 2
+ObjectTemplate.addTemplate Thompson
+ObjectTemplate.addTemplate Colt
+ObjectTemplate.addTemplate KnifeAllies
+ObjectTemplate.addTemplate MedPack
+ObjectTemplate.addTemplate GrenadeAllies
+ObjectTemplate.addWeaponIcon "Weapon/Icon_alliesKnife.tga"
+ObjectTemplate.addWeaponIcon "Weapon/Icon_colt.tga"
+ObjectTemplate.addWeaponIcon "Weapon/Icon_thompson.tga"
+ObjectTemplate.addWeaponIcon "Weapon/Icon_grenadeallies.tga"
+ObjectTemplate.addWeaponIcon "Weapon/Icon_medpack.tga"
+""")
+        for name, index in (("Thompson", 3), ("Colt", 2), ("KnifeAllies", 1),
+                            ("MedPack", 5), ("GrenadeAllies", 4)):
+            library.add_con(f"Objects/HandWeapons/{name}/Objects.con", f"""
+ObjectTemplate.create HandFireArms {name}
+ObjectTemplate.itemIndex {index}
+""")
+        return library
+
+    def manifest(self) -> dict:
+        library = self.library()
+        return build_manifest(library, collect(library),
+                              {"Wake": parse_level_kits("game.setKit 2 3 US_Medic\n")},
+                              "bf1942")
+
+    def test_weapons_are_listed_in_slot_order_with_slot_icons(self) -> None:
+        # The vanilla US_Medic file declares Thompson, Colt, Knife, MedPack,
+        # Grenade but its icons run knife, colt, thompson, grenade, medpack:
+        # the icon row is slot-ordered, not declaration-ordered, so the icon
+        # pairs with the weapon at the same position of the sorted list.
+        row = self.manifest()["kits"]["US_Medic"]
+        self.assertEqual(
+            [(1, "KnifeAllies", "Weapon/Icon_alliesKnife.tga"),
+             (2, "Colt", "Weapon/Icon_colt.tga"),
+             (3, "Thompson", "Weapon/Icon_thompson.tga"),
+             (4, "GrenadeAllies", "Weapon/Icon_grenadeallies.tga"),
+             (5, "MedPack", "Weapon/Icon_medpack.tga")],
+            [(w["slot"], w["weapon"], w["icon"])
+             for w in row["weapons"]])
+        # The primary is the slot-3 entry, as the engine selects on spawn.
+        self.assertEqual("Thompson", row["primary"])
+
+    def test_a_weapon_without_an_item_index_is_not_selectable(self) -> None:
+        library = self.library()
+        library.add_con("Objects/HandWeapons/Parachute/Objects.con", """
+ObjectTemplate.create HandFireArms Parachute
+""")
+        library.object("US_Medic").children.append(type(
+            library.object("US_Medic").children[0])(template="Parachute"))
+        manifest = build_manifest(library, collect(library),
+                                  {"Wake": parse_level_kits("game.setKit 2 3 US_Medic\n")},
+                                  "bf1942")
+        weapons = manifest["kits"]["US_Medic"]["weapons"]
+        self.assertNotIn("Parachute", [w["weapon"] for w in weapons])
+        # And the icons still line up: the unselectable item consumed no icon.
+        self.assertEqual(
+            ["Weapon/Icon_alliesKnife.tga", "Weapon/Icon_colt.tga"],
+            [w["icon"] for w in weapons[:2]])
+
+    def test_a_kit_with_fewer_icons_than_weapons_leaves_none_null(self) -> None:
+        library = self.library()
+        kit = library.object("US_Medic")
+        kit.kit_weapon_icons = ["Weapon/Icon_alliesKnife.tga"]
+        manifest = build_manifest(library, collect(library),
+                                  {"Wake": parse_level_kits("game.setKit 2 3 US_Medic\n")},
+                                  "bf1942")
+        weapons = manifest["kits"]["US_Medic"]["weapons"]
+        self.assertEqual("Weapon/Icon_alliesKnife.tga", weapons[0]["icon"])
+        self.assertIsNone(weapons[1]["icon"])
+        self.assertIsNone(weapons[4]["icon"])
+
+
 if __name__ == "__main__":
     unittest.main()

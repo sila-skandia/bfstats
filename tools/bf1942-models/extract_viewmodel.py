@@ -21,6 +21,10 @@ glTF animation per first-person clip family the state machine declares:
             `c_AsmWeaponState` clip driving the weapon's own bound parts
             (the Thompson's magazine leaves the gun and comes back)
     deploy  Ub_StandRaiseWeapon<W> -- the draw-in
+    idle1.. idleN  the aim state's `addIdle` fidgets (ANIM-6: a 4-7 s dwell
+            picks one at random; each one-shot returns to the aim state) -- the
+            "shaking his grip hand" animations a soldier performs standing
+            still, and which differ weapon by weapon
 
 Everything is data: the state machine names the clips and their rates, the
 clips pose the bones, the `.ske` weld places the weapon, and the soldier's
@@ -83,6 +87,13 @@ FAMILIES: tuple[tuple[str, str], ...] = (
     ("deploy", "StandRaiseWeapon"),
 )
 PRIMARY = "idle"
+
+# The idle fidgets (`Ub_Idle<W>1..3`, `Animations/WeaponHandling/1p/<W>/1pIdle*`)
+# are not declared per family — each aim state registers its own list through
+# `addIdle` (ANIM-6: on entry `updateState` arms a `(rand & 3) + 4.0` s timer,
+# expiry picks `rand() % n` among the registered states, each one-shot returns
+# through `addTransitionWhenDone`). They resolve from the aim state's
+# registration, named `idle1..idleN` in registration order.
 
 # Conjugation between the raw `.baf`/`.ske`-file frame convention and the
 # parsed (Z-mirror) one — the same S = diag(1, 1, -1) `pose.weapon_attachment`
@@ -206,6 +217,32 @@ def resolve_families(machine: animstates.StateMachine, weapon: str,
         if entry["weaponRef"] is not None:
             report[key]["weaponClip"] = entry["weaponRef"].path
             report[key]["weaponSpeed"] = entry["weaponRef"].speed
+
+    # The aim state's own fidgets, in `addIdle` registration order. A
+    # registered name the machine does not hold (a mod that registered one it
+    # never declared) cannot play in the engine either — skip it rather than
+    # inventing a clip.
+    aim_state = machine.state(f"Ub_StandAim{weapon}")
+    for index, idle_name in enumerate((aim_state.idles if aim_state else []),
+                                      start=1):
+        key = f"idle{index}"
+        state = machine.state(idle_name)
+        clip_ref = state.clip_1p() if state else None
+        if clip_ref is None:
+            report[key] = {"error": f"no 1P clip for registered fidget {idle_name}"}
+            continue
+        resolved[key] = {"ref": clip_ref, "loop": clip_loops(clip_ref),
+                         "weaponRef": None,
+                         "morphFactor": state.morph_factor,
+                         "returnTo": state.return_to}
+        report[key] = {
+            "fidgetState": state.name,
+            "upperClip": clip_ref.path,
+            "speed": clip_ref.speed,
+            "loop": bool(resolved[key]["loop"]),
+            "morphFactor": state.morph_factor,
+            "returnTo": state.return_to,
+        }
     return resolved, report
 
 
