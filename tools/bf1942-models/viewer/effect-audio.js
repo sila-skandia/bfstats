@@ -203,7 +203,15 @@ export class EffectAudio {
     }
     this.bundles.clear();
     for (const [key, entry] of Object.entries(manifest?.bundles || {})) {
-      this.bundles.set(key.toLowerCase(), entry.script);
+      // A bundle names a list of scripts, because 10 vanilla trees carry two:
+      // `MajorImpact_Sand` is `addTemplate e_Explani02` + `addTemplate
+      // e_ExplDrySand`, the blast and the sand rain, and the engine stands
+      // both children up. `script` is the pre-2026-09-20 single-valued field
+      // and is still read when a tree published before this has no `scripts`.
+      const keys = Array.isArray(entry?.scripts) && entry.scripts.length
+        ? entry.scripts
+        : (entry?.script ? [entry.script] : []);
+      if (keys.length) this.bundles.set(key.toLowerCase(), keys);
     }
     this.scripts.clear();
     for (const [key, script] of Object.entries(manifest?.scripts || {})) {
@@ -222,9 +230,16 @@ export class EffectAudio {
     return !!name && this.bundles.has(String(name).toLowerCase());
   }
 
-  #scriptFor(name) {
-    const key = this.bundles.get(String(name || '').toLowerCase());
-    return key ? this.scripts.get(key) : undefined;
+  /** Every script this bundle sounds — usually one, two for 10 of vanilla's. */
+  #scriptsFor(name) {
+    const keys = this.bundles.get(String(name || '').toLowerCase());
+    if (!keys) return [];
+    const out = [];
+    for (const key of keys) {
+      const script = this.scripts.get(key);
+      if (script) out.push(script);
+    }
+    return out;
   }
 
   /**
@@ -236,9 +251,13 @@ export class EffectAudio {
    * can prime ahead of the shot.
    */
   async prime(name) {
-    const script = this.#scriptFor(name);
-    if (!script || this.disposed) return null;
-    if (script.slots.length) return script;
+    const scripts = this.#scriptsFor(name);
+    if (!scripts.length || this.disposed) return null;
+    return Promise.all(scripts.map(script => this.#primeScript(script)));
+  }
+
+  #primeScript(script) {
+    if (script.slots.length) return Promise.resolve(script);
     if (this.pending.has(script.key)) return this.pending.get(script.key);
     const task = this.#grow(script).then(() => script, () => null)
       .finally(() => this.pending.delete(script.key));
@@ -306,14 +325,25 @@ export class EffectAudio {
    * from here, or the budget refused it).
    */
   play(name, position) {
-    const script = this.#scriptFor(name);
-    if (!script || this.disposed || !position) return 0;
+    if (this.disposed || !position) return 0;
+    const scripts = this.#scriptsFor(name);
+    if (!scripts.length) return 0;
     const [x, y, z] = position;
     const dx = x - this.listenerPosition.x;
     const dy = y - this.listenerPosition.y;
     const dz = z - this.listenerPosition.z;
     const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    let played = 0;
+    // One patch per script the tree carries. `MajorImpact_Sand` is a blast
+    // and a rain of sand, authored as two child bundles with a script each,
+    // and the engine plays both because it instantiates both.
+    for (const script of scripts) {
+      played += this.#playScript(script, x, y, z, distance);
+    }
+    return played;
+  }
 
+  #playScript(script, x, y, z, distance) {
     // The script's own answer to "can this be heard from there". A ricochet
     // whose distance ramp is spent at 25 m is not worth a voice at 300 m, and
     // the engine's own mixer would have lost it to a nearer sound anyway.
@@ -323,7 +353,7 @@ export class EffectAudio {
     }
 
     if (!script.slots.length) {
-      this.prime(name);
+      this.#primeScript(script);
       this.dropped += 1;
       return 0;
     }
