@@ -16,7 +16,8 @@ import {
   surveyVehicle, classifySeat, classifyRoot, findAllVehicleRoots,
   listEntryPoints, pickNearest, TIE_EPSILON, VehicleOccupancy, TurretAxis,
   TurretRig, FireState, chainOnShot, readWorldPose, AIM_INPUTS, hasAimAxes,
-  TURRET_DEGREES_PER_PIXEL, TURRET_PENDING_CLAMP, TURRET_DEADZONE,
+  TURRET_DEGREES_PER_PIXEL, TURRET_ACCELERATION, TURRET_SPEED_SCALE,
+  turretSpeedScale,
 } from './seats.js';
 
 const results = {};
@@ -108,11 +109,90 @@ function sherman() {
   gunYaw.add(gunCamera, gunBarrel);
   const hullGunner = node('shermanBrowning_PCO1', {
     control: 'shermanBrowning_PCO1', templateKind: 'PlayerControlObject',
+    // Its own `setVehicleIconPos` and -- deliberately -- no
+    // `setHasTurretIcon`. Both verbatim from `Objects/Vehicles/Land/Sherman/
+    // Objects.con`: the word is declared on the ROOT only (VHUD-9), so a hull
+    // gunner gets a dot but no dial.
+    hud: { vehicleIcon: 'Vehicle/Icon_sherman.tga', vehicleIconPos: [32, 61] },
   }, gunYaw, gunEntry);
   return node('Sherman', {
     control: 'Sherman', templateKind: 'PlayerControlObject',
-    hud: { hitpoints: 105, maxHitpoints: 105, vehicleIcon: 'Vehicle/Icon_sherman.tga' },
+    hud: {
+      hitpoints: 105, maxHitpoints: 105, vehicleIcon: 'Vehicle/Icon_sherman.tga',
+      hasTurretIcon: true, vehicleIconPos: [54, 103],
+    },
   }, engine, tower, rootEntryA, hullGunner);
+}
+
+/** The same Sherman with the hull gunner's `setVehicleIconPos` stripped: a
+ *  half-re-extracted tree, where one PCO carries a position and one does
+ *  not. The seat-dot decision is per dot, not per vehicle. */
+function shermanWithOneUnplacedSeat() {
+  const root = sherman();
+  root.traverse(o => {
+    if (o.name === 'shermanBrowning_PCO1') delete o.userData.hud.vehicleIconPos;
+  });
+  return root;
+}
+
+/** A casemate hull: a fixed gun in the glacis, no turret, and so no
+ *  `setHasTurretIcon` anywhere in its `.con` -- the Wespe's own shape, whose
+ *  root declares `setVehicleIconPos 55/94` and nothing else of interest here.
+ *  It still has an aim rig (the gun traverses a little inside its mantlet),
+ *  which is exactly why "the seat has a traverse" was the wrong trigger. */
+function wespe() {
+  const engine = node('WespeEngine', {
+    templateKind: 'Engine', physics: { engineType: 'c_ETTank' },
+  });
+  const gunBase = node('WespeGunBase', {
+    control: 'Wespe', templateKind: 'RotationalBundle',
+    rig: { axes: {
+      yaw: { input: 'c_PIMouseLookX', min: -15, max: 15, free: false, maxSpeed: 20, direction: 1 },
+      pitch: { input: 'c_PIMouseLookY', min: -5, max: 40, free: false, maxSpeed: 15, direction: 1 },
+    } },
+  }, node('WespeGunBarrel', {
+    templateKind: 'FireArms', fireArms: { magSize: 20, numOfMag: 1, roundOfFire: 0.2 },
+  }), node('WespeCamera', { templateKind: 'Camera', control: 'Wespe' }));
+  const entry = node('WespeEntry', {
+    control: 'Wespe', templateKind: 'EntryPoint',
+    seat: { control: 'Wespe', entryRadius: 3.6 },
+  });
+  return node('Wespe', {
+    control: 'Wespe', templateKind: 'PlayerControlObject',
+    hud: { hitpoints: 80, maxHitpoints: 80, vehicleIcon: 'Vehicle/Icon_wespe.tga',
+           vehicleIconPos: [55, 94] },
+  }, engine, gunBase, entry);
+}
+
+/** Six PlayerControlObjects, six dots. The Hanomag's own icon positions,
+ *  read out of `Objects/Vehicles/Land/Hanomag/Objects.con`: root `39/75`,
+ *  `Hanomag_MG42_PCO1` `40/65`, then four passengers at `30/59`, `41/55`,
+ *  `20/49`, `31/45`. Nothing else about the vehicle matters here. */
+function hanomag() {
+  const POSITIONS = [
+    ['Hanomag', [39, 75]],
+    ['Hanomag_MG42_PCO1', [40, 65]],
+    ['Hanomag_Passanger_PCO2', [30, 59]],
+    ['Hanomag_Passanger_PCO3', [41, 55]],
+    ['Hanomag_Passanger_PCO4', [20, 49]],
+    ['Hanomag_Passanger_PCO5', [31, 45]],
+  ];
+  const seats = POSITIONS.slice(1).map(([id, pos]) => node(id, {
+    control: id, templateKind: 'PlayerControlObject',
+    hud: { vehicleIcon: 'Vehicle/Icon_hanomag.tga', vehicleIconPos: pos },
+  }, node(`${id}_Entry`, {
+    control: id, templateKind: 'EntryPoint', seat: { control: id, entryRadius: 3 },
+  })));
+  return node('Hanomag', {
+    control: 'Hanomag', templateKind: 'PlayerControlObject',
+    hud: { hitpoints: 100, maxHitpoints: 100, vehicleIcon: 'Vehicle/Icon_hanomag.tga',
+           vehicleIconPos: POSITIONS[0][1] },
+  }, node('HanomagEngine', { templateKind: 'Engine', physics: { engineType: 'c_ETCar' } }),
+     node('HanomagEntry', {
+       control: 'Hanomag', templateKind: 'EntryPoint',
+       seat: { control: 'Hanomag', entryRadius: 3 },
+     }),
+     ...seats);
 }
 
 /** The V-100's own shape, and the reason `surveyVehicle` has a preference
@@ -364,9 +444,23 @@ function shermanWithRenamedGunnerNode() {
     gunnerAxisCount: gunnerTurret.axes.length,
     gunnerFireArms,
     rootHudIcon: rootHud.vehicleIcon,
-    // R2-31 (verify-r2.md, corrected): hitpoints/armor is the ROOT's alone --
-    // the gunner seat's own `hud` block (none declared here) must fall back.
-    gunnerHudSameAsRoot: gunnerHud === rootHud,
+    // R2-31 (verify-r2.md, corrected): hitpoints/armor is the ROOT's alone.
+    // `shermanBrowning_PCO1` really does declare its own `setVehicleIcon` and
+    // `setVehicleIconPos` -- both verbatim in `Objects.con` -- so `activeHud()`
+    // returns the SEAT's block, not the root's, and it is the absence of
+    // hitpoints in that block that keeps the invariant. `feedVehicleHud`
+    // reads them off `seatInfo(rootId)` for that reason.
+    gunnerHudIcon: gunnerHud.vehicleIcon,
+    gunnerHudHasNoHitpoints: gunnerHud.hitpoints === undefined,
+    rootHudHitpoints: rootHud.hitpoints,
+    // A seat that declares no block of its own still falls back to the root's
+    // -- the Hanomag's passengers do declare one, but a Defgun-style single
+    // seat vehicle has only the one block for `activeHud()` to find.
+    gunnerFallsBackWhenItHasNone: (() => {
+      const bare = new VehicleOccupancy(defgun());
+      bare.setActiveSeat(bare.rootId);
+      return bare.activeHud() === bare.seatInfo(bare.rootId).hud;
+    })(),
     exitLocationFallsBackToRoot: occ.exitLocationNode() === occ.root,
   };
 
@@ -429,100 +523,285 @@ function shermanWithRenamedGunnerNode() {
   };
 }
 
-// --- TurretAxis: deadzone, clamp, and the free-axis wrap ---------------------
+// --- the vehicle HUD: the dial's trigger and the seat dots -------------------
 
 {
-  const spec = { min: -90, max: 90, free: false, maxSpeed: 90, direction: 1 };
-  const rig = node('Axis', {});
-  const axis = new TurretAxis('yaw', rig, spec);
-  // GUN-3's own deadzone: below it, banked aim moves nothing. Written in
-  // DEGREES of ask and converted to pixels rather than pinned as a raw pixel
-  // count, because the pixels-per-degree ratio is an admitted feel number
-  // (its own comment says as much) and a fixture written in its units fails
-  // the moment it is retuned, for a reason that has nothing to do with the
-  // deadzone it is about.
-  const px = degrees => degrees / TURRET_DEGREES_PER_PIXEL;
-  axis.feed(px(TURRET_DEADZONE / 2));
-  axis.step(1 / 60);
-  const belowDeadzone = axis.angle;
-
-  // Sustained and well past the deadzone: the axis must actually move, and in
-  // the fed direction's sign convention (whichever `TurretAxis` picks --
-  // asserted for stability, not re-derived here).
-  for (let i = 0; i < 120; i++) { axis.feed(px(1.5)); axis.step(1 / 60); }
-  const movedAngle = axis.angle;
-
-  // What the mouse asks for is what it gets, while the ask stays inside what
-  // the axis can deliver: this is the whole point of banking the input rather
-  // than draining it every tick. Half a degree a frame for a second is 30
-  // degrees, and 30 degrees is what comes out.
-  const tracker = new TurretAxis('yaw', node('Tracker', {}),
-    { min: -180, max: 180, free: false, maxSpeed: 90, direction: 1 });
-  for (let i = 0; i < 60; i++) { tracker.feed(px(0.5)); tracker.step(1 / 60); }
-  for (let i = 0; i < 30; i++) tracker.step(1 / 60);   // let the bank drain
-  const tracked = round(tracker.angle, 2);
-
-  // And an ask far past what it can deliver is bounded, not banked for ever:
-  // TURRET_PENDING_CLAMP is the ceiling on how much aim can be owed.
-  const flicked = new TurretAxis('yaw', node('Flick', {}),
-    { free: true, maxSpeed: 90, direction: 1 });
-  flicked.feed(px(10000));
-  const bankedAfterAFlick = round(flicked.pending, 2);
-
-  // Pinned at the input register's own ±40 ceiling (feed far exceeds it),
-  // so the target velocity is the full `maxSpeed` and the ramp
-  // (`TURRET_ACCELERATION`, or the axis's own) is the only thing left between rest and
-  // the clamp -- 5 real seconds is comfortably past both. Must sit exactly
-  // at the declared max, never beyond it (GUN-4: setState's clamp,
-  // reproduced per-tick by TurretAxis.step itself here rather than a
-  // separate setState call).
-  for (let i = 0; i < 300; i++) { axis.feed(2000); axis.step(1 / 60); }
-  const clampedAngle = axis.angle;
-
-  // Wind-up: an axis that carries its own `setAcceleration` ramps at that
-  // number, and one that does not falls back to TURRET_ACCELERATION. Both
-  // driven at a saturating sample, so the only thing between rest and the
-  // declared `maxSpeed` is the wind-up itself. The acceleration is scaled by
-  // `speedScale` (4) in `step`, so the effective ramp rate is 4× — without it
-  // the cap (maxSpeed*4) is 4× further away but the ramp rate stays the game's
-  // value, and every turret takes 4× longer to answer a flick than it should.
-  function windUp(spec, seconds) {
-    const a = new TurretAxis('yaw', node('WindUp', {}), spec);
-    const ticks = Math.round(seconds * 60);
-    // Asking for far more travel than the axis can give, every tick, so the
-    // demanded rate is pinned at the cap and the wind-up is the only thing
-    // between rest and it.
-    for (let i = 0; i < ticks; i++) { a.feed(1e5); a.step(1 / 60); }
-    return a.velocity;
+  class FakeDrive {
+    constructor(root) { this.root = root; this.control = root.name; }
   }
-  // 140 deg/s (35 * speedScale) at 1400 deg/s^2 (350 * speedScale) is a tenth
-  // of a second to the cap — the game's own 0.1 s ratio, preserved.
-  const ownAccel = { free: true, maxSpeed: 35, direction: 1, acceleration: 350 };
-  // Same gun without the number: the fallback 90 * speedScale = 360 deg/s^2
-  // needs ~0.39 s to reach the 140 deg/s cap.
-  const fallbackAccel = { free: true, maxSpeed: 35, direction: 1 };
-  results.windUp = {
-    ownAtTenth: round(windUp(ownAccel, 0.1), 1),
-    fallbackAtTenth: round(windUp(fallbackAccel, 0.1), 1),
-    fallbackAtHalf: round(windUp(fallbackAccel, 0.5), 1),
-    maxSpeed: 35,
+  const tank = new VehicleOccupancy(sherman(), { GroundVehicle: FakeDrive });
+  tank.setActiveSeat(tank.rootId);
+  const driverInside = tank.showsTurretIcon(true);
+  const driverChase = tank.showsTurretIcon(false);
+  const driverDots = tank.seatDots();
+  tank.setActiveSeat(tank.seatIdAt(1));
+  const gunnerInside = tank.showsTurretIcon(true);
+  const gunnerDots = tank.seatDots();
+
+  const casemate = new VehicleOccupancy(wespe(), { GroundVehicle: FakeDrive });
+  casemate.setActiveSeat(casemate.rootId);
+
+  const apc = new VehicleOccupancy(hanomag(), { GroundVehicle: FakeDrive });
+  apc.setActiveSeat(apc.seatIdAt(2));
+
+  // A scene baked before `con.py` learned `setHasTurretIcon`: the field is
+  // simply absent, and absent must read as "no dial", not as "unknown, so
+  // show it anyway".
+  const stale = new VehicleOccupancy(defgun());
+  stale.setActiveSeat(stale.rootId);
+
+  results.turretIconTrigger = {
+    driverInside,
+    driverChase,
+    gunnerInside,
+    casemateInside: casemate.showsTurretIcon(true),
+    casemateHasAim: hasAimAxes(casemate.seatInfo(casemate.rootId)),
+    staleExtractInside: stale.showsTurretIcon(true),
+  };
+  results.seatDots = {
+    shermanFromTheDriversSeat: driverDots,
+    shermanFromTheGunnersSeat: gunnerDots,
+    hanomagFromTheThirdSeat: apc.seatDots(),
+    // Six leaves in the layout, six `VehiclePosX1..6` pairs in the engine.
+    hanomagSeatCount: apc.order.length,
+    // A seat with no position in its extract is VHUD-2's state 0 -- "draws
+    // nothing" -- not a live dot with a null position. The layout's own rects
+    // are that variable pair's authored placeholders, not seat positions.
+    defgunDots: stale.seatDots(),
+    // Half a re-extract: the root carries its position, the seat does not.
+    // The decision is per dot.
+    mixedFromTheRoot: (() => {
+      const mixed = new VehicleOccupancy(shermanWithOneUnplacedSeat());
+      mixed.setActiveSeat(mixed.rootId);
+      return mixed.seatDots();
+    })(),
+  };
+}
+
+// --- TurretAxis: the engine's velocity servo (GUN-2) -------------------------
+
+{
+  const DT = 1 / 60;
+  const px = degrees => degrees / TURRET_DEGREES_PER_PIXEL;
+  const scale = turretSpeedScale();
+
+  // The real numbers, read out of `Objects.rfa` this round:
+  //   ShermanTower        setMaxSpeed 35/25/0  setAcceleration 1000/0/0
+  //                       no setMinRotation / setMaxRotation  -> free
+  //   StationaryMG42Point setMaxSpeed 70/0/0   setAcceleration 5000/0/0
+  //                       setMinRotation -70/0/0  setMaxRotation 70/0/0
+  const SHERMAN_YAW = {
+    input: 'c_PIMouseLookX', free: true, min: null, max: null,
+    maxSpeed: 35, acceleration: 1000, direction: 1,
+  };
+  const MG42_YAW = {
+    input: 'c_PIMouseLookX', free: false, min: -70, max: 70,
+    maxSpeed: 70, acceleration: 5000, direction: 1,
   };
 
-  // A free (min==max) axis wraps through ±180 instead of clamping.
-  const freeAxis = new TurretAxis('yaw', node('FreeAxis', {}), { free: true, maxSpeed: 90, direction: 1 });
-  for (let i = 0; i < 400; i++) { freeAxis.feed(2000); freeAxis.step(1 / 60); }
-  const freeAngle = freeAxis.angle;
+  /** Hold a steady pointer rate for `seconds`, then let go for `coast`.
+   *  Travel is accumulated per tick and unwrapped so a free axis's ±360
+   *  correction does not truncate it. */
+  function drive(spec, pxPerFrame, seconds, coast = 0) {
+    const axis = new TurretAxis('yaw', node('Driven', {}), spec);
+    let travel = 0, prev = 0, held = 0;
+    const tick = () => {
+      axis.step(DT);
+      let d = axis.angle - prev;
+      if (d > 180) d -= 360; else if (d < -180) d += 360;
+      travel += Math.abs(d);
+      prev = axis.angle;
+    };
+    for (let i = 0; i < Math.round(seconds * 60); i++) { axis.feed(pxPerFrame); tick(); }
+    held = travel;
+    for (let i = 0; i < Math.round(coast * 60); i++) tick();
+    return { axis, travel, held, coast: travel - held };
+  }
 
-  results.turretAxis = {
-    belowDeadzone: round(belowDeadzone),
-    movedNonZero: Math.abs(movedAngle) > 1,
-    movedSameSignAsInput: Math.sign(movedAngle) === Math.sign(1.5),
-    trackedDegrees: tracked,
-    askedDegrees: 30,
-    bankedAfterAFlick,
-    pendingClamp: TURRET_PENDING_CLAMP,
-    clampedAtMax: round(clampedAngle) === 90,
-    freeStaysInWrapRange: freeAngle <= 180 && freeAngle >= -180,
+  // The servo's steady state: a saturating hand pins the input at the
+  // viewer's ±1 and the axis runs at `maxSpeed * TURRET_SPEED_SCALE`.
+  const shermanFlat = drive(SHERMAN_YAW, 400, 2.0);
+  // Half a second for the MG42: at 280 deg/s a full two would run it into the
+  // ±180 bound of this widened copy and measure the stop, not the rate.
+  const mg42Flat = drive({ ...MG42_YAW, min: -180, max: 180 }, 400, 0.5);
+
+  // The ramp: `speed` winds up at |acceleration|, scaled alongside the cap so
+  // the wind-up TIME is the game's own maxSpeed/acceleration ratio. An axis
+  // with no `setAcceleration` in its extract falls back.
+  function speedAfter(spec, seconds) {
+    const a = new TurretAxis('yaw', node('WindUp', {}), spec);
+    for (let i = 0; i < Math.round(seconds * 60); i++) { a.feed(1e5); a.step(DT); }
+    return a.speed;
+  }
+  const ownAccel = { free: true, maxSpeed: 35, direction: 1, acceleration: 350 };
+  const fallbackAccel = { free: true, maxSpeed: 35, direction: 1 };
+
+  // Release: the engine has no bank, so the only thing left after the hand
+  // stops is the velocity register ramping down. Compared against the same
+  // input in the tracking regime.
+  const flick = new TurretAxis('yaw', node('Flick', {}), SHERMAN_YAW);
+  flick.feed(px(10000));
+  flick.step(DT);
+  const flickTick = flick.angle;
+  let flickAfter = 0, prevF = flick.angle;
+  for (let i = 0; i < 60; i++) {
+    flick.step(DT);
+    flickAfter += Math.abs(flick.angle - prevF);
+    prevF = flick.angle;
+  }
+
+  // The clamp, in the engine's own order: `> max` first, `< min` second, on
+  // the authored components, with nothing zeroing the speed register.
+  const clamped = drive(MG42_YAW, 2000, 5.0);
+  const clampedAtMax = round(clamped.axis.angle, 4);
+  // ...and the reverse works straight off the stop: one second back at
+  // 280 deg/s would cover 280 degrees, so it runs into the far bound.
+  for (let i = 0; i < 60; i++) { clamped.axis.feed(-2000); clamped.axis.step(DT); }
+  const afterReverse = round(clamped.axis.angle, 2);
+
+  // The wrap gate is BOTH BOUNDS ZERO, not a zero-width range (GUN-2). A
+  // `min == max == 45` axis pins at 45; `con.py` now marks only the first
+  // free, and `_clip` is what acts on it.
+  const freeAxis = new TurretAxis('yaw', node('FreeAxis', {}),
+    { free: true, min: null, max: null, maxSpeed: 90, direction: 1 });
+  for (let i = 0; i < 400; i++) { freeAxis.feed(2000); freeAxis.step(DT); }
+  const pinned = new TurretAxis('yaw', node('Pinned', {}),
+    { free: false, min: 45, max: 45, maxSpeed: 90, direction: 1 });
+  for (let i = 0; i < 400; i++) { pinned.feed(2000); pinned.step(DT); }
+
+  // `continousRotationSpeed * dt`, added every tick in the non-automaticReset
+  // path whatever the input is doing (GUN-2). Fed nothing at all here, so the
+  // whole of the motion below is that term.
+  const windmill = new TurretAxis('yaw', node('Windmill', {}),
+    { free: true, min: null, max: null, maxSpeed: 110, acceleration: 10,
+      direction: 1, continuousRotation: 12 });
+  let windmillTravel = 0, prevW = 0;
+  for (let i = 0; i < 60; i++) {
+    windmill.step(DT);
+    let d = windmill.angle - prevW;
+    if (d > 180) d -= 360; else if (d < -180) d += 360;
+    windmillTravel += d;
+    prevW = windmill.angle;
+  }
+  // ...and it rides ON TOP of an input-driven traverse rather than replacing
+  // it: same axis, same second, with the hand held over.
+  const both = new TurretAxis('yaw', node('Both', {}),
+    { free: true, min: null, max: null, maxSpeed: 110, acceleration: 1e6,
+      direction: 1, continuousRotation: 12 });
+  let bothTravel = 0, prevB = 0;
+  for (let i = 0; i < 60; i++) {
+    both.feed(px(1));
+    both.step(DT);
+    let d = both.angle - prevB;
+    if (d > 180) d -= 360; else if (d < -180) d += 360;
+    bothTravel += d;
+    prevB = both.angle;
+  }
+
+  // `automaticReset`: the angle ramps STRAIGHT to `input * maxRotation` at
+  // |acceleration| deg/s (a rate, not an acceleration), with no velocity
+  // register and no continuous term -- and returns to zero at the same rate
+  // when the hand lets go. A steering wheel, in other words.
+  const wheel = new TurretAxis('yaw', node('Wheel', {}), {
+    input: 'c_PIMouseLookX', free: false, min: -60, max: 60,
+    maxSpeed: 100, acceleration: 120, direction: 1, automaticReset: true,
+  });
+  for (let i = 0; i < 60; i++) { wheel.feed(2000); wheel.step(DT); }
+  const wheelHeld = round(wheel.angle, 2);
+  const wheelSpeedRegister = wheel.speed;
+  for (let i = 0; i < 30; i++) wheel.step(DT);
+  const wheelHalfWayHome = round(wheel.angle, 2);
+  for (let i = 0; i < 60; i++) wheel.step(DT);
+  const wheelHome = round(wheel.angle, 2);
+  // One tick from rest moves exactly `|acceleration| * dt` degrees, which is
+  // what makes this a rate law rather than an acceleration one.
+  const wheelOne = new TurretAxis('yaw', node('WheelOne', {}), {
+    input: 'c_PIMouseLookX', free: false, min: -60, max: 60,
+    maxSpeed: 100, acceleration: 120, direction: 1, automaticReset: true,
+  });
+  wheelOne.feed(2000);
+  wheelOne.step(DT);
+
+  // HP-15: `RotationalBundle::handlePlayerInput` scales all three axes by 0.2
+  // while the vehicle is critically damaged. The servo sees the scaled input,
+  // so the steady rate is one fifth -- `map.html` passes the multiplier in.
+  const healthy = drive(SHERMAN_YAW, 400, 2.0);
+  const hurt = new TurretAxis('yaw', node('Hurt', {}), SHERMAN_YAW);
+  let hurtTravel = 0, prevH = 0;
+  for (let i = 0; i < 120; i++) {
+    hurtTravel += 0;
+    hurt.feed(400);
+    hurt.step(DT, 0.2);
+    let d = hurt.angle - prevH;
+    if (d > 180) d -= 360; else if (d < -180) d += 360;
+    hurtTravel += Math.abs(d);
+    prevH = hurt.angle;
+  }
+
+  // The same penalty at the RIG, the way `map.html` really drives it: the page
+  // sets `rig.inputScale` from the hull's live Armor and calls `step(dt)` with
+  // no argument. Two streams each added the 0.2 -- one on the pixels in
+  // `aim()`, one on the normalised input in `step()` -- and git merged both
+  // without a conflict. Scaled on the pixels, a saturating hand (400 px a
+  // frame against a 140 deg/s cap) loses nothing to the penalty at all; spent
+  // once in `step`, it is a fifth whatever the hand does. Built without a
+  // seat: the rig is only its axes and its scale here.
+  const rigTravel = (inputScale, px) => {
+    const rig = Object.create(TurretRig.prototype);
+    rig.axes = [new TurretAxis('yaw', node('RigYaw', {}), SHERMAN_YAW)];
+    rig.inputScale = inputScale;
+    let travel = 0, prev = 0;
+    for (let i = 0; i < 120; i++) {
+      rig.aim(px, 0);
+      rig.step(DT);
+      let d = rig.axes[0].angle - prev;
+      if (d > 180) d -= 360; else if (d < -180) d += 360;
+      travel += Math.abs(d);
+      prev = rig.axes[0].angle;
+    }
+    return travel;
+  };
+  const rigHealthyFast = rigTravel(1, 400);
+  const rigCriticalFast = rigTravel(0.2, 400);
+  const rigCriticalSlow = rigTravel(0.2, 10) / rigTravel(1, 10);
+  const rigWreck = rigTravel(0, 400);
+
+  results.turretServo = {
+    rigCriticalFastRatio: round(rigCriticalFast / rigHealthyFast, 3),
+    rigCriticalSlowRatio: round(rigCriticalSlow, 3),
+    rigWreckDegrees: round(rigWreck, 4),
+    speedScale: scale,
+    // 35 * 4 = 140 deg/s and 70 * 4 = 280 deg/s, held flat for 2 s minus the
+    // sliver spent ramping.
+    shermanDegPerSec: round(shermanFlat.travel / 2.0, 1),
+    shermanCap: 35 * scale,
+    mg42DegPerSec: round(mg42Flat.travel / 0.5, 1),
+    mg42Cap: 70 * scale,
+    ownAccelAtTenth: round(speedAfter(ownAccel, 0.1), 1),
+    fallbackAccelAtTenth: round(speedAfter(fallbackAccel, 0.1), 1),
+    fallbackAccelAtHalf: round(speedAfter(fallbackAccel, 0.5), 1),
+    fallbackAcceleration: TURRET_ACCELERATION,
+    // No bank: a one-frame flick turns the axis by one tick of servo, and
+    // what follows is only the register ramping down.
+    flickOneTickDegrees: round(flickTick, 3),
+    flickCoastDegrees: round(flickAfter, 2),
+    clampedAtMax,
+    declaredMax: MG42_YAW.max,
+    declaredMin: MG42_YAW.min,
+    afterReverse,
+    freeWrapped: freeAxis.angle <= 180 && freeAxis.angle >= -180,
+    zeroWidthRangePins: round(pinned.angle, 4),
+    continuousOnlyDegrees: round(windmillTravel, 2),
+    continuousPlusInputDegrees: round(bothTravel, 2),
+    wheelHeld,
+    wheelMaxRotation: 60,
+    wheelSpeedRegisterStaysZero: wheelSpeedRegister === 0,
+    wheelHalfWayHome,
+    wheelHome,
+    wheelOneTickDegrees: round(wheelOne.angle, 4),
+    wheelRatePerTick: round(120 * DT, 4),
+    healthyDegrees: round(healthy.travel, 2),
+    criticallyDamagedDegrees: round(hurtTravel, 2),
   };
 }
 
