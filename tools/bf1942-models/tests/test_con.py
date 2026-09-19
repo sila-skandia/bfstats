@@ -26,6 +26,7 @@ class ObjectLibraryTests(unittest.TestCase):
             "Objects/Vehicles/Land/Willy/Objects.con",
             """
 ObjectTemplate.create AnimatedBundle WillySteeringDummy
+ObjectTemplate.addTemplate WillySteering
 ObjectTemplate.addSkeletonIK Bip01_R_Hand 0.24/-0.1/-0.82 -80/60/50
 ObjectTemplate.addSkeletonIK Bip01_L_Hand -0.26/-0.1/-0.82 -80/-60/50
 ObjectTemplate.addSkeletonIK Bip01_Head not/a/number 0/0/0
@@ -38,12 +39,83 @@ ObjectTemplate.addSkeletonIK Bip01_Spine
         self.assertEqual(
             [
                 {"bone": "Bip01 R Hand", "position": (0.24, -0.1, -0.82),
-                 "rotation": (-80.0, 60.0, 50.0)},
+                 "rotation": (-80.0, 60.0, 50.0), "targetChild": 0},
                 {"bone": "Bip01 L Hand", "position": (-0.26, -0.1, -0.82),
-                 "rotation": (-80.0, -60.0, 50.0)},
+                 "rotation": (-80.0, -60.0, 50.0), "targetChild": 0},
             ],
             dummy.skeleton_ik_bones,
         )
+
+    def test_skeleton_ik_measures_from_the_child_added_most_recently(self) -> None:
+        # `addSkeletonIK` stores `getNoTemplates() - 1` (lnxded 0x8266d98,
+        # vptr+0x8c). The Willys' own file writes its two lines after
+        # `addTemplate WillySteering`, so the offsets are in the *wheel's*
+        # frame, not the dummy's -- which is the whole reason the hands follow
+        # the wheel as it turns. A line written before any child gets -1, the
+        # declaring node itself: `Attach_R_Hand` in Vehicles/Common.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Test/Objects.con",
+            """
+ObjectTemplate.create AnimatedBundle Attach_R_Hand
+ObjectTemplate.addSkeletonIK Bip01_R_Hand 0/0/0 0/0/0
+
+ObjectTemplate.create AnimatedBundle Console
+ObjectTemplate.addTemplate First
+ObjectTemplate.addSkeletonIK Bip01_R_Hand 1/0/0 0/0/0
+ObjectTemplate.addTemplate Second
+ObjectTemplate.addSkeletonIK Bip01_L_Hand 2/0/0 0/0/0
+""",
+        )
+        self.assertEqual(
+            [-1], [ik["targetChild"]
+                   for ik in library.object("Attach_R_Hand").skeleton_ik_bones])
+        self.assertEqual(
+            [0, 1], [ik["targetChild"]
+                     for ik in library.object("Console").skeleton_ik_bones])
+
+    def test_a_second_line_for_one_bone_replaces_the_first_in_place(self) -> None:
+        # 0x8266d70 scans the vector by bone-name id and overwrites at
+        # 0x8266e1a rather than appending -- one entry per bone per template.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Test/Objects.con",
+            """
+ObjectTemplate.create AnimatedBundle Twice
+ObjectTemplate.addSkeletonIK Bip01_R_Hand 1/0/0 0/0/0
+ObjectTemplate.addSkeletonIK Bip01_L_Hand 9/9/9 0/0/0
+ObjectTemplate.addSkeletonIK Bip01_R_Hand 2/0/0 10/0/0
+""",
+        )
+        entries = library.object("Twice").skeleton_ik_bones
+        self.assertEqual(["Bip01 R Hand", "Bip01 L Hand"],
+                         [ik["bone"] for ik in entries])
+        self.assertEqual((2.0, 0.0, 0.0), entries[0]["position"])
+        self.assertEqual((10.0, 0.0, 0.0), entries[0]["rotation"])
+
+    def test_a_repeat_declaration_keeps_the_first_target_child(self) -> None:
+        # The overwrite branch (0x8266e1a) writes only `slot+0x0c` (the Vec3)
+        # and `slot+0x18` (the Mat4). It never reaches the `getNoTemplates()`
+        # call at 0x8266d98, so `slot+0x04` keeps whatever the *first*
+        # declaration measured from -- even though children were added in
+        # between. FHSW's `Hotchkiss` is the real case: the same two lines
+        # appear before any child and again after two.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Test/Objects.con",
+            """
+ObjectTemplate.create AnimatedBundle Hotchkiss
+ObjectTemplate.addSkeletonIK Bip01_R_Hand 0.04/-0.03/-0.47 0/80/90
+ObjectTemplate.addTemplate e_MuzzHeavyLight
+ObjectTemplate.setPosition 0/0.14/0.87
+ObjectTemplate.addTemplate e_shell792mm
+ObjectTemplate.setPosition 0.07/0.12/0.27
+ObjectTemplate.addSkeletonIK Bip01_R_Hand 0.04/-0.03/-0.47 0/80/90
+""",
+        )
+        entries = library.object("Hotchkiss").skeleton_ik_bones
+        self.assertEqual(1, len(entries))
+        self.assertEqual(-1, entries[0]["targetChild"])
 
     def test_argumentless_command_does_not_consume_geometry_declaration(self) -> None:
         library = ObjectLibrary()

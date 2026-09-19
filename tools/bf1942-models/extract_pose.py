@@ -5,14 +5,18 @@
     python3 extract_pose.py --matrix
     python3 extract_pose.py --matrix --export --out ./viewer/models
 
-    --seat-poses extracts every passenger-seat pose the mod ships, one
-    `<Soldier>__<PoseName>.pose.glb` per soldier per seat (e.g.
-    `USSoldier__PassengerInWilly.pose.glb`), resolving the upper/lower state
-    names off `extras.seat.poseAnimation` through the animation state machine.
-    The viewer's `map.html` loads them straight onto a seat's EntryPoint when
-    that seat is occupied, so pressing E into a Willy's passenger door shows the
-    soldier posed by `Ub_PassengerInWilly`/`Lb_PassengerInWilly` instead of an
-    empty seat. `--soldiers` restricts the rows (default: every BfSoldier).
+    --seat-poses extracts every seat pose the mod ships, one
+    `<Soldier>__<PoseName>.pose.glb` per soldier per pose (e.g.
+    `USSoldier__PassengerInWilly.pose.glb`, `USSoldier__SitInVehicle.pose.glb`),
+    resolving each SeatObject's upper/lower state names the way
+    `BFSoldier::setUseSeat` does — the seat's own `seatAnimationUpperBody` /
+    `LowerBody` where it declares them, the soldier template's
+    `Ub_SitInVehicle` / `Lb_SitInVehicle` / `Lb_StandInVehicle` where it does
+    not. The viewer's `map.html` loads them onto a seat when it is occupied, so
+    pressing E into a Willy's passenger door shows the soldier posed by
+    `Ub_PassengerInWilly`/`Lb_PassengerInWilly`, and into its *driver's* door
+    the `SitInVehicle` pair, instead of an empty seat. `--soldiers` restricts
+    the rows (default: every BfSoldier).
 
 Positional arguments are soldier/weapon pairs. Each pair comes out as
 `<Soldier>__<Weapon>.pose.glb`: the soldier's body, head and hands skinned to
@@ -944,6 +948,45 @@ def resolve_seat_pose(machine: animstates.StateMachine, meshes: ArchivePool,
     return locals_map, lower_ref.path, upper_ref.path
 
 
+def seat_anchored(skeleton: ske_mod.Skeleton,
+                  locals_by_name: dict[str, tuple],
+                  ) -> dict[str, tuple]:
+    """Move a seat pose's origin from the soldier's feet onto his hips.
+
+    A `.baf` root track is the one transform expressed in the clip's own world
+    (`baf.ROOT_ALIGN`'s note), and for a seat clip it carries the *standing*
+    soldier's origin-at-the-feet convention: `3PWillySitLower` writes
+    `Bip01` at `0/-0.1104/-0.8335`, 0.83 m from the hips, which is the same
+    0.9992 m `3PStandLower` writes for a man standing on the ground.
+
+    A `SeatObject` is the sit position — `WillySeat` sits 0.6 m up inside the
+    Willys' body, where the cushion is, not 0.83 m under it — so a pose
+    parented there has to have its hips at its origin, or the whole soldier
+    rides that far out of the vehicle and his arms cannot reach anything. The
+    root's rotation is kept; only the translation goes, and the offset it
+    carried is recorded in the report so nothing is silently lost.
+    """
+    out = dict(locals_by_name)
+    for bone in skeleton.bones:
+        if bone.parent >= 0:
+            continue
+        key = ske_mod.canonical(bone.name)
+        if key in out:
+            out[key] = (out[key][0], (0.0, 0.0, 0.0))
+    return out
+
+
+def seat_root_offset(skeleton: ske_mod.Skeleton,
+                     locals_by_name: dict[str, tuple]) -> list[float] | None:
+    """The translation `seat_anchored` drops, for the report."""
+    for bone in skeleton.bones:
+        if bone.parent < 0:
+            key = ske_mod.canonical(bone.name)
+            if key in locals_by_name:
+                return [round(v, 5) for v in locals_by_name[key][1]]
+    return None
+
+
 def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
                      machine, meshes, textures, objects, library, frame: int,
                      max_texture: int, out: Path | None,
@@ -957,9 +1000,9 @@ def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
     the root node's static transform is the frame-0 pose for viewers that ignore
     clips.
 
-    The filename strips the `Ub_` prefix: `Ub_PassengerInWilly` ->
-    `USSoldier__PassengerInWilly.pose.glb`, matching what `map.html` looks up from
-    `extras.seat.poseAnimation.upperBody`.
+    The filename comes from `seat_pose_name`: `Ub_PassengerInWilly` +
+    `Lb_PassengerInWilly` -> `USSoldier__PassengerInWilly.pose.glb`, matching
+    what `map.html` derives from `extras.seat` through the same rule.
     """
     result: dict = {"soldier": soldier, "upperState": upper_state,
                     "lowerState": lower_state}
@@ -974,7 +1017,9 @@ def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
 
     locals_map, lower_path, upper_path = resolve_seat_pose(
         machine, meshes, upper_state, lower_state, frame)
-    locals_map = pose_mod.align_clip_roots(skeleton, locals_map)
+    aligned = pose_mod.align_clip_roots(skeleton, locals_map)
+    result["rootOffsetDropped"] = seat_root_offset(skeleton, aligned)
+    locals_map = seat_anchored(skeleton, aligned)
     result["lowerClip"] = lower_path
     result["upperClip"] = upper_path
 
@@ -1017,13 +1062,22 @@ def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
         if node is not None:
             skinned_roots.append(node)
 
-    # Bind-pose soldier meshes stand along +Z (Refractor forward). Stance poses
-    # pitch -90 on X so the soldier faces the side-on camera; a seat pose stands
-    # the soldier upright facing the vehicle's own forward, which glTF reads as
-    # -Z — a 180-degree yaw, not a coordinate-system pitch.
+    # The rotation that stands a seat pose up and faces it down the vehicle.
+    #
+    # **Chosen by measurement in the map page, not derived.** This was
+    # `ypr(180, 0, 0)`, which lays the soldier on his back with his knees in
+    # the air — every seat pose, passengers included, from the day the seat
+    # path was written; the comment it replaces reasoned about the *stance*
+    # export's bind space, which is a different one (that export pitches the
+    # other way and does not parent its skinned meshes under the root at all).
+    # With the value below, loaded on Wake, the driver's pelvis sits 0.03 m
+    # from `WillySeat`, his head 0.641 m above it, his knees 0.467 m forward
+    # and his feet 0.224 m below the pelvis — and both hands solve onto the
+    # wheel with zero error. See `SeatPoseOrientationTests` for why it is
+    # pinned rather than computed.
     root = builder.add_node(gltf.Node(
         name=f"{soldier} in {upper_state}",
-        rotation=gltf.quat_from_ypr(180.0, 0.0, 0.0),
+        rotation=gltf.quat_from_ypr(180.0, -90.0, 0.0),
         children=root_children,
         extras={"soldier": soldier, "upperState": upper_state,
                 "lowerState": lower_state, "poseKind": "seat"},
@@ -1046,6 +1100,10 @@ def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
         if clip is None or ref is None:
             continue
         frames, period = clip_timeline(clip, ref.speed, skeleton)
+        # The same re-anchoring the static hierarchy got, every frame: a mixer
+        # writes the clip's own root translation back over the node's and
+        # would put the soldier's feet on the seat again.
+        frames = [seat_anchored(skeleton, f) for f in frames]
         tracks = timeline_tracks(frames, period, joint_nodes)
         if tracks:
             builder.add_animation(label, tracks)
@@ -1054,7 +1112,7 @@ def export_seat_pose(soldier: str, upper_state: str, lower_state: str, *,
     result["texturesMissing"] = sorted(set(report.missing_textures))
 
     out.mkdir(parents=True, exist_ok=True)
-    pose_name = upper_state[len("Ub_"):] if upper_state.startswith("Ub_") else upper_state
+    pose_name = seat_pose_name(upper_state, lower_state)
     target = out / f"{soldier}__{pose_name}.pose.glb"
     extras = {key: value for key, value in result.items()
               if key not in ("metrics", "stances")}
@@ -1380,54 +1438,155 @@ def main() -> int:
     return 1 if failures else 0
 
 
-def discover_seat_poses(library: con_mod.ObjectLibrary
-                        ) -> list[tuple[str, str]]:
-    """Every (upperState, lowerState) pair a SeatObject declares, in use order.
+# The engine's own seat poses, for the seats that name none. `BFSoldierTemplate
+# ::init` resolves all three by name (lnxded `0x0827acaf`/`0x0827acff`/
+# `0x0827ad4f`, stored at template +0x294/+0x298/+0x29c) and
+# `BFSoldier::setUseSeat` (`0x08271950`) spends them like this:
+#
+#   upper body := the seat's own `seatAnimationUpperBody`, else `Ub_SitInVehicle`
+#   lower body := the seat's own `seatAnimationLowerBody`,
+#                 else `Lb_StandInVehicle` when the seat is
+#                      `c_SeatShowStandingSoldier`,
+#                 else `Lb_SitInVehicle`
+#
+# Every driver's seat in the game takes the default pair: `WillySeat`,
+# `KubelwagenSeat`, `ShermanBrowningSeat` and 50 others declare `seatFlags` and
+# no animation at all, which is why the driver has never had a glb to load.
+# These are exported under the same `<Soldier>__<Pose>.pose.glb` naming as a
+# declared seat pose, so the viewer's lookup path is one path, not two.
+DEFAULT_SEAT_POSES: tuple[tuple[str, str], ...] = (
+    ("Ub_SitInVehicle", "Lb_SitInVehicle"),
+    ("Ub_SitInVehicle", "Lb_StandInVehicle"),
+)
 
-    Scans all `SeatObject` templates for `seatAnimationUpperBody` strings. When
-    a seat declares only the upper string and leaves lower empty, the engine
-    falls back to `Lb_Stand` (SEAT-9), so we pair it with that. When a mod pairs
-    a non-matching lower (e.g. Black Medal's `Ub_PassengerInWilly` +
-    `Lb_PassengerInHanomag`) the matching pair from the same-named seat in
-    another mod is preferred; only when no match exists is the non-matching pair
-    kept, since the game's own state machine still plays it. The viewer keys off
-    the upper state's suffix (`Ub_PassengerInWilly` -> `PassengerInWilly`).
+
+LOWER_PREFIX = "Lb_"
+STANDING_FLAG = "c_seatshowstandingsoldier"
+
+
+def resolve_seat_states(template: con_mod.ObjectTemplate,
+                        machine: animstates.StateMachine | None = None,
+                        ) -> tuple[str, str]:
+    """The (upper, lower) animation states one SeatObject actually plays.
+
+    `BFSoldier::setUseSeat` (lnxded `0x08271950`) in full. The seat's own two
+    strings win where it declares them; where it does not, the soldier
+    template's three defaults do, and which lower default depends on one flag.
+    This is not `Lb_Stand`: no path in `setUseSeat` reaches a standing-on-the-
+    ground state, and the two branches that pick a default read template
+    +0x294 (`Lb_SitInVehicle`) and +0x29c (`Lb_StandInVehicle`), resolved by
+    name in `BFSoldierTemplate::init` at `0x0827acaf` and `0x0827ad4f`.
+
+    **A name the state machine does not have falls back to the same default.**
+    A seat may name a state the game never shipped: Road to Rome's two
+    `M3GMCPassengerSeat`s ask for `Ub_PassengerInM3GMC`/`Lb_PassengerInM3GMC`,
+    which no `AnimationStates` file in any mod declares — the mod's own
+    `AnimationStatesMod.con` is read (vanilla's `AnimationStates.con` ends with
+    `run AnimationStatesMod`, and it contributes XPack1's 178 other states), it
+    simply never defines these two. The engine's own answer is to leave the
+    slot alone: `setAnimationState` (`0x0826cee0`) calls `findState`
+    (`0x08328610`), gets -1 and returns at `0x0826cf12` without writing, so an
+    M3GMC passenger keeps whatever he was playing. We cannot export "whatever
+    he was playing", and exporting nothing would draw an empty seat that the
+    game fills, so each half that cannot resolve drops to the engine default
+    for that half. The substitution is not silent: `discover_seat_poses`
+    reports it and `seat-poses.json` records it.
     """
-    all_pairs: list[tuple[str, str, bool]] = []
-    by_upper: dict[str, list[tuple[str, bool]]] = {}
+    def known(name: str | None) -> bool:
+        return bool(name) and (machine is None or machine.state(name) is not None)
+
+    upper = template.seat_animation_upper_body
+    if not known(upper):
+        upper = "Ub_SitInVehicle"
+    lower = template.seat_animation_lower_body
+    if not known(lower):
+        standing = any(f.strip().lower() == STANDING_FLAG
+                       for f in template.seat_flags)
+        lower = "Lb_StandInVehicle" if standing else "Lb_SitInVehicle"
+    return upper, lower
+
+
+def seat_pose_name(upper: str, lower: str) -> str:
+    """The asset name for one resolved pair, and the viewer's lookup key.
+
+    The upper half names it, as it always has (`Ub_PassengerInWilly` ->
+    `PassengerInWilly`), because in vanilla every seat that declares an upper
+    declares the matching lower. A pair whose halves disagree — a Kettenkrad
+    driver sitting in the Hanomag's legs, or the engine's own default upper
+    over `Lb_StandInVehicle` — carries both, so two genuinely different poses
+    cannot land on one file. `Lb_Stand` is treated as no lower at all, which
+    is how a mod that declares only the upper half used to be named.
+    """
+    upper_suffix = upper[len(UPPER_PREFIX):] if upper.startswith(UPPER_PREFIX) else upper
+    lower_suffix = lower[len(LOWER_PREFIX):] if lower.startswith(LOWER_PREFIX) else lower
+    if lower_suffix in (upper_suffix, "Stand"):
+        return upper_suffix
+    return f"{upper_suffix}-{lower_suffix}"
+
+
+def discover_seat_poses(library: con_mod.ObjectLibrary,
+                        machine: animstates.StateMachine | None = None,
+                        ) -> list[tuple[str, str]]:
+    """Every (upperState, lowerState) pair the mod's seats resolve to.
+
+    One entry per distinct pair, in declaration order, each run through
+    `resolve_seat_states` — so a seat that declares nothing at all (every
+    driver's seat in vanilla: `WillySeat`, `KubelwagenSeat`, 50 more) yields
+    the engine's own `Ub_SitInVehicle`/`Lb_SitInVehicle`, which is the pose
+    that was missing and the reason a driver was never drawn.
+
+    A mod that pairs halves from two different seats (Black Medal's
+    `Ub_PassengerInWilly` with `Lb_PassengerInHanomag`) keeps that pair rather
+    than being corrected towards a matching one: it is what the game plays,
+    and `seat_pose_name` now gives it a file of its own instead of colliding
+    with the Willys'.
+
+    Pass `machine` and a seat naming a state the game never declared drops to
+    the engine's default for that half instead of producing a pose name that
+    can only fail; the substitutions come back in `seat_substitutions`.
+    """
+    seen: list[tuple[str, str]] = []
     for template in library.objects.values():
         if template.kind.lower() != "seatobject":
             continue
-        upper = template.seat_animation_upper_body
-        if not upper:
-            continue
-        lower = template.seat_animation_lower_body or "Lb_Stand"
-        suffix = upper[len(UPPER_PREFIX):] if upper.startswith(UPPER_PREFIX) else upper
-        lower_suffix = lower[len("Lb_"):] if lower.startswith("Lb_") else lower
-        matched = suffix == lower_suffix
-        pair = (upper, lower)
-        if pair not in all_pairs:
-            all_pairs.append((upper, lower, matched))
-        by_upper.setdefault(upper, []).append((lower, matched))
-    # Prefer a matching upper/lower pair per upper state; fall back to the first
-    # non-matching one when no match exists.
-    seen: list[tuple[str, str]] = []
-    for upper, lower, matched in all_pairs:
-        if any(u == upper for u, _ in seen):
-            continue
-        candidates = by_upper[upper]
-        match = next((c[0] for c in candidates if c[1]), None)
-        seen.append((upper, match if match else lower))
+        pair = resolve_seat_states(template, machine)
+        if pair not in seen:
+            seen.append(pair)
     return seen
+
+
+def seat_substitutions(library: con_mod.ObjectLibrary,
+                       machine: animstates.StateMachine,
+                       ) -> list[tuple[str, str, str]]:
+    """(seat, declared state, state used instead) for every name the game lacks.
+
+    Worth printing rather than swallowing: a seat asking for a state no mod
+    declares is a bug in that mod's content, and the reader should be told
+    which pose the occupant is wearing in its place.
+    """
+    out: list[tuple[str, str, str]] = []
+    for template in library.objects.values():
+        if template.kind.lower() != "seatobject":
+            continue
+        upper, lower = resolve_seat_states(template, machine)
+        for declared, used in ((template.seat_animation_upper_body, upper),
+                               (template.seat_animation_lower_body, lower)):
+            if declared and machine.state(declared) is None:
+                out.append((template.name, declared, used))
+    return out
 
 
 def extract_seat_poses(machine, meshes, textures, objects, library,
                        args) -> int:
     """Export one seat-pose glb per soldier per discovered pose name."""
-    poses = discover_seat_poses(library)
+    poses = discover_seat_poses(library, machine)
     if not poses:
         print("no seat poses found in this mod", file=sys.stderr)
         return 0
+    substitutions = seat_substitutions(library, machine)
+    for seat, declared, used in substitutions:
+        print(f"{seat}: no {declared} in the state machine; using {used}",
+              file=sys.stderr)
     soldiers = soldier_templates(library)
     if args.soldiers is not None:
         keep = {s.lower() for s in args.soldiers}
@@ -1436,7 +1595,7 @@ def extract_seat_poses(machine, meshes, textures, objects, library,
     failures = 0
     manifest = []
     for upper, lower in poses:
-        pose_name = upper[len(UPPER_PREFIX):] if upper.startswith(UPPER_PREFIX) else upper
+        pose_name = seat_pose_name(upper, lower)
         for soldier in soldiers:
             try:
                 result = export_seat_pose(
@@ -1457,8 +1616,10 @@ def extract_seat_poses(machine, meshes, textures, objects, library,
             except PoseError as exc:
                 failures += 1
                 print(f"{soldier} / {pose_name}: {exc}", file=sys.stderr)
-    (args.out / "seat-poses.json").write_text(
-        json.dumps({"poses": manifest}, indent=2))
+    (args.out / "seat-poses.json").write_text(json.dumps(
+        {"poses": manifest,
+         "substitutions": [{"seat": s, "declared": d, "used": u}
+                           for s, d, u in substitutions]}, indent=2))
     total = len(soldiers) * len(poses)
     ok = total - failures
     print(f"\n{ok}/{total} seat poses resolved; "
