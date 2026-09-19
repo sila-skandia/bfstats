@@ -73,6 +73,24 @@ const COULOMB_BREAKAWAY = 2.25;
 const COULOMB_GRAVITY = 9.82;
 
 /**
+ * Above this speed the parking hold below has faded to nothing, and the
+ * fitted coast model has the wheel to itself. Purely the viewer's, and a
+ * fade rather than a step so there is no discontinuity to drive through.
+ * [free, numerics]
+ */
+const PARKING_HOLD_SPEED = 3.0;
+
+/**
+ * The engine's simulation tick, `0x08716b5c`. It appears twice in the
+ * friction solver: once dividing the budget into a per-tick velocity step,
+ * and once multiplying the wanted velocity change back into an acceleration
+ * (`addFrictionAtAbsolutePosition(F * 30)`). So a grip mode that asks for a
+ * velocity change of `dV` is asking for `dV * 30` m/s^2, and the Coulomb
+ * clamp is what decides how much of that the ground can actually answer.
+ */
+const ENGINE_TICK_HZ = 30;
+
+/**
  * `MaterialManager.materialFriction` for a contact surface the level does not
  * name. An id the define file never mentions falls back to material 0, which
  * vanilla authors at 1.0, and that is also the `Material` constructor's own
@@ -126,6 +144,61 @@ function coulombCaps(friction, load) {
  * @returns {{scale: number, latched: boolean}} the factor to apply to both
  *   components of the demand, and the latch state for the next tick
  */
+// --- the spring, PHY-5 -------------------------------------------------------
+//
+// `PhysicsSpring::updatePhysics(float dt)` lnxded `0x0824ddd0` / client
+// `0x0057f0d0`:
+//
+//   anchor = parentPos + rot(parentTransform) * offset
+//   D      = anchor - wheel.getAbsolutePosition()
+//   accel  = -( strength * g * (-1/9.82) * D  +  damping * (D - D_prev) / dt )
+//   root->addAccelerationAtRelativePosition(anchor - rootPos, accel)
+//
+// Two things in that are worth having and one is worth not pretending to.
+//
+// WORTH HAVING. `g * (-1/9.82)` makes the sag gravity-invariant, and at the
+// shipped `g = -14.73` it is exactly **1.5** — so every spring in the game
+// acts at one and a half times the `setStrength` its `.con` file reads.
+// `bf42/con.py` deliberately exports the authored number and leaves the law
+// to the runtime; this file is that runtime. And `D_prev` is a **one-tick
+// backward difference of the displacement**, not a node velocity, so the
+// damper answers how fast the spring is being compressed rather than how fast
+// its mounting point happens to be moving through the world.
+//
+// ALSO WORTH HAVING: the axis. `SpringTemplate`'s constructor writes
+// `axisFixation = (0, 1, 0)` at `+0x15c` (`0x0824fc50` loads 1.0f into ecx,
+// `0x0824fc89`/`0x0824fc92`/`0x0824fc95` store 0/1/0), `setAxisFixation` is
+// the only thing that could change it, and **no `.con` in any of the 18
+// installed mods authors it** — surveyed, zero hits, `setPositionalFixation`
+// likewise. So every spring everywhere runs on the object's own +Y, which is
+// the HULL's up and leans with it, never the world's. (The ctor's other
+// defaults, for the record: strength `+0x16c` 1.0, damping `+0x168` 0.5.)
+//
+// WORTH NOT PRETENDING TO: **there is no ray.** A wheel is a collision body
+// and its contacts come from its own mesh vertices through
+// `ResponsePhysics::checkVsTerrain` `0x0825a960`; the binary's only
+// line-versus-triangle routine has two callers and both are AI pathfinding.
+// What follows below is a probe down the spring axis against a height
+// function, which is what this viewer can afford — an approximation OF a
+// vertex-contact solver, not a reconstruction of one. Nobody should go
+// looking for "the engine's ray" on the strength of it.
+const SPRING_AXIS_Y = 1.0;
+
+/**
+ * `strength * g * (-1/9.82)`: 1.5 at the shipped gravity, and derived from
+ * `GRAVITY` rather than written as 1.5 so it stays gravity-invariant exactly
+ * the way the engine's own expression does.
+ */
+const SPRING_GRAVITY_SCALE = GRAVITY * (-1 / 9.82);
+
+/**
+ * Below this much of the spring axis pointing at the ground, the probe below
+ * is asked to divide by nearly nothing and its Newton step runs away. A hull
+ * that far over is not driving anyway, so it falls back to a vertical drop.
+ * Numerics, not engine. [free]
+ */
+const SPRING_AXIS_FLOOR = 0.2;
+
 function coulombClamp(demand, caps, latched) {
   if (latched) {
     if (demand > caps.breakaway && demand > 1e-9) {
@@ -309,7 +382,40 @@ class Wheel {
     /** The material coefficient this wheel last found under itself, kept for
      * the harness to read. `0.5 * (wheel + ground)`, PHY-2. */
     this.friction = DEFAULT_MATERIAL_FRICTION;
+    /** `D_prev`: last tick's compression along the spring axis, so the damper
+     * is the engine's one-tick backward difference of the displacement
+     * (PHY-5) rather than the attach point's world-vertical velocity. `null`
+     * means the wheel was not in contact last tick — the engine never needs
+     * that case because its wheel is a body whose displacement is continuous,
+     * while a probe's compression jumps from nothing to its full depth in one
+     * step and a backward difference reads that as tens of metres a second.
+     * The first contact tick therefore damps nothing. [free, numerics] */
+    this.prevCompression = null;
   }
+}
+
+/**
+ * How far it is from `attach` to the ground **down the spring axis**, rather
+ * than straight down the world's Y. The two differ by `1/cos(lean)`, so a
+ * hull at 20 degrees was reading its wheels 6 % too shallow before.
+ *
+ * One Newton step off the vertical estimate is enough: the heightfield is a
+ * 4 m lattice and the correction is second order in the lean.
+ *
+ * @returns {number} metres along the axis, or Infinity where there is no
+ *   ground under it at all
+ */
+function probeAlongAxis(groundHeight, attach, axisWorld) {
+  const floor = groundHeight(attach.x, attach.z);
+  if (!Number.isFinite(floor)) return Infinity;
+  const drop = attach.y - floor;
+  if (axisWorld.y <= SPRING_AXIS_FLOOR) return drop;
+  let t = drop / axisWorld.y;
+  const px = attach.x - axisWorld.x * t;
+  const pz = attach.z - axisWorld.z * t;
+  const under = groundHeight(px, pz);
+  if (!Number.isFinite(under)) return t;
+  return t + (attach.y - axisWorld.y * t - under) / axisWorld.y;
 }
 
 /** A land vehicle: a `Vehicle` plus the drive model that moves it. */
@@ -381,8 +487,6 @@ export class GroundVehicle extends Vehicle {
     this._q = new THREE.Quaternion();
     this._qInv = new THREE.Quaternion();
     this._vBody = new THREE.Vector3();
-    this._wWorld = new THREE.Vector3();
-    this._rWorld = new THREE.Vector3();
     this._attach = new THREE.Vector3();
     this._dir = new THREE.Vector3();
     this._lat = new THREE.Vector3();
@@ -393,6 +497,7 @@ export class GroundVehicle extends Vehicle {
     this._susp = new THREE.Vector3();
     this._fTyre = new THREE.Vector3();
     this._arm = new THREE.Vector3();
+    this._axis = new THREE.Vector3();
     this._euler = new THREE.Euler();
   }
 
@@ -530,7 +635,6 @@ export class GroundVehicle extends Vehicle {
     const qInv = this._qInv.copy(q).invert();
     const vBody = this._vBody.copy(s.velocity).applyQuaternion(qInv);
     const w = s.angularVelocity;              // body rates, like Aircraft's
-    const wWorld = this._wWorld.copy(w).applyQuaternion(q);
     /** Forward road speed, signed: positive is travelling nose-first. */
     const vf = -vBody.z;
 
@@ -594,19 +698,20 @@ export class GroundVehicle extends Vehicle {
     const speed = s.velocity.length();
     const authority = Math.min(1, speed / 2);
 
+    // The spring axis, world frame. `(0, 1, 0)` in the HULL's frame — the
+    // constructor's own `axisFixation`, which nothing authors over (PHY-5) —
+    // so it leans with the body instead of standing world-vertical.
+    const axisWorld = this._axis.set(0, SPRING_AXIS_Y, 0).applyQuaternion(q);
+
     for (const wheel of this.wheels) {
-      // Where the axle is, and how fast it is moving vertically. The spring
-      // ray is world-vertical — PROVISIONAL; correct on the flats this jeep
-      // lives on, increasingly wrong past 20 degrees of body lean.
+      // Where the axle is, and how far the ground is DOWN THE SPRING AXIS.
       const attach = this._attach.copy(wheel.rest).applyQuaternion(q).add(s.position);
-      const floor = this.groundHeight(attach.x, attach.z);
-      const rWorld = this._rWorld.copy(wheel.rest).applyQuaternion(q);
-      const compression = Number.isFinite(floor)
-        ? (floor + k.wheelRadius) - attach.y
-        : -Infinity;
+      const reach = probeAlongAxis(this.groundHeight, attach, axisWorld);
+      const compression = Number.isFinite(reach) ? k.wheelRadius - reach : -Infinity;
       if (compression <= 0) {
         wheel.compression = 0;
         wheel.load = 0;
+        wheel.prevCompression = null;
         // No contact this tick clears the static latch (`0x0825b76b`).
         wheel.staticGrip = false;
         // An airborne driven wheel spins against nothing — at the surface
@@ -619,14 +724,20 @@ export class GroundVehicle extends Vehicle {
         continue;
       }
 
-      // Suspension: spring on travel, damper on the attach point's vertical
-      // rate, bump stop past the travel. All per mass, straight off
+      // Suspension, PHY-5: spring on travel at 1.5x the authored strength,
+      // damper on the one-tick backward difference of the displacement, bump
+      // stop past the travel. All per mass, straight off
       // `setStrength`/`setDamping` — see the spec table for the units case.
+      // Still an approximation in shape: `travel`, `bumpStiffness` and the
+      // probe itself are the viewer's, only the force law is read.
       const travel = Math.min(compression, k.suspensionTravel);
       const overrun = compression - travel;
-      const attachRate = s.velocity.y + (wWorld.z * rWorld.x - wWorld.x * rWorld.z);
-      let load = wheel.strength * (travel + overrun * k.bumpStiffness)
-        - wheel.damping * attachRate;
+      const rate = wheel.prevCompression === null
+        ? 0 : (compression - wheel.prevCompression) / h;
+      let load = SPRING_GRAVITY_SCALE * wheel.strength
+        * (travel + overrun * k.bumpStiffness)
+        + wheel.damping * rate;
+      wheel.prevCompression = compression;
       if (load < 0) load = 0;
       wheel.compression = compression;
       wheel.load = load;
@@ -669,6 +780,30 @@ export class GroundVehicle extends Vehicle {
       if (braking > 0) fLong -= moving * k.brakeDecel * braking * gShare;
       if (drive === 0 && braking === 0 && wheel.driven) {
         fLong -= moving * k.engineBraking / drivenCount;
+        // A PARKING HOLD, and it is the engine's own law rather than a new
+        // invention: EngineGrip's wanted velocity change is `dV = T - Vt`
+        // (collision-response.md section 8), and at a closed throttle `T` is
+        // zero, so a driven wheel asks for the whole of its contact velocity
+        // back, at `dV * 30`. The Coulomb clamp below caps it.
+        //
+        // The engine asks for that at EVERY speed, and it is a firm brake:
+        // applied unconditionally it takes this jeep from 12.8 m/s to 1.0 in
+        // three seconds off the pedal. That may well be right — BF1942
+        // vehicles do stop quickly — but the rest of this file's coast is
+        // built on a much gentler invented law (`engineBraking`,
+        // `rollingResistance`) that was fitted against the old behaviour, and
+        // swapping the two wholesale is a different job from item 16's. So it
+        // is faded out by `PARKING_HOLD_SPEED` and only really does the one
+        // thing the fitted model cannot: hold a stopped vehicle still.
+        //
+        // That became necessary with PHY-5. A hull sitting on its own static
+        // rake now has a forward component of suspension force, exactly as
+        // the engine's would, because the spring axis leans with the body
+        // instead of standing world-vertical — and nothing fitted was strong
+        // enough to resist it. A parked jeep crept at 0.1 m/s and a parked
+        // M3A1 rolled away at 2.2.
+        const hold = Math.max(0, 1 - Math.abs(uLong) / PARKING_HOLD_SPEED);
+        fLong -= uLong * ENGINE_TICK_HZ * hold / drivenCount;
       }
 
       // The friction circle, now with the engine's own coefficient and its
@@ -686,9 +821,12 @@ export class GroundVehicle extends Vehicle {
         fLat *= grip.scale;
       }
 
-      // Suspension pushes along world up; the tyre works in the body's
-      // ground plane at the contact patch, a wheel radius below the axle.
-      const suspension = this._susp.set(0, load, 0).applyQuaternion(qInv);
+      // Suspension pushes along the SPRING AXIS, which is the hull's own up
+      // (PHY-5) — so in the body frame it is simply (0, load, 0), with no
+      // rotation at all, and it leans with the vehicle instead of staying
+      // world-vertical. The tyre works in the body's ground plane at the
+      // contact patch, a wheel radius below the axle.
+      const suspension = this._susp.set(0, load, 0);
       force.add(suspension);
       force.addScaledVector(dir, fLong);
       force.addScaledVector(lat, fLat);
@@ -811,6 +949,8 @@ export class GroundVehicle extends Vehicle {
     for (const wheel of this.wheels) {
       wheel.angle = 0;
       wheel.compression = 0;
+      wheel.prevCompression = null;
+      wheel.staticGrip = true;
       wheel.load = 0;
       wheel.node.position.copy(wheel.basePosition);
       wheel.node.quaternion.copy(wheel.baseQuaternion);
@@ -1372,8 +1512,6 @@ export class TrackedVehicle extends Vehicle {
     this._q = new THREE.Quaternion();
     this._qInv = new THREE.Quaternion();
     this._vBody = new THREE.Vector3();
-    this._wWorld = new THREE.Vector3();
-    this._rWorld = new THREE.Vector3();
     this._attach = new THREE.Vector3();
     this._dir = new THREE.Vector3();
     this._lat = new THREE.Vector3();
@@ -1382,6 +1520,7 @@ export class TrackedVehicle extends Vehicle {
     this._torque = new THREE.Vector3();
     this._accel = new THREE.Vector3();
     this._fwd = new THREE.Vector3();
+    this._axis = new THREE.Vector3();
     this._susp = new THREE.Vector3();
     this._fTyre = new THREE.Vector3();
     this._arm = new THREE.Vector3();
@@ -1529,7 +1668,6 @@ export class TrackedVehicle extends Vehicle {
     const qInv = this._qInv.copy(q).invert();
     const vBody = this._vBody.copy(s.velocity).applyQuaternion(qInv);
     const w = s.angularVelocity;
-    const wWorld = this._wWorld.copy(w).applyQuaternion(q);
     const vf = -vBody.z;
 
     // --- engine state -----------------------------------------------------
@@ -1592,16 +1730,18 @@ export class TrackedVehicle extends Vehicle {
     const speed = s.velocity.length();
     const authority = Math.min(1, speed / 2);
 
+    // The spring axis, world frame — the hull's own up (PHY-5), not the
+    // world's. See `GroundVehicle.#step` for the whole reading.
+    const axisWorld = this._axis.set(0, SPRING_AXIS_Y, 0).applyQuaternion(q);
+
     for (const wheel of this.wheels) {
       const attach = this._attach.copy(wheel.rest).applyQuaternion(q).add(s.position);
-      const floor = this.groundHeight(attach.x, attach.z);
-      const rWorld = this._rWorld.copy(wheel.rest).applyQuaternion(q);
-      const compression = Number.isFinite(floor)
-        ? (floor + wheel.radius) - attach.y
-        : -Infinity;
+      const reach = probeAlongAxis(this.groundHeight, attach, axisWorld);
+      const compression = Number.isFinite(reach) ? wheel.radius - reach : -Infinity;
       if (compression <= 0) {
         wheel.compression = 0;
         wheel.load = 0;
+        wheel.prevCompression = null;
         wheel.staticGrip = false;   // no contact clears the latch (PHY-2)
         // Airborne and driven: the track keeps moving at its commanded rate
         // against nothing, same convention `GroundVehicle` uses.
@@ -1612,13 +1752,17 @@ export class TrackedVehicle extends Vehicle {
       }
 
       // Suspension: `GroundVehicle`'s own spring/damper/bump-stop shape,
-      // unchanged — see its comment for the PROVISIONAL vertical-ray
-      // disclaimer, which applies here exactly as it does there.
+      // unchanged — including PHY-5's 1.5x gravity-invariance factor and the
+      // backward-difference damper, and its disclaimer about what a probe
+      // down the spring axis is and is not.
       const travel = Math.min(compression, k.suspensionTravel);
       const overrun = compression - travel;
-      const attachRate = s.velocity.y + (wWorld.z * rWorld.x - wWorld.x * rWorld.z);
-      let load = wheel.strength * (travel + overrun * k.bumpStiffness)
-        - wheel.damping * attachRate;
+      const rate = wheel.prevCompression === null
+        ? 0 : (compression - wheel.prevCompression) / h;
+      let load = SPRING_GRAVITY_SCALE * wheel.strength
+        * (travel + overrun * k.bumpStiffness)
+        + wheel.damping * rate;
+      wheel.prevCompression = compression;
       if (load < 0) load = 0;
       wheel.compression = compression;
       wheel.load = load;
@@ -1746,6 +1890,17 @@ export class TrackedVehicle extends Vehicle {
         if (diff > coupleCap) diff = coupleCap;
         else if (diff < -coupleCap) diff = -coupleCap;
         fLong = -(uLong - vMean) * k.trackResistance * gShare + diff;
+        // The same parking hold `GroundVehicle` carries, and for the same
+        // reason: `trackResistance 0.25` stands in for the engine's own x30
+        // on this exact term, and at a quarter of a percent of it a hull
+        // parked on its own static rake rolled away at 2.2 m/s once PHY-5
+        // let the suspension lean with it. Below walking pace with the
+        // throttle shut, ask for the engine's figure; the Coulomb clamp
+        // decides what the ground gives back.
+        if (Math.abs(throttle) < 0.01) {
+          const hold = Math.max(0, 1 - Math.abs(uLong) / PARKING_HOLD_SPEED);
+          fLong -= uLong * ENGINE_TICK_HZ * hold * gShare;
+        }
       }
       // A dummy (spin-only) wheel gets no longitudinal force at all —
       // TANK-14's reading, and its own zero strength/damping already leaves
@@ -1778,7 +1933,9 @@ export class TrackedVehicle extends Vehicle {
         fLat *= grip.scale;
       }
 
-      const suspension = this._susp.set(0, load, 0).applyQuaternion(qInv);
+      // Along the spring axis, i.e. the hull's own up: (0, load, 0) in the
+      // body frame, unrotated (PHY-5).
+      const suspension = this._susp.set(0, load, 0);
       force.add(suspension);
       force.addScaledVector(dir, fLong);
       force.addScaledVector(lat, fLat);
@@ -1907,6 +2064,8 @@ export class TrackedVehicle extends Vehicle {
     for (const wheel of this.wheels) {
       wheel.angle = 0;
       wheel.compression = 0;
+      wheel.prevCompression = null;
+      wheel.staticGrip = true;
       wheel.load = 0;
       wheel.node.position.copy(wheel.basePosition);
       wheel.node.quaternion.copy(wheel.baseQuaternion);

@@ -384,13 +384,18 @@ results.constants = {
     // that run in opposite directions.
     ladder: ladder.map(r => round(r, 3)),
     driveShare: ladder.map(r => round(ladder[0] / r, 3)),
-    // Static compression under standing weight: four springs at 25 carry
-    // 14.73, so the heave sits g / (4 x 25) in from rest.
-    staticCompression: round(-GRAVITY / (4 * k.springStrength)),
-    // Heave: omega = sqrt(4k), critical damping 2 omega, supplied 4 x 5.
-    heaveOmega: round(Math.sqrt(4 * k.springStrength), 2),
+    // PHY-5: every spring acts at `g * (-1/9.82)` times its authored
+    // strength, which is 1.5 at the shipped -14.73. Four springs at an
+    // effective 37.5 carry 14.73, so the heave sits that far in from rest —
+    // 0.098 m, where reading `setStrength` literally said 0.147.
+    springScale: round(-GRAVITY / 9.82, 4),
+    staticCompression: round(-GRAVITY / (4 * 1.5 * k.springStrength)),
+    // Heave: omega = sqrt(4 * 1.5 * k), critical damping 2 omega, supplied
+    // 4 x 5. The old "exactly critical" coincidence (2*sqrt(100) = 20 = 4*5)
+    // depended on dropping the 1.5; with it the ratio is 1/sqrt(1.5).
+    heaveOmega: round(Math.sqrt(4 * 1.5 * k.springStrength), 2),
     heaveDampingRatio: round(
-      4 * k.springDamping / (2 * Math.sqrt(4 * k.springStrength)), 3),
+      4 * k.springDamping / (2 * Math.sqrt(4 * 1.5 * k.springStrength)), 3),
   };
 }
 
@@ -545,6 +550,31 @@ results.constants = {
     finite: [s.position, s.velocity].every(v =>
       Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z)),
     end: snapshot(truck),
+  };
+}
+
+// --- the spring axis leans with the hull (PHY-5) -----------------------------
+//
+// A slope steep enough to lean the jeep visibly. The probe now runs down the
+// hull's own +Y — `SpringTemplate`'s `axisFixation`, which nothing in 18
+// installs overrides — so a leaning hull reads its wheels further away than a
+// world-vertical drop would, by 1/cos(lean).
+{
+  const slope = 0.3;                      // ~16.7 degrees
+  const ramp = (x, z) => -z * slope;
+  const truck = jeep({ ground: ramp, y: 2 });
+  drive(truck, 6);
+  const s = truck.state;
+  results.slope = {
+    grounded: s.grounded,
+    pitchDeg: round(pitchDeg(truck), 2),
+    // It sits pitched with the ground rather than staying level.
+    slopeDeg: round(Math.atan(slope) * DEG, 2),
+    loads: truck.wheels.map(w => round(w.load, 2)),
+    totalLoad: round(truck.wheels.reduce((n, w) => n + w.load, 0), 2),
+    // How much further the axis probe reaches than a vertical drop at this
+    // lean: exactly 1/cos(pitch), which is what the correction buys.
+    axisStretch: round(1 / Math.cos(Math.atan(slope)), 4),
   };
 }
 
