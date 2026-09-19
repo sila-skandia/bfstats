@@ -190,6 +190,41 @@ class FillPictureGeometryTests(unittest.TestCase):
         self.assertEqual([246, 555], dots["shermanRoot"])
         self.assertEqual([224, 513], dots["shermanGunner"])
 
+    # --- the soldier ammo panel's type enum (ledger HUD-10) ----------------
+
+    def test_an_at_icon_weapon_feeds_2_so_a_bazooka_shows_its_rockets(self) -> None:
+        # The one real change HUD-10 asks for. `map.html` fed 6 for `ATIcon`,
+        # on the reasoning that 6 and 7 painted the same and the choice was
+        # arbitrary. It is neither: 6 is `ATIconAndHeatBar` (the MedPack), and
+        # the `{6,7}` panel has no rounds text at all — so every AT weapon in
+        # the game showed an icon with no count beside it. 2 lands in the
+        # `{2,3,4,5}` panel, which prints one.
+        ammo = self.results["ammoType"]
+        self.assertEqual(2, ammo["bazooka"])
+        self.assertEqual(6, ammo["medPack"])
+
+    def test_the_con_word_and_the_meme_value_are_one_enumeration(self) -> None:
+        # No converter to write: the client's own `operator>>` (`0x004c4cd0`)
+        # stores the same seven values the layout tests. Every vanilla hand
+        # weapon, through the table.
+        ammo = self.results["ammoType"]
+        self.assertEqual(
+            {"atnone": 0, "atammobar": 1, "aticon": 2, "aticonandstrengthbar": 3,
+             "aticonandreloadbar": 4, "aticonnotext": 5, "aticonandheatbar": 6},
+            ammo["codes"])
+        self.assertEqual(1, ammo["thompson"])
+        self.assertEqual(3, ammo["grenade"])
+        self.assertEqual(4, ammo["repairPack"])
+        self.assertEqual(0, ammo["knife"])
+
+    def test_which_types_print_rounds_is_read_off_the_layouts_own_gate(self) -> None:
+        # `AMMO_TYPES_WITH_ROUNDS` is not a choice: run the layout's real
+        # `when` list for the `Ammo/PrimaryAmmo` text through `hud.js`'s own
+        # condition evaluator and exactly 2 and 3 survive it.
+        ammo = self.results["ammoType"]
+        self.assertEqual([2, 3], ammo["roundsTextAdmits"])
+        self.assertEqual(ammo["roundsTextAdmits"], ammo["withRounds"])
+
     def test_an_unfed_dot_keeps_the_layouts_own_rect(self) -> None:
         # A scene extracted before the word was parsed has no pair to feed,
         # and six dots stacked at the panel's corner would be worse than the
