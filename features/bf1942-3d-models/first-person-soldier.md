@@ -1200,7 +1200,7 @@ flag `<select>`, the real key set, `window.__lookDelta` calling the same
 
 | | Wake | Berlin |
 |---|---|---|
-| one second of run | **6.00 m** | **6.00 m** |
+| one second of run (before §6d's ramp) | **6.00 m** | **6.00 m** |
 | one second of backpedal | **4.00 m** | **4.00 m** |
 | one second of strafe | **4.00 m** | — |
 | Shift walk / crouch / prone | **2.00 / 2.00 / 1.00 m** | **2.00 m** crouch |
@@ -1214,7 +1214,10 @@ produce it, because `directionalSpeed` is indexed
 second slot, so standing still and walking backwards share a number. Measured
 ratio 1.5000.
 
-**The jump arc is the gravity test that needs no instrumentation.** Take-off at
+**The jump arc is the gravity test that needs no instrumentation.**
+(Superseded by §6d: the take-off speed below was a tunable and is now a
+read 6.0 m/s impulse. The gravity argument itself is unaffected.)
+Take-off at
 5.4 m/s peaked at **0.974 m** and was airborne 41 frames. Under −14.73 the
 closed form is 0.990 m (Euler at 60 Hz undershoots slightly); under 9.81 it
 would be 1.486 m. The harness's 4 m ledge drop is the same test from the other
@@ -1388,6 +1391,259 @@ when he said it used to be almost perfect.
 Evidence is recorded in `features/bf1942-engine-reference/`: `symbols.json` rows
 `0x00613e90`, `0x004facd0`, `0x0099000c`, `0x005dd6e0`, and `ledger.md` rows
 CS-1 through CS-6.
+
+---
+
+## 6d. The jump, the ramp and the locomotion gate (2026-09-20, wave-2 stream A)
+
+The round's verified brief
+(`features/bf1942-parity-round-2026-09-19/viewer-changes.md`, items 1–4 and the
+`soldier.js` section) replaced four pieces of `physics.js` that §6b had left as
+tunables or had modelled by the wrong mechanism. Ledger rows **PHY-1**,
+**PHY-2**, **PHY-6**, **PHY-7**.
+
+### The jump is read, and it is an impulse
+
+`JUMP_SPEED = 5.4` was labelled UNMEASURED in §6b and it is gone. The engine's
+number is **6.0 m/s** (`0x008eb25c` / `0x086d271c`, raw `40c00000`), and the
+shape matters as much as the value:
+
+```
+accel = ((0, min(1 + dot(d_hat, N), 1) * N.y * 6.0, 0) - 0.25 * vCmd) * g_simulationFps
+PhysicsNode::addAccelerationAtRelativePosition(zero, accel)      vCmd = 0
+```
+
+It goes into the **acceleration accumulator**, beside the gravity already
+seeded there, and the four sub-steps spend both together. That is the whole
+difference between the ledger's 1.12 m apex and the 1.197 m a velocity set
+gives, and stepping this module at the engine's own 30 Hz reproduces
+**1.1221 m / 0.8000 s** to four decimals — which is the check that the reading
+is right, not just that the constant is.
+
+`d_hat` is the commanded movement with **y forced to zero before** normalising,
+so on flat ground the dot is 0 and `K` clamps to 1. On a slope only the
+normal's horizontal part enters: running into a rise weakens the jump, running
+down one clamps back to 1.
+
+The `-0.25 * vCmd` lands on the **actual velocity** and the command is then
+zeroed outright. At a 6 m/s run that is a 1.5 m/s backward kick on the jump
+tick — ten times a normal tick's forward gain, in the opposite direction.
+Writing it as `vCmd *= 0.75` is the refuted form; it only coincides while the
+body is already at its commanded speed.
+
+### The jump gate is a contact normal
+
+§6b gated the jump on `grounded`, which is `MAX_GROUND_SLOPE` — cos 60°. The
+engine's gate is a contact whose **`normal.y` exceeds 0.1** on a material that
+is not Water, which admits faces up to about 84°. State bit `0x40` is set by
+`handleCollision` (client `0x004fa764`, lnxded `0x0827d566`) and cleared every
+tick, so it needs a *fresh* upward contact.
+
+`0.1` is the only slope threshold anywhere in soldier movement. The engine has
+**no walk-slope limit, no step-up code and no movement capsule at all** — the
+collider is the object's own `SimpleCollisionMesh` vertices swept by
+`ResponsePhysics::checkVsTerrain`. `MAX_GROUND_SLOPE`, `STEP_HEIGHT` and
+`BODY_RADIUS` stay as this viewer's own answer to not having a contact solver,
+and their comments now say so.
+
+This needed one new primitive. Spawn placement runs **off** the tick
+(`Soldier.settle`), so nothing has produced a contact when the first frame asks
+whether a jump is legal; `SoldierBody.plant()` declares the contact a placed
+body is resting on. Poking `.grounded` used to be enough and silently is not
+any more — the first jump after every spawn was refused until this was added.
+
+### The speed tables are reached through a ramp
+
+`applyMovementFactors` (lnxded `0x082807a0`): a signed byte per axis, **+20 a
+tick** while held and **−12 a tick** toward zero when released, clamped ±127
+and multiplied by **1/127** before it indexes the table. Reversal snaps the
+register through zero (`max(min(state, 0) − 20, −127)`), so turning round costs
+one ramp-up rather than a ramp-down and a ramp-up. Only the *sign* of the input
+is read; there is no analogue term.
+
+The table row is chosen by the **register's** sign, not the raw input
+(`0x082747e0 cmp BYTE [ecx+0x58d],0; setle`), so releasing W does not drop a
+still-coasting soldier onto the backward row.
+
+It is carried here as a rate per second rather than as a byte, because this
+module runs at 60 Hz by choice. At `dt = 1/30` that reproduces the engine's
+integer ladder exactly — `600 × (1/30)` is 20.0 in binary floating point, with
+no rounding — and at any other rate it holds the wall clock, which is the
+observable that matters.
+
+### The locomotion force, and what the ground model is now honest about
+
+`accel = 0.75 * vCmd`, `0x08274a09`, and **not** multiplied by
+`g_simulationFps` — so it is genuinely an acceleration, `vCmd / 40` of delta-v
+per engine tick. It is applied **only on a tick where the collision solver
+resolved no impulse**, which for a soldier means only in free air.
+
+`AIR_CONTROL = 0.35`, invented in §6a and kept in §6b, is gone; the airborne
+arm is now the engine's own law. At a 6 m/s command that is 4.5 m/s², so a
+0.80 s jump carries about 3.6 m/s of steering authority and a tap of
+air-strafe carries almost none — an asymmetry retail has and a per-tick lerp
+cannot produce. A running jump therefore lands *faster* than a run: measured
+**5.998 m/s in, 4.498 out after the kick, 8.0 at the moment of landing**.
+
+**The ground model is a deliberate divergence, and this is the reasoning.**
+PHY-2 says a soldier standing on the ground is moved by the friction solver,
+not by the force above. The friction budget is a soldier-specific pair —
+`A·7.2·9.82·n.y⁵/30` to break away and `A·4.8·9.82·n.y⁵/30` while sliding —
+which on flat ground with `A = 1` is **2.357 and 1.571 m/s of delta-v per
+tick**, against a top speed of 6. The budget is three times the whole speed
+range, which is why the ledger's own wording is that friction "cancels
+tangential slip outright". Its *observable* output is a body that tracks its
+commanded tangential velocity with no lag a player could see, and a direct
+velocity assignment reproduces that exactly.
+
+So the viewer keeps the assignment, and the case for it is that the visible
+acceleration a player feels is now the **ramp**, which is the engine's, and the
+friction budget is precisely what makes the ramp the only thing one feels.
+Implementing `0.75 * vCmd` on the ground instead would be wrong twice over: it
+is gated off there, and at `vCmd / 40` per tick it would take 1.3 s to reach a
+speed the ramp reaches in 0.21 s. A partial rigid body — contacts without the
+static/kinetic latch, or a latch without the per-part mean — would be worse
+than either.
+
+What this therefore does **not** model, and should be said plainly: sliding on
+a low-`materialFriction` surface (ice, wet mud) where the budget would actually
+bite, and being shoved by a contact. Both need the contact solver in
+`collision-response.md` §8, which is the collision round's.
+
+### One resolver defect the gate exposed
+
+Reading PHY-6's gate as "airborne" rather than "no contact impulse" let an
+unopposed 4.5 m/s² pile onto a body the resolver was pinning against a ledge
+lip; its horizontal speed reached 13 m/s and rising while its position moved
+0.2 m in two seconds. Fixing the gate fixed the runaway and uncovered the
+underlying fault: `sweepCapsule` accepted contacts the motion was travelling
+*away* from. A sphere resting tangent to geometry reported `t = 0`, `#resolve`
+advanced by `max(0, t − SKIN)` = 0, found the move was not into the plane so
+stripped nothing, and swept again from the same point — four passes, no
+movement. Walking off a ledge hung instead of falling. Surfaces the sweep is
+receding from are now skipped, which is the correct semantics: a swept sphere
+can only be stopped by something it is approaching.
+
+### Measured, on the page
+
+`map.html?mod=bf1942&map=wake&shots`, The Airfield, flat dry sand, driven
+through the real key set with the real input gate and read through
+`window.__soldier()`.
+
+| | measured | engine (30 Hz) |
+|---|---|---|
+| jump apex | **1.166 m** | 1.122 m |
+| jump air time | **0.783 s** | 0.800 s |
+| standing start to 6 m/s | **0.217 s** (13 frames) | 0.212 s nominal, 7 ticks |
+| full speed to a stop | **0.367 s** (22 frames) | 0.353 s nominal, 11 ticks |
+| top speed | **5.998 m/s** | 6.0 less drag |
+| running jump: run / after kick / landing | **5.998 / 4.498 / 8.0 m/s** | 6.0 / 4.5 / 8.1 |
+
+The apex sits above the engine's because a 60 Hz step's finer sub-steps
+integrate nearer the continuum's 1.222 m; the 30 Hz figure is the parity
+assertion and `tests/test_physics.py` pins both. The speed ramp's per-frame
+trace is the exact ladder the register predicts — 0.472 m/s a frame, which is
+`6 × 10/127`.
+
+Treading water was worth the trip on its own: Wake's sea plane is at y = 95 and
+a soldier standing on it is correctly refused a jump and billed the water
+`damageMod`, which is what the first pass at this measurement accidentally
+measured before it went looking for dry land.
+
+### Tests
+
+`tests/test_physics.py` 48 assertions, `tests/test_soldier.py` 41,
+`tests/test_fall_damage.py` 15. Full suite 1348 → 1384.
+
+Three of the old soldier-harness scenarios had to be given their ramp back —
+the kerb walk, the ledge walk and the slope climb all measured a distance that
+is now 0.59 m shorter from a standing start — and the distance assertions
+subtract a `rampDeficitSeconds` the harness computes from the ramp constants
+rather than carrying a second set of magic numbers.
+
+One behaviour changed as a consequence and is worth flagging: the view bob's
+"moving" test was `travelled > 1e-5`, which used to be the same question as
+"is the gait idle" because the body stopped on the frame the key came up. With
+a 0.35 s ramp-down it is not, and a stop was restarting the bob faintly as a
+*walk* shake. The gait is the engine's criterion — `Lb_*` states carry the
+shake and an idle state carries none — so the test now leads with the gait and
+keeps `travelled` only so that running into a wall still kills the bob.
+
+### The adversarial review of the build, 2026-09-20
+
+Four things came out of driving the above against real Wake, Berlin and
+Stalingrad geometry (56 + 32 + 40 scripted probes per build, eight headings from
+every control point, the same input run against `main` on port 5273) and
+re-deriving the numbers independently. Suite 1377 → 1384.
+
+**1. The kick was landing on a synthesised velocity.** `step()` ran the ground
+friction assignment — `v = vCmd` — before the jump, so `-0.25 * vCmd` always
+came off a velocity that had just been set equal to `vCmd`: the refuted
+`vCmd *= 0.75` form, reached by the back door. It only shows on a body whose
+real velocity differs from its command, which is precisely a soldier pressed
+into a wall: his velocity is 0, his command is 6 m/s into the wall, and the
+engine's kick is 1.5 m/s **off** the wall. The build drove him 4.5 m/s *into*
+it, the resolver ate that, and PHY-6's contact gate then held the airborne force
+off for the whole hop — measured on Berlin (`Bernauer_Strasse_HQ`, yaw pi: 3.9 m
+of progress against `main`'s 12.1) and Wake (`The_Airfield`, yaw pi/4). The jump
+is now resolved first, in `SoldierBody.#tryJump`, and the locomotion block is
+skipped on a jump tick the way the engine's branch skips it. Nothing moves for
+an unblocked runner — 5.998 still becomes 4.496 — which is where every measured
+figure in the section above comes from.
+
+**2. The fall table is confirmed, independently.** Recomputed from the HP-14
+row and the real `_shared/damage.json` in a from-scratch Python model of the
+integrator, then measured again through the shipped module on real Wake terrain
+and real Wake sea. The two agree to four decimals at every height: 0 below
+3.97 m, **1.188** at 4 m, 2.187 at 4.5, 4.183 at 5, 10.858 at 6, 21.737 at 7,
+28.627 at 7.4, lethal at 7.55 — and 1.5518 for 10 m into the sea against
+103.4562 onto sand. `main` bills 9.97 HP for a 2 m drop and kills you at 4 m.
+
+**One consequence of reading the tables that is worth knowing**: materials 117
+and 118 — the ones Wake's airfield and base structures carry — have
+`materialDamage 1.0` and `damageMod 0.1`, a product of **0.1 against terrain's
+0.030**. Landing on a building therefore costs 3.3x what landing on sand costs,
+and the lethal drop onto a roof is about 5.2 m rather than 7.55 m. That is what
+the shipped tables say; it is not a fitted number and nothing here caps it.
+
+**3. The resolver changes hold up.** The receding-contact skip is narrower than
+it reads: `#sweepTriangle` already rejects a receding *face* (`nv >= -1e-9`)
+before it computes anything, so the only contacts the skip can reach are edge
+and corner ones, whose separating direction can point anywhere and which by
+definition cannot stop a motion already leaving them. Proved behaviourally
+against a 10 cm wall from a clean run-up, from 5 cm inside either face, and from
+dead centre — nothing passes through — and in an inside corner walked into at
+45 degrees, where the body settles one radius off each face with the last ten
+ticks not moving at all. On the levels, `main` shows the frozen-in-air hang this
+fixed (Wake `North_Base`, yaw pi/4: −10.2 m/s with the position static) and an
+un-jumped 7.5 m/s launch on Berlin; the reviewed build shows neither, and fewer
+bodies parked against geometry on every level.
+
+**4. The tick rate stays 60 Hz, and PHY-1's apex needs a qualifier.** The
+soldier already runs a fixed tick with render interpolation, so the jump, the
+ramp and the fall a landing is billed are identical at 23.7, 30, 60 and 144
+frames per second — now asserted. The remaining question was whether that tick
+should be 30 to reproduce 1.1221 m exactly, and the binary says no:
+`g_simulationFps` is a fixed 30.0 that nothing writes, but `Setup::initEngine`
+(`0x080bc632`) **doubles** it into the main loop's rate and `Setup::mainLoop`
+(`0x080bc0b0`) then rate-limits to `1/60 s` and integrates with the *measured*
+elapsed time, with no accumulator below it — `Game::updateWorld` (`0x0805d9b0`)
+passes `dt` straight down and `BasicPhysicsSystem::update` (`0x08251ef0`) is an
+empty stub. So the shipped loop targets 60 Hz and the engine's own apex moves
+with the frame rate: **1.12 m is the figure for a machine at exactly 30 fps**,
+not a constant, and the same caveat applies to PHY-6's 0.212 s. Moving the
+viewer to 30 Hz would chase a frame-rate artefact and halve the resolver's
+sampling — 0.2 m of travel per tick at a run — in the one part of the module
+with no engine provenance. The reasoning is in `physics.js` on `TICK_RATE`.
+
+Left alone, with the reason: a ~3 mm/frame limit cycle in one Berlin concave
+corner (`German_Mitte_HQ`, yaw 3pi/4) where the reported ground speed stays
+~1.8 m/s while the body does not move — it is on `main` too, so it belongs to
+the resolver rather than to this work; and a body put down **dead centre** in a
+wall thinner than its own diameter is blocked both ways along the wall's normal
+and can only slide out sideways, which `exitVehicle` can produce because it
+trusts `soldierExitLocation` without a room check (SEAT-6/SEAT-9, already
+recorded as not implemented). Neither is new.
 
 ---
 

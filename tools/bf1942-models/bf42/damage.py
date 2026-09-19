@@ -143,7 +143,20 @@ class DamageTables:
     def modifier(self, att_material: int, def_material: int) -> float | None:
         """`damageMod` for a projectile material against a struck material.
 
-        None means the pair has no entry, which the engine treats as no effect.
+        None means the pair has no entry, which the engine treats as **no
+        damage at all** — and that is a fact now, not a reading. Ledger DMG-1:
+        `MaterialManager::getDamageMod` (lnxded `0x08175040`) falls back to
+        `MaterialManager+0x24`, `defaultDamageMod`, and that field is 0.0 for
+        the life of the process. Both constructors write zero (`0x0817485e`,
+        `0x0817491e`); its setter `setDefaultDamageMod` (`0x08176190`) appears
+        in the file only as a vtable slot and nothing calls it; and there is no
+        console property for it — the registered MaterialManager name block at
+        `.rodata` `0x086c235b`-`0x086c2417` is exactly the fourteen words
+        vanilla's `.con` files use, so no mod can set it either.
+
+        So do not "fix" this to return a default. Returning the field would
+        either change nothing or introduce a bug, and the recommendation to do
+        so was checked and refuted.
         """
         return self.modifiers.get((self.att_group(att_material), self.def_group(def_material)))
 
@@ -157,6 +170,16 @@ class DamageTables:
 
     def splash_damage(self, att_material2: int, splash_material: int, *,
                       distance: float = 0.0, radius: float | None = None) -> float | None:
+        """`materialDamage(att2) * damageMod(att2, def) * (1 - d / radius)`.
+
+        The falloff matches the engine exactly (HP-9): `handleExplosion`
+        computes `A = 1/radius` once and both call sites pass it, giving
+        `t = clamp((radius - d) * A, 0, 1)`. Two refinements it is worth
+        knowing about here: the engine's gate is strictly `radius > d`, and the
+        distance is to the victim's **transform origin** — not a bounding box
+        and not the nearest surface — with only the Y term scaled, by
+        `YModOnExplosion` (default 1.0).
+        """
         base = self.base_damage(att_material2)
         mod = self.modifier(att_material2, splash_material)
         if base is None or mod is None:
@@ -243,6 +266,18 @@ def load_tables(resolve: Resolver, entry: str = SETTINGS_SCRIPT,
     `resolve` is asked for each script by case-insensitive archive path and returns
     None for a script that is not there — which is recorded, not fatal, because
     that is what the engine does with vanilla's ten expansion-only `run` lines.
+
+    **These tables are also where soldier fall damage gets its scalars**, which
+    is worth saying out loud because it was hunted for elsewhere for a long
+    time. HP-14's severity ends in `damageMod(att, def) * materialDamage(att)`
+    with the *ground* as the attacker and the soldier's `Material 40` as the
+    defender, and for every terrain material 0-15 what comes out of here is
+    `materialDamage = 30` and `damageMod = 0.001` — a product of 0.030. Water
+    (material 1) is the outlier at `1.5e-05`, about 67x gentler, which is why a
+    fall into the sea is survivable. Those two numbers are the whole of what
+    the viewer's old fitted `FALL_KINETIC_HP` was standing in for, and they are
+    why its implied ~0.026 was as close as it was. `viewer/fall-damage.js`
+    reads them straight out of the emitted `_shared/damage.json`.
     """
     tables = DamageTables()
     seen: set[str] = set()
