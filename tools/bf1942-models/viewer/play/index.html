@@ -54,16 +54,24 @@
 
 <script type="module">
 import {
-  AXIS, ALLIED, hitTest, listBox, paintMenu, scrollTo, stageScale, toVirtual,
-  visibleRows,
+  AXIS, ALLIED, hitTest, inRect, listBox, paintMenu, scrollTo, stageScale,
+  toVirtual, visibleRows,
 } from './menu-screen.js';
+import { loadMods, remember, servable, stored, VANILLA, withMod } from '../mods.js';
+import { createLoadingAudioController } from '../audio.js';
+import {
+  hitTestPanel, paintPanel, panelBounds, placeInColumn,
+  scrollBy as pickerScrollBy,
+} from './mod-picker.js';
 
 const qs = new URLSearchParams(location.search);
 // The pack the extractor writes. It ships to `maps/_shared/hud/menu/`,
 // beside the spawn screen's own; `?pack=` points a checkout at a scratch
 // build of it without moving anything.
 const PACK = qs.get('pack') || '../maps/_shared/hud/menu';
-const MAPS = qs.get('maps') || '../maps';
+// The active mod decides the real default (`?maps=` still wins outright,
+// for pointing a checkout at a scratch build the same way `?pack=` does).
+const MAPS_OVERRIDE = qs.get('maps');
 const bust = () => (qs.has('nocache') ? `?t=${Date.now()}` : '');
 
 const canvas = document.getElementById('screen');
@@ -78,6 +86,29 @@ const state = { team: ALLIED, index: 0, scroll: 0, level: null };
 let layout = null;
 let levels = [];
 let hover = null;
+
+// The mod list: permanently drawn in the column `SHOW_BOT_SETTINGS = false`
+// leaves blank, not a modal - clicking a row applies it immediately (it
+// filters the level list below, it doesn't launch anything). `modLayout` is
+// `menu/CustomGameMenu` flattened by `extract_custom_game_layout.py` and
+// shifted into that column by `placeInColumn`; `activeMod` the record
+// `mods.js` resolved (its `?mod=`/localStorage precedence, unchanged - see
+// `mods.js`'s own header comment); `picker` the panel's own
+// selection/scroll/hover state.
+let modLayout = null;
+let activeMod = VANILLA;
+let picker = { mods: [VANILLA], activeId: VANILLA.id, scroll: 0, hover: null };
+// The active mod's own maps root - `../maps` for vanilla, `../maps/mods/<id>`
+// otherwise. Resolved in `load()`, before the level manifest fetch.
+let MAPS = '../maps';
+
+// The main menu's own loop - not the loading screen's `vehicle4.mp3`
+// (`progress.js`'s own controller, on `map.html`) and not the well-known
+// battle theme, but whatever a mod's `Game.setMenuMusicFilename` names
+// (`extract_menu_music.py`). Vanilla, RtR and SWoWWII all point at the same
+// file; EoD's is its own recording - `${MAPS}/_shared/music/menu.mp3`
+// already resolves to the right one because `MAPS` already does.
+const menuAudio = createLoadingAudioController();
 
 const json = url => fetch(url + bust()).then(r => {
   if (!r.ok) throw new Error(`${r.status} ${url}`);
@@ -102,8 +133,25 @@ const env = {
     const entry = layout?.textures?.[name];
     return entry ? ready(image(`${PACK}/${entry.file}`)) : null;
   },
-  thumbnail: level =>
-    (level?.thumbnail ? ready(image(`${PACK}/${level.thumbnail}`)) : null),
+  thumbnail: level => {
+    // Vanilla's own menu thumbnail when there is one; otherwise (every
+    // other mod - `menu-levels.json` only ever lists vanilla's levels, see
+    // `buildLevels`) the level's own loading-screen background, which every
+    // `maps.json` entry carries.
+    if (level?.thumbnail) return ready(image(`${PACK}/${level.thumbnail}`));
+    if (level?.previewBg) return ready(image(`${MAPS}/${level.previewBg}`));
+    return null;
+  },
+  icon: mod => (mod?.icon ? ready(image(`../${mod.icon}`)) : null),
+  // The dialog's own `CustomGame/CustomGameUrl` / `...Info` var nodes: the
+  // file's shipped value is a placeholder (see `mod-picker.js`'s header
+  // comment), so the highlighted row's own facts stand in for it.
+  text: name => {
+    const mod = picker.mods.find(m => m.id === picker.activeId);
+    if (name === 'CustomGame/CustomGameUrl') return mod?.url || '';
+    if (name === 'CustomGame/CustomGameInfo') return mod?.info || 'No description available.';
+    return '';
+  },
   font: id => fonts.get(id) || null,
   tint: (font, rgb) => {
     const key = `${font.id}|${rgb.join(',')}`;
@@ -139,8 +187,25 @@ const env = {
  *
  *  Every extracted level is listed. The real game lists only the levels
  *  with bot support (`level.singlePlayer`); this site has no bots and
- *  launches Conquest, so hiding the rest would only lose them. */
-function buildLevels(menuLevels, manifest) {
+ *  launches Conquest, so hiding the rest would only lose them.
+ *
+ *  `menuLevels` is `menu/SkirmishMenu`'s own `SkirmishLevelsList` - vanilla's
+ *  levels, always, because it comes from `Mods/bf1942/Archives` regardless
+ *  of which mod is active. A mod's own levels were never in it, so a mod
+ *  other than vanilla skips the join and lists its own `maps.json` outright
+ *  - no bot-support flag or nation flags to carry over, and no menu
+ *  thumbnail (`env.thumbnail` falls back to the loading-screen background
+ *  for those). */
+function buildLevels(menuLevels, manifest, vanilla) {
+  if (!vanilla) {
+    return manifest
+      .map(entry => ({
+        map: entry.name,
+        title: entry.loading?.title || entry.name,
+        previewBg: entry.loading?.background || null,
+      }))
+      .sort((a, b) => a.title.localeCompare(b.title));
+  }
   const have = new Map();
   for (const entry of manifest) {
     // `maps.json` names a level the way its directory does; the extractor
@@ -162,20 +227,46 @@ function buildLevels(menuLevels, manifest) {
 }
 
 async function load() {
-  layout = await json(`${PACK}/menu-layout.json`);
+  const available = servable(await loadMods(), 'maps');
+  const wanted = (qs.get('mod') || stored() || VANILLA.id).toLowerCase();
+  activeMod = available.find(mod => mod.id === wanted) || available[0];
+  // A `?mod=` this tab cannot serve (no maps uploaded yet) must not stick.
+  if (activeMod.id === wanted) remember(activeMod.id);
+  picker = { mods: available, activeId: activeMod.id, scroll: 0, hover: null };
+  MAPS = MAPS_OVERRIDE || `../${activeMod.paths.maps}`;
+  menuAudio.attachUnmuteButton(document.body);
+  menuAudio.start(`${MAPS}/_shared/music/menu.mp3`, '../maps/_shared/music/menu.mp3');
+
+  const [skirmishLayout, rawModLayout] = await Promise.all([
+    json(`${PACK}/menu-layout.json`),
+    // Absent on a checkout that hasn't run extract_custom_game_layout.py -
+    // the panel just doesn't draw, same fallback shape as a mod with no
+    // maps.json.
+    json(`${PACK}/custom-game-layout.json`).catch(() => null),
+  ]);
+  layout = skirmishLayout;
+  // Into the column `SHOW_BOT_SETTINGS = false` leaves blank - the file
+  // places this dialog centered for a modal it is not being used as here.
+  modLayout = rawModLayout && placeInColumn(rawModLayout, 14, 100);
+  if (modLayout) {
+    layout.textures = { ...layout.textures, ...modLayout.textures };
+    layout.fontFiles = { ...layout.fontFiles, ...modLayout.fontFiles };
+  }
   const [menuLevels, manifest] = await Promise.all([
     json(`${PACK}/menu-levels.json`),
     json(`${MAPS}/maps.json`).catch(() => []),
   ]);
-  levels = buildLevels(menuLevels, manifest);
+  levels = buildLevels(menuLevels, manifest, activeMod.id === VANILLA.id);
   await Promise.all(Object.entries(layout.fontFiles || {}).map(async ([id, entry]) => {
     const meta = await json(`${PACK}/${entry.glyphs}`);
     const img = image(`${PACK}/${entry.file}`);
     await img.decode().catch(() => {});
     fonts.set(id, { id, meta, img });
   }));
-  // Every plate up front: the screen is 19 small textures and paints once.
+  // Every plate up front: the screen is a couple dozen small textures and
+  // paints once.
   for (const entry of Object.values(layout.textures || {})) image(`${PACK}/${entry.file}`);
+  for (const mod of available) if (mod.icon) image(`../${mod.icon}`);
   select(0);
   status.textContent = levels.length ? ''
     : 'No levels. From tools/bf1942-models run: python3 extract_map.py Wake';
@@ -201,14 +292,46 @@ function setTeam(team) {
   paintSoon();
 }
 
-/** START. The map page is the mesh site's own file; only the two launch
- *  parameters are ours. */
+/** START. The map page is the mesh site's own file; only the launch
+ *  parameters are ours - `mod` carries the active mod the way every other
+ *  viewer page's own link already does (`mods.js`'s `withMod`). */
 function start() {
   if (!state.level) return;
+  location.href = launchUrl();
+}
+
+function launchUrl() {
+  if (!state.level) return null;
   const url = new URL('../map.html', location.href);
   url.searchParams.set('map', state.level.map);
   url.searchParams.set('team', String(state.team));
-  location.href = url.toString();
+  if (activeMod.id !== VANILLA.id) url.searchParams.set('mod', activeMod.id);
+  return url.toString();
+}
+
+// --- mod list --------------------------------------------------------------
+
+/** Clicking a row: carries the choice the way the shell-mods `<select>` on
+ *  every other viewer page does - `remember()` then a reload, because every
+ *  page here resolves its mod once at module scope with top-level await
+ *  (`mods.js`'s own header comment). */
+function chooseMod(id) {
+  remember(id);
+  location.href = withMod(location.href, id);
+}
+
+function handlePanelHit(hit) {
+  if (!hit) return;
+  if (hit.kind === 'row') { chooseMod(picker.mods[hit.index].id); return; }
+  if (hit.kind === 'arrow') {
+    picker.scroll = pickerScrollBy(modLayout, picker, hit.by);
+    paintSoon();
+    return;
+  }
+  if (hit.kind === 'button' && hit.action === 'website') {
+    const url = picker.mods.find(m => m.id === picker.activeId)?.url;
+    if (url) window.open(url, '_blank', 'noopener,noreferrer');
+  }
 }
 
 // --- painting ----------------------------------------------------------------
@@ -237,6 +360,7 @@ function paint() {
   ctx.fillRect(0, 0, cw, chh);
   ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
   paintMenu(ctx, layout, state, env);
+  if (modLayout) paintPanel(ctx, modLayout, picker, env);
 }
 
 function resize() { paint(); }
@@ -250,9 +374,24 @@ function at(event) {
   return toVirtual(s, event.clientX - r.left, event.clientY - r.top);
 }
 
+/** The mod panel and the Skirmish screen are both live on the same canvas
+ *  at once - there is no modal to gate input on, just whether the pointer
+ *  is inside the panel's own bounds. */
+const overPanel = (x, y) => !!(modLayout && inRect(panelBounds(modLayout), x, y));
+
 canvas.addEventListener('pointermove', event => {
   if (!layout) return;
   const [x, y] = at(event);
+  if (overPanel(x, y)) {
+    if (hover) { hover = null; paintSoon(); }
+    const next = hitTestPanel(modLayout, picker, x, y);
+    const changed = JSON.stringify(next) !== JSON.stringify(picker.hover);
+    picker.hover = next;
+    canvas.style.cursor = next ? 'pointer' : 'default';
+    if (changed) paintSoon();
+    return;
+  }
+  if (picker.hover) { picker.hover = null; paintSoon(); }
   const next = hitTest(layout, state, x, y, levels.length);
   const changed = JSON.stringify(next) !== JSON.stringify(hover);
   hover = next;
@@ -260,14 +399,19 @@ canvas.addEventListener('pointermove', event => {
   if (changed) paintSoon();
 });
 
-canvas.addEventListener('pointerleave', () => { hover = null; paintSoon(); });
+canvas.addEventListener('pointerleave', () => {
+  hover = null;
+  picker.hover = null;
+  paintSoon();
+});
 
 canvas.addEventListener('click', event => {
   if (!layout) return;
   const [x, y] = at(event);
+  canvas.focus();
+  if (overPanel(x, y)) { handlePanelHit(hitTestPanel(modLayout, picker, x, y)); return; }
   const hit = hitTest(layout, state, x, y, levels.length);
   if (!hit) return;
-  canvas.focus();
   if (hit.kind === 'row') select(hit.index);
   else if (hit.kind === 'team') setTeam(hit.team);
   else if (hit.action === 'scroll') scrollBy(hit.by);
@@ -277,6 +421,7 @@ canvas.addEventListener('click', event => {
 canvas.addEventListener('dblclick', event => {
   if (!layout) return;
   const [x, y] = at(event);
+  if (overPanel(x, y)) return;
   // The list box's "Select action" is `Skirmish/StartSkirmish`: committing
   // a row starts the level.
   if (hitTest(layout, state, x, y, levels.length)?.kind === 'row') start();
@@ -292,6 +437,12 @@ function scrollBy(by) {
 
 canvas.addEventListener('wheel', event => {
   event.preventDefault();
+  const [x, y] = at(event);
+  if (overPanel(x, y)) {
+    picker.scroll = pickerScrollBy(modLayout, picker, Math.sign(event.deltaY));
+    paintSoon();
+    return;
+  }
   scrollBy(Math.sign(event.deltaY));
 }, { passive: false });
 
@@ -318,14 +469,13 @@ canvas.addEventListener('keydown', event => {
 window.__menu = {
   get state() { return { ...state, levels: levels.length }; },
   get levels() { return levels.map(l => l.title); },
-  select, setTeam, start, scrollBy,
-  launchUrl() {
-    if (!state.level) return null;
-    const url = new URL('../map.html', location.href);
-    url.searchParams.set('map', state.level.map);
-    url.searchParams.set('team', String(state.team));
-    return url.toString();
+  select, setTeam, start, scrollBy, launchUrl,
+  get mod() {
+    return { active: activeMod.id, available: picker.mods.map(m => m.id) };
   },
+  get audio() { return menuAudio.state; },
+  unlockAudio: () => menuAudio.unlock(),
+  chooseMod,
   paint,
   ready: false,
 };
