@@ -5,7 +5,7 @@ import {
   sampleCrd, sampleCurve, basisFromNormal, basisFromAxes, rollBasis, inFrame,
   EmitterClock, spawnParticle, integrateParticle, evalParticle, damageFactor,
   atlasGrid, frameIndex, splashSpec, splashDamage, truncateRadius,
-  blastDistance, DEFAULT_SPLASH_RADIUS,
+  blastDistance, diesOnContact, DEFAULT_SPLASH_RADIUS, IMPACT_BLAST_OFFSET,
 } from './effects-core.mjs';
 
 // A deterministic generator so the assertions are exact.
@@ -212,7 +212,10 @@ out.splashSpec = {
   landmine: spec({ material2: 232, damageType: 4, hasCollisionEffect: false,
                    radius: 4 }),
   // A flak shell: damageType 4 WITH the flag set. The flag is not consulted
-  // for type 4, so this bursts on its fuse and not on the aircraft it grazes.
+  // for the impact EXPLOSION, so this has an end-of-life blast and no impact
+  // one — but it is consulted for whether the round survives contact, and it
+  // does not: see `out.diesOnContact` below, which is what stops the viewer
+  // resting it on the ground and bursting it there.
   flak: spec({ material2: 199, damageType: 4, hasCollisionEffect: true,
                radius: 20 }),
   // A bomb, carrying the vertical scale.
@@ -241,6 +244,33 @@ out.splashSpec = {
   legacy: spec({ material2: 206, radius: 10 }),
   none: splashSpec(null),
 };
+// HP-9e: `dieAfterColl || hasCollisionEffect` recycles the round on contact
+// (`Projectile::handleCollision` 0x0831ef4b / 0x0831ef54 -> `resetProjectile`
+// 0x0831e720). A round that dies this way gets NO explosion of either kind:
+// `resetProjectile` sets the detonate latch without calling `startEndEffect`.
+// Only a round answering false here survives to burst on its fuse.
+out.diesOnContact = {
+  // Every ordinary HE round. The flag is what ends it at the wall.
+  sherman: diesOnContact({ material2: 206, damageType: 1, hasCollisionEffect: true }),
+  // The four vanilla fuse weapons: neither word, so all four live on.
+  grenade: diesOnContact({ damageType: 1, hasCollisionEffect: false, dieAfterColl: false }),
+  expack: diesOnContact({ damageType: 1, hasCollisionEffect: false, dieAfterColl: false }),
+  landmine: diesOnContact({ damageType: 4, hasCollisionEffect: false, dieAfterColl: false }),
+  // The three flak shells. `AA_Allies`/`Carrier_AA` write both words;
+  // `Flak38` writes only the flag, and the flag alone is enough.
+  flakBoth: diesOnContact({ damageType: 4, hasCollisionEffect: true, dieAfterColl: true }),
+  flakFlagOnly: diesOnContact({ damageType: 4, hasCollisionEffect: true }),
+  // `dieAfterColl` on its own, which no vanilla template does but the
+  // Katyusha rocket, the depth charge and the floating mine all do in the
+  // wider survey: it ends the round just as surely.
+  dieOnly: diesOnContact({ damageType: 1, hasCollisionEffect: false, dieAfterColl: true }),
+  // A glb baked before either word existed, and no damage block at all:
+  // assume the round ends at the wall, which is what 25 of vanilla's 28
+  // `damageType 1` templates do and the only safe default.
+  legacy: diesOnContact({ material2: 206, damageType: 1 }),
+  none: diesOnContact(null),
+};
+out.impactBlastOffset = IMPACT_BLAST_OFFSET;
 out.truncate = {
   exact: truncateRadius(15),
   down: truncateRadius(17.63),

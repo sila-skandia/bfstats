@@ -1642,6 +1642,44 @@ ObjectTemplate.material2 232
         self.assertEqual(4.0, mine.explosion_radius)
         self.assertIs(False, mine.has_collision_effect)
 
+    def test_die_after_coll_is_parsed_as_a_bool(self) -> None:
+        # HP-9e. `dieAfterColl` is `ProjectileTemplate+0x1a7`, and together
+        # with `hasCollisionEffect` it is what decides whether a round survives
+        # a contact at all: `Projectile::handleCollision` (lnxded 0x0831ee80)
+        # recycles it through `resetProjectile` when EITHER is set (tests at
+        # 0x0831ef4b and 0x0831ef54). The three vanilla flak shells are the
+        # reason the viewer needs it — they are `damageType 4`, so they have no
+        # impact explosion, but they set the flag and so die on contact
+        # instead of resting where they land and bursting on their fuse.
+        library = self.library(
+            "Objects/Projectiles/Objects.con",
+            """
+ObjectTemplate.create Projectile AA_Allies_Projectile
+ObjectTemplate.damageType 4
+ObjectTemplate.hasCollisionEffect 1
+ObjectTemplate.dieAfterColl 1
+ObjectTemplate.radius 20
+ObjectTemplate.material2 199
+
+ObjectTemplate.create Projectile GrenadeAxisProjectile
+ObjectTemplate.damageType 1
+ObjectTemplate.hasCollisionEffect 0
+ObjectTemplate.dieAfterColl 0
+ObjectTemplate.radius 15
+ObjectTemplate.material2 205
+""")
+        flak = library.object("AA_Allies_Projectile")
+        grenade = library.object("GrenadeAxisProjectile")
+        self.assertIs(True, flak.die_after_coll)
+        self.assertIs(False, grenade.die_after_coll)
+        # Unset means the .con said nothing, which the engine reads as its own
+        # constructor default (false) — `Flak38_Projectile` is exactly that,
+        # and its `hasCollisionEffect 1` alone still ends the round.
+        self.assertIsNone(
+            self.library("Objects/Projectiles/Objects.con",
+                         "ObjectTemplate.create Projectile Plain\n")
+            .object("Plain").die_after_coll)
+
     def test_radius_is_truncated_toward_zero_at_parse(self) -> None:
         # HP-9: `ProjectileTemplate.radius` is a console **int** — the parser
         # is `istream >> int` (lnxded 0x082df83f) and the value is `fild`ed
