@@ -1438,6 +1438,17 @@ class Assembler:
         # when its fuse ends), and `effects-core.js` would be back to inferring
         # the difference from `material2`, which carries none of it.
         #
+        # `dieAfterColl` rides along for the same reason, and it is NOT a
+        # restatement of the flag. Whether a round SURVIVES contact is a third
+        # question, answered by `Projectile::handleCollision` (0x0831ee80):
+        # `dieAfterColl` (0x0831ef4b) OR `hasCollisionEffect` (0x0831ef54)
+        # recycles it through `resetProjectile` (0x0831e720), which despawns it
+        # without ever calling `startEndEffect`. A `damageType 4` round with
+        # the flag set — vanilla's three flak shells — therefore dies on
+        # contact having exploded neither way, which is exactly what a timed
+        # airburst should do; treating it as a fuse round that rests where it
+        # lands and bursts there would invent a blast the game never has.
+        #
         # `radius` arrives already truncated toward zero — `con.py` does it at
         # parse because the console property is an `int` (HP-9). The engine's
         # own `ProjectileTemplate` constructor default is 10.0 (`0x41200000` at
@@ -1464,6 +1475,7 @@ class Assembler:
                 "material2": projectile.material2,
                 "damageType": projectile.damage_type,
                 "hasCollisionEffect": projectile.has_collision_effect,
+                "dieAfterColl": projectile.die_after_coll,
                 "yModOnExplosion": projectile.y_mod_on_explosion,
             }.items() if value is not None
         }
