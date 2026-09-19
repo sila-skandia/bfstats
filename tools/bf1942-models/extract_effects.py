@@ -56,11 +56,15 @@ EFFECT_SOUND_LEVEL = "high"
 # the same 32 is the `SoundSetup` constructor's own default before any `.con`
 # is read (lnxded `dice::bf::SoundSetup::SoundSetup` 0x080d51c0, `mov DWORD
 # PTR [ebx+0x50],0x20` at 0x080d520a; `setHardwareVoiceLimit` 0x080d5470
-# stores to that same `+0x50` and refuses a negative). `reserve2dMonoChans
-# 4/4/4` and `reserve2dStereoChans 2/2/2` hold six of them back for
-# non-spatialised playback, and Default.con's own comment gives the three
-# tiers: "Vec order is lo/med/hi and 16/24/32". Carried in the manifest so the
-# viewer's cap is the game's number rather than one this project invented.
+# stores to that same `+0x50` and refuses a negative). Default.con's own
+# comment gives the three tiers: "Vec order is lo/med/hi and 16/24/32".
+#
+# The 32 is the game's. `RESERVED_2D = 6` is this project's reading of
+# `reserve2dMonoChans 4/4/4` + `reserve2dStereoChans 2/2/2`, and it is NOT
+# proven: lnxded has no mixer, and all four of the hardware-voice and
+# reservation accessors have zero call sites in it. Both numbers go into the
+# manifest separately, rather than a single pre-subtracted 26, so the
+# unproven half is visible and can be changed without an extraction.
 VOICE_LIMIT = 32
 RESERVED_2D = 6
 

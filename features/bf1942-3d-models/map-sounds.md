@@ -194,10 +194,31 @@ and there is no per-emitter mixing to model.
 **But the script is often on a bundle the material table never names.** Of
 vanilla's 70 sounding impact bundles, **22 carry no script of their own** and
 inherit it from a nested child. Reading only the named template finds 48 of
-70. `bundle_sound_script` walks the `addTemplate` tree depth-first and
-resolves the path against the **owner's** `.con`, not the named bundle's —
+70. `bundle_sound_scripts` walks the `addTemplate` tree depth-first and
+resolves each path against the **owner's** `.con`, not the named bundle's —
 `RichoStoneDecal` lives in its own directory and `e_richoStone`, which owns
 `richostone.ssc`, in another.
+
+**And a tree can carry two** (corrected 2026-09-20; the first version of this
+said nothing in vanilla did). **10** of the 159 named bundles have two
+distinct scripts under them, and in every case neither is on the parent:
+
+| bundle | first script | second |
+|---|---|---|
+| `MajorImpact_Sand` | `e_Explani02` / `ExplAni02.ssc` | `e_ExplDrySand` / `ExplDrySand.ssc` |
+| `MajorImpact_Metal`, `MajorImpact_Stone` | `e_ExplBoatArmor` | `e_RichoCascadesMetal` / `…Stone` |
+| `BazookaCascades{Metal,Stone,Wood}` | `e_ExplBazooka` | `e_RichoCascades{Metal,Stone,Wood}` |
+| `Exp2Cascades{Metal,Stone,Wood}` | `e_ExplSmall2` | `e_RichoCascades{Metal,Stone,Wood}` |
+| `WaterExplosionTorpedo` | `e_waterimpact` | `e_ExplBoatArmor` |
+
+Both children are ordinary `addTemplate` instances, so the engine stands both
+up and both sound: a blast *and* its rain of debris. Taking only the first
+silenced the second half of every cascade and every major impact. The manifest
+now gives a bundle a list of scripts (`scripts`, with `script` kept as the
+first of them so an older published tree still plays), and vanilla goes from
+43 scripts / 661 layers / 190 samples to **46 / 677 / 192** (2,283,777 B).
+Reproduce the count with `bundle_sound_scripts` over `effect_names`, taking
+the entries of length > 1.
 
 Vanilla, by where the name comes from:
 
@@ -272,8 +293,20 @@ EffectBundle patches among them. It is now honoured in `EngineAudio`: layers
 carry their patch index, a `randomPlay` patch contributes exactly one voice
 per trigger, and the pick is re-rolled every round along with the
 `randomStartPitch` jitter. Played as layers instead of alternates, the
-8-alternate stone ricochet is eight simultaneous cracks. (This also closes
-G12 for the vehicle guns that were already shipping.)
+8-alternate stone ricochet is eight simultaneous cracks.
+
+That the word means *pick one* is a reading of the data, not something read
+out of the engine: the corpus has `randomPlay` only as index 18 of
+`SoundScript__registerCommands`' 23-keyword table, with no note on what the
+mixer does with it. Marked as such rather than as engine behaviour.
+
+**G12 is closed for effect bundles only.** The runtime half is done, but the
+extractor half is not: `extract_map._sound_layers` — the path that ships
+every vehicle engine, vehicle gun and ambient bed — still emits no `patch`
+and no `randomPlay`, so no shipped vehicle layer carries either key and every
+one of them groups under the same `patch: -1` and plays exactly as before.
+Closing G12 for FireArms (11 of 171 patches) and HandFireArms (20 of 113)
+means changing `_sound_layers` and re-extracting every level.
 
 ### The voice budget is the game's own number
 
@@ -311,18 +344,44 @@ the constructor's own default before any `.con` is read —
 refuses a negative (`test edx,edx; js 0x080d5480`). Reproduce with
 
 ```
-objdump -d -M intel --start-address=0x080d51c0 --stop-address=0x080d5260 \
-  "/home/dylan/Downloads/bf1942_lnxded (1).static"
+objdump -d -M intel --start-address=0x080d5120 --stop-address=0x080d5260 \
+  /home/dylan/Downloads/bf1942_lnxded-1.61-patched/bf1942/bf1942_lnxded.static
 ```
+
+(The path here is the patched binary the corpus is pinned to. An earlier
+draft cited `~/Downloads/bf1942_lnxded (1).static`; the two differ in 90
+bytes, none of them in this function, so the addresses hold in both. Both
+`SoundSetup` constructors — `C2` at `0x080d5120`, `C1` at `0x080d51c0` —
+store the same `0x20`, which is why the range above starts at the earlier
+one.)
 
 (This user's own profile also carries `game.setChannels 48`, not the 64 the
 2026-09-14 audit recorded — `Settings/Profiles/skandia/Sound.con`.)
 
-So: **32 hardware voices less the 6 reserved for 2D = 26 spatialised**, and
-that is the number `effects.sounds.json` carries and `effect-audio.js`
-spends. Arbitration is the engine's: `priority` decides, and between equals
-the furthest from the listener loses. A request that outbids nothing is
-dropped, which is what a full mixer does.
+**What the 26 is, and is not.** 32 is proven. The subtraction is not: nothing
+in lnxded computes a budget from the reservations, because a dedicated server
+has no mixer. `getHardwareVoiceLimit` `0x080d5460`, `setHardwareVoiceLimit`
+`0x080d5470`, `getReserve2dMonoChans` `0x080d53c0` and
+`getReserve2dStereoChans` `0x080d5400` have **zero call sites in the whole
+binary** — they are console-variable accessors and nothing else
+(`objdump -d -M intel <binary> | grep -c 'call.*80d5460'` returns 0 for each).
+Two further things are open with it: whether a *stereo* reservation costs one
+hardware voice or two (32 − 4 − 2 = 26 against 32 − 4 − 4 = 24), and how
+`Sound.setHardwareVoiceLimit` relates to the separate, larger
+`game.setChannels` — `Settings/Default/SoundLow.con` and `SoundMedium.con`
+say 16, `SoundHigh.con` 32, `Profiles/Default/Sound.con` and
+`Profiles/Custom/Sound.con` 64. On the DirectSound reading those are software
+mixer channels and the 32 is only the hardware-accelerated subset, in which
+case the real concurrency ceiling is 64, not 26.
+
+So: **26 is the viewer's choice, derived from two proven settings by an
+unproven subtraction.** It is what `effects.sounds.json` carries (as
+`voiceLimit: 32` and `reserved2d: 6`, so the arithmetic stays visible and
+changeable) and what `effect-audio.js` spends. Arbitration is the engine's
+word: `priority` decides, and between equals the furthest from the listener
+loses. That a full mixer *drops* rather than steals is also a viewer choice —
+`.ssc` has the word `priority` and no word for what happens when the mixer is
+full, and the client-side mixer that does the arbitrating has not been read.
 
 Two refinements the page forced, both now unit-tested:
 
