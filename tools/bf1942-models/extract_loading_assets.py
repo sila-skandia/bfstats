@@ -104,10 +104,13 @@ CANONICAL_TITLES: dict[str, str] = {
     "pow": "P.O.W.",
 }
 
+# `rem` opens a comment only as a word of its own. Matching the bare letters cut
+# `levels/remagen/...` off at `levels/`, which lost Remagen its load picture.
 CON_COMMAND_RE = re.compile(
-    r'^\s*(?:game\.)?(?P<cmd>setLoadPicture|setBackgroundMusic|setLoadMusicFilename)\s+["\']?(?P<arg>[^"\'\r\n]+?)["\']?\s*(?:rem.*)?$',
+    r'^\s*(?:game\.)?(?P<cmd>setLoadPicture|setBackgroundMusic|setLoadMusicFilename)\s+["\']?(?P<arg>[^"\'\r\n]+?)["\']?(?:\s+rem\b.*)?\s*$',
     re.IGNORECASE | re.MULTILINE,
 )
+_REM_LINE_RE = re.compile(r"rem\b", re.IGNORECASE)
 
 
 # --------------------------------------------------------------------------- #
@@ -229,13 +232,22 @@ class ArchiveReader:
             self._index[norm] = name
 
     def find(self, pattern: str) -> str | None:
-        """Find an entry matching exact pattern, suffix, or substring."""
+        """Find an entry by exact path, then whole trailing path, then substring.
+
+        Strictest first, each as its own pass: one loop that accepted any
+        suffix let `reloader.tga` answer for `loader.tga` whenever the archive
+        happened to list it earlier.
+        """
         needle = pattern.replace("\\", "/").lower()
         if needle in self._index:
             return self._index[needle]
-        for norm, real in self._index.items():
-            if norm.endswith(needle) or needle in norm:
-                return real
+        tail = "/" + needle.lstrip("/")
+        for accept in (lambda norm: norm.endswith(tail),
+                       lambda norm: norm.endswith(needle),
+                       lambda norm: needle in norm):
+            for norm, real in self._index.items():
+                if accept(norm):
+                    return real
         return None
 
     def read(self, entry_name: str) -> bytes:
@@ -274,7 +286,7 @@ def parse_menu_init_con(content: str) -> dict[str, str]:
     results: dict[str, str] = {}
     for line in content.splitlines():
         line = line.strip()
-        if not line or line.lower().startswith("rem"):
+        if not line or _REM_LINE_RE.match(line):
             continue
         match = CON_COMMAND_RE.match(line)
         if match:
@@ -288,11 +300,12 @@ def parse_menu_init_con(content: str) -> dict[str, str]:
 def format_map_title(name: str) -> str:
     """Format map directory name into authentic in-game uppercase loading title."""
     cleaned = name.strip()
-    key = cleaned.lower()
-    if key in CANONICAL_TITLES:
-        return CANONICAL_TITLES[key]
-    spaced = cleaned.replace("_", " ")
-    tokens = spaced.split()
+    tokens = cleaned.replace("_", " ").split()
+    # Look the name up the way it will be spoken, so stray separators around a
+    # directory name (`__wake__`) still find `wake`.
+    for key in (cleaned.lower(), "_".join(tokens).lower()):
+        if key in CANONICAL_TITLES:
+            return CANONICAL_TITLES[key]
     return " ".join(tokens).upper()
 
 
