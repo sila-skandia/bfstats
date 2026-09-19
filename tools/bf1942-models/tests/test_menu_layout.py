@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import extract_menu_layout as eml  # noqa: E402
 from bf42 import meme  # noqa: E402
+from bf42.modmenu import LayeredArchive  # noqa: E402
 from bf42.rfa import RfaArchive, find_archives_dir  # noqa: E402
 from extract_spawn_layout import load_lexicon  # noqa: E402
 
@@ -45,7 +46,8 @@ class SkirmishLayoutTests(unittest.TestCase):
         lexicon_path = next((c for c in MOD_DIR.iterdir()
                              if c.name.lower() == "lexiconall.dat"), None)
         cls.lexicon = eml.load_lexicon(lexicon_path) if lexicon_path else {}
-        cls.layout = eml.decode_layout(MENU_RFA, cls.lexicon)
+        with LayeredArchive([MENU_RFA], ["bf1942"]) as menu:
+            cls.layout = eml.decode_layout(menu, cls.lexicon)
         cls.elements = cls.layout["pages"]["skirmish"]["elements"]
 
     def find(self, **match):

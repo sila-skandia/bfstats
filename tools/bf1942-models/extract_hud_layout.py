@@ -72,11 +72,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from extract_models import DEFAULT_GAME_DIR  # noqa: E402
+from extract_models import DEFAULT_GAME_DIR, mod_chain  # noqa: E402
+from extract_hud_pack import hud_dir_for  # noqa: E402
 from bf42 import meme  # noqa: E402
-from bf42.rfa import RfaArchive, find_archives_dir  # noqa: E402
+from bf42.modmenu import MenuSources  # noqa: E402
 from extract_spawn_layout import (  # noqa: E402
-    align_of, extract_fonts, font_handles, font_id, load_lexicon, texture_key,
+    align_of, extract_fonts, font_handles, font_id, load_chain_lexicon,
+    load_lexicon, texture_key,
 )
 
 VIEWER_HUD_DIR = Path(__file__).resolve().parent / "viewer" / "maps" / "_shared" / "hud"
@@ -505,22 +507,53 @@ def leading_culls(top: meme.Obj) -> list[tuple[str, str]]:
     return names
 
 
-def find_top(root: meme.Obj, signature: list[tuple[str, str]], rect) -> meme.Obj:
+def find_top(root: meme.Obj, signature: list[tuple[str, str]], rect,
+             strict: bool = True) -> tuple[meme.Obj, bool]:
     """The one top-level entry (`root.chain()`) whose leading CullNode
-    signature and own rect match exactly. Raises rather than guess when
-    that is not unique -- this is checked against vanilla only (see
-    NOTES); a mod that restructures menu/InGame would need this re-run."""
+    signature and own rect match exactly, and whether it took the relaxed
+    path below.
+
+    The signature/rect pairs in `RAW_TOPS` were read off vanilla, where
+    several entries share a signature and are told apart only by their rect
+    (`vehiclePanel` and `vehicleAmmo` both cull on `Vehicle/ShowVehicleIcon`),
+    so both halves have to match and anything else raises rather than guess.
+
+    `strict=False` -- a mod's own menu/InGame -- allows two relaxations, and
+    only two:
+
+    * nothing matches signature *and* rect but exactly one entry in the file
+      carries that signature: that entry is taken and the second return value
+      is True, so a mod that moved a widget decodes at the position it moved
+      it to. Eve of Destruction moves the weapon bar this way.
+    * no entry carries the signature at all: `None`, meaning the mod dropped
+      that widget. EoD has no `ShowFlagIcon` group -- no CTF flag icon --
+      and an empty group is the honest reading of that.
+
+    Anything still ambiguous raises, so a mod that restructured the file
+    fails loudly instead of producing a layout that is wrong in a way nobody
+    would notice until it drew.
+    """
     matches = []
+    by_signature = []
     for top in root.chain():
         if leading_culls(top) != signature:
             continue
-        got = (top.fields.get("X"), top.fields.get("Y"), top.fields.get("Width"), top.fields.get("Height"))
+        by_signature.append(top)
+        got = (top.fields.get("X"), top.fields.get("Y"),
+               top.fields.get("Width"), top.fields.get("Height"))
         if got == rect:
             matches.append(top)
-    if len(matches) != 1:
-        raise SystemExit(f"expected exactly one menu/InGame top-level entry for "
-                          f"signature={signature} rect={rect}, found {len(matches)}")
-    return matches[0]
+    if len(matches) == 1:
+        return matches[0], False
+    if not strict and not matches:
+        if len(by_signature) == 1:
+            return by_signature[0], True
+        if not by_signature:
+            return None, False
+    raise SystemExit(f"expected exactly one menu/InGame top-level entry for "
+                     f"signature={signature} rect={rect}, found {len(matches)}"
+                     + ("" if strict else
+                        f" ({len(by_signature)} entries carry that signature)"))
 
 
 def flatten(tops: list[meme.Obj], lexicon: dict[str, str], on_enter=None) -> list[dict]:
@@ -607,12 +640,46 @@ RAW_TOPS: dict[str, tuple[list[tuple[str, str]], tuple]] = {
 SUPPLY_KEYS = ("supplyCtf", "supplyParachute", "supplyRepair", "supplyHeal",
                "supplyMine", "supplyReload", "supplyFlag", "supplyNonTakeable")
 
+#: The last note above describes truthfully a run that read vanilla's own
+#: menu/InGame, and a run that read a mod's not at all, so the latter
+#: replaces it. It turns on *whose archive answered*, not on which `--mod`
+#: was asked for: Road to Rome and Secret Weapons ship no menu/InGame of
+#: their own, so their HUD layout is vanilla's file with vanilla's note and
+#: comes out byte-identical -- which is what lets `extract_hud_mods.py` leave
+#: `hud-layout.json` out of their packs entirely.
+MOD_NOTE = (
+    "Read from a mod's menu chain, nearest child first. The top-level "
+    "entries are located by their leading CullNode signature and their own "
+    "rect, both derived from vanilla; a mod that kept menu/InGame's "
+    "structure decodes through the same finder, and one that restructured it "
+    "makes find_top fail loudly rather than guess. extract_hud_mods.py then "
+    "leaves hud-layout.json out of that mod's pack and the viewer falls back "
+    "to the vanilla one."
+)
 
-def decode_hud(ingame: bytes, lexicon: dict[str, str]) -> dict:
+
+def notes_for(owner: str) -> list[str]:
+    """`owner` is the mod in the chain whose menu.rfa held `menu/InGame`."""
+    if owner.lower() == "bf1942":
+        return NOTES
+    return NOTES[:-1] + [MOD_NOTE]
+
+
+def decode_hud(ingame: bytes, lexicon: dict[str, str],
+               source: str = SOURCE, notes: list[str] | None = None,
+               strict: bool = True) -> dict:
     root, reader = meme.load(ingame)
     raw: dict[str, list[dict]] = {}
+    moved: list[str] = []
+    absent: list[str] = []
     for key, (sig, rect) in RAW_TOPS.items():
-        top = find_top(root, sig, rect)
+        top, relaxed = find_top(root, sig, rect, strict)
+        if top is None:
+            absent.append(key)
+            raw[key] = []
+            continue
+        if relaxed:
+            moved.append(key)
         on_enter = tag_ammo_side if key == "vehicleAmmo" else None
         raw[key] = flatten([top], lexicon, on_enter=on_enter)
 
@@ -640,11 +707,23 @@ def decode_hud(ingame: bytes, lexicon: dict[str, str]) -> dict:
         out_groups[key] = {"rect": bounding_rect(elements), "elements": elements}
         fonts.update(el["font"] for el in elements if el["kind"] == "text")
 
+    all_notes = list(NOTES if notes is None else notes)
+    if moved:
+        all_notes.append(
+            "Located by CullNode signature alone, because this mod's "
+            "menu/InGame places them somewhere other than vanilla does, and "
+            "nothing else in the file carries their signature: "
+            + ", ".join(moved) + ".")
+    if absent:
+        all_notes.append(
+            "Not in this mod's menu/InGame at all -- no entry carries the "
+            "signature -- so the group is empty and nothing draws for it: "
+            + ", ".join(absent) + ".")
     return {
         "virtual": list(VIRTUAL),
-        "source": SOURCE,
+        "source": source,
         "fonts": sorted(fonts),
-        "notes": NOTES,
+        "notes": all_notes,
         "groups": out_groups,
     }
 
@@ -654,31 +733,34 @@ def decode_hud(ingame: bytes, lexicon: dict[str, str]) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--game-dir", type=Path, default=DEFAULT_GAME_DIR)
-    parser.add_argument("--out", type=Path, default=VIEWER_HUD_DIR)
+    parser.add_argument("--mod", default="bf1942",
+                        help="mod whose menu chain to read (default: bf1942)")
+    parser.add_argument("--out", type=Path, default=None,
+                        help="output directory (default: the mod's own pack dir)")
     parser.add_argument("--force", action="store_true", help="re-encode font atlases")
     args = parser.parse_args()
 
     game_dir = args.game_dir.expanduser()
-    mod = game_dir / "Mods" / "bf1942"
-    archives = find_archives_dir(mod)
-    if archives is None:
-        sys.exit(f"no Archives directory under {mod}")
-    by_name = {c.name.lower(): c for c in archives.iterdir()}
-    menu_rfa, font_rfa = by_name.get("menu.rfa"), by_name.get("font.rfa")
-    if not menu_rfa or not font_rfa:
-        sys.exit(f"menu.rfa / Font.rfa not found under {archives}")
-    lexicon_path = next((c for c in mod.iterdir() if c.name.lower() == "lexiconall.dat"), None)
-    lexicon = load_lexicon(lexicon_path) if lexicon_path else {}
+    sources = MenuSources(mod_chain(game_dir, args.mod))
+    out = args.out or hud_dir_for(sources.mod_id)
+    lexicon = load_chain_lexicon(sources.lexicon_paths)
 
-    with RfaArchive(menu_rfa) as arch:
-        ingame = arch.read(next(e for e in arch.entries if e.lower() == "menu/ingame"))
-    hud = decode_hud(ingame, lexicon)
-    hud["fontFiles"] = extract_fonts(font_rfa, font_handles(hud), args.out / "fonts", args.force)
-    args.out.mkdir(parents=True, exist_ok=True)
-    (args.out / "hud-layout.json").write_text(json.dumps(hud, indent=1) + "\n")
+    with sources.open_menu() as menu:
+        entry = next(e for e in menu.entries if e.lower() == "menu/ingame")
+        ingame = menu.read(entry)
+        owner = menu.owner(entry)
+    hud = decode_hud(ingame, lexicon,
+                     f"menu/InGame (MemeFile 2.0) in "
+                     f"Mods/{owner}/Archives/menu.rfa",
+                     notes_for(owner), strict=owner.lower() == "bf1942")
+    with sources.open_font() as fonts:
+        hud["fontFiles"] = extract_fonts(fonts, font_handles(hud),
+                                         out / "fonts", args.force)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "hud-layout.json").write_text(json.dumps(hud, indent=1) + "\n")
     counts = ", ".join(f"{k}={len(v['elements'])}" for k, v in hud["groups"].items())
-    print(f"{sum(len(v['elements']) for v in hud['groups'].values())} elements "
-          f"({counts}), {len(hud['fontFiles'])} fonts -> {args.out}")
+    print(f"{sources.mod_id}: {sum(len(v['elements']) for v in hud['groups'].values())} "
+          f"elements ({counts}), {len(hud['fontFiles'])} fonts -> {out}")
 
 
 if __name__ == "__main__":
