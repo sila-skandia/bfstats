@@ -172,6 +172,12 @@ class Flattener:
         self.variables: dict[str, object] = {}
         self.strings: dict[str, str] = {}
 
+    def effect_color(self, effect):
+        """The multiplier an `EffectNode`'s effect applies. A method so a
+        subclass can resolve effects whose channels are bound to variables;
+        the base is the module function, unchanged."""
+        return effect_color(effect)
+
     def note_variables(self, obj) -> None:
         if isinstance(obj, meme.Obj):
             if obj.name and obj.cls in ("BoolData", "IntData", "FloatData", "StringData"):
@@ -191,7 +197,7 @@ class Flattener:
                 if cond:
                     when.append(cond)
             elif cls == "EffectNode":
-                c = effect_color(node["Effect"])
+                c = self.effect_color(node["Effect"])
                 if c:
                     color = mul_color(color, c)
             elif cls == "TransformNode":
@@ -208,7 +214,21 @@ class Flattener:
             elif cls in ("CullEventActionNode", "CullVariableAndEventActionNode"):
                 self.emit_hit(node, nodes, rect, when)
             else:
-                self.run(node.children(), ox, oy, rect, color, when)
+                ox, oy, color, when = self.extend(node, nodes, ox, oy, rect, color, when)
+
+    def extend(self, node, siblings, ox, oy, rect, color, when):
+        """Every class the cases above do not name. The base walks into the
+        node's own children, which is what `menu/InGame` needs and all it
+        ever needed.
+
+        A subclass overrides this to add classes without restating the
+        dispatch. Like `CullNode` and `EffectNode`, a class here may be
+        sibling-scoped rather than a leaf (`TranslateNode` shifts the origin
+        for everything after it in the same list), so the hook returns the
+        state the loop carries forward.
+        """
+        self.run(node.children(), ox, oy, rect, color, when)
+        return ox, oy, color, when
 
     def leaf(self, kind, rect, color, when, **extra) -> dict:
         el = {"kind": kind, "rect": [round(v, 2) for v in rect]}
