@@ -351,6 +351,16 @@ export class EngineAudio {
    * This is voice stealing: a caller at its budget silences a patch outright
    * rather than letting the sum grow. `dispose()` is the other half and takes
    * the nodes with it; this one leaves an instance a pool can trigger again.
+   *
+   * The promises go with the sources. A patch that is cut still holds its
+   * armed `trigger Volume` latches, and `EffectAudio` parks a silenced slot at
+   * `since = Infinity`, so the window-close that calls `disarmPending` never
+   * comes round again for it: the latch stays armed forever. That is both a
+   * voice permanently missing from the budget — measured: one `silence()` of
+   * an `e_ExplGas` played at 4 m leaves `committed` stuck at 1 through 200
+   * frames — and, worse, an explosion that goes off later, when the listener
+   * walks into the distance band the cut layer was gated on. Cutting a patch
+   * has to cancel what it had promised as well as what it was playing.
    */
   silence() {
     for (const source of [...this.live]) {
@@ -359,6 +369,7 @@ export class EngineAudio {
     }
     this.live.clear();
     for (const voice of this.voices) voice.source = null;
+    this.disarmPending();
   }
 
   /**
