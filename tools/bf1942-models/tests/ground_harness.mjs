@@ -1442,13 +1442,19 @@ results.diffRPMByType = {
   clampedTank.sample(10);
   const clampedCar = new EngineState(ENGINE_SPECS.willy);
   clampedCar.sample(10);
-  // (b) `& 4`: the frame MAX while revs > 0, the frame MIN while revs <= 0.
+  // (b) `& 4`: the frame MAX while revs >= 0, the frame MIN while revs < 0.
   const tankMax = new EngineState(ENGINE_SPECS.sherman);
   tankMax.revs = 0.5;
   for (const v of [0.1, 0.3, 0.2]) tankMax.sample(v);
   const tankMin = new EngineState(ENGINE_SPECS.sherman);
   tankMin.revs = -0.5;
   for (const v of [-0.1, -0.3, -0.2]) tankMin.sample(v);
+  // The boundary: `fucompp` sets C3 on equality, so `test ah,0x45` is
+  // non-zero and the `jne` at 0x0824c926 goes to the MAX arm. A tank at
+  // exactly zero revs keeps the max, not the min.
+  const tankZero = new EngineState(ENGINE_SPECS.sherman);
+  tankZero.revs = 0;
+  for (const v of [-0.3, 0.2, -0.1]) tankZero.sample(v);
   // (c) the car's running mean, x0.99, over every contacting part — so the
   // two free-rolling fronts' honest zeroes halve a Willy's load.
   const carAll = new EngineState(ENGINE_SPECS.willy);
@@ -1469,6 +1475,7 @@ results.diffRPMByType = {
     clampedCar: round(clampedCar.load, 5),
     tankKeepsMax: round(tankMax.load, 5),
     tankKeepsMin: round(tankMin.load, 5),
+    tankAtZeroRevsKeepsMax: round(tankZero.load, 5),
     carTwoSamples: round(carAll.load, 5),
     carFourWithTwoZeroes: round(carWithZeroes.load, 5),
     meanScale: round(one.load / (dv * 7.0 / (engineTorqueFraction(1.0) * 10.5)), 4),
