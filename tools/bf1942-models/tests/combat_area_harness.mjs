@@ -5,7 +5,8 @@
 // the page loads, byte for byte. The module imports nothing.
 
 import { CombatArea, combatAreaRect, isInside, distanceOutside,
-         DEFAULT_TIME_ALLOWED, DEFAULT_DAMAGE_PER_SECOND,
+         isDamagingMaterial, DEFAULT_TIME_ALLOWED, DEFAULT_DAMAGE_PER_SECOND,
+         DEFAULT_MATERIAL_TO_GIVE_DAMAGE,
          OUTSIDE_TEXT, OUTSIDE_COLOR } from './combat-area.js';
 
 const results = {};
@@ -60,15 +61,29 @@ results.distance = {
 
 function run(area, samples) {
   const out = [];
-  for (const [dt, x, z] of samples) out.push(area.step(dt, x, z));
+  for (const [dt, x, z, material] of samples) out.push(area.step(dt, x, z, material));
   return out;
 }
 
-// A level with no area at all: inert, whatever the position.
+// A level with no area at all and no material channel: inert, whatever the
+// position. `active` is now true (the material half COULD fire if the level
+// fed one) but nothing happens without a material, which is the behaviour
+// every such level had before CA-5 was wired.
 const inert = new CombatArea({ combatArea: null });
 results.inert = {
   active: inert.active,
+  hasRect: inert.hasRect,
+  materialToGiveDamage: inert.materialToGiveDamage,
   frames: run(inert, [[1, 1e6, 1e6], [1, 1e6, 1e6]]),
+};
+
+// The same level with the material half switched off entirely.
+const rectOnly = new CombatArea({ combatArea: null }, { materialToGiveDamage: null });
+results.rectOnly = {
+  active: rectOnly.active,
+  materialToGiveDamage: rectOnly.materialToGiveDamage,
+  // Standing on material 7 with the test off: still inside.
+  frames: run(rectOnly, [[1, 10, -10, 7], [1, 10, -10, 7]]),
 };
 
 // Walk out of Berlin and stand there. dt 1 s a frame makes the arithmetic
@@ -164,5 +179,87 @@ results.edges = {
   justOutsideMinZ: edge.step(1, 1600, -1535.9).inside,
   justOutsideMaxZ: edge.step(1, 1600, -2048.1).inside,
 };
+
+// --- CA-5, the painted half ----------------------------------------------
+
+results.material = {
+  defaultId: DEFAULT_MATERIAL_TO_GIVE_DAMAGE,
+  // `cmp eax,edx` at 0x08152546 is a plain equality on a byte.
+  matches: isDamagingMaterial(7, 7),
+  misses: isDamagingMaterial(8, 7),
+  // A level with no `terrain/materials.png` feeds null, and null is not 7.
+  nullMaterial: isDamagingMaterial(null, 7),
+  undefinedMaterial: isDamagingMaterial(undefined, 7),
+  // The channel exists but the test is switched off.
+  testOff: isDamagingMaterial(7, null),
+};
+
+// Berlin: standing well inside the rectangle, on gravel and then on 7. The
+// real level paints 7 over 84% of the samples inside its own box and puts
+// every control point on 8 or 14, so this is the level's own shape.
+const painted = new CombatArea(berlinReal);
+results.paintedGround = {
+  frames: run(painted, [
+    [1, 1800, -1800, 8],    // gravel: inside
+    [1, 1800, -1800, 7],    // painted: the countdown starts
+    [1, 1800, -1800, 7],
+    [1, 1800, -1800, 14],   // dirt road: back inside, accumulator zeroed
+    [1, 1800, -1800, 7],
+  ]),
+};
+
+// The painted half damages on exactly the same schedule as walking out, and
+// stops when the man steps off it.
+const paintedLong = new CombatArea(berlinReal);
+const paintedFrames = run(paintedLong,
+  Array.from({ length: 16 }, () => [1, 1800, -1800, 7]));
+results.paintedDamage = {
+  countdowns: paintedFrames.map(f => f.countdown),
+  damage: paintedFrames.map(f => f.damage),
+  total: Math.round(paintedFrames.reduce((s, f) => s + f.damage, 0) * 1000) / 1000,
+  distanceIsZero: paintedFrames.every(f => f.distance === 0),
+  everyFrameIsInsideTheRect: paintedFrames.every(f => f.inRect),
+};
+
+// A level that paints no 7 anywhere must behave exactly as it did before. The
+// same walk, with every frame handed a material the level really uses.
+const unpainted = new CombatArea(berlinReal);
+const unpaintedFrames = run(unpainted, [
+  [1, 1800, -1800, 11], [1, 1000, -1800, 11], [1, 1000, -1800, 11],
+  [1, 1800, -1800, 11],
+]);
+const noMaterialFrames = (() => {
+  const a = new CombatArea(berlinReal);
+  return run(a, [[1, 1800, -1800], [1, 1000, -1800], [1, 1000, -1800],
+                 [1, 1800, -1800]]);
+})();
+results.unpainted = {
+  withMaterial: unpaintedFrames.map(f => ({ inside: f.inside, countdown: f.countdown,
+                                            damage: f.damage })),
+  withoutMaterial: noMaterialFrames.map(f => ({ inside: f.inside, countdown: f.countdown,
+                                                damage: f.damage })),
+};
+
+// A level with NO rectangle that paints 7 anyway -- aberdeen, kharkov and
+// kursk all do, and all three carry `combatArea: null`. The material half has
+// to fire there, because the rectangle it would otherwise need is the whole
+// heightfield and nothing is ever outside that.
+const noRectPainted = new CombatArea({ combatArea: null });
+results.noRectPainted = {
+  active: noRectPainted.active,
+  hasRect: noRectPainted.hasRect,
+  frames: run(noRectPainted, [
+    [1, 500, -500, 3],
+    [1, 500, -500, 7],
+    [1, 500, -500, 7],
+  ]),
+};
+
+// Outside the rectangle, the material is never consulted: 0x08152525 is only
+// reached from the in-bounds branch.
+const outsideBox = new CombatArea(berlinReal);
+results.outsideIgnoresMaterial = run(outsideBox, [
+  [1, 1000, -1800, 3],    // outside AND on safe ground: still outside
+]);
 
 console.log(JSON.stringify(results));
