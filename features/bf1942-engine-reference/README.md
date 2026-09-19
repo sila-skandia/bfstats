@@ -58,6 +58,31 @@ in ledger row SM-1:
 shader anywhere in it. Anything about *drawing* — and that includes how a
 material's components reach the GPU — can only come from the client.
 
+**It decompiles, by name, in seconds (found 2026-09-19).** The server has been
+sitting fully analysed in a second Ghidra project, `~/ghidra/linux-server`
+(39,983 functions, every symbol attached), and it is also in the
+`bf1942-mp-enabler` project. The GUI and the bridge refuse to open either copy
+("minor language change 4.6 -> 4.7 ... can only be opened read-only until it is
+upgraded"), which is why earlier rounds believed the server was "not in Ghidra"
+and hand-read it as x87 assembly. A headless Ghidra upgrades on open, so
+[`lnxded/decompile.sh`](lnxded/decompile.sh) copies the project to a temporary
+directory and decompiles whatever you name:
+
+```bash
+./lnxded/decompile.sh /tmp/out 'ResponsePhysics::solveImpulse' 'world::PhysicsNode::update' 0x08253930
+./lnxded/vt.py ResponsePhysics          # a gcc vtable, offsets from the VPTR (symbol + 8)
+./lnxded/vt.py --float 0x86d16cc        # a float constant;  --u32 for an IID_/CID_;  --sym for "which function is this in"
+```
+
+About 15 s plus 0.1 s per function; names inside the C are mangled (`c++filt`).
+It never touches the original project or the GUI's open one. Two runs must not
+share a project copy (they collide on its lock) - the script makes its own.
+Reading the decompiler's x87: `(byte)(x < 0.0 | NAN(x)<<10>>8 | (x == 0.0)<<0xe>>8)
+== 0x40` is just `x == 0.0`; `param_1[0x1a]` on an `int *this` is the float at
+byte `+0x68`. **The decompiler is a reader, not evidence**: a sign, a comparison
+direction or a subtraction order still gets confirmed in `objdump`, and the
+2026-09-19 verifiers did find decompile-level misreadings that way.
+
 **It does not give you struct layouts.** The binary reports `with debug_info`,
 but the DWARF covers only the statically linked libstdc++ and libgcc
 (`locale.cc`, `eh_throw.cc`, `libgcc2.c`); there is not one DICE compilation
@@ -123,6 +148,7 @@ endpoint list if you need an endpoint the script does not cover.
 symbols.json    address <-> name <-> subsystem <-> confidence <-> source
 xref.py         lookup + Ghidra driver + `add` to record findings
 ledger.md       every assumption our code makes, and its verification status
+lnxded/         decompile.sh + vt.py: the Linux server, decompiled by name
 include/        C stubs: the shape of each format, with per-field provenance
 subsystems/     narrative notes per subsystem, as they accumulate
 surveys/        scripts that measure real game data to test an assumption
@@ -178,6 +204,22 @@ table, and the StandardMesh anchors.
 ---
 
 ## Current state
+
+**Rigid-body collisions, 2026-09-19.** How two vehicles collide - contact
+finding, the mass-ratio push, the integrator and its box inertia, sleeping,
+the friction solver and crash damage - is written up in
+[subsystems/collision-response.md](subsystems/collision-response.md), from six
+reports and five verifications kept in
+[`features/vehicle-collision-physics/`](../vehicle-collision-physics/README.md).
+It **reverses this corpus on one point that the viewer was built on**: a
+collision does cost a vehicle hit points, against another object and against the
+ground (ledger HP-6, COL-2...; hitpoints-and-damage.md §3 rewritten). It also
+closes PHY-2's friction magnitudes, corrects physics.md §3 (only the root node
+integrates, one step per tick; `+0xcc` is `isSleeping`), names the
+`responsePhysicsManager` vtable (`update` is `+0x14`; `+0x1c` is the cache
+reset), and adds
+a `collision` subsystem of about 200 symbols, server and client.
+
 
 804 symbols across 25 subsystems: 225 from bf42plus, the rest read from the binaries — 138 in the first 2026-09-16 research round (formats, menus, rendering, physics, effects), 198 more (193 net new, plus five corrections to earlier entries) in the second, on the mechanics below, a further 10 (SSC-1/SSC-2/SSC-5's SoundScript addresses) from an unrelated fix landed the same day, and 25 more (plus five corrections) across two rounds on 2026-09-17, which closed HP-6 by proving a collision never costs hit points and settled what makes a vehicle burn — see [ledger](ledger.md) HP-6 and [subsystems/hitpoints-and-damage.md](subsystems/hitpoints-and-damage.md) §3.
 

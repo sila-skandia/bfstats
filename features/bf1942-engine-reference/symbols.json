@@ -1344,7 +1344,7 @@
    "subsystem": "game",
    "confidence": "verified",
    "source": "ghidra",
-   "note": "RELABELS bf42plus 'World::update physics dispatch'. It is GameClient::simulateFrame(float tickDt), GameClient vtable slot vptr+0x13c (read at 0x008d8ee4), twin of lnxded GameServer::simulateFrame 0x0815c2a0 (slot +0x140): g_game(DAT_0095f8d4)->getGameStatus (slot +0x74); FUN_004b6c20 simulatePlayersUpdate(dt); objectManager DAT_0097d764 slot +0x1c updateTweakingObjects then slot +0x14 updateObjects(dt,0,3); FUN_004b6850 simulatePlayersPhysics; physicsNodeManager DAT_0097d758 slot +0x14 (dt,0,0); responsePhysicsManager DAT_0097d75c slot +0x1c; FUN_0040bdc0 Game::updateWorldCollision; FUN_004b68c0 simulatePlayersCollisions; per-player loop; FUN_004b3260 updateGameLogic; FUN_0040be00 Game::updatePortals; this+0x21c++. Its dt is the FIXED 1/30 tick from GameClient::update 0x0048fca0, called nTicks times per frame -- not the frame dt. Physics is fixed-step 30 Hz, not frame-rate coupled."
+   "note": "RELABELS bf42plus 'World::update physics dispatch'. It is GameClient::simulateFrame(float tickDt), GameClient vtable slot vptr+0x13c (read at 0x008d8ee4), twin of lnxded GameServer::simulateFrame 0x0815c2a0 (slot +0x140): g_game(DAT_0095f8d4)->getGameStatus (slot +0x74); FUN_004b6c20 simulatePlayersUpdate(dt); objectManager DAT_0097d764 slot +0x1c updateTweakingObjects then slot +0x14 updateObjects(dt,0,3); FUN_004b6850 simulatePlayersPhysics; physicsNodeManager DAT_0097d758 slot +0x14 (dt,0,0); responsePhysicsManager DAT_0097d75c slot +0x1c; FUN_0040bdc0 Game::updateWorldCollision; FUN_004b68c0 simulatePlayersCollisions; per-player loop; FUN_004b3260 updateGameLogic; FUN_0040be00 Game::updatePortals; this+0x21c++. Its dt is the FIXED 1/30 tick from GameClient::update 0x0048fca0, called nTicks times per frame -- not the frame dt. Physics is fixed-step 30 Hz, not frame-rate coupled. [2026-09-19] 'responsePhysicsManager slot +0x1c' here is resetCachedCollisionObjects, called before each of the two collision passes; the passes themselves go through slot +0x14 inside updateWorldCollision and the per-player loop. Full tick order: subsystems/collision-response.md section 2."
   },
   {
    "address": "0x004b6f30",
@@ -1938,7 +1938,7 @@
    "subsystem": "physics",
    "confidence": "verified",
    "source": "research-2026-09-17-phy4",
-   "note": "Client twin of lnxded 0x082543d0; undefined in Ghidra, read with objdump. Tests [compositeObject+0x4] & 0x4000000 at 0x00540b17 (the server's byte +0x7 bit 0x4): set -> updatePositionalDragSimple 0x0053f4e0 with 0.1 and 1.0 pushed; clear -> the box law. For that it asks the object's geometry (vtable +0x10, then +0x24 with IID 0x492fe0fe from 0x00903490 pushed twice) for two bounding-box corners, takes extents DX, DY (vertical), DZ, and passes updatePositionalDragAdvanced 0x0053f5f0 and updateRotationalDragAdvanced 0x0053f7c0 the arguments a1 = 0.785*DX*DY, a2 = 0.785*DX*DZ, a3 = 0.785*DY*DZ (0.785 at 0x008f733c) and a4 = 1 + 24*min([this+0x8c]/DY, 1) (1.0 at 0x008c53c8, 25.0 at 0x008f7210). PHY-4 settled 2026-09-17: the selector bit is never set on any live object (ctors write 0x2090400; no or of 0x4000000 into object flags); every PhysicsNode always takes the box/Advanced branch."
+   "note": "Client twin of lnxded 0x082543d0; undefined in Ghidra, read with objdump. Tests [compositeObject+0x4] & 0x4000000 at 0x00540b17 (the server's byte +0x7 bit 0x4): set -> updatePositionalDragSimple 0x0053f4e0 with 0.1 and 1.0 pushed; clear -> the box law. For that it asks the object's geometry (vtable +0x10, then +0x24 with IID 0x492fe0fe from 0x00903490 pushed twice) for two bounding-box corners, takes extents DX, DY (vertical), DZ, and passes updatePositionalDragAdvanced 0x0053f5f0 and updateRotationalDragAdvanced 0x0053f7c0 the arguments a1 = 0.785*DX*DY, a2 = 0.785*DX*DZ, a3 = 0.785*DY*DZ (0.785 at 0x008f733c) and a4 = 1 + 24*min([this+0x8c]/DY, 1) (1.0 at 0x008c53c8, 25.0 at 0x008f7210). PHY-4 settled 2026-09-17: the selector bit is never set on any live object (ctors write 0x2090400; no or of 0x4000000 into object flags); every PhysicsNode always takes the box/Advanced branch. [2026-09-19 collision round, R2-integrator] client. [R2] F12"
   },
   {
    "address": "0x00541a60",
@@ -5142,7 +5142,7 @@
    "subsystem": "physics",
    "confidence": "verified",
    "source": "ghidra",
-   "note": "dice::ref2::world::responsePhysicsManager singleton, twin of lnxded 0x0871dc1c: slot +0x1c called twice per tick in GameClient__simulateFrame 0x004b6cb0 exactly where the server calls 0x0871dc1c slot +0x1c (0x0815c335, 0x0815c351)."
+   "note": "dice::ref2::world::responsePhysicsManager singleton, twin of lnxded 0x0871dc1c: slot +0x1c called twice per tick in GameClient__simulateFrame 0x004b6cb0 exactly where the server calls 0x0871dc1c slot +0x1c (0x0815c335, 0x0815c351). [2026-09-19] Slot +0x1c is resetCachedCollisionObjects (client 0x00579470), not the collision pass: update(dt, obj) is slot +0x14 (client 0x00579fa0), called from Game::updateWorldCollision 0x0040bdc0 with obj = NULL and once per occupied vehicle from 0x004b7870. Vtable 0x008fdce4, slots re-read from the live binary."
   },
   {
    "address": "0x0097d764",
@@ -5412,7 +5412,7 @@
    "subsystem": "hitpoints",
    "confidence": "verified",
    "source": "research-2026-09-17-collision-damage",
-   "note": "lnxded. The ONLY consumer of the collision-severity arithmetic computed by handleCollisionLandOrWater and handleCollisionObjectVsObject: an audio/visual effect spawn. 352-byte leaf; its own one direct call and indirect offsets {0x8,0xc,0x14,0x2c,0x3c,0x40,0x44,0x74,0x78,0x9c} include no Armor HP mutator. See ledger HP-6."
+   "note": "lnxded. The ONLY consumer of the collision-severity arithmetic computed by handleCollisionLandOrWater and handleCollisionObjectVsObject: an audio/visual effect spawn. 352-byte leaf; its own one direct call and indirect offsets {0x8,0xc,0x14,0x2c,0x3c,0x40,0x44,0x74,0x78,0x9c} include no Armor HP mutator. See ledger HP-6. [CORRECTED 2026-09-19] Not the only consumer: both handlers also pass the severity to GameServer::giveDamage 0x0814b2e0 through the GameServer's own vtable slot +0x15c. See ledger HP-6, COL-3, COL-4."
   },
   {
    "address": "0x08061df0",
@@ -5475,7 +5475,7 @@
    "subsystem": "hitpoints",
    "confidence": "verified",
    "source": "research-2026-09-17-collision-damage",
-   "note": "lnxded, 2135 bytes. Terrain and water contact. Computes |V|, |cos(V,N)|, MaterialManager damage/effect lookups, Armor::getSpeedMod, and for CID_BFSoldierTemplate a fall-height term (getLastCollisionHeight minus current Y, clamped against 1.0/2.0/20.0, times getDamageDampingFromActiveKitParts) -- and spends all of it on playCollisionEffect. No Armor HP mutator is reached. See ledger HP-6."
+   "note": "lnxded, 2135 bytes. Terrain and water contact. Computes |V|, |cos(V,N)|, MaterialManager damage/effect lookups, Armor::getSpeedMod, and for CID_BFSoldierTemplate a fall-height term (getLastCollisionHeight minus current Y, clamped against 1.0/2.0/20.0, times getDamageDampingFromActiveKitParts) -- and spends all of it on playCollisionEffect. No Armor HP mutator is reached. See ledger HP-6. [2026-09-19 collision round, lead] lnxded. [lead] other == NULL. Land: cos^3 x speedMod x |v|^2 x getDamageMod(matTerrain,matSelf) x getDamageForMaterial(matTerrain), applied when > 1.0, vehicles included. Water (matOther 1): cos^2, needs damageFromWater, no threshold. collision-response.md 9.5."
   },
   {
    "address": "0x081551c0",
@@ -5484,7 +5484,7 @@
    "subsystem": "hitpoints",
    "confidence": "verified",
    "source": "research-2026-09-17-collision-damage",
-   "note": "lnxded, 3673 bytes. Same shape and same dead end as handleCollisionLandOrWater. Its three indirect calls at offsets +0x18/+0x1c (Armor's setHitPoints/getHitPoints slots) resolve by data flow to the playerManager singleton and an IPlayerControlObject from the self-collision gate chain -- coincidental offset collisions, not Armor. See ledger HP-6."
+   "note": "lnxded, 3673 bytes. Same shape and same dead end as handleCollisionLandOrWater. Its three indirect calls at offsets +0x18/+0x1c (Armor's setHitPoints/getHitPoints slots) resolve by data flow to the playerManager singleton and an IPlayerControlObject from the self-collision gate chain -- coincidental offset collisions, not Armor. See ledger HP-6. [2026-09-19 collision round, R4-data-survey] lnxded. [R4] pre-existing decomp, read this track; the damage formula, cross-confirmed vs L0 C8 | lnxded. [lead] damage for object-vs-object contacts: attackerArmor.damageMod x angleFactor x victim speedMod x |v|^2 x getDamageMod(matAtt,matVic) x getDamageForMaterial(matAtt); > 1.0 -> this->giveDamage via vtable +0x15c. Soldier victim: separate branch. collision-response.md 9.3. SUPERSEDES the 2026-09-17 note that called this a dead end."
   },
   {
    "address": "0x08156020",
@@ -5718,7 +5718,7 @@
    "subsystem": "hitpoints",
    "confidence": "verified",
    "source": "research-2026-09-16-hitpoints",
-   "note": "lnxded."
+   "note": "lnxded. [2026-09-19 collision round, R4-data-survey] lnxded. [R4] pre-existing decomp; fallback chain ending at 'defaultDamageMod"
   },
   {
    "address": "0x0818df50",
@@ -5943,7 +5943,7 @@
    "subsystem": "hitpoints",
    "confidence": "verified",
    "source": "research-2026-09-16-hitpoints; corrected research-2026-09-17-collision-damage",
-   "note": "lnxded, shared with the projectile-impact chain. Walks the composite-parent chain for the nearest Armor, calls collision()(vtbl+0xe8)/setLastCollisionHeight(vtbl+0xf8), then dispatches to the dice::bf::game global's own vtable (+0x30/+0x34 on the stored vptr) by whether this's +0x4c class is CID_ProjectileTemplate. The gate at 0x81dae30 is self-collision suppression, NOT an otherObject type test (corrected 2026-09-17): it walks getRootParent(this) to the nearest IPlayerControlObject, then bypasses the Armor-recording block only when BOTH ObjectSpawner::getHoldObjectId() matches self's own root (edi+0x48) AND an ICompositeObject-identity compare against getRootParent(otherObject) matches. The setLastCollisionHeight write site is 0x81dae83-0x81dae98 and is the only one in the binary. See ledger HP-6, HP-6b, HP-6d."
+   "note": "lnxded, shared with the projectile-impact chain. Walks the composite-parent chain for the nearest Armor, calls collision()(vtbl+0xe8)/setLastCollisionHeight(vtbl+0xf8), then dispatches to the dice::bf::game global's own vtable (+0x30/+0x34 on the stored vptr) by whether this's +0x4c class is CID_ProjectileTemplate. The gate at 0x81dae30 is self-collision suppression, NOT an otherObject type test (corrected 2026-09-17): it walks getRootParent(this) to the nearest IPlayerControlObject, then bypasses the Armor-recording block only when BOTH ObjectSpawner::getHoldObjectId() matches self's own root (edi+0x48) AND an ICompositeObject-identity compare against getRootParent(otherObject) matches. The setLastCollisionHeight write site is 0x81dae83-0x81dae98 and is the only one in the binary. See ledger HP-6, HP-6b, HP-6d. [2026-09-19 collision round, R3-geometry-broadphase] lnxded. [R3] materials 99 (kill) and 37 (no damage) | lnxded. [lead] [2026-09-19] (self, other, speed, normal, relPos, matSelf, matOther). matOther 99 -> giveDamage 1e10; either material 37 -> no damage dispatch; with an Armor and !isInColList(other): game->handleCollision(other, self, ..., matOther, matSelf) - the OTHER object is the attacker - then addColObject(other). Returns 1 (respond physically) except for the spawner-held case. collision-response.md section 9.1."
   },
   {
    "address": "0x081db230",
@@ -5961,7 +5961,7 @@
    "subsystem": "physics",
    "confidence": "verified",
    "source": "research-2026-09-17-phy4",
-   "note": "Reads template +0x70: bit0 must be set; bit3 set -> allocates PointPhysicsNode (0x08255ef0), attaches it, then object updateFlags(set=0x8, clear=0) at 0x081dd4f6 \u2014 flag 0x8, NOT drag-selector 0x4000000. hasPointPhysics console property drives this path. Confirms PHY-4: point-physics selection is a different switch from the PhysicsNode drag-law bit."
+   "note": "Reads template +0x70: bit0 must be set; bit3 set -> allocates PointPhysicsNode (0x08255ef0), attaches it, then object updateFlags(set=0x8, clear=0) at 0x081dd4f6 \u2014 flag 0x8, NOT drag-selector 0x4000000. hasPointPhysics console property drives this path. Confirms PHY-4: point-physics selection is a different switch from the PhysicsNode drag-law bit. [2026-09-19 collision round, R2-integrator] lnxded. [R2] F9; template vtbl +0x64 | lnxded. [R4] pre-existing decomp; the mass/drag/inertia/centerOfMass binding anchor"
   },
   {
    "address": "0x081ddae0",
@@ -5970,7 +5970,7 @@
    "subsystem": "hitpoints",
    "confidence": "verified",
    "source": "research-2026-09-16-hitpoints",
-   "note": "lnxded. Copies 23 setter calls into a freshly pooled Armor, setMaxHitPoints strictly before setHitPoints. setMaterial is never called -- Armor's material is always the ctor's hardcoded 0. See ledger HP-3."
+   "note": "lnxded. Copies 23 setter calls into a freshly pooled Armor, setMaxHitPoints strictly before setHitPoints. setMaterial is never called -- Armor's material is always the ctor's hardcoded 0. See ledger HP-3. [2026-09-19 collision round, R4-data-survey] lnxded. [R4] decompiled this track; the template->Armor field-copy anchor"
   },
   {
    "address": "0x081dded0",
@@ -6087,7 +6087,7 @@
    "subsystem": "hitpoints",
    "confidence": "verified",
    "source": "research-2026-09-17-collision-damage",
-   "note": "lnxded. Springs are wheels and suspension. Sets two fields, then tail-forwards every argument to SimpleObject::handleCollision -- so a wheel's contact reaches the same dead end as any other."
+   "note": "lnxded. Springs are wheels and suspension. Sets two fields, then tail-forwards every argument to SimpleObject::handleCollision -- so a wheel's contact reaches the same dead end as any other. [CORRECTED 2026-09-19] Not a dead end: the base handler dispatches to GameServer::handleCollision*, which calls giveDamage. A wheel whose collision material is 37 is the exception - material 37 on either side skips the damage dispatch."
   },
   {
    "address": "0x08250950",
@@ -6141,7 +6141,7 @@
    "subsystem": "physics",
    "confidence": "verified",
    "source": "research-2026-09-17-phy4",
-   "note": "lnxded; client twin 0x00540920. Starts by delegating to the root: when this is not getRootNode() (0x082548d0) and a virtual predicate (vtable +0xcc) holds, it hands its force and torque to the root (vtable +0xdc, +0xd8), zeroes its own accumulators (+0x10, +0x1c, +0x28, +0x34, +0x40, +0x4c, +0x64) and returns - no drag and no gravity for that node on that tick. Otherwise, if drag(+0x68) > 0 (asserting when mass +0x6c < 1e-5): bit 0x4 of byte +0x7 of compositeObject(+0xc) set -> updatePositionalDragSimple(this, r = 0.1, scale = 1.0) from literal pushes; clear -> updatePositionalDragAdvanced 0x08252f50 then updateRotationalDragAdvanced 0x08253280 with the object's bounding box (physics.md section 3). Nothing found writes that bit: no .con word, no or of it in either binary, and not SimpleObjectTemplate::setPhysicsNodeComponent 0x081dd490, which only picks the node class from template +0x70. The same bit is read in updateRotationalPhysics 0x08253c3c, Emitter::handleUpdate 0x081e43f9 and Particle::handleUpdate 0x0820adec. PHY-4 settled 2026-09-17: the selector bit is never set on any live object (ctors write 0x2090400; no or of 0x4000000 into object flags); every PhysicsNode always takes the box/Advanced branch."
+   "note": "lnxded; client twin 0x00540920. Starts by delegating to the root: when this is not getRootNode() (0x082548d0) and a virtual predicate (vtable +0xcc) holds, it hands its force and torque to the root (vtable +0xdc, +0xd8), zeroes its own accumulators (+0x10, +0x1c, +0x28, +0x34, +0x40, +0x4c, +0x64) and returns - no drag and no gravity for that node on that tick. Otherwise, if drag(+0x68) > 0 (asserting when mass +0x6c < 1e-5): bit 0x4 of byte +0x7 of compositeObject(+0xc) set -> updatePositionalDragSimple(this, r = 0.1, scale = 1.0) from literal pushes; clear -> updatePositionalDragAdvanced 0x08252f50 then updateRotationalDragAdvanced 0x08253280 with the object's bounding box (physics.md section 3). Nothing found writes that bit: no .con word, no or of it in either binary, and not SimpleObjectTemplate::setPhysicsNodeComponent 0x081dd490, which only picks the node class from template +0x70. The same bit is read in updateRotationalPhysics 0x08253c3c, Emitter::handleUpdate 0x081e43f9 and Particle::handleUpdate 0x0820adec. PHY-4 settled 2026-09-17: the selector bit is never set on any live object (ctors write 0x2090400; no or of 0x4000000 into object flags); every PhysicsNode always takes the box/Advanced branch. [2026-09-19 collision round, R2-integrator] lnxded. [R2] F8 [CORRECTED 2026-09-19] +0xcc is isSleeping. A sleeping or non-root node copies the root's sleepiness and zeroes its own speeds and accumulators; nothing is delegated. Only the root integrates, one step per tick. collision-response.md sections 3-4."
   },
   {
    "address": "0x08255e80",
@@ -6159,7 +6159,7 @@
    "subsystem": "physics",
    "confidence": "verified",
    "source": "research-2026-09-15-soldier-physics",
-   "note": "lnxded, 4201 bytes; PointResponsePhysics and StaticResponsePhysics have empty versions. Live grip byte this+0xb4: EngineGrip (0x4, tested first at 0x0825baf9) spins the wheel from PhysicsEngine::getCurrentRatio 0x0824ca70 x getCurrentDifferentialRPM 0x0824c990 through SpinWheel 0x0825b440; RollGrip (0x2, 0x0825bb06) removes the contact velocity along the wheel's axis, taken from node->getAbsoluteTransformation() (PhysicsNode vtable +0x20); with neither, a Coulomb friction direction is used when StaticFriction (0x80, sign test at 0x0825bb78) is set, and the solver sets StaticFriction itself once sliding slows below a threshold (0x0825bf47). DummyGrip (0x20) is tested at entry as this->getPermanentGrip() & 0x20 (vtable +0x6c = 0x0825ce40, the authored byte +0xb5), taking the path past the friction solve (EngineGrip still drives the spin); a second, unmasked getPermanentGrip call returns early for NoGrip. RollGripWhenOccupied (0x8) is not tested: PhysicsSpring::updatePhysics 0x0057f0d0 rewrites it first (ledger PHY-2)."
+   "note": "lnxded, 4201 bytes; PointResponsePhysics and StaticResponsePhysics have empty versions. Live grip byte this+0xb4: EngineGrip (0x4, tested first at 0x0825baf9) spins the wheel from PhysicsEngine::getCurrentRatio 0x0824ca70 x getCurrentDifferentialRPM 0x0824c990 through SpinWheel 0x0825b440; RollGrip (0x2, 0x0825bb06) removes the contact velocity along the wheel's axis, taken from node->getAbsoluteTransformation() (PhysicsNode vtable +0x20); with neither, a Coulomb friction direction is used when StaticFriction (0x80, sign test at 0x0825bb78) is set, and the solver sets StaticFriction itself once sliding slows below a threshold (0x0825bf47). DummyGrip (0x20) is tested at entry as this->getPermanentGrip() & 0x20 (vtable +0x6c = 0x0825ce40, the authored byte +0xb5), taking the path past the friction solve (EngineGrip still drives the spin); a second, unmasked getPermanentGrip call returns early for NoGrip. RollGripWhenOccupied (0x8) is not tested: PhysicsSpring::updatePhysics 0x0057f0d0 rewrites it first (ledger PHY-2). [2026-09-19 collision round, R1-terrain-friction] lnxded. [R1] F5; the floats unused; ends 0x0825c750 | lnxded. [lead] [2026-09-19] the six float arguments are never read. Per touching part: wanted velocity change by grip, clamped as a vector to mu x N.y x 1.5 x 9.82/30 (x1.5 while the 0x80 latch holds), x30 into root.addFrictionAtAbsolutePosition (a running mean); -resistance x Vt summed through addAccelerationAtRelativePosition; wakes the root when contact speed^2 > 0.1. collision-response.md section 8. Client twin 0x00576c50."
   },
   {
    "address": "0x0825ce40",
@@ -6168,7 +6168,7 @@
    "subsystem": "physics",
    "confidence": "verified",
    "source": "research-2026-09-15-soldier-physics",
-   "note": "lnxded. Returns the byte at this+0xb5, which setPermanentGrip 0x0825ce60 writes: the authored grip, as opposed to the live +0xb4 byte addFriction reads and updates. ResponsePhysics vtable (0x0872e240) slot +0x6c past the 8-byte header - the slot an earlier reading took for getClassID (0x0825ce00, really +0x64)."
+   "note": "lnxded. Returns the byte at this+0xb5, which setPermanentGrip 0x0825ce60 writes: the authored grip, as opposed to the live +0xb4 byte addFriction reads and updates. ResponsePhysics vtable (0x0872e240) slot +0x6c past the 8-byte header - the slot an earlier reading took for getClassID (0x0825ce00, really +0x64). [2026-09-19 collision round, R1-terrain-friction] lnxded. [R1] +0xb5"
   },
   {
    "address": "0x0825e4a0",
@@ -6231,7 +6231,7 @@
    "subsystem": "hitpoints",
    "confidence": "verified",
    "source": "research-2026-09-17-collision-damage",
-   "note": "lnxded. Scales the soldier fall-height term inside handleCollisionLandOrWater. Despite the name it feeds playCollisionEffect's intensity arguments, not any HP loss. See ledger HP-6."
+   "note": "lnxded. Scales the soldier fall-height term inside handleCollisionLandOrWater. Despite the name it feeds playCollisionEffect's intensity arguments, not any HP loss. See ledger HP-6. [CORRECTED 2026-09-19] It does feed HP loss: k = max(h' x damping, 1) and the soldier's collision damage is multiplied by k^2 before giveDamage. collision-response.md section 9.3."
   },
   {
    "address": "0x08280590",
@@ -6942,7 +6942,7 @@
    "subsystem": "geom",
    "confidence": "verified",
    "source": "research-2026-09-15-mesh-formats",
-   "note": "lnxded. Reads the collision layer count, then per layer a u32 size: 0 means an empty slot with nothing more to read. Otherwise a u32 class id goes to SmartItf<IVectorCollider>::create (0x083840d0) - 0xEB97C2FA, CID_SimpleCollisionMesh, in all 24,532 surveyed layers - and the new collider's vtable +0x10 loads it, which is SimpleCollisionMesh::load 0x083c9e00 through a thunk at 0x083cb0a5 (ledger SM-9)."
+   "note": "lnxded. Reads the collision layer count, then per layer a u32 size: 0 means an empty slot with nothing more to read. Otherwise a u32 class id goes to SmartItf<IVectorCollider>::create (0x083840d0) - 0xEB97C2FA, CID_SimpleCollisionMesh, in all 24,532 surveyed layers - and the new collider's vtable +0x10 loads it, which is SimpleCollisionMesh::load 0x083c9e00 through a thunk at 0x083cb0a5 (ledger SM-9). [2026-09-19 collision round, R3-geometry-broadphase] lnxded. [R3] col blocks -> template +0xf4 / +0x100"
   },
   {
    "address": "0x083a6f00",
@@ -6987,7 +6987,7 @@
    "subsystem": "geom",
    "confidence": "verified",
    "source": "research-2026-09-15-mesh-formats",
-   "note": "lnxded. Reads a u32 that must be 5 (else returns false), then 16-byte vertices (this+0x34) and 8-byte faces (this+0x40), builds the bounding box from each vertex's first 12 bytes only, then Bsp::load for the acceleration data. Never calls giveVerticesMaterial or buildBsp (ledger SM-6, SM-9)."
+   "note": "lnxded. Reads a u32 that must be 5 (else returns false), then 16-byte vertices (this+0x34) and 8-byte faces (this+0x40), builds the bounding box from each vertex's first 12 bytes only, then Bsp::load for the acceleration data. Never calls giveVerticesMaterial or buildBsp (ledger SM-6, SM-9). [2026-09-19 collision round, R3-geometry-broadphase] lnxded. [R3] file layout"
   },
   {
    "address": "0x083ca950",
@@ -7149,7 +7149,7 @@
    "subsystem": "physics",
    "confidence": "working",
    "source": "research-2026-09-16-tank-drive",
-   "note": "lnxded, nm -C. Confirmed live in addFriction's ancestor-walk class-id compare (climbs to the nearest Engine via vtable+0x18/+0x10/+0x4c/+0xc)."
+   "note": "lnxded, nm -C. Confirmed live in addFriction's ancestor-walk class-id compare (climbs to the nearest Engine via vtable+0x18/+0x10/+0x4c/+0xc). [2026-09-19 collision round, R1-terrain-friction] lnxded. [R1] "
   },
   {
    "address": "0x086c2b88",
@@ -7257,7 +7257,7 @@
    "subsystem": "hitpoints",
    "confidence": "verified",
    "source": "research-2026-09-17-collision-damage",
-   "note": "lnxded. Overrides dump+0x38/+0x3c with 0x08153ba0/0x08156020, which is why SimpleObject::handleCollision's virtual dispatch on the dice::bf::game global (0x0870d918) lands in GameServer. See ledger HP-6c."
+   "note": "lnxded. Overrides dump+0x38/+0x3c with 0x08153ba0/0x08156020, which is why SimpleObject::handleCollision's virtual dispatch on the dice::bf::game global (0x0870d918) lands in GameServer. See ledger HP-6c. [2026-09-19 collision round, lead] lnxded. [lead] +0x30 handleCollisionForProjectile, +0x34 handleCollision, +0x38 handleExplosion, +0x15c giveDamage (offsets from the vptr = symbol + 8)."
   },
   {
    "address": "0x0871ba00",
@@ -7302,7 +7302,7 @@
    "subsystem": "hitpoints",
    "confidence": "verified",
    "source": "research-2026-09-16-hitpoints",
-   "note": "lnxded, all 82 real slots (0x000-0x144) dumped directly from .data and resolved to known Armor methods."
+   "note": "lnxded, all 82 real slots (0x000-0x144) dumped directly from .data and resolved to known Armor methods. [2026-09-19 collision round, R4-data-survey] lnxded. [R4] dumped fresh with 'vt.py' for exact offsets (89 slots)"
   },
   {
    "address": "0x0871d43c",
@@ -7347,7 +7347,7 @@
    "subsystem": "physics",
    "confidence": "verified",
    "source": "research-2026-09-15-drag",
-   "note": "lnxded. The global singleton pointer; client twin 0x0097d770. Read for getWind (vtable +0x1c) in PointPhysicsNode::updatePositionalDragSimple 0x08255fc0 and PhysicsNode::updatePositionalDragSimple 0x08252de0, and for getGravity (+0x14) in PointPhysicsNode::updatePhysics 0x082562c0."
+   "note": "lnxded. The global singleton pointer; client twin 0x0097d770. Read for getWind (vtable +0x1c) in PointPhysicsNode::updatePositionalDragSimple 0x08255fc0 and PhysicsNode::updatePositionalDragSimple 0x08252de0, and for getGravity (+0x14) in PointPhysicsNode::updatePhysics 0x082562c0. [2026-09-19 collision round, R2-integrator] lnxded. [R2] "
   },
   {
    "address": "0x087202d4",
@@ -7375,6 +7375,1869 @@
    "confidence": "verified",
    "source": "research-2026-09-16-supply-depots",
    "note": "lnxded, 8-byte double. Drives SupplyDepot::handleUpdate's self-throttle (real elapsed time, not the sim dt)."
+  },
+  {
+   "address": "0x0825a960",
+   "name": "dice::ref2::world::ResponsePhysics::checkVsTerrain(float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] F3; 'dt' unused | lnxded. [lead] col0 vertices of the part dropped on the heightfield (1 vertex when <= 3, 5 for a soldier); depth = vertex.y - terrain height, contact when <= 0; speed = root tangent speed at the contact; handleCollision(NULL, ...) when speed^2 > 0.1 (result ignored); impulseOn always. Water: setUnderWater + handleCollision with material 1, no impulse. Client twin 0x00575cd0."
+  },
+  {
+   "address": "0x0825b440",
+   "name": "dice::ref2::world::ResponsePhysics::SpinWheel(float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] F10; angle at '+0xc0"
+  },
+  {
+   "address": "0x08258900",
+   "name": "dice::ref2::world::ResponsePhysics::impulseOn(dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, float, int, int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] F4"
+  },
+  {
+   "address": "0x08258ca0",
+   "name": "dice::ref2::world::ResponsePhysics::reset()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] F12"
+  },
+  {
+   "address": "0x0825ce10",
+   "name": "dice::ref2::world::ResponsePhysics::getIsIntersectingTerrain(dice::ref2::Vec3&) const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] +0xc4' mean terrain contact point, '+0xd0' flag"
+  },
+  {
+   "address": "0x0825ce90",
+   "name": "dice::ref2::world::ResponsePhysics::setSurfacePositionalSpeed(dice::ref2::Vec3 const&)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] +0x50'; BFSoldier only"
+  },
+  {
+   "address": "0x0825ceb0",
+   "name": "dice::ref2::world::ResponsePhysics::getSurfacePositionalSpeed() const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] +0x50'; BFSoldier only"
+  },
+  {
+   "address": "0x0825ce60",
+   "name": "dice::ref2::world::ResponsePhysics::setPermanentGrip(unsigned char)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] +0xb5"
+  },
+  {
+   "address": "0x082587e0",
+   "name": "dice::ref2::world::ResponsePhysics::getVertexCollision(unsigned char)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] caches mesh (IID 0xd0867dfb) at '+0xdc', dirty byte '+0xd8 | lnxded. [R3] caches +0xe0 / +0xdc, dirty +0xd9 / +0xd8"
+  },
+  {
+   "address": "0x08254e50",
+   "name": "dice::ref2::world::PhysicsNode::addFrictionAtAbsolutePosition(dice::ref2::Pos3 const&, dice::ref2::Vec3 const&)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] F6 | lnxded. [R2] running mean; string '0x086d13e0"
+  },
+  {
+   "address": "0x08255230",
+   "name": "dice::ref2::world::PhysicsNode::addAccelerationAtRelativePosition(dice::ref2::Vec3 const&, dice::ref2::Vec3 const&)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] accel += a; torque += (rel - com) x a | lnxded. [R2] F4"
+  },
+  {
+   "address": "0x08254b90",
+   "name": "dice::ref2::world::PhysicsNode::getTangentSpeed(dice::ref2::Pos3 const&)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] rootV + rootOmega x (p - rootPos) | lnxded. [R2] F3"
+  },
+  {
+   "address": "0x08253570",
+   "name": "dice::ref2::world::PhysicsNode::updatePositionalPhysics(float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] clamps 1000 / 250 / 200 | lnxded. [R2] F5"
+  },
+  {
+   "address": "0x082539e0",
+   "name": "dice::ref2::world::PhysicsNode::updateRotationalPhysics(float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] clamps 1000 / 250 / 200 | lnxded. [R2] F6"
+  },
+  {
+   "address": "0x0825cfd0",
+   "name": "dice::ref2::world::ResponsePhysicsManager::addObject(dice::ref2::world::IObject*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] class 0xc42d -> list '+0xc', 0xc42e -> list '+0x14 | lnxded. [R3] list by response CID: 0xc42d -> +0xc, 0xc42e -> +0x14, static -> none"
+  },
+  {
+   "address": "0x0825d0b0",
+   "name": "dice::ref2::world::ResponsePhysicsManager::update(float, dice::ref2::world::IObject*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] F2 | lnxded. [R2] reset = ++counter; resetCached = byte +0x1c = 1 | lnxded. [R3] F3 | lnxded. [lead] rpm vtable +0x14. obj == NULL: detect pass (checkObjectVsObjects + checkVsTerrain for awake, non-player-driven parts) then resolve pass (solveImpulse + addFriction, NO sleeping test; point bodies solveImpulse only). obj != NULL: the single-object form used once per occupied vehicle. Client twin 0x00579fa0."
+  },
+  {
+   "address": "0x0825e3b0",
+   "name": "dice::ref2::world::ResponsePhysicsManager::getTerrainVectorCollider()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] terrain as IVectorCollider 0xb54616fc, cached '+8"
+  },
+  {
+   "address": "0x08257720",
+   "name": "dice::ref2::world::PointResponsePhysics::checkVsTerrain(float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] F11"
+  },
+  {
+   "address": "0x08257030",
+   "name": "dice::ref2::world::PointResponsePhysics::checkObjectVsObject(dice::ref2::world::IObject*, dice::ref2::world::IObject*, float, float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] F11 | lnxded. [R3] projectile line vs 'B.getFaceCollision(1)"
+  },
+  {
+   "address": "0x08256f70",
+   "name": "dice::ref2::world::PointResponsePhysics::solveImpulse(dice::ref2::world::IPhysicsNode*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] F11"
+  },
+  {
+   "address": "0x08256f50",
+   "name": "dice::ref2::world::PointResponsePhysics::impulseOn(dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, float, int, int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] empty"
+  },
+  {
+   "address": "0x08257e30",
+   "name": "dice::ref2::world::PointResponsePhysics::addFriction(dice::ref2::world::IPhysicsNode*, float, float, float, float, float, float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] empty"
+  },
+  {
+   "address": "0x08256f60",
+   "name": "dice::ref2::world::PointResponsePhysics::reset()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] empty"
+  },
+  {
+   "address": "0x0825f1b0",
+   "name": "dice::ref2::world::StaticResponsePhysics::checkVsTerrain(float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] empty"
+  },
+  {
+   "address": "0x0825f1c0",
+   "name": "dice::ref2::world::StaticResponsePhysics::addFriction(dice::ref2::world::IPhysicsNode*, float, float, float, float, float, float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] empty"
+  },
+  {
+   "address": "0x0825f120",
+   "name": "dice::ref2::world::StaticResponsePhysics::impulseOn(dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, float, int, int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] empty"
+  },
+  {
+   "address": "0x0825f140",
+   "name": "dice::ref2::world::StaticResponsePhysics::solveImpulse(dice::ref2::world::IPhysicsNode*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] empty"
+  },
+  {
+   "address": "0x081dd1d0",
+   "name": "dice::ref2::world::SimpleObjectTemplate::setResponsePhysicsComponent(dice::ref2::world::ICompositeObject*) const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] template '+0x70' bit 3 Point, bit 0 mobile; '+0x71' grip; '+0x78' groups | lnxded. [R3] picks Point / mobile / Static"
+  },
+  {
+   "address": "0x081ddeb0",
+   "name": "dice::ref2::world::SimpleObjectTemplate::setGrip(int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] +0x71', ctor default 1"
+  },
+  {
+   "address": "0x081ddec0",
+   "name": "dice::ref2::world::SimpleObjectTemplate::getGrip()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] +0x71', ctor default 1"
+  },
+  {
+   "address": "0x08748fa0",
+   "name": "vtable for dice::ref2::geom::PatchTerrain",
+   "kind": "vtable",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] +0x4c' getMaterial, '+0x54' getHeightAndNormal, '+0x5c' getWaterLevel"
+  },
+  {
+   "address": "0x083d6f10",
+   "name": "dice::ref2::geom::PatchTerrain::getHeightAndNormal(float, float, dice::ref2::Vec3&) const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] alternating-diagonal triangles, unit face normal (Phong if terrain '+0xf4')"
+  },
+  {
+   "address": "0x083d7a80",
+   "name": "dice::ref2::geom::PatchTerrain::getWaterLevel(float, float) const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] returns '*(this+0x30)', ignores x,z"
+  },
+  {
+   "address": "0x08747fc0",
+   "name": "vtable for dice::ref2::geom::SimpleCollisionMesh",
+   "kind": "vtable",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] +0xc' setCollisionLod, '+0x14' getNumCollisionLods, '+0x18' getVertexCount, '+0x1c' getVertices (16-byte records, u16 material at +0xc)"
+  },
+  {
+   "address": "0x0824c850",
+   "name": "dice::ref2::world::PhysicsEngine::feedbackLoop(dice::ref2::Vec3, dice::ref2::Vec3 const&)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] F7"
+  },
+  {
+   "address": "0x0823e120",
+   "name": "dice::ref2::world::Engine::handleUpdate(float, unsigned int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] writes engine '+0xb4' brake, decays '+0xb8"
+  },
+  {
+   "address": "0x08174550",
+   "name": "dice::ref2::world::Material::Material()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R1] friction 1.0, elasticity 0, resistance 0.01"
+  },
+  {
+   "address": "0x08252b70",
+   "name": "dice::ref2::world::PhysicsNode::PhysicsNode()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] defaults F1"
+  },
+  {
+   "address": "0x08252c40",
+   "name": "dice::ref2::world::PhysicsNode::PhysicsNode()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] defaults F1"
+  },
+  {
+   "address": "0x08252d10",
+   "name": "dice::ref2::world::PhysicsNode::reset()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] zero speeds + accumulators + n"
+  },
+  {
+   "address": "0x08252d90",
+   "name": "dice::ref2::world::PhysicsNode::getTopFixParent()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] climbs while *this* +0x91; only PhysicsWing calls it"
+  },
+  {
+   "address": "0x08253930",
+   "name": "dice::ref2::world::getGeometryInertia(dice::ref2::geom::IGeometry*, float*, float*, float*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] outs are Iz, Iy, Ix | lnxded. [lead] out1 = (DX^2+DY^2)/3 (Iz), out2 = (DZ^2+DX^2)/3 (Iy), out3 = (DY^2+DZ^2)/3 (Ix) from the geometry bounding box, full extents. The only inertia there is; mass never enters rotation."
+  },
+  {
+   "address": "0x0818d860",
+   "name": "dice::ref2::world::findLodGeometry(dice::ref2::world::ICompositeObject*, unsigned int, unsigned int, unsigned int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] highest-LOD child mesh, needs obj flag 0x1000000"
+  },
+  {
+   "address": "0x0818d4b0",
+   "name": "dice::ref2::world::getRootParent(dice::ref2::world::ICompositeObject const*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] flag 0x2000000 = is root; cache at obj+0xd4"
+  },
+  {
+   "address": "0x082548d0",
+   "name": "dice::ref2::world::PhysicsNode::getRootNode() const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] F2"
+  },
+  {
+   "address": "0x082548f0",
+   "name": "dice::ref2::world::PhysicsNode::getParent() const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] F2"
+  },
+  {
+   "address": "0x082548c0",
+   "name": "dice::ref2::world::PhysicsNode::setParent(dice::ref2::world::IPhysicsNode*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] F2"
+  },
+  {
+   "address": "0x08254a90",
+   "name": "dice::ref2::world::PhysicsNode::getPositionalSpeed() const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] static zero '0x087dbf10' for non-root"
+  },
+  {
+   "address": "0x08254ae0",
+   "name": "dice::ref2::world::PhysicsNode::getRotationalSpeed() const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] static zero '0x087dbf10' for non-root"
+  },
+  {
+   "address": "0x08254b30",
+   "name": "dice::ref2::world::PhysicsNode::addPositionalSpeed(dice::ref2::Vec3 const&)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] local +=, no forwarding"
+  },
+  {
+   "address": "0x08254b60",
+   "name": "dice::ref2::world::PhysicsNode::addRotationalSpeed(dice::ref2::Vec3 const&)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] local +=, no forwarding"
+  },
+  {
+   "address": "0x08254c70",
+   "name": "dice::ref2::world::PhysicsNode::addSpeedAtAbsolutePosition(dice::ref2::Pos3 const&, dice::ref2::Vec3 const&)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] F4"
+  },
+  {
+   "address": "0x08254d90",
+   "name": "dice::ref2::world::PhysicsNode::addSpeedAtRelativePosition(dice::ref2::Vec3 const&, dice::ref2::Vec3 const&)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] F4"
+  },
+  {
+   "address": "0x08255110",
+   "name": "dice::ref2::world::PhysicsNode::addAccelerationAtAbsolutePosition(dice::ref2::Pos3 const&, dice::ref2::Vec3 const&)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] F4"
+  },
+  {
+   "address": "0x0824d480",
+   "name": "dice::ref2::world::PhysicsNode::isSleeping() const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] F10"
+  },
+  {
+   "address": "0x0824d4a0",
+   "name": "dice::ref2::world::PhysicsNode::setIsSleeping()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] F10"
+  },
+  {
+   "address": "0x0824d4c0",
+   "name": "dice::ref2::world::PhysicsNode::setSleepiness(int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] F10"
+  },
+  {
+   "address": "0x0824d4e0",
+   "name": "dice::ref2::world::PhysicsNode::getSleepiness()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] F10"
+  },
+  {
+   "address": "0x08255330",
+   "name": "dice::ref2::world::PhysicsNode::setIsAwake()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] F10"
+  },
+  {
+   "address": "0x0872deec",
+   "name": "dice::ref2::world::PhysicsNode::mFramesBeforeSafeToSleep",
+   "kind": "data",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] byte 100 (Point twin '0x0872e064' also 100)"
+  },
+  {
+   "address": "0x0872ded0",
+   "name": "frames",
+   "kind": "data",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] debug float counters"
+  },
+  {
+   "address": "0x0872dee8",
+   "name": "posAcc",
+   "kind": "data",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] debug float counters"
+  },
+  {
+   "address": "0x0824d3f0",
+   "name": "dice::ref2::world::PhysicsNode::setHasSeparatePhysicsUpdate(bool)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] byte +0x90"
+  },
+  {
+   "address": "0x0824d410",
+   "name": "dice::ref2::world::PhysicsNode::getHasSeparatePhysicsUpdate() const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] byte +0x90 | lnxded. [R4] weak ('W') symbols, read via 'nm', confirmed against the vtable dump"
+  },
+  {
+   "address": "0x0872e020",
+   "name": "vtable for dice::ref2::world::PhysicsNodeManager",
+   "kind": "vtable",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] +0xc add, +0x10 remove, +0x14 update"
+  },
+  {
+   "address": "0x08255680",
+   "name": "dice::ref2::world::PhysicsNodeManager::addPhysicsNode(dice::ref2::world::IPhysicsNode*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] push_front if getIsMobile / F11"
+  },
+  {
+   "address": "0x08255740",
+   "name": "dice::ref2::world::PhysicsNodeManager::update(float, int, dice::ref2::world::IPhysicsNode*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] push_front if getIsMobile / F11"
+  },
+  {
+   "address": "0x0871dc18",
+   "name": "dice::ref2::world::physicsNodeManager",
+   "kind": "data",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] "
+  },
+  {
+   "address": "0x08251ef0",
+   "name": "dice::ref2::world::BasicPhysicsSystem::update(float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] empty"
+  },
+  {
+   "address": "0x08061e10",
+   "name": "dice::ref2::BaseMatrix4<float>& dice::ref2::rotateAboutLine<float>(dice::ref2::BaseMatrix4<float>&, dice::ref2::BaseVector3<float, dice::ref2::VectorTraits3<float> > const&, float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] degrees, 3x3 only"
+  },
+  {
+   "address": "0x080621b0",
+   "name": "dice::ref2::BaseMatrix4<float>& dice::ref2::setRotateAboutLine<float>(dice::ref2::BaseMatrix4<float>&, float, dice::ref2::BaseVector3<float, dice::ref2::VectorTraits3<float> > const&)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] degrees, 3x3 only"
+  },
+  {
+   "address": "0x081dbc70",
+   "name": "dice::ref2::world::SimpleObjectTemplate::SimpleObjectTemplate()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] template defaults F9 | lnxded. [R4] decompiled this track; literal field defaults"
+  },
+  {
+   "address": "0x0823fc20",
+   "name": "dice::ref2::world::EngineTemplate::setPhysicsNodeComponent(dice::ref2::world::ICompositeObject*) const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] subclass nodes, no field copy"
+  },
+  {
+   "address": "0x082502f0",
+   "name": "dice::ref2::world::SpringTemplate::setPhysicsNodeComponent(dice::ref2::world::ICompositeObject*) const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] subclass nodes, no field copy"
+  },
+  {
+   "address": "0x08251af0",
+   "name": "dice::ref2::world::WingTemplate::setPhysicsNodeComponent(dice::ref2::world::ICompositeObject*) const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] subclass nodes, no field copy"
+  },
+  {
+   "address": "0x08241090",
+   "name": "dice::ref2::world::FloatingBundleTemplate::setPhysicsNodeComponent(dice::ref2::world::ICompositeObject*) const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] subclass nodes, no field copy"
+  },
+  {
+   "address": "0x0815c2a0",
+   "name": "dice::bf::GameServer::simulateFrame(float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] F11 | lnxded. [R3] frame order, F1"
+  },
+  {
+   "address": "0x0815bfa0",
+   "name": "dice::bf::GameServer::simulatePlayersUpdate(float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] sets player+0x14b"
+  },
+  {
+   "address": "0x0815bd00",
+   "name": "dice::bf::GameServer::simulatePlayerUpdate(dice::bf::BFPlayer*, float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] sets player+0x14b"
+  },
+  {
+   "address": "0x0815c0f0",
+   "name": "dice::bf::GameServer::simulatePlayersPhysics(float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] "
+  },
+  {
+   "address": "0x0815c040",
+   "name": "dice::bf::GameServer::simulatePlayerPhysics(dice::bf::BFPlayer*, float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] "
+  },
+  {
+   "address": "0x0815c140",
+   "name": "dice::bf::GameServer::simulatePlayersCollisions(float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] clears +0x14b"
+  },
+  {
+   "address": "0x0815c0a0",
+   "name": "dice::bf::GameServer::simulatePlayerCollisions(dice::bf::BFPlayer*, float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] clears +0x14b | lnxded. [R3] per-player vehicle pass"
+  },
+  {
+   "address": "0x08147300",
+   "name": "dice::bf::performHandleUpdate(float, dice::ref2::world::IPlayerObject*, unsigned int, bool)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] tree walks"
+  },
+  {
+   "address": "0x08147470",
+   "name": "dice::bf::performMobilePhysicsUpdate(float, dice::ref2::world::IPlayerObject*, bool)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] tree walks"
+  },
+  {
+   "address": "0x08147580",
+   "name": "dice::bf::performMobileCollisionUpdate(float, dice::ref2::world::IPlayerObject*, bool)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] tree walks | lnxded. [R3] recursive 'update(dt, part)' over children"
+  },
+  {
+   "address": "0x08147730",
+   "name": "dice::bf::disablePhysics(dice::ref2::world::IPlayerObject*, bool)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] hasSeparate + update type 10 / 0"
+  },
+  {
+   "address": "0x08147680",
+   "name": "dice::bf::reenablePhysics(dice::ref2::world::IPlayerObject*, bool)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] hasSeparate + update type 10 / 0"
+  },
+  {
+   "address": "0x0805d9b0",
+   "name": "dice::bf::Game::updateWorld(float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] "
+  },
+  {
+   "address": "0x0805da00",
+   "name": "dice::bf::Game::updateWorldCollision(float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2]  | lnxded. [R3] grid refresh, counter++, world pass"
+  },
+  {
+   "address": "0x0819be10",
+   "name": "dice::ref2::world::ObjectManager::updateObjects(float, dice::ref2::world::UpdateFreqencyType, unsigned int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] handleUpdate where type matches"
+  },
+  {
+   "address": "0x0825e1a0",
+   "name": "dice::ref2::world::ResponsePhysicsManager::reset()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] reset = ++counter; resetCached = byte +0x1c = 1 | lnxded. [R3] ++collisionCheckedCounter"
+  },
+  {
+   "address": "0x0825e190",
+   "name": "dice::ref2::world::ResponsePhysicsManager::resetCachedCollisionObjects()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] reset = ++counter; resetCached = byte +0x1c = 1 | lnxded. [R3] sets manager byte +0x1c"
+  },
+  {
+   "address": "0x083138c0",
+   "name": "dice::ref2::world::ObjectSpawner::handleFrameUpdate(float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] held object: reset() each frame; on release setSleepiness(0) + carrier tangent speed"
+  },
+  {
+   "address": "0x085d63b0",
+   "name": "dice::bf::ai::AIObjectPhysical::disablePhysics(int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R2] setSleepiness(-1)"
+  },
+  {
+   "address": "0x0825d040",
+   "name": "dice::ref2::world::ResponsePhysicsManager::removeObject(dice::ref2::world::IObject*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] list by response CID: 0xc42d -> +0xc, 0xc42e -> +0x14, static -> none"
+  },
+  {
+   "address": "0x0825d5c0",
+   "name": "dice::ref2::world::getCollisionObjects(dice::ref2::world::ICompositeObject*, float, float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] grid query, F5"
+  },
+  {
+   "address": "0x0825d820",
+   "name": "dice::ref2::world::ResponsePhysicsManager::checkObjectVsObjects(float, dice::ref2::world::ICompositeObject*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] pair loop, F6 | lnxded. [lead] ten pair filters (same root, both passive, flag 1, already stamped this tick = the only dedup, shared collision group, child-vs-child, both radii < 0.45, swept spheres with margin |v_root|^2 dt/4, both vertex sets < 4), then the direction tree: static = face side; root radius ratio > 4 or soldier = smaller is the vertex side at weight 1.0; otherwise both directions at 0.5. Client twin 0x00579820."
+  },
+  {
+   "address": "0x0872e2d8",
+   "name": "dice::ref2::world::collisionCheckedCounter",
+   "kind": "data",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] per-tick stamp, init 1"
+  },
+  {
+   "address": "0x0879cfc0",
+   "name": "dice::ref2::world::objectVector",
+   "kind": "data",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] global candidate vector"
+  },
+  {
+   "address": "0x0819dc40",
+   "name": "dice::ref2::world::ObjectManager::getObjectsFromGrid(dice::ref2::Pos3 const&, float, std::vector<dice::ref2::world::IObject*, std::allocator<dice::ref2::world::IObject*> >&, dice::ref2::world::ObjectPredicator*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] vtbl +0x30 / +0x44"
+  },
+  {
+   "address": "0x0819df80",
+   "name": "dice::ref2::world::ObjectManager::getObjectsFromGrid(dice::ref2::Pos3 const&, dice::ref2::Vec3 const&, std::vector<dice::ref2::world::IObject*, std::allocator<dice::ref2::world::IObject*> >&, dice::ref2::world::ObjectPredicator*, bool)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] vtbl +0x30 / +0x44"
+  },
+  {
+   "address": "0x0818dc60",
+   "name": "dice::ref2::world::ObjectFlagPredicator::predicate(dice::ref2::world::IObject*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] (flags & mask) == mask"
+  },
+  {
+   "address": "0x08165630",
+   "name": "dice::ref2::world::BCompositeObject<dice::ref2::world::IPlayerObject>::getBoundingRadius() const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] composite radius, cached +0xb4"
+  },
+  {
+   "address": "0x08165900",
+   "name": "dice::ref2::world::BCompositeObject<dice::ref2::world::IPlayerObject>::addChild(dice::ref2::world::ICompositeObject*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] child leaves / rejoins the manager list"
+  },
+  {
+   "address": "0x08165cb0",
+   "name": "dice::ref2::world::BCompositeObject<dice::ref2::world::IPlayerObject>::removeChild(dice::ref2::world::ICompositeObject*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] child leaves / rejoins the manager list"
+  },
+  {
+   "address": "0x082584e0",
+   "name": "dice::ref2::world::ResponsePhysics::shouldCheckCollision()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] part eligibility"
+  },
+  {
+   "address": "0x08258600",
+   "name": "dice::ref2::world::ResponsePhysics::getNextToCheck()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] chain build"
+  },
+  {
+   "address": "0x08258570",
+   "name": "dice::ref2::world::ResponsePhysics::addToTmpResponseList(dice::ref2::world::IObject const*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] chain build"
+  },
+  {
+   "address": "0x08258450",
+   "name": "dice::ref2::world::ResponsePhysics::setDirtyNextToCheck()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] fields +0xd1, +0xd4"
+  },
+  {
+   "address": "0x082584a0",
+   "name": "dice::ref2::world::ResponsePhysics::resetNextToCheck()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] fields +0xd1, +0xd4"
+  },
+  {
+   "address": "0x082584c0",
+   "name": "dice::ref2::world::ResponsePhysics::setNextToCheck(dice::ref2::world::IResponsePhysics*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] fields +0xd1, +0xd4"
+  },
+  {
+   "address": "0x08258560",
+   "name": "dice::ref2::world::ResponsePhysics::getSimpleNextToCheck()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] fields +0xd1, +0xd4"
+  },
+  {
+   "address": "0x0825cd80",
+   "name": "dice::ref2::world::ResponsePhysics::setCollisionChecked(unsigned int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] field +0xbc"
+  },
+  {
+   "address": "0x0825cda0",
+   "name": "dice::ref2::world::ResponsePhysics::getCollisionChecked() const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] field +0xbc"
+  },
+  {
+   "address": "0x0825cdb0",
+   "name": "dice::ref2::world::ResponsePhysics::addToCollisionGroup(unsigned int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] field +0xb8"
+  },
+  {
+   "address": "0x0825cdd0",
+   "name": "dice::ref2::world::ResponsePhysics::removeFromCollisionGroup(unsigned int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] field +0xb8"
+  },
+  {
+   "address": "0x0825cdf0",
+   "name": "dice::ref2::world::ResponsePhysics::getCollisionGroups()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] field +0xb8"
+  },
+  {
+   "address": "0x08258730",
+   "name": "dice::ref2::world::ResponsePhysics::getFaceCollision(unsigned char)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] caches +0xe0 / +0xdc, dirty +0xd9 / +0xd8"
+  },
+  {
+   "address": "0x08258710",
+   "name": "dice::ref2::world::ResponsePhysics::setDirtyCollisionLodCache()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] caches +0xe0 / +0xdc, dirty +0xd9 / +0xd8"
+  },
+  {
+   "address": "0x0818d5b0",
+   "name": "dice::ref2::world::getCollisionMesh(dice::ref2::world::IObject*, dice::ref2::world::IObject**)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] geometry -> ICollisionMesh, LodObject fallback"
+  },
+  {
+   "address": "0x0818d910",
+   "name": "dice::ref2::world::findLodCollisionMesh(dice::ref2::world::ICompositeObject*, unsigned int, unsigned int, unsigned int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] geometry -> ICollisionMesh, LodObject fallback"
+  },
+  {
+   "address": "0x08259690",
+   "name": "dice::ref2::world::ResponsePhysics::checkObjectVsObject(dice::ref2::world::IObject*, dice::ref2::world::IObject*, float, float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] F9 | lnxded. [lead] (A, B, dt, weight): A col0 vertices probed against B faces (col1 when root A radius < 4.0 or A is a soldier, else col0) along a ray from rootA.pos - relV dt to the vertex; shares massB/(massA+massB) with 0.95/0.05 snaps (low snap gives shareB = +1.0, an engine slip); handleCollision on both when |vRel|^2 > 0.1; impulseOn on both. Client twin 0x00574e30."
+  },
+  {
+   "address": "0x0825f1a0",
+   "name": "dice::ref2::world::StaticResponsePhysics::checkObjectVsObject(dice::ref2::world::IObject*, dice::ref2::world::IObject*, float, float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] empty"
+  },
+  {
+   "address": "0x083b50e0",
+   "name": "dice::ref2::geom::BStandardMesh<dice::ref2::geom::IStandardMesh, dice::ref2::geom::StandardMeshTemplate>::setCollisionLod(unsigned int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] LOD index at TEMPLATE +0xe4"
+  },
+  {
+   "address": "0x083b5230",
+   "name": "dice::ref2::geom::BStandardMesh<dice::ref2::geom::IStandardMesh, dice::ref2::geom::StandardMeshTemplate>::getCollisionLod()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] LOD index at TEMPLATE +0xe4"
+  },
+  {
+   "address": "0x083b5260",
+   "name": "dice::ref2::geom::BStandardMesh<dice::ref2::geom::IStandardMesh, dice::ref2::geom::StandardMeshTemplate>::getNumCollisionLods()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] LOD index at TEMPLATE +0xe4"
+  },
+  {
+   "address": "0x083b4fd0",
+   "name": "dice::ref2::geom::BStandardMesh<dice::ref2::geom::IStandardMesh, dice::ref2::geom::StandardMeshTemplate>::getDistanceToGeometry(bool, dice::ref2::Mat4 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3&, dice::ref2::Vec3&, float&, float&, float&, int*) const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] forwards to colliders[LOD], sets g_scale"
+  },
+  {
+   "address": "0x083c9f70",
+   "name": "dice::ref2::geom::SimpleCollisionMesh::getDistanceToGeometry(bool, dice::ref2::Mat4 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3&, dice::ref2::Vec3&, float&, float&, float&, int*) const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] F10"
+  },
+  {
+   "address": "0x08386d70",
+   "name": "dice::ref2::geom::Bsp::load(dice::ref2::io::IStream*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] file layout"
+  },
+  {
+   "address": "0x08387270",
+   "name": "dice::ref2::geom::BspNode::load(dice::ref2::io::IStream*, dice::ref2::geom::BspNode::Face**&, dice::ref2::geom::BspNode::Face*&, dice::ref2::geom::BspNode*&)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] file layout"
+  },
+  {
+   "address": "0x08386ef0",
+   "name": "dice::ref2::geom::Bsp::getCollidingFaces(std::vector<dice::ref2::geom::BspNode::Face const*, std::allocator<dice::ref2::geom::BspNode::Face const*> >&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&) const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] BSP segment walk + back-face cull"
+  },
+  {
+   "address": "0x08387b40",
+   "name": "dice::ref2::geom::BspNode::getCollidingFaces() const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] BSP segment walk + back-face cull"
+  },
+  {
+   "address": "0x08374880",
+   "name": "dice::ref2::geom::checkFaceAndEdgeCollision(dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3&, float&, float&, bool)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] F11"
+  },
+  {
+   "address": "0x08374e40",
+   "name": "dice::ref2::geom::checkFaceAndEdgeCollisionDoubleSided(dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3&, float&, float&)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] no server callers"
+  },
+  {
+   "address": "0x08375610",
+   "name": "dice::ref2::geom::checkSweptSphereToSweptSphereCollision(dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, float, float, float&, float&, float&)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] no server callers"
+  },
+  {
+   "address": "0x08374e90",
+   "name": "dice::ref2::geom::checkSphereAndEdgeCollision(dice::ref2::Vec3 const&, float, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, std::vector<float, std::allocator<float> >&)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] no server callers"
+  },
+  {
+   "address": "0x083c14f0",
+   "name": "dice::ref2::geom::GridCollisionMesh::getDistanceToGeometry(bool, dice::ref2::Mat4 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3&, dice::ref2::Vec3&, float&, float&, float&, int*) const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] unused by shipped data"
+  },
+  {
+   "address": "0x083c01e0",
+   "name": "dice::ref2::geom::GridCollisionLeaf::checkCollisions(dice::ref2::geom::GridCollisionMesh const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3&, dice::ref2::Vec3&, float&, float&, float&, int*) const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R3] unused by shipped data"
+  },
+  {
+   "address": "0x081dc190",
+   "name": "dice::ref2::world::SimpleObjectTemplate::makeScript(dice::ref2::io::IStream*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R4] decompiled this track; prints '.con' names, guarded by default-comparisons"
+  },
+  {
+   "address": "0x081dbf00",
+   "name": "dice::ref2::world::SimpleObjectTemplate::SimpleObjectTemplate()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R4] decompiled this track; not separately useful"
+  },
+  {
+   "address": "0x081dd020",
+   "name": "dice::ref2::world::SimpleObjectTemplate::createObject() const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R4] decompiled this track; not used in the end"
+  },
+  {
+   "address": "0x081dd100",
+   "name": "dice::ref2::world::SimpleObjectTemplate::setPhysicsComponent(dice::ref2::world::IObject*) const",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R4] decompiled this track; sets 'ResponsePhysics', not 'Armor'/'PhysicsNode' \u2014 not used"
+  },
+  {
+   "address": "0x08173f10",
+   "name": "dice::ref2::world::Armor::init(dice::ref2::world::IObject*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R4] decompiled this track; just stores the owning object pointer, no defaults"
+  },
+  {
+   "address": "0x08175360",
+   "name": "dice::ref2::world::MaterialManager::dumpMaterialList()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R4] decompiled this track; the material print anchor"
+  },
+  {
+   "address": "0x081747f0",
+   "name": "dice::ref2::world::MaterialManager::MaterialManager()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R4] decompiled this track; 'speedDamageMod'/'defaultDamageMod' literal defaults"
+  },
+  {
+   "address": "0x08174c60",
+   "name": "dice::ref2::world::MaterialManager::getCreateCell(unsigned int, unsigned int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R4] pre-existing decomp; the (att,def)->MMCell nested-map lookup/insert"
+  },
+  {
+   "address": "0x08174f60",
+   "name": "dice::ref2::world::MaterialManager::getCreateCell()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R4] pre-existing decomp; no-arg overload using \"current\" att/def context fields ('param_1[6]'/'param_1[7]')"
+  },
+  {
+   "address": "0x081752b0",
+   "name": "dice::ref2::world::MaterialManager::setCell(unsigned int, float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R4] pre-existing decomp; the '.con' 'setCell'/'damageMod' writer"
+  },
+  {
+   "address": "0x081751b0",
+   "name": "dice::ref2::world::MaterialManager::getFrictionForMaterial(unsigned int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R4] pre-existing decomp; shared fallback shape"
+  },
+  {
+   "address": "0x081751f0",
+   "name": "dice::ref2::world::MaterialManager::getElasticityForMaterial(unsigned int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R4] pre-existing decomp; shared fallback shape"
+  },
+  {
+   "address": "0x08175230",
+   "name": "dice::ref2::world::MaterialManager::getResistanceForMaterial(unsigned int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R4] pre-existing decomp; shared fallback shape"
+  },
+  {
+   "address": "0x08175170",
+   "name": "dice::ref2::world::MaterialManager::getDamageForMaterial(unsigned int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R4] pre-existing decomp; shared fallback shape"
+  },
+  {
+   "address": "0x081761a0",
+   "name": "dice::ref2::world::MaterialManager::getDefaultDamageMod()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R4] pre-existing decomp; one-line field reads"
+  },
+  {
+   "address": "0x08176180",
+   "name": "dice::ref2::world::MaterialManager::getSpeedDamageMod()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R4] pre-existing decomp; one-line field reads"
+  },
+  {
+   "address": "0x0872df00",
+   "name": "vtable for dice::ref2::world::PhysicsNode",
+   "kind": "vtable",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R4] dumped fresh with 'vt.py' for exact offsets | lnxded. [lead] +0x68 addAccelerationAtAbsolutePosition, +0x70 addFrictionAtAbsolutePosition, +0x74 getTangentSpeed, +0x90 updatePhysics, +0xa0 getMass, +0xbc getHasSeparatePhysicsUpdate, +0xcc isSleeping, +0xd4 setIsAwake; client twin 0x008f7218."
+  },
+  {
+   "address": "0x0871d3a0",
+   "name": "vtable for dice::ref2::world::MaterialManager",
+   "kind": "vtable",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R4] briefing table, cross-used"
+  },
+  {
+   "address": "0x0824d2b0",
+   "name": "dice::ref2::world::PhysicsNode::setDrag(float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [R4] weak ('W') symbols, read via 'nm', confirmed against the vtable dump"
+  },
+  {
+   "address": "0x00579fa0",
+   "name": "ResponsePhysicsManager::update(float,IObject*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] vtable+0x14; twin of lnxded 0x0825d0b0"
+  },
+  {
+   "address": "0x00579820",
+   "name": "ResponsePhysicsManager::checkObjectVsObjects",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] direct call from 'update'; twin of 0x0825d820"
+  },
+  {
+   "address": "0x00579480",
+   "name": "ResponsePhysicsManager::reset()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] vtable+0x18; twin of 0x0825e1a0"
+  },
+  {
+   "address": "0x00579470",
+   "name": "ResponsePhysicsManager::resetCachedCollisionObjects()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] vtable+0x1c; twin of 0x0825e190"
+  },
+  {
+   "address": "0x00579490",
+   "name": "ResponsePhysicsManager::ResponsePhysicsManager()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] writes vtable 0x008fdce4"
+  },
+  {
+   "address": "0x008fdce4",
+   "name": "vtable for ResponsePhysicsManager",
+   "kind": "vtable",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] 33-byte object, 32-byte alloc"
+  },
+  {
+   "address": "0x00535f30",
+   "name": "createResponsePhysicsManagerBasic factory",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] reached via '\"...ResponsePhysicsManager.Basic\"' string 0x008f628c"
+  },
+  {
+   "address": "0x00574bb0",
+   "name": "ResponsePhysics::impulseOn",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] vtable+0x18; twin of 0x08258900"
+  },
+  {
+   "address": "0x005765d0",
+   "name": "ResponsePhysics::solveImpulse",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] vtable+0x1c; twin of 0x08258d30"
+  },
+  {
+   "address": "0x00576c50",
+   "name": "ResponsePhysics::addFriction",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] vtable+0x20; twin of 0x0825b6e0"
+  },
+  {
+   "address": "0x00575cd0",
+   "name": "ResponsePhysics::checkVsTerrain",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] vtable+0x24; twin of 0x0825a960"
+  },
+  {
+   "address": "0x00574e30",
+   "name": "ResponsePhysics::checkObjectVsObject",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] vtable+0x60; twin of 0x08259690"
+  },
+  {
+   "address": "0x00574b40",
+   "name": "ResponsePhysics::getPermanentGrip",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] vtable+0x6c; twin of 0x0825ce40"
+  },
+  {
+   "address": "0x00574b60",
+   "name": "ResponsePhysics::setSurfacePositionalSpeed",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] vtable 0x008fd770 +0x74 (the report filed it under +0x7c; +0x7c is the folded getter 0x007e9230 'return this + 0x14'). Twin of lnxded 0x0825ce90."
+  },
+  {
+   "address": "0x00577c30",
+   "name": "ResponsePhysics::getRootResponse",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] vtable+0x80; twin of 0x08259640"
+  },
+  {
+   "address": "0x00574970",
+   "name": "ResponsePhysics::ResponsePhysics()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] writes vtable 0x008fd770, 228-byte alloc"
+  },
+  {
+   "address": "0x008fd770",
+   "name": "vtable for ResponsePhysics",
+   "kind": "vtable",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] matches lnxded 0x0872e240 slot-for-slot"
+  },
+  {
+   "address": "0x00535ee0",
+   "name": "createResponsePhysicsBasic factory",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] reached via '\"...ResponsePhysics.Basic\"' string 0x008f62bc"
+  },
+  {
+   "address": "0x00574810",
+   "name": "ResponsePhysics Vec3-level adjust merge",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] wraps setAdjust x3; no lnxded twin (inlined there)"
+  },
+  {
+   "address": "0x005745b0",
+   "name": "setAdjust(float&,float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] twin of 0x0825cec0; same-sign/opposite-sign rule verified"
+  },
+  {
+   "address": "0x008f7218",
+   "name": "vtable for PhysicsNode",
+   "kind": "vtable",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] matches lnxded 0x0872df00 slot-for-slot"
+  },
+  {
+   "address": "0x00540220",
+   "name": "PhysicsNode::addAccelerationAtAbsolutePosition",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] vtable+0x68; twin of 0x08255110"
+  },
+  {
+   "address": "0x0053fe20",
+   "name": "PhysicsNode::getTangentSpeed",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] vtable+0x74; twin of 0x08254b90"
+  },
+  {
+   "address": "0x0053f470",
+   "name": "PhysicsNode::setHasSeparatePhysicsUpdate(bool)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] vtable+0xb8; twin of 0x0824d3f0; writes byte+0x90"
+  },
+  {
+   "address": "0x0053f480",
+   "name": "PhysicsNode::getHasSeparatePhysicsUpdate()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] vtable+0xbc; twin of 0x0824d410; reads byte+0x90"
+  },
+  {
+   "address": "0x0053f940",
+   "name": "PhysicsNode::updatePositionalPhysics",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] twin of 0x08253570"
+  },
+  {
+   "address": "0x005403b0",
+   "name": "PhysicsNode::updateRotationalPhysics",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] twin of 0x082539e0; torque clamp 1e6/1000.0 confirmed"
+  },
+  {
+   "address": "0x0053fc30",
+   "name": "getGeometryInertia",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] twin of 0x08253930; 1/3 constant confirmed"
+  },
+  {
+   "address": "0x0040bdc0",
+   "name": "Game::updateWorldCollision",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] twin of 0x0805da00; already inferred, now instruction-verified"
+  },
+  {
+   "address": "0x004b7870",
+   "name": "GameClient per-player mobile collision update",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] twin of lnxded 'GameServer::simulatePlayerCollisions' (0x0815c0a0) \u2192 'performMobileCollisionUpdate' (0x08147580) chain"
+  },
+  {
+   "address": "0x004bb800",
+   "name": "Armor::getDamageMod",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] vtable+0x3c; 0 code-level xrefs"
+  },
+  {
+   "address": "0x004bb820",
+   "name": "Armor::getAngleMod",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] vtable+0x44; 1 code-level xref ('0x00580d30', looks cosmetic)"
+  },
+  {
+   "address": "0x005ad100",
+   "name": "Armor::getSpeedMod",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] vtable+0x4c; 0 code-level xrefs"
+  },
+  {
+   "address": "0x004bbde0",
+   "name": "Armor::addColObject",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] vtable+0x120; 0 code-level xrefs"
+  },
+  {
+   "address": "0x004bbe80",
+   "name": "Armor::isInColList",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "client. [R5] vtable+0x12c; 0 code-level xrefs"
+  },
+  {
+   "address": "0x08258d30",
+   "name": "dice::ref2::world::ResponsePhysics::solveImpulse(dice::ref2::world::IPhysicsNode*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [lead] only when the positional adjust is non-zero: wheels (SpringTemplate) take the push-out along the normal, clamped 0..1; everything else moves the ROOT node by the adjust and posts speedAdjust x 30 x (1 + elasticity) x 0.5 through addAccelerationAtAbsolutePosition at the averaged contact point. Projectile mesh bodies are pitched/rolled toward the normal by up to 10 degrees. Client twin 0x005765d0."
+  },
+  {
+   "address": "0x0814b2e0",
+   "name": "dice::bf::GameServer::giveDamage(dice::ref2::world::IObject*, float, int, int, int, dice::ref2::Pos3, int, bool, bool)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [lead] GameServer vtable +0x15c (vptr = 0x0871b0e0 + 8). The receiver of the *0x15c call in both collision handlers is the GameServer (this), NOT the colliding object. Resolves the target Armor, calcDamage (friendly fire only), _giveDamage."
+  },
+  {
+   "address": "0x0814b520",
+   "name": "dice::bf::GameServer::calcDamage(dice::ref2::world::IObject*, float, int, bool)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [lead] friendly-fire factors only: GameServer +0x2c8 soldier / +0x2cc vehicle (+0x2d0 / +0x2d4 splash variant), applied when attacker team == victim PCO team; otherwise damage unchanged."
+  },
+  {
+   "address": "0x08173740",
+   "name": "dice::ref2::world::Armor::addColObject(dice::ref2::world::IObject*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [lead] 16-slot ring: objects +0x54, delta timers +0x94, head +0xd4, tail +0xd8; a new entry expires 1.0 s after insertion. The collision-damage rate limiter, one event per (Armor, other object) per second; terrain is the NULL entry."
+  },
+  {
+   "address": "0x081744d0",
+   "name": "dice::ref2::world::Armor::isInColList(dice::ref2::world::IObject*)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [lead] linear scan of the ring head..tail. SimpleObject::handleCollision skips the damage dispatch when true."
+  },
+  {
+   "address": "0x081737b0",
+   "name": "dice::ref2::world::Armor::clearColObjectList()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [lead] head = tail = 0."
+  },
+  {
+   "address": "0x08174470",
+   "name": "dice::ref2::world::Armor::collision()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [lead] sets byte +0x129."
+  },
+  {
+   "address": "0x0825cec0",
+   "name": "dice::ref2::world::setAdjust(float&, float)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [lead] per-axis merge used by impulseOn: accumulator 0 -> take; opposite signs -> add; same sign -> keep the larger magnitude. Client twin 0x005745b0."
+  },
+  {
+   "address": "0x08318b00",
+   "name": "dice::ref2::world::PlayerControlObject::handleCollision(dice::ref2::world::IObject*, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, int, int)",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [lead] matOther 99 -> giveDamage 1e10; other is an ObstacleTemplate (0x94af) -> other->handleMessage(0,0), return 0; else SimpleObject::handleCollision."
+  },
+  {
+   "address": "0x08173f70",
+   "name": "dice::ref2::world::Armor::getDamageMod()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [lead] Armor vtable +0x3c; .con ObjectTemplate.damageMod, default 1.0. The ATTACKER's value scales object-vs-object collision damage."
+  },
+  {
+   "address": "0x08173fc0",
+   "name": "dice::ref2::world::Armor::getSpeedMod()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [lead] Armor vtable +0x4c; .con ObjectTemplate.speedMod, default 0.05. The VICTIM's value scales collision damage by |v|^2."
+  },
+  {
+   "address": "0x08173fa0",
+   "name": "dice::ref2::world::Armor::getAngleMod()",
+   "kind": "function",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [lead] Armor vtable +0x44; .con ObjectTemplate.angleMod, default 0. 1 (every vanilla aircraft) makes collision damage independent of the impact angle."
+  },
+  {
+   "address": "0x0872e2e0",
+   "name": "vtable for dice::ref2::world::ResponsePhysicsManager",
+   "kind": "vtable",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [lead] +0x0c addObject, +0x10 removeObject, +0x14 update(dt, obj), +0x18 reset (++collisionCheckedCounter), +0x1c resetCachedCollisionObjects, +0x20 getTerrainVectorCollider."
+  },
+  {
+   "address": "0x0872e240",
+   "name": "vtable for dice::ref2::world::ResponsePhysics",
+   "kind": "vtable",
+   "subsystem": "collision",
+   "confidence": "verified",
+   "source": "research-2026-09-19-collision-response",
+   "note": "lnxded. [lead] +0x18 impulseOn, +0x1c solveImpulse, +0x20 addFriction, +0x24 checkVsTerrain, +0x58 getFaceCollision, +0x5c getVertexCollision, +0x60 checkObjectVsObject; client twin 0x008fd770 matches slot for slot."
   }
  ]
 }

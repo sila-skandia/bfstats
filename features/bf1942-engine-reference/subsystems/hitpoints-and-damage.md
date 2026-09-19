@@ -2,8 +2,8 @@
 
 Settled 2026-09-16 for the map viewer's `armor.js` and the soldier's HUD
 health bar ([ingame-hud.md](ingame-hud.md) HUD-9); extended 2026-09-17 with
-what a collision does (§3 — nothing, to hit points) and what makes a vehicle
-burn (§8). All addresses
+what makes a vehicle burn (§8); §3 (what a collision costs) was rewritten
+2026-09-19. All addresses
 `bf1942_lnxded.static` unless marked client. Every Armor-bearing thing —
 soldier, vehicle, stationary gun — shares one component and one death rule:
 death is a threshold crossing evaluated inside the mutator that causes it,
@@ -67,80 +67,55 @@ itself (`hpLostWhileCriticalDamage`, `hpLostWhileUpSideDown`,
 amount per firing, **not scaled by `dt`** — a longer frame does not lose
 more HP per water tick, it just checks in less often.
 
-## 3. A collision never costs hit points — except soldiers falling
+## 3. A collision costs hit points
 
-HP-6 was closed in the negative on 2026-09-17, researched and then
-independently re-derived by a verifier, concluding "there is no fall-damage
-formula." **That was refuted on 2026-09-18**: the soldier fall branch does
-apply hit-point damage via the object-level `*0x15c` dispatch. See
-`features/bf1942-3d-models/fall-damage-research-groundwork-2026-09-17.md` for
-the full re-derivation. The earlier pass's *descriptive* reading of the
-handlers is still accurate — it just resolved the wrong consumer.
+Settled 2026-09-19; full narrative, formulas and the material data in
+[collision-response.md](collision-response.md) §9. This section has been wrong
+twice, and the history is worth a paragraph because both errors were the same
+error.
 
-What the earlier pass got right: `SimpleObject::handleCollision`
-(`0x081dab40`) walks the composite chain for the nearest Armor, calls its
-`collision()` (vtable `+0xe8`) and `setLastCollisionHeight` (vtable `+0xf8`),
-and then dispatches on the `dice::bf::game` global's own vtable —
-`+0x30`/`+0x34` — choosing the projectile variant when `this`'s `+0x4c` class
-is `CID_ProjectileTemplate` (`0x86c2b90`). The singleton is a `GameServer`,
-whose vtable (`0x0871b0e0`) overrides both slots, so a physical contact lands
-in `GameServer::handleCollision` (`0x08156020`). That is a 101-byte tail-call
-dispatcher: `otherObject != NULL` goes to `handleCollisionObjectVsObject`
-(`0x081551c0`), and `NULL` — how **terrain and water** arrive — goes to
-`handleCollisionLandOrWater` (`0x08154960`). Neither of the two, directly, nor
-`Game::playCollisionEffect` (`0x0805de20`), ever calls an Armor `+0x20`/`+0x24`
-(damage/heal). That part of HP-6 stands.
+On 2026-09-17 HP-6 was closed in the negative - "a collision never costs hit
+points" - after a researcher and a verifier both found no Armor `damage`/`heal`
+call in either collision handler and took `Game::playCollisionEffect` for the
+severity number's only consumer. On 2026-09-18 that was refuted for a falling
+soldier: the handlers also make a `*0x15c` virtual call. But that pass
+identified the receiver as the colliding object and the slot as
+`BFSoldier::handleDamage`, and so kept the claim alive for vehicles.
 
-**The gap.** `handleCollisionLandOrWater` has a soldier branch (entered when
-the collision object's class `== CID_BFSoldierTemplate` `0x86c2b88`, at
-`0x8154d20`) that computes a fall severity and delivers it through
-`*0x15c` at `0x8154d12`/`0x815505b` — **not** `playCollisionEffect` (a direct
-`e8` call that only appears in the other branches at `0x8154b72`/`0x8154f0b`).
-Slot `*0x15c` on the BFSoldier's world-facing sub-vtable (`0x0872efc4`) is
-`BFSoldier::handleDamage` (`0x08270980`; value at `0x0872efc4+0x15c`). The
-same dispatch is used by `_giveDamage`, `killPlayer`,
-`handleCollisionForProjectile` and `handleCollisionObjectVsObject` — it is the
-engine's object-level damage/kill dispatch.
+**The receiver is the GameServer.** At `0x08155875`-`0x081558d6`
+(`handleCollisionObjectVsObject`) the code loads `this` (`0x8(%ebp)`), takes its
+vtable and calls `*0x15c`; slot `+0x15c` of GameServer's vtable (`0x0871b0e0`,
+vptr = symbol + 8) is `GameServer::giveDamage(IObject*, float, int, int, int,
+Pos3, int, bool, bool)` `0x0814b2e0`, which damages whatever object it is
+handed. Whatever sits at `+0x15c` of a BFSoldier sub-vtable is beside the
+point: the call is not made on the soldier. Re-derived independently from
+`objdump` (V0).
 
-The fall severity is `(getLastCollisionHeight().Y − current.Y)` — the fall
-distance — minus a 1.0 m free-fall tolerance, times
-`BFSoldier::getDamageDampingFromActiveKitParts()` (`0x0827ec00`), shaped by
-impact-speed thresholds (constants 10, 30 and a `/20` scaler) and gated so a
-fall below the 8.0 bound deals nothing. It reaches `Armor::damage`
-(`0x08172730`, a straight HP subtraction) via `BFSoldier::handleDamage` →
-`SimpleObject::handleDamage` (`0x081db230`, find-nearest-Armor). So **a
-soldier who falls far enough loses hit points, and can die**, matching retail
-gameplay.
+What is true, in short:
 
-The prior pass confused itself by reading the severity's *only direct* consumer
-as `playCollisionEffect` — it never resolved the second, `*0x15c` dispatch the
-soldier branch uses, because its sweep only mapped `getComponent(0xc4a4)` call
-sites and Armor `+0x20`/`+0x24` occurrences. Expressly:
+- `SimpleObject::handleCollision` `0x081dab40` finds the struck object's nearest
+  Armor and, unless that Armor's 1-second collision list already holds the other
+  object (`isInColList` `+0x12c`, `addColObject` `+0x120`), dispatches
+  `game->handleCollision(other, self, ...)` - the other object is the attacker.
+- Object vs object: `damage = attackerArmor.damageMod x (angleMod + (1 -
+  angleMod) sin(|cos| pi/2)) x speedMod x |v|^2 x getDamageMod(matAttacker,
+  matVictim) x getDamageForMaterial(matAttacker)`, applied when `> 1.0`.
+  `speedMod` and `angleMod` are the victim's. Vehicles included.
+- Terrain (`other == NULL`): `cos^3 x speedMod x |v|^2 x getDamageMod(matTerrain,
+  matSelf) x getDamageForMaterial(matTerrain)`, applied when `> 1.0`; water uses
+  `cos^2`, needs `damageFromWater`, and has no threshold. Vehicles included: a
+  plane that flies into a hill takes this.
+- A soldier victim subtracts 8 m/s first and multiplies by a fall-height term
+  and the kit damping, squared - the formula the fall-damage groundwork was
+  reaching for, with its branch polarities now settled.
+- Material 99 on the other side is an instant kill (1e10 damage); material 37 on
+  either side suppresses the damage dispatch.
 
-- Armor `damage`/`heal` (`+0x20`/`+0x24`) never appear in either handler —
-  true, but the damage travels *through slot `0x15c` → handleDamage →* Armor
-  `damage`, so the absence of a direct `+0x20` call in the handler is not the
-  same as the handler being harmless.
-- `playCollisionEffect` is a non-damaging leaf — true, but the soldier fall
-  branch does not (always) call it.
-- No tail calls out — true, but slot `0x15c` is an in-function indirect
-  dispatch, not a tail call, so the "no tail calls" check could not see it.
-- `SimpleObject::handleDamage` at vtable `+0xd8` never occurs *directly* in
-  the handlers — true; the fall reaches it via slot `0x15c`, so that check
-  proved nothing about falls.
-
-`Spring::handleCollision` (`0x0824f9b0`) sets two fields and tail-forwards to
-the base — a wheel's contact reaches the same terrain path, and a wheeled
-vehicle body has no soldier branch, consistent with vehicles not suffering
-fall damage (only soldiers get the `*0x15c` +height term; a vehicle crash
-still deals hit points only through §2's tick once it is destroyed, matching
-the HP-6/ARM-6 finding that nothing else reads a vehicle's Armor).
-
-**Remaining (for the exact curve):** the branch polarity in the soldier
-falloff (which impact-speed threshold means below→no damage vs above→ramp)
-awaits a verifier re-derivation of the x87 `fsubp`/`fucompp`/`test $0x45`
-operand order — the trap R2 corrected V1 on. The mechanism and constants are
-verified.
+What the earlier pass had right stands: neither handler calls Armor `+0x20` or
+`+0x24` directly, `playCollisionEffect` is a harmless leaf, terrain and water
+arrive through the same dispatcher with `otherObject = NULL`
+(`GameServer::handleCollision` `0x08156020`), and `Spring::handleCollision`
+`0x0824f9b0` forwards to the base, so a wheel's contact takes the same path.
 
 ## 4. `handleDamage`: find-nearest-Armor, then dispatch by sign
 
