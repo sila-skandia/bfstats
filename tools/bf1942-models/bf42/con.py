@@ -691,6 +691,25 @@ class ObjectTemplate:
     # a tank shell from a grenade. Surveyed across the 18 installed mods'
     # `objects*.rfa`: 4,207 declarations, 3,557 of them `1`.
     has_collision_effect: bool | None = None
+    # `dieAfterColl` is `ProjectileTemplate+0x1a7` (bool, ConsoleClass385,
+    # accessor 0x082de400, instance 0x087a4fc0), and it is **read** — not, as
+    # an earlier pass had it, a word whose consumer was unknown.
+    # `Projectile::handleCollision` (0x0831ee80) recycles the round on contact
+    # when EITHER `dieAfterColl` (test 0x0831ef4b) OR `hasCollisionEffect`
+    # (test 0x0831ef54) is set: it calls `Projectile::resetProjectile`
+    # (0x0831e720, called at 0x0831f00a), which sets the detonate latch
+    # `Projectile+0x10d` and despawns **without** calling `startEndEffect`.
+    #
+    # That makes it the third word the viewer needs, and the one that keeps a
+    # flak shell honest. Vanilla's three `damageType 4` flak rounds
+    # (`AA_Allies_Projectile`, `Carrier_AA_Projectile`, `Flak38_Projectile`)
+    # all set `hasCollisionEffect 1`, so they die the moment they touch
+    # anything — silently, since `damageType 4` gets no impact explosion
+    # either (gate 0x08153e79). Only a round with NEITHER word survives
+    # contact to burst on its fuse, and in vanilla that is exactly the two
+    # grenades, the explosives pack and the landmine, all four of which write
+    # `dieAfterColl 0`.
+    die_after_coll: bool | None = None
     # `YModOnExplosion` scales the Y term — and only the Y term — of the
     # distance an explosion measures to a victim's transform origin (HP-9,
     # lnxded 0x08156613). Engine default 1.0. 642 declarations across the
@@ -1831,7 +1850,8 @@ class ObjectLibrary:
                         }[cmd], value)
                 elif cmd in ("mindamage", "disttostartlosedamage", "disttomindamage",
                              "radius", "material2", "damagetype",
-                             "hascollisioneffect", "ymodonexplosion"):
+                             "hascollisioneffect", "dieaftercoll",
+                             "ymodonexplosion"):
                     try:
                         value = float(args.split()[0])
                     except (ValueError, IndexError):
@@ -1845,6 +1865,11 @@ class ObjectLibrary:
                         # on the wire; every one of the 4,207 declarations
                         # surveyed writes a bare 0 or 1.
                         obj.has_collision_effect = value != 0
+                    elif cmd == "dieaftercoll":
+                        # The other half of "does this round survive contact"
+                        # (lnxded 0x0831ef4b). A bool on the wire; every one of
+                        # the declarations surveyed writes a bare 0 or 1.
+                        obj.die_after_coll = value != 0
                     elif cmd == "radius":
                         # `ProjectileTemplate.radius` is a console **int**
                         # (HP-9): the parser is `istream >> int` at lnxded

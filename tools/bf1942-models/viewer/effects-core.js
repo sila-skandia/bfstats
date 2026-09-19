@@ -543,6 +543,32 @@ export function blastDistance(dx, dy, dz, yMod = 1) {
 }
 
 /**
+ * How far off the struck surface an **impact** explosion is centred: 0.1 m
+ * along the collision normal.
+ *
+ * `GameServer::handleCollisionForProjectile` computes the explosion position
+ * as `hitPos + 0.1 * normal` before handing it to `handleExplosion`: the
+ * constant is loaded at lnxded 0x08153f5e from `ds:0x086b1ca0`
+ * (`cdcccc3d` = 0.1f), multiplied into all three components of the normal at
+ * 0x08153f6b-0x08153f73, added to the hit position at 0x08153f82-0x08153f8f,
+ * and pushed as the blast centre at 0x08154026/0x08154030/0x08154037. The same
+ * shape appears in the function's other two collision blocks, at 0x0815434e
+ * and 0x081546f2.
+ *
+ * Two things it is NOT. It is not applied to the **collision effect** — that
+ * is played at 0x08153e5b, before any of this, on the raw hit point. And it is
+ * not applied to the **end-of-life** explosion, which stands on the
+ * projectile's own `getPos()` with no offset at all (`startEndEffect`
+ * 0x0831f747).
+ *
+ * Numerically it is small — 0.1 m out of a 10 to 30 m radius is well under 1%
+ * of the falloff — but it is free and it is read, and it is always *away* from
+ * whatever was struck, so the victim that took the direct hit is the one it
+ * shades.
+ */
+export const IMPACT_BLAST_OFFSET = 0.1;
+
+/**
  * Splash half of a projectile's damage block, or null when this round has no
  * area pass at all.
  *
@@ -565,10 +591,12 @@ export function blastDistance(dx, dy, dz, yMod = 1) {
  * mod's `objects*.rfa`: 3,161 `damageType 1` templates, 2,935 of them with the
  * flag, and 46 `damageType 4`.
  *
- * `damageType 4` explodes **only** at end of life, never on impact — which is
- * also why vanilla's three flak shells (`AA_Allies_Projectile`,
- * `Carrier_AA_Projectile`, `Flak38_Projectile`) are `damageType 4` *with* the
- * flag set: a flak round bursts on its fuse, not on the aircraft it grazes.
+ * `damageType 4` explodes **only** at end of life, never on impact. Do not
+ * read that as "so a `damageType 4` round rests where it lands and bursts
+ * there" — whether a round survives contact at all is a **third** question,
+ * and `diesOnContact` below is the one that answers it. Vanilla's three flak
+ * shells are `damageType 4` *with* the flag set, and the flag is not dead on
+ * them: it kills them on contact, with no explosion of either kind.
  *
  * Returns `{ material2, radius, damageType, hasCollisionEffect, yMod, impact,
  * endOfLife }`. `material2 -1` is the authored "no splash" (fighter MGs).
@@ -611,6 +639,54 @@ export function splashSpec(damage) {
   const endOfLife = damageType === 1 || damageType === 4;
   if (!impact && !endOfLife) return null;
   return { material2, radius, damageType, hasCollisionEffect, yMod, impact, endOfLife };
+}
+
+/**
+ * Does this round die the moment it touches anything?
+ *
+ * `Projectile::handleCollision` (lnxded 0x0831ee80) asks two questions and
+ * recycles the round if either answers yes:
+ *
+ *     0x0831ef4b  cmp BYTE [tmpl+0x1a7],0   ; dieAfterColl     -> jne kill
+ *     0x0831ef54  cmp BYTE [tmpl+0x1a4],0   ; hasCollisionEffect -> jne kill
+ *
+ * The kill is `Projectile::resetProjectile` (0x0831e720, called at
+ * 0x0831f00a). It sets the round's detonate latch (`Projectile+0x10d`) and
+ * despawns it, and it does **not** call `startEndEffect` — so a round that
+ * dies this way never gets an end-of-life explosion, and a later `detonate()`
+ * finds the latch already set and returns.
+ *
+ * This is the word that was missing, and the flak shells are why it matters.
+ * `AA_Allies_Projectile`, `Carrier_AA_Projectile` and `Flak38_Projectile` are
+ * `damageType 4` — no impact explosion, gate 0x08153e79 — but all three set
+ * `hasCollisionEffect 1` (two also set `dieAfterColl 1`). So a flak round that
+ * touches an aircraft, the ground or a wall is **deleted, silently**: it takes
+ * its direct hit and plays its collision effect (`Game::playCollisionEffect`
+ * runs at 0x08153e5b, before the explosion gate), and that is all. Reading the
+ * flag as "dead on a type-4 round" and letting the shell rest where it landed
+ * to burst on its fuse hands a 20 m, material2-199 blast to every AA gun
+ * firing at the ground.
+ *
+ * Only a round with NEITHER word survives contact. In vanilla that is exactly
+ * the four fuse weapons — `GrenadeAlliesProjectile`, `GrenadeAxisProjectile`,
+ * `ExpPackProjectile` and `LandmineProjectile`, all four `hasCollisionEffect
+ * 0` and `dieAfterColl 0`.
+ *
+ * Absent on an older baked glb: `hasCollisionEffect` defaults to **true** (the
+ * same assumption `splashSpec` makes, and the safe one — it keeps a tank shell
+ * ending at the wall), `dieAfterColl` to the engine's own **false**.
+ *
+ * Two further words in the same chain are read but not modelled here, and
+ * named so the next reader does not rediscover them: `isSticky`
+ * (`ProjectileTemplate+0x1ab`, tested 0x0831ef16) attaches the round to what
+ * it struck and disables its physics, and `detonateOnWaterCollision` (+0x1ac,
+ * tested 0x0831f3ae) is what lets a water contact be handled at all — without
+ * it `handleCollision` returns immediately on water. Neither is set by any
+ * vanilla projectile.
+ */
+export function diesOnContact(damage) {
+  if (!damage) return true;
+  return !!(damage.hasCollisionEffect ?? true) || !!damage.dieAfterColl;
 }
 
 /**

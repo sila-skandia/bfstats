@@ -30,7 +30,8 @@
 
 import * as THREE from 'three';
 import { impactEffect, materialFamily } from './collision.js';
-import { damageFactor, splashSpec } from './effects-core.js';
+import { damageFactor, diesOnContact, IMPACT_BLAST_OFFSET,
+         splashSpec } from './effects-core.js';
 // The world's downward acceleration, signed, taken from the module that owns
 // it rather than declared again here. It is -14.73 m/s^2 and not Earth's
 // -9.81: `BasicPhysicsSystem`'s constructor at `0x00578f00` writes 0xC16BAE14
@@ -788,14 +789,24 @@ export class GunFire {
       age: 0,
       travelled: 0,
       sincePuff: 0,
-      // A **fuse** round: one the engine gives an end-of-life explosion but no
-      // impact explosion (HP-9d). Vanilla's are exactly the grenades, the
-      // explosives pack and the landmine. Contact must neither detonate it nor
-      // end it, or its only blast is deleted and a grenade thrown into the
-      // open does nothing at all, which is what this viewer did until now.
+      // A **fuse** round: one the engine gives an end-of-life explosion, no
+      // impact explosion, and — the third condition, which is the one that is
+      // easy to miss — that actually SURVIVES contact (HP-9d, HP-9e).
+      // Vanilla's are exactly the two grenades, the explosives pack and the
+      // landmine. Contact must neither detonate such a round nor end it, or
+      // its only blast is deleted and a grenade thrown into the open does
+      // nothing at all, which is what this viewer did until now.
+      //
+      // `diesOnContact` is not a restatement of `!impact`. A flak shell is
+      // `damageType 4` (no impact explosion) *and* `hasCollisionEffect 1`, so
+      // `Projectile::handleCollision` recycles it the moment it touches
+      // something and it bursts neither way — see `diesOnContact`'s own note.
+      // Without this term all three vanilla flak guns would land a 20 m blast
+      // wherever their rounds came to rest.
       fuse: (() => {
         const splash = splashSpec(spec?.damage);
-        return !!(splash && !splash.impact && splash.endOfLife);
+        return !!(splash && !splash.impact && splash.endOfLife)
+          && !diesOnContact(spec?.damage);
       })(),
       // Set when a fuse round has come to rest on a surface; see `advance`.
       resting: false,
@@ -966,6 +977,17 @@ export class GunFire {
       record.splashMaterial2 = splash.material2;
       record.splashRadius = splash.radius;
       record.splashYMod = splash.yMod;
+      // The blast is centred 0.1 m off the surface, along the collision
+      // normal — `hitPos + 0.1 * normal`, lnxded 0x08153f5e-0x08153f8f, pushed
+      // at 0x08154026 (see `IMPACT_BLAST_OFFSET`). Kept as its own field
+      // rather than moving `point`, because `point` is where the **collision
+      // effect** goes and the engine plays that one at the raw hit position,
+      // before this offset is computed (0x08153e5b).
+      record.splashPoint = [
+        hit.x + hit.nx * IMPACT_BLAST_OFFSET,
+        hit.y + hit.ny * IMPACT_BLAST_OFFSET,
+        hit.z + hit.nz * IMPACT_BLAST_OFFSET,
+      ];
     }
     this.hits.unshift(record);
     if (this.hits.length > 16) this.hits.length = 16;
