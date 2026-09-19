@@ -720,7 +720,7 @@
     <span class="shell-brand"><img class="shell-brand-sigil" src="./bfstats-logo.webp" alt="bfstats.io" width="26" height="26"><b>mesh</b></span>
     <span class="shell-tabs">
       <a href="./index.html">Models</a>
-      <a href="./map.html" aria-current="page">Maps</a>
+      <a href="./play/index.html" aria-current="page">Maps</a>
       <a href="./poses.html">Poses</a>
       <a href="./kits.html">Kits</a>
     </span>
@@ -852,6 +852,7 @@ import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
          findWeaponSpecsByFireArms, WEAPON_HEADROOM } from './engine-audio.js';
 import { GunFire } from './gunfire.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
+import { EffectAudio } from './effect-audio.js';
 import { buildHeightfield, buildCollisionIndex, WorldCollider } from './collision.js';
 import { Soldier, spawnFlags, pickSpawn, spawnYaw,
          FOV_DEG as FOOT_FOV, GRAVITY } from './soldier.js';
@@ -862,6 +863,8 @@ import { createReplayController, recordingLevel } from './replay.js';
 import { Hud, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS } from './hud.js';
 import { Armor } from './armor.js';
 import { VehicleDamageSet, inputGate } from './vehicle-damage.js';
+import { BodyWorld } from './body-world.js';
+import { buildParkedVehicle, collisionPartsFor, describeVehicleParts, DrivenBody } from './vehicle-bodies.js';
 import { SupplyDepot, SupplyField } from './supply.js';
 import { collectIkBindings, defaultSeatPoseName, ikTarget, resolveSeatStates,
          seatBody, seatPoseName, solveTwoBone } from './seat-ik.js';
@@ -870,6 +873,11 @@ import { bonePattern, kitsByTemplate, wornGrafts } from './kit-graft.js';
 import { wantsEnvmap, cubeFaceUrls, envmapVertexPatch, envmapVertexBody,
          envmapFragmentPatch, envmapFragmentApply } from './envmap.js';
 import { CombatArea, combatAreaRect } from './combat-area.js';
+// HP-10's sampling, and the one metre `setCharacterHeight -1.00` puts between
+// a soldier's feet and his object origin — the point the engine measures a
+// blast to and adds its sample offsets from.
+import { soldierExposure, worldBlocker, POSE_STAND } from './soldier-exposure.js';
+import { CHARACTER_HEIGHT } from './physics.js';
 import { flareSprites, flareTextureFiles, hasDrawableFlare } from './lens-flare.js';
 
 // Which game's levels this page serves, and the directory they hang off:
@@ -1024,8 +1032,15 @@ let levelEnvCube = null;
 // `game.setActiveCombatArea` — the warning, its countdown and the damage
 // after it. All the engine reading is in `combat-area.js`; this file only
 // steps it with the body's position and hands the result to the HUD and to
-// the soldier's Armor. Rebuilt per level (11 of the 23 vanilla levels declare
-// an area; the other 12 carry `combatArea: null` and this stays inert).
+// the soldier's Armor. Rebuilt per level.
+//
+// It has TWO halves, and the second one is why it is no longer inert on the
+// twelve levels that declare no rectangle: `GameServer::gameStatusPlaying`
+// also counts you as outside when the terrain material under you equals
+// `materialToGiveDamage` (CA-5, default 7, "Reserved (Outside map)"). Eleven
+// of the 23 vanilla levels paint that id, three of them without declaring any
+// rectangle at all. `heightfield.material(x, z)` is the channel — the same one
+// `surfaceFriction` already reads per wheel.
 let combatArea = new CombatArea(null);
 let combatFrame = null;
 let simTime = 0;
@@ -1039,6 +1054,19 @@ let levelClips = [];
 let flagMixer = null;
 
 const params = new URLSearchParams(location.search);
+
+/** The Instant Battle screen in `play/` is where a level is chosen. */
+const MENU_URL = new URL('./play/index.html', location.href);
+
+// A bare `map.html` names no level, and the level list sits in the debug
+// panel a player never sees, so there would be nothing here to choose with.
+// Anything that names a level or a recording, asks for the debug panel, or is
+// a headless run stays on this page.
+if (!params.has('map') && !params.has('replay') && !params.has('shots')
+    && params.get('dev') !== '1') {
+  location.replace(MENU_URL);
+  await new Promise(() => {});
+}
 
 const optGameFog = document.getElementById('game-fog');
 const optWire = document.getElementById('wire');
@@ -1929,6 +1957,15 @@ gameConsole.register({
     if (!args.length) return devMode ? 1 : 0;
     return setDevMode(args[0] !== '0' && args[0].toLowerCase() !== 'false') ? 1 : 0;
   },
+});
+
+/** `game.disconnect` is the engine's own word (it sits in the `game` object's
+ *  method table beside `toggleGamePause` and `ticketRatio`), and it does what
+ *  it does there: leaves the battle for the menu. */
+gameConsole.register({
+  object: 'game', method: 'disconnect',
+  minArgs: 0, maxArgs: 0, argTypes: [],
+  run: () => { location.assign(MENU_URL); },
 });
 
 function setConsoleOpen(on) {
@@ -4106,10 +4143,11 @@ let occupancy = null;
 //
 // What the engine does and does not do, from `features/bf1942-engine-reference/`:
 //
-//   - **A collision costs nothing** (ledger HP-6). Driving a tank into a wall
-//     or flying a plane into a hill does not touch hit points — only a
-//     projectile damages anything. There is deliberately no crash-damage path
-//     below; the engine has none to copy.
+//   - **A collision costs hit points** (ledger HP-6, reversed 2026-09-19;
+//     `subsystems/collision-response.md` section 9). Ramming damages both
+//     vehicles by `speedMod x v^2 x` an angle factor `x` the material pair
+//     table, at most once a second per pair. That path is `stepVehicleBodies`
+//     below, which feeds the same `VehicleDamageSet` a round does.
 //   - **A living vehicle re-evaluates its tier every tick** (ARM-1), so this
 //     polls rather than latching, and stops polling once the thing is dead.
 // ---------------------------------------------------------------------------
@@ -4276,6 +4314,7 @@ async function wreckVehicle(vehicle) {
   visual.wrecked = true;
   visual.wreckAge = 0;
   visual.hidden = [];
+  retireVehicleBody(vehicle.owner);
   const template = templateNameOf(visual.node);
   try {
     if (!wreckModels.has(template)) {
@@ -4355,6 +4394,10 @@ function stepWrecks(dt) {
     for (const child of visual.hidden) child.visible = false;
     for (const handle of visual.handles) handle.stop?.();
     visual.handles.length = 0;
+    // A hull the body world had moved is answered through the moved-owner
+    // path, which ignores the disabled flag; drop that too or the faded wreck
+    // stays solid.
+    collider?.clearMovedOwner?.(owner, { enable: false });
     collider?.statics?.disableOwner?.(owner);
     visual.respawnIn = spawnDelayFor(visual);
   }
@@ -4414,6 +4457,7 @@ function respawnVehicle(owner) {
   if (vehicle) showDamageTier(vehicle, null);
   collider?.statics?.enableOwner?.(owner);
   visual.node.updateMatrixWorld(true);
+  respawnVehicleBody(owner);
 }
 
 /** Fade a subtree. Its materials are this wreck's own — see `wreckVehicle`. */
@@ -4437,6 +4481,285 @@ function fadeNode(root, opacity) {
  * every seat (VHUD-8, R2-31), so the driver and the hull gunner read the same
  * number.
  */
+// ---------------------------------------------------------------------------
+// Vehicles as rigid bodies: ram a parked plane and it moves, and both pay.
+//
+// Every placed vehicle with a mass is a body in `bodyWorld` (`body-world.js`):
+// parked ones stand on their own wheel springs, asleep until something touches
+// them; the one under the player takes part through a `DrivenBody` wrapped
+// round its drive model. The engine rules - contact finding, the mass-ratio
+// push, the friction pass, crash damage - are the framework-free modules;
+// everything here is the scene half: which node is which body, writing a
+// body's pose back onto its node, and telling the collider where a hull that
+// has been shoved now stands so that rounds and boots still meet it.
+// ---------------------------------------------------------------------------
+
+/** Crash events, kept only when a test asks for them (`window.__crashLog`). */
+let crashLog = null;
+/** `_shared/collision-meshes.json`: every collision layer of every vehicle mesh. */
+let collisionMeshes = null;
+let bodyWorld = null;
+// owner -> { node, spec, spawnInverse: Matrix4, moved: boolean }
+const bodyScene = new Map();
+const _bodyMatrix = new THREE.Matrix4();
+const _bodyParentInv = new THREE.Matrix4();
+const _bodyFwd = new THREE.Matrix4();
+const _bodyInv = new THREE.Matrix4();
+const _bodyScale = new THREE.Vector3();
+
+async function loadCollisionMeshes(dir) {
+  if (collisionMeshes) return collisionMeshes;
+  const ref = extras?.damage;
+  if (!ref?.path) return null;
+  const path = ref.path.replace(/damage\.json$/, 'collision-meshes.json');
+  try {
+    collisionMeshes = await fetch(`${MAPS_BASE}/${dir}/${path}${bust()}`)
+      .then(r => r.ok ? r.json() : null);
+  } catch { collisionMeshes = null; }
+  return collisionMeshes;
+}
+
+/** A node's world pose as the body modules' `position` + row `axes`. */
+function bodyPoseOf(node) {
+  node.updateWorldMatrix(true, false);
+  const e = node.matrixWorld.elements;
+  return {
+    position: [e[12], e[13], e[14]],
+    axes: [[e[0], e[1], e[2]], [e[4], e[5], e[6]], [e[8], e[9], e[10]]],
+  };
+}
+
+/** The heightfield as the three functions the body modules ask of the ground. */
+function bodyTerrain(heightfield, waterLevel) {
+  const normal = [0, 1, 0];
+  return {
+    height: (x, z) => {
+      const h = heightfield.height(x, z);
+      return Number.isFinite(h) ? h : -Infinity;
+    },
+    normal: (x, z, out) => {
+      heightfield.normal(x, z, normal);
+      out[0] = normal[0]; out[1] = normal[1]; out[2] = normal[2];
+      return out;
+    },
+    material: (x, z) => heightfield.material(x, z),
+    waterLevel: Number.isFinite(waterLevel) ? waterLevel : null,
+  };
+}
+
+/**
+ * Whether a placed vehicle becomes a simulated body. Ships stay scenery: a
+ * hull afloat is a `FloatingBundle`'s work, which nothing here models, and a
+ * woken destroyer would sink through the sea.
+ */
+function bodySpecFor(node) {
+  if (node?.userData?.physics?.vehicleCategory === 'VCSea') return null;
+  return describeVehicleParts(node, collisionMeshes);
+}
+
+/** Longest a spawned vehicle is given to come to rest: ten seconds of ticks. */
+const SETTLE_TICKS = 300;
+
+/**
+ * Let every placed vehicle drop onto its springs, before anything is indexed.
+ *
+ * An ObjectSpawner sits a little above the ground - a Willy's wheels hang
+ * 0.2 m clear at its authored pose - and the engine's vehicles are born awake:
+ * they fall, settle on their springs and go to sleep about three seconds
+ * later. Doing the same here, once, at load, puts each one where the game
+ * would have it, a third of a metre lower, so the collision index bakes the
+ * hull where it rests and a first touch does not make a parked plane drop.
+ * No damage is counted: wheels are what land, and wheels cost nothing.
+ */
+function settlePlacedVehicles(ownerRoots, heightfield) {
+  if (!collisionMeshes || !damageTables || !heightfield) return;
+  const world = new BodyWorld({
+    tables: damageTables, terrain: bodyTerrain(heightfield, extras?.waterLevel) });
+  const settling = [];
+  ownerRoots.forEach((node, index) => {
+    const spec = node?.userData?.armor ? bodySpecFor(node) : null;
+    if (!spec) return;
+    const parked = buildParkedVehicle(spec, { ...bodyPoseOf(node), asleep: false });
+    world.addParked(index, parked, spec);
+    settling.push({ node, body: parked.body });
+  });
+  for (let tick = 0; tick < SETTLE_TICKS; tick++) {
+    world.tick();
+    if (tick > 30 && settling.every(s => s.body.sleeping)) break;
+  }
+  for (const { node, body } of settling) writeBodyPose(node, body);
+}
+
+/** Rebuild the body world for the level `buildCollider` just indexed. */
+function setupVehicleBodies() {
+  bodyScene.clear();
+  bodyWorld = null;
+  const heightfield = collider?.heightfield;
+  if (!collisionMeshes || !damageTables || !heightfield) return;
+  bodyWorld = new BodyWorld({
+    tables: damageTables,
+    terrain: bodyTerrain(heightfield, collider.waterLevel),
+    onDamage: onCrashDamage,
+  });
+  for (const [owner, visual] of damageVisuals) {
+    const spec = bodySpecFor(visual.node);
+    if (!spec) continue;
+    visual.node.updateWorldMatrix(true, false);
+    bodyScene.set(owner, {
+      node: visual.node, spec, moved: false,
+      spawnInverse: visual.node.matrixWorld.clone().invert(),
+    });
+    collider.statics?.setBodyOwner?.(owner, true);
+    bodyWorld.addParked(owner, buildParkedVehicle(spec, bodyPoseOf(visual.node)), spec);
+  }
+}
+
+/**
+ * The collider a driven vehicle sweeps its hull against: everything the real
+ * one holds except other simulated bodies, which the contact solver owns. A
+ * swept sphere can only stop dead; the solver pushes, spins and damages.
+ */
+function bodyAwareCollider() {
+  if (!collider || !bodyWorld) return collider;
+  const world = collider;
+  return Object.create(world, {
+    sweepSphere: {
+      value: (ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner = -1) =>
+        world.sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, true),
+    },
+  });
+}
+
+/** A crash cost `owner` hit points: the same Armor a round would have hurt. */
+function onCrashDamage(owner, result, at, other) {
+  const vehicle = vehicleDamage.get(owner);
+  if (crashLog) {
+    crashLog.push({ tick: bodyWorld.ticks, owner, other, damage: result.damage,
+      kill: result.kill, cell: result.effectCell, hp: vehicle?.hitPoints ?? null });
+    if (crashLog.length > 200) crashLog.shift();
+  }
+  if (!vehicle || vehicle.destroyed) return;
+  vehicle.damage(result.kill ? vehicle.hitPoints : result.damage);
+  const effect = result.effectCell
+    ? damageTables?.effects?.[result.effectCell[0]]?.[result.effectCell[1]] : null;
+  if (effect) effects.play(effect, { position: [at[0], at[1], at[2]], normal: [0, 1, 0] });
+}
+
+/** The player has taken a vehicle: its drive model now stands in for the body. */
+function adoptDrivenBody(vehicle) {
+  if (!bodyWorld || !vehicle) return;
+  const owner = collider?.statics?.ownerOf(vehicle.node) ?? -1;
+  const scene = bodyScene.get(owner);
+  if (!scene) return;
+  bodyWorld.remove(owner);
+  const driven = new DrivenBody(vehicle, scene.spec);
+  bodyWorld.addDriven(owner, driven,
+    collisionPartsFor(scene.spec, driven, { hullOnly: true }), scene.spec);
+  scene.moved = true;
+}
+
+/** ... and has left it: it stands on its own springs again, where it was left. */
+function releaseDrivenBody(vehicle) {
+  if (!bodyWorld || !vehicle) return;
+  const owner = collider?.statics?.ownerOf(vehicle.node) ?? -1;
+  const scene = bodyScene.get(owner);
+  if (!scene || !bodyWorld.get(owner)?.driven) return;
+  bodyWorld.remove(owner);
+  const parked = buildParkedVehicle(scene.spec,
+    { ...bodyPoseOf(vehicle.node), asleep: false });
+  const v = vehicle.state.velocity;
+  parked.body.v[0] = v.x; parked.body.v[1] = v.y; parked.body.v[2] = v.z;
+  bodyWorld.addParked(owner, parked, scene.spec);
+}
+
+/** A wreck is scenery and a respawn is a fresh vehicle on its pad. */
+function retireVehicleBody(owner) {
+  if (!bodyScene.has(owner)) return;
+  bodyWorld?.remove(owner);
+}
+function respawnVehicleBody(owner) {
+  const scene = bodyScene.get(owner);
+  if (!scene || !bodyWorld) return;
+  bodyWorld.remove(owner);
+  scene.moved = false;
+  scene.dirty = false;
+  collider?.clearMovedOwner?.(owner, { enable: false });
+  // Back on its pad: the engine replaces the object at the ObjectSpawner, and
+  // the static index still holds the hull exactly there.
+  const node = scene.node;
+  _bodyMatrix.copy(scene.spawnInverse).invert();
+  if (node.parent) {
+    node.parent.updateWorldMatrix(true, false);
+    _bodyParentInv.copy(node.parent.matrixWorld).invert();
+    _bodyMatrix.premultiply(_bodyParentInv);
+  }
+  _bodyMatrix.decompose(node.position, node.quaternion, _bodyScale);
+  node.updateMatrix();
+  THREE.Object3D.prototype.updateMatrixWorld.call(node, true);
+  bodyWorld.addParked(owner, buildParkedVehicle(scene.spec, bodyPoseOf(scene.node)), scene.spec);
+}
+
+/** Write a body's pose onto its node and tell the collider where the hull is. */
+function syncBodyNode(owner, scene, body) {
+  writeBodyPose(scene.node, body);
+  publishMovedHull(owner, scene, scene.node, body.pos);
+}
+
+/** A body's world pose, written onto a scene node (which may be frozen). */
+function writeBodyPose(node, body) {
+  const a = body.axes, p = body.pos;
+  _bodyMatrix.set(
+    a[0][0], a[1][0], a[2][0], p[0],
+    a[0][1], a[1][1], a[2][1], p[1],
+    a[0][2], a[1][2], a[2][2], p[2],
+    0, 0, 0, 1);
+  if (node.parent) {
+    _bodyParentInv.copy(node.parent.matrixWorld).invert();
+    _bodyFwd.multiplyMatrices(_bodyParentInv, _bodyMatrix);
+  } else {
+    _bodyFwd.copy(_bodyMatrix);
+  }
+  _bodyFwd.decompose(node.position, node.quaternion, _bodyScale);
+  node.updateMatrix();
+  // The node may be frozen (`freeze` swaps `updateMatrixWorld` for a no-op);
+  // a body that moves has to go round that, and only that node pays for it.
+  THREE.Object3D.prototype.updateMatrixWorld.call(node, true);
+}
+
+function publishMovedHull(owner, scene, node, p) {
+  _bodyFwd.multiplyMatrices(node.matrixWorld, scene.spawnInverse);
+  _bodyInv.copy(_bodyFwd).invert();
+  collider.setMovedOwner(owner, _bodyFwd.elements, _bodyInv.elements,
+    p[0], p[1], p[2], scene.spec.boundingRadius);
+}
+
+/** One frame of the body world, after the drive model has moved the player's vehicle. */
+function stepVehicleBodies(dt) {
+  if (!bodyWorld) return;
+  if (!bodyWorld.step(dt)) return;
+  for (const [owner, entry] of bodyWorld.entries) {
+    const scene = bodyScene.get(owner);
+    if (!scene) continue;
+    if (entry.driven) {
+      // The contact solver may have pushed the drive model's state; draw it.
+      entry.driven.vehicle.applyTransform();
+      const s = entry.driven.vehicle.state.position;
+      publishMovedHull(owner, scene, scene.node, [s.x, s.y, s.z]);
+      continue;
+    }
+    const body = entry.parked.body;
+    if (body.sleeping && !scene.dirty) continue;
+    scene.dirty = !body.sleeping;          // one last sync on the tick it falls asleep
+    if (!scene.moved) {
+      const e = scene.node.matrixWorld.elements;
+      const dx = body.pos[0] - e[12], dy = body.pos[1] - e[13], dz = body.pos[2] - e[14];
+      if (dx * dx + dy * dy + dz * dz < 1e-6 && body.sleeping) continue;
+      scene.moved = true;
+    }
+    syncBodyNode(owner, scene, body);
+  }
+}
+
 function occupiedVehicleDamage() {
   if (!occupancy?.root) return null;
   for (const [owner, visual] of damageVisuals) {
@@ -4534,6 +4857,23 @@ function stepVehicleDamage(dt) {
 const combatAreaPos = new THREE.Vector3();
 
 /**
+ * The terrain material id under a world position, for the combat area's second
+ * test (CA-5).
+ *
+ * The engine asks `terrainBase`'s `PatchTerrain::getMaterial(x, z)` directly —
+ * a heightfield lookup, so what you are *standing* on makes no difference: a
+ * man on a rooftop over painted ground is over painted ground. `Heightfield.
+ * material` is the same nearest-sample read, and it answers
+ * `DEFAULT_TERRAIN_MATERIAL` (0) for a level with no `terrain/materials.png`,
+ * which can never equal 7 and so leaves such a level exactly as it was.
+ */
+function combatMaterial(x, z) {
+  const field = collider?.heightfield;
+  if (!field || !field.materials) return null;
+  return field.material(x, z);
+}
+
+/**
  * The combat area, one step a frame, against whatever the player occupies.
  *
  * `combat-area.js` carries the engine reading. The part that matters here is
@@ -4554,7 +4894,7 @@ function stepCombatArea(dt) {
   if (!combatArea.active) { combatFrame = null; return; }
   if (optPilot.checked && occupancy?.root) {
     const pos = occupancy.root.getWorldPosition(combatAreaPos);
-    combatFrame = combatArea.step(dt, pos.x, pos.z);
+    combatFrame = combatArea.step(dt, pos.x, pos.z, combatMaterial(pos.x, pos.z));
     if (combatFrame.damage > 0) {
       const hull = occupiedVehicleDamage();
       // A wreck has already died; the engine's own `giveDamage` on a
@@ -4567,7 +4907,8 @@ function stepCombatArea(dt) {
     return;
   }
   if (optOnFoot.checked && soldier && !soldierDead) {
-    combatFrame = combatArea.step(dt, soldier.x, soldier.z);
+    combatFrame = combatArea.step(dt, soldier.x, soldier.z,
+                                  combatMaterial(soldier.x, soldier.z));
     if (combatFrame.damage > 0 && soldierArmor) {
       soldierArmor.applyDamage(combatFrame.damage);
     }
@@ -4591,11 +4932,32 @@ function reconcileDamaged(vehicle) {
 const splashPos = new THREE.Vector3();
 
 /**
+ * `MaterialManager.material 40` — the soldier's own defending material, the
+ * one `damageMod(205, 40)` keys a grenade's splash off. Same constant
+ * `fall-damage.js` uses for the ground-versus-soldier pair.
+ */
+const SOLDIER_SPLASH_MATERIAL = 40;
+
+/**
  * Everything with an Armor that a blast could reach, as `applySplash` wants it:
  * world positions, because `vehicle-damage.js` stays free of three.js. The
  * distance is to the object's origin, which is what the engine measures too
  * (`handleExplosionOnObject`, HP-9) — a tank is not hurt less for being hit on
  * the far corner of its hull.
+ *
+ * Soldiers arrive carrying their own `Armor` and `soldier: true`, which is what
+ * earns them HP-10's exposure term. Two kinds:
+ *
+ *   - the player, when he is on foot and alive. He is not a placed object and
+ *     has no owner id, which is exactly why `applySplash` used to miss him.
+ *   - the decorative 3P figures on the spawn pads. They are clones of a pose
+ *     glb with no Armor of their own, so `placeSpawnSoldiers` gives each one
+ *     the same 30 HP a real soldier has — the cheapest way to make the
+ *     mechanic visible on the page, and the thing a headless check counts.
+ *
+ * A soldier's **object origin** is one metre above his feet
+ * (`setCharacterHeight -1.00`, `physics.js`'s `CHARACTER_HEIGHT`), and that is
+ * the point both the distance and the exposure samples are measured from.
  */
 function splashTargets() {
   const targets = [];
@@ -4604,7 +4966,33 @@ function splashTargets() {
     const pos = visual.node.getWorldPosition(splashPos);
     targets.push({ owner, x: pos.x, y: pos.y, z: pos.z });
   }
+  if (soldier && soldierArmor && !soldierDead && optOnFoot.checked) {
+    targets.push({
+      owner: -1, armor: soldierArmor, soldier: true, pose: soldier.pose,
+      splashMaterial: SOLDIER_SPLASH_MATERIAL,
+      x: soldier.x, y: soldier.y + CHARACTER_HEIGHT, z: soldier.z,
+    });
+  }
+  for (const pad of spawnSoldierTargets) {
+    if (pad.armor.destroyed) continue;
+    targets.push(pad);
+  }
   return targets;
+}
+
+/**
+ * HP-10's exposure for one soldier target: the fraction of
+ * `checkForHitOnSoldier`'s samples with a clear line to the blast.
+ *
+ * `soldier-exposure.js` carries the tables and the addresses; this only hands
+ * it the collider. The firer is excluded from the ray the way the engine's own
+ * filter holds the source object's root parent (0x0815b616).
+ */
+function soldierExposureFor(target, blast) {
+  if (!collider) return 1;
+  const blocked = worldBlocker(collider, { skipOwner: -1 });
+  return soldierExposure({ x: blast[0], y: blast[1], z: blast[2] },
+                         target, target.pose ?? 0, blocked);
 }
 
 /**
@@ -4618,8 +5006,18 @@ function applyVehicleHit(record) {
   if (!(record?.splashRadius > 0)) return;
   const splashed = vehicleDamage.applySplash(record, splashTargets(), {
     materials: guns.materials, modifiers: guns.modifiers,
+    exposure: soldierExposureFor,
   });
-  for (const hit of splashed) reconcileDamaged(hit.vehicle);
+  for (const hit of splashed) {
+    // A soldier target has no tier to re-pick and no wreck to build; what it
+    // has is a figure that should stop standing there. The player's own death
+    // is already handled where every other cause of it is.
+    if (hit.target?.soldier) {
+      if (hit.target.node && hit.vehicle.destroyed) hit.target.node.visible = false;
+      continue;
+    }
+    reconcileDamaged(hit.vehicle);
+  }
 }
 const AIR_KEYS = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'Space',
@@ -4711,7 +5109,23 @@ guns.onImpact = record => applyVehicleHit(record);
 // is absent) a hit is recorded and nothing is drawn at the spot.
 // Mesh particles (the decals, the stone chips) are `lighting true` meshes and
 // get the same engine-combine shading as every other dynamic mesh here.
-const effects = new EffectPlayer({ scene, camera, onMesh: mesh => bindDynamicShading(mesh) });
+// The other half of a bundle: the sound it was authored with. Pooled per
+// sound script and budgeted against the game's own 32 hardware voices — see
+// `effect-audio.js`. `?effects=off` leaves it out with the pictures;
+// `?sound=off` silences it on its own.
+const _effectEar = new THREE.Vector3();
+const effectAudio = new EffectAudio({
+  listener: null,
+  getBuffer: relPath => soundBuffer('_shared', relPath),
+});
+// The hook is one call at the point a bundle plays, which is also the point
+// the engine plays its own — `Game::playCollisionEffect` sounds the bundle
+// where it stands it up.
+const effects = new EffectPlayer({
+  scene, camera,
+  onMesh: mesh => bindDynamicShading(mesh),
+  onSound: (name, position) => effectAudio.play(name, position),
+});
 guns.effects = effects;
 let effectsLoad = null;
 function loadEffectLibrary() {
@@ -4719,7 +5133,31 @@ function loadEffectLibrary() {
   effectsLoad = EffectLibrary.load(`${MAPS_BASE}/_shared/effects.glb${bust()}`, loader)
     .then(library => { effects.library = library; return library; })
     .catch(err => { console.warn('effects library unavailable', err); return null; });
+  loadEffectSounds();
   return effectsLoad;
+}
+let effectSoundsLoad = null;
+function loadEffectSounds() {
+  if (effectSoundsLoad || AUDIO_OFF || params.get('sound') === 'off') {
+    return effectSoundsLoad;
+  }
+  effectSoundsLoad = fetch(`${MAPS_BASE}/_shared/effects.sounds.json${bust()}`)
+    .then(r => (r.ok ? r.json() : null))
+    .then(manifest => {
+      // A tree published before the sound pack exists simply stays quiet;
+      // `setManifest` on null leaves every lookup a miss and every play a
+      // no-op, which is what a missing file should look like.
+      if (!manifest) return null;
+      effectAudio.listener = ensureListener();
+      effectAudio.setManifest(manifest);
+      effectAudio.setMaster(masterVolume());
+      return manifest;
+    })
+    .catch(err => {
+      console.warn('effect sounds unavailable', err);
+      return null;
+    });
+  return effectSoundsLoad;
 }
 let vehicleGuns = [];
 // The active seat's own FireArms groups, for a vehicle occupancy is driving
@@ -4928,6 +5366,9 @@ function buildCollider(root) {
     if (child === spawnersRoot) ownerRoots.push(...child.children);
     else ownerRoots.push(child);
   }
+  // Before the index: it bakes every hull where it stands, so the vehicles
+  // have to be standing where they will rest.
+  settlePlacedVehicles(ownerRoots, heightfield);
   const statics = buildCollisionIndex(root, { ownerRoots });
   // Every damageable thing in the level, keyed by the same owner id the
   // collision index just handed out — which is what a hit record names, so a
@@ -5097,7 +5538,7 @@ function setPilot(on, node = null, seatId = null) {
       // shows it, so the first cockpit frame links nothing (rule 6).
       const cockpit = { prepareCockpit: root => warmSubtree(root) };
       const vehicle = occupancy.ensureDrive(currentRoot,
-        { groundHeight, surfaceFriction, collider, ...cockpit });
+        { groundHeight, surfaceFriction, collider: bodyAwareCollider(), ...cockpit });
       if (kind === 'air') {
         aircraft = vehicle;
         aircraft.groundHeight = groundHeight;
@@ -5115,6 +5556,7 @@ function setPilot(on, node = null, seatId = null) {
       // swap follows the view rather than the sim.
       vehicle.autoFirstPerson = false;
       view = new VehicleCamera(vehicle, { groundHeight });
+      adoptDrivenBody(vehicle);
     }
     // Root seat unless a specific `EntryPoint` said otherwise — walking
     // straight up to a Sherman's hull-gunner door seats you there directly,
@@ -5926,6 +6368,7 @@ function leaveVehicle() {
   vehicle.applyTransform();
   vehicle.applyRig();
   freezeVehicle(vehicle.node);   // parked where it stands: furniture again
+  releaseDrivenBody(vehicle);    // ... and a body on its own springs
   clearVehicleHud();
   occupancy = null;
   stick.roll = 0;
@@ -6518,6 +6961,19 @@ function quatFromYpr(yawDeg, pitchDeg, rollDeg) {
 // no people. Paratrooper pads are skipped (they are mid-air).
 const spawnSoldierCache = new Map();
 let spawnSoldiersRoot = null;
+/**
+ * The decorative figures as splash targets: `{ node, armor, soldier, pose,
+ * splashMaterial, x, y, z }`, rebuilt with them.
+ *
+ * They are clones of a pose glb and carry no Armor of their own, so each gets
+ * the 30 HP a vanilla soldier has (`CommonSoldierData.inc`). The position is
+ * the **object origin**, one metre above the pad the figure stands on, which
+ * is where `checkForHitOnSoldier` adds its sample offsets from.
+ */
+let spawnSoldierTargets = [];
+/** What a decorative figure is worth: the same `SOLDIER_MAX_HP_FALLBACK` a
+ *  spawned player gets when no kit template says otherwise. */
+const SPAWN_SOLDIER_HIT_POINTS = SOLDIER_MAX_HP_FALLBACK;
 
 function spawnSoldierUrl(team) {
   const nation = teamNation(team) || (team === 1 ? 'ger' : 'us');
@@ -6559,6 +7015,7 @@ async function placeSpawnSoldiers(root, report) {
     }
     spawnSoldiersRoot = null;
   }
+  spawnSoldierTargets = [];
   const spawns = (report?.soldierSpawns || []).filter(s => !s.paratrooper && s.team);
   if (!spawns.length) return;
   const group = new THREE.Group();
@@ -6580,6 +7037,15 @@ async function placeSpawnSoldiers(root, report) {
       node.quaternion.set(q[0], q[1], q[2], q[3]);
       node.userData.spawnSoldier = true;
       group.add(node);
+      // An Armor and a splash target, so a grenade thrown into a spawn pad
+      // does what a grenade does. The pose is standing — the figures are, and
+      // it is also the pose with the engine's 0.5 exposure cap, so what the
+      // page shows is the cap in play rather than an invented full exposure.
+      spawnSoldierTargets.push({
+        node, armor: new Armor(SPAWN_SOLDIER_HIT_POINTS), soldier: true,
+        pose: POSE_STAND, splashMaterial: SOLDIER_SPLASH_MATERIAL,
+        x, y: y + CHARACTER_HEIGHT, z,
+      });
     }
   }));
   if (!group.children.length) return;
@@ -10210,10 +10676,12 @@ async function show(entry) {
   // materials.png a couple of KB) and both are needed before the first shot,
   // not before the first frame.
   [terrainMaterials, damageTables] = await Promise.all([
-    loadTerrainMaterials(dir), loadDamageTables(dir),
+    loadTerrainMaterials(dir), loadDamageTables(dir), loadCollisionMeshes(dir),
   ]);
   materialFrictionById = buildMaterialFrictionTable(damageTables);
   const collision = buildCollider(currentRoot);
+  // After the collider: a body is keyed by the owner id the index handed out.
+  setupVehicleBodies();
   // A new level means a new scene graph; the old aircraft's node is gone, and
   // the view rig holds a reference to it. So are every cached door.
   aircraft = null;
@@ -10468,6 +10936,9 @@ function frame(dt) {
   // branches above because the engine's own check is per PLAYER, not per mode:
   // it tests and damages whatever the player occupies, plane included.
   stepCombatArea(dt);
+  // After the drive model has moved the player's vehicle and before the damage
+  // pass, so a ram's hit points and its smoke tier land on the same frame.
+  stepVehicleBodies(dt);
   // After `advance`, so a round that landed this frame is already accounted for
   // when the tier is picked. Unconditional for the same reason `advance` is: a
   // tank set alight before the player climbed out keeps burning down to nothing
@@ -10491,6 +10962,13 @@ function frame(dt) {
   if (occupancy) feedVehicleHud();
   effects.firstPerson = guns.firstPerson;
   effects.advance(dt);
+  // The ear is the camera's, the same listener every other voice on the page
+  // hangs off, so an impact is placed against the head the player is looking
+  // out of in every camera mode.
+  if (effectAudio.listener) {
+    effectAudio.setMaster(masterVolume());
+    effectAudio.update(dt, camera.getWorldPosition(_effectEar));
+  }
   applyVisibility();
   updateTextureFade();
   advanceSim(dt);
@@ -10647,6 +11125,18 @@ if (params.has('shots')) {
   // question the moving-vehicle port exists to answer: a tracer's position must
   // diverge from the muzzle it left, not travel with it.
   window.__effects = () => effects.stats();
+  // The sound pool: budget, live sources, what was played, dropped, stolen or
+  // ruled inaudible. A voice-count check reads this beside its own patched
+  // `AudioBufferSourceNode.start` counter, and the two must agree.
+  window.__effectAudio = () => (effectAudio.listener
+    ? effectAudio.snapshot() : { loaded: false });
+  window.__effectSoundsReady = async () => {
+    await effectSoundsLoad;
+    return effectAudio.listener ? effectAudio.bundles.size : 0;
+  };
+  // Decode a bundle's samples ahead of a check, so the first round is not the
+  // silent one a cold pool gives.
+  window.__primeEffectSound = name => effectAudio.prime(name);
   // Rule 6's resolve signal (features/mesh-viewer-performance): every warm-up
   // the page has started for this level and for the weapon in hand, awaited,
   // then show()'s clock readings. A check snapshots `renderer.info.programs`
@@ -10722,6 +11212,16 @@ if (params.has('shots')) {
       fuse: shot.fuse,
       resting: shot.resting,
       position: shot.mesh.position.toArray(),
+      // COL-2, and the three numbers a bounce check needs: where it is going,
+      // how many contacts it has resolved, and which material pair it is
+      // resolving them against. A rest position alone cannot tell a round
+      // that skidded from one that was teleported.
+      velocity: shot.velocity.toArray(),
+      contacts: shot.body?.contacts ?? 0,
+      contactMaterial: shot.body?.material ?? null,
+      surface: shot.body?.contact?.material ?? null,
+      pair: shot.body?.contact
+        ? shot.body.pairWith(shot.body.contact.material) : null,
     })),
     pooled: guns.tracerPool.length,
     // Baked streaks recycle into their own group's pool, not the shared
@@ -11171,9 +11671,15 @@ if (params.has('shots')) {
   // `tests/test_combat_area.py` pins.
   const combatAreaState = () => ({
     active: combatArea.active,
+    hasRect: combatArea.hasRect,
     rect: combatArea.rect,
     timeAllowed: combatArea.timeAllowed,
     damagePerSecond: combatArea.damagePerSecond,
+    // CA-5. Null switches the painted half off; the engine's own value is 7.
+    materialToGiveDamage: combatArea.materialToGiveDamage,
+    // What the level actually paints, so a check can find a painted patch
+    // rather than hunt for one: the histogram the extractor already writes.
+    materialHistogram: extras?.terrain?.materials?.histogram ?? null,
     outsideFor: combatArea.outsideFor,
     frame: combatFrame,
     hud: {
@@ -11199,7 +11705,34 @@ if (params.has('shots')) {
       combatArea.rect = options.rect ? { ...options.rect } : combatAreaRect(extras);
       combatArea.reset();
     }
+    // Same reasoning for the painted half: a check that wants to prove CA-5
+    // fires would otherwise have to walk to a patch of material 7, and one
+    // that wants to prove it is OFF on an unpainted level has nothing to
+    // switch. `null` runs the rectangle alone; an integer names another id.
+    if (options && 'materialToGiveDamage' in options) {
+      const id = options.materialToGiveDamage;
+      combatArea.materialToGiveDamage = Number.isInteger(id) ? id : null;
+      combatArea.reset();
+    }
     return combatAreaState();
+  };
+  // Every soldier a blast can reach, and what HP-10 would give him from a
+  // given point. The exposure is the thing worth reading back: it is the one
+  // term in the splash product that a screenshot cannot show, and a check that
+  // wants to prove a wall works needs the same number from both sides of it.
+  window.__soldiers = (blast) => {
+    const from = Array.isArray(blast) && blast.length === 3 ? blast : null;
+    return splashTargets().filter(t => t.soldier).map(t => ({
+      player: !t.node,
+      pose: t.pose,
+      hp: Math.round(t.armor.hitPoints * 1000) / 1000,
+      max: t.armor.maxHitPoints,
+      destroyed: t.armor.destroyed,
+      visible: t.node ? t.node.visible : true,
+      origin: [Math.round(t.x * 100) / 100, Math.round(t.y * 100) / 100,
+               Math.round(t.z * 100) / 100],
+      exposure: from ? soldierExposureFor(t, from) : null,
+    }));
   };
   // Every damageable thing in the level and what it is currently showing, for a
   // headless check: shoot a tank, step frames, read the tier back.
@@ -11277,6 +11810,50 @@ if (params.has('shots')) {
   // generic entry point `window.__damage(n)` is for the soldier. Negative heals,
   // the way `SimpleObject::handleDamage` dispatches on the sign of its argument
   // (ledger HP-7).
+  // The rigid-body world: one row per simulated vehicle, and a way to step it
+  // in a hidden tab the way `__renderOnce` steps everything else.
+  window.__bodies = () => (bodyWorld ? [...bodyWorld.entries.values()].map(e => {
+    const b = e.parked ? e.parked.body : e.driven;
+    return {
+      owner: e.owner, name: bodyScene.get(e.owner)?.node?.name, driven: !!e.driven,
+      pos: [...b.pos], v: [...b.v], w: [...b.w], sleepiness: b.sleepiness ?? null,
+      moved: !!bodyScene.get(e.owner)?.moved, hp: vehicleDamage.get(e.owner)?.hitPoints ?? null,
+    };
+  }) : null);
+  window.__stepBodies = dt => stepVehicleBodies(dt);
+  window.__crashLog = () => (crashLog ??= []);
+  // The aircraft under the player, for a stepped test: inputs, state, a pose.
+  window.__plane = () => (aircraft ? {
+    setInput: (name, value) => aircraft.setInput(name, value),
+    state: () => ({ position: { ...aircraft.state.position }, velocity: { ...aircraft.state.velocity },
+      grounded: aircraft.state.grounded, throttle: aircraft.state.throttle }),
+    place: (x, y, z, vx, vy, vz) => {
+      aircraft.state.position.set(x, y, z);
+      aircraft.state.velocity.set(vx, vy, vz);
+      aircraft.applyTransform();
+    },
+    integrate: dt => aircraft.integrate(dt),
+  } : null);
+  window.__wakeBody = owner => { const e = bodyWorld?.get(owner); e?.parked?.body.wake(); return !!e?.parked; };
+  // Climb into a placed vehicle by owner id, and put the driven one somewhere
+  // facing something: what a ramming test needs and a keyboard cannot give.
+  window.__enterOwner = owner => {
+    const node = damageVisuals.get(owner)?.node;
+    if (!node) return false;
+    enterVehicle({ vehicle: node, seatId: null });
+    return !!(car || aircraft);
+  };
+  window.__placeCar = (x, z, yaw, speed = 0) => {
+    if (!car) return null;
+    const s = car.state;
+    s.position.set(x, groundHeight(x, z) + 0.6, z);
+    s.orientation.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(s.orientation);
+    s.velocity.copy(fwd).multiplyScalar(speed);
+    s.angularVelocity.set(0, 0, 0);
+    car.applyTransform();
+    return { forward: [fwd.x, fwd.y, fwd.z] };
+  };
   window.__damageVehicle = (owner, amount) => {
     const vehicle = vehicleDamage.get(owner);
     if (!vehicle) return null;

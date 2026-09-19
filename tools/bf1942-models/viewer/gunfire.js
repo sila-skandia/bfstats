@@ -41,6 +41,11 @@ import { damageFactor, IMPACT_BLAST_OFFSET, isFuseRound, roundTimeToLive,
 // `physics.js` imports nothing, so taking the constant from there costs this
 // module no new dependency beyond the one line.
 import { GRAVITY } from './physics.js';
+// The contact a fuse round gets when it lands — elasticity, friction and
+// resistance off the material pair, at the engine's own 30 Hz. See
+// `contact-response.js` for why a grenade does not rebound and what it does
+// instead. Imports nothing itself, so this costs the page no extra module.
+import { FuseRoundBody, contactMaterialFor } from './contact-response.js';
 
 // Real muzzle velocities (400-1000 m/s) cross a parked model between two
 // frames; scaled down so a burst reads as a stream instead of a strobe.
@@ -187,6 +192,10 @@ const _aimBack = new THREE.Vector3();
 const _extent = new THREE.Vector3();
 const _step = new THREE.Vector3();
 const _tip = new THREE.Vector3();
+// Where a fuse round stood at the top of the frame, so the distance it
+// actually travelled under the contact solver can be measured rather than
+// integrated (the solver moves it, snaps it to surfaces and pushes it out).
+const _fuseFrom = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 // Scratch for the per-frame and per-shot paths below: a flash's roll, a
 // gun's recoil offset and a round's unit direction were each a fresh
@@ -806,6 +815,21 @@ export class GunFire {
       fuse,
       // Set when a fuse round has come to rest on a surface; see `advance`.
       resting: false,
+      // The rigid-body contact a fuse round gets. The engine's four fuse
+      // rounds all declare `setHasPointPhysics 0` and so take the real
+      // `ResponsePhysics` path, where the restitution comes off the material
+      // pair rather than out of thin air. `spec.material` is the round's own
+      // `ObjectTemplate.material` — 70 for both grenades, which is the only
+      // material in vanilla with an elasticity, and the whole reason a grenade
+      // stops its into-surface velocity dead where a landmine keeps half.
+      body: fuse
+        ? new FuseRoundBody({
+            material: contactMaterialFor(spec?.template,
+                                         this.attackerMaterial(spec)),
+            materials: this.materials,
+            gravity: GRAVITY * (spec.gravity ?? 1),
+          })
+        : null,
     };
     // The authored trail — `e_rocketFume` riding the bazooka round as an
     // `addTemplate` child: a looping smoke emitter at 100/s whose puffs
@@ -1070,6 +1094,51 @@ export class GunFire {
     return record;
   }
 
+  /**
+   * One frame of a fuse round: the rigid-body contact, not the ballistic step.
+   *
+   * HP-9d still holds — a fuse round takes NO impact path, plays no collision
+   * effect and detonates only on `timeToLive` — but what it does between the
+   * first touch and the fuse is now the engine's own contact solver rather
+   * than a full stop. `contact-response.js` carries the addresses; the short
+   * version is that all four vanilla fuse rounds declare
+   * `setHasPointPhysics 0`, so they get `ResponsePhysics`, and the restitution
+   * is the mean of the two materials' authored elasticity rather than a
+   * number anyone had to invent.
+   *
+   * Returns the distance travelled this frame, for the trail spacing.
+   */
+  #stepFuseRound(shot, dt) {
+    if (shot.resting) return 0;
+    const collider = this.collider;
+    const before = _fuseFrom.copy(shot.mesh.position);
+    // The contact probe. Same budget as `#sweep`: a round that has already
+    // spent the frame's casts simply does not move this frame, which is
+    // better than one that tunnels through the floor.
+    const owner = this.#owner(shot.group);
+    const probe = collider
+      ? (ox, oy, oz, dx, dy, dz, maxDist) => {
+          if (this.casts >= MAX_CASTS_PER_FRAME) return null;
+          this.casts++;
+          return collider.cast(ox, oy, oz, dx, dy, dz, maxDist, owner);
+        }
+      : null;
+    shot.body.step(dt, shot.mesh.position, shot.velocity, probe);
+    shot.resting = shot.body.resting;
+    const step = before.distanceTo(shot.mesh.position);
+    shot.travelled += step;
+    // Nose along the velocity while it is moving, and left where it was once
+    // it is not — a resting grenade should lie still, not snap to a lookAt of
+    // a zero vector. (The engine additionally pitches and rolls a mesh
+    // projectile up to 10 degrees toward the contact normal, which is how a
+    // bomb lies down; not modelled, and named so it is not rediscovered.)
+    if (shot.velocity.lengthSq() > 1e-6) {
+      _aimBack.copy(shot.mesh.position).sub(shot.velocity);
+      shot.mesh.lookAt(_aimBack);
+    }
+    return step;
+  }
+
   #spawnImpact(hit, family) {
     if (!this.impactMarkers) return;
     if (this.impacts.length >= MAX_IMPACTS) return;
@@ -1247,9 +1316,12 @@ export class GunFire {
       const shot = this.projectiles[i];
       shot.age += dt;
       let step = 0;
-      // A fuse round that has come to rest is only running its fuse down: no
-      // gravity, no motion, no sweep, until `timeToLive` detonates it below.
-      if (!shot.resting) {
+      // A fuse round runs the rigid-body contact solver instead of this
+      // loop's ballistic step: it has to keep moving after it touches
+      // something, which is the whole of what `contact-response.js` adds.
+      if (shot.body) {
+        step = this.#stepFuseRound(shot, dt);
+      } else if (!shot.resting) {
         if (shot.kind === 'rocket') {
           const speed = shot.velocity.length();
           shot.velocity.multiplyScalar((speed + ROCKET_ACCEL * dt) / speed);
@@ -1270,32 +1342,7 @@ export class GunFire {
         shot.mesh.lookAt(_aimBack);
         const struck = this.#sweep(shot.group, shot.mesh.position,
                                    shot.velocity, step, 0);
-        if (struck && shot.fuse) {
-          // HP-9d: a fuse round takes NO impact path. `hasCollisionEffect` is
-          // clear, which is literally "play no collision effect", and the
-          // explosion gate that same flag serves is why there is no blast here
-          // either — a grenade bouncing off a wall does nothing at all. So
-          // neither `#impact` nor removal: the round lives on, and its
-          // `timeToLive` is what ends it.
-          //
-          // **The resting is an approximation, and a deliberate one.** The
-          // engine's grenade is a rigid body (`setHasCollisionPhysics 1`,
-          // `setHasResponsePhysics 1`) that genuinely bounces, and the contact
-          // solver that would bounce it here belongs to the concurrent
-          // collision round (COL-2..COL-12), not to this one. Rather than
-          // invent a restitution coefficient, the round stops on the surface
-          // it met and runs its fuse down there. Its own authored word for
-          // this is `dieAfterColl 0` — on 2,311 templates across the installed
-          // mods, but NOT aligned with `hasCollisionEffect` (1,676 templates
-          // carry the flag set *and* `dieAfterColl 0`), and what the engine
-          // does with it was not read. Recorded as the lead it is; not
-          // consumed.
-          shot.mesh.position.set(struck.x + struck.nx * 0.05,
-                                 struck.y + struck.ny * 0.05,
-                                 struck.z + struck.nz * 0.05);
-          shot.velocity.set(0, 0, 0);
-          shot.resting = true;
-        } else if (struck) {
+        if (struck) {
           shot.mesh.position.set(struck.x, struck.y, struck.z);
           this.#impact(shot.group, shot.group.stats.projectile, struck,
                        shot.velocity, shot.travelled - step + struck.t);
