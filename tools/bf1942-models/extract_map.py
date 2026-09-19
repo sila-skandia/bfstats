@@ -78,6 +78,8 @@ from bf42.level import (  # noqa: E402
     parse_cubemap_rcm,
     parse_init_con,
     parse_sound_scripts,
+    # Re-exported: `load_gameplay_objects` reads the ObjectSpawn files itself
+    # now, but other modules import this name from here.
     parse_spawn_templates,
     parse_ssc,
     parse_static_objects,
@@ -1512,7 +1514,7 @@ def _modes_report(info: LevelInfo, placed_flags: set[str] | None,
             "tickets": _tickets_report(tickets_for_mode(info.game_types, name)),
             # No level in any installed mod declares `game.setActiveCombatArea`
             # inside a mode directory or a GameTypes script — measured over all
-            # 1,302 level archives — so this is the level-wide area every time.
+            # 1,301 level archives — so this is the level-wide area every time.
             # It is written per mode anyway so the merge is one uniform rule
             # and a mod that does scope one has somewhere to put it.
             "combatArea": combat_area,
@@ -1557,7 +1559,7 @@ def union_object_spawns(info: LevelInfo) -> list[tuple]:
 
     The scene glb holds one node per pad, not one per mode: the terrain,
     statics and lightmaps are mode-independent and so is a Sherman parked on
-    the same slab in Conquest and in Tdm. Measured over the 1,302 level
+    the same slab in Conquest and in Tdm. Measured over the 1,301 level
     archives of the 18 installed mods, the union is 89,128 pads against
     81,263 for the default mode alone — 9.7% more nodes, and the meshes
     behind them are shared in the buffer either way.
@@ -1585,7 +1587,7 @@ def union_object_spawns(info: LevelInfo) -> list[tuple]:
                 index[key] = len(order)
                 order.append((inst, vehicle, spec, [mode], {mode: window}))
                 continue
-            held_inst, held_vehicle, held_spec, modes, windows = order[at]
+            _, _, _, modes, windows = order[at]
             modes.append(mode)
             windows[mode] = window
     out: list[tuple] = []
