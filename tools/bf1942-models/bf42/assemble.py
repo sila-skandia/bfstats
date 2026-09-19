@@ -1434,14 +1434,44 @@ class Assembler:
             spec["gravity"] = projectile.gravity_modifier
         # What the round is worth on arrival. `material` keys the
         # MaterialManager's effect and damage tables; the falloff triple is
-        # `Projectile::getDamage`'s; `radius`/`material2`/`damageType` are the
-        # splash pass (`damageType 1`). Engine default radius is 10 when the
-        # `.con` omits it (ProjectileTemplate constructor).
+        # `Projectile::getDamage`'s; the rest is the splash pass.
+        #
+        # The engine has TWO explosions and `damageType` alone does not say
+        # which a round gets (HP-9d):
+        #
+        #   impact explosion      damageType == 1 AND hasCollisionEffect
+        #   end-of-life explosion damageType in {1, 4}, flag NOT tested
+        #
+        # so `hasCollisionEffect` travels with the block. Without it the viewer
+        # cannot tell a tank shell (bursts on contact) from a grenade (bursts
+        # when its fuse ends), and `effects-core.js` would be back to inferring
+        # the difference from `material2`, which carries none of it.
+        #
+        # `dieAfterColl` rides along for the same reason, and it is NOT a
+        # restatement of the flag. Whether a round SURVIVES contact is a third
+        # question, answered by `Projectile::handleCollision` (0x0831ee80):
+        # `dieAfterColl` (0x0831ef4b) OR `hasCollisionEffect` (0x0831ef54)
+        # recycles it through `resetProjectile` (0x0831e720), which despawns it
+        # without ever calling `startEndEffect`. A `damageType 4` round with
+        # the flag set — vanilla's three flak shells — therefore dies on
+        # contact having exploded neither way, which is exactly what a timed
+        # airburst should do; treating it as a fuse round that rests where it
+        # lands and bursts there would invent a blast the game never has.
+        #
+        # `radius` arrives already truncated toward zero — `con.py` does it at
+        # parse because the console property is an `int` (HP-9). The engine's
+        # own `ProjectileTemplate` constructor default is 10.0 (`0x41200000` at
+        # lnxded 0x0831f9b3), and six vanilla tank rounds ride it: Sherman,
+        # Tiger, PanzerIV, T34, T34-85 and Chi-ha declare no `radius` at all.
+        # The default is applied for `damageType 4` as well as 1, because the
+        # constructor does not consult `damageType` — vanilla's four
+        # `damageType 4` templates all author a radius, so this is correctness
+        # for mods rather than a change to any shipped round.
         if projectile.material is not None:
             spec["material"] = projectile.material
         radius = projectile.explosion_radius
         if (radius is None
-                and projectile.damage_type == 1
+                and projectile.damage_type in (1, 4)
                 and projectile.material2 is not None
                 and projectile.material2 >= 0):
             radius = 10.0
@@ -1453,6 +1483,9 @@ class Assembler:
                 "radius": radius,
                 "material2": projectile.material2,
                 "damageType": projectile.damage_type,
+                "hasCollisionEffect": projectile.has_collision_effect,
+                "dieAfterColl": projectile.die_after_coll,
+                "yModOnExplosion": projectile.y_mod_on_explosion,
             }.items() if value is not None
         }
         if damage:

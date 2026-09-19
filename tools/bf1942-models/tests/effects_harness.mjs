@@ -4,7 +4,9 @@
 import {
   sampleCrd, sampleCurve, basisFromNormal, basisFromAxes, rollBasis, inFrame,
   EmitterClock, spawnParticle, integrateParticle, evalParticle, damageFactor,
-  atlasGrid, frameIndex,
+  atlasGrid, frameIndex, splashSpec, splashDamage, truncateRadius,
+  blastDistance, diesOnContact, isFuseRound, roundTimeToLive,
+  DEFAULT_SPLASH_RADIUS, IMPACT_BLAST_OFFSET, FLIGHT_TTL_CEILING,
 } from './effects-core.mjs';
 
 // A deterministic generator so the assertions are exact.
@@ -184,5 +186,151 @@ out.chip = { vy: chip.velocity[1] };
 // Damage falloff, the Thompson's 0.5 / 40 / 80.
 out.damage = [0, 40, 60, 80, 200].map(x => damageFactor({ minDamage: 0.5, distToStartLoseDamage: 40, distToMinDamage: 80 }, x));
 out.damageNone = damageFactor(null, 500);
+
+// HP-9d, the two-path explosion rule. Every block below is a real vanilla
+// template's authored damage block, as `assemble.py` now emits it.
+const spec = (damage) => {
+  const s = splashSpec(damage);
+  return s && {
+    radius: s.radius, damageType: s.damageType,
+    impact: s.impact, endOfLife: s.endOfLife, yMod: s.yMod,
+    material2: s.material2,
+  };
+};
+out.splashSpec = {
+  // A tank shell: damageType 1 with the flag, no authored radius at all, so
+  // it rides the 10.0 constructor default. Both paths.
+  sherman: spec({ material2: 206, damageType: 1, hasCollisionEffect: true }),
+  // A grenade: damageType 1 WITHOUT the flag. End of life only — requiring
+  // the flag for splash generally would delete this blast entirely.
+  grenade: spec({ material2: 205, damageType: 1, hasCollisionEffect: false,
+                  radius: 15, yModOnExplosion: undefined }),
+  // The explosives pack, the other vanilla flagless damageType 1.
+  expack: spec({ material2: 204, damageType: 1, hasCollisionEffect: false,
+                 radius: 12 }),
+  // A landmine: damageType 4, which never takes the impact path even though
+  // the type-1 branch would have.
+  landmine: spec({ material2: 232, damageType: 4, hasCollisionEffect: false,
+                   radius: 4 }),
+  // A flak shell: damageType 4 WITH the flag set. The flag is not consulted
+  // for the impact EXPLOSION, so this has an end-of-life blast and no impact
+  // one — but it is consulted for whether the round survives contact, and it
+  // does not: see `out.diesOnContact` below, which is what stops the viewer
+  // resting it on the ground and bursting it there.
+  flak: spec({ material2: 199, damageType: 4, hasCollisionEffect: true,
+               radius: 20 }),
+  // A bomb, carrying the vertical scale.
+  bomb: spec({ material2: 202, damageType: 1, hasCollisionEffect: true,
+               radius: 20, yModOnExplosion: 2 }),
+  // A fighter MG: the authored "no splash".
+  noSplash: spec({ material2: -1, damageType: 0 }),
+  // damageType 0 and the direct-only types 2/3 take neither path.
+  direct: spec({ material2: 216, damageType: 0, hasCollisionEffect: true }),
+  binoculars: spec({ material2: 216, damageType: 3, hasCollisionEffect: false }),
+  // DC's 50calSniper: radius 0.25, truncated to 0, which with the strict
+  // `radius > d` gate is no splash at all — on EITHER path. The end-of-life
+  // path's "untruncated" radius is the absent second truncation, not a
+  // surviving fraction.
+  fractional: spec({ material2: 216, damageType: 1, hasCollisionEffect: true,
+                     radius: 0.25 }),
+  // Same, but on the fuse path, which is where a 0.25 would have to survive
+  // for the distinction to matter.
+  fractionalFuse: spec({ material2: 205, damageType: 1,
+                         hasCollisionEffect: false, radius: 0.25 }),
+  // FH's BismarckFatProjectile: 17.63 from an old bake, 17 to both paths.
+  oldBake: spec({ material2: 208, damageType: 1, hasCollisionEffect: true,
+                  radius: 17.63 }),
+  // A glb baked before either word existed: damageType assumed 1, the flag
+  // assumed present, so it behaves exactly as it always did.
+  legacy: spec({ material2: 206, radius: 10 }),
+  none: splashSpec(null),
+};
+// HP-9e: `dieAfterColl || hasCollisionEffect` recycles the round on contact
+// (`Projectile::handleCollision` 0x0831ef4b / 0x0831ef54 -> `resetProjectile`
+// 0x0831e720). A round that dies this way gets NO explosion of either kind:
+// `resetProjectile` sets the detonate latch without calling `startEndEffect`.
+// Only a round answering false here survives to burst on its fuse.
+out.diesOnContact = {
+  // Every ordinary HE round. The flag is what ends it at the wall.
+  sherman: diesOnContact({ material2: 206, damageType: 1, hasCollisionEffect: true }),
+  // The four vanilla fuse weapons: neither word, so all four live on.
+  grenade: diesOnContact({ damageType: 1, hasCollisionEffect: false, dieAfterColl: false }),
+  expack: diesOnContact({ damageType: 1, hasCollisionEffect: false, dieAfterColl: false }),
+  landmine: diesOnContact({ damageType: 4, hasCollisionEffect: false, dieAfterColl: false }),
+  // The three flak shells. `AA_Allies`/`Carrier_AA` write both words;
+  // `Flak38` writes only the flag, and the flag alone is enough.
+  flakBoth: diesOnContact({ damageType: 4, hasCollisionEffect: true, dieAfterColl: true }),
+  flakFlagOnly: diesOnContact({ damageType: 4, hasCollisionEffect: true }),
+  // `dieAfterColl` on its own, which no vanilla template does but the
+  // Katyusha rocket, the depth charge and the floating mine all do in the
+  // wider survey: it ends the round just as surely.
+  dieOnly: diesOnContact({ damageType: 1, hasCollisionEffect: false, dieAfterColl: true }),
+  // A glb baked before either word existed, and no damage block at all:
+  // assume the round ends at the wall, which is what 25 of vanilla's 28
+  // `damageType 1` templates do and the only safe default.
+  legacy: diesOnContact({ material2: 206, damageType: 1 }),
+  none: diesOnContact(null),
+};
+out.impactBlastOffset = IMPACT_BLAST_OFFSET;
+// The four vanilla fuse weapons and the three that only look like them, each
+// with the `timeToLive` its own `.con` authors — so the lifetime rule is
+// asserted on the real numbers rather than on invented ones.
+{
+  const VANILLA = {
+    sherman: { ttl: 3, damage: { material2: 206, damageType: 1, hasCollisionEffect: true, dieAfterColl: false } },
+    grenade: { ttl: 3, damage: { material2: 205, damageType: 1, radius: 15, hasCollisionEffect: false, dieAfterColl: false } },
+    expack: { ttl: 240, damage: { material2: 204, damageType: 1, radius: 12, hasCollisionEffect: false, dieAfterColl: false } },
+    landmine: { ttl: 360, damage: { material2: 232, damageType: 4, radius: 4, hasCollisionEffect: false, dieAfterColl: false } },
+    flakAllies: { ttl: 0.8, damage: { material2: 199, damageType: 4, radius: 20, hasCollisionEffect: true, dieAfterColl: true } },
+    flak38: { ttl: 0.8, damage: { material2: 199, damageType: 4, radius: 20, hasCollisionEffect: true } },
+    bomb: { ttl: 20, damage: { material2: 202, damageType: 1, radius: 20, hasCollisionEffect: true, yModOnExplosion: 2 } },
+  };
+  out.fuseRound = {};
+  out.lifetime = {};
+  for (const [name, { ttl, damage }] of Object.entries(VANILLA)) {
+    out.fuseRound[name] = isFuseRound(damage);
+    out.lifetime[name] = roundTimeToLive(ttl, damage);
+  }
+  // A mod round with an absurd fuse that still flies: held to the ceiling,
+  // because the ceiling exists for exactly that.
+  out.lifetime.longFlier = roundTimeToLive(600, VANILLA.sherman.damage);
+  // And the same absurd fuse on a fuse round: its own, because a rested round
+  // is not what the ceiling is guarding against.
+  out.lifetime.longFuse = roundTimeToLive(600, VANILLA.landmine.damage);
+  // No `timeToLive` at all on the spec.
+  out.lifetime.unspecified = roundTimeToLive(undefined, VANILLA.sherman.damage);
+  out.flightCeiling = FLIGHT_TTL_CEILING;
+}
+out.truncate = {
+  exact: truncateRadius(15),
+  down: truncateRadius(17.63),
+  toZero: truncateRadius(0.25),
+  negative: truncateRadius(-0.5),
+  default: DEFAULT_SPLASH_RADIUS,
+};
+// HP-9: only Y is scaled.
+out.blastDistance = {
+  plainUp: blastDistance(0, 5, 0),
+  scaledUp: blastDistance(0, 5, 0, 2),
+  sideways: blastDistance(5, 0, 0, 2),
+  diagonal: Math.round(blastDistance(3, 4, 0, 2) * 1e6) / 1e6,
+};
+// HP-9: the falloff, and DMG-1's unlisted pair.
+{
+  const materials = { 206: { attGroup: 206, defGroup: 206, damage: 10 },
+                      50: { attGroup: 50, defGroup: 50, damage: 0 } };
+  const modifiers = { 206: { 50: 2 } };
+  out.splashDamage = {
+    centre: splashDamage(206, 50, 0, 10, materials, modifiers),
+    half: splashDamage(206, 50, 5, 10, materials, modifiers),
+    edge: splashDamage(206, 50, 10, 10, materials, modifiers),
+    // DMG-1: an unlisted pair is 0, because `defaultDamageMod` is 0.0 and
+    // unreachable. Not "full damage", and not the base.
+    unlistedPair: splashDamage(206, 999, 0, 10, materials, modifiers),
+    // A soldier's exposure multiplies the falloff; 0 short-circuits.
+    halfExposed: splashDamage(206, 50, 0, 10, materials, modifiers, 0.5),
+    noExposure: splashDamage(206, 50, 0, 10, materials, modifiers, 0),
+  };
+}
 
 console.log(JSON.stringify(out));
