@@ -269,13 +269,84 @@ class SeatsModuleTests(unittest.TestCase):
         self.assertGreater(self.results["aimSense"]["rightwardsX"], 0.1)
 
     def test_hitpoints_hud_is_the_roots_shared_by_every_seat(self) -> None:
-        # R2-31 (verify-r2.md, corrected): one Armor per vehicle, not per seat.
+        # R2-31 (verify-r2.md, corrected): one Armor per vehicle, not per
+        # seat. `shermanBrowning_PCO1` does declare its own `setVehicleIcon`
+        # and `setVehicleIconPos`, so `activeHud()` returns the seat's block —
+        # what keeps the invariant is that the block carries no hitpoints, and
+        # that `feedVehicleHud` reads them off the ROOT seat rather than off
+        # `activeHud()`.
         occ = self.results["occupancy"]
         self.assertEqual("Vehicle/Icon_sherman.tga", occ["rootHudIcon"])
-        self.assertTrue(occ["gunnerHudSameAsRoot"])
+        self.assertEqual("Vehicle/Icon_sherman.tga", occ["gunnerHudIcon"])
+        self.assertTrue(occ["gunnerHudHasNoHitpoints"])
+        self.assertEqual(105, occ["rootHudHitpoints"])
+        self.assertTrue(occ["gunnerFallsBackWhenItHasNone"])
 
     def test_exit_location_falls_back_to_the_root_when_the_seat_has_none(self) -> None:
         self.assertTrue(self.results["occupancy"]["exitLocationFallsBackToRoot"])
+
+    # --- the vehicle HUD: the dial's trigger and the seat dots --------------
+
+    def test_the_turret_dial_needs_the_word_and_an_inside_view(self) -> None:
+        # VHUD-9: `ShowTurretIcon = (seatCamera.getViewMode() == 3) &&
+        # pcoTemplate.getHasTurretIcon()` (client `0x006ae597`–`0x006ae5d1`).
+        # The viewer used to show it for any seat with a traverse, in any
+        # view, which is wrong twice over.
+        trigger = self.results["turretIconTrigger"]
+        self.assertTrue(trigger["driverInside"])
+        self.assertFalse(trigger["driverChase"])
+
+    def test_a_casemate_hull_gets_no_dial_even_though_its_gun_traverses(self) -> None:
+        # The Wespe aims, within its mantlet, and never declares
+        # `setHasTurretIcon` — no vanilla casemate hull does. That is the
+        # whole reason the trigger is the word and not the rig.
+        trigger = self.results["turretIconTrigger"]
+        self.assertTrue(trigger["casemateHasAim"])
+        self.assertFalse(trigger["casemateInside"])
+
+    def test_a_hull_gunner_gets_no_dial_because_its_own_pco_lacks_the_word(self) -> None:
+        # The engine queries the CONTROLLED PCO's template, and the word lives
+        # on vehicle roots only — so `activeHud()`'s root fallback must not be
+        # used here or every seat of a Sherman would inherit the driver's dial.
+        self.assertFalse(self.results["turretIconTrigger"]["gunnerInside"])
+
+    def test_a_scene_baked_before_the_word_shows_no_dial(self) -> None:
+        # Absent reads as no, never as "unknown, so show it". The lead's
+        # re-extract is what turns it back on, for the vehicles that earn it.
+        self.assertFalse(self.results["turretIconTrigger"]["staleExtractInside"])
+
+    def test_seat_dots_come_from_each_pcos_own_setVehicleIconPos(self) -> None:
+        # VHUD-11: the positions were never "live-bound per vehicle" — every
+        # PCO declares its own, root and seats alike, and `con.py` simply had
+        # no hit for the word. Sherman root 54/103, `shermanBrowning_PCO1`
+        # 32/61, both verbatim from `Objects.con`.
+        dots = self.results["seatDots"]["shermanFromTheDriversSeat"]
+        self.assertEqual([(54, 103), (32, 61)], [(d["x"], d["y"]) for d in dots])
+
+    def test_the_dot_you_are_sitting_in_is_the_local_one(self) -> None:
+        # VHUD-2's five-state table (vtable `0x0093f300`): 0 blank, 1 local,
+        # 2 empty, 3 friend, 4 enemy. WHICH state a seat resolves to was never
+        # read, so the viewer answers only what it can know — you are 1 and
+        # every other declared seat is 2. Nothing here invents a 3 or a 4.
+        driver = self.results["seatDots"]["shermanFromTheDriversSeat"]
+        gunner = self.results["seatDots"]["shermanFromTheGunnersSeat"]
+        self.assertEqual([1, 2], [d["state"] for d in driver])
+        self.assertEqual([2, 1], [d["state"] for d in gunner])
+
+    def test_a_six_seat_vehicle_fills_all_six_dots(self) -> None:
+        # The layout has six `occupied-seat` leaves and the engine six
+        # `VehiclePosX1..6`/`Y1..6` pairs; the Hanomag has exactly six PCOs.
+        dots = self.results["seatDots"]["hanomagFromTheThirdSeat"]
+        self.assertEqual(6, self.results["seatDots"]["hanomagSeatCount"])
+        self.assertEqual([(39, 75), (40, 65), (30, 59), (41, 55), (20, 49), (31, 45)],
+                         [(d["x"], d["y"]) for d in dots])
+        self.assertEqual([2, 2, 1, 2, 2, 2], [d["state"] for d in dots])
+
+    def test_a_seat_with_no_extracted_position_yields_nulls(self) -> None:
+        # So `hud.js` can fall back to the layout's own literal rect instead
+        # of stacking every dot at the icon panel's top-left corner.
+        dots = self.results["seatDots"]["defgunDots"]
+        self.assertEqual([(None, None)], [(d["x"], d["y"]) for d in dots])
 
     # --- TurretAxis: the engine's velocity servo (ledger GUN-2) -------------
     #

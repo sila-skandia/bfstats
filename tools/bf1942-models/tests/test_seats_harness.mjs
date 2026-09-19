@@ -109,11 +109,79 @@ function sherman() {
   gunYaw.add(gunCamera, gunBarrel);
   const hullGunner = node('shermanBrowning_PCO1', {
     control: 'shermanBrowning_PCO1', templateKind: 'PlayerControlObject',
+    // Its own `setVehicleIconPos` and -- deliberately -- no
+    // `setHasTurretIcon`. Both verbatim from `Objects/Vehicles/Land/Sherman/
+    // Objects.con`: the word is declared on the ROOT only (VHUD-9), so a hull
+    // gunner gets a dot but no dial.
+    hud: { vehicleIcon: 'Vehicle/Icon_sherman.tga', vehicleIconPos: [32, 61] },
   }, gunYaw, gunEntry);
   return node('Sherman', {
     control: 'Sherman', templateKind: 'PlayerControlObject',
-    hud: { hitpoints: 105, maxHitpoints: 105, vehicleIcon: 'Vehicle/Icon_sherman.tga' },
+    hud: {
+      hitpoints: 105, maxHitpoints: 105, vehicleIcon: 'Vehicle/Icon_sherman.tga',
+      hasTurretIcon: true, vehicleIconPos: [54, 103],
+    },
   }, engine, tower, rootEntryA, hullGunner);
+}
+
+/** A casemate hull: a fixed gun in the glacis, no turret, and so no
+ *  `setHasTurretIcon` anywhere in its `.con` -- the Wespe's own shape, whose
+ *  root declares `setVehicleIconPos 55/94` and nothing else of interest here.
+ *  It still has an aim rig (the gun traverses a little inside its mantlet),
+ *  which is exactly why "the seat has a traverse" was the wrong trigger. */
+function wespe() {
+  const engine = node('WespeEngine', {
+    templateKind: 'Engine', physics: { engineType: 'c_ETTank' },
+  });
+  const gunBase = node('WespeGunBase', {
+    control: 'Wespe', templateKind: 'RotationalBundle',
+    rig: { axes: {
+      yaw: { input: 'c_PIMouseLookX', min: -15, max: 15, free: false, maxSpeed: 20, direction: 1 },
+      pitch: { input: 'c_PIMouseLookY', min: -5, max: 40, free: false, maxSpeed: 15, direction: 1 },
+    } },
+  }, node('WespeGunBarrel', {
+    templateKind: 'FireArms', fireArms: { magSize: 20, numOfMag: 1, roundOfFire: 0.2 },
+  }), node('WespeCamera', { templateKind: 'Camera', control: 'Wespe' }));
+  const entry = node('WespeEntry', {
+    control: 'Wespe', templateKind: 'EntryPoint',
+    seat: { control: 'Wespe', entryRadius: 3.6 },
+  });
+  return node('Wespe', {
+    control: 'Wespe', templateKind: 'PlayerControlObject',
+    hud: { hitpoints: 80, maxHitpoints: 80, vehicleIcon: 'Vehicle/Icon_wespe.tga',
+           vehicleIconPos: [55, 94] },
+  }, engine, gunBase, entry);
+}
+
+/** Six PlayerControlObjects, six dots. The Hanomag's own icon positions,
+ *  read out of `Objects/Vehicles/Land/Hanomag/Objects.con`: root `39/75`,
+ *  `Hanomag_MG42_PCO1` `40/65`, then four passengers at `30/59`, `41/55`,
+ *  `20/49`, `31/45`. Nothing else about the vehicle matters here. */
+function hanomag() {
+  const POSITIONS = [
+    ['Hanomag', [39, 75]],
+    ['Hanomag_MG42_PCO1', [40, 65]],
+    ['Hanomag_Passanger_PCO2', [30, 59]],
+    ['Hanomag_Passanger_PCO3', [41, 55]],
+    ['Hanomag_Passanger_PCO4', [20, 49]],
+    ['Hanomag_Passanger_PCO5', [31, 45]],
+  ];
+  const seats = POSITIONS.slice(1).map(([id, pos]) => node(id, {
+    control: id, templateKind: 'PlayerControlObject',
+    hud: { vehicleIcon: 'Vehicle/Icon_hanomag.tga', vehicleIconPos: pos },
+  }, node(`${id}_Entry`, {
+    control: id, templateKind: 'EntryPoint', seat: { control: id, entryRadius: 3 },
+  })));
+  return node('Hanomag', {
+    control: 'Hanomag', templateKind: 'PlayerControlObject',
+    hud: { hitpoints: 100, maxHitpoints: 100, vehicleIcon: 'Vehicle/Icon_hanomag.tga',
+           vehicleIconPos: POSITIONS[0][1] },
+  }, node('HanomagEngine', { templateKind: 'Engine', physics: { engineType: 'c_ETCar' } }),
+     node('HanomagEntry', {
+       control: 'Hanomag', templateKind: 'EntryPoint',
+       seat: { control: 'Hanomag', entryRadius: 3 },
+     }),
+     ...seats);
 }
 
 /** The V-100's own shape, and the reason `surveyVehicle` has a preference
@@ -365,9 +433,23 @@ function shermanWithRenamedGunnerNode() {
     gunnerAxisCount: gunnerTurret.axes.length,
     gunnerFireArms,
     rootHudIcon: rootHud.vehicleIcon,
-    // R2-31 (verify-r2.md, corrected): hitpoints/armor is the ROOT's alone --
-    // the gunner seat's own `hud` block (none declared here) must fall back.
-    gunnerHudSameAsRoot: gunnerHud === rootHud,
+    // R2-31 (verify-r2.md, corrected): hitpoints/armor is the ROOT's alone.
+    // `shermanBrowning_PCO1` really does declare its own `setVehicleIcon` and
+    // `setVehicleIconPos` -- both verbatim in `Objects.con` -- so `activeHud()`
+    // returns the SEAT's block, not the root's, and it is the absence of
+    // hitpoints in that block that keeps the invariant. `feedVehicleHud`
+    // reads them off `seatInfo(rootId)` for that reason.
+    gunnerHudIcon: gunnerHud.vehicleIcon,
+    gunnerHudHasNoHitpoints: gunnerHud.hitpoints === undefined,
+    rootHudHitpoints: rootHud.hitpoints,
+    // A seat that declares no block of its own still falls back to the root's
+    // -- the Hanomag's passengers do declare one, but a Defgun-style single
+    // seat vehicle has only the one block for `activeHud()` to find.
+    gunnerFallsBackWhenItHasNone: (() => {
+      const bare = new VehicleOccupancy(defgun());
+      bare.setActiveSeat(bare.rootId);
+      return bare.activeHud() === bare.seatInfo(bare.rootId).hud;
+    })(),
     exitLocationFallsBackToRoot: occ.exitLocationNode() === occ.root,
   };
 
@@ -427,6 +509,53 @@ function shermanWithRenamedGunnerNode() {
     aimInputs: AIM_INPUTS,
     browningYawNode: browning.seatInfo(browning.rootId).axes.yaw.node.name,
     browningPitchNode: browning.seatInfo(browning.rootId).axes.pitch.node.name,
+  };
+}
+
+// --- the vehicle HUD: the dial's trigger and the seat dots -------------------
+
+{
+  class FakeDrive {
+    constructor(root) { this.root = root; this.control = root.name; }
+  }
+  const tank = new VehicleOccupancy(sherman(), { GroundVehicle: FakeDrive });
+  tank.setActiveSeat(tank.rootId);
+  const driverInside = tank.showsTurretIcon(true);
+  const driverChase = tank.showsTurretIcon(false);
+  const driverDots = tank.seatDots();
+  tank.setActiveSeat(tank.seatIdAt(1));
+  const gunnerInside = tank.showsTurretIcon(true);
+  const gunnerDots = tank.seatDots();
+
+  const casemate = new VehicleOccupancy(wespe(), { GroundVehicle: FakeDrive });
+  casemate.setActiveSeat(casemate.rootId);
+
+  const apc = new VehicleOccupancy(hanomag(), { GroundVehicle: FakeDrive });
+  apc.setActiveSeat(apc.seatIdAt(2));
+
+  // A scene baked before `con.py` learned `setHasTurretIcon`: the field is
+  // simply absent, and absent must read as "no dial", not as "unknown, so
+  // show it anyway".
+  const stale = new VehicleOccupancy(defgun());
+  stale.setActiveSeat(stale.rootId);
+
+  results.turretIconTrigger = {
+    driverInside,
+    driverChase,
+    gunnerInside,
+    casemateInside: casemate.showsTurretIcon(true),
+    casemateHasAim: hasAimAxes(casemate.seatInfo(casemate.rootId)),
+    staleExtractInside: stale.showsTurretIcon(true),
+  };
+  results.seatDots = {
+    shermanFromTheDriversSeat: driverDots,
+    shermanFromTheGunnersSeat: gunnerDots,
+    hanomagFromTheThirdSeat: apc.seatDots(),
+    // Six leaves in the layout, six `VehiclePosX1..6` pairs in the engine.
+    hanomagSeatCount: apc.order.length,
+    // A seat with no position in its extract yields nulls, and `hud.js` falls
+    // back to the layout's own literal rect rather than stacking it at 0/0.
+    defgunDots: stale.seatDots(),
   };
 }
 
