@@ -1,7 +1,7 @@
 // Drives `viewer/vehicle-damage.js` outside a browser and prints one JSON blob.
-// The module imports only `armor.js`, which itself imports nothing, so the two
-// copied files are the whole harness — no vendored three.js (contrast
-// `ground_harness.mjs`).
+// The module imports `armor.js` and `effects-core.js`, neither of which imports
+// anything, so the three copied files are the whole harness — no vendored
+// three.js (contrast `ground_harness.mjs`).
 import {
   activeTier, deathTier, DamageableVehicle, VehicleDamageSet,
   TIER_DEATH, TIER_WATER_DEATH,
@@ -244,6 +244,49 @@ out.waterDeathFallback = deathTier(
       names: c.tier?.names ?? [], died: c.died,
     })),
     shermanHp: set.get(3).hitPoints,
+  };
+}
+
+// The area pass. Tables in `damage.json`'s own shape: material 236 is a tank
+// shell's splash (`material2`), 50 a tank hull's `splashMaterial`, and the
+// modifier table is keyed by group, as strings, the way JSON delivers it.
+{
+  const materials = {
+    236: { attGroup: 236, defGroup: 236, damage: 10 },
+    50: { attGroup: 50, defGroup: 50, damage: 0 },
+    73: { attGroup: 73, defGroup: 73, damage: 0 },
+  };
+  const modifiers = { 236: { 50: 2, 73: 0 } };
+  const tables = { materials, modifiers };
+  const fresh = () => {
+    const set = new VehicleDamageSet();
+    set.add(1, { ...SHERMAN, splashMaterial: 50 }, { name: 'Firer' });
+    set.add(2, { ...SHERMAN, splashMaterial: 50 }, { name: 'Near' });
+    set.add(3, { ...SHERMAN, splashMaterial: 50 }, { name: 'Edge' });
+    set.add(4, { ...SHERMAN, splashMaterial: 73 }, { name: 'Immune' });
+    set.add(5, SHERMAN, { name: 'OldExtract' });
+    return set;
+  };
+  const targets = [
+    { owner: 1, x: 0, y: 0, z: 0 },
+    { owner: 2, x: 5, y: 0, z: 0 },
+    { owner: 3, x: 10, y: 0, z: 0 },
+    { owner: 4, x: 1, y: 0, z: 0 },
+    { owner: 5, x: 1, y: 0, z: 0 },
+    { owner: 99, x: 1, y: 0, z: 0 },
+  ];
+  const blast = {
+    point: [0, 0, 0], firer: 1, splashMaterial2: 236, splashRadius: 10,
+  };
+  const set = fresh();
+  const hurt = set.applySplash(blast, targets, tables);
+  out.splash = {
+    hurt: hurt.map(h => ({ name: h.vehicle.name, lost: h.lost, distance: h.distance })),
+    firerHp: set.get(1).hitPoints,
+    directOnly: fresh().applySplash({ point: [0, 0, 0], firer: 1 }, targets, tables).length,
+    noSplashMaterial: fresh().applySplash(
+      { ...blast, splashMaterial2: -1 }, targets, tables).length,
+    noTables: fresh().applySplash(blast, targets).length,
   };
 }
 

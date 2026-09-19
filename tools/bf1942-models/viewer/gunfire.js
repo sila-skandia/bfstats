@@ -30,6 +30,7 @@
 
 import * as THREE from 'three';
 import { impactEffect, materialFamily } from './collision.js';
+import { damageFactor, splashSpec } from './effects-core.js';
 // The world's downward acceleration, signed, taken from the module that owns
 // it rather than declared again here. It is -14.73 m/s^2 and not Earth's
 // -9.81: `BasicPhysicsSystem`'s constructor at `0x00578f00` writes 0xC16BAE14
@@ -39,7 +40,6 @@ import { impactEffect, materialFamily } from './collision.js';
 // `physics.js` imports nothing, so taking the constant from there costs this
 // module no new dependency beyond the one line.
 import { GRAVITY } from './physics.js';
-import { damageFactor } from './effects-core.js';
 
 // Real muzzle velocities (400-1000 m/s) cross a parked model between two
 // frames; scaled down so a burst reads as a stream instead of a strobe.
@@ -939,6 +939,14 @@ export class GunFire {
         : base * (mod === null ? 1 : mod) * incidence * factor,
       played: false,
     };
+    // Splash / HE area pass (`damageType 1`). Direct HP is already in
+    // `damage`; these fields tell the map page who else to hurt within
+    // `radius` of the blast centre. Null when the round is direct-only.
+    const splash = splashSpec(spec?.damage);
+    if (splash) {
+      record.splashMaterial2 = splash.material2;
+      record.splashRadius = splash.radius;
+    }
     this.hits.unshift(record);
     if (this.hits.length > 16) this.hits.length = 16;
     if (this.effects && record.effect) {

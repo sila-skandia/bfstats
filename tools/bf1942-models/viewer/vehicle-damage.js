@@ -20,6 +20,7 @@
 // drawn, what a wreck looks like, who is allowed to climb in.
 
 import { Armor, DEATH_EPSILON } from './armor.js';
+import { splashDamage as splashHp } from './effects-core.js';
 
 /** `addArmorEffect`'s death tier: the explosion and the scrap. */
 export const TIER_DEATH = 0;
@@ -109,6 +110,8 @@ export class DamageableVehicle {
       Number.isFinite(extras?.hpLostWhileUpSideDown)
         ? extras.hpLostWhileUpSideDown : null;
     this.damageFromWater = Boolean(extras?.damageFromWater);
+    this.splashMaterial = Number.isFinite(extras?.splashMaterial)
+      ? extras.splashMaterial : null;
     this.name = name;
     this.owner = owner;
     /** The tier the caller has been told to draw, or null. */
@@ -279,6 +282,44 @@ export class VehicleDamageSet {
     if (!vehicle || vehicle.destroyed) return null;
     const lost = vehicle.damage(record.damage);
     return lost > 0 ? { vehicle, lost } : null;
+  }
+
+  /**
+   * Apply splash HP to every registered vehicle within `radius` of the blast.
+   *
+   * `targets` is `{ owner, x, y, z, splashMaterial }[]` — the map page supplies
+   * world positions because this module stays free of three.js. The firer is
+   * skipped. Returns every vehicle that lost HP.
+   */
+  applySplash(record, targets, { materials = null, modifiers = null } = {}) {
+    const material2 = record?.splashMaterial2;
+    const radius = record?.splashRadius;
+    if (!(Number.isFinite(material2) && material2 >= 0) || !(radius > 0)) {
+      return [];
+    }
+    const [bx, by, bz] = record.point || [];
+    if (![bx, by, bz].every(Number.isFinite)) return [];
+    const out = [];
+    for (const target of targets) {
+      if (target.owner === record.firer) continue;
+      const vehicle = this.get(target.owner);
+      if (!vehicle || vehicle.destroyed) continue;
+      const dx = target.x - bx;
+      const dy = target.y - by;
+      const dz = target.z - bz;
+      const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (distance >= radius) continue;
+      const splashMaterial = Number.isFinite(target.splashMaterial)
+        ? target.splashMaterial
+        : vehicle.splashMaterial;
+      if (!Number.isFinite(splashMaterial)) continue;
+      const amount = splashHp(material2, splashMaterial, distance, radius,
+                              materials, modifiers);
+      if (!(amount > 0)) continue;
+      const lost = vehicle.damage(amount);
+      if (lost > 0) out.push({ vehicle, lost, distance });
+    }
+    return out;
   }
 
   /** Step every vehicle. Returns only those whose drawing needs to change. */
