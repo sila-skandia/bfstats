@@ -1090,13 +1090,12 @@ the tick rate, and the viewer has to choose one.
 
 It runs at **30 Hz**, on an accumulator independent of the 60/120 Hz sub-step
 rate, because that is `g_simulationFps` and the figure the friction budget in
-this same file already spends. **Ledger LOOP-1 is open against it** — one
-2026-09-20 reading of lnxded's `Setup::mainLoop` says the loop targets
-`2 * g_simulationFps` and stores a measured frame time — and that row is
-explicitly marked "do not build on it". If it closes at 60 Hz,
-`ENGINE_TICK_HZ` is the only thing that changes and the effect is a filter
-that settles in 0.67 s instead of 1.33 s. **No ceiling, ladder or top speed
-moves**, because those are the filter's steady state, not its rate.
+this same file already spends. **Ledger LOOP-1 is CLOSED on it** (2026-09-20):
+the simulation is a fixed 30 Hz tick with `dt = 1/30` exactly, on client and
+server — `Setup::updateInputs` `0x080bc540` is the accumulator, and the only
+`dt` that reaches `simulateFrame` is the tick's own. The earlier
+`2 * g_simulationFps` reading was of the render loop. The 40-tick time
+constant is therefore 1.33 s of wall clock, and nothing here is hedged.
 
 ### RollGrip, and the two inventions it retires
 
@@ -1151,7 +1150,7 @@ sign flips a second and a worst per-frame load step of 0.0000, against 59 and
 | `ENGINE_LOAD_MEAN_SCALE 0.99` | absent | **read**, `ds:0x86d0cdc` |
 | `ENGINE_MAX_GEARS 5` | absent | **read** — `setNumberOfGears` `0x0823fd10` clamps [1,5] |
 | `ENGINE_DEFAULTS` | absent | **read** — `EngineTemplate::EngineTemplate` `0x0823efc0` |
-| `ENGINE_TICK_HZ 30` | the friction budget's | **read**, and now the filter's too — **still open** against LOOP-1 |
+| `ENGINE_TICK_HZ 30` | the friction budget's | **read**, and now the filter's too — LOOP-1 **closed** on it, `Setup::updateInputs` `0x080bc540` |
 | `COULOMB_SLIDING/_BREAKAWAY/_GRAVITY` | read (PHY-2) | read, unchanged; `coulombCaps` now returns the unweighted `A * \|g\|` |
 | `SPRING_*`, `suspensionTravel`, `bumpStiffness` | free / read (PHY-5) | unchanged — the force law is read, the travel and the bump stop are **still free** |
 | `STATIC_HOLD_*` | free, numerics | **still free**, and the settle test now gates entry only |
@@ -1210,6 +1209,5 @@ heightfield and material map, `mu` 0.9 on grass):
   went from 3 m at 18.5 m/s to 4.5 m at 31.
 - **Driving off the island** still accelerates downward for ever. Pre-existing,
   shared, and not a drivetrain problem.
-- **LOOP-1**, above.
 - **A reference drive in the real game** remains the one measurement that would
   settle the absolute numbers.

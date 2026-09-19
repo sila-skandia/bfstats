@@ -1113,10 +1113,10 @@ class DrivetrainConstantTests(unittest.TestCase):
 
     def test_the_filter_spools_up_over_forty_ticks_not_instantly(self) -> None:
         # Steady state is `revs = 2*(T1 - L)`, reached with a 40-tick time
-        # constant — 1.33 s at the corpus's 30 Hz. The kinematic
-        # `revs = speed / ratio` this replaced had no spool-up at all.
-        # **If LOOP-1 closes at 60 Hz this halves**; the ceiling does not
-        # move, because it is the filter's steady state, not its rate.
+        # constant — 1.33 s, and LOOP-1 is closed on the 30 Hz that makes it
+        # so (`Setup::updateInputs` `0x080bc540` is a fixed-step accumulator;
+        # only the tick's own `dt = 1/30` reaches `simulateFrame`). The
+        # kinematic `revs = speed / ratio` this replaced had no spool-up.
         trace = {row["tick"]: row for row in self.results["revFilter"]["trace"]}
         self.assertLess(trace[1]["revs"], 0.02)
         self.assertLess(trace[10]["revs"], 0.5)
