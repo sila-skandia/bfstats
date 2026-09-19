@@ -4,7 +4,7 @@
 // three.js (contrast `ground_harness.mjs`).
 import {
   activeTier, deathTier, DamageableVehicle, VehicleDamageSet,
-  TIER_DEATH, TIER_WATER_DEATH,
+  TIER_DEATH, TIER_WATER_DEATH, inputGate, CRITICAL_INPUT_SCALE,
 } from './vehicle-damage.mjs';
 
 const out = {};
@@ -287,6 +287,76 @@ out.waterDeathFallback = deathTier(
     noSplashMaterial: fresh().applySplash(
       { ...blast, splashMaterial2: -1 }, targets, tables).length,
     noTables: fresh().applySplash(blast, targets).length,
+  };
+
+  // HP-9: only the Y term of the blast distance is scaled, by
+  // `YModOnExplosion`. A target 5 m straight up is inside a 10 m blast at the
+  // default 1.0 and outside it at 2.0.
+  const above = [{ owner: 2, x: 0, y: 5, z: 0 }];
+  const withMod = (yMod) => {
+    const set = fresh();
+    const hit = set.applySplash({ ...blast, splashYMod: yMod }, above, tables);
+    return hit.length ? Math.round(hit[0].distance * 1e6) / 1e6 : null;
+  };
+  out.yMod = {
+    absent: withMod(undefined),   // 5 m: the plain distance
+    one: withMod(1),              // 5 m
+    two: withMod(2),              // 10 m -> at the radius, so out
+    // A horizontal target is untouched by the scale: X and Z are never
+    // multiplied (0x08156613 multiplies dy alone).
+    horizontalAtTwo: (() => {
+      const set = fresh();
+      const hit = set.applySplash({ ...blast, splashYMod: 2 },
+                                  [{ owner: 2, x: 5, y: 0, z: 0 }], tables);
+      return hit.length ? Math.round(hit[0].distance * 1e6) / 1e6 : null;
+    })(),
+  };
+}
+
+// HP-15: the input gate. A wreck takes no input at all; a critically damaged
+// vehicle's rotational bundles take 0.2x.
+{
+  const set = new VehicleDamageSet();
+  const sherman = set.add(1, SHERMAN, { name: 'Sherman' });
+  const states = [];
+  const snap = (label) => states.push({
+    label, hp: sherman.hitPoints, critical: sherman.critical,
+    destroyed: sherman.destroyed, ...inputGate(sherman),
+  });
+  snap('healthy');
+  sherman.damage(60);            // 40 HP: damaged, tier shown, not critical
+  snap('damaged');
+  sherman.damage(30);            // 10 HP: below criticalDamage 12
+  snap('critical');
+  sherman.damage(100);           // dead
+  snap('destroyed');
+  sherman.reset();               // the wreck-respawn timer's effect
+  snap('respawned');
+  out.inputGate = {
+    states,
+    scale: CRITICAL_INPUT_SCALE,
+    // An object with no Armor registered at all — a palm, a bare manned gun —
+    // is not gated.
+    unregistered: inputGate(null),
+  };
+
+  // The gate is read from the live Armor, so a hull killed by something other
+  // than a shell is gated identically. The combat area's own per-frame
+  // `giveDamage` lands on this same `Armor` (`stepCombatArea` in map.html),
+  // and so does the critical burn's own `hpLostWhileCriticalDamage` tick.
+  const burned = new VehicleDamageSet().add(1, SHERMAN, { name: 'Burner' });
+  burned.damage(89);                       // 11 HP: critical, burning
+  const whileBurning = inputGate(burned);
+  for (let t = 0; t < 12; t++) burned.update(1);   // 1.5 HP/s for 12 s
+  out.inputGate.byOtherCauses = {
+    whileBurning,
+    burnedDown: { destroyed: burned.destroyed, ...inputGate(burned) },
+    // Combat-area damage, the same path `stepCombatArea` takes.
+    combatArea: (() => {
+      const v = new VehicleDamageSet().add(1, SHERMAN, { name: 'Strayed' });
+      for (let t = 0; t < 30; t++) v.damage(5);    // 5 HP/s, the engine default
+      return { destroyed: v.destroyed, ...inputGate(v) };
+    })(),
   };
 }
 
