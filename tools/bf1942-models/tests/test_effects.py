@@ -837,6 +837,17 @@ class SurvivingContactTests(unittest.TestCase):
         self.assertTrue(self.results["sherman"])   # the flag alone
         self.assertTrue(self.results["dieOnly"])   # dieAfterColl alone
 
+    def test_only_four_vanilla_templates_are_fuse_rounds(self) -> None:
+        # The whole three-condition rule on the real vanilla numbers: an
+        # end-of-life blast, no impact blast, and surviving contact. A tank
+        # shell and a bomb fail the second; the flak shells fail the third.
+        fuse = run_harness()["fuseRound"]
+        self.assertEqual(
+            {"grenade": True, "expack": True, "landmine": True,
+             "sherman": False, "bomb": False,
+             "flakAllies": False, "flak38": False},
+            fuse)
+
     def test_an_old_bake_assumes_the_round_ends_at_the_wall(self) -> None:
         # Neither word on the block, or no block at all. Assuming survival
         # would leave every tank shell in a stale extract lying on the ground
@@ -863,6 +874,33 @@ class BlastGeometryTests(unittest.TestCase):
         self.assertEqual(5, d["sideways"])
         # 3 across, 4 up at yMod 2 -> hypot(3, 8) = 8.544004.
         self.assertAlmostEqual(8.544004, d["diagonal"], places=5)
+
+    def test_a_fuse_round_lives_out_its_authored_fuse(self) -> None:
+        # The 20 s ceiling is a viewer recycling guard for a round that is
+        # still FLYING. It became load-bearing the moment the fuse started
+        # firing a blast: `ExpPackProjectile` authors 240 s and
+        # `LandmineProjectile` 360 s, and the engine really does detonate them
+        # then (`Projectile::handleUpdate` 0x0831e940 -> `detonate`
+        # 0x0831e680). Clamping those to 20 s does not expire them early in
+        # some harmless cosmetic sense — it drops 12 m and 4 m of real splash
+        # on the player twenty seconds after he puts the charge down.
+        life = self.results["lifetime"]
+        self.assertEqual(240, life["expack"])
+        self.assertEqual(360, life["landmine"])
+        self.assertEqual(3, life["grenade"])
+        self.assertEqual(600, life["longFuse"])
+
+    def test_a_flying_round_is_still_held_to_the_ceiling(self) -> None:
+        # Nothing vanilla flies for twenty seconds, but a mod round with a
+        # huge fuse and a slow muzzle would sail on forever, and that is what
+        # the ceiling is for. A flak shell is NOT a fuse round, so it keeps
+        # the ceiling too — though its own fuse is under a second anyway.
+        life = self.results["lifetime"]
+        self.assertEqual(20, self.results["flightCeiling"])
+        self.assertEqual(20, life["longFlier"])
+        self.assertEqual(3, life["sherman"])
+        self.assertAlmostEqual(0.8, life["flakAllies"])
+        self.assertEqual(10, life["unspecified"])   # the no-timeToLive default
 
     def test_the_impact_blast_is_centred_off_the_surface(self) -> None:
         # `hitPos + 0.1 * normal`, lnxded 0x08153f5e (`ds:0x086b1ca0` =

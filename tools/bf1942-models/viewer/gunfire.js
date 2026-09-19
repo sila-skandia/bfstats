@@ -30,7 +30,7 @@
 
 import * as THREE from 'three';
 import { impactEffect, materialFamily } from './collision.js';
-import { damageFactor, diesOnContact, IMPACT_BLAST_OFFSET,
+import { damageFactor, IMPACT_BLAST_OFFSET, isFuseRound, roundTimeToLive,
          splashSpec } from './effects-core.js';
 // The world's downward acceleration, signed, taken from the module that owns
 // it rather than declared again here. It is -14.73 m/s^2 and not Earth's
@@ -765,6 +765,15 @@ export class GunFire {
     // points down -Z — the muzzle's own forward.
     mesh.quaternion.copy(_aim);
     this.scene.add(mesh);
+    // A **fuse** round (HP-9d, HP-9e): end-of-life explosion, no impact
+    // explosion, and — the condition that is easy to drop — it survives
+    // contact. Vanilla's are exactly the two grenades, the explosives pack and
+    // the landmine; the three flak shells pass the first two and fail the
+    // third. Contact must neither detonate a fuse round nor end it, or its
+    // only blast is deleted and a grenade thrown into the open does nothing at
+    // all, which is what this viewer did until now. `isFuseRound` in
+    // `effects-core.js` carries the rule and the addresses.
+    const fuse = isFuseRound(spec?.damage);
     const shot = {
       mesh,
       group,
@@ -783,31 +792,18 @@ export class GunFire {
       // so this is inert for tank guns and live only for the five naval guns
       // fast enough to be scaled and heavy enough to fall.
       gravityScale: (speed / authored) ** 2,
-      ttl: Math.min(spec.timeToLive || 10, 20),
+      // A fuse round runs its authored fuse; everything else is held to the
+      // viewer's own flight ceiling. `roundTimeToLive` carries why — in short,
+      // the ceiling was written when `timeToLive` only recycled a mesh, and
+      // clamping an explosives pack's 240 s to 20 s now drops 12 m of real
+      // splash on the player twenty seconds after he puts the charge down.
+      ttl: roundTimeToLive(spec.timeToLive, spec?.damage),
       trail: group.trailQuad ? spec.trail : null,
       run: null,
       age: 0,
       travelled: 0,
       sincePuff: 0,
-      // A **fuse** round: one the engine gives an end-of-life explosion, no
-      // impact explosion, and — the third condition, which is the one that is
-      // easy to miss — that actually SURVIVES contact (HP-9d, HP-9e).
-      // Vanilla's are exactly the two grenades, the explosives pack and the
-      // landmine. Contact must neither detonate such a round nor end it, or
-      // its only blast is deleted and a grenade thrown into the open does
-      // nothing at all, which is what this viewer did until now.
-      //
-      // `diesOnContact` is not a restatement of `!impact`. A flak shell is
-      // `damageType 4` (no impact explosion) *and* `hasCollisionEffect 1`, so
-      // `Projectile::handleCollision` recycles it the moment it touches
-      // something and it bursts neither way — see `diesOnContact`'s own note.
-      // Without this term all three vanilla flak guns would land a 20 m blast
-      // wherever their rounds came to rest.
-      fuse: (() => {
-        const splash = splashSpec(spec?.damage);
-        return !!(splash && !splash.impact && splash.endOfLife)
-          && !diesOnContact(spec?.damage);
-      })(),
+      fuse,
       // Set when a fuse round has come to rest on a surface; see `advance`.
       resting: false,
     };
