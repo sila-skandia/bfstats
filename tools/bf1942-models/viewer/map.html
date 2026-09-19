@@ -827,6 +827,8 @@ import { Hud } from './hud.js';
 import { Armor } from './armor.js';
 import { VehicleDamageSet } from './vehicle-damage.js';
 import { SupplyDepot, SupplyField } from './supply.js';
+import { wantsEnvmap, cubeFaceUrls, envmapVertexPatch, envmapVertexBody,
+         envmapFragmentPatch, envmapFragmentApply } from './envmap.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -971,6 +973,12 @@ let cloudMesh = null;
 let cloudUniforms = null;
 let waterUniforms = null;
 let waterAssets = [];     // textures owned by the water/cloud shaders
+// The level's environment cubemap. The engine loads it once per level into the
+// StandardMesh draw context's +0x18 (0x005c01dd) and binds it to texture stage
+// 1 for every `envmap true` material (0x005bfab3) — it is not the water's, the
+// water shader just happens to want the same six faces. Owned here so a level
+// with no water still reflects, and disposed with `waterAssets`.
+let levelEnvCube = null;
 let simTime = 0;
 // Drives everything the level glb animates. One mixer over the level root
 // plays every clip it carries: `FlagBlow <name>` per control point, over that
@@ -2518,6 +2526,9 @@ function bindDynamicShading(root) {
   // the onBeforeCompile SOURCE - identical closures with different level
   // values would collide across map switches without an explicit key.
   const cacheKey = `bf-dynamic-lit:${floorGlsl}|${sunGlsl}|${dirGlsl}`;
+  // `envmap true` adds texture stage 1 on top of the same stage-0 combine, so
+  // it is a second program, keyed apart from the plain one.
+  const envCacheKey = `${cacheKey}|envmap`;
   root.traverse(obj => {
     if (!obj.isMesh || !obj.material) return;
     // A muzzle flash is light, not a surface: the exporter bakes the sprite
@@ -2552,13 +2563,20 @@ function bindDynamicShading(root) {
       // 2*(ambient+globalAmbient), and in-game palms keep genuinely dark
       // shadow sides, so the crutch is dropped here rather than folded in -
       // keeping it would pin fronds at >=1.5x their texel on Tobruk.
-      mat.customProgramCacheKey = () => cacheKey;
+      // `envmap true` is texture stage 1 over the same stage-0 combine
+      // (envmap.js carries the engine addresses). Only bound when the level
+      // actually shipped six cube faces; without them the engine's own gate
+      // (ctx+0x18 != NULL, 0x005bfa8b) fails too and the material draws plain.
+      const env = wantsEnvmap(m) && levelEnvCube ? levelEnvCube : null;
+      mat.customProgramCacheKey = () => (env ? envCacheKey : cacheKey);
       mat.onBeforeCompile = (shader) => {
+        if (env) shader.uniforms.tBfEnv = { value: env };
         shader.vertexShader = shader.vertexShader
           .replace('void main() {',
-            'varying vec3 vBfNormal;\nvoid main() {')
+            `varying vec3 vBfNormal;\n${env ? envmapVertexPatch() : ''}void main() {`)
           .replace('#include <begin_vertex>',
             `vBfNormal = mat3( modelMatrix ) * normal;
+             ${env ? envmapVertexBody() : ''}
              #include <begin_vertex>`);
         shader.fragmentShader = shader.fragmentShader
           .replace('void main() {',
@@ -2573,6 +2591,7 @@ function bindDynamicShading(root) {
                    c * ( 1.0 / 12.92 ),
                    vec3( lessThanEqual( c, vec3( 0.04045 ) ) ) );
              }
+             ${env ? envmapFragmentPatch({ srgbFns: true }) : ''}
              void main() {`)
           .replace('#include <map_fragment>',
             `#include <map_fragment>
@@ -2584,7 +2603,11 @@ function bindDynamicShading(root) {
              vec3 bfLit = 2.0 * min( vec3( 1.0 ),
                  ${floorGlsl} + ${sunGlsl} * bfNdL );
              diffuseColor.rgb = bfFromSrgb( min( vec3( 1.0 ),
-                 bfToSrgb( diffuseColor.rgb ) * bfLit ) );`);
+                 bfToSrgb( diffuseColor.rgb ) * bfLit ) );
+             // Stage 1: the environment reflection, blended by the diffuse
+             // texture's own alpha (0x005bfcc6 BLENDCURRENTALPHA). Runs after
+             // stage 0 because CURRENT is stage 0's output.
+             ${env ? envmapFragmentApply() : ''}`);
       };
       mat.needsUpdate = true;
       return mat;
@@ -2668,6 +2691,18 @@ function disposeSky() {
   for (const tex of waterAssets) tex.dispose();
   waterAssets = [];
   waterUniforms = null;
+  levelEnvCube = null;
+}
+
+// The level cubemap, loaded once and shared by the envmap materials and the
+// water's fresnel term. Called before either wants it.
+function setupEnvCube(dir) {
+  const urls = cubeFaceUrls(extras, `${MAPS_BASE}/${dir}`);
+  if (!urls) { levelEnvCube = null; return null; }
+  levelEnvCube = cubeLoader.load(urls.map(u => `${u}${bust()}`));
+  levelEnvCube.colorSpace = THREE.SRGBColorSpace;
+  waterAssets.push(levelEnvCube);
+  return levelEnvCube;
 }
 
 function srgb(rgb, fallback) {
@@ -2780,13 +2815,10 @@ function setupWater(root, dir) {
   if (layer2) layer2.colorSpace = THREE.SRGBColorSpace;
   if (depth) depth.wrapS = depth.wrapT = THREE.ClampToEdgeWrapping;
   // The engine reflects ENVMAP_G_.rcm off the water via the shader-manager
-  // envmap parameter; the same six faces feed the fresnel term here.
-  let env = null;
-  if (extras.envmap?.length === 6) {
-    env = cubeLoader.load(extras.envmap.map(f => `${MAPS_BASE}/${dir}/${f}${bust()}`));
-    env.colorSpace = THREE.SRGBColorSpace;
-    waterAssets.push(env);
-  }
+  // envmap parameter; the same six faces feed the fresnel term here. Shared
+  // with the `envmap true` mesh materials (see setupEnvCube), one cube per
+  // level rather than one per consumer.
+  const env = levelEnvCube;
   const ld = w.lightDirection || [-0.3, 0.5, 0.65];
   waterUniforms = {
     tLayer1: { value: layer1 },
@@ -9184,6 +9216,8 @@ async function show(entry) {
   unlightTerrain(currentRoot);
   bindTerrainDetail(currentRoot, dir);
   setupSky(currentRoot, dir);
+  // Before setupWater and bindDynamicShading: both read `levelEnvCube`.
+  setupEnvCube(dir);
   setupWater(currentRoot, dir);
   setupSounds(extras, dir);
   loadMapArt(dir);
