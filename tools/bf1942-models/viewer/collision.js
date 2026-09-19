@@ -252,7 +252,14 @@ export class CollisionIndex {
     this.stats = { queries: 0, cells: 0, candidates: 0, tests: 0 };
   }
 
-  /** Stop (or restore) an owner's baked hull without rebuilding the index. */
+  /**
+   * Stop (or restore) an owner's baked hull without rebuilding the index.
+   *
+   * A disabled owner's triangles stay in the grid. `cast` and `sweepSphere`
+   * take an `onlyOwner` that tests exactly one owner's triangles and ignores
+   * this flag — which is how `WorldCollider` still hits a vehicle that has
+   * been shoved off its spawn: it asks in the hull's own baked frame.
+   */
   disableOwner(id) {
     if (id >= 0 && id < this._disabled.length) this._disabled[id] = 1;
   }
@@ -288,7 +295,7 @@ export class CollisionIndex {
    * returned `t` is metres from the origin. `out` is filled in place and
    * returned — the caller owns one and it never allocates per round per frame.
    */
-  cast(ox, oy, oz, dx, dy, dz, maxDist, skipOwner, out) {
+  cast(ox, oy, oz, dx, dy, dz, maxDist, skipOwner, out, onlyOwner = -1) {
     if (!this.cellStart || maxDist <= 0) return null;
     const stats = this.stats;
     stats.queries++;
@@ -339,8 +346,12 @@ export class CollisionIndex {
               if (this._stamp[tri] === stamp) continue;
               this._stamp[tri] = stamp;
               stats.candidates++;
-              if (skipOwner >= 0 && this.owners[tri] === skipOwner) continue;
-              if (this._disabled[this.owners[tri]]) continue;
+              if (onlyOwner >= 0) {
+                if (this.owners[tri] !== onlyOwner) continue;
+              } else {
+                if (skipOwner >= 0 && this.owners[tri] === skipOwner) continue;
+                if (this._disabled[this.owners[tri]]) continue;
+              }
               stats.tests++;
               const t = this.#intersect(tri, ox, oy, oz, dx, dy, dz, best);
               if (t >= 0 && t < best) {
@@ -393,7 +404,7 @@ export class CollisionIndex {
    * `out.nx/ny/nz` points from the hull toward the centre, which is the
    * direction that separates them.
    */
-  sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, out) {
+  sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, out, onlyOwner = -1) {
     if (!this.cellStart || maxDist <= 0) return null;
     const stats = this.stats;
     stats.queries++;
@@ -431,8 +442,12 @@ export class CollisionIndex {
           if (this._stamp[tri] === stamp) continue;
           this._stamp[tri] = stamp;
           stats.candidates++;
-          if (skipOwner >= 0 && this.owners[tri] === skipOwner) continue;
-          if (this._disabled[this.owners[tri]]) continue;
+          if (onlyOwner >= 0) {
+            if (this.owners[tri] !== onlyOwner) continue;
+          } else {
+            if (skipOwner >= 0 && this.owners[tri] === skipOwner) continue;
+            if (this._disabled[this.owners[tri]]) continue;
+          }
           // Box reject before the swept test. A ray gets away without one — the
           // per-cell Y band plus Moller-Trumbore is already cheap — but a sweep
           // costs a plane crossing, three edge quadratics and three corner
@@ -762,6 +777,19 @@ function packIndex(tris, materials, ownerIds, ownerNodes, count, cellSize, box) 
 const _normal = [0, 0, 0];
 
 /**
+ * Whether a segment (or a sphere swept along it) can reach a moved hull's
+ * bounding sphere at all: closest approach of the segment to the centre.
+ */
+function reachesSphere(ox, oy, oz, dx, dy, dz, maxDist, m, radius) {
+  const cx = m.x - ox, cy = m.y - oy, cz = m.z - oz;
+  let t = cx * dx + cy * dy + cz * dz;
+  if (t < 0) t = 0; else if (t > maxDist) t = maxDist;
+  const ex = cx - dx * t, ey = cy - dy * t, ez = cz - dz * t;
+  const reach = m.radius + radius;
+  return ex * ex + ey * ey + ez * ez <= reach * reach;
+}
+
+/**
  * Terrain, sea and hulls behind one `cast`.
  *
  * Order is cheapest-first *and* narrowing: the water plane is a divide, the
@@ -776,6 +804,23 @@ export class WorldCollider {
     this.waterLevel = Number.isFinite(waterLevel) ? waterLevel : null;
     this.statics = statics;
     this.dynamicCast = null;
+    /**
+     * Owners whose hull has left the pose it was baked at — a parked plane a
+     * jeep has just shoved. owner -> `{ fwd, inv, x, y, z, radius }`: rigid
+     * column-major 4x4s, baked frame to world and back, and the hull's current
+     * bounding sphere. See `setMovedOwner`.
+     */
+    this.moved = new Map();
+    this._movedHit = {
+      t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0,
+      dx: 0, dy: 0, dz: 0,
+      material: 0, kind: '', owner: -1, triangle: -1,
+    };
+    this._movedSweep = {
+      t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0,
+      px: 0, py: 0, pz: 0,
+      material: 0, kind: '', owner: -1, triangle: -1,
+    };
     this.hit = {
       t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0,
       dx: 0, dy: 0, dz: 0,
@@ -804,11 +849,76 @@ export class WorldCollider {
   sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner = -1) {
     if (!this.statics) return null;
     const started = performance.now();
-    const out = this.statics.sweepSphere(
+    let out = this.statics.sweepSphere(
       ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, this.sweepHit);
+    if (this.moved.size) {
+      let best = out ? out.t : maxDist;
+      for (const [owner, m] of this.moved) {
+        if (owner === skipOwner) continue;
+        if (!reachesSphere(ox, oy, oz, dx, dy, dz, best, m, radius)) continue;
+        const e = m.inv;
+        const hit = this.statics.sweepSphere(
+          e[0] * ox + e[4] * oy + e[8] * oz + e[12],
+          e[1] * ox + e[5] * oy + e[9] * oz + e[13],
+          e[2] * ox + e[6] * oy + e[10] * oz + e[14],
+          e[0] * dx + e[4] * dy + e[8] * dz,
+          e[1] * dx + e[5] * dy + e[9] * dz,
+          e[2] * dx + e[6] * dy + e[10] * dz,
+          best, radius, -1, this._movedSweep, owner);
+        if (!hit || hit.t >= best) continue;
+        best = hit.t;
+        out = this.sweepHit;
+        const f = m.fwd;
+        out.t = hit.t;
+        out.x = f[0] * hit.x + f[4] * hit.y + f[8] * hit.z + f[12];
+        out.y = f[1] * hit.x + f[5] * hit.y + f[9] * hit.z + f[13];
+        out.z = f[2] * hit.x + f[6] * hit.y + f[10] * hit.z + f[14];
+        out.px = f[0] * hit.px + f[4] * hit.py + f[8] * hit.pz + f[12];
+        out.py = f[1] * hit.px + f[5] * hit.py + f[9] * hit.pz + f[13];
+        out.pz = f[2] * hit.px + f[6] * hit.py + f[10] * hit.pz + f[14];
+        out.nx = f[0] * hit.nx + f[4] * hit.ny + f[8] * hit.nz;
+        out.ny = f[1] * hit.nx + f[5] * hit.ny + f[9] * hit.nz;
+        out.nz = f[2] * hit.nx + f[6] * hit.ny + f[10] * hit.nz;
+        out.material = hit.material;
+        out.owner = owner;
+        out.triangle = hit.triangle;
+        out.kind = hit.kind;
+      }
+    }
     this.elapsed += (performance.now() - started) * 1000;
     this.casts++;
     return out;
+  }
+
+  /**
+   * Tell the collider an owner's hull now sits somewhere other than where the
+   * index baked it.
+   *
+   * The index is a counting sort over world-space triangles and is not
+   * rebuilt for a vehicle that has been nudged two metres. Instead the owner
+   * is switched off in the index proper (`disableOwner`) and every query is
+   * asked a second time in the hull's *baked* frame, against that owner's
+   * triangles only: a rigid transform of the ray costs eighteen multiplies and
+   * the triangles, the grid and the narrowphase are all reused as they are.
+   * `fwd` takes baked space to world, `inv` is its inverse; both are
+   * column-major 4x4 element arrays (a three.js `Matrix4.elements`), copied.
+   * `x, y, z, radius` bound the hull where it is now, for the cheap reject.
+   */
+  setMovedOwner(owner, fwd, inv, x, y, z, radius) {
+    let m = this.moved.get(owner);
+    if (!m) {
+      m = { fwd: new Float64Array(16), inv: new Float64Array(16), x: 0, y: 0, z: 0, radius: 0 };
+      this.moved.set(owner, m);
+      this.statics?.disableOwner?.(owner);
+    }
+    m.fwd.set(fwd); m.inv.set(inv);
+    m.x = x; m.y = y; m.z = z; m.radius = radius;
+  }
+
+  /** The owner is back where it was baked (a respawn), or gone (a wreck). */
+  clearMovedOwner(owner, { enable = true } = {}) {
+    if (!this.moved.delete(owner)) return;
+    if (enable) this.statics?.enableOwner?.(owner);
   }
 
   /** The height a thing standing at (x, z) rests on: ground, or the sea. */
@@ -858,6 +968,38 @@ export class WorldCollider {
         out.material = dyn.material ?? 61;
         out.owner = dyn.owner ?? -1;
         out.triangle = -1;
+        out.kind = 'object';
+      }
+    }
+    if (this.statics && this.moved.size && best > 0) {
+      for (const [owner, m] of this.moved) {
+        if (owner === skipOwner) continue;
+        if (!reachesSphere(ox, oy, oz, dx, dy, dz, best, m, 0)) continue;
+        const e = m.inv;
+        // The index faces a hit normal toward the incoming round, and reads
+        // the round's direction off the record it is handed.
+        const probe = this._movedHit;
+        probe.dx = e[0] * dx + e[4] * dy + e[8] * dz;
+        probe.dy = e[1] * dx + e[5] * dy + e[9] * dz;
+        probe.dz = e[2] * dx + e[6] * dy + e[10] * dz;
+        const hit = this.statics.cast(
+          e[0] * ox + e[4] * oy + e[8] * oz + e[12],
+          e[1] * ox + e[5] * oy + e[9] * oz + e[13],
+          e[2] * ox + e[6] * oy + e[10] * oz + e[14],
+          probe.dx, probe.dy, probe.dz,
+          best, -1, probe, owner);
+        if (!hit || hit.t >= best) continue;
+        best = hit.t;
+        kind = 'object';
+        const f = m.fwd;
+        out.t = hit.t;
+        out.x = ox + dx * hit.t; out.y = oy + dy * hit.t; out.z = oz + dz * hit.t;
+        out.nx = f[0] * hit.nx + f[4] * hit.ny + f[8] * hit.nz;
+        out.ny = f[1] * hit.nx + f[5] * hit.ny + f[9] * hit.nz;
+        out.nz = f[2] * hit.nx + f[6] * hit.ny + f[10] * hit.nz;
+        out.material = hit.material;
+        out.owner = owner;
+        out.triangle = hit.triangle;
         out.kind = 'object';
       }
     }
