@@ -858,7 +858,7 @@ import { Soldier, spawnFlags, pickSpawn, spawnYaw,
 import { DeviationModel } from './deviation.js';
 import { wantViewmodelClip } from './viewmodel-anim.js';
 import { createReplayController, recordingLevel } from './replay.js';
-import { Hud } from './hud.js';
+import { Hud, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS } from './hud.js';
 import { Armor } from './armor.js';
 import { VehicleDamageSet } from './vehicle-damage.js';
 import { SupplyDepot, SupplyField } from './supply.js';
@@ -8091,6 +8091,10 @@ function stanceNation(team) {
 // the area, hoisted so `updateSoldierHud` allocates nothing per frame.
 const IN_COMBAT_AREA = { countdown: 0 };
 
+// `setHudAmmoType` -> `Ammo/AmmoType`, and which of those print a round
+// count: both live in `hud.js` beside the rest of the layout's own
+// vocabulary, so `tests/hud_harness.mjs` can drive them under node. HUD-10.
+
 function updateSoldierHud() {
   const vars = gameHud.vars;
   // Any seat at all, which `seats.js` answers for: `occupancy` is non-null
@@ -8223,6 +8227,7 @@ function updateSoldierHud() {
   const magazine = hw.data?.magazine;
   const hudAmmo = (hw.data?.hudAmmo || '').toLowerCase();
   const ammoHud = hw.data?.hud;
+  const ammoType = AMMO_TYPE_CODES[hudAmmo];
   if (hudAmmo === 'atammobar' && magazine) {
     // R1-19/HUD-9, the magazine-bar branch. PrimaryAmmo is the loaded round
     // count (top-right, "14" in the retail shot); PrimaryMag is a SEPARATE
@@ -8243,19 +8248,31 @@ function updateSoldierHud() {
     if (ammoHud?.ammoBar) vars['Ammo/SoldierAmmo/SoldierAmmoBar'] = ammoHud.ammoBar;
     if (ammoHud?.ammoBarFill) vars['Ammo/SoldierAmmo/SoldierAmmoBarFill'] = ammoHud.ammoBarFill;
     if (ammoHud?.ammoBarSize) vars['Ammo/SoldierAmmo/SoldierAmmoBarSize'] = ammoHud.ammoBarSize;
-  } else if (hudAmmo === 'aticon') {
-    // The icon-only fallback (AmmoType 6 or 7 in hud-layout.json — OPEN
-    // [R1-18]: which of the two the engine actually uses for ATIcon weapons
-    // was never read, so 6 is picked arbitrarily. Both branches cull the same
-    // unfed heat/reload fill below, so the choice paints identically: icon
-    // and panel only, no numbers — matching the Viewer Recipe's "icon-only
-    // fallback" exactly either way.
-    vars['Ammo/AmmoType'] = 6;
+  } else if (ammoType >= 2) {
+    // Every icon-style type. HUD-10 closed the enum: the `.meme` value and
+    // the `.con` value are THE SAME enumeration, so the weapon's own
+    // `setHudAmmoType` goes straight through with no converter to write.
+    //
+    // The one real change is `ATIcon`, which this fed as **6** on the
+    // reasoning that 6 and 7 painted identically and the choice was
+    // arbitrary. It is 2, and it is not arbitrary: the layout's `{2,3,4,5}`
+    // group draws the rounds text (gated `ne 4 && ne 5 && ne 6`) where the
+    // `{6,7}` group does not, so a Bazooka, Panzerschreck, ExpPack,
+    // Detonator or Landmine was showing an icon with no rocket count beside
+    // it. 6 is `ATIconAndHeatBar`, which in vanilla is the MedPack alone.
+    //
+    // `Ammo/PrimaryAmmo` is fed for every type whose layout branch prints it,
+    // and left alone for the two that do not (4 `ATIconAndReloadBar`, the
+    // RepairPack; 5 `ATIconNoText`).
+    vars['Ammo/AmmoType'] = ammoType;
+    if (AMMO_TYPES_WITH_ROUNDS.has(ammoType)) vars['Ammo/PrimaryAmmo'] = hw.rounds;
     if (ammoHud?.icon) vars['Ammo/SoldierAmmo/SoldierAmmoIcon'] = ammoHud.icon;
   }
-  // Any other value (or none) leaves `Ammo/AmmoType` unset: every soldierAmmo
-  // leaf requires it, so the whole panel culls rather than guessing a shape
-  // for a weapon this file cannot classify.
+  // `ATNone` (0, the two knives) and anything unrecognised leave
+  // `Ammo/AmmoType` unset: every soldierAmmo leaf requires it, so the whole
+  // panel culls rather than guessing a shape for a weapon this file cannot
+  // classify. For a knife that is also what the engine does -- 0 is tested by
+  // no layout branch at all.
 }
 
 /** Announce the view C just selected, then fall back to the control list. */

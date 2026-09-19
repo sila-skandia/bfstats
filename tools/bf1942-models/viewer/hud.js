@@ -252,6 +252,45 @@ function drawBitmapText(ctx, font, text, x, y, rgb) {
  *  freeze every dial at twelve o'clock.
  *
  *  The SIGN is `_drawPicture`'s business, not this function's -- see there. */
+/**
+ * `setHudAmmoType`'s value, lower-cased, to the `Ammo/AmmoType` integer the
+ * layout keys the soldier ammo panel on.
+ *
+ * HUD-10 closed this: the `.con` word and the `.meme` variable are **the same
+ * enumeration** — the client's own `operator>>` (`0x004c4cd0`) was decompiled
+ * in full and every stored value read — so a weapon's declared type goes
+ * straight through and there is no converter to write.
+ *
+ *   0 ATNone               nothing draws                  KnifeAllies/Axis
+ *   1 ATAmmoBar            magazine panel, bar, rounds, mag box
+ *   2 ATIcon               panel, icon, ROUNDS            Bazooka, Panzershreck,
+ *                                                         ExpPack, Detonator, Landmine
+ *   3 ATIconAndStrengthBar panel, icon, rounds, bar       grenades
+ *   4 ATIconAndReloadBar   panel, icon, reload bar        RepairPack
+ *   5 ATIconNoText         panel, icon
+ *   6 ATIconAndHeatBar     panel, icon, heat bar          MedPack
+ *
+ * Anything unrecognised is the client's own 7. Surveyed across all 18
+ * installs: ATAmmoBar 1017, ATIcon 512, ATIconAndStrengthBar 367, ATNone 218,
+ * ATIconAndHeatBar 51, ATIconAndReloadBar 19, ATIconNoText 1; 37 declarations
+ * in vanilla, every one matching the table above.
+ */
+export const AMMO_TYPE_CODES = {
+  atnone: 0, atammobar: 1, aticon: 2, aticonandstrengthbar: 3,
+  aticonandreloadbar: 4, aticonnotext: 5, aticonandheatbar: 6,
+};
+
+/**
+ * Which of the icon-family types print a round count.
+ *
+ * `menu/InGame`'s `{2,3,4,5}` panel gates its `Ammo/PrimaryAmmo` text on
+ * `ne 4 && ne 5 && ne 6` on top of the group's own membership test, so 2 and
+ * 3 print and 4 and 5 do not. This is why `ATIcon` had to be 2 and not 6: a
+ * Bazooka fed 6 landed in the `{6,7}` panel, which has no rounds text at all,
+ * and showed a rocket icon with no count beside it.
+ */
+export const AMMO_TYPES_WITH_ROUNDS = new Set([2, 3]);
+
 /** The 800x600 point the seat-occupancy dots are offset from (VHUD-7): the
  *  six 8x8 leaves draw at `(192 + VehiclePosX[i+1], 452 + VehiclePosY[i+1])`.
  *  It is also exactly `hud-layout.json`'s own seat-0 rect (247,457) minus that
