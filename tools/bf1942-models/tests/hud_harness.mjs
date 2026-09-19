@@ -9,7 +9,7 @@
 // is enough to read back exactly which band of the picture the fill was
 // clipped to, which is the whole of what the bug was about.
 
-import { Hud, wrapText } from './hud.js';
+import { Hud, wrapText, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS } from './hud.js';
 
 function recordingContext() {
   const calls = { images: [], clips: [] };
@@ -154,6 +154,189 @@ results.conditions = {
     { var: 'a', op: 'gt', value: 2 },
     { var: 'b', op: 'ge', value: 7 },
   ] }], { a: 1, b: 6 }),
+};
+
+// --- the turret dial's rotation sense (VHUD-9) -------------------------------
+//
+// `RotateEffect` is counter-clockwise on the HUD's y-down frame (client
+// `0x007edbf0`: `x' = x·cos + y·sin`, `y' = -x·sin + y·cos`, so `(0,-1)` at
+// +90 degrees becomes `(-1,0)` -- top to left). Canvas `rotate(+θ)` is
+// clockwise, so `_drawPicture` has to negate. The whole of the test is: feed
+// the engine's own angle and watch where the top of the sprite lands.
+
+/** The dial's rotating body, verbatim from `hud-layout.json` (VHUD-7: a 32x32
+ *  at (410,550), the one element in the file carrying a `RotateEffect`). */
+const dialBody = {
+  kind: 'picture', rect: [410, 550, 32, 32],
+  texture: 'icon_tank_turn_body_32x32',
+  rotation: { angle: 0, angleVar: 'IconLookRotation', angleMultiplier: 0 },
+};
+
+/** Paint the dial at one angle and report where the sprite's top-centre
+ *  texel ends up in screen space. A recording context composes the same
+ *  translate/rotate the painter issues. */
+function dialTopAt(angle) {
+  const hud = new Hud({ canvas: null, sprite: () => ({ width: 32, height: 32 }) });
+  hud.vars.IconLookRotation = angle;
+  const [x, y, w, h] = dialBody.rect;
+  // A zero angle takes `_drawPicture`'s plain path: no transform at all, the
+  // sprite straight down at its rect. Seed the frame with that so every angle
+  // is reported in the same screen coordinates.
+  let tx = x + w / 2, ty = y + h / 2, theta = 0;
+  const ctx = {
+    globalAlpha: 1,
+    save() {}, restore() {},
+    translate(cx, cy) { tx = cx; ty = cy; },
+    rotate(a) { theta = a; },
+    drawImage() {},
+  };
+  hud._drawPicture(ctx, dialBody, x, y, w, h, { width: 32, height: 32 });
+  // The sprite's own top-centre sits at (0, -h/2) in the rotated frame.
+  const px = 0 * Math.cos(theta) - (-h / 2) * Math.sin(theta) + tx;
+  const py = 0 * Math.sin(theta) + (-h / 2) * Math.cos(theta) + ty;
+  return {
+    canvasRotation: Number(theta.toFixed(6)),
+    topX: Number(px.toFixed(3)),
+    topY: Number(py.toFixed(3)),
+  };
+}
+
+const HALF_PI = Math.PI / 2;
+results.turretDial = {
+  centre: [dialBody.rect[0] + 16, dialBody.rect[1] + 16],
+  atZero: dialTopAt(0),
+  // The engine's +90 degrees: counter-clockwise, so the top goes LEFT.
+  atPlus90: dialTopAt(HALF_PI),
+  atMinus90: dialTopAt(-HALF_PI),
+  // An unrotated leaf must still take the cheap path, no transform at all.
+  unrotatedTakesThePlainPath: (() => {
+    const hud = new Hud({ canvas: null, sprite: () => ({ width: 32, height: 32 }) });
+    let rotated = false;
+    const ctx = {
+      globalAlpha: 1, save() {}, restore() {},
+      translate() { rotated = true; }, rotate() { rotated = true; },
+      drawImage() {},
+    };
+    hud._drawPicture(ctx, { kind: 'picture', rect: [0, 0, 8, 8] }, 0, 0, 8, 8,
+                     { width: 8, height: 8 });
+    return !rotated;
+  })(),
+};
+
+// --- the seat-occupancy dots' placement (VHUD-11, VHUD-7) --------------------
+
+/** Seat 0's leaf, verbatim from `hud-layout.json` (`test_hud_layout.py` has
+ *  the same rect and the same pair of variable names). */
+const seatZero = {
+  kind: 'occupied-seat', position: 0, rect: [247, 457, 8, 8],
+  dataRef: 'Occupied/OccupiedData',
+  posVar: { x: 'Vehicle/VehiclePos/VehiclePosX1', y: 'Vehicle/VehiclePos/VehiclePosY1' },
+};
+
+function dotAt(vars) {
+  const hud = new Hud({ canvas: null, sprite: () => ({ width: 8, height: 8 }) });
+  Object.assign(hud.vars, vars);
+  const [x, y] = seatZero.rect;
+  // Copied: the painter hands back a shared scratch pair so six leaves cost
+  // no allocation per frame, and holding it would alias every case below.
+  const at = hud.seatDotPosition(seatZero, x, y);
+  return at && [at[0], at[1]];
+}
+
+results.seatDots = {
+  layoutRect: seatZero.rect,
+  // Sherman's root declares `setVehicleIconPos 54/103`, and VHUD-7 anchors
+  // the dots at (192, 452) -- so this one lands at (246, 555), inside the
+  // 128x128 icon panel that starts at (200, 462).
+  shermanRoot: dotAt({
+    'Vehicle/VehiclePos/VehiclePosX1': 54,
+    'Vehicle/VehiclePos/VehiclePosY1': 103,
+  }),
+  // `shermanBrowning_PCO1`'s own 32/61.
+  shermanGunner: dotAt({
+    'Vehicle/VehiclePos/VehiclePosX1': 32,
+    'Vehicle/VehiclePos/VehiclePosY1': 61,
+  }),
+  // A scene baked before `setVehicleIconPos` was parsed feeds nothing. The
+  // leaf's own rect is that variable pair's authored placeholder, not a seat
+  // position, so the dot is not drawn at all.
+  unfed: dotAt({}),
+  halfFed: dotAt({ 'Vehicle/VehiclePos/VehiclePosX1': 54 }),
+  // ...and nothing reaches the canvas for it, which is the claim that
+  // actually matters: `_drawOccupiedSeat` must return before `drawImage`.
+  unfedDrawsNothing: (() => {
+    const hud = new Hud({ canvas: null, sprite: () => ({ width: 8, height: 8 }) });
+    hud.vars['Occupied/OccupiedData'] = [1, 2, 2, 2, 2, 2];
+    let drawn = 0;
+    const ctx = { globalAlpha: 1, save() {}, restore() {}, translate() {},
+                  rotate() {}, drawImage() { drawn++; } };
+    const [x, y, w, h] = seatZero.rect;
+    hud._drawOccupiedSeat(ctx, seatZero, x, y, w, h);
+    return drawn;
+  })(),
+  fedDrawsOne: (() => {
+    const hud = new Hud({ canvas: null, sprite: () => ({ width: 8, height: 8 }) });
+    hud.vars['Occupied/OccupiedData'] = [1, 2, 2, 2, 2, 2];
+    hud.vars['Vehicle/VehiclePos/VehiclePosX1'] = 54;
+    hud.vars['Vehicle/VehiclePos/VehiclePosY1'] = 103;
+    const at = [];
+    const ctx = { globalAlpha: 1, save() {}, restore() {}, translate() {},
+                  rotate() {}, drawImage(_img, px, py) { at.push([px, py]); } };
+    const [x, y, w, h] = seatZero.rect;
+    hud._drawOccupiedSeat(ctx, seatZero, x, y, w, h);
+    return at;
+  })(),
+  // A leaf that binds no pair at all never claimed to be placed by a
+  // variable, so it keeps its own rect.
+  noBinding: (() => {
+    const hud = new Hud({ canvas: null, sprite: () => ({ width: 8, height: 8 }) });
+    const { posVar, ...bare } = seatZero;
+    const at = hud.seatDotPosition(bare, bare.rect[0], bare.rect[1]);
+    return at && [at[0], at[1]];
+  })(),
+};
+
+// --- the soldier ammo panel's type enum (HUD-10) -----------------------------
+//
+// The `when` list below is transcribed VERBATIM from vanilla `menu/InGame`'s
+// own `Ammo/PrimaryAmmo` rounds text in the `{2,3,4,5}` panel --
+// `tests/test_hud_layout.py` asserts the transcription still matches the real
+// archive, so this can run `hud.js`'s real `_visible` against it without a
+// game install. The three gating leaves (`ShowSoldierIcon`,
+// `ShowWeaponIcon`, not-`ShowVehicleIcon`) are dropped; only the AmmoType
+// arithmetic is under test.
+const ROUNDS_TEXT_WHEN = [
+  { op: 'or', terms: [
+    { op: 'or', terms: [
+      { var: 'Ammo/AmmoType', op: 'eq', value: 2 },
+      { var: 'Ammo/AmmoType', op: 'eq', value: 5 },
+    ] },
+    { op: 'or', terms: [
+      { var: 'Ammo/AmmoType', op: 'eq', value: 3 },
+      { var: 'Ammo/AmmoType', op: 'eq', value: 4 },
+    ] },
+  ] },
+  { var: 'Ammo/AmmoType', op: 'ne', value: 4 },
+  { var: 'Ammo/AmmoType', op: 'ne', value: 5 },
+  { var: 'Ammo/AmmoType', op: 'ne', value: 6 },
+];
+
+results.ammoType = {
+  codes: AMMO_TYPE_CODES,
+  withRounds: [...AMMO_TYPES_WITH_ROUNDS].sort(),
+  // Every vanilla hand weapon's own `setHudAmmoType`, surveyed out of
+  // `Objects.rfa` this round, mapped through the table.
+  bazooka: AMMO_TYPE_CODES.aticon,
+  thompson: AMMO_TYPE_CODES.atammobar,
+  grenade: AMMO_TYPE_CODES.aticonandstrengthbar,
+  repairPack: AMMO_TYPE_CODES.aticonandreloadbar,
+  medPack: AMMO_TYPE_CODES.aticonandheatbar,
+  knife: AMMO_TYPE_CODES.atnone,
+  // Which types the layout's rounds text actually admits, run through the
+  // painter's own condition evaluator.
+  roundsTextAdmits: [0, 1, 2, 3, 4, 5, 6, 7]
+    .filter(n => visibleUnder(ROUNDS_TEXT_WHEN, { 'Ammo/AmmoType': n })),
+  roundsTextWhen: ROUNDS_TEXT_WHEN,
 };
 
 console.log(JSON.stringify(results));

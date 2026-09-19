@@ -10,6 +10,15 @@ Read with [`BRIEFING.md`](BRIEFING.md). Ledger ids point at
 `features/bf1942-engine-reference/ledger.md`; the narratives are in that
 folder's `subsystems/`.
 
+> **All 29 items are DONE as of 2026-09-20**, each marked under its heading with
+> the merge commit that carried it: wave 2 stream A `11042c0` (movement, fall
+> damage), stream D `db7b9b9` (drive), stream C `7032b3e` (turrets, HUD,
+> extractor) and stream B `2497920` (damage, wrecks). Each stream was
+> re-derived by an independent reviewer before merging, and where a reviewer
+> corrected the item — or found the item's own instruction incomplete — the
+> DONE line says so. **What the round did not close, and what building it
+> opened, is in ["Open after wave 2"](#open-after-wave-2) at the end.**
+
 Three pieces of ground rules:
 
 - **Line numbers are from `main` at 2026-09-19** and are a guide, not a
@@ -27,6 +36,8 @@ Three pieces of ground rules:
 ## `viewer/physics.js`
 
 ### 1. The jump is 6.0 m/s, and it is an impulse (PHY-1)
+
+**DONE** — wave 2 stream A, merged `11042c0`. The 6.0 impulse goes through the acceleration accumulator, not a velocity set: that is what reproduces 1.1221 m / 0.8000 s at 30 Hz, where a velocity set gives 1.1971 m. The `−0.25·vCmd` now lands on the actual velocity (it was coming off a velocity that had just been set equal to `vCmd`, which is the third **do NOT** arrived at by the back door — decisive against a wall: the engine kicks you 1.5 m/s off it, the first build drove 4.5 m/s into it). PHY-1 now carries a rate qualifier; see "Open after wave 2".
 
 `JUMP_SPEED = 5.4` (`:374`) becomes **`6.0`**, and the doc comment above it
 (`:359`–`:373`, "UNMEASURED — this is a tunable, not a fact") is replaced by the
@@ -63,6 +74,8 @@ airtime** at `g = −14.73`.
 
 ### 2. The jump gate is a contact normal, not a slope limit (PHY-1)
 
+**DONE** — wave 2 stream A, merged `11042c0`. Strictly `normal.y > 0.1`, material ≠ 1, cleared each tick, most-upward normal kept. `MAX_GROUND_SLOPE`/`STEP_HEIGHT`/`BODY_RADIUS` kept with comments saying the engine has none of them. A new `plant()` fixed a placed body silently refusing its first jump.
+
 Replace the grounded/`MAX_GROUND_SLOPE` test at `:645`, `:820` and `:857` for
 *jump legality only*: a jump is legal iff the previous tick produced a contact
 with **`normal.y > 0.1`** on a material that is not water. That is far more
@@ -76,6 +89,8 @@ collider is the object's `SimpleCollisionMesh` vertices swept by
 soldier movement.
 
 ### 3. The speed tables are reached through a ramp (PHY-6)
+
+**DONE** — wave 2 stream A, merged `11042c0`. Carried as a rate so the wall clock holds at any tick rate; at `dt = 1/30` it walks the engine's integer ladder exactly (20 40 60 80 100 120 127 up, 115 103 … 7 0 down, reversal 127 → −20). `AIR_CONTROL` is gone, replaced by `0.75·vCmd` under its real gate. PHY-6 now carries the same rate qualifier as PHY-1.
 
 A signed byte per axis, clamped ±127, stepped **+20 per tick** while the input
 is held and **−12 per tick** toward zero when it is released, then multiplied by
@@ -100,6 +115,8 @@ moved by the friction path, not by this force. Swimming's `5.0·vCmd` is **not**
 under that gate.
 
 ### 4. The submersion drag field has a name (PHY-7)
+
+**DONE** — wave 2 stream A, merged `11042c0`. `underWater` named, the hedge retired.
 
 `scale = 1 + 24·min(underWater/boundingRadius, 1)` — `underWater` is
 **submersion depth in metres** (`PointPhysicsNode::setUnderWater`, `+0x44`), and
@@ -126,6 +143,8 @@ stays inferred.
 
 ### 5. The splash falloff is right — leave it (HP-9)
 
+**DONE** — wave 2 stream B, merged `2497920`. `if (mod == null) return 0;` untouched; `blastDistance` scales only Y (5 m up reads 10 at yMod 2, 5 m sideways stays 5); distance to the victim's origin; strict `radius > d`. One thing **added** by the review: the impact blast is centred at `hitPos + 0.1·normal`, now `record.splashPoint` (ledger HP-9).
+
 `splashDamage`'s `Math.max(0, 1 - distance / radius)` is the engine's exact
 law: `t = clamp((radius − d)·(1/radius), 0, 1)`, with `A = 1/radius` computed
 once by `handleExplosion` and passed at both call sites. Two clarifications
@@ -143,6 +162,8 @@ for anything that is not a soldier.
   either change nothing or introduce a bug.
 
 ### 6. `splashSpec` needs the two-path rule (HP-9d)
+
+**DONE** — wave 2 stream B, merged `2497920`. `splashSpec` returns `impact` and `endOfLife` separately. **The rule needed a third clause the round did not know about:** a round whose `dieAfterColl` or `hasCollisionEffect` is set is recycled on contact and explodes neither way, so `fuse` also requires `!diesOnContact` — without it all three vanilla flak shells burst where they landed (ledger HP-9e, HP-9f).
 
 `splashSpec` (`:508`) currently accepts `damageType == 1` or `null` and ignores
 `hasCollisionEffect`. The engine has **two** explosions:
@@ -169,6 +190,8 @@ const endOfLife = damageType === 1 || damageType === 4;   // NO hasCollisionEffe
 
 ### 7. Radius is an integer, and a fractional one can mean no splash (HP-9)
 
+**DONE** — wave 2 stream B, merged `2497920`. Truncated toward zero at parse. The review corrected one thing here: "untruncated radius at end of life" is an *absent second truncation*, not a surviving fraction — the parse truncation already happened, so both paths take the same integer, and handing the fuse path `0.25` would resurrect a splash the engine never has.
+
 `ProjectileTemplate.radius` is a console **`int`**. Floor it toward zero
 wherever it is read, and treat `radius < 1` as **no splash at all** (the gate is
 strictly `radius > d` with `d ≥ 0`). This is not theoretical: 340 templates
@@ -181,6 +204,8 @@ across the installed mods author a fractional radius, and DC's
 ## `viewer/gunfire.js`
 
 ### 8. A fuse weapon explodes when its life ends (HP-9d)
+
+**DONE** — wave 2 stream B, merged `2497920`. A new `#detonate` at `timeToLive`. Two defects found on top: `ttl: Math.min(timeToLive, 20)` was a recycling guard that made a 240 s explosives pack and a 360 s mine detonate under the player at 20 s, and a fuse round's own lifetime is now its authored number.
 
 Grenades, satchels and mines never take the impact path. When a shot's
 `timeToLive` expires (or its fuse runs out), fire the end-of-life explosion for
@@ -195,6 +220,8 @@ Nothing else here changes: GUN-9's integrator note stands, and the turret servo
 ## `viewer/vehicle-damage.js`
 
 ### 9. The header comment is now wrong (HP-6, COL-3, COL-4)
+
+**DONE** — wave 2 stream B, merged `2497920`. Header comment corrected; the crash path itself left to the collision round, as instructed.
 
 Lines 9–11 say "**A collision never costs hit points** (HP-6) … Do not add a
 crash-damage path — the engine has none." That is refuted: both collision
@@ -216,6 +243,8 @@ two-path rule rather than guessing from `material2` alone.
 
 ### 10. `TurretAxis` is a first-order velocity servo (GUN-2)
 
+**DONE** — wave 2 stream C, merged `7032b3e`. The bank-and-spend model is gone with all four of its citations. Every sustained traverse is identical to the tick (Sherman 90° 0.667 s, MG42 0.333 s, MG42 to its 70° stop 0.250 s, both tracking 1.200 s); the only change is the ~20° of post-flick coast the bank produced, now 0°.
+
 Replace `TurretAxis.step`'s bank-and-spend model with the engine's:
 
 ```
@@ -226,6 +255,8 @@ angle  += speed * dt  +  continousRotationSpeed * dt
 then clamp: `angle > max → max`, else `angle < min → min`. Degrees throughout.
 
 ### 11. Three things the servo brings that the viewer has never had (GUN-2)
+
+**DONE** — wave 2 stream C, merged `7032b3e`. Two of the three claims here were **wrong about this viewer**, checked on the page rather than in the code: the 29 vanilla windmills already turn (they declare no input binding, so they are baked as ambient glTF clips and played), and `automaticReset` does not fix the 221 steering wheels (those are `c_PIYaw`/`c_PIThrottle` parts posed by the position law; only five templates in 18 installs pair the flag with a mouse-look axis, all `Engine`s, none vanilla). The law is implemented and dormant.
 
 - **`continousRotationSpeed · dt` is added unconditionally**, every tick, in
   the non-`automaticReset` path. 29 vanilla declarations — windmills,
@@ -243,6 +274,8 @@ then clamp: `angle > max → max`, else `angle < min → min`. Degrees throughou
 engine's `fchs`-on-negative-acceleration exactly. Keep it.
 
 ### 12. `TURRET_SPEED_SCALE` keeps its value (GUN-2b)
+
+**DONE** — wave 2 stream C, merged `7032b3e`. `TURRET_SPEED_SCALE = 4` byte-identical; only its justification was replaced. `TURRET_PENDING_CLAMP` and `TURRET_DEADZONE` no longer exist as exports.
 
 - **do NOT** remove or re-tune `TURRET_SPEED_SCALE = 4` (`:524`), and do NOT
   repeat the research report's claim that "`maxSpeed` is the literal deg/s
@@ -267,6 +300,8 @@ engine's `fchs`-on-negative-acceleration exactly. Keep it.
 
 ### 13. Seat switching already matches retail (SEAT-11)
 
+**DONE (no change needed)** — wave 2 stream C, merged `7032b3e`. Confirmed on the page: refusing an occupied seat is retail.
+
 `enter(player, force)` steals a seat only when `force == true`, and the **only**
 call site in the binary that passes `true` is `GameServer::exitVehicle`. The
 seat switch (`c_PIMenuSelect`), `c_PIUse` entry, spawn and kill all pass
@@ -274,6 +309,8 @@ seat switch (`c_PIMenuSelect`), `c_PIUse` entry, spawn and kill all pass
 correct. The row just stops being a hazard to hedge against.
 
 ### 14. A wreck cannot be driven, and a burning vehicle traverses slowly (HP-15)
+
+**DONE** — wave 2 streams B and C, merged `2497920` and `7032b3e`. Measured: healthy 60.504° over 12 frames, critical **12.101°** — ratio exactly 0.2000 — and repaired back. A destroyed hull takes throttle 0 while holding W, sweeps 0.000° and fires nothing. **The 0.2 must be spent exactly once, on the normalised input inside `step`, not on the raw pixels**: above the axis's own ceiling a pixel-scaled penalty is eaten by the clamp, so a burning tank traverses at the full 140°/s on a hard flick (measured 138.7 against 28).
 
 This retires ARM-6 ("a critically damaged vehicle drives and traverses exactly
 as a healthy one"), which was **false**:
@@ -294,6 +331,8 @@ lifetime, not per-frame flags. Gate the viewer's own input the same way, in
 ## `viewer/ground.js`
 
 ### 15. The gear ladder is data, and it is interpolated (TANK-3, TANK-4)
+
+**DONE** — wave 2 stream D, merged `db7b9b9`. Ladders pinned exactly: Sherman 4.000/6.364/9.333/12.727/14.894, Willy 7.000/11.136/16.333/22.273/26.064, M3A1 5.512/9.459/14.583/18.617, with 17.5 named in a test so it cannot come back. The non-monotonic case is real in the curve but **unreachable from a `.con`**: `setNumberOfGears` clamps to [1,5] (ledger TANK-3, extended). The torque curve is load-bearing, but as the **divisor of the load**, not a multiplier on drive (ledger TANK-13).
 
 Delete the invented `gearRatios: [3.8, 2.6, 1.8, 1.25, 1.0]` (`:83`). Build the
 101-slot curve from the authored control points with the engine's own
@@ -336,6 +375,8 @@ Ladders this produces: **Sherman** (`nGears 5, diff 4`) 4.000, 6.364, 9.333,
 
 ### 16. `mu` is material data, not a free constant (PHY-2)
 
+**DONE** — wave 2 stream D, merged `db7b9b9`. `materialFriction` is extracted into `damage.json` and reproduces the vanilla table exactly; each wheel computes the pair mean; the 1.5:1 hysteresis is one branch on a per-wheel latch. `corneringStiffness` and the lateral anisotropy are kept and **relabelled as inventions** — see "Open after wave 2".
+
 `mu: 1.0` (`:121`) and `mu: 1.1` (`:908`) stop being `[free]`. The engine's
 per-tick tangential budget is
 
@@ -366,6 +407,8 @@ Interstate 82 ships a wholly different set.
 
 ### 17. The suspension ray is a viewer approximation (PHY-5)
 
+**DONE** — wave 2 stream D, merged `db7b9b9`. The force law, the one-tick backward difference and the 1.5× are carried; the ray is kept and relabelled an approximation of a vertex-contact solver. **The axis was read rather than assumed**: `SpringTemplate`'s ctor writes `(0,1,0)` and no `.con` in 18 installs authors `setAxisFixation`, so every spring runs on the object's own +Y (ledger PHY-5, extended). The "DICE tuned this critically damped" argument dies with the 1.5 — the real ratio is 0.816.
+
 The engine's spring is
 
 ```
@@ -393,6 +436,8 @@ solver rather than as the engine's shape, and stop planning work around finding
 
 ### 18. The turret dial's rotation sense (VHUD-9)
 
+**DONE** — wave 2 stream C, merged `7032b3e`. Changed as a pair in one commit and proved by pixels: two builds served side by side, each painting the value its own pipeline feeds, at +90°, −90°, **+45° and 180°** — all four crops byte-identical PNGs.
+
 `RotateEffect` is **counter-clockwise-positive** on a y-down HUD frame
 (`x' = x·cos + y·sin`, `y' = −x·sin + y·cos`); HTML canvas `ctx.rotate(+θ)`
 (`:380`) is clockwise. The picture is currently right because
@@ -412,6 +457,8 @@ errors cancelling.
 
 ### 19. For whenever the heat and reload bars get fed (VHUD-10)
 
+**DONE (recorded, nothing to feed yet)** — wave 2 stream C, merged `7032b3e`. The feeder's destination fields are still not named, as instructed.
+
 The engine's feeder writes **`1 − f`**, not `f`:
 `f = heat > 0.1 ? heat/heatMax : (reload > 0.1 ? reload/reloadMax : 0)` — heat
 wins, with a strict `0.1` dead band on the raw values. `UnlimitedPrimaryAmmo`
@@ -428,6 +475,8 @@ too. `SniperSight` belongs to the **`CrossHair`** group, not `Overheat`.
 ## `viewer/map.html`
 
 ### 20. Hand-weapon ammo type: `aticon` feeds 2, not 6 (HUD-10)
+
+**DONE** — wave 2 stream C, merged `7032b3e`. Every branch checked on the page: knife → nothing; Colt/No4/Thompson/Bar1918 → 1 with magbar; **Bazooka → 2 with rounds and no bar**; ExpPack/Landmine/Detonator → 2; grenades → 3 with the strength bar; RepairPack → 4, no rounds; MedPack → 6.
 
 `:7609`–`:7640` already branches on the weapon's own `hudAmmo` and feeds `1`
 for `atammobar`. Change the `aticon` branch (`:7637`) from **6** to **2**, and
@@ -456,6 +505,8 @@ no converter to write.
 
 ### 21. The turret dial's trigger (VHUD-9)
 
+**DONE** — wave 2 stream C, merged `7032b3e`. Sherman cockpit 4,711 opaque texels; Sherman chase 0; Sherman hull gunner 0; Wespe gunner 0; Stuka rear gunner 0.
+
 `:5149`–`:5150` gates `ShowTurretIcon` on "the seat has a traverse". The engine
 gates it on
 
@@ -471,6 +522,8 @@ the vehicle **root** PCO.
 
 ### 22. The turret dial's angle (VHUD-9)
 
+**DONE** — wave 2 stream C, merged `7032b3e`. Paired with item 18 in the same commit.
+
 Feed the engine's own value:
 
 ```
@@ -483,6 +536,8 @@ comment at `:5141`–`:5147` reaches the right picture by wrong arithmetic
 ("clockwise 90° from 12 o'clock is 3 o'clock, not 9") and should be replaced.
 
 ### 23. Fall damage (HP-14)
+
+**DONE** — wave 2 stream A, merged `11042c0`. A new `fall-damage.js` carrying the whole formula and reading `damageMod`/`materialDamage` out of `_shared/damage.json`. First damage **3.97 m**, death **7.55 m**; 10 m into water costs 1.55 HP against 103 on land. Recomputed independently by the reviewer and equal to four decimals at every height. **One consequence worth knowing:** materials 117/118 — what Wake's airfield and base structures carry — give a product of 0.1 against terrain's 0.030, so landing on a building costs **3.3× what landing on sand costs** and the lethal drop onto a roof is ~5.2 m.
 
 `FALL_KINETIC_HP = 10` (`:5721`) and the ramp at `:5910`–`:5930` are replaced by
 the engine's model:
@@ -515,6 +570,8 @@ instead of cubing it. At `g = −14.73`, flat, undamped: nothing below ~3.5 m,
 
 ### 24. Seat-occupancy dots, and wreck input
 
+**DONE** — wave 2 streams C and B, merged `7032b3e` and `2497920`. Dots fed and measured inside the icon (Hanomag six, Sherman two); **an unplaced seat now draws nothing**, because the leaf's own fallback rect *is* the authored default and would have painted a wrong six-seat staircase on every vehicle until the next re-extract. The wreck gate is polled every frame against the live Armor, and was extended to `pilot()` as well as `drive()`.
+
 - **VHUD-11**: feed `Vehicle/VehiclePosX<n>`/`PosY<n>` from the new
   `setVehicleIconPos` field (item 25). The values are positions inside the
   128×128 vehicle-icon texture, which is the space VHUD-7's
@@ -530,6 +587,8 @@ instead of cubing it. At `g = −14.73`, flat, undamped: nothing below ~3.5 m,
 
 ### 25. Two missing `.con` words
 
+**DONE** — wave 2 stream C, merged `7032b3e`. Both words parsed into the `hud` extras. **The page cannot show either until the lead re-extracts** — they reach it only from glbs baked with this `con.py`.
+
 - **`setHasTurretIcon`** — a bool on the `PlayerControlObject` template
   (VHUD-9). 4,195 declarations across 18 installs, 4,160 of them `1`; vanilla
   has 10 sites on 7 templates. No hit anywhere in `con.py` today.
@@ -541,6 +600,8 @@ instead of cubing it. At `g = −14.73`, flat, undamped: nothing below ~3.5 m,
   root `54/103`, `shermanBrowning_PCO1` `32/61`).
 
 ### 26. The `free` rule is wrong (GUN-2)
+
+**DONE** — wave 2 stream C, merged `7032b3e`, and the brief's literal snippet was **not** what shipped. An omitted component is the template's own 0, so `free` is `min == 0 and max == 0` after resolution: 338 input-bound axes across 16 installs declare exactly one of the two vectors, and vanilla's own `B17_MG2` (`setMaxRotation 0/50/0`, no min) is a ventral gunner that elevates 50°, not one that spins. The 346 in the brief counts all axes; 150 across 12 installs are input-bound and actually reach a rig.
 
 `con.py:998` — `free = lo is None or hi is None or lo == hi` — treats
 `min == max == 45` as free-spinning. The engine wraps only when **both are
@@ -563,6 +624,8 @@ them freely.
 
 ### 27. `modifier()`'s docstring is right — make it explicit (DMG-1)
 
+**DONE** — wave 2 stream A, merged `11042c0`.
+
 `:143`–`:148` says `None` means "the pair has no entry, which the engine treats
 as no effect". That is **correct**, and now provably so: the engine's fallback
 is `MaterialManager+0x24` (`defaultDamageMod`), which is 0.0 from both
@@ -576,6 +639,8 @@ the victim's origin with only the Y term scaled by `YModOnExplosion`.
 
 ### 28. The fall-damage inputs are already in these tables (HP-14)
 
+**DONE** — wave 2 stream A, merged `11042c0`.
+
 Nothing to change, but worth a comment where the tables are built: for every
 terrain material 0–15, `materialDamage = 30` and `damageMod(ground, 40) =
 0.001`; water is `1.5e-05`. Those two numbers are what turn the fall formula's
@@ -586,6 +651,8 @@ terrain material 0–15, `materialDamage = 30` and `damageMod(ground, 40) =
 ## `bf42/assemble.py`
 
 ### 29. The 10.0 default is correct; the integer and the flag are not modelled
+
+**DONE** — wave 2 stream B, merged `2497920`. `hasCollisionEffect` and `dieAfterColl` are both emitted; the 10.0 default is kept and extended to type 4.
 
 - `radius = 10.0` when the `.con` omits it (`:1434`) is the
   `ProjectileTemplate` constructor's own default. **Keep it.**
@@ -598,11 +665,101 @@ terrain material 0–15, `materialDamage = 30` and `damageMod(ground, 40) =
 
 ---
 
+## Open after wave 2
+
+Every item above is built. These are what building them found, or could not
+reach — each with the ledger id that owns it, so a later round can start from
+the corpus rather than from this file. Ordered roughly by how wrong the viewer
+is without them.
+
+1. **The tracked-vehicle propulsion model is wrong at the root (TANK-7).**
+   `PhysicsEngine::updatePhysics` returns at its second instruction for a
+   `c_ETCar` or a `c_ETTank` — bit 0 of `engineType` (TANK-1) — so **a ground
+   vehicle gets no hull thrust at all**, and `TrackedVehicle.bodyThrust` is a
+   transcription of the propeller expression applied to a class that never
+   reaches it. The replacement is the same **EngineGrip contact-speed target**
+   a car uses (TANK-9), on the two `c_PGFEngineGrip` bogies, with
+   `getCurrentDifferentialRPM`'s `& 4` differential and its clamp, **capped at
+   1.0**. It is why the viewer's Sherman reads 41 km/h against the engine's
+   53.6. A stream, not a patch — see
+   [subsystems/tank-driving.md](../bf1942-engine-reference/subsystems/tank-driving.md) §5.
+2. **`GroundVehicle`'s `speed / ratio` inversion is not the engine's law
+   (TANK-12).** The engine carries revs as a *filtered state*,
+   `revs += 0.05·((T1 − L) − 0.5·revs)` clamped to `[−1.0, +1.2]`, with the
+   load as the feedback and **`0.05` applied per engine tick, not per second**.
+   The kinematic inversion reaches the same ceiling but not the same spool-up,
+   and not the same behaviour immediately after a shift. Two further mismatches
+   in the same row: `T1` is the clipped roll **angle** over `maxRotation.z`,
+   not the pedal (so a mod that changes either changes throttle response), and
+   the brake byte is set only when the pedal opposes the rev direction.
+3. **The 1.2 rev ceiling is not gated on `engineType` (TANK-1, TANK-9).**
+   `GroundVehicle` has no notion of the type, and a tank's cap is the `± 1`
+   clamp inside `getCurrentDifferentialRPM`'s `& 4` branch, not 1.2. Every
+   wheeled vanilla vehicle is a `c_ETCar`, so vanilla is clean; **a mod's
+   wheeled `c_ETTank` comes out 20% fast**, and DC/FH are not surveyed.
+4. **`corneringStiffness` and the lateral anisotropy stand in for RollGrip
+   (PHY-2).** There is no slip-angle curve in the engine and the Coulomb clamp
+   is isotropic on the tangential plane; these two are labelled inventions and
+   are load-bearing for feel (isotropic, the jeep turns 16° instead of 60° in
+   12 s; at stiffness 0 it is a sled that *gains* 30 km/h through a corner).
+   What they really stand in for is RollGrip's own `dV = −(Vt along the axle)`
+   — a demand the clamp bounds but never creates. **Implementing RollGrip
+   retires both.**
+5. **No soldier is splashed by an explosion (HP-9, HP-10).** `applySplash`
+   walks registered vehicles and the on-foot player is not one, so a grenade at
+   his feet costs him nothing. The engine's soldier path is a whole extra
+   mechanism — `checkForHitOnSoldier`'s 3/9/9 line-of-sight sampling with
+   standing's deliberate 0.5 cap — and none of it is modelled.
+6. **A fuse round rests rather than bounces (COL-2…COL-12).** No restitution
+   was invented, deliberately. To a player a grenade drops straight down a wall
+   instead of kicking off it, sticks on a slope instead of rolling, and stops
+   dead on flat ground instead of skipping: the blast is exact but a metre or
+   two short of where the game puts it — 13–20% of the falloff at the edge of a
+   15 m radius, nothing near the centre.
+7. **The combat area's terrain-material half (CA-5).** The engine has a second,
+   non-geometric way to be outside: the material under the player compared
+   against `GameServer::materialToGiveDamage` (default 7), a match counting as
+   outside. We carry no terrain material channel, so it is documented and not
+   modelled.
+8. **The turret calibration question (GUN-2b).** `maxSpeed` is a **gain**,
+   deg/s per unit of input, and nothing establishes the input's unit: the ±1
+   clamp lives inside `rememberExcessInput`, which no turret in 18 installs
+   declares, and the wire format reserves headroom to ±16. Until the client's
+   mouse-look magnitude is read, nobody can say what rate a Sherman turret
+   really turns at, and `TURRET_SPEED_SCALE = 4` must be left alone.
+9. **A live ticket bleed.** The HUD and the deploy screen show each team's real
+   count, but nothing drains it: that needs a death count
+   (`setTicketLosePerDeath`, `GameServer` `0x0813d700`), a flag-majority timer
+   (`setTicketLostPerMin` drains only while the *other* side holds more than
+   half the flags — with no capture mechanic it would never start or never
+   stop) and somewhere to put the result. `lossPerMin` is parsed and carried
+   but unread, and what threshold sets `Ticket/*TicketBlink` was never read.
+10. **Five console items (CON-5, CON-13, and three with no row of their own).**
+    The **text colour** is not in the corpus — the drawer's per-line call
+    carries none, so it is inherited device state, and the one hypothesis
+    (`D3DRS_TEXTUREFACTOR` left at `0xCC000000`) is unproven and settled by
+    sampling a glyph interior in a real capture. Also open: whether
+    `autoCompletion` completes to the longest common prefix or the first match;
+    the **history wrap** (the engine wraps, a clamping reconstruction differs
+    only at the two ends, and which end a new command is pushed onto was not
+    read); the leading **`@`** in `@Adding <%s> (%d) to buddylist` that
+    something strips; and `handleCommand` **codes 0 and 3**.
+11. **Occlusion and placement for the lens flare.** No occlusion test exists
+    (the hook does: `view.occlusion`), and the placement is inferred — the
+    `setFlare*` registrars were never traced to a draw, and no level that ships
+    flare art also sets `setFlareScale`, so the ghost spread is untested against
+    anything real. Vanilla ships **none of the five flare textures** it names,
+    in any of its 72 archives, so vanilla genuinely shows no ring ghosts.
+12. **`lightingSpecular` (DL-1, EM-1).** About a third of vanilla materials
+    declare it and nothing models it. It is a separate stage-0 term, so it would
+    interact with the envmap blend — whose factor is the same texture alpha.
+
 ## Ledger ids used here
 
-PHY-1, PHY-2, PHY-5, PHY-6, PHY-7, HP-6, HP-9, HP-9d, HP-14, HP-15, DMG-1,
-ARM-6 (retired), SEAT-11, GUN-2, GUN-2b, TANK-3, TANK-4, HUD-10, VHUD-7,
-VHUD-9, VHUD-10, VHUD-11, GUN-9.
+PHY-1, PHY-2, PHY-5, PHY-6, PHY-7, HP-6, HP-9, HP-9d, HP-9e, HP-9f, HP-10,
+HP-14, HP-15, DMG-1, DMG-2, ARM-6 (retired), SEAT-11, GUN-2, GUN-2b, GUN-9,
+TANK-1, TANK-3, TANK-4, TANK-7, TANK-9, TANK-12, HUD-10, VHUD-7, VHUD-9,
+VHUD-10, VHUD-11, CA-5, CON-5, CON-13, DL-1, EM-1, COL-2.
 
 **COL-3, COL-4 and COL-5** are also cited, in items 9 and 23. Those rows belong
 to the concurrent collision round and arrive with its own

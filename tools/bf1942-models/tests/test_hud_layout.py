@@ -187,6 +187,36 @@ class HudLayoutGoldenTests(unittest.TestCase):
                 walk(c)
         self.assertEqual({1, 2, 3, 4, 5, 6, 7}, seen)
 
+    def test_the_rounds_text_gate_matches_what_hud_harness_transcribes(self) -> None:
+        # HUD-10, and the anchor for `tests/hud_harness.mjs`'s own copy of
+        # this list: the icon panel's `Ammo/PrimaryAmmo` text is the
+        # `{2,3,4,5}` membership test AND `ne 4`, `ne 5`, `ne 6` — so it
+        # prints for exactly AmmoType 2 and 3. `ATIcon` had to be 2, not 6,
+        # for a Bazooka to show its rocket count; the `{6,7}` panel that 6
+        # lands in has no rounds text at all. The harness runs `hud.js`'s real
+        # evaluator over the transcription below; this keeps the two in step.
+        texts = [e for e in self.elements_of_kind("soldierAmmo", "text")
+                 if e.get("var") == "Ammo/PrimaryAmmo"]
+        icon_panel = [e for e in texts
+                      if any(c.get("op") == "or" for c in e["when"])]
+        self.assertEqual(1, len(icon_panel))
+        when = icon_panel[0]["when"]
+        self.assertEqual([
+            {"op": "or", "terms": [
+                {"op": "or", "terms": [
+                    {"var": "Ammo/AmmoType", "op": "eq", "value": 2},
+                    {"var": "Ammo/AmmoType", "op": "eq", "value": 5},
+                ]},
+                {"op": "or", "terms": [
+                    {"var": "Ammo/AmmoType", "op": "eq", "value": 3},
+                    {"var": "Ammo/AmmoType", "op": "eq", "value": 4},
+                ]},
+            ]},
+            {"var": "Ammo/AmmoType", "op": "ne", "value": 4},
+            {"var": "Ammo/AmmoType", "op": "ne", "value": 5},
+            {"var": "Ammo/AmmoType", "op": "ne", "value": 6},
+        ], [c for c in when if "Ammo/AmmoType" in str(c)])
+
     def test_soldier_ammo_has_mag_variant_is_present(self) -> None:
         found = any(c.get("var") == "Ammo/SoldierAmmo/SoldierAmmoHasMag"
                     for el in self.group("soldierAmmo")["elements"] for c in el["when"])
