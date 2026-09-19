@@ -2,17 +2,32 @@
 // the per-second loss once it is critical, and death.
 //
 // The engine side is settled in `features/bf1942-engine-reference/` — ledger
-// rows HP-1/HP-2/HP-5 and ARM-1/ARM-2, and
-// `subsystems/hitpoints-and-damage.md` §8. The two findings that shape this
-// file:
+// rows HP-1/HP-2/HP-5, ARM-1/ARM-2, HP-9/HP-9d and HP-15, and
+// `subsystems/hitpoints-and-damage.md` §8. The findings that shape this file:
 //
-//   - **A collision never costs hit points** (HP-6). Nothing here is driven by
-//     an impact against terrain or a wall; only a projectile damages anything.
-//     Do not add a crash-damage path — the engine has none.
+//   - **A collision DOES cost hit points** — HP-6's "a collision never costs
+//     hit points" was REFUTED on 2026-09-18/19. Both collision handlers reach
+//     `GameServer::giveDamage` through the GameServer's own vtable slot
+//     `+0x15c`, the engine's shared object-level damage dispatch; the soldier
+//     fall branch of `handleCollisionLandOrWater` (0x08154960) delivers a fall
+//     severity through it, and so does the vehicle-versus-vehicle path.
+//     See `subsystems/collision-response.md` §9.
+//
+//     **The vehicle crash path itself is not implemented here, and must not be
+//     guessed from this file.** Its formulas, its once-per-second-per-pair rate
+//     limiter and its material tables are COL-3/COL-4/COL-5 and belong to the
+//     collision round; the soldier half is HP-14, in `map.html`. What this
+//     module owns is projectile damage — direct and splash — plus the standing
+//     damage clocks below.
 //   - **A living object re-evaluates its effect tier every tick** (ARM-1). The
 //     `Armor+0x128` byte the engine keeps is a *death* latch, not a first-run
 //     latch, so there is no once-per-lifetime behaviour to reproduce: poll, and
 //     stop polling when it dies.
+//   - **A wreck takes no player input and a critical vehicle traverses at
+//     0.2x** (HP-15, superseding the retired ARM-6). That is two persistent
+//     bytes on the engine's object, not per-frame flags, and it lasts the whole
+//     wrecked lifetime; `inputGate` below is the rule and `map.html`/`seats.js`
+//     are where it is spent.
 //
 // Framework-free, like `armor.js`, `physics.js` and `collision.js` — no
 // three.js, no DOM — so `tests/vehicle_damage_harness.mjs` runs the real thing
@@ -20,7 +35,7 @@
 // drawn, what a wreck looks like, who is allowed to climb in.
 
 import { Armor, DEATH_EPSILON } from './armor.js';
-import { splashDamage as splashHp } from './effects-core.js';
+import { blastDistance, splashDamage as splashHp } from './effects-core.js';
 
 /** `addArmorEffect`'s death tier: the explosion and the scrap. */
 export const TIER_DEATH = 0;
@@ -242,6 +257,63 @@ function tierKey(tier) {
 }
 
 /**
+ * How much of the player's input a vehicle in this state actually passes on —
+ * `{ blocked, rotationalScale }`.
+ *
+ * **HP-15**, which retires ARM-6's "a critically damaged vehicle drives and
+ * traverses exactly as a healthy one". ARM-6's sweep was sound and its
+ * conclusion still holds for the question it asked — no drivetrain and no
+ * `RotationalBundle` function queries the Armor *component* — but it missed
+ * the path, because the Armor's state reaches the input code as two bytes on
+ * the object rather than through a component lookup:
+ *
+ *   `SimpleObject+0xed` (destroyed)
+ *     `PlayerControlObject::handlePlayerInput` (0x08318920) returns at its
+ *     epilogue (0x08318952) **before forwarding input to any child**. Not a
+ *     throttle cut and not a steering lock: a wreck receives nothing at all.
+ *
+ *   `SimpleObject+0xee` (critically damaged)
+ *     `RotationalBundle::handlePlayerInput` (0x081d834f) picks the second of
+ *     two near-identical duplicated blocks, which multiplies each of the three
+ *     input axes by the double at `ds:0x86c8678` = **0.2** (0x081d83af /
+ *     0x081d83b7). So a burning tank still traverses — at one fifth the rate.
+ *     (An earlier pass read that block as running *only* when the byte is set,
+ *     i.e. as an all-or-nothing gate; it is a scale.)
+ *
+ * Both are **persistent state for the whole wrecked lifetime**, not per-frame
+ * edge flags. They are set by the Armor's own status messages and cleared only
+ * when the wreck-respawn timer expires — six conditions inside
+ * `SimpleObject::handleUpdate` (0x081db2e0), ending in
+ * `setHitPoints(getMaxHitPoints())` and a timer reload. So a caller polls this
+ * every frame against the live Armor rather than latching it when a shell
+ * lands, which also means a vehicle killed some other way — the combat area's
+ * own `giveDamage`, drowning, burning down while empty — is gated identically.
+ *
+ * `null`/an unregistered vehicle is an undamaged one: full input.
+ *
+ * `out` is an optional caller-owned result object, filled in place and
+ * returned. This function is polled every frame by whoever is driving, and a
+ * fresh two-field object sixty times a second is a fresh two-field object
+ * sixty times a second; `map.html` keeps one and passes it. Omit it and you
+ * get a new object, which is what the tests want.
+ */
+export function inputGate(vehicle, out = { blocked: false, rotationalScale: 1 }) {
+  out.blocked = !!vehicle?.destroyed;
+  out.rotationalScale = !vehicle ? 1
+    : vehicle.destroyed ? 0
+      : vehicle.critical ? CRITICAL_INPUT_SCALE
+        : 1;
+  return out;
+}
+
+/**
+ * The 0.2 a critically damaged vehicle's rotational bundles scale every input
+ * axis by — the double at lnxded `ds:0x86c8678`
+ * (`9a9999999999c93f`), read as bytes. HP-15.
+ */
+export const CRITICAL_INPUT_SCALE = 0.2;
+
+/**
  * Every damageable thing in the level, keyed by the collision index's owner id
  * — which is what a hit record names, so a round that lands can be turned into
  * the vehicle it landed on with one lookup.
@@ -290,6 +362,20 @@ export class VehicleDamageSet {
    * `targets` is `{ owner, x, y, z, splashMaterial }[]` — the map page supplies
    * world positions because this module stays free of three.js. The firer is
    * skipped. Returns every vehicle that lost HP.
+   *
+   * Which blast this is came from `effects-core.js`'s `splashSpec` and rode
+   * here on the record (HP-9d): an **impact** blast needs `damageType 1` and
+   * `hasCollisionEffect`, an **end-of-life** blast needs `damageType` 1 or 4
+   * and tests no flag, and a caller that reaches this function has already
+   * decided which. The record carries `splashRadius` at whichever of the two
+   * radii applies — the truncated integer for an impact, the untruncated one
+   * for end of life (0x0831f73e) — so there is nothing left to re-derive
+   * here, and in particular nothing is inferred from `material2`, which
+   * carries none of it.
+   *
+   * `record.splashYMod` scales the **Y** term of the distance and nothing else
+   * (HP-9, 0x08156613), so a bomb's 2.0 halves its vertical reach. Absent
+   * means the engine's own 1.0.
    */
   applySplash(record, targets, { materials = null, modifiers = null } = {}) {
     const material2 = record?.splashMaterial2;
@@ -297,22 +383,36 @@ export class VehicleDamageSet {
     if (!(Number.isFinite(material2) && material2 >= 0) || !(radius > 0)) {
       return [];
     }
-    const [bx, by, bz] = record.point || [];
+    // `splashPoint` when the record carries one, `point` otherwise. They
+    // differ by design on the impact path: the engine centres that explosion
+    // 0.1 m off the struck surface along the collision normal
+    // (`hitPos + 0.1 * normal`, lnxded 0x08153f5e-0x08153f8f) while playing
+    // the collision effect at the raw hit point (0x08153e5b). The end-of-life
+    // explosion has no surface and no offset — it stands on the projectile's
+    // own position (0x0831f747) — so `#detonate` sets no `splashPoint` and
+    // this falls through to `point`, which is right.
+    const [bx, by, bz] = record.splashPoint || record.point || [];
     if (![bx, by, bz].every(Number.isFinite)) return [];
+    const yMod = record.splashYMod;
     const out = [];
     for (const target of targets) {
       if (target.owner === record.firer) continue;
       const vehicle = this.get(target.owner);
       if (!vehicle || vehicle.destroyed) continue;
-      const dx = target.x - bx;
-      const dy = target.y - by;
-      const dz = target.z - bz;
-      const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      // Distance to the victim's transform ORIGIN — not a bounding box, not
+      // the nearest surface (HP-9) — with only Y scaled.
+      const distance = blastDistance(target.x - bx, target.y - by,
+                                     target.z - bz, yMod);
       if (distance >= radius) continue;
       const splashMaterial = Number.isFinite(target.splashMaterial)
         ? target.splashMaterial
         : vehicle.splashMaterial;
       if (!Number.isFinite(splashMaterial)) continue;
+      // Exposure is left at 1: `checkForHitOnSoldier`'s cover term is
+      // soldier-only in the engine, and there is no vehicle equivalent to
+      // reproduce (see `splashDamage`'s own note). There is no occlusion at
+      // all for a non-soldier victim, so a tank behind a wall really does take
+      // the full falloff here, exactly as it does in the game.
       const amount = splashHp(material2, splashMaterial, distance, radius,
                               materials, modifiers);
       if (!(amount > 0)) continue;

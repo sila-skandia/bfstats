@@ -861,7 +861,7 @@ import { wantViewmodelClip } from './viewmodel-anim.js';
 import { createReplayController, recordingLevel } from './replay.js';
 import { Hud, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS } from './hud.js';
 import { Armor } from './armor.js';
-import { VehicleDamageSet } from './vehicle-damage.js';
+import { VehicleDamageSet, inputGate } from './vehicle-damage.js';
 import { SupplyDepot, SupplyField } from './supply.js';
 import { collectIkBindings, defaultSeatPoseName, ikTarget, resolveSeatStates,
          seatBody, seatPoseName, solveTwoBone } from './seat-ik.js';
@@ -4445,6 +4445,43 @@ function occupiedVehicleDamage() {
   return null;
 }
 
+/**
+ * HP-15's gate for the vehicle the player is in, re-read every frame:
+ * `{ blocked, rotationalScale }`.
+ *
+ * `vehicle-damage.js`'s `inputGate` is the rule and carries the addresses. The
+ * two things this function is responsible for are WHEN and WHERE:
+ *
+ *   - **When.** Every frame, against the live Armor, never latched when a
+ *     shell landed. The engine's own two bytes (`SimpleObject+0xed`/`+0xee`)
+ *     are persistent state cleared only by the wreck-respawn timer, so polling
+ *     matches them — and it is also what makes the gate apply to a hull killed
+ *     some *other* way. A vehicle burnt down by `hpLostWhileCriticalDamage`,
+ *     drowned, or killed by the combat area's own per-frame `giveDamage`
+ *     (which damages the occupied hull through this same `Armor`) refuses the
+ *     driver exactly as one killed by a shell does, because none of them are
+ *     special-cased: all four write hit points and this reads them back.
+ *   - **Where.** `occupancy.turret.inputScale` is the single multiplier
+ *     `seats.js` spends (its own `TurretRig.inputScale` comment says why it
+ *     lands on the input rather than on the servo), which covers the driver's
+ *     turret in `drive()` and a gunner's in `manned()` alike. The harder
+ *     destroyed gate is `drive()`'s, below.
+ *
+ * Aircraft are the known gap: `pilot()` does not consult this yet, though
+ * `PlayerControlObject::handlePlayerInput`'s early return is per-PCO and so
+ * covers a destroyed plane too. Its turret input IS already scaled, because
+ * that goes through the same rig.
+ */
+const vehicleInput = { blocked: false, rotationalScale: 1 };
+function stepVehicleInputGate() {
+  // Filled in place: this runs once per frame for the whole time anyone is in
+  // a vehicle, and `inputGate`'s own note says why it takes the object rather
+  // than returning a new one.
+  inputGate(occupiedVehicleDamage(), vehicleInput);
+  if (occupancy?.turret) occupancy.turret.inputScale = vehicleInput.rotationalScale;
+  return vehicleInput;
+}
+
 // The HP last pushed into the HUD, so a moving bar costs one compare per frame
 // rather than a full `feedVehicleHud()`.
 let fedVehicleHp = null;
@@ -5193,7 +5230,16 @@ const HUD_MANNED = 'Mouse aims · LMB fires · 1-9 seats · E get out · Esc';
  */
 function drive(dt) {
   if (!car) return;
-  const driving = occupancy.isActiveRoot();
+  // HP-15: a wreck cannot be driven. `PlayerControlObject::handlePlayerInput`
+  // (lnxded 0x08318920) returns at 0x08318952 **before forwarding input to any
+  // child**, so this is not a throttle cut or a steering lock — a destroyed
+  // vehicle receives nothing at all, and keeps receiving nothing until the
+  // wreck-respawn timer clears the byte. `driving` is forced false rather than
+  // returning outright, so the hull still integrates and coasts to a stop
+  // under its own momentum (the same reason this function runs every frame
+  // whether or not the driver's seat is the active one) and the rigs are still
+  // re-asserted; what stops is the reading of the keyboard.
+  const driving = occupancy.isActiveRoot() && !vehicleInput.blocked;
   if (driving) {
     const held = captured ? keys : EMPTY_KEYS;
 
@@ -5348,13 +5394,19 @@ function manned(dt) {
   // seat has no business deciding which button reaches which. Space is still
   // `c_PIFire` (it was this page's only vehicle trigger before the mouse
   // buttons were wired, and HUD_MANNED still offers it).
-  const fire = held.has('Space') || seatFire;
+  // HP-15: no player input reaches any child of a destroyed PCO, and a gun is
+  // a child — so a wreck's manned gun cannot be fired either. Its traverse is
+  // already gated, by `inputScale` on the same rig `stepVehicleInputGate` set.
+  // A bare gun with no Armor of its own is unaffected: `inputGate(null)` lets
+  // everything through.
+  const fire = (held.has('Space') || seatFire) && !vehicleInput.blocked;
   for (const node of occupancy.activeFireArmsNodes()) {
     const state = fireStateFor(node);
     state.step(dt);
     const group = mannedGuns.find(g => g.node === node);
     if (!group) continue;
-    const trigger = node.userData?.fireArms?.input === 'c_PIAltFire' ? seatAltFire : fire;
+    const trigger = node.userData?.fireArms?.input === 'c_PIAltFire'
+      ? (seatAltFire && !vehicleInput.blocked) : fire;
     guns.setFiring(group, trigger && state.canFire);
   }
   // Not fed here: `guns.advance(dt)` — which actually calls `fireShot`
@@ -8384,9 +8436,27 @@ function axisToward(current, demand, dt) {
  */
 function pilot(dt) {
   if (!aircraft) return;
-  const flying = occupancy.isActiveRoot();
+  // HP-15, the same gate `drive()` takes and for the same reason: the engine's
+  // early return is `PlayerControlObject::handlePlayerInput`'s (lnxded
+  // 0x08318920, epilogue 0x08318952), and a PlayerControlObject is what an
+  // aeroplane is too — nothing in that function knows or cares whether the
+  // object it is refusing to forward input to has wheels or wings. A destroyed
+  // plane still answering the stick under full control was a visible hole:
+  // `frame()` routes to `pilot()` rather than `drive()` purely on which
+  // drivetrain the root carries, so the wreck rule has to be on both sides of
+  // that fork or it is on neither.
+  //
+  // Forced false rather than returning, exactly as in `drive()`: the airframe
+  // still integrates, so a killed plane keeps its momentum and falls instead
+  // of stopping dead in the air, and the gun loop below still runs with
+  // `flying` gating its *value*, which is what turns the guns off the same
+  // frame — HP-13's `0x15` strips `IID_IWeapon` off a destroyed object, so a
+  // wreck has no weapons at all. The latched inputs are deliberately left
+  // where they were: the engine does not zero them either, it just stops
+  // delivering new ones.
+  const flying = occupancy.isActiveRoot() && !vehicleInput.blocked;
   if (flying) {
-    const held = captured ? keys : new Set();
+    const held = captured ? keys : EMPTY_KEYS;
 
     // W/S throttle. It latches rather than springs — you set a power setting and
     // it stays there, which is what a throttle quadrant does.
@@ -10342,6 +10412,10 @@ function frame(dt) {
     // existing momentum rather than freezing it. A bare gun/seat root has no
     // drivetrain to step either way — `aircraft`/`car` both stay null for
     // one — so neither call does anything for it.
+    // HP-15, before anything reads an input this frame: how much of the
+    // player's input the occupied hull's damage state lets through. One call,
+    // because `drive()` and `manned()` both spend the same answer.
+    stepVehicleInputGate();
     if (aircraft) pilot(dt);
     else if (car) drive(dt);
     if (mannedActive()) {
@@ -10637,6 +10711,18 @@ if (params.has('shots')) {
     hits: guns.hits,
     impacts: guns.impacts.length,
     projectiles: guns.projectiles.length,
+    // HP-9d, for a headless check: a **fuse** round is one the engine gives an
+    // end-of-life explosion but no impact explosion, and `resting` says it has
+    // met a surface and is running its fuse down where it landed rather than
+    // having detonated there.
+    inFlight: guns.projectiles.map(shot => ({
+      gun: shot.group.node.name,
+      age: shot.age,
+      ttl: shot.ttl,
+      fuse: shot.fuse,
+      resting: shot.resting,
+      position: shot.mesh.position.toArray(),
+    })),
     pooled: guns.tracerPool.length,
     // Baked streaks recycle into their own group's pool, not the shared
     // cylinder pool, so a leak there is invisible to `pooled` alone.
@@ -11121,6 +11207,14 @@ if (params.has('shots')) {
     owner, name: v.name, hp: Math.round(v.hitPoints * 100) / 100,
     max: v.maxHitPoints, critical: v.critical, destroyed: v.destroyed,
     criticalDamage: v.criticalDamage,
+    // Where it stands, which is also the point a blast measures its distance
+    // to (HP-9: the transform origin, not a bounding box). A check that wants
+    // to stand a man beside one, or to know which neighbour a shell should
+    // have caught, needs this and has had to guess at it until now.
+    pos: damageVisuals.get(owner)?.node
+      ? damageVisuals.get(owner).node.getWorldPosition(splashPos).toArray()
+        .map(n => Math.round(n * 100) / 100)
+      : null,
     tier: v.shown ? { threshold: v.shown.threshold, names: v.shown.names } : null,
     running: damageVisuals.get(owner)?.handles.length ?? 0,
     tiers: v.effects.map(e => ({ hp: e.hp, effect: e.effect })),
@@ -11150,6 +11244,18 @@ if (params.has('shots')) {
     setInput: (name, value) => car.setInput(name, value),
     integrate: dt => car.integrate(dt),
   } : null);
+  // HP-15, for a headless check: what the occupied hull's damage state is
+  // letting through this frame, and what the aim rig is actually scaling by.
+  window.__inputGate = () => ({
+    blocked: vehicleInput.blocked,
+    rotationalScale: vehicleInput.rotationalScale,
+    turretInputScale: occupancy?.turret?.inputScale ?? null,
+    occupied: occupiedVehicleDamage()
+      ? { hp: occupiedVehicleDamage().hitPoints,
+          critical: occupiedVehicleDamage().critical,
+          destroyed: occupiedVehicleDamage().destroyed }
+      : null,
+  });
   // Hurt one by owner id without having to hit it with a round — the same
   // generic entry point `window.__damage(n)` is for the soldier. Negative heals,
   // the way `SimpleObject::handleDamage` dispatches on the sign of its argument

@@ -738,7 +738,38 @@ function shermanWithRenamedGunnerNode() {
     prevH = hurt.angle;
   }
 
+  // The same penalty at the RIG, the way `map.html` really drives it: the page
+  // sets `rig.inputScale` from the hull's live Armor and calls `step(dt)` with
+  // no argument. Two streams each added the 0.2 -- one on the pixels in
+  // `aim()`, one on the normalised input in `step()` -- and git merged both
+  // without a conflict. Scaled on the pixels, a saturating hand (400 px a
+  // frame against a 140 deg/s cap) loses nothing to the penalty at all; spent
+  // once in `step`, it is a fifth whatever the hand does. Built without a
+  // seat: the rig is only its axes and its scale here.
+  const rigTravel = (inputScale, px) => {
+    const rig = Object.create(TurretRig.prototype);
+    rig.axes = [new TurretAxis('yaw', node('RigYaw', {}), SHERMAN_YAW)];
+    rig.inputScale = inputScale;
+    let travel = 0, prev = 0;
+    for (let i = 0; i < 120; i++) {
+      rig.aim(px, 0);
+      rig.step(DT);
+      let d = rig.axes[0].angle - prev;
+      if (d > 180) d -= 360; else if (d < -180) d += 360;
+      travel += Math.abs(d);
+      prev = rig.axes[0].angle;
+    }
+    return travel;
+  };
+  const rigHealthyFast = rigTravel(1, 400);
+  const rigCriticalFast = rigTravel(0.2, 400);
+  const rigCriticalSlow = rigTravel(0.2, 10) / rigTravel(1, 10);
+  const rigWreck = rigTravel(0, 400);
+
   results.turretServo = {
+    rigCriticalFastRatio: round(rigCriticalFast / rigHealthyFast, 3),
+    rigCriticalSlowRatio: round(rigCriticalSlow, 3),
+    rigWreckDegrees: round(rigWreck, 4),
     speedScale: scale,
     // 35 * 4 = 140 deg/s and 70 * 4 = 280 deg/s, held flat for 2 s minus the
     // sliver spent ramping.

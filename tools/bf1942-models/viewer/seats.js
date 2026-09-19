@@ -797,6 +797,31 @@ export class TurretRig {
     this.axes = AXES
       .filter(name => isAimAxis(seat.axes[name]?.spec))
       .map(name => new TurretAxis(name, seat.axes[name].node, seat.axes[name].spec));
+    /**
+     * A single multiplier on everything the player asks this rig for, set from
+     * outside — **HP-15**, and the one hook the vehicle's damage state needs
+     * in this file.
+     *
+     * `RotationalBundle::handlePlayerInput` (lnxded 0x081d834f) picks between
+     * two near-identical duplicated blocks; the one it takes when the object's
+     * `+0xee` byte is set multiplies each of the three input axes by the
+     * double at `ds:0x86c8678` = **0.2** (0x081d83af / 0x081d83b7). So a
+     * critically damaged vehicle still traverses, at a fifth of the rate. A
+     * destroyed one is a separate, harder gate one level up —
+     * `PlayerControlObject::handlePlayerInput` (0x08318920) returns before
+     * forwarding input to any child at all — and reaches here as **0**.
+     *
+     * It is deliberately a scale on the **input**, applied here rather than
+     * inside `TurretAxis`: the engine scales `PlayerInput` on its way into the
+     * bundle, not the servo's own maxSpeed or acceleration, so a critical
+     * turret's wind-up profile is unchanged and only the amount asked for
+     * shrinks. It also keeps the whole of HP-15 out of `TurretAxis`, whose
+     * servo is being replaced under GUN-2.
+     *
+     * `map.html` owns the value; `vehicle-damage.js`'s `inputGate` is the
+     * rule that produces it.
+     */
+    this.inputScale = 1;
   }
 
   /**
@@ -813,6 +838,11 @@ export class TurretRig {
    * every manned gun in the viewer, not just the tank that exposed it.
    */
   aim(dx, dy) {
+    // HP-15: a wreck takes no player input at all, so its pixels are not even
+    // accumulated and the rig is left exactly where its last occupant
+    // abandoned it. The CRITICAL vehicle's 0.2 is deliberately NOT applied
+    // here -- see `step`.
+    if (!(this.inputScale > 0)) return;
     for (const axis of this.axes) {
       if (axis.spec.input === 'c_PIMouseLookX') axis.feed(dx);
       else if (axis.spec.input === 'c_PIMouseLookY') axis.feed(dy);
@@ -825,10 +855,27 @@ export class TurretRig {
    * `inputScale` is passed straight through to each `TurretAxis.step` and is
    * HP-15's damage penalty: **0.2** while the vehicle is critically damaged,
    * 1 otherwise. `map.html` owns deciding which, since it is the only thing
-   * that knows the hull's live Armor.
+   * that knows the hull's live Armor, and it sets it on `this.inputScale`.
+   *
+   * It is spent HERE, on the normalised input, not on the pixels in `aim()`.
+   * The engine scales the `PlayerInput` entering the bundle
+   * (`RotationalBundle::handlePlayerInput` `0x081d834f`, x0.2 from
+   * `ds:0x86c8678`), and this file's analogue of that input is `unit` inside
+   * `TurretAxis.step` -- AFTER the saturating clamp, not before it. Scaling
+   * the pixels is equivalent only while the hand asks for less than the
+   * axis's own ceiling; above it the clamp eats the penalty. Measured on a
+   * Sherman tower (140 deg/s cap): pixel-scaled gives 60.5 deg/s at
+   * 40 px/frame where this gives 28, and the full 138.7 at 100 px/frame and
+   * beyond -- no penalty at all for exactly the fast hand a fight produces.
+   * Two wave-2 streams each added the multiplier, in the two shapes, and git
+   * merged them without a conflict; this is the one that survives.
+   *
+   * An explicit argument still wins, so a caller can ask for a scale the rig
+   * is not carrying.
    */
-  step(dt, inputScale = 1) {
-    for (const axis of this.axes) axis.step(dt, inputScale);
+  step(dt, inputScale) {
+    const scale = inputScale === undefined ? this.inputScale : inputScale;
+    for (const axis of this.axes) axis.step(dt, scale);
   }
 
   /** The traverse this rig currently sits at, in radians, in the same sense
