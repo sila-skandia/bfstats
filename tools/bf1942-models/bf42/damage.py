@@ -43,6 +43,18 @@ Resolver = Callable[[str], bytes | None]
 
 @dataclass
 class Material:
+    """One `MaterialManager.material <id>` block.
+
+    The three physical words are the contact solver's, not the damage
+    system's, and they are read by three neighbouring accessors off the same
+    struct: `getFrictionForMaterial` (lnxded `0x081751b0`) reads `Material+0x0c`,
+    `getElasticityForMaterial` (`0x081751f0`) `+0x10` and
+    `getResistanceForMaterial` (`0x08175230`) `+0x14`. All three share the same
+    fallback: an id the define file never mentions resolves through
+    `getMaterialPtr(0)` to **material 0**, and only if material 0 is also
+    missing does the accessor push `fld1` = 1.0. The defaults below are the
+    `Material` constructor's, per collision-response.md section 8.
+    """
     id: int
     att_group: int
     def_group: int
@@ -390,10 +402,33 @@ def _parse_script(tables: DamageTables, text: str, script: str,
             if value is not None:
                 material.friction = value
         elif cmd == "materialelasticity" and material is not None:
+            # The restitution term `ResponsePhysics::solveImpulse` spends
+            # (COL-2): the acceleration it hands the root is
+            # `speedAdjust * 30 * (1 + elasticity) * 0.5` (`fld1; fadd
+            # [edx+0xac]` at lnxded 0x08258ed4/0x08258ed6, the 30.0 at
+            # `ds:0x8716b5c`, the 0.5 at `ds:0x86b05e8`), and `impulseOn`
+            # stored `+0xac` as the MEAN of the two contacting materials
+            # (0x08258bd0). Over one 30 Hz tick that leaves the normal
+            # velocity at `v * (1 - e) / 2`.
+            #
+            # Vanilla authors a non-zero value on **exactly one** material:
+            # 70 "Grenades", at 2.0 — which against any surface (every other
+            # vanilla material is 0) means a pair mean of 1.0 and a normal
+            # velocity of exactly zero. So a grenade does not rebound; it
+            # cancels its into-surface speed and keeps its along-surface
+            # speed. Surveyed across all 18 installs: 70 is 2.0 everywhere it
+            # is declared, GCMOD adds 543, interstate adds 11 (0.1) and 45
+            # (-1.0), bfheroes adds 2011 (15.0) and 2012 (1.5).
             value = _number(args)
             if value is not None:
                 material.elasticity = value
         elif cmd == "materialresistance" and material is not None:
+            # `ResponsePhysics::addFriction`'s viscous term: the root is given
+            # `-resistance * Vt` through `addAccelerationAtRelativePosition`,
+            # i.e. a velocity change of `-resistance * Vt / 30` a tick, on top
+            # of the Coulomb clamp. Also a pair mean (`impulseOn` 0x08258c00).
+            # Vanilla authors 0.01-0.1 for the 16 terrain materials, 1.0 for
+            # the three stair materials 96-98, and 2.0 for grenades.
             value = _number(args)
             if value is not None:
                 material.resistance = value
