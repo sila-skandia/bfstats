@@ -105,6 +105,76 @@ Two consequences:
 `El_Alamein` is the reverse oddity: it ships `Tdm/` *and* a `GameTypes/Tdm.con`
 that runs `Ctf/*`. Fifteen levels across the mods do this.
 
+The engine agrees, and says so in the binary. `dice::bf::Setup::setNextLevel`
+(`0x080bf160` in `bf1942_lnxded.static`) builds `bf1942/levels/` + the level +
+`/gametypes/` + one of `conquest.con` / `ctf.con` / `tdm.con` / `coop.con` /
+`objectivemode.con`, chosen through a six-entry jump table at `0x86ba190` on
+the `GamePlayMode` in the `CampaignEntry`: 1 is ctf, 3 tdm, 4 coop, 5
+objectivemode, and 0, 2 and anything out of range fall to conquest. There is a
+`coop.con` and there is no `coop/` anywhere, which is the same finding from the
+other end. Reproduce with:
+
+```
+objdump -d -M intel --start-address=0x080bf160 --stop-address=0x080bfd00 \
+  ~/Downloads/bf1942_lnxded-1.61-patched/bf1942/bf1942_lnxded.static
+```
+
+### 1.2.1 `run` is per file, and 35 scripts use that
+
+A game type is **not** a directory, and on 35 of the 3,048 GameTypes scripts
+across the installed mods it is not one directory's worth of files either. The
+script names a file at a time, and these mix two layers in one game type.
+XPack1's Anzio, in full:
+
+```
+run SinglePlayer/SoldierSpawnTemplates
+run SinglePlayer/SoldierSpawns
+run SinglePlayer/SpawnpointManagerSettings
+run SinglePlayer/ObjectSpawnTemplates
+run Conquest/ControlPointTemplates
+if v_arg1 == host
+run ai
+run SinglePlayer/ObjectSpawns
+run Conquest/ControlPoints
+...
+```
+
+SinglePlayer's spawns and vehicles, **Conquest's flags**. XPack2's Gothic Line
+is the mirror: SinglePlayer's soldier spawns under Conquest's vehicles and
+flags.
+
+| mod | scripts | which |
+|---|---|---|
+| XPack1 (Road to Rome) | 6 | every CoOp script |
+| XPack2 (Secret Weapons) | 8 of 9 | |
+| bf1918 | 12 | |
+| FHSW | 6 | |
+| FH | 3 | |
+| **total** | **35** | **0 in vanilla** |
+
+17 of the 35 differ in real content rather than in two identical files; the
+worst is `FH/Zielona_Gora-1944`, whose CoOp takes `Conquest/ControlPoints` and
+whose SinglePlayer directory has no `ControlPoints.con` at all — a
+majority-directory reading gives it a layer with **zero flags** where the game
+shows five.
+
+So `GameType.files` records the directory of each of the seven layer files,
+`GameType.composed` is true when they straddle, and
+`compose_game_type_layers` writes a layer keyed by the **game type's own
+name** (`modes["CoOp"]`). The directory layers stay exactly what they were and
+are still reachable by their own names; on those levels `SinglePlayer` is
+correctly a layer no game type runs. Reproduce the survey with
+`r3c_split_layers.py` in the reviewer's scratch directory.
+
+This is also why the Instant Battle screen asks for `mode=CoOp` and not
+`mode=SinglePlayer` (§4).
+
+Every `run` line counts, in both arms of an `if v_arg1 == host` block. 1,381
+of the 1,454 scripts in a six-mod sample have such a block, and the host arm is
+the one a single-player launch takes; no script in any installed mod has a live
+`run` of a layer file in its `else` arm (the join arms are `rem`-ed out, and
+`strip_comments` removes those before the parse).
+
 ### 1.3 Dead layer directories
 
 107 levels ship a layer directory that no game type loads — the data is in the
@@ -186,7 +256,8 @@ count at all on any vanilla level — CTF is decided on captures.
 
 **Combat area.** No level in any installed mod declares
 `game.setActiveCombatArea` inside a layer directory or a GameTypes script —
-0 of 1,301. It is `Init.con`'s and level-wide. The schema carries it per mode
+0 of 1,303 scanned on review, against 1,037 that set one in `Init.con`. It is
+`Init.con`'s and level-wide. The schema carries it per mode
 anyway so the merge is one rule, and so a mod that does scope one has somewhere
 to put it.
 
@@ -272,6 +343,18 @@ Two rules, both tested:
 The same shape holds in the glb (§3): a node with no `modes` tag is in every
 mode, which is how every scene built before this reads.
 
+**One pre-existing key does change**, and it is not in `MODE_KEYS` so no
+`?mode=` moves it: `objects`. It is the build report for the glb, and the glb
+is now the union, so on Wake `spawners` reads 58 against 32, `controlPoints`
+10 against 5, `flagCloths` 7 against 5, `parts` 1800 against 1240,
+`triangles` 879,379 against 757,420, and `unresolvedTemplates` gains the Ctf
+layer's `ALLIES_BASE`. That is honest — it describes the file — but it is no
+longer the count of anything standing in the level, so `map.html` reads the
+spawners root for the stats panel and the console band instead. Everything
+else in a re-extracted `scene.json` is byte-identical to main's output;
+verified by extracting Aberdeen and Wake through both trees
+(`r3c_glb_diff.py`).
+
 ---
 
 ## 3. The glb: vehicles baked for a mode that is not playing
@@ -303,13 +386,38 @@ is Japanese in Conquest and American in Tdm, `setTeamGeometry` picks the cloth
 from the team, and one node cannot fly two flags. Only one of the pair is ever
 in the scene.
 
-Each node gets `extras.modes` — a list of layer names. The page's
-`pruneToMode` detaches everything the active mode does not list, before
-anything indexes the scene, so the vehicle list, the occupancy roots, the
-respawn timers, the cull set and the minimap markers never see a vehicle that
-is not in this mode. Detaching rather than hiding for exactly that reason;
-nothing is disposed, because glTF geometries are shared between placements and
-a pruned Sherman's buffers usually belong to a kept one.
+A node that is **not** in every layer gets `extras.modes` — a list of layer
+names. A node in all of them gets nothing, because an untagged node already
+reads as "every mode": that is the rule the viewer applies to pre-modes glbs
+and it costs a single-layer level nothing to obey. Aberdeen without it was
+gaining 42 redundant tags and 17,464 bytes, and its node array stopped being
+byte-identical to main's for no gain at all; with it, a single-layer level's
+node array, BIN chunk, accessors, meshes and materials are byte-for-byte what
+they were, and only the embedded report grows (+16.6 KB, +0.057%).
+
+The page's `pruneToMode` detaches everything the active mode does not list,
+before anything indexes the scene, so the vehicle list, the occupancy roots,
+the respawn timers, the cull set and the minimap markers never see a vehicle
+that is not in this mode. Verified on the merged tree: `indexScene`
+(`spawnersRoot`, `freezeStatics`), `collectTerrain`, `buildCollider`,
+`setupVehicleBodies`, `bindLightmaps`, `placeSpawnSoldiers` and
+`new CombatArea(extras)` all run after it, and nothing between the loader and
+the prune walks `gltf.scene`.
+
+Detaching rather than hiding for exactly that reason; nothing is disposed,
+because glTF geometries are shared between placements and a pruned Sherman's
+buffers usually belong to a kept one. The cost of that is a bounded CPU-side
+leak for the session's level — a hull only one layer parks (Wake's Chi-Ha)
+has geometry no kept node shares, and `dispose(currentRoot)` on the next
+level switch cannot reach it. Nothing is uploaded to the GPU and nothing is
+raycast, so it is a megabyte-scale leak, not a correctness one; disposing
+safely would need a reference count across the kept set.
+
+**Animation clips follow the prune.** The glb bakes a cloth clip per pole,
+so the clips for a pruned pole's bones bind to nothing and three logs
+`PropertyBinding: No target node found` once per track — 88 of them on Wake's
+*default* Conquest load and 292 on its Ctf. `show()` drops the dead tracks
+before building the actions, using three's own `PropertyBinding.findNode`.
 
 Flag cloths carry the tag in their own right, because the cloth mesh node sits
 at the scene root (glTF ignores a skinned mesh node's own transform) while its
@@ -340,20 +448,37 @@ Union sizes, measured over all 1,301 archives:
 * **No `mode`** — the default layer, which is the top-level report. Identical
   to the page's behaviour before this existed.
 * **`mode=SinglePlayer`** (a layer name, any case) — that layer.
-* **`mode=CoOp`** (a game type) — the layer that game type loads.
+* **`mode=CoOp`** (a game type) — the layer that game type loads, including a
+  composed one (§1.2.1).
 * **`mode=` something this level does not have** — the default layer, plus a
-  console warning naming what the level does have. A mistyped URL must not
-  leave the page with no flags.
+  message naming what the level does have. A mistyped URL must not leave the
+  page with no flags.
+* **`mode=` a game type the level's menu offers with no directory behind it**
+  — 21 levels across the mods are like this — the default layer, and the
+  message says specifically that. This case used to be silent:
+  `isUnknownMode` called it fine because the game type existed, and the page
+  rendered a different layer without a word. `modeProblem` separates the two.
 * **`mode=` with no `map=`** — still goes to the Instant Battle menu. The
   bare-page guard is unchanged and keys on `map`/`replay`/`shots`/`dev` only.
 
-The hook in `map.html` is three lines plus an import: `selectGameMode` where
-`extras = report` used to be, `pruneToMode` right after `currentRoot =
-gltf.scene`, and `spawnerWindow` inside `spawnDelayForNode`. Everything else —
-the deploy screen's spawn-point list, the full map's flags, the minimap's
-control-point strip, the ticket HUD, the decorative 3P soldiers at the spawn
-points — reads the module-level `extras`, so it follows the mode with no
-change at all.
+The message goes to `console.warn` **and** to the game's own console band
+(`logToConsole`), because the dev panel is hidden for everyone but a
+developer and a browser console is not somewhere a player looks.
+`window.__gameMode().note` carries it for a headless check.
+
+The hook in `map.html` is five places plus an import: `selectGameMode` and
+`modeProblem` where `extras = report` used to be, `pruneToMode` right after
+`currentRoot = gltf.scene`, the animation-clip filter just below it,
+`spawnerWindow` inside `spawnDelayForNode`, and the spawners-root count in the
+stats panel. Everything else — the deploy screen's spawn-point list, the full
+map's flags, the minimap's control-point strip, the ticket HUD, the decorative
+3P soldiers at the spawn points — reads the module-level `extras`, so it
+follows the mode with no change at all. `report` is a local in `show()` and
+nothing outside those five reads it.
+
+The ticket HUD hides itself when either count is missing (`feedTicketVars`),
+so Ctf and Tdm — which set no tickets on any vanilla level — draw no counter
+rather than a NaN or the layout's own "300"/"500" sample literal.
 
 `window.__gameMode()` reports the active layer, what was requested, what the
 level offers, the flags with their owners, the spawn counts per side, the
@@ -394,23 +519,61 @@ data, not a fixture: that `scene.json` and that `scene.glb` were written before
 any of this existed.
 
 And the Instant Battle screen, driven through `window.__menu` over all 23
-levels: **19 launch `mode=SinglePlayer`, 4 launch `mode=Conquest`** — Coral
-Sea, Invasion of the Philippines, Liberation of Caen and Aberdeen, which are
+levels: **19 launch `mode=CoOp`, 4 launch `mode=Conquest`** — Coral Sea,
+Invasion of the Philippines, Liberation of Caen and Aberdeen, which are
 exactly the four with `singlePlayer: false` and exactly the four the game does
 not list under Instant Battle. `map.html?mode=SinglePlayer` with no `map=`
 still lands on `play/index.html`: the bare-page guard is untouched.
 
+Re-driven on review over the merged tree, with the mod picker on main: 23
+vanilla levels 19/4, `?mod=xpack1` 6 levels all `mode=CoOp&mod=xpack1`,
+`?mod=xpack2` 8/1, `?mod=eod` 238/1, zero page errors on each. And the pages
+themselves, over the reviewer's own re-extracts, **zero warnings and zero
+errors on every mode of Wake**: no `?mode=` 32 vehicles / Conquest,
+`SinglePlayer` 23, `CoOp` 23 (the SinglePlayer layer), `Tdm` 30, `Ctf` 26 with
+one flag, `Nonsense` 32 with the one warning that says so; Aberdeen 33 with
+and without `?mode=`; `xpack1/Anzio` `?mode=CoOp` resolving to the **composed
+CoOp layer** with Conquest's six flags and SinglePlayer's 29 vehicles.
+
 ### Instant Battle
 
-`viewer/play/index.html` launches `mode=SinglePlayer` where the level ships
-that layout and `mode=Conquest` where it does not.
-`menu-levels.json` already records which as `singlePlayer` (19 of 23 vanilla
-levels; the four without are Aberdeen, Coral Sea, Invasion of the Philippines
-and Liberation of Caen). The launch URL is built in one place now, used by both
-`start()` and the `__menu.launchUrl()` harness hook.
+`viewer/play/index.html` launches `mode=CoOp` where the level ships that
+layout and `mode=Conquest` where it does not. **The game type, not the
+directory**: Instant Battle is the CoOp game type, `gametypes/coop.con`, and
+on Road to Rome and Secret Weapons that script's layout is no directory's
+(§1.2.1) — asking for `SinglePlayer` by name showed the wrong flags on 14 of
+those 15 levels, both mods published. On every vanilla level `CoOp` resolves
+to the SinglePlayer layer and nothing changes.
 
-This is what the game does: Instant Battle is a singleplayer screen and loads
-the level's SinglePlayer layout.
+`menu-levels.json` records which levels have that layout as `singlePlayer`
+(19 of 23 vanilla levels; the four without are Aberdeen, Coral Sea, Invasion
+of the Philippines and Liberation of Caen). A mod with no menu pack of its own
+lists `maps.json` outright and those records carry no `singlePlayer` at all —
+`undefined`, not `false` — so no `mode=` is sent and the level plays its own
+default layer. Naming Conquest there would be a guess, and wrong on the 27
+FHSW levels that ship no Conquest layer. All three published mods (EoD, Road
+to Rome, Secret Weapons) do have packs, so this is a guard, not a live path.
+
+The launch URL is built in one place, used by both `start()` and the
+`__menu.launchUrl()` harness hook, and carries `map`, `team`, `mode` and
+`mod`.
+
+### Publish ordering
+
+**The code must reach production before the re-extracted levels do.** Main's
+`map.html` has no `pruneToMode`, so on a new multi-layer glb it renders the
+union: served main's page against a re-extracted Wake, `window.__vehicles()`
+returns **58** where the same page on the old glb returns 32, and the glb
+carries 10 flag poles and 7 cloths against 5 and 5 — two flags on the beach
+position, one Japanese and one American. A single-layer level is safe either
+way (Aberdeen: 33 both times), which is 309 of the 1,301 installed levels.
+
+The other direction is safe and is proven against real published data: the
+new page on the published pre-modes `tobruk` renders 26 vehicles and 7 deploy
+rows with and without `?mode=`, zero warnings, zero errors. So the order is
+**deploy the viewer first, then upload the levels**; and if levels land first,
+every multi-layer level shows every mode's vehicles until the deploy catches
+up.
 
 ---
 
@@ -434,8 +597,14 @@ CLI. Run in both orderings; the byte counts were identical in both.
 | Aberdeen | 1 | 28.87 -> 28.87 MB (0.0%) | 384.7 -> 384.7 KB (0.0%) | 30.86 -> 30.86 MB (0.0%) |
 | **total** | 17 | **198.30 -> 203.00 MB (+2.4%)** | **1,931.6 -> 2,194.2 KB (+13.6%)** | **212.36 -> 217.32 MB (+2.3%)** |
 
-Aberdeen is the control: one layer, so the output is byte-identical and the
-code path is proven not to cost anything on a single-mode level.
+Aberdeen is the control: one layer, so the layer-reading code path costs it
+nothing. Measured again on review against **main's extractor** rather than
+against a trimmed `info.modes`, its `scene.glb` is *not* byte-identical: the
+node array, the BIN chunk, the accessors, meshes and materials are, and the
+glb grows by 16,584 bytes (+0.057%) because the embedded report carries
+`modes` and `gameTypes`. Before the untagged-in-every-mode rule (§3) it was
++17,464 with 42 redundant node tags. Wake's numbers below stand as measured
+(38.99 -> 41.95 MB, +7.6%).
 
 **+2.3% on disk.** The published tree is about 15 GB over 277 levels, so a full
 re-extract with this change is roughly **350 MB more**, and the glb is where
@@ -485,12 +654,12 @@ nothing at all.
 
 | what | where |
 |---|---|
-| `find_gameplay_modes`, `GameType`, `parse_game_type`, `load_game_types`, `tickets_for_mode` | `tools/bf1942-models/bf42/level.py` |
+| `find_gameplay_modes`, `GameType`, `parse_game_type`, `load_game_types`, `compose_game_type_layers`, `tickets_for_mode` | `tools/bf1942-models/bf42/level.py` |
 | `GameplayObjects.object_spawns` / `.object_spawn_templates` | `bf42/level.py` |
 | `LevelInfo.modes` / `.game_types`, filled in `load_level` | `bf42/level.py`, `extract_map.py` |
 | `union_object_spawns`, `union_control_points`, `_tag_modes` | `extract_map.py` |
 | `_modes_report`, `_tickets_report` | `extract_map.py` |
-| `selectGameMode`, `resolveMode`, `pruneToMode`, `spawnerWindow` | `viewer/game-modes.js` |
+| `selectGameMode`, `resolveMode`, `pruneToMode`, `spawnerWindow`, `modeProblem` | `viewer/game-modes.js` |
 | the three hooks | `viewer/map.html` |
 | the launch URL | `viewer/play/index.html` |
 | tests | `tests/test_game_modes.py`, `tests/test_game_modes_js.py`, `tests/game_modes_harness.mjs` |
@@ -514,3 +683,14 @@ nothing at all.
 * **`search_and_destroy`** is recognised as a game type (11 levels, DC_Final
   and DesertCombat) and loads the Conquest layer, which is what its script
   says. Whether the mode does anything else with that layer is unexamined.
+* **Pruned nodes are never disposed.** A hull only one layer parks has
+  geometry no kept node shares, and the next level switch's
+  `dispose(currentRoot)` cannot reach it. Bounded and CPU-side only (§3).
+* **Whether Instant Battle is the right default at all** is the owner's call,
+  not a defect. CoOp is what the game runs, and it is also the layout authored
+  for bots: Wake loses all seven jeeps and gains two Chi-Ha, Midway loses both
+  submarines, both destroyers and both battleships, and Kasserine Pass is a
+  different battle. On a page with no bots that is emptier than Conquest and
+  arguably a worse first impression; it is also the honest answer to "this is
+  the game's Instant Battle screen". Changing it is one ternary in
+  `launchUrl()`.
