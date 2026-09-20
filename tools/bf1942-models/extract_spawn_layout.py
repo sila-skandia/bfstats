@@ -6,7 +6,7 @@ Two artifacts next to the sprite pack `extract_hud_pack.py` writes:
   viewer/maps/_shared/hud/spawn-layout.json
       The spawn interface and the ticket counter as flat draw lists in the
       engine's 800x600 virtual space, read from the serialized
-      `dice::meme::*` node graph in `Mods/bf1942/Archives/menu.rfa`
+      `dice::meme::*` node graph in `Mods/<mod>/Archives/menu.rfa`
       (`bf42/meme.py` documents the stream). Every leaf carries its rect,
       texture or fill colour, font and alignment, resolved display string,
       colour multiplier and the `when` conditions (the `CullNode`s above
@@ -14,12 +14,20 @@ Two artifacts next to the sprite pack `extract_hud_pack.py` writes:
       the selected row, the mouse-over tint and the SUICIDE/CLOSE and
       RESUME/DONE swaps are all the game's own branches, evaluated by the
       viewer against its state. Locale keys are resolved through
-      `Mods/bf1942/lexiconAll.dat` (English column).
+      `Mods/<mod>/lexiconAll.dat` (English column).
 
   viewer/maps/_shared/hud/fonts/<face>.png + <face>.json
       The bitmap fonts those text nodes name, out of `Font.rfa`: the atlas
       as white RGBA with the coverage as alpha, and the glyph table
       (`bf42/font.py`).
+
+`--mod` picks the game. `menu.rfa`, `Font.rfa` and `lexiconAll.dat` are each
+resolved along the mod's `game.addModPath` chain, nearest child first
+(`bf42.modmenu.MenuSources`), and the lexicon is *merged* rather than
+replaced: Road to Rome's 122-record file and Secret Weapons' 374 hold only
+the strings those games change, and everything else still comes from
+vanilla's 1,656. With `--mod bf1942` the chain is one deep and this reads
+exactly what it always read.
 
 The map pane itself is not in the data: the engine hot-swaps the level's
 `InGameMap` into an empty `ClipNode` under `ShowMap`, and its rectangle is
@@ -39,10 +47,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from extract_models import DEFAULT_GAME_DIR  # noqa: E402
+from extract_models import DEFAULT_GAME_DIR, mod_chain  # noqa: E402
+from extract_hud_pack import hud_dir_for  # noqa: E402
 from bf42 import meme  # noqa: E402
 from bf42.font import decode_alpha_tga, font_json, parse_dif  # noqa: E402
-from bf42.rfa import RfaArchive, find_archives_dir  # noqa: E402
+from bf42.modmenu import MenuSources  # noqa: E402
 
 sys.path.insert(0, str(Path.home() / ".claude/skills/bf1942-map-images/scripts"))
 from extract_map_images import encode_png  # noqa: E402
@@ -94,6 +103,26 @@ def load_lexicon(path: Path, keep: str = "last") -> dict[str, str]:
             continue
         out[key] = values[0]
     return out
+
+
+def load_chain_lexicon(paths: list[Path], keep: str = "last") -> dict[str, str]:
+    """The strings a mod shows, merged along its mod path.
+
+    `paths` is nearest-first (`MenuSources.lexicon_paths`), so the files are
+    applied furthest-first and a nearer mod's record wins. A mod's lexicon is
+    an *overlay*, not a replacement: Road to Rome's holds 122 records against
+    vanilla's 1,656 and changes two of the ones it shares, and Secret
+    Weapons' holds 374 and changes 41. Loading only the nearest file would
+    leave every unshipped key unresolved on the spawn screen.
+
+    Eve of Destruction is the case where it shows: its file carries 1,667
+    records, 44 of which differ from vanilla's, and those 44 are what turn
+    AXIS into NORTH VIETNAM and SCOUT into Sniper.
+    """
+    merged: dict[str, str] = {}
+    for path in reversed(paths):
+        merged.update(load_lexicon(path, keep))
+    return merged
 
 
 # ---------------------------------------------------------------- flattening
@@ -352,7 +381,8 @@ def find_group(root: meme.Obj, var: str) -> meme.Obj | None:
     return None
 
 
-def decode_layout(ingame: bytes, lexicon: dict[str, str]) -> dict:
+def decode_layout(ingame: bytes, lexicon: dict[str, str],
+                  source: str | None = None) -> dict:
     root, reader = meme.load(ingame)
     groups = {}
     fonts: set[str] = set()
@@ -373,7 +403,8 @@ def decode_layout(ingame: bytes, lexicon: dict[str, str]) -> dict:
         strings.update(flat.strings)
     return {
         "virtual": list(VIRTUAL),
-        "source": "menu/InGame (MemeFile 2.0) in Mods/bf1942/Archives/menu.rfa",
+        "source": source or "menu/InGame (MemeFile 2.0) in "
+                            "Mods/bf1942/Archives/menu.rfa",
         "map": {"rect": MAP_RECT, "measured": True},
         "fonts": sorted(fonts),
         "strings": dict(sorted(strings.items())),
@@ -400,57 +431,65 @@ def font_handles(layout: dict) -> dict[str, str]:
     return out
 
 
-def extract_fonts(font_rfa: Path, handles: dict[str, str], out_dir: Path, force: bool) -> dict:
+def extract_fonts(fonts, handles: dict[str, str], out_dir: Path, force: bool) -> dict:
+    """`fonts` is the mod's layered `Font.rfa` view (`MenuSources.open_font`).
+
+    Five of the installed mods ship a `Font.rfa`; the other eleven inherit
+    vanilla's whole, which a one-deep chain gives them for free.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest = {}
-    with RfaArchive(font_rfa) as arch:
-        index = {e.lower(): e for e in arch.entries}
-        for fid, dif_name in handles.items():
-            dif = index.get(dif_name.lower())
-            tga = index.get(dif_name.lower().replace(".dif", ".tga"))
-            if not dif or not tga:
-                print(f"warning: {dif_name} not in {font_rfa.name}", file=sys.stderr)
-                continue
-            font = parse_dif(arch.read(dif).decode("latin-1"))
-            png = out_dir / f"{fid}.png"
-            if force or not png.exists():
-                w, h, rgba = decode_alpha_tga(arch.read(tga))
-                png.write_bytes(encode_png(w, h, rgba, drop_alpha=False))
-            (out_dir / f"{fid}.json").write_text(font_json(font))
-            manifest[fid] = {"file": f"fonts/{fid}.png", "glyphs": f"fonts/{fid}.json",
-                             "source": dif, "lineHeight": font.line_height}
+    index = {e.lower(): e for e in fonts.entries}
+    for fid, dif_name in handles.items():
+        dif = index.get(dif_name.lower())
+        tga = index.get(dif_name.lower().replace(".dif", ".tga"))
+        if not dif or not tga:
+            print(f"warning: {dif_name} not in the "
+                  f"{'/'.join(fonts.labels)} font chain", file=sys.stderr)
+            continue
+        font = parse_dif(fonts.read(dif).decode("latin-1"))
+        png = out_dir / f"{fid}.png"
+        if force or not png.exists():
+            w, h, rgba = decode_alpha_tga(fonts.read(tga))
+            png.write_bytes(encode_png(w, h, rgba, drop_alpha=False))
+        (out_dir / f"{fid}.json").write_text(font_json(font))
+        manifest[fid] = {"file": f"fonts/{fid}.png", "glyphs": f"fonts/{fid}.json",
+                         "source": dif, "lineHeight": font.line_height}
     return manifest
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--game-dir", type=Path, default=DEFAULT_GAME_DIR)
-    parser.add_argument("--out", type=Path, default=VIEWER_HUD_DIR)
+    parser.add_argument("--mod", default="bf1942",
+                        help="mod whose menu chain to read (default: bf1942)")
+    parser.add_argument("--out", type=Path, default=None,
+                        help="output directory (default: the mod's own pack dir)")
     parser.add_argument("--force", action="store_true", help="re-encode font atlases")
     args = parser.parse_args()
 
     game_dir = args.game_dir.expanduser()
-    mod = game_dir / "Mods" / "bf1942"
-    archives = find_archives_dir(mod)
-    if archives is None:
-        sys.exit(f"no Archives directory under {mod}")
-    by_name = {c.name.lower(): c for c in archives.iterdir()}
-    menu_rfa, font_rfa = by_name.get("menu.rfa"), by_name.get("font.rfa")
-    if not menu_rfa or not font_rfa:
-        sys.exit(f"menu.rfa / Font.rfa not found under {archives}")
-    lexicon_path = next((c for c in mod.iterdir() if c.name.lower() == "lexiconall.dat"), None)
-    lexicon = load_lexicon(lexicon_path) if lexicon_path else {}
+    sources = MenuSources(mod_chain(game_dir, args.mod))
+    out = args.out or hud_dir_for(sources.mod_id)
+
+    lexicon = load_chain_lexicon(sources.lexicon_paths)
     if not lexicon:
         print("warning: lexiconAll.dat not found, locale keys stay unresolved", file=sys.stderr)
 
-    with RfaArchive(menu_rfa) as arch:
-        ingame = arch.read(next(e for e in arch.entries if e.lower() == "menu/ingame"))
-    layout = decode_layout(ingame, lexicon)
-    layout["fontFiles"] = extract_fonts(font_rfa, font_handles(layout), args.out / "fonts", args.force)
-    args.out.mkdir(parents=True, exist_ok=True)
-    (args.out / "spawn-layout.json").write_text(json.dumps(layout, indent=1) + "\n")
+    with sources.open_menu() as menu:
+        entry = next(e for e in menu.entries if e.lower() == "menu/ingame")
+        ingame = menu.read(entry)
+        owner = menu.owner(entry)
+    layout = decode_layout(ingame, lexicon,
+                           f"menu/InGame (MemeFile 2.0) in "
+                           f"Mods/{owner}/Archives/menu.rfa")
+    with sources.open_font() as fonts:
+        layout["fontFiles"] = extract_fonts(fonts, font_handles(layout),
+                                            out / "fonts", args.force)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "spawn-layout.json").write_text(json.dumps(layout, indent=1) + "\n")
     n = sum(len(g["elements"]) for g in layout["groups"].values())
-    print(f"{n} elements, {len(layout['fontFiles'])} fonts -> {args.out}")
+    print(f"{sources.mod_id}: {n} elements, {len(layout['fontFiles'])} fonts -> {out}")
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ turns each one into a check a script can run:
   does is pile three or more parts on the origin *without a bind to explain
   them* — a part that carries a `boundBone` extra was put there by a skeleton
   and is vouched for by the silhouette check instead.
-* **Area outside the shadow silhouette.** Each hand weapon ships a
+* **Area outside the shadow silhouette.** A hand weapon usually ships a
   `Shad_*`/`Shade_*` mesh — the whole weapon as one part in the same space — so
   sub-part placement is measurable rather than a matter of opinion. The metric
   is the side (Z-Y) projection because the shadow meshes are nearly flat in X
@@ -30,6 +30,25 @@ turns each one into a check a script can run:
   M1911 — while the failure modes overshoot by far more.
 * **Degenerate geometry.** NaN positions and zero-area triangles, counted in
   world space.
+
+## What a node in the scene *is*
+
+The exporter no longer writes only the object's own parts. A modern `.glb`
+also carries muzzle-flash and shell-eject emitters, the tracer streak, the
+projectile body a rack drops, and the collision hulls — all real nodes with
+real triangles, all placed at the emitter's own origin because that is where
+the engine spawns them from.
+
+Every check below therefore asks the *extras the exporter stamps* what a node
+is, never its name. `templateKind`, `effect`, `effectEmitter`, `effectBundle`,
+`tracerMesh`, `projectileMesh`, `collision`, `skin`: that vocabulary is the
+exporter's own, so a renamed emitter or a mod's odd spelling cannot smuggle a
+helper node into a check meant for the object's body. Before this was so, the
+2026-09-19 rebuild called 42 of 96 vanilla models and 96 of 285 EoD models
+BROKEN and every one was a false alarm: emitters counted as "unbound parts
+piled on the origin", a Bar1918 measured 2.02 m across its own muzzle flash
+against 1.19 m real, and every soldier was four unbound parts and a missing
+mesh. A verifier that always says broken hides the day it is right.
 
 Everything here is pure: `.glb` bytes in, findings out. The CLI wiring that
 knows about `models.json`, reports and archives lives in `verify_models.py`.
@@ -99,7 +118,56 @@ VANILLA_UNRESOLVED_TEXTURES: frozenset[str] = frozenset({
     "texture/b17win_l",     # B17 window pane
 })
 
+# Mesh files the base game references and never shipped. Unlike the tables
+# above, these are statements about *files*, not about models, so they hold
+# for any mod chain that inherits `Mods/bf1942` -- which is every installed
+# mod -- and are applied whether or not `vanilla_facts` is on.
+#
+# `bodycollision_m1` is the whole of the list. Every `BFSoldier` reaches it
+# through `Objects/Soldiers/Common/Geometries.con`:
+#
+#     GeometryTemplate.create SkeletonCollisionMesh BodyCollision
+#     GeometryTemplate.file bodycollision_m1
+#
+# and no archive in a complete install holds an entry with that name (checked
+# across every `.rfa` under `Mods/bf1942/Archives`). It is the soldier hitbox,
+# not render geometry, so its absence costs an extracted soldier nothing --
+# but it was reported as "mesh files unresolved" on all eight vanilla soldiers
+# and 19 EoD ones, every one of them a broken verdict.
+BASE_GAME_ABSENT_MESHES: dict[str, str] = {
+    "bodycollision_m1":
+        "SkeletonCollisionMesh BodyCollision, referenced by every BFSoldier "
+        "and shipped in no archive of a complete install; a hitbox, not "
+        "render geometry",
+}
+
 LENGTH_TOLERANCE = 0.18
+
+# A "shadow mesh" is a low-poly stand-in for the whole weapon, which is what
+# makes it a fair frame to measure sub-part placement against. Some simple
+# LODs are not that: vanilla's JohnsonLMG points its Simple alternative at
+# `Johnson_Base_m1` (1,183 triangles against the model's 1,520) and Secret
+# Weapons' Gewehr43_zf4 at `gewehr43_main_m1` (1,285 of 1,555). Comparing a
+# weapon against *itself* at full detail measures the trigger-guard hole, not
+# a misplacement -- the G43's trigger, bolt and clip all read 85-90% outside
+# on a perfectly good model.
+#
+# Every genuine shadow mesh in the four installed catalogues measures at most
+# 18% of its model's triangles (the medkit's wrench at 0.18 is the fattest,
+# the K98's at 0.05 typical); the two impostors above are at 0.78 and 0.83.
+# The gate sits between them and is not delicate.
+SHADOW_TRIANGLE_RATIO = 0.35
+
+# The silhouette check compares against a coarse artist asset that vanilla
+# itself sometimes borrows from another weapon, so one weapon reading high is
+# evidence, not proof -- and every historical false alarm here was exactly
+# that. The regression it exists to catch (reading the `.ske` unmirrored) does
+# not hit one weapon, it hits every weapon in the catalogue at once, so that
+# is what is fatal: a catalogue whose *median* weapon reads above this is
+# mirrored, and the ones above `SILHOUETTE_FAIL` in it are called broken.
+# Vanilla's median is 0.030 over 19 weapons and EoD's 0.032 over 28.
+SILHOUETTE_CATALOGUE_FAIL = 0.12
+SILHOUETTE_CATALOGUE_MIN = 8
 
 # Real-world lengths in metres, longest axis of the thing as the game models it.
 # An entry is only worth having when the real figure is unambiguous (which
@@ -124,7 +192,14 @@ KNOWN_LENGTHS_M: dict[str, float] = {
     "DP": 1.27,             # Degtyaryov DP-27
     "Bazooka": 1.37,        # M1A1 launcher tube
     "Panzershreck": 1.64,   # RPzB 54
-    # Emplacements — the gun itself, no tripod.
+    # Emplacements — the gun itself. A `Stationary_*` template is the gun on
+    # its tripod, so the row is only worth having where the gun is still the
+    # longest side: the M2HB is 1.654 m against a mount that adds 10 cm
+    # (measured 1.756, 6.2% over), while the MG42 is only 1.22 m and its
+    # Lafette 42 mount is the longest side of the assembly (measured 1.715).
+    # `Stationary_mg42` therefore has no row — this table's own rule is that
+    # a wrong expectation is worse than none, and it was the verifier's own
+    # first true positive after the 2026-09-20 repair.
     "Browning": 1.654,      # M2HB
     "Browning_Air": 1.654,
     "Browning_unlimited": 1.654,
@@ -132,7 +207,6 @@ KNOWN_LENGTHS_M: dict[str, float] = {
     "MG42": 1.22,
     "MG42_Air": 1.22,
     "MG42_unlimited": 1.22,
-    "Stationary_mg42": 1.22,
     # Land vehicles, gun forward where the game models it that way. Variants
     # the game leaves ambiguous (PanzerIV barrel length, T34 vs T34-85) are
     # deliberately absent.
@@ -257,9 +331,31 @@ def _apply(transform: tuple[Matrix3, Vector3], point: Vector3) -> Vector3:
     return tuple(sum(r[i][k] * point[k] for k in range(3)) + t[i] for i in range(3))
 
 
+# The `templateKind` values the exporter stamps on a node that is an effect
+# emitter rather than a part of the object. `assemble.py` writes the kind
+# verbatim from the `.con`, so this is the game's own vocabulary.
+EFFECT_TEMPLATE_KINDS: frozenset[str] = frozenset({
+    "particle", "spriteparticle", "effectbundle", "lightsource", "sound",
+})
+
+# Extras that only ever appear on a node the exporter baked as a *preview* of
+# something the object fires, not as a part of the object: the tracer streak
+# and the projectile body. Both sit at the muzzle's own origin.
+PREVIEW_EXTRAS: tuple[str, ...] = ("tracerMesh", "projectileMesh")
+
+# Extras that mean the node is an effect emitter.
+EFFECT_EXTRAS: tuple[str, ...] = ("effect", "effectEmitter", "effectBundle")
+
+
 @dataclass
 class Part:
-    """One mesh-bearing node of the exported scene, in world space."""
+    """One mesh-bearing node of the exported scene, in world space.
+
+    The `is_*` properties below are the whole of this module's idea of what a
+    node is, and every one of them reads an extra the exporter wrote. Names
+    are never consulted -- except for `is_collision`, which keeps a name
+    fallback for `.glb` files written before the `collision` extra existed.
+    """
     name: str
     extras: dict = field(default_factory=dict)
     world_translation: Vector3 = (0.0, 0.0, 0.0)
@@ -270,8 +366,73 @@ class Part:
         return self.extras.get("boundBone")
 
     @property
+    def template_kind(self) -> str:
+        return str(self.extras.get("templateKind") or "").lower()
+
+    @property
     def is_collision(self) -> bool:
-        return bool(self.extras.get("collision")) or "collision" in self.name.lower()
+        return (bool(self.extras.get("collision"))
+                or bool(self.extras.get("collisionHull"))
+                or "collision" in self.name.lower())
+
+    @property
+    def is_effect(self) -> bool:
+        """A muzzle flash, shell eject, dust plane or smoke puff.
+
+        Its mesh is a billboard or a flare cone metres long, spawned at the
+        emitter's origin -- so it is neither a placement nor a size the object
+        has. `em_MuzzHeavy` on the Browning reaches 2.56 m from a 1.65 m gun.
+        """
+        return (self.template_kind in EFFECT_TEMPLATE_KINDS
+                or any(k in self.extras for k in EFFECT_EXTRAS))
+
+    @property
+    def is_preview(self) -> bool:
+        """The tracer streak or the projectile body, baked hidden so the
+        viewer can draw a round in flight. A tracer is a 1 m line through the
+        muzzle; a bomb is the bomb, not part of the aeroplane."""
+        return any(k in self.extras for k in PREVIEW_EXTRAS)
+
+    @property
+    def is_skinned(self) -> bool:
+        """Skinned to a skeleton (`extras.skin`, and `extras.skeleton` on the
+        node that owns one). A skinned mesh is authored in bind space and put
+        in place by the skeleton at runtime, so resting on the origin is what
+        it is supposed to do -- which is why every soldier's body, head and
+        two hands sit there."""
+        return "skin" in self.extras or "skeleton" in self.extras
+
+    @property
+    def is_helper(self) -> bool:
+        """Not part of the object's own body: collision, effect or preview."""
+        return self.is_collision or self.is_effect or self.is_preview
+
+    @property
+    def is_body(self) -> bool:
+        """Geometry the object is actually made of -- what a size or a
+        placement should be measured over."""
+        return not self.is_helper
+
+    @property
+    def centroid(self) -> Vector3:
+        """The average of this part's world-space vertices.
+
+        Where the part's *geometry* actually is, as against where its node
+        says it is. The two differ whenever a `.con` gives a sub-part no
+        `setPosition` because the mesh is already modelled in the hull's
+        space -- EoD's LCT-Mk6 stern ramp hangs at the node origin with its
+        geometry 17 m aft.
+        """
+        points = [p for tri in self.triangles for p in tri]
+        if not points:
+            return (0.0, 0.0, 0.0)
+        n = len(points)
+        return tuple(sum(p[i] for p in points) / n for i in range(3))
+
+
+def body_parts(parts: list[Part]) -> list[Part]:
+    """The object's own geometry, helpers dropped."""
+    return [p for p in parts if p.is_body and p.triangles]
 
 
 def scene_parts(doc: dict, blob: bytes) -> list[Part]:
@@ -356,25 +517,98 @@ def geometry_stats(parts: list[Part], *, zero_area_eps: float = 1e-10) -> Geomet
     return stats
 
 
+# A part is only "on the origin" when its own geometry is too, within this
+# fraction of the model's longest side. Node translation alone is not enough:
+# a `.con` gives a sub-part no `setPosition` whenever the mesh is already
+# modelled in the parent's space, which is how most mod vehicles are built.
+# EoD's LCT-Mk6 has five such parts, and their geometry is 1.6 m, 8.7 m,
+# 7.5 m, 17.3 m and 13.8 m from the origin of a 35 m landing craft. Nothing is
+# collapsed there; the parts are exactly where the artist put them.
+#
+# The failure mode this check exists for looks different in exactly this way:
+# a sub-part whose placement was lost is authored around its *own* local
+# origin, so collapsing it puts its geometry on the model origin as well. A
+# rifle's trigger is 2 cm of mesh centred on its bone; land it at the root and
+# its centroid is a centimetre from the origin of a 1.1 m weapon, well inside
+# the 5.5 cm this allows.
+ORIGIN_CENTROID_FRACTION = 0.05
+# ...with a floor, because the fraction is of the model's own size and a model
+# that collapsed *entirely* has no size left to take a fraction of. Three
+# centimetres is under the smallest sub-part any check here cares about.
+ORIGIN_CENTROID_FLOOR = 0.03
+
+
 def origin_pile(parts: list[Part], *, epsilon: float = 1e-4,
-                allowance: int = 2) -> list[str]:
-    """Unexplained visible parts piled on the scene origin.
+                allowance: int = 2, explained: frozenset[str] = frozenset(),
+                model_size: float | None = None) -> list[str]:
+    """Unexplained body parts collapsed onto the scene origin.
 
     One part at the origin is the hull or weapon body; a soldier legitimately
-    stacks two (body and head are both authored in bind space). A part carrying
-    a `boundBone` extra was placed there by a skeleton — the Type99's mag and
-    bolt bones genuinely rest on its base bone — so bound parts do not count.
-    More than `allowance` *unbound* parts at the origin is the child-placement
-    failure mode: `setPosition` read as a property of the parent, or a bind
-    that was never applied, leaves every sub-part buried at the root.
+    stacks two. More than `allowance` *unexplained* parts collapsed there is
+    the child-placement failure mode: `setPosition` read as a property of the
+    parent, or a bind that was never applied, leaves every sub-part buried at
+    the root.
+
+    Collapsed means both halves: the node sits at the origin *and* the part's
+    own geometry does, within `ORIGIN_CENTROID_FRACTION` of `model_size` (the
+    model's longest side, `body_length`). Passing no `model_size` keeps the
+    old node-translation-only reading.
+
+    Five kinds of node are explained and do not count:
+
+    * **bound** — a `boundBone` extra means a skeleton put it there. The
+      Type99's mag and bolt bones genuinely rest on its base bone.
+    * **skinned** — an `extras.skin` mesh is authored in bind space and moved
+      by the skeleton at runtime. Every soldier is four such meshes and all
+      four rest on the origin, which is correct and was 19 of the vanilla
+      rebuild's 42 "broken" verdicts.
+    * **helpers** — collision hulls, emitters, tracers and projectile
+      previews. They are spawned from the object's own origin by definition,
+      so counting them is counting the exporter's furniture. `AichiVal` was
+      called broken for a cockpit mesh, a bomb and a tracer.
+    * **`explained`** — names the caller already reports for a better reason,
+      so the same fact is not stated twice. `verify_models.py` passes the
+      parts the assembler recorded as binds it could not apply: EoD's M40
+      inherits the No4's `Block` and `Mag` sub-parts but not their bones, and
+      that is one finding, not two.
     """
+    radius = (max(model_size * ORIGIN_CENTROID_FRACTION, ORIGIN_CENTROID_FLOOR)
+              if model_size else None)
+
+    def collapsed(part: Part) -> bool:
+        if not all(abs(v) < epsilon for v in part.world_translation):
+            return False
+        if radius is None:
+            return True
+        c = part.centroid
+        return math.sqrt(sum(v * v for v in c)) <= radius
+
     piled = [
         part.name for part in parts
-        if not part.is_collision
+        if part.is_body
+        and not part.is_skinned
         and part.bound_bone is None
-        and all(abs(v) < epsilon for v in part.world_translation)
+        and part.name not in explained
+        and collapsed(part)
     ]
     return piled if len(piled) > allowance else []
+
+
+def body_length(parts: list[Part]) -> float | None:
+    """The longest side of the AABB over the object's own geometry.
+
+    `measure.bounds` reads the whole file, which since the exporter began
+    baking effects and previews is the wrong box: the Browning measures
+    3.56 m across a muzzle flash that reaches 2.56 m from a 1.65 m gun, and
+    the Bar1918 2.02 m against 1.19 m real. Measuring the model over its own
+    geometry is the figure a real-world length can be compared against, and it
+    was 23 of the vanilla rebuild's 42 "broken" verdicts.
+    """
+    points = [v for part in body_parts(parts) for tri in part.triangles for v in tri]
+    if not points:
+        return None
+    spans = [max(p[i] for p in points) - min(p[i] for p in points) for i in range(3)]
+    return max(spans)
 
 
 # Markers `assemble.py` writes into `boundParts` when a bind could not be
@@ -395,6 +629,32 @@ def unplaced_bound_parts(report: dict) -> tuple[list[str], list[str]]:
         elif _BIND_NO_SKELETON in line:
             no_skeleton.append(line)
     return no_bone, no_skeleton
+
+
+def unplaced_part_names(report: dict | None) -> frozenset[str]:
+    """The part names in those lines -- `"No4Block -> Block (no such bone)"`
+    gives `No4Block` -- so the origin-pile check can leave them to the finding
+    that already names them."""
+    if not report:
+        return frozenset()
+    names = set()
+    for line in report.get("boundParts") or []:
+        if _BIND_NO_BONE in line or _BIND_NO_SKELETON in line:
+            names.add(line.split("->", 1)[0].strip())
+    return frozenset(names)
+
+
+def bound_parts_placed(report: dict | None) -> int:
+    """How many binds the assembler *did* apply.
+
+    The difference between "the game's own data names a bone its skeleton
+    lacks" and "our skeleton reader lost the bones": if other parts bound to
+    the same skeleton, the reader read it, and the gap is the data's.
+    """
+    if not report:
+        return 0
+    return sum(1 for line in report.get("boundParts") or []
+               if _BIND_NO_BONE not in line and _BIND_NO_SKELETON not in line)
 
 
 # -- silhouette ------------------------------------------------------------- #
@@ -570,23 +830,40 @@ def triage_report(name: str, report: dict | None, *,
                   silhouette: SilhouetteResult | None = None,
                   dimensions: DimensionCheck | None = None,
                   length_tolerance: float = LENGTH_TOLERANCE,
-                  vanilla_facts: bool = True) -> Triage:
+                  vanilla_facts: bool = True,
+                  silhouette_fatal: bool = False,
+                  missing_asset_roles: dict[str, str] | None = None) -> Triage:
     """Fold every check into one clean / degraded / broken verdict.
 
     `vanilla_facts` applies the recorded authored exceptions above — the
     borrowed Type5 shadow, the two shaderless materials, the never-shipped
     textures. A mod extraction should pass False: its template names can
     collide with vanilla's without sharing its data.
+    `BASE_GAME_ABSENT_MESHES` is not one of those and applies either way; it
+    is a statement about a file the base game never shipped, and every mod
+    chain inherits it.
+
+    `silhouette_fatal` is the catalogue's verdict, not this model's: the
+    caller sets it when the median weapon in the catalogue reads high, which
+    is the shape the mirror regression has. On its own, one weapon measuring
+    outside its shadow is a degradation.
+
+    `missing_asset_roles` maps a missing geometry template or mesh file to
+    what in the game data referenced it (`"projectile"`, `"effect"`, `"part"`,
+    `"collision"`), resolved from the archives by the caller. An asset only a
+    projectile or an effect wanted cost the model nothing it draws.
     """
     triage = Triage(name)
+    roles = missing_asset_roles or {}
 
     if parts is not None:
         visible = [p for p in parts if not p.is_collision and p.triangles]
         if not visible:
             triage.broken("no visible geometry in the exported scene")
-        pile = origin_pile(parts)
+        pile = origin_pile(parts, explained=unplaced_part_names(report),
+                           model_size=body_length(parts))
         if pile:
-            message = (f"{len(pile)} unbound parts piled on the origin: "
+            message = (f"{len(pile)} unexplained parts piled on the origin: "
                        + ", ".join(sorted(pile)))
             # A pile the report already explains (the skeleton itself was
             # unreadable, as GrenadeAllies' corrupt .ske) is a recorded
@@ -616,7 +893,17 @@ def triage_report(name: str, report: dict | None, *,
                 triage.info(
                     f"silhouette {pct:.1f}% outside (authored: {reason})")
         elif silhouette.aggregate > SILHOUETTE_FAIL:
-            triage.broken(f"{pct:.1f}% of bound-part area outside the shadow silhouette")
+            line = (f"{pct:.1f}% of bound-part area outside the shadow "
+                    f"silhouette")
+            if silhouette_fatal:
+                triage.broken(line + " — and so does the median weapon in this "
+                                     "catalogue, which is the shape a mirrored "
+                                     ".ske read has")
+            else:
+                triage.degraded(
+                    line + " — one weapon against a coarse or borrowed shadow "
+                           "mesh, so this is a reading to look at, not a "
+                           "placement failure on its own")
         elif silhouette.aggregate > SILHOUETTE_WARN:
             triage.degraded(f"{pct:.1f}% of bound-part area outside the shadow silhouette")
         else:
@@ -632,16 +919,50 @@ def triage_report(name: str, report: dict | None, *,
 
     if report:
         no_bone, no_skeleton = unplaced_bound_parts(report)
+        placed = bound_parts_placed(report)
         for line in no_bone:
-            triage.broken(f"bound part names a bone the skeleton lacks: {line}")
+            if placed:
+                # Other parts bound to the same skeleton, so the skeleton was
+                # read and the gap is the game's own: EoD's M40 inherits the
+                # No4's `Block` and `Mag` sub-parts without their bones, and
+                # the engine would leave them where we do.
+                triage.degraded(
+                    f"bound part names a bone its own skeleton lacks, and "
+                    f"{placed} other bind(s) on the same skeleton did apply, "
+                    f"so this is the game's data: {line}")
+            else:
+                triage.broken(
+                    f"bound part names a bone the skeleton lacks, and no bind "
+                    f"on this model applied at all: {line}")
         for line in no_skeleton:
             triage.degraded(f"bound part left unplaced: {line}")
-        missing_meshes = report.get("missingMeshFiles") or []
-        if missing_meshes:
-            triage.broken(f"mesh files unresolved: {', '.join(missing_meshes)}")
-        missing_geoms = report.get("missingGeometryTemplates") or []
-        if missing_geoms:
-            triage.broken(f"geometry templates unresolved: {', '.join(missing_geoms)}")
+
+        def classify_missing(kind: str, names: list[str]) -> None:
+            """Split a list of unresolved assets by what wanted them."""
+            recorded, cosmetic, real = [], [], []
+            for asset in names:
+                leaf = asset.split(" (", 1)[0].strip().lower()
+                if leaf in BASE_GAME_ABSENT_MESHES:
+                    recorded.append(asset)
+                elif roles.get(leaf) in ("projectile", "effect", "collision"):
+                    cosmetic.append(asset)
+                else:
+                    real.append(asset)
+            if real:
+                triage.broken(f"{kind} unresolved: {', '.join(real)}")
+            if cosmetic:
+                triage.degraded(
+                    f"{kind} unresolved, wanted only by a "
+                    + "/".join(sorted({roles[a.split(' (', 1)[0].strip().lower()]
+                                       for a in cosmetic}))
+                    + f", so the model itself is whole: {', '.join(cosmetic)}")
+            for asset in recorded:
+                leaf = asset.split(" (", 1)[0].strip().lower()
+                triage.info(f"{asset}: {BASE_GAME_ABSENT_MESHES[leaf]}")
+
+        classify_missing("mesh files", report.get("missingMeshFiles") or [])
+        classify_missing("geometry templates",
+                         report.get("missingGeometryTemplates") or [])
         missing_textures = report.get("texturesNotFound") or []
         if missing_textures:
             authored_textures = VANILLA_UNRESOLVED_TEXTURES if vanilla_facts else frozenset()
