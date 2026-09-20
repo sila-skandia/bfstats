@@ -135,10 +135,17 @@ class NationJsTests(unittest.TestCase):
         self.assertEqual("unknown", h["axisWithVehicleGuess"])
         self.assertEqual("us", h["allied"])
 
-    def test_no_control_points_falls_to_the_vehicle_guess_then_to_unknown(self) -> None:
+    def test_no_flag_evidence_keeps_the_founding_pair_not_unknown(self) -> None:
+        # Omaha Beach, Iwo Jima, Coral Sea, Midway and Truk open with the
+        # Americans holding no flag, Kasserine Pass's zones are flagless, and
+        # the vehicle guess names only jp / rus / brit. Answering 'unknown'
+        # there took the US and German flags off the ticket counter.
         n = self.results["noControlPoints"]
         self.assertEqual("jp", n["withVehicleGuess"])
-        self.assertEqual("unknown", n["withoutVehicleGuess"])
+        self.assertEqual("ger", n["axisWithoutVehicleGuess"])
+        self.assertEqual("us", n["alliedWithoutVehicleGuess"])
+        self.assertEqual("ger", n["flaglessZonesOnly"])
+        self.assertEqual("unknown", n["noTeam"])
 
 
 class NationParityTests(unittest.TestCase):
