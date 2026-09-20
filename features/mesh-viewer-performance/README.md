@@ -229,6 +229,17 @@ Seven rules came out of this pass. The code cites each by number
    ceiling so a slow drift still catches up.
    (`dd165c5`, the map-surface repaint gate.)
 
+8. **The sim ticks at 30 Hz; the page never draws a raw tick.** Positions and
+   rigged angles are interpolated between the previous tick's pose and the
+   current one by `world.step()`'s reported `alpha`; the on-foot view angles
+   are not interpolated but predicted forward from the mouse counts still
+   pending, so the view leads the sim by exactly the rotation the next tick
+   will apply and costs no latency. Anything the sim reads out of the scene
+   graph during a tick must still see the tick's own pose — interpolate after
+   `world.step()` returns, and only onto nodes the tick rewrites before it
+   reads anything. Snap, never blend, across a spawn, a teleport, a seat or
+   vehicle change or a level switch. (Third pass, below.)
+
 ## The Iris Xe context loss
 
 Confirmed cause of the "8 s freeze" symptom, distinct from the Ctrl+W
@@ -563,6 +574,172 @@ the next `Vehicle` takes the turned pose for neutral — and still does.
 (one load, one interior, rest pose, mid-fetch race, failed fetch, remainder disposal)
 without a browser.
 
+## Third pass: the 30 Hz presentation
+
+"On the ground, zoomed in, prone, shooting, the frame rate feels bad."
+
+It was not the frame rate. A headed window on this machine's Iris Xe holds
+57-60 fps in every stance, zoom and trigger combination at about 3 ms of CPU
+and 4 ms of GPU a frame, and zooming is *cheaper* than not (173 draw calls
+down to 131). What the player was seeing is that the simulation ticks at
+**30 Hz** (world.js, THE TICK LAW) and the page drew raw tick state. At 60 Hz
+the world ticks every other frame, so half the rendered frames showed a new
+pose and half showed a repeat: a 30 Hz slideshow inside a 60 fps render, and
+worse than a true 30 fps because the repeats are not evenly spaced.
+
+Measured on foot, panning at a steady rate, the camera rotation per rendered
+frame read `[2.16, 0, 1.08, 0, 2.16, 0, 2.55, 0 ...]` degrees. Walking, the
+eye position moved on 93 of 180 frames. Flying a Corsair at 33 m/s, the camera
+moved on 95 of 180. Nothing was interpolated anywhere: `457e3f3` moved the
+look onto the tick and the page set `look.yaw = soldier.viewYaw` raw, and
+`f0ee4f6` left the soldier's own 60 Hz clock advanced in whole 1/30 steps from
+inside the world tick, so `soldier.clock.alpha` is always zero and `eye()`
+returns the last tick's pose. A comment above `onFootCamera` still claimed the
+eye was interpolated; it had not been for two commits.
+
+### Before / after
+
+`tests/perf/cadencecheck.cjs`, a headed window at 1280x800, 180 rendered
+frames per scenario, one frame's worth of pointer travel fed per frame.
+`movedPct` is the share of frames on which the camera's rotation (or its
+position) changed at all; `cv` is the coefficient of variation of the
+per-frame steps, zeros included. Both builds measured back to back on the
+same machine under the same load (`loadavg` 19-33; cadence counts are robust
+to load, absolute frame times are not).
+
+| scenario | before | after |
+| --- | --- | --- |
+| standing, hip, panning | 56.1% · cv 0.97 | **100%** · cv 0.00 |
+| standing, aiming, panning | 53.3% · cv 0.97 | **100%** · cv 0.00 |
+| prone, aiming, firing, panning | 59.4% · cv 0.98 | **100%** · cv 0.11 |
+| walking (eye position) | 53.3% · cv 0.94 | **100%** · cv 0.20 |
+| Corsair, cockpit eye | 51.1% · cv 0.98 | **100%** · cv 0.22 |
+| Willys, driver eye | 53.3% · cv 1.43 | **100%** · cv 0.83 |
+| Sherman tower traverse | 68.3% · cv 1.08 | **100%** · cv 0.36 |
+| Defgun traverse | 58.9% · cv 1.29 | **100%** · cv 0.71 |
+
+Uncapped (`--uncap`, `--disable-gpu-vsync --disable-frame-rate-limit`) every
+scenario also holds 100%, with the steps shrinking as the frames get shorter —
+which is the point: the drawn motion is a function of elapsed time now, not of
+the tick.
+
+The two remaining non-trivial `cv`s are honest. A car on suspension and a
+servo ramping through its acceleration curve really do move unevenly per
+frame; the *before* column's ~1.0 is the signature of "step, stall, step,
+stall" regardless of what the thing was doing.
+
+### The design
+
+- **World.** `step()` reports `alpha` — the clock's leftover fraction of a
+  tick — on every frame, including the frames that owe no tick (`clock.advance`
+  has already moved it). `onTick` fires at the end of every tick the world
+  runs, after the bodies and the damage pass, so the page's snapshot is that
+  tick's final state and a frame running several ticks still gets a `prev`
+  exactly one tick old. Both are presentation hooks: the world passes nothing
+  and reads nothing back, the tick law is untouched, and the suites that pin
+  it are unchanged.
+- **Interpolated.** The on-foot eye (bob included — `bobUp`/`bobSide`/`bobYaw`
+  advance once per world tick, and blending the whole `soldier.eye()` output
+  smooths them with it); the occupied vehicle's root position (lerp) and
+  orientation (slerp); and every node a tick poses — rig parts, the nodes an
+  Engine spins, every `TurretAxis` node of every seat's rig — by quaternion
+  slerp. `Soldier.eye(out, alpha)` grew an explicit alpha so the page can ask
+  for the tick's own finished pose; the body-clock default is unchanged for
+  anyone stepping a soldier at the display rate.
+- **Predicted, not interpolated: the on-foot view angles.** Lerping them would
+  cost 33 ms of mouse latency, which a shooter player feels. The mouse axis is
+  a RATE computed once per pumped frame from the counts accumulated since the
+  last pump, and a frame that runs no tick does not pump — so the rotation the
+  next tick will apply is a pure function of the counts pending right now.
+  `MouseInput.peek` is `pump` without the consumption (pump now calls it, so
+  there is one conversion and not two), `footLookPending` runs the result
+  through the same `zoomFov` factor the tick will, `soldierLookDegrees` gives
+  the tick's own degrees, and `Soldier.lookPreview` applies the tick's own
+  pitch clamp without turning anybody. The frame's total is n-independent, so
+  asking for one tick's worth and asking for the whole frame's are the same
+  call. On a frame that DID tick the counts were just consumed, the prediction
+  is exactly zero and the displayed view equals the simulated one: the
+  hand-off is continuous by construction, which is why the after column's
+  steps are dead uniform (cv 0.00) rather than merely non-zero.
+  `footFire` fires down the drawn view axis, so the round goes where the
+  crosshair is.
+- **External vehicle cameras.** `VehicleCamera`'s chase, front and fly-by
+  modes hang off `state.position`; they take `drawnPosition` now, or the hull
+  would slide smoothly inside a frame that stepped at 30 Hz. The cockpit mode
+  needed nothing — it reads the camera node, which the interpolated pose moves.
+
+### The tick-exact-pose constraint
+
+Anything the simulation reads out of the scene graph during a tick — muzzle
+world matrices in `gunfire.js`, seat positions, `setPlayerPosition` — must see
+the tick's own pose, never an interpolated one. That holds here **without a
+restore pass**, because every node this page interpolates is rewritten from
+exact sim state inside the tick before anything reads it: `Vehicle.integrate`
+ends in `applyTransform` + `applyRig`, `TurretAxis.step` ends in `_apply`, and
+both run in `#vehicleTick`, i.e. before that tick's `guns.advance`. The
+interpolated pose is written after `world.step()` returns and is dead by the
+next tick.
+
+One read happens before the step: `occupancy.root.getWorldPosition` in
+`frame()`'s seated branch. It feeds the combat-area test for a **bare** gun or
+seat root only — a root with a drivetrain reports `vehicle.state.position`
+instead — and a bare root has no drivetrain, so nothing interpolates its
+position and the value is exact either way.
+
+`stepVehicleBodies` had to learn the same thing: it re-applied the drive
+model's raw state once a frame to draw the contact solver's push, which would
+have put the hull back on the tick the cameras had just been placed off. The
+push is already in the pose captured at the end of the tick, so that call is
+skipped for the vehicle the interpolation owns.
+
+`__matrixDrift` after a full run reads the same 336 on `em_1P_MuzzSG44` as the
+base commit does — a pooled emitter, one of the hook's documented false
+positives, and identical before and after. 838 subtrees frozen either way.
+
+### Snap, never lerp
+
+`snapPresentation()` collapses `prev` onto `cur`: spawn (`spawnAtFlag`, which
+covers respawn after death), `__teleport`, `__plane().place`, `__placeCar`,
+and through `rebuildVehicleInterp()` — which also re-collects the node set —
+on entering or leaving a vehicle, on a seat switch, and on a level switch.
+
+A `FixedStep` catch-up collapse needs no entry on that list, and this is worth
+stating because it would be a bug in a per-frame snapshot: `onTick` fires per
+tick, so `prev` and `cur` are always two *adjacent* ticks however many ticks a
+frame ran or the clock dropped.
+
+### Not interpolated, and why
+
+- **Projectiles and tracer streaks.** `guns.advance` moves them inside the
+  tick, so they step at 30 Hz like everything else did. Interpolating them
+  means per-round prev/cur state inside `gunfire.js`, on the one path that is
+  also the collision sweep; the risk to the sim is not worth it for a streak
+  that is already a stretched quad. Open item.
+- **Parked rigid bodies being pushed.** `syncBodyNode` draws them from
+  `body.pos` at 30 Hz. Same reasoning, less visible: they are asleep almost
+  always, and a rammed hull is in shot for a second.
+- **The death cam.** It uses the interpolated eye but the raw `soldier.viewYaw`
+  for its own yaw. A one-second beat on a corpse; left alone deliberately.
+
+### The standing check
+
+`tests/perf/cadencecheck.cjs`, beside `perfbench.cjs` and `leakcheck.cjs` and
+documented in `tests/perf/README.md`. Same Playwright lookup, same `--base`,
+non-zero exit on failure, `--min` for the threshold (95%). It must run headed:
+headless Chromium and the hidden preview pane do not tick `requestAnimationFrame`
+usefully and every count would be noise.
+
+Two things it learned the hard way, both worth keeping:
+
+- **Feed the hand per rendered frame, not off a timer.** A `setInterval(4)`
+  under load misses frames and the check reads the miss as a stall. Pointer
+  lock delivers one coalesced mousemove per frame, and that is what the check
+  now does — it took the before/after signal from noisy to exact.
+- **A body standing against a wall is standing still for an honest reason.**
+  The walking scenario stands the soldier on open ground beside an aircraft
+  and probes several headings (`faceClear`) before it measures, checking that
+  he *keeps* moving rather than that he started.
+
 ## Open items
 
 - **A new `Vehicle` takes a parked vehicle's current rig pose for its rest pose.**
@@ -600,5 +777,9 @@ without a browser.
   main camera does not draw, so a bazooka rocket and its puffs are invisible.
 - **`__matrixDrift`'s false positives** want fixing in the hook, so the canary stays
   readable.
+- **Projectiles, tracer streaks and pushed parked hulls still step at 30 Hz.**
+  Everything the player rides or looks out of is interpolated now (third pass);
+  these are not, because they move inside `guns.advance` and `syncBodyNode` and
+  interpolating them means per-round state on the collision sweep's own path.
 - **Texture memory**, if this ever runs on a smaller GPU: warm-up now uploads every
   level texture (Wake: 290 textures, about 116 MB, +58 MB over the old lazy path).
