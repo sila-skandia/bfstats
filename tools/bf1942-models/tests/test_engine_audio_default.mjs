@@ -21,6 +21,10 @@ function stubCtx() {
   const ctx = {
     started: [],
     currentTime: 0,
+    // Real Web Audio starts a fresh context `suspended` until a user gesture;
+    // tests that do not care about that default to already running.
+    state: 'running',
+    resume() { this.state = 'running'; return Promise.resolve(); },
     createGain() { return node({ gain: param(0) }); },
     createPanner() {
       return node({
@@ -277,6 +281,82 @@ function gunPatch(layers, { oneShotsOnTrigger = true } = {}) {
   tick(0);
   tick(1);
   assert.equal(ctx.started.length, 2, 'a second rise is a second event');
+  audio.dispose();
+}
+
+// --- a suspended context drops one-shots instead of queuing them ----------
+//
+// The ordinary state before the page's first gesture. Queuing at a frozen
+// `currentTime` is how ten triggers become twenty sources that all sound
+// together the instant the context wakes (S4 gap 2); a one-shot asked for
+// while suspended is simply lost instead.
+
+{
+  const { ctx, audio } = gunPatch([shot('bang.wav'), shot('breech.wav')]);
+  ctx.state = 'suspended';
+  audio.start();
+  const played = audio.trigger();
+  assert.equal(played, 0, 'a suspended context drops the round, not queues it');
+  assert.equal(ctx.started.length, 0, 'no source is ever created for it');
+  assert.equal(audio.snapshot().suspended, 2, 'both layers counted as lost');
+  ctx.state = 'running';
+  const after = audio.trigger();
+  assert.equal(after, 2, 'the next round, once running, plays normally');
+  audio.dispose();
+}
+
+{
+  // A vehicle engine's own loop must still begin once the context can render
+  // it, even though `start()` was called while suspended -- the one thing a
+  // fix here must not break.
+  const ctx = stubCtx();
+  ctx.state = 'suspended';
+  const buffers = new Map([[WILLY_MAIN.file, fakeBuffer()]]);
+  const audio = new EngineAudio(
+    { template: 'Willy', engine: 'WillyEngine', layers: [WILLY_MAIN] },
+    [WILLY_MAIN], buffers, fakeListener(ctx));
+  audio.start();
+  assert.equal(ctx.started.length, 0,
+    'a loop cannot render into a suspended context');
+  assert.equal(audio.snapshot().pendingLoops, 1,
+    'and is remembered instead of lost');
+  ctx.state = 'running';
+  audio.setMaster(1);
+  const tick = () => audio.update({
+    dt: 1 / 30, rpm: 1, speed: 0, acceleration: 0, diveAngle: 0,
+    position: { x: 0, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 },
+    listenerPosition: { x: 0, y: 0, z: 0 },
+  });
+  tick();
+  assert.equal(ctx.started.length, 1,
+    'and starts for real the first frame the context wakes');
+  assert.equal(audio.snapshot().pendingLoops, 0);
+  tick();
+  assert.equal(ctx.started.length, 1, 'and only once -- a loop, not retriggered');
+  audio.dispose();
+}
+
+{
+  // A patch cut while its loop is still waiting for the context to wake must
+  // not spring to life later -- a level change silencing a wreck's fire has
+  // to be the end of it, resume or not.
+  const ctx = stubCtx();
+  ctx.state = 'suspended';
+  const buffers = new Map([[WILLY_MAIN.file, fakeBuffer()]]);
+  const audio = new EngineAudio(
+    { template: 'Willy', engine: 'WillyEngine', layers: [WILLY_MAIN] },
+    [WILLY_MAIN], buffers, fakeListener(ctx));
+  audio.start();
+  audio.silence();
+  ctx.state = 'running';
+  audio.setMaster(1);
+  audio.update({
+    dt: 1 / 30, rpm: 1, speed: 0, acceleration: 0, diveAngle: 0,
+    position: { x: 0, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 },
+    listenerPosition: { x: 0, y: 0, z: 0 },
+  });
+  assert.equal(ctx.started.length, 0,
+    'a silenced patch must not start its pending loop on resume');
   audio.dispose();
 }
 

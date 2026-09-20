@@ -194,6 +194,19 @@ export class EngineAudio {
     this.elapsed = 0;
     this.oneShotsOnTrigger = !!oneShotsOnTrigger;
     this.sinceRelease = 0;
+    // A one-shot requested while the context has not yet resumed (the
+    // ordinary state before the page's first gesture) queues at a frozen
+    // `currentTime` like every other one requested in the meantime, and the
+    // browser starts all of them together the instant the context wakes --
+    // ten triggers become twenty sources sounding as one bang. So a one-shot
+    // asked for while suspended is simply dropped; `suspended` counts how
+    // many, for a headless check to read beside `dropped`. A loop cannot be
+    // dropped the same way -- the engine note, or a wreck's fire, has to
+    // actually start once the context can render it -- so it is remembered
+    // here and started for real by `update()`'s own `#wake`, the first frame
+    // it sees the context running.
+    this.pendingLoops = new Set();
+    this.suspended = 0;
 
     this.bus = this.ctx.createGain();
     this.bus.gain.value = 0;
@@ -369,6 +382,10 @@ export class EngineAudio {
     }
     this.live.clear();
     for (const voice of this.voices) voice.source = null;
+    // A loop still waiting on the context to wake must not spring to life
+    // after the patch it belonged to has been cut -- a level change or a
+    // voice steal silencing this patch has to be the end of it, resume or not.
+    this.pendingLoops.clear();
     this.disarmPending();
   }
 
@@ -462,6 +479,14 @@ export class EngineAudio {
 
   #play(voice, when) {
     if (!voice.buffer || voice.source) return;
+    if (this.ctx.state !== 'running') {
+      // See the constructor's note. A loop remembers itself so `#wake` can
+      // start it for real once the context is running; a one-shot is simply
+      // lost, the same as a round nobody was there to hear.
+      if (voice.layer.loop) this.pendingLoops.add(voice);
+      else this.suspended += 1;
+      return;
+    }
     const source = this.ctx.createBufferSource();
     source.buffer = voice.buffer;
     source.loop = !!voice.layer.loop;
@@ -491,6 +516,21 @@ export class EngineAudio {
   }
 
   /**
+   * Start whatever loops piled up while the context could not render them.
+   *
+   * Polled from `update()`, which already runs every simulation tick, rather
+   * than a `statechange` listener: one fewer thing to unregister on
+   * `dispose()`, and the check costs nothing once `pendingLoops` is empty,
+   * which is every frame after the page's first gesture.
+   */
+  #wake() {
+    if (!this.pendingLoops.size || this.ctx.state !== 'running') return;
+    const now = this.ctx.currentTime;
+    for (const voice of this.pendingLoops) this.#play(voice, now);
+    this.pendingLoops.clear();
+  }
+
+  /**
    * One frame.
    *
    * `control` is everything the script's control sources need, in the units the
@@ -503,6 +543,7 @@ export class EngineAudio {
    */
   update(control) {
     if (this.disposed) return;
+    this.#wake();
     const dt = Math.max(control.dt || 0, 0);
     this.elapsed += dt;
     if (this.released) this.sinceRelease += dt;
@@ -683,6 +724,10 @@ export class EngineAudio {
       voices: this.voices.filter(v => v.playing).length,
       // And what the mixer is really summing, orphaned tails included.
       sources: this.live.size,
+      // One-shots lost to a suspended context, and loops still waiting for it
+      // to wake -- see the constructor's note.
+      suspended: this.suspended,
+      pendingLoops: this.pendingLoops.size,
       panners: this.groups.size,
       layers: this.voices.map(v => ({
         file: v.layer.file,
