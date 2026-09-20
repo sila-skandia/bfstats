@@ -1001,8 +1001,35 @@
    "kind": "function",
    "subsystem": "game",
    "confidence": "verified",
-   "source": "ghidra",
-   "note": "Twin of lnxded GameServer::processLocalPlayersInputs 0x081379b0. For each local player in the Game+0x30 queue map, nTicks times: pop one queued PlayerInput (zero-filled when the queue is dry), FUN_00483e70 = PlayerAction::set, tag with Game+0x21c (tick counter), FUN_00484890 = ActionBuffer::pushBack. One buffered action per simulation tick."
+   "source": "ghidra; extended verdict-2026-09-20-netcode",
+   "note": "Twin of lnxded GameServer::processLocalPlayersInputs 0x081379b0. For each local player in the Game+0x30 queue map, nTicks times: pop one queued PlayerInput (zero-filled when the queue is dry), FUN_00483e70 = PlayerAction::set, tag with Game+0x21c (tick counter), FUN_00484890 = ActionBuffer::pushBack. One buffered action per simulation tick. (re-read live 2026-09-20, D-6). See subsystems/netcode.md"
+  },
+  {
+   "address": "0x00489cb0",
+   "name": "GameClient__getGhostFactor",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Name descriptive, not recovered. Per-entity distance/velocity factor (flying) on the ghost-apply path 0x0048a130 -> 0x00489ed0 -> here -> 0x00498ce0 (read live, P-2). See subsystems/netcode.md"
+  },
+  {
+   "address": "0x00489ed0",
+   "name": "GameClient__applyGhostState",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Name descriptive, not recovered. The ghost state-applier called from GameClient__updateGhostManager 0x0048a130 (read live, P-2). See subsystems/netcode.md"
+  },
+  {
+   "address": "0x0048a130",
+   "name": "GameClient__updateGhostManager",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Name descriptive, not recovered. Client twin of server GhostManager::update 0x08141c70 (read live 2026-09-20; UNREAD at research time): gated on GameClient+0x1d8, iterates the ghost entities, calls state-applier 0x00489ed0 -> per-entity factor 0x00489cb0 -> 0x00498ce0. No snapshot-history/interpolation buffer (P-2). See subsystems/netcode.md"
   },
   {
    "address": "0x0048a710",
@@ -1014,13 +1041,22 @@
    "note": "bf42plus section: Other Functions"
   },
   {
+   "address": "0x0048c520",
+   "name": "GameClient__processGameStateAndSendPackets",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Name descriptive, not recovered. Client twin of server 0x08139420 (R-1/P-2): two-timer structure, ghost interval conn+0x18 = 0x3dcccccd written at 0x48c5c5 (0.1f at 0x8c53cc), rate fild [esi+0xc], [esi+0x14] period vs 0.0 at 0x8c41ac. See subsystems/netcode.md"
+  },
+  {
    "address": "0x0048fca0",
    "name": "GameClient__update",
    "kind": "function",
    "subsystem": "game",
    "confidence": "verified",
-   "source": "ghidra",
-   "note": "Defined as a function in Ghidra 2026-09-15 (body 404 bytes). GameClient::update(int nTicks, float tickDt) -- Game vtable slot vptr+0x28 (GameClient vtable, DATA xref 0x008d8dd4 is the addPlayerInput slot after it). Decompiled: nTicks>9 -> 1; FUN_00488840(nTicks) = processLocalPlayersInputs; FUN_0048f370 = processReceivedPackets; then nTicks x (*vtable+0x13c)(tickDt) = simulateFrame; then FUN_004b6400/FUN_004b6e10/FUN_004b5660(tickDt), getExactTime (FUN_00581960) minus static oldTime (_DAT_0097a728) for the wall-clock part, and list<PlayerInput>::clear (FUN_0078ffe0) over the Game+0x30 queue map. Byte-for-byte the shape of lnxded GameServer::update 0x08132940 (server simulateFrame slot is +0x140)."
+   "source": "ghidra; extended verdict-2026-09-20-netcode",
+   "note": "Defined as a function in Ghidra 2026-09-15 (body 404 bytes). GameClient::update(int nTicks, float tickDt) -- Game vtable slot vptr+0x28 (GameClient vtable, DATA xref 0x008d8dd4 is the addPlayerInput slot after it). Decompiled: nTicks>9 -> 1; FUN_00488840(nTicks) = processLocalPlayersInputs; FUN_0048f370 = processReceivedPackets; then nTicks x (*vtable+0x13c)(tickDt) = simulateFrame; then FUN_004b6400/FUN_004b6e10/FUN_004b5660(tickDt), getExactTime (FUN_00581960) minus static oldTime (_DAT_0097a728) for the wall-clock part, and list<PlayerInput>::clear (FUN_0078ffe0) over the Game+0x30 queue map. Byte-for-byte the shape of lnxded GameServer::update 0x08132940 (server simulateFrame slot is +0x140). (D-4, 2026-09-20): the bridge lost this function at verification time -- the nTicks>9->1 backlog was re-derived from PE bytes 0x48fca8-0x48fcb1. See subsystems/netcode.md"
   },
   {
    "address": "0x0048ffb6",
@@ -1036,9 +1072,9 @@
    "name": "patch__drop_actions",
    "kind": "patch_site",
    "subsystem": "patch",
-   "confidence": "working",
-   "source": "bf42plus",
-   "note": "bf42plus section: Misc Patches"
+   "confidence": "verified",
+   "source": "bf42plus; corrected verdict-2026-09-20-netcode",
+   "note": "bf42plus section: Misc Patches (P-1, 2026-09-20): read live -- the body is small: cache FUN_00484820(p)+0x14 into param_1+0x1c8, call FUN_004b7200. It does NOT itself re-pack via set/get + handleInput + performHandleUpdate (registerPlayerAction); called from the per-player loop GameClient__playerInputSyncLoop 0x004b8d70. The exact register->wire send path was not re-derived (NEEDS-MORE, cosmetic). See subsystems/netcode.md"
   },
   {
    "address": "0x00490750",
@@ -1054,18 +1090,18 @@
    "name": "GameClient__disconnect",
    "kind": "patch_site",
    "subsystem": "patch",
-   "confidence": "working",
-   "source": "bf42plus",
-   "note": "bf42plus section: Patched Locations (for reference)"
+   "confidence": "verified",
+   "source": "bf42plus; extended verdict-2026-09-20-netcode",
+   "note": "bf42plus section: Patched Locations (for reference) (J-3, 2026-09-20, PE bytes, full body): push 0xd; call [vtable+0x18] at 0x490f47 sends packet type 0xd, then teardown: +0x88 cleared, state +0x8/+0xc = 4, +0x34 nulled, held objects released. Patch point 0x00490f4c. See subsystems/netcode.md"
   },
   {
    "address": "0x00490f4c",
    "name": "patch__GameClient_disconnect_udp",
    "kind": "patch_site",
    "subsystem": "patch",
-   "confidence": "working",
-   "source": "bf42plus",
-   "note": "bf42plus section: Patched Locations (for reference)"
+   "confidence": "verified",
+   "source": "bf42plus; extended verdict-2026-09-20-netcode",
+   "note": "bf42plus section: Patched Locations (for reference) (J-4, 2026-09-20): mov ecx,[esi+0x34]; mov edx,[ecx]; call [edx+0x14] -- inside disconnect, the bf42plus force-disconnect point. See subsystems/netcode.md"
   },
   {
    "address": "0x00491180",
@@ -1234,9 +1270,18 @@
    "name": "patch__force_disconnect_msg",
    "kind": "patch_site",
    "subsystem": "patch",
-   "confidence": "working",
-   "source": "bf42plus",
-   "note": "bf42plus section: Hit Indicator Patches"
+   "confidence": "verified",
+   "source": "bf42plus; extended verdict-2026-09-20-netcode",
+   "note": "bf42plus section: Hit Indicator Patches (J-4, 2026-09-20): mov ecx,[0x973ab8]; call 0x6a7ee0 (force_disconnect_msg). See subsystems/netcode.md"
+  },
+  {
+   "address": "0x00498ce0",
+   "name": "GameClient__applyGhostTransform",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "open",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Name descriptive, not recovered. The ghost transform application step (0x0048a130 -> 0x00489ed0 -> 0x00489cb0 -> here). NOT read: how the per-entity factor maps to movement stays unread (P-2 caveat). Do not build on it."
   },
   {
    "address": "0x00499c40",
@@ -1378,9 +1423,9 @@
    "name": "patch__network_error_debug",
    "kind": "patch_site",
    "subsystem": "patch",
-   "confidence": "working",
-   "source": "bf42plus",
-   "note": "bf42plus section: Patched Locations (for reference)"
+   "confidence": "verified",
+   "source": "bf42plus; extended verdict-2026-09-20-netcode",
+   "note": "bf42plus section: Patched Locations (for reference) (J-4, 2026-09-20): call [edx+0x4] indirect vtable call (network_error_debug / GameEvent deserialize site). See subsystems/netcode.md"
   },
   {
    "address": "0x004b4800",
@@ -1406,8 +1451,8 @@
    "kind": "function",
    "subsystem": "game",
    "confidence": "verified",
-   "source": "ghidra",
-   "note": "Twin of lnxded GameServer::simulatePlayerUpdate 0x0815bd00. Pops one ActionBuffer entry (FUN_004913a0 = PlayerAction::get, player+0x180 buffer), then if getGameStatus()==1 (or 3 with player slot +0x58): FUN_004aaee0 checkPlayerTriggers, player->vtable+0x30 = BFPlayer::handleInput(input, dt) at 0x004b6b90, FUN_004b7680 performHandleUpdate(dt, ...); else controlObject(player+0xa4)->vtable+0x94 = IObject::handlePlayerInput(player, input, dt) at 0x004b6b56 (GCC slot +0x98; MSVC one slot earlier). dt is the 1/30 tick. THIS is the deviation/easing clock: one handlePlayerInput per 1/30 s tick."
+   "source": "ghidra; extended verdict-2026-09-20-netcode",
+   "note": "Twin of lnxded GameServer::simulatePlayerUpdate 0x0815bd00. Pops one ActionBuffer entry (FUN_004913a0 = PlayerAction::get, player+0x180 buffer), then if getGameStatus()==1 (or 3 with player slot +0x58): FUN_004aaee0 checkPlayerTriggers, player->vtable+0x30 = BFPlayer::handleInput(input, dt) at 0x004b6b90, FUN_004b7680 performHandleUpdate(dt, ...); else controlObject(player+0xa4)->vtable+0x94 = IObject::handlePlayerInput(player, input, dt) at 0x004b6b56 (GCC slot +0x98; MSVC one slot earlier). dt is the 1/30 tick. THIS is the deviation/easing clock: one handlePlayerInput per 1/30 s tick. (live 2026-09-20, D-6/P-2): zeroes the input on an empty ActionBuffer; pops exactly one entry per tick. See subsystems/netcode.md"
   },
   {
    "address": "0x004b6c20",
@@ -1516,6 +1561,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
+  },
+  {
+   "address": "0x004b8d70",
+   "name": "GameClient__playerInputSyncLoop",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Name descriptive, not recovered. The client self-prediction per-player loop (P-1, read live): front pending input -> PlayerAction::set 0x00483e70 -> get 0x004913a0 -> handleInput vtable+0x30 -> performHandleUpdate 0x004b7680 -> registerPlayerAction 0x004904f0 -> pop. The client steps its own player each tick from the same PlayerAction it registers for the wire. See subsystems/netcode.md"
   },
   {
    "address": "0x004bb800",
@@ -4186,9 +4240,9 @@
    "name": "patch__skip_spawn_screen_join",
    "kind": "patch_site",
    "subsystem": "patch",
-   "confidence": "working",
-   "source": "bf42plus",
-   "note": "bf42plus section: Spawn Screen Patches"
+   "confidence": "verified",
+   "source": "bf42plus; extended verdict-2026-09-20-netcode",
+   "note": "bf42plus section: Spawn Screen Patches (J-4, 2026-09-20): mov ecx,[ecx+0x30] then push 1; call 0x6cce20 = SpawnScreenStuff::setVisible(1) (skip_spawn_screen_join). See subsystems/netcode.md"
   },
   {
    "address": "0x006d846b",
@@ -5116,6 +5170,33 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: STL / MSVC Runtime (in-binary CRT)"
+  },
+  {
+   "address": "0x008c37d8",
+   "name": "vtable for IService",
+   "kind": "vtable",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Empty matchmaking stub (J-2): every slot = 0x00804ae0 = 'jmp ds:0x8c352c' (a single import stub). Loaded by the 8-byte stub at 0x4010b0 (mov eax,ecx; mov dword[eax],0x8c37d8; ret), sibling copies 0x4010c0/0x4010f0. No handshake. See subsystems/netcode.md"
+  },
+  {
+   "address": "0x008c37e0",
+   "name": "vtable for IJoinService",
+   "kind": "vtable",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Empty matchmaking stub (J-2): every slot = 0x00804ae0 import stub; loaded by 0x4010e0. No join logic or handshake. See subsystems/netcode.md"
+  },
+  {
+   "address": "0x008c3810",
+   "name": "vtable for IHostService",
+   "kind": "vtable",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Empty matchmaking stub (J-2): every slot = 0x00804ae0 import stub; loaded by 0x401120 (sibling 0x401130/0x401140). No host logic or handshake. See subsystems/netcode.md"
   },
   {
    "address": "0x008c3978",
@@ -6194,8 +6275,8 @@
    "kind": "function",
    "subsystem": "net",
    "confidence": "verified",
-   "source": "research-2026-09-19-vehicle-hud",
-   "note": "lnxded. Packs each PlayerInput float through floatToFixed(v, 12, 16.0f). See 0x08113480 and ledger GUN-2b."
+   "source": "research-2026-09-19-vehicle-hud; extended verdict-2026-09-20-netcode",
+   "note": "lnxded. Packs each PlayerInput float through floatToFixed(v, 12, 16.0f). See 0x08113480 and ledger GUN-2b. (W-1): channel index 0..5 packs action channels 0..5 in fixed order Yaw, Pitch, Roll, Throttle, MouseLookX, MouseLookY; buttons are level-triggered at \"0.5 < value\" with the input-mapped word's bit set; button map bit0=Fire(ch8)..bit25=ch33; byte-16 word bit 0x100 = ch48 Communication, never serialized. See subsystems/netcode.md"
   },
   {
    "address": "0x08113480",
@@ -6203,8 +6284,134 @@
    "kind": "function",
    "subsystem": "net",
    "confidence": "verified",
-   "source": "research-2026-09-19-vehicle-hud",
-   "note": "lnxded. Every PlayerInput float on the wire is packed 12-bit over a range of +-16.0 by PlayerAction::set 0x081128a0 (push 0x41800000 = 16.0 at every one of the 55 sites) and unpacked by PlayerAction::get 0x0815c5a0 as ((n/4095)*2 - 1)*16.0 (0x86c0cf0 = 4095.0, 0x86c0cf8 = 16.0, both doubles). The protocol deliberately reserves four bits of headroom above 1.0, which is one of the three reasons 'maxSpeed is the literal deg/s ceiling' is not safe to assume. See ledger GUN-2b."
+   "source": "research-2026-09-19-vehicle-hud; extended verdict-2026-09-20-netcode",
+   "note": "lnxded. Every PlayerInput float on the wire is packed 12-bit over a range of +-16.0 by PlayerAction::set 0x081128a0 (push 0x41800000 = 16.0 at every one of the 55 sites) and unpacked by PlayerAction::get 0x0815c5a0 as ((n/4095)*2 - 1)*16.0 (0x86c0cf0 = 4095.0, 0x86c0cf8 = 16.0, both doubles). The protocol deliberately reserves four bits of headroom above 1.0, which is one of the three reasons 'maxSpeed is the literal deg/s ceiling' is not safe to assume. See ledger GUN-2b. (W-2, 2026-09-20): exact law v/16 clamped to +-1, then (1<<bits)-1 * (v/16+1) * 0.5; at 12 bits round(4095*(clamp(v/16,-1,1)+1)/2). See subsystems/netcode.md"
+  },
+  {
+   "address": "0x08113530",
+   "name": "dice::bf::ClientConnection::ClientConnection",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "open",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Second ClientConnection ctor (research decompile 08113530.c). Not re-derived by the verifier; the J-1 handshake evidence is in 0x081142a0. Do not build on it yet."
+  },
+  {
+   "address": "0x081142a0",
+   "name": "dice::bf::ClientConnection::ClientConnection",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Per-connection defaults (J-1): conn+0xc = raw bits 0x14 = 20 (send rate), conn+0x10 = raw bits 0x414 = 1044 (byte budget), send BitStream(0x400) = 1024 B. The second BitStream ctor takes no explicit arg (default limit unverified). See subsystems/netcode.md"
+  },
+  {
+   "address": "0x081153f0",
+   "name": "dice::bf::ClientConnection::processReceivedPacket",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Decompiled by the verifier 2026-09-20 (verify/lnxded/081153f0.c). Per-connection packet dispatch; see subsystems/netcode.md"
+  },
+  {
+   "address": "0x081154a0",
+   "name": "dice::bf::ClientConnection::transmitMsgs",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Decompiled by the verifier 2026-09-20 (verify/lnxded/081154a0.c). See subsystems/netcode.md"
+  },
+  {
+   "address": "0x08132940",
+   "name": "dice::bf::GameServer::update(int, float)",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Server per-frame order (D-1): processLocalPlayersInputs -> processReceivedPackets -> n x vtable+0x140 simulateFrame(0x0815c2a0) -> updateStateMasks/updateVoteSystem/updateBanList -> updateConnections -> processGameStateAndSendPackets -> clearPlayerActions. 9 < n -> n = 1 backlog collapse (D-4). See subsystems/netcode.md"
+  },
+  {
+   "address": "0x08132c80",
+   "name": "dice::bf::GameServer::setPacketSize",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Empty 'return;' stub (R-2). See subsystems/netcode.md"
+  },
+  {
+   "address": "0x08132c90",
+   "name": "dice::bf::GameServer::setBandwidthChokeLimit",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Choke cap setter for GameServer+0x46c (R-1). See subsystems/netcode.md"
+  },
+  {
+   "address": "0x08132cb0",
+   "name": "dice::bf::GameServer::getBandwidthChokeLimit",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Reads the choke cap at GameServer+0x46c (R-1). See subsystems/netcode.md"
+  },
+  {
+   "address": "0x08132cc0",
+   "name": "dice::bf::GameServer::chokeBandwidth",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Send-rate choke (R-1): cap at GameServer+0x46c; sum over connections of rate(conn+0xc) * 1044(conn+0x10); while cap < sum, offending connections rate -= 5, floored at 10, written via changeUpdateFrequency 0x08132ff0. See subsystems/netcode.md"
+  },
+  {
+   "address": "0x08132ff0",
+   "name": "dice::bf::GameServer::changeUpdateFrequency",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Writes the per-connection send rate to conn+0xc; the choke's write path (R-1). See subsystems/netcode.md"
+  },
+  {
+   "address": "0x081378d0",
+   "name": "dice::bf::GameServer::receive",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "The receive path (R-2): NetServer read into the per-connection BitStream at conn+0x90, setMode(read). See subsystems/netcode.md"
+  },
+  {
+   "address": "0x081379b0",
+   "name": "dice::bf::GameServer::processLocalPlayersInputs",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "First step of GameServer::update's per-frame order (D-1). Client twin GameClient__processLocalPlayersInputs 0x00488840. See subsystems/netcode.md"
+  },
+  {
+   "address": "0x08137ba0",
+   "name": "dice::bf::GameServer::processReceivedPackets",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Server join handshake (J-1): on receive()==1, new ClientConnection (0x081142a0) -> setConnectionId -> map insert -> ServerInfoEvent + ServerInfoEvent2 -> initChallengeString + ChallengeEvent -> setConnectionType(0) -> chokeBandwidth(). See subsystems/netcode.md"
+  },
+  {
+   "address": "0x08139420",
+   "name": "dice::bf::GameServer::processGameStateAndSendPackets",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "The send (D-1 tail; R-1): per-connection period 1/rate from conn+0xc; ghost/state interval conn+0x18 = 0x3dcccccd (0.1f). Client twin 0x0048c520. See subsystems/netcode.md"
   },
   {
    "address": "0x0813dbc0",
@@ -6232,6 +6439,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-wiring",
    "note": "lnxded. Reads GameServer+0x474; see the setter 0x0813dff0 and ledger CA-5."
+  },
+  {
+   "address": "0x08141c70",
+   "name": "dice::bf::GhostManager::update",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Ghost dirty-object collection into the per-connection send set (P-2); 0.1 s cadence written by processGameStateAndSendPackets 0x08139420 (conn+0x18 = 0x3dcccccd). See subsystems/netcode.md"
   },
   {
    "address": "0x08147300",
@@ -6277,6 +6493,51 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [R2] hasSeparate + update type 10 / 0"
+  },
+  {
+   "address": "0x08148120",
+   "name": "dice::bf::PlayerActionManager::add",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Server-managed action ring (R-2/R-2b): if (3 < count) count = 3; ring memmove. The <=3 cap is SERVER-side only -- reachable only indirectly (one pointer hit, vtable/interface slot). The client send-loop batch cap stays open. See subsystems/netcode.md"
+  },
+  {
+   "address": "0x08148470",
+   "name": "dice::bf::PlayerActionManager::processRcvdPlayerActions",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Receive-side seq dedupe (D-4): pushes an action only when its serial (+0x88) is > lastSerial (+0x68); drops <= last. Entry stride 0x18. See subsystems/netcode.md"
+  },
+  {
+   "address": "0x081484e0",
+   "name": "dice::bf::PlayerActionManager::processReceivedPacket",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Packet reader (R-2): reads readUnsigned(stream, 4) = 4-bit action count (<=15); each counted entry is readFromStream. See subsystems/netcode.md"
+  },
+  {
+   "address": "0x081486f0",
+   "name": "dice::bf::PlayerAction::readFromStream",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "The wire reader (W-1): 6x readUnsigned(stream,12) into short[0..5], then 32 bits at +0xc. Byte 16(ch48) never crosses the wire; receivers reconstruct it as 0 (W-4). See subsystems/netcode.md"
+  },
+  {
+   "address": "0x08148750",
+   "name": "dice::bf::PlayerAction::writeToStream",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "The wire writer (W-1): 6x writeUnsigned(stream,12) of short[0..5] (bytes 0-11), then writeUnsigned(stream, dword at +0xc, 0x20) -- 104 bits, byte 16 never touched. See subsystems/netcode.md"
   },
   {
    "address": "0x0814b2e0",
@@ -6432,13 +6693,22 @@
    "note": "lnxded, per-sample-point occlusion test; body not decompiled."
   },
   {
+   "address": "0x0815bb90",
+   "name": "dice::bf::GameServer::clearPlayerActions",
+   "kind": "function",
+   "subsystem": "net",
+   "confidence": "verified",
+   "source": "verdict-2026-09-20-netcode",
+   "note": "Queue trim (D-2): per connection, player's ActionBuffer at BFPlayer+0x144; while 4 < size pop the OLDEST entry; any trim also writes player+0x174 = 0. See subsystems/netcode.md"
+  },
+  {
    "address": "0x0815bd00",
    "name": "dice::bf::GameServer::simulatePlayerUpdate(dice::bf::BFPlayer*, float)",
    "kind": "function",
    "subsystem": "collision",
    "confidence": "verified",
-   "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [R2] sets player+0x14b"
+   "source": "research-2026-09-19-collision-response; extended verdict-2026-09-20-netcode",
+   "note": "lnxded. [R2] sets player+0x14b (D-3/D-4, 2026-09-20): reads the FIRST ActionBuffer entry and erases it -- exactly one consume per player per tick; empty buffer decodes the sentinel plus an explicit 55-float zero loop (zeroed input, never skipped). See subsystems/netcode.md"
   },
   {
    "address": "0x0815bfa0",
@@ -6446,8 +6716,8 @@
    "kind": "function",
    "subsystem": "collision",
    "confidence": "verified",
-   "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [R2] sets player+0x14b"
+   "source": "research-2026-09-19-collision-response; extended verdict-2026-09-20-netcode",
+   "note": "lnxded. [R2] sets player+0x14b (D-3, 2026-09-20): calls simulatePlayerUpdate 0x0815bd00 once per player per tick (remote connections). See subsystems/netcode.md"
   },
   {
    "address": "0x0815c040",
@@ -6491,8 +6761,8 @@
    "kind": "function",
    "subsystem": "collision",
    "confidence": "verified",
-   "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [R2] F11 | lnxded. [R3] frame order, F1"
+   "source": "research-2026-09-19-collision-response; extended verdict-2026-09-20-netcode",
+   "note": "lnxded. [R2] F11 | lnxded. [R3] frame order, F1 (D-1, 2026-09-20): the per-tick server simulate -- GameServer vtable 0x0871b0e0+8 slot +0x140, one call per tick from GameServer::update 0x08132940. See subsystems/netcode.md"
   },
   {
    "address": "0x0815c5a0",
@@ -6500,8 +6770,8 @@
    "kind": "function",
    "subsystem": "net",
    "confidence": "verified",
-   "source": "research-2026-09-19-vehicle-hud",
-   "note": "lnxded. Decodes ((n/4095)*2 - 1)*16.0 back into a PlayerInput float. See 0x08113480 and ledger GUN-2b."
+   "source": "research-2026-09-19-vehicle-hud; extended verdict-2026-09-20-netcode",
+   "note": "lnxded. Decodes ((n/4095)*2 - 1)*16.0 back into a PlayerInput float. See 0x08113480 and ledger GUN-2b. (W-3/W-4, 2026-09-20): ((2n/4095)-1)*16 rounded to 0.01 (x100 0x86b01ac, frndint, /100); gated per channel on isInputMapped; ch48 read from byte 16 (dword bit 0x100) -- never on the wire, receivers reconstruct 0. See subsystems/netcode.md"
   },
   {
    "address": "0x0815cd7e",
@@ -7220,8 +7490,8 @@
    "kind": "function",
    "subsystem": "seat",
    "confidence": "verified",
-   "source": "research-2026-09-16-seats",
-   "note": "lnxded. 56-slot jump table at 0x086c88c4; 38 named values, 18 land on the shared default (30-43,49,52-54)."
+   "source": "research-2026-09-16-seats; extended verdict-2026-09-20-netcode",
+   "note": "lnxded. 56-slot jump table at 0x086c88c4; 38 named values, 18 land on the shared default (30-43,49,52-54). (W-5, 2026-09-20): console name-index helper -- a 56-case switch over the channel-name strings, no serialization of any kind. NOT the wire format (the netcode design README's \">> operator is the spec\" is overturned; the wire is PlayerAction 0x08148750/0x081486f0). See subsystems/netcode.md"
   },
   {
    "address": "0x081d8bc0",
@@ -7229,8 +7499,8 @@
    "kind": "function",
    "subsystem": "seat",
    "confidence": "verified",
-   "source": "research-2026-09-16-seats",
-   "note": "lnxded, string-compare parser not a table."
+   "source": "research-2026-09-16-seats; extended verdict-2026-09-20-netcode",
+   "note": "lnxded, string-compare parser not a table. (W-5, 2026-09-20): istream name-string compare cascade assigning the channel index; NOT the wire format. See subsystems/netcode.md"
   },
   {
    "address": "0x081d9450",
