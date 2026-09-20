@@ -847,25 +847,23 @@ import {
   VehicleOccupancy, findAllVehicleRoots, listEntryPoints, classifyRoot,
   FireState, chainOnShot, readWorldPose, pickNearest,
 } from './seats.js';
-import { MouseInput, profileFor, soldierLookDegrees } from './mouse-input.js';
+import { MouseInput, profileFor } from './mouse-input.js';
 import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
          findWeaponSpecsByFireArms, WEAPON_HEADROOM } from './engine-audio.js';
 import { GunFire } from './gunfire.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
 import { buildHeightfield, buildCollisionIndex, WorldCollider } from './collision.js';
-import { Soldier, spawnFlags, pickSpawn, spawnYaw,
-         FOV_DEG as FOOT_FOV, GRAVITY } from './soldier.js';
-import { fallDamageFor } from './fall-damage.js';
+import { FOV_DEG as FOOT_FOV, GRAVITY } from './soldier.js';
 import { DeviationModel } from './deviation.js';
 import { wantViewmodelClip } from './viewmodel-anim.js';
 import { createReplayController, recordingLevel } from './replay.js';
 import { Hud, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS } from './hud.js';
 import { Armor } from './armor.js';
-import { VehicleDamageSet, inputGate } from './vehicle-damage.js';
+import { VehicleDamageSet } from './vehicle-damage.js';
 import { BodyWorld } from './body-world.js';
-import { buildParkedVehicle, collisionPartsFor, describeVehicleParts, DrivenBody } from './vehicle-bodies.js';
-import { SupplyDepot, SupplyField } from './supply.js';
+import { buildParkedVehicle, describeVehicleParts } from './vehicle-bodies.js';
+import { SupplyDepot } from './supply.js';
 import { collectIkBindings, defaultSeatPoseName, ikTarget, resolveSeatStates,
          seatBody, seatPoseName, solveTwoBone } from './seat-ik.js';
 import { GameConsole, paintConsole, loadConsoleFont } from './console.js';
@@ -878,6 +876,7 @@ import { CombatArea, combatAreaRect } from './combat-area.js';
 // blast to and adds its sample offsets from.
 import { soldierExposure, worldBlocker, POSE_STAND } from './soldier-exposure.js';
 import { CHARACTER_HEIGHT } from './physics.js';
+import { World } from './world.js';
 import { flareSprites, flareTextureFiles, hasDrawableFlare } from './lens-flare.js';
 import { modeNames, modeProblem, pruneToMode, selectGameMode,
          spawnerWindow } from './game-modes.js';
@@ -1716,22 +1715,14 @@ function flySpeed() {
 // make while four other streams are editing this file.
 const SIM_TICK_HZ = 30;                 // `g_simulationFps`, lnxded 0x08716b5c
 const SIM_TICK_DT = 1 / SIM_TICK_HZ;    // `Setup+0xcc` / client `Setup+0x184`
-// `GameClient::update` 0x0048fca8 `cmp ebx,0x9; jle; mov ebx,1` -- a backlog
-// past nine collapses to a single tick and the world quietly loses the rest.
-// The engine never stretches `dt`, and neither does this.
-const SIM_MAX_BACKLOG = 9;
-let simAccum = 0;
 const mouseInput = new MouseInput();
-
-/** Whole ticks this frame owes, the engine's accumulator
- *  (`InputManager::update` 0x0049ce70). */
-function simTicks(dt) {
-  simAccum += Math.max(0, dt) || 0;
-  let ticks = Math.floor(simAccum / SIM_TICK_DT);
-  simAccum -= ticks * SIM_TICK_DT;
-  if (ticks > SIM_MAX_BACKLOG) { ticks = 1; simAccum = 0; }
-  return ticks;
-}
+// The 30 Hz clock itself lives in the world (world.js), one authority per
+// player; this page reads its frame's tick count back from `world.lookTicks
+// (dt)` instead of running a second accumulator that could drift out of
+// phase with the world's (a profile switch used to reset this page's simAccum
+// and never the world's). The engine's backlog collapse was that page clock's
+// rule too (`GameClient::update` 0x0048fca8 `cmp ebx,0x9; jle; mov ebx,1`);
+// the world owns the same law as its FixedStep's MAX_CATCH_UP_TICKS cap.
 
 /** Which sensitivity profile the player is on right now.
  *
@@ -1748,39 +1739,37 @@ function lookProfile() {
 }
 
 /**
- * One frame's pump. Returns the ticks the caller must now run.
+ * One frame's pump, driven by the world's own clock.
  *
- * The pump's argument is the time those ticks CONSUME (`nTicks / 30`), not the
- * wall-clock frame time -- `InputManager::update` 0x0049cff7 `fild nTicks;
- * fmul tickDt`. That is what makes the integral exact: the axis is
- * `0.001 * counts * scale / (n/30)`, each of the n ticks contributes its own
- * share, and the total comes to `0.001 * counts * scale * 30` whatever n was.
- * A frame that owes no tick does not pump at all, and its counts wait.
+ * The pump's argument is the time the frame's ticks CONSUME (`nTicks / 30`),
+ * not the wall-clock frame time -- `InputManager::update` 0x0049cff7
+ * `fild nTicks; fmul tickDt`. That is what makes the integral exact: the
+ * axis is `0.001 * counts * scale / (n/30)`, each of the n ticks contributes
+ * its own share, and the total comes to `0.001 * counts * scale * 30`
+ * whatever n was. A frame that owes no tick does not pump at all, and its
+ * counts wait. `ticks` is the world's count for this frame (`lookTicks`),
+ * so the pump and the sim share one tick authority.
  */
-function pumpLook(dt) {
+function pumpLook(ticks) {
   const profile = lookProfile();
   if (profile !== mouseInput.profile) {
     // A different control map has been activated (climbing into a plane, or
     // out of one). The engine resets the map it leaves, so nothing a player
-    // did on the old profile arrives scaled by the new one.
+    // did on the old profile arrives scaled by the new one. Only the device
+    // stage resets here; the world's clock carries on (it is the one clock).
     mouseInput.reset();
     mouseInput.profile = profile;
-    simAccum = 0;
   }
-  const ticks = simTicks(dt);
   if (ticks > 0) mouseInput.pump(ticks * SIM_TICK_DT, profile);
   return ticks;
 }
 
 /** A pumped frame's turret ticks: set the held axis pair once, then run the
- *  servo that many times at the engine's own dt. */
-function stepTurret(dt) {
-  const ticks = pumpLook(dt);
-  const turret = occupancy?.turret;
-  if (!turret) return;
-  turret.aim(mouseInput.x, mouseInput.y);
-  for (let i = 0; i < ticks; i++) turret.step(SIM_TICK_DT);
-}
+ *  servo that many times at the engine's own dt. The world owns this loop now
+ *  (world.js #vehicleTick aims the rig with the latest buffered axis and
+ *  steps it once per 30 Hz tick, which is exactly this servo run); the page
+ *  keeps only the pump — `pumpLook` above — and hands the world the axis
+ *  pair, so `occupancy.turret`'s aim/step moved across unchanged. */
 
 /** The soldier's own look, per tick.
  *
@@ -1790,11 +1779,10 @@ function stepTurret(dt) {
  *  at 0x0827457d) and none on the pitch (0x08274537). `mouse-input.js` carries
  *  the addresses. Signs match this page's own convention, which counts yaw the
  *  other way from the engine. */
-function stepSoldierLook(ticks) {
-  if (!ticks || !soldier) return;
+function footLookPair() {
   let x = mouseInput.x;
   let y = mouseInput.y;
-  if (!x && !y) return;
+  if (!x && !y) return { x, y };
   // While zoomed the engine scales BOTH mouse-look axes by the weapon's
   // `zoomFov` — the WORLD field of view, `zoom.fov` here — not by
   // `SoldierZoomFov`, which is the arms' own factor. Read out of the
@@ -1825,17 +1813,7 @@ function stepSoldierLook(ticks) {
     x *= factor;
     y *= factor;
   }
-  const per = soldierLookDegrees(x, y);
-  const yaw = -per.yaw * DEG_TO_RAD * ticks;
-  const pitch = -per.pitch * DEG_TO_RAD * ticks;
-  // The soldier owns the clamp: `setPointUpDownAngle 38.0 38.0` is the
-  // engine's own bound on `BFSoldier+0x284` and `soldier.look` applies it.
-  soldier.look(yaw, pitch);
-  // The deviation model wants |MouseLookX/Y| as radians of view movement,
-  // drained per frame in footFire(). Recoil writes `soldier.look` directly and
-  // so never counts against him.
-  footLookX += Math.abs(yaw);
-  footLookY += Math.abs(pitch);
+  return { x, y };
 }
 
 function lookDelta(dx, dy) {
@@ -1983,8 +1961,7 @@ addEventListener('keydown', e => {
     // holding the wheel of, not work the bolt.
     if (optPilot.checked && (aircraft || car)) {
       (aircraft || car).reset();
-      stick.roll = 0;
-      stick.pitch = 0;
+      world?.resetStick(LOCAL_PLAYER);
     } else if (optOnFoot.checked && soldier) {
       // R is the reload once there is a magazine to reload — the game's own
       // binding — and stays the respawn only for a soldier holding nothing
@@ -4365,7 +4342,10 @@ let occupancy = null;
 //     polls rather than latching, and stops polling once the thing is dead.
 // ---------------------------------------------------------------------------
 
-const vehicleDamage = new VehicleDamageSet();
+// `let`: reassigned to the world's own set at level load (show() keeps the
+// alias), so every HUD feed, splash pass and console hook that always reached
+// `vehicleDamage` still reaches the same object the world steps.
+let vehicleDamage = new VehicleDamageSet();
 // owner id -> { node, anchors: Map<effectName, Object3D>, handles: [] }, the
 // scene-side bookkeeping a tier change needs to undo.
 const damageVisuals = new Map();
@@ -4378,10 +4358,23 @@ const damageVisuals = new Map();
 function registerDamageables(ownerRoots) {
   clearDamageVisuals();
   vehicleDamage.clear();
+  // The world registers its side of every Armored owner (its own
+  // `vehicleDamage` set IS this array — same object, see show()) and takes
+  // the node + a world position for the water pass, so that pass needs no
+  // scene graph. A static root never moves, so its registration pose is
+  // enough; a hull's position is refreshed from the body world every tick.
+  const regPos = new THREE.Vector3();
   for (let owner = 0; owner < ownerRoots.length; owner++) {
     const node = ownerRoots[owner];
     const armorExtras = node?.userData?.armor;
-    const vehicle = vehicleDamage.add(owner, armorExtras, { name: node?.name || null });
+    const vehicle = world.addDamageable(owner, node, armorExtras, {
+      name: node?.name || null,
+      position: node ? (() => {
+        node.updateWorldMatrix(true, false);
+        node.getWorldPosition(regPos);
+        return [regPos.x, regPos.y, regPos.z];
+      })() : null,
+    });
     if (vehicle) {
       damageVisuals.set(owner, {
         node,
@@ -4810,11 +4803,11 @@ function setupVehicleBodies() {
   bodyWorld = null;
   const heightfield = collider?.heightfield;
   if (!collisionMeshes || !damageTables || !heightfield) return;
-  bodyWorld = new BodyWorld({
-    tables: damageTables,
-    terrain: bodyTerrain(heightfield, collider.waterLevel),
-    onDamage: onCrashDamage,
-  });
+  // The world owns the BodyWorld and its crash-damage accounting; this page
+  // half keeps the scene records and feeds each parked hull in.
+  world?.setupBodies({ tables: damageTables,
+                       terrain: bodyTerrain(heightfield, collider.waterLevel) });
+  bodyWorld = world?.bodyWorld ?? null;
   for (const [owner, visual] of damageVisuals) {
     const spec = bodySpecFor(visual.node);
     if (!spec) continue;
@@ -4824,7 +4817,7 @@ function setupVehicleBodies() {
       spawnInverse: visual.node.matrixWorld.clone().invert(),
     });
     collider.statics?.setBodyOwner?.(owner, true);
-    bodyWorld.addParked(owner, buildParkedVehicle(spec, bodyPoseOf(visual.node)), spec);
+    world?.addParkedBody(owner, spec, bodyPoseOf(visual.node));
   }
 }
 
@@ -4844,7 +4837,13 @@ function bodyAwareCollider() {
   });
 }
 
-/** A crash cost `owner` hit points: the same Armor a round would have hurt. */
+/** A crash cost `owner` hit points. Called by the world's BodyWorld callback
+ *  BEFORE the damage lands (world.js #onBodyDamage), so the console record
+ *  reads the same pre-damage hit points it always did; the world applies the
+ *  damage itself right after — this half is the presentation: the record a
+ *  `window.__crashLog` check wants and the effect bundle where the impact
+ *  was. The destroyed guard is the old skip: a wreck has already died, so the
+ *  impact stays silent. */
 function onCrashDamage(owner, result, at, other) {
   const vehicle = vehicleDamage.get(owner);
   if (crashLog) {
@@ -4853,7 +4852,6 @@ function onCrashDamage(owner, result, at, other) {
     if (crashLog.length > 200) crashLog.shift();
   }
   if (!vehicle || vehicle.destroyed) return;
-  vehicle.damage(result.kill ? vehicle.hitPoints : result.damage);
   const effect = result.effectCell
     ? damageTables?.effects?.[result.effectCell[0]]?.[result.effectCell[1]] : null;
   if (effect) effects.play(effect, { position: [at[0], at[1], at[2]], normal: [0, 1, 0] });
@@ -4865,10 +4863,7 @@ function adoptDrivenBody(vehicle) {
   const owner = collider?.statics?.ownerOf(vehicle.node) ?? -1;
   const scene = bodyScene.get(owner);
   if (!scene) return;
-  bodyWorld.remove(owner);
-  const driven = new DrivenBody(vehicle, scene.spec);
-  bodyWorld.addDriven(owner, driven,
-    collisionPartsFor(scene.spec, driven, { hullOnly: true }), scene.spec);
+  world.adoptDriven(owner, vehicle, scene.spec);
   scene.moved = true;
 }
 
@@ -4878,23 +4873,18 @@ function releaseDrivenBody(vehicle) {
   const owner = collider?.statics?.ownerOf(vehicle.node) ?? -1;
   const scene = bodyScene.get(owner);
   if (!scene || !bodyWorld.get(owner)?.driven) return;
-  bodyWorld.remove(owner);
-  const parked = buildParkedVehicle(scene.spec,
-    { ...bodyPoseOf(vehicle.node), asleep: false });
-  const v = vehicle.state.velocity;
-  parked.body.v[0] = v.x; parked.body.v[1] = v.y; parked.body.v[2] = v.z;
-  bodyWorld.addParked(owner, parked, scene.spec);
+  world.releaseDriven(owner, vehicle, scene.spec, bodyPoseOf(vehicle.node));
 }
 
 /** A wreck is scenery and a respawn is a fresh vehicle on its pad. */
 function retireVehicleBody(owner) {
   if (!bodyScene.has(owner)) return;
-  bodyWorld?.remove(owner);
+  world.retireBody(owner);
 }
 function respawnVehicleBody(owner) {
   const scene = bodyScene.get(owner);
   if (!scene || !bodyWorld) return;
-  bodyWorld.remove(owner);
+  world.removeBody(owner);
   scene.moved = false;
   scene.dirty = false;
   collider?.clearMovedOwner?.(owner, { enable: false });
@@ -4910,7 +4900,7 @@ function respawnVehicleBody(owner) {
   _bodyMatrix.decompose(node.position, node.quaternion, _bodyScale);
   node.updateMatrix();
   THREE.Object3D.prototype.updateMatrixWorld.call(node, true);
-  bodyWorld.addParked(owner, buildParkedVehicle(scene.spec, bodyPoseOf(scene.node)), scene.spec);
+  world.addParkedBody(owner, scene.spec, bodyPoseOf(scene.node));
 }
 
 /** Write a body's pose onto its node and tell the collider where the hull is. */
@@ -4947,10 +4937,12 @@ function publishMovedHull(owner, scene, node, p) {
     p[0], p[1], p[2], scene.spec.boundingRadius);
 }
 
-/** One frame of the body world, after the drive model has moved the player's vehicle. */
-function stepVehicleBodies(dt) {
-  if (!bodyWorld) return;
-  if (!bodyWorld.step(dt)) return;
+/** One body tick of the world, drawn: the world's step() (frame(), above)
+ *  already ran the BodyWorld itself — `step.bodyTicks` is the report of it —
+ *  and this half only writes the bodies that moved back onto their scene
+ *  nodes and tells the collider where a shoved hull now stands. */
+function stepVehicleBodies(step) {
+  if (!step.bodyTicks || !bodyWorld) return;
   for (const [owner, entry] of bodyWorld.entries) {
     const scene = bodyScene.get(owner);
     if (!scene) continue;
@@ -4983,18 +4975,21 @@ function occupiedVehicleDamage() {
 }
 
 /**
- * HP-15's gate for the vehicle the player is in, re-read every frame:
- * `{ blocked, rotationalScale }`.
+ * HP-15's gate for the vehicle the player is in, re-read every tick:
+ * `{ blocked, rotationalScale }`. The world runs it (world.js #vehicleTick)
+ * and frame() copies that tick's answer into this object so the camera shells
+ * (pilot/drive/manned below) and the mobile UI read the same values they
+ * always read.
  *
  * `vehicle-damage.js`'s `inputGate` is the rule and carries the addresses. The
- * two things this function is responsible for are WHEN and WHERE:
+ * two things this arrangement preserves are WHEN and WHERE:
  *
- *   - **When.** Every frame, against the live Armor, never latched when a
+ *   - **When.** Every tick, against the live Armor, never latched when a
  *     shell landed. The engine's own two bytes (`SimpleObject+0xed`/`+0xee`)
  *     are persistent state cleared only by the wreck-respawn timer, so polling
  *     matches them — and it is also what makes the gate apply to a hull killed
  *     some *other* way. A vehicle burnt down by `hpLostWhileCriticalDamage`,
- *     drowned, or killed by the combat area's own per-frame `giveDamage`
+ *     drowned, or killed by the combat area's own per-tick `giveDamage`
  *     (which damages the occupied hull through this same `Armor`) refuses the
  *     driver exactly as one killed by a shell does, because none of them are
  *     special-cased: all four write hit points and this reads them back.
@@ -5004,54 +4999,24 @@ function occupiedVehicleDamage() {
  *     turret in `drive()` and a gunner's in `manned()` alike. The harder
  *     destroyed gate is `drive()`'s, below.
  *
- * Aircraft are the known gap: `pilot()` does not consult this yet, though
  * `PlayerControlObject::handlePlayerInput`'s early return is per-PCO and so
  * covers a destroyed plane too. Its turret input IS already scaled, because
  * that goes through the same rig.
  */
 const vehicleInput = { blocked: false, rotationalScale: 1 };
-function stepVehicleInputGate() {
-  // Filled in place: this runs once per frame for the whole time anyone is in
-  // a vehicle, and `inputGate`'s own note says why it takes the object rather
-  // than returning a new one.
-  inputGate(occupiedVehicleDamage(), vehicleInput);
-  if (occupancy?.turret) occupancy.turret.inputScale = vehicleInput.rotationalScale;
-  return vehicleInput;
-}
 
 // The HP last pushed into the HUD, so a moving bar costs one compare per frame
 // rather than a full `feedVehicleHud()`.
 let fedVehicleHp = null;
 
-/** Scratch for `stepVehicleDamage`'s world-position reads. */
-const waterCheckPos = new THREE.Vector3();
-
-/** Step every damageable thing and reconcile what it is drawing. */
-function stepVehicleDamage(dt) {
+/** Step every damageable thing and reconcile what it is drawing.
+ *  The world's step() has already run the drowning (HP-5) and burn passes and
+ *  reported every tier/died change in `step.damage`; this half is the scene:
+ *  a tier effect, a wreck, the linger-and-fade, and the driver's own HP bar.
+ */
+function stepVehicleDamage(step, dt) {
   if (!vehicleDamage.size) return;
-  // Determine which vehicles are in water for the drowning damage tick
-  // (HP-5). A vehicle is "in water" when the water plane is the surface its
-  // wheels rest on (not terrain), or when its own centre has dropped to or
-  // below that plane. Boats are skipped by `DamageableVehicle.damageFromWater`
-  // being false on them, so no owner check is needed here.
-  const waterLevel = collider?.waterLevel;
-  let inWaterOwners = null;
-  if (Number.isFinite(waterLevel)) {
-    inWaterOwners = new Set();
-    for (const [owner, visual] of damageVisuals) {
-      if (visual?.wrecked || visual?.removed) continue;
-      const pos = visual.node.getWorldPosition(waterCheckPos);
-      if (pos.y <= waterLevel) {
-        inWaterOwners.add(owner);
-      } else {
-        const surface = collider.surfaceHeight(pos.x, pos.z);
-        if (Math.abs(surface - waterLevel) < 0.01) {
-          inWaterOwners.add(owner);
-        }
-      }
-    }
-  }
-  for (const change of vehicleDamage.update(dt, { inWaterOwners })) {
+  for (const change of step.damage) {
     if (change.changed) showDamageTier(change.vehicle, change.tier);
     if (change.died) wreckVehicle(change.vehicle);
   }
@@ -5065,71 +5030,6 @@ function stepVehicleDamage(dt) {
     fedVehicleHp = hp;
     if (live) feedVehicleHud();
   }
-}
-
-/** Scratch for `stepCombatArea`'s world-position read. */
-const combatAreaPos = new THREE.Vector3();
-
-/**
- * The terrain material id under a world position, for the combat area's second
- * test (CA-5).
- *
- * The engine asks `terrainBase`'s `PatchTerrain::getMaterial(x, z)` directly —
- * a heightfield lookup, so what you are *standing* on makes no difference: a
- * man on a rooftop over painted ground is over painted ground. `Heightfield.
- * material` is the same nearest-sample read, and it answers
- * `DEFAULT_TERRAIN_MATERIAL` (0) for a level with no `terrain/materials.png`,
- * which can never equal 7 and so leaves such a level exactly as it was.
- */
-function combatMaterial(x, z) {
-  const field = collider?.heightfield;
-  if (!field || !field.materials) return null;
-  return field.material(x, z);
-}
-
-/**
- * The combat area, one step a frame, against whatever the player occupies.
- *
- * `combat-area.js` carries the engine reading. The part that matters here is
- * WHO it applies to: `GameServer::gameStatusPlaying` tests
- * `BFPlayer::getVehicle()`'s position (lnxded 0x081523a1) and hands the
- * damage to that same object (0x08152490), branching at 0x0815243f on the
- * entry-point index `BFPlayer+0x6c`. Seated, that is the VEHICLE — a plane
- * that strays out burns down and the pilot is not touched directly. On foot
- * it is the soldier. Which is why this cannot live inside `onFoot()`: a
- * player leaves the area in a plane far more often than on his feet, and an
- * on-foot-only check is inert for exactly the case the mechanic exists for.
- *
- * Free fly is the one state with no engine counterpart — there is no player
- * object to accrue against — so the accumulator is reset rather than frozen,
- * and `combatFrame` goes null, which culls the warning group.
- */
-function stepCombatArea(dt) {
-  if (!combatArea.active) { combatFrame = null; return; }
-  if (optPilot.checked && occupancy?.root) {
-    const pos = occupancy.root.getWorldPosition(combatAreaPos);
-    combatFrame = combatArea.step(dt, pos.x, pos.z, combatMaterial(pos.x, pos.z));
-    if (combatFrame.damage > 0) {
-      const hull = occupiedVehicleDamage();
-      // A wreck has already died; the engine's own `giveDamage` on a
-      // destroyed object is a no-op for the same reason.
-      if (hull && !hull.destroyed) {
-        hull.damage(combatFrame.damage);
-        reconcileDamaged(hull);
-      }
-    }
-    return;
-  }
-  if (optOnFoot.checked && soldier && !soldierDead) {
-    combatFrame = combatArea.step(dt, soldier.x, soldier.z,
-                                  combatMaterial(soldier.x, soldier.z));
-    if (combatFrame.damage > 0 && soldierArmor) {
-      soldierArmor.applyDamage(combatFrame.damage);
-    }
-    return;
-  }
-  combatFrame = null;
-  combatArea.reset();
 }
 
 /** Re-pick a just-damaged vehicle's tier on the frame the damage landed. */
@@ -5593,6 +5493,8 @@ function buildCollider(root) {
   collider = (heightfield || statics || Number.isFinite(extras?.waterLevel))
     ? new WorldCollider({ heightfield, statics, waterLevel: extras?.waterLevel })
     : null;
+  world.setCollider(collider);
+  world.damageTables = damageTables;
   guns.collider = collider;
   guns.damageEffects = damageTables?.effects || null;
   guns.projectileMaterials = damageTables?.projectiles || null;
@@ -5697,12 +5599,10 @@ function warmLevel(library) {
 // to say how long the level's took. Neither promise gates anything the page
 // itself does.
 const warmups = { level: Promise.resolve(null), rig: Promise.resolve(), timing: {} };
-// Stick position, -1..1. Held keys drive it toward full deflection and it
-// springs back to centre when they are released, which is what the surfaces'
-// own `setAutomaticReset 1` does in the engine.
-const stick = { roll: 0, pitch: 0 };
-const STICK_RATE = 2.4;      // to full deflection in ~0.4 s
-const STICK_RETURN = 3.2;    // and back to centre a little faster
+// The stick position (-1..1, driven toward a held key's full deflection and
+// springing back to centre on release) is the world's per-player state now —
+// world.js owns it beside the aircraft path that spends it, and the page's
+// resets delegate to `world.resetStick`.
 const HEAD_SENS = 0.0022;
 // The four views C cycles. Only `cockpit` is reconstructed from data — the look
 // clamps it applies are `CorsairCamera`'s own setMin/setMaxRotation. Chase,
@@ -5845,8 +5745,23 @@ function setPilot(on, node = null, seatId = null) {
     clearVehicleHud();
     occupancy = null;
   }
-  stick.roll = 0;
-  stick.pitch = 0;
+  // The world's occupied-vehicle state rides the same seats as the page's:
+  // mounted on entry (the gun lists came fresh from `collectGuns` /
+  // `collectMannedGuns` above), cleared on exit. A seat switch re-scopes the
+  // lists through `switchSeat`'s own `refreshMount` below; the E-key exits
+  // (leaveVehicle/leaveManned) clear it themselves, as they do `occupancy`.
+  if (on && occupancy) {
+    world?.setPlayerVehicle(LOCAL_PLAYER, {
+      occupancy,
+      vehicle: aircraft || car || null,
+      kind: occupancy.rootKind,
+      groups: vehicleGuns,
+      manned: mannedGuns,
+    });
+  } else if (!on) {
+    world?.clearPlayerVehicle(LOCAL_PLAYER);
+  }
+  world?.resetStick(LOCAL_PLAYER);
   hud.textContent = isTouchDevice ? getTouchHudText()
     : on
       ? (mannedActive() ? HUD_MANNED : car ? HUD_DRIVE : HUD_PILOT)
@@ -5895,94 +5810,16 @@ const HUD_MANNED = 'Mouse aims · LMB fires · 1-9 seats · E get out · Esc';
  */
 function drive(dt) {
   if (!car) return;
-  // HP-15: a wreck cannot be driven. `PlayerControlObject::handlePlayerInput`
-  // (lnxded 0x08318920) returns at 0x08318952 **before forwarding input to any
-  // child**, so this is not a throttle cut or a steering lock — a destroyed
-  // vehicle receives nothing at all, and keeps receiving nothing until the
-  // wreck-respawn timer clears the byte. `driving` is forced false rather than
-  // returning outright, so the hull still integrates and coasts to a stop
-  // under its own momentum (the same reason this function runs every frame
-  // whether or not the driver's seat is the active one) and the rigs are still
-  // re-asserted; what stops is the reading of the keyboard.
+  // The world has already run this function's old sim half (world.js
+  // #vehicleTick): the HP-15 gate (`driving` below reads its answer), the
+  // keyboard into c_PIThrottle/c_PIYaw/c_PIFire/c_PIAltFire, `car.integrate`,
+  // the rigs (`applyTurrets` after, never before — the world keeps the page's
+  // own ordering comment), the turret's aim and step, the FireStates and the
+  // `vehicleGuns` loop with the unconditional-off `setFiring` semantics. The
+  // shell left here is the presentation half: the muzzle flash's 1P choice
+  // and the camera, including the passenger-seat pose.
   const driving = occupancy.isActiveRoot() && !vehicleInput.blocked;
-  if (driving) {
-    const held = captured ? keys : EMPTY_KEYS;
-
-    // Ground vehicles take keyboard input directly — the game's PhysicsEngine
-    // samples c_PIThrottle/c_PIYaw and the Engine's own RotationalBundle servo
-    // (setMaxSpeed/setAcceleration) rate-limits steering. The aircraft-style
-    // `axisToward` smoothing (0.4 s to full deflection) made every land vehicle
-    // feel like it was driving in molasses: throttle that takes half a second
-    // to floor, steering that lags half a wheel-turn behind the hand. A jeep that
-    // can't turn its front axle in time plows into the next corner sideways,
-    // and a Sherman's differential steer answers like a drunk tank. Drive feels
-    // snappy when the pedal and the rack answer at once and the engine's own
-    // servo is the only governor.
-    car.setInput('c_PIThrottle',
-      clampMobileInput(
-        ((held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0))
-        + mobilePadAxis('y')));
-    car.setInput('c_PIYaw',
-      clampMobileInput(
-        ((held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0))
-        + mobilePadAxis('x')));
-    // A Willys carries no guns, but the inputs cost nothing and whatever
-    // armed car arrives next inherits both triggers with them. `c_PIAltFire`
-    // is the one that was missing: a Sherman's coaxial machine gun declares
-    // it, so until the right mouse button reached this line the gun had no
-    // input and could not be fired at all.
-    car.setInput('c_PIFire', (held.has('Space') || seatFire) ? 1 : 0);
-    car.setInput('c_PIAltFire', seatAltFire ? 1 : 0);
-  }
-
-  car.integrate(dt);
-
-  // After `integrate`, never before: `applyRig` inside it re-poses every
-  // declared `RotationalBundle` from the vehicle's own surface table, and
-  // nothing ever writes `c_PIMouseLookX/Y` into that table, so it puts the
-  // turret back at hull-forward each frame. Stepping the aim rig afterwards
-  // is what leaves the traverse where the player pointed it — the same order
-  // `manned()` has always relied on for a gunner's seat, which runs after
-  // this function for exactly the same reason.
-  //
-  // Every rig re-asserted, only the active one stepped: `occupancy.turret`
-  // belongs to whichever seat is active, and when that is a nested gunner it
-  // is `manned()`'s to step, not ours — but an unmanned seat's gun still has
-  // to stay pointed where its last occupant left it.
-  occupancy.applyTurrets();
-  // Gated on the seat, NOT on `driving`. The look stage must be pumped exactly
-  // once a frame, and this seat being the active root is precisely the case
-  // `manned()` declines (`mannedActive()` returns false for an active root
-  // that has a drivetrain), so this is the only pump that frame. Gating it on
-  // `driving` instead left a wrecked hull's own driver pumping NOTHING: the
-  // pixels `lookDelta` keeps banking for him sat in the accumulator until the
-  // wreck timer cleared, and the first live frame then pumped seconds of
-  // travel into one tick and saturated the axis at the wire's +-16.
-  // The engine pumps the device every frame regardless of what the PCO does
-  // with the result (`InputManager::update` 0x0049ce70 is upstream of
-  // `PlayerControlObject::handlePlayerInput` 0x08318920 entirely); HP-15 is
-  // spent where it belongs, inside `TurretRig.aim`, which zeroes the held axis
-  // pair whenever `inputScale` is 0 — so a wreck's gun still receives nothing.
-  if (occupancy.isActiveRoot()) {
-    feedMobileTurretAim(dt);
-    stepTurret(dt);
-  }
-
-  // Kept unconditional rather than folded into `if (driving)` above: a
-  // vehicle's own weapon must stop the instant nobody is in the seat that
-  // fires it, and gating the *value* passed to `setFiring` on `driving` (not
-  // skipping the call) is what actually turns it off the same frame the seat
-  // stops being active, instead of leaving it latched at whatever it was
-  // firing the moment the seat switched away.
   guns.firstPerson = car.firstPerson;
-  for (const group of vehicleGuns) {
-    const state = fireStateFor(group.node);
-    if (driving) state.step(dt);
-    guns.setFiring(group, driving
-      && car.input(group.stats.input || 'c_PIFire') > 0
-       && state.canFire);
-  }
-
   // A non-driving seat (the Willy's passenger, a Sherman's hull gunner) still
   // needs the camera — the VehicleCamera owns the C-cycle for every seat of a
   // flyable vehicle, not only the root. The drivetrain step above is gated on
@@ -5999,6 +5836,8 @@ function drive(dt) {
     return;
   }
   if (!driving) return;
+  // Runs after the world integrated, so an external camera hangs off this
+  // frame's attitude rather than last frame's.
   const pose = view.update(dt);
   camera.position.copy(pose.position);
   camera.quaternion.copy(pose.quaternion);
@@ -6040,24 +5879,19 @@ const mannedCamPos = new THREE.Vector3();
 const mannedCamQuat = new THREE.Quaternion();
 
 /**
- * Step the active seat: its own `TurretRig` if it has one (`occupancy.turret`
- * is null for a bare seat — no RotationalBundle to aim, so `step`/the fire
- * loop below simply have nothing to do), always the seat's own Camera node
- * for the eye, and this seat's own FireArms for the trigger.
+ * Step the active seat's presentation half. The world has already aimed and
+ * stepped this seat's `TurretRig` (once per 30 Hz tick, the page's own
+ * `stepTurret` loop — the engine's `TurretAxis.step` law, GUN-3), fired this
+ * seat's FireArms and stepped their FireStates (world.js #vehicleTick); what
+ * remains is the eye and the trigger's muzzle choice.
  *
- * The turret's integration law is `seats.js`'s `TurretAxis.step` — see its
- * own comment for exactly which part of GUN-3 (verify-r6.md) is confirmed
- * and which the verifier explicitly could not close out (the accumulator
- * product's closed form); this function only drives it, it does not
- * reproduce the mechanism.
+ * The camera node never aims itself — GUN-5/6 (verify-r6.md), a gunner
+ * Camera only ever rides the turret it is parented under — so the eye is just
+ * wherever that hierarchy, freshly stepped in the world's tick, puts it. No
+ * cockpit/orbit/fly-by modes here; a manned gun only ever has the one view
+ * retail gives it.
  */
 function manned(dt) {
-  feedMobileTurretAim(dt);
-  stepTurret(dt);
-  // GUN-5/6 (verify-r6.md): a gunner Camera never aims itself, it only ever
-  // rides the turret it is parented under — so the eye is just wherever that
-  // hierarchy, freshly stepped above, puts it. No cockpit/orbit/fly-by modes
-  // here; a manned gun only ever has the one view retail gives it.
   readWorldPose(occupancy.cameraNode(), mannedCamPos, mannedCamQuat);
   camera.position.copy(mannedCamPos);
   camera.quaternion.copy(mannedCamQuat);
@@ -6065,35 +5899,9 @@ function manned(dt) {
   // Gunner cameras are always first-person — the 1P muzzle emitter, not the
   // mesh-mounted third-person flash that sits metres ahead of the eye.
   guns.firstPerson = true;
-
-  const held = captured ? keys : EMPTY_KEYS;
-  // Per weapon, not one trigger for the seat: a gunner's position can carry
-  // two guns declaring different inputs exactly as a driver's can, and the
-  // seat has no business deciding which button reaches which. Space is still
-  // `c_PIFire` (it was this page's only vehicle trigger before the mouse
-  // buttons were wired, and HUD_MANNED still offers it).
-  // HP-15: no player input reaches any child of a destroyed PCO, and a gun is
-  // a child — so a wreck's manned gun cannot be fired either. Its traverse is
-  // already gated, by `inputScale` on the same rig `stepVehicleInputGate` set.
-  // A bare gun with no Armor of its own is unaffected: `inputGate(null)` lets
-  // everything through.
-  const fire = (held.has('Space') || seatFire) && !vehicleInput.blocked;
-  for (const node of occupancy.activeFireArmsNodes()) {
-    const state = fireStateFor(node);
-    state.step(dt);
-    const group = mannedGuns.find(g => g.node === node);
-    if (!group) continue;
-    const trigger = node.userData?.fireArms?.input === 'c_PIAltFire'
-      ? (seatAltFire && !vehicleInput.blocked) : fire;
-    guns.setFiring(group, trigger && state.canFire);
-  }
-  // Not fed here: `guns.advance(dt)` — which actually calls `fireShot`
-  // (`chainOnShot`'s `registerShot()`, decrementing `state.ammo`) — has not
-  // run yet this frame; `manned()` returns before `frame()` reaches it. Fed
-  // instead from `frame()` itself, after `guns.advance(dt)`, so a shot this
-  // very frame is on the HUD this very frame instead of one frame late (the
-  // on-foot path already gets this for free — `updateSoldierHud()` runs at
-  // the tail of `frame()`, after `guns.advance`).
+  // The world's occupied-vehicle tick has already written this seat's trigger
+  // (`guns.setFiring`, gated on the HP-15 byte exactly as this function's old
+  // loop did); the HUD feed for it happens in frame() after guns.advance.
 }
 
 /**
@@ -6113,6 +5921,8 @@ function switchSeat(position) {
   disposeSeatPose();
   occupancy.setActiveSeat(seatId);
   collectMannedGuns();
+  // The world's driver/gunner fire loops read the same scoped lists.
+  world?.refreshMount(LOCAL_PLAYER, { groups: vehicleGuns, manned: mannedGuns });
   warmSubtree(occupancy.root);
   feedVehicleHud();
   hud.textContent = isTouchDevice ? getTouchHudText()
@@ -6607,8 +6417,8 @@ function leaveVehicle() {
   releaseDrivenBody(vehicle);    // ... and a body on its own springs
   clearVehicleHud();
   occupancy = null;
-  stick.roll = 0;
-  stick.pitch = 0;
+  world?.clearPlayerVehicle(LOCAL_PLAYER);
+  world?.resetStick(LOCAL_PLAYER);
 }
 
 /**
@@ -6738,6 +6548,7 @@ function leaveManned() {
   freezeVehicle(occupancy.root);
   clearVehicleHud();
   occupancy = null;
+  world?.clearPlayerVehicle(LOCAL_PLAYER);
 }
 
 /** E from a manned-only seat: a bare furniture gun, or a nested seat of a
@@ -6770,6 +6581,20 @@ function exitManned() {
 // and the presentation layer.
 
 let soldier = null;
+// The level's headless simulation core (world.js): N soldiers, the vehicle
+// bodies, guns, combat area, supply depots, tickets and the collider, stepped
+// at the engine's 30 Hz from one buffered input per player per tick. The page
+// builds it once per level in show(), feeds it the local player's input every
+// frame (frame() below) and keeps everything presentational. The one player
+// this page owns is always `LOCAL_PLAYER`; `world` is the same object a P2
+// server would run for every remote one.
+let world = null;
+const LOCAL_PLAYER = 'local';
+// The input object frame() built for this frame — onFootCamera's footFire
+// hands the deviation model the same c_PIThrottle/c_PIYaw values the world
+// consumed this tick (the engine's speed gates read the *input*, not the
+// achieved velocity).
+let frameInputLast = null;
 let seatSoldier = null;   // the seated soldier pose scene, if one is loaded
 let flags = [];
 let prone = false;           // `c_PILie` is a toggle, not a hold
@@ -6876,7 +6701,9 @@ const hudBridge = { get vars() { return gameHud.vars; } };
  *  clears the value in `show()` first, so the memory never crosses maps. */
 function buildSpawnFlags() {
   const kept = spawnFlagSelect.value;
-  flags = spawnFlags(extras);
+  // The world owns the flags (world.js builds them from the level data the
+  // engine's way); the deploy screen reads the same array it always read.
+  flags = world?.flags ?? [];
   spawnFlagSelect.innerHTML = '';
   for (const [index, flag] of flags.entries()) {
     const option = document.createElement('option');
@@ -6893,23 +6720,26 @@ function buildSpawnFlags() {
   return flags.length;
 }
 
-/** Put the soldier at the selected flag, on the next of its spawn points. */
-let spawnIndex = 0;
+/** Put the soldier at the selected flag, on the next of its spawn points.
+ *  The pick itself is the world's (pickSpawn/spawnYaw inside world.js —
+ *  `spawnPlayer` holds the per-player walk of the spawn list, so the page
+ *  never carries `spawnIndex`); this half is the kit, the latch resets and
+ *  the HUD line that always went with a spawn. */
 function spawnAtFlag(advance = false) {
-  if (!soldier || !flags.length) return false;
+  if (!soldier || !flags.length || !world) return false;
   const flag = flags[Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1)];
-  if (advance) spawnIndex++;
-  const spawn = pickSpawn(flag, spawnIndex,
-    { groundAt: groundHeight, group: flag.vehicle ? activeDeployGroup(flag) : null });
-  if (!spawn) return false;
-  soldier.collider = collider;
-  soldier.spawn(spawn.position[0], spawn.position[1], spawn.position[2],
-                spawnYaw(spawn));
+  const spawned = world.spawnPlayer(LOCAL_PLAYER, {
+    flag, advance, group: flag.vehicle ? activeDeployGroup(flag) : null });
+  if (!spawned) return false;
+  const spawn = spawned.spawn;
   prone = false;
   // A fresh body is full health, from the kit's own template (`soldierMaxHp`,
   // beside `kitLoadout` below) — every spawn and every redeploy passes
-  // through here, so this is the one reset point.
+  // through here, so this is the one reset point. The world owns the Armor
+  // record per player, but this is the same object the HUD has always read.
   soldierArmor = new Armor(soldierMaxHp(flag));
+  world.setPlayerArmor(LOCAL_PLAYER, soldierArmor);
+  world.setPlayerSupply(LOCAL_PLAYER, { team: deployTeamId, refillAmmo: supplyTarget.refillAmmo });
   // Respawn clears the death cam: the fresh body is alive, so the latch
   // must not hold the corpse cam over the new soldier.
   soldierDead = false;
@@ -6933,10 +6763,16 @@ function setOnFoot(on) {
   // leaving must not park a rifle on the free-fly camera.
   disposeHandWeapon();
   if (on) {
-    soldier = new Soldier({ collider, worldSize: extras?.worldSize || 0 });
+    // The soldier is the world's: `addPlayer` builds it the engine's way (a
+    // fresh Soldier on the collider, spawned at the team's first flag) and
+    // the page borrows the instance for the camera, exactly as the world's
+    // records are the only ones the HUD reads.
+    let player = world?.addPlayer(LOCAL_PLAYER, { team: deployTeamId });
+    soldier = player?.soldier ?? null;
     if (!buildSpawnFlags() || !spawnAtFlag()) {
       // A level with no control point that owns a spawn group has nowhere to
       // put a soldier; say so rather than dropping him at the origin.
+      world.removePlayer(LOCAL_PLAYER);
       soldier = null;
       optOnFoot.checked = false;
       spawnFlagSelect.hidden = true;
@@ -6957,6 +6793,9 @@ function setOnFoot(on) {
     // checkbox's exclusivity and the on-foot box both land here with the
     // overlay possibly still up.
     if (deployActive()) toggleFullMap(false);
+    // The soldier was the world's record; the world stops stepping it (a
+    // ghost left in the players map would keep walking on its last input).
+    world.removePlayer(LOCAL_PLAYER);
     soldier = null;
     // The soldier's own HP is meaningless off-foot; drop it and the icons
     // that read it rather than leave a stale number for the next spawn's
@@ -7005,49 +6844,29 @@ function collectSupplyDepots(root) {
   return depots;
 }
 
-/** Read the keyboard into the soldier and put the camera behind his eyes. */
-function onFoot(dt) {
+/**
+ * The on-foot camera half of the old `onFoot()` — the sim half went to the
+ * world's 30 Hz soldier tick (world.js #soldierTick): the look was applied
+ * per tick with the engine's own law (the pumped pair `frame()` handed over,
+ *  applied per tick with the engine's own law (the pumped pair `frame()`
+ *  handed over, `soldier.look`'s clamp included), the body stepped and the
+ *  HP-14 fall damage landed against the world player's Armor — in the old
+ *  order, look first because the engine turns the soldier inside the same
+ *  `handlePlayerInput` call that reads his movement input. What is left here
+ *  is the presentation: the death cam's latch and timer, the supply HUD, the
+ *  eye pose, the trigger and the door scan.
+ *
+ *  The sim runs on fixed ticks inside `step()` above — the world's 30 Hz,
+ *  the body's own 60 Hz within it — so the eye is still interpolated and
+ *  drawing at the last tick would still stutter on any monitor that is not
+ *  exactly 60 Hz. The bob's amplitudes are the game's `setCameraShake*`;
+ *  `soldier.js` has the citation. A dead body swaps in the death cam: the
+ *  same eye base but parked a couple of metres above it and pitched down
+ *  onto the corpse, so the view "floats over the dead player" for the beat
+ *  before the deploy screen takes over.
+ */
+function onFootCamera(dt) {
   if (!soldier) return;
-  // The look first, and on the engine's tick, because the engine turns the
-  // soldier inside the same `handlePlayerInput` call that reads his movement
-  // input — so this frame's walk runs along this frame's facing, not the last
-  // one's. `stepSoldierLook` is the whole of the on-foot mouse law.
-  stepSoldierLook(pumpLook(dt));
-  soldier.collider = collider;
-  const held = captured ? keys : EMPTY_KEYS;
-  // Hoisted so footFire can hand the deviation model the same c_PIThrottle /
-  // c_PIYaw values the body integrates — the engine's speed gates read the
-  // *input*, not the achieved velocity.
-  const input = {
-    forward: clampMobileInput(
-      ((held.has('KeyW') || touchFlying ? 1 : 0) - (held.has('KeyS') ? 1 : 0))
-      + mobilePadAxis('y')),
-    strafe: clampMobileInput(
-      ((held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0))
-      + mobilePadAxis('x')),
-    walk: held.has('ShiftLeft') || held.has('ShiftRight'),
-    crouch: held.has('ControlLeft') || held.has('ControlRight'),
-    prone,
-    jump: held.has('Space') || mobileJumpHeld,
-  };
-  // A dead body holds still: when `soldierDead` latches (death cam active)
-  // zero the steering/jump input so the corpse does not keep walking.
-  if (soldierDead) {
-    input.forward = input.strafe = 0;
-    input.jump = false;
-    input.crouch = input.prone = false;
-  }
-  soldier.step(dt, input);
-
-  // Fall damage — HP-14, the whole formula in `fall-damage.js`. The body has
-  // already done the hard part: `soldier.landing` is the frame's landing, with
-  // the impact speed sampled before the ground clamp and the drop measured
-  // from the last contact rather than from the airborne apex.
-  if (soldier.landing && soldierArmor) {
-    const hp = fallDamageFor(soldier.landing, damageTables);
-    if (hp > 0) soldierArmor.applyDamage(hp);
-  }
-
   // Death cam → deploy. When the on-foot body's Armor dies (fall damage,
   // `window.__damage(n)`, a future projectile), latch the dead state and hold
   // a short camera beat over/by the corpse (the game's death cam) before the
@@ -7071,21 +6890,21 @@ function onFoot(dt) {
   }
 
   // Wake's SupplyDepot instances: collected once per level (a map switch
-  // hands `currentRoot` a new object, caught here by reference), then ticked
-  // at this hook's own call rate — `SupplyDepot.tick`'s internal 0.5s
-  // self-throttle (verify-r3.md SUP-11) is what actually paces the give/heal,
-  // not this call rate. The `ShowHealIcon`/`ShowReloadIcon` HUD vars are
-  // un-throttled on purpose (SUP-33/34): they track proximity every frame,
-  // the way the engine's own icon predicates do, independent of the depot's
-  // own action cadence.
-  if (supplyDepotsRoot !== currentRoot) {
+  // hands `currentRoot` a new object, caught here by reference), handed to
+  // the world which does the ticking on its 30 Hz cadence —
+  // `SupplyDepot.tick`'s internal 0.5s self-throttle (verify-r3.md SUP-11)
+  // is what actually paces the give/heal, not the tick rate. The
+  // `ShowHealIcon`/`ShowReloadIcon` HUD vars are un-throttled on purpose
+  // (SUP-33/34): they track proximity every frame, the way the engine's own
+  // icon predicates do, independent of the depot's own action cadence.
+  if (world && supplyDepotsRoot !== currentRoot) {
     supplyDepotsRoot = currentRoot;
-    supplyField = new SupplyField(collectSupplyDepots(currentRoot));
+    world.setSupplyDepots(collectSupplyDepots(currentRoot));
+    supplyField = world.supplyField;
   }
   supplyTarget.x = soldier.x; supplyTarget.y = soldier.y; supplyTarget.z = soldier.z;
   supplyTarget.team = deployTeamId;
   supplyTarget.armor = soldierArmor;
-  supplyField.tick(dt, supplyTarget);
   hudBridge.vars['ShowHealIcon'] = supplyField.canHeal(supplyTarget);
   hudBridge.vars['ShowReloadIcon'] = supplyField.canRearm(supplyTarget);
   if (soldierArmor) {
@@ -7093,19 +6912,6 @@ function onFoot(dt) {
     hudBridge.vars['Soldier/SoldierMaxHitPoints'] = soldierArmor.maxHitPoints;
   }
 
-  // `soldier.eye()` is the eye pose with the bob already on it, interpolated
-  // between the last two 60 Hz ticks — the sim runs on a fixed step inside
-  // `step()` above, so drawing at the last tick would stutter on any monitor
-  // that is not exactly 60 Hz. The bob's amplitudes are the game's
-  // `setCameraShake*`; `soldier.js` has the citation.
-  // The camera: `soldier.eye()` is the eye pose with the bob already on it,
-  // interpolated between the last two 60 Hz ticks — the sim runs on a fixed
-  // step inside `step()` above, so drawing at the last tick would stutter on
-  // any monitor that is not exactly 60 Hz. The bob's amplitudes are the game's
-  // `setCameraShake*`; `soldier.js` has the citation. A dead body swaps in the
-  // death cam: the same eye base but parked a couple of metres above it and
-  // pitched down onto the corpse, so the view "floats over the dead player"
-  // for the beat before the deploy screen takes over.
   soldier.eye(footEye);
   if (soldierDead) {
     deathCamPos.set(footEye.x, footEye.y + 3.5, footEye.z);
@@ -7120,8 +6926,9 @@ function onFoot(dt) {
   applyLook();
   // After the camera pose is final: the weapon fires down this frame's view
   // axis, and the crosshair is drawn against this frame's FOV. A dead body
-  // cannot fire.
-  if (!soldierDead) footFire(dt, input);
+  // cannot fire. The input object is the one frame() built (the same values
+  // the world consumed this tick).
+  if (!soldierDead) footFire(dt, frameInputLast);
   // And after everything the frame owed: is there a door within reach.
   if (!soldierDead) scanForEntry(dt);
 }
@@ -9119,127 +8926,42 @@ function showView(mode) {
   updateSeatPoseVisibility();
 }
 
-/**
- * Move an axis toward a held key's demand, and spring it back when released.
- * A digital key on an analogue surface needs this or every input is a slam.
- */
-function axisToward(current, demand, dt) {
-  const rate = (demand === 0 ? STICK_RETURN : STICK_RATE) * dt;
-  const gap = demand - current;
-  return Math.abs(gap) <= rate ? demand : current + Math.sign(gap) * rate;
-}
+// The stick spring itself lives in world.js next to the aircraft path that
+// spends it (STICK_RATE / STICK_RETURN, moved verbatim); the page's resets
+// below delegate to `world.resetStick`.
 
 /**
  * Read the keyboard into the aircraft and step the flight model.
  *
- * Round 3's first disclosed gap, `drive()`'s own twin: runs every frame the
- * aircraft exists, not only while its own root/pilot seat is the one active,
- * so a nested seat of a flyable root (a rear-gunner position, once one is
- * enterable) cannot stop the airframe's own momentum and aerodynamics from
- * integrating — see `drive()`'s comment for the full reasoning, which
- * applies here unchanged. Reading fresh stick/rudder/throttle input and
- * moving the camera stay exclusive to the frames the pilot's own root seat
- * is actually the one occupied (`flying` below).
+ * Round 3's first disclosed gap, `drive()`'s own twin: the world's
+ * occupied-vehicle step runs every tick the aircraft exists, not only while
+ * its own root/pilot seat is the one active, so a nested seat of a flyable
+ * root (a rear-gunner position, once one is enterable) cannot stop the
+ * airframe's own momentum and aerodynamics from integrating. Reading fresh
+ * stick/rudder/throttle input and moving the camera stay exclusive to the
+ * ticks the pilot's own root seat is actually the one occupied (`flying`
+ * below).
  */
 function pilot(dt) {
   if (!aircraft) return;
-  // HP-15, the same gate `drive()` takes and for the same reason: the engine's
-  // early return is `PlayerControlObject::handlePlayerInput`'s (lnxded
-  // 0x08318920, epilogue 0x08318952), and a PlayerControlObject is what an
-  // aeroplane is too — nothing in that function knows or cares whether the
-  // object it is refusing to forward input to has wheels or wings. A destroyed
-  // plane still answering the stick under full control was a visible hole:
-  // `frame()` routes to `pilot()` rather than `drive()` purely on which
-  // drivetrain the root carries, so the wreck rule has to be on both sides of
-  // that fork or it is on neither.
-  //
-  // Forced false rather than returning, exactly as in `drive()`: the airframe
-  // still integrates, so a killed plane keeps its momentum and falls instead
-  // of stopping dead in the air, and the gun loop below still runs with
-  // `flying` gating its *value*, which is what turns the guns off the same
-  // frame — HP-13's `0x15` strips `IID_IWeapon` off a destroyed object, so a
-  // wreck has no weapons at all. The latched inputs are deliberately left
-  // where they were: the engine does not zero them either, it just stops
-  // delivering new ones.
+  // The world has already run this function's old sim half (world.js
+  // #vehicleTick) with its own copy of every rule and comment above: the
+  // HP-15 gate is read and `driving`/`flying` below reads its answer; the
+  // throttle latch, the `axisToward` rudder and stick spring (STICK_RATE /
+  // STICK_RETURN now live beside it in world.js, unchanged), the triggers,
+  // `aircraft.integrate`, `occupancy.applyTurrets`, the wreck-safe pump/aim
+  // of the turret (the look stage is pumped once a frame in frame(), the rig
+  // is aimed and stepped once per world tick — the page's own per-tick
+  // `stepTurret` loop), and the `vehicleGuns` loop with the unconditional-off
+  // `setFiring` semantics. The shell here is the presentation half.
   const flying = occupancy.isActiveRoot() && !vehicleInput.blocked;
-  if (flying) {
-    const held = captured ? keys : EMPTY_KEYS;
-
-    // W/S throttle. It latches rather than springs — you set a power setting and
-    // it stays there, which is what a throttle quadrant does.
-    const power = (held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0);
-    if (power) {
-      aircraft.setInput('c_PIThrottle', Math.max(0, Math.min(1,
-        aircraft.input('c_PIThrottle') + power * dt)));
-    }
-
-    // A/D rudder, pad X for roll, pad Y for pitch.
-    aircraft.setInput('c_PIYaw',
-      axisToward(aircraft.input('c_PIYaw'),
-        (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0), dt));
-    stick.roll = mobilePadHeld
-      ? mobilePadVector.x
-      : axisToward(stick.roll,
-        (held.has('ArrowRight') ? 1 : 0) - (held.has('ArrowLeft') ? 1 : 0), dt);
-    // Pitch is inverted, which is a real stick and the game's own default for
-    // aircraft: pull back to climb. Up arrow puts the nose down.
-    stick.pitch = mobilePadHeld
-      ? mobilePadVector.y
-      : axisToward(stick.pitch,
-        (held.has('ArrowUp') ? 1 : 0) - (held.has('ArrowDown') ? 1 : 0), dt);
-    aircraft.setInput('c_PIRoll', stick.roll);
-    aircraft.setInput('c_PIPitch', stick.pitch);
-
-    // The trigger is an input like any other, so a replay frame that writes
-    // `c_PIFire` fires the guns without knowing a keyboard exists. Which gun a
-    // given input pulls is the gun's own business: `CorsairGuns` declares
-    // `c_PIFire` and `CorsairBombDummy` declares `c_PIAltFire`, and the extractor
-    // ships both, so nothing here names either one.
-    aircraft.setInput('c_PIFire', (held.has('Space') || seatFire) ? 1 : 0);
-    aircraft.setInput('c_PIAltFire', seatAltFire ? 1 : 0);
-  }
-
-  aircraft.integrate(dt);
-  // Same reason `drive()` does it: `integrate` ends in `applyRig`, which puts
-  // every turret on the airframe back to rest. A B17's gunners keep theirs.
-  occupancy.applyTurrets();
-  // Gated on the seat rather than on `flying`, for the reason `drive()` spells
-  // out: this is the frame's only pump of the look stage whenever the pilot's
-  // own seat is the active one, and skipping it for a wrecked airframe banked
-  // the pixels until the wreck cleared and then spent them in a single
-  // saturated tick.
-  if (occupancy.isActiveRoot()) {
-    feedMobileTurretAim(dt);
-    stepTurret(dt);
-  }
-
-  // After `integrate`, so a round leaves this frame's muzzle pose rather than
-  // last frame's — at 55 m/s that is a metre of lag, and it shows as tracers
-  // spawning behind the wing.
-  //
-  // `integrate` is also what settles the cockpit swap, and the flash follows
-  // the view: the pilot gets `em_1P_MuzzHeavy`'s 0.4 m sprite, an observer
-  // outside gets the 1.76 m `MuzzHeavy_m1` mesh that would otherwise hang five
-  // metres off the wing two metres from his eye.
-  //
-  // Unconditional like `drive()`'s own copy of this loop, and for the same
-  // reason: `driving`/`flying` gates the value, not the call, so the
-  // aircraft's own guns actually stop the frame nobody is in the seat that
-  // fires them rather than staying latched at whatever they were doing.
   guns.firstPerson = aircraft.firstPerson;
-  for (const group of vehicleGuns) {
-    const state = fireStateFor(group.node);
-    if (flying) state.step(dt);
-    guns.setFiring(group, flying
-      && aircraft.input(group.stats.input || 'c_PIFire') > 0
-      && state.canFire);
-  }
-
   if (!flying) return;
   // The view rig owns all four modes and their smoothing; this just takes the
-  // pose. It runs after `integrate` so an external camera hangs off this frame's
-  // attitude rather than last frame's — at 55 m/s that is a metre of lag, and on
-  // a chase camera it reads as the aircraft sliding around inside the frame.
+  // pose. It runs after the world integrated, so an external camera hangs off
+  // this frame's attitude rather than last frame's — at 55 m/s that is a metre
+  // of lag, and on a chase camera it reads as the aircraft sliding around
+  // inside the frame.
   const pose = view.update(dt);
   camera.position.copy(pose.position);
   camera.quaternion.copy(pose.quaternion);
@@ -10582,7 +10304,7 @@ function openDeploy() {
     const first = deployFlagIndices()[0];
     if (first != null) {
       spawnFlagSelect.value = String(first);
-      spawnIndex = 0;
+      world?.setSpawnIndex(LOCAL_PLAYER, 0);
     }
   }
   fullmapBox.classList.add('deploy');
@@ -10625,8 +10347,8 @@ function selectDeployFlag(index, group = null) {
   if (!Number.isInteger(index) || index < 0 || index >= flags.length) return false;
   spawnFlagSelect.value = String(index);
   // A fresh choice starts at the flag's first spawn, as the select's own
-  // change handler would have it.
-  spawnIndex = 0;
+  // change handler would have it — the world's counter rides the reset.
+  world?.setSpawnIndex(LOCAL_PLAYER, 0);
   deployGroup = group;
   // The tab follows the flag: a number key or a harness call naming the
   // other side's flag switches the column with it.
@@ -10650,7 +10372,7 @@ function setDeployTeam(team, reselect = true) {
       const first = deployFlagIndices()[0];
       if (first != null) {
         spawnFlagSelect.value = String(first);
-        spawnIndex = 0;
+        world?.setSpawnIndex(LOCAL_PLAYER, 0);
         deployGroup = null;
       }
     }
@@ -10941,8 +10663,31 @@ async function show(entry) {
   // Before setupWater and bindDynamicShading: both read `levelEnvCube`.
   setupEnvCube(dir);
   setupLensFlare(dir);
-  combatArea = new CombatArea(extras);
+  combatArea = null;
   combatFrame = null;
+  // The world is the simulation core of frame() from here: built from the
+  // level data in hand (the collider lands a few lines down via buildCollider,
+  // the parked hulls via setupVehicleBodies), fed the local player's input
+  // per frame, and stepped at the engine's fixed 30 Hz (world.js, the tick
+  // law in its header). The page keeps the scene graph, the cameras, the HUD,
+  // the audio, the deploy flow and the effects; the world owns nothing that
+  // paints. `combatArea`, `bodyWorld`, `vehicleDamage` and `supplyField`
+  // below stay page-side aliases of the world's instances, so every HUD feed,
+  // console hook and debug readout that always reached them reaches them
+  // still.
+  world = new World({
+    extras,
+    guns,
+    groundHeight,
+    fireStates,
+    onCrash: onCrashDamage,
+    isWrecked: owner => {
+      const visual = damageVisuals.get(owner);
+      return !!(visual?.wrecked || visual?.removed);
+    },
+  });
+  combatArea = world.combatArea;
+  vehicleDamage = world.vehicleDamage;
   setupWater(currentRoot, dir);
   setupSounds(extras, dir);
   loadMapArt(dir);
@@ -11171,27 +10916,129 @@ optOnFoot.addEventListener('change', () => {
   placeCamera();
 });
 spawnFlagSelect.addEventListener('change', () => {
-  spawnIndex = 0;
+  world?.setSpawnIndex(LOCAL_PLAYER, 0);
   spawnAtFlag();
 });
 
 const clock = new THREE.Clock();
+/** Scratch for the seated branch's world-position feed (world.js's
+ *  `setPlayerPosition`, the combat-area test for a bare gun/seat root). */
+const seatWorldPos = new THREE.Vector3();
+
 function frame(dt) {
   updateMobileControls();
-  if (optPilot.checked && occupancy) {
+  // ---- the input stage (page) ----------------------------------------------
+  // The keyboard and the mouse never leave this page. The look stage (the
+  // mouse stage's per-frame pump, mouse-input.js) is pumped here once a frame
+  // in exactly the two cases the old code pumped it — on foot
+  // (`stepSoldierLook(pumpLook(ticks))`) and seated (`stepTurret`'s own pump) —
+  // and never for the free camera. The world owns the tick from there: its
+  // per-tick law consumes one buffered input per player per tick (world.js,
+  // the tick law in its header), which is the engine's own
+  // `InputManager::update` 0x0049cff7 boundary.
+  const seated = optPilot.checked && occupancy;
+  const onFoot = optOnFoot.checked && soldier;
+  // The world's one clock answers this frame's tick count; the pump reads it
+  // so the look stage and the sim can never drift apart (Fix 5). A frame
+  // before any level has built the world owes no ticks.
+  const lookTicks = world?.lookTicks(dt) ?? 0;
+  let input = null;
+  let look = null;
+  if (seated) {
+    // The pad's deflection must land in the device stage BEFORE the pump
+    // turns the counts into an axis, or this frame's pad aim arrives a
+    // frame late (the page's original feed-then-pump order).
+    feedMobileTurretAim(dt);
+    pumpLook(lookTicks);
+    const held = captured ? keys : EMPTY_KEYS;
+    // The engine's PlayerInput, named by action: the same keys, mouse
+    // latches and mobile pad this page has always folded. `forwardKeys` and
+    // `rudder` are the raw W/S and A/D pairs the aircraft's stick wants —
+    // ground vehicles steer and throttle with the pad folded in
+    // (`forward`/`strafe`), while the plane's roll and pitch arrive from the
+    // pad separately.
+    input = {
+      forward: clampMobileInput(
+        ((held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0))
+        + mobilePadAxis('y')),
+      forwardKeys: (held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0),
+      strafe: clampMobileInput(
+        ((held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0))
+        + mobilePadAxis('x')),
+      rudder: (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0),
+      fire: held.has('Space') || seatFire,
+      altFire: seatAltFire,
+      roll: mobilePadHeld ? mobilePadVector.x
+        : (held.has('ArrowRight') ? 1 : 0) - (held.has('ArrowLeft') ? 1 : 0),
+      pitch: mobilePadHeld ? mobilePadVector.y
+        : (held.has('ArrowUp') ? 1 : 0) - (held.has('ArrowDown') ? 1 : 0),
+      pad: mobilePadHeld,
+    };
+    look = { x: mouseInput.x, y: mouseInput.y };
+    const pos = occupancy.root.getWorldPosition(seatWorldPos);
+    world.setPlayerPosition(LOCAL_PLAYER, [pos.x, pos.y, pos.z]);
+  } else if (onFoot) {
+    pumpLook(lookTicks);
+    const held = captured ? keys : EMPTY_KEYS;
+    // Hoisted so footFire can hand the deviation model the same
+    // c_PIThrottle / c_PIYaw values the body integrates — the engine's speed
+    // gates read the *input*, not the achieved velocity.
+    input = {
+      forward: clampMobileInput(
+        ((held.has('KeyW') || touchFlying ? 1 : 0) - (held.has('KeyS') ? 1 : 0))
+        + mobilePadAxis('y')),
+      strafe: clampMobileInput(
+        ((held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0))
+        + mobilePadAxis('x')),
+      walk: held.has('ShiftLeft') || held.has('ShiftRight'),
+      crouch: held.has('ControlLeft') || held.has('ControlRight'),
+      prone,
+      jump: held.has('Space') || mobileJumpHeld,
+    };
+    // A dead body holds still: when `soldierDead` latches (death cam active)
+    // zero the steering/jump input so the corpse does not keep walking.
+    if (soldierDead) {
+      input.forward = input.strafe = 0;
+      input.jump = false;
+      input.crouch = input.prone = false;
+    }
+    look = footLookPair();
+  }
+  world?.setInput(LOCAL_PLAYER, input, look);
+  frameInputLast = input;
+
+  // ---- the sim core (world) -------------------------------------------------
+  // The whole simulation core of the old frame() in one 30 Hz step: the
+  // per-player soldiers and occupied drivetrains (the old onFoot +
+  // pilot/drive/manned sim halves), guns.advance, the combat area per player,
+  // the vehicle bodies and the damage pass — in the exact order, with
+  // nothing presentational inside (world.js, the tick law in its header).
+  // `step` is that tick's report; the presentation halves read it back.
+  const step = world?.step(dt) ?? { ticks: 0, bodyTicks: 0, players: {}, damage: [] };
+
+  // The readbacks: the HP-15 gate answer the camera shells and the mobile UI
+  // spend, the combat-area frame for the warning group and the `?data` hook,
+  // and the on-foot look this tick actually applied, for the deviation
+  // model's |MouseLookX/Y| drain (footFire reads the accumulated pair).
+  const local = step.players[LOCAL_PLAYER] ?? null;
+  vehicleInput.blocked = local?.gate.blocked ?? false;
+  vehicleInput.rotationalScale = local?.gate.rotationalScale ?? 1;
+  combatFrame = local?.combat ?? null;
+  if (local?.look) {
+    footLookX += Math.abs(local.look.yaw);
+    footLookY += Math.abs(local.look.pitch);
+  }
+
+  // ---- the cameras and the rest of the presentation -------------------------
+  if (seated) {
     // Round 3's first disclosed gap: the occupied vehicle's own drivetrain
-    // physics steps every frame it exists, no matter which of its seats is
-    // actually active — `pilot()`/`drive()` now run unconditionally here
-    // (each gated internally on `occupancy.isActiveRoot()`, see their own
-    // comments) instead of only when that root seat was the one active, so a
-    // nested seat (the Sherman's hull gunner) leaves the hull coasting on its
-    // existing momentum rather than freezing it. A bare gun/seat root has no
-    // drivetrain to step either way — `aircraft`/`car` both stay null for
-    // one — so neither call does anything for it.
-    // HP-15, before anything reads an input this frame: how much of the
-    // player's input the occupied hull's damage state lets through. One call,
-    // because `drive()` and `manned()` both spend the same answer.
-    stepVehicleInputGate();
+    // physics steps every tick it exists, no matter which of its seats is
+    // actually active — the world's occupied-vehicle step runs for the whole
+    // time the player is mounted, so a nested seat (the Sherman's hull
+    // gunner) leaves the hull coasting on its existing momentum rather than
+    // freezing it. A bare gun/seat root has no drivetrain either way —
+    // `aircraft`/`car` both stay null for one — so neither camera call does
+    // anything for it.
     if (aircraft) pilot(dt);
     else if (car) drive(dt);
     if (mannedActive()) {
@@ -11216,15 +11063,16 @@ function frame(dt) {
       camera.fov = FLY_FOV;
       camera.updateProjectionMatrix();
     }
-  } else if (optOnFoot.checked && soldier) {
-    onFoot(dt);
+  } else if (onFoot) {
+    onFootCamera(dt);
   } else {
     fly(dt);
     applyLook();
   }
   // Unconditional: rounds already in the air have to finish their flight even
-  // if the trigger, the pilot mode or the whole aircraft has gone away.
-  guns.advance(dt);
+  // if the trigger, the pilot mode or the whole aircraft has gone away — the
+  // world's tick runs `guns.advance` after the players and before the bodies,
+  // exactly where frame() used to.
   // Sync the seated soldier to its seat node's world pose — the glb is parented
   // to `scene` (not the vehicle tree) so it can't disturb VehicleCamera's node
   // traversal, so it must chase the seat's matrices here instead.
@@ -11239,19 +11087,16 @@ function frame(dt) {
   // the mixer and the clip overwrites the hands, run it before the rig and the
   // hands chase last frame's wheel.
   if (optPilot.checked) stepSeatIk();
-  // Before `stepVehicleDamage`, so a hull the combat area just hurt has its
-  // tier and its HUD bar reconciled on the same frame. Outside the movement
-  // branches above because the engine's own check is per PLAYER, not per mode:
-  // it tests and damages whatever the player occupies, plane included.
-  stepCombatArea(dt);
   // After the drive model has moved the player's vehicle and before the damage
   // pass, so a ram's hit points and its smoke tier land on the same frame.
-  stepVehicleBodies(dt);
+  // The world's tick ran the bodies immediately before its own damage pass,
+  // in the same frame as the old code; this half only draws the results.
+  stepVehicleBodies(step);
   // After `advance`, so a round that landed this frame is already accounted for
   // when the tier is picked. Unconditional for the same reason `advance` is: a
   // tank set alight before the player climbed out keeps burning down to nothing
   // whatever the camera is doing.
-  stepVehicleDamage(dt);
+  stepVehicleDamage(step, dt);
   // After `advance`, not before: a manned gun's `Ammo/PrimaryAmmo` etc. must
   // reflect whatever `advance` just fired this frame, the same way the
   // on-foot `updateSoldierHud()` below already does for `hw.rounds`. `manned()`
@@ -11409,7 +11254,11 @@ if (params.has('shots')) {
   Object.defineProperty(window, '__aircraft', { get: () => aircraft });
   // The driven car, its dashboard numbers included, for the same reason.
   Object.defineProperty(window, '__car', { get: () => car });
-  window.__stick = stick;
+  // The stick the world springs in its occupied-vehicle tick (world.js),
+  // reported through the local player's record.
+  Object.defineProperty(window, '__stick', {
+    get: () => world?.player(LOCAL_PLAYER)?.stick ?? { roll: 0, pitch: 0 },
+  });
   // Free-fly heading. Setting `camera.rotation` directly is pointless here —
   // `applyLook` rewrites it from `look` on every frame — so a headless check
   // that wants to face the camera somewhere has to move this instead.
