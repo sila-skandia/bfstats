@@ -38,7 +38,7 @@
  */
 
 const STORE_KEY = 'bf42-mesh-mod';
-const VANILLA = {
+export const VANILLA = {
   id: 'bf1942',
   name: 'Battlefield 1942',
   short: 'BF1942',
@@ -52,20 +52,26 @@ function modIconUrl(mod) {
   return `icons/mods/${mod?.id || 'bf1942'}.png`;
 }
 
-function stored() {
+export function stored() {
   try { return localStorage.getItem(STORE_KEY); } catch { return null; }
 }
 
-function remember(id) {
+export function remember(id) {
   try {
     if (id === VANILLA.id) localStorage.removeItem(STORE_KEY);
     else localStorage.setItem(STORE_KEY, id);
   } catch { /* private mode; the ?mod= in the URL still carries the choice */ }
 }
 
+// Resolved against this module's own URL, not the page's - `mods.js` lives
+// at the viewer root, but `play/index.html` imports it from one directory
+// down, and a bare relative fetch resolves against the *document*, not the
+// module, and would 404 from there.
+const MODS_JSON_URL = new URL('models/mods.json', import.meta.url);
+
 export async function loadMods() {
   try {
-    const response = await fetch(`models/mods.json?t=${Date.now()}`);
+    const response = await fetch(`${MODS_JSON_URL}?t=${Date.now()}`);
     if (!response.ok) throw new Error(String(response.status));
     const data = await response.json();
     const mods = Array.isArray(data) ? data : data?.mods;
@@ -79,12 +85,12 @@ export async function loadMods() {
 }
 
 /** Mods with at least one asset on this tab, vanilla always first. */
-function servable(mods, tab) {
+export function servable(mods, tab) {
   return mods.filter(mod =>
     mod.id === VANILLA.id || Number(mod?.counts?.[tab] || 0) > 0);
 }
 
-function withMod(href, id) {
+export function withMod(href, id) {
   const url = new URL(href, location.href);
   if (id === VANILLA.id) url.searchParams.delete('mod');
   else url.searchParams.set('mod', id);
