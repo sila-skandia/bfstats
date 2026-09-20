@@ -64,7 +64,10 @@ ROOT_PREFIXES = ("objects/vehicles/", "objects/stationary_weapons/")
 # `checkFaceAndEdgeCollision`/`getDistanceToGeometry` cull a face whose area is
 # (numerically) zero; `assemble.py::_collision_mesh_indices` drops the same
 # faces from the glb for the same reason — a face with no normal cannot be hit.
-_DEGENERATE_CROSS_SQ = 1e-12
+# The bar itself lives in `bf42/stdmesh.py`, beside the collision records, so
+# the two readers cannot drift apart; see the comment there for why it is
+# 1e-20 and not the 1e-12 that ate three tanks' wheel probes.
+_DEGENERATE_CROSS_SQ = stdmesh.DEGENERATE_CROSS_SQ
 
 
 def collect_geometry_refs(library: con_mod.ObjectLibrary) -> dict[str, str]:
@@ -255,7 +258,13 @@ def build_collision_meshes(meshes: ArchivePool, mesh_files: dict[str, str],
             stats["no_collision"] += 1
             continue
         layers = collision_layers_for(mesh)
-        if not any(layer["f"] for layer in layers):
+        # Vertices, not faces, are what decides whether this mesh is worth
+        # keeping: `checkVsTerrain` drops a part's **col0 vertices** onto the
+        # heightfield and never looks at a face (collision-response.md #7), so
+        # a layer whose every face was culled is still a usable ground probe.
+        # Asking for faces here is the second of the two gates that dropped
+        # the Sherman's suspension.
+        if not any(layer["v"] for layer in layers):
             stats["no_collision"] += 1
             continue
         out[lower_name] = {"bbox": _bbox_viewer(mesh), "layers": layers}

@@ -228,6 +228,26 @@ class Lod:
         return sum(len(m.triangles()) for m in self.materials)
 
 
+# A collision face is culled when its two edge vectors cross to (numerically)
+# nothing: `checkFaceAndEdgeCollision`/`getDistanceToGeometry` cannot hit a face
+# with no normal, and `assemble.py`/`extract_collision_meshes.py` drop the same
+# faces for the same reason. The bar is on the SQUARED cross product, so 1e-20
+# is |cross| = 1e-10 — a triangle about 10 um across.
+#
+# It used to be 1e-12 (|cross| = 1e-6, an area of 5e-7 m2), which is not
+# "numerically zero" but "small", and a wheel's ground probe is exactly that:
+# a deliberate ~1 mm triangle whose three vertices are one contact point
+# (collision-response.md #5.5, "n = vertex count; if n < 4: n = 1"). Across
+# vanilla, 98 of 66,476 collision faces fell under the old bar and no face at
+# all has a cross product of zero; the 7 layers it emptied outright were
+# Sherman_Whe3L/Le/R/Re (the suspension springs of the Sherman, the Priest and
+# the M10, which alias those meshes) and the three Tlight tracer meshes. With
+# their probes gone those three tanks had no sprung ground contact left and
+# settled onto their hull corners at a 13 degree list. See
+# `features/mesh-viewer-fidelity-defects/tilted-tanks.md`.
+DEGENERATE_CROSS_SQ = 1e-20
+
+
 @dataclass(frozen=True)
 class CollisionFace:
     vertices: tuple[int, int, int]

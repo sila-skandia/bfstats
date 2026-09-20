@@ -100,8 +100,9 @@
      the bar gap driven per frame through --ch-gap by the deviation cone
      mapped through the camera projection (updateCrosshair()). The weapon's
      own crossHairType decides the shape: CHTCrossHair is the full cross,
-     CHTIcon keeps only the dot (its authored icon art is not extracted
-     yet), CHTNone and a scoped aim draw nothing.
+     CHTIcon is the game's own `hk.tga` at the size and place menu/InGame
+     draws it, CHTNone and a scoped aim draw nothing. The dot survives only
+     as the fallback for a pack that has no `hk` in it.
 
      The look is measured off retail footage, not styled: no crosshair
      texture exists in any archive (the engine draws it), so a 960-wide
@@ -125,6 +126,21 @@
   }
   #crosshair .ch-dot { display: none; width: 2px; height: 2px; left: -1px; top: -1px; }
   #crosshair.ch-icon .ch-dot { display: block; }
+  #crosshair.ch-art .ch-dot { display: none; }
+  /* The CHTIcon picture. Sized per frame from the layout's own rect through
+     --ch-icon-w/h, because the HUD stretches its 800x600 virtual screen
+     independently on each axis (hud.js `_scaleFor`, VHUD-11) and this has to
+     land where the canvas would have put it. `background`, not `<img>`, so
+     the shared `#crosshair span` rule's ink does not paint behind it. */
+  #crosshair .ch-pic {
+    display: none;
+    background: center / 100% 100% no-repeat;
+    image-rendering: pixelated;
+    width: var(--ch-icon-w, 20px); height: var(--ch-icon-h, 20px);
+    left: calc(var(--ch-icon-w, 20px) / -2);
+    top: calc(var(--ch-icon-h, 20px) / -2);
+  }
+  #crosshair.ch-icon.ch-art .ch-pic { display: block; }
   #crosshair .ch-n { width: 2px; height: 13px; left: -1px; bottom: var(--ch-gap); }
   #crosshair .ch-s { width: 2px; height: 13px; left: -1px; top: var(--ch-gap); }
   #crosshair .ch-w { height: 2px; width: 13px; top: -1px; right: var(--ch-gap); }
@@ -799,7 +815,7 @@
   <canvas id="hud-canvas" aria-hidden="true"></canvas>
   <canvas id="console-canvas" aria-hidden="true" hidden></canvas>
   <div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; CapsLock spawn &middot; M map &middot; Esc</div>
-  <div id="crosshair" hidden><span class="ch-dot"></span><span class="ch-n"></span><span class="ch-s"></span><span class="ch-w"></span><span class="ch-e"></span></div>
+  <div id="crosshair" hidden><span class="ch-pic"></span><span class="ch-dot"></span><span class="ch-n"></span><span class="ch-s"></span><span class="ch-w"></span><span class="ch-e"></span></div>
   <div id="gate"><span>Tap or click to fly</span></div>
   <div id="gl-lost" hidden>
     <div class="gl-lost-card">
@@ -3502,12 +3518,55 @@ function advanceSim(dt) {
   }
 }
 
+/** The master limiter, installed by `ensureListener` below. */
+let audioLimiter = null;
+
+/**
+ * The one AudioListener every player on this page hangs off, with a limiter
+ * between it and the speakers.
+ *
+ * The limiter is why the buses can play the `.ssc` mix at the volumes it
+ * writes. Web Audio sums into the destination and clips flat there, so before
+ * this the engine and weapon buses each carried a fixed divisor to keep the
+ * worst case under full scale — and paid for it everywhere else: a Sherman
+ * idling, from inside, peaked at 0.089 against the BAR's 0.596 and the map's
+ * own wind at 0.0156, while the same tank's cannon still came out at 1.75 and
+ * clipped anyway. A single divisor cannot do both jobs; a limiter does the
+ * one job it was ever really for, and only when a sound actually asks for
+ * more than the output has.
+ *
+ * Set as a limiter rather than a compressor: `knee 0` and `ratio 20` make it
+ * flat below the threshold and a ceiling above it, so nothing under -1 dBFS
+ * is touched at all. The 3 ms attack catches a cannon's own transient; the
+ * 150 ms release is long enough not to pump the ambient bed between rounds of
+ * a machine gun and short enough to let go before the next shot.
+ */
 function ensureListener() {
   if (AUDIO_OFF) return null;
   if (!audioListener) {
     audioListener = new THREE.AudioListener();
     camera.add(audioListener);
     audioLoader = new THREE.AudioLoader();
+    const ctx = audioListener.context;
+    try {
+      const limiter = ctx.createDynamicsCompressor();
+      limiter.threshold.value = -1;
+      limiter.knee.value = 0;
+      limiter.ratio.value = 20;
+      limiter.attack.value = 0.003;
+      limiter.release.value = 0.15;
+      // three parents the listener's gain straight onto the destination in
+      // its constructor; this re-routes that one edge and nothing else, so
+      // every player that asks for `getInput()` still finds the same node.
+      audioListener.gain.disconnect();
+      audioListener.gain.connect(limiter);
+      limiter.connect(ctx.destination);
+      audioLimiter = limiter;
+    } catch {
+      // A context with no compressor node is still a context: the graph keeps
+      // its direct edge and the mix simply clips the way it used to.
+      audioListener.gain.connect(ctx.destination);
+    }
   }
   return audioListener;
 }
@@ -3806,6 +3865,11 @@ async function setupWeaponAudio(gen, dir, template, visualRoot, specs) {
     const audio = await loadEngineAudio(spec, {
       listener: ensureListener(),
       getBuffer: (relPath) => soundBuffer(dir, relPath),
+      // The gun bus keeps its own scale. Measured against the hand weapon it
+      // is already where it should be — a Sherman's coaxial Browning peaks at
+      // 0.654 to the BAR's 0.596 — and the one patch that ran past full scale
+      // through it, the 20-layer cannon at 1.75, is the limiter's business
+      // now rather than a reason to hold every other gun down.
       headroom: WEAPON_HEADROOM,
       // A gun patch is the report of one round, so its one-shots wait for
       // `trigger()` (spliced onto `guns.onShot` below) instead of firing once
@@ -3823,12 +3887,53 @@ async function setupWeaponAudio(gen, dir, template, visualRoot, specs) {
   for (const weapon of built) {
     // The voices belong on the gun, not the vehicle origin: a Corsair's guns
     // are 2.2 m out each wing, and the panner is what puts the rattle there.
-    weapon.node = visualRoot.getObjectByName(weapon.spec.fireArms)
-      || visualRoot;
+    // `fireArmsNode`, not `getObjectByName`, for the reason spelled out on
+    // `bareFireArmsName`: the second Corsair in a level is `CorsairGuns_1`.
+    weapon.node = fireArmsNode(visualRoot, weapon.spec.fireArms) || visualRoot;
     weapon.audio.setMaster(0);   // silent until the trigger is pulled
     weapon.audio.start();
   }
   weaponAudio = built;
+}
+
+/**
+ * A FireArms node name with the scene-wide instance suffix taken off.
+ *
+ * The exporter numbers the second and later copy of a vehicle across the
+ * whole level, and the numbering reaches every node inside it: the first
+ * BF109 on Kasserine fires `BF109Guns`, the second fires `BF109Guns_1`. The
+ * *sound* specs are per template (`findWeaponSpecs` keys on the vehicle's
+ * `control`), so they only ever carry the bare name — anything matching a
+ * spec against a live node has to strip the suffix or it silently misses
+ * every instance but the first.
+ *
+ * That is not hypothetical: `weaponAudioFor` already stripped it, and the
+ * gain gate in `updateAudio` did not, so flying the second BF109 or Stuka on
+ * a level ran the whole fire patch at master 0. A gun `.ssc` whose layers are
+ * all loops (every aircraft's is — the engine authors a Fire Loop held open
+ * by the trigger) has nothing but that gate to un-mute it, so the guns fired
+ * tracers in silence.
+ */
+function bareFireArmsName(name) {
+  return String(name || '').replace(/_\d+$/, '');
+}
+
+/** The FireArms node under `root` a spec's bare name refers to. */
+function fireArmsNode(root, fireArms) {
+  if (!root || !fireArms) return null;
+  const exact = root.getObjectByName(fireArms);
+  if (exact) return exact;
+  let found = null;
+  root.traverse(obj => {
+    if (!found && obj.name && bareFireArmsName(obj.name) === fireArms) found = obj;
+  });
+  return found;
+}
+
+/** The live gun group a weapon patch belongs to, tolerating that suffix. */
+function firingGroupFor(fireArms) {
+  const matches = group => bareFireArmsName(group.node.name) === fireArms;
+  return vehicleGuns.find(matches) || mannedGuns.find(matches) || null;
 }
 
 /**
@@ -3943,9 +4048,10 @@ function updateAudio(dt = 0) {
     // that has run its magazine dry or is not the seat's gun stays quiet for
     // the same reason it stops drawing tracers. Nested / bare seats fire from
     // `mannedGuns`, not `vehicleGuns` — looking only at the latter silenced
-    // every hull Browning and stationary MG.
-    const group = vehicleGuns.find(g => g.node.name === weapon.spec.fireArms)
-      || mannedGuns.find(g => g.node.name === weapon.spec.fireArms);
+    // every hull Browning and stationary MG. The name match goes through
+    // `bareFireArmsName` for the reason spelled out there: an exact compare
+    // silenced every instance of a vehicle but the first.
+    const group = firingGroupFor(weapon.spec.fireArms);
     // A gain gate is only meaningful for a patch that has something running to
     // gate. A gun built entirely out of one-shots — which is every gun on this
     // map — is silent between rounds on its own, and holding its master at 0
@@ -6610,9 +6716,10 @@ function enterVehicle(entry) {
   // vehicle's trigger — nor, on the way back out, the soldier's.
   seatFire = false;
   seatAltFire = false;
-  crosshairEl.hidden = true;
+  // Not hidden here any more: `updateCrosshair` runs every frame and reads
+  // the seat's own `setCrossHairType`, so a tank keeps its cross.
   camera.fov = FLY_FOV;
-  camera.near = FLY_NEAR;
+  camera.near = SEAT_NEAR;
   camera.updateProjectionMatrix();
   nearEntry = null;
   // Checked without an event on purpose: the change handler would tear the
@@ -6840,6 +6947,20 @@ let flags = [];
 let prone = false;           // `c_PILie` is a toggle, not a hold
 const FLY_FOV = camera.fov;
 const FLY_NEAR = camera.near;
+// The near plane of a seat's own view. `Renderer_drawView` (0x004662c0) gives
+// the engine's render view a near plane of 0.1 m and nothing moves it
+// (`handweapon-view-and-deviation.md` section 3, quoted again at the near pass
+// in `frame()`); the free-fly camera's 0.5 is this page's own, chosen for a
+// camera that never sits inside anything.
+//
+// A vehicle's first-person interior is what needs it. `1P_Sherman_Gunner_M1`
+// — the box a tank commander looks out of — spans 0.089 m to 0.40 m ahead of
+// `ShermanCamera`, so at 0.5 every one of its 633 triangles fell inside the
+// near plane and the driver saw straight through his own tank: no frame, and
+// the gun barrel (0.57 m out, and so NOT clipped) smeared across the right of
+// the screen as a shapeless wedge. At 0.1 the frame draws and occludes the
+// barrel, which is what the wedge always was.
+const SEAT_NEAR = 0.1;
 // GUN-6 (verify-r6.md): a manned gun's own Camera never sets its own FOV in
 // vanilla (`setVehicleFov` — no vanilla vehicle calls it) and the render
 // view's own default is 57.30 degrees vertical. `enterVehicle` sets
@@ -8645,7 +8766,7 @@ chainOnShot(guns, group => weaponAudioFor(group)?.audio.trigger());
 function weaponAudioFor(group) {
   const name = group?.node?.name;
   if (!name || !weaponAudio.length) return null;
-  const bare = name.replace(/_\d+$/, '');
+  const bare = bareFireArmsName(name);
   for (const weapon of weaponAudio) {
     if (weapon.spec.fireArms === name || weapon.spec.fireArms === bare) return weapon;
   }
@@ -8775,8 +8896,6 @@ function footFire(dt, input = null) {
   // The arms last, once the reload clock and the trigger have settled what
   // this frame is: a reload begun above starts its clip this same frame.
   updateViewmodelAnimation(hw, dt);
-
-  updateCrosshair();
 }
 
 /**
@@ -8791,21 +8910,91 @@ function footFire(dt, input = null) {
  * mapping is this projection or a linear scale — a corpus question
  * (crosshair draw path, client side); the footage pins only the endpoints.
  */
-function updateCrosshair() {
+/**
+ * What is under the trigger this frame, as the crosshair needs to know it:
+ * the `setCrossHairType` word of the weapon in hand, or of the seat.
+ *
+ * The word is declared per HandFireArms AND per PlayerControlObject, and it
+ * is the whole of the decision. Vanilla splits 37 templates across
+ * `CHTCrossHair` (the four bars: every rifle and SMG, and the Sherman,
+ * PanzerIV, Tiger, T34, Chi-ha and every hull/stationary MG), 49 across
+ * `CHTIcon` (one texture, `hk.tga` — no vanilla template overrides
+ * `CrossHair/CrossHairIcon`, so the bazooka, the K98, the Defgun, the
+ * Priest, the Sexton and every aircraft draw the same picture) and 64 across
+ * `CHTNone` (passengers, ships, the Willy).
+ *
+ * The page used to ask only the hand weapon, and only on foot, so a
+ * CHTCrossHair tank drew nothing and a CHTIcon launcher drew a bare dot.
+ * `deviation` is the hand weapon's acquired spread; a vehicle gun has no
+ * deviation model here, and the bars meet at centre the way a tank's do.
+ */
+function crosshairAim() {
+  // `occupancy` alone, not `aircraft || car`: those two outlive the seat.
+  // `leaveVehicle` empties the occupancy and parks the vehicle but keeps the
+  // drive model around for whoever climbs back in, so a soldier who had just
+  // stepped out of a Sherman was still being asked what the Sherman draws.
+  if (occupancy) {
+    // The CONTROLLED PCO's own `hud` block, which is where `setCrossHairType`
+    // is declared — a Sherman's driver and its hull gunner are two PCOs and
+    // answer separately. A scene extracted before the word was carried has
+    // none, and an absent word draws nothing rather than a guess.
+    return { style: occupancy?.activeHud?.()?.crossHairType ?? null,
+             deviation: 0, scoped: false };
+  }
   const hw = handWeapon;
-  const style = hw?.data?.crossHair;
-  const scoped = !!hw?.data?.zoom?.scope;
-  const show = optOnFoot.checked && !!soldier && !!hw
-    && (style === 'CHTCrossHair' || style === 'CHTIcon')
-    && !(scoped && isZoomed());
+  if (!optOnFoot.checked || !soldier || !hw) {
+    return { style: null, deviation: 0, scoped: false };
+  }
+  const floor = (hw.model.floor?.() ?? 0) * DEG_TO_RAD;
+  return {
+    style: hw.data?.crossHair ?? null,
+    deviation: Math.max(0, hw.model.current() * DEG_TO_RAD - floor),
+    scoped: !!hw.data?.zoom?.scope && isZoomed(),
+  };
+}
+
+/** The `CrossHair/CrossHairIcon` leaf of the layout's own crosshair group:
+ *  the rect a CHTIcon crosshair occupies in the 800x600 virtual screen, and
+ *  the sprite it defaults to. Read from `hud-layout.json` rather than written
+ *  here, so a mod that moves or replaces it is followed. */
+let crosshairIcon;          // undefined until the layout has been looked at
+function crosshairIconLeaf() {
+  if (crosshairIcon !== undefined) return crosshairIcon;
+  const layout = gameHud.layout;
+  if (!layout) return null;   // not loaded yet; ask again next frame
+  const leaf = (layout.groups?.crosshair?.elements || []).find(
+    el => el.kind === 'variable-picture' && el.var === 'CrossHair/CrossHairIcon');
+  crosshairIcon = leaf?.rect && leaf.texture
+    ? { rect: leaf.rect, virtual: layout.virtual || [800, 600], texture: leaf.texture }
+    : null;
+  if (crosshairIcon) {
+    // One fetch, and the `ch-art` class only once the bytes are in: a pack
+    // without `hk` keeps the centre dot instead of an empty box.
+    const url = `${hudPaths.url(`${crosshairIcon.texture}.png`)}${bust()}`;
+    const img = new Image();
+    img.onload = () => {
+      crosshairEl.querySelector('.ch-pic').style.backgroundImage = `url("${url}")`;
+      crosshairEl.classList.add('ch-art');
+    };
+    img.src = url;
+  }
+  return crosshairIcon;
+}
+
+function updateCrosshair() {
+  const { style, deviation, scoped } = crosshairAim();
+  // `!fullmapBox.hidden` covers both overlays this can now collide with: the
+  // deploy screen and the full map. They did not need saying while this ran
+  // only from `footFire`, which the overlay suppresses; it runs every frame
+  // now, so a soldier waiting to spawn would otherwise aim at his own map.
+  const show = (style === 'CHTCrossHair' || style === 'CHTIcon')
+    && !scoped && fullmapBox.hidden;
   // Written only on change, and read back from the element rather than a
   // cache because enterVehicle and disposeHandWeapon hide it behind this
   // function's back: every DOM write here invalidates style, and a frame
   // with nothing new to say must cost the page nothing (rule 3).
   if (crosshairEl.hidden !== !show) crosshairEl.hidden = !show;
   if (!show) return;
-  // CHTIcon weapons draw an authored icon in the game; until that art is
-  // extracted they keep the centre dot alone.
   const icon = style === 'CHTIcon';
   if (crosshairEl.classList.contains('ch-icon') !== icon) {
     crosshairEl.classList.toggle('ch-icon', icon);
@@ -8815,13 +9004,26 @@ function updateCrosshair() {
   // so the cached page height is stale there and the crosshair gap came out
   // scaled for a window nobody is looking at. Same reasoning, and the same
   // source, as the HUD canvas's own size in `frame()`.
-  const height = renderer.domElement.height / renderer.getPixelRatio() || 800;
-  const floor = (hw.model.floor?.() ?? 0) * DEG_TO_RAD;
-  const dev = Math.max(0, hw.model.current() * DEG_TO_RAD - floor);
-  const px = 0.5 * height * Math.tan(dev) / Math.tan(camera.fov * DEG_TO_RAD / 2);
-  const gap = `${px.toFixed(1)}px`;
-  if (crosshairEl.style.getPropertyValue('--ch-gap') !== gap) {
-    crosshairEl.style.setProperty('--ch-gap', gap);
+  const ratio = renderer.getPixelRatio();
+  const height = renderer.domElement.height / ratio || 800;
+  if (icon) {
+    const leaf = crosshairIconLeaf();
+    if (!leaf) return;
+    // The HUD stretches its virtual screen independently on each axis
+    // (hud.js `_scaleFor`), so the icon does too.
+    const width = renderer.domElement.width / ratio || 1280;
+    setCrosshairVar('--ch-icon-w', leaf.rect[2] * width / leaf.virtual[0]);
+    setCrosshairVar('--ch-icon-h', leaf.rect[3] * height / leaf.virtual[1]);
+    return;
+  }
+  const px = 0.5 * height * Math.tan(deviation) / Math.tan(camera.fov * DEG_TO_RAD / 2);
+  setCrosshairVar('--ch-gap', px);
+}
+
+function setCrosshairVar(name, px) {
+  const value = `${px.toFixed(1)}px`;
+  if (crosshairEl.style.getPropertyValue(name) !== value) {
+    crosshairEl.style.setProperty(name, value);
   }
 }
 
@@ -11380,6 +11582,9 @@ function frame(dt) {
   const hudW = renderer.domElement.width / renderer.getPixelRatio();
   const hudH = renderer.domElement.height / renderer.getPixelRatio();
   updateSoldierHud();
+  // Every frame, not just an on-foot one: a seat has a crosshair too, and it
+  // is `crosshairAim` that decides whose.
+  updateCrosshair();
   gameHud.paint(hudW, hudH);
   // After the render: the sun's screen position comes from the camera the
   // frame was just drawn with. A no-op on every vanilla level (see
@@ -11753,6 +11958,9 @@ if (params.has('shots')) {
     firing: !!handWeapon.group?.firing,
     shots: handWeapon.group?.shots ?? 0,
     crosshairHidden: crosshairEl.hidden,
+    crosshairStyle: crosshairAim().style,
+    crosshairIcon: crosshairEl.classList.contains('ch-icon'),
+    crosshairArt: crosshairEl.classList.contains('ch-art'),
     crosshairGap: crosshairEl.style.getPropertyValue('--ch-gap') || null,
     fov: camera.fov,
     // The idle-fidget state, so a headless check can step past the 4-7 s
@@ -12252,6 +12460,14 @@ if (params.has('shots')) {
   };
   window.__getAudioState = () => ({
     audioListener,
+    // The master limiter, and how hard it is working right now: `reduction`
+    // is the dB it is taking off the sum this instant, so a test can assert
+    // that an idling engine is untouched and a cannon is only just caught.
+    limiter: audioLimiter ? {
+      threshold: audioLimiter.threshold.value,
+      ratio: audioLimiter.ratio.value,
+      reduction: audioLimiter.reduction,
+    } : null,
     ambientAudio,
     activeAreaAudios,
     // Headless Chromium will not let anyone listen, so the engine crossfade has
