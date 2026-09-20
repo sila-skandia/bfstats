@@ -47,7 +47,7 @@
     z-index: 0;
     touch-action: none;
   }
-  #hud, #gate, #side {
+  #hud, #side {
     position: absolute;
     pointer-events: none;
   }
@@ -160,14 +160,27 @@
   /* The in-game console (viewer/console.js). The engine draws its wash and
      its text over everything the 3D view has already put up -- the drawer
      `FUN_00464ee0` runs from the frame's overlay pass, after the HUD -- so
-     this sits above every other layer the page owns. It is never
-     interactive: the console is a keyboard surface, exactly as it is in the
-     game. */
+     this sits above every other layer the page owns, the Escape menu
+     included: in the game the console comes down over the front end too. It
+     is never interactive: the console is a keyboard surface, exactly as it
+     is in the game. */
   #console-canvas {
-    z-index: 12;
+    z-index: 13;
     pointer-events: none;
   }
   #console-canvas[hidden] { display: none !important; }
+
+  /* The Escape menu (viewer/play/skirmish.js): the front end, back up over
+     the battle. Opaque, and over everything the level draws -- the spawn
+     screen at 11 included, though Escape takes that down before it gets
+     here. The arrow cursor is the pointer's own, as it is on the way-in
+     screen. */
+  #menu-canvas {
+    z-index: 12;
+    touch-action: manipulation;
+  }
+  #menu-canvas[hidden] { display: none !important; }
+  #menu-canvas:focus-visible { outline: none; }
 
   /* The debug gate. Everything in `#side` -- the level picker, fog,
      wireframe, vehicles, render-entire-map, pilot, spawn-on-foot and sound --
@@ -184,28 +197,9 @@
     z-index: 1;
     pointer-events: none;
   }
-  #gate {
-    z-index: 1;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    background: transparent;
-    color: var(--text);
-  }
-  #gate[hidden] { display: none; }
-  #gate span {
-    pointer-events: auto;
-    cursor: pointer;
-    border: 1px solid var(--accent);
-    padding: 10px 16px;
-    letter-spacing: .08em;
-    text-transform: uppercase;
-    font-size: 11px;
-    background: var(--panel);
-  }
   /* A lost WebGL context leaves the canvas exactly as it last drew -- there
      is no repaint to hint anything went wrong, so this has to be loud enough
-     to read over a frozen frame rather than blend in like #gate does. */
+     to read over a frozen frame rather than blend into the picture. */
   #gl-lost {
     position: absolute;
     z-index: 8;
@@ -248,7 +242,7 @@
      drawn into the canvas, over the art, the way the engine composes it. */
   #minimap {
     --mm-size: 188px;
-    /* Not covered by the `#hud, #gate, #side` positioning rule above. */
+    /* Not covered by the `#hud, #side` positioning rule above. */
     position: absolute;
     z-index: 3;
     top: 16px; right: 16px;
@@ -814,9 +808,8 @@
   <canvas id="flare-canvas" aria-hidden="true"></canvas>
   <canvas id="hud-canvas" aria-hidden="true"></canvas>
   <canvas id="console-canvas" aria-hidden="true" hidden></canvas>
-  <div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; CapsLock spawn &middot; M map &middot; Esc</div>
+  <div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; CapsLock spawn &middot; M map &middot; Esc menu</div>
   <div id="crosshair" hidden><span class="ch-pic"></span><span class="ch-dot"></span><span class="ch-n"></span><span class="ch-s"></span><span class="ch-w"></span><span class="ch-e"></span></div>
-  <div id="gate"><span>Tap or click to fly</span></div>
   <div id="gl-lost" hidden>
     <div class="gl-lost-card">
       <div class="gl-lost-title">Graphics context lost</div>
@@ -846,6 +839,10 @@
       <button type="button" id="deploy-resume" class="fm-hit" tabindex="-1" aria-label="Resume"></button>
     </div>
   </div>
+  <!-- The Escape menu: the Instant Battle screen again, over the battle.
+       Same controller as `play/index.html` (`play/skirmish.js`); focusable
+       so the keyboard reaches the level list the way the game's does. -->
+  <canvas id="menu-canvas" tabindex="-1" aria-label="Menu" hidden></canvas>
 </div>
 
 <script type="importmap">
@@ -869,7 +866,7 @@ import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
 import { GunFire } from './gunfire.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
-import { buildHeightfield, buildCollisionIndex, WorldCollider } from './collision.js';
+import { buildHeightfield, buildCollisionIndex, buildDrivableTops, WorldCollider } from './collision.js';
 import { FOV_DEG as FOOT_FOV, GRAVITY } from './soldier.js';
 import { DeviationModel } from './deviation.js';
 import { wantViewmodelClip } from './viewmodel-anim.js';
@@ -897,6 +894,7 @@ import { flareSprites, flareTextureFiles, hasDrawableFlare } from './lens-flare.
 import { modeNames, modeProblem, pruneToMode, selectGameMode,
          spawnerWindow } from './game-modes.js';
 import { loadHudPaths } from './hud-pack.js';
+import { createSkirmishScreen } from './play/skirmish.js';
 import { kitIconCandidates } from './kit-icon.js';
 import { cpNation as cpNationRule, teamNation as teamNationRule } from './nation.js';
 
@@ -2123,16 +2121,31 @@ addEventListener('keydown', e => {
     if (gameConsole.keydown(e)) e.preventDefault();
     return;
   }
+  // Under the Escape menu the keyboard is the menu's, the way it is the
+  // console's above: the list and the arrow keys answer, and nothing behind
+  // it moves. Escape is the way back to the game.
+  if (escMenuCaptures()) {
+    if (e.code === 'Escape') { setEscMenu(false); return; }
+    if (escMenu?.keydown(e)) e.preventDefault();
+    return;
+  }
   if (e.code === 'Escape') {
     // The map is the topmost thing Escape can dismiss. In its deploy state
     // it is dismissed with intent: a redeploy resumes the life in progress,
-    // an abandoned join falls back to fly. Under `?kblock` Escape is a locked
-    // key and reaches the page in fullscreen too: the first press releases
-    // the pointer as ever, a fresh press at the gate leaves the fullscreen.
+    // and a join nobody committed to leaves for the free camera, which is
+    // what closing the game's own spawn menu does on a server that allows
+    // it. Under `?kblock` Escape is a locked key and reaches the page in
+    // fullscreen too; the browser leaves the fullscreen only on a long
+    // press, and `kbLockLeave` is the page's own way out of a session the
+    // pointer has already left.
+    //
+    // With all of those away, Escape is the game's own: it brings up the
+    // menu, in one press even mid-play, because the browser has already
+    // taken the pointer lock off us by the time this runs.
     if (deployActive()) cancelDeploy();
     else if (!fullmapBox.hidden) toggleFullMap(false);
     else if (kbSession && !captured && !e.repeat) kbLockLeave();
-    else release();
+    else if (!e.repeat) setEscMenu(true);
     return;
   }
   // Caps Lock toggles the spawn menu even while a sidebar control is focused,
@@ -2255,7 +2268,8 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => {
   // A key released under an open console must not reach `keys` either: the
   // set is only ever read for movement, and the console has the keyboard.
-  if (consoleCaptures()) return;
+  // The Escape menu has it on the same terms.
+  if (consoleCaptures() || escMenuCaptures()) return;
   keys.delete(e.code);
 });
 
@@ -2267,7 +2281,7 @@ addEventListener('keyup', e => {
 // below). Without it -- and in Firefox and Safari, which have no Keyboard
 // Lock -- the only lever a page has is asking before the tab actually goes,
 // the way any unsaved-work page does. Scoped to mid-play (captured, on foot,
-// a live soldier) so it never fires over the gate screen or a fly-by.
+// a live soldier) so it never fires over the spawn screen or a fly-by.
 // Chromium shows the prompt only for a page that has had a real click or key
 // press since it loaded, which mid-play always has.
 addEventListener('beforeunload', e => {
@@ -2463,10 +2477,8 @@ window.__consoleLog = logToConsole;
 let seatFire = false;
 let seatAltFire = false;
 
-const gate = document.getElementById('gate');
 function setFly(on) {
   captured = on;
-  gate.hidden = on;
   if (on && isTouchDevice && !sideEl.classList.contains('side-collapsed')) {
     setSideCollapsed(true);
   }
@@ -2489,7 +2501,12 @@ function setFly(on) {
 function capture() {
   setFly(true);
   ensureAudioContext();
-  renderer.domElement.requestPointerLock();
+  // The lock is asked for, not depended on: Chrome refuses one for about a
+  // second after the player pressed Escape out of the last one, and it
+  // rejects rather than throws. `captured` is already true either way, so
+  // dragging still turns the view and the next click takes the lock.
+  const lock = renderer.domElement.requestPointerLock();
+  if (lock && typeof lock.catch === 'function') lock.catch(() => {});
   // After the pointer, never before: fullscreen spends the click's user
   // activation, and Chrome 149 refuses a pointer lock asked for after it.
   kbLockEnter();
@@ -2497,11 +2514,119 @@ function capture() {
 function release() {
   setFly(false);
 }
-const gateLabel = gate.querySelector('span');
-gateLabel.addEventListener('click', e => {
-  e.stopPropagation();
+
+// --- the Escape menu -------------------------------------------------------
+//
+// The game's own way out of a level: Escape puts the front end back up over
+// the battle, and from there you either go back to it, leave it, or start a
+// different one. This is that screen — `play/skirmish.js`, the same
+// controller `play/index.html` is, mounted on a canvas over the stage with
+// its fourth page up: `menu/ExitMenu`'s button, which reads END CURRENT GAME
+// because an Instant Battle is a singleplayer game
+// (`Join/Disconnect/ShowDisconnect` = 2, the engine's own numbering).
+//
+// The level keeps running behind it, untouched, and entirely hidden: the
+// menu is opaque, exactly as the engine's is. The front end paints its black
+// field and its camouflaged plate over the game, and stops the Bink movie
+// while there is a game to go back to — so the battle does not show through,
+// and nothing here dims or blurs the frame to suggest that it does.
+//
+// Three ways out of it, and all three are the game's: Escape again is back to
+// the game, START is a different level (the page navigates, which is this
+// site's "disconnect and load the new map"), and END CURRENT GAME is
+// `game.disconnect` — the same MENU_URL the console word already goes to.
+const menuCanvas = document.getElementById('menu-canvas');
+let escMenu = null;
+let escMenuUp = false;
+
+/** The screen, built and loading on first need. Warmed once the level is,
+ *  so the first Escape is a paint and not a fetch. */
+function escMenuScreen() {
+  if (escMenu) return escMenu;
+  escMenu = createSkirmishScreen({
+    canvas: menuCanvas,
+    // `map.html` sits at the viewer root, where `play/index.html` is one
+    // directory down; every pack and level URL in the controller is built
+    // off this.
+    root: '',
+    params,
+    // No menu loop over a battle: the engine stops the front end's own Bink
+    // movie the moment there is a game behind the menu.
+    music: false,
+    inGame: true,
+    onDisconnect: () => location.assign(MENU_URL),
+    // Picking a mod must not throw the level away, so the list re-fetches in
+    // place instead of reloading the page the way the way-in screen does.
+    modChoice: 'inplace',
+    onStatus: text => { if (text) console.warn(text); },
+  });
+  escMenu.load()
+    // The level and the side it opens on are the ones being played, the way
+    // the game's own list sits on what it last started. `launchTeam` is the
+    // `?team=` this page came in on; with no parameter the screen keeps its
+    // own default, which is the one the way-in screen shows.
+    .then(() => {
+      escMenu.selectMap(extras?.level || params.get('map') || '');
+      if (launchTeam) escMenu.setTeam(launchTeam);
+    })
+    .catch(error => {
+      console.error('Escape menu unavailable', error);
+      // A screen that cannot draw must not swallow Escape: the key goes back
+      // to being the one that frees the pointer.
+      setEscMenu(false);
+      escMenu = null;
+    });
+  return escMenu;
+}
+
+/** Up or down. Down is "back to the game", which leaves the gate showing —
+ *  the pointer lock is the player's to take again with a click, because a
+ *  browser will not hand it back on the same Escape that took it away. */
+function setEscMenu(on) {
+  if (on === escMenuUp) return;
+  escMenuUp = on;
+  menuCanvas.hidden = !on;
+  if (on) {
+    // A menu you cannot click is no menu: the pointer comes back with it.
+    // (The browser has usually taken the lock off already — this is what
+    // drops what was held and stops the world reading the mouse.)
+    release();
+    // Whatever was held when the menu came up must not still be held under
+    // it — the same rule the console follows.
+    keys.clear();
+    escMenuScreen().paint();
+    menuCanvas.focus();
+    return;
+  }
+  // Down is back to the game, with the mouse: that is what the menu does in
+  // the game, and there is no "click to resume" plate to ask for it any
+  // more. Escape is a user gesture, so the lock is usually granted outright;
+  // Chrome refuses one within about a second of the Escape that dropped it,
+  // and `capture` is written to survive that (the view still drags, and the
+  // next click takes the lock).
   capture();
-});
+}
+
+/** Whether the menu owns the keyboard and the pointer. */
+function escMenuCaptures() { return escMenuUp; }
+
+// The handle, beside `__console`'s: a headless check drives the screen and
+// reads its state back rather than screen-scraping a canvas, the same shape
+// `play/index.html`'s `__menu` offers.
+window.__escMenu = {
+  get up() { return escMenuUp; },
+  get ready() { return (escMenu?.state?.levels ?? 0) > 0; },
+  get state() { return escMenu?.state ?? null; },
+  get levels() { return escMenu?.levels ?? []; },
+  get mod() { return escMenu?.mod ?? null; },
+  open: () => setEscMenu(true),
+  close: () => setEscMenu(false),
+  select: index => escMenu?.select(index),
+  setTeam: team => escMenu?.setTeam(team),
+  launchUrl: () => escMenu?.launchUrl() ?? null,
+  start: () => escMenu?.start(),
+  paint: () => escMenu?.paint(),
+};
 
 // --- Keyboard Lock, prototype (`?kblock`, off by default) ------------------
 //
@@ -2542,7 +2667,6 @@ const KBLOCK = params.has('kblock') && typeof navigator.keyboard?.lock === 'func
 // deliberate Ctrl+T still opens a tab.
 const KBLOCK_KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'KeyE', 'KeyZ',
                      'KeyM', 'Space', 'Escape'];
-const GATE_TEXT = gateLabel.textContent;
 let kbSession = false;        // inside the fullscreen this page asked for
 let kbLockState = 'idle';     // what lock() last said; the ?shots hook reads it
 
@@ -2556,7 +2680,8 @@ function kbLockEnter() {
     error => { kbLockState = `rejected: ${error.name}`; });
 }
 
-// A fresh Escape at the gate, or leaving on-foot play, ends the session.
+// Leaving on-foot play ends the session, and so does the Escape that
+// closes the menu with the pointer already free.
 function kbLockLeave() {
   if (!kbSession) return;
   navigator.keyboard.unlock();
@@ -2576,7 +2701,6 @@ if (KBLOCK) {
     const was = HUD_FOOT;
     HUD_FOOT = inside ? HUD_FOOT_KBLOCK : HUD_FOOT_PLAIN;
     if (hud.textContent === was) hud.textContent = HUD_FOOT;
-    gateLabel.textContent = inside ? 'Click to resume · Esc exits full screen' : GATE_TEXT;
   });
 }
 let touchFlying = false;
@@ -6071,8 +6195,15 @@ function buildCollider(root) {
   // round that lands resolves to the vehicle it landed on with one lookup and
   // no scene walk. `ownerRoots[i]` is owner `i` by construction.
   registerDamageables(ownerRoots);
+  // Raised decks a ground vehicle drives on top of (bridges, repair/reload
+  // bays). The level's heightfield is the ground under them; their deck tops
+  // are static collision meshes the hull sweep would otherwise stop a tank on.
+  // Build once per level, on the collision grid, and hand `surfaceHeight` the
+  // deck so the wheels ride it across.
+  const drivableTops = buildDrivableTops(root);
   collider = (heightfield || statics || Number.isFinite(extras?.waterLevel))
-    ? new WorldCollider({ heightfield, statics, waterLevel: extras?.waterLevel })
+    ? new WorldCollider({ heightfield, statics, waterLevel: extras?.waterLevel,
+                          drivableTops })
     : null;
   world.setCollider(collider);
   world.damageTables = damageTables;
@@ -7450,9 +7581,9 @@ function setOnFoot(on) {
 // `let`: under `?kblock` the Escape hint changes for as long as the
 // fullscreen session lasts (kbLockEnter). Without it this never changes.
 let HUD_FOOT ='WASD move · Shift walk · Ctrl crouch · Z prone · Space jump · '
-  + 'LMB fire · RMB aim · R reload · CapsLock / M redeploy · Esc';
+  + 'LMB fire · RMB aim · R reload · CapsLock / M redeploy · Esc menu';
 const HUD_FOOT_PLAIN = HUD_FOOT;
-const HUD_FOOT_KBLOCK = `${HUD_FOOT_PLAIN} release · hold Esc exits full screen`;
+const HUD_FOOT_KBLOCK = `${HUD_FOOT_PLAIN} · hold Esc exits full screen`;
 
 /** Wake's (or any level's) `SupplyDepot` nodes, world position resolved
  *  through the scene graph — a depot is usually parented under a `Bundle`
@@ -10243,7 +10374,11 @@ function flagMapSpots(flag) {
 }
 
 function drawSpawnRings(ctx, toPx, sc) {
-  const chosen = Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1);
+  // -1 while nothing is chosen: every ring sits back and none is filled,
+  // which is what tells the player he is about to free-roam rather than
+  // spawn (`deployUnchosen`).
+  const chosen = deployUnchosen ? -1
+    : Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1);
   for (const index of deployFlagIndices()) {
     const flag = flags[index];
     for (const spot of flagMapSpots(flag)) {
@@ -10428,7 +10563,7 @@ function drawFullMap(force = false) {
   if (fullmapBox.hidden) return;
   const here = projectToArt(camera.position.x, camera.position.z) || { u: 0, v: 0 };
   const key = `${mapSurfaceKey(fullmapCanvas, here, 1)},${deployActive()},${deployRejoin},`
-    + `${deployTeamId},${spawnFlagSelect.value},${flags.length}`;
+    + `${deployTeamId},${deployUnchosen ? '-' : spawnFlagSelect.value},${flags.length}`;
   if (!mapSurfaceStale(fullmapCanvas, key, force)) return;
   // Bigger sprites than the HUD widget: this surface is several times the
   // size. In the deploy state the art dims to the spawn screen's silhouette
@@ -10517,6 +10652,11 @@ let deployRejoin = false;
 // The selection as it stood when the screen opened, so a cancelled redeploy
 // does not leave the panel's select pointing somewhere nobody went.
 let deployKept = '';
+// Nothing chosen. `spawnFlagSelect` has no empty value and several things
+// read it, so "no spawn" is a flag beside it rather than a cleared select:
+// a click on the map away from every ring sets it, choosing anything clears
+// it, and while it is set the commit is free roam instead of a spawn.
+let deployUnchosen = false;
 // The tab: 1 Axis, 2 Allied — the game's `Kit/ShowKit`. Follows the chosen
 // flag and filters the rings.
 let deployTeamId = 2;
@@ -11017,6 +11157,9 @@ function openDeploy() {
   // a corpse, and `Kit/IsAlive` must say so.
   deployRejoin = !!soldier && !soldierDead;
   deployKept = spawnFlagSelect.value;
+  // A fresh screen always opens on a flag, whether the last one was left
+  // unselected for a free roam or not.
+  deployUnchosen = false;
   // The deck-spot choice belongs to the life it was made on; a fresh screen
   // starts with whole flags again (the rejoin path re-derives it below).
   deployGroup = null;
@@ -11059,9 +11202,25 @@ function cancelDeploy() {
     if (kept !== '') spawnFlagSelect.value = kept;
     return;
   }
+  enterFreeCam();
+}
+
+/** Free roam: the spawn screen closed with nobody spawned.
+ *
+ *  The game's own behaviour on a server that allows it — you leave the spawn
+ *  menu without taking a spawn and the camera is yours over the level. Caps
+ *  Lock brings the screen back, which is how you stop free-roaming.
+ *
+ *  It takes the pointer with it. The click or the Enter that got here is a
+ *  user gesture, which is the only currency pointer lock accepts, and this
+ *  is the whole reason the page no longer needs a "click to fly" plate: the
+ *  way into the free camera captures the mouse on the way. */
+function enterFreeCam() {
+  deployUnchosen = false;
   optOnFoot.checked = false;
   setOnFoot(false);
   placeCamera();
+  capture();
 }
 
 /** The group of `flag` the current selection points at: the chosen deck
@@ -11075,6 +11234,7 @@ function activeDeployGroup(flag) {
 
 function selectDeployFlag(index, group = null) {
   if (!Number.isInteger(index) || index < 0 || index >= flags.length) return false;
+  deployUnchosen = false;
   spawnFlagSelect.value = String(index);
   // A fresh choice starts at the flag's first spawn, as the select's own
   // change handler would have it — the world's counter rides the reset.
@@ -11097,6 +11257,8 @@ function setDeployTeam(team, reselect = true) {
     tab.setAttribute('aria-pressed', String(Number(tab.dataset.team) === team));
   }
   if (reselect) {
+    // Picking a side is picking again: whatever the tab lands on is chosen.
+    deployUnchosen = false;
     const chosen = Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1);
     if (flags[chosen]?.team !== team) {
       const first = deployFlagIndices()[0];
@@ -11173,6 +11335,14 @@ function syncDeployReady() {
 
 function deploySpawn() {
   if (!deployActive() || !worldReady) return false;
+  // Nothing chosen: the commit is the way out to the free camera, not a
+  // spawn. The game's spawn menu closes the same way on a server that
+  // allows it, and there is no flag here to put a soldier at.
+  if (deployUnchosen) {
+    toggleFullMap(false);
+    enterFreeCam();
+    return false;
+  }
   const rejoin = deployRejoin;
   // Arm on-foot without firing `change` — that handler calls requestOnFoot
   // and would reopen this screen. Without the box ticked the frame loop
@@ -11197,6 +11367,11 @@ function deploySpawn() {
 // within a finger's width, measured in CSS pixels so the target does not
 // shrink on a hidpi display. A click only selects — Enter or DONE/SUICIDE
 // commits, matching the game. Touch arrives here as the same click event.
+//
+// A click on open ground, away from every ring, *unselects* instead. That is
+// how you say "no spawn" on this screen, and with nothing selected the same
+// commit that would have spawned you takes the free camera over the level
+// instead (`enterFreeCam`).
 fullmapCanvas.addEventListener('click', e => {
   if (!deployActive()) return;       // the plain map still closes, above
   e.stopPropagation();
@@ -11220,7 +11395,13 @@ fullmapCanvas.addEventListener('click', e => {
       }
     }
   }
-  if (best < 0) return;
+  if (best < 0) {
+    if (deployUnchosen) return;
+    deployUnchosen = true;
+    drawFullMap(true);
+    paintDeployChrome();
+    return;
+  }
   selectDeployFlag(best, bestGroup);
 });
 
@@ -11550,7 +11731,10 @@ async function show(entry) {
   timing.worldReady = performance.now();
   syncDeployReady();
   // Direct-to-spawn: skip the briefing dialog and land on the deploy screen.
-  if (!optPilot.checked) openDeploy();
+  // A level that declares no soldier spawn has no screen to open, and with
+  // the "click to fly" plate gone there would be nothing to tell the player
+  // the controls are live — so free roam starts armed instead.
+  if (!optPilot.checked && !openDeploy()) capture();
 
   // Every texture this level needs has been queued by now, so a queue that is
   // already drained (or was never filled) means the load is done — texReport
@@ -11601,6 +11785,12 @@ if (!manifest.length) {
   select.value = first.name;
   await show(first);
 }
+
+// The Escape menu's own pack, fetched once the level has stopped competing
+// for the network: a couple of JSON files and the plates, most of which the
+// screen the player came in through has already cached. Escape before this
+// lands builds it on the spot instead.
+warmups.level.finally(() => { escMenuScreen(); });
 
 replayController = createReplayController({
   scene, camera, loader, bust,
@@ -12219,8 +12409,12 @@ if (params.has('shots')) {
   // screen is not up or the name is not a flag.
   window.__deploy = {
     get open() { return deployActive(); },
+    // Nothing chosen: a click on open ground unselects, and the commit then
+    // takes the free camera instead of spawning (`enterFreeCam`).
+    get unchosen() { return deployUnchosen; },
     get flags() {
-      const chosen = Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1);
+      const chosen = deployUnchosen ? -1
+        : Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1);
       return flags.map((flag, index) => ({
         name: flag.name,
         team: flag.team,
@@ -12535,7 +12729,7 @@ if (params.has('shots')) {
   window.__kblock = () => ({
     enabled: KBLOCK, session: kbSession, lock: kbLockState, keys: KBLOCK_KEYS,
     fullscreen: document.fullscreenElement === stage,
-    hud: hud.textContent, gate: gateLabel.textContent,
+    hud: hud.textContent,
   });
   // The collider itself, for measuring rather than for asserting: `__collision()`
   // drains the accumulated cast cost, so calling it once a second gives the real

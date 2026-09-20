@@ -662,6 +662,118 @@ GeometryTemplate.create StandardMesh PT_Steering_M1
         self.assertIn("1P_PT_Str_M1", report.missing_meshes)
         self.assertNotIn("PT_Steering_M1", report.missing_meshes)
 
+    def test_a_cockpit_pair_with_no_third_person_mesh_keeps_its_wrapper(self) -> None:
+        """The M3A1 and the Priest name both cockpit alternatives after `1P_*`.
+
+        Vanilla's `M3A1CockpitExternal`/`M3A1CockpitInternal` and the Priest's
+        pair both declare `ObjectTemplate.geometry 1P_M3A1_Driver_M1` — there
+        is no third-person mesh on either side, so the fallback that swaps a
+        picked 1P alternative for a drawable sibling finds nothing. The export
+        used to let the wrapper vanish with its children, and the viewer's
+        cockpit graft then had no host: the driver sat inside the closed hull
+        with its back faces culled, seeing the world through the walls around
+        a few inward-facing fragments.
+        """
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Land/M3A1/Objects.con",
+            """
+ObjectTemplate.create PlayerControlObject M3A1
+ObjectTemplate.geometry M3A1_Hull_M1
+ObjectTemplate.addTemplate lodM3A1Cockpit
+
+ObjectTemplate.create LodObject lodM3A1Cockpit
+ObjectTemplate.addTemplate M3A1CockpitExternal
+ObjectTemplate.addTemplate M3A1CockpitInternal
+ObjectTemplate.lodSelector M3A1CockpitSelector
+
+ObjectTemplate.create SimpleObject M3A1CockpitExternal
+ObjectTemplate.geometry 1P_M3A1_Driver_M1
+
+ObjectTemplate.create SimpleObject M3A1CockpitInternal
+ObjectTemplate.geometry 1P_M3A1_Driver_M1
+
+LodSelectorTemplate.create DistCompareSelector M3A1CockpitSelector
+LodSelectorTemplate.addLodDistance 3
+LodSelectorTemplate.addLodComparison 0.5
+
+GeometryTemplate.create StandardMesh M3A1_Hull_M1
+GeometryTemplate.create StandardMesh 1P_M3A1_Driver_M1
+""",
+        )
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        builder = gltf.GlbBuilder()
+        stub_meshes(assembler, builder, "M3A1_Hull_M1")
+        report = Report(root="M3A1", configuration="complex", lod=0)
+
+        root = assembler.build_node(builder, "M3A1", report)
+        document = glb_document(builder.build([root], extras={}))
+        names = [node["name"] for node in document["nodes"]]
+
+        self.assertIn("lodM3A1Cockpit", names)
+        wrapper = document["nodes"][names.index("lodM3A1Cockpit")]
+        # Nothing drawable inside: both alternatives are first person, and the
+        # ordinary export refuses those. It is a graft host, not a visual part.
+        self.assertNotIn("mesh", wrapper)
+        self.assertEqual([], wrapper.get("children", []))
+        # ...and the refusal is the skip, not a load that failed: the 1P mesh
+        # belongs to the cockpit export alone.
+        self.assertNotIn("1P_M3A1_Driver_M1", report.missing_meshes)
+        # The selector still names its alternative (the external half, by the
+        # DistCompare's exterior-first rule); the internal one is the sibling
+        # left to the cockpit export.
+        self.assertEqual(["lodM3A1Cockpit -> M3A1CockpitExternal"],
+                         report.selected_lod_alternatives)
+        self.assertEqual(["M3A1CockpitInternal"], report.skipped_lod_alternatives)
+
+    def test_a_meshless_dummy_alternative_keeps_the_ship_cockpit_wrapper(self) -> None:
+        """The naval guns pair `ShipCockpitDummy` (no geometry) with `1p_shipgun_m1`.
+
+        Same landing as the M3A1 above by the opposite route: the selector
+        picks the Dummy, the Dummy builds to nothing, and the wrapper used to
+        be pruned for having neither a mesh nor a surviving child — taking the
+        graft host for every destroyer and battleship gun with it.
+        """
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Sea/Hatsuzuki/Objects.con",
+            """
+ObjectTemplate.create PlayerControlObject Hatsuzuki
+ObjectTemplate.addTemplate lodShipCockpit
+
+ObjectTemplate.create LodObject lodShipCockpit
+ObjectTemplate.addTemplate ShipCockpitDummy
+ObjectTemplate.addTemplate ShipCockpit
+ObjectTemplate.lodSelector ShipCockpitLodSelector
+
+ObjectTemplate.create SimpleObject ShipCockpitDummy
+
+ObjectTemplate.create SimpleObject ShipCockpit
+ObjectTemplate.geometry 1p_shipgun_m1
+
+LodSelectorTemplate.create DistCompareSelector ShipCockpitLodSelector
+LodSelectorTemplate.addLodDistance 200
+LodSelectorTemplate.addLodComparison 0.5
+
+GeometryTemplate.create StandardMesh 1p_shipgun_m1
+""",
+        )
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        builder = gltf.GlbBuilder()
+        report = Report(root="Hatsuzuki", configuration="complex", lod=0)
+
+        root = assembler.build_node(builder, "Hatsuzuki", report)
+        document = glb_document(builder.build([root], extras={}))
+        names = [node["name"] for node in document["nodes"]]
+
+        self.assertIn("lodShipCockpit", names)
+        wrapper = document["nodes"][names.index("lodShipCockpit")]
+        self.assertNotIn("mesh", wrapper)
+        self.assertEqual([], wrapper.get("children", []))
+        self.assertNotIn("1p_shipgun_m1", report.missing_meshes)
+
 
 class BrowseRigTests(unittest.TestCase):
     def test_helm_loses_steer_when_the_vehicle_has_no_visible_springs(self) -> None:

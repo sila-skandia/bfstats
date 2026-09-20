@@ -51,6 +51,26 @@ export function botSettingsEdge(layout) {
   return edge;
 }
 
+/** The pages the screen is, in the order they paint. `exit` is the last
+ *  because it is the only one that is not always up: it is `menu/ExitMenu`'s
+ *  END CURRENT GAME button, and there is a game to end only when the screen
+ *  is the Esc menu over a running level.
+ *
+ *  Which pages are up is the viewer's call on every one of these — the
+ *  engine's own `SetPathAction`s choose them and nothing in a page says "I
+ *  am showing" — and for this one the answer is whatever
+ *  `Join/Disconnect/ShowDisconnect` is: 0 is the front end and the page is
+ *  down, 2 is a singleplayer game and it is up. `menuVars` writes the
+ *  variable from the same flag, so the button's own two labels (DISCONNECT
+ *  for a server, END CURRENT GAME for a singleplayer game) pick themselves
+ *  out of the file. See `EXIT_RECTS` in `extract_menu_layout.py`. */
+export const PAGES = ['background', 'skirmish', 'navigation', 'exit'];
+
+/** The pages up for a given state: `exit` only in a game. */
+export function livePages(state) {
+  return state?.disconnect ? PAGES : PAGES.filter(page => page !== 'exit');
+}
+
 /** A page's elements, less the bot settings while they are switched off.
  *  Painting and hit-testing both walk this, so what is not drawn cannot be
  *  clicked either. */
@@ -124,12 +144,24 @@ export function toVirtual(s, px, py) {
 export const inRect = (rect, x, y) =>
   x >= rect[0] && x < rect[0] + rect[2] && y >= rect[1] && y < rect[1] + rect[3];
 
+/** The game the exit button is offering to leave, as the engine numbers
+ *  them: 1 a server, 2 a singleplayer game. Instant Battle is the second,
+ *  which is the `END CURRENT GAME` label. */
+export const SINGLEPLAYER_GAME = 2;
+
 /** The state the screen's conditions read. The file's own defaults, with
  *  the player's two choices written over them under the names the layout
  *  uses: `Campaign/Team` for the TEAM list, and the difficulty variables
- *  left at their shipped values because this site runs no bots. */
+ *  left at their shipped values because this site runs no bots.
+ *
+ *  `state.disconnect` is whether the screen is up over a running level, and
+ *  it goes in under the name the exit page reads to pick its label. */
 export function menuVars(layout, state) {
-  return { ...(layout.variables || {}), 'Campaign/Team': state.team };
+  return {
+    ...(layout.variables || {}),
+    'Campaign/Team': state.team,
+    'Join/Disconnect/ShowDisconnect': state.disconnect ? SINGLEPLAYER_GAME : 0,
+  };
 }
 
 /** The row the pointer is over in the list box, or -1. */
@@ -209,7 +241,7 @@ export function drawBitmapText(ctx, font, tint, text, x, y, color) {
  */
 export function paintMenu(ctx, layout, state, env) {
   const vars = menuVars(layout, state);
-  for (const page of ['background', 'skirmish', 'navigation']) {
+  for (const page of livePages(state)) {
     for (const el of pageElements(layout, page)) {
       if (!elementVisible(el, vars)) continue;
       paintElement(ctx, el, layout, state, env);
@@ -364,7 +396,7 @@ export function listBox(layout) {
 }
 
 /** What the pointer is over, in virtual units: a list row, a TEAM row, a
- *  scroll arrow or the START button. */
+ *  scroll arrow, the START button or, in a game, the one that ends it. */
 export function hitTest(layout, state, x, y, count) {
   const box = listBox(layout);
   if (box && inRect(rowArea(layout, box), x, y)) {
@@ -372,8 +404,13 @@ export function hitTest(layout, state, x, y, count) {
     if (index >= 0 && index < count) return { kind: 'row', index };
     return null;
   }
-  for (const page of ['skirmish', 'navigation']) {
+  const vars = menuVars(layout, state);
+  for (const page of livePages(state)) {
+    if (page === 'background') continue;
     for (const el of pageElements(layout, page)) {
+      // Nothing the conditions hold back is clickable either: the exit
+      // page's own button is in the file whether or not there is a game.
+      if (!elementVisible(el, vars)) continue;
       if (el.kind === 'hit' && el.sets?.some(s => s.var === 'Campaign/Team')
           && inRect(el.rect, x, y)) {
         return { kind: 'team', team: el.sets.find(s => s.var === 'Campaign/Team').value };
@@ -381,6 +418,10 @@ export function hitTest(layout, state, x, y, count) {
       if (el.kind === 'button' && inRect(el.rect, x, y)) {
         if (el.calls?.includes('Skirmish/StartSkirmish')) {
           return { kind: 'button', action: 'start', rect: el.rect };
+        }
+        // `menu/ExitMenu`'s own button, by the locale key of its label.
+        if (el.id === 'MENU_DISCONNECT') {
+          return { kind: 'button', action: 'disconnect', rect: el.rect };
         }
         const scroll = el.texture.includes('upp') ? -1
           : el.texture.includes('ner') ? 1 : 0;
