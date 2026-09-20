@@ -422,8 +422,14 @@ results.scale = {
   for (const p of PROFILES) readBack[p] = mi.sensitivityFor(p);
   mi.setSensitivity('air', 0.4);
   mi.setSensitivity('infantry', 1.0);
-  const clampedHigh = mi.setSensitivity('landSea', 5);
-  const clampedLow = mi.setSensitivity('common', -3);
+  // No clamp: `ControlSettings::setSensitivity` 0x006eb1a0 is a bare store,
+  // so a word given 5 really does buy `5 x 5 + 0.1` = 25.1 and a negative one
+  // really does invert the axis. 0..1 is the menu slider's range, not the
+  // console word's.
+  const aboveMenuRange = mi.setSensitivity('landSea', 5);
+  const aboveMenuScale = round(mi.scaleFor('landSea'), 10);
+  const belowMenuRange = mi.setSensitivity('common', -3);
+  const belowMenuScale = round(mi.scaleFor('common'), 10);
   const rejected = mi.setSensitivity('nosuchprofile', 0.5);
   const ignored = mi.setSensitivity('air', 'not a number');
 
@@ -432,8 +438,10 @@ results.scale = {
     afterSet: { ...mi.sensitivity },
     airScaleAfterSet: round(mi.scaleFor('air'), 10),
     infantryScaleAtMax: round(mi.scaleFor('infantry'), 10),
-    clampedHigh,
-    clampedLow,
+    aboveMenuRange,
+    aboveMenuScale,
+    belowMenuRange,
+    belowMenuScale,
     rejected: rejected === undefined,
     ignoredKeepsValue: ignored,
   };

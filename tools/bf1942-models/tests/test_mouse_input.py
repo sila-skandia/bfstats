@@ -402,10 +402,18 @@ class MouseConsoleWordTests(_Harness):
         self.assertEqual(1.0, c["afterSet"]["infantry"])
         self.assertAlmostEqual(5.1, c["infantryScaleAtMax"], places=10)
 
-    def test_the_menu_range_is_the_clamp(self) -> None:
+    def test_the_word_does_not_clamp_because_the_engine_does_not(self) -> None:
+        # `ControlSettings::setSensitivity` (client 0x006eb1a0) is
+        # `mov eax,[esp+4]; mov [ecx+0xc],eax`, plus a one-time seed of the
+        # saved slot at +0x10 while it still holds the -1.0f sentinel. There
+        # is no clamp anywhere on that path, so the console word must not
+        # invent one: 0..1 is the MENU SLIDER's range. 5 buys `5*5+0.1`, and
+        # a value below -0.02 really does invert the axis.
         c = self.results["console"]
-        self.assertEqual(1, c["clampedHigh"])
-        self.assertEqual(0, c["clampedLow"])
+        self.assertEqual(5, c["aboveMenuRange"])
+        self.assertAlmostEqual(25.1, c["aboveMenuScale"], places=10)
+        self.assertEqual(-3, c["belowMenuRange"])
+        self.assertAlmostEqual(-14.9, c["belowMenuScale"], places=10)
 
     def test_an_unknown_profile_or_a_bad_number_changes_nothing(self) -> None:
         c = self.results["console"]

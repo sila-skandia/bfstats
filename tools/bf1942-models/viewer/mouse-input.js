@@ -130,8 +130,26 @@ export const PROFILES = Object.freeze(['common', 'infantry', 'landSea', 'air']);
  * rest of the aircraft gun positions, which therefore aim on the LandSea
  * profile while the pilot beside them is on Air. Only the 13 aircraft *pilot*
  * PCOs declare `VCAir`; the ships declare `VCSea`, which selects the same
- * LandSea map. (`AA_Enterprise` is the single template with no category and so
- * the only one that would keep the infantry map.)
+ * LandSea map.
+ *
+ * Two things a first reading of that survey got wrong, both re-derived:
+ *
+ *   * Ten of the 121 declare the **unprefixed** spelling — `AA_Allies` says
+ *     `setVehicleCategory Land`, and nine Daihatsu/Lcvp/PTRaft passenger PCOs
+ *     say `Sea`. Those are real aliases, not typos: `operator>>(istream&,
+ *     VehicleCategory&)` lnxded `0x0829b580` compares against `'VCLand'`
+ *     (`0x086d4276`) **or** `'Land'` (`0x086d4030`) for 0, `'VCSea'`
+ *     (`0x086d427d`) or `'Sea'` (`0x086d427f`) for 1, `'VCAir'`
+ *     (`0x086d4270`) or `'Air'` (`0x086f3538`) for 2 — and writes **3** for
+ *     anything it does not recognise, which is the one value that would fall
+ *     through the client's branch and keep the infantry map.
+ *   * `AA_Enterprise`, the one template that declares no category at all, is
+ *     **not** left on the infantry map: `PlayerControlObjectTemplate`'s own
+ *     constructor seeds the field to 0 = VCLand (`mov DWORD [ebx+0x1dc],0x0`
+ *     at lnxded `0x08319628` and `0x083198a8`; the accessor pair is
+ *     `setVehicleCategory` `0x0831b940` / `getVehicleCategory` `0x0831b970`,
+ *     both on `+0x1dc`). So **every** vanilla PCO selects the LandSea or the
+ *     Air map, and nothing a player can sit in keeps the infantry one.
  *
  * At the shipped defaults `infantry` and `landSea` are the same number, so this
  * only actually bites in an aircraft — but the four knobs are separate and a
@@ -293,17 +311,26 @@ export class MouseInput {
   }
 
   /**
-   * `game.set*MouseSensitivity`. The menu's slider is 0..1 and the setter
-   * stores whatever it is handed (`ControlSettings::setSensitivity`
-   * `0x006eb1a0` is a bare `[this+0xc] = v`), so the clamp here is the menu's
-   * range rather than a guard the engine has. Returns what took effect.
+   * `game.set*MouseSensitivity`. **No clamp**, because the engine has none:
+   * `ControlSettings::setSensitivity` `0x006eb1a0` is
+   *
+   *     mov eax,[esp+0x4] ; mov [ecx+0xc],eax
+   *     cmp [ecx+0x10],0xbf800000 ; jne ; mov [ecx+0x10],[esp+0x4]
+   *
+   * -- a bare store of whatever it was handed, plus a one-time seed of the
+   * "saved" slot while it still holds the -1.0f sentinel. `game.
+   * setInfMouseSensitivity 2` really does buy a scale of 10.1 in retail, and
+   * a negative one really does invert the axis (`5 x s + 0.1` goes negative
+   * below -0.02). 0..1 is the MENU SLIDER's range, not the word's, and an
+   * earlier revision of this file clamped to it -- which is exactly the kind
+   * of invented guard this round exists to remove. Non-finite input is
+   * rejected, which is the JS console's own business, not the engine's.
+   * Returns what took effect.
    */
   setSensitivity(profile, value) {
     if (!PROFILES.includes(profile)) return undefined;
     const v = Number(value);
-    if (Number.isFinite(v)) {
-      this.sensitivity[profile] = Math.max(0, Math.min(1, v));
-    }
+    if (Number.isFinite(v)) this.sensitivity[profile] = v;
     return this.sensitivity[profile];
   }
 
@@ -405,6 +432,29 @@ export class MouseInput {
 // `+0xc8`/`+0xcc`/`+0xd0` — all three default to **1.0f** in the ctor
 // (`0x08328c30`-`0x08328c44`), so a standing soldier's factor is 1.
 //
+// Which of the three, and what the shipped states set them to, matters and is
+// now read. The x87 block at `0x0827449f`-`0x082744df` pairs them off:
+// `+0xc8` multiplies `c_PIThrottle`, **`+0xcc` multiplies this yaw delta**,
+// `+0xd0` multiplies `c_PIYaw`. They are the three arguments of the .con word
+// `AnimationStateMachine.setSpeed <throttle> <mouseLook> <yaw>`, and a sweep of
+// vanilla `animations.rfa` + `Objects.rfa` (284 states, 83 `setSpeed` lines)
+// says only these depart from `1 1 1`:
+//
+//     Lb_ClimbLadder*          1.0 / 0.7  0  0      (a ladder locks the look)
+//     Lb_Hit{Back,Chest}*      0          1  0
+//     Lb_Parachute*            0          1  0
+//     Lb_*InVehicle, passenger 0          0  0
+//     Lb_ExplosionFly*, deaths 0          0  0
+//     Lb_RunStandToLie         6.0        1  1      (the dive-to-prone lunge)
+//
+// so **no crouched or prone state slows the turn** — every `AnimationStates
+// Crouching.con` and `AnimationStatesLie.con` state is `1.0 1.0 1.0`. A viewer
+// with no ladders and no parachutes therefore has nothing to model here, and
+// modelling a prone turn penalty would be inventing one.
+// (Only the FIRST of the soldier's two state machines applies its factors:
+// `0x0827449b test esi,esi; jne 0x82744e5` skips the multiply on the second
+// pass of the `esi = 0..1` loop.)
+//
 // Since the tick is fixed at `dt = 1/30` (LOOP-1), `dt x g_simulationFps` is
 // exactly 1 and the law collapses to:
 //
@@ -419,16 +469,62 @@ export class MouseInput {
 // feel and landed on the read law, which is also the best evidence anyone has
 // that `countsPerPixel` really is about 1.
 //
-// NOT CLOSED, and deliberately not modelled: `BFSoldier+0x288` is not only the
-// tick's yaw, it is also a register the tick decrements and a second site
-// (`0x08274629`-`0x082746c5`, reached when `c_PIYaw != 0`, or when
-// `c_PIThrottle != 0` with no strafe) applies with the matching `-3.0`
-// (`ds:0x086d26fc`) and then zeroes. It is clamped at `0x08274412` against a
-// bound built from `0.6` (`ds:0x86c4f68`) and `18.0` (`ds:0x86c08d0`), which
-// reads like the torso/leg alignment the soldier mesh needs rather than a
-// second helping of view rotation. Whether a moving soldier therefore turns
-// faster than a standing one was not settled; the viewer implements the tick's
-// own rotation only.
+// Two more things scale the on-foot look before any of the above, both read
+// out of the tail of the same function (gcc put the blocks at the end; they
+// `jmp 0x08274266`, i.e. BEFORE the yaw and pitch maths):
+//
+//   * **Zoom.** `0x08275bdf call [eax+0x114]` asks the held FireArms whether
+//     it is zoomed; if so `0x08275bf2`-`0x08275c11` multiplies BOTH
+//     `c_PIMouseLookX` and `c_PIMouseLookY` by the weapon TEMPLATE's `+0x270`
+//     — `ObjectTemplate.zoomFov`, per `FireArmsTemplate::makeScript`
+//     `0x0828f0e2` (`+0x274` is `SoldierZoomFov`, `0x0828f0b0`, and is NOT
+//     what scales the hand). `map.html`'s `stepSoldierLook` carries this.
+//   * **Recoil.** When `BFSoldier+0x544` is non-zero, `0x08275c5f`-`0x08275c8a`
+//     ADDS `BFSoldier::yawRecoil()` `0x0827e720` to `c_PIMouseLookX` and
+//     `pitchRecoil()` `0x0827e7d0` to `c_PIMouseLookY`, once per queued count,
+//     and decrements the counter — so in retail the recoil kick travels the
+//     same path as the hand, through the same x3 yaw gain and the same +-38
+//     pitch clamp. This viewer writes recoil straight into `soldier.look`
+//     instead, which is a different shape with the same visible effect but
+//     does not inherit the 3:1 asymmetry. UNMODELLED, deliberately.
+//
+// STILL OPEN, and the viewer deliberately implements only the tick's own
+// rotation: `BFSoldier+0x288` is a second register the tick decrements
+// (`0x08274314 fsubr` — the RAW delta, before the animation turn factor),
+// clamped at `0x08274412`/`0x08275337` to `[-(template+0x188), +template+0x184]`
+// = the `ObjectTemplate.setTurnLeftRightAngle 20.0 14.0` pair
+// (`CommonSoldierData.inc:46`), each first scaled by the held weapon's
+// `vt[+0xa4]`/`vt[+0xa8]` multipliers (`0x082754ba`-`0x082754e3`) or by 0.6
+// (`ds:0x86c4f68`) for one weapon class. A second site
+// (`0x08274629`-`0x082746c5`, reached when `c_PIYaw != 0` or `c_PIThrottle
+// != 0` — i.e. whenever the soldier is MOVING) rotates by `-3.0 x that`
+// (`ds:0x086d26fc`) and zeroes it.
+//
+// What this round settled, and what it did not:
+//
+//   * The "two views of one quantity" reading is WRONG. Both sites fetch the
+//     matrix from `this->queryInterface(ds:0x86c2a58)->vt[+0x74]()` and write
+//     it back through `world::setTransformation` `0x08061690`, which resolves
+//     the SAME interface (`0x080616a1` loads the same `ds:0x86c2a58`) and
+//     calls its `vt[+0x78]` — the setter paired with that getter. So the two
+//     rotations land on one matrix and, read literally, COMPOUND.
+//   * Read literally, a moving soldier would therefore turn about twice as
+//     fast per tick as a standing one, and the standing-to-moving transition
+//     would snap the view by up to `3 x 20` = 60 degrees. Neither is what the
+//     retail game does, so something outside this function must neutralise
+//     one of them (a deferred/queued `setTransformation`, or a later pass
+//     re-deriving the transform) and that was not found.
+//   * `+0x288` is definitely ALSO a pose quantity: `BFSoldier::handleUpdate`
+//     `0x08271f86`-`0x08271f97` builds `setRotateYDeg(-3.0 x +0x288)` beside
+//     `setRotateXDeg(-2.5 x +0x284)` (`ds:0x86d2700` = -2.5), and
+//     `BFSoldier::updateAnimations` `0x0826e67e` feeds it (negated) to the
+//     aim-pose blend. The `setTurnLeftRightAngle` bound is the torso-twist
+//     limit it reads like.
+//
+// Until that is closed, "the tick's own rotation only" is the conservative
+// half: it is exactly right for a standing soldier and, if the literal reading
+// holds, up to 2x slow for a walking one. Do not "fix" it by doubling on the
+// strength of this comment.
 
 /** `3.0`, `ds:0x086c08c8`, `BFSoldier::handlePlayerInput` `0x0827457d`. */
 export const SOLDIER_YAW_GAIN = 3.0;
