@@ -30,6 +30,19 @@ import {
 
 export { AXIS, ALLIED };
 
+/** Where the menu's own speaker toggle is remembered. Scoped to the menu:
+ *  the level's loading music and everything the game itself plays have
+ *  their own switches, and this one does not reach them. */
+const MUTE_KEY = 'bf42-mesh-menu-muted';
+
+const menuMuted = () => {
+  try { return localStorage.getItem(MUTE_KEY) === '1'; } catch (_) { return false; }
+};
+
+const rememberMute = muted => {
+  try { localStorage.setItem(MUTE_KEY, muted ? '1' : '0'); } catch (_) { /* private mode */ }
+};
+
 /**
  * @param {object} options
  * @param {HTMLCanvasElement} options.canvas  the screen
@@ -261,7 +274,13 @@ export function createSkirmishScreen({
     // One `pack.json` fetch; a mod without a pack resolves to vanilla's.
     hudPaths = await loadHudPaths(activeMod.id, { bust, root });
     if (music) {
-      menuAudio.attachUnmuteButton(document.body);
+      // The speaker in the corner, not the loading screen's "click to
+      // enable" badge: this screen stays up, so the player needs the other
+      // direction too. Off is remembered — a mod switch reloads the page
+      // and the loop would otherwise start again over a player who turned
+      // it off ten seconds ago.
+      menuAudio.setMuted(menuMuted());
+      menuAudio.attachMuteToggle(document.body, { onChange: rememberMute });
       menuAudio.start(`${MAPS}/_shared/music/menu.mp3`,
                       `${root}maps/_shared/music/menu.mp3`);
     }
@@ -581,6 +600,8 @@ export function createSkirmishScreen({
       return { active: activeMod.id, available: picker.mods.map(m => m.id) };
     },
     get audio() { return menuAudio.state; },
+    get muted() { return menuAudio.muted; },
+    setMuted: on => { menuAudio.setMuted(on); rememberMute(menuAudio.muted); },
     unlockAudio: () => menuAudio.unlock(),
   };
 }
