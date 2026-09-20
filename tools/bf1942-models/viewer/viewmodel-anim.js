@@ -20,6 +20,19 @@ export const LOCO_CLIP = {
 /**
  * Which arms clip this frame owes.
  *
+ * Fire selection: a weapon's fire state is usually one clip (`fire`), but the
+ * knife's aim state registers five of them (`1pFireKnife1..5` — ANIM-6's
+ * `addAnimation ... c_AsmRandom`, the engine picks `rand() % n` per entry into
+ * the state) and the extractor bakes them as `fire1..fireN`. `fireVariants`
+ * carries those names. With variants, `want` names whichever variant currently
+ * owns the arms (`fire3`), which map.html plays like any other action; the
+ * per-round pick itself belongs to the shot path (`onShot`), not here —
+ * selection re-rolling dice every held-trigger frame would rewind a swing
+ * mid-arc. `hasFire` covers both shapes, and every rule below that used to
+ * compare `active === 'fire'` now accepts a variant too, so a swing keeps the
+ * arms until its one-shot clamps and a release drops back to loco through the
+ * same path a rifle's does.
+ *
  * @param {{
  *   reload: number,
  *   reloadPlayed: boolean,
@@ -37,6 +50,7 @@ export const LOCO_CLIP = {
  *   fidgetRunning: boolean,
  *   fidgetDue: boolean,
  *   fidgetPick: string | null,
+ *   fireVariants?: string[] | null,
  * }} s
  * @returns {{
  *   want: string,
@@ -50,6 +64,11 @@ export const LOCO_CLIP = {
  */
 export function wantViewmodelClip(s) {
   const loco = LOCO_CLIP[s.gait] || 'idle';
+  const variants = s.fireVariants?.length ? s.fireVariants : null;
+  // The fire clip owning the arms right now: the lone `fire` action, or
+  // whichever variant is mid-swing.
+  const activeFire = s.active === 'fire' || variants?.includes(s.active)
+    ? s.active : null;
   // Own the arms for the whole magazine timer, not only until LoopOnce
   // clamps. Three.js sets paused after clampWhenFinished, so isRunning()
   // goes false while reloadTime is still counting — falling through to idle
@@ -88,10 +107,10 @@ export function wantViewmodelClip(s) {
   if (s.fireLoops && s.firing && s.hasFire) {
     return { want: 'fire', startFire: !s.fireRunning };
   }
-  if (s.active === 'fire' && s.fireRunning && !s.fireLoops) {
-    return { want: 'fire' };
+  if (activeFire && s.fireRunning && !s.fireLoops) {
+    return { want: activeFire };
   }
-  if (s.active === 'fire' && !s.fireRunning && s.fireReturnsToReload && s.hasReload) {
+  if (activeFire && !s.fireRunning && s.fireReturnsToReload && s.hasReload) {
     return { want: 'reload', startReload: true };
   }
   // Trigger up while a LoopRepeat fire action is still scheduled: selection
@@ -100,6 +119,11 @@ export function wantViewmodelClip(s) {
   if (s.fireLoops && s.fireRunning && !s.firing) {
     return { want: loco, stopLoopFire: true };
   }
+  // Entering the fire state anew is never selection's call for a one-shot —
+  // the shot path (`onShot`) restarts the clip per round, and re-rolling the
+  // pick here every held-trigger frame would rewind a swing mid-arc. `fire`
+  // state entry on the looper path above is the engine's own transition;
+  // everything a variant weapon owes selection is the keep and the release.
   // The idle fidgets (ANIM-6): the aim state registers Ub_Idle<W>1..3, its
   // 4-7 s dwell timer picks one at random, and each one-shot returns to the
   // aim state through addTransitionWhenDone. Only the aim state's own timer
