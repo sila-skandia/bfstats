@@ -198,8 +198,35 @@ class SkirmishLayoutTests(unittest.TestCase):
         self.assertEqual("background", els[1]["texture"])
 
     def test_every_page_is_read(self) -> None:
-        self.assertEqual({"background", "skirmish", "navigation"},
+        self.assertEqual({"background", "skirmish", "navigation", "exit"},
                          set(self.layout["pages"]))
+
+    def test_the_exit_page_is_the_one_button_that_leaves_a_game(self) -> None:
+        # `EXIT_RECTS` keeps only the lower of `menu/ExitMenu`'s two buttons.
+        # QUIT is the other, and there is no quitting a web page.
+        els = self.layout["pages"]["exit"]["elements"]
+        buttons = [el for el in els if el["kind"] == "button"]
+        self.assertEqual(1, len(buttons), "QUIT is not kept")
+        self.assertEqual("MENU_DISCONNECT", buttons[0]["id"])
+        self.assertEqual([669.0, 85.0, 109.0, 24.0], rect(buttons[0]))
+        self.assertEqual("knapp3_n", buttons[0]["texture"])
+        # QUIT's own plate is not even named, so nothing decodes it.
+        self.assertNotIn("knappext_n", eml.layout_textures(self.layout))
+
+        # The two labels the button picks between, each culled on the engine's
+        # own numbering of what kind of game is being left.
+        labels = {el["key"]: el for el in els if el["kind"] == "text"}
+        self.assertEqual({"MENU_DISCONNECT", "MENU_DISCONNECT_SINGLEPLAYER"},
+                         set(labels))
+        self.assertEqual("DISCONNECT", labels["MENU_DISCONNECT"]["text"])
+        self.assertEqual("END CURRENT GAME",
+                         labels["MENU_DISCONNECT_SINGLEPLAYER"]["text"])
+        for key, value in (("MENU_DISCONNECT", 1),
+                           ("MENU_DISCONNECT_SINGLEPLAYER", 2)):
+            self.assertEqual(
+                [{"var": "Join/Disconnect/ShowDisconnect", "op": "eq",
+                  "value": value}],
+                labels[key]["when"])
 
     def test_fonts_are_the_faces_the_text_nodes_name(self) -> None:
         self.assertIn("standard6", self.layout["fonts"])
