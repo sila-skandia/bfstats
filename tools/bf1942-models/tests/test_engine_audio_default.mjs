@@ -360,4 +360,53 @@ function gunPatch(layers, { oneShotsOnTrigger = true } = {}) {
   audio.dispose();
 }
 
+// --- the engine bus plays the authored mix -----------------------------------
+//
+// It used to be scaled by 0.28, the worst-case concurrent layer sum of a
+// Corsair heard from its own cockpit, which left a Sherman idling at a peak of
+// 0.089 with the master at 0.7 — under a fifth of the BAR in the same scene.
+// The clipping that constant existed to prevent is now the listener's
+// limiter's job (`map.html`'s `ensureListener`), so the bus passes the `.ssc`
+// volumes through.
+{
+  const ctx = stubCtx();
+  const layers = [WILLY_MAIN];
+  const buffers = new Map([[WILLY_MAIN.file, fakeBuffer()]]);
+  const audio = new EngineAudio(
+    { template: 'Willy', engine: 'WillyEngine', layers }, layers, buffers,
+    fakeListener(ctx));
+  audio.start();
+  audio.setMaster(0.7);
+  audio.update({
+    dt: 1 / 30, rpm: 1, speed: 0, acceleration: 0, diveAngle: 0,
+    position: { x: 0, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 },
+    listenerPosition: { x: 0, y: 0, z: 0 },
+  });
+  assert.equal(audio.headroom, 1, 'the engine bus carries no divisor of its own');
+  assert.ok(Math.abs(audio.bus.gain.value - 0.7) < 1e-9,
+    `the bus is the master, unscaled: ${audio.bus.gain.value}`);
+  audio.dispose();
+}
+
+{
+  // A caller that wants its own scale still gets it: the gun patches pass
+  // WEAPON_HEADROOM, and `effect-audio.js` its own pooled figure.
+  const ctx = stubCtx();
+  const layers = [WILLY_MAIN];
+  const buffers = new Map([[WILLY_MAIN.file, fakeBuffer()]]);
+  const audio = new EngineAudio(
+    { template: 'Willy', engine: 'WillyEngine', layers }, layers, buffers,
+    fakeListener(ctx), 0.75);
+  audio.start();
+  audio.setMaster(0.8);
+  audio.update({
+    dt: 1 / 30, rpm: 1, speed: 0, acceleration: 0, diveAngle: 0,
+    position: { x: 0, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 },
+    listenerPosition: { x: 0, y: 0, z: 0 },
+  });
+  assert.ok(Math.abs(audio.bus.gain.value - 0.6) < 1e-9,
+    `an explicit headroom still scales the bus: ${audio.bus.gain.value}`);
+  audio.dispose();
+}
+
 console.log('test_engine_audio_default.mjs: ok');

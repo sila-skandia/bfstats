@@ -30,6 +30,7 @@ import {
   POSE_FLAG_JUMP, directionalSpeed, MATERIAL_WATER,
   RAMP_ACCEL, RAMP_DECEL, RAMP_LIMIT, RAMP_SCALE, ENGINE_TICK_RATE,
   RAMP_TO_FULL_SECONDS, RAMP_TO_STOP_SECONDS,
+  DIVE_SPEED_FACTOR, DIVE_DURATION,
 } from './physics.js';
 
 // Re-exported so a caller that already has `soldier.js` does not have to reach
@@ -42,6 +43,7 @@ export {
   directionalSpeed, MATERIAL_WATER,
   RAMP_ACCEL, RAMP_DECEL, RAMP_LIMIT, RAMP_SCALE, ENGINE_TICK_RATE,
   RAMP_TO_FULL_SECONDS, RAMP_TO_STOP_SECONDS,
+  DIVE_SPEED_FACTOR, DIVE_DURATION,
 };
 
 // -- what the game declares --------------------------------------------------
@@ -532,6 +534,18 @@ export class Soldier {
   /**
    * Crouch is held, prone is a toggle, and the eye eases between them over the
    * duration the animation clip declares.
+   *
+   * One of those transitions is not just a clip. Dropping prone from a stand
+   * while not moving backward enters `Lb_RunStandToLie`, which declares
+   * `setSpeed 6.0 1.0 1.0` — six times the prone table, i.e. a full run — for
+   * the length of its own dive clip. That is BF1942's prone slide, and
+   * `physics.js`'s `DIVE_SPEED_FACTOR` carries the engine reading (PHY-7). The
+   * eye takes the same 0.282 s down, because it is one state, not two.
+   *
+   * The other two routes to the floor are ordinary: `Lb_StandToLie` (moving
+   * backward when you press it) and `Lb_CrouchToLie` (from a crouch) both
+   * declare `setSpeed 1.0 1.0 1.0`, so they stop you dead the way this module
+   * always did.
    */
   #applyStance(input) {
     const wanted = input.prone ? 'prone' : (input.crouch ? 'crouch' : 'stand');
@@ -542,12 +556,21 @@ export class Soldier {
       want = this.stance;
     }
     if (want === this.stance) return;
-    const duration = STANCE_TRANSITION[`${this.stance}>${want}`] || 0.05;
+    // The engine's own test is `forwardInput * currentState.speedForward < 0`,
+    // and every stand/walk/run state declares 1.0, so it is the input's sign.
+    const dive = want === 'prone' && this.stance === 'stand'
+      && !((input.forward || 0) < 0);
+    const duration = dive
+      ? DIVE_DURATION
+      : (STANCE_TRANSITION[`${this.stance}>${want}`] || 0.05);
     this.stance = want;
     // The jump bit is the body's to set and clear, so it is carried across
     // rather than dropped by a stance change that happens mid-air.
     this.body.setPoseFlags(
       (this.body.poseFlags & POSE_FLAG_JUMP) | STANCE_FLAGS[want], duration);
+    // Leaving the dive — standing up, or crouching out of it — is a state with
+    // a plain 1.0, so any slide still running is cancelled by the same call.
+    this.body.setStateSpeed(dive ? DIVE_SPEED_FACTOR : 1, dive ? DIVE_DURATION : 0);
   }
 
   #gaitFor(input, forward, strafe) {
