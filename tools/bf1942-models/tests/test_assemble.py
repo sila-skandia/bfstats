@@ -216,6 +216,40 @@ def propeller_library() -> ObjectLibrary:
     return library
 
 
+# The bf109's own shape: a cockpit LodObject whose alternatives are named
+# `...Static` / `...Blurred` like a propeller's, under the `DistCompareSelector`
+# every other cockpit uses. Vanilla's single counter-example to the naming
+# convention `is_propeller_blur_pair` reads.
+BF109_COCKPIT_CON = """
+ObjectTemplate.create PlayerControlObject BF109
+ObjectTemplate.addTemplate lodbf109Cockpit
+
+ObjectTemplate.create LodObject lodbf109Cockpit
+ObjectTemplate.lodSelector bf109cockpitSelector
+ObjectTemplate.addTemplate bf109CockpitStatic
+ObjectTemplate.addTemplate bf109CockpitBlurred
+
+ObjectTemplate.create SimpleObject bf109CockpitStatic
+ObjectTemplate.geometry bf109_Fus_m1
+
+ObjectTemplate.create SimpleObject bf109CockpitBlurred
+ObjectTemplate.geometry 1P_bf109_M1
+
+LodSelectorTemplate.create DistCompareSelector bf109cockpitSelector
+LodSelectorTemplate.addLodDistance 10
+LodSelectorTemplate.addLodComparison 0.5
+
+GeometryTemplate.create StandardMesh bf109_Fus_m1
+GeometryTemplate.create StandardMesh 1P_bf109_M1
+"""
+
+
+def bf109_cockpit_library() -> ObjectLibrary:
+    library = ObjectLibrary()
+    library.add_con("Objects/Vehicles/Air/bf109/Objects.con", BF109_COCKPIT_CON)
+    return library
+
+
 class PropellerBlurExportTests(unittest.TestCase):
     def test_third_person_export_keeps_both_the_blade_and_the_blurred_disc(self) -> None:
         pool = ArchivePool()
@@ -277,6 +311,30 @@ class PropellerBlurExportTests(unittest.TestCase):
 
         self.assertIsNone(root)
         self.assertEqual([], report.propeller_blurs)
+
+    def test_a_cockpit_named_like_a_propeller_is_a_cockpit(self) -> None:
+        # Read by name alone this exported as a propeller pair, and the
+        # viewer then bound the bf109's 1P interior to the throttle: below
+        # half power it drew the fuselage from the pilot's eye point instead
+        # of the cockpit. The `DistCompareSelector` is the tell.
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, bf109_cockpit_library(),
+                              include_collision=False)
+        builder = gltf.GlbBuilder()
+        report = Report(root="BF109", configuration="complex", lod=0)
+        stub_meshes(assembler, builder, "bf109_Fus_m1", "1P_bf109_M1")
+
+        root = assembler.build_node(builder, "BF109", report)
+        document = glb_document(builder.build([root], extras={}))
+        names = [node["name"] for node in document["nodes"]]
+
+        # No stamp, and the ordinary cockpit rule applies instead: the
+        # exterior is kept and the 1P alternative left to the cockpit export.
+        self.assertEqual([], report.propeller_blurs)
+        self.assertNotIn("propellerBlur", document["nodes"][
+            names.index("lodbf109Cockpit")].get("extras", {}))
+        self.assertIn("bf109CockpitStatic", names)
+        self.assertNotIn("bf109CockpitBlurred", names)
 
 
 # A cut-down Corsair with the shape that matters: a PCO, a configuration
@@ -1068,6 +1126,7 @@ ObjectTemplate.setPrimaryAmmoIcon "Ammo/Icon_cannon.tga"
 ObjectTemplate.setPrimaryAmmoBar ABAmmoBarReloadBar
 ObjectTemplate.setSecondaryAmmoIcon "Ammo/Icon_bullet.tga"
 ObjectTemplate.setSecondaryAmmoBar ABAmmoBarHeatBar
+ObjectTemplate.setCrossHairType CHTCrossHair
 
 ObjectTemplate.create RotationalBundle ShermanTower
 ObjectTemplate.addTemplate shermanBrowning_PCO1
@@ -1079,6 +1138,7 @@ ObjectTemplate.addTemplate shermanEntry
 ObjectTemplate.setVehicleIcon "Vehicle/Icon_sherman.tga"
 ObjectTemplate.setPrimaryAmmoIcon "Ammo/Icon_bullet.tga"
 ObjectTemplate.setPrimaryAmmoBar ABAmmoBarHeatBar
+ObjectTemplate.setCrossHairType CHTIcon
 
 ObjectTemplate.create EntryPoint shermanEntry
 ObjectTemplate.setEntryRadius 1.5
@@ -1116,6 +1176,35 @@ ObjectTemplate.setEntryRadius 1.5
 
         self.assertEqual(2, len(report.vehicle_hud))
         self.assertEqual(report.vehicle_hud, report.as_dict()["vehicleHud"])
+
+    def test_each_pco_carries_its_own_crosshair_type(self) -> None:
+        """`setCrossHairType` is a PlayerControlObject word: the two PCOs of
+        one tank can and do answer differently, which is why it belongs in the
+        per-PCO block and not on the vehicle root. Without it the viewer had
+        nothing to read and drew no crosshair in any seat."""
+        nodes, _ = self.sherman()
+        self.assertEqual("CHTCrossHair", nodes["Sherman"]["extras"]["hud"]["crossHairType"])
+        self.assertEqual("CHTIcon",
+                         nodes["shermanBrowning_PCO1"]["extras"]["hud"]["crossHairType"])
+
+    def test_a_pco_that_declares_no_crosshair_type_carries_none(self) -> None:
+        """An absent word stays absent rather than becoming a default: the
+        viewer draws nothing for a seat it cannot ask, which is what a
+        passenger's `CHTNone` would have got anyway."""
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Land/Sherman/Objects.con",
+            self.SHERMAN_CON.replace("ObjectTemplate.setCrossHairType CHTCrossHair\n", ""))
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        builder = gltf.GlbBuilder()
+        report = Report(root="Sherman", configuration="complex", lod=0)
+        node = assembler.build_node(builder, "Sherman", report)
+        document = glb_document(builder.build([node], extras=report.as_dict()))
+        nodes = {n["name"]: n for n in document["nodes"]}
+        self.assertNotIn("crossHairType", nodes["Sherman"]["extras"]["hud"])
+        self.assertEqual("CHTIcon",
+                         nodes["shermanBrowning_PCO1"]["extras"]["hud"]["crossHairType"])
 
     def test_a_rotationalbundle_carries_no_hud_block(self) -> None:
         nodes, _ = self.sherman()

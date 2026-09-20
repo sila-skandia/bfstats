@@ -137,6 +137,44 @@ class RiggedPart {
   }
 }
 
+/**
+ * Whether an `extras.propellerBlur` stamp is really the blade/blur swap.
+ *
+ * `assemble.py` recognises the pair by name — a LodObject whose two
+ * alternatives end `Static` and `Blurred` — and vanilla breaks that
+ * convention exactly once: the bf109's *cockpit* LodObject calls its
+ * alternatives `bf109CockpitStatic` (the fuselage) and `bf109CockpitBlurred`
+ * (the 1P interior) where the other eleven aircraft say
+ * `...CockpitExternal` / `...CockpitInternal`. Nothing about it is a
+ * propeller, and it is the node the cockpit graft lands on, so a scene baked
+ * before the exporter learned the difference hands the viewer a "propeller
+ * pair" whose blurred half is the pilot's own cockpit.
+ *
+ * The engine itself never confused the two, and the selector is how it tells
+ * them apart: a propeller is a `CompareSelector` against engine input (0.07
+ * or 0.08 on all 59 pairs across the installed mods), while a cockpit is a
+ * `DistCompareSelector` against the 0.5 occupancy scalar `CockpitSwap` is
+ * built on. So the kind is the gate, not the name.
+ *
+ * Without this the bf109's interior was bound to the throttle: below half
+ * power `updateRig` hid the grafted cockpit and showed the fuselage, and the
+ * pilot flew looking at the *outside* of his own aeroplane from 0.7 m — the
+ * blurred brown smear the bug report called a low-fidelity HUD. Above half
+ * power it snapped to the real cockpit, because that is where the propeller
+ * swap put it.
+ *
+ * Fixed in `con.is_propeller_blur_pair` too, so a fresh extract carries no
+ * such stamp; this keeps every already-published asset tree right without a
+ * re-extraction.
+ */
+function isPropellerBlurPair(spec) {
+  const kind = String(spec?.selectorKind || '').toLowerCase();
+  // An asset published before the exporter recorded the kind at all is taken
+  // at its word: the false positive is one known node, the silent loss of
+  // every blurred disc would not be.
+  return !kind || kind === 'compareselector';
+}
+
 // --- cockpit interior ------------------------------------------------------
 //
 // A vehicle glb has no inside. `1P_Corsair` and the fuselage that hides it are
@@ -525,7 +563,13 @@ export class Vehicle {
       // propeller, but read rather than assumed). Both meshes are real
       // siblings under `obj`, kept apart from every other LodObject this
       // export collapses to one alternative.
-      if (data.propellerBlur) {
+      //
+      // `isPropellerBlurPair` is the guard against the one vanilla LodObject
+      // that wears the naming convention without being a propeller — see
+      // there. It matters here and not at export time only because the
+      // cockpit graft is what completes the pair: before it, the blurred half
+      // does not exist in this tree and no pair is built at all.
+      if (data.propellerBlur && isPropellerBlurPair(data.propellerBlur)) {
         const staticNode = obj.children.find(child => child.name === data.propellerBlur.static);
         const blurredNode = obj.children.find(child => child.name === data.propellerBlur.blurred);
         if (staticNode && blurredNode) {
