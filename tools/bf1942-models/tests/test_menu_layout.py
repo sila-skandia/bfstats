@@ -5,8 +5,10 @@ the extractor is what the shipped files say and a synthetic fixture would
 only assert that the code agrees with itself. The second is synthetic, for
 the parts that have to hold whatever the archives contain.
 
-Also runs `test_menu_screen.mjs`, the node suite over `viewer/play/
-menu-screen.js`, so `unittest discover` reaches it.
+Also runs the screen's two node suites, so `unittest discover` reaches them:
+`test_menu_screen.mjs` over `viewer/play/menu-screen.js`, and
+`test_menu_audio.mjs` over the mute switch in `viewer/audio.js` that the
+menu's speaker toggle is.
 """
 
 from __future__ import annotations
@@ -46,6 +48,7 @@ EOD_MENU_RFA = _eod_menu_rfa()
 LEXICON = MOD_DIR / "lexiconAll.dat"
 
 NODE_SUITE = Path(__file__).with_name("test_menu_screen.mjs")
+AUDIO_SUITE = Path(__file__).with_name("test_menu_audio.mjs")
 
 
 def rect(el):
@@ -814,12 +817,20 @@ class LexiconDuplicateTests(unittest.TestCase):
 
 class NodeSuiteTests(unittest.TestCase):
     def test_menu_screen_passes_under_node(self) -> None:
+        self._run(NODE_SUITE)
+
+    def test_menu_audio_passes_under_node(self) -> None:
+        """`viewer/audio.js`'s mute switch, which the menu's speaker toggle
+        is. Not a layout test, but the same screen and the same runner."""
+        self._run(AUDIO_SUITE)
+
+    def _run(self, suite) -> None:
         if shutil.which("node") is None:
             raise unittest.SkipTest("node is not installed")
-        proc = subprocess.run(["node", str(NODE_SUITE)],
+        proc = subprocess.run(["node", str(suite)],
                               capture_output=True, text=True, timeout=120)
         self.assertEqual(0, proc.returncode,
-                         f"{NODE_SUITE.name} failed:\n{proc.stdout}\n{proc.stderr}")
+                         f"{suite.name} failed:\n{proc.stdout}\n{proc.stderr}")
 
 
 if __name__ == "__main__":
