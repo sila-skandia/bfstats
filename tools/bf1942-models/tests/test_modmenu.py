@@ -531,6 +531,77 @@ class PatchArchiveTests(unittest.TestCase):
                 self.assertEqual("XPack1", menu.owner(entry))
 
 
+class KitPhotographExtractionTests(unittest.TestCase):
+    """The other half of `PatchArchiveTests`: reachable in the archive chain
+    is not the same as packed. `Texture/Kits` joining `SPRITE_DIR_GLOBS` is
+    what turns Road to Rome's two patched icons and Eve of Destruction's 87
+    nation-subdirectory ones into sprites `hud.json` actually names."""
+
+    @unittest.skipUnless(HAVE_GAME and HAVE_EOD,
+                         "needs the BF1942 install with EoD")
+    def test_a_nation_subdirectory_collision_is_qualified_by_its_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            sources = MenuSources(mod_chain(GAME_DIR, "EoD"))
+            with sources.open_menu() as menu:
+                manifest = ehp.extract_sprites(menu, Path(tmp), True)
+            # `assault_selected.dds` exists under a dozen of EoD's nation
+            # directories; each one is reachable only under its own
+            # qualified name, matching the same rule that separates
+            # Ammo/Icon_demokit.dds from Weapon/Icon_demokit.dds.
+            self.assertIn("nva_assault_selected", manifest)
+            self.assertIn("vietcong_assault_selected", manifest)
+            self.assertIn("arvn_assault_selected", manifest)
+            self.assertEqual("menu/Texture/Kits/NVA/assault_selected.dds",
+                             manifest["nva_assault_selected"]["source"])
+            self.assertEqual(
+                "menu/Texture/Kits/Vietcong/assault_selected.dds",
+                manifest["vietcong_assault_selected"]["source"])
+            self.assertTrue(
+                (Path(tmp) / manifest["nva_assault_selected"]["file"]).is_file())
+
+    @unittest.skipUnless(HAVE_GAME and HAVE_EOD,
+                         "needs the BF1942 install with EoD")
+    def test_vanillas_fifteen_kit_photographs_keep_their_own_ref(self) -> None:
+        # The fifteen root photographs are named individually in `SPRITES`
+        # (for their verified `ref`, confirmed against `menu/InGame`) and
+        # would also be swept up again by the new `Texture/Kits` glob --
+        # `extract_sprites` must skip the second pass for a name it already
+        # wrote, or the glob's generic, unverified `ref` would silently win.
+        with tempfile.TemporaryDirectory() as tmp:
+            sources = MenuSources(mod_chain(GAME_DIR, "EoD"))
+            with sources.open_menu() as menu:
+                manifest = ehp.extract_sprites(menu, Path(tmp), True)
+        self.assertEqual("Kits/icon_scout_allies_selected.tga",
+                         manifest["icon_scout_allies_selected"]["ref"])
+        self.assertEqual("Kits/Icon_assault_jap_selected.tga",
+                         manifest["icon_assault_jap_selected"]["ref"])
+
+    @unittest.skipUnless(HAVE_GAME, "needs the BF1942 install")
+    def test_vanillas_own_kit_manifest_is_unaffected_by_the_new_glob(self) -> None:
+        # `Texture/Kits` is taken in full like the other three directories,
+        # but on vanilla it holds nothing the fifteen `SPRITES` entries did
+        # not already name -- the glob adds zero photographs of its own.
+        with tempfile.TemporaryDirectory() as tmp:
+            sources = MenuSources(mod_chain(GAME_DIR, "bf1942"))
+            with sources.open_menu() as menu:
+                manifest = ehp.extract_sprites(menu, Path(tmp), True)
+        kit_names = {name for name, entry in manifest.items()
+                    if "/kits/" in entry["source"].lower()}
+        self.assertEqual(15, len(kit_names))
+
+    @unittest.skipUnless((GAME_DIR / "Mods/XPack1/Archives/menu_001.rfa").exists(),
+                         "needs Road to Rome installed")
+    def test_road_to_romes_patched_kit_photographs_are_packed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            sources = MenuSources(mod_chain(GAME_DIR, "XPack1"))
+            with sources.open_menu() as menu:
+                manifest = ehp.extract_sprites(menu, Path(tmp), True)
+            for name in ("icon_assault_breda_axis_selected",
+                         "icon_medic_stengun_allies_selected"):
+                self.assertIn(name, manifest)
+                self.assertTrue((Path(tmp) / manifest[name]["file"]).is_file())
+
+
 # ------------------------------------------------------- what a pack may delete
 
 class PackWriteScopeTests(unittest.TestCase):

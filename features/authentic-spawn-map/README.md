@@ -671,3 +671,131 @@ and no `GeometryTemplate.create` anywhere in the chain declares it (while its
 siblings `Cammo_Hull_M1` and `USRaft_prop_M1` are declared, so the check
 discriminates); `M79`'s `M79`, `remingtonMag` and `remingtonTrigger` are
 likewise referenced and never declared.
+
+## 12. Mod kit photographs (2026-09-20)
+
+The first of section 10's "two defects left for the lead", closed: a mod's
+own kit photographs are now extracted, packed and drawn. The second
+(a team's nation is a property of the level, not of its soldier skin) is
+untouched — out of this stream's scope.
+
+### The extractor
+
+`SPRITE_DIR_GLOBS` gains `Texture/Kits`, walked recursively rather than the
+one level the other three need, because a mod's own kit art sits one
+directory deeper than vanilla's: Eve of Destruction's 87 photographs are
+one per nation subdirectory (`Kits/NVA/assault_selected.dds`,
+`Kits/Vietcong/...`), none at the root vanilla's 15 occupy alone. Basenames
+collide across those subdirectories by the dozen (`assault_selected.dds`
+under eleven of them), so `dir_glob_renames` was generalized to qualify a
+collision by each file's own **immediate parent directory** rather than a
+name hardcoded per top-level glob entry. For the existing flat `Ammo`/
+`Weapon` case those are the same name, so vanilla's manifest — and the two
+rows `tests/test_extract_hud_pack.py` already asserted — are unchanged; for
+`Kits/<Nation>/assault_selected.dds` it produces `nva_assault_selected`,
+`vietcong_assault_selected`, and so on. `extract_sprites` skips a
+glob-derived name already written by the `SPRITES` pass, so vanilla's 15
+individually verified `ref` values are never clobbered by the glob's generic
+ones.
+
+Verified against the installed archives:
+
+* Vanilla's 260-sprite manifest, extracted with `main`'s code and with this
+  branch's, is byte-identical — `diff -r` on the two output directories
+  finds nothing.
+* Eve of Destruction gains exactly its 87 (`arvn_at_selected`,
+  `nva_assault_selected`, `vietcongfemale_scout_selected`, ... down to the
+  handful with no collision at all, `bean_selected`, `rambo_selected`,
+  `russian_advisor_selected`), zero removed, zero existing entries changed.
+* Road to Rome (`XPack1`) gains its two 1.6-patch icons,
+  `icon_assault_breda_axis_selected` and `icon_medic_stengun_allies_selected`
+  (reachable in the archive chain since section 10's `menu_001.rfa` fix;
+  never packed until now).
+* Secret Weapons (`XPack2`) gains its six own
+  (`kit_alliesassault_bren`, `kit_alliesengineer_auto5`,
+  `kit_alliesmedic_sten`, `kit_axisassault_g42`, `kit_axisengineer_glauncher`,
+  `kit_axisscout_g43`).
+
+`extract_hud_mods.py`'s pack counts, run against a scratch vanilla baseline
+(so the diff reflects only this change, not tree drift): EoD 582 -> 669
+files, XPack1 40 -> 42, XPack2 49 -> 55 — each delta is exactly the sprites
+above, nothing else moved.
+
+### The page
+
+`viewer/kit-icon.js` is the new pure module: `kitIconCandidates(path)` takes
+a `_shared/loadouts.json` `kitIcon.icon` value — the raw
+`ObjectTemplate.setKitIcon` path, casing and declared extension both
+untrustworthy — and returns, most specific first, the sprite keys the pack
+might have filed it under (the directory-qualified name, then the bare
+basename). `resolveKitIcon(path, has)` tries each in turn against a loaded
+pack. Node-tested in `tests/kit_icon_harness.mjs` /
+`tests/test_kit_icon_js.py` (13 cases: nested and root paths, casing,
+backslashes, no-extension, degenerate input, and the resolve-against-a-pack
+behaviour itself).
+
+`map.html`'s `kitPhoto()` now resolves the row's own bound kit first —
+`kitLoadout(team, role)` (already used for the weapon and health-bar art)
+gives the kit template, `loadouts.kits[kit].kitIcon.icon` gives its path, and
+`kitIconCandidates` gives the keys tried against `hudPack.sprites` (mod's own
+pack first, vanilla's fallback beneath it, the way every other sprite on the
+page already resolves). Only when the loadout, the icon field or the packed
+sprite itself is missing does it fall through to the old hardcoded
+`{jp, rus, can}` guess — now truly a fallback rather than the only path.
+
+### Verified on the page
+
+Driven through a scratch overlay (the shared `viewer/maps` tree symlinked
+whole except `maps/mods/eod/_shared/hud`, which was populated with this
+branch's freshly extracted, not-yet-merged EoD pack — see
+`tools/bf1942-models/link_viewer_assets.sh`'s comment on why `--out` can
+never point through the shared tree, and section 9's "Building and
+verifying" for the pattern), `map.html?mod=eod&map=a_shau&shots` with the
+page's `kitPhoto()` called directly for all five rows on both teams:
+
+| team | scout | assault | antitank | medic | engineer |
+|---|---|---|---|---|---|
+| axis (Vietcong-skinned) | `vietcong_rifleman_selected` | `vietcong_assault_selected` | `vietcong_scout_selected` | `vietcong_at_selected` | `vietcong_engineer_selected` |
+| allied (Special Forces) | `specialforces_rifleman_selected` | `specialforces_assault_selected` | `specialforces_scout_selected` | `specialforces_at_selected` | `specialforces_engineer_selected` |
+
+(The antitank/medic rows resolving to the `scout`/`at`-named kit is
+`kitLoadout`'s own class-label fallback when a level does not bind a kit at
+that exact slot — pre-existing behaviour, unrelated to this change.) Every
+sprite key above is one this branch's extraction newly added; before it,
+all ten resolved to vanilla's `icon_*_axis_selected` /
+`icon_*_allies_selected` — the reported bug, reproduced and now fixed.
+
+`map.html?mod=bf1942&map=wake&shots` against the same overlay (unmodified
+vanilla pack) reproduced the exact theatre variants the old hardcoded table
+special-cased — `icon_assault_jap_selected`, `icon_engineer_usmarines_selected`
+— but now out of the real per-kit data path rather than a `{jp, rus, can}`
+lookup keyed on the caller's `nation` argument (called with `nation`
+undefined in this check, to prove the fallback table was not the one
+firing). Console and network were clean of anything but a pre-existing,
+unrelated 404 (`_shared/effects.glb`/`effects.sounds.json`, missing for EoD
+in this tree already, nothing to do with kits).
+
+### Tests
+
+`tools/bf1942-models/tests/test_modmenu.py`'s new `KitPhotographExtractionTests`
+(4 cases, gated on the installed archives like its neighbours): a nation
+collision qualifies by directory, vanilla's 15 keep their `SPRITES`-verified
+`ref`, vanilla's own Kits glob adds nothing, Road to Rome's patched icons are
+packed. `tests/test_kit_icon_js.py` (13 cases, above). Full suite: 1,811
+green (was 1,794 at the start of this round), 0 skipped, `python3 -m
+unittest discover -s tests` from `tools/bf1942-models`.
+
+### For the lead, after merging
+
+```bash
+cd tools/bf1942-models
+python3 extract_hud_pack.py                       # vanilla: unchanged, 260 sprites
+python3 extract_hud_mods.py --mod EoD              # -> maps/mods/eod/_shared/hud, 669 files (was 582)
+python3 extract_hud_mods.py --mod XPack1           # -> maps/mods/xpack1/_shared/hud, 42 files (was 40)
+python3 extract_hud_mods.py --mod XPack2           # -> maps/mods/xpack2/_shared/hud, 55 files (was 49)
+```
+
+Only the three mod packs' `pack.json` and their new PNGs change; vanilla's
+pack is untouched (confirmed by the byte-identical diff above, so a
+re-extract is not required for correctness, only to pick up any drift
+between rounds).
