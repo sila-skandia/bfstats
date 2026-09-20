@@ -883,6 +883,7 @@ import { modeNames, modeProblem, pruneToMode, selectGameMode,
          spawnerWindow } from './game-modes.js';
 import { loadHudPaths } from './hud-pack.js';
 import { kitIconCandidates } from './kit-icon.js';
+import { cpNation as cpNationRule, teamNation as teamNationRule } from './nation.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -9558,28 +9559,19 @@ function drawSprite(ctx, name, x, y, sc, { angle = 0, alpha = 1 } = {}) {
   return true;
 }
 
-/** `flagus_m1` -> `us` through the manifest's table. A mesh the vanilla pack
- *  has no flag for — Road to Rome's Italians and French — falls back to its
- *  side's founding nation so it still reads as a side rather than as neutral. */
+/** `cpNation`/`teamNation` proper live in `nation.js`, free of this file's
+ *  `three` scene state so they can be tested under node
+ *  (`tests/nation_harness.mjs`) and shared byte-for-byte with the rule
+ *  `extract_menu_layout.py` runs when it writes `menu-levels.json`. These
+ *  two feed them this page's own state: the mod's flag-mesh table and, for
+ *  a side with no control point of its own, the vehicle-based guess. */
 function cpNation(cp) {
-  const m = /^flag([a-z]+)_/i.exec(cp.flagMesh || '');
-  const code = m ? hudPack.nations[m[1].toLowerCase()] : null;
-  if (code) return code;
-  return cp.team === 1 ? 'ger' : cp.team === 2 ? 'us' : null;
+  return cpNationRule(cp, hudPack.nations);
 }
 
-/** The nation a whole side flies on this level: the flag most of its control
- *  points hoist. Wake's Axis are Japanese, Kharkov's Allies Soviet. */
 function teamNation(team) {
-  const tally = new Map();
-  for (const cp of extras.controlPoints || []) {
-    if (cp.team !== team || !cp.flagMesh) continue;
-    const n = cpNation(cp);
-    if (n) tally.set(n, (tally.get(n) || 0) + 1);
-  }
-  let best = null;
-  for (const [n, count] of tally) if (!best || count > tally.get(best)) best = n;
-  return best || nationFromVehicles(team) || (team === 1 ? 'ger' : 'us');
+  return teamNationRule(extras.controlPoints || [], team, hudPack.nations,
+                        nationFromVehicles(team));
 }
 
 /* The ticket counter.
@@ -9709,9 +9701,13 @@ function drawArt(ctx, size, u0, v0, span, opts) {
 /** A control point is its flag sprite: `conp_<nation>` for one that can
  *  change hands, the red-ringed `baseflag_conp_<nation>` for a main base,
  *  `conp_neutral` for one nobody holds. Kasserine's flagless capture zones
- *  get the same icon — the map marks the point, not the cloth. */
+ *  get the same icon — the map marks the point, not the cloth. A flag mesh
+ *  this pack has no art for (`cpNation` -> `'unknown'`, Pathet Lao's
+ *  `flagpl_m1`) gets the same neutral plate rather than another nation's
+ *  flag — the pack's own stand-in for a team it cannot draw. */
 function drawControlPoint(ctx, cp, px, py, sc) {
-  const nation = cp.team ? cpNation(cp) : null;
+  const raw = cp.team ? cpNation(cp) : null;
+  const nation = raw && raw !== 'unknown' ? raw : null;
   const name = !nation ? 'conp_neutral'
     : cp.unableToChangeTeam ? `baseflag_conp_${nation}` : `conp_${nation}`;
   if (drawSprite(ctx, name, px, py, sc)) return;

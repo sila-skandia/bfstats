@@ -672,6 +672,211 @@ siblings `Cammo_Hull_M1` and `USRaft_prop_M1` are declared, so the check
 discriminates); `M79`'s `M79`, `remingtonMag` and `remingtonTrigger` are
 likewise referenced and never declared.
 
+## 11. A team's nation belongs to the level (2026-09-20)
+
+Section 10's two defects left for the lead, closed.
+
+### The rule, in one place
+
+`viewer/map.html` already derived a side's nation correctly in-game
+(`teamNation`/`cpNation`): the flag its own control points fly, read through
+`hud.json`'s `flagMeshNation` table. The Instant Battle screen derived it a
+different way — `game.setTeamSkin`'s soldier skin through the global
+`SKIN_NATION` table — and the two disagreed wherever a mod reused a skin
+across levels that fly different flags.
+
+The flag-mesh-to-nation rule already lived in exactly one place —
+`extract_hud_pack.py`'s `FLAG_MESH_NATION`/`MOD_FLAG_MESH_NATION`/
+`flag_mesh_nations`, written into every pack's own `hud.json` — so nothing
+new was invented for it. `extract_hud_pack.py` gained one small sibling,
+`flag_mesh_nation(flag_mesh, nations)`: the single regex
+(`^flag([a-z]+)_`) both sides now run.
+
+- **`viewer/nation.js`** (new module, `three`-free): `flagMeshNation`,
+  `cpNation`, `teamNation`, extracted verbatim out of `map.html` (which now
+  imports them and feeds its own state — `hudPack.nations`,
+  `extras.controlPoints`, the vehicle-based guess — through two four-line
+  wrappers). Nothing else in `map.html` changed; every other caller of
+  `cpNation`/`teamNation` is untouched.
+- **`extract_menu_layout.py`** gained `load_flag_mesh_nations(mod_id)`
+  (reads the mod's own already-extracted `hud.json['flagMeshNation']` —
+  the identical file the page fetches, not a re-derivation of it) and
+  `team_nation_from_level(gameplay, team, nations)`: the team's uncapturable
+  main base first, otherwise the majority of the flags it starts holding,
+  reading `bf42.level`'s `GameplayObjects` the same way
+  `extract_map.py`'s `_control_point_report` does (a placement's own team
+  override, the template's team-less `flag_mesh()`) so this can never
+  derive a different answer than what ends up in the level's own
+  `scene.json`. `level_record` tries this first and falls back to
+  `SKIN_NATION` only when it answers `None` — no gameplay data, the team
+  holds nothing, or every flag mesh it holds is unmapped. Each side's
+  record now carries `nationSource`: `"level"` or `"skin"`.
+
+A tie — more than one uncapturable main base, or an even split with none —
+keeps the first nation encountered walking the control points in file
+order, matching `viewer/nation.js`'s `Map`-tally tie-break
+(`count > tally.get(best)`, strictly greater). This was a real bug caught
+while cross-checking the rule against the whole corpus, not a design
+choice: sorting the tie alphabetically instead picked a different nation
+for one EoD level (`no_where_to_run`, below) than `map.html`'s plain
+majority did. With the fix, walking every vanilla and EoD level and
+comparing `team_nation_from_level`'s main-base-first answer against plain
+majority finds **zero** cases where the priority rule changes the outcome
+— it is kept because the task specifies it and because a future level
+could need it (a lone strong main base outvoted by several minor points),
+not because any installed level currently exercises the distinction. That
+also means `viewer/nation.js`'s `teamNation` did not need the main-base
+priority added to it: it is still the plain majority it always was, plus
+the `'unknown'` fallback below.
+
+### The Pathet Lao fallback
+
+`flagpl_m1` (Eve of Destruction's Pathet Laos army — `h_mong`,
+`ho_chi_minh_trail`, `laos_boundary_dispute`) is a real flag mesh no
+installed `menu.rfa` ships art for. The old fallback chain
+(`cpNation`/`teamNation`) ended in `team === 1 ? 'ger' : 'us'` regardless of
+*why* it got there — a mesh this pack has no art for, or a control point
+with no mesh at all (Kasserine's five flagless zones) — and in EoD's
+repainted table `ger` is the North Vietnamese flag, so a Pathet Lao base
+silently flew NVA colours on the minimap and the ticket counter.
+
+`viewer/nation.js` now tells the two apart:
+
+- **No mesh at all** (`cp.flagMesh` falsy — Kasserine): keeps the founding
+  guess, `cp.team === 1 ? 'ger' : cp.team === 2 ? 'us' : null`. This is a
+  real, deliberate answer for a WWII map with no flag cloth to read, not a
+  placeholder — removing it would have drawn Kasserine's owned-but-flagless
+  points as neutral, a regression `test_menu_layout.py`'s
+  `LevelNationFromArchivesTests.test_kasserine_is_unchanged_via_the_skin_fallback`
+  guards from the Python side (nothing in `map.html` reads Kasserine's
+  flagless points through `cpNation`'s fallback in a way this round
+  touched, but the same principle governs both).
+- **A mesh that IS there but unmapped** (`flagpl_m1`): answers `'unknown'`,
+  never the founding guess.
+
+`teamNation`'s own final fallback moved from `team === 1 ? 'ger' : 'us'` to
+`'unknown'` too, so a team with no flagged control points and no matching
+vehicle (`nationFromVehicles`) answers honestly rather than guessing.
+`'unknown'` is truthy, so it wins a majority vote outright when every flag
+a team holds is unmapped (all three Pathet Lao levels), rather than falling
+through to a vehicle guess or a team-number coin flip.
+
+Every consumer of `teamNation`/`cpNation` already tolerates this without
+further changes:
+
+- **Minimap control point icons** (`drawControlPoint`): explicitly treats
+  `'unknown'` the same as no nation — `conp_neutral`, the pack's own stand-in
+  for a point nobody can be shown to hold, never another nation's flag.
+- **The ticket counter flag** (`ticketFlagTexture`/`feedTicketVars`) and
+  **the deploy screen's team flag tabs** (`deployTexture`'s
+  `ChangeTeam/AxisTeamFlag`/`AlliedTeamFlag`): both build a sprite name by
+  string interpolation (`flag_ticket_unknown.tga`, `icon_flag_unknown`).
+  Neither name is ever in any installed pack, so `sprite()`'s plain `Map`
+  lookup returns `null` and the picture leaf's `if (!img) break;` already
+  skips drawing — no new code needed at either site, and no throw either
+  way.
+- **The Instant Battle preview flags** (`viewer/play/`): were already safe
+  — a level whose extracted record has no nation carries `"flag": null` and
+  `paintPreviewFlags` already skips a null flag. Unchanged.
+- The four *non-flag* fallbacks that also call `teamNation`
+  (`spawnSoldierUrl`'s weapon/soldier defaults, `weaponTemplateFor`,
+  `soldierTemplateFor`, `stanceNation`'s icon-set choice) already OR their
+  own `team === 1 ? ... : ...` default onto the result, so `'unknown'`
+  degrades through them exactly the way `null` used to — none of them
+  needed a change, and none of them is a flag.
+
+### Vanilla: only Liberation of Caen's Allied side moves
+
+```
+python3 tools/bf1942-models/extract_menu_layout.py --out <dir>
+```
+
+Re-run for vanilla from `main`'s code and from this branch into two scratch
+directories, `menu-levels.json` is otherwise byte-identical; the one
+changed record:
+
+| level | team | skin | was (`SKIN_NATION`) | is (the level's own flag) |
+|---|---|---|---|---|
+| `liberation_of_caen` | allied | `BritishSoldier` | `brit` | `can` (`flagcan_m1`, its uncapturable `Canadian_Base`) |
+
+The pack ships `icon_flag_can`/`conp_can` (vanilla's own `NATIONS` tuple
+always has, for Canada's five vanilla levels), so the corrected flag
+renders. Axis is unchanged: its five points are all `flagge_m1`, no marked
+main base, majority decides, and the level's own answer (`ger`) agrees with
+the skin. Every other one of the 23 vanilla levels — `LevelRecordTests`'
+existing assertions for `midway`/`berlin`/`el_alamein` included — is
+unchanged, checked exhaustively (every level, both sides) in
+`LevelNationFromArchivesTests.test_no_other_vanilla_level_moves`.
+
+### Eve of Destruction: 13 rows move, not 30
+
+```
+python3 tools/bf1942-models/extract_menu_layout.py --mod EoD --out <dir>
+```
+
+Re-run the same way for EoD (239 levels), walked exhaustively (every level,
+both sides — the script this ran is
+`EodLevelNationTests.test_exactly_thirteen_eod_rows_move` in
+`tests/test_menu_layout.py`):
+
+| level | team | skin | was (`SKIN_NATION`) | is (the level's own flag) |
+|---|---|---|---|---|
+| `xa_loi_pagoda` | allied | `ARVNForces` | `brit` | `us` (`flagus_m1`, its uncapturable `ARVN_Base`) |
+| `hidden_airfield` | axis | `NVASoldier` | `ger` | `jp` (`flagjp_m1`) |
+| `hill916` | axis | `NVASoldier` | `ger` | `jp` (`flagjp_m1`) |
+| `pushing_charly` | axis | `NVASoldier` | `ger` | `jp` (`flagjp_m1`) |
+| `the_bay` | axis | `VietCongSoldier` | `jp` | `ger` (`flagge_m1`) |
+| `battle_of_can_tho` | axis | `VietCongSoldier` | `jp` | `ger` (`flagge_m1`) |
+| `dak_pek` | axis | `VietCongSoldier` | `jp` | `ger` (`flagge_m1`) |
+| `ghost_town` | axis | `CivilVC_Soldier` | `jp` | `ger` (`flagge_m1`) |
+| `last_man_standing` | axis | `VietCongSoldier` | `jp` | `ger` (`flagge_m1`) |
+| `mono_lake` | axis | `VietCongSoldier` | `jp` | `ger` (`flagge_m1`) |
+| `nui_pek` | axis | `VietCongSoldier` | `jp` | `ger` (`flagge_m1`) |
+| `riverrun` | axis | `VietCongSoldier` | `jp` | `ger` (`flagge_m1`) |
+| `snipers` | axis | `VietCongSoldier` | `jp` | `ger` (`flagge_m1`) |
+
+`h_mong`, `ho_chi_minh_trail` and `laos_boundary_dispute` (Pathet Lao) do
+**not** move: both the old path (`SKIN_NATION` has no `pathetlaossoldier`
+row) and the new one (`flagpl_m1` unmapped) answer `None`, so
+`"nation": null, "flag": null` is unchanged — the run still says so rather
+than inventing a row, now via `team_nation_from_level` finding nothing
+first rather than `SKIN_NATION` finding nothing at all.
+
+`no_where_to_run` does **not** move either, but it is the one level in
+either corpus where the main-base tie-break in `team_nation_from_level`
+actually fires: EoD gives its axis two uncapturable bases of different
+nations, `Vietcong_Base` (`flagjp_m1`) and `Vietcong_Platoon`
+(`flagge_m1`). Encounter order keeps the answer `jp`, agreeing with both
+`SKIN_NATION`'s existing guess for `VietCongSoldier` and with
+`viewer/nation.js`'s plain-majority `teamNation` — the case that caught the
+alphabetical-tie-break bug during verification (see above).
+
+**This is 14 corrected rows total (13 EoD + Liberation of Caen), not the
+30 section 10 estimated.** That estimate was explicitly a partial one
+("`the_bay`, `battle_of_can_tho`, `+6 more`" — eight, where the exhaustive
+walk finds ten in that direction) and was never itself reproduced by a
+script; this section's numbers are the output of
+`EodLevelNationTests.test_exactly_thirteen_eod_rows_move`, run against the
+real, already-extracted archive tree on this machine, and are the ones to
+trust. Marking the "30" UNVERIFIED per the round's own rule on claims,
+rather than repeating it.
+
+### Tests
+
+`python3 -m unittest discover -s tests` from `tools/bf1942-models`: **1,830
+green**, up from 1,794 at branch start (36 new: 9
+`TeamNationFromLevelTests`, 2 `LoadFlagMeshNationsTests`, 3
+`LevelNationFromArchivesTests`, 6 `EodLevelNationTests` — all against the
+real installed archives — in `tests/test_menu_layout.py`, and 16 in the new
+`tests/test_nation_js.py`, node-harness-driven per the existing
+`hud-pack.js` pattern). `NationParityTests` in `test_nation_js.py` is the
+test the round asked for explicitly: it feeds `extract_hud_pack.flag_mesh_nation`
+and `extract_menu_layout.team_nation_from_level` the exact same tables and
+control-point fixtures `nation_harness.mjs` feeds `viewer/nation.js`, and
+asserts the two sides answer identically — `xa_loi_pagoda`,
+`liberation_of_caen`, `no_where_to_run`'s tie and the Pathet Lao levels
+included.
+
 ## 12. Mod kit photographs (2026-09-20)
 
 The first of section 10's "two defects left for the lead", closed: a mod's
