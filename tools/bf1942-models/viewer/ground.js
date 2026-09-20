@@ -73,14 +73,6 @@ const COULOMB_BREAKAWAY = 2.25;
 const COULOMB_GRAVITY = 9.82;
 
 /**
- * Above this speed the parking hold below has faded to nothing, and the
- * fitted coast model has the wheel to itself. Purely the viewer's, and a
- * fade rather than a step so there is no discontinuity to drive through.
- * [free, numerics]
- */
-const PARKING_HOLD_SPEED = 3.0;
-
-/**
  * The engine's simulation tick, `0x08716b5c`. It appears twice in the
  * friction solver: once dividing the budget into a per-tick velocity step,
  * and once multiplying the wanted velocity change back into an acceleration
@@ -116,23 +108,81 @@ export const DEFAULT_MATERIAL_FRICTION = 1.0;
 const WHEEL_MATERIAL_FRICTION = 1.0;
 
 /**
- * The two caps a contact is tested against, as accelerations rather than as
- * per-tick velocity steps — the viewer integrates at its own rate, and
- * `1.5 * 9.82 / 14.73` is exactly 1, so the kinetic cap really is `A * load`.
+ * The two caps **one contact** is tested against, as accelerations rather
+ * than as per-tick velocity steps — the viewer integrates at its own rate.
  *
- * `load` stands in for the engine's `|g| * L`: the viewer's per-wheel spring
- * loads sum to `|g|` when the vehicle is standing, so summed over the
- * contacts the budget is the engine's whole-vehicle one. **Approximation,
- * named:** the engine takes a mean over touching parts of one normal's y and
- * the viewer distributes the same total by spring load, so the two agree on
- * flat ground and diverge on a slope, where the viewer's split follows the
- * suspension rather than a single averaged normal.
+ * They carry no load, and that is the engine's own arithmetic rather than a
+ * simplification: the budget is `A * N.y * 1.5 * 9.82 / 30` metres per second
+ * of delta-v per tick, i.e. `A * N.y * |g|` as an acceleration, with no
+ * normal force anywhere in it (collision-response.md section 8 — "there is no
+ * force and no mass in this solver"). At `N.y = 1` on the flat that is
+ * `A * 14.73`.
+ *
+ * **Where the viewer differs, named — and the engine's side of it is now
+ * read, not inferred.** `addFriction` ends by handing the ROOT node (the
+ * `getParent()` walk at `0x0825b852`-`0x0825b873`) its clamped `dV * 30`
+ * through `PhysicsNode::addFrictionAtAbsolutePosition` `0x08254e50`, and that
+ * function is a **running mean over the tick's calls**, not a sum:
+ * `0x08254eab`-`0x08254f35` writes `positionalFriction = (positionalFriction
+ * * n + v) / (n + 1)` into `+0x40`; `0x08254fc0`-`0x0825503f` does the same
+ * for `rotationalFriction` `+0x4c` with `(pos - nodePos) x v`; `0x08255042`
+ * increments the count `+0x64`. (`setPositionalFriction` `0x0824d270` and
+ * `setRotationalFriction` `0x0824d290` fix the two offsets;
+ * `updateRotationalPhysics` clears all three at `0x08253dcd`-`0x08253ddc`.)
+ * The sibling `addAccelerationAtAbsolutePosition` `0x08255110` is a plain
+ * `fadd` accumulate at `0x08255156`-`0x08255170` — so in the engine **the
+ * springs sum and the tyres mean**, and a whole vehicle's Coulomb budget is
+ * `A * |g|` however many wheels touch.
+ *
+ * **`n` counts PARTS, not contact points.** `ResponsePhysicsManager::update`
+ * `0x0825d0b0` calls `checkVsTerrain` (`0x0825d160`, vtable `+0x24`) and then
+ * `addFriction` exactly once (`0x0825d137`, vtable `+0x20`) per object per
+ * tick, so however many vertices of a wheel are touching, that wheel adds one
+ * term to the mean. The six floats the call site pushes
+ * (`0.45, 0.9, 0.45, 2.0, 0, 0` at `0x0825d11d`-`0x0825d130`) are **dead** —
+ * a scan of `addFriction`'s whole body finds no read of `[ebp+0x10]` through
+ * `[ebp+0x24]`, so there is no per-call scale hiding in them.
+ *
+ * **This file now does the same**, and no normal load enters the tangential
+ * solve anywhere: `#step` accumulates each contact's clamped in-plane
+ * acceleration and its own `r x f` and divides both by the contact count,
+ * while the spring loads keep summing.
+ *
+ * It used to weight each contact's answer by that wheel's share of standing
+ * weight (`load / |g|`) and sum those. Two things were wrong with that:
+ *
+ *   - **the brake.** A jeep is rear-wheel drive and its rear pair carries
+ *     34 % of the standing weight, so the weighted sum braked it at 0.34 of
+ *     budget where the engine's mean gives the same pair 0.50 — 8.4 s and
+ *     128 m from 30.9 m/s, against `main`'s 3.9 s and 56 m.
+ *   - **a load spike multiplied the budget.** The damper reports a washboard
+ *     landing at a load near 100 against a standing 4.9, so the weight share
+ *     reached 7 and a single contact could answer with 100 m/s^2 of in-plane
+ *     force. That is the pump that put the jeep at 176 km/h over ground whose
+ *     flat top speed is 111.
+ *
+ * A first attempt at the swap (2026-09-20, by the reviewer) doubled a
+ * Sherman's settled yaw rate and rolled the M3A1 over, because with the
+ * weighting gone a barely-loaded contact answers at full budget. Two things
+ * it did not have made the difference here: the budget's own **`N.y`** (read,
+ * see below — a contact on a steep face now answers with less, and a side-on
+ * one with nothing), and the tyre frame lying in the **contact plane** rather
+ * than the hull's, so a saturated contact can no longer push the hull
+ * sideways out of its own plane. See `intoContactPlane`.
  */
-function coulombCaps(friction, load) {
-  const g = -GRAVITY;
-  const kinetic = friction * (COULOMB_SLIDING * COULOMB_GRAVITY / g) * load;
-  const breakaway = friction * (COULOMB_BREAKAWAY * COULOMB_GRAVITY / g) * load;
-  return { kinetic, breakaway };
+function coulombCaps(friction, normalY = 1) {
+  // `N.y` is read, not a refinement: `0x0825b80c fld DWORD PTR [eax+0x4]`
+  // with `eax = this+0x68` is the averaged contact normal's **y**, and it
+  // multiplies the budget formed at `0x0825b7c9`-`0x0825b804` from
+  // `ds:0x86d16e4` (9.82), `ds:0x8716b5c` (30), `ds:0x86d16e0` (2.25) and
+  // `ds:0x86be4d0` (1.5). So a steep contact face answers with less, and a
+  // side-on one with nothing — collision-response.md section 8's "the budget
+  // scales with the contact normal's Y, not with any normal force".
+  const ny = normalY > 0 ? normalY : 0;
+  return {
+    kinetic: friction * COULOMB_SLIDING * COULOMB_GRAVITY * ny,
+    breakaway: friction * COULOMB_BREAKAWAY * COULOMB_GRAVITY * ny,
+  };
 }
 
 /**
@@ -204,6 +254,27 @@ const SPRING_GRAVITY_SCALE = GRAVITY * (-1 / 9.82);
  * is asked to divide by nearly nothing and its Newton step runs away. A hull
  * that far over is not driving anyway, so it falls back to a vertical drop.
  * Numerics, not engine. [free]
+ *
+ * **KNOWN DEFECT, measured 2026-09-20, not fixed here.** That fall-back is
+ * where a tumbling jeep launches itself. Once the hull is past about 60
+ * degrees of pitch the vertical `drop` stops meaning anything: an axle that
+ * has swung under the ground reads a `compression` of metres, the bump stop
+ * multiplies it by `bumpStiffness`, and the whole load is pushed along the
+ * hull's own +Y, which at that attitude points sideways or down — so the
+ * spring drives the hull further in instead of holding it up. The second half
+ * of the same defect is that `dir`/`lat` are the hull's XZ plane rather than
+ * the contact plane, so a saturated longitudinal demand on a steeply pitched
+ * hull is mostly world-vertical thrust.
+ *
+ * On the harness's synthetic washboard (0.35 m every 12 m, gentler than
+ * Wake's dunes) a full-throttle Willy reaches an apex of **148 m** and
+ * **454 km/h**; on `main` the same run stays at 1.13 m and 58 km/h. Tanks and
+ * half-tracks stay bounded (1.3 m / 2.2 m) because they never tumble.
+ * Returning `Infinity` here instead of `drop` takes 148 m down to 37 m and
+ * capping the bump-stop overrun at 0.5 m takes it to 4.9 m, but neither
+ * removes the 160-plus km/h, because the thrust half is untouched. The fix is
+ * to project the tyre frame onto the contact plane; it is a physics change,
+ * not a guard.
  */
 const SPRING_AXIS_FLOOR = 0.2;
 
@@ -253,27 +324,60 @@ const STATIC_HOLD_SPIN = 0.05;
  */
 const STATIC_HOLD_SETTLE = 0.02;
 
+/**
+ * And it waits a whole second with all three of the above holding together,
+ * because a hull dropped onto a slope crosses every one of them transiently
+ * on the way down. Nothing in the engine has a dwell at all — its latch is a
+ * per-tick velocity constraint — so this is the viewer's own. [free,
+ * numerics]
+ */
 const STATIC_HOLD_DWELL = 1.0;
 
 function staticHold(vehicle, s, accel, h, drive, braking, loaded, budget,
     allLatched, springRate) {
-  const quiet = loaded && allLatched && budget > 0
+  const parked = loaded && allLatched && budget > 0
     && drive === 0 && braking === 0
-    && springRate <= STATIC_HOLD_SETTLE
     && s.velocity.lengthSq() <= STATIC_HOLD_SPEED * STATIC_HOLD_SPEED
     && s.angularVelocity.lengthSq() <= STATIC_HOLD_SPIN * STATIC_HOLD_SPIN;
+  if (!parked) {
+    vehicle._staticQuiet = 0;
+    vehicle._staticHeld = false;
+    return false;
+  }
   // A hull dropped onto a slope crosses every one of those thresholds
   // transiently on the way down, so the hold waits for them to hold together
-  // for a whole second before it takes effect. A genuinely parked vehicle
-  // passes that in a second; a settling one never does.
-  vehicle._staticQuiet = quiet ? (vehicle._staticQuiet ?? 0) + h : 0;
-  if (vehicle._staticQuiet < STATIC_HOLD_DWELL) return false;
+  // for a whole second, with the suspension stopped, before it takes effect.
+  //
+  // **The settle test gates entry only.** Once the hold is on, the spring
+  // rate it measures is its own doing: zeroing the horizontal velocity moves
+  // the contact patches by a hair, the springs answer, and the rate crosses
+  // `STATIC_HOLD_SETTLE` again — which used to reset the dwell, let the hull
+  // creep for another second, and re-engage, a limit cycle regulated by the
+  // threshold itself. It cost a parked M3A1 0.54 m in ten seconds. Re-testing
+  // a precondition against a state the test itself created is circular; the
+  // conditions that genuinely mean "no longer parked" are the ones above, and
+  // they are checked every sub-step.
+  if (!vehicle._staticHeld) {
+    if (springRate > STATIC_HOLD_SETTLE) {
+      vehicle._staticQuiet = 0;
+      return false;
+    }
+    vehicle._staticQuiet = (vehicle._staticQuiet ?? 0) + h;
+    if (vehicle._staticQuiet < STATIC_HOLD_DWELL) return false;
+    vehicle._staticHeld = true;
+  }
   // What the contacts are being asked to hold, this substep: the horizontal
   // acceleration plus the horizontal velocity already on the hull, expressed
   // as one acceleration so both are measured against the same budget.
   const ax = accel.x + s.velocity.x / h;
   const az = accel.z + s.velocity.z / h;
-  if (Math.hypot(ax, az) > budget) return false;
+  if (Math.hypot(ax, az) > budget) {
+    // Past the break-away budget — a slope steeper than `atan(mu)` — the
+    // latch lets go and the hull slides, exactly as the engine's does.
+    vehicle._staticHeld = false;
+    vehicle._staticQuiet = 0;
+    return false;
+  }
   accel.x = 0;
   accel.z = 0;
   s.velocity.x = 0;
@@ -380,39 +484,62 @@ export const WILLYS = {
   // level with no material map falls back to, which is also what the old
   // constant happened to be.
   //
-  // Lateral force per radian of slip, per unit of that wheel's normal load,
-  // saturating against the Coulomb cap at about 8 degrees of slip.
-  // **INVENTION, and now known to be one.** The engine has no slip-angle
-  // curve anywhere: its clamp is a plain isotropic vector scale on the
-  // tangential plane, and a rolling wheel only ever asks for lateral
-  // correction in the first place. This is kept because it is what gives the
-  // jeep a steering feel a player can drive, not because anything backs it.
-  // [free, invented]
-  corneringStiffness: 7,
-  // How much of the Coulomb budget the lateral axis may reach, the same
-  // invented anisotropy the tracked class carries and for a sharper reason
-  // here. `corneringStiffness` above was fitted against a flat isotropic
-  // `mu * load` circle with no hysteresis; PHY-2's 1.5:1 break-away raised
-  // the ceiling a *latched* wheel may pull by half, and the jeep promptly
-  // rolled itself onto its roof at full lock (89 degrees, from 12). 1/1.5
-  // puts the break-away ceiling back exactly where the fitted circle was and
-  // leaves the sliding ceiling below it — so the hysteresis is observable in
-  // the direction the invented stiffness does not dominate (traction) and
-  // neutral in the one where it does. Re-fitting the stiffness instead would
-  // have hidden the change inside another free number. [free, invented]
-  lateralGripFraction: 1 / 1.5,
-  // Slip angles are read against a floored longitudinal speed and faded in
-  // below walking pace, because a tyre model with real authority at zero
-  // speed is a numerical oscillator, not a tyre. [free, numerics]
-  slipFloor: 1.5,
+  // THREE MORE CONSTANTS ARE GONE FROM HERE AND MUST NOT COME BACK, and
+  // these three were the file's last labelled inventions:
+  //
+  //   `corneringStiffness 7`     lateral force per radian of slip angle.
+  //   `lateralGripFraction 1/1.5` how much of the Coulomb budget the lateral
+  //                              axis could reach.
+  //   `slipFloor 1.5`            the floored denominator a slip angle was
+  //                              read against, plus a speed fade, because a
+  //                              tyre model with authority at zero speed is
+  //                              an oscillator.
+  //
+  // All three stood in for **RollGrip's own demand**, `dV = -(Vt along the
+  // axle)` (collision-response.md section 8), which this file had never
+  // written out: the Coulomb clamp BOUNDS a lateral demand and never CREATES
+  // one, so deleting the stiffness without putting RollGrip in its place left
+  // the jeep with no lateral force at all — 16 degrees of turn in 12 s
+  // instead of 60, which is what a previous reviewer measured and why they
+  // were kept. With the demand written out the same jeep turns **120 degrees
+  // in 12 s** at 31 m/s, against 108 on `main` and 92 with the fitted model,
+  // and the worst body roll is 8.7 degrees.
+  //
+  // And the clamp is **isotropic** again, as PHY-2 says it is: no ellipse,
+  // no anisotropy, no slip-angle curve anywhere. What replaces the ellipse's
+  // rollover protection is that the two demands now genuinely compete for one
+  // budget — a wheel spending it on drive has none left to corner with, which
+  // is collision-response.md's own "power slide" note, and a tank measured
+  // `worstUp >= 0.974` across the whole yaw sweep where the ellipse was put
+  // there to stop it rolling.
   // --- resistance and brakes ------------------------------------------------
-  rollingResistance: 0.55,  // m/s^2, always-on once moving [free]
-  engineBraking: 0.4,       // m/s^2, throttle closed [free]
-  brakeDecel: 8,            // m/s^2 at full pedal, before the friction circle [free]
-  // Below this forward speed an opposed throttle stops braking and starts
-  // driving the other way — the BF1942 behaviour where holding S brakes to a
-  // halt and then backs up. [free]
-  reverseBelow: 0.5,
+  // FOUR CONSTANTS ARE GONE FROM HERE AND MUST NOT COME BACK. All four were
+  // fitted against the kinematic `revs = speed / ratio` drivetrain, and all
+  // four are things the engine gets for free out of the EngineGrip target:
+  //
+  //   `rollingResistance 0.55`  a always-on drag. The engine has none. Off
+  //   `engineBraking 0.4`       the pedal the rev state decays toward zero
+  //                             with a 40-tick time constant, the target
+  //                             `ratio * revs` decays with it, and the wheel
+  //                             asks for `T - Vt` — a deficit that grows as
+  //                             the target falls. That IS the coast, and it
+  //                             is a firm one: the engine really does stop a
+  //                             BF1942 jeep in a couple of seconds.
+  //   `brakeDecel 8`            a brake force. The engine's brake is the byte
+  //                             `PhysicsEngine+0xb4`, which `addFriction`
+  //                             tests at `0x0825c28a` to **discard the target
+  //                             entirely** (`0x0825c293` zeroes it): the
+  //                             wheel then asks for `0 - Vt`, its whole
+  //                             contact velocity back, and the Coulomb clamp
+  //                             decides how much of that the ground answers.
+  //                             So the brake is exactly `mu * |g|` and 8 was
+  //                             below even mud's 11.0.
+  //   `reverseBelow 0.5`        a speed under which an opposed pedal stops
+  //                             braking and starts driving. The engine has no
+  //                             such threshold: the brake byte is set while
+  //                             the pedal opposes the REV DIRECTION, so it
+  //                             clears by itself the moment the revs cross
+  //                             zero and reverse drive begins from there.
 
   // --- the rigid body -------------------------------------------------------
   // Per-mass inertia (radius of gyration squared, m^2) about roll/pitch/yaw,
@@ -500,13 +627,114 @@ function probeAlongAxis(groundHeight, attach, axisWorld) {
   const floor = groundHeight(attach.x, attach.z);
   if (!Number.isFinite(floor)) return Infinity;
   const drop = attach.y - floor;
-  if (axisWorld.y <= SPRING_AXIS_FLOOR) return drop;
+  // Past the floor the probe has no answer, and **the honest answer is "no
+  // contact"**, not a vertical drop. Returning `drop` there reported the
+  // world-vertical distance as a distance along an axis pointing nearly
+  // sideways, so a hull tipped past ~78 degrees read its buried axles as
+  // metres of compression — loads of 2312 against a standing 4.9 — and the
+  // bump stop threw the jeep 148 m into the air off a 0.35 m washboard. A
+  // wheel whose spring axis is that far from vertical is not carrying the
+  // hull; whatever is holding it up is the hull sweep's problem.
+  if (axisWorld.y <= SPRING_AXIS_FLOOR) return Infinity;
   let t = drop / axisWorld.y;
   const px = attach.x - axisWorld.x * t;
   const pz = attach.z - axisWorld.z * t;
   const under = groundHeight(px, pz);
   if (!Number.isFinite(under)) return t;
   return t + (attach.y - axisWorld.y * t - under) / axisWorld.y;
+}
+
+/**
+ * How far past its authored travel a spring may be pushed before the probe is
+ * simply wrong about where the ground is. The bump stop is `bumpStiffness`
+ * times the authored rate, so an unbounded overrun is an unbounded force:
+ * this is the depth at which a contact stops being a suspension event and
+ * starts being one the hull sweep should have caught. [free, numerics]
+ */
+const MAX_OVERRUN = 0.5;
+
+/** Half-width of the central difference the contact normal is taken over. The
+ * terrain under a viewer level is a 4 m lattice, so anything much smaller
+ * reads interpolation noise and anything much larger smooths away the dune a
+ * wheel is actually sitting on. [free, numerics] */
+const NORMAL_PROBE = 0.5;
+
+/**
+ * The contact normal under a world (x, z), from the height field's own
+ * gradient.
+ *
+ * The engine does not need this — it keeps a running mean of the unit normals
+ * of the frame's actual contacts at `ResponsePhysics+0x68`, which is what
+ * `addFriction` reads at `0x0825b80c` for the budget and at `0x0825bfce` for
+ * the tangent plane. A probe down a spring axis has no contact to take a
+ * normal from, so the surface it probed against supplies one. Named as the
+ * approximation it is; everything spent on it below is read.
+ */
+function groundNormal(groundHeight, x, z, out) {
+  const e = NORMAL_PROBE;
+  const hx0 = groundHeight(x - e, z);
+  const hx1 = groundHeight(x + e, z);
+  const hz0 = groundHeight(x, z - e);
+  const hz1 = groundHeight(x, z + e);
+  if (![hx0, hx1, hz0, hz1].every(Number.isFinite)) return out.set(0, 1, 0);
+  return out.set(-(hx1 - hx0) / (2 * e), 1, -(hz1 - hz0) / (2 * e)).normalize();
+}
+
+/**
+ * Lay an axis into the contact plane, the way `addFriction` lays a wheel's
+ * axle into it — **byte for byte, and this is the fix for the launch**:
+ *
+ * ```
+ * 0825bf99  RollGrip branch: [ebp-0x48..] = node transform row 0, the AXLE
+ * 0825bfce  |N|^2 from [esi+0x68..];  == 0 -> the demand is zeroed
+ * 0825c14b  s = (axle . N) / |N|^2   (0825c153-0825c171), then s*N
+ * 0825bfff  the projection: axle - s*N  (0825c00b-0825c021)
+ * 0825c063  |proj|^2 == 0 -> the degenerate arm, demand zeroed
+ * ```
+ *
+ * so RollGrip's direction is `axle - N*(axle.N)/(N.N)` and never the raw
+ * axle.
+ *
+ * **EngineGrip is the same, and it is read here too rather than taken from
+ * section 8.** It projects the finished target instead of the axis it was
+ * built from, at the other end of the branch:
+ *
+ * ```
+ * 0825c3d7-0825c40d  the blend is summed into T [ebp-0x48..] and copied to
+ *                    [ebp-0x78..], which is what ebx points at
+ * 0825c410  eax = [ebp-0x1e4] = this+0x68, the averaged contact normal
+ * 0825c416-0825c430  |N|^2
+ * 0825c432  fldz;  0825c436 fucom st(1);  0825c440 jne 0825c493
+ *                    -- a LITERAL zero, so |N|^2 == 0 falls through and the
+ *                       target is left alone (0825c442-0825c48e)
+ * 0825c493-0825c4ab  s = (T . N) / |N|^2      (fdivrp st(1),st)
+ * 0825c4ad-0825c4de  [ebx] = s*N
+ * 0825c453-0825c48b  T := T - s*N, stored back to [ebp-0x48..]
+ * ```
+ *
+ * and only then does `0825c2a3` take `dV = T - Vt`. So both grips end up
+ * tangential, by two different routes. `Vt` is tangential too, and that one
+ * is read as well: `0825b91a`-`0825b982` forms `|N|^2` from the same vector
+ * and `0825c579`-`0825c591` divides the dot by it, `0825b985`-`0825b9a0`
+ * subtracting the result — `Vt = V - N*(V.N)/(N.N)`, section 8's own
+ * expression, byte for byte.
+ *
+ * Why it matters to this file and not only to fidelity: the tyre frame used
+ * to be the HULL's own XZ plane. A Coulomb-saturated longitudinal demand on
+ * a hull pitched 60 degrees is then two thirds world-vertical, and full
+ * throttle becomes a rocket. In the contact plane it cannot be: every
+ * tangential demand is perpendicular to the surface normal by construction.
+ *
+ * @returns {boolean} false when the axis is parallel to the normal and the
+ *   projection is degenerate — the engine zeroes that contact's demand
+ */
+function intoContactPlane(axis, normal) {
+  const d = axis.dot(normal);
+  axis.addScaledVector(normal, -d);
+  const len = axis.length();
+  if (!(len > 1e-4)) return false;
+  axis.multiplyScalar(1 / len);
+  return true;
 }
 
 /** A land vehicle: a `Vehicle` plus the drive model that moves it. */
@@ -537,30 +765,18 @@ export class GroundVehicle extends Vehicle {
     this.surfaceFriction = options.surfaceFriction || (() => DEFAULT_MATERIAL_FRICTION);
 
     this.wheels = [];
-    /** Engine declarations off the `Engine` node, spec values as fallback. */
-    this.engine = {
+    /** `Engine::handleUpdate`'s whole state — the rev filter, the gearbox and
+     * the load feedback — shared with `TrackedVehicle`. Built from the spec
+     * here and replaced from the `Engine` node in `collectChassis`. */
+    this.engine = new EngineState({
       torque: this.spec.torque,
       differential: this.spec.differential,
       numberOfGears: this.spec.numberOfGears,
       gearUp: this.spec.gearUp,
       gearDown: this.spec.gearDown,
-    };
-    /** Current gear, 1-based; `reverse` is a mode rather than a gear slot. */
-    this.gear = 1;
-    /** Engine speed as a fraction of full, 0..1 — the quantity `setGearUp`
-     * and `setGearDown` are fractions *of*, and the same normalised rev the
-     * engine's own torque curve is indexed by (TANK-4). It used to be rad/s
-     * against a fitted `revLimit`. */
-    this.revs = 0;
+      engineType: 'c_ETCar',
+    });
     this.collectChassis();
-
-    /** `getCurrentRatio()` for gear 1..numberOfGears (TANK-3), built from the
-     * engine's own compiled curve rather than an authored ladder — because
-     * there is no authored ladder. Willy (`differential 7`, `numberOfGears 5`)
-     * comes out 7.000 / 11.136 / 16.333 / 22.273 / 26.064. Any gear count gets
-     * a real ratio, and above five gears the ladder is **not monotonic**; see
-     * `gearLadder`. */
-    this.ladder = gearLadder(this.engine.differential, this.engine.numberOfGears);
 
     // Hull collision against static objects (buildings, walls, other vehicles).
     // `k.boundingRadius` is the same value the drag equation uses — large enough
@@ -589,6 +805,12 @@ export class GroundVehicle extends Vehicle {
     this._fTyre = new THREE.Vector3();
     this._arm = new THREE.Vector3();
     this._axis = new THREE.Vector3();
+    this._normal = new THREE.Vector3();
+    this._gTick = new THREE.Vector3();
+    this._uG = new THREE.Vector3();
+    this._tanForce = new THREE.Vector3();
+    this._tanTorque = new THREE.Vector3();
+    this._nBody = new THREE.Vector3();
     this._euler = new THREE.Euler();
   }
 
@@ -609,12 +831,20 @@ export class GroundVehicle extends Vehicle {
     this.node.traverse(obj => {
       const data = obj.userData || {};
       if (data.templateKind === 'Engine' && data.physics) {
-        const p = data.physics;
-        if (typeof p.torque === 'number') this.engine.torque = p.torque;
-        if (typeof p.differential === 'number') this.engine.differential = p.differential;
-        if (typeof p.numberOfGears === 'number') this.engine.numberOfGears = p.numberOfGears;
-        if (typeof p.gearUp === 'number') this.engine.gearUp = p.gearUp;
-        if (typeof p.gearDown === 'number') this.engine.gearDown = p.gearDown;
+        // `engineType` comes off the node now (item 3): the 1.2 rev ceiling
+        // is type-independent but `getCurrentDifferentialRPM`'s +-1 clamp is
+        // not, and 101 of the 1,309 ground-vehicle Engines across the 18
+        // installs are a `c_ETTank` with at least one `c_PGFRollGrip` wheel.
+        // Vanilla's three (Hanomag, Ho-Ha, M3A1) are half-tracks and reach
+        // `TrackedVehicle` through `seats.js`; a mod's need not.
+        this.engine = new EngineState({
+          torque: this.spec.torque,
+          differential: this.spec.differential,
+          numberOfGears: this.spec.numberOfGears,
+          gearUp: this.spec.gearUp,
+          gearDown: this.spec.gearDown,
+          ...data.physics,
+        }, data.rig?.automaticReset);
         return;
       }
       if (data.templateKind !== 'Spring' || !data.physics) return;
@@ -634,65 +864,18 @@ export class GroundVehicle extends Vehicle {
     }
   }
 
-  /**
-   * The gearbox this tick: derive revs from road speed, shift on the declared
-   * thresholds, and say how much drive is available.
-   *
-   * `setGearUp 0.95` / `setGearDown 0.4` are fractions of maximum revs, and
-   * revs are a fraction outright, so both read literally. The road speed a
-   * gear reaches at a rev fraction is the engine's own EngineGrip target for
-   * that gear, `ratio * revs` (TANK-9 as corrected) — and revs runs to
-   * `ENGINE_REV_CEILING` = 1.2, not 1, so Willy's five gears top out at
-   * 8.40 / 13.36 / 19.60 / 26.73 / 31.28 m/s. The automatic's hysteresis
-   * still works out: an upshift at 0.95 lands the next gear at 0.60-0.81,
-   * well above the 0.4 downshift line, so the box never hunts.
-   *
-   * THE TRAP, and it is the easy bug in this file (TANK-3): there are two
-   * ladders and they run in opposite directions.
-   *
-   *   `getCurrentRatio()` RISES with gear — Willy 7.00 -> 26.06. It is a
-   *   *speed* multiplier: the engine's surface-speed target, and the thing
-   *   `bodyThrust` scales.
-   *
-   *   the DRIVE share falls with gear — 1.000 / 0.629 / 0.429 / 0.314 / 0.269
-   *   for any five-speed. It is the curve *sample* normalised to first gear,
-   *   `ladder[0] / ladder[g-1]`, and it is what the deleted `gearRatios`
-   *   ladder (3.8 / 2.6 / 1.8 / 1.25 / 1.0, normalised 1.000 / 0.684 / 0.474 /
-   *   0.329 / 0.263) was an eyeballed approximation of.
-   *
-   * Drive per gear is `setTorque` at its share, shaped by the engine's own
-   * torque curve (TANK-4, peak at 60 % revs, 0.70 at both ends) and faded over
-   * the last five percent of the rev range so top speed is an equilibrium.
-   */
-  #drivetrain(speed, reverse) {
-    const e = this.engine;
-    const ladder = this.ladder;
-    const top = ladder.length;
-    // The EngineGrip target for a gear is `ratio * revs`, so the rev fraction
-    // is simply road speed over the ratio — capped at the engine's own
-    // ceiling rather than at 1.
-    // Reverse runs against the clamp's other arm, which is NOT symmetric:
-    // `Engine::handleUpdate` floors revs at -1.0 and ceils them at +1.2, so
-    // reverse in first is 1/1.2 of forward in first, by the engine's own
-    // arithmetic rather than by a separate `reverseRatio`.
-    const ceiling = reverse ? ENGINE_REV_FLOOR : ENGINE_REV_CEILING;
-    const revsIn = ratio => Math.min(ceiling, speed / Math.max(1e-6, ratio));
-    if (reverse) {
-      // Reverse borrows first gear, which is what the deleted `reverseRatio`
-      // did — it was authored equal to `gearRatios[0]`.
-      this.gear = 1;
-      this.revs = revsIn(ladder[0]);
-    } else {
-      this.revs = revsIn(ladder[this.gear - 1]);
-      if (this.gear < top && this.revs > e.gearUp) this.gear += 1;
-      else if (this.gear > 1 && this.revs < e.gearDown) this.gear -= 1;
-      this.revs = revsIn(ladder[this.gear - 1]);
-    }
-    const share = ladder[0] / ladder[this.gear - 1];
-    const span = Math.max(1e-6, ceiling - e.gearUp);
-    const fade = Math.max(0, Math.min(1, (ceiling - this.revs) / span));
-    return e.torque * share * engineTorqueFraction(this.revs) * fade;
-  }
+  /** `getCurrentRatio()` at the live gear (TANK-3). */
+  get ratio() { return this.engine.ratio; }
+  /** The whole ladder — Willy 7.000/11.136/16.333/22.273/26.064. */
+  get ladder() { return this.engine.ladder; }
+  /** 1-based, and now the ENGINE's own gear rather than a road-speed
+   * inversion's. */
+  get gear() { return this.engine.gear; }
+  /** The filtered rev state, [-1.0, +1.2] (TANK-12). It is no longer
+   * `speed / ratio`: that inversion reached the same ceiling but had no
+   * spool-up, no behaviour after a shift, and no way to express the load
+   * feedback that actually governs a Refractor drivetrain. */
+  get revs() { return this.engine.revs; }
 
   /**
    * The Engine's rate rig is real on this vehicle too — `WillyEngine` carries
@@ -735,34 +918,25 @@ export class GroundVehicle extends Vehicle {
     /** Forward road speed, signed: positive is travelling nose-first. */
     const vf = -vBody.z;
 
-    // --- pedals -------------------------------------------------------------
-    // One axis does three jobs, exactly as in the game: accelerate, brake,
-    // reverse. Opposing the current motion is braking until the vehicle has
-    // all but stopped; only then does the same input become drive the other
-    // way. `c_PIThrottle` runs -1..1 here where an aircraft clamps it at 0.
-    const cmd = Math.max(-1, Math.min(1, this.input('c_PIThrottle')));
-    let braking = 0;
-    let drive = 0;
-    let reverse = false;
-    if (cmd > 0.01 && vf < -k.reverseBelow) {
-      braking = cmd;
-      this.#drivetrain(Math.abs(vf), false);
-    } else if (cmd < -0.01 && vf > k.reverseBelow) {
-      braking = -cmd;
-      this.#drivetrain(Math.abs(vf), true);
-    } else if (Math.abs(cmd) > 0.01) {
-      reverse = cmd < 0;
-      drive = this.#drivetrain(Math.abs(vf), reverse) * Math.abs(cmd);
-    } else {
-      this.#drivetrain(Math.abs(vf), vf < 0);
-    }
+    // --- the engine ---------------------------------------------------------
+    // One axis still does three jobs, but no state machine here decides which:
+    // the engine's own rev filter and brake byte do (TANK-12). A pedal that
+    // opposes the rev direction sets `PhysicsEngine+0xb4`, which discards the
+    // wheels' whole EngineGrip target so they ask for their contact velocity
+    // back; when the revs cross zero the byte clears by itself and the same
+    // pedal is now driving the other way. There is no `reverseBelow`, no
+    // `brakeDecel` and no reverse gear — reverse is the rev clamp's own lower
+    // arm, -1.0 against the ceiling's +1.2, which is why it is slower.
+    const cmd = clamp(this.input('c_PIThrottle'), -1, 1);
+    const engine = this.engine;
+    engine.advance(h, cmd, 0);
+    const drive = engine.braking ? 0 : Math.abs(cmd);
+    const braking = engine.braking ? 1 : 0;
 
-    // `state.throttle` is what map.html feeds as Engine::Rpm / `.ssc` Default.
-    // A car's Engine roll snaps to the pedal in <0.1 s (Willy: maxSpeed 55000
-    // over ±5000), so pedal alone is a step; gearbox revs are what climb and
-    // drop through the gears. A fading pedal floor covers the stationary
-    // blip where road speed is still zero.
-    const revRpm = Math.min(1, Math.max(0, this.revs));
+    // `state.throttle` is what map.html feeds as Engine::Rpm / `.ssc` Default,
+    // and `Engine::Rpm` is the rev state. A fading pedal floor still covers
+    // the stationary blip, where the filter has not spooled up yet.
+    const revRpm = Math.min(1, Math.abs(this.revs));
     const pedal = Math.min(1, Math.abs(cmd));
     const stationary = Math.max(0, 1 - Math.abs(vf) / 2);
     const wanted = Math.max(revRpm, pedal * stationary);
@@ -791,42 +965,65 @@ export class GroundVehicle extends Vehicle {
     let staticBudget = 0;
     let allLatched = true;
     let springRate = 0;
+    // `addFrictionAtAbsolutePosition`'s two accumulators: the tangential
+    // force and its moment are MEANED over the tick's contacts, not summed
+    // (see `coulombCaps`). The springs above keep summing, because they go
+    // through `addAccelerationAtRelativePosition`, which is a plain add.
+    const tanForce = this._tanForce.set(0, 0, 0);
+    const tanTorque = this._tanTorque.set(0, 0, 0);
+    let tanCount = 0;
 
-    // Per-wheel drive and brake are found before the loop so the friction
-    // circle can be applied per contact: total demand, split over the axle by
-    // its live load, each wheel capped by mu times what it is carrying.
-    const drivenCount = this.wheels.filter(x => x.driven).length || 1;
-    // Slip authority fades in below walking pace — see `slipFloor`.
     const speed = s.velocity.length();
-    const authority = Math.min(1, speed / 2);
 
     // The spring axis, world frame. `(0, 1, 0)` in the HULL's frame — the
     // constructor's own `axisFixation`, which nothing authors over (PHY-5) —
     // so it leans with the body instead of standing world-vertical.
     const axisWorld = this._axis.set(0, SPRING_AXIS_Y, 0).applyQuaternion(q);
 
+    // **Next tick's gravity, added to every contact velocity before the
+    // tangential demand is taken** — collision-response.md section 8's
+    // `V.y += g/30`, and it is in the binary, not only in the note:
+    // `0x0825b8b3 mov eax,ds:0x871dc30` (the physics-system singleton),
+    // `0x0825b8e4 call [edx+0x14]` — slot `+0x14` of `vtable for
+    // BasicPhysicsSystem` `0x0872de40` is `BasicPhysicsSystem::getGravity`
+    // `0x08251ec0` — then `0x0825b8e7 fdiv ds:0x8716b5c` (30.0) and
+    // `0x0825b8ff fadd` into the y term of `V`, all of it BEFORE the normal
+    // projection that makes `Vt`. Section 8's note on why: "so a held body
+    // does not creep". Without it the solver only ever sees the velocity gravity has
+    // ALREADY produced, cancels that, and lets the next tick's share through
+    // again; a parked jeep then walks down a 5-degree slope at a steady
+    // 0.8 m/s. With it the demand includes the push before it becomes
+    // motion, and the static latch answers the whole of it. In the body
+    // frame, because that is where `u` lives.
+    const gravityTick = this._gTick.set(0, GRAVITY / ENGINE_TICK_HZ, 0)
+      .applyQuaternion(qInv);
+
     for (const wheel of this.wheels) {
       // Where the axle is, and how far the ground is DOWN THE SPRING AXIS.
       const attach = this._attach.copy(wheel.rest).applyQuaternion(q).add(s.position);
       const reach = probeAlongAxis(this.groundHeight, attach, axisWorld);
-      const compression = Number.isFinite(reach) ? k.wheelRadius - reach : -Infinity;
-      if (compression <= 0) {
+      const raw = Number.isFinite(reach) ? k.wheelRadius - reach : -Infinity;
+      if (raw <= 0) {
         wheel.compression = 0;
         wheel.load = 0;
         wheel.prevCompression = null;
         // No contact this tick clears the static latch (`0x0825b76b`).
         wheel.staticGrip = false;
         // An airborne driven wheel spins against nothing — at the surface
-        // speed the engine is commanding for this gear (TANK-9's EngineGrip
-        // target), over the wheel's own radius.
-        if (wheel.driven && drive !== 0) {
-          // Unloaded, the rev filter pins at the ceiling, so an airborne
-          // driven wheel spins at the redline surface speed for this gear.
-          const commanded = ENGINE_REV_CEILING * this.ladder[this.gear - 1];
-          wheel.angle += (reverse ? -1 : 1) * (commanded / k.wheelRadius) * h;
+        // speed the engine is commanding (TANK-9's EngineGrip target), over
+        // the wheel's own radius. Unloaded there is no friction to feed the
+        // load, so the rev filter climbs to the ceiling on its own and the
+        // target comes out at the redline without anything saying so here.
+        if (wheel.driven) {
+          wheel.angle += (engine.target(0) / k.wheelRadius) * h;
         }
         continue;
       }
+
+      // The contact normal, hoisted above the spring because the spring now
+      // needs it too — see the `nAxis` note on `load`.
+      const nBody = groundNormal(this.groundHeight, attach.x, attach.z,
+        this._normal).applyQuaternion(qInv);
 
       // Contact-patch velocity in the body frame. Hoisted above the spring
       // because the damper's first tick needs its vertical component.
@@ -838,6 +1035,15 @@ export class GroundVehicle extends Vehicle {
       // `setStrength`/`setDamping` — see the spec table for the units case.
       // Still an approximation in shape: `travel`, `bumpStiffness` and the
       // probe itself are the viewer's, only the force law is read.
+      // **Bounded before anything reads it**, and the damper is the reason:
+      // `rate` is a backward difference of this number, so an axle that the
+      // probe says went from nothing to three metres deep in one sub-step
+      // reports a closing speed of 360 m/s and the damper alone answers with
+      // 1800 m/s^2. Capping only the spring's overrun left that untouched,
+      // and the jeep still peaked at 187 km/h on a washboard whose flat
+      // ground it does 111 on. Past `travel + MAX_OVERRUN` the probe is not
+      // describing a suspension state at all.
+      const compression = Math.min(raw, k.suspensionTravel + MAX_OVERRUN);
       const travel = Math.min(compression, k.suspensionTravel);
       const overrun = compression - travel;
       // On a wheel that had no contact last tick there is no backward
@@ -852,11 +1058,37 @@ export class GroundVehicle extends Vehicle {
       // hard gets its real closing rate, and the damper is no longer blind
       // for a tick every time a wheel re-lands — which on rough ground is 3 %
       // of a jeep's contacts and 8 % of a half-track's. [free, numerics]
+      // The damper answers how fast the spring is being compressed, and the
+      // axle cannot close on the ground faster than it is travelling toward
+      // it. A backward difference of a PROBE can: on a near-vertical face
+      // the probe's reading jumps the whole bounded depth in one sub-step
+      // and reports 96 m/s of closing speed where the axle is doing 8. The
+      // closing speed is the same quantity the first-contact seed already
+      // uses, for the same reason, so it bounds the difference too.
+      // [free, numerics]
+      const closing = Math.abs(u.y) + SPRING_AXIS_FLOOR;
       const rate = wheel.prevCompression === null
-        ? Math.max(0, -u.y) : (compression - wheel.prevCompression) / h;
-      let load = SPRING_GRAVITY_SCALE * wheel.strength
+        ? Math.max(0, -u.y)
+        : clamp((compression - wheel.prevCompression) / h, -closing, closing);
+      // **A spring cannot push against a face it is edge-on to.** The probe
+      // runs down the hull's own +Y (PHY-5, read), but the ground answers
+      // along its own normal, so the reaction available along the spring
+      // axis is at most `N . axis` of it. Without this a jeep straddling a
+      // 25 m drop read metres of compression on the near-vertical face and
+      // the bump stop pushed at about 101 m/s^2 along the hull's up while
+      // the tyres, with `N.y` near 0.12, had 1.8 m/s^2 to answer with: 251.8
+      // km/h and inverted, out of a fall worth 80.
+      //
+      // It is the same quantity the friction budget already spends — that
+      // one is `N . world-up` and is read (`0x0825b80c fld [eax+0x4]`); this
+      // is `N . spring-axis`. The engine has no equivalent because its wheel
+      // is a body whose displacement comes from its own contact rather than
+      // from a probe down an axis, so the precedent is read and the transfer
+      // is this file's. [free, numerics]
+      const nAxis = nBody.y > 0 ? nBody.y : 0;
+      let load = (SPRING_GRAVITY_SCALE * wheel.strength
         * (travel + overrun * k.bumpStiffness)
-        + wheel.damping * rate;
+        + wheel.damping * rate) * nAxis;
       springRate = Math.max(springRate, Math.abs(rate));
       wheel.prevCompression = compression;
       if (load < 0) load = 0;
@@ -868,111 +1100,124 @@ export class GroundVehicle extends Vehicle {
       wheel.friction = 0.5 * (WHEEL_MATERIAL_FRICTION
         + this.surfaceFriction(attach.x, attach.z));
 
+      // The tyre frame is laid into the contact plane rather than into the
+      // hull's — see `intoContactPlane` for the bytes and for what the
+      // hull-plane frame cost.
       // The tyre's own frame: forward steered or straight, lateral to its
       // right. Rotation about +Y, so a negative steer angle points the wheel
       // starboard — the right turn the sign convention above promises.
       const dir = this._dir.set(-Math.sin(steer), 0, -Math.cos(steer));
       if (!wheel.steered) dir.set(0, 0, -1);
       const lat = this._lat.crossVectors(dir, UP);
+      // Each axis projected independently, as the engine projects the axle:
+      // a degenerate one means the wheel is edge-on to the surface, and the
+      // engine's answer there is to ask for nothing.
+      const driveOk = intoContactPlane(dir, nBody);
+      const axleOk = intoContactPlane(lat, nBody);
 
-      const uLong = u.dot(dir);
-      const uLat = u.dot(lat);
+      // Section 8 takes the tangential demand from `V` with next tick's
+      // gravity already in it. The spring above deliberately used `u`
+      // WITHOUT it, because the damper's seed is a real closing speed.
+      const uG = this._uG.copy(u).add(gravityTick);
+      const uLong = driveOk ? uG.dot(dir) : 0;
+      const uLat = axleOk ? uG.dot(lat) : 0;
 
-      // Lateral: linear in slip angle, per unit load, saturated by the
-      // friction circle below. The floored denominator is the numerics note
-      // in the spec table.
-      const slip = Math.atan2(uLat, Math.max(Math.abs(uLong), k.slipFloor));
-      let fLat = -k.corneringStiffness * slip * load * authority;
+      // Everything below is per-contact ACCELERATION, and it stays that way:
+      // the engine's tangential solve has no normal load in it at all. What
+      // happens to these at the end is a MEAN over the contacts, not a sum.
 
-      // Longitudinal: the axle's share of drive, brake against the motion,
-      // rolling resistance and engine braking against it too. Retardation is
-      // weighted by this wheel's share of standing weight (`load / g`, which
-      // sums to 1 at rest), so an unloading inner wheel loses its share of
-      // everything at once.
-      const gShare = load / -GRAVITY;
-      let fLong = 0;
-      if (wheel.driven && drive !== 0) {
-        fLong += (reverse ? -1 : 1) * drive / drivenCount;
-      }
-      const moving = Math.tanh(uLong / 0.3);
-      fLong -= moving * k.rollingResistance * gShare;
-      if (braking > 0) fLong -= moving * k.brakeDecel * braking * gShare;
-      if (drive === 0 && braking === 0 && wheel.driven) {
-        fLong -= moving * k.engineBraking / drivenCount;
-        // A PARKING HOLD, and it is the engine's own law rather than a new
-        // invention: EngineGrip's wanted velocity change is `dV = T - Vt`
-        // (collision-response.md section 8), and at a closed throttle `T` is
-        // zero, so a driven wheel asks for the whole of its contact velocity
-        // back, at `dV * 30`. The Coulomb clamp below caps it.
-        //
-        // The engine asks for that at EVERY speed, and it is a firm brake:
-        // applied unconditionally it takes this jeep from 12.8 m/s to 1.0 in
-        // three seconds off the pedal. That may well be right — BF1942
-        // vehicles do stop quickly — but the rest of this file's coast is
-        // built on a much gentler invented law (`engineBraking`,
-        // `rollingResistance`) that was fitted against the old behaviour, and
-        // swapping the two wholesale is a different job from item 16's. So it
-        // is faded out by `PARKING_HOLD_SPEED` and only really does the one
-        // thing the fitted model cannot: hold a stopped vehicle still.
-        //
-        // That became necessary with PHY-5. A hull sitting on its own static
-        // rake now has a forward component of suspension force, exactly as
-        // the engine's would, because the spring axis leans with the body
-        // instead of standing world-vertical — and nothing fitted was strong
-        // enough to resist it. A parked jeep crept at 0.1 m/s and a parked
-        // M3A1 rolled away at 2.2.
-        //
-        // IT DOES NOT STOP IT DEAD, and the reason is structural rather than a
-        // matter of gain. This is a velocity-proportional force answering a
-        // constant one, so it settles where the two balance: the residual is
-        // the rake acceleration times one substep — 0.005 m/s for the jeep and
-        // 0.014 for the M3A1, i.e. 5 and 14 cm over ten parked seconds. Nothing
-        // sinks: every wheel's compression is identical at t=10 s and t=20 s.
-        // The engine has no such residual because its latched static contact is
-        // a **velocity constraint**, not a force — "F = dV in full" cancels the
-        // whole tangential velocity and keeps cancelling whatever the rake
-        // re-injects. Expressing that here means projecting the horizontal
-        // force out of a latched, stopped, closed-throttle contact after the
-        // forces are summed, which is a change to the integrator rather than to
-        // this term. [free, numerics]
-        const hold = Math.max(0, 1 - Math.abs(uLong) / PARKING_HOLD_SPEED);
-        fLong -= uLong * (1 / h) * hold / drivenCount;
+      // Lateral: **RollGrip**, and it is the engine's own demand rather than
+      // a tyre model (collision-response.md section 8, PHY-2). Every grip
+      // mode in the solver asks for the component of the contact velocity
+      // along the wheel's own axle back, in full, inside one tick:
+      //
+      //   RollGrip     dV = -(Vt along the axle)       -- free rolling
+      //   EngineGrip   dV = T - Vt                     -- the same lateral
+      //                                                   term, plus drive
+      //
+      // There is no slip-angle curve anywhere in the engine and no separate
+      // lateral coefficient: what limits it is the same isotropic Coulomb
+      // clamp the longitudinal demand is measured against, which is why a
+      // wheel that spends its budget driving has none left to corner with.
+      let aLat = axleOk ? -uLat * ENGINE_TICK_HZ : 0;
+
+      // Longitudinal: the EngineGrip contact-speed target and nothing else.
+      // `dV = T - Vt` (collision-response.md section 8), asked for at the
+      // engine's own `F * 30` (`ds:0x8716b5c` at `0x0825bc67`), and the
+      // Coulomb clamp below decides what the ground answers. A `c_PGFRollGrip`
+      // front wheel gets **no longitudinal demand at all** — it is free
+      // rolling, and RollGrip's wanted change is along the axle only.
+      //
+      // The brake byte is inside `engine.target()`: set, it returns 0, so the
+      // wheel asks for its whole contact velocity back. That is the brake,
+      // the coast and the parking hold, all three, and it is why
+      // `brakeDecel`, `engineBraking`, `rollingResistance` and
+      // `PARKING_HOLD_SPEED` are gone from this file.
+      let aLong = 0;
+      if (wheel.driven && driveOk) {
+        aLong = (engine.target(0, uLong) - uLong) * ENGINE_TICK_HZ;
       }
 
-      // The friction circle, now with the engine's own coefficient and its
-      // 1.5:1 break-away hysteresis (PHY-2). The budget is the mean of the
-      // two contacting materials, so the same jeep has 0.9 on grass and 0.75
-      // in mud; the clamp scales the pair and so keeps the direction of the
+      // The friction circle, with the engine's own coefficient and its 1.5:1
+      // break-away hysteresis (PHY-2). The budget is the mean of the two
+      // contacting materials, so the same jeep has 0.9 on grass and 0.75 in
+      // mud; the clamp scales the pair and so keeps the direction of the
       // demand, which is what makes a drive-saturated axle understeer instead
       // of doing something creative.
-      const caps = coulombCaps(wheel.friction, load);
-      const demand = Math.hypot(fLong, fLat / k.lateralGripFraction);
+      const caps = coulombCaps(wheel.friction, nBody.y);
+      const demand = Math.hypot(aLong, aLat);
       const grip = coulombClamp(demand, caps, wheel.staticGrip);
       wheel.staticGrip = grip.latched;
       if (!grip.latched) allLatched = false;
       staticBudget += caps.breakaway;
+      tanCount += 1;
       if (grip.scale !== 1) {
-        fLong *= grip.scale;
-        fLat *= grip.scale;
+        aLong *= grip.scale;
+        aLat *= grip.scale;
       }
-
+      // `feedbackLoop` sees the CLAMPED change, per engine tick, along this
+      // wheel's own forward axis (TANK-13) — and only from a
+      // `c_PGFEngineGrip` wheel, because the grip dispatch at `0x0825bafe`
+      // sends only the `0x4` branch to the ancestor walk that finds the
+      // engine at all.
+      if (wheel.driven) engine.sample(aLong / ENGINE_TICK_HZ);
       // Suspension pushes along the SPRING AXIS, which is the hull's own up
       // (PHY-5) — so in the body frame it is simply (0, load, 0), with no
       // rotation at all, and it leans with the vehicle instead of staying
-      // world-vertical. The tyre works in the body's ground plane at the
-      // contact patch, a wheel radius below the axle.
+      // world-vertical. It SUMS.
       const suspension = this._susp.set(0, load, 0);
       force.add(suspension);
-      force.addScaledVector(dir, fLong);
-      force.addScaledVector(lat, fLat);
       torque.add(this._arm.crossVectors(wheel.rest, suspension));
+      // The tyre works in the contact plane at the contact patch, a wheel
+      // radius below the axle, and goes into the MEANED accumulators with
+      // its own `r x f` — the angular half of
+      // `addFrictionAtAbsolutePosition` is a running mean of `r x v` on the
+      // same count, so the lever arm is taken per contact and then averaged,
+      // never summed.
       const fTyre = this._fTyre.set(0, 0, 0)
-        .addScaledVector(dir, fLong).addScaledVector(lat, fLat);
-      this._arm.set(wheel.rest.x, wheel.rest.y - k.wheelRadius, wheel.rest.z);
-      torque.add(this._arm.cross(fTyre));
+        .addScaledVector(dir, aLong).addScaledVector(lat, aLat);
+      tanForce.add(fTyre);
+      // The contact is where the wheel actually is, not where it rests: the
+      // spring is compressed, so the patch sits `compression` higher than
+      // `rest.y - radius`. `#applyWheels` already moves the visible wheel by
+      // exactly this and the force application point was not following it.
+      // The engine has no such gap — it applies at
+      // `part.pos + avgContactRelPos` and `part.pos` is the wheel body's
+      // live position.
+      this._arm.set(wheel.rest.x,
+        wheel.rest.y - k.wheelRadius + travel, wheel.rest.z);
+      tanTorque.add(this._arm.cross(fTyre));
 
       // The visual roll, from the road passing under the contact patch.
       wheel.angle += (uLong / k.wheelRadius) * h;
+    }
+
+    // The mean, and the budget the static hold measures itself against with
+    // it (`addFrictionAtAbsolutePosition` `0x08254e50`).
+    if (tanCount > 0) {
+      force.addScaledVector(tanForce, 1 / tanCount);
+      torque.addScaledVector(tanTorque, 1 / tanCount);
+      staticBudget /= tanCount;
     }
 
     s.grounded = loaded > 0;
@@ -1081,8 +1326,11 @@ export class GroundVehicle extends Vehicle {
     s.airspeed = 0;
     s.surfaces.clear();
     s.inputs.clear();
-    this.gear = 1;
-    this.revs = 0;
+    // The engine's own construction state: gear 1, no revs, the gear-change
+    // lockout re-seeded at 1.0 the way a fresh `PhysicsEngine` is.
+    this.engine.reset();
+    this._staticQuiet = 0;
+    this._staticHeld = false;
     for (const wheel of this.wheels) {
       wheel.angle = 0;
       wheel.compression = 0;
@@ -1166,12 +1414,51 @@ const GRIP_DUMMY = 'c_PGFEngineDummyGrip';
  * constants module". */
 const ENGINE_RATIO_SCALE = 3.5;
 
-/** `PhysicsEngine`'s own default when a `.con` file never calls
- * `setNoPropellerEffectAtSpeed` — TANK-5, confirmed at `EngineTemplate::
- * makeScript`'s `+0x5cc`. Sherman and M3A1 both leave it at this default
- * (TANK-4); a mod's tank that overrides it is read off the node instead, see
- * `collectChassis` below. */
-const FADE_SPEED_DEFAULT = 100.0;
+/**
+ * `setEngineType`'s enum, and it is a **bitfield** — re-derived from the
+ * 26-entry jump table at `0x086cf7b0` that `operator<<(ostream&, EngineType)`
+ * (`0x0823ef60`) switches on, each index matched to the case body that pushes
+ * its string. `EngineTemplate::getEngineType()` is **virtual slot `+0xa0`**
+ * (vtable `0x0872bd80`, vptr symbol+8 = `0x0872bd88`, slot → `0x0823fd00`),
+ * which is why an exhaustive grep for direct `call` sites once found none and
+ * ledger TANK-1 said nothing read it. There are nine call sites.
+ *
+ *   bit 0 (1)   propeller / thrust physics — the ONLY gate on
+ *               `PhysicsEngine::updatePhysics`, which **returns at its second
+ *               instruction** without it (`0x0824cc10`-`0x0824cc20`)
+ *   bit 1 (2)   ground drivetrain: `feedbackLoop` clamps its load to [-1, +1]
+ *   bit 2 (4)   differential steering, and the ±1 clamp that comes with it
+ *   bit 3 (8)   thrust rather than propeller spin (ship, torpedo)
+ *   bit 4 (16)  pinned throttle (rocket, torpedo)
+ *
+ * `c_ETCar` (2) and `c_ETTank` (6) both clear bit 0. **A ground vehicle gets
+ * no hull thrust at all** — ledger TANK-7, refuted; `subsystems/
+ * tank-driving.md` §5.
+ */
+export const ENGINE_TYPES = {
+  c_etplane: 1, c_etcar: 2, c_ettank: 6,
+  c_etship: 9, c_etrocket: 0x11, c_ettorpedo: 0x19,
+};
+
+/** `updatePhysics`'s gate: propeller/thrust physics. No ground vehicle. */
+export const ENGINE_BIT_THRUST = 1;
+/** `feedbackLoop` clamps its load sample to [-1, +1] (`0x0824c8ab`). */
+export const ENGINE_BIT_LOAD_CLAMP = 2;
+/** `getCurrentDifferentialRPM` splits and clamps per side (`0x0824c90f`). */
+export const ENGINE_BIT_DIFFERENTIAL = 4;
+
+/**
+ * The bits an `engineType` name carries. **The `EngineTemplate` constructor's
+ * own default is 0** (`0x0823f078 mov DWORD PTR [ebx+0x524],0x0`) — no bits,
+ * so no `updatePhysics`, no differential and no load clamp — and an unknown
+ * name has to read as that rather than as a guess. It costs nothing in the
+ * installed corpus: **every one of the 1,309 ground-vehicle Engines across
+ * the 18 installs authors `setEngineType`** (824 `c_ETTank`, 394 `c_ETCar`,
+ * 91 `c_ETShip` on the amphibians' second engine), none leaves it unset.
+ */
+export function engineTypeBits(name) {
+  return ENGINE_TYPES[String(name ?? '').toLowerCase()] ?? 0;
+}
 
 /**
  * `OverTimeDistribution::generateDistribution`, lnxded `0x081e7830`
@@ -1330,43 +1617,61 @@ export function engineTorqueFraction(revs) {
  * a direct algebraic consequence of every branch multiplying by `throttle`,
  * not a separate case here.
  *
- * @param {number} throttle `c_PIThrottle`, -1..1, signed (reverse is
- *   negative throttle, not a separate gear)
- * @param {number} yaw `c_PIYaw`, -1..1
+ * **This is the `engineType & 4` branch on its own.** The function the engine
+ * calls is `getCurrentDifferentialRPM`, which tests the type first and
+ * returns the rev state **raw and unclamped** when the bit is clear — see
+ * `currentDifferentialRPM`. A car has wheels well off its centreline (a
+ * Willy's rear springs sit at x = ±0.6) and must not reach this.
+ *
+ * @param {number} revs the engine's rev state, `PhysicsEngine+0xa0`. NOT the
+ *   pedal: `getCurrentDifferentialRPM` loads `+0xa0` at `0x0824c9c0`
+ * @param {number} steer `PhysicsEngine+0xb0`, the clipped yaw angle over
+ *   `maxRotation.x`, -1..1
  * @param {number} side sign of the wheel's local X in the vehicle frame
  */
-export function differentialRPM(throttle, yaw, side) {
-  if (side === 0) return throttle;
-  const factor = side > 0 ? 1 - 1.5 * yaw : 1 + 1.5 * yaw;
-  return Math.max(-1, Math.min(1, throttle * factor));
+export function differentialRPM(revs, steer, side) {
+  if (side === 0) return revs;
+  const factor = side > 0 ? 1 - 1.5 * steer : 1 + 1.5 * steer;
+  return Math.max(-1, Math.min(1, revs * factor));
 }
 
 /**
- * `PhysicsEngine::updatePhysics` body thrust (TANK-7, client `0x0057bfb0` /
- * lnxded `0x0824cbb0`) — the same law `Aircraft.step` already carries:
+ * `PhysicsEngine::getCurrentDifferentialRPM(float side)` whole, `0x0824c990`,
+ * hand-decoded flag by flag (the x87 trap that has bitten this corpus): the
+ * type test at `0x0824c9d1`-`0x0824c9e0` is `and eax,0x4; je` straight to the
+ * return, so
  *
- *   e = thr − ρ(v·fwd) / fadeSpeed
- *   K = 0.1|thr| + e|e|
- *   a = fwd * K * ratio
+ *   (type & 4) == 0   ->  the rev state, RAW — a car runs to +1.2
+ *   (type & 4) != 0   ->  clamp(revs * (1 -/+ 1.5*steer), -1, +1)
+ *   side == 0         ->  the rev state raw, even on a tank (0x0824ca4a)
  *
- * Applied **once** per simulation step at the engine node, from the
- * undivided throttle (`+0xa0`). Yaw never enters this formula — steering
- * while moving splits only the EngineGrip contact-speed targets via
- * `differentialRPM` (TANK-2 / TANK-9). An earlier viewer mistake evaluated
- * this per driven side and summed both tracks → ~8.8 m/s² at yaw 0 instead
- * of the retail ~4.4 (V-R3 claim 22).
- *
- * `rho` defaults to 1 (ground vehicles sit well below the aircraft density
- * ceiling). Units are acceleration; mass is already inside, matching the
- * rest of this codebase's `setTorque`-descended convention.
- *
- * @returns {number} m/s^2 along hull forward
+ * **This is where a tank's 1.0 ceiling lives** — not in the rev clamp, which
+ * is `[-1.0, +1.2]` for every type alike (ledger TANK-9, TANK-12). So the
+ * Sherman tops out at `ladder[5] * 1.0` = 14.89 m/s and the Willys at
+ * `ladder[5] * 1.2` = 31.28.
  */
-export function bodyThrust(throttle, forwardSpeed, ratio,
-    fadeSpeed = FADE_SPEED_DEFAULT, rho = 1) {
-  const e = throttle - rho * forwardSpeed / fadeSpeed;
-  return (0.1 * Math.abs(throttle) + e * Math.abs(e)) * ratio;
+export function currentDifferentialRPM(revs, steer, side, bits) {
+  if ((bits & ENGINE_BIT_DIFFERENTIAL) === 0) return revs;
+  return differentialRPM(revs, steer, side);
 }
+
+// THERE IS NO `bodyThrust` IN THIS FILE ANY MORE, and nothing here may grow
+// one back. It used to carry `PhysicsEngine::updatePhysics`'s propeller
+// expression — `e = thr - v/noPropellerEffectAtSpeed`, `K = 0.1|thr| + e|e|`,
+// `a = fwd*K*ratio` (`0x0824cf45`-`0x0824cf78`) — and apply it to a hull.
+// That whole function is behind `getEngineType() & 1`, and the gate is not a
+// gate on a block: `0x0824cc04 mov eax,[edi+0x9c]; 0x0824cc10 call [edx+0xa0];
+// 0x0824cc16 and eax,0x1; 0x0824cc1e jne 0x0824cc28`, and the fall-through at
+// `0x0824cc20` is the epilogue. **`c_ETCar` (2) and `c_ETTank` (6) clear bit 0
+// and the function returns at its second instruction.** A ground vehicle gets
+// no hull thrust, no `feedbackLoop` from that path, and never reaches
+// `noPropellerEffectAtSpeed` (`tmpl+0x520`, read only at `0x0824cf45` inside
+// `&1` AND `&8`). Ledger TANK-7, refuted; TANK-1's "nothing calls
+// getEngineType" refuted with it. `flight.js` keeps the aircraft's own copy of
+// the propeller law, which is where it belongs.
+//
+// What propels a ground vehicle — car and tank alike — is the EngineGrip
+// contact-speed target below, on its `c_PGFEngineGrip` springs.
 
 /**
  * EngineGrip contact-speed target, re-derived 2026-09-20 (TANK-9 corrected).
@@ -1397,14 +1702,18 @@ export function bodyThrust(throttle, forwardSpeed, ratio,
  * the engine's **rev state** `+0xa0` (`0x0824c990`), not the pedal, so the
  * ceiling is `ratio * revs` and revs runs to `ENGINE_REV_CEILING`.
  *
+ * @param {number} revs the engine's rev state, NOT the pedal
  * @param {number} [blend] the live gear-change timer `+0xb8`, 1 at the
  *   instant of a change and 0 in all steady driving
  * @param {number} [contactSpeed] `Vt . fwd`, the second term's input
+ * @param {number} [bits] `getEngineType()`. Defaults to the differential bit
+ *   because that is the branch this helper was written to pin; `EngineState`
+ *   passes its vehicle's own, so a car's wheels never take the split
  */
-export function engineGripTarget(throttle, yaw, side, ratio,
-    blend = 0, contactSpeed = 0) {
+export function engineGripTarget(revs, steer, side, ratio,
+    blend = 0, contactSpeed = 0, bits = ENGINE_BIT_DIFFERENTIAL) {
   const b = Math.max(0, Math.min(1, blend));
-  return (1 - 0.5 * b) * ratio * differentialRPM(throttle, yaw, side)
+  return (1 - 0.5 * b) * ratio * currentDifferentialRPM(revs, steer, side, bits)
     + 0.5 * b * contactSpeed;
 }
 
@@ -1419,25 +1728,400 @@ export function engineGripTarget(throttle, yaw, side, ratio,
  * `T1` is not the raw pedal: it is the engine's clipped RotationalBundle roll
  * angle over `maxRotation.z` (`0x0823e1e0`-`0x0823e1f4`), which reaches 1.0
  * within about 0.1 s of full throttle on all three vanilla drivetrains. The
- * 0.05 is per engine tick, NOT scaled by dt. This class does not carry that
- * filter: it inverts `speed / ratio` kinematically, which gives the same
- * ceiling and not the same spool-up (a named approximation, ledger TANK-12).
+ * 0.05 is per engine tick, NOT scaled by dt. `EngineState` below carries the
+ * whole filter; the kinematic `speed / ratio` inversion this file used to run
+ * is gone (ledger TANK-12).
  *
- * The 1.2 is a CAR's ceiling. `getCurrentDifferentialRPM` `0x0824c990` returns
- * revs unclamped only when `(engineType & 4) == 0`; a `c_ETTank` takes the
- * differential branch and is clamped to 1.0 there. Every wheeled vanilla
- * vehicle is `c_ETCar`, so this is right for all of them; a mod's wheeled
- * `c_ETTank` would come out 20% fast until the type is carried in.
+ * **The clamp itself is type-independent.** Both arms apply to every engine
+ * type alike; a tank's 1.0 comes from `getCurrentDifferentialRPM`'s own `& 4`
+ * clamp, not from here. See `currentDifferentialRPM`.
  *
  * So an open throttle against no load pins revs at **1.2**, not 1. That is
  * what puts a Willy's top gear at `1.2 * 26.064` = 31.3 m/s rather than at
- * `ladder[top]`. The asymmetric floor of -1.0 is the engine's too, and is why
- * reverse is slower than first.
+ * `ladder[top]`, and a Sherman's at `1.0 * 14.894` = 14.89. The asymmetric
+ * floor of -1.0 is the engine's too, and is why reverse is slower than first.
  */
 export const ENGINE_REV_CEILING = 1.2;
 
 /** The same clamp's lower arm, `0x0823e30b`-`0x0823e31e`: revs floor at -1.0. */
 export const ENGINE_REV_FLOOR = 1.0;
+
+/**
+ * `ds:0x86c08a8`, raw `cd cc 4c 3d` = 0.05f. The rev filter's gain, applied
+ * **per `Engine::handleUpdate` call and NOT scaled by `dt`** — the only uses
+ * of `dt` in that whole function are `fdiv [esi+0x374]` (the gear-change
+ * lockout) at `0x0823e23f` and three `calculateAndClipAngle` calls. So the
+ * filter's time constant is 40 engine ticks whatever the tick rate is, and
+ * a viewer that normalises it per second gets the wrong spool-up.
+ */
+const ENGINE_REV_FILTER_GAIN = 0.05;
+
+/**
+ * `ds:0x86d0cdc`, raw `a4 70 7d 3f` = 0.99f. The car branch of
+ * `feedbackLoop`'s running mean, `L = (L*n + L0) * 0.99 / (n + 1)`
+ * (`0x0824c952`-`0x0824c97e`).
+ */
+const ENGINE_LOAD_MEAN_SCALE = 0.99;
+
+/**
+ * `setNumberOfGears` `0x0823fd10` **clamps its argument to [1, 5]**
+ * (`cmp edx,0x5; jle` then `mov edx,5`; `test edx,edx; jle` then `mov edx,1`),
+ * so TANK-3's non-monotonic `nGears 8` ladder is real in the curve but
+ * unreachable from any `.con`. `gearLadder` deliberately does NOT clamp — it
+ * is the curve, and the curve is what the ledger pins — so the clamp lives
+ * here, where a template is read.
+ */
+const ENGINE_MAX_GEARS = 5;
+
+/** `EngineTemplate`'s own constructor defaults, `0x0823efc0`: gears 1
+ * (`0x0823f018`), differential 10.0 (`0x0823f022`), torque 60.0
+ * (`0x0823f02c`), gearUp 0.7 (`0x0823f036`), gearDown 0.3 (`0x0823f040`),
+ * gearChangeTime 1.0 (`0x0823f04a`), engineType 0 (`0x0823f078`). Used when a
+ * `.con` omits the word, which is why they are transcribed rather than
+ * invented. */
+const ENGINE_DEFAULTS = {
+  numberOfGears: 1, differential: 10.0, torque: 60.0,
+  gearUp: 0.7, gearDown: 0.3, gearChangeTime: 1.0,
+};
+
+/**
+ * The engine's own simulation tick, and the rate `EngineState.advance` steps
+ * the filter at.
+ *
+ * `g_simulationFps` (`0x08716b5c`, raw `0000f041` = 30.0) is the figure the
+ * friction budget above already spends, and **ledger LOOP-1 is CLOSED on it**
+ * (2026-09-20): the simulation is a fixed 30 Hz tick, `dt = 1/30` exactly, on
+ * client and server alike — `Setup::updateInputs` `0x080bc540` is an
+ * accumulator, and the only `dt` that ever reaches `simulateFrame` is the
+ * tick's own. The earlier "the loop targets `2 * g_simulationFps` and stores
+ * a measured frame time" reading was of the render loop, not the simulation,
+ * and nothing in this file hedges against it any more.
+ *
+ * So the filter runs at 30 Hz on an accumulator independent of the viewer's
+ * own sub-step rate, which is also what makes spool-up frame-rate
+ * independent. The 40-tick time constant is 1.33 s of wall clock.
+ */
+const ENGINE_TICK_SECONDS = 1 / ENGINE_TICK_HZ;
+
+const clamp = (value, lo, hi) => (value < lo ? lo : value > hi ? hi : value);
+
+/**
+ * The whole of `Engine::handleUpdate` (`0x0823e120`) and the drivetrain half
+ * of `PhysicsEngine` — the rev filter, the gearbox, the brake byte, the
+ * gear-change lockout and `feedbackLoop`'s load accumulator — as one object
+ * both vehicle classes own. Ledger TANK-12 and TANK-13.
+ *
+ * What it replaces: `GroundVehicle` used to invert `revs = speed / ratio`
+ * kinematically and `TrackedVehicle` had no rev state at all. The inversion
+ * reaches the same ceiling but not the same spool-up, has no behaviour after
+ * a shift, and cannot express the thing that actually governs a Refractor
+ * drivetrain — **the load feedback**. In the engine, hard acceleration makes
+ * `feedbackLoop`'s load large, the load pulls revs down, low revs lower the
+ * EngineGrip target, and the target is the whole of the propulsion. That loop
+ * is why `setTorque` matters (as the load's *divisor*, TANK-13) and why a
+ * 25-tonne Sherman and a 2.5-tonne jeep with the same ratios would not drive
+ * alike.
+ *
+ * Live fields carry their engine offsets: `revs` is `PhysicsEngine+0xa0`,
+ * `load` `+0xa4`, `loadCount` `+0xac`, `steer` `+0xb0`, `braking` `+0xb4`,
+ * `blend` `+0xb8`, `gear` `+0xbc`; `rollAngle`/`yawAngle` are the
+ * `RotationalBundle` angles at `Engine+0x10c` / `+0x104`.
+ */
+export class EngineState {
+  /**
+   * @param {object} [physics] the Engine node's `extras.physics`
+   * @param {boolean} [automaticReset] the Engine's `rig.automaticReset`
+   */
+  constructor(physics = {}, automaticReset = true) {
+    const pick = (value, fallback) =>
+      (typeof value === 'number' && Number.isFinite(value) ? value : fallback);
+    this.torque = pick(physics.torque, ENGINE_DEFAULTS.torque);
+    this.differential = pick(physics.differential, ENGINE_DEFAULTS.differential);
+    this.numberOfGears = Math.max(1, Math.min(ENGINE_MAX_GEARS,
+      Math.round(pick(physics.numberOfGears, ENGINE_DEFAULTS.numberOfGears))));
+    this.gearUp = pick(physics.gearUp, ENGINE_DEFAULTS.gearUp);
+    this.gearDown = pick(physics.gearDown, ENGINE_DEFAULTS.gearDown);
+    this.gearChangeTime = pick(physics.gearChangeTime, ENGINE_DEFAULTS.gearChangeTime);
+    this.engineType = physics.engineType ?? null;
+    this.bits = engineTypeBits(this.engineType);
+    // The Engine's own RotationalBundle, which is what the throttle and the
+    // steer are read through. `maxRotation` is the divisor; the rate is
+    // `setAcceleration` under the `automaticReset` law (GUN-2) and falls back
+    // to `setMaxSpeed`, which every vanilla ground drivetrain authors equal
+    // to it. Yaw/Pitch/Roll order, straight off the `.con`.
+    const maxRotation = physics.maxRotation || [0, 0, 0];
+    const rate = physics.acceleration || physics.maxSpeed || [0, 0, 0];
+    this.maxRollAngle = Math.abs(maxRotation[2] || 0);
+    this.maxYawAngle = Math.abs(maxRotation[0] || 0);
+    this.rollRate = Math.abs(rate[2] || 0);
+    this.yawRate = Math.abs(rate[0] || 0);
+    this.automaticReset = automaticReset !== false;
+    /** True when the Engine node carried no `maxRotation`, i.e. it came out
+     * of a tree extracted before `con.py` emitted it. Both angle terms then
+     * fall back to the raw input — see `tick`. Not a tuning knob: it is a
+     * report on the asset tree, and it goes away when the lead re-extracts
+     * every level's `scene.glb` and the `viewer/models` glbs. */
+    this.stale = !(this.maxRollAngle > 0) || !(this.maxYawAngle > 0);
+    /** `Engine+0x142`, the engine-on flag: `handleUpdate` forces the revs to
+     * **0** when it is clear (`0x0823e2d3 cmp BYTE PTR [edi+0x142],0x0` and
+     * the `0x0823e2e6`/`0x0823e2ec` arm that stores 0.0 to `+0xa0`), and
+     * `handlePlayerInput` `0x0823e5ef` reads the same byte.
+     *
+     * It is the read answer to "what holds an UNOCCUPIED vehicle on a
+     * slope": with the revs pinned at 0 the EngineGrip target is 0, every
+     * driven wheel asks for its whole contact velocity back, and the static
+     * latch answers it inside the break-away budget. Nothing in this viewer
+     * clears it today, because `map.html` only integrates the hull the
+     * player is sitting in — a parked one is a fixture and is never stepped.
+     * Carried so the fact is in the code rather than in a report. */
+    this.running = true;
+    /** `getCurrentRatio()` for every gear (TANK-3). */
+    this.ladder = gearLadder(this.differential, this.numberOfGears);
+
+    /** `PhysicsEngine+0xbc`, 1-based. The engine seeds it to 1 and
+     * `handleUpdate` is the only thing that ever writes it again — which the
+     * old TANK-7 reading denied, and is why a Sherman used to be stuck in
+     * first gear at 41 km/h instead of climbing to 53.6. */
+    this.gear = 1;
+    /** `PhysicsEngine+0xa0`, the filtered rev state, [-1.0, +1.2]. */
+    this.revs = 0;
+    /** `PhysicsEngine+0xb8`. The two `PhysicsEngine` constructors seed it to
+     * **1.0** (`0x0824c74c`, `0x0824c7cc`) and `handleUpdate` counts it down
+     * by `dt/gearChangeTime`; a whole-binary store scan finds no other writer
+     * at all — **not even a gear change re-arms it**. So it is a one-shot
+     * lockout that expires `gearChangeTime` into the object's life and stays
+     * expired, and the old "steady factor of ½" reading mistook this seed for
+     * a steady value and halved the whole fleet. */
+    this.blend = 1.0;
+    /** `Engine+0x10c` / `+0x104`: the clipped bundle angles, in the `.con`'s
+     * own units (a Willy's roll runs to ±5000, a Sherman's to ±1). */
+    this.rollAngle = 0;
+    this.yawAngle = 0;
+    /** `T1`, the rev filter's command: `rollAngle / maxRotation.z`. */
+    this.throttleTerm = 0;
+    /** `PhysicsEngine+0xb0`: `yawAngle / maxRotation.x`. */
+    this.steer = 0;
+    /** `PhysicsEngine+0xb4`, and it is a hard cut rather than a brake force:
+     * `addFriction` discards the whole EngineGrip target when it is set
+     * (`0x0825c28a`/`0x0825c293`), so the wheel asks for `0 - Vt` — all of its
+     * contact velocity back, at whatever the ground can answer. */
+    this.braking = false;
+    /** `PhysicsEngine+0xa4`/`+0xac`/`+0xa8`. */
+    this.load = 0;
+    this.loadCount = 0;
+    this.prevLoad = 0;
+    this._clock = 0;
+  }
+
+  /** `PhysicsEngine::getCurrentRatio()` at the live gear. */
+  get ratio() {
+    return this.ladder[Math.min(this.ladder.length, Math.max(1, this.gear)) - 1];
+  }
+
+  /** `PhysicsEngine::getCurrentTorque()`: the TANK-4 curve at the live revs,
+   * times `setTorque`. It is the **divisor of the load** (TANK-13), never a
+   * multiplier on drive — at redline it returns 0.70x and so *raises* the
+   * load feedback rather than adding power. */
+  get torqueNow() {
+    return engineTorqueFraction(this.revs) * this.torque;
+  }
+
+  /**
+   * The EngineGrip contact-speed target for a wheel on `side`, in **metres
+   * per second of contact-patch velocity** — no wheel radius anywhere on this
+   * path (`SpinWheel` `0x0825b440` *divides* by one, for the visual angle
+   * only). TANK-9 as corrected.
+   *
+   * @param {number} side sign of the wheel's local X
+   * @param {number} [contactSpeed] `Vt . fwd`, for the gear-change blend
+   */
+  target(side, contactSpeed = 0) {
+    if (this.braking) return 0;
+    return engineGripTarget(this.revs, this.steer, side, this.ratio,
+      this.blend, contactSpeed, this.bits);
+  }
+
+  /**
+   * One contact's clamped longitudinal velocity change, as
+   * `PhysicsEngine::feedbackLoop` (`0x0824c850`) takes it. TANK-13.
+   *
+   *   L0 = dot(dV, fwd) * getCurrentRatio() / getCurrentTorque()
+   *   (type & 2)  ->  L0 clamped to [-1, +1]              (car AND tank)
+   *   (type & 4)  ->  L is the frame MAX when revs >= 0, the frame MIN when
+   *                   revs < 0                             (tank)
+   *   else        ->  L = (L*n + L0) * 0.99 / (n + 1)      (car)
+   *
+   * **The min/max are that way round**, decoded from `0x0824c91f`'s
+   * `fldz; fucompp` (ST = 0.0, SRC = revs, so `revs > 0` takes the `jne` to
+   * `0x0824c942`, whose `fucom` keeps `L0` only when `L0 > L`). The
+   * v4-gearbox verdict states them inverted. Physically the max is the one
+   * that can hold an engine down, and the pair is symmetric in reverse.
+   *
+   * **`revs == 0` takes the MAX arm, not the MIN.** `fucompp` sets C3 on
+   * equality, `test ah,0x45` is then non-zero, and the `jne` at `0x0824c926`
+   * is taken to `0x0824c942` — the same branch `revs > 0` takes. Only the
+   * fall-through at `0x0824c928`, which is `0.0 > revs`, is the MIN. It is
+   * one tick of one sample, but it is the tick a tank pulls away on.
+   *
+   * **Only a `c_PGFEngineGrip` wheel feeds it.** `addFriction` dispatches on
+   * the grip byte at `0x0825baf1`-`0x0825bafe` (`mov dl,[esi+0xb4];
+   * and eax,0x4; test al,al; jne 0x0825c1b0`), and the `0x4` branch is the
+   * only one that walks the node's ancestors for a `PhysicsEngine`
+   * (`0x0825c1b0`-`0x0825c1fa`, storing it at `0x0825c556`). A RollGrip wheel
+   * takes the `0x2` branch at `0x0825bb04` instead, so the pointer stays null
+   * and the guard at `0x0825bc19` skips the call. The load is therefore the
+   * mean over the DRIVEN wheels alone.
+   *
+   * Getting this wrong is not academic: counting a jeep's two free-rolling
+   * fronts as zero samples halves the load, which pins the revs at
+   * `2*(1 - 0.5)` = 1.0 — just above `gearUp 0.95` — so the box shifts
+   * straight to top under full wheelspin and stays there. On Wake that jeep
+   * never left second gear's worth of speed; it sat in fifth doing donuts.
+   *
+   * @param {number} dvLong metres per second per **engine tick**
+   */
+  sample(dvLong) {
+    let l0 = dvLong * this.ratio / Math.max(1e-6, Math.abs(this.torqueNow));
+    if (!Number.isFinite(l0)) return;
+    if (this.bits & ENGINE_BIT_LOAD_CLAMP) l0 = clamp(l0, -1, 1);
+    if (this.bits & ENGINE_BIT_DIFFERENTIAL) {
+      if (this.revs >= 0) { if (l0 > this.load) this.load = l0; }
+      else if (l0 < this.load) this.load = l0;
+      return;
+    }
+    const n = this.loadCount;
+    this.load = (this.load * n + l0) * ENGINE_LOAD_MEAN_SCALE / (n + 1);
+    this.loadCount = n + 1;
+  }
+
+  /**
+   * Carry the engine forward by `dt` of wall time, running whole
+   * `ENGINE_TICK_SECONDS` ticks. The viewer sub-steps faster than the engine
+   * does (60 Hz for a car, 120 for a tank, against the engine's 30), exactly
+   * as `PointPhysicsNode` sub-steps inside one tick — so the load samples of
+   * several sub-steps land in one tick's accumulator, which is what the
+   * engine does too.
+   */
+  advance(dt, throttle, yaw) {
+    this._clock += dt;
+    let ticks = 0;
+    while (this._clock >= ENGINE_TICK_SECONDS && ticks < 8) {
+      this._clock -= ENGINE_TICK_SECONDS;
+      this.tick(ENGINE_TICK_SECONDS, throttle, yaw);
+      ticks += 1;
+    }
+    // A frame longer than eight engine ticks is a stall, not a simulation;
+    // drop the backlog rather than spending minutes of spool-up in one frame.
+    // The engine has no such cap (a stalled server just runs behind), so the
+    // 8 is this file's own. [free, numerics]
+    if (ticks >= 8) this._clock = 0;
+  }
+
+  /** One `Engine::handleUpdate`. */
+  tick(dt, throttle, yaw) {
+    const pedal = clamp(throttle, -1, 1);
+    const steerInput = clamp(yaw, -1, 1);
+
+    // The two RotationalBundle axes, under `setAutomaticReset`'s own law
+    // (GUN-2): the angle ramps straight toward `input * maxRotation` at the
+    // declared rate, in units per second, with no velocity register. Every
+    // car/tank Engine in the 18 installs but one authors the flag. A Willy
+    // reaches full roll in 5000/55000 = 0.091 s, a Sherman in 1/10 = 0.1 s,
+    // and a Sherman's steer reaches full lock in 1/4 = 0.25 s.
+    this.rollAngle = this.#ramp(this.rollAngle, pedal * this.maxRollAngle,
+      this.rollRate * dt, this.maxRollAngle);
+    this.yawAngle = this.#ramp(this.yawAngle, steerInput * this.maxYawAngle,
+      this.yawRate * dt, this.maxYawAngle);
+    // `T1 = Engine+0x10c / getMaxRotation().z` (`0x0823e1e0`-`0x0823e1f4`)
+    // and the steering term is its sibling, `Engine+0x104 / maxRotation.x`.
+    //
+    // **THE PRE-EXTRACT PATH, and it is not optional.** `maxRotation`,
+    // `maxSpeed` and `acceleration` only started reaching `extras.physics`
+    // with this branch's `bf42/con.py`, and a published `viewer/maps` or
+    // `viewer/models` tree can be older than the code that reads it — every
+    // shipped `scene.glb` today was extracted with the previous `con.py` and
+    // carries none of them. Throttle already degraded safely, because an
+    // absent `maxRotation.z` falls back to the pedal and the ratio converges
+    // to the same place. **Steering had no such fallback and degraded to a
+    // dead stick**: `maxYawAngle = 0` made `steer` identically 0, and the
+    // differential IS the whole of a tracked vehicle's steering, so on the
+    // assets that exist today a Sherman turned 0.0 degrees in six seconds of
+    // full lock and an M3A1 topped out at 30.7 km/h instead of 65.7.
+    //
+    // So both terms fall back to the input, which is what the servo
+    // converges to in 0.1 s (throttle) and 0.25 s (steer) when the data is
+    // there. The only thing lost without the data is that spool, and a mod
+    // that authors an unusual `maxRotation`/`acceleration` pair gets the
+    // vanilla response until its tree is re-extracted. `stale` says which
+    // path a vehicle is on so a harness — and `window.__drive()` — can tell
+    // a fallback from a reading.
+    this.throttleTerm = this.maxRollAngle > 0
+      ? this.rollAngle / this.maxRollAngle : pedal;
+    this.steer = this.maxYawAngle > 0
+      ? this.yawAngle / this.maxYawAngle : steerInput;
+
+    // The gear-change lockout counts down and is never re-armed (0x0823e24f,
+    // 0x0823e25a).
+    if (this.blend > 0) {
+      this.blend = Math.max(0, this.blend
+        - dt / Math.max(1e-6, this.gearChangeTime));
+    }
+
+    // The brake byte: the pedal opposing the rev direction, against literal
+    // ±0.1 doubles (`ds:0x86cf658`, `ds:0x86ba1d8`). Read off `Engine+0x124`,
+    // the RAW input, not the clipped angle.
+    this.braking = (pedal < -0.1 && this.revs > 0)
+      || (pedal > 0.1 && this.revs < 0);
+
+    // The filter itself. `0.05` is per call; the whole point of TANK-12.
+    // An engine that is off has its revs stored as 0.0 instead
+    // (`0x0823e2d3`, `0x0823e2e6`-`0x0823e2ec`).
+    const delta = ENGINE_REV_FILTER_GAIN
+      * ((this.throttleTerm - this.load) - 0.5 * this.revs);
+    this.revs = this.running
+      ? clamp(this.revs + delta, -ENGINE_REV_FLOOR, ENGINE_REV_CEILING) : 0;
+
+    // Up needs the lockout expired, down does not (0x0823e391-0x0823e3f1).
+    // The engine falls THROUGH the up-shift into the down-shift test, so both
+    // run in one tick; with gearUp 0.95 against gearDown 0.4 the second can
+    // never fire after the first.
+    if (this.revs > this.gearUp && this.blend === 0
+        && this.gear < this.numberOfGears) {
+      this.gear += 1;
+    }
+    if (this.revs < this.gearDown && this.gear > 1) this.gear -= 1;
+
+    // The tail: last tick's load is kept and the accumulator cleared, so the
+    // samples `addFriction` adds after this belong to the next tick.
+    this.prevLoad = this.load;
+    this.load = 0;
+    this.loadCount = 0;
+  }
+
+  /** Park it: the engine's own construction state. */
+  reset() {
+    this.gear = 1;
+    this.revs = 0;
+    this.blend = 1.0;
+    this.rollAngle = 0;
+    this.yawAngle = 0;
+    this.throttleTerm = 0;
+    this.steer = 0;
+    this.braking = false;
+    this.load = 0;
+    this.loadCount = 0;
+    this.prevLoad = 0;
+    this._clock = 0;
+  }
+
+  #ramp(angle, wanted, step, limit) {
+    let next = angle;
+    if (wanted > angle) next = Math.min(wanted, angle + step);
+    else if (wanted < angle) next = Math.max(wanted, angle - step);
+    // `calculateAndClipAngle`'s clip, with the template's symmetric limits.
+    return limit > 0 ? clamp(next, -limit, limit) : next;
+  }
+}
 
 /**
  * A wheel's rolling radius, measured off its own mesh — generalising the
@@ -1501,58 +2185,40 @@ export const TANK = {
   // the coefficient comes from the ground, per wheel, like everyone else's
   // (PHY-2). There never was a tank-specific reading to lose.
   //
-  // What survives is the ANISOTROPY, and it is now labelled for what it is:
-  // an invention. The engine's clamp is isotropic on the tangential plane and
-  // has no separate lateral coefficient at all. This file keeps one because a
-  // track that slides sideways as reluctantly as it grips lengthwise rolls
-  // itself over — at a Coulomb cap of 1.1x14.73 a full-lock turn asks 10.9 of
-  // roll moment about the contact patches where the springs can answer at
-  // most `sum(load) * halfWidth` = 12.5, and the M3A1 duly went onto its roof
-  // the moment anything let it turn quickly. Expressed as a fraction of the
-  // material cap rather than as a coefficient of its own, so the material
-  // data drives the magnitude and only the shape is fitted. [free, invented]
-  lateralGripFraction: 0.5,
-  // How quickly that lateral limit is reached, not how large it is: at 30 the
-  // tracks reached it inside a tenth of a degree of slip, which read as a hull
-  // welded to its heading. Same invention as Willy's. [free, invented]
-  corneringStiffness: 12,
-  // The half-track's own front axle only: an ordinary tyre, not a track —
-  // Willy's own value (`WILLYS.corneringStiffness`), transcribed rather than
-  // imported so this file's two vehicle specs stay independently readable.
-  frontAxleCorneringStiffness: 7,
-  slipFloor: 1.0,
-  // The half-track's free-rolling front axle only (TANK-15) — never an
-  // engine-connected wheel, so no separate "engine braking" belongs with it.
-  rollingResistance: 0.5,
-  // EngineGrip slip damper toward `engineGripTarget` (TANK-9), N per (m/s)
-  // per unit load — provisional until Coulomb magnitudes (PHY-2) are known.
-  // Open assumption (PLAN T3): this opposition, not fadeSpeed, is the real
-  // top-speed governor; do not invent fadeSpeed changes if cruise still
-  // overshoots the soft retail band.
-  //
-  // Re-fitted from 0.8 to put both hulls back in the band this file was
-  // originally tuned to and `ground-vehicles.md` still quotes — Sherman
-  // ~9 m/s / 33 km/h, M3A1 ~31 m/s / 112 km/h. The TANK-7 correction (body
-  // thrust applied once at the hull instead of per driven side) halved the
-  // propulsion this number was fitted against and nothing re-fitted it
-  // afterwards, so the Sherman had quietly been sitting at 18.5 km/h — a
-  // tank a player reads as broken before it has turned a corner. 0.25
-  // lands 33.7 and 114.5 km/h. Still fitted, still not a measurement. [free]
-  trackResistance: 0.25,
+  // The ANISOTROPY is gone too, with the same four names `WILLYS` lists —
+  // `lateralGripFraction 0.5`, `corneringStiffness 12`,
+  // `frontAxleCorneringStiffness 7`, `slipFloor 1.0`. The ellipse existed to
+  // stop a track that resisted sliding sideways as hard as it gripped
+  // lengthwise from rolling the hull over. With RollGrip written out, the
+  // lateral demand competes with the drive for one isotropic budget instead
+  // of being added to it, and a tank that is driving has no spare lateral
+  // force to roll itself with: measured `worstUp >= 0.974` at every yaw from
+  // 0.3 to full lock on both hulls, and >= 0.987 entering a turn from
+  // straight-line top speed — the two cases the ellipse was fitted against.
 
-  // The same damper's gain on the part of the target that DIFFERS between
-  // the two tracks — i.e. on the steering signal alone (`#step`). Kept apart
-  // from `trackResistance` because the two are not the same job: that one
-  // decides how fast the hull ends up going, this one decides how hard a
-  // track is driven against its opposite number, and a single shared value
-  // could only ever buy one at the other's expense. Sized against the grip
-  // actually available: the friction circle caps a track at `mu * load`, and
-  // a tank that never gets near that cap cannot out-torque its own tracks'
-  // sideways scrub, which is exactly how a Sherman ended up taking four
-  // minutes to turn around. Fitted, like every other number in this block,
-  // against the two vanilla hulls' turn rate with the rollover cases still
-  // surviving. [free]
-  trackDifferential: 20.0,
+  // THREE CONSTANTS ARE GONE FROM HERE AND MUST NOT COME BACK.
+  //
+  //   `rollingResistance 0.5`  a free-rolling front axle's drag. The engine
+  //                            gives a RollGrip wheel NO longitudinal demand
+  //                            at all (collision-response.md section 8):
+  //                            `dV = -(Vt along the axle)`, lateral only.
+  //   `trackResistance 0.25`   a fitted damper toward the track's target,
+  //                            standing in for the engine's own `x30` on that
+  //                            exact term. It was fitted against an M3A1 gear
+  //                            ratio of 17.5 that TANK-3 refuted, then
+  //                            re-fitted in the same breath against a body
+  //                            thrust TANK-7 refuted. Both of its anchors are
+  //                            gone; the term it stood in for is now written
+  //                            out, so it is retired rather than re-fitted a
+  //                            third time.
+  //   `trackDifferential 20`   a hand-built steering couple, needed only
+  //                            because `bodyThrust` propelled the hull and
+  //                            the wheels' own targets had nothing to do. The
+  //                            differential is now where the engine puts it —
+  //                            in the two sides' contact-speed targets — and
+  //                            the hull turns because they differ, with
+  //                            nothing applying a yaw torque to it
+  //                            (tank-driving.md section 5).
 
   // s^-1, on the *roll and pitch* body rates. Willy needs only 0.8 for the
   // same job (mopping up the airborne case); a tank's wheels sit much
@@ -1616,14 +2282,6 @@ export class TrackedVehicle extends Vehicle {
      * same way `groundHeight` is. See `GroundVehicle`'s own field. PHY-2. */
     this.surfaceFriction = options.surfaceFriction || (() => DEFAULT_MATERIAL_FRICTION);
 
-    // `this.control` never changes after construction, so the two
-    // `s.surfaces` keys `#step` reads every sub-step are built once here
-    // rather than templated fresh each call — a per-tick string allocation
-    // `features/mesh-viewer-performance/README.md` rule 5 exists to rule out,
-    // the same reasoning behind every scratch vector below.
-    this._throttleKey = `${this.control}/c_PIThrottle/roll`;
-    this._yawKey = `${this.control}/c_PIYaw/yaw`;
-
     // Root PCO physics (`Sherman`/`M3A1`'s own `setMass`/`setObjectDrag`) —
     // unlike `GroundVehicle`, read off the node rather than a single fitted
     // table, because this class has to answer for a 25-tonne Sherman and a
@@ -1633,52 +2291,24 @@ export class TrackedVehicle extends Vehicle {
     this.drag = typeof rootPhysics.drag === 'number' ? rootPhysics.drag : this.spec.drag;
 
     this.wheels = [];
-    /** Engine declarations off the `Engine` node; `torque` is kept for
-     * report/API parity with `GroundVehicle` and for the engine audio, and
-     * this class still does not spend it as drive — `bodyThrust` carries the
-     * propulsion. What it is NOT is sound-only: TANK-4 retired that claim,
-     * because `getCurrentTorque`'s caller runs inside `updatePhysics` and
-     * `addFriction`, and the second 101-slot curve is carried here now
-     * (`ENGINE_TORQUE_CURVE`). There is deliberately no `gearUp`/`gearDown`:
-     * a tank's `gear` never leaves 1 (TANK-7), so there is nothing to shift
-     * toward. */
-    this.engine = {
+    /** `Engine::handleUpdate`'s whole state, built from the `Engine` node in
+     * `collectChassis` below. A tracked hull **does** shift: TANK-12 found
+     * `PhysicsEngine+0xbc` written at `0x0823e3c7`/`0x0823e3f1` inside
+     * `handleUpdate`, which the old TANK-7 reading (`gear` never leaves its
+     * seed) denied — and being stuck in first is exactly why this viewer's
+     * Sherman read 41 km/h against the engine's 53.6. */
+    this.engine = new EngineState({
       differential: this.spec.differential,
       numberOfGears: this.spec.numberOfGears,
-      torque: null,
-      fadeSpeed: FADE_SPEED_DEFAULT,
-    };
+    });
     this._extent = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
     this.collectChassis();
 
-    /** The whole ladder (TANK-3), for any gear count — the Sherman's
-     * 4.000/6.364/9.333/12.727/14.894 and the M3A1's
-     * 5.512/9.459/14.583/18.617. A tracked hull never shifts, so only
-     * `ladder[0]` is ever spent; it is built in full because that is what the
-     * corrected curve is pinned against. */
-    this.ladder = gearLadder(this.engine.differential, this.engine.numberOfGears);
-    // getCurrentRatio() at gear 1, TANK-3/6/7/8: fixed for the vehicle's life,
-    // exactly mirroring the retail engine never writing `gear` past its seed.
-    this.ratio = this.ladder[0];
-
-    /** Driven wheels sharing each side — used for diagnostics / harnesses;
-     * longitudinal thrust is no longer split per side (TANK-7). */
+    /** Driven wheels sharing each side, for diagnostics and harnesses. */
     this.drivenBySide = { '-1': 0, '0': 0, '1': 0 };
     for (const wheel of this.wheels) {
       if (wheel.driven) this.drivenBySide[wheel.side] += 1;
     }
-    /** The load on the least-loaded grounded driven wheel, carried one
-     * sub-step. The steering couple in `#step` is sized and capped against
-     * this single shared number rather than each wheel's own live load — see
-     * its comment for why that is what keeps the two tracks' halves equal and
-     * opposite. Seeded to the hull's static share so the first sub-step after
-     * a spawn has something sane; no driven wheels leaves it 0 and the couple
-     * simply vanishes. */
-    const drivenCount = this.wheels.reduce((n, w) => n + (w.driven ? 1 : 0), 0);
-    this._coupleLoad = drivenCount > 0 ? -GRAVITY / drivenCount : 0;
-    /** And the material coefficient that wheel found, so the couple's cap is
-     * the ground's rather than a constant (PHY-2). */
-    this._coupleFriction = DEFAULT_MATERIAL_FRICTION;
 
     // A box estimate for aero drag and roll/pitch/yaw inertia, same
     // reconstruction `WILLYS` uses a guessed box for — except the footprint
@@ -1715,6 +2345,12 @@ export class TrackedVehicle extends Vehicle {
     this._accel = new THREE.Vector3();
     this._fwd = new THREE.Vector3();
     this._axis = new THREE.Vector3();
+    this._normal = new THREE.Vector3();
+    this._gTick = new THREE.Vector3();
+    this._uG = new THREE.Vector3();
+    this._tanForce = new THREE.Vector3();
+    this._tanTorque = new THREE.Vector3();
+    this._nBody = new THREE.Vector3();
     this._susp = new THREE.Vector3();
     this._fTyre = new THREE.Vector3();
     this._arm = new THREE.Vector3();
@@ -1757,13 +2393,14 @@ export class TrackedVehicle extends Vehicle {
     this.node.traverse(obj => {
       const data = obj.userData || {};
       if (data.templateKind === 'Engine' && data.physics) {
-        const p = data.physics;
-        if (typeof p.differential === 'number') this.engine.differential = p.differential;
-        if (typeof p.numberOfGears === 'number') this.engine.numberOfGears = p.numberOfGears;
-        if (typeof p.torque === 'number') this.engine.torque = p.torque;
-        if (typeof p.noPropellerEffectAtSpeed === 'number') {
-          this.engine.fadeSpeed = p.noPropellerEffectAtSpeed;
-        }
+        // The whole drivetrain, from the template. `noPropellerEffectAtSpeed`
+        // is deliberately NOT read: it lives inside `updatePhysics`'s
+        // `& 1`-and-`& 8` block, which a `c_ETTank` never reaches (TANK-7).
+        this.engine = new EngineState({
+          differential: this.spec.differential,
+          numberOfGears: this.spec.numberOfGears,
+          ...data.physics,
+        }, data.rig?.automaticReset);
         return;
       }
       if (data.templateKind !== 'Spring' || !data.physics) return;
@@ -1800,6 +2437,19 @@ export class TrackedVehicle extends Vehicle {
     });
   }
 
+  /** `getCurrentRatio()` at the live gear (TANK-3). A getter, not a field:
+   * the gearbox shifts (TANK-12) and this used to be pinned at `ladder[0]`
+   * for the vehicle's whole life. */
+  get ratio() { return this.engine.ratio; }
+  /** The whole ladder — Sherman 4.000/6.364/9.333/12.727/14.894, M3A1
+   * 5.512/9.459/14.583/18.617. */
+  get ladder() { return this.engine.ladder; }
+  /** 1-based, so `window.__drive()` and the harness read one shape for both
+   * vehicle classes. */
+  get gear() { return this.engine.gear; }
+  /** The filtered rev state, [-1.0, +1.2]. */
+  get revs() { return this.engine.revs; }
+
   /**
    * No `RotationalBundle` spin belongs on a tank hull's Engine node either —
    * see `GroundVehicle.advancePropeller` for the full reasoning, which
@@ -1831,10 +2481,13 @@ export class TrackedVehicle extends Vehicle {
    * exists to model, since the loads the track forces scale with are the
    * ones oscillating.
    *
-   * What actually cured it is `#step`'s friction ellipse
-   * (`lateralGripFraction`) —
-   * measured: the cycle is gone at 60 Hz with that in place, and 60/120/240/
-   * 480 Hz now agree to four decimals on every figure the harness reports.
+   * What cures it now is that there is no unbounded lateral force left to
+   * integrate: every tangential demand is a velocity change asked for inside
+   * one tick and clamped at `A * |g|`, so the stiffness a `.con` declares
+   * cannot put the pair past its stability limit at all. Measured: 0 roll
+   * sign flips per second in a settled full-lock turn, worst per-frame load
+   * step 0.0000, against the 59 flips and 14 % steps the fitted model left
+   * behind even at this rate.
    * This is margin, not the fix, and it is not free margin either, so it is
    * set to what the engine itself runs rather than to the largest number
    * that helped: `physics.md` §3's fixed 30 Hz tick with four
@@ -1866,48 +2519,26 @@ export class TrackedVehicle extends Vehicle {
 
     // --- engine state -----------------------------------------------------
     //
-    // A `c_ETTank` Engine's roll/yaw axes are ordinary position axes here
-    // (+-1 degree of body lean — TANK-4's `Physics.con` read, `bf42/con.py`'s
-    // own note) rather than the wide accumulator range a car's throttle axis
-    // gets, so `advanceSurfaces` above has *already* put both through the
-    // same declared-`setMaxSpeed` servo every other rig part answers to, and
-    // `s.surfaces` already holds them, normalised back to -1..1 — unlike
-    // `GroundVehicle`, which reads `c_PIThrottle` raw because a car's own
-    // throttle axis is exactly this wide-accumulator kind and never lands in
-    // `s.surfaces` at all. Reading these from there is this file's reading
-    // of the recipe's "axisToward('roll')/('yaw')": verify-r7.md pins the
-    // FORMULA these feed (TANK-10) but not the rate a keypress becomes the
-    // `PhysicsEngine`-internal value it reads — this is the one rate the
-    // vehicle's own data happens to declare for these exact axes, a
-    // reasonable stand-in, but open.
-    //
-    // OPEN QUESTION, worth naming precisely: a half-track's front-axle
-    // steering bundle (`M3A1Wheel1`) binds the identical (control, c_PIYaw,
-    // yaw) key the Engine's own body-lean axis does, and
-    // `Vehicle.servoAxes()` dedupes strictly by that triple — correct for a
-    // mirrored aileron pair, its designed case, but a collision here between
-    // two unrelated mechanisms. Whichever axis's declared `setMaxSpeed`
-    // happens to win the race governs the *rate* `s.surfaces` converges at
-    // (Engine 4 deg/s over a 1 degree span, `M3A1Wheel1` 2 deg/s over 40 —
-    // both fast enough to settle inside half a second), never which value it
-    // converges *to* (`this.input('c_PIYaw')`, read once, shared). Fixing it
-    // for real means `Vehicle`'s shared key scheme in `flight.js`, outside
-    // this file's ownership this round.
-    const throttle = s.surfaces.get(this._throttleKey) ?? 0;
-    const yaw = s.surfaces.get(this._yawKey) ?? 0;
+    // The RAW player inputs, because the engine's own RotationalBundle now
+    // lives inside `EngineState` and is stepped there: `Engine+0x124` is the
+    // raw input (read only for the brake byte) and `Engine+0x10c`/`+0x104`
+    // the clipped angles the throttle and steering terms are built from. This
+    // used to read `s.surfaces`, which put the two through `Vehicle`'s own
+    // servo instead — a reasonable stand-in at the time, and the reason the
+    // half-track's shared-`c_PIYaw`-key collision with `M3A1Wheel1`'s
+    // steering bundle used to govern the drivetrain's steering rate. It no
+    // longer can: `s.surfaces` still poses the visible wheels through
+    // `applyRig`, and the drivetrain reads the Engine's own declared
+    // `maxRotation`/`acceleration` (`extras.physics`, TANK-12).
+    const throttle = clamp(this.input('c_PIThrottle'), -1, 1);
+    const yaw = clamp(this.input('c_PIYaw'), -1, 1);
+    const engine = this.engine;
+    engine.advance(h, throttle, yaw);
 
-    // TANK-7: one whole-body thrust from undivided throttle — not per side.
-    const fadeSpeed = this.engine.fadeSpeed;
-    const thrust = bodyThrust(throttle, vf, this.ratio, fadeSpeed);
-
-    // Audio rpm for `.ssc` Default / Engine::Rpm. Land scripts modulate on
-    // Default; `PhysicsEngine::feedbackLoop` (0x0057be90) folds
-    // getCurrentRatio()*K / getCurrentTorque() into the engine's RPM state
-    // and that is the channel the note follows. `thrust` is already K*ratio.
-    const engineTorque = Math.max(this.engine.torque || 4, 1e-3);
-    const loadRpm = Math.min(1, Math.abs(thrust) / engineTorque);
-    const pedal = Math.min(1, Math.abs(throttle));
-    const wanted = Math.max(loadRpm, pedal * 0.25);
+    // Audio rpm for `.ssc` Default / Engine::Rpm — now the engine's own rev
+    // state rather than a thrust-over-torque reconstruction of it, since the
+    // rev state is what `Engine::Rpm` is.
+    const wanted = Math.min(1, Math.abs(engine.revs));
     s.throttle += (wanted - s.throttle) * Math.min(1, 8 * h);
 
     // --- wheels -------------------------------------------------------------
@@ -1918,36 +2549,59 @@ export class TrackedVehicle extends Vehicle {
     let staticBudget = 0;
     let allLatched = true;
     let springRate = 0;
-    // The steering couple's budget for the NEXT sub-step, gathered as the
-    // loop goes rather than in a second pass over the same wheels: the
-    // weakest driven track that is actually on the ground. A wheel in the air
-    // answers nothing, so it is skipped rather than zeroing the split for the
-    // whole hull the moment one roller crests a bump.
-    let nextCoupleLoad = Infinity;
-    let nextCoupleFriction = DEFAULT_MATERIAL_FRICTION;
+    // `addFrictionAtAbsolutePosition`'s two accumulators: the tangential
+    // force and its moment are MEANED over the tick's contacts, not summed
+    // (see `coulombCaps`). The springs above keep summing, because they go
+    // through `addAccelerationAtRelativePosition`, which is a plain add.
+    const tanForce = this._tanForce.set(0, 0, 0);
+    const tanTorque = this._tanTorque.set(0, 0, 0);
+    let tanCount = 0;
     const speed = s.velocity.length();
-    const authority = Math.min(1, speed / 2);
 
     // The spring axis, world frame — the hull's own up (PHY-5), not the
     // world's. See `GroundVehicle.#step` for the whole reading.
     const axisWorld = this._axis.set(0, SPRING_AXIS_Y, 0).applyQuaternion(q);
 
+    // **Next tick's gravity, added to every contact velocity before the
+    // tangential demand is taken** — collision-response.md section 8's
+    // `V.y += g/30`, and it is in the binary, not only in the note:
+    // `0x0825b8b3 mov eax,ds:0x871dc30` (the physics-system singleton),
+    // `0x0825b8e4 call [edx+0x14]` — slot `+0x14` of `vtable for
+    // BasicPhysicsSystem` `0x0872de40` is `BasicPhysicsSystem::getGravity`
+    // `0x08251ec0` — then `0x0825b8e7 fdiv ds:0x8716b5c` (30.0) and
+    // `0x0825b8ff fadd` into the y term of `V`, all of it BEFORE the normal
+    // projection that makes `Vt`. Section 8's note on why: "so a held body
+    // does not creep". Without it the solver only ever sees the velocity gravity has
+    // ALREADY produced, cancels that, and lets the next tick's share through
+    // again; a parked jeep then walks down a 5-degree slope at a steady
+    // 0.8 m/s. With it the demand includes the push before it becomes
+    // motion, and the static latch answers the whole of it. In the body
+    // frame, because that is where `u` lives.
+    const gravityTick = this._gTick.set(0, GRAVITY / ENGINE_TICK_HZ, 0)
+      .applyQuaternion(qInv);
+
     for (const wheel of this.wheels) {
       const attach = this._attach.copy(wheel.rest).applyQuaternion(q).add(s.position);
       const reach = probeAlongAxis(this.groundHeight, attach, axisWorld);
-      const compression = Number.isFinite(reach) ? wheel.radius - reach : -Infinity;
-      if (compression <= 0) {
+      const raw = Number.isFinite(reach) ? wheel.radius - reach : -Infinity;
+      if (raw <= 0) {
         wheel.compression = 0;
         wheel.load = 0;
         wheel.prevCompression = null;
         wheel.staticGrip = false;   // no contact clears the latch (PHY-2)
-        // Airborne and driven: the track keeps moving at its commanded rate
-        // against nothing, same convention `GroundVehicle` uses.
+        // Airborne and driven: the track keeps moving at its commanded
+        // surface speed against nothing, over its own radius (`SpinWheel`
+        // `0x0825b440` is `speed / radius`, visual only — TANK-8).
         if (wheel.driven) {
-          wheel.angle += this.ratio * differentialRPM(throttle, yaw, wheel.side) * h;
+          wheel.angle += (engine.target(wheel.side) / wheel.radius) * h;
         }
         continue;
       }
+
+      // The contact normal, hoisted above the spring for the same reason
+      // `GroundVehicle` hoists it.
+      const nBody = groundNormal(this.groundHeight, attach.x, attach.z,
+        this._normal).applyQuaternion(qInv);
 
       // Contact-patch velocity, hoisted for the damper's first tick exactly
       // as `GroundVehicle` hoists its own.
@@ -1959,13 +2613,41 @@ export class TrackedVehicle extends Vehicle {
       // and its disclaimer about what a probe down the spring axis is and is
       // not. A tracked hull needs the seed more than a jeep does: on rough
       // ground 8 % of its contacts are a wheel re-landing.
+      // Bounded before the damper reads it — see `GroundVehicle.#step`.
+      const compression = Math.min(raw, k.suspensionTravel + MAX_OVERRUN);
       const travel = Math.min(compression, k.suspensionTravel);
       const overrun = compression - travel;
+      // The damper answers how fast the spring is being compressed, and the
+      // axle cannot close on the ground faster than it is travelling toward
+      // it. A backward difference of a PROBE can: on a near-vertical face
+      // the probe's reading jumps the whole bounded depth in one sub-step
+      // and reports 96 m/s of closing speed where the axle is doing 8. The
+      // closing speed is the same quantity the first-contact seed already
+      // uses, for the same reason, so it bounds the difference too.
+      // [free, numerics]
+      const closing = Math.abs(u.y) + SPRING_AXIS_FLOOR;
       const rate = wheel.prevCompression === null
-        ? Math.max(0, -u.y) : (compression - wheel.prevCompression) / h;
-      let load = SPRING_GRAVITY_SCALE * wheel.strength
+        ? Math.max(0, -u.y)
+        : clamp((compression - wheel.prevCompression) / h, -closing, closing);
+      // **A spring cannot push against a face it is edge-on to.** The probe
+      // runs down the hull's own +Y (PHY-5, read), but the ground answers
+      // along its own normal, so the reaction available along the spring
+      // axis is at most `N . axis` of it. Without this a jeep straddling a
+      // 25 m drop read metres of compression on the near-vertical face and
+      // the bump stop pushed at about 101 m/s^2 along the hull's up while
+      // the tyres, with `N.y` near 0.12, had 1.8 m/s^2 to answer with: 251.8
+      // km/h and inverted, out of a fall worth 80.
+      //
+      // It is the same quantity the friction budget already spends — that
+      // one is `N . world-up` and is read (`0x0825b80c fld [eax+0x4]`); this
+      // is `N . spring-axis`. The engine has no equivalent because its wheel
+      // is a body whose displacement comes from its own contact rather than
+      // from a probe down an axis, so the precedent is read and the transfer
+      // is this file's. [free, numerics]
+      const nAxis = nBody.y > 0 ? nBody.y : 0;
+      let load = (SPRING_GRAVITY_SCALE * wheel.strength
         * (travel + overrun * k.bumpStiffness)
-        + wheel.damping * rate;
+        + wheel.damping * rate) * nAxis;
       springRate = Math.max(springRate, Math.abs(rate));
       wheel.prevCompression = compression;
       if (load < 0) load = 0;
@@ -1974,10 +2656,6 @@ export class TrackedVehicle extends Vehicle {
       loaded += 1;
       wheel.friction = 0.5 * (WHEEL_MATERIAL_FRICTION
         + this.surfaceFriction(attach.x, attach.z));
-      if (wheel.driven && load > 0 && load < nextCoupleLoad) {
-        nextCoupleLoad = load;
-        nextCoupleFriction = wheel.friction;
-      }
 
       // No steer angle for a track wheel — `dir` stays nose-forward, exactly
       // `GroundVehicle`'s own `!wheel.steered` branch. The one wheel this
@@ -1991,165 +2669,102 @@ export class TrackedVehicle extends Vehicle {
         dir.set(-Math.sin(steer), 0, -Math.cos(steer));
       }
       const lat = this._lat.crossVectors(dir, UP);
+      // Into the contact plane, exactly as `GroundVehicle` does it.
+      const driveOk = intoContactPlane(dir, nBody);
+      const axleOk = intoContactPlane(lat, nBody);
 
-      const uLong = u.dot(dir);
-      const uLat = u.dot(lat);
+      // Section 8 takes the tangential demand from `V` with next tick's
+      // gravity already in it. The spring above deliberately used `u`
+      // WITHOUT it, because the damper's seed is a real closing speed.
+      const uG = this._uG.copy(u).add(gravityTick);
+      const uLong = driveOk ? uG.dot(dir) : 0;
+      const uLat = axleOk ? uG.dot(lat) : 0;
 
-      // Lateral: same shape as `GroundVehicle`'s cornering-stiffness model
-      // for every wheel that touches the ground, dummy rollers included —
-      // their own near-zero load already prices them out on its own. A
-      // track's much stronger resistance to sliding sideways than a tyre's
-      // is `k.corneringStiffness` alone for a track wheel; the half-track's
-      // own front axle is an ordinary tyre (TANK-15: "an ordinary steerable
-      // front axle"), recipe step 11's "Willy's existing... code unchanged"
-      // — reusing the *track* figure there as well nearly rolled the M3A1
-      // in a held turn (found by driving one out ten seconds at speed and
-      // watching it go onto its roof), because that wheel, unlike a track
-      // wheel, is actively deflected by the steer angle and so puts real
-      // slip into a coefficient four times Willy's own.
-      const slip = Math.atan2(uLat, Math.max(Math.abs(uLong), k.slipFloor));
-      const stiffness = wheel.steered ? k.frontAxleCorneringStiffness : k.corneringStiffness;
-      let fLat = -stiffness * slip * load * authority;
+      // Per-contact ACCELERATION with no normal load in it, meaned at the
+      // end — `GroundVehicle.#step` and `coulombCaps` carry the reading.
 
-      // Longitudinal: the one place a tracked vehicle's wheels genuinely
-      // differ from a jeep's.
-      let fLong = 0;
-      if (wheel.steered) {
-        // The half-track's front axle only: a free-rolling tyre, never
-        // engine-connected (TANK-15), so nothing here but passive rolling
-        // resistance — Willy's own shape, no braking or reverse state
-        // machine, because this wheel never drives.
-        const gShare = load / -GRAVITY;
-        const moving = Math.tanh(uLong / 0.3);
-        fLong -= moving * k.rollingResistance * gShare;
-      } else if (wheel.driven) {
-        // TANK-9: EngineGrip builds a contact-speed target from
-        // differentialRPM (yaw splits left/right); friction pulls toward
-        // it. This is **not** a second copy of body thrust (TANK-7) —
-        // earlier code applied `K*ratio` per side here and doubled launch
-        // accel at yaw 0. Coulomb magnitudes open (PHY-2); `trackResistance`
-        // is the provisional damper (PLAN T3 open governor assumption).
-        //
-        // Split into the two jobs one constant used to do. The part common
-        // to both tracks (`vMean`, the yaw-0 target) is the top-speed
-        // governor and keeps `trackResistance` exactly as it was; the part
-        // that DIFFERS between the tracks — the whole of the steering
-        // signal, and nothing else — gets its own gain, because tying the
-        // two together made turn rate hostage to top speed: every unit of
-        // steering authority bought a proportional loss of cruise, so the
-        // fitted governor left the Sherman at 0.4 deg/s of yaw at full lock.
-        // At `yaw == 0` the two targets are equal and this reduces, term for
-        // term, to the line it replaces — so acceleration, top speed,
-        // reverse and TANK-17's own no-pivot-from-rest (differentialRPM is
-        // 0 on both sides at zero throttle, so both targets are 0 together)
-        // are all bit-identical to before. `differentialRPM`/`engineRatio`
-        // are untouched: this only changes how hard the split they compute
-        // is pushed, which was never anything but [free] to begin with.
-        //
-        // Split into the two jobs one constant used to do, and the steering
-        // half made a COUPLE rather than a brake. `vMean` — the yaw-0 target
-        // both tracks share — carries the top-speed governor and keeps
-        // `trackResistance` doing exactly what it always did. What each track
-        // asks for either side of that mean carries the steering, at its own
-        // gain, because tying the two together made turn rate hostage to top
-        // speed: every unit of steering authority cost a proportional unit of
-        // cruise, and the fitted governor left the Sherman at 0.4 deg/s of
-        // yaw at full lock.
-        //
-        // A couple, not a brake, because `differentialRPM` clamps the outer
-        // track at 1.0 — so read literally, the split only ever *slows* the
-        // inner track, and at the gain that actually turns a 25-tonne hull
-        // that brake is several times `bodyThrust`: a held full-lock turn
-        // dragged the Sherman from 32 km/h down to walking pace and stayed
-        // there. `diff` is each track's own deviation from the mean of the
-        // two, so one track gains exactly what the other gives up, the hull's
-        // net tractive effort is untouched, and what a turn genuinely costs
-        // comes out of the lateral scrub below instead.
-        //
-        // The couple is sized and capped off ONE shared number — the least
-        // loaded driven wheel that is on the ground, as of the previous
-        // sub-step (`_coupleLoad`) — and never off this wheel's own live
-        // load, so both halves come out identical in magnitude however the
-        // weight has just shifted. That is what keeps it a couple. Written
-        // against the live load it is heavier on the outer track, the one a
-        // turn loads up, so the pair stopped summing to zero and the residual
-        // read as a net forward push: a Sherman gaining speed to 61 km/h
-        // mid-turn, an M3A1 to 178 and onto its roof. Sizing it off the
-        // hull's static weight share instead fixed the tank and not the
-        // half-track, whose driven tracks carry only part of its weight (a
-        // free-rolling front axle carries the rest), so a static share
-        // over-drove them past the grip they actually had. The weakest driven
-        // track is the honest budget for a split that has to be answered
-        // equally at both ends. The governor above still reads this wheel's
-        // own live load, because that half is a real friction-scaled contact
-        // force rather than a split of engine effort.
-        const vMean = engineGripTarget(throttle, 0, 0, this.ratio);
-        const vTgt = engineGripTarget(throttle, yaw, wheel.side, this.ratio);
-        const vOther = engineGripTarget(throttle, yaw, -wheel.side, this.ratio);
-        const gShare = load / -GRAVITY;
-        const coupleLoad = this._coupleLoad;
-        const coupleCap = coulombCaps(this._coupleFriction, coupleLoad).kinetic;
-        let diff = (vTgt - vOther) * 0.5 * k.trackDifferential
-          * (coupleLoad / -GRAVITY);
-        if (diff > coupleCap) diff = coupleCap;
-        else if (diff < -coupleCap) diff = -coupleCap;
-        fLong = -(uLong - vMean) * k.trackResistance * gShare + diff;
-        // The same parking hold `GroundVehicle` carries, and for the same
-        // reason: `trackResistance 0.25` stands in for the engine's own x30
-        // on this exact term, and at a quarter of a percent of it a hull
-        // parked on its own static rake rolled away at 2.2 m/s once PHY-5
-        // let the suspension lean with it. Below walking pace with the
-        // throttle shut, ask for the engine's figure; the Coulomb clamp
-        // decides what the ground gives back.
-        if (Math.abs(throttle) < 0.01) {
-          const hold = Math.max(0, 1 - Math.abs(uLong) / PARKING_HOLD_SPEED);
-          fLong -= uLong * (1 / h) * hold * gShare;
-        }
-      }
-      // A dummy (spin-only) wheel gets no longitudinal force at all —
-      // TANK-14's reading, and its own zero strength/damping already leaves
-      // it nothing to spend one on regardless.
+      // Lateral: **RollGrip**, the same demand `GroundVehicle` now carries —
+      // the component of the contact velocity along the wheel's own axle,
+      // asked for back in full inside one tick. A dummy roller gets nothing
+      // at all: `addFriction` returns at `0x0825b7xx` for the DummyGrip bit
+      // before any of this, so it is not even a zero sample.
+      let aLat = (wheel.dummy || !axleOk) ? 0 : -uLat * ENGINE_TICK_HZ;
 
-      // The friction limit is an ELLIPSE here, not the circle a tyre gets —
-      // and PHY-2 says plainly that the engine's is a circle for both, so
-      // this is the viewer's, kept for a reason rather than for parity. An
-      // isotropic budget starves the differential (the only yaw authority a
-      // tank has) of longitudinal force while handing the hull a lateral
-      // force big enough to roll it: on a paved road the cap is 1.05x14.73
-      // and a full-lock turn asks ~10.4 of roll moment about the contact
-      // patches where the springs can answer at most `sum(load) * halfWidth`
-      // = 12.5. The M3A1 duly went onto its roof the moment anything let it
-      // turn quickly. `lateralGripFraction` sits below that threshold by a
-      // real margin and the longitudinal budget is untouched.
+      // Longitudinal: the EngineGrip contact-speed target, which is the whole
+      // of a tracked vehicle's propulsion (tank-driving.md section 5).
       //
-      // The magnitude is the material's (PHY-2) and so is the 1.5:1
-      // break-away hysteresis; only the ellipse's SHAPE is this file's own,
-      // and `lateralGripFraction` says so in its own comment. Stretching the
-      // lateral axis by that fraction turns the ellipse test back into the
-      // same scalar compare the isotropic clamp does, so both classes run one
-      // `coulombClamp`.
-      const caps = coulombCaps(wheel.friction, load);
-      const demand = Math.hypot(fLong, fLat / k.lateralGripFraction);
+      //   dV = T - Vt,  T = ratio * getCurrentDifferentialRPM(side) along fwd
+      //
+      // and `addFriction` hands the root `F * 30` — `ds:0x8716b5c`, the
+      // engine's own tick rate, at `0x0825bc67` — so the gain is
+      // `ENGINE_TICK_HZ` and not a fitted number and **not** `1 / h`. The
+      // distinction is not cosmetic: at `1 / h` the demand is four times
+      // stiffer at this class's 120 Hz sub-step than the engine's is, which
+      // saturates the Coulomb clamp on every sub-step, pins `feedbackLoop`'s
+      // load at its own clamp of 1.0, and holds the revs below `gearUp` for
+      // ever — a Sherman that never leaves third at 30 km/h.
+      //
+      // The two sides' targets differ by
+      // `getCurrentDifferentialRPM`'s own `1 -/+ 1.5 * steer`, each clamped
+      // to +-1, and **that difference is the entire steering mechanism** —
+      // nothing applies a yaw torque to the hull, and the couple this file
+      // used to build is gone with `trackDifferential`.
+      //
+      // A `c_PGFRollGrip` wheel (a half-track's front axle) and a dummy
+      // roller get NO longitudinal demand at all: RollGrip's wanted change is
+      // `-(Vt along the axle)`, lateral only, and DummyGrip returns before
+      // the solver (collision-response.md section 8).
+      let aLong = 0;
+      if (wheel.driven && !wheel.dummy && driveOk) {
+        aLong = (engine.target(wheel.side, uLong) - uLong) * ENGINE_TICK_HZ;
+      }
+
+      // The friction CIRCLE, isotropic on the tangential plane exactly as
+      // PHY-2 reads it — the ellipse this class used to carry is gone with
+      // `lateralGripFraction`. The magnitude is the pair of materials' and so
+      // is the 1.5:1 break-away hysteresis; nothing about the shape is this
+      // file's any more.
+      const caps = coulombCaps(wheel.friction, nBody.y);
+      const demand = Math.hypot(aLong, aLat);
       const grip = coulombClamp(demand, caps, wheel.staticGrip);
       wheel.staticGrip = grip.latched;
       if (!grip.latched) allLatched = false;
-      staticBudget += caps.breakaway;
-      if (grip.scale !== 1) {
-        fLong *= grip.scale;
-        fLat *= grip.scale;
+      // **A dummy roller is not a contact for this purpose.** The grip
+      // dispatch at `0x0825c669` tests `and eax,0x4` on the grip byte and
+      // sends `c_PGFEngineDummyGrip` (0x24) to `0x0825c680 call [eax+0xcc]`
+      // -- `SpinWheel` -- and out, so it never reaches
+      // `addFrictionAtAbsolutePosition` and never bumps its count `+0x64`.
+      // Counting a Sherman's eight dummies alongside its four driven bogies
+      // divides the tank's whole tangential answer by three: measured, that
+      // took the brake from 1.18 s to 3.35 s and turned a 25-degree slope
+      // into a 146 m slide. A plain `c_PGFDummyGrip` (0x20) is NOT excluded
+      // -- `(0x20 & 4) == 0` sends it back to the ordinary path at
+      // `0x0825b761` -- but no shipped chassis authors one.
+      if (!wheel.dummy) {
+        staticBudget += caps.breakaway;
+        tanCount += 1;
       }
-
+      if (grip.scale !== 1) {
+        aLong *= grip.scale;
+        aLat *= grip.scale;
+      }
+      // `feedbackLoop` sees the CLAMPED change, as a per-engine-tick delta-v
+      // along this wheel's own forward axis (TANK-13) — and only from a
+      // `c_PGFEngineGrip` wheel (the `0x4` branch at `0x0825bafe`), so a
+      // half-track's free-rolling front axle and every dummy roller are
+      // absent from it rather than present as zeroes.
+      if (wheel.driven && !wheel.dummy) engine.sample(aLong / ENGINE_TICK_HZ);
       // Along the spring axis, i.e. the hull's own up: (0, load, 0) in the
-      // body frame, unrotated (PHY-5).
+      // body frame, unrotated (PHY-5). Springs sum; tyres mean.
       const suspension = this._susp.set(0, load, 0);
       force.add(suspension);
-      force.addScaledVector(dir, fLong);
-      force.addScaledVector(lat, fLat);
       torque.add(this._arm.crossVectors(wheel.rest, suspension));
       const fTyre = this._fTyre.set(0, 0, 0)
-        .addScaledVector(dir, fLong).addScaledVector(lat, fLat);
-      this._arm.set(wheel.rest.x, wheel.rest.y - wheel.radius, wheel.rest.z);
-      torque.add(this._arm.cross(fTyre));
+        .addScaledVector(dir, aLong).addScaledVector(lat, aLat);
+      tanForce.add(fTyre);
+      this._arm.set(wheel.rest.x,
+        wheel.rest.y - wheel.radius + travel, wheel.rest.z);
+      tanTorque.add(this._arm.cross(fTyre));
 
       // Visual roll: a driven wheel spins at its own side's commanded rate
       // (TANK-2 — the two tracks visibly move at different speeds mid-turn,
@@ -2159,31 +2774,26 @@ export class TrackedVehicle extends Vehicle {
       // included, rolls off its own actual contact speed the way
       // `GroundVehicle`'s wheels all do.
       wheel.angle += (wheel.driven
-        ? this.ratio * differentialRPM(throttle, yaw, wheel.side)
+        ? engine.target(wheel.side) / wheel.radius
         : uLong / wheel.radius) * h;
     }
 
-    this._coupleLoad = nextCoupleLoad < Infinity ? nextCoupleLoad : 0;
-    this._coupleFriction = nextCoupleLoad < Infinity
-      ? nextCoupleFriction : DEFAULT_MATERIAL_FRICTION;
+    if (tanCount > 0) {
+      force.addScaledVector(tanForce, 1 / tanCount);
+      torque.addScaledVector(tanTorque, 1 / tanCount);
+      staticBudget /= tanCount;
+    }
 
     s.grounded = loaded > 0;
     s.airspeed = speed;
 
     // --- integrate ------------------------------------------------------------
-    // Semi-implicit Euler, `GroundVehicle`'s own shape, plus TANK-7 body
-    // thrust applied once along hull forward (not per track).
+    // Semi-implicit Euler, `GroundVehicle`'s own shape. **Nothing is added
+    // along hull forward here**: `PhysicsEngine::updatePhysics` returns at its
+    // second instruction for a `c_ETTank` (TANK-7), so the tracks' contact
+    // forces above are the whole of the propulsion, and the free-body damper
+    // that used to stand beside them is gone with `trackResistance`.
     const accel = this._accel.copy(force).applyQuaternion(q);
-    this._fwd.set(0, 0, -1).applyQuaternion(q);
-    accel.addScaledVector(this._fwd, thrust);
-    // Body-level EngineGrip remainder (TANK-9 / PLAN T3 open governor):
-    // wheel `trackResistance` toward `v_tgt` is Coulomb-capped (`mu*load`),
-    // so a high-ratio hull (M3A1's 17.5) still outruns the soft retail band
-    // and rolls in a hard turn. The same damper on the free body — toward
-    // the undivided yaw-0 target — closes what the patches cannot without
-    // touching fadeSpeed.
-    const vNom = engineGripTarget(throttle, 0, 0, this.ratio);
-    accel.addScaledVector(this._fwd, -(vf - vNom) * k.trackResistance);
     accel.y += GRAVITY;
     staticHold(this, s, accel, h, Math.abs(throttle) < 0.01 ? 0 : 1, 0,
       loaded, staticBudget, allLatched, springRate);
@@ -2278,12 +2888,11 @@ export class TrackedVehicle extends Vehicle {
       wheel.node.position.copy(wheel.basePosition);
       wheel.node.quaternion.copy(wheel.baseQuaternion);
     }
-    // Back to the constructor's seed, not the last sub-step's reading: every
-    // wheel's load was just zeroed above, and a parked vehicle's first step
-    // should size its steering couple off a hull standing on its own weight.
-    const driven = this.wheels.reduce((n, w) => n + (w.driven ? 1 : 0), 0);
-    this._coupleLoad = driven > 0 ? -GRAVITY / driven : 0;
-    this._coupleFriction = DEFAULT_MATERIAL_FRICTION;
+    // Back to the engine's own construction state: gear 1, no revs, and the
+    // gear-change lockout re-seeded at 1.0 the way a fresh `PhysicsEngine` is.
+    this.engine.reset();
+    this._staticQuiet = 0;
+    this._staticHeld = false;
     s.position.copy(this.node.userData.spawnPosition || s.position);
     s.orientation.copy(this.node.userData.spawnOrientation || s.orientation);
   }

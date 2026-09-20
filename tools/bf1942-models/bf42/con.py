@@ -1202,6 +1202,29 @@ class ObjectTemplate:
                 "gearDown": self.gear_down,
                 "gearChangeTime": self.gear_change_time,
                 "noPropellerEffectAtSpeed": self.no_propeller_effect_at_speed,
+                # An Engine's own RotationalBundle limits and rates, carried
+                # here as well as in `rig` because the drivetrain reads them
+                # as NUMBERS, not as a pose. `Engine::handleUpdate`
+                # (0x0823e120) builds the engine's throttle term `T1` as
+                # `clippedRollAngle / maxRotation.z` and its steering term as
+                # `clippedYawAngle / maxRotation.x`, so a mod that changes
+                # either changes throttle response and steering gain. `rig`
+                # cannot answer for that: it drops `min`/`max` to null on a
+                # free axis, emits `acceleration` only when non-zero, and is
+                # shaped for posing a mesh. Triples are Yaw/Pitch/Roll in the
+                # `.con`'s own order (NOT positions -- nothing is negated).
+                # Ledger TANK-12.
+                "maxRotation": list(self.max_rotation) if self.max_rotation else None,
+                "maxSpeed": list(self.max_speed) if self.max_speed else None,
+                # The rate the `setAutomaticReset` law ramps the angle at,
+                # deg/s (GUN-2). Every car/tank Engine in the 18 installs but
+                # one (`Pirates/swivelCannonEngine`) sets `setAutomaticReset`,
+                # and **475 of 1,421 of them author an acceleration that is
+                # not their maxSpeed** -- DC Final's Humvee is `3000` against
+                # a maxSpeed of `100` -- so the two are not interchangeable
+                # even though all three vanilla drivetrains happen to author
+                # them equal.
+                "acceleration": list(self.acceleration) if self.acceleration else None,
                 "pivotPosition": self._pivot(),
             }) or None
         if kind == "spring":
