@@ -61,10 +61,27 @@ export function wantViewmodelClip(s) {
     }
     return {
       want: 'reload',
-      startReload: s.active !== 'reload' || !s.reloadRunning,
+      // Re-own the reload clip only when the arms were actually taken by
+      // something else. Do NOT restart it because the LoopOnce pass ended
+      // (`!s.reloadRunning`) while the reload timer is still counting: the
+      // clip's span is fitted to reloadTime (1pAnimationsTweaking.con), so a
+      // finished pass means the magazine is almost in, and restarting it
+      // replays the reload sound that has already played for this magazine.
+      startReload: s.active !== 'reload',
     };
   }
-  if (s.active === 'reload' && s.reloadRunning) return { want: 'reload' };
+  // Hold the reload clip on the arms only while the reload is actually in
+  // progress. The un-gated keep-alive below used to keep the reload clip (and
+  // its looped audio, where the animation carries a sound channel) owning the
+  // arms even after an ammo box's `refillAmmo` set `reload = 0` mid-pass with
+  // ammo already restored to full -- the guns froze mid-reload forever,
+  // repeatedly replaying the reload sound. Gating on `reload > 0` makes the
+  // reload end exactly when the magazine is seated: a normal reload returns
+  // to loco as the timer completes, and an ammo-box top-up that cancels the
+  // timer drops straight back to idle so the sound stops.
+  if (s.reload > 0 && s.active === 'reload' && s.reloadRunning) {
+    return { want: 'reload' };
+  }
   if (s.active === 'deploy' && s.deployRunning) return { want: 'deploy' };
   // Looping fire (c_AsmLooping) follows the trigger latch. Checked before the
   // PlayOnce fireRunning keep — Three.js LoopRepeat never clears isRunning().

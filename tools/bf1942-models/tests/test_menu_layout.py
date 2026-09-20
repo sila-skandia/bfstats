@@ -5,8 +5,10 @@ the extractor is what the shipped files say and a synthetic fixture would
 only assert that the code agrees with itself. The second is synthetic, for
 the parts that have to hold whatever the archives contain.
 
-Also runs `test_menu_screen.mjs`, the node suite over `viewer/play/
-menu-screen.js`, so `unittest discover` reaches it.
+Also runs the screen's two node suites, so `unittest discover` reaches them:
+`test_menu_screen.mjs` over `viewer/play/menu-screen.js`, and
+`test_menu_audio.mjs` over the mute switch in `viewer/audio.js` that the
+menu's speaker toggle is.
 """
 
 from __future__ import annotations
@@ -46,6 +48,7 @@ EOD_MENU_RFA = _eod_menu_rfa()
 LEXICON = MOD_DIR / "lexiconAll.dat"
 
 NODE_SUITE = Path(__file__).with_name("test_menu_screen.mjs")
+AUDIO_SUITE = Path(__file__).with_name("test_menu_audio.mjs")
 
 
 def rect(el):
@@ -198,8 +201,35 @@ class SkirmishLayoutTests(unittest.TestCase):
         self.assertEqual("background", els[1]["texture"])
 
     def test_every_page_is_read(self) -> None:
-        self.assertEqual({"background", "skirmish", "navigation"},
+        self.assertEqual({"background", "skirmish", "navigation", "exit"},
                          set(self.layout["pages"]))
+
+    def test_the_exit_page_is_the_one_button_that_leaves_a_game(self) -> None:
+        # `EXIT_RECTS` keeps only the lower of `menu/ExitMenu`'s two buttons.
+        # QUIT is the other, and there is no quitting a web page.
+        els = self.layout["pages"]["exit"]["elements"]
+        buttons = [el for el in els if el["kind"] == "button"]
+        self.assertEqual(1, len(buttons), "QUIT is not kept")
+        self.assertEqual("MENU_DISCONNECT", buttons[0]["id"])
+        self.assertEqual([669.0, 85.0, 109.0, 24.0], rect(buttons[0]))
+        self.assertEqual("knapp3_n", buttons[0]["texture"])
+        # QUIT's own plate is not even named, so nothing decodes it.
+        self.assertNotIn("knappext_n", eml.layout_textures(self.layout))
+
+        # The two labels the button picks between, each culled on the engine's
+        # own numbering of what kind of game is being left.
+        labels = {el["key"]: el for el in els if el["kind"] == "text"}
+        self.assertEqual({"MENU_DISCONNECT", "MENU_DISCONNECT_SINGLEPLAYER"},
+                         set(labels))
+        self.assertEqual("DISCONNECT", labels["MENU_DISCONNECT"]["text"])
+        self.assertEqual("END CURRENT GAME",
+                         labels["MENU_DISCONNECT_SINGLEPLAYER"]["text"])
+        for key, value in (("MENU_DISCONNECT", 1),
+                           ("MENU_DISCONNECT_SINGLEPLAYER", 2)):
+            self.assertEqual(
+                [{"var": "Join/Disconnect/ShowDisconnect", "op": "eq",
+                  "value": value}],
+                labels[key]["when"])
 
     def test_fonts_are_the_faces_the_text_nodes_name(self) -> None:
         self.assertIn("standard6", self.layout["fonts"])
@@ -787,12 +817,20 @@ class LexiconDuplicateTests(unittest.TestCase):
 
 class NodeSuiteTests(unittest.TestCase):
     def test_menu_screen_passes_under_node(self) -> None:
+        self._run(NODE_SUITE)
+
+    def test_menu_audio_passes_under_node(self) -> None:
+        """`viewer/audio.js`'s mute switch, which the menu's speaker toggle
+        is. Not a layout test, but the same screen and the same runner."""
+        self._run(AUDIO_SUITE)
+
+    def _run(self, suite) -> None:
         if shutil.which("node") is None:
             raise unittest.SkipTest("node is not installed")
-        proc = subprocess.run(["node", str(NODE_SUITE)],
+        proc = subprocess.run(["node", str(suite)],
                               capture_output=True, text=True, timeout=120)
         self.assertEqual(0, proc.returncode,
-                         f"{NODE_SUITE.name} failed:\n{proc.stdout}\n{proc.stderr}")
+                         f"{suite.name} failed:\n{proc.stdout}\n{proc.stderr}")
 
 
 if __name__ == "__main__":

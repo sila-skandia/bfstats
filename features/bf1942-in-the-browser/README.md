@@ -708,3 +708,184 @@ screen's own bitmap face, and the scrollbar looks like a native one) rather
 than anything in `menu.rfa` - `viewer/icons/mods/*.png` stands in for it,
 already prepared for far more mods (16) than the four this viewer can
 currently serve maps for.
+
+## The Escape menu (2026-09-20)
+
+Asked for: *"a way to go back to the 'instant battle' menu. In the real game
+you use escape for that — by pressing Esc it takes you to the menu, and lets
+you disconnect, or just choose a new map and it disconnects and loads the new
+map."*
+
+**It is the same screen, because in the game it is the same screen.** Escape
+in a running level does not open a small in-game panel; it puts the front end
+back up over the battle, with one button in the top right corner the front
+end does not otherwise show. So the Instant Battle screen stopped being a page
+and became a controller — `viewer/play/skirmish.js` — that either page can
+mount on a canvas:
+
+| Mount | What it is |
+|---|---|
+| `play/index.html` | the way in. No game behind it, the menu loop playing, START a link away |
+| `map.html`, `#menu-canvas` | the Escape menu. The level keeps running behind it, no music, and the exit button live |
+
+`play/index.html` lost its whole script to the move and gained nothing but the
+options that make it the way-in mount; `menu-screen.js` and `mod-picker.js`
+are untouched by it — they were already the painting and the arithmetic.
+
+### The fourth page
+
+`menu/ExitMenu` is the pair of buttons in the top right of every front-end
+page: QUIT at (669,33) and, beneath it, the one that leaves the game you are
+in at (669,85). `extract_menu_layout.py` now decodes the second
+(`EXIT_RECTS`), which costs the pack nothing but three leaves — the plate is
+`knapp3_n`, the same one START already uses.
+
+The button carries **both** of the game's labels and picks between them on
+`Join/Disconnect/ShowDisconnect`: `== 1` is a server and reads `DISCONNECT`,
+`== 2` is a singleplayer game and reads `END CURRENT GAME`. Instant Battle is
+the second, so that is what the Escape menu shows, and it is the file's own
+choice rather than ours — both labels are in the pack, culled on the variable
+`menuVars` writes from `state.disconnect`.
+
+Whether the page is up at all is the viewer's call, the way it already is for
+the other three (the engine's `SetPathAction`s choose pages; nothing in a page
+says "I am showing"). The `CullNode` over the button *is* in the file — a bare
+`IntData` on the same variable — but `condition()` models equality and boolean
+culls, not the engine's non-zero-is-true reading of an int, so `livePages()`
+holds the page back until there is a game rather than pretending to read that.
+The reading itself is not in doubt: the same page's Bink player wraps that
+variable in a `NotData`, which means nothing unless an int is a truth value.
+Confirming it against the client is unfinished business, and it changes
+nothing on this screen either way.
+
+### What Escape does, in order
+
+The chain in `map.html`'s keydown, outermost first — every step of it was
+already there but the last:
+
+1. the console has the keyboard → Escape closes the console
+2. **the Escape menu is up → Escape is back to the game**
+3. the deploy screen is up → Escape cancels the deploy
+4. the full map is up → Escape closes it
+5. `?kblock` fullscreen with the pointer already free → Escape leaves it
+6. otherwise → **release the pointer and put the menu up**
+
+One press does step 6's two things together: the browser has already taken
+the pointer lock off the page by the time the handler runs, and a menu you
+cannot click is no menu. Closing does not take the lock back — Chrome will not
+hand it over on the same Escape that dropped it — so the gate shows and a
+click resumes, which is the page's existing way back into play.
+
+Under the menu the keyboard is the menu's, exactly as it is the console's:
+`keys.clear()` on the way up, nothing reaches the game while it is there, and
+the arrow keys, Home/End, Page Up/Down and Enter drive the level list. The
+canvas is opaque and sits above everything the level draws (z-index 12; the
+console moved to 13, since in the game the console comes down over the front
+end too). Nothing dims or blurs the frame behind it: the engine's own menu is
+opaque here as well — it paints its black field and its camouflaged plate over
+the game, and stops the front end's Bink movie the moment there is a game to
+go back to. Which is also why the Escape menu plays no menu music.
+
+### The three ways out
+
+- **Escape** — back to the game, which is still exactly where it was.
+- **END CURRENT GAME** — `location.assign(MENU_URL)`, the same place the
+  `game.disconnect` console word already went.
+- **START** — the new level, `?mod=`, `?team=` and `?mode=` and all. "It
+  disconnects and loads the new map" is a page navigation here, so it is one
+  step rather than two.
+
+The menu opens on the level being played (`selectMap`), and the mod list beside
+it switches **in place** rather than reloading: a reload is what the way-in
+screen does, and doing it here would throw away the level you are standing in.
+The pack and the level list are re-fetched, the choice is remembered as it
+always was, and the mod travels on the next START.
+
+Its pack is fetched once the level's own warm-up has settled
+(`warmups.level.finally`), so the first Escape is a paint and not a fetch; an
+Escape before that lands builds it on the spot.
+
+**One fix came out of this**, in code the way-in screen has been running all
+along: the font atlases were awaited with `img.decode()`, and a background tab
+does not decode — the promise never settles and the screen never finishes
+loading. It waits for the image's `load` now, which is what the first paint
+actually needs; `drawImage` decodes on its own.
+
+Not done: **touch**. There is no Escape key on a phone, and no on-screen
+control was added for it — the shell nav's MAPS link is still the way out
+there, as it was before.
+
+## Sound on, and the way out of the spawn screen (2026-09-21)
+
+Three asks off the back of the Escape menu, all of them the same shape: the
+page had a piece of scaffolding where the game has a behaviour.
+
+### The menu's speaker
+
+The menu loop and the loading music were always meant to play, and do —
+`audio.js` starts them and falls back to a gesture unlock when the autoplay
+policy refuses. What the menu had no way of expressing was the other
+direction. Its only control was the loading screen's badge, which says CLICK
+TO ENABLE and nothing else, because a loading screen is gone in a few seconds
+and a menu is not.
+
+So `attachMuteToggle`: a speaker in the top right corner of the menu screen,
+one icon with the waves crossed out when nothing is coming out of it. Three
+states behind two glyphs — playing, muted, and blocked by the browser — and
+one click does the right thing in each, because from where the player sits
+"muted" and "the browser will not let it start" are the same complaint.
+
+Muted is a state of the controller, not of the element, which is the part
+worth knowing about: `setMuted(true)` disarms the gesture unlock and survives
+`start()`, so neither a click elsewhere on the page nor the next track can
+bring the music back behind the player's back. `tests/test_menu_audio.mjs`
+pins exactly that.
+
+It is remembered (`bf42-mesh-menu-muted`), because switching mods reloads the
+page and the loop would otherwise start again over someone who turned it off
+ten seconds ago. **It is the menu's own switch and reaches nothing else** —
+the loading music has its own badge and the game its own sound setting. If
+that turns out to be the wrong scope, one line makes the level's loading
+music read the same key.
+
+### Free roam, and the end of "click to fly"
+
+The map page had a plate in the middle of the screen reading *Tap or click to
+fly*. It was built to explore a level before there was anything else to do on
+one, and it had become the only way back into the free camera after the spawn
+screen was closed.
+
+The game has that behaviour already, and it is not a plate: you close the
+spawn menu without taking a spawn, and on a server that allows it the camera
+is yours. So:
+
+- **A click on open ground unselects.** The spawn map's click already picked
+  the nearest ring within a finger's width and ignored a click that found
+  none; now that click clears the selection instead (`deployUnchosen`). Every
+  ring sits back, none is filled, and that is what tells the player what the
+  commit is about to do.
+- **Commit with nothing selected is the free camera.** Enter, or DONE, or
+  SUICIDE — whichever the footer is offering — takes `enterFreeCam()` rather
+  than spawning. So does Escape on the spawn screen, and so does CLOSE, which
+  is what they always did; they just used to drop you at the plate.
+- **Caps Lock brings the screen back**, unchanged, which is how you stop free
+  roaming.
+- **The plate is gone.** `#gate`, its CSS, its label and `GATE_TEXT` with it.
+
+The thing that made the plate removable is that every way into the free
+camera is now a user gesture — a click on DONE or an Enter — so
+`enterFreeCam` takes the pointer on the way through, the same way
+`deploySpawn` has always captured on the click that commits. Nothing is left
+that drops the player into a live world with dead controls. The one gap that
+would have been left is a level declaring no soldier spawn at all, which has
+no spawn screen to close: that now arms free roam at load instead.
+
+Escape is therefore one press to the menu from anywhere in play, and closing
+the menu captures again rather than leaving a plate to click. Chrome refuses
+a pointer lock for about a second after the Escape that dropped one, so
+`capture()` no longer depends on getting it: `captured` is set either way,
+the view still drags, and the next click takes the lock.
+
+Not done: **touch**, again. There is no Escape key and no Caps Lock on a
+phone; the spawn screen's own footer buttons work, so free roam is reachable
+there, but the menu is not.
