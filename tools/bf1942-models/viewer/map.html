@@ -846,8 +846,8 @@ import * as GroundModule from './ground.js';
 import {
   VehicleOccupancy, findAllVehicleRoots, listEntryPoints, classifyRoot,
   FireState, chainOnShot, readWorldPose, pickNearest,
-  setTurretSpeedScale, turretSpeedScale,
 } from './seats.js';
+import { MouseInput, profileFor, soldierLookDegrees } from './mouse-input.js';
 import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
          findWeaponSpecsByFireArms, WEAPON_HEADROOM } from './engine-audio.js';
 import { GunFire } from './gunfire.js';
@@ -894,6 +894,15 @@ const MODELS_BASE = activeMod.paths.models || 'models';
 const DEFAULT_DRAW = 700;
 const FLY_SPEED = 140;
 const FLY_SLOW = 0.02;
+// The FREE-FLY camera's look, radians per pixel, and nothing else any more.
+// It used to be the soldier's too, on no basis; the soldier now runs the
+// engine's own law (`mouse-input.js`, `BFSoldier::handlePlayerInput` lnxded
+// 0x08273c70) and this number stays only because the free camera is a debug
+// surface the engine has no equivalent for. Worth recording why it survived
+// so long: at the shipped sensitivity the engine's yaw works out at 0.1215
+// degrees per count and 0.0022 rad is 0.12605 degrees per pixel -- 3.7% apart,
+// which is the closest thing anyone has to evidence that one browser pixel is
+// about one mouse count.
 const LOOK_SENS = 0.0022;
 const FLY_KEYS = new Set([
   'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE',
@@ -1437,10 +1446,25 @@ function mobilePadAxis(axis) {
   return mobilePadHeld ? mobilePadVector[axis] : 0;
 }
 
+/**
+ * The touch pad's contribution to the same input stage the mouse feeds.
+ *
+ * A pad has a deflection, not a count rate, and the engine has no reading to
+ * transcribe here: BF1942's own controller support binds a stick through the
+ * same `axisToAxis` arm, so a real gamepad arrives already counted. The
+ * viewer's own choice, stated rather than transcribed, is that **full
+ * deflection is a hand moving `MOBILE_AIM_PIXELS_PER_SECOND` pixels a
+ * second** -- which keeps the pad in the same currency as the mouse, so the
+ * sensitivity profiles, the +-16 saturation and `countsPerPixel` all reach it
+ * unchanged, and one knob moves both.
+ *
+ * `-y` because the pad reports up-positive and the mouse (and DirectInput)
+ * report down-positive.
+ */
 function feedMobileTurretAim(dt) {
   if (!mobilePadHeld || !occupancy?.turret) return;
-  const pixels = MOBILE_AIM_PIXELS_PER_SECOND * Math.max(0, dt);
-  occupancy.turret.aim(mobilePadVector.x * pixels, -mobilePadVector.y * pixels);
+  mouseInput.accumulateDeflection(
+    mobilePadVector.x, -mobilePadVector.y, dt, MOBILE_AIM_PIXELS_PER_SECOND);
 }
 
 function resetMobilePad() {
@@ -1668,6 +1692,144 @@ function flySpeed() {
   return FLY_SPEED * (isSlow() ? FLY_SLOW : 1);
 }
 
+// --- the mouse-look input stage, on the engine's own tick -----------------
+//
+// LOOP-1 and GUN-2b together. The simulation is a fixed 30 Hz step with
+// `dt = 1/30` exactly, rendering runs free on top, and a frame produces 0, 1
+// or several whole ticks; the mouse-look axis is computed ONCE per pumped
+// frame and every tick of that frame reads the same value. That is what makes
+// the same hand movement turn a turret the same amount at 30, 60 and 144 fps,
+// and it is why this page cannot simply hand the render dt to the servo.
+//
+// The rest of the page still steps on the render dt -- the soldier body has
+// its own 60 Hz accumulator in `physics.js`, the drivetrain its own in
+// `ground.js`. Only the look path is moved here, which is the whole of this
+// stream: a page-wide fixed step is a bigger change than one branch should
+// make while four other streams are editing this file.
+const SIM_TICK_HZ = 30;                 // `g_simulationFps`, lnxded 0x08716b5c
+const SIM_TICK_DT = 1 / SIM_TICK_HZ;    // `Setup+0xcc` / client `Setup+0x184`
+// `GameClient::update` 0x0048fca8 `cmp ebx,0x9; jle; mov ebx,1` -- a backlog
+// past nine collapses to a single tick and the world quietly loses the rest.
+// The engine never stretches `dt`, and neither does this.
+const SIM_MAX_BACKLOG = 9;
+let simAccum = 0;
+const mouseInput = new MouseInput();
+
+/** Whole ticks this frame owes, the engine's accumulator
+ *  (`InputManager::update` 0x0049ce70). */
+function simTicks(dt) {
+  simAccum += Math.max(0, dt) || 0;
+  let ticks = Math.floor(simAccum / SIM_TICK_DT);
+  simAccum -= ticks * SIM_TICK_DT;
+  if (ticks > SIM_MAX_BACKLOG) { ticks = 1; simAccum = 0; }
+  return ticks;
+}
+
+/** Which sensitivity profile the player is on right now.
+ *
+ *  The engine reads it off the entered PCO's `getVehicleCategory()` (see
+ *  `mouse-input.js`'s `profileFor`), and in vanilla every stationary weapon
+ *  and every gunner position -- an aircraft's rear gun included -- declares
+ *  `VCLand`, so only an aircraft's own pilot seat is on the Air profile. That
+ *  is exactly `flying` here. */
+function lookProfile() {
+  if (optPilot.checked && occupancy) {
+    return profileFor(aircraft && occupancy.isActiveRoot() ? 'air' : 'land');
+  }
+  return profileFor(null);
+}
+
+/**
+ * One frame's pump. Returns the ticks the caller must now run.
+ *
+ * The pump's argument is the time those ticks CONSUME (`nTicks / 30`), not the
+ * wall-clock frame time -- `InputManager::update` 0x0049cff7 `fild nTicks;
+ * fmul tickDt`. That is what makes the integral exact: the axis is
+ * `0.001 * counts * scale / (n/30)`, each of the n ticks contributes its own
+ * share, and the total comes to `0.001 * counts * scale * 30` whatever n was.
+ * A frame that owes no tick does not pump at all, and its counts wait.
+ */
+function pumpLook(dt) {
+  const profile = lookProfile();
+  if (profile !== mouseInput.profile) {
+    // A different control map has been activated (climbing into a plane, or
+    // out of one). The engine resets the map it leaves, so nothing a player
+    // did on the old profile arrives scaled by the new one.
+    mouseInput.reset();
+    mouseInput.profile = profile;
+    simAccum = 0;
+  }
+  const ticks = simTicks(dt);
+  if (ticks > 0) mouseInput.pump(ticks * SIM_TICK_DT, profile);
+  return ticks;
+}
+
+/** A pumped frame's turret ticks: set the held axis pair once, then run the
+ *  servo that many times at the engine's own dt. */
+function stepTurret(dt) {
+  const ticks = pumpLook(dt);
+  const turret = occupancy?.turret;
+  if (!turret) return;
+  turret.aim(mouseInput.x, mouseInput.y);
+  for (let i = 0; i < ticks; i++) turret.step(SIM_TICK_DT);
+}
+
+/** The soldier's own look, per tick.
+ *
+ *  `BFSoldier::handlePlayerInput` (lnxded 0x08273c70) turns the view by
+ *  `input * dt * g_simulationFps` degrees a tick -- so, at the fixed tick,
+ *  `input` degrees -- with a x3.0 on the yaw axis alone (`ds:0x86c08c8`, read
+ *  at 0x0827457d) and none on the pitch (0x08274537). `mouse-input.js` carries
+ *  the addresses. Signs match this page's own convention, which counts yaw the
+ *  other way from the engine. */
+function stepSoldierLook(ticks) {
+  if (!ticks || !soldier) return;
+  let x = mouseInput.x;
+  let y = mouseInput.y;
+  if (!x && !y) return;
+  // While zoomed the engine scales BOTH mouse-look axes by the weapon's
+  // `zoomFov` — the WORLD field of view, `zoom.fov` here — not by
+  // `SoldierZoomFov`, which is the arms' own factor. Read out of the
+  // authority: `BFSoldier::handlePlayerInput` lnxded `0x08275bdf`
+  // `call [eax+0x114]` (the weapon's zoom state), then
+  //
+  //     0x08275bf2  mov eax,[edi+0x4c]        ; the FireArms TEMPLATE
+  //     0x08275bf5  fld [ebp-0x29c]           ; c_PIMouseLookX
+  //     0x08275bfb  fld [eax+0x270]
+  //     0x08275c01  fmul st(1),st ; 0x08275c03 fmul [ebp-0x2a4]
+  //     0x08275c0b  fstp [ebp-0x29c] ; 0x08275c11 fstp [ebp-0x2a4]
+  //
+  // and `FireArmsTemplate::makeScript` round-trips **`+0x270` as
+  // `ObjectTemplate.zoomFov`** (`0x0828f0e2` pushes `0x086d313b` =
+  // `'ObjectTemplate.zoomFov '` before `fld [ebx+0x270]`) while
+  // **`+0x274` is `ObjectTemplate.SoldierZoomFov`** (`0x0828f0b0` pushes
+  // `0x086d35e0`). The two differ per weapon and by a lot: a K98 is
+  // `zoomFov 0.4 / soldierZoomFov 0.6`, a Colt `0.7 / 0.5`. Using the arms'
+  // factor made a scoped K98 50% too fast and a sighted Colt 29% too slow.
+  //
+  // Why a whole FOV reads as a factor: the hip FOV is 1 radian, so `zoomFov`
+  // IS the ratio. The `-1.0f` template default cannot reach here --
+  // `FireArms::setZoom` `0x082881b7` refuses to zoom at all while
+  // `+0x270 < 0` -- but the guard costs nothing.
+  if (isZoomed()) {
+    const zoomFov = handWeapon?.data?.zoom?.fov;
+    const factor = Number.isFinite(zoomFov) && zoomFov > 0 ? zoomFov : 1;
+    x *= factor;
+    y *= factor;
+  }
+  const per = soldierLookDegrees(x, y);
+  const yaw = -per.yaw * DEG_TO_RAD * ticks;
+  const pitch = -per.pitch * DEG_TO_RAD * ticks;
+  // The soldier owns the clamp: `setPointUpDownAngle 38.0 38.0` is the
+  // engine's own bound on `BFSoldier+0x284` and `soldier.look` applies it.
+  soldier.look(yaw, pitch);
+  // The deviation model wants |MouseLookX/Y| as radians of view movement,
+  // drained per frame in footFire(). Recoil writes `soldier.look` directly and
+  // so never counts against him.
+  footLookX += Math.abs(yaw);
+  footLookY += Math.abs(pitch);
+}
+
 function lookDelta(dx, dy) {
   if (!dx && !dy) return;
   // P2's one necessary touch outside its owned-function list (see its final
@@ -1686,10 +1848,11 @@ function lookDelta(dx, dy) {
   // drivetrain seat with no turret — a jeep, an aircraft — still falls
   // through to `view.turn` below and swings the camera as it always did.
   if (optPilot.checked && occupancy?.turret) {
-    // Unnegated, unlike the soldier's own `look()` below: `TurretRig.aim`
-    // takes the browser's screen sense directly — see its own comment for the
-    // double flip that used to invert every manned gun in the viewer.
-    occupancy.turret.aim(dx, dy);
+    // Not applied here any more: the counts go into the input stage and the
+    // frame's pump turns them into one axis pair that every tick of that frame
+    // reads (`stepTurret`). Several `mousemove` events between two frames
+    // simply add up, which is what DirectInput does between two pumps.
+    mouseInput.accumulate(dx, dy);
     return;
   }
   if (optPilot.checked && mannedActive()) {
@@ -1707,25 +1870,10 @@ function lookDelta(dx, dy) {
     return;
   }
   if (optOnFoot.checked && soldier) {
-    // While zoomed the engine scales the mouse-look deltas by the same
-    // `SoldierZoomFov` factor that narrows the view — client 0x0050095f:
-    // `if (weapon->isZoomed()) { yawDelta *= SoldierZoomFov; pitchDelta *=
-    // SoldierZoomFov; }` — so a 0.6x view is a 0.6x hand.
-    if (isZoomed()) {
-      const factor = handWeapon?.data?.zoom?.soldierFov ?? 1;
-      dx *= factor;
-      dy *= factor;
-    }
-    // The soldier owns the look: `setPointUpDownAngle 38.0 38.0` clamps the
-    // pitch, and the body yaws bodily because `SoldierCamera` declares no
-    // rotation of its own.
-    soldier.look(-dx * LOOK_SENS, -dy * LOOK_SENS);
-    // The deviation model wants MouseLookX/Y, the engine's per-axis look
-    // inputs. Accumulated here, where the player's own turning arrives, and
-    // drained per frame in footFire() — recoil writes `soldier.look`
-    // directly and so never counts against him.
-    footLookX += Math.abs(dx * LOOK_SENS);
-    footLookY += Math.abs(dy * LOOK_SENS);
+    // Same as the turret: accumulated here, converted once per pumped frame,
+    // applied per tick in `stepSoldierLook`. The zoom factor and the pitch
+    // clamp moved there with it.
+    mouseInput.accumulate(dx, dy);
     return;
   }
   look.yaw -= dx * LOOK_SENS;
@@ -1981,6 +2129,39 @@ gameConsole.register({
   minArgs: 0, maxArgs: 0, argTypes: [],
   run: () => { location.assign(MENU_URL); },
 });
+
+/**
+ * The four mouse-sensitivity words, which are the engine's own: they are what
+ * `Settings/Default/Controls/*.con` calls to set the shipped defaults, and
+ * they are in the retail client's `game` object's method table
+ * (`setInfMouseSensitivity`'s registrar `FUN_006bba90`, name string
+ * `0x00920abc`; body at vtable `+0x48` = `0x006bbbe0` -> `0x006c57f0` ->
+ * `ControlSettings::setSensitivity` `0x006eb1a0`, a bare `[this+0xc] = v`).
+ *
+ * One float argument, 0..1 like the menu slider, and read-back with no
+ * argument. What the number buys is `5 x s + 0.1` as the mouse axis scale
+ * (`applyMouseSensitivity` `0x006c55f0`), so 0.25 is 1.35 and 0.75 is 3.85.
+ *
+ * `game.setCommonMouseSensitivity` is registered for completeness and is
+ * genuinely inert here: the Common profile belongs to
+ * `defaultGameControlMap`, which binds `c_GIMouseLookX/Y` — the menu and map
+ * cursor, not a player axis — and this page has no surface that reads it.
+ */
+const MOUSE_SENSITIVITY_WORDS = {
+  setCommonMouseSensitivity: 'common',
+  setInfMouseSensitivity: 'infantry',
+  setLandSeaMouseSensitivity: 'landSea',
+  setAirMouseSensitivity: 'air',
+};
+for (const [method, profile] of Object.entries(MOUSE_SENSITIVITY_WORDS)) {
+  gameConsole.register({
+    object: 'game', method,
+    minArgs: 0, maxArgs: 1, argTypes: ['float'], returns: 'float',
+    run: args => (args.length
+      ? mouseInput.setSensitivity(profile, args[0])
+      : mouseInput.sensitivityFor(profile)),
+  });
+}
 
 function setConsoleOpen(on) {
   if (!gameConsole.setOpen(on)) return;
@@ -5655,13 +5836,21 @@ function setPilot(on, node = null, seatId = null) {
   updateMobileControls();
 }
 
-// `?turret=<scale>` multiplies every aim axis's declared `setMaxSpeed` to get
-// the rate it actually traverses at. It is a knob and not a setting because
-// nothing in the corpus closes out what `setMaxSpeed` means for a
-// RotationalBundle on screen (`seats.js`'s `TURRET_SPEED_SCALE` has the
-// citations), so the number wants settling by playing rather than by another
-// guess. `window.__turretScale()` reads and writes it live.
-if (params.has('turret')) setTurretSpeedScale(params.get('turret'));
+// `?turret=<n>` multiplies `countsPerPixel` -- how many DirectInput counts one
+// browser `movementX` pixel is worth.
+//
+// It used to scale every axis's declared `setMaxSpeed`, standing in for the
+// unread magnitude of `PlayerInput[c_PIMouseLookX/Y]`. That is read now
+// (`mouse-input.js`), so `setMaxSpeed` is used as the engine uses it and this
+// knob has moved to the one quantity still unproven: whether a browser pixel
+// is a mouse count. It is the same knob to a player -- turn it up and
+// everything aims faster -- but it now moves the soldier's head as well as a
+// turret, which is correct, because a mouse count is a mouse count.
+// `window.__turretScale()` reads and writes it live.
+if (params.has('turret')) {
+  const n = Number(params.get('turret'));
+  if (Number.isFinite(n) && n > 0) mouseInput.countsPerPixel = n;
+}
 
 const HUD_PILOT = 'W/S throttle · A/D rudder · arrows pitch and roll · LMB guns · RMB bombs · '
   + 'C view · mouse look around · R reset · 1-9 seats · E out on the ground · Esc';
@@ -5743,9 +5932,22 @@ function drive(dt) {
   // is `manned()`'s to step, not ours — but an unmanned seat's gun still has
   // to stay pointed where its last occupant left it.
   occupancy.applyTurrets();
-  if (driving) {
+  // Gated on the seat, NOT on `driving`. The look stage must be pumped exactly
+  // once a frame, and this seat being the active root is precisely the case
+  // `manned()` declines (`mannedActive()` returns false for an active root
+  // that has a drivetrain), so this is the only pump that frame. Gating it on
+  // `driving` instead left a wrecked hull's own driver pumping NOTHING: the
+  // pixels `lookDelta` keeps banking for him sat in the accumulator until the
+  // wreck timer cleared, and the first live frame then pumped seconds of
+  // travel into one tick and saturated the axis at the wire's +-16.
+  // The engine pumps the device every frame regardless of what the PCO does
+  // with the result (`InputManager::update` 0x0049ce70 is upstream of
+  // `PlayerControlObject::handlePlayerInput` 0x08318920 entirely); HP-15 is
+  // spent where it belongs, inside `TurretRig.aim`, which zeroes the held axis
+  // pair whenever `inputScale` is 0 — so a wreck's gun still receives nothing.
+  if (occupancy.isActiveRoot()) {
     feedMobileTurretAim(dt);
-    occupancy.turret?.step(dt);
+    stepTurret(dt);
   }
 
   // Kept unconditional rather than folded into `if (driving)` above: a
@@ -5833,7 +6035,7 @@ const mannedCamQuat = new THREE.Quaternion();
  */
 function manned(dt) {
   feedMobileTurretAim(dt);
-  occupancy.turret?.step(dt);
+  stepTurret(dt);
   // GUN-5/6 (verify-r6.md): a gunner Camera never aims itself, it only ever
   // rides the turret it is parented under — so the eye is just wherever that
   // hierarchy, freshly stepped above, puts it. No cockpit/orbit/fly-by modes
@@ -6788,6 +6990,11 @@ function collectSupplyDepots(root) {
 /** Read the keyboard into the soldier and put the camera behind his eyes. */
 function onFoot(dt) {
   if (!soldier) return;
+  // The look first, and on the engine's tick, because the engine turns the
+  // soldier inside the same `handlePlayerInput` call that reads his movement
+  // input — so this frame's walk runs along this frame's facing, not the last
+  // one's. `stepSoldierLook` is the whole of the on-foot mouse law.
+  stepSoldierLook(pumpLook(dt));
   soldier.collider = collider;
   const held = captured ? keys : EMPTY_KEYS;
   // Hoisted so footFire can hand the deviation model the same c_PIThrottle /
@@ -8978,9 +9185,14 @@ function pilot(dt) {
   // Same reason `drive()` does it: `integrate` ends in `applyRig`, which puts
   // every turret on the airframe back to rest. A B17's gunners keep theirs.
   occupancy.applyTurrets();
-  if (flying) {
+  // Gated on the seat rather than on `flying`, for the reason `drive()` spells
+  // out: this is the frame's only pump of the look stage whenever the pilot's
+  // own seat is the active one, and skipping it for a wrecked airframe banked
+  // the pixels until the wreck cleared and then spent them in a single
+  // saturated tick.
+  if (occupancy.isActiveRoot()) {
     feedMobileTurretAim(dt);
-    occupancy.turret?.step(dt);
+    stepTurret(dt);
   }
 
   // After `integrate`, so a round leaves this frame's muzzle pose rather than
@@ -11498,10 +11710,33 @@ if (params.has('shots')) {
   // vehicle's `c_PIFire`, right its `c_PIAltFire`. Named apart from
   // `__setTrigger` because that one is the soldier's, and a seated player's
   // is a different input on a different object.
-  // The traverse-rate scale, live: call with no argument to read it, with a
-  // number to try one. Same knob as `?turret=`.
-  window.__turretScale = value => (value === undefined
-    ? turretSpeedScale() : setTurretSpeedScale(value));
+  // Counts per browser pixel, live: call with no argument to read it, with a
+  // number to try one. Same knob as `?turret=`, and the only unproven unit in
+  // the mouse path.
+  window.__turretScale = value => {
+    const n = Number(value);
+    if (value !== undefined && Number.isFinite(n) && n > 0) {
+      mouseInput.countsPerPixel = n;
+    }
+    return mouseInput.countsPerPixel;
+  };
+  // The whole input stage, for a headless check: `__mouseLook()` reads the
+  // held axis pair and the live profile, `__mouseLook(dx, dy)` feeds pointer
+  // counts in the way a `mousemove` would.
+  window.__mouseLook = (dx, dy) => {
+    if (dx !== undefined || dy !== undefined) {
+      mouseInput.accumulate(Number(dx) || 0, Number(dy) || 0);
+    }
+    return {
+      x: mouseInput.x,
+      y: mouseInput.y,
+      profile: mouseInput.profile,
+      scale: mouseInput.scaleFor(),
+      sensitivity: { ...mouseInput.sensitivity },
+      countsPerPixel: mouseInput.countsPerPixel,
+      pendingPixels: mouseInput.pendingPixels,
+    };
+  };
   window.__setSeatFire = (main, alt = false) => {
     seatFire = !!main;
     seatAltFire = !!alt;
