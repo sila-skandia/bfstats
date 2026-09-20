@@ -202,8 +202,15 @@ SPRITES: list[str] = [
 # unconditionally rather than as a hand-picked subset that could drift from
 # the archive: every stance icon and every ammo/weapon/vehicle HUD icon the
 # base game ships (15/30/48/21 entries respectively, checked on this
-# machine).
-SPRITE_DIR_GLOBS: list[str] = ["Texture/Soldier", "Texture/Ammo", "Texture/Weapon", "Texture/Vehicle"]
+# machine), and every kit photograph under `Kits/` -- vanilla's 15 sit at its
+# root and are already named individually in `SPRITES` above (for their
+# verified `ref`); a mod's own are typically nested one level deeper, one
+# subdirectory per nation (`Kits/NVA/assault_selected.dds`), so this walks
+# the whole subtree rather than the single level the other three need.
+# `extract_sprites` skips any entry this glob would re-name identically to
+# something `SPRITES` already wrote, so the two never fight over `ref`.
+SPRITE_DIR_GLOBS: list[str] = ["Texture/Soldier", "Texture/Ammo", "Texture/Weapon",
+                               "Texture/Vehicle", "Texture/Kits"]
 
 # Nation art beyond the six `NATIONS` names. `SPRITES` lists the nations the
 # base game ships, because they are the ones the base game's levels fly; a mod
@@ -232,14 +239,21 @@ SPRITE_NATION_PREFIXES: tuple[str, ...] = (
 #
 # It is the *rule* that is applied, not this pair, because a mod brings its
 # own: Eve of Destruction files a `Molotov.dds` under both `Ammo/` and
-# `Weapon/`. `dir_glob_renames` recomputes the set per chain, and on vanilla
-# it reproduces exactly the two rows below — asserted in
-# `tests/test_extract_hud_pack.py`.
+# `Weapon/` (also `Vietcong_Juicegrenade.dds` and `Vietcong_Satchel.dds`, the
+# same way), and its 87 kit photographs collide by the dozen across nine-odd
+# nation subdirectories of `Kits/` (`assault_selected.dds` alone under `NVA/`,
+# `ARVN/`, `Vietcong/`, ...). `dir_glob_renames` recomputes the set per chain,
+# qualifying by each colliding file's own immediate parent directory rather
+# than a directory named in `SPRITE_DIR_GLOBS` — for the flat `Ammo`/`Weapon`
+# case those are the same name, which is why this reproduces exactly the two
+# rows below on vanilla — asserted in `tests/test_extract_hud_pack.py`.
 #
 # Known limitation, unchanged by this: `hud.js`'s `spriteKeyFromRef` resolves
 # a live texture path by basename, so a qualified sprite is reachable only by
-# its qualified name. Nothing binds these two today; whoever wires the ammo
-# panel's icon has to key on the source directory too.
+# its qualified name. `viewer/kit-icon.js` is where the kit photographs' own
+# resolver tries the qualified name first; nothing else that reads a live
+# path does yet, so whoever wires the ammo panel's icon still has to key on
+# the source directory too.
 SPRITE_DIR_RENAME: dict[str, str] = {
     "menu/texture/ammo/icon_demokit.dds": "ammo_icon_demokit",
     "menu/texture/weapon/icon_demokit.dds": "weapon_icon_demokit",
@@ -252,16 +266,23 @@ def dir_glob_renames(entries) -> dict[str, str]:
 
     One archive's `Ammo/X` and another's `Weapon/X` are two different images
     under one key, which would silently clobber one of them; qualifying both
-    with their directory keeps both. A basename that occurs in only one of the
-    four directories is untouched, which is all but one of them in vanilla.
+    with their own immediate parent directory keeps both. The same rule
+    reaches a level deeper for `Kits/<Nation>/X`, where the collision is
+    between nation subdirectories rather than between two of
+    `SPRITE_DIR_GLOBS`'s own top-level names — `Ammo` and `Weapon` have no
+    subdirectories of their own in any installed archive, so using the
+    immediate parent rather than the glob's top-level name changes nothing
+    for them. A basename that occurs under only one directory, at any depth,
+    is untouched.
     """
+    low_prefixes = tuple(f"menu/{prefix}/".lower() for prefix in SPRITE_DIR_GLOBS)
     seen: dict[str, list[tuple[str, str]]] = {}
-    for prefix in SPRITE_DIR_GLOBS:
-        low_prefix = f"menu/{prefix}/".lower()
-        leaf = prefix.rsplit("/", 1)[-1].lower()
-        for entry in entries:
-            if entry.lower().startswith(low_prefix):
-                seen.setdefault(Path(entry).stem.lower(), []).append((leaf, entry))
+    for entry in entries:
+        low = entry.lower()
+        if not low.startswith(low_prefixes):
+            continue
+        leaf = Path(entry).parent.name.lower()
+        seen.setdefault(Path(entry).stem.lower(), []).append((leaf, entry))
     out: dict[str, str] = {}
     for name, hits in seen.items():
         if len({leaf for leaf, _ in hits}) < 2:
@@ -411,6 +432,15 @@ def extract_sprites(menu, out_dir: Path, force: bool) -> dict:
             if not entry.lower().startswith(low_prefix):
                 continue
             name = renames.get(entry.lower(), Path(entry).stem.lower())
+            if name in manifest:
+                # Vanilla's 15 root `Kits/` photographs are both named
+                # individually in `SPRITES` (for their verified `ref`) and
+                # swept up again here (`Texture/Kits` is one of
+                # `SPRITE_DIR_GLOBS`, walked whole); the `SPRITES` pass above
+                # always runs first, so this is that one entry reached a
+                # second time under the same, unqualified name, and must not
+                # clobber the `ref` already recorded for it.
+                continue
             decode_and_write(name, entry, sprite_ref_from_entry(entry))
 
     if missing:
