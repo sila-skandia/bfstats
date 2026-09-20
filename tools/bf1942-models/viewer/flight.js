@@ -181,6 +181,17 @@ class CockpitSwap {
     this.interior = interior;
     this.hidden = hidden;
     this.spec = spec;
+    // The interior's rigged nodes as the glb authored them, read now because
+    // this is the only moment they are certain to be at rest. A swap outlives
+    // the `Vehicle` that grafted it (`cockpitGrafts`), and the next one would
+    // otherwise index a steering wheel left hard over by the last driver and
+    // take that for its neutral — see `RiggedPart` on compounding.
+    this.rest = new Map();
+    for (const node of interior) {
+      node.traverse(obj => {
+        if (obj.userData?.rig?.axes) this.rest.set(obj, obj.quaternion.clone());
+      });
+    }
   }
 
   apply(firstPerson) {
@@ -205,6 +216,53 @@ function defaultModelsBase() {
 }
 
 const cockpitLoader = new GLTFLoader();
+
+/**
+ * One graft per vehicle node, however many `Vehicle`s are built on it.
+ *
+ * The interior is grafted into the *node's* tree, and the node outlives every
+ * `Vehicle` that drives it: map.html drops its occupancy on the way out of a
+ * seat, so each E back into the same jeep constructs another `Vehicle` on the
+ * same node. When the fetch belonged to the instance, every one of them
+ * fetched `<Control>.cockpit.glb` again and grafted another interior beside
+ * the last — whose `CockpitSwap` had died with its `Vehicle`, so it stayed
+ * hidden in the tree for good with its GPU half live. On a Willys that was 6
+ * geometries and 4 textures per enter/exit cycle, a second steering wheel in
+ * `parts`, and a fetch, a parse and a warm-up that bought nothing.
+ *
+ * Holds the promise of the node's `CockpitSwap[]`, so a seat retaken while
+ * the first fetch is still in the air waits on it rather than racing it.
+ * Weak, so a level switch takes the entry with the node.
+ */
+const cockpitGrafts = new WeakMap();
+
+function eachGpuResource(obj, visit) {
+  if (obj.geometry) visit(obj.geometry);
+  for (const material of [obj.material].flat().filter(Boolean)) {
+    visit(material);
+    for (const value of Object.values(material)) if (value?.isTexture) visit(value);
+  }
+}
+
+/**
+ * Give back what is left of a cockpit glb once its interior has been grafted.
+ *
+ * Only the flown seat's swaps are taken, so a B17's file leaves four gunner
+ * stations behind, and the page's `prepare` hook has already uploaded their
+ * textures along with everyone else's. Nothing will ever draw them. A texture
+ * the grafted interior shares with the remainder is the interior's to keep.
+ */
+function disposeRemainder(root, swaps) {
+  const kept = new Set();
+  for (const swap of swaps) {
+    for (const node of swap.interior) {
+      node.traverse(obj => eachGpuResource(obj, resource => kept.add(resource)));
+    }
+  }
+  root.traverse(obj => eachGpuResource(obj, resource => {
+    if (!kept.has(resource)) resource.dispose();
+  }));
+}
 
 // --- the vehicle -----------------------------------------------------------
 
@@ -315,7 +373,8 @@ export class Vehicle {
   }
 
   /**
-   * Fetch this vehicle's first-person interior and graft it on.
+   * Fetch this vehicle's first-person interior and graft it on — once per
+   * node, not once per `Vehicle` (`cockpitGrafts`).
    *
    * A vehicle with no cockpit export is not an error: most ground vehicles
    * have no `1P_*` mesh at all, and an asset tree published before cockpits
@@ -323,6 +382,17 @@ export class Vehicle {
    * exactly as it was.
    */
   async loadCockpit(modelsBase, prepare = null) {
+    let graft = cockpitGrafts.get(this.node);
+    if (!graft) {
+      graft = this.fetchCockpit(modelsBase, prepare);
+      cockpitGrafts.set(this.node, graft);
+    }
+    return this.adoptCockpit(await graft);
+  }
+
+  /** The fetch and the graft behind `loadCockpit`: this node's swaps, which
+   *  is none at all for a vehicle with no interior. */
+  async fetchCockpit(modelsBase, prepare) {
     const base = modelsBase || defaultModelsBase();
     const url = new URL(`${this.control}.cockpit.glb`, base).href;
     try {
@@ -332,9 +402,14 @@ export class Vehicle {
       // first cockpit frame is not also a link (features/mesh-viewer-
       // performance, rule 6). A failure costs that head start, not the cockpit.
       if (prepare) await Promise.resolve().then(() => prepare(gltf.scene)).catch(() => {});
-      return this.attachCockpit(gltf.scene);
+      const swaps = this.graftCockpit(gltf.scene);
+      disposeRemainder(gltf.scene, swaps);
+      return swaps;
     } catch {
-      return null;
+      // Nothing was grafted, so nothing is remembered: a fetch that failed
+      // for the network's reasons is asked again by the next `Vehicle` here.
+      cockpitGrafts.delete(this.node);
+      return [];
     }
   }
 
@@ -353,7 +428,7 @@ export class Vehicle {
    * Grafting another seat's would hang a Browning in mid-air behind the pilot.
    * When seat switching arrives, the filter is where it changes.
    */
-  attachCockpit(root) {
+  graftCockpit(root) {
     const byName = new Map();
     this.node.traverse(obj => {
       if (obj.name && !byName.has(obj.name)) byName.set(obj.name, obj);
@@ -363,6 +438,7 @@ export class Vehicle {
     root.traverse(obj => {
       if (obj.userData?.lodAlternative) sources.push(obj);
     });
+    const swaps = [];
     for (const source of sources) {
       const spec = source.userData.lodAlternative;
       if ((source.userData.control || '') !== this.control) continue;
@@ -374,16 +450,34 @@ export class Vehicle {
       const hidden = (spec.replaces || [])
         .map(name => byName.get(name))
         .filter(Boolean);
-      this.swaps.push(new CockpitSwap(host, interior, hidden, spec));
+      swaps.push(new CockpitSwap(host, interior, hidden, spec));
     }
-    if (!this.swaps.length) return null;
+    return swaps;
+  }
+
+  /**
+   * Take the node's graft as this `Vehicle`'s own — the one it just made, or
+   * the one a `Vehicle` before it on the same node left in the tree.
+   */
+  adoptCockpit(swaps) {
+    if (!swaps.length) return null;
+    this.swaps = swaps;
 
     // The grafted subtree brings its own rig extras (the SBD's gunner mount is
     // a RotationalBundle), so re-index rather than leaving them frozen.
     this.collect();
+    // An inherited interior was already in the tree when the constructor
+    // indexed it, wherever the last driver left it. Rest is what the swap
+    // read off the glb.
+    for (const swap of swaps) {
+      for (const part of this.parts) {
+        const rest = swap.rest.get(part.node);
+        if (rest) part.base.copy(rest);
+      }
+    }
     this.setFirstPerson(this.firstPerson);
-    // The graft above reparents nodes and the swap only toggles `visible`;
-    // neither composes a matrix. The interior arrives whole seconds after the
+    // The graft reparents nodes and the swap only toggles `visible`; neither
+    // composes a matrix. The interior arrives whole seconds after the
     // seat was taken, and a seat vacated in the meantime is back in
     // freezeStatics' frozen set (map.html), whose per-frame walk is a no-op --
     // so the interior would keep the cockpit glb's own world matrix, which on
