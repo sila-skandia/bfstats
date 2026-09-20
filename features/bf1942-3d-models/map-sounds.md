@@ -466,15 +466,6 @@ and a damage model the map viewer does not have.
 
 ### Known limits of what now plays
 
-- **A wreck's fire has no end.** `e_PanzFire` is a looping patch. It starts at
-  the impact that plays it, which is right, and nothing ever tells it the
-  wreck respawned, so it runs until the pool is silenced on a level change.
-  Tying an armor-tier bundle's sound to the object's own lifetime belongs with
-  the wreck lifecycle, not here.
-- **A bundle attached to a moving object is silent.** `EffectPlayer.play`'s
-  `attach` path has no world point at play time, so a rocket's trail plays no
-  sound. Vanilla's trail bundles carry no script anyway — a projectile's own
-  `loadSoundScript` is a separate binding, 45 of them, unextracted (row 3).
 - **The first round into a new surface is silent.** A hit cannot wait for a
   fetch and a decode, so `play` primes the pool in the background and returns
   0. Every round after it sounds. `__primeEffectSound` exists for a caller
@@ -482,3 +473,106 @@ and a damage model the map viewer does not have.
 - **`stop FinishSample`** is extracted and still ignored (G14), and
   **`addGroup Volume Menu`** is still unhandled — neither occurs on an effect
   script.
+
+## 2026-09-20 (S4): a wreck's fire ends, a suspended context stops piling up, and attach finally sounds
+
+Three gaps the review above left open, closed:
+
+**1. A wreck's fire used to have no end.** `showDamageTier`'s
+`effects.play(name, { attach: { object: anchor } })` returns a handle whose
+`stop()` now also silences the sound that play started —
+`EffectPlayer.play()` mints a `Symbol` token per call, threads it to
+`EffectAudio` as `{ follow, token }`, and `EffectAudio.stop(token)` finds and
+silences only the slot that token's own play claimed, never another bundle's
+turn on the same pooled script (`e_PanzFire`, `e_TankSmoke` and the rest of
+the `addArmorEffect` tiers pool the same handful of scripts). Every place
+`map.html` already called `handle.stop()` — `showDamageTier` on a tier
+change, `stepWrecks` when a wreck fades out, `respawnVehicle`,
+`clearDamageVisuals` on a level's own teardown, and `window.__stopEffects()`
+— now actually cuts the voice, not just the picture. Belt and braces:
+`disposeSounds()` (both of `show()`'s own teardown points) calls
+`effectAudio.silence()` unconditionally, so a level change hits zero
+committed voices regardless of what handle chain did or did not run for the
+level being left.
+
+Measured on the page (Wake, a `Defgun`'s `e_ExplGas`/`e_scrapmetal` death
+tier, real `__damageVehicle` calls): `__stopEffects()` on a primed
+`e_PanzFire` loop drops `pool.sources`/`pool.committed` from 1/1 to 0/0, and
+one real `AudioBufferSourceNode.stop()` call is observed. Switching levels
+(the `#maps` select, a real `show()` run) leaves `__effectAudio()` at
+`sources: 0, committed: 0`, matching the bound. Regression tests:
+`test_effect_audio.mjs`'s "stopping one loop leaves another of the same kind
+alone" and "silence() must not leave a stale token" cases;
+`test_engine_audio_default.mjs` gained a `silence()`-clears-`pendingLoops`
+case for the same reason at the `EngineAudio` layer.
+
+**2. Sounds queued while the `AudioContext` was suspended used to all fire at
+once on resume.** Fixed in `EngineAudio.#play` (`engine-audio.js`), shared by
+every caller (effect sounds, vehicle guns, vehicle engines): a request that
+arrives while `ctx.state !== 'running'` is dropped if it is a one-shot
+(counted in `suspended`, aggregated onto `EffectAudio.snapshot().suspended`
+too) and remembered in `pendingLoops` if it is a loop. `EngineAudio.update()`
+calls the new private `#wake()` first, which starts every pending loop for
+real the first frame it sees the context running — no `statechange`
+listener, since `update()` already runs every simulation tick. `silence()`
+clears `pendingLoops`, so a patch cut while still waiting to wake (a level
+change, a voice steal) does not spring to life later.
+
+Verified under node with a stub context modelling `state`/`resume()`: a
+suspended gun patch drops both layers of a two-layer round (`suspended: 2`,
+zero sources) and plays normally once `state` flips to `'running'`; a
+suspended engine loop starts zero sources at `start()`,
+`snapshot().pendingLoops === 1`, and starts exactly one real source on the
+first `update()` after the context wakes — frame-rate independent (the same
+holds at 15/30/120 fps, re-checked in a throwaway sweep alongside the
+delayed-`trigger Volume`-layer case the 2026-09-17 section already covers).
+**Not reproduced live**: this Playwright/Chromium build
+(`chromium_headless_shell` 1194 under Playwright 1.56.1) reports the
+`AudioContext` as already `'running'` before any `page.mouse.click`, with or
+without `--autoplay-policy=user-gesture-required` — an environment
+characteristic, not something this fix controls, so the suspended path could
+only be exercised at the node level.
+
+**3. A bundle attached to a moving object used to be silent.**
+`EffectPlayer.play()` had no world point for `attach` at all — `onSound` was
+only ever called when a literal `position` was passed, and `showDamageTier`
+never passes one. Fixed: `play()` now reads the attached object's current
+world position for the initial sound call, and hands `EffectAudio` a
+`follow` callback in the same `[x, y, z]` shape; `EffectAudio.update()`
+re-reads it once a frame (bounded by the slot count already being walked
+there, not by anything proportional to particles) and keeps the claimed
+slot's `position`/`distance` current, so a tier's fire tracks the hull it
+burns on instead of freezing at the point it started.
+
+Measured on the page: before this fix, `EffectPlayer.play()`'s own guard
+(`if (this.onSound && position)`) meant an attach-only call never invoked
+`onSound` at all, so none of `EffectAudio`'s `plays`/`inaudible`/`dropped`
+counters could ever move for a tier effect, regardless of distance. After
+the fix, damaging a real vehicle's registered `Armor` down through its tiers
+via `__damageVehicle` moves `dropped` (a cold, unprimed script) or
+`plays`/`inaudible` (once primed) every time — proving the call reaches
+`EffectAudio.play()` — and once the tier's scripts are primed ahead of time
+(`__primeEffectSound`), the death tier's `e_ExplGas`/`e_scrapmetal` bundles
+start a real source exactly as a position-based impact would (`plays: 1,
+sources: 1, committed: 6` — the other five are `e_ExplGas`'s own delayed
+`trigger Volume` layers, armed and counted the same way a position-based
+explosion's are). Regression test: `test_effect_audio.mjs`'s "a moving
+attachment's sound follows it" case plays a bundle with a `follow` callback
+that changes value between two `update()` calls and asserts the pooled
+slot's own `position`/`distance` moved with it.
+
+**Also re-checked, unchanged:** the dev panel's sound checkbox still gates
+master gain only (a source still starts, silently: `starts=1` with the
+checkbox off, matching the 2026-09-17 review's own finding); `?sound=off`
+and `?shots&noaudio` still start nothing. The review's own 200-rounds
+measurement reproduces to the number: pinned (never yields) **26 started,
+26 peak committed, never 27, 174 dropped**; paced 6 ms apart, **200
+started, peak 8 concurrent**.
+
+Code: `viewer/engine-audio.js` (`#wake`, `pendingLoops`, `suspended`),
+`viewer/effect-audio.js` (`Slot.follow`/`Slot.token`, `EffectAudio.play`'s
+new options, `EffectAudio.stop`, the `suspended` getter), `viewer/effects.js`
+(`EffectPlayer.play`'s attach-position/follow/token wiring, `onSoundStop`),
+`map.html` (`disposeSounds` calls `effectAudio.silence()`, `onSoundStop`
+wired to `effectAudio.stop`). Tests: `tests/test_engine_audio_default.mjs`,
+`tests/test_effect_audio.mjs`.

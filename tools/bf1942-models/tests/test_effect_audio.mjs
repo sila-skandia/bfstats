@@ -30,6 +30,11 @@ function stubCtx() {
     started: [],
     live: 0,
     currentTime: 0,
+    // Real Web Audio starts a fresh context `suspended` until a user gesture;
+    // tests that do not care about that default to already running, the way
+    // every test in this file did before the suspended-context fix existed.
+    state: 'running',
+    resume() { this.state = 'running'; return Promise.resolve(); },
     createGain() { return node({ gain: param(0) }); },
     createPanner() {
       return node({
@@ -502,6 +507,117 @@ assert.equal(scriptHold(richoLayers()), 0.25,
   audio.dispose();
   assert.equal(audio.play('RichoStoneDecal', [0, 0, 1]), 0,
                'a disposed pool plays nothing');
+}
+
+// --- a suspended context drops a round rather than queuing it -------------
+
+{
+  const { ctx, audio } = await build();
+  ctx.state = 'suspended';
+  const played = audio.play('RichoStoneDecal', [0, 0, 4]);
+  assert.equal(played, 0, 'a suspended context drops the round');
+  assert.equal(ctx.started.length, 0);
+  assert.equal(audio.snapshot().suspended, 1,
+               'and it is counted, not silently lost');
+  ctx.state = 'running';
+  const after = audio.play('RichoStoneDecal', [0, 0, 4]);
+  assert.equal(after, 1, 'and the next round, once running, plays normally');
+}
+
+function fireManifest() {
+  const spec = manifest();
+  spec.scripts.fire = {
+    script: 'fire.ssc', patches: 1,
+    layers: [1, 2, 3].map(i => ({
+      file: `sounds/vefr${i}.mp3`, patch: 0, randomPlay: true, loop: true,
+      volume: 1, minDistance: 3, priority: 1, trigger: null,
+      stereo: false, doppler: false, randomStartPitch: null,
+      relativePosition: null,
+      modulators: [{ dest: 'volume', source: 'distance', envelope: 'ramp',
+                     params: [5, 40, 1, -1] }],
+    })),
+  };
+  spec.bundles.e_panzfire = { name: 'e_PanzFire', script: 'fire' };
+  return spec;
+}
+
+{
+  // A wreck's fire asked for before the context has resumed must still
+  // actually start once it does -- gap 2's fix, shared with the vehicle
+  // engine, exercised here through the actual pooled wreck-fire path.
+  const ctx = stubCtx();
+  ctx.state = 'suspended';
+  const audio = new EffectAudio({
+    listener: listenerFor(ctx), getBuffer: async () => buffer(),
+    manifest: fireManifest(), rand: () => 0,
+  });
+  audio.setMaster(1);
+  await audio.prime('e_PanzFire');
+  const played = audio.play('e_PanzFire', [0, 0, 6]);
+  assert.equal(played, 0, 'the fire cannot render into a suspended context yet');
+  assert.equal(ctx.started.length, 0);
+  ctx.state = 'running';
+  audio.update(1 / 30, { x: 0, y: 0, z: 0 });
+  assert.equal(ctx.started.length, 1,
+               'and starts for real the frame the context wakes');
+  assert.ok(ctx.started[0].loop, 'still a loop, not retriggered as a one-shot');
+}
+
+// --- stopping one loop leaves another of the same kind alone --------------
+
+{
+  // Two different bundles' fires, so each pools independently (no
+  // growth-timing games needed to prove two are live at once). Putting out
+  // the first must not touch the second -- the mechanism `showDamageTier`'s
+  // handles, and `window.__stopEffects`, both rely on.
+  const spec = fireManifest();
+  spec.scripts.fire2 = { ...spec.scripts.fire, script: 'fire2.ssc' };
+  spec.bundles.e_boatfire = { name: 'e_BoatFire', script: 'fire2' };
+  const { ctx, audio } = await build({ spec, rand: sequence([0]) });
+  const tokenA = Symbol('tankA');
+  const tokenB = Symbol('boatB');
+  audio.play('e_PanzFire', [0, 0, 6], { token: tokenA });
+  audio.play('e_BoatFire', [20, 0, 6], { token: tokenB });
+  assert.equal(ctx.live, 2, 'both fires are burning');
+  audio.stop(tokenA);
+  assert.equal(ctx.live, 1, 'putting out the tank leaves the boat burning');
+  audio.stop(tokenA);
+  assert.equal(ctx.live, 1, 'stopping an already-stopped token is a no-op');
+  audio.stop(tokenB);
+  assert.equal(ctx.live, 0, 'and the boat stops on its own token');
+}
+
+{
+  // `silence()` (a level change) must not leave a token pointing at a slot
+  // that later gets reused for something else -- a stale token stopping the
+  // wrong bundle would be worse than one that does nothing.
+  const { ctx, audio } = await build({ rand: sequence([0]) });
+  const token = Symbol('gone');
+  audio.play('RichoStoneDecal', [0, 0, 4], { token });
+  audio.silence();
+  for (let i = 0; i < 30; i += 1) audio.update(1 / 30, { x: 0, y: 0, z: 0 });
+  audio.play('RichoStoneDecal', [0, 0, 4]);       // reuses the same slot
+  const before = ctx.live;
+  audio.stop(token);
+  assert.equal(ctx.live, before,
+               'a token from before a silence() must not reach into what plays after it');
+}
+
+// --- a moving attachment's sound follows it --------------------------------
+
+{
+  // `follow` is polled once a frame from `update`, not read once at `play`
+  // time -- the fix for a bundle attached to a moving object being pinned to
+  // wherever it started.
+  const { audio } = await build();
+  let x = 0;
+  const follow = () => [x, 0, 4];
+  audio.play('RichoStoneDecal', [0, 0, 4], { follow });
+  x = 50;
+  audio.update(1 / 30, { x: 0, y: 0, z: 0 });
+  const slot = audio.scripts.get('richo').slots[0];
+  assert.equal(slot.position.x, 50, 'the slot followed the object to its new point');
+  assert.ok(slot.distance > 4, 'and its distance was recomputed from there');
 }
 
 console.log('effect-audio: all assertions passed');
