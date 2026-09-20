@@ -32,6 +32,12 @@ const _y = new THREE.Vector3();
 const _z = new THREE.Vector3();
 const _axis = new THREE.Vector3();
 const _camPos = new THREE.Vector3();
+// Scratch for an `attach`ed bundle's sound point: read once at `play()` time
+// and again, through the same vector, from every `follow()` call `update`
+// makes later. Safe to share — each read is consumed into plain numbers
+// before the next slot's `follow()` runs (`EffectAudio.update` is
+// synchronous), so nothing here is ever live across two attachments at once.
+const _soundPos = new THREE.Vector3();
 
 /**
  * EMT-5's `r`: a mesh particle's own local bounding box, magnitude from the
@@ -184,17 +190,23 @@ export class EffectLibrary {
 export class EffectPlayer {
   constructor({ scene, camera, library = null, gravity = GRAVITY,
                 onMaterial = null, onMesh = null, onSound = null,
-                firstPerson = false } = {}) {
+                onSoundStop = null, firstPerson = false } = {}) {
     this.scene = scene;
     this.camera = camera;
-    // Called with `(bundleName, [x, y, z])` the instant a bundle is played,
-    // before anything is looked up in the geometry library. Before the
-    // library, deliberately: nine of the thirteen bundles that bake no
-    // geometry at all are the `e_Collision_*` family, which is sound and
-    // nothing else — a round hitting a man, a grenade bouncing off concrete,
-    // metal debris landing, two hulls grinding. Hanging the sound off a
-    // successful geometry lookup would silence exactly those.
+    // Called with `(bundleName, [x, y, z], { follow, token })` the instant a
+    // bundle is played, before anything is looked up in the geometry
+    // library. Before the library, deliberately: nine of the thirteen
+    // bundles that bake no geometry at all are the `e_Collision_*` family,
+    // which is sound and nothing else — a round hitting a man, a grenade
+    // bouncing off concrete, metal debris landing, two hulls grinding.
+    // Hanging the sound off a successful geometry lookup would silence
+    // exactly those. `follow`, present for an `attach`ed play, is a callback
+    // returning the attached object's current world point, so a looping
+    // sound can track it. `token` identifies this specific play to
+    // `onSoundStop`, called from the handle `play()` returns — what ties a
+    // looping sound to the lifetime of the visual effect that started it.
     this.onSound = onSound;
+    this.onSoundStop = onSoundStop;
     this.root = new THREE.Group();
     this.root.name = 'effects';
     // The group never moves, so it never forces its children, and only the
@@ -242,14 +254,42 @@ export class EffectPlayer {
    */
   play(name, { position = null, normal = null, attach = null, speed = 0 } = {}) {
     // Sound first, and independent of the geometry library: see `onSound`.
-    // A bundle attached to a moving object (a rocket's trail) is placed by the
-    // object, so only a placed bundle has a point to sound at here; the
-    // trail's own motor loop is the engine path's business, not an impact.
-    if (this.onSound && position) {
-      try { this.onSound(name, position); } catch (_) {}
+    // An `attach`ed bundle (a wreck's fire, in practice — vanilla's trail
+    // bundles carry no script of their own) has no `position`, so it is given
+    // one here from the object it rides on: the same world point the picture
+    // stands up on below, read once now and — for a loop — again every frame
+    // `follow()` is called, so the sound tracks a moving attachment instead
+    // of freezing at the point it started.
+    let soundPosition = position;
+    let follow = null;
+    if (attach?.object) {
+      attach.object.updateWorldMatrix(true, false);
+      attach.object.getWorldPosition(_soundPos);
+      if (!soundPosition) soundPosition = [_soundPos.x, _soundPos.y, _soundPos.z];
+      const object = attach.object;
+      follow = () => {
+        object.getWorldPosition(_soundPos);
+        return [_soundPos.x, _soundPos.y, _soundPos.z];
+      };
     }
+    // A token per call, so the handle this returns can silence exactly the
+    // voice its own play claimed — never another bundle's turn on the same
+    // pooled script. Minted even for a bundle this call never geometry-plays
+    // (the `e_Collision_*` family is sound and nothing else), which is why
+    // this is threaded through both early returns below rather than only the
+    // final one.
+    const token = (this.onSound && soundPosition) ? Symbol(name) : null;
+    if (token) {
+      try { this.onSound(name, soundPosition, { follow, token }); } catch (_) {}
+    }
+    const stopSound = () => {
+      if (token != null && this.onSoundStop) {
+        try { this.onSoundStop(token); } catch (_) {}
+      }
+    };
+
     const bundle = this.library?.get(name);
-    if (!bundle) return null;
+    if (!bundle) return token != null ? { run: null, stop: stopSound } : null;
     const run = {
       name: bundle.name,
       origin: new THREE.Vector3(),
@@ -262,11 +302,10 @@ export class EffectPlayer {
       age: 0,
     };
     if (attach?.object) {
-      attach.object.updateWorldMatrix(true, false);
       attach.object.getWorldPosition(run.origin);
       attach.object.getWorldQuaternion(run.quaternion);
     } else {
-      if (!position) return null;
+      if (!position) return token != null ? { run: null, stop: stopSound } : null;
       run.origin.set(position[0], position[1], position[2]);
       const basis = basisFromNormal(normal || [0, 1, 0]) || basisFromNormal([0, 1, 0]);
       frameQuaternion(basis, run.quaternion);
@@ -284,12 +323,16 @@ export class EffectPlayer {
         clock: new EmitterClock(spec, this.rand),
       });
     }
-    if (!run.emitters.length) return null;
+    if (!run.emitters.length) return token != null ? { run: null, stop: stopSound } : null;
     this.runs.push(run);
     this.plays++;
     return {
       run,
-      stop: () => { run.stopped = true; for (const e of run.emitters) e.clock.stopped = true; },
+      stop: () => {
+        run.stopped = true;
+        for (const e of run.emitters) e.clock.stopped = true;
+        stopSound();
+      },
     };
   }
 

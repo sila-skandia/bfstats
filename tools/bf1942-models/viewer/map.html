@@ -3388,6 +3388,14 @@ async function modelSoundBuffer(relPath) {
 function disposeSounds() {
   soundsGeneration++;
   disposeEngineAudio();
+  // Every pooled effect voice, armed latch and looping wreck fire, gone —
+  // called from both of `show()`'s own teardown points (directly, and again
+  // through `setupSounds`), so a level change is the one place the whole
+  // pool is guaranteed to hit zero committed voices, whatever handle chain
+  // did or did not run for the level being left. `silence()` keeps the pool
+  // itself — its scripts, its decoded buffers — so the next level's impacts
+  // do not re-decode anything.
+  effectAudio.silence();
   if (ambientAudio) {
     try {
       if (ambientAudio.isPlaying) ambientAudio.stop();
@@ -5140,7 +5148,8 @@ const effectAudio = new EffectAudio({
 const effects = new EffectPlayer({
   scene, camera,
   onMesh: mesh => bindDynamicShading(mesh),
-  onSound: (name, position) => effectAudio.play(name, position),
+  onSound: (name, position, opts) => effectAudio.play(name, position, opts),
+  onSoundStop: token => effectAudio.stop(token),
 });
 guns.effects = effects;
 let effectsLoad = null;
