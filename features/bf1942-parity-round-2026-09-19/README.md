@@ -219,6 +219,45 @@ back with its reviewer: both blockers claimed closed, brake closed, but a jeep
 with a driver still rolls down a 5 degree slope, roll reversals got worse, and
 the M3A1 leans 39 degrees and loses its turn-in at top speed.
 
+**W3-G (mouse input) is merged** (`91dbf3f`, 2026-09-20), verdict MERGE WITH
+FIXES. Reports: `w3g-mouse.md`, `w3g-review.md`. Checked on the merged page: on
+foot, 1,200 counts over a second turn the view 144.90 degrees and 480 counts of
+pitch over 12 ticks move it 19.32 - yaw is three times pitch, as read.
+- `TURRET_SPEED_SCALE`, `TURRET_DEGREES_PER_PIXEL` and the on-foot `LOOK_SENS`
+  are gone; the input stage (`viewer/mouse-input.js`) is the engine's rate law,
+  clamp and 12-bit wire, held for every tick of a frame; the four
+  `game.set*MouseSensitivity` words are on the console and do not clamp, because
+  `0x006eb1a0` does not.
+- Second reader confirmed the soldier look law byte for byte (pitch `-= input`,
+  yaw `-= 3 x input`, degrees per tick; `setRotateZDeg` multiplies by pi/180 at
+  `0x086b1ca4`) and added two scalers the stream missed: while zoomed both axes
+  are scaled by the weapon's `zoomFov` (+0x270, not `SoldierZoomFov`), and recoil
+  is added into the same axes before the x3.
+- FEEL, for the owner: on-foot PITCH is 3.1x slower than before at every hand
+  speed (yaw within 5%); a Sherman tower is 2.7x slower at ordinary hand speeds
+  (35 deg/s per unit of input); a Defgun winds up 4x slower. All three are the
+  read law. `countsPerPixel` (default 1.0, `?turret=`) is the one unproven unit -
+  the 3.7% agreement with the old constant is coincidence-prone; set it by play.
+- UNRESOLVED, not merely unverified: `BFSoldier+0x288` is rotated into the same
+  transform a second time when the soldier is moving, which read literally turns
+  a walking soldier twice as fast. Retail does not, so something outside
+  `handlePlayerInput` cancels one of them. The viewer applies the tick's own
+  rotation only.
+- Left: recoil bypasses the look law here; the touch pad has never aimed an
+  on-foot soldier (pre-existing); aircraft stick input is a separate consumer.
+
+**W3-A (drivetrain), third round.** The cliff launch is closed (sharp cliff jeep
+98.6 km/h, under its flat top); the M3A1 still leans 32-38 degrees (main: 5.5)
+and the arithmetic says an isotropic friction budget tips anything whose contact
+patches sit further below its origin than its half-track is wide. Two readers
+have not found what prevents it in the engine. **Parked on two observations of
+the real game, asked of the owner: does an M3A1 lean hard in a turn above about
+40 km/h, and does a jeep with a driver and no throttle roll down a gentle
+slope?** The reviewer is checking the two new commits meanwhile.
+
+**S2 (kit photographs) has reported** (`s2-kitphotos.md`); small enough that the
+lead reviews it.
+
 **W3-C (game modes) has reported and is in review** (`w3c-gamemodes.md`). **W3-G
 (mouse input) has reported and is in review** (`w3g-mouse.md`).
 
