@@ -342,6 +342,28 @@ def flag_mesh_nations(sprites: dict) -> dict[str, str]:
     return table
 
 
+# The one regex `viewer/nation.js`'s `flagMeshNation` also runs, so a
+# control point's flag mesh resolves to the same nation code whether it is
+# read here (`extract_menu_layout.py`, writing `menu-levels.json`) or in the
+# browser (`map.html`, live off the level's own scene). Both read the same
+# `nations` table too -- this pack's own `hud.json['flagMeshNation']`, from
+# `flag_mesh_nations` above -- so there is exactly one place a code can be
+# added and both sides pick it up without being told twice.
+_FLAG_MESH_RE = re.compile(r"^flag([a-z]+)_", re.IGNORECASE)
+
+
+def flag_mesh_nation(flag_mesh: str | None, nations: dict[str, str]) -> str | None:
+    """`flagus_m1` -> `us` through `nations`. `None` for a mesh the table has
+    never heard of -- Pathet Lao's `flagpl_m1`, which no installed `menu.rfa`
+    ships a `conp_pl` for -- rather than a guess: the caller decides what an
+    unmapped mesh means (`extract_menu_layout.py` falls back to the team's
+    soldier skin; `viewer/nation.js`'s `cpNation` answers `'unknown'`)."""
+    if not flag_mesh:
+        return None
+    m = _FLAG_MESH_RE.match(flag_mesh)
+    return nations.get(m.group(1).lower()) if m else None
+
+
 def sprite_ref(stem: str) -> str:
     """The name `menu/InGame` and the `.con` data actually spell for a sprite
     named by stem in `SPRITES` — `Texture/` dropped (both name textures
