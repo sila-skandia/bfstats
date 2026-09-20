@@ -360,6 +360,8 @@ class Part:
     extras: dict = field(default_factory=dict)
     world_translation: Vector3 = (0.0, 0.0, 0.0)
     triangles: list[Triangle] = field(default_factory=list)
+    node_index: int = -1
+    ancestor_indices: frozenset[int] = field(default_factory=frozenset)
 
     @property
     def bound_bone(self) -> str | None:
@@ -436,12 +438,23 @@ def body_parts(parts: list[Part]) -> list[Part]:
 
 
 def scene_parts(doc: dict, blob: bytes) -> list[Part]:
-    """Every mesh-bearing node, world-transformed, in scene order."""
+    """Every mesh-bearing node, world-transformed, in scene order.
+
+    Each `Part` also carries `node_index` and `ancestor_indices` -- every
+    node index on the path from the scene root down to (not including) this
+    one, mesh-bearing or not. `origin_pile` uses it to tell a rig's own pivot
+    chain (a gun's node nested under the turret ring it rotates with, both
+    correctly resting on the same point) from sub-parts that lost a placement
+    independently of each other: an ancestor that is itself a candidate
+    already accounts for the shared point, so a descendant landing there too
+    is not a second, independent instance of the failure.
+    """
     nodes = doc.get("nodes", [])
     meshes = doc.get("meshes", [])
     parts: list[Part] = []
 
-    def visit(index: int, parent: tuple[Matrix3, Vector3], depth: int = 0) -> None:
+    def visit(index: int, parent: tuple[Matrix3, Vector3],
+             ancestors: tuple[int, ...], depth: int = 0) -> None:
         if depth > 64 or index >= len(nodes):
             return
         node = nodes[index]
@@ -452,6 +465,8 @@ def scene_parts(doc: dict, blob: bytes) -> list[Part]:
                 name=node.get("name", f"node{index}"),
                 extras=node.get("extras") or {},
                 world_translation=world[1],
+                node_index=index,
+                ancestor_indices=frozenset(ancestors),
             )
             for prim in meshes[mesh_index].get("primitives", []):
                 attrs = prim.get("attributes", {})
@@ -468,11 +483,11 @@ def scene_parts(doc: dict, blob: bytes) -> list[Part]:
                     ))
             parts.append(part)
         for child in node.get("children", []):
-            visit(child, world, depth + 1)
+            visit(child, world, ancestors + (index,), depth + 1)
 
     scene = doc.get("scenes", [{}])[doc.get("scene", 0)]
     for root in scene.get("nodes", []):
-        visit(root, (_IDENTITY, (0.0, 0.0, 0.0)))
+        visit(root, (_IDENTITY, (0.0, 0.0, 0.0)), ())
     return parts
 
 
@@ -517,20 +532,20 @@ def geometry_stats(parts: list[Part], *, zero_area_eps: float = 1e-10) -> Geomet
     return stats
 
 
-# A part is only "on the origin" when its own geometry is too, within this
-# fraction of the model's longest side. Node translation alone is not enough:
-# a `.con` gives a sub-part no `setPosition` whenever the mesh is already
-# modelled in the parent's space, which is how most mod vehicles are built.
-# EoD's LCT-Mk6 has five such parts, and their geometry is 1.6 m, 8.7 m,
-# 7.5 m, 17.3 m and 13.8 m from the origin of a 35 m landing craft. Nothing is
-# collapsed there; the parts are exactly where the artist put them.
+# A part is only "collapsed" when its own geometry sits at the anchor too,
+# within this fraction of the model's longest side. Node translation alone is
+# not enough: a `.con` gives a sub-part no `setPosition` whenever the mesh is
+# already modelled in the parent's space, which is how most mod vehicles are
+# built. EoD's LCT-Mk6 has five such parts, and their geometry is 1.6 m,
+# 8.7 m, 7.5 m, 17.3 m and 13.8 m from the origin of a 35 m landing craft.
+# Nothing is collapsed there; the parts are exactly where the artist put them.
 #
 # The failure mode this check exists for looks different in exactly this way:
 # a sub-part whose placement was lost is authored around its *own* local
-# origin, so collapsing it puts its geometry on the model origin as well. A
-# rifle's trigger is 2 cm of mesh centred on its bone; land it at the root and
-# its centroid is a centimetre from the origin of a 1.1 m weapon, well inside
-# the 5.5 cm this allows.
+# origin, so collapsing it puts its geometry on the anchor as well. A rifle's
+# trigger is 2 cm of mesh centred on its bone; land it at the root and its
+# centroid is a centimetre from the origin of a 1.1 m weapon, well inside the
+# 5.5 cm this allows.
 ORIGIN_CENTROID_FRACTION = 0.05
 # ...with a floor, because the fraction is of the model's own size and a model
 # that collapsed *entirely* has no size left to take a fraction of. Three
@@ -538,21 +553,61 @@ ORIGIN_CENTROID_FRACTION = 0.05
 ORIGIN_CENTROID_FLOOR = 0.03
 
 
+def _cluster_by_translation(parts: list[Part],
+                            epsilon: float) -> list[list[Part]]:
+    """Group `parts` by shared `world_translation`, wherever that point is.
+
+    Not just the scene origin: a `.con`'s missing `setPosition` or an
+    unapplied bind buries a sub-part at whatever point its immediate parent's
+    world transform composes to, and that parent is routinely offset from the
+    scene root -- a vehicle hull's running-gear mount, a turret's own pivot.
+    Two nodes sharing a parent and both carrying no local offset land on
+    exactly the same floating-point value (the same composition applied to
+    the same input), so a tight epsilon still clusters them correctly; it is
+    the anchor that needs to move, not the tolerance.
+    """
+    clusters: list[list[Part]] = []
+    for part in parts:
+        for cluster in clusters:
+            anchor = cluster[0].world_translation
+            if all(abs(a - b) < epsilon
+                   for a, b in zip(part.world_translation, anchor)):
+                cluster.append(part)
+                break
+        else:
+            clusters.append([part])
+    return clusters
+
+
 def origin_pile(parts: list[Part], *, epsilon: float = 1e-4,
                 allowance: int = 2, explained: frozenset[str] = frozenset(),
                 model_size: float | None = None) -> list[str]:
-    """Unexplained body parts collapsed onto the scene origin.
+    """Unexplained body parts collapsed onto a single shared point.
 
-    One part at the origin is the hull or weapon body; a soldier legitimately
-    stacks two. More than `allowance` *unexplained* parts collapsed there is
-    the child-placement failure mode: `setPosition` read as a property of the
-    parent, or a bind that was never applied, leaves every sub-part buried at
-    the root.
+    One part at a shared point is the hull or weapon body; a soldier
+    legitimately stacks two. More than `allowance` *unexplained* parts
+    collapsed onto the *same* point is the child-placement failure mode:
+    `setPosition` read as a property of the parent, or a bind that was never
+    applied, leaves every sub-part buried at whatever their parent's world
+    position happens to be -- the scene root for a weapon or a soldier, but
+    just as often a hull, a turret ring or a track assembly sitting well away
+    from (0, 0, 0). Anchoring the check on the scene origin alone missed
+    exactly that: a Sherman with only its body parts' transforms zeroed piles
+    27 of them (all fourteen road wheels, `ShermanTower`, the hull hatch, the
+    pintle Browning) onto the hull's own running-gear mount at y = -0.8, and a
+    fixed-origin reading is blind to it. So the anchor is *comparative* --
+    wherever `_cluster_by_translation` finds parts sharing a point -- rather
+    than a hardcoded (0, 0, 0).
 
-    Collapsed means both halves: the node sits at the origin *and* the part's
-    own geometry does, within `ORIGIN_CENTROID_FRACTION` of `model_size` (the
-    model's longest side, `body_length`). Passing no `model_size` keeps the
-    old node-translation-only reading.
+    Collapsed still means both halves: the node sits at the cluster's shared
+    point *and* the part's own geometry does, within `ORIGIN_CENTROID_FRACTION`
+    of `model_size` (the model's longest side, `body_length`). Passing no
+    `model_size` keeps the old node-translation-only reading. This half is
+    what tells a real pile from instancing that legitimately shares a mount:
+    EoD's `BTR60CockpitExternal` is the same mesh placed at five points on the
+    hull, each authored with its geometry offset from its own node (the same
+    "modelled in the parent's space" pattern as the LCT-Mk6), so none of the
+    five reads as collapsed even where their nodes coincide.
 
     Five kinds of node are explained and do not count:
 
@@ -571,27 +626,62 @@ def origin_pile(parts: list[Part], *, epsilon: float = 1e-4,
       parts the assembler recorded as binds it could not apply: EoD's M40
       inherits the No4's `Block` and `Mag` sub-parts but not their bones, and
       that is one finding, not two.
+    * **a lone rider on a cluster ancestor** — a multi-axis mount is built as
+      nested pivots (a yaw bundle, a pitch bundle inside it, the gun inside
+      that), each correctly carrying no local offset of its own because the
+      rotation happens in place, so every level legitimately composes to the
+      same world point as the mount itself. EoD's `EoD_PACV_Ballmount` (the
+      yaw ring) and the `Mk19Ball` nested inside it are one pivot chain
+      wearing two names, not two independent placement failures, so the
+      single descendant folds into its ancestor. This is *not* the same
+      shape as a genuine pile: EoD's Fletcher carries a Flak 38 mount whose
+      handles, pedal and targeter (four independent siblings, not a chain)
+      all nest under `RL_body`, and when their placements are lost all four
+      -- being four, not one -- still count, `RL_body` included, because an
+      ancestor with more than one rider is the branch a pile piles onto, not
+      a pivot wearing a second name. Only an ancestor with *exactly one*
+      cluster-mate riding it is treated as a pivot and folds its rider away.
     """
     radius = (max(model_size * ORIGIN_CENTROID_FRACTION, ORIGIN_CENTROID_FLOOR)
               if model_size else None)
 
-    def collapsed(part: Part) -> bool:
-        if not all(abs(v) < epsilon for v in part.world_translation):
-            return False
+    def geometry_at(part: Part, anchor: Vector3) -> bool:
         if radius is None:
             return True
         c = part.centroid
-        return math.sqrt(sum(v * v for v in c)) <= radius
+        return math.sqrt(sum((c[i] - anchor[i]) ** 2 for i in range(3))) <= radius
 
-    piled = [
-        part.name for part in parts
+    candidates = [
+        part for part in parts
         if part.is_body
         and not part.is_skinned
         and part.bound_bone is None
         and part.name not in explained
-        and collapsed(part)
     ]
-    return piled if len(piled) > allowance else []
+
+    piled: list[str] = []
+    for cluster in _cluster_by_translation(candidates, epsilon):
+        anchor = cluster[0].world_translation
+        # A rig's own pivot chain rests on its own point by construction, and
+        # an ancestor already in this cluster accounts for its *one* rider --
+        # but an ancestor with two or more cluster-mates riding it is not a
+        # chain, it is the branch point several independent placements were
+        # lost onto, which is the pile itself. So only a lone rider folds
+        # into its ancestor; nothing folds away where the ancestor branches.
+        indices_here = {part.node_index for part in cluster}
+        rider_counts: dict[int, int] = {}
+        for part in cluster:
+            for ancestor in part.ancestor_indices & indices_here:
+                rider_counts[ancestor] = rider_counts.get(ancestor, 0) + 1
+        outermost = [
+            part for part in cluster
+            if not any(rider_counts.get(ancestor) == 1
+                      for ancestor in part.ancestor_indices & indices_here)
+        ]
+        collapsed = [part for part in outermost if geometry_at(part, anchor)]
+        if len(collapsed) > allowance:
+            piled.extend(part.name for part in collapsed)
+    return piled
 
 
 def body_length(parts: list[Part]) -> float | None:
