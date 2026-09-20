@@ -1020,6 +1020,11 @@ export class GroundVehicle extends Vehicle {
         continue;
       }
 
+      // The contact normal, hoisted above the spring because the spring now
+      // needs it too — see the `nAxis` note on `load`.
+      const nBody = groundNormal(this.groundHeight, attach.x, attach.z,
+        this._normal).applyQuaternion(qInv);
+
       // Contact-patch velocity in the body frame. Hoisted above the spring
       // because the damper's first tick needs its vertical component.
       const u = this._u.copy(vBody).add(this._arm.crossVectors(w, wheel.rest));
@@ -1053,11 +1058,37 @@ export class GroundVehicle extends Vehicle {
       // hard gets its real closing rate, and the damper is no longer blind
       // for a tick every time a wheel re-lands — which on rough ground is 3 %
       // of a jeep's contacts and 8 % of a half-track's. [free, numerics]
+      // The damper answers how fast the spring is being compressed, and the
+      // axle cannot close on the ground faster than it is travelling toward
+      // it. A backward difference of a PROBE can: on a near-vertical face
+      // the probe's reading jumps the whole bounded depth in one sub-step
+      // and reports 96 m/s of closing speed where the axle is doing 8. The
+      // closing speed is the same quantity the first-contact seed already
+      // uses, for the same reason, so it bounds the difference too.
+      // [free, numerics]
+      const closing = Math.abs(u.y) + SPRING_AXIS_FLOOR;
       const rate = wheel.prevCompression === null
-        ? Math.max(0, -u.y) : (compression - wheel.prevCompression) / h;
-      let load = SPRING_GRAVITY_SCALE * wheel.strength
+        ? Math.max(0, -u.y)
+        : clamp((compression - wheel.prevCompression) / h, -closing, closing);
+      // **A spring cannot push against a face it is edge-on to.** The probe
+      // runs down the hull's own +Y (PHY-5, read), but the ground answers
+      // along its own normal, so the reaction available along the spring
+      // axis is at most `N . axis` of it. Without this a jeep straddling a
+      // 25 m drop read metres of compression on the near-vertical face and
+      // the bump stop pushed at about 101 m/s^2 along the hull's up while
+      // the tyres, with `N.y` near 0.12, had 1.8 m/s^2 to answer with: 251.8
+      // km/h and inverted, out of a fall worth 80.
+      //
+      // It is the same quantity the friction budget already spends — that
+      // one is `N . world-up` and is read (`0x0825b80c fld [eax+0x4]`); this
+      // is `N . spring-axis`. The engine has no equivalent because its wheel
+      // is a body whose displacement comes from its own contact rather than
+      // from a probe down an axis, so the precedent is read and the transfer
+      // is this file's. [free, numerics]
+      const nAxis = nBody.y > 0 ? nBody.y : 0;
+      let load = (SPRING_GRAVITY_SCALE * wheel.strength
         * (travel + overrun * k.bumpStiffness)
-        + wheel.damping * rate;
+        + wheel.damping * rate) * nAxis;
       springRate = Math.max(springRate, Math.abs(rate));
       wheel.prevCompression = compression;
       if (load < 0) load = 0;
@@ -1069,13 +1100,9 @@ export class GroundVehicle extends Vehicle {
       wheel.friction = 0.5 * (WHEEL_MATERIAL_FRICTION
         + this.surfaceFriction(attach.x, attach.z));
 
-      // The contact normal, and the tyre frame laid into ITS plane rather
-      // than into the hull's — see `intoContactPlane` for the bytes and for
-      // what the hull-plane frame cost. Taken in the body frame, because
-      // that is where `u` and the force accumulator live.
-      const nBody = groundNormal(this.groundHeight, attach.x, attach.z,
-        this._normal).applyQuaternion(qInv);
-
+      // The tyre frame is laid into the contact plane rather than into the
+      // hull's — see `intoContactPlane` for the bytes and for what the
+      // hull-plane frame cost.
       // The tyre's own frame: forward steered or straight, lateral to its
       // right. Rotation about +Y, so a negative steer angle points the wheel
       // starboard — the right turn the sign convention above promises.
@@ -2563,6 +2590,11 @@ export class TrackedVehicle extends Vehicle {
         continue;
       }
 
+      // The contact normal, hoisted above the spring for the same reason
+      // `GroundVehicle` hoists it.
+      const nBody = groundNormal(this.groundHeight, attach.x, attach.z,
+        this._normal).applyQuaternion(qInv);
+
       // Contact-patch velocity, hoisted for the damper's first tick exactly
       // as `GroundVehicle` hoists its own.
       const u = this._u.copy(vBody).add(this._arm.crossVectors(w, wheel.rest));
@@ -2577,11 +2609,37 @@ export class TrackedVehicle extends Vehicle {
       const compression = Math.min(raw, k.suspensionTravel + MAX_OVERRUN);
       const travel = Math.min(compression, k.suspensionTravel);
       const overrun = compression - travel;
+      // The damper answers how fast the spring is being compressed, and the
+      // axle cannot close on the ground faster than it is travelling toward
+      // it. A backward difference of a PROBE can: on a near-vertical face
+      // the probe's reading jumps the whole bounded depth in one sub-step
+      // and reports 96 m/s of closing speed where the axle is doing 8. The
+      // closing speed is the same quantity the first-contact seed already
+      // uses, for the same reason, so it bounds the difference too.
+      // [free, numerics]
+      const closing = Math.abs(u.y) + SPRING_AXIS_FLOOR;
       const rate = wheel.prevCompression === null
-        ? Math.max(0, -u.y) : (compression - wheel.prevCompression) / h;
-      let load = SPRING_GRAVITY_SCALE * wheel.strength
+        ? Math.max(0, -u.y)
+        : clamp((compression - wheel.prevCompression) / h, -closing, closing);
+      // **A spring cannot push against a face it is edge-on to.** The probe
+      // runs down the hull's own +Y (PHY-5, read), but the ground answers
+      // along its own normal, so the reaction available along the spring
+      // axis is at most `N . axis` of it. Without this a jeep straddling a
+      // 25 m drop read metres of compression on the near-vertical face and
+      // the bump stop pushed at about 101 m/s^2 along the hull's up while
+      // the tyres, with `N.y` near 0.12, had 1.8 m/s^2 to answer with: 251.8
+      // km/h and inverted, out of a fall worth 80.
+      //
+      // It is the same quantity the friction budget already spends — that
+      // one is `N . world-up` and is read (`0x0825b80c fld [eax+0x4]`); this
+      // is `N . spring-axis`. The engine has no equivalent because its wheel
+      // is a body whose displacement comes from its own contact rather than
+      // from a probe down an axis, so the precedent is read and the transfer
+      // is this file's. [free, numerics]
+      const nAxis = nBody.y > 0 ? nBody.y : 0;
+      let load = (SPRING_GRAVITY_SCALE * wheel.strength
         * (travel + overrun * k.bumpStiffness)
-        + wheel.damping * rate;
+        + wheel.damping * rate) * nAxis;
       springRate = Math.max(springRate, Math.abs(rate));
       wheel.prevCompression = compression;
       if (load < 0) load = 0;
@@ -2597,9 +2655,6 @@ export class TrackedVehicle extends Vehicle {
       // "Willy's existing steerable-front-wheel code unchanged"), using its
       // own bundle's declared lock (`wheel.steerMax`) rather than a shared
       // vehicle-wide constant, since a half-track's is not a jeep's.
-      const nBody = groundNormal(this.groundHeight, attach.x, attach.z,
-        this._normal).applyQuaternion(qInv);
-
       const dir = this._dir.set(0, 0, -1);
       if (wheel.steered) {
         const steer = -yaw * wheel.steerMax * DEG;
