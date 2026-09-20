@@ -6642,15 +6642,15 @@ function switchSeat(position) {
   collectMannedGuns();
   // The world's driver/gunner fire loops read the same scoped lists.
   world?.refreshMount(LOCAL_PLAYER, { groups: vehicleGuns, manned: mannedGuns });
+  // A different seat is a different camera, often in a different rig; snap
+  // rather than sweep the view across the hull for a frame.
+  rebuildVehicleInterp();
   warmSubtree(occupancy.root);
   feedVehicleHud();
   hud.textContent = isTouchDevice ? getTouchHudText()
     : mannedActive() ? HUD_MANNED : car ? HUD_DRIVE : HUD_PILOT;
   loadSeatPose();
   updateMobileControls();
-  // A different seat is a different camera, often in a different rig; snap
-  // rather than sweep the view across the hull for a frame.
-  rebuildVehicleInterp();
 }
 
 // --- feeding the vehicle/gun HUD variables (BRIEFING2.md's contract) -------
