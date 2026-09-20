@@ -50,6 +50,7 @@ import {
   JUMP_IMPULSE, GRAVITY, DIRECTIONAL_SPEED, STRAFE_SPEED, WALK_SPEED_FACTOR,
   PITCH_LIMIT_DEG, FOV_DEG, BOB, CAMERA_SHAKE_FACTOR, STEP_PERIOD,
   STANCE_TRANSITION, RAMP_ACCEL, RAMP_LIMIT, ENGINE_TICK_RATE,
+  DIVE_SPEED_FACTOR, DIVE_DURATION,
 } from './soldier.js';
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
@@ -234,15 +235,59 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
     walk(s, { forward: 0, strafe: 1, ...input }, 60);
     return Math.abs(s.x - 4);
   };
+  // Prone is measured from an ALREADY prone soldier. Pressing Z while moving
+  // forward enters `Lb_RunStandToLie`, whose own `setSpeed 6.0` runs the first
+  // 0.282 s of it at a full run (PHY-7, `proneDive` below) — that is the dive,
+  // not the crawl, and folding it into this row would measure the wrong thing.
+  const measureProne = (input) => {
+    const s = runway();
+    walk(s, { prone: true }, 60);            // dive, then settle at a crawl
+    const from = s.z;
+    walk(s, { forward: 1, prone: true, ...input }, 60);
+    return from - s.z;
+  };
   results.travel = {
     run: measure({}),
     back: -measure({ forward: -1 }),
     walk: measure({ walk: true }),
     crouch: measure({ crouch: true }),
-    prone: measure({ prone: true }),
+    prone: measureProne({}),
     strafe: sideways({}),
     crouchStrafe: sideways({ crouch: true }),
   };
+  // The prone dive itself (PHY-7): a soldier at a saturated run who presses Z.
+  // `setSpeed 6.0` against the prone table's 1 m/s is the standing run exactly,
+  // so the dive covers `DIVE_DURATION * 6` and then the crawl takes over.
+  {
+    const diving = runway();
+    walk(diving, { forward: 1 }, 60);        // saturate the ramp at a run
+    const from = diving.z;
+    const frames = Math.round(DIVE_DURATION / DT);
+    walk(diving, { forward: 1, prone: true }, frames);
+    const slide = from - diving.z;
+    const after = diving.z;
+    walk(diving, { forward: 1, prone: true }, frames);
+    results.proneDive = {
+      slide,
+      // The same span of frames once the dive is over: a 1 m/s crawl.
+      crawl: after - diving.z,
+      duration: DIVE_DURATION,
+      factor: DIVE_SPEED_FACTOR,
+    };
+    // Backing up when you press it is `Lb_StandToLie`, `setSpeed 1.0` — no
+    // dive at all, so the same span covers a backward crawl and nothing more.
+    const backward = runway();
+    walk(backward, { forward: -1 }, 60);
+    const backFrom = backward.z;
+    walk(backward, { forward: -1, prone: true }, frames);
+    results.proneDive.backwardSlide = backward.z - backFrom;
+    // And from a crouch it is `Lb_CrouchToLie`, also 1.0.
+    const crouched = runway();
+    walk(crouched, { forward: 1, crouch: true }, 60);
+    const crouchFrom = crouched.z;
+    walk(crouched, { forward: 1, crouch: true, prone: true }, frames);
+    results.proneDive.fromCrouchSlide = crouchFrom - crouched.z;
+  }
   results.shiftIsSlower = results.travel.walk < results.travel.run;
   // What a standing start costs, so the tests can subtract it once instead of
   // carrying a second set of distances.
