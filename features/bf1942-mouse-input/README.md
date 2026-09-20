@@ -75,8 +75,21 @@ declare a category) settles what that means:
   LandSea profile while the pilot a metre away is on Air.
 * Only the 13 aircraft *pilot* PCOs are VCAir.
 * Ships are VCSea, which selects the same LandSea map.
-* `AA_Enterprise` is the one template with no category, and so the only one
-  that would keep the infantry map.
+* `AA_Enterprise` is the one template with no category -- but it still gets
+  **VCLand**, not the infantry map: `PlayerControlObjectTemplate`'s own
+  constructor seeds the field to 0 (`mov DWORD [ebx+0x1dc],0x0` at lnxded
+  `0x08319628` and `0x083198a8`; the accessors are `setVehicleCategory`
+  `0x0831b940` / `getVehicleCategory` `0x0831b970`, both on `+0x1dc`). So
+  **every** vanilla PCO selects LandSea or Air and nothing a player can sit in
+  keeps the infantry map. [corrected by the review, 2026-09-20]
+* Ten of the 121 use the **unprefixed** spelling and the engine accepts it:
+  `AA_Allies` declares `setVehicleCategory Land`, and nine Daihatsu/Lcvp/PTRaft
+  passenger PCOs declare `Sea`. `operator>>(istream&, VehicleCategory&)` lnxded
+  `0x0829b580` compares against `'VCLand'` (`0x086d4276`) **or** `'Land'`
+  (`0x086d4030`) for 0, `'VCSea'` (`0x086d427d`) or `'Sea'` (`0x086d427f`) for
+  1, `'VCAir'` (`0x086d4270`) or `'Air'` (`0x086f3538`) for 2, and writes
+  **3** for anything else -- 3 being the one value that falls through the
+  client's branch and leaves the infantry map in place.
 
 Shipped sensitivities, read out of `Mods/bf1942/Settings/Default/Controls/`:
 `Common.con:42` 0.25, `Infantry.con:28` 0.25, `Land.con:22` 0.25,
@@ -134,7 +147,12 @@ editing this file. The new block is next to `lookDelta`:
 * `pumpLook(dt)` -- pumps with `nTicks / 30` and resets the stage when the
   profile changes, then returns the ticks the caller owes.
 * `stepTurret(dt)` -- pump, `aim()` once, then `step(1/30)` per tick.
-* `stepSoldierLook(ticks)` -- the on-foot law, with the zoom factor.
+* `stepSoldierLook(ticks)` -- the on-foot law, with the zoom factor, which is
+  the weapon's **`zoomFov`** (`FireArmsTemplate+0x270`, read at
+  `0x08275bf2`-`0x08275c11`), NOT `SoldierZoomFov` (`+0x274`). The two are
+  different .con properties with different shipped values -- a K98 is
+  `zoomFov 0.4 / soldierZoomFov 0.6`, a Colt `0.7 / 0.5` -- and the first
+  revision used the wrong one. [corrected 2026-09-20]
 
 `lookDelta` now only accumulates for those two branches; the free-fly camera
 and `VehicleCamera` paths are unchanged (they are debug surfaces with no engine
@@ -151,8 +169,13 @@ the same currency as the mouse, so the profiles, the +-16 saturation and
 
 `game.setCommonMouseSensitivity`, `game.setInfMouseSensitivity`,
 `game.setLandSeaMouseSensitivity` and `game.setAirMouseSensitivity` are
-registered, one float argument, 0..1 like the menu slider, read-back with no
-argument. They are the engine's own words: they are what the shipped Controls
+registered, one float argument, **unclamped**, read-back with no argument.
+0..1 is the menu slider's range, not the word's: `ControlSettings::
+setSensitivity` `0x006eb1a0` is `mov eax,[esp+0x4]; mov [ecx+0xc],eax` plus a
+one-time seed of the saved slot at `+0x10` while it holds the `-1.0f`
+sentinel, with no clamp anywhere on the path, so `2` really does buy a scale
+of 10.1 and a negative value really does invert the axis. An earlier revision
+clamped to 0..1; the review removed it. [corrected 2026-09-20] They are the engine's own words: they are what the shipped Controls
 `.con` files call, and they are in the retail client's `game` method table
 (registrar `FUN_006bba90`, body at vtable `+0x48` = `0x006bbbe0` ->
 `0x006c57f0` -> `ControlSettings::setSensitivity` `0x006eb1a0`).
@@ -215,16 +238,57 @@ comes to **0.12605** degrees per pixel -- 3.7% away. Someone fitted that
 constant by feel and landed on the read law, which is also the best evidence
 anyone has that one browser pixel is about one mouse count.
 
-**Not closed, and deliberately not modelled.** `BFSoldier+0x288` is not only
-the tick's yaw: the tick decrements it, and a second site
-(`0x08274629`-`0x082746c5`, reached when `c_PIYaw != 0`, or when
-`c_PIThrottle != 0` with no strafe) applies it with the matching `-3.0`
-(`ds:0x086d26fc`) and zeroes it. It is clamped at `0x08274412` against a bound
-built from `0.6` (`ds:0x86c4f68`) and `18.0` (`ds:0x86c08d0`), which reads like
-the torso/leg alignment the soldier mesh needs rather than a second helping of
-view rotation. Whether a *moving* soldier therefore turns faster than a
-standing one was not settled. The viewer implements the tick's own rotation
-only.
+**Still open, and deliberately not modelled.** `BFSoldier+0x288` is not only
+the tick's yaw: the tick decrements it with the RAW delta (`0x08274314`,
+before the animation turn factor), and a second site
+(`0x08274629`-`0x082746c5`, reached when `c_PIYaw != 0` or `c_PIThrottle != 0`
+-- i.e. whenever the soldier is MOVING) applies it with the matching `-3.0`
+(`ds:0x086d26fc`) and zeroes it.
+
+The review re-read it and moved it on, without closing it:
+
+* The bound is not "built from 0.6 and 18.0". It is
+  `[-(template+0x188), +template+0x184]` -- the
+  `ObjectTemplate.setTurnLeftRightAngle 20.0 14.0` pair from
+  `Objects/Soldiers/Common/CommonSoldierData.inc:46` -- each first multiplied
+  by the held weapon's `vt[+0xa4]`/`vt[+0xa8]` (`0x082754ba`-`0x082754e3`), or
+  by 0.6 for one weapon class. The 18.0 is the default of a *third*
+  accumulator, `+0x290`, which takes twice the yaw delta and decays.
+* The "two views of one quantity" hedge is **wrong**. Both sites fetch the
+  matrix from `this->queryInterface(ds:0x86c2a58)->vt[+0x74]()` and write it
+  back through `world::setTransformation` `0x08061690`, which resolves the
+  same interface (`0x080616a1` loads the same `ds:0x86c2a58`) and calls its
+  `vt[+0x78]` -- the setter paired with that getter. Read literally the two
+  rotations therefore COMPOUND on one matrix: a moving soldier would turn
+  about twice as fast per tick, and the standing-to-moving transition would
+  snap the view by up to `3 x 20` = 60 degrees.
+* Neither is what the retail game does, so something outside this function
+  neutralises one of them, and the review did not find it.
+* `+0x288` is definitely also a pose quantity: `BFSoldier::handleUpdate`
+  `0x08271f86`-`0x08271f97` builds `setRotateYDeg(-3.0 x +0x288)` beside
+  `setRotateXDeg(-2.5 x +0x284)` (`ds:0x86d2700` = -2.5), and
+  `updateAnimations` `0x0826e67e` feeds it negated into the aim-pose blend.
+
+The viewer implements the tick's own rotation only, which is exactly right for
+a standing soldier and, if the literal reading holds, up to 2x slow for a
+walking one. Do not change that on the strength of this paragraph.
+
+**Nothing in vanilla slows a crouched or prone turn.** The animation state's
+turn factor that multiplies the yaw delta is `+0xcc`, the **second** argument
+of `AnimationStateMachine.setSpeed <throttle> <mouseLook> <yaw>` (the pairing
+is `0x0827449f`-`0x082744df`; only the first of the soldier's two state
+machines applies its factors -- `0x0827449b test esi,esi; jne`). Across 284
+vanilla states and 83 `setSpeed` lines the only departures from `1 1 1` are
+ladders (`1.0/0.7 0 0`), hit reactions and parachutes (`0 1 0`), vehicle and
+death states (`0 0 0`) and the dive-to-prone lunge `Lb_RunStandToLie`
+(`6.0 1.0 1.0`). Every `AnimationStatesCrouching.con` and
+`AnimationStatesLie.con` state is `1.0 1.0 1.0`.
+
+**Recoil takes the same path in retail.** When `BFSoldier+0x544` is non-zero,
+`0x08275c5f`-`0x08275c8a` ADDS `yawRecoil()` `0x0827e720` to `c_PIMouseLookX`
+and `pitchRecoil()` `0x0827e7d0` to `c_PIMouseLookY` before the law runs, so
+the kick inherits the x3 yaw gain and the +-38 pitch clamp. This viewer writes
+recoil straight into `soldier.look` instead. Unmodelled, deliberately.
 
 Aircraft stick input (`viewer/flight.js`) is untouched and is not a one-line
 consequence: `Air.con` binds the mouse to `c_PIPitch` and `c_PIRoll`, not to
@@ -284,14 +348,58 @@ None of this is fps-dependent any more, in either direction: the same hand
 movement turns the same amount at 30, 60 and 144 frames a second, and through
 a 200 ms stall.
 
+### The review's own table, with the pitch split out
+
+Measured, not derived: `tests/` harness driving the real `MouseInput` and the
+real `TurretAxis` (script in `.../scratchpad/r3g/hw/feel2.mjs`). "Old" is
+`min(0.12605 x px/s, 4 x maxSpeed)` for a turret and a flat 0.12605 deg/px on
+foot; "new" is `axis x maxSpeed` with `axis = quantise(0.001 x px/s x 1.35)`.
+
+| hand | axis | on foot yaw | on foot pitch | Sherman 35 | MG42 70 | Defgun 90 |
+|---|---|---|---|---|---|---|
+| 300 px/s | 0.40 | 37.8 -> **36.0** | 37.8 -> **12.0** | 37.8 -> **14.0** | 37.8 -> **28.0** | 37.8 -> **36.0** |
+| 1000 px/s | 1.35 | 126.1 -> **121.5** | 126.1 -> **40.5** | 126.1 -> **47.3** | 126.1 -> **94.5** | 126.1 -> **121.5** |
+| 3000 px/s | 4.04 | 378.2 -> **363.6** | 378.2 -> **121.2** | 140 -> **141.4** | 280 -> **282.8** | 360 -> **363.6** |
+
+Three things change by more than 2x, and only one of them is a judgement call:
+
+* **On-foot pitch, 3.1x slower at every hand.** The evidence is the strongest
+  in the whole stream -- the `x3.0` is a single `fmul ds:0x86c08c8` on the yaw
+  path only, and the pitch's own unit is fixed by the `setPointUpDownAngle
+  38.0 38.0` clamp it is compared against. Ship it.
+* **A Sherman tower, 2.7x slower at ordinary hand speeds.** Also solid:
+  `setMaxSpeed 35` is 35 deg/s per unit of input, and 1000 counts a second is
+  1.35 units. Ship it.
+* **The Defgun's wind-up, 4x slower.** Not in the table, because it is not a
+  steady-state number: the old model scaled `setAcceleration` by the same 4 it
+  scaled `maxSpeed` by, so a Defgun (`setMaxSpeed 90 / setAcceleration 50`)
+  used to ramp at 200 deg/s^2 and now ramps at 50. Its *steady* rate barely
+  moves (36.0 against 37.8 at 300 px/s -- a coincidence, `0.001 x 1.35 x 90` =
+  0.1215 is almost exactly the old `0.12605` deg/px) but it takes four times
+  as long to get there, and a Defgun is the gun a player will most notice it
+  on. The engine's number is the engine's number; flag it, do not scale it.
+
+On the unproven unit: the 3.7% agreement between the new on-foot yaw
+(0.1215 deg/count) and the old hand-fitted `LOOK_SENS` (0.12605 deg/px) is
+**weak** evidence for `countsPerPixel = 1`, and the review's confidence is low.
+`LOOK_SENS` was fitted on foot, where the old model was isotropic, so it was
+fitted against a law that was wrong in one of its two axes; landing within 4%
+of the yaw half of the right law is as consistent with "the fitter matched the
+horizontal feel of a 400-800 dpi mouse" as with "one pixel is one count". Two
+other numbers land in the same place by construction (a Defgun's 0.1215, a
+Stationary_Browning's 0.1215) because `maxSpeed 90` and `3 x 30` are both 90,
+which is a coincidence of the data, not corroboration. Treat 1.0 as a starting
+point to be set by playing, exactly as the stream says -- not as evidence.
+
 ## Tuning it
 
 * By playing: `?turret=1.4`, or `window.__turretScale(1.4)` live. It moves
   everything at once, which is the point -- it is a unit conversion, not a feel
   knob.
 * By profile: `game.setInfMouseSensitivity 0.4` in the console, or
-  `setLandSeaMouseSensitivity` / `setAirMouseSensitivity`. Range 0..1, exactly
-  the menu slider, and the scale it buys is `5 x s + 0.1`.
+  `setLandSeaMouseSensitivity` / `setAirMouseSensitivity`. The scale it buys is
+  `5 x s + 0.1`. 0..1 is the menu slider's range; the word itself does not
+  clamp, because the engine's does not.
 * Do **not** reintroduce a per-turret multiplier. `setMaxSpeed` and
   `setAcceleration` are now used as the engine uses them; if a gun feels wrong,
   the extract is wrong or `countsPerPixel` is.
@@ -342,3 +450,65 @@ SwiftShader, stepping `__renderOnce` (which runs exactly `frame(1/60)`).
   `game.setAirMouseSensitivity 0.5` moves the Air profile and reads back.
 * `window.__turretScale(2.5)` takes effect and restores.
 * No page errors.
+
+## What the adversarial review changed (2026-09-20)
+
+Second reader, re-derived from the binaries and the shipped data rather than
+from this document. Verdict: the engine claims hold; two code defects and
+three factual errors were fixed on the branch.
+
+**Confirmed, independently:** `c_PIMouseLookX` = id 4 / `c_PIMouseLookY` = id 5
+(mask bits 4 and 5 at `0x08273e3c`/`0x08273e6b` into `[ebp-0x29c]`/`[ebp-0x2a4]`);
+both `x dt` and `x g_simulationFps` on both axes; `ds:0x086c08c8` = bytes
+`00 00 40 40` = 3.0 used at `0x0827457d` (the same pool slot another stream read
+as the prone divisor -- the same float, and really used here); degrees, because
+`setRotateZDeg` `0x08062740` multiplies by `ds:0x086b1ca4` = 0.0174533; the
+`+0x18c` clamp compared against the same register the pitch was just stored to
+(`0x0827453d fst` then `0x0827454b fucomp`), and `setPointUpDownAngle 38.0 38.0`
+is the only such line in vanilla. `PlayerAction::get`'s `frndint(v x 100)/100`
+snap and `floatToFixed`'s forced-truncate `fldcw 0x0c00`: both confirmed byte
+for byte, and the viewer reproduces encode and decode exactly, negatives
+included -- after the `+1.0` shift the `fistp` argument is never negative, so
+truncate-toward-zero and floor are the same thing, and the resulting
+one-step negative bias (`q(v) + q(-v) = -0.01`) is the engine's, faithfully
+kept. The client's control-map branch at `0x006d78a5` and the strings at
+`0x00922500`/`0x00922520`: confirmed. A re-run of the `Objects.rfa` survey:
+122 PCOs, 58 VCLand + 1 Land, 40 VCSea + 9 Sea, 13 VCAir, 1 undeclared.
+
+**Code defects fixed:**
+
+1. The look stage was pumped only when `driving`/`flying`, which are
+   `isActiveRoot() && !blocked`. A wrecked hull's own driver therefore pumped
+   nothing: measured on the page, a destroyed Sherman's driver banked
+   `pendingPixels.x = 1200` over 60 frames and the axis stayed at 0. Now gated
+   on the seat instead, which is exactly the case `manned()` declines, so there
+   is still one pump a frame; the same run now reads `pendingPixels = 0`,
+   `axis = 1.61`, `traverse = 0` (HP-15 still honoured inside `TurretRig.aim`).
+2. `stepSoldierLook` scaled the zoomed hand by `SoldierZoomFov`. The authority
+   scales it by `zoomFov` (`FireArmsTemplate+0x270`, `0x08275bf2`). A scoped
+   K98 aimed 50% too fast, a sighted Colt 29% too slow.
+3. The console words clamped to 0..1. `ControlSettings::setSensitivity`
+   `0x006eb1a0` does not clamp at all. Removed; verified live through the real
+   console (`game.setAirMouseSensitivity 2` now sticks at 2).
+
+**Page checks re-run on this branch** (`map.html?map=Wake&shots`, SwiftShader,
+stepping `__renderOnce`): on foot, 1200 counts over 60 frames moved yaw
+**-144.90 degrees** and stopped pitch at **-38.00**; a 12-frame pitch-only run
+gave **-12.12 degrees** against a yaw-only run's **-36.36** -- the 3:1
+asymmetry, measured; `?turret=2.5` reaches `countsPerPixel`; a Sherman tower
+traversed **55.58 degrees** in the second at axis 1.61 (`1.61 x 35` = 56.35
+steady, less the 1000 deg/s^2 ramp); no page errors anywhere.
+
+**FPS invariance, measured over 20 s** at 1000 px/s: on-foot yaw 121.50 deg/s
+at 30, 60 and 240 fps, 120.60 at 75, 120.90 at 100, 120.79 at 144, and 121.15
+through 494 randomly sliced frames -- a 0.6% spread, all of it the wire's own
+truncation. A 5 s stall cannot burst: the page clamps its own frame dt to 0.1 s
+(`renderer.setAnimationLoop(() => frame(Math.min(clock.getDelta(), 0.1)))`) and
+`simTicks` collapses a backlog above nine to a single tick, and the worst a
+single tick can do is the wire's +-16, i.e. 48 degrees of yaw.
+
+**Still open** (see the `+0x288` section above), and one thing that is not a
+defect but is worth knowing: on a touch device the joystick pad aims a turret
+but has never aimed an on-foot soldier -- `feedMobileTurretAim` returns unless
+`occupancy?.turret` exists, and on foot the pad drives movement instead. That
+predates this stream.
