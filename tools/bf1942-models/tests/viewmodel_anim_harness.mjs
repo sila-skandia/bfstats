@@ -187,4 +187,47 @@ check('fidget chosen but deploy owns the arms → deploy wins', {
   deployRunning: true,
 }, { want: 'deploy' });
 
-console.log(JSON.stringify({ ok: true, cases: 24 }));
+// --- fire variants (the knife's 1pFireKnife1..5, ANIM-6 c_AsmRandom): the
+// --- extractor bakes them as fire1..fireN; the per-round pick belongs to the
+// --- shot path (onShot), selection only keeps and releases.
+
+check('variant swing in flight → keep that variant', {
+  active: 'fire3', fireVariants: ['fire1', 'fire2', 'fire3', 'fire4', 'fire5'],
+  fireLoops: false, fireRunning: true, firing: true, hasFire: true,
+}, { want: 'fire3' });
+
+check('variant swing clamped → idle', {
+  active: 'fire3', fireVariants: ['fire1', 'fire2', 'fire3', 'fire4', 'fire5'],
+  fireLoops: false, fireRunning: false, firing: false, hasFire: true,
+}, { want: 'idle' });
+
+check('variant swing clamped while walking → walk', {
+  active: 'fire2', fireVariants: ['fire1', 'fire2', 'fire3', 'fire4', 'fire5'],
+  fireLoops: false, fireRunning: false, firing: false, hasFire: true,
+  gait: 'walk',
+}, { want: 'walk' });
+
+check('variant swing clamped, fidget was due → idle (no fidget from fire)', {
+  active: 'fire4', fireVariants: ['fire1', 'fire2', 'fire3', 'fire4', 'fire5'],
+  fireLoops: false, fireRunning: false, firing: false, hasFire: true,
+  fidgetDue: true, fidgetPick: 'idle1',
+}, { want: 'idle1', startFidget: true });
+
+check('lone fire still wins with variants present (hasFire either way)', {
+  active: 'fire', fireVariants: null,
+  fireLoops: false, fireRunning: true, firing: false, hasFire: true,
+}, { want: 'fire' });
+
+check('variants listed but none active and none running → idle', {
+  active: 'idle', fireVariants: ['fire1', 'fire2'],
+  fireLoops: false, fireRunning: false, firing: true, hasFire: true,
+}, { want: 'idle' });
+
+// A variant must never satisfy the looper-release stopLoopFire rule: the
+// knife has no LoopRepeat fire to freeze.
+check('variant + trigger released mid-swing → keep swing, no stopLoopFire', {
+  active: 'fire5', fireVariants: ['fire1', 'fire2', 'fire3', 'fire4', 'fire5'],
+  fireLoops: false, fireRunning: true, firing: false, hasFire: true,
+}, { want: 'fire5' });
+
+console.log(JSON.stringify({ ok: true, cases: 31 }));

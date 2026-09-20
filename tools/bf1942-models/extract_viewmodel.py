@@ -187,11 +187,79 @@ def resolve_families(machine: animstates.StateMachine, weapon: str,
     """Per family: the 1P clip ref and any declared weapon-channel clip ref."""
     resolved: dict[str, dict] = {}
     report: dict[str, dict] = {}
+    variant_families: set[str] = set()
     for key, family in FAMILIES:
         state = machine.state(f"Ub_{family}{weapon}")
         clip_ref = state.clip_1p() if state else None
         if clip_ref is None:
-            report[key] = {"error": f"no Ub_{family}{weapon} state with a 1P clip"}
+            # Randomized variants: the knife's stand fire is five states
+            # (`Ub_FireKnifeAllies1..5`, clips A-E) that the hub state
+            # `Ub_FireKnifeAllies` -- which itself declares no 1P clip --
+            # jumps to one at a time. Resolve every variant the machine
+            # actually holds as its own family (`fire1`, `fire2`, ...) so a
+            # viewer can pick among them the way the ASM does.
+            variants = []
+            for n in range(1, 9):
+                vstate = machine.state(f"Ub_{family}{weapon}{n}")
+                vref = vstate.clip_1p() if vstate else None
+                if vstate is None or vref is None:
+                    continue
+                variants.append((n, vstate, vref))
+            if variants:
+                variant_families.add(key)
+                for n, vstate, vref in variants:
+                    entry: dict = {"ref": vref, "loop": clip_loops(vref),
+                                   "weaponRef": None,
+                                   "morphFactor": vstate.morph_factor,
+                                   "returnTo": vstate.return_to}
+                    if vstate.weapon_state:
+                        weapon_channel = machine.state(vstate.weapon_state)
+                        if weapon_channel and weapon_channel.clips:
+                            entry["weaponRef"] = weapon_channel.clips[0]
+                            entry["weaponState"] = vstate.weapon_state
+                    resolved[f"{key}{n}"] = entry
+                    report[f"{key}{n}"] = {
+                        "upperClip": vref.path,
+                        "speed": vref.speed,
+                        "loop": bool(entry["loop"]),
+                        "variantOf": key,
+                        "morphFactor": vstate.morph_factor,
+                        "returnTo": vstate.return_to,
+                        **({"weaponClip": entry["weaponRef"].path}
+                           if entry["weaponRef"] is not None else {}),
+                    }
+                report[key] = {"variants": [n for n, _s, _r in variants]}
+                continue
+            if key in variant_families:
+                continue
+            # The knife's `Ub_FireKnifeAllies` (and any mod sibling like it)
+            # declares no 1P clip and no `weapon_state`: the engine's fire
+            # state has no 1P slot, so `BFSoldier::updateAnimations` returns
+            # and the arms keep the aim pose while the swing runs entirely on
+            # the weapon channel. The channel exists under the ASM's canonical
+            # name (`WeaponFire<weapon>`) even where the state does not name
+            # it, so resolve it and bake a weapon-only family rather than
+            # dropping the weapon's only attack animation.
+            channel_name = ((state.weapon_state or f"Weapon{family}{weapon}")
+                            if state else None)
+            weapon_channel = machine.state(channel_name) if channel_name else None
+            if not (weapon_channel and weapon_channel.clips):
+                report[key] = {"error": f"no Ub_{family}{weapon} state with a 1P clip"}
+                continue
+            resolved[key] = {"ref": None, "loop": False,
+                             "weaponRef": weapon_channel.clips[0],
+                             "weaponState": channel_name,
+                             "morphFactor": state.morph_factor,
+                             "returnTo": state.return_to}
+            report[key] = {
+                "upperClip": None,
+                "weaponClip": weapon_channel.clips[0].path,
+                "weaponSpeed": weapon_channel.clips[0].speed,
+                "loop": False,
+                "weaponOnly": True,
+                "morphFactor": state.morph_factor,
+                "returnTo": state.return_to,
+            }
             continue
         # ANIM-7: honour c_AsmPlayOnce vs c_AsmLooping from the ASM clip word.
         loop = clip_loops(clip_ref)
@@ -379,10 +447,12 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
     # records the error and drops out rather than costing the export.
     clips: dict[str, dict] = {}
     for key, entry in resolved.items():
-        upper = read_clip(meshes, entry["ref"].path)
-        if upper is None:
-            clip_report[key] = {"error": f"clip unreadable: {entry['ref'].path}"}
-            continue
+        upper = None
+        if entry["ref"] is not None:
+            upper = read_clip(meshes, entry["ref"].path)
+            if upper is None:
+                clip_report[key] = {"error": f"clip unreadable: {entry['ref'].path}"}
+                continue
         weapon_clip = None
         if entry["weaponRef"] is not None:
             weapon_clip = read_clip(meshes, entry["weaponRef"].path)
@@ -499,7 +569,7 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
         for bone in skeleton.bones}
     animated = sorted({
         name
-        for entry in clips.values()
+        for entry in clips.values() if entry["upper"] is not None
         for name in entry["upper"].local_pose(0)
     } & set(joint_nodes))
     weapon_rest: dict[str, pose_mod.RT] = {}
@@ -510,27 +580,52 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
                 weapon_rest[key] = weapon_skeleton.relative(index, main_index)
 
     for key, entry in clips.items():
-        upper: baf.Animation = entry["upper"]
-        speed = entry["ref"].speed
-        loop = bool(entry["loop"])
-        times = clip_times(upper.frames, speed, loop)
-        # A loop's key list ends on frame 0 again (see clip_times), so the
-        # sampled frame indices wrap once.
-        frame_index = list(range(upper.frames)) + ([0] if loop and upper.frames > 1 else [])
-        frame_locals = [
-            pose_mod.align_clip_roots(skeleton, upper.local_pose(f))
-            for f in frame_index]
+        upper: baf.Animation | None = entry["upper"]
+        weapon_clip: baf.Animation | None = entry.get("weapon")
+        if upper is not None:
+            speed = entry["ref"].speed
+            loop = bool(entry["loop"])
+            times = clip_times(upper.frames, speed, loop)
+            # A loop's key list ends on frame 0 again (see clip_times), so the
+            # sampled frame indices wrap once.
+            frame_index = list(range(upper.frames)) + ([0] if loop and upper.frames > 1 else [])
+            frame_locals = [
+                pose_mod.align_clip_roots(skeleton, upper.local_pose(f))
+                for f in frame_index]
+        elif weapon_clip is None or weapon_skeleton is None or main_index is None:
+            # Nothing bakable (the weapon channel failed to read, or the
+            # weapon has no readable skeleton to pose its parts against).
+            # Record it and leave the family out of the glb rather than
+            # baking an animation that moves nothing.
+            clip_report[key] = {"error": "no readable clip for a family "
+                                         "whose state declares no 1P clip"}
+            continue
+        else:
+            # Weapon-channel-only family (the knife's fire): no joint motion
+            # of its own, and its time base is the weapon clip's own span.
+            loop = clip_loops(entry["weaponRef"])
+            times = clip_times(weapon_clip.frames, entry["weaponRef"].speed, loop)
+            frame_locals = None
         tracks = []
-        for name in animated:
-            if name in frame_locals[0]:
-                values = [locals_f.get(name, base_locals.get(
-                    name, rest_by_name[name])) for locals_f in frame_locals]
-                tracks.append((joint_nodes[name], times, values))
-            else:
+        if frame_locals is not None:
+            for name in animated:
+                if name in frame_locals[0]:
+                    values = [locals_f.get(name, base_locals.get(
+                        name, rest_by_name[name])) for locals_f in frame_locals]
+                    tracks.append((joint_nodes[name], times, values))
+                else:
+                    value = base_locals.get(name, rest_by_name[name])
+                    tracks.append((joint_nodes[name],
+                                   (times[0], times[-1]), [value, value]))
+        else:
+            # Keep every joint as a two-key constant at the base pose, so a
+            # viewer crossfading this clip against an arms clip never mixes an
+            # animated bone against an unanimated one (see the `animated`
+            # comment above).
+            for name in animated:
                 value = base_locals.get(name, rest_by_name[name])
                 tracks.append((joint_nodes[name],
                                (times[0], times[-1]), [value, value]))
-        weapon_clip: baf.Animation | None = entry.get("weapon")
         if weapon_clip is not None and weapon_skeleton is not None \
                 and main_index is not None:
             weapon_speed = entry["weaponRef"].speed
@@ -556,7 +651,8 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
                     tracks.append((node_index, (times[0], times[-1]),
                                    [weapon_rest[bone_key]] * 2))
         builder.add_animation(key, tracks)
-        clip_report[key]["frames"] = upper.frames
+        clip_report[key]["frames"] = (upper.frames if upper is not None
+                                      else weapon_clip.frames)
         # One full pass in seconds -- the engine's 1/|speed|, not a frame
         # count over an authoring rate (clip_span).
         clip_report[key]["duration"] = round(times[-1], 4)
