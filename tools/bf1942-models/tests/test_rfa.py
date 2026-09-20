@@ -8,6 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from bf42 import rfa  # noqa: E402
 from bf42.rfa import ArchivePool  # noqa: E402
 
 
@@ -199,6 +200,52 @@ class LevelObjectTests(unittest.TestCase):
         # level archive must not be mistaken for one.
         pool, added = self._add(["bf1942/Something/Objects/Hiryu/Objects.con"])
         self.assertEqual(0, added)
+
+
+class LevelTextureNameTests(unittest.TestCase):
+    """`level_texture_names` - the cheap "could this level reskin it?" index.
+
+    `extract_models.export_template` skips a level when none of these names
+    meets a name the model asks for, instead of exporting the whole model and
+    discarding it (Eve of Destruction: 68,115 exports to keep about 200). The
+    skip is only safe while this index and `ArchivePool.add_level` agree on
+    which entries count, so both are driven from one filter and that is pinned.
+    """
+
+    ENTRIES = [
+        "bf1942/levels/El_Alamein/AltTextures/SherW2_f.dds",
+        "bf1942/levels/El_Alamein/Texture/hull.v2.tga",
+        "bf1942/levels/El_Alamein/Custom Textures/Willy_Desert.DDS",
+        # not vehicle textures, by `add_level`'s own rules:
+        "bf1942/levels/El_Alamein/Textures/Tx03x07.dds",          # terrain tile
+        "bf1942/levels/El_Alamein/Texture/Menu/briefing.dds",     # menu art
+        "bf1942/levels/El_Alamein/Textures/ObjectLightmaps/a.dds",
+        "bf1942/levels/El_Alamein/Heightmap.raw",                 # too shallow
+        "bf1942/levels/El_Alamein/Sounds/wind.wav",               # wrong subdir
+    ]
+
+    def test_a_request_meets_a_level_file_by_leaf_or_stem(self) -> None:
+        self.assertEqual({"p4main_f"}, rfa.texture_name_keys("texture/P4main_f"))
+        self.assertEqual({"sherw2_f.dds", "sherw2_f"},
+                         rfa.texture_name_keys("AltTextures/SherW2_f.dds"))
+        # A name with a dot of its own still meets itself.
+        self.assertTrue(rfa.texture_name_keys("texture/hull.v2")
+                        & rfa.texture_name_keys("Texture/hull.v2.tga"))
+
+    def test_the_index_is_exactly_what_add_level_registers(self) -> None:
+        kept = list(rfa._level_texture_entries(self.ENTRIES))
+        self.assertEqual(
+            ["SherW2_f.dds", "hull.v2.tga", "Willy_Desert.DDS"],
+            [basename for _name, basename in kept])
+
+    def test_a_model_that_asks_for_none_of_them_is_skipped(self) -> None:
+        names = set()
+        for _name, basename in rfa._level_texture_entries(self.ENTRIES):
+            names |= rfa.texture_name_keys(basename)
+        sherman = rfa.texture_name_keys("texture/sherW2_f") | rfa.texture_name_keys("texture/Brown_r")
+        spitfire = rfa.texture_name_keys("texture/spit_main") | rfa.texture_name_keys("texture/Brown_r")
+        self.assertTrue(sherman & names, "El Alamein reskins the Sherman")
+        self.assertFalse(spitfire & names, "and has nothing for a Spitfire")
 
 
 if __name__ == "__main__":
