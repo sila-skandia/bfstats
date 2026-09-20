@@ -54,6 +54,19 @@ def scene(nodes: list[Node], builder: GlbBuilder) -> list[verify.Part]:
     return verify.scene_parts(doc, blob)
 
 
+def nested_scene(build) -> list[verify.Part]:
+    """Like `scene()`, but lets the caller nest real parent/child structure
+    first -- `build(builder)` adds whatever nodes it likes and returns the
+    indices to place at the top level, under the same synthetic root."""
+    builder = GlbBuilder()
+    roots = build(builder)
+    root = builder.add_node(Node(name="Root", children=roots))
+    path = Path(tempfile.mkdtemp()) / "model.glb"
+    path.write_bytes(builder.build([root]))
+    doc, blob = verify.read_glb(path)
+    return verify.scene_parts(doc, blob)
+
+
 def weapon_with_effects(builder: GlbBuilder) -> list[verify.Part]:
     """A 1.19 m weapon body with the furniture the exporter now bakes beside
     it: a muzzle-flash cone reaching 2 m, a billboard glow, a shell eject and
@@ -292,6 +305,123 @@ class HullSpacePartTests(unittest.TestCase):
             [], verify.origin_pile(parts,
                                    explained=verify.unplaced_part_names(report),
                                    model_size=verify.body_length(parts)))
+
+
+# ------------------------------------ 5b. the anchor is comparative, not fixed
+
+class NonOriginAnchorTests(unittest.TestCase):
+    """The origin-pile check used to test the *scene* origin only. A `.con`'s
+    lost `setPosition` or an unapplied bind buries a sub-part at whatever its
+    immediate parent's world transform composes to, and that parent is
+    routinely off the scene root -- a hull's running-gear mount, a turret's
+    own pivot. This is the shape the 2026-09-20 repair missed: zeroing only a
+    real Sherman's body-part transforms (all fourteen road wheels,
+    `ShermanTower`, the hull hatch, the pintle Browning) piles them onto the
+    hull's own running-gear mount at y = -0.8 rather than (0, 0, 0), and a
+    fixed-origin reading is blind to it -- `main` before this fix called the
+    file `ok`, exit 0, over a real Sherman built the same way.
+    """
+
+    def test_wheels_sharing_an_offset_mount_are_a_pile(self) -> None:
+        def build(builder: GlbBuilder) -> list[int]:
+            wheel_indices = []
+            for i in range(4):
+                mesh = builder.add_mesh(f"wheel{i}", [box(0.4)])
+                wheel_indices.append(builder.add_node(
+                    Node(name=f"Wheel{i}", mesh=mesh,
+                        extras={"templateKind": "SimpleObject"})))
+            # The track itself carries no mesh here (the real Sherman's does,
+            # but it is a skinned part and so already excluded on its own
+            # terms) -- what matters is that it is not at the scene origin.
+            mount = builder.add_node(
+                Node(name="Track", translation=(0.0, -0.8, 0.0),
+                    extras={"templateKind": "AnimatedBundle"},
+                    children=wheel_indices))
+            hull_mesh = builder.add_mesh("hull", [box(4.0)])
+            hull = builder.add_node(
+                Node(name="Hull", mesh=hull_mesh,
+                    extras={"templateKind": "Bundle"}, children=[mount]))
+            return [hull]
+
+        parts = nested_scene(build)
+        pile = verify.origin_pile(parts, model_size=verify.body_length(parts))
+        self.assertEqual(4, len(pile))
+        for i in range(4):
+            self.assertIn(f"Wheel{i}", pile)
+
+    def test_without_a_model_size_the_pile_still_shows_up(self) -> None:
+        # Node translation alone already answers "do these share a point",
+        # since the anchor is no longer pinned to (0, 0, 0) -- the geometry
+        # half only narrows which shared points count as collapsed.
+        def build(builder: GlbBuilder) -> list[int]:
+            return [builder.add_node(
+                Node(name=f"Wheel{i}",
+                    mesh=builder.add_mesh(f"wheel{i}", [box(0.4)]),
+                    translation=(0.0, -0.8, 0.0),
+                    extras={"templateKind": "SimpleObject"}))
+                for i in range(4)]
+
+        parts = nested_scene(build)
+        self.assertEqual(4, len(verify.origin_pile(parts)))
+
+    def test_a_mounts_own_pivot_chain_is_not_a_pile(self) -> None:
+        # EoD_PACV's shape: a yaw ring (Ballmount) with the gun (Gun) nested
+        # inside it through a pitch bundle (Barrel, no mesh of its own) that
+        # carries no local offset, plus a separately modelled decorative
+        # plate (Base) placed at the same deck point. The ring and its own
+        # gun are one pivot chain, not two placement failures, so folding the
+        # lone rider away leaves two -- allowed, the same as a soldier's body
+        # and head.
+        def build(builder: GlbBuilder) -> list[int]:
+            gun = builder.add_node(
+                Node(name="Gun", mesh=builder.add_mesh("gun", [box(0.3)]),
+                    extras={"templateKind": "FireArms"}))
+            barrel = builder.add_node(
+                Node(name="Barrel", children=[gun],
+                    extras={"templateKind": "RotationalBundle"}))
+            mount = builder.add_node(
+                Node(name="Ballmount",
+                    mesh=builder.add_mesh("mount", [box(0.5)]),
+                    translation=(-1.7, -0.5, -1.7),
+                    extras={"templateKind": "RotationalBundle"},
+                    children=[barrel]))
+            base = builder.add_node(
+                Node(name="Ballmount_Base",
+                    mesh=builder.add_mesh("base", [box(0.5)]),
+                    translation=(-1.7, -0.5, -1.7),
+                    extras={"templateKind": "SimpleObject"}))
+            return [mount, base]
+
+        parts = nested_scene(build)
+        pile = verify.origin_pile(parts, model_size=verify.body_length(parts))
+        self.assertEqual([], pile)
+
+    def test_a_branching_mount_is_a_pile_the_mount_included(self) -> None:
+        # EoD's Fletcher shape: a Flak 38 mount body (RL_body) with four
+        # independent sub-parts -- two handles, a pedal, a targeter -- nested
+        # under it, not a single chain. An ancestor with more than one rider
+        # is the branch several placements were lost onto, not a pivot
+        # wearing a second name, so nothing folds and the mount body counts
+        # alongside its four riders.
+        def build(builder: GlbBuilder) -> list[int]:
+            riders = [
+                builder.add_node(
+                    Node(name=name, mesh=builder.add_mesh(name, [box(0.1)]),
+                        extras={"templateKind": "RotationalBundle"}))
+                for name in ("RL_handle1", "RL_handle2", "RL_pedal", "RL_targeter")
+            ]
+            mount = builder.add_node(
+                Node(name="RL_body",
+                    mesh=builder.add_mesh("rl_body", [box(0.5)]),
+                    translation=(3.69, 6.92, 6.999),
+                    extras={"templateKind": "RotationalBundle"},
+                    children=riders))
+            return [mount]
+
+        parts = nested_scene(build)
+        pile = verify.origin_pile(parts, model_size=verify.body_length(parts))
+        self.assertEqual(5, len(pile))
+        self.assertIn("RL_body", pile)
 
 
 # ------------------------------------------------- 6. what a shadow mesh is
