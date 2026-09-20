@@ -67,20 +67,26 @@ from bf42.level import (  # noqa: E402
     LevelInfo,
     index_object_lightmaps,
     decode_heightmap,
+    compose_game_type_layers,
     decode_material_map,
     discover_level_sounds,
+    find_gameplay_modes,
     find_level_archives,
+    load_game_types,
     load_gameplay_objects,
     load_level_files,
     load_tickets,
     parse_cubemap_rcm,
     parse_init_con,
     parse_sound_scripts,
+    # Re-exported: `load_gameplay_objects` reads the ObjectSpawn files itself
+    # now, but other modules import this name from here.
     parse_spawn_templates,
     parse_ssc,
     parse_static_objects,
     parse_terrain_con,
     parse_soldier_spawn_templates,
+    tickets_for_mode,
     _commands,
     resolve_ssc_path,
     spawn_vehicle,
@@ -186,13 +192,25 @@ def load_level(game_dir: Path, mod: str, level: str,
     # but a mod map may only carry Ctf or ObjectiveMode — asking for the mode
     # the level actually has is what gets those their vehicles and flags.
     info.gameplay = load_gameplay_objects(files)
-    mode = info.gameplay.mode or "Conquest"
-    if files.find(f"{mode}/ObjectSpawnTemplates.con"):
-        info.spawn_templates = parse_spawn_templates(
-            _read_text(files, f"{mode}/ObjectSpawnTemplates.con"))
-    if files.find(f"{mode}/ObjectSpawns.con"):
-        info.spawn_objects = parse_static_objects(
-            _read_text(files, f"{mode}/ObjectSpawns.con"))
+    info.game_types = load_game_types(files)
+    # Every layer the archive ships, not just the default one. `default` keeps
+    # the old fallback exactly: a level with no control points and no soldier
+    # spawns anywhere still reads its vehicles out of `Conquest/`.
+    default = info.gameplay.mode or "Conquest"
+    ordered = find_gameplay_modes(files)
+    if default not in ordered:
+        ordered.insert(0, default)
+    for mode in ordered:
+        info.modes[mode] = (info.gameplay if mode == info.gameplay.mode
+                            else load_gameplay_objects(files, mode))
+    # And a layer of its own for each game type whose `run` lines straddle two
+    # directories, keyed by the game type's name — see `compose_game_type_layers`.
+    # Appended after the directory layers, so the default stays first.
+    compose_game_type_layers(files, info.game_types, info.modes)
+    # The default mode's vehicle layer, under the names every caller already
+    # uses. `load_gameplay_objects` reads these two files itself now.
+    info.spawn_templates = info.modes[default].object_spawn_templates
+    info.spawn_objects = info.modes[default].object_spawns
     heightmap = decode_heightmap(
         files.read("Heightmap.raw"), info.terrain.world_size, info.terrain.y_scale,
     )
@@ -1398,7 +1416,8 @@ def _world_to_image(info: LevelInfo) -> list[float]:
             0.0, 1.0 / size_z, 1.0 + min_z / size_z]
 
 
-def _control_point_report(info: LevelInfo, placed: set[str] | None) -> list[dict]:
+def _control_point_report(info: LevelInfo, placed: set[str] | None,
+                          gameplay=None) -> list[dict]:
     """`placed` is the set of templates that actually assembled into the glb,
     or None when objects were not built at all (`--terrain-only`).
 
@@ -1406,10 +1425,13 @@ def _control_point_report(info: LevelInfo, placed: set[str] | None) -> list[dict
     reporting every control point as invisible would tell the viewer these
     levels are all zone-only. Without an assembler the template's own reading
     is the best answer available.
+
+    `gameplay` is the layer to report; the default mode when omitted.
     """
+    gameplay = info.gameplay if gameplay is None else gameplay
     out: list[dict] = []
-    for inst in info.gameplay.control_points:
-        tpl = info.gameplay.template_for(inst)
+    for inst in gameplay.control_points:
+        tpl = gameplay.template_for(inst)
         entry = {
             "name": inst.template,
             "position": _to_gltf_vec(inst.position),
@@ -1432,8 +1454,8 @@ def _control_point_report(info: LevelInfo, placed: set[str] | None) -> list[dict
     return out
 
 
-def _soldier_spawn_report(info: LevelInfo) -> list[dict]:
-    gameplay = info.gameplay
+def _soldier_spawn_report(info: LevelInfo, gameplay=None) -> list[dict]:
+    gameplay = info.gameplay if gameplay is None else gameplay
     out: list[dict] = []
     for inst in gameplay.soldier_spawns:
         tpl = gameplay.soldier_spawn_templates.get(inst.template.lower())
@@ -1454,19 +1476,184 @@ def _soldier_spawn_report(info: LevelInfo) -> list[dict]:
     return out
 
 
-def _object_spawn_report(info: LevelInfo) -> list[dict]:
+def _pose_key(inst) -> tuple:
+    """Two placements are the same pad when the pose matches to a centimetre.
+
+    Authored coordinates are copied between a level's mode files verbatim, so
+    an exact match is the common case; the rounding only absorbs the handful
+    of files that were re-exported with a different float precision.
+    """
+    return (round(inst.position[0], 2), round(inst.position[1], 2),
+            round(inst.position[2], 2), round(inst.rotation[0], 2),
+            round(inst.rotation[1], 2), round(inst.rotation[2], 2))
+
+
+def _modes_report(info: LevelInfo, placed_flags: set[str] | None,
+                  combat_area: dict | None,
+                  vehicle_soldier_spawns: dict[str, list[dict]]) -> dict[str, dict]:
+    """`scene.json.modes` — one entry per gameplay layer the archive ships.
+
+    The terrain, the statics, the lightmaps and the glb are shared between
+    modes; only these six keys differ, so a level with four layers costs four
+    small blocks of json and nothing else. Measured on Wake: 47 KB against a
+    42 MB scene.
+
+    The top-level `controlPoints` / `soldierSpawns` / `objectSpawns` /
+    `vehicleSoldierSpawns` / `tickets` / `combatArea` stay the default layer's
+    and are not touched, so a reader that knows nothing about modes reads what
+    it always did — and `modes[default]` is the same data again, which is what
+    makes "no `?mode=`" and "before this change" the same picture.
+    """
+    out: dict[str, dict] = {}
+    for name, layer in info.modes.items():
+        out[name] = {
+            # Which of the menu's game types load this layer. Empty for a
+            # layer directory the archive ships but no GameTypes script runs
+            # (Wake's `Tdm/`, and 73 other levels across the installed mods).
+            "gameTypes": sorted(gt.name for gt in info.game_types.values()
+                                if gt.mode.lower() == name.lower()),
+            "controlPoints": _control_point_report(info, placed_flags, layer),
+            "soldierSpawns": _soldier_spawn_report(info, layer),
+            "objectSpawns": _object_spawn_report(info, layer),
+            "vehicleSoldierSpawns": vehicle_soldier_spawns.get(name, []),
+            "tickets": _tickets_report(tickets_for_mode(info.game_types, name)),
+            # No level in any installed mod declares `game.setActiveCombatArea`
+            # inside a mode directory or a GameTypes script — measured over all
+            # 1,301 level archives — so this is the level-wide area every time.
+            # It is written per mode anyway so the merge is one uniform rule
+            # and a mod that does scope one has somewhere to put it.
+            "combatArea": combat_area,
+        }
+    return out
+
+
+def _tickets_report(data) -> dict | None:
+    """A `TicketInfo` as scene.json carries it, or None when it declares none."""
+    if data is None or (data.team1 is None and data.team2 is None):
+        return None
+    out: dict = {"mode": data.mode}
+    if data.team1 is not None:
+        out["team1"] = data.team1
+    if data.team2 is not None:
+        out["team2"] = data.team2
+    if data.loss_per_min_team1 is not None or data.loss_per_min_team2 is not None:
+        out["lossPerMin"] = {}
+        if data.loss_per_min_team1 is not None:
+            out["lossPerMin"]["team1"] = data.loss_per_min_team1
+        if data.loss_per_min_team2 is not None:
+            out["lossPerMin"]["team2"] = data.loss_per_min_team2
+    return out
+
+
+def _tag_modes(builder, node: int, modes: list[str],
+               every: int | None = None) -> None:
+    """Mark a scene node as belonging to just these game modes.
+
+    The viewer detaches any node whose `modes` excludes the active one. A node
+    without the key is in every mode, which is also how every scene glb built
+    before modes existed reads — that is the backward-compatible default and
+    it must stay that way.
+
+    So a node that *is* in every mode is left untagged: `every` is how many
+    layers the level has, and a node in all of them already reads correctly
+    without the key. That is not only fewer bytes — it is what makes a
+    single-layer level's glb byte-identical to one built before any of this
+    existed, so 309 of the 1,301 installed levels need no re-publish at all.
+    """
+    if every is not None and len(modes) >= every:
+        return
+    placed = builder.node(node)
+    extras = dict(placed.extras) if isinstance(placed.extras, dict) else {}
+    extras["modes"] = list(modes)
+    placed.extras = extras
+
+
+def union_object_spawns(info: LevelInfo) -> list[tuple]:
+    """Every vehicle pad any mode places, once, tagged with the modes it is in.
+
+    The scene glb holds one node per pad, not one per mode: the terrain,
+    statics and lightmaps are mode-independent and so is a Sherman parked on
+    the same slab in Conquest and in Tdm. Measured over the 1,301 level
+    archives of the 18 installed mods, the union is 89,128 pads against
+    81,263 for the default mode alone — 9.7% more nodes, and the meshes
+    behind them are shared in the buffer either way.
+
+    Yields `(inst, vehicle, spec, modes, windows)`, default mode first and in
+    its own file order, so the nodes the viewer sees with no `?mode=` are the
+    ones it saw before modes existed. `windows` is mode -> respawn window and
+    is only populated when two modes disagree about it — 1,674 pads do across
+    the installed mods (32 in vanilla, and 307 in bf1918 alone), which is why
+    the window cannot simply be stamped once per pad. Counted by sweeping
+    every archive through this function; 2,123 was an earlier figure and does
+    not reproduce.
+    """
+    order: list[tuple] = []
+    index: dict[tuple, int] = {}
+    for mode, gameplay in info.modes.items():
+        for inst in gameplay.object_spawns:
+            vehicle = spawn_vehicle(inst.template, inst.team,
+                                    gameplay.object_spawn_templates)
+            if vehicle is None:
+                continue
+            spec = gameplay.object_spawn_templates.get(inst.template.lower())
+            window = spec.respawn_window() if spec else None
+            key = (vehicle.lower(), *_pose_key(inst))
+            at = index.get(key)
+            if at is None:
+                index[key] = len(order)
+                order.append((inst, vehicle, spec, [mode], {mode: window}))
+                continue
+            _, _, _, modes, windows = order[at]
+            modes.append(mode)
+            windows[mode] = window
+    out: list[tuple] = []
+    for inst, vehicle, spec, modes, windows in order:
+        # A pad every mode agrees on needs no per-mode table.
+        differs = len(set(windows.values())) > 1
+        out.append((inst, vehicle, spec, modes, windows if differs else {}))
+    return out
+
+
+def union_control_points(info: LevelInfo) -> list[tuple]:
+    """Every control point any mode places, once, tagged with its modes.
+
+    Keyed on the starting owner as well as the pose, because the cloth baked
+    onto the pole is chosen by team: Wake's `The_beach` opens Japanese in
+    Conquest and American in Tdm, which is two different flags on one spot.
+    Only one of them is ever in the scene at a time.
+    """
+    order: list[tuple] = []
+    index: dict[tuple, int] = {}
+    for mode, gameplay in info.modes.items():
+        for inst in gameplay.control_points:
+            tpl = gameplay.template_for(inst)
+            team = inst.team if inst.team is not None else (tpl.team if tpl else 0)
+            key = (inst.template.lower(), team, *_pose_key(inst))
+            at = index.get(key)
+            if at is None:
+                index[key] = len(order)
+                order.append((inst, tpl, [mode]))
+                continue
+            order[at][2].append(mode)
+    return order
+
+
+def _object_spawn_report(info: LevelInfo, gameplay=None) -> list[dict]:
     """Per-pad ObjectSpawner record: vehicle + respawn window + world pose.
 
     The viewer matches these to the baked spawner nodes by vehicle name and
     nearest position, then uses Min/MaxSpawnDelay (or SpawnDelay) after a wreck
     clears so the pad is walkable until the vehicle returns.
     """
+    spawns = info.spawn_objects if gameplay is None else gameplay.object_spawns
+    spawner_specs = (info.spawn_templates if gameplay is None
+                     else gameplay.object_spawn_templates)
     out: list[dict] = []
-    for inst in info.spawn_objects:
-        vehicle = spawn_vehicle(inst.template, inst.team, info.spawn_templates)
+    for inst in spawns:
+        vehicle = spawn_vehicle(inst.template, inst.team, spawner_specs)
         if vehicle is None:
             continue
-        spec = info.spawn_templates.get(inst.template.lower())
+        spec = spawner_specs.get(inst.template.lower())
         window = spec.respawn_window() if spec else None
         entry: dict = {
             "spawner": inst.template,
@@ -1497,7 +1684,8 @@ def _global_spawn_group_teams(game) -> dict[int, int]:
     return parse_spawn_point_manager(text)
 
 
-def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game) -> list[dict]:
+def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game,
+                                  gameplay=None) -> list[dict]:
     """The fleet's deck spawn points, reconstructed from the vehicle templates.
 
     A ship's own `Objects/Vehicles/Sea/<ship>/Objects.con` adds `SpawnPoint`
@@ -1511,10 +1699,16 @@ def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game) -> list[dict]:
     here is the spawner's pad pose with that offset rotated through it.
     """
     global_teams = _global_spawn_group_teams(game)
+    spawns = info.spawn_objects if gameplay is None else gameplay.object_spawns
+    # Not `templates`: the loop below rebinds that name to the *ship's* own
+    # soldier-spawn templates, and reusing it here would feed the next
+    # iteration's `spawn_vehicle` a dictionary of SpawnPoints.
+    spawner_specs = (info.spawn_templates if gameplay is None
+                     else gameplay.object_spawn_templates)
     out: list[dict] = []
     seen_pads = set()
-    for inst in info.spawn_objects:
-        vehicle = spawn_vehicle(inst.template, inst.team, info.spawn_templates)
+    for inst in spawns:
+        vehicle = spawn_vehicle(inst.template, inst.team, spawner_specs)
         if vehicle is None:
             continue
         blob = None
@@ -1616,6 +1810,10 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
                  lightmaps: dict[tuple[str, int, int, int], str] | None = None,
                  sky_faces: list | None = None,
                  vehicle_soldier_spawns: list[dict] | None = None,
+                 # Mode -> the same list for that layer's fleet. None means the
+                 # caller did not compute them per mode (a terrain-only run, or
+                 # a test that only passes the default list).
+                 vehicle_soldier_spawns_by_mode: dict[str, list[dict]] | None = None,
                  ) -> tuple[bytes, dict]:
     builder = gltf.GlbBuilder(generator="bfstats bf1942 level extractor")
     roots: list[int] = []
@@ -1772,11 +1970,19 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
             object_report["placed"] += 1
         spawn_fail: set[str] = set()
         spawner_nodes: list[int] = []
-        for inst in info.spawn_objects:
-            vehicle = spawn_vehicle(inst.template, inst.team, info.spawn_templates)
-            if vehicle is None:
-                object_report["skipped"].append(inst.template)
-                continue
+        # How many layers there are, so a node in all of them stays untagged
+        # and a single-layer level's glb is byte-identical to a pre-modes one.
+        every_mode = len(info.modes) or 1
+        # An ObjectSpawner whose template is unknown, or that spawns nothing
+        # for either side, yields no vehicle at all — reported the same way
+        # whichever mode it came from.
+        for mode_layer in info.modes.values():
+            for inst in mode_layer.object_spawns:
+                if spawn_vehicle(inst.template, inst.team,
+                                 mode_layer.object_spawn_templates) is None \
+                        and inst.template not in object_report["skipped"]:
+                    object_report["skipped"].append(inst.template)
+        for inst, vehicle, spec, modes, windows in union_object_spawns(info):
             node = _place_template(
                 assembler, builder, vehicle, inst, report, spawn_fail)
             if node is None:
@@ -1786,17 +1992,29 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
             # Respawn timing lives on the ObjectSpawner, not the vehicle. Stamp
             # it onto the placed node so a map that never rewrote scene.json
             # still carries the window in the glb extras.
-            spec = info.spawn_templates.get(inst.template.lower())
             window = spec.respawn_window() if spec else None
+            placed = builder.node(node)
+            extras_node = placed.extras if isinstance(placed.extras, dict) else {}
+            extras_node = dict(extras_node)
+            if len(modes) < every_mode:
+                extras_node["modes"] = list(modes)
             if window is not None:
-                placed = builder.node(node)
-                extras_node = placed.extras if isinstance(placed.extras, dict) else {}
-                extras_node = dict(extras_node)
-                extras_node["spawner"] = {
+                stamp = {
                     "name": inst.template,
                     "minSpawnDelay": window[0],
                     "maxSpawnDelay": window[1],
                 }
+                if windows:
+                    stamp["byMode"] = {
+                        name: (None if pair is None else
+                               {"minSpawnDelay": pair[0], "maxSpawnDelay": pair[1]})
+                        for name, pair in windows.items()
+                    }
+                extras_node["spawner"] = stamp
+            # Only when there is something to say: an empty `extras` is not the
+            # same bytes as no `extras`, and a single-layer level with no
+            # respawn window has nothing to add.
+            if extras_node:
                 placed.extras = extras_node
             spawner_nodes.append(node)
             object_report["spawners"] += 1
@@ -1808,8 +2026,7 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
             )))
         flag_nodes: list[int] = []
         flag_fail: set[str] = set()
-        for inst in info.gameplay.control_points:
-            tpl = info.gameplay.template_for(inst)
+        for inst, tpl, modes in union_control_points(info):
             if tpl is None or not tpl.visible:
                 continue
             node = _place_template(
@@ -1819,6 +2036,7 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
                 # carries no drawable primitive (Interstate 82's 53-byte
                 # `nothing.sm`). Only the assembler can see that.
                 continue
+            _tag_modes(builder, node, modes, every_mode)
             flag_nodes.append(node)
             placed_flags.add(inst.template.lower())
             object_report["controlPoints"] += 1
@@ -1838,6 +2056,10 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
                 continue
             anchor, mesh_node = built
             builder._nodes[node].children.append(anchor)
+            # The cloth sits at the scene root, not under the pole, so it needs
+            # the tag in its own right or a mode switch would leave it flying
+            # over a pole that is no longer there.
+            _tag_modes(builder, mesh_node, modes, every_mode)
             roots.append(mesh_node)
             object_report["flagCloths"] = object_report.get("flagCloths", 0) + 1
         if flag_nodes:
@@ -1893,20 +2115,21 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
     fog_start = info.fog_start if info.fog_start is not None else view_distance * 0.5
 
     # Load ticket configuration from GameTypes/*.con if present.
-    tickets_data = load_tickets(files, info.gameplay.mode)
-    tickets = None
-    if tickets_data and (tickets_data.team1 is not None or tickets_data.team2 is not None):
-        tickets = {"mode": tickets_data.mode}
-        if tickets_data.team1 is not None:
-            tickets["team1"] = tickets_data.team1
-        if tickets_data.team2 is not None:
-            tickets["team2"] = tickets_data.team2
-        if tickets_data.loss_per_min_team1 is not None or tickets_data.loss_per_min_team2 is not None:
-            tickets["lossPerMin"] = {}
-            if tickets_data.loss_per_min_team1 is not None:
-                tickets["lossPerMin"]["team1"] = tickets_data.loss_per_min_team1
-            if tickets_data.loss_per_min_team2 is not None:
-                tickets["lossPerMin"]["team2"] = tickets_data.loss_per_min_team2
+    tickets = _tickets_report(load_tickets(files, info.gameplay.mode))
+    combat_area = None if info.combat is None else {
+        "min": _to_gltf_vec((info.combat.min_x, 0.0, info.combat.min_z)),
+        "max": _to_gltf_vec((info.combat.max_x, 0.0, info.combat.max_z)),
+    }
+
+    modes_report = _modes_report(
+        info, placed_flags, combat_area,
+        vehicle_soldier_spawns_by_mode
+        if vehicle_soldier_spawns_by_mode is not None
+        else {(info.gameplay.mode or "Conquest"): (vehicle_soldier_spawns or [])})
+    game_types_report = {
+        gt.name: {"mode": gt.mode, "tickets": _tickets_report(gt.tickets)}
+        for gt in info.game_types.values()
+    }
 
     extras = {
         "level": info.name,
@@ -1917,10 +2140,7 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
         "fogEnd": fog_end,
         "sunDirection": _to_gltf_vec(info.sun_direction),
         "camera": _to_gltf_vec(info.camera) if info.camera else None,
-        "combatArea": None if info.combat is None else {
-            "min": _to_gltf_vec((info.combat.min_x, 0.0, info.combat.min_z)),
-            "max": _to_gltf_vec((info.combat.max_x, 0.0, info.combat.max_z)),
-        },
+        "combatArea": combat_area,
         "terrain": terrain_report,
         "objects": object_report,
         "skybox": None,
@@ -1934,6 +2154,9 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
         "vehicleSoldierSpawns": vehicle_soldier_spawns or [],
         "objectSpawns": _object_spawn_report(info),
         "tickets": tickets,
+        # The other layers this level ships, and the menu's game types.
+        "modes": modes_report,
+        "gameTypes": game_types_report,
         # `image` is filled in by `write_minimap` once the art is decoded; the
         # projection is known from the con files alone and stands on its own.
         "minimap": {"image": None, "worldToImage": _world_to_image(info)},
@@ -2068,14 +2291,22 @@ def main() -> int:
 
     sky_faces = prepare_sky(info, meshes, textures)
     # The fleet's deck spawn points, before the scene builds — `build_scene`
-    # writes them into the report beside the level's own soldier spawns.
-    vehicle_soldier_spawns = ([] if args.terrain_only else
-                              _vehicle_soldier_spawn_report(info, objects, game))
+    # writes them into the report beside the level's own soldier spawns. Each
+    # mode parks its own fleet (Wake's SinglePlayer layout drops the Japanese
+    # destroyers entirely), so the deck points are read per layer.
+    by_mode: dict[str, list[dict]] = {}
+    if not args.terrain_only:
+        for mode_name, layer in info.modes.items():
+            by_mode[mode_name] = _vehicle_soldier_spawn_report(
+                info, objects, game, layer)
+    default_mode = info.gameplay.mode or "Conquest"
+    vehicle_soldier_spawns = by_mode.get(default_mode, [])
     glb, extras = build_scene(
         files, info, heightmap, assembler,
         max_texture=args.max_texture, include_objects=not args.terrain_only,
         lightmaps=lightmaps, sky_faces=sky_faces, out_dir=out_dir,
         vehicle_soldier_spawns=vehicle_soldier_spawns,
+        vehicle_soldier_spawns_by_mode=by_mode or None,
     )
     if sky_faces:
         extras["sky"] = {
