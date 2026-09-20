@@ -78,6 +78,55 @@ export function sampleCurve(points, phase) {
   return points[points.length - 1].slice(1);
 }
 
+/**
+ * `sampleCurve` without the arrays: writes the components into `out` and
+ * returns how many it wrote, or -1 for the `null` the allocating form returns.
+ *
+ * Same arithmetic, term for term — `tests/effects_harness.mjs` asserts the two
+ * agree on the end branches, the interior branch and a multi-component ramp.
+ * It exists because the allocating form is on the per-particle-per-frame path
+ * (`evalParticleInto` below and `integrateParticle`'s three ramps), where each
+ * call was three fresh arrays: the two rest-element destructures and the `map`
+ * (features/mesh-viewer-performance, rule 5).
+ *
+ * `out` is the caller's scratch and is valid only until its next call — never
+ * hold it. `sampleCurve` stays the export for everything else.
+ */
+export function sampleCurveInto(points, phase, out) {
+  if (!points || !points.length) return -1;
+  const first = points[0];
+  if (phase <= first[0]) return fill(out, first);
+  for (let i = 1; i < points.length; i++) {
+    const b = points[i];
+    if (phase <= b[0]) {
+      const a = points[i - 1];
+      const k = b[0] === a[0] ? 1 : (phase - a[0]) / (b[0] - a[0]);
+      // The allocating form maps over `v0`, so the component count is the
+      // EARLIER point's, and a shorter later point makes `v1[j]` undefined and
+      // the result NaN. Kept exactly, NaN included, rather than quietly fixed.
+      for (let j = 1; j < a.length; j++) out[j - 1] = a[j] + (b[j] - a[j]) * k;
+      out.length = a.length - 1;
+      return a.length - 1;
+    }
+  }
+  return fill(out, points[points.length - 1]);
+}
+
+/** `point.slice(1)` — the components without the phase — in place. `out` is
+ *  truncated to the count so a component this ramp does not carry reads
+ *  `undefined`, the same thing it reads off `sampleCurve`'s shorter array,
+ *  rather than the last call's leftover. */
+function fill(out, point) {
+  for (let j = 1; j < point.length; j++) out[j - 1] = point[j];
+  out.length = point.length - 1;
+  return point.length - 1;
+}
+
+// One scratch for every ramp sampled on the per-frame path. Safe to share:
+// `integrateParticle` and `evalParticleInto` never nest, and each consumes a
+// sample before taking the next.
+const _curve = [];
+
 function norm(v) {
   const l = Math.hypot(v[0], v[1], v[2]);
   return l > 1e-12 ? [v[0] / l, v[1] / l, v[2] / l] : null;
@@ -353,12 +402,16 @@ export function spawnParticle(spec, basis, origin, emitterVelocity, rand = Math.
 export function integrateParticle(p, dt, gravity = GRAVITY) {
   p.age += dt;
   const phase = Math.min(p.age / p.ttl, 1) * 100;
+  // The three ramps below go through `sampleCurveInto`: this runs per live
+  // particle per frame and the allocating form was three arrays a call
+  // (features/mesh-viewer-performance, rule 5). `_curve` is consumed on the
+  // line after each sample and never held.
   let g = p.gravity;
-  const gRamp = sampleCurve(p.spec.gravityModifierOverTime, phase);
-  if (gRamp) g *= gRamp[0];
+  const gRamp = sampleCurveInto(p.spec.gravityModifierOverTime, phase, _curve);
+  if (gRamp >= 0) g *= _curve[0];
   let drag = p.drag;
-  const dRamp = sampleCurve(p.spec.dragOverTime, phase);
-  if (dRamp) drag *= dRamp[0];
+  const dRamp = sampleCurveInto(p.spec.dragOverTime, phase, _curve);
+  if (dRamp >= 0) drag *= _curve[0];
   const v = p.velocity;
   if (g) v[1] += gravity * g * dt;
   if (drag > 0) {
@@ -383,8 +436,8 @@ export function integrateParticle(p, dt, gravity = GRAVITY) {
   // (the raw `initAnimationFrame`, e.g. 8 of 16 for `fx_expl_core`) until the
   // first call that has a frame count to divide by.
   if (p.spec.numAnimationFrames > 1) {
-    const ramp = sampleCurve(p.spec.animationSpeedOverTime, phase);
-    p.animFrame += p.animSpeed * (ramp ? ramp[0] : 1) * dt / p.spec.numAnimationFrames;
+    const ramp = sampleCurveInto(p.spec.animationSpeedOverTime, phase, _curve);
+    p.animFrame += p.animSpeed * (ramp >= 0 ? _curve[0] : 1) * dt / p.spec.numAnimationFrames;
   }
   return p.age < p.ttl;
 }
@@ -428,6 +481,62 @@ export function evalParticle(p) {
   const alpha = sampleCurve(spec.alphaOverTime, phase);
   if (alpha) opacity *= alpha[0];
   return { scale, color, opacity, rotation: p.rotation, phase };
+}
+
+// `evalParticleInto`'s answer, one record for the whole module. `color` is
+// either `_look.rgb` or null, the same two states `evalParticle` returns.
+const _look = { scale: [0, 0, 0], rgb: [0, 0, 0], color: null, opacity: 1, rotation: 0, phase: 0 };
+
+/**
+ * `evalParticle` without the ten objects: the same record, filled in place.
+ *
+ * `EffectPlayer.#draw` reads every field and keeps none, once per live particle
+ * per frame — 190 of them under a Bazooka's `e_rocketFume` — and the allocating
+ * form built a `scale` array, usually a `color` array, a result object and up
+ * to four ramp samples of three arrays each for it (rule 5). Same arithmetic,
+ * term for term; `tests/effects_harness.mjs` asserts the two agree.
+ *
+ * THE RETURNED RECORD AND ITS `scale`/`color` ARRAYS ARE MODULE SCRATCH and
+ * are valid only until the next call — never hold one past the statement that
+ * reads it, the way `hud.js`'s `SEAT_DOT_AT` is documented. `evalParticle`
+ * stays the export for every caller that wants its own object.
+ */
+export function evalParticleInto(p) {
+  const spec = p.spec;
+  const phase = Math.min(p.age / p.ttl, 1) * 100;
+  const n = sampleCurveInto(spec.sizeOverTime, phase, _curve);
+  const size = n >= 0 ? _curve[0] : 1;
+  const scale = _look.scale;
+  if (p.kind === 'sprite') {
+    scale[0] = p.size * size; scale[1] = p.size * size; scale[2] = 1;
+    const xyn = sampleCurveInto(spec.xySizeRatioOverTime, phase, _curve);
+    const xy = p.xy * (xyn >= 0 ? _curve[0] : 1);
+    if (xy !== 1) scale[0] *= xy;
+  } else if (spec.sizeModifier
+             && (spec.sizeModifier[0] || spec.sizeModifier[1] || spec.sizeModifier[2])) {
+    const m = spec.sizeModifier;
+    scale[0] = p.size * size * m[0];
+    scale[1] = p.size * size * m[1];
+    scale[2] = p.size * size * m[2];
+  } else {
+    scale[0] = 1; scale[1] = 1; scale[2] = 1;
+  }
+  _look.color = null;
+  let opacity = 1;
+  const rgban = sampleCurveInto(spec.colorRGBAOverTime, phase, _curve);
+  if (rgban >= 0) {
+    _look.rgb[0] = _curve[0] / 255;
+    _look.rgb[1] = _curve[1] / 255;
+    _look.rgb[2] = _curve[2] / 255;
+    _look.color = _look.rgb;
+    opacity = _curve[3] / 255;
+  }
+  const alphan = sampleCurveInto(spec.alphaOverTime, phase, _curve);
+  if (alphan >= 0) opacity *= _curve[0];
+  _look.opacity = opacity;
+  _look.rotation = p.rotation;
+  _look.phase = phase;
+  return _look;
 }
 
 /**
