@@ -10,10 +10,10 @@
  */
 import assert from 'node:assert/strict';
 import {
-  ALLIED, AXIS, condOk, elementVisible, hitTest, inRect, listBox, measureText,
-  menuVars, pageElements, paintMenu, rowArea, rowAt, scrollTo, stageScale,
-  thumbSpan, toVirtual, trackRect, visibleRows,
-  SHOW_BOT_SETTINGS, botSettingsEdge,
+  ALLIED, AXIS, condOk, elementVisible, hitTest, inRect, listBox, livePages,
+  measureText, menuVars, pageElements, paintMenu, rowArea, rowAt, scrollTo,
+  stageScale, thumbSpan, toVirtual, trackRect, visibleRows,
+  SHOW_BOT_SETTINGS, SINGLEPLAYER_GAME, botSettingsEdge,
 } from '../viewer/play/menu-screen.js';
 
 // --- a stand-in for the extracted pack --------------------------------------
@@ -75,6 +75,21 @@ const layout = {
           pressed: 'knapp3_n', calls: ['Skirmish/StartSkirmish'], sets: [] },
         { kind: 'text', rect: [678, 544, 97, 18], font: 'standard6', align: 'center',
           key: 'MENU_START', text: 'START' },
+      ],
+    },
+    // `menu/ExitMenu`, as EXIT_RECTS keeps it: the button that leaves the
+    // game, and the two labels it picks between on the same variable.
+    exit: {
+      elements: [
+        { kind: 'button', rect: [669, 85, 109, 24], texture: 'knapp3_n', hover: 'knapp3_mo',
+          id: 'MENU_DISCONNECT' },
+        { kind: 'text', rect: [674, 94, 96, 18], font: 'standard6', align: 'center',
+          key: 'MENU_DISCONNECT', text: 'DISCONNECT',
+          when: [{ var: 'Join/Disconnect/ShowDisconnect', op: 'eq', value: 1 }] },
+        { kind: 'text', rect: [676, 94, 99, 18], font: 'standard6', align: 'center',
+          key: 'MENU_DISCONNECT_SINGLEPLAYER', text: 'END CURRENT GAME',
+          when: [{ var: 'Join/Disconnect/ShowDisconnect', op: 'eq', value: 2 }] },
+        { kind: 'hit', rect: [674, 87, 103, 23], calls: ['Sound/PlayMenuHighLight'] },
       ],
     },
   },
@@ -375,6 +390,60 @@ assert.ok(box, 'the layout has a list box');
     c => c.op === 'fillRect' && c.fill === 'rgb(0,48,137)' && c.alpha < 1);
   assert.equal(hover.length, 1);
   assert.equal(hover[0].rect[1], 264 + 4 * 14);
+}
+
+// --- the exit page: only over a running level -------------------------------
+
+{
+  // The front end. Nothing of `menu/ExitMenu` is drawn and its button is not
+  // there to be clicked, even though the pack carries the page.
+  assert.deepEqual(livePages({}), ['background', 'skirmish', 'navigation']);
+  const front = { team: AXIS, index: 0, scroll: 0, level: LEVELS[0] };
+  const ctx = stubCtx();
+  paintMenu(ctx, layout, front, stubEnv());
+  const plates = ctx.calls.filter(c => c.op === 'drawImage' && c.img === 'knapp3_n');
+  assert.equal(plates.length, 1, 'the only knapp3 plate is START');
+  assert.deepEqual(plates[0].rest, [670, 535, 64, 64]);
+  assert.equal(hitTest(layout, front, 700, 95, LEVELS.length), null,
+               'a page that is not up cannot be clicked');
+}
+
+{
+  // The Esc menu over a game. The page joins the others, and the button
+  // reads the game's singleplayer label rather than the server one.
+  const playing = { team: AXIS, index: 0, scroll: 0, level: LEVELS[0], disconnect: true };
+  assert.deepEqual(livePages(playing),
+                   ['background', 'skirmish', 'navigation', 'exit']);
+  assert.equal(menuVars(layout, playing)['Join/Disconnect/ShowDisconnect'],
+               SINGLEPLAYER_GAME);
+  assert.equal(menuVars(layout, { team: AXIS })['Join/Disconnect/ShowDisconnect'], 0);
+
+  const [server, singleplayer] = layout.pages.exit.elements.filter(el => el.kind === 'text');
+  const vars = menuVars(layout, playing);
+  assert.ok(!elementVisible(server, vars), 'DISCONNECT is the label for a server');
+  assert.ok(elementVisible(singleplayer, vars), 'END CURRENT GAME is this one');
+
+  const ctx = stubCtx();
+  paintMenu(ctx, layout, playing, stubEnv());
+  const plates = ctx.calls.filter(c => c.op === 'drawImage' && c.img === 'knapp3_n');
+  assert.equal(plates.length, 2, 'START and the exit button');
+  assert.ok(plates.some(c => c.rest[0] === 669 && c.rest[1] === 85));
+
+  const hit = hitTest(layout, playing, 700, 95, LEVELS.length);
+  assert.equal(hit.kind, 'button');
+  assert.equal(hit.action, 'disconnect');
+  assert.deepEqual(hit.rect, [669, 85, 109, 24]);
+  assert.equal(hitTest(layout, playing, 700, 120, LEVELS.length), null,
+               'below the button is nothing');
+  // START is still START with the page up.
+  assert.equal(hitTest(layout, playing, 700, 545, LEVELS.length).action, 'start');
+
+  // Hovering it swaps in the mouse-over plate, like every other button.
+  const over = stubCtx();
+  paintMenu(over, layout, playing, stubEnv({ hover: hit }));
+  const hovered = over.calls.filter(c => c.op === 'drawImage' && c.img === 'knapp3_mo');
+  assert.equal(hovered.length, 1);
+  assert.deepEqual(hovered[0].rest.slice(0, 2), [669, 85]);
 }
 
 {

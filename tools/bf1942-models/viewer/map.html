@@ -160,14 +160,27 @@
   /* The in-game console (viewer/console.js). The engine draws its wash and
      its text over everything the 3D view has already put up -- the drawer
      `FUN_00464ee0` runs from the frame's overlay pass, after the HUD -- so
-     this sits above every other layer the page owns. It is never
-     interactive: the console is a keyboard surface, exactly as it is in the
-     game. */
+     this sits above every other layer the page owns, the Escape menu
+     included: in the game the console comes down over the front end too. It
+     is never interactive: the console is a keyboard surface, exactly as it
+     is in the game. */
   #console-canvas {
-    z-index: 12;
+    z-index: 13;
     pointer-events: none;
   }
   #console-canvas[hidden] { display: none !important; }
+
+  /* The Escape menu (viewer/play/skirmish.js): the front end, back up over
+     the battle. Opaque, and over everything the level draws -- the spawn
+     screen at 11 included, though Escape takes that down before it gets
+     here. The arrow cursor is the pointer's own, as it is on the way-in
+     screen. */
+  #menu-canvas {
+    z-index: 12;
+    touch-action: manipulation;
+  }
+  #menu-canvas[hidden] { display: none !important; }
+  #menu-canvas:focus-visible { outline: none; }
 
   /* The debug gate. Everything in `#side` -- the level picker, fog,
      wireframe, vehicles, render-entire-map, pilot, spawn-on-foot and sound --
@@ -846,6 +859,10 @@
       <button type="button" id="deploy-resume" class="fm-hit" tabindex="-1" aria-label="Resume"></button>
     </div>
   </div>
+  <!-- The Escape menu: the Instant Battle screen again, over the battle.
+       Same controller as `play/index.html` (`play/skirmish.js`); focusable
+       so the keyboard reaches the level list the way the game's does. -->
+  <canvas id="menu-canvas" tabindex="-1" aria-label="Menu" hidden></canvas>
 </div>
 
 <script type="importmap">
@@ -897,6 +914,7 @@ import { flareSprites, flareTextureFiles, hasDrawableFlare } from './lens-flare.
 import { modeNames, modeProblem, pruneToMode, selectGameMode,
          spawnerWindow } from './game-modes.js';
 import { loadHudPaths } from './hud-pack.js';
+import { createSkirmishScreen } from './play/skirmish.js';
 import { kitIconCandidates } from './kit-icon.js';
 import { cpNation as cpNationRule, teamNation as teamNationRule } from './nation.js';
 
@@ -1897,16 +1915,29 @@ addEventListener('keydown', e => {
     if (gameConsole.keydown(e)) e.preventDefault();
     return;
   }
+  // Under the Escape menu the keyboard is the menu's, the way it is the
+  // console's above: the list and the arrow keys answer, and nothing behind
+  // it moves. Escape is the way back to the game.
+  if (escMenuCaptures()) {
+    if (e.code === 'Escape') { setEscMenu(false); return; }
+    if (escMenu?.keydown(e)) e.preventDefault();
+    return;
+  }
   if (e.code === 'Escape') {
     // The map is the topmost thing Escape can dismiss. In its deploy state
     // it is dismissed with intent: a redeploy resumes the life in progress,
     // an abandoned join falls back to fly. Under `?kblock` Escape is a locked
     // key and reaches the page in fullscreen too: the first press releases
     // the pointer as ever, a fresh press at the gate leaves the fullscreen.
+    //
+    // With all of those away, Escape is the game's own: it brings up the
+    // menu. One press does it even mid-play, because the browser has already
+    // taken the pointer lock off us by the time this runs, and `setEscMenu`
+    // puts the gate up with the screen.
     if (deployActive()) cancelDeploy();
     else if (!fullmapBox.hidden) toggleFullMap(false);
     else if (kbSession && !captured && !e.repeat) kbLockLeave();
-    else release();
+    else if (!e.repeat) setEscMenu(true);
     return;
   }
   // Caps Lock toggles the spawn menu even while a sidebar control is focused,
@@ -2029,7 +2060,8 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => {
   // A key released under an open console must not reach `keys` either: the
   // set is only ever read for movement, and the console has the keyboard.
-  if (consoleCaptures()) return;
+  // The Escape menu has it on the same terms.
+  if (consoleCaptures() || escMenuCaptures()) return;
   keys.delete(e.code);
 });
 
@@ -2276,6 +2308,111 @@ gateLabel.addEventListener('click', e => {
   e.stopPropagation();
   capture();
 });
+
+// --- the Escape menu -------------------------------------------------------
+//
+// The game's own way out of a level: Escape puts the front end back up over
+// the battle, and from there you either go back to it, leave it, or start a
+// different one. This is that screen — `play/skirmish.js`, the same
+// controller `play/index.html` is, mounted on a canvas over the stage with
+// its fourth page up: `menu/ExitMenu`'s button, which reads END CURRENT GAME
+// because an Instant Battle is a singleplayer game
+// (`Join/Disconnect/ShowDisconnect` = 2, the engine's own numbering).
+//
+// The level keeps running behind it, untouched, and entirely hidden: the
+// menu is opaque, exactly as the engine's is. The front end paints its black
+// field and its camouflaged plate over the game, and stops the Bink movie
+// while there is a game to go back to — so the battle does not show through,
+// and nothing here dims or blurs the frame to suggest that it does.
+//
+// Three ways out of it, and all three are the game's: Escape again is back to
+// the game, START is a different level (the page navigates, which is this
+// site's "disconnect and load the new map"), and END CURRENT GAME is
+// `game.disconnect` — the same MENU_URL the console word already goes to.
+const menuCanvas = document.getElementById('menu-canvas');
+let escMenu = null;
+let escMenuUp = false;
+
+/** The screen, built and loading on first need. Warmed once the level is,
+ *  so the first Escape is a paint and not a fetch. */
+function escMenuScreen() {
+  if (escMenu) return escMenu;
+  escMenu = createSkirmishScreen({
+    canvas: menuCanvas,
+    // `map.html` sits at the viewer root, where `play/index.html` is one
+    // directory down; every pack and level URL in the controller is built
+    // off this.
+    root: '',
+    params,
+    // No menu loop over a battle: the engine stops the front end's own Bink
+    // movie the moment there is a game behind the menu.
+    music: false,
+    inGame: true,
+    onDisconnect: () => location.assign(MENU_URL),
+    // Picking a mod must not throw the level away, so the list re-fetches in
+    // place instead of reloading the page the way the way-in screen does.
+    modChoice: 'inplace',
+    onStatus: text => { if (text) console.warn(text); },
+  });
+  escMenu.load()
+    // The level and the side it opens on are the ones being played, the way
+    // the game's own list sits on what it last started. `launchTeam` is the
+    // `?team=` this page came in on; with no parameter the screen keeps its
+    // own default, which is the one the way-in screen shows.
+    .then(() => {
+      escMenu.selectMap(extras?.level || params.get('map') || '');
+      if (launchTeam) escMenu.setTeam(launchTeam);
+    })
+    .catch(error => {
+      console.error('Escape menu unavailable', error);
+      // A screen that cannot draw must not swallow Escape: the key goes back
+      // to being the one that frees the pointer.
+      setEscMenu(false);
+      escMenu = null;
+    });
+  return escMenu;
+}
+
+/** Up or down. Down is "back to the game", which leaves the gate showing —
+ *  the pointer lock is the player's to take again with a click, because a
+ *  browser will not hand it back on the same Escape that took it away. */
+function setEscMenu(on) {
+  if (on === escMenuUp) return;
+  escMenuUp = on;
+  menuCanvas.hidden = !on;
+  if (on) {
+    // A menu you cannot click is no menu: the pointer comes back with it.
+    // (The browser has usually taken the lock off already — this is what
+    // puts the gate up and drops what was held.)
+    release();
+    // Whatever was held when the menu came up must not still be held under
+    // it — the same rule the console follows.
+    keys.clear();
+    escMenuScreen().paint();
+    menuCanvas.focus();
+  }
+}
+
+/** Whether the menu owns the keyboard and the pointer. */
+function escMenuCaptures() { return escMenuUp; }
+
+// The handle, beside `__console`'s: a headless check drives the screen and
+// reads its state back rather than screen-scraping a canvas, the same shape
+// `play/index.html`'s `__menu` offers.
+window.__escMenu = {
+  get up() { return escMenuUp; },
+  get ready() { return (escMenu?.state?.levels ?? 0) > 0; },
+  get state() { return escMenu?.state ?? null; },
+  get levels() { return escMenu?.levels ?? []; },
+  get mod() { return escMenu?.mod ?? null; },
+  open: () => setEscMenu(true),
+  close: () => setEscMenu(false),
+  select: index => escMenu?.select(index),
+  setTeam: team => escMenu?.setTeam(team),
+  launchUrl: () => escMenu?.launchUrl() ?? null,
+  start: () => escMenu?.start(),
+  paint: () => escMenu?.paint(),
+};
 
 // --- Keyboard Lock, prototype (`?kblock`, off by default) ------------------
 //
@@ -11142,6 +11279,12 @@ if (!manifest.length) {
   select.value = first.name;
   await show(first);
 }
+
+// The Escape menu's own pack, fetched once the level has stopped competing
+// for the network: a couple of JSON files and the plates, most of which the
+// screen the player came in through has already cached. Escape before this
+// lands builds it on the spot instead.
+warmups.level.finally(() => { escMenuScreen(); });
 
 replayController = createReplayController({
   scene, camera, loader, bust,
