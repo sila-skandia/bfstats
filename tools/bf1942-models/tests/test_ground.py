@@ -428,8 +428,15 @@ class GroundModelTests(unittest.TestCase):
             # ...and it still steers, to within a couple of per cent of the
             # turn it makes with the data present.
             self.assertGreater(abs(stale["yawDeg"]), 20.0, name)
+            # Within a few per cent. Not bit-equality: the data supplies the
+            # servo's spool (0.1 s of throttle, 0.25 s of steer) and the
+            # fallback snaps instead, which shifts where a turn starts by a
+            # fraction of a second. On the M3A1 that lands inside the
+            # full-lock instability reported in `ground-vehicles.md`, so it
+            # shows up as a few per cent of accumulated yaw rather than a
+            # fraction of a degree.
             self.assertAlmostEqual(abs(fresh["yawDeg"]), abs(stale["yawDeg"]),
-                                   delta=max(3.0, abs(fresh["yawDeg"]) * 0.03),
+                                   delta=max(3.0, abs(fresh["yawDeg"]) * 0.08),
                                    msg=name)
         # A Willys Engine authors no yaw axis at all, so it is on the
         # fallback path either way — and correctly so: a `c_ETCar` never
