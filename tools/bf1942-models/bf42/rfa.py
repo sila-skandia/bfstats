@@ -58,6 +58,54 @@ LEVEL_TEXTURE_DIRS = ("alttextures", "texture", "textures", "custom textures")
 _TERRAIN_TILE = re.compile(r"^tx\d+x\d+$", re.IGNORECASE)
 
 
+def _level_texture_entries(entries):
+    """The entries of a level archive that `ArchivePool.add_level` registers.
+
+    Yields `(entry name, basename)`. One filter for the pool and for
+    `level_texture_names`, so the cheap "could this level reskin anything?"
+    question can never disagree with what the pool would actually resolve.
+    """
+    for name in entries:
+        parts = name.split("/")
+        # Level entries look like: bf1942/levels/MapName/<subdir>/file.ext
+        if len(parts) < 5:
+            continue
+        if parts[3].lower() not in LEVEL_TEXTURE_DIRS:
+            continue
+        basename = parts[-1]
+        # Skip menu icons, lightmaps, terrain tiles
+        if any(p.lower() in ("menu", "objectlightmaps") for p in parts):
+            continue
+        if _TERRAIN_TILE.match(Path(basename).stem):
+            continue
+        yield name, basename
+
+
+def texture_name_keys(name: str) -> set[str]:
+    """The keys a texture name is compared under: its leaf and its stem.
+
+    A shader asks for `texture/p4main_f`; a level ships
+    `AltTextures/p4main_f.dds`. Both reduce to `p4main_f`. The leaf is kept
+    beside the stem so a name with a dot of its own (`hull.v2`) still meets
+    itself, which makes the comparison err toward a match - and a false match
+    only costs an export that the caller then discards.
+    """
+    leaf = name.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    return {leaf, Path(leaf).stem}
+
+
+def level_texture_names(path: Path) -> frozenset[str]:
+    """Every name a level archive could answer a vehicle texture lookup with.
+
+    Reads the archive's index only - no entry is decompressed - so asking this
+    of all 239 Eve of Destruction levels costs less than exporting one model.
+    """
+    keys: set[str] = set()
+    for _name, basename in _level_texture_entries(RfaArchive(path).entries):
+        keys |= texture_name_keys(basename)
+    return frozenset(keys)
+
+
 class ArchivePool:
     """Many archives addressed as one case-insensitive namespace.
 
@@ -127,20 +175,7 @@ class ArchivePool:
         label = label or path.stem
         self._archives.append((label, archive))
         added = 0
-        for name in archive.entries:
-            parts = name.split("/")
-            # Level entries look like: bf1942/levels/MapName/<subdir>/file.ext
-            if len(parts) < 5:
-                continue
-            subdir = parts[3].lower()
-            if subdir not in LEVEL_TEXTURE_DIRS:
-                continue
-            basename = parts[-1]
-            # Skip menu icons, lightmaps, terrain tiles
-            if any(p.lower() in ("menu", "objectlightmaps") for p in parts):
-                continue
-            if _TERRAIN_TILE.match(Path(basename).stem):
-                continue
+        for name, basename in _level_texture_entries(archive.entries):
             # Register as texture/<basename> so it resolves the same way
             # the engine does when a shader asks for texture/X.
             synth_key = f"texture/{basename}".lower()
