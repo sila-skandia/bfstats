@@ -25,8 +25,12 @@ Four artifacts, all under `--out`:
                       that `BfNewListBoxNode::read` turned out to hold).
   menu-levels.json    one record per level in the game's own level
                       archives: the title the game's own list shows (the
-                      level's `lexiconAll.dat` record, English column), the
-                      two sides' nations from `game.setTeamSkin`, the
+                      level's `lexiconAll.dat` record, English column), each
+                      side's soldier skin (`game.setTeamSkin`) and nation --
+                      the level's own flag first (`team_nation_from_level`,
+                      the same rule `viewer/nation.js` draws the live scene
+                      with), `SKIN_NATION` only when the level gives no
+                      answer, recorded per side as `nationSource` -- the
                       level's menu thumbnail, and whether the level has the
                       bot support the real Instant Battle list requires.
   textures/*.png      every plate, button and flag the layout names.
@@ -56,13 +60,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from extract_models import DEFAULT_GAME_DIR, mod_chain  # noqa: E402
-from extract_hud_pack import hud_dir_for  # noqa: E402
+from extract_hud_pack import flag_mesh_nation, hud_dir_for  # noqa: E402
 from extract_loading_assets import format_map_title  # noqa: E402
 from extract_spawn_layout import (  # noqa: E402
     Flattener, VIRTUAL, data_value, extract_fonts, font_handles, font_id,
     load_chain_lexicon, load_lexicon, texture_key,
 )
 from bf42 import meme  # noqa: E402
+from bf42.level import load_gameplay_objects, load_level_files  # noqa: E402
 from bf42.modmenu import MenuSources  # noqa: E402
 from bf42.rfa import RfaArchive, find_archives_dir  # noqa: E402
 
@@ -88,9 +93,16 @@ PAGES: list[tuple[str, str]] = [
 BACKGROUND_RECTS = [[0.0, 0.0, 800.0, 600.0], [0.0, 85.0, 800.0, 450.0]]
 
 #: `game.setTeamSkin <team> <soldier>` -> the nation whose flag that side
-#: flies. The flag sprites are `menu/Texture/icon_flag_<nation>.dds`, and the
-#: nation set is the one `features/authentic-spawn-map/README.md` section 2
-#: lists for them.
+#: flies -- the FALLBACK, used only when `team_nation_from_level` finds no
+#: answer in the level's own control points (no gameplay data at all, or
+#: every flag mesh the team holds is one `nations` has never heard of, like
+#: Pathet Lao's `flagpl_m1`). A team's nation is a property of the level, not
+#: of the skin: `liberation_of_caen`'s Allies wear `BritishSoldier` and this
+#: table would say `brit`, but the level's own uncapturable Allied base flies
+#: `flagcan_m1` and `team_nation_from_level` answers `can` first, the way
+#: `viewer/nation.js` already does in the live scene. The flag sprites are
+#: `menu/Texture/icon_flag_<nation>.dds`, and the nation set is the one
+#: `features/authentic-spawn-map/README.md` section 2 lists for them.
 SKIN_NATION: dict[str, str] = {
     "germansoldier": "ger",
     "germandesertsoldier": "ger",
@@ -631,15 +643,96 @@ def level_title(level_dir: str, titles: dict[str, tuple[str, str]] | None) -> tu
     return format_map_title(level_dir), "extract_loading_assets.format_map_title"
 
 
+def load_flag_mesh_nations(mod_id: str) -> dict[str, str]:
+    """The mod's own `hud.json['flagMeshNation']` -- the exact table
+    `viewer/nation.js` fetches into `hudPack.nations` at runtime, read from
+    the same file rather than re-derived, so a level's team nation computed
+    here can never drift from what the page itself would draw for the same
+    level. Empty (with a warning) when the pack has not been built yet --
+    `extract_hud_pack.py`/`extract_hud_mods.py` normally runs first -- so a
+    level still gets a nation, just SKIN_NATION's rather than the level's
+    own.
+    """
+    path = hud_dir_for(mod_id) / "hud.json"
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        print(f"warning: {path} not found or unreadable; run "
+              f"extract_hud_pack.py --mod {mod_id} first -- team nations "
+              "will fall back to SKIN_NATION alone", file=sys.stderr)
+        return {}
+    return data.get("flagMeshNation") or {}
+
+
+def team_nation_from_level(gameplay, team: int,
+                          nations: dict[str, str]) -> str | None:
+    """A team's nation the way `viewer/map.html`'s in-game `teamNation`
+    already derives it: the flag its own control points fly, not the
+    soldier skin painted on the men who hold it.
+
+    `flag_mesh_nation` runs the identical rule `viewer/nation.js`'s
+    `cpNation` does over the same `nations` table, so this and the live
+    scene can never disagree over what one flag mesh means -- only over
+    which flags a team happens to hold, and that is read here exactly as
+    `extract_map.py`'s `_control_point_report` records it: the control
+    point's *placement* team where the level overrides one, its template's
+    own team otherwise, and the template's own (team-less) `flag_mesh()`,
+    matching what ends up in the level's `scene.json`.
+
+    Priority: the team's own uncapturable main base first (`xa_loi_pagoda`'s
+    ARVN_Base flies `flagus_m1`, US, even though the *majority* of its
+    Allied flags elsewhere on other EoD levels are South Vietnamese);
+    otherwise the majority of the flags the team starts holding. `None`
+    when the level gives no answer at all -- no gameplay data, this team
+    holds nothing, or every flag mesh it holds is one `nations` has never
+    heard of (Pathet Lao's `flagpl_m1`) -- so the caller can fall back to
+    the team's soldier skin instead of guessing.
+
+    A tie -- more than one main base, or an even split with no main base at
+    all -- keeps the first nation encountered walking the level's own
+    control points in file order, the same rule `viewer/nation.js`'s
+    `teamNation` breaks a `Map` tally tie with (`count > tally.get(best)`,
+    strictly greater). `no_where_to_run` is the one installed level either
+    tie fires on -- EoD gives its axis two uncapturable bases, a
+    `Vietcong_Base` (`flagjp_m1`) and a `Vietcong_Platoon` (`flagge_m1`) --
+    and encounter order is what keeps this function and the live scene's
+    plain majority agreeing there too: sorting the tie alphabetically
+    instead (a bug caught while cross-checking this against the corpus, not
+    a design this file ever wanted) picked `ger` over `jp` and disagreed
+    with `viewer/map.html`.
+    """
+    main_tally: dict[str, int] = {}
+    tally: dict[str, int] = {}
+    for inst in gameplay.control_points:
+        tpl = gameplay.template_for(inst)
+        cp_team = inst.team if inst.team is not None else (tpl.team if tpl else 0)
+        if cp_team != team:
+            continue
+        nation = flag_mesh_nation(tpl.flag_mesh() if tpl else None, nations)
+        if not nation:
+            continue
+        tally[nation] = tally.get(nation, 0) + 1
+        if tpl is not None and tpl.unable_to_change_team:
+            main_tally[nation] = main_tally.get(nation, 0) + 1
+    if main_tally:
+        return max(main_tally, key=main_tally.get)
+    if tally:
+        return max(tally, key=tally.get)
+    return None
+
+
 def level_record(name: str, paths: list[Path], thumb_dir: Path | None,
-                 force: bool, titles: dict[str, tuple[str, str]] | None = None
+                 force: bool, titles: dict[str, tuple[str, str]] | None = None,
+                 nations: dict[str, str] | None = None
                  ) -> dict | None:
     """One level: its title, both sides' nations and its menu thumbnail.
 
     `thumb_dir` of None reads the record without decoding or writing the
     thumbnail, which is what a caller that only wants the nations needs.
     `titles` is `title_index(load_lexicon(..., keep="first"))`; without it
-    the title falls back to the loading screen's table.
+    the title falls back to the loading screen's table. `nations` is
+    `load_flag_mesh_nations`'s table for this mod; without it every level
+    falls back to `SKIN_NATION` the way this file always has.
     """
     skins: dict[int, str] = {}
     level_dir = name
@@ -664,6 +757,7 @@ def level_record(name: str, paths: list[Path], thumb_dir: Path | None,
                     thumbnail = (path, entry)
     if not skins and thumbnail is None:
         return None
+    gameplay = load_gameplay_objects(load_level_files(paths, name))
     title, source = level_title(level_dir, titles)
     record: dict = {
         "dir": name,
@@ -682,9 +776,14 @@ def level_record(name: str, paths: list[Path], thumb_dir: Path | None,
     for team, key in ((AXIS, "axis"), (ALLIED, "allied")):
         skin = skins.get(team)
         if skin:
-            nation = SKIN_NATION.get(skin.lower())
+            nation = team_nation_from_level(gameplay, team, nations or {})
+            nation_source = "level"
+            if nation is None:
+                nation = SKIN_NATION.get(skin.lower())
+                nation_source = "skin"
             record[key] = {"skin": skin, "nation": nation,
-                           "flag": f"icon_flag_{nation}" if nation else None}
+                           "flag": f"icon_flag_{nation}" if nation else None,
+                           "nationSource": nation_source if nation else None}
             if nation is None:
                 print(f"warning: {name}: no nation for team skin {skin!r}",
                       file=sys.stderr)
@@ -725,20 +824,29 @@ def chain_level_archives(chain: list[Path]) -> dict[str, list[Path]]:
 
 
 def extract_levels(archives, out_dir: Path, force: bool,
-                   titles: dict[str, tuple[str, str]] | None = None) -> dict:
+                   titles: dict[str, tuple[str, str]] | None = None,
+                   nations: dict[str, str] | None = None) -> dict:
     """`archives` is either one `Archives` directory or a name -> archives
-    mapping already merged over a mod chain."""
+    mapping already merged over a mod chain. `nations` is
+    `load_flag_mesh_nations`'s table for this mod."""
     by_name = (archives if isinstance(archives, dict)
                else level_archives(archives))
     levels = []
     for name, paths in sorted(by_name.items()):
-        record = level_record(name, paths, out_dir / "thumbnails", force, titles)
+        record = level_record(name, paths, out_dir / "thumbnails", force,
+                              titles, nations)
         if record is not None:
             levels.append(record)
     listed = sum(1 for level in levels if level["singlePlayer"])
     return {
         "source": "bf1942/levels/*.rfa: game.setTeamSkin from each level's "
-                  "Init.con, Menu/thumbnail.[dds|tga], title from "
+                  "Init.con names the skin; the nation is the level's own "
+                  "flag (its uncapturable main base first, otherwise the "
+                  "majority of the flags the team starts holding -- "
+                  "team_nation_from_level, the flag-mesh table from "
+                  "flag_mesh_nations), falling back to SKIN_NATION only "
+                  "when the level gives no answer (see each level's own "
+                  "nationSource). Menu/thumbnail.[dds|tga], title from "
                   "lexiconAll.dat keyed on the level's directory name "
                   "(English column), falling back to "
                   "extract_loading_assets.format_map_title",
@@ -789,8 +897,12 @@ def main() -> None:
     # twice (`Omaha_Beach` is a level title at record 976 and a control
     # point at 1332), and there the first record is the title.
     titles = title_index(load_chain_lexicon(sources.lexicon_paths, keep="first"))
+    # The same flag-mesh table `viewer/nation.js` fetches into `hudPack.nations`
+    # for this mod, so a level's nation here can never drift from the one the
+    # live scene draws for it.
+    nations = load_flag_mesh_nations(sources.mod_id)
     levels = extract_levels(chain_level_archives(sources.chain), out,
-                            args.force, titles)
+                            args.force, titles, nations)
     (out / "menu-levels.json").write_text(json.dumps(levels, indent=1) + "\n")
 
     # Decoded after the levels, because which nation flags the screen needs
