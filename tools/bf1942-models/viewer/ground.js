@@ -134,6 +134,15 @@ const WHEEL_MATERIAL_FRICTION = 1.0;
  * springs sum and the tyres mean**, and a whole vehicle's Coulomb budget is
  * `A * |g|` however many wheels touch.
  *
+ * **`n` counts PARTS, not contact points.** `ResponsePhysicsManager::update`
+ * `0x0825d0b0` calls `checkVsTerrain` (`0x0825d160`, vtable `+0x24`) and then
+ * `addFriction` exactly once (`0x0825d137`, vtable `+0x20`) per object per
+ * tick, so however many vertices of a wheel are touching, that wheel adds one
+ * term to the mean. The six floats the call site pushes
+ * (`0.45, 0.9, 0.45, 2.0, 0, 0` at `0x0825d11d`-`0x0825d130`) are **dead** —
+ * a scan of `addFriction`'s whole body finds no read of `[ebp+0x10]` through
+ * `[ebp+0x24]`, so there is no per-call scale hiding in them.
+ *
  * **This file now does the same**, and no normal load enters the tangential
  * solve anywhere: `#step` accumulates each contact's clamped in-plane
  * acceleration and its own `r x f` and divides both by the contact count,
@@ -684,10 +693,31 @@ function groundNormal(groundHeight, x, z, out) {
  * ```
  *
  * so RollGrip's direction is `axle - N*(axle.N)/(N.N)` and never the raw
- * axle. `collision-response.md` section 8 states the same of EngineGrip's
- * forward axis — "tangent to N" — and of the velocity it is differenced
- * against, `Vt = V - N*(V.N)/(N.N)`. **Proved here for RollGrip; taken from
- * section 8 for EngineGrip.**
+ * axle.
+ *
+ * **EngineGrip is the same, and it is read here too rather than taken from
+ * section 8.** It projects the finished target instead of the axis it was
+ * built from, at the other end of the branch:
+ *
+ * ```
+ * 0825c3d7-0825c40d  the blend is summed into T [ebp-0x48..] and copied to
+ *                    [ebp-0x78..], which is what ebx points at
+ * 0825c410  eax = [ebp-0x1e4] = this+0x68, the averaged contact normal
+ * 0825c416-0825c430  |N|^2
+ * 0825c432  fldz;  0825c436 fucom st(1);  0825c440 jne 0825c493
+ *                    -- a LITERAL zero, so |N|^2 == 0 falls through and the
+ *                       target is left alone (0825c442-0825c48e)
+ * 0825c493-0825c4ab  s = (T . N) / |N|^2      (fdivrp st(1),st)
+ * 0825c4ad-0825c4de  [ebx] = s*N
+ * 0825c453-0825c48b  T := T - s*N, stored back to [ebp-0x48..]
+ * ```
+ *
+ * and only then does `0825c2a3` take `dV = T - Vt`. So both grips end up
+ * tangential, by two different routes. `Vt` is tangential too, and that one
+ * is read as well: `0825b91a`-`0825b982` forms `|N|^2` from the same vector
+ * and `0825c579`-`0825c591` divides the dot by it, `0825b985`-`0825b9a0`
+ * subtracting the result — `Vt = V - N*(V.N)/(N.N)`, section 8's own
+ * expression, byte for byte.
  *
  * Why it matters to this file and not only to fidelity: the tyre frame used
  * to be the HULL's own XZ plane. A Coulomb-saturated longitudinal demand on
@@ -952,8 +982,14 @@ export class GroundVehicle extends Vehicle {
 
     // **Next tick's gravity, added to every contact velocity before the
     // tangential demand is taken** — collision-response.md section 8's
-    // `V.y += g/30`, and its own note on why: "so a held body does not
-    // creep". Without it the solver only ever sees the velocity gravity has
+    // `V.y += g/30`, and it is in the binary, not only in the note:
+    // `0x0825b8b3 mov eax,ds:0x871dc30` (the physics-system singleton),
+    // `0x0825b8e4 call [edx+0x14]` — slot `+0x14` of `vtable for
+    // BasicPhysicsSystem` `0x0872de40` is `BasicPhysicsSystem::getGravity`
+    // `0x08251ec0` — then `0x0825b8e7 fdiv ds:0x8716b5c` (30.0) and
+    // `0x0825b8ff fadd` into the y term of `V`, all of it BEFORE the normal
+    // projection that makes `Vt`. Section 8's note on why: "so a held body
+    // does not creep". Without it the solver only ever sees the velocity gravity has
     // ALREADY produced, cancels that, and lets the next tick's share through
     // again; a parked jeep then walks down a 5-degree slope at a steady
     // 0.8 m/s. With it the demand includes the push before it becomes
@@ -2493,8 +2529,14 @@ export class TrackedVehicle extends Vehicle {
 
     // **Next tick's gravity, added to every contact velocity before the
     // tangential demand is taken** — collision-response.md section 8's
-    // `V.y += g/30`, and its own note on why: "so a held body does not
-    // creep". Without it the solver only ever sees the velocity gravity has
+    // `V.y += g/30`, and it is in the binary, not only in the note:
+    // `0x0825b8b3 mov eax,ds:0x871dc30` (the physics-system singleton),
+    // `0x0825b8e4 call [edx+0x14]` — slot `+0x14` of `vtable for
+    // BasicPhysicsSystem` `0x0872de40` is `BasicPhysicsSystem::getGravity`
+    // `0x08251ec0` — then `0x0825b8e7 fdiv ds:0x8716b5c` (30.0) and
+    // `0x0825b8ff fadd` into the y term of `V`, all of it BEFORE the normal
+    // projection that makes `Vt`. Section 8's note on why: "so a held body
+    // does not creep". Without it the solver only ever sees the velocity gravity has
     // ALREADY produced, cancels that, and lets the next tick's share through
     // again; a parked jeep then walks down a 5-degree slope at a steady
     // 0.8 m/s. With it the demand includes the push before it becomes
