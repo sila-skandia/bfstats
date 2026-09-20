@@ -220,7 +220,11 @@ export function paintMenu(ctx, layout, state, env) {
   ctx.globalAlpha = 1;
 }
 
-function paintElement(ctx, el, layout, state, env) {
+/** One leaf: fill, picture, button or text. Screen-agnostic - every
+ *  `kind` it handles is keyed off the element itself, not which page it
+ *  came from - so `mod-picker.js` reuses it for the Custom Game dialog's
+ *  own leaves rather than re-implementing this switch. */
+export function paintElement(ctx, el, layout, state, env) {
   const [x, y, w, h] = el.rect;
   const color = el.color || [1, 1, 1, 1];
   ctx.globalAlpha = color[3];
@@ -252,7 +256,11 @@ function paintElement(ctx, el, layout, state, env) {
     case 'text': {
       const font = env.font(el.font);
       if (!font) break;
-      const text = el.text || '';
+      // A `var` node's shipped `text` is the file's own placeholder (the
+      // vanilla default the engine substitutes at runtime, e.g. the Custom
+      // Game dialog's URL/INFO fields) - a screen that wants a live value
+      // there supplies `env.text(name)`.
+      const text = (el.var && env.text?.(el.var)) || el.text || '';
       const width = measureText(font, text);
       const tx = el.align === 'center' ? x + (w - width) / 2
         : el.align === 'right' ? x + w - width : x;

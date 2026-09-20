@@ -467,6 +467,7 @@ function stats(xs) {
 }
 
 function pacing(frames) {
+  if (!frames.length) return { frames: 0, skipped: true };
   const dts = frames.map(f => f[0]);
   const s = [...dts].sort((a, b) => a - b);
   const total = dts.reduce((a, b) => a + b, 0);
@@ -625,6 +626,7 @@ async function bench() {
       gpuTimer: rt.timer ? { disjoint: rt.disjoint, unread: rt.unread } : null,
       mapRepaints: rt.repaints, cpu,
     };
+    if (frames.length) {
     // A run whose context was lost draws nothing and paces perfectly; say so
     // rather than report it.
     results.realtime.contextLost = results.realtime.drawCalls.max === 0;
@@ -649,6 +651,7 @@ async function bench() {
     if (results.profileRealtime) {
       console.log(`--- profile self time, real time (total ${results.profileRealtime.totalMs} ms)`);
       for (const l of results.profileRealtime.top.slice(0, 25)) console.log(`${l.share.toFixed(1).padStart(5)}%  ${String(l.ms).padStart(6)}ms  ${l.fn}`);
+    }
     }
   } finally {
     clearInterval(rssTimer);
