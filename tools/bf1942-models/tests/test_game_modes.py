@@ -38,6 +38,7 @@ from bf42.level import (  # noqa: E402
     find_gameplay_mode,
     find_gameplay_modes,
     load_game_types,
+    compose_game_type_layers,
     load_gameplay_objects,
     parse_game_type,
     tickets_for_mode,
@@ -461,6 +462,206 @@ class TicketReportTests(unittest.TestCase):
         from bf42.level import TicketInfo
         out = extract_map._tickets_report(TicketInfo(mode="ObjectiveMode", team1=100))
         self.assertEqual(out, {"mode": "ObjectiveMode", "team1": 100})
+
+
+# Road to Rome's Anzio `GameTypes/CoOp.con`, trimmed to its run lines. The
+# point of this file: `run` is per FILE, so the flags come out of `Conquest/`
+# while everything else comes out of `SinglePlayer/`. No directory holds this
+# layout, so no directory can name it.
+ANZIO_COOP = """
+Game.setNumberOfTickets 1 120
+Game.setNumberOfTickets 2 100
+
+run SinglePlayer/SoldierSpawnTemplates
+run SinglePlayer/SoldierSpawns
+run SinglePlayer/SpawnpointManagerSettings
+run SinglePlayer/ObjectSpawnTemplates
+run Conquest/ControlPointTemplates
+
+if v_arg1 == host
+run ai
+run SinglePlayer/ObjectSpawns
+run Conquest/ControlPoints
+rem object.create redBase
+else
+rem object.create flagPole
+endIf
+"""
+
+
+class SplitLayerGameTypeTests(unittest.TestCase):
+    """A game type whose `run` lines straddle two layer directories.
+
+    35 of the 3,048 GameTypes scripts across the 18 installed mods do this --
+    all 6 Road to Rome CoOp scripts, 8 of Secret Weapons' 9, and 21 across
+    Forgotten Hope, FHSW and bf1918. None in vanilla, which is why a
+    directory-keyed reading looked complete.
+    """
+
+    def test_the_directory_of_each_layer_file_is_recorded(self) -> None:
+        gt = parse_game_type(ANZIO_COOP, "CoOp")
+        self.assertEqual(gt.files["soldierspawns"], "SinglePlayer")
+        self.assertEqual(gt.files["objectspawns"], "SinglePlayer")
+        self.assertEqual(gt.files["controlpoints"], "Conquest")
+        self.assertEqual(gt.files["controlpointtemplates"], "Conquest")
+
+    def test_a_split_script_is_composed(self) -> None:
+        self.assertTrue(parse_game_type(ANZIO_COOP, "CoOp").composed)
+
+    def test_a_single_directory_script_is_not_composed(self) -> None:
+        self.assertFalse(parse_game_type(WAKE_COOP, "CoOp").composed)
+
+    def test_bare_runs_do_not_make_a_script_composed(self) -> None:
+        gt = parse_game_type("run ai\nrun SinglePlayer/ControlPoints\n", "CoOp")
+        self.assertFalse(gt.composed)
+        self.assertEqual(gt.files, {"controlpoints": "SinglePlayer"})
+
+    def test_a_composed_game_type_gets_a_layer_of_its_own(self) -> None:
+        files = _FakeFiles({
+            "Conquest/ControlPoints.con": _flag("base", 1),
+            "SinglePlayer/ControlPoints.con": _flag("other", 2),
+            "SinglePlayer/SoldierSpawns.con": _spawn("sp"),
+            "Conquest/SoldierSpawns.con": _spawn("cq"),
+        })
+        types = {"CoOp": parse_game_type(ANZIO_COOP, "CoOp")}
+        layers = {"Conquest": load_gameplay_objects(files, "Conquest"),
+                  "SinglePlayer": load_gameplay_objects(files, "SinglePlayer")}
+        compose_game_type_layers(files, types, layers)
+        self.assertIn("CoOp", layers)
+        # The engine's answer: Conquest's flags, SinglePlayer's spawns.
+        self.assertEqual([c.template for c in layers["CoOp"].control_points],
+                         ["base"])
+        self.assertEqual([s.template for s in layers["CoOp"].soldier_spawns],
+                         ["sp"])
+        # And the game type now points at its own layer, so the per-layer
+        # `gameTypes` list, the ticket lookup and `?mode=CoOp` all agree.
+        self.assertEqual(types["CoOp"].mode, "CoOp")
+
+    def test_an_unsplit_game_type_gets_no_extra_layer(self) -> None:
+        files = _FakeFiles({"SinglePlayer/ControlPoints.con": _flag("base", 1)})
+        types = {"CoOp": parse_game_type(WAKE_COOP, "CoOp")}
+        layers = {"SinglePlayer": load_gameplay_objects(files, "SinglePlayer")}
+        compose_game_type_layers(files, types, layers)
+        self.assertEqual(list(layers), ["SinglePlayer"])
+        self.assertEqual(types["CoOp"].mode, "SinglePlayer")
+
+    def test_sources_override_the_directory_per_file(self) -> None:
+        files = _FakeFiles({
+            "Conquest/ControlPoints.con": _flag("cqflag", 1),
+            "SinglePlayer/ControlPoints.con": _flag("spflag", 2),
+            "SinglePlayer/SoldierSpawns.con": _spawn("spspawn"),
+        })
+        out = load_gameplay_objects(files, "SinglePlayer",
+                                    sources={"controlpoints": "Conquest"})
+        self.assertEqual([c.template for c in out.control_points], ["cqflag"])
+        self.assertEqual([s.template for s in out.soldier_spawns], ["spspawn"])
+
+
+def _flag(name: str, team: int) -> str:
+    return (f"Object.create {name}\n"
+            "Object.absolutePosition 10/0/10\n"
+            "Object.rotation 0/0/0\n"
+            f"Object.setTeam {team}\n")
+
+
+def _spawn(name: str) -> str:
+    return (f"Object.create {name}\n"
+            "Object.absolutePosition 5/0/5\n"
+            "Object.rotation 0/0/0\n")
+
+
+class _FakeFiles:
+    """The two `LevelFiles` methods `load_gameplay_objects` uses."""
+
+    def __init__(self, blobs: dict[str, str]) -> None:
+        self._blobs = {k.lower(): v for k, v in blobs.items()}
+
+    def find(self, rel: str):
+        return rel.lower() if rel.lower() in self._blobs else None
+
+    def read(self, key: str) -> bytes:
+        return self._blobs[key].encode("latin-1")
+
+
+class TagModesTests(unittest.TestCase):
+    """The glb tag. A node with no `modes` key is in every mode, which is how
+    every scene built before this existed reads -- so a node that IS in every
+    mode must not get one, or a single-layer level's glb stops being byte-
+    identical to a pre-modes one for no gain at all."""
+
+    class _Node:
+        def __init__(self) -> None:
+            self.extras = None
+
+    class _Builder:
+        def __init__(self) -> None:
+            self.nodes = {0: TagModesTests._Node()}
+
+        def node(self, index: int):
+            return self.nodes[index]
+
+    def test_a_node_in_every_mode_is_left_untagged(self) -> None:
+        builder = self._Builder()
+        extract_map._tag_modes(builder, 0, ["Conquest"], 1)
+        self.assertIsNone(builder.node(0).extras)
+
+    def test_a_node_in_some_modes_is_tagged(self) -> None:
+        builder = self._Builder()
+        extract_map._tag_modes(builder, 0, ["Conquest", "Tdm"], 4)
+        self.assertEqual(builder.node(0).extras, {"modes": ["Conquest", "Tdm"]})
+
+    def test_the_tag_joins_whatever_extras_the_node_already_had(self) -> None:
+        builder = self._Builder()
+        builder.node(0).extras = {"kind": "controlPoints"}
+        extract_map._tag_modes(builder, 0, ["Ctf"], 4)
+        self.assertEqual(builder.node(0).extras,
+                         {"kind": "controlPoints", "modes": ["Ctf"]})
+
+    def test_without_a_layer_count_every_node_is_tagged(self) -> None:
+        # The old signature, which the flag cloths and the tests both used.
+        builder = self._Builder()
+        extract_map._tag_modes(builder, 0, ["Conquest"])
+        self.assertEqual(builder.node(0).extras, {"modes": ["Conquest"]})
+
+
+class RoadToRomeArchiveTests(unittest.TestCase):
+    """Anzio, against the shipped Road to Rome archive: the CoOp script runs
+    `SinglePlayer/*` for the spawns and `Conquest/ControlPoints` for the
+    flags, so its layer is neither directory's."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        if not GAME_DIR.is_dir():
+            raise unittest.SkipTest("the game is not installed")
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from extract_models import mod_chain
+        from bf42.level import find_level_archives, load_level_files
+        chain = mod_chain(GAME_DIR, "XPack1")
+        if not chain:
+            raise unittest.SkipTest("Road to Rome is not installed")
+        paths = find_level_archives(GAME_DIR, "XPack1", "Anzio", chain=chain)
+        if not paths:
+            raise unittest.SkipTest("Anzio.rfa is not installed")
+        cls.files = load_level_files(paths, "Anzio")
+
+    def test_the_coop_script_straddles_two_directories(self) -> None:
+        gt = load_game_types(self.files)["CoOp"]
+        self.assertTrue(gt.composed)
+        self.assertEqual(gt.files["controlpoints"].lower(), "conquest")
+        self.assertEqual(gt.files["soldierspawns"].lower(), "singleplayer")
+
+    def test_the_composed_layer_flies_conquest_s_flags(self) -> None:
+        types = load_game_types(self.files)
+        layers = {m: load_gameplay_objects(self.files, m)
+                  for m in find_gameplay_modes(self.files)}
+        compose_game_type_layers(self.files, types, layers)
+        coop = layers["CoOp"]
+        conquest = layers["Conquest"]
+        single = layers["SinglePlayer"]
+        self.assertEqual([c.template for c in coop.control_points],
+                         [c.template for c in conquest.control_points])
+        self.assertEqual(len(coop.soldier_spawns), len(single.soldier_spawns))
+        self.assertEqual(types["CoOp"].mode, "CoOp")
 
 
 if __name__ == "__main__":
