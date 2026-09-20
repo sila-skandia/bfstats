@@ -446,6 +446,89 @@ ground is therefore not moved by this at all; it is moved by the friction path
 **not** under that gate — `0x08274a03`'s `jne` lands past the 0.75 block but
 before the swim test at `0x08274b5f`.
 
+### The animation state multiplies the table, and that is the prone slide (2026-09-20, ledger PHY-8)
+
+The ramp is not the last thing between the input and the table. `handlePlayerInput`
+runs both animation state machines first —
+
+```
+speedMul = 1.0
+if (this+0x579 == 0)
+  for (i = 0; i < 2; i++)                       // lower body, then upper
+    checkTransitions(&this[0xa5 + i*0x11], input, &a, &b, &c)
+    if (i == 0)                                 // ONLY the lower body's
+      forwardInput *= a;  speedMul = a;  strafeInput *= c
+```
+
+— and `speedMul` survives into the speed itself:
+
+```
+vCmd_fwd = this[0x4b] * directionalSpeed[pose*2 + (ramp <= 0)] * speedMul
+```
+
+Those three floats are the state's own `AnimationStateMachine.setSpeed <fwd> <?>
+<strafe>`. Multiplying the *inputs* by them changes nothing, because
+`applyMovementFactors` reads only the sign; the multiplier that bites is the one
+on the table.
+
+And the `pose` that indexes the table is the animation machine's too.
+`BFSoldier::getPose()` (`0x0827ddc0`) is nothing but
+
+```
+f = AnimationStateMachineInstance::getCurrentStateFlags(this + 0x294)
+return (f & 0x20) ? 1 : (f & 0x40) >> 5          // c_AsmIsCrouching / c_AsmIsLying
+```
+
+so the speed row follows the **clip that is playing**, not an input bit.
+
+Every walk, run, stand, crouch and lie state in `animations/AnimationStates*.con`
+declares `setSpeed 1.0 1.0 1.0`, which is why nobody noticed the multiplier. One
+state does not, and it is the reason a BF1942 player who hits the prone key at a
+run keeps going for a good metre and a half:
+
+```
+AnimationStateMachine.createState Lb_RunStandToLie
+AnimationStateMachine.addAnimation Animations/Lie/LowerBody/3PJump2LieLower.baf 1.5 c_AsmPlayOnce
+AnimationStateMachine.addTransitionWhenDone Lb_Lie
+AnimationStateMachine.setSpeed 6.0 1.0 1.0
+AnimationStateMachine.setMorphFactor 4.0
+AnimationStateMachine.setCameraShakeYaw 0 0.15 8.0
+AnimationStateMachine.setCameraShakeUpDown 0 0.08 15
+AnimationStateMachine.setCameraShakeLeftRight 0 0.02 5
+AnimationStateMachine.setCameraShakeFadeIn 0 0.6
+AnimationStateMachine.setFlag c_AsmIsLying
+```
+
+`c_AsmIsLying` is set, so the pose is already PRONE and the table hands out
+1 m/s; times 6.0 that is the standing run exactly, held for as long as the dive
+clip plays. `3PJump2LieLower.baf` is **11 frames** and the state plays it at
+**1.5x**: **0.282 s**, about **1.7 m**. (`3pAnimationsTweaking.con` separately
+says `set3pAnimationSpeed Lb_RunStandToLie 1.40`, which would make it 0.302 s;
+which of the two the engine honours for the `addTransitionWhenDone` clock was
+not read.)
+
+Which of the three routes to the floor you get is decided in the same function.
+It multiplies the forward input by the **current** state's own forward speed —
+1.0 for every stand/walk/run state — and branches on the sign:
+
+| entered from | state | `setSpeed` | slide |
+|---|---|---|---|
+| standing or moving forward | `Lb_RunStandToLie` | **6.0** 1.0 1.0 | 0.282 s at a full run |
+| moving backward | `Lb_StandToLie` | 1.0 1.0 1.0 | none |
+| crouching (`flags & 0x20`) | `Lb_CrouchToLie` | 1.0 1.0 1.0 | none |
+
+Standing still takes the dive branch too; it simply has no ramp for the 6.0 to
+multiply.
+
+**One thing read alongside this and deliberately not acted on** (ledger PHY-9):
+the same decompile applies the ramp **squared** — `sgn(r)·r²·table·speedMul`,
+with `r = state/127` — where §8's own reading above, and the viewer, have it
+linear. Two readings of one block that disagree about how many `fmul`s carry
+`r`. It is recorded rather than shipped, because squaring it changes the shape
+of every standing start in the game.
+
+---
+
 ### The jump: 6.0 m/s, one tick, and the server computes it too (2026-09-19, ledger PHY-1)
 
 The gate is as read in 2026-09-16: in the client's `handlePlayerInput`
