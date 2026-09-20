@@ -15,6 +15,7 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { selectGait } from './gait-select.js';
+import { isPropellerBlurPair } from './flight.js';
 
 // --- conventions --------------------------------------------------------------
 
@@ -739,6 +740,45 @@ const ghostMaterial = new THREE.MeshBasicMaterial({
   color: 0x9aa666, transparent: true, opacity: 0.2, depthWrite: false,
 });
 
+/**
+ * The idle propeller state every replayed aircraft carries, and why.
+ *
+ * A `models/<Template>.glb` keeps both of a vanilla prop plane's meshes as
+ * real siblings under the LodObject wrapper, stamped `extras.propellerBlur`
+ * (assemble.py's `_propeller_blur`): the static blade and the blurred disc
+ * the engine swaps in at `addLodComparison 0.07` once the throttle passes it.
+ * The playable map hides the disc when the level loads and `flight.js`
+ * (`applyRig`'s pair loop) toggles the pair from the flown vehicle's live
+ * throttle — a parked plane blades-out, a flown one blurs past the threshold.
+ *
+ * A replay has neither: the recording carries position and hit points per
+ * object, never an engine scalar, so there is no throttle to read and no
+ * Vehicle to run `applyRig` on. Every replayed aircraft therefore gets the
+ * one state the level's own parked spawners show — blade visible, disc
+ * hidden. Without this the clone draws both meshes at once from its first
+ * frame, the blade straight through the blur, because the glb exports both
+ * visible and the pair toggle is the only thing that ever picks one.
+ *
+ * The kind gate is `flight.js`'s own (`isPropellerBlurPair`): the bf109's
+ * *cockpit* LodObject wears the same Static/Blurred naming under a
+ * `DistCompareSelector`, and its "blurred" half is the pilot's 1P interior.
+ * Fresh trees exclude the interior from the export (the wrapper's children
+ * find no `blurred` name and the walk is a no-op), but an already-published
+ * tree carries both halves, and hiding one of them would strip the bf109's
+ * cockpit out of every replay flown past it.
+ *
+ * Exported for the headless check (`tests/test_replay_models.py`), which
+ * pins the law against a synthetic glb tree rather than a browser page.
+ */
+export function setReplayPropellerIdle(scene) {
+  scene.traverse(obj => {
+    const blur = obj.userData?.propellerBlur;
+    if (!blur || !isPropellerBlurPair(blur)) return;
+    const blurred = obj.children.find(child => child.name === blur.blurred);
+    if (blurred) blurred.visible = false;
+  });
+}
+
 function setGhost(entity, ghost) {
   if (entity.ghost === ghost) return;
   entity.ghost = ghost;
@@ -878,6 +918,7 @@ class ReplayPlayer {
           if (data.effect || data.projectileMesh || data.projectileTrail
               || data.collision || /collision/i.test(obj.name || '')) obj.visible = false;
         });
+        setReplayPropellerIdle(gltf.scene);
         // The page's own vehicle shading, so a replayed tank is lit like a
         // parked one rather than by raw glTF materials.
         this.ctx.shadeModel?.(gltf.scene);
