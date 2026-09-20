@@ -880,6 +880,7 @@ import { soldierExposure, worldBlocker, POSE_STAND } from './soldier-exposure.js
 import { CHARACTER_HEIGHT } from './physics.js';
 import { flareSprites, flareTextureFiles, hasDrawableFlare } from './lens-flare.js';
 import { loadHudPaths } from './hud-pack.js';
+import { kitIconCandidates } from './kit-icon.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -9930,10 +9931,25 @@ function applyDeployFrame() {
 // The five rows in the game's order; the index is its `Kit/SelectedKit`.
 const KITS = ['scout', 'assault', 'antitank', 'medic', 'engineer'];
 
-/** Which photograph a kit row shows. The theatre variants exist only where
- *  the game drew them: Japanese assault and engineer, Soviet and Canadian
- *  assault; everything else is the plain allies/axis picture. */
+/** Which photograph a kit row shows: the level's own kit for this row and
+ *  team, through `_shared/loadouts.json`'s `kitIcon.icon` (`setKitIcon`'s raw
+ *  path -- `kit-icon.js` handles the casing, the extension and the
+ *  directory-qualified name a nation collision earns it) resolved against
+ *  whichever sprites the pack actually loaded, mod's own first. Falls back
+ *  to the vanilla-table guess below whenever the loadout, the icon field or
+ *  the sprite itself is not there -- a mod whose pack has not caught up, or
+ *  a level `_shared/loadouts.json` does not know. The theatre variants in
+ *  that fallback exist only where the game drew them: Japanese assault and
+ *  engineer, Soviet and Canadian assault; everything else is the plain
+ *  allies/axis picture. */
 function kitPhoto(role, nation, team) {
+  const { kit } = kitLoadout(team, role);
+  const icon = kit && loadouts?.kits?.[kit]?.kitIcon?.icon;
+  if (icon) {
+    for (const candidate of kitIconCandidates(icon)) {
+      if (hudPack.sprites.has(candidate)) return candidate;
+    }
+  }
   const variants = {
     jp: { assault: 'jap', engineer: 'jap' },
     rus: { assault: 'russian' },
