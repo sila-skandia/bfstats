@@ -1581,9 +1581,11 @@ def union_object_spawns(info: LevelInfo) -> list[tuple]:
     Yields `(inst, vehicle, spec, modes, windows)`, default mode first and in
     its own file order, so the nodes the viewer sees with no `?mode=` are the
     ones it saw before modes existed. `windows` is mode -> respawn window and
-    is only populated when two modes disagree about it — 2,123 pads do across
-    the installed mods (32 in vanilla), which is why the window cannot simply
-    be stamped once per pad.
+    is only populated when two modes disagree about it — 1,674 pads do across
+    the installed mods (32 in vanilla, and 307 in bf1918 alone), which is why
+    the window cannot simply be stamped once per pad. Counted by sweeping
+    every archive through this function; 2,123 was an earlier figure and does
+    not reproduce.
     """
     order: list[tuple] = []
     index: dict[tuple, int] = {}
