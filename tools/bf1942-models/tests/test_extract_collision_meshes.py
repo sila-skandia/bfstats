@@ -229,24 +229,64 @@ class BuildCollisionMeshesTests(unittest.TestCase):
         self.assertEqual({}, out)
         self.assertEqual(1, stats["no_collision"])
 
-    def test_a_mesh_whose_only_faces_are_degenerate_is_treated_as_no_collision(self) -> None:
-        layer_bytes = _collision_layer_bytes(
-            vertices=[(0.0, 0.0, 0.0, 1), (0.0, 0.0, 0.0, 1), (0.0, 0.0, 0.0, 1)],
-            faces=[((0, 1, 2), 1, 0)],  # zero area: all three vertices coincide
-        )
+    @staticmethod
+    def _one_layer_mesh(vertices, faces) -> bytes:
         data = bytearray()
         data += struct.pack("<II", 10, 0)
         data += struct.pack("<3f", 0.0, 0.0, 0.0)
         data += struct.pack("<3f", 0.0, 0.0, 0.0)
         data += struct.pack("<B", 0)
         data += struct.pack("<I", 1)
-        data += layer_bytes
+        data += _collision_layer_bytes(vertices=vertices, faces=faces)
         data += struct.pack("<I", 0)
-        pool = FakePool({"standardmesh/flat.sm": bytes(data)})
+        return bytes(data)
+
+    def test_a_mesh_whose_only_faces_are_degenerate_keeps_its_vertices(self) -> None:
+        """`checkVsTerrain` drops a part's col0 VERTICES onto the heightfield
+        and never looks at a face (collision-response.md #7), so a layer whose
+        every face was culled is still a usable ground probe. Asking for faces
+        here is what dropped the Sherman's suspension: see
+        `test_a_millimetre_wheel_probe_survives_the_degenerate_cull` below."""
+        pool = FakePool({"standardmesh/flat.sm": self._one_layer_mesh(
+            vertices=[(0.0, 0.0, 0.0, 1), (0.0, 0.0, 0.0, 1), (0.0, 0.0, 0.0, 1)],
+            faces=[((0, 1, 2), 1, 0)],  # zero area: all three vertices coincide
+        )})
 
         out, stats = build_collision_meshes(pool, {"flat": "Flat"})
-        self.assertEqual({}, out)
-        self.assertEqual(1, stats["no_collision"])
+        self.assertIn("flat", out)
+        self.assertEqual(0, stats["no_collision"])
+        layer = out["flat"]["layers"][0]
+        self.assertEqual(9, len(layer["v"]))
+        self.assertEqual([], layer["f"])     # the face itself is still culled
+        self.assertEqual([], layer["fm"])
+        self.assertEqual([], layer["n"])
+
+    def test_a_millimetre_wheel_probe_survives_the_degenerate_cull(self) -> None:
+        """`Sherman_Whe3L_M1`'s own col0, to the millimetre: three vertices
+        about 0.8 mm apart, one face, cross^2 = 6.4e-13. The old 1e-12 bar
+        threw it away, which left the Sherman, the Priest and the M10 with no
+        sprung ground contact at all."""
+        pool = FakePool({"standardmesh/whe3.sm": self._one_layer_mesh(
+            vertices=[(0.0, -0.30432, -0.00084, 178),
+                      (0.0, -0.30481, 0.0, 178),
+                      (0.0, -0.30439, 0.00093, 178)],
+            faces=[((1, 0, 2), 178, 0)],
+        )})
+
+        out, stats = build_collision_meshes(pool, {"whe3": "Whe3"})
+        self.assertIn("whe3", out)
+        layer = out["whe3"]["layers"][0]
+        self.assertEqual(9, len(layer["v"]))
+        self.assertEqual(1, len(layer["fm"]))     # the face is kept too
+        self.assertEqual(3, len(layer["n"]))
+        self.assertEqual(1, stats["faces"])
+
+    def test_the_degenerate_bar_is_the_one_stdmesh_publishes(self) -> None:
+        """One constant, two readers: `assemble.py` culls the glb's collision
+        faces with the same number, so a probe the sidecar keeps cannot be a
+        probe the scene drops."""
+        from extract_collision_meshes import _DEGENERATE_CROSS_SQ
+        self.assertEqual(stdmesh.DEGENERATE_CROSS_SQ, _DEGENERATE_CROSS_SQ)
 
 
 class CollectGeometryRefsTests(unittest.TestCase):

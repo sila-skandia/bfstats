@@ -464,6 +464,52 @@ results.constants = {
       plane.applyRig();
       return plane.propellerBlurPairs.length;
     })(),
+    // Vanilla's one counter-example to the naming convention: the bf109's
+    // *cockpit* LodObject calls its alternatives `bf109CockpitStatic` (the
+    // fuselage) and `bf109CockpitBlurred` (the 1P interior), under the
+    // `DistCompareSelector` every other cockpit uses. A scene baked before
+    // the exporter learned to read the selector carries the stamp anyway, and
+    // binding it to the throttle put the pilot outside his own aeroplane
+    // below half power. The kind is the gate.
+    cockpitNamedLikeAPropeller: (() => {
+      const root = new THREE.Object3D();
+      root.name = 'BF109';
+      root.userData = { control: 'BF109', templateKind: 'PlayerControlObject' };
+      const wrapper = new THREE.Object3D();
+      wrapper.name = 'lodbf109Cockpit';
+      wrapper.userData = {
+        propellerBlur: {
+          static: 'bf109CockpitStatic',
+          blurred: 'bf109CockpitBlurred',
+          selectorKind: 'DistCompareSelector',
+          distances: [10],
+          comparisons: [0.5],
+        },
+      };
+      const exterior = new THREE.Object3D();
+      exterior.name = 'bf109CockpitStatic';
+      const interior = new THREE.Object3D();
+      interior.name = 'bf109CockpitBlurred';
+      wrapper.add(exterior, interior);
+      root.add(wrapper);
+      const plane = new Aircraft(root, null, { cockpit: false });
+      plane.state.throttle = 0;
+      plane.applyRig();
+      return {
+        pairs: plane.propellerBlurPairs.length,
+        // Untouched by the rig: whatever the cockpit swap set stands.
+        exterior: exterior.visible,
+        interior: interior.visible,
+      };
+    })(),
+    // A real propeller that declares its kind is still a pair.
+    compareSelectorIsStillAPair: (() => {
+      const plane = buildPropeller();
+      const wrapper = plane.node.getObjectByName('lodCorsairPropeller');
+      wrapper.userData.propellerBlur.selectorKind = 'CompareSelector';
+      plane.collect();
+      return plane.propellerBlurPairs.length;
+    })(),
   };
 }
 

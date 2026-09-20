@@ -160,6 +160,17 @@ function relativeTransform(rootWorld, partWorld) {
  * and reads the root's own `physics` / `armor` extras. A part is a wheel when
  * the node it hangs from is a `Spring`; everything else is hull.
  *
+ * A `Spring` that carries no collision node of its own is resolved through its
+ * OWN `userData.geometry` instead (`springProbe` below). That is not a guess
+ * about where a wheel is: `PhysicsSpring` probes the spring's own geometry,
+ * and the node the assembler would hang under it names that same geometry.
+ * It matters because a published tree may predate the assembler's
+ * degenerate-face fix — `bf42/stdmesh.py`'s `DEGENERATE_CROSS_SQ` used to
+ * cull a wheel probe's ~1 mm triangle, which left the Sherman, the Priest and
+ * the M10 with no sprung ground contact at all, resting on their hull corners
+ * at a 13 degree list. Re-extracted levels carry the node and take the branch
+ * above; this is what makes the ones already on disk stand up straight.
+ *
  * The inertia box is the hull's visual bounding box — the engine asks the
  * object for its own geometry, and failing that the highest LOD's
  * (`updateRotationalPhysics`, spec 4.2), which for every vehicle is the hull
@@ -175,26 +186,44 @@ export function describeVehicleParts(root, collisionMeshes) {
   const parts = [];
   let hullBox = null, hullVolume = -1;
 
+  const addPart = (owner, world, entry, isSpring) => {
+    const { offset, rot } = relativeTransform(rootWorld, world);
+    parts.push({
+      node: owner, kind: isSpring ? 'spring' : 'body',
+      shape: shapeFromMeshEntry(entry), offset, rot,
+      spring: isSpring ? (owner.userData.physics || null) : null,
+    });
+    if (!isSpring) {
+      const [lo, hi] = entry.bbox;
+      const size = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
+      const volume = size[0] * size[1] * size[2];
+      if (volume > hullVolume) { hullVolume = volume; hullBox = size; }
+    }
+  };
+
+  /** A `Spring`'s own probe, when the tree carries no collision node for it.
+   *  The spring's node stands in for the missing child, which is where the
+   *  assembler hangs it and so where its transform would have been. */
+  const springProbe = node => {
+    if (node.userData?.templateKind !== 'Spring') return;
+    if (!node.userData.geometry) return;
+    for (const child of node.children) if (child.userData?.collision) return;
+    const entry = meshEntryFor(collisionMeshes, node.userData.geometry);
+    if (!entry || !entry.layers.length || !entry.layers[0].v.length) return;
+    addPart(node, node.matrixWorld.elements, entry, true);
+  };
+
   const visit = node => {
     const data = node.userData;
     if (data?.collision && data.sourceGeometry) {
       const entry = meshEntryFor(collisionMeshes, data.sourceGeometry);
       if (entry && entry.layers.length && entry.layers[0].v.length) {
         const owner = node.parent;
-        const isSpring = owner?.userData?.templateKind === 'Spring';
-        const { offset, rot } = relativeTransform(rootWorld, node.matrixWorld.elements);
-        parts.push({
-          node: owner, kind: isSpring ? 'spring' : 'body',
-          shape: shapeFromMeshEntry(entry), offset, rot,
-          spring: isSpring ? (owner.userData.physics || null) : null,
-        });
-        if (!isSpring) {
-          const [lo, hi] = entry.bbox;
-          const size = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
-          const volume = size[0] * size[1] * size[2];
-          if (volume > hullVolume) { hullVolume = volume; hullBox = size; }
-        }
+        addPart(owner, node.matrixWorld.elements, entry,
+                owner?.userData?.templateKind === 'Spring');
       }
+    } else {
+      springProbe(node);
     }
     for (const child of node.children) visit(child);
   };

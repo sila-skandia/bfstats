@@ -625,7 +625,7 @@ class Assembler:
                     ab[2] * ac[0] - ab[0] * ac[2],
                     ab[0] * ac[1] - ab[1] * ac[0],
                 )
-                if sum(value * value for value in cross) <= 1e-12:
+                if sum(value * value for value in cross) <= stdmesh.DEGENERATE_CROSS_SQ:
                     continue
                 by_material.setdefault(face.material_id, []).append(face)
             if by_material:
@@ -1813,7 +1813,10 @@ class Assembler:
         # every other LodObject here — the engine keeps both meshes and swaps
         # which is visible as the throttle opens, so a third-person export
         # keeps both too. See `con.is_propeller_blur_pair` and `_propeller_blur`.
-        if not self.first_person and con_mod.is_propeller_blur_pair(children_refs):
+        # The selector goes with it: the bf109's cockpit wears the same
+        # `Static`/`Blurred` names and is not a propeller.
+        if not self.first_person and con_mod.is_propeller_blur_pair(
+                children_refs, self.library.selector(template.lod_selector)):
             report.selected_lod_alternatives.append(
                 f"{template.name} -> "
                 + " + ".join(child.template for child in children_refs))
@@ -2062,7 +2065,8 @@ class Assembler:
                 children_refs, report, template)
             if self.first_person:
                 lod_swap = self._lod_swap(template, children_refs, selected_refs[0])
-            elif len(selected_refs) == 2 and con_mod.is_propeller_blur_pair(selected_refs):
+            elif len(selected_refs) == 2 and con_mod.is_propeller_blur_pair(
+                    selected_refs, self.library.selector(template.lod_selector)):
                 propeller_blur = self._propeller_blur(template, selected_refs)
             if self.include_collision and not self.first_person:
                 donor = self._collision_alternative(children_refs)
@@ -2412,6 +2416,16 @@ class Assembler:
                 # seat, because each declares its own.
                 "vehicleIconPos": (list(template.vehicle_icon_pos)
                                    if template.vehicle_icon_pos else None),
+                # `setCrossHairType`, which is a PlayerControlObject word and
+                # not a FireArms one: a Sherman declares CHTCrossHair on the
+                # tank and again on its hull-gun PCO, a Priest gunner declares
+                # CHTIcon, and every passenger seat declares CHTNone. Vanilla
+                # spreads the three across 86 PCOs, so there is nothing to
+                # infer from the vehicle's shape — without the word the viewer
+                # could not tell a tank that draws the cross from a bomber that
+                # draws `hk.tga` from a seat that draws neither, and drew
+                # nothing for any of them.
+                "crossHairType": template.cross_hair_type,
             }.items() if value is not None}
             if hud:
                 extras["hud"] = hud
