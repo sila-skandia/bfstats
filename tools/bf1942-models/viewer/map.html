@@ -5304,8 +5304,26 @@ function stepVehicleBodies(step) {
   }
 }
 
+/* The DamageableVehicle the player is sitting in.
+ *
+ * `registerDamageables` hands the world the same `(owner, node)` pairs it puts
+ * in `damageVisuals`, and the world keeps them in a `nodeOwners` WeakMap — so
+ * `World.occupiedDamageable` answers this in one lookup where the loop below
+ * walks every Armored object in the level. It is asked twice a frame while
+ * seated (the HUD's hit-point bar and the burn-down check in `stepDamage`).
+ *
+ * The scan is kept for the one state the world cannot answer from: `addPlayer`
+ * runs only from `setOnFoot(true)`, so a player who never left free fly and
+ * climbed straight into a hull through the pilot checkbox has no world player
+ * record, and `setPlayerVehicle` silently did nothing for him. Requiring the
+ * world's own `player.occupancy` to BE this page's `occupancy` is what makes
+ * the fast path exactly the slow one: same node, same owner, same set.
+ */
 function occupiedVehicleDamage() {
   if (!occupancy?.root) return null;
+  if (world?.player(LOCAL_PLAYER)?.occupancy === occupancy) {
+    return world.occupiedDamageable(LOCAL_PLAYER);
+  }
   for (const [owner, visual] of damageVisuals) {
     if (visual.node === occupancy.root) return vehicleDamage.get(owner);
   }
