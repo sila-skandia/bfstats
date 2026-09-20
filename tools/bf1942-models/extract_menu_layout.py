@@ -4,7 +4,7 @@
 The sibling of `extract_spawn_layout.py`: same reader, same `Flattener`,
 same 800x600 virtual space, a different set of pages. Where that one takes
 the spawn interface out of `menu/InGame`, this one takes the front-end
-screen the player picks a level and a side on, which is three pages laid
+screen the player picks a level and a side on, which is four pages laid
 one over the other:
 
   menu/Background         the black field and the camouflaged plate
@@ -13,6 +13,10 @@ one over the other:
                           left, the level preview, the LEVELS list and the
                           TEAM list
   menu/SkirmishNavigation the green START button at (500,535)
+  menu/ExitMenu           the button that leaves the game you are in, in
+                          the top right corner -- drawn only when there is
+                          one, which on this site is the Esc menu over a
+                          running level (EXIT_RECTS)
 
 Four artifacts, all under `--out`:
 
@@ -85,12 +89,38 @@ PAGES: list[tuple[str, str]] = [
     ("background", "menu/Background"),
     ("skirmish", "menu/SkirmishMenu"),
     ("navigation", "menu/SkirmishNavigation"),
+    ("exit", "menu/ExitMenu"),
 ]
 
 #: Only the parts of `menu/Background` that belong to this screen. The page
 #: also carries the main-menu buttons, the Bink player and the disconnect
 #: dialogue; none of them is on the Instant Battle screen.
 BACKGROUND_RECTS = [[0.0, 0.0, 800.0, 600.0], [0.0, 85.0, 800.0, 450.0]]
+
+#: `menu/ExitMenu` is the pair of buttons in the top right corner of every
+#: front-end page: QUIT at (669,33) and, beneath it, the one that leaves the
+#: game you are in at (669,85). Only the second is kept. There is no quitting
+#: a web page, and the viewer has no button for it; the other one is the Esc
+#: menu's whole point (`viewer/play/skirmish.js`).
+#:
+#: The button carries both of the game's labels and picks between them on
+#: `Join/Disconnect/ShowDisconnect`: 1 is a server, and reads DISCONNECT; 2 is
+#: a singleplayer game, and reads END CURRENT GAME. Instant Battle is the
+#: second. The two label texts are culled on that variable the ordinary way
+#: (`== 1`, `== 2`) and so come out of the flattener gated; the CullNode over
+#: the button itself is the bare `IntData`, which `condition()` does not model
+#: -- the engine reads a non-zero int as true there (the same page's Bink
+#: player wraps the same variable in a `NotData`, which means nothing
+#: otherwise) -- so the *page* is the viewer's to hold back until there is a
+#: game to leave, and `paintMenu` only draws it once it is handed one.
+EXIT_RECTS = [[669.0, 85.0, 128.0, 128.0]]
+
+#: Per page, the top-level transforms to keep; everything else on the page is
+#: another screen's.
+PAGE_RECTS: dict[str, list[list[float]]] = {
+    "background": BACKGROUND_RECTS,
+    "exit": EXIT_RECTS,
+}
 
 #: `game.setTeamSkin <team> <soldier>` -> the nation whose flag that side
 #: flies -- the FALLBACK, used only when `team_nation_from_level` finds no
@@ -487,8 +517,8 @@ def decode_page(data: bytes, lexicon: dict[str, str],
 def decode_layout(menu, lexicon: dict[str, str]) -> dict:
     """`menu` is the mod's layered `menu.rfa` view (`MenuSources.open_menu`).
 
-    Of the 16 installed mods only Secret Weapons ships any of the three pages
-    below, and that one only `menu/MainLogo`, which is not one of them — so
+    Of the 16 installed mods only Secret Weapons ships any of the pages in
+    `PAGES`, and that one only `menu/MainLogo`, which is not one of them — so
     in practice every mod's Instant Battle screen is vanilla's, and what
     changes is the level list beside it. Resolving through the chain means a
     mod that *does* restyle the screen gets its own without this file
@@ -505,8 +535,7 @@ def decode_layout(menu, lexicon: dict[str, str]) -> dict:
         if real is None:
             sys.exit(f"the {'/'.join(menu.labels)} menu chain has no {entry}")
         owners.add(menu.owner(real) or "")
-        page = decode_page(menu.read(real), lexicon,
-                           BACKGROUND_RECTS if key == "background" else None)
+        page = decode_page(menu.read(real), lexicon, PAGE_RECTS.get(key))
         for warning in page["warnings"]:
             # `menu/Background` also carries the main menu's Bink player
             # (`BfBinkNode`, no schema, MEME-11's remainder). It is
