@@ -7,7 +7,7 @@
 // the reason the collision arithmetic lives there rather than in `gunfire.js`.
 
 import {
-  buildHeightfield, buildCollisionIndex, WorldCollider,
+  buildHeightfield, buildCollisionIndex, buildDrivableTops, WorldCollider,
   impactEffect, materialFamily, WATER_MATERIAL,
 } from './collision.mjs';
 
@@ -243,6 +243,52 @@ results.surfaceHeight = {
   overLand: all.surfaceHeight(16, -8),
   overSea: all.surfaceHeight(0, -8),
 };
+
+// --- drivable decks (bridges / repair bays) --------------------------------
+
+// A bridge is a wide flat deck (the road a tank rides) with a thin parapet
+// wall at one edge, both named to match the drivable heuristic. The deck sits
+// at y = 6..8 over a river; the heightfield under it is the slope (y = x/4,
+// so ~2 here). `buildDrivableTops` must lift `surfaceHeight` to the deck, not
+// the parapet cap (which, by the dominant-face rule, loses to the deck's far
+// larger horizontal footprint).
+{
+  const deck = group([
+    fakeMesh(
+      // Flat wide deck, x 4..12, y 6, z -12..-2 (a 8 x 10 m road).
+      [4, 6, -2, 12, 6, -2, 12, 6, -12, 4, 6, -12],
+      { index: [0, 1, 2, 0, 2, 3], kind: 'Bridge' }),
+    fakeMesh(
+      // Thin parapet wall at x = 6, up to y = 11.
+      [6, 6, -2, 6, 6, -12, 6, 11, -12, 6, 11, -2],
+      { index: [0, 1, 2, 0, 2, 3], kind: 'Bridge' }),
+  ]);
+  const tops = buildDrivableTops(deck);
+  const collider = new WorldCollider({ heightfield: field, waterLevel: 2,
+    drivableTops: tops });
+  results.drivable = {
+    built: tops !== null,
+    // Over the deck (x = 8, z = -8): surfaceHeight rides the deck (a level ~6
+    // surface), far above the ~2 terrain / water.
+    deckTop: collider.surfaceHeight(8, -8),
+    // Off the deck (x = 40, well outside the deck's cell): the heightfield
+    // (y = x/4 = 10) rules, so the drivable raster adds nothing there.
+    offDeck: collider.surfaceHeight(40, -8),
+    // The parapet cap (11) must NOT win over the deck's 6 in cells they share.
+    notParapet: collider.surfaceHeight(6, -8),
+  };
+}
+
+// A building (name not in the drivable set) must never lift a tank onto its
+// roof: its cells fall back to the heightfield.
+{
+  const roof = fakeMesh(
+    [14, 9, -2, 16, 9, -2, 16, 9, -4, 14, 9, -4],
+    { index: [0, 1, 2, 0, 2, 3], kind: 'Building' });
+  const tops = buildDrivableTops(group([roof]));
+  results.nonDrivableRoof =
+    tops === null || !Number.isFinite(tops.top[tops.cols * 0 + 0]);
+}
 
 // --- effect selection ------------------------------------------------------
 

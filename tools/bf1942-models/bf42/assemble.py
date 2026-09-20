@@ -2060,6 +2060,21 @@ class Assembler:
         # An alternative this export does not draw, whose hull it still owes
         # the world. See `_collision_for_geometry`.
         collision_makeup: con_mod.ChildRef | None = None
+        # A LodObject one of whose alternatives is a first-person mesh is a
+        # cockpit pair, and this export is where the cockpit graft lands: the
+        # wrapper node is the host the `.cockpit.glb` attaches to, matched by
+        # name (`graftCockpit` in flight.js). Some vanilla pairs offer this
+        # export nothing to draw — the M3A1 and the Priest name both of their
+        # cockpit alternatives after the same `1P_*` mesh, and the naval guns'
+        # `...Dummy` side is meshless — so the wrapper survives as an empty
+        # group rather than vanishing with its children and leaving the graft
+        # nowhere to land.
+        cockpit_host = (
+            not self.first_person
+            and template.is_lod_selector
+            and any(self._geometry_is_first_person(ref.template)
+                    for ref in children_refs)
+        )
         if template.is_lod_selector and children_refs:
             selected_refs = self._select_lod_children(
                 children_refs, report, template)
@@ -2266,7 +2281,7 @@ class Assembler:
         # without this they would be dropped and their IK with them.
         if (mesh_index is None and not child_indices
                 and not (is_camera or is_placement or is_supply_depot or physics
-                         or template.skeleton_ik_bones)):
+                         or template.skeleton_ik_bones or cockpit_host)):
             return None
 
         if mesh_index is not None:
