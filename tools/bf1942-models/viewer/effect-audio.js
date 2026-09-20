@@ -159,6 +159,12 @@ class Slot {
     this.priority = 0;
     this.distance = 0;
     this.plays = 0;
+    // Set only for a play that named them: a callback returning this slot's
+    // owner's current world point (a wreck's fire tracking the hull it burns
+    // on), and the token that play's own handle silences this slot with,
+    // provided nothing has claimed the slot since. See `EffectAudio.play`.
+    this.follow = null;
+    this.token = null;
   }
 
   /** Still owed sound? Either something is running, or a delayed layer is due. */
@@ -335,8 +341,16 @@ export class EffectAudio {
    * starts, and the picture does not wait either. Returns the number of layers
    * that actually started (0 when the pool is cold, the patch is inaudible
    * from here, or the budget refused it).
+   *
+   * `follow`, if given, is called once a frame (from `update`) and must
+   * return this play's current world point as `[x, y, z]` — what an
+   * `attach`ed bundle needs so its loop tracks the object it rides on rather
+   * than freezing at the point it started. `token` identifies this specific
+   * play to `stop()`, so a caller holding the handle `EffectPlayer.play`
+   * returned can silence exactly the voice its own call claimed, never
+   * another bundle's turn on the same pooled script.
    */
-  play(name, position) {
+  play(name, position, { follow = null, token = null } = {}) {
     if (this.disposed || !position) return 0;
     const scripts = this.#scriptsFor(name);
     if (!scripts.length) return 0;
@@ -350,12 +364,12 @@ export class EffectAudio {
     // and a rain of sand, authored as two child bundles with a script each,
     // and the engine plays both because it instantiates both.
     for (const script of scripts) {
-      played += this.#playScript(script, x, y, z, distance);
+      played += this.#playScript(script, x, y, z, distance, follow, token);
     }
     return played;
   }
 
-  #playScript(script, x, y, z, distance) {
+  #playScript(script, x, y, z, distance, follow = null, token = null) {
     // The script's own answer to "can this be heard from there". A ricochet
     // whose distance ramp is spent at 25 m is not worth a voice at 300 m, and
     // the engine's own mixer would have lost it to a nearer sound anyway.
@@ -376,6 +390,8 @@ export class EffectAudio {
       return 0;
     }
     slot.position = { x, y, z };
+    slot.follow = follow;
+    slot.token = token;
     slot.distance = distance;
     slot.priority = script.priority;
     slot.since = 0;
@@ -456,8 +472,35 @@ export class EffectAudio {
     if (!victim) return false;
     victim.audio.silence();
     victim.since = Infinity;
+    victim.follow = null;
+    victim.token = null;
     this.stolen += 1;
     return true;
+  }
+
+  /**
+   * Silence whichever slot this token's own play claimed — and only that
+   * slot. The pool may since have reused or stolen the voice for something
+   * else entirely, in which case this does nothing, which is correct: that
+   * play's sound is already gone.
+   *
+   * This is what ties a looping effect sound to the visual handle that
+   * started it. `EffectPlayer.play()` mints a token per call and its
+   * returned handle's `stop()` calls this with it — a wreck's fire stops
+   * when the tier that owns it is stopped, and `window.__stopEffects()`
+   * reaches it the same way, through the same handle.
+   */
+  stop(token) {
+    if (token == null) return;
+    for (const script of this.scripts.values()) {
+      for (const slot of script.slots) {
+        if (slot.token !== token) continue;
+        slot.audio.silence();
+        slot.since = Infinity;
+        slot.follow = null;
+        slot.token = null;
+      }
+    }
   }
 
   #place(slot, dt) {
@@ -485,6 +528,20 @@ export class EffectAudio {
       for (const slot of script.slots) {
         const was = slot.since;
         slot.since += step;
+        // A moving attachment's slot tracks it every frame rather than
+        // freezing at the point the play started — bounded by the slot
+        // count already being walked here, not by anything proportional to
+        // particles or samples.
+        if (slot.follow) {
+          const p = slot.follow();
+          if (p) {
+            slot.position = { x: p[0], y: p[1], z: p[2] };
+            const dx = p[0] - this.listenerPosition.x;
+            const dy = p[1] - this.listenerPosition.y;
+            const dz = p[2] - this.listenerPosition.z;
+            slot.distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          }
+        }
         // An idle slot still gets a frame: its bus gain has to reach the
         // master it will play at, or the first round out of a cold slot comes
         // in under a ramp that has not finished.
@@ -514,8 +571,19 @@ export class EffectAudio {
       for (const slot of script.slots) {
         slot.audio.silence();
         slot.since = Infinity;
+        slot.follow = null;
+        slot.token = null;
       }
     }
+  }
+
+  /** One-shots lost to a suspended context, summed across every pooled patch. */
+  get suspended() {
+    let total = 0;
+    for (const script of this.scripts.values()) {
+      for (const slot of script.slots) total += slot.audio.suspended;
+    }
+    return total;
   }
 
   dispose() {
@@ -553,6 +621,7 @@ export class EffectAudio {
       dropped: this.dropped,
       stolen: this.stolen,
       inaudible: this.inaudible,
+      suspended: this.suspended,
       scripts,
     };
   }
