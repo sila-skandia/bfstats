@@ -3334,9 +3334,18 @@ function bindDynamicShading(root) {
 const FADE_NEAR = 20;   // [free] m, alpha 0 at or below
 const FADE_FAR = 55;    // [free] m, alpha 1 at or beyond
 let fadeMeshes = [];
+// Every input to the ramp below is the camera's position against fixed points,
+// so a frame that did not move the camera cannot change a single opacity. The
+// gate is that position plus a generation `bindTextureFade` bumps, so the first
+// call after a level rebuilds `fadeMeshes` always runs (rule 7's shape, applied
+// to a list instead of a surface).
+let fadeGeneration = 0;
+let fadeCamGeneration = -1;
+let fadeCamX = NaN, fadeCamY = NaN, fadeCamZ = NaN;
 
 function bindTextureFade(root) {
   fadeMeshes = [];
+  fadeGeneration++;
   root.traverse(obj => {
     if (!obj.isMesh) return;
     const source = [obj.material].flat();
@@ -3355,19 +3364,37 @@ function bindTextureFade(root) {
     // Statics never move; cache the world position once.
     const at = new THREE.Vector3();
     obj.getWorldPosition(at);
-    fadeMeshes.push({ obj, at });
+    // And which of this mesh's materials the ramp drives. A mesh can carry a
+    // material ARRAY where only some entries are the darkness plane's, so the
+    // fading ones are kept rather than the first (rule 5: `[obj.material].flat()`
+    // per mesh per frame was two fresh arrays per mesh, 33 of them on Wake).
+    fadeMeshes.push({ obj, at, mats: bound.filter(m => m?.userData?.textureFade) });
   });
 }
 
 function updateTextureFade() {
-  for (const { obj, at } of fadeMeshes) {
-    const d = camera.position.distanceTo(at);
+  const cam = camera.position;
+  if (fadeCamGeneration === fadeGeneration
+      && cam.x === fadeCamX && cam.y === fadeCamY && cam.z === fadeCamZ) return;
+  fadeCamGeneration = fadeGeneration;
+  fadeCamX = cam.x; fadeCamY = cam.y; fadeCamZ = cam.z;
+  for (const { obj, at, mats } of fadeMeshes) {
+    const dx = at.x - cam.x, dy = at.y - cam.y, dz = at.z - cam.z;
+    // Kept as a real square root rather than compared against squared band
+    // edges: `sqrt` is correctly rounded, so `sqrt(d2) <= 20` and `d2 <= 400`
+    // disagree by one ULP just past the near edge (`sqrt(400 + 2^-44)` rounds
+    // back to exactly 20), and this has to be a behavioural no-op. One sqrt
+    // across 33 meshes is not what the profile was reading anyway — the
+    // allocations and the unconditional writes below were.
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
     const a = Math.min(1, Math.max(0, (d - FADE_NEAR) / (FADE_FAR - FADE_NEAR)));
-    for (const m of [obj.material].flat()) {
-      if (m?.userData?.textureFade) m.opacity = a;
-    }
-    // A fully-faded plane still costs a draw call; drop it.
-    obj.visible = a > 0;
+    for (const m of mats) if (m.opacity !== a) m.opacity = a;
+    // A fully-faded plane still costs a draw call; drop it. Compared against
+    // the material's and the object's OWN current value rather than a
+    // remembered one, so anything else that writes either is picked up on the
+    // next frame the camera moves.
+    const shown = a > 0;
+    if (obj.visible !== shown) obj.visible = shown;
   }
 }
 
@@ -4557,7 +4584,51 @@ function indexScene(root) {
     tagCull(child);
     cull.push(child);
   }
+  flattenCull();
   freezeStatics(root);
+}
+
+/* `cull`'s bounding spheres, as four flat arrays.
+ *
+ * `applyVisibility` runs a distance test per entry per frame — 814 of them on
+ * Wake, before the 32 spawner children — and each one used to chase
+ * `obj.userData.cullCenter` (a `Vector3` behind two property loads and a
+ * dictionary lookup) plus `obj.userData.cullRadius`. The centres and radii are
+ * fixed at `indexScene` time by `tagCull`, so they are hoisted out of the scene
+ * graph once and the per-frame test becomes typed-array arithmetic
+ * (features/mesh-viewer-performance, rule 5's sibling: no per-frame pointer
+ * chase either).
+ *
+ * `Float64Array`, not `Float32Array`: the old test ran in doubles, and this has
+ * to be a behavioural no-op. Rounding a centre to Float32 moves it by up to
+ * ~4e-5 m at Wake's coordinates, which is enough to flip one object at exactly
+ * the range boundary. 26 KB of doubles is not the cost being addressed.
+ *
+ * `userData.cullCenter`/`cullRadius` stay on the objects — `tagCull` is still
+ * their only writer — so any future reader of them is unaffected.
+ *
+ * The SPAWNER children are deliberately NOT flattened. `Vehicle`'s constructor
+ * reparents the driven vehicle out of `spawnersRoot` and `leaveVehicle` puts it
+ * back, so that list's membership changes during play; 32 object-based tests a
+ * frame are not worth the invalidation. `cull` itself is written only here.
+ */
+let cullFlat = {
+  x: new Float64Array(0), y: new Float64Array(0),
+  z: new Float64Array(0), r: new Float64Array(0),
+};
+function flattenCull() {
+  const n = cull.length;
+  const x = new Float64Array(n), y = new Float64Array(n);
+  const z = new Float64Array(n), r = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const c = cull[i].userData.cullCenter;
+    // `tagCull` gives every entry a centre; a `null` here would have meant
+    // "always visible" to the old predicate, so keep that reading exactly.
+    if (!c) { r[i] = Infinity; continue; }
+    x[i] = c.x; y[i] = c.y; z[i] = c.z;
+    r[i] = cull[i].userData.cullRadius || 0;
+  }
+  cullFlat = { x, y, z, r };
 }
 
 // --- static matrices --------------------------------------------------------
@@ -4663,6 +4734,10 @@ function freezeStatics(root) {
   }
 }
 
+/** The spawner children's distance test, and theirs alone since `applyVisibility`
+ *  took the static list onto `cullFlat`: that list's membership moves during
+ *  play (a driven vehicle leaves `spawnersRoot` and comes back), and 32 tests a
+ *  frame do not pay for keeping a parallel array in step with it. */
 function inRange(obj, cam, limit) {
   const c = obj.userData.cullCenter;
   const r = obj.userData.cullRadius || 0;
@@ -4676,7 +4751,26 @@ function applyVisibility() {
   const entire = optEntire.checked;
   const cam = camera.position;
   const limit = drawDistance();
-  for (const obj of cull) obj.visible = entire || inRange(obj, cam, limit);
+  // The static half runs off `cullFlat` (see `flattenCull`): no `userData`
+  // lookup, no `Vector3`, and `.visible` written only when it flips, which on
+  // a walking frame is a handful of the 814 rather than all of them. The test
+  // itself is the old `inRange` arithmetic unchanged, in doubles.
+  // `indexScene` is the only writer of either, and it rebuilds both together;
+  // this is the assertion that says so out loud rather than reading `undefined`
+  // out of a short array and hiding half a level.
+  if (cullFlat.x.length !== cull.length) flattenCull();
+  const { x, y, z, r } = cullFlat;
+  const cx = cam.x, cy = cam.y, cz = cam.z;
+  for (let i = 0; i < cull.length; i++) {
+    let shown = entire;
+    if (!shown) {
+      const dx = x[i] - cx, dy = y[i] - cy, dz = z[i] - cz;
+      const reach = limit + r[i];
+      shown = dx * dx + dy * dy + dz * dz <= reach * reach;
+    }
+    const obj = cull[i];
+    if (obj.visible !== shown) obj.visible = shown;
+  }
   if (!spawnersRoot) return;
   spawnersRoot.visible = optVehicles.checked;
   if (!optVehicles.checked) return;
@@ -5442,8 +5536,26 @@ function stepVehicleBodies(step) {
   }
 }
 
+/* The DamageableVehicle the player is sitting in.
+ *
+ * `registerDamageables` hands the world the same `(owner, node)` pairs it puts
+ * in `damageVisuals`, and the world keeps them in a `nodeOwners` WeakMap — so
+ * `World.occupiedDamageable` answers this in one lookup where the loop below
+ * walks every Armored object in the level. It is asked twice a frame while
+ * seated (the HUD's hit-point bar and the burn-down check in `stepDamage`).
+ *
+ * The scan is kept for the one state the world cannot answer from: `addPlayer`
+ * runs only from `setOnFoot(true)`, so a player who never left free fly and
+ * climbed straight into a hull through the pilot checkbox has no world player
+ * record, and `setPlayerVehicle` silently did nothing for him. Requiring the
+ * world's own `player.occupancy` to BE this page's `occupancy` is what makes
+ * the fast path exactly the slow one: same node, same owner, same set.
+ */
 function occupiedVehicleDamage() {
   if (!occupancy?.root) return null;
+  if (world?.player(LOCAL_PLAYER)?.occupancy === occupancy) {
+    return world.occupiedDamageable(LOCAL_PLAYER);
+  }
   for (const [owner, visual] of damageVisuals) {
     if (visual.node === occupancy.root) return vehicleDamage.get(owner);
   }
@@ -9590,15 +9702,33 @@ const fullmapCanvas = document.getElementById('fullmap-canvas');
 // to one measured read, so the first frame after the map opens is right.
 const canvasCssWidth = new Map();
 const canvasObserver = new ResizeObserver(entries => {
-  for (const entry of entries) canvasCssWidth.set(entry.target, entry.contentRect.width);
+  for (const entry of entries) {
+    const width = entry.contentRect.width;
+    // A 0 here means `display: none` — the box the surface lives in is hidden —
+    // and it is reported at the end of the frame that hid it. Dropping the
+    // entry rather than caching the 0 is what lets the frame that UNHIDES the
+    // surface measure it, in that same frame, before this observer has had a
+    // chance to speak: the alternative paints one frame into the previous
+    // backing size (confirmed: 283 px instead of 562). Neither painter reads a
+    // width while its own box is hidden, so nothing else is asking meanwhile.
+    if (width) canvasCssWidth.set(entry.target, width);
+    else canvasCssWidth.delete(entry.target);
+  }
 });
 canvasObserver.observe(minimapCanvas);
 canvasObserver.observe(fullmapCanvas);
 function cssWidthOf(canvas) {
   const known = canvasCssWidth.get(canvas);
-  if (known) return known;
+  // `!== undefined`, not truthiness, and a measured 0 is cached too: a width
+  // of 0 is an ANSWER, and treating it as a miss meant `getBoundingClientRect`
+  // — a synchronous layout, rule 3 — ran again on every call that got one, for
+  // exactly the surface this cache exists to keep off the frame path. The
+  // observer above never stores a 0 (see there), so the only way to hold one is
+  // to have measured it, and the observer overwrites that the moment the box
+  // has a size.
+  if (known !== undefined) return known;
   const measured = canvas.getBoundingClientRect().width;
-  if (measured) canvasCssWidth.set(canvas, measured);
+  canvasCssWidth.set(canvas, measured);
   return measured;
 }
 const fullmapName = document.getElementById('fullmap-name');
@@ -9870,22 +10000,82 @@ function ticketFlagTexture(team) {
   return `flag_ticket_${teamNation(team)}.tga`;
 }
 
-/** Fill in the `ShowTicket` group's variables on a table. Returns whether the
- *  group will draw. */
-function feedTicketVars(vars) {
+/* The four strings the group needs, memoised on the level.
+ *
+ * `feedTicketVars` runs from `updateSoldierHud` BEFORE every one of its early
+ * returns, so it is on the frame path in every mode — and every input it reads
+ * is level data that cannot move under it. The counts are the ROUND-START
+ * values the comment above describes (nothing in this page writes
+ * `extras.tickets`; a future bleed would replace the `extras` object, which is
+ * part of the key below, but one that mutated the counts IN PLACE would have to
+ * bump the key here too). The two flag textures are `teamNation`, which is the
+ * flag a side's control points fly.
+ *
+ * Unmemoised that cost, twice per frame: `nationFromVehicles` lowercasing all
+ * 32 of Wake's spawner names into a Set, spreading that Set into a fresh array
+ * once per nation stem inside a `.some`, and building a template literal per
+ * name per stem; `teamNationRule` building a Map and re-scanning the control
+ * points; and two `String()` conversions. `stanceNation` above already
+ * memoises the identical rule for the stance icon for exactly this reason
+ * (features/mesh-viewer-performance, rule 5).
+ *
+ * The key is every input that can move: the level directory; the gameplay-mode
+ * `extras` (`show()` assigns `selectGameMode`'s fresh object roughly a hundred
+ * lines before `currentDir`, so the dir alone is not enough on its own terms
+ * even though no frame runs between the two); the flag-mesh table, which
+ * `loadHudPack` fills asynchronously and can land after a level does; and the
+ * spawner group, which `indexScene` rebuilds per level.
+ *
+ * That last one is also why this must NOT be recomputed per frame rather than
+ * merely why it can be cached: `Vehicle`'s constructor reparents the driven
+ * vehicle OUT of `spawnersRoot`, so a per-frame `nationFromVehicles` would flip
+ * Wake's Axis ticket flag from Japanese to German for as long as a player sits
+ * in the level's only Zero. Keying on the group's identity — not its contents —
+ * holds the round-start answer for the whole round, which is the one the game
+ * shows.
+ */
+let ticketMemoDir = null;
+let ticketMemoExtras = null;
+let ticketMemoNations = null;
+let ticketMemoSpawners = null;
+const ticketMemo = {
+  show: false, axis: '', allied: '', axisFlag: '', alliedFlag: '',
+};
+function ticketMemoFor() {
+  if (ticketMemoDir === currentDir && ticketMemoExtras === extras
+      && ticketMemoNations === hudPack.nations
+      && ticketMemoSpawners === spawnersRoot) {
+    return ticketMemo;
+  }
+  ticketMemoDir = currentDir;
+  ticketMemoExtras = extras;
+  ticketMemoNations = hudPack.nations;
+  ticketMemoSpawners = spawnersRoot;
   const t = extras.tickets;
   // Both counts or none: the group draws two numbers side by side and a lone
   // one would leave the layout's own sample literal ("300"/"500") showing
   // next to a real value, which reads as data rather than as a gap.
-  if (!t || t.team1 == null || t.team2 == null) {
+  ticketMemo.show = !!t && t.team1 != null && t.team2 != null;
+  ticketMemo.axis = ticketMemo.show ? String(t.team1) : '';
+  ticketMemo.allied = ticketMemo.show ? String(t.team2) : '';
+  ticketMemo.axisFlag = ticketMemo.show ? ticketFlagTexture(1) : '';
+  ticketMemo.alliedFlag = ticketMemo.show ? ticketFlagTexture(2) : '';
+  return ticketMemo;
+}
+
+/** Fill in the `ShowTicket` group's variables on a table. Returns whether the
+ *  group will draw. */
+function feedTicketVars(vars) {
+  const memo = ticketMemoFor();
+  if (!memo.show) {
     vars['ShowTicket'] = false;
     return false;
   }
   vars['ShowTicket'] = true;
-  vars['AxisTicket'] = String(t.team1);
-  vars['AlliedTicket'] = String(t.team2);
-  vars['AxisTicketFlag'] = ticketFlagTexture(1);
-  vars['AlliedTicketFlag'] = ticketFlagTexture(2);
+  vars['AxisTicket'] = memo.axis;
+  vars['AlliedTicket'] = memo.allied;
+  vars['AxisTicketFlag'] = memo.axisFlag;
+  vars['AlliedTicketFlag'] = memo.alliedFlag;
   // The two red 50%-alpha quads over the numbers are the engine's low-ticket
   // warning, and it is a live-round state on a timer nothing here runs.
   // Fed false rather than left unfed so the leaves cull deterministically

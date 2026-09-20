@@ -13,7 +13,7 @@
 import * as THREE from 'three';
 import {
   basisFromNormal, EmitterClock, spawnParticle, integrateParticle,
-  evalParticle, atlasGrid, frameIndex, GRAVITY,
+  evalParticleInto, atlasGrid, frameIndex, GRAVITY,
 } from './effects-core.js';
 
 // Lids. The engine keeps 127 decals per emitter ring (`DecalEmitter::addDecal`,
@@ -625,7 +625,12 @@ export class EffectPlayer {
   }
 
   #draw(p) {
-    const look = evalParticle(p);
+    // `look`, its `scale` and its `color` are `effects-core`'s module scratch
+    // and are valid only until the next `evalParticleInto` — the same contract
+    // `hud.js`'s `SEAT_DOT_AT` carries. Everything below reads them inside this
+    // call and keeps none of them; `evalParticle` is still there for a caller
+    // that wants its own object.
+    const look = evalParticleInto(p);
     const mesh = p.mesh;
     mesh.position.set(p.position[0], p.position[1], p.position[2]);
     mesh.scale.set(Math.max(look.scale[0], 1e-4), Math.max(look.scale[1], 1e-4),
@@ -652,9 +657,6 @@ export class EffectPlayer {
       if (rot && (rot.dof || rot.up || rot.right)) {
         // Tumbling debris: `rotationalSpeedIn*` are degrees per second about
         // the particle's own frame axes, sampled once at spawn.
-        if (p.tumbleRates === undefined) {
-          const { sampleCrd } = p; // placeholder never used
-        }
         if (!p.tumbleRates) {
           p.tumbleRates = [
             rot.right ? sampleCrdLocal(rot.right, this.rand) : 0,

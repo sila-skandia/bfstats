@@ -788,6 +788,63 @@ class CoreModuleTests(unittest.TestCase):
         self.assertAlmostEqual(0.5, curve["alphaAt85"][0])
         self.assertEqual([127.5, 127.5, 127.5, 102], curve["rgbaMid"])
 
+    def test_sample_curve_into_matches_the_allocating_form(self) -> None:
+        """`sampleCurveInto` is what the per-frame path calls; it may not drift.
+
+        Every branch: before the first point, on it, between two points, a
+        zero-width segment, past the last, a missing ramp, an empty ramp, a
+        single-point ramp, a multi-component ramp, a later point carrying fewer
+        components than the earlier one (NaN on both sides, deliberately), and
+        points with no components at all (an empty array on one side, a count
+        of 0 on the other -- which is NOT the `null` a missing ramp answers).
+        """
+        into = self.results["into"]["curve"]
+        self.assertGreaterEqual(len(into), 11)
+        for name, row in into.items():
+            with self.subTest(curve=name):
+                self.assertEqual(row["want"], row["got"], "components differ")
+                self.assertEqual(row["wantLen"], row["gotLen"], "component count differs")
+                self.assertEqual(row["wantFirst"], row["gotFirst"],
+                                 "what a `ramp ? ramp[0] : 1` caller reads differs")
+        # The two states a caller must be able to tell apart really are distinct.
+        self.assertEqual(-1, into["missing"]["gotLen"])
+        self.assertEqual(-1, into["empty"]["gotLen"])
+        self.assertEqual(0, into["noComponents"]["gotLen"])
+        self.assertEqual("undefined", into["noComponents"]["gotFirst"])
+        self.assertEqual(1, into["missing"]["gotFirst"])
+        # The interpolation branch takes its count from the EARLIER point, so a
+        # shorter later point is NaN -- unchanged from the allocating form.
+        self.assertEqual("NaN", into["shorterLater"]["got"][1])
+
+    def test_eval_particle_into_matches_the_allocating_form(self) -> None:
+        """`evalParticleInto` fills one module-level record; same numbers.
+
+        Four particles across every branch of `evalParticle` -- a mesh with a
+        `sizeModifier`, a sprite with size and colour ramps, a sprite with an
+        `xySizeRatioOverTime` away from 1, and a mesh with no `sizeModifier`
+        (the bare `[1, 1, 1]`) -- each read at six points of its life including
+        past the end, where the phase clamps.
+        """
+        look = self.results["into"]["look"]
+        self.assertEqual({"decal", "puff", "ratio", "bare"}, set(look))
+        for name, rows in look.items():
+            self.assertEqual(6, len(rows))
+            for row in rows:
+                with self.subTest(particle=name, frac=row["frac"]):
+                    self.assertTrue(row["same"], f"look differs: {row['want']}")
+                    self.assertEqual(row["wantColorNull"], row["gotColorNull"])
+        # The sprite branches must actually have produced a colour and a
+        # non-unit x scale, or the comparison above proved nothing about them.
+        self.assertFalse(look["puff"][1]["wantColorNull"])
+        self.assertNotEqual(look["ratio"][3]["want"]["scale"][0],
+                            look["ratio"][3]["want"]["scale"][1])
+        # ... and the bare-mesh branch really is the unit scale.
+        self.assertEqual([1, 1, 1], look["bare"][2]["want"]["scale"])
+        # One record, reused: that is the whole point, and the contract the
+        # call site in `effects.js` documents.
+        self.assertTrue(self.results["into"]["reuse"]["sameObject"])
+        self.assertTrue(self.results["into"]["reuse"]["sameScale"])
+
     def test_frame_stands_up_on_the_normal(self) -> None:
         basis = self.results["basis"]
         self.assertEqual({"right": [1, 0, 0], "up": [0, 1, 0], "dof": [0, 0, -1]}, basis["ground"])
