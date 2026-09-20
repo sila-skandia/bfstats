@@ -1222,13 +1222,31 @@ and projects it: `0x0825c14b`-`0x0825c171` forms `s = (axle . N)/|N|^2`
 against the averaged contact normal at `ResponsePhysics+0x68`, and
 `0x0825bfff`-`0x0825c021` computes `axle - s*N`, with `|N|^2 == 0`
 (`0x0825bfe4`) and `|proj|^2 == 0` (`0x0825c063`) both zeroing that contact's
-demand. `collision-response.md` section 8 says the same of EngineGrip's
-forward axis ("tangent to N") and of `Vt`. Proved here for RollGrip; taken
-from section 8 for EngineGrip. This file had been using the hull's own XZ
-plane, so a Coulomb-saturated longitudinal demand on a pitched hull was
-largely world-vertical thrust — the jeep reached 453.7 km/h and a 148 m apex
-on a 0.35 m washboard. With the frame in the contact plane it is 3.32 m and
-120.0, against `main`'s 1.13 m and 58.0.
+demand. **EngineGrip is read too, not taken from section 8**: it projects the
+finished target rather than the axis it was built from, at the other end of
+the same branch — `0x0825c410` loads `this+0x68`, `0x0825c416`-`0x0825c430`
+forms `|N|^2`, `0x0825c432`'s `fldz` is a literal zero so the degenerate arm
+`0x0825c442`-`0x0825c48e` leaves the target alone, `0x0825c493`-`0x0825c4de`
+forms `s = (T.N)/|N|^2` and `s*N`, and `0x0825c453`-`0x0825c48b` subtracts it
+before `0x0825c2a3` takes `dV = T - Vt`. `Vt` likewise at `0x0825b91a` /
+`0x0825c579` / `0x0825b985`.
+
+This file had been using the hull's own XZ plane, so a Coulomb-saturated
+longitudinal demand on a pitched hull was largely world-vertical thrust — the
+jeep reached 453.7 km/h and a 148 m apex on a 0.35 m washboard. With the
+frame in the contact plane it is 3.88 m and 139.2.
+
+**Read that against `main` at a matched entry speed, not at matched input.**
+`main` on the same washboard under full throttle reads 1.13 m and 58.0, but
+only because its jeep cannot get past 53.5 km/h over the bumps; dropped onto
+the same washboard already doing **31 m/s** it reaches a **54.85 m apex at
+454.3 km/h** and ends inverted. The same coasting test here reads **3.88 m and
+114.3** — fourteen times better on apex and four times on speed. What the
+drivetrain changed is that its jeep is now fast enough over a washboard to
+reach the speed at which a 0.35 m crest launches it at all. **What is still
+open is not the launch but the landing**: a jeep that flips stays flipped and
+slides on its roof at 110 km/h, in this file and in `main` alike, because
+nothing rights an overturned hull.
 
 **Springs sum, tyres mean.** `PhysicsNode::addFrictionAtAbsolutePosition`
 `0x08254e50` keeps a running mean over the tick's contacts (linear `+0x40`,
@@ -1335,9 +1353,27 @@ Applying the force at the real contact took the lean from 42.0 to 37.8 degrees
 and gave back the full-lock turn-in that had been lost (-22.6 degrees in 8 s
 to -213.7). **It is not enough, and the arithmetic says why.** The M3A1's
 patches sit 1.38 m below the hull origin with the springs loaded, against a
-half-track of 0.97 m; the isotropic Coulomb coefficient is
-`1.5 * 9.82 / 14.73` = **1.0** exactly; `0.97 / 1.38 = 0.70 < 1.0`, so it
-tips. The Willys (`0.60 / 0.50`) and the Sherman do not. Nothing in the engine
+half-track of 0.97 m; `0.97 / 1.38 = 0.70`, and it tips wherever the surface's
+own coefficient exceeds that. `1.5 * 9.82 / 14.73` = 1.0 is the coefficient on
+an **undefined or dirt-road** material, which is the default; the real budget
+is `A * 1.5 * 9.82 * N.y` with `A` the mean of the wheel's material and the
+ground's, so grass and sand give `A = 0.9` (13.26 m/s^2, mu 0.90), rock 0.8,
+mud 0.75, paved and gravel 1.05. **0.70 is under every one of them but water
+(0.55)**, so the M3A1 tips on every drivable surface in the game. The Willys
+(`0.60 / 0.50` = 1.20) and the Sherman (`1.008 / 1.01` = 1.00) do not.
+
+The hull origin is **not** a viewer artefact, and the M3A1 is a data outlier
+rather than a bad transcription. Straight out of the shipped `.con`:
+`M3A1Engine addTemplate m3a1TrackL / setPosition 0/-0.749/-0.949` puts the
+track 0.749 m below the hull origin and the road wheels another 0.519 below
+that, for -1.268; the Hanomag's `HanomagEngine addTemplate hanomagTrackL /
+setPosition -0.099/-0.649/0` with `+0.229` on the wheels puts the same class
+of vehicle at **-0.42**. The extracted glbs agree (`M3A1.glb` springs
+-1.268, mesh box -1.768..+1.979; `Hanomag.glb` -0.420, box -0.920..+1.920;
+`Sherman.glb` -0.679; `Willy.glb` -0.139), and in all four the origin sits
+mid-hull with the geometry reaching 0.5 m below the spring line. So a Hanomag
+at `0.932 / 0.75` = 1.24 would not tip and an M3A1 at 0.70 does: the two
+half-tracks really are authored a metre apart. Nothing in the engine
 bounds the per-contact tangential demand except `A * N.y`: the six floats
 `ResponsePhysicsManager::update` `0x0825d0b0` pushes into `addFriction` at
 `0x0825d11d`-`0x0825d130` are dead, `addFriction` runs once per part per tick,
