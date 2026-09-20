@@ -94,13 +94,26 @@ function modulate(modulators, c, initial) {
   return out;
 }
 
-// Worst-case concurrent layer sum for a Corsair at full throttle heard from
-// the cockpit: hi 1.0 + veadaurun 0.5 + prop 1.0 + two cockpit whines at
-// 0.8 x 0.8 ~= 3.8. The .ssc mix is authored against a game mixer with its own
-// headroom; a Web Audio graph summing straight into the destination would clip
-// flat. Scaling the whole bus keeps every per-voice gain reporting the value
-// its script asks for, which is what makes the crossfade checkable.
-const BUS_HEADROOM = 0.28;
+// The engine bus plays the `.ssc` mix at the volumes it asks for.
+//
+// It used to be scaled by 0.28 — the worst-case concurrent layer sum of a
+// Corsair at full throttle heard from the cockpit (hi 1.0 + veadaurun 0.5 +
+// prop 1.0 + two cockpit whines at 0.8 x 0.8 ~= 3.8), on the reasoning that a
+// Web Audio graph summing straight into the destination would clip flat.
+// Every other vehicle then paid the Corsair's bill, and worst case is not
+// what actually arrives: layers that are not in phase do not add in phase.
+// Measured on a Sherman, inside, idling, master at 0.7, the whole engine came
+// out at a peak of 0.089 and an RMS of 0.0295 — against 0.596/0.185 for the
+// BAR in the same scene and 0.0156 for the map's own wind. A tank you are
+// sitting in was twice as loud as the weather.
+//
+// The clipping the constant existed to prevent is real, and it is real
+// whatever this number is: the Sherman's cannon, on the *weapon* bus, was
+// measured peaking at 1.75. One divisor cannot both leave an idling engine
+// audible and hold a 20-layer cannon under full scale. So the clipping is now
+// held where it belongs, by a limiter on the listener itself (`map.html`'s
+// `ensureListener`), and the bus plays what the script wrote.
+const BUS_HEADROOM = 1;
 
 // A gun patch is a far shorter stack and needs its own figure, or the engine's
 // eleven-layer divisor would bury it. `CorsairMG.ssc` has four layers split

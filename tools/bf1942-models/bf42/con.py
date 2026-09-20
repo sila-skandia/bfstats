@@ -342,7 +342,8 @@ def lod_alternative_role(template_name: str) -> str | None:
     return None
 
 
-def is_propeller_blur_pair(children: list["ChildRef"]) -> bool:
+def is_propeller_blur_pair(children: list["ChildRef"],
+                           selector: "LodSelector | None" = None) -> bool:
     """Whether a LodObject's two alternatives are the engine's blade/blur swap.
 
     Every vanilla propeller aircraft (and the mods that keep the convention)
@@ -355,8 +356,26 @@ def is_propeller_blur_pair(children: list["ChildRef"]) -> bool:
     declared threshold. `select_lod_alternative` would otherwise fall back to
     child order — neither name matches an `interior`/`wreck`/`simple`/`complex`
     role — and silently keep only whichever was declared first.
+
+    **The names alone are not enough, and vanilla is the counter-example.**
+    The bf109's *cockpit* LodObject calls its alternatives
+    `bf109CockpitStatic` (the fuselage) and `bf109CockpitBlurred` (the 1P
+    interior) where the other eleven aircraft say `...CockpitExternal` /
+    `...CockpitInternal` — the same naming oddity `geometry_is_first_person`
+    already records. Read by name it is a propeller, and the viewer then binds
+    the pilot's own cockpit to the throttle.
+
+    So the `selector` decides, which is how the engine told them apart: a
+    propeller is a `CompareSelector` against engine input, a cockpit a
+    `DistCompareSelector` against the in-cockpit scalar. Across the fourteen
+    installed mods all 59 genuine pairs are `CompareSelector` and the bf109
+    cockpit is the only `DistCompareSelector` wearing the convention. A
+    selector that did not resolve says nothing either way and is left to the
+    names, so an unreadable `LodSelectorTemplate` cannot cost a blurred disc.
     """
     if len(children) != 2:
+        return False
+    if selector is not None and selector.kind.lower() != "compareselector":
         return False
     names = [child.template.lower() for child in children]
     return (any(name.endswith("static") for name in names)

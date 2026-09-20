@@ -93,6 +93,35 @@ class VehicleBodiesTests(unittest.TestCase):
         for got, want in zip(self.r["describeTurnedOffset"], [1, 0, 0]):
             self.assertAlmostEqual(want, got, places=9)
 
+    # --- a Spring with no collision node of its own -----------------------------
+
+    def test_a_spring_without_a_collision_node_probes_its_own_geometry(self) -> None:
+        """The published scenes predate `stdmesh.DEGENERATE_CROSS_SQ`, so the
+        Sherman family's suspension carries no `... collision 0` child. The
+        Spring still names the geometry, and `PhysicsSpring` reads the probe
+        from there in the engine too, so the wheels are found anyway - which
+        is the difference between a tank standing on its springs and a tank
+        resting on a hull corner at a 13 degree list."""
+        bare = self.r["bareSprings"]
+        self.assertEqual(4, bare["springs"])
+        self.assertEqual(1, bare["body"])
+        # The probe lands at the Spring's own transform, which is where the
+        # collision node the assembler would have hung there sits.
+        rounded = sorted([round(c, 6) for c in offset] for offset in bare["offsets"])
+        self.assertEqual([[-0.8, -0.4, -1.5], [-0.8, -0.4, 1.5],
+                          [0.8, -0.4, -1.5], [0.8, -0.4, 1.5]], rounded)
+        # And it is a real suspension, with the authored spring numbers.
+        self.assertEqual(25, bare["spring"]["strength"])
+        self.assertEqual(5, bare["spring"]["damping"])
+        # The inertia box is still the hull's: a wheel is never the body.
+        self.assertEqual([2, 1, 4], bare["box"])
+
+    def test_a_spring_whose_geometry_has_no_collision_stays_scenery(self) -> None:
+        self.assertEqual(0, self.r["bareSpringsUnresolved"])
+
+    def test_a_spring_with_both_a_node_and_a_geometry_is_counted_once(self) -> None:
+        self.assertEqual(4, self.r["bareSpringsNoDoubleCount"])
+
     # --- the vehicle under the player -------------------------------------------
 
     def test_driven_tangent_speed_is_v_plus_w_cross_r(self) -> None:
