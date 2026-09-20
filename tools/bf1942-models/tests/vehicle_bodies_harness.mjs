@@ -97,6 +97,47 @@ function jeepAt(x, y, z, physics = { mass: 2500, speedMod: 1 }) {
   out.describeTurnedOffset = turnedSpec.parts.find(p => p.kind === 'spring').offset;
 }
 
+// --- a Spring the assembler gave no collision node ------------------------
+// A tree extracted before `stdmesh.DEGENERATE_CROSS_SQ` stopped eating a
+// wheel probe's millimetre triangle has the Spring but not the node under it.
+// `describeVehicleParts` resolves the probe through the Spring's own
+// `geometry` instead; that is where `PhysicsSpring` reads it from anyway.
+function jeepWithBareSprings(x, y, z, { geometry = 'wheel_geometry' } = {}) {
+  const root = node('Jeep', translate(x, y, z),
+    { physics: { mass: 2500, speedMod: 1 }, armor: {} });
+  const hull = add(root, node('JeepHull', translate(x, y, z), { templateKind: 'SimpleObject' }));
+  add(hull, node('JeepHull collision 1', translate(x, y, z),
+    { collision: true, sourceGeometry: 'Hull_Geometry' }));
+  for (const [i, [wx, wz]] of [[-0.8, -1.5], [0.8, -1.5], [-0.8, 1.5], [0.8, 1.5]].entries()) {
+    add(root, node(`JeepSpring${i}`, translate(x + wx, y - 0.4, z + wz),
+      { templateKind: 'Spring', geometry,
+        physics: { gripFlags: 2, strength: 25, damping: 5 } }));
+  }
+  return root;
+}
+{
+  const spec = describeVehicleParts(jeepWithBareSprings(10, 5, -20), collisionMeshes);
+  out.bareSprings = {
+    springs: spec.parts.filter(p => p.kind === 'spring').length,
+    body: spec.parts.filter(p => p.kind === 'body').length,
+    offsets: spec.parts.filter(p => p.kind === 'spring').map(p => p.offset),
+    spring: spec.parts.find(p => p.kind === 'spring').spring,
+    box: spec.box,
+  };
+  // A geometry with no collision of its own stays scenery: no invention.
+  out.bareSpringsUnresolved = describeVehicleParts(
+    jeepWithBareSprings(0, 0, 0, { geometry: 'no_such_geometry' }), collisionMeshes)
+    .parts.filter(p => p.kind === 'spring').length;
+  // And a Spring that HAS its node is counted once, not twice, even though it
+  // also names the geometry.
+  const both = jeepAt(0, 0, 0);
+  for (const child of both.children) {
+    if (child.userData.templateKind === 'Spring') child.userData.geometry = 'wheel_geometry';
+  }
+  out.bareSpringsNoDoubleCount =
+    describeVehicleParts(both, collisionMeshes).parts.filter(p => p.kind === 'spring').length;
+}
+
 // --- the driven vehicle as a body -------------------------------------------
 {
   const vehicle = { state: {
