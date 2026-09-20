@@ -527,8 +527,49 @@ matrices, and neither is a frozen static that moved. A drift named `Em_*` or `Me
 or sitting under `vm/Scene/viewmodel root`, is noise. The hook should skip hidden
 pool children, and the viewmodel scene when the rig is not drawn.
 
+### The cockpit was grafted once per `Vehicle`, and the page builds one per entry
+
+Entering and leaving a vehicle leaked GPU resources in a straight line: on a Wake
+Willys, 6 geometries and 4 textures per cycle (`renderer.info.memory` 357, 363, 369,
+375, 381 and 364, 368, 372, 376, 380 over five warm cycles). The suspects were what
+an exit rebuilds, the soldier and the hand-weapon rig. Neither is rebuilt: the rig is
+hidden on entry and shown on exit. The leak was on the way **in**.
+
+`leaveVehicle` nulls `occupancy`, so every E back into the same jeep constructs a new
+`VehicleOccupancy` and a new `GroundVehicle` on the same node, and `Vehicle`'s
+constructor started its own `loadCockpit`: another fetch of `Willy.cockpit.glb` (6
+primitives, 4 textures — the leak's exact size), another `prepareCockpit` warm-up
+uploading its textures, another interior grafted under `lodWillyCockpit` and
+`lodWillySteering` beside the last one. The old interior's `CockpitSwap` had died with
+its `Vehicle`, so nothing would ever show it or free it. Textures landed whenever the
+fetch did, even after the exit; the geometries uploaded once the new copy was drawn in
+cockpit view. It also cost a fetch, a glb parse and a `compileAsync` per entry, and
+put a second steering wheel in `parts`.
+
+Fixed in `flight.js`: the graft belongs to the node (`cockpitGrafts`, a `WeakMap` of
+the promise of the node's swaps), and a `Vehicle` adopts it. A seat retaken mid-fetch
+waits on the fetch in the air; a failed fetch is not remembered; whatever the graft
+leaves behind in the glb (a B17's four unflown gunner stations, already uploaded by
+the warm-up) is disposed. One thing had to come with it: a kept interior is indexed by
+the next `Vehicle` wherever the last driver left it, so `CockpitSwap` records its
+rigged nodes' rest poses off the glb and `adoptCockpit` restores them as the parts'
+bases. The exterior has always had that problem — get out with the wheels turned and
+the next `Vehicle` takes the turned pose for neutral — and still does.
+
+`disposeHandWeapon` disposing only `material.map` was checked and is not a leak: all
+277 materials across the 36 viewmodel glbs carry `baseColorTexture` and nothing else.
+
+`tests/perf/leakcheck.cjs` is the standing check; `test_flight.py` pins the graft
+(one load, one interior, rest pose, mid-fetch race, failed fetch, remainder disposal)
+without a browser.
+
 ## Open items
 
+- **A new `Vehicle` takes a parked vehicle's current rig pose for its rest pose.**
+  `RiggedPart` and `Wheel` capture `node.quaternion` on construction and map.html
+  constructs a `Vehicle` per entry, so an exit with the steering held compounds into
+  the next drive. The grafted interior is now protected from it (above); the exterior
+  parts are not. Rest poses want to belong to the node.
 - **The real-hardware pass is Dylan's, and it is the last thing standing.** The
   14-step list is in `MANUAL-CHECK.md` beside this file: the chord with a real
   mouse (the view snap especially — CDP cannot produce the bogus `movementX` a real
