@@ -4358,7 +4358,51 @@ function indexScene(root) {
     tagCull(child);
     cull.push(child);
   }
+  flattenCull();
   freezeStatics(root);
+}
+
+/* `cull`'s bounding spheres, as four flat arrays.
+ *
+ * `applyVisibility` runs a distance test per entry per frame — 814 of them on
+ * Wake, before the 32 spawner children — and each one used to chase
+ * `obj.userData.cullCenter` (a `Vector3` behind two property loads and a
+ * dictionary lookup) plus `obj.userData.cullRadius`. The centres and radii are
+ * fixed at `indexScene` time by `tagCull`, so they are hoisted out of the scene
+ * graph once and the per-frame test becomes typed-array arithmetic
+ * (features/mesh-viewer-performance, rule 5's sibling: no per-frame pointer
+ * chase either).
+ *
+ * `Float64Array`, not `Float32Array`: the old test ran in doubles, and this has
+ * to be a behavioural no-op. Rounding a centre to Float32 moves it by up to
+ * ~4e-5 m at Wake's coordinates, which is enough to flip one object at exactly
+ * the range boundary. 26 KB of doubles is not the cost being addressed.
+ *
+ * `userData.cullCenter`/`cullRadius` stay on the objects — `tagCull` is still
+ * their only writer — so any future reader of them is unaffected.
+ *
+ * The SPAWNER children are deliberately NOT flattened. `Vehicle`'s constructor
+ * reparents the driven vehicle out of `spawnersRoot` and `leaveVehicle` puts it
+ * back, so that list's membership changes during play; 32 object-based tests a
+ * frame are not worth the invalidation. `cull` itself is written only here.
+ */
+let cullFlat = {
+  x: new Float64Array(0), y: new Float64Array(0),
+  z: new Float64Array(0), r: new Float64Array(0),
+};
+function flattenCull() {
+  const n = cull.length;
+  const x = new Float64Array(n), y = new Float64Array(n);
+  const z = new Float64Array(n), r = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const c = cull[i].userData.cullCenter;
+    // `tagCull` gives every entry a centre; a `null` here would have meant
+    // "always visible" to the old predicate, so keep that reading exactly.
+    if (!c) { r[i] = Infinity; continue; }
+    x[i] = c.x; y[i] = c.y; z[i] = c.z;
+    r[i] = cull[i].userData.cullRadius || 0;
+  }
+  cullFlat = { x, y, z, r };
 }
 
 // --- static matrices --------------------------------------------------------
@@ -4464,6 +4508,10 @@ function freezeStatics(root) {
   }
 }
 
+/** The spawner children's distance test, and theirs alone since `applyVisibility`
+ *  took the static list onto `cullFlat`: that list's membership moves during
+ *  play (a driven vehicle leaves `spawnersRoot` and comes back), and 32 tests a
+ *  frame do not pay for keeping a parallel array in step with it. */
 function inRange(obj, cam, limit) {
   const c = obj.userData.cullCenter;
   const r = obj.userData.cullRadius || 0;
@@ -4477,7 +4525,26 @@ function applyVisibility() {
   const entire = optEntire.checked;
   const cam = camera.position;
   const limit = drawDistance();
-  for (const obj of cull) obj.visible = entire || inRange(obj, cam, limit);
+  // The static half runs off `cullFlat` (see `flattenCull`): no `userData`
+  // lookup, no `Vector3`, and `.visible` written only when it flips, which on
+  // a walking frame is a handful of the 814 rather than all of them. The test
+  // itself is the old `inRange` arithmetic unchanged, in doubles.
+  // `indexScene` is the only writer of either, and it rebuilds both together;
+  // this is the assertion that says so out loud rather than reading `undefined`
+  // out of a short array and hiding half a level.
+  if (cullFlat.x.length !== cull.length) flattenCull();
+  const { x, y, z, r } = cullFlat;
+  const cx = cam.x, cy = cam.y, cz = cam.z;
+  for (let i = 0; i < cull.length; i++) {
+    let shown = entire;
+    if (!shown) {
+      const dx = x[i] - cx, dy = y[i] - cy, dz = z[i] - cz;
+      const reach = limit + r[i];
+      shown = dx * dx + dy * dy + dz * dz <= reach * reach;
+    }
+    const obj = cull[i];
+    if (obj.visible !== shown) obj.visible = shown;
+  }
   if (!spawnersRoot) return;
   spawnersRoot.visible = optVehicles.checked;
   if (!optVehicles.checked) return;
