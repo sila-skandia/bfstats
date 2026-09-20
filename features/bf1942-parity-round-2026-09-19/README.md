@@ -255,10 +255,57 @@ the real game, asked of the owner: does an M3A1 lean hard in a turn above about
 40 km/h, and does a jeep with a driver and no throttle roll down a gentle
 slope?** The reviewer is checking the two new commits meanwhile.
 
-**S2 (kit photographs) has reported** (`s2-kitphotos.md`); small enough that the
-lead reviews it.
+**All four Sonnet fix streams are merged** (2026-09-20), each reviewed by the
+lead from its diff, a trial merge, the suite and a page check:
+- **S2 kit photographs** (`0c391fa`): vanilla's pack byte-identical from the
+  merged code (262 files compared); packs re-extracted locally, EoD 669 files,
+  XPack1 42, XPack2 55; EoD's spawn screen now shows EoD's own kit photographs.
+- **S3 verifier** (`0590dd2`): the origin-pile check clusters parts by shared
+  world point wherever it is, folding a lone rider into its ancestor; vanilla
+  94/2/0, XPack1 13/2/0, XPack2 25/4/0 re-run by the lead and unchanged.
+- **S1 level nations** (`0c45e26` + lead's `13ebfc7`): the menu derives a team's
+  nation from the level's own control points. Vanilla moves in exactly one row
+  (Liberation of Caen's allies become Canada); EoD in 13 (not the 30 the review
+  estimated - that figure was never reproduced by a script). **The lead caught a
+  regression at merge**: `teamNation`'s last fallback had become `'unknown'`,
+  which would have taken the US flag off Omaha, Iwo Jima, Coral Sea, Midway and
+  Truk and the German one off Kasserine, because `nationFromVehicles` only names
+  jp, rus and brit. `'unknown'` now wins only when a side's own flags vote for it.
+  `menu-levels.json` regenerated locally (vanilla and the three packs).
+- **S4 sound lifecycle** (`08d3327`): an effect handle's `stop()` cuts its voice,
+  every level change silences the pool, a suspended AudioContext drops one-shots
+  and remembers loops, an attached effect sounds and follows its object. The
+  suspended path is proven under node only - every browser to hand starts running.
 
-**W3-C (game modes) has reported and is in review** (`w3c-gamemodes.md`). **W3-G
+**W3-C (game modes) is merged** (`48244c9`, 2026-09-20), verdict MERGE WITH
+FIXES. Reports: `w3c-gamemodes.md`, `w3c-review.md`.
+- `GameTypes/<x>.con` is the index (read in `Setup::setNextLevel` `0x080bf160`,
+  jump table `0x86ba190`), but a game type does NOT load one directory: 35 of
+  3,048 scripts straddle two, including every Road to Rome and 8 of 9 Secret
+  Weapons CoOp scripts. The reviewer added composed layers keyed by game type;
+  Instant Battle launches `mode=CoOp`.
+- **PUBLISH ORDER: the viewer code must be live before re-extracted levels are
+  uploaded.** A re-extracted multi-layer glb holds the union of every mode's pads
+  and flags; main's old page has no `pruneToMode` and would show 58 vehicles on
+  Wake and two flags on its beach. The code deploys itself from main (Jenkins),
+  so: merge, let the image roll, THEN re-extract and publish levels. The publish
+  now running uploads levels extracted BEFORE this stream, which are safe.
+- Re-extract (after the drivetrain question settles, so it is done once):
+  `extract_maps_all.py` for vanilla, and `--mod EoD|XPack1|XPack2 --out
+  viewer/maps/mods/<id> --levels <the pack's own>`; about +2.3% on disk.
+- Left: pruned nodes are never disposed; ObjectiveMode bindings and `Ctf.con`
+  flag bases are not placed; no mode picker (URL only).
+
+**W3-A (drivetrain), third review: MERGE-IF.** The two new commits hold; the
+washboard "regression" was a framing error (at a matched 31 m/s entry main
+reaches a 54.85 m apex and 454 km/h, the branch 3.88 m and 114 km/h). The M3A1's
+node origin is shipped data (`setPosition 0/-0.749/-0.949` plus 0.519), giving
+half-track / patch-depth ratios M3A1 0.70, Hanomag 1.24, Sherman 1.00, Willys
+1.20 against a grass budget of mu 0.90 - so the branch predicts the M3A1 leans
+and the HANOMAG DOES NOT, which makes the Hanomag the control. Mergeable as it
+stands if the owner sees, in the real game, (1) an occupied jeep with no throttle
+roll down a 5-10 degree slope and (2) an M3A1 lie over in a turn above about
+40 km/h while a Hanomag stays flat. Otherwise DO NOT MERGE until explained. (`w3c-gamemodes.md`). **W3-G
 (mouse input) has reported and is in review** (`w3g-mouse.md`).
 
 **W3-A (drivetrain) was reviewed: DO NOT MERGE, sent back to its author**
