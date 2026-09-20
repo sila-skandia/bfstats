@@ -7299,26 +7299,57 @@ const FALLBACK_SOLDIERS = {
 // The extracted first-person arms rigs — `<Soldier>__<Weapon>.fp.glb` under
 // models/viewmodels (§11) — one per soldier and weapon the vanilla levels
 // pair, because the sleeves are the nation's camo and the hands are welded
-// to that weapon. Looked up by `viewmodelRigFor`; a pairing absent here, or
-// a mod tree without the folder, draws the bare 3P glb.
+// to that weapon. Every weapon the kits can put in a hand: the primaries,
+// the knife and grenade (the knife's fire family is five variants, ANIM-6's
+// c_AsmRandom), the pistols, and the engineer/medic/scout gadgets. Looked up
+// by `viewmodelRigFor`; a pairing absent here, or a mod tree without the
+// folder, draws the bare 3P glb.
 const VIEWMODEL_RIGS = [
-  'USSoldier__Thompson', 'USSoldier__No4Sniper', 'USSoldier__Bar1918',
-  'USSoldier__Bazooka', 'USSoldier__No4', 'USSoldier__M1Garand',
-  'USMarineSoldier__No4Sniper', 'USMarineSoldier__Bar1918',
-  'USMarineSoldier__Bazooka', 'USMarineSoldier__Thompson',
-  'USMarineSoldier__M1Garand',
-  'BritishSoldier__No4Sniper', 'BritishSoldier__Bar1918',
-  'BritishSoldier__Bazooka', 'BritishSoldier__Thompson', 'BritishSoldier__No4',
-  'RussianSoldier__No4Sniper', 'RussianSoldier__DP', 'RussianSoldier__Bazooka',
-  'RussianSoldier__Mp18', 'RussianSoldier__No4',
-  'GermanSoldier__K98Sniper', 'GermanSoldier__Sg44',
-  'GermanSoldier__Panzershreck', 'GermanSoldier__MP40', 'GermanSoldier__K98',
-  'GermanDesertSoldier__K98Sniper', 'GermanDesertSoldier__Sg44',
-  'GermanDesertSoldier__Panzershreck', 'GermanDesertSoldier__Mp40',
-  'GermanDesertSoldier__K98',
-  'JapaneseSoldier__K98Sniper', 'JapaneseSoldier__Type99',
-  'JapaneseSoldier__Panzershreck', 'JapaneseSoldier__Mp18',
-  'JapaneseSoldier__Type5',
+  'USSoldier__Bar1918', 'USSoldier__Bazooka', 'USSoldier__Binoculars',
+  'USSoldier__Colt', 'USSoldier__Detonator', 'USSoldier__ExpPack',
+  'USSoldier__GrenadeAllies', 'USSoldier__KnifeAllies', 'USSoldier__Landmine',
+  'USSoldier__M1Garand', 'USSoldier__MedPack', 'USSoldier__No4',
+  'USSoldier__No4Sniper', 'USSoldier__RepairPack', 'USSoldier__Thompson',
+  'USMarineSoldier__Bar1918', 'USMarineSoldier__Bazooka',
+  'USMarineSoldier__Binoculars', 'USMarineSoldier__Colt',
+  'USMarineSoldier__Detonator', 'USMarineSoldier__ExpPack',
+  'USMarineSoldier__GrenadeAllies', 'USMarineSoldier__KnifeAllies',
+  'USMarineSoldier__Landmine', 'USMarineSoldier__M1Garand',
+  'USMarineSoldier__MedPack', 'USMarineSoldier__No4Sniper',
+  'USMarineSoldier__RepairPack', 'USMarineSoldier__Thompson',
+  'BritishSoldier__Bar1918', 'BritishSoldier__Bazooka',
+  'BritishSoldier__Binoculars', 'BritishSoldier__Colt',
+  'BritishSoldier__Detonator', 'BritishSoldier__ExpPack',
+  'BritishSoldier__GrenadeAllies', 'BritishSoldier__KnifeAllies',
+  'BritishSoldier__Landmine', 'BritishSoldier__MedPack', 'BritishSoldier__No4',
+  'BritishSoldier__No4Sniper', 'BritishSoldier__RepairPack',
+  'BritishSoldier__Thompson',
+  'RussianSoldier__Bazooka', 'RussianSoldier__Binoculars',
+  'RussianSoldier__Colt', 'RussianSoldier__DP', 'RussianSoldier__Detonator',
+  'RussianSoldier__ExpPack', 'RussianSoldier__GrenadeAllies',
+  'RussianSoldier__KnifeAllies', 'RussianSoldier__Landmine',
+  'RussianSoldier__MedPack', 'RussianSoldier__Mp18', 'RussianSoldier__No4',
+  'RussianSoldier__No4Sniper', 'RussianSoldier__RepairPack',
+  'GermanSoldier__Binoculars', 'GermanSoldier__Detonator',
+  'GermanSoldier__ExpPack', 'GermanSoldier__GrenadeAxis', 'GermanSoldier__K98',
+  'GermanSoldier__K98Sniper', 'GermanSoldier__KnifeAxis',
+  'GermanSoldier__Landmine', 'GermanSoldier__MP40', 'GermanSoldier__MedPack',
+  'GermanSoldier__Panzershreck', 'GermanSoldier__RepairPack',
+  'GermanSoldier__Sg44', 'GermanSoldier__WalterP38',
+  'GermanDesertSoldier__Binoculars', 'GermanDesertSoldier__Detonator',
+  'GermanDesertSoldier__ExpPack', 'GermanDesertSoldier__GrenadeAxis',
+  'GermanDesertSoldier__K98', 'GermanDesertSoldier__K98Sniper',
+  'GermanDesertSoldier__KnifeAxis', 'GermanDesertSoldier__Landmine',
+  'GermanDesertSoldier__MedPack', 'GermanDesertSoldier__Mp40',
+  'GermanDesertSoldier__Panzershreck', 'GermanDesertSoldier__RepairPack',
+  'GermanDesertSoldier__Sg44', 'GermanDesertSoldier__WalterP38',
+  'JapaneseSoldier__Binoculars', 'JapaneseSoldier__Detonator',
+  'JapaneseSoldier__ExpPack', 'JapaneseSoldier__GrenadeAxis',
+  'JapaneseSoldier__K98Sniper', 'JapaneseSoldier__KnifeAxis',
+  'JapaneseSoldier__Landmine', 'JapaneseSoldier__MedPack',
+  'JapaneseSoldier__Mp18', 'JapaneseSoldier__Panzershreck',
+  'JapaneseSoldier__RepairPack', 'JapaneseSoldier__Type5',
+  'JapaneseSoldier__Type99', 'JapaneseSoldier__WalterP38',
 ];
 const viewmodelRigIndex = new Map(VIEWMODEL_RIGS.map(stem => [stem.toLowerCase(), stem]));
 
@@ -8066,6 +8097,16 @@ async function loadHandWeapon(name, soldierName = null) {
     }
   }
   if (token !== weaponToken || !optOnFoot.checked || !soldier) return null;
+  // A bare 3P weapon ships its collision hulls as drawable siblings of the
+  // visual mesh — the grenade's "Complex collision" box in the green
+  // `defense material` read as soldier armour riding along with the weapon.
+  // The fp rigs never carry hulls; the bare fallback hides them, the way the
+  // level path's own cull treats collision nodes (`isCollision`, above).
+  if (!fp) {
+    gltf.scene.traverse(obj => {
+      if (isCollision(obj)) obj.visible = false;
+    });
+  }
   // Document-level extras land on `gltf.userData` (GLTFLoader's
   // `assignExtrasToUserData(result, json)`); the fallbacks cover a vendored
   // loader that files them elsewhere. The fp rig spells its armoury block
@@ -8160,6 +8201,7 @@ async function loadHandWeapon(name, soldierName = null) {
   // (Thompson Looping vs sniper PlayOnce) — ANIM-7 / T2.
   let mixer = null;
   const actions = {};
+  let fireVariants = [];
   if (fp && gltf.animations?.length) {
     mixer = new THREE.AnimationMixer(gltf.scene);
     const clipExtras = doc.clips ?? {};
@@ -8180,6 +8222,13 @@ async function loadHandWeapon(name, soldierName = null) {
       }
       actions[clip.name] = action;
     }
+    // Fire one-shots beyond the lone `fire` family: the knife's aim state
+    // registers five swings (ANIM-6's c_AsmRandom — `rand() % n` on every
+    // entry into the fire state) and the extractor bakes them as
+    // `fire1..fireN`. `onShot` rolls the per-round pick; selection
+    // (viewmodel-anim.js) only keeps the swing and releases it to loco.
+    fireVariants = Object.keys(actions).filter(k => /^fire\d+$/.test(k))
+      .sort((a, b) => Number(a.slice(4)) - Number(b.slice(4)));
   }
   const magazine = data?.magazine || null;
   // The idle fidgets this rig baked (`idle1..idleN` — §11's `addIdle`
@@ -8195,6 +8244,8 @@ async function loadHandWeapon(name, soldierName = null) {
     rigFile: fp ? rigFile : null,   // the arms rig that answered, if one did
     fov1p,                 // `set1pFov` in radians, or null for a bare weapon
     mixer, actions,        // the arms rig's state machine; both empty when bare
+    fireVariants,          // the fire one-shot variants (`fire1..fireN`), when the
+                           // weapon's aim state registers several (the knife)
     clips: fp ? doc.clips ?? null : null,   // per-family frames/speed/span extras
     active: null,          // the clip currently owning the arms
     fidgetNames,           // baked idle fidget families (`idle1..idleN`)
@@ -8202,8 +8253,10 @@ async function loadHandWeapon(name, soldierName = null) {
     fidgetTimer: null,     // seconds left of the ANIM-6 dwell, null = parked
     group: null,
     // The loaded magazine plus the spares. `magazines 5` is read as the
-    // total carried, which is how the game's HUD counts them.
-    rounds: magazine?.size ?? Infinity,
+    // total carried, which is how the game's HUD counts them. A negative
+    // `magSize` is the engine's unlimited ammo (the knife's -1): rounds goes
+    // to Infinity so the trigger gate and the reload checks read it plainly.
+    rounds: magazine ? (magazine.size >= 0 ? magazine.size : Infinity) : Infinity,
     mags: magazine ? Math.max((magazine.magazines ?? 1) - 1, 0) : 0,
     reload: 0,       // seconds left of a reload in progress
     reloadPlayed: false,  // the arms' reload clip has been started for this magazine
@@ -8333,7 +8386,10 @@ function playViewmodelClip(hw, name, { restart = false, timeScale = 1,
  */
 function updateViewmodelAnimation(hw, dt) {
   if (!hw.mixer) return;
-  const fireAction = hw.actions.fire;
+  // The fire action whose clock matters: the lone `fire`, or — the knife —
+  // whichever registered swing currently owns the arms.
+  const fireVariant = hw.fireVariants.includes(hw.active) ? hw.active : null;
+  const fireAction = hw.actions[fireVariant ?? 'fire'];
   const fireRunning = !!(fireAction && fireAction.isRunning());
   const fireReturnsToReload = /reload/i.test(hw.clips?.fire?.returnTo || '');
   // Looping fire (Thompson / BAR) — not bolt rifles whose returnTo is
@@ -8379,6 +8435,7 @@ function updateViewmodelAnimation(hw, dt) {
     fireReturnsToReload,
     firing: !!hw.group?.firing,
     hasFire: !!fireAction,
+    fireVariants: hw.fireVariants.length ? hw.fireVariants : null,
     hasReload: !!hw.actions.reload,
     gait: soldier?.gait,
     fidget: hw.fidget,
@@ -8592,7 +8649,15 @@ guns.onShot = group => {
   // would un-freeze a just-released LoopRepeat and keep the post-fire shake.
   const fireReturnsToReload = /reload/i.test(hw.clips?.fire?.returnTo || '');
   const fireLoops = !!(hw.clips?.fire?.loop) && !fireReturnsToReload;
-  if (!fireLoops) playViewmodelClip(hw, 'fire', { restart: true });
+  if (!fireLoops) {
+    // One swing per round, and for the knife one of its five registered
+    // swings — the same `rand() % n` the engine's c_AsmRandom rolls on every
+    // entry into the fire state. A lone `fire` family plays itself.
+    const pick = hw.fireVariants.length
+      ? hw.fireVariants[Math.floor(Math.random() * hw.fireVariants.length)]
+      : 'fire';
+    playViewmodelClip(hw, pick, { restart: true });
+  }
   if (Number.isFinite(hw.rounds)) hw.rounds = Math.max(0, hw.rounds - 1);
   hw.model.onShot();
   hw.cool = 1 / (hw.data?.roundOfFire || 1);
