@@ -563,6 +563,146 @@ the next `Vehicle` takes the turned pose for neutral — and still does.
 (one load, one interior, rest pose, mid-fetch race, failed fetch, remainder disposal)
 without a browser.
 
+## Fourth pass: the audit's small items
+
+A profile-led audit of one on-foot frame found six page-code costs small enough
+to fix without a build, and they were taken one commit each. All six are
+behavioural no-ops — the point was to stop paying for work whose answer never
+changes within a frame, a level, or a lookup.
+
+### What was fixed
+
+| | before | after |
+|---|---|---|
+| `inRange` (846 distance tests a frame) | 106 ms, 1.28% | 6 ms, 0.07% |
+| `applyVisibility` | 54 ms, 0.65% | 12 ms, 0.14% |
+| `updateTextureFade` | 49 ms, 0.59% | off the profile |
+| `feedTicketVars` + `nationFromVehicles` + `teamNation` | 51 ms, 0.61% | 1 ms, 0.01% |
+| `frame`'s own self time | 194 ms, 2.33% | 85 ms, 1.02% |
+| **`map.html`, all of it** | **672 ms, 8.07%** | **264 ms, 3.15%** |
+| **every viewer module together** | **1,042 ms, 12.50%** | **622 ms, 7.42%** |
+
+`zoombench.cjs --seconds 8 --uncap --scenarios stand-hip-fire`, headed, Wake /
+`The_Airfield` / Thompson, DPR 1, before = `acd5f72` and after = this branch's
+tip, served side by side and run minutes apart. Total self time was 8,332 ms
+against 8,381 ms — the same frame's worth of work either way, with the workload
+counters flat (199.9 against 200.6 draw calls a frame, 131,071 against 131,076
+triangles, 65 shots, 86 against 85 live particles). **Read the shares, not the
+milliseconds**: 1-minute load average was 32-40 throughout, several other
+sessions were running timed captures on the same GPU, and the harness's own
+2x-run-to-run caveat stands. three.js's share *rises* (56.0% to 59.1%) for the
+same reason `projectObject`'s did in the first pass: the total it is a share of
+did not move while the page's own half of it shrank.
+
+The six, and what each one actually was:
+
+1. **The ticket counter recomputed four level constants twice a frame.**
+   `feedTicketVars` runs before every early return of `updateSoldierHud`, so it
+   is on the frame path in fly, foot and seat alike. `nationFromVehicles`
+   lowercased all 32 of Wake's spawner names into a Set and spread that Set once
+   per nation stem inside a `.some`; `teamNationRule` built a Map and rescanned
+   the control points. All of it is level data, memoised now on the level
+   directory, the `extras` object, `hudPack.nations` and the spawners group —
+   exactly as `stanceNation` already memoises the same rule for the stance icon.
+   It is also a fix: `Vehicle` reparents the driven vehicle out of `spawners`,
+   so the per-frame form swapped Wake's Axis ticket flag from Japanese to German
+   once its Japanese hulls were being driven.
+2. **The darkness planes faded whether or not the camera had moved.** 33 meshes
+   a frame, each allocating two arrays for `[obj.material].flat()` and writing
+   `.opacity` and `.visible` unconditionally. `bindTextureFade` now keeps the
+   fading materials in the record, both writes are compared first, and the whole
+   loop is skipped while the camera is still. The square root stays: squared band
+   edges are *not* exactly equivalent — `sqrt` is correctly rounded, so
+   `sqrt(400 + 2^-44)` rounds back to exactly 20 and the two tests disagree by
+   one ULP just past the near edge.
+3. **The level's distance test chased 814 `userData` bags.** The centres and
+   radii `tagCull` fixes at `indexScene` time are hoisted into four
+   `Float64Array`s parallel to `cull`, and `.visible` is written only when it
+   flips. Float64 and not Float32 deliberately: rounding a centre to single
+   precision moves it by up to ~4e-5 m at Wake's coordinates, enough to flip one
+   object at the range boundary, and this had to be a no-op. The 32 spawner
+   children keep the object-based path, because that list's membership moves
+   during play.
+4. **The occupied hull was found by scanning every Armored object, twice a
+   frame.** `World.occupiedDamageable` is the same answer through the
+   `nodeOwners` WeakMap `registerDamageables` fills from the same array. Not a
+   straight swap: `addPlayer` runs only from `setOnFoot(true)`, so a player who
+   entered a hull from free fly has no world player record and the world would
+   have answered null — the scan stays behind a guard for him. Counted in-page:
+   an on-foot entry takes the world lookup 63-157 times per vehicle against a
+   single scan; a free-fly entry takes the scan every time.
+5. **A cached canvas width of 0 read as "not measured yet".** `cssWidthOf`
+   tested truthiness, so a hidden surface's 0 fell through to
+   `getBoundingClientRect` (rule 3) on every call that got one. Honest about the
+   size of this one: with `getBoundingClientRect` wrapped and tallied from before
+   the document runs, the pre-change build makes exactly **one** call between
+   page load and a spawned on-foot frame and none per frame after that — both
+   painters return early while their own box is hidden. It is a correctness fix
+   on a hot-path rule, not a frame.
+6. **A live particle's look allocated about ten objects.** `evalParticle` built
+   a `scale` array, usually a `color` array, a result object, and up to four
+   `sampleCurve` samples of three arrays each — per particle per frame, with
+   `integrateParticle` adding three more samples for its gravity, drag and
+   flipbook ramps. `sampleCurveInto`/`evalParticleInto` are the same arithmetic
+   into module scratch, and only the per-frame path uses them. Measured directly
+   under node over 684,000 calls (190 sprites x 60 fps x 60 s, the heaviest
+   moment the second pass measured): **1,166 ns/call to 261 ns/call, 4.5x**, with
+   the consumed results bit-identical. It does **not** show in the browser
+   profile above, because `stand-hip-fire` carries 85 live particles rather than
+   190 and effects sit inside the run-to-run noise there — the browser evidence
+   for this one is pixel parity, not time.
+
+`sampleCurveInto` and `evalParticleInto` are pinned by
+`tests/effects_harness.mjs` + `test_effects.py`: eleven ramps across
+before-the-first-point, on it, interpolating, a zero-width segment, past the
+last, missing, empty, single-point, multi-component, a shorter later point (NaN
+on both sides, deliberately preserved) and points with no components at all; and
+four particles across every branch of `evalParticle`, each read at six points of
+life. The new assertions discriminate — dropping the `color` reset breaks 12
+rows, dropping the interior truncation breaks the no-components row.
+
+**Equivalence, per fix.** The ticket variables were read back through
+`window.__hudVars()` on two levels and across a level switch in both directions;
+the fade and cull sets were captured for every one of the 33 fade meshes, 816
+level-root children and 32 spawner children at 17 camera positions on Wake and
+on Aberdeen, and again across both option checkboxes, a driven Willy and a level
+switch; the occupied hull was read 30 ways across a jeep, a plane, a nested tank
+gunner seat and two bare stationary guns, entered from foot and from free fly,
+before and after damage. Every one identical to the pre-change build, except the
+detached-hulls ticket flag, where the new answer is the correct one.
+`perfbench.cjs shot`/`compare` over the whole branch: **arms, burst, minimap and
+settled all 0 differing pixels, max channel delta 0**, workload counters equal
+(7 shots, 2 particles, 2 decals).
+
+### `forceSinglePass` had already shipped
+
+The open item below said "measured, not applied". It was applied on 2026-09-18
+in `aa2820c`, two days after the item was written, and the README was never
+updated. Confirmed on this branch: all 116 of the effects materials that are
+transparent and `DoubleSide` carry `forceSinglePass`, and turning it off on
+those materials alone at runtime, mid-burst with 29 live particles, takes one
+firing frame from **208 to 238 draw calls** — one extra draw per live sprite,
+which is the mechanism the second pass described. The level's own 1,114
+transparent `DoubleSide` materials are correctly left alone; that is where the
+151 pixels differed.
+
+### What the audit found already fine
+
+The page's own code is no longer where this frame goes. Outside
+`renderer.render`, every viewer module together is **7.4%** of the frame's JS
+self time after this pass. Inside it, `projectObject` plus `intersectsObject` is
+**15.8%**, `updateMatrixWorld` **4.8%**, and per-draw material binding
+(`setProgram`, `needsUpdate`, `setup`, `refreshUniformsCommon`,
+`refreshFogUniforms`) **15.0%** — for about 200 main-pass draws, because Wake carries **3,942
+distinct materials across 4,244 meshes** and `bindDynamicShading` gives every
+level mesh its own. That is the shape of the remaining headroom, and none of it
+is reachable by tightening another page function: it is the two structural open
+items below, material sharing and instancing.
+
+Deliberately not done, having been measured and found worthless or wrong:
+pausing the ambient flag mixer, gating the lens flare, and guarding
+`updateProjectionMatrix`.
+
 ## Open items
 
 - **A new `Vehicle` takes a parked vehicle's current rig pose for its rest pose.**
@@ -577,9 +717,6 @@ without a browser.
   holds Ctrl+W. Automation cannot close that last one: CDP injects below the layer
   that marks locked keys, so a native-keycode Ctrl+W closes the tab even with the
   lock held.
-- **`forceSinglePass` on sprite materials** — one line, 1.91 ms of the 2.66 ms
-  sprite cost at 190 live sprites, pixel-identical. Measured, not applied; it wants
-  its own commit and a parity capture.
 - **Instancing or merging the level's repeated statics and vegetation** — the
   biggest measured win (430 draws to about 115 keys) and a real build: per-instance
   range culling, frustum culling, `textureFade`. Needs a decision before anyone
