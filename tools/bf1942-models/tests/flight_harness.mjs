@@ -24,7 +24,8 @@
 // here starts above 900 m, and the one case that does is the ceiling test.
 
 import * as THREE from 'three';
-import { Aircraft, CORSAIR, GRAVITY, calculateLift, VehicleCamera, findVehicle } from './flight.mjs';
+import { Aircraft, CORSAIR, GRAVITY, Vehicle, calculateLift, VehicleCamera, findVehicle } from './flight.mjs';
+import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 
 const DEG = 180 / Math.PI;
 const DT = 1 / 60;
@@ -907,6 +908,137 @@ for (const dt of [1 / 60, 1 / 30, 0.1]) {
     turnedAt,
     tailFirstEnd: snapshot(back),
   });
+}
+
+// --- the interior is grafted once per node, not once per Vehicle ------------
+//
+// map.html builds a fresh `Vehicle` on the same node every time a seat is
+// retaken, and each one used to fetch `<Control>.cockpit.glb` and graft another
+// interior beside the last: 6 geometries and 4 textures per Willys entry, never
+// released. `loadAsync` is stood in for here — the same `GLTFLoader` module
+// instance `flight.mjs` imports — so the real `loadCockpit` path runs with no
+// network, and a load is a thing that can be counted.
+
+{
+  const disposed = new Set();
+  const watch = resource => {
+    resource.addEventListener('dispose', () => disposed.add(resource.name));
+    return resource;
+  };
+  const skinned = name => {
+    const geometry = watch(new THREE.BufferGeometry());
+    geometry.name = `${name}.geometry`;
+    const map = watch(new THREE.Texture());
+    map.name = `${name}.map`;
+    const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ map }));
+    mesh.name = name;
+    return mesh;
+  };
+  const named = (name, userData = {}, ...children) => {
+    const node = new THREE.Object3D();
+    node.name = name;
+    node.userData = userData;
+    node.add(...children);
+    return node;
+  };
+
+  /** A Willys root the way the map glb leaves one: hosts, and the exterior. */
+  const jeep = () => named('Willy', { control: 'Willy' },
+    named('lodWillyCockpit', {}, named('WillyCockpitExternal')),
+    named('lodWillySteering', {}, named('WillyLowSteering')));
+
+  /** `Willy.cockpit.glb`: two swaps of its own, and one for a seat not flown. */
+  const cockpitGlb = () => {
+    const wheel = named('WillyHighRSteering', {
+      rig: {
+        control: 'Willy',
+        axes: { roll: { input: 'c_PIYaw', min: -90, max: 90, free: false, driver: 'position', maxSpeed: 900, direction: 1 } },
+      },
+    }, skinned('1P_Willy_str'));
+    return named('cockpit', {},
+      named('lodWillyCockpit', {
+        control: 'Willy',
+        lodAlternative: { selected: 'WillyCockpitInternal', replaces: ['WillyCockpitExternal'] },
+      }, named('WillyCockpitInternal', {}, skinned('1P_Willy_Hul'))),
+      named('lodWillySteering', {
+        control: 'Willy',
+        lodAlternative: { selected: 'WillyHighRSteering', replaces: ['WillyLowSteering'] },
+      }, wheel),
+      named('lodWillyGunner', {
+        control: 'WillyGunner',
+        lodAlternative: { selected: 'WillyGunnerInternal', replaces: [] },
+      }, skinned('1P_Willy_Gun')));
+  };
+
+  let loads = 0;
+  let failNext = false;
+  const realLoadAsync = GLTFLoader.prototype.loadAsync;
+  GLTFLoader.prototype.loadAsync = async () => {
+    loads++;
+    await Promise.resolve();
+    if (failNext) { failNext = false; throw new Error('net::ERR_FAILED'); }
+    return { scene: cockpitGlb() };
+  };
+  const options = { modelsBase: 'http://cockpit.test/models/' };
+  const count = (node, name) => {
+    let n = 0;
+    node.traverse(obj => { if (obj.name === name) n++; });
+    return n;
+  };
+  const wheelAngle = node => round(
+    2 * Math.acos(Math.min(1, Math.abs(node.getObjectByName('WillyHighRSteering').quaternion.w))) * DEG);
+
+  // In, steer hard over, out with the wheel still turned, in again.
+  const node = jeep();
+  const first = new Vehicle(node, null, options);
+  const firstGrafted = !!await first.cockpitReady;
+  first.setInput('c_PIYaw', 1);
+  first.advanceSurfaces(1);
+  first.applyRig();
+  const leftAt = wheelAngle(node);
+  first.setFirstPerson(false);
+
+  const second = new Vehicle(node, null, options);
+  const secondGrafted = !!await second.cockpitReady;
+  const loadsForOneNode = loads;
+  const partsSecond = second.parts.length;
+  second.applyRig();                       // stick centred: the wheel's rest
+  const restAt = wheelAngle(node);
+  second.setFirstPerson(true);
+  const inside = {
+    interior: node.getObjectByName('WillyCockpitInternal').visible,
+    exterior: node.getObjectByName('WillyCockpitExternal').visible,
+  };
+  second.setFirstPerson(false);
+  const outside = {
+    interior: node.getObjectByName('WillyCockpitInternal').visible,
+    exterior: node.getObjectByName('WillyCockpitExternal').visible,
+  };
+
+  // A seat retaken while the first fetch is still in the air.
+  loads = 0;
+  const racedNode = jeep();
+  const racers = [new Vehicle(racedNode, null, options), new Vehicle(racedNode, null, options)];
+  const raced = (await Promise.all(racers.map(v => v.cockpitReady))).map(Boolean);
+  const racedLoads = loads;
+
+  // A fetch that failed is not remembered; the next `Vehicle` asks again.
+  loads = 0;
+  failNext = true;
+  const flakyNode = jeep();
+  const failed = await new Vehicle(flakyNode, null, options).cockpitReady;
+  const retried = !!await new Vehicle(flakyNode, null, options).cockpitReady;
+
+  GLTFLoader.prototype.loadAsync = realLoadAsync;
+  results.cockpitGraft = {
+    firstGrafted, secondGrafted, loadsForOneNode,
+    interiors: count(node, 'WillyCockpitInternal'),
+    wheels: count(node, 'WillyHighRSteering'),
+    partsSecond, leftAt, restAt, inside, outside,
+    raced, racedLoads, racedInteriors: count(racedNode, 'WillyCockpitInternal'),
+    failed, retried, flakyLoads: loads, flakyInteriors: count(flakyNode, 'WillyCockpitInternal'),
+    disposed: [...disposed].sort(),
+  };
 }
 
 // --- the camera still reads the same state ---------------------------------

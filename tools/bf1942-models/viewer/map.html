@@ -12199,6 +12199,11 @@ if (params.has('shots')) {
     enterVehicle({ vehicle: node, seatId: null });
     return !!(car || aircraft);
   };
+  // The occupied vehicle's interior, settled: true once it is grafted, false
+  // for a vehicle that has none. A check counting what an entry costs the GPU
+  // has to sample after this, or the glb lands in whichever cycle it likes.
+  window.__cockpitReady = () =>
+    ((aircraft || car)?.cockpitReady ?? Promise.resolve(null)).then(Boolean);
   window.__placeCar = (x, z, yaw, speed = 0) => {
     if (!car) return null;
     const s = car.state;

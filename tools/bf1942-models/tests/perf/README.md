@@ -29,6 +29,25 @@ Playwright comes from `ui/node_modules` (the main checkout's when run from a
 worktree; `PLAYWRIGHT_MODULES` overrides). Every phase prints one JSON line;
 `--out` keeps the whole record with per-frame counters.
 
+## GPU leak check
+
+`leakcheck.cjs` walks the real E key in and out of a vehicle and fails when
+`renderer.info.memory` climbs across warm cycles. Same server, same Playwright.
+
+```bash
+node leakcheck.cjs --base http://localhost:5573                  # Willys on Wake
+node leakcheck.cjs --base http://localhost:5573 --software       # SwiftShader, no GPU
+node leakcheck.cjs --base http://localhost:5573 --vehicle '^Corsair' --cycles 8
+```
+
+`--warm` cycles (2) are free, `--cycles` (5) are counted, every sample is taken on
+foot outside the vehicle, and each entry waits on `__cockpitReady()` so an
+interior lands in the cycle that asked for it. A leak is a slope: the check fails
+when a count ends at least one resource per counted cycle above the last warm
+sample, and then lists what the counted cycles uploaded and never released, by
+scene path. A pool that uploads one mesh late is a step and passes. Exit 0 flat,
+1 climbing, 2 the run could not be staged (no such vehicle, E refused).
+
 Renderer settings and the map repaint gate, for isolating what a frame's
 pixels cost (`--dpr` stays the window's device scale factor):
 

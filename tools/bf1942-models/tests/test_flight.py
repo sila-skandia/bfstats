@@ -591,6 +591,53 @@ class FlightModelTests(unittest.TestCase):
 
     # --- the seam the presentation layer reads -----------------------------
 
+    # --- one interior per node, however many Vehicles drive it -------------
+
+    def test_retaking_a_seat_neither_fetches_nor_grafts_a_second_interior(self) -> None:
+        # The enter/exit GPU leak: map.html builds a `Vehicle` per entry, and
+        # each one fetched the cockpit glb and grafted another copy beside the
+        # last, whose swap had died with its `Vehicle` — hidden for good, its
+        # 6 geometries and 4 textures live for good.
+        graft = self.results["cockpitGraft"]
+        self.assertTrue(graft["firstGrafted"])
+        self.assertTrue(graft["secondGrafted"])
+        self.assertEqual(1, graft["loadsForOneNode"])
+        self.assertEqual(1, graft["interiors"])
+        self.assertEqual(1, graft["wheels"])
+        # ...and the second `Vehicle` really owns the swap it inherited.
+        self.assertEqual({"interior": True, "exterior": False}, graft["inside"])
+        self.assertEqual({"interior": False, "exterior": True}, graft["outside"])
+
+    def test_an_inherited_interior_keeps_the_rest_pose_the_glb_gave_it(self) -> None:
+        # The price of keeping the interior: the last driver got out with the
+        # wheel hard over, and the next `Vehicle` indexes it where it stands.
+        # Rest has to come from the swap, or every entry compounds the last.
+        graft = self.results["cockpitGraft"]
+        self.assertEqual(1, graft["partsSecond"])
+        self.assertAlmostEqual(90.0, graft["leftAt"], places=1)
+        self.assertAlmostEqual(0.0, graft["restAt"], places=1)
+
+    def test_a_seat_retaken_mid_fetch_waits_on_the_fetch_already_in_the_air(self) -> None:
+        graft = self.results["cockpitGraft"]
+        self.assertEqual([True, True], graft["raced"])
+        self.assertEqual(1, graft["racedLoads"])
+        self.assertEqual(1, graft["racedInteriors"])
+
+    def test_a_failed_cockpit_fetch_is_not_remembered(self) -> None:
+        graft = self.results["cockpitGraft"]
+        self.assertIsNone(graft["failed"])
+        self.assertTrue(graft["retried"])
+        self.assertEqual(2, graft["flakyLoads"])
+        self.assertEqual(1, graft["flakyInteriors"])
+
+    def test_what_the_graft_leaves_behind_is_given_back(self) -> None:
+        # Only the flown seat's swaps are taken; the page's warm-up has already
+        # uploaded the rest of the file's textures. The grafted interior's own
+        # are never in this list, on any of the four loads above.
+        self.assertEqual(
+            ["1P_Willy_Gun.geometry", "1P_Willy_Gun.map"],
+            self.results["cockpitGraft"]["disposed"])
+
     def test_the_camera_still_reads_nothing_but_vehicle_state(self) -> None:
         camera = self.results["camera"]
         self.assertGreater(camera["cockpitY"], 0.0)
