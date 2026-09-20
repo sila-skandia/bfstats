@@ -166,6 +166,29 @@ class SoldierModuleTests(unittest.TestCase):
                             ("strafe", 4.0), ("crouchStrafe", 2.0)):
             self.assertAlmostEqual(table * clear, travel[gait], places=2, msg=gait)
 
+    def test_dropping_prone_at_a_run_slides_the_length_of_the_dive_clip(self) -> None:
+        # PHY-7. `Lb_RunStandToLie` is the state a soldier enters when he
+        # presses Z while not moving backward, and it declares
+        # `setSpeed 6.0 1.0 1.0` against a prone table of 1 m/s — a full
+        # standing run — for the length of `3PJump2LieLower.baf` (11 frames at
+        # 1.5x = 0.282 s). That is BF1942's prone slide: about 1.7 m.
+        dive = self.results["proneDive"]
+        self.assertEqual(6, dive["factor"])
+        self.assertAlmostEqual(11 / (26 * 1.5), dive["duration"], places=6)
+        self.assertAlmostEqual(1.70, dive["slide"], places=2)
+        # The same span of frames once `addTransitionWhenDone Lb_Lie` has
+        # handed over: the 1 m/s crawl, six times shorter.
+        self.assertAlmostEqual(6.0, dive["slide"] / dive["crawl"], places=2)
+
+    def test_the_other_two_routes_to_the_floor_do_not_slide(self) -> None:
+        # The branch is in `handlePlayerInput`: the forward input times the
+        # current state's own forward speed, tested for sign. Backing up gives
+        # `Lb_StandToLie` and a crouch gives `Lb_CrouchToLie`, and both declare
+        # `setSpeed 1.0 1.0 1.0` — so both cover a plain crawl and nothing more.
+        dive = self.results["proneDive"]
+        self.assertAlmostEqual(dive["crawl"], dive["backwardSlide"], places=6)
+        self.assertAlmostEqual(dive["crawl"], dive["fromCrouchSlide"], places=6)
+
     def test_a_second_at_cruise_is_the_table_speed_exactly(self) -> None:
         # The same second once the ramp has saturated: no deficit, just drag.
         self.assertAlmostEqual(6.0, self.results["travelCruising"], places=2)

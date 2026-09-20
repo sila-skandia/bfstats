@@ -484,6 +484,62 @@ export function rampedStrafeSpeed(pose, state, walk = false) {
   return STRAFE_SPEED[pose] * (state * RAMP_SCALE) * (walk ? WALK_SPEED_FACTOR : 1);
 }
 
+// --- the animation state's own speed, and the prone dive (PHY-7) -------------
+
+/**
+ * A locomotion state can multiply the speed table, and exactly one of them does.
+ *
+ * `BFSoldier::handlePlayerInput` (lnxded `0x08273c70`) does not reach
+ * `directionalSpeed` unscaled. Before the tables it runs both state machines'
+ * `AnimationStateMachineInstance::checkTransitions(input, float&, float&,
+ * float&)` and keeps the **lower body's** three floats (`0x08275a??`, the
+ * `iVar20 == 0` arm of the two-machine loop); the first of them survives as a
+ * multiplier into
+ *
+ *     vCmd = soldier[0x4b] * directionalSpeed[pose*2 + (ramp <= 0)] * stateSpeed
+ *
+ * and the three floats are the state's own `AnimationStateMachine.setSpeed
+ * <fwd> <?> <strafe>`. Every walk, run, stand, crouch and lie state in
+ * `animations/AnimationStates*.con` declares `setSpeed 1.0 1.0 1.0`, so the
+ * multiplier is inert — with **one exception**:
+ *
+ *     AnimationStateMachine.createState Lb_RunStandToLie
+ *     AnimationStateMachine.addAnimation Animations/Lie/LowerBody/3PJump2LieLower.baf 1.5 c_AsmPlayOnce
+ *     AnimationStateMachine.addTransitionWhenDone Lb_Lie
+ *     AnimationStateMachine.setSpeed 6.0 1.0 1.0
+ *     AnimationStateMachine.setFlag c_AsmIsLying
+ *
+ * That state is the dive to the ground, and it is where BF1942's prone slide
+ * comes from. `getPose()` (`0x0827ddc0`) reads the animation machine's own
+ * current flags, so `c_AsmIsLying` means the pose is already PRONE for the
+ * whole of it and the table hands out 1 m/s — times `setSpeed`'s 6.0, which is
+ * exactly the standing run. You keep running speed for the length of the clip,
+ * then drop to a 1 m/s crawl when `Lb_Lie` takes over.
+ *
+ * Which of the two lie transitions you get is decided in the same function: it
+ * multiplies the forward input by the *current* state's own forward speed and
+ * branches on the sign (`0x08275xxx`, the `fStack_268 < 0.0` test). Moving
+ * backward gives `Lb_StandToLie` — `setSpeed 1.0 1.0 1.0`, no slide. Anything
+ * else, standing still included, gives the dive; standing still just has no
+ * ramp for the 6.0 to multiply. From a crouch it is `Lb_CrouchToLie`, also 1.0.
+ */
+export const DIVE_SPEED_FACTOR = 6;
+
+/**
+ * How long the dive lasts: `3PJump2LieLower.baf` is **11 frames** and
+ * `Lb_RunStandToLie` plays it at **1.5x**, so `frames / (fps * rate)` at the
+ * same nominal 26 fps `soldier.js`'s `STANCE_TRANSITION` is derived against —
+ * **0.282 s**, about 1.7 m at a 6 m/s run.
+ *
+ * The soft term is the same one that table carries: no `.baf` header states a
+ * nominal frame rate, and 26 fps is what the walk cycle implies against its own
+ * declared step period. `3pAnimationsTweaking.con` separately says
+ * `set3pAnimationSpeed Lb_RunStandToLie 1.40`, which would make it 0.302 s;
+ * this uses the `addAnimation` rate, for consistency with `STANCE_TRANSITION`,
+ * and the two answers are 20 ms apart.
+ */
+export const DIVE_DURATION = 11 / (26 * 1.5);
+
 /**
  * `CommonSoldierData.inc`: `mass 100`, `drag 1.0`. Both shipped, both read.
  */
@@ -781,6 +837,11 @@ export class SoldierBody {
     // `ENGINE_TICK_RATE` for why the discretisation and not the timing gives.
     this.forwardRamp = 0;
     this.strafeRamp = 0;
+    // The current lower-body animation state's own `setSpeed` forward term and
+    // what is left of it (PHY-7, `setStateSpeed`). 1 for every state vanilla
+    // ships bar the prone dive, so this is normally a multiply by one.
+    this.stateSpeed = 1;
+    this.stateSpeedLeft = 0;
     // The most-upward contact normal of the previous tick, and whether that
     // contact armed a jump. `handleCollision` keeps the most upward normal of
     // the frame at soldier `+0x400` (lnxded `0x0827d4d5`-`0x0827d503`) and the
@@ -883,6 +944,24 @@ export class SoldierBody {
       : (this.poseFlags & ~POSE_FLAG_PRONE), duration);
   }
 
+  /**
+   * Enter a locomotion state whose own `setSpeed` scales the speed table
+   * (PHY-7), for `seconds` — the length of the clip that state plays once.
+   *
+   * `seconds <= 0` puts it back to 1 immediately, which is what the timer
+   * running out does. The only caller in vanilla's data is the prone dive.
+   */
+  setStateSpeed(factor, seconds) {
+    const wanted = Number.isFinite(factor) ? factor : 1;
+    if (!(seconds > 0) || wanted === 1) {
+      this.stateSpeed = 1;
+      this.stateSpeedLeft = 0;
+      return;
+    }
+    this.stateSpeed = wanted;
+    this.stateSpeedLeft = seconds;
+  }
+
   /** The parachute is a drag swap and nothing else: 1.0 becomes 24. */
   setParachute(on) {
     this.parachute = Boolean(on);
@@ -933,8 +1012,18 @@ export class SoldierBody {
     // --- the ramp, then the tables it indexes (PHY-6) ----------------------
     this.forwardRamp = applyMovementFactors(forward, this.forwardRamp, dt);
     this.strafeRamp = applyMovementFactors(strafe, this.strafeRamp, dt);
-    const fwdSpeed = rampedDirectionalSpeed(this.pose, this.forwardRamp, walk);
+    // PHY-7: the lower body's current animation state multiplies the forward
+    // table. Applied before the diagonal clamp below, or the dive's 6.0 would
+    // be clamped straight back down to the prone table it is scaling.
+    const fwdSpeed = rampedDirectionalSpeed(this.pose, this.forwardRamp, walk)
+      * this.stateSpeed;
     const sideSpeed = rampedStrafeSpeed(this.pose, this.strafeRamp, walk);
+    if (this.stateSpeedLeft > 0) {
+      this.stateSpeedLeft -= dt;
+      // `addTransitionWhenDone`: the clip ends and the plain lie/stand state,
+      // with its own `setSpeed 1.0`, takes over.
+      if (this.stateSpeedLeft <= 0) this.setStateSpeed(1, 0);
+    }
     // Facing is +Z at yaw 0, matching the viewer's own look vector. Both speeds
     // are already signed by their ramp register, so the input axes do not
     // reappear here.
