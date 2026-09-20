@@ -102,6 +102,34 @@ which is what the wedge always was. Checked in the page: `__camera.near` reads
 0.1 in a seat, and the seven `1P_Sherman_Gunner_M1` primitives measure 0.089 to
 0.400 in view space against it.
 
+### 2b. …and then it was black (found on the owner's re-test)
+
+The frame drew and still read as "just looking direct at the world", because
+it was rendering at **rgb(1,1,0)**.
+
+This page draws the whole level with `MeshBasicMaterial`: BF1942 bakes its
+light into the textures and the per-object lightmaps, so a shaded material
+would be a second opinion about a surface that already carries one. The
+cockpit glb is the one thing in the scene that does not come from the level —
+it is the MODEL BROWSER's export (`extract_models.py --cockpit`), and that page
+lights what it shows, so the interior arrived as `MeshStandardMaterial` and was
+the only surface a level's hemisphere and sun actually touched.
+
+Inside a tank that is fatal. The camera-facing vertices of
+`1P_Sherman_Gunner_M1` have a mean `N·L` of **0.01** against the sun and a mean
+`N.y` of **−0.04**, so the sun gives them nothing and the hemisphere gives them
+its horizon. `1p_TankA_Gunner*_I.dds` have a mean of rgb(56,54,48) and a
+maximum of rgb(106,101,98); on screen they measured rgb(1,1,0) to rgb(3,3,2).
+
+`map.html`'s `unlitCockpit` converts a grafted interior to the same unlit
+material the rest of the level uses, preserving the `userData.additive` mark a
+gunsight glow needs. The same pixels now measure **rgb(21,22,16) to
+rgb(26,29,24)**, and the frame, its bevels, its corner screws and its top latch
+read the way they do in a retail capture. The aperture was never the problem:
+it spans 0.215–0.57 of the width and 0.289–0.778 of the height against the
+retail Sherman's 0.20–0.83 and 0.258–0.782 (our right edge is the gun barrel,
+not the frame).
+
 ---
 
 ## 3. No crosshair on a tank, and a bare dot on the anti-tank
