@@ -314,6 +314,23 @@ that level. EoD is 285 x 239 = 68,115 full exports; the job had kept 129 of
 index alone, through the same filter `add_level` registers with. Vanilla output
 identical (263 glbs, 263 manifest variants, 90 level variants) in 72 s.
 
+**The final re-extract is done and verified** (2026-09-20, 12:05-13:22, 77 min
+for everything; `scratchpad/reextract-v3.log`, every stage exit 0, no traceback).
+EoD's model catalogue took FIVE MINUTES (was 3+ hours and unfinished); EoD's 239
+levels are the remaining 58. Checked: catalogues 96 / 15 / 29 / 285, every model
+with a thumb on disk; level variants 90 / 9 / 15 / 147; levels 23 / 6 / 9 / 239,
+every one carrying `modes` (73 / 30 / 45 / 812 layers); Wake's 36 Engine nodes
+carry `maxRotation`, `maxSpeed` and `acceleration`; Anzio has the composed `CoOp`
+layer. On the page: vanilla Wake is 32 vehicles and 7 Willys in Conquest, and
+`?mode=CoOp` gives the SinglePlayer layer's 23 vehicles, no Willys, 2 Chi-Ha,
+tickets 140 v 100. Also extracted: the effects and effect-sound packs for EoD,
+XPack1 and XPack2 (their pages were 404ing `effects.glb`).
+
+**The delta publish is running** (`scratchpad/publish/publish-v2.log`): models
+5,044 files / 1.2 GB, then maps 1,301 files / 15.0 GB, gzip -1 on the wire
+(a `scene.glb` shrinks 15-27%), a group at a time, sizes checked, manifests
+last, nothing deleted. The uplink is the limit at roughly 1.2 MB/s.
+
 **Re-extract and publish, restarted.** The old EoD model job and the first
 publish (stopped between groups at 113 of 281, 5.83 GB) were both uploading or
 producing output the drivetrain and game-modes extractors supersede. Running
