@@ -3217,6 +3217,70 @@ function srgb(rgb, fallback) {
 // The engine draws the SkyBox mesh camera-centred with no fog and no lighting
 // (`lighting false` in every Sky_*.rs). Reparent it out of the level root so
 // distance culling never touches it, and swap its lit materials for unlit ones.
+/**
+ * A grafted cockpit interior, in the same light the rest of the level is in:
+ * none.
+ *
+ * This page draws the whole level with `MeshBasicMaterial`. BF1942 bakes its
+ * light into the textures and the per-object lightmaps, so a shaded material
+ * here would be a second opinion about a surface that already carries one.
+ * The cockpit glb is the exception because it does not come from the level —
+ * it is the MODEL BROWSER's export (`extract_models.py --cockpit`), and that
+ * page lights what it shows, so the interior arrives as
+ * `MeshStandardMaterial` and is the one surface in a level the level's own
+ * hemisphere and sun actually touch.
+ *
+ * Inside a tank that is fatal. `1P_Sherman_Gunner_M1`'s camera-facing
+ * vertices have a mean N.L of 0.01 against the sun and a mean N.y of -0.04,
+ * so the sun gives them nothing and the hemisphere gives them its horizon: a
+ * texture whose own mean is rgb(56,54,48) came out at **rgb(1,1,0)**. The
+ * viewport frame the driver looks through was there all along and it was
+ * black, which is why the report read "in ours it's just looking direct at
+ * the world". Unlit, the same pixels measure rgb(21,22,16) to rgb(26,29,24)
+ * and the frame, its bevels, its corner screws and its top latch all read
+ * the way they do in a retail capture.
+ *
+ * `userData.additive` is carried across the same way `loadHandWeapon` does
+ * it: a gunsight's own glow is an additive surface and has to stay one.
+ * Materials are converted once each, not once per mesh, because a cockpit's
+ * seven texture pages are shared between its parts.
+ */
+function unlitCockpit(root) {
+  const seen = new Map();
+  const convert = m => {
+    if (!m || m.isMeshBasicMaterial) return m;
+    let basic = seen.get(m);
+    if (basic) return basic;
+    basic = new THREE.MeshBasicMaterial({
+      map: m.map || null,
+      color: m.color ? m.color.clone() : 0xffffff,
+      transparent: m.transparent,
+      opacity: m.opacity,
+      alphaTest: m.alphaTest,
+      side: m.side,
+      depthWrite: m.depthWrite,
+      toneMapped: m.toneMapped,
+    });
+    basic.name = m.name;
+    basic.userData = m.userData;
+    if (m.userData?.additive) {
+      basic.blending = THREE.AdditiveBlending;
+      basic.transparent = true;
+      basic.depthWrite = false;
+    }
+    seen.set(m, basic);
+    return basic;
+  };
+  root.traverse(obj => {
+    if (!obj.isMesh) return;
+    obj.material = Array.isArray(obj.material)
+      ? obj.material.map(convert) : convert(obj.material);
+  });
+  // The shaded originals were never drawn; free them rather than leave seven
+  // standard-material programs' worth of texture references alive.
+  for (const original of seen.keys()) original.dispose();
+}
+
 function setupSky(root, dir) {
   root.traverse(obj => {
     if (obj.userData?.kind === 'sky') skyRoot = obj;
@@ -4026,10 +4090,12 @@ function engineControl(dt) {
 
 // Sitting in a vehicle, its engine is essentially all you can hear — the map's
 // wind and surf do not compete with a radial a metre in front of your knees.
-// Ducking the ambience is how to get there: the engine bus is already pinned at
-// BUS_HEADROOM because its layers sum well past unity, so raising it would clip
-// rather than get louder. Eased rather than switched, or entering and leaving
-// the cockpit pops.
+// Ducking the ambience is how to get there. It used to be the ONLY way to get
+// there, because the engine bus was pinned at a divisor fitted to a Corsair;
+// it no longer is (`engine-audio.js`'s `BUS_HEADROOM`, and the limiter in
+// `ensureListener`), and the duck is now what it says it is rather than a way
+// round a mix that could not be turned up. Eased rather than switched, or
+// entering and leaving the cockpit pops.
 const AMBIENT_DUCK = 0.12;
 const AMBIENT_DUCK_TAU = 0.4;
 let ambientDuck = 1;
@@ -5920,9 +5986,12 @@ function setPilot(on, node = null, seatId = null) {
       // `seats.js`'s own doc on `classes`.
       //
       // The cockpit interior is a glb of its own, fetched now and swapped in
-      // for the fuselage when it lands (flight.js); warmed before the swap
-      // shows it, so the first cockpit frame links nothing (rule 6).
-      const cockpit = { prepareCockpit: root => warmSubtree(root) };
+      // for the fuselage when it lands (flight.js); relit and then warmed
+      // before the swap shows it, so the first cockpit frame links nothing
+      // (rule 6) and is not black (`unlitCockpit`).
+      const cockpit = {
+        prepareCockpit: root => { unlitCockpit(root); return warmSubtree(root); },
+      };
       const vehicle = occupancy.ensureDrive(currentRoot,
         { groundHeight, surfaceFriction, collider: bodyAwareCollider(), ...cockpit });
       if (kind === 'air') {
