@@ -1197,7 +1197,15 @@ export class GroundVehicle extends Vehicle {
       const fTyre = this._fTyre.set(0, 0, 0)
         .addScaledVector(dir, aLong).addScaledVector(lat, aLat);
       tanForce.add(fTyre);
-      this._arm.set(wheel.rest.x, wheel.rest.y - k.wheelRadius, wheel.rest.z);
+      // The contact is where the wheel actually is, not where it rests: the
+      // spring is compressed, so the patch sits `compression` higher than
+      // `rest.y - radius`. `#applyWheels` already moves the visible wheel by
+      // exactly this and the force application point was not following it.
+      // The engine has no such gap — it applies at
+      // `part.pos + avgContactRelPos` and `part.pos` is the wheel body's
+      // live position.
+      this._arm.set(wheel.rest.x,
+        wheel.rest.y - k.wheelRadius + travel, wheel.rest.z);
       tanTorque.add(this._arm.cross(fTyre));
 
       // The visual roll, from the road passing under the contact patch.
@@ -2754,7 +2762,8 @@ export class TrackedVehicle extends Vehicle {
       const fTyre = this._fTyre.set(0, 0, 0)
         .addScaledVector(dir, aLong).addScaledVector(lat, aLat);
       tanForce.add(fTyre);
-      this._arm.set(wheel.rest.x, wheel.rest.y - wheel.radius, wheel.rest.z);
+      this._arm.set(wheel.rest.x,
+        wheel.rest.y - wheel.radius + travel, wheel.rest.z);
       tanTorque.add(this._arm.cross(fTyre));
 
       // Visual roll: a driven wheel spins at its own side's commanded rate
