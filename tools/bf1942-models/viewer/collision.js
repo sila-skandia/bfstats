@@ -782,6 +782,137 @@ function packIndex(tris, materials, ownerIds, ownerNodes, count, cellSize, box) 
   return index;
 }
 
+/**
+ * A placed object whose name marks it as a surface a ground vehicle drives
+ * on top of, rather than a wall it rams: bridges, raised reload/repair bays,
+ * ramps, overpasses and hardsurface decks. The viewer's heightfield does not
+ * carry these raised decks -- `terrain/` is the ground under them -- so without
+ * this a tank crosses the river only as far as the bridge's static collision
+ * mesh, which the hull sweep treats as a wall and stops it on.
+ *
+ * The engine's own `checkVsTerrain` drops a vehicle's vertices onto a
+ * heightfield that *does* include drivable bridges; sampling the deck tops out
+ * of the static collision index is the viewer's equivalent (this raster feeds
+ * `WorldCollider.surfaceHeight`). Match on the object's own name so a mod's
+ * similarly-named bridge/bay templates work unchanged.
+ */
+const DRIVABLE_TOP_RE = /bridge|repairpoint|reloadbay|repairbay|bay|ramp|overpass|dock|flightdeck|freightdeck|hardsurface|deck/i;
+
+/**
+ * Build a coarse raster of the top (max Y) of every drivable deck under
+ * `root`, on the same cell grid as the collision index, or null when a level
+ * ships no drivable static at all. `-Infinity` marks a cell with no drivable
+ * surface, so `surfaceHeight` hands those back to the heightfield unaltered.
+ *
+ * Walks the same collision meshes `buildCollisionIndex` does (same predicate),
+ * reading the same world matrices, so the two never disagree about where the
+ * geometry is. Per cell the winner is the LARGEST horizontal face -- a wide
+ * deck, not a thin parapet wall -- and the cell stores that face's height, so
+ * a tank rides the road surface, never a rail cap. Built once per level, read
+ * as a flat Float32Array per query: a per-frame cost of one lookup under the
+ * heightfield's own bilinear sample (features/mesh-viewer-performance rule 5).
+ *
+ * `cellSize` must match the value used to build the collision index.
+ */
+export function buildDrivableTops(root, { cellSize = CELL_SIZE } = {}) {
+  const meshes = [];
+  root.traverse(obj => {
+    if (!obj.isMesh || !obj.geometry) return;
+    if (!isCollisionMesh(obj)) return;
+    const name = obj.parent?.name ?? obj.name ?? '';
+    const stem = String(obj.parent?.displayName ?? obj.displayName ?? obj.name ?? '');
+    if (DRIVABLE_TOP_RE.test(`${name} ${stem}`)) meshes.push(obj);
+  });
+  if (!meshes.length) return null;
+
+  let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+  for (const mesh of meshes) {
+    const geometry = mesh.geometry;
+    const position = geometry.attributes.position;
+    const index = geometry.index ? geometry.index.array : null;
+    const array = position.array;
+    const m = mesh.matrixWorld.elements;
+    const faces = Math.floor((geometry.index ? geometry.index.count : position.count) / 3);
+    for (let f = 0; f < faces; f++) {
+      for (let c = 0; c < 3; c++) {
+        const vi = index ? index[f * 3 + c] : f * 3 + c;
+        const lx = array[vi * 3], ly = array[vi * 3 + 1], lz = array[vi * 3 + 2];
+        const x = m[0] * lx + m[4] * ly + m[8] * lz + m[12];
+        const z = m[2] * lx + m[6] * ly + m[10] * lz + m[14];
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (z < minZ) minZ = z;
+        if (z > maxZ) maxZ = z;
+      }
+    }
+  }
+  if (!Number.isFinite(minX)) return null;
+
+  const minX0 = Math.floor(minX / cellSize) * cellSize;
+  const minZ0 = Math.floor(minZ / cellSize) * cellSize;
+  const cols = Math.max(1, Math.ceil((maxX - minX0) / cellSize) + 1);
+  const rows = Math.max(1, Math.ceil((maxZ - minZ0) / cellSize) + 1);
+  const W = cols, cells = cols * rows;
+  // A cell's drivable top is chosen by the LARGEST horizontal face that
+  // touches it, not the tallest point. A bridge is a wide flat road (the
+  // deck, the surface a vehicle rides) flanked by tall, thin parapet walls;
+  // taking the max Y of everything in the 32 m cell would stand the tank on
+  // the parapet cap. The deck's horizontal footprint dwarfs the parapet's
+  // strips, so the face with the most XZ area in a cell is the riding surface.
+  const top = new Float32Array(cells).fill(-Infinity);   // deck height
+  const topA = new Float32Array(cells);                   // winning face's footprint
+
+  for (const mesh of meshes) {
+    const geometry = mesh.geometry;
+    const position = geometry.attributes.position;
+    const index = geometry.index ? geometry.index.array : null;
+    const array = position.array;
+    const m = mesh.matrixWorld.elements;
+    const faces = Math.floor((geometry.index ? geometry.index.count : position.count) / 3);
+    for (let f = 0; f < faces; f++) {
+      // Three world vertices; the horizontal footprint and a representative
+      // height. Storing a triangle as a tiny local array allocates, but this
+      // whole pass runs once per level, off the frame path.
+      const wx = [0, 0, 0], wy = [0, 0, 0], wz = [0, 0, 0];
+      for (let c = 0; c < 3; c++) {
+        const vi = index ? index[f * 3 + c] : f * 3 + c;
+        const lx = array[vi * 3], ly = array[vi * 3 + 1], lz = array[vi * 3 + 2];
+        wx[c] = m[0] * lx + m[4] * ly + m[8] * lz + m[12];
+        wy[c] = m[1] * lx + m[5] * ly + m[9] * lz + m[13];
+        wz[c] = m[2] * lx + m[6] * ly + m[10] * lz + m[14];
+      }
+      const x0 = Math.min(wx[0], wx[1], wx[2]);
+      const x1 = Math.max(wx[0], wx[1], wx[2]);
+      const z0 = Math.min(wz[0], wz[1], wz[2]);
+      const z1 = Math.max(wz[0], wz[1], wz[2]);
+      // Mean height -- the surface's own level, not a parapet cap.
+      const yMean = (wy[0] + wy[1] + wy[2]) / 3;
+      // Horizontal footprint (XZ projection area). A level deck face keeps its
+      // full area; a vertical parapet face projects to ~nothing.
+      const e1x = wx[1] - wx[0], e1z = wz[1] - wz[0];
+      const e2x = wx[2] - wx[0], e2z = wz[2] - wz[0];
+      const area = Math.abs(e1x * e2z - e1z * e2x) * 0.5;
+      if (!(area > 0)) continue;   // a vertical face has no drivable top
+      const ix0 = Math.max(0, Math.floor((x0 - minX0) / cellSize));
+      const ix1 = Math.min(W - 1, Math.floor((x1 - minX0) / cellSize));
+      const iz0 = Math.max(0, Math.floor((z0 - minZ0) / cellSize));
+      const iz1 = Math.min(rows - 1, Math.floor((z1 - minZ0) / cellSize));
+      for (let iz = iz0; iz <= iz1; iz++) {
+        const row = iz * W;
+        for (let ix = ix0; ix <= ix1; ix++) {
+          const cell = row + ix;
+          if (area > topA[cell]) { topA[cell] = area; top[cell] = yMean; }
+        }
+      }
+    }
+  }
+  // The dominant-face pass leaves cells between the deck and the terrain
+  // (overhanging approaches) with no winner yet the deck rising above its own
+  // supports; those fall to the heightfield, which is fine (vehicles cross on
+  // the deck). Cells where a face won read the deck height.
+  return { minX: minX0, minZ: minZ0, cellSize, cols, rows, top, present: cells };
+}
+
 // --- the world -------------------------------------------------------------
 
 const _normal = [0, 0, 0];
@@ -809,10 +940,12 @@ function reachesSphere(ox, oy, oz, dx, dy, dz, maxDist, m, radius) {
  * the ground it was going to hit anyway.
  */
 export class WorldCollider {
-  constructor({ heightfield = null, waterLevel = null, statics = null } = {}) {
+  constructor({ heightfield = null, waterLevel = null, statics = null,
+               drivableTops = null } = {}) {
     this.heightfield = heightfield;
     this.waterLevel = Number.isFinite(waterLevel) ? waterLevel : null;
     this.statics = statics;
+    this.drivableTops = drivableTops;
     this.dynamicCast = null;
     /**
      * Owners whose hull has left the pose it was baked at — a parked plane a
@@ -934,11 +1067,31 @@ export class WorldCollider {
     if (enable) this.statics?.enableOwner?.(owner);
   }
 
-  /** The height a thing standing at (x, z) rests on: ground, or the sea. */
+  /** The height a thing standing at (x, z) rests on: ground, or the sea, or a
+   *  drivable deck a vehicle may ride (a bridge span, a reload bay's apron). */
   surfaceHeight(x, z) {
-    const ground = this.heightfield ? this.heightfield.height(x, z) : NaN;
-    if (this.waterLevel === null) return ground;
-    return Number.isNaN(ground) ? this.waterLevel : Math.max(ground, this.waterLevel);
+    let ground = this.heightfield ? this.heightfield.height(x, z) : NaN;
+    if (this.waterLevel !== null) {
+      ground = Number.isNaN(ground) ? this.waterLevel : Math.max(ground, this.waterLevel);
+    }
+    const tops = this.drivableTops;
+    if (tops) {
+      const dx = x - tops.minX;
+      const dz = z - tops.minZ;
+      if (dx >= 0 && dz >= 0) {
+        const ix = Math.floor(dx / tops.cellSize);
+        const iz = Math.floor(dz / tops.cellSize);
+        if (ix < tops.cols && iz < tops.rows) {
+          const t = tops.top[iz * tops.cols + ix];
+          // The deck sits above whatever is under it (water, a ravine). Only a
+          // deck HIGHER than the heightfield lifts the vehicle onto it; walls
+          // and buildings are never in the drivable raster, so none of this
+          // ever stands a tank on a roof.
+          if (Number.isFinite(t) && t > ground) ground = t;
+        }
+      }
+    }
+    return ground;
   }
 
   /**

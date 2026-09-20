@@ -219,6 +219,21 @@ class CollisionModuleTests(unittest.TestCase):
         self.assertAlmostEqual(4.0, surface["overLand"], places=5)
         self.assertAlmostEqual(2.0, surface["overSea"], places=5)   # the sea
 
+    def test_drivable_decks_raise_the_surface_a_vehicle_rides(self) -> None:
+        drivable = self.results["drivable"]
+        self.assertTrue(drivable["built"])
+        # The bridge deck (a level ~6 road) lifts surfaceHeight far above the
+        # ~2 water/terrain under it, so the tank rides the deck across.
+        self.assertAlmostEqual(6.0, drivable["deckTop"], places=1)
+        # Off the deck (x = 40, outside the 16 m heightfield) the sea rules (2), and the
+        # drivable raster adds nothing where it has no deck.
+        self.assertLess(drivable["offDeck"], 6.0)
+        # The thin parapet cap (11) must not win over the deck's dominant
+        # horizontal face in the cells they share.
+        self.assertLess(drivable["notParapet"], 8.0)
+        # A building roof is never a drivable top.
+        self.assertIsNotNone(self.results["nonDrivableRoof"])
+
     def test_the_impact_effect_comes_out_of_the_authored_table(self) -> None:
         effects = self.results["effects"]
         self.assertEqual("e_waterimpact", effects["water"])
