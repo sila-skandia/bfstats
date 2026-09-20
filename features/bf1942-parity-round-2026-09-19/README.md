@@ -326,6 +326,24 @@ layer. On the page: vanilla Wake is 32 vehicles and 7 Willys in Conquest, and
 tickets 140 v 100. Also extracted: the effects and effect-sound packs for EoD,
 XPack1 and XPack2 (their pages were 404ing `effects.glb`).
 
+**PUBLISHED AND VERIFIED (2026-09-20 14:30).** Models 0.79 GB in 3 minutes, maps
+14.98 GB in 51 minutes, over eight parallel `kubectl exec` streams, 355 units, no
+failures. A full re-listing of the volume against the local trees: models 8,321
+of 8,321, maps 35,401 of 35,401 present at the right size, nothing to send, 70
+legacy files on the volume left alone. Live on mesh.bfstats.io: Wake carries its
+four mode layers and 36 Engine nodes with `maxRotation`; Anzio has its composed
+`CoOp` layer; Caen's allies are Canadian; EoD's catalogue is 285 with 285 thumbs;
+the three mods' effects packs and kit photographs answer 200; EoD's A Shau loads
+with its own kit photographs and no failed request.
+- The publisher is now in the repo: `scripts/publish-mesh-delta.py` (size delta,
+  parallel units, sizes verified, manifests last, resumable, never deletes;
+  `--dry-run` says what would go).
+- Two traps it records: ONE exec stream to Hetzner is about 1 MB/s whatever the
+  uplink, so use streams, not bandwidth; and a big listing streamed out of
+  `kubectl exec` can arrive TRUNCATED with no error (30,707 of 35,471 lines),
+  which reads as thousands of missing files - list to a file on the pod and
+  check the count.
+
 **The delta publish is running** (`scratchpad/publish/publish-v2.log`): models
 5,044 files / 1.2 GB, then maps 1,301 files / 15.0 GB, gzip -1 on the wire
 (a `scene.glb` shrinks 15-27%), a group at a time, sizes checked, manifests
