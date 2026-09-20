@@ -1282,3 +1282,94 @@ is on.
   `EngineState.running`; `map.html` never steps an unoccupied hull, so it
   cannot be exercised from the page. The occupied case is **unverified
   against retail**.
+
+## 2026-09-20 (wave 3, second review): the probe's two remaining lies
+
+### A spring cannot push against a face it is edge-on to
+
+A jeep straddling a 25 m drop reached **251.8 km/h** and ended inverted, out
+of a fall worth 80. Same mechanism as the washboard launch, through a
+different door: the probe runs down the hull's own +Y (PHY-5, read), so on a
+near-vertical face it reads metres of compression, and the bump stop pushed
+about 101 m/s^2 along the hull's up while the tyres — `N.y` near 0.12 — had
+1.8 m/s^2 to answer with.
+
+The ground answers along its own normal, so the reaction available along the
+spring axis is at most `N . axis` of it. That is the same quantity the
+friction budget already spends as `N . world-up`, which **is** read
+(`0x0825b80c fld [eax+0x4]`, `eax = this+0x68`). The engine needs no
+equivalent, because its wheel is a body whose displacement comes from its own
+contact rather than from a probe down an axis — so the precedent is read and
+the transfer is this file's, marked `[free, numerics]`. The damper is bounded
+the same way and for the reason its first-contact seed already was: a backward
+difference of a probe reported 96 m/s of closing speed where the axle was
+doing 8.
+
+| jeep straddling the shoulder | main | before | now |
+|---|---|---|---|
+| sharp cliff, peak | 131.5 km/h | 256.0 | **98.6** |
+| rounded shoulder, peak | 107.1 | 251.8 | 113.3 |
+| M3A1 rounded, peak / apex | — | 208 / 106.6 m | **67.3 / 1.4 m** |
+
+### The tyre force is applied where the wheel is
+
+The spring is compressed, so the contact patch sits `travel` higher than
+`rest.y - radius`. `#applyWheels` had been moving the visible wheel by exactly
+that while the force application point stayed at the axle's rest. The engine
+has no such gap: it applies at `part.pos + avgContactRelPos`, and `part.pos`
+is the wheel body's live position.
+
+### The M3A1 lean: what was read, and why it is still open
+
+`getGeometryInertia` `0x08253930` derives a body's inertia from its geometry's
+**bounding box** — slot `+0x1c` returns min at `+0x0` and max at `+0xc`,
+`0x0825398b`-`0x082539c9` forms `K * (d_j^2 + d_k^2)` per axis with `K` at
+`ds:0x86d1390` — and `updateRotationalPhysics` calls it at `0x08253e96` and
+divides the angular impulse by it at `0x0825408a`. That is the same box law
+this viewer already uses; it sets how fast a hull rolls, not whether it tips.
+`inertiaModifier` is parsed and emitted by `con.py` already, and **no vanilla
+land vehicle authors it** (zero hits over `bf1942/Objects.rfa`, alongside zero
+`setCenterOfMassOffset`), so neither can help the M3A1.
+
+Applying the force at the real contact took the lean from 42.0 to 37.8 degrees
+and gave back the full-lock turn-in that had been lost (-22.6 degrees in 8 s
+to -213.7). **It is not enough, and the arithmetic says why.** The M3A1's
+patches sit 1.38 m below the hull origin with the springs loaded, against a
+half-track of 0.97 m; the isotropic Coulomb coefficient is
+`1.5 * 9.82 / 14.73` = **1.0** exactly; `0.97 / 1.38 = 0.70 < 1.0`, so it
+tips. The Willys (`0.60 / 0.50`) and the Sherman do not. Nothing in the engine
+bounds the per-contact tangential demand except `A * N.y`: the six floats
+`ResponsePhysicsManager::update` `0x0825d0b0` pushes into `addFriction` at
+`0x0825d11d`-`0x0825d130` are dead, `addFriction` runs once per part per tick,
+and there is no load weighting anywhere.
+
+So either the engine's own M3A1 leans like this and retail footage would show
+it, or there is a mechanism two readers have now failed to find. It is
+reported rather than tuned away, and the bound the review set — 8 degrees and
+`up.y >= 0.98` — is **not met**: the sweep reads 31.8 to 37.8 degrees,
+`up.y` 0.79 to 0.85.
+
+### An occupied jeep on a slope at zero throttle: deliberate
+
+5 degrees walks it **7.65 m in 10 seconds**, ending at 0.79 m/s; 12 degrees
+19.9 m; 25 degrees 39.2 m. `main` gives 0.00 / 0.45 / 1.00. This is a
+deliberate consequence of the read law, not an accident:
+
+- the brake byte needs `|pedal| > 0.1` and is **not set** at zero input
+  (`0x0823e260` against `ds:0x86cf658` and `ds:0x86ba1d8`, both arms);
+- break-away is not the binding constraint — at 5 degrees the pull is
+  1.28 m/s^2 against a 22.0 m/s^2 static cap, and the contact is latched and
+  applying its demand in full;
+- the demand simply *is* "roll", because a jeep's only longitudinal demand
+  comes from its two `c_PGFEngineGrip` wheels, whose target is `ratio * revs`,
+  and the rev filter's steady state at zero throttle is `revs = -2L`. The load
+  feedback assists the roll in both orientations.
+
+An **unoccupied** vehicle is a different case and the engine answers it:
+`Engine+0x142` pins the revs to 0 (`0x0823e2d3`, set and cleared by
+`Engine::handleMessage` `0x0823e730`), which is carried here as
+`EngineState.running`. Nothing in the viewer needs it wired: `map.html`
+integrates only the hull the player is in, and the vehicle-collision work's
+own `ParkedVehicle` (`viewer/body-ground.js`) runs a separate, engine-less
+spring model. **The occupied case remains unverified against retail** and is
+waiting on thirty seconds of footage.
