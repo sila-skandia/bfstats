@@ -425,7 +425,10 @@ skeleton hangs under the pole. Without the tag, switching mode would leave a
 flag flying over a pole that is no longer there.
 
 **Respawn windows.** A pad two modes share can still be timed differently:
-2,123 pads across the installed mods disagree, 32 of them in vanilla
+1,674 pads across the installed mods disagree, 32 of them in vanilla
+(307 in bf1918, 276 in FinnWars, 168 in Interstate 82; re-counted on review by
+sweeping every archive through `union_object_spawns` -- 2,123 does not
+reproduce, 32 in vanilla does)
 (DC_Final's Berlin parks a humvee on one slab with a 40-80 s window in Conquest
 and 70-110 s in Tdm). When the modes disagree the node's stamp gains
 `spawner.byMode`, and `spawnerWindow` in `game-modes.js` reads the active
@@ -438,6 +441,11 @@ Union sizes, measured over all 1,301 archives:
 |---|---|---|---|
 | vehicle pads (nodes) | 81,263 | 89,128 | +7,865 (+9.7%) |
 | flag poles (nodes) | 7,509 | 8,335 | +826 (+11.0%) |
+
+Re-run on review over all 1,301 openable archives: the pad union comes back
+**89,128**, exactly; the flag union **8,529** against a default-layer 7,646,
+which is the same +11.5% over a count taken before the invisible-template
+filter rather than after it. 35 levels carry a composed game type.
 
 ---
 

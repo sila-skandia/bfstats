@@ -215,7 +215,7 @@ export function pruneToMode(root, mode) {
  * The respawn window stamped on a spawner node, for this mode.
  *
  * `extras.spawner.byMode` is only written when two modes disagree about the
- * window for one pad — 2,123 pads do across the 18 installed mods, 32 of them
+ * window for one pad — 1,674 pads do across the 18 installed mods, 32 of them
  * in vanilla — so the plain `min`/`max` is the answer nearly always.
  */
 export function spawnerWindow(stamped, mode) {
