@@ -2,8 +2,10 @@
 // The module imports nothing, which is what makes this possible; the
 // three.js glue in `effects.js` is exercised in the browser instead.
 import {
-  sampleCrd, sampleCurve, basisFromNormal, basisFromAxes, rollBasis, inFrame,
-  EmitterClock, spawnParticle, integrateParticle, evalParticle, damageFactor,
+  sampleCrd, sampleCurve, sampleCurveInto, basisFromNormal, basisFromAxes,
+  rollBasis, inFrame,
+  EmitterClock, spawnParticle, integrateParticle, evalParticle, evalParticleInto,
+  damageFactor,
   atlasGrid, frameIndex, splashSpec, splashDamage, truncateRadius,
   blastDistance, diesOnContact, isFuseRound, roundTimeToLive,
   DEFAULT_SPLASH_RADIUS, IMPACT_BLAST_OFFSET, FLIGHT_TTL_CEILING,
@@ -331,6 +333,111 @@ out.blastDistance = {
     halfExposed: splashDamage(206, 50, 0, 10, materials, modifiers, 0.5),
     noExposure: splashDamage(206, 50, 0, 10, materials, modifiers, 0),
   };
+}
+
+// The non-allocating twins (features/mesh-viewer-performance, fourth pass):
+// `sampleCurveInto` and `evalParticleInto` run on the per-frame path and must
+// agree with the allocating exports to the bit. Every branch is driven here —
+// before the first point, between two points, past the last, a missing ramp, a
+// single-point ramp, a multi-component ramp, and a later point carrying fewer
+// components than the earlier one (where BOTH forms produce NaN, which is the
+// behaviour being preserved rather than fixed).
+{
+  // `NaN !== NaN`, and `undefined` does not survive JSON, so both sides are
+  // stringified through the same sentinel before they are compared.
+  const tag = v => (typeof v === 'number' && Number.isNaN(v) ? 'NaN'
+    : v === undefined ? 'undefined' : v);
+  const curves = {
+    beforeFirst: [[[10, 1], [100, 0]], 0],
+    atFirst: [[[10, 1], [100, 0]], 10],
+    interior: [[[0, 1], [70, 1], [100, 0]], 85],
+    interiorFlat: [[[0, 5], [0, 9], [100, 0]], 0.5],
+    pastLast: [[[0, 1], [50, 0.5]], 99],
+    rgbaMid: [[[0, 255, 255, 255, 204], [100, 0, 0, 0, 0]], 50],
+    single: [[[0, 3, 4]], 60],
+    missing: [null, 50],
+    empty: [[], 50],
+    shorterLater: [[[0, 1, 2, 3], [100, 9]], 50],
+    noComponents: [[[0], [100]], 50],
+  };
+  const scratch = [];
+  out.into = { curve: {} };
+  for (const [name, [points, phase]] of Object.entries(curves)) {
+    const want = sampleCurve(points, phase);
+    const n = sampleCurveInto(points, phase, scratch);
+    const got = n < 0 ? null : scratch.slice(0, n);
+    out.into.curve[name] = {
+      want: want === null ? null : want.map(tag),
+      got: got === null ? null : got.map(tag),
+      // The count the allocating form implies, so a length mismatch is caught
+      // even where every component happens to agree.
+      wantLen: want === null ? -1 : want.length,
+      gotLen: n,
+      // What a caller that reads `[0]` off either sees (the `ramp ? ramp[0] : 1`
+      // shape used throughout `integrateParticle` and `evalParticle`).
+      wantFirst: tag(want ? want[0] : 1),
+      gotFirst: tag(n >= 0 ? scratch[0] : 1),
+    };
+  }
+
+  // Four particles covering every branch of `evalParticle`: a mesh with a
+  // `sizeModifier` and an alpha ramp, a sprite with size/colour ramps, a
+  // sprite with an `xySizeRatioOverTime` that is not 1, and a mesh with no
+  // `sizeModifier` at all (the bare `[1, 1, 1]` branch).
+  const ratioSpec = {
+    timeToLive: ['n', 1, 0, 0], intensity: ['n', 1, 0, 0],
+    particle: { kind: 'sprite', timeToLive: ['n', 2, 0, 0], size: ['n', 2, 0, 0],
+                gravityModifier: ['n', 0, 0, 0],
+                sizeOverTime: [[0, 1], [100, 0.5]],
+                xySizeRatio: ['n', 1.5, 0, 0],
+                xySizeRatioOverTime: [[0, 1], [100, 2]],
+                alphaOverTime: [[0, 1], [100, 0]] },
+  };
+  const bareSpec = {
+    timeToLive: ['n', 1, 0, 0], intensity: ['n', 1, 0, 0],
+    particle: { kind: 'mesh', timeToLive: ['n', 2, 0, 0], size: ['n', 3, 0, 0],
+                gravityModifier: ['n', 0, 0, 0] },
+  };
+  const ground2 = basisFromNormal([0, 1, 0]);
+  const cases = {
+    decal: spawnParticle(decalSpec, ground2, [10, 5, -3], null, lcg(21)),
+    puff: spawnParticle(puffSpec, basisFromAxes([0, 0, -1], [0, 1, 0]), [0, 0, 0], [0, 0, -50], lcg(31)),
+    ratio: spawnParticle(ratioSpec, ground2, [0, 0, 0], null, lcg(41)),
+    bare: spawnParticle(bareSpec, ground2, [0, 0, 0], null, lcg(43)),
+  };
+  out.into.look = {};
+  for (const [name, particle] of Object.entries(cases)) {
+    const rows = [];
+    for (const frac of [0, 0.01, 0.4, 0.85, 1, 1.5]) {
+      particle.age = particle.ttl * frac;
+      particle.rotation = 37 * frac;
+      // Allocating first and snapshotted: the Into form's answer is module
+      // scratch and the next call would overwrite it.
+      const want = evalParticle(particle);
+      const snapshot = {
+        scale: want.scale.map(tag), color: want.color ? want.color.map(tag) : null,
+        opacity: tag(want.opacity), rotation: tag(want.rotation), phase: tag(want.phase),
+      };
+      const got = evalParticleInto(particle);
+      rows.push({
+        frac,
+        same: JSON.stringify(snapshot) === JSON.stringify({
+          scale: got.scale.map(tag), color: got.color ? got.color.map(tag) : null,
+          opacity: tag(got.opacity), rotation: tag(got.rotation), phase: tag(got.phase),
+        }),
+        want: snapshot,
+        // `color` must be null in exactly the same states, not merely equal.
+        wantColorNull: want.color === null,
+        gotColorNull: got.color === null,
+      });
+    }
+    out.into.look[name] = rows;
+  }
+  // The scratch record really is reused: two calls must hand back the same
+  // object, and the second must not have been disturbed by the first.
+  const a = evalParticleInto(cases.puff);
+  const b = evalParticleInto(cases.puff);
+  out.into.reuse = { sameObject: a === b, sameScale: a.scale === b.scale };
 }
 
 console.log(JSON.stringify(out));
