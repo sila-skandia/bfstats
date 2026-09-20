@@ -30,7 +30,8 @@ from bf42 import damage as damage_mod
 from bf42 import measure as measure_mod
 from bf42 import roster as roster_mod
 from bf42.assemble import Assembler, reaches_first_person
-from bf42.rfa import ArchivePool, find_archives_dir, find_game_dir, find_levels_dir
+from bf42.rfa import (ArchivePool, find_archives_dir, find_game_dir, find_levels_dir,
+                      level_texture_names, texture_name_keys)
 
 DEFAULT_GAME_DIR = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942"
 
@@ -410,8 +411,14 @@ def export_one(name: str, meshes: ArchivePool, textures: ArchivePool,
                configuration: str, lod: int, max_texture: int, out: Path,
                level_label: str | None = None,
                first_person: bool = False,
+               requested: set[str] | None = None,
                ) -> dict | None:
-    """Export a single vehicle variant, returning a manifest fragment or None."""
+    """Export a single vehicle variant, returning a manifest fragment or None.
+
+    `requested`, when given, is filled with every texture name the export
+    asked for, found or not (`texture_name_keys` form) - what
+    `export_template` needs to tell which levels could reskin this model.
+    """
     assembler = Assembler(meshes, textures, objects, library,
                           lod=lod, max_texture=max_texture,
                           configuration=configuration,
@@ -427,6 +434,13 @@ def export_one(name: str, meshes: ArchivePool, textures: ArchivePool,
     except Exception as exc:
         print(f"  {name}{suffix}: {exc}", file=sys.stderr)
         return None
+
+    if requested is not None:
+        for path in report.resolved_textures:
+            requested |= texture_name_keys(path)
+        for path in report.missing_textures:
+            # A miss that failed to decode is recorded as "<path> (<why>)".
+            requested |= texture_name_keys(path.split(" (", 1)[0])
 
     if level_label is not None and not any(
         source.split(":", 1)[0].casefold() == level_label.casefold()
@@ -463,6 +477,16 @@ def export_one(name: str, meshes: ArchivePool, textures: ArchivePool,
 
 _worker_state: dict = {}
 
+# One index read per level archive per worker process, however many models ask.
+_level_name_cache: dict[Path, frozenset[str]] = {}
+
+
+def _level_names(level_path: Path) -> frozenset[str]:
+    names = _level_name_cache.get(level_path)
+    if names is None:
+        names = _level_name_cache[level_path] = level_texture_names(level_path)
+    return names
+
 
 def _init_export_worker(chain_paths: list[str], fallback_paths: list[str]) -> None:
     chain = [Path(p) for p in chain_paths]
@@ -484,10 +508,11 @@ def export_template(name: str, meshes: ArchivePool, base_textures: ArchivePool,
     variants: list[dict] = []
     failures = 0
     for configuration in configurations:
+        requested: set[str] = set()
         base = export_one(
             name, meshes, base_textures, objects, library,
             configuration=configuration, lod=lod,
-            max_texture=max_texture, out=out,
+            max_texture=max_texture, out=out, requested=requested,
         )
         if base is None:
             failures += 1
@@ -495,6 +520,21 @@ def export_template(name: str, meshes: ArchivePool, base_textures: ArchivePool,
         variants.append(base)
 
         for level_name, level_path in level_sources:
+            # A level reskins this model only if it ships a texture the model
+            # asks for, and that is answerable from the archive's index alone.
+            # Exporting first and checking afterwards - which is what this did
+            # - assembles the whole model, decodes every texture and builds the
+            # glb, then throws it away: Eve of Destruction is 285 models x 239
+            # levels, 68,115 exports to keep about 200, and hours of CPU. The
+            # check below is `add_level`'s own filter, and errs toward a match;
+            # `export_one` still has the last word on a level that passes it.
+            try:
+                if not requested & _level_names(level_path):
+                    continue
+            except Exception as exc:
+                print(f"  {name}.{level_name}: cannot read level archive ({exc})",
+                      file=sys.stderr)
+                continue
             level_textures = ArchivePool()
             try:
                 added = level_textures.add_level(level_path, label=level_name)
