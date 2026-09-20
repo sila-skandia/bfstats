@@ -417,6 +417,105 @@ Read against the severities as they now stand, without re-running the drill:
   under one bug is why there are five checks; the same bug expressed as
   unparsed binds trips all five weapons at once.
 
+### The anchor was fixed, not comparative — the origin pile's blind spot
+
+The 2026-09-20 repair above tightened `collapsed()` to require the part's own
+*geometry* to sit where its node claims, not just the node — that is what
+suppresses the LCT-Mk6 pattern and, over the four real catalogues, 10 EoD
+readings that are genuine false alarms: `BTR60CockpitExternal` instanced five
+times on the hull, `EoD_HueyRocketPods`, `LVT4_SprocketGuide`, each the same
+mesh (or a helper/attachment node) placed at a point with its geometry
+authored offset from its own node, not collapsed there. That check itself was
+never the problem.
+
+The problem was where it looked. `collapsed()` tested `world_translation`
+against the **scene origin**, `(0, 0, 0)`, within `1e-4`. A `.con`'s missing
+`setPosition` or an unapplied bind buries a sub-part at whatever its
+immediate parent's world transform composes to — and that parent is just as
+often a hull's running-gear mount, a turret ring or a gun cradle as it is the
+scene root. A real Sherman with only its *body parts'* transforms zeroed
+(the fourteen road wheels, `ShermanTower`, the hull hatch, the pintle
+Browning — the hull mesh itself, the tracks and the effects are untouched)
+piles 14 of them onto the hull's own running-gear mount at `y = -0.799` (the
+two tracks' own local position — `y = -0.8` in the README's rounder telling
+is the same point) rather than `(0, 0, 0)`. Because the anchor was fixed, this pile was
+invisible to both readings at once: `collapsed()`'s node check never matched
+because the wheels are metres from the scene root, and the centroid check
+never got a chance to run. `main` before this fix reads that file `ok`, exit
+0; before the 2026-09-20 rebuild it happened to read `broken` only because
+three of the twenty-seven parts landed on the scene origin by coincidence.
+
+**The fix is comparative, not another threshold.** `_cluster_by_translation`
+groups a model's candidate body parts by shared `world_translation`, wherever
+that point is — two nodes with a common parent and no local offset of their
+own compose to the exact same floating-point value, so the existing `1e-4`
+tolerance still clusters them correctly. Each cluster is then run through the
+same geometry-centroid half as before, now measured against the cluster's own
+point rather than a hardcoded origin, and a cluster with more than `allowance`
+collapsed members is a pile — the same "three or more" rule, aimed wherever
+the parts actually are.
+
+That alone reintroduces a new false alarm the old fixed-origin reading never
+had occasion to raise: EoD's `EoD_PACV` carries a Flak-mount-style ball
+turret (`EoD_PACV_Ballmount`, a yaw ring) with its own gun
+(`EoD_PACV_Mk19Ball`) nested one bundle inside it, both authored with no
+local offset because the rotation happens in place — plus a separately
+modelled `EoD_PACV_Ballmount_BaseLeft` plate at the same deck point. All
+three now measure at one shared point, and three is a pile by the rule
+above. But a multi-axis mount's own pivot chain resting on itself is not a
+placement failure, it is what a correct rig looks like, so `origin_pile` also
+tracks each candidate's ancestor chain (`Part.node_index` /
+`Part.ancestor_indices`, threaded through by `scene_parts`) and folds a
+**lone** rider into its ancestor before counting: `Ballmount` accounts for
+`Mk19Ball` riding it, leaving `{Ballmount, Ballmount_BaseLeft}` — two, which
+is allowed, the same as a soldier's body and head. The rule is deliberately
+narrow — only an ancestor with *exactly one* candidate riding it inside the
+cluster folds. An ancestor with two or more is not a chain, it is the branch
+several independent placements were lost onto, which is the pile itself:
+EoD's Fletcher carries a Flak 38 mount (`RL_body`) with two handles, a pedal
+and a targeter nested directly under it, four siblings rather than one link,
+and all five — the mount included — still count.
+
+Classification never reads a node name for this, same as everywhere else in
+this module: `is_body`, `is_skinned` and `bound_bone` are exactly the checks
+`origin_pile` already used, and the new ancestor bookkeeping is pure
+tree structure (`node_index`, `ancestor_indices`), not a name pattern. The
+distinguishing signal between a real pile and a pivot chain (or a legitimately
+instanced part) was always available in the extras and the geometry; the
+anchor was the only thing hardcoded.
+
+**Reproduced against three real constructions**, each a real `.glb` mutated
+in scratch by zeroing only the named nodes' own transform (translation,
+rotation and scale), never touched in place:
+
+| construction | source | zeroed | flagged pile | pre-fix | post-fix |
+|---|---|---|---|---|---|
+| Sherman | vanilla `Sherman.glb` | the 14 non-dummy road wheels (`WheelL1-4`/`WheelR1-4`), `ShermanTower`, `Sherman_Hull_Hatch`, `Browning` | the 14 wheels, onto the two tracks' own mount at `y ≈ -0.799` (`ShermanTower`+`Sherman_Hull_Hatch` fall back to the scene origin as only 2, below the allowance; `Browning`'s own parent chain lands it nowhere shared) | ok, exit 0 | broken, 14 named |
+| Mustang | vanilla `Mustang.glb` | both landing-gear legs, four gear-bay hatches, `MustangGear1` | all 7, plus `MustangPropellerStatic`/`Blurred` (already, unmutated, coincident on the same `MustangEngine` mount) | ok, exit 0 | broken, 9 named |
+| Fletcher | EoD's `Fletcher.glb` | a K-gun's two handles, pedal and targeter (`RL_handle1/2`, `RL_pedal`, `RL_targeter`) | all 4 per gun, `RL_body` included per gun (a branching mount, not a pivot chain — see below), both port and starboard | ok, exit 0 | broken, 10 named |
+
+Confirmed against the original (pre-2026-09-20-continuation) `bf42/verify.py`
+via `git show HEAD:tools/bf1942-models/bf42/verify.py` that all three read
+`clean`/exit 0 — the fixed-origin reading really is blind to them.
+
+**Catalogue tallies, unchanged by this fix** (measured the same day):
+
+| catalogue | before this fix | after this fix |
+|---|---|---|
+| vanilla (96) | 94 clean, 2 degraded, 0 broken | 94 clean, 2 degraded, 0 broken |
+| Road to Rome (15) | 13 clean, 2 degraded, 0 broken | 13 clean, 2 degraded, 0 broken |
+| Secret Weapons (29) | 25 clean, 4 degraded, 0 broken | 25 clean, 4 degraded, 0 broken |
+| Eve of Destruction (285) | 221 clean, 56 degraded, 8 broken | 221 clean, 56 degraded, 8 broken |
+
+The eight EoD broken verdicts are the same eight named earlier in this
+section (the unresolved `GeometryTemplate` references) — none of them was
+ever an origin-pile finding, so the anchor change could not have touched
+them either way. The ten suppressed EoD false alarms (`BTR60CockpitExternal`
+and the rest) stay suppressed: their geometry is still authored offset from
+their node, which the comparative anchor does not change. Without the
+ancestor fold, the EoD sweep reads 220 clean, 56 degraded, 9 broken — the
+extra name is `EoD_PACV`, the pivot-chain false alarm above.
+
 ### `texture_coverage.py` — the table above, on demand
 
 One line per mod; `--missing` lists every unresolved reference with the first
@@ -430,12 +529,14 @@ installation-independently in `tests/test_verify.py`,
 `tests/test_verify_false_alarms.py` and `tests/test_extract_all.py` — glb
 round-trips built with the project's own `GlbBuilder`, synthetic silhouettes
 with known overlap fractions, the origin-pile qualifiers (soldier stack
-allowed, Type99-style bound stack allowed, unbound pile flagged), the
+allowed, Type99-style bound stack allowed, unbound pile flagged, a pile off
+the scene origin flagged the same way, a mount's own lone-rider pivot chain
+not flagged, a branching mount flagged with the mount included), the
 authored-fact gating on and off vanilla, the shadow-geometry walk over a
 synthetic `.con` library, and the effects-only skip rule:
 
 ```bash
-python3 -m unittest discover -s tools/bf1942-models/tests   # 1,566 tests
+python3 -m unittest discover -s tools/bf1942-models/tests   # 1,801 tests
 ```
 
 `test_verify_false_alarms.py` is one test per class of thing the verifier used
