@@ -435,6 +435,24 @@ export class Soldier {
   }
 
   /**
+   * Where `look(dYaw, dPitch)` WOULD leave the view, without turning anybody.
+   *
+   * The same two lines as `look`, including the same clamp against the same
+   * `setPointUpDownAngle` limit — that is the point of it being here rather
+   * than in the caller. A renderer drawing between ticks uses it to show the
+   * rotation the pending mouse counts have already bought (map.html), so the
+   * displayed view leads the simulated one by exactly the amount the next
+   * tick is going to apply and the hand-off costs no step.
+   *
+   * `viewYaw`, not `yaw`: the bob's roll of the head belongs to the view.
+   */
+  lookPreview(dYaw, dPitch, out = { yaw: 0, pitch: 0 }) {
+    out.yaw = this.viewYaw + dYaw;
+    out.pitch = clamp(this.pitch + dPitch, -PITCH_LIMIT, PITCH_LIMIT);
+    return out;
+  }
+
+  /**
    * One frame: the stance the player asked for, then whole ticks of the body,
    * then the bob that rides them.
    *
@@ -510,9 +528,17 @@ export class Soldier {
    * motion out of a 60 Hz sim rather than a 60 Hz stutter. `this.x/y/z` stay
    * the authoritative tick position — a check asserting where the feet ended up
    * must not read a number the renderer smoothed.
+   *
+   * `alpha` defaults to this body clock's own leftover, which is what a caller
+   * stepping the soldier at the DISPLAY rate wants. A caller stepping it from
+   * inside a coarser fixed tick — the world's 30 Hz, which is exactly two of
+   * this clock's 60 Hz ticks and therefore always leaves an alpha of zero —
+   * must pass **1** to read this tick's own finished pose and do its own
+   * interpolation against the coarser clock. map.html does that; there is no
+   * body-clock alpha to read in the headless-World arrangement.
    */
-  eye(out = { x: 0, y: 0, z: 0 }) {
-    this.body.eye(this.clock.alpha, out);
+  eye(out = { x: 0, y: 0, z: 0 }, alpha = this.clock.alpha) {
+    this.body.eye(alpha, out);
     // Lateral sway rides the right vector of the look direction.
     const rightX = Math.cos(this.yaw), rightZ = -Math.sin(this.yaw);
     out.x += rightX * this.bobSide;
