@@ -175,6 +175,11 @@ function isPropellerBlurPair(spec) {
   return !kind || kind === 'compareselector';
 }
 
+// Replay and model-browser consumers that clone a whole `models/<Template>.glb`
+// need the same gate (replay.js), so it is part of the module's surface. The
+// doc comment above carries the reasoning; read it there.
+export { isPropellerBlurPair };
+
 // --- cockpit interior ------------------------------------------------------
 //
 // A vehicle glb has no inside. `1P_Corsair` and the fuselage that hides it are
