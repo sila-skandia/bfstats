@@ -67,6 +67,14 @@ export function gameTypes(extras) {
   }));
 }
 
+/** The directory a game type conventionally loads when the level ships no
+ *  script for it. Only `CoOp` needs an entry: every other game type's layer
+ *  is the directory of its own name, and `CoOp`'s is `SinglePlayer/` on all
+ *  871 levels that offer it. One level in the 18 installed mods ships
+ *  `SinglePlayer/` without a `GameTypes/CoOp.con` (DC_Final's Medina Ridge),
+ *  and this is what keeps `?mode=CoOp` meaning something there. */
+const CONVENTIONAL_LAYER = { coop: 'singleplayer' };
+
 /**
  * Which layer `?mode=<wanted>` names.
  *
@@ -74,6 +82,11 @@ export function gameTypes(extras) {
  * the SinglePlayer layer on every level that offers it — no vanilla level
  * ships a `CoOp/` directory at all). Case-insensitive, because a URL typed by
  * hand will not match the archive's capitalisation.
+ *
+ * A game type whose `run` lines straddle two directories has a layer of its
+ * own, keyed by the game type's name, and the direct match below finds it —
+ * that is how `?mode=CoOp` gets Road to Rome's CoOp layout, which is
+ * SinglePlayer's spawns under Conquest's flags and is no directory's.
  *
  * Returns null when there is nothing to select (an old report), and the
  * default layer when `wanted` is empty or names nothing this level has — a
@@ -91,6 +104,11 @@ export function resolveMode(extras, wanted) {
     const layer = names.find(name => name.toLowerCase() === String(type.mode).toLowerCase());
     if (layer) return layer;
   }
+  const conventional = CONVENTIONAL_LAYER[want];
+  if (conventional) {
+    const layer = names.find(name => name.toLowerCase() === conventional);
+    if (layer) return layer;
+  }
   return names[0];
 }
 
@@ -102,6 +120,37 @@ export function isUnknownMode(extras, wanted) {
   const lowered = want.toLowerCase();
   return !modeNames(extras).some(name => name.toLowerCase() === lowered)
     && !gameTypes(extras).some(t => t.name.toLowerCase() === lowered);
+}
+
+/**
+ * Why `?mode=` did not get what it asked for, or `''` when it did.
+ *
+ *   'unknown' — neither a layer nor a game type of this level.
+ *   'missing' — a game type the level's menu offers whose layer directory it
+ *               does not ship. 21 levels across the installed mods advertise
+ *               a game type with no directory behind it (13 Ctf, 4 Tdm, 3
+ *               CoOp, 1 ObjectiveMode) and `resolveMode` quietly hands back
+ *               the default; a caller that only asked `isUnknownMode` would
+ *               say nothing at all, which is the one outcome the URL rule
+ *               forbids.
+ *
+ * `''` also for a report with no `modes` (nothing was ever selectable) and
+ * for an empty `?mode=`.
+ */
+export function modeProblem(extras, wanted) {
+  const want = String(wanted == null ? '' : wanted).trim();
+  const names = modeNames(extras);
+  if (!want || !names.length) return '';
+  const lowered = want.toLowerCase();
+  if (names.some(name => name.toLowerCase() === lowered)) return '';
+  const conventional = CONVENTIONAL_LAYER[lowered];
+  if (conventional && names.some(name => name.toLowerCase() === conventional)) {
+    return '';
+  }
+  const type = gameTypes(extras).find(t => t.name.toLowerCase() === lowered);
+  if (!type) return 'unknown';
+  return names.some(name => name.toLowerCase() === String(type.mode).toLowerCase())
+    ? '' : 'missing';
 }
 
 /**
