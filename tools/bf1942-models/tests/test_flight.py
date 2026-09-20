@@ -282,6 +282,25 @@ class FlightModelTests(unittest.TestCase):
         # costs nothing per frame, same guarantee `spinsChildren` makes.
         self.assertEqual(0, blur["noExtras"])
 
+    def test_a_cockpit_named_like_a_propeller_is_never_bound_to_the_throttle(
+            self) -> None:
+        # The bf109's cockpit LodObject wears the propeller's naming
+        # convention (`bf109CockpitStatic` / `bf109CockpitBlurred`), so every
+        # already-published scene carries a `propellerBlur` stamp on it. Taken
+        # at face value the rig fought `CockpitSwap` for the same two nodes
+        # and won, every frame: under half throttle the pilot was shown the
+        # outside of his own fuselage from 0.7 m — reported as a "low
+        # fidelity blurred HUD" — and it snapped to the real cockpit above it.
+        blur = self.results["propellerBlur"]
+        cockpit = blur["cockpitNamedLikeAPropeller"]
+
+        self.assertEqual(0, cockpit["pairs"])
+        # And the rig left both alone rather than flipping them at throttle 0.
+        self.assertTrue(cockpit["exterior"])
+        self.assertTrue(cockpit["interior"])
+        # The kind narrows; it does not disarm the real swap.
+        self.assertEqual(1, blur["compareSelectorIsStillAPair"])
+
     def test_the_inertia_is_the_box_estimate_times_the_authored_modifier(self) -> None:
         # `inertiaModifier 1.05/0.850/0.94` is yaw/pitch/roll [data]; the
         # solid-box base it multiplies is the last free number in the model.

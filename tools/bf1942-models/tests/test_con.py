@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bf42.con import (  # noqa: E402
     ChildRef,
+    LodSelector,
     ObjectLibrary,
     ObjectTemplate,
     instance_template_name,
@@ -450,6 +451,24 @@ ObjectTemplate.addTemplate CorsairCockpitExternal
             [ChildRef("CorsairPropellerStatic"), ChildRef("CorsairPropellerBlurred")]))
         self.assertTrue(is_propeller_blur_pair(
             [ChildRef("CorsairPropellerBlurred"), ChildRef("CorsairPropellerStatic")]))
+
+    def test_a_cockpit_selector_is_never_the_blur_pair_however_it_is_named(self) -> None:
+        # The bf109's cockpit LodObject wears the propeller's naming
+        # convention — `bf109CockpitStatic` is the fuselage and
+        # `bf109CockpitBlurred` the 1P interior — and read by name alone it
+        # exported as a propeller, which bound the pilot's own cockpit to the
+        # throttle. The selector kind is what the engine itself goes by.
+        children = [ChildRef("bf109CockpitStatic"), ChildRef("bf109CockpitBlurred")]
+        self.assertFalse(is_propeller_blur_pair(
+            children, LodSelector("bf109cockpitSelector", "DistCompareSelector",
+                                  distances=[10.0], comparisons=[0.5])))
+        # The same two names under a real propeller selector still are one:
+        # the kind narrows, it does not replace the name test.
+        self.assertTrue(is_propeller_blur_pair(
+            children, LodSelector("x", "CompareSelector", comparisons=[0.07])))
+        # A `LodSelectorTemplate` that did not resolve says nothing either
+        # way, and losing a blurred disc over it would be the worse trade.
+        self.assertTrue(is_propeller_blur_pair(children, None))
 
     def test_propeller_blur_pair_requires_exactly_the_two_named_alternatives(self) -> None:
         # An ordinary complex/wreck LodObject must never be mistaken for one.
