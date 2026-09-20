@@ -336,8 +336,12 @@ function start() {
  *  `SinglePlayer/` layout, and on Road to Rome and Secret Weapons it loads
  *  SinglePlayer's spawns under Conquest's flags, which is no directory's
  *  layout at all. So the game type is what travels, and `map.html` resolves
- *  it — asking for `SinglePlayer` by name would show the wrong flags on 14 of
- *  the 15 Road to Rome and Secret Weapons levels that ship one.
+ *  it — asking for `SinglePlayer` by name is right on most of those levels
+ *  only because the two directories happen to agree, and wrong on Cassino and
+ *  Gothic Line, both published. Across all 18 installed mods 35 game-type
+ *  scripts straddle two directories and 7 of them resolve to a different
+ *  layout that way; asking for the game type is right on all 35 by
+ *  construction.
  *
  *  `menu-levels.json` records which levels have that layout as `singlePlayer`
  *  (19 of vanilla's 23; the four that do not are Aberdeen, Coral Sea,
