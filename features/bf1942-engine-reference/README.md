@@ -258,6 +258,24 @@ table, and the StandardMesh anchors.
 
 ## Current state
 
+**Netcode, 2026-09-20.** The P0 multiplayer research stream
+([`features/netcode-play-multiplayer/`](../netcode-play-multiplayer/README.md))
+verified and filed: the wire action record is `PlayerAction` — six 12-bit
+channels in fixed order (Yaw, Pitch, Roll, Throttle, MouseLookX, MouseLookY)
+plus a u32 button mask at byte 12, 104 bits — the server delivers exactly one
+buffered action per player per tick from a queue trimmed to four drop-oldest,
+with seq dedupe and a backlog `> 9 → 1`, and the client predicts its own
+player from the same actions it sends while remotes are ghost-overwritten at
+0.1 s with no interpolation buffer. Write-up in
+[subsystems/netcode.md](subsystems/netcode.md); ledger rows
+W-1…W-5, D-1…D-6, J-1…J-4, P-1/P-2, R-1/R-2. It overturns two of that design
+doc's assumptions: `operator<<`/`>>` are console name helpers, not the wire
+format (W-5), and IService/IJoinService/IHostService are empty stubs, not a
+join/host split (J-2). **30 symbols added, 17 notes extended, six of them
+promoted from bf42plus `working` to `verified`**; two items stay `open` — the
+ghost apply step `0x00498ce0`, and the client send-loop batch cap (R-2b: the
+≤ 3 cap exists only server-side in `PlayerActionManager::add` `0x08148120`).
+
 **The drivetrain, the console, IK and the combat area, 2026-09-20.** A second
 integration pass carried in the build streams of two waves, the reviewers who
 re-derived their work from the binaries, and a dedicated verifier who settled
@@ -320,7 +338,7 @@ results and its open items are in
 and "Start here" at the top of this file carries the queue that follows from it.
 
 
-1,184 symbols across 26 subsystems (1,119 before the second 2026-09-20 integration; 817 across 25 before the two 2026-09-19 rounds): 225 from bf42plus, the rest read from the binaries — 138 in the first 2026-09-16 research round (formats, menus, rendering, physics, effects), 198 more (193 net new, plus five corrections to earlier entries) in the second, on the mechanics below, a further 10 (SSC-1/SSC-2/SSC-5's SoundScript addresses) from an unrelated fix landed the same day, 25 more (plus five corrections) across two rounds on 2026-09-17, and **96 (plus 14 corrections) from the 2026-09-19 parity round** on damage, the vehicle HUD and soldier movement. That 2026-09-17 pair closed HP-6 by proving a collision never costs hit points — which 2026-09-18 and then 2026-09-19 refuted outright; see [ledger](ledger.md) HP-6 and [subsystems/hitpoints-and-damage.md](subsystems/hitpoints-and-damage.md) §3. The same evening's collision round added **207 more** (the `collision` subsystem, plus 21 extended notes); the two were merged by address on 2026-09-20 with one overlap (`0x08173fc0`, `Armor::getSpeedMod`, which keeps the collision round's entry and carries the parity round's evidence in its note). The same day's second integration added **65 more** (the console class in both binaries, the skeleton-IK chain, the combat area, the projectile contact recycle and the gearbox) **and extended 17 existing notes**, one of which — `getEngineType` `0x0823fd00` — had been carrying a refuted claim. Recompute with `python3 -c "import json;print(len(json.load(open('symbols.json'))['symbols']))"`.
+1,214 symbols across 26 subsystems (1,184 before the 2026-09-20 netcode round; 1,119 before the second 2026-09-20 integration; 817 across 25 before the two 2026-09-19 rounds): 225 from bf42plus, the rest read from the binaries — 138 in the first 2026-09-16 research round (formats, menus, rendering, physics, effects), 198 more (193 net new, plus five corrections to earlier entries) in the second, on the mechanics below, a further 10 (SSC-1/SSC-2/SSC-5's SoundScript addresses) from an unrelated fix landed the same day, 25 more (plus five corrections) across two rounds on 2026-09-17, and **96 (plus 14 corrections) from the 2026-09-19 parity round** on damage, the vehicle HUD and soldier movement. That 2026-09-17 pair closed HP-6 by proving a collision never costs hit points — which 2026-09-18 and then 2026-09-19 refuted outright; see [ledger](ledger.md) HP-6 and [subsystems/hitpoints-and-damage.md](subsystems/hitpoints-and-damage.md) §3. The same evening's collision round added **207 more** (the `collision` subsystem, plus 21 extended notes); the two were merged by address on 2026-09-20 with one overlap (`0x08173fc0`, `Armor::getSpeedMod`, which keeps the collision round's entry and carries the parity round's evidence in its note). The same day's second integration added **65 more** (the console class in both binaries, the skeleton-IK chain, the combat area, the projectile contact recycle and the gearbox) **and extended 17 existing notes**, one of which — `getEngineType` `0x0823fd00` — had been carrying a refuted claim. The netcode round later the same day added **30 more** (the `net` and `game` subsystems' wire, delivery and join code) and extended a further 17 notes, six promoted from bf42plus `working` to this round's `verified`. Recompute with `python3 -c "import json;print(len(json.load(open('symbols.json'))['symbols']))"`.
 
 **The game loop is settled (2026-09-15).** The client is a fixed-step
 simulation at `g_simulationFps` = 30 Hz (`0x00957640`; the same 30.0 in the
