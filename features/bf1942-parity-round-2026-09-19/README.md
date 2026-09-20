@@ -296,6 +296,31 @@ FIXES. Reports: `w3c-gamemodes.md`, `w3c-review.md`.
 - Left: pruned nodes are never disposed; ObjectiveMode bindings and `Ctf.con`
   flag bases are not placed; no mode picker (URL only).
 
+**W3-A (drivetrain) is merged as it stands** (`36ff97e`, 2026-09-20), on the
+owner's word ("merge it as-is for now, I will get back to you later"). The two
+real-game observations are STILL OWED and decide whether it stays: an occupied
+jeep with no throttle rolling down a 5-10 degree slope, and an M3A1 lying over in
+a turn above about 40 km/h while a Hanomag stays flat. If retail shows otherwise
+the lateral law is wrong somewhere two readers missed. Known on main until then:
+the M3A1 leans 32-38 degrees in fast turns; an occupied jeep walks 7.65 m in 10 s
+down 5 degrees. Still to do regardless: sample the contact velocity at the same
+point the tyre force is applied (`u` is taken at `wheel.rest`).
+
+**The model extractor was spending hours proving a negative** (`774696c`).
+`--level-all` exported each model once per level - assembled it, decoded every
+texture, built the glb - and only THEN checked whether any texture had come from
+that level. EoD is 285 x 239 = 68,115 full exports; the job had kept 129 of
+62,090 after three hours of 16 cores. The check now runs first, from the archive
+index alone, through the same filter `add_level` registers with. Vanilla output
+identical (263 glbs, 263 manifest variants, 90 level variants) in 72 s.
+
+**Re-extract and publish, restarted.** The old EoD model job and the first
+publish (stopped between groups at 113 of 281, 5.83 GB) were both uploading or
+producing output the drivetrain and game-modes extractors supersede. Running
+now: `scratchpad/reextract-v3.sh` - all four catalogues and every level with
+main's final extractor. The live site already serves `game-modes.js`, so the
+publish-order rule is met; the delta publish follows the extraction.
+
 **W3-A (drivetrain), third review: MERGE-IF.** The two new commits hold; the
 washboard "regression" was a framing error (at a matched 31 m/s entry main
 reaches a 54.85 m apex and 454 km/h, the branch 3.88 m and 114 km/h). The M3A1's
