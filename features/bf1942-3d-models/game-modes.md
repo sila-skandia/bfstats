@@ -152,11 +152,28 @@ flags.
 | FH | 3 | |
 | **total** | **35** | **0 in vanilla** |
 
-17 of the 35 differ in real content rather than in two identical files; the
-worst is `FH/Zielona_Gora-1944`, whose CoOp takes `Conquest/ControlPoints` and
-whose SinglePlayer directory has no `ControlPoints.con` at all — a
+Most of the 35 straddle two directories whose copies of the file in question
+are the same layout, so reading the majority directory happened to give the
+right answer anyway. Resolving each composed layer against the majority
+directory it would otherwise have used, and comparing what the page would
+draw — flags with owner and position, soldier spawns, vehicle pads:
+
+| | scripts |
+|---|---|
+| straddle two directories | 35 |
+| **differ in the flags** | **5** — `FH/Zielona_Gora-1944`, `FHSW/Husky`, `XPack1/cassino`, `bf1918/belgrade`, `bf1918/tanga` |
+| differ in flags, spawns or pads | 7 — the five above plus `FH/Liberation_Of_Caen`, `XPack2/Gothic_Line` |
+
+The worst is `FH/Zielona_Gora-1944`, whose CoOp takes `Conquest/ControlPoints`
+and whose SinglePlayer directory has no `ControlPoints.con` at all — a
 majority-directory reading gives it a layer with **zero flags** where the game
-shows five.
+shows five. Reproduce with `check_split_impact.py` in this stream's scratch
+directory.
+
+So the fix is worth making for correctness, not for its blast radius: it is
+7 levels of 1,301, one of them badly wrong. The reason to carry `GameType.files`
+anyway is that "the majority directory is usually right" is not a rule the
+engine has, and a mod shipped tomorrow gets no such luck.
 
 So `GameType.files` records the directory of each of the seven layer files,
 `GameType.composed` is true when they straddle, and
@@ -549,9 +566,11 @@ CoOp layer** with Conquest's six flags and SinglePlayer's 29 vehicles.
 layout and `mode=Conquest` where it does not. **The game type, not the
 directory**: Instant Battle is the CoOp game type, `gametypes/coop.con`, and
 on Road to Rome and Secret Weapons that script's layout is no directory's
-(§1.2.1) — asking for `SinglePlayer` by name showed the wrong flags on 14 of
-those 15 levels, both mods published. On every vanilla level `CoOp` resolves
-to the SinglePlayer layer and nothing changes.
+(§1.2.1). Asking for `SinglePlayer` by name is the right layer on most of
+them by luck and the wrong one on `XPack1/cassino` and `XPack2/Gothic_Line`,
+both published; asking for the game type is right on all of them by
+construction. On every vanilla level `CoOp` resolves to the SinglePlayer layer
+and nothing changes.
 
 `menu-levels.json` records which levels have that layout as `singlePlayer`
 (19 of 23 vanilla levels; the four without are Aberdeen, Coral Sea, Invasion
