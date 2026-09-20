@@ -8,8 +8,13 @@
  * - AUDIO-AUTOPLAY-TRAP: Catch NotAllowedError & AbortError without uncaught console errors
  * - AUDIO-GESTURE-UNLOCK: One-time document interaction gesture unlock (pointerdown, keydown, touchstart, click)
  *   in capture phase with atomic teardown across all 4 event types
- * - AUDIO-UNMUTE-UI: Authentic Refractor HUD unmute button/badge ([ 🔊 SOUND: CLICK TO ENABLE ])
+ * - AUDIO-UNMUTE-UI: Authentic Refractor HUD unmute badge ([ SOUND: CLICK TO ENABLE ])
  *   with pointer-events: auto, auto-reveal on block, auto-hide on unlock/complete/cancel
+ * - AUDIO-MUTE-UI: A speaker toggle (`attachMuteToggle`) for a screen that stays up while
+ *   the music plays, where the badge's "click to enable" is only half the control the
+ *   player needs. Muted is a state of this controller, not of the element: it survives a
+ *   gesture unlock, so a click somewhere else on the page cannot start the music behind
+ *   the player's back.
  * - AUDIO-FADEOUT: Smooth 800ms volume ramp down to 0 using Web Audio GainNode (linearRampToValueAtTime)
  *   or fallback volume interpolation, resetting audio.currentTime = 0 and restoring gain to 1.0
  * - AUDIO-STALE-CANCEL: Invariant state guards & generation tracking ensuring post-load / post-fadeout / cancelled
@@ -24,6 +29,8 @@ export const AudioState = Object.freeze({
   FADING_OUT: 'FADING_OUT',
   COMPLETED: 'COMPLETED',
   CANCELLED: 'CANCELLED',
+  // Turned off by the player, not by the browser: see `setMuted`.
+  MUTED: 'MUTED',
 });
 
 const DEFAULT_FADE_MS = 800;
@@ -74,6 +81,8 @@ export class LoadingAudioController {
     this._unlockPromise = null;
 
     this._unmuteButton = null;
+    this._muteToggle = null;
+    this._muted = false;
     this._gestureCleanup = null;
     this._onError = null;
 
@@ -89,6 +98,56 @@ export class LoadingAudioController {
 
   isAutoplayBlocked() {
     return this._isAutoplayBlocked;
+  }
+
+  /** Whether the player has turned this track off. */
+  get muted() {
+    return this._muted;
+  }
+
+  /**
+   * Turn the track off or back on.
+   *
+   * This is the player's own switch, and it outranks everything else the
+   * controller does: while it is on, `start()` loads the track but does not
+   * play it, and the gesture unlock stays disarmed, so a click anywhere on
+   * the page cannot bring the music back. Turning it off plays from where
+   * the track is — the click that did it is itself the gesture the autoplay
+   * policy wanted, so this is also the unblock.
+   *
+   * @param {boolean} on
+   * @returns {boolean} the new state
+   */
+  setMuted(on) {
+    const next = Boolean(on);
+    if (next === this._muted) return this._muted;
+    this._muted = next;
+    if (next) {
+      this._disarmGestureUnlock();
+      if (this._audio) {
+        try { this._audio.pause(); } catch (_) {}
+      }
+      if (this._state === AudioState.ACTIVE_PLAYING
+          || this._state === AudioState.BLOCKED_WAITING_GESTURE) {
+        this._state = AudioState.MUTED;
+      }
+      this._syncAudioUi();
+      return this._muted;
+    }
+    if (this._state === AudioState.MUTED) this._state = AudioState.LOADING;
+    this._syncAudioUi();
+    // Not `_playCurrent`: `unlock()` is the path that also resumes a
+    // suspended AudioContext, which a tab that never got its gesture has.
+    this.unlock();
+    return this._muted;
+  }
+
+  /** True when the track is loaded and wanted but not coming out of the
+   *  speakers — muted by the player, or still waiting for a gesture. The
+   *  speaker icon reads this and nothing else. */
+  get silent() {
+    return this._muted || this._isAutoplayBlocked
+      || this._state !== AudioState.ACTIVE_PLAYING;
   }
 
   onAutoplayBlocked(callback) {
@@ -183,6 +242,13 @@ export class LoadingAudioController {
     this._audio.onerror = onError;
 
     this._audio.src = this._currentUrl;
+    // Muted is the player's switch and survives a fresh track: the next
+    // level's loading music must not undo what he turned off on this one.
+    if (this._muted) {
+      this._state = AudioState.MUTED;
+      this._syncAudioUi();
+      return;
+    }
     this._playCurrent(session);
   }
 
@@ -342,11 +408,71 @@ export class LoadingAudioController {
   }
 
   /**
+   * A speaker toggle in the corner of a screen that stays up while the music
+   * plays. The badge above is for a loading screen, which is gone in a few
+   * seconds and only ever needs "click to enable"; a menu the player sits on
+   * needs the other direction too.
+   *
+   * Both states are one icon: a speaker, with the waves crossed out when
+   * nothing is coming out of it — whether that is the player's doing or the
+   * autoplay policy's, since from where he is sitting they are the same
+   * thing and one click fixes either.
+   *
+   * @param {HTMLElement} containerElement
+   * @param {Object} [options]
+   * @param {(muted: boolean) => void} [options.onChange] - after a click
+   * @returns {HTMLElement | null}
+   */
+  attachMuteToggle(containerElement, { onChange } = {}) {
+    if (!containerElement || !this._document) return null;
+    if (this._muteToggle && containerElement.contains
+        && containerElement.contains(this._muteToggle)) {
+      return this._muteToggle;
+    }
+
+    this._injectButtonStyles();
+
+    const btn = this._document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ld-mute-btn';
+    // Two paths, one on top of the other: the cone and its waves, and the
+    // stroke through them that `.ld-mute-off` reveals.
+    btn.innerHTML = `
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path class="ld-mute-cone" d="M4 9.5h3.2L12 5.4v13.2L7.2 14.5H4z"/>
+        <path class="ld-mute-wave" d="M15.4 9.2a4 4 0 0 1 0 5.6"/>
+        <path class="ld-mute-wave ld-mute-wave-far" d="M17.9 6.7a7.5 7.5 0 0 1 0 10.6"/>
+        <path class="ld-mute-slash" d="M5 19 19 5"/>
+      </svg>`;
+    btn.style.pointerEvents = 'auto';
+    btn.style.cursor = 'pointer';
+
+    btn.addEventListener('click', (e) => {
+      if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+      if (e && typeof e.preventDefault === 'function') e.preventDefault();
+      // Three cases, one button. Blocked but not muted is the interesting
+      // one: the click is itself the gesture the autoplay policy wanted, so
+      // turning it "on" from there is an unlock and not an unmute.
+      if (this._muted) this.setMuted(false);
+      else if (this.silent) { this.unlock(); this._syncAudioUi(); }
+      else this.setMuted(true);
+      if (typeof onChange === 'function') {
+        try { onChange(this._muted); } catch (_) {}
+      }
+    });
+
+    containerElement.appendChild(btn);
+    this._muteToggle = btn;
+    this._syncAudioUi();
+    return btn;
+  }
+
+  /**
    * Triggers gesture unlock explicitly or via user interaction.
    * @returns {Promise<void>}
    */
   async unlock() {
-    if (this._isStale || this._isCancelled) return;
+    if (this._isStale || this._isCancelled || this._muted) return;
     if (this._state === AudioState.ACTIVE_PLAYING || (this._audio && !this._audio.paused && this._state !== AudioState.BLOCKED_WAITING_GESTURE)) {
       return;
     }
@@ -494,7 +620,8 @@ export class LoadingAudioController {
   }
 
   _playCurrent(session) {
-    if (!this._audio || this._isStale || this._isCancelled || this._sessionGeneration !== session) {
+    if (!this._audio || this._isStale || this._isCancelled || this._muted
+        || this._sessionGeneration !== session) {
       return;
     }
 
@@ -670,15 +797,28 @@ export class LoadingAudioController {
   }
 
   _notifyAutoplayBlocked() {
+    this._syncAudioUi();
     for (const cb of [...this._blockedCallbacks]) {
       try { cb(); } catch (_) {}
     }
   }
 
   _notifyAutoplayResolved() {
+    this._syncAudioUi();
     for (const cb of [...this._resolvedCallbacks]) {
       try { cb(); } catch (_) {}
     }
+  }
+
+  /** The speaker icon, after anything that could have changed what is
+   *  coming out of the speakers. */
+  _syncAudioUi() {
+    const btn = this._muteToggle;
+    if (!btn) return;
+    const silent = this.silent;
+    btn.setAttribute('aria-pressed', String(silent));
+    btn.setAttribute('aria-label', silent ? 'Turn menu music on' : 'Turn menu music off');
+    btn.classList.toggle('ld-mute-off', silent);
   }
 
   _injectButtonStyles() {
@@ -722,6 +862,55 @@ export class LoadingAudioController {
         .ld-unmute-btn[hidden] {
           display: none !important;
         }
+        /* The speaker toggle: the badge's plate, square, icon only. */
+        .ld-mute-btn {
+          position: absolute;
+          top: 16px;
+          right: 16px;
+          z-index: 100;
+          pointer-events: auto;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 30px;
+          height: 30px;
+          padding: 0;
+          background: rgba(19, 19, 19, 0.9);
+          border: 1px solid #3d3d3d;
+          border-radius: 2px;
+          outline: none;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+          transition: background 150ms ease, border-color 150ms ease;
+        }
+        .ld-mute-btn:hover { background: rgba(35, 35, 35, 0.95); border-color: #7d8849; }
+        .ld-mute-btn svg { width: 18px; height: 18px; display: block; }
+        .ld-mute-btn .ld-mute-cone {
+          fill: #9aa666;
+          stroke: none;
+        }
+        .ld-mute-btn .ld-mute-wave {
+          fill: none;
+          stroke: #9aa666;
+          stroke-width: 1.6;
+          stroke-linecap: round;
+        }
+        .ld-mute-btn .ld-mute-slash {
+          stroke: #9aa666;
+          stroke-width: 1.8;
+          stroke-linecap: round;
+          opacity: 0;
+        }
+        .ld-mute-btn:hover .ld-mute-cone { fill: #ffffff; }
+        .ld-mute-btn:hover .ld-mute-wave,
+        .ld-mute-btn:hover .ld-mute-slash { stroke: #ffffff; }
+        /* Off: the waves go, the stroke through it comes. */
+        .ld-mute-btn.ld-mute-off .ld-mute-cone { fill: #6f6f6f; }
+        .ld-mute-btn.ld-mute-off .ld-mute-wave { opacity: 0; }
+        .ld-mute-btn.ld-mute-off .ld-mute-slash { opacity: 1; stroke: #6f6f6f; }
+        .ld-mute-btn.ld-mute-off:hover .ld-mute-cone { fill: #cfcfc4; }
+        .ld-mute-btn.ld-mute-off:hover .ld-mute-slash { stroke: #cfcfc4; }
+        .ld-mute-btn[hidden] { display: none !important; }
       `;
       this._document.head.appendChild(style);
     } catch (_) {}
