@@ -814,3 +814,78 @@ actually needs; `drawImage` decodes on its own.
 Not done: **touch**. There is no Escape key on a phone, and no on-screen
 control was added for it — the shell nav's MAPS link is still the way out
 there, as it was before.
+
+## Sound on, and the way out of the spawn screen (2026-09-21)
+
+Three asks off the back of the Escape menu, all of them the same shape: the
+page had a piece of scaffolding where the game has a behaviour.
+
+### The menu's speaker
+
+The menu loop and the loading music were always meant to play, and do —
+`audio.js` starts them and falls back to a gesture unlock when the autoplay
+policy refuses. What the menu had no way of expressing was the other
+direction. Its only control was the loading screen's badge, which says CLICK
+TO ENABLE and nothing else, because a loading screen is gone in a few seconds
+and a menu is not.
+
+So `attachMuteToggle`: a speaker in the top right corner of the menu screen,
+one icon with the waves crossed out when nothing is coming out of it. Three
+states behind two glyphs — playing, muted, and blocked by the browser — and
+one click does the right thing in each, because from where the player sits
+"muted" and "the browser will not let it start" are the same complaint.
+
+Muted is a state of the controller, not of the element, which is the part
+worth knowing about: `setMuted(true)` disarms the gesture unlock and survives
+`start()`, so neither a click elsewhere on the page nor the next track can
+bring the music back behind the player's back. `tests/test_menu_audio.mjs`
+pins exactly that.
+
+It is remembered (`bf42-mesh-menu-muted`), because switching mods reloads the
+page and the loop would otherwise start again over someone who turned it off
+ten seconds ago. **It is the menu's own switch and reaches nothing else** —
+the loading music has its own badge and the game its own sound setting. If
+that turns out to be the wrong scope, one line makes the level's loading
+music read the same key.
+
+### Free roam, and the end of "click to fly"
+
+The map page had a plate in the middle of the screen reading *Tap or click to
+fly*. It was built to explore a level before there was anything else to do on
+one, and it had become the only way back into the free camera after the spawn
+screen was closed.
+
+The game has that behaviour already, and it is not a plate: you close the
+spawn menu without taking a spawn, and on a server that allows it the camera
+is yours. So:
+
+- **A click on open ground unselects.** The spawn map's click already picked
+  the nearest ring within a finger's width and ignored a click that found
+  none; now that click clears the selection instead (`deployUnchosen`). Every
+  ring sits back, none is filled, and that is what tells the player what the
+  commit is about to do.
+- **Commit with nothing selected is the free camera.** Enter, or DONE, or
+  SUICIDE — whichever the footer is offering — takes `enterFreeCam()` rather
+  than spawning. So does Escape on the spawn screen, and so does CLOSE, which
+  is what they always did; they just used to drop you at the plate.
+- **Caps Lock brings the screen back**, unchanged, which is how you stop free
+  roaming.
+- **The plate is gone.** `#gate`, its CSS, its label and `GATE_TEXT` with it.
+
+The thing that made the plate removable is that every way into the free
+camera is now a user gesture — a click on DONE or an Enter — so
+`enterFreeCam` takes the pointer on the way through, the same way
+`deploySpawn` has always captured on the click that commits. Nothing is left
+that drops the player into a live world with dead controls. The one gap that
+would have been left is a level declaring no soldier spawn at all, which has
+no spawn screen to close: that now arms free roam at load instead.
+
+Escape is therefore one press to the menu from anywhere in play, and closing
+the menu captures again rather than leaving a plate to click. Chrome refuses
+a pointer lock for about a second after the Escape that dropped one, so
+`capture()` no longer depends on getting it: `captured` is set either way,
+the view still drags, and the next click takes the lock.
+
+Not done: **touch**, again. There is no Escape key and no Caps Lock on a
+phone; the spawn screen's own footer buttons work, so free roam is reachable
+there, but the menu is not.
