@@ -1545,6 +1545,20 @@ export class VehicleCamera {
     this.anchored = false;
     this.shot = 0;
     this.side = 1;
+    /**
+     * Where the hull is being DRAWN this frame, when that is not where the
+     * simulation left it.
+     *
+     * The cockpit view needs nothing here — it reads the `<Vehicle>Camera`
+     * node, so it follows whatever pose the scene graph is carrying — but the
+     * chase, front and fly-by views hang off `state.position`, which only
+     * moves on a tick. Left alone they would step at 30 Hz while the hull they
+     * are filming slid smoothly between ticks, and the aircraft would jitter
+     * inside the frame. A page that interpolates the drawn pose (map.html)
+     * points this at the vector it drew; anyone else leaves it null and the
+     * sim position stands, exactly as before.
+     */
+    this.drawnPosition = null;
     this.pose = {
       position: new THREE.Vector3(),
       quaternion: new THREE.Quaternion(),
@@ -1683,6 +1697,10 @@ export class VehicleCamera {
   update(dt) {
     const s = this.vehicle.state;
     const out = this.pose;
+    // The hull as drawn, for every view that frames it from outside; the
+    // velocity, the heading frame and the fly-by's re-plant test stay on the
+    // sim state, where a fraction of a tick of position makes no difference.
+    const at = this.drawnPosition || s.position;
 
     if (this.mode === 'cockpit') {
       // Straight off the `<Vehicle>Camera` node, which is already posed in world
@@ -1713,7 +1731,7 @@ export class VehicleCamera {
       }
       out.position.copy(this.anchor);
       // Level: a tripod does not roll, so world up, and the aircraft centred.
-      this._basis.lookAt(out.position, s.position, WORLD_UP);
+      this._basis.lookAt(out.position, at, WORLD_UP);
       out.quaternion.setFromRotationMatrix(this._basis);
       return out;
     }
@@ -1724,12 +1742,12 @@ export class VehicleCamera {
     this._offset.set(0, rig.up, rig.back)
       .applyEuler(new THREE.Euler(this.look.pitch, this.look.yaw, 0, 'YXZ'))
       .applyQuaternion(this.follow);
-    out.position.copy(s.position).add(this._offset);
+    out.position.copy(at).add(this._offset);
     // Aim at a point along the *smoothed* heading rather than the live nose, or
     // the aim would reintroduce the high-frequency motion the frame just took
     // out. Up comes from the same frame, which is what holds the horizon level
     // through a roll and stays continuous over the top of a loop.
-    this._target.set(0, 0, -rig.lead).applyQuaternion(this.follow).add(s.position);
+    this._target.set(0, 0, -rig.lead).applyQuaternion(this.follow).add(at);
     this._up.set(0, 1, 0).applyQuaternion(this.follow);
     this._basis.lookAt(out.position, this._target, this._up);
     out.quaternion.setFromRotationMatrix(this._basis);

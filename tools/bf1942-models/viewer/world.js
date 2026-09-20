@@ -36,6 +36,13 @@
 //     catch-up cap the soldier physics uses (the page's old look accumulator
 //     carried the same collapse -- GameClient::update 0x0048fca8, both
 //     binaries -- and is now a single clock, see `lookTicks`).
+//   * The tick is the SIM's cadence, never the PAGE's. `step()` reports the
+//     clock's `alpha` — how far the frame has carried past the last tick —
+//     and fires `onTick` at the end of every tick it runs, so the page can
+//     keep the previous tick's pose beside the current one and draw between
+//     them. Nothing presentational may reach back the other way: the hook is
+//     called with no arguments and its return value is ignored, so a page
+//     that does not register one is bit-identical to one that does.
 //   * On foot, the soldier runs its own 60 Hz FixedStep inside the world
 //     tick (soldier.js): a 1/30 world tick is exactly two 1/60 body ticks
 //     with the same input, and tests/test_soldier.py has already pinned that
@@ -160,6 +167,7 @@ export class World {
     fireStates = null,
     onCrash = null,
     isWrecked = null,
+    onTick = null,
   } = {}) {
     this.collider = collider;
     this.extras = extras;
@@ -178,6 +186,14 @@ export class World {
     /** The world's water pass must skip wrecks the page has faded out of the
      *  scene; the page passes `owner => visual.wrecked || visual.removed`. */
     this.isWrecked = isWrecked || (() => false);
+    /** Called at the END of every tick this world runs, after the bodies and
+     *  the damage pass — i.e. with every piece of tick state final. The page
+     *  registers its pose snapshot here (map.html's render interpolation): a
+     *  tick boundary is the only place the previous and the current tick pose
+     *  can be told apart, and a frame that runs several ticks needs the hook
+     *  per tick or its "previous" is N ticks old. Presentation only; the
+     *  simulation neither passes it anything nor reads anything back. */
+    this.onTick = onTick;
 
     /** The level's flags, the engine's join of control points to spawn
      *  groups (soldier.js). The page's deploy screen reads this. */
@@ -546,11 +562,19 @@ export class World {
    * and with nothing presentational inside. Returns the step report (see
    * #emptyReport); the page consumes it for camera, HUD, effects and scene
    * sync work.
+   *
+   * `report.alpha` is the clock's leftover fraction of a tick AFTER this
+   * frame — what a renderer must interpolate by to draw the frame's own
+   * instant rather than the last tick's. It is filled in on EVERY frame,
+   * including the common 60 Hz one that owes no tick at all: `clock.advance`
+   * has already run and moved the alpha even when it returned 0, and a frame
+   * that drew the previous frame's alpha would be drawing the sim twice.
    */
   step(dt) {
     const report = this.#emptyReport();
     this.report = report;
     report.ticks = this.clock.advance(dt);
+    report.alpha = this.clock.alpha;
     if (!report.ticks) return report;
     const bodyBefore = this.bodyWorld?.ticks ?? 0;
     for (let i = 0; i < report.ticks; i++) this.#tick();
@@ -558,8 +582,13 @@ export class World {
     return report;
   }
 
+  /** The same fraction outside a step report — `step()` fills `report.alpha`
+   *  from exactly this — for a caller that holds the world but not the
+   *  report it last returned. */
+  get alpha() { return this.clock.alpha; }
+
   #emptyReport() {
-    return { ticks: 0, bodyTicks: 0, players: {}, damage: [], crashes: [] };
+    return { ticks: 0, bodyTicks: 0, alpha: 0, players: {}, damage: [], crashes: [] };
   }
 
   #tick() {
@@ -588,6 +617,10 @@ export class World {
     if (this.guns) this.guns.advance(dt);
     if (this.bodyWorld) this.bodyWorld.step(dt);
     this.#damageTick(dt);
+    // Last, so the snapshot a renderer takes here is this tick's FINAL state:
+    // after the contact solver has pushed a hull and after the damage pass,
+    // not the mid-tick pose `integrate` left on the scene graph.
+    this.onTick?.();
   }
 
   // --- the per-player steps, in frame()'s own order ------------------------

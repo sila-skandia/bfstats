@@ -265,6 +265,10 @@ export function quantiseAxis(value) {
  *     argument (`InputManager::update` `0x0049cff7`) and it is what makes the
  *     total rotation per frame exactly proportional to the counts.
  *   * `x` / `y` every tick of that frame. They do not change between pumps.
+ *   * `peek(...)` on a frame that is only DRAWING — it converts the counts
+ *     still waiting without consuming them, which is how a renderer shows the
+ *     rotation the next tick is already committed to (map.html's on-foot
+ *     view). Never call it instead of `pump`: it changes nothing.
  *
  * A frame that produces no tick simply does not pump, and its counts stay in
  * the accumulator for the next one — the engine's behaviour, and the reason a
@@ -289,6 +293,9 @@ export class MouseInput {
     this._pixelsY = 0;
     this._x = 0;
     this._y = 0;
+    /** `pump`'s own scratch pair, so the conversion it shares with `peek`
+     *  costs no allocation on a per-frame path. */
+    this._peek = { x: 0, y: 0 };
     /** Which profile the last pump used, for the HUD/console to report. */
     this.profile = 'infantry';
   }
@@ -367,16 +374,52 @@ export class MouseInput {
   pump(elapsedSeconds, profile = this.profile) {
     this.profile = PROFILES.includes(profile) ? profile : this.profile;
     if (!(elapsedSeconds > 0)) return { x: this._x, y: this._y };
-    const scale = this.scaleFor(this.profile);
-    const countsX = this._pixelsX * this.countsPerPixel;
-    const countsY = this._pixelsY * this.countsPerPixel;
+    this.peek(elapsedSeconds, this.profile, this._peek);
     this._pixelsX = 0;
     this._pixelsY = 0;
+    this._x = this._peek.x;
+    this._y = this._peek.y;
+    return { x: this._x, y: this._y };
+  }
+
+  /**
+   * The conversion WITHOUT the consumption: what `pump(elapsedSeconds,
+   * profile)` would produce for the counts standing right now, leaving the
+   * accumulator, the held axis and the active profile exactly as they are.
+   *
+   * This is the whole of `pump` — `pump` calls it and then clears — so a
+   * caller gets the real scale, the real `+-16` clamp and the real 12-bit
+   * quantisation rather than an open-coded copy of the three constants.
+   *
+   * It exists for render prediction, and only for it. A frame that runs no
+   * tick does not pump (`InputManager::update` 0x0049cf46), so its counts are
+   * still sitting here unconverted while the page draws — and the rotation
+   * the NEXT tick will apply is a pure function of them. Asking for the pair
+   * at `elapsedSeconds = 1/30` gives that tick's own axis. It is also the
+   * whole frame's rotation for a frame that will run n ticks: the axis is
+   * `0.001 x counts x scale / (n/30)` and each of the n ticks applies it, so
+   * the product is the same n-independent number the one-tick answer is,
+   * give or take the quantiser's 0.01 step. Predicting the total and
+   * predicting one tick are therefore the same call.
+   *
+   * `out` is written in place; nothing here allocates.
+   */
+  peek(elapsedSeconds, profile = this.profile, out = { x: 0, y: 0 }) {
+    const use = PROFILES.includes(profile) ? profile : this.profile;
+    if (!(elapsedSeconds > 0)) {
+      // The device's own `dt > 0` gate (0x00670034): the held value stands.
+      out.x = this._x;
+      out.y = this._y;
+      return out;
+    }
+    const scale = this.scaleFor(use);
+    const countsX = this._pixelsX * this.countsPerPixel;
+    const countsY = this._pixelsY * this.countsPerPixel;
     const rateX = RATE_FACTOR * countsX * scale / elapsedSeconds;
     const rateY = RATE_FACTOR * countsY * scale / elapsedSeconds;
-    this._x = quantiseAxis(this.invertX ? -rateX : rateX);
-    this._y = quantiseAxis(this.invertY ? -rateY : rateY);
-    return { x: this._x, y: this._y };
+    out.x = quantiseAxis(this.invertX ? -rateX : rateX);
+    out.y = quantiseAxis(this.invertY ? -rateY : rateY);
+    return out;
   }
 
   /** Drop everything — a mode switch, a lost pointer lock, a console opening.

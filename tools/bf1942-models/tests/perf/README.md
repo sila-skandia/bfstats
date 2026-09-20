@@ -29,6 +29,46 @@ Playwright comes from `ui/node_modules` (the main checkout's when run from a
 worktree; `PLAYWRIGHT_MODULES` overrides). Every phase prints one JSON line;
 `--out` keeps the whole record with per-frame counters.
 
+## Frame-cadence check
+
+`cadencecheck.cjs` answers a different question from `perfbench.cjs`: not what a
+frame costs, but whether what the player sees moves on every frame. The world
+ticks at 30 Hz (world.js, THE TICK LAW), so a page that drew raw tick state gave
+a 60 Hz display a new pose on half its frames and a repeat on the rest — which
+reads as "the frame rate feels bad" while the renderer sits at 57-60 fps. The
+findings and the presentation design they became are in
+`features/mesh-viewer-performance/README.md`, "Third pass: the 30 Hz presentation".
+
+```bash
+node cadencecheck.cjs --base http://localhost:5573
+node cadencecheck.cjs --base http://localhost:5573 --only foot-zoom-pan
+node cadencecheck.cjs --base http://localhost:5573 --uncap --out after.json
+```
+
+Eight scenarios — hip / aiming / prone-and-firing pans, walking, a Corsair's
+cockpit, a Willys, a Sherman tower and a Defgun — each panned, walked, flown or
+driven at a steady rate for `--frames` (180) rendered frames. Per scenario:
+
+- `movedPct`, the share of frames on which the camera's rotation (or its world
+  position) changed at all. 100 is a page drawing its own instant; ~50 is a page
+  drawing the last tick. A scenario fails below `--min` (95).
+- `cv`, the coefficient of variation of the per-frame steps, zeros included. A
+  page alternating a step with a stall sits near 1.0 whatever its mean.
+
+It is headed and nothing else: headless Chromium and the hidden preview pane do
+not tick `requestAnimationFrame` usefully, and every count would be noise.
+`--uncap` adds the vsync-off flags, which is the proof that the motion is a
+function of elapsed time rather than of the tick. Every run ends with
+`__matrixDrift` (its documented false positives apply — a name like `Em_*` is
+noise; compare against the base build rather than against zero). Exit 0 all
+pass, 1 one or more fail, 2 a scenario could not be staged.
+
+The panning scenarios feed `__lookDelta` once per rendered frame from inside the
+measuring loop, which is what pointer lock delivers; driving it off a timer
+measures the timer's jitter instead. The walking scenario stands the soldier on
+open ground and probes several headings first, because a body walking into a
+wall stands still for an honest reason.
+
 ## GPU leak check
 
 `leakcheck.cjs` walks the real E key in and out of a vehicle and fails when
