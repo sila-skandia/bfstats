@@ -4,8 +4,8 @@
 // the viewer module in under its own name, so the file under test is the file
 // the page loads, byte for byte. The module imports nothing.
 
-import { MODE_KEYS, gameTypes, isUnknownMode, modeNames, nodeInMode,
-         pruneToMode, resolveMode, selectGameMode,
+import { MODE_KEYS, gameTypes, isUnknownMode, modeNames, modeProblem,
+         nodeInMode, pruneToMode, resolveMode, selectGameMode,
          spawnerWindow } from './game-modes.js';
 
 const results = {};
@@ -261,6 +261,98 @@ results.spawnerWindow = {
     minSpawnDelay: 40, maxSpawnDelay: 80, byMode: { Tdm: null },
   }, 'Tdm'),
   nothing: spawnerWindow(null, 'Conquest'),
+};
+
+// Road to Rome's Anzio as the extractor now writes it: `CoOp` is a layer of
+// its own, because the script takes its flags from `Conquest/` and everything
+// else from `SinglePlayer/`. `SinglePlayer` is still there and is still the
+// directory's own layout -- and no game type runs it as such.
+const anzio = {
+  level: 'Anzio',
+  gameplayMode: 'Conquest',
+  controlPoints: [{ name: 'cq', team: 1 }],
+  soldierSpawns: [{ group: 1 }],
+  objectSpawns: [],
+  vehicleSoldierSpawns: [],
+  tickets: null,
+  combatArea: null,
+  gameTypes: { Conquest: { mode: 'Conquest' }, CoOp: { mode: 'CoOp' } },
+  modes: {
+    Conquest: { gameTypes: ['Conquest'], controlPoints: [{ name: 'cq', team: 1 }],
+                soldierSpawns: [{ group: 1 }], objectSpawns: [],
+                vehicleSoldierSpawns: [], tickets: null, combatArea: null },
+    SinglePlayer: { gameTypes: [], controlPoints: [{ name: 'sp', team: 1 }],
+                    soldierSpawns: [{ group: 2 }, { group: 3 }], objectSpawns: [],
+                    vehicleSoldierSpawns: [], tickets: null, combatArea: null },
+    CoOp: { gameTypes: ['CoOp'], controlPoints: [{ name: 'cq', team: 1 }],
+            soldierSpawns: [{ group: 2 }, { group: 3 }], objectSpawns: [],
+            vehicleSoldierSpawns: [], tickets: { mode: 'CoOp', team1: 120, team2: 100 },
+            combatArea: null },
+  },
+};
+
+// A level whose menu offers Ctf and which ships no `Ctf/` directory. 21
+// levels across the installed mods are like this.
+const advertisedOnly = {
+  level: 'Kakazu_Ridge',
+  gameplayMode: 'Conquest',
+  controlPoints: [{ name: 'a', team: 1 }],
+  soldierSpawns: [], objectSpawns: [], vehicleSoldierSpawns: [],
+  tickets: null, combatArea: null,
+  gameTypes: { Conquest: { mode: 'Conquest' }, Ctf: { mode: 'Ctf' } },
+  modes: {
+    Conquest: { gameTypes: ['Conquest'], controlPoints: [{ name: 'a', team: 1 }],
+                soldierSpawns: [], objectSpawns: [], vehicleSoldierSpawns: [],
+                tickets: null, combatArea: null },
+  },
+};
+
+// A level with a `SinglePlayer/` directory and no `GameTypes/CoOp.con` --
+// DC_Final's Medina Ridge is the one in the installed mods.
+const noCoopScript = {
+  level: 'DC_Medina_Ridge',
+  gameplayMode: 'Conquest',
+  controlPoints: [], soldierSpawns: [], objectSpawns: [],
+  vehicleSoldierSpawns: [], tickets: null, combatArea: null,
+  gameTypes: { Conquest: { mode: 'Conquest' } },
+  modes: {
+    Conquest: { gameTypes: ['Conquest'], controlPoints: [], soldierSpawns: [],
+                objectSpawns: [], vehicleSoldierSpawns: [], tickets: null,
+                combatArea: null },
+    SinglePlayer: { gameTypes: [], controlPoints: [{ name: 'sp', team: 2 }],
+                    soldierSpawns: [], objectSpawns: [],
+                    vehicleSoldierSpawns: [], tickets: null, combatArea: null },
+  },
+};
+
+results.composed = {
+  // Instant Battle asks for the game type, and on Road to Rome that is a
+  // layer of its own -- Conquest's flags under SinglePlayer's spawns.
+  coop: resolveMode(anzio, 'CoOp'),
+  coopFlags: selectGameMode(anzio, 'CoOp').controlPoints.map(c => c.name),
+  coopSpawns: selectGameMode(anzio, 'CoOp').soldierSpawns.length,
+  coopTickets: selectGameMode(anzio, 'CoOp').tickets,
+  // The directory is still reachable by its own name and is still its own
+  // layout -- which is not what the engine runs here.
+  singlePlayer: resolveMode(anzio, 'SinglePlayer'),
+  singlePlayerFlags: selectGameMode(anzio, 'SinglePlayer').controlPoints.map(c => c.name),
+  // And on a level whose CoOp is one directory's, nothing changed.
+  wakeCoop: resolveMode(wake, 'CoOp'),
+  // A level that ships the layout but no script for it still answers.
+  conventional: resolveMode(noCoopScript, 'CoOp'),
+  conventionalProblem: modeProblem(noCoopScript, 'CoOp'),
+};
+
+results.modeProblem = {
+  none: modeProblem(wake, ''),
+  layer: modeProblem(wake, 'Tdm'),
+  gameType: modeProblem(wake, 'CoOp'),
+  unknown: modeProblem(wake, 'Nonsense'),
+  // Advertised by the menu, no directory behind it: `resolveMode` hands back
+  // the default and this is the only thing that says so.
+  missing: modeProblem(advertisedOnly, 'Ctf'),
+  missingResolves: resolveMode(advertisedOnly, 'Ctf'),
+  oldReport: modeProblem({ level: 'Tobruk', gameplayMode: 'Conquest' }, 'Ctf'),
 };
 
 process.stdout.write(JSON.stringify(results));

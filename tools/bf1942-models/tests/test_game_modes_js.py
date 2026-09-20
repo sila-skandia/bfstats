@@ -249,5 +249,78 @@ class SpawnerWindowTests(unittest.TestCase):
         self.assertIsNone(self.results["spawnerWindow"]["nothing"])
 
 
+class ComposedLayerTests(unittest.TestCase):
+    """A game type whose layer is no single directory's.
+
+    Every Road to Rome CoOp script and 8 of Secret Weapons' 9 take their
+    flags out of `Conquest/` and everything else out of `SinglePlayer/`, so
+    the extractor writes a `CoOp` layer of its own and `?mode=CoOp` is what
+    resolves to it. 35 scripts across the 18 installed mods; none in vanilla.
+    """
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+
+    def test_the_game_type_name_resolves_to_the_composed_layer(self) -> None:
+        self.assertEqual(self.results["composed"]["coop"], "CoOp")
+
+    def test_the_composed_layer_is_conquest_s_flags(self) -> None:
+        self.assertEqual(self.results["composed"]["coopFlags"], ["cq"])
+
+    def test_the_composed_layer_is_singleplayer_s_spawns(self) -> None:
+        self.assertEqual(self.results["composed"]["coopSpawns"], 2)
+
+    def test_the_composed_layer_carries_the_game_type_s_tickets(self) -> None:
+        self.assertEqual(self.results["composed"]["coopTickets"],
+                         {"mode": "CoOp", "team1": 120, "team2": 100})
+
+    def test_the_directory_is_still_reachable_by_its_own_name(self) -> None:
+        self.assertEqual(self.results["composed"]["singlePlayer"], "SinglePlayer")
+        self.assertEqual(self.results["composed"]["singlePlayerFlags"], ["sp"])
+
+    def test_a_level_whose_coop_is_one_directory_is_unchanged(self) -> None:
+        self.assertEqual(self.results["composed"]["wakeCoop"], "SinglePlayer")
+
+    def test_a_layout_with_no_script_for_it_still_answers(self) -> None:
+        # DC_Final's Medina Ridge ships `SinglePlayer/` and no CoOp script.
+        self.assertEqual(self.results["composed"]["conventional"], "SinglePlayer")
+        self.assertEqual(self.results["composed"]["conventionalProblem"], "")
+
+
+class ModeProblemTests(unittest.TestCase):
+    """What `?mode=` could not give, so the page can say so rather than
+    quietly render a different layer."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+
+    def test_no_mode_asked_is_no_problem(self) -> None:
+        self.assertEqual(self.results["modeProblem"]["none"], "")
+
+    def test_a_layer_this_level_has_is_no_problem(self) -> None:
+        self.assertEqual(self.results["modeProblem"]["layer"], "")
+
+    def test_a_game_type_this_level_offers_is_no_problem(self) -> None:
+        self.assertEqual(self.results["modeProblem"]["gameType"], "")
+
+    def test_a_name_the_level_does_not_know_is_unknown(self) -> None:
+        self.assertEqual(self.results["modeProblem"]["unknown"], "unknown")
+
+    def test_a_game_type_with_no_directory_behind_it_is_missing(self) -> None:
+        # The case `isUnknownMode` calls fine and the page used to render in
+        # silence: the menu offers Ctf, the archive has no `Ctf/`.
+        self.assertEqual(self.results["modeProblem"]["missing"], "missing")
+        self.assertEqual(self.results["modeProblem"]["missingResolves"], "Conquest")
+
+    def test_a_report_from_before_modes_existed_says_nothing(self) -> None:
+        self.assertEqual(self.results["modeProblem"]["oldReport"], "")
+
+
 if __name__ == "__main__":
     unittest.main()
