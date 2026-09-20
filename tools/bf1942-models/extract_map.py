@@ -67,6 +67,7 @@ from bf42.level import (  # noqa: E402
     LevelInfo,
     index_object_lightmaps,
     decode_heightmap,
+    compose_game_type_layers,
     decode_material_map,
     discover_level_sounds,
     find_gameplay_modes,
@@ -202,6 +203,10 @@ def load_level(game_dir: Path, mod: str, level: str,
     for mode in ordered:
         info.modes[mode] = (info.gameplay if mode == info.gameplay.mode
                             else load_gameplay_objects(files, mode))
+    # And a layer of its own for each game type whose `run` lines straddle two
+    # directories, keyed by the game type's name — see `compose_game_type_layers`.
+    # Appended after the directory layers, so the default stays first.
+    compose_game_type_layers(files, info.game_types, info.modes)
     # The default mode's vehicle layer, under the names every caller already
     # uses. `load_gameplay_objects` reads these two files itself now.
     info.spawn_templates = info.modes[default].object_spawn_templates
@@ -1540,14 +1545,23 @@ def _tickets_report(data) -> dict | None:
     return out
 
 
-def _tag_modes(builder, node: int, modes: list[str]) -> None:
+def _tag_modes(builder, node: int, modes: list[str],
+               every: int | None = None) -> None:
     """Mark a scene node as belonging to just these game modes.
 
     The viewer detaches any node whose `modes` excludes the active one. A node
     without the key is in every mode, which is also how every scene glb built
     before modes existed reads — that is the backward-compatible default and
     it must stay that way.
+
+    So a node that *is* in every mode is left untagged: `every` is how many
+    layers the level has, and a node in all of them already reads correctly
+    without the key. That is not only fewer bytes — it is what makes a
+    single-layer level's glb byte-identical to one built before any of this
+    existed, so 309 of the 1,301 installed levels need no re-publish at all.
     """
+    if every is not None and len(modes) >= every:
+        return
     placed = builder.node(node)
     extras = dict(placed.extras) if isinstance(placed.extras, dict) else {}
     extras["modes"] = list(modes)
@@ -1954,6 +1968,9 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
             object_report["placed"] += 1
         spawn_fail: set[str] = set()
         spawner_nodes: list[int] = []
+        # How many layers there are, so a node in all of them stays untagged
+        # and a single-layer level's glb is byte-identical to a pre-modes one.
+        every_mode = len(info.modes) or 1
         # An ObjectSpawner whose template is unknown, or that spawns nothing
         # for either side, yields no vehicle at all — reported the same way
         # whichever mode it came from.
@@ -1977,7 +1994,8 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
             placed = builder.node(node)
             extras_node = placed.extras if isinstance(placed.extras, dict) else {}
             extras_node = dict(extras_node)
-            extras_node["modes"] = list(modes)
+            if len(modes) < every_mode:
+                extras_node["modes"] = list(modes)
             if window is not None:
                 stamp = {
                     "name": inst.template,
@@ -1991,7 +2009,11 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
                         for name, pair in windows.items()
                     }
                 extras_node["spawner"] = stamp
-            placed.extras = extras_node
+            # Only when there is something to say: an empty `extras` is not the
+            # same bytes as no `extras`, and a single-layer level with no
+            # respawn window has nothing to add.
+            if extras_node:
+                placed.extras = extras_node
             spawner_nodes.append(node)
             object_report["spawners"] += 1
         if spawner_nodes:
@@ -2012,7 +2034,7 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
                 # carries no drawable primitive (Interstate 82's 53-byte
                 # `nothing.sm`). Only the assembler can see that.
                 continue
-            _tag_modes(builder, node, modes)
+            _tag_modes(builder, node, modes, every_mode)
             flag_nodes.append(node)
             placed_flags.add(inst.template.lower())
             object_report["controlPoints"] += 1
@@ -2035,7 +2057,7 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
             # The cloth sits at the scene root, not under the pole, so it needs
             # the tag in its own right or a mode switch would leave it flying
             # over a pole that is no longer there.
-            _tag_modes(builder, mesh_node, modes)
+            _tag_modes(builder, mesh_node, modes, every_mode)
             roots.append(mesh_node)
             object_report["flagCloths"] = object_report.get("flagCloths", 0) + 1
         if flag_nodes:
