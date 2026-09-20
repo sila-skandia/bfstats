@@ -41,6 +41,16 @@ const FREE_RANGE = 180;
 // has his own `c_PIMouseLookY`. Keying on the bare input name welds them.
 const keyOf = (control, input) => `${control}/${input}`;
 
+/** A node name's match key: lowercased, with the scene document's
+ *  duplicate-instance suffix dropped (`MustangPropellerBlurred_1` and the
+ *  spec's authored `MustangPropellerBlurred` are the same node). The scene
+ *  glb renames every second instance of a name; every data spec — the
+ *  propeller-blur stamp, the cockpit `lodAlternative`, a spec's `replaces`
+ *  list — spells the authored one. Map.html keeps the same law as
+ *  `bareFireArmsName`; this is that helper's flight-side twin. */
+export const nodeNameKey = name =>
+  String(name || '').toLowerCase().replace(/_\d+$/, '');
+
 /**
  * The signed direction an axis deflects for a positive input.
  *
@@ -463,7 +473,11 @@ export class Vehicle {
    * same template walk pruned rather than a separate authoring of the same
    * geometry: `lodCorsairCockpit` means the same node in both files, at the
    * same place, so the interior lands where the engine puts it without this
-   * module knowing a single offset.
+   * module knowing a single offset. The match is bare, not exact: the scene
+   * document renames every second instance of a name (`lodMustangCockpit_1`),
+   * the fetched glb always spells the authored name, and an exact compare
+   * left the second Mustang of a level with no interior at all — the same
+   * rename the audio gate tripped on (`bareFireArmsName` in map.html).
    *
    * Only the flown seat's swaps are taken. A B17 ships five — the pilot's
    * cockpit plus a 1P mesh for each gunner station's turret and gun — and each
@@ -474,7 +488,9 @@ export class Vehicle {
   graftCockpit(root) {
     const byName = new Map();
     this.node.traverse(obj => {
-      if (obj.name && !byName.has(obj.name)) byName.set(obj.name, obj);
+      if (obj.name && !byName.has(nodeNameKey(obj.name))) {
+        byName.set(nodeNameKey(obj.name), obj);
+      }
     });
 
     const sources = [];
@@ -485,13 +501,13 @@ export class Vehicle {
     for (const source of sources) {
       const spec = source.userData.lodAlternative;
       if ((source.userData.control || '') !== this.control) continue;
-      const host = byName.get(source.name);
+      const host = byName.get(nodeNameKey(source.name));
       if (!host) continue;
       // `children` is live while reparenting, so snapshot it first.
       const interior = [...source.children];
       for (const child of interior) host.add(child);
       const hidden = (spec.replaces || [])
-        .map(name => byName.get(name))
+        .map(name => byName.get(nodeNameKey(name)))
         .filter(Boolean);
       swaps.push(new CockpitSwap(host, interior, hidden, spec));
     }
@@ -574,9 +590,18 @@ export class Vehicle {
       // there. It matters here and not at export time only because the
       // cockpit graft is what completes the pair: before it, the blurred half
       // does not exist in this tree and no pair is built at all.
+      //
+      // The children are matched on the bare name key, not exactly: a second
+      // instance's nodes are renamed in the scene document
+      // (`MustangPropellerStatic_1`) while the stamp spells the authored
+      // name, and an exact compare silently collected no pair — the flown
+      // second aircraft never swapped blade for disc, and flew showing the
+      // parked blade the level-load pass had left it with.
       if (data.propellerBlur && isPropellerBlurPair(data.propellerBlur)) {
-        const staticNode = obj.children.find(child => child.name === data.propellerBlur.static);
-        const blurredNode = obj.children.find(child => child.name === data.propellerBlur.blurred);
+        const staticKey = nodeNameKey(data.propellerBlur.static);
+        const blurredKey = nodeNameKey(data.propellerBlur.blurred);
+        const staticNode = obj.children.find(child => nodeNameKey(child.name) === staticKey);
+        const blurredNode = obj.children.find(child => nodeNameKey(child.name) === blurredKey);
         if (staticNode && blurredNode) {
           this.propellerBlurPairs.push({
             static: staticNode,

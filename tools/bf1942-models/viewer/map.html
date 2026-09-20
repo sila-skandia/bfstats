@@ -871,6 +871,8 @@ import { FOV_DEG as FOOT_FOV, GRAVITY } from './soldier.js';
 import { DeviationModel } from './deviation.js';
 import { wantViewmodelClip } from './viewmodel-anim.js';
 import { createReplayController, recordingLevel } from './replay.js';
+import { createRoomClient } from './netcode-client.js';
+import { createRemoteRenderer } from './netcode-render.js';
 import { Hud, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS } from './hud.js';
 import { Armor } from './armor.js';
 import { VehicleDamageSet } from './vehicle-damage.js';
@@ -6473,8 +6475,17 @@ function setPilot(on, node = null, seatId = null) {
       groups: vehicleGuns,
       manned: mannedGuns,
     });
+    // The room's control channel: the server mounts this player in its own
+    // world the same way (netcode.js MSG_ACTION; the vehicle id is the room
+    // table's, matched by template + pose like the renderer's).
+    const netSeat = netSeatRow('enter');
+    if (netSeat) netSendAction(netSeat);
   } else if (!on) {
     world?.clearPlayerVehicle(LOCAL_PLAYER);
+    // The seat's gone; tell the server before the occupancy row is cleared
+    // so the others' replicas release the hull.
+    const netSeat = occupancy ? netSeatRow('exit') : null;
+    if (netSeat) netSendAction(netSeat);
   }
   world?.resetStick(LOCAL_PLAYER);
   // Climbing in or out moves the drawn set and the camera both; re-collect
@@ -6651,6 +6662,11 @@ function switchSeat(position) {
     : mannedActive() ? HUD_MANNED : car ? HUD_DRIVE : HUD_PILOT;
   loadSeatPose();
   updateMobileControls();
+  // The room's control channel: seat switches are rows, not input words.
+  const netId = netVehicleIdFor(occupancy.root);
+  if (roomJoined && netId != null) {
+    netSendAction({ type: 'seat', vehicle: netId, seat: position, action: 'switch' });
+  }
 }
 
 // --- feeding the vehicle/gun HUD variables (BRIEFING2.md's contract) -------
@@ -7187,7 +7203,11 @@ function exitVehicle() {
   const vehicle = aircraft || car;
   if (!vehicle) return;
   const exit = exitPose(vehicle);
+  // The room's control channel: capture the seat row before leaveVehicle
+  // clears the occupancy the row is read from.
+  const netSeat = occupancy ? netSeatRow('exit') : null;
   leaveVehicle();
+  if (netSeat) netSendAction(netSeat);
   optPilot.checked = false;
   if (optOnFoot.checked && soldier) {
     soldier.collider = collider;
@@ -7279,7 +7299,9 @@ function leaveManned() {
 function exitManned() {
   if (!occupancy) return;
   const exit = exitPoseManned(occupancy);
+  const netSeat = occupancy ? netSeatRow('exit') : null;
   leaveManned();
+  if (netSeat) netSendAction(netSeat);
   optPilot.checked = false;
   if (optOnFoot.checked && soldier) {
     soldier.collider = collider;
@@ -7510,6 +7532,14 @@ function spawnAtFlag(advance = false) {
   hud.textContent = `${flag.name} · ${spawn.name}`;
   clearTimeout(hudViewTimer);
   hudViewTimer = setTimeout(updateHud, 2200);
+  // The room's control channel: the server re-places its own copy of this
+  // player on the same flag (fresh Armor on the kit's max).
+  if (roomJoined) {
+    netSendAction({
+      type: 'spawn',
+      flag: Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1),
+    });
+  }
   return true;
 }
 
@@ -11581,12 +11611,18 @@ async function show(entry) {
   // flight.js toggles it from live throttle. Every parked spawner here has no
   // throttle at all, so it gets the engine-off state the comment above already
   // establishes: blades visible, disc hidden.
+  //
+  // The stamp spells the authored child name; the scene document renames
+  // every second instance (`MustangPropellerBlurred_1`), and an exact compare
+  // left a parked second aircraft drawing blade and disc stacked. Same bare
+  // name law as `bareFireArmsName` below.
   currentRoot.traverse(obj => {
     if (obj.userData?.effect || obj.userData?.projectileMesh
         || obj.userData?.projectileTrail) obj.visible = false;
     const blur = obj.userData?.propellerBlur;
     if (blur) {
-      const blurred = obj.children.find(child => child.name === blur.blurred);
+      const key = bareFireArmsName(blur.blurred);
+      const blurred = obj.children.find(child => bareFireArmsName(child.name) === key);
       if (blurred) blurred.visible = false;
     }
   });
@@ -11826,6 +11862,244 @@ optEntire.addEventListener('change', () => {
 // recording dropped onto the view. See replay.js.
 const replayUrl = params.get('replay');
 let replayController = null;
+// --- the room (netcode-play-multiplayer P2) ----------------------------------
+//
+// `?room=<code>` joins the room server at the same origin (`/netcode` —
+// HAProxy's path-beg ACL rides it through, WS and the JSON lobby both).
+// netcode-client.js owns the wire (the engine's 104-bit input word, the 20 Hz
+// snapshots, the seq law); netcode-render.js draws the server-confirmed
+// remotes the way replay.js draws recordings; this page glues the two onto
+// the local sim's seams and sends the engine's control-channel rows (seat
+// enter/exit/switch, respawn) from the page's own mount/spawn code. Without
+// `?room=` every binding below is a no-op — single-player is untouched.
+const roomCode = params.get('room');
+const roomName = params.get('name') || 'Player';
+let roomClient = null;
+let roomRenderer = null;
+let roomJoined = false;
+let roomPingTimer = null;
+const parkedHullCache = new Map();   // room vehicle id -> local scene node
+const netScratchV = new THREE.Vector3();
+
+/** The room table id for a LOCAL vehicle node: template name (the scene
+ *  node's `userData.control`), closest to the server pose among the same
+ *  template's entries — the `spawnDelayForNode` matching law, over the wire
+ *  table instead of the local scene. */
+function netVehicleIdFor(node) {
+  if (!roomJoined || !node) return null;
+  const name = templateNameOf(node).toLowerCase();
+  netScratchV.setFromMatrixPosition(node.matrixWorld);
+  let best = null;
+  let bestD = Infinity;
+  for (const [id, v] of roomClient.vehicles) {
+    if (v.template.toLowerCase() !== name) continue;
+    const pose = roomClient.remoteVehicle(id);
+    if (!pose) continue;
+    const d = (netScratchV.x - pose.x) ** 2
+      + (netScratchV.y - pose.y) ** 2 + (netScratchV.z - pose.z) ** 2;
+    if (d < bestD) { bestD = d; best = id; }
+  }
+  return best;
+}
+
+/** The active seat's position in the occupancy's own survey order, the same
+ *  index the server's seat rows and the snapshot records carry (root = 0). */
+function netSeatIndex() {
+  const occ = occupancy;
+  if (!occ) return null;
+  const i = occ.order.indexOf(occ.activeSeatId);
+  return i >= 0 ? i : 0;
+}
+
+function netSeatRow(action) {
+  const occ = occupancy;
+  if (!occ?.root) return null;
+  const id = netVehicleIdFor(occ.root);
+  if (id == null) return null;
+  return { type: 'seat', vehicle: id, seat: netSeatIndex() ?? 0, action };
+}
+
+function netSendAction(row) {
+  if (roomJoined && roomClient) roomClient.action(row);
+}
+
+/** The local scene's parked hull for a room vehicle id: the level node whose
+ *  template matches and whose position is closest to the server pose. The
+ *  replica draws a remote driver's vehicle, so the parked hull under it must
+ *  not double-draw (and it is asleep either way — `damageVisuals`' own node,
+ *  the frozen spawn tree, not the body world). */
+function parkedHullFor(vehicleId) {
+  if (parkedHullCache.has(vehicleId)) return parkedHullCache.get(vehicleId);
+  const v = roomClient?.vehicles.get(vehicleId);
+  let found = null;
+  if (v) {
+    const want = v.template.toLowerCase();
+    const pose = roomClient.remoteVehicle(vehicleId);
+    let bestD = Infinity;
+    for (const visual of damageVisuals.values()) {
+      const node = visual?.node;
+      if (!node || templateNameOf(node).toLowerCase() !== want) continue;
+      const d = pose
+        ? (node.position.x - pose.x) ** 2
+          + (node.position.y - pose.y) ** 2 + (node.position.z - pose.z) ** 2
+        : 0;
+      if (d < bestD) { bestD = d; found = node; }
+    }
+  }
+  parkedHullCache.set(vehicleId, found);
+  return found;
+}
+
+function hideParkedHull(roomId, occupied) {
+  const node = parkedHullFor(roomId);
+  if (node) node.visible = !occupied;
+}
+
+function netTeardownRoom() {
+  if (!roomJoined && !roomClient) return;
+  roomJoined = false;
+  if (roomPingTimer !== null) { clearInterval(roomPingTimer); roomPingTimer = null; }
+  roomRenderer?.reset();
+  roomClient?.close();
+  roomClient = null;
+  parkedHullCache.clear();
+}
+
+async function joinRoom() {
+  if (!roomCode || roomClient) return;
+  try {
+    const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+    const ws = new WebSocket(`${proto}${location.host}/netcode`);
+    // The server only ever sends binary frames; say so before the first one
+    // lands (the hello follows the join immediately).
+    ws.binaryType = 'arraybuffer';
+    roomClient = createRoomClient({ ws, now: () => performance.now() });
+    roomRenderer = createRemoteRenderer({
+      scene, camera, loader, bust,
+      modelsBase: MODELS_BASE,
+      // The engine's vehicle lighting, as the level's own vehicles get it —
+      // replicas are drawn the way replay.js draws recorded ones.
+      shadeModel: root => bindDynamicShading(root),
+      onOccupyChange: hideParkedHull,
+    });
+    roomClient.onevent = row => {
+      if (row?.text) logToConsole(row.text);
+    };
+    roomClient.onclosed = code => {
+      const wasIn = roomJoined;
+      roomJoined = false;
+      if (roomPingTimer !== null) { clearInterval(roomPingTimer); roomPingTimer = null; }
+      roomRenderer?.reset();
+      if (wasIn) logToConsole(`room closed (${code})`);
+    };
+    roomClient.onjoined = async () => {
+      roomJoined = true;
+      // (The heartbeat was already running — it starts at open, see above,
+      // so the join's own silence during the page's load is covered.)
+      // The room names the level it runs. When the URL already asked for
+      // that level the page's own load covers it; when it asked for
+      // another (or nothing), the ONE clean way to switch is a reload with
+      // the room's level in the URL — `show()` is not safe to run twice,
+      // and the manifest flow would be mid-flight in the same breath. The
+      // reload re-joins the same room from the URL and loads once.
+      const want = (roomClient.hello.level || '').toLowerCase();
+      const asked = (params.get('map') || '').toLowerCase();
+      if (want && asked !== want && manifest.some(e => e.name.toLowerCase() === want)) {
+        const q = new URLSearchParams(location.search);
+        q.set('map', want);
+        location.replace(`${location.pathname}?${q}`);
+        return;
+      }
+      logToConsole(`room ${roomClient.hello.room} · ${roomClient.hello.level} · slot ${roomClient.slot}`);
+      logToConsole(`you are on team ${roomClient.hello.team === 1 ? 'AXIS' : 'ALLIED'}`);
+      // The room names the team; the deploy screen rides it.
+      setDeployTeam(roomClient.hello.team === 1 ? 1 : 2, false);
+      if (!deployActive()) openDeploy();
+    };
+    ws.addEventListener('message', e => {
+      // Binary frames only (see above); a string would be a server that is
+      // not the room server, and is ignored rather than misparsed.
+      if (typeof e.data === 'string') return;
+      roomClient?.handleMessage(e.data);
+    });
+    ws.addEventListener('error', e => {
+      console.warn('room socket error', e.message ?? e);
+    });
+    ws.addEventListener('close', e => {
+      // The room server's own close codes ride the wire as MSG_CLOSED rows
+      // (netcode.js); a bare transport close is the silent-timeout law or a
+      // network drop, and the console should say which side ended it.
+      console.log('room socket closed', e.code, e.reason);
+      netTeardownRoom();
+    });
+    window.__netDiag = () => ({
+      readyState: ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][ws.readyState],
+      clientState: roomClient?.state ?? null,
+      hello: roomClient?.hello ?? null,
+      captured,
+      lockHeld,
+      pointerLock: document.pointerLockElement === renderer.domElement,
+    });
+    // Send the join when the socket is open (or now, if it already is) —
+    // `send` before the handshake throws, and a silent drop would just look
+    // like a server that never answered.
+    const sendJoin = () => roomClient?.join({
+      room: roomCode,
+      name: roomName,
+      team: 0,
+      // Create-on-join names the level the room was made on (rooms.mjs);
+      // joining an existing room ignores it.
+      level: params.get('map') || undefined,
+    });
+    // Heartbeat from the handshake on: the page's own level load starves
+    // its main thread for seconds at a time (GLB parses), and the server's
+    // silence window (rooms.mjs HEARTBEAT_TIMEOUT_MS) must not end a
+    // connection whose join is still queued behind that burst.
+    const startPing = () => {
+      if (roomPingTimer !== null) clearInterval(roomPingTimer);
+      roomPingTimer = setInterval(() => roomClient?.ping(), 4000);
+    };
+    if (ws.readyState === WebSocket.OPEN) {
+      startPing();
+      sendJoin();
+    } else {
+      ws.addEventListener('open', () => {
+        startPing();
+        sendJoin();
+      });
+    }
+    window.addEventListener('beforeunload', netTeardownRoom);
+    window.__net = () => ({
+      connected: roomJoined,
+      slot: roomClient?.slot ?? null,
+      level: roomClient?.hello?.level ?? null,
+      remoteSlots: roomJoined ? roomClient.remoteSlots() : [],
+      remote: s => roomJoined ? roomClient.remotePlayer(s) : null,
+      snapCount: roomJoined ? roomClient.snapCount() : 0,
+      feed: roomJoined ? [...roomClient.feed] : [],
+      close: netTeardownRoom,
+    });
+    // The E-key seat toggle, exposed the way __deploy and __keys are: the
+    // smoke drives this instead of a pointer-lock keypress.
+    window.__seatToggle = () => {
+      if (optPilot.checked && mannedActive()) exitManned();
+      else if (optPilot.checked && (aircraft || car)) exitVehicle();
+      else if (optOnFoot.checked && soldier && captured && nearEntry) enterVehicle(nearEntry);
+    };
+    window.__seat = () => ({
+      pilot: optPilot.checked,
+      onboard: !!occupancy,
+      vehicle: occupancy?.root?.userData?.control ?? null,
+      seat: occupancy ? occupancy.order.indexOf(occupancy.activeSeatId) : null,
+    });
+  } catch (err) {
+    console.warn('room unavailable', err);
+    logToConsole('multiplayer unavailable — playing solo');
+    roomClient = null;
+  }
+}
+
+if (roomCode) joinRoom();
 
 const manifest = await fetch(`${MAPS_BASE}/maps.json${bust()}`)
   .then(r => r.ok ? r.json() : [])
@@ -11840,6 +12114,9 @@ if (!manifest.length) {
     select.appendChild(new Option(entry.name, entry.name));
   }
   select.addEventListener('change', () => {
+    // A room is pinned to the level its server created; switching maps
+    // leaves it (P2 — the room's own lobby is the place to pick again).
+    netTeardownRoom();
     const entry = manifest.find(e => e.name === select.value);
     if (entry) show(entry);
   });
@@ -11876,6 +12153,7 @@ if (replayUrl) {
   replayController.openFromUrl(replayUrl, params.get('serverlog'))
     .catch(error => console.warn('replay unavailable', error));
 }
+
 
 optSound.addEventListener('change', () => {
   ensureAudioContext();
@@ -12006,6 +12284,19 @@ function frame(dt) {
   // directly (the on-foot eye) or through the scene graph (every seat).
   presentAlpha = step.alpha;
   applyVehicleInterp(presentAlpha);
+
+  // The room's wire, right on the sim core's edge: one input word per tick
+  // the world consumed (the engine's one-buffered-input-per-tick law — the
+  // same input this page just handed the local sim; an unticked frame sends
+  // nothing and the server's world idles that tick, which is what this
+  // page's own idle ticks already are). Then the renderer draws the
+  // server-confirmed remotes after the local world's readbacks.
+  if (roomJoined && step.ticks > 0 && input) {
+    roomClient.sendInput(input, look);
+  }
+  if (roomJoined && roomRenderer) {
+    roomRenderer.update(dt, roomClient, performance.now());
+  }
 
   // The readbacks: the HP-15 gate answer the camera shells and the mobile UI
   // spend, the combat-area frame for the warning group and the `?data` hook,
