@@ -146,6 +146,62 @@ class OriginPileTests(unittest.TestCase):
         ])
         self.assertEqual([], verify.origin_pile(parts))
 
+    def test_a_pile_off_the_scene_origin_is_still_a_pile(self) -> None:
+        # The anchor is comparative, not a hardcoded (0, 0, 0): a tank's
+        # running gear routinely shares a mount well away from the scene
+        # root (measured at y = -0.8 for a real Sherman), and four sub-parts
+        # collapsed onto *that* point is exactly the same failure signature
+        # as four collapsed onto the origin.
+        parts = self._parts([
+            ("Wheel1", (0, -0.8, 0), None),
+            ("Wheel2", (0, -0.8, 0), None),
+            ("Wheel3", (0, -0.8, 0), None),
+            ("Wheel4", (0, -0.8, 0), None),
+        ])
+        self.assertEqual(4, len(verify.origin_pile(parts)))
+
+    def _part_with_ancestry(self, name: str, at: tuple[float, float, float],
+                           node_index: int,
+                           ancestor_indices: frozenset[int] = frozenset(),
+                           ) -> verify.Part:
+        return verify.Part(name=name, world_translation=at,
+                           triangles=[((0, 0, 0), (1, 0, 0), (0, 1, 0))],
+                           node_index=node_index,
+                           ancestor_indices=ancestor_indices)
+
+    def test_a_lone_rider_on_an_offset_ancestor_folds_away(self) -> None:
+        # A multi-axis mount's own pivot chain: a yaw ring and the gun nested
+        # inside it both legitimately compose to the ring's own world point.
+        # One rider on an ancestor is that pivot chain wearing two names, not
+        # two independent placement failures -- so it folds into the
+        # ancestor, and a separately modelled part at the same point (a
+        # mount plus a decorative base, EoD_PACV's shape) still only totals
+        # two, which is allowed.
+        at = (0.0, -9.0, -90.0)
+        mount = self._part_with_ancestry("Mount", at, node_index=1)
+        gun = self._part_with_ancestry("Gun", at, node_index=2,
+                                       ancestor_indices=frozenset({1}))
+        base = self._part_with_ancestry("Base", at, node_index=3)
+        self.assertEqual([], verify.origin_pile([mount, gun, base]))
+
+    def test_a_branching_ancestor_does_not_fold_and_still_flags(self) -> None:
+        # EoD's Fletcher shape: a Flak 38 mount body with four independent
+        # sub-parts (handles, pedal, targeter) nested under it, not a single
+        # chain. Two or more riders sharing an ancestor is the branch a pile
+        # lands on, not a pivot wearing a second name, so nothing folds and
+        # the mount body counts alongside its riders.
+        at = (3.69, 6.92, 6.999)
+        mount = self._part_with_ancestry("RL_body", at, node_index=1)
+        riders = [
+            self._part_with_ancestry(name, at, node_index=10 + i,
+                                     ancestor_indices=frozenset({1}))
+            for i, name in enumerate(
+                ["RL_handle1", "RL_handle2", "RL_pedal", "RL_targeter"])
+        ]
+        pile = verify.origin_pile([mount, *riders])
+        self.assertEqual(5, len(pile))
+        self.assertIn("RL_body", pile)
+
 
 class UnplacedBoundPartTests(unittest.TestCase):
     def test_splits_missing_bones_from_missing_skeletons(self) -> None:
