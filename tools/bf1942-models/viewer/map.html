@@ -879,7 +879,7 @@ import { CombatArea, combatAreaRect } from './combat-area.js';
 import { soldierExposure, worldBlocker, POSE_STAND } from './soldier-exposure.js';
 import { CHARACTER_HEIGHT } from './physics.js';
 import { flareSprites, flareTextureFiles, hasDrawableFlare } from './lens-flare.js';
-import { isUnknownMode, modeNames, pruneToMode, selectGameMode,
+import { modeNames, modeProblem, pruneToMode, selectGameMode,
          spawnerWindow } from './game-modes.js';
 import { loadHudPaths } from './hud-pack.js';
 
@@ -1062,6 +1062,10 @@ let simTime = 0;
 // every node they drive in three's matrix walk.
 let levelClips = [];
 let flagMixer = null;
+// What `?mode=` could not give this level, for the console band. Null
+// whenever the URL got exactly what it asked for, which is every load
+// with no `?mode=` at all.
+let modeNote = null;
 
 const params = new URLSearchParams(location.search);
 
@@ -10604,10 +10608,22 @@ async function show(entry) {
   // through. See `viewer/game-modes.js`.
   const wantedMode = params.get('mode');
   extras = selectGameMode(report, wantedMode);
-  if (isUnknownMode(report, wantedMode)) {
-    console.warn(`no "${wantedMode}" layer on ${report.level}; `
-      + `showing ${extras.gameplayMode}. Has: ${modeNames(report).join(', ')}`);
-  }
+  // A `?mode=` that did not land says so, and says it where a player can read
+  // it: the dev panel is hidden for everyone but a developer, so the message
+  // goes to the game's own console band as well (`logToConsole`, below, once
+  // the level header has been written). Silence is the one wrong answer —
+  // falling back to the default layer without a word is a page that looks
+  // right and is showing something else.
+  const modeIssue = modeProblem(report, wantedMode);
+  modeNote = modeIssue
+    ? (modeIssue === 'missing'
+      ? `"${wantedMode}" is a game type ${report.level} offers but ships no `
+        + `layer for; showing ${extras.gameplayMode}. `
+        + `Has: ${modeNames(report).join(', ')}`
+      : `no "${wantedMode}" layer on ${report.level}; `
+        + `showing ${extras.gameplayMode}. Has: ${modeNames(report).join(', ')}`)
+    : null;
+  if (modeNote) console.warn(modeNote);
   // Before the old root is disposed: every gun is indexed off a node in it, and
   // the rounds in the air are clones of nodes it owns.
   releaseGuns();
@@ -10653,8 +10669,24 @@ async function show(entry) {
   // flight.js already accumulates from its rate axes — playing the baked clip
   // here as well would drive it twice.
   flagMixer = null;
-  const ambient = (gltf.animations || []).filter(
-    c => !/^spin(\.\d+)?$/.test(c.name));
+  const ambient = (gltf.animations || [])
+    .filter(c => !/^spin(\.\d+)?$/.test(c.name))
+    // The glb bakes a flag's cloth clip for every mode's pole, and
+    // `pruneToMode` has just detached the ones this mode does not fly. A
+    // track whose node has gone is a `THREE.PropertyBinding: No target node
+    // found` warning per bone per frame's worth of setup — 88 of them on
+    // Wake's Conquest layer alone — so the tracks are dropped here, the same
+    // test three itself applies when it gives up on one.
+    .map(clip => {
+      const live = clip.tracks.filter(track => THREE.PropertyBinding.findNode(
+        currentRoot, THREE.PropertyBinding.parseTrackName(track.name).nodeName));
+      if (live.length === clip.tracks.length) return clip;
+      if (!live.length) return null;
+      const trimmed = clip.clone();
+      trimmed.tracks = live;
+      return trimmed;
+    })
+    .filter(Boolean);
   levelClips = ambient;
   if (ambient.length) {
     flagMixer = new THREE.AnimationMixer(currentRoot);
@@ -10756,6 +10788,10 @@ async function show(entry) {
     });
   const t = extras.terrain || {};
   const o = extras.objects || {};
+  // `objects` counts what the glb holds, and the glb holds every mode's
+  // vehicles; what is standing in this level is what survived `pruneToMode`.
+  const vehiclesHere = spawnersRoot ? spawnersRoot.children.length
+                                    : (o.spawners || 0);
   document.getElementById('stats').innerHTML =
     `<strong>${extras.level || entry.name}</strong><br>` +
     `world ${extras.worldSize || '?'} m<br>` +
@@ -10763,7 +10799,7 @@ async function show(entry) {
     (t.defaultTiles ? ` + ${t.defaultTiles} default` : '') +
     (t.detail ? ' + detail' : '') + `<br>` +
     `objects ${o.placed || 0} placed` +
-    (o.spawners ? ` / ${o.spawners} vehicles` : '') +
+    (vehiclesHere ? ` / ${vehiclesHere} vehicles` : '') +
     (o.lightmaps ? ` / ${o.lightmaps} lightmaps` : '') +
     (o.skipped?.length ? ` / ${o.skipped.length} skipped` : '') + `<br>` +
     `sky ${extras.sky ? extras.sky.mesh + (extras.sky.clouds ? ' + clouds' : '') :
@@ -10787,8 +10823,11 @@ async function show(entry) {
   logToConsole(`level ${extras.level || entry.name} (${activeMod.id || 'bf1942'})`);
   logToConsole(`world ${extras.worldSize || '?'} m, ` +
                `${t.triangles || 0} terrain tris over ${t.tiles || 0} tiles`);
-  logToConsole(`${o.placed || 0} objects placed, ${o.spawners || 0} vehicle spawners, ` +
+  logToConsole(`${o.placed || 0} objects placed, ${vehiclesHere} vehicle spawners, ` +
                `${o.lightmaps || 0} object lightmaps`);
+  // The one line a player who typed a `?mode=` needs and would otherwise only
+  // find in a browser console they never open.
+  if (modeNote) logToConsole(modeNote);
   if (o.skipped?.length) logToConsole(`${o.skipped.length} objects skipped`);
   logToConsole(collision.statics
     ? `collision ${collision.statics.count} tris` + (collision.heightfield
@@ -11693,22 +11732,13 @@ if (params.has('shots')) {
     if (on !== undefined) mapGate = !!on;
     return mapGate;
   };
-  // The combat area and what it is doing to the body this frame: the rect the
-  // level declared, the engine's two constants, and the live accumulator. A
-  // headless check teleports out, steps frames and reads the countdown and
-  // the HP down the same path a walk would take.
-  //
-  // The two constants are settable here for the same reason `__setAmmo` and
-  // `__damage` exist: the engine's real allowance is 10 seconds, and under
-  // `__renderOnce` a frame is a capped 0.1 s of sim, so reaching the damage
-  // honestly costs 100 forced frames — more than SwiftShader survives in one
-  // session. Overriding them exercises the identical code path on a shorter
   // Which gameplay layer `?mode=` landed on, and what else the level ships —
   // enough for a headless check to prove the flags, spawns and vehicles it is
   // looking at belong to the mode it asked for.
   window.__gameMode = () => ({
     active: extras?.gameplayMode || null,
     requested: params.get('mode'),
+    note: modeNote,
     available: modeNames(extras),
     gameTypes: Object.fromEntries(
       Object.entries(extras?.gameTypes || {}).map(([k, v]) => [k, v?.mode])),
@@ -11727,6 +11757,16 @@ if (params.has('shots')) {
       : [],
   });
 
+  // The combat area and what it is doing to the body this frame: the rect the
+  // level declared, the engine's two constants, and the live accumulator. A
+  // headless check teleports out, steps frames and reads the countdown and
+  // the HP down the same path a walk would take.
+  //
+  // The two constants are settable here for the same reason `__setAmmo` and
+  // `__damage` exist: the engine's real allowance is 10 seconds, and under
+  // `__renderOnce` a frame is a capped 0.1 s of sim, so reaching the damage
+  // honestly costs 100 forced frames — more than SwiftShader survives in one
+  // session. Overriding them exercises the identical code path on a shorter
   // clock; the engine's own values are what the module defaults to and what
   // `tests/test_combat_area.py` pins.
   const combatAreaState = () => ({
