@@ -876,7 +876,7 @@ import { CombatArea, combatAreaRect } from './combat-area.js';
 // HP-10's sampling, and the one metre `setCharacterHeight -1.00` puts between
 // a soldier's feet and his object origin — the point the engine measures a
 // blast to and adds its sample offsets from.
-import { soldierExposure, worldBlocker, POSE_STAND } from './soldier-exposure.js';
+import { soldierExposure, worldBlocker } from './soldier-exposure.js';
 import { CHARACTER_HEIGHT } from './physics.js';
 import { flareSprites, flareTextureFiles, hasDrawableFlare } from './lens-flare.js';
 import { modeNames, modeProblem, pruneToMode, selectGameMode,
@@ -4528,6 +4528,10 @@ async function wreckVehicle(vehicle) {
   visual.wrecked = true;
   visual.wreckAge = 0;
   visual.hidden = [];
+  // Whoever was in it dies with it, and that has to happen HERE — before the
+  // seat is torn down below — because this is the one place a vehicle dies,
+  // whatever killed it (a shell, the burn-down, drowning, the combat area).
+  killOccupantInWreck(visual.node);
   retireVehicleBody(vehicle.owner);
   const template = templateNameOf(visual.node);
   try {
@@ -4571,6 +4575,74 @@ async function wreckVehicle(vehicle) {
     // No wreck for this template: leave the live mesh up for the linger/fade
     // rather than blanking the pad.
   }
+}
+
+/** Scratch for `killOccupantInWreck`'s world reads. */
+const wreckDeathPos = new THREE.Vector3();
+const wreckDeathQuat = new THREE.Quaternion();
+const wreckDeathFwd = new THREE.Vector3();
+
+/**
+ * The hull the player is sitting in just exploded, so the player dies with it.
+ *
+ * Retail's shape, and the reason this is not simply "you cannot drive a wreck":
+ * a destroyed `PlayerControlObject` kills its occupants, the client opens the
+ * spawn screen on local death (`hitpoints-and-damage.md` §7, `FUN_004933d0` →
+ * `SpawnScreenStuff::setVisible(true)`), and between the two there is the beat
+ * the player spends watching the thing he was driving burn. HP-15's input gate
+ * — the part this page already had — is what happens to a wreck *nobody* is in.
+ *
+ * Three steps, in this order:
+ *
+ *   1. read the hull's live pose, because the death cam frames the wreck and
+ *      the body is left beside it rather than back where he climbed in;
+ *   2. empty the seat (`leaveManned` delegates to `leaveVehicle` whenever the
+ *      root has a drivetrain, so one call covers a jeep, a tank, a plane and a
+ *      bare manned gun alike);
+ *   3. put the suspended on-foot body down at the exit point, kill its Armor
+ *      and latch the death cam. From there `onFoot()` owns the rest — the same
+ *      countdown and the same `openDeploy()` a death on foot runs through.
+ *
+ * A free-fly pilot (the debug checkbox, no soldier waiting) has no life to
+ * lose: the seat still empties, and the camera goes back to the flythrough.
+ */
+function killOccupantInWreck(node) {
+  if (!occupancy || occupancy.root !== node || soldierDead) return;
+  node.updateWorldMatrix(true, false);
+  node.getWorldPosition(wreckDeathPos);
+  node.getWorldQuaternion(wreckDeathQuat);
+  wreckDeathFwd.set(0, 0, -1).applyQuaternion(wreckDeathQuat);
+  // The hull's own facing, in the soldier's convention (forward is
+  // `(sin yaw, 0, cos yaw)`), so the death cam sits behind the wreck's tail.
+  const hullYaw = Math.atan2(wreckDeathFwd.x, wreckDeathFwd.z);
+  const exit = exitPoseManned(occupancy);
+  leaveManned();
+  optPilot.checked = false;
+  resetMobileControls();
+  if (!(optOnFoot.checked && soldier)) {
+    placeCamera();
+    updateHud();
+    return;
+  }
+  soldier.collider = collider;
+  soldier.spawn(exit.x, exit.y, exit.z, hullYaw);
+  prone = false;
+  camera.fov = FOOT_FOV;
+  camera.near = 0.2;
+  camera.updateProjectionMatrix();
+  if (handWeapon) handWeapon.rig.visible = true;
+  // A body that climbed in at full health still has it; take all of it, so
+  // the `soldierArmor.destroyed` latch in `onFoot()` is not what fires the
+  // flow a second time (it cannot: `soldierDead` is set below first).
+  if (!soldierArmor) soldierArmor = new Armor(SOLDIER_MAX_HP_FALLBACK);
+  soldierArmor.applyDamage(soldierArmor.maxHitPoints);
+  soldierDead = true;
+  deathCamShot = DEATH_CAM.vehicle;
+  deathCamTimer = deathCamShot.beat;
+  // The wreck, not the corpse, is what this shot is of.
+  deathCamTarget = { x: wreckDeathPos.x, y: wreckDeathPos.y, z: wreckDeathPos.z,
+                     yaw: hullYaw };
+  hud.textContent = 'killed in action';
 }
 
 /**
@@ -5159,15 +5231,12 @@ const SOLDIER_SPLASH_MATERIAL = 40;
  * (`handleExplosionOnObject`, HP-9) — a tank is not hurt less for being hit on
  * the far corner of its hull.
  *
- * Soldiers arrive carrying their own `Armor` and `soldier: true`, which is what
- * earns them HP-10's exposure term. Two kinds:
- *
- *   - the player, when he is on foot and alive. He is not a placed object and
- *     has no owner id, which is exactly why `applySplash` used to miss him.
- *   - the decorative 3P figures on the spawn pads. They are clones of a pose
- *     glb with no Armor of their own, so `placeSpawnSoldiers` gives each one
- *     the same 30 HP a real soldier has — the cheapest way to make the
- *     mechanic visible on the page, and the thing a headless check counts.
+ * A soldier arrives carrying his own `Armor` and `soldier: true`, which is what
+ * earns him HP-10's exposure term. There is one: the player, when he is on foot
+ * and alive. He is not a placed object and has no owner id, which is exactly
+ * why `applySplash` used to miss him. (The decorative figures that used to
+ * stand on the spawn pads were the other kind, and they are gone — see
+ * `soldierSpawns` further down for what they actually drew.)
  *
  * A soldier's **object origin** is one metre above his feet
  * (`setCharacterHeight -1.00`, `physics.js`'s `CHARACTER_HEIGHT`), and that is
@@ -5186,10 +5255,6 @@ function splashTargets() {
       splashMaterial: SOLDIER_SPLASH_MATERIAL,
       x: soldier.x, y: soldier.y + CHARACTER_HEIGHT, z: soldier.z,
     });
-  }
-  for (const pad of spawnSoldierTargets) {
-    if (pad.armor.destroyed) continue;
-    targets.push(pad);
   }
   return targets;
 }
@@ -6862,6 +6927,25 @@ let deathCamTimer = 0;    // seconds left floating over the corpse before openDe
 const DEATH_CAM_BEAT = 1.2;  // s — short float over the corpse before deploy shows
 const deathCamPos = new THREE.Vector3();
 
+// How the death cam is framed, and for how long. Two settings, because the two
+// deaths are showing different things: on foot the subject is the body that
+// just fell over, and the camera floats right above it; killed inside a
+// vehicle the subject is the **burning hull**, so the camera pulls back behind
+// and above the wreck and holds longer, which is the shot BF1942 gives you —
+// the crash first, then the spawn screen. Neither the distances nor the beats
+// are engine numbers (the client's own death cam was never decoded past
+// `FUN_004933d0` opening the spawn screen); they are framing.   [HOUSE RULES]
+const DEATH_CAM = {
+  foot:    { lift: 3.5, back: 0,   pitch: -0.9,  beat: DEATH_CAM_BEAT },
+  vehicle: { lift: 4.5, back: 7.5, pitch: -0.55, beat: 3.0 },
+};
+let deathCamShot = DEATH_CAM.foot;
+/** What the death cam is framed on: `null` for the corpse's own eye — the
+ *  on-foot death — or `{ x, y, z, yaw }`, the burning hull the player was in. */
+let deathCamTarget = null;
+/** Reused so the death cam costs no allocation per frame. */
+const deathCamAt = { x: 0, y: 0, z: 0, yaw: 0 };
+
 /** The supply and health side of the in-game HUD writes the engine's own
  *  variable names straight into the painter's table, the same one
  *  `updateSoldierHud` fills; `gameHud` is declared with the painter further
@@ -6914,6 +6998,8 @@ function spawnAtFlag(advance = false) {
   // must not hold the corpse cam over the new soldier.
   soldierDead = false;
   deathCamTimer = 0;
+  deathCamShot = DEATH_CAM.foot;
+  deathCamTarget = null;
   // The weapon follows the flag: switching to the other side's spawn swaps
   // the SMG. A no-op when the right one is already in hand.
   ensureHandWeapon(flag);
@@ -7056,7 +7142,9 @@ function onFoot(dt) {
   // cannot re-fire the flow, and is reset by `spawnAtFlag` on the next spawn.
   if (soldierArmor && !soldierDead && soldierArmor.destroyed) {
     soldierDead = true;
-    deathCamTimer = DEATH_CAM_BEAT;
+    deathCamShot = DEATH_CAM.foot;
+    deathCamTarget = null;
+    deathCamTimer = deathCamShot.beat;
     // The corpse cam itself is applied downstream, where the eye pose is
     // normally written (`soldierDead` branch) — this block only latches the
     // state and runs the deploy timer.
@@ -7108,10 +7196,21 @@ function onFoot(dt) {
   // for the beat before the deploy screen takes over.
   soldier.eye(footEye);
   if (soldierDead) {
-    deathCamPos.set(footEye.x, footEye.y + 3.5, footEye.z);
+    // Behind the subject along its own facing and above it, by `deathCamShot`.
+    // The subject is the corpse's eye for a death on foot and the hull for one
+    // inside a vehicle (`deathCamTarget`). Forward is `(sin yaw, 0, cos yaw)` —
+    // the soldier's convention throughout this file — so "behind" is minus that.
+    const at = deathCamTarget || Object.assign(deathCamAt, {
+      x: footEye.x, y: footEye.y, z: footEye.z, yaw: soldier.viewYaw,
+    });
+    const camYaw = at.yaw;
+    deathCamPos.set(
+      at.x - Math.sin(camYaw) * deathCamShot.back,
+      at.y + deathCamShot.lift,
+      at.z - Math.cos(camYaw) * deathCamShot.back);
     camera.position.set(deathCamPos.x, deathCamPos.y, deathCamPos.z);
-    look.yaw = soldier.viewYaw;
-    look.pitch = -0.9;
+    look.yaw = camYaw;
+    look.pitch = deathCamShot.pitch;
   } else {
     camera.position.set(footEye.x, footEye.y, footEye.z);
     look.yaw = soldier.viewYaw;
@@ -7180,120 +7279,25 @@ const FALLBACK_SOLDIERS = {
   ger: 'GermanSoldier', jp: 'JapaneseSoldier',
 };
 
-/** Refractor YPR degrees → glTF quaternion (same conjugation as bf42/gltf.py). */
-function quatFromYpr(yawDeg, pitchDeg, rollDeg) {
-  const y = (-yawDeg * Math.PI / 180) * 0.5;
-  const p = (-pitchDeg * Math.PI / 180) * 0.5;
-  const r = (rollDeg * Math.PI / 180) * 0.5;
-  const qy = [0, Math.sin(y), 0, Math.cos(y)];
-  const qx = [Math.sin(p), 0, 0, Math.cos(p)];
-  const qz = [0, 0, Math.sin(r), Math.cos(r)];
-  const mul = (a, b) => [
-    a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
-    a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
-    a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
-    a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
-  ];
-  return mul(mul(qy, qx), qz);
-}
-
-// Decorative 3P soldiers at soldierSpawns — one pose (or bare skin) per team,
-// cloned to every pad. Without this the flythrough has flags and vehicles but
-// no people. Paratrooper pads are skipped (they are mid-air).
-const spawnSoldierCache = new Map();
-let spawnSoldiersRoot = null;
-/**
- * The decorative figures as splash targets: `{ node, armor, soldier, pose,
- * splashMaterial, x, y, z }`, rebuilt with them.
- *
- * They are clones of a pose glb and carry no Armor of their own, so each gets
- * the 30 HP a vanilla soldier has (`CommonSoldierData.inc`). The position is
- * the **object origin**, one metre above the pad the figure stands on, which
- * is where `checkForHitOnSoldier` adds its sample offsets from.
- */
-let spawnSoldierTargets = [];
-/** What a decorative figure is worth: the same `SOLDIER_MAX_HP_FALLBACK` a
- *  spawned player gets when no kit template says otherwise. */
-const SPAWN_SOLDIER_HIT_POINTS = SOLDIER_MAX_HP_FALLBACK;
-
-function spawnSoldierUrl(team) {
-  const nation = teamNation(team) || (team === 1 ? 'ger' : 'us');
-  const soldier = FALLBACK_SOLDIERS[nation] || (team === 1 ? 'GermanSoldier' : 'USSoldier');
-  // Assault row (index 1) — the most common kit at a flag.
-  const weapon = FALLBACK_PRIMARIES[nation]?.[1] || 'Thompson';
-  return {
-    pose: `${MODELS_BASE}/poses/${soldier}__${weapon}.pose.glb`,
-    bare: `${MODELS_BASE}/${soldier}.glb`,
-  };
-}
-
-async function loadSpawnSoldierTemplate(team) {
-  const key = String(team);
-  if (spawnSoldierCache.has(key)) return spawnSoldierCache.get(key);
-  const urls = spawnSoldierUrl(team);
-  const pending = loader.loadAsync(`${urls.pose}${bust()}`)
-    .then(g => g.scene, () => loader.loadAsync(`${urls.bare}${bust()}`).then(g => g.scene, () => null))
-    .then(scene => {
-      if (!scene) { spawnSoldierCache.set(key, null); return null; }
-      scene.traverse(obj => {
-        if (obj.isMesh) {
-          obj.castShadow = false;
-          obj.receiveShadow = false;
-        }
-      });
-      spawnSoldierCache.set(key, scene);
-      return scene;
-    });
-  spawnSoldierCache.set(key, pending);
-  return pending;
-}
-
-async function placeSpawnSoldiers(root, report) {
-  if (spawnSoldiersRoot) {
-    if (spawnSoldiersRoot.parent) {
-      spawnSoldiersRoot.parent.remove(spawnSoldiersRoot);
-      dispose(spawnSoldiersRoot);
-    }
-    spawnSoldiersRoot = null;
-  }
-  spawnSoldierTargets = [];
-  const spawns = (report?.soldierSpawns || []).filter(s => !s.paratrooper && s.team);
-  if (!spawns.length) return;
-  const group = new THREE.Group();
-  group.name = 'soldierSpawns';
-  const byTeam = new Map();
-  for (const s of spawns) {
-    if (!byTeam.has(s.team)) byTeam.set(s.team, []);
-    byTeam.get(s.team).push(s);
-  }
-  await Promise.all([...byTeam.keys()].map(async team => {
-    const template = await loadSpawnSoldierTemplate(team);
-    if (!template) return;
-    for (const s of byTeam.get(team)) {
-      const node = template.clone(true);
-      const [x, y, z] = s.position || [0, 0, 0];
-      node.position.set(x, y, z);
-      const [yaw = 0, pitch = 0, roll = 0] = s.rotation || [];
-      const q = quatFromYpr(yaw, pitch, roll);
-      node.quaternion.set(q[0], q[1], q[2], q[3]);
-      node.userData.spawnSoldier = true;
-      group.add(node);
-      // An Armor and a splash target, so a grenade thrown into a spawn pad
-      // does what a grenade does. The pose is standing — the figures are, and
-      // it is also the pose with the engine's 0.5 exposure cap, so what the
-      // page shows is the cap in play rather than an invented full exposure.
-      spawnSoldierTargets.push({
-        node, armor: new Armor(SPAWN_SOLDIER_HIT_POINTS), soldier: true,
-        pose: POSE_STAND, splashMaterial: SOLDIER_SPLASH_MATERIAL,
-        x, y: y + CHARACTER_HEIGHT, z,
-      });
-    }
-  }));
-  if (!group.children.length) return;
-  bindDynamicShading(group);
-  root.add(group);
-  spawnSoldiersRoot = group;
-}
+// Nothing stands on a soldier spawn pad.
+//
+// There used to be a decorative 3P figure on every one of them — a clone of
+// `<Soldier>__<assault primary>.pose.glb`, so that a flythrough had people in
+// it as well as flags and vehicles. What it actually put on the map was a
+// **row of rifles hovering at chest height**, one per pad, and no people at
+// all: `Object3D.clone()` does not rebind a skeleton, so every clone's
+// `SkinnedMesh.skeleton` still pointed at the template's own bones, which are
+// not in the scene and sit at the origin. The bodies therefore all skinned to
+// the same spot near (0, 1.5, 0) while the weapon — a plain `Mesh` parented
+// into the *cloned* bone tree, so carried by the clone's own transform —
+// stayed out at the pad. Twenty-eight floating Sg44s on Berlin, and the same
+// on every level with spawns.
+//
+// The pads are empty in the real game, and this is a playable map now rather
+// than a flythrough, so the figures are gone rather than rebound: a row of
+// motionless mannequins at every spawn point is not what a player should walk
+// into. `splashTargets()` loses them as grenade targets with no replacement —
+// the player's own body is still in that list, and so is every vehicle.
 
 // The extracted first-person arms rigs — `<Soldier>__<Weapon>.fp.glb` under
 // models/viewmodels (§11) — one per soldier and weapon the vanilla levels
@@ -10563,7 +10567,9 @@ function openDeploy() {
   // flags — off the current map, or not anywhere at all. Rebuilding is a few
   // DOM options; the kept choice rides the select through it.
   if (!buildSpawnFlags()) return false;
-  deployRejoin = !!soldier;
+  // A dead body is not a life to go back to: RESUME must not hand the player
+  // a corpse, and `Kit/IsAlive` must say so.
+  deployRejoin = !!soldier && !soldierDead;
   deployKept = spawnFlagSelect.value;
   // The deck-spot choice belongs to the life it was made on; a fresh screen
   // starts with whole flags again (the rejoin path re-derives it below).
@@ -10866,7 +10872,6 @@ async function show(entry) {
   guns.groups.length = 0;
   vehicleGuns = [];
   dispose(currentRoot);
-  spawnSoldiersRoot = null;
   disposeSky();
   disposeSounds();
   currentRoot = gltf.scene;
@@ -10969,10 +10974,6 @@ async function show(entry) {
   }
   indexScene(currentRoot);
   collectTerrain(currentRoot);
-  // Decorative kit soldiers at the pads — async, after the scene is already
-  // visible, so a missing pose tree never blocks the flythrough.
-  placeSpawnSoldiers(currentRoot, extras).catch(err =>
-    console.warn('spawn soldiers unavailable', err));
   // Both tables are small (damage.json 154 KB shared across every level,
   // materials.png a couple of KB) and both are needed before the first shot,
   // not before the first frame.
