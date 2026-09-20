@@ -20,7 +20,8 @@ import * as THREE from 'three';
 import {
   GroundVehicle, WILLYS, TrackedVehicle, TANK,
   engineRatio, gearLadder, engineTorqueFraction, differentialRPM,
-  engineGripTarget, ENGINE_REV_CEILING, ENGINE_REV_FLOOR,
+  currentDifferentialRPM, engineGripTarget, engineTypeBits, ENGINE_TYPES,
+  EngineState, ENGINE_REV_CEILING, ENGINE_REV_FLOOR,
 } from './ground.js';
 import { GRAVITY } from './physics.js';
 
@@ -55,6 +56,14 @@ function willyNode() {
     physics: {
       engineType: 'c_ETCar', torque: 10.5, differential: 7.0,
       numberOfGears: 5, gearUp: 0.95, gearDown: 0.4,
+      // `setMinRotation 0/0/-5000`, `setMaxRotation 0/0/5000`,
+      // `setMaxSpeed 0/0/55000`, `setAcceleration 0/0/55000`. The Engine
+      // declares NO yaw input at all -- a car steers through its front
+      // wheels' own bundles -- so `maxRotation.x` is 0 and the drivetrain's
+      // steering term stays 0, which is exactly what makes
+      // `getCurrentDifferentialRPM` a no-op for a `c_ETCar`.
+      maxRotation: [0, 0, 5000], maxSpeed: [0, 0, 55000],
+      acceleration: [0, 0, 55000],
     },
     rig: {
       control: 'Willy', automaticReset: true,
@@ -180,6 +189,10 @@ function shermanNode() {
     physics: {
       engineType: 'c_ETTank', torque: 4, differential: 4, numberOfGears: 5,
       gearUp: 0.95, gearDown: 0.45, gearChangeTime: 0.05,
+      // `setMinRotation -1/0/-1`, `setMaxRotation 1/0/1`,
+      // `setMaxSpeed 4/0/10`, `setAcceleration 4/0/10`: full throttle in
+      // 1/10 = 0.1 s, full lock in 1/4 = 0.25 s.
+      maxRotation: [1, 0, 1], maxSpeed: [4, 0, 10], acceleration: [4, 0, 10],
     },
     rig: {
       control: 'Sherman', automaticReset: true,
@@ -245,6 +258,10 @@ function m3a1Node() {
     physics: {
       engineType: 'c_ETTank', torque: 5, differential: 5, numberOfGears: 4,
       gearUp: 0.95, gearDown: 0.45, gearChangeTime: 0.05,
+      // `setMinRotation -1/0/-1`, `setMaxRotation 1/0/1`,
+      // `setMaxSpeed 4/0/10`, `setAcceleration 4/0/10`: full throttle in
+      // 1/10 = 0.1 s, full lock in 1/4 = 0.25 s.
+      maxRotation: [1, 0, 1], maxSpeed: [4, 0, 10], acceleration: [4, 0, 10],
     },
     rig: {
       control: 'M3A1', automaticReset: true,
@@ -589,14 +606,53 @@ for (const [name, make] of [
 
 // Hands off the wheel again: the steering servo's automatic reset must
 // straighten the wheels and the yaw rate die away.
+//
+// Two entries, because the answer depends on whether the throttle is still
+// floored, and that is the whole of PHY-2's "power slide": the Coulomb
+// budget is one circle per contact, so a driven wheel spending it on drive
+// has nothing left to corner with. `fromSpeed` is a jeep already at its top
+// speed when the wheel goes over — the drive demand is then nearly zero
+// because the target and the road speed agree, so both axles have their full
+// budget and the hull straightens. `fromRest` floors it into the turn from a
+// standstill, where the rear axle is saturated for the whole manoeuvre.
+{
+  const truck = jeep();
+  drive(truck, 2);
+  drive(truck, 10, holding({ c_PIThrottle: 1 }));
+  drive(truck, 8, holding({ c_PIThrottle: 1, c_PIYaw: 0.4 }));
+  const turning = round(truck.state.angularVelocity.y * DEG, 2);
+  drive(truck, 4, holding({ c_PIThrottle: 1, c_PIYaw: 0 }));
+  const held = round(truck.state.angularVelocity.y * DEG, 2);
+  drive(truck, 4, holding({ c_PIThrottle: 0, c_PIYaw: 0 }));
+  results.straighten = {
+    turningRate: turning,
+    // Wheel centred, throttle still floored. It does NOT come straight, and
+    // it gets worse with time rather than better: a half-lock turn at 31 m/s
+    // lifts the inside rear clear of the ground (its load reads 0), so the
+    // whole of the tractive effort is on one side of the hull and the couple
+    // that makes keeps the slide going for as long as the throttle does.
+    throttleHeld: held,
+    // Lift off and it unwinds: the revs decay, the target falls to the road
+    // speed, the rear axle gets its circle back and the front axle — which
+    // never spends any of its own on drive — straightens the hull.
+    yawRate: round(truck.state.angularVelocity.y * DEG, 2),
+    roll: round(rollDeg(truck), 2),
+    speed: round(alongOf(truck), 2),
+  };
+}
+// The same, floored from rest — and then with the throttle lifted as well,
+// which is what actually ends a power slide.
 {
   const truck = jeep();
   drive(truck, 2);
   drive(truck, 8, holding({ c_PIThrottle: 1, c_PIYaw: 0.4 }));
   drive(truck, 4, holding({ c_PIThrottle: 1, c_PIYaw: 0 }));
-  results.straighten = {
-    yawRate: round(truck.state.angularVelocity.y * DEG, 2),
-    roll: round(rollDeg(truck), 2),
+  const held = round(truck.state.angularVelocity.y * DEG, 2);
+  drive(truck, 4, holding({ c_PIThrottle: 0, c_PIYaw: 0 }));
+  results.straightenFromRest = {
+    throttleHeld: held,
+    throttleLifted: round(truck.state.angularVelocity.y * DEG, 2),
+    speed: round(truck.state.velocity.length(), 2),
   };
 }
 
@@ -1007,20 +1063,30 @@ for (const [key, builder] of [['shermanTurn', shermanNode], ['m3a1Turn', m3a1Nod
 
 // The steered front axle's own contribution, measured the only way it means
 // anything: at a MATCHED speed. Comparing the two hulls' yaw rate at full
-// throttle compares a 34 km/h vehicle against a 114 km/h one (the corrected
-// ratio, TANK-3, really is 4.4x), and the faster one is grip-limited, so the
-// yaw-rate comparison that used to live here answered a question about top
-// speed, not about the front axle. Held instead at a common ~8 m/s by a
-// bang-bang throttle, and read as turn RADIUS (v / yawRate), which is what
-// "turns tighter" actually means.
+// throttle compares a 53.6 km/h vehicle against a 67.2 km/h one, and both
+// are grip-limited, so the yaw-rate comparison that used to live here
+// answered a question about top speed, not about the front axle. Held
+// instead at a common ~4 m/s by a bang-bang throttle, and read as turn
+// RADIUS (v / yawRate), which is what "turns tighter" actually means.
+//
+// 4 m/s, not 8: a turning tracked hull spends its Coulomb budget scrubbing
+// the tracks sideways and cannot hold 8 m/s through a half-lock turn at any
+// throttle — the Sherman settles at 4.1. That is the differential's own
+// arithmetic (at half lock the outer track's target is `revs * 0.25`), not a
+// limitation of the model.
 results.tankMatchedTurn = [];
 for (const [name, builder] of [['sherman', shermanNode], ['m3a1', m3a1Node]]) {
   const t = tank(builder, { y: 0.5 });
+  // Half lock, not full. At full lock `getCurrentDifferentialRPM` gives the
+  // outer track `clamp(revs * (1 - 1.5), -1, 1)` — it is driven BACKWARDS at
+  // half the inner track's speed — so a tracked hull at full lock is very
+  // nearly pivoting and cannot hold 8 m/s at any throttle. That is the
+  // engine's own arithmetic, not a limitation of the model.
   const hold = tt => {
-    tt.setInput('c_PIThrottle', tt.state.velocity.length() < 8 ? 1 : 0);
-    tt.setInput('c_PIYaw', 1);
+    tt.setInput('c_PIThrottle', tt.state.velocity.length() < 4 ? 1 : 0);
+    tt.setInput('c_PIYaw', 0.5);
   };
-  drive(t, 4, tt => tt.setInput('c_PIThrottle', tt.state.velocity.length() < 8 ? 1 : 0));
+  drive(t, 4, tt => tt.setInput('c_PIThrottle', tt.state.velocity.length() < 4 ? 1 : 0));
   drive(t, 12, hold);
   const v = t.state.velocity.length();
   const w = Math.abs(t.state.angularVelocity.y);
@@ -1130,6 +1196,385 @@ for (const [key, builder] of [['shermanHardTurn', shermanNode], ['m3a1HardTurn',
     leftConsistent: round(Math.max(...left) - Math.min(...left), 3),
     rightConsistent: round(Math.max(...right) - Math.min(...right), 3),
   };
+}
+
+
+// === EngineState: every drivetrain constant against its ledger row =========
+//
+// `Engine::handleUpdate` 0x0823e120 (TANK-12), `PhysicsEngine::feedbackLoop`
+// 0x0824c850 (TANK-13), `getCurrentDifferentialRPM` 0x0824c990 (TANK-9) and
+// `EngineTemplate::getEngineType` slot +0xa0 (TANK-1). These run the state
+// object directly, tick by tick, with no vehicle around it — so a viewer
+// change that happens to look right on the page still has to answer for the
+// arithmetic.
+
+/** The three vanilla drivetrains, exactly as `Physics.con` authors them. */
+const ENGINE_SPECS = {
+  willy: {
+    engineType: 'c_ETCar', torque: 10.5, differential: 7, numberOfGears: 5,
+    gearUp: 0.95, gearDown: 0.4,
+    maxRotation: [0, 0, 5000], maxSpeed: [0, 0, 55000], acceleration: [0, 0, 55000],
+  },
+  sherman: {
+    engineType: 'c_ETTank', torque: 4, differential: 4, numberOfGears: 5,
+    gearUp: 0.95, gearDown: 0.45, gearChangeTime: 0.05,
+    maxRotation: [1, 0, 1], maxSpeed: [4, 0, 10], acceleration: [4, 0, 10],
+  },
+  tiger: {
+    engineType: 'c_ETTank', torque: 3.5, differential: 3.5, numberOfGears: 5,
+    gearUp: 0.95, gearDown: 0.45, gearChangeTime: 0.05,
+    maxRotation: [1, 0, 1], maxSpeed: [4, 0, 10], acceleration: [4, 0, 10],
+  },
+  m3a1: {
+    engineType: 'c_ETTank', torque: 5, differential: 5, numberOfGears: 4,
+    gearUp: 0.95, gearDown: 0.45, gearChangeTime: 0.05,
+    maxRotation: [1, 0, 1], maxSpeed: [4, 0, 10], acceleration: [4, 0, 10],
+  },
+};
+
+const TICK = 1 / 30;
+
+results.engineTypes = {
+  // The 26-entry jump table at 0x086cf7b0, and the ctor default 0 at
+  // 0x0823f078 for anything that is not one of the six.
+  names: { ...ENGINE_TYPES },
+  car: engineTypeBits('c_ETCar'),
+  tank: engineTypeBits('c_ETTank'),
+  plane: engineTypeBits('c_ETPlane'),
+  ship: engineTypeBits('c_ETShip'),
+  rocket: engineTypeBits('c_ETRocket'),
+  torpedo: engineTypeBits('c_ETTorpedo'),
+  caseInsensitive: engineTypeBits('C_ETTANK'),
+  unknown: engineTypeBits('c_ETHovercraft'),
+  absent: engineTypeBits(undefined),
+  // bit 0 is the ONLY gate on updatePhysics, and neither ground type has it.
+  carHasThrust: (engineTypeBits('c_ETCar') & 1) !== 0,
+  tankHasThrust: (engineTypeBits('c_ETTank') & 1) !== 0,
+  planeHasThrust: (engineTypeBits('c_ETPlane') & 1) !== 0,
+  shipHasThrust: (engineTypeBits('c_ETShip') & 1) !== 0,
+};
+
+results.diffRPMByType = {
+  // (type & 4) == 0: the rev state, raw and unclamped, even at +1.2 and even
+  // for a wheel well off the centreline. A car steers with its front wheels.
+  carAtCeiling: round(currentDifferentialRPM(1.2, 0, 1, engineTypeBits('c_ETCar')), 4),
+  carSteering: round(currentDifferentialRPM(1.2, 0.5, 1, engineTypeBits('c_ETCar')), 4),
+  // (type & 4): split per side, then clamped to +-1 — which is where a
+  // tank's 1.0 ceiling comes from, not from the rev clamp.
+  tankAtCeiling: round(currentDifferentialRPM(1.2, 0, 1, engineTypeBits('c_ETTank')), 4),
+  tankOuterHalfLock: round(currentDifferentialRPM(1.0, 0.5, 1, engineTypeBits('c_ETTank')), 4),
+  tankInnerHalfLock: round(currentDifferentialRPM(1.0, 0.5, -1, engineTypeBits('c_ETTank')), 4),
+  tankOuterFullLock: round(currentDifferentialRPM(1.0, 1, 1, engineTypeBits('c_ETTank')), 4),
+  // side === 0 returns the rev state raw on a tank too (0x0824ca4a).
+  tankCentreline: round(currentDifferentialRPM(1.2, 0.5, 0, engineTypeBits('c_ETTank')), 4),
+  // An unknown type has no bits at all, so it behaves as a car here.
+  unknownAtCeiling: round(currentDifferentialRPM(1.2, 0.5, 1, 0), 4),
+};
+
+{
+  // The template defaults `EngineTemplate::EngineTemplate` 0x0823efc0 writes,
+  // and `setNumberOfGears`'s own [1,5] clamp at 0x0823fd10.
+  const bare = new EngineState({});
+  const overGeared = new EngineState({ numberOfGears: 8, differential: 5 });
+  const underGeared = new EngineState({ numberOfGears: 0 });
+  results.engineDefaults = {
+    numberOfGears: bare.numberOfGears,
+    differential: bare.differential,
+    torque: bare.torque,
+    gearUp: bare.gearUp,
+    gearDown: bare.gearDown,
+    gearChangeTime: bare.gearChangeTime,
+    bits: bare.bits,
+    gear: bare.gear,
+    revs: bare.revs,
+    blend: bare.blend,
+    gearsClampedHigh: overGeared.numberOfGears,
+    gearsClampedLow: underGeared.numberOfGears,
+    // The ladder a clamped 8-speed actually gets: five gears, the five-speed
+    // ladder, NOT the non-monotonic eight-speed one the curve would give.
+    clampedLadder: overGeared.ladder.map(r => round(r, 3)),
+    rawEightSpeed: gearLadder(5, 8).map(r => round(r, 3)),
+  };
+}
+
+{
+  // The rev filter, run open-loop at full throttle with no load. `0.05` is
+  // per TICK and not per second, so the wall-clock spool-up follows the tick
+  // rate — the whole of TANK-12's rate qualifier.
+  const e = new EngineState(ENGINE_SPECS.sherman);
+  const trace = [];
+  for (let i = 0; i < 200; i++) {
+    e.tick(TICK, 1, 0);
+    if (i < 4 || i === 9 || i === 39 || i === 199) {
+      trace.push({ tick: i + 1, revs: round(e.revs, 5), t1: round(e.throttleTerm, 4), gear: e.gear });
+    }
+  }
+  results.revFilter = {
+    trace,
+    ceiling: round(e.revs, 5),
+    // One tick from rest with T1 already at 1: exactly the gain.
+    firstStepFromT1: (() => {
+      const probe = new EngineState({ ...ENGINE_SPECS.sherman, maxRotation: [1, 0, 0] });
+      probe.tick(TICK, 1, 0);
+      return round(probe.revs, 6);
+    })(),
+    // And the floor, reverse.
+    floor: (() => {
+      const probe = new EngineState(ENGINE_SPECS.sherman);
+      for (let i = 0; i < 400; i++) probe.tick(TICK, -1, 0);
+      return round(probe.revs, 5);
+    })(),
+  };
+}
+
+{
+  // T1 is the CLIPPED ROLL ANGLE over maxRotation.z, not the pedal: a Willy
+  // reaches it in 5000/55000 = 0.091 s and a Sherman in 1/10 = 0.1 s, and a
+  // mod that changes either changes throttle response.
+  const spool = spec => {
+    const e = new EngineState(spec);
+    let ticks = 0;
+    while (e.throttleTerm < 0.999 && ticks < 300) { e.tick(TICK, 1, 0); ticks += 1; }
+    return { seconds: round(ticks * TICK, 4), ticks };
+  };
+  const slow = new EngineState({ ...ENGINE_SPECS.sherman, maxRotation: [1, 0, 2], maxSpeed: [4, 0, 10], acceleration: [4, 0, 10] });
+  slow.tick(TICK, 1, 0);
+  results.throttleTerm = {
+    willy: spool(ENGINE_SPECS.willy),
+    sherman: spool(ENGINE_SPECS.sherman),
+    // Double maxRotation.z with the same rate and the term is half as far
+    // along after one tick: the divisor is real.
+    doubledMaxRotation: round(slow.throttleTerm, 5),
+    // No roll limit at all falls back to the pedal.
+    noLimit: (() => {
+      const e = new EngineState({ ...ENGINE_SPECS.sherman, maxRotation: [1, 0, 0] });
+      e.tick(TICK, 0.5, 0);
+      return round(e.throttleTerm, 4);
+    })(),
+  };
+  // The steering term is the sibling: yaw angle over maxRotation.x, 0.25 s
+  // to full lock on a Sherman, and 0 for an Engine with no yaw limit.
+  const steer = new EngineState(ENGINE_SPECS.sherman);
+  let steerTicks = 0;
+  while (steer.steer < 0.999 && steerTicks < 300) { steer.tick(TICK, 1, 1); steerTicks += 1; }
+  const carSteer = new EngineState(ENGINE_SPECS.willy);
+  for (let i = 0; i < 60; i++) carSteer.tick(TICK, 1, 1);
+  results.steerTerm = {
+    shermanSeconds: round(steerTicks * TICK, 4),
+    carSteer: round(carSteer.steer, 5),
+  };
+}
+
+{
+  // The gearbox. Up needs `revs > gearUp` AND the lockout expired AND a gear
+  // to go to; down needs only `revs < gearDown` and a gear to come back to.
+  const armed = new EngineState(ENGINE_SPECS.sherman);
+  armed.revs = 1.0;                       // past gearUp
+  armed.blend = 1.0;                      // lockout still running
+  armed.tick(TICK, 1, 0);
+  const lockedGear = armed.gear;
+  const free = new EngineState(ENGINE_SPECS.sherman);
+  free.blend = 0;
+  free.revs = 1.0;
+  free.tick(TICK, 1, 0);
+  const down = new EngineState(ENGINE_SPECS.sherman);
+  down.gear = 4;
+  down.blend = 1.0;                       // NO lockout on the way down
+  down.revs = 0.1;
+  down.tick(TICK, 0, 0);
+  const floorGear = new EngineState(ENGINE_SPECS.sherman);
+  floorGear.revs = -0.5;
+  floorGear.blend = 0;
+  floorGear.tick(TICK, -1, 0);
+  results.gearbox = {
+    upBlockedByLockout: lockedGear,
+    upWhenFree: free.gear,
+    downIgnoresLockout: down.gear,
+    downStopsAtFirst: floorGear.gear,
+    // The lockout expires `gearChangeTime` into the object's life and is
+    // never re-armed: a Sherman's 0.05 s is one tick and a bit.
+    lockoutTicksSherman: (() => {
+      const e = new EngineState(ENGINE_SPECS.sherman);
+      let n = 0;
+      while (e.blend > 0 && n < 200) { e.tick(TICK, 0, 0); n += 1; }
+      return n;
+    })(),
+    // The Willys authors none, so it takes the ctor default of 1.0 s.
+    lockoutTicksWilly: (() => {
+      const e = new EngineState(ENGINE_SPECS.willy);
+      let n = 0;
+      while (e.blend > 0 && n < 200) { e.tick(TICK, 0, 0); n += 1; }
+      return n;
+    })(),
+    // And nothing re-arms it: a gear change leaves it at zero.
+    lockoutAfterShift: (() => {
+      const e = new EngineState(ENGINE_SPECS.sherman);
+      for (let i = 0; i < 10; i++) e.tick(TICK, 1, 0);
+      e.revs = 1.0;
+      const before = e.gear;
+      e.tick(TICK, 1, 0);
+      return { blend: round(e.blend, 6), shifted: e.gear > before };
+    })(),
+  };
+}
+
+{
+  // The brake byte: set only when the pedal OPPOSES the rev direction, and
+  // against literal +-0.1. When it is set the EngineGrip target is discarded
+  // whole, which is the engine's entire brake.
+  const cases = [];
+  for (const [pedal, revs] of [[-1, 0.5], [-0.05, 0.5], [1, -0.5], [0.05, -0.5],
+                               [1, 0.5], [-1, -0.5], [0, 0.5]]) {
+    const e = new EngineState(ENGINE_SPECS.sherman);
+    e.revs = revs;
+    e.tick(TICK, pedal, 0);
+    cases.push({ pedal, revs, braking: e.braking, target: round(e.target(1), 4) });
+  }
+  results.brakeByte = cases;
+}
+
+{
+  // The load, `feedbackLoop` 0x0824c850 (TANK-13). Three separate facts.
+  const dv = 0.4;
+  // (a) `& 2` clamps each sample to [-1, +1] — car AND tank.
+  const clampedTank = new EngineState(ENGINE_SPECS.sherman);
+  clampedTank.revs = 1.0;
+  clampedTank.sample(10);
+  const clampedCar = new EngineState(ENGINE_SPECS.willy);
+  clampedCar.sample(10);
+  // (b) `& 4`: the frame MAX while revs >= 0, the frame MIN while revs < 0.
+  const tankMax = new EngineState(ENGINE_SPECS.sherman);
+  tankMax.revs = 0.5;
+  for (const v of [0.1, 0.3, 0.2]) tankMax.sample(v);
+  const tankMin = new EngineState(ENGINE_SPECS.sherman);
+  tankMin.revs = -0.5;
+  for (const v of [-0.1, -0.3, -0.2]) tankMin.sample(v);
+  // The boundary: `fucompp` sets C3 on equality, so `test ah,0x45` is
+  // non-zero and the `jne` at 0x0824c926 goes to the MAX arm. A tank at
+  // exactly zero revs keeps the max, not the min.
+  const tankZero = new EngineState(ENGINE_SPECS.sherman);
+  tankZero.revs = 0;
+  for (const v of [-0.3, 0.2, -0.1]) tankZero.sample(v);
+  // (c) the car's running mean, x0.99, over every contacting part — so the
+  // two free-rolling fronts' honest zeroes halve a Willy's load.
+  const carAll = new EngineState(ENGINE_SPECS.willy);
+  carAll.revs = 1.0;
+  for (let i = 0; i < 2; i++) carAll.sample(dv);
+  const carWithZeroes = new EngineState(ENGINE_SPECS.willy);
+  carWithZeroes.revs = 1.0;
+  for (const v of [dv, 0, dv, 0]) carWithZeroes.sample(v);
+  const one = new EngineState(ENGINE_SPECS.willy);
+  one.revs = 1.0;
+  one.sample(dv);
+  results.load = {
+    // L0 = dv * ratio / (torqueCurve(revs) * setTorque). Willy gear 1:
+    // 0.4 * 7.0 / (0.7 * 10.5).
+    singleSample: round(one.load, 5),
+    expectedSingle: round(dv * 7.0 / (engineTorqueFraction(1.0) * 10.5) * 0.99, 5),
+    clampedTank: round(clampedTank.load, 5),
+    clampedCar: round(clampedCar.load, 5),
+    tankKeepsMax: round(tankMax.load, 5),
+    tankKeepsMin: round(tankMin.load, 5),
+    tankAtZeroRevsKeepsMax: round(tankZero.load, 5),
+    carTwoSamples: round(carAll.load, 5),
+    carFourWithTwoZeroes: round(carWithZeroes.load, 5),
+    meanScale: round(one.load / (dv * 7.0 / (engineTorqueFraction(1.0) * 10.5)), 4),
+    // The tail of handleUpdate keeps the previous value and clears the
+    // accumulator, so samples belong to the tick that follows them.
+    clearedOnTick: (() => {
+      const e = new EngineState(ENGINE_SPECS.willy);
+      e.sample(dv);
+      const held = round(e.load, 5);
+      e.tick(TICK, 1, 0);
+      return { held, after: round(e.load, 5), prev: round(e.prevLoad, 5), count: e.loadCount };
+    })(),
+  };
+}
+
+// The fleet's ceilings, straight off the ladder and the type's own clamp.
+// `ratio_top * 1.2` for a c_ETCar and `* 1.0` for a c_ETTank (TANK-9).
+results.fleetCeilings = Object.fromEntries(
+  Object.entries({
+    willy: [7, 5, 'c_ETCar'],
+    kubelwagen: [7, 5, 'c_ETCar'],
+    katyusha: [5, 4, 'c_ETCar'],
+    sherman: [4, 5, 'c_ETTank'],
+    panzerIV: [4, 5, 'c_ETTank'],
+    tiger: [3.5, 5, 'c_ETTank'],
+    m3a1: [5, 4, 'c_ETTank'],
+    hanomag: [5, 4, 'c_ETTank'],
+  }).map(([name, [diff, gears, type]]) => {
+    const ladder = gearLadder(diff, gears);
+    const cap = (engineTypeBits(type) & 4) ? 1.0 : ENGINE_REV_CEILING;
+    return [name, {
+      top: round(ladder[ladder.length - 1] * cap, 3),
+      kmh: round(ladder[ladder.length - 1] * cap * 3.6, 1),
+      reverse: round(ladder[0] * (engineTypeBits(type) & 4 ? 1.0 : ENGINE_REV_FLOOR), 3),
+    }];
+  }));
+
+
+// --- the pre-extract path: a tree older than the code that reads it -------
+//
+// `maxRotation`, `maxSpeed` and `acceleration` only started reaching
+// `extras.physics` with this branch's `bf42/con.py`. Every published
+// `scene.glb` today predates it, and `map.html` builds the drivable hull from
+// the LEVEL scene, so until the lead re-extracts, none of the three is
+// present. Throttle always degraded safely; steering degraded to a dead stick
+// and a tracked hull's steering IS the differential. Both now fall back to
+// the raw input, and this is the regression that says so.
+{
+  const strip = root => {
+    root.traverse(n => {
+      const phys = n.userData && n.userData.physics;
+      if (phys && n.userData.templateKind === 'Engine') {
+        delete phys.maxRotation; delete phys.maxSpeed; delete phys.acceleration;
+      }
+    });
+    return root;
+  };
+  const yawOf = truck => new THREE.Euler()
+    .setFromQuaternion(truck.state.orientation, 'YXZ').y;
+  const lap = (truck, seconds) => {
+    let acc = 0;
+    let prev = yawOf(truck);
+    drive(truck, seconds, t => {
+      t.setInput('c_PIThrottle', 1);
+      t.setInput('c_PIYaw', 1);
+      let d = yawOf(t) - prev;
+      prev = yawOf(t);
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      acc += d;
+    });
+    return acc * DEG;
+  };
+  results.preExtract = {};
+  for (const [name, build] of [
+    ['sherman', () => tank(shermanNode, { y: 0.5 })],
+    ['m3a1', () => tank(m3a1Node, { y: 0.5 })],
+    ['willy', () => jeep()],
+    ['shermanStale', () => new TrackedVehicle(strip(shermanNode()), null,
+      { cockpit: false, groundHeight: () => 0 })],
+    ['m3a1Stale', () => new TrackedVehicle(strip(m3a1Node()), null,
+      { cockpit: false, groundHeight: () => 0 })],
+    ['willyStale', () => new GroundVehicle(strip(willyNode()), null,
+      { cockpit: false, groundHeight: () => 0 })],
+  ]) {
+    const truck = build();
+    truck.state.position.set(0, name.startsWith('willy') ? 0.6 : 1.2, 0);
+    drive(truck, 3);
+    let top = 0;
+    drive(truck, 14, t => {
+      t.setInput('c_PIThrottle', 1);
+      top = Math.max(top, alongOf(t));
+    });
+    results.preExtract[name] = {
+      stale: truck.engine.stale,
+      topKmh: round(top * 3.6, 1),
+      yawDeg: round(lap(truck, 6), 1),
+    };
+  }
 }
 
 // --- hull collision against static objects -----------------------------------
