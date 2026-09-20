@@ -1773,12 +1773,33 @@ function stepSoldierLook(ticks) {
   let x = mouseInput.x;
   let y = mouseInput.y;
   if (!x && !y) return;
-  // While zoomed the engine scales the mouse-look deltas by the same
-  // `SoldierZoomFov` factor that narrows the view — client 0x0050095f:
-  // `if (weapon->isZoomed()) { yawDelta *= SoldierZoomFov; pitchDelta *=
-  // SoldierZoomFov; }` — so a 0.6x view is a 0.6x hand.
+  // While zoomed the engine scales BOTH mouse-look axes by the weapon's
+  // `zoomFov` — the WORLD field of view, `zoom.fov` here — not by
+  // `SoldierZoomFov`, which is the arms' own factor. Read out of the
+  // authority: `BFSoldier::handlePlayerInput` lnxded `0x08275bdf`
+  // `call [eax+0x114]` (the weapon's zoom state), then
+  //
+  //     0x08275bf2  mov eax,[edi+0x4c]        ; the FireArms TEMPLATE
+  //     0x08275bf5  fld [ebp-0x29c]           ; c_PIMouseLookX
+  //     0x08275bfb  fld [eax+0x270]
+  //     0x08275c01  fmul st(1),st ; 0x08275c03 fmul [ebp-0x2a4]
+  //     0x08275c0b  fstp [ebp-0x29c] ; 0x08275c11 fstp [ebp-0x2a4]
+  //
+  // and `FireArmsTemplate::makeScript` round-trips **`+0x270` as
+  // `ObjectTemplate.zoomFov`** (`0x0828f0e2` pushes `0x086d313b` =
+  // `'ObjectTemplate.zoomFov '` before `fld [ebx+0x270]`) while
+  // **`+0x274` is `ObjectTemplate.SoldierZoomFov`** (`0x0828f0b0` pushes
+  // `0x086d35e0`). The two differ per weapon and by a lot: a K98 is
+  // `zoomFov 0.4 / soldierZoomFov 0.6`, a Colt `0.7 / 0.5`. Using the arms'
+  // factor made a scoped K98 50% too fast and a sighted Colt 29% too slow.
+  //
+  // Why a whole FOV reads as a factor: the hip FOV is 1 radian, so `zoomFov`
+  // IS the ratio. The `-1.0f` template default cannot reach here --
+  // `FireArms::setZoom` `0x082881b7` refuses to zoom at all while
+  // `+0x270 < 0` -- but the guard costs nothing.
   if (isZoomed()) {
-    const factor = handWeapon?.data?.zoom?.soldierFov ?? 1;
+    const zoomFov = handWeapon?.data?.zoom?.fov;
+    const factor = Number.isFinite(zoomFov) && zoomFov > 0 ? zoomFov : 1;
     x *= factor;
     y *= factor;
   }
@@ -5895,7 +5916,20 @@ function drive(dt) {
   // is `manned()`'s to step, not ours — but an unmanned seat's gun still has
   // to stay pointed where its last occupant left it.
   occupancy.applyTurrets();
-  if (driving) {
+  // Gated on the seat, NOT on `driving`. The look stage must be pumped exactly
+  // once a frame, and this seat being the active root is precisely the case
+  // `manned()` declines (`mannedActive()` returns false for an active root
+  // that has a drivetrain), so this is the only pump that frame. Gating it on
+  // `driving` instead left a wrecked hull's own driver pumping NOTHING: the
+  // pixels `lookDelta` keeps banking for him sat in the accumulator until the
+  // wreck timer cleared, and the first live frame then pumped seconds of
+  // travel into one tick and saturated the axis at the wire's +-16.
+  // The engine pumps the device every frame regardless of what the PCO does
+  // with the result (`InputManager::update` 0x0049ce70 is upstream of
+  // `PlayerControlObject::handlePlayerInput` 0x08318920 entirely); HP-15 is
+  // spent where it belongs, inside `TurretRig.aim`, which zeroes the held axis
+  // pair whenever `inputScale` is 0 — so a wreck's gun still receives nothing.
+  if (occupancy.isActiveRoot()) {
     feedMobileTurretAim(dt);
     stepTurret(dt);
   }
@@ -9135,7 +9169,12 @@ function pilot(dt) {
   // Same reason `drive()` does it: `integrate` ends in `applyRig`, which puts
   // every turret on the airframe back to rest. A B17's gunners keep theirs.
   occupancy.applyTurrets();
-  if (flying) {
+  // Gated on the seat rather than on `flying`, for the reason `drive()` spells
+  // out: this is the frame's only pump of the look stage whenever the pilot's
+  // own seat is the active one, and skipping it for a wrecked airframe banked
+  // the pixels until the wreck cleared and then spent them in a single
+  // saturated tick.
+  if (occupancy.isActiveRoot()) {
     feedMobileTurretAim(dt);
     stepTurret(dt);
   }
