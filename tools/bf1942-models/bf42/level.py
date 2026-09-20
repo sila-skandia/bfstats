@@ -443,6 +443,13 @@ class LevelInfo:
     spawn_templates: dict[str, SpawnTemplate] = field(default_factory=dict)
     spawn_objects: list[StaticInstance] = field(default_factory=list)
     gameplay: "GameplayObjects" = field(default_factory=lambda: GameplayObjects())
+    # Every gameplay layer the archive ships, keyed by mode directory, the
+    # default (`gameplay.mode`) first. `gameplay`, `spawn_objects` and
+    # `spawn_templates` above stay the default mode's view of the same data,
+    # so every caller written before modes existed reads what it always did.
+    modes: dict[str, "GameplayObjects"] = field(default_factory=dict)
+    # `GameTypes/*.con` — the menu's game types and the layer each one loads.
+    game_types: dict[str, "GameType"] = field(default_factory=dict)
     sky: SkyInfo = field(default_factory=SkyInfo)
     water: WaterInfo = field(default_factory=WaterInfo)
     lighting: LightingInfo = field(default_factory=LightingInfo)
@@ -517,6 +524,23 @@ class LevelFiles:
 
     def names(self) -> list[str]:
         return [real for _, real in self._index.values()]
+
+    def under(self, directory: str) -> list[str]:
+        """Relative paths of the files directly inside `directory`.
+
+        Only the level-relative keys are considered — the index also holds
+        each archive's own full path, and those start with the archive prefix
+        (`bf1942/levels/<name>/`) so they never match a bare directory name.
+        """
+        prefix = _norm_path(directory).strip("/") + "/"
+        out: list[str] = []
+        for key in self._index:
+            if not key.startswith(prefix):
+                continue
+            tail = key[len(prefix):]
+            if tail and "/" not in tail:
+                out.append(key)
+        return sorted(out)
 
     def tiles(self) -> list[tuple[int, int, str]]:
         """`(col, row, archive_path)` for every `Textures/TxCCxRR` tile."""
@@ -835,6 +859,11 @@ class GameplayObjects:
     soldier_spawn_templates: dict[str, SoldierSpawnTemplate] = field(default_factory=dict)
     # From `<mode>/spawnPointManagerSettings.con`: group -> side (1 or 2).
     spawn_group_teams: dict[int, int] = field(default_factory=dict)
+    # `<mode>/ObjectSpawns.con` and its templates — the vehicle layer. Loaded
+    # here so one call yields a whole mode; `extract_map` used to read these
+    # two files itself for the single mode it knew about.
+    object_spawns: list[StaticInstance] = field(default_factory=list)
+    object_spawn_templates: dict[str, SpawnTemplate] = field(default_factory=dict)
 
     def template_for(self, inst: StaticInstance) -> ControlPointTemplate | None:
         return self.control_point_templates.get(inst.template.lower())
@@ -860,32 +889,275 @@ class GameplayObjects:
         return None
 
 
-def load_gameplay_objects(files: LevelFiles, mode: str | None = None) -> GameplayObjects:
+# The seven files a gameplay layer is made of. `run` is per file, not per
+# directory, so a game type is free to take four of them from one layer
+# directory and three from another — `LAYER_SOURCE_FILES` is the list
+# `parse_game_type` records the directory of, and `sources` below is how a
+# composed layer is read.
+LAYER_SOURCE_FILES = ("ControlPoints", "ControlPointTemplates",
+                      "SoldierSpawns", "SoldierSpawnTemplates",
+                      "spawnPointManagerSettings",
+                      "ObjectSpawnTemplates", "ObjectSpawns")
+
+
+def load_gameplay_objects(files: LevelFiles, mode: str | None = None,
+                          sources: dict[str, str] | None = None) -> GameplayObjects:
     """Read a level's control points and soldier spawns.
 
     Every file here is optional and levels really do omit them: vanilla
     Coral_sea ships `ControlPoints.con` with no `ControlPointTemplates.con` at
     all, so a placement with no template is normal and yields a point with
     default parameters rather than an error.
+
+    `sources` overrides the directory per file, keyed by the lowercased base
+    name — `{"controlpoints": "Conquest"}` on a game type that runs
+    `SinglePlayer/*` for the spawns and `Conquest/ControlPoints` for the
+    flags. Omitted files fall back to `mode`, which is what every caller that
+    passes no `sources` gets for all seven.
     """
     mode = mode or find_gameplay_mode(files)
     out = GameplayObjects(mode=mode or "")
-    if not mode:
+    if not mode and not sources:
         return out
 
-    def text(rel: str) -> str:
-        hit = files.find(rel)
+    def text(base: str) -> str:
+        where = (sources or {}).get(base.lower(), mode)
+        if not where:
+            return ""
+        hit = files.find(f"{where}/{base}.con")
         return files.read(hit).decode("latin-1", "replace") if hit else ""
 
-    out.control_points = parse_static_objects(text(f"{mode}/ControlPoints.con"))
+    out.control_points = parse_static_objects(text("ControlPoints"))
     out.control_point_templates = parse_control_point_templates(
-        text(f"{mode}/ControlPointTemplates.con"))
-    out.soldier_spawns = parse_static_objects(text(f"{mode}/SoldierSpawns.con"))
+        text("ControlPointTemplates"))
+    out.soldier_spawns = parse_static_objects(text("SoldierSpawns"))
     out.soldier_spawn_templates = parse_soldier_spawn_templates(
-        text(f"{mode}/SoldierSpawnTemplates.con"))
+        text("SoldierSpawnTemplates"))
     out.spawn_group_teams = parse_spawn_point_manager(
-        text(f"{mode}/spawnPointManagerSettings.con"))
+        text("spawnPointManagerSettings"))
+    out.object_spawn_templates = parse_spawn_templates(
+        text("ObjectSpawnTemplates"))
+    out.object_spawns = parse_static_objects(text("ObjectSpawns"))
     return out
+
+
+# The files that make a directory a gameplay layer rather than art or AI data.
+# `ObjectSpawns.con` counts here but deliberately not in `find_gameplay_mode`:
+# a vehicles-only directory must not change which mode is the default.
+_LAYER_FILES = ("ControlPoints.con", "SoldierSpawns.con", "ObjectSpawns.con")
+
+
+def find_gameplay_modes(files: LevelFiles) -> list[str]:
+    """Every gameplay layer the level ships, the default mode first.
+
+    `find_gameplay_mode` answers "which one layer do we read"; this answers
+    "which layers exist". The first element is exactly what
+    `find_gameplay_mode` returns whenever that is not None, so switching a
+    caller from one to the other cannot change the default.
+    """
+    out: list[str] = []
+    default = find_gameplay_mode(files)
+    if default:
+        out.append(default)
+    for mode in GAMEPLAY_MODES:
+        if mode in out:
+            continue
+        if any(files.find(f"{mode}/{name}") for name in _LAYER_FILES):
+            out.append(mode)
+    return out
+
+
+# `run <path>` is the engine's include. It carries no dot, so `_commands` —
+# which only matches `Namespace.verb` lines — never sees it, and the layer a
+# game type loads is invisible without this.
+_RUN_LINE = re.compile(r"^\s*run\s+([^\s]+)", re.IGNORECASE)
+
+
+@dataclass
+class GameType:
+    """One `GameTypes/<name>.con`: the game type the menu offers.
+
+    `mode` is the layer *directory* the script runs, which is not always the
+    file's own name — no vanilla level ships a `CoOp/` directory, because
+    `GameTypes/CoOp.con` runs `SinglePlayer/*`. Measured across the 1,302
+    level archives of the 18 installed mods: `CoOp` runs `singleplayer` on 796
+    of the 871 levels that offer it, and never runs a `coop` directory
+    anywhere.
+    """
+
+    name: str
+    mode: str = ""
+    tickets: "TicketInfo | None" = None
+    runs: list[str] = field(default_factory=list)
+    # Which directory each of the seven layer files is run from, keyed by the
+    # lowercased base name. `run` is per file, so this is the authority and
+    # `mode` is only its majority answer: 35 of the 3,048 GameTypes scripts in
+    # the 18 installed mods straddle two directories — every Road to Rome CoOp
+    # script takes its flags from `Conquest/` and everything else from
+    # `SinglePlayer/`. `composed` says when that has happened.
+    files: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def composed(self) -> bool:
+        """True when this game type's layer is not one directory's."""
+        return len({d.lower() for d in self.files.values()}) > 1
+
+
+def parse_game_type(text: str, name: str = "") -> GameType:
+    """The layer a `GameTypes/<x>.con` loads, and the tickets it sets.
+
+    The layer is taken from the `run <dir>/<file>` lines: the most-run
+    directory wins, so a script that runs four `SinglePlayer/*` files and one
+    `ai` is still a SinglePlayer layer. A script whose runs are all bare
+    (`run ai`) or relative (`run ../shared`) yields an empty mode and the
+    caller falls back to the file's own name.
+
+    `mode` is a summary, though, and `files` is the truth: the engine's `run`
+    is per file and a script may take its flags from one directory and its
+    spawns from another. `composed` is true exactly then, and
+    `load_gameplay_objects(files, mode, sources=gt.files)` reads what the
+    engine reads.
+
+    Every `run` line counts, in both arms of an `if v_arg1 == host` block.
+    That is the right reading for this viewer: it is the host arm the engine
+    takes on a single-player or listen-server launch, and across the 18
+    installed mods no script has a live `run` of a layer file in its `else`
+    arm at all (the join arms are `rem`-ed out, which `strip_comments` has
+    already removed by here).
+    """
+    body = con_mod.strip_comments(text)
+    runs: list[str] = []
+    for line in body.splitlines():
+        match = _RUN_LINE.match(line)
+        if match:
+            runs.append(match.group(1).replace("\\", "/"))
+    counts: dict[str, int] = {}
+    sources: dict[str, str] = {}
+    wanted = {name.lower(): name for name in LAYER_SOURCE_FILES}
+    for rel in runs:
+        head, sep, tail = rel.partition("/")
+        if not sep or head in ("", ".", ".."):
+            continue
+        key = head.lower()
+        counts[key] = counts.get(key, 0) + 1
+        base = tail.rsplit("/", 1)[-1].lower()
+        if base.endswith(".con"):
+            base = base[:-4]
+        if base in wanted:
+            sources[base] = head
+    mode = ""
+    if counts:
+        best = max(counts.values())
+        # Ties resolve by GAMEPLAY_MODES order so the answer is deterministic
+        # rather than dict-insertion order.
+        ranked = sorted(
+            (k for k, v in counts.items() if v == best),
+            key=lambda k: _mode_rank(k))
+        mode = _canonical_mode(ranked[0])
+    tickets = parse_tickets(body)
+    if tickets.team1 is None and tickets.team2 is None:
+        tickets = None
+    else:
+        tickets.mode = name or mode
+    return GameType(name=name, mode=mode, tickets=tickets, runs=runs,
+                    files=sources)
+
+
+def _mode_rank(lowered: str) -> int:
+    for index, mode in enumerate(GAMEPLAY_MODES):
+        if mode.lower() == lowered:
+            return index
+    return len(GAMEPLAY_MODES)
+
+
+def _canonical_mode(lowered: str) -> str:
+    """`singleplayer` -> `SinglePlayer`. An unknown directory keeps its case."""
+    for mode in GAMEPLAY_MODES:
+        if mode.lower() == lowered:
+            return mode
+    return lowered
+
+
+def load_game_types(files: LevelFiles) -> dict[str, GameType]:
+    """Every `GameTypes/*.con` the level ships, keyed by the file's own name.
+
+    A level with no `GameTypes/` directory yields an empty map; the caller
+    then has only the layer directories to go on, which is what the extractor
+    did before game types were read at all.
+    """
+    out: dict[str, GameType] = {}
+    for rel in sorted(files.under("GameTypes")):
+        if not rel.lower().endswith(".con"):
+            continue
+        name = _canonical_game_type(rel.rsplit("/", 1)[-1][:-4])
+        hit = files.find(rel)
+        if hit is None:
+            continue
+        gt = parse_game_type(files.read(hit).decode("latin-1", "replace"), name)
+        if not gt.mode:
+            # `GameTypes/Conquest.con` that only runs bare scripts still means
+            # Conquest: the file name is the game type either way.
+            gt.mode = _canonical_mode(name.lower())
+        out[name] = gt
+    return out
+
+
+def compose_game_type_layers(files: LevelFiles, game_types: dict[str, GameType],
+                             layers: dict[str, GameplayObjects]) -> None:
+    """Give every game type whose files straddle two directories its own layer.
+
+    The engine's `run` is per file. Road to Rome's `GameTypes/CoOp.con` runs
+    `SinglePlayer/SoldierSpawns`, `SinglePlayer/ObjectSpawns` and
+    `Conquest/ControlPoints`; Secret Weapons' Gothic Line runs
+    `SinglePlayer/SoldierSpawns` and `Conquest/ObjectSpawns`. Neither is any
+    one directory's layout, so neither can be named by a directory: the entry
+    is keyed by the **game type's** own name (`CoOp`), and `gt.mode` is
+    repointed at it so every consumer — the per-layer `gameTypes` list, the
+    ticket lookup, the page's `?mode=CoOp` — resolves to what the engine runs.
+
+    35 of the 3,048 GameTypes scripts across the 18 installed mods need this
+    (6 Road to Rome, 8 Secret Weapons, 3 Forgotten Hope, 6 FHSW, 12 bf1918);
+    no vanilla level does, which is why a directory-keyed reading looked
+    complete. Mutates `game_types` and `layers` in place.
+    """
+    for name, gt in game_types.items():
+        if not gt.composed or name in layers:
+            continue
+        composed = load_gameplay_objects(files, gt.mode, sources=gt.files)
+        composed.mode = name
+        layers[name] = composed
+        gt.mode = name
+
+
+# The shipped spellings vary (`Coop.con`, `CoOp.con`, `coop.con`); the site
+# needs one name per game type.
+_GAME_TYPE_NAMES = ("Conquest", "CoOp", "Ctf", "Tdm", "ObjectiveMode",
+                    "Search_And_Destroy", "SinglePlayer")
+
+
+def _canonical_game_type(name: str) -> str:
+    for known in _GAME_TYPE_NAMES:
+        if known.lower() == name.lower():
+            return known
+    return name
+
+
+def tickets_for_mode(game_types: dict[str, GameType],
+                     mode: str) -> "TicketInfo | None":
+    """The ticket counts the game type that loads `mode` declares.
+
+    Needed because the file is not named after the layer: SinglePlayer's
+    tickets are in `GameTypes/CoOp.con`. Conquest first when two game types
+    load the same layer, else the first in `GAMEPLAY_MODES` order.
+    """
+    if not mode:
+        return None
+    hits = [gt for gt in game_types.values()
+            if gt.mode.lower() == mode.lower() and gt.tickets is not None]
+    if not hits:
+        return None
+    hits.sort(key=lambda gt: _mode_rank(gt.name.lower()))
+    return hits[0].tickets
 
 
 @dataclass

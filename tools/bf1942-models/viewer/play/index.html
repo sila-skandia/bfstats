@@ -15,8 +15,12 @@
   runtime, so they come from `menu-levels.json` joined against the levels
   this viewer actually has (`maps/maps.json`).
 
-  START loads `../map.html?map=<level>&team=<1|2>`, which is the same map
-  page the mesh site serves, not a copy of it.
+  START loads `../map.html?map=<level>&team=<1|2>` plus `mode=` and `mod=`
+  where they apply, which is the same map page the mesh site serves, not a
+  copy of it. The game's Instant Battle runs a level's CoOp game type, so
+  this asks for it too wherever the level list says the level has that
+  layout -- 19 of the 23 vanilla levels, recorded per level as `singlePlayer`
+  in `menu-levels.json`. See `features/bf1942-3d-models/game-modes.md`.
 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -197,8 +201,9 @@ const env = {
  *  levels and this is the game's screen.
  *
  *  Every extracted level is listed. The real game lists only the levels
- *  with bot support (`level.singlePlayer`); this site has no bots and
- *  launches Conquest, so hiding the rest would only lose them.
+ *  with bot support (`level.singlePlayer`); this site has no bots, and the
+ *  levels without that layout launch Conquest instead, so hiding them would
+ *  only lose them.
  *
  *  `menuLevels` is the active game's own list: vanilla's, or the one a
  *  mod's pack carries (`hud-pack.js`). A mod with no pack has none - what
@@ -206,7 +211,8 @@ const env = {
  *  - so `joined` is false, the join is skipped and its `maps.json` is listed
  *  outright: no bot-support flag or nation flags to carry over, and no menu
  *  thumbnail (`env.thumbnail` falls back to the loading-screen background
- *  for those). */
+ *  for those). Those records carry no `singlePlayer` either, which is what
+ *  `launchUrl` keys on - see its comment. */
 function buildLevels(menuLevels, manifest, joined) {
   if (!joined) {
     return manifest
@@ -311,21 +317,45 @@ function setTeam(team) {
 }
 
 /** START. The map page is the mesh site's own file; only the launch
- *  parameters are ours - `mod` carries the active mod the way every other
- *  viewer page's own link already does (`mods.js`'s `withMod`). */
+ *  parameters are ours. */
 function start() {
   if (!state.level) return;
   location.href = launchUrl();
 }
 
-/** Where START goes. The mod travels with it: without it an Anzio launched
- *  from Road to Rome's screen would be looked for in vanilla's level tree
- *  whenever the remembered mod and the link's disagree. */
+/** Where START goes. Two things travel with the level and the team.
+ *
+ *  The mod: without it an Anzio launched from Road to Rome's screen would be
+ *  looked for in vanilla's level tree whenever the remembered mod and the
+ *  link's disagree.
+ *
+ *  The game mode. Instant Battle is a singleplayer screen, and in the game it
+ *  runs the level's **CoOp** game type — `GameTypes/CoOp.con`, which is the
+ *  script `bf1942_lnxded`'s `Setup::setNextLevel` names for GamePlayMode 4.
+ *  That is a game type, not a directory: on every vanilla level it loads the
+ *  `SinglePlayer/` layout, and on Road to Rome and Secret Weapons it loads
+ *  SinglePlayer's spawns under Conquest's flags, which is no directory's
+ *  layout at all. So the game type is what travels, and `map.html` resolves
+ *  it — asking for `SinglePlayer` by name would show the wrong flags on 14 of
+ *  the 15 Road to Rome and Secret Weapons levels that ship one.
+ *
+ *  `menu-levels.json` records which levels have that layout as `singlePlayer`
+ *  (19 of vanilla's 23; the four that do not are Aberdeen, Coral Sea,
+ *  Invasion of the Philippines and Liberation of Caen, and they get Conquest,
+ *  which is what the game falls back to for them as well). A mod with no menu
+ *  pack has no such list and its records carry no flag at all — `undefined`,
+ *  not `false` — so nothing is asked for and `map.html` plays the level's own
+ *  default layer, exactly as it did before `?mode=` existed. Naming Conquest
+ *  there would be a guess, and a wrong one on the 27 FHSW levels that ship no
+ *  Conquest layer. See `features/bf1942-3d-models/game-modes.md`. */
 function launchUrl() {
   if (!state.level) return null;
   const url = new URL('../map.html', location.href);
   url.searchParams.set('map', state.level.map);
   url.searchParams.set('team', String(state.team));
+  if (state.level.singlePlayer !== undefined) {
+    url.searchParams.set('mode', state.level.singlePlayer ? 'CoOp' : 'Conquest');
+  }
   if (activeMod.id !== VANILLA.id) url.searchParams.set('mod', activeMod.id);
   return url.toString();
 }
