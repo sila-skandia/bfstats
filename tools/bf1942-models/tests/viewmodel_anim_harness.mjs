@@ -109,6 +109,27 @@ check('reload timer + clip still scheduled → hold reload', {
   reload: 0.8, reloadPlayed: true, reloadRunning: true, active: 'reload',
 }, { want: 'reload' });
 
+// The LoopOnce reload pass has already finished (clamped) but the magazine
+// timer is still counting: the clip already played its sound for this
+// magazine, so re-owning the arms must NOT restart it (that restarted the
+// reload clip audio over and over on weapons whose clip span is shorter
+// than reloadTime). It should merely keep the finished pose until the timer
+// runs out.
+check('reload pass finished but timer counting → hold pose, do not restart', {
+  reload: 0.8, reloadPlayed: true, reloadRunning: false, active: 'reload',
+}, { want: 'reload', startReload: false });
+
+// An ammo box's `refillAmmo` sets `reload = 0` the instant ammo is restored,
+// even while the long reload clip is still mid-pass. The un-gated keep-alive
+// used to leave the arms stuck in the reload state (and, where the animation
+// carries one, replaying its sound) forever afterwards -- the guns froze
+// mid-reload with a full magazine. Once the timer is done and ammo full, the
+// arms must drop straight back to the gait clip so the sound stops.
+check('ammo top-up cancels reload with clip still running → back to loco', {
+  reload: 0, reloadPlayed: true, reloadRunning: true, active: 'reload',
+  gait: 'stand',
+}, { want: 'idle' });
+
 check('walk gait loco', {
   active: 'idle', gait: 'walk',
 }, { want: 'walk' });

@@ -866,7 +866,7 @@ import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
 import { GunFire } from './gunfire.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
-import { buildHeightfield, buildCollisionIndex, WorldCollider } from './collision.js';
+import { buildHeightfield, buildCollisionIndex, buildDrivableTops, WorldCollider } from './collision.js';
 import { FOV_DEG as FOOT_FOV, GRAVITY } from './soldier.js';
 import { DeviationModel } from './deviation.js';
 import { wantViewmodelClip } from './viewmodel-anim.js';
@@ -5851,8 +5851,15 @@ function buildCollider(root) {
   // round that lands resolves to the vehicle it landed on with one lookup and
   // no scene walk. `ownerRoots[i]` is owner `i` by construction.
   registerDamageables(ownerRoots);
+  // Raised decks a ground vehicle drives on top of (bridges, repair/reload
+  // bays). The level's heightfield is the ground under them; their deck tops
+  // are static collision meshes the hull sweep would otherwise stop a tank on.
+  // Build once per level, on the collision grid, and hand `surfaceHeight` the
+  // deck so the wheels ride it across.
+  const drivableTops = buildDrivableTops(root);
   collider = (heightfield || statics || Number.isFinite(extras?.waterLevel))
-    ? new WorldCollider({ heightfield, statics, waterLevel: extras?.waterLevel })
+    ? new WorldCollider({ heightfield, statics, waterLevel: extras?.waterLevel,
+                          drivableTops })
     : null;
   world.setCollider(collider);
   world.damageTables = damageTables;
