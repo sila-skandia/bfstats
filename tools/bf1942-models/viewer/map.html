@@ -879,7 +879,10 @@ import { CombatArea, combatAreaRect } from './combat-area.js';
 import { soldierExposure, worldBlocker, POSE_STAND } from './soldier-exposure.js';
 import { CHARACTER_HEIGHT } from './physics.js';
 import { flareSprites, flareTextureFiles, hasDrawableFlare } from './lens-flare.js';
+import { modeNames, modeProblem, pruneToMode, selectGameMode,
+         spawnerWindow } from './game-modes.js';
 import { loadHudPaths } from './hud-pack.js';
+import { kitIconCandidates } from './kit-icon.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -1069,6 +1072,10 @@ let simTime = 0;
 // every node they drive in three's matrix walk.
 let levelClips = [];
 let flagMixer = null;
+// What `?mode=` could not give this level, for the console band. Null
+// whenever the URL got exactly what it asked for, which is every load
+// with no `?mode=` at all.
+let modeNote = null;
 
 const params = new URLSearchParams(location.search);
 
@@ -4383,7 +4390,8 @@ function registerDamageables(ownerRoots) {
  * `objectSpawns` entry in scene.json by vehicle name + position.
  */
 function spawnDelayForNode(node) {
-  const stamped = node?.userData?.spawner;
+  // `byMode` on the stamp when two modes time one pad differently.
+  const stamped = spawnerWindow(node?.userData?.spawner, extras?.gameplayMode);
   if (stamped && (Number.isFinite(stamped.minSpawnDelay)
                   || Number.isFinite(stamped.maxSpawnDelay))) {
     const min = stamped.minSpawnDelay ?? stamped.maxSpawnDelay;
@@ -10142,10 +10150,25 @@ function applyDeployFrame() {
 // The five rows in the game's order; the index is its `Kit/SelectedKit`.
 const KITS = ['scout', 'assault', 'antitank', 'medic', 'engineer'];
 
-/** Which photograph a kit row shows. The theatre variants exist only where
- *  the game drew them: Japanese assault and engineer, Soviet and Canadian
- *  assault; everything else is the plain allies/axis picture. */
+/** Which photograph a kit row shows: the level's own kit for this row and
+ *  team, through `_shared/loadouts.json`'s `kitIcon.icon` (`setKitIcon`'s raw
+ *  path -- `kit-icon.js` handles the casing, the extension and the
+ *  directory-qualified name a nation collision earns it) resolved against
+ *  whichever sprites the pack actually loaded, mod's own first. Falls back
+ *  to the vanilla-table guess below whenever the loadout, the icon field or
+ *  the sprite itself is not there -- a mod whose pack has not caught up, or
+ *  a level `_shared/loadouts.json` does not know. The theatre variants in
+ *  that fallback exist only where the game drew them: Japanese assault and
+ *  engineer, Soviet and Canadian assault; everything else is the plain
+ *  allies/axis picture. */
 function kitPhoto(role, nation, team) {
+  const { kit } = kitLoadout(team, role);
+  const icon = kit && loadouts?.kits?.[kit]?.kitIcon?.icon;
+  if (icon) {
+    for (const candidate of kitIconCandidates(icon)) {
+      if (hudPack.sprites.has(candidate)) return candidate;
+    }
+  }
   const variants = {
     jp: { assault: 'jap', engineer: 'jap' },
     rus: { assault: 'russian' },
@@ -10807,7 +10830,28 @@ async function show(entry) {
     settleLevelWarmup(null);
     throw error;
   }
-  extras = report;
+  // `?mode=` picks one of the level's gameplay layers; with no parameter this
+  // resolves to the default layer, whose arrays are the top-level ones, so the
+  // page is unchanged. A report from before `modes` existed passes straight
+  // through. See `viewer/game-modes.js`.
+  const wantedMode = params.get('mode');
+  extras = selectGameMode(report, wantedMode);
+  // A `?mode=` that did not land says so, and says it where a player can read
+  // it: the dev panel is hidden for everyone but a developer, so the message
+  // goes to the game's own console band as well (`logToConsole`, below, once
+  // the level header has been written). Silence is the one wrong answer —
+  // falling back to the default layer without a word is a page that looks
+  // right and is showing something else.
+  const modeIssue = modeProblem(report, wantedMode);
+  modeNote = modeIssue
+    ? (modeIssue === 'missing'
+      ? `"${wantedMode}" is a game type ${report.level} offers but ships no `
+        + `layer for; showing ${extras.gameplayMode}. `
+        + `Has: ${modeNames(report).join(', ')}`
+      : `no "${wantedMode}" layer on ${report.level}; `
+        + `showing ${extras.gameplayMode}. Has: ${modeNames(report).join(', ')}`)
+    : null;
+  if (modeNote) console.warn(modeNote);
   // Before the old root is disposed: every gun is indexed off a node in it, and
   // the rounds in the air are clones of nodes it owns.
   releaseGuns();
@@ -10821,6 +10865,10 @@ async function show(entry) {
   disposeSky();
   disposeSounds();
   currentRoot = gltf.scene;
+  // The glb holds every mode's vehicles and flags; drop the ones this mode
+  // does not park. Before anything indexes the scene, so the vehicle list, the
+  // occupancy roots and the cull set never see them.
+  pruneToMode(currentRoot, extras.gameplayMode);
   // Baked fire-effect payloads (muzzle flashes, projectile bodies, trail
   // quads) ride every assembled vehicle; only the model viewer animates
   // them, so here they must stay hidden or they render parked on the guns.
@@ -10849,8 +10897,24 @@ async function show(entry) {
   // flight.js already accumulates from its rate axes — playing the baked clip
   // here as well would drive it twice.
   flagMixer = null;
-  const ambient = (gltf.animations || []).filter(
-    c => !/^spin(\.\d+)?$/.test(c.name));
+  const ambient = (gltf.animations || [])
+    .filter(c => !/^spin(\.\d+)?$/.test(c.name))
+    // The glb bakes a flag's cloth clip for every mode's pole, and
+    // `pruneToMode` has just detached the ones this mode does not fly. A
+    // track whose node has gone is a `THREE.PropertyBinding: No target node
+    // found` warning per bone per frame's worth of setup — 88 of them on
+    // Wake's Conquest layer alone — so the tracks are dropped here, the same
+    // test three itself applies when it gives up on one.
+    .map(clip => {
+      const live = clip.tracks.filter(track => THREE.PropertyBinding.findNode(
+        currentRoot, THREE.PropertyBinding.parseTrackName(track.name).nodeName));
+      if (live.length === clip.tracks.length) return clip;
+      if (!live.length) return null;
+      const trimmed = clip.clone();
+      trimmed.tracks = live;
+      return trimmed;
+    })
+    .filter(Boolean);
   levelClips = ambient;
   if (ambient.length) {
     flagMixer = new THREE.AnimationMixer(currentRoot);
@@ -10952,6 +11016,10 @@ async function show(entry) {
     });
   const t = extras.terrain || {};
   const o = extras.objects || {};
+  // `objects` counts what the glb holds, and the glb holds every mode's
+  // vehicles; what is standing in this level is what survived `pruneToMode`.
+  const vehiclesHere = spawnersRoot ? spawnersRoot.children.length
+                                    : (o.spawners || 0);
   document.getElementById('stats').innerHTML =
     `<strong>${extras.level || entry.name}</strong><br>` +
     `world ${extras.worldSize || '?'} m<br>` +
@@ -10959,7 +11027,7 @@ async function show(entry) {
     (t.defaultTiles ? ` + ${t.defaultTiles} default` : '') +
     (t.detail ? ' + detail' : '') + `<br>` +
     `objects ${o.placed || 0} placed` +
-    (o.spawners ? ` / ${o.spawners} vehicles` : '') +
+    (vehiclesHere ? ` / ${vehiclesHere} vehicles` : '') +
     (o.lightmaps ? ` / ${o.lightmaps} lightmaps` : '') +
     (o.skipped?.length ? ` / ${o.skipped.length} skipped` : '') + `<br>` +
     `sky ${extras.sky ? extras.sky.mesh + (extras.sky.clouds ? ' + clouds' : '') :
@@ -10983,8 +11051,11 @@ async function show(entry) {
   logToConsole(`level ${extras.level || entry.name} (${activeMod.id || 'bf1942'})`);
   logToConsole(`world ${extras.worldSize || '?'} m, ` +
                `${t.triangles || 0} terrain tris over ${t.tiles || 0} tiles`);
-  logToConsole(`${o.placed || 0} objects placed, ${o.spawners || 0} vehicle spawners, ` +
+  logToConsole(`${o.placed || 0} objects placed, ${vehiclesHere} vehicle spawners, ` +
                `${o.lightmaps || 0} object lightmaps`);
+  // The one line a player who typed a `?mode=` needs and would otherwise only
+  // find in a browser console they never open.
+  if (modeNote) logToConsole(modeNote);
   if (o.skipped?.length) logToConsole(`${o.skipped.length} objects skipped`);
   logToConsole(collision.statics
     ? `collision ${collision.statics.count} tris` + (collision.heightfield
@@ -11912,6 +11983,31 @@ if (params.has('shots')) {
     if (on !== undefined) mapGate = !!on;
     return mapGate;
   };
+  // Which gameplay layer `?mode=` landed on, and what else the level ships —
+  // enough for a headless check to prove the flags, spawns and vehicles it is
+  // looking at belong to the mode it asked for.
+  window.__gameMode = () => ({
+    active: extras?.gameplayMode || null,
+    requested: params.get('mode'),
+    note: modeNote,
+    available: modeNames(extras),
+    gameTypes: Object.fromEntries(
+      Object.entries(extras?.gameTypes || {}).map(([k, v]) => [k, v?.mode])),
+    controlPoints: (extras?.controlPoints || []).map(
+      cp => ({ name: cp.name, team: cp.team, position: cp.position })),
+    soldierSpawns: (extras?.soldierSpawns || []).length,
+    spawnTeams: (extras?.soldierSpawns || []).reduce((acc, s) => {
+      const key = String(s.team);
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {}),
+    objectSpawns: (extras?.objectSpawns || []).length,
+    tickets: extras?.tickets || null,
+    vehicles: spawnersRoot
+      ? spawnersRoot.children.map(v => v.name).sort()
+      : [],
+  });
+
   // The combat area and what it is doing to the body this frame: the rect the
   // level declared, the engine's two constants, and the live accumulator. A
   // headless check teleports out, steps frames and reads the countdown and
