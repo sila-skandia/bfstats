@@ -877,6 +877,18 @@ asserts the two sides answer identically — `xa_loi_pagoda`,
 `liberation_of_caen`, `no_where_to_run`'s tie and the Pathet Lao levels
 included.
 
+### Lead's correction at merge: silence is not "unknown"
+
+As written, `teamNation`'s last fallback became `'unknown'`. That is right for
+a side whose own flags are unmapped (Pathet Lao) and wrong for a side with no
+flag evidence at all: the Americans hold no flag at the start of Omaha Beach,
+Iwo Jima, Coral Sea, Midway or Truk, Kasserine Pass's zones are flagless, and
+`nationFromVehicles` only ever names jp, rus or brit - so the US and German
+ticket flags would have vanished from six vanilla levels. `'unknown'` now wins
+only when the side's flags vote for it; no evidence keeps the founding pair
+(team 1 ger, team 2 us), exactly as `main` did. Pinned by
+`test_no_flag_evidence_keeps_the_founding_pair_not_unknown`.
+
 ## 12. Mod kit photographs (2026-09-20)
 
 The first of section 10's "two defects left for the lead", closed: a mod's

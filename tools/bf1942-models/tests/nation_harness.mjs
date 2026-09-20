@@ -126,11 +126,18 @@ results.hMong = {
 };
 
 // A team with no control points of its own at all (Wake's Japanese arrive
-// by sea): the vehicle guess wins, and with none offered either, 'unknown'
-// -- never a ger/us default.
+// by sea): the vehicle guess wins. With none offered either, the founding
+// pair stands -- the vehicle guess only ever names jp, rus or brit, so
+// Omaha Beach's Americans and Kasserine Pass's Germans have nothing else,
+// and 'unknown' here would take the US and German ticket flags off six
+// vanilla levels. 'unknown' is what a side's own unmapped FLAGS say (the
+// Pathet Lao case above), never what silence says.
 results.noControlPoints = {
   withVehicleGuess: teamNation([], 1, VANILLA, 'jp'),
-  withoutVehicleGuess: teamNation([], 1, VANILLA, null),
+  axisWithoutVehicleGuess: teamNation([], 1, VANILLA, null),
+  alliedWithoutVehicleGuess: teamNation([], 2, VANILLA, null),
+  flaglessZonesOnly: teamNation([{ team: 1 }, { team: 1 }], 1, VANILLA, null),
+  noTeam: teamNation([], 0, VANILLA, null),
 };
 
 console.log(JSON.stringify(results, null, 1));

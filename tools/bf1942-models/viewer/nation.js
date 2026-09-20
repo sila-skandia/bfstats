@@ -47,10 +47,15 @@ export function cpNation(cp, nations) {
  *  air (Wake's Japanese) -- kept as a plain argument rather than computed
  *  in here so this module never has to read a `three` scene graph.
  *
- *  The final fallback is `'unknown'`, never a guessed nation: once every
- *  control point and every vehicle has had its say, guessing ger/us the
- *  way `cpNation`'s flagless branch does is exactly the mistake that drew
- *  an NVA flag over a Pathet Lao base -- see `cpNation`. */
+ *  `'unknown'` is an ANSWER, not a fallback: it wins only when the side's
+ *  own flags say it (Pathet Lao's `flagpl_m1`, a mesh this pack has no art
+ *  for) -- that is what stops an NVA flag being drawn over a Pathet Lao
+ *  base. A side with no flag evidence at all is a different case and keeps
+ *  the founding pair, as `cpNation`'s flagless branch does: the Americans
+ *  hold no flag at the start of Omaha Beach, Iwo Jima, Coral Sea, Midway or
+ *  Truk, the Germans none on Kasserine Pass (its zones are flagless), and
+ *  `vehicleNation` only ever names jp, rus or brit -- so without this the
+ *  US and German ticket flags vanish from six vanilla levels. */
 export function teamNation(controlPoints, team, nations, vehicleNation) {
   const tally = new Map();
   for (const cp of controlPoints || []) {
@@ -60,5 +65,5 @@ export function teamNation(controlPoints, team, nations, vehicleNation) {
   }
   let best = null;
   for (const [n, count] of tally) if (!best || count > tally.get(best)) best = n;
-  return best || vehicleNation || 'unknown';
+  return best || vehicleNation || (team === 1 ? 'ger' : team === 2 ? 'us' : 'unknown');
 }
