@@ -9439,15 +9439,33 @@ const fullmapCanvas = document.getElementById('fullmap-canvas');
 // to one measured read, so the first frame after the map opens is right.
 const canvasCssWidth = new Map();
 const canvasObserver = new ResizeObserver(entries => {
-  for (const entry of entries) canvasCssWidth.set(entry.target, entry.contentRect.width);
+  for (const entry of entries) {
+    const width = entry.contentRect.width;
+    // A 0 here means `display: none` — the box the surface lives in is hidden —
+    // and it is reported at the end of the frame that hid it. Dropping the
+    // entry rather than caching the 0 is what lets the frame that UNHIDES the
+    // surface measure it, in that same frame, before this observer has had a
+    // chance to speak: the alternative paints one frame into the previous
+    // backing size (confirmed: 283 px instead of 562). Neither painter reads a
+    // width while its own box is hidden, so nothing else is asking meanwhile.
+    if (width) canvasCssWidth.set(entry.target, width);
+    else canvasCssWidth.delete(entry.target);
+  }
 });
 canvasObserver.observe(minimapCanvas);
 canvasObserver.observe(fullmapCanvas);
 function cssWidthOf(canvas) {
   const known = canvasCssWidth.get(canvas);
-  if (known) return known;
+  // `!== undefined`, not truthiness, and a measured 0 is cached too: a width
+  // of 0 is an ANSWER, and treating it as a miss meant `getBoundingClientRect`
+  // — a synchronous layout, rule 3 — ran again on every call that got one, for
+  // exactly the surface this cache exists to keep off the frame path. The
+  // observer above never stores a 0 (see there), so the only way to hold one is
+  // to have measured it, and the observer overwrites that the moment the box
+  // has a size.
+  if (known !== undefined) return known;
   const measured = canvas.getBoundingClientRect().width;
-  if (measured) canvasCssWidth.set(canvas, measured);
+  canvasCssWidth.set(canvas, measured);
   return measured;
 }
 const fullmapName = document.getElementById('fullmap-name');
