@@ -192,6 +192,33 @@ carries one. Checked in the browser for bf1942, xpack1 and eod.
   NVA flag in-game; `verify_models.py`'s origin-pile check is anchored on the
   scene origin and misses a Sherman whose 27 parts collapse onto the hull.
 
+**Sonnet fix streams for the items the wave 3 reviews left open** (launched
+2026-09-20 at the owner's request; each in its own worktree, each reviewed before
+it merges):
+
+| Stream | What it fixes |
+|---|---|
+| S1 level nations | A team's flag is a LEVEL property: the Instant Battle screen derives it from the level's own control points the way `map.html` does (30 EoD team/level rows and vanilla's Caen were wrong); Pathet Lao bases stop flying the NVA flag - an unmapped nation shows no flag |
+| S2 kit photographs | `extract_hud_pack.py` globs `menu/Texture/Kits/**` with directory-qualified names (EoD's 87, SW's 6, RtR's 2 from `menu_001.rfa`); `kitPhoto()` reads the kit's own `setKitIcon` from `loadouts.json` |
+| S3 verifier | `origin_pile` anchored on the scene origin misses a Sherman whose 27 parts pile on the hull origin; a comparative rule that keeps the 10 EoD false alarms suppressed |
+| S4 sound lifecycle | wreck fire stops with its wreck and on level change; sounds requested while the AudioContext is suspended no longer fire together on resume; a bundle attached to a moving object sounds |
+
+Not given to an agent yet: vehicle guns never get `randomPlay` (needs
+`extract_map._sound_layers`, which the game-modes stream is rewriting - after it
+lands), and the 26-voice arithmetic (needs the client mixer read in Ghidra).
+
+**Publishing** (owner: "publish, commit and push, no need to confirm",
+2026-09-20): a size-and-json delta of `viewer/models` and `viewer/maps` against
+the volume is going up group by group (`scratchpad/publish/publish-delta.py`,
+manifests last, nothing deleted): 1,979 model files / 0.64 GB and 1,729 map
+files / 14.9 GB - every `scene.glb` changed. `models/mods/eod` is held back
+until its re-extraction finishes.
+
+**W3-A (drivetrain) rework has reported** (`w3a-drivetrain-rework.md`) and is
+back with its reviewer: both blockers claimed closed, brake closed, but a jeep
+with a driver still rolls down a 5 degree slope, roll reversals got worse, and
+the M3A1 leans 39 degrees and loses its turn-in at top speed.
+
 **W3-C (game modes) has reported and is in review** (`w3c-gamemodes.md`). **W3-G
 (mouse input) has reported and is in review** (`w3g-mouse.md`).
 
