@@ -53,7 +53,7 @@ HARNESS = Path(__file__).resolve().parent / "world_harness.mjs"
 _MODULE_NAMES = [
     "physics", "soldier", "mouse-input", "fall-damage",
     "body-world", "vehicle-bodies", "combat-area", "supply", "armor",
-    "vehicle-damage", "seats", "rigid-body", "body-contact",
+    "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact",
     "body-ground", "body-friction", "crash-damage", "effects-core",
 ]
 MODULES = {f"{name}.js": VIEWER / f"{name}.js" for name in _MODULE_NAMES}

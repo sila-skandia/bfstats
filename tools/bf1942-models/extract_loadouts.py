@@ -34,9 +34,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bf42 import con as con_mod
 from bf42 import kit as kit_mod
+from bf42.modmenu import MenuSources
 
 from extract_models import (DEFAULT_GAME_DIR, build_library, build_pools,
                             discover_levels, mod_chain)
+from extract_spawn_layout import load_chain_lexicon
 
 
 def _soldier_hit_points(library: con_mod.ObjectLibrary,
@@ -60,13 +62,21 @@ def _soldier_hit_points(library: con_mod.ObjectLibrary,
 
 def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
                    loadouts: dict[str, dict[int, kit_mod.TeamLoadout]],
-                   mod: str) -> dict:
+                   mod: str,
+                   lexicon: dict[str, str] | None = None) -> dict:
     """The file the page loads, from collected kits and swept levels.
 
     Only kits some level binds are listed — a dead kit cannot be spawned with,
     and vanilla declares ten of them. A level naming a kit the library does
     not hold keeps the raw name so the gap is visible in the file rather than
     silently dropped; the page treats an unknown kit as no primary.
+
+    `lexicon` is the mod chain's merged lexicon (`load_chain_lexicon` over
+    `MenuSources.lexicon_paths` — the same file the SkirmishMenu titles
+    resolve through): it turns each kit's `setKitName` lexicon key into the
+    display string the deploy screen's row is labelled with. Absent (a test
+    or a chain with no lexiconAll.dat), the key is still emitted and `text`
+    is null; the page falls back to its own layout's resolved string.
     """
     rows: dict[str, dict] = {}
     levels: dict[str, dict] = {}
@@ -143,6 +153,17 @@ def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
                             {"index": kit_template.kit_icon[0],
                              "icon": kit_template.kit_icon[1]}
                             if kit_template and kit_template.kit_icon else None),
+                        # The row's label: the kit's own `setKitName` lexicon
+                        # key, resolved through the mod chain's lexicon — the
+                        # same resolution the SkirmishMenu titles get. The
+                        # key is kept alongside the text so a page reading an
+                        # older file (or a key the lexicon lacks) can still
+                        # fall back to its own layout's string.
+                        "kitName": (
+                            {"index": kit_template.kit_name[0],
+                             "key": kit_template.kit_name[1],
+                             "text": (lexicon or {}).get(kit_template.kit_name[1])}
+                            if kit_template and kit_template.kit_name else None),
                         "weaponIcons": (
                             list(kit_template.kit_weapon_icons)
                             if kit_template else []),
@@ -179,7 +200,10 @@ def main() -> int:
     library = build_library(objects)
     kits = kit_mod.collect(library)
     loadouts = kit_mod.level_loadouts(discover_levels(chain))
-    manifest = build_manifest(library, kits, loadouts, args.mod)
+    # The kit row labels resolve through the same merged lexicon the
+    # SkirmishMenu titles do (extract_menu_layout.py's own call).
+    lexicon = load_chain_lexicon(MenuSources(chain).lexicon_paths)
+    manifest = build_manifest(library, kits, loadouts, args.mod, lexicon)
 
     unarmed = [name for name, row in manifest["kits"].items() if not row["primary"]]
     unknown = sorted({name for level in manifest["levels"].values()
