@@ -63,6 +63,15 @@ no database, no audio, no GPU anywhere in the room's path.
   the engine's control channel (J-1/J-3); MSG_LEAVE is 0xd and the silent
   10 s sweep is its drop twin; snapshots go at each connection's own rate
   (default 20, floor 10) and fire events throttle at ~0.35 s per player.
+  **P4**: a deploy row's `spawnIndex` is the page's own spawn-point pick and
+  the authority spawns on exactly it (the two sims must agree about where the
+  body starts, or the prediction splays away from the authority forever —
+  `features/netcode-play-multiplayer/SNAPBACK.md`); `connection.ack` is the
+  highest input seq the world has consumed for that player, monotonic across
+  idle ticks, and rides every snapshot player row so the client can measure
+  its prediction error at a tick both sides have run; and the snapshot's
+  facing is converted to the DEGREES the record documents, here at the wire's
+  edge, because the World keeps radians.
 - **server.mjs** — RFC 6455 handshake and frame codec only; every protocol
   decision stays in rooms.mjs. The adapter satisfies the core's peer
   contract: `{ send(bytes: Uint8Array), close(code?, reason?) }` where `send`
