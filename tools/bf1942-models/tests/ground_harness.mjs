@@ -130,6 +130,113 @@ function willyNode() {
   return root;
 }
 
+/**
+ * The Kubelwagen, the one vanilla `c_ETCar` whose Engine binds `c_PIYaw`.
+ *
+ * `Objects/Vehicles/Land/Kubelwagen/Physics.con` gives `KubelwagenEngine`
+ * `setInputToYaw c_PIYaw` over `setMinRotation -1/0/-1` ..
+ * `setMaxRotation 1/0/1` -- the same +-1 degree body lean a `c_ETTank`
+ * Engine declares -- alongside the throttle roll every car engine has. The
+ * Engine sits between every spring and the root, so an ancestor walk that
+ * does not insist on a `RotationalBundle` marks the rear `c_PGFEngineGrip`
+ * springs steered as well as the fronts: all four tyres point the same way,
+ * the yaw moment cancels, and the car crabs off on a fixed heading. The
+ * Willy above is the control -- same mass, same torque ladder, same grip
+ * classes, its Engine binding roll only.
+ *
+ * Everything else is the Willy's tree with the Kubelwagen's own geometry
+ * from the same `Physics.con` (front axle 1.2 m ahead of the origin, rear
+ * 1.23 m behind, track 1.255 m).
+ */
+function kubelNode() {
+  const root = new THREE.Object3D();
+  root.name = 'Kubelwagen';
+  root.userData = {
+    control: 'Kubelwagen',
+    templateKind: 'PlayerControlObject',
+    physics: { mass: 2500, drag: 1.5, vehicleCategory: 'VCLand' },
+  };
+
+  const camera = new THREE.Object3D();
+  camera.name = 'KubelwagenCamera';
+  camera.position.set(-0.38, 0.95, 1.25);
+  camera.userData = { templateKind: 'Camera', cameraView: 'CVMInside' };
+  root.add(camera);
+
+  const engine = new THREE.Object3D();
+  engine.name = 'KubelwagenEngine';
+  engine.position.set(0, 0.35, 0.25);
+  engine.userData = {
+    templateKind: 'Engine',
+    physics: {
+      engineType: 'c_ETCar', torque: 10.5, differential: 7.0,
+      numberOfGears: 5, gearUp: 0.95, gearDown: 0.4, gearChangeTime: 0.05,
+      maxRotation: [1, 0, 1], maxSpeed: [10, 0, 10], acceleration: [10, 0, 10],
+    },
+    rig: {
+      control: 'Kubelwagen', automaticReset: true,
+      axes: {
+        yaw: {
+          input: 'c_PIYaw', min: -1, max: 1, free: false,
+          driver: 'position', maxSpeed: 10, direction: 1, acceleration: 10,
+        },
+        roll: {
+          input: 'c_PIThrottle', min: -1, max: 1, free: false,
+          driver: 'position', maxSpeed: 10, direction: 1, acceleration: 10,
+        },
+      },
+    },
+  };
+  root.add(engine);
+
+  const steerRig = {
+    control: 'Kubelwagen', automaticReset: true,
+    axes: {
+      yaw: {
+        input: 'c_PIYaw', min: -30, max: 30, free: false,
+        driver: 'position', maxSpeed: 200, direction: 1,
+      },
+    },
+  };
+  for (const side of [1, -1]) {
+    const bundle = new THREE.Object3D();
+    bundle.name = side > 0 ? 'KubelwagenFrontWheelR' : 'KubelwagenFrontWheelL';
+    bundle.position.set(0.6275 * side, -0.007, -1.2);
+    bundle.userData = { templateKind: 'RotationalBundle', rig: steerRig };
+    const front = new THREE.Object3D();
+    front.name = side > 0 ? 'KubelwagenFrontSpringR' : 'KubelwagenFrontSpringL';
+    front.position.set(0, -0.599, 0);
+    front.userData = {
+      templateKind: 'Spring',
+      physics: { grip: 'c_PGFRollGrip', gripFlags: 2, strength: 25, damping: 5 },
+    };
+    bundle.add(front);
+    engine.add(bundle);
+
+    const rear = new THREE.Object3D();
+    rear.name = side > 0 ? 'KubelwagenBackSpringR' : 'KubelwagenBackSpringL';
+    rear.position.set(0.6275 * side, -0.423, 1.23);
+    rear.userData = {
+      templateKind: 'Spring',
+      physics: { grip: 'c_PGFEngineGrip', gripFlags: 4, strength: 25, damping: 5 },
+    };
+    engine.add(rear);
+  }
+  return root;
+}
+
+/** The Kubelwagen on the same analytic ground the `jeep()` helper uses. */
+function kubel({ ground = () => 0, y = 0.6, speed = 0, surface } = {}) {
+  const truck = new GroundVehicle(kubelNode(), null, {
+    cockpit: false, groundHeight: ground,
+    ...(surface ? { surfaceFriction: surface } : {}),
+  });
+  const s = truck.state;
+  s.position.set(0, y, 0);
+  s.velocity.set(0, 0, -speed);
+  return truck;
+}
+
 /** A jeep standing on (or dropped just above) analytic ground. */
 function jeep({ ground = () => 0, y = 0.6, speed = 0, surface } = {}) {
   const truck = new GroundVehicle(willyNode(), null, {
@@ -602,6 +709,54 @@ for (const [name, make] of [
     minUp: round(minUp),
     end: snapshot(truck),
   };
+}
+
+// --- the Kubelwagen: a car Engine that binds c_PIYaw --------------------------
+//
+// Same scenario as `steering` above, run on both cars. The Kubelwagen must
+// turn like the Willy, and only its two `c_PGFRollGrip` fronts may come back
+// steered. Before the `RotationalBundle` guard in `collectChassis` all four
+// of its springs were steered, which pointed every tyre the same way: the
+// hull translated sideways on a near-constant heading -- a couple of degrees
+// of yaw over six seconds of half lock against the Willy's hundreds.
+{
+  const turnOf = build => {
+    const truck = build();
+    drive(truck, 2);
+    drive(truck, 10, holding({ c_PIThrottle: 1 }));
+    const heading = t => Math.atan2(-forwardOf(t).x, -forwardOf(t).z);
+    let turned = 0;
+    let last = heading(truck);
+    let crab = 0;
+    drive(truck, 6, t => {
+      holding({ c_PIThrottle: 1, c_PIYaw: 0.5 })(t);
+      const now = heading(t);
+      let step = (now - last) * DEG;
+      if (step > 180) step -= 360;
+      if (step < -180) step += 360;
+      turned += step;
+      last = now;
+      // How far the velocity has slipped out of the nose: a crabbing hull
+      // travels sideways with no yaw to show for it.
+      const v = t.state.velocity;
+      const along = v.dot(forwardOf(t));
+      const speed = v.length();
+      crab = Math.max(crab, speed > 1 ? Math.abs(Math.asin(
+        Math.min(1, Math.sqrt(Math.max(0, speed * speed - along * along)) / speed))) * DEG : 0);
+    });
+    return {
+      wheels: truck.wheels.length,
+      driven: truck.wheels.filter(w => w.driven).length,
+      steered: truck.wheels.filter(w => w.steered).length,
+      steeredAreRollGrip: truck.wheels
+        .filter(w => w.steered).every(w => !w.driven),
+      steerMax: truck.wheels.map(w => w.steerMax),
+      turnedDeg: round(turned, 1),
+      worstSlipDeg: round(crab, 1),
+      end: snapshot(truck),
+    };
+  };
+  results.kubelwagen = { kubel: turnOf(kubel), willy: turnOf(jeep) };
 }
 
 // Hands off the wheel again: the steering servo's automatic reset must

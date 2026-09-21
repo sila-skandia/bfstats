@@ -898,9 +898,10 @@ export class GroundVehicle extends Vehicle {
    * A wheel is a `Spring` node with a `physics` extra — position, stiffness,
    * damping, grip class all come from the glb, so a Kubelwagen or a Sherman's
    * six-a-side road wheels arrive through the same walk with no per-vehicle
-   * table. A wheel is *steered* if any ancestor between it and the root
-   * carries a yaw rig on `c_PIYaw`, which is exactly the `RotationalBundle`
-   * the front wheels hang from.
+   * table. A wheel is *steered* if a `RotationalBundle` ancestor between it
+   * and the root carries a yaw rig on `c_PIYaw`, which is exactly the bundle
+   * the front wheels hang from — and only such an ancestor, because a car's
+   * Engine may bind `c_PIYaw` for its own body lean (see the walk below).
    */
   collectChassis() {
     this.node.updateWorldMatrix(true, true);
@@ -929,11 +930,31 @@ export class GroundVehicle extends Vehicle {
       local.multiplyMatrices(rootInverse, obj.matrixWorld);
       const rest = new THREE.Vector3().setFromMatrixPosition(local);
       let steered = false;
+      let steerMax = this.spec.maxSteer;
       for (let p = obj.parent; p && p !== this.node; p = p.parent) {
+        // A `RotationalBundle` ancestor only, the same guard `TrackedVehicle`
+        // carries. A car's Engine was assumed never to bind yaw; vanilla's
+        // `KubelwagenEngine` does — `setInputToYaw c_PIYaw` over
+        // `setMinRotation -1/0/-1` .. `setMaxRotation 1/0/1`, the same +-1
+        // degree body lean a `c_ETTank` Engine declares, and it sits between
+        // every spring and the root. Walking ancestors regardless of kind
+        // therefore marked the rear `c_PGFEngineGrip` springs steered too, so
+        // all four tyres pointed the same way: the Kubelwagen crabbed off on
+        // a fixed heading with no yaw moment at any lock. The Schwimmwagen
+        // declares the same engine rig and was broken the same way; Willy,
+        // whose engine binds roll only, was not.
+        if (p.userData?.templateKind !== 'RotationalBundle') continue;
         const yaw = p.userData?.rig?.axes?.yaw;
-        if (yaw && yaw.input === 'c_PIYaw') { steered = true; break; }
+        if (yaw && yaw.input === 'c_PIYaw') {
+          steered = true;
+          const span = Math.max(Math.abs(yaw.min ?? 0), Math.abs(yaw.max ?? 0));
+          if (span > 0) steerMax = span;
+          break;
+        }
       }
-      this.wheels.push(new Wheel(obj, rest, data.physics, steered));
+      const wheel = new Wheel(obj, rest, data.physics, steered);
+      wheel.steerMax = steerMax;
+      this.wheels.push(wheel);
     });
     // Nothing marked driven — a trailer, or an extract from before the
     // physics extras — drives everything rather than nothing.
@@ -1032,7 +1053,10 @@ export class GroundVehicle extends Vehicle {
     for (const [key, value] of s.surfaces) {
       if (key.includes('/c_PIYaw/') && key.endsWith('/yaw')) { steerInput = value; break; }
     }
-    const steer = -steerInput * k.maxSteer * DEG;
+    // Kept normalised here; the lock is per wheel below, off the bundle's own
+    // declared span, with `spec.maxSteer` standing in only for a wheel whose
+    // bundle declared none.
+    const steerNorm = -steerInput;
 
     // --- wheels ---------------------------------------------------------------
     const force = this._force.set(0, 0, 0);      // body frame, per mass
@@ -1189,6 +1213,7 @@ export class GroundVehicle extends Vehicle {
       // The tyre's own frame: forward steered or straight, lateral to its
       // right. Rotation about +Y, so a negative steer angle points the wheel
       // starboard — the right turn the sign convention above promises.
+      const steer = steerNorm * (wheel.steerMax ?? k.maxSteer) * DEG;
       const dir = this._dir.set(-Math.sin(steer), 0, -Math.cos(steer));
       if (!wheel.steered) dir.set(0, 0, -1);
       const lat = this._lat.crossVectors(dir, UP);
