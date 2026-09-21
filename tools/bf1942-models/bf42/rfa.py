@@ -5,23 +5,90 @@ the part the model pipeline needs on top of it: a *pooled, case-insensitive* vie
 over many archives at once. Refractor was authored on Windows, so `Objects.rfa`
 happily asks for `texture/Sherma_I` when the archive holds `texture/sherma_i.dds`,
 and a mod resolves that name against its own archives before its parents'.
+
+**Every segment of a compressed archive is LZO**, which is the one thing the
+skill's reader gets wrong and `_inflate_segment` below fixes. Its rule was that
+a segment whose compressed size equals its uncompressed size was stored
+verbatim — the plausible reading of a format that has no per-segment flag. It
+is not what the format does. LZO output is not bounded below by its input:
+`animations/GrenadeAxis.ske` deflates 130 bytes *up* to 136, so a stream of
+exactly the payload's length is an ordinary compressed one that happened to
+break even. Measured over every archive in the install — vanilla and all nine
+mods — 448 segments have `seg_c == seg_uc` and all 448 inflate cleanly to
+exactly `seg_uc` bytes; not one is raw. Under the old rule each of those came
+back as undecoded LZO bytes, so 448 files silently arrived as garbage that
+happened to start with a byte or two of real data. `animations/GrenadeAllies.ske`
+was one, which is why the viewer's grenade sat on its side in the palm with no
+grip transform; `animations/Weapons/MedPack/MedPackFire.baf` and every mod's
+`Molotov.ske`, `APLandmine.ske` and smoke-grenade skeleton were others, along
+with level heightmaps and terrain tiles.
+
+Nothing observed needs the verbatim path, but it is kept as a fallback for a
+break-even segment LZO rejects rather than dropped. It is only reachable there:
+when the two sizes differ, verbatim is arithmetically impossible — the segment
+cannot both be `seg_c` bytes long and expand to a different `seg_uc` — so a
+failed inflate is real archive damage and has to keep raising. EoD's
+`objects.rfa` has three such entries out of 4806, and `ArchivePool.try_read`
+exists to log and skip them.
 """
 
 from __future__ import annotations
 
 import re
+import struct
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path.home() / ".claude/skills/bf1942-map-images/scripts"))
 
 try:
-    from extract_map_images import RfaArchive  # noqa: F401  (re-exported)
+    from extract_map_images import RfaArchive as _SkillRfaArchive
+    from extract_map_images import lzo_decompress
 except ImportError:  # pragma: no cover - developer environment guard
     sys.exit(
         "Could not import the RFA reader. This tool reuses the one from the\n"
         "bf1942-map-images skill at ~/.claude/skills/bf1942-map-images/scripts/."
     )
+
+
+def _inflate_segment(chunk: bytes, seg_c: int, seg_uc: int) -> bytes:
+    """One archive segment's payload: LZO, falling back to verbatim.
+
+    See the module docstring for why LZO is tried first even when the segment
+    did not shrink, and why only a break-even segment may fall back. A short
+    inflate is a failed one — `lzo1x_decompress_safe` can return a truncated
+    buffer for a stream that is not LZO at all — so the result counts only if
+    it is exactly the length the segment header declares.
+    """
+    if seg_c != seg_uc:
+        return lzo_decompress(chunk, seg_uc)
+    try:
+        out = lzo_decompress(chunk, seg_uc)
+    except Exception:
+        return chunk
+    return out if len(out) == seg_uc else chunk
+
+
+class RfaArchive(_SkillRfaArchive):
+    """The skill's reader with the segment rule corrected."""
+
+    def read(self, name: str) -> bytes:
+        c_size, uc_size, offset = self.entries[name]
+        if uc_size == 0:
+            return b""
+        self._fh.seek(self._base + offset)
+        if not self.compressed:
+            return self._fh.read(uc_size)
+
+        blob = self._fh.read(c_size)
+        (segments,) = struct.unpack_from("<I", blob, 0)
+        data_start = 4 + segments * 12
+        out = bytearray()
+        for i in range(segments):
+            seg_c, seg_uc, seg_off = struct.unpack_from("<III", blob, 4 + i * 12)
+            chunk = blob[data_start + seg_off:data_start + seg_off + seg_c]
+            out += _inflate_segment(chunk, seg_c, seg_uc)
+        return bytes(out)
 
 
 def _child_dir(parent: Path, name: str) -> Path | None:

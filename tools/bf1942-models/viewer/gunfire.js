@@ -668,6 +668,30 @@ export class GunFire {
     return velocity > PROJECTILE_SCALE_CUTOFF ? velocity * group.speedScale : velocity;
   }
 
+  /**
+   * Parent a spawned mesh into the world, on the world's own layer.
+   *
+   * A round belongs to the world the moment it leaves the gun, and `this.scene`
+   * is the world scene — but a clone carries its template's `layers`, and a
+   * first-person hand weapon's template is a node inside the arms rig, which
+   * map.html puts wholesale on `VIEWMODEL_LAYER` so the near pass can draw it
+   * over cleared depth. A grenade cloned from there is added to the world scene
+   * and then drawn by nobody: the world camera's mask does not include layer 1
+   * and the near camera only renders `vmScene`. That is the whole reason a
+   * thrown grenade exploded where you threw it without ever being seen, and the
+   * same silence hid the bazooka's rocket body (its smoke trail is separate
+   * sprites spawned here, which is why nobody noticed).
+   *
+   * Every spawn path goes through this, so the rule is stated once: whatever is
+   * parented into the world scene is visible to a default camera. Pooled meshes
+   * are re-adopted rather than trusted — a pool outlives the weapon it came
+   * from, and re-equipping re-clones from a fresh rig.
+   */
+  #adopt(mesh) {
+    mesh.traverse(obj => obj.layers.set(0));
+    this.scene.add(mesh);
+  }
+
   #spawnTracer(muzzle, group, bright) {
     const speed = this.#displaySpeed(group, group.stats.velocity || 100);
     // The velocity is the round's own for as long as it flies, so it is a
@@ -715,7 +739,7 @@ export class GunFire {
       mesh.lookAt(_aimBack.copy(mesh.position).add(direction));
       pool = this.tracerPool;
     }
-    this.scene.add(mesh);
+    this.#adopt(mesh);
     this.tracers.push({
       mesh,
       pool,
@@ -773,7 +797,7 @@ export class GunFire {
     // The baked body was Z-mirrored like every vehicle mesh, so its nose
     // points down -Z — the muzzle's own forward.
     mesh.quaternion.copy(_aim);
-    this.scene.add(mesh);
+    this.#adopt(mesh);
     // A **fuse** round (HP-9d, HP-9e): end-of-life explosion, no impact
     // explosion, and — the condition that is easy to drop — it survives
     // contact. Vanilla's are exactly the two grenades, the explosives pack and
@@ -815,6 +839,17 @@ export class GunFire {
       fuse,
       // Set when a fuse round has come to rest on a surface; see `advance`.
       resting: false,
+      // The round's authored spin, radians per second about its own X, from the
+      // throwing weapon's `rotationalSpeed` — `8/0/0` on both grenades and on
+      // nothing else in vanilla, which is why a thrown grenade tumbles and a
+      // landmine does not. `PointPhysicsNode::updatePhysics` (lnxded
+      // 0x082562c0) integrates one scalar rate into one accumulated angle, so
+      // only the first component is the engine's; the UNIT is unverified (see
+      // features/grenade-viewmodel-and-throw). Read as radians it is 1.3
+      // turns a second, which is what a thrown grenade does; read as degrees
+      // it would be 2.2 degrees a second, which is nothing.
+      spin: group.stats.throw?.rotationalSpeed?.[0] || 0,
+      spun: 0,
       // The rigid-body contact a fuse round gets. The engine's four fuse
       // rounds all declare `setHasPointPhysics 0` and so take the real
       // `ResponsePhysics` path, where the restitution comes off the material
@@ -873,7 +908,7 @@ export class GunFire {
     mesh.visible = true;
     mesh.position.copy(shot.mesh.position);
     mesh.quaternion.copy(this.camera.quaternion);
-    this.scene.add(mesh);
+    this.#adopt(mesh);
     this.puffs.push({
       mesh, materials, spec: shot.trail, age: 0, pool: group.puffPool,
     });
@@ -1135,6 +1170,14 @@ export class GunFire {
     if (shot.velocity.lengthSq() > 1e-6) {
       _aimBack.copy(shot.mesh.position).sub(shot.velocity);
       shot.mesh.lookAt(_aimBack);
+      // The authored tumble, on top of the nose-along-flight orientation and
+      // about the round's own X — so a grenade turns over as it arcs instead of
+      // tracking the path like a dart. Accumulated rather than incremented into
+      // the quaternion, because `lookAt` above overwrites it every tick.
+      if (shot.spin) {
+        shot.spun += shot.spin * dt;
+        shot.mesh.rotateX(shot.spun);
+      }
     }
     return step;
   }
@@ -1161,7 +1204,7 @@ export class GunFire {
                       hit.z + hit.nz * 0.15);
     mesh.quaternion.copy(this.camera.quaternion);
     mesh.scale.setScalar(0.4);
-    this.scene.add(mesh);
+    this.#adopt(mesh);
     this.impacts.push({
       mesh, age: 0,
       ttl: hit.kind === 'water' ? IMPACT_WATER_TTL : IMPACT_TTL,
