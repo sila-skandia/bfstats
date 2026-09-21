@@ -259,10 +259,9 @@ pitch over 12 ticks move it 19.32 - yaw is three times pitch, as read.
 98.6 km/h, under its flat top); the M3A1 still leans 32-38 degrees (main: 5.5)
 and the arithmetic says an isotropic friction budget tips anything whose contact
 patches sit further below its origin than its half-track is wide. Two readers
-have not found what prevents it in the engine. **Parked on two observations of
-the real game, asked of the owner: does an M3A1 lean hard in a turn above about
-40 km/h, and does a jeep with a driver and no throttle roll down a gentle
-slope?** The reviewer is checking the two new commits meanwhile.
+have not found what prevents it in the engine. **Both observations were answered by the
+owner on 2026-09-22 — the lean is right** (see W3-A, closed); the jeep creep
+remains an open defect. The reviewer is checking the two new commits meanwhile.
 
 **All four Sonnet fix streams are merged** (2026-09-20), each reviewed by the
 lead from its diff, a trial merge, the suite and a page check:
@@ -305,14 +304,15 @@ FIXES. Reports: `w3c-gamemodes.md`, `w3c-review.md`.
 - Left: pruned nodes are never disposed; ObjectiveMode bindings and `Ctf.con`
   flag bases are not placed; no mode picker (URL only).
 
-**W3-A (drivetrain) is merged as it stands** (`36ff97e`, 2026-09-20), on the
-owner's word ("merge it as-is for now, I will get back to you later"). The two
-real-game observations are STILL OWED and decide whether it stays: an occupied
-jeep with no throttle rolling down a 5-10 degree slope, and an M3A1 lying over in
-a turn above about 40 km/h while a Hanomag stays flat. If retail shows otherwise
-the lateral law is wrong somewhere two readers missed. Known on main until then:
-the M3A1 leans 32-38 degrees in fast turns; an occupied jeep walks 7.65 m in 10 s
-down 5 degrees. Still to do regardless: sample the contact velocity at the same
+**W3-A (drivetrain) is merged and now CLOSED** (`36ff97e`, 2026-09-20; ruled on
+by the owner 2026-09-22). It was merged on his word ("merge it as-is for now, I
+will get back to you later") with two real-game observations owed, and the M3A1's
+32-38 degree lean is now **accepted as correct**: *"as far as I am concerned it
+looks almost exactly like the real game mechanics."* The lateral law stays, the
+two owed observations are no longer owed, and the lean is **behaviour to preserve
+— a later stream that reduces it has caused a regression, not made an
+improvement.** W6-C was told so mid-flight. Still an open defect, separately: an
+occupied jeep walks 7.65 m in 10 s down 5 degrees. Still to do regardless: sample the contact velocity at the same
 point the tyre force is applied (`u` is taken at `wheel.rest`).
 
 **The model extractor was spending hours proving a negative** (`774696c`).
@@ -516,7 +516,7 @@ staged state intact. 2,316 tests green on the trial worktree.
 |---|---|---|
 | W6-A bombs | The aircraft secondary weapon, built from `../plane-bombs-and-torpedoes/README.md` §4-§5 (G-1…G-6) and BOMB-1…BOMB-12. The spec's own headline is that the extractor was never the problem: every rack is already parsed and stamped into the shipped glb, and the weapon dies on a three-line guard in `gunfire.js:484` that refuses a group with no flash, no tracer, no recoil and `velocity 0` — which is precisely a bomb rack. Own worktree | running |
 | W6-B third-person soldier | The largest visible miss in the viewer: **nothing draws a human body in the world.** The camera half is done and merged — `soldier-camera.js` and the `chase-camera.js` placement law are correct and `__footView('chase')` already puts the camera where it belongs — and it is gated behind `?soldier3p=1` because driving it shows a grey field. The extracted soldier glbs carry **zero animations** and nothing exports a 3P clip, so this is a pipeline feature: the stance and gait families, and the canopy plus the 18 `3PParachute*.baf` clips. Own worktree | running |
-| W6-C hull vs statics | The largest unbuilt piece: a driven hull against the world, from `../viewer-ground-hull-collision/README.md` §3 and `collision-response.md`. Vehicle-against-vehicle has gone through the solver since 09-20; a building still stops a hull on the swept sphere and a plane that noses in is levelled out instead of tumbling. Told to port §6.1's `-1.0` rather than the engine's `+1.0` sign bug, and to feed a hull contact into per-wheel friction as an `N.y ≈ 0` sample rather than as grip. If it turns up what stops the M3A1 leaning, that is the bigger prize. Own worktree | running |
+| W6-C hull vs statics | The largest unbuilt piece: a driven hull against the world, from `../viewer-ground-hull-collision/README.md` §3 and `collision-response.md`. Vehicle-against-vehicle has gone through the solver since 09-20; a building still stops a hull on the swept sphere and a plane that noses in is levelled out instead of tumbling. Told to port §6.1's `-1.0` rather than the engine's `+1.0` sign bug, and to feed a hull contact into per-wheel friction as an `N.y ≈ 0` sample rather than as grip. **The brief originally dangled the M3A1 lean as the bigger prize; that was withdrawn mid-flight when the owner ruled the lean correct, and the stream is now told to measure the lean before and after and report any movement as a regression.** Own worktree | running |
 | W6-G netcode snap-back | The owner's own report: creating a game locally and joining it snapped his view back a few steps, constantly. Another agent had made it go away with `location.hostname !== '127.0.0.1'` in `onsnapshot` — a hostname test switching authority off where it is easiest to observe. It never reached `main` and is now reverted out of the working tree. The real defect is that a correction is `soldier.spawn()`, a respawn-shaped teleport that discards every input sent since the snapshot, with **no input replay** — so any standing divergence is a repeated snap rather than one that converges. This is P4's own scope. Own worktree | running |
 | W6-H verifier truth | `verify_models.py` called 42 of 96 vanilla models broken and every one was a false alarm. S3 already fixed the origin-pile half (`0590dd2`); what is left is the weapon length measured across a tracer (`Bar1918` 2.02 m against 1.19 m), the skinned soldier it does not understand, and the Sherman whose 27 parts collapse onto the hull. **Required to build deliberately broken models and show it still catches them** — a verifier that now passes everything is the same bug with the sign flipped. Own worktree | running |
 | W6-E ships, research | The owner's three ship reports, read from the engine. No file changes outside its own feature doc | **reported `6024efd`**, second reader running. See below |
