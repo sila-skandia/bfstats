@@ -973,6 +973,7 @@ import { buildHeightfield, buildCollisionIndex, buildDrivableMask, WorldCollider
 import { FOV_DEG as FOOT_FOV, GRAVITY } from './soldier.js';
 import { DeviationModel } from './deviation.js';
 import { wantViewmodelClip } from './viewmodel-anim.js';
+import { fireVariantsFor, stanceClip, stanceFor } from './stance-clips.js';
 import { createReplayController, recordingLevel } from './replay.js';
 import { createRoomClient } from './netcode-client.js';
 import { createRemoteRenderer } from './netcode-render.js';
@@ -8208,10 +8209,17 @@ const footEye = { x: 0, y: 0, z: 0 };
 // magazine, zoom, recoil) and a node stamped `fireArms` with a `muzzle`
 // child, so nothing about any weapon is declared below.
 //
-// Two deliberate shortcuts remain, both visible and both documented:
-//   - Scoped weapons get the data's FOV change and no scope art.
-//   - Crouch and prone play the standing aim: their 1P clip families exist
-//     in the data but are not yet baked into the fp.glb (§11 keeps the list).
+// One deliberate shortcut remains, visible and documented: scoped weapons get
+// the data's FOV change and no scope art.
+//
+// Crouch and prone no longer play the standing aim. The engine declares a
+// separate upper-body state per stance per weapon — `Ub_Crouch<W>`,
+// `Ub_Lie<W>`, `Ub_{Crouch,Lie}Forward<W>`, `Ub_Lie{Fire,Reload,RaiseWeapon}<W>`
+// and `Ub_CrouchRaiseWeapon<W>`, all 26 vanilla weapons, all with 1P clips —
+// the exporter bakes them, and `stance-clips.js` is the chain that picks one.
+// A rig published before those families existed answers `hasClip` false for
+// them and falls back to the standing clip, which is what this did for every
+// stance before.
 
 // Which weapon the deploy screen's kit puts in hand is the game's own data,
 // read from two places neither of which is the level's scene: the level's
@@ -9222,7 +9230,8 @@ async function loadHandWeapon(name, soldierName = null) {
       // ANIM-7: fire→StandReload (returnTo) is PlayOnce even if a stale
       // extract still wrote loop=true (No4Sniper / K98Sniper).
       let loop = meta?.loop ?? LOCO_LOOP.has(clip.name);
-      if (clip.name === 'fire' && /reload/i.test(meta?.returnTo || '')) {
+      if ((clip.name === 'fire' || clip.name === 'proneFire')
+          && /reload/i.test(meta?.returnTo || '')) {
         loop = false;
       }
       if (loop) {
@@ -9238,8 +9247,9 @@ async function loadHandWeapon(name, soldierName = null) {
     // entry into the fire state) and the extractor bakes them as
     // `fire1..fireN`. `onShot` rolls the per-round pick; selection
     // (viewmodel-anim.js) only keeps the swing and releases it to loco.
-    fireVariants = Object.keys(actions).filter(k => /^fire\d+$/.test(k))
-      .sort((a, b) => Number(a.slice(4)) - Number(b.slice(4)));
+    // Both stance families' variants, so a prone swing has its own list.
+    fireVariants = [...fireVariantsFor('fire', Object.keys(actions)),
+                    ...fireVariantsFor('proneFire', Object.keys(actions))];
   }
   const magazine = data?.magazine || null;
   // The idle fidgets this rig baked (`idle1..idleN` — §11's `addIdle`
@@ -9265,6 +9275,11 @@ async function loadHandWeapon(name, soldierName = null) {
     rigFile: fp ? rigFile : null,   // the arms rig that answered, if one did
     fov1p,                 // `set1pFov` in radians, or null for a bare weapon
     mixer, actions,        // the arms rig's state machine; both empty when bare
+    // Which families this rig baked — what `stance-clips.js` resolves a
+    // stance's chain against. A rig extracted before the crouch/prone families
+    // existed answers false for them and every chain falls back to the
+    // standing clip, which is what the page did for all three stances before.
+    hasClip: name => Object.hasOwn(actions, name),
     fireVariants,          // the fire one-shot variants (`fire1..fireN`), when the
                            // weapon's aim state registers several (the knife)
     clips: fp ? doc.clips ?? null : null,   // per-family frames/speed/span extras
@@ -9334,7 +9349,7 @@ async function loadHandWeapon(name, soldierName = null) {
     // §11's deploy one-shot on spawn.
     actions.idle.play();
     hw.active = 'idle';
-    playViewmodelClip(hw, 'deploy', { restart: true });
+    playViewmodelClip(hw, stanceDeployName(hw), { restart: true });
   }
   // The fetch has been in flight since the top of this function; attach it
   // to `hw` whenever it lands. The guard is the load token, not
@@ -9361,15 +9376,17 @@ function ensureHandWeapon(flag) {
       && (handWeapon.rigFile || null) === (viewmodelRigFor(name, who) || null)
       && (!handWeapon.group || guns.groups.includes(handWeapon.group))) {
     // Same weapon, new life: the raise plays again on every spawn.
-    playViewmodelClip(handWeapon, 'deploy', { restart: true });
+    playViewmodelClip(handWeapon, stanceDeployName(handWeapon), { restart: true });
     return;
   }
   loadHandWeapon(name, who);
 }
 
-// Walk/run are one baked clip at two rates (§11). Crouch/prone fall back to
-// idle until those families are baked. LOCO_CLIP lives in viewmodel-anim.js.
-const LOCO_LOOP = new Set(['idle', 'walk', 'run']);
+// Walk/run are one baked clip at two rates (§11), and so are stand-aim and
+// crouch-aim. The looping families, for a rig whose extras do not say: the
+// stance chains and what each one resolves to are `stance-clips.js`.
+const LOCO_LOOP = new Set(['idle', 'walk', 'run',
+                           'crouch', 'crouchWalk', 'prone', 'crawl']);
 
 /**
  * Bring `name` to full weight and fade whatever held the arms before it.
@@ -9378,6 +9395,25 @@ const LOCO_LOOP = new Set(['idle', 'walk', 'run']);
  * Silently a no-op for the bare-weapon fallback, which has no mixer.
  */
 /** Seconds the engine takes to blend into `name`: 1 / its state's morph factor. */
+/**
+ * Stop every fire one-shot this rig holds, in either stance family.
+ *
+ * It used to be `hw.actions.fire?.stop()`, which is the wrong action as soon
+ * as the man who fired is lying down: a clamped `proneFire` would have gone
+ * on holding the arms through the reload that follows it.
+ */
+/** The draw-in family for the stance the soldier is in right now. */
+function stanceDeployName(hw) {
+  return stanceClip('deploy', stanceFor(soldier?.gait, soldier?.stance),
+                    hw?.hasClip);
+}
+
+function stopFireActions(hw) {
+  for (const name of ['fire', 'proneFire', ...hw.fireVariants]) {
+    hw.actions[name]?.stop();
+  }
+}
+
 function viewmodelFade(hw, name) {
   const factor = hw?.clips?.[name]?.morphFactor ?? VIEWMODEL_MORPH_DEFAULT;
   return factor >= VIEWMODEL_MORPH_SNAP || factor <= 0 ? 0 : 1 / factor;
@@ -9398,7 +9434,7 @@ function playViewmodelClip(hw, name, { restart = false, timeScale = 1,
     // leave LoopRepeat fire evaluating — and shaking — for that whole fade.
     // The engine leaves the fire state; freeze fire's clock so the last pose
     // holds while idle/walk morphs in. Reload already snaps via fade === 0.
-    const leavingLoopFire = hw.active === 'fire'
+    const leavingLoopFire = (hw.active === 'fire' || hw.active === 'proneFire')
       && from.loop === THREE.LoopRepeat;
     if (leavingLoopFire) from.setEffectiveTimeScale(0);
     if (fade > 0) {
@@ -9422,21 +9458,28 @@ function playViewmodelClip(hw, name, { restart = false, timeScale = 1,
  */
 function updateViewmodelAnimation(hw, dt) {
   if (!hw.mixer) return;
-  // The fire action whose clock matters: the lone `fire`, or — the knife —
-  // whichever registered swing currently owns the arms.
+  // Which stance families this rig actually baked; a rig published before they
+  // existed resolves back down its chain to the standing ones.
+  const has = hw.hasClip;
+  const stance = stanceFor(soldier?.gait, soldier?.stance);
+  const fireName = stanceClip('fire', stance, has);
+  const reloadName = stanceClip('reload', stance, has);
+  // The fire action whose clock matters: this stance's fire family, or — the
+  // knife — whichever registered swing currently owns the arms.
   const fireVariant = hw.fireVariants.includes(hw.active) ? hw.active : null;
-  const fireAction = hw.actions[fireVariant ?? 'fire'];
+  const fireAction = hw.actions[fireVariant ?? fireName];
   const fireRunning = !!(fireAction && fireAction.isRunning());
-  const fireReturnsToReload = /reload/i.test(hw.clips?.fire?.returnTo || '');
+  const fireMeta = hw.clips?.[fireName] || hw.clips?.fire;
+  const fireReturnsToReload = /reload/i.test(fireMeta?.returnTo || '');
   // `Ub_StandResetRaiseWeapon<W>` — the thrown weapons' returnTo, where a
   // rifle's is StandReload. Raising the next grenade is its reload.
-  const fireReturnsToDeploy = /raiseweapon/i.test(hw.clips?.fire?.returnTo || '');
+  const fireReturnsToDeploy = /raiseweapon/i.test(fireMeta?.returnTo || '');
   // Looping fire (Thompson / BAR) — not bolt rifles whose returnTo is
   // StandReload even when a stale extract still marks fire.loop true.
-  const fireLoops = !!(hw.clips?.fire?.loop) && !fireReturnsToReload;
+  const fireLoops = !!(fireMeta?.loop) && !fireReturnsToReload;
   // LoopOnce + clampWhenFinished leaves the action scheduled but paused;
   // isRunning() is false then, which used to drop the reload keep-alive.
-  const reloadAction = hw.actions.reload;
+  const reloadAction = hw.actions[reloadName];
   const reloadRunning = !!(reloadAction
     && (typeof reloadAction.isScheduled === 'function'
       ? reloadAction.isScheduled()
@@ -9452,7 +9495,11 @@ function updateViewmodelAnimation(hw, dt) {
   // clamped): when it stops running, selection returns idle and the clock
   // re-arms a fresh dwell — the engine's own rhythm, one fidget every 4-7 s
   // of stillness.
-  if (hw.active === 'idle' && soldier?.gait === 'stand' && hw.fidgetNames.length
+  // The dwell belongs to `Ub_StandAim<W>` alone — `addIdle` is registered on
+  // the standing aim state and on nothing else — so a crouched or prone
+  // soldier fidgets in the engine no more than he does here.
+  if (hw.active === 'idle' && soldier?.gait === 'stand'
+      && stance === 'stand' && hw.fidgetNames.length
       && hw.actions[hw.fidgetNames[0]]) {
     if (hw.fidgetTimer == null) hw.fidgetTimer = 4 + Math.random() * 3;
     hw.fidgetTimer -= dt;
@@ -9467,7 +9514,7 @@ function updateViewmodelAnimation(hw, dt) {
     reload: hw.reload,
     reloadPlayed: hw.reloadPlayed,
     reloadRunning,
-    deployRunning: !!hw.actions.deploy?.isRunning(),
+    deployRunning: !!hw.actions[stanceClip('deploy', stance, has)]?.isRunning(),
     active: hw.active,
     fireRunning,
     fireLoops,
@@ -9476,9 +9523,11 @@ function updateViewmodelAnimation(hw, dt) {
     firing: !!hw.group?.firing,
     hasFire: !!fireAction,
     fireVariants: hw.fireVariants.length ? hw.fireVariants : null,
-    hasReload: !!hw.actions.reload,
-    hasDeploy: !!hw.actions.deploy,
+    hasReload: !!reloadAction,
+    hasDeploy: !!hw.actions[stanceClip('deploy', stance, has)],
     gait: soldier?.gait,
+    stance: soldier?.stance,
+    has,
     fidget: hw.fidget,
     fidgetRunning: !!(fidgetAction && fidgetAction.isRunning()),
     fidgetDue: hw.fidgetTimer != null && hw.fidgetTimer <= 0,
@@ -9492,19 +9541,21 @@ function updateViewmodelAnimation(hw, dt) {
   // 1pAnimationsTweaking.con so one pass matches reloadTime.
   // Latch only after a successful play — a no-op (bare weapon, missing clip)
   // must not burn the one attempt for this magazine.
+  // `decision.want` already names the stance's own family, so these branches
+  // play what selection resolved rather than the standing name.
   if (decision.startReload) {
-    hw.actions.fire?.stop();
-    if (playViewmodelClip(hw, 'reload', { restart: true })) {
+    stopFireActions(hw);
+    if (playViewmodelClip(hw, decision.want, { restart: true })) {
       if (decision.markReloadPlayed) hw.reloadPlayed = true;
     }
   } else if (decision.startFire) {
-    playViewmodelClip(hw, 'fire', { restart: true });
+    playViewmodelClip(hw, decision.want, { restart: true });
   } else if (decision.startDeploy) {
     // The throw's returnTo: bring the next grenade up. Same shape as the
     // reload branch above — stop the spent fire clip so a clamped one-shot
     // cannot go on holding the arms through the raise.
-    hw.actions.fire?.stop();
-    playViewmodelClip(hw, 'deploy', { restart: true });
+    stopFireActions(hw);
+    playViewmodelClip(hw, decision.want, { restart: true });
   } else if (decision.startFidget) {
     // The pick lands in `hw.fidget` only once the clip actually owns the
     // arms — a bare weapon or a rig without the family would otherwise
@@ -9730,15 +9781,21 @@ function beginHandFire(hw) {
   // factor and clamped between shots. Looping fire (BAR / Thompson) is owned
   // by updateViewmodelAnimation + the trigger latch — restarting it here
   // would un-freeze a just-released LoopRepeat and keep the post-fire shake.
-  const fireReturnsToReload = /reload/i.test(hw.clips?.fire?.returnTo || '');
-  const fireLoops = !!(hw.clips?.fire?.loop) && !fireReturnsToReload;
+  // The fire family this stance owes: `Ub_LieFire<W>` when he is prone, the
+  // standing one otherwise (the engine declares no crouched fire state).
+  const fireName = stanceClip('fire', stanceFor(soldier?.gait, soldier?.stance),
+                              hw.hasClip);
+  const fireMeta = hw.clips?.[fireName] || hw.clips?.fire;
+  const fireReturnsToReload = /reload/i.test(fireMeta?.returnTo || '');
+  const fireLoops = !!(fireMeta?.loop) && !fireReturnsToReload;
   if (!fireLoops) {
     // One swing per round, and for the knife one of its five registered
     // swings — the same `rand() % n` the engine's c_AsmRandom rolls on every
-    // entry into the fire state. A lone `fire` family plays itself.
-    const pick = hw.fireVariants.length
-      ? hw.fireVariants[Math.floor(Math.random() * hw.fireVariants.length)]
-      : 'fire';
+    // entry into the fire state. A lone family plays itself.
+    const variants = fireVariantsFor(fireName, Object.keys(hw.actions));
+    const pick = variants.length
+      ? variants[Math.floor(Math.random() * variants.length)]
+      : fireName;
     playViewmodelClip(hw, pick, { restart: true });
   }
 }
