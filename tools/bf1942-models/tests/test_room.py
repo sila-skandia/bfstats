@@ -51,6 +51,9 @@ _VIEWER_MODULES = [
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact",
     "body-ground", "body-friction", "crash-damage", "effects-core",
     "collision", "flight", "ground", "game-modes", "netcode",
+    # Reached through seats.js: the salvo arithmetic and the HUD weapon-slot
+    # order, and an aircraft torpedo's water run.
+    "bomb-release", "torpedo-run",
 ]
 MODULES = {f"viewer/{name}.js": VIEWER / f"{name}.js" for name in _VIEWER_MODULES}
 MODULES.update({
