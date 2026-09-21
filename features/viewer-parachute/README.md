@@ -85,6 +85,27 @@ with a `trigger Volume`, so `p1` is when the layer starts:
 | 5 | `soprupp.wav` | **11.5 s** | the easter egg — see below |
 | voice | `fallparachute{,2,3}.wav` | 3.3 s | second patch, `randomPlay 1`, under `@Language` |
 
+`tools/bf1942-models/extract_soldier_sounds.py` reads those numbers out of the
+script with the pipeline's own `.ssc` parser rather than by hand, and prints
+them straight back:
+
+```
+c_SstFallingHigh    layered     rcktlp1@0.0s, luft2@0.0s, fhs1@1.2s, fhs2@2.3s, soprupp@11.5s
+c_SstFallingHigh    randomPlay  fallparachute@3.3s, fallparachute2@3.3s, fallparachute3@3.3s
+c_SstOpenParachute  randomPlay  para1@0.4s, para2@0.4s, para3@0.3s
+```
+
+Two things fall out of that run:
+
+- **The canopy's own crack is delayed too** — 0.3 to 0.4 s after you pull, not
+  on the frame you pull.
+- **`c_SstParachuteLand` has no script at all.** `SoldierSound.inc` says
+  `loadSoundScript SoldierParachuteLand.ssc` and both landing states declare the
+  trigger, but there is no such file anywhere in vanilla's `Objects.rfa` — its
+  two siblings, `SoldierFallingHigh.ssc` and `SoldierOpenParachute.ssc`, are
+  right beside it in the same directory. **A parachute landing is silent in
+  retail**, which is presumably why nobody remembers a sound for it.
+
 ### The easter egg
 
 `soprupp.wav` is 0.853 s at 22 kHz, it sits in the **ambience** patch beside the
@@ -372,16 +393,17 @@ beside this file; serve the viewer on your own port first). Out of a plane
 
 ## 7. Not done, and what is open
 
-- **No audio plays.** The samples are not in the published
-  `_shared/sounds` tree and that tree is read-only for a worktree.
-  `parachute.js` emits each trigger by the engine's own name
-  (`c_SstFallingHigh`, `c_SstOpenParachute`, `c_SstParachuteLand`) with the
-  sample name, the `randomPlay` choices, the authored volume and the `Time`
-  gate, and `map.html` collects them; the six files to publish are
-  `rcktlp1`, `luft2`, `fhs1`, `fhs2`, `soprupp` and the three
-  `@Language/fallparachute{,2,3}` voices, plus `para{1,2,3}` for the opening.
-  All are in `Mods/bf1942/Archives/sound.rfa` under `sound/44kHz/` (and
-  `22khz`, `11khz`).
+- **No audio plays yet, but the samples are one command away.**
+  `tools/bf1942-models/extract_soldier_sounds.py --out <tree>` writes eleven
+  mp3s (251 KB: `rcktlp1`, `luft2`, `fhs1`, `fhs2`, `soprupp`,
+  `fallparachute{,2,3}`, `para{1,2,3}`) plus `sounds/soldier.json`, the
+  manifest carrying every layer's volume, loop flag and `Time` gate. It was
+  run into a scratch tree and checked; it was **not** run into
+  `viewer/maps/_shared`, because that tree is the lead's and read-only from a
+  worktree. `parachute.js` meanwhile emits each trigger by the engine's own
+  name with the sample, the `randomPlay` choices, the volume and the delay,
+  and `map.html` collects them — so the remaining work is a player that reads
+  `soldier.json` and the event stream, and it has nothing left to discover.
 - **No third-person parachute animation.** The extracted soldier glbs carry
   **zero** animation clips — `extract_pose.py` bakes three *static* poses
   (`Lb_Stand`/`Lb_Crouch`/`Lb_Lie` plus `Ub_*<Weapon>`) and nothing animates a
