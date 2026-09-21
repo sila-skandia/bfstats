@@ -3,7 +3,7 @@
 Every constant asserted here is an address in `bf1942_lnxded.static`
 (the Linux dedicated server, not stripped); the write-up with the commands that
 reproduce each one is `features/viewer-parachute/README.md`. The landmarks at
-the end -- a 3.13 m/s descent, a 6.37 m/s glide, a 2.037:1 glide ratio and a
+the end -- a 6.03 m/s descent, a 12.28 m/s glide, a 2.037:1 glide ratio and a
 landing that costs nothing -- are what the whole thing has to produce when a
 real `Soldier` is bailed out over a real heightfield and flown down.
 """
@@ -151,33 +151,49 @@ class ParachuteTests(unittest.TestCase):
         cf = self.results["closedForm"]
         self.assertAlmostEqual(cf["enginePairK"], cf["viewerPairK"], places=9)
 
-    def test_a_chute_settles_at_three_metres_a_second(self) -> None:
-        # Terminal descent goes as 1/r^2 off PARACHUTE_DRAG_RADIUS, which sits
-        # at 2.5 inside the window PARA-6 bounds at [2.354, 3.126). The glide
-        # is the ratio away and needs no radius.
+    def test_a_chute_settles_at_six_metres_a_second(self) -> None:
+        # Terminal descent goes as 1/r^2 off PARACHUTE_DRAG_RADIUS, which is
+        # 1.8: inside the only bound PARA-6 still has (r < 3.126, the canopy
+        # must not close in mid-air) and set by play -- the owner reports the
+        # 2.5 this used to carry descends at about half retail's rate. The
+        # glide is the ratio away and needs no radius.
         for case in ("chute", "lowChute"):
             with self.subTest(case=case):
-                self.assertAlmostEqual(3.1258, self.results[case]["descent"], places=3)
-                self.assertAlmostEqual(6.3663, self.results[case]["glide"], places=3)
+                self.assertAlmostEqual(6.0297, self.results[case]["descent"], places=3)
+                self.assertAlmostEqual(12.2805, self.results[case]["glide"], places=3)
 
-    def test_a_chute_landing_costs_nothing_and_no_deviation_buys_it(self) -> None:
+    def test_the_canopy_is_handed_a_zero_impact_speed(self) -> None:
+        # BFSoldier::handleCollision 0x0827d3b0 overrides SimpleObject's and
+        # forwards to it with a locally built zero Vec3 in place of argument 3
+        # -- the impact speed -- for as long as state bit 0x10 is set
+        # (0x0827d470 tests it, 0x0827d483-0x0827d491 builds the zeroes,
+        # 0x0827d4a2 pushes them). The not-parachuting tail at 0x0827dc60 is
+        # the same code pushing the caller's real vector instead.
+        self.assertTrue(self.results["constants"]["zeroesImpactSpeed"])
+        self.assertEqual(0, self.results["landingImpactSpeed"]["underCanopy"])
+        self.assertAlmostEqual(
+            13.681, self.results["landingImpactSpeed"]["freeFall"], places=3)
+
+    def test_a_chute_landing_costs_nothing_at_any_speed(self) -> None:
         # The engine's own data requires the landing to be free:
         # Lb_ParachuteHitGround ends `addTransitionWhenDone Lb_Stand`.
         #
-        # It is free here for the engine's own reason, not a workaround. F is
-        # still the WHOLE drop -- Armor::update only ever raises
-        # lastCollisionHeight (0x081730b0-0x081730e7), so a parachutist's F is
-        # his full altitude, and the viewer no longer re-stamps it. What makes
-        # the landing cost nothing is the impact speed sitting under HP-14's
-        # 8.0 m/s floor, which is what PARA-6's radius window is derived from.
+        # It is free for the engine's own reason. F is still the WHOLE drop --
+        # Armor::update only ever raises lastCollisionHeight
+        # (0x081730b0-0x081730e7), so a parachutist's F is his full altitude,
+        # and the viewer does not re-stamp it. The body really does arrive at
+        # 13.68 m/s, well over HP-14's 8.0 m/s floor; what the handler is told
+        # is 0, so |v| - 8.0 goes negative and it returns before Q^2.
         for case in ("chute", "lowChute"):
             with self.subTest(case=case):
                 landing = self.results[case]["landing"]
                 self.assertIsNotNone(landing)
                 self.assertEqual(0, landing["hp"])
                 self.assertGreater(landing["fallHeight"], 100)
-                self.assertAlmostEqual(7.092, landing["impactSpeed"], places=2)
-                self.assertLess(landing["impactSpeed"], 8.0)
+                self.assertTrue(landing["underCanopy"])
+                self.assertEqual(0, landing["impactSpeed"])
+                # What the body actually did, which HP-14 would have billed.
+                self.assertAlmostEqual(13.681, landing["bodyImpactSpeed"], places=2)
 
     def test_no_chute_is_still_lethal(self) -> None:
         free = self.results["freeFall"]
