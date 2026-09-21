@@ -281,41 +281,46 @@ def find_engine_script(library, objects: ArchivePool,
     """The `.ssc` bound to a vehicle's Engine: `(archive path, engine name)`.
 
     Two hops, because `loadSoundScript` binds to a *template*, not to a vehicle:
-    walk the vehicle's template tree for its `Engine` child, then read the
-    `.con` that declared that child and take the script bound to it by name. A
+    walk the vehicle's template tree for its `Engine` children, then read the
+    `.con` that declared one and take the script bound to it by name. A
     Corsair's `Physics.con` binds four different scripts to four different
     children (engine, two wing creaks, landing gear); matching on the engine's
     own name is what picks the right one.
+
+    The walk keeps going past an Engine that binds nothing rather than stopping
+    at the first one it meets. A vehicle may carry several: EoD's Loach declares
+    five (`LoachTailEngine`, two dummies, two hover engines) and binds
+    `Sounds/HueyEngine.ssc` to exactly one of them, `LoachDummyEngine1`, which
+    is not the one BFS reaches first — so stopping at the first Engine reported
+    the helicopter as having no engine sound at all. Same for the Mi4T/Mi8T,
+    the Hawk and the SA2. Order is otherwise unchanged, so a vehicle whose
+    first Engine is the one with the script (every vanilla one) resolves
+    exactly as before.
     """
     root = library.objects.get(template.lower())
     if root is None:
         return None
     seen: set[str] = set()
     queue = [root]
-    engine = None
     while queue:
         node = queue.pop(0)
         key = node.name.lower()
         if key in seen:
             continue
         seen.add(key)
-        if node.kind.lower() == "engine":
-            engine = node
-            break
+        if node.kind.lower() == "engine" and node.source:
+            con_hit = objects.find(node.source)
+            if con_hit is not None:
+                scripts = parse_sound_scripts(
+                    objects.read(con_hit).decode("latin-1"))
+                entry = scripts.get(node.name.lower())
+                if entry is not None:
+                    return resolve_ssc_path(node.source, entry[1]), node.name
         for ref in node.children:
             child = library.objects.get(ref.template.lower())
             if child is not None:
                 queue.append(child)
-    if engine is None or not engine.source:
-        return None
-    con_hit = objects.find(engine.source)
-    if con_hit is None:
-        return None
-    scripts = parse_sound_scripts(objects.read(con_hit).decode("latin-1"))
-    entry = scripts.get(engine.name.lower())
-    if entry is None:
-        return None
-    return resolve_ssc_path(engine.source, entry[1]), engine.name
+    return None
 
 
 def find_weapon_scripts(library, objects: ArchivePool,
@@ -475,6 +480,43 @@ def transcode_to_mp3(data: bytes, dest: Path) -> None:
         tmp_mp3.unlink(missing_ok=True)
 
 
+def sample_writer(shared_dir: Path, rel_base: Path, audio_format: str = "mp3"):
+    """The `(basename, bytes) -> relative path` sink every sound report writes
+    through.
+
+    Lifted out of `extract_sounds` so the sounds-only patch path
+    (`--sounds-only`) writes its samples with byte-identical naming and LAME
+    settings. Nothing about the dedupe holds if two callers disagree about
+    either: a second encoder setting is a second copy of the same sample under
+    the same name, and a second naming rule is a 404 for every level that
+    already points at the first.
+    """
+    seen: dict[str, str] = {}
+
+    def write(resolved: tuple[str, bytes]) -> str:
+        basename, data = resolved
+        if basename in seen:
+            return seen[basename]
+        shared_dir.mkdir(parents=True, exist_ok=True)
+        if audio_format == "mp3":
+            target = shared_dir / (Path(basename).stem + ".mp3")
+            # Another level may have transcoded it already: this directory is
+            # shared across every level in the mod and across runs.
+            if not target.is_file():
+                transcode_to_mp3(data, target)
+        else:
+            target = shared_dir / basename
+            if not target.is_file():
+                tmp = shared_dir / f"{basename}.{os.getpid()}.part"
+                tmp.write_bytes(data)
+                os.replace(tmp, target)
+        rel = os.path.relpath(target, rel_base).replace(os.sep, "/")
+        seen[basename] = rel
+        return rel
+
+    return write
+
+
 def extract_sounds(info: LevelInfo, level_files: LevelFiles,
                    sounds: ArchivePool, out_dir: Path,
                    library=None, objects: ArchivePool | None = None,
@@ -508,28 +550,7 @@ def extract_sounds(info: LevelInfo, level_files: LevelFiles,
     # yields the staging depth — `../../../_shared/...` for a path that needs
     # to be `../_shared/...`, pointing outside the published tree.
     rel_base = final_dir or out_dir
-    seen: dict[str, str] = {}
-
-    def write(resolved: tuple[str, bytes]) -> str:
-        basename, data = resolved
-        if basename in seen:
-            return seen[basename]
-        shared_dir.mkdir(parents=True, exist_ok=True)
-        if audio_format == "mp3":
-            target = shared_dir / (Path(basename).stem + ".mp3")
-            # Another level may have transcoded it already: this directory is
-            # shared across every level in the mod and across runs.
-            if not target.is_file():
-                transcode_to_mp3(data, target)
-        else:
-            target = shared_dir / basename
-            if not target.is_file():
-                tmp = shared_dir / f"{basename}.{os.getpid()}.part"
-                tmp.write_bytes(data)
-                os.replace(tmp, target)
-        rel = os.path.relpath(target, rel_base).replace(os.sep, "/")
-        seen[basename] = rel
-        return rel
+    write = sample_writer(shared_dir, rel_base, audio_format)
 
     if info.sounds.ambient is not None:
         resolved = resolve_sound(info.sounds.ambient.file, level_files, sounds)
@@ -553,7 +574,7 @@ def extract_sounds(info: LevelInfo, level_files: LevelFiles,
 
     if library is not None and objects is not None and vehicles:
         sound_report["vehicles"] = extract_vehicle_sounds(
-            library, objects, sounds, vehicles, write)
+            library, objects, sounds, vehicles, write, level_files)
 
     if objects is not None and info.gameplay.control_points:
         flags = extract_flag_sound(info, objects, sounds, write)
@@ -632,7 +653,8 @@ def extract_flag_sound(info: LevelInfo, objects: ArchivePool,
 
 
 def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
-                           vehicles: list[str], write) -> list[dict]:
+                           vehicles: list[str], write,
+                           level_files: LevelFiles | None = None) -> list[dict]:
     """Per-vehicle engine sound: the layered patch, and its wavs on disk.
 
     What ships is the parsed script rather than a baked recipe. Every layer
@@ -645,6 +667,17 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
     Templates with FireArms but no Engine (Stationary MG42 / Browning) still
     get an entry: empty `layers`, weapons filled. The viewer looks those up by
     template the same way it looks up a tank's guns.
+
+    `level_files` is the level archive, searched ahead of the mod's shared
+    `Sound*.rfa` exactly as the ambient and area paths already search it, and
+    exactly as the engine resolves a path. Without it a sample a level ships for
+    itself resolved to nothing and `_sound_layers` dropped the layer in silence:
+    Liberation of Caen's Pak40 keeps `pak40fireST.wav` and `pak40fire.wav`
+    inside its own archive, so the anti-tank gun shipped with its muzzle blast
+    missing and nothing audible until the 0.85 s reverb tail. Those two are the
+    only vanilla casualties — swept across all 23 levels, 2 samples dropped and
+    0 whose level-local copy differs from the shared one, so consulting the
+    level first cannot change any sample already published.
     """
     def read_script(path: str) -> str | None:
         hit = objects.find(path)
@@ -664,7 +697,8 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
                 # released when it stops. Anything past the first patch is not
                 # engine sound.
                 samples = patches[0].samples if patches else []
-                layers = _sound_layers(samples, sounds, write)
+                layers = _sound_layers(samples, sounds, write,
+                                       level_files)
                 if layers:
                     entry = {
                         "template": template,
@@ -685,7 +719,7 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
                 _firing_patch(parse_ssc(arms_text, level=VEHICLE_SOUND_LEVEL,
                                         include=read_script,
                                         source=arms_script)),
-                sounds, write)
+                sounds, write, level_files)
             if not arms_layers:
                 continue
             weapons.append({
@@ -709,7 +743,8 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
     return out
 
 
-def _sound_layers(samples, sounds: ArchivePool, write) -> list[dict]:
+def _sound_layers(samples, sounds: ArchivePool, write,
+                  level_files: LevelFiles | None = None) -> list[dict]:
     """One `.ssc` patch's samples as the viewer's layer dicts, wavs written.
 
     Shared by the engine and the guns because a layer is a layer: the viewer
@@ -718,7 +753,8 @@ def _sound_layers(samples, sounds: ArchivePool, write) -> list[dict]:
     """
     layers: list[dict] = []
     for sample in samples:
-        resolved = resolve_sound(sample.file, None, sounds, VEHICLE_RATES)
+        resolved = resolve_sound(sample.file, level_files, sounds,
+                                 VEHICLE_RATES)
         if resolved is None:
             continue
         layers.append({
@@ -1614,6 +1650,57 @@ def union_object_spawns(info: LevelInfo) -> list[tuple]:
     return out
 
 
+def spawned_vehicle_templates(info: LevelInfo) -> list[str]:
+    """Every vehicle template the scene can ever contain, deduped.
+
+    The sound list has to answer for the *scene*, and the scene is built from
+    `union_object_spawns` — every pad any mode places. Two narrower readings
+    each dropped vehicles the viewer then found itself sitting in with no
+    `sounds.vehicles` entry, which `setupEngineAudio` reports as "no engine
+    sound for X" and which also takes the guns down with it:
+
+    1. **One mode.** The list used to walk `info.spawn_objects`, which is the
+       default mode's spawners alone (`load_level`). Berlin parks its Tiger in
+       a mode that is not Conquest, Wake its Chi-ha, Ho-Ha, BlackMedal and
+       flak38; 16 vanilla vehicles were missing this way.
+    2. **One team.** `spawn_vehicle` answers the narrower question the scene
+       builder asks — which single vehicle stands on this pad *now* — so it
+       returns one team's template, preferring team 2. A pad whose flag changes
+       hands swaps to the other team's vehicle with no node moving, so the
+       sound the viewer needs for that pad is not decided by the pose alone.
+       An `ownerTeam` spawner is locked to its team by the engine and
+       contributes only that half.
+
+    Order is deliberately the old one first — default mode, `spawn_vehicle`'s
+    pick — and the additions appended, so an existing `scene.json` grows rather
+    than being reshuffled. Case-insensitive, because `ObjectSpawnTemplates.con`
+    is.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def add(template: str | None) -> None:
+        if not template or template.lower() in seen:
+            return
+        seen.add(template.lower())
+        out.append(template)
+
+    for inst in info.spawn_objects:
+        add(spawn_vehicle(inst.template, inst.team, info.spawn_templates))
+    for gameplay in info.modes.values():
+        for inst in gameplay.object_spawns:
+            spec = gameplay.object_spawn_templates.get(inst.template.lower())
+            if spec is None:
+                continue
+            add(spawn_vehicle(inst.template, inst.team,
+                              gameplay.object_spawn_templates))
+            if spec.owner_team is not None:
+                continue
+            for template in spec.vehicles.values():
+                add(template)
+    return out
+
+
 def union_control_points(info: LevelInfo) -> list[tuple]:
     """Every control point any mode places, once, tagged with its modes.
 
@@ -2166,6 +2253,63 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
     return builder.build(roots, extras=extras), extras
 
 
+def patch_vehicle_sounds(game_dir: Path, mod: str, level: str, out: Path,
+                         shared_sounds: Path | None = None,
+                         audio_format: str = "mp3") -> tuple[int, int]:
+    """Recompute `sounds.vehicles` in one published `scene.json`, nothing else.
+
+    The maps tree is 15 GB, shared and untracked, and a level's glb takes
+    minutes to rebuild. Widening the vehicle list
+    (`spawned_vehicle_templates`) changes exactly one key of one file per
+    level, so re-extracting whole levels to deliver it would be hours of work
+    to rewrite bytes that must come out identical anyway — and every one of
+    those bytes is a chance for an unrelated pipeline change to ride along
+    silently.
+
+    So this loads the level's con files and object archives, runs the same
+    `extract_vehicle_sounds` through the same `sample_writer`, and swaps that
+    one key into the JSON already on disk. `ambient`, `areas` and `flags` are
+    left exactly as the level's own extraction wrote them, and the file is
+    re-dumped with the same `indent=2`, so a diff shows the one key and
+    nothing else.
+
+    Returns `(before, after)` entry counts. The glb is never opened.
+    """
+    scene_json = out / level.lower() / "scene.json"
+    if not scene_json.is_file():
+        raise FileNotFoundError(scene_json)
+    extras = json.loads(scene_json.read_text())
+
+    chain = mod_chain(game_dir, mod)
+    files, info, _heightmap, paths = load_level(game_dir, mod, level, chain)
+    fallbacks = _mod_dirs(game_dir, list(TEXTURE_GAP_MODS)) \
+        if not _vanilla_texture_rfa_present(chain) else []
+    meshes, textures, objects, _game = build_pools(chain, fallbacks)
+    for path in paths:
+        objects.add_level_objects(path, label=f"{info.name} objects")
+    library = build_library(objects)
+
+    sounds = ArchivePool()
+    for mod_dir in chain:
+        archives = find_archives_dir(mod_dir)
+        if archives is not None:
+            sounds.add_dir(archives, SOUND_ARCHIVES)
+
+    level_dir = out / info.name.lower()
+    shared_dir = shared_sounds or (out / "_shared" / "sounds")
+    write = sample_writer(shared_dir, level_dir, audio_format)
+    vehicles = extract_vehicle_sounds(
+        library, objects, sounds, spawned_vehicle_templates(info), write,
+        files)
+
+    block = extras.setdefault("sounds", {"ambient": None, "areas": [],
+                                         "vehicles": []})
+    before = len(block.get("vehicles") or [])
+    block["vehicles"] = vehicles
+    scene_json.write_text(json.dumps(extras, indent=2))
+    return before, len(vehicles)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -2202,6 +2346,13 @@ def main() -> int:
                          "measured sample-exact through decodeAudioData so "
                          "engine layers still loop seamlessly; wav keeps the "
                          "raw PCM at roughly 8x the bytes")
+    ap.add_argument("--sounds-only", action="store_true",
+                    help="rewrite only the `sounds.vehicles` key of an already "
+                         "published <out>/<level>/scene.json, writing any newly "
+                         "needed samples into the shared directory. The glb, "
+                         "the textures and every other key are left untouched — "
+                         "this is how a widened vehicle list reaches a 15 GB "
+                         "maps tree without re-extracting levels.")
     args = ap.parse_args()
 
     # Checked before any extraction rather than at the first sample: a level is
@@ -2215,6 +2366,14 @@ def main() -> int:
                  "(roughly 8x the bytes).")
 
     game_dir = args.game_dir.expanduser()
+    if args.sounds_only:
+        before, after = patch_vehicle_sounds(
+            game_dir, args.mod, args.level, args.out,
+            shared_sounds=args.shared_sounds, audio_format=args.audio_format)
+        print(f"sounds:   {args.level} vehicles {before} -> {after}",
+              file=sys.stderr)
+        return 0
+
     chain = mod_chain(game_dir, args.mod)
     files, info, heightmap, paths = load_level(game_dir, args.mod, args.level, chain)
     print(f"level:    {info.name}  ({', '.join(p.name for p in paths)})", file=sys.stderr)
@@ -2342,12 +2501,10 @@ def main() -> int:
         if archives is not None:
             sounds.add_dir(archives, SOUND_ARCHIVES)
     # Engine sound is per spawned vehicle, deduped by template: a level with
-    # eight Corsair spawners still ships one set of wavs and one script.
-    spawned: list[str] = []
-    for inst in info.spawn_objects:
-        vehicle = spawn_vehicle(inst.template, inst.team, info.spawn_templates)
-        if vehicle and vehicle not in spawned:
-            spawned.append(vehicle)
+    # eight Corsair spawners still ships one set of wavs and one script. The
+    # list spans every mode and both teams of each spawner, because the scene
+    # does — see `spawned_vehicle_templates`.
+    spawned = spawned_vehicle_templates(info)
     # Defaults to a sibling of the level directories so a standalone run and a
     # batch run put samples in the same place; `extract_maps_all.py` passes the
     # real destination explicitly, because its workers write to per-level

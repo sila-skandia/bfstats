@@ -231,42 +231,56 @@ export class EngineAudio {
     this.groups = new Map();
     this.voices = [];
     for (const layer of layers) {
-      // `stereo` marks a sample for non-spatialised playback (cockpit gun
-      // layers): HRTF at 1.2 m is wrong when the data says 2D. Connect those
-      // straight to the bus; everything else keeps a panner group keyed by
-      // relativePosition.
-      if (layer.stereo) {
-        const voice = new Voice(this.ctx, layer, buffers.get(layer.file), this.bus);
-        voice.group = {
-          panner: null, offset: [0, 0, 0],
-          distance: 0, radial: 0, primed: true,
-        };
-        this.voices.push(voice);
-        continue;
-      }
       const offset = layer.relativePosition || [0, 0, 0];
-      const key = offset.join(',');
+      // `stereo` marks a sample for non-spatialised playback (cockpit gun
+      // layers): HRTF at 1.2 m is wrong when the data says 2D. Those connect
+      // straight to the bus and get no panner — but they still get a group,
+      // because `stereo` is about *panning*, not about distance.
+      //
+      // It used to skip the group entirely and hand the voice a throwaway one
+      // frozen at `distance: 0`, and that silently broke every near/far pair
+      // whose near half is the stereo one. The pairs are written as a hard
+      // hand-over on one number: `mg42.ssc`'s near layer is
+      // `Volume <- Distance ramp 1/1/1/-1` (1 below a metre, 0 above) and its
+      // far layer the exact complement, `1/1/0/1`. Frozen at zero the near
+      // layer read "below a metre" forever, so at the gunner's real 1.4 m
+      // *both* halves ran at full gain — two coherent copies of one 114 ms
+      // buffer, +6 dB and flanging, which is the drone the "machine gun
+      // sounds like a car horn" report was about. Measured on the Sherman's
+      // coaxial Browning (whose layers share one sample at identical playback
+      // rate, `randomStartPitch` absent): top-8 spectral tonality 0.84
+      // doubled against 0.42 single, and the Spitfire's cockpit pair — two
+      // *different* samples, and a far pair correctly gated off below 4 m —
+      // measures 0.50. That is also why only the tanks were reported: an
+      // aircraft's far layers are gated at 4 m and never came in.
+      const key = layer.stereo ? `stereo:${offset.join(',')}` : offset.join(',');
       let group = this.groups.get(key);
       if (!group) {
-        const panner = this.ctx.createPanner();
-        panner.panningModel = 'HRTF';
-        panner.distanceModel = 'inverse';
-        panner.refDistance = layer.minDistance || 1;
-        // The script's own `Volume <- Distance` ramp owns distance volume
-        // exclusively, exactly as the map's area sounds do. Leaving the
-        // panner's inverse curve on would attenuate a second time, on a
-        // different law, and the two would disagree about where a plane
-        // becomes inaudible. Panning is for direction only.
-        panner.rolloffFactor = 0;
-        panner.connect(this.bus);
+        let panner = null;
+        if (!layer.stereo) {
+          panner = this.ctx.createPanner();
+          panner.panningModel = 'HRTF';
+          panner.distanceModel = 'inverse';
+          panner.refDistance = layer.minDistance || 1;
+          // The script's own `Volume <- Distance` ramp owns distance volume
+          // exclusively, exactly as the map's area sounds do. Leaving the
+          // panner's inverse curve on would attenuate a second time, on a
+          // different law, and the two would disagree about where a plane
+          // becomes inaudible. Panning is for direction only.
+          panner.rolloffFactor = 0;
+          panner.connect(this.bus);
+        }
         group = { panner, offset, distance: 0, radial: 0, primed: false };
         this.groups.set(key, group);
       }
       // refDistance tracks the nearest layer in the group; inert while
       // rolloffFactor is 0, but it keeps the node honest if that ever changes.
-      group.panner.refDistance = Math.min(group.panner.refDistance,
-                                          layer.minDistance || 1);
-      const voice = new Voice(this.ctx, layer, buffers.get(layer.file), group.panner);
+      if (group.panner) {
+        group.panner.refDistance = Math.min(group.panner.refDistance,
+                                            layer.minDistance || 1);
+      }
+      const voice = new Voice(this.ctx, layer, buffers.get(layer.file),
+                              group.panner || this.bus);
       voice.group = group;
       this.voices.push(voice);
     }
@@ -616,7 +630,25 @@ export class EngineAudio {
         const shift = SPEED_OF_SOUND / (SPEED_OF_SOUND + voice.group.radial);
         rate *= Math.min(DOPPLER_MAX, Math.max(DOPPLER_MIN, shift));
       }
-      voice.targetGain = Math.max(0, volume);
+      // One voice never plays above unity. `volume` is a 0..1 mixer scalar in
+      // every script that means anything by it — of 5,484 layers across the 23
+      // vanilla levels, 5,458 are at or below 1 and the remaining 26 are three
+      // authoring outliers: `Coaxial_Browning/Sounds/High.ssc` says
+      // `volume 10` (Sherman and M10, 25 occurrences) and the KettenKrad's
+      // engine-start one-shot says 5. Read literally, 10 put the Sherman's
+      // coaxial Browning 20 dB hot: measured pre-limiter peak 5.02 and RMS
+      // 1.51, against 0.596/0.185 for the BAR in the same scene, which drove
+      // the master limiter 14 dB into 20:1 and flattened a 7.7 Hz periodic
+      // comb into the honk the bug report described. Clamped, and with the
+      // stereo-distance fix above, the same patch measures peak 0.82 / RMS
+      // 0.158 — just under the Spitfire's known-good 0.90/0.250.
+      //
+      // Clamped here rather than in the extractor deliberately: `volume 10`
+      // is what the game's own script says, so the data stays faithful and
+      // every already-published maps tree is fixed without a re-extraction.
+      // Clamped on the *modulated* result rather than on `layer.volume`, so a
+      // ramp that itself overshoots cannot get round it either.
+      voice.targetGain = Math.min(1, Math.max(0, volume));
       voice.targetRate = Math.max(0.05, rate);
 
       // `trigger Volume` is the delayed-start gate: the sample waits until its
