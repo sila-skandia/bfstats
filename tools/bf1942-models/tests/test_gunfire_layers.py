@@ -29,6 +29,7 @@ HARNESS = Path(__file__).resolve().parent / "gunfire_layers_harness.mjs"
 
 MODULES = {
     "gunfire.js": VIEWER / "gunfire.js",
+    "idle-vehicle.js": VIEWER / "idle-vehicle.js",
     # gunfire.js's own import graph, all of it leaf modules bar three.
     "collision.js": VIEWER / "collision.js",
     "effects-core.js": VIEWER / "effects-core.js",
