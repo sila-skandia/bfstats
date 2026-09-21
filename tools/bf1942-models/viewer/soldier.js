@@ -36,6 +36,7 @@ import {
   Parachute, effectiveParachuteDrag,
   PARA_NONE, PARA_FALLING, PARA_OPEN, PARA_LANDED,
 } from './parachute.js';
+import { resolveSpawn } from './spawn-safety.js';
 
 // Re-exported so a caller that already has `soldier.js` does not have to reach
 // past it for a number it is about to compare against. Every one of these is
@@ -943,7 +944,9 @@ export function spawnFlags(extras) {
  * the airborne heuristic is skipped — a deck is always well above the sea
  * under the hull, and none of these points is a parachute drop.
  */
-export function pickSpawn(flag, index = 0, { groundAt = null, airborne = 12, group = null } = {}) {
+export function pickSpawn(flag, index = 0, {
+  groundAt = null, airborne = 12, group = null, world = null,
+} = {}) {
   let pool = flag?.spawns || [];
   if (group != null) {
     const inGroup = pool.filter(spawn => spawn.group === group);
@@ -951,13 +954,30 @@ export function pickSpawn(flag, index = 0, { groundAt = null, airborne = 12, gro
   }
   const usable = pool.filter(spawn => {
     if (spawn.paratrooper) return false;
+    // `spawnPointManager.OnlyForAI 1` — the engine's own audience filter on a
+    // spawn group, and the reason Battle of Britain could put a player inside
+    // a radar bunker. Each of its four towers declares its group twice: five
+    // points spread around the building `OnlyForHuman`, and ONE at the
+    // building's own origin `OnlyForAI`. The AI point is indoors under a
+    // 2.25 m ceiling. A human is never offered it; a bot would be, if this
+    // viewer had any.
+    if (spawn.onlyForAI) return false;
     if (flag?.vehicle || !groundAt || !spawn.position) return true;
     const ground = groundAt(spawn.position[0], spawn.position[2]);
     return !Number.isFinite(ground) || spawn.position[1] - ground < airborne;
   });
   const finalPool = usable.length ? usable : pool;
   if (!finalPool.length) return null;
-  return finalPool[((index % finalPool.length) + finalPool.length) % finalPool.length];
+  // And then the geometry, for everything the level's own words cannot say:
+  // `resolveSpawn` walks on from the asked-for point until it finds one a
+  // body can stand up in and walk away from, and hands back the asked-for one
+  // (flagged `blockedReason`) when none of them is. See `spawn-safety.js`.
+  return resolveSpawn(finalPool, index, {
+    world,
+    // A ship's deck points arrive with their real deck heights; lifting one
+    // onto the heightfield under the hull would probe from the sea bed.
+    groundAt: flag?.vehicle ? null : groundAt,
+  });
 }
 
 /**

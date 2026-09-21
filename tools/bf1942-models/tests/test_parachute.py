@@ -24,6 +24,7 @@ MODULES = [
     ROOT / "viewer" / "physics.js",
     ROOT / "viewer" / "collision.js",
     ROOT / "viewer" / "fall-damage.js",
+    ROOT / "viewer" / "spawn-safety.js",
 ]
 HARNESS = Path(__file__).resolve().parent / "parachute_harness.mjs"
 

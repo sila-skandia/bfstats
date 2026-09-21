@@ -198,6 +198,11 @@ const _tip = new THREE.Vector3();
 // integrated (the solver moves it, snaps it to surfaces and pushes it out).
 const _fuseFrom = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
+// Scratch for `layOnSurface`: the basis a landed fuse round is stood up in.
+const _restN = new THREE.Vector3();
+const _restF = new THREE.Vector3();
+const _restR = new THREE.Vector3();
+const _restM = new THREE.Matrix4();
 // Scratch for the per-frame and per-shot paths below: a flash's roll, a
 // gun's recoil offset and a round's unit direction were each a fresh
 // allocation before, per emitter per frame and per shot, and a frame that
@@ -206,6 +211,55 @@ const _up = new THREE.Vector3(0, 1, 0);
 const _spin = new THREE.Quaternion();
 const _recoil = new THREE.Vector3();
 const _direction = new THREE.Vector3();
+
+/**
+ * Lay a fuse round on the surface it is touching, instead of pointing it down
+ * its own velocity.
+ *
+ * WHY THIS EXISTS. Every round in this module is aimed with
+ * `mesh.lookAt(position - velocity)` — nose along flight — and for a shell in
+ * the air that is right. For the four rounds that survive contact it is wrong
+ * the moment they touch anything, and wrong in a way that is easy to watch: an
+ * explosives pack thrown along the ground slides flat, sheds its along-surface
+ * speed to friction, and then — with the horizontal component gone and one
+ * tick of gravity still being added and cancelled every tick
+ * (`contact-response.js`, "rest is judged on distance moved") — the only
+ * velocity left is a hair of DOWNWARD, so `lookAt` swung the slab onto its end
+ * and stood it in the dirt. In the game it stays flat.
+ *
+ * WHAT IT DOES. The body's contact normal is the round's up; the heading it
+ * was travelling on, flattened into the surface, is the direction it faces.
+ * Both grenades, the landmine and the pack are authored lying in their own
+ * XZ plane (local +Y up, the exporter's world-up), so this is the whole of
+ * "lie down on what you hit" — a pack on a slope tilts with the slope, and
+ * one on a wall lies against the wall, which is what a charge stuck to a
+ * bridge girder should do.
+ *
+ * `heading` may be null or parallel to the normal (a round dropped straight
+ * down onto flat ground); any perpendicular will do then, and world +X
+ * projected onto the surface is the cheapest one that is always defined.
+ */
+function layOnSurface(mesh, normal, heading) {
+  _restN.set(normal.nx, normal.ny, normal.nz);
+  if (_restN.lengthSq() < 1e-9) return;
+  _restN.normalize();
+  _restF.copy(heading || _restR.set(1, 0, 0));
+  _restF.addScaledVector(_restN, -_restF.dot(_restN));
+  if (_restF.lengthSq() < 1e-6) {
+    _restF.set(1, 0, 0).addScaledVector(_restN, -_restN.x);
+    if (_restF.lengthSq() < 1e-6) _restF.set(0, 0, 1).addScaledVector(_restN, -_restN.z);
+  }
+  _restF.normalize();
+  // Right-handed basis with the mesh's own -Z as the facing axis, the same
+  // axis `lookAt` uses, so a round that lands nose-first keeps its heading.
+  // Y = n, Z = -f, and X must be Y x Z = f x n for the matrix to be a
+  // rotation — build it the other way round and `setFromRotationMatrix`
+  // reads a mirror and hands back a quaternion that turns the round inside
+  // out.
+  _restR.crossVectors(_restF, _restN);
+  _restM.makeBasis(_restR, _restN, _restF.negate());
+  mesh.quaternion.setFromRotationMatrix(_restM);
+}
 
 /**
  * Every gun in one scene, and the rounds they have in the air.
@@ -895,6 +949,10 @@ export class GunFire {
       // it would be 2.2 degrees a second, which is nothing.
       spin: group.stats.throw?.rotationalSpeed?.[0] || 0,
       spun: 0,
+      // The flattened direction of travel, kept for `layOnSurface`: a round
+      // that has stopped has no velocity left to face along, and the last
+      // heading it had is the one the game leaves it lying on.
+      heading: fuse ? new THREE.Vector3(0, 0, -1) : null,
       // The rigid-body contact a fuse round gets. The engine's four fuse
       // rounds all declare `setHasPointPhysics 0` and so take the real
       // `ResponsePhysics` path, where the restitution comes off the material
@@ -1175,6 +1233,69 @@ export class GunFire {
   }
 
   /**
+   * Take `shot` out of the world, blowing it up on the way when it earned it.
+   *
+   * `blast` is whether this is the end of the round's own fuse (or a hand
+   * detonation, which the engine treats identically — `Projectile::detonate`
+   * is the same call either way). The end-of-life explosion is HP-9d:
+   * `damageType` 1 or 4, no `hasCollisionEffect` test, an untruncated radius.
+   * This is how a grenade, an explosives pack and a landmine deal every point
+   * of damage they ever deal. `#detonate` plays the `endEffectTemplate`
+   * itself; a round with no end-of-life blast still gets its effect through
+   * the fallback below.
+   */
+  #endRound(shot, index, blast) {
+    shot.run?.stop();
+    const spec = shot.group.stats.projectile;
+    if (!(blast && this.#detonate(shot.group, spec, shot.mesh.position,
+                                  shot.travelled))) {
+      if (this.effects && spec?.endEffect) {
+        const at = shot.mesh.position;
+        this.effects.play(spec.endEffect,
+                          { position: [at.x, at.y, at.z], normal: [0, 1, 0] });
+      }
+    }
+    this.scene.remove(shot.mesh);
+    shot.mesh.visible = false;
+    shot.group.projectilePool.push(shot.mesh);
+    this.projectiles.splice(index, 1);
+  }
+
+  /**
+   * Blow up every round `group` still has in the world, now.
+   *
+   * `FireArms::detonateProjectiles` (lnxded `0x08287f80`) walks the array of
+   * live projectiles the weapon keeps at `+0x1d8` (count at `+0x1e4`) and
+   * calls `Projectile::detonate()` on each — the SAME call the end of a fuse
+   * makes, which is why a hand-detonated explosives pack does exactly the
+   * damage a timed-out one does. The array is per WEAPON, so one engineer's
+   * plunger cannot set off another's charges; here the group is the weapon,
+   * and the rounds already carry it.
+   *
+   * Returns how many went off.
+   */
+  detonateProjectiles(group) {
+    if (!group) return 0;
+    let count = 0;
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const shot = this.projectiles[i];
+      if (shot.group !== group) continue;
+      this.#endRound(shot, i, true);
+      count++;
+    }
+    return count;
+  }
+
+  /** How many rounds `group` still has in the world — the size of the array
+   *  `detonateProjectiles` would walk. The HUD has no use for it; the tests
+   *  and the detonator's own "is there anything to set off" do. */
+  liveProjectiles(group) {
+    let count = 0;
+    for (const shot of this.projectiles) if (shot.group === group) count++;
+    return count;
+  }
+
+  /**
    * One frame of a fuse round: the rigid-body contact, not the ballistic step.
    *
    * HP-9d still holds — a fuse round takes NO impact path, plays no collision
@@ -1222,12 +1343,22 @@ export class GunFire {
     shot.resting = shot.body.resting;
     const step = before.distanceTo(shot.mesh.position);
     shot.travelled += step;
-    // Nose along the velocity while it is moving, and left where it was once
-    // it is not — a resting grenade should lie still, not snap to a lookAt of
-    // a zero vector. (The engine additionally pitches and rolls a mesh
-    // projectile up to 10 degrees toward the contact normal, which is how a
-    // bomb lies down; not modelled, and named so it is not rediscovered.)
-    if (shot.velocity.lengthSq() > 1e-6) {
+    // The heading it is travelling on, flattened — remembered while it is
+    // moving so `layOnSurface` has something to face the round along once the
+    // velocity has been spent.
+    if (shot.velocity.x || shot.velocity.z) {
+      shot.heading.set(shot.velocity.x, 0, shot.velocity.z).normalize();
+    }
+    if (shot.body.contact) {
+      // Touching something: lie on it. Nose-along-velocity is for flight, and
+      // a round in contact has almost no velocity left that points anywhere
+      // meaningful — see `layOnSurface` for the pack that used to stand on
+      // its end in the dirt because of it.
+      layOnSurface(shot.mesh, shot.body.contact, shot.heading);
+    } else if (shot.velocity.lengthSq() > 1e-6) {
+      // Nose along the velocity while it is in the air, and left where it was
+      // once it is not — a resting grenade should lie still, not snap to a
+      // lookAt of a zero vector.
       _aimBack.copy(shot.mesh.position).sub(shot.velocity);
       shot.mesh.lookAt(_aimBack);
       // The authored tumble, on top of the nose-along-flight orientation and
@@ -1459,31 +1590,11 @@ export class GunFire {
       }
       const expired = shot.age > shot.ttl;
       if (expired || shot.travelled > shot.group.maxRange) {
-        shot.run?.stop();
-        const spec = shot.group.stats.projectile;
-        // The end-of-life explosion (HP-9d): `damageType` 1 or 4, no
-        // `hasCollisionEffect` test, an untruncated radius. This is how a
-        // grenade, an explosives pack and a landmine deal every point of
-        // damage they ever deal, and until now the viewer gave them none.
-        // `#detonate` plays the `endEffectTemplate` itself; a round with no
-        // end-of-life blast still gets its effect through the fallback.
-        //
         // Only on `timeToLive`, never on the range cap: `maxRange` is this
         // viewer's own recycling guard (1,500 m on the map page, further than
         // any vanilla round's `timeToLive` carries it), not the engine's fuse,
         // and exploding there would invent a blast at an arbitrary distance.
-        if (!(expired && this.#detonate(shot.group, spec, shot.mesh.position,
-                                        shot.travelled))) {
-          if (this.effects && spec?.endEffect) {
-            const at = shot.mesh.position;
-            this.effects.play(spec.endEffect,
-                              { position: [at.x, at.y, at.z], normal: [0, 1, 0] });
-          }
-        }
-        this.scene.remove(shot.mesh);
-        shot.mesh.visible = false;
-        shot.group.projectilePool.push(shot.mesh);
-        this.projectiles.splice(i, 1);
+        this.#endRound(shot, i, expired);
         continue;
       }
       active = true;

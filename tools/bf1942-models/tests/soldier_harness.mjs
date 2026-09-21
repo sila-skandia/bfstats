@@ -731,6 +731,34 @@ function bobShape(input, factor) {
   results.pickedWithoutGround = pickSpawn(axis, 0)?.name;
   results.pickedNames = axis.spawns.map(s => s.name);
 
+  // Battle of Britain's shape: one group the level declares `OnlyForAI`, one
+  // it declares `OnlyForHuman`, both on the same flag. The AI point sits at
+  // the building's own origin, which is indoors.
+  const bunker = {
+    name: 'East_Harwick_RadarTower', team: 2, group: 74, vehicle: true,
+    spawns: [
+      { name: 'ai', position: [1427.3, 103, -1258.1], rotation: [0, 0, 0],
+        group: 64, team: 2, onlyForAI: true },
+      { name: 'human-1', position: [1427.3, 103, -1276.7], rotation: [0, 0, 0],
+        group: 74, team: 2, onlyForHuman: true },
+      { name: 'human-2', position: [1432.1, 103, -1275.3], rotation: [0, 0, 0],
+        group: 74, team: 2, onlyForHuman: true },
+    ],
+  };
+  results.bunkerPicks = [0, 1, 2, 3].map(i => pickSpawn(bunker, i)?.name);
+  // And the geometry gate on top of it: a collider that calls the first
+  // human point solid walks on to the second.
+  const solidAt = (x, z) => Math.abs(x - 1427.3) < 1 && Math.abs(z + 1276.7) < 1;
+  const blockingWorld = {
+    sweepSphere(ox, oy, oz) {
+      return solidAt(ox, oz)
+        ? { t: 0, x: ox, y: oy, z: oz, nx: 0, ny: 1, nz: 0, material: 0 }
+        : null;
+    },
+  };
+  results.bunkerAvoidsSolid =
+    pickSpawn(bunker, 0, { world: blockingWorld })?.name;
+
   results.spawnYaw = {
     zero: spawnYaw({ rotation: [0, 0, 0] }),
     ninety: spawnYaw({ rotation: [90, 0, 0] }),
