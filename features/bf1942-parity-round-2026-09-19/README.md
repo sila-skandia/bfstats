@@ -514,11 +514,11 @@ staged state intact. 2,316 tests green on the trial worktree.
 
 | Stream | Owns | State |
 |---|---|---|
-| W6-A bombs | The aircraft secondary weapon, built from `../plane-bombs-and-torpedoes/README.md` §4-§5 (G-1…G-6) and BOMB-1…BOMB-12. The spec's own headline is that the extractor was never the problem: every rack is already parsed and stamped into the shipped glb, and the weapon dies on a three-line guard in `gunfire.js:484` that refuses a group with no flash, no tracer, no recoil and `velocity 0` — which is precisely a bomb rack. Own worktree | running |
-| W6-B third-person soldier | The largest visible miss in the viewer: **nothing draws a human body in the world.** The camera half is done and merged — `soldier-camera.js` and the `chase-camera.js` placement law are correct and `__footView('chase')` already puts the camera where it belongs — and it is gated behind `?soldier3p=1` because driving it shows a grey field. The extracted soldier glbs carry **zero animations** and nothing exports a 3P clip, so this is a pipeline feature: the stance and gait families, and the canopy plus the 18 `3PParachute*.baf` clips. Own worktree | running |
-| W6-C hull vs statics | The largest unbuilt piece: a driven hull against the world, from `../viewer-ground-hull-collision/README.md` §3 and `collision-response.md`. Vehicle-against-vehicle has gone through the solver since 09-20; a building still stops a hull on the swept sphere and a plane that noses in is levelled out instead of tumbling. Told to port §6.1's `-1.0` rather than the engine's `+1.0` sign bug, and to feed a hull contact into per-wheel friction as an `N.y ≈ 0` sample rather than as grip. **The brief originally dangled the M3A1 lean as the bigger prize; that was withdrawn mid-flight when the owner ruled the lean correct, and the stream is now told to measure the lean before and after and report any movement as a regression.** Own worktree | running |
-| W6-G netcode snap-back | The owner's own report: creating a game locally and joining it snapped his view back a few steps, constantly. Another agent had made it go away with `location.hostname !== '127.0.0.1'` in `onsnapshot` — a hostname test switching authority off where it is easiest to observe. It never reached `main` and is now reverted out of the working tree. The real defect is that a correction is `soldier.spawn()`, a respawn-shaped teleport that discards every input sent since the snapshot, with **no input replay** — so any standing divergence is a repeated snap rather than one that converges. This is P4's own scope. Own worktree | running |
-| W6-H verifier truth | `verify_models.py` called 42 of 96 vanilla models broken and every one was a false alarm. S3 already fixed the origin-pile half (`0590dd2`); what is left is the weapon length measured across a tracer (`Bar1918` 2.02 m against 1.19 m), the skinned soldier it does not understand, and the Sherman whose 27 parts collapse onto the hull. **Required to build deliberately broken models and show it still catches them** — a verifier that now passes everything is the same bug with the sign flipped. Own worktree | running |
+| W6-A bombs | The aircraft secondary weapon, built from `../plane-bombs-and-torpedoes/README.md` §4-§5 (G-1…G-6) and BOMB-1…BOMB-12. The spec's own headline is that the extractor was never the problem: every rack is already parsed and stamped into the shipped glb, and the weapon dies on a three-line guard in `gunfire.js:484` that refuses a group with no flash, no tracer, no recoil and `velocity 0` — which is precisely a bomb rack. Own worktree | **merged `b8184ef`**, review MERGE WITH FIXES (`7199667`) |
+| W6-B third-person soldier | The largest visible miss in the viewer: **nothing draws a human body in the world.** The camera half is done and merged — `soldier-camera.js` and the `chase-camera.js` placement law are correct and `__footView('chase')` already puts the camera where it belongs — and it is gated behind `?soldier3p=1` because driving it shows a grey field. The extracted soldier glbs carry **zero animations** and nothing exports a 3P clip, so this is a pipeline feature: the stance and gait families, and the canopy plus the 18 `3PParachute*.baf` clips. Own worktree | **merged `a60b260`** |
+| W6-C hull vs statics | The largest unbuilt piece: a driven hull against the world, from `../viewer-ground-hull-collision/README.md` §3 and `collision-response.md`. Vehicle-against-vehicle has gone through the solver since 09-20; a building still stops a hull on the swept sphere and a plane that noses in is levelled out instead of tumbling. Told to port §6.1's `-1.0` rather than the engine's `+1.0` sign bug, and to feed a hull contact into per-wheel friction as an `N.y ≈ 0` sample rather than as grip. **The brief originally dangled the M3A1 lean as the bigger prize; that was withdrawn mid-flight when the owner ruled the lean correct, and the stream is now told to measure the lean before and after and report any movement as a regression.** Own worktree | **merged `3469648`** |
+| W6-G netcode snap-back | The owner's own report: creating a game locally and joining it snapped his view back a few steps, constantly. Another agent had made it go away with `location.hostname !== '127.0.0.1'` in `onsnapshot` — a hostname test switching authority off where it is easiest to observe. It never reached `main` and is now reverted out of the working tree. The real defect is that a correction is `soldier.spawn()`, a respawn-shaped teleport that discards every input sent since the snapshot, with **no input replay** — so any standing divergence is a repeated snap rather than one that converges. This is P4's own scope. Own worktree | **merged `47f0224`** |
+| W6-H verifier truth | `verify_models.py` called 42 of 96 vanilla models broken and every one was a false alarm. S3 already fixed the origin-pile half (`0590dd2`); what is left is the weapon length measured across a tracer (`Bar1918` 2.02 m against 1.19 m), the skinned soldier it does not understand, and the Sherman whose 27 parts collapse onto the hull. **Required to build deliberately broken models and show it still catches them** — a verifier that now passes everything is the same bug with the sign flipped. Own worktree | **merged `fbe6ee7`** |
 | W6-E ships, research | The owner's three ship reports, read from the engine. No file changes outside its own feature doc | **reported `6024efd`**, second reader running. See below |
 | W6-F spawner teams | The one ship defect already proven from the data: `teamOnVehicle` read as a team index. Own worktree | **merged `0934813`** (2026-09-22). See below |
 
@@ -659,6 +659,77 @@ fixed it; what remains is that **nothing settles at all**, because
   json): vanilla's GuadalCanal, Iwo_Jima, Midway and Omaha_Beach, XPack1's husky,
   and EoD's five. Nothing published, and nothing written into the shared
   `viewer/maps` tree.
+
+**Wave 6 is closed: all six streams merged, suite 2,488 green, main at `a60b260`.**
+What each one turned out to be, where it differs from what its brief expected:
+
+- **W6-A bombs.** A plane drops bombs for the first time. The review's job was the
+  collateral, because BOMB-1 lands on every multi-barrel `FireArms` and not only
+  on racks: it re-derived `Fire` (`0x0828a090`) and `fireFinished` (`0x08288470`)
+  from the bytes without reference to the build record and all six load-bearing
+  claims hold, so game-wide is right. **Three of the stream's worked examples were
+  wrong, all three verified by the lead against `Objects.rfa`**: the Katyusha
+  declares `setAsynchronyFire 1` and so really does fire one rail a pull (the OLD
+  comment's conclusion was right), `Elco80_Torpedos` likewise, and `CorsairGuns`
+  is `magSize 900` — the 600-round magazines that halve from 50 s to 25 are
+  `SBDGuns`, `SBD-TGuns` and `IlyushinGuns`. The stream's own two best catches
+  were spec errors: `gravityScale` is `0/0` = **NaN** at a zero release, which
+  would have deleted gravity from every bomb, and `Bomb.ssc`'s first sounding
+  patch is the LOOPING whistle. Two of its hedges closed in its favour —
+  Refractor's update dispatch is a flat registry (`ObjectManager::updateObjects`
+  `0x0819be10`), not parent recursion, so a torpedo's child `Engine` does run.
+- **W6-B third-person soldier.** There is a man in the world and **he breathes**:
+  657 px move between two frames 0.4 s apart while he stands still, which a
+  constant clip cannot do. 68.3% of the chase-view box is body. `?soldier3p=1` is
+  gone and the default is on. The absences are half the result:
+  **`Ub_ParachuteIdle` does not exist**, `Lb_ParachuteFall` names
+  `3pExplosionFly*`, ten of the eighteen `3PParachute*.baf` files are named by no
+  state, and the three stance clips were never stills but 17-18 frame breathing
+  loops the pose files had been sampling one frame of. It also corrected
+  `PARACHUTE_VIEW_RADIUS`: a parachutist is **13.3 m** tall, so at 3.0 the canopy
+  sat entirely off-frame.
+- **W6-C hull vs statics.** A driven hull probes its own col0 vertices into the
+  shared contact solver instead of meeting a building through `sweepSphere`. The
+  plan deferred the vertex probe as needing col0 plumbed; the 09-20 round had
+  already plumbed it. **It found a defect on main**: the sweep pins position and
+  cancels only the normal component, so a Willy driven into Bocage's `barack_m1`
+  never moves — frozen, `grounded: false`, pitch and roll exactly 0.00 — while its
+  velocity sawtooths 22 → 36.9 m/s for ever. A BF109 at 60 m/s used to log **zero
+  contacts and fly through a church**. And the new path costs **0.407 ms/tick
+  against the sweep's 0.463**, so it is cheaper than what it removed.
+- **W6-G netcode.** The owner's local snap-back was two sims walking on different
+  headings from different spawn points: `rooms.mjs` asked for `advance: true` while
+  the page picked its own (45 m apart), and then `soldier.spawn(x, y, z)` left
+  `soldier.js:382`'s `yaw = 0` default to wipe the client's facing, so the two
+  integrated the same input 17.719 degrees apart and separated at 1.85 m/s for
+  ever. What proved it was heading rather than latency is that the divergence was
+  almost entirely **lateral**. A third defect fell out: remote soldiers were drawn
+  at a **57th** of their heading, radians written and degrees assumed. 9 teleports
+  in 20 s → 0 in 30. The previous agent's `location.hostname` test is reverted.
+- **W6-H verifier.** It can be believed and it can still fail: **seven mutated
+  real models caught, four of which passed before** — collapsed binds, a stripped
+  skeleton, a Sherman missing its whole tower, and an emptied `boundParts`. EoD
+  221/56/8 exit 1 → 251/34/0 exit 0, with the eight BROKEN verdicts **proved**
+  false rather than suppressed. Two real things the noise hid: EoD's M79 family
+  genuinely draws no receiver, trigger or magazine (the game has the same holes),
+  and the origin-pile check cannot catch a weapon collapsing on its own.
+
+**Carried as a fact and deliberately not acted on.** `ground.js` computes inertia
+as a solid box's `(a^2+b^2)/12` — `WILLYS` 0.40/1.27/1.29 are exactly those values
+for its 1.6x1.5x3.6 box, checked by the lead — where the engine's
+`getGeometryInertia` is `(DY^2+DZ^2)/3`, **four times larger**. Every ground
+vehicle is therefore 4x more responsive in roll than the engine would be. Since
+the owner has ruled the current lean a match for the real game, closing that gap
+would reduce the lean about fourfold and would be a **regression**. Either the
+engine read is wrong or something else compensates; it is an open tension, not a
+task.
+
+**The re-extract, at last done once rather than four times.** Poses through
+`extract_pose.py --shared-assets` (`poses/gaits/` 5,302,423 → 9,505,203 B, and the
+extractor prints `absent: Ub_ParachuteIdle`, so the absence is data). All 23
+vanilla levels through `extract_maps_all.py`, which carries W6-F's four ship
+levels, the deck-spawn sign fix everywhere a ship stands, and W6-A's four new
+projectile fields that a placed aircraft needs. **Nothing published.**
 
 ### Not yet assigned
 
