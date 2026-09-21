@@ -54,15 +54,89 @@
     background: #000;
   }
   #status:empty { display: none; }
+  /* The P2 lobby: the room server's own panel, page type, not menu type —
+     the engine's join wiring was never in the extracted layout, so the
+     panel is this page's addition over the Instant Battle screen. */
+  .rooms-open {
+    position: fixed;
+    left: 14px;
+    bottom: 14px;
+    padding: 8px 14px;
+    font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #cfcfc4;
+    background: #000;
+    border: 1px solid #2d2d2d;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .rooms-open:hover { border-color: #9aa666; }
+  .rooms-panel {
+    position: fixed;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: min(360px, calc(100% - 28px));
+    padding: 12px 14px;
+    background: rgba(19, 19, 19, .94);
+    border: 1px solid #2d2d2d;
+    border-radius: 6px;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #cfcfc4;
+    box-sizing: border-box;
+  }
+  .rooms-head {
+    font-weight: 700;
+    letter-spacing: .12em;
+    color: #9aa666;
+    margin-bottom: 8px;
+  }
+  .rooms-list {
+    max-height: 220px;
+    overflow: auto;
+    border: 1px solid #2d2d2d;
+    background: #000;
+    margin-bottom: 8px;
+  }
+  .rooms-row { padding: 5px 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rooms-row:hover { background: #222; color: #fff; }
+  .rooms-empty { color: #8a8a8a; padding: 6px 8px; }
+  .rooms-field { display: block; margin: 6px 0; }
+  .rooms-field input {
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 3px;
+    padding: 5px 8px;
+    background: #000;
+    color: #e8e8d8;
+    border: 1px solid #2d2d2d;
+    border-radius: 3px;
+    font: inherit;
+  }
+  .rooms-field input:focus { outline: 1px solid #7d8849; }
+  .rooms-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .rooms-actions button {
+    flex: 1;
+    padding: 7px 0;
+    font: inherit;
+    color: #e8e8d8;
+    background: #222;
+    border: 1px solid #2d2d2d;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .rooms-actions button:hover { border-color: #9aa666; }
+  .rooms-status { margin-top: 8px; color: #8a8a8a; min-height: 1em; }
   /* Focusable so the keyboard reaches the list the way the game's does. */
   #screen:focus-visible { outline: 1px solid #7d8849; outline-offset: -1px; }
 </style>
 
 <canvas id="screen" tabindex="0" aria-label="Instant Battle"></canvas>
 <p id="status">Loading…</p>
+<button class="rooms-open" id="rooms-open" hidden>PLAY ONLINE</button>
 
 <script type="module">
 import { createSkirmishScreen } from './skirmish.js';
+import { createRoomsPanel } from './rooms.js';
 
 const canvas = document.getElementById('screen');
 const status = document.getElementById('status');
@@ -82,6 +156,28 @@ canvas.addEventListener('keydown', event => {
   if (screen.keydown(event)) event.preventDefault();
 });
 
+// --- the P2 lobby ------------------------------------------------------------
+// `?room=` starts a game straight into a room (the smoke test's own path);
+// the button opens the rooms panel where the room server is reachable.
+// The level for CREATE ROOM rides the screen's already-loaded list, and
+// joining a room leaves the level to the room server (map.html switches to
+// the hello's level).
+const openBtn = document.getElementById('rooms-open');
+const rooms = createRoomsPanel({
+  levels: () => screen.levels.map(l => ({ name: l.name })),
+  onJoin: (room, name, level) => {
+    const args = new URLSearchParams({ room, name });
+    if (level) args.set('map', level);
+    location.assign(`../map.html?${args}`);
+  },
+});
+openBtn.hidden = false;
+openBtn.addEventListener('click', () => {
+  if (rooms.visible) rooms.hide();
+  else rooms.show();
+});
+window.__rooms = rooms;
+
 // --- the harness -------------------------------------------------------------
 //
 // The same shape `map.html` offers: a headless check drives the screen and
@@ -96,6 +192,8 @@ window.__menu = {
   launchUrl: screen.launchUrl,
   get mod() { return screen.mod; },
   get audio() { return screen.audio; },
+  get muted() { return screen.muted; },
+  setMuted: screen.setMuted,
   unlockAudio: screen.unlockAudio,
   chooseMod: screen.chooseMod,
   paint: screen.paint,

@@ -7533,11 +7533,13 @@ function spawnAtFlag(advance = false) {
   clearTimeout(hudViewTimer);
   hudViewTimer = setTimeout(updateHud, 2200);
   // The room's control channel: the server re-places its own copy of this
-  // player on the same flag (fresh Armor on the kit's max).
+  // player on the same flag (fresh Armor at the kit's max — the spawn row
+  // names the kit so both sides build the same Armor from loadouts.json).
   if (roomJoined) {
     netSendAction({
       type: 'spawn',
       flag: Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1),
+      kit: deployKit,
     });
   }
   return true;
@@ -11878,6 +11880,12 @@ let roomClient = null;
 let roomRenderer = null;
 let roomJoined = false;
 let roomPingTimer = null;
+// P3: the server's word beats the local sim only past these windows — a
+// destroyed-Armor decree is a hard event (the page's own death loop latches
+// the cam), but HP and position corrections wait for a real mismatch so the
+// prediction stays the predictor (netcode.md §4).
+const NET_HP_GRACE = 1.5;
+const NET_POS_GRACE = 4.0;
 const parkedHullCache = new Map();   // room vehicle id -> local scene node
 const netScratchV = new THREE.Vector3();
 
@@ -11984,6 +11992,60 @@ async function joinRoom() {
     });
     roomClient.onevent = row => {
       if (row?.text) logToConsole(row.text);
+      // P3: death by server decree. The page's own death loop
+      // (`soldierDead` latch on a destroyed Armor) is the cam, the deploy
+      // screen and the spectator work — the decree only has to make the
+      // Armor agree with the server's. The suicide path's own precedent
+      // (`soldierArmor.applyDamage(maxHitPoints)`).
+      if (row.type === 'killed' && row.slot === roomClient.slot
+          && soldierArmor && !soldierDead) {
+        soldierArmor.applyDamage(soldierArmor.maxHitPoints);
+      }
+      // Flags move by decree too: the deploy screen's list and the map's
+      // markers read `flags[]` live, so a team write is the whole repaint.
+      if (row.type === 'captured' && Number.isInteger(row.flag)
+          && flags[row.flag]) {
+        flags[row.flag].team = row.team;
+        if (typeof paintDeployChrome === 'function') paintDeployChrome();
+      }
+      // The tickets: the layout's own group reads `extras.tickets` — the
+      // memoised painters re-run when the object CHANGES, so a fresh object
+      // per row is the page's own prescribed live-update path (the comment
+      // at `ticketFlagTexture`: "mutated the counts IN PLACE would have to
+      // bump the key here too" — a replacement bumps it for us).
+      if (row.type === 'ticket' && Number.isFinite(row.count) && extras) {
+        const key = `team${row.team}`;
+        if (extras.tickets?.[key] !== row.count) {
+          extras.tickets = {
+            ...extras.tickets,
+            [key]: row.count,
+          };
+        }
+      }
+    };
+    // P3: the snapshot is the server's word with a small grace window —
+    // HP drops apply (never heals — the supply depots heal both sides, and
+    // the server's own count absorbs the rest), and a position past the
+    // grace snaps (a respawn, a stuck body; P4's smoothing owns the small
+    // stuff). Only when the local player is alive and on foot.
+    roomClient.onsnapshot = snap => {
+      if (!soldier || soldierDead || !soldierArmor) return;
+      if (optPilot.checked || !optOnFoot.checked) return;
+      let self = null;
+      for (const p of snap.players) {
+        if (p.slot === roomClient.slot) { self = p; break; }
+      }
+      if (!self || !self.alive) return;
+      if (self.hp != null && self.hp < soldierArmor.hitPoints - NET_HP_GRACE) {
+        soldierArmor.applyDamage(soldierArmor.hitPoints - self.hp);
+      }
+      if (Number.isFinite(self.x) && Number.isFinite(self.z)) {
+        const dx = self.x - soldier.x;
+        const dz = self.z - soldier.z;
+        if (dx * dx + dz * dz > NET_POS_GRACE * NET_POS_GRACE) {
+          soldier.spawn(self.x, self.y, self.z);
+        }
+      }
     };
     roomClient.onclosed = code => {
       const wasIn = roomJoined;
@@ -12077,6 +12139,7 @@ async function joinRoom() {
       remote: s => roomJoined ? roomClient.remotePlayer(s) : null,
       snapCount: roomJoined ? roomClient.snapCount() : 0,
       feed: roomJoined ? [...roomClient.feed] : [],
+      sent: roomJoined ? [...roomClient.sentActions] : [],
       close: netTeardownRoom,
     });
     // The E-key seat toggle, exposed the way __deploy and __keys are: the
