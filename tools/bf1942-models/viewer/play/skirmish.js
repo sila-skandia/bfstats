@@ -20,6 +20,7 @@ import {
   AXIS, ALLIED, hitTest, inRect, listBox, paintMenu, scrollTo, stageScale,
   toVirtual, visibleRows,
 } from './menu-screen.js';
+import { createNavStrip } from './nav-strip.js';
 import { loadMods, remember, servable, stored, VANILLA, withMod } from '../mods.js';
 import { createLoadingAudioController } from '../audio.js';
 import { loadHudPaths, hudPaths as plainHudPaths } from '../hud-pack.js';
@@ -56,6 +57,12 @@ const rememberMute = muted => {
  * @param {() => void} [options.onDisconnect]        END CURRENT GAME
  * @param {(text: string) => void} [options.onStatus]
  * @param {'reload'|'inplace'} [options.modChoice]   what picking a mod does
+ * @param {Array} [options.tabs]  the front end's navigation rows
+ *                                (`nav-strip.js`), drawn over this screen
+ *                                the way the game draws them over its own.
+ *                                Null on the Esc menu: there is no front end
+ *                                behind a running level to navigate.
+ * @param {(id: string) => void} [options.onTab]
  */
 export function createSkirmishScreen({
   canvas,
@@ -67,6 +74,8 @@ export function createSkirmishScreen({
   onDisconnect = null,
   onStatus = () => {},
   modChoice = 'reload',
+  tabs = null,
+  onTab = () => {},
 } = {}) {
   const qs = params;
   const bust = () => (qs.has('nocache') ? `?t=${Date.now()}` : '');
@@ -113,6 +122,10 @@ export function createSkirmishScreen({
   // `mods.js`'s own header comment); `picker` the panel's own
   // selection/scroll/hover state.
   let modLayout = null;
+  //: The SINGLEPLAY / MULTIPLAY strip, when the mounting page asked for one.
+  //  Its plates and faces come out of `main-menu-layout.json`, whose tables
+  //  are merged into this screen's the same way the mod dialog's are.
+  let strip = null;
   let activeMod = VANILLA;
   let picker = { mods: [VANILLA], activeId: VANILLA.id, scroll: 0, hover: null };
   // The active mod's own maps root - `<root>maps` for vanilla, `<root>maps/
@@ -285,12 +298,15 @@ export function createSkirmishScreen({
                       `${root}maps/_shared/music/menu.mp3`);
     }
 
-    const [skirmishLayout, rawModLayout] = await Promise.all([
+    const [skirmishLayout, rawModLayout, navLayout] = await Promise.all([
       json(packUrl('menu-layout.json')),
       // Absent on a checkout that hasn't run extract_custom_game_layout.py -
       // the panel just doesn't draw, same fallback shape as a mod with no
       // maps.json.
       json(packUrl('custom-game-layout.json')).catch(() => null),
+      // Likewise extract_main_menu_layout.py: no pack, no tab strip, and
+      // the screen is what it was before there was a second tab.
+      tabs ? json(packUrl('main-menu-layout.json')).catch(() => null) : null,
     ]);
     layout = skirmishLayout;
     // Into the column `SHOW_BOT_SETTINGS = false` leaves blank - the file
@@ -299,6 +315,12 @@ export function createSkirmishScreen({
     if (modLayout) {
       layout.textures = { ...layout.textures, ...modLayout.textures };
       layout.fontFiles = { ...layout.fontFiles, ...modLayout.fontFiles };
+    }
+    if (navLayout) {
+      layout.textures = { ...layout.textures, ...navLayout.textures };
+      layout.fontFiles = { ...layout.fontFiles, ...navLayout.fontFiles };
+      strip = createNavStrip({ layout: navLayout, env, rows: tabs,
+                               active: 'singleplay', onPick: onTab });
     }
     // The game's own list for this mod: vanilla's always, and a mod's when its
     // pack carries one (`extract_hud_mods.py` writes it beside the thumbnails).
@@ -475,6 +497,7 @@ export function createSkirmishScreen({
     ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
     paintMenu(ctx, layout, state, env);
     if (modLayout) paintPanel(ctx, modLayout, picker, env);
+    strip?.paint(ctx);
   }
 
   const observer = new ResizeObserver(() => paint());
@@ -506,7 +529,7 @@ export function createSkirmishScreen({
       return;
     }
     if (picker.hover) { picker.hover = null; paintSoon(); }
-    const next = hitTest(layout, state, x, y, levels.length);
+    const next = strip?.hover(x, y) || hitTest(layout, state, x, y, levels.length);
     const changed = JSON.stringify(next) !== JSON.stringify(hover);
     hover = next;
     canvas.style.cursor = next ? 'pointer' : 'default';
@@ -524,6 +547,7 @@ export function createSkirmishScreen({
     const [x, y] = at(event);
     canvas.focus();
     if (overPanel(x, y)) { handlePanelHit(hitTestPanel(modLayout, picker, x, y)); return; }
+    if (strip?.click(x, y)) return;
     const hit = hitTest(layout, state, x, y, levels.length);
     if (!hit) return;
     if (hit.kind === 'row') select(hit.index);
@@ -599,6 +623,7 @@ export function createSkirmishScreen({
     get mod() {
       return { active: activeMod.id, available: picker.mods.map(m => m.id) };
     },
+    get strip() { return strip; },
     get audio() { return menuAudio.state; },
     get muted() { return menuAudio.muted; },
     setMuted: on => { menuAudio.setMuted(on); rememberMute(menuAudio.muted); },

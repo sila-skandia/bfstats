@@ -86,8 +86,14 @@ SCHEMAS: dict[str, list[tuple[str, str]]] = {
                       ("Width", F32), ("Height", F32), ("Transformed node", OBJ)],
     "BfTransformNode": [("Next node", OBJ), ("X", OBJ), ("Y", OBJ),
                         ("Width", F32), ("Height", F32), ("Transformed node", OBJ)],
-    "BfTransformNodeSize": [("Next node", OBJ), ("Width", OBJ), ("Height", OBJ),
-                            ("X", F32), ("Y", F32), ("Transformed node", OBJ)],
+    # MEME-15: the mirror of `BfTransformNode` — the *size* is the pair of
+    # data objects and the position is the pair of floats, so the floats come
+    # first on the wire, straight after the sibling pointer. Read the other
+    # way round (the old order) the two floats were eaten as an object frame
+    # and `menu/InternetMenu` and `menu/LocalMenu` desynced here.
+    "BfTransformNodeSize": [("Next node", OBJ), ("X", F32), ("Y", F32),
+                            ("Width", OBJ), ("Height", OBJ),
+                            ("Transformed node", OBJ)],
     "TranslateNode": [("Next node", OBJ), ("X", OBJ), ("Y", OBJ)],
     "SplitNode": [("Next node", OBJ), ("Split node", OBJ)],
     "CullNode": [("Next node", OBJ), ("Variable", OBJ), ("In time", F32), ("Out time", F32)],

@@ -379,6 +379,13 @@ recorded here. Settled:
 - **Menus and HUD** — every menu action and event class read (MEME-11),
   including a 1-byte "Event type" that `meme.py` reads as 4; the `.font` grammar
   (FONT-1); the minimap's size, zoom and rotation (MEME-13, MMAP-1, MMAP-2).
+  MEME-11's own remainder is now closed by **MEME-15**: `BfTransformNodeSize`
+  puts its two floats *before* its two data objects, which was the last thing
+  desyncing the reader (`menu/InternetMenu`, `menu/LocalMenu`). Nothing in any
+  installed archive overruns the stream now, and clean pages go 110 → **137 of
+  236**. Two rows came with it: **MEME-16**, front-end pages position panels
+  with `AddData` / `SubData`, and **MEME-17**, a page placed by a `PathNode`
+  layer carries page-local coordinates and no way yet to read where they go.
 - **Rendering** — the object-lightmap combine (LM-1…LM-4).
 - **Physics and effects** — particle drag is an acceleration, not an
   exponential (EMT-5), and every `PhysicsNode` vehicle always runs the box-shaped
