@@ -18,6 +18,11 @@ Two narrowings came with it, both the user's:
   that. For now one map, with all defaults is enough. Just server name and
   max players looks good."
 
+Then, on the first build: **the SERVER NAME field has to be typeable**, and
+**there is no point offering CREATE GAME when the room server is down** —
+"they can use single player if it's down… we might as well prevent them
+creating it at all and show the error."
+
 Done. Screens: `?tab=multiplay` on the play page.
 
 ## What the screen is
@@ -33,11 +38,12 @@ game.
 | The server browser | `menu/InternetMenu` |
 | JOIN | `menu/InternetNavigation` |
 | CREATE GAME | `menu/CreateGameMenu` + `menu/CreateGameMenuPage1` |
+| SERVER NAME / MAX PLAYERS fields | `BfEditNode` / `BfEditNodeInt` in `menu/CreateGameMenuPage1` |
 | START INTERNET | `menu/CreateGameNavigation` |
 | Background | `menu/Background` |
 
 `tools/bf1942-models/extract_main_menu_layout.py` flattens all of them into
-`viewer/maps/_shared/hud/menu/main-menu-layout.json` (316 elements, 45
+`viewer/maps/_shared/hud/menu/main-menu-layout.json` (337 elements, 45
 textures, 3 faces). `viewer/play/nav-strip.js` draws the two button rows,
 `viewer/play/multiplay.js` the screen, `viewer/play/menu-pack.js` is the
 image/font/tint cache both share with `skirmish.js`.
@@ -102,9 +108,56 @@ JOIN and a row's double click go to
 The room server's word still wins — the HELLO carries the room's level and
 the page switches to it.
 
-CREATE GAME picks a level and a six-character code and goes to the same
-page; the room is made by the first client to name a code the server has no
-room for.
+CREATE GAME picks a level and a code and goes to the same page; the room is
+made by the first client to name a code the server has no room for.
+
+**The level has to travel as the room server names it.** It builds its
+table by reading the `maps/` directory (`buildLevelTable` in
+`server/server.mjs`), so its keys are directory names — `el_alamein`.
+`maps.json` names the same level `El_Alamein`, and `map.html` lowercases
+before it looks, so the difference is invisible everywhere else: a create
+that asks for `El_Alamein` finds nothing in the table and the join comes
+back `bad_room`. `levelKey()` sends the menu record's `dir`.
+
+## The two fields
+
+SERVER NAME and MAX PLAYERS are the file's own `BfEditNode` and
+`BfEditNodeInt`, which the flattener now emits as `kind: "edit"` with the
+variable each is bound to, its font and its limits. Their rects are what
+the value text is drawn into, what the caret hangs off, and what a click on
+the field is tested against — none of which the two quads beside the label
+could give, since those are the box's frame and well, not the field.
+
+SERVER NAME is typed into. A room's name *is* its address — it is what the
+browser lists and what another player needs — so the field is the room code,
+and it is typed against `ROOM_CODE_RE` in `server/rooms.mjs`
+(`^[A-Za-z0-9_-]{3,24}$`) rather than the file's own 32 characters, which
+are a dedicated server's name. An unusable name goes amber and the rule
+appears under the row in the same face; START refuses until it is fixed.
+MAX PLAYERS is read-only at 16: `MAX_PLAYERS` in `server/rooms.mjs`, which
+is not negotiable the way a dedicated server's is.
+
+The caret only blinks while the field has the keyboard, so the screen is a
+paint-on-demand one the rest of the time.
+
+## When the room server is not answering
+
+CREATE GAME is not drawn and not clickable; an open dialog closes itself on
+the poll that finds the server gone; JOIN is not drawn either, because
+there is nothing to join. Where the rows would be, in the screen's own face:
+
+```
+THE ROOM SERVER ISN'T ANSWERING
+
+NOTHING CAN BE JOINED OR CREATED UNTIL IT RUNS.
+SINGLEPLAY IS STILL THERE.
+```
+
+Nothing goes in the page's DOM status bar for this — that bar is for the
+things that stop the screen existing at all, like a missing pack.
+
+`online` is `polled && lastError === null`: before the first answer nothing
+is offered and nothing is refused.
 
 ## The player's name
 

@@ -37,7 +37,15 @@ import { loadHudPaths, hudPaths as plainHudPaths } from '../hud-pack.js';
 const ROOMS_URL = '/netcode/rooms';
 const POLL_MS = 3000;
 
-/** A room code the server will take: `ROOM_CODE_RE` in `server/rooms.mjs`. */
+/** What the room server will take as a code: `ROOM_CODE_RE` in
+ *  `server/rooms.mjs`. The SERVER NAME field is typed against this rather
+ *  than against `menu/CreateGameMenuPage1`'s own 32 characters — the file's
+ *  limit is a dedicated server's name, and this one is an address. */
+const ROOM_CODE_RE = /^[A-Za-z0-9_-]{3,24}$/;
+const CODE_CHAR_RE = /^[A-Za-z0-9_-]$/;
+const CODE_MAX = 24;
+const CODE_RULE = '3-24 LETTERS, NUMBERS, - OR _';
+
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const newCode = () => Array.from({ length: 6 },
   () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]).join('');
@@ -88,8 +96,16 @@ const CREATE_ARROWS = new Set(['menu_rubr_pilh_16x32', 'menu_rubr_pilv_16x32',
  *  is its code: that is what the browser lists and what another player
  *  needs. */
 const ROOM_SETTINGS = [
-  { key: 'CREATE_GAME_SERVERNAME', value: create => create.code },
-  { key: 'CREATE_GAME_MAX_PLAYERS', value: () => String(MAX_PLAYERS) },
+  // The room's own `BfEditNode`, typed into. A room's name is its address:
+  // it is what the browser lists and what another player needs, so the
+  // field is the code.
+  { key: 'CREATE_GAME_SERVERNAME', edit: 'Host/Create/ServerName',
+    value: create => create.code },
+  // `BfEditNodeInt` in the file, read-only here: a room's capacity is
+  // `MAX_PLAYERS` in `server/rooms.mjs` and is not negotiable the way a
+  // dedicated server's is.
+  { key: 'CREATE_GAME_MAX_PLAYERS', edit: 'Host/Create/MaxPlayers',
+    value: () => String(MAX_PLAYERS) },
 ];
 
 /** `MAX_PLAYERS` in `server/rooms.mjs` — a room's capacity, which is not
@@ -152,7 +168,9 @@ export function createMultiplayScreen({
   let levels = [];          // the level records CREATE GAME picks from
   let rooms = [];
   let lastError = null;
+  let polled = false;
   let timer = null;
+  let caret = null;   // the blink, while a field has the keyboard
   let hover = null;
 
   const state = {
@@ -282,6 +300,12 @@ export function createMultiplayScreen({
     return state.asc ? out : out.reverse();
   }
 
+  /** Whether the room server answered the last time this asked. Until the
+   *  first answer it is neither: nothing is offered and nothing is refused.
+   *  CREATE GAME hangs off this — there is no point making a room on a
+   *  server that is not there, and Instant Battle still works. */
+  const online = () => polled && lastError === null;
+
   async function poll() {
     try {
       const res = await fetch(ROOMS_URL);
@@ -292,18 +316,28 @@ export function createMultiplayScreen({
       const list = Array.isArray(body) ? body : body?.rooms;
       rooms = Array.isArray(list) ? list.map(decorate) : [];
       lastError = null;
-      onStatus('');
     } catch (error) {
+      // Said on the canvas, where the rows would be, in the screen's own
+      // face — not in the page's status bar, which is for the things that
+      // stop the screen existing at all (a missing pack).
       lastError = error;
       rooms = [];
-      onStatus(`room server unreachable (${error.message})`);
     }
+    onStatus('');
+    polled = true;
     state.index = Math.min(state.index, Math.max(0, rooms.length - 1));
+    // A room server that goes away under an open CREATE GAME takes the
+    // dialog with it, rather than leaving a START that cannot work.
+    if (state.create && !online()) closeCreate();
     paintSoon();
   }
 
   function start() { if (timer === null) { poll(); timer = setInterval(poll, POLL_MS); } }
-  function stop() { if (timer !== null) clearInterval(timer); timer = null; }
+  function stop() {
+    if (timer !== null) clearInterval(timer);
+    timer = null;
+    stopCaret();
+  }
 
   // --- loading ---------------------------------------------------------------
 
@@ -348,8 +382,51 @@ export function createMultiplayScreen({
   // --- CREATE GAME -----------------------------------------------------------
 
   function openCreate() {
-    state.create = { index: 0, scroll: 0, level: levels[0] || null, code: newCode() };
+    if (!online()) return false;
+    state.create = { index: 0, scroll: 0, level: levels[0] || null,
+                     code: newCode(), editing: false };
+    startCaret();
     paintSoon();
+    return true;
+  }
+
+  function closeCreate() {
+    state.create = null;
+    stopCaret();
+    paintSoon();
+  }
+
+  /** The caret blinks only while a field has the keyboard, so the screen is
+   *  still a paint-on-demand one the rest of the time. */
+  function startCaret() {
+    if (caret !== null) return;
+    caret = setInterval(() => { if (state.create?.editing) paint(); }, 500);
+  }
+  function stopCaret() {
+    if (caret !== null) clearInterval(caret);
+    caret = null;
+  }
+
+  const codeOk = () => ROOM_CODE_RE.test(state.create?.code ?? '');
+
+  /** Typing into the SERVER NAME field. Returns whether the key was the
+   *  field's — anything else falls back to the screen's own keys. */
+  function typeInto(event) {
+    const create = state.create;
+    if (!create?.editing) return false;
+    if (event.key === 'Backspace') {
+      create.code = create.code.slice(0, -1);
+    } else if (event.key === 'Enter' || event.key === 'Escape'
+               || event.key === 'Tab') {
+      create.editing = false;
+    } else if (event.key.length === 1 && CODE_CHAR_RE.test(event.key)) {
+      if (create.code.length >= CODE_MAX) return true;
+      create.code += event.key;
+    } else {
+      return false;
+    }
+    paintSoon();
+    return true;
   }
 
   function pickCreateLevel(index) {
@@ -373,11 +450,22 @@ export function createMultiplayScreen({
    *  dialog leaves alone. */
   function createRoom() {
     const create = state.create;
-    if (!create?.level) return;
+    if (!create?.level || !online() || !codeOk()) return;
     const args = new URLSearchParams({ room: create.code, name: state.name,
-                                       map: create.level.map });
+                                       map: levelKey(create.level) });
     onStart(`${root}map.html?${args}`);
   }
+
+  /** How the room server names a level.
+   *
+   *  It builds its table by reading the `maps/` directory
+   *  (`buildLevelTable` in `server/server.mjs`), so its keys are directory
+   *  names — `el_alamein`. `maps.json` names the same level `El_Alamein`,
+   *  and `map.html` lowercases before it looks, so the difference is
+   *  invisible everywhere except here: a create that asks for
+   *  `El_Alamein` finds nothing in the table and the join is refused
+   *  `bad_room`. The menu record's `dir` is the directory. */
+  const levelKey = level => level.dir || level.map;
 
   /** JOIN. The room's level travels with the code: a bare `map.html?room=`
    *  names no level, and `map.html` sends anything that names no level
@@ -451,9 +539,15 @@ export function createMultiplayScreen({
     // server being down does.
     if (!list.length && font) {
       ctx.globalAlpha = 1;
-      drawBitmapText(ctx, font, pack.env.tint,
-                     lastError ? 'THE ROOM SERVER ISN\'T ANSWERING' : 'NO ROOMS RUNNING',
-                     Math.round(bx + 4), by + 1, [0.55, 0.55, 0.55]);
+      const lines = lastError
+        ? ['THE ROOM SERVER ISN\'T ANSWERING', '', 'NOTHING CAN BE JOINED OR CREATED '
+           + 'UNTIL IT RUNS.', 'SINGLEPLAY IS STILL THERE.']
+        : ['NO ROOMS RUNNING', '', 'CREATE GAME STARTS ONE.'];
+      for (const [i, line] of lines.entries()) {
+        drawBitmapText(ctx, font, pack.env.tint, line, Math.round(bx + 4),
+                       by + 1 + i * box.rowHeight,
+                       i === 0 && lastError ? [0.85, 0.5, 0.35] : [0.55, 0.55, 0.55]);
+      }
     }
     paintThumb(box, list.length);
     ctx.globalAlpha = 1;
@@ -513,6 +607,40 @@ export function createMultiplayScreen({
   /** The page's own face, for the leaves this file draws itself. */
   const font0 = () => pack.env.font(createBox('Host/Create/LevelsList').font);
 
+  /** The one field of `menu/CreateGameMenuPage1` this screen types into. */
+  const EDITABLE = 'Host/Create/ServerName';
+
+  /** One settings row, already shifted into the CREATE GAME plate: the
+   *  label, the two quads that draw the value box, and the file's own
+   *  `BfEditNode` rect, which is where the text and the caret go and what
+   *  a click on the field is tested against.
+   *
+   *  Shifted, because the page's coordinates are its own:
+   *  `menu/CreateGameMenuPageLayer` places it and that layer is a
+   *  `PathNode`, which the reader has no schema for — the offset used is
+   *  the CREATE GAME plate's own origin, which lands the page's labels at
+   *  x 42, exactly where the plate's own heading sits. Ledger MEME-17. */
+  function settingRow(setting) {
+    const plate = page('createGame').find(el => el.texture?.startsWith('menu_creategamexl'));
+    if (!plate) return null;
+    const [dx, dy] = plate.rect;
+    const shift = el => ({ ...el, rect: [el.rect[0] + dx, el.rect[1] + dy,
+                                         el.rect[2], el.rect[3]] });
+    const elements = page('createGamePage1');
+    const label = elements.find(el => el.key === setting.key);
+    if (!label) return null;
+    const near = el => Math.abs(el.rect[1] - label.rect[1]) < 8;
+    const field = elements.find(el => el.kind === 'edit' && el.var === setting.edit
+                                   && near(el));
+    if (!field) return null;
+    return {
+      label: shift(label),
+      field: shift(field),
+      boxes: elements.filter(el => el.kind === 'fill' && near(el))
+        .sort((a, b) => b.rect[2] - a.rect[2]).map(shift),
+    };
+  }
+
   /** The dialog's one list. */
   const levelsBox = () => createBox('Host/Create/LevelsList');
 
@@ -527,29 +655,34 @@ export function createMultiplayScreen({
    *  page's labels at x 42 — exactly where the plate's own CREATE GAME
    *  heading sits. See the ledger's MEME row on `PathNode`. */
   function paintRoomSettings(create, font) {
-    const plate = page('createGame').find(el => el.texture?.startsWith('menu_creategamexl'));
-    if (!plate || !font) return;
-    const [dx, dy] = plate.rect;
-    const elements = page('createGamePage1');
+    if (!font) return;
     for (const setting of ROOM_SETTINGS) {
-      const label = elements.find(el => el.key === setting.key);
-      if (!label) continue;
-      // The label's own row: the two nested quads beside it are the value
-      // box, the outer its frame and the inner its well.
-      const boxes = elements
-        .filter(el => el.kind === 'fill' && Math.abs(el.rect[1] - label.rect[1]) < 8)
-        .sort((a, b) => b.rect[2] - a.rect[2]);
-      const shifted = el => ({ ...el, rect: [el.rect[0] + dx, el.rect[1] + dy,
-                                             el.rect[2], el.rect[3]] });
-      paintElement(ctx, shifted(label), layout, state, pack.env);
-      for (const box of boxes) paintElement(ctx, shifted(box), layout, state, pack.env);
-      const well = boxes[boxes.length - 1];
-      if (!well) continue;
+      const row = settingRow(setting);
+      if (!row) continue;
+      paintElement(ctx, row.label, layout, state, pack.env);
+      for (const box of row.boxes) paintElement(ctx, box, layout, state, pack.env);
+      const text = setting.value(create);
+      const typed = setting.edit === EDITABLE;
+      const bad = typed && !codeOk();
       ctx.globalAlpha = 1;
       ctx.imageSmoothingEnabled = false;
-      drawBitmapText(ctx, font, pack.env.tint, setting.value(create),
-                     Math.round(well.rect[0] + dx + 3), well.rect[1] + dy + 1,
-                     [0.78, 0.78, 0.78]);
+      const x = Math.round(row.field.rect[0] + 3);
+      const y = row.field.rect[1] + 4;
+      drawBitmapText(ctx, font, pack.env.tint, text, x, y,
+                     bad ? [0.85, 0.5, 0.35] : [0.78, 0.78, 0.78]);
+      // The caret: a one-unit bar after the text, on the half second.
+      if (typed && create.editing && Math.floor(Date.now() / 500) % 2 === 0) {
+        ctx.fillStyle = '#c7c7b4';
+        ctx.fillRect(x + measureText(font, text) + 1, y, 1, font.meta.lineHeight);
+      }
+    }
+    // What the field will take, said only when what is in it will not do.
+    const rule = settingRow(ROOM_SETTINGS[1]);
+    if (rule && !codeOk()) {
+      ctx.globalAlpha = 1;
+      drawBitmapText(ctx, font, pack.env.tint, CODE_RULE,
+                     Math.round(rule.label.rect[0]), rule.label.rect[1] + 26,
+                     [0.85, 0.5, 0.35]);
     }
     ctx.globalAlpha = 1;
   }
@@ -617,7 +750,9 @@ export function createMultiplayScreen({
       // The JOIN button only — the rest of `menu/InternetNavigation` is
       // REFRESH, STOP and the four filter and favourite buttons, none of
       // which this site answers for (the lobby refreshes itself).
-      paintPage('internetNav', table, el => el.rect[1] < FOOTER_Y);
+      // JOIN goes with the rows. With none — an empty lobby, or a room
+      // server that is not answering — there is nothing for it to do.
+      if (sorted().length) paintPage('internetNav', table, el => el.rect[1] < FOOTER_Y);
     }
     strip?.paint(ctx);
     ctx.globalAlpha = 1;
@@ -655,6 +790,8 @@ export function createMultiplayScreen({
         return { kind: 'button', action: 'create-scroll',
                  by: el.texture.includes('upp') ? -1 : 1, rect: el.rect };
       }
+      const name = settingRow(ROOM_SETTINGS[0]);
+      if (name && inRect(name.field.rect, x, y)) return { kind: 'create-name' };
       const go = startButton();
       if (go && inRect(go.rect, x, y)) {
         return { kind: 'button', action: 'create-go', rect: go.rect };
@@ -680,7 +817,9 @@ export function createMultiplayScreen({
       }
     }
     const go = joinButton();
-    if (go && inRect(go.rect, x, y)) return { kind: 'button', action: 'join', rect: go.rect };
+    if (go && sorted().length && inRect(go.rect, x, y)) {
+      return { kind: 'button', action: 'join', rect: go.rect };
+    }
     return null;
   }
 
@@ -709,16 +848,22 @@ export function createMultiplayScreen({
     const hit = hitTest(x, y);
     if (!hit) {
       // Outside everything, with the dialog up, is the way back out of it.
-      if (state.create) { state.create = null; paintSoon(); }
+      if (state.create) closeCreate();
       return;
     }
-    if (hit.kind === 'create-level') pickCreateLevel(hit.index);
+    // A click anywhere in the dialog but the field takes the keyboard off
+    // it, the way clicking away from a field does everywhere else.
+    if (state.create && hit.kind !== 'create-name') state.create.editing = false;
+    if (hit.kind === 'create-name') {
+      state.create.editing = true;
+      paintSoon();
+    } else if (hit.kind === 'create-level') pickCreateLevel(hit.index);
     else if (hit.action === 'create-scroll') {
       const max = Math.max(0, levels.length - listCapacity(levelsBox()));
       state.create.scroll = Math.min(max, Math.max(0, state.create.scroll + hit.by));
       paintSoon();
     } else if (hit.action === 'create-go') createRoom();
-    else if (hit.kind === 'modal') { /* the dialog swallows it */ }
+    else if (hit.kind === 'modal') { paintSoon(); }
     else if (hit.action === 'nav') strip.click(x, y);
     else if (hit.kind === 'row') { state.index = hit.index; paintSoon(); }
     else if (hit.kind === 'sort') {
@@ -746,7 +891,10 @@ export function createMultiplayScreen({
   function keydown(event) {
     if (!layout) return false;
     if (state.create) {
-      if (event.key === 'Escape') { state.create = null; paintSoon(); return true; }
+      // The field has the keyboard while it is focused, so Escape leaves
+      // the field before it leaves the dialog.
+      if (typeInto(event)) return true;
+      if (event.key === 'Escape') { closeCreate(); return true; }
       if (event.key === 'ArrowDown') { pickCreateLevel(state.create.index + 1); return true; }
       if (event.key === 'ArrowUp') { pickCreateLevel(state.create.index - 1); return true; }
       if (event.key === 'Enter') { createRoom(); return true; }
@@ -778,7 +926,10 @@ export function createMultiplayScreen({
     stop,
     select,
     openCreate,
+    closeCreate,
     createRoom,
+    get online() { return online(); },
+    get codeOk() { return codeOk(); },
     join: () => join(sorted()[state.index]),
     setName(name) { state.name = name || 'Player'; },
     get state() { return state; },

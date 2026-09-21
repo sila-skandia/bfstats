@@ -456,6 +456,9 @@ class MenuFlattener(Flattener):
         if cls == "BfNavigationButtonNode":
             self.emit_nav_button(node, ox, oy, color, when)
             return ox, oy, color, when
+        if cls in ("BfEditNode", "BfEditNodeInt"):
+            self.emit_edit(node, rect, color, when)
+            return ox, oy, color, when
         return super().extend(node, siblings, ox, oy, rect, color, when)
 
     def coord(self, value) -> float:
@@ -518,6 +521,29 @@ class MenuFlattener(Flattener):
                   pressed=texture_key(node["Clicked picture"]),
                   calls=action_calls(node["Action"]),
                   sets=action_sets(node["Action"]))
+
+    def emit_edit(self, node, rect, color, when) -> None:
+        """A typed field. Like `BfNewListBoxNode` it has no rect of its own
+        and fills the transform it sits in, which is the recessed well the
+        two quads beside its label draw.
+
+        `BfEditNodeInt` is the same node with an int behind it and a range:
+        the engine clamps to `Min value` / `Max value`, with -1 meaning no
+        limit. Both carry the variable the text is read from and written
+        back to, which is how a screen knows what the field *is*."""
+        source = node["String"] if node.cls == "BfEditNode" else node["Int"]
+        el = self.leaf(
+            "edit", rect, color, when,
+            var=data_name(source) or "",
+            font=font_id(node["Font"]),
+            focus=bool(node["Focus"]),
+        )
+        if node.cls == "BfEditNode":
+            el["maxChars"] = node["Max characters"]
+        else:
+            el["int"] = True
+            el["min"] = node["Min value (-1 = no limit)"]
+            el["max"] = node["Max value (-1 = no limit)"]
 
     def emit_hit(self, node, siblings, rect, when) -> None:
         """The base records a `Kit/MouseOver/*` flag and a label key. These
