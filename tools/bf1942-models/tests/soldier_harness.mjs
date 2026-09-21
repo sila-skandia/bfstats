@@ -136,7 +136,16 @@ const lowKerb = box(13, 0, -20, 15, 0.30, 0, 80);
 const highKerb = box(16, 0, -20, 18, 0.80, 0, 80);
 const beam = box(12, 1.40, -34, 20, 1.60, -30, 80);
 const platform = box(12, 0, -46, 18, 4.0, -40, 92);
-const root = group([terrain, wall, lowKerb, highKerb, beam, platform]);
+// A ship's own two decks, well clear of the terrain so nothing here is the
+// world's ground: a hold floor at y 8, a deck over it at y 9.6..9.8, and its
+// weather deck at 12.2..12.4. A spawn authored in the hold has 1.6 m of
+// headroom -- no room to stand -- and `settle`'s upward escape is what puts him
+// on the deck instead. A spawn on the deck itself has 2.4 m and stays.
+const hold = box(-20, 7.8, -20, -12, 8.0, -12, 92);
+const tween = box(-20, 9.6, -20, -12, 9.8, -12, 92);
+const weather = box(-20, 12.2, -20, -12, 12.4, -12, 92);
+const root = group([terrain, wall, lowKerb, highKerb, beam, platform,
+                    hold, tween, weather]);
 const statics = buildCollisionIndex(root, { ownerRoots: root.children, cellSize: 8 });
 const collider = new WorldCollider({ heightfield: field, statics, waterLevel: -50 });
 
@@ -532,6 +541,25 @@ results.frameRateRamp = [rampAtFrameRate(30), rampAtFrameRate(60),
   walk(clear, { crouch: true }, 60);
   walk(clear, {}, 60);
   results.headroomClear = { stance: clear.stance, eyeY: clear.eyeY };
+}
+
+// --- `settle`'s upward escape ------------------------------------------------
+//
+// `BFSpawnPoint::spawn` (0x08163d70) writes the authored position and nothing
+// else; a point authored inside a hull is saved by the ordinary contact push,
+// which a downward probe cannot do. The gate is "the floor is a hull's, not the
+// world's", because the engine's push goes the shortest way out and for a man
+// standing on the ground under a beam that is downward.
+{
+  // In the hold, 1.6 m under the tween deck: lifted onto it (9.8).
+  results.escapeFromHold = fresh(-16, 8.1, -16).y;
+  // Already on the tween deck, 2.4 m under the weather deck: left alone.
+  results.escapeStaysOnDeck = fresh(-16, 9.9, -16).y;
+  // On the weather deck with open sky: left alone.
+  results.escapeOpenDeck = fresh(-16, 12.5, -16).y;
+  // On the ground under the 1.40 m beam -- no room to stand, but the floor is
+  // the world's, so he stays under it and the stance system refuses the stand.
+  results.escapeUnderBeam = fresh(16, 0.2, -32).y;
 }
 
 // --- view bob --------------------------------------------------------------

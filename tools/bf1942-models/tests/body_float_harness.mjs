@@ -13,7 +13,7 @@ import {
   GRAVITY, BUOYANCY_DIVISOR, LIFT_NORMALISER, EQUILIBRIUM_SUM,
   DAMPING_AREA_SCALE, DAMPING_LERP_TOP, SUBMERSION_FLOOR,
   submersion, floatLift, floatAcceleration, floatSupport, equilibriumRootY,
-  sinkRate, floatNodesOf,
+  sinkRate, floatNodesOf, localiseFloats, FloatingHull,
 } from './body-float.js';
 
 const out = { constants: {
@@ -193,5 +193,58 @@ out.floatNodes = floatNodesOf(tree).map(f => ({
 }));
 out.floatNodesEmpty = floatNodesOf(
   fakeNode('Willy', 'PlayerControlObject', { mass: 1200 }, [0, 0, 0])).length;
+
+
+// --- (f) a hull going down ----------------------------------------------------
+//
+// A Fletcher, eight `Fletcher_Floater` at relY 7.5 with `sinkingSpeedMod 1`,
+// hull box 18.73 x 12 x 133.86, bounding radius 70 -- and `arm()`, which is
+// `FloatingBundle::handleMessage`'s `0x14` branch.
+{
+  const world = [];
+  for (const [x, z] of [[-1.999, -50], [2, -50], [-4.999, -17], [5, -17],
+                        [-4.999, 17], [5, 17], [-1.999, 50], [2, 50]]) {
+    world.push({ hullHeight: 20, floatMinLift: 2, floatMaxLift: 2,
+                 sinkingSpeedMod: 1, offsetX: x, offsetY: 7.5, offsetZ: z });
+  }
+  const identity = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  const make = () => new FloatingHull({
+    floats: localiseFloats(world, identity),
+    mass: 2500000, drag: 3, box: [18.73, 12, 133.86], boundingRadius: 70,
+    waterLevel: WATER, position: [0, 20.225, 0], axes: identity,
+  });
+
+  // Undamaged: she floats, ten seconds of it.
+  const afloat = make();
+  for (let i = 0; i < 300; i++) afloat.step();
+  out.hullAfloat = { y: afloat.body.pos[1], armed: afloat.armed,
+                     offsets: afloat.floats.map(f => f.sinkOffset) };
+
+  // Armed, and then a minute of it.
+  const sinking = make();
+  const armedTwice = [sinking.arm(), sinking.arm()];
+  out.hullRates = sinking.floats.map(f => ({ z: f.local[2], rate: f.sinkRate }));
+  const trace = [];
+  for (let i = 1; i <= 1800; i++) {
+    sinking.step();
+    if (i % 300 === 0) {
+      trace.push({ tick: i, y: +sinking.body.pos[1].toFixed(3),
+                   // The hull's own forward axis: its y component IS the trim.
+                   noseY: +sinking.body.axes[2][1].toFixed(5) });
+    }
+  }
+  out.hullSinking = { armedTwice, trace,
+                      y: sinking.body.pos[1], awake: !sinking.body.sleeping };
+
+  // `sinkingSpeedMod 0` on every node -- a raft. Armed, and it does not move.
+  const raft = new FloatingHull({
+    floats: localiseFloats(world.map(f => ({ ...f, sinkingSpeedMod: 0 })), identity),
+    mass: 2500000, drag: 3, box: [18.73, 12, 133.86], boundingRadius: 70,
+    waterLevel: WATER, position: [0, 20.225, 0], axes: identity,
+  });
+  raft.arm();
+  for (let i = 0; i < 1800; i++) raft.step();
+  out.raft = { y: raft.body.pos[1], rates: raft.floats.map(f => f.sinkRate) };
+}
 
 console.log(JSON.stringify(out));
