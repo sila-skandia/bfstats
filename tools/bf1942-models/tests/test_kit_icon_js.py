@@ -131,5 +131,40 @@ class ResolveKitIconTests(unittest.TestCase):
         self.assertIsNone(self.results["resolve"]["noIconUndefined"])
 
 
+class KitRowLabelTests(unittest.TestCase):
+    """The deploy screen's kit row label: the kit's own `setKitName`,
+    resolved through the mod chain's lexicon at extract time, with the
+    layout's own string and the page's class word as fallbacks."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+
+    def test_the_resolved_kit_name_wins(self) -> None:
+        self.assertEqual("ANTI-TANK", self.results["rowLabel"]["resolved"])
+
+    def test_a_mods_lexicon_repointing_a_vanilla_key_wins(self) -> None:
+        # EoD's lexicon points RESPAWN_SCOUT at "Sniper": the row says what
+        # THIS mod calls the kit, not the menu's class word.
+        self.assertEqual("Sniper", self.results["rowLabel"]["modRepoint"])
+
+    def test_a_null_text_falls_back_to_the_layout_string(self) -> None:
+        self.assertEqual("JET PACK", self.results["rowLabel"]["nullText"])
+
+    def test_an_absent_kit_name_falls_back_to_the_layout_string(self) -> None:
+        self.assertEqual("SCOUT", self.results["rowLabel"]["noKitName"])
+
+    def test_an_empty_text_falls_back_to_the_layout_string(self) -> None:
+        self.assertEqual("ANTI-TANK", self.results["rowLabel"]["emptyText"])
+
+    def test_without_a_layout_the_class_word_is_the_last_resort(self) -> None:
+        self.assertEqual("Anti-tank", self.results["rowLabel"]["classFallback"])
+
+    def test_without_anything_the_label_is_empty_not_a_crash(self) -> None:
+        self.assertEqual("", self.results["rowLabel"]["nothing"])
+
+
 if __name__ == "__main__":
     unittest.main()

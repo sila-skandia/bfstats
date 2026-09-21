@@ -62,3 +62,30 @@ export function resolveKitIcon(iconPath, has) {
   }
   return null;
 }
+
+/**
+ * The display string for one of the deploy screen's five kit rows.
+ *
+ * The engine labels the row from the kit's own `ObjectTemplate.setKitName`
+ * -- a lexicon key (`RESPAWN_AT` for vanilla's anti-tank kit,
+ * `RESPAWN_RIFLEMAN` for Eve of Destruction's) -- resolved through the mod
+ * chain's lexicon, which `extract_loadouts.py` does at extract time and
+ * files as `loadouts.kits[kit].kitName.text` beside the raw `key`. A mod's
+ * lexicon can re-point even a vanilla key (EoD's points `RESPAWN_SCOUT` at
+ * "Sniper"), so the row says what the level's kit for that row is called in
+ * THIS mod, not what the menu's own strings call the class.
+ *
+ * The fallbacks are for files that predate the field: a `kitName` whose
+ * `text` is null (a key the lexicon lacked at extract time) and a `kitName`
+ * that is absent entirely (an older `loadouts.json`) both fall back to
+ * `layoutText` -- the spawn layout's own string for that row, already
+ * resolved from the menu's lexicon at extract time -- and only a missing
+ * layout falls through to `classLabel`, the page's own class word.
+ */
+export function kitRowLabel(kitName, layoutText, classLabel) {
+  if (kitName && typeof kitName.text === 'string' && kitName.text) {
+    return kitName.text;
+  }
+  if (typeof layoutText === 'string' && layoutText) return layoutText;
+  return classLabel || '';
+}
