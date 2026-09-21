@@ -866,7 +866,7 @@ import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
 import { GunFire } from './gunfire.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
-import { buildHeightfield, buildCollisionIndex, buildDrivableTops, WorldCollider } from './collision.js';
+import { buildHeightfield, buildCollisionIndex, buildDrivableMask, WorldCollider } from './collision.js';
 import { FOV_DEG as FOOT_FOV, GRAVITY } from './soldier.js';
 import { DeviationModel } from './deviation.js';
 import { wantViewmodelClip } from './viewmodel-anim.js';
@@ -1193,6 +1193,12 @@ function uiFocused() {
  *
  * The raycast stays as the fallback for a level whose lattice would not
  * rebuild (a mod with an irregular terrain export); `collider` is null then.
+ *
+ * `fromY` is the driven-vehicle opt-in and nothing else passes it: with a
+ * reference height the answer also includes a drivable deck at or below it (a
+ * bridge span, a repair bay's apron), so a tank's wheels ride the deck while a
+ * soldier, a plane's ground check, a boat and the cameras keep seeing terrain
+ * and sea alone. See `WorldCollider.surfaceHeight`.
  */
 const groundRay = new THREE.Raycaster();
 const DOWN = new THREE.Vector3(0, -1, 0);
@@ -1201,10 +1207,10 @@ let terrainMeshes = [];
 const terrainBBox = new THREE.Box3();
 let collider = null;
 
-function groundHeight(x, z) {
+function groundHeight(x, z, fromY) {
   const sea = extras?.waterLevel ?? -Infinity;
   if (collider) {
-    const h = collider.surfaceHeight(x, z);
+    const h = collider.surfaceHeight(x, z, fromY);
     if (Number.isFinite(h)) return h;
   }
   if (!terrainMeshes.length) return sea;
@@ -1259,16 +1265,33 @@ function buildMaterialFrictionTable(tables) {
 
 const DEFAULT_SURFACE_FRICTION = 1.0;
 
-function surfaceFriction(x, z) {
+function surfaceFriction(x, z, fromY) {
   const table = materialFrictionById;
   if (!table) return DEFAULT_SURFACE_FRICTION;
   const sea = extras?.waterLevel;
-  let id = collider?.heightfield?.material(x, z);
-  if (Number.isFinite(sea) && groundHeight(x, z) <= sea) id = 1;
+  // A wheel on a drivable deck spends the DECK's material, not the riverbed's
+  // under it. `fromY` is the same vehicle opt-in `groundHeight` takes, so this
+  // costs one extra deck ray per wheel and only while actually on a deck — and
+  // without it a tank crossing a bridge over water was gripping at water's 0.1
+  // because the surface it was standing on read as being at the sea line.
+  const deck = fromY !== undefined ? collider?.deckSurface?.(x, z, fromY) : null;
+  let id = deck ? deck.material : collider?.heightfield?.material(x, z);
+  if (!deck && Number.isFinite(sea) && groundHeight(x, z, fromY) <= sea) id = 1;
   if (!Number.isInteger(id) || id < 0 || id >= table.length) {
     return DEFAULT_SURFACE_FRICTION;
   }
   return table[id];
+}
+
+/**
+ * The contact normal of a drivable deck under (x, z), when a deck is what the
+ * wheel there is standing on: `ground.js` takes the deck triangle's own normal
+ * rather than a finite difference of the height, so a tank pitches up the repair
+ * bay's incline and levels on its pad. False elsewhere, and the vehicle then
+ * uses the heightfield gradient it has always used.
+ */
+function deckNormal(x, z, fromY, out) {
+  return collider?.deckNormal ? collider.deckNormal(x, z, fromY, out) : false;
 }
 
 function collectTerrain(root) {
@@ -5521,8 +5544,15 @@ function bodyAwareCollider() {
   const world = collider;
   return Object.create(world, {
     sweepSphere: {
-      value: (ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner = -1) =>
-        world.sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, true),
+      // The drivable-deck gate is forwarded, not swallowed: this wrapper IS the
+      // collider a driven vehicle is handed, so dropping the last two arguments
+      // would leave a tank welded to every bridge deck it touched.
+      // `skipBodies` stays true whatever the caller says — that is this
+      // wrapper's whole job — but the gate is passed straight through.
+      value: (ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner = -1,
+              _skipBodies = true, deckStepTop = -Infinity, deckFloorCos = 2) =>
+        world.sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner,
+                          true, deckStepTop, deckFloorCos),
     },
   });
 }
@@ -6199,13 +6229,13 @@ function buildCollider(root) {
   registerDamageables(ownerRoots);
   // Raised decks a ground vehicle drives on top of (bridges, repair/reload
   // bays). The level's heightfield is the ground under them; their deck tops
-  // are static collision meshes the hull sweep would otherwise stop a tank on.
-  // Build once per level, on the collision grid, and hand `surfaceHeight` the
-  // deck so the wheels ride it across.
-  const drivableTops = buildDrivableTops(root);
+  // are static collision meshes. This is only the broadphase gate — the ride
+  // surface itself comes out of `WorldCollider.deckHeight`, a ray against the
+  // deck's own triangles, so an incline is an incline and not a raster step.
+  const drivableMask = buildDrivableMask(root);
   collider = (heightfield || statics || Number.isFinite(extras?.waterLevel))
     ? new WorldCollider({ heightfield, statics, waterLevel: extras?.waterLevel,
-                          drivableTops })
+                          drivableMask })
     : null;
   world.setCollider(collider);
   world.damageTables = damageTables;
@@ -6370,7 +6400,8 @@ function setPilot(on, node = null, seatId = null) {
         prepareCockpit: root => { unlitCockpit(root); return warmSubtree(root); },
       };
       const vehicle = occupancy.ensureDrive(currentRoot,
-        { groundHeight, surfaceFriction, collider: bodyAwareCollider(), ...cockpit });
+        { groundHeight, surfaceFriction, deckNormal, collider: bodyAwareCollider(),
+          ...cockpit });
       if (kind === 'air') {
         aircraft = vehicle;
         aircraft.groundHeight = groundHeight;
@@ -13265,6 +13296,13 @@ if (params.has('shots')) {
       position: { ...car.state.position },
       velocity: { ...car.state.velocity },
       grounded: car.state.grounded,
+      // Attitude, in degrees: a deck trace has to see the hull pitch up an
+      // incline and level off on the pad, and reading that off the orientation
+      // quaternion outside the page is needless work.
+      pitch: THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1,
+        new THREE.Vector3(0, 0, -1).applyQuaternion(car.state.orientation).y)))),
+      roll: THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1,
+        new THREE.Vector3(1, 0, 0).applyQuaternion(car.state.orientation).y)))),
       gear: car.gear ?? null,
       revs: car.revs ?? null,
       wheels: car.wheels.map(w => ({
@@ -13289,8 +13327,42 @@ if (params.has('shots')) {
       return { ...car.state.position };
     },
     // Where the level's heightfield and material map put the ground under a
-    // world (x, z): the two functions the drivetrain itself is handed.
-    ground: (x, z) => ({ height: groundHeight(x, z), friction: surfaceFriction(x, z) }),
+    // world (x, z): the two functions the drivetrain itself is handed. `fromY`
+    // is the drivable-deck reference the wheels pass (their axle plus the step
+    // they can mount), so a trace can read the deck a vehicle is riding and the
+    // terrain under it separately.
+    ground: (x, z, fromY) => ({
+      height: groundHeight(x, z, fromY),
+      friction: surfaceFriction(x, z, fromY),
+      deck: collider?.deckHeight ? collider.deckHeight(x, z, fromY) : null,
+    }),
+    // What the hull sweep meets on a move, and the triangle it meets — the
+    // question "why did the tank stop here" has no other answer from outside
+    // the page, and a deck that reads as a wall is exactly that question.
+    // `deckStepTop`/`deckFloorCos` are the gate; omit them for the ungated view.
+    sweep: (dx, dy, dz, dist, deckStepTop = -Infinity, deckFloorCos = 2) => {
+      if (!collider) return null;
+      const len = Math.hypot(dx, dy, dz) || 1;
+      const s = car.state.position;
+      const hit = collider.sweepSphere(s.x, s.y, s.z, dx / len, dy / len, dz / len,
+        dist, car._hullRadius, car._collisionOwner, true, deckStepTop, deckFloorCos);
+      if (!hit) return null;
+      const tris = collider.statics?.tris;
+      const j = hit.triangle * 9;
+      return {
+        t: hit.t, owner: hit.owner, triangle: hit.triangle,
+        drivable: collider.statics?.drivable?.[hit.triangle] === 1,
+        name: collider.statics?.ownerNodes?.[hit.owner]?.name ?? null,
+        point: [hit.px, hit.py, hit.pz],
+        normal: [hit.nx, hit.ny, hit.nz],
+        vertices: tris && hit.triangle >= 0
+          ? [[tris[j], tris[j + 1], tris[j + 2]],
+             [tris[j + 3], tris[j + 4], tris[j + 5]],
+             [tris[j + 6], tris[j + 7], tris[j + 8]]]
+          : null,
+        radius: car._hullRadius,
+      };
+    },
   } : null);
   // HP-15, for a headless check: what the occupied hull's damage state is
   // letting through this frame, and what the aim rig is actually scaling by.
