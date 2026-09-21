@@ -469,6 +469,38 @@ untested.
 Nobody is building bots this wave. W5-D produces the document that makes it
 possible and an honest price for it.
 
+### Wave 5 addendum: W5-E, the descent and the camera (2026-09-21)
+
+Two things the owner reported after playing the merged parachute: the canopy
+descends at about half the real game's rate, and C should take the view outside
+a falling soldier. **Reviewed MERGE WITH FIXES; the branch is
+`worktree-agent-ae5a14457b88ae4b3` (`670064d`, `26a6a45`, `a4e6f7d`,
+`c95d2d1`) and is NOT yet merged** — the main checkout had another session's
+uncommitted work in `map.html` at merge time. The engine findings are already
+in `ledger.md` (`1cb95ff`) so nothing here is lost if the branch goes stale.
+
+**The owner's "half speed" was the thread that unravelled it.** The lead's
+hypothesis — that the glide term is input-gated — is **dead**: a third and
+fourth independent read found no conditional between the multiply and the call
+and no input channel in the operand's provenance. The real answer is PARA-10:
+`BFSoldier::handleCollision` hands the collision handler a **zero speed vector**
+while the parachuting bit is set, so a canopy landing is free at any speed and
+PARA-6's lower bound rested on a floor the engine never applies. Radius back to
+**1.8**, descent **3.126 → 6.030 m/s** (1.93x), landing still free, a no-chute
+drop still lethal.
+
+**What is left open, for the next phase:**
+
+| Item | Where it stands |
+|---|---|
+| **A third-person soldier and a canopy mesh** | The blocker for the camera the owner asked for. `viewer/soldier-camera.js` and the `chase-camera.js` placement law are built and correct, but driving them shows **a featureless grey field** at altitude and a conspicuous empty hole in frame lower down, because nothing is drawn there. The external views are therefore **gated behind `?soldier3p=1`, off by default** — showing a grey void is worse than the key doing nothing. `__footView('chase')` already puts the camera where it belongs, so **the model is the only missing half**. Note the extracted soldier glbs carry **zero animations**; the 18 `3PParachute*.baf` clips exist (Open 41 frames, Glide 12, Ground 6, Fall 12) but nothing exports a 3P clip — that is a pipeline feature, not viewer work |
+| **C on foot is a no-op** | CAM-1: the engine authorises one view mode for a soldier and `BFSoldier::nextCamera` is an empty function, so this is parity. The owner will press C on foot and get nothing; if that is unwanted it is a deliberate departure to be made and labelled, not a bug |
+| **PARA-6 is still not closed** | The composite-radius chain contradicts itself: the soldier's own geometry radius is exactly 1.0, `getBoundingRadius` returns 0 when `flags & 1`, and CAM-3 proves `setIsParachuting` **clears** that bit on open — giving ~1.0 stowed and ~13.79 open, neither flyable. One reading in that chain is wrong. **This is the thread to pull**; the radius is currently set by play, not by the engine |
+| **PARA-9, free-fall run-off** | 129.8 m/s horizontal at t = 2.0 s, the reading confirmed four times, no exemption found and no max-speed member anywhere in `ref2::world`. PARA-10 removes the "but fall damage exists" objection without resolving it |
+| **The client's channel-26 handler** | CAM-2: the server cannot settle what C does to a parachutist. Best lead is that W4-C put the client's `Camera::getTransformation` at `0x005659b0`, so its `setViewMode` sibling is nearby and its callers are the toggle |
+| **`exitVehicle`'s bail branch has still never run end-to-end headlessly** | Seating needs pointer lock; `__bailOut` remains the only headless entry. Carried from W5-B |
+| **The parachute does not replicate** | Confirmed, not merely unverified: `netcode.js` encodes bits 4/20/21/22 only and `deploy`/`dead` are not in the codec. **Bit 22 is already spent on jump as a documented departure, and bit 22 is precisely `c_PIMenuSelect9`, the engine's own ripcord** — so whoever wires this must move jump first |
+
 ### Not yet assigned
 
 Hull collision between ground vehicles and the world has an engine spec
