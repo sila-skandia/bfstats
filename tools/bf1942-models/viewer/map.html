@@ -962,6 +962,7 @@ import { loadHudPaths } from './hud-pack.js';
 import { createSkirmishScreen } from './play/skirmish.js';
 import { kitIconCandidates, kitRowLabel } from './kit-icon.js';
 import { cpNation as cpNationRule, teamNation as teamNationRule } from './nation.js';
+import { BfMap, minimapWindow, rotateAbout, coverRect } from './bfmap.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -2274,6 +2275,13 @@ addEventListener('keydown', e => {
     } else toggleFullMap();
     return;
   }
+  // N is `c_PIZoomMap`: it steps the minimap's three-level zoom counter
+  // (bfmap.js). Behind the same gates as M — the console, the Escape menu and
+  // a focused form control have all returned above.
+  if (e.code === 'KeyN' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    bfmap.zoomIn();
+    return;
+  }
   // Seated in anything, the same row switches seats instead (SEAT-23/24,
   // verify-r5.md's `c_PIMenuSelect1..9`) — checked after the deploy screen's
   // own use of these keys above, since the two are never active together.
@@ -2491,6 +2499,21 @@ for (const [method, profile] of Object.entries(MOUSE_SENSITIVITY_WORDS)) {
       : mouseInput.sensitivityFor(profile)),
   });
 }
+
+/** `game.setStaticMinimap` is the engine's own word — every stock
+ *  `GeneralOptions.con` calls it with 1, which is why the widget is north-up
+ *  by default — and it sets `BfMap`'s static byte (+0x58, ledger MMAP-2). 0
+ *  lets the closed minimap turn with the player; read back with no argument.
+ *  `bfmap` is declared further down this module, so it is only touched when
+ *  the word runs, never at registration. */
+gameConsole.register({
+  object: 'game', method: 'setStaticMinimap',
+  minArgs: 0, maxArgs: 1, argTypes: ['int'], returns: 'int',
+  run: args => {
+    if (args.length) bfmap.setStatic(args[0] !== '0' && args[0].toLowerCase() !== 'false');
+    return bfmap.isStatic ? 1 : 0;
+  },
+});
 
 function setConsoleOpen(on) {
   if (!gameConsole.setOpen(on)) return;
@@ -10285,10 +10308,13 @@ function cssWidthOf(canvas) {
 const fullmapName = document.getElementById('fullmap-name');
 const fullmapMeta = document.getElementById('fullmap-meta');
 
-// How much of the map the HUD window shows. The engine's zoom steps were not
-// recovered from the binary, so this is a viewer choice: a quarter of the
-// combat area keeps a 2 km level readable without losing the grid letters.
-const MINIMAP_SPAN = 0.25;
+// How much of the map the HUD window shows, and how it turns. The engine's
+// `BfMap` law (bfmap.js): three zoom levels stepped by `N`, the closed widget's
+// width covering 2.3^-(level+0.5) of the whole map — 0.659 / 0.287 / 0.125 —
+// centred on the player with no stop at the map's edge, and the displayed
+// rotation following the player's heading unless the map is static
+// (`game.setStaticMinimap 1`, the shipped default, north-up).
+const bfmap = new BfMap();
 // Sprite scale in CSS pixels, multiplied by the canvas's own backing ratio so
 // a flag is the same size on the 188 px HUD widget as on the fullscreen map
 // and stays put on a hidpi display.
@@ -10704,7 +10730,27 @@ function drawArt(ctx, size, u0, v0, span, opts) {
   const sw = span * mapArt.width;
   const sh = span * mapArt.height;
   ctx.globalAlpha = opts.dim ? SPAWN_MAP_ALPHA : opts.translucent ? 0.85 : 1;
-  ctx.drawImage(mapArt, sx, sy, sw, sh, 0, 0, size, size);
+  if (opts.rot || u0 < 0 || v0 < 0 || u0 + span > 1 || v0 + span > 1) {
+    // The HUD minimap: the window is centred on the player, so it can hang
+    // over the art's edge, and the rotating mode turns it about the surface's
+    // centre. The source is grown to cover the turned square's corners and cut
+    // to the art; what lies past the art is the backdrop.
+    const cover = coverRect(u0, v0, span, size, opts.rot || 0);
+    if (cover) {
+      const mid = size / 2;
+      ctx.save();
+      ctx.translate(mid, mid);
+      ctx.rotate(opts.rot || 0);
+      ctx.translate(-mid, -mid);
+      ctx.drawImage(mapArt,
+        cover.src.u * mapArt.width, cover.src.v * mapArt.height,
+        cover.src.w * mapArt.width, cover.src.h * mapArt.height,
+        cover.dst.x, cover.dst.y, cover.dst.w, cover.dst.h);
+      ctx.restore();
+    }
+  } else {
+    ctx.drawImage(mapArt, sx, sy, sw, sh, 0, 0, size, size);
+  }
   ctx.globalAlpha = 1;
 }
 
@@ -10734,7 +10780,7 @@ function drawControlPoint(ctx, cp, px, py, sc) {
 const vehiclePos = new THREE.Vector3();
 const vehicleQuat = new THREE.Quaternion();
 const vehicleFwd = new THREE.Vector3();
-function drawVehicles(ctx, toPx, sc) {
+function drawVehicles(ctx, toPx, sc, rot = 0) {
   if (!spawnersRoot) return;
   for (const vehicle of spawnersRoot.children) {
     vehicle.getWorldPosition(vehiclePos);
@@ -10747,7 +10793,9 @@ function drawVehicles(ctx, toPx, sc) {
     // vehicle; same forward axis and the same screen angle as the player.
     vehicle.getWorldQuaternion(vehicleQuat);
     vehicleFwd.set(0, 0, -1).applyQuaternion(vehicleQuat);
-    const angle = Math.atan2(vehicleFwd.x, -vehicleFwd.z);
+    // `rot` is the map's own turn (the rotating minimap): a heading drawn on a
+    // turned map turns with it.
+    const angle = Math.atan2(vehicleFwd.x, -vehicleFwd.z) + rot;
     if (!icon || !drawSprite(ctx, icon, q.x, q.y, sc, { angle, alpha: 0.9 })) {
       drawSprite(ctx, 'icon_vehicledot_empty', q.x, q.y, sc);
     }
@@ -10772,9 +10820,11 @@ function nationFromVehicles(team) {
   return has('rus') ? 'rus' : has('brit') ? 'brit' : null;
 }
 
-function drawPlayer(ctx, px, py, sc) {
+function drawPlayer(ctx, px, py, sc, rot = 0) {
+  // On the rotating minimap `rot` is minus the heading, so the arrow reads
+  // straight up and the world turns under it.
   if (drawSprite(ctx, 'minimap_icon_ring_32x32', px, py, sc * 0.8,
-                 { angle: cameraHeading() })) return;
+                 { angle: cameraHeading() + rot })) return;
   ctx.fillStyle = '#76d65c';
   ctx.beginPath();
   ctx.arc(px, py, 4 * sc, 0, Math.PI * 2);
@@ -10852,14 +10902,18 @@ function paintMap(canvas, u0, v0, span, opts) {
   drawArt(ctx, size, u0, v0, span, opts);
   if (!extras.minimap?.worldToImage) return ratio;
 
-  const toPx = p => ({
-    x: ((p.u - u0) / span) * size,
-    y: ((p.v - v0) / span) * size,
-  });
+  // Every marker POSITION turns with the art about the surface's centre; the
+  // flag plates themselves stay upright (a viewer choice — what the engine
+  // does to a flag icon on a turned map was not read), and only the icons that
+  // show a heading add the turn to their own angle.
+  const rot = opts.rot || 0;
+  const mid = size / 2;
+  const toPx = p => rotateAbout(((p.u - u0) / span) * size,
+                                ((p.v - v0) / span) * size, mid, rot);
   const sc = MARKER_SCALE * ratio * (opts.scale || 1);
   ctx.imageSmoothingEnabled = false;
 
-  drawVehicles(ctx, toPx, sc);
+  drawVehicles(ctx, toPx, sc, rot);
   for (const cp of extras.controlPoints || []) {
     const p = projectToArt(cp.position[0], cp.position[2]);
     if (!p) continue;
@@ -10872,7 +10926,7 @@ function paintMap(canvas, u0, v0, span, opts) {
     const here = projectToArt(camera.position.x, camera.position.z);
     if (here) {
       const q = toPx(here);
-      drawPlayer(ctx, q.x, q.y, sc);
+      drawPlayer(ctx, q.x, q.y, sc, rot);
     }
   }
   ctx.imageSmoothingEnabled = true;
@@ -10966,14 +11020,20 @@ function drawMinimap() {
   if (minimapBox.hidden) return;
   const here = projectToArt(camera.position.x, camera.position.z);
   if (!here) return;
-  if (!mapSurfaceStale(minimapCanvas, mapSurfaceKey(minimapCanvas, here, MINIMAP_SPAN))) return;
-  // North-up with a rotating arrow. That is the game's own shipped default —
-  // every stock profile sets `game.setStaticMinimap 1` — and it keeps the
-  // baked-in grid letters upright.
-  const half = MINIMAP_SPAN / 2;
-  const u0 = Math.min(Math.max(here.u - half, 0), 1 - MINIMAP_SPAN);
-  const v0 = Math.min(Math.max(here.v - half, 0), 1 - MINIMAP_SPAN);
-  const ratio = paintMap(minimapCanvas, u0, v0, MINIMAP_SPAN, { translucent: true });
+  // The live span: `N` steps the level and `bfmap.update` eases toward it, so
+  // the span is part of what the surface shows and part of its key.
+  const span = bfmap.span();
+  const key = `${mapSurfaceKey(minimapCanvas, here, span)},`
+    + `${Math.round(span * 1e5)},${bfmap.isStatic ? 1 : 0}`;
+  if (!mapSurfaceStale(minimapCanvas, key)) return;
+  // North-up with a rotating arrow by default. That is the game's own shipped
+  // default — every stock profile sets `game.setStaticMinimap 1` — and it
+  // keeps the baked-in grid letters upright. `game.setStaticMinimap 0` turns
+  // the map under a fixed arrow instead: this widget is the closed map, z = 0,
+  // so the turn is the whole heading (the heading is already in the key).
+  const { u0, v0 } = minimapWindow(here, span);
+  const rot = bfmap.rotation(0, cameraHeading());
+  const ratio = paintMap(minimapCanvas, u0, v0, span, { translucent: true, rot });
   drawMinimapChrome(minimapCanvas.getContext('2d'), minimapCanvas.width, ratio);
 }
 
@@ -11153,7 +11213,10 @@ function applyDeployFrame() {
   fullmapFrame.style.width = `${w * s.sx}px`;
   fullmapFrame.style.height = `${h * s.sy}px`;
   fullmapFrame.style.opacity = deployZ.toFixed(3);
-  const theta = -(1 - deployZ) * cameraHeading();
+  // `bfmap.rotation` is that law with the static byte honoured: north-up all
+  // the way under the shipped `game.setStaticMinimap 1`, turned in with the
+  // camera under 0 (the profile the reference capture was recorded with).
+  const theta = bfmap.rotation(deployZ, cameraHeading());
   const cover = Math.abs(Math.cos(theta)) + Math.abs(Math.sin(theta));
   fullmapCanvas.style.transform = `rotate(${theta}rad) scale(${cover.toFixed(4)})`;
   // The threshold only arms on the way up: a close strips the chrome in the
@@ -12941,6 +13004,7 @@ function frame(dt) {
     renderer.autoClear = true;
   }
   deployAnimate(dt);
+  bfmap.update(dt);
   drawMinimap();
   drawFullMap();
   // Last, over everything: feed this frame's soldier-side variables, then
@@ -13604,6 +13668,9 @@ if (params.has('shots')) {
     if (on !== undefined) mapGate = !!on;
     return mapGate;
   };
+  // The minimap's zoom and rotation state (bfmap.js), so a headless check can
+  // step the level, settle the ease and read the span without a key event.
+  window.__bfmap = bfmap;
   // Which gameplay layer `?mode=` landed on, and what else the level ships —
   // enough for a headless check to prove the flags, spawns and vehicles it is
   // looking at belong to the mode it asked for.
