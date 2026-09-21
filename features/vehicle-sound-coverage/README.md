@@ -363,7 +363,36 @@ audible half of the sweep is measured by building the real `EngineAudio` from th
 shipped layer data on a bare page and tapping the listener, rather than by
 holding a trigger in `map.html`.
 
-Worth someone's attention separately: the same arithmetic means a **real**
-machine running below about 30 fps ends each frame with `group.firing` false, so
-a vehicle gun's *looping* patches (every MG) would stutter with the trigger held.
-Not the reported bug, and not touched here.
+The same arithmetic meant a **real** machine running below about 30 fps ended
+each frame with `group.firing` false, so a vehicle gun's *looping* patches (every
+MG) stuttered with the trigger held. **Fixed 2026-09-21**, in `world.js`
+`#consume`: the page's un-sequenced word is the frame's device state, so it is
+held for every tick of the `step()` it was fed for (the client's own law --
+`InputManager::update` 0x0049cff7 samples once for `nTicks`, and
+`mouse-input.js` divides the counts by `nTicks / 30` expecting each tick to
+apply the axis). A sequenced packet is still never replayed, and a step the
+page fed nothing for still idles. Every channel of the word is a level, so
+nothing in it needed consuming once; the jump press edge is derived inside
+`soldier.js`, which is why the old idle word also turned a held jump into a
+hop per frame. The room wire sends one word per tick run, for the same reason.
+
+Measured on Kursk, T-34 coax (`Coaxial_MG42`, 12 rps, two looping layers),
+trigger held for one simulated second through `__setSeatFire(false, true)` and
+`__renderOnce(w, h, dt)` -- the third argument is new, the frame time to
+simulate:
+
+| frame rate | before: frames `firing` / gate open / rounds | after |
+| --- | --- | --- |
+| 60 fps | 59 of 60 / 59 / 13 | 60 of 60 / 60 / 13 |
+| 30 fps | 30 of 30 / 30 / 13 | 30 of 30 / 30 / 13 |
+| 15 fps | **0 of 15 / 0 / 12** | 15 of 15 / 15 / 13 |
+| 10 fps | **0 of 10 / 0 / 10** | 10 of 10 / 10 / 13 |
+
+The throttle was dropped on the same ticks (a T-34 held on W for 2 s now
+reaches 9.44 / 9.46 / 9.46 m/s at 60 / 15 / 10 fps). On-foot fire was never
+affected: the page latches `guns.setFiring` itself once a frame and the world
+never touches a hand weapon's group (DP, 10 rounds a second at 60 and 15 fps
+alike). Note that a headless run has to spawn before `__enterOwner` -- the
+local player only joins the world at deploy, and a mount with no player is a
+silent no-op. Pinned by `tests/test_world_held_input.py`
+(`world_held_input_harness.mjs`).
