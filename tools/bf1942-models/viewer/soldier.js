@@ -678,13 +678,20 @@ export class Soldier {
       // the only term the drop height enters through, so `F` is what the
       // chute has to neutralise.
       //
-      // **Which engine call does it was not found** (`Armor+0x28`'s setter,
-      // `0x08174480`, has no caller that resolves to a falling soldier; the
-      // three virtual `+0xf8` sites reachable from `GameServer` are an
-      // `Objective` and a weapon, not an Armor). So the mechanism here is the
-      // viewer's: re-stamp the reference every tick the canopy is carrying
-      // you, which bills the touchdown for the last tick's descent and
-      // nothing else. Marked UNVERIFIED in the feature doc.
+      // The engine writes `Armor+0x28` inline at the tail of `Armor::update`
+      // (`0x081730b0`-`0x081730e7`): every tick the object is not in contact
+      // (`Armor+0x129 == 0`) it *raises* the field to the current `y`. It is a
+      // running maximum of altitude, so the engine does not neutralise `F` for
+      // a parachutist either — `F` really is the whole 120 m.
+      //
+      // The engine's own answer is the drag radius: at `r >= 2.354` the canopy
+      // touches down at `|v| <= 8.0` and `handleCollisionLandOrWater` returns
+      // before it reaches `Q^2`. `PARACHUTE_DRAG_RADIUS` is 1.8, below that
+      // window, so this re-stamp stands in for it: bill the touchdown for the
+      // last tick's descent and nothing else. It differs from the engine's
+      // rule only in direction (the engine never lowers the value). Raise the
+      // radius into the window and this block can go. See the feature doc's
+      // sections 4 and 5.
       this.body.lastCollisionHeight = this.y;
     }
     if (flying) {
