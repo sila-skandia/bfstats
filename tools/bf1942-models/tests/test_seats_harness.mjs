@@ -306,6 +306,17 @@ function stationaryBrowning() {
       const { seats } = surveyVehicle(tank);
       return classifySeat(seats.get('shermanBrowning_PCO1'), false);
     })(),
+    // `c_ETShip`. The engine has no ship propulsion code at all: `c_ETShip = 9`
+    // has bit 0 set (`operator<<(std::ostream&, EngineType)` `0x0823ef60`), so
+    // `PhysicsEngine::updatePhysics` runs the SAME thrust body an aeroplane
+    // gets. A helm is a drive seat, not a passenger seat.
+    shipRoot: classifyRoot(node('Fletcher',
+      { control: 'Fletcher', templateKind: 'PlayerControlObject' },
+      node('Fletcher_Engine', {
+        templateKind: 'Engine', physics: { engineType: 'c_ETShip' },
+        control: 'Fletcher' }),
+      node('FletcherEntry', { templateKind: 'EntryPoint',
+        seat: { control: 'Fletcher', entryRadius: 3 } }))),
     // A root with neither an Engine, nor motion+FireArms, nor even a
     // FireArms at all is a bare seat -- GUN-10's fallthrough (a passenger
     // position, or a hull this round has no drive model for).

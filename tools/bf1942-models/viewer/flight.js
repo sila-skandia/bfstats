@@ -1022,9 +1022,16 @@ class Surface {
     const [ox, oy, oz] = spec.offset || [0, 0, 0];
     this.apply = new THREE.Vector3(ax + ox, ay + oy, -(az + oz));
 
+    // `mountQuaternion` is the same rotation already conjugated: a spec built
+    // from an extracted scene reads the node's own glb quaternion, which IS
+    // `Ry(-yaw)Rx(-pitch)Rz(roll)` because `bf42/gltf.py` applied the mirror at
+    // export. Spelling the Euler triple out is for the hand-written tables
+    // below, which are read against `Physics.con`.
     const [yaw, pitch, roll] = spec.mount || [0, 0, 0];
-    this.mount = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(-pitch * RAD, -yaw * RAD, roll * RAD, 'YXZ'));
+    this.mount = spec.mountQuaternion
+      ? new THREE.Quaternion(...spec.mountQuaternion).normalize()
+      : new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(-pitch * RAD, -yaw * RAD, roll * RAD, 'YXZ'));
     // The -90 roll on every rudder and vertical fin turns its lift sideways
     // through the same formula. Nothing here special-cases them.
     this.rest = this.mount.clone().multiply(
@@ -1182,6 +1189,11 @@ export class Aircraft extends Vehicle {
     this._servos = null;
     this.engines = this.spec.engines.map(engine => ({
       id: engine.id,
+      // `ObjectTemplate.engineType`, carried because `waterGate` splits on its
+      // bit 3 and the two rules are opposites: without it a ship's screw, which
+      // is authored BELOW the waterline, would take the aircraft rule and have
+      // its throttle zeroed every step.
+      engineType: engine.engineType ?? null,
       position: new THREE.Vector3(
         engine.position[0], engine.position[1], -engine.position[2]),
       // `getCurrentRatio` = 3.5 * setDifferential / gearRatioCurve[100].
@@ -1204,6 +1216,48 @@ export class Aircraft extends Vehicle {
   /** Where a surface's hinge has actually got to, degrees. */
   deflection(surface) {
     return axisAngle(surface.axis, this.state.surfaces.get(surface.key) ?? 0);
+  }
+
+  /**
+   * The throttle one engine may use this step, or `null` for "no thrust".
+   *
+   * `PhysicsEngine::updatePhysics` tests the engine node's own world height
+   * against the water level and then splits on `engineType & 8`
+   * (`0x0824cc89`/`0x0824d047`). An aircraft has that bit clear, and its rule is
+   * the one implemented here: **below the waterline the throttle is zeroed** —
+   * a ditched plane's propeller stops pulling. A ship has it set and gets the
+   * mirror, which `ship.js` overrides in.
+   *
+   * `waterHeight` is -Infinity until the page says where the sea is, so on a
+   * land map this is never taken.
+   */
+  waterGate(_engine, worldY) {
+    return worldY < this.waterHeight ? 0 : this.state.throttle;
+  }
+
+  /**
+   * Accelerations and moments that are neither a surface's nor an engine's.
+   *
+   * Nothing for an aircraft: `PhysicsSpring` is stood in for by `settle` and
+   * there is no third node type on a plane. A `FloatingBundle` is one
+   * (`ship.js`), and so would a `LandingGear` be if it made force.
+   */
+  bodyForces(_accel, _moment, _h) {}
+
+  /**
+   * Body drag, added to the accumulator.
+   *
+   * `-drag * v`, which is what this file has always done and is **not** the
+   * engine's law: `PhysicsNode` takes the box form
+   * (`accel += -drag*|relV|/mass * (Ax*proj0 + Ay*proj1 + Az*proj2)`,
+   * physics.md §3), quadratic in speed and area-scaled. The linear form is a
+   * fitted stand-in whose coefficient came out of the Corsair's measured
+   * terminal speeds, and replacing it is a flight-model job, not this stream's.
+   * `ship.js` runs the box law, because a ship's terminal speed is nothing at
+   * all without the submerged drag multiplier.
+   */
+  applyDrag(_accel, _h) {
+    _accel.addScaledVector(this.state.velocity, -this.spec.drag);
   }
 
   /**
@@ -1275,8 +1329,11 @@ export class Aircraft extends Vehicle {
     const k = this.spec;
     if (this.autoFirstPerson && !this.firstPerson) this.setFirstPerson(true);
 
-    // Throttle spools rather than steps.
-    const wanted = clamp(this.input('c_PIThrottle'), 0, 1);
+    // Throttle spools rather than steps. `throttleMin` is 0 for an aircraft —
+    // a propeller does not run backwards — and -1 for a ship, whose Engine
+    // declares `setMinRotation 0/0/-4000` and whose `K = 0.1*|throttle| + e*|e|`
+    // is signed, so a negative throttle is astern.
+    const wanted = clamp(this.input('c_PIThrottle'), k.throttleMin ?? 0, 1);
     const gap = wanted - s.throttle;
     const spool = k.throttleRate * dt;
     s.throttle = Math.abs(gap) <= spool ? wanted : s.throttle + Math.sign(gap) * spool;
@@ -1356,9 +1413,16 @@ export class Aircraft extends Vehicle {
     const along = s.velocity.dot(_fwd);
     for (const engine of this.engines) {
       _r.copy(engine.position).applyQuaternion(s.orientation);
+      // The water gate. `engineType` bit 3 (`c_ETShip` = 9, `c_ETTorpedo` =
+      // 0x19) versus bit 3 clear (`c_ETPlane` = 1) picks opposite rules at
+      // `0x0824cc89`/`0x0824d047`, and an aircraft's is "an engine under water
+      // makes no thrust". `waterGate` answers for both; the default is an
+      // aircraft's, so nothing here changes for one.
+      const throttle = this.waterGate(engine, s.position.y + _r.y);
+      if (throttle === null) continue;
       const rho = 1 - clamp((s.position.y + _r.y) / AIR_DENSITY_ZERO_AT_HEIGHT, 0, 1);
-      const e = s.throttle - rho * along / engine.fadeSpeed;
-      const a = (ENGINE_IDLE * Math.abs(s.throttle) + e * Math.abs(e)) * engine.ratio;
+      const e = throttle - rho * along / engine.fadeSpeed;
+      const a = (ENGINE_IDLE * Math.abs(throttle) + e * Math.abs(e)) * engine.ratio;
       _force.copy(_fwd).multiplyScalar(a);
       _accel.add(_force);
       // At the engine node, not the centre of mass — a nacelle 0.45 m above the
@@ -1366,8 +1430,14 @@ export class Aircraft extends Vehicle {
       _moment.add(_arm.crossVectors(_r, _force));
     }
 
+    // Anything the body carries that is neither a surface nor an engine. Empty
+    // for an aircraft; a ship's eight `FloatingBundle`s are here, and because
+    // they land in `_moment` as well their differing depths are what rights the
+    // hull (`ship.js`).
+    this.bodyForces(_accel, _moment, h);
+
     _accel.y -= k.gravity;
-    _accel.addScaledVector(s.velocity, -k.drag);
+    this.applyDrag(_accel, h);
 
     // Angular, in the body frame, which is the only one the inertia tensor is
     // diagonal in. The gyroscopic term matters here: a Corsair's yaw inertia is
