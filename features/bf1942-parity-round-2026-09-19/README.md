@@ -516,7 +516,7 @@ staged state intact. 2,316 tests green on the trial worktree.
 |---|---|---|
 | W6-A bombs | The aircraft secondary weapon, built from `../plane-bombs-and-torpedoes/README.md` §4-§5 (G-1…G-6) and BOMB-1…BOMB-12. The spec's own headline is that the extractor was never the problem: every rack is already parsed and stamped into the shipped glb, and the weapon dies on a three-line guard in `gunfire.js:484` that refuses a group with no flash, no tracer, no recoil and `velocity 0` — which is precisely a bomb rack. Own worktree | running |
 | W6-E ships, research | The owner's three ship reports, read from the engine. No file changes outside its own feature doc | running |
-| W6-F spawner teams | The one ship defect already proven from the data: `teamOnVehicle` read as a team index. Own worktree | running |
+| W6-F spawner teams | The one ship defect already proven from the data: `teamOnVehicle` read as a team index. Own worktree | **merged `0934813`** (2026-09-22). See below |
 
 **The ships round, and what the first pass already established.** The owner
 reported three things after playing: destroyers sit high enough to show a
@@ -557,6 +557,56 @@ Axis ships for *both* fleets. They are three different bugs.
   position carries `team: 2`, so the soldier-spawn team may be a second bug.
 - `c_ETShip` is not one of the three engine types `seats.js:186-196` has a drive
   model for, so a ship helm deliberately falls through to a bare `'seat'`.
+
+**W6-F is merged** (`0934813`, 2026-09-22), record in
+[`../teamonvehicle-is-a-bool/README.md`](../teamonvehicle-is-a-bool/README.md).
+`teamOnVehicle` is a **bool**, proved four ways in lnxded rather than argued from
+the data alone: a single `char` at `ObjectSpawnerTemplate+0x185`; registered with
+the type string `"bool"` (`0x086b1e97`, written at `0x082a8946`) where
+`nrOfObjectToSpawn` gets `"int"` and the delays `"float"`;
+`ObjectSpawnerTemplate::makeScript` (`0x08314f70`) round-trips it as the
+**literal** line `ObjectTemplate.teamOnVehicle 1` with no value appended, so the
+engine itself can never write anything else; and `ObjectSpawner::spawnObject`
+(`0x083140a0`) picks the hull with `map<u32, IObjectTemplate*>::find(this->team)`
+on the **instance's** team at `+0x134`, consulting `+0x185` only to decide whether
+to stamp that team onto the spawned object afterwards. The lead verified the two
+strings independently in the image; `0x086e15e0` really is the whole line, and its
+neighbour `ObjectTemplate.useButtonRadius ` really does end in the space that a
+value would go in.
+
+- **Two corrections to the lead's own survey**, which is why the stream was told
+  to reproduce it: the first pass counted patch archives as separate levels, so
+  the real vanilla figures are 88 spawners at `1`, 8 at `2`, 33 at `0`. **Truk was
+  never affected** — its 33 are all `0`, which failed the old `in (1, 2)` guard —
+  and vanilla's `teamOnVehicle 2` spawners all declare a single team, so `2` never
+  moved a hull either. Across the mods: EoD alone writes `0` on 9,274 spawners.
+- Fixed in vanilla on **Midway, Guadalcanal, Iwo Jima and Omaha Beach**, 12
+  spawners and 30 placed instances; and in the mods on FHSW (1,652 instances),
+  bg42 (330), bf1918 (699), FinnWars (118), FH (105), WarFront (53), DC_Final
+  (24), EoD (37), DesertCombat (23), GCMOD (11), bfheroes (26), FHSWEurope (3)
+  and XPack1 (4). Battle of Britain, Wake and Coral Sea don't move, each for its
+  own reason — Wake's carrier spawner really does declare `shokaku` for both.
+- **The deck spawns came right with it, as the same bug one step downstream.** The
+  wrong hull meant reading the wrong ship's `Objects.con`, and
+  `GlobalSpawnGroups.con` binds `hatsuzuki`'s groups 70/71/82/83 to team 1 where
+  `fletcher`'s 68/69/80/81 are team 2. No separate fix.
+- **Every American hull had been shipping with no engine or gun sound**, because
+  `spawned_vehicle_templates` dropped the other half of such a spawner. Midway's
+  `sounds.vehicles` goes 16 → 21, gaining `fletcher`, `fletcher2`, `enterprise`,
+  `princeow` and `Gato`.
+- Checked by the lead on a real extraction rather than from the report: Midway's
+  team 2 is fletcher, fletcher2, enterprise, princeow and Gato, its team 1
+  hatsuzuki, hatsuzuki2, shokaku, yamato and Sub7c, with all 17 American deck
+  points team 2 and all 16 Japanese team 1. Suite 2,334 green at the trial merge,
+  2,369 on main after it.
+- Left open: an instance with no `setteam` (or `setteam 0`) still falls back to
+  `vehicles.get(2) or vehicles.get(1)`, where the engine's `map.find` misses and
+  `spawnObject` returns `0xffffffff` — so EoD's Green_Hell `Mortar_spawner` is
+  arguably an empty pad. Proving the miss path needs a live server.
+- **Re-extraction owed** (the hull mesh in `scene.glb` is wrong too, not just the
+  json): vanilla's GuadalCanal, Iwo_Jima, Midway and Omaha_Beach, XPack1's husky,
+  and EoD's five. Nothing published, and nothing written into the shared
+  `viewer/maps` tree.
 
 ### Not yet assigned
 
