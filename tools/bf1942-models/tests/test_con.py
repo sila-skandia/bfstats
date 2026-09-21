@@ -1592,6 +1592,38 @@ ObjectTemplate.setAmmoBarTextPosY 10
             "textPosY": 10.0,
         }, stats["hud"])
 
+    def test_weapon_stats_carries_the_throw_block(self) -> None:
+        # Objects/HandWeapons/GrenadeAllies/Objects.con, the four lines that
+        # make a throw a throw. Only the four hand weapons that let go of what
+        # they hold declare any of them, so nothing else grows a `throw` block.
+        library = self.library(
+            "Objects/HandWeapons/GrenadeAllies/Objects.con",
+            """
+ObjectTemplate.create HandFireArms GrenadeAllies
+ObjectTemplate.rotationalSpeed 8/0/0
+ObjectTemplate.velocity 25
+ObjectTemplate.hideDuringFireTime 0.4
+ObjectTemplate.fireDelay 1
+ObjectTemplate.fireInCameraDof 1
+""")
+        stats = library.object("GrenadeAllies").weapon_stats()
+
+        self.assertEqual({
+            "fireDelay": 1.0,
+            "hideDuringFireTime": 0.4,
+            "rotationalSpeed": [8.0, 0.0, 0.0],
+        }, stats["throw"])
+
+    def test_a_weapon_that_throws_nothing_has_no_throw_block(self) -> None:
+        library = self.library(
+            "Objects/HandWeapons/Thompson/Objects.con",
+            """
+ObjectTemplate.create HandFireArms Thompson
+ObjectTemplate.roundOfFire 10
+ObjectTemplate.velocity 400
+""")
+        self.assertNotIn("throw", library.object("Thompson").weapon_stats())
+
     def test_kit_hud_icons_and_weapon_icon_row(self) -> None:
         # Objects/Items/USKit/Medic/Objects.con, verbatim.
         library = self.library(
