@@ -33,7 +33,7 @@ import {
   DIVE_SPEED_FACTOR, DIVE_DURATION,
 } from './physics.js';
 import {
-  Parachute, effectiveParachuteDrag,
+  Parachute, effectiveParachuteDrag, landingImpactSpeed,
   PARA_NONE, PARA_FALLING, PARA_OPEN, PARA_LANDED,
 } from './parachute.js';
 
@@ -590,11 +590,22 @@ export class Soldier {
     // never does from growing it without bound.
     for (let i = 0; i < ticks; i++) {
       this.#stepParachute(this.clock.dt, input);
+      // The chute bit as the collision will see it. `#stepParachute` has just
+      // run, which is the engine's order too — `BFSoldier::handleUpdate` sets
+      // and clears `+0x3e6` bit `0x10`, and `handleCollision` reads it during
+      // the resolve that `body.step` is about to do.
+      const underCanopy = this.chute.open;
       this.body.step(this.clock.dt, this._tickInput);
       contacts += this.body.contacts;
       if (this.body.landed) {
         this.landing = {
-          impactSpeed: this.body.impactSpeed,
+          // `BFSoldier::handleCollision` 0x0827d470-0x0827d4a5 forwards a zero
+          // Vec3 in place of the speed while the parachute bit is set, so
+          // HP-14 sees |v| = 0, subtracts its 8.0 and returns with nothing.
+          // See `landingImpactSpeed` in parachute.js.
+          impactSpeed: landingImpactSpeed(underCanopy, this.body.impactSpeed),
+          bodyImpactSpeed: this.body.impactSpeed,
+          underCanopy,
           fallHeight: this.body.fallHeight,
           cosTheta: this.body.impactCosTheta,
           normalY: this.body.impactNormalY,
@@ -662,15 +673,14 @@ export class Soldier {
     const state = this.chute.state;
     const flying = state === PARA_FALLING || state === PARA_OPEN;
     this.body.setParachute(this.chute.open, this._chuteDrag);
-    // No deviation here any more. HP-14 bills `F = getLastCollisionHeight() - y`
-    // and the engine never lowers that field — `Armor::update` raises it to the
-    // current `y` every tick the object is out of contact (`0x081730b0`-
-    // `0x081730e7`, guarded by `Armor+0x129`), so `F` really is the whole drop
-    // for a parachutist too. The engine's answer is the drag radius, not a
-    // reset: inside `PARACHUTE_DRAG_RADIUS`'s window the canopy touches down at
-    // `|v| <= 8.0` and `handleCollisionLandOrWater` returns before `Q^2`. An
-    // earlier radius sat below that window and this block re-stamped
-    // `lastCollisionHeight` to stand in for it; see parachute.js.
+    // No deviation here. HP-14 bills `F = getLastCollisionHeight() - y` and the
+    // engine never lowers that field — `Armor::update` raises it to the current
+    // `y` every tick the object is out of contact (`0x081730b0`-`0x081730e7`,
+    // guarded by `Armor+0x129`), so `F` really is the whole drop for a
+    // parachutist too. What makes the landing free is not the height term and
+    // not the radius: `BFSoldier::handleCollision` hands the collision handler
+    // a zero speed vector while the chute bit is set, which `step` applies
+    // through `landingImpactSpeed`. See parachute.js.
     if (flying) {
       const a = this.chute.accel;
       if (a.x || a.y || a.z) this.body.body.addAcceleration(a.x, a.y, a.z);
