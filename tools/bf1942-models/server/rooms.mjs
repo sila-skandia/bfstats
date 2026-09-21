@@ -68,6 +68,17 @@ export const DROP_SWEEP_MS = 1_000;
  *  will own the real cadence; this is the room's event copy. */
 export const FIRE_EVENT_COOLDOWN_S = 0.35;
 
+/** A deploy row's `spawnIndex` is a walk over one flag's spawn points, and
+ *  `pickSpawn` wraps it; this only keeps a hostile row from arriving with
+ *  something that would cost a modulo over a huge number. */
+export const SPAWN_INDEX_MAX = 0xffff;
+
+/** Radians (the World's facing) to the degrees the snapshot record carries.
+ *  NaN travels as NaN -- a seated player's facing is the hull's. */
+function degreesOf(radians) {
+  return Number.isFinite(radians) ? radians * 180 / Math.PI : NaN;
+}
+
 /** The room clock's own frame cadence (33.33 ms); the FixedStep interior
  *  means the cadence is a target, not a law. */
 const FRAME_MS = Math.max(1, Math.round(WORLD_TICK_DT * 1000));
@@ -276,7 +287,22 @@ export class Room {
       flag = flags[index];
     }
     this.authority.revive(slot, connection.team, row?.kit ?? null);
-    if (!world.spawnPlayer(slot, { flag, advance: true })) return;
+    // ONE spawn pick, made once. A flag holds several spawn points and
+    // `pickSpawn` walks them by `player.spawnIndex`; the deploy screen owns
+    // that walk on the page (`spawnAtFlag`), so the row carries the index it
+    // landed on and the authority spawns on exactly that point. Advancing
+    // here as well put the two sims on DIFFERENT points of the same flag --
+    // 45 m apart on Aberdeen's British_Base, and authored facing 17.7 deg
+    // apart, so both integrated the same forward word along different
+    // headings and the prediction splayed away from the authority at
+    // ~1.9 m/s until the correction teleported the player back, twice a
+    // second, forever (features/netcode-play-multiplayer/SNAPBACK.md).
+    // A client that sends no index keeps the old behaviour: the authority
+    // walks the list itself.
+    const wanted = row?.spawnIndex;
+    const pinned = Number.isInteger(wanted) && wanted >= 0 && wanted <= SPAWN_INDEX_MAX;
+    if (pinned) player.spawnIndex = wanted;
+    if (!world.spawnPlayer(slot, { flag, advance: !pinned })) return;
     this.#event('spawn', connection, {});
   }
 
@@ -412,6 +438,15 @@ export class Room {
       if (player.occupancy && !player.vehicle && player.position) {
         world.setPlayerPosition(slot, this.instance.positionOf(player.occupancy));
       }
+      // The input acknowledgement: the HIGHEST seq this world has consumed for
+      // the player, kept monotonic. `player.last` is only the entry THIS tick
+      // consumed, and a tick with nothing buffered consumes the engine's
+      // zeroed word, which carries no seq — reading the ack straight off it
+      // would blank the acknowledgement on every idle tick and cost the client
+      // the tick it reconciles against (netcode-reconcile.js).
+      if (Number.isInteger(player.last?.seq) && player.last.seq > connection.ack) {
+        connection.ack = player.last.seq;
+      }
       // Fire events, at the throttle: `player.last` is the entry exactly one
       // tick consumed, so a fire flag here is the World's own receive law.
       const last = player.last;
@@ -478,10 +513,21 @@ export class Room {
         alive: row.alive, seated: row.seated,
         crouch: row.crouch, prone: row.prone,
         inVehicle: row.inVehicle,
-        team: row.team, x, y, z, yaw: row.yaw, pitch: row.pitch,
+        team: row.team, x, y, z,
+        // DEGREES on the wire, which is what the record says it carries
+        // (netcode.js) and what `netcode-render.js` converts back with its
+        // own `rad()`. The World keeps the soldier's facing in radians, so
+        // the conversion belongs here, at the wire's edge -- shipping the
+        // radian value under a field documented as degrees drew every remote
+        // soldier at a 57th of its real heading.
+        yaw: degreesOf(row.yaw), pitch: degreesOf(row.pitch),
         hp: row.hp,
         vehicleId: entry ? entry.id : 0,
         seatIndex: row.seatIndex >= 0 ? Math.min(row.seatIndex, 15) : null,
+        // The input acknowledgement: the highest seq this world has consumed
+        // for the player (raised in `#tick`). The client reconciles against
+        // the tick it names, so the input latency is not read as error.
+        ack: connection.ack,
       });
     }
     const vehicles = [];
@@ -587,6 +633,10 @@ export class RoomServerCore {
       nextSendAt: 0,
       lastSeen: this.now(),
       fireAt: 0,
+      // The highest input seq this room's world has consumed for the player;
+      // the snapshot's `ack` (netcode.js), kept monotonic so an idle tick
+      // never withdraws an acknowledgement.
+      ack: 0,
       room: null,
     };
     this.connections.set(peer, connection);

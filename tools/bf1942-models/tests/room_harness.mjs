@@ -32,6 +32,9 @@
 //       mount glue round-trips on a real published map
 //   j   the glb-tree contract: a vehicle template's JSON chunk yields the
 //       seat hierarchy (seats, springs, fireArms, entries) with no geometry
+//   m   P4: a deploy row's `spawnIndex` pins the authority to the page's own
+//       spawn point (the snap-back defect), the snapshot carries the input
+//       `ack`, and the facing on the wire is degrees
 //
 // Laws cited are the engine's (`netcode.md` §1/§2/§5, J-3) as pinned by
 // `features/netcode-play-multiplayer/README.md` P2.
@@ -48,7 +51,7 @@ import {
 } from './viewer/netcode.js';
 import { VehicleOccupancy, classifyRoot, listEntryPoints } from './viewer/seats.js';
 import { MAX_CATCH_UP_TICKS } from './viewer/physics.js';
-import { HEARTBEAT_TIMEOUT_MS } from './server/rooms.mjs';
+import { HEARTBEAT_TIMEOUT_MS, SPAWN_INDEX_MAX } from './server/rooms.mjs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
@@ -589,6 +592,121 @@ let nextTag = 1;
       ? { team: majorityRow.team, count: majorityRow.count } : null,
     bleedTicket: majorityRow?.team === 2 && majorityRow.count < 100,
   };
+}
+
+// --- (m) P4: one spawn pick, the input ack, and the wire's own units ----------
+// The snap-back defect (features/netcode-play-multiplayer/SNAPBACK.md): the
+// authority walked the flag's spawn list on every deploy row while the page did
+// not, so the two sims stood the same soldier on DIFFERENT spawn points of the
+// same flag -- 45 m and 17.7 deg apart on Aberdeen -- and both then ran the
+// same forward word along different headings until the correction teleported
+// the player back, twice a second, forever.
+//
+// Three things are pinned here:
+//   * a deploy row carrying `spawnIndex` puts the authority on exactly that
+//     spawn point, and does NOT advance past it;
+//   * a row without one keeps the old walk (a client that does not send it);
+//   * the snapshot carries the input `ack` and the facing in DEGREES, which is
+//     what makes the client's reconciliation possible and its remotes point the
+//     right way.
+{
+  const pm = attachPeer(core, String(nextTag++));
+  joinPeer(core, pm, 'MMM', 'M', 0);
+  const mRoom = core.room('MMM');
+  const mPeer = mRoom.players.get(1).peer;
+  const mw = mRoom.world;
+  const flag = mw.flags[0];
+
+  // The page's own pick, made with the page's own call, so the two sides are
+  // compared against one law rather than two.
+  const asPage = new Map();
+  for (const index of [0, 1, 2]) {
+    mw.player(1).spawnIndex = index;
+    mw.spawnPlayer(1, { flag });
+    asPage.set(index, { x: mw.player(1).soldier.x, z: mw.player(1).soldier.z,
+                        yaw: mw.player(1).soldier.yaw,
+                        name: mw.player(1).spawn?.name ?? null });
+  }
+
+  // A pinned row: the authority lands on the point the row names, and stays on
+  // it (no advance).
+  const pinned = [];
+  for (const index of [0, 1, 2]) {
+    sendJson(mPeer, MSG_ACTION, { type: 'spawn', flag: 0, spawnIndex: index });
+    mRoom.frame(FRAME_MS); clock.ms += FRAME_MS;
+    const sol = mw.player(1).soldier;
+    const want = asPage.get(index);
+    pinned.push({
+      index,
+      spawnIndex: mw.player(1).spawnIndex,
+      name: mw.player(1).spawn?.name ?? null,
+      pageName: want.name,
+      agrees: Math.hypot(sol.x - want.x, sol.z - want.z) < 1e-6
+        && Math.abs(sol.yaw - want.yaw) < 1e-9,
+      yawGapDeg: Math.abs(sol.yaw - want.yaw) * 180 / Math.PI,
+    });
+  }
+
+  // No index in the row: the authority keeps walking the list itself.
+  mw.player(1).spawnIndex = 0;
+  sendJson(mPeer, MSG_ACTION, { type: 'spawn', flag: 0 });
+  mRoom.frame(FRAME_MS); clock.ms += FRAME_MS;
+  const unpinnedIndex = mw.player(1).spawnIndex;
+
+  // The ack and the units, on the wire.
+  sendJson(mPeer, MSG_ACTION, { type: 'spawn', flag: 0, spawnIndex: 0 });
+  mRoom.frame(FRAME_MS); clock.ms += FRAME_MS;
+  mPeer.sent.length = 0;
+  const ackTrace = [];
+  for (let i = 1; i <= 4; i++) {
+    sendInput(mPeer, 500 + i, walkInput());
+    // Two laps per word so the 20 Hz snapshot stream fires for each of them.
+    mRoom.frame(FRAME_MS); clock.ms += FRAME_MS;
+    mRoom.frame(FRAME_MS); clock.ms += FRAME_MS;
+    const snap = ofType(mPeer, MSG_SNAPSHOT).at(-1);
+    const row = snap
+      ? decodeSnapshot(snap.subarray(1)).players.find(p => p.slot === 1) : null;
+    if (row) ackTrace.push({ ack: row.ack, yaw: row.yaw });
+  }
+  // An idle tick does not move the acknowledgement on: the engine's zeroed
+  // word carries no seq, so there is nothing new for the client to reconcile
+  // against.
+  mRoom.frame(FRAME_MS); clock.ms += FRAME_MS;
+  mRoom.frame(FRAME_MS); clock.ms += FRAME_MS;
+  const lastSnapM = ofType(mPeer, MSG_SNAPSHOT).at(-1);
+  const afterIdle = lastSnapM
+    ? decodeSnapshot(lastSnapM.subarray(1)).players.find(p => p.slot === 1)?.ack
+    : null;
+
+  // The units. The descriptor level authors no spawn rotation, so turn the
+  // soldier with a look word and read the facing back off the wire: degrees,
+  // matching the World's radians exactly (`netcode-render.js` converts with
+  // its own rad(), and shipping radians under a degrees field drew every
+  // remote soldier at a 57th of its heading).
+  for (let i = 1; i <= 6; i++) {
+    sendInput(mPeer, 600 + i, walkInput(), { x: 4, y: 0 });
+    mRoom.frame(FRAME_MS); clock.ms += FRAME_MS;
+    mRoom.frame(FRAME_MS); clock.ms += FRAME_MS;
+  }
+  const turnedSnap = ofType(mPeer, MSG_SNAPSHOT).at(-1);
+  const turnedRow = turnedSnap
+    ? decodeSnapshot(turnedSnap.subarray(1)).players.find(p => p.slot === 1) : null;
+
+  results.m = {
+    pinned,
+    unpinnedIndex,
+    ackTrace,
+    afterIdle,
+    soldierYawDeg: mw.player(1).soldier.yaw * 180 / Math.PI,
+    soldierYawRad: mw.player(1).soldier.yaw,
+    wireYawDeg: turnedRow?.yaw ?? null,
+    spawnIndexMax: SPAWN_INDEX_MAX,
+  };
+  // A row with an absurd index is clamped out rather than trusted into a
+  // modulo over a huge number.
+  sendJson(mPeer, MSG_ACTION, { type: 'spawn', flag: 0, spawnIndex: 1e12 });
+  mRoom.frame(FRAME_MS); clock.ms += FRAME_MS;
+  results.m.absurdIndex = mw.player(1).spawnIndex;
 }
 
 console.log(JSON.stringify(results));

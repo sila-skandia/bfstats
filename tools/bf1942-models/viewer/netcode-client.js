@@ -48,12 +48,21 @@ export function createRoomClient({ ws, now = null }) {
   out.onjoined = null;      // () => {} — hello landed, page spawns
 
   /** One input+look word per world tick consumed (the page calls it exactly
-   *  when the local world ticked); never called between ticks. */
+   *  when the local world ticked); never called between ticks. Returns the
+   *  seq the word went out under, which is the tick's own name on the wire --
+   *  the page records its predicted pose against it so the authority's `ack`
+   *  can be reconciled against the right tick (netcode-reconcile.js). Returns
+   *  0 when nothing went out. */
   out.sendInput = (input, look) => {
-    if (out.state !== 'joined') return;
+    if (out.state !== 'joined') return 0;
     seq += 1;
     ws.send(new Uint8Array([MSG_INPUT, ...encodeInputFrame(seq, input, look)]));
+    return seq;
   };
+
+  /** The highest seq the page has put on the wire (diagnostics; the
+   *  reconciler's own ack is the authority's word, not this). */
+  out.sentSeq = () => seq;
 
   /** The engine's control channel rows (netcode.js MSG_ACTION): seat
    *  enter/exit/switch and respawn. Kept in `sentActions` (bounded) so the
@@ -212,6 +221,16 @@ export function createRoomClient({ ws, now = null }) {
   /** How many snapshots the client has applied — the page's diagnostics and
    *  the smoke's liveness checks read this before trusting any remote. */
   out.snapCount = () => history.length;
+
+  /** The LOCAL player's row in the newest snapshot: the authority's own word
+   *  about this body, un-lerped (the reconciliation reads the wire, never the
+   *  render-space blend) and null before the first snapshot. The correction
+   *  law consumes it through `onsnapshot`; this is the same row for a check
+   *  that wants to measure the gap from outside. */
+  out.selfPlayer = () => {
+    const snap = history.length ? history[history.length - 1].snap : null;
+    return playerIn(snap, out.slot);
+  };
 
   /** The vehicle `id`'s lerped pose between the last two snapshots:
    *  {id, x, y, z, q, occupied} or null. */
