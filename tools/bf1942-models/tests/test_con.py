@@ -1623,6 +1623,34 @@ ObjectTemplate.addTemplate Colt
             "Weapon/Icon_medpack.tga",
         ], kit.kit_weapon_icons)
 
+    def test_kit_setkitname_is_a_lexicon_key_not_a_string(self) -> None:
+        # `setKitName <slot> "<KEY>"` has the same shape as `setKitIcon`: an
+        # authored index and a quoted token. The token is a lexicon key, so
+        # it is stored raw, unquoted, and untouched.
+        library = self.library(
+            "Objects/Items/USKit/Medic/Objects.con",
+            """
+ ObjectTemplate.create Kit  US_Medic
+ ObjectTemplate.setType Medic
+ ObjectTemplate.setKitName 2 "RESPAWN_MEDIC"
+ ObjectTemplate.setKitActiveName 2 "RESPAWN_ACTIVE_MEDIC"
+""")
+        kit = library.object("US_Medic")
+
+        self.assertEqual((2, "RESPAWN_MEDIC"), kit.kit_name)
+        # `setKitActiveName` is not read: the deploy screen labels the row,
+        # not the selected-row highlight.
+        self.assertIsNone(getattr(kit, "kit_active_name", None))
+
+    def test_a_kit_without_setkitname_reports_none(self) -> None:
+        library = self.library(
+            "Objects/Items/USKit/Medic/Objects.con",
+            """
+ ObjectTemplate.create Kit  US_Medic
+ ObjectTemplate.setType Medic
+""")
+        self.assertIsNone(library.object("US_Medic").kit_name)
+
     def test_soldier_constants_off_the_spliced_common_soldier_data(self) -> None:
         # `include ../Common/CommonSoldierData.inc` is not a `Namespace.cmd`
         # directive, so the parser never sees it: the caller has to splice
