@@ -22,8 +22,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).resolve().parent / "vehicle_bodies_harness.mjs"
-MODULES = ["rigid-body", "body-contact", "crash-damage", "body-friction",
-           "body-ground", "vehicle-bodies", "body-world"]
+MODULES = ["rigid-body", "body-contact", "body-statics", "crash-damage",
+           "body-friction", "body-ground", "vehicle-bodies", "body-world"]
 
 
 def run_harness() -> dict:
@@ -146,6 +146,38 @@ class VehicleBodiesTests(unittest.TestCase):
 
     def test_driven_acceleration_is_clamped_at_1000(self) -> None:
         self.assertAlmostEqual(1000 / 30, self.r["drivenClamped"], places=6)
+
+    # --- the hull-contact hand-over (collision-response.md 8) ---------------------
+
+    def test_a_drive_model_that_has_not_asked_gets_no_hull_contacts(self) -> None:
+        self.assertIsNone(self.r["hullContactsOptIn"])
+
+    def test_a_response_with_no_contact_publishes_nothing(self) -> None:
+        self.assertEqual(0, self.r["hullContactsEmptyResponse"])
+
+    def test_a_hull_contact_carries_the_normal_the_budget_is_made_of(self) -> None:
+        c = self.r["hullContact"]
+        # The averaged contact normal, not re-normalised (section 8), and its Y,
+        # which is the whole Coulomb budget.
+        self.assertEqual([0, 0.25, 0.9], c["normal"])
+        self.assertEqual(0.25, c["normalY"])
+        self.assertEqual(0.95, c["friction"])
+        self.assertEqual(0.01, c["resistance"])
+        self.assertEqual(2, c["count"])
+        # Where it acts: the part's own position plus the averaged offset, the
+        # same point `solveImpulse` posts its acceleration at (section 6.4).
+        self.assertAlmostEqual(1.1, c["x"], places=6)
+        self.assertAlmostEqual(1.8, c["y"], places=6)
+        self.assertAlmostEqual(1.5, c["z"], places=6)
+
+    def test_the_normal_is_copied_not_aliased(self) -> None:
+        self.assertEqual(0.25, self.r["hullContactNormalCopied"])
+
+    def test_every_tick_starts_with_no_hull_contacts(self) -> None:
+        self.assertEqual(0, self.r["hullContactsClearedBySync"])
+
+    def test_the_hull_contact_list_is_capped(self) -> None:
+        self.assertEqual(8, self.r["hullContactsCap"])
 
     # --- one tick of everything ---------------------------------------------------
 

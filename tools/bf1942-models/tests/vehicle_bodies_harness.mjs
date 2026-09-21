@@ -172,6 +172,45 @@ function jeepWithBareSprings(x, y, z, { geometry = 'wheel_geometry' } = {}) {
   out.drivenClamped = vehicle.state.velocity.x;
 }
 
+// --- the hull-contact hand-over to the drive model --------------------------
+//
+// `ground.js` runs the viewer's own friction solver, so a driven vehicle's
+// resolved contacts are handed to it rather than answered here
+// (collision-response.md section 8). The hand-over is opt-in — a vehicle that
+// has not declared `hullContacts` gets nothing — and the list is emptied at
+// the top of every tick, by `sync`.
+{
+  const vehicle = { state: {
+    position: { x: 0, y: 0, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 1 },
+    velocity: { x: 0, y: 0, z: 0 }, angularVelocity: { x: 0, y: 0, z: 0 } } };
+  const body = new DrivenBody(vehicle, { mass: 2500, box: [2, 1, 4], boundingRadius: 3 });
+  // No `hullContacts` declared: nothing is published and nothing throws.
+  body.noteContact({ count: 1, avgNormal: [0, 0, 1], avgRelPos: [0, 0, 0],
+                     friction: 1, resistance: 0.01 }, [0, 0, 0]);
+  out.hullContactsOptIn = vehicle.hullContacts ?? null;
+
+  vehicle.hullContacts = [];
+  // A response with no contact this tick publishes nothing.
+  body.noteContact({ count: 0, avgNormal: [0, 0, 0], avgRelPos: [0, 0, 0],
+                     friction: 1, resistance: 0.01 }, [0, 0, 0]);
+  out.hullContactsEmptyResponse = vehicle.hullContacts.length;
+
+  const response = { count: 2, avgNormal: [0, 0.25, 0.9], avgRelPos: [0.1, -0.2, -1.5],
+                     friction: 0.95, resistance: 0.01 };
+  body.noteContact(response, [1, 2, 3]);
+  out.hullContact = vehicle.hullContacts[0];
+  // The normal is a COPY: the solver reuses its accumulator in place.
+  response.avgNormal[1] = 99;
+  out.hullContactNormalCopied = vehicle.hullContacts[0].normal[1];
+  // And the tick's list is cleared by `sync`, so a tick with no contact
+  // clears the drive model's view of them.
+  body.sync();
+  out.hullContactsClearedBySync = vehicle.hullContacts.length;
+  // Capped, so a hull wedged in a corner cannot grow it without bound.
+  for (let i = 0; i < 50; i++) body.noteContact(response, [0, 0, 0]);
+  out.hullContactsCap = vehicle.hullContacts.length;
+}
+
 // --- the world loop ---------------------------------------------------------
 {
   const tables = { materials: { 0: { attGroup: 0, defGroup: 0, damage: 30, friction: 1, resistance: 0.02 },
