@@ -193,6 +193,13 @@ function inferDim(meshes, worldSize) {
 // --- static hulls ----------------------------------------------------------
 
 const CELL_SIZE = 32;   // metres; 64 x 64 cells over a 2048 m level
+// The drivable-deck raster's own cell size, deliberately much finer than the
+// collision index's: a reload/repair bay is a few metres across against a 32 m
+// index cell, so a coarse raster either misses the pad or smears it across one
+// giant cell, and the tank's ride surface would jump as it crossed cell edges.
+// Two metres keeps a small pad's deck top where it actually is while staying a
+// cheap built-once Float32Array (256 x 256 cells over a 512 m deck region).
+const DRIVABLE_CELL = 2;
 
 // Where `#sweepTriangle` leaves its contact. Module scratch rather than an
 // object, for the same reason the triangles are nine loose floats: the sweep
@@ -796,13 +803,13 @@ function packIndex(tris, materials, ownerIds, ownerNodes, count, cellSize, box) 
  * `WorldCollider.surfaceHeight`). Match on the object's own name so a mod's
  * similarly-named bridge/bay templates work unchanged.
  */
-const DRIVABLE_TOP_RE = /bridge|repairpoint|reloadbay|repairbay|bay|ramp|overpass|dock|flightdeck|freightdeck|hardsurface|deck/i;
+const DRIVABLE_TOP_RE = /bridge|repairpoint|repaircist|reloadbay|repairbay|repairstation|bay|ramp|overpass|dock|flightdeck|freightdeck|hardsurface|deck/i;
 
 /**
- * Build a coarse raster of the top (max Y) of every drivable deck under
- * `root`, on the same cell grid as the collision index, or null when a level
- * ships no drivable static at all. `-Infinity` marks a cell with no drivable
- * surface, so `surfaceHeight` hands those back to the heightfield unaltered.
+ * Build a raster of the top of every drivable deck under `root`, on the fine
+ * `DRIVABLE_CELL` grid, or null when a level ships no drivable static at all.
+ * `-Infinity` marks a cell with no drivable surface, so `surfaceHeight` hands
+ * those back to the heightfield unaltered.
  *
  * Walks the same collision meshes `buildCollisionIndex` does (same predicate),
  * reading the same world matrices, so the two never disagree about where the
@@ -814,7 +821,7 @@ const DRIVABLE_TOP_RE = /bridge|repairpoint|reloadbay|repairbay|bay|ramp|overpas
  *
  * `cellSize` must match the value used to build the collision index.
  */
-export function buildDrivableTops(root, { cellSize = CELL_SIZE } = {}) {
+export function buildDrivableTops(root, { cellSize = DRIVABLE_CELL } = {}) {
   const meshes = [];
   root.traverse(obj => {
     if (!obj.isMesh || !obj.geometry) return;
@@ -946,6 +953,41 @@ export class WorldCollider {
     this.waterLevel = Number.isFinite(waterLevel) ? waterLevel : null;
     this.statics = statics;
     this.drivableTops = drivableTops;
+    // Which placed-object owners are drivable surfaces (bridges, repair/reload
+    // bays, ramps) -- the set the drivable-deck raster was built from, kept per
+    // owner so the vehicle hull sweep can distinguish a deck a tank climbs from
+    // a wall it must stop on. -1 (no owner) is never drivable.
+    this.drivableOwners = null;
+    if (statics?.ownerNodes?.length) {
+      const out = new Uint8Array(statics.ownerNodes.length);
+      // An owner is drivable when any collision mesh in its subtree carries a
+      // drivable name — the same rule `buildDrivableTops` uses to raster the
+      // deck — so the owner of a `repaircist...collision` mesh is flagged even
+      // when the root node's own name is generic. The hull sweep leans on this
+      // to let a tank climb the deck instead of ramming its lip.
+      const drivableIn = root => {
+        let found = false;
+        for (let n = root; n; n = n.parent) {
+          if (DRIVABLE_TOP_RE.test(String(n?.name ?? ''))) { found = true; break; }
+        }
+        return found;
+      };
+      for (let i = 0; i < statics.ownerNodes.length; i++) {
+        const node = statics.ownerNodes[i];
+        let drivable = node
+          && (DRIVABLE_TOP_RE.test(String(node.userData?.control ?? ''))
+              || drivableIn(node));
+        node?.traverse?.(child => {
+          if (drivable) return;
+          if (child === node) return;
+          for (let n = child; n; n = n.parent) {
+            if (DRIVABLE_TOP_RE.test(String(n?.name ?? ''))) { drivable = true; break; }
+          }
+        });
+        if (drivable) out[i] = 1;
+      }
+      this.drivableOwners = out;
+    }
     this.dynamicCast = null;
     /**
      * Owners whose hull has left the pose it was baked at — a parked plane a
@@ -1065,6 +1107,13 @@ export class WorldCollider {
   clearMovedOwner(owner, { enable = true } = {}) {
     if (!this.moved.delete(owner)) return;
     if (enable) this.statics?.enableOwner?.(owner);
+  }
+
+  /** Whether the placed object with owner id `owner` is a drivable surface a
+   *  ground vehicle climbs (a bridge deck, a reload/repair bay). -1 is never. */
+  isDrivableOwner(owner) {
+    return owner >= 0 && this.drivableOwners != null
+      && owner < this.drivableOwners.length && this.drivableOwners[owner] === 1;
   }
 
   /** The height a thing standing at (x, z) rests on: ground, or the sea, or a
