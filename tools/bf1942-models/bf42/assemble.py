@@ -1599,6 +1599,12 @@ class Assembler:
         projectile_spec, projectile_nodes = self._projectile_spec(
             builder, template, report)
         nodes += projectile_nodes
+        throw = {key: value for key, value in {
+            "fireDelay": template.fire_delay,
+            "hideDuringFireTime": template.hide_during_fire_time,
+            "rotationalSpeed": (list(template.rotational_speed)
+                                if template.rotational_speed else None),
+        }.items() if value is not None}
         extras = {key: value for key, value in {
             "projectile": projectile_spec,
             "roundOfFire": template.round_of_fire,
@@ -1615,6 +1621,13 @@ class Assembler:
             "coolDownPerSec": template.cool_down_per_sec,
             "timeDelayOnOverheat": template.time_delay_on_overheat,
             "velocity": template.velocity,
+            # The throw, for the four hand weapons that let go of what they
+            # hold: how long the weapon's own mesh is hidden from the shot
+            # (`hideDuringFireTime`, the hand-off), the lockout before the next
+            # one (`fireDelay`), and the round's authored tumble
+            # (`rotationalSpeed`, `8/0/0` on both grenades and nothing else).
+            # Absent on every other weapon, so nothing else grows a key.
+            "throw": throw or None,
             "input": template.input_fire or "c_PIFire",
             "control": control or "vehicle",
             "muzzles": len(muzzles),

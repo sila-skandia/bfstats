@@ -14,9 +14,11 @@ const base = {
   fireRunning: false,
   fireLoops: false,
   fireReturnsToReload: false,
+  fireReturnsToDeploy: false,
   firing: false,
   hasFire: true,
   hasReload: true,
+  hasDeploy: true,
   gait: 'stand',
 };
 
@@ -230,4 +232,43 @@ check('variant + trigger released mid-swing → keep swing, no stopLoopFire', {
   fireLoops: false, fireRunning: true, firing: false, hasFire: true,
 }, { want: 'fire5' });
 
-console.log(JSON.stringify({ ok: true, cases: 31 }));
+// The throw. A grenade's fire state returns to `Ub_StandResetRaiseWeapon<W>`,
+// not to StandReload — it has no reload clip, because reloading a grenade is
+// raising the next one — so the spent throw must hand the arms to `deploy`
+// rather than dropping to idle empty-handed. The raise then keeps them for its
+// own pass and releases to loco the ordinary way.
+check('throw clamped → raise the next grenade', {
+  active: 'fire', fireLoops: false, fireRunning: false, firing: false,
+  fireReturnsToDeploy: true, hasReload: false,
+}, { want: 'deploy', startDeploy: true });
+
+check('the raise keeps the arms for its own pass', {
+  active: 'deploy', deployRunning: true, fireReturnsToDeploy: true,
+  hasReload: false,
+}, { want: 'deploy' });
+
+check('the raise finishing releases to idle', {
+  active: 'deploy', deployRunning: false, fireReturnsToDeploy: true,
+  hasReload: false,
+}, { want: 'idle' });
+
+check('a throw still in flight keeps the arms', {
+  active: 'fire', fireLoops: false, fireRunning: true, firing: false,
+  fireReturnsToDeploy: true, hasReload: false,
+}, { want: 'fire' });
+
+// A rig without the deploy family (a bare weapon, a mod rig that baked none)
+// must fall back to loco rather than asking for a clip that is not there.
+check('no deploy family → idle, not a missing clip', {
+  active: 'fire', fireLoops: false, fireRunning: false, firing: false,
+  fireReturnsToDeploy: true, hasReload: false, hasDeploy: false,
+}, { want: 'idle', startDeploy: undefined });
+
+// StandReload still wins where the data says StandReload: the bolt rifles must
+// not be diverted into a raise by the new rule.
+check('a rifle returnTo StandReload is unaffected', {
+  active: 'fire', fireLoops: false, fireRunning: false, firing: false,
+  fireReturnsToReload: true, fireReturnsToDeploy: false,
+}, { want: 'reload', startReload: true });
+
+console.log(JSON.stringify({ ok: true, cases: 37 }));
