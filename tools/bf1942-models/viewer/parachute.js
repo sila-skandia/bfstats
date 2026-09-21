@@ -127,36 +127,92 @@ export const PARACHUTE_SPEED = 30;
  *     2.5 m/s and HP-14 fall damage could never happen at all.
  *
  * So the engine's own number is somewhere between and this corpus cannot say
- * where. Two shipped behaviours bound it:
+ * where. **One** shipped behaviour bounds it, from above:
  *
- *   - a chute landing is survivable — `Lb_ParachuteHitGround`
- *     `addTransitionWhenDone Lb_Stand`, and the dead case has its own separate
- *     `Lb_ParachuteDeadHitGround`. HP-14 bills the **full** impact speed, and
- *     the canopy carries 2.0367x the vertical as horizontal the whole way
- *     down, so `|v| = 2.2690 * v_y` must sit under HP-14's 8.0 m/s floor:
- *     **`r >= 2.354`**;
  *   - the canopy must not close in mid-air — `setIsParachuting(false)` fires
  *     at `|vy| <= 2.0` (`0x08272f3b`, `0x08273129`) — so **`r < 3.126`**.
  *
- * An earlier reading of this window had `1.563 < r < 2.8`: the lower bound
- * tested the *vertical* descent against a floor that applies to the whole
- * impact speed, and the upper was a judgement about fall damage still feeling
- * present rather than a bound on anything. 1.8 came out of it, which is below
- * the real window — and that is why `soldier.js` used to re-stamp
- * `lastCollisionHeight` under the canopy to stop HP-14 billing the whole drop.
- * Inside the corrected window the landing comes out of HP-14's own arithmetic
- * and that workaround is gone.
+ * There used to be a lower bound of `r >= 2.354` here, and **it is refuted**.
+ * It said a chute landing has to arrive under HP-14's 8.0 m/s floor to be
+ * survivable, so `|v| = 2.2690 * v_y <= 8.0` forced `v_y <= 3.53`. The engine
+ * never puts a chute landing in front of that floor at all. See
+ * `PARACHUTE_ZEROES_IMPACT_SPEED` below: `BFSoldier::handleCollision`
+ * (`0x0827d3b0`) hands the collision handler a **zero** speed vector for the
+ * whole time state bit `0x10` is set, so `|v| = 0`, the soldier arm of
+ * `handleCollisionLandOrWater` computes `0 - 8.0 < 0` and returns before any
+ * damage. A canopy landing is free at **any** speed, and the descent rate is
+ * therefore not bounded from below by survivability — or by anything else the
+ * corpus has found.
  *
- * 2.5 is taken from the lower half of the corrected window: the descent rate
- * falls as 1/r^2, so the low end is the fastest chute the engine's own
- * survivability bound allows, and the whole window is slow (a 120 m float is
- * 34 s at the very bottom of it and 60 s at the top). At 2.5 the canopy
- * settles to 3.13 m/s down and 6.37 m/s forward, touches down at |v| = 7.09
- * with 0.9 m/s of margin under HP-14's floor rather than the 0.001 m/s that
- * r = 2.354 leaves, and stays well clear of the 2.0 m/s auto-close. Still a
- * tunable rather than the engine's own number: set it by play.
+ * Which leaves the owner's play as the evidence, and it is the same kind of
+ * evidence the bounds are: the descent at `r = 2.5` (3.13 m/s down, 6.37
+ * forward, 119 s to fall 400 m) is **about half** what retail does. Twice that
+ * is `r = sqrt(1473 / (pi * 24 * 6.25)) = 1.77`, so **1.8** — which is the
+ * number the first draft of this window arrived at, before a survivability
+ * bound that does not exist pushed it out. At 1.8 the canopy settles to
+ * **6.030 m/s down and 12.280 m/s forward** and touches down at `|v| = 13.68`,
+ * which the engine does not bill. Still UNVERIFIED as the engine's own number,
+ * and still the one number here set by play rather than by an address.
  */
-export const PARACHUTE_DRAG_RADIUS = 2.5;
+export const PARACHUTE_DRAG_RADIUS = 1.8;
+
+/**
+ * A canopy landing costs nothing, and this is the engine's own mechanism.
+ *
+ * `BFSoldier::handleCollision` (`0x0827d3b0`) overrides `SimpleObject`'s and
+ * forwards to it — but not unchanged. At `0x0827d470` it reads its own state
+ * bits and tests the parachute bit:
+ *
+ *     827d470:  mov  ax, WORD PTR [edi+0x3e6]
+ *     827d477:  and  eax, 0x10
+ *     827d47a:  test ax, ax
+ *     827d47d:  je   827dc60              ; not parachuting -> the other tail
+ *     827d483:  mov  eax, 0x0
+ *     827d48b:  mov  DWORD PTR [ebp-0x28], eax    ; a local Vec3 of zeroes
+ *     827d48e:  mov  DWORD PTR [ebp-0x24], eax
+ *     827d491:  mov  DWORD PTR [ebp-0x20], eax
+ *     827d494:  lea  edx, [ebp-0x28]
+ *     ...
+ *     827d4a2:  push edx                  ; <- the SPEED argument
+ *     827d4a5:  call 81dab40 <SimpleObject::handleCollision>
+ *
+ * The two tails are otherwise the same instruction for instruction: the
+ * not-parachuting one at `0x0827dc60` pushes `[ebp+0x10]`, the caller's real
+ * speed vector, and jumps straight back to the shared `push esi / push edi /
+ * call` at `0x0827d4a3`. The only difference between them is which Vec3 lands
+ * in argument 3.
+ *
+ * Argument 3 is the impact speed. `PointResponsePhysics::checkVsTerrain`
+ * (`0x08257720`) stores the node's `getPositionalSpeed()` at `this+0x48` and
+ * the terrain normal at `this+0x5c`, and `solveImpulse` (`0x08256f70`) calls
+ * the object's vtable `+0x58` with `(other, this+0x48, this+0x5c, relPos,
+ * m1, m2)`. That is the same Vec3 `GameServer::handleCollisionLandOrWater`
+ * (`0x08154960`) takes `|v|` from, and for a soldier — the CID test at
+ * `0x08154a81` — the first thing it does with it is `|v| - 8.0` and return
+ * when that goes negative. Zero minus eight is negative, so the whole of
+ * HP-14 — the `Q^2` that a 400 m drop makes enormous included — is skipped.
+ *
+ * The consequence for this module: a landing taken while the chute is open is
+ * billed at **zero** impact speed, whatever the body was actually doing. The
+ * free-fall state is **not** covered — bit `0x10` is clear there — so a man
+ * who never pulls is billed the full 101 m/s.
+ *
+ * This also retires PARA-8's invented mechanism for good. `soldier.js` once
+ * re-stamped `lastCollisionHeight` under the canopy to stop HP-14 billing the
+ * whole drop; `Armor::update` (`0x081730b0`-`0x081730e7`) does the opposite,
+ * and the engine's real answer was never the height term at all.
+ */
+export const PARACHUTE_ZEROES_IMPACT_SPEED = true;
+
+/**
+ * The impact speed to bill a landing at, given whether the chute was open.
+ *
+ * Exactly `BFSoldier::handleCollision`'s choice of argument 3, as a function:
+ * the real speed when the parachute bit is clear, zero when it is set.
+ */
+export function landingImpactSpeed(parachuteOpen, impactSpeed) {
+  return parachuteOpen ? 0 : impactSpeed;
+}
 
 /**
  * The drag to hand a body whose bounding radius is not the engine's.
