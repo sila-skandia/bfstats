@@ -181,7 +181,7 @@ function bail({ from = 400, deployAt = null, pitch = -Math.PI / 2, vz = 0 } = {}
     deploy = deployAt != null && soldier.parachuteState === 'falling'
       && t >= deployAt && soldier.parachuteState !== 'open';
     soldier.step(dt, { deploy });
-    for (const e of soldier.parachuteEvents) {
+    for (const e of soldier.drainParachuteEvents()) {
       if (e.type === 'state' && e.state === 'falling' && trace.fallFiredAt == null) {
         trace.fallFiredAt = { t, y: soldier.y, height: soldier.y };
       }
