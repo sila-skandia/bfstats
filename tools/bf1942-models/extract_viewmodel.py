@@ -89,8 +89,8 @@ from extract_pose import (
 #
 # The stance families are the engine's own, not a scaling of the standing ones.
 # Surveyed over vanilla's 1,458-state machine (see
-# `features/viewer-soldier-stance-and-blast/README.md` §2), every weapon that
-# declares `Ub_StandAim<W>` also declares all six below, and they resolve to
+# `features/viewer-soldier-stance-and-blast/README.md` §2), all 28 weapons that
+# declare `Ub_StandAim<W>` also declare all six below, and they resolve to
 # three different shapes:
 #
 #   Ub_Crouch<W>        the *same* `1PStandAim<W>.baf`, at the state's own
@@ -108,8 +108,14 @@ from extract_pose import (
 # vanilla weapon), so a crouching man fires and reloads on the standing states.
 # The viewer's fallback chain reproduces that rather than inventing a clip.
 #
+# `Ub_CrouchRaiseWeapon<W>` resolves to the *same* `1PDeploy<W>.baf` at the
+# same rate as `Ub_StandRaiseWeapon<W>` on all 28 vanilla weapons, so
+# `crouchDeploy` is a duplicate of `deploy` in a vanilla rig and costs bytes
+# for nothing there. It is baked anyway because the chain is per mod: a mod
+# that declares a real crouched draw-in gets it without a code change.
+#
 # Not baked, and named here so the gap is visible rather than assumed away: the
-# 26 weapons also declare `{Crouch,Lie,}{Backward,StrafeLeft,StrafeRight,Turn*}`
+# 28 weapons also declare `{Crouch,Lie,}{Backward,StrafeLeft,StrafeRight,Turn*}`
 # and the two jumps, all with 1P clips. The viewer plays the forward clip for
 # every direction in every stance, standing included, so those are a separate
 # gap from this one.

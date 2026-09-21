@@ -35,8 +35,10 @@ export const LOCO_CLIP = {
  * Stance: `stance` ('stand' | 'crouch' | 'prone') joins `gait`, and every
  * family this returns is resolved through `stance-clips.js` against `has` —
  * the predicate saying which families the loaded rig actually baked. A rig
- * published before the stance families existed resolves back to the standing
- * clip down its own chain, so an old `fp.glb` behaves exactly as it did.
+ * published before the stance families existed resolves back down its own
+ * chain to a standing clip; the one place that is not what it used to do is a
+ * moving crouched or prone soldier, who lands on `walk` where the old flat
+ * table sent him to `idle` (see `stance-clips.js`).
  *
  * Fire selection: a weapon's fire state is usually one clip (`fire`), but the
  * knife's aim state registers five of them (`1pFireKnife1..5` — ANIM-6's
