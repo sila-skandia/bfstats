@@ -46,6 +46,7 @@ import { GRAVITY } from './physics.js';
 // `contact-response.js` for why a grenade does not rebound and what it does
 // instead. Imports nothing itself, so this costs the page no extra module.
 import { FuseRoundBody, contactMaterialFor, SURFACE_STANDOFF } from './contact-response.js';
+import { idleFirePose } from './idle-vehicle.js';
 
 // Real muzzle velocities (400-1000 m/s) cross a parked model between two
 // frames; scaled down so a burst reads as a stream instead of a strobe.
@@ -525,6 +526,30 @@ export class GunFire {
     if (!group || group.firing === !!on) return false;
     group.firing = !!on;
     return true;
+  }
+
+  /**
+   * Retire one group: trigger off, out of the index, and the gun it was
+   * driving left looking like a gun nobody is firing.
+   *
+   * The order matters and the last step is the one that was missing. Splicing
+   * a group out of `this.groups` is what a seat exit has always done -- rounds
+   * already in the air keep their own reference and finish their flight -- but
+   * it also means `advance` never looks at that gun again. A muzzle flash lit
+   * on the frame of the exit is therefore never advanced to its own
+   * `timeToLive`, and a barrel caught mid-recoil is never walked back to
+   * `home`: both are latches that outlive the object that drives them, and
+   * they stay on the parked vehicle for the rest of the level. `idleFirePose`
+   * is the reset, and it is here rather than in any caller because here is
+   * where the group stops being stepped.
+   */
+  release(group) {
+    if (!group) return false;
+    group.firing = false;
+    const index = this.groups.indexOf(group);
+    if (index >= 0) this.groups.splice(index, 1);
+    idleFirePose(group.node);
+    return index >= 0;
   }
 
   /**
