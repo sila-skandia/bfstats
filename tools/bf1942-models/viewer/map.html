@@ -993,7 +993,9 @@ import { Armor } from './armor.js';
 import { VehicleDamageSet } from './vehicle-damage.js';
 import { BodyWorld } from './body-world.js';
 import { buildParkedVehicle, describeVehicleParts } from './vehicle-bodies.js';
-import { equilibriumRootY, floatNodesOf } from './body-float.js';
+import {
+  equilibriumRootY, floatNodesOf, localiseFloats, FloatingHull,
+} from './body-float.js';
 import { SupplyDepot } from './supply.js';
 import { collectIkBindings, defaultSeatPoseName, ikTarget, resolveSeatStates,
          seatBody, seatPoseName, solveTwoBone } from './seat-ik.js';
@@ -5813,6 +5815,34 @@ function bodySpecFor(node) {
  * A hull whose float nodes cannot carry it gets `null` and is left where it was
  * authored rather than dropped through the sea bed.
  */
+/**
+ * A burning ship stops being a spawn point.
+ *
+ * `BFSpawnPoint::getActive(bool, int)` (`0x08163dd0`) walks the chain to the
+ * nearest `IID_IArmor` (`0xc4a4`) and returns 0 when it reports
+ * `isCriticalDamaged()` (Armor vtable `+0xcc`, `0x08174320`) — the same
+ * threshold that arms the sink, so the moment a destroyer starts going down it
+ * stops offering her decks. Answered per hull here because the world's flag
+ * list is built once at load and the state is live.
+ */
+function shipFlagInactive(flag) {
+  if (!flag?.vehicle || !flag.position) return false;
+  for (const host of floatHosts) {
+    if (host.sinking) {
+      const p = host.sinking.body.pos;
+      if (Math.hypot(flag.position[0] - p[0], flag.position[2] - p[2])
+          <= host.radius + 40) return true;
+      continue;
+    }
+    const d = Math.hypot(flag.position[0] - host.authored[0],
+                         flag.position[2] - host.authored[2]);
+    if (d > host.radius + 40) continue;
+    const owner = collider?.statics?.ownerOf?.(host.node) ?? -1;
+    return !!(owner >= 0 && vehicleDamage?.get(owner)?.critical);
+  }
+  return false;
+}
+
 function floatPlacedVehicles(ownerRoots, waterLevel) {
   floatHosts.length = 0;
   if (!Number.isFinite(waterLevel)) return;
@@ -5846,6 +5876,73 @@ function floatPlacedVehicles(ownerRoots, waterLevel) {
 /** Placed floating hulls, with the pose their deck spawns were baked against. */
 const floatHosts = [];
 const _deckPoint = new THREE.Vector3();
+
+/**
+ * A ship that has taken critical damage is going down.
+ *
+ * `FloatingBundle::handleMessage` (`0x082402b0`) arms the per-node sink rate on
+ * TemplateMessage **`0x14`** — `criticalDamage`, the same threshold that stops
+ * a ship being a spawn point (`BFSpawnPoint::getActive` `0x08163dd0` step 2) —
+ * not on death. For a Fletcher that is 50 of its 300 hit points.
+ *
+ * The body world does not carry ships (see `bodySpecFor`), so a hull that
+ * starts sinking gets its own `FloatingHull` (`body-float.js`): a `RigidBody`
+ * with the float law posted at each node, which is precisely what the engine
+ * runs. Each node's rate is its own, so the offsets diverge and she goes down
+ * by one end; on a capital ship the spread is about 2:1, and the vanilla hull
+ * that actually rolls over is the LCVP.
+ *
+ * The deck spawns follow, because `rebaseDeckSpawns` resolves them through the
+ * hull's live matrix: a burning destroyer carries her spawn points down with
+ * her, which is the engine's own arrangement and the reason the critical gate
+ * exists at all.
+ */
+function armSinkingHull(host) {
+  if (host.sinking) return host.sinking;
+  const floats = floatNodesOf(host.node);
+  if (!floats.length) return null;
+  host.node.updateWorldMatrix(true, false);
+  const e = host.node.matrixWorld.elements;
+  const axes = [[e[0], e[1], e[2]], [e[4], e[5], e[6]], [e[8], e[9], e[10]]];
+  const spec = host.node.userData?.physics || {};
+  const box = new THREE.Box3().setFromObject(host.node);
+  const size = box.getSize(new THREE.Vector3());
+  let radius = 0;
+  for (const float of floats) {
+    radius = Math.max(radius, Math.hypot(float.offsetX, float.offsetY, float.offsetZ));
+  }
+  host.sinking = new FloatingHull({
+    floats: localiseFloats(floats, axes),
+    mass: spec.mass || 1, drag: spec.drag || 0,
+    box: [size.x, size.y, size.z],
+    inertiaModifier: spec.inertiaModifier || [1, 1, 1],
+    waterLevel: collider?.waterLevel ?? extras?.waterLevel ?? 0,
+    boundingRadius: radius,
+    position: [e[12], e[13], e[14]], axes,
+  });
+  host.sinking.arm();
+  return host.sinking;
+}
+
+function stepSinkingHulls(step) {
+  if (!step?.bodyTicks || !floatHosts.length) return;
+  for (const host of floatHosts) {
+    if (!host.sinking) {
+      // The occupied hull is the drive model's, not this pass's.
+      if (occupancy?.root === host.node) continue;
+      const owner = collider?.statics?.ownerOf?.(host.node) ?? -1;
+      const record = owner >= 0 ? vehicleDamage?.get(owner) : null;
+      if (!record?.critical) continue;
+      if (!armSinkingHull(host)) continue;
+    }
+    for (let tick = 0; tick < step.bodyTicks; tick++) host.sinking.step();
+    const body = host.sinking.body;
+    writeBodyPose(host.node, body);
+    // The deck spawns ride the hull down: the same live re-resolution the
+    // level load does, re-evaluated now that the hull has moved.
+    rebaseDeckSpawns();
+  }
+}
 
 /**
  * Move every deck spawn with the hull it belongs to.
@@ -8179,6 +8276,11 @@ function buildSpawnFlags() {
 function spawnAtFlag(advance = false) {
   if (!soldier || !flags.length || !world) return false;
   const flag = flags[Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1)];
+  // `BFSpawnPoint::getActive`'s Armor gate: a critically damaged ship offers
+  // nothing. The engine answers this per spawn point every time the screen is
+  // drawn; the viewer answers it at the moment of the spawn, which is the one
+  // that matters.
+  if (shipFlagInactive(flag)) return false;
   const spawned = world.spawnPlayer(LOCAL_PLAYER, {
     flag, advance, group: flag.vehicle ? activeDeployGroup(flag) : null });
   if (!spawned) return false;
@@ -14417,6 +14519,9 @@ function frame(dt) {
   // The world's tick ran the bodies immediately before its own damage pass,
   // in the same frame as the old code; this half only draws the results.
   stepVehicleBodies(step);
+  // ... and beside them, the hulls the body world does not carry: a ship that
+  // has taken critical damage is going down, and its deck spawns go with it.
+  stepSinkingHulls(step);
   // After `advance`, so a round that landed this frame is already accounted for
   // when the tier is picked. Unconditional for the same reason `advance` is: a
   // tank set alight before the player climbed out keeps burning down to nothing
@@ -14837,6 +14942,8 @@ if (params.has('shots')) {
         team: flag.team,
         spawns: flag.spawns.length,
         selected: index === chosen,
+        // A burning ship: `BFSpawnPoint::getActive`'s Armor gate.
+        inactive: shipFlagInactive(flag),
       }));
     },
     get team() { return deployTeamId; },
