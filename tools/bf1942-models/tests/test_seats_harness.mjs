@@ -574,6 +574,16 @@ function shermanWithRenamedGunnerNode() {
       mixed.setActiveSeat(mixed.rootId);
       return mixed.seatDots();
     })(),
+    // The live-occupancy half (wave 4): `tank` is sitting in the gunner's
+    // seat (position 1) when these run, so the driver's seat is the one an
+    // occupant row can fill.
+    shermanGunnerWithFriendDriver: tank.seatDots([{ seat: 0, team: 1 }], 1),
+    shermanGunnerWithEnemyDriver: tank.seatDots([{ seat: 0, team: 2 }], 1),
+    shermanGunnerRowOnTheLocalSeat: tank.seatDots([{ seat: 1, team: 2 }], 1),
+    // `apc` sits in position 2 of the six-seat Hanomag; two enemy passengers
+    // in the driver's and the fourth passenger's seats.
+    hanomagCrew: apc.seatDots(
+      [{ seat: 0, team: 1 }, { seat: 4, team: 1 }], 2),
   };
 }
 

@@ -33,8 +33,10 @@ HARNESS = Path(__file__).resolve().parent / "mouse_input_harness.mjs"
 MODULES = {
     "mouse-input.js": VIEWER / "mouse-input.js",
     # `seats.js` so the Sherman numbers run through the real `TurretAxis`
-    # servo rather than a re-implementation of it here.
+    # servo rather than a re-implementation of it here, and its own
+    # `seat-dots.js` import.
     "seats.js": VIEWER / "seats.js",
+    "seat-dots.js": VIEWER / "seat-dots.js",
     "node_modules/three/three.module.js": VIEWER / "vendor" / "three.module.js",
 }
 THREE_PACKAGE = json.dumps({
