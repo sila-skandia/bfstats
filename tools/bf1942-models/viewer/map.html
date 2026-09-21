@@ -4171,6 +4171,37 @@ function disposeSounds() {
   activeAreaAudios = [];
 }
 
+// A depot's give sound, once `setupSounds` has pulled it out of the ambience:
+// the decoded sample and the context time its last play runs until.
+let supplyGive = null;
+const _depotPos = new THREE.Vector3();
+
+/** Where this level's SupplyDepot nodes stand, for telling a depot's give
+ *  sound from real building ambience. One walk per level load. */
+function supplyDepotPositions() {
+  const out = [];
+  currentRoot?.traverse(obj => {
+    if (obj.userData?.templateKind !== 'SupplyDepot') return;
+    obj.getWorldPosition(_depotPos);
+    out.push({ x: _depotPos.x, z: _depotPos.z });
+  });
+  return out;
+}
+
+/** The refill report: one pass of the sample per give that gave something,
+ *  never stacked on a pass still sounding. */
+function playSupplyGive() {
+  if (!supplyGive || !audioListener || masterVolume() <= 0) return;
+  const ctx = audioListener.context;
+  if (ctx.state !== 'running' || ctx.currentTime < supplyGive.until) return;
+  const source = ctx.createBufferSource();
+  source.buffer = supplyGive.buffer;
+  source.connect(ensureHandFireBus(ctx));
+  source.onended = () => { try { source.disconnect(); } catch (_) {} };
+  try { source.start(); } catch (_) { return; }
+  supplyGive.until = ctx.currentTime + supplyGive.buffer.duration;
+}
+
 async function setupSounds(report, dir) {
   disposeSounds();
   const gen = soundsGeneration;
@@ -4217,6 +4248,33 @@ async function setupSounds(report, dir) {
         farDistance: flags.farDistance ?? 15.0,
       });
     }
+  }
+
+  // A SupplyDepot's sound script is its *give* sound — `Ammorefill.wav`, heard
+  // while the depot is actually handing over ammunition — and every scene.json
+  // extracted before the extractor learnt that ships it as building ambience:
+  // one for-ever loop beside each of vanilla's 621 ammo boxes and airfield
+  // depots. Those areas are taken out of the pool here, so published trees are
+  // right without a re-extract, and their sample becomes `supplyGive`, played
+  // from the depot's own give (`supplyTarget.refillAmmo`).
+  supplyGive = null;
+  const depotAt = supplyDepotPositions();
+  const isDepotGive = area => {
+    if (!/_static$/i.test(area.name || '') || area.points?.length !== 1) return false;
+    if (!depotAt.length) return /ammorefill/i.test(area.file || '');
+    const [x, , z] = area.points[0];
+    return depotAt.some(d => (d.x - x) ** 2 + (d.z - z) ** 2 < 36);
+  };
+  let giveFile = null;
+  for (let i = areaList.length - 1; i >= 0; i--) {
+    if (!isDepotGive(areaList[i])) continue;
+    giveFile = giveFile || areaList[i].file;
+    areaList.splice(i, 1);
+  }
+  if (giveFile) {
+    const buffer = await getBuffer(giveFile);
+    if (gen !== soundsGeneration) return;
+    if (buffer) supplyGive = { buffer, until: 0 };
   }
 
   if (areaList.length > 0) {
@@ -8324,9 +8382,15 @@ supplyTarget.refillAmmo = () => {
   // spares) — one magazine less than the pre-existing `__refill` perf-cheat
   // below, which is deliberately generous for a stress test rather than
   // standing in for a real mechanic.
-  hw.rounds = magazine.size;
-  hw.mags = Math.max((magazine.magazines ?? 1) - 1, 0);
+  const size = magazine.size >= 0 ? magazine.size : Infinity;
+  const spares = Math.max((magazine.magazines ?? 1) - 1, 0);
+  // A soldier who is owed nothing gets nothing, and hears nothing: the depot
+  // ticks every half second for as long as he stands on it.
+  if (hw.rounds >= size && hw.mags >= spares) return;
+  hw.rounds = size;
+  hw.mags = spares;
   hw.reload = 0;
+  playSupplyGive();
 };
 let weaponToken = 0;      // guards a slow load landing after a mode/map switch
 let triggerHeld = false;  // left button, while pointer-locked on foot
@@ -9781,12 +9845,21 @@ function footFire(dt, input = null) {
       // that makes the round waits for the countdown. A weapon swapped or a
       // soldier killed mid-wind-up never throws: `hw` goes with them.
       const windUp = hw.data?.throw?.fireDelay || 0;
+      // Clicks made during a throw are not banked either: the rifles keep
+      // their one queued shot across the bolt cycle, but a grenade mashed
+      // through its wind-up would follow itself with a second nobody asked for.
+      if (windUp > 0 && (hw.throwWind > 0 || hw.cool > 0)) clickQueued = false;
       if (hw.throwWind > 0) {
         hw.throwWind -= dt;
         if (hw.throwWind <= 0) {
           hw.throwWind = 0;
           pullHandTrigger(hw);
         }
+      } else if (clickQueued && !(hw.rounds > 0) && hw.reload <= 0) {
+        // Dry, and not mid-reload: the click is spent on nothing. Left queued
+        // it was honoured the moment an ammo box refilled the weapon — spam
+        // the trigger on an empty grenade pouch and the resupply threw one.
+        clickQueued = false;
       } else if (clickQueued && canFire && hw.cool <= 0 && !hw.pulse) {
         clickQueued = false;
         if (windUp > 0) {
@@ -9821,6 +9894,13 @@ function footFire(dt, input = null) {
       hw.hideFire = 0;
       if (hw.weaponNode) hw.weaponNode.visible = true;
     }
+  }
+  // A thrown weapon with nothing left to throw is an empty hand. The engine
+  // gets there by switching weapons (`changeWeaponWhenNoAmmo`); until this
+  // page does that, the fist at least does not hold a grenade the pouch does
+  // not have — and an ammo box puts one back in it the moment it refills.
+  if (hw.weaponNode && hw.data?.throw && hw.hideFire <= 0) {
+    hw.weaponNode.visible = hw.rounds > 0 || hw.mags > 0;
   }
 
   // The arms last, once the reload clock and the trigger have settled what

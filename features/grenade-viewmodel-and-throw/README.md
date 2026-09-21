@@ -351,3 +351,29 @@ among them: both report `gripAnimated: false` and neither weapon throws.
 - `changeWeaponWhenNoAmmo` — the engine switches weapons when the last grenade
   is gone and this page does not, so the soldier is left holding one he cannot
   throw.
+
+## Follow-ups from play-testing (2026-09-21)
+
+- **Every other throw never left the hand.** The semi-auto trigger was a
+  one-frame pulse, `guns.advance` runs on the 30 Hz world tick, and a pulse on
+  a frame with no tick fired nothing. The pull is now held until
+  `group.shots` moves (`pullHandTrigger`, 0.25 s ceiling) — for every
+  `fireOnce` hand weapon, not only the grenade.
+- **Clicks are not banked.** A click while dry, or during a throw's wind-up or
+  cycle, is spent: spamming the trigger on an empty pouch no longer throws a
+  grenade the moment an ammo box refills it.
+- **An empty pouch is an empty hand.** A throw weapon with no rounds and no
+  spares hides its grip node; a refill shows it again.
+- **The thrown round and the world.** Three faults in `FuseRoundBody`: the
+  body was left exactly ON the struck plane, where a ray toward that plane
+  misses, so at the foot of a wall (contact remembered: the wall) it sank
+  through the floor slab and then, under the heightfield, fell out of the
+  world; the re-seat probe reached a whole tick's travel and hauled a
+  rebounding round back onto the wall it had just left; and the pair
+  restitution as read makes a grenade stop dead against everything. Now the
+  body stands `SURFACE_STANDOFF` (2 cm) off what it touches, the re-seat only
+  holds a contact the body is still within that standoff of, an elastic round
+  keeps `ELASTIC_REBOUND` (0.2, free, fitted by eye — see the constant) of its
+  closing speed above 1.5 m/s, and `gunfire.js` clamps a fuse round that gets
+  under the terrain back onto it. 20 m/s into a wall comes to rest about
+  1.6 m back from it.

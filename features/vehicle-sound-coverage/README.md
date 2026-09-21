@@ -396,3 +396,19 @@ alike). Note that a headless run has to spawn before `__enterOwner` -- the
 local player only joins the world at deploy, and a mount with no player is a
 silent no-op. Pinned by `tests/test_world_held_input.py`
 (`world_held_input_harness.mjs`).
+
+## The ammo box that never stopped reloading (2026-09-21)
+
+`discover_level_sounds` harvests `loadSoundScript` out of static objects as
+building ambience, and a SupplyDepot's script is not ambience: it is the *give*
+sound, `Ammorefill.wav`, heard while the depot hands over ammunition. It shipped
+as a for-ever loop beside all 621 vanilla ammo boxes and airfield depots.
+`_find_template_sound_script` now skips a script bound to a `SupplyDepot`, and —
+so published scene.json files are right without a re-extract — `setupSounds`
+pulls any single-point `*_static` area standing on a SupplyDepot node out of the
+ambient pool and keeps its sample as `supplyGive`. `supplyTarget.refillAmmo`
+plays one pass of it only when the held weapon was actually owed something, and
+never over a pass still sounding. Vehicles re-arming at an airfield depot do not
+play it yet (the viewer has no vehicle re-arm at all). `barbwire1` is exported
+the same way — 553 loops — and is probably a touch sound too; left alone until
+someone confirms what the game does.
