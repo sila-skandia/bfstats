@@ -1,7 +1,7 @@
 """`viewer/stance-clips.js` -- which upper-body family a stance owes.
 
 The chains are not a viewer invention: `AnimationStates.con` declares a
-separate upper-body state per stance, per weapon, and all 26 vanilla weapons
+separate upper-body state per stance, per weapon, and all 28 vanilla weapons
 that declare `Ub_StandAim<W>` also declare `Ub_Crouch<W>`,
 `Ub_CrouchForward<W>`, `Ub_CrouchRaiseWeapon<W>`, `Ub_Lie<W>`,
 `Ub_LieForward<W>`, `Ub_LieFire<W>`, `Ub_LieReload<W>` and
@@ -84,6 +84,19 @@ class StanceClipTests(unittest.TestCase):
     def test_there_is_no_crouch_run(self) -> None:
         # `Ub_CrouchForward<W>` is the only forward crouch state in the data.
         self.assertEqual("crouchWalk", self.results["moving"]["crouchRun"])
+        # And the chain says so, not just the resolution: a `crouchRun` entry
+        # no rig carries would resolve to `crouchWalk` anyway, so the absence
+        # has to be asserted on the table itself.
+        chains = self.results["chains"]
+        self.assertEqual(chains["walkCrouch"], chains["runCrouch"])
+
+    def test_the_absent_crouch_actions_are_absent_from_the_chains(self) -> None:
+        # Same trap: an invented `crouchFire` / `crouchReload` entry resolves
+        # to the standing clip on every rig that lacks it, so only the chain
+        # itself can pin the data's two absences.
+        chains = self.results["chains"]
+        self.assertEqual(["fire"], chains["fireCrouch"])
+        self.assertEqual(["reload"], chains["reloadCrouch"])
 
     def test_crouch_fires_and_reloads_on_the_standing_states(self) -> None:
         actions = self.results["actions"]
@@ -97,7 +110,13 @@ class StanceClipTests(unittest.TestCase):
         self.assertEqual("crouchDeploy", actions["deployCrouch"])
         self.assertEqual("proneDeploy", actions["deployProne"])
 
-    def test_a_rig_without_the_stance_clips_behaves_as_it_did_before(self) -> None:
+    def test_a_rig_without_the_stance_clips_resolves_to_a_standing_one(self) -> None:
+        # Not quite "as it did before": a **stationary** crouched or prone
+        # soldier on an old rig lands on `idle`, exactly as he used to, but a
+        # moving one now lands on `walk` where the old flat table sent him to
+        # `idle`. That is the chain doing its job -- `Ub_CrouchForward<W>` is
+        # the same `1pRun<W>.baf` the standing walk uses -- and it is the one
+        # behaviour an un-re-extracted rig does not keep.
         old = self.results["oldRig"]
         self.assertEqual("idle", old["crouchIdle"])
         self.assertEqual("idle", old["proneIdle"])
