@@ -1622,6 +1622,18 @@ export class VehicleCamera {
      * sim position stands, exactly as before.
      */
     this.drawnPosition = null;
+    /**
+     * An external-view law supplied by the page, or null.
+     *
+     * Called once per `update()` in EVERY mode as `(mode, dt, pose)`; it
+     * returns true when it has written `pose` for this frame, and false to let
+     * the framing below stand. It sees the cockpit and fly-by frames too
+     * because the engine's chase offset is carried through them (it starts
+     * from zero out of the cockpit, which is the swoop out of the vehicle).
+     * map.html sets it for seats that run `chase-camera.js`; this file imports
+     * nothing new, so the node harnesses that copy it are untouched.
+     */
+    this.externalLaw = null;
     this.pose = {
       position: new THREE.Vector3(),
       quaternion: new THREE.Quaternion(),
@@ -1764,6 +1776,14 @@ export class VehicleCamera {
     // velocity, the heading frame and the fly-by's re-plant test stay on the
     // sim state, where a fraction of a tick of position makes no difference.
     const at = this.drawnPosition || s.position;
+
+    // The page's law gets first refusal. When it takes the frame the follow
+    // frame is still kept warm, so dropping back to the framing below (a
+    // `?chase=` change, a seat without the law) never opens on a snap.
+    if (this.externalLaw && this.externalLaw(this.mode, dt, out)) {
+      this.followFrame(dt);
+      return out;
+    }
 
     if (this.mode === 'cockpit') {
       // Straight off the `<Vehicle>Camera` node, which is already posed in world
