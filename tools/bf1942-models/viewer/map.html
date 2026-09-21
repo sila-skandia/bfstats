@@ -722,6 +722,52 @@
       display: none;
     }
   }
+/* The room join modal (P3): the game's own overlay for a room that will
+     not open -- a missing room server, a full room, a bad code. The panel
+     is this page's tokens, the deploy screen's family; pre-game it floats
+     over the level, under the console (13) and the Escape menu (12), which
+     keep the z the engine's layering gives them. */
+  #roomIssue {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    display: grid;
+    place-items: center;
+    background: rgba(0, 0, 0, .55);
+  }
+  #roomIssue[hidden] { display: none; }
+  #roomIssue .ri-panel {
+    width: min(440px, calc(100% - 48px));
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 20px 22px;
+    font: 12px/1.55 var(--mm-font-mono);
+    color: var(--text);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, .45);
+  }
+  #roomIssue .ri-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 10px;
+    color: var(--accent);
+    font-weight: 700;
+    letter-spacing: .12em;
+  }
+  #roomIssue .ri-code { color: var(--muted); font-weight: 400; letter-spacing: 0; }
+  #roomIssue .ri-message { margin: 0 0 16px; white-space: pre-wrap; }
+  #roomIssue .ri-actions { display: flex; gap: 8px; }
+  #roomIssue button {
+    flex: 1;
+    padding: 8px 0;
+    font: inherit;
+    color: var(--text);
+    background: #222;
+    border: 1px solid var(--line);
+    cursor: pointer;
+  }
+  #roomIssue button:hover { border-color: var(--accent); color: var(--accent); }
+  #roomIssue .ri-solo { color: var(--muted); }
 </style>
 </head>
 <body>
@@ -837,6 +883,23 @@
       <button type="button" id="deploy-suicide" class="fm-hit" tabindex="-1" aria-label="Suicide"></button>
       <button type="button" id="deploy-score" class="fm-hit" tabindex="-1" aria-label="Score board"></button>
       <button type="button" id="deploy-resume" class="fm-hit" tabindex="-1" aria-label="Resume"></button>
+    </div>
+  </div>
+  <!-- The room's own trouble modal (P3): a room that will not open — the
+       room server is not answering, the room is full, the code is bad —
+       must say so before the player loses interest and navigates away.
+       The panel is the page's own design tokens, the same family as the
+       deploy screen and the Escape menu behind it. Pre-game (or mid-game,
+       for a dropped room), so it floats over the level but under the
+       console and the menu, which never change their z. -->
+  <div id="roomIssue" hidden>
+    <div class="ri-panel" role="alertdialog" aria-label="Room problem">
+      <div class="ri-title">ROOM <span class="ri-code" id="roomIssueCode"></span></div>
+      <p class="ri-message" id="roomIssueMessage"></p>
+      <div class="ri-actions">
+        <button type="button" id="roomIssueRetry">RETRY</button>
+        <button type="button" id="roomIssueSolo" class="ri-solo">PLAY SOLO</button>
+      </div>
     </div>
   </div>
   <!-- The Escape menu: the Instant Battle screen again, over the battle.
@@ -11997,6 +12060,7 @@ let roomClient = null;
 let roomRenderer = null;
 let roomJoined = false;
 let roomPingTimer = null;
+let roomTornDown = false;    // a deliberate teardown; not a join failure
 // P3: the server's word beats the local sim only past these windows — a
 // destroyed-Armor decree is a hard event (the page's own death loop latches
 // the cam), but HP and position corrections wait for a real mismatch so the
@@ -12081,6 +12145,7 @@ function hideParkedHull(roomId, occupied) {
 }
 
 function netTeardownRoom() {
+  roomTornDown = true;
   if (!roomJoined && !roomClient) return;
   roomJoined = false;
   if (roomPingTimer !== null) { clearInterval(roomPingTimer); roomPingTimer = null; }
@@ -12089,6 +12154,42 @@ function netTeardownRoom() {
   roomClient = null;
   parkedHullCache.clear();
 }
+
+// --- the room's trouble modal -------------------------------------------------
+//
+// A room that will not open must say so: the join fails with no feedback
+// today, and a player staring at an empty map navigates away. The modal is
+// the game's own panel (this page's tokens, the deploy family) with the
+// reason, RETRY (one reload — the URL holds the room), and PLAY SOLO.
+const ROOM_CLOSE_MESSAGES = {
+  room_full: 'the room is full',
+  bad_room: 'no room with that code',
+  bad_name: 'that name is no good',
+  no_peer: 'the server lost your connection',
+  handler_error: 'the server had a problem',
+  silent_timeout: 'the server dropped you (silence)',
+};
+const roomIssue = document.getElementById('roomIssue');
+const roomIssueCode = document.getElementById('roomIssueCode');
+const roomIssueMessage = document.getElementById('roomIssueMessage');
+
+function roomIssueShow(code, message) {
+  roomIssueCode.textContent = code ? `· ${code}` : '';
+  roomIssueMessage.textContent = message;
+  roomIssue.hidden = false;
+  (document.getElementById('roomIssueRetry'))?.focus?.();
+}
+
+function roomIssueHide() { roomIssue.hidden = true; }
+
+function roomPlaySolo() {
+  roomIssue.hidden = true;
+  netTeardownRoom();
+  logToConsole('playing solo');
+}
+document.getElementById('roomIssueRetry').addEventListener('click',
+  () => location.reload());
+document.getElementById('roomIssueSolo').addEventListener('click', roomPlaySolo);
 
 async function joinRoom() {
   if (!roomCode || roomClient) return;
@@ -12170,9 +12271,16 @@ async function joinRoom() {
       if (roomPingTimer !== null) { clearInterval(roomPingTimer); roomPingTimer = null; }
       roomRenderer?.reset();
       if (wasIn) logToConsole(`room closed (${code})`);
+      // The reason, on the screen: a dropped round or a refused join both
+      // end in this modal — the message names the failure and the two
+      // ways back in.
+      const message = ROOM_CLOSE_MESSAGES[code]
+        ?? (typeof code === 'string' && code ? `the room closed: ${code}` : null);
+      if (message) roomIssueShow(code, message.toUpperCase());
     };
     roomClient.onjoined = async () => {
       roomJoined = true;
+      roomIssueHide();
       // (The heartbeat was already running — it starts at open, see above,
       // so the join's own silence during the page's load is covered.)
       // The room names the level it runs. When the URL already asked for
@@ -12203,13 +12311,23 @@ async function joinRoom() {
     });
     ws.addEventListener('error', e => {
       console.warn('room socket error', e.message ?? e);
+      // The close that follows the error is the one that speaks.
     });
     ws.addEventListener('close', e => {
       // The room server's own close codes ride the wire as MSG_CLOSED rows
       // (netcode.js); a bare transport close is the silent-timeout law or a
       // network drop, and the console should say which side ended it.
       console.log('room socket closed', e.code, e.reason);
+      // A join that never happened must say so: a missing room server
+      // otherwise leaves a silently empty map. A deliberate teardown never
+      // reaches the modal (the guard below reads the teardown flag).
+      const failed = roomCode && !roomJoined && !roomTornDown;
       netTeardownRoom();
+      if (failed) {
+        roomIssueShow(null,
+          "CAN'T REACH THE ROOM SERVER\n"
+          + 'Make sure it is running, then RETRY — or play solo.');
+      }
     });
     window.__netDiag = () => ({
       readyState: ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][ws.readyState],

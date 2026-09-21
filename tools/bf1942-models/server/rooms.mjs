@@ -56,11 +56,12 @@ export const CHOKE_CAP = RATE_BYTES * MAX_PLAYERS * SNAPSHOT_RATE_DEFAULT;
 
 /** Silent connections are dropped — the peer's 0xd-equivalent (J-3). */
 /** A connection the server heard nothing from for this long is gone. The
- *  page pings every 4 s, so 15 s tolerates a paused main thread (a
- *  client-side level load can hold a synchronous burst of several seconds,
- *  during which the page cannot even run its own timer) without drifting
- *  into the engine's 30 s keepalive period. */
-export const HEARTBEAT_TIMEOUT_MS = 15_000;
+ *  page pings every 4 s, so 25 s tolerates a paused main thread without
+ *  drifting into the engine's 30 s keepalive period — and the pause is
+ *  real: a joining page parses the level's scene.glb in one synchronous
+ *  chunk while its own timers cannot run (observed >15 s under software
+ *  GL, where every documented silent-timeout trace landed). */
+export const HEARTBEAT_TIMEOUT_MS = 25_000;
 export const DROP_SWEEP_MS = 1_000;
 
 /** Fire-event throttle: map.html's 1/0.35 s SMG cadence. P3's GunFire rounds

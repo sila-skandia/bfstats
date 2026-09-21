@@ -171,7 +171,7 @@ class RoomTests(unittest.TestCase):
         self.assertTrue(e["slotFreed"])
         self.assertTrue(e["reuseOk"], e)
 
-    def test_silent_ten_second_drop_sweep(self) -> None:
+    def test_silent_drop_sweep(self) -> None:
         e = self.results["e"]
         self.assertTrue(e["sweepDropped"])
         self.assertEqual(e["sweepRow"], 1)
