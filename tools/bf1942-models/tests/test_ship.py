@@ -34,6 +34,9 @@ MODULES = {
     "ship.mjs": VIEWER / "ship.js",
     "flight.mjs": VIEWER / "flight.js",
     "body-float.js": VIEWER / "body-float.js",
+    # `body-float.js`'s own import: `FloatingHull` is a `RigidBody` with the
+    # float law posted at each node.
+    "rigid-body.js": VIEWER / "rigid-body.js",
     "vendor/loaders/GLTFLoader.js": VIEWER / "vendor" / "loaders" / "GLTFLoader.js",
     "vendor/utils/BufferGeometryUtils.js": VIEWER / "vendor" / "utils" / "BufferGeometryUtils.js",
     "node_modules/three/three.module.js": VIEWER / "vendor" / "three.module.js",

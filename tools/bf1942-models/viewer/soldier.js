@@ -290,6 +290,36 @@ const PITCH_LIMIT = PITCH_LIMIT_DEG * DEG;
  */
 const SPAWN_DROP = 600;
 
+/**
+ * The upward escape `settle()` is allowed, and what makes it fire.
+ *
+ * A `SpawnPoint` is an authored coordinate and the engine does not validate
+ * it: `BFSpawnPoint::spawn` (`0x08163d70`) is
+ * `soldier->setAbsolutePosition(this->getAbsolutePosition())` and nothing else.
+ * What saves a point authored inside solid geometry is the ordinary contact
+ * path — the soldier is the vertex side at weight 1.0 against the ship's col1
+ * faces (collision-response.md §5.3-5.4), the mass share is 0.95+, so he takes
+ * the whole correction and is pushed clear.
+ *
+ * `settle()` probes downward only and so cannot do that. This is the narrowest
+ * stand-in that is still honestly the engine's: **when the surface the soldier
+ * would stand on leaves him no room to stand up, climb onto whatever is
+ * pressing on his head.** A body that cannot stand is a body the engine would
+ * have ejected; a body with headroom is left exactly where it was, which is
+ * what keeps a legitimate indoor spawn — Stalingrad, a bunker, a carrier's
+ * hangar deck under the flight deck — working.
+ *
+ * `STAND_ROOM` is the standing figure height plus a little
+ * (`physics.js` `BODY_HEIGHT[POSE_STAND]`). `SLAB_LIMIT` caps how thick a thing
+ * may be and still be climbed onto: past it, it is not a deck over your head,
+ * it is the inside of something, and the honest answer is to stay put rather
+ * than teleport a player through a wall. `ESCAPE_STEPS` bounds the walk for a
+ * stack of decks.
+ */
+const STAND_ROOM = HEIGHT.stand + 0.05;
+const SLAB_LIMIT = 2.0;
+const ESCAPE_STEPS = 4;
+
 /** How many undrained bail-out events to keep. A whole fall produces six. */
 const PARACHUTE_EVENT_CAP = 64;
 /** Shared empty result, so draining nothing costs no allocation per frame. */
@@ -495,9 +525,14 @@ export class Soldier {
         this.x, from, this.z, 0, -1, 0, SPAWN_DROP, -1, record);
       if (hit) best = hit.y;
     }
+    // Whether the floor is a hull's or the world's. `#escapeUp` needs to know:
+    // being wedged under something with the ground under your boots is not the
+    // same as being wedged under something inside a ship.
+    const onStatic = Number.isFinite(best);
     const ground = collider.surfaceHeight ? collider.surfaceHeight(this.x, this.z) : NaN;
     if (Number.isFinite(ground) && ground <= from && ground > best) best = ground;
     if (Number.isFinite(best)) {
+      if (onStatic && best !== ground) best = this.#escapeUp(collider, best);
       this.body.place(this.x, best, this.z, this.yaw);
       // `plant`, not a poke at `.grounded`: PHY-1's jump gate is the previous
       // tick's *contact*, and spawn placement runs off the tick, so the body
@@ -508,6 +543,54 @@ export class Soldier {
       this.body.plant(1, onWater ? MATERIAL_WATER : -1);
     }
     return this;
+  }
+
+  /**
+   * Climb out from under a deck there is no room to stand under.
+   *
+   * See `STAND_ROOM`. The walk is: is there a surface within standing height
+   * of `floor`? If not, stop — this is a place a man fits, and a low ceiling he
+   * can crouch under is his business. If there is, find that thing's far side
+   * by continuing the ray past it, and if it is thin enough to be a deck rather
+   * than the inside of something, stand on top of it and ask again.
+   *
+   * The caller's gate — that the floor is a *static hit*, not the terrain or
+   * the sea — is what makes this safe, and it is not a detail. The engine's
+   * push-out goes along the contact normal, i.e. the shortest way out, and for
+   * a man on open ground under a low beam the shortest way out is downward:
+   * the engine does not lift him onto the beam, it refuses to let him stand up.
+   * Up is only the way out when he is *inside* something, and having a hull's
+   * own surface under his boots rather than the world's is the cheap and
+   * honest version of that question. (The exact version is a capsule push-out
+   * against the penetrating faces; a downward ray cannot ask it.)
+   *
+   * Vanilla gives this nothing to do today: across Midway, Wake, Coral Sea, Iwo
+   * Jima and Guadalcanal, all 73 ship deck spawns land on a hull surface with
+   * at least 3.0 m of headroom once the extractor's double-mirror is fixed and
+   * the hull is at its own draft. It is here for the authored-inside case the
+   * research predicted and for the mods that will have it.
+   */
+  #escapeUp(collider, floor) {
+    if (!collider.statics) return floor;
+    const record = this._up || (this._up = {
+      t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0,
+      dx: 0, dy: 1, dz: 0, material: 0, kind: '', owner: -1, triangle: -1,
+    });
+    let at = floor;
+    for (let step = 0; step < ESCAPE_STEPS; step++) {
+      record.dx = 0; record.dy = 1; record.dz = 0;
+      const ceiling = collider.statics.cast(
+        this.x, at + 0.02, this.z, 0, 1, 0, STAND_ROOM, -1, record);
+      if (!ceiling) return at;
+      const under = ceiling.y;
+      record.dx = 0; record.dy = 1; record.dz = 0;
+      const over = collider.statics.cast(
+        this.x, under + 0.02, this.z, 0, 1, 0, SLAB_LIMIT, -1, record);
+      // Thicker than a deck, or unbounded: this is not something to climb onto.
+      if (!over || !(over.y > at)) return floor;
+      at = over.y;
+    }
+    return at;
   }
 
   /** Mouse delta, in the page's radians. Yaw is free, pitch is clamped. */

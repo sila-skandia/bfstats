@@ -377,6 +377,33 @@ class SoldierModuleTests(unittest.TestCase):
         self.assertEqual("stand", clear["stance"])
         self.assertAlmostEqual(1.65, clear["eyeY"], places=3)
 
+    # -- `settle`'s upward escape -------------------------------------------- #
+
+    def test_a_spawn_inside_a_hull_is_lifted_onto_the_deck_over_it(self) -> None:
+        """`BFSpawnPoint::spawn` (0x08163d70) writes the authored position and
+        nothing else; what saves a point authored inside a hull is the ordinary
+        contact push -- soldier as the vertex side at weight 1.0 against the
+        ship's col1 faces, mass share over 0.95, so he takes the whole
+        correction (collision-response.md §5.3-5.4, §6.1). `settle` probes
+        downward only, so it stood him on the hold floor under the deck.
+        Authored at 8.1 in a hold whose deck is 1.6 m over it: on the deck."""
+        self.assertAlmostEqual(9.8, self.results["escapeFromHold"], places=3)
+
+    def test_a_spawn_with_standing_room_is_left_where_it_is(self) -> None:
+        """2.4 m under the weather deck is a place a man stands. The escape must
+        not turn every sheltered deck -- a carrier's hangar, a boat bay, a
+        bunker -- into a lift to the roof."""
+        self.assertAlmostEqual(9.8, self.results["escapeStaysOnDeck"], places=3)
+        self.assertAlmostEqual(12.4, self.results["escapeOpenDeck"], places=3)
+
+    def test_a_man_under_a_beam_on_open_ground_stays_under_it(self) -> None:
+        """The gate: the floor has to be a hull's, not the world's. The engine's
+        push-out goes the shortest way out, and for a man standing on the ground
+        under a 1.40 m beam that is downward -- it does not lift him onto the
+        beam, it refuses to let him stand up, which is the case two tests
+        above."""
+        self.assertAlmostEqual(0.0, self.results["escapeUnderBeam"], places=3)
+
     # -- view bob ----------------------------------------------------------- #
 
     def test_the_shipped_soldier_has_no_walking_bob(self) -> None:

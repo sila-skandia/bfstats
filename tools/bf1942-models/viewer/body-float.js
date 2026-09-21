@@ -53,6 +53,8 @@
 // duck-typed node access `collision.js` and `vehicle-bodies.js` use
 // (`userData`, `children`, `matrixWorld.elements`), so it runs under node.
 
+import { RigidBody, TICK } from './rigid-body.js';
+
 /** `BasicPhysicsSystem::getGravity` (vtable `+0x14`, `0x08251ec0`) — a field
  *  read, so -14.73 is configured rather than literal in that function. */
 export const GRAVITY = -14.73;
@@ -276,4 +278,147 @@ export function floatNodesOf(root) {
   };
   visit(root);
   return out;
+}
+
+// --- a hull going down ---------------------------------------------------------
+
+/**
+ * Body-local offsets for float nodes read in world space.
+ *
+ * `floatNodesOf` measures each node against the hull's world origin, which is
+ * what the law wants — it is a world-space call — but a hull that turns or
+ * lists has to rotate them every tick, so they are taken into the body frame
+ * once. `axes` is the row convention the body modules use: `axes[i]` is the
+ * body's i-th axis in world space, so the body-frame component is the dot.
+ */
+export function localiseFloats(floats, axes) {
+  return (floats || []).map(float => {
+    const w = [float.offsetX || 0, float.offsetY || 0, float.offsetZ || 0];
+    return {
+      ...float,
+      local: [
+        w[0] * axes[0][0] + w[1] * axes[0][1] + w[2] * axes[0][2],
+        w[0] * axes[1][0] + w[1] * axes[1][1] + w[2] * axes[1][2],
+        w[0] * axes[2][0] + w[1] * axes[2][1] + w[2] * axes[2][2],
+      ],
+      sinkOffset: 0,
+      sinkRate: 0,
+      angle: 0,
+    };
+  });
+}
+
+/**
+ * An unmanned hull in the water: afloat, and then going down by one end.
+ *
+ * A `RigidBody` is the engine's `PhysicsNode` (`rigid-body.js` is that read),
+ * and a ship in Refractor is exactly that plus its `FloatingBundle` children
+ * calling `addAccelerationAtAbsolutePosition` on it. So this class is the
+ * wiring and nothing else: post each node's force at each node's world
+ * position, then step.
+ *
+ * `arm()` is `FloatingBundle::handleMessage`'s `0x14` branch — **critical
+ * damage, not death**. `0x15` (destroyed) sets the wreck byte and leaves the
+ * rate alone, so a ship blown apart in one blow may never start sinking at all;
+ * whether `Armor::status` can reach `0x15` without passing `0x14` is UNVERIFIED
+ * in the corpus and is not modelled here either way.
+ *
+ * Each node gets its own rate out of `sinkRate`, so the offsets diverge and the
+ * hull goes down by the end whose nodes sink fastest. That is the whole visual,
+ * and it costs nothing: the righting couple is already emergent from eight
+ * nodes at eight depths.
+ *
+ * What is NOT modelled: the hull's own box drag (a sinking hull barely
+ * translates horizontally, and the float nodes carry the heave damping). A
+ * `Ship` under the player holds the same float descriptors, so the manned case
+ * is the same law and the same accumulator through a different integrator.
+ */
+export class FloatingHull {
+  constructor({
+    floats, mass = 1, box = null, inertiaModifier = [1, 1, 1],
+    waterLevel = 0, drag = 0, boundingRadius = 0,
+    position = [0, 0, 0], axes = null,
+  } = {}) {
+    this.body = new RigidBody({ mass, box, inertiaModifier, position, axes });
+    // A `RigidBody` is born with an empty accumulator, because the engine's is:
+    // the gravity a tick uses was written at the end of the tick before it
+    // (rigid-body.js F8). A hull that has been floating since the level loaded
+    // is not a body that has just been constructed, though, and starting it a
+    // whole tick of gravity short kicks it half a metre a second upward, which
+    // on a 28-second time constant takes minutes to come back. Seeding the
+    // accumulator is the "this body has already been ticking" state.
+    this.body.acc[1] = GRAVITY * this.body.gravityModifier;
+    this.floats = floats || [];
+    this.waterLevel = waterLevel;
+    this.drag = drag;
+    this.mass = mass;
+    this.boundingRadius = boundingRadius;
+    this.areaXZ = box ? box[0] * box[2] : 0;
+    this.armed = false;
+    this._p = [0, 0, 0];
+    this._v = [0, 0, 0];
+    this._a = [0, 0, 0];
+  }
+
+  /** `FloatingBundle::handleMessage(0x14)`: each node takes its own rate. */
+  arm() {
+    if (this.armed) return false;
+    this.armed = true;
+    for (const float of this.floats) {
+      float.sinkRate = sinkRate(float, {
+        offsetX: float.local[0], offsetZ: float.local[2],
+        boundingRadius: this.boundingRadius,
+      });
+    }
+    return true;
+  }
+
+  /** One node's world position, through the hull's current pose. */
+  nodeWorld(float, out = this._p) {
+    const { pos, axes } = this.body;
+    const l = float.local;
+    for (let i = 0; i < 3; i++) {
+      out[i] = pos[i] + l[0] * axes[0][i] + l[1] * axes[1][i] + l[2] * axes[2][i];
+    }
+    return out;
+  }
+
+  /**
+   * One tick: the accumulator, then the body.
+   *
+   * The offset accumulates first and wakes the hull, exactly as `updatePhysics`
+   * does it — the `sinkOffset += sinkRate` and the `setIsAwake()` are the first
+   * thing in that function, ahead of the sleep test, which is why a sinking
+   * ship never sleeps.
+   */
+  step(dt = TICK) {
+    const body = this.body;
+    for (const float of this.floats) {
+      if (float.sinkRate) { float.sinkOffset += float.sinkRate; body.wake(); }
+    }
+    // **A sleeping ship makes no lift.** `updatePhysics` copies the root's
+    // sleepiness and returns before it touches the water, and that early return
+    // is load-bearing here rather than an optimisation: a hull resting at its
+    // draft sleeps after a hundred quiet ticks, and a body that wakes takes its
+    // first tick with an empty accumulator — one tick of pure buoyancy, half a
+    // metre a second upward. Posting lift into a sleeping hull therefore walks
+    // it up out of the water, a centimetre per sleep cycle. A hull with a sink
+    // rate never reaches this line: the accumulator above wakes it every tick,
+    // which is why a sinking ship never sleeps.
+    if (body.sleeping) { body.step(dt); return body; }
+    for (const float of this.floats) {
+      const p = this.nodeWorld(float, this._p);
+      body.tangentSpeed(p, this._v);
+      const a = floatAcceleration(float, {
+        nodeY: p[1], waterLevel: this.waterLevel, verticalSpeed: this._v[1],
+        angle: float.angle || 0, sinkOffset: float.sinkOffset,
+        drag: this.drag, mass: this.mass, areaXZ: this.areaXZ,
+      });
+      if (a === 0) continue;
+      this._a[0] = 0; this._a[1] = a; this._a[2] = 0;
+      body.addAccelerationAt(p, this._a);
+    }
+    body.step(dt);
+    return body;
+  }
 }

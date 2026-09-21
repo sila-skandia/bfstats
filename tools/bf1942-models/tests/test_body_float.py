@@ -37,7 +37,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("body_float_harness.mjs")
-MODULES = {"body-float.js": VIEWER / "body-float.js"}
+MODULES = {
+    "body-float.js": VIEWER / "body-float.js",
+    # `FloatingHull` is a `RigidBody` plus the float law, because that is what a
+    # ship is: `PhysicsNode` with `FloatingBundle` children posting into it.
+    "rigid-body.js": VIEWER / "rigid-body.js",
+}
 
 WATER = 20.0
 GRAVITY = -14.73
@@ -263,6 +268,61 @@ class BodyFloatTests(unittest.TestCase):
 
     def test_a_vehicle_with_no_floaters_yields_none(self):
         self.assertEqual(self.out["floatNodesEmpty"], 0)
+
+    # -- (f) a hull going down ----------------------------------------------
+
+    def test_an_undamaged_hull_holds_its_draft_for_ever(self):
+        """A `RigidBody` with the law posted at each node, started at the
+        closed form, does not drift: exactly the draft, exactly zero velocity.
+
+        That only holds because a **sleeping** hull makes no lift, which is the
+        engine's own early return. A body wakes with an empty accumulator and
+        takes one tick of pure buoyancy -- half a metre a second upward -- so a
+        hull that keeps being given lift while asleep walks itself up out of
+        the water a centimetre per sleep cycle. It read 20.33 before that
+        return was honoured."""
+        self.assertAlmostEqual(self.out["hullAfloat"]["y"], 20.225, places=6)
+        self.assertFalse(self.out["hullAfloat"]["armed"])
+        self.assertEqual(self.out["hullAfloat"]["offsets"], [0] * 8)
+
+    def test_arming_is_idempotent_and_gives_each_node_its_own_rate(self):
+        """`FloatingBundle::handleMessage(0x14)` arms the rate once. `q` depends
+        on where the node sits along `x + z`, so the eight rates differ and the
+        ship goes down by one end."""
+        self.assertEqual(self.out["hullSinking"]["armedTwice"], [True, False])
+        rates = self.out["hullRates"]
+        bow = max(r["rate"] for r in rates)
+        stern = min(r["rate"] for r in rates)
+        self.assertAlmostEqual(bow / stern, 1.90, places=1)
+        # Monotone along the hull: the further forward, the faster down.
+        by_z = sorted(rates, key=lambda r: r["z"])
+        self.assertEqual([r["rate"] for r in by_z],
+                         sorted(r["rate"] for r in by_z))
+
+    def test_a_critically_damaged_hull_goes_down_by_the_bow(self):
+        """Sixty seconds from `0x14`. She loses her freeboard in the first ten,
+        is under in thirty, and trims bow-down the whole way -- the y component
+        of her own forward axis goes negative and keeps going. Nothing in the
+        model says "trim": it is eight nodes at eight depths and `r x a`."""
+        trace = self.out["hullSinking"]["trace"]
+        self.assertLess(trace[0]["y"], 20.225 - 2)
+        # Monotone down, and still going.
+        self.assertEqual([t["y"] for t in trace],
+                         sorted((t["y"] for t in trace), reverse=True))
+        self.assertLess(trace[-1]["y"], 0)
+        # Bow down, monotonically.
+        self.assertEqual([t["noseY"] for t in trace],
+                         sorted((t["noseY"] for t in trace), reverse=True))
+        self.assertLess(trace[-1]["noseY"], -0.1)
+        # And she never sleeps: the accumulator wakes her every tick.
+        self.assertTrue(self.out["hullSinking"]["awake"])
+
+    def test_a_hull_whose_floaters_are_all_mod_zero_never_sinks(self):
+        """`sinkingSpeedMod 0` is "never": both vanilla rafts set it on all four
+        of their floaters, so a shot-up raft does not go down and does not roll.
+        Armed, and a minute later it is still exactly at its draft."""
+        self.assertEqual(self.out["raft"]["rates"], [0] * 8)
+        self.assertAlmostEqual(self.out["raft"]["y"], 20.225, places=6)
 
 
 if __name__ == "__main__":
