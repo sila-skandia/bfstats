@@ -3,7 +3,7 @@
 Every constant asserted here is an address in `bf1942_lnxded.static`
 (the Linux dedicated server, not stripped); the write-up with the commands that
 reproduce each one is `features/viewer-parachute/README.md`. The landmarks at
-the end -- a 6.03 m/s descent, a 12.28 m/s glide, a 2.037:1 glide ratio and a
+the end -- a 3.13 m/s descent, a 6.37 m/s glide, a 2.037:1 glide ratio and a
 landing that costs nothing -- are what the whole thing has to produce when a
 real `Soldier` is bailed out over a real heightfield and flown down.
 """
@@ -150,23 +150,33 @@ class ParachuteTests(unittest.TestCase):
         cf = self.results["closedForm"]
         self.assertAlmostEqual(cf["enginePairK"], cf["viewerPairK"], places=9)
 
-    def test_a_chute_settles_at_six_metres_a_second(self) -> None:
+    def test_a_chute_settles_at_three_metres_a_second(self) -> None:
+        # Terminal descent goes as 1/r^2 off PARACHUTE_DRAG_RADIUS, which sits
+        # at 2.5 inside the window PARA-6 bounds at [2.354, 3.126). The glide
+        # is the ratio away and needs no radius.
         for case in ("chute", "lowChute"):
             with self.subTest(case=case):
-                self.assertAlmostEqual(6.0297, self.results[case]["descent"], places=3)
-                self.assertAlmostEqual(12.2805, self.results[case]["glide"], places=3)
+                self.assertAlmostEqual(3.1258, self.results[case]["descent"], places=3)
+                self.assertAlmostEqual(6.3663, self.results[case]["glide"], places=3)
 
-    def test_a_chute_landing_costs_nothing(self) -> None:
-        # The engine's own data requires this: Lb_ParachuteHitGround ends
-        # `addTransitionWhenDone Lb_Stand`. See soldier.js #stepParachute for
-        # the deviation that makes HP-14's F term stop billing the whole drop.
+    def test_a_chute_landing_costs_nothing_and_no_deviation_buys_it(self) -> None:
+        # The engine's own data requires the landing to be free:
+        # Lb_ParachuteHitGround ends `addTransitionWhenDone Lb_Stand`.
+        #
+        # It is free here for the engine's own reason, not a workaround. F is
+        # still the WHOLE drop -- Armor::update only ever raises
+        # lastCollisionHeight (0x081730b0-0x081730e7), so a parachutist's F is
+        # his full altitude, and the viewer no longer re-stamps it. What makes
+        # the landing cost nothing is the impact speed sitting under HP-14's
+        # 8.0 m/s floor, which is what PARA-6's radius window is derived from.
         for case in ("chute", "lowChute"):
             with self.subTest(case=case):
                 landing = self.results[case]["landing"]
                 self.assertIsNotNone(landing)
                 self.assertEqual(0, landing["hp"])
-                self.assertLess(landing["fallHeight"], 0.5)
-                self.assertAlmostEqual(13.681, landing["impactSpeed"], places=2)
+                self.assertGreater(landing["fallHeight"], 100)
+                self.assertAlmostEqual(7.092, landing["impactSpeed"], places=2)
+                self.assertLess(landing["impactSpeed"], 8.0)
 
     def test_no_chute_is_still_lethal(self) -> None:
         free = self.results["freeFall"]
