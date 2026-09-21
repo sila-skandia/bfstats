@@ -403,7 +403,6 @@ pipeline {
               }
             }
           }
-        }
         // BF1942 netcode room server (features/netcode-play-multiplayer,
         // P2). DISABLED by default: the deployment files are written and
         // NOT applied (repo convention — deployment is the owner's call),
