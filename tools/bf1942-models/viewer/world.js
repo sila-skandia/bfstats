@@ -257,11 +257,12 @@ export class World {
   /** The level's parked hulls, once the collider has handed out owner ids.
    *  `terrain` is the body world's ground (page's `bodyTerrain` glue); the
    *  world owns the BodyWorld and the crash-damage accounting from here on. */
-  setupBodies({ tables, terrain }) {
+  setupBodies({ tables, terrain, statics = null }) {
     if (this.bodyWorld || !tables || !terrain) return;
     this.bodyWorld = new BodyWorld({
       tables,
       terrain,
+      statics,
       onDamage: (owner, result, at, other) => this.#onBodyDamage(owner, result, at, other),
     });
   }
@@ -280,6 +281,11 @@ export class World {
     const driven = new DrivenBody(vehicle, spec);
     this.bodyWorld.addDriven(owner, driven,
       collisionPartsFor(spec, driven, { hullOnly: true }), spec);
+    // The solver now owns this hull's contacts with the static world, so the
+    // drive model's own swept sphere stands down (`ground.js` `hullSolved`).
+    // Only when there IS a static world to probe: without one a building is
+    // still the sweep's business.
+    if (this.bodyWorld.statics && 'hullSolved' in vehicle) vehicle.hullSolved = true;
   }
 
   /** ... and has left it: it stands on its own springs again, where it was
@@ -287,6 +293,7 @@ export class World {
   releaseDriven(owner, vehicle, spec, pose) {
     if (!this.bodyWorld || !vehicle) return;
     if (!this.bodyWorld.get(owner)?.driven) return;
+    if ('hullSolved' in vehicle) vehicle.hullSolved = false;
     this.bodyWorld.remove(owner);
     const parked = buildParkedVehicle(spec, { ...pose, asleep: false });
     const v = vehicle.state.velocity;

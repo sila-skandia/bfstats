@@ -52,7 +52,7 @@ HARNESS = Path(__file__).resolve().parent / "world_harness.mjs"
 # the unmodified imports resolve.
 _MODULE_NAMES = [
     "physics", "parachute", "soldier", "spawn-safety", "mouse-input", "fall-damage",
-    "body-world", "vehicle-bodies", "combat-area", "supply", "armor",
+    "body-world", "body-statics", "vehicle-bodies", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact",
     "body-ground", "body-friction", "crash-damage", "effects-core",
     # Reached through seats.js: the salvo arithmetic and the HUD

@@ -5804,8 +5804,14 @@ function setupVehicleBodies() {
   if (!collisionMeshes || !damageTables || !heightfield) return;
   // The world owns the BodyWorld and its crash-damage accounting; this page
   // half keeps the scene records and feeds each parked hull in.
+  // `statics` is what turns a building from a wall into a contact: a driven
+  // hull probes its own collision vertices against the level's triangles and
+  // the same solver that shoves a parked plane pushes and spins it
+  // (`body-statics.js`). Without a `drivableMask` the deck gate inside it has
+  // nothing to gate, which is exactly right for a level with no bridge.
   world?.setupBodies({ tables: damageTables,
-                       terrain: bodyTerrain(heightfield, collider.waterLevel) });
+                       terrain: bodyTerrain(heightfield, collider.waterLevel),
+                       statics: collider.statics ? collider.staticProbe() : null });
   bodyWorld = world?.bodyWorld ?? null;
   for (const [owner, visual] of damageVisuals) {
     const spec = bodySpecFor(visual.node);
@@ -14884,6 +14890,16 @@ if (params.has('shots')) {
         compression: w.compression, load: w.load,
         friction: w.friction, latched: w.staticGrip, driven: w.driven,
       })),
+      // This tick's resolved hull contacts (`body-statics.js` found them, the
+      // solver pushed them, `DrivenBody.noteContact` handed them over). The
+      // only observable that says "the building answered as a body" rather
+      // than "the sweep stopped me", and `normalY` is the whole of why a
+      // side-on one brings no friction.
+      hullSolved: car.hullSolved,
+      hullContacts: car.hullContacts.map(c => ({
+        normalY: c.normalY, friction: c.friction, count: c.count,
+        at: [c.x, c.y, c.z],
+      })),
     }),
     setInput: (name, value) => car.setInput(name, value),
     integrate: dt => car.integrate(dt),
@@ -14965,7 +14981,40 @@ if (params.has('shots')) {
       moved: !!bodyScene.get(e.owner)?.moved, hp: vehicleDamage.get(e.owner)?.hitPoints ?? null,
     };
   }) : null);
+  // Turn the hull-vs-static path off and on, which is the only honest A/B for
+  // it: `false` takes the static contacts out of the solver AND puts the drive
+  // model back on its own swept sphere, exactly the pair of behaviours that
+  // used to be the only one. Called with no argument it just reports.
+  window.__hullSolver = on => {
+    if (!bodyWorld) return null;
+    if (on !== undefined) {
+      bodyWorld.statics = on && collider?.statics ? collider.staticProbe() : null;
+      const driven = car || aircraft;
+      if (driven && 'hullSolved' in driven) driven.hullSolved = !!bodyWorld.statics;
+    }
+    return { solver: !!bodyWorld.statics, sweep: !((car || aircraft)?.hullSolved) };
+  };
+  // Static-world contacts the last body tick found, for any driven vehicle —
+  // the one number that says the hull met the level, for an aircraft as well
+  // as a car (an aircraft's drive model has no friction mean to hand them to,
+  // so `__drive().hullContacts` cannot answer for it).
+  window.__staticContacts = () => bodyWorld?.staticContacts ?? null;
   window.__stepBodies = dt => stepVehicleBodies(dt);
+  // One whole simulation tick for a headless drive: the drive model, then the
+  // rigid-body world, in `world.js`'s own order (forces and integration, then
+  // contacts detected and resolved — spec section 2). `__drive().integrate`
+  // alone steps half of it, and since a driven hull's collisions with the
+  // static world moved into the solver that half no longer includes hitting a
+  // building. Returns the body world's tick count so a trace can prove the
+  // second half actually ran.
+  window.__stepSim = (ticks = 1, dt = 1 / 30) => {
+    for (let i = 0; i < ticks; i++) {
+      (car || aircraft)?.integrate(dt);
+      bodyWorld?.tick();
+    }
+    (car || aircraft)?.applyTransform();
+    return bodyWorld?.ticks ?? 0;
+  };
   window.__crashLog = () => (crashLog ??= []);
   // The aircraft under the player, for a stepped test: inputs, state, a pose.
   window.__plane = () => (aircraft ? {
