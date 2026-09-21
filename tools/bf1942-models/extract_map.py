@@ -1867,8 +1867,22 @@ def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game,
             if tpl.enter_on_spawn or tpl.group is None:
                 continue
             for lx, ly, lz in offsets.get(name, [(0.0, 0.0, 0.0)]):
-                wx = ox + (lx * cos_y - lz * sin_y)
-                wz = oz + (lx * sin_y + lz * cos_y)
+                # Mirror the offset's z into the viewer's frame BEFORE rotating
+                # it. The pad origin is mirrored at output (`-oz` below) and the
+                # hull node carries `Ry(-yaw_con)` (`gltf.quat_from_ypr`), so
+                # rotating an unmirrored offset by `+yaw_con` and then mirroring
+                # the sum applies the flip twice and inverts both cross terms.
+                # This is `shipNode.localToWorld(lx, ly, -lz)` written out:
+                # rotating (lx, -lz) by -yaw_con.
+                #
+                # It put 26 of Midway's 26 deck spawns off their own hull, 21 of
+                # them over open water, which is why selecting a ship on the
+                # spawn screen dropped the soldier into the sea at the water
+                # level. Hatsuzuki's driver pad moved 41 m. Pad 8 appeared to
+                # work only because its yaw is 88.19 degrees, where cos is 0.03
+                # and the mis-signed term is worth under a metre.
+                vx = lx * cos_y + lz * sin_y
+                vz = lx * sin_y - lz * cos_y
                 # The LEVEL's own `spawnPointManagerSettings.con` first.
                 # `Game/GlobalSpawnGroups.con` binds the 64..77 range to the
                 # fleet's decks, and a level is free to reuse those numbers
@@ -1887,7 +1901,8 @@ def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game,
                     "name": name,
                     "group": tpl.group,
                     "team": team,
-                    "position": [round(wx, 3), round(oy + ly, 3), round(-wz, 3)],
+                    "position": [round(ox + vx, 3), round(oy + ly, 3),
+                                 round(-oz + vz, 3)],
                     "rotation": list(inst.rotation),
                 }
                 if tpl.paratrooper:
