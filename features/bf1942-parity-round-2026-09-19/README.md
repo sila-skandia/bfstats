@@ -531,7 +531,28 @@ still stops on the swept sphere, and a drive model that tumbles when it crashes.
    regenerated, and wave 2's `setHasTurretIcon` / `setVehicleIconPos` /
    projectile words need one more pass over vehicles after it lands.
 3. Publish. Overwriting content on the assets volume is confirm-first.
-4. Integrate verified research into `ledger.md` and `symbols.json`.
+   **Re-extracted locally 2026-09-21, not yet published:** all **99**
+   viewmodel rigs through `extract_viewmodel.py` so the stance families
+   W5-A reads actually exist on disk (166 MB → 222 MB; every rig carries
+   the eight new clips, and the absences are data — `proneReload` on the
+   56 weapons with no reload, `proneFire` on 14, `proneDeploy` on 2). And
+   the bail-out sounds through `extract_soldier_sounds.py` into
+   `viewer/maps/_shared/sounds` (11 samples; `c_SstParachuteLand`
+   correctly reported missing — the engine ships no such script, PARA-7).
+   Still owed from earlier waves: `loadouts.json` for W4-A's `kitName`,
+   `skeletonIK` nodes in the published scenes, `hasTurretIcon` /
+   `vehicleIconPos` on vehicles, `crossHairType` on the mods' levels, and
+   `_shared/hud/scoreboard/` with the viewer code.
+4. ~~Integrate verified research into `ledger.md` and `symbols.json`.~~
+   **Done 2026-09-21** (`e0a1099`), for wave 5: three new sections —
+   PARA-1…PARA-9 (the parachute), AI-1…AI-25 (the bot subsystem) and
+   ANIM-10…ANIM-12 (per-stance upper-body states) — plus the pose
+   constants on HP-10. 317 ledger rows, no duplicate ids. `symbols.json`
+   merged **by address**: 49 new, 5 updated in place, 1,263 total, no
+   duplicate addresses, file order untouched. Two refutations are
+   recorded as such rather than quietly replaced: PARA-2
+   (`setParachuteSpeed` is an acceleration) and AI-4 (the AI runs first,
+   not last — the `+0x1b3` offset is layout, not execution).
 
 ## How the round runs
 
