@@ -10131,7 +10131,19 @@ function finishHandShot(hw) {
 // fires, vehicle or hand weapon alike — a no-op for any group this track
 // never built a `FireState` for (the aircraft/car path has no magazine model
 // of its own yet; the hand weapon manages its own `hw.rounds` above).
-chainOnShot(guns, group => fireStates.get(group.node)?.registerShot());
+chainOnShot(guns, (group, rounds) =>
+  fireStates.get(group.node)?.registerShot(rounds));
+// How many rounds a weapon still has in the magazine, so `gunfire.js` can serve
+// BOMB-5's partial salvo: a two-barrel dive bomber down to its last round drops
+// ONE bomb, because `FireArms::Fire` fires only as many barrels as the magazine
+// can pay for. Without this the rack would fire a fixed pair and be charged for
+// two it did not have, handing out a free bomb at the bottom of every magazine.
+// Unlimited when this page never built a `FireState` for the group, which is
+// the honest answer for one.
+guns.roundsLeft = group => {
+  const state = fireStates.get(group.node);
+  return state && !state.unlimited ? state.ammo : Infinity;
+};
 // And the report. A gun `.ssc` is a one-shot event patch — the muzzle blast,
 // the casing, the crew reloading, the breech — so the round is what plays it,
 // exactly as a hand weapon's own `playHandFire` works two screens up. Chained
