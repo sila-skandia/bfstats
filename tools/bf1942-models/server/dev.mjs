@@ -1,9 +1,10 @@
 // The P2/P3 dev rig: one command to run the room server AND a static server
 // with the production route in miniature (everything under `/netcode` — the
 // rooms list and the WebSocket — proxied to the room server), the way the
-// play site's HAProxy does it. Open the printed URL, click PLAY ONLINE on
-// the Instant Battle screen, or go straight into a room with
-// `map.html?room=MYROOM&name=You&map=aberdeen` in two browsers.
+// play site's HAProxy does it. Open the printed URL and take the MULTIPLAY
+// tab — the room list is the rooms this server is running — or go straight
+// into a room with `map.html?room=MYROOM&name=You&map=aberdeen` in two
+// browsers.
 //
 //   node server/dev.mjs [--static-port 8000] [--netcode-port 8080]
 //                       [--level aberdeen] [--viewer viewer]
@@ -53,6 +54,7 @@ const host = `http://127.0.0.1:${STATIC_PORT}`;
 console.log(`
   netcode ready:
     play page   ${host}/play/
+    room list   ${host}/play/?tab=multiplay
     straight in ${host}/map.html?room=MYROOM&name=You&map=${LEVEL}
     room list   ${host}/netcode/rooms
   (the second browser opens the same straight-in URL, same room code)
