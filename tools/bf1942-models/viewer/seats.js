@@ -22,6 +22,10 @@ import { byWeaponSlot } from './bomb-release.js';
 
 const AXES = ['yaw', 'pitch', 'roll'];
 
+/** Root seat kinds that own a drivetrain object. `'ship'` joined them when
+ *  `c_ETShip` turned out to be the aircraft thrust law (see `classifySeat`). */
+export const DRIVE_KINDS = ['air', 'ground', 'tank', 'ship'];
+
 /** The two inputs a player's mouse actually reaches an aim axis through
  *  (GUN-2). Everything else a `RotationalBundle` can bind — a steered front
  *  wheel's `c_PIYaw`, a minigun barrel's `c_PIFire` spin — is somebody else's
@@ -183,17 +187,22 @@ export function surveyVehicle(root) {
  * motion (`maxSpeed>0` on at least one axis -- excludes a zeroed gunner
  * Camera, which is never this `templateKind` anyway, and a purely cosmetic
  * hinge) *and* a FireArms is a manned gun; anything else that reaches an
- * `EntryPoint` is a bare seat -- a passenger position, or a helm this round
- * has no drive model for (a ship hull's own root: "c_ETShip" is not one of
- * the three engine types below, so it falls through to 'seat' exactly like a
- * true passenger, which is the honest answer for "no propulsion model" rather
- * than a special case).
+ * `EntryPoint` is a bare seat -- a passenger position.
+ *
+ * `c_ETShip` is `'ship'`, and the reason it took a round to get there is that
+ * the engine has no ship propulsion code to find: `c_ETShip = 9` has bit 0 set
+ * (`operator<<(ostream&, EngineType)` `0x0823ef60`), so a helm runs the SAME
+ * `PhysicsEngine::updatePhysics` thrust body an aeroplane does, with bit 3
+ * adding the water rule. `ship.js` is that plus `FloatingBundle`; a helm is a
+ * drive seat like any other. A car and a tank, whose bit 0 is clear, are the
+ * ones that genuinely need their own model.
  */
 export function classifySeat(seat, isRoot) {
   if (isRoot) {
     if (seat.engineType === 'c_ETPlane') return 'air';
     if (seat.engineType === 'c_ETCar') return 'ground';
     if (seat.engineType === 'c_ETTank') return 'tank';
+    if (seat.engineType === 'c_ETShip') return 'ship';
   }
   const hasMotion = AXES.some(axis => seat.axes[axis] && seat.axes[axis].spec.maxSpeed > 0);
   if (hasMotion && seat.fireArms.length) return 'gun';
@@ -338,10 +347,16 @@ export class VehicleOccupancy {
 
   /** The root's own drivetrain object, building it on first use. */
   ensureDrive(parent, options) {
-    if (this.drive || !['air', 'ground', 'tank'].includes(this.rootKind)) return this.drive;
-    const { Aircraft, GroundVehicle, TrackedVehicle } = this.classes;
+    if (this.drive || !DRIVE_KINDS.includes(this.rootKind)) return this.drive;
+    const { Aircraft, GroundVehicle, TrackedVehicle, Ship } = this.classes;
     if (this.rootKind === 'air') this.drive = new Aircraft(this.root, parent, options);
     else if (this.rootKind === 'ground') this.drive = new GroundVehicle(this.root, parent, options);
+    // A helm with no `Ship` class injected stays a bare seat rather than
+    // becoming a Corsair: `Aircraft`'s own spec table falls back to the
+    // CORSAIR numbers, which on a 2,500-tonne hull is not a degraded ship, it
+    // is a different vehicle. Same rule `TrackedVehicle` gets, opposite answer,
+    // because `GroundVehicle` on a tank hull IS a degraded tank.
+    else if (this.rootKind === 'ship') this.drive = Ship ? new Ship(this.root, parent, options) : null;
     else this.drive = new (TrackedVehicle || GroundVehicle)(this.root, parent, options);
     return this.drive;
   }
