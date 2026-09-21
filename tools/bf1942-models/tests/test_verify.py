@@ -285,10 +285,25 @@ class TriageTests(unittest.TestCase):
         triage = verify.triage_report("Sherman", {"texturesNotFound": []})
         self.assertEqual("clean", triage.status)
 
-    def test_missing_mesh_files_are_broken(self) -> None:
+    def test_a_missing_mesh_the_archives_do_hold_is_broken(self) -> None:
+        # The caller read the archives and did not put the file in
+        # `missing_asset_absent`, so the chain has it and the assembler lost it.
+        triage = verify.triage_report(
+            "Foo", {"missingMeshFiles": ["Foo_Hull_M1"]}, archives_read=True)
+        self.assertEqual("broken", triage.status)
+
+    def test_a_missing_mesh_no_archive_holds_is_a_degradation(self) -> None:
+        triage = verify.triage_report(
+            "Foo", {"missingMeshFiles": ["Foo_Hull_M1"]}, archives_read=True,
+            missing_asset_absent=frozenset({"foo_hull_m1"}))
+        self.assertEqual("degraded", triage.status)
+
+    def test_without_the_archives_it_says_it_does_not_know(self) -> None:
         triage = verify.triage_report(
             "Foo", {"missingMeshFiles": ["Foo_Hull_M1"]})
-        self.assertEqual("broken", triage.status)
+        self.assertEqual("degraded", triage.status)
+        self.assertTrue(any("archives were not read" in f.message
+                            for f in triage.findings), triage.findings)
 
     def test_unresolved_textures_are_degraded(self) -> None:
         triage = verify.triage_report(
@@ -299,9 +314,17 @@ class TriageTests(unittest.TestCase):
         triage = verify.triage_report(
             "Sherman", {"texturesNotFound": ["texture/sherW2_f"]})
         self.assertEqual("clean", triage.status)
-        # ...unless the extraction is not vanilla, where the fact list is void.
+        # A file the base game never shipped is absent from every chain that
+        # inherits it, so this one holds for a mod extraction too: XPack2's
+        # Sherman_T34 and three EoD vehicles reach the very same `.rs`.
         triage = verify.triage_report(
-            "Sherman", {"texturesNotFound": ["texture/sherW2_f"]},
+            "Sherman_T34", {"texturesNotFound": ["texture/sherW2_f"]},
+            vanilla_facts=False)
+        self.assertEqual("clean", triage.status)
+
+    def test_a_texture_the_mod_itself_is_missing_is_still_degraded(self) -> None:
+        triage = verify.triage_report(
+            "Elco80", {"texturesNotFound": ["texture/50cal_b"]},
             vanilla_facts=False)
         self.assertEqual("degraded", triage.status)
 

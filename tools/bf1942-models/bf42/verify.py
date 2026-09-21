@@ -30,6 +30,16 @@ turns each one into a check a script can run:
   M1911 — while the failure modes overshoot by far more.
 * **Degenerate geometry.** NaN positions and zero-area triangles, counted in
   world space.
+* **A part that is simply gone.** The exporter counts the object's own parts
+  and triangles into its report; `inventory_check` reads both back out of the
+  file. Nothing else here can see a dropped node -- a lost placement makes a
+  pile, a lost mesh makes a report line, but a Sherman that reaches disk
+  without its turret looks like a smaller Sherman.
+* **A skinned mesh with nothing to pose it.** A `.skn` is authored in bind
+  space, so the skeleton is what puts it anywhere. `unposed_skins` asks whether
+  one is in scope, which is the difference between a correct soldier (four
+  meshes stacked at the origin, a skeleton overhead) and a broken one (four
+  meshes stacked at the origin, and that is all there is).
 
 ## What a node in the scene *is*
 
@@ -103,6 +113,15 @@ SILHOUETTE_AUTHORED: dict[str, tuple[float, str]] = {
 # Two mesh materials no vanilla `.rs` defines a shader for — 2 triangles on the
 # Thompson body, a 29-triangle sight detail on the StG 44. Authored gaps in the
 # game data, not lookup failures.
+#
+# Like `BASE_GAME_ABSENT_MESHES` these are statements about *files*: the
+# material name comes out of `Thompson_m1.sm` itself and the missing shader out
+# of the base game's `.rs` set, so they hold for every mod chain that inherits
+# `Mods/bf1942` -- which is every installed mod. EoD's Thompson and Sg44 are
+# vanilla's, read out of vanilla's archives, and gating these on the mod being
+# vanilla put both of them back in the degraded column for no reason. A mod
+# weapon that merely shares the *template* name would carry its own mesh and so
+# its own material names, which is what makes keying on the material safe.
 MATERIALS_WITHOUT_SHADER_AUTHORED: dict[str, frozenset[str]] = {
     "Thompson": frozenset({"thompson_m1_material0"}),
     "Sg44": frozenset({"sg44_material1"}),
@@ -112,6 +131,10 @@ MATERIALS_WITHOUT_SHADER_AUTHORED: dict[str, frozenset[str]] = {
 # the `.rs` names variants the archives never shipped. These are the only
 # absent references that reach an extracted model; the full 56-name census is
 # in features/bf1942-3d-models/extraction-rollout.md.
+#
+# Statements about files again, so they apply to every chain that inherits the
+# base game: 19 of the 22 unresolved-texture rows across XPack2 and EoD are
+# these same three names, reached through vanilla's own `.rs` files.
 VANILLA_UNRESOLVED_TEXTURES: frozenset[str] = frozenset({
     "texture/",             # an empty ref in BlackMedal_Hull_L1.rs and Yamato turrets
     "texture/sherw2_f",     # Sherman road-wheel variant (Sherman, M10, Priest)
@@ -244,6 +267,23 @@ KNOWN_LENGTHS_M: dict[str, float] = {
 }
 
 
+# A figure per manifest *category*, for the case where the name is one of
+# dozens that all model the same real thing. A soldier is the only one: the
+# four catalogues hold 32 soldier templates (eight nations in vanilla, two per
+# expansion pack, nineteen in EoD) and the one external fact about every one of
+# them is that a standing man is about as tall as a standing man. Measured over
+# their own geometry they run 1.869 m to 2.011 m -- the models take licence and
+# the tall ones wear a helmet -- so 1.85 m with the standard tolerance spans
+# the catalogues with room to spare while a soldier exported at a tenth or
+# three times scale is nowhere near it. That was the *only* external check a
+# skinned soldier had missing: it is the one model in the set whose every
+# mesh is excused from the placement check, so without a size nothing objective
+# was said about it at all.
+CATEGORY_LENGTHS_M: dict[str, float] = {
+    "soldier": 1.85,
+}
+
+
 class VerifyError(ValueError):
     pass
 
@@ -362,6 +402,10 @@ class Part:
     triangles: list[Triangle] = field(default_factory=list)
     node_index: int = -1
     ancestor_indices: frozenset[int] = field(default_factory=frozenset)
+    #: Whether this node or any ancestor carries an `extras.skeleton`, i.e.
+    #: whether there is a skeleton in scope that could pose a skinned mesh.
+    #: `scene_parts` fills it in; a hand-built `Part` defaults to False.
+    skeleton_in_scope: bool = False
 
     @property
     def bound_bone(self) -> str | None:
@@ -403,6 +447,18 @@ class Part:
         it is supposed to do -- which is why every soldier's body, head and
         two hands sit there."""
         return "skin" in self.extras or "skeleton" in self.extras
+
+    @property
+    def is_posed(self) -> bool:
+        """Skinned *and* with a skeleton in scope to pose it.
+
+        Resting on the origin is only excusable for the first reason when the
+        second holds. A soldier exported without its `.ske` -- the skins
+        written, the skeleton lost -- is four meshes stacked in bind space that
+        nothing will ever move, which is a broken soldier and not a correct
+        one; reading `is_skinned` alone excused it unconditionally.
+        """
+        return self.is_skinned and self.skeleton_in_scope
 
     @property
     def is_helper(self) -> bool:
@@ -454,19 +510,23 @@ def scene_parts(doc: dict, blob: bytes) -> list[Part]:
     parts: list[Part] = []
 
     def visit(index: int, parent: tuple[Matrix3, Vector3],
-             ancestors: tuple[int, ...], depth: int = 0) -> None:
+             ancestors: tuple[int, ...], skeleton: bool = False,
+             depth: int = 0) -> None:
         if depth > 64 or index >= len(nodes):
             return
         node = nodes[index]
         world = _compose(parent, node)
+        extras = node.get("extras") or {}
+        skeleton = skeleton or bool(extras.get("skeleton"))
         mesh_index = node.get("mesh")
         if mesh_index is not None:
             part = Part(
                 name=node.get("name", f"node{index}"),
-                extras=node.get("extras") or {},
+                extras=extras,
                 world_translation=world[1],
                 node_index=index,
                 ancestor_indices=frozenset(ancestors),
+                skeleton_in_scope=skeleton,
             )
             for prim in meshes[mesh_index].get("primitives", []):
                 attrs = prim.get("attributes", {})
@@ -483,7 +543,7 @@ def scene_parts(doc: dict, blob: bytes) -> list[Part]:
                     ))
             parts.append(part)
         for child in node.get("children", []):
-            visit(child, world, ancestors + (index,), depth + 1)
+            visit(child, world, ancestors + (index,), skeleton, depth + 1)
 
     scene = doc.get("scenes", [{}])[doc.get("scene", 0)]
     for root in scene.get("nodes", []):
@@ -613,10 +673,14 @@ def origin_pile(parts: list[Part], *, epsilon: float = 1e-4,
 
     * **bound** — a `boundBone` extra means a skeleton put it there. The
       Type99's mag and bolt bones genuinely rest on its base bone.
-    * **skinned** — an `extras.skin` mesh is authored in bind space and moved
-      by the skeleton at runtime. Every soldier is four such meshes and all
-      four rest on the origin, which is correct and was 19 of the vanilla
-      rebuild's 42 "broken" verdicts.
+    * **skinned, with a skeleton in scope** — an `extras.skin` mesh is
+      authored in bind space and moved by the skeleton at runtime. Every
+      soldier is four such meshes and all four rest on the origin, which is
+      correct and was 19 of the vanilla rebuild's 42 "broken" verdicts. The
+      excuse is `is_posed`, not `is_skinned`: it holds only while the node or
+      an ancestor carries an `extras.skeleton` to do the posing. Strip the
+      soldier's skeleton and those same four meshes are a real pile, which
+      `unposed_skins` names as well.
     * **helpers** — collision hulls, emitters, tracers and projectile
       previews. They are spawned from the object's own origin by definition,
       so counting them is counting the exporter's furniture. `AichiVal` was
@@ -654,7 +718,7 @@ def origin_pile(parts: list[Part], *, epsilon: float = 1e-4,
     candidates = [
         part for part in parts
         if part.is_body
-        and not part.is_skinned
+        and not part.is_posed
         and part.bound_bone is None
         and part.name not in explained
     ]
@@ -684,6 +748,117 @@ def origin_pile(parts: list[Part], *, epsilon: float = 1e-4,
     return piled
 
 
+def _extra_geometries(extras: dict) -> set[str]:
+    """Every geometry name an `extras` block points at, lowercased.
+
+    A part names its own geometry in `extras.geometry`; a baked preview or
+    emitter names the geometry it spawns inside `extras.projectileMesh`,
+    `extras.tracerMesh` or one of the effect extras.
+    """
+    found: set[str] = set()
+    own = extras.get("geometry")
+    if isinstance(own, str) and own:
+        found.add(own.replace("\\", "/").rsplit("/", 1)[-1].lower())
+    for key in PREVIEW_EXTRAS + EFFECT_EXTRAS:
+        value = extras.get(key)
+        if isinstance(value, dict):
+            nested = value.get("geometry")
+            if isinstance(nested, str) and nested:
+                found.add(nested.replace("\\", "/").rsplit("/", 1)[-1].lower())
+    return found
+
+
+def helper_geometry_names(parts: list[Part]) -> frozenset[str]:
+    """Geometries only the exporter's furniture uses, never a drawn part.
+
+    Which turns `materialsWithoutShader` from a list of names into a statement
+    about the model. Thirteen EoD vehicles report `bullet_m1_Material0`: that
+    is the material of `bullet_m1`, the round the gun fires, baked hidden as a
+    `projectileMesh` on the barrel. Nothing the model draws is untextured, and
+    it is the same class of mistake as counting a muzzle flash as a part -- the
+    material name carries the mesh it came from (`Foo_M1.sm` names its
+    materials `Foo_M1_Material0`), so the two can be matched up.
+
+    A geometry that *any* body part also uses is not in this set, so a material
+    shared between a drawn part and an emitter keeps its degradation.
+    """
+    helper: set[str] = set()
+    body: set[str] = set()
+    for part in parts:
+        (helper if part.is_helper else body).update(
+            _extra_geometries(part.extras))
+    return frozenset(helper - body)
+
+
+def material_mesh(material: str) -> str:
+    """`Foo_M1_Material0` -> `foo_m1`, the mesh the material came from."""
+    lowered = material.strip().lower()
+    head, sep, tail = lowered.rpartition("_material")
+    if sep and (not tail or tail.isdigit()):
+        return head
+    return lowered
+
+
+def unposed_skins(parts: list[Part]) -> list[str]:
+    """Skinned meshes with no skeleton in scope to put them anywhere.
+
+    The one thing a skinned model cannot survive. A `.skn` holds vertices in
+    bind space and a per-vertex bone index; without the `.ske` those indices
+    address nothing, so the mesh draws exactly where it was authored -- which
+    for all eight vanilla soldiers is four meshes stacked at the origin, the
+    body inside the head. It is also the failure the old check could not see,
+    because it excused any node carrying a `skin` extra whether or not
+    anything could pose it.
+
+    Every skinned part in all four installed catalogues (425 models, 32 of
+    them soldiers) has a skeleton in scope, so this returning anything at all
+    is a regression.
+    """
+    return [part.name for part in parts
+            if part.is_skinned and not part.skeleton_in_scope]
+
+
+@dataclass
+class Inventory:
+    """What the scene holds against what the exporter's report claims."""
+    scene_parts: int
+    scene_triangles: int
+    report_parts: int
+    report_triangles: int
+
+    @property
+    def agrees(self) -> bool:
+        return (self.scene_parts == self.report_parts
+                and self.scene_triangles == self.report_triangles)
+
+
+def inventory_check(parts: list[Part], report: dict | None) -> Inventory | None:
+    """Did every part the exporter counted reach the file?
+
+    The one failure mode nothing else here can see: a part that is simply
+    *gone*. A lost placement makes a pile, a lost mesh file makes a report
+    line, a wrong scale makes a length -- but a node dropped between the
+    assembler's own count and the bytes on disk leaves no trace in any other
+    check, and a Sherman missing its turret is as broken as a Sherman with its
+    turret on the origin.
+
+    The exporter writes `parts` and `triangles` into the report over exactly
+    the object's own geometry (helpers excluded), so the two counts are
+    comparable term for term, and they agree exactly on all 425 models of the
+    four installed catalogues. No tolerance is therefore warranted: a
+    disagreement is a fact about the file, not a reading.
+    """
+    if not report or "parts" not in report or "triangles" not in report:
+        return None
+    body = body_parts(parts)
+    return Inventory(
+        scene_parts=len(body),
+        scene_triangles=sum(len(p.triangles) for p in body),
+        report_parts=int(report["parts"]),
+        report_triangles=int(report["triangles"]),
+    )
+
+
 def body_length(parts: list[Part]) -> float | None:
     """The longest side of the AABB over the object's own geometry.
 
@@ -707,6 +882,11 @@ def body_length(parts: list[Part]) -> float | None:
 # and the report says so under `skeletonsNotRead`.
 _BIND_NO_BONE = "(no such bone)"
 _BIND_NO_SKELETON = "(no skeleton in scope)"
+# A bind onto a *skinned* part is applied by the skin's own bind pose, so the
+# assembler records the bind and stamps no `boundBone`: there is no offset to
+# stamp. Every soldier in the four catalogues is exactly this (the head bound
+# to `Bip01_Spine3`), which is why `unstamped_binds` has to know the marker.
+_BIND_SKINNED = "(skinned, bind pose is identity)"
 
 
 def unplaced_bound_parts(report: dict) -> tuple[list[str], list[str]]:
@@ -732,6 +912,41 @@ def unplaced_part_names(report: dict | None) -> frozenset[str]:
         if _BIND_NO_BONE in line or _BIND_NO_SKELETON in line:
             names.add(line.split("->", 1)[0].strip())
     return frozenset(names)
+
+
+def unstamped_binds(parts: list[Part], report: dict | None) -> list[str]:
+    """Parts the report says it placed from a bone that carry no `boundBone`.
+
+    The placement check cannot see a lost bind on its own, and this is why it
+    needs help. Collapse a rifle's three bound sub-parts onto its origin and
+    only two of them read as collapsed -- the third's mesh is authored 11.5 cm
+    from its bone, which is 9.7% of a 1.19 m weapon against the 5% radius that
+    keeps the LCT-Mk6 quiet -- so the pile stays at the allowance and nothing
+    fires. Meanwhile the silhouette check measures *bound* parts, so losing
+    the binds leaves it nothing to measure at all. Both checks go quiet
+    together, which is the worst shape a verifier can have.
+
+    The bind is nevertheless still recorded, in the assembler's own report, so
+    the two can be held against each other: a part the report placed from a
+    bone and the file does not mark is a placement that went missing between
+    the two. Measured across the four catalogues, the only applied bind lines
+    whose part carries no `boundBone` are the 32 soldiers' skinned heads
+    (marked as such in the line) and four EoD parts that never reached the
+    scene at all because their geometry is undefined -- both excluded here.
+    """
+    if not report:
+        return []
+    present = {part.name: part for part in parts}
+    lost = []
+    for line in report.get("boundParts") or []:
+        if any(marker in line for marker in
+               (_BIND_NO_BONE, _BIND_NO_SKELETON, _BIND_SKINNED)):
+            continue
+        name = line.split("->", 1)[0].strip()
+        part = present.get(name)
+        if part is not None and part.bound_bone is None:
+            lost.append(name)
+    return lost
 
 
 def bound_parts_placed(report: dict | None) -> int:
@@ -873,10 +1088,20 @@ class DimensionCheck:
 
 def dimension_check(name: str, measured_length: float | None,
                     known: dict[str, float] | None = None,
+                    category: str | None = None,
                     ) -> DimensionCheck | None:
-    """Compare the measured longest side against the real thing, when known."""
+    """Compare the measured longest side against the real thing, when known.
+
+    `category` is the manifest's own classification, which is how a soldier
+    gets a figure without a row per nation: the table above needs one entry
+    per template name, and there are 32 soldier templates across the four
+    catalogues whose only external fact is that a man is about as tall as a
+    man. A name row still wins where one exists.
+    """
     table = KNOWN_LENGTHS_M if known is None else known
     expected = table.get(name)
+    if expected is None and category:
+        expected = CATEGORY_LENGTHS_M.get(category.lower())
     if expected is None or measured_length is None:
         return None
     return DimensionCheck(expected=expected, measured=measured_length)
@@ -922,7 +1147,10 @@ def triage_report(name: str, report: dict | None, *,
                   length_tolerance: float = LENGTH_TOLERANCE,
                   vanilla_facts: bool = True,
                   silhouette_fatal: bool = False,
-                  missing_asset_roles: dict[str, str] | None = None) -> Triage:
+                  missing_asset_roles: dict[str, str] | None = None,
+                  missing_asset_absent: frozenset[str] = frozenset(),
+                  archives_read: bool = False,
+                  inventory: Inventory | None = None) -> Triage:
     """Fold every check into one clean / degraded / broken verdict.
 
     `vanilla_facts` applies the recorded authored exceptions above — the
@@ -942,6 +1170,19 @@ def triage_report(name: str, report: dict | None, *,
     what in the game data referenced it (`"projectile"`, `"effect"`, `"part"`,
     `"collision"`), resolved from the archives by the caller. An asset only a
     projectile or an effect wanted cost the model nothing it draws.
+
+    `missing_asset_absent` holds the lowercased names the caller has *proved*
+    the mod chain cannot resolve either: no `.con` in the chain defines that
+    geometry template, or no archive in it holds that mesh file. This is the
+    difference between "the extraction lost something" and "the mod's data
+    points at nothing", and it is the whole severity question. The engine
+    builds its geometry-template registry from the same scripts we parse and
+    probes the same archives, so a reference the chain cannot resolve draws
+    nothing in the game either and the extraction reproducing that is
+    *correct*. `archives_read` says whether the caller could ask at all;
+    without the archives an unresolved asset cannot be told apart from a
+    dangling one, and saying "broken" on a coin toss is what this module
+    exists to stop.
     """
     triage = Triage(name)
     roles = missing_asset_roles or {}
@@ -950,6 +1191,12 @@ def triage_report(name: str, report: dict | None, *,
         visible = [p for p in parts if not p.is_collision and p.triangles]
         if not visible:
             triage.broken("no visible geometry in the exported scene")
+        unposed = unposed_skins(parts)
+        if unposed:
+            triage.broken(
+                f"{len(unposed)} skinned mesh(es) with no skeleton in scope to "
+                f"pose them, so they draw in bind space where they were "
+                f"authored: " + ", ".join(sorted(unposed)))
         pile = origin_pile(parts, explained=unplaced_part_names(report),
                            model_size=body_length(parts))
         if pile:
@@ -962,6 +1209,13 @@ def triage_report(name: str, report: dict | None, *,
                 triage.degraded(message)
             else:
                 triage.broken(message)
+
+    if inventory is not None and not inventory.agrees:
+        triage.broken(
+            f"the scene holds {inventory.scene_parts} parts and "
+            f"{inventory.scene_triangles} triangles; the exporter's own report "
+            f"counted {inventory.report_parts} and "
+            f"{inventory.report_triangles}")
 
     if stats is not None:
         if stats.non_finite_vertices:
@@ -1008,6 +1262,11 @@ def triage_report(name: str, report: dict | None, *,
             triage.broken(line)
 
     if report:
+        if parts is not None and (lost := unstamped_binds(parts, report)):
+            triage.broken(
+                f"{len(lost)} part(s) the report placed from a bone carry no "
+                f"bind in the file, so the placement was lost after it was "
+                f"resolved: " + ", ".join(sorted(lost)))
         no_bone, no_skeleton = unplaced_bound_parts(report)
         placed = bound_parts_placed(report)
         for line in no_bone:
@@ -1028,18 +1287,41 @@ def triage_report(name: str, report: dict | None, *,
             triage.degraded(f"bound part left unplaced: {line}")
 
         def classify_missing(kind: str, names: list[str]) -> None:
-            """Split a list of unresolved assets by what wanted them."""
-            recorded, cosmetic, real = [], [], []
+            """Split a list of unresolved assets by what wanted them, and by
+            whether the mod chain could have resolved them at all."""
+            recorded, cosmetic, dangling, real = [], [], [], []
             for asset in names:
                 leaf = asset.split(" (", 1)[0].strip().lower()
                 if leaf in BASE_GAME_ABSENT_MESHES:
                     recorded.append(asset)
+                elif leaf in missing_asset_absent:
+                    dangling.append(asset)
                 elif roles.get(leaf) in ("projectile", "effect", "collision"):
                     cosmetic.append(asset)
                 else:
                     real.append(asset)
             if real:
-                triage.broken(f"{kind} unresolved: {', '.join(real)}")
+                # Either the archives hold it and the assembler lost it, or
+                # nobody asked the archives. The first is a regression; the
+                # second is an unknown, and an unknown is not a verdict.
+                line = f"{kind} unresolved: {', '.join(real)}"
+                if archives_read:
+                    triage.broken(
+                        line + " — and the mod chain does define it, so the "
+                               "assembler lost something that is there")
+                else:
+                    triage.degraded(
+                        line + " — the archives were not read, so this could "
+                               "not be told apart from a reference the mod's "
+                               "own data leaves dangling")
+            if dangling:
+                drawn = sorted({roles.get(a.split(" (", 1)[0].strip().lower())
+                                or "part" for a in dangling})
+                triage.degraded(
+                    f"{kind} unresolved and defined nowhere in the mod chain, "
+                    f"so the engine draws nothing there either and the "
+                    f"extraction matches the game (wanted by: "
+                    f"{'/'.join(drawn)}): {', '.join(dangling)}")
             if cosmetic:
                 triage.degraded(
                     f"{kind} unresolved, wanted only by a "
@@ -1055,10 +1337,9 @@ def triage_report(name: str, report: dict | None, *,
                          report.get("missingGeometryTemplates") or [])
         missing_textures = report.get("texturesNotFound") or []
         if missing_textures:
-            authored_textures = VANILLA_UNRESOLVED_TEXTURES if vanilla_facts else frozenset()
             unexplained = [
                 t for t in missing_textures
-                if t.strip().lower() not in authored_textures
+                if t.strip().lower() not in VANILLA_UNRESOLVED_TEXTURES
             ]
             if unexplained:
                 triage.degraded(f"textures unresolved: {', '.join(unexplained)}")
@@ -1069,19 +1350,27 @@ def triage_report(name: str, report: dict | None, *,
                     + ", ".join(explained))
         no_shader = report.get("materialsWithoutShader") or []
         if no_shader:
-            authored_materials = (
-                MATERIALS_WITHOUT_SHADER_AUTHORED.get(name, frozenset())
-                if vanilla_facts else frozenset())
-            unexplained = [
-                m for m in no_shader if m.lower() not in authored_materials
-            ]
+            authored_materials = MATERIALS_WITHOUT_SHADER_AUTHORED.get(
+                name, frozenset())
+            helper_meshes = (helper_geometry_names(parts)
+                             if parts is not None else frozenset())
+            recorded = [m for m in no_shader if m.lower() in authored_materials]
+            helper = [m for m in no_shader
+                      if m not in recorded
+                      and material_mesh(m) in helper_meshes]
+            unexplained = [m for m in no_shader
+                           if m not in recorded and m not in helper]
             if unexplained:
                 triage.degraded(
                     f"materials without a shader: {', '.join(unexplained)}")
-            explained = [m for m in no_shader if m not in unexplained]
-            if explained:
+            if helper:
                 triage.info(
-                    "materials no vanilla .rs defines: " + ", ".join(explained))
+                    "materials without a shader on a node the exporter bakes "
+                    "as furniture rather than a part of the object, so nothing "
+                    "the model draws is untextured: " + ", ".join(helper))
+            if recorded:
+                triage.info(
+                    "materials no vanilla .rs defines: " + ", ".join(recorded))
         bad_skeletons = report.get("skeletonsNotRead") or []
         if bad_skeletons:
             triage.degraded(f"skeletons unreadable: {', '.join(bad_skeletons)}")
