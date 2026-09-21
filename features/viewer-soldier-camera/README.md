@@ -75,9 +75,22 @@ refuses the two trace modes — which is why the only vanilla templates that say
 anything are ten artillery pieces asking for `ObjectTemplate.CVMExternTrace 1`,
 and the soldier.
 
-Which of `+0x1bf` / `+0x1c0` is `CVMTrace` and which `CVMExternTrace` is
-**inferred** from case `0x11` being the arm that reads the externally set
-transform, not read from a registration. Nothing depends on it.
+Each `CVM*` word's byte is **read from its console registration**, not
+inferred. The static initialiser at `0x081b3fdd`-`0x081b43e3` builds six
+`ConsoleClass` singletons, each pairing a name string with a descriptor whose
+`executeObjectMethod` writes one template byte:
+
+| word | string | class | `executeObjectMethod` | byte | mode |
+|---|---|---|---|---|---|
+| `CVMInside` | `0x086c541a` | `ConsoleClass223` | `0x081d1a20` | `+0x1bc` | 3 |
+| `CVMChase` | `0x086c5411` | `ConsoleClass224` | `0x081d1e30` | `+0x1bd` | 12 |
+| `CVMFrontChase` | `0x086c5403` | `ConsoleClass225` | `0x081d2240` | `+0x1c1` | 13 |
+| `CVMFlyBy` | `0x086c53fa` | `ConsoleClass226` | `0x081d2650` | `+0x1be` | 14 |
+| `CVMTrace` | `0x086c53f1` | `ConsoleClass227` | `0x081d2a60` | `+0x1bf` | 16 |
+| `CVMExternTrace` | `0x086c53e2` | `ConsoleClass228` | `0x081d2e70` | `+0x1c0` | 17 |
+
+(Verified by the W5-E review, 2026-09-21, which replaced this paragraph's
+earlier inference.)
 
 `Objects/Soldiers/Common/Objects.con` is the only place in vanilla that writes
 all six:
@@ -119,12 +132,23 @@ is one view, and `setViewMode` refuses the rest.**
 
 ## 3. Why that is not the last word, and what UNVERIFIED means here
 
-The dedicated server is not the authority for a camera toggle. **No instruction
-anywhere in `bf1942_lnxded.static` reads input channel 26**: the whole image
-contains a single `shr reg,0x1a`, and that one is in
-`dice::ref2::io::System::cpu_Has_SSE2` (`0x08418e60`). A headless server has no
+The dedicated server is not the authority for a camera toggle, and it never
+performs one: **`Camera::setViewMode` has exactly two call sites in the whole
+image** (`0x081a9a4a` and `0x081a9e3a`, both inside the Camera subsystem
+itself), and neither is reached from an input path. A headless server has no
 camera to toggle, which is also the likeliest reason `BFSoldier::nextCamera` is
 empty there while `PlayerControlObject::nextCamera` is not.
+
+> **Corrected by the W5-E review, 2026-09-21.** This paragraph used to argue
+> the point from a scan finding a single `shr reg,0x1a` in the image. That is
+> the wrong test and proves nothing: a `PlayerInput` is a **59-slot array of
+> analog values**, not a packed bitfield. `BFSoldier::handlePlayerInput` copies
+> it whole with `mov eax,0x3b; rep movsd` (`0x08273cfc`), and
+> `GameServer::checkPlayerTriggers(BFPlayer*, PlayerInput)` -- which takes it
+> by value -- reads channels 14 to 22 at `[ebp+0x48]` through `[ebp+0x68]`,
+> four bytes apart, and nothing past 22. A channel is never read with a shift.
+> The conclusion survives on the call-site count above; the old evidence does
+> not support it.
 
 The consumer is in the client. This stream confirmed the client carries the same
 `CVMInside` / `CVMChase` console words (strings at `0x008ef69c` / `0x008ef70c`,
@@ -155,7 +179,8 @@ shipped behaviour — that bounds PARA-6, and it is treated the same way.
 - `PARACHUTE_VIEW_CYCLE` is `['inside', 'chase', 'front']`, mode ids 3, 12, 13.
   It is a **viewer choice made to the owner's play, not an engine reading**,
   marked in those words in the module, and `map.html` swaps it in only while
-  `soldier.parachuteState === 'open'`.
+  `soldier.parachuteState === 'open'` **and** the page was loaded with
+  `?soldier3p=1` -- see §6 for why the flag is there and off by default.
 - `PARACHUTE_VIEW_RADIUS = 3.0` is a viewer number too. `chase-camera.js` takes
   the root's `getBoundingRadius()`, and for a soldier that is exactly the
   quantity PARA-6 cannot pin (1.0 with the `Parachute` child contributing
@@ -205,16 +230,26 @@ landed t=25.20 state=none hp=30
 after landing: view={"mode":"inside","modeId":3,"modes":["inside"],"firstPerson":true}
 ```
 
+Re-run by the W5-E review on `localhost:5345` with `?soldier3p=1`, and this
+time the canvas was read as well as the state. The cycle is exactly as above;
+what each mode paints is in §6.
+
 ---
 
 ## 6. Not done
 
-- **There is no third-person soldier or canopy mesh on the page.** The local
-  soldier is drawn as a first-person arms rig parented to the camera and
-  nothing else, and `map.html` has no parachute visual at all (the bail-out
-  events are logged, not played). So the external views currently frame an
-  empty point in the sky. The camera is right; the thing it is pointed at has
-  to be built.
+- **There is no third-person soldier or canopy mesh on the page**, so the
+  external views are **held behind `?soldier3p=1` and off by default** (the
+  W5-E review, 2026-09-21). The local soldier is drawn as a first-person arms
+  rig parented to the camera and nothing else, and `map.html` has no parachute
+  visual at all (the bail-out events are logged, not played), so an external
+  view frames an empty point in the sky. Driven on the page at 290 m over Wake:
+  `chase` is a featureless grey field, `front` is bare sky, and the low front
+  view over the island renders the world correctly with nothing in the middle
+  of it. That reads as a broken render rather than a camera angle, which is
+  worse than C doing nothing, so C stays a no-op everywhere until the body is
+  built. The camera law itself is right and is exercised by
+  `tests/test_soldier_camera.py`; turn the flag on with the mesh.
 - **The client's channel-26 handler was not found**, so §3's question is open.
   The route that looked most likely and ran out of budget: the client's
   `Camera::getTransformation` is known to be at `0x005659b0` (W4-C), so its
