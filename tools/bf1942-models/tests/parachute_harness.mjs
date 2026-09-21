@@ -9,7 +9,8 @@
 // and the landing actually come to.
 
 import {
-  Parachute, effectiveParachuteDrag,
+  Parachute, effectiveParachuteDrag, landingImpactSpeed,
+  PARACHUTE_ZEROES_IMPACT_SPEED,
   FALL_STATE_SPEED, FALL_STATE_HEIGHT, CHUTE_CLOSE_SPEED,
   PARACHUTE_DRAG, PARACHUTE_SPEED, PARACHUTE_DRAG_RADIUS,
   FALL_SOUND_LAYERS, CHUTE_OPEN_SAMPLES, PARA_CLIPS,
@@ -46,6 +47,7 @@ results.constants = {
   parachuteDrag: PARACHUTE_DRAG,
   parachuteSpeed: PARACHUTE_SPEED,
   dragRadius: PARACHUTE_DRAG_RADIUS,
+  zeroesImpactSpeed: PARACHUTE_ZEROES_IMPACT_SPEED,
   openClipSeconds: OPEN_CLIP_SECONDS,
   landedClipSeconds: LANDED_CLIP_SECONDS,
   openSamples: CHUTE_OPEN_SAMPLES,
@@ -73,6 +75,14 @@ results.closedForm = {
   freeFallTerminal: Math.abs(GRAVITY)
     / (Math.PI * SOLDIER_BOUNDING_RADIUS * SOLDIER_BOUNDING_RADIUS
       * SOLDIER_DRAG / SOLDIER_MASS),
+};
+
+// `BFSoldier::handleCollision` 0x0827d470-0x0827d4a5: the speed argument the
+// collision handler is given is a zero Vec3 for as long as the chute bit is
+// set, and the caller's real vector otherwise.
+results.landingImpactSpeed = {
+  underCanopy: landingImpactSpeed(true, 13.681),
+  freeFall: landingImpactSpeed(false, 13.681),
 };
 
 // --- the state machine on its own ------------------------------------------
@@ -214,6 +224,8 @@ function bail({ from = 400, deployAt = null, pitch = -Math.PI / 2, vz = 0 } = {}
     landing: landing
       ? {
         impactSpeed: landing.impactSpeed, fallHeight: landing.fallHeight,
+        bodyImpactSpeed: landing.bodyImpactSpeed,
+        underCanopy: landing.underCanopy,
         cosTheta: landing.cosTheta, hp,
       }
       : null,
