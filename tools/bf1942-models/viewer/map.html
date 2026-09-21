@@ -370,6 +370,38 @@
     cursor: pointer;
   }
   #fullmap.deploy .fm-hit:disabled { cursor: default; }
+  /* The score board (`Scoreboard/SpawnScoreBoard` in menu/InGame), painted
+     into its canvas from scoreboard-layout.json the way #deploy-chrome paints
+     the spawn screen. It stands in for the spawn interface when SCORE BOARD
+     opens it (`Kit/ScoreboardSpawnInterface`), so it sits at the same level
+     and, later in the document, over it; held on Tab it takes no pointer. */
+  #scoreboard {
+    position: absolute;
+    inset: 0;
+    z-index: 11;
+    pointer-events: none;
+  }
+  #scoreboard[hidden] { display: none; }
+  #scoreboard.from-spawn { pointer-events: auto; }
+  #scoreboard canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+  #scoreboard-done {
+    position: absolute;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    opacity: 0;
+    cursor: pointer;
+  }
+  /* While the board stands in for it the spawn interface is not drawn; the
+     state underneath (team, kit, chosen flag) is untouched. */
+  #fullmap.deploy.board-open { visibility: hidden; }
   a { color: var(--accent); }
 
   .side-header {
@@ -885,6 +917,10 @@
       <button type="button" id="deploy-resume" class="fm-hit" tabindex="-1" aria-label="Resume"></button>
     </div>
   </div>
+  <div id="scoreboard" hidden>
+    <canvas id="scoreboard-canvas" aria-hidden="true"></canvas>
+    <button type="button" id="scoreboard-done" tabindex="-1" aria-label="Close score board"></button>
+  </div>
   <!-- The room's own trouble modal (P3): a room that will not open — the
        room server is not answering, the room is full, the code is bad —
        must say so before the player loses interest and navigates away.
@@ -966,6 +1002,8 @@ import { loadHudPaths } from './hud-pack.js';
 import { createSkirmishScreen } from './play/skirmish.js';
 import { kitIconCandidates, kitRowLabel } from './kit-icon.js';
 import { cpNation as cpNationRule, teamNation as teamNationRule } from './nation.js';
+import { BfMap, minimapWindow, rotateAbout, coverRect } from './bfmap.js';
+import { boardRows, boardVars, paintLeaves, listFloor, listGeometry } from './scoreboard.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -2234,7 +2272,8 @@ addEventListener('keydown', e => {
     // With all of those away, Escape is the game's own: it brings up the
     // menu, in one press even mid-play, because the browser has already
     // taken the pointer lock off us by the time this runs.
-    if (deployActive()) cancelDeploy();
+    if (scoreboardOpen()) setScoreboard(false);
+    else if (deployActive()) cancelDeploy();
     else if (!fullmapBox.hidden) toggleFullMap(false);
     else if (kbSession && !captured && !e.repeat) kbLockLeave();
     else if (!e.repeat) setEscMenu(true);
@@ -2249,8 +2288,10 @@ addEventListener('keydown', e => {
   }
   // Deploy owns Enter and 1-9 even when a sidebar INPUT/SELECT is focused:
   // otherwise Enter toggles `#onfoot` or activates RESUME and the commit
-  // either never runs or is immediately undone into fly-through.
-  if (deployActive()) {
+  // either never runs or is immediately undone into fly-through. Not while
+  // the score board stands in for the screen: the spawn interface is not up
+  // to be driven, and DONE or Escape is the way back to it.
+  if (deployActive() && !scoreFromSpawn) {
     if (e.code === 'Enter' && !e.repeat) {
       e.preventDefault();
       e.stopPropagation();
@@ -2276,6 +2317,21 @@ addEventListener('keydown', e => {
       // plain map, because his soldier is still ticked and still alive.
       openDeploy();
     } else toggleFullMap();
+    return;
+  }
+  // Tab is `c_PIShowScoreBoard`, `c_CMPushAndHold` in every shipped control
+  // map: the board is up for as long as the key is down. Not over the spawn
+  // screen, whose own SCORE BOARD button is the way in there.
+  if (e.code === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    e.preventDefault();
+    if (!e.repeat && !deployActive() && !scoreboardOpen()) setScoreboard(true, false);
+    return;
+  }
+  // N is `c_PIZoomMap`: it steps the minimap's three-level zoom counter
+  // (bfmap.js). Behind the same gates as M — the console, the Escape menu and
+  // a focused form control have all returned above.
+  if (e.code === 'KeyN' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    bfmap.zoomIn();
     return;
   }
   // Seated in anything, the same row switches seats instead (SEAT-23/24,
@@ -2358,6 +2414,9 @@ addEventListener('keydown', e => {
       || (optPilot.checked && AIR_KEYS.has(e.code)))) e.preventDefault();
 });
 addEventListener('keyup', e => {
+  // Push-and-hold: the board held up on Tab goes with the key, whatever else
+  // has the keyboard by then. One opened from the spawn screen stays.
+  if (e.code === 'Tab' && scoreboardOpen() && !scoreFromSpawn) setScoreboard(false);
   // A key released under an open console must not reach `keys` either: the
   // set is only ever read for movement, and the console has the keyboard.
   // The Escape menu has it on the same terms.
@@ -2496,10 +2555,26 @@ for (const [method, profile] of Object.entries(MOUSE_SENSITIVITY_WORDS)) {
   });
 }
 
+/** `game.setStaticMinimap` is the engine's own word — every stock
+ *  `GeneralOptions.con` calls it with 1, which is why the widget is north-up
+ *  by default — and it sets `BfMap`'s static byte (+0x58, ledger MMAP-2). 0
+ *  lets the closed minimap turn with the player; read back with no argument.
+ *  `bfmap` is declared further down this module, so it is only touched when
+ *  the word runs, never at registration. */
+gameConsole.register({
+  object: 'game', method: 'setStaticMinimap',
+  minArgs: 0, maxArgs: 1, argTypes: ['int'], returns: 'int',
+  run: args => {
+    if (args.length) bfmap.setStatic(args[0] !== '0' && args[0].toLowerCase() !== 'false');
+    return bfmap.isStatic ? 1 : 0;
+  },
+});
+
 function setConsoleOpen(on) {
   if (!gameConsole.setOpen(on)) return;
   consoleCanvas.hidden = !gameConsole.open;
   if (gameConsole.open) {
+    if (scoreboardOpen() && !scoreFromSpawn) setScoreboard(false);
     // Whatever was held when the console came up must not still be held
     // under it: the engine stops feeding `PlayerInput` entirely while the
     // flag is set, so a key down at that moment never repeats.
@@ -10493,10 +10568,13 @@ function cssWidthOf(canvas) {
 const fullmapName = document.getElementById('fullmap-name');
 const fullmapMeta = document.getElementById('fullmap-meta');
 
-// How much of the map the HUD window shows. The engine's zoom steps were not
-// recovered from the binary, so this is a viewer choice: a quarter of the
-// combat area keeps a 2 km level readable without losing the grid letters.
-const MINIMAP_SPAN = 0.25;
+// How much of the map the HUD window shows, and how it turns. The engine's
+// `BfMap` law (bfmap.js): three zoom levels stepped by `N`, the closed widget's
+// width covering 2.3^-(level+0.5) of the whole map — 0.659 / 0.287 / 0.125 —
+// centred on the player with no stop at the map's edge, and the displayed
+// rotation following the player's heading unless the map is static
+// (`game.setStaticMinimap 1`, the shipped default, north-up).
+const bfmap = new BfMap();
 // Sprite scale in CSS pixels, multiplied by the canvas's own backing ratio so
 // a flag is the same size on the 188 px HUD widget as on the fullscreen map
 // and stays put on a hidpi display.
@@ -10912,7 +10990,27 @@ function drawArt(ctx, size, u0, v0, span, opts) {
   const sw = span * mapArt.width;
   const sh = span * mapArt.height;
   ctx.globalAlpha = opts.dim ? SPAWN_MAP_ALPHA : opts.translucent ? 0.85 : 1;
-  ctx.drawImage(mapArt, sx, sy, sw, sh, 0, 0, size, size);
+  if (opts.rot || u0 < 0 || v0 < 0 || u0 + span > 1 || v0 + span > 1) {
+    // The HUD minimap: the window is centred on the player, so it can hang
+    // over the art's edge, and the rotating mode turns it about the surface's
+    // centre. The source is grown to cover the turned square's corners and cut
+    // to the art; what lies past the art is the backdrop.
+    const cover = coverRect(u0, v0, span, size, opts.rot || 0);
+    if (cover) {
+      const mid = size / 2;
+      ctx.save();
+      ctx.translate(mid, mid);
+      ctx.rotate(opts.rot || 0);
+      ctx.translate(-mid, -mid);
+      ctx.drawImage(mapArt,
+        cover.src.u * mapArt.width, cover.src.v * mapArt.height,
+        cover.src.w * mapArt.width, cover.src.h * mapArt.height,
+        cover.dst.x, cover.dst.y, cover.dst.w, cover.dst.h);
+      ctx.restore();
+    }
+  } else {
+    ctx.drawImage(mapArt, sx, sy, sw, sh, 0, 0, size, size);
+  }
   ctx.globalAlpha = 1;
 }
 
@@ -10942,7 +11040,7 @@ function drawControlPoint(ctx, cp, px, py, sc) {
 const vehiclePos = new THREE.Vector3();
 const vehicleQuat = new THREE.Quaternion();
 const vehicleFwd = new THREE.Vector3();
-function drawVehicles(ctx, toPx, sc) {
+function drawVehicles(ctx, toPx, sc, rot = 0) {
   if (!spawnersRoot) return;
   for (const vehicle of spawnersRoot.children) {
     vehicle.getWorldPosition(vehiclePos);
@@ -10955,7 +11053,9 @@ function drawVehicles(ctx, toPx, sc) {
     // vehicle; same forward axis and the same screen angle as the player.
     vehicle.getWorldQuaternion(vehicleQuat);
     vehicleFwd.set(0, 0, -1).applyQuaternion(vehicleQuat);
-    const angle = Math.atan2(vehicleFwd.x, -vehicleFwd.z);
+    // `rot` is the map's own turn (the rotating minimap): a heading drawn on a
+    // turned map turns with it.
+    const angle = Math.atan2(vehicleFwd.x, -vehicleFwd.z) + rot;
     if (!icon || !drawSprite(ctx, icon, q.x, q.y, sc, { angle, alpha: 0.9 })) {
       drawSprite(ctx, 'icon_vehicledot_empty', q.x, q.y, sc);
     }
@@ -10980,9 +11080,11 @@ function nationFromVehicles(team) {
   return has('rus') ? 'rus' : has('brit') ? 'brit' : null;
 }
 
-function drawPlayer(ctx, px, py, sc) {
+function drawPlayer(ctx, px, py, sc, rot = 0) {
+  // On the rotating minimap `rot` is minus the heading, so the arrow reads
+  // straight up and the world turns under it.
   if (drawSprite(ctx, 'minimap_icon_ring_32x32', px, py, sc * 0.8,
-                 { angle: cameraHeading() })) return;
+                 { angle: cameraHeading() + rot })) return;
   ctx.fillStyle = '#76d65c';
   ctx.beginPath();
   ctx.arc(px, py, 4 * sc, 0, Math.PI * 2);
@@ -11060,14 +11162,18 @@ function paintMap(canvas, u0, v0, span, opts) {
   drawArt(ctx, size, u0, v0, span, opts);
   if (!extras.minimap?.worldToImage) return ratio;
 
-  const toPx = p => ({
-    x: ((p.u - u0) / span) * size,
-    y: ((p.v - v0) / span) * size,
-  });
+  // Every marker POSITION turns with the art about the surface's centre; the
+  // flag plates themselves stay upright (a viewer choice — what the engine
+  // does to a flag icon on a turned map was not read), and only the icons that
+  // show a heading add the turn to their own angle.
+  const rot = opts.rot || 0;
+  const mid = size / 2;
+  const toPx = p => rotateAbout(((p.u - u0) / span) * size,
+                                ((p.v - v0) / span) * size, mid, rot);
   const sc = MARKER_SCALE * ratio * (opts.scale || 1);
   ctx.imageSmoothingEnabled = false;
 
-  drawVehicles(ctx, toPx, sc);
+  drawVehicles(ctx, toPx, sc, rot);
   for (const cp of extras.controlPoints || []) {
     const p = projectToArt(cp.position[0], cp.position[2]);
     if (!p) continue;
@@ -11080,7 +11186,7 @@ function paintMap(canvas, u0, v0, span, opts) {
     const here = projectToArt(camera.position.x, camera.position.z);
     if (here) {
       const q = toPx(here);
-      drawPlayer(ctx, q.x, q.y, sc);
+      drawPlayer(ctx, q.x, q.y, sc, rot);
     }
   }
   ctx.imageSmoothingEnabled = true;
@@ -11174,14 +11280,20 @@ function drawMinimap() {
   if (minimapBox.hidden) return;
   const here = projectToArt(camera.position.x, camera.position.z);
   if (!here) return;
-  if (!mapSurfaceStale(minimapCanvas, mapSurfaceKey(minimapCanvas, here, MINIMAP_SPAN))) return;
-  // North-up with a rotating arrow. That is the game's own shipped default —
-  // every stock profile sets `game.setStaticMinimap 1` — and it keeps the
-  // baked-in grid letters upright.
-  const half = MINIMAP_SPAN / 2;
-  const u0 = Math.min(Math.max(here.u - half, 0), 1 - MINIMAP_SPAN);
-  const v0 = Math.min(Math.max(here.v - half, 0), 1 - MINIMAP_SPAN);
-  const ratio = paintMap(minimapCanvas, u0, v0, MINIMAP_SPAN, { translucent: true });
+  // The live span: `N` steps the level and `bfmap.update` eases toward it, so
+  // the span is part of what the surface shows and part of its key.
+  const span = bfmap.span();
+  const key = `${mapSurfaceKey(minimapCanvas, here, span)},`
+    + `${Math.round(span * 1e5)},${bfmap.isStatic ? 1 : 0}`;
+  if (!mapSurfaceStale(minimapCanvas, key)) return;
+  // North-up with a rotating arrow by default. That is the game's own shipped
+  // default — every stock profile sets `game.setStaticMinimap 1` — and it
+  // keeps the baked-in grid letters upright. `game.setStaticMinimap 0` turns
+  // the map under a fixed arrow instead: this widget is the closed map, z = 0,
+  // so the turn is the whole heading (the heading is already in the key).
+  const { u0, v0 } = minimapWindow(here, span);
+  const rot = bfmap.rotation(0, cameraHeading());
+  const ratio = paintMap(minimapCanvas, u0, v0, span, { translucent: true, rot });
   drawMinimapChrome(minimapCanvas.getContext('2d'), minimapCanvas.width, ratio);
 }
 
@@ -11237,6 +11349,7 @@ function toggleFullMap(on) {
   // Closing strips the deploy chrome with it, so a level switch or a plain
   // Escape can never leave the screen armed behind a hidden overlay.
   if (!want) {
+    if (scoreFromSpawn) setScoreboard(false);
     fullmapBox.classList.remove('deploy');
     fullmapFrame.removeAttribute('style');
   }
@@ -11320,6 +11433,10 @@ const BFMAP_CLOSED_RECT = [620, 30, 175, 175];
 // 0.7 (1 - exp(-9*0.134) ~= 0.7). `.deploy-ready` is that threshold.
 const BFMAP_CHROME_Z = 0.7;
 
+// True while the score board stands in for the spawn interface (opened by its
+// SCORE BOARD button). Declared here, ahead of the board's own block, because
+// the deploy close paths below read it and can run before that block has.
+let scoreFromSpawn = false;
 let deployZ = 0;        // the eased zoom fraction: 0 minimap, 1 spawn map
 let deployZTarget = 0;  // where BfMap__animate is easing it
 
@@ -11341,6 +11458,7 @@ function deployAnimate(dt) {
  *  instant close used to do — chrome stripped so a level switch or a plain
  *  Escape can never leave the screen armed behind a hidden overlay. */
 function finishDeployClose() {
+  if (scoreFromSpawn) setScoreboard(false);
   fullmapBox.hidden = true;
   fullmapBox.classList.remove('deploy', 'deploy-ready');
   fullmapFrame.removeAttribute('style');
@@ -11361,7 +11479,10 @@ function applyDeployFrame() {
   fullmapFrame.style.width = `${w * s.sx}px`;
   fullmapFrame.style.height = `${h * s.sy}px`;
   fullmapFrame.style.opacity = deployZ.toFixed(3);
-  const theta = -(1 - deployZ) * cameraHeading();
+  // `bfmap.rotation` is that law with the static byte honoured: north-up all
+  // the way under the shipped `game.setStaticMinimap 1`, turned in with the
+  // camera under 0 (the profile the reference capture was recorded with).
+  const theta = bfmap.rotation(deployZ, cameraHeading());
   const cover = Math.abs(Math.cos(theta)) + Math.abs(Math.sin(theta));
   fullmapCanvas.style.transform = `rotate(${theta}rad) scale(${cover.toFixed(4)})`;
   // The threshold only arms on the way up: a close strips the chrome in the
@@ -11466,8 +11587,8 @@ function measureText(font, text) {
 /** Text in a bitmap font at virtual (x, y), the line's top at y: each glyph
  *  drawn at `left` past the pen and `ascent` above the baseline, the pen
  *  advancing by left + width + right, as `bf42/font.py` reads the `.dif`. */
-function drawBitmapText(ctx, fontId, text, x, y, rgb) {
-  const font = spawnLayout.fonts.get(fontId);
+function drawBitmapText(ctx, fontId, text, x, y, rgb, fonts = spawnLayout.fonts) {
+  const font = fonts.get(fontId);
   if (!font) return;
   const atlas = tintedAtlas(font, rgb);
   const base = font.meta.baseline;
@@ -11712,6 +11833,189 @@ function paintDeploySoon() {
 }
 
 new ResizeObserver(() => { if (deployActive()) layoutDeploy(); }).observe(fullmapBox);
+
+// --- the score board ------------------------------------------------------------
+//
+// `scoreboard/scoreboard-layout.json` is the `Scoreboard/SpawnScoreBoard` group
+// of `menu/InGame` (extract_scoreboard_layout.py): the two team panels, their
+// heading strips and totals, the button frame, the server plate. `scoreboard.js`
+// is what the engine adds at runtime — the variable table and the list rows —
+// and the leaf painter; this is the page's end: the pack, the canvas, who is
+// on the board, and the two ways in (SCORE BOARD on the spawn screen, Tab held).
+const scoreBox = document.getElementById('scoreboard');
+const scoreCanvas = document.getElementById('scoreboard-canvas');
+const scoreDoneBtn = document.getElementById('scoreboard-done');
+const scoreLayout = { data: null, fonts: new Map(), textures: new Map() };
+let scoreHoverDone = false;
+let scorePaintKey = '';
+
+function scoreboardOpen() { return !scoreBox.hidden; }
+
+async function loadScoreLayout() {
+  const url = rel => `${hudPaths.url(`scoreboard/${rel}`)}${bust()}`;
+  let data;
+  try {
+    data = await fetch(url('scoreboard-layout.json')).then(r => r.json());
+  } catch (error) {
+    console.warn('score board layout unavailable', error);
+    return;
+  }
+  const image = src => new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+  await Promise.all([
+    ...Object.entries(data.fontFiles || {}).map(async ([id, entry]) => {
+      const [meta, img] = await Promise.all([
+        fetch(url(entry.glyphs)).then(r => r.json()), image(url(entry.file))]);
+      if (img) scoreLayout.fonts.set(id, { meta, img, tinted: new Map() });
+    }),
+    ...Object.entries(data.textures || {}).map(async ([name, entry]) => {
+      const img = await image(url(entry.file));
+      if (img) scoreLayout.textures.set(name, img);
+    }),
+  ]);
+  scoreLayout.data = data;
+  if (scoreboardOpen()) paintScoreboard(true);
+}
+loadScoreLayout();
+
+/** Everyone the page really knows about: the local player, and in a room the
+ *  roster the server sent. Nobody else is ever listed. */
+function scoreboardPlayers() {
+  const inRoom = roomJoined && roomClient;
+  const players = [{
+    slot: inRoom ? roomClient.slot : null,
+    name: roomName,
+    team: inRoom ? (roomClient.hello?.team === 1 ? 1 : 2) : deployTeamId,
+    local: true,
+  }];
+  if (inRoom) {
+    for (const slot of roomClient.remoteSlots()) {
+      players.push({ slot, name: roomClient.nameOf(slot), team: roomClient.teamOf(slot) });
+    }
+  }
+  return players;
+}
+
+function scoreboardScale() {
+  const W = scoreBox.clientWidth || 800;
+  const H = scoreBox.clientHeight || 600;
+  const [vw, vh] = scoreLayout.data?.virtual || [800, 600];
+  if (W / H < 1) {
+    const s = Math.min(W / vw, H / vh);
+    return { sx: s, sy: s, ox: (W - vw * s) / 2, oy: (H - vh * s) / 2, W, H };
+  }
+  return { sx: W / vw, sy: H / vh, ox: 0, oy: 0, W, H };
+}
+
+const scoreRes = {
+  // The board's own plates first; a bound picture (the two ticket flags) is
+  // one of the HUD pack's sprites.
+  texture: name => scoreLayout.textures.get(name) || sprite(name),
+  measure: (fontId, text) => {
+    const font = scoreLayout.fonts.get(fontId);
+    return font ? measureText(font, text) : 0;
+  },
+  drawText: (ctx, fontId, text, x, y, rgb) =>
+    drawBitmapText(ctx, fontId, text, x, y, rgb, scoreLayout.fonts),
+  lineHeight: fontId => scoreLayout.data?.fontFiles?.[fontId]?.lineHeight || 8,
+  hover: el => scoreHoverDone && el.texture === 'knappext_n',
+  floor: el => listFloor(scoreLayout.data.elements, el),
+};
+
+/** One paint of the board. Cheap to ask for: nothing is drawn unless what it
+ *  shows — the roster, the tallies, the size, the hover — has changed. */
+function paintScoreboard(force = false) {
+  const data = scoreLayout.data;
+  if (!data || !scoreboardOpen()) return;
+  const inRoom = !!(roomJoined && roomClient);
+  const rows = boardRows(scoreboardPlayers(), inRoom ? roomClient.feed : []);
+  const s = scoreboardScale();
+  const key = JSON.stringify([rows, s.W, s.H, scoreFromSpawn, scoreHoverDone, inRoom,
+                              currentDir, hudPack.sprites.size]);
+  if (!force && key === scorePaintKey) return;
+  scorePaintKey = key;
+
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const cw = Math.round(s.W * dpr);
+  const ch = Math.round(s.H * dpr);
+  if (scoreCanvas.width !== cw || scoreCanvas.height !== ch) {
+    scoreCanvas.width = cw;
+    scoreCanvas.height = ch;
+  }
+  const ctx = scoreCanvas.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, cw, ch);
+  ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
+
+  const box = data.elements.find(el => el.kind === 'listbox');
+  const visibleRows = box
+    ? listGeometry(box, data.listColumns, scoreRes.lineHeight(box.font),
+                   scoreRes.floor(box)).visibleRows : Infinity;
+  const vars = boardVars(data.variables, {
+    fromSpawn: scoreFromSpawn,
+    inRoom,
+    alive: deployRejoin || (optOnFoot.checked && !!soldier),
+    serverName: inRoom ? String(roomClient.hello?.room ?? '') : '',
+    serverIp: inRoom ? location.host : '',
+    mapName: extras.level || currentDir || '',
+    axisFlag: ticketFlagTexture(1),
+    alliedFlag: ticketFlagTexture(2),
+    rows,
+    visibleRows,
+  });
+  paintLeaves(ctx, data, data.elements, vars, scoreRes, {
+    'Scoreboard/AxisScoreboardList': rows[1],
+    'Scoreboard/AlliedScoreboardList': rows[2],
+  });
+  // `ShowTicket` is its own top-level entry of menu/InGame and stays up over
+  // the board. Live, the HUD canvas already has it; over the spawn screen the
+  // deploy chrome drew it, and that chrome is hidden while the board stands in.
+  if (scoreFromSpawn && spawnLayout.data?.groups?.tickets) {
+    const spawnRes = { ...scoreRes,
+      texture: name => sprite(name),
+      measure: (fontId, text) => {
+        const font = spawnLayout.fonts.get(fontId);
+        return font ? measureText(font, text) : 0;
+      },
+      drawText: (c, fontId, text, x, y, rgb) => drawBitmapText(c, fontId, text, x, y, rgb),
+    };
+    paintLeaves(ctx, data, spawnLayout.data.groups.tickets.elements, deployVars(), spawnRes);
+  }
+  const done = data.elements.find(el => el.kind === 'button' && el.texture === 'knappext_n');
+  if (done) placeHit(scoreDoneBtn, done.rect, s);
+}
+
+/** Open or close the board. `fromSpawn` is `Scoreboard/FromSpawnScoreboard`:
+ *  true when the spawn screen's SCORE BOARD button opened it (the red button
+ *  reads DONE and gives the spawn interface back), false when Tab holds it up
+ *  over the live game (the button reads LOCK, which this page does not act
+ *  on — there is nothing to lock a pointer for). */
+function setScoreboard(on, fromSpawn = false) {
+  if (on === scoreboardOpen()) return;
+  scoreFromSpawn = on && fromSpawn;
+  scoreHoverDone = false;
+  scoreBox.hidden = !on;
+  scoreBox.classList.toggle('from-spawn', scoreFromSpawn);
+  scoreDoneBtn.hidden = !scoreFromSpawn;
+  fullmapBox.classList.toggle('board-open', scoreFromSpawn);
+  if (on) paintScoreboard(true);
+}
+
+scoreDoneBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  scoreDoneBtn.blur();
+  setScoreboard(false);
+});
+for (const [type, over] of [['pointerenter', true], ['pointerleave', false]]) {
+  scoreDoneBtn.addEventListener(type, () => { scoreHoverDone = over; paintScoreboard(); });
+}
+// A held key whose release the page never sees must not leave the board up.
+addEventListener('blur', () => { if (scoreboardOpen() && !scoreFromSpawn) setScoreboard(false); });
+new ResizeObserver(() => paintScoreboard(true)).observe(scoreBox);
 
 // --- the state -----------------------------------------------------------------
 
@@ -12075,6 +12379,9 @@ deployResumeBtn.addEventListener('click', e => {
 deployScoreBtn.addEventListener('click', e => {
   e.stopPropagation();
   deployScoreBtn.blur();
+  // `Kit/ScoreboardSpawnInterface`: the board takes the spawn interface's
+  // place until its own DONE (`Kit/DoneSpawnScoreboard`) gives it back.
+  setScoreboard(true, true);
 });
 
 async function show(entry) {
@@ -13149,6 +13456,8 @@ function frame(dt) {
     renderer.autoClear = true;
   }
   deployAnimate(dt);
+  if (scoreboardOpen()) paintScoreboard();
+  bfmap.update(dt);
   drawMinimap();
   drawFullMap();
   // Last, over everything: feed this frame's soldier-side variables, then
@@ -13818,6 +14127,19 @@ if (params.has('shots')) {
   window.__mapGate = on => {
     if (on !== undefined) mapGate = !!on;
     return mapGate;
+  };
+  // The minimap's zoom and rotation state (bfmap.js), so a headless check can
+  // step the level, settle the ease and read the span without a key event.
+  window.__bfmap = bfmap;
+  // The score board: open/close it, and read back what it lists.
+  window.__scoreboard = {
+    open: (fromSpawn = false) => setScoreboard(true, fromSpawn),
+    close: () => setScoreboard(false),
+    get isOpen() { return scoreboardOpen(); },
+    get fromSpawn() { return scoreFromSpawn; },
+    ready: () => !!scoreLayout.data,
+    rows: () => boardRows(scoreboardPlayers(), roomJoined && roomClient ? roomClient.feed : []),
+    paint: () => paintScoreboard(true),
   };
   // Which gameplay layer `?mode=` landed on, and what else the level ships —
   // enough for a headless check to prove the flags, spawns and vehicles it is
