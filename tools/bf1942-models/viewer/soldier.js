@@ -662,38 +662,15 @@ export class Soldier {
     const state = this.chute.state;
     const flying = state === PARA_FALLING || state === PARA_OPEN;
     this.body.setParachute(this.chute.open, this._chuteDrag);
-    if (this.chute.open) {
-      // **A deliberate deviation, and the reason it is one.**
-      //
-      // HP-14's severity carries `Q = max(1, (F - 1) * kitDamping)` and then
-      // squares it, where `F` is `getLastCollisionHeight() - y` — the drop
-      // since the last contact. A man who steps out at 120 m and floats the
-      // rest of the way down under a canopy still arrives with `F = 120`, and
-      // `Q^2` alone makes that landing worth ~6,900 HP against his 30.
-      //
-      // The engine's own data says that cannot be what happens: the landing
-      // clip `Lb_ParachuteHitGround` ends `addTransitionWhenDone Lb_Stand` —
-      // you stand up and walk away — and the dead case has its own separate
-      // `Lb_ParachuteDeadHitGround`. A chute landing is survivable, and `F` is
-      // the only term the drop height enters through, so `F` is what the
-      // chute has to neutralise.
-      //
-      // The engine writes `Armor+0x28` inline at the tail of `Armor::update`
-      // (`0x081730b0`-`0x081730e7`): every tick the object is not in contact
-      // (`Armor+0x129 == 0`) it *raises* the field to the current `y`. It is a
-      // running maximum of altitude, so the engine does not neutralise `F` for
-      // a parachutist either — `F` really is the whole 120 m.
-      //
-      // The engine's own answer is the drag radius: at `r >= 2.354` the canopy
-      // touches down at `|v| <= 8.0` and `handleCollisionLandOrWater` returns
-      // before it reaches `Q^2`. `PARACHUTE_DRAG_RADIUS` is 1.8, below that
-      // window, so this re-stamp stands in for it: bill the touchdown for the
-      // last tick's descent and nothing else. It differs from the engine's
-      // rule only in direction (the engine never lowers the value). Raise the
-      // radius into the window and this block can go. See the feature doc's
-      // sections 4 and 5.
-      this.body.lastCollisionHeight = this.y;
-    }
+    // No deviation here any more. HP-14 bills `F = getLastCollisionHeight() - y`
+    // and the engine never lowers that field — `Armor::update` raises it to the
+    // current `y` every tick the object is out of contact (`0x081730b0`-
+    // `0x081730e7`, guarded by `Armor+0x129`), so `F` really is the whole drop
+    // for a parachutist too. The engine's answer is the drag radius, not a
+    // reset: inside `PARACHUTE_DRAG_RADIUS`'s window the canopy touches down at
+    // `|v| <= 8.0` and `handleCollisionLandOrWater` returns before `Q^2`. An
+    // earlier radius sat below that window and this block re-stamped
+    // `lastCollisionHeight` to stand in for it; see parachute.js.
     if (flying) {
       const a = this.chute.accel;
       if (a.x || a.y || a.z) this.body.body.addAcceleration(a.x, a.y, a.z);

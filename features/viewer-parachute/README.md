@@ -324,6 +324,18 @@ Two shipped behaviours bound it.
 > was wrong in the direction that matters: it tested the **vertical** descent
 > against HP-14's 8.0 m/s floor, but HP-14's `|v|` is the **full** impact speed
 > and the canopy carries `2.0367 ×` the vertical as horizontal all the way to
+> **Settled by the lead, 2026-09-21 (after the review).** The radius moved from
+> 1.8 to **2.5**, inside the corrected window, and §5's `lastCollisionHeight`
+> re-stamp is **deleted**. The landing now costs nothing for the engine's own
+> reason: `F` is still the whole drop, as `Armor::update` requires, and the
+> touchdown simply arrives under HP-14's 8.0 m/s floor at `|v| = 7.092`. 2.5 is
+> taken from the lower half of the window because descent goes as `1/r²` — the
+> low end is the fastest chute the survivability bound allows (3.126 m/s down,
+> 6.366 forward) and it keeps 0.9 m/s of margin under the floor where r = 2.354
+> leaves 0.001. Everything below describing `r = 1.8` and the re-stamp is the
+> state before that change, kept because the derivation is what bounds the
+> window. The radius remains UNVERIFIED either way.
+>
 > the ground. The corrected window is **`2.354 ≤ r < 3.126`**, derived below,
 > and the shipped `r = 1.8` sits outside it — which is the whole reason §5
 > needed a mechanism of its own.

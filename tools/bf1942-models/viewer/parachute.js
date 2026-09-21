@@ -131,17 +131,32 @@ export const PARACHUTE_SPEED = 30;
  *
  *   - a chute landing is survivable — `Lb_ParachuteHitGround`
  *     `addTransitionWhenDone Lb_Stand`, and the dead case has its own separate
- *     `Lb_ParachuteDeadHitGround` — so the terminal descent `|g| / k` must sit
- *     under HP-14's 8.0 m/s damage floor, i.e. `r > 1.563`;
- *   - HP-14 fall damage exists, so a 7.5 m drop must still arrive near
- *     15 m/s, i.e. the free-fall terminal must stay far above it: `r < 2.8`.
+ *     `Lb_ParachuteDeadHitGround`. HP-14 bills the **full** impact speed, and
+ *     the canopy carries 2.0367x the vertical as horizontal the whole way
+ *     down, so `|v| = 2.2690 * v_y` must sit under HP-14's 8.0 m/s floor:
+ *     **`r >= 2.354`**;
+ *   - the canopy must not close in mid-air — `setIsParachuting(false)` fires
+ *     at `|vy| <= 2.0` (`0x08272f3b`, `0x08273129`) — so **`r < 3.126`**.
  *
- * 1.8 is taken from that window. At it the chute settles to 6.03 m/s down and
- * 12.28 m/s forward, lands with 2 m/s of margin under the damage floor, and
- * leaves the soldier's own drag inert (terminal 145 m/s). Treat it as a
- * tunable, not as the engine's.
+ * An earlier reading of this window had `1.563 < r < 2.8`: the lower bound
+ * tested the *vertical* descent against a floor that applies to the whole
+ * impact speed, and the upper was a judgement about fall damage still feeling
+ * present rather than a bound on anything. 1.8 came out of it, which is below
+ * the real window — and that is why `soldier.js` used to re-stamp
+ * `lastCollisionHeight` under the canopy to stop HP-14 billing the whole drop.
+ * Inside the corrected window the landing comes out of HP-14's own arithmetic
+ * and that workaround is gone.
+ *
+ * 2.5 is taken from the lower half of the corrected window: the descent rate
+ * falls as 1/r^2, so the low end is the fastest chute the engine's own
+ * survivability bound allows, and the whole window is slow (a 120 m float is
+ * 34 s at the very bottom of it and 60 s at the top). At 2.5 the canopy
+ * settles to 3.13 m/s down and 6.37 m/s forward, touches down at |v| = 7.09
+ * with 0.9 m/s of margin under HP-14's floor rather than the 0.001 m/s that
+ * r = 2.354 leaves, and stays well clear of the 2.0 m/s auto-close. Still a
+ * tunable rather than the engine's own number: set it by play.
  */
-export const PARACHUTE_DRAG_RADIUS = 1.8;
+export const PARACHUTE_DRAG_RADIUS = 2.5;
 
 /**
  * The drag to hand a body whose bounding radius is not the engine's.
