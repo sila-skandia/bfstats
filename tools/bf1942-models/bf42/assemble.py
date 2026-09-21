@@ -1417,6 +1417,51 @@ class Assembler:
                 best = (ttl, spec, payload)
         return (best[1], best[2]) if best else (None, None)
 
+    # Which of a projectile's `addTemplate` children change how it flies. An
+    # `EffectBundle` child is the wake and already rides out as `trailBundle`;
+    # a `Wing`, a `FloatingBundle` or an `Engine` is physics, and until now none
+    # of it reached the viewer at all.
+    _PROJECTILE_PART_KINDS = ("wing", "floatingbundle", "engine")
+
+    def _projectile_parts(self,
+                          projectile: con_mod.ObjectTemplate) -> list[dict]:
+        """The physics children of a Projectile, placed and with their words.
+
+        `AircraftTorpedo` is the reason this exists: two `Torpedo_Floater`
+        (`FloatingBundle`) 3 m above the hull centre and 2 m either side of it,
+        a `Torpedo_Engine` (`c_ETTorpedo`) and two `Torpedo_Wing` at the tail.
+        Those five are the whole of why a torpedo runs level in water instead
+        of sinking, and `_projectile_spec` never walked the children to find
+        them (gap G-4). The three bombs bring two `Bomb_wing` fins each by the
+        same route, which is what keeps a released bomb nose-down.
+
+        Positions are Refractor's, Z-negated into glTF exactly as `build_node`
+        does for every other child; rotations are the `.con`'s own yaw/pitch/
+        roll triple, unconverted, because a consumer reading `setMinRotation`
+        and `setMaxRotation` out of the same block needs the same convention.
+        The physics words come from `ObjectTemplate.physics()`, which already
+        serialises all three classes.
+        """
+        parts: list[dict] = []
+        for ref in projectile.children:
+            name = con_mod.instance_template_name(ref, self.library.object)
+            child = self.library.object(name) if name else None
+            if child is None:
+                continue
+            kind = child.kind.lower()
+            if kind not in self._PROJECTILE_PART_KINDS:
+                continue
+            part = {
+                "template": child.name,
+                "kind": child.kind,
+                "position": [ref.position[0], ref.position[1],
+                             -ref.position[2]],
+                "rotation": list(ref.rotation),
+            }
+            part.update(child.physics() or {})
+            parts.append(part)
+        return parts
+
     def _projectile_spec(self, builder: gltf.GlbBuilder,
                          template: con_mod.ObjectTemplate,
                          report: Report) -> tuple[dict | None, list[int]]:
@@ -1488,6 +1533,19 @@ class Assembler:
         # for mods rather than a change to any shipped round.
         if projectile.material is not None:
             spec["material"] = projectile.material
+        # The body words. A bomb is `mass 250` / `drag 0.08` and a torpedo
+        # `mass 800` / `drag 0.04`, and without them a viewer cannot run the
+        # engine's own drag law (`accel -= scale*v * pi r^2 * drag / mass`,
+        # PHY-7) on a round at all — it was integrating gravity alone.
+        # `setHasPointPhysics 0` says which physics path the round takes, which
+        # is what decides whether its `Wing` and `FloatingBundle` children mean
+        # anything (BOMB-10).
+        for key, value in (("mass", projectile.mass),
+                           ("drag", projectile.drag),
+                           ("hasPointPhysics", projectile.has_point_physics),
+                           ("stopAtEndEffect", projectile.stop_at_end_effect)):
+            if value is not None:
+                spec[key] = value
         radius = projectile.explosion_radius
         if (radius is None
                 and projectile.damage_type in (1, 4)
@@ -1505,6 +1563,13 @@ class Assembler:
                 "hasCollisionEffect": projectile.has_collision_effect,
                 "dieAfterColl": projectile.die_after_coll,
                 "yModOnExplosion": projectile.y_mod_on_explosion,
+                # The third "what happens on contact" word, and the one the
+                # aircraft torpedo is built on: `Projectile::handleCollision`'s
+                # only `return 0` is a water contact without it (BOMB-11), so a
+                # round declaring `0` passes THROUGH the surface. It lives
+                # beside `dieAfterColl` because it answers the same question.
+                "detonateOnWaterCollision":
+                    projectile.detonate_on_water_collision,
             }.items() if value is not None
         }
         if damage:
@@ -1515,6 +1580,8 @@ class Assembler:
         from . import effects as effects_mod
         if trail_bundle := effects_mod.projectile_trail_bundle(self.library, projectile):
             spec["trailBundle"] = trail_bundle
+        if parts := self._projectile_parts(projectile):
+            spec["parts"] = parts
         if projectile.end_effect_template:
             spec["endEffect"] = projectile.end_effect_template
         if body is not None and body.geometry:
@@ -1634,6 +1701,25 @@ class Assembler:
             "coolDownPerSec": template.cool_down_per_sec,
             "timeDelayOnOverheat": template.time_delay_on_overheat,
             "velocity": template.velocity,
+            # One barrel per pull instead of a salvo, and one round charged
+            # instead of one per barrel (BOMB-1/BOMB-3). Seven vanilla
+            # templates; the B17's bomb rack is the one that matters, and
+            # without this word its stick of eight is a salvo of two.
+            "asynchronyFire": template.asynchrony_fire,
+            # `projectilePosition` is where the round leaves when a template
+            # declares no `addFireArmsPosition`, and the muzzle list below
+            # already falls back to it. When BOTH are declared the barrels win
+            # for placement — but the offset does not stop existing: a Stuka's
+            # rack is `projectilePosition 0/-0.4/-0.2` with barrels at ±3.3, so
+            # dropping it put the bombs 0.4 m too high and 0.2 m too far aft.
+            # Carried beside the barrels rather than folded into them so the
+            # muzzle nodes still read as the `.con`'s own numbers.
+            "projectilePosition": (
+                [template.projectile_position[0],
+                 template.projectile_position[1],
+                 -template.projectile_position[2]]
+                if template.projectile_position and template.fire_arms_positions
+                and any(template.projectile_position) else None),
             # The throw, for the four hand weapons that let go of what they
             # hold: how long the weapon's own mesh is hidden from the shot
             # (`hideDuringFireTime`, the hand-off), the wind-up from the trigger
