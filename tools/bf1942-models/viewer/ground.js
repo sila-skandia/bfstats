@@ -38,6 +38,11 @@ const UP = new THREE.Vector3(0, 1, 0);
 
 const DEG = Math.PI / 180;
 
+// The tallest step a driven vehicle's hull will climb (a bridge deck lip or a
+// reload/repair bay's apron, both surfaced by the drivable-deck raster). A
+// deck taller than this — a tower or building on the bay — stays a wall.
+const CLIMB_STEP = 2.6;   // metres
+
 /** The two grips a wheel declares, and what they mean to the drivetrain. */
 const GRIP_DRIVEN = 'c_PGFEngineGrip';
 
@@ -1277,20 +1282,52 @@ export class GroundVehicle extends Vehicle {
         const hit = this.collider.sweepSphere(
           prevX, prevY, prevZ, dx * len, dy * len, dz * len,
           dist, this._hullRadius, this._collisionOwner);
-        if (hit) {
-          const backOff = Math.max(0, hit.t - 0.02);
+        // A drivable deck (bridge/reload-bay apron) is terrain the wheels ride,
+        // not a wall the hull rams, so its leading lip must not dead-stop the
+        // tank (that was the edge-hang / bounce bug). But it is a real step, not
+        // a free climb: the tank steps up onto it only when the deck is a short
+        // rise above its current support. Re-sweep past the deck to find the
+        // first genuine wall; only a wall/building, or a deck too tall to step
+        // onto, keeps the full stop.
+        const overDeck = hit && this.collider.isDrivableOwner(hit.owner);
+        const solid = overDeck
+          ? this.collider.sweepSphere(
+              prevX, prevY, prevZ, dx * len, dy * len, dz * len,
+              dist, this._hullRadius, hit.owner)
+          : hit;
+        if (solid && this.collider.isDrivableOwner(solid.owner)) {
+          // Still only the deck: climb it if it is a step the tank can mount
+          // (`CLIMB_STEP` metres above current support), a little each tick so
+          // it rises like terrain instead of leaping. A deck taller than the
+          // step (a tower on the bay) is left to the wall stop below.
+          const deck = this.groundHeight(s.position.x, s.position.z);
+          if (Number.isFinite(deck) && s.position.y < deck - 0.05 && s.grounded) {
+            const rise = deck - s.position.y;
+            if (rise <= CLIMB_STEP) {
+              s.position.y += Math.min(0.2, rise - 0.05);
+              if (s.velocity.y < 0) s.velocity.y = 0;
+            } else {
+              // Too tall to step -- fall through to a normal stop below.
+              const backOff = Math.max(0, solid.t - 0.02);
+              s.position.x = prevX + dx * len * backOff;
+              s.position.y = prevY + dy * len * backOff;
+              s.position.z = prevZ + dz * len * backOff;
+            }
+          }
+        } else if (solid) {
+          const backOff = Math.max(0, solid.t - 0.02);
           s.position.x = prevX + dx * len * backOff;
           s.position.y = prevY + dy * len * backOff;
           s.position.z = prevZ + dz * len * backOff;
           // Kill the velocity component into the surface normal (it points
           // from the hull toward the vehicle centre). Lateral and tangential
           // components are preserved so the vehicle slides along the wall.
-          const vDotN = s.velocity.x * hit.nx + s.velocity.y * hit.ny
-                      + s.velocity.z * hit.nz;
+          const vDotN = s.velocity.x * solid.nx + s.velocity.y * solid.ny
+                      + s.velocity.z * solid.nz;
           if (vDotN < 0) {
-            s.velocity.x -= vDotN * hit.nx;
-            s.velocity.y -= vDotN * hit.ny;
-            s.velocity.z -= vDotN * hit.nz;
+            s.velocity.x -= vDotN * solid.nx;
+            s.velocity.y -= vDotN * solid.ny;
+            s.velocity.z -= vDotN * solid.nz;
           }
         }
       }
@@ -2837,17 +2874,40 @@ export class TrackedVehicle extends Vehicle {
         const hit = this.collider.sweepSphere(
           prevX, prevY, prevZ, dx * len, dy * len, dz * len,
           dist, this._hullRadius, this._collisionOwner);
-        if (hit) {
-          const backOff = Math.max(0, hit.t - 0.02);
+        // Same climb-vs-stop rule as `GroundVehicle`: a drivable deck's lip is
+        // a step the tank mounts, re-sweeping past it; a deck taller than
+        // CLIMB_STEP stays a wall.
+        const overDeck = hit && this.collider.isDrivableOwner(hit.owner);
+        const solid = overDeck
+          ? this.collider.sweepSphere(
+              prevX, prevY, prevZ, dx * len, dy * len, dz * len,
+              dist, this._hullRadius, hit.owner)
+          : hit;
+        if (solid && this.collider.isDrivableOwner(solid.owner)) {
+          const deck = this.groundHeight(s.position.x, s.position.z);
+          if (Number.isFinite(deck) && s.position.y < deck - 0.05 && s.grounded) {
+            const rise = deck - s.position.y;
+            if (rise <= CLIMB_STEP) {
+              s.position.y += Math.min(0.2, rise - 0.05);
+              if (s.velocity.y < 0) s.velocity.y = 0;
+            } else {
+              const backOff = Math.max(0, solid.t - 0.02);
+              s.position.x = prevX + dx * len * backOff;
+              s.position.y = prevY + dy * len * backOff;
+              s.position.z = prevZ + dz * len * backOff;
+            }
+          }
+        } else if (solid) {
+          const backOff = Math.max(0, solid.t - 0.02);
           s.position.x = prevX + dx * len * backOff;
           s.position.y = prevY + dy * len * backOff;
           s.position.z = prevZ + dz * len * backOff;
-          const vDotN = s.velocity.x * hit.nx + s.velocity.y * hit.ny
-                      + s.velocity.z * hit.nz;
+          const vDotN = s.velocity.x * solid.nx + s.velocity.y * solid.ny
+                      + s.velocity.z * solid.nz;
           if (vDotN < 0) {
-            s.velocity.x -= vDotN * hit.nx;
-            s.velocity.y -= vDotN * hit.ny;
-            s.velocity.z -= vDotN * hit.nz;
+            s.velocity.x -= vDotN * solid.nx;
+            s.velocity.y -= vDotN * solid.ny;
+            s.velocity.z -= vDotN * solid.nz;
           }
         }
       }
