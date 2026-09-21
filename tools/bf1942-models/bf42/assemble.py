@@ -1623,8 +1623,8 @@ class Assembler:
             "velocity": template.velocity,
             # The throw, for the four hand weapons that let go of what they
             # hold: how long the weapon's own mesh is hidden from the shot
-            # (`hideDuringFireTime`, the hand-off), the lockout before the next
-            # one (`fireDelay`), and the round's authored tumble
+            # (`hideDuringFireTime`, the hand-off), the wind-up from the trigger
+            # to the round (`fireDelay`), and the round's authored tumble
             # (`rotationalSpeed`, `8/0/0` on both grenades and nothing else).
             # Absent on every other weapon, so nothing else grows a key.
             "throw": throw or None,
