@@ -967,6 +967,7 @@ import {
 import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
          findWeaponSpecsByFireArms, WEAPON_HEADROOM } from './engine-audio.js';
 import { GunFire } from './gunfire.js';
+import { idleFirePose, idleFireState } from './idle-vehicle.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
 import { buildHeightfield, buildCollisionIndex, buildDrivableMask, WorldCollider } from './collision.js';
@@ -5612,6 +5613,16 @@ function respawnVehicle(owner) {
     });
   }
   visual.hidden = [];
+  // A fresh object off the ObjectSpawner, not the one that burned. The hull
+  // that just came back on was hidden mid-burst — `wreckVehicle` turns the
+  // intact mesh off with every lit muzzle flash still flagged visible under
+  // it, and the loop above turns the whole subtree back on — so without this
+  // a Spitfire crashed with the trigger down respawns firing. Its guns are
+  // new too: a full magazine, a cold barrel and no reload running, which is
+  // the one moment a vehicle's ammunition is allowed to reset (stepping out
+  // and back in is the same object and keeps what it spent).
+  idleFirePose(visual.node);
+  idleFireState(visual.node, [fireStates, world?.fireStates]);
   vehicle?.reset();
   if (vehicle) showDamageTier(vehicle, null);
   collider?.statics?.enableOwner?.(owner);
@@ -6319,11 +6330,7 @@ function collectGuns() {
     const foreign = vehicleGuns.filter(group => !rootFireArms.has(group.node));
     if (foreign.length) {
       vehicleGuns = vehicleGuns.filter(group => rootFireArms.has(group.node));
-      for (const group of foreign) {
-        guns.setFiring(group, false);
-        const index = guns.groups.indexOf(group);
-        if (index >= 0) guns.groups.splice(index, 1);
-      }
+      for (const group of foreign) guns.release(group);
     }
   }
   collectMannedGuns();
@@ -6339,11 +6346,7 @@ function collectGuns() {
  * answer to the trigger.
  */
 function collectMannedGuns() {
-  for (const group of mannedGuns) {
-    guns.setFiring(group, false);
-    const index = guns.groups.indexOf(group);
-    if (index >= 0) guns.groups.splice(index, 1);
-  }
+  for (const group of mannedGuns) guns.release(group);
   // A driver's own FireArms already have their group in `vehicleGuns`; a
   // second one on the same node is a second shell per trigger pull.
   const driven = new Set(vehicleGuns.map(group => group.node));
@@ -6371,18 +6374,11 @@ function collectMannedGuns() {
 function releaseGuns() {
   // Surgical, like `disposeHandWeapon`: only this vehicle's groups leave the
   // index, and rounds already in the air keep their reference and finish
-  // their flight.
-  for (const group of vehicleGuns) {
-    guns.setFiring(group, false);
-    const index = guns.groups.indexOf(group);
-    if (index >= 0) guns.groups.splice(index, 1);
-  }
+  // their flight. `guns.release` also puts each gun back to its idle pose —
+  // the vehicle is about to be furniture again, and furniture is not firing.
+  for (const group of vehicleGuns) guns.release(group);
   vehicleGuns = [];
-  for (const group of mannedGuns) {
-    guns.setFiring(group, false);
-    const index = guns.groups.indexOf(group);
-    if (index >= 0) guns.groups.splice(index, 1);
-  }
+  for (const group of mannedGuns) guns.release(group);
   mannedGuns = [];
 }
 
@@ -12479,9 +12475,14 @@ async function show(entry) {
   // every second instance (`MustangPropellerBlurred_1`), and an exact compare
   // left a parked second aircraft drawing blade and disc stacked. Same bare
   // name law as `bareFireArmsName` below.
+  // `idleFirePose` is the same sweep this loop used to spell out inline, plus
+  // the one payload it left out: `tracerMesh`, the baked streak template. It
+  // is a real mesh parked on the barrel, and `GunFire.collect` hides it — so
+  // it went dark the moment anybody climbed in and drew from the first frame
+  // of the level on every gun nobody had touched yet. Fifteen of them on
+  // Battle of Britain, four Spitfires and eleven Brownings.
+  idleFirePose(currentRoot);
   currentRoot.traverse(obj => {
-    if (obj.userData?.effect || obj.userData?.projectileMesh
-        || obj.userData?.projectileTrail) obj.visible = false;
     const blur = obj.userData?.propellerBlur;
     if (blur) {
       const key = bareFireArmsName(blur.blurred);
