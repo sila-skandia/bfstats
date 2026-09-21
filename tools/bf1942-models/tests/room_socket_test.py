@@ -112,8 +112,13 @@ class SocketJunctionTests(unittest.TestCase):
         self.assertEqual(b["level"], "test")
         self.assertIn(a["team"], (1, 2))
         self.assertNotEqual(a["slot"], b["slot"])
-        self.assertEqual(a["slots"], 16)
+        # HELLO's `slots` is the roster of players ALREADY in the room, so the
+        # first joiner's is empty; the 16 is `maxPlayers` (rooms.mjs's
+        # `helloRow`). This assertion read `slots` as the cap and had been red
+        # since the roster arrived.
+        self.assertEqual(a["slots"], [])
         self.assertEqual(a["maxPlayers"], 16)
+        self.assertEqual(len(b["slots"]), 1)
 
         # The snapshot stream moved the walker over the wire (the walk law,
         # one second at the engine's own 30 Hz over real loopback frames).
