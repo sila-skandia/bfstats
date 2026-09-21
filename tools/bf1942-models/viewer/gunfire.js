@@ -46,6 +46,7 @@ import { GRAVITY } from './physics.js';
 // `contact-response.js` for why a grenade does not rebound and what it does
 // instead. Imports nothing itself, so this costs the page no extra module.
 import { FuseRoundBody, contactMaterialFor, SURFACE_STANDOFF } from './contact-response.js';
+import { idleFirePose } from './idle-vehicle.js';
 
 // Real muzzle velocities (400-1000 m/s) cross a parked model between two
 // frames; scaled down so a burst reads as a stream instead of a strobe.
@@ -525,6 +526,50 @@ export class GunFire {
     if (!group || group.firing === !!on) return false;
     group.firing = !!on;
     return true;
+  }
+
+  /**
+   * Retire one group: trigger off, out of the index, and the gun it was
+   * driving left looking like a gun nobody is firing.
+   *
+   * The order matters and the last step is the one that was missing. Splicing
+   * a group out of `this.groups` is what a seat exit has always done -- rounds
+   * already in the air keep their own reference and finish their flight -- but
+   * it also means `advance` never looks at that gun again. A muzzle flash lit
+   * on the frame of the exit is therefore never advanced to its own
+   * `timeToLive`, and a barrel caught mid-recoil is never walked back to
+   * `home`: both are latches that outlive the object that drives them, and
+   * they stay on the parked vehicle for the rest of the level. `idleFirePose`
+   * is the reset, and it is here rather than in any caller because here is
+   * where the group stops being stepped.
+   */
+  release(group) {
+    if (!group) return false;
+    group.firing = false;
+    const index = this.groups.indexOf(group);
+    if (index >= 0) this.groups.splice(index, 1);
+    // Hiding a flash is not all of it: `advance` also *moves* one. An emitter
+    // declaring `offsetInDof` or `speedInDof` is re-placed every frame at
+    // `basePos + drift`, and a billboarded one has its quaternion rewritten
+    // to face the camera -- and both stop the moment the group leaves the
+    // index, leaving the node wherever the exit caught it. `collect` then
+    // re-reads `basePos`/`baseQuat` off that node on the next entry, so the
+    // drift is re-baked as the authored placement and the emitter walks one
+    // more drift away from its muzzle on every enter-fire-exit cycle.
+    // Measured on Kasserine Pass' AA_Allies, whose `Em_MuzzAAgunB_WSmoke`
+    // declares `speedInDof 10` over a 0.5 s life: authored local z -1.0, then
+    // -1.667, -2.0, -2.333 after one, two and three cycles, and it never
+    // comes back. `basePos`/`baseQuat` are the authored pose, kept aside by
+    // `collect` for exactly this reason, so putting the node back on them is
+    // the whole reset. `age = Infinity` is what `advance` itself uses to mean
+    // "idle", so a group handed back to a later `advance` starts there.
+    for (const emitter of group.emitters) {
+      emitter.age = Infinity;
+      emitter.node.position.copy(emitter.basePos);
+      emitter.node.quaternion.copy(emitter.baseQuat);
+    }
+    idleFirePose(group.node);
+    return index >= 0;
   }
 
   /**
