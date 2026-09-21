@@ -18,6 +18,12 @@ reader (W4-F, 2026-09-21). The addresses the module's header carries:
 So the closed minimap crops by 2.3^(level+0.5) at steady state -- a factor of
 2.3 between each of the three levels -- and the open spawn map crops by 1
 (whole map) whatever the level.
+
+The crop is of the whole map texture: `minimap_screenTransform` 0x00469360
+divides the offset from the widget's centre by `nodeSize * crop` and adds the
+centre `(1 - z) * player + z * 0.5`, the player's uv being what the setter
+0x00467810 stores (W4-B, 2026-09-21). So the closed widget's width covers
+0.659 / 0.287 / 0.125 of the map, centred on the player with no edge clamp.
 """
 
 from __future__ import annotations
@@ -70,7 +76,7 @@ class BfMapTests(unittest.TestCase):
         self.assertAlmostEqual(2.3, c["cropBase"], places=6)
         self.assertEqual(6, c["zoomEaseRate"])
         self.assertEqual(3, c["zoomLevels"])
-        self.assertAlmostEqual(0.25, c["defaultSpan"], places=6)
+        self.assertAlmostEqual(0.01, c["zoomSnap"], places=9)
 
     # ---- the zoom counter --------------------------------------------------
 
@@ -126,19 +132,33 @@ class BfMapTests(unittest.TestCase):
 
     # ---- the span (closed widget) -----------------------------------------
 
-    def test_level_zero_is_the_anchor_and_levels_step_by_the_base(self) -> None:
+    def test_the_span_is_one_over_the_crop_of_the_whole_map(self) -> None:
+        # `minimap_screenTransform` 0x00469360 divides the offset from the
+        # widget's centre by nodeSize * crop, so the widget's width covers
+        # 1 / crop of the texture: 0.659 / 0.287 / 0.125 closed.
         s = self.results["span"]
-        self.assertAlmostEqual(0.25, s["l0"], places=9)
-        self.assertAlmostEqual(0.25 / 2.3, s["l1"], places=9)
-        self.assertAlmostEqual(0.25 / 2.3 ** 2, s["l2"], places=9)
+        self.assertAlmostEqual(2.3 ** -0.5, s["l0"], places=9)
+        self.assertAlmostEqual(2.3 ** -1.5, s["l1"], places=9)
+        self.assertAlmostEqual(2.3 ** -2.5, s["l2"], places=9)
+        self.assertAlmostEqual(0.659, s["l0"], places=3)
+        self.assertAlmostEqual(0.287, s["l1"], places=3)
+        self.assertAlmostEqual(0.125, s["l2"], places=3)
         self.assertAlmostEqual(2.3, s["ratio01"], places=6)
         self.assertAlmostEqual(2.3, s["ratio12"], places=6)
 
-    def test_a_custom_base_keeps_the_anchor_and_the_steps(self) -> None:
+    def test_the_open_map_spans_the_whole_texture(self) -> None:
         s = self.results["span"]
-        # Anchoring level 0 to a base of 1 keeps the 2.3 steps from there.
-        self.assertAlmostEqual(1.0, s["customBaseL0"], places=9)
-        self.assertAlmostEqual(1.0 / 2.3, s["customBaseL1"], places=9)
+        self.assertAlmostEqual(1.0, s["openL0"], places=9)
+        self.assertAlmostEqual(1.0, s["openL2"], places=9)
+
+    def test_the_centre_runs_from_the_player_to_the_middle_of_the_map(self) -> None:
+        c = self.results["centre"]
+        self.assertAlmostEqual(0.2, c["closed"]["u"], places=9)
+        self.assertAlmostEqual(0.9, c["closed"]["v"], places=9)
+        self.assertAlmostEqual(0.5, c["open"]["u"], places=9)
+        self.assertAlmostEqual(0.5, c["open"]["v"], places=9)
+        self.assertAlmostEqual(0.35, c["half"]["u"], places=9)
+        self.assertAlmostEqual(0.7, c["half"]["v"], places=9)
 
     # ---- the rotation ------------------------------------------------------
 
@@ -170,13 +190,52 @@ class BfMapTests(unittest.TestCase):
         self.assertAlmostEqual(math.pi - 0.1, r["wrappedHeading"], places=9)
         self.assertAlmostEqual(0.5, r["neg"], places=9)
 
+    # ---- the window, the marker turn and the art cover ----------------------
+
+    def test_the_window_keeps_the_player_at_the_centre_even_at_the_edge(self) -> None:
+        # The engine's centre is the player's own uv with no clamp (0x00469360).
+        w = self.results["window"]
+        self.assertAlmostEqual(0.375, w["mid"]["u0"], places=9)
+        self.assertAlmostEqual(0.375, w["mid"]["v0"], places=9)
+        self.assertAlmostEqual(0.02 - 0.125, w["corner"]["u0"], places=9)
+        self.assertAlmostEqual(0.99 - 0.125, w["corner"]["v0"], places=9)
+
+    def test_markers_turn_with_the_canvas_transform(self) -> None:
+        t = self.results["turn"]
+        self.assertEqual({"x": 10, "y": 20}, t["none"])
+        self.assertAlmostEqual(50, t["centre"]["x"], places=9)
+        self.assertAlmostEqual(50, t["centre"]["y"], places=9)
+        self.assertAlmostEqual(90, t["quarter"]["x"], places=9)
+        self.assertAlmostEqual(50, t["quarter"]["y"], places=9)
+        # Heading east: the point to the east reads straight up the widget.
+        self.assertAlmostEqual(50, t["eastReadsUp"]["x"], places=9)
+        self.assertAlmostEqual(10, t["eastReadsUp"]["y"], places=9)
+
+    def test_the_art_cover_grows_with_the_turn_and_is_cut_to_the_art(self) -> None:
+        c = self.results["cover"]
+        self.assertAlmostEqual(0.25, c["flat"]["src"]["u"], places=9)
+        self.assertAlmostEqual(0.5, c["flat"]["src"]["w"], places=9)
+        self.assertAlmostEqual(0.0, c["flat"]["dst"]["x"], places=9)
+        self.assertAlmostEqual(100.0, c["flat"]["dst"]["w"], places=9)
+        want = 0.5 * math.sqrt(2)
+        self.assertAlmostEqual(want, c["eighth"]["src"]["w"], places=9)
+        self.assertAlmostEqual(0.5 - want / 2, c["eighth"]["src"]["u"], places=9)
+        self.assertAlmostEqual(100 * math.sqrt(2), c["eighth"]["dst"]["w"], places=6)
+        # Off the left edge: the source starts at 0 and the destination is
+        # pushed right by what is missing.
+        self.assertAlmostEqual(0.0, c["edge"]["src"]["u"], places=9)
+        self.assertAlmostEqual(0.1, c["edge"]["src"]["w"], places=9)
+        self.assertAlmostEqual(50.0, c["edge"]["dst"]["x"], places=6)
+        self.assertAlmostEqual(50.0, c["edge"]["dst"]["w"], places=6)
+        self.assertIsNone(c["off"])
+
     # ---- the state machine -------------------------------------------------
 
     def test_the_widget_opens_settled_at_level_zero(self) -> None:
         s = self.results["state"]["initial"]
         self.assertEqual(0, s["level"])
         self.assertAlmostEqual(0.5, s["eased"], places=9)
-        self.assertAlmostEqual(0.25, s["span"], places=9)
+        self.assertAlmostEqual(2.3 ** -0.5, s["span"], places=9)
         self.assertTrue(s["static"])
 
     def test_three_n_presses_wrap_the_counter(self) -> None:
@@ -186,9 +245,13 @@ class BfMapTests(unittest.TestCase):
 
     def test_the_settled_spans_step_by_the_base(self) -> None:
         spans = self.results["state"]["settled"]
-        self.assertAlmostEqual(0.25, spans[0], places=5)
-        self.assertAlmostEqual(0.25 / 2.3, spans[1], places=5)
-        self.assertAlmostEqual(0.25 / 2.3 ** 2, spans[2], places=5)
+        # Exact, not approximate: the ease stores the target once within 0.01.
+        self.assertAlmostEqual(2.3 ** -0.5, spans[0], places=12)
+        self.assertAlmostEqual(2.3 ** -1.5, spans[1], places=12)
+        self.assertAlmostEqual(2.3 ** -2.5, spans[2], places=12)
+
+    def test_the_ease_snaps_within_a_hundredth(self) -> None:
+        self.assertEqual(0.5, self.results["state"]["snaps"])
 
     def test_the_static_flag_gates_the_rotation(self) -> None:
         s = self.results["state"]
