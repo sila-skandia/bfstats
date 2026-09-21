@@ -45,19 +45,21 @@ out.standing = {
   nonsense: remoteGait(NaN, {}),
 };
 
-// Crouched: one movement family, top speed 2 m/s.
+// Crouched: one movement family; run 2 m/s, walk 2/3 m/s.
 out.crouched = {
   still: remoteGait(0, { crouch: true }),
-  atBand: remoteGait(1.0, { crouch: true }),
+  atBand: remoteGait(1 / 3, { crouch: true }),
+  walking: remoteGait(2 / 3, { crouch: true }),   // c_PIWalk while crouched
   moving: remoteGait(2, { crouch: true }),
   // A crouched man cannot reach 6 m/s, but a snapshot lerp can say he did.
   fast: remoteGait(6, { crouch: true }),
 };
 
-// Prone: top speed 1 m/s, so the band is half of that.
+// Prone: crawl 1 m/s, and 1/3 m/s with the walk key down.
 out.prone = {
   still: remoteGait(0, { prone: true }),
-  atBand: remoteGait(0.5, { prone: true }),
+  atBand: remoteGait(1 / 6, { prone: true }),
+  walking: remoteGait(1 / 3, { prone: true }),
   crawling: remoteGait(1, { prone: true }),
   // `soldier.js`'s own order: prone wins when a snapshot carries both bits.
   bothBits: remoteGait(0, { crouch: true, prone: true }),
