@@ -14285,6 +14285,36 @@ if (params.has('shots')) {
     }
     return combatAreaState();
   };
+  // Set a blast off at an exact point, through the page's own splash path.
+  //
+  // The same shape as `__damage` and `__damageVehicle`: the thing a headless
+  // check cannot otherwise do is place an explosion where it can do the
+  // arithmetic. A fired round lands where the ballistics put it, and its
+  // centre is `hitPos + 0.1 * normal` (HP-9) which nothing reports — so the
+  // distance term, which is the whole point of the assertion, would have to
+  // be guessed. This builds the record `effects-core.js`'s `splashSpec` builds
+  // and hands it to `applyVehicleHit`, so `splashTargets()`,
+  // `soldierExposureFor` and `VehicleDamageSet.applySplash` all run exactly as
+  // a shell's do; only the ballistics are skipped.
+  //
+  // There is no damage argument, and that is the engine: how much a blast is
+  // worth is `materialDamage(material2) * damageMod(material2, victim)`, out
+  // of the MaterialManager tables (DMG-1). Only the geometry is passed in.
+  // Defaults are a hand grenade's — material2 205, radius 10,
+  // `YModOnExplosion` 1.0.
+  window.__blast = (point, {
+    radius = 10, material2 = 205, yMod = 1, firer = -1,
+  } = {}) => {
+    if (!Array.isArray(point) || point.length !== 3) return null;
+    const before = splashTargets().filter(t => t.soldier)
+      .map(t => t.armor.hitPoints);
+    applyVehicleHit({
+      splashPoint: point, splashRadius: radius,
+      splashMaterial2: material2, splashYMod: yMod, firer,
+    });
+    const after = window.__soldiers(point);
+    return after.map((row, i) => ({ ...row, lost: before[i] - row.hp }));
+  };
   // Every soldier a blast can reach, and what HP-10 would give him from a
   // given point. The exposure is the thing worth reading back: it is the one
   // term in the splash product that a screenshot cannot show, and a check that
