@@ -201,3 +201,80 @@ const _vertex = [0, 0, 0];
 const _contact = [0, 0, 0];
 const _speed = [0, 0, 0];
 const _normal = [0, 1, 0];
+
+/**
+ * Does this body actually reach the water plane?
+ *
+ * The engine's own rule, from `checkVsTerrain`
+ * (`features/bf1942-engine-reference/subsystems/collision-response.md` §7):
+ * water produces no impulse, but **the lowest tested vertex below the water
+ * level sets `underWater` on the part's node** — so water contact is
+ * geometric, and the vertices it is decided on are exactly the ones
+ * `BodyWorld.#drivenTerrainDamage` already samples against the heightfield
+ * (collision layer 0; one vertex when the layer has three or fewer).
+ *
+ * This exists because "is the surface under this (x, z) the sea?" is NOT that
+ * rule and cannot stand in for it: `WorldCollider.surfaceHeight` is a function
+ * of x/z alone, so it answers "water" for a Corsair at 400 m over the ocean
+ * just as readily as for a jeep sitting in it, and HP-5's drowning tick then
+ * burns a plane out of the sky at `hpLostWhileDamageFromWater` a second (10
+ * for every vanilla aircraft — a 10-second life for a 100 HP Corsair over
+ * Wake). Altitude has to enter the test somewhere, and the hull is where the
+ * engine puts it.
+ *
+ * `originY` is the body's own origin height, which the caller already has:
+ * below the plane, the hull is in the water whatever its vertices say, and
+ * the loop is skipped. The `reach` bail above it is a rotation-invariant
+ * bound — no vertex can be further from the origin than the longest one — so
+ * a vehicle high above the sea costs one subtraction, not a vertex sweep,
+ * every tick.
+ */
+export function touchesWater(entry, originY, waterLevel) {
+  if (!entry || !Number.isFinite(waterLevel) || !Number.isFinite(originY)) return false;
+  if (originY <= waterLevel) return true;
+  if (originY - waterReach(entry) > waterLevel) return false;
+  for (const part of entry.parts) {
+    const layer = part.shape?.layers?.[0];
+    if (!layer || !layer.vertices) continue;
+    for (let i = 0, n = sampleCount(layer); i < n; i++) {
+      part.worldVertex(0, i, _vertex);
+      if (_vertex[1] <= waterLevel) return true;
+    }
+  }
+  return false;
+}
+
+/** `checkVsTerrain`'s own sampling: every layer-0 vertex, or just the first
+ *  when the layer has three or fewer — the rule `#drivenTerrainDamage` runs. */
+function sampleCount(layer) {
+  const n = layer.vertices.length / 3;
+  return n <= 3 ? Math.min(n, 1) : n;
+}
+
+/**
+ * How far below its origin any tested vertex of this body can possibly sit,
+ * cached on the entry.
+ *
+ * The bound is `max(|offset| + |vertex|)` over the sampled vertices — a
+ * radius, not a height, so no orientation can beat it and a rolling plane
+ * needs no recompute. Shapes never change after `addParked`/`addDriven`, so
+ * this is computed once per body.
+ */
+function waterReach(entry) {
+  if (entry._waterReach !== undefined) return entry._waterReach;
+  let reach = 0;
+  for (const part of entry.parts) {
+    const layer = part.shape?.layers?.[0];
+    if (!layer || !layer.vertices) continue;
+    const o = part.offset || [0, 0, 0];
+    const arm = Math.hypot(o[0], o[1], o[2]);
+    const v = layer.vertices;
+    for (let i = 0, n = sampleCount(layer); i < n; i++) {
+      const b = i * 3;
+      const r = arm + Math.hypot(v[b], v[b + 1], v[b + 2]);
+      if (r > reach) reach = r;
+    }
+  }
+  entry._waterReach = reach;
+  return reach;
+}

@@ -19,6 +19,12 @@ copied from a document. The lead edits this file; streams do not (see
 | Four finished branches sat unmerged since 09-17: `parity/envmap`, `parity/sounds`, `parity/tickets`, `parity/muzzle` | trial-merged, 1,116 green, merged |
 | A fifth piece sat **uncommitted** in the `parity/muzzle` worktree: `spawnPointManager.groupTeam`, ship deck spawns (`vehicleSoldierSpawns`), deploy-screen ring and footer fixes, the debug sidebar collapsed | rescued as `parity/deploy-spawn-points`, merged, page smoke-tested on Wake |
 
+## Landed on 2026-09-21
+
+| What | How it was checked |
+|---|---|
+| **Aircraft drowned in mid-air.** HP-5's water tick asked `WorldCollider.surfaceHeight`, which is a function of x and z alone, so any hull over open water counted as *in* it at any altitude — a plane flying over the sea lost `hpLostWhileDamageFromWater` every second until it exploded, with nothing shooting at it. 10 HP/s for every vanilla aircraft (a 100 HP Corsair dead in ten seconds over Wake), 75 HP/s for a Secret Weapons Flettner. `world.js` now asks `touchesWater` (`body-world.js`), which is `checkVsTerrain`'s own rule — collision-response.md §7, the lowest **tested** collision vertex below the water level — so altitude decides it. The x/z query stays in front of it as the cheap cull, which keeps a tank on a bridge over a river out of the water as `85cc7d4` intended | `test_world.py` water contact cases; on Wake, a driven SBD held over open sea loses 0 HP at 300 m, 120 m and 96 m, and 10 HP/s once its belly is under the plane; ten seconds of untouched sim moves none of the level's 32 vehicles |
+
 ## Open, by stream
 
 Status words: **open** nothing exists; **data** the extractor emits it and the
