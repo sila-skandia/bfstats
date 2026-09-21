@@ -45,7 +45,7 @@ import { GRAVITY } from './physics.js';
 // resistance off the material pair, at the engine's own 30 Hz. See
 // `contact-response.js` for why a grenade does not rebound and what it does
 // instead. Imports nothing itself, so this costs the page no extra module.
-import { FuseRoundBody, contactMaterialFor } from './contact-response.js';
+import { FuseRoundBody, contactMaterialFor, SURFACE_STANDOFF } from './contact-response.js';
 
 // Real muzzle velocities (400-1000 m/s) cross a parked model between two
 // frames; scaled down so a burst reads as a stream instead of a strobe.
@@ -1159,6 +1159,21 @@ export class GunFire {
         }
       : null;
     shot.body.step(dt, shot.mesh.position, shot.velocity, probe);
+    // The floor of last resort. `WorldCollider.cast` leaves a ray that starts
+    // under the heightfield alone (a round spawned inside a hill must not be
+    // deleted at the muzzle), so a fuse round that ever gets under the ground
+    // — off the lip of a slab, through a seam between two hulls — would fall
+    // for the rest of its fuse and blow up under the map. Terrain is a height
+    // function: one lookup puts it back.
+    const field = collider?.heightfield;
+    if (field) {
+      const p = shot.mesh.position;
+      const ground = field.height(p.x, p.z);
+      if (p.y < ground) {
+        p.y = ground + SURFACE_STANDOFF;
+        if (shot.velocity.y < 0) shot.velocity.y = 0;
+      }
+    }
     shot.resting = shot.body.resting;
     const step = before.distanceTo(shot.mesh.position);
     shot.travelled += step;
