@@ -380,12 +380,26 @@ export class CollisionIndex {
           // Cheap reject on Y before touching a single triangle: the cell's own
           // vertical extent against the segment's over just this cell. Near-
           // ground flight over a town spends most of its candidates here.
+          const tOut = Math.min(tExit, best);
           const y0 = oy + dy * tEnter;
-          const y1 = oy + dy * Math.min(tExit, best);
+          const y1 = oy + dy * tOut;
           const loY = Math.min(y0, y1);
           const hiY = Math.max(y0, y1);
           if (hiY >= this.cellMinY[cell] && loY <= this.cellMaxY[cell]) {
             stats.cells++;
+            // The segment's own box over just this cell, for the per-triangle
+            // reject below. A round crossing a town used to pay Moller-Trumbore
+            // on every triangle in the cell — a thousand of them in Berlin,
+            // nearly all several storeys above its head — and the short rays a
+            // hull vertex probe casts (`body-statics.js`, a metre or two) pay
+            // that a dozen times a tick. Six comparisons instead: 49,400
+            // narrowphase tests per tick down to 116 for a half-track driving
+            // through Berlin, 4.6 ms a tick down to 1.0.
+            const x0 = ox + dx * tEnter, x1 = ox + dx * tOut;
+            const loX = Math.min(x0, x1), hiX = Math.max(x0, x1);
+            const z0 = oz + dz * tEnter, z1 = oz + dz * tOut;
+            const loZ = Math.min(z0, z1), hiZ = Math.max(z0, z1);
+            const p = this.tris;
             for (let k = from; k < to; k++) {
               const tri = this.cellItems[k];
               if (this._stamp[tri] === stamp) continue;
@@ -399,6 +413,13 @@ export class CollisionIndex {
                 if (this._disabled[this.owners[tri]]) continue;
                 if (skipBodies && this._body[this.owners[tri]]) continue;
               }
+              const j = tri * 9;
+              if (Math.min(p[j + 1], p[j + 4], p[j + 7]) > hiY
+                  || Math.max(p[j + 1], p[j + 4], p[j + 7]) < loY
+                  || Math.min(p[j], p[j + 3], p[j + 6]) > hiX
+                  || Math.max(p[j], p[j + 3], p[j + 6]) < loX
+                  || Math.min(p[j + 2], p[j + 5], p[j + 8]) > hiZ
+                  || Math.max(p[j + 2], p[j + 5], p[j + 8]) < loZ) continue;
               if (deck && deck[tri] && this.#deckDrops(tri, deckStepTop, deckFloorCos)) continue;
               stats.tests++;
               const t = this.#intersect(tri, ox, oy, oz, dx, dy, dz, best);
@@ -689,23 +710,27 @@ export class CollisionIndex {
   }
 
   /**
-   * Is any triangle this caller can see inside the box at all?
+   * Every triangle this caller can see whose AABB overlaps the box, into
+   * `out`; returns how many were written (capped at `out.length`).
    *
    * The broadphase half of a hull vertex probe (`body-statics.js`, spec §5.1's
-   * one grid query per root per tick): a jeep in open country asks this once
-   * and skips sixteen grid walks, and a jeep in a town pays eighteen
-   * comparisons per candidate before any narrowphase runs. Triangle AABB
-   * against the box, nothing else — it answers "maybe", never "where".
+   * one grid query per root per tick): the root collects once and every vertex
+   * probe narrows against the list through `castAmong`, instead of each probe
+   * walking the grid again. Triangle AABB against the box and nothing else —
+   * it answers "which might", never "where".
+   *
+   * Pass `out = null` for the cheap existence question: it returns 1 at the
+   * first candidate and 0 if there is none.
    */
-  anyInBox(loX, loY, loZ, hiX, hiY, hiZ, skipOwner = -1, skipBodies = false,
-           deckStepTop = -Infinity, deckFloorCos = 2) {
-    if (!this.cellStart) return false;
+  collectInBox(loX, loY, loZ, hiX, hiY, hiZ, skipOwner = -1, skipBodies = false,
+               deckStepTop = -Infinity, deckFloorCos = 2, out = null) {
+    if (!this.cellStart) return 0;
     const size = this.cellSize;
     let ix0 = Math.floor((loX - this.minX) / size);
     let ix1 = Math.floor((hiX - this.minX) / size);
     let iz0 = Math.floor((loZ - this.minZ) / size);
     let iz1 = Math.floor((hiZ - this.minZ) / size);
-    if (ix1 < 0 || iz1 < 0 || ix0 >= this.cols || iz0 >= this.rows) return false;
+    if (ix1 < 0 || iz1 < 0 || ix0 >= this.cols || iz0 >= this.rows) return 0;
     ix0 = Math.max(0, ix0); iz0 = Math.max(0, iz0);
     ix1 = Math.min(this.cols - 1, ix1); iz1 = Math.min(this.rows - 1, iz1);
     const deck = this.drivable
@@ -713,6 +738,8 @@ export class CollisionIndex {
     const p = this.tris;
     const stats = this.stats;
     stats.queries++;
+    let kept = 0;
+    const limit = out ? out.length : 0;
     for (let iz = iz0; iz <= iz1; iz++) {
       for (let ix = ix0; ix <= ix1; ix++) {
         const cell = this.cell(ix, iz);
@@ -736,11 +763,51 @@ export class CollisionIndex {
               || Math.min(p[j + 2], p[j + 5], p[j + 8]) > hiZ
               || Math.max(p[j + 2], p[j + 5], p[j + 8]) < loZ) continue;
           if (deck && deck[tri] && this.#deckDrops(tri, deckStepTop, deckFloorCos)) continue;
-          return true;
+          if (!out) return 1;
+          if (kept >= limit) return kept;
+          out[kept++] = tri;
         }
       }
     }
-    return false;
+    return kept;
+  }
+
+  /**
+   * Nearest hit among triangles a `collectInBox` already chose, or null.
+   *
+   * The second half of the engine's broadphase-then-narrowphase split (spec
+   * 5.1-5.5): a root collects its candidates once per tick and every one of its
+   * vertex probes tests that list, instead of each probe walking the grid
+   * again. On Berlin that is one cell walk of 2,100 triangles per tick rather
+   * than twenty-six of them.
+   *
+   * `dx/dy/dz` unit, `maxDist` metres, `out.t` metres. The returned normal
+   * faces the ray's start, as `cast`'s does.
+   */
+  castAmong(list, count, ox, oy, oz, dx, dy, dz, maxDist, out) {
+    if (!(count > 0) || !(maxDist > 0)) return null;
+    const stats = this.stats;
+    stats.queries++;
+    let best = maxDist;
+    let found = -1;
+    for (let k = 0; k < count; k++) {
+      const tri = list[k];
+      stats.tests++;
+      const t = this.#intersect(tri, ox, oy, oz, dx, dy, dz, best);
+      if (t >= 0 && t < best) { best = t; found = tri; }
+    }
+    if (found < 0) return null;
+    out.t = best;
+    out.x = ox + dx * best;
+    out.y = oy + dy * best;
+    out.z = oz + dz * best;
+    out.dx = dx; out.dy = dy; out.dz = dz;
+    out.material = this.materials[found];
+    out.owner = this.owners[found];
+    out.triangle = found;
+    out.kind = 'object';
+    this.#normal(found, out);
+    return out;
   }
 
   /** Moller-Trumbore, two-sided: a hull's winding is not something to trust. */
@@ -1378,34 +1445,52 @@ export class WorldCollider {
    * `deckFloorCos` is `ground.js`'s `DECK_FLOOR_COS`: a drivable triangle
    * within 60 degrees of horizontal is a ride surface, and a hull vertex must
    * not find it any more than the old swept sphere could.
+   *
+   * The two calls are ordered, not independent: `near` chooses this body's
+   * candidate triangles for the tick and `cast` narrows against that choice.
+   * Call `near` once per body before its vertex casts — which is what
+   * `body-statics.js` does — or `cast` answers from a stale set.
    */
-  staticProbe({ deckFloorCos = 0.5 } = {}) {
+  staticProbe({ deckFloorCos = 0.5, capacity = 8192 } = {}) {
     const world = this;
     const hit = {
       t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0,
       dx: 0, dy: 0, dz: 0,
       material: 0, kind: '', owner: -1, triangle: -1,
     };
+    // The body's candidate set for this tick. `near` fills it, the vertex
+    // `cast`s that follow narrow against it — the engine's own split, and the
+    // difference between one cell walk per body per tick and one per vertex
+    // (2.9 ms a tick against 0.3, measured on Berlin with a Hanomag).
+    // 8,192 is a wide margin: the box is the hull's own bounding sphere grown
+    // by a tick of travel, and Berlin's densest 32 m cell holds about 2,100
+    // triangles in total. A body that somehow filled it would simply not be
+    // tested against the rest, which is why the margin is wide rather than
+    // tight.
+    const candidates = new Int32Array(capacity);
+    let count = 0;
     return {
       near(x, y, z, dx, dy, dz, dist, radius, owner, stepTop) {
         const s = world.statics;
+        count = 0;
         if (!s) return false;
         const ex = x + dx * dist, ey = y + dy * dist, ez = z + dz * dist;
-        return s.anyInBox(
+        count = s.collectInBox(
           Math.min(x, ex) - radius, Math.min(y, ey) - radius, Math.min(z, ez) - radius,
           Math.max(x, ex) + radius, Math.max(y, ey) + radius, Math.max(z, ez) + radius,
-          owner, true, stepTop, deckFloorCos);
+          owner, true, stepTop, deckFloorCos, candidates);
+        return count > 0;
       },
-      cast(ox, oy, oz, dx, dy, dz, maxDist, owner, stepTop) {
+      cast(ox, oy, oz, dx, dy, dz, maxDist) {
         const s = world.statics;
-        if (!s) return null;
-        hit.dx = dx; hit.dy = dy; hit.dz = dz;   // `#normal` orients against it
-        return s.cast(ox, oy, oz, dx, dy, dz, maxDist, owner, hit, -1, false,
-                      true, stepTop, deckFloorCos);
+        if (!s || !count) return null;
+        return s.castAmong(candidates, count, ox, oy, oz, dx, dy, dz, maxDist, hit);
       },
       supportY(x, z, fromY) {
         return world.surfaceHeight(x, z, fromY);
       },
+      /** How many candidates the last `near` kept, for a cost trace. */
+      candidateCount() { return count; },
     };
   }
 

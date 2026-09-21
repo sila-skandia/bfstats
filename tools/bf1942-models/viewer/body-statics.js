@@ -26,17 +26,24 @@
 //
 // --- what the static world has to answer -------------------------------------
 //
+//   near(x, y, z, dx, dy, dz, dist, radius, owner, stepTop) -> boolean
+//       Optional broadphase, the analogue of §5.1's one grid query per root
+//       per tick: is anything static within `radius` of the segment at all.
+//       Called ONCE per body, before its vertex casts, and a real adapter is
+//       entitled to treat it as "choose this body's candidate triangles" and
+//       to apply `owner` and `stepTop` here rather than per cast
+//       (`WorldCollider.staticProbe` does exactly that, and it is the
+//       difference between one grid walk per body per tick and one per
+//       vertex). Without it every vertex pays a grid walk on an empty field.
 //   cast(ox, oy, oz, dx, dy, dz, maxDist, owner, stepTop)
 //       The first static face a ray crosses, or null. `dx/dy/dz` unit,
 //       `maxDist` metres. `owner` is the probing body's own owner id, to be
 //       skipped along with every other simulated body (those are the contact
-//       solver's, not this pass's). `stepTop` is the drivable-deck gate (see
-//       `supportY`). The hit carries `x/y/z` (the crossing), `nx/ny/nz` (the
-//       face normal **oriented back toward the ray's start**) and `material`.
-//   near(x, y, z, dx, dy, dz, dist, radius, owner, stepTop) -> boolean
-//       Optional broadphase, the analogue of §5.1's one grid query per root
-//       per tick: is anything static within `radius` of the segment at all.
-//       Without it every vertex pays a grid walk on an empty field.
+//       solver's, not this pass's); `stepTop` is the drivable-deck gate (see
+//       `supportY`). Both are passed on every cast so an adapter with no
+//       `near` still has them. The hit carries `x/y/z` (the crossing),
+//       `nx/ny/nz` (the face normal **oriented back toward the ray's start**)
+//       and `material`.
 //   supportY(x, z, fromY) -> number
 //       Optional. The height of the surface the body is standing on, terrain
 //       or drivable deck. `stepTop` is that plus `KERB_STEP`: a drivable

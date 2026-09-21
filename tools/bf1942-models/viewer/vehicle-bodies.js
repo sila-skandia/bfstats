@@ -369,7 +369,11 @@ export class DrivenBody {
     const list = this.vehicle.hullContacts;
     if (!list || !response.count || list.length >= HULL_CONTACT_CAP) return;
     list.push({
-      // The averaged contact normal's Y is the whole friction budget (spec 8).
+      // The averaged contact normal, copied: the caller's is reused in place
+      // by the next tick's contacts. It is a mean of unit normals and NOT
+      // re-normalised (spec 8), so it is handed over as it stands.
+      normal: [response.avgNormal[0], response.avgNormal[1], response.avgNormal[2]],
+      // Its Y is the whole friction budget (spec 8).
       normalY: response.avgNormal[1],
       friction: response.friction,
       resistance: response.resistance,
