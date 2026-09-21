@@ -34,6 +34,7 @@ data:
       acl host_mesh_bfstats req.hdr(host) -i mesh.bfstats.io
       acl is_stats path_beg /stats
       acl is_hub path_beg /hub
+      acl is_netcode path_beg /netcode
 
       capture request header CF-Connecting-IP len 15
       log-format "%[capture.req.hdr(0)]\ %ci:%cp [%t] %ft %b/%s %Tq/%Tw/%Tc/%Tr/%Tt %ST %B %CC %CS %tsc %ac/%fc/%bc/%sc/%rc %sq/%bq %hr %hs %{+Q}r %sslv"
@@ -53,6 +54,13 @@ data:
       use_backend staging_frontend if host_staging_bfstats
 
       # Everything else to frontend
+
+      # Netcode room server — path-based like /stats, host-agnostic: it
+      # rides whatever host serves the play site. Matches both the
+      # WebSocket upgrade (GET /netcode) and the rooms list (GET
+      # /netcode/rooms). Before the default so /netcode never hits the UI.
+      use_backend netcode if is_netcode
+
       default_backend frontend
 
     backend stats_api
@@ -63,6 +71,23 @@ data:
 
     backend mesh_frontend
       server mesh bfstats-mesh-service.bf42-stats:80
+
+    backend netcode
+      # The BF1942 room server. Idle WebSockets must survive: the defaults'
+      # 50s timeout client/server would reap a socket between heartbeats, so
+      # this backend sets `timeout tunnel 4h`, which replaces both after the
+      # upgrade. The room server heartbeats at <= 30s, keeping a live
+      # socket's idle gap far under the bound; a socket silent for 4h is
+      # dead and should be reaped.
+      timeout tunnel 4h
+      # `init-addr last,libc,none`: the netcode Service may not exist when
+      # this ConfigMap applies, and HAProxy 3.2 treats an unresolvable server
+      # address as a FATAL startup error — applying it without this line
+      # would take bfstats.io down with it. With it, HAProxy starts, this
+      # server sits DOWN, and /netcode answers 503 until the Deployment
+      # exists and haproxy is restarted (names resolve once at boot; a
+      # server disabled at boot stays disabled).
+      server netcode bfstats-netcode-service.bf42-stats:8080 init-addr last,libc,none
 
     backend staging_frontend
       server staging bfstats-ui-service.bfstats-ui:80

@@ -255,24 +255,122 @@ their motion within the interpolation tolerance). No networking in P1.
 
 ### P2 — Transport and room lifecycle
 
-Node room server: WebSocket endpoint (minimal, no framework beyond `ws` or
-plain `node:http` upgrade), binary frames, rooms with codes, join/leave, the
-late-join snapshot path, heartbeat/keepalive, and the cluster pod
-(`deploy/app/netcode-deployment.yaml`, budget permitting — Decisions). Client
-net layer behind the one-interface seam, `?room=` join in `map.html`.
-Done means two browsers — one on each side of a real junction — see each
-other's soldiers move, enter seats, and fire, with the local sim untouched.
+**Implemented 2026-09-21** — the done-bar holds on this box:
+`tools/bf1942-models/tests/p2_two_browser_smoke.mjs` boots the room server
+over real TCP plus a static server, drives two Playwright chromium pages
+into one room, deploys both, walks A two deterministic seconds
+(`__renderOnce`, the page's own headless clock), asserts B's confirmed ghost
+tracks A within 2 m, has A enter the nearest vehicle (matched to the room's
+vehicle table by template + pose, the ID rides `MSG_ACTION`), asserts the
+server mounts it (its own snapshot stream now carries A seated — B sees the
+seat even though the seat row excludes the actor), holds the trigger and
+sees the server's throttled `fire` rows on B, then explicitly leaves and
+sees the leave row land. Exit 0 is the done-bar; `--port`/`--static` pick
+free ports so runs never collide (and the smoke SIGKILLs its room server,
+static server, and both chromium processes on any exit — no strays).
+
+What P2 delivered:
+
+- `viewer/netcode.js` — the wire: the engine's 104-bit `PlayerAction` record
+  (six 12-bit channels, bit-packed, the u32 button mask, ±16 headroom) with
+  `mouse-input.js`'s own quantization, plus a one-byte extension for the
+  page's raw key pairs (the aircraft's `forwardKeys`/`rudder`), the frame
+  types, and the 27-byte player / 30-byte vehicle snapshot records. Two
+  cited departures: bits 22/23 for the page's jump and pad marker, and the
+  byte-13 key pairs — the engine's own record is untouched otherwise.
+- `tools/bf1942-models/server/` — the room server, zero npm deps:
+  `server.mjs` (RFC6455 handshake + frame codec on `node:http`, ~150 lines;
+  a handler exception severs the peer, never the listener), `rooms.mjs`
+  (rooms, join/leave, heartbeat with `HEARTBEAT_TIMEOUT_MS = 15 s` — the
+  page's own level load starves its main thread for seconds, and the ping
+  starts at socket open, not after the hello), the 20 Hz snapshot streams
+  with the R-1 choke law, `MSG_ACTION` seat enter/exit/switch + spawn,
+  fire-row throttling at the SMG cadence), `level.mjs` (headless level
+  loading: scene.json, the scene.glb JSON chunk trees, the heightfield from
+  the terrain geometry, collision sidecars; template resolution is
+  case-insensitive — scene.json spells `sherman`, the files are
+  `Sherman.Kasserine_Pass.glb` — and mesh nodes get real (empty)
+  `BufferGeometry` so wheel/tracer measurement answers instead of throwing;
+  `mountIntoSeat` mirrors the page's enter flow), `glb-tree.mjs` (GLB JSON
+  chunk reader, no mesh data).
+- `viewer/netcode-client.js` + `viewer/netcode-render.js` — the page's
+  seam: one client object (join, seq-managed input word per consumed tick,
+  snapshot buffer lerped at `t − 50 ms` — render-side smoothing the engine
+  never shipped, the wire stays the law), a replay-style remote renderer
+  (pose-pair soldier replicas, template vehicle replicas, seat parentage,
+  stance from flags, gait from a measured speed, parked-hull handover via
+  `onOccupyChange`), and the `?room=` glue in `map.html` (join rides the
+  page's own load — the room block runs before the level manifest — a
+  mismatched level reloads ONCE with the room's level in the URL, the room
+  names the team, the deploy flow is unchanged).
+- `viewer/play/rooms.js` + the Instant Battle screen's PLAY ONLINE panel —
+  the lobby: `/netcode/rooms` list (polled), create/join with a name and a
+  room code, launch via `?room=&name=&map=`. Single-player START is
+  untouched.
+- `netcode/Dockerfile`, `deploy/app/netcode-deployment.yaml`,
+  `deploy/app/ingress/deployment.yaml` (path-beg `/netcode` ACL, `timeout
+  tunnel`, `init-addr` caution), the Jenkinsfile's `NETCODE_ENABLED=false`
+  stage, and the Deployment section below. Nothing was applied to any
+  cluster — the owner's call, per repo convention.
+
+The room server's vehicle table is every seatable spawn (`objectSpawns` ∪
+`vehicleSoldierSpawns`) with a published template — 33 on Aberdeen, each
+with its template, pose-frozen on real slopes, drive-mountable headless.
+
+What is NOT in P2 (deliberate, next phases): damage/kills authority (P3 —
+the server's world has no armor tables wired yet; a player's HP in
+snapshots is the kit max), remote fire visuals beyond the feed rows (P4),
+the spectator cameras (P4), recording (P4), and any client correction
+(P4 — the smoke asserts prediction ≈ authority within 2 m at tick
+boundaries, which is the honest P2 state).
 
 ### P3 — Authority: damage, kills, tickets, flags
 
-Server asserts the `Armor`/damage paths (it owns the same `Armor` class),
-validates projectiles (the `GunFire`/`FuseRoundBody` modules, no client can
-damage what the server's sim did not), runs the ticket bleed (the engine's
-majority-flag timer — the viewer already draws tickets, the *server* side of
-the timer is what the parity round flagged as missing), flag capture, and
-the kill feed (replay.js's `SCORE_TEXT` becomes live events). Client shows
-deaths by server decree (its own death-cam/deploy flow already exists),
-corrects position and HP from snapshots with a small grace window.
+**Slice A implemented 2026-09-21** — the authority lives in
+`tools/bf1942-models/server/authority.mjs`, wired into every room's
+post-step pass (`rooms.mjs`), and pinned by the room harness's (k)/(l)
+scenarios:
+
+- **Armor on the server** — each spawn builds the player's Armor from
+  `_shared/loadouts.json` the page's own way (`kits[kit].maxHitpoints`,
+  fallback 30; the deploy's spawn row now carries the kit). One law, two
+  constructions, one sidecar.
+- **The death decree** — every damage the world's own sim lands (combat
+  area, crash costs, the vehicle water/critical pass) lands on a player's
+  Armor during `step`; the authority notices a destroyed Armor and makes it
+  a death: the `killed` row (crash/vehicle attribution where the report
+  names the other object, else null — Armor's own `lastHit` is the seam for
+  slice B's splash), one ticket (`LOSS_PER_DEATH = 1`, the engine's
+  `setTicketLosePerDeath`), the dead-until-respawn latch, the input gate
+  (a dead player's word never reaches the world), and `alive: false` in
+  the snapshots. The deploy action revives with fresh Armor.
+- **The ticket law** — one per death; plus `lossPerMin` drained once a
+  second while the other side holds more than half the capturable flags
+  (`setTicketLostPerMin`'s majority gate — the parity round's missing
+  server-side timer). `ticket` rows carry the fresh counts.
+- **Flag capture** — a live, un-contested enemy inside the flag's ring for
+  `FLAG_CAPTURE_SECONDS` flips the owner (`captured` rows; the deploy
+  screen's list and the map markers repaint from the `flags[]` write).
+  **`FLAG_CAPTURE_RADIUS_MS = 8` and `FLAG_CAPTURE_SECONDS = 8` are
+  authored constants** — the capture law was never corpus-read, so P5
+  confirms or corrects them in one place. Uncapturable points (the fleet)
+  never count toward the majority.
+- **Client consumption** — a `killed` row for the local slot drives the
+  page's own death loop (destroyed Armor ⇒ the existing death cam and
+  deploy screen — the suicide path's precedent), snapshots correct HP
+  (server word, 1.5 HP grace, never heals — the supply depots heal both
+  sides) and position (4 m grace snap; P4's smoothing owns the small
+  stuff), `ticket` rows replace `extras.tickets` (the page's own
+  prescribed live-update path for the HUD's memoised painters), and the
+  feed speaks the kill/ticket/captured vocabulary on both sides.
+
+**Slice B — the projectile path — is the remaining P3 work**: the
+headless `GunFire` wiring (`instantiate`'s "P3 seam: `guns: null`") so
+rounds and fuse contacts resolve server-side from damage.json, and
+`splashTargets`/`applySplash` over the server's own players and damageables
+(the page glue `map.html:5828`; the server's `onImpact` hook is the seam).
+Until it lands, the only damage in a room is combat-area, water/critical
+and crash damage — which is exactly the harness's tested shape.
 
 ### P4 — Feel and correctness
 
@@ -337,3 +435,57 @@ slot into the same shape.
 - The budget numbers are the same sweep the play-site doc made (7296/7741 Mi
   with the limits of `deploy/app/*.yaml` summed), unchanged since 2026-09-19;
   recorded here as context only, per the owner's constraint decision.
+
+## Deployment (P2)
+
+Written, reviewed, **not applied** — the same convention the play site
+followed (`features/bf1942-in-the-browser/README.md` §Deployment): the
+manifests, the image build and the pipeline stage land in the repo, and
+`kubectl` does not run until the owner says so.
+
+What now exists, one line each:
+
+- `netcode/Dockerfile` — the room server image (`node:22-alpine`): copies
+  `tools/bf1942-models/server/` plus the whole `tools/bf1942-models/viewer/`
+  tree (mesh's copy-wholesale rule), stands the vendored `three.module.js`
+  up as `node_modules/three` the way the test harnesses do, and fixes
+  `node /app/server/server.mjs --port 8080 --viewer /app/viewer` as the
+  entrypoint. `deploy/app/netcode-deployment.yaml` mounts `assets/mesh/maps`
+  and `assets/mesh/models` (same PVC, same subPaths as the mesh pod) over
+  `/app/viewer/maps` and `/app/viewer/models`, read-only, so level data is
+  never copied and the server reads exactly what the browser reads.
+- `deploy/app/netcode-deployment.yaml` — Deployment + Service in
+  `bf42-stats`: `anskia/bfstats-netcode:latest`, containerPort 8080 (Node
+  convention, matching the API pods; mesh is 80 because nginx), requests
+  96Mi/50m CPU, limits 192Mi/400m CPU — the estimate above, with the
+  cgroup/back-pressure relationship commented in. No priorityClassName: a
+  30 Hz tick absorbs scheduler delay, and the 1942-services class must
+  never ride this pod.
+- `deploy/app/ingress/deployment.yaml` — additive only: `acl is_netcode
+  path_beg /netcode`, `use_backend netcode if is_netcode` before the
+  default, and a `netcode` backend with `timeout tunnel 4h` and
+  `init-addr last,libc,none`. Every pre-existing line is untouched.
+- `Jenkinsfile` — a Netcode Pipeline stage (build + apply) mirroring the
+  play stage's mechanics exactly, gated on `NETCODE_ENABLED = 'false'`.
+- `deploy/app/ingress/README.md` — a netcode section: the route, the apply
+  order and the manual-steps reminder.
+
+Apply order, when the owner chooses to:
+
+1. Apply `deploy/app/netcode-deployment.yaml` — the Service must exist
+   before the ingress step, because…
+2. Apply the ingress ConfigMap and `kubectl -n haproxy rollout restart
+   deployment/haproxy`. HAProxy has no `resolvers` section, so backend names
+   resolve once at boot; a name that resolves only after the ConfigMap
+   applies sits DOWN (503) until the restart. The ConfigMap apply is a
+   **manual step** — the Jenkins stage stops at the pod. `init-addr
+   last,libc,none` is what makes step 2 order-safe: without it, an
+   unresolvable server address is a fatal HAProxy startup error and every
+   site behind this frontend dies, not just `/netcode`.
+
+DNS/tunnel: `wss://play.bfstats.io/netcode` is the intended public URL, but
+hosting is the play-site deployment's open question — the netcode route is
+host-agnostic, it rides whatever host serves the play site (the `is_netcode`
+ACL is path-based), and the tunnel needs no new rule for it. The budget is
+not a gate (the constraint decision above); the pod's declared ceiling is
+192Mi of the 7296/7741 Mi sweep either way.

@@ -74,3 +74,39 @@ tunnel ID — so adding a hostname to the wrong config silently does nothing. If
 host 1033s, check which tunnel its CNAME points at before touching ingress
 rules; everything here forwards to the same HAProxy, so the backend config is
 shared and rarely the cause.
+
+## The netcode room server route (`/netcode`)
+
+The BF1942 multiplayer room server (P2 of
+[`features/netcode-play-multiplayer/README.md`](../../../features/netcode-play-multiplayer/README.md))
+is a Node pod in `bf42-stats` reached through this same tunnel and HAProxy:
+`wss://play.bfstats.io/netcode` is the intended public URL. The route needs no
+hostname of its own — it is a path-based `is_netcode` ACL (`path_beg /netcode`,
+matching both the WebSocket upgrade and the `/netcode/rooms` JSON GET), so it
+rides whatever host serves the play site. The `play.bfstats.io` hostname/DNS is
+the play-site deployment's open question and remains out of scope here; no
+cloudflared change is needed for the netcode path itself.
+
+The deployment files exist (`deploy/app/netcode-deployment.yaml`,
+`netcode/Dockerfile`, the `netcode` backend below) but **nothing is applied** —
+applying is the owner's call, per repo convention. The apply order is:
+
+1. Apply `deploy/app/netcode-deployment.yaml` (Deployment + Service in
+   `bf42-stats`). The Service must exist before step 2.
+2. Apply this `deployment.yaml`'s ConfigMap — a **manual step**: no Jenkins
+   stage applies the ingress ConfigMap, and none ever has (mesh was manual
+   too).
+3. `kubectl -n haproxy rollout restart deployment/haproxy`. There is no
+   `resolvers` section, so `bfstats-netcode-service.bf42-stats` is resolved
+   once at boot: a server disabled at boot stays disabled, and a backends name
+   resolved before the Service exists answers 503 until this restart.
+
+The `netcode` backend carries `init-addr last,libc,none` because the Service
+may not exist when the ConfigMap is applied — without it HAProxy 3.2 treats an
+unresolvable server address as a **fatal** startup error and would take
+`bfstats.io` (and everything else this frontend serves) down with it. It also
+carries `timeout tunnel 4h`: the defaults' 50s `timeout client`/`timeout
+server` apply to upgraded WebSockets whenever `timeout tunnel` is unset, which
+would reap the socket between heartbeats. The room server heartbeats at ≤ 30s,
+so a live socket's idle gap stays far under the bound; a socket silent for 4h
+is dead and should be reaped.
