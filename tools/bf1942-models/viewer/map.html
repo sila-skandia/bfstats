@@ -921,9 +921,13 @@ import { GroundVehicle } from './ground.js';
 import * as GroundModule from './ground.js';
 import {
   VehicleOccupancy, findAllVehicleRoots, listEntryPoints, classifyRoot,
-  FireState, chainOnShot, readWorldPose, pickNearest,
+  FireState, chainOnShot, readWorldPose, pickNearest, AIM_INPUTS,
 } from './seats.js';
 import { MouseInput, profileFor, soldierLookDegrees } from './mouse-input.js';
+import {
+  CHASE_BEHIND, CHASE_AHEAD, boundingRadius, chaseTarget, chaseStep, chaseEye,
+  chaseLawFor,
+} from './chase-camera.js';
 import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
          findWeaponSpecsByFireArms, WEAPON_HEADROOM } from './engine-audio.js';
 import { GunFire } from './gunfire.js';
@@ -6456,6 +6460,127 @@ const HEAD_SENS = 0.0022;
 // `CVMFrontChase`, `CVMFlyBy`) and never where they sit. See flight.js.
 let view = null;
 
+// --- the external view's law (chase-camera.js) -----------------------------
+//
+// `chase-camera.js` is the arithmetic of `Camera::getTransformation` for
+// CVMChase / CVMFrontChase; this is the three.js half: read the drawn poses,
+// write the camera. It reads NODES, never `state`: `applyVehicleInterp` has
+// already slerped the root and every aim axis to this frame's alpha and walked
+// the world matrices, so the tower it sees is the one being drawn. Reading the
+// raw tick pose here is what would make the view judder at 30 Hz.
+//
+// Which frame supplies forward/up is the contested part - the W4-C brief says
+// the turret, both binaries say the hull - and `chaseLawFor` owns that answer.
+// `?chase=engine` is the law as read; `?chase=legacy` is the old framing.
+const CHASE_OPTION = params.get('chase');
+const chaseRig = {
+  law: null,            // chaseLawFor()'s answer for the mounted root seat
+  camera: null,         // the root seat's Camera node: anchor and look-at point
+  root: null,
+  radius: 0,
+  rel: [0, 0, 0],
+  target: [0, 0, 0],
+  eye: [0, 0, 0],
+  anchor: new THREE.Vector3(),
+  eyeV: new THREE.Vector3(),
+  quat: new THREE.Quaternion(),
+  fwd: new THREE.Vector3(),
+  up: new THREE.Vector3(),
+  basis: new THREE.Matrix4(),
+};
+const CHASE_WORLD_UP = new THREE.Vector3(0, 1, 0);
+// `getBoundingRadius` is cached on the engine's object (+0xb4); cached here per
+// root for the same reason, and so a wreck's smoke never inflates it.
+const chaseRadiusCache = new WeakMap();
+
+/** The plain tree `boundingRadius` walks, from a vehicle's node tree. */
+function chaseRadiusTree(node) {
+  let radius = 0;
+  if (node.isMesh && !isCollision(node) && node.geometry) {
+    if (!node.geometry.boundingSphere) node.geometry.computeBoundingSphere();
+    const sphere = node.geometry.boundingSphere;
+    if (sphere) radius = sphere.center.length() + sphere.radius;
+  }
+  return {
+    radius,
+    offset: node.position.toArray(),
+    children: node.children.filter(c => !isCollision(c)).map(chaseRadiusTree),
+  };
+}
+
+/** Does `cameraNode` hang under one of the seat's mouse-aimed axes (GUN-7's
+ *  shape)? Asked of the seat survey, not of a `TurretRig`: a rig is only built
+ *  the first time its seat is manned, and a player who climbs in at the hull
+ *  gunner's door reaches the driving seat later, by a seat switch. */
+function cameraRidesTurret(cameraNode, seat, root) {
+  if (!cameraNode || !seat?.axes) return false;
+  const aimed = Object.values(seat.axes)
+    .filter(axis => AIM_INPUTS.includes(axis?.spec?.input))
+    .map(axis => axis.node);
+  for (let p = cameraNode.parent; p && p !== root; p = p.parent) {
+    if (aimed.includes(p)) return true;
+  }
+  return false;
+}
+
+/** Decide the law for the vehicle just mounted. Called from `setPilot`, after
+ *  the root seat's rig exists. */
+function mountChaseLaw(vehicle) {
+  chaseRig.law = null;
+  chaseRig.camera = vehicle.cameraNode || null;
+  chaseRig.root = vehicle.node;
+  chaseRig.rel.fill(0);
+  if (!view || !chaseRig.camera) { if (view) view.externalLaw = null; return; }
+  const rides = cameraRidesTurret(
+    chaseRig.camera, occupancy.seatInfo(occupancy.rootId), vehicle.node);
+  chaseRig.law = chaseLawFor(CHASE_OPTION, rides);
+  if (chaseRig.law.law !== 'engine') { view.externalLaw = null; return; }
+  if (!chaseRadiusCache.has(vehicle.node)) {
+    chaseRadiusCache.set(vehicle.node, boundingRadius(chaseRadiusTree(vehicle.node)));
+  }
+  chaseRig.radius = chaseRadiusCache.get(vehicle.node);
+  view.externalLaw = chaseExternalLaw;
+}
+
+/** `VehicleCamera.externalLaw`: true when it wrote `pose`. */
+function chaseExternalLaw(mode, dt, pose) {
+  const rig = chaseRig;
+  // Only the root seat: a passenger's view stays on the old framing, and a
+  // gunner's belongs to `manned()`.
+  if (!occupancy?.isActiveRoot()) return false;
+  rig.camera.getWorldPosition(rig.anchor);
+  if (mode !== 'chase' && mode !== 'front') {
+    // The engine carries `rel` as (last output - Camera position) in every
+    // mode: zero in the cockpit, the tripod's offset in fly-by.
+    if (mode === 'flyby' && view.anchored) {
+      rig.rel[0] = view.anchor.x - rig.anchor.x;
+      rig.rel[1] = view.anchor.y - rig.anchor.y;
+      rig.rel[2] = view.anchor.z - rig.anchor.z;
+    } else {
+      rig.rel.fill(0);
+    }
+    return false;
+  }
+  // forward/up: the Camera's parent (the brief's turret frame, a viewer
+  // choice) or the vehicle root (what both binaries read).
+  const frame = rig.law.frameFromAim ? rig.camera.parent : rig.root;
+  frame.getWorldQuaternion(rig.quat);
+  rig.fwd.set(0, 0, -1).applyQuaternion(rig.quat);
+  rig.up.set(0, 1, 0).applyQuaternion(rig.quat);
+  const sign = mode === 'front' ? CHASE_AHEAD : CHASE_BEHIND;
+  chaseTarget(rig.fwd.toArray(), rig.up.toArray(), rig.radius, sign, rig.target);
+  const v = view.vehicle.state.velocity;
+  chaseStep(rig.rel, rig.target, [v.x, v.y, v.z], sign, dt);
+  const ax = rig.anchor.x + rig.rel[0];
+  const az = rig.anchor.z + rig.rel[2];
+  chaseEye(rig.anchor.toArray(), rig.rel, groundHeight(ax, az), rig.eye);
+  rig.eyeV.fromArray(rig.eye);
+  pose.position.copy(rig.eyeV);
+  rig.basis.lookAt(rig.eyeV, rig.anchor, CHASE_WORLD_UP);
+  pose.quaternion.setFromRotationMatrix(rig.basis);
+  return true;
+}
+
 /**
  * Occupy `node` (any `PlayerControlObject` root — a flyable/drivable one,
  * a `c_ETTank`, a bare gun/seat furniture root) at `seatId`, or the root seat
@@ -6527,6 +6652,9 @@ function setPilot(on, node = null, seatId = null) {
     // straight up to a Sherman's hull-gunner door seats you there directly,
     // never through the driver's seat first.
     occupancy.setActiveSeat(seatId || occupancy.rootId);
+    // After the seats exist: the law asks whether the root seat's Camera rides
+    // one of its own aim axes.
+    if (view) mountChaseLaw(aircraft || car);
     collectGuns();
     // `collect` (called above, for both the drivetrain's own guns and, via
     // its own `collectMannedGuns()` tail, a bare gun/seat root's FireArms)
@@ -13027,6 +13155,13 @@ if (params.has('shots')) {
   // degrees off the nose, so framing them means looking at them — and the orbit
   // outside it. `__setView(mode)` selects a mode without walking the cycle.
   Object.defineProperty(window, '__view', { get: () => view });
+  // The external view's law as mounted: which law and frame `?chase=` chose,
+  // the root's bounding radius, and the carried offset from the seat Camera.
+  window.__chase = () => ({
+    option: CHASE_OPTION, law: chaseRig.law, radius: chaseRig.radius,
+    rel: [...chaseRig.rel], camera: chaseRig.camera?.name ?? null,
+    active: !!view?.externalLaw,
+  });
   window.__setView = mode => {
     if (!view) return null;
     const set = view.setMode(mode);
