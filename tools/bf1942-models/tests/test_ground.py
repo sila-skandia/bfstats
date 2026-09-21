@@ -1053,6 +1053,66 @@ class TrackedVehicleTests(unittest.TestCase):
         col = self.results["hullCollisionNoCollider"]
         self.assertTrue(col["throughWall"])
 
+    # --- drivable decks (bridges, repair/reload bays) -----------------------
+
+    def test_a_vehicle_drives_up_the_incline_and_rests_on_the_pad(self) -> None:
+        # A 4 m ramp onto a 1 m pad, the repair bay of the bug report. The
+        # surface is analytic but it is analytic in the shape the real query
+        # has: a height that exists only at or below the reference the caller
+        # passes, so what is under test is the reference `ground.js` asks from.
+        for name in ("jeepOntoPad", "tigerOntoPad"):
+            run = self.results[name]
+            with self.subTest(name):
+                self.assertTrue(run["reachedPad"])
+                # It rides the pad at the same height above it as it rides the
+                # flat ground — the pad carries it, it is not sunk into it and
+                # not floating over it. (Submerged in the pad was the report.)
+                self.assertAlmostEqual(run["flatRide"], run["padRide"], delta=0.02)
+                # And never below the pad's top surface at all.
+                self.assertGreater(run["lowestOnPad"], 1.0)
+                # Nose up the incline, level on the pad.
+                self.assertGreater(run["peakRampPitch"], 8.0)
+                self.assertLess(abs(run["padPitch"]), 2.0)
+                # No tick-to-tick jump beyond what a 1/4 ramp at road speed
+                # explains. The `CLIMB_STEP` nudge this replaced moved the hull
+                # 0.2 m a tick on its own, and the height raster's cells
+                # stepped under the wheels on top of that.
+                self.assertLess(run["biggestJump"], 0.08)
+
+    def test_only_the_crest_of_the_incline_puts_a_jeep_in_the_air(self) -> None:
+        # A jeep at road speed over the convex break where a 14-degree ramp
+        # meets a flat pad leaves the ground, which is what a jeep does over a
+        # crest. What must not happen is the hull bouncing along the flat run.
+        jeep = self.results["jeepOntoPad"]
+        zs = jeep["airborneZs"]
+        self.assertLess(len(zs), 15)
+        if zs:
+            # One contiguous hop, and it starts within a few metres of the crest
+            # at z = -10 rather than anywhere on the pad.
+            self.assertLess(abs(zs[0] + 10), 4.0)
+            self.assertLess(abs(zs[-1] - zs[0]), 3.0)
+        # The tank, slower and far heavier, never leaves the deck at all.
+        self.assertEqual(0, self.results["tigerOntoPad"]["airborneOnDeck"])
+
+    def test_a_span_overhead_never_lifts_a_vehicle_onto_it(self) -> None:
+        # Driving UNDER a bridge whose deck is 8 m up. The shared height overlay
+        # this replaced lifted anything at (x, z) onto whatever deck was over it.
+        run = self.results["underTheSpan"]
+        self.assertTrue(run["passedBeneath"])
+        self.assertLess(run["highestBeneath"], 1.0)
+
+    def test_the_hull_sweep_hands_the_collider_the_deck_gate(self) -> None:
+        # Two numbers, and the first has to track the surface the wheels are on:
+        # the support plus the step a driven vehicle mounts (1 m). On the flat
+        # that is 1, on the 1 m pad it is 2 — so a lip within a step is a kerb
+        # and a parapet standing above it is still a wall.
+        gate = self.results["deckGate"]
+        self.assertTrue(gate["asked"])
+        self.assertAlmostEqual(1.0, gate["flatStepTop"], places=3)
+        self.assertAlmostEqual(2.0, gate["padStepTop"], places=3)
+        self.assertEqual(0.5, gate["flatFloorCos"])
+        self.assertEqual(0.5, gate["padFloorCos"])
+
 
 
 class DrivetrainConstantTests(unittest.TestCase):

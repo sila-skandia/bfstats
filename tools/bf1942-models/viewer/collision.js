@@ -193,13 +193,14 @@ function inferDim(meshes, worldSize) {
 // --- static hulls ----------------------------------------------------------
 
 const CELL_SIZE = 32;   // metres; 64 x 64 cells over a 2048 m level
-// The drivable-deck raster's own cell size, deliberately much finer than the
-// collision index's: a reload/repair bay is a few metres across against a 32 m
-// index cell, so a coarse raster either misses the pad or smears it across one
-// giant cell, and the tank's ride surface would jump as it crossed cell edges.
-// Two metres keeps a small pad's deck top where it actually is while staying a
-// cheap built-once Float32Array (256 x 256 cells over a 512 m deck region).
-const DRIVABLE_CELL = 2;
+// The drivable-deck BROADPHASE cell size. This raster is not a height any more
+// (see `buildDrivableMask`): it only answers "is there a deck triangle over this
+// patch of ground, and between which two heights", so the exact deck query can
+// skip the ray entirely over open terrain and clamp it to the deck's own Y band
+// otherwise. Four metres is fine for a gate — it costs two floats a cell
+// (262 k cells, 2.1 MB, over a level whose decks span the whole 2048 m) and a
+// cell it over-marks only costs one short ray that finds nothing.
+const DRIVABLE_CELL = 4;
 
 // Where `#sweepTriangle` leaves its contact. Module scratch rather than an
 // object, for the same reason the triangles are nine loose floats: the sweep
@@ -234,11 +235,21 @@ function lowestRoot(a, b, c, limit) {
  * muzzle; `cast` takes the firing object's owner id and skips it.
  */
 export class CollisionIndex {
-  constructor(tris, materials, owners, ownerNodes, bounds) {
+  constructor(tris, materials, owners, ownerNodes, bounds, drivable = null) {
     this.tris = tris;                 // Float32Array, 9 per triangle
     this.materials = materials;       // Uint16Array, 1 per triangle
     this.owners = owners;             // Int32Array, 1 per triangle
     this.ownerNodes = ownerNodes;     // Object3D[] indexed by owner id
+    /**
+     * 1 where the triangle belongs to a surface a ground vehicle drives on top
+     * of rather than into — a bridge span, a repair/reload bay, a ramp (see
+     * `DRIVABLE_TOP_RE`). Per TRIANGLE, not per owner, because both readers
+     * need that resolution: the deck ray must ignore the terrain and the
+     * buildings around the bridge, and the vehicle hull sweep must keep the
+     * bridge's own parapet walls while ignoring its road surface. null when
+     * the level ships no drivable static at all.
+     */
+    this.drivable = drivable;         // Uint8Array, 1 per triangle, or null
     this.count = materials.length;
     this.minX = bounds.minX;
     this.minZ = bounds.minZ;
@@ -309,8 +320,15 @@ export class CollisionIndex {
    * `dx, dy, dz` must be unit length and `maxDist` is the segment length, so a
    * returned `t` is metres from the origin. `out` is filled in place and
    * returned — the caller owns one and it never allocates per round per frame.
+   *
+   * `onlyDrivable` narrows the test to the drivable-surface triangles (the
+   * `drivable` mask): that is how `WorldCollider.deckHeight` asks "what deck is
+   * under this wheel" without the terrain, the buildings or a parked truck
+   * answering. With no mask built, it can only answer "nothing".
    */
-  cast(ox, oy, oz, dx, dy, dz, maxDist, skipOwner, out, onlyOwner = -1) {
+  cast(ox, oy, oz, dx, dy, dz, maxDist, skipOwner, out, onlyOwner = -1,
+       onlyDrivable = false) {
+    if (onlyDrivable && !this.drivable) return null;
     if (!this.cellStart || maxDist <= 0) return null;
     const stats = this.stats;
     stats.queries++;
@@ -361,6 +379,7 @@ export class CollisionIndex {
               if (this._stamp[tri] === stamp) continue;
               this._stamp[tri] = stamp;
               stats.candidates++;
+              if (onlyDrivable && !this.drivable[tri]) continue;
               if (onlyOwner >= 0) {
                 if (this.owners[tri] !== onlyOwner) continue;
               } else {
@@ -418,9 +437,30 @@ export class CollisionIndex {
    * is the sphere *centre* at contact and `out.px/py/pz` the point it touched;
    * `out.nx/ny/nz` points from the hull toward the centre, which is the
    * direction that separates them.
+   *
+   * `deckStepTop` and `deckFloorCos` are the driven-vehicle gate, and they only
+   * ever drop triangles of a DRIVABLE surface (the `drivable` mask) — a
+   * soldier, a round or a rigid body passes the defaults and sees the level
+   * exactly as before. A vehicle's hull sphere is its whole bounding radius
+   * (2-3 m) centred on the hull origin barely a metre off the ground, so it is
+   * permanently buried in any horizontal surface it is standing on. Terrain
+   * gets away with this by not being in the sweep at all; a bridge deck is a
+   * static mesh, so without a gate the sweep reports a contact at t = 0 on
+   * every tick a tank spends on a bridge and the tank is welded to its lip.
+   * The gate is therefore what makes a deck a *floor* to the hull:
+   *
+   * - `deckFloorCos`: a drivable triangle within `acos(deckFloorCos)` of
+   *   horizontal is a ride surface, not a wall. It drops both the road deck and
+   *   its underside, and — the point of using an angle rather than a plane —
+   *   the sloped approach ramp and the arch of a humped span too.
+   * - `deckStepTop`: a drivable triangle lying entirely at or below this world
+   *   Y is a kerb the suspension mounts rather than a wall. The caller sets it
+   *   to the surface its wheels are on plus the step a driven vehicle climbs,
+   *   so a deck's leading lip face is stepped over while a parapet, a pillar or
+   *   a hut on the bay — all of them rising well above it — still stop the hull.
    */
   sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, out, onlyOwner = -1,
-              skipBodies = false) {
+              skipBodies = false, deckStepTop = -Infinity, deckFloorCos = 2) {
     if (!this.cellStart || maxDist <= 0) return null;
     const stats = this.stats;
     stats.queries++;
@@ -445,6 +485,10 @@ export class CollisionIndex {
     // parameterised on the displacement vector.
     let best = 1;
     let found = false;
+    // Is the driven-vehicle deck gate live at all? Hoisted out of the triangle
+    // loop so the soldier and the rounds pay one boolean for it.
+    const deck = this.drivable
+      && (deckStepTop > -Infinity || deckFloorCos <= 1) ? this.drivable : null;
     for (let iz = iz0; iz <= iz1; iz++) {
       for (let ix = ix0; ix <= ix1; ix++) {
         const cell = this.cell(ix, iz);
@@ -479,6 +523,20 @@ export class CollisionIndex {
               || Math.max(p[j], p[j + 3], p[j + 6]) < loX
               || Math.min(p[j + 2], p[j + 5], p[j + 8]) > hiZ
               || Math.max(p[j + 2], p[j + 5], p[j + 8]) < loZ) continue;
+          // The driven-vehicle deck gate, after the box reject so a bridge two
+          // cells away never reaches it. Only a drivable triangle can be gated.
+          if (deck && deck[tri]) {
+            if (Math.max(p[j + 1], p[j + 4], p[j + 7]) <= deckStepTop) continue;
+            if (deckFloorCos <= 1) {
+              // |unit normal . up| — an absolute value, so nothing here trusts
+              // the collision mesh's winding (`#intersect`'s own caveat).
+              const e1x = p[j + 3] - p[j], e1y = p[j + 4] - p[j + 1], e1z = p[j + 5] - p[j + 2];
+              const e2x = p[j + 6] - p[j], e2y = p[j + 7] - p[j + 1], e2z = p[j + 8] - p[j + 2];
+              const cy = e1z * e2x - e1x * e2z;
+              const len = Math.hypot(e1y * e2z - e1z * e2y, cy, e1x * e2y - e1y * e2x);
+              if (len > 1e-12 && Math.abs(cy) / len >= deckFloorCos) continue;
+            }
+          }
           stats.tests++;
           const t = this.#sweepTriangle(tri, ox, oy, oz, vx, vy, vz, radius, best);
           if (t >= 0 && t <= best) {
@@ -684,6 +742,12 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
   const tris = new Float32Array(total * 9);
   const materials = new Uint16Array(total);
   const ownerIds = new Int32Array(total).fill(-1);
+  // Which triangles belong to a drivable surface. One byte a triangle (21 kB on
+  // Bocage) and it is what both the exact deck ray and the vehicle hull sweep
+  // read; left null when the level ships no drivable static at all, so nothing
+  // downstream pays for a level with no bridges.
+  const drivableIds = new Uint8Array(total);
+  let anyDrivable = false;
   let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
   let at = 0;
   for (const mesh of meshes) {
@@ -694,6 +758,8 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
     const m = mesh.matrixWorld.elements;
     const material = geometry.userData?.defenseMaterial ?? 0;
     const owner = ownerOf.get(mesh) ?? -1;
+    const drivable = isDrivableCollisionMesh(mesh) ? 1 : 0;
+    if (drivable) anyDrivable = true;
     const faces = Math.floor((geometry.index ? geometry.index.count : position.count) / 3);
     for (let f = 0; f < faces; f++) {
       for (let c = 0; c < 3; c++) {
@@ -712,12 +778,14 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
       }
       materials[at] = material;
       ownerIds[at] = owner;
+      drivableIds[at] = drivable;
       at++;
     }
   }
   if (!at) return null;
   return packIndex(tris, materials, ownerIds, owners, at, cellSize,
-                   { minX, minZ, maxX, maxZ });
+                   { minX, minZ, maxX, maxZ },
+                   anyDrivable ? drivableIds : null);
 }
 
 /** Whether a loaded node is one of the assembler's collision primitives. */
@@ -733,7 +801,8 @@ export function isCollisionMesh(obj) {
  * into `cellStart`, then write each triangle into its cells. Bocage's 21,661
  * triangles come out at roughly 1.2 cell entries each.
  */
-function packIndex(tris, materials, ownerIds, ownerNodes, count, cellSize, box) {
+function packIndex(tris, materials, ownerIds, ownerNodes, count, cellSize, box,
+                   drivableIds = null) {
   const minX = Math.floor(box.minX / cellSize) * cellSize;
   const minZ = Math.floor(box.minZ / cellSize) * cellSize;
   const cols = Math.max(1, Math.ceil((box.maxX - minX) / cellSize) + 1);
@@ -741,7 +810,8 @@ function packIndex(tris, materials, ownerIds, ownerNodes, count, cellSize, box) 
   const index = new CollisionIndex(
     tris.subarray(0, count * 9), materials.subarray(0, count),
     ownerIds.subarray(0, count), ownerNodes,
-    { minX, minZ, cols, rows, cellSize });
+    { minX, minZ, cols, rows, cellSize },
+    drivableIds ? drivableIds.subarray(0, count) : null);
   const cells = cols * rows;
   const counts = new Int32Array(cells + 1);
   const spanOf = (tri) => {
@@ -798,37 +868,91 @@ function packIndex(tris, materials, ownerIds, ownerNodes, count, cellSize, box) 
  * mesh, which the hull sweep treats as a wall and stops it on.
  *
  * The engine's own `checkVsTerrain` drops a vehicle's vertices onto a
- * heightfield that *does* include drivable bridges; sampling the deck tops out
- * of the static collision index is the viewer's equivalent (this raster feeds
- * `WorldCollider.surfaceHeight`). Match on the object's own name so a mod's
- * similarly-named bridge/bay templates work unchanged.
+ * heightfield that *does* include drivable bridges. The viewer's equivalent is
+ * `WorldCollider.deckHeight`, which rays the real triangles of these objects;
+ * this name set is the gate on *which* statics a vehicle may be lifted onto at
+ * all, so a mod's similarly-named bridge/bay templates work unchanged and a
+ * windowsill never becomes a road.
+ *
+ * The set can afford to be generous now that the ride surface is a ray and the
+ * hull gate is per triangle, because the GEOMETRY decides what happens to a
+ * matched object. `repaircist_m1` is the example: a 1.65 x 3.7 x 1.85 m repair
+ * canister, matched by this pattern, and correctly still an obstacle — its top
+ * is out of a wheel's step and its sides rise past the hull's, so a tank bumps
+ * into it exactly as it always did. The pattern only says "a vehicle is allowed
+ * to ride this if the shape works out".
+ *
+ * `landrep1` is the vanilla LAND vehicle repair/reload station — a workshop over
+ * a slab with a low apron, shipped on 31 of the extracted levels, and the object
+ * in the "it drives through the repair pad and the model is submerged in it"
+ * report. Nothing in the original set matched it (no `bay`, no `ramp`), so its
+ * apron was never in the ride surface at all and the tank's wheels stayed on the
+ * terrain 0.9 m below the slab. `airrep1` is its aircraft sibling, driven into
+ * the same way. The supply-depot building (`Supplyde_m1`) is deliberately NOT
+ * here: a bare `supplyde` would also catch `AmmoboxSupplyDepot` and the other
+ * logical `*SupplyDepot` objects, and a depot is something a vehicle pulls up
+ * to, not onto.
+ *
+ * Known loose matches, left alone because the geometry contains them: `bay`
+ * catches a B17's `B17_Bay_*` doors and `ramp` catches `Katyusha_Ramp`, both
+ * parts of flyable/drivable vehicles rather than level furniture. The only
+ * consequence is that another vehicle's hull may clip slightly into those
+ * near-horizontal faces of a parked one.
  */
-const DRIVABLE_TOP_RE = /bridge|repairpoint|repaircist|reloadbay|repairbay|repairstation|bay|ramp|overpass|dock|flightdeck|freightdeck|hardsurface|deck/i;
+const DRIVABLE_TOP_RE = /bridge|repairpoint|repaircist|reloadbay|repairbay|repairstation|landrep|airrep|bay|ramp|overpass|dock|flightdeck|freightdeck|hardsurface|deck/i;
 
 /**
- * Build a raster of the top of every drivable deck under `root`, on the fine
- * `DRIVABLE_CELL` grid, or null when a level ships no drivable static at all.
- * `-Infinity` marks a cell with no drivable surface, so `surfaceHeight` hands
- * those back to the heightfield unaltered.
+ * Whether a collision mesh belongs to a drivable surface: its own name, the
+ * stem the assembler kept, or any ancestor placement node's name.
  *
- * Walks the same collision meshes `buildCollisionIndex` does (same predicate),
- * reading the same world matrices, so the two never disagree about where the
- * geometry is. Per cell the winner is the LARGEST horizontal face -- a wide
- * deck, not a thin parapet wall -- and the cell stores that face's height, so
- * a tank rides the road surface, never a rail cap. Built once per level, read
- * as a flat Float32Array per query: a per-frame cost of one lookup under the
- * heightfield's own bilinear sample (features/mesh-viewer-performance rule 5).
- *
- * `cellSize` must match the value used to build the collision index.
+ * The ancestor walk is deliberate and it is why the mask is per triangle rather
+ * than per name: a repair bay arrives as a `repaircist...` placement whose own
+ * collision primitives are named generically, and a bridge arrives as a span
+ * node with the road and the parapets as separate children. Both want every
+ * triangle under the placement marked — the road so the wheels can ride it, the
+ * parapet so the hull sweep can still be stopped by it (the sweep tells the two
+ * apart by the triangle's own slope, not by its name).
  */
-export function buildDrivableTops(root, { cellSize = DRIVABLE_CELL } = {}) {
+export function isDrivableCollisionMesh(obj) {
+  for (let n = obj; n; n = n.parent) {
+    if (DRIVABLE_TOP_RE.test(String(n.name ?? ''))) return true;
+    if (DRIVABLE_TOP_RE.test(String(n.displayName ?? ''))) return true;
+    if (DRIVABLE_TOP_RE.test(String(n.userData?.control ?? ''))) return true;
+  }
+  return false;
+}
+
+/**
+ * A BROADPHASE gate over the drivable statics under `root`, or null when the
+ * level ships none. Per `DRIVABLE_CELL` cell it holds the min and max world Y of
+ * every drivable triangle whose XZ box touches that cell — nothing else.
+ *
+ * It is deliberately not a height any more. A raster of deck heights cannot be
+ * a ride surface: a cell can only hold one number, so a sloped triangle becomes
+ * a plateau (the repair bay's little incline turns into a step and the tank
+ * either submerges in it or pops onto it), a cell shared by a deck and its
+ * underside has to guess which one a vehicle is on, and neighbouring cells step
+ * against each other so the wheel springs read cliffs where the road is smooth.
+ * The exact query (`WorldCollider.deckHeight`) rays the real triangles instead,
+ * and all this raster does is make that ray free to skip and short to run:
+ *
+ * - no drivable triangle over this cell (`minY > maxY`) -> no ray at all, which
+ *   is the whole of open terrain, every level with no bridge, and every metre of
+ *   a level more than a cell away from one;
+ * - the querier is below every deck triangle here -> no ray, which is how a
+ *   tank *under* a bridge stays under it for free;
+ * - otherwise the ray is clamped to `[minY, maxY]`, so it is a couple of metres
+ *   long over one 32 m index cell rather than a sweep of the level's height.
+ *
+ * Two floats a cell, built once per level (features/mesh-viewer-performance
+ * rule 5: nothing allocated per frame, and no query at all over open ground).
+ */
+export function buildDrivableMask(root, { cellSize = DRIVABLE_CELL } = {}) {
   const meshes = [];
   root.traverse(obj => {
     if (!obj.isMesh || !obj.geometry) return;
     if (!isCollisionMesh(obj)) return;
-    const name = obj.parent?.name ?? obj.name ?? '';
-    const stem = String(obj.parent?.displayName ?? obj.displayName ?? obj.name ?? '');
-    if (DRIVABLE_TOP_RE.test(`${name} ${stem}`)) meshes.push(obj);
+    if (isDrivableCollisionMesh(obj)) meshes.push(obj);
   });
   if (!meshes.length) return null;
 
@@ -859,15 +983,11 @@ export function buildDrivableTops(root, { cellSize = DRIVABLE_CELL } = {}) {
   const minZ0 = Math.floor(minZ / cellSize) * cellSize;
   const cols = Math.max(1, Math.ceil((maxX - minX0) / cellSize) + 1);
   const rows = Math.max(1, Math.ceil((maxZ - minZ0) / cellSize) + 1);
-  const W = cols, cells = cols * rows;
-  // A cell's drivable top is chosen by the LARGEST horizontal face that
-  // touches it, not the tallest point. A bridge is a wide flat road (the
-  // deck, the surface a vehicle rides) flanked by tall, thin parapet walls;
-  // taking the max Y of everything in the 32 m cell would stand the tank on
-  // the parapet cap. The deck's horizontal footprint dwarfs the parapet's
-  // strips, so the face with the most XZ area in a cell is the riding surface.
-  const top = new Float32Array(cells).fill(-Infinity);   // deck height
-  const topA = new Float32Array(cells);                   // winning face's footprint
+  const cells = cols * rows;
+  // An empty cell is `minY > maxY`, which is the one test every reader makes
+  // first and needs no separate presence byte.
+  const loY = new Float32Array(cells).fill(Infinity);
+  const hiY = new Float32Array(cells).fill(-Infinity);
 
   for (const mesh of meshes) {
     const geometry = mesh.geometry;
@@ -877,47 +997,36 @@ export function buildDrivableTops(root, { cellSize = DRIVABLE_CELL } = {}) {
     const m = mesh.matrixWorld.elements;
     const faces = Math.floor((geometry.index ? geometry.index.count : position.count) / 3);
     for (let f = 0; f < faces; f++) {
-      // Three world vertices; the horizontal footprint and a representative
-      // height. Storing a triangle as a tiny local array allocates, but this
-      // whole pass runs once per level, off the frame path.
-      const wx = [0, 0, 0], wy = [0, 0, 0], wz = [0, 0, 0];
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      let z0 = Infinity, z1 = -Infinity;
       for (let c = 0; c < 3; c++) {
         const vi = index ? index[f * 3 + c] : f * 3 + c;
         const lx = array[vi * 3], ly = array[vi * 3 + 1], lz = array[vi * 3 + 2];
-        wx[c] = m[0] * lx + m[4] * ly + m[8] * lz + m[12];
-        wy[c] = m[1] * lx + m[5] * ly + m[9] * lz + m[13];
-        wz[c] = m[2] * lx + m[6] * ly + m[10] * lz + m[14];
+        const x = m[0] * lx + m[4] * ly + m[8] * lz + m[12];
+        const y = m[1] * lx + m[5] * ly + m[9] * lz + m[13];
+        const z = m[2] * lx + m[6] * ly + m[10] * lz + m[14];
+        if (x < x0) x0 = x; if (x > x1) x1 = x;
+        if (y < y0) y0 = y; if (y > y1) y1 = y;
+        if (z < z0) z0 = z; if (z > z1) z1 = z;
       }
-      const x0 = Math.min(wx[0], wx[1], wx[2]);
-      const x1 = Math.max(wx[0], wx[1], wx[2]);
-      const z0 = Math.min(wz[0], wz[1], wz[2]);
-      const z1 = Math.max(wz[0], wz[1], wz[2]);
-      // Mean height -- the surface's own level, not a parapet cap.
-      const yMean = (wy[0] + wy[1] + wy[2]) / 3;
-      // Horizontal footprint (XZ projection area). A level deck face keeps its
-      // full area; a vertical parapet face projects to ~nothing.
-      const e1x = wx[1] - wx[0], e1z = wz[1] - wz[0];
-      const e2x = wx[2] - wx[0], e2z = wz[2] - wz[0];
-      const area = Math.abs(e1x * e2z - e1z * e2x) * 0.5;
-      if (!(area > 0)) continue;   // a vertical face has no drivable top
+      // Every cell the triangle's XZ box touches, conservatively: over-marking
+      // costs one short ray that finds nothing, under-marking would drop the
+      // deck out from under a wheel.
       const ix0 = Math.max(0, Math.floor((x0 - minX0) / cellSize));
-      const ix1 = Math.min(W - 1, Math.floor((x1 - minX0) / cellSize));
+      const ix1 = Math.min(cols - 1, Math.floor((x1 - minX0) / cellSize));
       const iz0 = Math.max(0, Math.floor((z0 - minZ0) / cellSize));
       const iz1 = Math.min(rows - 1, Math.floor((z1 - minZ0) / cellSize));
       for (let iz = iz0; iz <= iz1; iz++) {
-        const row = iz * W;
+        const row = iz * cols;
         for (let ix = ix0; ix <= ix1; ix++) {
           const cell = row + ix;
-          if (area > topA[cell]) { topA[cell] = area; top[cell] = yMean; }
+          if (y0 < loY[cell]) loY[cell] = y0;
+          if (y1 > hiY[cell]) hiY[cell] = y1;
         }
       }
     }
   }
-  // The dominant-face pass leaves cells between the deck and the terrain
-  // (overhanging approaches) with no winner yet the deck rising above its own
-  // supports; those fall to the heightfield, which is fine (vehicles cross on
-  // the deck). Cells where a face won read the deck height.
-  return { minX: minX0, minZ: minZ0, cellSize, cols, rows, top, present: cells };
+  return { minX: minX0, minZ: minZ0, cellSize, cols, rows, minY: loY, maxY: hiY };
 }
 
 // --- the world -------------------------------------------------------------
@@ -948,47 +1057,28 @@ function reachesSphere(ox, oy, oz, dx, dy, dz, maxDist, m, radius) {
  */
 export class WorldCollider {
   constructor({ heightfield = null, waterLevel = null, statics = null,
-               drivableTops = null } = {}) {
+               drivableMask = null } = {}) {
     this.heightfield = heightfield;
     this.waterLevel = Number.isFinite(waterLevel) ? waterLevel : null;
     this.statics = statics;
-    this.drivableTops = drivableTops;
-    // Which placed-object owners are drivable surfaces (bridges, repair/reload
-    // bays, ramps) -- the set the drivable-deck raster was built from, kept per
-    // owner so the vehicle hull sweep can distinguish a deck a tank climbs from
-    // a wall it must stop on. -1 (no owner) is never drivable.
-    this.drivableOwners = null;
-    if (statics?.ownerNodes?.length) {
-      const out = new Uint8Array(statics.ownerNodes.length);
-      // An owner is drivable when any collision mesh in its subtree carries a
-      // drivable name — the same rule `buildDrivableTops` uses to raster the
-      // deck — so the owner of a `repaircist...collision` mesh is flagged even
-      // when the root node's own name is generic. The hull sweep leans on this
-      // to let a tank climb the deck instead of ramming its lip.
-      const drivableIn = root => {
-        let found = false;
-        for (let n = root; n; n = n.parent) {
-          if (DRIVABLE_TOP_RE.test(String(n?.name ?? ''))) { found = true; break; }
-        }
-        return found;
-      };
-      for (let i = 0; i < statics.ownerNodes.length; i++) {
-        const node = statics.ownerNodes[i];
-        let drivable = node
-          && (DRIVABLE_TOP_RE.test(String(node.userData?.control ?? ''))
-              || drivableIn(node));
-        node?.traverse?.(child => {
-          if (drivable) return;
-          if (child === node) return;
-          for (let n = child; n; n = n.parent) {
-            if (DRIVABLE_TOP_RE.test(String(n?.name ?? ''))) { drivable = true; break; }
-          }
-        });
-        if (drivable) out[i] = 1;
-      }
-      this.drivableOwners = out;
-    }
+    /** The drivable-deck broadphase gate (`buildDrivableMask`), or null. */
+    this.drivableMask = drivableMask;
     this.dynamicCast = null;
+    /**
+     * Where the last `deckHeight` found a deck, and the triangle it found: a
+     * driven vehicle needs the surface's real normal and material as well as its
+     * height, and this is how it gets them without a second ray. Reused in
+     * place; valid only until the next `deckHeight`.
+     */
+    this.deck = { y: -Infinity, nx: 0, ny: 1, nz: 0, material: 0, triangle: -1,
+                  owner: -1 };
+    // Straight down, always, so the direction `#normal` orients the hit against
+    // is set once here rather than per query.
+    this._deckHit = {
+      t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0,
+      dx: 0, dy: -1, dz: 0,
+      material: 0, kind: '', owner: -1, triangle: -1,
+    };
     /**
      * Owners whose hull has left the pose it was baked at — a parked plane a
      * jeep has just shoved. owner -> `{ fwd, inv, x, y, z, radius }`: rigid
@@ -1031,11 +1121,13 @@ export class WorldCollider {
    * against a lattice. `physics.js` does that clamp, and `map.html` composes the
    * two. The sea is not solid and never appears in a sweep at all.
    */
-  sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner = -1, skipBodies = false) {
+  sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner = -1, skipBodies = false,
+              deckStepTop = -Infinity, deckFloorCos = 2) {
     if (!this.statics) return null;
     const started = performance.now();
     let out = this.statics.sweepSphere(
-      ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, this.sweepHit, -1, skipBodies);
+      ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, this.sweepHit, -1, skipBodies,
+      deckStepTop, deckFloorCos);
     // `skipBodies`: the caller is itself a simulated body, and what it does to
     // another one is the contact solver's business (a push, a spin, damage on
     // both sides), not a dead stop against a swept sphere.
@@ -1109,38 +1201,122 @@ export class WorldCollider {
     if (enable) this.statics?.enableOwner?.(owner);
   }
 
-  /** Whether the placed object with owner id `owner` is a drivable surface a
-   *  ground vehicle climbs (a bridge deck, a reload/repair bay). -1 is never. */
-  isDrivableOwner(owner) {
-    return owner >= 0 && this.drivableOwners != null
-      && owner < this.drivableOwners.length && this.drivableOwners[owner] === 1;
+  /**
+   * The top of the drivable deck under (x, z) **at or below `fromY`**, exactly,
+   * or -Infinity where there is none. Leaves the surface it found in `this.deck`.
+   *
+   * A downward ray against the real collision triangles of the drivable statics
+   * only (`CollisionIndex.drivable`), which is what makes this the ride surface
+   * a soldier already walks on rather than an approximation of it: the repair
+   * bay's incline comes out continuous, a humped span comes out arched, and the
+   * answer is a triangle, so the caller can have its normal and its material
+   * for free.
+   *
+   * Two properties do the work that the old height raster could not:
+   *
+   * - **It is height-aware.** The ray starts at `fromY` and goes down, so a
+   *   vehicle under a bridge is never offered the deck above it, and a vehicle
+   *   on the deck is never offered the riverbed. `fromY` is the caller's own
+   *   reference: a wheel passes its axle plus the step it can climb, so a deck
+   *   within reach is mounted and one above it is not.
+   * - **The topmost surface wins by construction.** `cast` returns the NEAREST
+   *   hit, and the nearest hit going down from above a deck is its road surface;
+   *   the underside of the same span is behind it and can never be picked. That
+   *   is the "sinks below the bridge" bug — the raster's largest-footprint rule
+   *   could not tell a deck from its own soffit, which has the same footprint.
+   *
+   * The broadphase (`drivableMask`) is consulted first and answers most calls
+   * with no ray at all; see `buildDrivableMask`.
+   */
+  deckHeight(x, z, fromY) {
+    const deck = this.deck;
+    deck.y = -Infinity;
+    deck.triangle = -1;
+    const mask = this.drivableMask;
+    const statics = this.statics;
+    if (!mask || !statics || !Number.isFinite(fromY)) return -Infinity;
+    const ix = Math.floor((x - mask.minX) / mask.cellSize);
+    const iz = Math.floor((z - mask.minZ) / mask.cellSize);
+    if (ix < 0 || iz < 0 || ix >= mask.cols || iz >= mask.rows) return -Infinity;
+    const cell = iz * mask.cols + ix;
+    const lo = mask.minY[cell], hi = mask.maxY[cell];
+    if (!(lo <= hi)) return -Infinity;         // no deck triangle over this cell
+    if (fromY < lo) return -Infinity;          // every deck here is above us
+    // Clamp the ray to the cell's own band, and lift the origin by a millimetre
+    // so a query taken exactly ON the surface still finds it (`#intersect`
+    // ignores a hit at t = 0).
+    const top = Math.min(fromY, hi) + 1e-3;
+    const hit = statics.cast(x, top, z, 0, -1, 0, top - lo + 2e-3, -1,
+                             this._deckHit, -1, true);
+    if (!hit) return -Infinity;
+    deck.y = hit.y;
+    deck.nx = hit.nx; deck.ny = hit.ny; deck.nz = hit.nz;
+    deck.material = hit.material;
+    deck.triangle = hit.triangle;
+    deck.owner = hit.owner;
+    return hit.y;
   }
 
-  /** The height a thing standing at (x, z) rests on: ground, or the sea, or a
-   *  drivable deck a vehicle may ride (a bridge span, a reload bay's apron). */
-  surfaceHeight(x, z) {
+  /**
+   * The height a thing standing at (x, z) rests on: ground, or the sea.
+   *
+   * `fromY` is **opt-in and vehicles only**. Passed, the answer also includes a
+   * drivable deck at or below it (`deckHeight`), which is how a driven vehicle
+   * rides a bridge span or a repair bay's apron. Omitted — every other caller in
+   * the viewer: the soldier, the aircraft and boat floors, the cameras, spawn
+   * placement, the parked-vehicle settle — the answer is terrain and sea, and
+   * nothing else, exactly as it was before decks existed. Those callers must not
+   * see a deck through this: a soldier meets a bridge through `cast`, from a real
+   * triangle, which is why walking over one has always worked and why lifting
+   * the shared surface instead put anyone standing *under* a bridge on top of it.
+   */
+  surfaceHeight(x, z, fromY = NaN) {
     let ground = this.heightfield ? this.heightfield.height(x, z) : NaN;
     if (this.waterLevel !== null) {
       ground = Number.isNaN(ground) ? this.waterLevel : Math.max(ground, this.waterLevel);
     }
-    const tops = this.drivableTops;
-    if (tops) {
-      const dx = x - tops.minX;
-      const dz = z - tops.minZ;
-      if (dx >= 0 && dz >= 0) {
-        const ix = Math.floor(dx / tops.cellSize);
-        const iz = Math.floor(dz / tops.cellSize);
-        if (ix < tops.cols && iz < tops.rows) {
-          const t = tops.top[iz * tops.cols + ix];
-          // The deck sits above whatever is under it (water, a ravine). Only a
-          // deck HIGHER than the heightfield lifts the vehicle onto it; walls
-          // and buildings are never in the drivable raster, so none of this
-          // ever stands a tank on a roof.
-          if (Number.isFinite(t) && t > ground) ground = t;
-        }
-      }
+    if (Number.isFinite(fromY)) {
+      const deck = this.deckHeight(x, z, fromY);
+      // `!(deck <= ground)` rather than `>`, so a level with no heightfield (a
+      // harness, a mod whose lattice would not rebuild) still gets its deck.
+      if (Number.isFinite(deck) && !(deck <= ground)) ground = deck;
     }
     return ground;
+  }
+
+  /**
+   * The contact normal of the drivable deck at (x, z) below `fromY`, written
+   * into `out` as [nx, ny, nz]; false when no deck is the surface there.
+   *
+   * The hit triangle's own normal, oriented up (`#normal` faces it against the
+   * downward ray). A driven vehicle needs this rather than a finite difference
+   * of the height, so a tank pitches along the repair bay's incline and levels
+   * on the pad instead of reading the step between two raster cells as a cliff.
+   * Returns false where the terrain is still the higher surface, so the caller
+   * keeps the heightfield gradient it has always used there.
+   */
+  deckNormal(x, z, fromY, out) {
+    if (!this.deckSurface(x, z, fromY)) return false;
+    out[0] = this.deck.nx; out[1] = this.deck.ny; out[2] = this.deck.nz;
+    return true;
+  }
+
+  /**
+   * `this.deck` when a drivable deck — not the terrain or the sea — is what a
+   * vehicle at (x, z) below `fromY` is standing on, else null.
+   *
+   * The one place the "is the deck the surface here" comparison lives, so the
+   * height, the normal and the material never disagree about it.
+   */
+  deckSurface(x, z, fromY) {
+    if (!this.drivableMask || !this.statics) return null;
+    const deck = this.deckHeight(x, z, fromY);
+    if (!Number.isFinite(deck)) return null;
+    let ground = this.heightfield ? this.heightfield.height(x, z) : NaN;
+    if (this.waterLevel !== null) {
+      ground = Number.isNaN(ground) ? this.waterLevel : Math.max(ground, this.waterLevel);
+    }
+    return deck <= ground ? null : this.deck;
   }
 
   /**
