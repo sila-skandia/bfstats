@@ -68,7 +68,20 @@ if (no active kit part sets its template byte +0x62)
 `10.0`. **So it is neither height alone nor time alone: it is a downward speed
 of more than 8 m/s taken more than 10 m above the terrain.** The height is
 measured against the terrain heightfield, not against a downward cast — standing
-11 m up a building over ground at 0 satisfies it.
+11 m up a building over ground at 0 satisfies it. Both gates are required and
+the height one is nested inside the speed one — re-derived by the W5-B review
+from the Ghidra decompile of `handlePlayerInput`, which reads
+`if (kitPartByte62 == 0 && speed.y < -8.0 && lowerState != template[0x1e4]) {
+pos = getAbsolutePosition(); if (10.0 < pos.y - terrainBase->getHeight(pos.x,
+pos.z)) setAnimationState(0, template[0x1e4]), setAnimationState(1,
+template[0x1e8]); }`.
+
+**`BFSoldier::triggerFallingAnimation` (`0x0827e920`) has nothing to do with
+this**, and the brief that pointed this stream at it was wrong. It has exactly
+one caller in the whole image — `GameServer::handleExplosionOnObject` at
+`0x08156bb3` — and occupies no vtable slot: the only other occurrence of its
+address anywhere in the file is its own `.symtab` entry (file offset
+`0x9f0eb8`). It is the blast-knockback animation, not the skydive.
 
 Both halves of that state declare `AnimationStateMachine.setSoundTrigger
 c_SstFallingHigh`, so entering it starts
@@ -223,10 +236,26 @@ whole feel of the two states:
 | state | site | axis | clamp |
 |---|---|---|---|
 | free fall (bit `0x10` clear, state `Lb_ParachuteFall`) | `0x082726fd` | the **camera**'s `getAbsoluteTransformation()` row 2 — `*(soldier+0x3f0)` → element → `+8` → `queryInterface(IID_ICompositeObject 0xc378)` → `vtable+0x40` | the product's `y` is forced to `<= 0` (`0x0827274d`–`0x08272764`), so it can never lift you |
-| under the canopy (bit `0x10` set) | `0x082727e3` | the **soldier**'s own `getAbsoluteTransformation()` row 2 (`BFSoldier` vtable `+0x40`) | none |
+| under the canopy (bit `0x10` set) | `0x082727f2` | the **soldier**'s own `getAbsoluteTransformation()` row 2 (`BFSoldier` vtable `+0x40`) | none |
 
-Row 2 is forward: the same `+0x20` triple is dotted against the velocity a few
-lines earlier to choose `Lb_ExplosionForward` vs `Lb_ExplosionBackward`.
+(The canopy site's `fld [ecx+0x2e8]` is at `0x082727f2`; `0x082727e3` is the
+`call [eax+0x40]` two instructions before it. An earlier draft of this file
+quoted the call address as the read address in the prose above the table.)
+
+Row 2 is forward, by two independent routes: the same `+0x20` triple is dotted
+against the velocity a few lines earlier to choose `Lb_ExplosionForward` vs
+`Lb_ExplosionBackward`, and `setRotateYDeg<float>` (`0x081a24b0`) writes
+`m[0x00] = cos`, `m[0x08] = -sin`, `m[0x20] = sin`, `m[0x28] = cos` — so row 2
+is the local **Z** axis and row 0 the local X.
+
+`soldier+0x3f0` is not a bare pointer: the constructor allocates it at
+`0x0826c1f1` through
+`__simple_alloc<_List_node<dice::ref2::world::ICameraObject*>>::allocate(1)` and
+makes it circular, so it is the sentinel of a `std::list<ICameraObject*>` and
+the `+8` above is that node's data slot. **The free-fall axis is the soldier's
+first camera object**, whose relative transform `handleUpdate` itself writes
+each tick from the player's pitch and yaw (`0x08271f0d` on). The camera really
+does steer the fall.
 
 **One consequence needs no radius at all.** Under the canopy the body is upright,
 so its forward row is horizontal, and both the forward term and gravity divide
@@ -288,17 +317,48 @@ client).
   terminal fall is 2.5 m/s and **HP-14 fall damage could never happen at all**.
 
 So the engine's own value is somewhere between and this corpus cannot say where.
-Two shipped behaviours bound it:
+Two shipped behaviours bound it.
 
-- a chute landing is survivable — `Lb_ParachuteHitGround` ends
+> **Corrected by the W5-B review, 2026-09-21.** The first draft of this section
+> put the window at `1.563 < r < 2.8`. Both ends were wrong, and the lower one
+> was wrong in the direction that matters: it tested the **vertical** descent
+> against HP-14's 8.0 m/s floor, but HP-14's `|v|` is the **full** impact speed
+> and the canopy carries `2.0367 ×` the vertical as horizontal all the way to
+> the ground. The corrected window is **`2.354 ≤ r < 3.126`**, derived below,
+> and the shipped `r = 1.8` sits outside it — which is the whole reason §5
+> needed a mechanism of its own.
+
+- **A chute landing is survivable.** `Lb_ParachuteHitGround` ends
   `addTransitionWhenDone Lb_Stand`, and the dead case has its own separate
-  `Lb_ParachuteDeadHitGround` — so the terminal descent `|g| / k` must sit under
-  HP-14's 8.0 m/s damage floor: **r > 1.563**;
-- HP-14 fall damage exists, so a 7.5 m drop must still arrive near 15 m/s, i.e.
-  the free-fall terminal must stay far above it: **r < 2.8**.
+  `Lb_ParachuteDeadHitGround`. HP-14 subtracts 8.0 from the impact speed and
+  returns with no damage at all when that goes negative, so survivability is
+  exactly `|v| ≤ 8.0` at touchdown — and `|v|` is the whole velocity, because
+  the obliqueness is already carried by the separate `A = |cosθ|³` term (and
+  `A` is lerped to 1 for any `F ≥ 3` anyway, so the angle cannot save a long
+  drop). With the radius-free glide ratio of §4,
 
-**The viewer flies the parachute at r = 1.8, taken from that window. It is
-UNVERIFIED as the engine's number.** `physics.js` keeps
+      |v| = v_y · sqrt(1 + 2.0367²) = 2.2690 · v_y ,   v_y = 1473 / (pi · r² · 24)
+
+  so `|v| ≤ 8.0` gives **r ≥ 2.354**. Below that the engine bills the landing:
+  at the shipped `r = 1.8` the canopy arrives at `|v| = 13.681 m/s`, and
+  `fall-damage.js` returns a severity of **6855** against 30 HP.
+- **The canopy never closes in mid-air.** `BFSoldier::handleUpdate` calls
+  `setIsParachuting(false)` as soon as `|getPositionalSpeed().y| <= 2.0` (§5).
+  A descent that settles at or below 2 m/s would therefore drop the canopy
+  while still in the sky, which is not a thing that happens, so
+  `v_y = 1473 / (pi · r² · 24) > 2.0` gives **r < 3.126**. This replaces the
+  first draft's `r < 2.8`, which was a judgement about fall damage still
+  "feeling" present rather than a derivation — at `r = 2.8` the free-fall
+  terminal is still 59.8 m/s and a 7.55 m drop still arrives essentially
+  undamped, so that bound bound nothing.
+
+Note what the corrected window does **not** fix: the free-fall run-off of §7.
+At `r = 2.354` the free-fall horizontal terminal is still 172 m/s. The radius
+is not the lever for that one.
+
+**The viewer flies the parachute at r = 1.8, taken from the first draft's
+window. It is UNVERIFIED as the engine's number, and it is now known to be
+below the window shipped behaviour forces.** `physics.js` keeps
 `SOLDIER_BOUNDING_RADIUS = 0.8` untouched, because every HP-14 figure (no damage
 below 3.97 m, lethal at 7.55 m) was measured against it and at the soldier's own
 `drag 1.0` the term is inert either way (terminal 733 m/s at 0.8, 145 m/s at
@@ -332,16 +392,53 @@ steps out at 120 m and floats the rest of the way down still arrives with
 measured, before the fix, through `tests/parachute_harness.mjs`.
 
 The engine's own data says that cannot be what happens (`Lb_ParachuteHitGround`
-→ `Lb_Stand`), and `F` is the only term the drop height enters through. **Which
-engine call neutralises it was not found**: `Armor::setLastCollisionHeight`
-(`0x08174480`, vtable `+0xf8`) has no caller in the server that resolves to a
-falling soldier — the three virtual `+0xf8` sites reachable from `GameServer` and
-`BFSoldier` are an `Objective` and a weapon.
+→ `Lb_Stand`), and `F` is the only term the drop height enters through.
+
+### The engine's writer, found
+
+The first draft of this section said the writer of `Armor+0x28` "was not found",
+having hunted for callers of the **virtual** setter. That was the wrong place to
+look: `Armor::setLastCollisionHeight` (`0x08174480`, vtable `+0xf8`) is a weak
+two-line accessor that nothing in the server calls, and the three `+0xf8` call
+sites inside `BFSoldier` are a different class's slot — each of them tests the
+return value with `test eax,eax`, so none is the `void(float)` setter.
+
+The field is written **inline**, at the tail of `Armor::update(float)`
+(`0x08172f40`), at `0x081730b0`–`0x081730e7`:
+
+```
+ 81730b0:  mov    eax,DWORD PTR [edi+0x34]     ; the owner IObject
+ 81730b9:  call   DWORD PTR [edx+0x38]         ; getAbsolutePosition()
+ 81730bc:  fld    DWORD PTR [edi+0x28]         ; lastCollisionHeight
+ 81730bf:  fld    DWORD PTR [eax+0x4]          ; pos.y
+ 81730c5:  fucompp
+ 81730c9:  test   ah,0x45
+ 81730cc:  jne    817304c                      ; skip unless pos.y > lastCollisionHeight
+ 81730e1:  mov    eax,DWORD PTR [eax+0x4]
+ 81730e4:  mov    DWORD PTR [edi+0x28],eax     ; lastCollisionHeight = pos.y
+```
+
+guarded one level up by `Armor+0x129 == 0` — the per-tick "collided" byte that
+`Armor::collision()` (`0x08174470`) sets. **So the engine's own rule is: every
+tick the object is not in contact, raise `lastCollisionHeight` to its current
+`y`.** It is a running maximum of altitude, reset by contact.
+
+That settles what the number is, and it settles that the engine does **not**
+neutralise `F` for a parachutist: a man who steps out at 120 m keeps
+`lastCollisionHeight = 120` all the way down, and `F = 120` on arrival. The
+engine's actual answer to the 6,900 HP is §4's radius — at `r ≥ 2.354` the
+canopy touches down at `|v| ≤ 8.0` and `handleCollisionLandOrWater` returns
+before it reaches `Q²` at all. At the shipped `r = 1.8` it does not, which is
+why this mechanism exists:
 
 So the viewer's mechanism is its own and is marked as such in
 `soldier.js#stepParachute`: **re-stamp `lastCollisionHeight` every tick the
 canopy is carrying you**, which bills the touchdown for the last tick's descent
-and nothing else. The outcome is the engine's; the route to it is not.
+and nothing else. It differs from the engine's rule only in direction — the
+engine raises the value and never lowers it — and it exists solely to cover a
+radius that is below §4's corrected window. Raise `PARACHUTE_DRAG_RADIUS` into
+that window and this whole block can go: the outcome then comes out of HP-14's
+own 8.0 floor, with nothing invented.
 
 ---
 
@@ -429,6 +526,32 @@ beside this file; serve the viewer on your own port first). Out of a plane
   opening the canopy multiplies the drag by 24 and bleeds the horizontal off
   with a 0.41 s time constant. This is the one behavioural question a verifier
   should take first: `0x082726b8`–`0x08272764` is the whole of it.
+
+  **Re-derived from raw disassembly by the W5-B review, 2026-09-21: every part
+  of that reading is correct and the run-off stands.** Specifically —
+  - The axis is the camera's. `soldier+0x3f0` is the sentinel of a
+    `std::list<ICameraObject*>` (allocator call at `0x0826c1f1`), and the same
+    `handleUpdate` writes that camera's transform from the player's pitch and
+    yaw at `0x08271f0d` on.
+  - Row 2 is forward, by `setRotateYDeg` (`0x081a24b0`) as well as by the
+    `Lb_ExplosionForward` dot.
+  - The clamp is `y ≤ 0`, not `y ≥ 0`. `fldz` / `fld [ebp-0xb4]` /
+    `fucomp st(1)` / `test ah,0x45` / `jne` at `0x0827274d`–`0x08272764`:
+    `test ah,0x45` clears ZF for every x87 result except *greater*, so the
+    fallthrough — the one that stores the popped `0.0` over `y` — is taken
+    exactly when `y > 0`.
+  - The argument order at the call site is `(zero, force)`, and that is right:
+    `PointPhysicsNode::addAccelerationAtRelativePosition` (`0x08256650`) reads
+    `[ebp+0x10]`, its **second** argument, into the accumulator and never
+    touches the first, while `PhysicsNode`'s version (`0x08255230`) uses the
+    first as the lever arm. The signature is `(position, acceleration)`.
+  - It is applied every tick, gated only on `stateBits & 0x10 == 0` and
+    `getCurrentState(lower) == template+0x1e4`, inside `soldier+0x245 == 0`
+    (alive) and `flags & 4 == 0`. Nothing upstream throttles it.
+
+  What the review did change is §4's radius window — but not in a way that
+  helps here: the corrected `2.354 ≤ r < 3.126` still leaves the free-fall
+  horizontal terminal at 172 m/s. The run-off is not a radius problem.
 - **The drag radius** (§4). The honest lever if the descent ever needs
   re-tuning; nothing else in the law is free.
 - **`c_AsmLockFreeLook` on `Lb_ParachuteOpen` is not modelled.** The engine
@@ -441,8 +564,15 @@ beside this file; serve the viewer on your own port first). Out of a plane
 - **The kit-part gate on the falling state.** `handlePlayerInput` skips the
   whole free-fall branch when any active kit part's template carries a non-zero
   byte at `+0x62`. What that byte is was not chased.
-- **Multiplayer.** `deploy` rides the input word but was not checked against
-  `netcode.js`'s wire format, so a remote player's chute may not replicate.
+- **Multiplayer: confirmed not replicated.** The W5-B review checked it.
+  `netcode.js`'s `encodeInput` writes a fixed bit mask — bit 4 walk, 20 prone,
+  21 crouch, 22 jump — and `decodeInput` reads exactly those back; neither
+  `deploy` nor `dead` is in the codec, so a remote player's canopy does not
+  replicate at all. Nothing regresses (the field is simply dropped), but the
+  fix is not free: **bit 22 is already spent.** The viewer put jump there as a
+  documented departure, and bit 22 is precisely `c_PIMenuSelect9` — the
+  engine's own ripcord bit (§3). Whoever wires this up has to move jump or
+  find another bit, and should say which in the codec's header.
 
 ---
 
