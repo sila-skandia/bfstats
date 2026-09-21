@@ -956,9 +956,10 @@ import { selectMod } from './mods.js';
 import { Aircraft, VehicleCamera, findVehicle, findVehicles } from './flight.js';
 import { GroundVehicle } from './ground.js';
 import * as GroundModule from './ground.js';
+import { Ship } from './ship.js';
 import {
   VehicleOccupancy, findAllVehicleRoots, listEntryPoints, classifyRoot,
-  FireState, chainOnShot, readWorldPose, pickNearest, AIM_INPUTS,
+  FireState, chainOnShot, readWorldPose, pickNearest, AIM_INPUTS, DRIVE_KINDS,
 } from './seats.js';
 import { MouseInput, profileFor, soldierLookDegrees } from './mouse-input.js';
 import {
@@ -992,6 +993,9 @@ import { Armor } from './armor.js';
 import { VehicleDamageSet } from './vehicle-damage.js';
 import { BodyWorld } from './body-world.js';
 import { buildParkedVehicle, describeVehicleParts } from './vehicle-bodies.js';
+import {
+  equilibriumRootY, floatNodesOf, localiseFloats, FloatingHull,
+} from './body-float.js';
 import { SupplyDepot } from './supply.js';
 import { collectIkBindings, defaultSeatPoseName, ikTarget, resolveSeatStates,
          seatBody, seatPoseName, solveTwoBone } from './seat-ik.js';
@@ -5771,13 +5775,226 @@ function bodyTerrain(heightfield, waterLevel) {
 }
 
 /**
- * Whether a placed vehicle becomes a simulated body. Ships stay scenery: a
- * hull afloat is a `FloatingBundle`'s work, which nothing here models, and a
- * woken destroyer would sink through the sea.
+ * Whether a placed vehicle becomes a simulated body.
+ *
+ * Ships stay out of the parked body world, and now for a narrower reason than
+ * "nothing models buoyancy": `floatPlacedVehicles` puts every hull at its
+ * closed-form draft before the collision index bakes it, so a ship is correct
+ * *scenery* — solid, walkable, at the right waterline — and never wakes. The
+ * body world's parked path is gravity plus wheel springs against the
+ * heightfield (`body-ground.js`); a destroyer woken into that would sink
+ * through the sea, because the float term lives in the drive model
+ * (`ship.js`) rather than in `ParkedVehicle`. Runtime buoyancy for an
+ * unoccupied hull — ram a moored Fletcher and watch it rock — is the piece
+ * this leaves open.
  */
 function bodySpecFor(node) {
   if (node?.userData?.physics?.vehicleCategory === 'VCSea') return null;
   return describeVehicleParts(node, collisionMeshes);
+}
+
+/**
+ * Put every floating hull at its own draft, before anything is indexed.
+ *
+ * The engine does this by simulating: a ship is born awake at the spawner's
+ * authored pose and its `FloatingBundle`s settle it, which on Midway means
+ * lifting a Yamato 4.72 m and dropping a Hatsuzuki 6.08 m from pads the level
+ * author placed at the *other* fleet's draft. Doing it by simulation here
+ * would cost thousands of ticks — the law is overdamped by a factor of about
+ * 15, so a Fletcher's slow pole is 0.036 per second and 300 ticks leaves it
+ * 0.147 m high — so the draft is solved in closed form instead
+ * (`body-float.js` `equilibriumRootY`, the root of `sum (-f)*lift = 9.82`).
+ * It is exact, it is free, and it is the same fixed point the settle would
+ * crawl to.
+ *
+ * Only `y` moves. The force is world-vertical and every vanilla hull hangs its
+ * eight float nodes at one height, so there is no couple to find: pitch and
+ * roll righting only has anything to do when the nodes sit at different depths,
+ * which off a level's own pad they never do.
+ *
+ * A hull whose float nodes cannot carry it gets `null` and is left where it was
+ * authored rather than dropped through the sea bed.
+ */
+/**
+ * A burning ship stops being a spawn point.
+ *
+ * `BFSpawnPoint::getActive(bool, int)` (`0x08163dd0`) walks the chain to the
+ * nearest `IID_IArmor` (`0xc4a4`) and returns 0 when it reports
+ * `isCriticalDamaged()` (Armor vtable `+0xcc`, `0x08174320`) — the same
+ * threshold that arms the sink, so the moment a destroyer starts going down it
+ * stops offering her decks. Answered per hull here because the world's flag
+ * list is built once at load and the state is live.
+ */
+function shipFlagInactive(flag) {
+  if (!flag?.vehicle || !flag.position) return false;
+  for (const host of floatHosts) {
+    if (host.sinking) {
+      const p = host.sinking.body.pos;
+      if (Math.hypot(flag.position[0] - p[0], flag.position[2] - p[2])
+          <= host.radius + 40) return true;
+      continue;
+    }
+    const d = Math.hypot(flag.position[0] - host.authored[0],
+                         flag.position[2] - host.authored[2]);
+    if (d > host.radius + 40) continue;
+    const owner = collider?.statics?.ownerOf?.(host.node) ?? -1;
+    return !!(owner >= 0 && vehicleDamage?.get(owner)?.critical);
+  }
+  return false;
+}
+
+function floatPlacedVehicles(ownerRoots, waterLevel) {
+  floatHosts.length = 0;
+  if (!Number.isFinite(waterLevel)) return;
+  for (const node of ownerRoots) {
+    if (node?.userData?.physics?.vehicleCategory !== 'VCSea') continue;
+    const floats = floatNodesOf(node);
+    if (!floats.length) continue;
+    node.updateWorldMatrix(true, false);
+    const authored = node.matrixWorld.elements;
+    const host = {
+      node,
+      // The pose the extractor baked the deck spawns against — this one, right
+      // now, before the hull moves. See `rebaseDeckSpawns`.
+      authored: [authored[12], authored[13], authored[14]],
+      authoredInverse: node.matrixWorld.clone().invert(),
+      radius: 0,
+    };
+    for (const float of floats) {
+      host.radius = Math.max(host.radius,
+        Math.hypot(float.offsetX, float.offsetZ));
+    }
+    floatHosts.push(host);
+    const y = equilibriumRootY(floats, waterLevel);
+    if (!Number.isFinite(y)) continue;
+    node.position.y += y - authored[13];
+    node.updateMatrix();
+    node.updateMatrixWorld(true);
+  }
+}
+
+/** Placed floating hulls, with the pose their deck spawns were baked against. */
+const floatHosts = [];
+const _deckPoint = new THREE.Vector3();
+
+/**
+ * A ship that has taken critical damage is going down.
+ *
+ * `FloatingBundle::handleMessage` (`0x082402b0`) arms the per-node sink rate on
+ * TemplateMessage **`0x14`** — `criticalDamage`, the same threshold that stops
+ * a ship being a spawn point (`BFSpawnPoint::getActive` `0x08163dd0` step 2) —
+ * not on death. For a Fletcher that is 50 of its 300 hit points.
+ *
+ * The body world does not carry ships (see `bodySpecFor`), so a hull that
+ * starts sinking gets its own `FloatingHull` (`body-float.js`): a `RigidBody`
+ * with the float law posted at each node, which is precisely what the engine
+ * runs. Each node's rate is its own, so the offsets diverge and she goes down
+ * by one end; on a capital ship the spread is about 2:1, and the vanilla hull
+ * that actually rolls over is the LCVP.
+ *
+ * The deck spawns follow, because `rebaseDeckSpawns` resolves them through the
+ * hull's live matrix: a burning destroyer carries her spawn points down with
+ * her, which is the engine's own arrangement and the reason the critical gate
+ * exists at all.
+ */
+function armSinkingHull(host) {
+  if (host.sinking) return host.sinking;
+  const floats = floatNodesOf(host.node);
+  if (!floats.length) return null;
+  host.node.updateWorldMatrix(true, false);
+  const e = host.node.matrixWorld.elements;
+  const axes = [[e[0], e[1], e[2]], [e[4], e[5], e[6]], [e[8], e[9], e[10]]];
+  const spec = host.node.userData?.physics || {};
+  const box = new THREE.Box3().setFromObject(host.node);
+  const size = box.getSize(new THREE.Vector3());
+  let radius = 0;
+  for (const float of floats) {
+    radius = Math.max(radius, Math.hypot(float.offsetX, float.offsetY, float.offsetZ));
+  }
+  host.sinking = new FloatingHull({
+    floats: localiseFloats(floats, axes),
+    mass: spec.mass || 1, drag: spec.drag || 0,
+    box: [size.x, size.y, size.z],
+    inertiaModifier: spec.inertiaModifier || [1, 1, 1],
+    waterLevel: collider?.waterLevel ?? extras?.waterLevel ?? 0,
+    boundingRadius: radius,
+    position: [e[12], e[13], e[14]], axes,
+  });
+  host.sinking.arm();
+  return host.sinking;
+}
+
+function stepSinkingHulls(step) {
+  if (!step?.bodyTicks || !floatHosts.length) return;
+  for (const host of floatHosts) {
+    if (!host.sinking) {
+      // The occupied hull is the drive model's, not this pass's.
+      if (occupancy?.root === host.node) continue;
+      const owner = collider?.statics?.ownerOf?.(host.node) ?? -1;
+      const record = owner >= 0 ? vehicleDamage?.get(owner) : null;
+      if (!record?.critical) continue;
+      if (!armSinkingHull(host)) continue;
+    }
+    for (let tick = 0; tick < step.bodyTicks; tick++) host.sinking.step();
+    const body = host.sinking.body;
+    writeBodyPose(host.node, body);
+    // The deck spawns ride the hull down: the same live re-resolution the
+    // level load does, re-evaluated now that the hull has moved.
+    rebaseDeckSpawns();
+  }
+}
+
+/**
+ * Move every deck spawn with the hull it belongs to.
+ *
+ * `BFSpawnPoint::spawn` (`0x08163d70`) is one line —
+ * `soldier->setAbsolutePosition(this->getAbsolutePosition())` — and a
+ * `SpawnPoint` is an ordinary composite child of the ship, so in the engine a
+ * deck spawn is *never* a world position: it is a ship-local offset through the
+ * hull's live transform at the moment of the spawn. `extract_map.py` bakes the
+ * world position it has at the authored pad, which is right until something
+ * moves the hull — and `floatPlacedVehicles`, one line above, has just moved
+ * every one of them by up to 6 m.
+ *
+ * So each baked point is carried through `hull.matrixWorld * authoredInverse`,
+ * which is exactly the offset-and-re-resolve the engine does, recovered from
+ * the bake rather than from a re-extract: the inverse of the pose it was baked
+ * against turns a world point back into the ship-local offset, and the hull's
+ * current matrix puts it back. It costs no extractor change and it is right for
+ * pitch and roll as well as heave.
+ *
+ * Rewriting `extras` rather than resolving at spawn time keeps the deploy
+ * screen's rings, `spawn-safety.js`'s walk and the spawn itself reading one
+ * number. A hull that moves *after* load — under way, or going down — needs
+ * this evaluated per spawn instead; that is the piece left open.
+ */
+function rebaseDeckSpawns() {
+  const spawns = extras?.vehicleSoldierSpawns;
+  if (!spawns?.length || !floatHosts.length) return;
+  for (const spawn of spawns) {
+    if (!spawn.position) continue;
+    // Idempotent: the bake, kept, so a second index pass on the same `extras`
+    // rebases from the authored point rather than from its own output.
+    spawn.deckBake ??= spawn.position.slice();
+    const [x, , z] = spawn.deckBake;
+    let host = null, best = Infinity;
+    for (const candidate of floatHosts) {
+      const d = Math.hypot(x - candidate.authored[0], z - candidate.authored[2]);
+      // Inside the hull's own float-node footprint, generously: a deck point is
+      // on the ship it was authored on, and the fleet's pads are hundreds of
+      // metres apart.
+      if (d < best && d <= candidate.radius + 40) { best = d; host = candidate; }
+    }
+    if (!host) continue;
+    _deckPoint.set(x, spawn.deckBake[1], z)
+      .applyMatrix4(host.authoredInverse).applyMatrix4(host.node.matrixWorld);
+    // In place, not a fresh array: `new World(...)` has already run
+    // `spawnFlags(extras)`, and a flag's own `position` (the ring the deploy
+    // map draws) is a reference to THIS array.
+    spawn.position[0] = +_deckPoint.x.toFixed(3);
+    spawn.position[1] = +_deckPoint.y.toFixed(3);
+    spawn.position[2] = +_deckPoint.z.toFixed(3);
+  }
 }
 
 /** Longest a spawned vehicle is given to come to rest: ten seconds of ticks. */
@@ -6516,8 +6733,12 @@ function buildCollider(root) {
     else ownerRoots.push(child);
   }
   // Before the index: it bakes every hull where it stands, so the vehicles
-  // have to be standing where they will rest.
+  // have to be standing where they will rest. A ship rests at its own draft,
+  // which is a closed form rather than a settle, and its deck spawns move with
+  // it.
   settlePlacedVehicles(ownerRoots, heightfield);
+  floatPlacedVehicles(ownerRoots, extras?.waterLevel);
+  rebaseDeckSpawns();
   const statics = buildCollisionIndex(root, { ownerRoots });
   // Every damageable thing in the level, keyed by the same owner id the
   // collision index just handed out — which is what a hit record names, so a
@@ -6801,10 +7022,10 @@ function setPilot(on, node = null, seatId = null) {
       return;
     }
     occupancy = new VehicleOccupancy(picked, {
-      Aircraft, GroundVehicle, TrackedVehicle: GroundModule.TrackedVehicle,
+      Aircraft, GroundVehicle, TrackedVehicle: GroundModule.TrackedVehicle, Ship,
     });
     const kind = occupancy.rootKind;
-    if (kind === 'air' || kind === 'ground' || kind === 'tank') {
+    if (DRIVE_KINDS.includes(kind)) {
       // `ensureDrive` picks the class; `tank` asks for P4's `TrackedVehicle`
       // and falls back to `GroundVehicle` (Willys physics on a Sherman hull)
       // when that track's class has not landed in this worktree yet — see
@@ -6819,13 +7040,42 @@ function setPilot(on, node = null, seatId = null) {
       };
       const vehicle = occupancy.ensureDrive(currentRoot,
         { groundHeight, surfaceFriction, deckNormal, collider: bodyAwareCollider(),
+          // The flat sea. A ship needs it twice: its `FloatingBundle`s measure
+          // `f` against it, and its two rudders make lift at all only because
+          // `PhysicsWing` gives a submerged surface a medium of 10.
+          waterLevel: collider?.waterLevel ?? extras?.waterLevel,
           ...cockpit });
-      if (kind === 'air') {
+      // A helm with no `Ship` built (a tree with no Engine node under the hull)
+      // falls back to being a bare seat rather than pretending to drive.
+      if (!vehicle) {
+        occupancy.setActiveSeat(seatId || occupancy.rootId);
+        collectGuns();
+        warmSubtree(occupancy.root);
+      } else if (kind === 'air') {
         aircraft = vehicle;
         aircraft.groundHeight = groundHeight;
         // The spawn pose puts the aircraft on the deck; lift it clear of its
         // own wheels. The car/tank stays put — its springs are the lift.
         aircraft.state.position.y += 0.2;
+      } else if (kind === 'ship') {
+        // `aircraft`, not `car`: a `Ship` IS an `Aircraft` (same thrust law,
+        // same surfaces, same `integrate`), and every consumer of the
+        // `aircraft` reference — the chase law, the engine audio, the HUD's
+        // throttle feed, `syncMobileThrottle` — wants the aircraft interface.
+        // The one place the two must differ is the input mapping, and that is
+        // keyed on `player.kind` in `world.js`, not on this variable: W/S is a
+        // ship's signed ahead/astern, not a plane's latching throttle.
+        aircraft = vehicle;
+        // Run aground on a beach rather than sail through it — but against the
+        // sea BED, not `groundHeight`, which is `surfaceHeight` and therefore
+        // `max(terrain, water)`. Handing a ship that floor clamps every hull
+        // whose draft is below the waterline UP to the sea surface: a Yamato,
+        // which floats at 17.45 against a water level of 20, was pinned at 20
+        // and reported `grounded`. A ship's floor is the ground under the water.
+        aircraft.groundHeight = (x, z) => {
+          const h = collider?.heightfield?.height(x, z);
+          return Number.isFinite(h) ? h : -Infinity;
+        };
       } else {
         car = vehicle;
       }
@@ -6835,9 +7085,11 @@ function setPilot(on, node = null, seatId = null) {
       // touches `autoFirstPerson` at all), so it takes the decision over:
       // `VehicleCamera` calls `setFirstPerson` on every mode change, and the
       // swap follows the view rather than the sim.
-      vehicle.autoFirstPerson = false;
-      view = new VehicleCamera(vehicle, { groundHeight });
-      adoptDrivenBody(vehicle);
+      if (vehicle) {
+        vehicle.autoFirstPerson = false;
+        view = new VehicleCamera(vehicle, { groundHeight });
+        adoptDrivenBody(vehicle);
+      }
     }
     // Root seat unless a specific `EntryPoint` said otherwise — walking
     // straight up to a Sherman's hull-gunner door seats you there directly,
@@ -8024,6 +8276,11 @@ function buildSpawnFlags() {
 function spawnAtFlag(advance = false) {
   if (!soldier || !flags.length || !world) return false;
   const flag = flags[Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1)];
+  // `BFSpawnPoint::getActive`'s Armor gate: a critically damaged ship offers
+  // nothing. The engine answers this per spawn point every time the screen is
+  // drawn; the viewer answers it at the moment of the spawn, which is the one
+  // that matters.
+  if (shipFlagInactive(flag)) return false;
   const spawned = world.spawnPlayer(LOCAL_PLAYER, {
     flag, advance, group: flag.vehicle ? activeDeployGroup(flag) : null });
   if (!spawned) return false;
@@ -14262,6 +14519,9 @@ function frame(dt) {
   // The world's tick ran the bodies immediately before its own damage pass,
   // in the same frame as the old code; this half only draws the results.
   stepVehicleBodies(step);
+  // ... and beside them, the hulls the body world does not carry: a ship that
+  // has taken critical damage is going down, and its deck spawns go with it.
+  stepSinkingHulls(step);
   // After `advance`, so a round that landed this frame is already accounted for
   // when the tier is picked. Unconditional for the same reason `advance` is: a
   // tank set alight before the player climbed out keeps burning down to nothing
@@ -14682,6 +14942,8 @@ if (params.has('shots')) {
         team: flag.team,
         spawns: flag.spawns.length,
         selected: index === chosen,
+        // A burning ship: `BFSpawnPoint::getActive`'s Armor gate.
+        inactive: shipFlagInactive(flag),
       }));
     },
     get team() { return deployTeamId; },
@@ -15282,6 +15544,52 @@ if (params.has('shots')) {
       exposure: from ? soldierExposureFor(t, from) : null,
     }));
   };
+  // Every floating hull, where it is and where the closed form says it should
+  // be: the one readout that says whether a ship is at its own draft. A check
+  // asserting the fleet's eight predicted `y` values needs the target beside
+  // the measurement, or it is asserting the viewer against itself.
+  window.__ships = () => floatHosts.map(host => {
+    const floats = floatNodesOf(host.node);
+    host.node.updateWorldMatrix(true, false);
+    return {
+      control: host.node.userData?.control ?? host.node.name,
+      y: +host.node.matrixWorld.elements[13].toFixed(4),
+      target: +equilibriumRootY(floats, collider?.waterLevel ?? extras?.waterLevel)
+        .toFixed(4),
+      authoredY: +host.authored[1].toFixed(4),
+      nodes: floats.length,
+      hullHeight: floats[0]?.hullHeight ?? null,
+      relY: +(floats[0]?.offsetY ?? 0).toFixed(3),
+      maxLift: floats[0]?.floatMaxLift ?? null,
+      minLift: floats[0]?.floatMinLift ?? null,
+    };
+  });
+  // The level's deck spawns as the page now holds them: `rebaseDeckSpawns` has
+  // moved each one with its hull, and `deckBake` is the extractor's own value
+  // beside it. Both, because the whole question is whether the point sits over
+  // its ship.
+  window.__deckSpawns = () => (extras?.vehicleSoldierSpawns || []).map(s => ({
+    vehicle: s.vehicle, name: s.name, pad: s.pad, group: s.group, team: s.team,
+    position: s.position, bake: s.deckBake ?? null,
+  }));
+  // Every seat of whatever is occupied, not just the active one: what each is
+  // classified as and what it is wired to. `__occupancy` above reports the
+  // active seat; this reports the row the number keys walk, which is what a
+  // check of seat cycling has to name -- a gun count that changes says
+  // something moved, not which seat it moved to.
+  window.__seatTable = () => occupancy && ({
+    control: occupancy.root?.userData?.control ?? null,
+    rootKind: occupancy.rootKind,
+    drive: occupancy.drive ? occupancy.drive.constructor.name : null,
+    active: occupancy.order.indexOf(occupancy.activeSeatId),
+    seats: occupancy.order.map((id, index) => ({
+      index, kind: occupancy.seatKind(id),
+      node: occupancy.seatInfo(id)?.node?.name ?? null,
+      fireArms: occupancy.seatInfo(id)?.fireArms.length ?? 0,
+      engine: occupancy.seatInfo(id)?.engineType ?? null,
+      axes: Object.keys(occupancy.seatInfo(id)?.axes || {}),
+    })),
+  });
   // Every damageable thing in the level and what it is currently showing, for a
   // headless check: shoot a tank, step frames, read the tier back.
   window.__vehicles = () => [...vehicleDamage.byOwner.entries()].map(([owner, v]) => ({
