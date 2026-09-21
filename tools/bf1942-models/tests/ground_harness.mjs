@@ -1814,16 +1814,34 @@ results.fleetCeilings = Object.fromEntries(
 // (driving under a bridge) is not.
 //
 // Layout, driving down -Z from the origin: flat ground to z = -6, a 4 m ramp
-// rising to 1 m, then a 14 m pad at 1 m. The reload/repair bay of the bug
+// rising to 1 m, then a 200 m pad at 1 m. The reload/repair bay of the bug
 // report, with its "little incline".
+//
+// The pad used to be 14 m, which is where `padPitch` went wrong. At the
+// engine's own rotational inertia (`getGeometryInertia`, four times a solid
+// box's) a Sherman's pitch mode is 0.75 Hz, so the hull takes three seconds
+// to come level after the crest — and a 14 m pad at road speed is under a
+// second of it. The measurement was landing mid-decay and reading 2.3 deg of
+// "not level". The pad is now long enough that the last sample on it is a
+// settled one, and `padSettleSeconds` says how long the settling took rather
+// than the tolerance being widened to hide it.
 const PAD_Y = 1.0;
+const PAD_LENGTH = 200;
 const rampTop = z => {
   const d = -z;
   if (d < 6) return -Infinity;
   if (d < 10) return ((d - 6) / 4) * PAD_Y;
-  if (d <= 24) return PAD_Y;
+  if (d <= 10 + PAD_LENGTH) return PAD_Y;
   return -Infinity;
 };
+/**
+ * The ramp's own angle: 1 m of rise over a 4 m run. Everything the deck can
+ * demand of a hull's attitude is this number, and a hull whose load-bearing
+ * springs span less than the 4 m run (both vehicles here do) is demanded all
+ * of it, so it is the target a slow ascent is measured against rather than a
+ * fitted threshold.
+ */
+const RAMP_ANGLE_DEG = round(Math.atan(PAD_Y / 4) * DEG, 2);
 /** The analytic stand-in for `WorldCollider.surfaceHeight(x, z, fromY)`. */
 const deckGround = topOf => (x, z, fromY) => {
   const deck = topOf(z);
@@ -1853,31 +1871,56 @@ for (const [name, build, radius] of [
     cockpit: false, groundHeight: deckGround(rampTop),
     deckNormal: deckGroundNormal(rampTop),
   }), 0.5],
+]) for (const [mode, pilot, seconds] of [
+  // Floored, which is how the bug was reported. From 6 m of run-up both
+  // vehicles arrive at the ramp foot doing about 8 m/s.
+  ['', t => t.setInput('c_PIThrottle', 1), 14],
+  // ...and the same ramp at a walking 1 m/s, where the hull has time to take
+  // up the attitude the deck demands and the peak is the ramp's own angle
+  // rather than a transient. Held with the pedal rather than by seeding a
+  // velocity, so the drivetrain is in the loop exactly as above.
+  ['Slow', t => t.setInput('c_PIThrottle', alongOf(t) < 1 ? 1 : 0), 30],
 ]) {
   const truck = build();
   truck.state.position.set(0, name === 'jeep' ? 0.6 : 1.2, 0);
   drive(truck, 2);                       // let the springs settle on the flat
   const restY = truck.state.position.y;
+  // The attitude the vehicle holds standing on flat ground. Neither hull is
+  // at exactly zero — a Willys sits 1.2 degrees nose-down on its own springs
+  // — so "level on the pad" means "back to this", not "back to zero".
+  const restPitch = pitchDeg(truck);
   const trace = [];
-  drive(truck, 14, t => {
-    t.setInput('c_PIThrottle', 1);
+  drive(truck, seconds, t => {
+    pilot(t);
     const s = t.state;
     trace.push({
       z: round(s.position.z, 3), y: round(s.position.y, 3),
       deck: round(Math.max(0, rampTop(s.position.z) === -Infinity ? 0 : rampTop(s.position.z)), 3),
       pitch: round(pitchDeg(t), 2), grounded: s.grounded,
+      v: round(alongOf(t), 2),
     });
   });
-  // Everything from the moment the hull is over the ramp to the end of the run.
-  const onDeck = trace.filter(p => p.z <= -6 && p.z >= -24);
-  const onPad = trace.filter(p => p.z <= -11 && p.z >= -23);
+  // Everything from the moment the hull is over the ramp to the end of the
+  // pad — the WHOLE pad, so a hull bouncing 40 m along it is not off the end
+  // of the window.
+  const onDeck = trace.filter(p => p.z <= -6 && p.z >= -(10 + PAD_LENGTH));
+  const onPad = trace.filter(p => p.z <= -11 && p.z >= -(9 + PAD_LENGTH));
   const onRamp = trace.filter(p => p.z <= -6.5 && p.z >= -9.5);
   let biggestJump = 0;
   for (let i = 1; i < onDeck.length; i++) {
     biggestJump = Math.max(biggestJump, Math.abs(onDeck[i].y - onDeck[i - 1].y));
   }
-  results[`${name}OntoPad`] = {
+  // The first tick on the pad from which the hull holds its flat-ground
+  // attitude to within half a degree for a whole second. This is the number
+  // the 14 m pad could not contain.
+  let settle = null;
+  for (let i = 0; i + 60 < onPad.length; i++) {
+    if (onPad.slice(i, i + 60).every(p => Math.abs(p.pitch - restPitch) < 0.5)) { settle = i; break; }
+  }
+  const loadedZ = truck.wheels.filter(w => w.strength > 0).map(w => w.rest.z);
+  results[`${name}OntoPad${mode}`] = {
     restY: round(restY, 3),
+    restPitch: round(restPitch, 2),
     reachedPad: onPad.length > 0,
     // Ride height above the surface, on the flat and on the pad: the same
     // number, so the pad carries the vehicle exactly as the ground does.
@@ -1889,18 +1932,69 @@ for (const [name, build, radius] of [
     // speed cannot explain (the old `CLIMB_STEP` nudge moved 0.2 m a tick on its
     // own, and the raster's cell steps threw the hull clear of the surface).
     airborneOnDeck: onDeck.filter(p => !p.grounded).length,
-    // Where those ticks are: a jeep at 25 m/s over the convex break where the
+    // Where those ticks are: a jeep at 8 m/s over the convex break where the
     // ramp meets the pad leaves the ground for a moment, which is what a jeep
     // does over a crest. What must NOT happen is airborne ticks along the flat
     // run of the pad itself.
     airborneOnPad: onPad.filter(p => !p.grounded).length,
     airborneZs: onDeck.filter(p => !p.grounded).map(p => p.z),
     biggestJump: round(biggestJump, 3),
-    // Nose up the incline, level again on the pad.
+    // --- attitude ---------------------------------------------------------
+    // The ramp's own angle, and the span of the LOAD-BEARING springs. A
+    // Sherman's eight `c_PGFEngineDummyGrip` rollers are `strength 0`/
+    // `damping 0` and carry none of the hull, so the supported span is the
+    // two real bogie rows (2.449 m), not the 4.1 m the rollers cover — which
+    // is why the deck demands this hull the ramp's whole angle rather than a
+    // bridged fraction of it.
+    rampAngleDeg: RAMP_ANGLE_DEG,
+    loadedSpanZ: round(Math.max(...loadedZ) - Math.min(...loadedZ), 3),
+    vAtRampFoot: round(trace.find(p => p.z <= -6)?.v ?? 0, 2),
+    // ...and at the crest, where the ramp meets the pad, which is the launch
+    // speed of any hop over the convex break.
+    vAtCrest: round(trace.find(p => p.z <= -10)?.v ?? 0, 2),
+    // Nose up the incline...
     peakRampPitch: onRamp.length ? round(Math.max(...onRamp.map(p => p.pitch)), 2) : null,
+    // ...and level again on the pad, measured once it has settled, with the
+    // settling time reported rather than absorbed into a tolerance.
     padPitch: onPad.length ? round(onPad[onPad.length - 1].pitch, 2) : null,
+    padPitchVsRest: onPad.length ? round(onPad[onPad.length - 1].pitch - restPitch, 2) : null,
+    padSettleSeconds: settle === null ? null : round(settle / 60, 2),
     finalZ: round(trace[trace.length - 1].z, 2),
   };
+}
+
+// How much of the ramp's angle a Sherman takes up as a function of how fast it
+// meets it. This is why the floored run peaks at half the ramp's angle while
+// the walking one takes all of it, and it is not a stiffness or a geometry
+// limit: the two load-bearing bogie rows span 2.449 m across a 4 m run, so the
+// deck demands the hull the whole 14.04 degrees at every speed.
+//
+// What happens instead, read off the per-wheel loads: the ramp lifts the hull
+// about 0.3 m before the rear row has pitched down to follow it, the rear row
+// runs out of its 0.35 m of travel and unloads completely, and the tank
+// teeters on the front row alone for the length of the ramp. With no rear
+// spring there is no pitch stiffness, so the nose comes up under the front
+// row's moment against the hull's rotational inertia — and the peak arrives
+// the moment the rear row touches down again, which is why it is a rate, not
+// an angle. At the engine's `getGeometryInertia` (four times a solid box's)
+// that rate is a quarter of what it was.
+{
+  const speeds = [1, 2, 3, 4, 6, 8];
+  results.tankRampPitchBySpeed = speeds.map(hold => {
+    const truck = new TrackedVehicle(shermanNode(), null, {
+      cockpit: false, groundHeight: deckGround(rampTop),
+      deckNormal: deckGroundNormal(rampTop),
+    });
+    truck.state.position.set(0, 1.2, 0);
+    drive(truck, 2);
+    let peak = -Infinity;
+    drive(truck, 12, t => {
+      t.setInput('c_PIThrottle', alongOf(t) < hold ? 1 : 0);
+      const z = t.state.position.z;
+      if (z <= -6.5 && z >= -9.5) peak = Math.max(peak, pitchDeg(t));
+    });
+    return { hold, peak: Number.isFinite(peak) ? round(peak, 2) : null };
+  });
 }
 
 // Under a bridge: the span is 8 m up, the vehicle is on the ground below it, and
@@ -1952,8 +2046,8 @@ for (const [name, build, radius] of [
   const onFlat = seen[seen.length - 1];
   seen.length = 0;
   drive(truck, 12, holding({ c_PIThrottle: 1 }));
-  // The sweep the hull made while it was squarely on the pad, not the last one
-  // of the run (by then the jeep is far past the pad on flat ground again).
+  // The sweep the hull made while it was squarely on the pad, a little past
+  // the crest rather than the last one of the run.
   const onPad = seen.filter(p => p.z <= -12 && p.z >= -22).pop();
   results.deckGate = {
     asked: seen.length > 0,
