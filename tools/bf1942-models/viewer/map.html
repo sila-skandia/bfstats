@@ -6477,7 +6477,9 @@ function setPilot(on, node = null, seatId = null) {
     });
     // The room's control channel: the server mounts this player in its own
     // world the same way (netcode.js MSG_ACTION; the vehicle id is the room
-    // table's, matched by template + pose like the renderer's).
+    // table's, matched by template + pose like the renderer's). The seat-dot
+    // feed keeps the same id for its every-frame occupant read.
+    netOccupiedVehicleId = netVehicleIdFor(occupancy.root);
     const netSeat = netSeatRow('enter');
     if (netSeat) netSendAction(netSeat);
   } else if (!on) {
@@ -6712,9 +6714,11 @@ function clearVehicleHud() {
   for (const name of HUD_VEHICLE_VARS) setHudVar(name, null);
   // The dot feed's memo goes with them, or re-entering the same vehicle at
   // the same seat would leave all thirteen variables deleted and never
-  // rewritten.
+  // rewritten. The cached room id is the same kind of stale-on-exit state:
+  // every exit path (setPilot off, leaveVehicle, leaveManned) funnels here.
   seatDotsFor = null;
-  seatDotsSeat = null;
+  seatDotsSig = null;
+  netOccupiedVehicleId = null;
 }
 
 // R2-8 (verify-r2.md's corrected report): the client's own case-sensitive
@@ -6743,18 +6747,49 @@ function turretDialAngle() {
   return occupancy.turret?.turretYawRadians();
 }
 
-// The seat-dot feed's memo: the vehicle and the seat it was last written for.
-// Nothing in the table can change between seat switches — the positions are
-// template data and the states are only "you" versus "not you" — so this
-// rewrites 13 variables on a switch rather than on every frame.
+// The seat-dot feed's memo: the vehicle it was last written for and the
+// state signature it wrote. The positions are template data and never move,
+// and the states only move when the local player switches seats or a room
+// player enters, leaves or switches seats in this vehicle — so the table is
+// rewritten on a change, not on every frame, and `frame()` can afford to ask
+// every frame whether anything changed.
 let seatDotsFor = null;
-let seatDotsSeat = null;
+let seatDotsSig = null;
+
+/** The room's other players seated in THIS vehicle, as the `{ seat, team }`
+ *  rows `seatDots()` takes: `seat` in the occupancy's own position numbering
+ *  (the snapshot's `seatIndex` is that index — `netcode-render.js` seats its
+ *  replicas by the same law), `team` the server's team id. Empty when not in
+ *  a room or when this vehicle has no room table id: single-player has no
+ *  other occupants, and a vehicle the room does not track cannot be matched.
+ *
+ *  The table id is computed lazily rather than only on entry, because entry
+ *  can happen before the first snapshot lands — `netVehicleIdFor` needs a
+ *  pose to match against, and a null computed too early would otherwise stay
+ *  null for the whole ride. */
+function remoteSeatOccupants() {
+  if (!roomJoined || !roomClient || !occupancy) return [];
+  if (netOccupiedVehicleId == null) netOccupiedVehicleId = netVehicleIdFor(occupancy.root);
+  if (netOccupiedVehicleId == null) return [];
+  const out = [];
+  for (const slot of roomClient.remoteSlots()) {
+    const p = roomClient.remotePlayer(slot);
+    if (p && p.seated && p.inVehicle && p.vehicleId === netOccupiedVehicleId
+        && Number.isInteger(p.seatIndex)) {
+      out.push({ seat: p.seatIndex, team: roomClient.teamOf(slot) });
+    }
+  }
+  return out;
+}
 
 function feedSeatDots() {
-  if (seatDotsFor === occupancy && seatDotsSeat === occupancy.activeSeatId) return;
+  if (!occupancy) return;
+  const dots = occupancy.seatDots(remoteSeatOccupants(),
+                                  roomClient?.hello?.team ?? 0);
+  const sig = dots.map(d => d.state).join(',');
+  if (seatDotsFor === occupancy && sig === seatDotsSig) return;
   seatDotsFor = occupancy;
-  seatDotsSeat = occupancy.activeSeatId;
-  const dots = occupancy.seatDots();
+  seatDotsSig = sig;
   setHudVar('Occupied/OccupiedData', dots.map(d => d.state));
   for (let i = 0; i < 6; i++) {
     const dot = dots[i];
@@ -6826,10 +6861,9 @@ function feedVehicleHud() {
   // position pair per dot. A seat whose extract predates the word feeds no
   // pair and `hud.js` keeps the layout's own literal rect.
   //
-  // Memoised on the vehicle and the seat, because `feedVehicleHud` runs every
-  // frame while occupied (rule 5) and nothing in the dot table can change
-  // between seat switches: the positions are template data and the states are
-  // "you" versus "not you".
+  // Called here for the entry frame and on every seat switch; `frame()` also
+  // calls it every frame, because a room player can change this vehicle's
+  // occupancy at any moment. The feed's signature memo makes both cheap.
   feedSeatDots();
   // R2-31 (corrected, verify-r2.md): hitpoints/armor live on the root PCO
   // only, one Armor shared by every seat — never a nested seat's own value.
@@ -11879,6 +11913,10 @@ let roomRenderer = null;
 let roomJoined = false;
 let roomPingTimer = null;
 const parkedHullCache = new Map();   // room vehicle id -> local scene node
+// The room table id of the vehicle the local player is sitting in, cached on
+// entry: `netVehicleIdFor` is a matrix read over the room table, and the
+// seat-dot feed asks for it every frame while seated.
+let netOccupiedVehicleId = null;
 const netScratchV = new THREE.Vector3();
 
 /** The room table id for a LOCAL vehicle node: template name (the scene
@@ -12505,6 +12543,10 @@ function frame(dt) {
   // under `__renderOnce`, which touches only the renderer's own size.
   const hudW = renderer.domElement.width / renderer.getPixelRatio();
   const hudH = renderer.domElement.height / renderer.getPixelRatio();
+  // The seat dots ask about live occupancy every frame: a room player can
+  // climb into (or out of) this vehicle at any moment, and the feed's own
+  // signature memo makes the steady state a single string compare.
+  feedSeatDots();
   updateSoldierHud();
   // Every frame, not just an on-foot one: a seat has a crosshair too, and it
   // is `crosshairAim` that decides whose.
