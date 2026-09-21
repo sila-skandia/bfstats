@@ -141,9 +141,9 @@ class SharedSoundWriteTests(unittest.TestCase):
 
 
 def spawn_template(name: str, vehicles: dict[int, str],
-                   owner_team: int | None = None) -> SpawnTemplate:
+                   team_on_vehicle: bool = False) -> SpawnTemplate:
     return SpawnTemplate(name=name, vehicles=dict(vehicles),
-                         owner_team=owner_team)
+                         team_on_vehicle=team_on_vehicle)
 
 
 def gameplay(spawners: dict[str, SpawnTemplate],
@@ -200,15 +200,19 @@ class SpawnedVehicleListTests(unittest.TestCase):
         self.assertEqual(extract_map.spawned_vehicle_templates(info),
                          ["Sherman", "PanzerIV"])
 
-    def test_an_owner_team_spawner_contributes_only_its_own_team(self) -> None:
-        # The engine locks the pad to `ownerTeam`, so the other half can never
-        # spawn there and listing it would ship a sound nothing can play.
+    def test_a_team_on_vehicle_spawner_still_contributes_both_teams(self) -> None:
+        # `teamOnVehicle` locks the pad to nothing: it is a bool saying the
+        # spawner stamps its team onto what it spawns, and either half can
+        # stand here depending on the instance's own `Object.setteam`. Read as
+        # an owner team it dropped the other half, which is how Midway's
+        # fletcher and enterprise lost their engine sounds.
         info = self.level({"Conquest": gameplay(
-            {"AlliedOnly": spawn_template("AlliedOnly",
-                                          {1: "PanzerIV", 2: "Sherman"},
-                                          owner_team=2)},
-            [("AlliedOnly", None)])})
-        self.assertEqual(extract_map.spawned_vehicle_templates(info), ["Sherman"])
+            {"FleetSpawner": spawn_template("FleetSpawner",
+                                            {1: "hatsuzuki", 2: "fletcher"},
+                                            team_on_vehicle=True)},
+            [("FleetSpawner", None)])})
+        self.assertEqual(extract_map.spawned_vehicle_templates(info),
+                         ["fletcher", "hatsuzuki"])
 
     def test_the_default_mode_order_is_preserved_and_additions_append(self) -> None:
         # So a re-extraction (or the `--sounds-only` patch) grows an existing
