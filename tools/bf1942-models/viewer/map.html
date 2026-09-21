@@ -6344,8 +6344,11 @@ function collectMannedGuns() {
     const index = guns.groups.indexOf(group);
     if (index >= 0) guns.groups.splice(index, 1);
   }
+  // A driver's own FireArms already have their group in `vehicleGuns`; a
+  // second one on the same node is a second shell per trigger pull.
+  const driven = new Set(vehicleGuns.map(group => group.node));
   mannedGuns = occupancy
-    ? occupancy.activeFireArmsNodes().flatMap(node => guns.collect(node, {
+    ? occupancy.activeFireArmsNodes().filter(node => !driven.has(node)).flatMap(node => guns.collect(node, {
       replace: false,
       speedScale: 1,
       maxRange: 1500,

@@ -846,8 +846,15 @@ export class World {
     }
     // The active seat's own FireArms: per weapon, one trigger per declared
     // input (c_PIFire / c_PIAltFire), gated on the same HP-15 byte.
+    // A drivetrain's root seat is its driver's, and its FireArms are the
+    // `groups` the loop above has just stepped and triggered. Taking them
+    // again here fired a second group on the same node: one pull of a
+    // Sherman's trigger was two shells and two rounds off the HUD, and the
+    // reload ran at twice its rate.
+    const driven = new Set(player.groups.map(g => g.node));
     const fire = input.fire && !player.gate.blocked;
     for (const node of occ.activeFireArmsNodes()) {
+      if (driven.has(node)) continue;
       const state = this.fireStateFor(node);
       state.step(dt);
       const group = player.manned.find(g => g.node === node);
