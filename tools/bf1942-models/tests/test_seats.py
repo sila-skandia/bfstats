@@ -103,6 +103,14 @@ class SeatsModuleTests(unittest.TestCase):
     def test_a_root_with_no_engine_motion_or_firearms_is_a_bare_seat(self) -> None:
         self.assertEqual("seat", self.results["classify"]["bareSeat"])
 
+    def test_a_ship_helm_is_a_drive_seat(self) -> None:
+        """`c_ETShip = 9` -- bit 0 set, so `PhysicsEngine::updatePhysics`
+        (`0x0824cbb0`) runs the aircraft thrust body for it, and bit 3 adds the
+        water rule. There is no ship propulsion code in the engine to be
+        missing, so a helm was never honestly a passenger seat; `ship.js` is
+        the drive model and `'ship'` is the kind."""
+        self.assertEqual("ship", self.results["classify"]["shipRoot"])
+
     # --- seat order matches SEAT-24's own reading ---------------------------
 
     def test_root_is_always_seat_position_zero(self) -> None:
