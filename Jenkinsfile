@@ -8,6 +8,17 @@ pipeline {
   parameters {
     booleanParam(name: 'BUILD_ALL', defaultValue: false, description: 'Build and deploy all services, ignoring changeset detection')
   }
+  environment {
+    // The BF1942 netcode room server is built and written but not deployed:
+    // nothing is applied until the owner flips the switch (repo convention —
+    // the play site was held the same way), and the ingress ConfigMap is a
+    // manual step that no Jenkins stage performs. Set this to 'true' once
+    // the room server exists and the owner wants it in the cluster. Unlike
+    // the play stage, this pod is NOT gated on the node budget — the
+    // owner's constraint decision in features/netcode-play-multiplayer
+    // says so explicitly.
+    NETCODE_ENABLED = 'false'
+  }
   triggers {
     githubPush()
     pollSCM('H/5 * * * *')
@@ -50,6 +61,7 @@ pipeline {
               env.UI_CHANGED = 'true'
               env.NOTIFICATIONS_CHANGED = 'true'
               env.MESH_CHANGED = 'true'
+              env.NETCODE_CHANGED = 'true'
           } else {
               env.API_CHANGED = changedFiles.any { it.startsWith('api/') } ? 'true' : 'false'
               env.UI_CHANGED = changedFiles.any { it.startsWith('ui/') } ? 'true' : 'false'
@@ -57,9 +69,15 @@ pipeline {
               env.MESH_CHANGED = changedFiles.any {
                   it.startsWith('mesh/') || it.startsWith('tools/bf1942-models/viewer/')
               } ? 'true' : 'false'
+              // The netcode image ships the room server plus the whole
+              // viewer tree, so a viewer change that rebuilds the mesh
+              // image must rebuild this one too.
+              env.NETCODE_CHANGED = changedFiles.any {
+                  it.startsWith('netcode/') || it.startsWith('tools/bf1942-models/server/') || it.startsWith('tools/bf1942-models/viewer/')
+              } ? 'true' : 'false'
           }
-          
-          echo "API_CHANGED=${env.API_CHANGED}, UI_CHANGED=${env.UI_CHANGED}, NOTIFICATIONS_CHANGED=${env.NOTIFICATIONS_CHANGED}, MESH_CHANGED=${env.MESH_CHANGED}"
+
+          echo "API_CHANGED=${env.API_CHANGED}, UI_CHANGED=${env.UI_CHANGED}, NOTIFICATIONS_CHANGED=${env.NOTIFICATIONS_CHANGED}, MESH_CHANGED=${env.MESH_CHANGED}, NETCODE_CHANGED=${env.NETCODE_CHANGED}"
         }
       }
     }
@@ -378,6 +396,82 @@ pipeline {
                           "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache"
                       fi
                       echo "Cloudflare cache purged for mesh.bfstats.io."
+                      '''
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        // BF1942 netcode room server (features/netcode-play-multiplayer,
+        // P2). DISABLED by default: the deployment files are written and
+        // NOT applied (repo convention — deployment is the owner's call),
+        // and the ingress ConfigMap that routes /netcode is a manual step
+        // no Jenkins stage performs: after this stage's apply, someone must
+        // apply deploy/app/ingress/deployment.yaml and rollout restart the
+        // haproxy deployment, because HAProxy resolves each backend name
+        // once at boot. Flip NETCODE_ENABLED to 'true' when the server
+        // exists and the owner wants it in the cluster. Left as a stage
+        // rather than a note so the difference is one word, not a rewrite.
+        stage('Netcode Pipeline') {
+          when {
+            allOf {
+              expression { env.NETCODE_ENABLED == 'true' }
+              anyOf { expression { env.NETCODE_CHANGED == 'true' }; expression { params.BUILD_ALL } }
+            }
+          }
+          stages {
+            stage('Build Netcode Docker Image') {
+              agent {
+                kubernetes {
+                  cloud 'Local k8s'
+                  yamlFile 'deploy/pod.yaml'
+                  nodeSelector 'kubernetes.io/hostname=bethany'
+                }
+              }
+              steps {
+                container('dind') {
+                  withCredentials([
+                    usernamePassword(credentialsId: 'jenkins-bf1942-stats-dockerhub-pat', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')
+                  ]) {
+                    sh '''
+                      echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+
+                      docker buildx create --name multiarch-builder-netcode --driver docker-container --use || true
+                      docker buildx use multiarch-builder-netcode
+
+                      DOCKER_BUILDKIT=1 docker buildx build -f netcode/Dockerfile . \
+                        --platform linux/arm64 \
+                        --build-arg BUILDKIT_PROGRESS=plain \
+                        --cache-from type=registry,ref=anskia/bfstats-netcode:buildcache \
+                        --cache-to type=registry,ref=anskia/bfstats-netcode:buildcache,mode=max \
+                        --push \
+                        -t anskia/bfstats-netcode:latest
+                    '''
+                  }
+                }
+              }
+            }
+            stage('Deploy Netcode') {
+              agent {
+                kubernetes {
+                  cloud 'Local k8s'
+                  yamlFile 'deploy/pod.yaml'
+                  nodeSelector 'kubernetes.io/hostname=bethany'
+                }
+              }
+              steps {
+                container('kubectl') {
+                  withCredentials([
+                    file(credentialsId: 'bf42-stats-k3s-kubeconfig', variable: 'KUBECONFIG_FILE')
+                  ]) {
+                    sh '''
+                      set -euo pipefail
+                      export KUBECONFIG="$KUBECONFIG_FILE"
+                      kubectl -n bf42-stats apply -f deploy/app/netcode-deployment.yaml
+                      kubectl -n bf42-stats rollout restart deployment/bfstats-netcode
+                      kubectl -n bf42-stats rollout status deployment/bfstats-netcode --timeout=120s
                     '''
                   }
                 }

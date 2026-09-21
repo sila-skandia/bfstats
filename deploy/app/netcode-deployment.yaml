@@ -1,0 +1,101 @@
+---
+# bfstats-netcode: the BF1942 multiplayer room server (P2 of
+# features/netcode-play-multiplayer/README.md).
+#
+# NOT APPLIED. Written for the owner to apply, in the repo's convention for
+# a feature's first deployment files (the play site was held the same way):
+# nothing here has touched a cluster. The owner's constraint decision in the
+# feature README says this pod is NOT gated on the node budget (7296/7741 Mi
+# today) — it is kept lean by construction, one Node process, no framework,
+# level data without glb scenes, and profiled on the real node once it runs.
+# It adds a hard ceiling of 192Mi to the budget sweep either way.
+#
+# Namespace bf42-stats and the overall shape mirror mesh-deployment.yaml:
+# same PVC and the same two assets subPaths, read-only; the room server is
+# the mesh site's sibling on the same volume.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bfstats-netcode
+  namespace: bf42-stats
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bfstats-netcode
+  template:
+    metadata:
+      labels:
+        app: bfstats-netcode
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: netcode
+          image: anskia/bfstats-netcode:latest
+          imagePullPolicy: Always
+          ports:
+            # The node server listens on 8080, matching the API pods'
+            # convention (mesh is 80 because nginx's default). Nothing here
+            # is a root-owned socket; the port is internal anyway and the
+            # Service maps it. The HAProxy backend targets this same 8080.
+            - containerPort: 8080
+          volumeMounts:
+            # Same PVC and the same two subPaths the mesh pod mounts, read-
+            # only: the server reads scene.json, the scene.glb JSON chunks,
+            # the vehicle glbs and the damage tables from these trees and
+            # writes nothing. The mounts overlay the image's /app/viewer/
+            # tree at the same-relative paths the server resolves through
+            # --viewer /app/viewer, so what runs on the node is exactly what
+            # runs on the worktree. subPath creates the dir if missing.
+            - name: assets-data
+              mountPath: /app/viewer/maps
+              subPath: assets/mesh/maps
+              readOnly: true
+            - name: assets-data
+              mountPath: /app/viewer/models
+              subPath: assets/mesh/models
+              readOnly: true
+          # Requests 96Mi / 50m CPU, limits 192Mi / 400m CPU — the feature
+          # README's own estimate (Node RSS ~120-200Mi with level data and
+          # rooms; ~16 soldiers + ~60 vehicles at 30 Hz is a fraction of one
+          # core). This is Node, so the SQLite per-connection multiplier
+          # warnings do not apply, but the cgroup relationship is the same
+          # one the repo documents for .NET: the container's memory limit is
+          # also Node's heap back-pressure (one process, one cgroup), so the
+          # limit is the correct ceiling, not a constraint bolted on top of
+          # an unbounded heap. requests/limits both present, as CLAUDE.md
+          # requires for every container.
+          #
+          # Intentionally NO priorityClassName: 1942-services is for the
+          # always-on core services. A room server runs a 30 Hz tick where a
+          # few milliseconds of scheduler delay is invisible, and a
+          # top-priority container is the first to evict everything else on
+          # this node — this pod must never carry that class.
+          resources:
+            requests:
+              memory: "96Mi"
+              cpu: "50m"
+            limits:
+              memory: "192Mi"
+              cpu: "400m"
+      volumes:
+        - name: assets-data
+          persistentVolumeClaim:
+            claimName: bf42-stats-pvc-v2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bfstats-netcode-service
+  namespace: bf42-stats
+spec:
+  selector:
+    app: bfstats-netcode
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: netcode
