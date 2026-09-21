@@ -1013,7 +1013,10 @@ export class FireState {
    * a caller written before this argument existed will pass.
    *
    * Heat is per pull and not per projectile: `heatAddWhenFire` is added once,
-   * which is what `fireFinished`'s own single call to the heat accumulator does.
+   * which is what the engine's own single call to the heat accumulator does —
+   * in `FireArms::Fire` at `0x0828a2f3`, above the barrel loop, not in
+   * `fireFinished` as this comment used to say. The behaviour is unchanged; the
+   * citation was wrong.
    */
   registerShot(rounds = 1) {
     if (this.hasHeat) {
