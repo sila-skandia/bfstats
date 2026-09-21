@@ -5,6 +5,21 @@ that a future stream can build bots without rediscovering the subsystem, and so
 that `SHOW_BOT_SETTINGS` in `viewer/play/menu-screen.js` can be switched on with
 real semantics behind each control.
 
+> **Second-reader pass, 2026-09-21.** Every claim below was re-derived from the
+> binaries by an independent verifier. Three things changed: the tick order in
+> §1.3 was wrong (the AI runs **first**, not last, and the one-tick bot latency
+> it implied does not exist), the `IAIMain` secondary vptr is at
+> `vtable for AIMain + 0x80` not `+ 0x78`, and the `C = 0/10/30` selection in
+> §6.2 was read on the wrong object. Two open items closed: §5.3's skirmish
+> AI-SKILL slider really is inert, and §6.2's `C` is an anti-aircraft penalty.
+> The aim-error formula, its branch sense, its constants, the call-site argument
+> order, the four-row skill table, the 55-entry `PlayerInputMap`, the 30-entry
+> `InformationType`, the difficulty jump tables, the ten `getBotSkill` call
+> sites, `AISettings::reset`'s 0.75, the `aiMeshes` binding rule and its
+> `0x411` material flags, the `Pathfinding/` coverage table, the dead
+> `precision` word, the `ai.rfa`-is-scaffolding finding and the 90-byte binary
+> diff all reproduced exactly.
+
 **Binary.** Every address below is `bf1942_lnxded.static` unless marked
 *client*, in which case it is `BF1942.exe` (sha256 `60c9452d…cd3699`, the hash
 `xref.py check` verifies). The copy read here is
@@ -115,32 +130,49 @@ This extends the corpus's partial list in
 address per name. The viewer's own `netcode.js` mask bits (Fire 8, Walk 12,
 Run 13, AltFire 23, Lie 28, Crouch 29) all check out; its Jump = ch30 and
 Pad = ch31 remain the documented departures — ch30 is `PICameraMode1` here.
+There is no `PIJump` in the enum at all: the corpus already settled that the
+engine's jump is **`c_PIAction` = 9**
+([handweapon-view-and-deviation.md](../bf1942-engine-reference/subsystems/handweapon-view-and-deviation.md)
+§2, "jump (c_PIAction) only"), so the viewer's ch30 is a departure from channel
+9, not from a channel the engine lacks.
 
 ### 1.3 The tick
 
 `GameServer::simulateFrame(float)` **0x0815c2a0** — the once-per-1/30 s
 simulation tick the netcode research established (ledger D-1) — calls, in order:
 
-| offset | call |
-|---|---|
-| +0x28 | `simulatePlayersUpdate(dt)` **0x0815bfa0** — pops one buffered action per player, applies it |
-| +0x72 | `simulatePlayersPhysics(dt)` **0x0815c0f0** |
-| +0xa2 | `Game::updateWorldCollision(dt)` **0x0805da00** |
-| +0xbe | `simulatePlayersCollisions(dt)` **0x0815c140** |
-| +0xfd | `updateGameLogic(dt)` **0x081505c0** |
-| +0x125 | `Game::updatePortals(dt)` **0x0805daa0** |
-| **+0x1b3** | **`GameServer::updateAI(dt)` 0x0813a3f0** |
+| order | offset | call |
+|---|---|---|
+| 1 | +0x09 | `game->getGameStatus()` (`Game` vptr +0x74, **0x080617b0**, reads `Game+0x58`) |
+| 2 | **+0x1b3** | **`GameServer::updateAI(dt)` 0x0813a3f0** — only when the status is 1 (`Playing`) |
+| 3 | +0x28 | `simulatePlayersUpdate(dt)` **0x0815bfa0** — pops one buffered action per player, applies it |
+| 4 | +0x72 | `simulatePlayersPhysics(dt)` **0x0815c0f0** |
+| 5 | +0xa2 | `Game::updateWorldCollision(dt)` **0x0805da00** |
+| 6 | +0xbe | `simulatePlayersCollisions(dt)` **0x0815c140** |
+| 7 | +0xfd | `updateGameLogic(dt)` **0x081505c0** (skipped when the status is 4) |
+| 8 | +0x125 | `Game::updatePortals(dt)` **0x0805daa0** (skipped when the status is 4) |
+
+**The `+0x1b3` block is not the last thing that runs; it is the last thing that
+is *laid out*.** `dec eax / je 0x0815c449` at **0x0815c2b8** sends control to
+the cold block gcc parked at the end of the function, and that block ends
+`jmp 0x0815c2be` (**0x0815c45b**) — back into the main body at +0x1e, one
+instruction past the branch. So `updateAI` runs **before**
+`simulatePlayersUpdate`, not after it. The status values come from
+`GameServer::updateGameLogic` **0x081505c0**, which switches the same
+`Game+0x58` field: 1 → `gameStatusPlaying`, 2 and 5 → `gameStatusEndGame`,
+3 → `gameStatusPreGame`.
 
 `Game::updateAI(float)` **0x0805da50** is three virtual calls on the singleton
 `dice::bf::ai::IAIMain::instance` (**0x0874fb8c**): `isInitialised()`
 (IAIMain vptr +0x1c), then `tick(dt)` (+0x24), then `action()` (+0x28).
 `GameServer::updateAI(float)` **0x0813a3f0** is the server's identical twin.
 Those slots resolve through the **secondary** vtable of `AIMain` —
-`vtable for dice::bf::ai::AIMain` + 0x78 is the `IAIMain` sub-object's vptr —
-to `AIMain::isInitialised` 0x08479520, `AIMain::tick(float)` 0x08479580 and
-`AIMain::action()` 0x084778d0. (`vt.py "ai::AIMain"` prints both tables; the
-gcc "+8" rule applies to the first, the thunk block starting at +0x78 is the
-second.)
+`vtable for dice::bf::ai::AIMain` + **0x80** is the `IAIMain` sub-object's vptr
+(the symbol carries the secondary offset-to-top `0xfffffffc` at +0x78 and the
+typeinfo at +0x7c; the "+8" rule applies to the secondary table exactly as it
+does to the primary) — to `AIMain::isInitialised` 0x08479520 through the thunk
+at symbol +0x9c, `AIMain::tick(float)` 0x08479580 through +0xa4 and
+`AIMain::action()` 0x084778d0 through +0xa8.
 
 Bots go through `simulatePlayersUpdate` like everyone else:
 **0x0815bfa0** walks the whole `playerManager` list and calls
@@ -148,11 +180,22 @@ Bots go through `simulatePlayersUpdate` like everyone else:
 which is exactly the bot case, a player with no network client — as well as for
 clients whose byte `+0x09` flag is set. There is no separate bot update path.
 
-**The AI runs last in the tick.** So a bot's decision lands in its
-`ActionBuffer` after `simulatePlayersUpdate` has already run, and takes effect
-on the *next* tick: **a bot has exactly one tick (1/30 s) of built-in input
-latency**, the same as a networked human. A viewer that feeds bot input into its
-own `World.setInput()` at the end of a tick reproduces this for free.
+**The AI runs first in the tick, not last.** The whole chain —
+`simulateFrame` -> `GameServer::updateAI` -> `IAIMain::action()` ->
+`AIMain::action()` (0x0847798b) -> `BotManager::action()` (0x0849a166) ->
+`actionExecutePlan()` -> `bot->updatePlayerAction(bool)` (Bot vptr +0xb8, called
+at **0x0849a640**) -> `AIPlayer::addInput` -> `ActionBuffer::pushBack` — has
+already pushed this tick's bot action into the buffer by the time
+`simulatePlayersUpdate` runs. A bot therefore does **not** pay the extra tick of
+latency an earlier draft of this document claimed; its freshly written action is
+in the buffer the consumer reads in the same `simulateFrame`.
+
+**UNVERIFIED**: whether `GameServer::simulatePlayerUpdate` **0x0815bd00** then
+actually consumes that newest entry or an older one. It selects by a sequence
+index (`cmp eax,0x36` at 0x0815bd3b, `cmp eax,0xffffffff` at 0x0815bd75) that
+was not decoded here, so the *realised* bot latency is 0 or 1 ticks and the
+buffer-selection rule decides which. What is settled is the ordering: the write
+precedes the read.
 
 ### 1.4 `AIMain::action()` is a time budget, not a loop over bots
 
@@ -253,11 +296,13 @@ over vanilla plus 18 mods (61 hits):
 | mod | `setMaxNBots` | `setBotSkill` |
 |---|---|---|
 | bf1942 (vanilla) | 64 | **never called** |
-| bf1918 | 256 | one call, no argument on the line |
+| bf1918 | 256 | one call, `aiSettings.setBotSkill<TAB>1` in `game.rfa`'s `AIbehaviours.con` |
 | bfheroes, WarFront | 255 | 1.0 (WarFront also 0.7) |
-| FH, FHSW, EoD | (inherited) | 1.0 (FHSW has a commented-out 0.75) |
+| FH, FHSW | (inherited) | 1.0 (FHSW has two `rem`-ed 0.75 lines, in `Remagen` and `Remagen_jet`) |
+| EoD | 64 | 1.0 (twice: `ai.rfa` and `game.rfa`) |
 | bg42 | 64 | 0.8 |
-| GCMOD, Pirates, FinnWars, interstate, XPack1/2 | 64 | never |
+| GCMOD, Pirates, FinnWars, interstate | 64 | never |
+| XPack1/2, DC_Final, DesertCombat | (neither word appears in their own archives) | never |
 
 Vanilla never sets `botSkill` from data at all, which makes
 `AISettings::reset()`'s default (§6) the value that actually runs.
@@ -345,8 +390,8 @@ and the per-level archives.
 ### 3.2 What the shipped AI data actually is
 
 Survey over vanilla plus 18 mods (`python3 scratchpad/w5d/survey_ai_files.py`,
-13,997 matching entries; six FHSW/bg42 level archives fail to open at all and
-are reported):
+13,997 matching entries; six level archives fail to open at all and are
+reported — four in FHSW and two in FHSWEurope, none in bg42):
 
 | normalised path | count | what it is |
 |---|---|---|
@@ -377,6 +422,7 @@ Plus, and this the earlier survey pattern missed because the directory is
 | bf1918 | 134 | 112 |
 | WarFront | 90 | 81 |
 | bfheroes | 35 | 33 |
+| FHSWEurope | 6 | 6 |
 | DC_Final / DesertCombat | 48 / 35 | 7 / 8 |
 | FinnWars | 70 | 1 |
 | GCMOD, Pirates, interstate | 30 / 33 / 13 | **0** |
@@ -823,14 +869,41 @@ in both `c6`- and `88`-encoded forms
 (`python3 scratchpad/w5d/pescan.py 'c6 ?? 88 00 00 00'` and `'88 ?? 88 00 00 00'`,
 ten sites total) found no other writer on this object.
 
-Read literally that means the Instant Battle **AI SKILL slider does nothing** in
-1.61 retail: `+0x88` stays 0, `0 - 1` fails the `CMP ECX,3 / JA` range check,
-and the default arm gives 0.5 whatever the slider says. **I am flagging this as
-OPEN, not asserting it.** A second reader should check the remaining
-`mov byte [reg+0x88]` sites (0x00490e86, 0x0049681c, 0x007b30d0, 0x007b314d,
-0x00490f19, 0x0049103a, 0x004999af, 0x0068d5b4, 0x007b300d) and any
-computed-address write, and ideally test it in wine: set AI SKILL to EASY and to
-IMPOSSIBLE and see whether bot accuracy changes.
+That means the Instant Battle **AI SKILL slider does nothing** in 1.61 retail:
+`+0x88` stays 0, `0 - 1` fails the `CMP ECX,3 / JA` range check, and the default
+arm gives 0.5 whatever the slider says.
+
+**SETTLED by a second reader, 2026-09-21.** The object is identified without
+ambiguity: it is allocated `new 0x8c` at **0x006ddb74**, constructed at
+**0x006dc800** (vptr `0x0092454c`, which occurs in exactly two places in the
+whole image — that constructor and the destructor at 0x006dc866), and stored at
+`[parent+0x0c]`. Its constructor sets `+0x64 = +0x68 = +0x6c = +0x70 = 2`,
+`+0x78 = 1`, `+0x7c = 0`, `+0x80 = 0` and `+0x88 = 0` (`xor ebx,ebx` at
+0x006dc804, so the `bl` stored at 0x006dc84b is 0). Over a full
+`objdump -d` of `BF1942.exe`:
+
+- **byte writes to `[reg+0x88]`**: ten sites in the image, the nine besides the
+  constructor all on other classes (0x00490e86 / 0x00490f19 / 0x0049103a and
+  0x004999af initialise objects with a string at `+0x8c` and `+0x80/+0x84 = -1`;
+  0x0049681c writes `+0xc4` and `+0x180`; 0x0068d5b4 an object with
+  `+0x6c = 3` and colour words; 0x007b300d / 0x007b30d0 / 0x007b314d a
+  window-ish object linked through `[+0x64]+0x4`). None has the
+  `+0x64..+0x70 = 2` / `+0x84` pointer layout.
+- **writes of any width whose base was loaded from `[X+0x0c]`**: none.
+- **`lea reg,[obj+0x88]`**: 25 sites; the only two that feed the menu variable
+  registrar `0x0069eb50` bind the names `"Tickets"` (0x006bea9b) and
+  `"GameKit"` (0x006cc3ce) on unrelated objects.
+- **byte reads of `[reg+0x88]`**: eight in the image, exactly two of them on
+  this object — `FUN_006dd910` at 0x006dd929, and a getter at **0x006ddb20**
+  (`return this->[0x0c]->byte_0x88`) called from 0x006aab03 and 0x006abfbe.
+  The field has a getter and **no setter**.
+- **the value the slider does write**, `+0x64`, is read only at 0x006dd479
+  (formatting it into `SinglePlayerSettings.con`) and 0x006dd6e8 (a
+  save/restore pair with 0x006dd8c2). Nothing routes it to `setBotSkill`.
+
+So AI SKILL in Instant Battle is inert in retail 1.61 and botSkill is always
+0.5 on that path. A wine test is no longer needed to establish it, though one
+would still be a nice confirmation.
 
 **What the viewer should do meanwhile**: wire the slider to botSkill using the
 §5.2 table (1→0.25, 2→0.5, 3→0.75, 4→1.0). That is the mapping the engine's own
@@ -869,7 +942,7 @@ them to the AI. Do not build a difficulty model on those two console words.
 | **+0x24** | **`0x3f400000` = 0.75** | **`botSkill`** | `getBotSkill` 0x08484760 / `setBotSkill` **0x08484770** — a bare store, no clamp, no declared range (`objectHasRange()` **0x084c44d0** returns 0) |
 | +0x28 | `0x40000000` = 2.0 | SAI update frequency | `getSAIUpdateFrequency` 0x08484920 |
 | +0x2c | `0x20` = 32 | information-grid dimension | `getInformationGridDimension` 0x08484400 |
-| +0x30 | (not in `reset`) | number of sides | `getNSides` 0x08484440 |
+| +0x30 | `0` | number of sides | `getNSides` 0x08484440 (written by `reset` at 0x0848460c) |
 
 So with vanilla data, which never calls `aiSettings.setBotSkill`, **the default
 bot skill is 0.75 — the game's own HARD**. A level's `AI.con` overrides
@@ -951,18 +1024,50 @@ term on the next deviation update**, not a persistent state — which is exactly
 what the corpus already recorded as the unexplained `aiPending` channel. That
 row can now be closed.
 
-`C` is 0.0, 10.0 or 30.0 depending on two flag tests on the target's
-`Information` record and one virtual call (`0x08625d8b`, `0x08625d91`); at skill
-1.0 the `C` term still contributes `0.25*C`, so an IMPOSSIBLE bot is not
-literally perfect against whatever those flags select. **UNVERIFIED**: what
-selects 10 vs 30 vs 0. The tested bits are `Information+0x04 & 0x10` (ITAir,
-under §4.3's inferred mirror) and `+0x04 & 0x40` (ITNaval), which would make
-`C` an air/naval lead-and-range penalty, but that reading was not confirmed.
+`C` is 0.0, 10.0 or 30.0, and the selection **is** readable. Two different
+`Information` records are involved, not one: `E` = the bot's own current
+equipment (`bot->vt[0xd0]()` = `BotMain::getCurrentEquipment`, resolved through
+the handle table at `0x087beee0` at 0x08625cf0) and `T` = the bot's firing
+target (`bot->vt[0x80]()` = `BotMain::getFiringTarget`, resolved the same way at
+0x08625dd7). Then, reading the branches at 0x08625d81 / 0x08625e18 /
+0x08625e5c / 0x08625e64:
+
+```
+if (E.typeMask & ITAir)                      C = 0.0    // 0x08625d81
+else if (T is null)                          -> no setBotSkill call at all
+else if (!(T.typeMask & ITAir))              C = 0.0    // 0x08625e18
+else if (E->[0x20]->vt[0x6c]())              C = 10.0   // 0x08625e54
+else if (E.typeMask & ITNaval)               C = 10.0   // 0x08625e64
+else                                         C = 30.0
+```
+
+So `C` is an **anti-aircraft penalty on the shooter**, not a property of the
+target class as such: it is 0 for every ground-versus-ground engagement and for
+any bot that is itself flying, 30 for an ordinary ground bot shooting at an
+aircraft, and 10 for a naval bot (or one satisfying the unidentified predicate
+at `E->[0x20]` vtable +0x6c) doing the same. The bit positions are `ITAir` = 4
+(`0x10`) and `ITNaval` = 6 (`0x40`) in the §4.3 enum, read out of
+`Information+0x04` under §4.3's inferred mirror. At skill 1.0 the term still
+contributes `0.25*C`, so an IMPOSSIBLE bot shooting at a plane still carries
+7.5 units of error. Dropping `C` in the table below is therefore correct for
+infantry-versus-infantry, which is the case a viewer builds first.
+
+**UNVERIFIED**: what `E->[0x20]`'s vtable slot +0x6c tests.
+
+(The earlier draft of this section put both flag tests on the target's record
+and cited `0x08625d91`, which is not an instruction boundary.)
 
 ### 6.3 The AI weapon table across the install
 
 `python3 scratchpad/w5d/survey_ai_weapons.py` — 3,290 AI `weaponTemplate`s
-across vanilla and 18 mods:
+across vanilla and 18 mods. **Scope caveat**: that script only opens archives
+whose *name* contains `objects`. Re-running the same scan over every archive
+finds a further **540** AI `weaponTemplate.create` lines in level archives and
+`GCMOD/texture.rfa` (3,830 in all) — including 17 in vanilla's own
+`Kasserine_Pass.rfa`. The per-word counts below are therefore the
+`*objects*.rfa` subtotal, not the install total; the ratios and the
+conclusions are unaffected, and no level-archive template sets `deviation` in
+vanilla:
 
 | word | uses |
 |---|---|
@@ -977,7 +1082,7 @@ across vanilla and 18 mods:
 | `exitVelocity` | 63 |
 | `useAimerOnly` | 49 |
 | `healing` | 33 |
-| `precision` | 16 — **not a registered console word in 1.61; these lines are dead** |
+| `precision` | 16 (15 by an all-archive rescan, all in `WarFront/Objects.rfa`) — **not a registered console word in 1.61; these lines are dead**. Verified by a case-insensitive byte scan of both binaries: the only `precision` tokens are `shadowPrecision` and libstdc++ symbols, while `deviation`, `deviationCorrectionTime`, `minRange`, `maxRange`, `burst` and `weaponFire` each occur exactly once |
 | `drag` | 4 (registered: `ConsoleClass623`, record `0x087cf840`) |
 
 Vanilla sets `deviation` on exactly four templates and
@@ -1088,8 +1193,8 @@ The urgency contest, plans, the strategic layer.
 
 - The decoded `Pathfinding/*.raw` grid (§3.4).
 - The sensing model: what a bot can see, at what range, through what, with what
-  delay. `AISettings::getViewDistance` (default 512, Gazala 300) and
-  `setStatsViewDistance` exist; the frustum test and the `AIInformationGrid`
+  delay. `AISettings::getViewDistance` (default 600, Gazala 300) and
+  `getStatsViewDistance` (default 512) exist; the frustum test and the `AIInformationGrid`
   sweep were not opened.
 - What selects `C = 0/10/30` in the deviation formula (§6.2).
 - Whether the skirmish AI-skill slider is live (§5.3).
@@ -1149,10 +1254,10 @@ analysis was re-run.
 
 | # | Open | Where to start |
 |---|---|---|
-| A | Is the Instant Battle AI-skill slider live? `FUN_006dd910`'s skirmish arm reads a byte at `SkirmishSettings+0x88` with no writer found | §5.3; test in wine |
+| A | ~~Is the Instant Battle AI-skill slider live?~~ **CLOSED, it is not** — `SkirmishSettings+0x88` has a getter and no setter anywhere in `BF1942.exe` | §5.3 |
 | B | Where `SkirmishPercentageOfBots` / `OfCpu` land | §5.4 |
 | C | The `Pathfinding/*.raw` row encoding and world scale | §3.4, `CellMap::loadRawFile` 0x085f86a0 |
-| D | What selects `C = 0/10/30` in the deviation formula | §6.2, 0x08625d8b |
+| D | ~~What selects `C = 0/10/30`~~ **CLOSED** — an anti-aircraft penalty keyed on the bot's own equipment and its firing target; one sub-predicate (`E->[0x20]` vtable +0x6c) still unnamed | §6.2 |
 | E | Whether `Information+0x04` really mirrors the `aiTemplate.addType` mask | §4.3 |
 | F | The sensing model (frustum, grid, hearing) | `BotMain::sense` 0x08521cf0 |
 | G | The per-behaviour urgency and plan generators | 0x0853–0x0862 |
