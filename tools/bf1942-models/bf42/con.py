@@ -658,6 +658,17 @@ class ObjectTemplate:
     kit_health_bar_icon: str | None = None
     kit_health_bar_full_icon: str | None = None
     kit_icon: tuple[int, str] | None = None
+    # `setKitName <slot> "<LEXICON_KEY>"`: the kit's own display name, a
+    # lexicon key (vanilla's kits spell RESPAWN_SCOUT / RESPAWN_ASSAULT /
+    # RESPAWN_AT / RESPAWN_MEDIC / RESPAWN_ENGINEER; Eve of Destruction
+    # spells RESPAWN_RIFLEMAN, RESPAWN_MACHINE_GUNNER, RESPAWN_ADVISOR,
+    # RESPAWN_CHOPPERPILOT, and its own lexicon even re-points
+    # RESPAWN_SCOUT at "Sniper"). The key is stored raw; the mod chain's
+    # lexicon resolves it at extraction time (extract_loadouts.py), the
+    # same code the SkirmishMenu titles run through. A companion
+    # `setKitActiveName` exists for the selected-row highlight and is not
+    # read: the deploy screen labels the row, not the highlight.
+    kit_name: tuple[int, str] | None = None
     kit_weapon_icons: list[str] = field(default_factory=list)
 
     # -- Soldier constants ----------------------------------------------------#
@@ -1787,6 +1798,18 @@ class ObjectLibrary:
                             continue
                         if icon := tokens[1].strip().strip('"'):
                             obj.kit_icon = (index, icon)
+                elif cmd == "setkitname":
+                    # Same shape as `setkiticon`: an authored index and a
+                    # quoted lexicon key. The key is a lexicon word, not a
+                    # display string, so it is kept raw (see `kit_name`).
+                    tokens = args.split(None, 1)
+                    if len(tokens) == 2:
+                        try:
+                            index = int(float(tokens[0]))
+                        except ValueError:
+                            continue
+                        if key := tokens[1].strip().strip('"'):
+                            obj.kit_name = (index, key)
                 elif cmd == "addweaponicon":
                     if token := args.strip().strip('"'):
                         obj.kit_weapon_icons.append(token)
