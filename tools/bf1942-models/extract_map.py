@@ -334,8 +334,20 @@ def find_weapon_scripts(library, objects: ArchivePool,
     (`Weapons.con` puts `loadSoundScript Sounds/CorsairMG.ssc` directly on
     `CorsairGuns`), not to a child of it.
 
-    Returns `(fire arms name, archive path, script path)` per gun that has one;
-    a bomb rack has no sound script and simply does not appear.
+    Returns `(fire arms name, archive path, script path)` per gun that has one.
+
+    A bomb rack declares none of its own, and used to "simply not appear" here —
+    which was gap G-5: the release thump and the falling whistle are one
+    `loadSoundScript ../air/common/Sounds/Bomb.ssc` on the **projectile**
+    (`DiveBomberBomb` and its two siblings, `Objects/Vehicles/Common/
+    Weapons.con`), not on the FireArms, and `projectileTemplate` is not a child
+    ref so the walk below never reached it. The rack's projectile is now asked
+    too, and the script is reported under the RACK's name: the viewer keys its
+    weapon audio on the FireArms node, and a bomb whose sound arrived under
+    `DiveBomberBomb` would belong to nothing on screen. A gun whose own script
+    is present keeps it — the projectile is consulted only as a fallback, so no
+    machine gun's `Projectile.ssc` (a ricochet script, three of them in vanilla)
+    can displace the gun's own fire patch.
     """
     root = library.objects.get(template.lower())
     if root is None:
@@ -349,20 +361,34 @@ def find_weapon_scripts(library, objects: ArchivePool,
         if key in seen:
             continue
         seen.add(key)
-        if node.kind.lower() == "firearms" and node.source:
-            con_hit = objects.find(node.source)
-            if con_hit is not None:
-                scripts = parse_sound_scripts(
-                    objects.read(con_hit).decode("latin-1"))
-                entry = scripts.get(node.name.lower())
-                if entry is not None:
-                    found.append((node.name, node.source,
-                                  resolve_ssc_path(node.source, entry[1])))
+        if node.kind.lower() == "firearms":
+            hit = _weapon_script(objects, node)
+            if hit is None and node.projectile_template:
+                projectile = library.objects.get(
+                    node.projectile_template.lower())
+                if projectile is not None:
+                    hit = _weapon_script(objects, projectile)
+            if hit is not None:
+                found.append((node.name, hit[0], hit[1]))
         for ref in node.children:
             child = library.objects.get(ref.template.lower())
             if child is not None:
                 queue.append(child)
     return found
+
+
+def _weapon_script(objects: ArchivePool, node) -> tuple[str, str] | None:
+    """`(archive path, resolved .ssc path)` for `node`'s own `loadSoundScript`."""
+    if not node.source:
+        return None
+    con_hit = objects.find(node.source)
+    if con_hit is None:
+        return None
+    scripts = parse_sound_scripts(objects.read(con_hit).decode("latin-1"))
+    entry = scripts.get(node.name.lower())
+    if entry is None:
+        return None
+    return node.source, resolve_ssc_path(node.source, entry[1])
 
 
 # `silence.wav` is how a gun script says "this patch is not used". Every vanilla
