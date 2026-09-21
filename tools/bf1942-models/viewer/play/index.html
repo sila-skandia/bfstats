@@ -2,30 +2,35 @@
 <!--
   BF1942 in the browser - the way in.
 
-  The game's own Singleplayer > Instant Battle screen: `menu/Background`,
-  `menu/SkirmishMenu` and `menu/SkirmishNavigation` out of
-  `Mods/bf1942/Archives/menu.rfa`, flattened by `extract_menu_layout.py` and
-  painted leaf by leaf into one canvas. Nothing here is CSS that resembles
-  the game - the plates, the bitmap faces, the strings, the rectangles and
-  the colours are all the shipped files. The page's own CSS is the black
-  field the canvas sits in and nothing else.
+  The game's own front end, two tabs of it. SINGLEPLAY is
+  Singleplayer > Instant Battle (`menu/Background`, `menu/SkirmishMenu` and
+  `menu/SkirmishNavigation` out of `Mods/bf1942/Archives/menu.rfa`, flattened
+  by `extract_menu_layout.py`); MULTIPLAY is the server browser
+  (`menu/InternetMenu` and `menu/InternetNavigation`, by
+  `extract_main_menu_layout.py`), with the room server's rooms in the list
+  the engine fills from GameSpy. The strip over both is
+  `menu/MainMenuNavigation`, the game's own tab plates and faces, and the
+  CREATE GAME button under it is `menu/MultiplayerNavigation`'s.
 
-  The rows of the level list are the one part the file does not hold: the
-  engine fills `Skirmish/SkirmishLevelsList` from the level archives at
-  runtime, so they come from `menu-levels.json` joined against the levels
-  this viewer actually has (`maps/maps.json`).
+  Nothing here is CSS that resembles the game - the plates, the bitmap
+  faces, the strings, the rectangles and the colours are all the shipped
+  files, painted leaf by leaf into a canvas. The page's own CSS is the black
+  field the canvases sit in and nothing else.
+
+  The rows of either list are the one part no file holds. The engine fills
+  `Skirmish/SkirmishLevelsList` from the level archives at runtime and
+  `Join/Internet/InternetServerList` from the master server; here they come
+  from `menu-levels.json` joined against the levels this viewer has
+  (`maps/maps.json`) and from `GET /netcode/rooms`.
 
   START loads `../map.html?map=<level>&team=<1|2>` plus `mode=` and `mod=`
-  where they apply, which is the same map page the mesh site serves, not a
-  copy of it. The game's Instant Battle runs a level's CoOp game type, so
-  this asks for it too wherever the level list says the level has that
-  layout -- 19 of the 23 vanilla levels, recorded per level as `singlePlayer`
-  in `menu-levels.json`. See `features/bf1942-3d-models/game-modes.md`.
+  where they apply; JOIN and CREATE GAME load the same page with `room=` and
+  `name=`. It is the map page the mesh site serves, not a copy of it.
 
-  The screen itself is `skirmish.js`, which is a controller over a canvas
-  rather than a page: `map.html` mounts the same one over a running level as
-  its Escape menu, with the fourth page (`menu/ExitMenu`'s END CURRENT GAME
-  button) up. This page is that controller with no game behind it.
+  Both screens are controllers over a canvas rather than pages:
+  `skirmish.js` is mounted again by `map.html` as its Escape menu, with the
+  fourth page (`menu/ExitMenu`'s END CURRENT GAME button) up and no tab
+  strip - there is no front end behind a running level to navigate.
 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -38,13 +43,17 @@
     background: #000;
     overflow: hidden;
   }
-  /* The game's arrow cursor is the pointer's own; the canvas is the screen. */
-  #screen {
+  /* The game's arrow cursor is the pointer's own; a canvas is the screen.
+     Both tabs are one, stacked; the one that is not up is not painted. */
+  .screen {
+    position: absolute;
+    inset: 0;
     display: block;
     width: 100%;
     height: 100%;
     touch-action: manipulation;
   }
+  .screen[hidden] { display: none; }
   #status {
     position: fixed;
     inset: auto 0 0 0;
@@ -54,160 +63,119 @@
     background: #000;
   }
   #status:empty { display: none; }
-  /* The P2 lobby: the room server's own panel, page type, not menu type —
-     the engine's join wiring was never in the extracted layout, so the
-     panel is this page's addition over the Instant Battle screen. */
-  .rooms-open {
-    position: fixed;
-    left: 14px;
-    bottom: 14px;
-    padding: 8px 14px;
-    font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: #cfcfc4;
-    background: #000;
-    border: 1px solid #2d2d2d;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-  .rooms-open:hover { border-color: #9aa666; }
-  .rooms-panel {
-    position: fixed;
-    right: 14px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: min(360px, calc(100% - 28px));
-    padding: 12px 14px;
-    background: rgba(19, 19, 19, .94);
-    border: 1px solid #2d2d2d;
-    border-radius: 6px;
-    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: #cfcfc4;
-    box-sizing: border-box;
-  }
-  .rooms-head {
-    font-weight: 700;
-    letter-spacing: .12em;
-    color: #9aa666;
-    margin-bottom: 8px;
-  }
-  .rooms-list {
-    max-height: 220px;
-    overflow: auto;
-    border: 1px solid #2d2d2d;
-    background: #000;
-    margin-bottom: 8px;
-  }
-  .rooms-row { padding: 5px 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .rooms-row:hover { background: #222; color: #fff; }
-  .rooms-empty { color: #8a8a8a; padding: 6px 8px; }
-  .rooms-field { display: block; margin: 6px 0; }
-  .rooms-field input {
-    width: 100%;
-    box-sizing: border-box;
-    margin-top: 3px;
-    padding: 5px 8px;
-    background: #000;
-    color: #e8e8d8;
-    border: 1px solid #2d2d2d;
-    border-radius: 3px;
-    font: inherit;
-  }
-  .rooms-field input:focus { outline: 1px solid #7d8849; }
-  .rooms-actions { display: flex; gap: 8px; margin-top: 10px; }
-  .rooms-actions button {
-    flex: 1;
-    padding: 7px 0;
-    font: inherit;
-    color: #e8e8d8;
-    background: #222;
-    border: 1px solid #2d2d2d;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-  .rooms-actions button:hover { border-color: #9aa666; }
-  .rooms-status { margin-top: 8px; color: #8a8a8a; min-height: 1em; }
-  /* The lobby's own trouble modal: the room server isn't answering, and
-     CREATE/JOIN would otherwise navigate into a dead page (map.html shows
-     the same modal there — here the player gets the reason before the
-     reset). The panel is this page's family. */
-  .rooms-issue {
-    position: fixed;
-    inset: 0;
-    z-index: 20;
-    display: grid;
-    place-items: center;
-    background: rgba(0, 0, 0, .55);
-  }
-  .rooms-issue[hidden] { display: none; }
-  .rooms-issue-panel {
-    width: min(400px, calc(100% - 40px));
-    padding: 18px 20px;
-    background: rgba(19, 19, 19, .96);
-    border: 1px solid #2d2d2d;
-    border-radius: 6px;
-  }
-  .rooms-issue-title {
-    font-weight: 700;
-    letter-spacing: .12em;
-    color: #9aa666;
-    margin-bottom: 10px;
-  }
-  .rooms-issue-message { margin: 0 0 16px; white-space: pre-wrap; color: #cfcfc4; }
   /* Focusable so the keyboard reaches the list the way the game's does. */
-  #screen:focus-visible { outline: 1px solid #7d8849; outline-offset: -1px; }
+  .screen:focus-visible { outline: 1px solid #7d8849; outline-offset: -1px; }
 </style>
 
-<canvas id="screen" tabindex="0" aria-label="Instant Battle"></canvas>
+<canvas class="screen" id="screen" tabindex="0" aria-label="Instant Battle"></canvas>
+<canvas class="screen" id="screen-mp" tabindex="0" aria-label="Multiplayer" hidden></canvas>
 <p id="status">Loading…</p>
-<button class="rooms-open" id="rooms-open" hidden>PLAY ONLINE</button>
 
 <script type="module">
 import { createSkirmishScreen } from './skirmish.js';
-import { createRoomsPanel } from './rooms.js';
+import { createMultiplayScreen } from './multiplay.js';
 
 const canvas = document.getElementById('screen');
+const canvasMp = document.getElementById('screen-mp');
 const status = document.getElementById('status');
 
-// The way in: the screen with no game behind it, so no END CURRENT GAME
+// The two rows the front end draws, named by the locale key of the label in
+// `main-menu-layout.json` (see `nav-strip.js`). The game's strip has six
+// tabs and the row under MULTIPLAY has four buttons; this site answers for
+// two and one, and a tab that goes nowhere is worse than a tab that is not
+// there. `slot: 0` puts CREATE GAME in the first slot of its row rather than
+// the third, where INTERNET and LOCAL would have been.
+const TABS = [
+  { page: 'mainNav',
+    items: [{ key: 'MENU_SINGLEPLAY', id: 'singleplay' },
+            { key: 'MENU_MULTIPLAY', id: 'multiplay' }] },
+];
+const MULTIPLAY_TABS = [
+  ...TABS,
+  { page: 'multiplayerNav',
+    items: [{ key: 'MENU_CREATE_GAME', id: 'create', slot: 0 }] },
+];
+
+// The player's name. The game keeps it in `menu/MainMenu`'s PROFILE panel,
+// which this front end does not draw yet; until it does the name rides the
+// query string or the last one used.
+const NAME_KEY = 'bf42-mesh-player-name';
+const params = new URLSearchParams(location.search);
+const playerName = (() => {
+  const asked = params.get('name');
+  try {
+    if (asked) localStorage.setItem(NAME_KEY, asked);
+    return asked || localStorage.getItem(NAME_KEY) || 'Player';
+  } catch (_) { return asked || 'Player'; }
+})();
+
+// --- the two screens ---------------------------------------------------------
+//
+// The way in: Instant Battle with no game behind it, so no END CURRENT GAME
 // button, the menu loop playing, and START going where the link goes.
-// `map.html` mounts the same controller as its Esc menu — see
-// `skirmish.js`.
+// `map.html` mounts the same controller as its Esc menu — see `skirmish.js`.
 const screen = createSkirmishScreen({
   canvas,
   root: '../',
   music: true,
+  tabs: TABS,
+  onTab: id => show(id),
   onStatus: text => { status.textContent = text; },
 });
+
+// The MULTIPLAY tab is built with the page but only loaded when it is first
+// asked for: the room server's lobby is a poll, and a player who never
+// leaves Instant Battle should not be starting one.
+const multiplay = createMultiplayScreen({
+  canvas: canvasMp,
+  root: '../',
+  tabs: MULTIPLAY_TABS,
+  onTab: id => (id === 'create' ? multiplay.openCreate() : show(id)),
+  onStatus: text => { status.textContent = text; },
+});
+multiplay.setName(playerName);
+
+let tab = 'singleplay';
+let multiplayLoaded = null;
+
+function show(id) {
+  if (id === tab) return;
+  tab = id;
+  const online = id === 'multiplay';
+  canvas.hidden = online;
+  canvasMp.hidden = !online;
+  screen.strip?.setActive(id);
+  multiplay.strip?.setActive(id);
+  if (!online) {
+    multiplay.stop();
+    screen.paint();
+    canvas.focus();
+    return;
+  }
+  status.textContent = '';
+  multiplayLoaded ??= multiplay.load().catch(error => {
+    status.textContent = `Multiplayer screen unavailable: ${error.message}. `
+      + 'From tools/bf1942-models run: python3 extract_main_menu_layout.py';
+    console.error(error);
+  });
+  multiplayLoaded.then(() => { multiplay.start(); multiplay.paint(); });
+  canvasMp.focus();
+}
 
 canvas.addEventListener('keydown', event => {
   if (screen.keydown(event)) event.preventDefault();
 });
+canvasMp.addEventListener('keydown', event => {
+  if (multiplay.keydown(event)) event.preventDefault();
+});
 
-// --- the P2 lobby ------------------------------------------------------------
-// `?room=` starts a game straight into a room (the smoke test's own path);
-// the button opens the rooms panel where the room server is reachable.
-// The level for CREATE ROOM rides the screen's already-loaded list, and
-// joining a room leaves the level to the room server (map.html switches to
-// the hello's level).
-const openBtn = document.getElementById('rooms-open');
-const rooms = createRoomsPanel({
-  levels: () => screen.levels.map(l => ({ name: l.name })),
-  onJoin: (room, name, level) => {
-    const args = new URLSearchParams({ room, name });
-    if (level) args.set('map', level);
-    location.assign(`../map.html?${args}`);
-  },
-});
-openBtn.hidden = false;
-openBtn.addEventListener('click', () => {
-  if (rooms.visible) rooms.hide();
-  else rooms.show();
-});
-window.__rooms = rooms;
+// `?tab=multiplay` opens on the room list, which is where a link shared out
+// of a room wants to land.
+if (params.get('tab') === 'multiplay') queueMicrotask(() => show('multiplay'));
 
 // --- the harness -------------------------------------------------------------
 //
-// The same shape `map.html` offers: a headless check drives the screen and
+// The same shape `map.html` offers: a headless check drives a screen and
 // reads its state back rather than screen-scraping a canvas.
 window.__menu = {
   get state() { return screen.state; },
@@ -224,8 +192,12 @@ window.__menu = {
   unlockAudio: screen.unlockAudio,
   chooseMod: screen.chooseMod,
   paint: screen.paint,
+  get tab() { return tab; },
+  show,
   ready: false,
 };
+
+window.__multiplay = multiplay;
 
 screen.load().then(() => { window.__menu.ready = true; })
   .catch(error => {
