@@ -57,6 +57,18 @@ class ClipRef:
     def is_first_person(self) -> bool:
         return "/1p/" in self.path.replace("\\", "/").lower()
 
+    @property
+    def loops(self) -> bool:
+        """`addAnimation <path> <speed> <loop>`'s third word, as a bool.
+
+        The scripts write it three ways — a bare `1`, the console constant
+        `c_AsmLooping`, and (in mods) `true` — and a one-shot writes `0` or
+        `c_AsmPlayOnce`. It decides whether a baked clip's last keyframe wraps
+        back to frame 0 (`extract_pose.timeline_tracks`), so a `PlayOnce`
+        parachute opening does not snap the canopy shut at the end of its pass.
+        """
+        return self.looping.strip().lower() in ("1", "c_asmlooping", "true")
+
 
 @dataclass
 class State:
