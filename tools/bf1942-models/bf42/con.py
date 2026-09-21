@@ -964,12 +964,15 @@ class ObjectTemplate:
     # both grenades, the explosives pack and the landmine — declare these, and
     # they are what makes a throw read as a throw rather than a muzzle flash.
     #
-    # `fireDelay` is the lockout AFTER a shot, not a wind-up before it:
-    # `FireArms::Fire` (lnxded 0x0828a090) returns early when the countdown is
-    # still running — arming a pending shot that `handleUpdate` (0x08288890)
-    # releases at expiry — and otherwise fires immediately and only then sets
-    # the countdown from this value. So the projectile leaves on the click and
-    # this is the earliest the next one can.
+    # `fireDelay` is the wind-up: seconds from the trigger to the round.
+    # `FireArms::Fire` (lnxded 0x0828a090) arms a pending shot against this
+    # countdown and `handleUpdate` (0x08288890) releases it at expiry. An
+    # earlier reading of those two functions took it for a lockout AFTER the
+    # shot; the data settles it the other way. The grenades declare 1.0 s, the
+    # fire clip's fling runs 0.6..1.0 s of its 1.35 s, their `.ssc` gates the
+    # throw's swoosh to 0.9 s after the trigger, and `hideDuringFireTime` 0.4
+    # covers exactly what is left of the clip — and `roundOfFire 1` already
+    # is the lockout, so a second one of the same length would say nothing.
     #
     # `hideDuringFireTime` is seconds the weapon's own visual is hidden,
     # starting at the shot: `Fire` hides it when it starts the countdown and
