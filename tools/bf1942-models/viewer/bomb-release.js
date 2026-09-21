@@ -83,9 +83,14 @@ export function releaseSpeed(stats) {
  *
  * `roundsLeft < barrelCount` is BOMB-5, the partial salvo: `Fire` has a rule
  * above the loop that fires only `roundsLeft` barrels, so a dive bomber down
- * to its last round drops ONE bomb and never goes into ammunition debt. An
- * implementation that fires a fixed pair and decrements afterwards hands out a
- * free bomb at the bottom of every magazine.
+ * to its last round drops ONE bomb and never goes into ammunition debt.
+ *
+ * It never fires on a bomb rack, though, and the "free bomb at the bottom of
+ * every magazine" this comment used to claim does not occur in shipped data:
+ * every non-async multi-barrel weapon's `magSize` is a multiple of its barrel
+ * count, or -1. The case that does reach it is XPack2's `WasserFallGuns` —
+ * 25 `addFireArmsPosition` entries on `magSize 1`, so one pull fires a single
+ * barrel and empties it.
  *
  * An unlimited weapon (`roundsLeft` Infinity, the `mags == -1` sentinel of
  * GUN-4) short-circuits the whole charge block in the engine, so it salvos in
