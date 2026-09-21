@@ -127,6 +127,62 @@ class HelperNodeTests(unittest.TestCase):
         self.assertEqual(["Bar1918Complex"],
                          [p.name for p in verify.body_parts(self.parts)])
 
+    def test_a_shaderless_material_on_a_baked_round_is_not_a_hole(self) -> None:
+        # Thirteen EoD vehicles report `bullet_m1_Material0`: the material of
+        # the round the gun fires, baked hidden on the barrel. The material
+        # name carries the mesh it came from, so it can be matched to the node.
+        builder = GlbBuilder()
+        body = builder.add_mesh("body", [box(1.0)])
+        round_ = builder.add_mesh("round", [box(0.05)])
+        parts = scene([
+            Node(name="Bofors_GunBarrel", mesh=body,
+                 extras={"templateKind": "FireArms", "geometry": "Bofor_Gun_M1"}),
+            Node(name="Bofors_GunBarrel projectile", mesh=round_,
+                 extras={"templateKind": "Projectile",
+                         "projectileMesh": {"template": "37mmAA_Projectile",
+                                            "geometry": "bullet_m1"}}),
+        ], builder)
+        self.assertEqual(frozenset({"bullet_m1"}),
+                         verify.helper_geometry_names(parts))
+        triage = verify.triage_report(
+            "Bofors", {"materialsWithoutShader": ["bullet_m1_Material0"]},
+            parts=parts, vanilla_facts=False)
+        self.assertEqual("clean", triage.status)
+
+    def test_a_shaderless_material_on_a_drawn_part_is_still_degraded(self) -> None:
+        builder = GlbBuilder()
+        body = builder.add_mesh("body", [box(1.0)])
+        parts = scene([
+            Node(name="EoD_Raft_Body", mesh=body,
+                 extras={"templateKind": "SimpleObject",
+                         "geometry": "EoD_Raft_01_M1"}),
+        ], builder)
+        triage = verify.triage_report(
+            "EoD_Raft", {"materialsWithoutShader": ["EoD_Raft_01_M1_Material1"]},
+            parts=parts, vanilla_facts=False)
+        self.assertEqual("degraded", triage.status)
+
+    def test_a_geometry_a_drawn_part_shares_is_not_furniture(self) -> None:
+        builder = GlbBuilder()
+        shared = builder.add_mesh("shared", [box(0.4)])
+        other = builder.add_mesh("other", [box(0.4)])
+        parts = scene([
+            Node(name="Drawn", mesh=shared,
+                 extras={"templateKind": "SimpleObject", "geometry": "shared_m1"}),
+            Node(name="Preview", mesh=other,
+                 extras={"templateKind": "Projectile",
+                         "projectileMesh": {"template": "X",
+                                            "geometry": "shared_m1"}}),
+        ], builder)
+        self.assertEqual(frozenset(), verify.helper_geometry_names(parts))
+
+    def test_the_material_name_gives_up_its_mesh(self) -> None:
+        self.assertEqual("bullet_m1", verify.material_mesh("bullet_m1_Material0"))
+        self.assertEqual("thompson_m1",
+                         verify.material_mesh("Thompson_m1_Material0"))
+        # Nothing to strip: left alone rather than guessed at.
+        self.assertEqual("oddly_named", verify.material_mesh("Oddly_Named"))
+
     def test_a_renamed_emitter_is_still_an_emitter(self) -> None:
         # The classification must not depend on the `em_` prefix: mods spell
         # their emitters however they like.
