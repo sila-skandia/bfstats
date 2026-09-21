@@ -15,6 +15,7 @@
 // than asserted as engine behaviour -- see especially `TurretAxis.step`.
 
 import * as THREE from 'three';
+import { resolveSeatDots, SEAT_DOT_SLOTS } from './seat-dots.js';
 
 // --- seat survey -------------------------------------------------------
 
@@ -447,7 +448,7 @@ export class VehicleOccupancy {
    *
    * Each returned entry is `{ state, x, y }`. `x`/`y` come straight from the
    * seat's own PCO template (`setVehicleIconPos`, parsed by `con.py` since
-   * this round) and are positions inside the 128x128 vehicle-icon texture —
+   * wave 2) and are positions inside the 128x128 vehicle-icon texture —
    * the same space VHUD-7's `(192 + X, 452 + Y)` anchor works in, so the
    * Sherman's root `54/103` lands at (246, 555), inside the icon. A seat whose
    * extract has no position yields `null` for it and `hud.js` falls back to
@@ -456,11 +457,13 @@ export class VehicleOccupancy {
    * `state` is `BfOccupiedVehicleData`'s five-entry icon table (VHUD-2,
    * vtable `0x0093f300` read as raw bytes): 0 draws nothing, 1
    * `vehicledot_local`, 2 `vehicledot_empty`, 3 `vehicledot_friend`, 4
-   * `vehicledot_enemy`. **Which live state a given seat resolves to was NOT
-   * read** — that half of VHUD-2 is still open — so this viewer answers the
-   * only question it can: the seat you are sitting in is 1 and every other
-   * declared seat is 2. There are no other occupants to be a 3 or a 4, and
-   * inventing one would be a guess dressed as engine behaviour.
+   * `vehicledot_enemy`. The states are resolved in `seat-dots.js` from the
+   * live occupancy: the seat this occupancy is sitting in is 1, a seat an
+   * `occupants` row names is 3 or 4 by that player's team against
+   * `localTeam`, and everything else is 2. `occupants` is the page's job to
+   * gather — it is the room's other players seated in THIS vehicle, as
+   * `{ seat, team }` rows in this survey's own position numbering — because
+   * this class only ever knows the local player's seat.
    *
    * Seats past the sixth get no dot: the layout has six `occupied-seat`
    * leaves and the engine has six `VehiclePosX1..6`/`Y1..6` pairs.
@@ -477,17 +480,20 @@ export class VehicleOccupancy {
    * assert a seat layout the data does not have, so nothing is drawn until
    * the vehicle is re-extracted.
    */
-  seatDots() {
-    return this.order.slice(0, 6).map(id => {
-      const seat = this.seatInfo(id);
-      const pos = seat?.hud?.vehicleIconPos;
-      const placed = Array.isArray(pos)
-        && typeof pos[0] === 'number' && typeof pos[1] === 'number';
-      return {
-        state: !placed ? 0 : id === this.activeSeatId ? 1 : 2,
-        x: placed ? pos[0] : null,
-        y: placed ? pos[1] : null,
-      };
+  seatDots(occupants = [], localTeam = 0) {
+    const iconPos = this.order.slice(0, SEAT_DOT_SLOTS).map(id => {
+      const pos = this.seatInfo(id)?.hud?.vehicleIconPos;
+      return Array.isArray(pos)
+        && typeof pos[0] === 'number' && typeof pos[1] === 'number'
+        ? pos : null;
+    });
+    const localSeat = this.activeSeatId == null
+      ? null : this.order.indexOf(this.activeSeatId);
+    return resolveSeatDots({
+      iconPos,
+      localSeat: localSeat >= 0 ? localSeat : null,
+      occupants,
+      localTeam,
     });
   }
 
