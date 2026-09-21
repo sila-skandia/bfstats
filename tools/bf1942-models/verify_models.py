@@ -175,6 +175,88 @@ def missing_asset_roles(library: con_mod.ObjectLibrary, root_name: str,
     }
 
 
+def declared_binds(library: con_mod.ObjectLibrary, root_name: str) -> int:
+    """How many `bindToSkeletonPart` children the game data gives this model.
+
+    The one check that can see the failure this whole module was written for.
+    `bindToSkeletonPart` parsed wrong is the bug that put every sub-part on the
+    weapon origin, and in that shape the artefact alone cannot betray it: with
+    the bind gone the assembler records no bind, the file marks no bone, the
+    silhouette check has no bound part to measure and the pile check sees two
+    collapsed parts where it allows two. Every artefact-only check agrees that
+    nothing is wrong.
+
+    The game data does not agree. It says how many sub-parts are bound, we can
+    count them, and the assembler's report says how many it resolved. Across
+    the four installed catalogues those two numbers are equal on all 425
+    models, including the cases where the bind could not be applied (EoD's M40
+    inherits the No4's bones and misses them; the count still matches, because
+    the assembler records the attempt). So a shortfall is not a reading, it is
+    a bind the assembler never saw.
+    """
+    seen: set[str] = set()
+    total = 0
+
+    def visit(name: str | None, depth: int = 0) -> None:
+        nonlocal total
+        if not name or depth > 24 or name.lower() in seen:
+            return
+        seen.add(name.lower())
+        template = library.object(name)
+        if template is None:
+            return
+        for child in template.children:
+            if getattr(child, "skeleton_part", None):
+                total += 1
+            visit(child.template, depth + 1)
+
+    visit(root_name)
+    return total
+
+
+def unresolvable_assets(library: con_mod.ObjectLibrary, meshes,
+                        geometry_templates: list[str],
+                        mesh_files: list[str]) -> frozenset[str]:
+    """Which unresolved assets the *mod chain itself* cannot resolve either.
+
+    The severity of an unresolved asset turns entirely on this. The engine
+    registers geometry templates from the same `.con` scripts `build_library`
+    parses (`beginrem` blocks included — EoD's Type38 script comments out six
+    Bofors templates, and neither the engine nor we register them) and probes
+    the same archives for a mesh file. So a reference the chain cannot resolve
+    is a reference the game draws nothing for, and an extraction that draws
+    nothing there is *right*. What would be wrong is failing to resolve
+    something the chain does define, which is what this leaves behind.
+
+    EoD is the whole of the present evidence: eight of its models name
+    geometry templates (`remingtonMag`, `remingtonTrigger`, `M79`,
+    `EoD_Raft_Motor_M1`, `CammoRaft_Motor_M1`, `M125_TurretMG`,
+    `EoD_LCT-Mk6CC-Ramp`, `Vietcong_Grenadelauncher`) that no script in the
+    chain creates. Every one was a BROKEN verdict, and all eight are the mod's
+    own dangling data.
+
+    Note what stays broken: `assemble.py` appends a *reason* in parentheses
+    when it found the file and could not use it (`foo_m1 (no lods)`), so the
+    leaf name resolves, the asset is not in this set, and a damaged or
+    unparseable mesh keeps its broken verdict.
+    """
+    absent: set[str] = set()
+    for name in geometry_templates:
+        leaf = name.split(" (", 1)[0].strip()
+        if leaf and library.geometry(leaf) is None:
+            absent.add(leaf.lower())
+    for name in mesh_files:
+        leaf = name.split(" (", 1)[0].strip()
+        if not leaf:
+            continue
+        found = (meshes.resolve_ext(f"standardMesh/{leaf}", (".sm",))
+                 or meshes.resolve_ext(f"treeMesh/{leaf}", (".tm",))
+                 or meshes.resolve_ext(f"standardMesh/{leaf}", (".skn", ".ske")))
+        if not found:
+            absent.add(leaf.lower())
+    return frozenset(absent)
+
+
 def shadow_triangles(library: con_mod.ObjectLibrary, meshes,
                      root_name: str) -> list[verify.Triangle] | None:
     """The shadow mesh's LOD0 triangles, Z-mirrored into glTF space."""
@@ -253,6 +335,9 @@ def measure_entry(entry: dict, models_dir: Path, archives) -> dict:
     out["stats"] = verify.geometry_stats(parts)
     out["length"] = verify.body_length(parts)
 
+    if archives is not None:
+        out["declaredBinds"] = declared_binds(archives[0], name)
+
     is_weapon = entry.get("category") in ("handweapon", None)
     if archives is not None and is_weapon:
         library, meshes = archives
@@ -281,7 +366,10 @@ def measure_entry(entry: dict, models_dir: Path, archives) -> dict:
 
 def triage_measured(measured: dict, *, length_tolerance: float,
                     vanilla_facts: bool, silhouette_fatal: bool,
-                    roles: dict[str, str]) -> tuple[verify.Triage, dict]:
+                    roles: dict[str, str],
+                    absent: frozenset[str] = frozenset(),
+                    archives_read: bool = False,
+                    ) -> tuple[verify.Triage, dict]:
     """The verdict for one measured model, given what the catalogue says."""
     name = measured["name"]
     detail: dict = {"name": name, "glb": measured["glb"]}
@@ -307,7 +395,8 @@ def triage_measured(measured: dict, *, length_tolerance: float,
     length = measured.get("length")
     if length is not None:
         detail["length"] = round(length, 4)
-    dimensions = verify.dimension_check(name, length)
+    category = (measured.get("entry") or {}).get("category")
+    dimensions = verify.dimension_check(name, length, category=category)
     if dimensions:
         detail["expectedLength"] = dimensions.expected
 
@@ -318,7 +407,22 @@ def triage_measured(measured: dict, *, length_tolerance: float,
         vanilla_facts=vanilla_facts,
         silhouette_fatal=silhouette_fatal,
         missing_asset_roles=roles,
+        missing_asset_absent=absent,
+        archives_read=archives_read,
+        inventory=verify.inventory_check(parts, measured["report"]),
     )
+    declared = measured.get("declaredBinds")
+    if declared is not None:
+        recorded = len((measured.get("report") or {}).get("boundParts") or [])
+        detail["declaredBinds"] = declared
+        detail["recordedBinds"] = recorded
+        if recorded < declared:
+            triage.broken(
+                f"the game data binds {declared} sub-part(s) to a bone and the "
+                f"assembler recorded {recorded}, so {declared - recorded} bind(s) "
+                f"were never read — the failure mode that put every sub-part on "
+                f"the weapon origin")
+
     if measured.get("shadowSkipped"):
         triage.info("silhouette check skipped: " + measured["shadowSkipped"])
     return triage, detail
@@ -415,14 +519,20 @@ def main() -> int:
         # What, in this model's own template tree, wanted each asset the
         # assembler could not resolve.
         roles: dict[str, str] = {}
+        absent: frozenset[str] = frozenset()
         report = m.get("report") or {}
         wanted = ((report.get("missingMeshFiles") or [])
                   + (report.get("missingGeometryTemplates") or []))
         if wanted and archives is not None:
             roles = missing_asset_roles(archives[0], m["name"], wanted)
+            absent = unresolvable_assets(
+                archives[0], archives[1],
+                report.get("missingGeometryTemplates") or [],
+                report.get("missingMeshFiles") or [])
         triage, detail = triage_measured(
             m, length_tolerance=args.length_tolerance,
-            vanilla_facts=vanilla_facts, silhouette_fatal=fatal, roles=roles)
+            vanilla_facts=vanilla_facts, silhouette_fatal=fatal, roles=roles,
+            absent=absent, archives_read=archives is not None)
         by_status[triage.status].append(triage.name)
         results.append({
             "name": triage.name,
