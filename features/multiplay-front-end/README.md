@@ -144,14 +144,22 @@ paint-on-demand one the rest of the time.
 
 CREATE GAME is not drawn and not clickable; an open dialog closes itself on
 the poll that finds the server gone; JOIN is not drawn either, because
-there is nothing to join. Where the rows would be, in the screen's own face:
+there is nothing to join. Where the rows would be, in the screen's own
+face, one red line:
 
 ```
-THE ROOM SERVER ISN'T ANSWERING
-
-NOTHING CAN BE JOINED OR CREATED UNTIL IT RUNS.
-SINGLEPLAY IS STILL THERE.
+MASTER SERVER IS DOWN RIGHT NOW
 ```
+
+That is the whole message. It used to spell out that nothing could be
+joined or created and that Instant Battle still worked — but with JOIN and
+CREATE GAME both gone and SINGLEPLAY sitting lit beside it, the screen was
+already saying all of that. An empty-but-answering lobby gets the same
+single line in grey: `NO ROOMS RUNNING`.
+
+Red is `ALERT`, the one colour on this screen for something being wrong
+rather than merely absent — the other place it appears is a SERVER NAME the
+room server would refuse.
 
 Nothing goes in the page's DOM status bar for this — that bar is for the
 things that stop the screen existing at all, like a missing pack.
