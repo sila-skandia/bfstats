@@ -548,6 +548,26 @@ export class GunFire {
     group.firing = false;
     const index = this.groups.indexOf(group);
     if (index >= 0) this.groups.splice(index, 1);
+    // Hiding a flash is not all of it: `advance` also *moves* one. An emitter
+    // declaring `offsetInDof` or `speedInDof` is re-placed every frame at
+    // `basePos + drift`, and a billboarded one has its quaternion rewritten
+    // to face the camera -- and both stop the moment the group leaves the
+    // index, leaving the node wherever the exit caught it. `collect` then
+    // re-reads `basePos`/`baseQuat` off that node on the next entry, so the
+    // drift is re-baked as the authored placement and the emitter walks one
+    // more drift away from its muzzle on every enter-fire-exit cycle.
+    // Measured on Kasserine Pass' AA_Allies, whose `Em_MuzzAAgunB_WSmoke`
+    // declares `speedInDof 10` over a 0.5 s life: authored local z -1.0, then
+    // -1.667, -2.0, -2.333 after one, two and three cycles, and it never
+    // comes back. `basePos`/`baseQuat` are the authored pose, kept aside by
+    // `collect` for exactly this reason, so putting the node back on them is
+    // the whole reset. `age = Infinity` is what `advance` itself uses to mean
+    // "idle", so a group handed back to a later `advance` starts there.
+    for (const emitter of group.emitters) {
+      emitter.age = Infinity;
+      emitter.node.position.copy(emitter.basePos);
+      emitter.node.quaternion.copy(emitter.baseQuat);
+    }
     idleFirePose(group.node);
     return index >= 0;
   }

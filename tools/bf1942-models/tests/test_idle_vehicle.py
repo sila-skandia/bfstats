@@ -140,6 +140,32 @@ class IdleVehicleTests(unittest.TestCase):
         # Named once even though the page hands the same map in twice.
         self.assertEqual(["ShermanGunBarrel"], self.results["respawnReset"])
 
+    # --- the emitter's own transform --------------------------------------
+
+    def test_a_drifting_emitter_goes_back_to_its_authored_placement(self) -> None:
+        # Hiding the node is only half of the latch. `advance` places an
+        # emitter declaring `offsetInDof`/`speedInDof` at `basePos + drift`
+        # and rewrites a billboarded one's quaternion, and both stop the
+        # instant the group leaves the index -- while `collect` re-reads
+        # `basePos`/`baseQuat` off the live node on the next entry. So a flash
+        # left mid-drift is re-baked as the authored placement, and the
+        # emitter walks one more drift from the muzzle every cycle.
+        # Reproduced on the page with Kasserine Pass' AA_Allies
+        # (`Em_MuzzAAgunB_WSmoke`, `speedInDof 10` over 0.5 s): authored local
+        # z -1.0, then -1.667, -2.0, -2.333 after one, two and three
+        # enter-fire-exit cycles, and it never came back.
+        authored = self.results["driftAuthored"]
+        self.assertEqual([0.0, 0.0, -1.0], authored)
+        for cycle, seen in enumerate(self.results["driftCycles"], start=1):
+            self.assertEqual(authored, seen, f"cycle {cycle}")
+
+    def test_a_billboarded_emitter_goes_back_to_its_authored_facing(self) -> None:
+        # `baseQuat` is what the drift direction is expressed in, so a
+        # billboard quaternion re-baked as the rest pose does not only leave
+        # the flash turned -- it sends the next burst's drift off along the
+        # camera's axis instead of the line of fire.
+        self.assertEqual([0.0, 0.0, 0.0, 1.0], self.results["driftQuat"])
+
     # --- the module's own contract ----------------------------------------
 
     def test_an_idle_tree_costs_nothing(self) -> None:
@@ -153,6 +179,48 @@ class IdleVehicleTests(unittest.TestCase):
 
     def test_a_lookup_holding_nothing_is_not_an_error(self) -> None:
         self.assertEqual([], self.results["emptyLookup"])
+
+
+class IdleVehicleWiringTests(unittest.TestCase):
+    """The three call sites, pinned in `map.html`'s own source.
+
+    The harness above drives `idleFirePose`/`idleFireState` directly, which
+    proves the module and the `GunFire.release` road into it -- but nothing in
+    the suite went near the other two. Deleting `respawnVehicle`'s pair and the
+    level-load sweep's call left all ten of those tests green, so the wiring
+    the owner's own repro depends on was carried by nothing. `map.html` is one
+    10,000-line inline module that no node harness can import, so it is pinned
+    the way `test_map_entry` pins its own contracts: on the source text.
+    """
+
+    source = (VIEWER / "map.html").read_text(encoding="utf-8")
+
+    def test_a_respawned_hull_is_reset_where_it_comes_back(self) -> None:
+        # Both halves: the pose, and the `FireState` the respawn inherits
+        # through a WeakMap keyed on a node it reuses. Measured on the page
+        # (Aberdeen, Sherman, cannon fired twice, destroyed, respawned,
+        # re-entered): `Ammo/PrimaryAmmo` 28 of 30 without this, 30 with it.
+        self.assertIn("idleFirePose(visual.node);", self.source)
+        self.assertIn("idleFireState(visual.node, [fireStates, world?.fireStates]);",
+                      self.source)
+
+    def test_the_level_load_sweep_goes_through_the_same_reset(self) -> None:
+        # And no longer spells out its own three-key copy, which is how it
+        # came to miss `tracerMesh` -- 15 streak templates drawing across
+        # Battle of Britain at load, measured, 0 after.
+        self.assertIn("idleFirePose(currentRoot);", self.source)
+        self.assertNotIn("obj.userData?.projectileTrail) obj.visible = false;",
+                         self.source)
+
+    def test_every_seat_exit_funnels_through_release(self) -> None:
+        # Four copies of trigger-off-and-splice became one `guns.release`. A
+        # fifth copy growing back is the way this defect returns, so no vehicle
+        # or manned gun list may splice `guns.groups` by hand again.
+        for name in ("collectGuns", "collectMannedGuns", "releaseGuns"):
+            start = self.source.index(f"function {name}(")
+            end = self.source.index("\n}\n", start)
+            body = self.source[start:end]
+            self.assertNotIn("guns.groups.splice", body, name)
 
 
 if __name__ == "__main__":
