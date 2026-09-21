@@ -800,6 +800,29 @@ class ObjectTemplate:
     # grenades, the explosives pack and the landmine, all four of which write
     # `dieAfterColl 0`.
     die_after_coll: bool | None = None
+    # `setHasPointPhysics 0` puts a round on the `ResponsePhysics` path rather
+    # than the point-mass one, i.e. a full rigid body with its `Wing` fins and
+    # `FloatingBundle` floaters acting on it. Both grenades, the explosives
+    # pack, the landmine, the three bombs and the aircraft torpedo declare it
+    # (ledger BOMB-10); nothing in vanilla declares `1`.
+    has_point_physics: bool | None = None
+    # `DetonateOnWaterCollision` — the one word that defines an aircraft
+    # torpedo's water entry (BOMB-11). `Projectile::handleCollision`
+    # (lnxded 0x0831ee80) has exactly one `return 0` path, a water contact
+    # without this flag (test at 0x0831f3ae, field `+0x1ac`), and that swallowed
+    # contact is why a torpedo goes *into* the sea instead of bursting on it.
+    # Only `AircraftTorpedo` declares it in vanilla, as `0`.
+    detonate_on_water_collision: bool | None = None
+    # `stopAtEndEffect 1` with `dieAfterColl 0` is how the three bombs are
+    # retired: the round survives its own collision and the end effect ends it.
+    # Recorded for completeness; nothing branches on it yet.
+    stop_at_end_effect: bool | None = None
+    # `setAsynchronyFire 1` — a multi-barrel FireArms that fires ONE barrel per
+    # pull, round-robin, and charges one round instead of one per barrel
+    # (ledger BOMB-3, `FireArmsTemplate+0x338`). It is what makes the B17 lay a
+    # stick of eight rather than salvo a pair, and vanilla declares it on
+    # exactly seven templates.
+    asynchrony_fire: bool | None = None
     # `YModOnExplosion` scales the Y term — and only the Y term — of the
     # distance an explosion measures to a victim's transform origin (HP-9,
     # lnxded 0x08156613). Engine default 1.0. 642 declarations across the
@@ -2164,7 +2187,9 @@ class ObjectLibrary:
                 elif cmd in ("fireonce", "autoreload", "usescope",
                              "setsnipersight", "sethasrecoilforce",
                              "setgobackonrecoil", "fireincameradof",
-                             "altfireonce"):
+                             "altfireonce", "sethaspointphysics",
+                             "detonateonwatercollision", "stopatendeffect",
+                             "setasynchronyfire"):
                     if (value := truthy(args)) is not None:
                         setattr(obj, {
                             "fireonce": "fire_once",
@@ -2175,6 +2200,11 @@ class ObjectLibrary:
                             "setgobackonrecoil": "go_back_on_recoil",
                             "fireincameradof": "fire_in_camera_dof",
                             "altfireonce": "alt_fire_once",
+                            "sethaspointphysics": "has_point_physics",
+                            "detonateonwatercollision":
+                                "detonate_on_water_collision",
+                            "stopatendeffect": "stop_at_end_effect",
+                            "setasynchronyfire": "asynchrony_fire",
                         }[cmd], value)
                 elif cmd in ("setfiredev", "setdevmod", "setturndev",
                              "setspeeddev", "setmiscdev"):
