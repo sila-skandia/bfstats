@@ -42,12 +42,17 @@
 // The dedicated server says the same thing, and says which rate to pick. See
 // `TICK_RATE`.
 //
-// Like `collision.js`, this module imports nothing. It takes a duck-typed
+// This module imports one thing, `parachute.js`, which itself imports nothing
+// — the parachute is a state machine over the body's velocity and height, not
+// an integrator, so it lives beside this file rather than in it. It takes a
+// duck-typed
 // `world` with `surfaceHeight(x, z)`, `sweepSphere(...)` and `cast(...)` —
 // which is exactly what `WorldCollider` is — so `tests/physics_harness.mjs` can
 // drive the whole thing under node with no renderer, no GL and no three.js.
 // Every one of the three is optional: a level exported before the collision
 // flip has a heightfield and no hulls, and a body on one still walks.
+
+import { PARACHUTE_DRAG, PARACHUTE_SPEED } from './parachute.js';
 
 // --- the world's constants -------------------------------------------------
 
@@ -546,25 +551,43 @@ export const DIVE_DURATION = 11 / (26 * 1.5);
 export const SOLDIER_MASS = 100;
 export const SOLDIER_DRAG = 1.0;
 
-/** `setParachuteDrag 24.00` / `setParachuteSpeed 30.00`, same file. */
-export const PARACHUTE_DRAG = 24;
-export const PARACHUTE_SPEED = 30;
+/**
+ * `setParachuteDrag 24.00` / `setParachuteSpeed 30.00`, same file.
+ *
+ * Both are re-exported from `parachute.js`, which owns the parachute and
+ * carries the evidence. The one thing to carry here, because it used to be
+ * recorded the other way round: **`setParachuteSpeed` is an acceleration**,
+ * 30 m/s^2 along a forward axis, handed to
+ * `PointPhysicsNode::addAccelerationAtRelativePosition` once per tick by
+ * `BFSoldier::handleUpdate` (`0x08272700`, `0x082727e3`). It is not a speed
+ * and it is not a terminal velocity.
+ */
+export { PARACHUTE_DRAG, PARACHUTE_SPEED };
 
 /**
  * The soldier's bounding radius, for the drag term only. **Inferred.**
  *
  * The engine reads it from a virtual getter, not from any `.con`, so it is not
- * in the shipped data and was not located in the client. 0.8 m is chosen
- * because it makes the drag equation reproduce a number that *is* shipped: at
- * `PARACHUTE_DRAG`, terminal velocity is
+ * in the shipped data. 0.8 m was originally chosen because it makes the drag
+ * equation land on 30.5 m/s of terminal velocity against the shipped
+ * `setParachuteSpeed 30.00` — **and that argument is refuted**: the 30.00 is an
+ * acceleration along the body's forward axis, not a speed (see
+ * `parachute.js`'s `PARACHUTE_SPEED`), so the two numbers were never
+ * commensurable and the agreement is a coincidence.
  *
- *     g / (pi * r^2 * drag / mass) = 14.73 / (pi * 0.64 * 24 / 100) = 30.5 m/s
+ * What is now known about the engine's own number: the soldier's collision
+ * geometry radius is exactly **1.0** (the 17-vertex hull
+ * `SkeletonCollisionMeshTemplate`'s constructor hard-codes, `0x083af34a` on),
+ * and `BCompositeObject::getBoundingRadius` (`0x08165630`) then takes the max
+ * against every child's `|pos| + radius`. Neither end is settled; see
+ * `parachute.js`'s `PARACHUTE_DRAG_RADIUS` for the bounds and the choice.
  *
- * against `setParachuteSpeed 30.00`. A 1.8% miss on a value that spans two
- * independent constants is good evidence for the reading of the drag equation,
- * and weaker but real evidence for the radius. Treat the radius as a tunable.
- * At the soldier's own `drag 1.0` it is nearly inert — terminal velocity is
- * 730 m/s, i.e. a man falls essentially in vacuum, which matches the game.
+ * 0.8 is kept here because every fall-damage figure in the corpus (HP-14: no
+ * damage below 3.97 m, lethal at 7.55 m) was measured against it, and at the
+ * soldier's own `drag 1.0` the whole term is inert either way — terminal
+ * velocity is 730 m/s at 0.8 and 145 m/s at 1.8, and a man falls essentially
+ * in vacuum at both. The parachute, where the drag is 24x larger and the
+ * radius therefore decides whether a landing kills you, does not use this.
  */
 export const SOLDIER_BOUNDING_RADIUS = 0.8;
 
@@ -962,10 +985,20 @@ export class SoldierBody {
     this.stateSpeedLeft = seconds;
   }
 
-  /** The parachute is a drag swap and nothing else: 1.0 becomes 24. */
-  setParachute(on) {
+  /**
+   * The parachute is a drag swap and nothing else — `setIsParachuting`
+   * (lnxded `0x08276f90`) hands `BFSoldierTemplate+0x2e4` (`setParachuteDrag
+   * 24`) or `+0x44` (`ObjectTemplate.drag 1.0`) to
+   * `PointPhysicsNode::setDrag` and does nothing else to the physics.
+   *
+   * `drag` lets the caller pass the value already scaled for this body's
+   * bounding radius, which is what `parachute.js`'s `effectiveParachuteDrag`
+   * exists for: only `r^2 * drag` reaches the integrator, and the radius this
+   * viewer carries is not the engine's. Omitted, the shipped 24 is used.
+   */
+  setParachute(on, drag = PARACHUTE_DRAG) {
     this.parachute = Boolean(on);
-    this.body.drag = on ? PARACHUTE_DRAG : SOLDIER_DRAG;
+    this.body.drag = on ? drag : SOLDIER_DRAG;
   }
 
   /**
