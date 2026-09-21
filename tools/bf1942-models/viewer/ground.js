@@ -427,6 +427,79 @@ function staticHold(vehicle, s, accel, h, drive, braking, loaded, budget,
   return true;
 }
 
+// --- a hull contact's own friction (collision-response.md section 8) --------
+
+const _hcRel = new THREE.Vector3();
+const _hcU = new THREE.Vector3();
+const _hcN = new THREE.Vector3();
+const _hcVt = new THREE.Vector3();
+const _hcF = new THREE.Vector3();
+
+/**
+ * Fold this tick's hull contacts into the tyres' friction accumulators.
+ *
+ * The contacts come from the rigid-body solver (`body-statics.js` finds them,
+ * `vehicle-bodies.js` `DrivenBody.noteContact` hands them over) and they go in
+ * as **samples in the same running mean the wheels feed**, never as extra
+ * grip. That is the engine's arithmetic, not a simplification, and it is the
+ * one thing about hull friction that is easy to get backwards:
+ *
+ * - the Coulomb budget is `mu * N.y * |g|` (`coulombCaps`), so a **side-on ram
+ *   has no friction at all** — a wall's normal is horizontal and `N.y` is 0;
+ * - `addFrictionAtAbsolutePosition` is a running MEAN over the tick's parts,
+ *   so that zero sample *dilutes* the wheels' answer for the tick. A jeep
+ *   scraping a wall with four wheels down keeps four fifths of its grip, and
+ *   that is what the engine gives it.
+ *
+ * Every non-wheel part is **ContactGrip** (section 8): it asks for its whole
+ * tangential contact velocity back, and the clamp decides what it gets. So a
+ * hull lying on something horizontal — a crate, a deck, a wreck — does get
+ * real friction out of this, which is the other half of the same rule.
+ *
+ * What it deliberately does NOT feed is `staticHold`'s budget or its
+ * `allLatched` test. That hold is the viewer's own construct (see
+ * `STATIC_HOLD_SPEED`), fitted against wheel contacts; the engine has no
+ * vehicle-wide latch to put a hull contact into, and a hull touching a wall
+ * must not stop a parked vehicle being held.
+ *
+ * @returns {number} samples added to the mean
+ */
+function hullContactFriction(vehicle, s, qInv, vBody, w, gravityTick,
+                             tanForce, tanTorque, force) {
+  const contacts = vehicle.hullContacts;
+  if (!contacts || !contacts.length) return 0;
+  let added = 0;
+  for (const c of contacts) {
+    // The contact point and its normal, in the body frame the tyre solve uses.
+    _hcRel.set(c.x - s.position.x, c.y - s.position.y, c.z - s.position.z)
+      .applyQuaternion(qInv);
+    _hcN.set(c.normal[0], c.normal[1], c.normal[2]).applyQuaternion(qInv);
+    const nn = _hcN.lengthSq();
+    if (!(nn > 1e-9)) continue;
+    // Contact-patch velocity with next tick's gravity already in it, exactly
+    // as the wheels take it.
+    _hcU.copy(vBody).add(_hcVt.crossVectors(w, _hcRel)).add(gravityTick);
+    _hcVt.copy(_hcN).multiplyScalar(_hcU.dot(_hcN) / nn);
+    _hcVt.subVectors(_hcU, _hcVt);
+    // `resistance` is a plain velocity-proportional acceleration at the root
+    // and it SUMS, unlike everything else here (section 8). Hull on hull it is
+    // 0.01: a scrape that costs a little speed, not a brake.
+    if (c.resistance > 0) force.addScaledVector(_hcVt, -c.resistance);
+    // ContactGrip: the whole tangential velocity back, this tick.
+    _hcF.copy(_hcVt).multiplyScalar(-ENGINE_TICK_HZ);
+    const caps = coulombCaps(c.friction, c.normalY);
+    const demand = _hcF.length();
+    // No latch: a `Response`'s static latch lives on the part, and a hull
+    // contact that lasts is a scrape rather than something being stood on.
+    const grip = coulombClamp(demand, caps, false);
+    if (grip.scale !== 1) _hcF.multiplyScalar(grip.scale);
+    tanForce.add(_hcF);
+    tanTorque.add(_hcRel.cross(_hcF));
+    added += 1;
+  }
+  return added;
+}
+
 function coulombClamp(demand, caps, latched) {
   if (latched) {
     if (demand > caps.breakaway && demand > 1e-9) {
@@ -863,6 +936,32 @@ export class GroundVehicle extends Vehicle {
     // skipped in the sweep or the vehicle collides with itself.
     this._hullRadius = this.spec.boundingRadius;
     this._collisionOwner = this.collider?.statics?.ownerOf(node) ?? -1;
+
+    /**
+     * This tick's hull contacts against the static world, or against another
+     * vehicle: `[{normal, normalY, friction, resistance, count, x, y, z}]`,
+     * filled by `vehicle-bodies.js` `DrivenBody.noteContact` once the rigid-body
+     * solver has resolved them and emptied at the top of every body tick.
+     *
+     * Declaring it is the opt-in: a drive model with no tyre mean to dilute
+     * (`flight.js`) never gets one. `hullContactFriction` is what reads it.
+     */
+    this.hullContacts = [];
+
+    /**
+     * True while the rigid-body contact solver owns this hull's collisions
+     * with the static world (`body-statics.js`, through `BodyWorld`), which is
+     * whenever the page has a `collision-meshes.json` for the mod and has
+     * adopted this vehicle as a `DrivenBody`.
+     *
+     * The sweep at the end of `#step` is then off: it is a *second*,
+     * incompatible answer to the same question — a whole-vehicle bounding
+     * sphere stopped dead at a wall, with the correction applied at the centre
+     * of mass so nothing ever spins — and running both would double every
+     * push-out. It stays as the fallback for a level or a mod the solver
+     * cannot serve.
+     */
+    this.hullSolved = false;
 
     // Body-frame inertia, diagonal. A box is symmetric enough for a jeep.
     this._inertia = new THREE.Vector3(
@@ -1320,6 +1419,12 @@ export class GroundVehicle extends Vehicle {
       wheel.angle += (uLong / k.wheelRadius) * h;
     }
 
+    // The hull's own contacts go into the same mean the tyres feed — a
+    // side-on one with nothing in it, which is the engine's dilution and not
+    // a loss of grip we invented. See `hullContactFriction`.
+    tanCount += hullContactFriction(this, s, qInv, vBody, w, gravityTick,
+      tanForce, tanTorque, force);
+
     // The mean, and the budget the static hold measures itself against with
     // it (`addFrictionAtAbsolutePosition` `0x08254e50`).
     if (tanCount > 0) {
@@ -1378,7 +1483,7 @@ export class GroundVehicle extends Vehicle {
     // never wired in. A SKIN offset keeps the body from vibrating against the
     // surface it is butted up to. `skipOwner` of -1 (no match) skips nothing,
     // so a test collider with no owner index still works.
-    if (this.collider && this._hullRadius > 0) {
+    if (this.collider && this._hullRadius > 0 && !this.hullSolved) {
       const dx = s.position.x - prevX;
       const dy = s.position.y - prevY;
       const dz = s.position.z - prevZ;
@@ -2457,6 +2562,13 @@ export class TrackedVehicle extends Vehicle {
     this._hullRadius = this._boundingRadius;
     this._collisionOwner = this.collider?.statics?.ownerOf(node) ?? -1;
 
+    // `GroundVehicle`'s two, with the same meaning: this tick's resolved hull
+    // contacts for `hullContactFriction`, and whether the rigid-body solver
+    // owns this hull against the static world (which turns off the sweep at
+    // the end of `#step`).
+    this.hullContacts = [];
+    this.hullSolved = false;
+
     // Scratch, so a tick allocates nothing — the same set `GroundVehicle`
     // keeps, for the same reason.
     this._q = new THREE.Quaternion();
@@ -2906,6 +3018,13 @@ export class TrackedVehicle extends Vehicle {
         : uLong / wheel.radius) * h;
     }
 
+    // The hull's own contacts, as samples in the same mean (see
+    // `hullContactFriction`). A tracked hull is wider than its track is tall,
+    // so this matters more here than on a jeep: a Sherman that noses into a
+    // wall keeps its tracks' grip diluted by one part, not replaced.
+    tanCount += hullContactFriction(this, s, qInv, vBody, w, gravityTick,
+      tanForce, tanTorque, force);
+
     if (tanCount > 0) {
       force.addScaledVector(tanForce, 1 / tanCount);
       torque.addScaledVector(tanTorque, 1 / tanCount);
@@ -2958,7 +3077,7 @@ export class TrackedVehicle extends Vehicle {
     // Hull collision against static objects — same sweep as `GroundVehicle`.
     // skipOwner of -1 skips nothing, so the sweep works even with a mock
     // collider that has no owner index.
-    if (this.collider && this._hullRadius > 0) {
+    if (this.collider && this._hullRadius > 0 && !this.hullSolved) {
       const dx = s.position.x - prevX;
       const dy = s.position.y - prevY;
       const dz = s.position.z - prevZ;

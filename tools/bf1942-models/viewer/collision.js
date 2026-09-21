@@ -325,9 +325,17 @@ export class CollisionIndex {
    * `drivable` mask): that is how `WorldCollider.deckHeight` asks "what deck is
    * under this wheel" without the terrain, the buildings or a parked truck
    * answering. With no mask built, it can only answer "nothing".
+   *
+   * `skipBodies` and the two `deck*` arguments mean exactly what they mean to
+   * `sweepSphere`, and are here for the same one caller: a driven vehicle's
+   * hull, which now probes its own collision vertices along a ray
+   * (`body-statics.js`) instead of sweeping a sphere. A simulated body is the
+   * contact solver's, and a drivable deck is a floor rather than a wall,
+   * whichever query asks.
    */
   cast(ox, oy, oz, dx, dy, dz, maxDist, skipOwner, out, onlyOwner = -1,
-       onlyDrivable = false) {
+       onlyDrivable = false, skipBodies = false, deckStepTop = -Infinity,
+       deckFloorCos = 2) {
     if (onlyDrivable && !this.drivable) return null;
     if (!this.cellStart || maxDist <= 0) return null;
     const stats = this.stats;
@@ -356,6 +364,10 @@ export class CollisionIndex {
     let tEnter = 0;
     let best = maxDist;
     let found = false;
+    // Is the driven-vehicle deck gate live at all? Hoisted out of the triangle
+    // loop, as `sweepSphere` hoists its own.
+    const deck = this.drivable
+      && (deckStepTop > -Infinity || deckFloorCos <= 1) ? this.drivable : null;
     // A segment 16 m long crosses at most two 32 m cells; the cap is only here
     // so a degenerate direction cannot spin.
     for (let guard = 0; guard < 256; guard++) {
@@ -385,7 +397,9 @@ export class CollisionIndex {
               } else {
                 if (skipOwner >= 0 && this.owners[tri] === skipOwner) continue;
                 if (this._disabled[this.owners[tri]]) continue;
+                if (skipBodies && this._body[this.owners[tri]]) continue;
               }
+              if (deck && deck[tri] && this.#deckDrops(tri, deckStepTop, deckFloorCos)) continue;
               stats.tests++;
               const t = this.#intersect(tri, ox, oy, oz, dx, dy, dz, best);
               if (t >= 0 && t < best) {
@@ -525,18 +539,7 @@ export class CollisionIndex {
               || Math.max(p[j + 2], p[j + 5], p[j + 8]) < loZ) continue;
           // The driven-vehicle deck gate, after the box reject so a bridge two
           // cells away never reaches it. Only a drivable triangle can be gated.
-          if (deck && deck[tri]) {
-            if (Math.max(p[j + 1], p[j + 4], p[j + 7]) <= deckStepTop) continue;
-            if (deckFloorCos <= 1) {
-              // |unit normal . up| — an absolute value, so nothing here trusts
-              // the collision mesh's winding (`#intersect`'s own caveat).
-              const e1x = p[j + 3] - p[j], e1y = p[j + 4] - p[j + 1], e1z = p[j + 5] - p[j + 2];
-              const e2x = p[j + 6] - p[j], e2y = p[j + 7] - p[j + 1], e2z = p[j + 8] - p[j + 2];
-              const cy = e1z * e2x - e1x * e2z;
-              const len = Math.hypot(e1y * e2z - e1z * e2y, cy, e1x * e2y - e1y * e2x);
-              if (len > 1e-12 && Math.abs(cy) / len >= deckFloorCos) continue;
-            }
-          }
+          if (deck && deck[tri] && this.#deckDrops(tri, deckStepTop, deckFloorCos)) continue;
           stats.tests++;
           const t = this.#sweepTriangle(tri, ox, oy, oz, vx, vy, vz, radius, best);
           if (t >= 0 && t <= best) {
@@ -659,6 +662,85 @@ export class CollisionIndex {
     else { sx /= len; sy /= len; sz /= len; }
     _sweepNx = sx; _sweepNy = sy; _sweepNz = sz;
     return hit;
+  }
+
+  /**
+   * The driven-vehicle deck gate for one DRIVABLE triangle: true when it is a
+   * ride surface or a kerb rather than a wall, and so must be dropped. Shared
+   * by `sweepSphere` and `cast` (the hull vertex probe of `body-statics.js`),
+   * which have to agree — one gate deciding what a deck is, not two.
+   *
+   * - at or below `deckStepTop`: a kerb the suspension mounts.
+   * - within `acos(deckFloorCos)` of horizontal: a road, its underside, an
+   *   approach ramp or the arch of a humped span.
+   */
+  #deckDrops(tri, deckStepTop, deckFloorCos) {
+    const p = this.tris;
+    const j = tri * 9;
+    if (Math.max(p[j + 1], p[j + 4], p[j + 7]) <= deckStepTop) return true;
+    if (deckFloorCos > 1) return false;
+    // |unit normal . up| — an absolute value, so nothing here trusts the
+    // collision mesh's winding (`#intersect`'s own caveat).
+    const e1x = p[j + 3] - p[j], e1y = p[j + 4] - p[j + 1], e1z = p[j + 5] - p[j + 2];
+    const e2x = p[j + 6] - p[j], e2y = p[j + 7] - p[j + 1], e2z = p[j + 8] - p[j + 2];
+    const cy = e1z * e2x - e1x * e2z;
+    const len = Math.hypot(e1y * e2z - e1z * e2y, cy, e1x * e2y - e1y * e2x);
+    return len > 1e-12 && Math.abs(cy) / len >= deckFloorCos;
+  }
+
+  /**
+   * Is any triangle this caller can see inside the box at all?
+   *
+   * The broadphase half of a hull vertex probe (`body-statics.js`, spec §5.1's
+   * one grid query per root per tick): a jeep in open country asks this once
+   * and skips sixteen grid walks, and a jeep in a town pays eighteen
+   * comparisons per candidate before any narrowphase runs. Triangle AABB
+   * against the box, nothing else — it answers "maybe", never "where".
+   */
+  anyInBox(loX, loY, loZ, hiX, hiY, hiZ, skipOwner = -1, skipBodies = false,
+           deckStepTop = -Infinity, deckFloorCos = 2) {
+    if (!this.cellStart) return false;
+    const size = this.cellSize;
+    let ix0 = Math.floor((loX - this.minX) / size);
+    let ix1 = Math.floor((hiX - this.minX) / size);
+    let iz0 = Math.floor((loZ - this.minZ) / size);
+    let iz1 = Math.floor((hiZ - this.minZ) / size);
+    if (ix1 < 0 || iz1 < 0 || ix0 >= this.cols || iz0 >= this.rows) return false;
+    ix0 = Math.max(0, ix0); iz0 = Math.max(0, iz0);
+    ix1 = Math.min(this.cols - 1, ix1); iz1 = Math.min(this.rows - 1, iz1);
+    const deck = this.drivable
+      && (deckStepTop > -Infinity || deckFloorCos <= 1) ? this.drivable : null;
+    const p = this.tris;
+    const stats = this.stats;
+    stats.queries++;
+    for (let iz = iz0; iz <= iz1; iz++) {
+      for (let ix = ix0; ix <= ix1; ix++) {
+        const cell = this.cell(ix, iz);
+        const from = this.cellStart[cell];
+        const to = this.cellStart[cell + 1];
+        if (to <= from) continue;
+        if (hiY < this.cellMinY[cell] || loY > this.cellMaxY[cell]) continue;
+        stats.cells++;
+        for (let k = from; k < to; k++) {
+          const tri = this.cellItems[k];
+          const owner = this.owners[tri];
+          if (skipOwner >= 0 && owner === skipOwner) continue;
+          if (this._disabled[owner]) continue;
+          if (skipBodies && this._body[owner]) continue;
+          stats.candidates++;
+          const j = tri * 9;
+          if (Math.min(p[j + 1], p[j + 4], p[j + 7]) > hiY
+              || Math.max(p[j + 1], p[j + 4], p[j + 7]) < loY
+              || Math.min(p[j], p[j + 3], p[j + 6]) > hiX
+              || Math.max(p[j], p[j + 3], p[j + 6]) < loX
+              || Math.min(p[j + 2], p[j + 5], p[j + 8]) > hiZ
+              || Math.max(p[j + 2], p[j + 5], p[j + 8]) < loZ) continue;
+          if (deck && deck[tri] && this.#deckDrops(tri, deckStepTop, deckFloorCos)) continue;
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   /** Moller-Trumbore, two-sided: a hull's winding is not something to trust. */
@@ -1282,6 +1364,49 @@ export class WorldCollider {
       if (Number.isFinite(deck) && !(deck <= ground)) ground = deck;
     }
     return ground;
+  }
+
+  /**
+   * The static world as `body-statics.js` asks about it: the three functions a
+   * hull vertex probe needs, bound to this collider.
+   *
+   * Statics only — no terrain, no sea, no simulated body. Terrain is the drive
+   * model's (`groundHeight`) and a body is the contact solver's; what is left
+   * is exactly the buildings, walls, piers and parked scenery a hull can hit,
+   * which is what the engine's `checkObjectVsObject` meets on this side.
+   *
+   * `deckFloorCos` is `ground.js`'s `DECK_FLOOR_COS`: a drivable triangle
+   * within 60 degrees of horizontal is a ride surface, and a hull vertex must
+   * not find it any more than the old swept sphere could.
+   */
+  staticProbe({ deckFloorCos = 0.5 } = {}) {
+    const world = this;
+    const hit = {
+      t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0,
+      dx: 0, dy: 0, dz: 0,
+      material: 0, kind: '', owner: -1, triangle: -1,
+    };
+    return {
+      near(x, y, z, dx, dy, dz, dist, radius, owner, stepTop) {
+        const s = world.statics;
+        if (!s) return false;
+        const ex = x + dx * dist, ey = y + dy * dist, ez = z + dz * dist;
+        return s.anyInBox(
+          Math.min(x, ex) - radius, Math.min(y, ey) - radius, Math.min(z, ez) - radius,
+          Math.max(x, ex) + radius, Math.max(y, ey) + radius, Math.max(z, ez) + radius,
+          owner, true, stepTop, deckFloorCos);
+      },
+      cast(ox, oy, oz, dx, dy, dz, maxDist, owner, stepTop) {
+        const s = world.statics;
+        if (!s) return null;
+        hit.dx = dx; hit.dy = dy; hit.dz = dz;   // `#normal` orients against it
+        return s.cast(ox, oy, oz, dx, dy, dz, maxDist, owner, hit, -1, false,
+                      true, stepTop, deckFloorCos);
+      },
+      supportY(x, z, fromY) {
+        return world.surfaceHeight(x, z, fromY);
+      },
+    };
   }
 
   /**
