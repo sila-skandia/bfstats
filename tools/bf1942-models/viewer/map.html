@@ -2284,8 +2284,10 @@ addEventListener('keydown', e => {
   }
   // Deploy owns Enter and 1-9 even when a sidebar INPUT/SELECT is focused:
   // otherwise Enter toggles `#onfoot` or activates RESUME and the commit
-  // either never runs or is immediately undone into fly-through.
-  if (deployActive()) {
+  // either never runs or is immediately undone into fly-through. Not while
+  // the score board stands in for the screen: the spawn interface is not up
+  // to be driven, and DONE or Escape is the way back to it.
+  if (deployActive() && !scoreFromSpawn) {
     if (e.code === 'Enter' && !e.repeat) {
       e.preventDefault();
       e.stopPropagation();
