@@ -550,28 +550,39 @@ class MemeElevenSurveyTests(unittest.TestCase):
         ]
         self.assertEqual([], offenders)
 
-    def test_only_the_two_known_open_pages_crash(self) -> None:
-        # MEME-11: "menu/InternetMenu and menu/LocalMenu still desync near
-        # BfTransformNodeSize, cause open" - this reader hits it as an
-        # IndexError (a stream-desync-class symbol overrun) rather than a
-        # graceful leftover-bytes warning; still open, not this fix's to
-        # solve, but pinned here so a regression elsewhere is not mistaken
-        # for it.
+    def test_no_page_crashes_the_reader(self) -> None:
+        # MEME-15 closed MEME-11's remainder: `menu/InternetMenu` and
+        # `menu/LocalMenu` desynced because `BfTransformNodeSize`'s field
+        # order was read as Width/Height then X/Y, where the wire has the
+        # two floats first (it is `BfTransformNode`'s mirror - the *size* is
+        # the pair of data objects). The two floats were eaten as an object
+        # frame and the next symbol index was garbage. No page in any
+        # installed archive overruns the stream now.
         crashed = [(mod, archive, entry, type(exc).__name__)
-                  for mod, archive, entry, reader, exc in self.results if exc is not None]
-        for mod, archive, entry, exc_name in crashed:
-            self.assertIn(entry.rsplit("/", 1)[-1], ("InternetMenu", "LocalMenu"), (mod, archive, entry))
-            self.assertEqual("IndexError", exc_name, (mod, archive, entry))
+                   for mod, archive, entry, reader, exc in self.results if exc is not None]
+        self.assertEqual([], crashed)
+
+    def test_the_server_browser_reads_to_its_last_byte(self) -> None:
+        # The page MEME-15 was found on, named rather than counted: the
+        # front end's MULTIPLAY screen is what `multiplay.js` draws.
+        rows = [(mod, archive, reader, exc)
+                for mod, archive, entry, reader, exc in self.results
+                if entry.rsplit("/", 1)[-1].lower() == "internetmenu"]
+        self.assertTrue(rows, "no InternetMenu in any installed archive")
+        for mod, archive, reader, exc in rows:
+            self.assertIsNone(exc, (mod, archive))
+            self.assertEqual([], reader.warnings, (mod, archive))
 
     def test_clean_page_count_has_not_regressed(self) -> None:
-        # 11 of 230 before the MEME-11 fix, 80 of 230 after it, and 110 of
-        # 230 once the five Singleplayer classes above were added (each
-        # count measured directly by deleting the schemas again and
-        # re-running this survey). A floor, not the exact count, so the test
-        # does not chase whichever mods happen to be installed.
+        # 11 of 230 before the MEME-11 fix, 80 of 230 after it, 110 of 230
+        # once the five Singleplayer classes above were added, and 137 of
+        # 236 with MEME-15's `BfTransformNodeSize` field order (each count
+        # measured directly by putting the old reading back and re-running
+        # this survey). A floor, not the exact count, so the test does not
+        # chase whichever mods happen to be installed.
         clean = sum(1 for _, _, _, reader, exc in self.results
                    if exc is None and reader.pos == len(reader.data) and not reader.warnings)
-        self.assertGreaterEqual(clean, 100)
+        self.assertGreaterEqual(clean, 130)
 
 
 if __name__ == "__main__":

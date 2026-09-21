@@ -228,23 +228,30 @@ def level_flags(levels: dict) -> set[str]:
 FLAG_SIZE = round(256 * 90 / 600, 1)
 
 
-def list_rows(layout: dict, out: Path) -> dict | None:
-    """Where the level list's rows go inside the list box.
+def list_rows(layout: dict, out: Path, page_key: str = "skirmish",
+              box: dict | None = None) -> dict | None:
+    """Where a list box's rows go inside it.
 
-    `BfNewListBoxNode` has no rect of its own: it fills the 178x185
-    transform it shares with the scroll arrows and the scroll track. Rows
-    drawn from the top of that transform start four units above the LEVELS
-    heading's baseline and run past the plate, which is not what the game
-    shows - the rows sit in the recessed well the plate art has for them.
+    `BfNewListBoxNode` has no rect of its own: it fills the transform it
+    shares with the scroll arrows and the scroll track. Rows drawn from the
+    top of that transform start four units above the heading's baseline and
+    run past the plate, which is not what the game shows - the rows sit in
+    the recessed well the plate art has for them.
 
     The well is not in the layout (the same way the spawn map's rect is not,
     MEME-8), but it *is* in the shipped art, so it is read off the plate
     rather than typed in: the run of dark, opaque rows down the middle of
-    `menu_singlepl_levellist_256x256`. That gives 11 rows of the file's own
-    14-unit pitch, which is what the reference capture shows.
+    the picture the box sits on (`menu_singlepl_levellist_256x256` for the
+    level list). That gives 11 rows of the file's own 14-unit pitch, which
+    is what the reference capture shows.
+
+    `box` names which of a page's list boxes to measure; the default is the
+    first, which is all the Instant Battle screen has. The CREATE GAME page
+    has three, each on its own plate.
     """
-    page = layout["pages"]["skirmish"]["elements"]
-    box = next((el for el in page if el["kind"] == "listbox"), None)
+    page = layout["pages"][page_key]["elements"]
+    if box is None:
+        box = next((el for el in page if el["kind"] == "listbox"), None)
     if box is None:
         return None
     bx, by, bw, bh = box["rect"]
@@ -279,6 +286,18 @@ def list_rows(layout: dict, out: Path) -> dict | None:
     count = int((bottom - top) // box["rowHeight"])
     return {"fromPlateArt": plate["texture"],
             "top": round(top, 2), "bottom": round(bottom, 2), "count": count}
+
+
+def measure_rows(layout: dict, out: Path, page_key: str) -> None:
+    """Write each of a page's list boxes' row wells onto the box itself, as
+    `rows`. The screens that draw them (`multiplay.js`) then need no
+    per-box arithmetic of their own."""
+    for box in layout["pages"][page_key]["elements"]:
+        if box["kind"] != "listbox":
+            continue
+        rows = list_rows(layout, out, page_key, box)
+        if rows:
+            box["rows"] = rows
 
 
 def flag_slots(layout: dict) -> dict | None:
@@ -416,6 +435,21 @@ class MenuFlattener(Flattener):
             dx = data_value(node["X"]) or 0.0
             dy = data_value(node["Y"]) or 0.0
             return ox + dx, oy + dy, color, when
+        if cls in ("BfTransformNode", "BfTransformNodeSize"):
+            # The two variable transforms. `BfTransformNode` binds its
+            # position to data objects and keeps float size;
+            # `BfTransformNodeSize` is the mirror. Either way the node moves
+            # the origin and sets the rect its leaves fill, exactly as
+            # `TransformNode` does — the base class only knows the all-float
+            # one, so without this the front-end pages (the tab strip is a
+            # `BfTransformNode` at `Navigation/NavigationX/Y`) drew every
+            # leaf at the page origin.
+            x = ox + self.coord(node["X"])
+            y = oy + self.coord(node["Y"])
+            w = self.coord(node["Width"])
+            h = self.coord(node["Height"])
+            self.run(node.children(), x, y, [x, y, w, h], color, when)
+            return ox, oy, color, when
         if cls == "BfNewListBoxNode":
             self.emit_list_box(node, rect, color, when)
             return ox, oy, color, when
@@ -423,6 +457,33 @@ class MenuFlattener(Flattener):
             self.emit_nav_button(node, ox, oy, color, when)
             return ox, oy, color, when
         return super().extend(node, siblings, ox, oy, rect, color, when)
+
+    def coord(self, value) -> float:
+        """A transform field that may be a float on the wire or a data
+        object bound to a variable. A named variable is resolved through
+        `settled_values` the way `channel` resolves a colour channel, so the
+        rect is the one the page settles at rather than the animation's
+        starting value.
+
+        `AddData` and `SubData` are the engine's own arithmetic nodes and a
+        front-end page lays itself out with them: `menu/InternetMenu` puts
+        the selected-server bar at `Join/ServerListHeight + ServerInfoPosY`
+        and gives the scroll track `Join/ScrollbarHeight - 23`. Read as a
+        plain value each is `None` and the panel collapses to the page
+        origin, which is where the bar was drawn before this evaluated
+        them.
+        """
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, meme.Obj) and value.cls in ("AddData", "SubData"):
+            a = self.coord(value["Data 1"])
+            b = self.coord(value["Data 2"])
+            return a + b if value.cls == "AddData" else a - b
+        name = data_name(value)
+        if name is not None and name in self.settled:
+            return float(self.settled[name])
+        raw = data_value(value)
+        return float(raw) if isinstance(raw, (int, float)) else 0.0
 
     def emit_list_box(self, node, rect, color, when) -> None:
         """The level list. Everything but its rows is in the file: the rows
@@ -489,22 +550,47 @@ class MenuFlattener(Flattener):
 
 # ------------------------------------------------------------------ decoding
 
+#: The three transform classes a page can hang a panel off at top level.
+#: `TransformNode` is all floats; the other two bind half their rect to data
+#: objects (see `MenuFlattener.extend`). The front-end pages use all three —
+#: the tab strip is a `BfTransformNode` at `Navigation/NavigationX/Y`.
+TOP_TRANSFORMS = ("TransformNode", "BfTransformNode", "BfTransformNodeSize")
+
+
 def decode_page(data: bytes, lexicon: dict[str, str],
-                keep: list[list[float]] | None = None) -> dict:
+                keep: list[list[float]] | None = None,
+                settled: dict[str, float] | None = None,
+                tops: tuple[str, ...] = TOP_TRANSFORMS) -> dict:
     """One page as a flat draw list. `keep` limits the walk to the top-level
-    `TransformNode`s with those rects, for a page that holds more than this
-    screen."""
+    transforms with those rects, for a page that holds more than this
+    screen. `settled` writes over what `settled_values` read out of the
+    file, for a variable whose resting value is the *page's* to choose —
+    `Navigation/NavigationY` is 85, 58 or 33 depending on how deep in the
+    menu the page sits, and the file cannot say which.
+
+    `tops` is which top-level classes to walk. The default is the three
+    transforms, which is every panel a screen positions for itself; a page
+    that is placed by its *layer* rather than by itself hangs its body off
+    a bare `SplitNode` instead, and its caller adds that."""
     root, reader = meme.load(data)
-    flat = MenuFlattener(lexicon, settled_values(root))
-    tops = []
+    rest = settled_values(root)
+    rest.update(settled or {})
+    flat = MenuFlattener(lexicon, rest)
+    walk = []
     for top in root.chain():
-        if top.cls != "TransformNode":
+        if top.cls not in tops:
             continue
-        rect = [top["X"], top["Y"], top["Width"], top["Height"]]
+        # A `SplitNode` has no rect of its own: it is a branch, and the
+        # page it carries is placed by whatever holds the page.
+        if top.cls == "SplitNode":
+            walk.append(top)
+            continue
+        rect = [flat.coord(top["X"]), flat.coord(top["Y"]),
+                flat.coord(top["Width"]), flat.coord(top["Height"])]
         if keep is not None and rect not in keep:
             continue
-        tops.append(top)
-    flat.run(tops)
+        walk.append(top)
+    flat.run(walk)
     return {
         "elements": flat.elements,
         "variables": flat.variables,
