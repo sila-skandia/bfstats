@@ -126,6 +126,33 @@
   }
   .rooms-actions button:hover { border-color: #9aa666; }
   .rooms-status { margin-top: 8px; color: #8a8a8a; min-height: 1em; }
+  /* The lobby's own trouble modal: the room server isn't answering, and
+     CREATE/JOIN would otherwise navigate into a dead page (map.html shows
+     the same modal there — here the player gets the reason before the
+     reset). The panel is this page's family. */
+  .rooms-issue {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: grid;
+    place-items: center;
+    background: rgba(0, 0, 0, .55);
+  }
+  .rooms-issue[hidden] { display: none; }
+  .rooms-issue-panel {
+    width: min(400px, calc(100% - 40px));
+    padding: 18px 20px;
+    background: rgba(19, 19, 19, .96);
+    border: 1px solid #2d2d2d;
+    border-radius: 6px;
+  }
+  .rooms-issue-title {
+    font-weight: 700;
+    letter-spacing: .12em;
+    color: #9aa666;
+    margin-bottom: 10px;
+  }
+  .rooms-issue-message { margin: 0 0 16px; white-space: pre-wrap; color: #cfcfc4; }
   /* Focusable so the keyboard reaches the list the way the game's does. */
   #screen:focus-visible { outline: 1px solid #7d8849; outline-offset: -1px; }
 </style>

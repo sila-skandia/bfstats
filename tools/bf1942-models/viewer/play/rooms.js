@@ -26,19 +26,41 @@ export function createRoomsPanel({ levels, onJoin }) {
       <button class="rooms-join">JOIN</button>
       <button class="rooms-create">CREATE</button>
     </div>
-    <div class="rooms-status"></div>`;
+    <div class="rooms-status"></div>
+    <div class="rooms-issue" hidden>
+      <div class="rooms-issue-panel" role="alertdialog" aria-label="Room problem">
+        <div class="rooms-issue-title">ROOM</div>
+        <p class="rooms-issue-message"></p>
+        <div class="rooms-actions">
+          <button class="rooms-issue-ok">OK</button>
+        </div>
+      </div>
+    </div>`;
 
   const list = host.querySelector('.rooms-list');
   const empty = host.querySelector('.rooms-empty');
   const code = host.querySelector('.rooms-code');
   const name = host.querySelector('.rooms-name');
   const status = host.querySelector('.rooms-status');
+  const issue = host.querySelector('.rooms-issue');
+  const issueMessage = host.querySelector('.rooms-issue-message');
+  const issueOk = host.querySelector('.rooms-issue-ok');
   const just = ['JOIN', 'CREATE'].map(id => host.querySelector(`.rooms-${id.toLowerCase()}`));
   const [joinBtn, createBtn] = just;
 
   let rooms = [];
   let timer = null;
   let lastError = null;
+
+  function showIssue(message) {
+    issueMessage.textContent = message;
+    issue.hidden = false;
+    issueOk.focus();
+  }
+  issueOk.addEventListener('click', () => { issue.hidden = true; });
+  issue.addEventListener('click', event => {
+    if (event.target === issue) issue.hidden = true;
+  });
 
   async function poll() {
     try {
@@ -74,6 +96,16 @@ export function createRoomsPanel({ levels, onJoin }) {
   }
 
   function join(level) {
+    // A room server that isn't answering must say so here, before the
+    // navigation into map.html (whose own modal would say the same thing a
+    // level-load later) — the player gets the reason now, not after the
+    // page has already reset.
+    if (lastError) {
+      showIssue('THE ROOM SERVER ISN\'T ANSWERING\n'
+        + 'Nothing can be joined until it runs.\n'
+        + 'Start it, then try again.');
+      return;
+    }
     const room = code.value.trim();
     if (!room) {
       status.textContent = 'type a room code';
