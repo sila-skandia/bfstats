@@ -1688,8 +1688,11 @@ def spawned_vehicle_templates(info: LevelInfo) -> list[str]:
        returns one team's template, preferring team 2. A pad whose flag changes
        hands swaps to the other team's vehicle with no node moving, so the
        sound the viewer needs for that pad is not decided by the pose alone.
-       An `ownerTeam` spawner is locked to its team by the engine and
-       contributes only that half.
+       Both halves are listed — including for a spawner carrying
+       `teamOnVehicle`, which is a bool about stamping the team onto the
+       spawned object and locks the pad to nothing (see `SpawnTemplate`). The
+       earlier reading took it for an owner team and dropped the other half,
+       which is what left Midway's fleet with no fletcher or enterprise sound.
 
     Order is deliberately the old one first — default mode, `spawn_vehicle`'s
     pick — and the additions appended, so an existing `scene.json` grows rather
@@ -1714,8 +1717,6 @@ def spawned_vehicle_templates(info: LevelInfo) -> list[str]:
                 continue
             add(spawn_vehicle(inst.template, inst.team,
                               gameplay.object_spawn_templates))
-            if spec.owner_team is not None:
-                continue
             for template in spec.vehicles.values():
                 add(template)
     return out

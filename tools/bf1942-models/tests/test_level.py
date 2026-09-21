@@ -206,8 +206,89 @@ ObjectTemplate.teamOnVehicle 2
         )
         self.assertEqual("sherman", spawn_vehicle("lighttankspawner", 2, templates))
         self.assertEqual("panzeriv", spawn_vehicle("lighttankspawner", 1, templates))
-        self.assertEqual("Willy", spawn_vehicle("ScoutCarSpawner", 1, templates))
+        # `teamOnVehicle` is a bool, not a team index: the *instance's* team
+        # still picks the hull.
+        self.assertEqual("Kubelwagen", spawn_vehicle("ScoutCarSpawner", 1, templates))
+        self.assertEqual("Willy", spawn_vehicle("ScoutCarSpawner", 2, templates))
         self.assertIsNone(spawn_vehicle("AAGunSpawner", 2, templates))
+
+    # Midway's own `Conquest/ObjectSpawnTemplates.con`, verbatim. Both fleets
+    # share these three spawners and `ObjectSpawns.con` gives each hull its
+    # own `Object.setteam` — 2 for the American fleet at x ~ 3400, 1 for the
+    # Japanese at x ~ 700. Reading `teamOnVehicle 1` as an owner team forced
+    # every pad to the Japanese hull, so the US fleet sailed as shokaku,
+    # hatsuzuki and hatsuzuki2.
+    MIDWAY_FLEET = """
+ObjectTemplate.create ObjectSpawner DestroyerSpawner
+ObjectTemplate.setObjectTemplate 2 fletcher
+ObjectTemplate.setObjectTemplate 1 hatsuzuki
+ObjectTemplate.SpawnDelay 200
+ObjectTemplate.SpawnDelayAtStart 0
+ObjectTemplate.TimeToLive 120
+ObjectTemplate.Distance 200
+ObjectTemplate.teamOnVehicle 1
+ObjectTemplate.create ObjectSpawner DestroyerSpawner2
+ObjectTemplate.setObjectTemplate 2 fletcher2
+ObjectTemplate.setObjectTemplate 1 hatsuzuki2
+ObjectTemplate.SpawnDelay 200
+ObjectTemplate.SpawnDelayAtStart 0
+ObjectTemplate.TimeToLive 120
+ObjectTemplate.Distance 200
+ObjectTemplate.teamOnVehicle 1
+ObjectTemplate.create ObjectSpawner carrierSpawner
+ObjectTemplate.setObjectTemplate 2 enterprise
+ObjectTemplate.setObjectTemplate 1 shokaku
+ObjectTemplate.SpawnDelay 300
+ObjectTemplate.SpawnDelayAtStart 0
+ObjectTemplate.TimeToLive 120
+ObjectTemplate.Distance 200
+ObjectTemplate.teamOnVehicle 1
+"""
+
+    def test_midways_allied_fleet_is_american(self) -> None:
+        templates = parse_spawn_templates(self.MIDWAY_FLEET)
+        self.assertEqual("fletcher", spawn_vehicle("DestroyerSpawner", 2, templates))
+        self.assertEqual("fletcher2", spawn_vehicle("DestroyerSpawner2", 2, templates))
+        self.assertEqual("enterprise", spawn_vehicle("carrierSpawner", 2, templates))
+
+    def test_midways_axis_fleet_is_still_japanese(self) -> None:
+        templates = parse_spawn_templates(self.MIDWAY_FLEET)
+        self.assertEqual("hatsuzuki", spawn_vehicle("DestroyerSpawner", 1, templates))
+        self.assertEqual("hatsuzuki2", spawn_vehicle("DestroyerSpawner2", 1, templates))
+        self.assertEqual("shokaku", spawn_vehicle("carrierSpawner", 1, templates))
+
+    def test_team_on_vehicle_is_a_bool(self) -> None:
+        # `ObjectSpawnerTemplate + 0x185` is a `char` the engine registers as
+        # a `bool` property, and `makeScript` (0x08314f70) round-trips it as
+        # the literal line `ObjectTemplate.teamOnVehicle 1` with no value
+        # appended. EoD writes `0` on 9,274 spawners, which is not a team at
+        # all; XPack2 writes `2`.
+        templates = parse_spawn_templates(
+            """
+ObjectTemplate.create ObjectSpawner OffSpawner
+ObjectTemplate.setObjectTemplate 2 fletcher
+ObjectTemplate.setObjectTemplate 1 hatsuzuki
+ObjectTemplate.teamOnVehicle 0
+ObjectTemplate.create ObjectSpawner OnSpawner
+ObjectTemplate.setObjectTemplate 2 fletcher
+ObjectTemplate.setObjectTemplate 1 hatsuzuki
+ObjectTemplate.teamOnVehicle 1
+ObjectTemplate.create ObjectSpawner TwoSpawner
+ObjectTemplate.setObjectTemplate 2 fletcher
+ObjectTemplate.setObjectTemplate 1 hatsuzuki
+ObjectTemplate.teamOnVehicle 2
+ObjectTemplate.create ObjectSpawner SilentSpawner
+ObjectTemplate.setObjectTemplate 2 fletcher
+"""
+        )
+        self.assertFalse(templates["offspawner"].team_on_vehicle)
+        self.assertTrue(templates["onspawner"].team_on_vehicle)
+        self.assertTrue(templates["twospawner"].team_on_vehicle)
+        self.assertFalse(templates["silentspawner"].team_on_vehicle)
+        # Whatever the flag says, the hull follows the instance's team.
+        for name in ("OffSpawner", "OnSpawner", "TwoSpawner"):
+            self.assertEqual("fletcher", spawn_vehicle(name, 2, templates))
+            self.assertEqual("hatsuzuki", spawn_vehicle(name, 1, templates))
 
     def test_respawn_window_from_min_max_and_single_delay(self) -> None:
         templates = parse_spawn_templates(
