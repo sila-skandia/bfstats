@@ -897,7 +897,7 @@ import { modeNames, modeProblem, pruneToMode, selectGameMode,
          spawnerWindow } from './game-modes.js';
 import { loadHudPaths } from './hud-pack.js';
 import { createSkirmishScreen } from './play/skirmish.js';
-import { kitIconCandidates } from './kit-icon.js';
+import { kitIconCandidates, kitRowLabel } from './kit-icon.js';
 import { cpNation as cpNationRule, teamNation as teamNationRule } from './nation.js';
 
 // Which game's levels this page serves, and the directory they hang off:
@@ -8121,6 +8121,39 @@ function kitLoadout(team, kitName = deployKit) {
   };
 }
 
+// The five kit-row text leaves of the spawn layout, by their own lexicon
+// keys, mapped onto the page's row names. The keys are the layout's — the
+// menu's `Kit/Strings/KitName1..5` defaults — not the kits' `setKitName`
+// keys, which is exactly why the label cannot be the leaf's own text: a mod
+// re-points the row's kit (and its name) without touching the menu.
+const KIT_ROW_KEYS = {
+  RESPAWN_SCOUT: 'scout', RESPAWN_ASSAULT: 'assault', RESPAWN_AT: 'antitank',
+  RESPAWN_MEDIC: 'medic', RESPAWN_ENGINEER: 'engineer',
+};
+
+/** The display string for the kit row `role` on the current deploy team:
+ *  the level's kit for that row, its own `ObjectTemplate.setKitName`
+ *  resolved through the mod chain's lexicon (`loadouts.kits[kit].kitName`),
+ *  falling back to the spawn layout's own string for the row and, last, the
+ *  page's class word. Shared by the canvas text (`deployText`) and the
+ *  kit buttons' aria-labels, so both say the same. */
+function kitRowLabelFor(role, layoutText) {
+  const { kit } = kitLoadout(deployTeamId, role);
+  const name = kit ? loadouts?.kits?.[kit]?.kitName : null;
+  return kitRowLabel(name, layoutText, KIT_CLASS[role] || role);
+}
+
+/** `kitRowLabelFor`'s fallback, for the callers without the leaf in hand
+ *  (the buttons' aria-labels): the spawn layout's own resolved string for
+ *  the row. */
+function kitRowLayoutText(role) {
+  const key = Object.entries(KIT_ROW_KEYS).find(([, r]) => r === role)?.[0];
+  if (!key) return null;
+  const el = spawnLayout.data?.groups?.spawn?.elements
+    ?.find(e => e.kind === 'text' && e.key === key);
+  return el?.text ?? null;
+}
+
 /** The max HP a soldier of `flag`'s team, holding the deploy screen's chosen
  *  kit, spawns with — `_shared/loadouts.json`'s own `maxHitpoints` for that
  *  kit, or `SOLDIER_MAX_HP_FALLBACK` when the field or the file is not there
@@ -11059,6 +11092,12 @@ function deployTexture(el, vars) {
 function deployText(el, vars) {
   if (el.key === 'RESPAWN_SUICIDE' && !worldReady) return 'LOADING';
   if (el.var && /^Kit\/NrOf/.test(el.var)) return '0';
+  // The five kit-row labels: the level's kit for the row, its own
+  // `setKitName` resolved through the mod chain's lexicon — not the leaf's
+  // own text, which is the menu's string for the class, and a mod re-points
+  // the row's kit (and its name) without touching the menu.
+  const role = KIT_ROW_KEYS[el.key];
+  if (role) return kitRowLabelFor(role, el.text);
   // A bound string the page actually feeds wins over the layout's own sample
   // ("300"/"500" on the ticket counters). Only values this page wrote count:
   // `deployVars()` seeds the table from those same samples, so an untouched
@@ -11117,6 +11156,7 @@ function layoutDeploy() {
   for (const el of group.elements) {
     if (el.kind === 'button' && buttons[el.id]) placeHit(buttons[el.id], el.rect, s);
   }
+  updateKitAriaLabels();
   paintDeployChrome();
   drawFullMap(true);
 }
@@ -11380,11 +11420,24 @@ function selectDeployFlag(index, group = null) {
 /** The AXIS / ALLIED tab. `reselect` moves the chosen flag onto the new
  *  side when it is not already there — a tab click — and leaves it alone
  *  when the flag chose the tab. */
+/** The kit buttons' accessible names say the same as the rows draw: the
+ *  level's kit for the row on the current team, its `setKitName` resolved.
+ *  Called from `setDeployTeam` (the team changed) and `layoutDeploy` (the
+ *  layout — and with it the label's fallback — may have just landed). */
+function updateKitAriaLabels() {
+  for (const hit of deployKitHits) {
+    const role = hit.dataset.kit;
+    if (role) hit.setAttribute('aria-label',
+      kitRowLabelFor(role, kitRowLayoutText(role)));
+  }
+}
+
 function setDeployTeam(team, reselect = true) {
   deployTeamId = team;
   for (const tab of deployTabs) {
     tab.setAttribute('aria-pressed', String(Number(tab.dataset.team) === team));
   }
+  updateKitAriaLabels();
   if (reselect) {
     // Picking a side is picking again: whatever the tab lands on is chosen.
     deployUnchosen = false;
