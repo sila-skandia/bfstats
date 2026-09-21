@@ -88,6 +88,41 @@ sample, and then lists what the counted cycles uploaded and never released, by
 scene path. A pool that uploads one mesh late is a step and passes. Exit 0 flat,
 1 climbing, 2 the run could not be staged (no such vehicle, E refused).
 
+## Drivable-deck trace
+
+`decktrace.cjs` drives a vehicle across a level's real decks -- a bridge span, a
+repair/reload station, a dock -- and prints what the wheels found, per tick.
+Same server, same Playwright.
+
+```bash
+node decktrace.cjs --base http://localhost:5573 --map bocage --list
+node decktrace.cjs --base http://localhost:5573 --map bocage --deck stonebridge_sml_M1 \
+  --vehicle '^Tiger' --start 545.8,-1676.3 --yaw -0.740 --out bridge.json
+node decktrace.cjs --base http://localhost:5573 --map market_garden \
+  --deck stonebridge_big_M1 --zone 939,953,-1146,-1007
+```
+
+`--list` names every drivable static in the level with its world box, which is
+how you pick a `--deck`; without `--start`/`--yaw` the run crosses the chosen
+deck's long axis from `--runUp` metres outside it, which a diagonal span or a
+station with a building on it will want overriding. `--zone x0,x1,z0,z1` is the
+stretch the summary averages over.
+
+It spawns on foot before taking the vehicle (the world consumes one buffered
+input per player per tick, and there is no local player until the deploy screen
+has spawned one), sets `captured` through `__setFly(true)` and then holds the
+real W key -- the only path a tracked hull moves down. What to read: `rideOnDeck`
+against `rideOnGround` (the deck must carry the vehicle exactly as the terrain
+does), `ticksBelowDeck` and `airborneOnDeck` (both zero on a level span),
+`biggestJump` (nothing the slope does not explain) and `pitchOnDeck` (it should
+follow the incline). Exit 0 when the deck was crossed with no tick below it,
+1 otherwise, 2 the run could not be staged.
+
+It also reads a build from **before** the exact-deck query (no `__drive().sweep`,
+no pitch on the drive state, no `deck` in the ground answer) and says
+`legacy: true`, which is how one tool produces both halves of a before/after --
+see `features/maps-viewer-drivable-decks-and-reload-sound`.
+
 Renderer settings and the map repaint gate, for isolating what a frame's
 pixels cost (`--dpr` stays the window's device scale factor):
 

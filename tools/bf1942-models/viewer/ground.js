@@ -38,10 +38,47 @@ const UP = new THREE.Vector3(0, 1, 0);
 
 const DEG = Math.PI / 180;
 
-// The tallest step a driven vehicle's hull will climb (a bridge deck lip or a
-// reload/repair bay's apron, both surfaced by the drivable-deck raster). A
-// deck taller than this — a tower or building on the bay — stays a wall.
-const CLIMB_STEP = 2.6;   // metres
+// --- drivable decks (bridges, repair/reload bays, ramps) --------------------
+//
+// A raised deck is a static collision mesh, not part of the level heightfield,
+// so a driven vehicle needs two things from it that terrain gives for free: the
+// wheels must find its real surface, and the hull must not treat that surface as
+// a wall. `WorldCollider.deckHeight` answers the first with a ray against the
+// deck's own triangles; these three numbers are the policy around it.
+
+/**
+ * How far ABOVE a wheel's axle the deck ray starts, i.e. the step a driven
+ * vehicle may mount onto. The axle already sits a wheel radius above whatever
+ * it is standing on, so the reachable step is this plus the wheel radius —
+ * about a metre for a tank, 0.85 m for a jeep, which takes a bay's apron and a
+ * bridge's abutment lip and refuses a loading platform. Raising it further
+ * would let a tank levitate onto anything named like a deck. [free, numerics]
+ */
+const DECK_STEP_UP = 0.5;   // metres
+
+/**
+ * The same allowance measured from the surface the hull is riding, for the hull
+ * sweep's wall test: a drivable object's vertical face whose top is within this
+ * of the current support is a kerb the suspension steps over, not a wall. A
+ * parapet, a bridge pillar or a hut on the bay all rise well past it and still
+ * stop the hull dead. [free, numerics]
+ */
+const DECK_WALL_STEP = 1.0;   // metres
+
+/**
+ * |normal . up| above which a drivable object's triangle is a surface a vehicle
+ * rides rather than a wall it hits: 0.5 is 60 degrees, comfortably past any
+ * approach ramp or arched span and nowhere near a parapet. The hull sweep drops
+ * those triangles entirely, which is what makes a deck behave like terrain —
+ * the wheels carry the vehicle over it and the sphere never rams it.
+ *
+ * This is the whole of the old `CLIMB_STEP` hack's job, done where the geometry
+ * is. That hack nudged `position.y` by 0.2 m a tick whenever the sweep reported
+ * the deck and the raster claimed the deck was higher, which both launched a
+ * hull the raster over-read and let one pass straight through a pad the raster
+ * under-read (the "drives through the repair pad" report). [free, numerics]
+ */
+const DECK_FLOOR_COS = 0.5;
 
 /** The two grips a wheel declares, and what they mean to the drivetrain. */
 const GRIP_DRIVEN = 'c_PGFEngineGrip';
@@ -625,11 +662,18 @@ class Wheel {
  * One Newton step off the vertical estimate is enough: the heightfield is a
  * 4 m lattice and the correction is second order in the lean.
  *
+ * `fromY` is the reference height every ground query on this probe shares: the
+ * axle plus the step the vehicle may climb, so a drivable deck within reach is
+ * the floor and one above it is not (`WorldCollider.surfaceHeight`). It must be
+ * one value for the whole probe — asking the offset sample from a different
+ * reference is how a surface stops being a function and the spring starts
+ * reading cliffs that are not there.
+ *
  * @returns {number} metres along the axis, or Infinity where there is no
  *   ground under it at all
  */
-function probeAlongAxis(groundHeight, attach, axisWorld) {
-  const floor = groundHeight(attach.x, attach.z);
+function probeAlongAxis(groundHeight, attach, axisWorld, fromY) {
+  const floor = groundHeight(attach.x, attach.z, fromY);
   if (!Number.isFinite(floor)) return Infinity;
   const drop = attach.y - floor;
   // Past the floor the probe has no answer, and **the honest answer is "no
@@ -644,7 +688,7 @@ function probeAlongAxis(groundHeight, attach, axisWorld) {
   let t = drop / axisWorld.y;
   const px = attach.x - axisWorld.x * t;
   const pz = attach.z - axisWorld.z * t;
-  const under = groundHeight(px, pz);
+  const under = groundHeight(px, pz, fromY);
   if (!Number.isFinite(under)) return t;
   return t + (attach.y - axisWorld.y * t - under) / axisWorld.y;
 }
@@ -675,14 +719,36 @@ const NORMAL_PROBE = 0.5;
  * normal from, so the surface it probed against supplies one. Named as the
  * approximation it is; everything spent on it below is read.
  */
-function groundNormal(groundHeight, x, z, out) {
+function groundNormal(groundHeight, x, z, fromY, out) {
   const e = NORMAL_PROBE;
-  const hx0 = groundHeight(x - e, z);
-  const hx1 = groundHeight(x + e, z);
-  const hz0 = groundHeight(x, z - e);
-  const hz1 = groundHeight(x, z + e);
+  const hx0 = groundHeight(x - e, z, fromY);
+  const hx1 = groundHeight(x + e, z, fromY);
+  const hz0 = groundHeight(x, z - e, fromY);
+  const hz1 = groundHeight(x, z + e, fromY);
   if (![hx0, hx1, hz0, hz1].every(Number.isFinite)) return out.set(0, 1, 0);
   return out.set(-(hx1 - hx0) / (2 * e), 1, -(hz1 - hz0) / (2 * e)).normalize();
+}
+
+/** Scratch for one deck normal, so asking for one allocates nothing. */
+const _deckN = [0, 1, 0];
+
+/**
+ * The contact normal under a wheel: the drivable deck's own triangle where the
+ * wheel is on a deck, and the heightfield's gradient everywhere else.
+ *
+ * A finite difference is the right answer for terrain — it IS a height function,
+ * sampled off a 4 m lattice — and the wrong one for a deck, whose surface is a
+ * few large triangles with hard edges: half a metre either side of a wheel near
+ * the lip straddles a drop of metres, and the normal that comes out of that is
+ * nearly horizontal, which through `nAxis` turns the spring off on the tick the
+ * tank is trying to mount the thing. The deck answers with the triangle it
+ * actually found, which is exact on the flat, exact up the incline, and steady.
+ */
+function surfaceNormalAt(vehicle, x, z, fromY, out) {
+  if (vehicle.deckNormal && vehicle.deckNormal(x, z, fromY, _deckN)) {
+    return out.set(_deckN[0], _deckN[1], _deckN[2]);
+  }
+  return groundNormal(vehicle.groundHeight, x, z, fromY, out);
 }
 
 /**
@@ -768,6 +834,13 @@ export class GroundVehicle extends Vehicle {
      * test passes a constant or a stripe. PHY-2.
      */
     this.surfaceFriction = options.surfaceFriction || (() => DEFAULT_MATERIAL_FRICTION);
+    /**
+     * `(x, z, fromY, out) => boolean`: the contact normal of a drivable deck
+     * where a wheel is on one, injected the same way the two above are. Optional
+     * — with no hook (or off a deck) the contact normal is the heightfield's own
+     * gradient, which is what it has always been. See `surfaceNormalAt`.
+     */
+    this.deckNormal = options.deckNormal || null;
 
     this.wheels = [];
     /** `Engine::handleUpdate`'s whole state — the rev filter, the gearbox and
@@ -1006,7 +1079,12 @@ export class GroundVehicle extends Vehicle {
     for (const wheel of this.wheels) {
       // Where the axle is, and how far the ground is DOWN THE SPRING AXIS.
       const attach = this._attach.copy(wheel.rest).applyQuaternion(q).add(s.position);
-      const reach = probeAlongAxis(this.groundHeight, attach, axisWorld);
+      // One reference height for every ground query this wheel makes: the axle
+      // plus the step the suspension can mount. A drivable deck at or below it
+      // is this wheel's floor; a deck above it is something the vehicle has to
+      // drive round to, and a deck it is under stays over its head.
+      const fromY = attach.y + DECK_STEP_UP;
+      const reach = probeAlongAxis(this.groundHeight, attach, axisWorld, fromY);
       const raw = Number.isFinite(reach) ? k.wheelRadius - reach : -Infinity;
       if (raw <= 0) {
         wheel.compression = 0;
@@ -1027,7 +1105,7 @@ export class GroundVehicle extends Vehicle {
 
       // The contact normal, hoisted above the spring because the spring now
       // needs it too — see the `nAxis` note on `load`.
-      const nBody = groundNormal(this.groundHeight, attach.x, attach.z,
+      const nBody = surfaceNormalAt(this, attach.x, attach.z, fromY,
         this._normal).applyQuaternion(qInv);
 
       // Contact-patch velocity in the body frame. Hoisted above the spring
@@ -1103,7 +1181,7 @@ export class GroundVehicle extends Vehicle {
       // The Coulomb coefficient this contact spends: the mean of the wheel's
       // own material and the ground's (PHY-2), sampled where the tyre is.
       wheel.friction = 0.5 * (WHEEL_MATERIAL_FRICTION
-        + this.surfaceFriction(attach.x, attach.z));
+        + this.surfaceFriction(attach.x, attach.z, fromY));
 
       // The tyre frame is laid into the contact plane rather than into the
       // hull's — see `intoContactPlane` for the bytes and for what the
@@ -1256,7 +1334,10 @@ export class GroundVehicle extends Vehicle {
     // Failsafe, not suspension: if the hull's origin has somehow got below
     // the ground the springs never saw (a cliff edge under the belly, a
     // teleport), stop it there rather than letting it fall out of the world.
-    const under = this.groundHeight(s.position.x, s.position.z);
+    // The reference is the hull origin itself, NOT the origin plus a step: a
+    // deck above the origin must stay above it, or driving under a low bridge
+    // would snap the hull up onto the span.
+    const under = this.groundHeight(s.position.x, s.position.z, s.position.y);
     if (Number.isFinite(under) && s.position.y < under + 0.05) {
       s.position.y = under + 0.05;
       if (s.velocity.y < 0) s.velocity.y = 0;
@@ -1279,55 +1360,36 @@ export class GroundVehicle extends Vehicle {
       const dist = Math.hypot(dx, dy, dz);
       if (dist > 1e-6) {
         const len = 1 / dist;
+        // A drivable deck is a FLOOR to this sweep, never a wall: see
+        // `DECK_FLOOR_COS`. The hull sphere is the vehicle's whole bounding
+        // radius centred barely a metre off the ground, so it is buried in
+        // anything horizontal it stands on — terrain only gets away with it by
+        // not being in the sweep at all. Two numbers hand the gate the geometry
+        // it needs: the surface the hull is riding (so a lip within a step of it
+        // is a kerb, not a wall) and the slope past which a drivable triangle is
+        // a road rather than a parapet. Everything else in the level, this
+        // vehicle's own hull aside, still stops it dead.
+        const support = this.groundHeight(prevX, prevZ, prevY);
+        const stepTop = Number.isFinite(support)
+          ? support + DECK_WALL_STEP : -Infinity;
         const hit = this.collider.sweepSphere(
           prevX, prevY, prevZ, dx * len, dy * len, dz * len,
-          dist, this._hullRadius, this._collisionOwner);
-        // A drivable deck (bridge/reload-bay apron) is terrain the wheels ride,
-        // not a wall the hull rams, so its leading lip must not dead-stop the
-        // tank (that was the edge-hang / bounce bug). But it is a real step, not
-        // a free climb: the tank steps up onto it only when the deck is a short
-        // rise above its current support. Re-sweep past the deck to find the
-        // first genuine wall; only a wall/building, or a deck too tall to step
-        // onto, keeps the full stop.
-        const overDeck = hit && this.collider.isDrivableOwner(hit.owner);
-        const solid = overDeck
-          ? this.collider.sweepSphere(
-              prevX, prevY, prevZ, dx * len, dy * len, dz * len,
-              dist, this._hullRadius, hit.owner)
-          : hit;
-        if (solid && this.collider.isDrivableOwner(solid.owner)) {
-          // Still only the deck: climb it if it is a step the tank can mount
-          // (`CLIMB_STEP` metres above current support), a little each tick so
-          // it rises like terrain instead of leaping. A deck taller than the
-          // step (a tower on the bay) is left to the wall stop below.
-          const deck = this.groundHeight(s.position.x, s.position.z);
-          if (Number.isFinite(deck) && s.position.y < deck - 0.05 && s.grounded) {
-            const rise = deck - s.position.y;
-            if (rise <= CLIMB_STEP) {
-              s.position.y += Math.min(0.2, rise - 0.05);
-              if (s.velocity.y < 0) s.velocity.y = 0;
-            } else {
-              // Too tall to step -- fall through to a normal stop below.
-              const backOff = Math.max(0, solid.t - 0.02);
-              s.position.x = prevX + dx * len * backOff;
-              s.position.y = prevY + dy * len * backOff;
-              s.position.z = prevZ + dz * len * backOff;
-            }
-          }
-        } else if (solid) {
-          const backOff = Math.max(0, solid.t - 0.02);
+          dist, this._hullRadius, this._collisionOwner, false,
+          stepTop, DECK_FLOOR_COS);
+        if (hit) {
+          const backOff = Math.max(0, hit.t - 0.02);
           s.position.x = prevX + dx * len * backOff;
           s.position.y = prevY + dy * len * backOff;
           s.position.z = prevZ + dz * len * backOff;
           // Kill the velocity component into the surface normal (it points
           // from the hull toward the vehicle centre). Lateral and tangential
           // components are preserved so the vehicle slides along the wall.
-          const vDotN = s.velocity.x * solid.nx + s.velocity.y * solid.ny
-                      + s.velocity.z * solid.nz;
+          const vDotN = s.velocity.x * hit.nx + s.velocity.y * hit.ny
+                      + s.velocity.z * hit.nz;
           if (vDotN < 0) {
-            s.velocity.x -= vDotN * solid.nx;
-            s.velocity.y -= vDotN * solid.ny;
-            s.velocity.z -= vDotN * solid.nz;
+            s.velocity.x -= vDotN * hit.nx;
+            s.velocity.y -= vDotN * hit.ny;
+            s.velocity.z -= vDotN * hit.nz;
           }
         }
       }
@@ -2318,6 +2380,8 @@ export class TrackedVehicle extends Vehicle {
     /** The ground's `materialFriction` under a world (x, z) — injected the
      * same way `groundHeight` is. See `GroundVehicle`'s own field. PHY-2. */
     this.surfaceFriction = options.surfaceFriction || (() => DEFAULT_MATERIAL_FRICTION);
+    /** The drivable-deck contact normal hook. See `GroundVehicle`'s own field. */
+    this.deckNormal = options.deckNormal || null;
 
     // Root PCO physics (`Sherman`/`M3A1`'s own `setMass`/`setObjectDrag`) —
     // unlike `GroundVehicle`, read off the node rather than a single fitted
@@ -2619,7 +2683,9 @@ export class TrackedVehicle extends Vehicle {
 
     for (const wheel of this.wheels) {
       const attach = this._attach.copy(wheel.rest).applyQuaternion(q).add(s.position);
-      const reach = probeAlongAxis(this.groundHeight, attach, axisWorld);
+      // One deck reference for the whole probe, exactly as `GroundVehicle` does.
+      const fromY = attach.y + DECK_STEP_UP;
+      const reach = probeAlongAxis(this.groundHeight, attach, axisWorld, fromY);
       const raw = Number.isFinite(reach) ? wheel.radius - reach : -Infinity;
       if (raw <= 0) {
         wheel.compression = 0;
@@ -2637,7 +2703,7 @@ export class TrackedVehicle extends Vehicle {
 
       // The contact normal, hoisted above the spring for the same reason
       // `GroundVehicle` hoists it.
-      const nBody = groundNormal(this.groundHeight, attach.x, attach.z,
+      const nBody = surfaceNormalAt(this, attach.x, attach.z, fromY,
         this._normal).applyQuaternion(qInv);
 
       // Contact-patch velocity, hoisted for the damper's first tick exactly
@@ -2692,7 +2758,7 @@ export class TrackedVehicle extends Vehicle {
       wheel.load = load;
       loaded += 1;
       wheel.friction = 0.5 * (WHEEL_MATERIAL_FRICTION
-        + this.surfaceFriction(attach.x, attach.z));
+        + this.surfaceFriction(attach.x, attach.z, fromY));
 
       // No steer angle for a track wheel — `dir` stays nose-forward, exactly
       // `GroundVehicle`'s own `!wheel.steered` branch. The one wheel this
@@ -2854,7 +2920,10 @@ export class TrackedVehicle extends Vehicle {
     }
 
     // Failsafe, not suspension — see `GroundVehicle`'s own comment.
-    const under = this.groundHeight(s.position.x, s.position.z);
+    // The reference is the hull origin itself, NOT the origin plus a step: a
+    // deck above the origin must stay above it, or driving under a low bridge
+    // would snap the hull up onto the span.
+    const under = this.groundHeight(s.position.x, s.position.z, s.position.y);
     if (Number.isFinite(under) && s.position.y < under + 0.05) {
       s.position.y = under + 0.05;
       if (s.velocity.y < 0) s.velocity.y = 0;
@@ -2871,43 +2940,25 @@ export class TrackedVehicle extends Vehicle {
       const dist = Math.hypot(dx, dy, dz);
       if (dist > 1e-6) {
         const len = 1 / dist;
+        // The deck gate, exactly as `GroundVehicle` passes it.
+        const support = this.groundHeight(prevX, prevZ, prevY);
+        const stepTop = Number.isFinite(support)
+          ? support + DECK_WALL_STEP : -Infinity;
         const hit = this.collider.sweepSphere(
           prevX, prevY, prevZ, dx * len, dy * len, dz * len,
-          dist, this._hullRadius, this._collisionOwner);
-        // Same climb-vs-stop rule as `GroundVehicle`: a drivable deck's lip is
-        // a step the tank mounts, re-sweeping past it; a deck taller than
-        // CLIMB_STEP stays a wall.
-        const overDeck = hit && this.collider.isDrivableOwner(hit.owner);
-        const solid = overDeck
-          ? this.collider.sweepSphere(
-              prevX, prevY, prevZ, dx * len, dy * len, dz * len,
-              dist, this._hullRadius, hit.owner)
-          : hit;
-        if (solid && this.collider.isDrivableOwner(solid.owner)) {
-          const deck = this.groundHeight(s.position.x, s.position.z);
-          if (Number.isFinite(deck) && s.position.y < deck - 0.05 && s.grounded) {
-            const rise = deck - s.position.y;
-            if (rise <= CLIMB_STEP) {
-              s.position.y += Math.min(0.2, rise - 0.05);
-              if (s.velocity.y < 0) s.velocity.y = 0;
-            } else {
-              const backOff = Math.max(0, solid.t - 0.02);
-              s.position.x = prevX + dx * len * backOff;
-              s.position.y = prevY + dy * len * backOff;
-              s.position.z = prevZ + dz * len * backOff;
-            }
-          }
-        } else if (solid) {
-          const backOff = Math.max(0, solid.t - 0.02);
+          dist, this._hullRadius, this._collisionOwner, false,
+          stepTop, DECK_FLOOR_COS);
+        if (hit) {
+          const backOff = Math.max(0, hit.t - 0.02);
           s.position.x = prevX + dx * len * backOff;
           s.position.y = prevY + dy * len * backOff;
           s.position.z = prevZ + dz * len * backOff;
-          const vDotN = s.velocity.x * solid.nx + s.velocity.y * solid.ny
-                      + s.velocity.z * solid.nz;
+          const vDotN = s.velocity.x * hit.nx + s.velocity.y * hit.ny
+                      + s.velocity.z * hit.nz;
           if (vDotN < 0) {
-            s.velocity.x -= vDotN * solid.nx;
-            s.velocity.y -= vDotN * solid.ny;
-            s.velocity.z -= vDotN * solid.nz;
+            s.velocity.x -= vDotN * hit.nx;
+            s.velocity.y -= vDotN * hit.ny;
+            s.velocity.z -= vDotN * hit.nz;
           }
         }
       }
