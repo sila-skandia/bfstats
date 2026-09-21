@@ -473,10 +473,10 @@ possible and an honest price for it.
 
 Two things the owner reported after playing the merged parachute: the canopy
 descends at about half the real game's rate, and C should take the view outside
-a falling soldier. **Reviewed MERGE WITH FIXES; the branch is
-`worktree-agent-ae5a14457b88ae4b3` (`670064d`, `26a6a45`, `a4e6f7d`,
-`c95d2d1`) and is NOT yet merged** — the main checkout had another session's
-uncommitted work in `map.html` at merge time. The engine findings are already
+a falling soldier. **Merged 2026-09-22 as `67c12cb`** (`670064d`, `26a6a45`, `a4e6f7d`,
+`c95d2d1`), review MERGE WITH FIXES. It had sat unmerged since 09-21 because the
+main checkout had another session's uncommitted work in `map.html`; see wave 6
+for how the one-line overlap was got round. The engine findings are already
 in `ledger.md` (`1cb95ff`) so nothing here is lost if the branch goes stale.
 
 **The owner's "half speed" was the thread that unravelled it.** The lead's
@@ -500,6 +500,63 @@ drop still lethal.
 | **The client's channel-26 handler** | CAM-2: the server cannot settle what C does to a parachutist. Best lead is that W4-C put the client's `Camera::getTransformation` at `0x005659b0`, so its `setViewMode` sibling is nearby and its callers are the toggle |
 | **`exitVehicle`'s bail branch has still never run end-to-end headlessly** | Seating needs pointer lock; `__bailOut` remains the only headless entry. Carried from W5-B |
 | **The parachute does not replicate** | Confirmed, not merely unverified: `netcode.js` encodes bits 4/20/21/22 only and `deploy`/`dead` are not in the codec. **Bit 22 is already spent on jump as a documented departure, and bit 22 is precisely `c_PIMenuSelect9`, the engine's own ripcord** — so whoever wires this must move jump first |
+
+### Wave 6, running (launched 2026-09-22)
+
+**W5-E landed first** (`67c12cb`), which is what had been blocking it: the branch
+had sat unmerged since 09-21 because `map.html` was dirty in the main checkout.
+It still was, and it still is — another session is live in
+`viewer/play/**`, `viewer/ground.js`, `bf42/meme.py` and the two menu-layout
+extractors. The overlap turned out to be one line: the dirty hunk is at
+`map.html:13237` and the branch's are at 972/2409/8142/8221/8239/13553/14091, so
+a stash, the merge and `stash pop --index` landed it with the other session's
+staged state intact. 2,316 tests green on the trial worktree.
+
+| Stream | Owns | State |
+|---|---|---|
+| W6-A bombs | The aircraft secondary weapon, built from `../plane-bombs-and-torpedoes/README.md` §4-§5 (G-1…G-6) and BOMB-1…BOMB-12. The spec's own headline is that the extractor was never the problem: every rack is already parsed and stamped into the shipped glb, and the weapon dies on a three-line guard in `gunfire.js:484` that refuses a group with no flash, no tracer, no recoil and `velocity 0` — which is precisely a bomb rack. Own worktree | running |
+| W6-E ships, research | The owner's three ship reports, read from the engine. No file changes outside its own feature doc | running |
+| W6-F spawner teams | The one ship defect already proven from the data: `teamOnVehicle` read as a team index. Own worktree | running |
+
+**The ships round, and what the first pass already established.** The owner
+reported three things after playing: destroyers sit high enough to show a
+propeller, a spawn point on a ship puts you in the ocean, and Midway spawns the
+Axis ships for *both* fleets. They are three different bugs.
+
+- **The team one is proven and does not need research.** Every ship spawner
+  declares `ObjectTemplate.teamOnVehicle 1` beside `setObjectTemplate 2 enterprise`
+  and `setObjectTemplate 1 shokaku`, and `ObjectSpawns.con` gives each instance
+  its own `setteam`. `level.py:1309-1312` reads `teamonvehicle` into
+  `SpawnTemplate.owner_team`, and `spawn_vehicle` (`level.py:1355-1356`) lets it
+  **override the instance's own team** — so both fleets get the team-1 hull. The
+  shipped extract says so out loud: `{'spawner': 'carrierSpawner', 'vehicle':
+  'shokaku', 'team': 2}`. **`teamOnVehicle` is not a team index**: across the
+  vanilla levels it takes the values 1 (139 spawners), 2 (7) and **0 (33)**, and 0
+  is not a team. 127 spawners that declare both teams' templates carry
+  `teamOnVehicle 1`, across **Battle of Britain, Coral Sea, Guadalcanal, Invasion
+  of the Philippines, Iwo Jima, Midway, Omaha Beach, Truk and Wake** — every one
+  of them currently Axis for both sides. W6-F owns the fix; W6-E owes the engine
+  read of what the flag really is (`ObjectSpawner::spawnObject` lnxded
+  `0x083140a0`; no `setTeamOnVehicle` symbol exists, so it is a registered
+  property).
+- **The propeller is buoyancy, and the authored y is not the waterline.** Midway's
+  `waterLevel` is 20. The destroyer instances are authored at y = **20.4371**;
+  the battleships at y = **12.7**, which is 7.3 m *below* the same waterline. So
+  the engine settles a ship both up and down, and the viewer draws it where
+  authored because **nothing reads `FloatingBundle`** — `PhysicsFloatingBundle` is
+  named in physics.md and nowhere consumed. `Fletcher_Floater` is `hullHeight 20`,
+  `floatMaxLift 2`, `floatMinLift 2`.
+- **The deck exists in our data and not in our collision.** Midway's
+  `vehicleSoldierSpawns` carry y = 29.837 and 32.437, 10-12 m above the waterline,
+  which is right. A ship is a dynamic object and not a static, so there is no deck
+  in the statics index to land on — the same mechanism an earlier round guessed at
+  for Wake's Shokaku and Hatsuzuki putting a soldier in the sea at y = 95. W6-E
+  owes what geometry a ship contributes and how a soldier rides a moving one.
+- Also noticed and handed to W6-E: the deck spawn at `[3194.183, 32.437,
+  -2243.676]` carries `team: 1` while the ship spawner instance at the *same*
+  position carries `team: 2`, so the soldier-spawn team may be a second bug.
+- `c_ETShip` is not one of the three engine types `seats.js:186-196` has a drive
+  model for, so a ship helm deliberately falls through to a bare `'seat'`.
 
 ### Not yet assigned
 
