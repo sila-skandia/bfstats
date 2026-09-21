@@ -12732,11 +12732,14 @@ function frame(dt) {
   // The room's wire, right on the sim core's edge: one input word per tick
   // the world consumed (the engine's one-buffered-input-per-tick law — the
   // same input this page just handed the local sim; an unticked frame sends
-  // nothing and the server's world idles that tick, which is what this
-  // page's own idle ticks already are). Then the renderer draws the
-  // server-confirmed remotes after the local world's readbacks.
-  if (roomJoined && step.ticks > 0 && input) {
-    roomClient.sendInput(input, look);
+  // nothing). A frame longer than 33 ms ran several local ticks against this
+  // word (world.js `#consume`), so it owes the server that many: one word a
+  // frame would leave the authority's catch-up ticks on its zeroed idle word,
+  // which is a held trigger released every frame below 30 fps. Then the
+  // renderer draws the server-confirmed remotes after the local world's
+  // readbacks.
+  if (roomJoined && input) {
+    for (let i = 0; i < step.ticks; i++) roomClient.sendInput(input, look);
   }
   if (roomJoined && roomRenderer) {
     roomRenderer.update(dt, roomClient, performance.now());
@@ -12969,11 +12972,13 @@ if (params.has('shots')) {
   // Screenshot tooling in a hidden tab gets no requestAnimationFrame ticks
   // and reports a 0x0 window; let it force a sized, deterministic frame
   // before reading the canvas back.
-  window.__renderOnce = (w = 1280, h = 800) => {
+  // `dt` is the frame time to simulate, under the animation loop's own 0.1 s
+  // clamp: 1/15 is a 15 fps machine, whose every frame owes two world ticks.
+  window.__renderOnce = (w = 1280, h = 800, dt = 1 / 60) => {
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    frame(1 / 60);
+    frame(Math.min(Math.max(dt, 0), 0.1));
     return true;
   };
   // Scene handles for offline inspection: isolating one shader term is the

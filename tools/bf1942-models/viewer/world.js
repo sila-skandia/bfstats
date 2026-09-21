@@ -29,7 +29,15 @@
 //     the engine's idle word. The page's own per-player stage stays at 0-1
 //     entries -- `setInput` without a sequence replaces the un-consumed
 //     entry (freshest device state), so the display-rate feed never binds
-//     the cap. Sequenced packets (the future wire) append instead and dedupe
+//     the cap. That un-sequenced word is the frame's DEVICE STATE, not a
+//     packet: a frame longer than one tick runs every one of its ticks
+//     against it, which is the client's own law (`InputManager::update`
+//     0x0049cff7 samples the devices once for `nTicks`, and mouse-input.js
+//     divides the counts by `nTicks / 30` on the promise that each tick
+//     applies the axis). It is held for that one `step()` only; a step the
+//     page fed nothing for idles. Every channel of the word is a level --
+//     the one edge it implies, the jump press, is derived by soldier.js from
+//     the level -- so there is nothing in it to consume once. Sequenced packets (the future wire) append instead and dedupe
 //     on `seq > lastSeen`, the receive rule (`processRcvdPlayerActions`
 //     0x08148470). A backlog beyond the sim's tolerance collapses: the
 //     world's clock is a FixedStep capped at MAX_CATCH_UP_TICKS, the same
@@ -327,6 +335,7 @@ export class World {
       // the input word, engine-FIFO semantics (see the header):
       buffer: [],              // sequenced packets, appended, cap 4 drop-oldest
       pending: null,           // the page's un-sequenced freshest state (0-1)
+      held: null,              // that state, for the rest of its frame's ticks
       lastSeen: -1,            // highest sequence accepted (receive dedupe)
       last: null,              // the entry the last tick consumed (or idle)
       lookApplied: { yaw: 0, pitch: 0 },
@@ -661,6 +670,8 @@ export class World {
     report.ticks = this.clock.advance(dt);
     report.alpha = this.clock.alpha;
     if (!report.ticks) return report;
+    // A held local word belongs to the step that consumed it, never the next.
+    for (const player of this.players.values()) player.held = null;
     const bodyBefore = this.bodyWorld?.ticks ?? 0;
     for (let i = 0; i < report.ticks; i++) this.#tick();
     report.bodyTicks = (this.bodyWorld?.ticks ?? 0) - bodyBefore;
@@ -850,13 +861,27 @@ export class World {
   /** Exactly one input per tick (LOOP-1 / `simulatePlayerUpdate` 0x0815bd00):
    *  the buffer's oldest sequenced entry, or the local stage's pending entry
    *  when that is the only thing waiting, or the engine's zeroed idle word
-   *  when both are empty -- never a replay of what a previous tick consumed.
+   *  when both are empty -- a sequenced packet is never replayed.
+   *
+   *  The local stage's entry is the exception, and only within its own
+   *  frame: it is the device state the page sampled for ALL of this step's
+   *  ticks, so the catch-up ticks of a frame longer than 33 ms run against
+   *  it too. Handing them the idle word instead ended every slow frame with
+   *  the trigger released -- `group.firing` false at draw time, a vehicle
+   *  MG's fire loop gated shut every frame, one round in n fired -- and
+   *  dropped the throttle, the steer and the look axis on the same ticks;
+   *  on foot it turned a held jump into a press per frame. `step()` clears
+   *  the hold before its first tick, so nothing outlives the frame it was
+   *  fed for.
    */
   #consume(player) {
     let entry = player.buffer.length ? player.buffer.shift() : null;
     if (!entry) {
-      entry = player.pending;
-      player.pending = null;
+      if (player.pending) {
+        player.held = player.pending;
+        player.pending = null;
+      }
+      entry = player.held;
     }
     player.last = entry ?? ENGINE_IDLE;
     return player.last;
