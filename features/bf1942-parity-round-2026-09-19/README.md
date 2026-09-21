@@ -450,6 +450,25 @@ second reader, builds get an adversarial review, nothing merges untested.
 W4-A and W4-F run in parallel; W4-B and W4-C launch once W4-F reports and its
 claims pass a second reader.
 
+### Wave 5, running (launched 2026-09-21)
+
+Four streams. Two are defects the owner found playing the thing; one is the
+soldier work that has been the largest visible miss since the round opened; one
+is the bots research that "Not yet assigned" has been waiting on. Each in its
+own worktree from `main` at `2883708`, same shape as before: builds get an
+adversarial review, research claims get a second reader, nothing merges
+untested.
+
+| Stream | Owns | Port |
+|---|---|---|
+| W5-A soldiers | **an explosion hurts the man on foot** (HP-9/HP-10: `applySplash` walks registered vehicles only, so a grenade at the local player's feet costs him nothing), **crouch and prone play their own aim** instead of the standing clip, and what can honestly be done about spawn-pad soldiers being decoration. Explicitly NOT bot behaviour, which is W5-D's | 5331 |
+| W5-B parachute | Stepping out of a flying aircraft drops you where the plane was. In the game you fall, the scream fires, the fart easter egg exists, and the chute opens on 9 and glides you down still able to look and shoot. Reads the engine first: the server is unstripped for this — `BFSoldier::setIsParachuting(bool)` `0x08276f90`, `BFSoldier::triggerFallingAnimation()` `0x0827e920`, `setParachuteSpeed` / `setParachuteDrag`, sound triggers `c_SstFallingHigh` / `c_SstOpenParachute` / `c_SstParachuteLand`, and the `Ub_Parachute{Open,Fall,HitGround,Die,DeadHitGround}` clip names. `ShowParachute` is already in the corpus as a world-icon HUD flag (SUP-17) | 5332 |
+| W5-C idle when unoccupied | A tank or plane keeps its firing animation when nobody is in it — on exit with the trigger down, on the respawn after a wreck (the owner's repro is a Spitfire crashed mid-burst), and on a freshly placed vehicle. Three entry points, two candidate latches: `world.js`'s `fireStates` WeakMap keyed on a node that survives a respawn, and `gunfire.js`'s `group.firing` with `viewmodel-anim.js`'s `fireRunning`. The same shape as wave 3's `silence()` leaving `trigger Volume` latches armed | 5333 |
+| W5-D bots, research | The corpus has nothing on the engine's AI. The server is fully symbolised for it — `BotMain` 379 symbols, `BotManager` 275, `Bot` 148, `AIPathfinding` 201, `AIInformationGrid` 114, `AIMain` 105, `AISettings` 91, `AIStrategicObject` 75, plus `AITemplateManager`, `AILandingZone`, `AITemplateCover`, `BotBehaviour`. Question 5 is the one with a build behind it: what the Instant Battle screen's difficulty variables become, which is what `SHOW_BOT_SETTINGS` in `viewer/play/menu-screen.js` is switched off waiting for. Closes with a staged cost estimate for the smallest bot worth shooting at. No worktree changes beyond its own feature doc | — |
+
+Nobody is building bots this wave. W5-D produces the document that makes it
+possible and an honest price for it.
+
 ### Not yet assigned
 
 Hull collision between ground vehicles and the world has an engine spec
@@ -473,7 +492,7 @@ still stops on the swept sphere, and a drive model that tumbles when it crashes.
 | Debris falls through the ground (particles have no collision) | open |
 | No dynamic shadows (`castShadow = false` is the only hit) | open |
 | `poses.html` cannot fire a weapon (never imports `GunFire`) | open |
-| Spawn-pad soldiers are decoration; crouch and prone play the standing aim | open |
+| Spawn-pad soldiers are decoration; crouch and prone play the standing aim | **assigned, W5-A** (with the on-foot splash gap) |
 | Ground vehicles have no hull collision; every drive constant is `[free]` until a drive is recorded in wine | open |
 | A tank's external camera follows the hull, not the turret | **done, W4-C `577de24`** (turret-following default kept by the owner's ruling) |
 | Seat-occupancy dots unfed (positions are live-bound per vehicle) | **done, W4-A `eab59c0`** |
@@ -483,7 +502,7 @@ still stops on the swept sphere, and a drive model that tumbles when it crashes.
 | `Water.baseTex`, `envmapcolor`; `aiMeshes.rfa` hulls; palm trunk collision; `c_CGProjectiles` / `c_CGLadders`; `LightmapShadowBits.lsb` (format unknown); Berlin's ground outside its four tiles | open |
 | Bar1918 round counter never decrements (`task_4b7d2a66`) | open, unreproduced |
 | `verify_models.py` is stale: on the 09-19 vanilla rebuild it calls 42 of 96 models broken, every one a false alarm. It counts projectile, tracer, trail, cockpit and emitter helper nodes as "unbound parts piled on the origin", measures a rifle's length across them (Bar1918 2.02 m against 1.19 m), and does not understand a skinned soldier. Checked by eye: `BritishSoldier`, `AichiVal` and `Bar1918` render correctly. A verifier that always says broken hides the day it is right | open |
-| Bots. Nothing about the engine's AI is in the corpus: how a bot is spawned, driven and given a kit, what `aiMeshes.rfa` and a level's `AI/` and `AIPathFinding/` hold, and what the Instant Battle screen's difficulty variables become when a battle starts. Until it is documented the screen's whole left column is switched off (`SHOW_BOT_SETTINGS` in `viewer/play/menu-screen.js`, owner's call 2026-09-20) | open, research first |
+| Bots. Nothing about the engine's AI is in the corpus: how a bot is spawned, driven and given a kit, what `aiMeshes.rfa` and a level's `AI/` and `AIPathFinding/` hold, and what the Instant Battle screen's difficulty variables become when a battle starts. Until it is documented the screen's whole left column is switched off (`SHOW_BOT_SETTINGS` in `viewer/play/menu-screen.js`, owner's call 2026-09-20) | **assigned, W5-D** (research only; the screen's left column stays off until it reports) |
 | Mod coverage: 18 mods installed; maps and models exist for vanilla, XPack1, XPack2 and EoD only | by choice, for now |
 
 ### The lead's own queue
