@@ -72,7 +72,7 @@ import {
 import { Soldier, spawnFlags, pickSpawn, spawnYaw } from './soldier.js';
 import { fallDamageFor } from './fall-damage.js';
 import { soldierLookDegrees } from './mouse-input.js';
-import { BodyWorld } from './body-world.js';
+import { BodyWorld, touchesWater } from './body-world.js';
 import { buildParkedVehicle, collisionPartsFor, DrivenBody, quaternionFromAxes } from './vehicle-bodies.js';
 import { CombatArea } from './combat-area.js';
 import { SupplyField } from './supply.js';
@@ -1012,13 +1012,27 @@ export class World {
         owners.add(owner);
         continue;
       }
-      // The body's own height is the reference the deck query needs (see
-      // `WorldCollider.surfaceHeight`): a tank on a bridge over a river is
-      // standing on the span, not in the water, and a tank in the river UNDER
-      // the same span is in the water — which the raster this replaced could not
-      // tell apart, because it lifted the surface at an (x, z) for everyone.
+      // Is there open water under this (x, z) at all? The body's own height is
+      // the reference the deck query needs (see `WorldCollider.surfaceHeight`):
+      // a tank on a bridge over a river is standing on the span, not in the
+      // water, and a tank in the river UNDER the same span is in the water —
+      // which the raster this replaced could not tell apart, because it lifted
+      // the surface at an (x, z) for everyone.
       const surface = collider.surfaceHeight(pos[0], pos[2], pos[1]);
-      if (Math.abs(surface - waterLevel) < 0.01) owners.add(owner);
+      if (Math.abs(surface - waterLevel) >= 0.01) continue;
+      // ...and does the hull actually reach it? This second half is the whole
+      // of the altitude test, and without it the answer above was the final
+      // one: `surfaceHeight` is a function of x and z, so a plane at 400 m over
+      // the sea read as "in water" and HP-5's drowning tick took
+      // `hpLostWhileDamageFromWater` off it every second — 10 HP/s for every
+      // vanilla aircraft, which kills a 100 HP Corsair over Wake in ten
+      // seconds of ordinary flight with nothing shooting at it. `touchesWater`
+      // is the engine's own geometric rule (collision-response §7).
+      const entry = this.bodyWorld?.get(owner);
+      // Furniture registered by position alone has no hull to test; its origin
+      // is the only geometry there is, and the `<= waterLevel` test above has
+      // already asked about it.
+      if (entry && touchesWater(entry, pos[1], waterLevel)) owners.add(owner);
     }
     return owners;
   }

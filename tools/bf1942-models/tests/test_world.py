@@ -200,5 +200,37 @@ class WorldTests(unittest.TestCase):
         self.assertEqual(s7["dedupe"]["seqs"], [40, 41])
 
 
+    # --- HP-5's water contact ------------------------------------------
+
+    def test_a_hull_high_over_open_water_is_not_in_the_water(self) -> None:
+        """The regression: `#inWaterOwners` used to decide water contact from
+        `WorldCollider.surfaceHeight`, which is a function of x and z alone
+        and so answers "the sea" for a plane at any altitude over it. Every
+        aircraft flying over water then took `hpLostWhileDamageFromWater`
+        (10 HP/s for every vanilla plane) once a second until it exploded,
+        with nothing shooting at it. `touchesWater` is `checkVsTerrain`'s own
+        rule — collision-response.md §7, the lowest tested vertex below the
+        water level — so altitude decides it."""
+        water = self.results["water"]
+        self.assertFalse(water["highAbove"])
+        self.assertFalse(water["justClear"])
+
+    def test_water_contact_begins_at_the_lowest_tested_vertex(self) -> None:
+        # §7: the vertex, not the origin, is the thing that has to be under
+        # the plane — and the compare is `<=`, so resting exactly on it is
+        # contact.
+        water = self.results["water"]
+        self.assertTrue(water["bellyTouching"])
+        self.assertTrue(water["bellyUnder"])
+
+    def test_an_origin_below_the_water_plane_needs_no_vertex(self) -> None:
+        water = self.results["water"]
+        self.assertTrue(water["originUnder"])
+
+    def test_a_level_with_no_water_drowns_nothing(self) -> None:
+        water = self.results["water"]
+        self.assertFalse(water["noWaterLevel"])
+
+
 if __name__ == "__main__":
     unittest.main()
