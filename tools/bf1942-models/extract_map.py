@@ -334,7 +334,10 @@ def find_weapon_scripts(library, objects: ArchivePool,
     (`Weapons.con` puts `loadSoundScript Sounds/CorsairMG.ssc` directly on
     `CorsairGuns`), not to a child of it.
 
-    Returns `(fire arms name, archive path, script path)` per gun that has one.
+    Returns `(fire arms name, archive path, script path, from the projectile)`
+    per gun that has one; the last element says the script came off the round
+    rather than off the weapon, which is what `_firing_patch`'s `release` mode
+    keys on.
 
     A bomb rack declares none of its own, and used to "simply not appear" here —
     which was gap G-5: the release thump and the falling whistle are one
@@ -363,13 +366,15 @@ def find_weapon_scripts(library, objects: ArchivePool,
         seen.add(key)
         if node.kind.lower() == "firearms":
             hit = _weapon_script(objects, node)
+            projectile_sourced = False
             if hit is None and node.projectile_template:
                 projectile = library.objects.get(
                     node.projectile_template.lower())
                 if projectile is not None:
                     hit = _weapon_script(objects, projectile)
+                    projectile_sourced = hit is not None
             if hit is not None:
-                found.append((node.name, hit[0], hit[1]))
+                found.append((node.name, hit[0], hit[1], projectile_sourced))
         for ref in node.children:
             child = library.objects.get(ref.template.lower())
             if child is not None:
@@ -405,7 +410,7 @@ def _non_silence(samples):
             if not s.file.replace("\\", "/").lower().endswith(_SILENCE)]
 
 
-def _firing_patch(patches):
+def _firing_patch(patches, release=False):
     """The patch a held trigger plays.
 
     Prefer a patch that carries a looping sample (the Fire Loop). Fall back to
@@ -413,6 +418,16 @@ def _firing_patch(patches):
     report. When the Fire Loop wins, keep only its looping layers — that patch
     also stacks shell-eject and distance one-shots the continuous gain-gate
     path cannot play.
+
+    `release` inverts that preference, and a bomb rack is why. A rack's script
+    is the PROJECTILE's `Bomb.ssc`, whose first sounding patch is the falling
+    bomb's in-flight whistle — three looping samples, `shellair`, `Shellwhine`
+    and `haxxar`. Taking the loop there would hang a for-ever whistle on a
+    momentary trigger; the release thump (`bmbreal1` / `bmbreal3`, `randomPlay`,
+    `relativePosition 0/0/2`, `dopplerOff`) is the second patch and is the
+    one-shot the viewer's per-round trigger wants. So: a weapon whose sound came
+    off its own projectile takes the first ONE-SHOT patch instead of the first
+    looping one.
     """
     first = None
     for patch in patches:
@@ -421,9 +436,9 @@ def _firing_patch(patches):
             continue
         if first is None:
             first = samples
-        loops = [s for s in samples if s.loop]
-        if loops:
-            return loops
+        wanted = [s for s in samples if bool(s.loop) is not release]
+        if wanted:
+            return wanted
     return first or []
 
 
@@ -736,7 +751,7 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
         # The guns ride along with the vehicle that carries them — or alone,
         # for a furniture mount that has no drivetrain voice of its own.
         weapons: list[dict] = []
-        for arms_name, _, arms_script in find_weapon_scripts(
+        for arms_name, _, arms_script, from_round in find_weapon_scripts(
                 library, objects, template):
             arms_text = read_script(arms_script)
             if arms_text is None:
@@ -744,7 +759,8 @@ def extract_vehicle_sounds(library, objects: ArchivePool, sounds: ArchivePool,
             arms_layers = _sound_layers(
                 _firing_patch(parse_ssc(arms_text, level=VEHICLE_SOUND_LEVEL,
                                         include=read_script,
-                                        source=arms_script)),
+                                        source=arms_script),
+                              release=from_round),
                 sounds, write, level_files)
             if not arms_layers:
                 continue
