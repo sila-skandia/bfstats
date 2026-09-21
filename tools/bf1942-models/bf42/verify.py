@@ -113,6 +113,15 @@ SILHOUETTE_AUTHORED: dict[str, tuple[float, str]] = {
 # Two mesh materials no vanilla `.rs` defines a shader for — 2 triangles on the
 # Thompson body, a 29-triangle sight detail on the StG 44. Authored gaps in the
 # game data, not lookup failures.
+#
+# Like `BASE_GAME_ABSENT_MESHES` these are statements about *files*: the
+# material name comes out of `Thompson_m1.sm` itself and the missing shader out
+# of the base game's `.rs` set, so they hold for every mod chain that inherits
+# `Mods/bf1942` -- which is every installed mod. EoD's Thompson and Sg44 are
+# vanilla's, read out of vanilla's archives, and gating these on the mod being
+# vanilla put both of them back in the degraded column for no reason. A mod
+# weapon that merely shares the *template* name would carry its own mesh and so
+# its own material names, which is what makes keying on the material safe.
 MATERIALS_WITHOUT_SHADER_AUTHORED: dict[str, frozenset[str]] = {
     "Thompson": frozenset({"thompson_m1_material0"}),
     "Sg44": frozenset({"sg44_material1"}),
@@ -122,6 +131,10 @@ MATERIALS_WITHOUT_SHADER_AUTHORED: dict[str, frozenset[str]] = {
 # the `.rs` names variants the archives never shipped. These are the only
 # absent references that reach an extracted model; the full 56-name census is
 # in features/bf1942-3d-models/extraction-rollout.md.
+#
+# Statements about files again, so they apply to every chain that inherits the
+# base game: 19 of the 22 unresolved-texture rows across XPack2 and EoD are
+# these same three names, reached through vanilla's own `.rs` files.
 VANILLA_UNRESOLVED_TEXTURES: frozenset[str] = frozenset({
     "texture/",             # an empty ref in BlackMedal_Hull_L1.rs and Yamato turrets
     "texture/sherw2_f",     # Sherman road-wheel variant (Sherman, M10, Priest)
@@ -735,6 +748,57 @@ def origin_pile(parts: list[Part], *, epsilon: float = 1e-4,
     return piled
 
 
+def _extra_geometries(extras: dict) -> set[str]:
+    """Every geometry name an `extras` block points at, lowercased.
+
+    A part names its own geometry in `extras.geometry`; a baked preview or
+    emitter names the geometry it spawns inside `extras.projectileMesh`,
+    `extras.tracerMesh` or one of the effect extras.
+    """
+    found: set[str] = set()
+    own = extras.get("geometry")
+    if isinstance(own, str) and own:
+        found.add(own.replace("\\", "/").rsplit("/", 1)[-1].lower())
+    for key in PREVIEW_EXTRAS + EFFECT_EXTRAS:
+        value = extras.get(key)
+        if isinstance(value, dict):
+            nested = value.get("geometry")
+            if isinstance(nested, str) and nested:
+                found.add(nested.replace("\\", "/").rsplit("/", 1)[-1].lower())
+    return found
+
+
+def helper_geometry_names(parts: list[Part]) -> frozenset[str]:
+    """Geometries only the exporter's furniture uses, never a drawn part.
+
+    Which turns `materialsWithoutShader` from a list of names into a statement
+    about the model. Thirteen EoD vehicles report `bullet_m1_Material0`: that
+    is the material of `bullet_m1`, the round the gun fires, baked hidden as a
+    `projectileMesh` on the barrel. Nothing the model draws is untextured, and
+    it is the same class of mistake as counting a muzzle flash as a part -- the
+    material name carries the mesh it came from (`Foo_M1.sm` names its
+    materials `Foo_M1_Material0`), so the two can be matched up.
+
+    A geometry that *any* body part also uses is not in this set, so a material
+    shared between a drawn part and an emitter keeps its degradation.
+    """
+    helper: set[str] = set()
+    body: set[str] = set()
+    for part in parts:
+        (helper if part.is_helper else body).update(
+            _extra_geometries(part.extras))
+    return frozenset(helper - body)
+
+
+def material_mesh(material: str) -> str:
+    """`Foo_M1_Material0` -> `foo_m1`, the mesh the material came from."""
+    lowered = material.strip().lower()
+    head, sep, tail = lowered.rpartition("_material")
+    if sep and (not tail or tail.isdigit()):
+        return head
+    return lowered
+
+
 def unposed_skins(parts: list[Part]) -> list[str]:
     """Skinned meshes with no skeleton in scope to put them anywhere.
 
@@ -1273,10 +1337,9 @@ def triage_report(name: str, report: dict | None, *,
                          report.get("missingGeometryTemplates") or [])
         missing_textures = report.get("texturesNotFound") or []
         if missing_textures:
-            authored_textures = VANILLA_UNRESOLVED_TEXTURES if vanilla_facts else frozenset()
             unexplained = [
                 t for t in missing_textures
-                if t.strip().lower() not in authored_textures
+                if t.strip().lower() not in VANILLA_UNRESOLVED_TEXTURES
             ]
             if unexplained:
                 triage.degraded(f"textures unresolved: {', '.join(unexplained)}")
@@ -1287,19 +1350,27 @@ def triage_report(name: str, report: dict | None, *,
                     + ", ".join(explained))
         no_shader = report.get("materialsWithoutShader") or []
         if no_shader:
-            authored_materials = (
-                MATERIALS_WITHOUT_SHADER_AUTHORED.get(name, frozenset())
-                if vanilla_facts else frozenset())
-            unexplained = [
-                m for m in no_shader if m.lower() not in authored_materials
-            ]
+            authored_materials = MATERIALS_WITHOUT_SHADER_AUTHORED.get(
+                name, frozenset())
+            helper_meshes = (helper_geometry_names(parts)
+                             if parts is not None else frozenset())
+            recorded = [m for m in no_shader if m.lower() in authored_materials]
+            helper = [m for m in no_shader
+                      if m not in recorded
+                      and material_mesh(m) in helper_meshes]
+            unexplained = [m for m in no_shader
+                           if m not in recorded and m not in helper]
             if unexplained:
                 triage.degraded(
                     f"materials without a shader: {', '.join(unexplained)}")
-            explained = [m for m in no_shader if m not in unexplained]
-            if explained:
+            if helper:
                 triage.info(
-                    "materials no vanilla .rs defines: " + ", ".join(explained))
+                    "materials without a shader on a node the exporter bakes "
+                    "as furniture rather than a part of the object, so nothing "
+                    "the model draws is untextured: " + ", ".join(helper))
+            if recorded:
+                triage.info(
+                    "materials no vanilla .rs defines: " + ", ".join(recorded))
         bad_skeletons = report.get("skeletonsNotRead") or []
         if bad_skeletons:
             triage.degraded(f"skeletons unreadable: {', '.join(bad_skeletons)}")

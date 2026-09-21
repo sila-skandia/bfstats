@@ -314,9 +314,17 @@ class TriageTests(unittest.TestCase):
         triage = verify.triage_report(
             "Sherman", {"texturesNotFound": ["texture/sherW2_f"]})
         self.assertEqual("clean", triage.status)
-        # ...unless the extraction is not vanilla, where the fact list is void.
+        # A file the base game never shipped is absent from every chain that
+        # inherits it, so this one holds for a mod extraction too: XPack2's
+        # Sherman_T34 and three EoD vehicles reach the very same `.rs`.
         triage = verify.triage_report(
-            "Sherman", {"texturesNotFound": ["texture/sherW2_f"]},
+            "Sherman_T34", {"texturesNotFound": ["texture/sherW2_f"]},
+            vanilla_facts=False)
+        self.assertEqual("clean", triage.status)
+
+    def test_a_texture_the_mod_itself_is_missing_is_still_degraded(self) -> None:
+        triage = verify.triage_report(
+            "Elco80", {"texturesNotFound": ["texture/50cal_b"]},
             vanilla_facts=False)
         self.assertEqual("degraded", triage.status)
 
