@@ -16,6 +16,7 @@
 
 import * as THREE from 'three';
 import { resolveSeatDots, SEAT_DOT_SLOTS } from './seat-dots.js';
+import { byWeaponSlot } from './bomb-release.js';
 
 // --- seat survey -------------------------------------------------------
 
@@ -397,9 +398,24 @@ export class VehicleOccupancy {
     return seat?.camera || seat?.node || this.root;
   }
 
-  /** The FireArms nodes `collectGuns()` should scope firing to. */
+  /**
+   * The FireArms nodes `collectGuns()` should scope firing to, primary first.
+   *
+   * `map.html`'s ammo panel reads `nodes[0]` as the primary weapon-icon slot
+   * and `nodes[1]` as the secondary, and that used to be declaration order.
+   * `byWeaponSlot` sorts on the declared trigger instead -- `c_PIFire` before
+   * `c_PIAltFire`, stably -- which is what puts the B17's bombs in the PRIMARY
+   * slot, where `setNumberOfWeaponIcons 1` and `setPrimaryAmmoIcon
+   * "Ammo/Icon_bomb.tga"` say they belong (ledger BOMB-7: its pilot carries a
+   * rack and no gun). A Sherman's cannon and coax are both `c_PIFire` and keep
+   * the order they were declared in. It is a design choice and not a derived
+   * fact -- VHUD-10 is still open -- and `byWeaponSlot` carries why.
+   *
+   * Firing does not depend on the order (world.js keys each node on its own
+   * `input`), so this is the HUD's rule and nothing else changes behind it.
+   */
   activeFireArmsNodes() {
-    return this.seatInfo(this.activeSeatId)?.fireArms || [];
+    return byWeaponSlot(this.seatInfo(this.activeSeatId)?.fireArms || []);
   }
 
   /** `Vehicle/*` HUD block for the currently manned seat, falling back to the
@@ -983,14 +999,29 @@ export class FireState {
     }
   }
 
-  /** Called once per round actually fired (chain onto `guns.onShot`). */
-  registerShot() {
+  /**
+   * Called once per trigger pull (chain onto `guns.onShot`), with the number of
+   * rounds that pull spent.
+   *
+   * **One round per projectile, not one per pull** — ledger BOMB-1,
+   * `FireArms::fireFinished` (lnxded `0x08288470`): a multi-barrel weapon with
+   * no `setAsynchronyFire` charges `barrelCount`, everything else charges 1,
+   * and the counter is floored at zero. A Stuka's `magSize 30` over two barrels
+   * is therefore fifteen drops of a pair and one pull takes it from 30 to 28.
+   * `gunfire.js`'s `salvo()` does that arithmetic and hands the answer down; the
+   * default of 1 is what every single-barrel weapon in the game spends and what
+   * a caller written before this argument existed will pass.
+   *
+   * Heat is per pull and not per projectile: `heatAddWhenFire` is added once,
+   * which is what `fireFinished`'s own single call to the heat accumulator does.
+   */
+  registerShot(rounds = 1) {
     if (this.hasHeat) {
       this.heat = Math.min(1, this.heat + this.stats.heatAddWhenFire);
       if (this.heat >= 1) this.overheatRemaining = this.stats.timeDelayOnOverheat || 0;
     }
     if (!this.unlimited) {
-      this.ammo = Math.max(0, this.ammo - 1);
+      this.ammo = Math.max(0, this.ammo - Math.max(0, rounds));
       if (this.ammo === 0 && this.magsLeft > 0) {
         this.reloadRemaining = this.stats.reloadTime || 0;
       }
@@ -1009,9 +1040,12 @@ export class FireState {
  */
 export function chainOnShot(gunsInstance, extra) {
   const previous = gunsInstance.onShot;
-  gunsInstance.onShot = group => {
-    previous?.(group);
-    extra(group);
+  // `rounds` is what the pull actually cost (BOMB-1); forwarded so a handler
+  // that spends ammunition gets it, and ignorable by every handler that does
+  // not care (the fire sound, the viewmodel's cycle).
+  gunsInstance.onShot = (group, rounds) => {
+    previous?.(group, rounds);
+    extra(group, rounds);
   };
 }
 
