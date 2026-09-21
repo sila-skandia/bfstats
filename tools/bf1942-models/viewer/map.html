@@ -4243,6 +4243,25 @@ async function setupEngineAudio() {
     // failure that made every map but Wake look silent last time.
     console.info(`no engine sound for ${template}: re-extract this map if it `
                  + 'predates the vehicle-sound pipeline');
+    // The guns are not the engine's to lose. They hang off the same report
+    // entry, so a template missing from `sounds.vehicles` used to take the
+    // whole seat silent — no engine note *and* no report when you fired,
+    // which is how a Bocage PanzerIV or a Stalingrad Hanomag read as
+    // completely dead. But a gun patch is looked up by FireArms node name,
+    // and the same `.ssc` was almost always extracted next to some other
+    // vehicle on the same map that carries that gun, so the patches are
+    // usually right there in the report under a different template. Try
+    // that before giving up: a map whose data is a re-extraction behind at
+    // least still shoots audibly.
+    const arms = listSeatFireArms(vehicle.node);
+    const byName = findWeaponSpecsByFireArms(extras, arms).map(found => {
+      const local = arms.find(a => a === found.fireArms
+                                   || a === `${found.fireArms}_unlimited`);
+      return local ? { ...found, fireArms: local } : found;
+    });
+    if (byName.length) {
+      await setupWeaponAudio(gen, currentDir, template, vehicle.node, byName);
+    }
     return;
   }
   // The voices hang off the `Engine` node the script is bound to, not the
@@ -4336,6 +4355,26 @@ async function setupWeaponAudio(gen, dir, template, visualRoot, specs) {
  */
 function bareFireArmsName(name) {
   return String(name || '').replace(/_\d+$/, '');
+}
+
+/**
+ * Every FireArms node name under `root`, bare of the instance suffix.
+ *
+ * `findWeaponSpecs` keys on the vehicle's template, so it has nothing to say
+ * about a vehicle the report does not list. This is the other way in: the
+ * scene itself knows which guns are bolted to the thing you are sitting in,
+ * and `findWeaponSpecsByFireArms` can find those patches wherever in the
+ * report they were extracted.
+ */
+function listSeatFireArms(root) {
+  if (!root) return [];
+  const names = new Set();
+  root.traverse(obj => {
+    if (obj.userData?.fireArms && obj.name) {
+      names.add(bareFireArmsName(obj.name));
+    }
+  });
+  return [...names];
 }
 
 /** The FireArms node under `root` a spec's bare name refers to. */
