@@ -424,9 +424,25 @@ Reports: `w3d-sounds.md`, `w3d-review.md`.
   as "pick one" is a reading of the data (SND-6).
 - To publish with the rest: `_shared/effects.glb`, `effects.report.json`,
   `effects.sounds.json` and the 192 new files under `_shared/sounds`.
-- Left open: wreck fire never ends (holds 3 voices), sounds queued while the
-  AudioContext is suspended fire together on resume, vehicle guns still do not
-  get `randomPlay` (needs `extract_map._sound_layers` and a level re-extract).
+ - Left open: wreck fire never ends (holds 3 voices), sounds queued while the
+   AudioContext is suspended fire together on resume, vehicle guns still do not
+   get `randomPlay` (needs `extract_map._sound_layers` and a level re-extract).
+
+### Wave 4, merged (launched 2026-09-21)
+
+Five items the owner picked from "Not yet assigned" on 2026-09-21, split by what
+each needs first. Same shape as before: research reports as text and gets a
+second reader, builds get an adversarial review, nothing merges untested.
+
+| Stream | Owns | State |
+|---|---|---|
+| W4-F research | the three engine reads the builds below are blocked on: (1) the in-game **scoreboard** — which meme page it is, what it lists, how it is fed; (2) the **tank external camera** law — which view mode targets the turret and how the camera is positioned; (3) **MMAP-1/2** — who writes the minimap zoom and yaw. No worktree, no file changes | **reported, second-read 2026-09-21.** Camera + minimap CONFIRMED (crop base is 2.3 as a *double* `0x008d62a0`; zoom is 3 levels, `+0x48 = level+0.5`; `+0x68` = player heading, written every frame). Scoreboard core CONFIRMED with two corrections: the deploy button is a *single* `BfButtonNode` → `Kit/ScoreboardSpawnInterface` (not 18 per-locale), and the art ships `.dds`. Two gaps left open (the `+0x58` static store, the N-key increment of the zoom counter) — non-blocking for the builds |
+| W4-A build | **seat-occupancy dots** (feed the live per-vehicle occupancy into the six dots, `seats.js` `seatDots()` / `hud.js` `seatDotPosition`) and **deploy-screen kit labels** (extract `ObjectTemplate.setKitName` into `loadouts.json`, resolve the lexicon key, swap the hardcoded Scout/Assault/... row labels). No engine read needed: `vehicleIconPos` is already in the re-extracted scenes, and `setKitName 2 "RESPAWN_AT"` is a lexicon key like the menu titles. Worktree `bfstats-w4a-hud` (branch `w4/hud`), port 5321 | **merged `eab59c0`** (review MERGE; the netcode room harness needed `seat-dots.js` after the merge — `865c02a`). Seat dots live; kit labels need the post-merge `loadouts.json` re-extract to carry `kitName` (vanilla shows the same SCOUT/ASSAULT/... either way; EoD re-points `RESPAWN_SCOUT`→Sniper once re-extracted) |
+| W4-B build | **SCORE BOARD** (the in-game board behind `deployScoreBtn`) and **minimap zoom (N) + rotating mode**, built from W4-F's verified reads. Worktree `bfstats-w4b-board` (branch `w4/board-map`), port 5322 | **merged `e173af4`** (2026-09-21; the first build agent crashed mid-stream, a second finished it; lead review on the merged page, suite 2244 OK). `N` steps three eased levels and `game.setStaticMinimap 0` turns the map about the player. The widget's span is now the engine's own, `1/crop` of the map (0.659 / 0.287 / 0.125), read from the pointer inverse `0x00469360` — level 0 shows far more than the old 0.25, and the window no longer stops at the map edge. The board is `menu/InGame` entry 47, extracted by `extract_scoreboard_layout.py`; opens from `deployScoreBtn` and on held `Tab`; fed the local player, a room's roster and `killed` events, zeros otherwise. Open: the N-key increment, the list's row-fill code and what columns 0/150/355-450 carry are unread; mods fall back to vanilla's board; **`_shared/hud/scoreboard/` (268 KB) must be published with the viewer code**. Report `w4b-board.md`, with ledger rows (MMAP-1/2 confirmed, new MEME-14) ready to paste |
+| W4-C build | **tank external camera** — the external view follows the turret, not the hull, built from W4-F's camera read over the existing C-key cycling. Worktree `bfstats-w4c-camera` (branch `w4/camera`), port 5323 | **merged `577de24`** (2026-09-21; the first build agent crashed before writing anything, a second built it; lead review, suite 2178 OK at merge). Chase and front views of a seat whose Camera rides an aimed axis are anchored on the seat Camera with the engine's offsets (`1.2 R`, `0.3` up, ease `1 - exp(-2 dt)`, 1 m terrain clamp); measured camera heading follows the turret 0 to -90.04 degrees with the hull fixed. **Owner's ruling wanted:** the build agent's read of `Camera::getTransformation` (lnxded `0x081aaf90`, client `0x005659b0`) has the chase *direction* come from the vehicle root and only the *anchor* ride the turret, against this round's premise. Turret-following ships as the default, labelled a viewer choice; `?chase=engine` runs the law as read, `?chase=legacy` the old framing; the default is one line in `chaseLawFor`. A clip of the real C view with the turret traversed settles it. Open: only the Sherman was run, gun pitch not captured, the 7.125 m bounding radius is unverified, gunner seats have no external view here. Report `w4c-camera.md`, with ledger rows (CVM-2, CVM-3, a CVM-1 amendment) ready to paste |
+
+W4-A and W4-F run in parallel; W4-B and W4-C launch once W4-F reports and its
+claims pass a second reader.
 
 ### Not yet assigned
 
@@ -453,11 +469,11 @@ still stops on the swept sphere, and a drive model that tumbles when it crashes.
 | `poses.html` cannot fire a weapon (never imports `GunFire`) | open |
 | Spawn-pad soldiers are decoration; crouch and prone play the standing aim | open |
 | Ground vehicles have no hull collision; every drive constant is `[free]` until a drive is recorded in wine | open |
-| A tank's external camera follows the hull, not the turret | open |
-| Seat-occupancy dots unfed (positions are live-bound per vehicle) | open |
-| SCORE BOARD opens nothing | open |
-| Minimap zoom (N) and rotating mode | open, blocked on MMAP-1/2 |
-| Deploy-screen kit row labels should come from `setKitName` | open |
+| A tank's external camera follows the hull, not the turret | **done, W4-C `577de24`** (default frame awaits the owner's ruling, see wave 4) |
+| Seat-occupancy dots unfed (positions are live-bound per vehicle) | **done, W4-A `eab59c0`** |
+| SCORE BOARD opens nothing | **done, W4-B `e173af4`** |
+| Minimap zoom (N) and rotating mode | **done, W4-B `e173af4`** |
+| Deploy-screen kit row labels should come from `setKitName` | **done, W4-A `eab59c0`** (needs the `loadouts.json` re-extract) |
 | `Water.baseTex`, `envmapcolor`; `aiMeshes.rfa` hulls; palm trunk collision; `c_CGProjectiles` / `c_CGLadders`; `LightmapShadowBits.lsb` (format unknown); Berlin's ground outside its four tiles | open |
 | Bar1918 round counter never decrements (`task_4b7d2a66`) | open, unreproduced |
 | `verify_models.py` is stale: on the 09-19 vanilla rebuild it calls 42 of 96 models broken, every one a false alarm. It counts projectile, tracer, trail, cockpit and emitter helper nodes as "unbound parts piled on the origin", measures a rifle's length across them (Bar1918 2.02 m against 1.19 m), and does not understand a skinned soldier. Checked by eye: `BritishSoldier`, `AichiVal` and `Bar1918` render correctly. A verifier that always says broken hides the day it is right | open |
@@ -578,3 +594,69 @@ outside your scratch directory. For each row: the claim, the evidence with
 addresses in both binaries where both apply, what it changes in our code (file
 and line), and a ledger row in the ledger's table format. Say plainly which
 rows you could not close and how far you got.
+
+### W4-F. Research (scoreboard, tank camera, minimap)
+
+Tag `w4f-research`. No worktree, no file changes outside your scratch
+directory. Three reads, each reported with the claim, the evidence (addresses in
+both binaries where both apply), what it changes in our code (file and line), and
+a ledger row in the ledger's table format:
+
+1. **The in-game scoreboard.** Which meme page it is (the `menu/InGame` group or
+   a separate page), what it lists (players, kills, tickets, control points?),
+   how it is fed, and what the `SCORE BOARD` button on the deploy/respawn screen
+   opens. The viewer's `deployScoreBtn` (`map.html`) is a button in name only.
+2. **The tank external camera.** Which view mode the external/chase camera is,
+   and whether it targets the hull or the turret. The viewer's external view
+   follows the hull; the game's follows the turret. Read the camera law (the
+   `CameraTemplate` / view-mode code, `cameraViewModes` already parsed by
+   `con.py`) and say exactly what the external camera tracks and how it is
+   positioned.
+3. **MMAP-1/2.** Who writes the minimap zoom and the minimap yaw. The ledger has
+   `BfMap__animate` recomputing the displayed rotation each frame with no easing,
+   and `+0x68` (the target angle) and `+0x58` unread. Close both: what sets the
+   zoom (the `N` key / `game.setMinimapZoom`?) and what sets the yaw, and what
+   `game.setStaticMinimap` does.
+
+Say plainly which rows you could not close and how far you got.
+
+### W4-A. HUD wiring: seat dots and kit labels
+
+Tag `w4a-hud`, port 5321. Worktree `bfstats-w4a-hud` (branch `w4/hud`). Owns:
+`seats.js` `seatDots()` and its feed in `map.html`, `hud.js` `seatDotPosition`,
+`extract_loadouts.py` / `bf42/kit.py` for `setKitName`, and the deploy-screen kit
+row in `map.html`.
+
+Done means: the six seat-occupancy dots on the vehicle HUD show the live
+per-vehicle occupancy (who is in which seat), fed from the `VehicleOccupancy`
+that already tracks seat switches — `vehicleIconPos` is already in the
+re-extracted scenes, so this is wiring, not extraction. And the deploy screen's
+five kit rows are labelled from the engine's own `ObjectTemplate.setKitName`
+(a lexicon key such as `RESPAWN_AT`, resolved through the same lexicon the menu
+titles use), not the hardcoded Scout/Assault/Anti-tank/Medic/Engineer. Extract
+`setKitName` into `loadouts.json`, resolve the key, and swap the labels. Prove
+both on the page with a capture; keep the suite green.
+
+### W4-B. SCORE BOARD and minimap zoom/rotation
+
+Tag `w4b-board`, port 5322. Worktree `bfstats-w4b-board` (branch `w4/board-map`).
+Owns: the scoreboard surface in `map.html` (behind `deployScoreBtn`), the
+minimap zoom and rotating mode in `map.html`'s minimap code. Built from W4-F's
+verified reads.
+
+Done means: `SCORE BOARD` opens the in-game board the way the game draws it
+(from W4-F's page read), fed with whatever the game feeds it. And the minimap
+zooms on `N` and has the rotating mode, by the engine's own zoom and yaw law
+(from W4-F's MMAP-1/2 read), not a guess. Prove both on the page with a capture;
+keep the suite green.
+
+### W4-C. Tank external camera
+
+Tag `w4c-camera`, port 5323. Worktree `bfstats-w4c-camera` (branch `w4/camera`).
+Owns: the external/chase camera in `map.html` (the C-key view cycling and the
+camera it drives). Built from W4-F's camera read.
+
+Done means: the tank's external view follows the turret, not the hull, by the
+engine's own camera law (from W4-F's read), over the existing C-key cycling.
+Prove it on the page with a capture (a turreted tank, external view, turret
+traversed); keep the suite green.
