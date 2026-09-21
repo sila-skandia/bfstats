@@ -39,6 +39,7 @@ or LZO-compressed flat archives (`.rfa`).
 ### LZO1X Decompression
 - Compressed chunks within the data payload use **LZO1X**.
 - A compressed entry starts with `segments_count` (uint32), followed by per-segment metadata `(compressed_size, uncompressed_size, segment_offset)`.
+- **Every segment is LZO, even when `compressed_size == uncompressed_size`.** That is not a "stored verbatim" marker — LZO output can equal or exceed its input, and all 448 break-even segments across vanilla and nine mods inflate cleanly (`animations/GrenadeAllies.ske`, 247 == 247, reads as garbage if taken raw). Inflate first; fall back to verbatim only for a break-even segment LZO rejects; a size mismatch still raises.
 - Can be decompressed safely with standard system `liblzo2.so` via Python `ctypes` without any third-party Python libraries (`liblzo2.so.2` / `liblzo2.so`).
 
 ---
