@@ -17,6 +17,98 @@ mods.
 
 ---
 
+## 0. Corrected by W5-E, 2026-09-21: the landing is free by a mechanism nobody had read
+
+The owner, having played the merged chute: *"I'd say they are falling about
+0.5x the speed compared to in-game."* The viewer settled at 3.126 m/s down,
+which §4's radius window forced. That window's **lower** bound is refuted.
+
+`BFSoldier::handleCollision` (`0x0827d3b0`) overrides `SimpleObject`'s and
+forwards to it, but not unchanged. It tests its own state bits and, while the
+parachute bit `0x10` is set, replaces argument 3 — the impact **speed** — with
+a locally built zero `Vec3`:
+
+```
+827d470:  mov  ax, WORD PTR [edi+0x3e6]
+827d477:  and  eax, 0x10
+827d47a:  test ax, ax
+827d47d:  je   827dc60              ; not parachuting -> the other tail
+827d483:  mov  eax, 0x0
+827d48b:  mov  DWORD PTR [ebp-0x28], eax
+827d48e:  mov  DWORD PTR [ebp-0x24], eax
+827d491:  mov  DWORD PTR [ebp-0x20], eax
+827d494:  lea  edx, [ebp-0x28]
+...
+827d4a2:  push edx                  ; <- the SPEED argument
+827d4a3:  push esi                  ; other object
+827d4a4:  push edi                  ; this
+827d4a5:  call 81dab40 <SimpleObject::handleCollision>
+```
+
+The not-parachuting tail at `0x0827dc60` is the identical sequence pushing
+`[ebp+0x10]`, the caller's real speed vector, and jumping back to the shared
+`push esi / push edi / call` at `0x0827d4a3`. The **only** difference between
+the two paths is which `Vec3` lands in argument 3.
+
+That argument is the impact speed HP-14 bills.
+`PointResponsePhysics::checkVsTerrain` (`0x08257720`) stores the node's
+`getPositionalSpeed()` at `this+0x48` and the terrain normal at `this+0x5c`,
+and `solveImpulse` (`0x08256f70`) calls the object's vtable `+0x58` with
+`(other, this+0x48, this+0x5c, relPos, m1, m2)` — so it is the **full**
+velocity, and `GameServer::handleCollisionLandOrWater` (`0x08154960`) takes
+`|v|` from it, subtracts 8.0 for a soldier and returns when that goes negative.
+Zero minus eight is negative.
+
+**A parachute landing costs nothing at any speed, and free fall is untouched**
+(bit `0x10` is clear there). Nothing else about §5 changes: `Armor::update`
+still only ever raises `lastCollisionHeight`, `F` is still the whole drop,
+and PARA-8 stays refuted — the engine's answer was never the height term and
+never the radius.
+
+Consequences:
+
+- §4's window loses its lower end. The only bound left is `r < 3.126`, from the
+  canopy not closing in mid-air.
+- The radius is set by the owner's play instead: **1.8**, which is where the
+  first draft of §4 had it. The canopy settles at **6.030 m/s down and
+  12.280 m/s forward**, touches down at `|v| = 13.68` and is billed nothing.
+  Measured on the page at `localhost:5344`, a 200 m bail-out over Wake:
+  descent 6.0297, glide 12.2805, `hitPoints` 30 of 30 on the ground.
+- `soldier.js` now passes `landingImpactSpeed(chuteOpen, |v|)` into the landing
+  it reports, which is `handleCollision`'s choice of argument 3 as a function.
+
+**§7's free-fall run-off (PARA-9) is NOT resolved by this.** The zeroing does
+not apply with bit `0x10` clear, and the camera-axis term still reaches 129.8
+m/s horizontal at t = 2.0 s. What this finding does add is that the engine is
+demonstrably content to let a parachutist arrive at any speed at all, so a
+large number under the canopy is not by itself evidence of a misread.
+
+The always-glide reading of §4 **survives**. It was re-read a third time here,
+at the instruction level (`0x082726a8`-`0x082727cb` for free fall,
+`0x082727d4`-`0x0827289f` for the canopy): the acceleration is
+`template[+0x2e8]` times rows `+0x20/+0x24/+0x28` of a `Mat4`, with no input
+channel anywhere in the operand's provenance, no conditional between the
+multiply and the `call [vt+0x6c]`, and the zero `Vec3` in the position
+argument. `updatePositionalDragSimple` (`0x08255fc0`) is isotropic, so there
+is no separate horizontal damping, and `addAccelerationAtRelativePosition`
+(`0x08256650`) adds its **second** argument and ignores the first, exactly as
+PARA-2 says. The body is pulled upright every tick by the
+`makeOrthonormalBasis` block at the head of `handleUpdate`'s alive arm (the
+`up` vector is snapped to `(0,1,0)` when `up.y <= 0.1` and halved toward it
+otherwise, then the forward row is re-derived perpendicular to it), so the
+canopy's forward really is horizontal and the 2.037:1 ratio really is what the
+engine flies.
+
+### The camera, while we were here
+
+What C does to a parachuting soldier is written up beside this file, in
+[`features/viewer-soldier-camera/README.md`](../viewer-soldier-camera/README.md).
+Short version: the engine gives a soldier exactly one camera and one allowed
+view mode, the viewer widens that under an open canopy only, and the widening
+is marked as a viewer choice.
+
+---
+
 ## 1. The four states, and what carries each
 
 | state | what the engine keeps | entered by |
