@@ -106,24 +106,33 @@ triangle with the largest XZ footprint touching that cell. Four things were
 wrong with that, and each one maps onto a symptom:
 
 - **A sloped triangle became a flat plateau at its mean height, smeared across
-  its whole XZ bounding box** — the box, not the cells it actually covers. A
-  repair pad's approach incline is one or two such triangles, so the "little
-  incline" was a step at the average of its two ends: too high at the bottom
-  (the hull popped) and too low at the top (the hull submerged). Same for a
-  humped span and every approach ramp.
-- **The underside of a deck has exactly the footprint of its road.** The
-  largest-face rule cannot tell them apart, so which one a cell stored came down
-  to mesh order — "sinks below the bridge".
+  its whole XZ bounding box** — the box, not the cells it actually covers. An
+  approach incline or a humped span is one or two such triangles, so what the
+  wheels got was a step at the average of the triangle's two ends: too high at
+  the bottom and too low at the top.
+- **The underside of a deck has exactly the footprint of its road**, so the
+  largest-face rule cannot tell them apart and which one a cell stored came down
+  to mesh order. Measured, and it lost: standing on the crown of Bocage's stone
+  bridge the raster answered **42.53 for a road at 46.41** — 3.9 m of "sinks
+  below the bridge", from one cell.
 - **Nearest-cell lookup, no interpolation.** The surface stepped at every cell
   edge, and the wheel probes (`probeAlongAxis`, plus `groundNormal`'s central
   differences at 0.5 m) read those steps as cliffs in the height AND in the
-  normal — "jumps around in the air".
+  normal — "jumps around in the air". A Tiger crossing the span spent 118 of its
+  ticks airborne and moved up to 1.90 m in a single tick.
 - **The query had no notion of the asker's height**, so *anything* at an (x, z)
   under a bridge was lifted onto the span. And `surfaceHeight` is shared: the
   README used to claim soldiers were untouched and that was simply false —
   `PlayerBody#settle` and `#tooSteep` in `physics.js` read it, as do the aircraft
   and boat floors, the cameras, spawn placement and the drowning check. A soldier
-  standing under Bocage's bridge was standing on top of it.
+  put down under Bocage's bridge crown ended up 30 m higher, on the span.
+- **And the fifth, which is why the repair pad behaved differently from the
+  bridge: the pad was not in the drivable name set at all.** `landrep1_supply` is
+  the vanilla land repair/reload station and nothing in `DRIVABLE_TOP_RE` matched
+  it, so the raster had no entry for it, the wheels read the terrain flat all the
+  way across, and the hull simply ploughed through the apron with two thirds of a
+  metre of itself inside the slab — "drives through it, submerged in the repair
+  pad", exactly as described.
 
 On top of the raster, the hull sweep carried a `CLIMB_STEP` hack: when the sweep
 hit a drivable owner it nudged `position.y` up by 0.2 m a tick, and when the
