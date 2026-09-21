@@ -54,6 +54,8 @@ export class BodyWorld {
     this._partsDirty = true;
     this._debt = 0;
     this.ticks = 0;
+    /** Static-world contacts the last tick found, for a trace to read. */
+    this.staticContacts = 0;
 
     const world = this;
     this.handlers = {
@@ -176,6 +178,7 @@ export class BodyWorld {
     // Detect (step 5-6, pass 1): object against object, the static world,
     // then the ground.
     collideBodies(this._parts, TICK, handlers);
+    this.staticContacts = 0;
     if (this.statics) {
       for (const entry of this.entries.values()) {
         // Driven only, for now. A parked body against a building is the same
@@ -185,7 +188,7 @@ export class BodyWorld {
         // again. `features/viewer-ground-hull-collision/README.md` has it as
         // the next step, with the settle pass as where it belongs.
         if (entry.driven) {
-          collideWithStatics(entry.parts, this.statics, TICK, handlers);
+          this.staticContacts += collideWithStatics(entry.parts, this.statics, TICK, handlers);
         }
       }
     }
