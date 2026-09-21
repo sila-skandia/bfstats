@@ -46,6 +46,17 @@ const CODE_CHAR_RE = /^[A-Za-z0-9_-]$/;
 const CODE_MAX = 24;
 const CODE_RULE = '3-24 LETTERS, NUMBERS, - OR _';
 
+/** The one thing on this screen that is wrong rather than merely absent:
+ *  the lobby has no answer, or what is typed in SERVER NAME will not do.
+ *  Red, in the screen's own face. */
+const ALERT = [0.82, 0.24, 0.18];
+
+/** Said where the rows would be when the lobby does not answer. The
+ *  reasons it used to spell out — nothing can be joined, nothing can be
+ *  created, Instant Battle still works — are now said by JOIN and CREATE
+ *  GAME not being drawn at all. */
+const MASTER_DOWN = 'MASTER SERVER IS DOWN RIGHT NOW';
+
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const newCode = () => Array.from({ length: 6 },
   () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]).join('');
@@ -535,19 +546,16 @@ export function createMultiplayScreen({
                        Math.round(head.rect[0]), y + 1, [0.78, 0.78, 0.78]);
       }
     }
-    // The empty list says so where the rows would be, the way the room
-    // server being down does.
+    // An empty list says why, where the rows would be. One line either
+    // way: with CREATE GAME and JOIN both gone while the master server is
+    // down, the screen has already said everything the extra sentences
+    // were saying.
     if (!list.length && font) {
       ctx.globalAlpha = 1;
-      const lines = lastError
-        ? ['THE ROOM SERVER ISN\'T ANSWERING', '', 'NOTHING CAN BE JOINED OR CREATED '
-           + 'UNTIL IT RUNS.', 'SINGLEPLAY IS STILL THERE.']
-        : ['NO ROOMS RUNNING', '', 'CREATE GAME STARTS ONE.'];
-      for (const [i, line] of lines.entries()) {
-        drawBitmapText(ctx, font, pack.env.tint, line, Math.round(bx + 4),
-                       by + 1 + i * box.rowHeight,
-                       i === 0 && lastError ? [0.85, 0.5, 0.35] : [0.55, 0.55, 0.55]);
-      }
+      drawBitmapText(ctx, font, pack.env.tint,
+                     lastError ? MASTER_DOWN : 'NO ROOMS RUNNING',
+                     Math.round(bx + 4), by + 1,
+                     lastError ? ALERT : [0.55, 0.55, 0.55]);
     }
     paintThumb(box, list.length);
     ctx.globalAlpha = 1;
@@ -669,7 +677,7 @@ export function createMultiplayScreen({
       const x = Math.round(row.field.rect[0] + 3);
       const y = row.field.rect[1] + 4;
       drawBitmapText(ctx, font, pack.env.tint, text, x, y,
-                     bad ? [0.85, 0.5, 0.35] : [0.78, 0.78, 0.78]);
+                     bad ? ALERT : [0.78, 0.78, 0.78]);
       // The caret: a one-unit bar after the text, on the half second.
       if (typed && create.editing && Math.floor(Date.now() / 500) % 2 === 0) {
         ctx.fillStyle = '#c7c7b4';
@@ -682,7 +690,7 @@ export function createMultiplayScreen({
       ctx.globalAlpha = 1;
       drawBitmapText(ctx, font, pack.env.tint, CODE_RULE,
                      Math.round(rule.label.rect[0]), rule.label.rect[1] + 26,
-                     [0.85, 0.5, 0.35]);
+                     ALERT);
     }
     ctx.globalAlpha = 1;
   }
