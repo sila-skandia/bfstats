@@ -339,14 +339,17 @@ ObjectTemplate.create Projectile PlaneProjectile
 ObjectTemplate.loadSoundScript Sounds/Ricochet.ssc
 """)})
 
-    def _scripts(self) -> dict[str, str]:
+    def _scripts(self) -> dict[str, tuple[str, bool]]:
         from extract_map import find_weapon_scripts
-        return {name: script for name, _, script
+        return {name: (script, from_round) for name, _, script, from_round
                 in find_weapon_scripts(self.library, self.pool, "Plane")}
 
     def test_a_bomb_rack_now_reports_the_projectiles_script(self) -> None:
         scripts = self._scripts()
-        self.assertEqual("Objects/Vehicles/Air/Plane/Sounds/Bomb.ssc",
+        # And it is flagged as the round's own, which is what makes
+        # `_firing_patch` take the one-shot release rather than the looping
+        # in-flight whistle that is Bomb.ssc's first sounding patch.
+        self.assertEqual(("Objects/Vehicles/Air/Plane/Sounds/Bomb.ssc", True),
                          scripts["PlaneBombRack"])
         # Under the RACK's name, because that is the node the viewer's weapon
         # audio is keyed on.
@@ -355,7 +358,7 @@ ObjectTemplate.loadSoundScript Sounds/Ricochet.ssc
     def test_a_gun_with_its_own_script_keeps_it(self) -> None:
         # The fallback must not let a `Projectile.ssc` ricochet script displace
         # a gun's own fire patch.
-        self.assertEqual("Objects/Vehicles/Air/Plane/Sounds/PlaneMG.ssc",
+        self.assertEqual(("Objects/Vehicles/Air/Plane/Sounds/PlaneMG.ssc", False),
                          self._scripts()["PlaneGuns"])
 
     def test_a_torpedo_rack_still_reports_nothing(self) -> None:
@@ -429,6 +432,42 @@ class RealGameDataTests(unittest.TestCase):
         self.assertIsNone(self.stuka["stukabombrack"].sound_script)
         self.assertEqual("../air/common/Sounds/Bomb.ssc",
                          self.common["divebomberbomb"].sound_script)
+
+
+class FiringPatchTests(unittest.TestCase):
+    """`_firing_patch`'s release mode, which is what keeps a bomb from whistling
+    for ever off a momentary trigger."""
+
+    class _Sample:
+        def __init__(self, file: str, loop: bool) -> None:
+            self.file, self.loop = file, loop
+
+    class _Patch:
+        def __init__(self, samples) -> None:
+            self.samples = samples
+
+    def _bomb_ssc(self):
+        # `Objects/Vehicles/Air/Common/Sounds/Bomb.ssc`, in its own order: the
+        # looping whistle first, the release thump second.
+        S, P = self._Sample, self._Patch
+        return [
+            P([S("Sound/shellair.wav", True), S("Sound/Shellwhine.wav", True),
+               S("Sound/haxxar.wav", True)]),
+            P([S("Sound/bmbreal1.wav", False), S("Sound/bmbreal3.wav", False)]),
+            P([S("Sound/bmbreal2.wav", False)]),
+        ]
+
+    def test_a_held_gun_trigger_still_takes_the_fire_loop(self) -> None:
+        from extract_map import _firing_patch
+        picked = _firing_patch(self._bomb_ssc())
+        self.assertEqual(["Sound/shellair.wav", "Sound/Shellwhine.wav",
+                          "Sound/haxxar.wav"], [s.file for s in picked])
+
+    def test_a_release_takes_the_one_shot_thump(self) -> None:
+        from extract_map import _firing_patch
+        picked = _firing_patch(self._bomb_ssc(), release=True)
+        self.assertEqual(["Sound/bmbreal1.wav", "Sound/bmbreal3.wav"],
+                         [s.file for s in picked])
 
 
 if __name__ == "__main__":
