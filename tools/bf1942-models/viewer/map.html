@@ -972,6 +972,10 @@ import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
 import { buildHeightfield, buildCollisionIndex, buildDrivableMask, WorldCollider } from './collision.js';
 import { FOV_DEG as FOOT_FOV, GRAVITY } from './soldier.js';
+import {
+  SoldierView, PARACHUTE_VIEW_CYCLE, PARACHUTE_VIEW_RADIUS,
+  VIEW_INSIDE, VIEW_FRONT,
+} from './soldier-camera.js';
 import { DeviationModel } from './deviation.js';
 import { wantViewmodelClip } from './viewmodel-anim.js';
 import { fireVariantsFor, stanceClip, stanceFor } from './stance-clips.js';
@@ -2409,11 +2413,15 @@ addEventListener('keydown', e => {
       lastSeatToggle = performance.now();
     }
   }
-  // C cycles the view, which is `c_PIToggleCameraMode` bound to IDKey_C in every
-  // one of the game's own control maps.
-  if (e.code === 'KeyC' && !e.repeat && !e.ctrlKey && !e.metaKey
-      && optPilot.checked && view) {
-    showView(view.cycle());
+  // C cycles the view, which is `c_PIToggleCameraMode` (input channel 26)
+  // bound to IDKey_C in every one of the game's own control maps -- Infantry's
+  // included, which is why it reaches a soldier at all. `soldier-camera.js`
+  // owns which views a soldier may reach and in what order; on foot that is the
+  // engine's own set of one and this is a no-op, under a canopy it is the three
+  // the owner described. The vehicle side is untouched.
+  if (e.code === 'KeyC' && !e.repeat && !e.ctrlKey && !e.metaKey) {
+    if (optPilot.checked && view) showView(view.cycle());
+    else if (optOnFoot.checked && soldier) footView3p.cycle();
   }
   // Z is `c_PILie`, a non-repetitive trigger, so it toggles rather than holds.
   if (e.code === 'KeyZ' && !e.repeat && optOnFoot.checked && soldier) prone = !prone;
@@ -8142,6 +8150,8 @@ function collectSupplyDepots(root) {
  */
 function onFootCamera(dt) {
   if (!soldier) return;
+  // Which views C may reach this frame -- the engine's one, or the canopy's.
+  syncFootView();
   // Death cam → deploy. When the on-foot body's Armor dies (fall damage,
   // `window.__damage(n)`, a future projectile), latch the dead state and hold
   // a short camera beat over/by the corpse (the game's death cam) before the
@@ -8221,6 +8231,37 @@ function onFootCamera(dt) {
     camera.position.set(deathCamPos.x, deathCamPos.y, deathCamPos.z);
     look.yaw = camYaw;
     look.pitch = deathCamShot.pitch;
+  } else if (!footView3p.firstPerson) {
+    // C has taken the view outside the man. The offsets, the 0.6 s velocity
+    // lag and the `1 - exp(-2 dt)` ease are `chase-camera.js`'s, which are the
+    // engine's own (`Camera::getTransformation`, lnxded 0x081aaf90); the frame
+    // is the soldier's facing, the anchor his eye, and the look-at is the
+    // anchor, exactly as the engine's `lookAt(eye, camM.position, worldUp)`.
+    // Only the radius and the fact that a soldier may reach the mode at all
+    // are the viewer's -- see `soldier-camera.js`.
+    const sign = footView3p.mode === VIEW_FRONT ? CHASE_AHEAD : CHASE_BEHIND;
+    const yaw = footView.yaw;
+    foot3pForward[0] = Math.sin(yaw);
+    foot3pForward[1] = 0;
+    foot3pForward[2] = Math.cos(yaw);
+    const v = soldier.body.body.velocity;
+    foot3pVelocity[0] = v.x; foot3pVelocity[1] = v.y; foot3pVelocity[2] = v.z;
+    chaseTarget(foot3pForward, FOOT_3P_UP, PARACHUTE_VIEW_RADIUS, sign, foot3pTarget);
+    chaseStep(foot3pRel, foot3pTarget, foot3pVelocity, sign, dt);
+    foot3pAnchor[0] = footEye.x;
+    foot3pAnchor[1] = footEye.y;
+    foot3pAnchor[2] = footEye.z;
+    const floorY = collider?.surfaceHeight
+      ? collider.surfaceHeight(footEye.x + foot3pRel[0], footEye.z + foot3pRel[2])
+      : -Infinity;
+    chaseEye(foot3pAnchor, foot3pRel, floorY, foot3pEye);
+    camera.position.set(foot3pEye[0], foot3pEye[1], foot3pEye[2]);
+    const dx = footEye.x - foot3pEye[0];
+    const dy = footEye.y - foot3pEye[1];
+    const dz = footEye.z - foot3pEye[2];
+    const flat = Math.hypot(dx, dz);
+    look.yaw = Math.atan2(dx, dz);
+    look.pitch = Math.atan2(dy, flat);
   } else {
     camera.position.set(footEye.x, footEye.y, footEye.z);
     look.yaw = footView.yaw;
@@ -8238,6 +8279,36 @@ function onFootCamera(dt) {
 
 const EMPTY_KEYS = new Set();
 const footEye = { x: 0, y: 0, z: 0 };
+
+// The soldier's view mode and the state the external ones carry between
+// frames. `SoldierView` starts on the engine's own set -- `CVMInside` alone,
+// which is all `SoldierCamera` authorises -- so C is a no-op on foot until
+// `setCycle` widens it under an open canopy.
+const footView3p = new SoldierView();
+const foot3pRel = [0, 0, 0];
+const foot3pTarget = [0, 0, 0];
+const foot3pForward = [0, 0, 0];
+const foot3pVelocity = [0, 0, 0];
+const foot3pAnchor = [0, 0, 0];
+const foot3pEye = [0, 0, 0];
+const FOOT_3P_UP = [0, 1, 0];
+
+/**
+ * Open the canopy's view cycle, close it again on the ground.
+ *
+ * `setCycle` drops a mode the new cycle cannot reach back to `inside`, so a
+ * landing always returns the page to first person however C left it, and the
+ * offset is reset with it -- otherwise the next chute would open with the
+ * camera still swinging in from the last one.
+ */
+function syncFootView() {
+  const open = soldier?.parachuteState === 'open';
+  const before = footView3p.mode;
+  footView3p.setCycle(open ? PARACHUTE_VIEW_CYCLE : null);
+  if (footView3p.mode !== before && footView3p.mode === VIEW_INSIDE) {
+    foot3pRel[0] = foot3pRel[1] = foot3pRel[2] = 0;
+  }
+}
 
 // --- the weapon in hand ------------------------------------------------------
 //
@@ -13553,7 +13624,10 @@ function frame(dt) {
   // FOV only for `?fov1p=world` and the bare 3P fallback, whose
   // VIEWMODEL_BASE was eyeballed under it. See first-person-soldier.md's
   // 2026-09-16 note and handweapon-view-and-deviation.md §3/§7.
-  if (handWeapon?.rig.visible) {
+  // `footView3p.firstPerson` is the soldier's `CVMInside`: an arms rig drawn
+  // over a chase view would hang in front of the camera with nothing holding
+  // it. It is true everywhere but under a canopy with C pressed.
+  if (handWeapon?.rig.visible && footView3p.firstPerson) {
     renderer.autoClear = false;
     renderer.clearDepth();
     // Two traps in an overlay pass, both learned the hard way. Three draws
@@ -14091,10 +14165,26 @@ if (params.has('shots')) {
       drag: soldier.body.body.drag,
       grounded: soldier.grounded,
       hitPoints: soldierArmor?.hitPoints ?? null,
+      landing: soldier.landing,
       events: drained,
     };
   };
   window.__setDeploy = on => { debugDeployHeld = !!on; return debugDeployHeld; };
+  // The soldier's camera view, for a headless check: read it with no argument,
+  // press C with `__footView('cycle')`, or name a mode. `modes` is what
+  // `soldier-camera.js` allows this frame -- one on foot, three under a canopy.
+  window.__footView = arg => {
+    if (arg === 'cycle') footView3p.cycle();
+    else if (typeof arg === 'string') footView3p.setMode(arg);
+    return {
+      mode: footView3p.mode,
+      modeId: footView3p.modeId,
+      modes: footView3p.modes,
+      firstPerson: footView3p.firstPerson,
+      rel: [...foot3pRel],
+      eye: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+    };
+  };
   // The seated player's two mouse triggers, for a headless check: left is the
   // vehicle's `c_PIFire`, right its `c_PIAltFire`. Named apart from
   // `__setTrigger` because that one is the soldier's, and a seated player's
