@@ -8222,6 +8222,9 @@ function isZoomed() {
 }
 const crosshairEl = document.getElementById('crosshair');
 const aimOrigin = new THREE.Vector3();
+// Where the throwing hand is at the release frame, camera space (metres).
+const THROW_RELEASE = new THREE.Vector3(0.22, -0.10, -0.40);
+const throwHand = new THREE.Vector3();
 const aimDirection = new THREE.Vector3();
 
 // The kit row's class, for finding a level's kit by class when its slot
@@ -9011,6 +9014,8 @@ async function loadHandWeapon(name, soldierName = null) {
     cool: 0,         // seconds until a semi-auto weapon has cycled
     weaponNode,      // the welded weapon inside the rig, or null when bare
     hideFire: 0,     // seconds of `hideDuringFireTime` left on the weapon mesh
+    throwWind: 0,    // seconds of `fireDelay` wind-up left before the round leaves
+    throwBegun: false,  // the wind-up already played this round's clip and report
     pulse: false,    // a one-frame trigger pulse is in flight
     fire: null,      // { spec, buffer } once firePromise (above) resolves
     fireRetry: false, // the shot path has already asked again for a missing report
@@ -9035,6 +9040,15 @@ async function loadHandWeapon(name, soldierName = null) {
       aimRay: data.fireInCameraDof ? () => {
         camera.getWorldPosition(aimOrigin);
         camera.getWorldDirection(aimDirection);
+        // A thrown weapon leaves the hand, not the bridge of the nose. The
+        // direction stays the view axis (`fireInCameraDof`), so it still lands
+        // where the crosshair says to within the hand's own 0.4 m; only where
+        // the round first appears moves, to where the fire clip has the fist
+        // at its release frame — up-right of centre and an arm's length out.
+        // Presentation, and named as such: the engine's own origin is the eye.
+        if (data.throw?.fireDelay > 0) {
+          aimOrigin.add(throwHand.copy(THROW_RELEASE).applyQuaternion(camera.quaternion));
+        }
         return { origin: aimOrigin, dir: aimDirection };
       } : null,
       spreadDeg: () => (handWeapon ? handWeapon.model.current() : 0),
@@ -9402,6 +9416,31 @@ guns.onShot = group => {
   // A report that never arrived — a manifest or an mp3 that failed while the
   // page was still pulling the level down — is asked for once more here
   // rather than leaving this weapon silent for the rest of its life.
+  // A wound-up throw (`fireDelay`) played its report and started its clip on
+  // the click — `beginHandFire`, below; the round leaving is only the round.
+  if (!hw.throwBegun) beginHandFire(hw);
+  hw.throwBegun = false;
+  // The hand-off. A thrown weapon's own mesh goes away for
+  // `hideDuringFireTime` at the moment the round is created — that is one
+  // statement in `FireArms::Fire`, not two events to line up — so the grenade
+  // in the palm and the grenade in the air are never both on screen. Started
+  // here because here is where the round leaves: `guns.onShot` is called from
+  // `fireShot`, the same call that spawns the projectile.
+  const hide = hw.data?.throw?.hideDuringFireTime;
+  if (hide > 0 && hw.weaponNode) {
+    hw.hideFire = hide;
+    hw.weaponNode.visible = false;
+  }
+  if (Number.isFinite(hw.rounds)) hw.rounds = Math.max(0, hw.rounds - 1);
+  hw.model.onShot();
+  hw.cool = Math.max(hw.cool, 1 / (hw.data?.roundOfFire || 1));
+  finishHandShot(hw);
+};
+
+/** The trigger's half of a shot: the report and the arms' fire clip. For every
+ *  ordinary weapon it runs from `guns.onShot`, on the round; for a throw it
+ *  runs on the click, `fireDelay` ahead of the round. */
+function beginHandFire(hw) {
   if (!hw.fire) refetchHandFireSound(hw);
   playHandFire(hw.fire);
   // PlayOnce arms: one restart per round, blended at the fire state's morph
@@ -9419,20 +9458,10 @@ guns.onShot = group => {
       : 'fire';
     playViewmodelClip(hw, pick, { restart: true });
   }
-  // The hand-off. A thrown weapon's own mesh goes away for
-  // `hideDuringFireTime` at the moment the round is created — that is one
-  // statement in `FireArms::Fire`, not two events to line up — so the grenade
-  // in the palm and the grenade in the air are never both on screen. Started
-  // here because here is where the round leaves: `guns.onShot` is called from
-  // `fireShot`, the same call that spawns the projectile.
-  const hide = hw.data?.throw?.hideDuringFireTime;
-  if (hide > 0 && hw.weaponNode) {
-    hw.hideFire = hide;
-    hw.weaponNode.visible = false;
-  }
-  if (Number.isFinite(hw.rounds)) hw.rounds = Math.max(0, hw.rounds - 1);
-  hw.model.onShot();
-  hw.cool = 1 / (hw.data?.roundOfFire || 1);
+}
+
+/** What follows the round out of the barrel: the un-zoom and the kick. */
+function finishHandShot(hw) {
   // `UnZoomBetweenFireTime > 0` (the snipers' 3.0): the fire path flags it
   // and `FireArms::handleUpdate` un-zooms, then re-zooms when the timer
   // runs out — the bolt-cycle un-zoom. The toggle latch itself holds.
@@ -9591,10 +9620,36 @@ function footFire(dt, input = null) {
         guns.setFiring(hw.group, false);
         hw.pulse = false;
       }
-      if (clickQueued && canFire && hw.cool <= 0) {
+      // A throw winds up first. `fireDelay` (the grenades' 1.0 s) is the time
+      // from the click to the round: the fire clip pulls the pin and swings
+      // through its fling over exactly that span, the `.ssc` lands its swoosh
+      // at 0.9 s of it, and `hideDuringFireTime` (0.4) then covers what is
+      // left of the 1.35 s clip before the next one is raised — three
+      // independently authored numbers that only agree under this reading.
+      // So the click starts the clip and the report, and the trigger pulse
+      // that makes the round waits for the countdown. A weapon swapped or a
+      // soldier killed mid-wind-up never throws: `hw` goes with them.
+      const windUp = hw.data?.throw?.fireDelay || 0;
+      if (hw.throwWind > 0) {
+        hw.throwWind -= dt;
+        if (hw.throwWind <= 0) {
+          hw.throwWind = 0;
+          guns.setFiring(hw.group, true);
+          hw.pulse = true;
+        }
+      } else if (clickQueued && canFire && hw.cool <= 0 && !hw.pulse) {
         clickQueued = false;
-        guns.setFiring(hw.group, true);
-        hw.pulse = true;
+        if (windUp > 0) {
+          hw.throwWind = windUp;
+          hw.throwBegun = true;
+          // Held past the release so a second click cannot start a second
+          // wind-up over this one; `onShot` then adds the declared cycle.
+          hw.cool = windUp;
+          beginHandFire(hw);
+        } else {
+          guns.setFiring(hw.group, true);
+          hw.pulse = true;
+        }
       }
     } else {
       const firing = triggerHeld && canFire;

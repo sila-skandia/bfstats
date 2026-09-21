@@ -173,17 +173,28 @@ the `weaponStats` block and the FireArms node's own extras, under `throw`:
 
 | property | GrenadeAllies | what it is |
 |---|---|---|
-| `fireDelay` | 1.0 s | the lockout **after** a shot, not a wind-up before it |
+| `fireDelay` | 1.0 s | the wind-up: seconds from the trigger to the round |
 | `hideDuringFireTime` | 0.4 s | seconds the weapon's own mesh is hidden, from the shot |
 | `rotationalSpeed` | `8/0/0` | the round's tumble |
 
-`fireDelay` had to be read out of the engine rather than guessed, because the
-name suggests the opposite of what it does. `FireArms::Fire` (lnxded
-`0x0828a090`) returns early when the countdown is still running — arming a
-pending shot that `handleUpdate` (`0x08288890`) releases at expiry — and
-otherwise fires **immediately**, only then setting the countdown from the
-template. So the projectile leaves on the click and this is the earliest the
-next one can. **The throw is not delayed**, and nothing here invents a delay.
+`fireDelay` is the wind-up, and the first pass of this work had it backwards.
+`FireArms::Fire` (lnxded `0x0828a090`) arms a pending shot against a countdown
+that `handleUpdate` (`0x08288890`) releases at expiry; that was first read as
+"fires immediately, then locks out", and the page threw the grenade on the
+click while the arms were still pulling the pin. Three independently authored
+numbers only agree under the other reading: the fire clip's fling runs
+0.6..1.0 s of its 1.35 s, `GrenadeAllies.ssc` gates the throw's swoosh to 0.9 s
+after the trigger, and `hideDuringFireTime` 0.4 s covers exactly what is left
+of the clip after a release at 1.0 s. `roundOfFire 1` is already the lockout.
+
+So in `map.html` the click starts the fire clip and the report
+(`beginHandFire`) and `hw.throwWind` counts `fireDelay` down; the trigger pulse
+that makes the round fires when it expires, and `guns.onShot` then does only
+the round's half (the hide, the ammo, the cycle). Swapping weapons mid-wind-up
+throws nothing. The round's first appearance is moved from the eye to where the
+fist is at the release frame (`THROW_RELEASE`, camera space) — the direction is
+still the view axis, so this is presentation and costs under half a metre of
+parallax.
 
 `hideDuringFireTime` is the hand-off, and it is one statement rather than two
 events to line up: the same `Fire` that creates the projectile blanks the
