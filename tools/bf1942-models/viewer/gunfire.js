@@ -656,18 +656,20 @@ export class GunFire {
    * one round **per barrel**, unless it declares `setAsynchronyFire`, in which
    * case it fires one barrel round-robin and is charged one.
    *
-   * This corrects the reading that used to live here. The old comment argued
-   * from the shipped data that Refractor cycles `addFireArmsPosition` entries
-   * one per round — `KatyushaFireArmsBundle` declares six positions and
-   * `magSize 6`, so alternation gives six rockets and volleying "would empty a
-   * six-round magazine as thirty-six". The binary says the volley is right and
-   * the arithmetic that made it absurd was the charge: `Fire` volleys and
-   * `fireFinished` charges six, so the Katyusha's six rails are six rockets in
-   * ONE pull off a magazine of six, not thirty-six over six pulls.
-   * `Elco80_Torpedos` (two tubes, `magSize 2`) is one salvo of two. A Corsair's
-   * two-barrel `CorsairGuns` really does put 24 rounds a second into the air
-   * out of a 12 rps template, and its 600-round magazine really does last 25
-   * seconds and not 50.
+   * This corrects the reading that used to live here — and the Katyusha is the
+   * wrong example to correct it with. The old comment argued from the shipped
+   * data that Refractor cycles `addFireArmsPosition` entries one per round, and
+   * on `KatyushaFireArmsBundle` that **conclusion was right**, for a reason the
+   * old comment did not give: it declares `setAsynchronyFire 1`, so it takes the
+   * round-robin branch and really does fire one rail per pull off its six.
+   * `Elco80_Torpedos` declares the flag too — one tube a pull, not a salvo of
+   * two. What the binary overturns is the general rule, not those two weapons.
+   *
+   * The weapons the charge really does change are the non-async multi-barrel
+   * guns. A Corsair's two-barrel `CorsairGuns` puts 24 rounds a second into the
+   * air out of a 12 rps template, so its `magSize 900` lasts 37.5 s rather than
+   * 75. The 600-round magazines that halve from 50 s to 25 are `SBDGuns`,
+   * `SBD-TGuns` and `IlyushinGuns`.
    *
    * `group.shots` counts PROJECTILES, as it always did, and so still paces the
    * tracer interval; the round-robin counter is the same field, which is what
