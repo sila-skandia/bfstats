@@ -127,6 +127,62 @@ class HelperNodeTests(unittest.TestCase):
         self.assertEqual(["Bar1918Complex"],
                          [p.name for p in verify.body_parts(self.parts)])
 
+    def test_a_shaderless_material_on_a_baked_round_is_not_a_hole(self) -> None:
+        # Thirteen EoD vehicles report `bullet_m1_Material0`: the material of
+        # the round the gun fires, baked hidden on the barrel. The material
+        # name carries the mesh it came from, so it can be matched to the node.
+        builder = GlbBuilder()
+        body = builder.add_mesh("body", [box(1.0)])
+        round_ = builder.add_mesh("round", [box(0.05)])
+        parts = scene([
+            Node(name="Bofors_GunBarrel", mesh=body,
+                 extras={"templateKind": "FireArms", "geometry": "Bofor_Gun_M1"}),
+            Node(name="Bofors_GunBarrel projectile", mesh=round_,
+                 extras={"templateKind": "Projectile",
+                         "projectileMesh": {"template": "37mmAA_Projectile",
+                                            "geometry": "bullet_m1"}}),
+        ], builder)
+        self.assertEqual(frozenset({"bullet_m1"}),
+                         verify.helper_geometry_names(parts))
+        triage = verify.triage_report(
+            "Bofors", {"materialsWithoutShader": ["bullet_m1_Material0"]},
+            parts=parts, vanilla_facts=False)
+        self.assertEqual("clean", triage.status)
+
+    def test_a_shaderless_material_on_a_drawn_part_is_still_degraded(self) -> None:
+        builder = GlbBuilder()
+        body = builder.add_mesh("body", [box(1.0)])
+        parts = scene([
+            Node(name="EoD_Raft_Body", mesh=body,
+                 extras={"templateKind": "SimpleObject",
+                         "geometry": "EoD_Raft_01_M1"}),
+        ], builder)
+        triage = verify.triage_report(
+            "EoD_Raft", {"materialsWithoutShader": ["EoD_Raft_01_M1_Material1"]},
+            parts=parts, vanilla_facts=False)
+        self.assertEqual("degraded", triage.status)
+
+    def test_a_geometry_a_drawn_part_shares_is_not_furniture(self) -> None:
+        builder = GlbBuilder()
+        shared = builder.add_mesh("shared", [box(0.4)])
+        other = builder.add_mesh("other", [box(0.4)])
+        parts = scene([
+            Node(name="Drawn", mesh=shared,
+                 extras={"templateKind": "SimpleObject", "geometry": "shared_m1"}),
+            Node(name="Preview", mesh=other,
+                 extras={"templateKind": "Projectile",
+                         "projectileMesh": {"template": "X",
+                                            "geometry": "shared_m1"}}),
+        ], builder)
+        self.assertEqual(frozenset(), verify.helper_geometry_names(parts))
+
+    def test_the_material_name_gives_up_its_mesh(self) -> None:
+        self.assertEqual("bullet_m1", verify.material_mesh("bullet_m1_Material0"))
+        self.assertEqual("thompson_m1",
+                         verify.material_mesh("Thompson_m1_Material0"))
+        # Nothing to strip: left alone rather than guessed at.
+        self.assertEqual("oddly_named", verify.material_mesh("Oddly_Named"))
+
     def test_a_renamed_emitter_is_still_an_emitter(self) -> None:
         # The classification must not depend on the `em_` prefix: mods spell
         # their emitters however they like.
@@ -184,23 +240,38 @@ class SkinnedSoldierTests(unittest.TestCase):
     the origin. This is every soldier in the game and it was 19 of the vanilla
     rebuild's 42 broken verdicts."""
 
-    def soldier(self) -> list[verify.Part]:
-        builder = GlbBuilder()
-        parts = []
-        for name, geometry, size in (
-                ("GerSoldier3PBody", "Soldier/3PGerBody", 1.63),
-                ("GerSoldierComplexHead1", "Soldier/GerComplexHead1", 0.30),
-                ("GerSoldierRightHand", "Soldier/GerRightHand", 0.22),
-                ("GerSoldierLeftHand", "Soldier/GerLeftHand", 0.15)):
-            mesh = builder.add_mesh(name, [box(size)])
-            parts.append(Node(name=name, mesh=mesh, extras={
-                "templateKind": "SimpleObject", "geometry": geometry,
-                "skin": f"animations/{name}.skn"}))
-        return scene(parts, builder)
+    def soldier(self, *, skeleton: bool = True) -> list[verify.Part]:
+        """The shape the exporter writes: a `BFSoldier` root carrying the
+        `.ske` with the four skinned meshes beneath it, exactly as
+        `BritishSoldier.glb` is built. `skeleton=False` is the same soldier
+        with its skeleton lost, which is not the same model at all."""
+        def build(builder: GlbBuilder) -> list[int]:
+            children = []
+            for name, geometry, size in (
+                    ("GerSoldier3PBody", "Soldier/3PGerBody", 1.63),
+                    ("GerSoldierComplexHead1", "Soldier/GerComplexHead1", 0.30),
+                    ("GerSoldierRightHand", "Soldier/GerRightHand", 0.22),
+                    ("GerSoldierLeftHand", "Soldier/GerLeftHand", 0.15)):
+                mesh = builder.add_mesh(name, [box(size)])
+                children.append(builder.add_node(Node(name=name, mesh=mesh, extras={
+                    "templateKind": "SimpleObject", "geometry": geometry,
+                    "skin": f"animations/{name}.skn"})))
+            root_extras = {"templateKind": "BFSoldier"}
+            if skeleton:
+                root_extras["skeleton"] = "animations/GerSoldier.ske"
+            return [builder.add_node(Node(name="GermanSoldier",
+                                         extras=root_extras,
+                                         children=children))]
+        return nested_scene(build)
 
     def test_a_skinned_part_is_recognised(self) -> None:
         for part in self.soldier():
             self.assertTrue(part.is_skinned, part.name)
+
+    def test_the_skeleton_on_the_root_is_in_scope_for_every_mesh(self) -> None:
+        for part in self.soldier():
+            self.assertTrue(part.skeleton_in_scope, part.name)
+            self.assertTrue(part.is_posed, part.name)
 
     def test_four_skinned_parts_on_the_origin_are_not_a_pile(self) -> None:
         self.assertEqual([], verify.origin_pile(self.soldier()))
@@ -208,6 +279,43 @@ class SkinnedSoldierTests(unittest.TestCase):
     def test_the_soldier_comes_out_clean(self) -> None:
         triage = verify.triage_report("GermanSoldier", {}, parts=self.soldier())
         self.assertEqual("clean", triage.status)
+
+    def test_a_soldier_is_measured_against_a_standing_man(self) -> None:
+        # The one external check a soldier has: every mesh of it is excused
+        # from the placement check, so without a size nothing objective was
+        # being said about it at all.
+        parts = self.soldier()
+        check = verify.dimension_check("GermanSoldier",
+                                       verify.body_length(parts),
+                                       category="soldier")
+        self.assertIsNotNone(check)
+        self.assertEqual(1.85, check.expected)
+
+    def test_a_soldier_exported_three_times_too_big_fails(self) -> None:
+        check = verify.dimension_check("GermanSoldier", 1.85 * 3,
+                                       category="soldier")
+        self.assertFalse(check.ok())
+
+    def test_every_soldier_in_the_four_catalogues_is_inside_the_band(self) -> None:
+        # Measured on 2026-09-22 over the shipped catalogues: vanilla 1.869 to
+        # 1.881, the packs up to 2.011 (a helmet and some licence), EoD the
+        # same set again. The band has to hold all of them.
+        for measured in (1.869288, 1.881318, 2.010934, 1.873965):
+            check = verify.dimension_check("AnySoldier", measured,
+                                           category="soldier")
+            self.assertTrue(check.ok(), measured)
+
+    def test_a_soldier_whose_skeleton_was_lost_is_broken(self) -> None:
+        # The failure `is_skinned` alone could not see: the skins are there,
+        # nothing can pose them, and the four meshes draw stacked at the
+        # origin with the body inside the head.
+        parts = self.soldier(skeleton=False)
+        self.assertEqual(4, len(verify.unposed_skins(parts)))
+        self.assertEqual(4, len(verify.origin_pile(parts)))
+        triage = verify.triage_report("GermanSoldier", {}, parts=parts)
+        self.assertEqual("broken", triage.status)
+        self.assertTrue(any("no skeleton in scope" in f.message
+                            for f in triage.findings), triage.findings)
 
     def test_the_node_that_carries_the_skeleton_counts_as_skinned_too(self) -> None:
         builder = GlbBuilder()
@@ -237,9 +345,9 @@ class AbsentBaseGameMeshTests(unittest.TestCase):
             vanilla_facts=False)
         self.assertEqual("clean", triage.status)
 
-    def test_any_other_missing_mesh_is_still_broken(self) -> None:
+    def test_any_other_missing_mesh_the_chain_holds_is_still_broken(self) -> None:
         triage = verify.triage_report(
-            "Foo", {"missingMeshFiles": ["sherman_hull_m1"]})
+            "Foo", {"missingMeshFiles": ["sherman_hull_m1"]}, archives_read=True)
         self.assertEqual("broken", triage.status)
 
 
@@ -479,16 +587,42 @@ class SeverityTests(unittest.TestCase):
         self.assertEqual("degraded", triage.status)
 
     def test_an_asset_a_drawn_part_wanted_is_broken(self) -> None:
+        # vanilla's IlyushinDummyBomb really does carry this mesh under the
+        # wing, and the chain defines the template, so losing it is a hole.
         triage = verify.triage_report(
             "Ilyushin", {"missingGeometryTemplates": ["Big_Bomb_M1"]},
-            missing_asset_roles={"big_bomb_m1": "part"})
+            missing_asset_roles={"big_bomb_m1": "part"}, archives_read=True)
         self.assertEqual("broken", triage.status)
 
-    def test_an_unclassified_asset_keeps_the_strict_verdict(self) -> None:
-        # No archives, so nothing is known about what wanted it.
+    def test_a_reference_the_mod_leaves_dangling_is_not_our_bug(self) -> None:
+        # EoD's raft names a motor geometry template no `.con` in the chain
+        # creates. The engine resolves nothing there either, so the extraction
+        # showing no motor is the extraction being right. This was one of
+        # eight EoD BROKEN verdicts on 2026-09-22.
+        triage = verify.triage_report(
+            "Cammo_Raft", {"missingGeometryTemplates": ["CammoRaft_Motor_M1"]},
+            missing_asset_roles={"cammoraft_motor_m1": "part"},
+            missing_asset_absent=frozenset({"cammoraft_motor_m1"}),
+            archives_read=True)
+        self.assertEqual("degraded", triage.status)
+        self.assertTrue(any("defined nowhere in the mod chain" in f.message
+                            for f in triage.findings), triage.findings)
+
+    def test_a_mesh_found_but_unusable_keeps_its_broken_verdict(self) -> None:
+        # `assemble.py` appends the reason in parentheses when it *found* the
+        # file and could not use it, so the leaf resolves, it is never in
+        # `missing_asset_absent`, and a damaged mesh still fails.
+        triage = verify.triage_report(
+            "Foo", {"missingMeshFiles": ["foo_hull_m1 (no lods)"]},
+            missing_asset_absent=frozenset(), archives_read=True)
+        self.assertEqual("broken", triage.status)
+
+    def test_an_unclassified_asset_without_archives_is_an_unknown(self) -> None:
+        # No archives, so nothing is known about what wanted it or whether the
+        # chain could resolve it. An unknown is not a verdict.
         triage = verify.triage_report(
             "Cammo_Raft", {"missingGeometryTemplates": ["CammoRaft_Motor_M1"]})
-        self.assertEqual("broken", triage.status)
+        self.assertEqual("degraded", triage.status)
 
 
 if __name__ == "__main__":
