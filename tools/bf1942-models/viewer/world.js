@@ -111,6 +111,7 @@ const IDLE_INPUT = Object.freeze({
   forward: 0, strafe: 0, forwardKeys: 0, rudder: 0,
   walk: false, crouch: false, prone: false,
   jump: false, fire: false, altFire: false, roll: 0, pitch: 0, pad: false,
+  deploy: false, dead: false,
 });
 
 /**
@@ -145,6 +146,12 @@ function shapeInput(input) {
     crouch: !!i.crouch,
     prone: !!i.prone,
     jump: !!i.jump,
+    // `c_PIMenuSelect9` on a falling soldier: the ripcord. The engine gives
+    // item slot 9 a second job through TemplateMessage 18
+    // (`BFSoldier::handleMessage` lnxded 0x0827728b) and `parachute.js`
+    // carries the rest; `dead` is what stops a corpse pulling it.
+    deploy: !!i.deploy,
+    dead: !!i.dead,
     // The vehicle triggers: the same c_PIFire/c_PIAltFire the engine's
     // PlayerInput carries. The page folds Space and its seatFire/seatAltFire
     // latches into these before setInput.

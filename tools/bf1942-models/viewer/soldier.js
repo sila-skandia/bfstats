@@ -32,6 +32,10 @@ import {
   RAMP_TO_FULL_SECONDS, RAMP_TO_STOP_SECONDS,
   DIVE_SPEED_FACTOR, DIVE_DURATION,
 } from './physics.js';
+import {
+  Parachute, effectiveParachuteDrag,
+  PARA_NONE, PARA_FALLING, PARA_OPEN, PARA_LANDED,
+} from './parachute.js';
 
 // Re-exported so a caller that already has `soldier.js` does not have to reach
 // past it for a number it is about to compare against. Every one of these is
@@ -45,6 +49,7 @@ export {
   RAMP_TO_FULL_SECONDS, RAMP_TO_STOP_SECONDS,
   DIVE_SPEED_FACTOR, DIVE_DURATION,
 };
+export { PARA_NONE, PARA_FALLING, PARA_OPEN, PARA_LANDED };
 
 // -- what the game declares --------------------------------------------------
 
@@ -284,6 +289,11 @@ const PITCH_LIMIT = PITCH_LIMIT_DEG * DEG;
  */
 const SPAWN_DROP = 600;
 
+/** How many undrained bail-out events to keep. A whole fall produces six. */
+const PARACHUTE_EVENT_CAP = 64;
+/** Shared empty result, so draining nothing costs no allocation per frame. */
+const EMPTY_EVENTS = Object.freeze([]);
+
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 /**
@@ -338,6 +348,17 @@ export class Soldier {
 
     // Reused rather than reallocated: `step()` runs it up to twelve times.
     this._tickInput = { forward: 0, strafe: 0, walk: false };
+
+    // Bailing out. The state machine and both engine forces are in
+    // `parachute.js`; this owns the pitch the free-fall term steers on and the
+    // tick loop the whole thing runs in.
+    this.chute = new Parachute();
+    /** Sound and animation events the last `step()` produced, oldest first. */
+    this.parachuteEvents = [];
+    /** The drag `parachute.js` asks for, pre-scaled for this body's radius. */
+    this._chuteDrag = effectiveParachuteDrag(this.body.body.boundingRadius);
+    this._chuteForward = { x: 0, y: 0, z: 0 };
+    this._chuteBodyForward = { x: 0, y: 0, z: 0 };
   }
 
   // The body owns the position, the yaw and the world. These forward rather
@@ -371,8 +392,68 @@ export class Soldier {
     this.onWater = false;
     this.landing = null;
     this.clock.reset();
+    this.chute.reset();
+    this.parachuteEvents.length = 0;
+    this.body.setParachute(false);
     this.settle();
     return this;
+  }
+
+  /**
+   * Step out of a flying aircraft: placed, moving, and **not** dropped to the
+   * floor.
+   *
+   * `spawn()` ends in `settle()`, a 600 m probe that puts the feet on whatever
+   * is underneath — right for a spawn pad and wrong for a bail-out, which is
+   * why leaving a plane at altitude used to teleport the pilot to the ground
+   * under it. Bailing out is not gated in the engine (SEAT-5/SEAT-8: the exit
+   * check is pure geometry), so the whole of what should happen next is the
+   * fall, and the fall needs the body left where the aircraft was.
+   *
+   * The inherited velocity is the aircraft's: a man who steps out of something
+   * doing 90 m/s keeps doing 90 m/s. That is the ordinary consequence of the
+   * exit not changing the body's momentum, and it is what makes the free-fall
+   * gate (`vy < -8`) take a moment to arm after a level bail-out.
+   */
+  bailOut(x, y, z, yaw = 0, vx = 0, vy = 0, vz = 0) {
+    this.body.place(x, y, z, yaw);
+    this.body.setPoseFlags(0, 0);
+    this.body.body.setVelocity(vx, vy, vz);
+    this.body.grounded = false;
+    this.body.contacted = false;
+    this.body.jumpArmed = false;
+    this.body.lastCollisionHeight = y;
+    this.pitch = 0;
+    this.stance = 'stand';
+    this.gait = 'stand';
+    this.speed = 0;
+    this.bobPhase = 0; this.bobTime = 0; this.bobGait = 'stand';
+    this.stepPhase = 0; this.steps = 0;
+    this.bobUp = 0; this.bobSide = 0; this.bobYaw = 0;
+    this.blocked = false;
+    this.onWater = false;
+    this.landing = null;
+    this.clock.reset();
+    this.chute.reset();
+    this.parachuteEvents.length = 0;
+    this.body.setParachute(false);
+    return this;
+  }
+
+  /** `none` | `falling` | `open` | `landed` — the engine's four states. */
+  get parachuteState() { return this.chute.state; }
+
+  /**
+   * Take the bail-out sound and animation triggers produced since the last
+   * call, oldest first, and empty the queue.
+   *
+   * A queue rather than a per-frame array because a frame runs whole ticks
+   * and a caller reads once per frame; a sound trigger that landed on the
+   * first of three ticks must not be thrown away by the third.
+   */
+  drainParachuteEvents() {
+    if (!this.parachuteEvents.length) return EMPTY_EVENTS;
+    return this.parachuteEvents.splice(0, this.parachuteEvents.length);
   }
 
   /**
@@ -480,6 +561,11 @@ export class Soldier {
     this._tickInput.forward = forward;
     this._tickInput.strafe = strafe;
     this._tickInput.walk = !!input.walk;
+    // Kept so `#stepParachute` can put them back on the tick after the chute
+    // stops suppressing them; a frame can run up to twelve ticks and the
+    // suppression is per tick, not per frame.
+    this._inputForward = forward;
+    this._inputStrafe = strafe;
     // Latched in the body, so a tap that lands between two ticks is not
     // swallowed — but only on the press edge. The game never re-jumps a held
     // Space: landing with the key still down leaves you on the floor until
@@ -496,7 +582,14 @@ export class Soldier {
     // that straddled the landing would drop the fall on the floor. Cleared each
     // frame; a caller reads it once, right after `step`.
     this.landing = null;
+    // `parachuteEvents` is deliberately NOT cleared here. A frame can run
+    // several world ticks and each one calls this method, so clearing per
+    // call drops every event but the last tick's — which is how the 2.3 s
+    // `fhs2` layer went missing from the first page trace. The caller drains
+    // it (`drainParachuteEvents`); the cap below is what keeps a caller that
+    // never does from growing it without bound.
     for (let i = 0; i < ticks; i++) {
+      this.#stepParachute(this.clock.dt, input);
       this.body.step(this.clock.dt, this._tickInput);
       contacts += this.body.contacts;
       if (this.body.landed) {
@@ -519,6 +612,97 @@ export class Soldier {
     // so a frame that straddles a drain reads as zero rather than as negative.
     if (collider) this.casts = Math.max(0, collider.casts - castsBefore);
     return this;
+  }
+
+  /**
+   * One tick of `parachute.js`, and the two things it answers with.
+   *
+   * Run **before** `SoldierBody.step`, because the acceleration it returns has
+   * to land in the same accumulator the tick is about to spend and zero
+   * (`PointBody.updatePhysics`: drag, integrate, re-seed gravity), which is
+   * exactly where the engine's own
+   * `addAccelerationAtRelativePosition(zero, forward * parachuteSpeed)` lands.
+   *
+   * The third thing it does is a *suppression*. Both free-fall and glide
+   * states declare `AnimationStateMachine.setSpeed 0 1 0`, and PHY-8 has that
+   * forward term multiplying the locomotion table — so WASD is worth nothing
+   * in either, and the engine substitutes the look/facing term as the only air
+   * control there is. Zeroing the tick input is how that reads here.
+   *
+   * `height` is above the **terrain**, not above the nearest surface: the
+   * engine's own gate is `pos.y - terrainBase->getHeight(x, z)`
+   * (`0x08275f10`), so `surfaceHeight` and not a downward cast is the right
+   * question to ask the collider.
+   */
+  #stepParachute(dt, input) {
+    const collider = this.body.world;
+    const ground = collider?.surfaceHeight
+      ? collider.surfaceHeight(this.x, this.z) : NaN;
+    const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
+    const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
+    const view = this._chuteForward;
+    view.x = sy * cp; view.y = sp; view.z = cy * cp;
+    const facing = this._chuteBodyForward;
+    facing.x = sy; facing.y = 0; facing.z = cy;
+    this.chute.update({
+      dt,
+      velocityY: this.body.body.velocity.y,
+      height: Number.isFinite(ground) ? this.y - ground : null,
+      grounded: this.body.grounded,
+      deploy: !!input.deploy,
+      dead: !!input.dead,
+      forward: view,
+      bodyForward: facing,
+    });
+    if (this.chute.events.length) {
+      for (const event of this.chute.events) this.parachuteEvents.push(event);
+      const over = this.parachuteEvents.length - PARACHUTE_EVENT_CAP;
+      if (over > 0) this.parachuteEvents.splice(0, over);
+    }
+    const state = this.chute.state;
+    const flying = state === PARA_FALLING || state === PARA_OPEN;
+    this.body.setParachute(this.chute.open, this._chuteDrag);
+    if (this.chute.open) {
+      // **A deliberate deviation, and the reason it is one.**
+      //
+      // HP-14's severity carries `Q = max(1, (F - 1) * kitDamping)` and then
+      // squares it, where `F` is `getLastCollisionHeight() - y` — the drop
+      // since the last contact. A man who steps out at 120 m and floats the
+      // rest of the way down under a canopy still arrives with `F = 120`, and
+      // `Q^2` alone makes that landing worth ~6,900 HP against his 30.
+      //
+      // The engine's own data says that cannot be what happens: the landing
+      // clip `Lb_ParachuteHitGround` ends `addTransitionWhenDone Lb_Stand` —
+      // you stand up and walk away — and the dead case has its own separate
+      // `Lb_ParachuteDeadHitGround`. A chute landing is survivable, and `F` is
+      // the only term the drop height enters through, so `F` is what the
+      // chute has to neutralise.
+      //
+      // The engine writes `Armor+0x28` inline at the tail of `Armor::update`
+      // (`0x081730b0`-`0x081730e7`): every tick the object is not in contact
+      // (`Armor+0x129 == 0`) it *raises* the field to the current `y`. It is a
+      // running maximum of altitude, so the engine does not neutralise `F` for
+      // a parachutist either — `F` really is the whole 120 m.
+      //
+      // The engine's own answer is the drag radius: at `r >= 2.354` the canopy
+      // touches down at `|v| <= 8.0` and `handleCollisionLandOrWater` returns
+      // before it reaches `Q^2`. `PARACHUTE_DRAG_RADIUS` is 1.8, below that
+      // window, so this re-stamp stands in for it: bill the touchdown for the
+      // last tick's descent and nothing else. It differs from the engine's
+      // rule only in direction (the engine never lowers the value). Raise the
+      // radius into the window and this block can go. See the feature doc's
+      // sections 4 and 5.
+      this.body.lastCollisionHeight = this.y;
+    }
+    if (flying) {
+      const a = this.chute.accel;
+      if (a.x || a.y || a.z) this.body.body.addAcceleration(a.x, a.y, a.z);
+      this._tickInput.forward = 0;
+      this._tickInput.strafe = 0;
+    } else {
+      this._tickInput.forward = this._inputForward ?? 0;
+      this._tickInput.strafe = this._inputStrafe ?? 0;
+    }
   }
 
   /**

@@ -48,6 +48,7 @@ MODULES = {
     "ground.js": VIEWER / "ground.js",
     "flight.js": VIEWER / "flight.js",
     "physics.js": VIEWER / "physics.js",
+    "parachute.js": VIEWER / "parachute.js",
     "vendor/loaders/GLTFLoader.js": VIEWER / "vendor" / "loaders" / "GLTFLoader.js",
     "vendor/utils/BufferGeometryUtils.js": VIEWER / "vendor" / "utils" / "BufferGeometryUtils.js",
     "node_modules/three/three.module.js": VIEWER / "vendor" / "three.module.js",
