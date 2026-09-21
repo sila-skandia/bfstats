@@ -110,6 +110,33 @@ Cover is real and is the collider's: the same blast placed *east* of the same
 spawn scored 0 of 9 samples standing, and on Bocage 3 of 9 at 5 m. Script:
 `scratchpad/w5a/blast.mjs`.
 
+> Review: every row of that table reproduced on an independent run
+> (`scratchpad/w5a-review/blast-check.mjs`, port 5335) -- 6.00 / 12.00 /
+> 12.00 / 24.00 / 12.00 / 0.00, `pose` 0/1/2 matching the stance, exposure
+> read both before the blast through the pre-existing `__soldiers` hook and
+> after it through `__blast`, and no console errors. `__blast` builds exactly
+> the fields `gunfire.js` writes on a real record (`splashPoint`,
+> `splashRadius`, `splashMaterial2`, `splashYMod`, `firer`) and hands them to
+> the page's own `applyVehicleHit`, so the path it exercises is the real one;
+> the single divergence is that it does not run the radius through
+> `truncateRadius`, so a caller passing a fractional radius gets something the
+> engine never sees.
+>
+> The engine law re-derived byte for byte against the same binary
+> (`scratchpad/w5a-review/bin*.sh`): dispatch, the three `mov edi` counters,
+> the three tables and the three divisors are all exactly as stated, and the
+> two 9-sample tables are byte-identical over 108 bytes. The pose mapping is
+> not inferred: `ObjTemplBFModule::init` registers `c_AsmIsCrouching` = 0x20
+> (`0x0829920a`) and `c_AsmIsLying` = 0x40 (`0x0829923a`) through
+> `addConstantHelper`, and `getPose()` returns 1 on 0x20 and 2 on 0x40 -- so
+> 1 is crouch, 2 is prone, and standing's 0.5 cap is real.
+>
+> One thing the round's open list should keep: this measures the viewer's
+> **linear** falloff (`1 - d/r`), which the round README itself flags at line
+> 85 as the Mod Development Toolkit's formula rather than the binary's. HP-10
+> (the exposure sampling) is done and merged; whether the falloff *shape*
+> inside the radius is the engine's is untouched by this stream.
+
 ---
 
 ## 2. Crouch and prone play their own aim — built
@@ -117,8 +144,15 @@ spawn scored 0 of 9 samples standing, and on Bocage 3 of 9 at 5 m. Script:
 ### What the data says
 
 Surveyed over vanilla's 1,458-state machine (`scratchpad/w5a/survey_stance.py`
-and `fams.py`, through `bf42.animstates` over `animations.rfa`). All **26**
+and `fams.py`, through `bf42.animstates` over `animations.rfa`). All **28**
 weapons that declare `Ub_StandAim<W>` also declare, each with a 1P clip:
+
+> Review correction: the count is 28, not 26. Both survey scripts match a
+> hard-coded weapon whitelist, and it misses `RepairPack` and spells the P38
+> `P38` where the states spell it `WalterP38`. Re-derived with no whitelist
+> (`scratchpad/w5a-review/surv3.py`, `surv4.py`): `Ub_StandAim*` has 29
+> matches, one of which is the bare template `Ub_StandAim` with no 1P clip,
+> and the other 28 all carry the eight families below, each with a 1P clip.
 
 | state | resolves to | Thompson rate |
 |---|---|---|
@@ -143,12 +177,27 @@ them in:
 - **there is no crouch-run**: `Ub_CrouchForward<W>` is the only forward crouch
   state, so walking and running crouched are one family.
 
+Both absences re-derived in review over the raw archive text with no weapon
+whitelist at all: zero case-insensitive matches for `crouchfire`,
+`crouchreload` or `crouchrun` anywhere in the 28 `.con`/`.inc` files the mesh
+pool resolves (`scratchpad/w5a-review/surv.py`). `_001` layering is not a
+hazard here — `ArchivePool.add_dir` registers `<name>_001.rfa` before
+`<name>.rfa` so a patch wins the first-hit lookup, and vanilla ships no
+`animations_001.rfa` in any case. The chains now pin both absences on the
+table itself rather than only on a resolution, which is what the review's
+mutation test found missing.
+
 ### What was built
 
 - `extract_viewmodel.py` bakes eight new families: `crouch`, `crouchWalk`,
   `prone`, `crawl`, `proneFire`, `proneReload`, `crouchDeploy`, `proneDeploy`.
   The two tracked fixtures grew 2.11 MB -> 2.90 MB and 2.16 MB -> 2.93 MB
   (+37%), almost all of it the 181-frame prone reload.
+  One of the eight is a duplicate in vanilla: `Ub_CrouchRaiseWeapon<W>` names
+  the same `1PDeploy<W>.baf` at the same rate as `Ub_StandRaiseWeapon<W>` on
+  all 28 weapons, so `crouchDeploy` and `deploy` are the same animation in a
+  vanilla rig. It is baked anyway, because the chain is per mod and a mod may
+  declare a real crouched draw-in.
 - `viewer/stance-clips.js` (new, free of `three`, tested under node) holds the
   chains and the resolution.
 - `viewer/viewmodel-anim.js` takes `stance` and `has` and resolves fire, reload,
@@ -165,8 +214,19 @@ selector keyed on the gait alone cannot see a crouching man standing still, and
 that is exactly why the page played the standing aim in every stance.
 
 A rig published before these families existed answers `hasClip` false for them
-and every chain falls back to the standing clip, so an old `fp.glb` behaves
-exactly as it did.
+and every chain falls back to a standing clip.
+
+> Review correction: "behaves exactly as it did" is not quite true, and the
+> difference is the one thing the live site sees before a re-extract. A
+> *stationary* crouched or prone soldier on an old rig still lands on `idle`;
+> a **moving** one now lands on `walk`, where the old flat `LOCO_CLIP` sent
+> both the `crouch` and `prone` gaits to `idle`. Measured by running the same
+> kit matrix against a checkout of `2883708` served beside this branch
+> (`scratchpad/w5a-review/fallback.mjs`, :5335 against :5336): every standing
+> row is identical across the two builds on all five US kits, and the only
+> rows that move are `crouch move` and `crawl`, `idle` -> `walk`. That is the
+> better clip -- `Ub_CrouchForward<W>` is the same `1pRun<W>.baf` the standing
+> walk uses -- but it is a change.
 
 ### Measured, on Bocage (US side, medic kit, `USSoldier__Thompson`)
 
@@ -207,12 +267,18 @@ StrafeRight,Turn*}` and the two jumps, all with 1P clips. The viewer plays the
 a separate gap from this one and was not in this stream's brief.
 
 **Re-extraction the lead owns**: only the two tracked fixtures
-(`USSoldier__Thompson`, `GermanSoldier__MP40`) carry the new families. The other
-194 rigs in `viewer/models/viewmodels` are the main checkout's and were not
-touched — the shared tree is read-only to a stream. One
-`extract_viewmodel.py` pass over the published pairings puts the families on all
-of them; until then every other weapon falls back to the standing clip, exactly
-as before.
+(`USSoldier__Thompson`, `GermanSoldier__MP40`) carry the new families. The
+other rigs in `viewer/models/viewmodels` are the main checkout's and were not
+touched — the shared tree is read-only to a stream. One `extract_viewmodel.py`
+pass over the published pairings puts the families on all of them; until then
+every other weapon falls back down its chain, as above.
+
+> Review correction: there are **99** `.fp.glb` rigs in the published tree,
+> not 196, so it is 97 others, not 194 (`find viewer/models -name '*.fp.glb' |
+> wc -l`). The tree is 163 MB today; at the fixtures' +37% a full re-extract
+> takes it to roughly 224 MB, about +60 MB. Narrowing it buys little: the
+> growth is per rig and almost all of it is the prone reload, which every
+> weapon has.
 
 ---
 
@@ -292,6 +358,24 @@ for a 1-2 m/s crawl) are an artefact of driving both pages by
 stance branch does not depend on the magnitude; the band boundaries themselves
 are pinned by the node tests, not by this.
 
+> Review, on a **three**-client room (`scratchpad/w5a-review/room3p.mjs`): all
+> seven families bind on both observers' rigs, every stance resolves, and
+> there are no page errors. Each observer's drawn family is consistent with
+> the crouch/prone flags its own client held. The two observers do disagree
+> with each other, and that is the harness: whichever page is stepped last in
+> a tick is the fresh one, and swapping the step order swaps which of them
+> tracks the stance (`room3p.mjs` against `room3q.mjs`). A stationary
+> replica's smoothed speed reads exactly 0.
+>
+> One real gap in the bands, fixed in review: `physics.js`
+> `rampedDirectionalSpeed` applies `walkSpeedFactor` in **every** pose, so a
+> crouched man holding `c_PIWalk` makes 2 x 1/3 = 0.67 m/s and a crawling one
+> 1 x 1/3 = 0.33 m/s. Boundaries at half the *run* speed (1.0 crouched, 0.5
+> prone) sit above both, so a walking crouch was drawn as a still one. The
+> boundary a stance with one movement family needs separates still from its
+> **slowest** speed, so each is now half the stance's own walk speed: 1/3 and
+> 1/6. `test_remote_gait.py` gained the two walk-key cases.
+
 ---
 
 ## Tests
@@ -303,7 +387,8 @@ skip without them).
 
 New:
 
-- `tests/test_stance_clips.py` + `tests/stance_clips_harness.mjs` — 10 tests
+- `tests/test_stance_clips.py` + `tests/stance_clips_harness.mjs` — 11 tests
+  (10, plus one added in review)
 - `tests/test_remote_gait.py` + `tests/remote_gait_harness.mjs` — 10 tests
 - `tests/test_viewmodel.py` — the family list, the crouch rate identity, the
   four prone clips

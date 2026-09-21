@@ -8218,8 +8218,11 @@ const footEye = { x: 0, y: 0, z: 0 };
 // and `Ub_CrouchRaiseWeapon<W>`, all 26 vanilla weapons, all with 1P clips —
 // the exporter bakes them, and `stance-clips.js` is the chain that picks one.
 // A rig published before those families existed answers `hasClip` false for
-// them and falls back to the standing clip, which is what this did for every
-// stance before.
+// them and falls back down its chain to a standing clip. Only the two tracked
+// fixtures carry the new families today; the other 97 rigs in
+// models/viewmodels take that fallback until the lead re-extracts, and for
+// them the one visible change is that a moving crouched or prone soldier now
+// plays the standing walk where he used to play idle.
 
 // Which weapon the deploy screen's kit puts in hand is the game's own data,
 // read from two places neither of which is the level's scene: the level's
@@ -9277,8 +9280,10 @@ async function loadHandWeapon(name, soldierName = null) {
     mixer, actions,        // the arms rig's state machine; both empty when bare
     // Which families this rig baked — what `stance-clips.js` resolves a
     // stance's chain against. A rig extracted before the crouch/prone families
-    // existed answers false for them and every chain falls back to the
-    // standing clip, which is what the page did for all three stances before.
+    // existed answers false for them and every chain falls back to a standing
+    // clip, which is what the page did for all three stances before — except
+    // for a moving crouched or prone soldier, who now lands on the walk clip
+    // rather than idle.
     hasClip: name => Object.hasOwn(actions, name),
     fireVariants,          // the fire one-shot variants (`fire1..fireN`), when the
                            // weapon's aim state registers several (the knife)
