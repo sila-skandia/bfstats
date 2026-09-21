@@ -289,6 +289,11 @@ const PITCH_LIMIT = PITCH_LIMIT_DEG * DEG;
  */
 const SPAWN_DROP = 600;
 
+/** How many undrained bail-out events to keep. A whole fall produces six. */
+const PARACHUTE_EVENT_CAP = 64;
+/** Shared empty result, so draining nothing costs no allocation per frame. */
+const EMPTY_EVENTS = Object.freeze([]);
+
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
 /**
@@ -439,6 +444,19 @@ export class Soldier {
   get parachuteState() { return this.chute.state; }
 
   /**
+   * Take the bail-out sound and animation triggers produced since the last
+   * call, oldest first, and empty the queue.
+   *
+   * A queue rather than a per-frame array because a frame runs whole ticks
+   * and a caller reads once per frame; a sound trigger that landed on the
+   * first of three ticks must not be thrown away by the third.
+   */
+  drainParachuteEvents() {
+    if (!this.parachuteEvents.length) return EMPTY_EVENTS;
+    return this.parachuteEvents.splice(0, this.parachuteEvents.length);
+  }
+
+  /**
    * Drop to the floor immediately, the way the engine does on spawn.
    *
    * The probe starts just above the feet, not above the head: a spawn under a
@@ -564,7 +582,12 @@ export class Soldier {
     // that straddled the landing would drop the fall on the floor. Cleared each
     // frame; a caller reads it once, right after `step`.
     this.landing = null;
-    this.parachuteEvents.length = 0;
+    // `parachuteEvents` is deliberately NOT cleared here. A frame can run
+    // several world ticks and each one calls this method, so clearing per
+    // call drops every event but the last tick's — which is how the 2.3 s
+    // `fhs2` layer went missing from the first page trace. The caller drains
+    // it (`drainParachuteEvents`); the cap below is what keeps a caller that
+    // never does from growing it without bound.
     for (let i = 0; i < ticks; i++) {
       this.#stepParachute(this.clock.dt, input);
       this.body.step(this.clock.dt, this._tickInput);
@@ -633,6 +656,8 @@ export class Soldier {
     });
     if (this.chute.events.length) {
       for (const event of this.chute.events) this.parachuteEvents.push(event);
+      const over = this.parachuteEvents.length - PARACHUTE_EVENT_CAP;
+      if (over > 0) this.parachuteEvents.splice(0, over);
     }
     const state = this.chute.state;
     const flying = state === PARA_FALLING || state === PARA_OPEN;
