@@ -7,7 +7,7 @@
 // the reason the collision arithmetic lives there rather than in `gunfire.js`.
 
 import {
-  buildHeightfield, buildCollisionIndex, buildDrivableTops, WorldCollider,
+  buildHeightfield, buildCollisionIndex, buildDrivableMask, WorldCollider,
   impactEffect, materialFamily, WATER_MATERIAL,
 } from './collision.mjs';
 
@@ -36,6 +36,13 @@ function fakeMesh(positions, { index = null, material = 0, matrix = IDENTITY,
     traverse(fn) { fn(node); for (const c of node.children) c.traverse(fn); },
   };
   return node;
+}
+
+/** Six decimals is plenty and it keeps the JSON readable. */
+function round(v, places = 3) {
+  if (!Number.isFinite(v)) return v;
+  const k = 10 ** places;
+  return Math.round(v * k) / k;
 }
 
 function group(children) {
@@ -245,49 +252,188 @@ results.surfaceHeight = {
 };
 
 // --- drivable decks (bridges / repair bays) --------------------------------
-
-// A bridge is a wide flat deck (the road a tank rides) with a thin parapet
-// wall at one edge, both named to match the drivable heuristic. The deck sits
-// at y = 6..8 over a river; the heightfield under it is the slope (y = x/4,
-// so ~2 here). `buildDrivableTops` must lift `surfaceHeight` to the deck, not
-// the parapet cap (which, by the dominant-face rule, loses to the deck's far
-// larger horizontal footprint).
+//
+// The deck fixture is a level of its own: flat ground at y = 0 over 64 m, with
+// a repair bay (a sloped approach ramp onto a flat pad, walled on three sides)
+// and an arched bridge (a humped span with a real underside and two parapets).
+// Both are named to match the drivable heuristic; a building roof beside them is
+// not, and must never lift anything.
+//
+// Everything asserted here was WRONG under the height raster this replaced: a
+// sloped ramp triangle wrote its mean height flat across its whole XZ box (so
+// the ramp was a step at the wrong height, which is how a tank ended up
+// submerged in a repair pad), a span's underside has exactly the footprint of
+// its road so the largest-face rule could pick either, and the query had no
+// notion of the asker's height so anything under a bridge was lifted onto it.
 {
-  const deck = group([
-    fakeMesh(
-      // Flat wide deck, x 4..12, y 6, z -12..-2 (a 8 x 10 m road).
-      [4, 6, -2, 12, 6, -2, 12, 6, -12, 4, 6, -12],
-      { index: [0, 1, 2, 0, 2, 3], kind: 'Bridge' }),
-    fakeMesh(
-      // Thin parapet wall at x = 6, up to y = 11.
-      [6, 6, -2, 6, 6, -12, 6, 11, -12, 6, 11, -2],
-      { index: [0, 1, 2, 0, 2, 3], kind: 'Bridge' }),
+  const flat = [];
+  for (let iz = 0; iz < 16; iz++) {
+    for (let ix = 0; ix < 16; ix++) {
+      const x0 = ix * 4, x1 = x0 + 4;
+      const z0 = -iz * 4, z1 = z0 - 4;
+      flat.push(x0, 0, z0, x1, 0, z0, x1, 0, z1);
+      flat.push(x0, 0, z0, x1, 0, z1, x0, 0, z1);
+    }
+  }
+  const ground = buildHeightfield([fakeMesh(flat, { collision: false, kind: 'terrain' })],
+                                  { worldSize: 64 });
+
+  const quad = (a, b, c, d, kind) => fakeMesh([...a, ...b, ...c, ...d],
+    { index: [0, 1, 2, 0, 2, 3], kind });
+
+  // A repair bay: pad top at y = 1, x 10..20, z -10..0; a 4 m approach ramp
+  // rising from the ground at x = 6 to the pad at x = 10; vertical walls closing
+  // the other three sides. The ramp is the "little incline" a vehicle drives up.
+  const bay = group([
+    quad([10, 1, 0], [20, 1, 0], [20, 1, -10], [10, 1, -10], 'RepairBay'),
+    quad([6, 0, 0], [10, 1, 0], [10, 1, -10], [6, 0, -10], 'RepairBay'),
+    quad([20, 0, 0], [20, 1, 0], [20, 1, -10], [20, 0, -10], 'RepairBay'),
+    quad([10, 0, 0], [20, 0, 0], [20, 1, 0], [10, 1, 0], 'RepairBay'),
+    quad([10, 0, -10], [20, 0, -10], [20, 1, -10], [10, 1, -10], 'RepairBay'),
   ]);
-  const tops = buildDrivableTops(deck);
-  const collider = new WorldCollider({ heightfield: field, waterLevel: 2,
-    drivableTops: tops });
-  results.drivable = {
-    built: tops !== null,
-    // Over the deck (x = 8, z = -8): surfaceHeight rides the deck (a level ~6
-    // surface), far above the ~2 terrain / water.
-    deckTop: collider.surfaceHeight(8, -8),
-    // Off the deck (x = 40, well outside the deck's cell): the heightfield
-    // (y = x/4 = 10) rules, so the drivable raster adds nothing there.
-    offDeck: collider.surfaceHeight(40, -8),
-    // The parapet cap (11) must NOT win over the deck's 6 in cells they share.
-    notParapet: collider.surfaceHeight(6, -8),
-  };
-}
 
-// A building (name not in the drivable set) must never lift a tank onto its
-// roof: its cells fall back to the heightfield.
-{
-  const roof = fakeMesh(
-    [14, 9, -2, 16, 9, -2, 16, 9, -4, 14, 9, -4],
-    { index: [0, 1, 2, 0, 2, 3], kind: 'Building' });
-  const tops = buildDrivableTops(group([roof]));
-  results.nonDrivableRoof =
-    tops === null || !Number.isFinite(tops.top[tops.cols * 0 + 0]);
+  // An arched bridge across z = -20..-40 at x = 30..40: five road segments
+  // rising 4 -> 6 -> 7 -> 6 -> 4, an underside a metre below each of them, and a
+  // parapet along each side standing 2 m above the road.
+  const arch = [4, 6, 7, 6, 4];
+  const spanParts = [];
+  for (let i = 0; i < 4; i++) {
+    const zA = -20 - i * 5, zB = zA - 5;
+    const yA = arch[i], yB = arch[i + 1];
+    // Road surface.
+    spanParts.push(quad([30, yA, zA], [40, yA, zA], [40, yB, zB], [30, yB, zB], 'Bridge'));
+    // Underside, a metre below it — the face the old raster could pick instead.
+    spanParts.push(quad([30, yA - 1, zA], [40, yA - 1, zA],
+                        [40, yB - 1, zB], [30, yB - 1, zB], 'Bridge'));
+    // Parapets: vertical strips either side, road + 2.
+    spanParts.push(quad([30, yA, zA], [30, yA + 2, zA],
+                        [30, yB + 2, zB], [30, yB, zB], 'Bridge'));
+    spanParts.push(quad([40, yA, zA], [40, yA + 2, zA],
+                        [40, yB + 2, zB], [40, yB, zB], 'Bridge'));
+  }
+  const bridge = group(spanParts);
+
+  // A building beside them: a flat roof at y = 9 and the wall under it, neither
+  // drivable by name. A roof must never be a ride surface and a wall must never
+  // stop being one, whatever the gate is set to.
+  const hut = group([
+    quad([50, 9, -2], [58, 9, -2], [58, 9, -10], [50, 9, -10], 'Building'),
+    quad([50, 0, -2], [50, 9, -2], [50, 9, -10], [50, 0, -10], 'Building'),
+  ]);
+
+  const level = group([bay, bridge, hut]);
+  const deckStatics = buildCollisionIndex(level, { ownerRoots: [bay, bridge, hut] });
+  const mask = buildDrivableMask(level);
+  const world = new WorldCollider({ heightfield: ground, statics: deckStatics,
+                                    drivableMask: mask });
+
+  // Which triangles the index marked drivable: the bay's and the bridge's, never
+  // the hut's. This is the mask both the deck ray and the hull sweep read.
+  let drivableTris = 0;
+  for (let i = 0; i < deckStatics.count; i++) {
+    if (deckStatics.drivable[i]) drivableTris++;
+  }
+
+  // The ramp, sampled every half metre from the ground to the pad. Under an
+  // exact query this is a straight line of gradient 1/4 with no steps in it.
+  const rampProfile = [];
+  for (let x = 6; x <= 11.0001; x += 0.5) {
+    rampProfile.push(round(world.surfaceHeight(x, -5, 2.5), 4));
+  }
+  // The arch, along the middle of the road. Its own slope is 1/5, so no step
+  // between neighbours may be bigger than that plus rounding.
+  const archProfile = [];
+  for (let z = -20; z >= -40.0001; z -= 1) {
+    archProfile.push(round(world.surfaceHeight(35, z, 12), 4));
+  }
+
+  results.decks = {
+    built: mask !== null,
+    drivableTris,
+    hutTrisDrivable: (() => {
+      // The hut is owner 2; none of its triangles may be marked.
+      let n = 0;
+      for (let i = 0; i < deckStatics.count; i++) {
+        if (deckStatics.owners[i] === 2 && deckStatics.drivable[i]) n++;
+      }
+      return n;
+    })(),
+    rampProfile,
+    archProfile,
+    // The pad's flat top, from a wheel reference just above it.
+    padTop: round(world.surfaceHeight(15, -5, 2.0), 4),
+    // The crown of the arch, and a point on its rising flank.
+    archCrown: round(world.surfaceHeight(35, -30, 12), 4),
+    archFlank: round(world.surfaceHeight(35, -25, 12), 4),
+    // The underside (6 at the crown) must never be the answer from above it.
+    archNotUnderside: world.surfaceHeight(35, -30, 12) > 6.5,
+    // The parapet cap (9 at the crown) must never be the answer either.
+    archNotParapetCap: round(world.surfaceHeight(30.2, -30, 12), 4),
+    // From UNDER the bridge the deck is not there at all: the surface is the
+    // ground, and the deck query itself declines.
+    fromUnderBridge: round(world.surfaceHeight(35, -30, 1.5), 4),
+    deckFromUnderBridge: Number.isFinite(world.deckHeight(35, -30, 1.5)),
+    // A roof is never a ride surface, however high the asker starts.
+    overHutRoof: round(world.surfaceHeight(54, -6, 20), 4),
+    deckOverHutRoof: Number.isFinite(world.deckHeight(54, -6, 20)),
+    // Off every deck, open ground answers and no ray is cast.
+    openGround: round(world.surfaceHeight(2, -2, 2), 4),
+    // Height-awareness at the bay: a wheel reference a step above the ground
+    // finds the 1 m pad from beside it, one below the pad does not.
+    padFromBelowLip: Number.isFinite(world.deckHeight(15, -5, 0.4)),
+    padFromAboveLip: Number.isFinite(world.deckHeight(15, -5, 1.4)),
+    // Without a reference height NOTHING sees a deck — this is the opt-in that
+    // keeps soldiers, aircraft, boats and cameras on terrain and sea alone.
+    padWithoutReference: round(world.surfaceHeight(15, -5), 4),
+    bridgeWithoutReference: round(world.surfaceHeight(35, -30), 4),
+  };
+
+  // The deck's contact normal comes off the hit triangle, not a finite
+  // difference: level on the pad, tilted up the ramp, tilted along the arch.
+  const n = [0, 0, 0];
+  results.deckNormals = {
+    onPad: world.deckNormal(15, -5, 2.0, n) && n.map(v => round(v, 3)),
+    onRamp: (() => {
+      const got = world.deckNormal(8, -5, 3.0, n);
+      return got && n.map(v => round(v, 3));
+    })(),
+    onArchFlank: (() => {
+      const got = world.deckNormal(35, -25, 12, n);
+      return got && n.map(v => round(v, 3));
+    })(),
+    // Open ground has no deck normal, so the caller keeps the heightfield's.
+    onOpenGround: world.deckNormal(2, -2, 2, n),
+    // And nothing under the bridge does either.
+    underBridge: world.deckNormal(35, -30, 1.5, n),
+  };
+
+  // The hull sweep's deck gate. A vehicle hull is a fat sphere centred barely a
+  // metre off the ground, so it is inside whatever horizontal surface it stands
+  // on; the gate is what stops a deck reading as a wall. Defaults must leave the
+  // level exactly as it was (a soldier, a round, a body).
+  const R = 1.8;
+  const at = (x, y, z, dx, dy, dz, dist, stepTop, floorCos) => {
+    const len = Math.hypot(dx, dy, dz);
+    return world.sweepSphere(x, y, z, dx / len, dy / len, dz / len, dist, R, -1, false,
+                             stepTop, floorCos);
+  };
+  results.deckSweep = {
+    // Driving east into the bay's ramp at ground level: ungated this is a dead
+    // stop (the old edge-hang), gated it is a slope the wheels climb.
+    rampUngated: at(4, 0.6, -5, 1, 0, 0, 8, -Infinity, 2) !== null,
+    rampGated: at(4, 0.6, -5, 1, 0, 0, 8, 0 + 1.0, 0.5) === null,
+    // On the pad, settling as it drives along it: ungated the road under the
+    // hull is a contact on the first tick, which is the "welded to the deck"
+    // bug; gated it is a floor and the sweep is silent.
+    onPadUngated: at(12, 1.6, -5, 1, -0.3, 0, 6, -Infinity, 2) !== null,
+    onPadGated: at(12, 1.6, -5, 1, -0.3, 0, 6, 1.0 + 1.0, 0.5) === null,
+    // A parapet is still a wall from the road: it rises 2 m above the support,
+    // well past the step, and it is vertical.
+    parapetGated: at(36, 8, -30, -1, 0, 0, 8, 7 + 1.0, 0.5) !== null,
+    // And so is the hut's wall, which is not drivable at all and cannot be gated
+    // away however generous the gate.
+    hutWallGated: at(46, 2, -6, 1, 0, 0, 8, 100, 0) !== null,
+  };
 }
 
 // --- effect selection ------------------------------------------------------
