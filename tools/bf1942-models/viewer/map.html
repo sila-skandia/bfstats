@@ -982,6 +982,7 @@ import { fireVariantsFor, stanceClip, stanceFor } from './stance-clips.js';
 import { createReplayController, recordingLevel } from './replay.js';
 import { createRoomClient } from './netcode-client.js';
 import { createRemoteRenderer } from './netcode-render.js';
+import { createReconciler } from './netcode-reconcile.js';
 import { Hud, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS } from './hud.js';
 import { Armor } from './armor.js';
 import { VehicleDamageSet } from './vehicle-damage.js';
@@ -2139,6 +2140,12 @@ function snapPresentation() {
 function capturePresentationTick() {
   const snap = presentSnap;
   presentSnap = false;
+  // The room's prediction ledger: one entry per tick the world ran, in the
+  // order the words go on the wire, so the authority's `ack` names a pose the
+  // client can measure its error at. Here rather than beside the send, because
+  // a frame that ran three ticks sends three words and this is the only place
+  // that sees each tick's own finished pose (netcode-reconcile.js).
+  if (roomJoined && soldier) netTickPoses.push(soldier.x, soldier.y, soldier.z);
   if (soldier) {
     if (!snap) Object.assign(footEyePrev, footEyeCur);
     // Alpha 1: this tick's own finished pose. See `Soldier.eye`.
@@ -8024,9 +8031,16 @@ function spawnAtFlag(advance = false) {
   // player on the same flag (fresh Armor at the kit's max — the spawn row
   // names the kit so both sides build the same Armor from loadouts.json).
   if (roomJoined) {
+    // The ledger describes a body that no longer exists.
+    netReconciler?.reset();
+    netTickPoses.length = 0;
     netSendAction({
       type: 'spawn',
       flag: Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1),
+      // WHICH of the flag's spawn points, so the authority spawns on the one
+      // the prediction just used. `spawnPlayer` has already walked the index
+      // for this spawn, so this is the point the soldier is standing on.
+      spawnIndex: world.player(LOCAL_PLAYER)?.spawnIndex ?? 0,
       kit: deployKit,
     });
   }
@@ -13118,12 +13132,34 @@ let roomRenderer = null;
 let roomJoined = false;
 let roomPingTimer = null;
 let roomTornDown = false;    // a deliberate teardown; not a join failure
-// P3: the server's word beats the local sim only past these windows — a
-// destroyed-Armor decree is a hard event (the page's own death loop latches
-// the cam), but HP and position corrections wait for a real mismatch so the
-// prediction stays the predictor (netcode.md §4).
+// P3: HP follows the server's word past this window — a destroyed-Armor decree
+// is a hard event (the page's own death loop latches the cam), but a drop
+// smaller than this is the prediction's own business, so the prediction stays
+// the predictor (netcode.md §4).
 const NET_HP_GRACE = 1.5;
-const NET_POS_GRACE = 4.0;
+// P4: the correction law lives in netcode-reconcile.js — the hard-set limit,
+// the smoothing share and the replay of the client's unacknowledged ticks are
+// all its numbers, each justified from the sim in its own header. The page
+// keeps the ledger it needs (one pose per tick, flat xyz triples) and writes
+// the plan the module hands back.
+let netReconciler = null;
+const netTickPoses = [];
+/** The last correction the reconciler asked for, for `?data` and the smoke. */
+let netLastCorrection = null;
+let netCorrectionCount = 0;
+let netHardCorrectionCount = 0;
+
+/** A correction moves the body and touches nothing else.
+ *
+ *  NOT `Soldier.spawn()`, which is a respawn: it zeroes the velocity and the
+ *  PHY-6 ramps, resets the stance, the gait, the bob, the view pitch and the
+ *  soldier's own 60 Hz clock, and — called with no yaw — sets the facing to 0.
+ *  The rigid body's `setPosition` moves `position` and `previous` together, so
+ *  the render interpolation does not draw a smear across the correction
+ *  either. */
+function netPlaceSoldier(x, y, z) {
+  soldier.body.body.setPosition(x, Number.isFinite(y) ? y : soldier.y, z);
+}
 const parkedHullCache = new Map();   // room vehicle id -> local scene node
 // The room table id of the vehicle the local player is sitting in, cached on
 // entry: `netVehicleIdFor` is a matrix read over the room table, and the
@@ -13171,6 +13207,13 @@ function netSeatRow(action) {
 
 function netSendAction(row) {
   if (roomJoined && roomClient) roomClient.action(row);
+  // A seat row moves the body somewhere the soldier sim did not walk it
+  // (a hull pose, an exit point), so every pose in the prediction ledger
+  // describes a different situation from the one the next snapshot will.
+  if (row?.type === 'seat') {
+    netReconciler?.reset();
+    netTickPoses.length = 0;
+  }
 }
 
 /** The local scene's parked hull for a room vehicle id: the level node whose
@@ -13213,6 +13256,9 @@ function netTeardownRoom() {
   roomRenderer?.reset();
   roomClient?.close();
   roomClient = null;
+  netReconciler = null;
+  netTickPoses.length = 0;
+  netLastCorrection = null;
   parkedHullCache.clear();
 }
 
@@ -13261,6 +13307,7 @@ async function joinRoom() {
     // lands (the hello follows the join immediately).
     ws.binaryType = 'arraybuffer';
     roomClient = createRoomClient({ ws, now: () => performance.now() });
+    netReconciler = createReconciler();
     roomRenderer = createRemoteRenderer({
       scene, camera, loader, bust,
       modelsBase: MODELS_BASE,
@@ -13302,11 +13349,15 @@ async function joinRoom() {
         }
       }
     };
-    // P3: the snapshot is the server's word with a small grace window —
-    // HP drops apply (never heals — the supply depots heal both sides, and
-    // the server's own count absorbs the rest), and a position past the
-    // grace snaps (a respawn, a stuck body; P4's smoothing owns the small
-    // stuff). Only when the local player is alive and on foot.
+    // P3/P4: the snapshot is the server's word. HP drops apply (never heals —
+    // the supply depots heal both sides, and the server's own count absorbs
+    // the rest), and the position goes through the correction law: the error
+    // is measured at the tick the authority acknowledges, the client's own
+    // unacknowledged ticks are replayed on top, and what is left is closed a
+    // fraction at a time unless it is large enough to be a different event
+    // (netcode-reconcile.js owns every one of those decisions and its own
+    // numbers). Only when the local player is alive and on foot — a seated
+    // player's snapshot position is the hull's.
     roomClient.onsnapshot = snap => {
       if (!soldier || soldierDead || !soldierArmor) return;
       if (optPilot.checked || !optOnFoot.checked) return;
@@ -13318,13 +13369,17 @@ async function joinRoom() {
       if (self.hp != null && self.hp < soldierArmor.hitPoints - NET_HP_GRACE) {
         soldierArmor.applyDamage(soldierArmor.hitPoints - self.hp);
       }
-      if (Number.isFinite(self.x) && Number.isFinite(self.z)) {
-        const dx = self.x - soldier.x;
-        const dz = self.z - soldier.z;
-        if (dx * dx + dz * dz > NET_POS_GRACE * NET_POS_GRACE) {
-          soldier.spawn(self.x, self.y, self.z);
-        }
-      }
+      if (self.seated || self.inVehicle) return;
+      const plan = netReconciler?.accept(self, soldier);
+      if (!plan) return;
+      netPlaceSoldier(plan.x, plan.hard ? plan.y : null, plan.z);
+      // The facing, at the same share: the one divergence that grows without
+      // bound if nothing repairs it (netcode-reconcile.js's `yawDeltaOf`).
+      if (plan.yawDelta) soldier.body.yaw += plan.yawDelta;
+      netLastCorrection = { error: plan.error, hard: plan.hard,
+                            replayed: plan.replayed, acked: plan.acked };
+      netCorrectionCount++;
+      if (plan.hard) netHardCorrectionCount++;
     };
     roomClient.onclosed = code => {
       const wasIn = roomJoined;
@@ -13439,6 +13494,18 @@ async function joinRoom() {
       snapCount: roomJoined ? roomClient.snapCount() : 0,
       feed: roomJoined ? [...roomClient.feed] : [],
       sent: roomJoined ? [...roomClient.sentActions] : [],
+      // The authority's own row for this body, straight off the wire: what
+      // the correction law measured against.
+      self: roomJoined ? roomClient.selfPlayer() : null,
+      // P4's correction ledger: what the last correction measured, how many
+      // have run and how many of those had to be hard-set. A healthy room
+      // walks with `hardCorrections` at 0 and `error` in centimetres.
+      correction: netLastCorrection,
+      corrections: netCorrectionCount,
+      hardCorrections: netHardCorrectionCount,
+      pending: netReconciler?.pending() ?? 0,
+      ack: netReconciler?.lastAck() ?? 0,
+      sentSeq: roomJoined ? roomClient.sentSeq() : 0,
       close: netTeardownRoom,
     });
     // The E-key seat toggle, exposed the way __deploy and __keys are: the
@@ -13677,8 +13744,23 @@ function frame(dt) {
   // renderer draws the server-confirmed remotes after the local world's
   // readbacks.
   if (roomJoined && input) {
-    for (let i = 0; i < step.ticks; i++) roomClient.sendInput(input, look);
+    // The ledger's tail holds this frame's ticks (capturePresentationTick
+    // pushed one triple each); each word is recorded against the pose of the
+    // tick it belongs to, so the authority's `ack` lands on the right one.
+    const owed = Math.min(step.ticks, Math.floor(netTickPoses.length / 3));
+    const base = netTickPoses.length - owed * 3;
+    for (let i = 0; i < step.ticks; i++) {
+      const seq = roomClient.sendInput(input, look);
+      const at = base + i * 3;
+      if (seq && i < owed) {
+        netReconciler?.recordTick(seq, netTickPoses[at], netTickPoses[at + 1],
+          netTickPoses[at + 2]);
+      }
+    }
   }
+  // The ledger is per frame: whatever this frame's ticks produced has either
+  // been recorded against a seq or belongs to a frame that sent nothing.
+  if (netTickPoses.length) netTickPoses.length = 0;
   if (roomJoined && roomRenderer) {
     roomRenderer.update(dt, roomClient, performance.now());
   }

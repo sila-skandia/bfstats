@@ -381,6 +381,26 @@ follow cameras (replay.js's exist), sound for remote entities (the S4 sound
 lifecycle work covers attachment), and the recorded-match replay (server
 writes the recording format; `?replay=` works unchanged).
 
+**Correction smoothing and input replay implemented 2026-09-22** — the owner's
+own view was teleporting backwards twice a second on loopback, which turned out
+to be two defects that fed each other: the authority walked a flag's spawn list
+on every deploy row while the page did not (so the two sims stood the soldier on
+different spawn points, 45 m and 17.7 deg apart on Aberdeen), and the correction
+was `soldier.spawn()` against the client's PRESENT position — a respawn that
+discarded the facing, the velocity and the PHY-6 ramps, measuring input latency
+as prediction error and never repairing a heading. The wire now carries an input
+`ack`, the deploy row carries the spawn index, and `viewer/netcode-reconcile.js`
+owns the law: measure at the acknowledged tick, replay the unacknowledged ticks,
+re-base the ledger, smooth a quarter of what is left per snapshot, hard-set only
+past 4 m. Measured over a sustained walk: 12 teleports in 25 s before, **0 in
+30 s** after, with the acked prediction error at 0.000 m. A third defect fell out
+of the measuring — the snapshot's facing was shipped in radians under a field
+documented as degrees, so every remote soldier was drawn at a 57th of its real
+heading. The whole write-up, with the numbers from both sides of the wire, is
+[SNAPBACK.md](SNAPBACK.md); the regression tests are
+`tests/test_netcode_reconcile.py`, `tests/test_room.py` scenario (m) and
+`tests/p4_snapback_smoke.mjs`.
+
 ### P5 — Hardening and the bug list
 
 Deterministic-server tests (the same input stream lands the same world state
