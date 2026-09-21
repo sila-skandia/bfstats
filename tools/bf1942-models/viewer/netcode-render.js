@@ -21,6 +21,7 @@ import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { setReplayPropellerIdle } from './replay.js';
 import { surveyVehicle } from './seats.js';
+import { FAMILY_CLIPS, remoteClipFamily } from './remote-gait.js';
 
 // The engine's team numbering (AXIS = 1, ALLIED = 2), and the soldier pose
 // pair each team's placeholder gets. The pair's weapon is the recording
@@ -165,16 +166,16 @@ export function createRemoteRenderer(ctx) {
         return;
       }
       const scene = skeletonClone(assets.pair.scene);
-      s.rig = { scene, mixer: null, actions: null };
+      s.rig = { scene, mixer: null, families: null };
       buildGaitRig(s, scene, assets.pair.animations, assets.gaits);
       group.add(scene);
     });
     return s;
   }
 
-  /** One mixer, the pose's own stance clips for idle/crouch/prone, the
-   *  shared lower+upper walk/run pairs; actions parked at weight 0 and
-   *  crossfaded by poseSoldier. The mixer's time accumulates from the page's
+  /** One mixer, the pose's own stance clips for stand/crouch/lie, the
+   *  shared lower+upper walk/run/crouchwalk/crawl pairs; actions parked at
+   *  weight 0 and switched by poseSoldier. The mixer's time accumulates from the page's
    *  dt: the replay renderer sets time as a pure function of the recording
    *  clock, and a live room has no such clock, so accumulated dt is the
    *  honest source; the crossfade discipline is the same. */
@@ -190,20 +191,24 @@ export function createRemoteRenderer(ctx) {
       a.paused = true;
       return a;
     };
-    const actions = {
-      stand: action('stand', poseClips),
-      crouch: action('crouch', poseClips),
-      prone: action('prone', poseClips),
-      runLower: action('run.lower', gaitClips),
-      runUpper: action('run.upper', gaitClips),
-      walkLower: action('walk.lower', gaitClips),
-      walkUpper: action('walk.upper', gaitClips),
-    };
-    // A gait only counts when both halves resolved (replay.js's law).
-    if (!actions.runLower || !actions.runUpper) actions.runLower = actions.runUpper = null;
-    if (!actions.walkLower || !actions.walkUpper) actions.walkLower = actions.walkUpper = null;
+    // One entry per clip family, each holding the actions that family needs:
+    // a static pose clip, or a lower/upper pair. The names are the files' own
+    // (`remote-gait.js` `FAMILY_CLIPS`) -- the prone pose is baked as `lie`,
+    // and `crouchwalk` and `crawl` are in every published gait bundle.
+    const families = {};
+    for (const [family, spec] of Object.entries(FAMILY_CLIPS)) {
+      if (spec.pose) {
+        const a = action(spec.pose, poseClips);
+        if (a) families[family] = [a];
+        continue;
+      }
+      // A gait only counts when both halves resolved (replay.js's law).
+      const lower = action(spec.lower, gaitClips);
+      const upper = action(spec.upper, gaitClips);
+      if (lower && upper) families[family] = [lower, upper];
+    }
     s.rig.mixer = mixer;
-    s.rig.actions = actions;
+    s.rig.families = families;
   }
 
   function vehicleFor(id, template) {
@@ -270,18 +275,21 @@ export function createRemoteRenderer(ctx) {
         q.setFromEuler(new THREE.Euler(rad(state.pitch ?? 0), rad(state.yaw ?? 0), 0, 'YXZ'));
         q.multiply(SOLDIER_YAW_FLIP);
       }
-      poseSoldier(s, state, dt);
+      // The speed estimate first, then the clip it chooses: posing before
+      // measuring spent last frame's speed on this frame's state, so a gait
+      // change always lagged by a frame.
       if (!s.lastPos) s.lastPos = [state.x, state.y, state.z];
       else {
         const dx = state.x - s.lastPos[0];
         const dy = state.y - s.lastPos[1];
         const dz = state.z - s.lastPos[2];
         const speed = dt > 0 ? Math.hypot(dx, dy, dz) / Math.max(dt, 1e-3) : 0;
-        // A snappy one-pole speed estimate; the walk/run band (gait-select's
-        // terrain) is ~1.5–7 m/s, so the thresholds below sit mid-band.
+        // A snappy one-pole estimate. The bands it is compared against are
+        // the engine's own speed tables (`remote-gait.js` BANDS).
         s.lastSpeed = s.lastSpeed + (speed - s.lastSpeed) * Math.min(1, dt * 6);
         s.lastPos[0] = state.x; s.lastPos[1] = state.y; s.lastPos[2] = state.z;
       }
+      poseSoldier(s, state, dt);
     }
 
     // The vehicles: replicas exist exactly while a remote drives them. When
@@ -326,25 +334,21 @@ export function createRemoteRenderer(ctx) {
    *  window is the honest approximation until P4 ports the full law. */
   function poseSoldier(s, state, dt) {
     const rig = s.rig;
-    if (!rig?.actions) return;
-    const speed = s.lastSpeed;
-    const run = speed > 4.6;
-    const walk = !run && speed > 1.0;
-    let want = state.crouch ? 'crouch' : state.prone ? 'prone'
-      : run ? 'run' : walk ? 'walk' : 'stand';
-    if (!rig.actions[want]) {
-      if (want === 'run') want = rig.actions.walk ? 'walk' : 'stand';
-      else if (want === 'walk' || want === 'crouch' || want === 'prone') want = 'stand';
-    }
+    if (!rig?.families) return;
+    // Stance and speed decide the family; `remote-gait.js` owns both the
+    // bands (the engine's own speed tables) and the fallback chain.
+    const want = remoteClipFamily(s.lastSpeed, state,
+                                  family => !!rig.families[family]);
     if (want !== s.want) {
       s.want = want;
-      for (const [name, a] of Object.entries(rig.actions)) {
-        if (!a) continue;
-        a.setEffectiveWeight(name === want ? 1 : 0);
-        if (name === want) {
-          a.paused = false;
-          a.reset();
-          a.play();
+      for (const [family, actions] of Object.entries(rig.families)) {
+        for (const a of actions) {
+          a.setEffectiveWeight(family === want ? 1 : 0);
+          if (family === want) {
+            a.paused = false;
+            a.reset();
+            a.play();
+          }
         }
       }
     }
@@ -359,5 +363,20 @@ export function createRemoteRenderer(ctx) {
     retired.clear();
   }
 
-  return { update, reset, root };
+  /**
+   * What each remote replica is currently drawing, for a headless check: the
+   * clip family `poseSoldier` settled on, the families its rig actually bound,
+   * and the smoothed speed that chose it. There is nothing else on the page
+   * that can tell a walk from a stand on someone else's soldier.
+   */
+  function debugSoldiers() {
+    return [...soldiers.values()].map(s => ({
+      slot: s.slot, team: s.team, visible: s.group.visible,
+      want: s.want, speed: +(s.lastSpeed ?? 0).toFixed(3),
+      bound: s.rig?.families ? Object.keys(s.rig.families) : null,
+      standIn: !!s.standIn,
+    }));
+  }
+
+  return { update, reset, root, debugSoldiers };
 }
