@@ -47,6 +47,9 @@ import { GRAVITY } from './physics.js';
 // instead. Imports nothing itself, so this costs the page no extra module.
 import { FuseRoundBody, contactMaterialFor, SURFACE_STANDOFF } from './contact-response.js';
 import { idleFirePose } from './idle-vehicle.js';
+import { dragAcceleration, entersWater, launchesADrawnBody,
+         releaseSpeed, salvo } from './bomb-release.js';
+import { TorpedoRun, runParts } from './torpedo-run.js';
 
 // Real muzzle velocities (400-1000 m/s) cross a parked model between two
 // frames; scaled down so a burst reads as a stream instead of a strobe.
@@ -192,6 +195,9 @@ const _drift = new THREE.Vector3();
 const _aimBack = new THREE.Vector3();
 const _extent = new THREE.Vector3();
 const _step = new THREE.Vector3();
+// The drag acceleration of one round, per frame. Scratch, like every other
+// vector on this page: a round in flight must not allocate.
+const _drag = new THREE.Vector3();
 const _tip = new THREE.Vector3();
 // Where a fuse round stood at the top of the frame, so the distance it
 // actually travelled under the contact solver can be measured rather than
@@ -481,8 +487,16 @@ export class GunFire {
           baseQuat: node.quaternion.clone(),
         });
       });
-      // Bomb racks declare no flash, no tracer and no recoil: nothing to show.
-      if (!emitters.length && !stats.tracer && !stats.recoil
+      // A bomb rack declares no flash, no tracer and no recoil, and releases at
+      // zero muzzle velocity -- so it matched every clause of the guard that
+      // used to stand here and no plane in this viewer has ever dropped a bomb
+      // (ledger BOMB-9). The guard is not deleted: what it protected against is
+      // a `FireArms` placeholder with no signature AND nothing to launch, which
+      // would still cost a trigger, a cooldown and a stream of invisible rounds
+      // spending collision casts. `launchesADrawnBody` is the amended test and
+      // carries the whole argument.
+      if (!launchesADrawnBody(stats, projectileMesh)
+          && !emitters.length && !stats.tracer && !stats.recoil
           && !(stats.velocity > 0)) return;
       // The template's cross-section, measured once, so the width floor is
       // expressed against real metres rather than a guess at what a tracer mesh
@@ -522,6 +536,12 @@ export class GunFire {
       const group = {
         node: obj,
         stats,
+        // `PointPhysicsNode::updatePositionalDragSimple` (`0x00578990`) takes
+        // the body's own `getBoundingRadius` (virtual slot `+0x1c`) into the
+        // drag term as a frontal area, pi*r^2. Nothing exports it, so it is
+        // measured here off the drawn body's geometry — the same object the
+        // engine is measuring — once per group rather than once per round.
+        boundingRadius: projectileMesh ? meshRadius(projectileMesh) : 0,
         muzzles: muzzles.length ? muzzles : [obj],
         emitters,
         projectileMesh,
@@ -627,21 +647,54 @@ export class GunFire {
   }
 
   /**
-   * One round.
+   * One trigger pull.
    *
-   * Barrels take turns. Refractor cycles `addFireArmsPosition` entries one per
-   * round rather than volleying them, and the shipped data settles it without
-   * touching the binary: `KatyushaFireArmsBundle` declares six positions,
-   * `magSize 6` and `roundOfFire 1` — six rails, six rockets, one a second,
-   * which is the ripple the launcher actually fires. Volleying would empty a
-   * six-round magazine as thirty-six rockets. `Elco80_Torpedos` says the same
-   * thing smaller: two tubes, `magSize 2`. The model browser volleyed, so a
-   * Corsair fired 24 rounds a second out of a 12 rps gun; it alternates now.
+   * How many barrels that is, and what it costs in ammunition, is `salvo()` in
+   * `bomb-release.js` — read out of `FireArms::Fire` (lnxded `0x0828a090`) and
+   * `FireArms::fireFinished` (`0x08288470`), ledger BOMB-1 to BOMB-5. In short:
+   * a multi-barrel weapon fires **all** its barrels in one pull and is charged
+   * one round **per barrel**, unless it declares `setAsynchronyFire`, in which
+   * case it fires one barrel round-robin and is charged one.
+   *
+   * This corrects the reading that used to live here. The old comment argued
+   * from the shipped data that Refractor cycles `addFireArmsPosition` entries
+   * one per round — `KatyushaFireArmsBundle` declares six positions and
+   * `magSize 6`, so alternation gives six rockets and volleying "would empty a
+   * six-round magazine as thirty-six". The binary says the volley is right and
+   * the arithmetic that made it absurd was the charge: `Fire` volleys and
+   * `fireFinished` charges six, so the Katyusha's six rails are six rockets in
+   * ONE pull off a magazine of six, not thirty-six over six pulls.
+   * `Elco80_Torpedos` (two tubes, `magSize 2`) is one salvo of two. A Corsair's
+   * two-barrel `CorsairGuns` really does put 24 rounds a second into the air
+   * out of a 12 rps template, and its 600-round magazine really does last 25
+   * seconds and not 50.
+   *
+   * `group.shots` counts PROJECTILES, as it always did, and so still paces the
+   * tracer interval; the round-robin counter is the same field, which is what
+   * BOMB-3's `FireArms+0x296` is.
    */
   fireShot(group) {
+    const pull = salvo(group.muzzles.length, {
+      asynchronyFire: !!group.stats.asynchronyFire,
+      // BOMB-5's partial salvo needs the magazine, and the magazine lives in
+      // `seats.js`'s `FireState`, which `gunfire.js` knows nothing about. One
+      // optional hook, wired by the page the same way `onShot` is; unset means
+      // unlimited, which is what the model browser's turntable is.
+      roundsLeft: this.roundsLeft?.(group) ?? Infinity,
+      nextBarrel: group.shots,
+    });
+    // Charged once for the whole pull, with the projectile count — BOMB-1. A
+    // handler written before this signature existed ignores the second
+    // argument and spends one, which is what it did before.
+    this.onShot?.(group, pull.rounds);
+    for (const barrel of pull.barrels) {
+      this.#fireBarrel(group, group.muzzles[barrel]);
+    }
+  }
+
+  /** One projectile, out of one barrel. */
+  #fireBarrel(group, muzzle) {
     group.shots += 1;
-    this.onShot?.(group);
-    const muzzle = group.muzzles[(group.shots - 1) % group.muzzles.length];
     // An emitter with no declared `view` is drawn in both, which is 341 of
     // vanilla's 364 — and it is also what a glb baked before the flag was
     // exported looks like, so a stale asset behaves exactly as it used to.
@@ -869,7 +922,14 @@ export class GunFire {
   }
 
   #spawnProjectile(muzzle, group, spec) {
-    const authored = group.stats.velocity || 100;
+    // `releaseSpeed` is `velocity ?? 100`, not `velocity || 100`. Every one of
+    // the thirteen vanilla aircraft racks declares `velocity 0`, which is a real
+    // authored value meaning "the round leaves at no speed of its own"; `||`
+    // read it as absent and launched a released bomb forward at 100 m/s
+    // (ledger BOMB-8). At zero the muzzle transform contributes nothing and
+    // `#muzzleVelocity` returns `group.platformVelocity` alone — the aircraft's
+    // own motion, which is the whole of a bomb release.
+    const authored = releaseSpeed(group.stats);
     const speed = this.#displaySpeed(group, authored);
     const velocity = this.#muzzleVelocity(muzzle, group, speed, new THREE.Vector3());
     let mesh = group.projectilePool.pop();
@@ -923,7 +983,20 @@ export class GunFire {
       // (`speedScale: 1`) and every round under the browser's 150 m/s cutoff —
       // so this is inert for tank guns and live only for the five naval guns
       // fast enough to be scaled and heavy enough to fall.
-      gravityScale: (speed / authored) ** 2,
+      // 1 at a zero release: there is no speed scaling to compensate for when
+      // the round leaves at no speed of its own, and `0 / 0` is NaN — which
+      // would have silently deleted gravity from every bomb in the game.
+      gravityScale: authored > 0 ? (speed / authored) ** 2 : 1,
+      // The engine's own drag law needs the body's frontal area over its mass,
+      // and the radius is `getBoundingRadius` — nothing exports it, so it is
+      // measured off the drawn body's geometry once per group (`collect`).
+      boundingRadius: group.boundingRadius,
+      // Set on the first water contact a `detonateOnWaterCollision 0` round is
+      // allowed to survive; from then on `TorpedoRun` replaces the ballistic
+      // step. Null for everything else, which in vanilla is everything but the
+      // aircraft torpedo.
+      torpedo: null,
+      wake: null,
       // A fuse round runs its authored fuse; everything else is held to the
       // viewer's own flight ceiling. `roundTimeToLive` carries why — in short,
       // the ceiling was written when `timeToLive` only recycled a mesh, and
@@ -1246,6 +1319,7 @@ export class GunFire {
    */
   #endRound(shot, index, blast) {
     shot.run?.stop();
+    shot.wake?.stop();
     const spec = shot.group.stats.projectile;
     if (!(blast && this.#detonate(shot.group, spec, shot.mesh.position,
                                   shot.travelled))) {
@@ -1371,6 +1445,61 @@ export class GunFire {
       }
     }
     return step;
+  }
+
+  /**
+   * A water contact this round is allowed to survive: the engine's only
+   * `return 0`, and the whole of an aircraft torpedo's water entry.
+   *
+   * `Projectile::handleCollision` (lnxded `0x0831ee80`) swallows a water contact
+   * on a round whose `detonateOnWaterCollision` is clear (`+0x1ac`, tested at
+   * `0x0831f3ae`) — it changes no velocity and returns without detonating, so
+   * the round keeps going into the sea. This viewer ran the contact
+   * unconditionally, which `features/bf1942-blast-and-bounce/README.md` already
+   * recorded as a divergence; this closes it.
+   *
+   * Handing the round to a `TorpedoRun` happens here rather than at the spawn,
+   * because "am I in the water" is only answerable once it is. Bombs are
+   * unaffected: none of the three declares the word, so `entersWater` is false
+   * and a bomb still bursts on the sea.
+   *
+   * @returns {boolean} true when the caller must NOT end the round
+   */
+  #throughWater(shot, hit) {
+    if (hit.kind !== 'water') return false;
+    const spec = shot.group.stats.projectile;
+    if (!entersWater(spec)) return false;
+    if (!shot.torpedo) {
+      const waterLevel = this.collider?.waterLevel ?? hit.y;
+      if (!runParts(spec).isTorpedo) {
+        // `detonateOnWaterCollision 0` with no floaters: the contact is still
+        // swallowed (that is the engine's rule and it does not consult the
+        // children), the round simply keeps its ballistic step under water.
+        return true;
+      }
+      shot.torpedo = new TorpedoRun(spec, waterLevel, shot.boundingRadius || 1);
+      // The wake, attached so its frame is the torpedo's own. Same contract as
+      // the bazooka's `e_rocketFume`; `shot.run` is the in-air trail and is
+      // stopped so the two do not both play.
+      if (this.effects && spec.trailBundle && this.effects.has(spec.trailBundle)) {
+        shot.run?.stop();
+        shot.run = null;
+        shot.wake = this.effects.play(spec.trailBundle, {
+          attach: { object: shot.mesh, velocity: () => shot.velocity },
+        });
+      }
+    }
+    return true;
+  }
+
+  /** Take `shot` out of the world with no blast — the plain contact path. */
+  #recycle(shot, index) {
+    shot.run?.stop();
+    shot.wake?.stop();
+    this.scene.remove(shot.mesh);
+    shot.mesh.visible = false;
+    shot.group.projectilePool.push(shot.mesh);
+    this.projectiles.splice(index, 1);
   }
 
   #spawnImpact(hit, family) {
@@ -1555,6 +1684,34 @@ export class GunFire {
       // something, which is the whole of what `contact-response.js` adds.
       if (shot.body) {
         step = this.#stepFuseRound(shot, dt);
+      } else if (shot.torpedo) {
+        // A torpedo in the water runs its own integrator instead of the
+        // ballistic one: buoyancy from its two floaters, levelling from its
+        // wings, thrust from its `c_ETTorpedo` engine, drag at PHY-7's
+        // submerged 25x. It still sweeps for contact below, so a hull kills a
+        // ship through the ordinary `#impact` with material 250.
+        step = shot.torpedo.step(dt, shot.mesh.position, shot.velocity);
+        shot.travelled += step;
+        if (shot.velocity.lengthSq() > 1e-6) {
+          _aimBack.copy(shot.mesh.position).sub(shot.velocity);
+          shot.mesh.lookAt(_aimBack);
+        }
+        // `minDistanceUnderwaterSurface 0` / `maxDistanceUnderwaterSurface 50`
+        // on `e_WaterTorpedo` is the wake's own depth gate; the run reports it
+        // as `running`.
+        if (shot.wake && !shot.torpedo.running) {
+          shot.wake.stop();
+          shot.wake = null;
+        }
+        const struck = this.#sweep(shot.group, shot.mesh.position,
+                                   shot.velocity, step, 0);
+        if (struck && !this.#throughWater(shot, struck)) {
+          shot.mesh.position.set(struck.x, struck.y, struck.z);
+          this.#impact(shot.group, shot.group.stats.projectile, struck,
+                       shot.velocity, shot.travelled - step + struck.t);
+          this.#recycle(shot, i);
+          continue;
+        }
       } else if (!shot.resting) {
         if (shot.kind === 'rocket') {
           const speed = shot.velocity.length();
@@ -1568,23 +1725,32 @@ export class GunFire {
         if (shot.gravity) {
           shot.velocity.y += GRAVITY * shot.gravity * shot.gravityScale * dt;
         }
+        // Aerodynamic drag, the engine's own law (PHY-7,
+        // `updatePositionalDragSimple` `0x00578990`). Inert until this round's
+        // extractor change, because no projectile carried `mass` or `drag`; for
+        // a 250 kg bomb at `drag 0.08` it is about 0.12 m/s^2 at 150 m/s, so it
+        // is a correction and not a change of shape. `speedScale` is 1 wherever
+        // this matters, so the term is applied on real time.
+        if (shot.boundingRadius) {
+          dragAcceleration(shot.group.stats.projectile, shot.velocity,
+                           shot.boundingRadius, 0, _drag);
+          shot.velocity.addScaledVector(_drag, dt);
+        }
         step = shot.velocity.length() * dt;
         shot.travelled += step;
         shot.mesh.position.addScaledVector(shot.velocity, dt);
-        // Nose (local -Z) along the velocity, so shells arc over.
+        // Nose (local -Z) along the velocity, so shells arc over — and so a
+        // released bomb points down its own path, which is what `Bomb_wing`'s
+        // `setWingLift 0.2` fins do in the engine.
         _aimBack.copy(shot.mesh.position).sub(shot.velocity);
         shot.mesh.lookAt(_aimBack);
         const struck = this.#sweep(shot.group, shot.mesh.position,
                                    shot.velocity, step, 0);
-        if (struck) {
+        if (struck && !this.#throughWater(shot, struck)) {
           shot.mesh.position.set(struck.x, struck.y, struck.z);
           this.#impact(shot.group, shot.group.stats.projectile, struck,
                        shot.velocity, shot.travelled - step + struck.t);
-          shot.run?.stop();
-          this.scene.remove(shot.mesh);
-          shot.mesh.visible = false;
-          shot.group.projectilePool.push(shot.mesh);
-          this.projectiles.splice(i, 1);
+          this.#recycle(shot, i);
           continue;
         }
       }
@@ -1656,6 +1822,24 @@ export class GunFire {
     }
     return active;
   }
+}
+
+/**
+ * The bounding-sphere radius of a template mesh, in its own frame, metres.
+ *
+ * Measured on the geometry rather than with `Box3.setFromObject`, for the same
+ * reason the tracer width is (see `collect`): a world-space AABB of a body
+ * rotated by the airframe reads the wrong number. Returns 0 for a node with no
+ * geometry, which switches the drag term off rather than inventing an area.
+ */
+function meshRadius(node) {
+  let radius = 0;
+  node.traverse(part => {
+    if (!part.isMesh || !part.geometry) return;
+    if (!part.geometry.boundingSphere) part.geometry.computeBoundingSphere();
+    radius = Math.max(radius, part.geometry.boundingSphere?.radius || 0);
+  });
+  return radius;
 }
 
 /** The `muzzle` node `node` hangs off, searching no further than `stop`. */
