@@ -238,8 +238,35 @@ export const FALL_SOUND_LAYERS = Object.freeze([
   Object.freeze({ id: 'soprupp', sample: 'soprupp', at: 11.5, loop: false, volume: 1 }),
 ]);
 
-/** `SoldierOpenParachute.ssc`: `randomPlay 1` over three samples. */
-export const CHUTE_OPEN_SAMPLES = Object.freeze(['para1', 'para2', 'para3']);
+/**
+ * `SoldierOpenParachute.ssc`: `randomPlay 1` over three samples, each with its
+ * own `Volume <- Time` gate — so the canopy's crack lands a third of a second
+ * after you pull, not on the frame you pull.
+ *
+ * `extract_soldier_sounds.py` reads these from the script; the list here is
+ * the fallback for a tree published before that ran, and
+ * `tests/test_soldier_sounds.py` is what keeps the two honest.
+ */
+export const CHUTE_OPEN_LAYERS = Object.freeze([
+  Object.freeze({ sample: 'para1', at: 0.4, volume: 1 }),
+  Object.freeze({ sample: 'para2', at: 0.4, volume: 1 }),
+  Object.freeze({ sample: 'para3', at: 0.3, volume: 1 }),
+]);
+
+/** Just the names, for a caller that only wants to know what to load. */
+export const CHUTE_OPEN_SAMPLES = Object.freeze(
+  CHUTE_OPEN_LAYERS.map((l) => l.sample));
+
+/**
+ * `c_SstParachuteLand` has **no script in vanilla**. `SoldierSound.inc` does
+ * say `ObjectTemplate.loadSoundScript SoldierParachuteLand.ssc`, and both
+ * `Lb_ParachuteHitGround` and `Lb_ParachuteDeadHitGround` declare the trigger,
+ * but there is no such file anywhere in `Objects.rfa` — the sibling
+ * `SoldierFallingHigh.ssc` and `SoldierOpenParachute.ssc` are both right
+ * beside it. So a chute landing is silent in retail, and the `land` event
+ * below is emitted for the animation state, not for a sample to play.
+ */
+export const CHUTE_LAND_HAS_NO_SCRIPT = true;
 
 /**
  * One soldier's parachute, driven once per engine tick.
@@ -360,7 +387,12 @@ export class Parachute {
         this.state = PARA_LANDED;
         this._landedFor = 0;
         this.drag = null;
-        this.events.push({ type: 'sound', id: 'land', trigger: 'c_SstParachuteLand' });
+        // No sample: `SoldierParachuteLand.ssc` does not ship (see
+        // `CHUTE_LAND_HAS_NO_SCRIPT`). The event is the animation state's.
+        this.events.push({
+          type: 'sound', id: 'land', trigger: 'c_SstParachuteLand',
+          sample: null,
+        });
         this.events.push({
           type: 'state', state: PARA_LANDED,
           clips: dead ? PARA_CLIPS.deadLanded : PARA_CLIPS[PARA_LANDED],
@@ -386,12 +418,13 @@ export class Parachute {
     this.state = PARA_OPEN;
     this.openTime = 0;
     this.drag = PARACHUTE_DRAG;
+    const pick = CHUTE_OPEN_LAYERS[Math.min(
+      CHUTE_OPEN_LAYERS.length - 1,
+      Math.floor(this.random() * CHUTE_OPEN_LAYERS.length))];
     this.events.push({
       type: 'sound', id: 'open', trigger: 'c_SstOpenParachute',
       choices: CHUTE_OPEN_SAMPLES,
-      sample: CHUTE_OPEN_SAMPLES[Math.min(
-        CHUTE_OPEN_SAMPLES.length - 1,
-        Math.floor(this.random() * CHUTE_OPEN_SAMPLES.length))],
+      sample: pick.sample, at: pick.at, volume: pick.volume,
     });
     this.events.push({ type: 'state', state: PARA_OPEN, clips: PARA_CLIPS.open });
   }
