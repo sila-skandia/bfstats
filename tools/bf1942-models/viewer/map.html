@@ -9016,7 +9016,9 @@ async function loadHandWeapon(name, soldierName = null) {
     hideFire: 0,     // seconds of `hideDuringFireTime` left on the weapon mesh
     throwWind: 0,    // seconds of `fireDelay` wind-up left before the round leaves
     throwBegun: false,  // the wind-up already played this round's clip and report
-    pulse: false,    // a one-frame trigger pulse is in flight
+    pulse: false,    // a semi-auto trigger pull is being held for its round
+    pulseShots: 0,   // `group.shots` when it was pulled; moving means it fired
+    pulseHeld: 0,    // seconds it has been held
     fire: null,      // { spec, buffer } once firePromise (above) resolves
     fireRetry: false, // the shot path has already asked again for a missing report
     zoomed: false,   // the press-toggle latch (`altFireOnce`)
@@ -9437,6 +9439,17 @@ guns.onShot = group => {
   finishHandShot(hw);
 };
 
+// Longest a semi-auto pulse is held waiting for its round: several world ticks.
+const PULSE_CEILING = 0.25;
+
+/** One semi-auto trigger pull, held by `footFire` until its round exists. */
+function pullHandTrigger(hw) {
+  guns.setFiring(hw.group, true);
+  hw.pulse = true;
+  hw.pulseShots = hw.group.shots;
+  hw.pulseHeld = 0;
+}
+
 /** The trigger's half of a shot: the report and the arms' fire clip. For every
  *  ordinary weapon it runs from `guns.onShot`, on the round; for a throw it
  *  runs on the click, `fireDelay` ahead of the round. */
@@ -9616,9 +9629,19 @@ function footFire(dt, input = null) {
       // Semi-auto: one queued click becomes exactly one frame of trigger,
       // which `advance` turns into exactly one round; `cool` holds the
       // declared cycle (a No4 works its bolt for 2.7 s) across clicks.
+      // The pulse is held until the round it asked for exists, not for one
+      // frame: `guns.advance` runs on the world's 30 Hz tick and this runs per
+      // rendered frame, so a one-frame pulse that fell on a frame with no tick
+      // in it fired nothing — the grenade stayed in the fist through the whole
+      // fling and sank with the raise, on roughly every other throw at 60 fps.
+      // `shots` moving is the round; the ceiling only stops a gun that cannot
+      // fire (a collider mid-rebuild) from holding the trigger for ever.
       if (hw.pulse) {
-        guns.setFiring(hw.group, false);
-        hw.pulse = false;
+        hw.pulseHeld += dt;
+        if (hw.group.shots !== hw.pulseShots || hw.pulseHeld > PULSE_CEILING) {
+          guns.setFiring(hw.group, false);
+          hw.pulse = false;
+        }
       }
       // A throw winds up first. `fireDelay` (the grenades' 1.0 s) is the time
       // from the click to the round: the fire clip pulls the pin and swings
@@ -9634,8 +9657,7 @@ function footFire(dt, input = null) {
         hw.throwWind -= dt;
         if (hw.throwWind <= 0) {
           hw.throwWind = 0;
-          guns.setFiring(hw.group, true);
-          hw.pulse = true;
+          pullHandTrigger(hw);
         }
       } else if (clickQueued && canFire && hw.cool <= 0 && !hw.pulse) {
         clickQueued = false;
@@ -9647,8 +9669,7 @@ function footFire(dt, input = null) {
           hw.cool = windUp;
           beginHandFire(hw);
         } else {
-          guns.setFiring(hw.group, true);
-          hw.pulse = true;
+          pullHandTrigger(hw);
         }
       }
     } else {
