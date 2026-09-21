@@ -13071,6 +13071,9 @@ async function joinRoom() {
           + 'Make sure it is running, then RETRY — or play solo.');
       }
     });
+    // What the other players in the room are drawing: the clip family each
+    // replica settled on, what its rig bound, and the speed that chose it.
+    window.__remotes = () => roomRenderer?.debugSoldiers() ?? [];
     window.__netDiag = () => ({
       readyState: ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][ws.readyState],
       clientState: roomClient?.state ?? null,
