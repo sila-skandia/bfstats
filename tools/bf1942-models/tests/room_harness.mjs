@@ -48,6 +48,7 @@ import {
 } from './viewer/netcode.js';
 import { VehicleOccupancy, classifyRoot, listEntryPoints } from './viewer/seats.js';
 import { MAX_CATCH_UP_TICKS } from './viewer/physics.js';
+import { HEARTBEAT_TIMEOUT_MS } from './server/rooms.mjs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
@@ -282,7 +283,7 @@ let nextTag = 1;
   const witness = sweepRoom.players.get(2);
   witness.peer.sent.length = 0;
   victim.lastSeen = 0;                       // silent since the epoch
-  clock.ms += 11_100;
+  clock.ms += HEARTBEAT_TIMEOUT_MS + 100;    // past the sweep window
   sweepRoom.frame(0);                        // a no-elapsed lap: sweep only
   const leaveRows = ofType(witness.peer, MSG_EVENT).map(jsonRow);
   results.e = {
