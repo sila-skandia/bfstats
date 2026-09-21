@@ -95,6 +95,17 @@ for (const [role, byStance] of Object.entries(STANCE_CHAINS)) {
   }
 }
 
+// The chains themselves, for the two families the data does NOT declare.
+// Resolving them through `has` is not enough: an invented `crouchFire` or
+// `crouchRun` entry that no rig carries still resolves to the standing clip,
+// so the chain would drift while every resolution test stayed green.
+out.chains = {
+  fireCrouch: [...STANCE_CHAINS.fire.crouch],
+  reloadCrouch: [...STANCE_CHAINS.reload.crouch],
+  runCrouch: [...STANCE_CHAINS.run.crouch],
+  walkCrouch: [...STANCE_CHAINS.walk.crouch],
+};
+
 // An unknown role has no chain and says so rather than inventing one.
 out.unknownRole = stanceClip('somersault', 'prone', full);
 
