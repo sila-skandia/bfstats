@@ -43,6 +43,7 @@ MODULES = [
     ROOT / "viewer" / "physics.js",
     ROOT / "viewer" / "parachute.js",
     ROOT / "viewer" / "collision.js",
+    ROOT / "viewer" / "spawn-safety.js",
 ]
 HARNESS = Path(__file__).resolve().parent / "soldier_harness.mjs"
 
@@ -504,6 +505,21 @@ class SoldierModuleTests(unittest.TestCase):
 
     def test_without_a_ground_probe_only_the_declared_flag_filters(self) -> None:
         self.assertEqual("a", self.results["pickedWithoutGround"])
+
+    def test_an_ai_only_spawn_is_never_offered_to_a_player(self) -> None:
+        # Battle of Britain: "you spawn inside the factory and can't get out".
+        # Each radar tower declares its group twice — five `OnlyForHuman`
+        # points spread around the building, and ONE `OnlyForAI` point at the
+        # building's own origin, indoors under a 2.25 m ceiling. The engine's
+        # filter is the whole answer; walking round the pool never reaches it.
+        self.assertEqual(["human-1", "human-2", "human-1", "human-2"],
+                         self.results["bunkerPicks"])
+
+    def test_a_spawn_inside_geometry_is_walked_past(self) -> None:
+        # And the geometry gate behind the filter, for everything a level's
+        # own words cannot say: a collider that reports the first human point
+        # solid moves the player to the next one.
+        self.assertEqual("human-2", self.results["bunkerAvoidsSolid"])
 
     def test_a_spawn_faces_the_way_it_was_authored(self) -> None:
         yaw = self.results["spawnYaw"]

@@ -1509,7 +1509,27 @@ def _soldier_spawn_report(info: LevelInfo, gameplay=None) -> list[dict]:
             # chute, so an on-foot mode has to skip it.
             "paratrooper": bool(tpl and tpl.paratrooper),
         })
+        _stamp_audience(out[-1], gameplay.spawn_groups.get(group))
     return out
+
+
+def _stamp_audience(entry: dict, settings) -> None:
+    """`spawnPointManager.OnlyForAI` / `OnlyForHuman`, when either is set.
+
+    The engine filters a whole spawn GROUP by who is asking, and the filter is
+    load-bearing rather than cosmetic: Battle of Britain declares each radar
+    tower twice, `OnlyForAI 1` for a single point at the building's own origin
+    and `OnlyForHuman 1` for the five spread around it outside. The AI point
+    is inside the bunker, under a 2.25 m ceiling — a player handed it spawns
+    in a room and cannot get out. Written only when true, so the key's absence
+    keeps meaning "no filter" in every tree extracted before this.
+    """
+    if settings is None:
+        return
+    if settings.only_for_ai:
+        entry["onlyForAI"] = True
+    if settings.only_for_human:
+        entry["onlyForHuman"] = True
 
 
 def _pose_key(inst) -> tuple:
@@ -1786,6 +1806,7 @@ def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game,
     here is the spawner's pad pose with that offset rotated through it.
     """
     global_teams = _global_spawn_group_teams(game)
+    layer_groups = (info.gameplay if gameplay is None else gameplay).spawn_groups
     spawns = info.spawn_objects if gameplay is None else gameplay.object_spawns
     # Not `templates`: the loop below rebinds that name to the *ship's* own
     # soldier-spawn templates, and reusing it here would feed the next
@@ -1847,18 +1868,30 @@ def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game,
             for lx, ly, lz in offsets.get(name, [(0.0, 0.0, 0.0)]):
                 wx = ox + (lx * cos_y - lz * sin_y)
                 wz = oz + (lx * sin_y + lz * cos_y)
+                # The LEVEL's own `spawnPointManagerSettings.con` first.
+                # `Game/GlobalSpawnGroups.con` binds the 64..77 range to the
+                # fleet's decks, and a level is free to reuse those numbers
+                # for something else entirely — Battle of Britain gives all
+                # four of its radar towers a group in that range and declares
+                # every one of them `groupTeam 2`. Reading the global file
+                # alone put three of the four on the German side of the
+                # spawn screen, which is the wrong end of the English Channel.
+                settings = layer_groups.get(tpl.group)
+                team = (settings.team if settings and settings.team is not None
+                        else global_teams.get(tpl.group) or inst.team)
                 entry = {
                     "vehicle": vehicle,
                     "spawner": inst.template,
                     "pad": pad_id,
                     "name": name,
                     "group": tpl.group,
-                    "team": global_teams.get(tpl.group) or inst.team,
+                    "team": team,
                     "position": [round(wx, 3), round(oy + ly, 3), round(-wz, 3)],
                     "rotation": list(inst.rotation),
                 }
                 if tpl.paratrooper:
                     entry["paratrooper"] = True
+                _stamp_audience(entry, settings)
                 out.append(entry)
     return out
 

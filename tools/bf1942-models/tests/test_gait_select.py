@@ -33,6 +33,7 @@ MODULES = [
     ROOT / "viewer" / "soldier.js",
     ROOT / "viewer" / "physics.js",
     ROOT / "viewer" / "parachute.js",
+    ROOT / "viewer" / "spawn-safety.js",
 ]
 HARNESS = Path(__file__).resolve().parent / "gait_select_harness.mjs"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"

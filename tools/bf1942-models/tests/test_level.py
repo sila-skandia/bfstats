@@ -13,6 +13,8 @@ from bf42.level import (  # noqa: E402
     find_level_archives,
     parse_cubemap_rcm,
     parse_init_con,
+    parse_spawn_point_groups,
+    parse_spawn_point_manager,
     parse_spawn_templates,
     parse_static_objects,
     parse_terrain_con,
@@ -1021,3 +1023,65 @@ ObjectTemplate.setFlareTexture only.tga
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SpawnPointManagerTests(unittest.TestCase):
+    """`spawnPointManagerSettings.con`, whole — sides AND the audience filter.
+
+    Battle of Britain is the level that made this matter twice over. Its four
+    radar towers each get TWO spawn groups: an `OnlyForHuman 1` group of five
+    points spread around the building, and an `OnlyForAI 1` group of one point
+    at the building's own origin, which is indoors. A player handed that point
+    spawns inside the model. The words were never read — the old parser closed
+    a group block on `groupTeam`, which is the line immediately before
+    `OnlyForAI` in every vanilla file, so it could not have seen it.
+    """
+
+    # The Conquest layer's own file, trimmed to the shape that matters.
+    BOB = """
+spawnPointManager.group 1
+spawnPointManager.groupTeam 1
+spawnPointManager.groupEnableToChangeTeam 0
+spawnPointManager.groupIcon test1.tga
+
+spawnPointManager.group 64
+spawnPointManager.groupTeam 2
+spawnPointManager.groupEnableToChangeTeam 0
+spawnPointManager.groupIcon test2.tga
+spawnPointManager.OnlyForAI 1
+
+spawnPointManager.group 74
+spawnPointManager.groupTeam 2
+spawnPointManager.groupEnableToChangeTeam 0
+spawnPointManager.groupIcon test2.tga
+spawnPointManager.OnlyForHuman 1
+
+rem the CTF shared group: no side at all
+spawnPointManager.group 20
+spawnPointManager.groupTeam 0
+"""
+
+    def test_a_group_block_runs_to_the_next_group_line(self) -> None:
+        groups = parse_spawn_point_groups(self.BOB)
+        self.assertTrue(groups[64].only_for_ai)
+        self.assertFalse(groups[64].only_for_human)
+        self.assertTrue(groups[74].only_for_human)
+        self.assertFalse(groups[74].only_for_ai)
+        self.assertFalse(groups[1].only_for_ai)
+
+    def test_sides_still_come_out_the_way_they_did(self) -> None:
+        self.assertEqual(
+            {1: 1, 64: 2, 74: 2}, parse_spawn_point_manager(self.BOB))
+        # `groupTeam 0` is no side and is not recorded, but the group is still
+        # known — it can carry an audience filter of its own.
+        groups = parse_spawn_point_groups(self.BOB)
+        self.assertIn(20, groups)
+        self.assertIsNone(groups[20].team)
+
+    def test_an_empty_file_is_an_empty_map(self) -> None:
+        self.assertEqual({}, parse_spawn_point_groups(""))
+        self.assertEqual({}, parse_spawn_point_manager(""))
+
+    def test_a_word_before_any_group_line_is_ignored(self) -> None:
+        self.assertEqual(
+            {}, parse_spawn_point_groups("spawnPointManager.OnlyForAI 1"))

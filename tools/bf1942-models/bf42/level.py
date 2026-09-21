@@ -801,8 +801,26 @@ def parse_soldier_spawn_templates(text: str) -> dict[str, SoldierSpawnTemplate]:
     return out
 
 
-def parse_spawn_point_manager(text: str) -> dict[int, int]:
-    """`spawnPointManagerSettings.con`: which side each spawn group belongs to.
+@dataclass
+class SpawnGroupSettings:
+    """One `spawnPointManager.group N` block.
+
+    `groupTeam` is the side the spawn screen lists the group under.
+    `OnlyForAI` / `OnlyForHuman` are the engine's own audience filter on a
+    group, and they are not decoration: Battle of Britain declares each of its
+    four radar towers TWICE, once `OnlyForAI 1` and once `OnlyForHuman 1`, and
+    the AI half is a single point at the building's own origin — inside it,
+    under a 2.25 m ceiling. Handing that to a player is a spawn he cannot walk
+    out of. Vanilla's other user is Coral Sea; mods use it freely.
+    """
+    group: int
+    team: int | None = None
+    only_for_ai: bool = False
+    only_for_human: bool = False
+
+
+def parse_spawn_point_groups(text: str) -> dict[int, SpawnGroupSettings]:
+    """`spawnPointManagerSettings.con`, whole: every group it declares.
 
     The spawn screen keys on this, not on the control point that happens to
     declare the group: `spawnPointManager.group N` / `groupTeam T` says which
@@ -811,21 +829,42 @@ def parse_spawn_point_manager(text: str) -> dict[int, int]:
     declares `spawnGroupId 1` starts `team 2`. Deriving the side from the flag
     alone put the Japanese landing spawn on the wrong side of the screen.
     `groupTeam 0` (CTF's shared groups) is no side and is not recorded.
+
+    A block runs from its `group` line to the next one, so every word after
+    `groupTeam` still belongs to it — an earlier reading closed the block on
+    `groupTeam` and so could never have seen `OnlyForAI`, which in every
+    vanilla file is the line after it.
     """
-    teams: dict[int, int] = {}
-    current: int | None = None
+    groups: dict[int, SpawnGroupSettings] = {}
+    current: SpawnGroupSettings | None = None
     for ns, cmd, args in _commands(text):
         if ns != "spawnpointmanager":
             continue
         tokens = args.split()
         if cmd == "group":
-            current = _opt_int(tokens)
-        elif cmd == "groupteam" and current is not None:
+            number = _opt_int(tokens)
+            if number is None:
+                current = None
+                continue
+            current = groups.setdefault(number, SpawnGroupSettings(group=number))
+        elif current is None:
+            continue
+        elif cmd == "groupteam":
             team = _opt_int(tokens)
             if team in (1, 2):
-                teams[current] = team
-            current = None
-    return teams
+                current.team = team
+        elif cmd == "onlyforai":
+            current.only_for_ai = bool(tokens) and tokens[0] != "0"
+        elif cmd == "onlyforhuman":
+            current.only_for_human = bool(tokens) and tokens[0] != "0"
+    return groups
+
+
+def parse_spawn_point_manager(text: str) -> dict[int, int]:
+    """Just the sides, for the callers that only want `group -> team`."""
+    return {number: settings.team
+            for number, settings in parse_spawn_point_groups(text).items()
+            if settings.team is not None}
 
 
 # A level ships one directory per game mode it supports and the same flag can
@@ -859,6 +898,10 @@ class GameplayObjects:
     soldier_spawn_templates: dict[str, SoldierSpawnTemplate] = field(default_factory=dict)
     # From `<mode>/spawnPointManagerSettings.con`: group -> side (1 or 2).
     spawn_group_teams: dict[int, int] = field(default_factory=dict)
+    # The same file, whole — the side plus the `OnlyForAI` / `OnlyForHuman`
+    # audience filter. Kept alongside rather than instead of the map above so
+    # nothing that only wanted the side has to change.
+    spawn_groups: dict[int, "SpawnGroupSettings"] = field(default_factory=dict)
     # `<mode>/ObjectSpawns.con` and its templates — the vehicle layer. Loaded
     # here so one call yields a whole mode; `extract_map` used to read these
     # two files itself for the single mode it knew about.
@@ -933,8 +976,11 @@ def load_gameplay_objects(files: LevelFiles, mode: str | None = None,
     out.soldier_spawns = parse_static_objects(text("SoldierSpawns"))
     out.soldier_spawn_templates = parse_soldier_spawn_templates(
         text("SoldierSpawnTemplates"))
-    out.spawn_group_teams = parse_spawn_point_manager(
+    out.spawn_groups = parse_spawn_point_groups(
         text("spawnPointManagerSettings"))
+    out.spawn_group_teams = {number: settings.team
+                             for number, settings in out.spawn_groups.items()
+                             if settings.team is not None}
     out.object_spawn_templates = parse_spawn_templates(
         text("ObjectSpawnTemplates"))
     out.object_spawns = parse_static_objects(text("ObjectSpawns"))
