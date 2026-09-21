@@ -3,6 +3,7 @@
 
 import {
   SoldierView, SOLDIER_CAMERA_CVM, SOLDIER_VIEW_CYCLE, PARACHUTE_VIEW_CYCLE,
+  FOOT_VIEW_CYCLE,
   PARACHUTE_VIEW_RADIUS, VIEW_MODE_ID, VIEW_INSIDE, VIEW_CHASE, VIEW_FRONT,
 } from './soldier-camera.js';
 
@@ -10,6 +11,7 @@ const results = {
   cvm: SOLDIER_CAMERA_CVM,
   engineCycle: SOLDIER_VIEW_CYCLE,
   parachuteCycle: PARACHUTE_VIEW_CYCLE,
+  footCycle: FOOT_VIEW_CYCLE,
   parachuteRadius: PARACHUTE_VIEW_RADIUS,
   modeIds: VIEW_MODE_ID,
 };
