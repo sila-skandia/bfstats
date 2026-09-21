@@ -962,8 +962,8 @@ import {
 } from './seats.js';
 import { MouseInput, profileFor, soldierLookDegrees } from './mouse-input.js';
 import {
-  CHASE_BEHIND, CHASE_AHEAD, boundingRadius, chaseTarget, chaseStep, chaseEye,
-  chaseLawFor,
+  CHASE_BEHIND, CHASE_AHEAD, CHASE_RADIUS_SCALE, boundingRadius, chaseTarget,
+  chaseStep, chaseEye, chaseLawFor,
 } from './chase-camera.js';
 import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
          findWeaponSpecsByFireArms, WEAPON_HEADROOM } from './engine-audio.js';
@@ -8267,10 +8267,25 @@ function onFootCamera(dt) {
     foot3pForward[2] = Math.cos(yaw);
     const v = soldier.body.body.velocity;
     foot3pVelocity[0] = v.x; foot3pVelocity[1] = v.y; foot3pVelocity[2] = v.z;
-    chaseTarget(foot3pForward, FOOT_3P_UP, PARACHUTE_VIEW_RADIUS, sign, foot3pTarget);
+    // How tall the subject is this frame, and therefore how far back and how
+    // high the eye has to sit for all of it to be in shot. A man is
+    // `PARACHUTE_VIEW_RADIUS`, the number W5-E chose and the only one it had;
+    // a man under a canopy is 14 metres of him, and the FIRST frame ever taken
+    // of one showed why that matters -- at 3.0 the soldier hung in the middle
+    // of the picture with his canopy entirely above the top edge. `canopySpan`
+    // is measured off the canopy's own drawn bounding box, not typed in.
+    const span = canopySpan();
+    const radius = span > 0
+      ? (span * CANOPY_VIEW_MARGIN / 2) / Math.tan(FOOT_FOV * 0.5 * DEG_TO_RAD)
+        / CHASE_RADIUS_SCALE
+      : PARACHUTE_VIEW_RADIUS;
+    chaseTarget(foot3pForward, FOOT_3P_UP, radius, sign, foot3pTarget);
     chaseStep(foot3pRel, foot3pTarget, foot3pVelocity, sign, dt);
     foot3pAnchor[0] = footEye.x;
-    foot3pAnchor[1] = footEye.y;
+    // Centre the subject rather than the man: the eye is near the top of a
+    // parachutist, so anchoring on it puts the canopy off-screen however far
+    // back the camera goes.
+    foot3pAnchor[1] = span > 0 ? footBodyFeetY() + span / 2 : footEye.y;
     foot3pAnchor[2] = footEye.z;
     const floorY = collider?.surfaceHeight
       ? collider.surfaceHeight(footEye.x + foot3pRel[0], footEye.z + foot3pRel[2])
@@ -8313,6 +8328,37 @@ const foot3pVelocity = [0, 0, 0];
 const foot3pAnchor = [0, 0, 0];
 const foot3pEye = [0, 0, 0];
 const FOOT_3P_UP = [0, 1, 0];
+// The drawn subject's own height, for the framing above. Measured off the
+// canopy's bounding box the first time it is on screen -- the bundle's six-bone
+// chain rests with `Bone06` 13.68 m up and the mesh spans 13.49 m of that, so
+// the number is the data's and not a guess, and a mod with a different chute
+// gets its own. Zero while no canopy is drawn, which is when the subject is a
+// man and `PARACHUTE_VIEW_RADIUS` is the right distance for him.
+const footCanopyBox = new THREE.Box3();
+let footCanopyTop = 0;
+// Headroom over the exact fit. `chase-camera.js` lifts the eye by 0.3 R above
+// the anchor and looks back down at it (the engine's own offset), so a camera
+// placed at the distance that exactly fits the subject's height still cuts the
+// top of the canopy off -- measured on the frame, at span 13.303 m. 1.35 is a
+// viewer number, chosen on the frame, like `PARACHUTE_VIEW_RADIUS` beside it.
+const CANOPY_VIEW_MARGIN = 1.35;
+
+/** The body's feet, which is where its root sits. */
+function footBodyFeetY() {
+  return footBody ? footBody.scene.position.y : footEye.y;
+}
+
+/** Feet to canopy top, in metres, or 0 when no canopy is drawn. */
+function canopySpan() {
+  if (!footCanopy || !footCanopy.scene.visible) return 0;
+  if (!footCanopyTop) {
+    footCanopyBox.setFromObject(footCanopy.scene);
+    if (!footCanopyBox.isEmpty()) {
+      footCanopyTop = Math.max(0, footCanopyBox.max.y - footBodyFeetY());
+    }
+  }
+  return footCanopyTop;
+}
 
 // The canopy's external views. Held behind `?soldier3p=1` until 2026-09-22,
 // when the body and the canopy they point at were built: the flag is now
@@ -14754,6 +14800,9 @@ if (params.has('shots')) {
     if (footCanopy) footCanopy.scene.visible = footCanopy.scene.visible && !on;
     return footBodyForceHidden;
   };
+  // The subject height the external view frames itself against: feet to canopy
+  // top, measured off the drawn canopy.
+  window.__canopySpan = () => +canopySpan().toFixed(3);
   window.__footBody = () => (footBody ? {
     soldier: footBody.soldier,
     weapon: footBody.weapon,
