@@ -21,6 +21,7 @@
 
 import { TICK } from './rigid-body.js';
 import { collideBodies } from './body-contact.js';
+import { collideWithStatics } from './body-statics.js';
 import { CrashDamage, contactMaterialValues } from './crash-damage.js';
 import { wheelFrictionOpts } from './vehicle-bodies.js';
 
@@ -36,10 +37,15 @@ export class BodyWorld {
    * @param {(owner: number, result: {damage: number, kill: boolean,
    *          effectCell: number[]|null}, at: number[], other: number|null) => void}
    *        [options.onDamage]  called when a contact costs hit points
+   * @param {object} [options.statics]  the static world, as `body-statics.js`
+   *        asks about it (`WorldCollider.staticProbe()`). Without it a hull
+   *        meets a building the way it did before this existed — whatever the
+   *        drive model does for itself.
    */
-  constructor({ tables, terrain, onDamage = null }) {
+  constructor({ tables, terrain, onDamage = null, statics = null }) {
     this.tables = tables;
     this.terrain = terrain;
+    this.statics = statics;
     this.onDamage = onDamage;
     this.crash = new CrashDamage(tables);
     /** owner -> entry. */
@@ -48,6 +54,8 @@ export class BodyWorld {
     this._partsDirty = true;
     this._debt = 0;
     this.ticks = 0;
+    /** Static-world contacts the last tick found, for a trace to read. */
+    this.staticContacts = 0;
 
     const world = this;
     this.handlers = {
@@ -167,8 +175,23 @@ export class BodyWorld {
       entry.parked.body.step(TICK);
     }
 
-    // Detect (step 5-6, pass 1): object against object, then the ground.
+    // Detect (step 5-6, pass 1): object against object, the static world,
+    // then the ground.
     collideBodies(this._parts, TICK, handlers);
+    this.staticContacts = 0;
+    if (this.statics) {
+      for (const entry of this.entries.values()) {
+        // Driven only, for now. A parked body against a building is the same
+        // call and the same solver, but a level places vehicles inside hangars
+        // and lean-tos whose col0 hull the coarse mesh overlaps, and a sleeping
+        // body woken by a push-out it can never satisfy would never sleep
+        // again. `features/viewer-ground-hull-collision/README.md` has it as
+        // the next step, with the settle pass as where it belongs.
+        if (entry.driven) {
+          this.staticContacts += collideWithStatics(entry.parts, this.statics, TICK, handlers);
+        }
+      }
+    }
     for (const entry of this.entries.values()) {
       if (entry.parked) entry.parked.detectGround(terrain, handlers);
     }
@@ -187,6 +210,13 @@ export class BodyWorld {
       const rootPart = entry.parts.find(p => p.isRoot) || entry.parts[0];
       for (const part of entry.parts) {
         part.response.solve(body, part.worldPos(_pos), rootPart.response);
+        // A driven vehicle's contact FRICTION belongs to its drive model — the
+        // engine's friction pass would run here (spec 8), and for a hull
+        // contact what it mostly does is dilute the tyres' mean with a sample
+        // whose `N.y` is near zero. `noteContact` is that hand-over, before
+        // the averages are cleared; a body whose drive model does not want it
+        // (an aircraft) is a no-op.
+        body.noteContact?.(part.response, _pos);
         part.response.clearContacts();
       }
       body.flush(TICK);
