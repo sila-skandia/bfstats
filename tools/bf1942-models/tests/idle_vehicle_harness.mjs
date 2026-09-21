@@ -169,6 +169,46 @@ out.doubleReleaseLit = lit(hull);
                        canFire: state.canFire };
 }
 
+// --- the emitter's own transform, across repeated entries -----------------
+//
+// The half of the latch that hiding the node does not reach. `advance` places
+// a drifting emitter at `basePos + drift` every frame and rewrites a
+// billboarded one's quaternion; both stop dead when the group leaves the
+// index, and `collect` re-reads `basePos`/`baseQuat` off whatever it finds on
+// the next entry. Without the restore in `release`, the drift is re-baked as
+// the authored placement and the emitter walks one more drift from the muzzle
+// per enter-fire-exit cycle -- reproduced on the page with Kasserine Pass'
+// AA_Allies, `Em_MuzzAAgunB_WSmoke` (`speedInDof 10`, 0.5 s life): authored
+// local z -1.0, then -1.667, -2.0, -2.333 after one, two and three cycles.
+{
+  const scene2 = new THREE.Scene();
+  const camera2 = new THREE.PerspectiveCamera();
+  // A camera that is not at identity, so the billboard has something to write.
+  camera2.quaternion.setFromEuler(new THREE.Euler(0.3, 0.7, 0.1));
+  const guns2 = new GunFire({ scene: scene2, camera: camera2, viewportHeight: () => 900 });
+  guns2.rand = () => 0.5;
+  const { hull: aa, flash: smoke } = tank();
+  smoke.name = 'Em_MuzzAAgunB_WSmoke';
+  smoke.position.set(0, 0, -1);
+  smoke.userData.effect = { kind: 'emitter', timeToLive: 0.5, size: 1,
+                            speedInDof: 10, billboard: true };
+  scene2.add(aa);
+  out.driftAuthored = [smoke.position.x, smoke.position.y, smoke.position.z]
+    .map(v => Number(v.toFixed(4)));
+  out.driftCycles = [];
+  for (let cycle = 0; cycle < 3; cycle++) {
+    const [g] = guns2.collect(aa, { replace: false, speedScale: 1, roundLifetime: 'data' });
+    guns2.setFiring(g, true);
+    guns2.advance(1 / 60);   // the round leaves, the emitter opens at age 0
+    guns2.advance(0.2);      // 2 m of drift along the direction of fire
+    guns2.release(g);        // the exit, mid-drift
+    out.driftCycles.push([smoke.position.x, smoke.position.y, smoke.position.z]
+      .map(v => Number(v.toFixed(4))));
+  }
+  out.driftQuat = [smoke.quaternion.x, smoke.quaternion.y, smoke.quaternion.z,
+                   smoke.quaternion.w].map(v => Number(v.toFixed(4)));
+}
+
 // --- the module's own contract --------------------------------------------
 {
   // An already-idle tree costs nothing and reports nothing.
