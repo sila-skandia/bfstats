@@ -4,7 +4,7 @@
 // The engine has no "stance modifier" on an animation: crouching and lying are
 // their own upper-body states with their own clips, declared per weapon in
 // `AnimationStates.con`. Surveyed over vanilla's 1,458-state machine (the
-// survey script is in this stream's feature doc), all 26 weapons that declare
+// survey script is in this stream's feature doc), all 28 weapons that declare
 // `Ub_StandAim<W>` also declare, each with a 1P clip:
 //
 //   Ub_Crouch<W>            the same `1PStandAim<W>.baf` at the crouch rate
@@ -32,8 +32,12 @@
 // Everything here is name resolution over what a rig actually baked, so it is
 // free of `three` and of the DOM and `tests/stance_clips_harness.mjs` runs the
 // real thing under node. A rig published before those families were baked (or
-// a mod's rig that never had them) resolves down its chain to the standing
-// clip, which is exactly what the viewer did for every stance before this.
+// a mod's rig that never had them) resolves down its chain to a standing clip.
+// That is what the viewer already did in every stance but one: a **moving**
+// crouched or prone soldier used to fall on `idle` (the old flat table sent
+// both gaits there) and now falls on `walk`. It is the right clip to fall on
+// -- `Ub_CrouchForward<W>` and the standing walk are the same `1pRun<W>.baf`
+// -- but it is a change, and it is the only one an un-re-extracted rig sees.
 
 export const STANCE_STAND = 'stand';
 export const STANCE_CROUCH = 'crouch';
