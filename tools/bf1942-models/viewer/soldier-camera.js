@@ -160,6 +160,20 @@ export const PARACHUTE_VIEW_CYCLE = Object.freeze([
 ]);
 
 /**
+ * The same cycle, offered **on foot** under `?foot3p=1`.
+ *
+ * **A deliberate departure from CAM-1, not an engine reading**, and separate
+ * from `PARACHUTE_VIEW_CYCLE` so the two can never be confused: the engine
+ * authorises exactly one view mode for a soldier and `BFSoldier::nextCamera` is
+ * an empty function, so pressing C while standing does nothing in retail and
+ * does nothing here by default. The flag exists because the page now draws the
+ * soldier's own body from the game's own clips and there would otherwise be no
+ * way to look at it outside a canopy or a death cam -- it is an inspection
+ * view, the same kind of thing `?dev=1` is.
+ */
+export const FOOT_VIEW_CYCLE = PARACHUTE_VIEW_CYCLE;
+
+/**
  * The radius the external views hang at, in metres, before
  * `CHASE_RADIUS_SCALE`.
  *
