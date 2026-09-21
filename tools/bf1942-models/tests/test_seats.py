@@ -40,6 +40,7 @@ MODULES = {
     # cadence below is measured against the real `GunFire.advance`/`setFiring`
     # the page loads rather than a re-implementation of them in the harness.
     "gunfire.js": VIEWER / "gunfire.js",
+    "idle-vehicle.js": VIEWER / "idle-vehicle.js",
     "collision.js": VIEWER / "collision.js",
     "physics.js": VIEWER / "physics.js",
     "effects-core.js": VIEWER / "effects-core.js",
