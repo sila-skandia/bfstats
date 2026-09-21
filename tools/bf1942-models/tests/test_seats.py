@@ -33,6 +33,9 @@ HARNESS = Path(__file__).resolve().parent / "test_seats_harness.mjs"
 
 MODULES = {
     "seats.js": VIEWER / "seats.js",
+    # `seat-dots.js` is `seatDots()`'s state resolution, imported by
+    # `seats.js`.
+    "seat-dots.js": VIEWER / "seat-dots.js",
     # `gunfire.js` and the four modules it imports, so the rate-of-fire
     # cadence below is measured against the real `GunFire.advance`/`setFiring`
     # the page loads rather than a re-implementation of them in the harness.
@@ -320,19 +323,23 @@ class SeatsModuleTests(unittest.TestCase):
         # VHUD-11: the positions were never "live-bound per vehicle" — every
         # PCO declares its own, root and seats alike, and `con.py` simply had
         # no hit for the word. Sherman root 54/103, `shermanBrowning_PCO1`
-        # 32/61, both verbatim from `Objects.con`.
+        # 32/61, both verbatim from `Objects.con`. Six slots are always
+        # returned, the layout's own six leaves; the Sherman declares two, so
+        # the other four are blank with no position.
         dots = self.results["seatDots"]["shermanFromTheDriversSeat"]
-        self.assertEqual([(54, 103), (32, 61)], [(d["x"], d["y"]) for d in dots])
+        self.assertEqual(
+            [(54, 103), (32, 61)] + [(None, None)] * 4,
+            [(d["x"], d["y"]) for d in dots])
 
     def test_the_dot_you_are_sitting_in_is_the_local_one(self) -> None:
         # VHUD-2's five-state table (vtable `0x0093f300`): 0 blank, 1 local,
-        # 2 empty, 3 friend, 4 enemy. WHICH state a seat resolves to was never
-        # read, so the viewer answers only what it can know — you are 1 and
-        # every other declared seat is 2. Nothing here invents a 3 or a 4.
+        # 2 empty, 3 friend, 4 enemy. Without an occupant table the viewer
+        # answers what it can know — you are 1 and every other declared seat
+        # is 2; the seats the vehicle does not declare are blank.
         driver = self.results["seatDots"]["shermanFromTheDriversSeat"]
         gunner = self.results["seatDots"]["shermanFromTheGunnersSeat"]
-        self.assertEqual([1, 2], [d["state"] for d in driver])
-        self.assertEqual([2, 1], [d["state"] for d in gunner])
+        self.assertEqual([1, 2, 0, 0, 0, 0], [d["state"] for d in driver])
+        self.assertEqual([2, 1, 0, 0, 0, 0], [d["state"] for d in gunner])
 
     def test_a_six_seat_vehicle_fills_all_six_dots(self) -> None:
         # The layout has six `occupied-seat` leaves and the engine six
@@ -348,18 +355,43 @@ class SeatsModuleTests(unittest.TestCase):
         # for a scene baked before `con.py` learned `setVehicleIconPos`: the
         # layout's own rects are the variable pair's authored placeholders (a
         # 5px staircase from (247,457)), not seat positions, so a dot drawn
-        # there asserts a seat layout the data does not carry.
+        # there asserts a seat layout the data does not carry. The Defgun
+        # declares one seat with no position, so all six slots are blank.
         dots = self.results["seatDots"]["defgunDots"]
-        self.assertEqual([(None, None)], [(d["x"], d["y"]) for d in dots])
-        self.assertEqual([0], [d["state"] for d in dots])
+        self.assertEqual([(None, None)] * 6, [(d["x"], d["y"]) for d in dots])
+        self.assertEqual([0] * 6, [d["state"] for d in dots])
 
     def test_a_mixed_vehicle_drops_only_the_seats_that_have_no_position(self)\
             -> None:
         # Per dot, not per vehicle: a half-re-extracted tree must still place
         # the seats it does carry.
         dots = self.results["seatDots"]["mixedFromTheRoot"]
-        self.assertEqual([(54, 103), (None, None)], [(d["x"], d["y"]) for d in dots])
-        self.assertEqual([1, 0], [d["state"] for d in dots])
+        self.assertEqual(
+            [(54, 103), (None, None)] + [(None, None)] * 4,
+            [(d["x"], d["y"]) for d in dots])
+        self.assertEqual([1, 0, 0, 0, 0, 0], [d["state"] for d in dots])
+
+    def test_an_occupant_s_seat_reads_by_their_team_against_the_local_one(self) -> None:
+        # The live half of VHUD-2's table: the gunner is sitting in position
+        # 1, and the driver's seat (position 0) is filled by an occupant row.
+        # Same team is the friend dot (3), the other team the enemy dot (4);
+        # the seats the vehicle does not declare stay blank (0).
+        friend = self.results["seatDots"]["shermanGunnerWithFriendDriver"]
+        enemy = self.results["seatDots"]["shermanGunnerWithEnemyDriver"]
+        self.assertEqual([3, 1, 0, 0, 0, 0], [d["state"] for d in friend])
+        self.assertEqual([4, 1, 0, 0, 0, 0], [d["state"] for d in enemy])
+
+    def test_the_local_seat_beats_an_occupant_row_on_it(self) -> None:
+        # A stale or racing row naming the seat the local player is in cannot
+        # flip his own dot to enemy: local is local.
+        dots = self.results["seatDots"]["shermanGunnerRowOnTheLocalSeat"]
+        self.assertEqual([2, 1, 0, 0, 0, 0], [d["state"] for d in dots])
+
+    def test_a_six_seat_vehicle_shows_its_crew(self) -> None:
+        # The Hanomag from its third seat, two enemy passengers in the
+        # driver's and fourth passenger's seats.
+        dots = self.results["seatDots"]["hanomagCrew"]
+        self.assertEqual([4, 2, 1, 2, 4, 2], [d["state"] for d in dots])
 
     # --- TurretAxis: the engine's velocity servo (ledger GUN-2) -------------
     #
