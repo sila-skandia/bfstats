@@ -4657,8 +4657,18 @@ async function setupMannedWeaponAudio() {
  * the tail from being killed by the pending teardown.
  */
 function stopEngineAudio() {
-  if (!engineAudio) return;
-  engineAudio.release();
+  // The release is the engine bus's; the teardown that follows it is every
+  // bus's. `if (!engineAudio) return` skipped both, and the guns are not the
+  // engine's to lose here any more than they are in `setupEngineAudio`, whose
+  // no-spec branch builds weapon patches for a template that has no Engine
+  // sound script at all. Leaving on that branch left those voices started, on
+  // their own panners at the gun nodes of a vehicle nobody is in, until the
+  // next entry's `disposeEngineAudio` happened to come along -- which on a
+  // level where the player never enters another vehicle is never. Silent
+  // (`updateAudio` holds a patch with loops at master 0 once no group of its
+  // is firing) but held, which is the same latch this stream is closing
+  // everywhere else.
+  engineAudio?.release();
   const gen = engineGeneration;
   setTimeout(() => {
     if (gen === engineGeneration) disposeEngineAudio();
