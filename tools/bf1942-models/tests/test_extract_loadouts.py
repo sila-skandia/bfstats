@@ -17,19 +17,21 @@ class LoadoutManifestTests(unittest.TestCase):
     def library(self) -> ObjectLibrary:
         library = ObjectLibrary()
         library.add_con("Objects/Items/JapKit/AntiTank/Objects.con", """
-ObjectTemplate.create Kit Jap_AT
-ObjectTemplate.setType AT
-ObjectTemplate.setKitTeam 1
-ObjectTemplate.addTemplate Panzershreck
-ObjectTemplate.addTemplate WalterP38
-ObjectTemplate.addTemplate KnifeAxis
+ ObjectTemplate.create Kit Jap_AT
+ ObjectTemplate.setType AT
+ ObjectTemplate.setKitTeam 1
+ ObjectTemplate.setKitName 2 "RESPAWN_AT"
+ ObjectTemplate.addTemplate Panzershreck
+ ObjectTemplate.addTemplate WalterP38
+ ObjectTemplate.addTemplate KnifeAxis
 """)
         library.add_con("Objects/Items/USKit/AntiTank/Objects.con", """
-ObjectTemplate.create Kit Us_AT
-ObjectTemplate.setType AT
-ObjectTemplate.setKitTeam 2
-ObjectTemplate.addTemplate Bazooka
-ObjectTemplate.addTemplate Colt
+ ObjectTemplate.create Kit Us_AT
+ ObjectTemplate.setType AT
+ ObjectTemplate.setKitTeam 2
+ ObjectTemplate.setKitName 2 "RESPAWN_AT"
+ ObjectTemplate.addTemplate Bazooka
+ ObjectTemplate.addTemplate Colt
 """)
         library.add_con("Objects/Items/USKit/Medic/Objects.con", """
 ObjectTemplate.create Kit US_Medic
@@ -63,10 +65,12 @@ ObjectTemplate.itemIndex 1
 """)
         return library
 
-    def manifest(self, init: str, level: str = "Wake") -> dict:
+    def manifest(self, init: str, level: str = "Wake",
+                 lexicon: dict | None = None) -> dict:
         library = self.library()
         kits = collect(library)
-        return build_manifest(library, kits, {level: parse_level_kits(init)}, "bf1942")
+        return build_manifest(library, kits, {level: parse_level_kits(init)},
+                              "bf1942", lexicon)
 
     def test_levels_are_keyed_by_the_directory_the_map_extractor_writes(self) -> None:
         manifest = self.manifest("""
@@ -97,6 +101,32 @@ game.setKit 2 2 Us_AT
         self.assertEqual(["Bazooka", "Colt"], manifest["kits"]["Us_AT"]["items"])
         self.assertEqual(3, manifest["primaryItemIndex"])
         self.assertEqual("bf1942", manifest["mod"])
+
+    def test_kit_name_carries_the_key_and_the_lexicon_resolves_it(self) -> None:
+        # `setKitName 2 "RESPAWN_AT"` is a lexicon key, not a string: the
+        # manifest keeps the key and resolves it through the mod chain's
+        # lexicon, the same file the SkirmishMenu titles run through.
+        manifest = self.manifest(
+            "game.setKit 1 2 Jap_AT\ngame.setKit 2 2 Us_AT\n",
+            lexicon={"RESPAWN_AT": "ANTI-TANK"})
+        for name in ("Jap_AT", "Us_AT"):
+            self.assertEqual(
+                {"index": 2, "key": "RESPAWN_AT", "text": "ANTI-TANK"},
+                manifest["kits"][name]["kitName"])
+
+    def test_a_kit_name_key_the_lexicon_lacks_keeps_a_null_text(self) -> None:
+        # The key is still emitted — the page falls back to its own layout's
+        # resolved string — but the text is null rather than a guess.
+        manifest = self.manifest("game.setKit 1 2 Jap_AT\n", lexicon={})
+        self.assertEqual(
+            {"index": 2, "key": "RESPAWN_AT", "text": None},
+            manifest["kits"]["Jap_AT"]["kitName"])
+
+    def test_without_a_lexicon_the_key_is_emitted_and_text_is_null(self) -> None:
+        manifest = self.manifest("game.setKit 1 2 Jap_AT\n")
+        self.assertEqual(
+            {"index": 2, "key": "RESPAWN_AT", "text": None},
+            manifest["kits"]["Jap_AT"]["kitName"])
 
     def test_only_kits_a_level_binds_are_listed(self) -> None:
         # US_Medic is declared but no level names it here.
@@ -188,6 +218,7 @@ ObjectTemplate.maxhitpoints 30
 
         self.assertIsNone(row["healthBarIcon"])
         self.assertIsNone(row["kitIcon"])
+        self.assertIsNone(row["kitName"])
         self.assertEqual([], row["weaponIcons"])
         self.assertIsNone(row["hitpoints"])
         self.assertIsNone(row["maxHitpoints"])
