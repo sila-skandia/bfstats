@@ -395,6 +395,41 @@ export const REST_MOVE = 0.002;
 export const CONTACT_SKIN = 0.05;
 
 /**
+ * How far off a struck surface the body is left standing, in metres.
+ *
+ * **A viewer number, and a fix.** The body is a point and its collider is a
+ * ray, and a ray that starts exactly ON a triangle's plane does not hit that
+ * triangle. One surface at a time that was survivable, because `#reseat`
+ * lifts and re-drops against the contact it remembers. Two were not: a grenade
+ * sliding down a wall remembers the WALL, so when it reached the floor slab at
+ * the wall's foot its next downward ray began on the slab's own plane, missed
+ * it, and the round sank through the slab and then — already under the
+ * heightfield, which `WorldCollider.cast` deliberately leaves alone — fell out
+ * of the world. Standing the body its own radius off whatever it touched means
+ * every later ray toward any surface starts in front of it. 2 cm is under a
+ * Mk 2's radius, small enough that a flat landmine does not visibly float.
+ */
+export const SURFACE_STANDOFF = 0.02;
+
+/**
+ * The share of its closing speed an ELASTIC round leaves a surface with, and
+ * the closing speed under which it does not rebound at all.
+ *
+ * **Free, fitted to retail by eye, and named as such.** `solveImpulse` as read
+ * here is `v += speedAdjust * (1 + e) / 2` with `e` the mean of the pair's
+ * elasticities; the grenade's 2.0 against a wall's 0 makes that exactly 1 — a
+ * dead stop against everything, which is not what the game does: a thrown
+ * grenade comes off a wall or a crate with a small, soft rebound and hops once
+ * or twice before it rolls. Either the mean or the halving is misread; until
+ * the binary says which, a round whose own material declares an elasticity
+ * keeps this much of its into-surface speed, reversed. Inelastic rounds (the
+ * landmine, the explosives pack) are untouched. The floor on closing speed is
+ * what lets a rolling grenade come to rest instead of buzzing on tick-sized hops.
+ */
+export const ELASTIC_REBOUND = 0.2;
+export const REBOUND_MIN_CLOSING = 1.5;   // m/s
+
+/**
  * A fuse round between contacts: gravity, travel, and the contact when it meets
  * one.
  *
@@ -469,6 +504,7 @@ export class FuseRoundBody {
     const speed = Math.hypot(velocity.x, velocity.y, velocity.z);
     const travel = speed * SIM_DT;
     let hit = null;
+    let struck = false;
     if (travel > 1e-6 && probe) {
       hit = probe(position.x, position.y, position.z,
                   velocity.x / speed, velocity.y / speed, velocity.z / speed,
@@ -478,11 +514,12 @@ export class FuseRoundBody {
       // Put the body on the surface first — the engine's `posAdjust` is the
       // penetration push-out and a viewer that stops the sweep at the crossing
       // has no penetration to undo.
-      position.x = hit.x;
-      position.y = hit.y;
-      position.z = hit.z;
+      position.x = hit.x + hit.nx * SURFACE_STANDOFF;
+      position.y = hit.y + hit.ny * SURFACE_STANDOFF;
+      position.z = hit.z + hit.nz * SURFACE_STANDOFF;
       this.contact = { nx: hit.nx, ny: hit.ny, nz: hit.nz, material: hit.material };
       this.contacts++;
+      struck = true;
     } else {
       position.x += velocity.x * SIM_DT;
       position.y += velocity.y * SIM_DT;
@@ -500,10 +537,24 @@ export class FuseRoundBody {
       return;
     }
     const pair = this.pairWith(this.contact.material);
+    // Closing speed into the surface, read before the solver removes it.
+    const c = this.contact;
+    const closing = struck
+      ? -(velocity.x * c.nx + velocity.y * c.ny + velocity.z * c.nz) : 0;
     const result = applyContact(velocity, position, this.contact, pair,
                                 { latched: this.latched,
                                   gravity: Math.abs(this.gravity) });
     this.latched = result.latched;
+    // The rebound (`ELASTIC_REBOUND`): only a fresh strike, only an elastic
+    // round, only above the floor — a re-seated resting contact never bounces.
+    if (closing > REBOUND_MIN_CLOSING
+        && materialProperty(this.materials, this.material, 'elasticity') > 0) {
+      const out = closing * ELASTIC_REBOUND;
+      velocity.x += c.nx * out;
+      velocity.y += c.ny * out;
+      velocity.z += c.nz * out;
+      this.latched = false;
+    }
     // Rest is judged on **distance moved**, not on speed, and the reason is
     // the engine's own `V.y += g/30`: the friction solver cancels NEXT tick's
     // gravity in advance, so a body held on a slope carries a standing
@@ -542,9 +593,17 @@ export class FuseRoundBody {
                       position.z + c.nz * lift,
                       -c.nx, -c.ny, -c.nz, lift * 2);
     if (!hit) return null;
-    position.x = hit.x;
-    position.y = hit.y;
-    position.z = hit.z;
+    // Found, but is the body still ON it? The probe reaches a tick's travel
+    // past the surface so that a body which sank is recovered — and by the
+    // same reach it used to find a wall the round had just come off, haul it
+    // back and let the solver kill the rebound. Above the standoff it has
+    // left; only at or under it is this still a contact.
+    const above = (position.x - hit.x) * c.nx + (position.y - hit.y) * c.ny
+                + (position.z - hit.z) * c.nz;
+    if (above > SURFACE_STANDOFF + 0.01) return null;
+    position.x = hit.x + hit.nx * SURFACE_STANDOFF;
+    position.y = hit.y + hit.ny * SURFACE_STANDOFF;
+    position.z = hit.z + hit.nz * SURFACE_STANDOFF;
     return { nx: hit.nx, ny: hit.ny, nz: hit.nz, material: hit.material };
   }
 }

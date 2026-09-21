@@ -401,3 +401,47 @@ class TranscodeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SupplyDepotGiveSoundTests(unittest.TestCase):
+    """A SupplyDepot's script is its give sound, never building ambience."""
+
+    class _Template:
+        def __init__(self, source, children=()):
+            self.source = source
+            self.children = [type("Ref", (), {"template": c})() for c in children]
+
+    class _Library:
+        def __init__(self, templates):
+            self.templates = {k.lower(): v for k, v in templates.items()}
+
+        def object(self, name):
+            return self.templates.get(name.lower())
+
+    class _Objects:
+        def __init__(self, files):
+            self.files = files
+
+        def find(self, path):
+            return path if path in self.files else None
+
+        def read(self, hit):
+            return self.files[hit].encode("latin-1")
+
+    def _find(self, kind):
+        from bf42.level import _find_template_sound_script
+        con = (f"ObjectTemplate.create {kind} Thing\n"
+               "ObjectTemplate.loadSoundScript Sounds/Thing.ssc\n")
+        library = self._Library({
+            "Holder": self._Template("objects/holder.con", ["Thing"]),
+            "Thing": self._Template("objects/thing.con"),
+        })
+        objects = self._Objects({"objects/holder.con": "", "objects/thing.con": con})
+        return _find_template_sound_script("Holder", library, objects)
+
+    def test_a_supply_depot_script_is_not_ambience(self):
+        self.assertIsNone(self._find("SupplyDepot"))
+
+    def test_any_other_kind_still_is(self):
+        self.assertEqual(("objects/thing.con", "Sounds/Thing.ssc"),
+                         self._find("SimpleObject"))
