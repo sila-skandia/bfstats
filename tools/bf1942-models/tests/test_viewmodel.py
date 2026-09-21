@@ -494,10 +494,43 @@ class ThompsonViewmodelArtifactTests(unittest.TestCase):
         cls.names = [node.get("name") for node in cls.doc["nodes"]]
 
     def test_every_family_bakes_an_animation(self) -> None:
+        # The six standing families, the eight stance ones (`Ub_Crouch*` /
+        # `Ub_Lie*`, which the engine declares per weapon and which the page
+        # used to substitute the standing aim for), then the three fidgets.
         self.assertEqual(
             ["idle", "walk", "run", "fire", "reload", "deploy",
+             "crouch", "crouchWalk", "prone", "crawl",
+             "proneFire", "proneReload", "crouchDeploy", "proneDeploy",
              "idle1", "idle2", "idle3"],
             [anim["name"] for anim in self.doc["animations"]])
+
+    def test_crouch_is_the_standing_aim_clip_at_the_crouch_rate(self) -> None:
+        # `Ub_CrouchThompson` names `1PStandAimThompson.baf` -- the same clip
+        # `Ub_StandAimThompson` names -- and differs only in its rate, 0.33
+        # against 0.1. So the two baked animations hold the same frames over
+        # different spans: 3.0303 s against 10 s.
+        report = json.loads((VIEWMODEL_GLB.parent
+                             / "USSoldier__Thompson.fp.report.json").read_text())
+        idle, crouch = report["clips"]["idle"], report["clips"]["crouch"]
+        self.assertEqual(idle["upperClip"], crouch["upperClip"])
+        self.assertEqual(idle["frames"], crouch["frames"])
+        self.assertEqual(0.1, idle["speed"])
+        self.assertEqual(0.33, crouch["speed"])
+        self.assertAlmostEqual(10.0, idle["duration"], places=3)
+        self.assertAlmostEqual(3.0303, crouch["duration"], places=3)
+
+    def test_prone_has_clips_of_its_own(self) -> None:
+        # Unlike crouch, lying down is not a rate change: four of its families
+        # name clips nothing else uses.
+        report = json.loads((VIEWMODEL_GLB.parent
+                             / "USSoldier__Thompson.fp.report.json").read_text())
+        clips = report["clips"]
+        for key, stem in (("prone", "1pLieAimThompson.baf"),
+                          ("crawl", "1pCrawlThompson.baf"),
+                          ("proneFire", "1PLieFireThompson.baf"),
+                          ("proneReload", "1PLieReloadThompson.baf")):
+            self.assertTrue(clips[key]["upperClip"].endswith(stem),
+                            f"{key}: {clips[key]['upperClip']}")
 
     def test_the_three_first_person_meshes_are_skinned(self) -> None:
         skinned = [self.names[i] for i, node in enumerate(self.doc["nodes"])
