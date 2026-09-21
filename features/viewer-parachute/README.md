@@ -431,6 +431,13 @@ beside this file; serve the viewer on your own port first). Out of a plane
   should take first: `0x082726b8`–`0x08272764` is the whole of it.
 - **The drag radius** (§4). The honest lever if the descent ever needs
   re-tuning; nothing else in the law is free.
+- **`c_AsmLockFreeLook` on `Lb_ParachuteOpen` is not modelled.** The engine
+  locks the view for the 3.15 s the opening clip plays and releases it for
+  `Lb_ParachuteIdle`, which declares no such flag; the viewer leaves the view
+  free throughout. Firing under the canopy is already right without any work
+  — `Ub_ParachuteOpen`'s `addTransitionWhenDone Ub_StandAim` puts the upper
+  body straight back into the ordinary aiming state, and the viewer never took
+  the weapon away.
 - **The kit-part gate on the falling state.** `handlePlayerInput` skips the
   whole free-fall branch when any active kit part's template carries a non-zero
   byte at `+0x62`. What that byte is was not chased.
