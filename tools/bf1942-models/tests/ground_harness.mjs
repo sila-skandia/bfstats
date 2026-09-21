@@ -1588,6 +1588,9 @@ results.fleetCeilings = Object.fromEntries(
   const mockCollider = {
     waterLevel: -Infinity,
     statics: { ownerOf: () => -1 },
+    // ground.js's drivable-deck gate asks before it trusts a hit's owner;
+    // the mock world has no decks, so nothing is one.
+    isDrivableOwner: () => false,
     sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner) {
       // Wall normal faces +Z (toward the vehicle). Sphere centre touches when
       // z = WALL_Z + radius (for a wall facing +Z, the sphere centre at contact
