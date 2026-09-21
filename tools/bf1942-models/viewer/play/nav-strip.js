@@ -75,10 +75,14 @@ function place(slot, x) {
  * @param {object} options
  * @param {object} options.layout  main-menu-layout.json
  * @param {object} options.env     a `menu-pack.js` env
- * @param {Array}  options.rows    `[{ page, items: [{ key, id, slot? }] }]`
- *                                 — `slot` re-places an item at that slot's
- *                                 x on its own page, for a row the site
- *                                 keeps only one button of
+ * @param {Array}  options.rows    `[{ page, items: [{ key, id, slot?,
+ *                                 enabled? }] }]` — `slot` re-places an
+ *                                 item at that slot's x on its own page,
+ *                                 for a row the site keeps only one button
+ *                                 of; `enabled` is asked every frame and a
+ *                                 button that answers false is neither
+ *                                 drawn nor clickable (CREATE GAME while
+ *                                 the room server is not answering)
  * @param {string} [options.active] the id of the tab that is up
  * @param {(id: string) => void} [options.onPick]
  */
@@ -95,6 +99,7 @@ export function createNavStrip({ layout, env, rows, active = null, onPick = () =
         id: item.id,
         index: slot.index,
         text: slot.text,
+        enabled: item.enabled ?? (() => true),
         rect: [x, slot.elements[0].rect[1], slot.width, slot.elements[0].rect[3]],
         elements: place(slot, x),
       }];
@@ -113,6 +118,7 @@ export function createNavStrip({ layout, env, rows, active = null, onPick = () =
   function paint(ctx) {
     const table = vars();
     for (const button of built) {
+      if (!button.enabled()) continue;
       for (const el of button.elements) {
         if (!elementVisible(el, table)) continue;
         paintElement(ctx, el, layout, null, env);
@@ -121,7 +127,8 @@ export function createNavStrip({ layout, env, rows, active = null, onPick = () =
     ctx.globalAlpha = 1;
   }
 
-  const hitTest = (x, y) => built.find(b => inRect(b.rect, x, y)) || null;
+  const hitTest = (x, y) =>
+    built.find(b => b.enabled() && inRect(b.rect, x, y)) || null;
 
   return {
     paint,
