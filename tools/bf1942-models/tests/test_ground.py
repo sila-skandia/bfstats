@@ -552,6 +552,52 @@ class GroundModelTests(unittest.TestCase):
         self.assertLess(abs(straighten["yawRate"]), 2.0)
         self.assertLess(abs(straighten["roll"]), 2.0)
 
+    def test_a_car_engine_that_binds_yaw_does_not_steer_the_rear_axle(self) -> None:
+        """The Kubelwagen, and with it every `c_ETCar` whose Engine binds
+        `c_PIYaw`.
+
+        `Objects/Vehicles/Land/Kubelwagen/Physics.con` gives
+        `KubelwagenEngine` `setInputToYaw c_PIYaw` over `setMinRotation
+        -1/0/-1` .. `setMaxRotation 1/0/1` -- the +-1 degree body lean a
+        `c_ETTank` Engine declares, on a car. `GroundVehicle.collectChassis`
+        walked every ancestor for that axis on the stated assumption that a
+        car's Engine never binds yaw, so the Engine, which sits between every
+        spring and the root, marked the rear `c_PGFEngineGrip` springs steered
+        as well as the fronts. Four tyres pointing the same way cancel the yaw
+        moment: the hull crabbed off on a fixed heading whatever the input,
+        which is what "drives in one direction no matter what you do" is.
+
+        `TrackedVehicle` already carried the `RotationalBundle` guard for its
+        own engines; `GroundVehicle` now carries it too. The Willy, whose
+        Engine binds roll only, is the control and must be unchanged.
+
+        Vanilla's Kubelwagen is the only `c_ETCar` affected; the Schwimmwagen
+        in the mod set declares the same engine rig.
+        """
+        kubel = self.results["kubelwagen"]["kubel"]
+        willy = self.results["kubelwagen"]["willy"]
+
+        # Only the two front `c_PGFRollGrip` springs steer.
+        self.assertEqual(4, kubel["wheels"])
+        self.assertEqual(2, kubel["driven"])
+        self.assertEqual(2, kubel["steered"])
+        self.assertTrue(kubel["steeredAreRollGrip"],
+                        "a driven rear spring came back steered")
+        # The lock is the front bundle's own +-30, not the Engine's +-1.
+        self.assertEqual([30.0] * 4, kubel["steerMax"])
+
+        # Half lock for six seconds turns it, and turns it the way the Willy
+        # turns: right, for positive `c_PIYaw`.
+        self.assertLess(kubel["turnedDeg"], -90.0)
+        self.assertLess(willy["turnedDeg"], -90.0)
+        # Two cars of the same mass on the same ladder with the same grip
+        # classes corner within a quarter of each other; the geometry differs
+        # (2.43 m wheelbase against the Willy's 2.21) so this is not equality.
+        self.assertAlmostEqual(kubel["turnedDeg"], willy["turnedDeg"],
+                               delta=abs(willy["turnedDeg"]) * 0.25)
+        # And it turns rather than slides: the velocity stays near the nose.
+        self.assertLess(kubel["worstSlipDeg"], 45.0)
+
     def test_a_floored_jeep_now_comes_out_of_a_hard_turn(self) -> None:
         """Pinned as a measurement, not defended as a fidelity claim.
 
