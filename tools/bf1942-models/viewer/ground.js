@@ -658,11 +658,22 @@ export const WILLYS = {
 
   // --- the rigid body -------------------------------------------------------
   // Per-mass inertia (radius of gyration squared, m^2) about roll/pitch/yaw,
-  // from a 1.6 x 1.5 x 3.6 m box. The Willys declares no `inertiaModifier`
-  // the way every aircraft does, so not even the ratios are data here. [free]
-  inertiaRoll: 0.40,
-  inertiaPitch: 1.27,
-  inertiaYaw: 1.29,
+  // from a 1.6 x 1.5 x 3.6 m box, by the ENGINE's own formula rather than a
+  // solid box's. `getGeometryInertia` (lnxded `0x08253930`, client
+  // `0x0053fc30`, collision-response.md §4.2) reads the geometry bounding
+  // box's full extents and returns
+  //
+  //     Ix = (DY² + DZ²)/3   Iy = (DZ² + DX²)/3   Iz = (DX² + DY²)/3
+  //
+  // which is **four times** a solid box's inertia per unit mass, and the
+  // corpus is explicit that it is the only inertia there is: mass never
+  // enters rotation, there is no gyroscopic term, and the body turns about
+  // its ORIGIN rather than its centre of mass. These used to be the /12
+  // values (0.40 / 1.27 / 1.29). The Willys declares no `inertiaModifier` the
+  // way every aircraft does, so the modifier is 1 here.
+  inertiaRoll: 1.60,
+  inertiaPitch: 5.07,
+  inertiaYaw: 5.17,
   // s^-1, on the body rates. The suspension already damps pitch and roll
   // hard (the dampers work on a lever); this mops up yaw and the airborne
   // case. [free]
@@ -2556,7 +2567,11 @@ export class TrackedVehicle extends Vehicle {
     // x=pitch (about the right axis), y=yaw (about up), z=roll (about
     // forward) — the same axis/field mapping `GroundVehicle._inertia` uses,
     // read against `w.x/y/z`'s own meaning in `#step` below.
-    this._inertia = new THREE.Vector3((l2 + h2) / 12, (w2 + l2) / 12, (w2 + h2) / 12);
+    //
+    // Divisor 3, not 12: this is the engine's `getGeometryInertia` (lnxded
+    // `0x08253930`, collision-response.md §4.2), which is four times a solid
+    // box's inertia per unit mass and is the only inertia the engine has.
+    this._inertia = new THREE.Vector3((l2 + h2) / 3, (w2 + l2) / 3, (w2 + h2) / 3);
 
     // Hull collision against static objects — same as `GroundVehicle`.
     this._hullRadius = this._boundingRadius;
