@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from bf42 import animstates, ske  # noqa: E402
+from bf42 import animstates, pose, ske  # noqa: E402
 from bf42.con import ObjectLibrary  # noqa: E402
 from test_pose import pack_ske  # noqa: E402
 import extract_viewmodel  # noqa: E402
@@ -374,6 +374,73 @@ class WeaponPartLocalsTests(unittest.TestCase):
             self.assertAlmostEqual(0.0, t[i], places=5)
             for j in range(3):
                 self.assertAlmostEqual(IDENTITY[i][j], rot[i][j], places=5)
+
+
+class WeaponMainLocalTests(unittest.TestCase):
+    """The grip wrapper, one frame at a time.
+
+    `weapon_part_locals` re-expresses bound parts against the main bone, which
+    divides out whatever the clip does to the main bone itself — and for the
+    two grenades, the Detonator, the Landmine, the MedPack, the JohnsonLMG's
+    reload, the M1Garand and the Type5 that motion is the point: it is the whole
+    weapon moving in the hand. `weapon_main_local` is where it lands instead,
+    and the identity that pins it is the same one `weapon_attachment` answers:
+    a clip frame holding the rest pose must reproduce the static weld.
+    """
+
+    def _skeleton(self) -> ske.Skeleton:
+        c, s = math.cos(math.radians(90.0)), math.sin(math.radians(90.0))
+        rot_x90 = ((1.0, 0.0, 0.0), (0.0, c, -s), (0.0, s, c))
+        return ske.parse(pack_ske([
+            ("Bip01 R Hand", -1, IDENTITY, (0.305, 0.0, 0.0)),
+            ("Base", 0, rot_x90, (0.099, 0.046, 0.032)),
+            ("sprint", 1, IDENTITY, (0.011, 0.062, 0.012)),
+        ]), "GrenadeAllies.ske")
+
+    def _clip(self, quat, pos):
+        from bf42 import baf
+        return baf.parse(pack_baf([("Base", quat, pos)]), "GrenadeAlliesFire.baf")
+
+    def test_a_rest_frame_reproduces_the_static_weld(self) -> None:
+        skeleton = self._skeleton()
+        # The stored image of the raw X+90 rest, the same conjugate the
+        # WeaponPartLocals tests above rely on.
+        w = int(math.cos(math.radians(45.0)) * 32767)
+        x = -int(math.sin(math.radians(45.0)) * 32767)
+        clip = self._clip((x, 0, 0, w),
+                          tuple(int(v * 32768) for v in (0.099, 0.046, 0.032)))
+
+        got_rot, got_t = extract_viewmodel.weapon_main_local(clip, skeleton, 1, 0)
+        want_rot, want_t = pose.weapon_attachment(skeleton, 1, clip_posed=True)
+
+        for i in range(3):
+            self.assertAlmostEqual(want_t[i], got_t[i], places=3)
+            for j in range(3):
+                self.assertAlmostEqual(want_rot[i][j], got_rot[i][j], places=3)
+
+    def test_a_moved_frame_carries_the_weapon_out_of_the_hand(self) -> None:
+        # The release: the grenade's main bone leaves the palm. The wrapper's
+        # translation has to move with it, in metres, and not be cancelled the
+        # way the bound parts' main-relative transforms are.
+        skeleton = self._skeleton()
+        w = int(math.cos(math.radians(45.0)) * 32767)
+        x = -int(math.sin(math.radians(45.0)) * 32767)
+        thrown = (-0.360, -0.045, 0.233)
+        clip = self._clip((x, 0, 0, w),
+                          tuple(int(v * 32768) for v in thrown))
+
+        _rot, got_t = extract_viewmodel.weapon_main_local(clip, skeleton, 1, 0)
+
+        # Raw z becomes the wrapper's z unchanged: the clip is already in the
+        # file convention, so nothing is conjugated on this path.
+        self.assertAlmostEqual(thrown[0], got_t[0], places=3)
+        self.assertAlmostEqual(thrown[1], got_t[1], places=3)
+        self.assertAlmostEqual(thrown[2], got_t[2], places=3)
+        # And it really has left: the static weld is 0.11 m from the hand root,
+        # this is half a metre away.
+        _srot, still = pose.weapon_attachment(skeleton, 1, clip_posed=True)
+        moved = math.dist(got_t, still)
+        self.assertGreater(moved, 0.4)
 
 
 class SoldierViewConstantsTests(unittest.TestCase):
