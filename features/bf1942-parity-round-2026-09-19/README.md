@@ -515,7 +515,11 @@ staged state intact. 2,316 tests green on the trial worktree.
 | Stream | Owns | State |
 |---|---|---|
 | W6-A bombs | The aircraft secondary weapon, built from `../plane-bombs-and-torpedoes/README.md` §4-§5 (G-1…G-6) and BOMB-1…BOMB-12. The spec's own headline is that the extractor was never the problem: every rack is already parsed and stamped into the shipped glb, and the weapon dies on a three-line guard in `gunfire.js:484` that refuses a group with no flash, no tracer, no recoil and `velocity 0` — which is precisely a bomb rack. Own worktree | running |
-| W6-E ships, research | The owner's three ship reports, read from the engine. No file changes outside its own feature doc | running |
+| W6-B third-person soldier | The largest visible miss in the viewer: **nothing draws a human body in the world.** The camera half is done and merged — `soldier-camera.js` and the `chase-camera.js` placement law are correct and `__footView('chase')` already puts the camera where it belongs — and it is gated behind `?soldier3p=1` because driving it shows a grey field. The extracted soldier glbs carry **zero animations** and nothing exports a 3P clip, so this is a pipeline feature: the stance and gait families, and the canopy plus the 18 `3PParachute*.baf` clips. Own worktree | running |
+| W6-C hull vs statics | The largest unbuilt piece: a driven hull against the world, from `../viewer-ground-hull-collision/README.md` §3 and `collision-response.md`. Vehicle-against-vehicle has gone through the solver since 09-20; a building still stops a hull on the swept sphere and a plane that noses in is levelled out instead of tumbling. Told to port §6.1's `-1.0` rather than the engine's `+1.0` sign bug, and to feed a hull contact into per-wheel friction as an `N.y ≈ 0` sample rather than as grip. If it turns up what stops the M3A1 leaning, that is the bigger prize. Own worktree | running |
+| W6-G netcode snap-back | The owner's own report: creating a game locally and joining it snapped his view back a few steps, constantly. Another agent had made it go away with `location.hostname !== '127.0.0.1'` in `onsnapshot` — a hostname test switching authority off where it is easiest to observe. It never reached `main` and is now reverted out of the working tree. The real defect is that a correction is `soldier.spawn()`, a respawn-shaped teleport that discards every input sent since the snapshot, with **no input replay** — so any standing divergence is a repeated snap rather than one that converges. This is P4's own scope. Own worktree | running |
+| W6-H verifier truth | `verify_models.py` called 42 of 96 vanilla models broken and every one was a false alarm. S3 already fixed the origin-pile half (`0590dd2`); what is left is the weapon length measured across a tracer (`Bar1918` 2.02 m against 1.19 m), the skinned soldier it does not understand, and the Sherman whose 27 parts collapse onto the hull. **Required to build deliberately broken models and show it still catches them** — a verifier that now passes everything is the same bug with the sign flipped. Own worktree | running |
+| W6-E ships, research | The owner's three ship reports, read from the engine. No file changes outside its own feature doc | **reported `6024efd`**, second reader running. See below |
 | W6-F spawner teams | The one ship defect already proven from the data: `teamOnVehicle` read as a team index. Own worktree | **merged `0934813`** (2026-09-22). See below |
 
 **The ships round, and what the first pass already established.** The owner
@@ -603,6 +607,54 @@ value would go in.
   `vehicles.get(2) or vehicles.get(1)`, where the engine's `map.find` misses and
   `spawnObject` returns `0xffffffff` — so EoD's Green_Hell `Mortar_spawner` is
   arguably an empty pad. Proving the miss path needs a live server.
+
+**W6-E reported** (`6024efd`, 858 lines,
+[`../bf1942-ships-research-2026-09-22/README.md`](../bf1942-ships-research-2026-09-22/README.md)),
+**and it collapses the owner's first report into his third.**
+`PhysicsFloatingBundle::updatePhysics` is read in full (lnxded `0x0824d640`,
+client `0x0057e980`, the client entry *derived* from the "No geometry for parent
+in floatingBundle." string rather than guessed). `hullHeight` is a **datum, not a
+dimension**: `f = 0` when the float node sits at `waterLevel + hullHeight` and
+`-1` at the waterline, the force is purely world-vertical applied at the node, so
+pitch and roll righting falls out of the torque term and nothing else levels a
+ship. The closed-form equilibrium `Σ(-f)·lift = 9.82` predicts eight vanilla
+hulls, and **every Midway pad is authored within 0.7 m of the ALLIED ship's
+draft** — so a Fletcher on its own pad sits 0.21 m high, with its screw still
+2.2 m under, while the Hatsuzuki that SPAWN-1 put there instead sits **6.07 m
+above its own waterline**. The lead recomputed both from the archives. The
+propeller the owner saw was the wrong ship on the pad, and W6-F has already
+fixed it; what remains is that **nothing settles at all**, because
+`map.html:5755` is `if (vehicleCategory === 'VCSea') return null;`.
+
+- The lead's own first recount said 16 float nodes, not 8, and would have falsely
+  refuted the report: `Sea/fletcher/Objects.con` defines **two** hulls, `Fletcher`
+  and `Fletcher2`, 8 floaters each. Scope a component count to its own
+  `ObjectTemplate.create` block.
+- `waterHeight` (`+0x1b0`) and `dragModifier` (`+0x1c0`) are read by **nothing**,
+  so `Hatsuzuki`'s `dragModifier 8000` is dead. Flagged to the second reader
+  because a negative from a whole-image scan is exactly the shape of claim W2-D's
+  review once overturned.
+- **A ship starts sinking at `criticalDamage`, not death** — only Armor message
+  `0x14` arms the rate, and each float node sinks at its own rate scaled by its
+  `x+z` offset from the hull centre, which is why a ship goes down by one end.
+  `BFSpawnPoint::getActive` refuses deck spawns on the same threshold, so a
+  burning destroyer stops offering them exactly as it starts going down.
+- **The earlier round's deck-spawn explanation is refuted.** `BFSpawnPoint::spawn`
+  (`0x08163d70`) is a bare `setAbsolutePosition`; a ship is a dynamic body the
+  pair filter never skips, so "the carriers are not in the static collision index"
+  was the wrong model, and the hull's `collision 1` node *is* in the shipped glb.
+  The report's own leading candidate for the viewer bug is that
+  `soldier.js`'s `settle()` probes downward only, while several spawns are
+  authored *inside* the hull (`FletcherSoldierSpawn` `relY 5` under a `relY 7.5`
+  deck) — it never ran the page, so the second reader was told to.
+- `c_ETShip` is on the **aircraft** thrust law with bit 3 as its water rule, and
+  the submarine dive turns out to be the floater's own `min`/`max` lift term under
+  a `RotationalBundle` — no new subsystem for either.
+- **Held out of the corpus deliberately.** It is committed as a report; its 13
+  ledger rows and 30 symbols enter `ledger.md` and `symbols.json` only after the
+  second reader, per this round's rule. Priorities set for that reader: the
+  `1 + 24f` damping sign reversal (if it is backwards every ship oscillates), the
+  "read by nothing" negatives, and running the deck-spawn check on the page.
 - **Re-extraction owed** (the hull mesh in `scene.glb` is wrong too, not just the
   json): vanilla's GuadalCanal, Iwo_Jima, Midway and Omaha_Beach, XPack1's husky,
   and EoD's five. Nothing published, and nothing written into the shared
