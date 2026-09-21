@@ -211,7 +211,7 @@ export function decodeInputFrame(payload) {
 // honors (20 Hz default, lower on cumulative load). Rendering-side
 // smoothness is the client's choice; the record is the law.
 
-// Per-player record, 27 bytes:
+// Per-player record, 31 bytes:
 //   u8  slot           1..16
 //   u8  flags          bit0 alive, bit1 seated, bit2 crouch, bit3 prone,
 //                      bit4 inVehicle (position is the hull's)
@@ -221,12 +221,24 @@ export function decodeInputFrame(payload) {
 //   u16 hp             armor hitPoints, 0xffff when the player carries none
 //   u8  vehicleId      0 = on foot, else the room's vehicle table id
 //   u8  seatIndex      0..15, 0xff when not seated
+//   u32 ack            the input seq the authority's last tick CONSUMED for
+//                      this player (0 before it has consumed any)
+//
+// `ack` is a cited departure from the engine's ghost state, and the one the
+// engine could not have needed: its client never reconciled, so it never had
+// to know which of its own words the authority had already run. A client that
+// predicts does -- without an acknowledgement the only comparison available is
+// "the authority's position THEN against mine NOW", which reads the whole
+// input latency as a prediction error and drags the player backwards by it
+// (features/netcode-play-multiplayer/SNAPBACK.md). Four bytes per player-row
+// at 20 Hz is 1.3 kB/s at a full 16, inside the R-1 choke's own budget, and
+// every row carries it so a remote's input age is observable too.
 // Per-vehicle record, 30 bytes:
 //   u8  id             the hello vehicle table's id
 //   u8  flags          bit0 occupied, bit1 air, bit2 ground
 //   f32 x, y, z        the hull origin in world space
 //   f32 qx, qy, qz, qw the hull quaternion (viewer frame, already z-negated)
-export const SNAPSHOT_PLAYER_BYTES = 27;
+export const SNAPSHOT_PLAYER_BYTES = 31;
 export const SNAPSHOT_VEHICLE_BYTES = 30;
 
 export function encodeSnapshot(tick, players, vehicles) {
@@ -250,6 +262,7 @@ export function encodeSnapshot(tick, players, vehicles) {
     buf.setUint16(o, p.hp === null ? 0xffff : Math.max(0, Math.min(0x7fff, Math.round(p.hp))), true); o += 2;
     buf.setUint8(o, p.vehicleId ?? 0); o += 1;
     buf.setUint8(o, p.seatIndex ?? 0xff); o += 1;
+    buf.setUint32(o, Math.max(0, Math.min(0xffffffff, p.ack ?? 0)), true); o += 4;
   }
   buf.setUint8(o, vehicles.length); o += 1;
   for (const v of vehicles) {
@@ -282,6 +295,7 @@ export function decodeSnapshot(payload) {
     const hp = buf.getUint16(o, true); o += 2;
     const vehicleId = buf.getUint8(o); o += 1;
     const seatIndex = buf.getUint8(o); o += 1;
+    const ack = buf.getUint32(o, true); o += 4;
     players.push({
       slot,
       alive: (flags & 1) !== 0,
@@ -293,6 +307,7 @@ export function decodeSnapshot(payload) {
       hp: hp === 0xffff ? null : hp,
       vehicleId,
       seatIndex: seatIndex === 0xff ? null : seatIndex,
+      ack,
     });
   }
   const vehicleCount = buf.getUint8(o); o += 1;
