@@ -115,9 +115,10 @@ worldB.step(3.0);                 // 90 world ticks owed; 12 may run
 const bTicks = worldB.clock.ticks;
 const bTravelled = Math.hypot(
   b.soldier.x - bSpawn.x, b.soldier.z - bSpawn.z);
-// One input for the one tick that had anything buffered; the remaining
-// catch-up ticks run the engine's zeroed word, exactly as a client that
-// missed a second has its ship coasted to a stop rather than "helped".
+// The local word is the frame's device state, so every one of the ticks the
+// cap lets through walks against it (`world_held_input_harness.mjs` pins
+// that law); what the collapse bounds is the COUNT -- twelve ticks of walk,
+// not ninety.
 
 // --- scenario 4: determinism -------------------------------------------------
 // The same scripted stream twice => identical final state, byte for byte.
