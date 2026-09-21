@@ -28,6 +28,9 @@ import { ParkedVehicle, WheelSpring } from './body-ground.js';
 /** Acceleration clamp shared with `rigid-body.js` (spec 4.2): |a| <= 1000. */
 const ACCEL_LIMIT = 1000;
 
+/** Most hull contacts a drive model is handed in one tick. See `noteContact`. */
+const HULL_CONTACT_CAP = 8;
+
 // --- small algebra, no allocation ---------------------------------------------
 
 function cross(a, b, out) {
@@ -298,6 +301,12 @@ export class DrivenBody {
 
   /** Read the drive model's state. Call before every world tick. */
   sync() {
+    // A drive model that reads its hull contacts (`ground.js`) sees one tick's
+    // worth at a time: the list is emptied here, at the top of the tick, and
+    // refilled by `noteContact` when the tick resolves. A tick that finds
+    // nothing therefore clears it, which is what "no contact this tick clears
+    // the static latch" needs.
+    if (this.vehicle.hullContacts) this.vehicle.hullContacts.length = 0;
     const s = this.vehicle.state;
     this.pos[0] = s.position.x; this.pos[1] = s.position.y; this.pos[2] = s.position.z;
     axesFromQuaternion(s.orientation, this.axes);
@@ -336,6 +345,40 @@ export class DrivenBody {
   }
 
   addFrictionAt() {}
+
+  /**
+   * Publish one part's resolved contact to the drive model, for its own
+   * friction pass.
+   *
+   * The engine runs `addFriction` on the same averages `impulseOn` left
+   * (spec 8) and there is no second friction solver; this viewer has one,
+   * inside `ground.js`, so the honest seam is to hand the averages over rather
+   * than to answer them here. What matters about a hull contact is almost
+   * never grip: the Coulomb budget is `mu * N.y * |g|`, so a side-on ram
+   * brings **nothing** and — being a sample in a running mean, not a sum —
+   * takes the tyres' own budget down with it for that tick. That dilution is
+   * the engine's behaviour and the reason this is a sample rather than a
+   * force.
+   *
+   * Only published for a vehicle that has declared `hullContacts`; an aircraft
+   * has no tyre mean to dilute and gets nothing. Capped, because a hull
+   * standing in a corner can accumulate a part per tick and nobody downstream
+   * needs more than a handful.
+   */
+  noteContact(response, partPos) {
+    const list = this.vehicle.hullContacts;
+    if (!list || !response.count || list.length >= HULL_CONTACT_CAP) return;
+    list.push({
+      // The averaged contact normal's Y is the whole friction budget (spec 8).
+      normalY: response.avgNormal[1],
+      friction: response.friction,
+      resistance: response.resistance,
+      count: response.count,
+      x: partPos[0] + response.avgRelPos[0],
+      y: partPos[1] + response.avgRelPos[1],
+      z: partPos[2] + response.avgRelPos[2],
+    });
+  }
 
   /** Hand what the tick's contacts posted to the drive model. */
   flush(dt = TICK) {
