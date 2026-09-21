@@ -60,7 +60,34 @@ velocity, and `GameServer::handleCollisionLandOrWater` (`0x08154960`) takes
 Zero minus eight is negative.
 
 **A parachute landing costs nothing at any speed, and free fall is untouched**
-(bit `0x10` is clear there). Nothing else about §5 changes: `Armor::update`
+(bit `0x10` is clear there).
+
+> **Confirmed by the W5-E review, 2026-09-21**, re-derived from
+> `~/Downloads/bf1942_lnxded-1.61-patched/bf1942/bf1942_lnxded.static` (md5
+> `b750be17...`, same layout), and the argument's identity is now read rather
+> than traced. `SimpleObject::handleCollision`'s own debug print at
+> `0x081dac17`-`0x081dac81` labels its arguments out of the string at
+> `0x086c8c4d`: **`"speed:" << [ebp+0x10] << " other:" << ... << " me:" << ...
+> << " relPos:" << [ebp+0x18] << " mat:"`**. So the first `Vec3` -- the one
+> `BFSoldier::handleCollision` replaces with the zero local -- is the engine's
+> own "speed", and the third is "relPos". Also checked and holding: the two
+> tails differ in that argument and nothing else (`0x0827dc60` pushes
+> `[ebp+0x20]`, `ebx`, `[ebp+0x18]`, `[ebp+0x14]`, `[ebp+0x10]` then jumps to
+> the shared `push esi / push edi / call`, while `0x0827d497` pushes the same
+> list with `lea edx,[ebp-0x28]` in the last slot, and `edx` is not touched
+> between the `lea` and the `push`); the branch polarity (`je 0x0827dc60` is
+> taken when bit `0x10` is **clear**, i.e. free fall keeps its real vector);
+> the vtable slot, read off both concrete tables rather than counted --
+> `0x0872f040 + 8 + 0x58` is `0x0827d3b0` and `0x08725020 + 8 + 0x58` is
+> `0x081dab40`, so `+0x58` is `handleCollision` on `BFSoldier` and on
+> `SimpleObject` alike; the forwarding chain
+> (`SimpleObject::handleCollision` `0x081daeee` calls GameServer vtable `+0x34`
+> = `GameServer::handleCollision` `0x08156020`, which tail-jumps to
+> `handleCollisionLandOrWater` at `0x08156080` with the arguments shifted by
+> one); the CID gate (`ds:0x86c2b88` is `0x9493`, tested at `0x08154a81`); and
+> the floor itself (`ds:0x86c08c0` is `8.0f`; at `0x08155189` `fucomp` against
+> `fldz` with `test ah,0x45; je 0x08154c78`, and `0x08154c78` is the function's
+> `ret`). Zero speed takes that `ret`. Nothing else about §5 changes: `Armor::update`
 still only ever raises `lastCollisionHeight`, `F` is still the whole drop,
 and PARA-8 stays refuted — the engine's answer was never the height term and
 never the radius.

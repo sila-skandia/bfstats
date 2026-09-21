@@ -8293,6 +8293,16 @@ const foot3pAnchor = [0, 0, 0];
 const foot3pEye = [0, 0, 0];
 const FOOT_3P_UP = [0, 1, 0];
 
+// The canopy's external views are held behind `?soldier3p=1` until there is
+// something to point them at. The camera law is right -- it is
+// `chase-camera.js`'s, which is the engine's -- but the page draws the local
+// soldier as a first-person arms rig and has no parachute visual at all, so an
+// external view frames an empty point in the sky. Driven on the page at 290 m
+// over Wake the chase mode is a featureless grey field and the front mode is
+// bare sky, which reads as a broken render rather than a camera angle. Turn
+// this on with the third-person soldier and canopy mesh, not before.
+const SOLDIER_3P_VIEWS = params.has('soldier3p');
+
 /**
  * Open the canopy's view cycle, close it again on the ground.
  *
@@ -8302,7 +8312,7 @@ const FOOT_3P_UP = [0, 1, 0];
  * camera still swinging in from the last one.
  */
 function syncFootView() {
-  const open = soldier?.parachuteState === 'open';
+  const open = SOLDIER_3P_VIEWS && soldier?.parachuteState === 'open';
   const before = footView3p.mode;
   footView3p.setCycle(open ? PARACHUTE_VIEW_CYCLE : null);
   if (footView3p.mode !== before && footView3p.mode === VIEW_INSIDE) {
