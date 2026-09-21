@@ -949,6 +949,29 @@ class ObjectTemplate:
     # shot is a camera ray and `projectilePosition 0/0/0` is only where the
     # flash draws. See first-person-soldier.md §2.7.
     fire_in_camera_dof: bool | None = None
+    # The throw. Only the four hand weapons that let go of what they hold —
+    # both grenades, the explosives pack and the landmine — declare these, and
+    # they are what makes a throw read as a throw rather than a muzzle flash.
+    #
+    # `fireDelay` is the lockout AFTER a shot, not a wind-up before it:
+    # `FireArms::Fire` (lnxded 0x0828a090) returns early when the countdown is
+    # still running — arming a pending shot that `handleUpdate` (0x08288890)
+    # releases at expiry — and otherwise fires immediately and only then sets
+    # the countdown from this value. So the projectile leaves on the click and
+    # this is the earliest the next one can.
+    #
+    # `hideDuringFireTime` is seconds the weapon's own visual is hidden,
+    # starting at the shot: `Fire` hides it when it starts the countdown and
+    # `handleUpdate` shows it again at expiry. That is the hand-off — the
+    # grenade in the palm goes away exactly as the thrown one appears.
+    fire_delay: float | None = None
+    hide_during_fire_time: float | None = None
+    # A projectile's own spin, authored per axis (`8/0/0` on both grenades and
+    # on nothing else in vanilla) — the tumble of a thrown grenade.
+    # `PointPhysicsNode::updatePhysics` (lnxded 0x082562c0) integrates one
+    # scalar rate into one accumulated angle, so only the first component is
+    # the engine's; the unit is UNVERIFIED (see the feature README).
+    rotational_speed: tuple[float, ...] | None = None
     # The authored first-person placement, per weapon: where the weapon sits
     # against the soldier's eye at the hip and zoomed (Refractor metres,
     # x/y/z). The viewer guessed these before they were parsed — with them,
@@ -1390,12 +1413,21 @@ class ObjectTemplate:
             "textPosY": self.hud_ammo_bar_text_pos_y,
             "icon": self.hud_ammo_icon,
         })
+        # The throw, for the four hand weapons that let go of what they hold.
+        # See the field comments for what each one actually gates.
+        throw = prune({
+            "fireDelay": self.fire_delay,
+            "hideDuringFireTime": self.hide_during_fire_time,
+            "rotationalSpeed": (list(self.rotational_speed)
+                                if self.rotational_speed else None),
+        })
         stats = prune({
             "roundOfFire": self.round_of_fire,
             "fireOnce": self.fire_once,
             "velocity": self.velocity,
             "projectile": self.projectile_template,
             "fireInCameraDof": self.fire_in_camera_dof,
+            "throw": throw or None,
             "crossHair": self.cross_hair_type,
             "hudAmmo": self.hud_ammo_type,
             "soundScript": self.sound_script,
@@ -1867,7 +1899,8 @@ class ObjectLibrary:
                         continue
                 elif cmd in ("setpositionoffset", "inertiamodifier",
                              "setpivotposition", "soldiercameraposition",
-                             "soldierzoomposition", "center1phands"):
+                             "soldierzoomposition", "center1phands",
+                             "rotationalspeed"):
                     try:
                         value = vec3_lenient(args.split()[0])
                     except (ValueError, IndexError):
@@ -1879,6 +1912,7 @@ class ObjectLibrary:
                         "soldiercameraposition": "soldier_camera_position",
                         "soldierzoomposition": "soldier_zoom_position",
                         "center1phands": "center_1p_hands",
+                        "rotationalspeed": "rotational_speed",
                     }[cmd], value)
                 elif cmd in ("rememberexcessinput", "hasrestrictedexit",
                              "damagefromwater"):
@@ -2041,7 +2075,8 @@ class ObjectLibrary:
                              "unzoombetweenfiretime", "setmindev",
                              "mindeviation", "maxdeviation", "set1pfov",
                              "heataddwhenfire", "cooldownpersec",
-                             "timedelayonoverheat"):
+                             "timedelayonoverheat", "firedelay",
+                             "hideduringfiretime"):
                     try:
                         value = float(args.split()[0])
                     except (ValueError, IndexError):
@@ -2058,6 +2093,8 @@ class ObjectLibrary:
                         "heataddwhenfire": "heat_add_when_fire",
                         "cooldownpersec": "cool_down_per_sec",
                         "timedelayonoverheat": "time_delay_on_overheat",
+                        "firedelay": "fire_delay",
+                        "hideduringfiretime": "hide_during_fire_time",
                     }[cmd], value)
                 elif cmd in ("fireonce", "autoreload", "usescope",
                              "setsnipersight", "sethasrecoilforce",

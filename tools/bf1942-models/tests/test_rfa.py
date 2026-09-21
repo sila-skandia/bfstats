@@ -2,14 +2,112 @@ from __future__ import annotations
 
 import contextlib
 import io
+import struct
 import sys
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from bf42 import rfa  # noqa: E402
+from bf42 import rfa, ske  # noqa: E402
 from bf42.rfa import ArchivePool  # noqa: E402
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
+
+def pack_archive(payloads: dict[str, tuple[bytes, int]]) -> bytes:
+    """A one-segment-per-entry compressed RFA, the shape the real ones have.
+
+    `payloads` maps an entry name to (segment bytes, declared uncompressed
+    size). The segment bytes are written exactly as given, so a caller can hand
+    over a real LZO stream — or something that is not one — and see what the
+    reader makes of it.
+    """
+    body = bytearray(struct.pack("<II", 0, 1))   # data_size patched below, compressed
+    index = bytearray()
+    for name, (segment, uncompressed) in payloads.items():
+        offset = len(body)
+        body += struct.pack("<I", 1)                                  # one segment
+        body += struct.pack("<III", len(segment), uncompressed, 0)    # its header
+        body += segment
+        raw = name.encode("latin-1")
+        index += struct.pack("<I", len(raw)) + raw
+        index += struct.pack("<III", len(body) - offset, uncompressed, offset)
+        index += bytes(12)                                            # three unused
+    struct.pack_into("<I", body, 0, len(body))
+    return bytes(body) + struct.pack("<I", len(payloads)) + bytes(index)
+
+
+class SegmentInflateTests(unittest.TestCase):
+    """A segment that did not shrink is still LZO.
+
+    The reader used to treat `seg_c == seg_uc` as "stored verbatim", which is
+    the plausible reading of a format with no per-segment flag and is wrong:
+    LZO output is not bounded below by its input, so a stream can come out the
+    same length as its payload. Across the whole install — vanilla and all nine
+    mods — 448 segments break even and all 448 inflate; none is raw.
+    `animations/GrenadeAllies.ske` is one of them, and the fixture here is its
+    real 247-byte stream out of `animations.rfa`, which came back as undecoded
+    LZO for every extraction until now. The grenade's whole broken pose (welded
+    at the hand root, no grip transform, no `pigg`/`sprint` parts, no throw)
+    was downstream of that one comparison.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.stream = (FIXTURES / "grenadeallies.ske.lzo").read_bytes()
+
+    def test_a_break_even_segment_is_inflated(self) -> None:
+        # Exactly the case that used to fall through to verbatim.
+        self.assertEqual(247, len(self.stream))
+        out = rfa._inflate_segment(self.stream, 247, 247)
+        self.assertEqual(247, len(out))
+        self.assertEqual((1, 4), struct.unpack_from("<II", out, 0))
+
+    def test_the_grenade_skeleton_reads_through_the_archive(self) -> None:
+        path = Path(self.enterContext(
+            contextlib.closing(_TempArchive(pack_archive(
+                {"animations/GrenadeAllies.ske": (self.stream, 247)})))).name)
+        with rfa.RfaArchive(path) as archive:
+            data = archive.read("animations/GrenadeAllies.ske")
+        skeleton = ske.parse(data, "animations/GrenadeAllies.ske")
+        self.assertEqual(["Bip01 R Hand", "Base ", "pigg", "sprint"],
+                         [bone.name for bone in skeleton.bones])
+        self.assertEqual([-1, 0, 1, 1], [bone.parent for bone in skeleton.bones])
+        # `useSkeletonPartAsMain Base` resolves against the stored `Base `
+        # (trailing space and all — `canonical` strips it), and the weld that
+        # puts the grenade upright in the palm is that bone's rest under the
+        # hand root.
+        main = skeleton.main_index("Base", "GrenadeAllies")
+        self.assertEqual("Base ", skeleton.bones[main].name)
+
+    def test_a_segment_that_is_not_lzo_falls_back_to_verbatim(self) -> None:
+        # Nothing in the install needs this path, but a break-even segment is
+        # the one place verbatim is even arithmetically possible, so a stream
+        # LZO rejects is handed back rather than dropped.
+        raw = bytes(range(64))
+        self.assertEqual(raw, rfa._inflate_segment(raw, 64, 64))
+
+    def test_a_size_mismatched_segment_that_fails_still_raises(self) -> None:
+        # Here verbatim cannot be the answer — the segment is 64 bytes and is
+        # declared to expand to 4096 — so a failed inflate is archive damage and
+        # has to keep reaching `ArchivePool.try_read`, which logs and skips it.
+        with self.assertRaises(Exception):
+            rfa._inflate_segment(bytes(range(64)), 64, 4096)
+
+
+class _TempArchive:
+    """A named temporary file holding `data`, deleted on close."""
+
+    def __init__(self, data: bytes) -> None:
+        import tempfile
+        self._file = tempfile.NamedTemporaryFile(suffix=".rfa", delete=False)
+        self._file.write(data)
+        self._file.close()
+        self.name = self._file.name
+
+    def close(self) -> None:
+        Path(self.name).unlink(missing_ok=True)
 
 
 class ArchivePoolTests(unittest.TestCase):

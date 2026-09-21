@@ -42,9 +42,11 @@ export const LOCO_CLIP = {
  *   fireRunning: boolean,
  *   fireLoops: boolean,
  *   fireReturnsToReload: boolean,
+ *   fireReturnsToDeploy: boolean,
  *   firing: boolean,
  *   hasFire: boolean,
  *   hasReload: boolean,
+ *   hasDeploy: boolean,
  *   gait: string | null | undefined,
  *   fidget: string | null,
  *   fidgetRunning: boolean,
@@ -57,6 +59,7 @@ export const LOCO_CLIP = {
  *   markReloadPlayed?: boolean,
  *   startReload?: boolean,
  *   startFire?: boolean,
+ *   startDeploy?: boolean,
  *   stopLoopFire?: boolean,
  *   startFidget?: boolean,
  *   endFidget?: boolean,
@@ -112,6 +115,14 @@ export function wantViewmodelClip(s) {
   }
   if (activeFire && !s.fireRunning && s.fireReturnsToReload && s.hasReload) {
     return { want: 'reload', startReload: true };
+  }
+  // The throw's own returnTo. A rifle's fire state returns to StandReload
+  // (ANIM-7, above); a grenade's returns to `Ub_StandResetRaiseWeapon<W>` —
+  // it has no reload clip at all, because reloading a grenade *is* raising the
+  // next one. Same shape as the rule above, aimed at the deploy family, so the
+  // arms bring up grenade two instead of dropping to idle empty-handed.
+  if (activeFire && !s.fireRunning && s.fireReturnsToDeploy && s.hasDeploy) {
+    return { want: 'deploy', startDeploy: true };
   }
   // Trigger up while a LoopRepeat fire action is still scheduled: selection
   // returns loco (idle when gait is stand), and the mixer must freeze/stop

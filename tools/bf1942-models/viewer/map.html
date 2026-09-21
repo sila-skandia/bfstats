@@ -8774,6 +8774,16 @@ async function loadHandWeapon(name, soldierName = null) {
     ? Object.keys(doc.clips ?? {}).filter(k => /^idle\d+$/.test(k))
         .sort((a, b) => Number(a.slice(4)) - Number(b.slice(4)))
     : [];
+  // The `<weapon> grip` node — the weapon itself, welded under the hand, with
+  // the arms and sleeves as its siblings rather than its children. It is what
+  // `hideDuringFireTime` hides: the engine's `FireArms::Fire` blanks the
+  // weapon's own visual for that long from the shot and `handleUpdate` restores
+  // it at expiry (lnxded 0x0828a090 / 0x08288890), which is how the grenade
+  // leaves the palm at the instant the thrown one appears. Only the four
+  // weapons that let go of what they hold declare a time, so on everything
+  // else this node is found and never touched.
+  let weaponNode = null;
+  if (fp) rig.traverse(obj => { if (obj.userData?.weldBone) weaponNode = obj; });
   const hw = {
     name, data, rig,
     soldier: soldierName,  // whose sleeves were asked for
@@ -8797,6 +8807,8 @@ async function loadHandWeapon(name, soldierName = null) {
     reload: 0,       // seconds left of a reload in progress
     reloadPlayed: false,  // the arms' reload clip has been started for this magazine
     cool: 0,         // seconds until a semi-auto weapon has cycled
+    weaponNode,      // the welded weapon inside the rig, or null when bare
+    hideFire: 0,     // seconds of `hideDuringFireTime` left on the weapon mesh
     pulse: false,    // a one-frame trigger pulse is in flight
     fire: null,      // { spec, buffer } once firePromise (above) resolves
     fireRetry: false, // the shot path has already asked again for a missing report
@@ -8928,6 +8940,9 @@ function updateViewmodelAnimation(hw, dt) {
   const fireAction = hw.actions[fireVariant ?? 'fire'];
   const fireRunning = !!(fireAction && fireAction.isRunning());
   const fireReturnsToReload = /reload/i.test(hw.clips?.fire?.returnTo || '');
+  // `Ub_StandResetRaiseWeapon<W>` — the thrown weapons' returnTo, where a
+  // rifle's is StandReload. Raising the next grenade is its reload.
+  const fireReturnsToDeploy = /raiseweapon/i.test(hw.clips?.fire?.returnTo || '');
   // Looping fire (Thompson / BAR) — not bolt rifles whose returnTo is
   // StandReload even when a stale extract still marks fire.loop true.
   const fireLoops = !!(hw.clips?.fire?.loop) && !fireReturnsToReload;
@@ -8969,10 +8984,12 @@ function updateViewmodelAnimation(hw, dt) {
     fireRunning,
     fireLoops,
     fireReturnsToReload,
+    fireReturnsToDeploy,
     firing: !!hw.group?.firing,
     hasFire: !!fireAction,
     fireVariants: hw.fireVariants.length ? hw.fireVariants : null,
     hasReload: !!hw.actions.reload,
+    hasDeploy: !!hw.actions.deploy,
     gait: soldier?.gait,
     fidget: hw.fidget,
     fidgetRunning: !!(fidgetAction && fidgetAction.isRunning()),
@@ -8994,6 +9011,12 @@ function updateViewmodelAnimation(hw, dt) {
     }
   } else if (decision.startFire) {
     playViewmodelClip(hw, 'fire', { restart: true });
+  } else if (decision.startDeploy) {
+    // The throw's returnTo: bring the next grenade up. Same shape as the
+    // reload branch above — stop the spent fire clip so a clamped one-shot
+    // cannot go on holding the arms through the raise.
+    hw.actions.fire?.stop();
+    playViewmodelClip(hw, 'deploy', { restart: true });
   } else if (decision.startFidget) {
     // The pick lands in `hw.fidget` only once the clip actually owns the
     // arms — a bare weapon or a rig without the family would otherwise
@@ -9194,6 +9217,17 @@ guns.onShot = group => {
       : 'fire';
     playViewmodelClip(hw, pick, { restart: true });
   }
+  // The hand-off. A thrown weapon's own mesh goes away for
+  // `hideDuringFireTime` at the moment the round is created — that is one
+  // statement in `FireArms::Fire`, not two events to line up — so the grenade
+  // in the palm and the grenade in the air are never both on screen. Started
+  // here because here is where the round leaves: `guns.onShot` is called from
+  // `fireShot`, the same call that spawns the projectile.
+  const hide = hw.data?.throw?.hideDuringFireTime;
+  if (hide > 0 && hw.weaponNode) {
+    hw.hideFire = hide;
+    hw.weaponNode.visible = false;
+  }
   if (Number.isFinite(hw.rounds)) hw.rounds = Math.max(0, hw.rounds - 1);
   hw.model.onShot();
   hw.cool = 1 / (hw.data?.roundOfFire || 1);
@@ -9367,6 +9401,19 @@ function footFire(dt, input = null) {
       // `stop FinishSample` lets the cycle in flight complete on release,
       // on running dry, and on a magazine change alike.
       if (!firing) releaseHandFireLoop();
+    }
+  }
+
+  // `hideDuringFireTime` running out puts the weapon back in the hand, which
+  // the engine does unconditionally — `handleUpdate` shows the visual again and
+  // only then considers switching weapons (`changeWeaponWhenNoAmmo`, which this
+  // page does not do yet, so a soldier out of grenades keeps holding one he
+  // cannot throw).
+  if (hw.hideFire > 0) {
+    hw.hideFire -= dt;
+    if (hw.hideFire <= 0) {
+      hw.hideFire = 0;
+      if (hw.weaponNode) hw.weaponNode.visible = true;
     }
   }
 
