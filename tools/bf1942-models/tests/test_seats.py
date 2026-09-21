@@ -33,6 +33,11 @@ HARNESS = Path(__file__).resolve().parent / "test_seats_harness.mjs"
 
 MODULES = {
     "seats.js": VIEWER / "seats.js",
+    # `bomb-release.js` (the salvo arithmetic, the release speed and the
+    # drag law) and `torpedo-run.js` (an aircraft torpedo's water run),
+    # both reached through gunfire.js / seats.js.
+    "bomb-release.js": VIEWER / "bomb-release.js",
+    "torpedo-run.js": VIEWER / "torpedo-run.js",
     # `seat-dots.js` is `seatDots()`'s state resolution, imported by
     # `seats.js`.
     "seat-dots.js": VIEWER / "seat-dots.js",
