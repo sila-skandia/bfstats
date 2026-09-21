@@ -13,6 +13,7 @@
 // gives identical final state).
 
 import { World, WORLD_TICK_RATE, WORLD_TICK_DT } from './world.mjs';
+import { touchesWater } from './body-world.js';
 import { MAX_CATCH_UP_TICKS, DIRECTIONAL_SPEED } from './physics.js';
 
 const DT = 1 / 60;                 // the harness displays at 60 fps
@@ -217,6 +218,57 @@ const dDedupeState = {
   seqs: dPlayer().buffer.map(e => e.seq),     // [40, 41]
 };
 
+
+// --- scenario 8: water contact is geometric, not a column of x/z ------------
+// `touchesWater` is what the world's HP-5 pass asks before it drowns anything
+// (`world.js` #inWaterOwners). The rule is `checkVsTerrain`'s
+// (`collision-response.md` §7): the lowest TESTED collision vertex below the
+// water level is what puts a body in the water, so a hull 300 m above the sea
+// is not in it. Before this, the world asked `WorldCollider.surfaceHeight`,
+// a function of x and z alone, and every aircraft over open water drowned at
+// `hpLostWhileDamageFromWater` a second while flying normally.
+//
+// A fake entry is enough: `touchesWater` reads `entry.parts`, and a part
+// only has to answer `shape.layers[0].vertices` and `worldVertex`. The hull
+// here is a 2 m cube whose lowest vertices sit 1 m under the origin, so the
+// transition is at `originY - 1`.
+
+const HULL = [
+  -1, -1, -1,  1, -1, -1,  1, -1, 1,  -1, -1, 1,   // bottom, 1 m below origin
+  -1, 1, -1,   1, 1, -1,   1, 1, 1,   -1, 1, 1,    // top
+];
+
+function fakeEntry(originY) {
+  const part = {
+    offset: [0, 0, 0],
+    shape: { layers: [{ vertices: HULL }] },
+    worldVertex(layer, i, out) {
+      const b = i * 3;
+      out[0] = HULL[b];
+      out[1] = originY + HULL[b + 1];
+      out[2] = HULL[b + 2];
+      return out;
+    },
+  };
+  return { owner: 1, parts: [part] };
+}
+
+const WATER = 95;
+const water = {
+  // The bug this pins: 300 m up over open water.
+  highAbove: touchesWater(fakeEntry(395), 395, WATER),
+  // Just clear: the belly is at 96.1.
+  justClear: touchesWater(fakeEntry(97.1), 97.1, WATER),
+  // Belly exactly on the plane — `<=`, so this is contact.
+  bellyTouching: touchesWater(fakeEntry(96), 96, WATER),
+  // Belly under it.
+  bellyUnder: touchesWater(fakeEntry(95.5), 95.5, WATER),
+  // Origin under it: true without looking at a vertex at all.
+  originUnder: touchesWater(fakeEntry(90), 90, WATER),
+  // A level with no water at all answers nothing.
+  noWaterLevel: touchesWater(fakeEntry(0), 0, null),
+};
+
 console.log(JSON.stringify({
   tickRate: WORLD_TICK_RATE,
   tickDt: WORLD_TICK_DT,
@@ -269,4 +321,5 @@ console.log(JSON.stringify({
     dedupe: dDedupeState,
     movedOverTheSqueeze: dMoved,
   },
+  water,
 }));
