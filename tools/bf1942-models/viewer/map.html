@@ -8372,7 +8372,7 @@ const SOLDIER_3P_VIEWS = !params.has('no-soldier3p');
 // empty. With the body now drawn there is something to point a camera at, and
 // nowhere else to point one from outside a canopy or the death cam, so this is
 // the inspection view -- a departure, labelled.
-const SOLDIER_3P_ON_FOOT = params.has('foot3p');
+const SOLDIER_3P_ON_FOOT = SOLDIER_3P_VIEWS && params.has('foot3p');
 
 /**
  * Open the canopy's view cycle, close it again on the ground.
@@ -8647,7 +8647,17 @@ async function ensureFootBody(soldierName, weapon) {
  *  a chase view does not catch a rig frozen where it was last visible. */
 function syncFootBody(dt) {
   if (!footBody || !soldier) return;
-  const visible = optOnFoot.checked && !optPilot.checked
+  // NOT under the death cam, deliberately. The death cam is an external view --
+  // it parks a couple of metres behind and above the corpse and pitches down
+  // onto it (`DEATH_CAM.foot`) -- so the body would fit there, and it was
+  // wired up and then taken out again on the frame it produced
+  // (`08-death-cam.png`): there is no death family in `soldier-body.js`, so the
+  // man lies dead and the rig plays `stand`, and the near pass still draws the
+  // first-person arms over the top because it gates on `firstPerson`, which
+  // stays true while dead. A standing man under a death cam is the same kind
+  // of wrong that gated `?soldier3p=1` in the first place. It wants the
+  // `Lb_Die*` families, which this stream did not survey.
+  const visible = optOnFoot.checked && !optPilot.checked && !soldierDead
     && !footView3p.firstPerson && !footBodyForceHidden;
   // `soldier.y` is the feet and so is the pose rig's root; the body's yaw is
   // the soldier's plus the half turn the export bakes in. The position is this
