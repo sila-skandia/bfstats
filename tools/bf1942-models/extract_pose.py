@@ -110,6 +110,69 @@ GAITS: tuple[tuple[str, str, str], ...] = (
     ("crawl", "Lb_LieForward", "LieForward"),
 )
 
+# What the shared sidecars carry: the four locomotion gaits above **and the
+# three stances**, as timelines rather than stills.
+#
+# The three stance clips the pose files carry are single frames of these same
+# states, and that was the whole standing soldier: a statue. The clips
+# themselves are not stills at all --
+#
+#   Lb_Stand   / Ub_StandAim<W>   3PStandLower.baf        18 frames at 0.8
+#   Lb_Crouch  / Ub_Crouch<W>     3PCrouchBreathLower.baf 18 frames at 0.8
+#   Lb_Lie     / Ub_Lie<W>        3PLieBreathLower.baf    17 frames at 1.0
+#
+# -- they are the breathing loops the clip names say they are (`*Breath*`),
+# 1.25 s, 1.25 s and 1.0 s long. Baking them as `stand.lower`/`stand.upper` and
+# so on beside the gaits makes every family a lower/upper pair, which is what
+# lets a renderer compose one half against another: the parachute glide is
+# exactly `Lb_ParachuteIdle` legs under a `Ub_StandAim<W>` torso, and the
+# engine composes it that way itself (see PARACHUTE_STATES).
+#
+# The pose files keep their constant `stand`/`crouch`/`lie` clips untouched, so
+# nothing that already reads them changes.
+SHARED_TIMELINES: tuple[tuple[str, str, str], ...] = GAITS + STANCES
+
+# The parachute body states, baked under the engine's own state names so a
+# renderer can play `PARA_CLIPS` (`viewer/parachute.js`) with no translation
+# table in between.
+#
+# Weapon-independent, every one of them: the clips live under
+# `animations/3P_NoWeapon/` and the states carry no `<Weapon>` suffix, so they
+# ship once for the whole game rather than per grip.
+#
+# `Ub_ParachuteIdle` is in this list **and does not exist**, deliberately. The
+# glide has no upper-body state: `Ub_ParachuteOpen` declares
+# `addTransitionWhenDone Ub_StandAim`, so as the canopy finishes opening the
+# engine puts the torso back on the ordinary weapon aim -- which is why a man
+# under a chute can aim and fire, and why `3PParachuteGlideUpper.baf` ships in
+# the archives with no state naming it. Listing the name here makes the
+# absence land in the manifest's `absent` block instead of being assumed away.
+PARACHUTE_STATES: tuple[str, ...] = (
+    "Lb_ParachuteFall", "Ub_ParachuteFall",
+    "Lb_ParachuteOpen", "Ub_ParachuteOpen",
+    "Lb_ParachuteIdle", "Ub_ParachuteIdle",
+    "Lb_ParachuteHitGround", "Ub_ParachuteHitGround",
+    "Lb_ParachuteDie", "Ub_ParachuteDie",
+    "Lb_ParachuteDeadHitGround", "Ub_ParachuteDeadHitGround",
+)
+PARACHUTE_ASSET = "parachute"
+
+# The canopy itself. `CommonSoldierData.inc` hangs `Parachute` on every soldier
+# (`assemble.is_foreign_skeleton_part` is what keeps it out of the body bakes),
+# and `setIsParachuting` drives that child to the animation state
+# `"OpenParachute"` -- ledger PARA-5, which read the `c_SstOpenParachute`
+# literal five bytes in. Those two states live on the canopy's own six-bone
+# skeleton, not the soldier's:
+#
+#   OpenParachute  ParachuteOpen.baf  21 frames at 0.4, PlayOnce, -> IdleParachute
+#   IdleParachute  ParachuteIdle.baf  21 frames at 0.5, Looping
+CANOPY_TEMPLATE = "Parachute"
+CANOPY_STATES: tuple[tuple[str, str], ...] = (
+    ("open", "OpenParachute"),
+    ("idle", "IdleParachute"),
+)
+CANOPY_ASSET = "parachute.canopy"
+
 # Where the shared gait clips live, relative to the pose directory. The clips
 # are not baked into the 224 pose files because neither half of a gait varies
 # per pose: the lower body is weapon- *and* soldier-independent (one set for
@@ -309,21 +372,35 @@ def clip_timeline(animation: baf.Animation, speed: float,
 
 
 def timeline_tracks(frames: list[dict], period: float,
-                    joint_nodes: dict[str, int],
+                    joint_nodes: dict[str, int], loop: bool = True,
                     ) -> list[tuple[int, tuple[float, ...], list]]:
-    """glTF tracks for a looping timeline: N frames over `period` seconds.
+    """glTF tracks for a timeline: N frames over `period` seconds.
 
-    N+1 keyframes, the last repeating frame 0, so the final segment is the
-    wrap the engine's `% frames` performs and the clip's duration comes out
-    at exactly `period` — a three.js `LoopRepeat` action then seams.
+    A **looping** clip gets N+1 keyframes, the last repeating frame 0, so the
+    final segment is the wrap the engine's `% frames` performs and the clip's
+    duration comes out at exactly `period` — a three.js `LoopRepeat` action
+    then seams.
+
+    A **one-shot** (`c_AsmPlayOnce`) has no wrap: phase 0 is the first frame,
+    phase 1 the last, so N frames span N-1 intervals over the same `period`.
+    Giving one the loop layout would put the canopy's last opening frame one
+    step from its stowed first frame and snap it shut at the end of the pass;
+    this is the same rule `extract_viewmodel.clip_times` follows, and the flag
+    it reads is the state's own (`animstates.ClipRef.loops`).
     """
     count = len(frames)
-    step = period / count
-    times = tuple(k * step for k in range(count + 1))
+    if count <= 1:
+        times = (0.0, period)
+        return [(joint_nodes[name], times, [frames[0][name]] * 2)
+                for name in sorted(set(frames[0]) & set(joint_nodes))]
+    intervals = count if loop else count - 1
+    keys = count + 1 if loop else count
+    step = period / intervals
+    times = tuple(k * step for k in range(keys))
     tracks = []
     for name in sorted(set(frames[0]) & set(joint_nodes)):
         tracks.append((joint_nodes[name], times,
-                       [frames[k % count][name] for k in range(count + 1)]))
+                       [frames[k % count][name] for k in range(keys)]))
     return tracks
 
 
@@ -440,14 +517,22 @@ def _joint_hierarchy(builder: gltf.GlbBuilder, skeleton: ske_mod.Skeleton,
     return joint_nodes, roots
 
 
-def _write_clip_bundle(skeleton: ske_mod.Skeleton, clips: list[tuple[str, list, float]],
+def _write_clip_bundle(skeleton: ske_mod.Skeleton,
+                       clips: list[tuple[str, list, float]],
                        target: Path, extras: dict) -> int:
-    """One clips-only `.glb`: the joint hierarchy plus `clips`, nothing else."""
+    """One clips-only `.glb`: the joint hierarchy plus `clips`, nothing else.
+
+    A clip entry is `(name, frames, period)`, or `(name, frames, period, loop)`
+    where the bake must honour a one-shot's own frame layout. Looping is the
+    default because every locomotion and stance state in the game loops.
+    """
     builder = gltf.GlbBuilder()
     joint_nodes, roots = _joint_hierarchy(builder, skeleton)
     written = 0
-    for name, frames, period in clips:
-        tracks = timeline_tracks(frames, period, joint_nodes)
+    for entry in clips:
+        name, frames, period = entry[0], entry[1], entry[2]
+        loop = entry[3] if len(entry) > 3 else True
+        tracks = timeline_tracks(frames, period, joint_nodes, loop)
         if tracks:
             builder.add_animation(name, tracks)
             written += 1
@@ -479,9 +564,9 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
     root = out / GAIT_ASSET_DIR
 
     # -- the weapon-independent lower half, once ---------------------------- #
-    lower_clips: list[tuple[str, list, float]] = []
+    lower_clips: list[tuple[str, list, float, bool]] = []
     lower_meta: dict[str, dict] = {}
-    for key, lower_state, _family in GAITS:
+    for key, lower_state, _family in SHARED_TIMELINES:
         state = machine.state(lower_state)
         ref = state.clip_3p() if state else None
         if ref is None:
@@ -492,10 +577,10 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
             manifest["errors"][key] = f"lower clip unreadable: {ref.path}"
             continue
         frames, period = clip_timeline(animation, ref.speed, skeleton)
-        lower_clips.append((f"{key}.lower", frames, period))
+        lower_clips.append((f"{key}.lower", frames, period, ref.loops))
         lower_meta[key] = {"state": state.name, "clip": ref.path,
                            "speed": ref.speed, "frames": animation.frames,
-                           "period": round(period, 4)}
+                           "period": round(period, 4), "loop": ref.loops}
     if lower_clips:
         _write_clip_bundle(
             skeleton, lower_clips,
@@ -516,9 +601,9 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
 
     for grip, sharing in sorted(by_grip.items()):
         representative = sharing[0]
-        clips: list[tuple[str, list, float]] = []
+        clips: list[tuple[str, list, float, bool]] = []
         meta: dict[str, dict] = {}
-        for key, _lower_state, family in GAITS:
+        for key, _lower_state, family in SHARED_TIMELINES:
             ref = machine.clip_3p(f"{UPPER_PREFIX}{family}", representative)
             if ref is None:
                 continue
@@ -528,9 +613,10 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
                     f"upper clip unreadable: {ref.path}")
                 continue
             frames, period = clip_timeline(animation, ref.speed, skeleton)
-            clips.append((f"{key}.upper", frames, period))
+            clips.append((f"{key}.upper", frames, period, ref.loops))
             meta[key] = {"clip": ref.path, "speed": ref.speed,
-                         "frames": animation.frames, "period": round(period, 4)}
+                         "frames": animation.frames,
+                         "period": round(period, 4), "loop": ref.loops}
         if not clips:
             continue
         _write_clip_bundle(
@@ -539,8 +625,220 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
              "gaits": meta, "skeleton": skeleton.source})
         manifest["grips"][grip] = f"{GAIT_ASSET_DIR}/{grip}.gait.glb"
 
-    (root / "gaits.json").write_text(json.dumps(manifest, indent=2))
+    write_gaits_manifest(out, manifest)
     return manifest
+
+
+def write_gaits_manifest(out: Path, changed: dict) -> dict:
+    """Merge `changed` into `gaits/gaits.json` rather than overwriting it.
+
+    A targeted re-run must not delete what it did not produce. `models.json`
+    learned this the hard way: a subset `extract_models.py` run rewrote the
+    browse manifest to only the templates it touched and every other entry, and
+    every thumbnail, vanished from the live site. The parachute and canopy pass
+    (`--parachute`) is exactly such a subset run — it knows nothing about the 23
+    grips — so the two dict-valued keys are merged key by key and every scalar
+    key the caller did not supply is kept.
+    """
+    root = out / GAIT_ASSET_DIR
+    root.mkdir(parents=True, exist_ok=True)
+    target = root / "gaits.json"
+    merged: dict = {}
+    if target.exists():
+        try:
+            previous = json.loads(target.read_text())
+        except (OSError, json.JSONDecodeError):
+            previous = {}
+        if isinstance(previous, dict):
+            merged = previous
+    for key, value in changed.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = {**merged[key], **value}
+        else:
+            merged[key] = value
+    target.write_text(json.dumps(merged, indent=2))
+    return merged
+
+
+def export_parachute_clips(machine: animstates.StateMachine,
+                           meshes: ArchivePool, skeleton: ske_mod.Skeleton,
+                           out: Path) -> dict:
+    """`gaits/parachute.gait.glb`: the canopy body states, one clip each.
+
+    Every clip is named after the engine state that declares it, so
+    `viewer/parachute.js`'s `PARA_CLIPS` — which already carries the state
+    names, and already knows the glide's upper half is `Ub_StandAim` — plays
+    them with no translation table in between.
+
+    The states are weapon-independent (`animations/3P_NoWeapon/`, no `<Weapon>`
+    suffix), so this bundle ships once for the whole game. Absences are
+    reported apart from unparseable files, the way the viewmodel exporter
+    reports them, because they mean opposite things: `Ub_ParachuteIdle` is
+    absent because the engine hands the torso back to `Ub_StandAim` when the
+    canopy finishes opening, not because anything is broken.
+    """
+    clips: list[tuple[str, list, float, bool]] = []
+    meta: dict[str, dict] = {}
+    absent: dict[str, str] = {}
+    errors: dict[str, str] = {}
+    for name in PARACHUTE_STATES:
+        state = machine.state(name)
+        ref = state.clip_3p() if state else None
+        if ref is None:
+            absent[name] = ("no such animation state"
+                            if state is None else "state declares no 3P clip")
+            continue
+        animation = read_clip(meshes, ref.path)
+        if animation is None:
+            errors[name] = (
+                f"clip {'absent from the archives' if meshes.find(ref.path) is None else 'present but unparseable'}"
+                f": {ref.path}")
+            continue
+        frames, period = clip_timeline(animation, ref.speed, skeleton)
+        clips.append((name, frames, period, ref.loops))
+        meta[name] = {"clip": ref.path, "speed": ref.speed,
+                      "frames": animation.frames, "period": round(period, 4),
+                      "loop": ref.loops, "returnTo": state.return_to,
+                      "morphFactor": state.morph_factor}
+    result: dict = {"clips": meta, "absent": absent, "errors": errors,
+                    "asset": None}
+    if not clips:
+        return result
+    _write_clip_bundle(
+        skeleton, clips, out / GAIT_ASSET_DIR / f"{PARACHUTE_ASSET}.gait.glb",
+        {"parachute": meta, "absent": absent, "skeleton": skeleton.source,
+         # The glide's torso. Not a viewer choice: `Ub_ParachuteOpen` declares
+         # `addTransitionWhenDone Ub_StandAim`.
+         "glideUpper": "stand.upper"})
+    result["asset"] = f"{GAIT_ASSET_DIR}/{PARACHUTE_ASSET}.gait.glb"
+    return result
+
+
+def export_canopy(machine: animstates.StateMachine, meshes: ArchivePool,
+                  textures: ArchivePool, objects: ArchivePool,
+                  library: con_mod.ObjectLibrary, out: Path,
+                  max_texture: int = 1024) -> dict:
+    """`gaits/parachute.canopy.glb`: the chute itself, with its two clips.
+
+    The `Parachute` template is an `AnimatedBundle` on its own six-bone
+    skeleton (`animations/Parachute.ske`, `Bone01`..`Bone06`), which is exactly
+    why `assemble.is_foreign_skeleton_part` drops it from every soldier bake —
+    walking a soldier's skinned children would otherwise skin 13.5 m of canopy
+    to his head. This is that geometry brought back on the skeleton it belongs
+    to, with the two states `setIsParachuting` drives it through (PARA-5).
+
+    Unlike the soldier, this skeleton is already Y-up — `Bone06` rests at
+    (-0.029, 13.676, 0.0) and the mesh spans y 0 to 13.49 — so the bundle
+    carries no pitch node, and `attach` below is the soldier template's own
+    `addTemplate Parachute` offset, which every vanilla soldier writes as
+    (0, 0.3, 0).
+    """
+    result: dict = {"asset": None, "clips": {}, "errors": {}}
+    template = library.object(CANOPY_TEMPLATE)
+    if template is None or not template.skeleton:
+        result["errors"][CANOPY_TEMPLATE] = "no such template, or no skeleton"
+        return result
+    skeleton = read_skeleton(meshes, template.skeleton)
+    if skeleton is None:
+        result["errors"][CANOPY_TEMPLATE] = (
+            f"skeleton unreadable: {template.skeleton}")
+        return result
+
+    builder = gltf.GlbBuilder()
+    assembler = Assembler(meshes, textures, objects, library,
+                          max_texture=max_texture, include_collision=False,
+                          include_effects=False)
+    report = Report(root=CANOPY_TEMPLATE, configuration="canopy", lod=0)
+    joint_nodes, joint_roots = _joint_hierarchy(builder, skeleton)
+    part_report: dict = {}
+    mesh_node = build_skinned_part(builder, assembler, meshes, skeleton,
+                                   template, joint_nodes, report, part_report)
+    if mesh_node is None:
+        result["errors"][CANOPY_TEMPLATE] = "no skinned geometry"
+        return result
+
+    for key, state_name in CANOPY_STATES:
+        state = machine.state(state_name)
+        ref = state.clip_3p() if state else None
+        if ref is None:
+            result["errors"][key] = f"no {state_name} state with a clip"
+            continue
+        animation = read_clip(meshes, ref.path)
+        if animation is None:
+            result["errors"][key] = f"clip unreadable: {ref.path}"
+            continue
+        frames, period = clip_timeline(animation, ref.speed, skeleton)
+        tracks = timeline_tracks(frames, period, joint_nodes, ref.loops)
+        if not tracks:
+            result["errors"][key] = f"clip animates no bone of {template.skeleton}"
+            continue
+        builder.add_animation(key, tracks)
+        result["clips"][key] = {
+            "state": state.name, "clip": ref.path, "speed": ref.speed,
+            "frames": animation.frames, "period": round(period, 4),
+            "loop": ref.loops, "returnTo": state.return_to}
+    if not result["clips"]:
+        return result
+
+    # Whichever soldier declares the child: the offset is the same on all of
+    # them, and reading it beats writing it down.
+    attach = next(
+        (list(ref.position) for candidate in library.objects.values()
+         if candidate.kind.lower() == "bfsoldier"
+         for ref in candidate.children
+         if ref.template.lower() == CANOPY_TEMPLATE.lower() and ref.position),
+        [0.0, 0.3, 0.0])
+    extras = {
+        "canopy": CANOPY_TEMPLATE, "skeleton": skeleton.source,
+        "attach": attach, "clips": result["clips"],
+        "parts": part_report, "texturesMissing": sorted(report.missing_textures),
+    }
+    target = out / GAIT_ASSET_DIR / f"{CANOPY_ASSET}.glb"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    # Same three.js bind-matrix rule as the pose files: the skinned mesh node
+    # sits at the scene root, never under the joints.
+    target.write_bytes(builder.build(joint_roots + [mesh_node], extras=extras))
+    result["asset"] = f"{GAIT_ASSET_DIR}/{CANOPY_ASSET}.glb"
+    result["attach"] = attach
+    result["parts"] = part_report
+    result["texturesMissing"] = sorted(report.missing_textures)
+    return result
+
+
+def write_parachute_assets(machine: animstates.StateMachine,
+                           meshes: ArchivePool, textures: ArchivePool,
+                           objects: ArchivePool,
+                           library: con_mod.ObjectLibrary,
+                           soldiers: list[str], out: Path,
+                           max_texture: int = 1024) -> dict:
+    """The parachute half of the shared assets: body clips, then the canopy.
+
+    Both are weapon- and soldier-independent, so this runs once and merges its
+    two keys into `gaits/gaits.json` — `write_gaits_manifest`, not an
+    overwrite.
+    """
+    skeleton = None
+    for soldier in soldiers:
+        template = library.object(soldier)
+        if template is None or not template.skeleton:
+            continue
+        skeleton = read_skeleton(meshes, template.skeleton)
+        if skeleton is not None:
+            break
+    summary: dict = {"body": None, "canopy": None}
+    changed: dict = {}
+    if skeleton is not None:
+        body = export_parachute_clips(machine, meshes, skeleton, out)
+        summary["body"] = body
+        changed["parachute"] = body["asset"]
+    canopy = export_canopy(machine, meshes, textures, objects, library, out,
+                           max_texture=max_texture)
+    summary["canopy"] = canopy
+    changed["canopy"] = canopy["asset"]
+    if canopy.get("attach"):
+        changed["canopyAttach"] = canopy["attach"]
+    write_gaits_manifest(out, changed)
+    return summary
 
 
 def write_shared_gaits(machine: animstates.StateMachine, meshes: ArchivePool,
@@ -1269,6 +1567,20 @@ def main() -> int:
                          "A mod's armoury is not vanilla's 28 — EoD declares 77 "
                          "weapons with a stand-aim state, and the full product "
                          "is a long run for a sample of it.")
+    ap.add_argument("--shared-assets", action="store_true",
+                    help="write every shared sidecar and nothing else: the "
+                         "lower bundle, one bundle per grip, the parachute body "
+                         "clips and the canopy. The pose .glb files and "
+                         "poses-matrix.json are not touched, which makes this "
+                         "the whole re-extraction a change to the shared "
+                         "timelines needs.")
+    ap.add_argument("--parachute", action="store_true",
+                    help="write only the parachute shared assets — the body "
+                         "clip bundle (gaits/parachute.gait.glb) and the canopy "
+                         "(gaits/parachute.canopy.glb) — and merge their two "
+                         "keys into gaits/gaits.json. Both are weapon- and "
+                         "soldier-independent, so this is the whole of them; "
+                         "nothing else in the pose tree is touched.")
     ap.add_argument("--seat-poses", action="store_true",
                     help="extract every passenger-seat pose (Ub_PassengerInX / "
                          "Lb_PassengerInX) the mod ships, one .glb per soldier per "
@@ -1277,9 +1589,11 @@ def main() -> int:
                          "them up straight off extras.seat.poseAnimation.")
     args = ap.parse_args()
 
-    if not args.matrix and not args.seat_poses and (
+    if not args.matrix and not args.seat_poses and not args.parachute \
+            and not args.shared_assets and (
             not args.pairs or len(args.pairs) % 2):
-        ap.error("give soldier/weapon pairs, or --matrix, or --seat-poses")
+        ap.error("give soldier/weapon pairs, or --matrix, or --seat-poses, "
+                 "or --parachute, or --shared-assets")
 
     game_dir = args.game_dir.expanduser()
     chain = mod_chain(game_dir, args.mod)
@@ -1291,6 +1605,63 @@ def main() -> int:
                    objects=objects, library=library, state=args.state,
                    frame=args.frame, max_texture=args.max_texture,
                    gait_mode=args.gaits)
+
+    if args.shared_assets:
+        args.out.mkdir(parents=True, exist_ok=True)
+        soldiers = soldier_templates(library)
+        if args.soldiers is not None:
+            keep = {s.lower() for s in args.soldiers}
+            soldiers = [s for s in soldiers if s.lower() in keep]
+        weapons = [w for w in machine.weapons(f"{UPPER_PREFIX}{args.state}")
+                   if library.object(w) is not None]
+        if args.weapons is not None:
+            keep = {w.lower() for w in args.weapons}
+            weapons = [w for w in weapons if w.lower() in keep]
+        shared = write_shared_gaits(machine, meshes, library, soldiers,
+                                   weapons, args.out)
+        if shared:
+            print(f"shared timelines: 1 lower + {len(shared['grips'])} grips "
+                  f"for {len(shared['weaponGrip'])} weapons; families "
+                  f"{[key for key, _lo, _up in SHARED_TIMELINES]}",
+                  file=sys.stderr)
+            for key, why in sorted(shared["errors"].items()):
+                print(f"  error:  {key}: {why}", file=sys.stderr)
+        chute = write_parachute_assets(
+            machine, meshes, textures, objects, library, soldiers, args.out,
+            max_texture=args.max_texture)
+        body = chute["body"] or {}
+        print(f"parachute body clips: {len(body.get('clips', {}))} "
+              f"-> {body.get('asset')}", file=sys.stderr)
+        for name, why in sorted((body.get("absent") or {}).items()):
+            print(f"  absent: {name}: {why}", file=sys.stderr)
+        for name, why in sorted((body.get("errors") or {}).items()):
+            print(f"  error:  {name}: {why}", file=sys.stderr)
+        print(f"canopy: {len(chute['canopy'].get('clips', {}))} clips, attach "
+              f"{chute['canopy'].get('attach')} -> "
+              f"{chute['canopy'].get('asset')}", file=sys.stderr)
+        return 0 if (shared and body.get("asset")
+                     and chute["canopy"].get("asset")) else 1
+
+    if args.parachute:
+        args.out.mkdir(parents=True, exist_ok=True)
+        summary = write_parachute_assets(
+            machine, meshes, textures, objects, library,
+            soldier_templates(library), args.out,
+            max_texture=args.max_texture)
+        body = summary["body"] or {}
+        canopy = summary["canopy"]
+        print(f"parachute body clips: {len(body.get('clips', {}))} "
+              f"-> {body.get('asset')}", file=sys.stderr)
+        for name, why in sorted((body.get("absent") or {}).items()):
+            print(f"  absent: {name}: {why}", file=sys.stderr)
+        for name, why in sorted((body.get("errors") or {}).items()):
+            print(f"  error:  {name}: {why}", file=sys.stderr)
+        print(f"canopy: {len(canopy.get('clips', {}))} clips, attach "
+              f"{canopy.get('attach')} -> {canopy.get('asset')}",
+              file=sys.stderr)
+        for name, why in sorted((canopy.get("errors") or {}).items()):
+            print(f"  error:  {name}: {why}", file=sys.stderr)
+        return 0 if (body.get("asset") and canopy.get("asset")) else 1
 
     if args.seat_poses:
         return extract_seat_poses(machine, meshes, textures, objects, library,
@@ -1378,6 +1749,12 @@ def main() -> int:
                 print(f"shared gait clips: 1 lower + {len(shared['grips'])} "
                       f"grips for {len(shared['weaponGrip'])} weapons",
                       file=sys.stderr)
+            chute = write_parachute_assets(
+                machine, meshes, textures, objects, library, soldiers,
+                args.out, max_texture=args.max_texture)
+            body = chute["body"] or {}
+            print(f"parachute: {len(body.get('clips', {}))} body clips, "
+                  f"canopy {chute['canopy'].get('asset')}", file=sys.stderr)
         matrix_path = args.out / "poses-matrix.json"
 
         # Merge rather than overwrite. A mod extracted with `--own` wants two
