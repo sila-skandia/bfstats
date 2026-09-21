@@ -5,7 +5,7 @@
 // file the page loads, byte for byte. The module touches no DOM and no
 // `three` import, so it runs under plain node with no shimming.
 
-import { kitIconCandidates, resolveKitIcon } from './kit-icon.js';
+import { kitIconCandidates, resolveKitIcon, kitRowLabel } from './kit-icon.js';
 
 const results = {};
 
@@ -62,6 +62,30 @@ results.resolve = {
   // No icon at all recorded for the kit.
   noIcon: resolveKitIcon(null, has),
   noIconUndefined: resolveKitIcon(undefined, has),
+};
+
+// --- kitRowLabel ---------------------------------------------------------
+
+results.rowLabel = {
+  // The kit's own setKitName, resolved at extract time: it wins.
+  resolved: kitRowLabel(
+    { index: 2, key: 'RESPAWN_AT', text: 'ANTI-TANK' }, 'ANTI-TANK', 'Anti-tank'),
+  // A mod's lexicon re-pointing a vanilla key (EoD's RESPAWN_SCOUT -> Sniper):
+  // the row says what THIS mod calls the kit, not the menu's class word.
+  modRepoint: kitRowLabel(
+    { index: 0, key: 'RESPAWN_SCOUT', text: 'Sniper' }, 'SCOUT', 'Scout'),
+  // A key the lexicon lacked at extract time: the layout's own string.
+  nullText: kitRowLabel(
+    { index: 2, key: 'RESPAWN_JetPack', text: null }, 'JET PACK', 'Assault'),
+  // An older loadouts.json with no kitName field at all: the layout's string.
+  noKitName: kitRowLabel(null, 'SCOUT', 'Scout'),
+  // A null text that is not a string: still the layout's string.
+  emptyText: kitRowLabel(
+    { index: 2, key: 'RESPAWN_AT', text: '' }, 'ANTI-TANK', 'Anti-tank'),
+  // No layout either: the page's own class word.
+  classFallback: kitRowLabel(null, null, 'Anti-tank'),
+  // And nothing at all: the empty string, not a crash.
+  nothing: kitRowLabel(null, null, null),
 };
 
 console.log(JSON.stringify(results, null, 1));
