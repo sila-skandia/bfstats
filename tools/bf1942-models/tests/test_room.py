@@ -24,7 +24,10 @@ What this file pins is the P2 contract of
 * the real wake level headless — heightfield lattice + materials + static
   index + a drivable table and a mount round-trip;
 * the glb-tree contract — a template's JSON chunk yields the seat hierarchy
-  with no geometry decoded.
+  with no geometry decoded;
+* P4's snap-back fix — a deploy row's `spawnIndex` pins the authority to the
+  page's own spawn point, the snapshot carries the monotonic input `ack`, and
+  the facing on the wire is degrees (`SNAPBACK.md`).
 """
 
 from __future__ import annotations
@@ -286,6 +289,48 @@ class RoomTests(unittest.TestCase):
         l = self.results["l"]
         self.assertTrue(l["bleedTicket"], l["majorityRow"])
         self.assertEqual(l["majorityRow"]["team"], 2)
+
+
+    # --- (m) P4: one spawn pick, the ack, and the wire's units ---------------
+
+    def test_a_deploy_row_pins_the_authority_to_the_pages_spawn_point(self) -> None:
+        m = self.results["m"]
+        # The defect: the authority walked the flag's spawn list on every
+        # deploy row while the page did not, so the two sims stood the same
+        # soldier on different points of the same flag — 45 m and 17.7 deg
+        # apart on Aberdeen. A row naming the index lands on that index, keeps
+        # it, and agrees with what the page's own `spawnPlayer` produced.
+        for row in m["pinned"]:
+            self.assertEqual(row["spawnIndex"], row["index"], row)
+            self.assertEqual(row["name"], row["pageName"], row)
+            self.assertTrue(row["agrees"], row)
+            self.assertAlmostEqual(row["yawGapDeg"], 0.0, places=9)
+
+    def test_a_row_without_an_index_keeps_the_authoritys_own_walk(self) -> None:
+        m = self.results["m"]
+        # A client that sends no index is unchanged: the authority advances.
+        self.assertEqual(m["unpinnedIndex"], 1)
+        # And an absurd index is clamped out rather than trusted, so that row
+        # falls back to the walk too.
+        self.assertEqual(m["spawnIndexMax"], 0xffff)
+        self.assertEqual(m["absurdIndex"], 1)
+
+    def test_the_snapshot_acknowledges_the_input_it_consumed(self) -> None:
+        m = self.results["m"]
+        acks = [row["ack"] for row in m["ackTrace"]]
+        self.assertEqual(acks, [501, 502, 503, 504])
+        # An idle tick never withdraws an acknowledgement: the engine's zeroed
+        # word carries no seq, and the client's reconciliation point would go
+        # with it.
+        self.assertEqual(m["afterIdle"], 504)
+
+    def test_the_wire_carries_the_facing_in_degrees(self) -> None:
+        m = self.results["m"]
+        self.assertAlmostEqual(m["wireYawDeg"], m["soldierYawDeg"], places=4)
+        # And it is degrees, not the World's radians under a degrees field —
+        # which is what drew every remote soldier at a 57th of its heading.
+        self.assertNotAlmostEqual(m["wireYawDeg"], m["soldierYawRad"], places=3)
+        self.assertAlmostEqual(m["wireYawDeg"], -72.0, places=3)
 
 
 if __name__ == "__main__":
