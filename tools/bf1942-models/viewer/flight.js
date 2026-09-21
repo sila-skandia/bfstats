@@ -41,6 +41,23 @@ const FREE_RANGE = 180;
 // has his own `c_PIMouseLookY`. Keying on the bare input name welds them.
 const keyOf = (control, input) => `${control}/${input}`;
 
+// The propeller's own two numbers — the file's own constants, like world.js's
+// STICK_RATE, not restated data: the engine carries no idle-RPM or spool
+// constant in any vanilla template (complete Camera/Engine vocabulary
+// surveyed in flyable-vehicles/input-and-cockpit.md). Degrees per second.
+//
+//   idle  — a boarded engine turns the blades over at ~2 rev/s with the
+//           throttle shut; the blurred disc never shows for it (the swap
+//           stays keyed on the spooling `state.throttle` at the stamped
+//           0.07 comparison, so idle is always blade-visible).
+//   full  — the long-standing 6 rev/s at full throttle, unchanged.
+//   spool — exponential chase constants; up is the engine-start wind-up,
+//           down the longer windmill decay after the throttle shuts.
+const PROP_IDLE_RATE = 720;
+const PROP_FULL_RATE = 2160;
+const PROP_SPOOL_UP = 0.8;
+const PROP_SPOOL_DOWN = 2.0;
+
 /** A node name's match key: lowercased, with the scene document's
  *  duplicate-instance suffix dropped (`MustangPropellerBlurred_1` and the
  *  spec's authored `MustangPropellerBlurred` are the same node). The scene
@@ -339,6 +356,9 @@ export class VehicleState {
     this.surfaces = new Map();
     /** Propeller revolutions accumulated, degrees. */
     this.propellerAngle = 0;
+    /** Propeller angular speed, degrees/s; chases the idled-engine target
+     *  with spool inertia (see `advancePropeller`). */
+    this.propRpm = 0;
     /** 0..1, what the engine note and the propeller blur key off. */
     this.throttle = 0;
     this.airspeed = 0;
@@ -680,7 +700,19 @@ export class Vehicle {
    * throttle sets how fast the drivetrain turns, not where it stops.
    */
   advancePropeller(dt) {
-    this.state.propellerAngle += this.state.throttle * 360 * 6 * dt;
+    // An idling engine turns its propeller. Retail: board a plane and the
+    // blades are already turning over slowly long before any throttle — the
+    // "idle" state the blur swap sits at the far end of. The idled rate chases
+    // its target with inertia, so the boarding spin-up reads as an
+    // acceleration rather than the previous hard cut (rate was exactly zero
+    // at rest throttle, then the spooling throttle's disc arrived within
+    // spool*0.07 = 0.7 s of W).
+    const target = PROP_IDLE_RATE
+      + this.state.throttle * (PROP_FULL_RATE - PROP_IDLE_RATE);
+    const gap = target - this.state.propRpm;
+    const tau = gap > 0 ? PROP_SPOOL_UP : PROP_SPOOL_DOWN;
+    this.state.propRpm += gap * Math.min(1, dt / tau);
+    this.state.propellerAngle += this.state.propRpm * dt;
   }
 
   /** Write the rig onto the scene graph. Read-only with respect to state. */
@@ -1418,6 +1450,7 @@ export class Aircraft extends Vehicle {
     s.throttle = 0;
     s.airspeed = 0;
     s.propellerAngle = 0;
+    s.propRpm = 0;
     s.surfaces.clear();
     s.inputs.clear();
     s.inputs.set('c_PILandingGear', 0);
