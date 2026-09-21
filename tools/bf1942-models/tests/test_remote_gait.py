@@ -87,8 +87,11 @@ class RemoteGaitTests(unittest.TestCase):
         bands = self.results["bands"]
         self.assertAlmostEqual(1.0, bands["walk"])    # half of the 2 m/s walk
         self.assertAlmostEqual(4.0, bands["run"])     # midpoint of 2 and 6
-        self.assertAlmostEqual(1.0, bands["crouch"])  # half of 2
-        self.assertAlmostEqual(0.5, bands["prone"])   # half of 1
+        # Crouch and prone have one movement family, so their boundary
+        # separates still from the SLOWEST speed it covers -- the stance's
+        # walk speed, since `walkSpeedFactor` applies in every pose.
+        self.assertAlmostEqual(1 / 3, bands["crouch"])   # half of 2 x 1/3
+        self.assertAlmostEqual(1 / 6, bands["prone"])    # half of 1 x 1/3
 
     def test_a_standing_soldier_walks_and_runs(self) -> None:
         standing = self.results["standing"]
@@ -108,6 +111,8 @@ class RemoteGaitTests(unittest.TestCase):
         crouched = self.results["crouched"]
         self.assertEqual("crouch", crouched["still"])
         self.assertEqual("crouch", crouched["atBand"])
+        # A crouched man with the walk key down makes 0.67 m/s; he is moving.
+        self.assertEqual("crouchwalk", crouched["walking"])
         self.assertEqual("crouchwalk", crouched["moving"])
         # There is no crouch-run: a lerp that overshoots still crouch-walks.
         self.assertEqual("crouchwalk", crouched["fast"])
@@ -116,6 +121,8 @@ class RemoteGaitTests(unittest.TestCase):
         prone = self.results["prone"]
         self.assertEqual("prone", prone["still"])
         self.assertEqual("prone", prone["atBand"])
+        # And with the walk key down, 0.33 m/s: still a crawl.
+        self.assertEqual("crawl", prone["walking"])
         self.assertEqual("crawl", prone["crawling"])
         # `soldier.js` `#gaitFor` tests prone first; so does this.
         self.assertEqual("prone", prone["bothBits"])
