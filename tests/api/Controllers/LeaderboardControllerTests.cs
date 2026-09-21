@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace api.tests.Controllers;
@@ -30,7 +31,7 @@ public class LeaderboardControllerTests : IDisposable
 
         _dbContext = new PlayerTrackerDbContext(options);
         _dbContext.Database.EnsureCreated();
-        _leaderboardService = new SqliteLeaderboardService(_dbContext);
+        _leaderboardService = new SqliteLeaderboardService(_dbContext, NullLogger<SqliteLeaderboardService>.Instance);
         _logger = Substitute.For<ILogger<LeaderboardController>>();
         _controller = new LeaderboardController(_leaderboardService, _logger);
     }
@@ -521,6 +522,71 @@ public class LeaderboardControllerTests : IDisposable
         Assert.False(bots.IsPopulated);
         Assert.Equal(16.4, live.AvgPlayers);
         Assert.Equal(1.2, bots.AvgPlayers);
+    }
+
+    [Fact]
+    public async Task GetLeaderboard_PopulatedOnly_UsesWeeklyServerStatsAndPages()
+    {
+        var now = DateTime.UtcNow;
+        var (isoYear, isoWeek) = (System.Globalization.ISOWeek.GetYear(now), System.Globalization.ISOWeek.GetWeekOfYear(now));
+
+        _dbContext.Servers.AddRange(
+            new GameServer { Guid = "srv-live", Name = "Dogtags 24/7", Game = "bf1942" },
+            new GameServer { Guid = "srv-bots", Name = "Bot Arena", Game = "bf1942" }
+        );
+
+        var hour = NodaTime.Instant.FromDateTimeUtc(DateTime.SpecifyKind(now.AddHours(-3), DateTimeKind.Utc));
+        _dbContext.ServerOnlineCounts.AddRange(
+            new api.Data.Entities.ServerOnlineCount
+            {
+                ServerGuid = "srv-live",
+                HourTimestamp = hour,
+                Game = "bf1942",
+                AvgPlayers = 16.4,
+                PeakPlayers = 22,
+                SampleCount = 120
+            },
+            new api.Data.Entities.ServerOnlineCount
+            {
+                ServerGuid = "srv-bots",
+                HourTimestamp = hour,
+                Game = "bf1942",
+                AvgPlayers = 1.2,
+                PeakPlayers = 3,
+                SampleCount = 120
+            }
+        );
+
+        _dbContext.PlayerServerStats.AddRange(
+            new PlayerServerStats { PlayerName = "Alpha", ServerGuid = "srv-live", Year = isoYear, Week = isoWeek, TotalKills = 100, TotalDeaths = 10, TotalScore = 3000, TotalRounds = 30, TotalPlayTimeMinutes = 120 },
+            new PlayerServerStats { PlayerName = "Alpha", ServerGuid = "srv-bots", Year = isoYear, Week = isoWeek, TotalKills = 9000, TotalDeaths = 1, TotalScore = 50000, TotalRounds = 40, TotalPlayTimeMinutes = 40 },
+            new PlayerServerStats { PlayerName = "Beta", ServerGuid = "srv-live", Year = isoYear, Week = isoWeek, TotalKills = 80, TotalDeaths = 20, TotalScore = 2000, TotalRounds = 25, TotalPlayTimeMinutes = 100 },
+            new PlayerServerStats { PlayerName = "Gamma", ServerGuid = "srv-live", Year = isoYear, Week = isoWeek, TotalKills = 40, TotalDeaths = 40, TotalScore = 1000, TotalRounds = 25, TotalPlayTimeMinutes = 80 },
+            new PlayerServerStats { PlayerName = "BotFarmer", ServerGuid = "srv-bots", Year = isoYear, Week = isoWeek, TotalKills = 800, TotalDeaths = 10, TotalScore = 9000, TotalRounds = 40, TotalPlayTimeMinutes = 50 }
+        );
+        await _dbContext.SaveChangesAsync();
+
+        var page1 = await _controller.GetLeaderboard(
+            page: 1, pageSize: 2, sortBy: "score", days: 365, minRounds: 25, populatedOnly: true);
+        var page1Ok = Assert.IsType<OkObjectResult>(page1.Result);
+        var page1Resp = Assert.IsType<GlobalLeaderboardResponse>(page1Ok.Value);
+
+        Assert.Equal(3, page1Resp.TotalPlayers);
+        Assert.Equal(2, page1Resp.Players.Count);
+        Assert.Equal("Alpha", page1Resp.Players[0].Name);
+        Assert.Equal(3000, page1Resp.Players[0].Score);
+        Assert.Equal("Beta", page1Resp.Players[1].Name);
+        Assert.DoesNotContain(page1Resp.Players, p => p.Name == "BotFarmer");
+
+        var page2 = await _controller.GetLeaderboard(
+            page: 2, pageSize: 2, sortBy: "score", days: 365, minRounds: 25, populatedOnly: true);
+        var page2Ok = Assert.IsType<OkObjectResult>(page2.Result);
+        var page2Resp = Assert.IsType<GlobalLeaderboardResponse>(page2Ok.Value);
+
+        Assert.Equal(3, page2Resp.TotalPlayers);
+        Assert.Single(page2Resp.Players);
+        Assert.Equal("Gamma", page2Resp.Players[0].Name);
+        Assert.Equal(3, page2Resp.Players[0].Rank);
     }
 
     [Fact]

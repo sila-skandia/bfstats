@@ -6,6 +6,7 @@ using api.Servers.Models;
 using api.Telemetry;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using NodaTime;
 
 namespace api.PlayerStats;
@@ -14,7 +15,9 @@ namespace api.PlayerStats;
 /// SQLite-based leaderboard service that queries pre-computed weekly aggregates.
 /// Aggregates PlayerServerStats records across weeks for the requested time period.
 /// </summary>
-public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqliteLeaderboardService
+public class SqliteLeaderboardService(
+    PlayerTrackerDbContext dbContext,
+    ILogger<SqliteLeaderboardService> logger) : ISqliteLeaderboardService
 {
     private const int MinRoundsDefault = 3;
 
@@ -1039,21 +1042,24 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
         var direction = isAscending ? "ASC" : "DESC";
         var orderBy = sort switch
         {
-            "kd" => $"""CASE WHEN e."Deaths" = 0 THEN e."Kills" ELSE CAST(e."Kills" AS REAL) / e."Deaths" END {direction}, e."Kills" {direction}""",
-            "kills" => $"""e."Kills" {direction}, e."Score" {direction}""",
-            "deaths" => $"""e."Deaths" {direction}, e."Name" COLLATE NOCASE ASC""",
-            "kpm" => $"""CASE WHEN e."PlayMin" <= 0 THEN 0.0 ELSE CAST(e."Kills" AS REAL) / e."PlayMin" END {direction}, e."Kills" {direction}""",
-            "playmin" or "time" => $"""e."PlayMin" {direction}, e."Score" {direction}""",
-            "rounds" => $"""e."Rounds" {direction}, e."Score" {direction}""",
-            "player" or "name" => $"""e."Name" COLLATE NOCASE {direction}""",
-            _ => $"""e."Score" {direction}, e."Kills" {direction}"""
+            "kd" => $"""CASE WHEN "Deaths" = 0 THEN "Kills" ELSE CAST("Kills" AS REAL) / "Deaths" END {direction}, "Kills" {direction}""",
+            "kills" => $"\"Kills\" {direction}, \"Score\" {direction}",
+            "deaths" => $"\"Deaths\" {direction}, \"Name\" COLLATE NOCASE ASC",
+            "kpm" => $"""CASE WHEN "PlayMin" <= 0 THEN 0.0 ELSE CAST("Kills" AS REAL) / "PlayMin" END {direction}, "Kills" {direction}""",
+            "playmin" or "time" => $"\"PlayMin\" {direction}, \"Score\" {direction}",
+            "rounds" => $"\"Rounds\" {direction}, \"Score\" {direction}",
+            "player" or "name" => $"\"Name\" COLLATE NOCASE {direction}",
+            _ => $"\"Score\" {direction}, \"Kills\" {direction}"
         };
 
         var whereClause = filters.Count > 0 ? $"WHERE {string.Join(" AND ", filters)}" : "";
+        var indexedBy = tableName == "PlayerServerStats"
+            ? " INDEXED BY IX_PlayerServerStats_LeaderboardCovering"
+            : "";
 
         var sql = $$"""
             WITH
-            eligible AS (
+            eligible AS MATERIALIZED (
                 SELECT
                     p."PlayerName" AS "Name",
                     SUM(p."TotalKills") AS "Kills",
@@ -1061,21 +1067,20 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
                     SUM(p."TotalScore") AS "Score",
                     SUM(p."TotalPlayTimeMinutes") AS "PlayMin",
                     SUM(p."TotalRounds") AS "Rounds"
-                FROM "{{tableName}}" AS p
+                FROM "{{tableName}}" AS p{{indexedBy}}
                 {{whereClause}}
                 GROUP BY p."PlayerName"
                 HAVING SUM(p."TotalRounds") >= @minRounds AND SUM(p."TotalPlayTimeMinutes") >= @minPlay
             ),
-            ranked AS (
-                SELECT
-                    e.*,
-                    ROW_NUMBER() OVER (ORDER BY {{orderBy}}, e."Name" ASC) AS "Rank"
-                FROM eligible AS e
+            page AS MATERIALIZED (
+                SELECT *
+                FROM eligible
+                ORDER BY {{orderBy}}, "Name" ASC
+                LIMIT @pageSize OFFSET @offset
             )
             SELECT
                 0 AS "RowType",
                 (SELECT COUNT(*) FROM eligible) AS "TotalPlayers",
-                0 AS "Rank",
                 '' AS "Name",
                 0 AS "Kills",
                 0 AS "Deaths",
@@ -1086,21 +1091,20 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
             SELECT
                 1,
                 0,
-                "Rank",
                 "Name",
                 "Kills",
                 "Deaths",
                 "Score",
                 "PlayMin",
                 "Rounds"
-            FROM ranked
-            WHERE "Rank" > @offset AND "Rank" <= @offset + @pageSize
-            ORDER BY "RowType", "Rank"
+            FROM page
+            ORDER BY "RowType"
             """;
 
         var result = new GlobalLeaderboardQueryResult();
         var connection = dbContext.Database.GetDbConnection();
         var shouldClose = connection.State != ConnectionState.Open;
+        var queryTimer = Stopwatch.StartNew();
 
         if (shouldClose)
         {
@@ -1130,13 +1134,13 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
                     case 1:
                         result.Players.Add(new PlayerAggRow
                         {
-                            Rank = reader.GetInt32(2),
-                            Name = reader.GetString(3),
-                            Kills = reader.GetInt32(4),
-                            Deaths = reader.GetInt32(5),
-                            Score = reader.GetInt32(6),
-                            PlayMin = reader.GetDouble(7),
-                            Rounds = reader.GetInt32(8)
+                            Rank = 0,
+                            Name = reader.GetString(2),
+                            Kills = reader.GetInt32(3),
+                            Deaths = reader.GetInt32(4),
+                            Score = reader.GetInt32(5),
+                            PlayMin = reader.GetDouble(6),
+                            Rounds = reader.GetInt32(7)
                         });
                         break;
                 }
@@ -1149,6 +1153,12 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
                 await connection.CloseAsync();
             }
         }
+
+        queryTimer.Stop();
+        logger.LogInformation(
+            "Global leaderboard query {Table} days={Days} include={IncludeCount} exclude={ExcludeCount} populated={PopulatedCount} eligible={TotalPlayers} pageRows={PageRows} in {ElapsedMs}ms",
+            tableName, days, includeGuids.Count, excludeGuids.Count, populatedGuids.Count,
+            result.TotalPlayers, result.Players.Count, queryTimer.ElapsedMilliseconds);
 
         // If PlayerStatsMonthly or PlayerServerStats had 0 rows (e.g. in test environment where only PlayerMapStats was seeded),
         // fallback to PlayerMapStats query.
@@ -1363,6 +1373,7 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
 
         var connection = dbContext.Database.GetDbConnection();
         var shouldClose = connection.State != ConnectionState.Open;
+        var favTimer = Stopwatch.StartNew();
         if (shouldClose)
         {
             await connection.OpenAsync();
@@ -1449,6 +1460,11 @@ public class SqliteLeaderboardService(PlayerTrackerDbContext dbContext) : ISqlit
                 }
             }
         }
+
+        favTimer.Stop();
+        logger.LogInformation(
+            "Leaderboard favorites for {PlayerCount} names in {ElapsedMs}ms",
+            playerNames.Count, favTimer.ElapsedMilliseconds);
 
         foreach (var player in players)
         {
