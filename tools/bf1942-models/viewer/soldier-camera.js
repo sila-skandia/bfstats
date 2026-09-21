@@ -66,13 +66,22 @@
 //
 // WHAT THIS FILE DOES ANYWAY, AND WHY IT IS MARKED. The owner plays the game
 // and reports that C rotates the view of a parachuting soldier. The dedicated
-// server is not the authority for that: **no instruction anywhere in
-// `bf1942_lnxded.static` reads input channel 26** (the whole image contains a
-// single `shr reg,0x1a`, in `io::System::cpu_Has_SSE2`), because a headless
-// server has no camera to toggle -- which is also the likely reason
-// `BFSoldier::nextCamera` is empty there. The consumer is in the client, and
-// this stream did not find it. So the CVM reading above may be the whole
-// story, or the client may reach past it for a parachutist.
+// server is not the authority for that: it never toggles a view mode at all.
+// `Camera::setViewMode` has exactly **two** call sites in the whole image
+// (`0x081a9a4a` and `0x081a9e3a`, both inside the Camera subsystem itself),
+// and neither is reached from an input path -- a headless server has no camera
+// to toggle, which is also the likely reason `BFSoldier::nextCamera` is empty
+// there. The consumer is in the client, and this stream did not find it. So
+// the CVM reading above may be the whole story, or the client may reach past
+// it for a parachutist.
+//
+// (A `PlayerInput` is a **59-slot array of analog values**, not a packed
+// bitfield: `BFSoldier::handlePlayerInput` copies it with `mov eax,0x3b; rep
+// movsd` at `0x08273cfc`, and `GameServer::checkPlayerTriggers(BFPlayer*,
+// PlayerInput)` -- which takes it by value -- reads channels 14 to 22 at
+// `[ebp+0x48]` through `[ebp+0x68]`, four bytes apart, and nothing past 22.
+// So a channel is never read with a shift, and scanning for one proves
+// nothing; the call-site count above is the evidence.)
 //
 // `PARACHUTE_VIEW_CYCLE` is therefore a **VIEWER CHOICE MADE TO THE OWNER'S
 // PLAY, not an engine reading**, in the same way `chase-camera.js`'s default
@@ -92,11 +101,18 @@ export const VIEW_FRONT = 'front';
  * `Camera::getViewMode` (`0x081acc10`) reads them back out of `Camera+0x14c`.
  *
  * 14, 16 and 17 are named for completeness -- fly-by and the two trace modes.
- * Which of +0x1bf / +0x1c0 is `CVMTrace` and which `CVMExternTrace` is
- * **inferred**, not read from a registration: case 0x11 is the arm that uses
- * the externally supplied transform at `Camera+0x8c`/`+0x90`
- * (`setExternCameraTrans`, `0x081ada50`), so 0x11 is taken to be the extern
- * one. Nothing here depends on that.
+ *
+ * Each `CVM*` word's byte is **read from its console registration**, not
+ * inferred. The six words are six `ConsoleClass` singletons built by the
+ * static initialiser at `0x081b3fdd`-`0x081b43e3`, each pairing a name string
+ * with a descriptor whose `executeObjectMethod` writes one template byte:
+ *
+ *     CVMInside      0x086c541a  ConsoleClass223  0x081d1a20  -> +0x1bc  (3)
+ *     CVMChase       0x086c5411  ConsoleClass224  0x081d1e30  -> +0x1bd  (12)
+ *     CVMFrontChase  0x086c5403  ConsoleClass225  0x081d2240  -> +0x1c1  (13)
+ *     CVMFlyBy       0x086c53fa  ConsoleClass226  0x081d2650  -> +0x1be  (14)
+ *     CVMTrace       0x086c53f1  ConsoleClass227  0x081d2a60  -> +0x1bf  (16)
+ *     CVMExternTrace 0x086c53e2  ConsoleClass228  0x081d2e70  -> +0x1c0  (17)
  */
 export const VIEW_MODE_ID = Object.freeze({
   [VIEW_INSIDE]: 3,
