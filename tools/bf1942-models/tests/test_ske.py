@@ -48,7 +48,13 @@ class SkeletonParseTests(unittest.TestCase):
         self.assertEqual([-1, 0], [b.parent for b in skeleton.bones])
 
     def test_rejects_unknown_version(self) -> None:
-        # GrenadeAllies.ske in this install reports version 278 and is unreadable.
+        # Version 1 is the only one vanilla or any installed mod writes. 278 is
+        # not a real version: it is what the first four bytes of an LZO stream
+        # decode to, and `animations/GrenadeAllies.ske` read that way for as
+        # long as the archive reader thought a segment that did not shrink was
+        # stored verbatim (see test_rfa.SegmentInflateTests, and bf42/rfa.py).
+        # Rejecting it is still right — a real unknown version must not be
+        # guessed at — so the reader is the layer that had to change.
         with self.assertRaises(ske.SkeletonError):
             ske.parse(pack_ske([], version=278), "GrenadeAllies.ske")
 

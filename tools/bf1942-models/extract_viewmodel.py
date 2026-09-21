@@ -343,6 +343,45 @@ def weapon_part_locals(clip: baf.Animation, skeleton: ske_mod.Skeleton,
     }
 
 
+def weapon_main_local(clip: baf.Animation, skeleton: ske_mod.Skeleton,
+                      main_index: int, frame: int) -> pose_mod.RT:
+    """The grip wrapper's transform at `frame`: the main bone under the hand.
+
+    `weapon_part_locals` re-expresses every bound part against the main bone,
+    so whatever the clip does to the main bone *itself* is divided back out —
+    and that motion is the throw. `GrenadeAlliesFire.baf` holds the grenade at
+    rest for its first 24 frames and then flies the main bone 0.54 m out of the
+    palm along the swing; eight vanilla weapons animate their main bone this
+    way (both grenades, the Detonator, the Landmine, the MedPack, the
+    JohnsonLMG's reload, the M1Garand and the Type5), and none of it reached
+    the glb while the wrapper carried the static weld alone.
+
+    This is the same quantity `pose.weapon_attachment(clip_posed=True)`
+    computes, one frame at a time: the main bone's pose in the skeleton root's
+    space, in the raw file convention, yawed by `CLIP_WORLD_YAW` into mesh
+    world. A clip local is already raw, so only bones falling back to their
+    `.ske` rest need conjugating out of the parse-time mirror. At frame 0 of
+    any of the eight this reproduces the static attach to under 0.1 mm, which
+    is the identity that pins it.
+    """
+    raw_locals = clip.local_pose(frame)
+    worlds: list[pose_mod.RT] = []
+    for index, bone in enumerate(skeleton.bones):
+        key = ske_mod.canonical(bone.name)
+        local = (raw_locals[key] if key in raw_locals
+                 else _conjugate((bone.rotation, bone.translation)))
+        if bone.parent < 0 or bone.parent >= index:
+            worlds.append(local)
+        else:
+            worlds.append(pose_mod.rt_mul(worlds[bone.parent], local))
+    rotation, translation = pose_mod.rt_mul(pose_mod.rt_inverse(worlds[0]),
+                                           worlds[main_index])
+    return (tuple(tuple(sum(rotation[i][k] * pose_mod.CLIP_WORLD_YAW[k][j]
+                            for k in range(3)) for j in range(3))
+                  for i in range(3)),
+            translation)
+
+
 def collect_bound_nodes(builder: gltf.GlbBuilder, weapon_node: int,
                         ) -> dict[str, int]:
     """boundBone name -> node index, for every bound part under the weapon.
@@ -445,13 +484,26 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
 
     # Read every family's clips up front; a family whose file is unreadable
     # records the error and drops out rather than costing the export.
+    #
+    # Absent and unparseable are reported apart, because they mean opposite
+    # things: a state machine that registers a clip the game never shipped is
+    # the data's own dead end (`1PReloadGrenadeAllies.baf` and 15 others under
+    # `WeaponHandling/1p/` — a grenade has no reload animation because reloading
+    # one is raising the next), while a file that is present and will not parse
+    # is a gap in this pipeline and has to be chased. Lumping them together as
+    # "unreadable" is how a real reader bug — `animations/GrenadeAllies.ske` —
+    # sat in these reports looking like missing content.
     clips: dict[str, dict] = {}
     for key, entry in resolved.items():
         upper = None
         if entry["ref"] is not None:
             upper = read_clip(meshes, entry["ref"].path)
             if upper is None:
-                clip_report[key] = {"error": f"clip unreadable: {entry['ref'].path}"}
+                state = ("absent from the archives"
+                         if meshes.find(entry["ref"].path) is None
+                         else "present but unparseable")
+                clip_report[key] = {
+                    "error": f"clip {state}: {entry['ref'].path}"}
                 continue
         weapon_clip = None
         if entry["weaponRef"] is not None:
@@ -541,16 +593,17 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
     weapon_report = Report(root=weapon, configuration="complex", lod=0)
     weapon_node = assembler.build_node(builder, weapon, weapon_report)
     bound_nodes: dict[str, int] = {}
+    grip_node: int | None = None
     if weapon_node is not None:
         bound_nodes = collect_bound_nodes(builder, weapon_node)
-        wrapper = builder.add_node(gltf.Node(
+        grip_node = builder.add_node(gltf.Node(
             name=f"{weapon} grip",
             translation=attach[1],
             rotation=gltf.quat_from_matrix(attach[0]),
             children=[weapon_node],
             extras={"weapon": weapon, "weldBone": "Bip01 R Hand"},
         ))
-        builder._nodes[joint_nodes["bip01 r hand"]].children.append(wrapper)
+        builder._nodes[joint_nodes["bip01 r hand"]].children.append(grip_node)
 
     root = builder.add_node(gltf.Node(
         name=f"{soldier} {weapon} viewmodel",
@@ -573,11 +626,24 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
         for name in entry["upper"].local_pose(0)
     } & set(joint_nodes))
     weapon_rest: dict[str, pose_mod.RT] = {}
+    main_key: str | None = None
     if weapon_skeleton is not None and main_index is not None:
+        main_key = ske_mod.canonical(weapon_skeleton.bones[main_index].name)
         for index, bone in enumerate(weapon_skeleton.bones):
             key = ske_mod.canonical(bone.name)
             if key in bound_nodes:
                 weapon_rest[key] = weapon_skeleton.relative(index, main_index)
+    # Whether the grip wrapper is animated at all. Only eight vanilla weapons
+    # move their own main bone (`weapon_main_local`), and a rig that does not
+    # needs no wrapper track: the node simply keeps its authored weld. A rig
+    # that does needs one in *every* family, including the still ones, or a
+    # crossfade out of the throw mixes an animated wrapper against an
+    # unanimated one — the same rule the joints follow above.
+    grips = (grip_node is not None and main_key is not None
+             and any(entry.get("weapon") is not None
+                     and main_key in {ske_mod.canonical(track.name)
+                                      for track in entry["weapon"].bones}
+                     for entry in clips.values()))
 
     for key, entry in clips.items():
         upper: baf.Animation | None = entry["upper"]
@@ -645,11 +711,28 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
                 elif bone_key in weapon_rest:
                     tracks.append((node_index, (times[0], times[-1]),
                                    [weapon_rest[bone_key]] * 2))
+            # The grip wrapper. A clip that moves the weapon's own main bone
+            # moves the whole weapon in the hand, which `weapon_part_locals`
+            # deliberately factors out of the bound parts — so it has to land
+            # here or it lands nowhere (`weapon_main_local`).
+            if grips:
+                if main_key in clip_bones:
+                    tracks.append((grip_node, weapon_times,
+                                   [weapon_main_local(weapon_clip,
+                                                      weapon_skeleton,
+                                                      main_index, f)
+                                    for f in weapon_index]))
+                else:
+                    tracks.append((grip_node, (times[0], times[-1]),
+                                   [attach, attach]))
         else:
             for bone_key, node_index in bound_nodes.items():
                 if bone_key in weapon_rest:
                     tracks.append((node_index, (times[0], times[-1]),
                                    [weapon_rest[bone_key]] * 2))
+            if grips:
+                tracks.append((grip_node, (times[0], times[-1]),
+                               [attach, attach]))
         builder.add_animation(key, tracks)
         clip_report[key]["frames"] = (upper.frames if upper is not None
                                       else weapon_clip.frames)
@@ -660,6 +743,10 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
     result["soldierParts"] = part_report
     result["weaponParts"] = weapon_report.parts
     result["boundParts"] = sorted(bound_nodes)
+    # True when a weapon-channel clip moves the whole weapon in the hand, so
+    # the `<weapon> grip` node is animated rather than a static weld — the
+    # throw, and the seven other vanilla weapons that do the same.
+    result["gripAnimated"] = grips
     result["texturesMissing"] = sorted(
         set(report.missing_textures + weapon_report.missing_textures))
 
