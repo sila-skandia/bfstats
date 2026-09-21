@@ -379,6 +379,10 @@ export class World {
     const spawn = pickSpawn(target, player.spawnIndex, {
       groundAt: this.groundHeight,
       group: target.vehicle ? (group ?? player.team) : null,
+      // The collider, so a point inside a model is walked past rather than
+      // stood on (`spawn-safety.js`). Absent on a page with no world
+      // geometry, and then the pick is the authored point as before.
+      world: this.collider,
     });
     if (!spawn) return null;
     player.soldier.collider = this.collider;

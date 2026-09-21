@@ -865,7 +865,7 @@ class Assembler:
                 )))
         child_refs = template.children
         if template.is_lod_selector and child_refs:
-            child_refs = [self._collision_alternative(child_refs)]
+            child_refs = [self._collision_alternative(child_refs, template)]
         for ref in child_refs:
             child_name = con_mod.instance_template_name(ref, self.library.object)
             if child_name is None:
@@ -887,10 +887,23 @@ class Assembler:
         ))
 
     def _collision_alternative(self, children_refs: list[con_mod.ChildRef],
+                               template: con_mod.ObjectTemplate | None = None,
                                ) -> con_mod.ChildRef:
-        """The LodObject alternative that carries the object's collision hull."""
+        """The LodObject alternative that carries the object's collision hull.
+
+        The object's WRECK is not one of them. `hasDestroyedLod 1` marks the
+        last alternative as the destroyed state (`con.destroyed_alternative`),
+        and grafting its hull onto the intact object fills the standing
+        building with the rubble of the fallen one — Battle of Britain's
+        factory, where it trapped anyone who walked in. Excluded here rather
+        than at the call sites so the hull-only walk gets it too.
+        """
+        selector = (self.library.selector(template.lod_selector)
+                    if template is not None and template.lod_selector else None)
+        wreck = con_mod.destroyed_alternative(children_refs, selector)
+        pool = [ref for ref in children_refs if ref is not wreck] or children_refs
         return max(
-            children_refs,
+            pool,
             key=lambda ref: self._collision_triangles(
                 con_mod.instance_template_name(ref, self.library.object) or ""))
 
@@ -2097,7 +2110,7 @@ class Assembler:
                     selected_refs, self.library.selector(template.lod_selector)):
                 propeller_blur = self._propeller_blur(template, selected_refs)
             if self.include_collision and not self.first_person:
-                donor = self._collision_alternative(children_refs)
+                donor = self._collision_alternative(children_refs, template)
                 drawn = self._collision_triangles(
                     con_mod.instance_template_name(
                         selected_refs[0], self.library.object) or "")

@@ -16,7 +16,11 @@ from bf42.assemble import (  # noqa: E402
     is_foreign_skeleton_part,
     reaches_first_person,
 )
-from bf42.con import ObjectLibrary, ObjectTemplate  # noqa: E402
+from bf42.con import (  # noqa: E402
+    ObjectLibrary,
+    ObjectTemplate,
+    select_lod_alternative,
+)
 from bf42.rfa import ArchivePool  # noqa: E402
 
 
@@ -100,6 +104,119 @@ class CollisionExportTests(unittest.TestCase):
             builder, "TestHull", mesh, report) if assembler.include_collision else []
         self.assertEqual([], assembler._geom_collisions["testhull"])
         self.assertEqual(0, report.collision_parts)
+
+
+# Battle of Britain's factory, in the shape that trapped people in it: a
+# `DistCompareSelector2` with `hasDestroyedLod 1` over Complex / Simple /
+# Wreck, where the wreck's collision hull is the biggest of the three.
+FACTORY_CON = """
+ObjectTemplate.create PlayerControlObject Britain_Factory
+ObjectTemplate.addTemplate lodFactory
+
+ObjectTemplate.create LodObject lodFactory
+ObjectTemplate.lodSelector FactoryLodSelector
+ObjectTemplate.addTemplate FactoryComplex
+ObjectTemplate.addTemplate FactorySimple
+ObjectTemplate.addTemplate FactoryWreck
+
+ObjectTemplate.create Bundle FactoryComplex
+ObjectTemplate.geometry Britain_factory_m1
+ObjectTemplate.setHasCollisionPhysics 1
+
+ObjectTemplate.create SimpleObject FactorySimple
+ObjectTemplate.geometry Britain_Factory_L1
+
+ObjectTemplate.create SimpleObject FactoryWreck
+ObjectTemplate.geometry Britain_Factory_Wreck_m1
+
+LodSelectorTemplate.create DistCompareSelector2 FactoryLodSelector
+LodSelectorTemplate.hasDestroyedLod 1
+LodSelectorTemplate.addLodDistance 300
+
+GeometryTemplate.create StandardMesh Britain_factory_m1
+GeometryTemplate.create StandardMesh Britain_Factory_L1
+GeometryTemplate.create StandardMesh Britain_Factory_Wreck_m1
+"""
+
+# A real LOD ladder with no destroyed state: the low rung carries the hull,
+# and it still has to be allowed to.
+LADDER_CON = """
+ObjectTemplate.create LodObject lodHut
+ObjectTemplate.lodSelector HutSelector
+ObjectTemplate.addTemplate HutHigh
+ObjectTemplate.addTemplate HutLow
+
+ObjectTemplate.create SimpleObject HutHigh
+ObjectTemplate.geometry hut_m1
+
+ObjectTemplate.create SimpleObject HutLow
+ObjectTemplate.geometry hut_m2
+
+LodSelectorTemplate.create DistanceSelector HutSelector
+LodSelectorTemplate.addLodDistance 70
+
+GeometryTemplate.create StandardMesh hut_m1
+GeometryTemplate.create StandardMesh hut_m2
+"""
+
+
+class DestroyedLodCollisionTests(unittest.TestCase):
+    """A standing building does not wear the collision hull of its own wreck.
+
+    `_collision_alternative` picks whichever LodObject alternative carries the
+    most collision triangles, on the reasoning that a drawn mesh with no hull
+    still owes the world one. For a vehicle's or a building's WRECK that is
+    the wrong donor: the wreck is a destroyed state, not a rung, and grafting
+    its rubble onto the intact object leaves a building you can see the inside
+    of and cannot walk through. Battle of Britain's factory drew its own
+    210-triangle hull and `Britain_Factory_Wreck_m1`'s 244 on top of it.
+    `hasDestroyedLod 1` is the engine's own word for which alternative that is,
+    declared on 34 selectors in vanilla, and the last child is the one it
+    means in all 34.
+    """
+
+    def _assembler(self, con_text: str, triangles: dict[str, int]):
+        library = ObjectLibrary()
+        library.add_con("Objects/Test/Objects.con", con_text)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        assembler._collision_triangles = lambda name: triangles.get(name.lower(), 0)
+        return library, assembler
+
+    def test_the_wreck_is_never_the_donor(self) -> None:
+        library, assembler = self._assembler(FACTORY_CON, {
+            "factorycomplex": 210, "factorysimple": 0, "factorywreck": 244,
+        })
+        lod = library.object("lodFactory")
+        donor = assembler._collision_alternative(lod.children, lod)
+        self.assertEqual("FactoryComplex", donor.template)
+
+    def test_the_drawn_alternative_owes_no_extra_hull_at_all(self) -> None:
+        # The whole point: with the wreck out of the pool the donor IS the
+        # alternative being drawn, so `collision_makeup` never fires and no
+        # second hull is added.
+        library, assembler = self._assembler(FACTORY_CON, {
+            "factorycomplex": 210, "factorysimple": 0, "factorywreck": 244,
+        })
+        lod = library.object("lodFactory")
+        drawn = select_lod_alternative(
+            lod.children, "complex", library.selector(lod.lod_selector))
+        donor = assembler._collision_alternative(lod.children, lod)
+        self.assertEqual(drawn.template, donor.template)
+
+    def test_a_real_lod_ladder_still_borrows_its_low_rungs_hull(self) -> None:
+        library, assembler = self._assembler(LADDER_CON, {
+            "huthigh": 0, "hutlow": 96,
+        })
+        lod = library.object("lodHut")
+        donor = assembler._collision_alternative(lod.children, lod)
+        self.assertEqual("HutLow", donor.template)
+
+    def test_the_selector_word_is_read(self) -> None:
+        library, _ = self._assembler(FACTORY_CON, {})
+        self.assertTrue(library.selector("FactoryLodSelector").has_destroyed_lod)
+        library2, _ = self._assembler(LADDER_CON, {})
+        self.assertFalse(library2.selector("HutSelector").has_destroyed_lod)
 
 
 class InvisiblePartTests(unittest.TestCase):
