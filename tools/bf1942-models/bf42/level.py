@@ -59,7 +59,22 @@ class StaticInstance:
 class SpawnTemplate:
     name: str
     vehicles: dict[int, str] = field(default_factory=dict)
-    owner_team: int | None = None
+    # `ObjectTemplate.teamOnVehicle` — a **bool**, not a team index. It says
+    # whether the spawner stamps its own team onto the vehicle it spawns, and
+    # it has nothing to do with which hull comes out: `ObjectSpawner::
+    # spawnObject` (lnxded `0x083140a0`) looks the template up with
+    # `map<u32, IObjectTemplate*>::find(this->team)` — the *instance's* team,
+    # set by `Object.setteam` — and only then, `if (template+0x185)`, calls
+    # the spawned object's `setTeam`. The engine registers the property as
+    # type `bool` (descriptor at `0x87a70c0`, type string `0x086b1e97`
+    # "bool", written at `0x082a8946`) and `ObjectSpawnerTemplate::makeScript`
+    # (`0x08314f70`) round-trips it as the literal line
+    # `ObjectTemplate.teamOnVehicle 1` with no value appended, so the engine
+    # itself can never write anything but 1. The shipped data agrees that it
+    # is not a team: EoD writes `0` on 9,274 spawners and XPack2 writes `2`.
+    # Reading it as an owner team put the Japanese hull on both of Midway's
+    # fleets, and on nine other vanilla levels' ships besides.
+    team_on_vehicle: bool = False
     # ObjectSpawner respawn window after the wreck is cleared. Some templates
     # use a single `SpawnDelay` instead of Min/Max (ships, MGs).
     min_spawn_delay: float | None = None
@@ -1304,11 +1319,10 @@ def parse_spawn_templates(text: str) -> dict[str, SpawnTemplate]:
                 current.vehicles[team] = name
         elif cmd == "teamonvehicle" and tokens:
             try:
-                team = int(tokens[0])
+                flag = int(tokens[0])
             except ValueError:
                 continue
-            if team in (1, 2):
-                current.owner_team = team
+            current.team_on_vehicle = flag != 0
         elif cmd == "minspawndelay" and tokens:
             try:
                 current.min_spawn_delay = float(tokens[0])
@@ -1352,8 +1366,9 @@ def spawn_vehicle(spawner: str, team: int | None,
     spec = templates.get(spawner.lower())
     if spec is None:
         return None
-    if spec.owner_team is not None:
-        team = spec.owner_team
+    # `spec.team_on_vehicle` is deliberately not consulted: it is a bool about
+    # stamping the team onto the spawned object, and the hull is chosen by the
+    # instance's own `Object.setteam` alone. See `SpawnTemplate`.
     if team is not None and team in spec.vehicles:
         return spec.vehicles[team]
     return spec.vehicles.get(2) or spec.vehicles.get(1)
