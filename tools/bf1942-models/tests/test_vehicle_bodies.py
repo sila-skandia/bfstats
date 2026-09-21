@@ -22,8 +22,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).resolve().parent / "vehicle_bodies_harness.mjs"
-MODULES = ["rigid-body", "body-contact", "crash-damage", "body-friction",
-           "body-ground", "vehicle-bodies", "body-world"]
+MODULES = ["rigid-body", "body-contact", "body-statics", "crash-damage",
+           "body-friction", "body-ground", "vehicle-bodies", "body-world"]
 
 
 def run_harness() -> dict:

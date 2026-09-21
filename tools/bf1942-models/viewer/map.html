@@ -5797,8 +5797,14 @@ function setupVehicleBodies() {
   if (!collisionMeshes || !damageTables || !heightfield) return;
   // The world owns the BodyWorld and its crash-damage accounting; this page
   // half keeps the scene records and feeds each parked hull in.
+  // `statics` is what turns a building from a wall into a contact: a driven
+  // hull probes its own collision vertices against the level's triangles and
+  // the same solver that shoves a parked plane pushes and spins it
+  // (`body-statics.js`). Without a `drivableMask` the deck gate inside it has
+  // nothing to gate, which is exactly right for a level with no bridge.
   world?.setupBodies({ tables: damageTables,
-                       terrain: bodyTerrain(heightfield, collider.waterLevel) });
+                       terrain: bodyTerrain(heightfield, collider.waterLevel),
+                       statics: collider.statics ? collider.staticProbe() : null });
   bodyWorld = world?.bodyWorld ?? null;
   for (const [owner, visual] of damageVisuals) {
     const spec = bodySpecFor(visual.node);
