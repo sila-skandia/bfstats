@@ -110,7 +110,22 @@ class HeldInputTests(unittest.TestCase):
         self.assertFalse(wire["firingAtDraw"])
         self.assertTrue(wire["lastIdle"])
 
-    # --- on foot --------------------------------------------------------------
+    # --- one trigger, one gun ---------------------------------------------------
+
+    def test_a_drivers_cannon_is_fired_and_stepped_once(self) -> None:
+        # One shot is one shell: the active-seat loop must leave the driver's
+        # own FireArms to the driver loop, duplicate group or not.
+        cannon = self.results["drivenCannon"]
+        self.assertGreater(cannon["ticks"], 0)
+        self.assertTrue(cannon["driverFiring"])
+        self.assertFalse(cannon["twinFiring"])
+        self.assertEqual(cannon["steps"], cannon["ticks"])
+
+    def test_a_nested_gunner_still_fires_his_own_gun(self) -> None:
+        gunner = self.results["nestedGunner"]
+        self.assertTrue(gunner["gunnerFiring"])
+        self.assertFalse(gunner["driverFiring"])
+
 
     def test_a_walk_covers_the_same_ground_at_15_fps(self) -> None:
         foot = self.results["foot"]

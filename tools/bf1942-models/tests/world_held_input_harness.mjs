@@ -207,6 +207,43 @@ const sequenced = {
   lastIdle: wire.world.players.get('P').last.idle === true,
 };
 
+// --- a driver's cannon is one gun ---------------------------------------------
+// The driver's seat IS the drivetrain's root, so `activeFireArmsNodes()` names
+// the same FireArms node the driver loop's `groups` already carry. A second
+// group on that node (map.html's `collectMannedGuns` used to build one) was
+// triggered by the active-seat loop as well: one pull of a Sherman's trigger
+// was two shells in the air and two rounds off the HUD, and the FireState's
+// reload and heat timers were stepped twice a tick.
+function drivenCannon() {
+  const m = mounted();
+  const twin = m.guns.group(10);
+  twin.node = m.group.node;                       // same FireArms node
+  m.occupancy.activeFireArmsNodes = () => [m.group.node];
+  m.world.refreshMount('P', { groups: [m.group], manned: [twin] });
+  const state = m.world.fireStateFor(m.group.node);
+  let steps = 0;
+  const step = state.step.bind(state);
+  state.step = dt => { steps += 1; return step(dt); };
+  let ticks = 0;
+  for (let i = 0; i < 30; i++) {
+    m.world.setInput('P', { ...IDLE, fire: true });
+    ticks += m.world.step(1 / 30).ticks;
+  }
+  return { ticks, steps, driverFiring: m.group.firing, twinFiring: twin.firing };
+}
+
+/** The hull gunner's seat: a different node, nobody driving. Still fires. */
+function nestedGunner() {
+  const m = mounted();
+  const gunner = m.guns.group(10);
+  m.occupancy.isActiveRoot = () => false;
+  m.occupancy.activeFireArmsNodes = () => [gunner.node];
+  m.world.refreshMount('P', { groups: [m.group], manned: [gunner] });
+  m.world.setInput('P', { ...IDLE, fire: true });
+  m.world.step(1 / 30);
+  return { driverFiring: m.group.firing, gunnerFiring: gunner.firing };
+}
+
 // --- on foot -------------------------------------------------------------------
 // The same second of forward walk at 60 fps and at 15 fps covers the same
 // ground: the body's trajectory is frame-rate independent only if every
@@ -257,6 +294,8 @@ console.log(JSON.stringify({
   release,
   unfed,
   sequenced,
+  drivenCannon: drivenCannon(),
+  nestedGunner: nestedGunner(),
   foot: {
     walked60: walked(60),
     walked15: walked(15),
