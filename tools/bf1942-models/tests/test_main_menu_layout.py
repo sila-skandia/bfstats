@@ -174,6 +174,36 @@ class MainMenuLayoutTests(unittest.TestCase):
         self.assertIn("CREATE_GAME_MAX_PLAYERS", labels)
         self.assertGreater(len(self.page("createGamePage1")), 40)
 
+    def test_the_typed_fields_are_the_files_own_edit_nodes(self) -> None:
+        """SERVER NAME is a `BfEditNode` bound to `Host/Create/ServerName`
+        and MAX PLAYERS a `BfEditNodeInt` bound to `Host/Create/MaxPlayers`
+        with the engine's own range. `multiplay.js` types into the first
+        and reads the second; without the rect off these nodes there is
+        nothing to click on and nowhere to put the caret."""
+        fields = {el["var"]: el for el in self.page("createGamePage1")
+                  if el["kind"] == "edit"}
+        name = fields["Host/Create/ServerName"]
+        self.assertEqual([164.0, 46.0, 140.0, 20.0], rect(name))
+        self.assertEqual(32, name["maxChars"])
+        self.assertEqual("standard6_latin", name["font"])
+        self.assertNotIn("int", name)
+        players = fields["Host/Create/MaxPlayers"]
+        self.assertTrue(players["int"])
+        self.assertEqual(2, players["min"])
+
+    def test_an_edit_node_sits_beside_its_label(self) -> None:
+        """The field's rect has to line up with the label's row, because
+        that is how `settingRow` pairs the two."""
+        for key, var in (("CREATE_GAME_SERVERNAME", "Host/Create/ServerName"),
+                         ("CREATE_GAME_MAX_PLAYERS", "Host/Create/MaxPlayers")):
+            with self.subTest(key):
+                label = self.labelled("createGamePage1", key)
+                field = next(el for el in self.page("createGamePage1")
+                             if el["kind"] == "edit" and el["var"] == var
+                             and abs(el["rect"][1] - label["rect"][1]) < 8)
+                self.assertGreater(field["rect"][0], label["rect"][0],
+                                   "the field is to the right of its label")
+
     def test_the_two_start_buttons(self) -> None:
         calls = [el["calls"][0] for el in self.page("createGameNav")
                  if el["kind"] == "button" and el.get("calls")]

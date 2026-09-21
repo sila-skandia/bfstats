@@ -90,10 +90,14 @@ const TABS = [
     items: [{ key: 'MENU_SINGLEPLAY', id: 'singleplay' },
             { key: 'MENU_MULTIPLAY', id: 'multiplay' }] },
 ];
+// CREATE GAME comes and goes with the room server. There is no point
+// offering to make a room on a server that is not answering — the screen
+// says so where the rows would be, and SINGLEPLAY is still there.
 const MULTIPLAY_TABS = [
   ...TABS,
   { page: 'multiplayerNav',
-    items: [{ key: 'MENU_CREATE_GAME', id: 'create', slot: 0 }] },
+    items: [{ key: 'MENU_CREATE_GAME', id: 'create', slot: 0,
+              enabled: () => multiplay.online }] },
 ];
 
 // The player's name. The game keeps it in `menu/MainMenu`'s PROFILE panel,
@@ -130,6 +134,9 @@ const multiplay = createMultiplayScreen({
   canvas: canvasMp,
   root: '../',
   tabs: MULTIPLAY_TABS,
+  // Both of these close over `multiplay` itself, which is fine: neither is
+  // called until a frame paints or a button is clicked, long after the
+  // binding exists.
   onTab: id => (id === 'create' ? multiplay.openCreate() : show(id)),
   onStatus: text => { status.textContent = text; },
 });
