@@ -108,6 +108,14 @@ class SoldierCameraTests(unittest.TestCase):
         # header of soldier-camera.js.
         self.assertEqual(["inside", "chase", "front"],
                          self.results["parachuteCycle"])
+
+    def test_the_on_foot_inspection_cycle_is_the_canopy_s(self) -> None:
+        # `?foot3p=1` is a labelled departure from CAM-1, and it offers the same
+        # three modes the canopy does rather than inventing a fourth.
+        self.assertEqual(self.results["parachuteCycle"],
+                         self.results["footCycle"])
+        # It is NOT what a soldier's camera authorises, which stays one.
+        self.assertEqual(["inside"], self.results["engineCycle"])
         air = self.results["underCanopy"]
         self.assertEqual(["inside", "chase", "front", "inside"], air["seen"])
         self.assertEqual([3, 12, 13, 3], air["ids"])
