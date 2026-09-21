@@ -6705,10 +6705,10 @@
    "address": "0x08154960",
    "name": "dice::bf::GameServer::handleCollisionLandOrWater(...)",
    "kind": "function",
-   "subsystem": "hitpoints",
+   "subsystem": "damage",
    "confidence": "verified",
-   "source": "research-2026-09-17-collision-damage",
-   "note": "lnxded, 2135 bytes. Terrain and water contact. Computes |V|, |cos(V,N)|, MaterialManager damage/effect lookups, Armor::getSpeedMod, and for CID_BFSoldierTemplate a fall-height term (getLastCollisionHeight minus current Y, clamped against 1.0/2.0/20.0, times getDamageDampingFromActiveKitParts) -- and spends all of it on playCollisionEffect. No Armor HP mutator is reached. See ledger HP-6. [2026-09-19 collision round, lead] lnxded. [lead] other == NULL. Land: cos^3 x speedMod x |v|^2 x getDamageMod(matTerrain,matSelf) x getDamageForMaterial(matTerrain), applied when > 1.0, vehicles included. Water (matOther 1): cos^2, needs damageFromWater, no threshold. collision-response.md 9.5."
+   "source": "research-2026-09-21-parachute",
+   "note": "lnxded. Reached by tail-jump from GameServer::handleCollision 0x08156020 at 0x08156080 (args shifted one slot). Soldier arm gated on CID 0x9493 at 0x08154a81; |v| taken 0x081549e2-0x081549f8; 0x08155189 fsub 8.0f (ds:0x86c08c0) then fldz/fucomp st(1)/test ah,0x45/je 0x08154c78, and 0x08154c78 is the function's ret -- so |v| <= 8.0 returns before Q^2. Ledger PARA-10, HP-14."
   },
   {
    "address": "0x08154e4f",
@@ -6883,12 +6883,12 @@
   },
   {
    "address": "0x08164c80",
-   "name": "dice::ref2::world::BObject<dice::ref2::world::IPlayerObject>::updateFlags(unsigned int, unsigned int)",
+   "name": "dice::ref2::world::BObject::updateFlags(unsigned,unsigned)",
    "kind": "function",
-   "subsystem": "weapons",
+   "subsystem": "physics",
    "confidence": "verified",
-   "source": "research-2026-09-15-weapons",
-   "note": "lnxded, the base half: flags = (flags | setMask) & ~clearMask into this+0x4. For bit 0x1000 it notifies the object manager (mObjectManagerImpl 0x087202d4) on both edges - vtable +0xec when set, +0xf0 when cleared (test at 0x08164d1a) - like several other bookkeeping bits (0x8, 0x800, 0x200, 0x10000, the sign bit). Nothing tests 0x4000, here or anywhere in FireArms/HandFireArms (0x08287000-0x08296500)."
+   "source": "research-2026-09-21-parachute",
+   "note": "lnxded. Argument order is (SET, CLEAR): it computes a & ~flags and b & flags and early-exits when both are zero, which only means 'nothing changes' under that reading. setIsParachuting pushes 0x1, 0x0 at 0x08277027, so opening the canopy CLEARS the Parachute child's bit 0. Ledger CAM-3, PARA-6."
   },
   {
    "address": "0x08165360",
@@ -6906,7 +6906,7 @@
    "subsystem": "physics",
    "confidence": "verified",
    "source": "research-2026-09-21-parachute",
-   "note": "lnxded. max(geometry->getRadius(), max over children of |child.relativePosition| + child->getBoundingRadius()), cached at +0xb4, recomputed when object flag 0x80000 is set (the recompute always walks children -- there is no 'pre-child' value). The soldier's Parachute child (13.493 m mesh radius at 0/0.3/0) is what makes this unusable as the drag radius. Ledger PARA-6."
+   "note": "lnxded. max(geometry->getRadius(), max over children of |child.relativePosition| + child->getBoundingRadius()), cached at +0xb4. Returns 0.0 outright when flags & 1 (0x0816563d-0x08165647). With CAM-3's polarity this makes the soldier's composite ~1.0 with the chute stowed and ~13.79 with it open -- neither flyable, so one reading in the PARA-6 chain is still wrong."
   },
   {
    "address": "0x08165900",
@@ -7503,6 +7503,24 @@
    "note": "lnxded."
   },
   {
+   "address": "0x081ac7c0",
+   "name": "dice::ref2::world::Camera::setViewMode(int)",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-21-camera",
+   "note": "lnxded. Jump table 0x086c5040 (cmp edi,0x11; ja -> 0x081ac7f0 = xor eax,eax; ret). Each live arm tests one byte of the camera template [esi+0x4c] and returns 0 when zero: 3->+0x1bc, 12->+0x1bd, 13->+0x1c1, 14->+0x1be, 16->+0x1bf, 17->+0x1c0; mode 0 folds into mode 3's arm. EXACTLY TWO call sites in the whole image (0x081a9a4a, 0x081a9e3a), neither on an input path. Ledger CAM-1, CAM-2."
+  },
+  {
+   "address": "0x081acc20",
+   "name": "dice::ref2::world::CameraTemplate::CameraTemplate()",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-21-camera",
+   "note": "lnxded. Seeds +0x1bc/+0x1bd/+0x1be/+0x1c1 = 1 and +0x1bf/+0x1c0 = 0, so an unauthored camera allows inside/chase/front-chase/fly-by. Ledger CAM-1."
+  },
+  {
    "address": "0x081acd60",
    "name": "CameraTemplate::makeScript",
    "kind": "function",
@@ -7657,12 +7675,12 @@
   },
   {
    "address": "0x081dab40",
-   "name": "SimpleObject::handleCollision(...)",
+   "name": "dice::ref2::world::SimpleObject::handleCollision(IObject*,Vec3 const&,Vec3 const&,Vec3 const&,float,float)",
    "kind": "function",
-   "subsystem": "hitpoints",
+   "subsystem": "damage",
    "confidence": "verified",
-   "source": "research-2026-09-16-hitpoints; corrected research-2026-09-17-collision-damage",
-   "note": "lnxded, shared with the projectile-impact chain. Walks the composite-parent chain for the nearest Armor, calls collision()(vtbl+0xe8)/setLastCollisionHeight(vtbl+0xf8), then dispatches to the dice::bf::game global's own vtable (+0x30/+0x34 on the stored vptr) by whether this's +0x4c class is CID_ProjectileTemplate. The gate at 0x81dae30 is self-collision suppression, NOT an otherObject type test (corrected 2026-09-17): it walks getRootParent(this) to the nearest IPlayerControlObject, then bypasses the Armor-recording block only when BOTH ObjectSpawner::getHoldObjectId() matches self's own root (edi+0x48) AND an ICompositeObject-identity compare against getRootParent(otherObject) matches. The setLastCollisionHeight write site is 0x81dae83-0x81dae98 and is the only one in the binary. See ledger HP-6, HP-6b, HP-6d. [2026-09-19 collision round, R3-geometry-broadphase] lnxded. [R3] materials 99 (kill) and 37 (no damage) | lnxded. [lead] [2026-09-19] (self, other, speed, normal, relPos, matSelf, matOther). matOther 99 -> giveDamage 1e10; either material 37 -> no damage dispatch; with an Armor and !isInColList(other): game->handleCollision(other, self, ..., matOther, matSelf) - the OTHER object is the attacker - then addColObject(other). Returns 1 (respond physically) except for the spawner-held case. collision-response.md section 9.1."
+   "source": "research-2026-09-21-parachute",
+   "note": "lnxded. Its own debug print at 0x081dac17-0x081dac81 (format string 0x086c8c4d) emits 'speed:' << [ebp+0x10] << ' other:' << ... << ' relPos:' << [ebp+0x18] -- the engine's own label for the argument BFSoldier::handleCollision swaps for zeroes. Calls GameServer vtable +0x34 at 0x081daeee. Ledger PARA-10."
   },
   {
    "address": "0x081db230",
@@ -8530,12 +8548,12 @@
   },
   {
    "address": "0x08256f70",
-   "name": "dice::ref2::world::PointResponsePhysics::solveImpulse(dice::ref2::world::IPhysicsNode*)",
+   "name": "dice::ref2::world::PointResponsePhysics::solveImpulse(...)",
    "kind": "function",
-   "subsystem": "collision",
+   "subsystem": "physics",
    "confidence": "verified",
-   "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [R1] F11"
+   "source": "research-2026-09-21-parachute",
+   "note": "lnxded. Calls the struck object's vtable +0x58 (handleCollision) at 0x08256ff7 with (other, this+0x48, this+0x5c, relPos, m1, m2); this+0x48 is getPositionalSpeed() and this+0x5c the terrain normal, both stored by checkVsTerrain 0x08257720. Ledger PARA-10."
   },
   {
    "address": "0x08257030",
@@ -9079,12 +9097,12 @@
   },
   {
    "address": "0x0827d3b0",
-   "name": "dice::ref2::world::BFSoldier::handleCollision",
+   "name": "dice::ref2::world::BFSoldier::handleCollision(IObject*,Vec3 const&,Vec3 const&,Vec3 const&,float,float)",
    "kind": "function",
-   "subsystem": "physics",
+   "subsystem": "damage",
    "confidence": "verified",
-   "source": "research-2026-09-19-movement; PHY-2b refuted review-2026-09-20-drive",
-   "note": "lnxded. Stores the 2nd Vec3& argument (the surface normal) at soldier +0x3d0..+0x3d8 (0x0827d50a) and mirrors it into IResponsePhysics +0x98 (0x0827d52f) - but only when the impulse count +0xa4 is 0, or when the new normal.y exceeds the stored one (0x0827d4d5-0x0827d503), so it keeps the MOST UPWARD normal of the frame. Also ORs the jump-arming bit 0x40 into the state word (0x0827d566). PHY-2b REFUTED ON THIS EVIDENCE, 2026-09-20: the three stores are 0x0827d52f (+0x98), 0x0827d538 (+0x9c) and 0x0827d541 (+0xa0), integer movs of float bits issued from outside the ResponsePhysics family -- invisible both to a scan of family methods and to a scan for fst[p] DWORD PTR [reg+0x98], which is the pair of filters the 'the field is only ever zero' claim rested on. addFriction reads +0x9c at 0x0825b80c and clears +0x98 at 0x0825bd70, after the collision phase, so the soldier branch sees a live normal. Ledger PHY-2b."
+   "source": "research-2026-09-21-parachute",
+   "note": "lnxded. Overrides SimpleObject's (vtable +0x58 on both concrete tables) and forwards to 0x081dab40 -- but while BFSoldier+0x3e6 & 0x10 (parachuting) it substitutes a locally built ZERO Vec3 for the speed argument (test 0x0827d470, zeroes 0x0827d483-0x0827d491, lea edx 0x0827d494, push 0x0827d4a2). The not-parachuting tail 0x0827dc60 pushes the caller's real vector in that slot and rejoins the shared call; the tails differ in nothing else. This is why a parachute landing is free at any speed. Free fall (bit 0x2000) is NOT covered. Ledger PARA-10."
   },
   {
    "address": "0x0827d566",
@@ -9112,6 +9130,24 @@
    "confidence": "verified",
    "source": "research-2026-09-17-collision-damage",
    "note": "lnxded. Scales the soldier fall-height term inside handleCollisionLandOrWater. Despite the name it feeds playCollisionEffect's intensity arguments, not any HP loss. See ledger HP-6. [CORRECTED 2026-09-19] It does feed HP loss: k = max(h' x damping, 1) and the soldier's collision damage is multiplied by k^2 before giveDamage. collision-response.md section 9.3."
+  },
+  {
+   "address": "0x0827f7a0",
+   "name": "dice::ref2::world::BFSoldier::getCameras()",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-21-camera",
+   "note": "lnxded. Returns the one-element list at BFSoldier+0x3f0 (a std::list<ICameraObject*> sentinel; see PARA-3). Ledger CAM-1."
+  },
+  {
+   "address": "0x0827f7c0",
+   "name": "dice::ref2::world::BFSoldier::nextCamera()",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-21-camera",
+   "note": "lnxded. An EMPTY function: push ebp; mov ebp,esp; pop ebp; ret. A soldier on foot has no view cycling in the engine. PlayerControlObject::nextCamera 0x083186b0 is the one that walks and wraps a camera list. Ledger CAM-1."
   },
   {
    "address": "0x08280590",
