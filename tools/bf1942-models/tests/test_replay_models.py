@@ -43,6 +43,7 @@ MODULES = {
     "gait-select.js": VIEWER / "gait-select.js",
     "soldier.js": VIEWER / "soldier.js",
     "physics.js": VIEWER / "physics.js",
+    "parachute.js": VIEWER / "parachute.js",
     "vendor/utils/SkeletonUtils.js": VIEWER / "vendor" / "utils" / "SkeletonUtils.js",
     "vendor/loaders/GLTFLoader.js": VIEWER / "vendor" / "loaders" / "GLTFLoader.js",
     "vendor/utils/BufferGeometryUtils.js": VIEWER / "vendor" / "utils" / "BufferGeometryUtils.js",
