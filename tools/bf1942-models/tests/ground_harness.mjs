@@ -1649,4 +1649,169 @@ results.fleetCeilings = Object.fromEntries(
   };
 }
 
+// --- driving onto a drivable deck -------------------------------------------
+//
+// The deck is analytic here, exactly as the ground under every other scenario
+// in this harness is, but it is analytic in the SHAPE the real query has: a
+// height that only exists at or below the reference the caller passes. That
+// reference is the thing under test — `ground.js` must ask from the axle plus
+// the step it can mount, so a deck in reach is the floor and a deck overhead
+// (driving under a bridge) is not.
+//
+// Layout, driving down -Z from the origin: flat ground to z = -6, a 4 m ramp
+// rising to 1 m, then a 14 m pad at 1 m. The reload/repair bay of the bug
+// report, with its "little incline".
+const PAD_Y = 1.0;
+const rampTop = z => {
+  const d = -z;
+  if (d < 6) return -Infinity;
+  if (d < 10) return ((d - 6) / 4) * PAD_Y;
+  if (d <= 24) return PAD_Y;
+  return -Infinity;
+};
+/** The analytic stand-in for `WorldCollider.surfaceHeight(x, z, fromY)`. */
+const deckGround = topOf => (x, z, fromY) => {
+  const deck = topOf(z);
+  if (Number.isFinite(fromY) && deck > 0 && fromY >= deck) return deck;
+  return 0;
+};
+/** ... and for `deckNormal`: the surface's own normal, not a difference. */
+const deckGroundNormal = topOf => (x, z, fromY, out) => {
+  const deck = topOf(z);
+  if (!(Number.isFinite(fromY) && deck > 0 && fromY >= deck)) return false;
+  // One-sided slope of the analytic deck, which on the ramp is 1/4 and on the
+  // pad is nothing.
+  const e = 0.05;
+  const a = topOf(z - e), b = topOf(z + e);
+  const slope = Number.isFinite(a) && Number.isFinite(b) ? (b - a) / (2 * e) : 0;
+  const len = Math.hypot(0, 1, -slope);
+  out[0] = 0; out[1] = 1 / len; out[2] = -slope / len;
+  return true;
+};
+
+for (const [name, build, radius] of [
+  ['jeep', () => new GroundVehicle(willyNode(), null, {
+    cockpit: false, groundHeight: deckGround(rampTop),
+    deckNormal: deckGroundNormal(rampTop),
+  }), 0.35],
+  ['tiger', () => new TrackedVehicle(shermanNode(), null, {
+    cockpit: false, groundHeight: deckGround(rampTop),
+    deckNormal: deckGroundNormal(rampTop),
+  }), 0.5],
+]) {
+  const truck = build();
+  truck.state.position.set(0, name === 'jeep' ? 0.6 : 1.2, 0);
+  drive(truck, 2);                       // let the springs settle on the flat
+  const restY = truck.state.position.y;
+  const trace = [];
+  drive(truck, 14, t => {
+    t.setInput('c_PIThrottle', 1);
+    const s = t.state;
+    trace.push({
+      z: round(s.position.z, 3), y: round(s.position.y, 3),
+      deck: round(Math.max(0, rampTop(s.position.z) === -Infinity ? 0 : rampTop(s.position.z)), 3),
+      pitch: round(pitchDeg(t), 2), grounded: s.grounded,
+    });
+  });
+  // Everything from the moment the hull is over the ramp to the end of the run.
+  const onDeck = trace.filter(p => p.z <= -6 && p.z >= -24);
+  const onPad = trace.filter(p => p.z <= -11 && p.z >= -23);
+  const onRamp = trace.filter(p => p.z <= -6.5 && p.z >= -9.5);
+  let biggestJump = 0;
+  for (let i = 1; i < onDeck.length; i++) {
+    biggestJump = Math.max(biggestJump, Math.abs(onDeck[i].y - onDeck[i - 1].y));
+  }
+  results[`${name}OntoPad`] = {
+    restY: round(restY, 3),
+    reachedPad: onPad.length > 0,
+    // Ride height above the surface, on the flat and on the pad: the same
+    // number, so the pad carries the vehicle exactly as the ground does.
+    padRide: onPad.length ? round(onPad[onPad.length - 1].y - PAD_Y, 3) : null,
+    flatRide: round(restY, 3),
+    // Never below the pad's top surface.
+    lowestOnPad: onPad.length ? round(Math.min(...onPad.map(p => p.y)), 3) : null,
+    // Never airborne on the deck, and no tick-to-tick jump the 1/4 ramp at this
+    // speed cannot explain (the old `CLIMB_STEP` nudge moved 0.2 m a tick on its
+    // own, and the raster's cell steps threw the hull clear of the surface).
+    airborneOnDeck: onDeck.filter(p => !p.grounded).length,
+    // Where those ticks are: a jeep at 25 m/s over the convex break where the
+    // ramp meets the pad leaves the ground for a moment, which is what a jeep
+    // does over a crest. What must NOT happen is airborne ticks along the flat
+    // run of the pad itself.
+    airborneOnPad: onPad.filter(p => !p.grounded).length,
+    airborneZs: onDeck.filter(p => !p.grounded).map(p => p.z),
+    biggestJump: round(biggestJump, 3),
+    // Nose up the incline, level again on the pad.
+    peakRampPitch: onRamp.length ? round(Math.max(...onRamp.map(p => p.pitch)), 2) : null,
+    padPitch: onPad.length ? round(onPad[onPad.length - 1].pitch, 2) : null,
+    finalZ: round(trace[trace.length - 1].z, 2),
+  };
+}
+
+// Under a bridge: the span is 8 m up, the vehicle is on the ground below it, and
+// it must stay there. This is the regression the shared height overlay caused —
+// anything at (x, z) was lifted onto whatever deck was over it, vehicles and
+// soldiers alike — and the reference height is what fixes it.
+{
+  const spanTop = z => (-z >= 10 && -z <= 30 ? 8 : -Infinity);
+  const truck = new GroundVehicle(willyNode(), null, {
+    cockpit: false, groundHeight: deckGround(spanTop),
+    deckNormal: deckGroundNormal(spanTop),
+  });
+  truck.state.position.set(0, 0.6, 0);
+  drive(truck, 2);
+  const trace = [];
+  drive(truck, 10, t => {
+    t.setInput('c_PIThrottle', 1);
+    trace.push({ z: round(t.state.position.z, 2), y: round(t.state.position.y, 3) });
+  });
+  const beneath = trace.filter(p => p.z <= -11 && p.z >= -29);
+  results.underTheSpan = {
+    passedBeneath: beneath.length > 0,
+    highestBeneath: beneath.length ? round(Math.max(...beneath.map(p => p.y)), 3) : null,
+  };
+}
+
+// What the hull sweep asks the collider for. The deck gate is two numbers and
+// they have to track the surface the vehicle is riding: a lip within a step of
+// it is a kerb, anything above is a wall. A mock that answers "nothing hit"
+// records them.
+{
+  const seen = [];
+  const gateCollider = {
+    waterLevel: -Infinity,
+    statics: { ownerOf: () => -1 },
+    sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, skipBodies,
+                deckStepTop, deckFloorCos) {
+      seen.push({ z: round(oz, 2), stepTop: round(deckStepTop, 3),
+                  floorCos: deckFloorCos });
+      return null;
+    },
+  };
+  const truck = new GroundVehicle(willyNode(), null, {
+    cockpit: false, groundHeight: deckGround(rampTop),
+    deckNormal: deckGroundNormal(rampTop), collider: gateCollider,
+  });
+  truck.state.position.set(0, 0.6, 0);
+  drive(truck, 2);
+  const onFlat = seen[seen.length - 1];
+  seen.length = 0;
+  drive(truck, 12, holding({ c_PIThrottle: 1 }));
+  // The sweep the hull made while it was squarely on the pad, not the last one
+  // of the run (by then the jeep is far past the pad on flat ground again).
+  const onPad = seen.filter(p => p.z <= -12 && p.z >= -22).pop();
+  results.deckGate = {
+    asked: seen.length > 0,
+    // On the flat: the ground (0) plus the step.
+    flatStepTop: onFlat && onFlat.stepTop,
+    flatFloorCos: onFlat && onFlat.floorCos,
+    // On the pad: the pad (1) plus the same step, so the gate rose with the
+    // surface — which is what makes a lip a kerb and a parapet a wall.
+    padStepTop: onPad && onPad.stepTop,
+    padFloorCos: onPad && onPad.floorCos,
+    finalZ: round(truck.state.position.z, 2),
+  };
+}
+
+
 process.stdout.write(JSON.stringify(results, null, 2));

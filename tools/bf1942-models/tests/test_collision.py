@@ -219,20 +219,95 @@ class CollisionModuleTests(unittest.TestCase):
         self.assertAlmostEqual(4.0, surface["overLand"], places=5)
         self.assertAlmostEqual(2.0, surface["overSea"], places=5)   # the sea
 
-    def test_drivable_decks_raise_the_surface_a_vehicle_rides(self) -> None:
-        drivable = self.results["drivable"]
-        self.assertTrue(drivable["built"])
-        # The bridge deck (a level ~6 road) lifts surfaceHeight far above the
-        # ~2 water/terrain under it, so the tank rides the deck across.
-        self.assertAlmostEqual(6.0, drivable["deckTop"], places=1)
-        # Off the deck (x = 40, outside the 16 m heightfield) the sea rules (2), and the
-        # drivable raster adds nothing where it has no deck.
-        self.assertLess(drivable["offDeck"], 6.0)
-        # The thin parapet cap (11) must not win over the deck's dominant
-        # horizontal face in the cells they share.
-        self.assertLess(drivable["notParapet"], 8.0)
-        # A building roof is never a drivable top.
-        self.assertIsNotNone(self.results["nonDrivableRoof"])
+    def test_a_drivable_deck_is_the_exact_surface_a_vehicle_rides(self) -> None:
+        decks = self.results["decks"]
+        self.assertTrue(decks["built"])
+        # Every triangle of the repair bay and the bridge is marked drivable;
+        # none of the building's is. 5 quads + 16 quads = 42 triangles.
+        self.assertEqual(42, decks["drivableTris"])
+        self.assertEqual(0, decks["hutTrisDrivable"])
+
+        # The bay's approach ramp rises 1 m over 4 m. Sampled every half metre
+        # the query must be the ramp itself — a straight 1/4 gradient, no steps —
+        # and then flat on the pad. The height raster this replaced wrote each
+        # triangle's MEAN height flat across its whole box, so the ramp came out
+        # as one plateau at the wrong height, which is how a vehicle ended up
+        # submerged in the pad instead of driving up onto it.
+        ramp = decks["rampProfile"]
+        self.assertEqual(11, len(ramp))
+        for i, x in enumerate([6 + 0.5 * i for i in range(11)]):
+            self.assertAlmostEqual(min(1.0, (x - 6) / 4), ramp[i], places=4)
+        self.assertAlmostEqual(1.0, decks["padTop"], places=4)
+
+        # The arch: 4 -> 7 -> 4 over 20 m, continuous, every step along it
+        # explained by the span's own 1/5 slope and nothing else.
+        arch = decks["archProfile"]
+        self.assertEqual(21, len(arch))
+        self.assertAlmostEqual(4.0, arch[0], places=4)
+        self.assertAlmostEqual(7.0, max(arch), places=4)
+        self.assertAlmostEqual(7.0, decks["archCrown"], places=4)
+        self.assertAlmostEqual(6.0, decks["archFlank"], places=4)
+        for a, b in zip(arch, arch[1:]):
+            self.assertLessEqual(abs(b - a), 0.4 + 1e-6)
+        # Never the span's own underside (6 at the crown) and never the parapet
+        # cap (9): the ray answers with the nearest surface below the asker, so
+        # the road always wins from above it.
+        self.assertTrue(decks["archNotUnderside"])
+        self.assertAlmostEqual(7.0, decks["archNotParapetCap"], places=4)
+
+        # Height awareness. From under the bridge the deck is not offered at all
+        # and the surface is the ground; from below the bay's lip the pad is out
+        # of reach, from a step above it the pad is the floor.
+        self.assertAlmostEqual(0.0, decks["fromUnderBridge"], places=4)
+        self.assertFalse(decks["deckFromUnderBridge"])
+        self.assertFalse(decks["padFromBelowLip"])
+        self.assertTrue(decks["padFromAboveLip"])
+
+        # A roof is never a ride surface, and open ground never casts a ray.
+        self.assertFalse(decks["deckOverHutRoof"])
+        self.assertAlmostEqual(0.0, decks["overHutRoof"], places=4)
+        self.assertAlmostEqual(0.0, decks["openGround"], places=4)
+
+        # The opt-in: with no reference height the answer is terrain and sea
+        # only, which is what keeps the soldier, the aircraft floor, the boats
+        # and the cameras exactly where they were before decks existed.
+        self.assertAlmostEqual(0.0, decks["padWithoutReference"], places=4)
+        self.assertAlmostEqual(0.0, decks["bridgeWithoutReference"], places=4)
+
+    def test_a_deck_contact_normal_comes_off_the_hit_triangle(self) -> None:
+        normals = self.results["deckNormals"]
+        # Level on the pad.
+        self.assertEqual([0.0, 1.0, 0.0], normals["onPad"])
+        # Up the 1/4 ramp: leaning back along -x, and a unit vector.
+        nx, ny, nz = normals["onRamp"]
+        self.assertLess(nx, -0.2)
+        self.assertGreater(ny, 0.9)
+        self.assertAlmostEqual(0.0, nz, places=3)
+        self.assertAlmostEqual(-0.25, nx / ny, places=2)
+        # Along the arch's 1/5 flank: tilted in z, not in x.
+        nx, ny, nz = normals["onArchFlank"]
+        self.assertAlmostEqual(0.0, nx, places=3)
+        self.assertAlmostEqual(0.2, nz / ny, places=2)
+        # No deck, no deck normal — the caller keeps the heightfield gradient.
+        self.assertFalse(normals["onOpenGround"])
+        self.assertFalse(normals["underBridge"])
+
+    def test_the_hull_sweep_treats_a_deck_as_a_floor_and_a_parapet_as_a_wall(self) -> None:
+        sweep = self.results["deckSweep"]
+        # Ungated — every other caller in the viewer — the level is unchanged:
+        # the ramp and the road under the hull are both contacts, which for a
+        # vehicle hull sphere means a dead stop on arrival and again every tick
+        # it spends on the deck.
+        self.assertTrue(sweep["rampUngated"])
+        self.assertTrue(sweep["onPadUngated"])
+        # Gated with the vehicle's own support and slope limits, both become
+        # floor: the wheels carry the hull over them.
+        self.assertTrue(sweep["rampGated"])
+        self.assertTrue(sweep["onPadGated"])
+        # A parapet on the same bridge is vertical and rises past the step, so it
+        # still stops the hull, and so does a building wall at any gate.
+        self.assertTrue(sweep["parapetGated"])
+        self.assertTrue(sweep["hutWallGated"])
 
     def test_the_impact_effect_comes_out_of_the_authored_table(self) -> None:
         effects = self.results["effects"]

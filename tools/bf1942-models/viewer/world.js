@@ -895,7 +895,12 @@ export class World {
         owners.add(owner);
         continue;
       }
-      const surface = collider.surfaceHeight(pos[0], pos[2]);
+      // The body's own height is the reference the deck query needs (see
+      // `WorldCollider.surfaceHeight`): a tank on a bridge over a river is
+      // standing on the span, not in the water, and a tank in the river UNDER
+      // the same span is in the water — which the raster this replaced could not
+      // tell apart, because it lifted the surface at an (x, z) for everyone.
+      const surface = collider.surfaceHeight(pos[0], pos[2], pos[1]);
       if (Math.abs(surface - waterLevel) < 0.01) owners.add(owner);
     }
     return owners;
