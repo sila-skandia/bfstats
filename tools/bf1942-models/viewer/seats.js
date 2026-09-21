@@ -918,6 +918,22 @@ export class TurretRig {
 export class FireState {
   constructor(stats) {
     this.stats = stats;
+    this.reset();
+  }
+
+  /**
+   * Back to the state a gun is in the first time anybody touches it: full
+   * magazine, all its spares, cold barrel, no reload running.
+   *
+   * Used when a vehicle respawns. The states live in a `WeakMap` keyed on the
+   * FireArms node, and a respawn reuses that node, so without this a hull
+   * destroyed with a hot, half-empty, mid-reload gun is rebuilt around it --
+   * the engine replaces the *object* at the ObjectSpawner, which is exactly
+   * the moment its ammunition is new. Stepping out and back in does NOT go
+   * through here: that is the same object, and it keeps what it has spent.
+   */
+  reset() {
+    const stats = this.stats;
     this.unlimited = stats.magSize == null || stats.magSize < 0;
     this.ammo = this.unlimited ? Infinity : stats.magSize;
     // `numOfMag` counts the loaded magazine, not the spares beside it — the
