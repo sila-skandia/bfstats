@@ -4,9 +4,10 @@
 // viewer module in under its own name, so the file under test is the file the
 // page loads, byte for byte. The module imports nothing.
 
-import { CROP_BASE, ZOOM_EASE_RATE, ZOOM_LEVELS, DEFAULT_SPAN,
+import { CROP_BASE, ZOOM_EASE_RATE, ZOOM_LEVELS, ZOOM_SNAP, mapCentre,
           stepZoomLevel, zoomTarget, easeZoom, crop, minimapSpan,
-          wrapAngle, displayRotation, BfMap } from './bfmap.js';
+          wrapAngle, displayRotation, minimapWindow, rotateAbout, coverRect,
+          BfMap } from './bfmap.js';
 
 const results = {};
 
@@ -14,7 +15,7 @@ results.constants = {
   cropBase: CROP_BASE,
   zoomEaseRate: ZOOM_EASE_RATE,
   zoomLevels: ZOOM_LEVELS,
-  defaultSpan: DEFAULT_SPAN,
+  zoomSnap: ZOOM_SNAP,
 };
 
 // --- the zoom counter ------------------------------------------------------
@@ -71,16 +72,22 @@ results.crop = {
 // --- the span (closed widget) ---------------------------------------------
 
 results.span = {
-  // Level 0 is the anchor: DEFAULT_SPAN.
+  // The widget's width covers 1 / crop of the whole map texture.
   l0: minimapSpan(0.5),
-  // Each level divides by the base.
   l1: minimapSpan(1.5),
   l2: minimapSpan(2.5),
   ratio01: minimapSpan(0.5) / minimapSpan(1.5),
   ratio12: minimapSpan(1.5) / minimapSpan(2.5),
-  // A custom base anchors level 0 to that base and keeps the 2.3 steps.
-  customBaseL0: minimapSpan(0.5, 1),
-  customBaseL1: minimapSpan(1.5, 1),
+  // Open (z = 1) it is the whole map whatever the level.
+  openL0: minimapSpan(0.5, 1),
+  openL2: minimapSpan(2.5, 1),
+};
+
+results.centre = {
+  // Closed: the player. Open: the middle of the map. Between: the blend.
+  closed: mapCentre(0, { u: 0.2, v: 0.9 }),
+  open: mapCentre(1, { u: 0.2, v: 0.9 }),
+  half: mapCentre(0.5, { u: 0.2, v: 0.9 }),
 };
 
 // --- the rotation ----------------------------------------------------------
@@ -113,6 +120,38 @@ results.rotation = {
   neg: displayRotation(0, -0.5, false),
 };
 
+// --- the window, the marker turn and the art cover --------------------------
+
+results.window = {
+  // Centred on the player, in the open and at the art's edge alike.
+  mid: minimapWindow({ u: 0.5, v: 0.5 }, 0.25),
+  corner: minimapWindow({ u: 0.02, v: 0.99 }, 0.25),
+};
+
+results.turn = {
+  // No rotation is the identity.
+  none: rotateAbout(10, 20, 50, 0),
+  // The centre never moves.
+  centre: rotateAbout(50, 50, 50, 1.234),
+  // A point straight above the centre, turned a quarter clockwise (canvas
+  // angles: y down, positive clockwise), lands to the right of it.
+  quarter: rotateAbout(50, 10, 50, Math.PI / 2),
+  // A player heading east (h = PI/2) has the map turned by -h: what lay to
+  // his east (right of centre) now reads straight up.
+  eastReadsUp: rotateAbout(90, 50, 50, displayRotation(0, Math.PI / 2, false)),
+};
+
+results.cover = {
+  // Unturned: the window itself, pixel for pixel.
+  flat: coverRect(0.25, 0.25, 0.5, 100, 0),
+  // An eighth turn needs sqrt(2) of the window about its centre.
+  eighth: coverRect(0.25, 0.25, 0.5, 100, Math.PI / 4),
+  // Cut to the art at the edge; the destination shrinks with it.
+  edge: coverRect(-0.1, 0.0, 0.2, 100, 0),
+  // Wholly off the art: nothing to draw.
+  off: coverRect(1.5, 1.5, 0.2, 100, 0),
+};
+
 // --- the state machine -----------------------------------------------------
 
 const m = new BfMap();
@@ -136,6 +175,8 @@ results.state = {
     return out;
   })(),
   // The static flag gates the rotation.
+  // Within ZOOM_SNAP of the target the ease stores the target outright.
+  snaps: (() => { const d = new BfMap(); d.zoomEased = 0.5 + 0.009; d.update(1e-6); return d.zoomEased; })(),
   rotationStatic: new BfMap().rotation(0, 1.0),
   rotationDynamic: (() => { const d = new BfMap({ isStatic: false }); return d.rotation(0, 1.0); })(),
   // setStatic flips it.
