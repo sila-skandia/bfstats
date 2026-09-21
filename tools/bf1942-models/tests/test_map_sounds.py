@@ -11,6 +11,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import extract_map  # noqa: E402
+from bf42.level import SpawnTemplate  # noqa: E402
 
 
 def pcm_wav(seconds: float = 0.05, rate: int = 44100) -> bytes:
@@ -137,6 +138,225 @@ class SharedSoundWriteTests(unittest.TestCase):
             with self.assertRaises(extract_map.TranscodeError):
                 self._write("mp3")
         self.assertFalse((self.shared / "wind.wav").exists())
+
+
+def spawn_template(name: str, vehicles: dict[int, str],
+                   owner_team: int | None = None) -> SpawnTemplate:
+    return SpawnTemplate(name=name, vehicles=dict(vehicles),
+                         owner_team=owner_team)
+
+
+def gameplay(spawners: dict[str, SpawnTemplate],
+             placed: list[tuple[str, int | None]]):
+    """A mode layer: its spawner templates, and the pads it puts them on."""
+    layer = mock.Mock()
+    layer.object_spawn_templates = {k.lower(): v for k, v in spawners.items()}
+    layer.object_spawns = [mock.Mock(template=name, team=team)
+                           for name, team in placed]
+    return layer
+
+
+class SpawnedVehicleListTests(unittest.TestCase):
+    """The list `sounds.vehicles` is built from.
+
+    Both bugs here made the *viewer* silent rather than the extractor loud: a
+    vehicle the scene contains with no entry in the report gets no engine
+    patch, and because the guns hang off the same entry, no gun patch either —
+    `setupEngineAudio` logs "no engine sound for X" and returns.
+    """
+
+    def level(self, modes: dict, default: str = "Conquest"):
+        info = mock.Mock()
+        info.modes = modes
+        info.spawn_templates = modes[default].object_spawn_templates
+        info.spawn_objects = modes[default].object_spawns
+        return info
+
+    def test_a_vehicle_only_a_non_default_mode_places_is_listed(self) -> None:
+        # Berlin's Tiger and four of Wake's vehicles were missing exactly this
+        # way: the scene is the union over modes (`union_object_spawns`) while
+        # the sound list walked the default mode alone.
+        info = self.level({
+            "Conquest": gameplay(
+                {"HeavyTankSpawner": spawn_template("HeavyTankSpawner",
+                                                    {1: "T34", 2: "T34"})},
+                [("HeavyTankSpawner", 1)]),
+            "Tdm": gameplay(
+                {"HeavyTankSpawner": spawn_template("HeavyTankSpawner",
+                                                    {1: "Tiger", 2: "Tiger"})},
+                [("HeavyTankSpawner", 1)]),
+        })
+        self.assertEqual(extract_map.spawned_vehicle_templates(info),
+                         ["T34", "Tiger"])
+
+    def test_both_teams_of_a_spawner_are_listed(self) -> None:
+        # `spawn_vehicle` answers "which one stands here now" and prefers team
+        # 2, so Bocage's PanzerIV and Stalingrad's Hanomag — the Axis half of a
+        # spawner whose Allied half shipped — never reached the report.
+        info = self.level({"Conquest": gameplay(
+            {"MediumTankSpawner": spawn_template("MediumTankSpawner",
+                                                 {1: "PanzerIV", 2: "Sherman"})},
+            [("MediumTankSpawner", None)])})
+        self.assertEqual(extract_map.spawned_vehicle_templates(info),
+                         ["Sherman", "PanzerIV"])
+
+    def test_an_owner_team_spawner_contributes_only_its_own_team(self) -> None:
+        # The engine locks the pad to `ownerTeam`, so the other half can never
+        # spawn there and listing it would ship a sound nothing can play.
+        info = self.level({"Conquest": gameplay(
+            {"AlliedOnly": spawn_template("AlliedOnly",
+                                          {1: "PanzerIV", 2: "Sherman"},
+                                          owner_team=2)},
+            [("AlliedOnly", None)])})
+        self.assertEqual(extract_map.spawned_vehicle_templates(info), ["Sherman"])
+
+    def test_the_default_mode_order_is_preserved_and_additions_append(self) -> None:
+        # So a re-extraction (or the `--sounds-only` patch) grows an existing
+        # scene.json rather than reshuffling it, which is what keeps the diff
+        # readable and the review honest.
+        info = self.level({
+            "Conquest": gameplay(
+                {"A": spawn_template("A", {2: "Willy"}),
+                 "B": spawn_template("B", {2: "Kubelwagen"})},
+                [("A", None), ("B", None)]),
+            "Tdm": gameplay(
+                {"A": spawn_template("A", {2: "Willy"}),
+                 "C": spawn_template("C", {2: "Priest"})},
+                [("C", None), ("A", None)]),
+        })
+        self.assertEqual(extract_map.spawned_vehicle_templates(info),
+                         ["Willy", "Kubelwagen", "Priest"])
+
+    def test_dedupe_is_case_insensitive(self) -> None:
+        # `ObjectSpawnTemplates.con` is: one mode writes `panzeriv`, another
+        # `PanzerIV`, and two entries for one vehicle is two sets of layers
+        # decoded twice in the viewer.
+        info = self.level({
+            "Conquest": gameplay(
+                {"A": spawn_template("A", {2: "panzeriv"})}, [("A", None)]),
+            "Tdm": gameplay(
+                {"A": spawn_template("A", {2: "PanzerIV"})}, [("A", None)]),
+        })
+        self.assertEqual(extract_map.spawned_vehicle_templates(info), ["panzeriv"])
+
+    def test_an_unknown_spawner_template_is_skipped(self) -> None:
+        info = self.level({"Conquest": gameplay(
+            {"A": spawn_template("A", {2: "Willy"})},
+            [("A", None), ("NotDeclared", None)])})
+        self.assertEqual(extract_map.spawned_vehicle_templates(info), ["Willy"])
+
+
+class LevelLocalSampleTests(unittest.TestCase):
+    """A vehicle sample the level ships for itself must still resolve.
+
+    `_sound_layers` drops a layer whose sample resolves to nothing, silently.
+    It used to pass `None` where `resolve_sound` takes the level archive, so it
+    only ever searched the mod's shared `Sound*.rfa` — and Liberation of Caen
+    keeps `pak40fireST.wav`/`pak40fire.wav` inside its own archive, so the
+    anti-tank gun shipped with no muzzle blast at all and nothing audible until
+    its 0.85 s reverb tail (measured: the whole patch rendered at RMS 0.0000,
+    against 0.1954 once the two layers come back).
+    """
+
+    def sample(self, file: str):
+        return mock.Mock(
+            file=file, loop=False, volume=1.0, min_distance=1.0, priority=10,
+            trigger=None, stop=None, stereo=False, doppler_off=True,
+            random_start_pitch=None, relative_position=None, effects=[])
+
+    def test_the_level_archive_is_searched_for_a_vehicle_sample(self) -> None:
+        level_files = mock.sentinel.level_archive
+        seen = []
+
+        def resolve(ref, files, sounds, rates=None):
+            seen.append(files)
+            return ("pak40fire.wav", b"data") if files is level_files else None
+
+        with mock.patch.object(extract_map, "resolve_sound", resolve):
+            layers = extract_map._sound_layers(
+                [self.sample("@ROOT/Sound/@RTD/pak40fire.wav")],
+                mock.Mock(), lambda r: "../_shared/sounds/pak40fire.mp3",
+                level_files)
+
+        self.assertEqual(seen, [level_files])
+        self.assertEqual([l["file"] for l in layers],
+                         ["../_shared/sounds/pak40fire.mp3"])
+
+    def test_without_it_the_layer_is_still_dropped_rather_than_faked(self) -> None:
+        # The old behaviour is the fallback, not an error: a sample that is
+        # genuinely absent has to leave the layer out, or the viewer decodes a
+        # 404 into a null buffer.
+        with mock.patch.object(extract_map, "resolve_sound",
+                               return_value=None):
+            layers = extract_map._sound_layers(
+                [self.sample("gone.wav")], mock.Mock(), lambda r: "x", None)
+        self.assertEqual(layers, [])
+
+
+class Node:
+    """The shape `find_engine_script` reads off an `ObjectLibrary` entry."""
+
+    def __init__(self, name, kind, source=None, children=()):
+        self.name = name
+        self.kind = kind
+        self.source = source
+        self.children = [mock.Mock(template=c.name) for c in children]
+
+
+class EngineScriptWalkTests(unittest.TestCase):
+    """Which `Engine` child a vehicle's sound script is taken from.
+
+    EoD's Loach declares five and binds `Sounds/HueyEngine.ssc` to the last one
+    BFS reaches, so stopping at the first Engine reported the helicopter — and
+    the Mi4T, Mi8T, Hawk and SA2 — as having no engine sound at all.
+    """
+
+    def library(self, *nodes):
+        lib = mock.Mock()
+        lib.objects = {n.name.lower(): n for n in nodes}
+        return lib
+
+    def pool(self, cons: dict[str, str]):
+        pool = mock.Mock()
+        pool.find = lambda path: path if path in cons else None
+        pool.read = lambda path: cons[path].encode("latin-1")
+        return pool
+
+    def test_the_walk_passes_an_engine_that_binds_nothing(self) -> None:
+        quiet = Node("TailEngine", "Engine", source="v/Physics.con")
+        loud = Node("MainEngine", "Engine", source="v/Physics.con")
+        root = Node("Loach", "PlayerControlObject", children=(quiet, loud))
+        found = extract_map.find_engine_script(
+            self.library(root, quiet, loud),
+            self.pool({"v/Physics.con":
+                       "ObjectTemplate.create Engine MainEngine\n"
+                       "ObjectTemplate.loadSoundScript Sounds/HueyEngine.ssc\n"}),
+            "Loach")
+        self.assertEqual(found, ("v/Sounds/HueyEngine.ssc", "MainEngine"))
+
+    def test_the_first_engine_with_a_script_still_wins(self) -> None:
+        # Every vanilla vehicle binds the script to the Engine BFS reaches
+        # first; the widened walk must not start preferring a later one.
+        first = Node("ShermanEngine", "Engine", source="v/Physics.con")
+        second = Node("ShermanEngine2", "Engine", source="v/Physics.con")
+        root = Node("Sherman", "PlayerControlObject", children=(first, second))
+        found = extract_map.find_engine_script(
+            self.library(root, first, second),
+            self.pool({"v/Physics.con":
+                       "ObjectTemplate.create Engine ShermanEngine\n"
+                       "ObjectTemplate.loadSoundScript Sounds/A.ssc\n"
+                       "ObjectTemplate.create Engine ShermanEngine2\n"
+                       "ObjectTemplate.loadSoundScript Sounds/B.ssc\n"}),
+            "Sherman")
+        self.assertEqual(found, ("v/Sounds/A.ssc", "ShermanEngine"))
+
+    def test_no_engine_binds_a_script_is_still_none(self) -> None:
+        engine = Node("SA2Engine", "Engine", source="v/Physics.con")
+        root = Node("SA2", "PlayerControlObject", children=(engine,))
+        self.assertIsNone(extract_map.find_engine_script(
+            self.library(root, engine),
+            self.pool({"v/Physics.con": "ObjectTemplate.create Engine SA2Engine\n"}),
+            "SA2"))
 
 
 class TranscodeTests(unittest.TestCase):

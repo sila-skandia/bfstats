@@ -409,4 +409,137 @@ function gunPatch(layers, { oneShotsOnTrigger = true } = {}) {
   audio.dispose();
 }
 
+// --- a near/far pair hands over on the real distance, `stereo` included ------
+//
+// `mg42.ssc`'s Fire Loop is two loads of one 114 ms `MG42_fire.wav`: a `stereo`
+// near layer at `Volume <- Distance ramp 1/1/1/-1` (1 below a metre, 0 above)
+// and a spatialised far layer at the exact complement, `1/1/0/1`. Exactly one
+// of them is ever meant to sound.
+//
+// `stereo` used to short-circuit the group bookkeeping and hand the voice a
+// throwaway group frozen at `distance: 0`, so the near layer read "below a
+// metre" wherever the listener actually was. At the gunner's real 1.4 m both
+// halves then ran at full gain -- two coherent copies of one short buffer,
+// +6 dB and flanging, which is the drone the "tank machine gun sounds like a
+// car horn" report was about. Aircraft escaped it because their far pair is
+// gated at 4 m and never came in at cockpit range.
+
+function pairLayer(stereo, params) {
+  return {
+    file: 'mg42.wav', loop: true, volume: 1, stereo, doppler: false,
+    randomStartPitch: [0, 0], relativePosition: [0, 0, -1],
+    modulators: [
+      { dest: 'volume', source: 'distance', envelope: 'ramp', params },
+    ],
+  };
+}
+
+function pairAt(distance) {
+  const layers = [pairLayer(true, [1, 1, 1, -1]), pairLayer(false, [1, 1, 0, 1])];
+  const ctx = stubCtx();
+  const buffers = new Map([['mg42.wav', fakeBuffer()]]);
+  const audio = new EngineAudio(
+    { template: 'PanzerIV', engine: 'Coaxial_MG42', layers }, layers, buffers,
+    fakeListener(ctx), 0.75, true);
+  audio.start();
+  audio.setMaster(0.7);
+  // Two frames: the first primes each group's distance, the second reads it.
+  for (let i = 0; i < 2; i++) {
+    audio.update({
+      dt: 1 / 60, rpm: 0, speed: 0, acceleration: 0, diveAngle: 0,
+      // The voice offset is [0,0,-1], so a listener at `-1 + distance` stands
+      // exactly `distance` from the sound.
+      position: { x: 0, y: 0, z: 0 },
+      quaternion: { x: 0, y: 0, z: 0, w: 1 },
+      listenerPosition: { x: 0, y: 0, z: -1 + distance },
+    });
+  }
+  const snap = audio.snapshot();
+  audio.dispose();
+  return { gains: snap.layers.map(l => l.gain),
+           distances: snap.layers.map(l => l.distance) };
+}
+
+{
+  const near = pairAt(0.5);
+  assert.ok(Math.abs(near.distances[0] - 0.5) < 1e-6,
+    `a stereo layer must carry the real distance, got ${near.distances[0]}`);
+  assert.ok(near.gains[0] > 0.9 && near.gains[1] < 1e-6,
+    `inside a metre only the near half sounds, got ${near.gains}`);
+
+  const far = pairAt(1.4);
+  assert.ok(Math.abs(far.distances[0] - 1.4) < 1e-6,
+    `and it must track the listener, got ${far.distances[0]}`);
+  assert.ok(far.gains[0] < 1e-6 && far.gains[1] > 0.9,
+    `past a metre only the far half sounds, got ${far.gains}`);
+}
+
+{
+  // A stereo layer still gets no panner -- `stereo` is about panning, and HRTF
+  // at 1.2 m is wrong when the data says 2D. It shares the bus instead.
+  const layers = [pairLayer(true, [1, 1, 1, -1])];
+  const ctx = stubCtx();
+  const buffers = new Map([['mg42.wav', fakeBuffer()]]);
+  const audio = new EngineAudio(
+    { template: 'PanzerIV', engine: 'Coaxial_MG42', layers }, layers, buffers,
+    fakeListener(ctx), 0.75, true);
+  assert.equal(audio.groups.size, 1, 'a stereo layer gets a group');
+  assert.equal([...audio.groups.values()][0].panner, null,
+    'but no panner: it is played 2D');
+  audio.dispose();
+}
+
+// --- one voice never plays above unity --------------------------------------
+//
+// `Coaxial_Browning/Sounds/High.ssc` says `volume 10`. Across the 23 vanilla
+// levels that is one of three authoring outliers -- 5,458 of 5,484 layers are
+// at or below 1 -- and read literally it put the Sherman's and M10's coaxial
+// Browning 20 dB hot: measured pre-limiter peak 5.02 and RMS 1.51 against
+// 0.596/0.185 for the BAR in the same scene, which drove the master limiter
+// 14 dB into 20:1 and flattened a 7.7 Hz periodic comb into a honk.
+
+function gainOf(layer, headroom = 0.75, oneShots = true) {
+  const layers = [layer];
+  const ctx = stubCtx();
+  const buffers = new Map([[layer.file, fakeBuffer()]]);
+  const audio = new EngineAudio(
+    { template: 'Sherman', engine: 'Coaxial_browning', layers }, layers,
+    buffers, fakeListener(ctx), headroom, oneShots);
+  audio.start();
+  audio.setMaster(1);
+  audio.update({
+    dt: 1 / 60, rpm: 1, speed: 0, acceleration: 0, diveAngle: 0,
+    position: { x: 0, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 },
+    listenerPosition: { x: 0, y: 0, z: 0 },
+  });
+  const gain = audio.snapshot().layers[0].gain;
+  audio.dispose();
+  return gain;
+}
+
+{
+  assert.equal(gainOf({
+    file: 'brownmlp.wav', loop: true, volume: 10, stereo: true, doppler: false,
+    randomStartPitch: null, relativePosition: [0, 0, 0], modulators: [],
+  }), 1, 'an authored volume above unity is clamped, not multiplied');
+
+  // The clamp is on the modulated result, so a ramp that itself overshoots
+  // cannot get round it either.
+  assert.equal(gainOf({
+    file: 'x.wav', loop: true, volume: 0.6, stereo: true, doppler: false,
+    randomStartPitch: null, relativePosition: [0, 0, 0],
+    modulators: [
+      { dest: 'volume', source: 'default', envelope: 'linear', params: [4, 0] },
+    ],
+  }), 1, 'a modulator overshoot is clamped too');
+
+  // And everything the scripts actually author is untouched.
+  const quiet = gainOf({
+    file: 'x.wav', loop: true, volume: 0.6, stereo: true, doppler: false,
+    randomStartPitch: null, relativePosition: [0, 0, 0], modulators: [],
+  });
+  assert.ok(Math.abs(quiet - 0.6) < 1e-9,
+    `a sub-unity volume is left alone, got ${quiet}`);
+}
+
 console.log('test_engine_audio_default.mjs: ok');
