@@ -271,4 +271,73 @@ check('a rifle returnTo StandReload is unaffected', {
   fireReturnsToReload: true, fireReturnsToDeploy: false,
 }, { want: 'reload', startReload: true });
 
-console.log(JSON.stringify({ ok: true, cases: 37 }));
+// --- stance ------------------------------------------------------------
+//
+// The defect: crouch and prone played the standing aim, and a *stationary*
+// crouched soldier did not even report `gait === 'crouch'` (soldier.js
+// `#gaitFor` answers 'stand' for anything not moving), so the stance has to
+// arrive beside the gait. `has` says which families the loaded rig baked.
+const baked = new Set(['idle', 'walk', 'run', 'fire', 'reload', 'deploy',
+  'crouch', 'crouchWalk', 'prone', 'crawl',
+  'proneFire', 'proneReload', 'crouchDeploy', 'proneDeploy']);
+const has = name => baked.has(name);
+
+check('standing still is the standing aim', { gait: 'stand', stance: 'stand', has },
+  { want: 'idle' });
+check('crouched and still is the crouch aim, not the standing one',
+  { gait: 'stand', stance: 'crouch', has }, { want: 'crouch' });
+check('prone and still is the prone aim',
+  { gait: 'stand', stance: 'prone', has }, { want: 'prone' });
+check('crouch-walking is the crouch forward family',
+  { gait: 'crouch', stance: 'crouch', has }, { want: 'crouchWalk' });
+check('crawling is the crawl family',
+  { gait: 'prone', stance: 'prone', has }, { want: 'crawl' });
+// No crouch-run state exists in the data: crouched movement is one family.
+check('there is no crouch run', { gait: 'run', stance: 'crouch', has },
+  { want: 'crouchWalk' });
+
+// A rig published before the stance families were baked must behave exactly
+// as the page did before: every chain falls back to the standing clip.
+const oldRig = name => ['idle', 'walk', 'run', 'fire', 'reload', 'deploy']
+  .includes(name);
+check('an old rig crouched falls back to idle',
+  { gait: 'stand', stance: 'crouch', has: oldRig }, { want: 'idle' });
+check('an old rig crawling falls back to walk',
+  { gait: 'prone', stance: 'prone', has: oldRig }, { want: 'walk' });
+
+// Fire and reload: prone has its own states, crouch does not -- the engine
+// declares no `Ub_CrouchFire<W>` or `Ub_CrouchReload<W>` for any weapon.
+check('a prone reload is the prone reload',
+  { reload: 3, reloadPlayed: false, gait: 'stand', stance: 'prone', has },
+  { want: 'proneReload', startReload: true, markReloadPlayed: true });
+check('a crouched reload is the standing reload, because the data has no other',
+  { reload: 3, reloadPlayed: false, gait: 'stand', stance: 'crouch', has },
+  { want: 'reload', startReload: true });
+check('looping fire prone takes the prone fire clip',
+  { fireLoops: true, firing: true, gait: 'stand', stance: 'prone', has },
+  { want: 'proneFire', startFire: true });
+check('looping fire crouched stays on the standing fire clip',
+  { fireLoops: true, firing: true, gait: 'stand', stance: 'crouch', has },
+  { want: 'fire', startFire: true });
+// A one-shot swing begun standing keeps the arms after he drops prone: the
+// stance changed but the clamped action is still the one holding them.
+check('a swing begun standing survives going prone',
+  { active: 'fire', fireLoops: false, fireRunning: true, gait: 'stand',
+    stance: 'prone', has }, { want: 'fire' });
+// ...and the reload that follows it is the prone one.
+check('the reload after that swing is the prone reload',
+  { active: 'fire', fireLoops: false, fireRunning: false,
+    fireReturnsToReload: true, gait: 'stand', stance: 'prone', has },
+  { want: 'proneReload', startReload: true });
+check('a prone throw raises the next grenade prone',
+  { active: 'proneFire', fireLoops: false, fireRunning: false,
+    fireReturnsToDeploy: true, hasReload: false, gait: 'stand',
+    stance: 'prone', has },
+  { want: 'proneDeploy', startDeploy: true });
+// Releasing a looping fire prone drops to the prone aim, not the standing one.
+check('releasing prone fire falls back to the prone aim',
+  { active: 'proneFire', fireLoops: true, fireRunning: true, firing: false,
+    gait: 'stand', stance: 'prone', has },
+  { want: 'prone', stopLoopFire: true });
+
+console.log(JSON.stringify({ ok: true, cases: 53 }));
