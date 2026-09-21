@@ -420,6 +420,15 @@
    "note": "bf42plus section: Other Functions"
   },
   {
+   "address": "0x0044e7b0",
+   "name": "GameClient__startLevelWithBotSkill",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "inferred",
+   "source": "research-2026-09-21-ai",
+   "note": "CLIENT. Takes the botSkill float as arg 6 ([esp+0x42c]) and calls IAISettings::instance(0x00a78610)->vtable[+0x40] at 0x0044e7f3. Callers 0x004544c0, 0x00450aa0, 0x00450bc0, 0x006dc8c0. Args 3/4/5 inferred to be the team ratios and the ticket setting."
+  },
+  {
    "address": "0x00454480",
    "name": "Map__func_454480",
    "kind": "function",
@@ -4074,6 +4083,15 @@
    "note": "bf42plus section: Loading Screen"
   },
   {
+   "address": "0x006bc9e0",
+   "name": "Game__setSkirmishAiSkill::executeObjectMethod",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "CLIENT. Writes SkirmishSettings+0x64 -- which FUN_006dd910 never reads. Siblings: setSkirmishNrOfLives 0x006bcce0 (+0x70), setSkirmishDifficulty 0x006bd1d0 (+0x78), setCampaignAiSkill 0x006bd370 (CampaignSettings+0x48), setCampaignNrOfLives 0x006bd670 (+0x54). Ledger AI-21."
+  },
+  {
    "address": "0x006c57e0",
    "name": "getInfantryInvert",
    "kind": "function",
@@ -4270,6 +4288,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Spawn Screen Patches"
+  },
+  {
+   "address": "0x006dd910",
+   "name": "MenuSettings__skirmishDifficultyToEngineValues",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "CLIENT. AiSkill 1/2/3/4 -> botSkill 0.25/0.5/0.75/1.0 (jump table 0x006dda18), BotRatio -> 1:1/3:4/1:2/1:3 (0x006dda28), NrOfLives -> 1/5/10/20 (0x006dda38). The SKIRMISH arm reads a byte at SkirmishSettings+0x88 which has a getter (0x006ddb20) and NO SETTER in the image, so Instant Battle always gets 0.5 -- the slider is inert. The campaign arm's +0x48 is real. Ledger AI-20, AI-21."
   },
   {
    "address": "0x006dfa7f",
@@ -4504,6 +4531,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-vehicle-hud",
    "note": "Ammo/ReloadTime, ReloadTimeSecondary, via the float registrar 0x006b3ae0."
+  },
+  {
+   "address": "0x006f3310",
+   "name": "ai::ConsoleClass__setBotSkill::executeObjectMethod",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "CLIENT. aiSettings.setBotSkill; calls IAISettings::instance(0x00a78610) vtable +0x40, which is how that slot was identified in the client."
   },
   {
    "address": "0x00729b30",
@@ -6144,6 +6180,15 @@
    "note": "lnxded. BFPlayer vtable +0x3c, returns BFPlayer+0x4c. The combat-area check tests THIS object's position (0x081523a1) and damages it, so a seated player's hull burns and he does not: the target branches at 0x0815243f on BFPlayer+0x6c, the entry-point index (-1 from the ctor at 0x08050b1e, restored by GameServer::exitVehicle at 0x0814e5c2), falling back on foot to BFPlayer+0x68, the default vehicle setDefaultVehicle stores at 0x08055879. Ledger CA-7."
   },
   {
+   "address": "0x08056210",
+   "name": "dice::ref2::io::Input<PlayerInputMap,55u>::isInputMapped(PlayerInputMap) const",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. Bound-checks > 0x36 and tests the 55-bit mask at +0xdc/+0xe0; 55*4 = 0xdc, so the mask starts immediately after the float array. Ledger AI-3."
+  },
+  {
    "address": "0x0805d9b0",
    "name": "dice::bf::Game::updateWorld(float)",
    "kind": "function",
@@ -6160,6 +6205,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [R2]  | lnxded. [R3] grid refresh, counter++, world pass"
+  },
+  {
+   "address": "0x0805da50",
+   "name": "dice::bf::Game::updateAI(float)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. IAIMain vptr slots +0x1c isInitialised, +0x24 tick(float), +0x28 action(), through the SECONDARY vptr at 'vtable for AIMain' +0x80 (+0x78 is the offset-to-top 0xfffffffc, +0x7c the typeinfo). Ledger AI-5."
   },
   {
    "address": "0x0805de20",
@@ -6324,6 +6378,15 @@
    "note": "Decompiled by the verifier 2026-09-20 (verify/lnxded/081154a0.c). See subsystems/netcode.md"
   },
   {
+   "address": "0x08131ef0",
+   "name": "dice::bf::GameServer::loadBots(int)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. Mode 2 runs <level>SinglePlayer/Bots.con (0x086bff2d), any other mode SinglePlayer/Skirmish.con (0x086bff13). Called from startServer at 0x08133582. Ledger AI-8."
+  },
+  {
    "address": "0x08132940",
    "name": "dice::bf::GameServer::update(int, float)",
    "kind": "function",
@@ -6412,6 +6475,15 @@
    "confidence": "verified",
    "source": "verdict-2026-09-20-netcode",
    "note": "The send (D-1 tail; R-1): per-connection period 1/rate from conn+0xc; ghost/state interval conn+0x18 = 0x3dcccccd (0.1f). Client twin 0x0048c520. See subsystems/netcode.md"
+  },
+  {
+   "address": "0x0813a3f0",
+   "name": "dice::bf::GameServer::updateAI(float)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. isInitialised/tick/action on IAIMain::instance. Reached from the cold block at 0x0815c449, i.e. first in the tick. Ledger AI-4, AI-5."
   },
   {
    "address": "0x0813dbc0",
@@ -6603,6 +6675,24 @@
    "note": "lnxded, inside GameServer::checkPlayerTriggers' c_PIMenuSelect path: enterVehicle(player, pco, false, false), i.e. force = FALSE. A seat switch into an occupied seat is refused, not stolen. See ledger SEAT-11."
   },
   {
+   "address": "0x08150018",
+   "name": "dice::bf::GameServer::checkPlayerTriggers - the MenuSelect ladder",
+   "kind": "site",
+   "subsystem": "input",
+   "confidence": "verified",
+   "source": "research-2026-09-21-parachute",
+   "note": "lnxded, inside 0x0814f2c0. Input bits 14..22 (c_PIMenuSelect1..9) map onto TemplateMessage 10..18, each gated on the analog value > 0.5, posted through the player object's vtable +0x9c. Bit 22 -> message 18 is the parachute ripcord. Ledger PARA-4."
+  },
+  {
+   "address": "0x08150df0",
+   "name": "dice::bf::GameServer::gameStatusPlaying(float)",
+   "kind": "function",
+   "subsystem": "game",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. Contains the per-tick bot top-up loop at +0x9b: while (getMaxNBots() != getBotCount()) create a player and IAIMain::activateBot. Ledger AI-7."
+  },
+  {
    "address": "0x08153ea9",
    "name": "handleCollisionForProjectile hasCollisionEffect gate",
    "kind": "patch_site",
@@ -6714,10 +6804,10 @@
    "address": "0x0815bfa0",
    "name": "dice::bf::GameServer::simulatePlayersUpdate(float)",
    "kind": "function",
-   "subsystem": "collision",
+   "subsystem": "net",
    "confidence": "verified",
-   "source": "research-2026-09-19-collision-response; extended verdict-2026-09-20-netcode",
-   "note": "lnxded. [R2] sets player+0x14b (D-3, 2026-09-20): calls simulatePlayerUpdate 0x0815bd00 once per player per tick (remote connections). See subsystems/netcode.md"
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. Walks the whole playerManager list; simulates a player when getClient(id)==0 (a bot) or the client's byte+0x09 is set. Extends ledger D-3: bots share the path."
   },
   {
    "address": "0x0815c040",
@@ -6759,10 +6849,10 @@
    "address": "0x0815c2a0",
    "name": "dice::bf::GameServer::simulateFrame(float)",
    "kind": "function",
-   "subsystem": "collision",
+   "subsystem": "game",
    "confidence": "verified",
-   "source": "research-2026-09-19-collision-response; extended verdict-2026-09-20-netcode",
-   "note": "lnxded. [R2] F11 | lnxded. [R3] frame order, F1 (D-1, 2026-09-20): the per-tick server simulate -- GameServer vtable 0x0871b0e0+8 slot +0x140, one call per tick from GameServer::update 0x08132940. See subsystems/netcode.md"
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. CAUTION: updateAI sits at +0x1b3 by LAYOUT, not by execution. dec eax / je 0x0815c449 at 0x0815c2b8 (on Game::getGameStatus) jumps to a cold block gcc parked at the end; it calls updateAI then jmp 0x0815c2be at 0x0815c45b, re-entering the body BEFORE simulatePlayersUpdate at 0x0815c2c8. The AI runs FIRST, gated on GameStatus == 1. Ledger AI-4."
   },
   {
    "address": "0x0815c5a0",
@@ -6811,12 +6901,12 @@
   },
   {
    "address": "0x08165630",
-   "name": "dice::ref2::world::BCompositeObject<dice::ref2::world::IPlayerObject>::getBoundingRadius() const",
+   "name": "dice::ref2::world::BCompositeObject<IPlayerObject>::getBoundingRadius() const",
    "kind": "function",
-   "subsystem": "collision",
+   "subsystem": "physics",
    "confidence": "verified",
-   "source": "research-2026-09-19-collision-response",
-   "note": "lnxded. [R3] composite radius, cached +0xb4"
+   "source": "research-2026-09-21-parachute",
+   "note": "lnxded. max(geometry->getRadius(), max over children of |child.relativePosition| + child->getBoundingRadius()), cached at +0xb4, recomputed when object flag 0x80000 is set (the recompute always walks children -- there is no 'pre-child' value). The soldier's Parachute child (13.493 m mesh radius at 0/0.3/0) is what makes this unusable as the drag radius. Ledger PARA-6."
   },
   {
    "address": "0x08165900",
@@ -6910,12 +7000,12 @@
   },
   {
    "address": "0x08172f40",
-   "name": "Armor::update(float)",
+   "name": "dice::ref2::world::Armor::update(float)",
    "kind": "function",
-   "subsystem": "hitpoints",
+   "subsystem": "damage",
    "confidence": "verified",
-   "source": "research-2026-09-16-hitpoints",
-   "note": "lnxded. Water/deep-water recomputed every call; critical/upside-down loss gated behind a +=dt accumulator (+0xe8) firing only at >=1.0s, skipped entirely for soldiers. See ledger HP-5. Also the sole caller of playEffect() (0x08173100). That call is gated on the +0x128 byte, which is a death latch only -- a living object's tier is therefore re-evaluated every tick. See ledger ARM-1."
+   "source": "research-2026-09-21-parachute",
+   "note": "lnxded. Writes Armor+0x28 (lastCollisionHeight) INLINE at its tail, 0x081730b0-0x081730e7, guarded by Armor+0x129 == 0 (the per-tick contact byte Armor::collision() 0x08174470 sets): every tick out of contact it RAISES the field to the current y. A running maximum of altitude, reset only by contact -- so the engine does NOT damp HP-14's F for a parachutist. Ledger PARA-8."
   },
   {
    "address": "0x08173680",
@@ -7060,6 +7150,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [lead] sets byte +0x129."
+  },
+  {
+   "address": "0x08174480",
+   "name": "dice::ref2::world::Armor::setLastCollisionHeight(float)",
+   "kind": "function",
+   "subsystem": "damage",
+   "confidence": "verified",
+   "source": "research-2026-09-21-parachute",
+   "note": "lnxded. A dead weak accessor at vtable +0xf8 with NO caller; the three +0xf8 sites inside BFSoldier belong to another class (each tests its return with test eax,eax). The real writer is Armor::update's inline store. Ledger PARA-8."
   },
   {
    "address": "0x08174490",
@@ -8367,6 +8466,15 @@
    "note": "lnxded. Writes vptr 0x0872e088 = vtable symbol 0x0872e080 + 8 (so a server vtable slot N is at symbol + 8 + N), compositeObject +0xc = NULL, drag +0x38 = 0, mass +0x3c = 1.0, gravityModifier +0x40 = 1.0, underWater +0x44 = 0. No bounding-radius field: getBoundingRadius (0x08256510) forwards to the composite object's vtable +0x48."
   },
   {
+   "address": "0x08255fc0",
+   "name": "dice::ref2::world::PointPhysicsNode::updatePositionalDragSimple(float, float)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-21-parachute",
+   "note": "lnxded twin of client 0x00578990. accel -= (scale*v - wind) * pi * r * r * drag / mass, drag at +0x38 and 1/mass from +0x3c. Confirms PHY-3's client reading on the server; r comes from updatePhysics 0x082562c0 via vtable +0x1c."
+  },
+  {
    "address": "0x082560c0",
    "name": "dice::ref2::world::PointPhysicsNode::updatePositionalPhysics",
    "kind": "function",
@@ -8377,12 +8485,12 @@
   },
   {
    "address": "0x08256650",
-   "name": "dice::ref2::world::PointPhysicsNode::addAccelerationAtRelativePosition",
+   "name": "dice::ref2::world::PointPhysicsNode::addAccelerationAtRelativePosition(Vec3 const&, Vec3 const&)",
    "kind": "function",
    "subsystem": "physics",
    "confidence": "verified",
-   "source": "research-2026-09-19-movement",
-   "note": "lnxded, PointPhysicsNode vtable 0x0872e080 slot +0x6c (+0x68 is the AtAbsolutePosition sibling). Reads [ebp+0x10] (argument 2) into the acceleration accumulator this+0x1c and IGNORES [ebp+0xc] - which is how the jump's 'Vec3::zero, accel' argument order was proved from the callee rather than assumed. The same virtual index carries the same method on PhysicsNode (0x08255230) and StaticPhysicsNode (0x0825e750)."
+   "source": "research-2026-09-21-parachute",
+   "note": "lnxded. Signature is (position, acceleration): it reads the SECOND argument into the +0x1c accumulator and ignores the first. The sibling PhysicsNode:: version 0x08255230 does use arg 1 as a lever arm. This is where setParachuteSpeed lands. Ledger PARA-2."
   },
   {
    "address": "0x08256ad0",
@@ -8943,6 +9051,15 @@
    "note": "lnxded. If this+0x50 is non-zero, tail-calls AnimationStateMachineInstance::getSoundTrigger 0x0832ae90 on the upper-body machine (+0x2d8); otherwise asks it and falls back to the lower body (+0x294) when it returns 0. Client twin 0x004f5c60, whose result 4 (c_SstJump) blocks the jump."
   },
   {
+   "address": "0x08276f90",
+   "name": "dice::ref2::world::BFSoldier::setIsParachuting(bool)",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-21-parachute",
+   "note": "lnxded. State bit 0x10 at BFSoldier+0x3e6; PointPhysicsNode::setDrag(template+0x2e4 open / +0x44 close) through [BFSoldier+0x60] vtable+0x94; the Parachute child at +0x26c driven to animation state 'OpenParachute' via queryInterface(0xc49e) vtable+0x14; Lb_/Ub_ParachuteOpen on open, Lb_/Ub_ParachuteHitGround (or *DeadHitGround, byte +0x245) on close. Closes at |vy| <= 2.0. Ledger PARA-5."
+  },
+  {
    "address": "0x08277720",
    "name": "BFSoldier::handleMessage repair/heal dispatch sites",
    "kind": "patch_site",
@@ -8950,6 +9067,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-damage",
    "note": "lnxded. useRepairPack is called at 0x08277720 and useMedPack at 0x08277796, each behind an ammo test (cmp [edx],eax; jle skip). Because both run from handleMessage rather than a timed update, healFactor/repairFactor are per-invocation amounts and the cadence of the message is what a HP-per-second figure would need. See ledger SUP-15."
+  },
+  {
+   "address": "0x08277b84",
+   "name": "dice::bf::BFSoldier::handleMessage - TemplateMessage 18 (ripcord)",
+   "kind": "site",
+   "subsystem": "input",
+   "confidence": "verified",
+   "source": "research-2026-09-21-parachute",
+   "note": "lnxded, inside 0x08277260 (dispatch at 0x0827728b, cmp edi,0x12). Takes the message only when animMachine[lower].getCurrentState() == BFSoldierTemplate+0x1e4 (Lb_ParachuteFall), then setIsParachuting(true) at 0x08277ba7. Blocked outright by the dead byte at BFSoldier+0x245. Ledger PARA-4."
   },
   {
    "address": "0x0827d3b0",
@@ -8968,6 +9094,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-movement",
    "note": "or WORD PTR [edi+0x3e6],0x40, inside BFSoldier::handleCollision 0x0827d3b0, under the identical gate (N.y > 0.1 against 0x086b1ca0, and [ebp+0x20] != 1). Found by grepping all 60 accesses to +0x3e6; it is the only or-0x40 among them. THE SERVER'S JUMP BLOCK IS THEREFORE LIVE, not dead: the old 'dead code behind an always-equal 0.0 == 0.0 test' reading was the not-armed arm only, and the armed arm at 0x082741ad -> 0x08275f86 reaches the real PlayerInput[9] through getSoundTrigger() != c_SstJump. Cleared each tick at 0x08274d29. See ledger PHY-1."
+  },
+  {
+   "address": "0x0827e920",
+   "name": "dice::ref2::world::BFSoldier::triggerFallingAnimation()",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "research-2026-09-21-parachute",
+   "note": "lnxded. Stamps WorldTime into BFSoldier+0x584 and nothing else. Occupies no vtable slot; its ONE caller is GameServer::handleExplosionOnObject (0x08156bb3), so it is blast knockback, NOT the free-fall/parachute path -- that is handlePlayerInput 0x08275eaa. Ledger PARA-1."
   },
   {
    "address": "0x0827ec00",
@@ -9060,6 +9195,15 @@
    "note": "lnxded. Registers a console constant. ObjTemplBFModule::init uses it for the animation sound triggers, and the client registers the same 21 with the same values through 0x00583bf0: c_SstStand 1, c_SstWalk 2, c_SstRun 3, c_SstJump 4, c_SstToCrouch 6, c_SstFromCrouch 7, c_SstCrouchMove 8, c_SstToCrawl 9, c_SstStandUp 10, c_SstCrawlMove 11, c_SstToSwim 12, c_SstSwim 13, c_SstSwimStand 14, c_SstFromSwim 15, c_SstOpenParachute 16, c_SstFallingHigh 17, c_SstParachuteLand 18, c_SstHitDamage 19, c_SstKilled 21, c_SstHealedByMedic 22, c_SstClimbLadder 23 (none of the 21 is 5 or 20). Script sets them with AnimationStateMachine.setSoundTrigger; AnimationStateMachineInstance::getSoundTrigger reads them back."
   },
   {
+   "address": "0x0829920a",
+   "name": "dice::ref2::world::ObjTemplBFModule::init - c_AsmIsCrouching = 0x20",
+   "kind": "site",
+   "subsystem": "animation",
+   "confidence": "verified",
+   "source": "research-2026-09-21-soldier",
+   "note": "lnxded. addConstantHelper('c_AsmIsCrouching', 0x20); the sibling c_AsmIsLying = 0x40 is at 0x0829923a. BFSoldier::getPose() 0x0827ddc0 returns 1 on 0x20 and 2 on 0x40, so HP-10's pose 1 is CROUCH and pose 2 is PRONE. Ledger HP-10."
+  },
+  {
    "address": "0x0829b190",
    "name": "operator<<(ostream&, AmmoBar)",
    "kind": "function",
@@ -9076,6 +9220,24 @@
    "confidence": "verified",
    "source": "research-2026-09-16-vehicle-hud",
    "note": "lnxded twin of client 0x004c4ef0."
+  },
+  {
+   "address": "0x082bc110",
+   "name": "dice::ref2::world::ConsoleClass181::executeObjectMethod (ObjectTemplate.setParachuteDrag)",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "research-2026-09-21-parachute",
+   "note": "lnxded. -> getActiveTemplate(0x9493)+0x2e4. Registered at 0x082b1cd4, name string 0x086d56ee."
+  },
+  {
+   "address": "0x082bc3e0",
+   "name": "dice::ref2::world::ConsoleClass182::executeObjectMethod (ObjectTemplate.setParachuteSpeed)",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "research-2026-09-21-parachute",
+   "note": "lnxded. -> getActiveTemplate(0x9493)+0x2e8. Registered at 0x082b1c06, name string 0x086d56dc. The field is an ACCELERATION, not a terminal speed. Ledger PARA-2."
   },
   {
    "address": "0x082df7b0",
@@ -9969,6 +10131,24 @@
    "note": "lnxded 0x083a9300-0x083a9354: setTransformation, draw, isSupported (returns 0), addParticle and update are each push ebp; mov ebp,esp; pop ebp; ret, and ParticleSystem's only vtable (0x08746ea0) points its draw/isSupported/setTransformation slots at them. getNumParticlesInParticleSystem 0x083a92a0 is real but its list is never filled."
   },
   {
+   "address": "0x083ad850",
+   "name": "dice::ref2::geom::SkeletonCollisionMesh::getRadius()",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-21-parachute",
+   "note": "lnxded. Returns the template's float at +0x34 -- the value computeBoundingValues wrote. The soldier's own geometry radius: 1.0."
+  },
+  {
+   "address": "0x083afb80",
+   "name": "dice::ref2::geom::SkeletonCollisionMeshTemplate::computeBoundingValues()",
+   "kind": "function",
+   "subsystem": "geom",
+   "confidence": "verified",
+   "source": "research-2026-09-21-parachute",
+   "note": "lnxded. radius = max |v| over the template's vertex array. Called from the ctor at 0x083af64a over a 17-vertex hull the ctor HARD-CODES at 0x083af34a-0x083af660; emulated independently twice, giving max |v| = EXACTLY 1.0, and no .con or file can change it (no bodycollision_m1 exists). Ledger PARA-6."
+  },
+  {
    "address": "0x083b4fd0",
    "name": "dice::ref2::geom::BStandardMesh<dice::ref2::geom::IStandardMesh, dice::ref2::geom::StandardMeshTemplate>::getDistanceToGeometry(bool, dice::ref2::Mat4 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3 const&, dice::ref2::Vec3&, dice::ref2::Vec3&, float&, float&, float&, int*) const",
    "kind": "function",
@@ -10158,6 +10338,24 @@
    "note": "lnxded. Marker block 0x083ec287 pushes the sixty '+' (0x086e38e0) and BOTH its exits (0x083ec2cd jg, 0x083ec2df jmp) land on 0x083ec1ff, which strlens the edit buffer at this+0x60, appends it to the prompt copy and pushes that -- the same instruction the unscrolled path reaches from 0x083ec1f6. Short path 0x083ec147; dec edi 0x083ec174. Ledger CON-10."
   },
   {
+   "address": "0x083f7f40",
+   "name": "dice::ref2::io::addConstantHelper(std::string const&,unsigned)",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. (name, value) console-constant registrar."
+  },
+  {
+   "address": "0x083f8870",
+   "name": "dice::ref2::io::Module::init()",
+   "kind": "function",
+   "subsystem": "io",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. Registers the c_GI* and c_PI* console constants one addConstantHelper call each; the full 55-entry PlayerInputMap enum was decoded here by two independent readers. Ledger AI-2."
+  },
+  {
    "address": "0x08417ae0",
    "name": "dice::ref2::io::read(dice::ref2::io::IStream*, unsigned int&)",
    "kind": "function",
@@ -10203,6 +10401,150 @@
    "note": "lnxded. Linear scan comparing names with dice::ref2::equalsIgnoreCase (0x08374120, call at 0x08429d0d): the zip archive class matches case-insensitively too. BF1942 content ships as .rfa, not zip."
   },
   {
+   "address": "0x08477840",
+   "name": "dice::bf::ai::AIMain::setAISystemQuotient(double const&)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. Stores AIMain+0x10 unclamped. Console word ai.aiSystemQuotient, record 0x087c3600."
+  },
+  {
+   "address": "0x08477880",
+   "name": "dice::bf::ai::AIMain::setAISystemComponentsQuotient(unsigned,unsigned)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. a/(a+b) -> AIMain+0x18 (BotManager share), b/(a+b) -> +0x20 (strategic AI share)."
+  },
+  {
+   "address": "0x084778d0",
+   "name": "dice::bf::ai::AIMain::action()",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. budget = getTimeIncrease()*aiSystemQuotient(AIMain+0x10); 0.95*budget split by AIMain+0x18/+0x20; one side per call round-robin over getNSides(). Ledger AI-6."
+  },
+  {
+   "address": "0x08477f30",
+   "name": "dice::bf::ai::AIMain::addBot(IPlayer*,int,BotMoralAdmin*,float*,IObject*)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. Delegates to BotManager::addBot 0x08499060; addUnspawnedBot is 0x08478160/0x08499820."
+  },
+  {
+   "address": "0x08478510",
+   "name": "dice::bf::ai::AIMain::activateBot(IPlayer*,int,std::string const&)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. IAIMain vptr slot +0x10."
+  },
+  {
+   "address": "0x08479580",
+   "name": "dice::bf::ai::AIMain::tick(float)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded."
+  },
+  {
+   "address": "0x08479940",
+   "name": "dice::bf::ai::AIMeshLoader::getAIMesh(IGeometry*)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. Template name truncated at the LAST '_' (rfind(0x5f) at 0x0847999b), plus '_a1' (0x086f315c). Ledger AI-10."
+  },
+  {
+   "address": "0x08479a10",
+   "name": "dice::bf::ai::AIMeshLoader::getAIMesh(std::string const&)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. Prefixes 'AIMeshes/' (0x086f3160) and loads it as an ordinary StandardMesh."
+  },
+  {
+   "address": "0x0847c580",
+   "name": "dice::bf::ai::AIPathfinding::loadMaps()",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. ai.loadMaps. loadSearchMaps 0x0847c5c0 builds levelPath + 'Pathfinding/' (0x086f3198) -- NOT 'AIPathfinding/'. It LOADS; createMaps 0x0847b2e0 is the editor generator. Ledger AI-12."
+  },
+  {
+   "address": "0x08484450",
+   "name": "dice::bf::ai::AISettings::reset()",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. Defaults: +0x1c viewDistance 600.0, +0x20 statsViewDistance 512.0, +0x24 botSkill 0.75 (store at 0x08484613), +0x28 saiUpdateFrequency 2.0, +0x2c informationGridDimension 32. Ledger AI-14."
+  },
+  {
+   "address": "0x08484760",
+   "name": "dice::bf::ai::AISettings::getBotSkill()",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. fld [eax+0x24]. IAISettings vtable +0x40. EXACTLY ten call sites in the whole server, confirmed by two independent enumerations. Ledger AI-15."
+  },
+  {
+   "address": "0x08484770",
+   "name": "dice::bf::ai::AISettings::setBotSkill(float)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. Bare store to this+0x24; no clamp, no declared range. Vanilla data never calls it, so the running value is reset()'s 0.75. Ledger AI-14."
+  },
+  {
+   "address": "0x08485290",
+   "name": "dice::bf::ai::operator<<(std::ostream&, InformationType)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. Jump table 0x086f3f5c gives the dense 0..29 InformationType enum; ITAir = 4, ITNaval = 6, ITSoldier = 22. Decoded twice independently."
+  },
+  {
+   "address": "0x08498cd0",
+   "name": "dice::bf::ai::BotManager::setSystemQuotient(unsigned,unsigned,unsigned)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. a/(a+b+c) -> +0x9c, b/(a+b+c) -> +0xa4; c is the implicit remainder. AIBotManager.setSystemQuotient."
+  },
+  {
+   "address": "0x0849a130",
+   "name": "dice::bf::ai::BotManager::action(double const&)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. actionDeadBots/buildObjectMap/updateDamages, then 0.40 executePlan, 0.60*q_dec decision, 0.60*q_path pathfinding, 0.60*(1-q_dec-q_path)*0.1 hearing, *0.9 sensing. Ledger AI-6."
+  },
+  {
+   "address": "0x0849a320",
+   "name": "dice::bf::ai::BotManager::actionExecutePlan(double const&)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. Plan step: (getBotSkill()*0.1 + 0.1) * getTimeIncrease(), constant [0x086b1ca0] = 0.1. One of getBotSkill's ten call sites. Ledger AI-15."
+  },
+  {
    "address": "0x084a2050",
    "name": "dice::bf::ai static initializer",
    "kind": "function",
@@ -10212,6 +10554,60 @@
    "note": "lnxded, 0x1764a bytes (95 KB): one translation unit's global constructors inlined, registering dozens of bot-AI console words back to back (dice::bf::ai::(anonymous namespace)::consoleObjectNNN). Do not read it linearly - grep lnxded_text.s for a word's string address instead. Registers weaponTemplate.deviationCorrectionTime at 0x084a6e33 and weaponTemplate.deviation at 0x084a6f01."
   },
   {
+   "address": "0x08500980",
+   "name": "dice::bf::ai::ConsoleClass492::executeObjectMethod (aiTemplate.addType)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. AITemplate+0x08 |= 1 << enumValue. Record 0x087cc3c0. Ledger AI-9."
+  },
+  {
+   "address": "0x08510580",
+   "name": "dice::bf::ai::ConsoleClass618::executeObjectMethod (weaponTemplate.deviation)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. Reads/writes WeaponTemplateManager::getActiveTemplate()+0x30. Record 0x087cf480, registered at 0x084a6f01. Closes DEV-8's registration half."
+  },
+  {
+   "address": "0x08510980",
+   "name": "dice::bf::ai::ConsoleClass619::executeObjectMethod (weaponTemplate.deviationCorrectionTime)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. Writes +0x34 = t and +0x38 = (t == 0 ? 0 : 1/t). Record 0x087cf540, registered at 0x084a6e33. Closes DEV-8's registration half."
+  },
+  {
+   "address": "0x08526430",
+   "name": "dice::bf::ai::BotMain::updatePlayerAction(bool)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. Clears the one-shot buttons (PIFire 8, PIAltFire 23, PIReload 24, PILie 28) then hands BotMain+0x04's PlayerInput to AIPlayer::addInput. Ledger AI-1."
+  },
+  {
+   "address": "0x08526650",
+   "name": "dice::bf::ai::BotMain::resetAllControls(bool,bool,bool)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. drive/look/action; writes PlayerInput[4*index]. Throttle kept when Information+0x04 bit 4 (ITAir); Lie/Crouch kept when byte+0x06 bit 0x40 (ITSoldier)."
+  },
+  {
+   "address": "0x0852cea0",
+   "name": "dice::bf::ai::BotMain::getFiringTargetTime() const",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. fld [this+0x1b8]; Bot vtable +0x84. The 'when did I acquire this target' stamp in the deviation formula."
+  },
+  {
    "address": "0x085d63b0",
    "name": "dice::bf::ai::AIObjectPhysical::disablePhysics(int)",
    "kind": "function",
@@ -10219,6 +10615,51 @@
    "confidence": "verified",
    "source": "research-2026-09-19-collision-response",
    "note": "lnxded. [R2] setSleepiness(-1)"
+  },
+  {
+   "address": "0x085dcf10",
+   "name": "dice::bf::ai::AIPlayer::addInput(PlayerInput*)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. PlayerAction::set + ActionBuffer::pushBack; BFPlayer+0x144 holds a POINTER to the buffer, not the buffer inline. This is why a bot is indistinguishable from a networked human below the input layer. Ledger AI-1."
+  },
+  {
+   "address": "0x085ee580",
+   "name": "dice::bf::ai::WeaponFireArm::setBotSkill(float,float,float)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. dev = (1-0.75*A)*C + F30*(F38*max(0, F34*(1-A) - (now-B)) + 0.25*(1-A)); tail-jumps to FireArms::setAIDeviation. A=botSkill, B=getFiringTargetTime, C in {0,10,30}. x87 0x085ee587-0x085ee60b re-derived by two readers; test ah,0x45 / je 0x085ee610 is the D > 0 arm. WeaponBundle twin 0x085ed050; vtable slot +0x84. Ledger AI-16."
+  },
+  {
+   "address": "0x085ef740",
+   "name": "dice::bf::ai::WeaponTemplate::WeaponTemplate(int)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. Defaults at 0x085ef7b6-0x085ef7c4: +0x30 deviation = 5.0, +0x34 deviationCorrectionTime = 10.0, +0x38 = 0.1. Every AI weapon has a deviation even when its file says nothing. Ledger AI-17."
+  },
+  {
+   "address": "0x085f86a0",
+   "name": "dice::bf::ai::CellMap::loadRawFile(IStream*)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. Five int32 header validated against CellMap+0x18/0x20/0x10/0x2c/0x24 (ctor 0x085f7af0), then a special-cell count and (1<<(p6-p5))<<(p7-p5) row records. Row encoding UNREAD. Ledger AI-13."
+  },
+  {
+   "address": "0x086257d0",
+   "name": "dice::bf::ai::EntryTrigger::execute(BotScript*,Bot*,bool&,bool&)",
+   "kind": "function",
+   "subsystem": "ai",
+   "confidence": "verified",
+   "source": "research-2026-09-21-ai",
+   "note": "lnxded. The plan instruction that pulls the trigger; calls Weapon::setBotSkill through vtable +0x84 at 0x08625dc9 (args read off the pushes at 0x08625daf-0x08625dc9). The C term is an ANTI-AIRCRAFT penalty on the shooter: getCurrentEquipment (Bot vptr +0xd0) at 0x08625cf0 and getFiringTarget (+0x80) at 0x08625dd7, branches 0x08625d81/0x08625e18/0x08625e5c/0x08625e64. TriggerContinously twin 0x08625ff0. Ledger AI-16, AI-18."
   },
   {
    "address": "0x086b01ac",
