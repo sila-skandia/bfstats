@@ -2111,6 +2111,14 @@ def _find_template_sound_script(template_name: str, library, objects) -> tuple[s
                 con_text = objects.read(con_hit).decode("latin-1", "replace")
                 scripts = parse_sound_scripts(con_text)
                 if key in scripts:
+                    # A SupplyDepot's script is its *give* sound: the engine
+                    # plays `Ammorefill.wav` while the depot is actually
+                    # handing a soldier or a vehicle ammunition, and is silent
+                    # otherwise. Shipped as building ambience it looped for
+                    # ever beside all 621 vanilla ammo boxes and airfield
+                    # depots. The viewer plays it from the depot's own give.
+                    if scripts[key][0] == "supplydepot":
+                        return None
                     return tmpl.source, scripts[key][1]
 
         # Add children to queue
