@@ -58,6 +58,80 @@
       "frames": 31,
       "duration": 1.0
     },
+    "crouch": {
+      "upperClip": "Animations/StandWalkRun/1p/Mp40/1PStandAimMp40.baf",
+      "speed": 0.34,
+      "loop": true,
+      "morphFactor": 0.7,
+      "returnTo": "Ub_CrouchToStand",
+      "frames": 13,
+      "duration": 2.9412
+    },
+    "crouchWalk": {
+      "upperClip": "Animations/StandWalkRun/1p/Mp40/1pRunMp40.baf",
+      "speed": 0.5,
+      "loop": true,
+      "morphFactor": 0.5,
+      "returnTo": "Ub_CrouchMp40",
+      "frames": 17,
+      "duration": 2.0
+    },
+    "prone": {
+      "upperClip": "Animations/StandWalkRun/1p/Mp40/1pLieAimMp40.baf",
+      "speed": 0.2,
+      "loop": true,
+      "morphFactor": 0.7,
+      "returnTo": "Ub_LieMp40",
+      "frames": 13,
+      "duration": 5.0
+    },
+    "crawl": {
+      "upperClip": "Animations/StandWalkRun/1p/Mp40/1pCrawlMp40.baf",
+      "speed": 0.82,
+      "loop": true,
+      "morphFactor": 0.5,
+      "returnTo": "Ub_LieMp40",
+      "frames": 17,
+      "duration": 1.2195
+    },
+    "proneFire": {
+      "upperClip": "Animations/WeaponHandling/1p/Mp40/1PLieFireMp40.baf",
+      "speed": 2.37,
+      "loop": true,
+      "morphFactor": 4.0,
+      "returnTo": "_POSE_",
+      "frames": 7,
+      "duration": 0.4219
+    },
+    "proneReload": {
+      "upperClip": "Animations/WeaponHandling/1p/Mp40/1PLieReloadMp40.baf",
+      "speed": 0.22,
+      "loop": false,
+      "morphFactor": 10000.0,
+      "returnTo": "_POSE_",
+      "weaponClip": "Animations/Weapons/Mp40/Mp40Reload.baf",
+      "weaponSpeed": 0.22,
+      "frames": 165,
+      "duration": 4.5455
+    },
+    "crouchDeploy": {
+      "upperClip": "Animations/WeaponHandling/1p/Mp40/1PDeployMp40.baf",
+      "speed": 1.0,
+      "loop": false,
+      "morphFactor": 10000.0,
+      "returnTo": "_POSE_",
+      "frames": 31,
+      "duration": 1.0
+    },
+    "proneDeploy": {
+      "upperClip": "Animations/WeaponHandling/1p/Mp40/1PLieDeployMp40.baf",
+      "speed": 1.0,
+      "loop": false,
+      "morphFactor": 10000.0,
+      "returnTo": "_POSE_",
+      "frames": 31,
+      "duration": 1.0
+    },
     "idle1": {
       "fidgetState": "Ub_IdleMp401",
       "upperClip": "Animations/WeaponHandling/1p/Mp40/1pIdle1Mp40.baf",
@@ -211,6 +285,7 @@
     "plupp",
     "trigger"
   ],
+  "gripAnimated": false,
   "texturesMissing": [],
   "glb": "GermanSoldier__MP40.fp.glb"
 }

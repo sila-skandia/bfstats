@@ -17,6 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 HARNESS = Path(__file__).resolve().parent / "viewmodel_anim_harness.mjs"
 MODULE = ROOT / "viewer" / "viewmodel-anim.js"
+STANCE = ROOT / "viewer" / "stance-clips.js"
 
 
 class ViewmodelAnimTests(unittest.TestCase):
@@ -27,6 +28,7 @@ class ViewmodelAnimTests(unittest.TestCase):
             work = Path(tmp)
             (work / "package.json").write_text('{"type": "module"}')
             shutil.copyfile(MODULE, work / "viewmodel-anim.js")
+            shutil.copyfile(STANCE, work / "stance-clips.js")
             shutil.copyfile(HARNESS, work / "harness.mjs")
             proc = subprocess.run(
                 ["node", str(work / "harness.mjs")],
@@ -35,7 +37,7 @@ class ViewmodelAnimTests(unittest.TestCase):
             raise AssertionError(f"harness failed:\n{proc.stderr}\n{proc.stdout}")
         payload = json.loads(proc.stdout.strip())
         self.assertTrue(payload["ok"])
-        self.assertEqual(payload["cases"], 37)
+        self.assertEqual(payload["cases"], 53)
 
 
 if __name__ == "__main__":

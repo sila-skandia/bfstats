@@ -21,6 +21,14 @@ glTF animation per first-person clip family the state machine declares:
             `c_AsmWeaponState` clip driving the weapon's own bound parts
             (the Thompson's magazine leaves the gun and comes back)
     deploy  Ub_StandRaiseWeapon<W> -- the draw-in
+    crouch      Ub_Crouch<W>        the stand-aim clip at the crouch rate
+    crouchWalk  Ub_CrouchForward<W> the run clip at the crouch-walk rate
+    prone       Ub_Lie<W>           `1pLieAim<W>`, the prone sway
+    crawl       Ub_LieForward<W>    `1pCrawl<W>`
+    proneFire   Ub_LieFire<W>       the prone shot cycle
+    proneReload Ub_LieReload<W>     the prone reload, weapon channel included
+    crouchDeploy / proneDeploy      Ub_{Crouch,Lie}RaiseWeapon<W>, the draw-in
+                                    and the grenade's own raise, per stance
     idle1.. idleN  the aim state's `addIdle` fidgets (ANIM-6: a 4-7 s dwell
             picks one at random; each one-shot returns to the aim state) -- the
             "shaking his grip hand" animations a soldier performs standing
@@ -78,6 +86,39 @@ from extract_pose import (
 # key, upper-body state family (`Ub_<family><Weapon>`). Loop comes from the
 # state's 1P clip (`c_AsmPlayOnce` / `c_AsmLooping`), not a hardcoded flag —
 # bolt rifles are PlayOnce→StandReload (ANIM-7); Thompson fire is Looping.
+#
+# The stance families are the engine's own, not a scaling of the standing ones.
+# Surveyed over vanilla's 1,458-state machine (see
+# `features/viewer-soldier-stance-and-blast/README.md` §2), all 28 weapons that
+# declare `Ub_StandAim<W>` also declare all six below, and they resolve to
+# three different shapes:
+#
+#   Ub_Crouch<W>        the *same* `1PStandAim<W>.baf`, at the state's own
+#                       faster rate (Thompson 0.33 against standing's 0.1) --
+#                       a crouching man breathes over the sights 3.3x as fast
+#   Ub_CrouchForward<W> the same `1pRun<W>.baf` as walk/run, own rate
+#   Ub_Lie<W>           a dedicated `1pLieAim<W>.baf`
+#   Ub_LieForward<W>    a dedicated `1pCrawl<W>.baf`
+#   Ub_LieFire<W>       a dedicated `1PLieFire<W>.baf`
+#   Ub_LieReload<W>     a dedicated `1PLieReload<W>.baf`
+#   Ub_CrouchRaiseWeapon<W> / Ub_LieRaiseWeapon<W>  the per-stance draw-in
+#
+# There is deliberately no crouch fire or crouch reload family: the machine
+# declares none (`Ub_CrouchFire<W>` / `Ub_CrouchReload<W>` do not exist for any
+# vanilla weapon), so a crouching man fires and reloads on the standing states.
+# The viewer's fallback chain reproduces that rather than inventing a clip.
+#
+# `Ub_CrouchRaiseWeapon<W>` resolves to the *same* `1PDeploy<W>.baf` at the
+# same rate as `Ub_StandRaiseWeapon<W>` on all 28 vanilla weapons, so
+# `crouchDeploy` is a duplicate of `deploy` in a vanilla rig and costs bytes
+# for nothing there. It is baked anyway because the chain is per mod: a mod
+# that declares a real crouched draw-in gets it without a code change.
+#
+# Not baked, and named here so the gap is visible rather than assumed away: the
+# 28 weapons also declare `{Crouch,Lie,}{Backward,StrafeLeft,StrafeRight,Turn*}`
+# and the two jumps, all with 1P clips. The viewer plays the forward clip for
+# every direction in every stance, standing included, so those are a separate
+# gap from this one.
 FAMILIES: tuple[tuple[str, str], ...] = (
     ("idle", "StandAim"),
     ("walk", "WalkForward"),
@@ -85,6 +126,14 @@ FAMILIES: tuple[tuple[str, str], ...] = (
     ("fire", "Fire"),
     ("reload", "StandReload"),
     ("deploy", "StandRaiseWeapon"),
+    ("crouch", "Crouch"),
+    ("crouchWalk", "CrouchForward"),
+    ("prone", "Lie"),
+    ("crawl", "LieForward"),
+    ("proneFire", "LieFire"),
+    ("proneReload", "LieReload"),
+    ("crouchDeploy", "CrouchRaiseWeapon"),
+    ("proneDeploy", "LieRaiseWeapon"),
 )
 PRIMARY = "idle"
 
