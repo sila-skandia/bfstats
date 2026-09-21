@@ -58,6 +58,80 @@
       "frames": 29,
       "duration": 1.0
     },
+    "crouch": {
+      "upperClip": "Animations/StandWalkRun/1p/Thompson/1PStandAimThompson.baf",
+      "speed": 0.33,
+      "loop": true,
+      "morphFactor": 0.7,
+      "returnTo": "Ub_CrouchToStand",
+      "frames": 13,
+      "duration": 3.0303
+    },
+    "crouchWalk": {
+      "upperClip": "Animations/StandWalkRun/1p/Thompson/1pRunThompson.baf",
+      "speed": 0.86,
+      "loop": true,
+      "morphFactor": 0.5,
+      "returnTo": "Ub_CrouchThompson",
+      "frames": 17,
+      "duration": 1.1628
+    },
+    "prone": {
+      "upperClip": "Animations/StandWalkRun/1p/Thompson/1pLieAimThompson.baf",
+      "speed": 0.2,
+      "loop": true,
+      "morphFactor": 0.7,
+      "returnTo": "Ub_LieThompson",
+      "frames": 13,
+      "duration": 5.0
+    },
+    "crawl": {
+      "upperClip": "Animations/StandWalkRun/1p/Thompson/1pCrawlThompson.baf",
+      "speed": 1.0,
+      "loop": true,
+      "morphFactor": 0.5,
+      "returnTo": "Ub_LieThompson",
+      "frames": 17,
+      "duration": 1.0
+    },
+    "proneFire": {
+      "upperClip": "Animations/WeaponHandling/1p/Thompson/1PLieFireThompson.baf",
+      "speed": 10.0,
+      "loop": true,
+      "morphFactor": 4.0,
+      "returnTo": "_POSE_",
+      "frames": 8,
+      "duration": 0.1
+    },
+    "proneReload": {
+      "upperClip": "Animations/WeaponHandling/1p/Thompson/1PLieReloadThompson.baf",
+      "speed": 0.21,
+      "loop": false,
+      "morphFactor": 10000.0,
+      "returnTo": "_POSE_",
+      "weaponClip": "Animations/Weapons/Thompson/ThompsonReload.baf",
+      "weaponSpeed": 0.21,
+      "frames": 181,
+      "duration": 4.7619
+    },
+    "crouchDeploy": {
+      "upperClip": "Animations/WeaponHandling/1p/Thompson/1PDeployThompson.baf",
+      "speed": 1.0,
+      "loop": false,
+      "morphFactor": 10000.0,
+      "returnTo": "_POSE_",
+      "frames": 29,
+      "duration": 1.0
+    },
+    "proneDeploy": {
+      "upperClip": "Animations/WeaponHandling/1p/Thompson/1PLieDeployThompson.baf",
+      "speed": 1.0,
+      "loop": false,
+      "morphFactor": 10000.0,
+      "returnTo": "_POSE_",
+      "frames": 29,
+      "duration": 1.0
+    },
     "idle1": {
       "fidgetState": "Ub_IdleThompson1",
       "upperClip": "Animations/WeaponHandling/1p/Thompson/1pIdle1Thompson.baf",
@@ -210,6 +284,7 @@
     "flerp",
     "magasin"
   ],
+  "gripAnimated": false,
   "texturesMissing": [],
   "glb": "USSoldier__Thompson.fp.glb"
 }
