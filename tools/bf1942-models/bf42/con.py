@@ -293,6 +293,10 @@ class LodSelector:
     kind: str
     distances: list[float] = field(default_factory=list)
     comparisons: list[float] = field(default_factory=list)
+    # `LodSelectorTemplate.hasDestroyedLod 1`: the LAST alternative is the
+    # object's destroyed state, not a rung of its LOD ladder. See
+    # `destroyed_alternative`.
+    has_destroyed_lod: bool = False
 
     @property
     def ranks_by_distance(self) -> bool:
@@ -319,6 +323,41 @@ class LodSelector:
         return {"selector": self.name, "selectorKind": self.kind,
                 "distances": list(self.distances),
                 "comparisons": list(self.comparisons)}
+
+
+def destroyed_alternative(children: list[ChildRef],
+                          selector: "LodSelector | None") -> ChildRef | None:
+    """The alternative that is this LodObject's WRECK, or None.
+
+    `LodSelectorTemplate.hasDestroyedLod 1` says the last alternative is the
+    destroyed state rather than another rung of the ladder, and it is declared
+    exactly where you would expect: 34 selectors in vanilla, every aircraft,
+    every tank and car, the Defgun, the breakable window, and Battle of
+    Britain's factory. In all 34 the destroyed alternative is the last child,
+    and in 33 of them it is also named `...Wreck` (the odd one out is
+    `WindowWhole`/`WindowBroken`).
+
+    This matters because the alternative is **not drawn** — `select_lod_alternative`
+    picks the intact one — while its collision hull used to be grafted onto
+    the intact object anyway, whenever the wreck happened to carry more
+    collision triangles than the mesh being drawn. What that puts in the world
+    is a building full of invisible rubble: Battle of Britain's factory drew
+    its own 210-triangle hull AND `Britain_Factory_Wreck_m1`'s 244, so a
+    player who walked in through the doorway he could see was standing inside
+    a collapsed version of the same building with no way out. The published
+    trees carried it on Mi8A, both Sampans, the AW52, the Goblin and the
+    factory.
+
+    The name is the fallback for a mod that skips the word, which costs
+    nothing: a child named for a wreck is never the hull an intact object
+    should be wearing.
+    """
+    if not children:
+        return None
+    if selector is not None and selector.has_destroyed_lod:
+        return children[-1]
+    last = children[-1]
+    return last if lod_alternative_role(last.template) == "wreck" else None
 
 
 def lod_alternative_role(template_name: str) -> str | None:
@@ -2262,6 +2301,9 @@ class ObjectLibrary:
                     self.selectors.setdefault(parts[1].lower(), selector)
                 elif selector is None:
                     continue
+                elif cmd == "hasdestroyedlod":
+                    tokens = args.split()
+                    selector.has_destroyed_lod = bool(tokens) and tokens[0] != "0"
                 elif cmd in ("addloddistance", "addlodcomparison"):
                     # Written one threshold per line, in alternative order, so
                     # they accumulate rather than overwrite: `DistCompareSelector2`
