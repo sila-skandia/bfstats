@@ -9177,6 +9177,42 @@
    "note": "lnxded. Builds the position-id->seat map the number-key switch queries."
   },
   {
+   "address": "0x08288470",
+   "name": "dice::ref2::world::FireArms::fireFinished()",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-09-22-bombs",
+   "note": "lnxded. THE ammunition spend; not Fire and not fireBarrel. if (mags > 0) { if (tmpl+0x338 == 0 && barrelCount > 1 && tmpl+0x348 == 0) mags -= barrelCount; else mags -= 1; } with a <0 floor, same arithmetic on the running total at this+0x298. Ledger BOMB-1."
+  },
+  {
+   "address": "0x0828a090",
+   "name": "dice::ref2::world::FireArms::Fire(IPlayer*)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-09-22-bombs",
+   "note": "lnxded. Already cited by ledger FA-1 for fireingForce. Read in full 2026-09-22 for the barrel dispatch (BOMB-1..BOMB-5): barrelCount = (tmpl[0x214]-tmpl[0x210])/12; 0 -> fireBarrel(-1), 1 -> fireBarrel(0), >1 and tmpl+0x338 clear -> fireBarrel(i) for every i, >1 and tmpl+0x338 set -> one round-robin barrel off the counter at this+0x296. Partial salvo above the loop: mags != -1 && mags < barrelCount && tmpl+0x348 clear -> fire only mags barrels."
+  },
+  {
+   "address": "0x0828aba0",
+   "name": "dice::ref2::world::FireArms::fireBarrel(IPlayer*, Mat4&, int)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-09-22-bombs",
+   "note": "lnxded. Spawns one projectile from barrel index N (-1 = the FireArms' own transform). Touches no ammunition counter -- the charge is in fireFinished 0x08288470."
+  },
+  {
+   "address": "0x0828ca40",
+   "name": "dice::ref2::world::FireArms::mags()",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-09-22-bombs",
+   "note": "lnxded. Accessor for the current magazine counter. -1 is GUN-4's unlimited sentinel and short-circuits the whole spend block in fireFinished."
+  },
+  {
    "address": "0x0828d490",
    "name": "FireArms::getHasHeat()",
    "kind": "function",
@@ -9184,6 +9220,15 @@
    "confidence": "verified",
    "source": "research-2026-09-16-manned-guns",
    "note": "lnxded. template+0x300 > template+0x304 -- strict greater-than, not equality as first read. Fields' meaning still unestablished."
+  },
+  {
+   "address": "0x0828e3b0",
+   "name": "dice::ref2::world::FireArmsTemplate::makeScript(IStream*)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-09-22-bombs",
+   "note": "lnxded. The .con serializer. Walks the addFireArmsPosition vector at +0x210..+0x214. Emits neither asynchronyFire nor fireAllAtOnce, which is why neither flag's offset can be recovered from it (ledger BOMB-4)."
   },
   {
    "address": "0x0828f660",
@@ -11047,6 +11092,33 @@
    "confidence": "verified",
    "source": "research-2026-09-16-supply-depots",
    "note": "lnxded. Third/final query in the climb."
+  },
+  {
+   "address": "0x086d5185",
+   "name": "console:FireArmsTemplate.fireAllAtOnce (string)",
+   "kind": "string",
+   "subsystem": "weapons",
+   "confidence": "inferred",
+   "source": "research-2026-09-22-bombs",
+   "note": "lnxded .rodata. Descriptor object 0x087a4840, vtable 0x08738aa8, ctor 0x082db580, registered at 0x082ab5f8. The leading candidate for the second single-round flag at FireArmsTemplate+0x348 (ledger BOMB-4) -- NOT proven: the descriptor does not carry its target offset in the vtable and makeScript never emits the word. 0 declarations across all 14 installs, so it is moot for shipped data."
+  },
+  {
+   "address": "0x086d51c9",
+   "name": "console:FireArmsTemplate.addFireArmsPosition (string)",
+   "kind": "string",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-09-22-bombs",
+   "note": "lnxded .rodata, registered at 0x082abadb. Appends to the barrel vector at FireArmsTemplate+0x210..+0x214, 12-byte elements. 24,540 declarations across 14 installs, 91 in vanilla. Ledger BOMB-2."
+  },
+  {
+   "address": "0x086d5319",
+   "name": "console:FireArmsTemplate.asynchronyFire (string)",
+   "kind": "string",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-09-22-bombs",
+   "note": "lnxded .rodata. Descriptor object 0x087a3580, vtable 0x08739728, ctor 0x082d5400, registered at 0x082acadf. Bound to FireArmsTemplate+0x338 by the B17 argument in ledger BOMB-3, not by reading the registrar. 3,343 declarations across 14 installs, 7 in vanilla."
   },
   {
    "address": "0x086e9e08",
