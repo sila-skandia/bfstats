@@ -2353,6 +2353,12 @@ addEventListener('keydown', e => {
       && !e.ctrlKey && !e.metaKey && !e.altKey) {
     const kitDigit = /^Digit([1-9])$/.exec(e.code);
     if (kitDigit) {
+      // Recorded in `keys` as well as acted on, and the reason is slot 9:
+      // the engine gives `c_PIMenuSelect9` a second job on a falling soldier
+      // (TemplateMessage 18 -> `setIsParachuting(true)`, `parachute.js`), and
+      // the per-frame input word reads `keys`. This branch used to return
+      // before `keys.add` and the ripcord never reached it.
+      keys.add(e.code);
       selectKitWeapon(Number(kitDigit[1]));
       return;
     }
@@ -7627,13 +7633,32 @@ function exitPose(vehicle) {
  * The real gate (SEAT-6/SEAT-9: a room check at `soldierExitLocation`, run
  * only when the template's `hasRestrictedExit` is set) is not implemented —
  * `exitPose`'s placement is trusted as-is, same as it already was on the
- * ground. `soldier.spawn()`'s own `SPAWN_DROP` fall-to-floor already handles
- * landing an exit point that turns out to be in mid-air.
+ * ground.
+ *
+ * What was missing was everything *after* stepping out of something flying.
+ * `soldier.spawn()` ends in `settle()`, a 600 m probe to the floor, so a
+ * bail-out at 300 m put the pilot on the sand under the plane. Above the
+ * bail-out height below, the exit goes through `Soldier.bailOut` instead,
+ * which places the body where the aircraft was, hands it the aircraft's own
+ * velocity, and leaves `parachute.js` to run the fall (`viewer/parachute.js`
+ * for the engine side; key 9 opens the canopy).
  */
+/** Metres above the ground past which stepping out is a bail-out, not a
+ *  step down. The engine has no such number — it simply never teleports —
+ *  and this exists only because `spawn()`'s floor probe is the viewer's
+ *  normal exit. Half a metre under the free-fall state's own 10 m gate, so a
+ *  door on a hangar roof is still a step and not a drop. */
+const BAIL_OUT_HEIGHT = 9.5;
+
 function exitVehicle() {
   const vehicle = aircraft || car;
   if (!vehicle) return;
   const exit = exitPose(vehicle);
+  // Height above whatever the collider says is under the exit point, and the
+  // hull's own velocity — both read before `leaveVehicle` lets go of it.
+  const groundAt = collider?.surfaceHeight ? collider.surfaceHeight(exit.x, exit.z) : NaN;
+  const bailing = Number.isFinite(groundAt) && exit.y - groundAt > BAIL_OUT_HEIGHT;
+  const hullVelocity = vehicle.state?.velocity;
   // The room's control channel: capture the seat row before leaveVehicle
   // clears the occupancy the row is read from.
   const netSeat = occupancy ? netSeatRow('exit') : null;
@@ -7642,7 +7667,12 @@ function exitVehicle() {
   optPilot.checked = false;
   if (optOnFoot.checked && soldier) {
     soldier.collider = collider;
-    soldier.spawn(exit.x, exit.y, exit.z, exit.yaw);
+    if (bailing) {
+      soldier.bailOut(exit.x, exit.y, exit.z, exit.yaw,
+        hullVelocity?.x ?? 0, hullVelocity?.y ?? 0, hullVelocity?.z ?? 0);
+    } else {
+      soldier.spawn(exit.x, exit.y, exit.z, exit.yaw);
+    }
     camera.fov = FOOT_FOV;
     camera.near = 0.2;
     camera.updateProjectionMatrix();
@@ -7748,6 +7778,14 @@ function exitManned() {
   }
   resetMobileControls();
 }
+
+/** The sound and animation triggers `parachute.js` produced, newest last.
+ *  Drained by `window.__parachute()`; capped so a long session cannot grow
+ *  it without bound. Presentation only — the state machine keeps its own. */
+const parachuteLog = [];
+/** `window.__setDeploy(true)`: the ripcord, for a headless check that cannot
+ *  hold a key down through Chromium's own focus rules. */
+let debugDeployHeld = false;
 
 // --- on foot ----------------------------------------------------------------
 //
@@ -8044,7 +8082,7 @@ function setOnFoot(on) {
 // `let`: under `?kblock` the Escape hint changes for as long as the
 // fullscreen session lasts (kbLockEnter). Without it this never changes.
 let HUD_FOOT ='WASD move · Shift walk · Ctrl crouch · Z prone · Space jump · '
-  + 'LMB fire · RMB aim · R reload · CapsLock / M redeploy · Esc menu';
+  + 'LMB fire · RMB aim · R reload · 9 chute · CapsLock / M redeploy · Esc menu';
 const HUD_FOOT_PLAIN = HUD_FOOT;
 const HUD_FOOT_KBLOCK = `${HUD_FOOT_PLAIN} · hold Esc exits full screen`;
 
@@ -13241,6 +13279,17 @@ function frame(dt) {
       crouch: held.has('ControlLeft') || held.has('ControlRight'),
       prone,
       jump: held.has('Space') || mobileJumpHeld,
+      // `c_PIMenuSelect9`, input bit 22 -> TemplateMessage 18 ->
+      // `BFSoldier::setIsParachuting(true)`. It is the kit's ninth item slot
+      // and the engine gives it a second job on a falling soldier; see
+      // `parachute.js`. Both the digit row and the numpad, because a bail-out
+      // is a two-second window. On a touch device the JUMP button doubles as
+      // the ripcord while the state machine says you are falling — a jump is
+      // worth nothing in mid-air, and a bail-out is no time to hunt for a
+      // control that would otherwise have to be added to the pad.
+      deploy: held.has('Digit9') || held.has('Numpad9') || debugDeployHeld
+        || (mobileJumpHeld && soldier?.parachuteState === 'falling'),
+      dead: soldierDead,
     };
     // A dead body holds still: when `soldierDead` latches (death cam active)
     // zero the steering/jump input so the corpse does not keep walking.
@@ -13267,6 +13316,15 @@ function frame(dt) {
   // directly (the on-foot eye) or through the scene graph (every seat).
   presentAlpha = step.alpha;
   applyVehicleInterp(presentAlpha);
+  // Bail-out triggers for the frame. `parachute.js` names each one by the
+  // engine's own sound trigger (`c_SstFallingHigh`, `c_SstOpenParachute`,
+  // `c_SstParachuteLand`) and animation state; nothing plays them yet — the
+  // samples are not in the published `_shared/sounds` tree — so this keeps
+  // them where a check and a future audio stage can both read them.
+  if (soldier?.parachuteEvents.length) {
+    for (const event of soldier.drainParachuteEvents()) parachuteLog.push(event);
+    if (parachuteLog.length > 64) parachuteLog.splice(0, parachuteLog.length - 64);
+  }
 
   // The room's wire, right on the sim core's edge: one input word per tick
   // the world consumed (the engine's one-buffered-input-per-tick law — the
@@ -13925,6 +13983,42 @@ if (params.has('shots')) {
     triggerHeld = !!on;
     if (on) clickQueued = true;
   };
+  // Bailing out, for a headless check. `__bailOut` puts the man in the air
+  // with a velocity the way stepping out of a flying plane does (no floor
+  // probe, unlike `__teleport`); `__parachute()` reads the state machine and
+  // the numbers a check wants to assert on, and drains the sound and
+  // animation events the last frame produced.
+  window.__bailOut = (x, y, z, yaw = 0, vx = 0, vy = 0, vz = 0) => {
+    if (!soldier) return false;
+    soldier.collider = collider;
+    soldier.bailOut(x, y, z, yaw, vx, vy, vz);
+    snapPresentation();
+    return true;
+  };
+  window.__parachute = () => {
+    if (!soldier) return null;
+    const v = soldier.body.body.velocity;
+    const ground = collider?.surfaceHeight
+      ? collider.surfaceHeight(soldier.x, soldier.z) : NaN;
+    const drained = parachuteLog.slice();
+    parachuteLog.length = 0;
+    return {
+      state: soldier.parachuteState,
+      fallTime: soldier.chute.fallTime,
+      open: soldier.chute.open,
+      clips: soldier.chute.clips(soldierDead),
+      y: soldier.y, x: soldier.x, z: soldier.z,
+      height: Number.isFinite(ground) ? soldier.y - ground : null,
+      velocity: { x: v.x, y: v.y, z: v.z },
+      descent: Math.abs(v.y),
+      glide: Math.hypot(v.x, v.z),
+      drag: soldier.body.body.drag,
+      grounded: soldier.grounded,
+      hitPoints: soldierArmor?.hitPoints ?? null,
+      events: drained,
+    };
+  };
+  window.__setDeploy = on => { debugDeployHeld = !!on; return debugDeployHeld; };
   // The seated player's two mouse triggers, for a headless check: left is the
   // vehicle's `c_PIFire`, right its `c_PIAltFire`. Named apart from
   // `__setTrigger` because that one is the soldier's, and a seated player's
