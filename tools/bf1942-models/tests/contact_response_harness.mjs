@@ -7,7 +7,7 @@ import {
   SIM_HZ, SIM_DT, CONTACT_GRAVITY, STATIC_FRICTION_FACTOR, DEFAULT_FRICTION,
   DEFAULT_ELASTICITY, DEFAULT_RESISTANCE, NO_MATERIAL_TABLE, GRENADE_MATERIAL,
   REST_SPEED, materialProperty, contactPair, normalRestitution, applyContact,
-  FuseRoundBody,
+  FuseRoundBody, SURFACE_STANDOFF, ELASTIC_REBOUND,
 } from './contact-response.js';
 
 const results = {};
@@ -19,6 +19,7 @@ results.constants = {
               resistance: DEFAULT_RESISTANCE },
   noTable: NO_MATERIAL_TABLE, grenadeMaterial: GRENADE_MATERIAL,
   restSpeed: REST_SPEED,
+  standoff: SURFACE_STANDOFF, rebound: ELASTIC_REBOUND,
 };
 
 // The vanilla numbers, as `damage.json` carries them after this round's
@@ -192,8 +193,13 @@ function throwRound(material, options = {}) {
   const v = { ...velocity };
   const trail = [];
   const frames = Math.round(seconds * 60);
+  let lowest = Infinity, backFromWall = 0;
   for (let i = 0; i < frames; i++) {
     body.step(1 / 60, p, v, probe);
+    lowest = Math.min(lowest, p.y);
+    if (body.contacts > 0 && worldOptions.wallX != null) {
+      backFromWall = Math.max(backFromWall, worldOptions.wallX - p.x);
+    }
     if (i % 15 === 0) trail.push({ t: +((i + 1) / 60).toFixed(3),
                                    x: +p.x.toFixed(4), y: +p.y.toFixed(4) });
     if (body.resting) break;
@@ -204,6 +210,8 @@ function throwRound(material, options = {}) {
     resting: body.resting,
     contacts: body.contacts,
     latched: body.latched,
+    lowest: +lowest.toFixed(4),
+    backFromWall: +backFromWall.toFixed(4),
     trail,
   };
 }

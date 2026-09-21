@@ -957,9 +957,13 @@ import { GroundVehicle } from './ground.js';
 import * as GroundModule from './ground.js';
 import {
   VehicleOccupancy, findAllVehicleRoots, listEntryPoints, classifyRoot,
-  FireState, chainOnShot, readWorldPose, pickNearest,
+  FireState, chainOnShot, readWorldPose, pickNearest, AIM_INPUTS,
 } from './seats.js';
 import { MouseInput, profileFor, soldierLookDegrees } from './mouse-input.js';
+import {
+  CHASE_BEHIND, CHASE_AHEAD, boundingRadius, chaseTarget, chaseStep, chaseEye,
+  chaseLawFor,
+} from './chase-camera.js';
 import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
          findWeaponSpecsByFireArms, WEAPON_HEADROOM } from './engine-audio.js';
 import { GunFire } from './gunfire.js';
@@ -4242,6 +4246,37 @@ function disposeSounds() {
   activeAreaAudios = [];
 }
 
+// A depot's give sound, once `setupSounds` has pulled it out of the ambience:
+// the decoded sample and the context time its last play runs until.
+let supplyGive = null;
+const _depotPos = new THREE.Vector3();
+
+/** Where this level's SupplyDepot nodes stand, for telling a depot's give
+ *  sound from real building ambience. One walk per level load. */
+function supplyDepotPositions() {
+  const out = [];
+  currentRoot?.traverse(obj => {
+    if (obj.userData?.templateKind !== 'SupplyDepot') return;
+    obj.getWorldPosition(_depotPos);
+    out.push({ x: _depotPos.x, z: _depotPos.z });
+  });
+  return out;
+}
+
+/** The refill report: one pass of the sample per give that gave something,
+ *  never stacked on a pass still sounding. */
+function playSupplyGive() {
+  if (!supplyGive || !audioListener || masterVolume() <= 0) return;
+  const ctx = audioListener.context;
+  if (ctx.state !== 'running' || ctx.currentTime < supplyGive.until) return;
+  const source = ctx.createBufferSource();
+  source.buffer = supplyGive.buffer;
+  source.connect(ensureHandFireBus(ctx));
+  source.onended = () => { try { source.disconnect(); } catch (_) {} };
+  try { source.start(); } catch (_) { return; }
+  supplyGive.until = ctx.currentTime + supplyGive.buffer.duration;
+}
+
 async function setupSounds(report, dir) {
   disposeSounds();
   const gen = soundsGeneration;
@@ -4288,6 +4323,33 @@ async function setupSounds(report, dir) {
         farDistance: flags.farDistance ?? 15.0,
       });
     }
+  }
+
+  // A SupplyDepot's sound script is its *give* sound — `Ammorefill.wav`, heard
+  // while the depot is actually handing over ammunition — and every scene.json
+  // extracted before the extractor learnt that ships it as building ambience:
+  // one for-ever loop beside each of vanilla's 621 ammo boxes and airfield
+  // depots. Those areas are taken out of the pool here, so published trees are
+  // right without a re-extract, and their sample becomes `supplyGive`, played
+  // from the depot's own give (`supplyTarget.refillAmmo`).
+  supplyGive = null;
+  const depotAt = supplyDepotPositions();
+  const isDepotGive = area => {
+    if (!/_static$/i.test(area.name || '') || area.points?.length !== 1) return false;
+    if (!depotAt.length) return /ammorefill/i.test(area.file || '');
+    const [x, , z] = area.points[0];
+    return depotAt.some(d => (d.x - x) ** 2 + (d.z - z) ** 2 < 36);
+  };
+  let giveFile = null;
+  for (let i = areaList.length - 1; i >= 0; i--) {
+    if (!isDepotGive(areaList[i])) continue;
+    giveFile = giveFile || areaList[i].file;
+    areaList.splice(i, 1);
+  }
+  if (giveFile) {
+    const buffer = await getBuffer(giveFile);
+    if (gen !== soundsGeneration) return;
+    if (buffer) supplyGive = { buffer, until: 0 };
   }
 
   if (areaList.length > 0) {
@@ -6531,6 +6593,127 @@ const HEAD_SENS = 0.0022;
 // `CVMFrontChase`, `CVMFlyBy`) and never where they sit. See flight.js.
 let view = null;
 
+// --- the external view's law (chase-camera.js) -----------------------------
+//
+// `chase-camera.js` is the arithmetic of `Camera::getTransformation` for
+// CVMChase / CVMFrontChase; this is the three.js half: read the drawn poses,
+// write the camera. It reads NODES, never `state`: `applyVehicleInterp` has
+// already slerped the root and every aim axis to this frame's alpha and walked
+// the world matrices, so the tower it sees is the one being drawn. Reading the
+// raw tick pose here is what would make the view judder at 30 Hz.
+//
+// Which frame supplies forward/up is the contested part - the W4-C brief says
+// the turret, both binaries say the hull - and `chaseLawFor` owns that answer.
+// `?chase=engine` is the law as read; `?chase=legacy` is the old framing.
+const CHASE_OPTION = params.get('chase');
+const chaseRig = {
+  law: null,            // chaseLawFor()'s answer for the mounted root seat
+  camera: null,         // the root seat's Camera node: anchor and look-at point
+  root: null,
+  radius: 0,
+  rel: [0, 0, 0],
+  target: [0, 0, 0],
+  eye: [0, 0, 0],
+  anchor: new THREE.Vector3(),
+  eyeV: new THREE.Vector3(),
+  quat: new THREE.Quaternion(),
+  fwd: new THREE.Vector3(),
+  up: new THREE.Vector3(),
+  basis: new THREE.Matrix4(),
+};
+const CHASE_WORLD_UP = new THREE.Vector3(0, 1, 0);
+// `getBoundingRadius` is cached on the engine's object (+0xb4); cached here per
+// root for the same reason, and so a wreck's smoke never inflates it.
+const chaseRadiusCache = new WeakMap();
+
+/** The plain tree `boundingRadius` walks, from a vehicle's node tree. */
+function chaseRadiusTree(node) {
+  let radius = 0;
+  if (node.isMesh && !isCollision(node) && node.geometry) {
+    if (!node.geometry.boundingSphere) node.geometry.computeBoundingSphere();
+    const sphere = node.geometry.boundingSphere;
+    if (sphere) radius = sphere.center.length() + sphere.radius;
+  }
+  return {
+    radius,
+    offset: node.position.toArray(),
+    children: node.children.filter(c => !isCollision(c)).map(chaseRadiusTree),
+  };
+}
+
+/** Does `cameraNode` hang under one of the seat's mouse-aimed axes (GUN-7's
+ *  shape)? Asked of the seat survey, not of a `TurretRig`: a rig is only built
+ *  the first time its seat is manned, and a player who climbs in at the hull
+ *  gunner's door reaches the driving seat later, by a seat switch. */
+function cameraRidesTurret(cameraNode, seat, root) {
+  if (!cameraNode || !seat?.axes) return false;
+  const aimed = Object.values(seat.axes)
+    .filter(axis => AIM_INPUTS.includes(axis?.spec?.input))
+    .map(axis => axis.node);
+  for (let p = cameraNode.parent; p && p !== root; p = p.parent) {
+    if (aimed.includes(p)) return true;
+  }
+  return false;
+}
+
+/** Decide the law for the vehicle just mounted. Called from `setPilot`, after
+ *  the root seat's rig exists. */
+function mountChaseLaw(vehicle) {
+  chaseRig.law = null;
+  chaseRig.camera = vehicle.cameraNode || null;
+  chaseRig.root = vehicle.node;
+  chaseRig.rel.fill(0);
+  if (!view || !chaseRig.camera) { if (view) view.externalLaw = null; return; }
+  const rides = cameraRidesTurret(
+    chaseRig.camera, occupancy.seatInfo(occupancy.rootId), vehicle.node);
+  chaseRig.law = chaseLawFor(CHASE_OPTION, rides);
+  if (chaseRig.law.law !== 'engine') { view.externalLaw = null; return; }
+  if (!chaseRadiusCache.has(vehicle.node)) {
+    chaseRadiusCache.set(vehicle.node, boundingRadius(chaseRadiusTree(vehicle.node)));
+  }
+  chaseRig.radius = chaseRadiusCache.get(vehicle.node);
+  view.externalLaw = chaseExternalLaw;
+}
+
+/** `VehicleCamera.externalLaw`: true when it wrote `pose`. */
+function chaseExternalLaw(mode, dt, pose) {
+  const rig = chaseRig;
+  // Only the root seat: a passenger's view stays on the old framing, and a
+  // gunner's belongs to `manned()`.
+  if (!occupancy?.isActiveRoot()) return false;
+  rig.camera.getWorldPosition(rig.anchor);
+  if (mode !== 'chase' && mode !== 'front') {
+    // The engine carries `rel` as (last output - Camera position) in every
+    // mode: zero in the cockpit, the tripod's offset in fly-by.
+    if (mode === 'flyby' && view.anchored) {
+      rig.rel[0] = view.anchor.x - rig.anchor.x;
+      rig.rel[1] = view.anchor.y - rig.anchor.y;
+      rig.rel[2] = view.anchor.z - rig.anchor.z;
+    } else {
+      rig.rel.fill(0);
+    }
+    return false;
+  }
+  // forward/up: the Camera's parent (the brief's turret frame, a viewer
+  // choice) or the vehicle root (what both binaries read).
+  const frame = rig.law.frameFromAim ? rig.camera.parent : rig.root;
+  frame.getWorldQuaternion(rig.quat);
+  rig.fwd.set(0, 0, -1).applyQuaternion(rig.quat);
+  rig.up.set(0, 1, 0).applyQuaternion(rig.quat);
+  const sign = mode === 'front' ? CHASE_AHEAD : CHASE_BEHIND;
+  chaseTarget(rig.fwd.toArray(), rig.up.toArray(), rig.radius, sign, rig.target);
+  const v = view.vehicle.state.velocity;
+  chaseStep(rig.rel, rig.target, [v.x, v.y, v.z], sign, dt);
+  const ax = rig.anchor.x + rig.rel[0];
+  const az = rig.anchor.z + rig.rel[2];
+  chaseEye(rig.anchor.toArray(), rig.rel, groundHeight(ax, az), rig.eye);
+  rig.eyeV.fromArray(rig.eye);
+  pose.position.copy(rig.eyeV);
+  rig.basis.lookAt(rig.eyeV, rig.anchor, CHASE_WORLD_UP);
+  pose.quaternion.setFromRotationMatrix(rig.basis);
+  return true;
+}
+
 /**
  * Occupy `node` (any `PlayerControlObject` root — a flyable/drivable one,
  * a `c_ETTank`, a bare gun/seat furniture root) at `seatId`, or the root seat
@@ -6602,6 +6785,9 @@ function setPilot(on, node = null, seatId = null) {
     // straight up to a Sherman's hull-gunner door seats you there directly,
     // never through the driver's seat first.
     occupancy.setActiveSeat(seatId || occupancy.rootId);
+    // After the seats exist: the law asks whether the root seat's Camera rides
+    // one of its own aim axes.
+    if (view) mountChaseLaw(aircraft || car);
     collectGuns();
     // `collect` (called above, for both the drivetrain's own guns and, via
     // its own `collectMannedGuns()` tail, a bare gun/seat root's FireArms)
@@ -8271,9 +8457,15 @@ supplyTarget.refillAmmo = () => {
   // spares) — one magazine less than the pre-existing `__refill` perf-cheat
   // below, which is deliberately generous for a stress test rather than
   // standing in for a real mechanic.
-  hw.rounds = magazine.size;
-  hw.mags = Math.max((magazine.magazines ?? 1) - 1, 0);
+  const size = magazine.size >= 0 ? magazine.size : Infinity;
+  const spares = Math.max((magazine.magazines ?? 1) - 1, 0);
+  // A soldier who is owed nothing gets nothing, and hears nothing: the depot
+  // ticks every half second for as long as he stands on it.
+  if (hw.rounds >= size && hw.mags >= spares) return;
+  hw.rounds = size;
+  hw.mags = spares;
   hw.reload = 0;
+  playSupplyGive();
 };
 let weaponToken = 0;      // guards a slow load landing after a mode/map switch
 let triggerHeld = false;  // left button, while pointer-locked on foot
@@ -9728,12 +9920,21 @@ function footFire(dt, input = null) {
       // that makes the round waits for the countdown. A weapon swapped or a
       // soldier killed mid-wind-up never throws: `hw` goes with them.
       const windUp = hw.data?.throw?.fireDelay || 0;
+      // Clicks made during a throw are not banked either: the rifles keep
+      // their one queued shot across the bolt cycle, but a grenade mashed
+      // through its wind-up would follow itself with a second nobody asked for.
+      if (windUp > 0 && (hw.throwWind > 0 || hw.cool > 0)) clickQueued = false;
       if (hw.throwWind > 0) {
         hw.throwWind -= dt;
         if (hw.throwWind <= 0) {
           hw.throwWind = 0;
           pullHandTrigger(hw);
         }
+      } else if (clickQueued && !(hw.rounds > 0) && hw.reload <= 0) {
+        // Dry, and not mid-reload: the click is spent on nothing. Left queued
+        // it was honoured the moment an ammo box refilled the weapon — spam
+        // the trigger on an empty grenade pouch and the resupply threw one.
+        clickQueued = false;
       } else if (clickQueued && canFire && hw.cool <= 0 && !hw.pulse) {
         clickQueued = false;
         if (windUp > 0) {
@@ -9768,6 +9969,13 @@ function footFire(dt, input = null) {
       hw.hideFire = 0;
       if (hw.weaponNode) hw.weaponNode.visible = true;
     }
+  }
+  // A thrown weapon with nothing left to throw is an empty hand. The engine
+  // gets there by switching weapons (`changeWeaponWhenNoAmmo`); until this
+  // page does that, the fist at least does not hold a grenade the pouch does
+  // not have — and an ammo box puts one back in it the moment it refills.
+  if (hw.weaponNode && hw.data?.throw && hw.hideFire <= 0) {
+    hw.weaponNode.visible = hw.rounds > 0 || hw.mags > 0;
   }
 
   // The arms last, once the reload clock and the trigger have settled what
@@ -13336,6 +13544,13 @@ if (params.has('shots')) {
   // degrees off the nose, so framing them means looking at them — and the orbit
   // outside it. `__setView(mode)` selects a mode without walking the cycle.
   Object.defineProperty(window, '__view', { get: () => view });
+  // The external view's law as mounted: which law and frame `?chase=` chose,
+  // the root's bounding radius, and the carried offset from the seat Camera.
+  window.__chase = () => ({
+    option: CHASE_OPTION, law: chaseRig.law, radius: chaseRig.radius,
+    rel: [...chaseRig.rel], camera: chaseRig.camera?.name ?? null,
+    active: !!view?.externalLaw,
+  });
   window.__setView = mode => {
     if (!view) return null;
     const set = view.setMode(mode);

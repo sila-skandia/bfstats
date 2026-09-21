@@ -205,34 +205,51 @@ class ContactResponseTests(unittest.TestCase):
         old = self.results["stopDead"]
         new = self.results["flatGround"]["grenade"]
         self.assertAlmostEqual(14.3816, old["x"], places=3)
-        self.assertAlmostEqual(18.7548, new["rest"]["x"], places=3)
+        # 21.388 since the elastic rebound: one soft hop off the landing, then
+        # the same skid (it was 18.7548 when a grenade stopped dead on touch).
+        self.assertAlmostEqual(21.388, new["rest"]["x"], places=3)
         self.assertGreater(new["rest"]["x"] - old["x"], 4.0)
         self.assertTrue(new["resting"])
-        self.assertAlmostEqual(0.0, new["rest"]["y"], places=6,
+        standoff = self.results["constants"]["standoff"]
+        self.assertAlmostEqual(standoff, new["rest"]["y"], places=6,
                                msg="the round must end ON the ground, not in it")
+        self.assertGreaterEqual(new["lowest"], 0.0)
         self.assertEqual(0, new["speed"])
 
     def test_a_landmine_slides_further_than_a_grenade(self) -> None:
         # Not because it is heavier -- mass is nowhere in this solver -- but
         # because material 232 falls back to material 0's friction 1.0 while
         # the grenade's own is 2.0, so the pair means are 0.9 and 1.4.
+        # On the ground alone that still holds, but the grenade now hops once
+        # off its landing (ELASTIC_REBOUND) and the hop carries it past the
+        # landmine, so the comparison that survives is the one the materials
+        # make: the inelastic rounds never rebound, and everything rests a
+        # standoff above the ground, never in it.
         ground = self.results["flatGround"]
-        self.assertGreater(ground["landmine"]["rest"]["x"],
-                           ground["grenade"]["rest"]["x"])
         self.assertTrue(ground["landmine"]["resting"])
         self.assertTrue(ground["expack"]["resting"])
+        self.assertEqual(ground["landmine"]["rest"], ground["expack"]["rest"])
+        standoff = self.results["constants"]["standoff"]
         for name in ("grenade", "landmine", "expack"):
-            self.assertAlmostEqual(0.0, ground[name]["rest"]["y"], places=6)
+            self.assertAlmostEqual(standoff, ground[name]["rest"]["y"], places=6)
+            self.assertGreaterEqual(ground[name]["lowest"], 0.0)
 
     def test_a_round_thrown_at_a_wall_ends_at_its_foot(self) -> None:
         wall = self.results["againstWall"]
+        standoff = self.results["constants"]["standoff"]
         for name in ("grenade", "landmine"):
-            self.assertAlmostEqual(6.0, wall[name]["rest"]["x"], places=2)
-            self.assertAlmostEqual(0.0, wall[name]["rest"]["y"], places=6)
+            self.assertLess(wall[name]["rest"]["x"], 6.0, "never past the wall")
+            self.assertAlmostEqual(standoff, wall[name]["rest"]["y"], places=6)
             self.assertTrue(wall[name]["resting"])
-        # The grenade stops its into-wall speed in ONE contact; the landmine
-        # only halves it each time and needs several.
-        self.assertEqual(2, wall["grenade"]["contacts"])
+            # The corner where the wall meets the floor is where a round used
+            # to sink through the floor and fall out of the world.
+            self.assertGreaterEqual(wall[name]["lowest"], 0.0)
+        # The inelastic landmine ends at the wall's foot. The grenade comes off
+        # it with a soft rebound -- 20 m/s in, a metre or two back, not a
+        # ricochet -- and is not hauled back to the wall by the re-seat probe.
+        self.assertLess(wall["landmine"]["backFromWall"], 0.05)
+        self.assertGreater(wall["grenade"]["backFromWall"], 0.5)
+        self.assertLess(wall["grenade"]["backFromWall"], 3.0)
         self.assertGreater(wall["landmine"]["contacts"], 2)
 
     def test_friction_decides_what_rolls_down_a_slope(self) -> None:
