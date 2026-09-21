@@ -28,6 +28,10 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULES = {
     "physics.mjs": ROOT / "viewer" / "physics.js",
     "collision.mjs": ROOT / "viewer" / "collision.js",
+    # `physics.js` imports `./parachute.js` by that name, so this one cannot be
+    # renamed with the others; the `package.json` below is what lets node read
+    # a bare `.js` as a module.
+    "parachute.js": ROOT / "viewer" / "parachute.js",
 }
 HARNESS = Path(__file__).resolve().parent / "physics_harness.mjs"
 
@@ -37,6 +41,7 @@ def run_harness() -> dict:
         raise unittest.SkipTest("node is not installed")
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
+        (work / "package.json").write_text('{"type": "module"}')
         for name, source in MODULES.items():
             shutil.copyfile(source, work / name)
         shutil.copyfile(HARNESS, work / "harness.mjs")

@@ -42,6 +42,7 @@ MODULES = {
     "gunfire.js": VIEWER / "gunfire.js",
     "collision.js": VIEWER / "collision.js",
     "physics.js": VIEWER / "physics.js",
+    "parachute.js": VIEWER / "parachute.js",
     "effects-core.js": VIEWER / "effects-core.js",
     "contact-response.js": VIEWER / "contact-response.js",
     "node_modules/three/three.module.js": VIEWER / "vendor" / "three.module.js",

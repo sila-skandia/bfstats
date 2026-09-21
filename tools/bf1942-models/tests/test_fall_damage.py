@@ -24,8 +24,13 @@ HARNESS = Path(__file__).resolve().parent / "fall_damage_harness.mjs"
 def run_harness() -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
+        (work / "package.json").write_text('{"type": "module"}')
         for name in ("fall-damage", "physics"):
             shutil.copy(ROOT / "viewer" / f"{name}.js", work / f"{name}.mjs")
+        # `physics.js` imports `./parachute.js` by that name, so this one keeps
+        # its own; the `package.json` above is what lets node read a bare `.js`
+        # as a module.
+        shutil.copy(ROOT / "viewer" / "parachute.js", work / "parachute.js")
         shutil.copy(HARNESS, work / "harness.mjs")
         proc = subprocess.run(
             ["node", str(work / "harness.mjs")],
