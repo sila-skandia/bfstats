@@ -5811,6 +5811,10 @@ function isSeaHull(node) {
  * answers water's 0.1 for anything under the sea line and would let a beached
  * destroyer slide off a sandbank.
  */
+/** Scratch for the ship's sea-bed normal query; the heightfield writes a plain
+ *  array, `Ship` wants a THREE.Vector3. */
+const _shipNormal = [0, 1, 0];
+
 function seabedFriction(x, z) {
   const table = materialFrictionById;
   const id = collider?.heightfield?.material(x, z);
@@ -6187,6 +6191,36 @@ function onCrashDamage(owner, result, at, other) {
   if (effect) effects.play(effect, { position: [at[0], at[1], at[2]], normal: [0, 1, 0] });
 }
 
+/**
+ * How far the hull's own col0 collision VERTICES reach below its origin, in the
+ * hull's frame — the same set `BodyWorld.#drivenTerrainDamage` bills and the same
+ * set `checkVsTerrain` (`0x0825a960`) drops on the heightfield.
+ *
+ * `Ship.keel` is the collision BOX's bottom, and on a level whose drawn tree
+ * carries no hull collision node it is the drawn geometry box's bottom (ships
+ * README §15). A Gato's col0 vertices reach 1.06 m below that box, so a hull
+ * grounded on the box would report herself clear of a reef while the damage pass
+ * still had a vertex inside it — the one hull on Midway that kept dying after the
+ * footprint grounding went in. Handing `Ship` this number makes the two agree.
+ */
+function hullCollisionKeel(spec) {
+  let lowest = Infinity;
+  for (const desc of spec?.parts || []) {
+    if (desc.kind !== 'body') continue;
+    const layer = desc.shape?.layers?.[0];
+    const v = layer?.vertices;
+    if (!v) continue;
+    const rot = desc.rot;
+    for (let i = 0; i < v.length; i += 3) {
+      // Part-local -> body frame, `body-contact.js`'s own row convention.
+      const y = desc.offset[1]
+        + v[i] * rot[0][1] + v[i + 1] * rot[1][1] + v[i + 2] * rot[2][1];
+      if (y < lowest) lowest = y;
+    }
+  }
+  return Number.isFinite(lowest) ? lowest : null;
+}
+
 /** The player has taken a vehicle: its drive model now stands in for the body. */
 function adoptDrivenBody(vehicle) {
   if (!bodyWorld || !vehicle) return;
@@ -6200,6 +6234,8 @@ function adoptDrivenBody(vehicle) {
   // re-asks every query in the hull's own frame, and a 1,400-triangle destroyer
   // that probed its own baked triangles for one tick would shove itself.
   if (scene.sea) {
+    // Ground her on the same geometry the crash-damage pass bills.
+    if ('sampleKeel' in vehicle) vehicle.sampleKeel = hullCollisionKeel(scene.spec);
     scene.node.updateWorldMatrix(true, false);
     const e = scene.node.matrixWorld.elements;
     publishMovedHull(owner, scene, scene.node, [e[12], e[13], e[14]]);
@@ -7184,6 +7220,19 @@ function setPilot(on, node = null, seatId = null) {
         aircraft.groundHeight = (x, z) => {
           const h = collider?.heightfield?.height(x, z);
           return Number.isFinite(h) ? h : -Infinity;
+        };
+        // ... and the normal there, because `impulseOn`'s push-out is ALONG it
+        // (`checkVsTerrain` asks for height and normal in one call,
+        // `PatchTerrain::getHeightAndNormal` `0x083d6f10`). Without it a hull
+        // that meets the face of a reef is lifted up it instead of stopped
+        // against it — and a hull left buried in a bank is billed crash damage
+        // for a contact with a wall. See `Ship.pushOutOfBed`.
+        aircraft.groundNormal = (x, z, out) => {
+          const n = collider?.heightfield?.normal;
+          if (!n) { out.set(0, 1, 0); return out; }
+          n.call(collider.heightfield, x, z, _shipNormal);
+          out.set(_shipNormal[0], _shipNormal[1], _shipNormal[2]);
+          return out;
         };
         // ... and once she is on it, what holds her there: the mean of her own
         // material's friction and the bottom's, which is what `impulseOn` writes
@@ -15745,7 +15794,15 @@ if (params.has('shots')) {
       z: +s.position.z.toFixed(3),
       keel: +aircraft.keel.toFixed(3), underWater: +aircraft.underWater().toFixed(3),
       aground: !!aircraft.aground,
-      seaBed: +aircraft.groundHeight(s.position.x, s.position.z).toFixed(3),
+      // The RAW bed under her origin. `Ship.groundHeight` now answers the
+      // footprint's floor (a synthetic number the clamp reads), so a trace that
+      // wants "what is under her" has to ask `bedHeight`.
+      seaBed: +(aircraft.bedHeight
+        ? aircraft.bedHeight(s.position.x, s.position.z)
+        : aircraft.groundHeight(s.position.x, s.position.z)).toFixed(3),
+      // The deepest part of her hull that is still under the bed, which after
+      // `pushOutOfBed` should be zero on any grounded hull.
+      buried: +((aircraft.deepestContact?.()?.depth) ?? 0).toFixed(4),
       size: aircraft.spec.size.map(n => +n.toFixed(3)),
       inertia: [aircraft.inertia.x, aircraft.inertia.y, aircraft.inertia.z],
       staticContacts: bodyWorld?.staticContacts ?? null,
