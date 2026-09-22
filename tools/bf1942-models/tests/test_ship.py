@@ -20,6 +20,7 @@ law's own `1 + 24*min(depth/DY, 1)`.
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import subprocess
 import tempfile
@@ -34,6 +35,10 @@ MODULES = {
     "ship.mjs": VIEWER / "ship.js",
     "flight.mjs": VIEWER / "flight.js",
     "body-float.js": VIEWER / "body-float.js",
+    # `ship.js`'s own two new imports: the gearbox (`engine-revs.js`, no imports
+    # of its own) and the Coulomb constants the beaching friction uses.
+    "engine-revs.js": VIEWER / "engine-revs.js",
+    "body-friction.js": VIEWER / "body-friction.js",
     # `body-float.js`'s own import: `FloatingHull` is a `RigidBody` with the
     # float law posted at each node.
     "rigid-body.js": VIEWER / "rigid-body.js",
@@ -99,10 +104,63 @@ class ShipSpecTests(unittest.TestCase):
         self.assertEqual(engine["position"], [0, -4, 40])
 
     def test_a_ship_may_go_astern_and_an_aircraft_may_not(self):
-        """`Fletcher_Engine` runs `setMinRotation 0/0/-4000`, and `K` is a
-        signed square, so a negative throttle is astern. `CORSAIR`'s own
-        `throttleMin` is absent and reads as 0."""
-        self.assertEqual(self.out["spec"]["throttleMin"], -1)
+        """`Fletcher_Engine` runs `setMinRotation 0/0/-4000` to
+        `setMaxRotation 0/0/5000`, and `T1 = Engine+0x10c / maxRotation.z` reads
+        the CLIPPED angle (`0x0823e1e0`), so the pedal's own floor is
+        -4000/5000 = **-0.8**, not -1: astern is 80 per cent of ahead before the
+        signed square ever sees it. `CORSAIR`'s own `throttleMin` is absent and
+        reads as 0."""
+        self.assertAlmostEqual(self.out["spec"]["throttleMin"], -0.8, places=6)
+
+    def test_a_ship_turns_on_the_engines_own_inertia(self):
+        """`getGeometryInertia` (`0x08253930`, collision-response.md §4.2) is
+        `(DY²+DZ²)/3` and friends off the geometry bounding box -- FOUR times a
+        solid box's per unit mass, and the only inertia the engine has. A 134 m
+        hull on a solid box's inertia answers the helm four times too quickly."""
+        self.assertEqual(self.out["spec"]["inertiaLaw"], "geometry")
+        mass, (dx, dy, dz) = 2500000, self.out["spec"]["size"]
+        inertia = self.out["inertia"]
+        self.assertAlmostEqual(inertia["y"] / (mass * (dx * dx + dz * dz) / 3),
+                               1.0, places=6)
+        self.assertAlmostEqual(inertia["x"] / (mass * (dz * dz + dy * dy) / 3),
+                               1.0, places=6)
+        self.assertAlmostEqual(inertia["z"] / (mass * (dx * dx + dy * dy) / 3),
+                               1.0, places=6)
+
+    def test_the_geometry_box_is_the_roots_own_mesh(self):
+        """`getGeometryInertia` and the box drag both ask the object for its own
+        `IGeometry`, which is the root's standard mesh. A turret, a climbing net
+        and a muzzle-flash sprite are child OBJECTS with geometry of their own
+        and are not in it -- the harness hangs a turret 12 m up and a wash sprite
+        5 m down, and neither reaches the box."""
+        self.assertEqual(self.out["geometry"]["size"], [18.73, 12.0, 133.86])
+        self.assertEqual(self.out["geometry"]["bottom"], -5.0)
+
+    def test_the_box_is_measured_in_the_hulls_own_frame(self):
+        """`DX/DY/DZ` are the object's own extents. Measuring a hull at 45
+        degrees of yaw through `matrixWorld` would give the world AABB and make
+        a destroyer report a beam of 107 m."""
+        self.assertEqual(self.out["geometryTurned"], [18.73, 12.0, 133.86])
+
+    def test_the_keel_is_the_collision_boxs_bottom_and_it_is_the_draft(self):
+        """`setUnderWater` measures the lowest COLLISION point, not the lowest
+        drawn one (`ResponsePhysics::checkVsTerrain` `0x0825a960`), and that
+        same point is what rests on the sea bed -- so `groundClearance` is
+        `-keel`."""
+        spec = self.out["spec"]
+        self.assertEqual(spec["keel"], -4.0)
+        self.assertEqual(spec["groundClearance"], 4.0)
+        # At her draft the keel is 3.775 m under a water level of 20:
+        # 20 - (20.225 - 4).
+        self.assertAlmostEqual(self.out["afloat"]["underWater"], 3.775, places=3)
+
+    def test_the_box_laws_angular_half_does_nothing_to_a_ship(self):
+        """`k' = -drag*|w|/mass` times `(Ax+Az)` about y. It is in the law and is
+        implemented, and at five degrees a second of yaw it is 2.2e-9 rad/s²
+        -- so a hull's turn is damped by her two `Wing`s and by nothing else."""
+        drag = self.out["angularDrag"]
+        self.assertLess(drag["momentY"], 0)      # it opposes the rotation
+        self.assertLess(abs(drag["alphaY"]), 1e-7)
 
     def test_the_throttle_spools_over_the_revs_the_engine_declares(self):
         """`setMaxSpeed 0/0/5000` over `setMaxRotation 0/0/5000` is the whole
@@ -132,17 +190,23 @@ class ShipWaterGateTests(unittest.TestCase):
         cls.out = run_harness()
 
     def test_a_screw_under_water_drives_and_one_out_of_it_does_not(self):
-        """Bit 3 set. Below the waterline the thrust body runs with the stored
-        throttle; above it, with `|throttle| > 0.02`, the thrust is skipped
-        entirely and the throttle is **pinned to 1.0** (`0x0824d047`)."""
+        """Bit 3 set. Below the waterline the thrust body runs on the REVS
+        (`+0xa0`); above it, with `|revs| > 0.02`, the thrust is skipped entirely
+        and `+0xa0` is **pinned to 1.0** (`0x0824d06d` writes `[edi+0xa0]`)."""
         gate = self.out["gate"]
         self.assertEqual(gate["submerged"], 1)
         self.assertIsNone(gate["clearOfTheWater"])
-        self.assertEqual(gate["throttleAfterPin"], 1)
+        self.assertEqual(gate["revsAfterPin"], 1)
+
+    def test_the_pin_lands_on_the_revs_and_not_on_the_helm_order(self):
+        """`0x0824d06d` writes `[edi+0xa0]`, the rev state -- not the pedal. A
+        hull lifted clear of the water and put back must not come back with the
+        helm order changed under the player's hand."""
+        self.assertEqual(self.out["gate"]["throttleAfterPin"], 1)
 
     def test_the_dead_band_is_two_hundredths(self):
-        """`|throttle| > 0.02` -- at or below it the branch is not taken and the
-        throttle survives."""
+        """`|revs| > 0.02` -- at or below it the branch is not taken and the
+        revs survive."""
         self.assertEqual(self.out["gate"]["clearInTheDeadBand"], 0.01)
 
     def test_an_aircraft_gets_the_mirror_rule(self):
@@ -174,15 +238,30 @@ class ShipUnderWayTests(unittest.TestCase):
         the whole reason placement is closed-form."""
         self.assertAlmostEqual(self.out["dropped"]["y"], DRAFT, places=2)
 
-    def test_full_ahead_reaches_a_terminal_speed_and_stays_afloat(self):
-        """Thrust at full throttle from rest is `(0.1 + 1) * 3.5*2/0.94` =
-        8.19 m/s^2, and what stops it is the box drag law. The terminal speed
-        depends on `underWater`, which is NOT read from the binary (see
-        `ship.js`), so what is asserted is that a terminal speed exists, is in
-        the range a destroyer plausibly makes, and is reached -- not its
-        value."""
-        self.assertAlmostEqual(0.1 + 1.0, 1.1, places=9)
+    def test_the_pedal_is_not_the_throttle_the_thrust_law_reads(self):
+        """`PhysicsEngine::updatePhysics` reads `+0xa0` (`fsubr [edi+0xa0]` at
+        `0x0824cf4b`), which `Engine::handleUpdate` writes as
+        `revs += 0.05*((T1 - L) - 0.5*revs)`. The load `L` is the thrust itself
+        through `feedbackLoop`, so a pedal on the floor does NOT give the thrust
+        law 1.0: a Fletcher settles near 0.48, and `revs = 2*(T1 - L)` holds.
+
+        This is the whole of "too quick": without it a destroyer accelerates at
+        `(0.1 + 1)*7.447 = 8.19 m/s^2` from rest, five times what she should."""
         self.assertAlmostEqual(1.1 * RATIO, 8.191, places=3)
+        ahead = self.out["ahead"]
+        self.assertGreater(ahead["revs"], 0.3)
+        self.assertLess(ahead["revs"], 0.7)
+        self.assertEqual(ahead["throttle"], 1)
+        # The gearbox's own fixed point, to the accuracy of one tick of the
+        # load that is accumulated after the filter has run.
+        self.assertAlmostEqual(ahead["revs"], 2 * (1 - ahead["load"]), places=2)
+
+    def test_full_ahead_reaches_a_terminal_speed_and_stays_afloat(self):
+        """What stops her is the box drag law with the submerged multiplier; what
+        holds her down to a plausible speed is the rev governor above. The
+        terminal speed still depends on the geometry box, so what is asserted is
+        that a terminal speed exists, is in the range a destroyer plausibly
+        makes, and is reached -- not its value."""
         ahead = self.out["ahead"]
         self.assertGreater(ahead["along"], 5)
         self.assertLess(ahead["along"], 30)
@@ -201,7 +280,9 @@ class ShipUnderWayTests(unittest.TestCase):
         axis, which an aircraft's clamp at 0 could not express."""
         astern = self.out["astern"]
         self.assertLess(astern["along"], -5)
-        self.assertAlmostEqual(astern["throttle"], -1, places=3)
+        self.assertAlmostEqual(astern["throttle"], -0.8, places=3)
+        # ... and she makes less way astern than ahead, because `T1` is -0.8.
+        self.assertLess(abs(astern["along"]), self.out["ahead"]["along"])
 
     def test_the_rudder_turns_the_ship_and_the_sign_follows_the_input(self):
         """Two `Wing`s, opposite `setAcceleration` signs, 110 m apart: the
@@ -225,6 +306,87 @@ class ShipUnderWayTests(unittest.TestCase):
         self.assertLess(abs(self.out["turning"]["y"] - DRAFT), 0.5)
         self.assertAlmostEqual(self.out["turning"]["y"],
                                self.out["turningOther"]["y"], places=2)
+
+
+    def test_she_takes_time_to_answer_the_helm(self):
+        """The inertia correction shows up here rather than in the steady rate:
+        the hull's own two `Wing`s damp the turn and the box law's angular half
+        is 2.2e-9 rad/s², so the STEADY rate is set by the wings and the speed
+        while the INERTIA sets how long she takes to reach it. Ten seconds of
+        full rudder is a sixth of what the first thirty seconds average out to
+        per second, which is a hull leaning into a turn rather than pivoting."""
+        ten = self.out["turning"]["tenSeconds"]["turned"]
+        rate = self.out["turning"]["rate"]
+        self.assertLess(abs(ten), 25)
+        # The rate she settles at, and the radius that implies: a destroyer's
+        # circle is hundreds of metres, not tens.
+        speed = self.out["turning"]["speed"]
+        radius = speed / abs(rate * math.pi / 180)
+        self.assertGreater(radius, 50)
+        self.assertLess(radius, 600)
+        # She is still accelerating into the turn at 10 s: the first ten seconds
+        # are well under a third of the thirty-second total.
+        self.assertLess(abs(ten), abs(self.out["turning"]["turned"]) / 2.5)
+
+
+    def test_the_engines_inertia_is_four_times_a_solid_boxs_where_it_matters(self):
+        """The same hull, the same rudder, the same speed -- only the divisor
+        changes. `(DY²+DZ²)/3` against `/12` is four times the inertia, so it is
+        four times LESS angular acceleration in the first seconds of a turn, and
+        it converges on the same steady rate because that rate is the two
+        `Wing`s' own balance and has no inertia in it at all."""
+        answer = {row["seconds"]: row for row in self.out["helmAnswer"]}
+        # Two seconds in, the ratio is the formula's own 4.
+        two = answer[2]
+        self.assertGreater(abs(two["box"]) / abs(two["geometry"]), 3.0)
+        # ... and it closes as she settles into the turn.
+        five = answer[5]
+        self.assertLess(abs(five["box"]) / abs(five["geometry"]), 3.0)
+        self.assertGreater(abs(five["box"]), abs(five["geometry"]))
+        # The steady rate is the same to a tenth of a degree a second.
+        self.assertAlmostEqual(self.out["turning"]["rate"],
+                               self.out["turningSolidBox"]["rate"], places=1)
+
+
+class ShipAgroundTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.out = run_harness()
+
+    def test_a_hull_over_a_shoal_rests_on_its_keel(self):
+        """`groundClearance` is the draft, so a sea bed at 17.0 holds a keel at
+        relative -4.0 at a root y of 21.0 -- 0.775 m above where she would float.
+        She is held up as well as held still, and full ahead does not move her."""
+        beached = self.out["beached"]
+        self.assertTrue(beached["aground"])
+        self.assertAlmostEqual(beached["y"], 21.0, places=3)
+        self.assertEqual(beached["speed"], 0)
+        self.assertEqual(beached["throttle"], 1)
+
+    def test_she_makes_way_over_deep_water_and_stops_on_the_bank(self):
+        """The same hull, full ahead, over deep water for 300 m and then a
+        sandbank. `struckAt` is when `grounded` first goes true."""
+        run = self.out["ranAground"]
+        self.assertIsNotNone(run["struckAt"])
+        moving = [p for p in run["track"] if not p["aground"] and p["t"] > 1]
+        self.assertTrue(moving, "she never got under way")
+        self.assertGreater(max(p["speed"] for p in moving), 5)
+        stuck = [p for p in run["track"] if p["aground"]]
+        self.assertTrue(stuck, "she never ran aground")
+        for point in stuck:
+            self.assertLess(point["speed"], 0.01)
+            self.assertAlmostEqual(point["y"], 21.0, places=2)
+
+    def test_full_throttle_does_not_free_her_and_nor_does_astern(self):
+        """The owner's own requirement, and the engine's: the Coulomb budget on
+        a hull-on-sand contact is `0.9 * 1.5 * 9.82 = 13.3 m/s²` of velocity
+        change a second (physics.md §10's sliding arm, the smaller of the two),
+        against a thrust of about 1.5. Ten seconds of full ahead and thirty of
+        full astern move her centimetres."""
+        run = self.out["ranAground"]
+        self.assertLess(abs(run["heldAhead"]["moved"]), 0.5)
+        self.assertLess(abs(run["heldAstern"]["moved"]), 0.5)
+        self.assertTrue(run["heldAstern"]["aground"])
 
 
 if __name__ == "__main__":

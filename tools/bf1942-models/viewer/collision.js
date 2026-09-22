@@ -440,17 +440,34 @@ export class CollisionIndex {
       else { iz += stepZ; tEnter = tMaxZ; tMaxZ += tDeltaZ; }
       if (!stepX && !stepZ) break;   // straight up or down: one cell only
     }
-    if (!found) return null;
-    const tri = out.triangle;
-    out.t = best;
-    out.x = ox + dx * best;
-    out.y = oy + dy * best;
-    out.z = oz + dz * best;
-    out.material = this.materials[tri];
-    out.owner = this.owners[tri];
-    out.kind = 'object';
-    this.#normal(tri, out);
-    return out;
+    if (found) {
+      const tri = out.triangle;
+      out.t = best;
+      out.x = ox + dx * best;
+      out.y = oy + dy * best;
+      out.z = oz + dz * best;
+      out.material = this.materials[tri];
+      out.owner = this.owners[tri];
+      out.kind = 'object';
+      this.#normal(tri, out);
+    }
+    // A hull that has been driven off its bake is switched OFF in this index and
+    // re-asked in its own baked frame (`WorldCollider.setMovedOwner`), and that
+    // second half used to live only in `WorldCollider.cast` — so a caller that
+    // reaches past the world collider to the index, as `soldier.js`'s `settle`
+    // deliberately does to avoid the terrain marcher, could not see a moved hull
+    // at all. Spawn on a carrier that has steamed a kilometre and the deck is
+    // simply not there: the man lands in the sea beside her. `movedPass` is the
+    // world collider's own loop, injected, so one query answers for both halves.
+    //
+    // Not re-entered (`onlyOwner` is how the pass itself asks), not for a
+    // drivable-only query (no moved hull carries the drivable mask), and not for
+    // a caller that is itself a simulated body and owns its contacts.
+    if (out && this.movedPass && onlyOwner < 0 && !onlyDrivable && !skipBodies) {
+      if (this.movedPass(ox, oy, oz, dx, dy, dz,
+                         found ? best : maxDist, skipOwner, out)) return out;
+    }
+    return found ? out : null;
   }
 
   /**
@@ -1339,9 +1356,60 @@ export class WorldCollider {
       m = { fwd: new Float64Array(16), inv: new Float64Array(16), x: 0, y: 0, z: 0, radius: 0 };
       this.moved.set(owner, m);
       this.statics?.disableOwner?.(owner);
+      // The index answers for its own moved owners from here on, so a caller
+      // that reaches past this collider to `statics.cast` — `soldier.js`'s
+      // `settle`, which avoids the terrain marcher on purpose — still finds a
+      // hull that has been driven. See `CollisionIndex.cast`'s own note.
+      if (this.statics && !this.statics.movedPass) {
+        this.statics.movedPass = (ox, oy, oz, dx, dy, dz, best, skipOwner, out) =>
+          this.castMoved(ox, oy, oz, dx, dy, dz, best, skipOwner, out);
+      }
     }
     m.fwd.set(fwd); m.inv.set(inv);
     m.x = x; m.y = y; m.z = z; m.radius = radius;
+  }
+
+  /**
+   * Every moved owner's own triangles against one ray, in world space.
+   *
+   * The second half of `setMovedOwner`'s arrangement, factored out of `cast` so
+   * the index can run it too. Improves `out` in place and returns true when it
+   * found something nearer than `best`; leaves `out` alone otherwise.
+   */
+  castMoved(ox, oy, oz, dx, dy, dz, best, skipOwner, out) {
+    if (!this.statics || !this.moved.size || !(best > 0)) return false;
+    let improved = false;
+    for (const [owner, m] of this.moved) {
+      if (owner === skipOwner) continue;
+      if (!reachesSphere(ox, oy, oz, dx, dy, dz, best, m, 0)) continue;
+      const e = m.inv;
+      // The index faces a hit normal toward the incoming round, and reads the
+      // round's direction off the record it is handed.
+      const probe = this._movedHit;
+      probe.dx = e[0] * dx + e[4] * dy + e[8] * dz;
+      probe.dy = e[1] * dx + e[5] * dy + e[9] * dz;
+      probe.dz = e[2] * dx + e[6] * dy + e[10] * dz;
+      const hit = this.statics.cast(
+        e[0] * ox + e[4] * oy + e[8] * oz + e[12],
+        e[1] * ox + e[5] * oy + e[9] * oz + e[13],
+        e[2] * ox + e[6] * oy + e[10] * oz + e[14],
+        probe.dx, probe.dy, probe.dz,
+        best, -1, probe, owner);
+      if (!hit || hit.t >= best) continue;
+      best = hit.t;
+      improved = true;
+      const f = m.fwd;
+      out.t = hit.t;
+      out.x = ox + dx * hit.t; out.y = oy + dy * hit.t; out.z = oz + dz * hit.t;
+      out.nx = f[0] * hit.nx + f[4] * hit.ny + f[8] * hit.nz;
+      out.ny = f[1] * hit.nx + f[5] * hit.ny + f[9] * hit.nz;
+      out.nz = f[2] * hit.nx + f[6] * hit.ny + f[10] * hit.nz;
+      out.material = hit.material;
+      out.owner = owner;
+      out.triangle = hit.triangle;
+      out.kind = 'object';
+    }
+    return improved;
   }
 
   /** The owner is back where it was baked (a respawn), or gone (a wreck). */
@@ -1572,37 +1640,9 @@ export class WorldCollider {
         out.kind = 'object';
       }
     }
-    if (this.statics && this.moved.size && best > 0) {
-      for (const [owner, m] of this.moved) {
-        if (owner === skipOwner) continue;
-        if (!reachesSphere(ox, oy, oz, dx, dy, dz, best, m, 0)) continue;
-        const e = m.inv;
-        // The index faces a hit normal toward the incoming round, and reads
-        // the round's direction off the record it is handed.
-        const probe = this._movedHit;
-        probe.dx = e[0] * dx + e[4] * dy + e[8] * dz;
-        probe.dy = e[1] * dx + e[5] * dy + e[9] * dz;
-        probe.dz = e[2] * dx + e[6] * dy + e[10] * dz;
-        const hit = this.statics.cast(
-          e[0] * ox + e[4] * oy + e[8] * oz + e[12],
-          e[1] * ox + e[5] * oy + e[9] * oz + e[13],
-          e[2] * ox + e[6] * oy + e[10] * oz + e[14],
-          probe.dx, probe.dy, probe.dz,
-          best, -1, probe, owner);
-        if (!hit || hit.t >= best) continue;
-        best = hit.t;
-        kind = 'object';
-        const f = m.fwd;
-        out.t = hit.t;
-        out.x = ox + dx * hit.t; out.y = oy + dy * hit.t; out.z = oz + dz * hit.t;
-        out.nx = f[0] * hit.nx + f[4] * hit.ny + f[8] * hit.nz;
-        out.ny = f[1] * hit.nx + f[5] * hit.ny + f[9] * hit.nz;
-        out.nz = f[2] * hit.nx + f[6] * hit.ny + f[10] * hit.nz;
-        out.material = hit.material;
-        out.owner = owner;
-        out.triangle = hit.triangle;
-        out.kind = 'object';
-      }
+    if (this.castMoved(ox, oy, oz, dx, dy, dz, best, skipOwner, out)) {
+      best = out.t;
+      kind = 'object';
     }
     this.elapsed += (performance.now() - started) * 1000;
     this.casts++;
