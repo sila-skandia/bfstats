@@ -227,6 +227,13 @@ or overwriting existing content on the volume.
 
 ## 9. Settling a Format Question Against the Game Binary
 
+**Gameplay gate:** If the question is about what a player, flag, spawn point,
+vehicle pad, control point, HUD, ticket system, or audio cue does at runtime,
+load and follow `.agents/skills/bf1942-map-player-investigation/SKILL.md` before
+changing an extractor or viewer. A survey can identify candidate data, but it
+cannot establish gameplay semantics. Do not invent a default or synthetic audio
+fallback while the binary behavior is open.
+
 Our readers reconstruct proprietary formats from observation, and observation of vanilla
 data is often right by coincidence and wrong on mods. The cross-reference corpus lives in
 the bfstats repo at `features/bf1942-engine-reference/`:
@@ -253,8 +260,10 @@ One past investigation burned a session on a field that turned out to affect **1
 33,038**, and a second on an engine behaviour with **zero** occurrences in real data. A
 `Counter` would have caught both in thirty seconds.
 
-Open the binary when a model is *visibly* wrong and the data cannot explain why. Do not
-open it to satisfy curiosity about a reserved field.
+For file-format questions, open the binary when a model is *visibly* wrong and the data
+cannot explain why. For map/player gameplay questions, binary tracing is mandatory even
+when the authored data looks self-explanatory: the engine may ignore, clamp, combine, or
+reinterpret those fields, and viewer behavior is not evidence.
 
 ### Working with the binary
 

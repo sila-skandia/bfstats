@@ -9,7 +9,7 @@
 // is enough to read back exactly which band of the picture the fill was
 // clipped to, which is the whole of what the bug was about.
 
-import { Hud, wrapText, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS } from './hud.js';
+import { Hud, wrapText, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS, calculateHitOctant } from './hud.js';
 
 function recordingContext() {
   const calls = { images: [], clips: [] };
@@ -337,6 +337,17 @@ results.ammoType = {
   roundsTextAdmits: [0, 1, 2, 3, 4, 5, 6, 7]
     .filter(n => visibleUnder(ROUNDS_TEXT_WHEN, { 'Ammo/AmmoType': n })),
   roundsTextWhen: ROUNDS_TEXT_WHEN,
+};
+
+results.hitOctants = {
+  front: calculateHitOctant(1.0, 0.0),
+  frontRight: calculateHitOctant(0.7, 0.7),
+  right: calculateHitOctant(0.0, 1.0),
+  rearRight: calculateHitOctant(-0.7, 0.7),
+  rear: calculateHitOctant(-1.0, 0.0),
+  rearLeft: calculateHitOctant(-0.7, -0.7),
+  left: calculateHitOctant(0.0, -1.0),
+  frontLeft: calculateHitOctant(0.7, -0.7),
 };
 
 console.log(JSON.stringify(results));

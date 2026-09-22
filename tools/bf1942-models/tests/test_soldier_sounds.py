@@ -14,7 +14,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from extract_soldier_sounds import (
-    BAIL_OUT_SCRIPTS, LANGUAGES, language_refs, script_manifest, time_gate,
+    ALL_SOLDIER_SCRIPTS, BAIL_OUT_SCRIPTS, INJURY_SCRIPTS, LANGUAGES,
+    MOVEMENT_SCRIPTS, PATCH_MATERIALS, language_refs, script_manifest, time_gate,
 )
 from bf42.level import parse_ssc
 
@@ -146,6 +147,31 @@ trigger Volume
              ("c_SstOpenParachute", "SoldierOpenParachute.ssc"),
              ("c_SstParachuteLand", "SoldierParachuteLand.ssc")],
             list(BAIL_OUT_SCRIPTS))
+
+    def test_all_soldier_scripts_includes_movement_and_injury(self) -> None:
+        self.assertEqual(
+            [("c_SstWalk", "SoldierWalk.ssc"),
+             ("c_SstRun", "SoldierRun.ssc")],
+            list(MOVEMENT_SCRIPTS))
+        self.assertEqual(
+            [("c_SstHitDamage", "SoldierHitDamage.ssc"),
+             ("c_SstFFHitDamage", "SoldierFFHitDamage.ssc")],
+            list(INJURY_SCRIPTS))
+        self.assertEqual(
+            list(BAIL_OUT_SCRIPTS) + list(MOVEMENT_SCRIPTS) + list(INJURY_SCRIPTS),
+            list(ALL_SOLDIER_SCRIPTS))
+
+    def test_ten_surface_materials_match_soldier_patches(self) -> None:
+        self.assertEqual(
+            ("sand", "metal", "wood", "concrete", "grass", "gravel", "ice", "mud", "fabric", "harness"),
+            PATCH_MATERIALS)
+
+    def test_movement_script_with_ten_patches_is_tagged_with_materials(self) -> None:
+        ten_patch_text = "\n".join("newPatch\nload @ROOT/Sound/@RTD/test.wav\n" for _ in range(10))
+        patches = script_manifest(ten_patch_text, "Objects/Soldiers/Common/Sounds/High/SoldierWalk.ssc")
+        self.assertEqual(10, len(patches))
+        for i, p in enumerate(patches):
+            self.assertEqual(PATCH_MATERIALS[i], p.get("material"))
 
 
 if __name__ == "__main__":
