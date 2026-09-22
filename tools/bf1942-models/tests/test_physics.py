@@ -32,6 +32,7 @@ MODULES = {
     # renamed with the others; the `package.json` below is what lets node read
     # a bare `.js` as a module.
     "parachute.js": ROOT / "viewer" / "parachute.js",
+    "swim.js": ROOT / "viewer" / "swim.js",
 }
 HARNESS = Path(__file__).resolve().parent / "physics_harness.mjs"
 
@@ -337,12 +338,48 @@ class PhysicsModuleTests(unittest.TestCase):
             expected = 20 - 0.5 * 14.73 * t * t
             self.assertLess(abs(sample["y"] - expected), 0.06, sample)
 
-    def test_the_ground_is_the_higher_of_the_terrain_and_the_sea(self) -> None:
-        # Requirement in the engine's own terms: `surfaceHeight` is
-        # max(heightfield, waterLevel), and the feet follow it.
-        sea = self.results["standsOnTheSea"]
-        self.assertTrue(sea["grounded"])
-        self.assertAlmostEqual(3.0, sea["y"], places=6)
+    def test_a_man_cannot_walk_on_water(self) -> None:
+        # This test used to assert the opposite, and the opposite was the bug:
+        # `WorldCollider.surfaceHeight` answers max(heightfield, waterLevel) and
+        # the feet were settled onto that, so a soldier stood on the sea and
+        # could walk out to the horizon. The engine has no such surface for a
+        # soldier -- `BFSoldier::updateSwimming` (`0x08282190`) is the only thing
+        # that ever puts a soldier's y on the water, and it puts it 0.4 m under.
+        #
+        # With no swim state injected the surface is simply not a floor, so the
+        # body goes through it. Three metres of water over a flat bed at 0:
+        sank = self.results["withoutASwimStateHeSinksToTheBed"]
+        self.assertAlmostEqual(0.0, sank["y"], places=3)
+        self.assertNotAlmostEqual(3.0, sank["y"], places=1)
+
+    def test_deep_enough_water_puts_him_in_the_swim_state(self) -> None:
+        swam = self.results["swimsInsteadOfStanding"]
+        self.assertTrue(swam["swimming"])
+        # `0x082822d4`: the position is written to `surfaceY - 0.4` every tick,
+        # so the draft is exact rather than a settle, and he is not `grounded`.
+        self.assertAlmostEqual(swam["waterLevel"] - swam["draft"], swam["y"],
+                               places=6)
+        self.assertFalse(swam["grounded"])
+
+    def test_wading_is_walking_on_the_seabed(self) -> None:
+        # 20 cm of water is under `SWIM_ENTER_DEPTH`, so he keeps his feet, keeps
+        # the bed's own normal and material, and covers ground.
+        waded = self.results["wadesOnTheSeabed"]
+        self.assertFalse(waded["swimming"])
+        self.assertTrue(waded["grounded"])
+        self.assertAlmostEqual(2.8, waded["y"], places=3)
+        self.assertGreater(waded["travelled"], 8.0)
+
+    def test_a_swimmer_moves_and_is_slower_than_a_runner(self) -> None:
+        # The force is the engine's `5.0 * vCmd` (`0x08274b6f`) and the ceiling is
+        # `swim.js`'s `SWIM_SPEED_CEILING_FACTOR`, which is labelled a viewer
+        # number there. What is asserted is the shape: he moves, he stays at his
+        # draft, and he is slower than the standing table's 6 m/s.
+        swim = self.results["swimsForward"]
+        self.assertGreater(swim["travelled"], 5.0)
+        self.assertLess(swim["speed"], swim["runSpeed"])
+        self.assertAlmostEqual(2.6, swim["y"], places=6)
+        self.assertEqual("swimForward", swim["family"])
 
     def test_a_body_stops_at_a_hull(self) -> None:
         # Free ground would have carried it 18 m past the wall.
@@ -527,6 +564,12 @@ class PhysicsModuleTests(unittest.TestCase):
         sea = self.results["cannotJumpOffWater"]
         self.assertFalse(sea["armed"])
         self.assertAlmostEqual(0.0, sea["rose"], places=6)
+        # And he is swimming rather than standing on it, which is the engine's own
+        # refusal: `BFSoldier::handleSwimAction` (`0x08282460`) zeroes the
+        # `c_PIAction` axis (PlayerInput +0x24, mask bit 9 at +0xdc) while
+        # `c_AsmIsSwimming` is up, so the jump input never reaches the gate.
+        self.assertTrue(sea["swimming"])
+        self.assertEqual(5, sea["gain"])
 
     def test_a_prone_body_does_not_jump(self) -> None:
         self.assertTrue(self.results["proneDoesNotJump"])
