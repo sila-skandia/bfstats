@@ -500,3 +500,415 @@ Scratch — probes, traces and the frames — is in this session's scratch
 directory under `W7-A/` (`ships.mjs`, `decks.mjs`, `drive.mjs`, `frames*.mjs`,
 `sink.mjs`, `shots/`). Session-scoped; every number above carries the hook that
 regenerates it.
+
+---
+
+# W8-A: the three defects the owner found
+
+Stream **W8-A**. The owner drove what W7-A shipped and reported three things: a
+ship is too quick and too manoeuvrable, a ship does not run aground, and a
+respawn on a ship that has moved puts you where she started. All three are fixed.
+Everything below was measured; where a number moved the wrong way it says so.
+
+Before/after on the page is the **same probe against two builds** — the main
+checkout (W7-A as merged, `d265a6fa`) on one port and this worktree on another,
+each ship driven from her own authored pad on her own authored heading, heading
+read off the velocity direction because that is a hook both builds have
+(`scratch/W8-A/compare.mjs`).
+
+## 11. `setUnderWater`'s caller, read at last
+
+W7-A left this as the single biggest lever on a ship's top speed and marked it
+UNVERIFIED. It is now read.
+
+**`PhysicsNode::setUnderWater` has no direct callers at all.** It is virtual slot
+**`+0xc0`** (`vt.py 'world::PhysicsNode'`), and the same slot on
+`PointPhysicsNode` (`0x08256ad0`) and `StaticPhysicsNode` (`0x0825ead0`). A scan
+of every `call DWORD PTR [reg+0xc0]` in the lnxded image finds **57 sites**, of
+which all but four are AI, console and mesh-loading code. The four are:
+
+| site | function |
+|---|---|
+| `0x0825ac60`, `0x0825ad41` | `ResponsePhysics::checkVsTerrain(float)` `0x0825a960` |
+| `0x08257777`, `0x08257b40` | `PointResponsePhysics::checkVsTerrain(float)` `0x08257720` |
+
+So **the vehicle side has exactly one caller, and it is the terrain check.** What
+it passes, traced instruction by instruction:
+
+```
+0x0825a991  this->getVertexCollision(0)                  ; ResponsePhysics vtable +0x5c
+0x0825aa30  T = 9999.0                                   ; ds:0x86d16d0, a running MINIMUM
+0x0825aa48  n = <that collision mesh>->vtable[+0x18]()   ; a count; if (n <= 3) n = 1
+0x0825aa72  if (n > 10) goto 0x0825b04f                  ; a different arm entirely
+  loop over n:   transform a vertex to world;  T = min(T, vertex.y)
+0x0825ac01  R = terrainBase->vtable[+0x5c](pos.x, pos.z) ; PatchTerrain::getWaterLevel
+0x0825ac26  if (T < R)  setUnderWater(R - T)     at 0x0825ac60
+            else        setUnderWater(0.0)       at 0x0825ad41
+```
+
+`dice::ref2::geom::terrainBase` is the global at `0x087435f0` (`vt.py --sym`) and
+`PatchTerrain`'s vtable `+0x5c` is `getWaterLevel(float, float)` `0x083d7a80`,
+which SHIP-5 already read as discarding both arguments and returning the level's
+flat scalar.
+
+> **`underWater` is a DEPTH IN METRES: the water level minus the world y of the
+> object's lowest collision vertex, floored at zero.** Not a fraction, not a
+> volume, and of one point only — the keel.
+
+And the divisor is confirmed independently while I was there.
+`PhysicsNode::updatePhysics` `0x082543d0` reads the geometry bounding box twice
+through the same accessor — max at `+0xc/+0x10/+0x14` (`0x0825453d`), min at
+`+0x00/+0x04/+0x08` (`0x08254563`) — forms `DY = max.y - min.y` at `0x08254591`,
+divides `PhysicsNode+0x8c` by it at `0x0825459d`, clamps the quotient to 1 at
+`0x082545aa`, and multiplies by the 25.0 at `ds:0x86ccce0` (`0x082545fb`). So
+`scale = 1 + 24*min(underWater/DY, 1)` with `DY` the geometry box's **full
+vertical extent**, exactly as physics.md §3 has it.
+
+**Still UNVERIFIED, and it is the one thing left open about this law:** which
+hulls reach the writing arm. `n` comes from slot `+0x18` of the col0 collision
+mesh, reached as an interface subobject, so the slot is not one of
+`SimpleCollisionMesh`'s or `GridCollisionMesh`'s primary vtable and I did not
+identify it. `n > 10` goes to `0x0825b04f`, and **that arm calls neither
+setter** — the `+0xc0` scan finds only the two sites above in the whole function.
+If `n` is a vertex or LOD count that a capital ship exceeds, the engine may never
+write `underWater` for one. The law is ported as though it does, because a hull
+whose drag never gets the multiplier has no terminal speed worth the name.
+
+## 12. Defect 1: too quick, and too manoeuvrable
+
+Three levers were checked. Two were real and one was not.
+
+### 12.1 The drag box was a world-space AABB (the big one)
+
+`shipSpec` measured `THREE.Box3().setFromObject(root)` — the world axis-aligned
+box of **every mesh drawn under the hull**, at the hull's placed yaw. On Midway:
+
+| ship | old box (world AABB) | hull mesh's own box |
+|---|---|---|
+| Fletcher | **100.56 x 35.95 x 82.80** | 18.87 x 35.26 x 115.49 |
+| Fletcher2 (same template, other pad) | **100.32 x 35.95 x 83.14** | 18.87 x 35.26 x 115.49 |
+| Gato | **75.02 x 20.64 x 76.80** | 8.53 x 20.64 x 95.03 |
+| Enterprise | **253.14 x 69.26 x 207.43** | 44.16 x 69.20 x 284.50 |
+
+A destroyer with a 19 m beam was being given a 100 m one, **and the number
+changed with the direction her pad happened to face** — so a ship's drag, her
+inertia and her submerged multiplier all depended on her mooring heading. That is
+not a calibration, it is a bug.
+
+`hullGeometry` now walks the root's own LOD chain to the node that carries its
+geometry and measures that, in the **root's own frame**. The engine asks the
+object for its own `IGeometry` (IID `0x492fe0fe`), which is the root's standard
+mesh: a Fletcher's turrets, climbing nets, ammo boxes, depth-charge projectiles,
+muzzle-flash sprites and water-wash sprites are children with geometry of their
+own and are not in it. Masts are, because they are part of the hull mesh.
+
+One wrinkle the level assembler forces: it splits a hull's single StandardMesh
+into one sub-mesh **per material** (a placed Fletcher is nineteen
+`Fletch_hull_M1*` children of `FletcherComplex`, which itself carries no mesh),
+while the standalone glb puts the mesh on the node. `hullGeometry` takes a node's
+own mesh **plus** its untagged non-collision mesh children, which covers both.
+
+### 12.2 The pedal is not the throttle the thrust law reads (the other big one)
+
+`PhysicsEngine::updatePhysics` reads `PhysicsEngine+0xa0` for the `throttle` in
+`K = 0.1*|throttle| + e*|e|` — `fsubr [edi+0xa0]` at `0x0824cf4b`, and again at
+`0x0824cf5d` for the idle term. `+0xa0` is written in exactly one place:
+`Engine::handleUpdate` `0x0823e120`, the gearbox (TANK-12).
+
+```
+revs += 0.05 * ((T1 - L) - 0.5*revs)          clamped to [-1.0, +1.2]
+```
+
+`T1` is the clipped `RotationalBundle` roll angle over `maxRotation.z`, so for
+every vanilla ship (`setMinRotation 0/0/-4000`, `setMaxRotation 0/0/5000`) it is
+**+1.0 ahead and -0.8 astern**, not +/-1. `L` is the load, and for a **ship** it is
+not what tank-driving.md §4 describes — that reading is the ground-vehicle
+caller's. A ship's `feedbackLoop` caller is `updatePhysics` itself at
+`0x0824cfc1`: the by-value `Vec3` it pushes is `K*fwd` (each component multiplied
+by `[ebp-0xa0]` = K at `0x0824cf7e`-`0x0824cfa0`) and the `const Vec3&` is `fwd`
+(`lea ebx,[ebp-0x28]`, the transform's own row 2), so the dot is `K` and
+
+```
+L0 = K * getCurrentRatio() / getCurrentTorque()          L = 0.99*(L*n + L0)/(n+1)
+```
+
+with `getCurrentTorque = torqueCurve[100*min(|revs|,1)] * setTorque` (TANK-4, and
+TANK-13's "divisor of the load"). `c_ETShip = 9` has bits 1 and 2 clear, so
+neither the `& 2` clamp at `0x0824c8ab` nor the `& 4` frame min/max at
+`0x0824c90f` applies — a ship takes the running mean at `0x0824c952`.
+
+That load is a **speed-dependent governor**, and it is the whole of "too quick":
+at full pedal from rest a Fletcher's revs settle near **0.48**, not 1.0, and the
+thrust law sees 0.48. All of it is in the new `viewer/engine-revs.js`, with the
+two authored curves rebuilt from their control points (the published ratio ladder
+— Sherman 4.000/6.364/9.333/12.727/14.894, M3A1 first gear 5.512 — comes out of
+it, which is the check that the curve is right and not merely self-consistent).
+
+**One correction to the corpus while here.** `getCurrentRatio()` is **not**
+rev-dependent; the VERDICT's §2.5 reads `PhysicsEngine+0xbc` as "the current
+rev", and TANK-12 and physics.md §5 both read the same field as the **gear**.
+`0x0824ca70` is `fild [ebx+0xbc]` over `fild [edx+0x360]` times 100 — the index
+is `100*gear/numberOfGears`. `EngineTemplate`'s ctor defaults `numberOfGears` to
+1 (`0x0823f018` and `0x0823f288`, `mov DWORD PTR [ebx+0x360],0x1`),
+`PhysicsEngine`'s seeds the gear to 1, and **no vanilla ship authors
+`setNumberOfGears`** (checked on all eight Midway hulls' glbs). So the index is
+100, the divisor is `ratioCurve[100] = 0.94`, and a Fletcher's 7.447 is exact at
+every rev. There was nothing to fix here, and TANK-12's rev filter was the
+missing piece for a different reason than the one nominated.
+
+### 12.3 The inertia was a quarter of the engine's — and it is not the steady turn
+
+`flight.js`'s `boxInertia` divided by **12**, the textbook solid box.
+`getGeometryInertia` (`0x08253930`, collision-response.md §4.2) divides by **3**.
+A ship now takes the engine's law (`spec.inertiaLaw = 'geometry'`); an aircraft
+still takes the solid box, because `flight.js`'s aircraft model was calibrated
+against it and there is no measurement to move it to.
+
+Isolated in the harness — the same hull, the same rudder, the same everything but
+the divisor:
+
+| full rudder for | engine's `/3` | solid box's `/12` | ratio |
+|---|---|---|---|
+| 1 s | 0.000 deg | -0.001 deg | — |
+| 2 s | **-0.030** | **-0.117** | **3.9** |
+| 3 s | -0.273 | -0.898 | 3.3 |
+| 5 s | -2.340 | -4.721 | 2.0 |
+| 10 s | -15.84 | -21.79 | 1.4 |
+| 30 s | -105.60 | -115.41 | 1.1 |
+| **steady rate** | **-4.791 deg/s** | **-4.816 deg/s** | **1.005** |
+
+So the answer to "was the inertia the manoeuvrability problem" is: **it was four
+times too little resistance in the first two seconds of a turn and it was nothing
+at all at steady state.** The steady rate is set by the two `Wing`s' own balance,
+and the box law's angular half — which W7-A left out and which is now
+implemented — is 2.2e-9 rad/s^2 at five degrees a second of yaw, thirteen orders
+below the rudders. It is ported because it is in the law, not because it does
+anything.
+
+### 12.4 The turning circle is the authored geometry, and it did not move
+
+Measured radius, before and after, on the page:
+
+| ship | radius before | radius after |
+|---|---|---|
+| Fletcher | 118.2 m | **118.1 m** |
+| Yamato | 192.4 m | 193.3 m |
+| Enterprise | 235.9 m | 236.0 m |
+
+A Fletcher's is `55 / tan(25 deg) = 118.0 m` — the two `Wing`s' own arm over
+their own `setMaxRotation`, exactly. It is speed-independent (both the rudder
+couple and the wings' damping go as `v^2`, so `omega` goes as `v`) and
+inertia-independent, so **no code lever reaches it**: it is `Fletcher_rudder` and
+`Fletcher_HullWing` at +/-55 m with a +/-25 degree range, and a real Fletcher's
+tactical diameter is about three times that. If the owner still wants her to turn
+wider, the number to change is authored data, not this model.
+
+### 12.5 The numbers, before and after
+
+Same probe, both builds, each ship from her own pad. Speed in m/s.
+
+| | Fletcher before | Fletcher after | Yamato before | Yamato after | Enterprise before | Enterprise after |
+|---|---|---|---|---|---|---|
+| after 2 s | 8.56 | **1.89** | 9.13 | **1.89** | 7.24 | **1.42** |
+| after 5 s | 12.09 | **6.13** | 14.66 | **6.26** | 13.19 | **4.75** |
+| after 10 s | 12.19 | 11.10 | 15.04 | 11.96 | 13.95 | 9.31 |
+| top speed | 12.36 | **15.20** | 15.05 | **18.80** | 13.97 | **16.00** |
+| in knots | 24.0 | **29.5** | 29.3 | **36.5** | 27.2 | **31.1** |
+| the real ship | | 36.0 | | 27.0 | | 32.5 |
+| astern | — | 12.83 | — | 15.83 | — | 13.47 |
+| 10 s of full rudder | 53.3 deg | 59.6 deg | 39.2 | 40.5 | 26.4 | 29.4 |
+| steady turn | 6.03 deg/s | 7.45 | 4.48 | 5.52 | 3.39 | 3.85 |
+| revs at cruise | (1.0) | **0.514** | (1.0) | 0.538 | (1.0) | 0.519 |
+
+Read honestly:
+
+- **The acceleration from rest is 4.5 to 5.1 times lower.** A 2,500-tonne
+  destroyer used to be at 8.6 m/s — 17 knots — **two seconds** after the pedal
+  went down, on `(0.1 + 1)*7.447 = 8.19 m/s^2`. She is now at 1.89 m/s and takes
+  about a minute to work up to her top speed. That is what "too quick" was, and
+  it is what the rev governor fixes.
+- **Top speed went UP, by 20 to 25 per cent**, because §12.1's fix removed five
+  times too much drag area. It lands the three hulls at 82, 135 and 96 per cent
+  of their real ships' top speeds, against 67, 108 and 84 per cent before —
+  closer on two of three, and the Yamato is the game's own data
+  (`setDifferential 2`, the same as a destroyer's, on a 65,000-tonne hull).
+- **The turn rate went UP with the speed** — the radius is fixed, so a faster
+  ship turns more degrees a second. Ten seconds of full rudder is 6 degrees more
+  on a Fletcher than it was. The inertia fix is worth 4x in the first two
+  seconds and is invisible by ten.
+- `throttleMin` is now **-0.8**, from the Engine's own clipped roll range, so
+  astern is 80 per cent of the ahead order before the signed square sees it.
+
+## 13. Defect 2: she runs aground, and stays
+
+Two halves, both wired.
+
+**The sea bed.** `groundClearance` was 0 — the hull's *origin* had to touch the
+bed. It is now `-keel`, the depth of the hull's own collision box below its
+origin, which is the same quantity `setUnderWater` measures (§11). So she grounds
+when her **keel** touches, and `Ship.settle` holds her there with the engine's own
+Coulomb budget: `A * 1.50 * 9.82 * L / 30` per tick, the **sliding** arm
+(physics.md §10's smaller of the two), with `A` the mean of the hull's material
+and the bed's from the level's own `materialFriction` table. A hull on sand is
+0.9, so 13.3 m/s^2 against a thrust of about 1.5.
+
+**Proven with a named ship on a named shore.** Midway's Fletcher (owner 261),
+placed at x 1000 on the z = -2050 line and pointed due east at the island's
+western beach, which crosses the water line at **x 1800**:
+
+| t | x | y | speed | sea bed | aground |
+|---|---|---|---|---|---|
+| 0 s | 1000.00 | 20.225 | 0 | (none) | no |
+| 20 s | 1191.30 | 20.227 | 14.55 | (none) | no |
+| 40 s | 1491.70 | 20.232 | 15.17 | (none) | no |
+| **52.77 s** | **1685.48** | 20.241 | **15.02** | **16.73** | **yes** |
+| 60 s | 1694.71 | 20.885 | 0 | 17.37 | yes |
+| 100 s | 1694.93 | 20.902 | 0 | 17.39 | yes |
+| 133 s | 1694.71 | 20.902 | 0 | 17.39 | yes |
+
+She touches the bank at 52.77 s with 15.0 m/s on her, stops inside eight seconds,
+and is lifted 0.68 m above her floating draft (20.225 -> 20.902) because her keel
+is resting on a bed at 17.39 rather than hanging in 20 m of water. Then:
+
+- **ten more seconds of full ahead move her 6.5 cm** (`revs` 0.410, throttle 1);
+- **thirty seconds of full astern move her 6.6 cm the other way**, and she is
+  still `aground`.
+
+A car would have driven itself off. She does not.
+
+**The static world.** A driven hull now enters the body world as a `DrivenBody`,
+so `body-statics.js`'s `collideWithStatics` probes her col0 vertices against the
+level's triangles — the machinery W6-C built and left unwired "only because
+buoyancy did not exist yet". She stays out of the **parked** body world, which is
+gravity plus wheel springs and would sink her; `setupVehicleBodies` describes her
+hull anyway so `adoptDriven` has a spec to hand it.
+
+There is nothing static in deep water on any vanilla sea level except the other
+ships, so the pier test *is* the ship-to-ship test. Wake's own two hulls are the
+only waterline statics reachable by a keel (a scan of every static triangle that
+straddles `waterLevel = 95` over a bed more than 4 m deep returns owners 827 and
+828, which are the Hatsuzuki and the Shokaku themselves). Driving the Hatsuzuki
+at the moored Shokaku:
+
+| | |
+|---|---|
+| first tick, range 73.68 m | **5 static contacts** |
+| after 10 s at full ahead | 1 contact, speed **0.23 m/s**, heading shoved -102.0 -> -89.1 deg |
+| after 150 s | speed 0.22 m/s, still off her |
+
+She cannot drive through another hull, and the contacts push and turn her rather
+than stopping her dead, which is the solver's own behaviour.
+
+## 14. Defect 3: a spawn goes where the ship is now
+
+`BFSpawnPoint::spawn` (`0x08163d70`) is a bare
+`soldier->setAbsolutePosition(this->getAbsolutePosition())`, and a deck
+`SpawnPoint` reached the hull's tree through `addTemplate` — so its world position
+is its ship-local offset through the hull's **live** transform at the moment of the
+spawn. W7-A's `rebaseDeckSpawns` already did that arithmetic; it ran only at load.
+
+It now runs in three places:
+
+1. **At the top of `spawnAtFlag`**, which is the "at the moment of the spawn".
+2. **Once per tick for any hull that has moved** — sinking or driven — which is
+   what moves the map markers, because a ship flag's `groups[].position` IS the
+   spawn's own array (`soldier.js` `spawnFlags`) and `drawSpawnRings` draws
+   wherever this put it. The owner asked to watch the spots move with the
+   carrier; they do.
+3. **On a respawn**, where `refloatHull` puts her back at her closed-form draft
+   rather than on a parked body's springs.
+
+`shipFlagInactive` also now matches a flag against the hull's **live** position
+rather than her authored one, or a rebased ring 1.2 km from the pad stopped being
+recognised as that ship's.
+
+**One real coupling had to be broken to make this work.** `soldier.js`'s `settle`
+calls `collider.statics.cast` — the raw index — deliberately, to avoid the
+terrain marcher. But `WorldCollider.setMovedOwner` **disables** a moved hull in
+that index and re-asks every query in the hull's own baked frame, and that second
+half lived only in `WorldCollider.cast`. So a hull that had been driven was
+invisible to `settle`: the deck spawn arrived at the right x/z and the man fell
+through to the sea beside her. `CollisionIndex.cast` now runs the same moved pass
+(`WorldCollider.castMoved`, factored out and injected), guarded off for the
+pass's own recursive query, for a drivable-only query and for a caller that is
+itself a simulated body. That fixes the class: a soldier can stand on any hull
+that has moved, not just a ship.
+
+**Proven.** Midway's Enterprise (owner 264), boarded on foot, placed on her own
+pad pointed down -z, 90 s at full ahead, out with E, then the deploy screen:
+
+| | |
+|---|---|
+| hull, from pad (3398.58, -2856.49) | to **(3398.58, -4130.19)** — **1273.7 m** |
+| `enterprise_aircraftsoldierspawn` bake | (3489.81, 40.27, -2924.03) |
+| the same point after the drive | **(3397.08, 39.60, -4016.69)** |
+| flag reports | `inactive: false` |
+| `__deploy.spawn()` | **true** |
+| soldier lands at | **(3397.08, 37.829, -4016.688)**, `grounded` |
+| distance to the hull | **113.51 m** (she is 284 m long) |
+| distance to her pad | **1160.2 m** |
+| what is under his feet | the flight deck, owner **264**, at 37.829 |
+
+Before this stream the same run put him at the bake, (3489.809, **20.000**,
+-2924.03) — standing on the sea 1.2 km astern of the carrier, which is the
+owner's report exactly.
+
+## 15. Divergences this stream added or changed
+
+| | |
+|---|---|
+| **`underWater` is the collision box's bottom corner, not the lowest vertex.** | Same number for an upright hull; they differ by the hull's own roll when she leans. And on a level whose drawn tree carries no hull collision node it falls back to the geometry box's bottom — Midway's Fletcher does (27 collision meshes under her, all turret, net and Browning), so her keel reads -3.512 (the drawn bottom) where the standalone glb's `FletcherComplex collision 1` says -3.48: **3 cm**. Wake's Hatsuzuki does carry hers and reads -0.084. |
+| **The rev governor is a ship's only.** | The engine runs the gearbox for every engine type and the 1.2 clamp is type-independent, so an aircraft diverges: `flight.js` still feeds the pedal to the thrust law directly, because moving it would move every number in `test_flight.py` without a measurement to move them to. Written down in `flight.js`'s `advanceEngines`. |
+| **A ship's screw visual and engine audio key on the pedal, not the revs.** | The engine keys the propeller on `+0xa0` (`0x0824cd1a`). Cosmetic; left so the audio keeps reading one number. |
+| **A parked ship is still not a body.** | Ram a moored Fletcher and she does not rock. Unchanged from W7-A §8 item 1, and the reason ship-to-ship works at all is that the moored hull is *static*: the driven one probes it, the moored one feels nothing. |
+| **A driven ship's baked hull leaves the static index the moment she is boarded.** | `adoptDrivenBody` publishes the moved transform at once rather than at the end of the first tick, so a 1,400-triangle destroyer never probes her own baked triangles. |
+| **`__setOnFoot(false)` teleports a vehicle back to its spawn** (`Vehicle.reset()`), where the E key leaves it standing. Any check on where a driven ship ENDED UP must use the new `window.__exitVehicle()`. | Not a change, but it cost this stream an afternoon and is worth writing down. |
+| **The four sub-steps.** | `flight.js` integrates a ship in four sub-steps per tick; `PhysicsNode` takes one (physics.md §3 — the four are `PointPhysicsNode`'s). Unchanged from W7-A and not revisited. |
+
+## 16. What is still open
+
+1. **The Yamato is 35 per cent faster than the real ship** (36.5 kn against 27).
+   Every input is her own authored data and the law is read, so this is either the
+   game's own arcade choice or a hull-specific input nobody has looked at —
+   `submarineData`-style per-template words, or her `drag`/`mass` pair.
+2. **Whether a capital ship's `underWater` is ever written** — §11's `n > 10`
+   arm. Needs slot `+0x18` on the col0 collision-mesh interface identified.
+3. **The turning circle is 118 m for a Fletcher** where the real ship's is three
+   times that. It is `55/tan(25 deg)` from the authored `Wing`s and no code lever
+   reaches it (§12.4).
+4. **A ship left at sea has no parked body**, so she cannot be rammed by a car or
+   rocked by a wake, and two ships cannot both be bodies at once. W7-A §8 item 1,
+   unchanged.
+5. **A hull's own collision layer is missing from some levels' drawn trees**
+   (§15), so the keel is the drawn bottom there. A re-extract would settle it;
+   the difference measured 3 cm on the one hull where both numbers exist.
+6. **The submarine dive and the wreck's sea-bed stop** are W7-A §8 items 2 and 5,
+   untouched.
+7. **Ramming damage on a ship-to-ship contact** is `handlers.onStatic`, still
+   unwired (`body-statics.js` divergence 2). Running the Hatsuzuki into the
+   Shokaku at 15 m/s costs neither of them a hit point.
+
+## 17. How to reproduce W8-A
+
+```bash
+# tests (from tools/bf1942-models) -- 2,600 green
+python3 -m unittest discover -s tests
+python3 -m unittest tests.test_engine_revs tests.test_ship tests.test_collision
+
+# the page, on two ports, for the before/after
+python3 -m http.server 5291 --directory tools/bf1942-models/viewer          # this build
+python3 -m http.server 5292 --directory <main checkout>/tools/bf1942-models/viewer
+# then, headless (the new hooks):
+#   window.__helm()          the occupied ship's throttle, REVS, load, keel,
+#                            underWater, aground, size, inertia, staticContacts
+#   window.__placeShip(x, z, yaw, speed)   at her draft, pointed somewhere
+#   window.__exitVehicle()   the E key, which does NOT teleport her back
+#   window.__ships()         now also x/z and whether she is sinking
+```
+
+Scratch — probes and traces — is in this session's scratch directory under
+`W8-A/`: `compare.mjs` (the before/after rig), `fleet.mjs` (speed and turn per
+hull), `aground2.mjs` (the beaching), `carrier4.mjs` (the carrier spawn),
+`ram.mjs` (ship against ship), `boxes.mjs` (the old box against the new),
+`pier.mjs` (waterline statics), `dis.txt` (the lnxded disassembly the addresses
+above were read from).
