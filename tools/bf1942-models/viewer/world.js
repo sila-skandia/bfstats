@@ -290,14 +290,23 @@ export class World {
 
   /** ... and has left it: it stands on its own springs again, where it was
    *  left, trading the driven pose for a parked one at the given world pose. */
-  releaseDriven(owner, vehicle, spec, pose) {
+  releaseDriven(owner, vehicle, spec, pose, wheelState = null) {
     if (!this.bodyWorld || !vehicle) return;
     if (!this.bodyWorld.get(owner)?.driven) return;
     if ('hullSolved' in vehicle) vehicle.hullSolved = false;
     this.bodyWorld.remove(owner);
-    const parked = buildParkedVehicle(spec, { ...pose, asleep: false });
+    const parked = buildParkedVehicle(spec, {
+      ...pose,
+      asleep: false,
+      wheelState,
+    });
     const v = vehicle.state.velocity;
     parked.body.v[0] = v.x; parked.body.v[1] = v.y; parked.body.v[2] = v.z;
+    const w = vehicle.state.angularVelocity;
+    for (let i = 0; i < 3; i++) {
+      parked.body.w[i] = w.x * pose.axes[0][i]
+        + w.y * pose.axes[1][i] + w.z * pose.axes[2][i];
+    }
     this.bodyWorld.addParked(owner, parked, spec);
   }
 
@@ -839,6 +848,20 @@ export class World {
         if (inControl) {
           vehicle.setInput('c_PIThrottle', input.forward);
           vehicle.setInput('c_PIYaw', input.strafe);
+          // Ships ride this branch on player.kind (a Ship IS an Aircraft in
+          // ship.js, but world.js branches on the seat kind, and c_ETShip
+          // classifies to 'ship'). Their ramps (LCVP/Daihatsu) and dive
+          // planes + float trim (Gato/Sub7C) all bind c_PIPitch, which no
+          // ground/tank hull does -- so only ships read the pitch axis here.
+          // The same stick spring the aircraft path uses (arrows on desktop,
+          // the mobile pad's Y when held, bypassing the spring as the page
+          // always did for it); W/S stays c_PIThrottle (ahead/astern) and
+          // never drives the pitch.
+          if (player.kind === 'ship') {
+            player.stick.pitch = input.pad
+              ? input.pitch : axisToward(player.stick.pitch, input.pitch, dt);
+            vehicle.setInput('c_PIPitch', player.stick.pitch);
+          }
           vehicle.setInput('c_PIFire', input.fire ? 1 : 0);
           vehicle.setInput('c_PIAltFire', input.altFire ? 1 : 0);
         }

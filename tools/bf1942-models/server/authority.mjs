@@ -41,7 +41,7 @@ export const LOSS_PER_DEATH = 1;
 /** Metres from the flag's origin an enemy must stand (P5 verifies). */
 export const FLAG_CAPTURE_RADIUS_MS = 8;
 
-/** Seconds of un-contested enemy presence to flip the owner (P5 verifies). */
+/** Fallback seconds of un-contested enemy presence to flip the owner. */
 export const FLAG_CAPTURE_SECONDS = 8;
 
 /** The page's own fallback (`SOLDIER_MAX_HP_FALLBACK`): every vanilla kit
@@ -168,29 +168,46 @@ export function createAuthority(ctx) {
   /** One call's worth of the flags-and-bleed law, at the room's tick
    *  cadence; the engine's own clock is per-second, accumulated here. */
   function flagsAndBleed(dt) {
-      const flags = world.flags ?? [];
-      if (!flags.length) return;
+    const flags = world.flags ?? [];
+    if (!flags.length) return;
 
-      // Capture first: owner changes move the majority this same loop.
-      for (const [index, flag] of flags.entries()) {
+    // Capture first: owner changes move the majority this same loop.
+    for (const [index, flag] of flags.entries()) {
         if (flag.uncapturable || !flag.position) continue;
         let progress = capture.get(index);
         const inside = ringPopulation(flag);
         if (inside.contest) {
+          if (progress && progress.status !== 'contested') {
+            progress.status = 'contested';
+            onRow({ type: 'captureContested', flag: index, name: flag.name });
+          }
           if (progress) { progress.team = 0; progress.ticks = 0; }
           continue;
         }
         if (inside.team !== 0 && inside.team !== flag.team) {
           if (!progress) { progress = { team: 0, ticks: 0 }; capture.set(index, progress); }
-          if (progress.team !== inside.team) { progress.team = inside.team; progress.ticks = 0; }
+          if (progress.team !== inside.team) {
+            progress.team = inside.team;
+            progress.ticks = 0;
+            progress.status = 'capturing';
+            onRow({ type: 'capturing', flag: index, team: inside.team,
+                    name: flag.name, duration: captureSeconds(flag) });
+          } else if (progress.status === 'contested') {
+            progress.status = 'capturing';
+            onRow({ type: 'capturing', flag: index, team: inside.team,
+                    name: flag.name, duration: captureSeconds(flag) });
+          }
           progress.ticks += dt;
-          if (progress.ticks >= FLAG_CAPTURE_SECONDS) {
+          if (progress.ticks >= captureSeconds(flag)) {
             flag.team = inside.team;
             capture.delete(index);
             onRow({ type: 'captured', flag: index, team: inside.team, name: flag.name });
           }
-        } else if (progress?.ticks) {
-          progress.ticks = 0;
+        } else if (progress) {
+          if (progress.ticks || progress.status === 'contested') {
+            onRow({ type: 'captureCancelled', flag: index, name: flag.name });
+          }
+          capture.delete(index);
         }
       }
 
@@ -219,6 +236,11 @@ export function createAuthority(ctx) {
 
   // --- the law's helpers ----------------------------------------------------
 
+  function captureSeconds(flag) {
+    return Number.isFinite(flag.timeToGetControl) && flag.timeToGetControl > 0
+      ? flag.timeToGetControl : FLAG_CAPTURE_SECONDS;
+  }
+
   /** One ticket down for `team`; false when it was already at 0. The
    *  world owns the tickets object, raw from scene.json — counts mutate in
    *  place (both key spellings, so a harness descriptor's legacy `1`/`2`
@@ -244,7 +266,9 @@ export function createAuthority(ctx) {
     let allies = 0;
     const fx = flag.position[0];
     const fz = flag.position[2];
-    const r2 = FLAG_CAPTURE_RADIUS_MS * FLAG_CAPTURE_RADIUS_MS;
+    const radius = Number.isFinite(flag.radius) && flag.radius > 0
+      ? flag.radius : FLAG_CAPTURE_RADIUS_MS;
+    const r2 = radius * radius;
     for (const [slot, player] of world.players) {
       if (dead.has(slot)) continue;
       if (player.armor?.destroyed) continue;

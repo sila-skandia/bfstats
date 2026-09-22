@@ -16,7 +16,7 @@ import {
   surveyVehicle, classifySeat, classifyRoot, findAllVehicleRoots,
   listEntryPoints, pickNearest, TIE_EPSILON, VehicleOccupancy, TurretAxis,
   TurretRig, FireState, chainOnShot, readWorldPose, AIM_INPUTS, hasAimAxes,
-  TURRET_ACCELERATION,
+  TURRET_ACCELERATION, axisPeerNodes, turretPeerNodes,
 } from './seats.js';
 
 const results = {};
@@ -515,6 +515,10 @@ function shermanWithRenamedGunnerNode() {
   jeepOcc.setActiveSeat(jeepOcc.rootId);
   const browning = new VehicleOccupancy(stationaryBrowning());
   browning.setActiveSeat(browning.rootId);
+  // Same-axis-same-input: the V-100's steered wheels (`c_PIYaw`) must NOT be
+  // peered under the turret (`c_PIMouseLookX`), even though they lose the same
+  // `yaw` slot. The slot winner still replaces; only the peering is gated.
+  const mixedYaw = mixed.seatInfo(mixed.rootId).axes.yaw;
   results.aimAxisSelection = {
     shermanRootHasAim: hasAimAxes(occ.seatInfo(occ.rootId)),
     mixedHasAim: hasAimAxes(mixed.seatInfo(mixed.rootId)),
@@ -524,13 +528,65 @@ function shermanWithRenamedGunnerNode() {
     // The steering bundles are still there for `applyRig` to pose; losing the
     // `seat.axes` slot costs them nothing, because nothing but the aim rig
     // reads that map.
-    mixedYawSlotNode: mixed.seatInfo(mixed.rootId).axes.yaw.node.name,
+    mixedYawSlotNode: mixedYaw.node.name,
+    mixedYawPeers: (mixedYaw.peers || []).map(n => n.name).sort(),
+    mixedYawPeerCount: (mixedYaw.peers || []).length,
     jeepHasAim: hasAimAxes(jeepOcc.seatInfo(jeepOcc.rootId)),
     jeepTurretNull: jeepOcc.turret === null,
     aimInputs: AIM_INPUTS,
     browningYawNode: browning.seatInfo(browning.rootId).axes.yaw.node.name,
     browningPitchNode: browning.seatInfo(browning.rootId).axes.pitch.node.name,
   };
+
+  // Fletcher dual-turret shape (Issue 4): two identical-spec bundles under the
+  // same PCO and same axis/input. Both land in `peers`; a single TurretAxis
+  // drives both; the helper unwraps winner-first for `cameraRidesTurret`.
+  {
+    const fwd = node('Fletcher_cannon', {
+      control: 'Fletcher', templateKind: 'RotationalBundle',
+      rig: { axes: { yaw: { input: 'c_PIMouseLookX', min: null, max: null, free: true, maxSpeed: 30, direction: 1 } } },
+    });
+    const fwdFront = node('Fletcher_cannon_Front', {
+      control: 'Fletcher', templateKind: 'RotationalBundle',
+      rig: { axes: { yaw: { input: 'c_PIMouseLookX', min: null, max: null, free: true, maxSpeed: 30, direction: 1 } } },
+    });
+    const engine = node('Fletcher_Engine', {
+      control: 'Fletcher', templateKind: 'Engine', physics: { engineType: 'c_ETShip' },
+    });
+    const entry = node('FletcherEntry', {
+      control: 'Fletcher', templateKind: 'EntryPoint',
+      seat: { control: 'Fletcher', entryRadius: 3 },
+    });
+    const fletcher = node('Fletcher', {
+      control: 'Fletcher', templateKind: 'PlayerControlObject',
+    }, engine, fwd, fwdFront, entry);
+    const survey = surveyVehicle(fletcher);
+    const yawEntry = survey.seats.get('Fletcher').axes.yaw;
+    const peerNames = (yawEntry.peers || []).map(n => n.name).sort();
+    const occF = new VehicleOccupancy(fletcher);
+    occF.setActiveSeat(occF.rootId);
+    const rigAxis = occF.turret.axes.find(a => a.axisName === 'yaw');
+    // Step the single rig axis and confirm both peers follow by the same delta.
+    const q0fwd = fwd.quaternion.clone();
+    const q0front = fwdFront.quaternion.clone();
+    occF.turret.aim(1, 0);
+    occF.turret.step(1 / 30);
+    const movedFwd = fwd.quaternion.angleTo(q0fwd);
+    const movedFront = fwdFront.quaternion.angleTo(q0front);
+    results.dualTurret = {
+      yawPeerNames: peerNames,
+      yawPeerCount: (yawEntry.peers || []).length,
+      yawSlotNode: yawEntry.node.name,
+      yawSlotInput: yawEntry.spec.input,
+      singleRigAxis: occF.turret.axes.filter(a => a.axisName === 'yaw').length,
+      rigPeerCount: rigAxis ? rigAxis.peers.length : 0,
+      bothPeersMove: movedFwd > 1e-6 && movedFront > 1e-6,
+      peersMoveTogether: Math.abs(movedFwd - movedFront) < 1e-9,
+      helperSeat: turretPeerNodes(survey.seats.get('Fletcher'), 'yaw').map(n => n.name).sort(),
+      helperAxis: axisPeerNodes(yawEntry).map(n => n.name).sort(),
+      helperMissingAxis: turretPeerNodes(survey.seats.get('Fletcher'), 'pitch').length,
+    };
+  }
 }
 
 // --- the vehicle HUD: the dial's trigger and the seat dots -------------------

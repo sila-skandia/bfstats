@@ -133,6 +133,29 @@ export function materialDamage(tables, id) {
   return mat ? (mat.damage ?? 0.0) : 0.0;
 }
 
+/**
+ * The effect bundle `damage.json` names for an attacker material meeting a
+ * victim material, or null when the cell is unauthored.
+ *
+ * The standalone form of `CrashDamage._effectCell`'s group resolution plus
+ * the table read: attacker id to `attGroup`, victim id to `defGroup` (group,
+ * not id — `damageModifier`'s own rule), then
+ * `effects[attGroup][defGroup]`. Numeric and string keys both read, because a
+ * table that came in over JSON may carry either. Case is deliberately NOT
+ * resolved here: `EffectLibrary.get` lowercases every lookup, so the table's
+ * `e_Collision_ship` and the library's `e_collision_ship` are one bundle
+ * (assemble.py's `(n.lower(), n)` bake tie-break).
+ */
+export function effectNameFor(tables, matAttacker, matVictim) {
+  const att = materialOf(tables, matAttacker);
+  const vic = materialOf(tables, matVictim);
+  const attGroup = att ? att.attGroup : matAttacker;
+  const defGroup = vic ? vic.defGroup : matVictim;
+  const row = tables?.effects?.[attGroup] ?? tables?.effects?.[String(attGroup)];
+  if (!row) return null;
+  return row[defGroup] ?? row[String(defGroup)] ?? null;
+}
+
 /** A defined material's own field, or the `Material::Material()` ctor
  *  default (friction 1.0, elasticity 0.0, resistance 0.01 — V4 1.4 "O4
  *  closed") for a defined material that never authored it. */

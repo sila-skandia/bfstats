@@ -236,6 +236,9 @@ class Report:
     # the same glance-able convention as `seats`/`physics_parts` above.
     supply_depots: list[str] = field(default_factory=list)
     vehicle_hud: list[str] = field(default_factory=list)
+    # One line per child ObjectSpawner resolved to its held vehicle
+    # (`Enterprise_corsairSpawner -> corsair`), in declaration order.
+    held_spawners: list[str] = field(default_factory=list)
     # One line per part carrying an `extras.physics` block, so a glance at the
     # report says whether a vehicle came out simulatable or came out scenery.
     physics_parts: list[str] = field(default_factory=list)
@@ -279,6 +282,7 @@ class Report:
             "skeletonIk": self.skeleton_ik,
             "supplyDepots": self.supply_depots,
             "vehicleHud": self.vehicle_hud,
+            "heldSpawners": self.held_spawners,
             "physicsParts": self.physics_parts,
             "skinnedParts": self.skinned_parts,
             "boundParts": self.bound_parts,
@@ -2213,6 +2217,26 @@ class Assembler:
             child_name = con_mod.instance_template_name(ref, self.library.object)
             if child_name is None:
                 continue
+            # A child ObjectSpawner is not a part — it is the engine's parked
+            # vehicle, held at the spawner's placed offset until it is
+            # entered. Resolve the hull on the spawner itself (its own team
+            # picks, team 2 then team 1 — the same rule a level spawn
+            # follows) and assemble it as a static child, stamped with the
+            # spawner's record. A spawner that names no vehicle is genuinely
+            # empty in-game too — the node is dropped, not guessed.
+            spawner = self.library.object(child_name)
+            held_record: dict | None = None
+            held_name: str | None = None
+            if spawner is not None and spawner.is_spawner:
+                held_name = spawner.spawn_vehicle_name()
+                if held_name is None:
+                    report.unresolved_templates.append(child_name)
+                    continue
+                if self.library.object(held_name) is None:
+                    report.unresolved_templates.append(held_name)
+                    continue
+                held_record = spawner.spawner_record(spawner_name=spawner.name)
+                child_name = held_name
             # Prune to the cockpit. Without this the walk would still descend
             # the whole vehicle and emit a second, mesh-less copy of its
             # drivetrain, guns and camera — nodes that already exist in the
@@ -2243,6 +2267,21 @@ class Assembler:
                 skeleton_scope=skeleton_scope,
             )
             if child is not None:
+                if held_record is not None:
+                    # Stamp the held vehicle with where it came from. The
+                    # record rides `extras.heldSpawner` on the vehicle node
+                    # itself (not on a wrapper): the spawner is meshless and
+                    # behaviour-only, and the engine's held object IS the
+                    # vehicle parked at the spawner's offset. The spawner's
+                    # own setPosition/setRotation are already the node's
+                    # transform — they were passed through as this child's
+                    # placement above.
+                    node = builder.node(child)
+                    node.extras = {**(node.extras or {}),
+                                   "heldSpawner": held_record}
+                    report.held_spawners.append(
+                        f"{held_record['spawner']} -> {held_name}"
+                        f" at {'/'.join(f'{v:g}' for v in ref.position)}")
                 child_indices.append(child)
                 built_children.append((ref, child_name, child))
 
