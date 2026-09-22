@@ -1035,9 +1035,11 @@ export function spawnFlags(extras) {
   const claimed = new Set();
   for (const point of points) {
     const group = point?.spawnGroupId;
-    const owned = group == null ? null : byGroup.get(group);
+    const groups = [point?.spawnGroupId, point?.secondSpawnGroupId]
+      .filter((value, index, all) => value != null && all.indexOf(value) === index);
+    const owned = groups.flatMap(value => byGroup.get(value) || []);
     if (!owned || !owned.length) continue;
-    claimed.add(group);
+    for (const value of groups) claimed.add(value);
     flags.push({
       name: point.displayName || point.name || `flag ${group}`,
       // The side the spawn screen lists the group under is the engine's own
@@ -1047,8 +1049,40 @@ export function spawnFlags(extras) {
       // `team 2` but its group is `groupTeam 1` — the Japanese landing).
       team: owned.find(s => s.team === 1 || s.team === 2)?.team ?? point.team ?? null,
       group,
+      groups,
       position: point.position || null,
       uncapturable: !!point.unableToChangeTeam,
+      radius: Number.isFinite(point.radius) ? point.radius : null,
+      timeToGetControl: Number.isFinite(point.timeToGetControl)
+        ? point.timeToGetControl : null,
+      controlPointName: point.name || null,
+      spawns: owned,
+    });
+  }
+  // Some maps have valid side-owned bases that are not represented by a
+  // ControlPoint object (Guadalcanal's airfield groups 9 and 10 are the
+  // canonical example). They are still real deploy rows; omitting them makes
+  // the authored spawn points unreachable. They are base rows, not capturable
+  // flags, because the archive provides no capture zone for them.
+  for (const [group, owned] of byGroup) {
+    if (claimed.has(group) || !owned.length) continue;
+    const team = owned.find(s => s.team === 1 || s.team === 2)?.team;
+    if (team !== 1 && team !== 2) continue;
+    const position = owned.reduce((sum, spawn) => {
+      sum[0] += spawn.position?.[0] || 0;
+      sum[1] += spawn.position?.[1] || 0;
+      sum[2] += spawn.position?.[2] || 0;
+      return sum;
+    }, [0, 0, 0]).map(value => value / owned.length);
+    flags.push({
+      name: owned[0].name || `spawn group ${group}`,
+      team,
+      group,
+      groups: [group],
+      position,
+      uncapturable: true,
+      standalone: true,
+      controlPointName: null,
       spawns: owned,
     });
   }

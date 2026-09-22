@@ -991,6 +991,7 @@ import { createReconciler } from './netcode-reconcile.js';
 import { Hud, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS } from './hud.js';
 import { Armor } from './armor.js';
 import { VehicleDamageSet } from './vehicle-damage.js';
+import { effectNameFor } from './crash-damage.js';
 import { BodyWorld } from './body-world.js';
 import { buildParkedVehicle, describeVehicleParts } from './vehicle-bodies.js';
 import {
@@ -4444,6 +4445,26 @@ async function setupSounds(report, dir) {
   updateAudio();
 }
 
+/** The retail capture call is a short radio line, not a UI-only notification. */
+function announceCapture(row) {
+  if (AUDIO_OFF || !row || !window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+    return;
+  }
+  const name = row.name || 'the flag';
+  const text = row.type === 'capturing'
+    ? "We've got them on the run."
+    : row.type === 'captured'
+      ? `${row.team === 1 ? 'Axis' : 'Allied'} forces have captured ${name}.`
+      : row.type === 'captureContested'
+        ? `${name} is contested.` : null;
+  if (!text) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.volume = optSound.checked ? Number(optSoundVol.value) || 0 : 0;
+  utterance.rate = 0.92;
+  window.speechSynthesis.speak(utterance);
+}
+
 // --- engine audio -----------------------------------------------------------
 //
 // The flown vehicle's own engine, played from the `.ssc` the extractor shipped
@@ -5036,8 +5057,57 @@ function indexScene(root) {
     tagCull(child);
     cull.push(child);
   }
+  tagVehicleControlPoints();
   flattenCull();
   freezeStatics(root);
+}
+
+/** Associate parked hulls with the authored capture zone nearest their pad. */
+function tagVehicleControlPoints() {
+  if (!spawnersRoot || !Array.isArray(extras?.controlPoints)) return;
+  const points = extras.controlPoints;
+  const spawns = Array.isArray(extras.objectSpawns) ? extras.objectSpawns : [];
+  const scratch = new THREE.Vector3();
+  for (const vehicle of spawnersRoot.children) {
+    vehicle.getWorldPosition(scratch);
+    const want = templateNameOf(vehicle).toLowerCase();
+    let best = null;
+    let bestDistance = Infinity;
+    for (const spawn of spawns) {
+      const name = String(spawn.vehicle || '').toLowerCase();
+      if (name !== want && !want.startsWith(name + '_')) continue;
+      const p = spawn.position || [];
+      if (p.length !== 3) continue;
+      const distance = Math.hypot(scratch.x - p[0], scratch.y - p[1], scratch.z - p[2]);
+      if (distance < bestDistance) { best = spawn; bestDistance = distance; }
+    }
+    if (best?.controlPointName) {
+      vehicle.userData.controlPointName = best.controlPointName;
+      continue;
+    }
+    // Older scene.json files predate the association fields. Reconstruct the
+    // same nearest-pad relationship so old extracts gain the gate too.
+    let point = null;
+    let pointDistance = Infinity;
+    for (const candidate of points) {
+      const p = candidate.position || [];
+      if (p.length !== 3) continue;
+      const distance = Math.hypot(scratch.x - p[0], scratch.z - p[2]);
+      const radius = Number(candidate.radius) || 0;
+      if (distance <= Math.max(60, radius * 4) && distance < pointDistance) {
+        point = candidate;
+        pointDistance = distance;
+      }
+    }
+    if (point) vehicle.userData.controlPointName = point.name || null;
+  }
+}
+
+function vehicleSpawnActive(vehicle) {
+  const name = vehicle?.userData?.controlPointName;
+  if (!name || !world?.flags) return true;
+  const flag = world.flags.find(item => item.controlPointName === name);
+  return !flag || flag.team !== 0;
 }
 
 /* `cull`'s bounding spheres, as four flat arrays.
@@ -5227,7 +5297,8 @@ function applyVisibility() {
   spawnersRoot.visible = optVehicles.checked;
   if (!optVehicles.checked) return;
   for (const vehicle of spawnersRoot.children) {
-    vehicle.visible = entire || inRange(vehicle, cam, limit);
+    vehicle.visible = vehicleSpawnActive(vehicle)
+      && (entire || inRange(vehicle, cam, limit));
   }
 }
 
@@ -5533,9 +5604,9 @@ const wreckDeathFwd = new THREE.Vector3();
  *
  *   1. read the hull's live pose, because the death cam frames the wreck and
  *      the body is left beside it rather than back where he climbed in;
- *   2. empty the seat (`leaveManned` delegates to `leaveVehicle` whenever the
- *      root has a drivetrain, so one call covers a jeep, a tank, a plane and a
- *      bare manned gun alike);
+ *   2. empty the seat (`leaveManned` delegates to `leaveVehicle` when the
+ *      active seat is the root, so one call covers a jeep, a tank, a plane
+ *      and a bare manned gun alike);
  *   3. put the suspended on-foot body down at the exit point, kill its Armor
  *      and latch the death cam. From there `onFoot()` owns the rest — the same
  *      countdown and the same `openDeploy()` a death on foot runs through.
@@ -6145,12 +6216,35 @@ function setupVehicleBodies() {
     if (!spec) continue;
     visual.node.updateWorldMatrix(true, false);
     bodyScene.set(owner, {
-      node: visual.node, spec, sea, moved: false,
+      node: visual.node, spec, sea, moved: false, spawnActive: true,
       spawnInverse: visual.node.matrixWorld.clone().invert(),
     });
     if (sea) continue;
     collider.statics?.setBodyOwner?.(owner, true);
     world?.addParkedBody(owner, spec, bodyPoseOf(visual.node));
+  }
+  syncVehicleSpawnOwnership();
+}
+
+/** Neutral capture zones have no live parked hulls until their flag changes. */
+function syncVehicleSpawnOwnership() {
+  for (const [owner, visual] of damageVisuals) {
+    const scene = bodyScene.get(owner);
+    if (!scene || scene.sea) continue;
+    const active = vehicleSpawnActive(scene.node);
+    if (scene.spawnActive === active) continue;
+    scene.spawnActive = active;
+    entryPoints = null;
+    if (active) {
+      collider.statics?.enableOwner?.(owner);
+      collider.statics?.setBodyOwner?.(owner, true);
+      world?.addParkedBody(owner, scene.spec, bodyPoseOf(scene.node));
+    } else {
+      world?.removeBody(owner);
+      collider.statics?.disableOwner?.(owner);
+      collider.statics?.setBodyOwner?.(owner, false);
+      scene.node.visible = false;
+    }
   }
 }
 
@@ -6227,6 +6321,24 @@ function hullCollisionKeel(spec) {
   return Number.isFinite(lowest) ? lowest : null;
 }
 
+/**
+ * The hull's own collision material for the beaching groan: the first hull
+ * (`body`, not `spring`) part's layer-0 vertex material — the same vertex
+ * set `BodyWorld.#drivenTerrainDamage` bills and `hullCollisionKeel` reads.
+ * Falls back to material 0 (the `materialOf` chain resolves it) when the
+ * spec has no hull layer, so `effectNameFor` still answers.
+ */
+function hullCollisionMaterial(node) {
+  const owner = collider?.statics?.ownerOf?.(node) ?? -1;
+  const scene = bodyScene.get(owner);
+  for (const desc of scene?.spec?.parts || []) {
+    if (desc.kind !== 'body') continue;
+    const vm = desc.shape?.layers?.[0]?.vertexMaterials;
+    if (vm?.length) return vm[0];
+  }
+  return 0;
+}
+
 /** The player has taken a vehicle: its drive model now stands in for the body. */
 function adoptDrivenBody(vehicle) {
   if (!bodyWorld || !vehicle) return;
@@ -6263,7 +6375,9 @@ function releaseDrivenBody(vehicle) {
     bodyWorld.remove(owner);
     return;
   }
-  world.releaseDriven(owner, vehicle, scene.spec, bodyPoseOf(vehicle.node));
+  const wheelState = vehicle.wheels
+    ? new Map(vehicle.wheels.map(wheel => [wheel.node, wheel])) : null;
+  world.releaseDriven(owner, vehicle, scene.spec, bodyPoseOf(vehicle.node), wheelState);
 }
 
 /** A wreck is scenery and a respawn is a fresh vehicle on its pad. */
@@ -6304,6 +6418,11 @@ function respawnVehicleBody(owner) {
 function syncBodyNode(owner, scene, body) {
   writeBodyPose(scene.node, body);
   publishMovedHull(owner, scene, scene.node, body.pos);
+  // EntryPoint world positions are cached between proximity scans. A released
+  // vehicle carries those points with it, so discard the cache as soon as its
+  // parked body moves rather than leaving an enter prompt at the exit spot.
+  entryPoints = null;
+  nearEntry = null;
 }
 
 /** A body's world pose, written onto a scene node (which may be frozen). */
@@ -7074,12 +7193,15 @@ function chaseRadiusTree(node) {
 /** Does `cameraNode` hang under one of the seat's mouse-aimed axes (GUN-7's
  *  shape)? Asked of the seat survey, not of a `TurretRig`: a rig is only built
  *  the first time its seat is manned, and a player who climbs in at the hull
- *  gunner's door reaches the driving seat later, by a seat switch. */
+ *  gunner's door reaches the driving seat later, by a seat switch. Peers
+ *  included: `surveyVehicle` keeps every same-axis bundle as `axis.peers`
+ *  (a destroyer's two turret pairs under one PCO), and a Camera parented
+ *  under any peer rides the turret just as much as one under `axis.node`. */
 function cameraRidesTurret(cameraNode, seat, root) {
   if (!cameraNode || !seat?.axes) return false;
   const aimed = Object.values(seat.axes)
     .filter(axis => AIM_INPUTS.includes(axis?.spec?.input))
-    .map(axis => axis.node);
+    .flatMap(axis => axis.peers?.length ? axis.peers : [axis.node]);
   for (let p = cameraNode.parent; p && p !== root; p = p.parent) {
     if (aimed.includes(p)) return true;
   }
@@ -7913,6 +8035,7 @@ let entryScan = 0;
 function collectEntryPoints() {
   entryPoints = [];
   for (const vehicle of findAllVehicleRoots(currentRoot)) {
+    if (!vehicleSpawnActive(vehicle)) continue;
     const control = vehicle.userData?.control || vehicle.name || 'vehicle';
     for (const entry of listEntryPoints(vehicle, ENTRY_RADIUS_FALLBACK)) {
       entryPoints.push({
@@ -8034,8 +8157,8 @@ function enterVehicle(entry) {
  * exit is `leaveManned`'s job, since there is no `Vehicle` instance here to
  * reset. Whichever one runs, exiting always empties the whole vehicle — this
  * page has exactly one occupant, so a nested seat's own exit ends the
- * driver's occupancy too (`leaveManned` delegates here when a drivetrain
- * exists, per the note on `mannedActive()`'s own approximation).
+ * driver's occupancy too (`leaveManned` delegates here when the active seat
+ * is the root, per the note on `mannedActive()`'s own approximation).
  */
 function leaveVehicle() {
   const vehicle = aircraft || car;
@@ -8048,8 +8171,11 @@ function leaveVehicle() {
   // where the driver's seat had been, with his IK still being solved every
   // frame, and only the *next* entry cleaned him up.
   disposeSeatPose();
-  vehicle.state.velocity.set(0, 0, 0);
-  vehicle.state.angularVelocity.set(0, 0, 0);
+  // Exiting a vehicle does not reset its PhysicsNode. Velocities are left
+  // where they stand (the old code zeroed them, which froze a bailed hull
+  // dead); the parked body inherits them below, and the unoccupied hull
+  // coasts down under drag and wheel friction instead of stopping in place.
+  // Only the controls and engine state are released here.
   vehicle.state.throttle = 0;
   vehicle.setInput('c_PIThrottle', 0);
   vehicle.setInput('c_PIYaw', 0);
@@ -8170,18 +8296,25 @@ const exitFwd = new THREE.Vector3();
  * integrating it every frame regardless of which seat is active (round 3's
  * first disclosed gap), so stepping out while the hull is still coasting
  * places the soldier at the tank's real current position, not wherever it
- * was the moment the turret seat was taken. Always the root's transform, not
- * the active seat's own: stepping out relative to a spinning turret's own
- * frame would swing the exit point with the aim, which is not what a hull
- * door does.
+ * was the moment the turret seat was taken. The root's transform when the
+ * exit node IS the root (a hull door), but the exit node's own transform
+ * when it is a nested seat — a carrier AA gun's `soldierExitLocation` is in
+ * the gun PCO's frame, not the hull's, and the hull origin sits at the
+ * waterline.
  */
 function exitPoseManned(occ) {
-  const declared = occ.exitLocationNode()?.userData?.physics?.soldierExitLocation;
+  const exitNode = occ.exitLocationNode();
+  const declared = exitNode?.userData?.physics?.soldierExitLocation;
   const local = declared
     ? new THREE.Vector3(declared.position[0], declared.position[1],
       -declared.position[2])
     : new THREE.Vector3(-2, 0.5, 0);
-  readWorldPose(occ.root, exitWorldPos, exitWorldQuat);
+  // Use the exit node's own pose when it is a nested seat (e.g. a carrier
+  // AA gun m metres above the hull), not the hull root's pose at the
+  // waterline.  The root case stays as-is — a hull door offset is in the
+  // root's frame by definition.
+  const refNode = exitNode !== occ.root ? exitNode : occ.root;
+  readWorldPose(refNode, exitWorldPos, exitWorldQuat);
   const position = local.applyQuaternion(exitWorldQuat).add(exitWorldPos);
   const fwd = exitFwd.set(0, 0, -1).applyQuaternion(exitWorldQuat);
   return {
@@ -8197,14 +8330,25 @@ function exitPoseManned(occ) {
  * whatever pose its last gunner left it in, and nothing in verify-r5/r6
  * describes a return-to-rest on exit.
  *
- * If the root also has a drivetrain (a nested seat's own exit, e.g. the
- * Sherman's hull gunner stepping out without ever having driven), this page
- * still has only one occupant, so the exit empties the whole vehicle —
- * delegate to `leaveVehicle` for the parts only it knows how to reset.
+ * If the active seat IS the root and a drivetrain exists (driver/pilot/helm
+ * stepping out), this page still has only one occupant, so the exit empties
+ * the whole vehicle — delegate to `leaveVehicle` for the parts only it knows
+ * how to reset.
+ *
+ * The one exception: a nested gunner seat of a vehicle with a drivetrain
+ * (the Sherman's hull gunner, a carrier AA gun). The player never took the
+ * helm, so the hull is parked where she lies with the same cleanup the root
+ * exit runs — stick reset, driven-body release, engine-audio teardown,
+ * HUD, view/camera mode — but without touching her carried velocity (she
+ * keeps coasting under `releaseDrivenBody`'s handoff, exactly like a helm
+ * exit; a nested exit is not a helm exit, so the hull never integrates
+ * driverless — see `idle-vehicle.js`: it resets fire pose/state only, and
+ * driverless coasting stays a follow-up).
  */
 function leaveManned() {
   if (!occupancy) return;
-  if (aircraft || car) {
+  const isNestedSeat = occupancy.activeSeatId !== occupancy.rootId;
+  if ((aircraft || car) && !isNestedSeat) {
     // `leaveVehicle` calls `releaseGuns()` itself, which already releases
     // `mannedGuns` the same way it releases `vehicleGuns` — see there.
     leaveVehicle();
@@ -8217,6 +8361,32 @@ function leaveManned() {
   // is still in `mannedGuns`, which this function is about to empty).
   releaseGuns();
   disposeSeatPose();
+  if (isNestedSeat && (aircraft || car)) {
+    // Nested gunner seat of a driven vehicle (Sherman hull gunner, carrier
+    // AA gun): the same cleanup `leaveVehicle` runs, in the same order, on
+    // the hull the gunner never drove — parked where she lies, velocity
+    // carried over, never zeroed.
+    const vehicle = aircraft || car;
+    vehicle.state.throttle = 0;
+    vehicle.setInput('c_PIThrottle', 0);
+    vehicle.setInput('c_PIYaw', 0);
+    vehicle.setInput('c_PIFire', 0);
+    vehicle.setInput('c_PIAltFire', 0);
+    if (view) {
+      view.setMode('cockpit');
+      vehicle.setFirstPerson(false);
+    }
+    vehicle.applyTransform();
+    vehicle.applyRig();
+    freezeVehicle(vehicle.node);
+    releaseDrivenBody(vehicle);
+    disposeEngineAudio();
+    clearVehicleHud();
+    occupancy = null;
+    world?.clearPlayerVehicle(LOCAL_PLAYER);
+    world?.resetStick(LOCAL_PLAYER);
+    return;
+  }
   disposeEngineAudio();
   freezeVehicle(occupancy.root);
   clearVehicleHud();
@@ -8273,6 +8443,9 @@ let soldier = null;
 // server would run for every remote one.
 let world = null;
 const LOCAL_PLAYER = 'local';
+const CAPTURE_FALLBACK_SECONDS = 8;
+let localCapture = null;
+let roomCapture = null;
 // The input object frame() built for this frame — onFootCamera's footFire
 // hands the deviation model the same c_PIThrottle/c_PIYaw values the world
 // consumed this tick (the engine's speed gates read the *input*, not the
@@ -8436,6 +8609,100 @@ function buildSpawnFlags() {
   return flags.length;
 }
 
+function captureRadius(flag) {
+  return Number.isFinite(flag?.radius) && flag.radius > 0 ? flag.radius : 8;
+}
+
+function captureDuration(flag) {
+  return Number.isFinite(flag?.timeToGetControl) && flag.timeToGetControl > 0
+    ? flag.timeToGetControl : CAPTURE_FALLBACK_SECONDS;
+}
+
+function nearestEnemyFlag(team, position) {
+  if (!position) return null;
+  let nearest = null;
+  let distance = Infinity;
+  for (const flag of flags) {
+    if (flag.uncapturable || !flag.position || flag.team === team) continue;
+    const dx = position.x - flag.position[0];
+    const dz = position.z - flag.position[2];
+    const d = Math.hypot(dx, dz);
+    if (d <= captureRadius(flag) && d < distance) {
+      nearest = flag;
+      distance = d;
+    }
+  }
+  return nearest;
+}
+
+function capturePosition() {
+  const player = world?.player(LOCAL_PLAYER);
+  if (player?.soldier) return player.soldier;
+  if (player?.vehicle?.state?.position) return player.vehicle.state.position;
+  return null;
+}
+
+function resetCaptureUi() {
+  localCapture = null;
+  roomCapture = null;
+}
+
+function updateCaptureHud(ticks) {
+  if (!optOnFoot.checked || !soldier || soldierDead) {
+    if (!roomCapture && !localCapture) return;
+    resetCaptureUi();
+    updateHud();
+    return;
+  }
+
+  // Solo play has no server authority, so run the same delayed capture law
+  // locally. Room play only displays the authoritative lifecycle below.
+  if (!roomJoined) {
+    const player = world?.player(LOCAL_PLAYER);
+    const target = nearestEnemyFlag(player?.team ?? deployTeamId, capturePosition());
+    if (!target) {
+      if (localCapture) { localCapture = null; updateHud(); }
+      return;
+    }
+    if (!localCapture || localCapture.flag !== target) {
+      localCapture = { flag: target, elapsed: 0 };
+      announceCapture({ type: 'capturing', team: player?.team ?? deployTeamId,
+        name: target.name });
+    }
+    localCapture.elapsed += (ticks * (1 / 30));
+    const progress = Math.min(100, Math.round(
+      localCapture.elapsed / captureDuration(target) * 100));
+    hud.textContent = `CAPTURING ${target.name} · ${progress}%`;
+    if (localCapture.elapsed < captureDuration(target)) return;
+    target.team = player?.team ?? deployTeamId;
+    syncVehicleSpawnOwnership();
+    logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
+    announceCapture({ type: 'captured', team: target.team, name: target.name });
+    hud.textContent = `${target.name} captured`;
+    clearTimeout(hudViewTimer);
+    hudViewTimer = setTimeout(updateHud, 2200);
+    localCapture = null;
+    return;
+  }
+
+  if (!roomCapture) return;
+  if (roomCapture.until && performance.now() >= roomCapture.until) {
+    roomCapture = null;
+    updateHud();
+    return;
+  }
+  if (!roomCapture.contested && !roomCapture.done) {
+    roomCapture.elapsed += ticks * (1 / 30);
+    const progress = Math.min(100, Math.round(
+      roomCapture.elapsed / roomCapture.duration * 100));
+    hud.textContent = `CAPTURING ${roomCapture.name} · ${progress}%`;
+  } else if (roomCapture.contested) {
+    hud.textContent = `CONTESTED ${roomCapture.name}`;
+  } else if (roomCapture.done) {
+    hud.textContent = `${roomCapture.name} captured`;
+  }
+}
+
 /** Put the soldier at the selected flag, on the next of its spawn points.
  *  The pick itself is the world's (pickSpawn/spawnYaw inside world.js —
  *  `spawnPlayer` holds the per-player walk of the spawn list, so the page
@@ -8443,6 +8710,7 @@ function buildSpawnFlags() {
  *  the HUD line that always went with a spawn. */
 function spawnAtFlag(advance = false) {
   if (!soldier || !flags.length || !world) return false;
+  resetCaptureUi();
   // `BFSpawnPoint::spawn` (`0x08163d70`) is `soldier->setAbsolutePosition(
   // this->getAbsolutePosition())` and nothing else, and a deck `SpawnPoint`
   // reached the ship's tree through `addTemplate` — so its world position is its
@@ -8512,6 +8780,7 @@ function setOnFoot(on) {
   // current level's gun index (a map switch has just cleared `guns.groups`),
   // leaving must not park a rifle on the free-fly camera.
   disposeHandWeapon();
+  if (!on) resetCaptureUi();
   if (on) {
     // The soldier is the world's: `addPlayer` builds it the engine's way (a
     // fresh Soldier on the collider, spawned at the team's first flag) and
@@ -12392,6 +12661,7 @@ const vehicleFwd = new THREE.Vector3();
 function drawVehicles(ctx, toPx, sc, rot = 0) {
   if (!spawnersRoot) return;
   for (const vehicle of spawnersRoot.children) {
+    if (!vehicleSpawnActive(vehicle)) continue;
     vehicle.getWorldPosition(vehiclePos);
     const p = projectToArt(vehiclePos.x, vehiclePos.z);
     if (!p) continue;
@@ -14279,6 +14549,18 @@ async function joinRoom() {
     });
     roomClient.onevent = row => {
       if (row?.text) logToConsole(row.text);
+      if (row?.type === 'capturing' || row?.type === 'captureContested'
+          || row?.type === 'captured') announceCapture(row);
+      if (row?.type === 'capturing') {
+        roomCapture = { name: row.name || 'flag', elapsed: 0,
+          duration: Number(row.duration) > 0 ? Number(row.duration) : 8,
+          contested: false, done: false };
+      } else if (row?.type === 'captureContested' && roomCapture) {
+        roomCapture.contested = true;
+      } else if (row?.type === 'captureCancelled') {
+        roomCapture = null;
+        updateHud();
+      }
       // P3: death by server decree. The page's own death loop
       // (`soldierDead` latch on a destroyed Armor) is the cam, the deploy
       // screen and the spectator work — the decree only has to make the
@@ -14293,6 +14575,11 @@ async function joinRoom() {
       if (row.type === 'captured' && Number.isInteger(row.flag)
           && flags[row.flag]) {
         flags[row.flag].team = row.team;
+        roomCapture = { name: row.name || flags[row.flag].name,
+          elapsed: 0, duration: 0, contested: false, done: true,
+          until: performance.now() + 2200 };
+        syncVehicleSpawnOwnership();
+        applyVisibility();
         if (typeof paintDeployChrome === 'function') paintDeployChrome();
       }
       // The tickets: the layout's own group reads `extras.tickets` — the
@@ -14680,6 +14967,8 @@ function frame(dt) {
   // nothing presentational inside (world.js, the tick law in its header).
   // `step` is that tick's report; the presentation halves read it back.
   const step = world?.step(dt) ?? { ticks: 0, bodyTicks: 0, alpha: 0, players: {}, damage: [] };
+  syncVehicleSpawnOwnership();
+  updateCaptureHud(step.ticks);
   // The presentation instant this frame draws, and the drawn vehicle pose that
   // follows from it. Before every camera below, because all of them read it —
   // directly (the on-foot eye) or through the scene graph (every seat).
@@ -14751,6 +15040,30 @@ function frame(dt) {
     // anything for it.
     if (aircraft) pilot(dt);
     else if (car) drive(dt);
+    // Beaching groan: when the ship's keel first touches the seabed, play the
+    // collision effect for the seabed's material against the hull's — the
+    // same `effects[attGroup][defGroup]` cell `onCrashDamage` reads
+    // (`crash-damage.js` `effectNameFor`), attacker = terrain under the keel,
+    // victim = the hull's own collision material. Fires regardless of the
+    // damage threshold — the real game sounds every ground contact even when
+    // the speed is too low to score damage — and bills nothing (W9-A:
+    // beaching costs no hit points). Single groan on the beach frame only;
+    // the script's layers are one-shots, so a grind loop while sliding would
+    // need new machinery — not built here. No `speed`: the picture's `speed`
+    // is the emitter clock, and `EngineAudio` has no `Effect::Speed` channel
+    // (an `extern` source it never feeds), so the scrape plays at its
+    // authored level with `beachSpeed` as the gate, not the gain.
+    if (aircraft?.beachedThisTick && aircraft.beachSpeed > 0.5) {
+      const p = aircraft.state.position;
+      const terrainId = collider?.heightfield?.material
+        ? collider.heightfield.material(p.x, p.z) : 0;
+      const hullId = hullCollisionMaterial(aircraft.node);
+      const effect = effectNameFor(damageTables, terrainId, hullId);
+      if (effect) effects.play(effect, {
+        position: [p.x, p.y, p.z],
+        normal: [0, 1, 0],
+      });
+    }
     if (mannedActive()) {
       // A bare gun/seat root, or a nested seat of a vehicle whose own root
       // `pilot`/`drive` just took its physics step above — the camera and

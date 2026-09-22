@@ -156,6 +156,10 @@ export function createRoomClient({ ws, now = null }) {
       type: row.type,
       slot: row.slot ?? null,
       other: row.other ?? null,
+      flag: row.flag ?? null,
+      team: row.team ?? null,
+      name: row.name ?? null,
+      duration: row.duration ?? null,
       text: feedText(row),
     };
     out.feed.push(feedRow);
@@ -185,6 +189,9 @@ export function createRoomClient({ ws, now = null }) {
           : `${who(row.slot) ?? '?'} died`;
       case 'ticket': return `${team(row.team)} tickets: ${row.count}`;
       case 'captured': return `${team(row.team)} captured ${row.name ?? 'a flag'}`;
+      case 'capturing': return `${team(row.team)} has them on the run at ${row.name ?? 'a flag'}`;
+      case 'captureContested': return `${row.name ?? 'A flag'} is contested`;
+      case 'captureCancelled': return `Capture of ${row.name ?? 'a flag'} was stopped`;
       case 'closed': return row.text ?? 'the room closed';
       default: return row.text ?? row.type;
     }

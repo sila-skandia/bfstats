@@ -2360,5 +2360,159 @@ class ForeignSkeletonPartTests(unittest.TestCase):
         self.assertTrue(is_foreign_skeleton_part(parachute, rootless))
 
 
+class HeldSpawnerBakeTests(unittest.TestCase):
+    """Child `ObjectSpawner`s assemble as held vehicles, not as missing parts.
+
+    The Enterprise deck below is trimmed from the shipped
+    `Objects/Vehicles/Sea/Enterprise/Objects.con`: one deck spawner held at
+    its placed offset, one davit spawner, and a meshless spawner the engine
+    holds nothing on. Before this fix the walk looked the spawner template
+    up as a part, found no geometry, and dropped it — the deck came out
+    empty and `partTree` showed no spawner entries.
+    """
+
+    SHIP_CON = """
+ObjectTemplate.create PlayerControlObject TestCarrier
+ObjectTemplate.addTemplate TestCarrier_corsairSpawner
+ObjectTemplate.setPosition -4.999/19.63/-110.999
+ObjectTemplate.setRotation -3/-13/0
+ObjectTemplate.addTemplate TestCarrier_lcvpSpawner
+ObjectTemplate.setPosition -17.35/8.75/-69.748
+ObjectTemplate.addTemplate EmptySpawner
+ObjectTemplate.setPosition 1/2/3
+ObjectTemplate.addTemplate MissingSpawner
+ObjectTemplate.setPosition 4/5/6
+
+ObjectTemplate.create ObjectSpawner TestCarrier_corsairSpawner
+ObjectTemplate.setObjectTemplate 1 corsair
+ObjectTemplate.setObjectTemplate 2 corsair
+ObjectTemplate.TimeToLive 120
+ObjectTemplate.Distance 200
+ObjectTemplate.spawnOffset 0/0/0
+ObjectTemplate.holdObject 1
+ObjectTemplate.team 1
+
+ObjectTemplate.create ObjectSpawner TestCarrier_lcvpSpawner
+ObjectTemplate.setObjectTemplate 1 Lcvp
+ObjectTemplate.setObjectTemplate 2 Lcvp
+ObjectTemplate.TimeToLive 30
+ObjectTemplate.Distance 20
+ObjectTemplate.spawnOffset 0/0/0
+ObjectTemplate.holdObject 1
+ObjectTemplate.team 1
+ObjectTemplate.MaxNrOfObjectSpawned 3
+ObjectTemplate.damageWhenLost 10
+
+ObjectTemplate.create ObjectSpawner EmptySpawner
+ObjectTemplate.holdObject 1
+ObjectTemplate.team 1
+
+ObjectTemplate.create ObjectSpawner MissingSpawner
+ObjectTemplate.setObjectTemplate 1 NoSuchVehicle
+ObjectTemplate.setObjectTemplate 2 NoSuchVehicle
+ObjectTemplate.holdObject 1
+ObjectTemplate.team 1
+
+ObjectTemplate.create PlayerControlObject corsair
+ObjectTemplate.geometry Corsair_Hull_M1
+
+ObjectTemplate.create PlayerControlObject Lcvp
+ObjectTemplate.geometry Lcvp_Hull_M1
+
+GeometryTemplate.create StandardMesh Corsair_Hull_M1
+GeometryTemplate.create StandardMesh Lcvp_Hull_M1
+"""
+
+    def _assemble(self, con_text: str, root: str):
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Sea/Test/Objects.con", con_text)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library, include_collision=False)
+        builder = gltf.GlbBuilder()
+        stub_meshes(assembler, builder, "Corsair_Hull_M1", "Lcvp_Hull_M1")
+        report = Report(root=root, configuration="complex", lod=0)
+        node = assembler.build_node(builder, root, report)
+        assert node is not None
+        return glb_document(builder.build([node], extras=report.as_dict())), report
+
+    def ship(self):
+        document, report = self._assemble(self.SHIP_CON, "TestCarrier")
+        return {node["name"]: node for node in document["nodes"]}, report
+
+    def test_held_vehicles_assemble_at_the_spawners_placed_offset(self) -> None:
+        nodes, _ = self.ship()
+
+        self.assertIn("corsair", nodes)
+        self.assertIn("Lcvp", nodes)
+        # Refractor Z negates into glTF: -110.999 -> 110.999, -69.748 -> 69.748.
+        self.assertEqual([-4.999, 19.63, 110.999], nodes["corsair"]["translation"])
+        self.assertEqual([-17.35, 8.75, 69.748], nodes["Lcvp"]["translation"])
+
+    def test_held_vehicles_carry_the_spawner_record(self) -> None:
+        nodes, report = self.ship()
+
+        deck = nodes["corsair"]["extras"]["heldSpawner"]
+        self.assertEqual("TestCarrier_corsairSpawner", deck["spawner"])
+        self.assertEqual("corsair", deck["vehicle"])
+        self.assertEqual(1, deck["team"])
+        self.assertIs(True, deck["holdObject"])
+        self.assertEqual(120.0, deck["timeToLive"])
+        self.assertEqual(200.0, deck["distance"])
+        self.assertEqual([0.0, 0.0, 0.0], deck["spawnOffset"])
+
+        davit = nodes["Lcvp"]["extras"]["heldSpawner"]
+        self.assertEqual("TestCarrier_lcvpSpawner", davit["spawner"])
+        self.assertEqual(3, davit["maxNrOfObjectSpawned"])
+        self.assertEqual(10.0, davit["damageWhenLost"])
+        self.assertEqual(30.0, davit["timeToLive"])
+        self.assertEqual(20.0, davit["distance"])
+
+        self.assertEqual(["TestCarrier_corsairSpawner -> corsair at -4.999/19.63/-110.999",
+                          "TestCarrier_lcvpSpawner -> Lcvp at -17.35/8.75/-69.748"],
+                         report.held_spawners)
+        self.assertEqual(report.held_spawners, report.as_dict()["heldSpawners"])
+
+    def test_held_vehicles_appear_in_the_part_tree_not_as_unresolved(self) -> None:
+        _, report = self.ship()
+
+        self.assertTrue(any("corsair [Corsair_Hull_M1]" in line
+                            for line in report.part_tree))
+        self.assertTrue(any("Lcvp [Lcvp_Hull_M1]" in line for line in report.part_tree))
+        self.assertNotIn("TestCarrier_corsairSpawner", report.unresolved_templates)
+        self.assertNotIn("corsair", report.unresolved_templates)
+
+    def test_an_empty_spawner_and_an_unknown_hull_are_dropped_not_guessed(self) -> None:
+        nodes, report = self.ship()
+
+        self.assertNotIn("EmptySpawner", nodes)
+        self.assertNotIn("MissingSpawner", nodes)
+        self.assertNotIn("NoSuchVehicle", nodes)
+        self.assertIn("EmptySpawner", report.unresolved_templates)
+        self.assertIn("NoSuchVehicle", report.unresolved_templates)
+
+    def test_the_spawner_itself_leaves_no_node_behind(self) -> None:
+        nodes, _ = self.ship()
+
+        self.assertNotIn("TestCarrier_corsairSpawner", nodes)
+        self.assertNotIn("TestCarrier_lcvpSpawner", nodes)
+
+    def test_a_cockpit_export_keeps_only_the_held_branch_that_reaches_first_person(self) -> None:
+        # A held aircraft with no 1P geometry anywhere below it cannot be
+        # entered from the cockpit export's point of view, so the reachability
+        # guard prunes it exactly like any other non-1P branch.
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Sea/Test/Objects.con", self.SHIP_CON)
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library, first_person=True,
+                              include_collision=False)
+        builder = gltf.GlbBuilder()
+        stub_meshes(assembler, builder, "Corsair_Hull_M1", "Lcvp_Hull_M1")
+        report = Report(root="TestCarrier", configuration="complex", lod=0,
+                        first_person=True)
+
+        self.assertIsNone(assembler.build_node(builder, "TestCarrier", report))
+        self.assertEqual([], report.held_spawners)
+
+
 if __name__ == "__main__":
     unittest.main()

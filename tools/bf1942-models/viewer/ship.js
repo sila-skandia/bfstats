@@ -803,10 +803,16 @@ export class Ship extends Aircraft {
    */
   get aground() { return this.state.grounded || this._touchedBed === true; }
 
-  /** The engine's own per-tick contact latch, cleared once a tick. */
+  /** The engine's own per-tick contact latch, cleared once a tick.
+   *  Also latches `beachedThisTick` on the frame the keel first touches. */
   integrate(dt) {
+    const wasAground = this.aground;
     this._touchedBed = false;
     super.integrate(dt);
+    this.beachedThisTick = !wasAground && this.aground;
+    if (this.beachedThisTick) {
+      this.beachSpeed = Math.hypot(this.state.velocity.x, this.state.velocity.z);
+    }
   }
 
   /**

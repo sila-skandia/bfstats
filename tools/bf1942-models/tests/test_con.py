@@ -1948,5 +1948,167 @@ ObjectTemplate.radius 2.5
         self.assertIsNone(depot.explosion_radius)
 
 
+class HeldSpawnerParseTests(unittest.TestCase):
+    """Child `ObjectSpawner` blocks — deck aircraft and davit boats.
+
+    Every snippet is verbatim from vanilla's `Objects.rfa`: the Enterprise
+    deck/davit window and the Gato/Sub7C button spawners. The Fletcher davit
+    block is identical in shape to the Enterprise LCVP one (both teams name
+    `Lcvp`, `holdObject 1`, TTL 30, Distance 20, MaxNr 3, damageWhenLost 10)
+    — the issue plan's "no setObjectTemplate" reading does not match the
+    shipped file, which declares both teams at lines 239-240.
+    """
+
+    def library(self, path: str, text: str) -> ObjectLibrary:
+        library = ObjectLibrary()
+        library.add_con(path, text)
+        return library
+
+    ENTERPRISE_DECK = """
+ObjectTemplate.create ObjectSpawner Enterprise_corsairSpawner
+ObjectTemplate.setObjectTemplate 1 corsair
+ObjectTemplate.setObjectTemplate 2 corsair
+ObjectTemplate.minSpawnDelay 20
+ObjectTemplate.maxSpawnDelay 40
+ObjectTemplate.TimeToLive 120
+ObjectTemplate.Distance 200
+ObjectTemplate.spawnOffset 0/0/0
+ObjectTemplate.holdObject 1
+ObjectTemplate.team 1
+"""
+
+    def test_deck_spawner_reads_vehicles_team_hold_and_window(self) -> None:
+        library = self.library(
+            "Objects/Vehicles/Sea/Enterprise/Objects.con", self.ENTERPRISE_DECK)
+        spawner = library.object("Enterprise_corsairSpawner")
+
+        self.assertTrue(spawner.is_spawner)
+        self.assertEqual({1: "corsair", 2: "corsair"}, spawner.spawner_vehicles)
+        self.assertEqual(1, spawner.spawner_team)
+        self.assertIs(True, spawner.spawner_hold_object)
+        self.assertEqual(120.0, spawner.time_to_live)
+        self.assertEqual(200.0, spawner.spawner_distance)
+        self.assertEqual((0.0, 0.0, 0.0), spawner.spawner_spawn_offset)
+        self.assertEqual("corsair", spawner.spawn_vehicle_name())
+
+    def test_davit_spawner_reads_max_nr_and_damage_when_lost(self) -> None:
+        # Enterprise_LcvpSpawner, verbatim.
+        library = self.library(
+            "Objects/Vehicles/Sea/Enterprise/Objects.con",
+            """
+ObjectTemplate.create ObjectSpawner Enterprise_LcvpSpawner
+ObjectTemplate.setObjectTemplate 1 Lcvp
+ObjectTemplate.setObjectTemplate 2 Lcvp
+ObjectTemplate.minSpawnDelay 20
+ObjectTemplate.maxSpawnDelay 20
+ObjectTemplate.TimeToLive 30
+ObjectTemplate.Distance 20
+ObjectTemplate.spawnOffset 0/0/0
+ObjectTemplate.holdObject 1
+ObjectTemplate.team 1
+ObjectTemplate.MaxNrOfObjectSpawned 3
+ObjectTemplate.damageWhenLost 10
+""")
+        spawner = library.object("Enterprise_LcvpSpawner")
+
+        self.assertEqual(3, spawner.spawner_max_nr)
+        self.assertEqual(10.0, spawner.spawner_damage_when_lost)
+        self.assertEqual("Lcvp", spawner.spawn_vehicle_name())
+
+    def test_submarine_button_spawner_has_geometry_offset_and_no_hold(self) -> None:
+        # GatoDaiHatsuSpawner, verbatim: a spawn button, not a held deck
+        # child — no `holdObject`, no `MaxNrOfObjectSpawned`, and a real
+        # `spawnOffset` the extractor must keep on the record, not apply.
+        library = self.library(
+            "Objects/Vehicles/Sea/Gato/Objects.con",
+            """
+ObjectTemplate.create ObjectSpawner GatoDaiHatsuSpawner
+ObjectTemplate.geometry spawnbutton_m1
+ObjectTemplate.hasCollisionPhysics 1
+ObjectTemplate.setObjectTemplate 1 DaiHatsu
+ObjectTemplate.setObjectTemplate 2 DaiHatsu
+ObjectTemplate.minSpawnDelay 20
+ObjectTemplate.maxSpawnDelay 20
+ObjectTemplate.TimeToLive 30
+ObjectTemplate.Distance 20
+ObjectTemplate.useButtonRadius 2
+ObjectTemplate.spawnOffset -5.5/-2/0
+ObjectTemplate.damageWhenLost 10
+""")
+        spawner = library.object("GatoDaiHatsuSpawner")
+
+        self.assertIsNone(spawner.spawner_hold_object)
+        self.assertIsNone(spawner.spawner_max_nr)
+        self.assertEqual((-5.5, -2.0, 0.0), spawner.spawner_spawn_offset)
+        self.assertEqual("DaiHatsu", spawner.spawn_vehicle_name())
+        record = spawner.spawner_record()
+        self.assertEqual("GatoDaiHatsuSpawner", record["spawner"])
+        self.assertEqual("DaiHatsu", record["vehicle"])
+        self.assertEqual([-5.5, -2.0, 0.0], record["spawnOffset"])
+        self.assertNotIn("holdObject", record)
+        self.assertNotIn("maxNrOfObjectSpawned", record)
+
+    def test_spawner_team_picks_the_hull_with_team_fallback(self) -> None:
+        library = self.library(
+            "Objects/Test/Objects.con",
+            """
+ObjectTemplate.create ObjectSpawner SplitSpawner
+ObjectTemplate.setObjectTemplate 1 Zero
+ObjectTemplate.setObjectTemplate 2 corsair
+ObjectTemplate.team 1
+ObjectTemplate.holdObject 1
+
+ObjectTemplate.create ObjectSpawner TeamTwoSpawner
+ObjectTemplate.setObjectTemplate 1 Zero
+ObjectTemplate.setObjectTemplate 2 corsair
+ObjectTemplate.team 2
+ObjectTemplate.holdObject 1
+
+ObjectTemplate.create ObjectSpawner NoTeamSpawner
+ObjectTemplate.setObjectTemplate 1 Zero
+ObjectTemplate.setObjectTemplate 2 corsair
+ObjectTemplate.holdObject 1
+
+ObjectTemplate.create ObjectSpawner EmptySpawner
+ObjectTemplate.holdObject 1
+ObjectTemplate.team 1
+""")
+        self.assertEqual("Zero", library.object("SplitSpawner").spawn_vehicle_name())
+        self.assertEqual("corsair", library.object("TeamTwoSpawner").spawn_vehicle_name())
+        # No `team`: team 2 wins the fallback, the same rule a level spawn
+        # follows (`level.spawn_vehicle`).
+        self.assertEqual("corsair", library.object("NoTeamSpawner").spawn_vehicle_name())
+        # No `setObjectTemplate` lines: genuinely empty, never a guess.
+        self.assertIsNone(library.object("EmptySpawner").spawn_vehicle_name())
+
+    def test_team_is_routed_by_kind_not_shared(self) -> None:
+        # `team` is spelled the same on a SupplyDepot and an ObjectSpawner
+        # and means the owner's side on both; one must not claim the other's.
+        library = self.library(
+            "Objects/Test/Objects.con",
+            """
+ObjectTemplate.create SupplyDepot TestDepot
+ObjectTemplate.team 0
+
+ObjectTemplate.create ObjectSpawner TestSpawner
+ObjectTemplate.team 1
+""")
+        depot = library.object("TestDepot")
+        spawner = library.object("TestSpawner")
+        self.assertEqual(0, depot.supply_team)
+        self.assertIsNone(depot.spawner_team)
+        self.assertEqual(1, spawner.spawner_team)
+        self.assertIsNone(spawner.supply_team)
+
+    def test_non_spawner_has_no_vehicle_or_record(self) -> None:
+        library = self.library(
+            "Objects/Vehicles/Land/Sherman/Objects.con",
+            "ObjectTemplate.create PlayerControlObject Sherman\n")
+        sherman = library.object("Sherman")
+        self.assertFalse(sherman.is_spawner)
+        self.assertIsNone(sherman.spawn_vehicle_name())
+        self.assertIsNone(sherman.spawner_record())
+
+
 if __name__ == "__main__":
     unittest.main()

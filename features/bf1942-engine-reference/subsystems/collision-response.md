@@ -106,6 +106,14 @@ input buffer is empty is simulated with an all-zero input, so an occupied
 vehicle is integrated and collided every tick; only a connected-but-not-ready
 client is skipped. (Game status 4 skips steps 2–6 altogether.)
 
+The client follows the same handoff: `PhysicsNode::updatePhysics` (`0x00540920`)
+keeps the root's positional and rotational velocity fields live while the
+object is occupied, and `exitVehicle` clears the separate-update flag rather
+than resetting those fields. The next global physics pass therefore continues
+the vehicle with its authored mass, drag and inertia. A viewer that zeroes
+velocity on exit loses this momentum; rebuilding a parked spring without its
+current displacement also creates an artificial first-tick suspension bounce.
+
 **Latency.** `solveImpulse` moves the position immediately, in step 5 or 6 of
 tick N, and posts the velocity change into the acceleration accumulator, which
 the next `updatePhysics` consumes — tick N+1. Impulses land one tick late by
