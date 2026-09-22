@@ -439,7 +439,9 @@ export function collisionPartsFor(spec, body, { hullOnly = false } = {}) {
  * contact wakes it (spec 4.3). Pass false for a vehicle the player has just
  * stepped out of, which should settle where it was left.
  */
-export function buildParkedVehicle(spec, { position, axes, asleep = true }) {
+export function buildParkedVehicle(spec, {
+  position, axes, asleep = true, wheelState = null,
+} = {}) {
   const body = new RigidBody({
     mass: spec.mass, inertiaModifier: spec.inertiaModifier, box: spec.box,
     position, axes,
@@ -454,7 +456,7 @@ export function buildParkedVehicle(spec, { position, axes, asleep = true }) {
       damping: part.spring?.damping ?? 0,
     }),
   }));
-  return new ParkedVehicle({ body, parts, wheels });
+  return new ParkedVehicle({ body, parts, wheels, initialWheelState: wheelState });
 }
 
 /** The world axle of a wheel part: its own X axis, for RollGrip friction. */

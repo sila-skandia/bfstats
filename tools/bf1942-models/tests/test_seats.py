@@ -256,6 +256,46 @@ class SeatsModuleTests(unittest.TestCase):
         self.assertEqual("V-100Turret",
                          self.results["aimAxisSelection"]["mixedYawSlotNode"])
 
+    def test_a_steered_wheel_is_not_peered_under_the_turret(self) -> None:
+        # Same-axis-same-input guard (Issue 4): the V-100's `yaw` slot winner
+        # is the turret (`c_PIMouseLookX`), but the losing steered wheels
+        # (`c_PIYaw`) must NOT be peered under it — otherwise every turret
+        # `_apply` welds the front wheels to the turret angle. Replacement
+        # still happens; only the peering is gated.
+        sel = self.results["aimAxisSelection"]
+        self.assertEqual(1, sel["mixedYawPeerCount"])
+        self.assertEqual(["V-100Turret"], sel["mixedYawPeers"])
+
+    def test_two_bundles_same_axis_and_input_are_both_peered(self) -> None:
+        # Fletcher dual-turret shape (Issue 4): `Fletcher_cannon` +
+        # `Fletcher_cannon_Front`, identical specs, same seat/axis/input.
+        # Both land in `peers` and a single `TurretAxis` drives both. The
+        # first bundle keeps the slot; the second is peered, not replacing.
+        dual = self.results["dualTurret"]
+        self.assertEqual(["Fletcher_cannon", "Fletcher_cannon_Front"],
+                         dual["yawPeerNames"])
+        self.assertEqual(2, dual["yawPeerCount"])
+        self.assertEqual("Fletcher_cannon", dual["yawSlotNode"])
+        self.assertEqual("c_PIMouseLookX", dual["yawSlotInput"])
+        self.assertEqual(1, dual["singleRigAxis"])
+        self.assertEqual(2, dual["rigPeerCount"])
+
+    def test_a_single_rig_axis_drives_both_peers_together(self) -> None:
+        dual = self.results["dualTurret"]
+        self.assertTrue(dual["bothPeersMove"])
+        self.assertTrue(dual["peersMoveTogether"])
+
+    def test_peer_helpers_unwrap_winner_first_for_cameraRidesTurret(self) -> None:
+        # `map.html` `cameraRidesTurret` needs every node one aim axis drives,
+        # not just `axis.node`. `turretPeerNodes(seat, name)` /
+        # `axisPeerNodes(entry)` unwrap the `{node, spec, peers}` shape.
+        dual = self.results["dualTurret"]
+        self.assertEqual(["Fletcher_cannon", "Fletcher_cannon_Front"],
+                         dual["helperSeat"])
+        self.assertEqual(["Fletcher_cannon", "Fletcher_cannon_Front"],
+                         dual["helperAxis"])
+        self.assertEqual(0, dual["helperMissingAxis"])
+
     def test_stationary_browning_pitch_prefers_the_movable_axis(self) -> None:
         # Point is first and declares pitch at maxSpeed 0; Rotation owns the
         # real elevation. Without a maxSpeed preference, elevation stays dead.

@@ -81,7 +81,7 @@ const _bodyV = [0, 0, 0];
  * @returns {number} how many of the tested vertices were in contact this
  *   call (for tests/diagnostics; the spec has no equivalent return value)
  */
-export function terrainContact(part, terrain, handlers) {
+export function terrainContact(part, terrain, handlers, reportTerrainDamage = true) {
   const layer0 = part.shape.layers[0];
   if (!layer0 || !layer0.vertices) return 0;
   const rawCount = layer0.vertices.length / 3;
@@ -108,7 +108,7 @@ export function terrainContact(part, terrain, handlers) {
     const matSelf = layer0.vertexMaterials ? layer0.vertexMaterials[i] : 0;
     const matTerrain = terrain.material(_w[0], _w[2]);
 
-    if (lenSq3(_speed) > HANDLER_SPEED_THRESHOLD_SQ) {
+    if (reportTerrainDamage && lenSq3(_speed) > HANDLER_SPEED_THRESHOLD_SQ) {
       handlers.onTerrain(part, _speed, _N, _C, matSelf, matTerrain);
     }
 
@@ -252,7 +252,7 @@ export class ParkedVehicle {
    *   offset HERE, before `detectGround` ever mutates it — construct the
    *   parts with their true rest offsets already in place.
    */
-  constructor({ body, parts, wheels }) {
+  constructor({ body, parts, wheels, initialWheelState = null }) {
     this.body = body;
     this.parts = parts;
     this.rootPart = parts.find(p => p.isRoot);
@@ -266,6 +266,26 @@ export class ParkedVehicle {
       restOffset: [w.part.offset[0], w.part.offset[1], w.part.offset[2]],
     }));
     this._wheelByPart = new Map(this.wheels.map(w => [w.part, w]));
+
+    // A driven vehicle hands its live suspension to this parked body when the
+    // player exits. Keeping the current compression and damper history avoids
+    // treating the handoff as a fresh landing, which otherwise produces the
+    // small up/down oscillation visible on every exit.
+    if (initialWheelState) {
+      const up = body.axes[1];
+      for (const wheel of this.wheels) {
+        const live = initialWheelState.get(wheel.part.node);
+        const compression = live?.compression;
+        if (!(compression > 0)) continue;
+        const push = wheel.spring.push;
+        push[0] = up[0] * compression;
+        push[1] = up[1] * compression;
+        push[2] = up[2] * compression;
+        wheel.spring.previous[0] = -push[0];
+        wheel.spring.previous[1] = -push[1];
+        wheel.spring.previous[2] = -push[2];
+      }
+    }
 
     for (const part of this.parts) {
       part.response.grip = parkedGrip(part.response.grip);
@@ -289,7 +309,13 @@ export class ParkedVehicle {
    *  class's own doc comment for why. */
   detectGround(terrain, handlers) {
     if (this.body.sleeping) return;
-    for (const part of this.parts) terrainContact(part, terrain, handlers);
+    for (const part of this.parts) {
+      // Wheels are suspension contacts, not hull impacts. The driven vehicle
+      // path already samples hull-only terrain damage, so reporting a rolling
+      // tyre's tangential speed here would slowly destroy every vehicle after
+      // the player exits it.
+      terrainContact(part, terrain, handlers, part.kind !== 'spring');
+    }
   }
 
   /**

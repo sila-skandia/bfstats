@@ -635,6 +635,28 @@ class ObjectTemplate:
     supply_work_on_soldiers: bool | None = None
     supply_work_on_vehicles: bool | None = None
 
+    # -- ObjectSpawner (held child) ------------------------------------------ #
+    # Deck aircraft and davit boats are not `addTemplate` PCO children. They
+    # are child `ObjectSpawner`s with `holdObject 1` in the ship's
+    # `Objects.con`: the engine spawns the vehicle and holds it at the
+    # spawner's placed offset until it is entered, its TTL expires, or it
+    # leaves `Distance`. `setObjectTemplate <team> <vehicle>` picks the hull
+    # per team under the same rule as a level spawn (`level.spawn_vehicle`):
+    # the spawner's own `team` picks, falling back to team 2 then team 1.
+    # Every surveyed sea spawner declares the same hull for both teams.
+    # `spawnOffset` is an additional offset the engine applies at spawn; the
+    # extractor assembles the held vehicle at the spawner's own
+    # `setPosition`/`setRotation` and keeps the offset on the record.
+    # `TimeToLive` rides the generic `time_to_live` field every other kind
+    # uses rather than a second copy of itself.
+    spawner_vehicles: dict[int, str] = field(default_factory=dict)
+    spawner_team: int | None = None
+    spawner_hold_object: bool | None = None
+    spawner_distance: float | None = None
+    spawner_spawn_offset: tuple[float, float, float] | None = None
+    spawner_max_nr: int | None = None
+    spawner_damage_when_lost: float | None = None
+
     # -- Vehicle HUD ----------------------------------------------------------#
     # Declared on the vehicle's own `PlayerControlObject` root -- 13678 of
     # 13699 `setVehicleIcon` uses across the 14 installed mods' `Objects.rfa`
@@ -1136,6 +1158,48 @@ class ObjectTemplate:
     @property
     def is_lod_selector(self) -> bool:
         return self.kind.lower() == "lodobject"
+
+    @property
+    def is_spawner(self) -> bool:
+        return self.kind.lower() == "objectspawner"
+
+    def spawn_vehicle_name(self) -> str | None:
+        """The hull this spawner holds, or None when it holds nothing.
+
+        Same rule as a level spawn (`level.spawn_vehicle`): the spawner's
+        own `team` picks between the `setObjectTemplate` declarations,
+        falling back to team 2 then team 1. An empty vehicle map — a block
+        with no `setObjectTemplate` lines — is a spawner that is genuinely
+        empty, not one that defaults to something; it returns None rather
+        than guessing.
+        """
+        if not self.is_spawner:
+            return None
+        if self.spawner_team is not None and self.spawner_team in self.spawner_vehicles:
+            return self.spawner_vehicles[self.spawner_team]
+        return self.spawner_vehicles.get(2) or self.spawner_vehicles.get(1)
+
+    def spawner_record(self, spawner_name: str | None = None) -> dict | None:
+        """This spawner's held-child record for a glb `extras.heldSpawner`.
+
+        Emitted by `assemble.build_node` on the node built for the held
+        vehicle. Every key is omitted when the data does not declare it, so
+        an absent word stays absent rather than becoming a default.
+        """
+        if not self.is_spawner:
+            return None
+        return {key: value for key, value in {
+            "spawner": spawner_name or self.name,
+            "vehicle": self.spawn_vehicle_name(),
+            "team": self.spawner_team,
+            "holdObject": self.spawner_hold_object,
+            "timeToLive": self.time_to_live,
+            "distance": self.spawner_distance,
+            "spawnOffset": (list(self.spawner_spawn_offset)
+                            if self.spawner_spawn_offset else None),
+            "maxNrOfObjectSpawned": self.spawner_max_nr,
+            "damageWhenLost": self.spawner_damage_when_lost,
+        }.items() if value is not None}
 
     def control_scope(self, inherited: str) -> str:
         if self.kind.lower() == "playercontrolobject":
@@ -1823,8 +1887,56 @@ class ObjectLibrary:
                     except (ValueError, IndexError):
                         continue
                 elif cmd == "team":
+                    # `team` is spelled the same on a SupplyDepot and an
+                    # ObjectSpawner, and means the owner's side on both --
+                    # routed by kind so one does not claim the other's.
+                    # Spawner survey: SupplyDepot 16 uses, ObjectSpawner 10,
+                    # plus Flag/FlagBase which this parser has never read.
                     try:
-                        obj.supply_team = int(float(args.split()[0]))
+                        team_value = int(float(args.split()[0]))
+                    except (ValueError, IndexError):
+                        continue
+                    if obj.kind.lower() == "objectspawner":
+                        obj.spawner_team = team_value
+                    else:
+                        obj.supply_team = team_value
+                # -- ObjectSpawner. Every word here is ObjectSpawner-only in
+                # the survey (`setObjectTemplate` 24/24, `holdObject` 10/10,
+                # `spawnOffset` 12/12, `MaxNrOfObjectSpawned` 6/6,
+                # `damageWhenLost` 8/8, `Distance` 12/12), so no kind gate is
+                # needed the way `team` and `radius` need one. `TimeToLive`
+                # rides the generic `time_to_live` bucket every other kind
+                # uses, below.
+                elif cmd == "setobjecttemplate":
+                    tokens = args.split()
+                    if len(tokens) >= 2:
+                        try:
+                            team = int(float(tokens[0]))
+                        except ValueError:
+                            continue
+                        if team in (1, 2):
+                            obj.spawner_vehicles[team] = tokens[1]
+                elif cmd == "holdobject":
+                    if (value := truthy(args)) is not None:
+                        obj.spawner_hold_object = value
+                elif cmd == "distance":
+                    try:
+                        obj.spawner_distance = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                elif cmd == "spawnoffset":
+                    try:
+                        obj.spawner_spawn_offset = vec3_lenient(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                elif cmd == "maxnrofobjectspawned":
+                    try:
+                        obj.spawner_max_nr = int(float(args.split()[0]))
+                    except (ValueError, IndexError):
+                        continue
+                elif cmd == "damagewhenlost":
+                    try:
+                        obj.spawner_damage_when_lost = float(args.split()[0])
                     except (ValueError, IndexError):
                         continue
                 elif cmd == "sethealth":
