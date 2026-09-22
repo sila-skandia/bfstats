@@ -239,13 +239,20 @@
   /* The map art, top right. That corner is free: #side is top left, #hud is
      bottom centre. Sized in one place so the canvas backing store and the
      frame agree. No CSS chrome: the game's own `icon_mapbar_small` bezel is
-     drawn into the canvas, over the art, the way the engine composes it. */
+     drawn into the canvas, over the art, the way the engine composes it.
+     Retail geometry (measured off the 2559x1441 capture): the ticket bar is
+     x 622.2..793.7 y 4.6..27.5 and the minimap frame x 621.9..793.4 from
+     y ~30 down to the cpbar strip at y ~206..220 — a 171.5-wide cluster
+     whose map art is 164.9 across, ratio map/ticket 0.962. The widget keeps
+     that ratio: its width is anchored to the painted ticket bar (the layout
+     group's own 256-wide plate), so the two read as the one cluster the
+     game draws. */
   #minimap {
-    --mm-size: 188px;
+    --mm-size: 196px;
     /* Not covered by the `#hud, #side` positioning rule above. */
     position: absolute;
     z-index: 3;
-    top: 16px; right: 16px;
+    top: 44px; right: 16px;
     width: var(--mm-size);
   }
   #minimap[hidden] { display: none; }
@@ -674,8 +681,8 @@
 
   @media (max-width: 720px) {
     #minimap {
-      --mm-size: 110px;
-      top: 10px;
+      --mm-size: 118px;
+      top: 34px;
       right: 10px;
     }
     #mobile-controls {
@@ -843,7 +850,7 @@
     <span>Maps</span>
   </button>
   <div id="minimap" hidden>
-    <canvas id="minimap-canvas" width="376" height="376"></canvas>
+    <canvas id="minimap-canvas" width="392" height="392"></canvas>
   </div>
   <div id="map-actions" class="map-actions speed-control">
     <button type="button" id="speed-toggle-btn" class="map-action-btn speed-toggle-btn" data-speed="fast" aria-label="Toggle flight speed">
@@ -991,7 +998,7 @@ import { createRemoteRenderer } from './netcode-render.js';
 import { createReconciler } from './netcode-reconcile.js';
 import { Hud, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS, calculateHitOctant } from './hud.js';
 import { Armor } from './armor.js';
-import { VehicleDamageSet } from './vehicle-damage.js';
+import { VehicleDamageSet, deathTier } from './vehicle-damage.js';
 import { effectNameFor } from './crash-damage.js';
 import { BodyWorld } from './body-world.js';
 import { buildParkedVehicle, describeVehicleParts } from './vehicle-bodies.js';
@@ -1021,6 +1028,7 @@ import { kitIconCandidates, kitRowLabel } from './kit-icon.js';
 import { cpNation as cpNationRule, teamNation as teamNationRule } from './nation.js';
 import { BfMap, minimapWindow, rotateAbout, coverRect } from './bfmap.js';
 import { boardRows, boardVars, paintLeaves, listFloor, listGeometry } from './scoreboard.js';
+import { BotController, spawnBots } from './bot.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -2748,6 +2756,12 @@ function release() {
 // the game, START is a different level (the page navigates, which is this
 // site's "disconnect and load the new map"), and END CURRENT GAME is
 // `game.disconnect` — the same MENU_URL the console word already goes to.
+//
+// There is one Instant Battle screen, and this is it: the same controller,
+// the same bot settings in the left column. The mod list is not here and is
+// not there either — it is the front end's own CUSTOM GAME tab, and there is
+// no front end behind a running level to tab to, nor anything for it to do
+// here: the mod is the one this level is running in.
 const menuCanvas = document.getElementById('menu-canvas');
 let escMenu = null;
 let escMenuUp = false;
@@ -2768,9 +2782,6 @@ function escMenuScreen() {
     music: false,
     inGame: true,
     onDisconnect: () => location.assign(MENU_URL),
-    // Picking a mod must not throw the level away, so the list re-fetches in
-    // place instead of reloading the page the way the way-in screen does.
-    modChoice: 'inplace',
     onStatus: text => { if (text) console.warn(text); },
   });
   escMenu.load()
@@ -5517,6 +5528,18 @@ async function wreckVehicle(vehicle) {
   visual.wrecked = true;
   visual.wreckAge = 0;
   visual.hidden = [];
+
+  visual.node.updateWorldMatrix(true, false);
+  visual.node.getWorldPosition(wreckDeathPos);
+  const death = deathTier(vehicle.effects, { inWater: false });
+  if (death?.names?.length) {
+    for (const name of death.names) {
+      effects.play(name, { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
+    }
+  } else {
+    effects.play('e_ExplGas', { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
+  }
+
   // Whoever was in it dies with it, and that has to happen HERE — before the
   // seat is torn down below — because this is the one place a vehicle dies,
   // whatever killed it (a shell, the burn-down, drowning, the combat area).
@@ -6275,10 +6298,10 @@ function onCrashDamage(owner, result, at, other) {
       kill: result.kill, cell: result.effectCell, hp: vehicle?.hitPoints ?? null });
     if (crashLog.length > 200) crashLog.shift();
   }
-  if (!vehicle || vehicle.destroyed) return;
   const effect = result.effectCell
     ? damageTables?.effects?.[result.effectCell[0]]?.[result.effectCell[1]] : null;
   if (effect) effects.play(effect, { position: [at[0], at[1], at[2]], normal: [0, 1, 0] });
+  if (!vehicle) return;
 }
 
 /**
@@ -6792,6 +6815,13 @@ function loadEffectSounds() {
       effectAudio.listener = ensureListener();
       effectAudio.setManifest(manifest);
       effectAudio.setMaster(masterVolume());
+      for (const name of [
+        'e_ExplGas', 'e_ExplArmor', 'e_ExplBoatArmor', 'e_ExplBazooka',
+        'e_collision_Other', 'e_collision_metal', 'e_collision_Wood', 'e_collision_Stone',
+        'e_WaterExplosion', 'WaterWaterExplosion',
+      ]) {
+        effectAudio.prime(name).catch(() => {});
+      }
       return manifest;
     })
     .catch(err => {
@@ -8440,6 +8470,11 @@ let soldier = null;
 // server would run for every remote one.
 let world = null;
 const LOCAL_PLAYER = 'local';
+/** Bot parameters from the URL (skirmish.js passes ?botCount= and ?botSkill=). */
+const BOT_COUNT = Math.max(0, Math.min(32, Number(params.get('botCount')) || 0));
+const BOT_SKILL = Math.max(0.25, Math.min(1.0, Number(params.get('botSkill')) || 0.75));
+/** Bot controllers for the current level; cleared on every level switch. */
+let botControllers = [];
 const CAPTURE_FALLBACK_SECONDS = 8;
 let localCapture = null;
 let roomCapture = null;
@@ -8673,6 +8708,7 @@ function updateCaptureHud(ticks) {
     syncVehicleSpawnOwnership();
     logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
     hud.textContent = `${target.name} captured`;
+    playCaptureVoice();
     clearTimeout(hudViewTimer);
     hudViewTimer = setTimeout(updateHud, 2200);
     localCapture = null;
@@ -8694,6 +8730,10 @@ function updateCaptureHud(ticks) {
     hud.textContent = `CONTESTED ${roomCapture.name}`;
   } else if (roomCapture.done) {
     hud.textContent = `${roomCapture.name} captured`;
+    if (!roomCapture.voiced) {
+      roomCapture.voiced = true;
+      playCaptureVoice();
+    }
   }
 }
 
@@ -8765,6 +8805,245 @@ function spawnAtFlag(advance = false) {
   return true;
 }
 
+/**
+ * Spawn bots on the player's team (the engine puts bots on both sides, but
+ * for Stage 1 we put them on the player's side so they're visible).
+ * Called once per level load, after the world is built.
+ */
+function spawnBotsForLevel() {
+  disposeBotVisuals();
+  if (BOT_COUNT <= 0 || !world) {
+    console.log(`[bots] skipped: BOT_COUNT=${BOT_COUNT}, world=${!!world}`);
+    return;
+  }
+  botControllers = [];
+  // Bots spawn on the same team as the human player.
+  const botTeam = deployTeamId;
+  console.log(`[bots] spawning ${BOT_COUNT} bots on team ${botTeam}, skill ${BOT_SKILL}`);
+  botControllers = spawnBots({
+    world,
+    count: BOT_COUNT,
+    botSkill: BOT_SKILL,
+    team: botTeam,
+    flags: world.flags,
+  });
+  console.log(`[bots] created ${botControllers.length} bot controllers`);
+  // Place each bot on its spawn point and kick off visual loading.
+  for (let i = 0; i < botControllers.length; i++) {
+    const bot = botControllers[i];
+    const flag = world.flags[i % world.flags.length];
+    if (flag && flag.spawns?.length) {
+      const spawn = flag.spawns[i % flag.spawns.length];
+      bot.setPosition(spawn.position[0], spawn.position[1], spawn.position[2]);
+      console.log(`[bots] ${bot.name} -> ${spawn.position.join(', ')}`);
+    }
+    // Async: load the bot's visual so it appears when ready.
+    ensureBotVisual(bot).then(vis => {
+      if (vis?.rig) {
+        console.log(`[bots] visual loaded for ${bot.name}`);
+      } else {
+        console.warn(`[bots] visual failed for ${bot.name}`);
+      }
+    });
+  }
+}
+
+/**
+ * Tick all bot controllers. Called from frame() after the world step.
+ */
+function tickBots(dt) {
+  if (!botControllers.length || !soldier) return;
+  const playerPos = [soldier.x, soldier.y, soldier.z];
+  for (const bot of botControllers) {
+    bot.tick(dt, playerPos, LOCAL_PLAYER);
+  }
+}
+
+// --- bot rendering -------------------------------------------------------------
+// Bots get the same pose-pair + gait-rig treatment as remote players
+// (netcode-render.js). Each bot is a THREE.Group with a cloned skinned mesh
+// and an AnimationMixer, positioned at the bot controller's position.
+
+const BOT_SOLDIER = { 1: 'GermanSoldier', 2: 'USMarineSoldier' };
+const BOT_WEAPON = 'Colt';
+
+/** Bot pose-pair cache: "SoldierName__Colt" -> { scene, animations }. */
+const botPoseCache = new Map();
+
+/** Bot gait clips cache: "gaits/Colt.gait.glb" -> AnimationClip[]. */
+const botGaitCache = new Map();
+
+/** The root group all bot visuals hang off. Added to scene in show(). */
+let botRoot = null;
+
+/** Per-bot visual state: { group, rig, want, lastSpeed } */
+const botVisuals = new Map();
+
+async function botPosePair(soldierName, weapon) {
+  const key = `${soldierName}__${weapon}`;
+  if (!botPoseCache.has(key)) {
+    botPoseCache.set(key, footBodyLoader
+      .loadAsync(`${MODELS_BASE}/poses/${key}.pose.glb${bust()}`)
+      .then(gltf => {
+        gltf.scene.traverse(obj => {
+          const data = obj.userData || {};
+          if (data.effect || data.projectileMesh || data.projectileTrail
+              || data.collision || /collision/i.test(obj.name || '')) obj.visible = false;
+        });
+        return { scene: gltf.scene, animations: gltf.animations ?? [] };
+      }).catch(() => null));
+  }
+  return botPoseCache.get(key);
+}
+
+async function botGaitClips(weapon) {
+  const manifest = await footGaits();
+  if (!manifest) return [];
+  const entry = manifest[weapon] ?? manifest[Object.keys(manifest)[0]];
+  if (!entry) return [];
+  const key = entry.lower;
+  if (!botGaitCache.has(key)) {
+    botGaitCache.set(key, footBodyLoader
+      .loadAsync(`${MODELS_BASE}/poses/${key}${bust()}`)
+      .then(g => g.animations ?? []).catch(() => []));
+  }
+  const lower = await botGaitCache.get(key);
+  const upperKey = entry.upper;
+  if (!botGaitCache.has(upperKey)) {
+    botGaitCache.set(upperKey, footBodyLoader
+      .loadAsync(`${MODELS_BASE}/poses/${upperKey}${bust()}`)
+      .then(g => g.animations ?? []).catch(() => []));
+  }
+  const upper = await botGaitCache.get(upperKey);
+  return [...lower, ...upper];
+}
+
+const FAMILY_CLIPS = {
+  stand: { pose: 'stand' },
+  walk: { lower: 'lower', upper: 'upper' },
+  crouch: { pose: 'crouch' },
+  crouchwalk: { lower: 'crouchlower', upper: 'crouchupper' },
+  lie: { pose: 'lie' },
+  crawl: { lower: 'crawllower', upper: 'crawlupper' },
+};
+
+function buildBotGaitRig(scene, poseClips, gaitClips) {
+  const mixer = new THREE.AnimationMixer(scene);
+  const action = (name, clips) => {
+    const clip = THREE.AnimationClip.findByName(clips, name);
+    if (!clip) return null;
+    const a = mixer.clipAction(clip);
+    a.setLoop(THREE.LoopRepeat, Infinity);
+    a.play();
+    a.setEffectiveWeight(0);
+    a.paused = true;
+    return a;
+  };
+  const families = {};
+  for (const [family, spec] of Object.entries(FAMILY_CLIPS)) {
+    if (spec.pose) {
+      const a = action(spec.pose, poseClips);
+      if (a) families[family] = [a];
+      continue;
+    }
+    const lower = action(spec.lower, gaitClips);
+    const upper = action(spec.upper, gaitClips);
+    if (lower && upper) families[family] = [lower, upper];
+  }
+  return { mixer, families };
+}
+
+function botClipFamily(speed, stance) {
+  if (stance === 'prone') {
+    return 'lie';
+  }
+  if (stance === 'crouch') {
+    return speed > 0.5 ? 'crouchwalk' : 'crouch';
+  }
+  return speed > 0.5 ? 'walk' : 'stand';
+}
+
+async function ensureBotVisual(bot) {
+  const team = world?.player(bot.playerId)?.team ?? 2;
+  const soldierName = BOT_SOLDIER[team] ?? BOT_SOLDIER[2];
+  let vis = botVisuals.get(bot.playerId);
+  if (vis) return vis;
+
+  const group = new THREE.Group();
+  group.name = `bot ${bot.name}`;
+  group.visible = false;
+  botRoot.add(group);
+
+  vis = { group, rig: null, want: null, lastSpeed: 0, lastPos: null };
+  botVisuals.set(bot.playerId, vis);
+
+  const [pair, gaits] = await Promise.all([
+    botPosePair(soldierName, BOT_WEAPON),
+    botGaitClips(BOT_WEAPON),
+  ]);
+  if (!pair) return vis;
+
+  const scene = skeletonClone(pair.scene);
+  bindDynamicShading(scene);
+  const rig = buildBotGaitRig(scene, pair.animations, gaits);
+  group.add(scene);
+  vis.rig = { scene, mixer: rig.mixer, families: rig.families };
+
+  return vis;
+}
+
+function updateBotVisuals(dt) {
+  if (!botControllers.length) return;
+  for (const bot of botControllers) {
+    const vis = botVisuals.get(bot.playerId);
+    if (!vis?.rig) continue;
+
+    const pos = bot.getPosition();
+    if (!pos || !Number.isFinite(pos[0])) continue;
+
+    vis.group.visible = true;
+    vis.group.position.set(pos[0], pos[1], pos[2]);
+
+    // Bots face the player when firing.
+    const yaw = bot.yaw ?? 0;
+    const q = vis.group.quaternion;
+    q.setFromEuler(new THREE.Euler(0, yaw, 0, 'YXZ'));
+
+    // Estimate speed from position change.
+    if (!vis.lastPos) vis.lastPos = [...pos];
+    const dx = pos[0] - vis.lastPos[0];
+    const dz = pos[2] - vis.lastPos[2];
+    const speed = dt > 0 ? Math.hypot(dx, dz) / dt : 0;
+    vis.lastSpeed = vis.lastSpeed + (speed - vis.lastSpeed) * Math.min(1, dt * 6);
+    vis.lastPos[0] = pos[0]; vis.lastPos[1] = pos[1]; vis.lastPos[2] = pos[2];
+
+    // Stage 1 bots don't move, so they're always standing.
+    const want = 'stand';
+    if (want !== vis.want) {
+      vis.want = want;
+      for (const [family, actions] of Object.entries(vis.rig.families)) {
+        for (const a of actions) {
+          a.setEffectiveWeight(family === want ? 1 : 0);
+          if (family === want) {
+            a.paused = false;
+            a.reset();
+            a.play();
+          }
+        }
+      }
+    }
+    vis.rig.mixer.update(dt);
+  }
+}
+
+function disposeBotVisuals() {
+  for (const vis of botVisuals.values()) {
+    botRoot.remove(vis.group);
+    if (vis.rig?.scene) disposeFootBodyScene(vis.rig.scene);
+  }
+  botVisuals.clear();
+}
+
 function setOnFoot(on) {
   if (on && optPilot.checked) {      // the two modes are exclusive
     optPilot.checked = false;
@@ -8818,6 +9097,7 @@ function setOnFoot(on) {
     delete hudBridge.vars['Soldier/SoldierMaxHitPoints'];
     delete hudBridge.vars['ShowHealIcon'];
     delete hudBridge.vars['ShowReloadIcon'];
+    delete hudBridge.vars['ShowFlagIcon'];
     spawnFlagSelect.hidden = true;
     camera.fov = FLY_FOV;
     camera.near = FLY_NEAR;
@@ -11320,6 +11600,65 @@ async function playSoldierHurtSound(isFriendlyFire = false) {
   if (buf) playSoldierOneShot(buf, choice.volume ?? 0.7, 0.05, 0);
 }
 
+// --- control-point capture voice -------------------------------------------
+//
+// `Bf1942/Game/GamePlay.ssc` (bf1942/Game.rfa): `GainControlPoint` plays one
+// of `WeNowHaveControlOver{,2,3}.wav`, `LoseControlPoint` one of
+// `WeHaveLostControlOf{,2,3}.wav` — both `randomPlay 1`, extracted to
+// `maps/_shared/voices/en/` at 22 kHz the way `extract_soldier_sounds.py`
+// resolves `@Language` (English first, the viewer's own announcer).
+// Only the local player's own side speaks, and only on foot: the two patches
+// are the engine's team-wide announcements for its own gain/loss, and this
+// viewer never mixes the enemy's. Neutral takes and enemy takes-back both
+// land on `GainControlPoint` here — the retail wording ("we now have control
+// over the ...") is what the screenshot's "captured" moment plays.
+let lastCaptureVoiceTime = 0;
+function captureVoiceDir() {
+  // Per-mod trees carry their own announcer the way the sprite pack does
+  // (`hudPaths` above picks vanilla vs `maps/mods/<mod>/_shared/` per file);
+  // mods that never extracted voices fall back to the vanilla English set.
+  return MAPS_BASE === 'maps' ? 'maps/_shared/voices/en'
+    : `${MAPS_BASE}/_shared/voices/en`;
+}
+async function playCaptureVoiceSample(stem) {
+  if (AUDIO_OFF || masterVolume() <= 0) return false;
+  ensureAudioContext();
+  if (!audioListener || audioListener.context.state === 'suspended') return false;
+  const dir = captureVoiceDir();
+  const key = `voices:${dir}/${stem}.mp3`;
+  let pending = audioBufferCache.get(key);
+  if (!pending) {
+    if (!audioLoader) return false;
+    pending = audioLoader.loadAsync(`${dir}/${stem}.mp3${bust()}`)
+      .catch(e => {
+        console.warn(`Could not load capture voice ${stem}:`, e);
+        audioBufferCache.delete(key);
+        return null;
+      });
+    audioBufferCache.set(key, pending);
+  }
+  const buf = await pending;
+  if (!buf) return false;
+  // The one-shot path the footsteps and hurt grunts already use: 2D voice,
+  // no pitch wobble (a `randomPlay` pick is the variation), script volume 1.
+  playSoldierOneShot(buf, 1, 0, 0);
+  return true;
+}
+async function playCaptureVoice() {
+  if (AUDIO_OFF || masterVolume() <= 0) return;
+  // One announcement per take, never stacked.
+  const now = performance.now() * 0.001;
+  if (now - lastCaptureVoiceTime < 1.0) return;
+  // The local player's take is a gain for his own side — neutral takes and
+  // enemy takes-back alike. Solo has no enemy ear to hear a loss with, and
+  // room play hears its own side's loss only when the server says the point
+  // changed under it, so only the gain patch plays here.
+  const stems = ['WeNowHaveControlOver', 'WeNowHaveControlOver2', 'WeNowHaveControlOver3'];
+  const stem = stems[Math.floor(Math.random() * stems.length)];
+  const played = await playCaptureVoiceSample(stem);
+  if (played) lastCaptureVoiceTime = now;
+}
+
 function applyDamageToPlayer(damage, attackerPos = null, attackerTeam = null) {
   if (!soldierArmor || soldierDead) return;
   soldierArmor.applyDamage(damage);
@@ -12004,6 +12343,13 @@ function updateSoldierHud(dt = 0.016) {
   // died leaves `soldier` null while the counter is still up in the game.
   feedTicketVars(vars);
   if (!onFootActive && !inVehicle) vars['ShowTicket'] = false;
+  // The flag-status disc beneath the minimap: the layout's own `ShowFlagIcon`
+  // leaf at (720,230) 64x64 (the neutral white flag while the local player
+  // stands inside a neutral control point's radius; the screenshot's little
+  // white flag). Fed from the same capture state `updateCaptureHud` reads, so
+  // the disc and the CAPTURING line can never disagree. `AxisFlagIcon` /
+  // `AlliedFlagIcon` stay unfed — CTF-only leaves with no conquest meaning.
+  feedFlagIconVars(vars);
   // The combat-area warning, drawn by the layout's own `outside` group.
   // `stepCombatArea` leaves `combatFrame` null whenever nothing the engine
   // would call a player is in the world, and its countdown is 0 while that
@@ -12359,7 +12705,7 @@ const fullmapMeta = document.getElementById('fullmap-meta');
 // (`game.setStaticMinimap 1`, the shipped default, north-up).
 const bfmap = new BfMap();
 // Sprite scale in CSS pixels, multiplied by the canvas's own backing ratio so
-// a flag is the same size on the 188 px HUD widget as on the fullscreen map
+// a flag is the same size on the 196 px HUD widget as on the fullscreen map
 // and stays put on a hidpi display.
 const MARKER_SCALE = 1.25;
 // Only for the moment before the sprite pack lands: a dot in the side's colour
@@ -12703,6 +13049,39 @@ function feedTicketVars(vars) {
   vars['Ticket/ShowAxisTicketBlink'] = false;
   vars['Ticket/ShowAlliedTicketBlink'] = false;
   return true;
+}
+
+/** Fill in the `ShowFlagIcon` group's variables: the neutral white-flag disc
+ *  the game paints beneath the minimap while the local player is inside a
+ *  neutral control point's capture radius.
+ *
+ *  The layout's own condition is `ShowFlagIcon && !AxisFlagIcon &&
+ *  !AlliedFlagIcon` (the 64x64 `icon_flag` leaf at (720,230)): the disc is up
+ *  exactly while no side's CTF flag is up, which in conquest is the whole
+ *  round. So the feed is one question — is the player standing in a neutral
+ *  point's radius? — answered from the same `nearestEnemyFlag` the capture
+ *  loop runs, over the same `flags` it reads. A stale true would leave the
+ *  white flag up after walking away or after the take, so every path that
+ *  clears capture state (leave radius, take, death, mode switch) clears this
+ *  too, through the same `updateSoldierHud` frame path. CTF leaves
+ *  (`AxisFlagIcon`, `AlliedFlagIcon`, `ShowNonTakeableFlagIcon`) are fed false
+ *  rather than left unfed so they cull deterministically. */
+function feedFlagIconVars(vars) {
+  vars['AxisFlagIcon'] = false;
+  vars['AlliedFlagIcon'] = false;
+  vars['ShowNonTakeableFlagIcon'] = false;
+  if (!optOnFoot.checked || !soldier || soldierDead) {
+    vars['ShowFlagIcon'] = false;
+    return false;
+  }
+  const player = world?.player(LOCAL_PLAYER);
+  const team = player?.team ?? deployTeamId;
+  const target = nearestEnemyFlag(team, capturePosition());
+  // Neutral only: an enemy-held point is a take-back, not the white flag —
+  // the disc is the "this point belongs to nobody" marker.
+  const show = !!target && target.team !== 1 && target.team !== 2;
+  vars['ShowFlagIcon'] = show;
+  return show;
 }
 
 function loadMapArt(dir) {
@@ -14346,6 +14725,14 @@ async function show(entry) {
   rebuildVehicleInterp();
   combatArea = world.combatArea;
   vehicleDamage = world.vehicleDamage;
+  // Bot visuals: create the root group now that `scene` exists.
+  if (!botRoot) {
+    botRoot = new THREE.Group();
+    botRoot.name = 'bot-renderers';
+    scene.add(botRoot);
+  }
+  // Bots spawn on the player's team once the world is built.
+  spawnBotsForLevel();
   setupWater(currentRoot, dir);
   setupSounds(extras, dir);
   loadMapArt(dir);
@@ -14732,7 +15119,7 @@ async function joinRoom() {
         flags[row.flag].team = row.team;
         roomCapture = { name: row.name || flags[row.flag].name,
           elapsed: 0, duration: 0, contested: false, done: true,
-          until: performance.now() + 2200 };
+          until: performance.now() + 2200, voiced: false };
         syncVehicleSpawnOwnership();
         applyVisibility();
         if (typeof paintDeployChrome === 'function') paintDeployChrome();
@@ -15122,6 +15509,9 @@ function frame(dt) {
   // nothing presentational inside (world.js, the tick law in its header).
   // `step` is that tick's report; the presentation halves read it back.
   const step = world?.step(dt) ?? { ticks: 0, bodyTicks: 0, alpha: 0, players: {}, damage: [] };
+  // Bot AI runs after the world step, so bots read the player's post-step pose.
+  tickBots(dt);
+  updateBotVisuals(dt);
   syncVehicleSpawnOwnership();
   updateCaptureHud(step.ticks);
   // The presentation instant this frame draws, and the drawn vehicle pose that

@@ -103,6 +103,7 @@ export class DeviationModel {
     this.speed = 0;
     this.turn = 0;
     this.misc = 0;
+    this.aiPending = 0;  // bot aim error; stays 0 for a human player
     this._acc = 0;   // fractional ticks carried between updates
     /**
      * The inputs, named for the engine's PlayerInput channels: `throttle` is
@@ -221,9 +222,45 @@ export class DeviationModel {
    * read yet, and floor-and-lid is what its two extracted numbers can say.
    */
   current() {
-    let total = this.floor() + this.fire + this.speed + this.turn + this.misc;
+    let total = this.floor() + this.fire + this.speed + this.turn + this.misc
+      + (this.aiPending ?? 0);
     const lid = this.data.maxDeviation;
     if (lid !== undefined && total > lid) total = lid;
     return total > 0 ? total : 0;
+  }
+
+  /**
+   * Set the AI deviation term (the sixth term, `aiPending`).
+   *
+   * From the research document §6.2, the closed-form formula:
+   *
+   *   dev = (1 - 0.75*A) * C
+   *       + F30 * (F38 * max(0, F34*(1-A) - (now - B)) + 0.25*(1-A))
+   *
+   * A = botSkill (0.25 EASY .. 1.0 IMPOSSIBLE)
+   * C = anti-aircraft penalty (0 ground-vs-ground, 10 naval-vs-air, 30 otherwise)
+   * F30 = weaponTemplate.deviation (default 5.0)
+   * F34 = weaponTemplate.deviationCorrectionTime (default 10.0)
+   * F38 = 1/F34 (default 0.1)
+   * now - B = time since the bot acquired its firing target
+   *
+   * The result is stored as `aiPending` and added to `current()`.
+   * For a human player this stays 0.
+   */
+  setAIDeviation({ botSkill, timeSinceTarget = 0, aaPenalty = 0,
+                   deviation = 5.0, correctionTime = 10.0 } = {}) {
+    const A = botSkill;
+    const C = aaPenalty;
+    const F30 = deviation;
+    const F34 = correctionTime;
+    const F38 = F34 > 0 ? 1 / F34 : 0.1;
+    const elapsed = timeSinceTarget;
+
+    const term1 = (1 - 0.75 * A) * C;
+    const inner = Math.max(0, F34 * (1 - A) - elapsed);
+    const term2 = F30 * (F38 * inner + 0.25 * (1 - A));
+
+    this.aiPending = term1 + term2;
+    return this.aiPending;
   }
 }
