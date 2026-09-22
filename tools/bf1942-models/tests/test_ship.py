@@ -356,10 +356,15 @@ class ShipAgroundTests(unittest.TestCase):
     def test_a_hull_over_a_shoal_rests_on_its_keel(self):
         """`groundClearance` is the draft, so a sea bed at 17.0 holds a keel at
         relative -4.0 at a root y of 21.0 -- 0.775 m above where she would float.
-        She is held up as well as held still, and full ahead does not move her."""
+        She is held up as well as held still, and full ahead does not move her.
+
+        Within a quarter of a metre rather than exactly, since W9-A: the hull
+        rests on the LOWEST corner of her own footprint rather than on her
+        origin's column (`Ship.hullFloor`), and a sixth of a degree of trim
+        moves that corner 0.17 m over a 133 m hull."""
         beached = self.out["beached"]
         self.assertTrue(beached["aground"])
-        self.assertAlmostEqual(beached["y"], 21.0, places=3)
+        self.assertAlmostEqual(beached["y"], 21.0, delta=0.25)
         self.assertEqual(beached["speed"], 0)
         self.assertEqual(beached["throttle"], 1)
 
@@ -375,7 +380,12 @@ class ShipAgroundTests(unittest.TestCase):
         self.assertTrue(stuck, "she never ran aground")
         for point in stuck:
             self.assertLess(point["speed"], 0.01)
-            self.assertAlmostEqual(point["y"], 21.0, places=2)
+            # A quarter of a metre, for the reason in the test above: she rests
+            # on the lowest corner of her footprint, and she carries a little
+            # trim. Before W9-A she rested on her origin's column and so did not
+            # notice the bank until her origin was over it -- which is how her
+            # bow came to be half a hull-length inside it.
+            self.assertAlmostEqual(point["y"], 21.0, delta=0.25)
 
     def test_full_throttle_does_not_free_her_and_nor_does_astern(self):
         """The owner's own requirement, and the engine's: the Coulomb budget on
@@ -387,6 +397,66 @@ class ShipAgroundTests(unittest.TestCase):
         self.assertLess(abs(run["heldAhead"]["moved"]), 0.5)
         self.assertLess(abs(run["heldAstern"]["moved"]), 0.5)
         self.assertTrue(run["heldAstern"]["aground"])
+
+
+class ShipReefTests(unittest.TestCase):
+    """W9-A: running aground must cost no hit points.
+
+    The engine bills terrain crash damage to a ship like anything else --
+    `GameServer::handleCollisionLandOrWater` `0x08154960`, `|c|^3 * speedMod *
+    |v|^2 * getDamageMod(matTerrain, matSelf) * getDamageForMaterial(matTerrain)`
+    over a `> 1.0` gate -- and for a ship hull the middle pair is brutal:
+    `damageMod(11 "Wet sand", 55..59) = 10.0`, authored in
+    `Bf1942/Game/Collision_Armor/HeavyArmor.con` under `rem *** Wet Sand ***`
+    with `setEffectTemplate e_Collision_ship`, times `materialDamage = 30`. The
+    product is 300, where a jeep's hull (material 45) gets 0.01*30 = 0.3 and a
+    plane's fuselage 0.1*30 = 3.
+
+    On a real beach that still costs almost nothing, because `c` is the bank's
+    own gradient: a few degrees, `c^3` a few times 1e-4, under two hit points.
+    What made a hull die was `c` going to 0.8 -- and `c` only goes to 0.8 if the
+    hull is allowed to put part of herself INSIDE a wall. The engine never lets
+    her: `checkVsTerrain` `0x0825a960` calls `impulseOn` for every col0 vertex
+    under the bed, so the hull is pushed out along her whole length. Grounding
+    her on her origin's column alone let her bow travel half her length into an
+    island first.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.out = run_harness()
+
+    def test_no_part_of_the_hull_is_ever_left_under_the_bed(self):
+        """The footprint's deepest penetration, measured by the test's own
+        sampler over the whole run, never exceeds a few centimetres. Before W9-A
+        the bow reached the wall's full 16 m."""
+        reef = self.out["reef"]
+        self.assertGreater(reef["topSpeed"], 9, "she never got under way")
+        self.assertLess(reef["buried"], 0.1)
+
+    def test_the_crash_damage_path_is_never_handed_anything(self):
+        """`|c|^3 * 0.05 * |v|^2 * 300` over the `> 1.0` gate, computed for every
+        penetrating footprint sample on every tick: zero for the whole run, so
+        beaching her costs the ship no hit points and the man at the helm no
+        hit points either -- he only ever died because she was wrecked under
+        him (`map.html killOccupantInWreck`)."""
+        self.assertEqual(self.out["reef"]["worstBill"], 0)
+
+    def test_she_still_stops_at_the_wall_and_stays_there(self):
+        """W8-A's behaviour has to survive the fix: she grounds, she stops, and
+        ten seconds of full ahead move her centimetres."""
+        reef = self.out["reef"]
+        self.assertIsNotNone(reef["struckAt"])
+        self.assertTrue(reef["aground"])
+        self.assertLess(reef["speed"], 0.05)
+        self.assertLess(abs(reef["heldAhead"]), 0.5)
+
+    def test_she_is_not_perched_above_the_waterline(self):
+        """The push-out is along the bed's own normal (`impulseOn`, section 7),
+        so a hull that meets the FACE of a reef is shoved back off it rather
+        than lifted up it. Lifting her vertically by the penetration would have
+        put a 133 m hull's keel metres clear of the sea."""
+        self.assertLess(self.out["reef"]["keelAboveWater"], 0.5)
 
 
 if __name__ == "__main__":

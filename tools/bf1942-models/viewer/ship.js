@@ -144,6 +144,34 @@ const DEFAULT_TORQUE = 60;
  */
 const SEABED_FRICTION = 0.9;
 
+/**
+ * The hull's own footprint, as fractions of the collision box's bottom face.
+ *
+ * `ResponsePhysics::checkVsTerrain` (`0x0825a960`) drops **every** col0 vertex
+ * on the heightfield and calls `impulseOn` for each one that is under it
+ * (`0x0825ae1b`), so the engine's hull is pushed out of the ground along its
+ * whole length, not at its origin. A hull grounded on its origin's column alone
+ * puts a 265 m Yamato's bow 133 m inside an island before anything stops her —
+ * and `BodyWorld.#drivenTerrainDamage` then bills her for a contact with the
+ * face of whatever she is buried in. See §18 of `features/viewer-ships/README.md`.
+ *
+ * A grid over the box's bottom face rather than the hull's real vertex list,
+ * because a `Ship` is built from the node tree's BOXES (`hullGeometry`), which
+ * is all `keel`, `size` and `hullCentre` are; the box's bottom face is the same
+ * surface those vertices lie on for an upright hull. The step is the vanilla
+ * heightfield's own cell size, so no cell under the hull is stepped over.
+ */
+const HULL_SAMPLE_STEP = 4;
+
+/** Never more than this many samples along or across, whatever the hull's size:
+ *  a Yamato is 265 m long and 47 wide, which at a 4 m step would be 67 x 13. */
+const HULL_SAMPLE_CAP = 33;
+
+/** How many times a sub-step re-resolves the deepest penetration. The push-out
+ *  is exact for a locally flat bed; a second and third pass catch a keel that
+ *  straddles two slopes. */
+const PUSH_OUT_PASSES = 3;
+
 /** The node kinds a root's own geometry may be reached THROUGH. Anything else
  *  under the root is a separate object with its own geometry, and the engine's
  *  box does not contain it. A plain untagged mesh counts, which is what makes a
@@ -156,6 +184,8 @@ const _arm = new THREE.Vector3();
 const _spin = new THREE.Vector3();
 const _rel = new THREE.Vector3();
 const _qi = new THREE.Quaternion();
+const _sample = new THREE.Vector3();
+const _bedN = new THREE.Vector3();
 const _box = new THREE.Box3();
 const _size = new THREE.Vector3();
 const _inv = new THREE.Matrix4();
@@ -168,6 +198,14 @@ function conPosition(node) {
 }
 
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+
+/** A flat bed, for a caller that has installed no `groundNormal`. Every number
+ *  W8-A measured on a sea bed of one gradient is unchanged by the footprint
+ *  pass under this default. */
+function flatNormal(_x, _z, out) {
+  out.set(0, 1, 0);
+  return out;
+}
 
 /** The assembler's collision primitives, by the test `map.html` itself uses. */
 function isCollisionNode(node) {
@@ -257,7 +295,13 @@ export function hullGeometry(root) {
       keel = Math.min(keel, _box.min.y);
     }
   }
-  return { size, bottom, keel: Number.isFinite(keel) ? keel : bottom };
+  // Where that box SITS, in x and z: a hull's geometry is not centred on its
+  // origin (a Gato's reaches 56.6 m aft and 38.4 m forward), so a footprint
+  // laid out symmetrically about the origin misses one end of her and
+  // over-reaches the other. `Ship.deepestContact` needs the centre as well as
+  // the extents.
+  const centre = [(union.min.x + union.max.x) / 2, (union.min.z + union.max.z) / 2];
+  return { size, bottom, centre, keel: Number.isFinite(keel) ? keel : bottom };
 }
 
 /**
@@ -351,6 +395,9 @@ export function shipSpec(root) {
     // origin. `keel` is what `setUnderWater` measures and what grounds her.
     boxBottom: hull.bottom,
     keel: hull.keel,
+    // `[x, z]` of the geometry box's centre in the hull's own frame: where the
+    // footprint the grounding samples actually lies.
+    hullCentre: hull.centre,
     // The engine's own `getGeometryInertia`, `(DY²+DZ²)/3` and friends —
     // FOUR times a solid box's. A 115 m hull on a solid box's inertia turns
     // four times too eagerly, and that is most of "too manoeuvrable".
@@ -415,6 +462,119 @@ export class Ship extends Aircraft {
      * averages the two surfaces' `materialFriction`; a hull on sand is 0.9.
      */
     this.seabedFriction = SEABED_FRICTION;
+    /**
+     * The sea bed's unit normal at (x, z), written into `out`.
+     *
+     * `checkVsTerrain` asks the terrain for height AND normal in one call
+     * (`PatchTerrain::getHeightAndNormal` `0x083d6f10`, vtable `+0x54`) and
+     * hands the normal straight to `impulseOn`, whose push-out is along it
+     * (§7). Without it a hull would be pushed straight up the face of a bank
+     * instead of back off it. The page installs the level's own; the default is
+     * flat.
+     */
+    this.groundNormal = flatNormal;
+    /** The deepest footprint contact `hullFloor` found this sub-step, for
+     *  `settle` to finish resolving. Never read across sub-steps. */
+    this._contact = null;
+    /**
+     * The depth to sample the footprint at, when the page knows better than the
+     * box does.
+     *
+     * `keel` is the hull's collision BOX bottom, and on a level whose drawn
+     * tree carries no hull collision node it is the drawn geometry box's bottom
+     * instead (W8-A §15). `BodyWorld.#drivenTerrainDamage` bills the hull's real
+     * col0 VERTICES, which on a Gato reach 1.06 m below that box — so a
+     * footprint sampled at the box would report her clear while the damage pass
+     * had a vertex under the bed. The page installs the col0 minimum here; the
+     * deeper of the two is what grounds her.
+     */
+    this.sampleKeel = null;
+  }
+
+  /**
+   * `Aircraft.step`'s floor clamp reads `groundHeight`, and for a hull that is
+   * the wrong question: a ship does not stand on the bed under her origin, she
+   * rests on the highest part of the bed under her **hull**.
+   *
+   * `checkVsTerrain` (`0x0825a960`) drops every col0 vertex on the heightfield
+   * and calls `impulseOn` for each one under it, so the engine resolves the
+   * contact over the hull's whole length. Grounding on the origin's column
+   * alone let a 265 m hull's bow travel half her length inside an island before
+   * anything stopped her, and `BodyWorld.#drivenTerrainDamage` then billed her
+   * against the face she was buried in rather than against the bank she was
+   * riding — 2,400 to 4,400 hit points where the bank itself costs 1.8.
+   *
+   * So a `Ship` answers `groundHeight` with the footprint's own floor, and
+   * keeps the page's raw heightfield query as `bedHeight`.
+   */
+  get groundHeight() {
+    return this._floorQuery ??= (x, z) => this.hullFloor(x, z);
+  }
+
+  set groundHeight(fn) {
+    this.bedHeight = typeof fn === 'function' ? fn : (() => -Infinity);
+  }
+
+  /**
+   * The deepest point of the hull's footprint that is under the bed, with the
+   * bed's normal there: `{depth, x, z, nx, ny, nz}`, or `null` when the hull is
+   * clear. `depth` is `|penetration|`, positive.
+   */
+  deepestContact() {
+    const bed = this.bedHeight;
+    if (typeof bed !== 'function') return null;
+    const s = this.state;
+    const dx = this.spec.size?.[0] ?? 0;
+    const dz = this.spec.size?.[2] ?? 0;
+    const keelY = Number.isFinite(this.sampleKeel)
+      ? Math.min(this.sampleKeel, this.keel) : this.keel;
+    const cx = this.spec.hullCentre?.[0] ?? 0;
+    const cz = this.spec.hullCentre?.[1] ?? 0;
+    const nx = Math.min(HULL_SAMPLE_CAP, Math.max(3, Math.ceil(dx / HULL_SAMPLE_STEP) + 1));
+    const nz = Math.min(HULL_SAMPLE_CAP, Math.max(5, Math.ceil(dz / HULL_SAMPLE_STEP) + 1));
+    let depth = 0, at = null;
+    for (let iz = 0; iz < nz; iz++) {
+      const lz = cz + dz * (iz / (nz - 1) - 0.5);
+      for (let ix = 0; ix < nx; ix++) {
+        const lx = cx + dx * (ix / (nx - 1) - 0.5);
+        _sample.set(lx, keelY, lz).applyQuaternion(s.orientation);
+        const x = s.position.x + _sample.x;
+        const z = s.position.z + _sample.z;
+        const h = bed(x, z);
+        if (!Number.isFinite(h)) continue;
+        const under = h - (s.position.y + _sample.y);
+        if (under > depth) { depth = under; at = [x, z]; }
+      }
+    }
+    if (!at) return null;
+    (this.groundNormal || flatNormal)(at[0], at[1], _bedN);
+    const length = _bedN.length();
+    if (!(length > 1e-9)) _bedN.set(0, 1, 0);
+    else _bedN.divideScalar(length);
+    // A normal that has gone horizontal, or over, would push a hull sideways
+    // for ever and never lift her; the engine's own terrain normals are the
+    // heightfield's and always have a positive y.
+    const ny = Math.max(_bedN.y, 1e-3);
+    return { depth, x: at[0], z: at[1], nx: _bedN.x, ny, nz: _bedN.z };
+  }
+
+  /**
+   * The floor to hand the clamp: `-Infinity` while the hull is clear (so it
+   * does not report `grounded` in open water), else a value that makes the
+   * clamp lift her by exactly the push-out's VERTICAL component,
+   * `depth * normal.y`. `settle` applies the horizontal half.
+   */
+  hullFloor() {
+    const contact = this.deepestContact();
+    this._contact = contact;
+    if (contact) this._touchedBed = true;
+    if (!contact) return -Infinity;
+    // The clamp does `position.y = floor + groundClearance`, so a floor of
+    // `y - groundClearance + lift` lifts her by exactly `lift` whatever depth
+    // the footprint was sampled at.
+    const clearance = Number.isFinite(this.spec.groundClearance)
+      ? this.spec.groundClearance : -this.keel;
+    return this.state.position.y - clearance + contact.depth * contact.ny;
   }
 
   /**
@@ -508,6 +668,7 @@ export class Ship extends Aircraft {
    * bottom must be free to rise.
    */
   settle(h) {
+    this.pushOutOfBed();
     const s = this.state;
     const friction = typeof this.seabedFriction === 'function'
       ? this.seabedFriction(s.position.x, s.position.z)
@@ -531,6 +692,44 @@ export class Ship extends Aircraft {
     if (spin > 1e-9) {
       const keep = spin <= budget ? 0 : (spin - budget) / spin;
       s.angularVelocity.y *= keep;
+    }
+  }
+
+  /**
+   * The rest of `impulseOn` (`0x08258900`): push the hull out by the remaining
+   * penetration **along the sloped normal**, and cancel the closing speed along
+   * it (§7, COL-9).
+   *
+   * `Aircraft.step`'s clamp has already applied the vertical component of the
+   * first pass — that is what `hullFloor` handed it — so the first pass here
+   * only owes the horizontal half. Two further passes resolve a keel that
+   * straddles two gradients. Without the horizontal half a hull meeting the
+   * face of a bank would be lifted up it rather than stopped against it, and
+   * she would end up perched above the waterline.
+   *
+   * The reason this matters for hit points and not just for looks: once no part
+   * of the hull is left under the bed, `BodyWorld.#drivenTerrainDamage` finds no
+   * penetrating vertex and the crash-damage path is never reached. Beaching
+   * costs nothing, which is what the game does.
+   */
+  pushOutOfBed() {
+    const s = this.state;
+    let contact = this._contact;
+    this._contact = null;
+    for (let pass = 0; pass < PUSH_OUT_PASSES; pass++) {
+      if (pass > 0) contact = this.deepestContact();
+      if (!contact) return;
+      s.position.x += contact.depth * contact.nx;
+      s.position.z += contact.depth * contact.nz;
+      // Pass 0's vertical half is the clamp's; later passes owe their own.
+      if (pass > 0) s.position.y += contact.depth * contact.ny;
+      const closing = s.velocity.x * contact.nx + s.velocity.y * contact.ny
+        + s.velocity.z * contact.nz;
+      if (closing < 0) {
+        s.velocity.x -= closing * contact.nx;
+        s.velocity.y -= closing * contact.ny;
+        s.velocity.z -= closing * contact.nz;
+      }
     }
   }
 
@@ -591,9 +790,24 @@ export class Ship extends Aircraft {
    * from too, and adding a second unmeasured damper on top would be tuning
    * rather than porting.
    */
-  /** True while the keel is on the bottom: `Aircraft.step`'s own floor test,
-   *  which for a hull whose `groundClearance` is its draft means beached. */
-  get aground() { return this.state.grounded; }
+  /**
+   * True while the keel is on the bottom.
+   *
+   * `Aircraft.step`'s own floor test is one sub-step's answer, and since W9-A
+   * the push-out shoves the hull clear of the bed within the sub-step that found
+   * the contact — so a hull grinding against a bank reads `grounded` on one
+   * sub-step and not the next. The engine's own flag is per TICK: `checkVsTerrain`
+   * latches a byte (`ResponsePhysics+0xd0`, written at the function's tail,
+   * `0x0825b03a`) if ANY vertex was under the bed anywhere in the tick. This is
+   * that byte, cleared at the top of `integrate`.
+   */
+  get aground() { return this.state.grounded || this._touchedBed === true; }
+
+  /** The engine's own per-tick contact latch, cleared once a tick. */
+  integrate(dt) {
+    this._touchedBed = false;
+    super.integrate(dt);
+  }
 
   /**
    * `PhysicsNode+0x8c`, as `ResponsePhysics::checkVsTerrain` writes it.
