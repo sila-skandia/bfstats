@@ -2990,6 +2990,12 @@ function buttonChange(e) {
     return;
   }
   if (!(optOnFoot.checked && soldier)) return;
+  // No active item, no mouse. Both buttons are `handleMessage` messages -- Fire
+  // is 6 and AltFire is 7 -- and the gate at `0x082772ac` drops the dispatch
+  // whole while `c_AsmHideWeapon` is up. `footFire` would refuse the trigger
+  // anyway; this is here so a swimmer does not bank a click or toggle a zoom on
+  // a weapon he is not holding.
+  if (itemsLocked()) return;
   if (e.button === 0) {
     triggerHeld = true;
     clickQueued = true;
@@ -15409,6 +15415,14 @@ if (params.has('shots')) {
       modeId: footView3p.modeId,
       modes: footView3p.modes,
       firstPerson: footView3p.firstPerson,
+      // Why `setMode('chase')` may have done nothing. On foot the cycle is the
+      // engine's own set of ONE (CAM-1: `SoldierCamera` writes `CVMChase 0` and
+      // `BFSoldier::nextCamera` is empty), and `?foot3p=1` is the marked
+      // departure that widens it. Reported here because a check that asks for a
+      // chase view and is refused otherwise reads the refusal as "the body is
+      // not being drawn" — which is how W8-B's swim body came to be called
+      // missing when it was only invisible.
+      cycleOnFoot: SOLDIER_3P_ON_FOOT,
       rel: [...foot3pRel],
       eye: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
     };
