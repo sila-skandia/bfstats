@@ -486,3 +486,320 @@ worktree** is now a real directory of symlinks plus one real
 | **Remote players** | `netcode-render.js` and `remote-gait.js` are W6-G's and are untouched. A remote swimmer is drawn with his locomotion gait, because the snapshot carries no swim bit. The bit exists in the engine's own network state (`BFSoldier::getStateBits` `0x0827e1c0`); wiring it is a netcode job |
 | **Sound** | Four scripts ship and none is played: `SoldierToSwim.ssc`, `SoldierSwim.ssc`, `SoldierSwimStand.ssc`, `SoldierFromSwim.ssc`, driven by the states' own `setSoundTrigger c_SstToSwim` / `c_SstSwim` / `c_SstSwimStand` / `c_SstFromSwim`, with `SoldierSound.setSwimFrequency 1` and `setRandomSwimFrequency 0.025` |
 | **Vehicles in water** | Untouched, and W8-A's. The `Armor::update` water timer this stream read is the same one a vehicle uses, so the numbers in §2 apply there too — vanilla vehicles carry `damageFromWater 1` and `hpLostWhileDamageFromWater` 5 to 10 with **no** delay, which is why a tank in the sea starts losing HP at once |
+
+---
+
+# W9-B: he could still fire, and he could not be seen to swim
+
+Stream W9-B of the same round, on the two defects the lead measured on the
+deployed build after W8-B shipped. The owner:
+
+> It does slow me down when I enter, but I can still fire weapons, but in water
+> you're locked down and they have a swimming animation.
+
+Branch: `worktree-agent-ad46aa9fa7612154f`. Commits:
+
+| commit | what |
+|---|---|
+| `d8bb4cf` | the item gate: `SWIM_STATE_FLAGS` and `itemsLocked` in `swim.js`, `Soldier.itemsLocked` beside them, and every item verb in `map.html` asking; the first-person rig goes with the item; `__footBody().playing` reads the mixer back |
+| `1555837` | `pointerdown` is an item message too; `__footView()` reports `cycleOnFoot` |
+
+---
+
+## 9. Defect 1 — the gate is on the ITEM, not on the trigger
+
+W8-B had both halves of this and drew the wrong conclusion from them. Its §3
+says a swimmer "can still fire — `c_PIFire` is index 8 and is not touched",
+which is true of `handleSwimAction` and is not the mechanism. Re-read, and
+wider than W8-B read it — every one of these calls
+`AnimationStateMachineInstance::getCurrentStateFlags(this+0x294)`
+(`0x0832b110`) on the **lower** machine and tests bit `0x2`:
+
+| reader | addresses | what the `jne` skips |
+|---|---|---|
+| **`BFSoldier::handleMessage(TemplateMessage, IPlayer*)`** `0x08277260` | read `0x082772a4`, `0x082772ac and eax,0x2`, `0x082772af jne 0x08277340` | **the whole dispatch.** Past the gate is `lea eax,[edi-0x6]`, `cmp eax,0x10`, `jmp DWORD PTR [eax*4+0x86d2748]` — a 17-entry jump table over messages **6 to 22** |
+| `BFSoldier::selectBestLoadedWeapon()` `0x08273a80` | `0x08273ae9`, `0x08273af1`, `0x08273af4 jne 0x08273be5` | the automatic switch away from an empty weapon |
+| `BFSoldier::enableItem(char)` `0x08278460` | `0x082784a1`, `0x082784af`, `0x082784b2 jne 0x082787d1` | the function's own `ret` — nothing can be enabled |
+
+`handleMessage` is the one that matters and it is new here. **Fire is message 6
+and AltFire is message 7** — already cited in this tree, in `map.html`'s
+demolitions block, out of this same function — and **MenuSelect4 is message
+13**, so the whole slot-selection family sits inside the gated range as well.
+Exactly two ids are intercepted *before* the gate and survive it: `0x15` at
+`0x08277275` (destruction, HP-13) and `0x12` at `0x0827728e`.
+
+So the engine does not refuse the fire input. **It leaves the swimmer with no
+item at all.** That is how it is implemented here, and there is no special case
+on the trigger anywhere. `viewer/swim.js` carries the law:
+
+```js
+export const SWIM_STATE_FLAGS = Object.freeze({
+  swimStart: ASM_HIDE_WEAPON | ASM_IS_SWIMMING,   // 0xA, all five of them
+  ...
+  swimDie: 0,                                     // AnimationStatesDie.con: no flags
+});
+export function itemsLocked(stateFlags) {
+  return (Number(stateFlags) & ASM_HIDE_WEAPON) !== 0;
+}
+```
+
+with `SwimState.stateFlags` / `SwimState.itemsLocked` and `Soldier.itemsLocked`
+on top, and `map.html` gains one helper — `itemsLocked()`, reading
+`soldier?.itemsLocked` — and seven callers.
+
+### What else the gate turned out to cover
+
+Everything `handleMessage` dispatches, which on this page is:
+
+| verb | where | while swimming |
+|---|---|---|
+| the trigger | `footFire`'s `hw.group` and detonator blocks | nothing fires; `guns.setFiring(false)` and the Fire Loop released on the tick he goes under, and no click banked for when he wades out |
+| the mouse itself | `pointerdown` | neither button reaches anything — no click queued, no zoom latched |
+| weapon selection | `selectKitWeapon` (the number keys, and the wheel through `cycleKitWeapon`) | refused |
+| the demolitions pair | `altFireDemolitions`, `selectDetonator` | refused. **A swimming engineer cannot put a charge down and cannot reach his plunger**, because both ends of that pair are messages 6 and 7 |
+| the reload | `startReload`, and the automatic change `footFire` starts on a dry magazine | refused; a change already in flight freezes where it was, because its clock is `FireArms::handleUpdate`'s and that is not running on an item he does not have |
+| the crosshair | `crosshairAim` | no active item, so no `setCrossHairType` to read, so no reticle |
+
+Two things are deliberately **not** gated. **Entering a vehicle**: climbing into
+a boat out of the water is something the game does, and nothing in the read says
+otherwise. And **`viewer/seats.js`**: a swimmer is not in a seat, so its weapon
+gate is not where this belongs.
+
+### The first-person rig goes with the item, and nothing replaces it
+
+`hw.rig.visible = !locked && ...`, which takes the whole near pass with it (that
+pass is gated on `handWeapon?.rig.visible`), and `updateViewmodelAnimation` is
+not ticked, so no fire or reload clip runs itself out behind the water.
+
+**There is no first-person swim clip to put in its place, and that is read
+rather than assumed.** Parsing the shipped state machine (`bf42.animstates` over
+vanilla `animations.rfa`), not one of the ten swim states declares a 1P clip:
+
+```
+Lb_StartSwim     3P=animations/3P_NoWeapon/3PSwimStartLower.baf      1P=None
+Ub_StartSwim     3P=animations/3P_NoWeapon/3PSwimStartUpper.baf      1P=None
+Lb_Floating      3P=animations/3P_NoWeapon/3PSwimFloatingLower.baf   1P=None
+Ub_Floating      3P=animations/3P_NoWeapon/3PSwimFloatingUpper.baf   1P=None
+Lb/Ub_SwimForward, Lb/Ub_SwimBackward, Lb/Ub_EndSwim                 1P=None
+```
+
+The five `AnimationStateMachine.set1pAnimationSpeed Ub_StartSwim 3.60` /
+`Ub_Floating 0.40` / `Ub_SwimForward 1.00` / `Ub_SwimBackward 1.00` /
+`Ub_EndSwim 3.20` lines in `animations/1pAnimationsTweaking.con` tune a clip
+that was never registered. **That closes W8-B's "the first-person arms while
+swimming" open item**: the engine's own first-person view of a swimmer is his
+empty hands, and that is now what the page draws.
+
+---
+
+## 10. Defect 2 — `want` WAS being applied; nothing was drawing it
+
+The lead's readout was
+
+```
+__footBody() -> want: "swimFloat", gait: "stand", visible: false, weaponVisible: false
+```
+
+and `gait: "stand"` was read as the applied family. It is not: `gait` is
+`soldier.gait`, the locomotion row, and `#gaitFor` answers `'stand'` for **any**
+stationary soldier — a swimming one included, which is the same trap
+`soldier-body.js`'s own `locoFamily` comment documents. The applied family was
+never in that readout at all.
+
+So `__footBody()` now answers with the mixer as well as the request
+(`map.html`, in the `window.__footBody` block):
+
+```js
+playing: Object.entries(footBody.families)
+  .filter(([, actions]) => actions.some(a => a.getEffectiveWeight() > 0))
+  .map(([family, actions]) => ({ family, weight: ..., time: ... })),
+```
+
+Measured in the sea at Wake, **in first person** (where the body is hidden) and
+again in the chase view:
+
+```
+first person   want swimFloat   playing [{ swimFloat, weight 1, time 2.3667 }]
+chase          want swimFloat   playing [{ swimFloat, weight 1, time 0.1667 }]
+```
+
+One family, weight 1, its clock running, in both. The application step does not
+drop the swim set and it never did: `syncFootBody` on the deployed build is
+byte-identical to this worktree's —
+
+```
+$ diff <(sed -n '/^function syncFootBody/,/^}/p' live-map.html) \
+       <(sed -n '/^function syncFootBody/,/^}/p' viewer/map.html) && echo IDENTICAL
+IDENTICAL
+```
+
+— and the drawn skeleton's own local rotations, read out of the scene before any
+change in this stream, already differed from the standing pose and changed from
+frame to frame (`Bip01_L_UpperArm` `[0.0049, 0.4034, -0.4407, 0.8019]` standing,
+`[-0.3477, -0.0992, -0.2840, 0.8880]` floating, `[-0.3002, -0.1636, -0.4250,
+0.8381]` 0.4 s later).
+
+**What failed is that nothing put it on screen, for two separate reasons.**
+
+1. `visible: false` persisted after `__footView('chase')` because the call was
+   **refused**. On foot the view cycle is the engine's own set of one — CAM-1:
+   `SoldierCamera` writes `CVMChase 0` and `BFSoldier::nextCamera` is an empty
+   function — and `SOLDIER_3P_ON_FOOT` needs **`?foot3p=1`** to widen it.
+   `SoldierView.setMode` then leaves the mode alone, silently, exactly as
+   `Camera::setViewMode` returns 0. The lead's page was drawing no body to look
+   at. `__footView()` now reports `cycleOnFoot` so that refusal is legible
+   instead of looking like a missing body.
+2. In first person what the player was actually looking at was his **rifle**,
+   held out in front of him, playing its ordinary idle clip. That is the wrong
+   thing that was really on screen, and Defect 1's fix is what removes it.
+
+Nothing in `soldier-body.js` or the `syncFootBody` switch needed changing. The
+file and line that answers "why was `want` not applied" is therefore
+`viewer/map.html:9090` (`const visible = ... && !footView3p.firstPerson ...`)
+together with `viewer/map.html:8779` (`SOLDIER_3P_ON_FOOT = SOLDIER_3P_VIEWS &&
+params.has('foot3p')`): the body was applied, and hidden.
+
+---
+
+## 11. The frames, each with its zero control
+
+Served from this worktree on `localhost:5393` with the shared poses tree linked
+in by `link_viewer_assets.sh`, driven through Playwright under SwiftShader at
+840x600, `?mod=bf1942&map=wake&shots&foot3p=1`. **The page's own rAF loop was
+stopped** (`__renderer.setAnimationLoop(null)`) before any pixel was read.
+Drivers in the stream's scratch directory (`lib.mjs`, `p1_fire.mjs`,
+`p2_anim.mjs`, `p3_breathe.mjs`, `p4a_state.mjs`, `p4b_drown.mjs`,
+`p5_wade.mjs`). Wake, water level 95.0, open sea at (1289.4, -534.9), a
+JapaneseSoldier holding a Type 99.
+
+### He cannot fire, and the control is the same trigger on the beach
+
+`__setTrigger(true)` held for 60 ticks, three times:
+
+```
+dry, on the beach     16 shots, 16 rounds spent, firing true,
+                      locked false, rigVisible true, crosshair shown
+swimming, open sea     0 shots,  0 rounds spent, firing false,
+                      locked TRUE, rigVisible false, crosshair hidden
+                      stateFlags 10 (0x2 | 0x8), swimState swimFloat, y 94.600
+back ashore            4 shots,  4 rounds spent, locked false, rigVisible true
+```
+
+and beside it, while swimming: `__altFire()` → **false**, `__demolitions()`
+unchanged, the weapon still `Type99` after a slot request.
+
+### The rifle the gate removes, in first person
+
+Same tick, same camera, same sea; the only thing moved is `swim.family`, pushed
+off the flag table for one frame, which reproduces W8-B's behaviour exactly
+(gate open, rifle in hand). `01-first-person-swimming.png` is an empty ocean;
+`02-first-person-gate-open.png` is the Type 99 in the lower right of it.
+
+```
+1P, gate shut vs gate open   55,234 of 504,000 px (10.96%)
+                             box [487,143]-[744,600], meanDelta 332.8, maxDelta 605
+CONTROL (the same frame twice)    0 px, 0.00%
+```
+
+### The swim body is drawn, and it is the swim family
+
+Chase view, with and without the body (`__footBodyHide`):
+
+```
+body box [354,281]-[486,539]
+body in its box   12,802 of 34,056 px (37.59%), meanDelta 145.5, maxDelta 358
+whole frame       12,802 of 504,000 px (2.54%)
+CONTROL (the same frame twice)   0 px
+__footBody() -> want swimFloat, playing [{ swimFloat, weight 1 }], weaponVisible FALSE
+```
+
+`06-float-t0.png` is a Japanese soldier chest-deep in the Pacific with his arms
+out and **no rifle**.
+
+### It is an animation, not a mesh parked on the sea
+
+Two renders 0.4 s of sim apart, every time-driven uniform pinned (15 numbers, 8
+vectors, 5 texture offsets) and redrawn **directly** with
+`renderer.render(scene, camera)` rather than through `frame()` — `advanceSim`
+writes `simTime` back into the water uniform on every frame, so pinning and then
+stepping puts the sea back where it was going anyway. The chase camera was let
+settle first: it drifts **0.000042 m** between the two reads, and the body's
+position is unchanged at `[1289.4, 94.6, -534.9]`.
+
+```
+CONTROL (pin, redraw, redraw)                        0 px, 0.00%
+a water-only box [40,400]-[200,560], the noise floor 8,173 px, meanDelta 1.3, maxDelta 6
+a sky box        [40,20]-[200,120]                   0 px
+the body box, delta > 7   12,608 of 34,056 px (37.02%), meanDelta 146.3, maxDelta 349
+CONTROL at the same threshold                        0 px
+clip clock  swimFloat 0.2667 s -> 0.6667 s
+```
+
+The threshold is the measured noise floor plus one, not a number anyone chose:
+the camera's 4e-5 m of residual drift moves the water's view-dependent term by
+at most 6 levels, and the body's own change is at 349. `07-float-t1.png` beside
+`06-float-t0.png` is the same man with his arms and head in a different place.
+
+### W8-B's four behaviours, re-measured, none regressed
+
+**The state and the draft.** `waterLevel 95.0 - y 94.600 = 0.4000` exactly
+(`SWIM_FLOAT_DRAFT`), depth 0.403, `swimming true`, `swimFloat`, `grounded
+false`.
+
+**The strokes and the ceiling.** W held for 3 s: state `swimForward`, `playing
+[swimForward]`, **2.000 m/s**, travelled **6.665 m** (run is 6 m/s). Released →
+`swimFloat`, decaying through 1.681 m/s. Identical to W8-B's 2.000 / 6.67.
+
+**The wade-out at depth <= 0.35**, swum at the Landing Beach ramp rather than
+teleported (a teleport drops him wherever he lands and never carries him up the
+ramp), sampled every 3 ticks because `Lb_EndSwim` is 19 ticks long:
+
+```
+t 19.53  z -688.13  depth 0.403  swimForward  grounded false  locked true
+t 23.13  z -692.23  depth 0.334  swimEnd      grounded TRUE   locked true
+t 23.33  z -692.46  depth 0.301  swimEnd      grounded true   locked true
+t 23.53  z -692.69  depth 0.269  swimEnd      grounded true   locked true
+t 23.73  z -693.04  depth 0.219  (null)       grounded true   locked FALSE, want run
+t 24.40  z -694.05  depth 0.077  standing, grace back to 90.0
+```
+
+The 0.35 threshold is what starts the exit, and the weapon comes back when the
+**clip** finishes and not when the depth does — `Lb_EndSwim` declares
+`c_AsmHideWeapon` like the other four, so `locked` stays true for the whole
+0.3125 s of it. That is §1's "`Lb_EndSwim` still declares `c_AsmIsSwimming`"
+with its sibling flag, measured.
+
+**The drowning clock**, 1,250 renders at the animation loop's own 0.1 s clamp,
+sampled every 5 s:
+
+```
+t   5 .. 85 s   hp 30, drowned 0          (grace 89.9 -> 4.9)
+t  90 s         hp 29, drowned 1
+t  95 s         hp 24        t 100 s  hp 19        t 105 s  hp 14
+t 110 s         hp  9        t 115 s  hp  4        t 120 s  hp 0, destroyed TRUE
+```
+
+First hit between 85 and 90 s, then one HP a second off 30, dead at 119 s —
+`CommonSoldierData.inc`'s law, unchanged. `swimState` is `swimFloat` and `want`
+is `swimFloat` at every sample.
+
+---
+
+## 12. The re-extraction the real tree needs
+
+**None.** This stream extracted nothing and published nothing. The one asset the
+swim work needs — `poses/gaits/swim.gait.glb`, 426,700 bytes, and the `"swim"`
+key in `poses/gaits/gaits.json` — is already in the shared tree and already on
+`mesh.bfstats.io` (all 19 families bind on both). `git status --short` over
+`tools/bf1942-models/viewer` reports nothing; the tree was reached by
+`link_viewer_assets.sh` symlinks and read only.
+
+## 13. Still open after this stream
+
+| Item | Where it stands |
+|---|---|
+| **Remote swimmers** | Still W6-G's. `netcode-render.js` and `remote-gait.js` are outside this stream's files and are untouched, so a remote swimmer is still drawn with his locomotion gait: the snapshot carries no swim bit. The bit exists in the engine's own network state (`BFSoldier::getStateBits` `0x0827e1c0`). This is the half of the owner's "they have a swimming animation" that is not yet delivered |
+| **Seeing your own swim animation on foot** | Only under `?foot3p=1`, and that stays a marked departure: CAM-1 says the engine authorises one view mode for a soldier. Not widened here |
+| **Messages 8, 9, 11, 12, 14..17, 22** | Named only as "inside the gated range". Their jump-table targets are read (`0x082779d0`, `0x082779dc`, `0x08277a09`, `0x08277ab0`, `0x08277add`, `0x08277b0a`, `0x08277b37`, `0x08277b75`) and all of them are past the gate, which is all this stream needed; the enum itself is unmapped |
+| **The swim speed ceiling** | Unchanged and still a viewer number — §8's first row stands |
+| **Sound** | Unchanged: the four `.ssc` scripts still ship and none is played |
