@@ -1,98 +1,42 @@
 <!DOCTYPE html>
-<!--
-  BF1942 in the browser - the way in.
-
-  The game's own front end, two tabs of it. SINGLEPLAY is
-  Singleplayer > Instant Battle (`menu/Background`, `menu/SkirmishMenu` and
-  `menu/SkirmishNavigation` out of `Mods/bf1942/Archives/menu.rfa`, flattened
-  by `extract_menu_layout.py`); MULTIPLAY is the server browser
-  (`menu/InternetMenu` and `menu/InternetNavigation`, by
-  `extract_main_menu_layout.py`), with the room server's rooms in the list
-  the engine fills from GameSpy. The strip over both is
-  `menu/MainMenuNavigation`, the game's own tab plates and faces, and the
-  CREATE GAME button under it is `menu/MultiplayerNavigation`'s.
-
-  Nothing here is CSS that resembles the game - the plates, the bitmap
-  faces, the strings, the rectangles and the colours are all the shipped
-  files, painted leaf by leaf into a canvas. The page's own CSS is the black
-  field the canvases sit in and nothing else.
-
-  The rows of either list are the one part no file holds. The engine fills
-  `Skirmish/SkirmishLevelsList` from the level archives at runtime and
-  `Join/Internet/InternetServerList` from the master server; here they come
-  from `menu-levels.json` joined against the levels this viewer has
-  (`maps/maps.json`) and from `GET /netcode/rooms`.
-
-  START loads `../map.html?map=<level>&team=<1|2>` plus `mode=` and `mod=`
-  where they apply; JOIN and CREATE GAME load the same page with `room=` and
-  `name=`. It is the map page the mesh site serves, not a copy of it.
-
-  Both screens are controllers over a canvas rather than pages:
-  `skirmish.js` is mounted again by `map.html` as its Escape menu, with the
-  fourth page (`menu/ExitMenu`'s END CURRENT GAME button) up and no tab
-  strip - there is no front end behind a running level to navigate.
--->
+<html lang="en">
+<head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Battlefield 1942</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BF1942 Instant Battle</title>
+<link rel="icon" href="data:,">
 <style>
-  :root { color-scheme: dark; }
-  html, body {
-    margin: 0;
-    height: 100%;
-    background: #000;
-    overflow: hidden;
-  }
-  /* The game's arrow cursor is the pointer's own; a canvas is the screen.
-     Both tabs are one, stacked; the one that is not up is not painted. */
-  .screen {
-    position: absolute;
-    inset: 0;
-    display: block;
-    width: 100%;
-    height: 100%;
-    touch-action: manipulation;
-  }
-  .screen[hidden] { display: none; }
-  #status {
-    position: fixed;
-    inset: auto 0 0 0;
-    padding: 10px 14px;
-    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: #cfcfc4;
-    background: #000;
-  }
-  #status:empty { display: none; }
-  /* Focusable so the keyboard reaches the list the way the game's does. */
-  .screen:focus-visible { outline: 1px solid #7d8849; outline-offset: -1px; }
+html, body { margin: 0; padding: 0; background: #000; height: 100%; overflow: hidden; }
+.screen { display: block; width: 100%; height: 100%; outline: none; }
+#status { color: #aaa; font: 14px/1.4 monospace; padding: 0 12px; }
 </style>
-
+</head>
+<body>
 <canvas class="screen" id="screen" tabindex="0" aria-label="Instant Battle"></canvas>
 <canvas class="screen" id="screen-mp" tabindex="0" aria-label="Multiplayer" hidden></canvas>
+<canvas class="screen" id="screen-cg" tabindex="0" aria-label="Custom Game" hidden></canvas>
 <p id="status">Loading…</p>
 
 <script type="module">
 import { createSkirmishScreen } from './skirmish.js';
 import { createMultiplayScreen } from './multiplay.js';
+import { createModPicker } from './mod-picker-screen.js';
 
 const canvas = document.getElementById('screen');
 const canvasMp = document.getElementById('screen-mp');
+const canvasCg = document.getElementById('screen-cg');
 const status = document.getElementById('status');
 
-// The two rows the front end draws, named by the locale key of the label in
-// `main-menu-layout.json` (see `nav-strip.js`). The game's strip has six
-// tabs and the row under MULTIPLAY has four buttons; this site answers for
-// two and one, and a tab that goes nowhere is worse than a tab that is not
-// there. `slot: 0` puts CREATE GAME in the first slot of its row rather than
-// the third, where INTERNET and LOCAL would have been.
+// SINGLEPLAY, MULTIPLAY and CUSTOM GAME on the main nav, in that order.
+// CUSTOM GAME is `mainNav`'s own fourth button moved one slot left, into
+// OPTIONS' place, so it sits directly right of MULTIPLAY with no gap where
+// the tabs this site does not answer for would be.
 const TABS = [
   { page: 'mainNav',
     items: [{ key: 'MENU_SINGLEPLAY', id: 'singleplay' },
-            { key: 'MENU_MULTIPLAY', id: 'multiplay' }] },
+            { key: 'MENU_MULTIPLAY', id: 'multiplay' },
+            { key: 'MENU_CUSTOM_GAME', id: 'customgame', slot: 2 }] },
 ];
-// CREATE GAME comes and goes with the room server. There is no point
-// offering to make a room on a server that is not answering — the screen
-// says so where the rows would be, and SINGLEPLAY is still there.
 const MULTIPLAY_TABS = [
   ...TABS,
   { page: 'multiplayerNav',
@@ -100,9 +44,6 @@ const MULTIPLAY_TABS = [
               enabled: () => multiplay.online }] },
 ];
 
-// The player's name. The game keeps it in `menu/MainMenu`'s PROFILE panel,
-// which this front end does not draw yet; until it does the name rides the
-// query string or the last one used.
 const NAME_KEY = 'bf42-mesh-player-name';
 const params = new URLSearchParams(location.search);
 const playerName = (() => {
@@ -113,11 +54,11 @@ const playerName = (() => {
   } catch (_) { return asked || 'Player'; }
 })();
 
-// --- the two screens ---------------------------------------------------------
-//
-// The way in: Instant Battle with no game behind it, so no END CURRENT GAME
-// button, the menu loop playing, and START going where the link goes.
-// `map.html` mounts the same controller as its Esc menu — see `skirmish.js`.
+// SINGLEPLAYER: Instant Battle with bot settings visible, no mod picker.
+// Bots are always on — `botCount: 4`, `botSkill: 0.75` by default.
+// This is the one Instant Battle screen: `map.html` mounts the same
+// controller with the same options as its Esc menu, so Escaping out of a
+// level lands on the screen the level was launched from.
 const screen = createSkirmishScreen({
   canvas,
   root: '../',
@@ -125,48 +66,75 @@ const screen = createSkirmishScreen({
   tabs: TABS,
   onTab: id => show(id),
   onStatus: text => { status.textContent = text; },
+  // The mod is picked on the CUSTOM GAME tab now, and that tab hands it
+  // here: re-fetch the level list in place rather than reload the page and
+  // lose the menu loop with it.
+  modChoice: 'inplace',
 });
 
-// The MULTIPLAY tab is built with the page but only loaded when it is first
-// asked for: the room server's lobby is a poll, and a player who never
-// leaves Instant Battle should not be starting one.
+// MULTIPLAY: room server lobby. Built lazily.
 const multiplay = createMultiplayScreen({
   canvas: canvasMp,
   root: '../',
   tabs: MULTIPLAY_TABS,
-  // Both of these close over `multiplay` itself, which is fine: neither is
-  // called until a frame paints or a button is clicked, long after the
-  // binding exists.
   onTab: id => (id === 'create' ? multiplay.openCreate() : show(id)),
   onStatus: text => { status.textContent = text; },
 });
 multiplay.setName(playerName);
 
+// CUSTOM GAME: the mod list — which game Instant Battle is a battle in.
+// Picking one switches the mod the way it always did; the level list on the
+// Instant Battle tab follows it.
+const customGame = createModPicker({
+  canvas: canvasCg,
+  root: '../',
+  tabs: TABS,
+  onTab: id => show(id),
+  onMod: id => screen.chooseMod(id),
+  onStatus: text => { status.textContent = text; },
+});
+
 let tab = 'singleplay';
 let multiplayLoaded = null;
+let customGameLoaded = null;
 
 function show(id) {
   if (id === tab) return;
   tab = id;
-  const online = id === 'multiplay';
-  canvas.hidden = online;
-  canvasMp.hidden = !online;
+  canvas.hidden = id !== 'singleplay';
+  canvasMp.hidden = id !== 'multiplay';
+  canvasCg.hidden = id !== 'customgame';
   screen.strip?.setActive(id);
   multiplay.strip?.setActive(id);
-  if (!online) {
+  customGame.strip?.setActive(id);
+  if (id === 'singleplay') {
     multiplay.stop();
     screen.paint();
     canvas.focus();
     return;
   }
-  status.textContent = '';
-  multiplayLoaded ??= multiplay.load().catch(error => {
-    status.textContent = `Multiplayer screen unavailable: ${error.message}. `
-      + 'From tools/bf1942-models run: python3 extract_main_menu_layout.py';
-    console.error(error);
-  });
-  multiplayLoaded.then(() => { multiplay.start(); multiplay.paint(); });
-  canvasMp.focus();
+  if (id === 'multiplay') {
+    status.textContent = '';
+    multiplayLoaded ??= multiplay.load().catch(error => {
+      status.textContent = `Multiplayer screen unavailable: ${error.message}. `
+        + 'From tools/bf1942-models run: python3 extract_main_menu_layout.py';
+      console.error(error);
+    });
+    multiplayLoaded.then(() => { multiplay.start(); multiplay.paint(); });
+    canvasMp.focus();
+    return;
+  }
+  if (id === 'customgame') {
+    status.textContent = '';
+    customGameLoaded ??= customGame.load().catch(error => {
+      status.textContent = `Custom Game screen unavailable: ${error.message}. `
+        + 'From tools/bf1942-models run: python3 extract_custom_game_layout.py';
+      console.error(error);
+    });
+    customGameLoaded.then(() => { customGame.paint(); });
+    canvasCg.focus();
+    return;
+  }
 }
 
 canvas.addEventListener('keydown', event => {
@@ -175,15 +143,13 @@ canvas.addEventListener('keydown', event => {
 canvasMp.addEventListener('keydown', event => {
   if (multiplay.keydown(event)) event.preventDefault();
 });
+canvasCg.addEventListener('keydown', event => {
+  if (customGame.keydown(event)) event.preventDefault();
+});
 
-// `?tab=multiplay` opens on the room list, which is where a link shared out
-// of a room wants to land.
 if (params.get('tab') === 'multiplay') queueMicrotask(() => show('multiplay'));
+if (params.get('tab') === 'customgame') queueMicrotask(() => show('customgame'));
 
-// --- the harness -------------------------------------------------------------
-//
-// The same shape `map.html` offers: a headless check drives a screen and
-// reads its state back rather than screen-scraping a canvas.
 window.__menu = {
   get state() { return screen.state; },
   get levels() { return screen.levels; },
@@ -200,16 +166,17 @@ window.__menu = {
   chooseMod: screen.chooseMod,
   paint: screen.paint,
   get tab() { return tab; },
+  get customGame() { return customGame.mod; },
+  chooseCustomGame: id => customGame.chooseMod(id),
   show,
-  ready: false,
 };
 
-window.__multiplay = multiplay;
-
-screen.load().then(() => { window.__menu.ready = true; })
-  .catch(error => {
-    status.textContent = `Instant Battle screen unavailable: ${error.message}. `
-      + 'From tools/bf1942-models run: python3 extract_menu_layout.py';
-    console.error(error);
-  });
+screen.load().catch(error => {
+  status.textContent = `Instant Battle screen unavailable: ${error.message}. `
+    + 'From tools/bf1942-models run: python3 extract_map.py Wake';
+  console.error(error);
+});
+canvas.focus();
 </script>
+</body>
+</html>

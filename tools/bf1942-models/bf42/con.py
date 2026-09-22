@@ -1582,6 +1582,57 @@ class ObjectTemplate:
 
 
 @dataclass
+class AiWeaponTemplate:
+    """AI weapon template from `<object>/Ai/Weapons.con`.
+
+    These are the `weaponTemplate.create` blocks the AI uses when firing.
+    The research document (§6.2, §6.3) established that vanilla leaves most
+    at the constructor defaults (deviation 5.0, deviationCorrectionTime 10.0)
+    and only tightens the scoped rifles.
+    """
+    name: str
+    burst: int = 0
+    deviation: float = 5.0
+    deviation_correction_time: float = 10.0
+    indirect: int = 0
+    min_range: float = 0.0
+    max_range: float = 0.0
+    weapon_activate: str | None = None
+    weapon_fire: str | None = None
+    strength: dict[str, float] = field(default_factory=dict)
+    sound_sphere_radius: float | None = None
+    source: str = ""
+
+
+@dataclass
+class AiControlInfo:
+    """AI control mapping from `<object>/Ai/Objects.con`.
+
+    Maps AI intent names to PlayerInputMap channel names, with sensitivity
+    and scale factors. The research document (§2.4) shows this is the bridge
+    between "the bot wants to turn left" and "write −0.4 into channel 0".
+    """
+    drive_turn_control: str | None = None
+    drive_throttle_control: str | None = None
+    aim_horizontal_control: str | None = None
+    aim_vertical_control: str | None = None
+    look_horizontal_control: str | None = None
+    look_vertical_control: str | None = None
+    throttle_sensitivity: float | None = None
+    yaw_sensitivity: float | None = None
+    pitch_sensitivity: float | None = None
+    roll_sensitivity: float | None = None
+    look_vertical_sensitivity: float | None = None
+    look_horizontal_sensitivity: float | None = None
+    throttle_scale: float | None = None
+    pitch_scale: float | None = None
+    roll_scale: float | None = None
+    yaw_scale: float | None = None
+    camera_relative_min_rotation: tuple[float, float, float] | None = None
+    camera_relative_max_rotation: tuple[float, float, float] | None = None
+
+
+@dataclass
 class GeometryTemplate:
     name: str
     kind: str            # StandardMesh / AnimatedMesh / TreeMesh / ...
@@ -1604,6 +1655,9 @@ class ObjectLibrary:
         # geometry template name -> the object folder it was declared in, so the
         # per-object `Art/*.rs` override can be found later.
         self.geometry_dir: dict[str, str] = {}
+        # AI data: keyed by object name (the folder's last component, e.g. "Sherman").
+        self.ai_weapons: dict[str, AiWeaponTemplate] = {}
+        self.ai_control: dict[str, AiControlInfo] = {}
 
     def add_con(self, path: str, text: str) -> None:
         text = strip_comments(text)
@@ -1612,6 +1666,8 @@ class ObjectLibrary:
         geom: GeometryTemplate | None = None
         child: ChildRef | None = None
         selector: LodSelector | None = None
+        ai_wep: AiWeaponTemplate | None = None
+        ai_ctrl_obj: str | None = None  # current object name for Ai/Objects.con context
 
         for line in text.splitlines():
             match = _COMMAND.match(line.strip())
@@ -2470,6 +2526,154 @@ class ObjectLibrary:
                 elif geom is not None and cmd == "setskin":
                     geom.skin = args.split()[0] if args else None
 
+            elif ns == "weapontemplate":
+                if cmd == "create":
+                    name = args.split()[0] if args else None
+                    if name:
+                        ai_wep = AiWeaponTemplate(name=name, source=path)
+                        self.ai_weapons.setdefault(name.lower(), ai_wep)
+                elif ai_wep is None:
+                    pass
+                elif cmd == "burst":
+                    try:
+                        ai_wep.burst = int(float(args.split()[0]))
+                    except (ValueError, IndexError):
+                        pass
+                elif cmd == "deviation":
+                    try:
+                        ai_wep.deviation = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        pass
+                elif cmd == "deviationcorrectiontime":
+                    try:
+                        ai_wep.deviation_correction_time = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        pass
+                elif cmd == "indirect":
+                    try:
+                        ai_wep.indirect = int(float(args.split()[0]))
+                    except (ValueError, IndexError):
+                        pass
+                elif cmd == "minrange":
+                    try:
+                        ai_wep.min_range = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        pass
+                elif cmd == "maxrange":
+                    try:
+                        ai_wep.max_range = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        pass
+                elif cmd == "weaponactivate":
+                    ai_wep.weapon_activate = args.split()[0] if args else None
+                elif cmd == "weaponfire":
+                    ai_wep.weapon_fire = args.split()[0] if args else None
+                elif cmd == "setsoundsphereradius":
+                    try:
+                        ai_wep.sound_sphere_radius = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        pass
+                elif cmd == "setstrength":
+                    # `setStrength Infantry 4.0 LightArmour 0.0 ...`
+                    tokens = args.split()
+                    i = 0
+                    while i + 1 < len(tokens):
+                        try:
+                            ai_wep.strength[tokens[i]] = float(tokens[i + 1])
+                        except ValueError:
+                            pass
+                        i += 2
+
+            elif ns == "aitemplate":
+                if cmd == "addtype":
+                    # `aiTemplate.addType ITxxx` — the object type mask (§4.3).
+                    # Stored raw; the viewer resolves enum names later.
+                    pass  # Type mask not needed for Stage 1
+
+            elif ns == "aitemplateplugin":
+                if cmd == "create":
+                    # `aiTemplatePlugIn.create ControlInfo` — the channel mapping.
+                    # We key it by the object name (folder's last component).
+                    ai_ctrl_obj = folder.rsplit("/", 1)[-1] if folder else None
+                    if ai_ctrl_obj:
+                        self.ai_control.setdefault(
+                            ai_ctrl_obj.lower(), AiControlInfo())
+                elif ai_ctrl_obj is None:
+                    pass
+                elif (ctrl := self.ai_control.get(ai_ctrl_obj.lower())):
+                    if cmd == "driveturncontrol":
+                        ctrl.drive_turn_control = args.split()[0] if args else None
+                    elif cmd == "drivethrottlecontrol":
+                        ctrl.drive_throttle_control = args.split()[0] if args else None
+                    elif cmd == "aimhorizontalcontrol":
+                        ctrl.aim_horizontal_control = args.split()[0] if args else None
+                    elif cmd == "aimverticalcontrol":
+                        ctrl.aim_vertical_control = args.split()[0] if args else None
+                    elif cmd == "lookhorizontalcontrol":
+                        ctrl.look_horizontal_control = args.split()[0] if args else None
+                    elif cmd == "lookverticalcontrol":
+                        ctrl.look_vertical_control = args.split()[0] if args else None
+                    elif cmd == "throttlesensitivity":
+                        try:
+                            ctrl.throttle_sensitivity = float(args.split()[0])
+                        except (ValueError, IndexError):
+                            pass
+                    elif cmd == "yawsensitivity":
+                        try:
+                            ctrl.yaw_sensitivity = float(args.split()[0])
+                        except (ValueError, IndexError):
+                            pass
+                    elif cmd == "pitchsensitivity":
+                        try:
+                            ctrl.pitch_sensitivity = float(args.split()[0])
+                        except (ValueError, IndexError):
+                            pass
+                    elif cmd == "rollsensitivity":
+                        try:
+                            ctrl.roll_sensitivity = float(args.split()[0])
+                        except (ValueError, IndexError):
+                            pass
+                    elif cmd == "lookverticalsensitivity":
+                        try:
+                            ctrl.look_vertical_sensitivity = float(args.split()[0])
+                        except (ValueError, IndexError):
+                            pass
+                    elif cmd == "lookhorizontalsensitivity":
+                        try:
+                            ctrl.look_horizontal_sensitivity = float(args.split()[0])
+                        except (ValueError, IndexError):
+                            pass
+                    elif cmd == "throttlescale":
+                        try:
+                            ctrl.throttle_scale = float(args.split()[0])
+                        except (ValueError, IndexError):
+                            pass
+                    elif cmd == "pitchscale":
+                        try:
+                            ctrl.pitch_scale = float(args.split()[0])
+                        except (ValueError, IndexError):
+                            pass
+                    elif cmd == "rollscale":
+                        try:
+                            ctrl.roll_scale = float(args.split()[0])
+                        except (ValueError, IndexError):
+                            pass
+                    elif cmd == "yawscale":
+                        try:
+                            ctrl.yaw_scale = float(args.split()[0])
+                        except (ValueError, IndexError):
+                            pass
+                    elif cmd == "setcamerarelativeminrotationdeg":
+                        try:
+                            ctrl.camera_relative_min_rotation = vec3(args.split()[0])
+                        except (ValueError, IndexError):
+                            pass
+                    elif cmd == "setcamerarelativemaxrotationdeg":
+                        try:
+                            ctrl.camera_relative_max_rotation = vec3(args.split()[0])
+                        except (ValueError, IndexError):
+                            pass
+
     def object(self, name: str) -> ObjectTemplate | None:
         return self.objects.get(name.lower())
 
@@ -2484,6 +2688,12 @@ class ObjectLibrary:
 
     def selector(self, name: str | None) -> LodSelector | None:
         return self.selectors.get(name.lower()) if name else None
+
+    def ai_weapon(self, name: str) -> AiWeaponTemplate | None:
+        return self.ai_weapons.get(name.lower())
+
+    def ai_control_info(self, name: str) -> AiControlInfo | None:
+        return self.ai_control.get(name.lower())
 
     def art_dir(self, geometry_name: str) -> str | None:
         _, bare = split_geometry_qualifier(geometry_name)

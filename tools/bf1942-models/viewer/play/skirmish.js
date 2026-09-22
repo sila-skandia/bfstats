@@ -12,22 +12,25 @@
 // from the page, whether the menu loop plays, what START does, and whether
 // there is a game to leave. Nothing here knows about either page.
 //
+// The left column is the bot settings, on both mounts. The mod list used to
+// share it — pick a game here, and the level list below follows — and now
+// has the front end's own CUSTOM GAME tab (`mod-picker-screen.js`) to itself,
+// which hands its pick back through `chooseMod`. This screen still holds
+// which mod is active, because the level list and every pack URL are the
+// mod's; it just does not draw the list any more.
+//
 // The painting, the hit-testing and the layout arithmetic are all
-// `menu-screen.js` and `mod-picker.js`; this is the part that fetches the
-// pack, holds the selection and turns a pointer into a choice.
+// `menu-screen.js`; this is the part that fetches the pack, holds the
+// selection and turns a pointer into a choice.
 
 import {
-  AXIS, ALLIED, hitTest, inRect, listBox, paintMenu, scrollTo, stageScale,
+  AXIS, ALLIED, hitTest, listBox, paintMenu, scrollTo, stageScale,
   toVirtual, visibleRows,
 } from './menu-screen.js';
 import { createNavStrip } from './nav-strip.js';
 import { loadMods, remember, servable, stored, VANILLA, withMod } from '../mods.js';
 import { createLoadingAudioController } from '../audio.js';
 import { loadHudPaths, hudPaths as plainHudPaths } from '../hud-pack.js';
-import {
-  hitTestPanel, paintPanel, panelBounds, placeInColumn,
-  scrollBy as pickerScrollBy,
-} from './mod-picker.js';
 
 export { AXIS, ALLIED };
 
@@ -79,19 +82,7 @@ export function createSkirmishScreen({
 } = {}) {
   const qs = params;
   const bust = () => (qs.has('nocache') ? `?t=${Date.now()}` : '');
-  // Which game's Instant Battle screen this is is `activeMod`, resolved in
-  // `load()` by `mods.js`'s own precedence (`?mod=`, then the remembered
-  // one). A mod lists its own levels and draws whatever chrome it ships of
-  // its own; everything it did not repaint still comes from the vanilla pack
-  // (`../hud-pack.js`). The screen itself is vanilla's on every installed mod
-  // -- only Secret Weapons ships a menu page at all, and not one of these
-  // three -- so in practice what a mod changes here is the level list, its
-  // thumbnails, the background plate and the nation flags on the preview.
-  // Until `load()` knows the mod this resolves everything to vanilla's pack.
   let hudPaths = plainHudPaths('bf1942', null, { root });
-  // `?pack=` still points a checkout at a scratch build of the menu pack
-  // without moving anything; it wins over the resolver, whole. `?maps=` does
-  // the same for the level tree.
   const SCRATCH_PACK = qs.get('pack');
   const packUrl = rel => (SCRATCH_PACK ? `${SCRATCH_PACK}/${rel}`
                                        : hudPaths.menuUrl(rel));
@@ -108,44 +99,28 @@ export function createSkirmishScreen({
   const state = {
     team: ALLIED, index: 0, scroll: 0, level: null,
     disconnect: Boolean(inGame && onDisconnect),
+    // Bot settings: always on. The retail AI SKILL slider is proven inert
+    // (§5.3 of the AI research doc); wiring it is a deliberate departure.
+    botSkill: 0.75,   // 0.25 EASY, 0.5 NORMAL, 0.75 HARD, 1.0 IMPOSSIBLE
+    botCount: 4,      // number of bots to spawn (default on)
   };
   let layout = null;
   let levels = [];
   let hover = null;
 
-  // The mod list: permanently drawn in the column `SHOW_BOT_SETTINGS = false`
-  // leaves blank, not a modal - clicking a row applies it immediately (it
-  // filters the level list below, it doesn't launch anything). `modLayout` is
-  // `menu/CustomGameMenu` flattened by `extract_custom_game_layout.py` and
-  // shifted into that column by `placeInColumn`; `activeMod` the record
-  // `mods.js` resolved (its `?mod=`/localStorage precedence, unchanged - see
-  // `mods.js`'s own header comment); `picker` the panel's own
-  // selection/scroll/hover state.
-  let modLayout = null;
-  //: The SINGLEPLAY / MULTIPLAY strip, when the mounting page asked for one.
-  //  Its plates and faces come out of `main-menu-layout.json`, whose tables
-  //  are merged into this screen's the same way the mod dialog's are.
+  // Which game this is a battle in. Not drawn here — the CUSTOM GAME tab is
+  // the list — but every pack URL, the level list and the menu loop are the
+  // active mod's, so the screen holds it.
   let strip = null;
   let activeMod = VANILLA;
-  let picker = { mods: [VANILLA], activeId: VANILLA.id, scroll: 0, hover: null };
-  // The active mod's own maps root - `<root>maps` for vanilla, `<root>maps/
-  // mods/<id>` otherwise. Resolved in `load()`, before the level manifest
-  // fetch.
+  let mods = [VANILLA];
   let MAPS = `${root}maps`;
 
-  // The main menu's own loop - not the loading screen's `vehicle4.mp3`
-  // (`progress.js`'s own controller, on `map.html`) and not the well-known
-  // battle theme, but whatever a mod's `Game.setMenuMusicFilename` names
-  // (`extract_menu_music.py`). Vanilla, RtR and SWoWWII all point at the same
-  // file; EoD's is its own recording - `${MAPS}/_shared/music/menu.mp3`
-  // already resolves to the right one because `MAPS` already does.
-  //
-  // The Esc menu plays none of it. The engine stops the front end's own Bink
-  // movie the moment there is a game to go back to (`menu/Background`'s
-  // `PlayBink` is cleared while `Join/Disconnect/ShowDisconnect` is set), and
-  // a menu loop starting over a battle already in your ears would be the
-  // same mistake in the other medium.
   const menuAudio = createLoadingAudioController();
+  /** The track the loop is already on. `load` runs again on every mod
+   *  change, and `menuAudio.start` always starts from the top — so the
+   *  loop is only (re)started when the mod actually brings its own. */
+  let menuTrack = null;
 
   const json = url => fetch(url + bust()).then(r => {
     if (!r.ok) throw new Error(`${r.status} ${url}`);
@@ -165,12 +140,6 @@ export function createSkirmishScreen({
 
   const ready = img => (img && img.complete && img.naturalWidth ? img : null);
 
-  /** Settles when an image's bytes are in, either way.
-   *
-   *  Not `decode()`, which is what this used to await: a background tab does
-   *  not decode, so in one the promise never settles and the screen never
-   *  finishes loading. `load` fires there as it does anywhere, the bytes are
-   *  what the first paint is waiting on, and `drawImage` decodes on its own. */
   const loaded = img => (img.complete ? Promise.resolve() : new Promise(resolve => {
     img.addEventListener('load', resolve, { once: true });
     img.addEventListener('error', resolve, { once: true });
@@ -182,24 +151,12 @@ export function createSkirmishScreen({
       return entry ? ready(image(packUrl(entry.file))) : null;
     },
     thumbnail: level => {
-      // The game's own menu thumbnail when the pack has one (vanilla's, or a
-      // mod's own through `hud-pack.js`); otherwise - a mod with no pack, see
-      // `buildLevels` - the level's own loading-screen background, which every
-      // `maps.json` entry carries.
       if (level?.thumbnail) return ready(image(packUrl(level.thumbnail)));
       if (level?.previewBg) return ready(image(`${MAPS}/${level.previewBg}`));
       return null;
     },
     icon: mod => (mod?.icon ? ready(image(`${root}${mod.icon}`)) : null),
-    // The dialog's own `CustomGame/CustomGameUrl` / `...Info` var nodes: the
-    // file's shipped value is a placeholder (see `mod-picker.js`'s header
-    // comment), so the highlighted row's own facts stand in for it.
-    text: name => {
-      const mod = picker.mods.find(m => m.id === picker.activeId);
-      if (name === 'CustomGame/CustomGameUrl') return mod?.url || '';
-      if (name === 'CustomGame/CustomGameInfo') return mod?.info || 'No description available.';
-      return '';
-    },
+    text: () => '',
     font: id => fonts.get(id) || null,
     tint: (font, rgb) => {
       const key = `${font.id}|${rgb.join(',')}`;
@@ -224,28 +181,6 @@ export function createSkirmishScreen({
 
   // --- loading ---------------------------------------------------------------
 
-  /** The level list: what the extractor read out of the game, narrowed to the
-   *  levels this viewer actually has a scene for, in the order the game's own
-   *  list is in - alphabetical by the title it shows.
-   *
-   *  The title is the level's own `lexiconAll.dat` record, which is what the
-   *  game's list shows ("BATTLE OF MIDWAY", "OPERATION MARKET GARDEN"), not
-   *  the loading screen's table in `maps.json` - the two differ on four
-   *  levels and this is the game's screen.
-   *
-   *  Every extracted level is listed. The real game lists only the levels
-   *  with bot support (`level.singlePlayer`); this site has no bots, and the
-   *  levels without that layout launch Conquest instead, so hiding them would
-   *  only lose them.
-   *
-   *  `menuLevels` is the active game's own list: vanilla's, or the one a
-   *  mod's pack carries (`hud-pack.js`). A mod with no pack has none - what
-   *  `packUrl` hands back then is vanilla's list, which never held its levels
-   *  - so `joined` is false, the join is skipped and its `maps.json` is listed
-   *  outright: no bot-support flag or nation flags to carry over, and no menu
-   *  thumbnail (`env.thumbnail` falls back to the loading-screen background
-   *  for those). Those records carry no `singlePlayer` either, which is what
-   *  `launchUrl` keys on - see its comment. */
   function buildLevels(menuLevels, manifest, joined) {
     if (!joined) {
       return manifest
@@ -258,8 +193,6 @@ export function createSkirmishScreen({
     }
     const have = new Map();
     for (const entry of manifest) {
-      // `maps.json` names a level the way its directory does; the extractor
-      // keys on the same lowercased name.
       have.set(entry.name.toLowerCase(), entry);
     }
     const out = [];
@@ -280,51 +213,31 @@ export function createSkirmishScreen({
     const available = servable(await loadMods(), 'maps');
     const wanted = (wantedMod || qs.get('mod') || stored() || VANILLA.id).toLowerCase();
     activeMod = available.find(mod => mod.id === wanted) || available[0];
-    // A `?mod=` this tab cannot serve (no maps uploaded yet) must not stick.
     if (activeMod.id === wanted) remember(activeMod.id);
-    picker = { mods: available, activeId: activeMod.id, scroll: 0, hover: null };
+    mods = available;
     MAPS = MAPS_OVERRIDE || `${root}${activeMod.paths.maps}`;
-    // One `pack.json` fetch; a mod without a pack resolves to vanilla's.
     hudPaths = await loadHudPaths(activeMod.id, { bust, root });
     if (music) {
-      // The speaker in the corner, not the loading screen's "click to
-      // enable" badge: this screen stays up, so the player needs the other
-      // direction too. Off is remembered — a mod switch reloads the page
-      // and the loop would otherwise start again over a player who turned
-      // it off ten seconds ago.
       menuAudio.setMuted(menuMuted());
       menuAudio.attachMuteToggle(document.body, { onChange: rememberMute });
-      menuAudio.start(`${MAPS}/_shared/music/menu.mp3`,
-                      `${root}maps/_shared/music/menu.mp3`);
+      const track = `${MAPS}/_shared/music/menu.mp3`;
+      if (track !== menuTrack) {
+        menuTrack = track;
+        menuAudio.start(track, `${root}maps/_shared/music/menu.mp3`);
+      }
     }
 
-    const [skirmishLayout, rawModLayout, navLayout] = await Promise.all([
+    const [skirmishLayout, navLayout] = await Promise.all([
       json(packUrl('menu-layout.json')),
-      // Absent on a checkout that hasn't run extract_custom_game_layout.py -
-      // the panel just doesn't draw, same fallback shape as a mod with no
-      // maps.json.
-      json(packUrl('custom-game-layout.json')).catch(() => null),
-      // Likewise extract_main_menu_layout.py: no pack, no tab strip, and
-      // the screen is what it was before there was a second tab.
       tabs ? json(packUrl('main-menu-layout.json')).catch(() => null) : null,
     ]);
     layout = skirmishLayout;
-    // Into the column `SHOW_BOT_SETTINGS = false` leaves blank - the file
-    // places this dialog centered for a modal it is not being used as here.
-    modLayout = rawModLayout && placeInColumn(rawModLayout, 14, 100);
-    if (modLayout) {
-      layout.textures = { ...layout.textures, ...modLayout.textures };
-      layout.fontFiles = { ...layout.fontFiles, ...modLayout.fontFiles };
-    }
     if (navLayout) {
       layout.textures = { ...layout.textures, ...navLayout.textures };
       layout.fontFiles = { ...layout.fontFiles, ...navLayout.fontFiles };
       strip = createNavStrip({ layout: navLayout, env, rows: tabs,
                                active: 'singleplay', onPick: onTab });
     }
-    // The game's own list for this mod: vanilla's always, and a mod's when its
-    // pack carries one (`extract_hud_mods.py` writes it beside the thumbnails).
-    // A mod with no pack of its own lists its `maps.json` outright instead.
     const hasMenuLevels = activeMod.id === VANILLA.id
       || Boolean(SCRATCH_PACK) || hudPaths.owns('menu/menu-levels.json');
     const [menuLevels, manifest] = await Promise.all([
@@ -338,10 +251,7 @@ export function createSkirmishScreen({
       await loaded(img);
       fonts.set(id, { id, meta, img });
     }));
-    // Every plate up front: the screen is a couple dozen small textures and
-    // paints once.
     for (const entry of Object.values(layout.textures || {})) image(packUrl(entry.file));
-    for (const mod of available) if (mod.icon) image(`${root}${mod.icon}`);
     state.scroll = 0;
     select(0);
     onStatus(levels.length ? ''
@@ -363,9 +273,6 @@ export function createSkirmishScreen({
     paintSoon();
   }
 
-  /** Select a level by the name `?map=` spells, if the list has it. The Esc
-   *  menu opens on the level you are in, the way the game's own list is
-   *  already sitting on the one it last started. */
   function selectMap(name) {
     if (!name) return false;
     const wanted = String(name).toLowerCase();
@@ -381,42 +288,32 @@ export function createSkirmishScreen({
     paintSoon();
   }
 
-  /** START. The map page is the mesh site's own file; only the launch
-   *  parameters are ours. */
+  /** Apply a bot slider click. The layout's `sets` array carries the variable
+   *  name and the value to set. For the four-step sliders (AiSkill, BotRatio,
+   *  NrOfLives) the value is 1-4; for the percentage sliders it's the authored
+   *  value. We map the 1-4 values to actual botSkill/botCount state.
+   *
+   *  The retail AI SKILL slider is proven inert (§5.3); wiring it is a
+   *  deliberate departure from the game. */
+  function applyBotSlider(sets) {
+    for (const s of sets) {
+      if (s.var === 'Skirmish/SkirmishAiSkill') {
+        // 1→0.25, 2→0.5, 3→0.75, 4→1.0 (§5.2 table)
+        state.botSkill = [0.25, 0.5, 0.75, 1.0][s.value - 1] ?? 0.75;
+      } else if (s.var === 'Options/General/SkirmishPercentageOfBots') {
+        // 50-400% scale on max bot count. Map to botCount: 50%→2, 100%→4,
+        // 200%→8, 400%→16. Linear interpolation.
+        state.botCount = Math.max(1, Math.round((s.value / 100) * 4));
+      }
+    }
+    paintSoon();
+  }
+
   function start() {
     if (!state.level) return;
     onStart(launchUrl());
   }
 
-  /** Where START goes. Two things travel with the level and the team.
-   *
-   *  The mod: without it an Anzio launched from Road to Rome's screen would be
-   *  looked for in vanilla's level tree whenever the remembered mod and the
-   *  link's disagree.
-   *
-   *  The game mode. Instant Battle is a singleplayer screen, and in the game it
-   *  runs the level's **CoOp** game type — `GameTypes/CoOp.con`, which is the
-   *  script `bf1942_lnxded`'s `Setup::setNextLevel` names for GamePlayMode 4.
-   *  That is a game type, not a directory: on every vanilla level it loads the
-   *  `SinglePlayer/` layout, and on Road to Rome and Secret Weapons it loads
-   *  SinglePlayer's spawns under Conquest's flags, which is no directory's
-   *  layout at all. So the game type is what travels, and `map.html` resolves
-   *  it — asking for `SinglePlayer` by name is right on most of those levels
-   *  only because the two directories happen to agree, and wrong on Cassino and
-   *  Gothic Line, both published. Across all 18 installed mods 35 game-type
-   *  scripts straddle two directories and 7 of them resolve to a different
-   *  layout that way; asking for the game type is right on all 35 by
-   *  construction.
-   *
-   *  `menu-levels.json` records which levels have that layout as `singlePlayer`
-   *  (19 of vanilla's 23; the four that do not are Aberdeen, Coral Sea,
-   *  Invasion of the Philippines and Liberation of Caen, and they get Conquest,
-   *  which is what the game falls back to for them as well). A mod with no menu
-   *  pack has no such list and its records carry no flag at all — `undefined`,
-   *  not `false` — so nothing is asked for and `map.html` plays the level's own
-   *  default layer, exactly as it did before `?mode=` existed. Naming Conquest
-   *  there would be a guess, and a wrong one on the 27 FHSW levels that ship no
-   *  Conquest layer. See `features/bf1942-3d-models/game-modes.md`. */
   function launchUrl() {
     if (!state.level) return null;
     const url = new URL(`${root}map.html`, location.href);
@@ -426,20 +323,16 @@ export function createSkirmishScreen({
       url.searchParams.set('mode', state.level.singlePlayer ? 'CoOp' : 'Conquest');
     }
     if (activeMod.id !== VANILLA.id) url.searchParams.set('mod', activeMod.id);
+    // Bot parameters: always passed when bots are enabled.
+    url.searchParams.set('botCount', String(state.botCount));
+    url.searchParams.set('botSkill', String(state.botSkill));
     return url.toString();
   }
 
-  // --- mod list --------------------------------------------------------------
+  // --- the active mod --------------------------------------------------------
 
-  /** Clicking a row. On the way in, this carries the choice the way the
-   *  shell-mods `<select>` on every other viewer page does - `remember()`
-   *  then a reload, because every page here resolves its mod once at module
-   *  scope with top-level await (`mods.js`'s own header comment).
-   *
-   *  Over a running level there is nothing to reload: the level behind the
-   *  screen is the one you are playing, and switching mods must not throw it
-   *  away. The pack and the level list are re-fetched in place instead, and
-   *  the mod travels on the next START like any other. */
+  /** Called by the CUSTOM GAME tab when a game is picked, and by nothing on
+   *  this screen: there is no list here to pick from. */
   function chooseMod(id) {
     if (id === activeMod.id) return;
     remember(id);
@@ -451,20 +344,6 @@ export function createSkirmishScreen({
       return;
     }
     location.href = withMod(location.href, id);
-  }
-
-  function handlePanelHit(hit) {
-    if (!hit) return;
-    if (hit.kind === 'row') { chooseMod(picker.mods[hit.index].id); return; }
-    if (hit.kind === 'arrow') {
-      picker.scroll = pickerScrollBy(modLayout, picker, hit.by);
-      paintSoon();
-      return;
-    }
-    if (hit.kind === 'button' && hit.action === 'website') {
-      const url = picker.mods.find(m => m.id === picker.activeId)?.url;
-      if (url) window.open(url, '_blank', 'noopener,noreferrer');
-    }
   }
 
   // --- painting --------------------------------------------------------------
@@ -481,8 +360,6 @@ export function createSkirmishScreen({
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
-    // A hidden canvas has no box: `stageScale` would divide by it. The Esc
-    // menu spends most of a session down, and paints on the way up.
     if (!w || !h) return;
     const cw = Math.round(w * dpr);
     const chh = Math.round(h * dpr);
@@ -495,8 +372,9 @@ export function createSkirmishScreen({
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, cw, chh);
     ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
-    paintMenu(ctx, layout, state, env);
-    if (modLayout) paintPanel(ctx, modLayout, picker, env);
+    // The left column is the bot settings, which `SHOW_BOT_SETTINGS` has off
+    // by default because the retail screen leaves it blank.
+    paintMenu(ctx, layout, state, env, true);
     strip?.paint(ctx);
   }
 
@@ -511,25 +389,11 @@ export function createSkirmishScreen({
     return toVirtual(s, event.clientX - r.left, event.clientY - r.top);
   }
 
-  /** The mod panel and the Skirmish screen are both live on the same canvas
-   *  at once - there is no modal to gate input on, just whether the pointer
-   *  is inside the panel's own bounds. */
-  const overPanel = (x, y) => !!(modLayout && inRect(panelBounds(modLayout), x, y));
-
   canvas.addEventListener('pointermove', event => {
     if (!layout) return;
     const [x, y] = at(event);
-    if (overPanel(x, y)) {
-      if (hover) { hover = null; paintSoon(); }
-      const next = hitTestPanel(modLayout, picker, x, y);
-      const changed = JSON.stringify(next) !== JSON.stringify(picker.hover);
-      picker.hover = next;
-      canvas.style.cursor = next ? 'pointer' : 'default';
-      if (changed) paintSoon();
-      return;
-    }
-    if (picker.hover) { picker.hover = null; paintSoon(); }
-    const next = strip?.hover(x, y) || hitTest(layout, state, x, y, levels.length);
+    const next = strip?.hover(x, y)
+      || hitTest(layout, state, x, y, levels.length, true);
     const changed = JSON.stringify(next) !== JSON.stringify(hover);
     hover = next;
     canvas.style.cursor = next ? 'pointer' : 'default';
@@ -538,7 +402,6 @@ export function createSkirmishScreen({
 
   canvas.addEventListener('pointerleave', () => {
     hover = null;
-    picker.hover = null;
     paintSoon();
   });
 
@@ -546,12 +409,12 @@ export function createSkirmishScreen({
     if (!layout) return;
     const [x, y] = at(event);
     canvas.focus();
-    if (overPanel(x, y)) { handlePanelHit(hitTestPanel(modLayout, picker, x, y)); return; }
     if (strip?.click(x, y)) return;
-    const hit = hitTest(layout, state, x, y, levels.length);
+    const hit = hitTest(layout, state, x, y, levels.length, true);
     if (!hit) return;
     if (hit.kind === 'row') select(hit.index);
     else if (hit.kind === 'team') setTeam(hit.team);
+    else if (hit.kind === 'botSlider') applyBotSlider(hit.sets);
     else if (hit.action === 'scroll') scrollBy(hit.by);
     else if (hit.action === 'start') start();
     else if (hit.action === 'disconnect') onDisconnect?.();
@@ -560,10 +423,7 @@ export function createSkirmishScreen({
   canvas.addEventListener('dblclick', event => {
     if (!layout) return;
     const [x, y] = at(event);
-    if (overPanel(x, y)) return;
-    // The list box's "Select action" is `Skirmish/StartSkirmish`: committing
-    // a row starts the level.
-    if (hitTest(layout, state, x, y, levels.length)?.kind === 'row') start();
+    if (hitTest(layout, state, x, y, levels.length, true)?.kind === 'row') start();
   });
 
   function scrollBy(by) {
@@ -577,19 +437,9 @@ export function createSkirmishScreen({
   canvas.addEventListener('wheel', event => {
     event.preventDefault();
     if (!layout) return;
-    const [x, y] = at(event);
-    if (overPanel(x, y)) {
-      picker.scroll = pickerScrollBy(modLayout, picker, Math.sign(event.deltaY));
-      paintSoon();
-      return;
-    }
     scrollBy(Math.sign(event.deltaY));
   }, { passive: false });
 
-  /** The keyboard, for whoever owns it. `play/index.html` hands over what the
-   *  canvas gets; `map.html` hands over what the page gets while the Esc menu
-   *  is up, because there the keyboard is the game's the rest of the time.
-   *  Returns whether the key was the screen's. */
   function keydown(event) {
     if (!layout) return false;
     const box = listBox(layout);
@@ -621,7 +471,7 @@ export function createSkirmishScreen({
     get state() { return { ...state, levels: levels.length }; },
     get levels() { return levels.map(l => l.title); },
     get mod() {
-      return { active: activeMod.id, available: picker.mods.map(m => m.id) };
+      return { active: activeMod.id, available: mods.map(m => m.id) };
     },
     get strip() { return strip; },
     get audio() { return menuAudio.state; },
