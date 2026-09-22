@@ -255,5 +255,135 @@ class DrowningTests(unittest.TestCase):
         self.assertEqual(0, self.results["damageFromWaterOff"]["lost"])
 
 
+class SwimItemGateTests(unittest.TestCase):
+    """The engine does not block the trigger. It leaves him nothing to fire.
+
+    `c_AsmHideWeapon` (0x2) is declared by all five lower swim states, and three
+    separate readers test that bit off the LOWER machine's
+    `getCurrentStateFlags()` (`0x0832b110`):
+
+    * `BFSoldier::handleMessage` (`0x08277260`) reads it at `0x082772a4` and
+      `0x082772ac and eax,0x2` / `0x082772af jne` skips the **whole** dispatch --
+      `lea eax,[edi-0x6]` / `cmp eax,0x10` / `jmp DWORD PTR [eax*4+0x86d2748]`,
+      a 17-entry jump table over messages 6..22. Fire is 6, AltFire is 7 and
+      MenuSelect4 is 13, all three already cited in `map.html`'s demolitions
+      block out of this same function.
+    * `BFSoldier::selectBestLoadedWeapon` (`0x08273a80`) at `0x08273af4`.
+    * `BFSoldier::enableItem(char)` (`0x08278460`) at `0x082784b2`, which is the
+      function's own `ret`.
+
+    So "a swimmer cannot fire" is not a rule about the trigger, and modelling it
+    as one would leave him reloading and zooming a weapon he does not have.
+    """
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+
+    def test_every_swim_state_declares_hide_weapon_and_is_swimming(self) -> None:
+        flags = self.results["stateFlags"]
+        for family in ("swimStart", "swimFloat", "swimForward", "swimBackward",
+                       "swimEnd"):
+            # 0x2 | 0x8 -- `setFlag c_AsmHideWeapon` then
+            # `setFlag c_AsmIsSwimming`, on every one of the five.
+            self.assertEqual(0xA, flags[family], family)
+
+    def test_the_gate_is_the_hide_weapon_bit_and_nothing_else(self) -> None:
+        gate = self.results["itemsLockedBy"]
+        self.assertTrue(gate["hideWeapon"])
+        self.assertTrue(gate["both"])
+        self.assertFalse(gate["none"])
+        # `c_AsmIsSwimming` alone does NOT shut it: the engine's three readers
+        # test 0x2, not 0x8. A state could swim with a weapon out; none does.
+        self.assertFalse(gate["swimmingOnly"])
+        self.assertFalse(gate["climbing"])
+
+    def test_the_gate_follows_the_state_over_a_whole_swim(self) -> None:
+        gate = self.results["gateOverOneSwim"]
+        # Dry, and wading in 0.2 m of water, he is armed.
+        self.assertIsNone(gate["dry"]["family"])
+        self.assertFalse(gate["dry"]["locked"])
+        self.assertIsNone(gate["wading"]["family"])
+        self.assertFalse(gate["wading"]["locked"])
+        # The tick he crosses 0.43 m the weapon is gone.
+        self.assertEqual("swimStart", gate["entering"]["family"])
+        self.assertTrue(gate["entering"]["locked"])
+        # `Lb_EndSwim` declares the flag too, so it is still gone through the
+        # third of a second the exit clip takes -- the same span over which the
+        # drowning clock and the 5.0 gain stay up.
+        self.assertEqual("swimEnd", gate["exiting"]["family"])
+        self.assertTrue(gate["exiting"]["locked"])
+        # And it comes back when the state does, not when the depth does.
+        self.assertIsNone(gate["ashore"]["family"])
+        self.assertFalse(gate["ashore"]["locked"])
+        self.assertEqual(
+            ["swimStart", "swimFloat", "swimForward", "swimBackward", "swimEnd"],
+            gate["lockedFamilies"])
+        self.assertEqual([None], gate["unlockedFamilies"])
+
+    def test_a_corpse_in_the_water_is_not_holding_a_weapon_away(self) -> None:
+        # `Lb_DieSwim` is an `AnimationStatesDie.con` state and declares no
+        # flags at all, so the gate is not what keeps a dead man from firing.
+        self.assertEqual(0, self.results["deathFlags"]["swimDie"])
+        self.assertFalse(self.results["deathFlags"]["swimDieLocked"])
+
+
+class ItemGateWiringTests(unittest.TestCase):
+    """Every item verb in `map.html` consults the gate.
+
+    A law in a module that nothing calls is the bug this stream was sent to fix:
+    W8-B read `c_AsmHideWeapon` correctly, hid the third-person weapon node with
+    it, and left `footFire` firing. `map.html` has no node harness -- it is a
+    16,000-line page -- so the wiring is pinned by reading it, which is weak
+    evidence about behaviour and exact evidence about presence. The behaviour
+    itself is measured headlessly; see `features/viewer-swimming/README.md`.
+    """
+
+    MAP = ROOT / "viewer" / "map.html"
+    # function name -> why it has to ask
+    VERBS = {
+        "footFire": "the trigger, the reload clock and the plunger",
+        "selectKitWeapon": "MenuSelect<slot>, message 10..17",
+        "selectDetonator": "reached only by AltFire or MenuSelect4",
+        "altFireDemolitions": "AltFire, message 7",
+        "startReload": "a magazine change is an item message too",
+        "crosshairAim": "no active item, no setCrossHairType to read",
+    }
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        if not cls.MAP.exists():
+            raise unittest.SkipTest("map.html is not in the tree")
+        cls.text = cls.MAP.read_text(encoding="utf-8", errors="replace")
+
+    def body_of(self, name: str) -> str:
+        """The source of one top-level `function name(...)` in `map.html`."""
+        start = self.text.find(f"\nfunction {name}(")
+        self.assertNotEqual(-1, start, f"no top-level function {name} in map.html")
+        end = self.text.find("\n}\n", start)
+        self.assertNotEqual(-1, end, name)
+        return self.text[start:end]
+
+    def test_the_gate_helper_exists_and_reads_the_soldier(self) -> None:
+        gate = self.body_of("itemsLocked")
+        self.assertIn("soldier?.itemsLocked", gate)
+
+    def test_every_item_verb_consults_the_gate(self) -> None:
+        for name, why in self.VERBS.items():
+            with self.subTest(verb=name, why=why):
+                self.assertIn("itemsLocked()", self.body_of(name))
+
+    def test_the_first_person_rig_is_not_drawn_without_an_item(self) -> None:
+        # There is no 1P swim clip in the game at all: not one of the ten swim
+        # states declares a `set1pAnimation` (the five
+        # `set1pAnimationSpeed Ub_*Swim*` lines in
+        # `animations/1pAnimationsTweaking.con` tune a clip that was never
+        # registered). So an unenabled item is simply not drawn.
+        fire = self.body_of("footFire")
+        self.assertIn("hw.rig.visible = !locked", fire)
+
+
 if __name__ == "__main__":
     unittest.main()

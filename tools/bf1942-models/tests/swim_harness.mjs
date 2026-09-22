@@ -9,8 +9,8 @@ import {
   DrownTimer, HP_LOST_WHILE_DAMAGE_FROM_WATER, MATERIAL_WATER,
   SWIM_ACCEL_GAIN, SWIM_CLIPS, SWIM_END_SECONDS, SWIM_ENTER_DEPTH,
   SWIM_FLOAT_DRAFT, SWIM_LEAVE_DEPTH, SWIM_START_SECONDS, SWIM_THROTTLE_BAND,
-  SwimState, WATER_DAMAGE_DELAY, WATER_DAMAGE_INTERVAL,
-  swimDepth, swimStroke,
+  SWIM_STATE_FLAGS, SwimState, WATER_DAMAGE_DELAY, WATER_DAMAGE_INTERVAL,
+  itemsLocked, swimDepth, swimStroke,
 } from './swim.js';
 
 const results = {};
@@ -217,5 +217,54 @@ results.noWater = walkDepths([{ surfaceY: null, feetY: -400, ticks: 10 }]).last;
   for (let i = 0; i < Math.round(300 / DT); i++) lost += timer.update(DT, true);
   results.damageFromWaterOff = { lost };
 }
+
+// --- the item gate ---------------------------------------------------------
+// `c_AsmHideWeapon` is bit 0x2 of the LOWER machine's flags, and while it is up
+// the engine leaves the soldier nothing to fire: `handleMessage` discards its
+// whole message dispatch (`0x082772ac`), `selectBestLoadedWeapon` bails out
+// (`0x08273af4`) and `enableItem` refuses (`0x082784b2`).
+results.stateFlags = SWIM_STATE_FLAGS;
+results.itemsLockedBy = {
+  hideWeapon: itemsLocked(ASM_HIDE_WEAPON),
+  swimmingOnly: itemsLocked(ASM_IS_SWIMMING),
+  both: itemsLocked(ASM_HIDE_WEAPON | ASM_IS_SWIMMING),
+  none: itemsLocked(0),
+  climbing: itemsLocked(ASM_IS_CLIMBING),
+};
+// Walked over the whole life of one swim: dry, entering, floating, stroking,
+// leaving, and dry again -- the gate follows the state, not the depth.
+{
+  const swim = new SwimState();
+  const trace = [];
+  const tick = (surfaceY, feetY, throttle = 0) => {
+    swim.update({ dt: DT, surfaceY, feetY, throttle });
+    trace.push({ family: swim.family, flags: swim.stateFlags,
+                 locked: swim.itemsLocked });
+  };
+  tick(null, 0);                                   // no water at all
+  tick(3, 2.8);                                    // 0.2 m: wading, still armed
+  tick(3, 2.0);                                    // 0.43 crossed: Lb_StartSwim
+  for (let i = 0; i < Math.round(0.4 / DT); i++) tick(3, 2.0);   // -> forward
+  tick(3, 2.0, 1);                                 // stroking
+  tick(3, 2.0, -1);
+  tick(3, 2.0);                                    // floating
+  tick(3, 2.8);                                    // 0.2 m: Lb_EndSwim
+  const exiting = { family: swim.family, flags: swim.stateFlags,
+                    locked: swim.itemsLocked };
+  for (let i = 0; i < Math.round(0.4 / DT); i++) tick(3, 2.8);   // clip runs out
+  results.gateOverOneSwim = {
+    dry: trace[0], wading: trace[1], entering: trace[2],
+    exiting,
+    ashore: trace[trace.length - 1],
+    lockedFamilies: [...new Set(trace.filter(t => t.locked).map(t => t.family))],
+    unlockedFamilies: [...new Set(trace.filter(t => !t.locked).map(t => t.family))],
+  };
+}
+// The swim death drops the flag, because `Lb_DieSwim` declares none: a corpse is
+// not holding a rifle away, it is just a corpse.
+results.deathFlags = {
+  swimDie: SWIM_STATE_FLAGS.swimDie,
+  swimDieLocked: itemsLocked(SWIM_STATE_FLAGS.swimDie),
+};
 
 console.log(JSON.stringify(results, null, 1));
