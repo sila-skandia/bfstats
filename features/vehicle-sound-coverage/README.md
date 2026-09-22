@@ -10,6 +10,12 @@ Five defects, in three layers: two in `extract_map.py`'s vehicle-sound list, one
 in its sample resolution, and two in `engine-audio.js`'s evaluation of a patch.
 None of them is about the Axis.
 
+**The horn was reported a third time on 2026-09-23 and is written up as D7 at the
+bottom of this file. Read that first.** D4 and D5 below are both still correct and
+both still in the tree; the horn came back through a route neither of them covers,
+which is the point. D7 states the invariant all three share and replaces
+route-by-route fixing with a guard on the invariant itself.
+
 ---
 
 ## D1 — the sound list was one mode and one team; the scene is neither
@@ -412,3 +418,150 @@ never over a pass still sounding. Vehicles re-arming at an airfield depot do not
 play it yet (the viewer has no vehicle re-arm at all). `barbwire1` is exported
 the same way — 553 loops — and is probably a touch sound too; left alone until
 someone confirms what the game does.
+
+---
+
+# D7 — the horn came back a third time (2026-09-23)
+
+Reported again, same words: *the machine gun sounds on a tank sound like a car
+horn.* D4 and D5 were both still in the tree and both still correct. The horn
+was a third, independent route to the same acoustic event.
+
+## The invariant that should have been written down the first time
+
+> **No two voices of a patch may sound at once out of the same sample, at the
+> same point in space, at the same playback rate.**
+
+D4 was one way to break it, D5 made it audible, and D7 is a third way. Each fix
+closed its own route and the bug came back through the next one, because each
+fix was a patch to a *cause* and the defect is a *consequence*. `engine-audio.js`
+now arbitrates the consequence — see `#resolveCoherent` — and the routes stop
+mattering.
+
+## Why coherent doubling is a horn and not just "louder"
+
+`#play` starts a loop at a random point in its own buffer (that line is
+deliberate: it is what stops two Corsairs locking together). So two copies of
+one sample at one rate do not add to +6 dB — they sit at a **fixed random phase
+offset for as long as both run**, which is a static comb filter across the whole
+spectrum. A 114 ms loop is already a harmonic comb at 8.8 Hz; combing it again
+at a fixed offset turns texture into pitch, and the page's limiter then pumps at
+the comb period and squares it off.
+
+The random offset is also why this bug is so slippery. Ten renders of the *same*
+Sherman coax patch at the *same* distance, unarbitrated, measure tonality
+**57.1..81.4**. Some sessions honk; some do not. "It's back" and "I can't
+reproduce it" were both true.
+
+## The data, from the game's own script
+
+`Objects/Stationary_Weapons/Coaxial_Browning/Sounds/High.ssc`, Fire Loop patch —
+read out of `Objects.rfa`, not inferred:
+
+```
+load @ROOT/Sound/@RTD/brownmlp.wav      load @ROOT/Sound/@RTD/brownmlp.wav
+loop  stereo  volume 10                 loop
+minDistance 2                           minDistance 6
+relativePosition -1/0/1                 relativePosition -1/0/1
+priority 10                             priority 8
+Volume <- Distance Ramp 2 2 1 -1        Volume <- Distance Ramp 1 1 0 1
+     (1 below 2 m, 0 above)                  (0 below 1 m, 1 above)
+                                        Volume <- Distance Ramp 130 150 1 -1
+```
+
+The two ramps are **not** complements. Below 1 m and above 2 m exactly one is
+up; **between 1 m and 2 m both are at full**, one sample, one point, no
+`randomStartPitch`, `dopplerOff` — identical playback rate, measured 1.0000 /
+1.0000. The driver's camera sits 1.4 m from the coax node, i.e. inside the
+window, every time you fire it.
+
+D4's note reads the MG42's pair as a complementary hand-over and it is; the
+Browning's is not, and nobody checked the second one. 172 of 981 vanilla `.ssc`
+patches load one sample twice at one offset, so this shape is the house idiom
+for every automatic weapon, not an oddity of one file.
+
+## The fix
+
+`EngineAudio` builds a list of **twin sets** once, in the constructor: voices
+sharing one sample file and one offset. Keyed on the *offset*, not on the group
+object, because the `stereo` half and the spatialised half of a hand-over
+deliberately live in separate groups (D4) — they are the pair that honks, so
+they have to meet. Nearly every patch ends up with an empty list and pays
+nothing.
+
+Per frame, between the modulate pass and the trigger/ramp pass,
+`#resolveCoherent` zeroes every voice that would sum coherently with a louder
+twin. Two things make it narrow enough to be safe:
+
+* **Rate.** Only voices at the same playback rate contest, within 0.4%. Stacking
+  one sample at *different* pitches is how Refractor builds a rich engine — the
+  Willy runs two loads of `WillyHiRPM2` at 0.40 and 0.875, the T34 two of
+  `t34eng2` 0.9% apart — and detuned copies beat and smear each other instead of
+  combing. That is the authored sound and it survives untouched.
+* **Priority.** The winner is the one the script itself nominates. `priority` is
+  the only word a `.ssc` has for arbitration, and the Browning says 10 for the
+  near half against 8 for the far. Then loudness, then declaration order, so a
+  set of equals resolves identically every frame and the arbitration is never
+  itself a source of flutter.
+
+It runs *before* the `trigger Volume` gate, so a one-shot that loses never spends
+its latch on a round nobody hears; and a voice zeroed by arbitration does not
+re-arm that latch, or it would fire again the moment its twin walked out of range.
+
+## Measured
+
+Real `EngineAudio`, real shipped layers, real `AudioContext`, the page's own
+limiter, master 0.7, `WEAPON_HEADROOM` 0.75 — ten renders per row, Sherman
+`Coaxial_browning` on Aberdeen. `tonality` is the share of band energy in the
+eight strongest bins, scaled so a flat spectrum reads 1.
+
+| listener | | tonality (10 renders) | RMS | peak |
+|---|---|---|---|---|
+| 1.4 m, inside the overlap | before | **57.1 .. 81.4** (mean 70.5) | 0.211..0.244 | 0.716..0.801 |
+| 1.4 m, inside the overlap | after | **61.6 .. 62.9** (mean 62.2) | 0.182..0.184 | 0.611 |
+| 8 m, outside it | before | 62.6 .. 63.4 | 0.118..0.120 | 0.530 |
+| 8 m, outside it | after | 62.6 .. 63.7 | 0.118..0.119 | 0.530 |
+
+Three things to read off it. The spread collapses from 24 points to 1.3 — the
+comb is gone, not averaged. The arbitrated figure at 1.4 m lands on the 8 m
+baseline, which is the same patch with one layer up, i.e. what it should have
+sounded like all along. And outside the overlap nothing changes at all, before
+or after, which is the proof that the fix touches only the window it is for.
+
+Pre-limiter the doubling is +2.1 to +2.6 dB rather than +6 — coherent-with-random-
+offset, not coherent-in-phase — and the limiter then turns that into the tonality
+jump. Both halves of the D5 story, again.
+
+## Measuring it next time
+
+```bash
+node tools/bf1942-models/tests/sound_coherence_measure.cjs [level] [template] [fireArms] [metres]
+```
+
+Renders the named patch offline through the page's own limiter with the
+arbitration on and off, ten times each. **Read the spread, not the figure**; and
+compare a distance inside the suspected band against one well outside it, which
+is the patch's own control. `tests/sound_coherence_rig.html` is the page it
+drives; `arbitrate: false` is exactly the pre-fix behaviour.
+
+The "driving this headless" note above still applies — `map.html` itself cannot
+be measured this way, which is why the rig builds `EngineAudio` on a bare page.
+
+## Verified / tests
+
+* `tests/test_engine_audio_default.mjs`, new section — the Browning's authored
+  ramps swept at 13 distances (no doubling anywhere, and no hole at the
+  hand-over either); the Willy and T34 detunes surviving; a 0.1% "detune"
+  correctly treated as a duplicate; two different samples at one point and one
+  sample at two points both left alone; the `stereo`/panned pair still meeting;
+  the three tie-breaks; and a losing one-shot keeping its latch.
+* The same file sweeps **every extracted level's shipped layer data** at 24
+  distances (and three rpm values for engines) for the fingerprint. It skips
+  when `viewer/maps` is absent, and swept 23 levels clean here.
+* Removing `#resolveCoherent` fails the suite loudly; the full Python suite is
+  2,698 tests, OK.
+
+Not affected, and checked: hand weapons. `models/sounds/weapons.json` picks a
+**single** `fireLoop` sample per weapon rather than the near/far pair, and
+`map.html` already clamps its `volume` to unity — which is why the BAR was the
+known-good control in D5 and still measures the same.

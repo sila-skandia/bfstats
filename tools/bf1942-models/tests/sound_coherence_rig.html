@@ -1,0 +1,133 @@
+<!doctype html><meta charset=utf-8><title>sound coherence rig</title>
+<!--
+  Render a real vehicle patch offline and measure it, so that "the machine gun
+  sounds like a car horn" can be answered with a number instead of an opinion.
+
+  Driven by `sound_coherence_measure.cjs`; served from the repo root of
+  `tools/bf1942-models` (the paths below are relative to `tests/`), because it
+  needs both `viewer/engine-audio.js` and an extracted `viewer/maps` tree.
+
+  Why offline and not `map.html`: `requestAnimationFrame` in headless Chromium
+  runs at about 2 Hz, so the page's fire dispatch and gain gate effectively do
+  not run while the Web Audio graph keeps rendering on its own thread. Building
+  the real `EngineAudio` from the shipped layer data on a bare page and tapping
+  the listener is what actually measures.
+
+  `arbitrate: false` is the control: an empty twin list is exactly the
+  behaviour `#resolveCoherent` replaced, so one run gives you before and after.
+-->
+<script type="module">
+import { EngineAudio, WEAPON_HEADROOM } from '../viewer/engine-audio.js';
+
+const SR = 48000;
+
+async function render({ map, template, fireArms, distance, seconds = 2.0, master = 0.7, arbitrate = true, limit = true }) {
+  const scene = await (await fetch(`../viewer/maps/${map}/scene.json`)).json();
+  const veh = scene.sounds.vehicles.find(v => v.template.toLowerCase() === template.toLowerCase());
+  const spec = veh.weapons.find(w => w.fireArms === fireArms);
+  const ctx = new OfflineAudioContext(2, Math.round(SR * seconds), SR);
+  // An OfflineAudioContext reports `suspended` until startRendering, and
+  // EngineAudio deliberately parks loops until it sees `running`.
+  Object.defineProperty(ctx, 'state', { get: () => 'running' });
+
+  // The page's own limiter, copied from map.html's ensureListener.
+  const limiter = ctx.createDynamicsCompressor();
+  limiter.threshold.value = -3; limiter.knee.value = 0;
+  limiter.ratio.value = 20; limiter.attack.value = 0.003; limiter.release.value = 0.25;
+  const input = ctx.createGain();
+  input.gain.value = 1;
+  if (limit) { limiter.connect(ctx.destination); input.connect(limiter); }
+  else input.connect(ctx.destination);
+  const listener = { context: ctx, getInput: () => input, timeDelta: 1 / 60 };
+
+  const buffers = new Map();
+  for (const l of spec.layers) {
+    if (buffers.has(l.file)) continue;
+    const raw = await (await fetch(new URL(`../viewer/maps/${map}/${l.file}`, location.href))).arrayBuffer();
+    buffers.set(l.file, await ctx.decodeAudioData(raw));
+  }
+  const audio = new EngineAudio(spec, spec.layers, buffers, listener,
+                                WEAPON_HEADROOM, true, () => 0.5);
+  // `arbitrate: false` is the "before" control: an empty twin list is exactly
+  // the behaviour this fix replaced.
+  if (!arbitrate) audio.coherent = [];
+  audio.start();
+  audio.setMaster(master);
+  audio.update({ dt: 1 / 60, rpm: 0, speed: 0, acceleration: 0, diveAngle: 0,
+    position: { x: distance, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 },
+    listenerPosition: { x: 0, y: 0, z: 0 } });
+  audio.update({ dt: 1 / 60, rpm: 0, speed: 0, acceleration: 0, diveAngle: 0,
+    position: { x: distance, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 },
+    listenerPosition: { x: 0, y: 0, z: 0 } });
+  const snap = audio.snapshot();
+  const rendered = await ctx.startRendering();
+
+  // Skip the de-zipper ramp-in.
+  const skip = Math.round(SR * 0.5);
+  const a = rendered.getChannelData(0).subarray(skip);
+  const b = rendered.getChannelData(1).subarray(skip);
+  let peak = 0, sum = 0;
+  const mono = new Float32Array(a.length);
+  for (let i = 0; i < a.length; i++) {
+    const v = (a[i] + b[i]) / 2;
+    mono[i] = v;
+    const m = Math.abs(v);
+    if (m > peak) peak = m;
+    sum += v * v;
+  }
+  const rms = Math.sqrt(sum / a.length);
+  return { peak, rms, tonality: tonality(mono), layers: snap.layers.map(l =>
+    ({ file: l.file.split('/').pop(), gain: +l.gain.toFixed(3), rate: +l.playbackRate.toFixed(4), suppressed: l.suppressed })) };
+}
+
+// Share of band energy in the eight strongest narrow bins, as the 2026-09-21
+// measurement defined it: a pure tone approaches 1, broadband noise 0.
+function tonality(x) {
+  const N = 16384;
+  const bins = new Float64Array(N / 2);
+  let frames = 0;
+  for (let off = 0; off + N <= x.length; off += N) {
+    const re = new Float64Array(N), im = new Float64Array(N);
+    for (let i = 0; i < N; i++) re[i] = x[off + i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / N));
+    fft(re, im);
+    for (let k = 1; k < N / 2; k++) bins[k] += Math.hypot(re[k], im[k]);
+    frames++;
+  }
+  if (!frames) return 0;
+  let total = 0;
+  for (let k = 1; k < N / 2; k++) { bins[k] /= frames; total += bins[k]; }
+  const top = [...bins.slice(1)].sort((p, q) => q - p).slice(0, 8)
+    .reduce((t, v) => t + v, 0);
+  // Share of band energy in the eight strongest bins, scaled so a flat
+  // spectrum reads 1: values well above 1 are a spectrum with a pitch in it.
+  return total > 0 ? (top / total) * ((N / 2 - 1) / 8) : 0;
+}
+
+function fft(re, im) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = -2 * Math.PI / len;
+    const wr = Math.cos(ang), wi = Math.sin(ang);
+    for (let i = 0; i < n; i += len) {
+      let cr = 1, ci = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const ur = re[i + k], ui = im[i + k];
+        const vr = re[i + k + len / 2] * cr - im[i + k + len / 2] * ci;
+        const vi = re[i + k + len / 2] * ci + im[i + k + len / 2] * cr;
+        re[i + k] = ur + vr; im[i + k] = ui + vi;
+        re[i + k + len / 2] = ur - vr; im[i + k + len / 2] = ui - vi;
+        const ncr = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = ncr;
+      }
+    }
+  }
+}
+
+window.__honk = render;
+window.__ready = true;
+</script>
