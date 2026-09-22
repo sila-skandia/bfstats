@@ -58,11 +58,22 @@ SKIP_SUFFIXES = (".tmp", ".orig", ".pyc")
 class Volume:
     def __init__(self, context: str, namespace: str) -> None:
         self.kube = ["kubectl", "--context", context, "-n", namespace]
-        pod = subprocess.run(self.kube + ["get", "pods", "-l", "app=filebrowser", "-o",
+        # Tell "the API is unreachable" apart from "the deployment is scaled to
+        # zero". An empty `get pods` means both, and saying only the second sent
+        # somebody scaling a filebrowser that had been running for sixteen days
+        # while the real problem was a VPN holding the API port open-circuit
+        # (2026-09-22). kubectl's own exit code and stderr distinguish them.
+        got = subprocess.run(self.kube + ["get", "pods", "-l", "app=filebrowser", "-o",
                                           "jsonpath={.items[0].metadata.name}"],
-                             capture_output=True, text=True).stdout.strip()
+                             capture_output=True, text=True)
+        pod = got.stdout.strip()
         if not pod:
-            sys.exit("no filebrowser pod; scale it up first")
+            err = (got.stderr or "").strip()
+            if got.returncode != 0 or err:
+                sys.exit("cannot reach the cluster, so whether a filebrowser pod "
+                         f"exists is unknown -- fix this first:\n  {err.splitlines()[-1] if err else f'kubectl exited {got.returncode}'}")
+            sys.exit("the cluster answered and there is no filebrowser pod: "
+                     "scale it up first")
         self.pod = pod
 
     def run(self, *args: str, **kwargs) -> subprocess.CompletedProcess:
