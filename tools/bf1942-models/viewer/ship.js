@@ -199,44 +199,63 @@ function isCollisionNode(node) {
  */
 export function hullGeometry(root) {
   root.updateWorldMatrix(true, true);
-  // Down the chain to the node that carries the root's own mesh, preferring a
-  // mesh child over another structural one. `guard` is only there so a cyclic
-  // or pathological tree cannot hang the page.
-  let node = root;
-  for (let guard = 0; node && !(node !== root && node.isMesh) && guard < 16; guard++) {
-    let chain = null, mesh = null;
+  // The meshes that belong to ONE node: its own, plus every untagged non-collision
+  // mesh child. The second half is what the level assembler needs — it splits a
+  // hull's single StandardMesh into one sub-mesh per material, so a placed
+  // Fletcher's geometry is nineteen `Fletch_hull_M1*` children of
+  // `FletcherComplex` rather than a mesh on it, while the standalone glb puts the
+  // mesh on the node. A child with a `templateKind` is a separate object with
+  // geometry of its own and is never in it.
+  const meshesOf = node => {
+    const found = [];
+    if (node.isMesh && node.geometry && !isCollisionNode(node)) found.push(node);
     for (const child of node.children) {
-      if (isCollisionNode(child)) continue;
+      if (isCollisionNode(child) || !child.isMesh || !child.geometry) continue;
       if (!GEOMETRY_CHAIN_KINDS.has(child.userData?.templateKind)) continue;
-      if (child.isMesh) { mesh = child; break; }
-      if (!chain) chain = child;
+      found.push(child);
     }
-    node = mesh || chain;
+    return found;
+  };
+  // Down the chain to the first node that has any. `guard` is only there so a
+  // pathological tree cannot hang the page.
+  let body = null, meshes = [];
+  for (let node = root, guard = 0; node && guard < 16; guard++) {
+    meshes = meshesOf(node);
+    if (meshes.length) { body = node; break; }
+    node = node.children.find(child => !isCollisionNode(child)
+      && GEOMETRY_CHAIN_KINDS.has(child.userData?.templateKind)) ?? null;
   }
-  const body = node?.isMesh ? node : null;
   // In the ROOT's own frame, never the world's: `applyMatrix4` on a Box3 takes
   // the AABB of the transformed box, so measuring through `matrixWorld` would
-  // make a hull placed at 45 degrees of yaw report a box half as long again.
+  // make a hull placed at 45 degrees of yaw report a beam of 107 m.
   _inv.copy(root.matrixWorld).invert();
-  const local = geom => {
-    geom.computeBoundingBox();
-    return _box.copy(geom.boundingBox);
+  const union = new THREE.Box3();
+  const add = node => {
+    node.geometry.computeBoundingBox();
+    _box.copy(node.geometry.boundingBox)
+      .applyMatrix4(_local.multiplyMatrices(_inv, node.matrixWorld));
+    union.union(_box);
   };
-  if (body?.geometry) {
-    local(body.geometry).applyMatrix4(_local.multiplyMatrices(_inv, body.matrixWorld));
-  } else {
-    _box.setFromObject(root).applyMatrix4(_inv);
+  for (const mesh of meshes) add(mesh);
+  if (union.isEmpty()) {
+    union.setFromObject(root).applyMatrix4(_inv);
   }
-  _box.getSize(_size);
+  union.getSize(_size);
   const size = [_size.x, _size.y, _size.z];
-  const bottom = _box.min.y;
+  const bottom = union.min.y;
   // The keel: the lowest point of the hull's own collision geometry, which is
-  // the quantity `ResponsePhysics::checkVsTerrain` hands `setUnderWater`.
+  // the quantity `ResponsePhysics::checkVsTerrain` hands `setUnderWater`. It
+  // hangs off whichever of the two shapes above carries it.
   let keel = Infinity;
-  for (const child of body?.children || []) {
-    if (!child.isMesh || !isCollisionNode(child) || !child.geometry) continue;
-    local(child.geometry).applyMatrix4(_local.multiplyMatrices(_inv, child.matrixWorld));
-    keel = Math.min(keel, _box.min.y);
+  const hosts = body ? [body, ...meshes] : [];
+  for (const host of hosts) {
+    for (const child of host.children) {
+      if (!child.isMesh || !child.geometry || !isCollisionNode(child)) continue;
+      child.geometry.computeBoundingBox();
+      _box.copy(child.geometry.boundingBox)
+        .applyMatrix4(_local.multiplyMatrices(_inv, child.matrixWorld));
+      keel = Math.min(keel, _box.min.y);
+    }
   }
   return { size, bottom, keel: Number.isFinite(keel) ? keel : bottom };
 }
