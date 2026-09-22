@@ -25,6 +25,14 @@ copied from a document. The lead edits this file; streams do not (see
 |---|---|
 | **Aircraft drowned in mid-air.** HP-5's water tick asked `WorldCollider.surfaceHeight`, which is a function of x and z alone, so any hull over open water counted as *in* it at any altitude — a plane flying over the sea lost `hpLostWhileDamageFromWater` every second until it exploded, with nothing shooting at it. 10 HP/s for every vanilla aircraft (a 100 HP Corsair dead in ten seconds over Wake), 75 HP/s for a Secret Weapons Flettner. `world.js` now asks `touchesWater` (`body-world.js`), which is `checkVsTerrain`'s own rule — collision-response.md §7, the lowest **tested** collision vertex below the water level — so altitude decides it. The x/z query stays in front of it as the cheap cull, which keeps a tank on a bridge over a river out of the water as `85cc7d4` intended | `test_world.py` water contact cases; on Wake, a driven SBD held over open sea loses 0 HP at 300 m, 120 m and 96 m, and 10 HP/s once its belly is under the plane; ten seconds of untouched sim moves none of the level's 32 vehicles |
 
+## Landed on 2026-09-22
+
+| What | How it was checked |
+|---|---|
+| **Wave 4 HUD, scoreboard, camera & minimap (`eab59c0`, `e173af4`, `577de24`)**: Seat-occupancy dots resolve live states (local/friend/enemy/empty); deploy-screen kit rows label from `setKitName`; scoreboard button opens `menu/InGame` board; minimap cycles 3 zoom levels with the N key and rotates with player heading; tank external camera tracks the turret/gun-base rather than hull | Adversarial reviews and test harnesses in `w4/hud`, `w4/board-map`, `w4/camera`; full suite 2151 tests OK |
+| **Carrier and destroyer gameplay parity (`0e1cd1e1`)**: Deck aircraft child spawners (`holdObject 1`) parsed in `con.py` and assembled as static held children in `assemble.py`; ship pitch axis routed in `world.js` for landing craft ramps (`Lcvp_Ramp`, `DaihatsuLanding`) and submarine dive planes; destroyer secondary turret rotation peered in `seats.js` without welding other inputs; nested seat dismount cleaned up; beaching hull-scrape effect and audio hooked without impact damage | Unit tests in `test_assemble.py`, `test_con.py`, `test_seats.py`, and map viewer inspection |
+| **Ship and swimming physics waves 7–9 (`d265a6fa`, `7300024c`, `8f00bfd9`, `c8677b83`, `18852ccc`)**: Ships float at authored draft (`FloatingBundle`), answer the helm, sink on critical damage with deck spawns disabled; ground vehicles have engine-faithful inertia; soldiers enter swimming mode (`c_SstSwim`) on deep water, drown when submerged, and are locked out of weapon dispatch while swimming | `test_world.py`, `test_mouse_input.py`, `viewer-ships/README.md`, `viewer-swimming/README.md` |
+
 ## Open, by stream
 
 Status words: **open** nothing exists; **data** the extractor emits it and the
@@ -844,12 +852,15 @@ still stops on the swept sphere, and a drive model that tumbles when it crashes.
 | No dynamic shadows (`castShadow = false` is the only hit) | open |
 | `poses.html` cannot fire a weapon (never imports `GunFire`) | open |
 | Spawn-pad soldiers are decoration; crouch and prone play the standing aim | **assigned, W5-A** (with the on-foot splash gap) |
-| Ground vehicles have no hull collision; every drive constant is `[free]` until a drive is recorded in wine | open |
+| Ground vehicles have no hull collision; every drive constant is `[free]` until a drive is recorded in wine | open (vehicle-vs-vehicle rigid body collision is done `47b273d`; hull vs statics open) |
+| Carrier deck aircraft spawners, ramp pitch, and turret peering | **done (`0e1cd1e1`, `features/carrier-destroyer-parity/`)** |
+| Ship buoyancy, draft placement, driving, and sinking | **done (`d265a6fa`, `7300024c`, `features/viewer-ships/`)** |
+| Water swimming and drowning mechanics | **done (`8f00bfd9`, `18852ccc`, `features/viewer-swimming/`)** |
 | A tank's external camera follows the hull, not the turret | **done, W4-C `577de24`** (turret-following default kept by the owner's ruling) |
 | Seat-occupancy dots unfed (positions are live-bound per vehicle) | **done, W4-A `eab59c0`** |
 | SCORE BOARD opens nothing | **done, W4-B `e173af4`** |
 | Minimap zoom (N) and rotating mode | **done, W4-B `e173af4`** |
-| Deploy-screen kit row labels should come from `setKitName` | **done, W4-A `eab59c0`** (needs the `loadouts.json` re-extract) |
+| Deploy-screen kit row labels should come from `setKitName` | **done, W4-A `eab59c0`** (EoD `loadouts.json` re-extracted with `kitName`) |
 | `Water.baseTex`, `envmapcolor`; `aiMeshes.rfa` hulls; palm trunk collision; `c_CGProjectiles` / `c_CGLadders`; `LightmapShadowBits.lsb` (format unknown); Berlin's ground outside its four tiles | open |
 | Bar1918 round counter never decrements (`task_4b7d2a66`) | open, unreproduced |
 | `verify_models.py` is stale: on the 09-19 vanilla rebuild it calls 42 of 96 models broken, every one a false alarm. It counts projectile, tracer, trail, cockpit and emitter helper nodes as "unbound parts piled on the origin", measures a rifle's length across them (Bar1918 2.02 m against 1.19 m), and does not understand a skinned soldier. Checked by eye: `BritishSoldier`, `AichiVal` and `Bar1918` render correctly. A verifier that always says broken hides the day it is right | open |

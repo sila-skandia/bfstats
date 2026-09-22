@@ -243,6 +243,17 @@ class FillPictureGeometryTests(unittest.TestCase):
         # to be placed by a variable.
         self.assertEqual(dots["layoutRect"][:2], dots["noBinding"])
 
+    def test_hit_octants_map_to_compass_directions(self) -> None:
+        octants = self.results["hitOctants"]
+        self.assertEqual(1, octants["front"])
+        self.assertEqual(2, octants["frontRight"])
+        self.assertEqual(3, octants["right"])
+        self.assertEqual(4, octants["rearRight"])
+        self.assertEqual(5, octants["rear"])
+        self.assertEqual(6, octants["rearLeft"])
+        self.assertEqual(7, octants["left"])
+        self.assertEqual(8, octants["frontLeft"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -331,6 +331,19 @@ class CollisionModuleTests(unittest.TestCase):
         self.assertTrue(cost["hasStats"])
         self.assertTrue(cost["finite"])
 
+    def test_footstep_material_maps_surface_ids(self) -> None:
+        mats = self.results["footstepMaterials"]
+        self.assertEqual("grass", mats["grass"])
+        self.assertEqual("mud", mats["mud"])
+        self.assertEqual("gravel", mats["gravel"])
+        self.assertEqual("ice", mats["ice"])
+        self.assertEqual("sand", mats["sand"])
+        self.assertEqual("concrete", mats["rock"])
+        self.assertEqual("concrete", mats["pavedRoad"])
+        self.assertEqual("wood", mats["wood"])
+        self.assertEqual("metal", mats["metal"])
+        self.assertEqual("concrete", mats["concrete"])
+
 
 class ProjectileMaterialTests(unittest.TestCase):
     """`ObjectTemplate.material` on a Projectile is the attacker id."""
