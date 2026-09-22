@@ -173,6 +173,40 @@ CANOPY_STATES: tuple[tuple[str, str], ...] = (
 )
 CANOPY_ASSET = "parachute.canopy"
 
+# The swim body states, baked under the engine's own state names, the same way
+# the parachute ones are — so `viewer/swim.js`'s `SWIM_CLIPS` is the only table
+# and `soldier-body.js` needs no translation.
+#
+# Weapon-independent like the parachute's: `animations/AnimationStatesSwim.con`
+# names clips under `animations/3P_NoWeapon/` and no state carries a `<Weapon>`
+# suffix. That is not a coincidence — every one of the five LOWER swim states
+# declares `setFlag c_AsmHideWeapon` as well as `setFlag c_AsmIsSwimming`, and
+# `BFSoldier::enableItem(char)` returns without enabling anything while that flag
+# is up (lnxded `0x082784a1` reads the flags, `0x082784af and eax,0x2`,
+# `0x082784b2 jne` to the exit). A swimming soldier's weapon is stowed, and the
+# art agreeing with the code is how you can tell.
+#
+# `Lb_DieSwim` / `Ub_DieSwim` are from `AnimationStatesDie.con` rather than the
+# swim file, and they are reached by `BFSoldier::handleDamage` testing
+# `c_AsmIsSwimming` **first**, before the pose: `0x08270c51` reads the lower
+# body's flags, `0x08270c63 and eax,0x8`, and the two `setAnimationState` calls at
+# `0x08270c73` / `0x08270c85` take the states cached on the template at `+0x258`
+# and `+0x25c` (`BFSoldierTemplate::init` `0x0827b660` / `0x0827b6af`). So a man
+# who dies in the water never plays a standing death.
+#
+# Upper halves exist for all five swim states — unlike the parachute glide, whose
+# `Ub_ParachuteOpen` hands the torso back to `Ub_StandAim` — so there is no
+# absence to report here and the list is exactly the twelve states.
+SWIM_STATES: tuple[str, ...] = (
+    "Lb_StartSwim", "Ub_StartSwim",
+    "Lb_Floating", "Ub_Floating",
+    "Lb_SwimForward", "Ub_SwimForward",
+    "Lb_SwimBackward", "Ub_SwimBackward",
+    "Lb_EndSwim", "Ub_EndSwim",
+    "Lb_DieSwim", "Ub_DieSwim",
+)
+SWIM_ASSET = "swim"
+
 # Where the shared gait clips live, relative to the pose directory. The clips
 # are not baked into the 224 pose files because neither half of a gait varies
 # per pose: the lower body is weapon- *and* soldier-independent (one set for
@@ -712,6 +746,89 @@ def export_parachute_clips(machine: animstates.StateMachine,
          "glideUpper": "stand.upper"})
     result["asset"] = f"{GAIT_ASSET_DIR}/{PARACHUTE_ASSET}.gait.glb"
     return result
+
+
+def export_swim_clips(machine: animstates.StateMachine, meshes: ArchivePool,
+                      skeleton: ske_mod.Skeleton, out: Path) -> dict:
+    """`gaits/swim.gait.glb`: the twelve swim body states, one clip each.
+
+    Same shape as `export_parachute_clips`, and for the same reasons: the clips
+    are weapon- and soldier-independent, they are named after the engine state
+    that declares them so `viewer/swim.js`'s `SWIM_CLIPS` is the only table, and
+    absences are reported apart from unparseable files because they mean
+    opposite things.
+
+    One detail the entry and exit share and nothing else in the tree does: they
+    are the **same clip**, `3PSwimStartLower.baf`, played forwards at 2.6 and
+    backwards at -3.2. `clip_timeline` already reverses a negative-speed clip
+    (frame 0 stays the cycle start), so the exit is baked as its own timeline
+    rather than left for a renderer to run an action in reverse.
+
+    The speeds are the state machine's finished ones, which for the entry are NOT
+    what `AnimationStatesSwim.con` writes: `animations/3pAnimationsTweaking.con`
+    re-declares `set3pAnimationSpeed Lb_StartSwim 2.60` over the file's 3.6.
+    Reading the machine rather than the file is what picks that up.
+    """
+    clips: list[tuple[str, list, float, bool]] = []
+    meta: dict[str, dict] = {}
+    absent: dict[str, str] = {}
+    errors: dict[str, str] = {}
+    for name in SWIM_STATES:
+        state = machine.state(name)
+        ref = state.clip_3p() if state else None
+        if ref is None:
+            absent[name] = ("no such animation state"
+                            if state is None else "state declares no 3P clip")
+            continue
+        animation = read_clip(meshes, ref.path)
+        if animation is None:
+            errors[name] = (
+                f"clip {'absent from the archives' if meshes.find(ref.path) is None else 'present but unparseable'}"
+                f": {ref.path}")
+            continue
+        frames, period = clip_timeline(animation, ref.speed, skeleton)
+        clips.append((name, frames, period, ref.loops))
+        meta[name] = {"clip": ref.path, "speed": ref.speed,
+                      "frames": animation.frames, "period": round(period, 4),
+                      "loop": ref.loops, "returnTo": state.return_to,
+                      "morphFactor": state.morph_factor}
+    result: dict = {"clips": meta, "absent": absent, "errors": errors,
+                    "asset": None}
+    if not clips:
+        return result
+    _write_clip_bundle(
+        skeleton, clips, out / GAIT_ASSET_DIR / f"{SWIM_ASSET}.gait.glb",
+        {"swim": meta, "absent": absent, "skeleton": skeleton.source,
+         # Read off the state file, not chosen: every lower swim state declares
+         # `setFlag c_AsmHideWeapon`, and `BFSoldier::enableItem` obeys it.
+         "hidesWeapon": True})
+    result["asset"] = f"{GAIT_ASSET_DIR}/{SWIM_ASSET}.gait.glb"
+    return result
+
+
+def write_swim_assets(machine: animstates.StateMachine, meshes: ArchivePool,
+                      library: con_mod.ObjectLibrary, soldiers: list[str],
+                      out: Path) -> dict:
+    """The swim bundle, merged into `gaits/gaits.json` rather than overwriting it.
+
+    One key, `swim`, so a targeted run of this alone leaves the 23 grip bundles,
+    the lower bundle and the parachute's three keys exactly as they were — the
+    `models.json` lesson, applied the same way `write_parachute_assets` applies
+    it.
+    """
+    skeleton = None
+    for soldier in soldiers:
+        template = library.object(soldier)
+        if template is None or not template.skeleton:
+            continue
+        skeleton = read_skeleton(meshes, template.skeleton)
+        if skeleton is not None:
+            break
+    if skeleton is None:
+        return {"body": None}
+    body = export_swim_clips(machine, meshes, skeleton, out)
+    write_gaits_manifest(out, {"swim": body["asset"]})
+    return {"body": body}
 
 
 def export_canopy(machine: animstates.StateMachine, meshes: ArchivePool,
@@ -1570,7 +1687,8 @@ def main() -> int:
     ap.add_argument("--shared-assets", action="store_true",
                     help="write every shared sidecar and nothing else: the "
                          "lower bundle, one bundle per grip, the parachute body "
-                         "clips and the canopy. The pose .glb files and "
+                         "clips, the canopy and the swim clips. The pose .glb "
+                         "files and "
                          "poses-matrix.json are not touched, which makes this "
                          "the whole re-extraction a change to the shared "
                          "timelines needs.")
@@ -1581,6 +1699,12 @@ def main() -> int:
                          "keys into gaits/gaits.json. Both are weapon- and "
                          "soldier-independent, so this is the whole of them; "
                          "nothing else in the pose tree is touched.")
+    ap.add_argument("--swim", action="store_true",
+                    help="write only the swim body clips "
+                         "(gaits/swim.gait.glb) and merge that one key into "
+                         "gaits/gaits.json. Weapon- and soldier-independent — "
+                         "every swim state names a clip under "
+                         "animations/3P_NoWeapon/ — so this is the whole of it.")
     ap.add_argument("--seat-poses", action="store_true",
                     help="extract every passenger-seat pose (Ub_PassengerInX / "
                          "Lb_PassengerInX) the mod ships, one .glb per soldier per "
@@ -1590,10 +1714,10 @@ def main() -> int:
     args = ap.parse_args()
 
     if not args.matrix and not args.seat_poses and not args.parachute \
-            and not args.shared_assets and (
+            and not args.swim and not args.shared_assets and (
             not args.pairs or len(args.pairs) % 2):
         ap.error("give soldier/weapon pairs, or --matrix, or --seat-poses, "
-                 "or --parachute, or --shared-assets")
+                 "or --parachute, or --swim, or --shared-assets")
 
     game_dir = args.game_dir.expanduser()
     chain = mod_chain(game_dir, args.mod)
@@ -1639,8 +1763,30 @@ def main() -> int:
         print(f"canopy: {len(chute['canopy'].get('clips', {}))} clips, attach "
               f"{chute['canopy'].get('attach')} -> "
               f"{chute['canopy'].get('asset')}", file=sys.stderr)
+        swim = write_swim_assets(machine, meshes, library, soldiers, args.out)
+        swim_body = swim["body"] or {}
+        print(f"swim body clips: {len(swim_body.get('clips', {}))} "
+              f"-> {swim_body.get('asset')}", file=sys.stderr)
+        for name, why in sorted((swim_body.get("absent") or {}).items()):
+            print(f"  absent: {name}: {why}", file=sys.stderr)
+        for name, why in sorted((swim_body.get("errors") or {}).items()):
+            print(f"  error:  {name}: {why}", file=sys.stderr)
         return 0 if (shared and body.get("asset")
-                     and chute["canopy"].get("asset")) else 1
+                     and chute["canopy"].get("asset")
+                     and swim_body.get("asset")) else 1
+
+    if args.swim:
+        args.out.mkdir(parents=True, exist_ok=True)
+        summary = write_swim_assets(machine, meshes, library,
+                                    soldier_templates(library), args.out)
+        body = summary["body"] or {}
+        print(f"swim body clips: {len(body.get('clips', {}))} "
+              f"-> {body.get('asset')}", file=sys.stderr)
+        for name, why in sorted((body.get("absent") or {}).items()):
+            print(f"  absent: {name}: {why}", file=sys.stderr)
+        for name, why in sorted((body.get("errors") or {}).items()):
+            print(f"  error:  {name}: {why}", file=sys.stderr)
+        return 0 if body.get("asset") else 1
 
     if args.parachute:
         args.out.mkdir(parents=True, exist_ok=True)

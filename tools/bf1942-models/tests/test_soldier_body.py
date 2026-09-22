@@ -32,7 +32,8 @@ ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("soldier_body_harness.mjs")
 MODULES = {"soldier-body.js": VIEWER / "soldier-body.js",
-           "parachute.js": VIEWER / "parachute.js"}
+           "parachute.js": VIEWER / "parachute.js",
+           "swim.js": VIEWER / "swim.js"}
 
 
 def run_harness() -> dict:
@@ -62,11 +63,13 @@ class SoldierBodyTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.results = run_harness()
 
-    def test_the_seven_locomotion_families_and_the_six_parachute_ones(self) -> None:
+    def test_the_seven_gaits_the_six_parachutes_and_the_six_swims(self) -> None:
         self.assertEqual(
             ["stand", "walk", "run", "crouch", "crouchwalk", "prone", "crawl",
              "parachuteFall", "parachuteOpen", "parachuteGlide",
-             "parachuteLanded", "parachuteDie", "parachuteDeadLanded"],
+             "parachuteLanded", "parachuteDie", "parachuteDeadLanded",
+             "swimStart", "swimFloat", "swimForward", "swimBackward",
+             "swimEnd", "swimDie"],
             self.results["families"])
 
     def test_every_family_names_both_halves_of_the_body(self) -> None:
@@ -105,10 +108,14 @@ class SoldierBodyTests(unittest.TestCase):
         self.assertEqual("Lb_ParachuteIdle",
                          self.results["clips"]["parachuteGlide"]["lower"])
 
-    def test_the_four_playonce_states_are_the_one_shots(self) -> None:
+    def test_the_playonce_states_are_the_one_shots(self) -> None:
+        # The four parachute `c_AsmPlayOnce` states, and the swim entry, exit and
+        # death -- `Lb_StartSwim`, `Lb_EndSwim` and `Lb_DieSwim` are all
+        # `c_AsmPlayOnce` with an `addTransitionWhenDone` (or, for the death,
+        # nothing) after them.
         self.assertEqual(
             ["parachuteOpen", "parachuteLanded", "parachuteDie",
-             "parachuteDeadLanded"],
+             "parachuteDeadLanded", "swimStart", "swimEnd", "swimDie"],
             self.results["once"])
 
     def test_every_pair_parachute_js_can_answer_resolves_to_a_family(self) -> None:
@@ -188,6 +195,43 @@ class SoldierBodyTests(unittest.TestCase):
         self.assertEqual("idle", canopy["landed"])
         self.assertEqual("idle", canopy["die"])
         self.assertEqual("idle", canopy["deadLanded"])
+
+    def test_every_pair_swim_js_can_answer_resolves_to_a_family(self) -> None:
+        self.assertEqual(
+            {"swimStart": "swimStart", "swimFloat": "swimFloat",
+             "swimForward": "swimForward", "swimBackward": "swimBackward",
+             "swimEnd": "swimEnd", "swimDie": "swimDie"},
+            self.results["swimPairs"])
+        # One table, not two: the clip names here are `swim.js`'s own.
+        self.assertTrue(self.results["swimTableAgrees"])
+        self.assertIsNone(self.results["swimUnknown"])
+        self.assertIsNone(self.results["swimNull"])
+        self.assertEqual("swimForward", self.results["swimCaseInsensitive"])
+
+    def test_swimming_replaces_the_gait_and_the_stance(self) -> None:
+        # `updateSwimming` enters the swim states by name on BOTH machines
+        # (`0x082823f7` / `0x08282426`), so they are whole-body states like the
+        # parachute's -- a swimming man is not also running, and not also
+        # crouching (the swim states declare no `c_AsmIsCrouching`).
+        sel = self.results["swimSelection"]
+        self.assertEqual("run", sel["running"])
+        self.assertEqual("swimForward", sel["swimmingWhileRunning"])
+        self.assertEqual("swimFloat", sel["swimmingWhileCrouched"])
+        self.assertEqual("swimDie", sel["deadInTheWater"])
+        # A canopy over water is the parachute's landing, not a swim.
+        self.assertEqual("parachuteGlide", sel["underACanopyOverWater"])
+
+    def test_a_tree_without_the_swim_bundle_falls_back_to_treading(self) -> None:
+        old = self.results["swimOnAnOldRig"]
+        # Never `run`: the chain goes swim -> swimFloat -> stand.
+        self.assertEqual("stand", old["noSwimBundle"])
+        self.assertEqual("swimFloat", old["onlyFloat"])
+        self.assertEqual("swimBackward", old["fullRig"])
+
+    def test_a_swimmer_has_no_canopy(self) -> None:
+        canopy = self.results["swimCanopy"]
+        self.assertIsNone(canopy["float"])
+        self.assertIsNone(canopy["die"])
 
 
 if __name__ == "__main__":
