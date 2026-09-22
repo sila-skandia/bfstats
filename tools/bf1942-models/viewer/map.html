@@ -5811,6 +5811,10 @@ function isSeaHull(node) {
  * answers water's 0.1 for anything under the sea line and would let a beached
  * destroyer slide off a sandbank.
  */
+/** Scratch for the ship's sea-bed normal query; the heightfield writes a plain
+ *  array, `Ship` wants a THREE.Vector3. */
+const _shipNormal = [0, 1, 0];
+
 function seabedFriction(x, z) {
   const table = materialFrictionById;
   const id = collider?.heightfield?.material(x, z);
@@ -7184,6 +7188,19 @@ function setPilot(on, node = null, seatId = null) {
         aircraft.groundHeight = (x, z) => {
           const h = collider?.heightfield?.height(x, z);
           return Number.isFinite(h) ? h : -Infinity;
+        };
+        // ... and the normal there, because `impulseOn`'s push-out is ALONG it
+        // (`checkVsTerrain` asks for height and normal in one call,
+        // `PatchTerrain::getHeightAndNormal` `0x083d6f10`). Without it a hull
+        // that meets the face of a reef is lifted up it instead of stopped
+        // against it — and a hull left buried in a bank is billed crash damage
+        // for a contact with a wall. See `Ship.pushOutOfBed`.
+        aircraft.groundNormal = (x, z, out) => {
+          const n = collider?.heightfield?.normal;
+          if (!n) { out.set(0, 1, 0); return out; }
+          n.call(collider.heightfield, x, z, _shipNormal);
+          out.set(_shipNormal[0], _shipNormal[1], _shipNormal[2]);
+          return out;
         };
         // ... and once she is on it, what holds her there: the mean of her own
         // material's friction and the bottom's, which is what `impulseOn` writes
@@ -15745,7 +15762,15 @@ if (params.has('shots')) {
       z: +s.position.z.toFixed(3),
       keel: +aircraft.keel.toFixed(3), underWater: +aircraft.underWater().toFixed(3),
       aground: !!aircraft.aground,
-      seaBed: +aircraft.groundHeight(s.position.x, s.position.z).toFixed(3),
+      // The RAW bed under her origin. `Ship.groundHeight` now answers the
+      // footprint's floor (a synthetic number the clamp reads), so a trace that
+      // wants "what is under her" has to ask `bedHeight`.
+      seaBed: +(aircraft.bedHeight
+        ? aircraft.bedHeight(s.position.x, s.position.z)
+        : aircraft.groundHeight(s.position.x, s.position.z)).toFixed(3),
+      // The deepest part of her hull that is still under the bed, which after
+      // `pushOutOfBed` should be zero on any grounded hull.
+      buried: +((aircraft.deepestContact?.()?.depth) ?? 0).toFixed(4),
       size: aircraft.spec.size.map(n => +n.toFixed(3)),
       inertia: [aircraft.inertia.x, aircraft.inertia.y, aircraft.inertia.z],
       staticContacts: bodyWorld?.staticContacts ?? null,
