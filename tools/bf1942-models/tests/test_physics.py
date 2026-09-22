@@ -370,6 +370,24 @@ class PhysicsModuleTests(unittest.TestCase):
         self.assertAlmostEqual(2.8, waded["y"], places=3)
         self.assertGreater(waded["travelled"], 8.0)
 
+    def test_a_swimmer_can_stand_up_in_the_shallows(self) -> None:
+        # The ordering trap, and it is the whole reason the swim state is
+        # updated AFTER the tick's resolve rather than before it: the pin puts
+        # the feet at `surface - 0.4` every tick, so a depth measured before the
+        # resolve is always exactly 0.4 and the 0.35 exit test can never fire.
+        # `BFSoldier::updateSwimming` runs out of `handleUpdate`, where the
+        # seabed has already had its say.
+        shallows = self.results["swimsIntoTheShallows"]
+        self.assertTrue(shallows["afloat"]["swimming"])
+        self.assertAlmostEqual(2.6, shallows["afloat"]["y"], places=6)
+        # `Lb_EndSwim` really plays -- it is not skipped straight to standing.
+        self.assertTrue(shallows["sawExitClip"])
+        ended = shallows["ended"]
+        self.assertFalse(ended["swimming"])
+        self.assertIsNone(ended["family"])
+        self.assertTrue(ended["grounded"])
+        self.assertAlmostEqual(2.7, ended["y"], places=3)
+
     def test_a_swimmer_moves_and_is_slower_than_a_runner(self) -> None:
         # The force is the engine's `5.0 * vCmd` (`0x08274b6f`) and the ceiling is
         # `swim.js`'s `SWIM_SPEED_CEILING_FACTOR`, which is labelled a viewer
