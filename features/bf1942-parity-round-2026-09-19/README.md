@@ -731,6 +731,95 @@ vanilla levels through `extract_maps_all.py`, which carries W6-F's four ship
 levels, the deck-spawn sign fix everywhere a ship stands, and W6-A's four new
 projectile fields that a placed aircraft needs. **Nothing published.**
 
+### Waves 7 and 8: ships, and water (2026-09-22)
+
+The owner drove what wave 6 shipped and reported defects from play. Both waves are
+**merged**; main carried 2,639 tests green at the end of them.
+
+| Stream | Owns | State |
+|---|---|---|
+| W7-A ships, build | Buoyancy, propulsion, deck spawns, guns and seat cycling, sinking — from the second-read research | **merged `d265a6fa`** |
+| W7-B inertia fallout | Ground inertia taken to the engine's `getGeometryInertia` on the owner's instruction, and the tests that were fitted to the old constant | **merged `58489690`** |
+| W8-A ships, round 2 | The owner's three follow-ups: too quick, does not run aground, spawns do not follow a moved hull | **merged `7300024c`** |
+| W8-B water and swimming | A man walks on water; in the game he swims and drowns | **merged `8f00bfd9`** |
+
+**Ships now float at their real draft, drive, beach, sink, and carry their spawns.**
+Eight hulls placed from the closed form `Σ(−f)·lift = 9.82` match the research's
+predictions to the table's own rounding. `SETTLE_TICKS` was deliberately not
+raised: the law reproduces the verdict's 300-tick residuals exactly (Fletcher
+0.147 m), which is the argument for solving rather than iterating.
+
+- **Guns and seat cycling were never broken.** The stream was told to verify before
+  writing and did: a Fletcher's helm already collected 4 gun groups and the number
+  row already moved between positions. `TurretAxis` and `VehicleOccupancy` never
+  cared that the root had no drive model. The only defect was `__enterOwner`
+  returning false.
+- **"Too quick" was the ACCELERATION, not the top speed**, and W8-A said so rather
+  than hiding that two numbers moved the other way. A destroyer was reaching 17
+  knots two seconds after the pedal went down; speed at 2 s is now 4.5-5.1x lower.
+  The mechanism is that a ship's thrust throttle is the gearbox's **rev** state and
+  its load is `K·ratio/torque` — a speed-dependent governor holding a Fletcher at
+  0.48 revs at full pedal (`viewer/engine-revs.js`).
+- Top speed **rose** because the drag box was a **world AABB at the hull's moored
+  heading**: Midway's Fletcher was given 100.56 x 35.95 x 82.80 m, a 19 m beam read
+  as 100 m, and her drag changed with which way she was parked.
+- **The steady turn is authored data and no code lever reaches it.**
+  `55/tan(25°) = 118 m`, speed- and inertia-independent; the lead verified the ±25°
+  rudder in `fletcher/Physics.con`. A real Fletcher's circle is about three times
+  that, so **the game turns tighter than the ship did**. Ship inertia was still a
+  quarter of the engine's and is fixed — worth 3.9x in the first 2 s of rudder and
+  nothing at all in the steady rate.
+- **PHY-10, new**: `setUnderWater`'s only physics caller is
+  `ResponsePhysics::checkVsTerrain`, and the value is a **keel depth in metres** —
+  the minimum y of the col0 vertices against the water level. Left open and said
+  so: an `n > 10` arm calls neither setter, so a capital ship may never have it
+  written at all.
+- Two corpus corrections, one to a brief the lead had passed on: `getCurrentRatio()`
+  is **gear**-indexed, not rev-indexed, so a ship's 7.447 is exact at every rev;
+  and `throttleMin` is −0.8.
+
+**Water.** `settle()` was putting the feet on `max(heightfield, waterLevel)` —
+right for a vehicle on a bridge, wrong for a man. `BFSoldier::updateSwimming`
+(`0x08282190`) is read in full: enter above **0.43 m** of depth, leave at **0.35 or
+below**, and in between the soldier is **teleported** to `surfaceY − 0.4` rather
+than solved. A ladder neither starts nor ends a swim.
+
+- **Drowning is the VEHICLE's own timer**, armed by the swim flag and not by
+  contact: a soldier-specific clause in `Armor::setLastHitMaterialIndex` gives a
+  `CID_BFSoldierTemplate` object `armor[0x11] = isSwimming()` where everything else
+  gets 1. 90 s of grace then 1 HP/s against 30 HP, dead at 119 — verified by the
+  lead in `CommonSoldierData.inc`, measured on the page as destroyed at 120 in
+  5-second buckets. One dry tick restores the whole grace.
+- **It refuted a claim in our own code.** `armor.js`'s header said the water tick
+  "explicitly skips soldiers — no HP loss at all", citing an `R4-13` from a
+  `verify-r4.md` not in the tree. The merge left the refutation in the ledger and
+  the feature doc but not in the file; the lead corrected it (`f66b567`), because a
+  wrong comment in the code outlives any report.
+- The weapon is stowed, **read not assumed**: all five swim states declare
+  `c_AsmHideWeapon` (5 of 5, lead-verified) and `enableItem` returns early while
+  that bit is up. A swimmer cannot jump (`handleSwimAction` discards `c_PIAction`)
+  but can still fire.
+- **One invented number, labelled as such**: the swim speed ceiling. The engine's
+  cap is the box drag `physics.js` does not carry — its sphere law balances at
+  167 m/s — so `walkSpeedFactor`'s 2.0 m/s stands in, with the box law's own 2.06
+  noted as independent support.
+
+**A methodology find worth more than either feature.** A with/without-body pixel
+differential is invalid while the page's rAF loop is running: Playwright's page
+composites, so water, sky and sim all move between the two captures. A run doing
+this reported **59.6% of an empty ocean as the soldier** and had to be redone.
+Stop the loop, pin the time-driven uniforms, and **always run the zero control**.
+It is also how a real clip is told from a still mesh — 657 px moving 0.4 s apart
+while a soldier stands "still" is his breathing loop.
+
+**Published 2026-09-22.** A size delta of 442 files / 1.45 GB against a 20 GB tree
+(models 226 / 0.24 GB, maps 216 / 1.21 GB), 70 legacy files on the volume left
+alone. The publish-order rule was checked first, not assumed: all seven new modules
+answered 200 on `mesh.bfstats.io` and `swim.js` was confirmed to be the real module
+rather than a 200-with-index-page. Also fixed on the way through: the publisher
+reported "no filebrowser pod; scale it up first" when the cluster was merely
+unreachable, which invited scaling a pod that had been running 16 days (`04195b7`).
+
 ### Not yet assigned
 
 Hull collision between ground vehicles and the world has an engine spec
