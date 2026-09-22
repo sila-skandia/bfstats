@@ -844,6 +844,26 @@ export class SoldierBody {
     this.pose = POSE_STAND;
     this.grounded = false;
     this.parachute = false;
+    /**
+     * The swim state, or `null` for a body that does not model swimming.
+     *
+     * **Injected, not imported.** `viewer/swim.js` carries the whole law —
+     * `updateSwimming`'s two thresholds, the draft, the `5.0 * vCmd` gain and
+     * the `c_AsmIsSwimming` flag — and this module reads it duck-typed
+     * (`update()`, `swimming`, `gain`) so that `physics.js` keeps the single
+     * import it has always had and every harness that copies it keeps working
+     * unchanged. `soldier.js` supplies one.
+     *
+     * With no collaborator a body still cannot stand on the sea (`#settle` does
+     * not treat the water plane as ground at all); it just falls through it and
+     * keeps falling, which is the honest "not modelled" rather than the old
+     * "walks on water".
+     */
+    this.swim = null;
+    /** `c_AsmIsSwimming` as of this tick, mirrored off the collaborator. */
+    this.swimming = false;
+    /** `max(0, waterSurface - feetY)`, the engine's own quantity. */
+    this.swimDepth = 0;
     // Eye height is animated rather than snapped: a pose change that teleported
     // the camera 50 cm reads as a glitch, not as ducking. The travel is linear
     // over a duration the caller may set per transition, because it stands in
@@ -893,6 +913,7 @@ export class SoldierBody {
     this._jumpQueued = false;
     this._armed = false;
     this._bestNormalY = -Infinity;
+    this._waterEntry = false;
   }
 
   get position() { return this.body.position; }
@@ -1042,6 +1063,16 @@ export class SoldierBody {
     const strafe = clamp(input.strafe ?? 0, -1, 1);
     const walk = Boolean(input.walk);
 
+    // --- the water, first, because it decides which force moves him --------
+    //
+    // `BFSoldier::updateSwimming` (lnxded `0x08282190`) runs once per tick out
+    // of `handleUpdate` and reads the body's position as it stands at the top of
+    // the tick, which is where this call is. It answers with the y the body is
+    // to be pinned at, or null for "leave it alone"; the pin is applied after
+    // the resolve, because the engine's own write is a `setPosition` on the
+    // object and lands after the integration.
+    const swimPin = this.#updateSwim(dt, forward, input);
+
     // --- the ramp, then the tables it indexes (PHY-6) ----------------------
     this.forwardRamp = applyMovementFactors(forward, this.forwardRamp, dt);
     this.strafeRamp = applyMovementFactors(strafe, this.strafeRamp, dt);
@@ -1099,8 +1130,30 @@ export class SoldierBody {
     // Nothing changes for an unblocked runner, who is the case every measured
     // figure comes from: his velocity already equals his command when the tick
     // begins, so the assignment was a no-op and 6.0 still becomes 4.5.
-    const jumped = this.#tryJump(dt, cmdX, cmdZ);
-    if (jumped) {
+    const jumped = this.swimming ? false : this.#tryJump(dt, cmdX, cmdZ);
+    if (this.swimming) {
+      // PHY-6's other half, and the part the ledger says is the important one:
+      // the swimming force is `5.0 * vCmd` (`0x086c5288`, applied at
+      // `0x08274b6f`) and it is **not** under the `IResponsePhysics+0xa4 == 0`
+      // gate the `0.75 * vCmd` walk force is under — `0x08274a03`'s `jne` lands
+      // past the 0.75 block and before the swim test at `0x08274b5f`. So it is
+      // an acceleration, every tick, in contact or not, and there is no
+      // `v = vCmd` assignment: a swimmer's speed is the balance between this
+      // and the drag the water puts on him, which is why he does not reach the
+      // 6 m/s the stand row of `directionalSpeed` names.
+      //
+      // The table row itself is unchanged. There is no swim entry in
+      // `directionalSpeed` — the lnxded table at `0x0872edec` holds the same six
+      // values as the client's `0x009581b4` and the two floats after it are
+      // `strafeSpeed[0..1]`, not a fourth pose row — and `getPose()`
+      // (`0x0827ddc0`) can only answer 0, 1 or 2. A swimming soldier is posed
+      // standing and reads the standing row.
+      const gain = Number.isFinite(this.swim?.gain) ? this.swim.gain : 5.0;
+      body.addAcceleration(gain * cmdX, 0, gain * cmdZ);
+      // A queued jump is spent rather than banked: coming out of the water
+      // holding Space must not fire a jump that was pressed mid-stroke.
+      this._jumpQueued = false;
+    } else if (jumped) {
       // `vCmd` is zeroed outright, not damped, and the engine's jump branch
       // forward-jumps clean over the locomotion block — so a jump tick carries
       // no locomotion force and no friction assignment at all. The next tick
@@ -1162,7 +1215,12 @@ export class SoldierBody {
 
     // --- the engine's update ----------------------------------------------
     const wasGrounded = this.grounded;
-    body.updatePhysics(dt);
+    // PHY-7's submersion drag, live: `scale = 1 + 24 * min(underWater/r, 1)`
+    // with `underWater` the same `max(0, surface - y)` the swim state computed.
+    // It is the engine's own coupling (`setUnderWater`, `0x08256ad0`), and it is
+    // the reason a body in water sinks slowly rather than like a stone.
+    body.updatePhysics(dt, { underWater: this.swimming ? this.swimDepth : 0 });
+    if (this.swimming) this.#capSwimSpeed();
     // The impact velocity, captured before anything clamps it.
     const ivx = v.x, ivy = v.y, ivz = v.z;
 
@@ -1170,16 +1228,18 @@ export class SoldierBody {
     this._armed = false;
     this._bestNormalY = -Infinity;
     this.landed = false;
+    this._waterEntry = false;
     this.#resolve();
     this.#refuseSteepGround();
     this.#settle();
+    this.#floatAtDraft(swimPin);
 
     // A landing is a tick that ends grounded having not begun so. `F` is the
     // engine's `getLastCollisionHeight() - pos.y` (Armor `+0x28`), which is the
     // height of the last *contact*, not the apex: a jump straight up therefore
     // lands with `F = 0` and a jump off a ledge is billed the ledge, not the
     // apex above it.
-    if (this.grounded && !wasGrounded) {
+    if ((this.grounded && !wasGrounded) || this._waterEntry) {
       this.landed = true;
       this.impactSpeed = Math.hypot(ivx, ivy, ivz);
       const n = this.contactNormal;
@@ -1192,7 +1252,8 @@ export class SoldierBody {
         ? Math.abs((ivx * n.x + ivy * n.y + ivz * n.z) / this.impactSpeed)
         : 1;
       this.impactMaterial = this.contactMaterial;
-      this.fallHeight = this.lastCollisionHeight - this.body.position.y;
+      this.fallHeight = this.lastCollisionHeight
+        - (this._waterEntry ? this._waterEntryY : this.body.position.y);
     }
     this.jumpArmed = this._armed;
     this.contacted = this._bestNormalY > -Infinity;
@@ -1422,6 +1483,100 @@ export class SoldierBody {
     v.z = 0;
   }
 
+  /**
+   * One tick of the injected swim state, and the draft it asks for.
+   *
+   * The water surface is asked for as a function of (x, z) and nothing else,
+   * which is the engine's own shape: `updateSwimming` calls
+   * `terrainBase->vtbl+0x5c(pos.x, pos.z)` (`0x08282215`) and subtracts the
+   * body's y from the answer. That is the same trap HP-5's `touchesWater`
+   * documents on the vehicle side — `surfaceHeight` cannot tell you whether you
+   * are *in* the water, only where the water is; altitude decides.
+   *
+   * `this.world.waterLevel` is that surface: the collider carries one horizontal
+   * plane over the whole world, and so does the engine (`WaterPatch`'s level is
+   * per terrain, not per cell).
+   */
+  #updateSwim(dt, forward, input) {
+    const swim = this.swim;
+    if (!swim || typeof swim.update !== 'function') {
+      this.swimming = false;
+      this.swimDepth = 0;
+      return null;
+    }
+    const level = this.world ? this.world.waterLevel : null;
+    const pin = swim.update({
+      dt,
+      surfaceY: Number.isFinite(level) ? level : null,
+      feetY: this.body.position.y,
+      // `c_PIThrottle`, which is the forward axis and not the ramp: the swim
+      // states' `addTransitionOne` clauses read the raw input.
+      throttle: forward,
+      climbing: Boolean(input.climbing),
+      dead: Boolean(input.dead),
+    });
+    this.swimming = Boolean(swim.swimming);
+    this.swimDepth = Number.isFinite(swim.depth) ? swim.depth : 0;
+    return pin;
+  }
+
+  /**
+   * Hold a swimmer's horizontal speed under the ceiling the collaborator names.
+   *
+   * The whole of why this exists is in `swim.js` beside
+   * `SWIM_SPEED_CEILING_FACTOR`: the engine's `5.0 * vCmd` is balanced by the
+   * **box** drag law (PHY-4) and this module carries the sphere one, so without a
+   * ceiling a swimmer accelerates to 167 m/s. The factor is a viewer number and
+   * is labelled as one there; the table entry it scales is the engine's.
+   *
+   * Un-ramped deliberately: the ceiling stands in for a drag, and a drag does not
+   * disappear when the key comes up. Using the ramped speed would stop a swimmer
+   * dead the instant he let go, which is the one thing water does not do.
+   */
+  #capSwimSpeed() {
+    const factor = Number.isFinite(this.swim?.ceilingFactor)
+      ? this.swim.ceilingFactor : 1 / 3;
+    const cap = Math.max(DIRECTIONAL_SPEED[this.pose * 2],
+                         STRAFE_SPEED[this.pose]) * factor;
+    if (!(cap > 0)) return;
+    const v = this.body.velocity;
+    const speed = Math.hypot(v.x, v.z);
+    if (speed <= cap) return;
+    const k = cap / speed;
+    v.x *= k;
+    v.z *= k;
+  }
+
+  /**
+   * Pin a swimmer's feet to the draft the engine teleports him to.
+   *
+   * `updateSwimming`'s last act, while the surface is above the body, is
+   * `setPosition(x, surfaceY - 0.4, z)` through the object's own vtable slot
+   * `+0x3c` (`0x082822d4`-`0x0828227b`). It is a position write and not a
+   * force, so a swimmer's vertical motion is not solved at all: he is placed at
+   * his draft every tick, which is why a man who falls into the sea from a
+   * bomber surfaces instantly instead of sinking and bobbing.
+   *
+   * The one thing added here is zeroing a downward velocity, and it is added for
+   * the reason `#settle`'s wedge guard is: gravity keeps seeding the accumulator
+   * every tick, and behind a hard position clamp that velocity grows without
+   * bound until the clamp stops applying and fires the body at the seabed. The
+   * engine has the same shape and gets away with it because its own
+   * `setPosition` resets the physics node; this is that reset.
+   */
+  #floatAtDraft(pin) {
+    if (pin === null || pin === undefined || !Number.isFinite(pin)) return;
+    const p = this.body.position;
+    const v = this.body.velocity;
+    p.y = pin;
+    if (v.y < 0) v.y = 0;
+    // Floating is not standing: nothing to jump off, nothing to bill a fall
+    // against, and no footfalls. `#contact` already refuses to arm a jump on
+    // Water, and this makes the whole surface agree with that.
+    this.grounded = false;
+    this.lastCollisionHeight = pin;
+  }
+
   /** Is the ground at (x, z) both above `y` and steeper than a body may climb? */
   #tooSteep(x, z, y) {
     const ground = this.world.surfaceHeight(x, z);
@@ -1461,10 +1616,49 @@ export class SoldierBody {
     let groundNx = 0, groundNy = 1, groundNz = 0, groundMaterial = -1;
     if (world && world.surfaceHeight) {
       const h = world.surfaceHeight(p.x, p.z);
-      if (Number.isFinite(h)) {
-        ground = h;
-        const level = world.waterLevel;
-        if (level != null && Math.abs(h - level) <= 1e-6) {
+      const level = world.waterLevel;
+      // **A man does not stand on the sea**, and this is where he used to.
+      // `WorldCollider.surfaceHeight` answers `max(heightfield, waterLevel)`,
+      // which is the right question for a vehicle on a bridge and the wrong one
+      // for a soldier in the water: it put the feet on the water plane, reported
+      // `grounded`, and let him walk out to sea. The engine has no such surface
+      // for a soldier — `updateSwimming` is the only thing that ever puts a
+      // soldier's y on the water, and it puts it 0.4 m *under*.
+      //
+      // So where the sea is the higher surface, ask the heightfield what is
+      // actually underfoot. Standing in shallow water is then standing on the
+      // seabed, with the seabed's own normal and material; deep water leaves
+      // nothing to stand on and the body falls, which is what hands it to
+      // `#updateSwim`.
+      const isSea = Number.isFinite(h) && level != null
+        && Math.abs(h - level) <= 1e-6;
+      // The surface is not a floor, but it **is** a collision: HP-14's water
+      // landing damage comes from `GameServer::handleCollisionLandOrWater`'s
+      // `param_7 == 1` arm (`0x08154960`, and material 1 is hardcoded into all
+      // three of its lookups), so a man who falls in is billed for it -- about
+      // 67x more gently than the same drop onto land, because water's
+      // `damageMod` is 1.5e-05 against dirt's 0.001. Registered here as a
+      // one-tick contact on the crossing, with no clamp and no `grounded`.
+      if (isSea && p.y <= level + SKIN
+          && this.body.previous.y > level + SKIN) {
+        this._waterEntry = true;
+        // The drop is billed to the surface, not to wherever inside the tick's
+        // step the body ended up, so that the same 10 m fall is the same `F`
+        // whether it ends on dirt or in the sea and the only thing that differs
+        // is the material's own `damageMod`.
+        this._waterEntryY = level;
+        this.contacts++;
+        this.#contact(0, 1, 0, MATERIAL_WATER);
+      }
+      const bed = isSea && world.heightfield && world.heightfield.height
+        ? world.heightfield.height(p.x, p.z) : NaN;
+      const solid = isSea ? bed : h;
+      if (Number.isFinite(solid)) {
+        ground = solid;
+        if (isSea && !(bed < level)) {
+          // The sea and the bed agree to within the epsilon: a shoreline cell
+          // exactly at water level. Keep the old material so a jump is still
+          // refused there.
           groundMaterial = MATERIAL_WATER;
         } else {
           if (world.heightfield && world.heightfield.normal) {
@@ -1486,7 +1680,13 @@ export class SoldierBody {
       // and it costs one entry in the collider's cast meter per tick.
       const hit = world.cast(p.x, p.y + STEP_HEIGHT, p.z, 0, -1, 0,
                              STEP_HEIGHT + SNAP_DOWN);
-      if (hit && hit.ny >= MAX_GROUND_SLOPE && hit.y > ground) {
+      // The cast answers for the water plane too (`collision.js`'s `kind ===
+      // 'water'` arm), and that answer is not a floor for a man: without this
+      // the sea came straight back in through the hull probe the moment the
+      // surface test above stopped offering it.
+      if (hit && hit.kind === 'water') {
+        // nothing underfoot here
+      } else if (hit && hit.ny >= MAX_GROUND_SLOPE && hit.y > ground) {
         ground = hit.y;
         groundNx = hit.nx; groundNy = hit.ny; groundNz = hit.nz;
         groundMaterial = hit.material;
