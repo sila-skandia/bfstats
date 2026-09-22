@@ -239,10 +239,10 @@ export function drawBitmapText(ctx, font, tint, text, x, y, color) {
  *   levels         -> every level record, in list order
  *   hover          -> {kind, index} under the pointer, or null
  */
-export function paintMenu(ctx, layout, state, env) {
+export function paintMenu(ctx, layout, state, env, showBotSettings = SHOW_BOT_SETTINGS) {
   const vars = menuVars(layout, state);
   for (const page of livePages(state)) {
-    for (const el of pageElements(layout, page)) {
+    for (const el of pageElements(layout, page, showBotSettings)) {
       if (!elementVisible(el, vars)) continue;
       paintElement(ctx, el, layout, state, env);
     }
@@ -396,8 +396,15 @@ export function listBox(layout) {
 }
 
 /** What the pointer is over, in virtual units: a list row, a TEAM row, a
- *  scroll arrow, the START button or, in a game, the one that ends it. */
-export function hitTest(layout, state, x, y, count) {
+ *  scroll arrow, the START button or, in a game, the one that ends it.
+ *
+ *  `showBotSettings` has to be the same answer the paint was given: what is
+ *  not drawn must not be clickable, and what *is* drawn must be. The bot
+ *  column is the case that matters — with the flag left at its default the
+ *  sliders paint and then swallow every click, because `pageElements` has
+ *  already filtered them out of the walk below. */
+export function hitTest(layout, state, x, y, count,
+                        showBotSettings = SHOW_BOT_SETTINGS) {
   const box = listBox(layout);
   if (box && inRect(rowArea(layout, box), x, y)) {
     const index = rowAt(layout, box, state.scroll, x, y);
@@ -407,13 +414,24 @@ export function hitTest(layout, state, x, y, count) {
   const vars = menuVars(layout, state);
   for (const page of livePages(state)) {
     if (page === 'background') continue;
-    for (const el of pageElements(layout, page)) {
+    for (const el of pageElements(layout, page, showBotSettings)) {
       // Nothing the conditions hold back is clickable either: the exit
       // page's own button is in the file whether or not there is a game.
       if (!elementVisible(el, vars)) continue;
       if (el.kind === 'hit' && el.sets?.some(s => s.var === 'Campaign/Team')
           && inRect(el.rect, x, y)) {
         return { kind: 'team', team: el.sets.find(s => s.var === 'Campaign/Team').value };
+      }
+      // Bot settings sliders: AiSkill (1-4), BotRatio (1-4), NrOfLives (1-4),
+      // PercentageOfBots (50-400), PercentageOfCpu (10-25).
+      if (el.kind === 'hit' && el.sets?.length && inRect(el.rect, x, y)) {
+        const botVar = el.sets.find(s =>
+          s.var === 'Skirmish/SkirmishAiSkill' ||
+          s.var === 'Skirmish/SkirmishBotRatio' ||
+          s.var === 'Skirmish/SkirmishNrOfLives' ||
+          s.var === 'Options/General/SkirmishPercentageOfBots' ||
+          s.var === 'Options/General/SkirmishPercentageOfCpu');
+        if (botVar) return { kind: 'botSlider', sets: el.sets, rect: el.rect };
       }
       if (el.kind === 'button' && inRect(el.rect, x, y)) {
         if (el.calls?.includes('Skirmish/StartSkirmish')) {
