@@ -9,13 +9,25 @@
 // `collision.js` — no three.js, no DOM — so `tests/test_armor.py` runs it
 // under plain node through `armor_harness.mjs`.
 //
-// Deliberately NOT modelled, both because this file's only caller this round
-// is the on-foot soldier and because the engine itself excludes soldiers from
-// them: the per-accumulated-second critical/upside-down/water-damage ticks
-// (`R4-13`: "explicitly skips soldiers — no HP loss at all"), and the
-// finite-budget heal/repair branch (`R4-10`/`R4-25`: exact arithmetic
-// unresolved, and moot — every Wake depot's own budget is the unlimited `-1`
-// sentinel; see `supply.js`).
+// Deliberately NOT modelled here: the per-accumulated-second
+// critical/upside-down ticks, and the finite-budget heal/repair branch
+// (`R4-10`/`R4-25`: exact arithmetic unresolved, and moot — every Wake depot's
+// own budget is the unlimited `-1` sentinel; see `supply.js`).
+//
+// **`R4-13` is REFUTED, and the water tick does NOT skip soldiers** (HP-16,
+// 2026-09-22). The claim ("explicitly skips soldiers — no HP loss at all")
+// cited a `verify-r4.md` that is not in the tree, and it is wrong: a soldier
+// drowns on `Armor`'s own ordinary water timer (`Armor::update` lnxded
+// `0x08172f40`). What arms it is a soldier-specific clause in
+// `Armor::setLastHitMaterialIndex` (`0x081736b0`) — material 1 is water, and a
+// `CID_BFSoldierTemplate` object gets `armor[0x11] = isSwimming()` where every
+// other object gets 1, so it is keyed on the SWIM STATE rather than on contact.
+// Vanilla `CommonSoldierData.inc` gives `WaterDamageDelay 90`,
+// `hpLostWhileDamageFromWater 1` against 30 HP: 90 s of grace, then 1 HP/s,
+// dead at 119 s. The post-hit reset is a literal 1.0 s, and the dry arm
+// restores the whole delay, so one dry tick buys the full grace back. The
+// timer itself lives in `viewer/swim.js` and is applied from `world.js`
+// beside the fall damage; this file's business is the damage it then bills.
 
 /**
  * `Armor::status(float)`'s death threshold (`R4-2`, `R4-7`): a pending value
