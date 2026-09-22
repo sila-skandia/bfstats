@@ -15,6 +15,12 @@ description: >
   itself -- "is this field really reserved", "what does the engine do with this value",
   "x-ref BF42 source to verify X", "is our reader right about this" -- see section 9 for
   the decompiled BF1942.exe reference corpus and the rule for when it is worth opening.
+  Also use for anything to do with Refractor sound scripts (.ssc) and how the viewer plays
+  them -- layered engine notes, vehicle and weapon fire, near/far hand-overs -- and ALWAYS
+  when a sound is reported as wrong in the map viewer ("the machine gun sounds like a car
+  horn", a drone, a honk, flanging, a gun that is too loud or silent): section 11 carries
+  the one invariant that has now been broken three times, why each fix stopped holding,
+  and the command that measures it instead of guessing.
 ---
 
 # Battlefield 1942 & Mod Artifact Extraction Guide
@@ -402,3 +408,92 @@ at runtime, so `(280,33) 512x512` was measured from a capture.
 
 Full detail: `features/authentic-spawn-map/README.md` sections 2 and 7, and
 `features/bf1942-3d-models/minimap-and-fullmap.md`.
+
+---
+
+## 11. Sound Scripts (.ssc): the one rule that keeps getting broken
+
+A `.ssc` is a list of `newPatch` blocks, each a list of `load`ed samples with their own
+`beginEffect`/`endEffect` modulators. `tools/bf1942-models/bf42/level.py` parses it,
+`extract_map.py` ships each layer to the viewer, and `viewer/engine-audio.js` evaluates
+the same curves the engine evaluates. Nothing here hard-codes a vehicle.
+
+### The invariant
+
+> **No two voices of a patch may sound at once out of the same sample, at the same point
+> in space, at the same playback rate.**
+
+Break it and you get a fixed comb filter, not a louder gun: `EngineAudio.#play` starts a
+loop at a random point in its own buffer, so two copies of one sample sit at a fixed
+random phase offset for as long as both run. On a 114 ms loop (`brownmlp`, `MG42_fire`)
+the comb is already at 8.8 Hz, and through the page's limiter it flattens into a drone.
+The symptom people report is **"the tank's machine gun sounds like a car horn."**
+
+It has arrived three separate times, by three unrelated routes:
+
+| | route | fixed |
+|---|---|---|
+| 1 | a `stereo` layer got a throwaway group frozen at `distance: 0`, so its `Volume <- Distance` ramp read "below a metre" wherever you stood | 2026-09-21 |
+| 2 | `volume 10` (an authoring outlier; 5,458 of 5,484 vanilla layers are at or below 1) read literally, driving the limiter 14 dB into 20:1 | 2026-09-21 |
+| 3 | two `Volume <- Distance` ramps whose bands simply **overlap** where the gunner's head is | 2026-09-23 |
+
+Each fix closed its own route and the bug came back through the next one. **Do not patch
+the route. The guard is `EngineAudio.#resolveCoherent`, which arbitrates the fingerprint
+itself** — twins are zeroed all but one, by the script's own `priority`, then loudness,
+then declaration order.
+
+### What a near/far pair actually looks like
+
+`Objects/Stationary_Weapons/Coaxial_Browning/Sounds/High.ssc`, Fire Loop patch — the
+house idiom for every automatic weapon in the game (BAR, DP, every coaxial):
+
+```
+load @ROOT/Sound/@RTD/brownmlp.wav      load @ROOT/Sound/@RTD/brownmlp.wav
+loop  stereo  volume 10                 loop
+minDistance 2                           minDistance 6
+relativePosition -1/0/1                 relativePosition -1/0/1
+priority 10                             priority 8
+Volume <- Distance Ramp 2 2 1 -1        Volume <- Distance Ramp 1 1 0 1
+     (1 below 2 m, 0 above)                  (0 below 1 m, 1 above)
+```
+
+One sample, one point, and **1 m..2 m authored with both at full**. Exactly one is meant
+to sound; the driver's camera sits 1.4 m from the coax node. 172 of 981 vanilla `.ssc`
+patches load one sample twice at one offset, so this shape is the norm, not an oddity.
+
+### What is emphatically NOT the defect
+
+The same sample stacked at **different pitches** is how Refractor builds a rich engine —
+the Willy runs two loads of `WillyHiRPM2` at playback rates 0.40 and 0.875, the T34 two of
+`t34eng2` 0.9% apart. Detuned copies beat and smear each other; that is the authored
+sound and must survive untouched. The rate test (`COHERENT_RATE_TOL`, 0.4%) is the whole
+of the line between a hand-over and a detune. Two *different* samples at one point
+(the Spitfire's SFMG1/SFMG2, incommensurate combs) never contest either.
+
+### Measuring it
+
+Never argue about this from a waveform or an opinion — render it:
+
+```bash
+node tools/bf1942-models/tests/sound_coherence_measure.cjs aberdeen sherman Coaxial_browning 1.4
+```
+
+It renders the real patch offline through the page's own limiter with the arbitration on
+and off, ten times each, and reports peak / RMS / tonality (share of band energy in the
+eight strongest bins, scaled so a flat spectrum reads 1). **Read the spread, not the
+figure.** Unarbitrated at 1.4 m: tonality 57..81 across ten renders of one patch — a
+different draw of the comb every session, which is exactly why this bug reads as
+intermittent and "came back". Arbitrated: 61.6..62.9, which is what the same patch
+measures at 40 m where only one layer is up.
+
+Driving `map.html` headless does **not** work for this: `requestAnimationFrame` in
+headless Chromium runs at about 2 Hz, so the page's fire dispatch and gain gate
+effectively never run while the Web Audio graph keeps rendering on its own thread.
+
+### Pinned by
+
+`tools/bf1942-models/tests/test_engine_audio_default.mjs` (run by `test_engine_audio.py`,
+so `verify.sh` covers it) — the synthetic mechanism, the detunes that must survive, the
+tie-breaks, a one-shot that must not spend its `trigger Volume` latch when it loses, and a
+sweep of every extracted level's shipped layer data at 24 distances. Full history and
+measurements: `features/vehicle-sound-coverage/README.md`.

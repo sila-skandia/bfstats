@@ -4,6 +4,7 @@
  * `engine::rpm` — a constant 1 freezes every jeep/Sherman layer at full song.
  */
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { EngineAudio } from '../viewer/engine-audio.js';
 
 function stubCtx() {
@@ -540,6 +541,259 @@ function gainOf(layer, headroom = 0.75, oneShots = true) {
   });
   assert.ok(Math.abs(quiet - 0.6) < 1e-9,
     `a sub-unity volume is left alone, got ${quiet}`);
+}
+
+
+// --- the car horn: two coherent copies of one sample ------------------------
+//
+// THE INVARIANT THIS SECTION EXISTS TO HOLD, in one sentence:
+//
+//   **No two voices of a patch may sound at once out of the same sample, at
+//   the same point in space, at the same playback rate.**
+//
+// That is not a style rule, it is the whole of the "the tank's machine gun
+// sounds like a car horn" report, and it has now arrived by three unrelated
+// routes: a `stereo` layer's Distance channel frozen at 0 (2026-09-21), a
+// `volume 10` outlier read literally (2026-09-21), and two `Volume <-
+// Distance` ramps whose bands simply overlap where the gunner's head is
+// (2026-09-23). Each fix closed its own route; the bug came back through the
+// next one. So assert the invariant, not the route.
+//
+// Why it sounds like a horn: `#play` starts a loop at a random point in its
+// own buffer, so two copies of one sample sum at a FIXED random phase offset
+// — a static comb filter over the whole spectrum, and on a 114 ms loop
+// (`brownmlp`, `MG42_fire`) the comb is already at 8.8 Hz. Measured on the
+// Sherman's coaxial Browning through the page's own limiter, ten renders of
+// the same patch at the same distance: tonality 57.1..81.4 before (a
+// different draw of the comb every session, which is why this reads as
+// intermittent) against 61.6..62.9 after, which is the single-layer baseline
+// the same patch measures at 8 m.
+
+function twin(file, { offset = [0, 0, 0], priority = 0, stereo = false,
+                      volume = 1, rate = null, band = null } = {}) {
+  const modulators = [];
+  if (band) {
+    modulators.push({ dest: 'volume', source: 'distance', envelope: 'ramp', params: band });
+  }
+  if (rate !== null) {
+    modulators.push({ dest: 'pitch', source: 'default', envelope: 'linear', params: [rate, 0] });
+  }
+  return {
+    file, loop: true, volume, priority, stereo, doppler: false,
+    randomStartPitch: null, relativePosition: offset, modulators,
+  };
+}
+
+/** One frame of a patch at `distance` metres, as `{gain, rate, suppressed}[]`. */
+function atDistance(layers, distance, { oneShots = false, rpm = 0 } = {}) {
+  const ctx = stubCtx();
+  const buffers = new Map(layers.map(l => [l.file, fakeBuffer()]));
+  const audio = new EngineAudio(
+    { template: 'Sherman', engine: 'Coaxial_browning', layers },
+    layers, buffers, fakeListener(ctx), 1, oneShots, () => 0.5);
+  audio.start();
+  audio.setMaster(1);
+  audio.update({
+    dt: 1 / 60, rpm, speed: 0, acceleration: 0, diveAngle: 0,
+    position: { x: distance, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 },
+    listenerPosition: { x: 0, y: 0, z: 0 },
+  });
+  const out = audio.snapshot().layers;
+  audio.dispose();
+  return out;
+}
+
+// `Objects/Stationary_Weapons/Coaxial_Browning/Sounds/Browning.ssc`, verbatim
+// in the shape `extract_map.py` ships it: one `brownmlp` held below 2 m and a
+// second `brownmlp` held above 1 m, at one offset. 1 m..2 m is authored with
+// both at full, and the driver's camera sits 1.4 m from the coax node.
+const COAX_NEAR = twin('brownmlp.mp3', { priority: 10, stereo: true, volume: 10,
+                                         band: [2, 2, 1, -1] });
+const COAX_FAR = twin('brownmlp.mp3', { priority: 8, band: [1, 1, 0, 1] });
+
+{
+  for (const d of [0.2, 0.5, 1.0, 1.2, 1.4, 1.6, 1.9, 2.0, 2.4, 3, 6, 20, 150]) {
+    const [near, far] = atDistance([COAX_NEAR, COAX_FAR], d);
+    assert.ok(!(near.gain > 0.02 && far.gain > 0.02),
+      `the coaxial Browning doubles on itself at ${d} m: `
+      + `near ${near.gain}, far ${far.gain} — this is the car horn`);
+    // ...and the hand-over must not become a hole: something always sounds.
+    assert.ok(near.gain > 0.9 || far.gain > 0.9,
+      `the hand-over went silent at ${d} m (${near.gain} / ${far.gain})`);
+  }
+  // Inside the overlap the script's own `priority` picks the winner: the near
+  // layer is 10 against the far layer's 8, and at 1.4 m you are on top of it.
+  const [near, far] = atDistance([COAX_NEAR, COAX_FAR], 1.4);
+  assert.equal(near.gain, 1, 'the higher-priority half keeps its gain');
+  assert.equal(far.gain, 0, 'the lower-priority half is the one that goes');
+  assert.equal(far.suppressed, true, 'and it is reported as arbitrated away');
+  assert.equal(near.suppressed, false);
+  // Outside it, nothing is arbitrated at all — the ramps already agree.
+  const [outNear, outFar] = atDistance([COAX_NEAR, COAX_FAR], 20);
+  assert.equal(outFar.gain, 1, 'past the hand-over the far layer carries it');
+  assert.equal(outFar.suppressed, false, 'and nothing was suppressed to get there');
+  assert.equal(outNear.gain, 0);
+}
+
+{
+  // **The thing this must never touch.** Refractor builds a rich engine by
+  // stacking ONE sample at DIFFERENT pitches, and those copies beat and smear
+  // each other instead of combing — that is the authored sound. The Willy
+  // runs two loads of `WillyHiRPM2` at rates 0.40 and 0.875; the T34 two of
+  // `t34eng2` 0.9% apart, the tightest authored detune in the vanilla set.
+  const willy = atDistance([twin('WillyHiRPM2.mp3', { rate: 0.4 }),
+                            twin('WillyHiRPM2.mp3', { rate: 0.875 })], 4, { rpm: 1 });
+  assert.ok(willy.every(l => l.gain > 0.9 && !l.suppressed),
+    `a detuned stack is the engine's own sound and must survive: `
+    + `${JSON.stringify(willy.map(l => l.gain))}`);
+
+  const t34 = atDistance([twin('t34eng2.mp3', { rate: 1.0 }),
+                          twin('t34eng2.mp3', { rate: 0.991 })], 4, { rpm: 1 });
+  assert.ok(t34.every(l => l.gain > 0.9 && !l.suppressed),
+    'a 0.9% detune is authored, not a duplicate');
+
+  // A rate that really is the same, though, is the defect however small the
+  // gap: 0.1% apart is one buffer with a slow phase creep, still a comb.
+  const locked = atDistance([twin('t34eng2.mp3', { rate: 1.0 }),
+                             twin('t34eng2.mp3', { rate: 1.001 })], 4, { rpm: 1 });
+  assert.equal(locked.filter(l => l.gain > 0.02).length, 1,
+    'two copies at effectively one rate are one voice');
+}
+
+{
+  // Two DIFFERENT samples at one offset are a mix, not a duplicate — the
+  // Spitfire's cockpit pair (SFMG1 6.53 Hz, SFMG2 13.61 Hz: incommensurate
+  // combs that smear each other) is the known-good control this whole
+  // investigation measured against, and it must measure the same after.
+  const spit = atDistance([twin('SFMG1.mp3', { priority: 10 }),
+                           twin('SFMG2.mp3', { priority: 8 })], 1.4);
+  assert.ok(spit.every(l => l.gain > 0.9 && !l.suppressed),
+    'two different samples at one point never contest');
+
+  // And one sample at two DIFFERENT points is a stereo spread, not a
+  // duplicate: the Sherman cannon fires `aafire` from +-1.4 m deliberately.
+  const spread = atDistance([twin('aafire.mp3', { offset: [1.4, 0.4, 0] }),
+                             twin('aafire.mp3', { offset: [-1.4, 0.4, 0] })], 6);
+  assert.ok(spread.every(l => l.gain > 0.9 && !l.suppressed),
+    'one sample at two points is a spread, not a duplicate');
+}
+
+{
+  // The `stereo` half and the spatialised half of a hand-over live in separate
+  // groups by design (`stereo:<offset>` vs `<offset>`) — the arbitration keys
+  // on the offset so that they still meet. A regression here would silently
+  // re-open the whole defect while every other assertion still passed.
+  const [a, b] = atDistance([twin('one.mp3', { stereo: true, priority: 10 }),
+                             twin('one.mp3', { stereo: false, priority: 8 })], 1.4);
+  assert.equal(a.gain, 1);
+  assert.equal(b.gain, 0, 'a stereo layer and a panned one at one offset still contest');
+}
+
+{
+  // Ties resolve the same way every frame, or the arbitration itself becomes
+  // a source of flutter: priority, then loudness, then declaration order.
+  const byGain = atDistance([twin('one.mp3', { volume: 0.5 }),
+                             twin('one.mp3', { volume: 1 })], 6);
+  assert.equal(byGain[0].gain, 0, 'the quieter of two equals loses');
+  assert.equal(byGain[1].gain, 1);
+
+  const byOrder = atDistance([twin('one.mp3'), twin('one.mp3')], 6);
+  assert.equal(byOrder[0].gain, 1, 'and dead equals fall to declaration order');
+  assert.equal(byOrder[1].gain, 0);
+}
+
+{
+  // A one-shot that loses the contest must not spend its `trigger Volume`
+  // latch on a round nobody hears — the arbitration runs BEFORE the gate.
+  const shotLayer = (priority) => ({
+    file: 'blast.wav', loop: false, volume: 1, priority, stereo: false,
+    doppler: false, randomStartPitch: null, relativePosition: [0, 0, 0],
+    trigger: 'volume',
+    modulators: [
+      { dest: 'volume', source: 'time', envelope: 'ramp', params: [0.06, 0.06, 0, 1] },
+    ],
+  });
+  const layers = [shotLayer(10), shotLayer(8)];
+  const ctx = stubCtx();
+  const buffers = new Map([['blast.wav', fakeBuffer()]]);
+  const audio = new EngineAudio(
+    { template: 'Sherman', engine: 'gun', layers }, layers, buffers,
+    fakeListener(ctx), 1, true, () => 0.5);
+  audio.start();
+  audio.trigger();
+  audio.update({
+    dt: 0.1, rpm: 0, speed: 0, acceleration: 0, diveAngle: 0,
+    position: { x: 0, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 },
+    listenerPosition: { x: 0, y: 0, z: 0 },
+  });
+  assert.equal(ctx.started.length, 1,
+    'one round of two coherent one-shots starts one source, not two');
+  audio.dispose();
+}
+
+// --- the same invariant over the real shipped data --------------------------
+//
+// The synthetic cases above pin the mechanism; this pins the actual `.ssc`
+// files, which is where all three regressions came from. `viewer/maps` is an
+// extracted tree rather than a tracked one, so this skips when it is absent
+// (CI, a fresh worktree) and runs for anyone who has extracted a level.
+
+{
+  const mapsDir = new URL('../viewer/maps/', import.meta.url);
+  let levels = [];
+  try {
+    levels = fs.readdirSync(mapsDir).filter(
+      name => fs.existsSync(new URL(`${name}/scene.json`, mapsDir)));
+  } catch (_) { levels = []; }
+
+  // Every distance a listener can plausibly be at, from inside the turret to
+  // the far end of a layer's last band. The three known regressions all lived
+  // in a narrow window, so the sweep is deliberately dense where heads are.
+  const DISTANCES = [0.1, 0.3, 0.5, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2,
+                     2.5, 3, 4, 5, 6, 8, 10, 15, 20, 40, 80, 150, 300];
+  const offences = [];
+  for (const level of levels) {
+    const scene = JSON.parse(
+      fs.readFileSync(new URL(`${level}/scene.json`, mapsDir), 'utf8'));
+    for (const vehicle of scene.sounds?.vehicles ?? []) {
+      const patches = [];
+      if (vehicle.layers?.length) {
+        patches.push({ name: vehicle.engine, layers: vehicle.layers, oneShots: false });
+      }
+      for (const weapon of vehicle.weapons ?? []) {
+        if (weapon.layers?.length) {
+          patches.push({ name: weapon.fireArms, layers: weapon.layers, oneShots: true });
+        }
+      }
+      for (const patch of patches) {
+        for (const distance of DISTANCES) {
+          for (const rpm of patch.oneShots ? [0] : [0, 0.5, 1]) {
+            const heard = atDistance(patch.layers, distance,
+                                     { oneShots: patch.oneShots, rpm });
+            const seen = new Map();
+            heard.forEach((voice, i) => {
+              if (voice.gain <= 0.02) return;
+              const offset = (patch.layers[i].relativePosition || [0, 0, 0]).join(',');
+              const key = `${voice.file}@${offset}`;
+              for (const other of seen.get(key) ?? []) {
+                const spread = Math.abs(other.playbackRate - voice.playbackRate);
+                if (spread <= 0.004 * Math.max(other.playbackRate, voice.playbackRate)) {
+                  offences.push(`${level} ${vehicle.template}/${patch.name} `
+                    + `${key} at ${distance} m: two voices at rate `
+                    + `${voice.playbackRate.toFixed(4)}`);
+                }
+              }
+              seen.set(key, [...(seen.get(key) ?? []), voice]);
+            });
+          }
+        }
+      }
+    }
+  }
+  assert.equal(offences.length, 0,
+    `coherent duplicates in shipped sound data:\n  ${offences.slice(0, 12).join('\n  ')}`);
+  console.log(`  swept ${levels.length} extracted level(s) for coherent duplicates`
+    + (levels.length ? '' : ' (none extracted — viewer/maps is not in the tree)'));
 }
 
 console.log('test_engine_audio_default.mjs: ok');
