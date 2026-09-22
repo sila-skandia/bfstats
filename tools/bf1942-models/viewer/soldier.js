@@ -36,6 +36,11 @@ import {
   Parachute, effectiveParachuteDrag, landingImpactSpeed,
   PARA_NONE, PARA_FALLING, PARA_OPEN, PARA_LANDED,
 } from './parachute.js';
+import {
+  SwimState, DrownTimer, SWIM_CLIPS,
+  SWIM_ENTER_DEPTH, SWIM_LEAVE_DEPTH, SWIM_FLOAT_DRAFT, SWIM_ACCEL_GAIN,
+  WATER_DAMAGE_DELAY, HP_LOST_WHILE_DAMAGE_FROM_WATER, WATER_DAMAGE_INTERVAL,
+} from './swim.js';
 import { resolveSpawn } from './spawn-safety.js';
 
 // Re-exported so a caller that already has `soldier.js` does not have to reach
@@ -51,6 +56,11 @@ export {
   DIVE_SPEED_FACTOR, DIVE_DURATION,
 };
 export { PARA_NONE, PARA_FALLING, PARA_OPEN, PARA_LANDED };
+export {
+  SWIM_CLIPS, SWIM_ENTER_DEPTH, SWIM_LEAVE_DEPTH, SWIM_FLOAT_DRAFT,
+  SWIM_ACCEL_GAIN, WATER_DAMAGE_DELAY, HP_LOST_WHILE_DAMAGE_FROM_WATER,
+  WATER_DAMAGE_INTERVAL,
+};
 
 // -- what the game declares --------------------------------------------------
 
@@ -363,10 +373,17 @@ export class Soldier {
     this.steps = 0;           // footsteps taken, for the audio stage
     this.blocked = false;     // something stopped the last move
     this.casts = 0;           // collider queries spent on the last step()
-    // `WorldCollider` treats the sea as one horizontal plane and reports it as
-    // a surface, so standing on it is what falls out. BF1942 swims instead
-    // (eight `3PSwim*` clips, `setSwimFrequency 1`), which is not this stage —
-    // this flag exists so the page can say so rather than quietly lie.
+    // In the water, and the clock that kills him there. The law is `swim.js`:
+    // `BFSoldier::updateSwimming` for the state and the draft, `Armor::update`'s
+    // water-damage timer for the drowning. The body reads the state duck-typed
+    // (it is injected, not imported, so `physics.js` keeps its one dependency).
+    this.swim = new SwimState();
+    this.body.swim = this.swim;
+    this.drown = new DrownTimer();
+    /** HP the water owes the caller's `Armor`; drained with `drainDrowning()`. */
+    this.drownDamage = 0;
+    /** True while the feet are on the water plane. Kept for the page's readout;
+     *  it is now "he is swimming", because a man cannot stand on the sea. */
     this.onWater = false;
     this.landing = null;
 
@@ -378,7 +395,7 @@ export class Soldier {
     this.cameraShakeFactor = CAMERA_SHAKE_FACTOR;
 
     // Reused rather than reallocated: `step()` runs it up to twelve times.
-    this._tickInput = { forward: 0, strafe: 0, walk: false };
+    this._tickInput = { forward: 0, strafe: 0, walk: false, dead: false };
 
     // Bailing out. The state machine and both engine forces are in
     // `parachute.js`; this owns the pitch the free-fall term steers on and the
@@ -424,6 +441,9 @@ export class Soldier {
     this.landing = null;
     this.clock.reset();
     this.chute.reset();
+    this.swim.reset();
+    this.drown.reset();
+    this.drownDamage = 0;
     this.parachuteEvents.length = 0;
     this.body.setParachute(false);
     this.settle();
@@ -466,6 +486,9 @@ export class Soldier {
     this.landing = null;
     this.clock.reset();
     this.chute.reset();
+    this.swim.reset();
+    this.drown.reset();
+    this.drownDamage = 0;
     this.parachuteEvents.length = 0;
     this.body.setParachute(false);
     return this;
@@ -645,6 +668,7 @@ export class Soldier {
     this._tickInput.forward = forward;
     this._tickInput.strafe = strafe;
     this._tickInput.walk = !!input.walk;
+    this._tickInput.dead = !!input.dead;
     // Kept so `#stepParachute` can put them back on the tick after the chute
     // stops suppressing them; a frame can run up to twelve ticks and the
     // suppression is per tick, not per frame.
@@ -680,6 +704,10 @@ export class Soldier {
       // the resolve that `body.step` is about to do.
       const underCanopy = this.chute.open;
       this.body.step(this.clock.dt, this._tickInput);
+      // `Armor::update`'s water-damage timer, on the same tick the body just
+      // spent. Accumulated rather than applied: the `Armor` a soldier's HP lives
+      // in belongs to the page, which is where `Armor::update` would apply it.
+      this.drownDamage += this.drown.update(this.clock.dt, this.swim.swimming);
       contacts += this.body.contacts;
       if (this.body.landed) {
         this.landing = {
@@ -861,13 +889,36 @@ export class Soldier {
     return input.walk ? 'walk' : 'run';
   }
 
-  /** Standing on the sea plane rather than on ground. */
+  /**
+   * In the water: the `c_AsmIsSwimming` flag, which is the only answer there is.
+   *
+   * This used to be "grounded, and the ground is the sea plane", because that
+   * was what the collider offered. It is not a state the engine has — nothing
+   * ever puts a soldier's feet *on* the water — so the flag the engine does have
+   * is what the page reads now.
+   */
   #updateWater() {
-    const collider = this.body.world;
-    const level = collider?.waterLevel;
-    this.onWater = this.body.grounded && level != null
-      && this.y <= level + 1e-6;
+    this.onWater = this.swim.swimming;
   }
+
+  /**
+   * Take the HP the water has earned since the last drain.
+   *
+   * Handed out rather than applied for the same reason `parachuteEvents` is: the
+   * soldier's `Armor` belongs to the page. A frame can run twelve ticks and the
+   * timer can fire on more than one of them, so this is a sum and not a flag.
+   */
+  drainDrowning() {
+    const owed = this.drownDamage;
+    this.drownDamage = 0;
+    return owed;
+  }
+
+  /** Seconds of grace left before the water starts taking HP, for a HUD. */
+  get drownGrace() { return this.drown.graceLeft; }
+
+  /** The lower/upper clip pair the swim state owes, or `null` when dry. */
+  swimClips(dead = false) { return this.swim.clips(dead); }
 
   /**
    * View bob, and the footstep clock beside it. Two independent clocks that

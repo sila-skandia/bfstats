@@ -22,6 +22,7 @@ import {
 import {
   buildHeightfield, buildCollisionIndex, WorldCollider,
 } from './collision.mjs';
+import { SwimState, SWIM_FLOAT_DRAFT, SWIM_ACCEL_GAIN } from './swim.js';
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
@@ -425,10 +426,58 @@ for (let i = 1; i <= 60; i++) {
 }
 results.fallArc = arcSamples;
 
-// Water: the ground the feet find is max(heightfield, waterLevel).
+// Water. `WorldCollider.surfaceHeight` answers max(heightfield, waterLevel) and
+// a body used to be settled onto that, so it stood on the sea and could walk out
+// to the horizon. It cannot any more: the engine has no surface there for a
+// soldier -- `BFSoldier::updateSwimming` is the only thing that ever puts a
+// soldier's y on the water, and it puts it 0.4 m under.
+//
+// Three metres of water over a flat seabed at 0.
 const sea = new WorldCollider({ heightfield: field, waterLevel: 3 });
-const floated = walk(sea, {}, 2, { start: { x: 4, y: 20, z: -32 } });
-results.standsOnTheSea = { y: floated.y, grounded: floated.grounded };
+// With no swim collaborator the surface is not a floor at all, so the body goes
+// through it and settles on the seabed: honest "not modelled" rather than
+// "walks on water".
+const noSwim = walk(sea, {}, 2, { start: { x: 4, y: 20, z: -32 } });
+results.withoutASwimStateHeSinksToTheBed = {
+  y: noSwim.y, grounded: noSwim.grounded, bed: 0, waterLevel: 3 };
+// With one he floats at `waterLevel - SWIM_FLOAT_DRAFT` and `c_AsmIsSwimming` is
+// up. Dropped from 20 m, so his vertical velocity when he hits is 19 m/s and the
+// draft is a clamp, not a settle.
+const swam = walk(sea, {}, 3, {
+  start: { x: 4, y: 20, z: -32 },
+  setup: s => { s.swim = new SwimState(); },
+});
+results.swimsInsteadOfStanding = {
+  y: swam.y, grounded: swam.grounded, swimming: swam.soldier.swimming,
+  depth: swam.soldier.swimDepth,
+  draft: SWIM_FLOAT_DRAFT, waterLevel: 3,
+  family: swam.soldier.swim.family,
+};
+// Wading: 20 cm of water over a seabed at 2.8 is under the 0.43 threshold, so he
+// walks on the bed with the bed's own normal and never enters the swim state.
+const shallowField = buildHeightfield([flatTile(2.8)], { worldSize: 64, dim: 16 });
+const shallow = new WorldCollider({ heightfield: shallowField, waterLevel: 3 });
+const waded = walk(shallow, { forward: 1 }, 2, {
+  start: { x: 4, y: 2.8, z: -32 },
+  setup: s => { s.swim = new SwimState(); },
+});
+results.wadesOnTheSeabed = {
+  y: waded.y, grounded: waded.grounded, swimming: waded.soldier.swimming,
+  depth: waded.soldier.swimDepth, travelled: waded.travelled,
+};
+// Swimming forward: the `5.0 * vCmd` acceleration against the water's drag, with
+// no `v = vCmd` assignment anywhere, so the speed is a balance and not a table
+// entry. What matters is that he moves, in the direction he is facing, and slower
+// than the 6 m/s the standing row of `directionalSpeed` names.
+const stroked = walk(sea, { forward: 1 }, 6, {
+  start: { x: 4, y: 2.6, z: -32 },
+  setup: s => { s.swim = new SwimState(); },
+});
+results.swimsForward = {
+  travelled: stroked.travelled, speed: stroked.soldier.groundSpeed,
+  y: stroked.y, family: stroked.soldier.swim.family,
+  runSpeed: DIRECTIONAL_SPEED[0],
+};
 
 // Hulls: a wall at x = 8 across the walker's path.
 const blocker = fakeMesh(
@@ -585,9 +634,12 @@ results.jumpGate = {
   water: armingFor(1.0, MATERIAL_WATER),
 };
 
-// And the gate really governs: a body standing on water cannot jump.
+// And the gate really governs: a swimmer cannot jump. He is not `grounded`, he
+// is holding no contact worth arming, and the swim branch spends a queued jump
+// rather than banking it for the moment he wades out.
 const sea2 = new WorldCollider({ heightfield: field, waterLevel: 3 });
 const swimmer = new SoldierBody({ world: sea2, yaw: 0 });
+swimmer.swim = new SwimState();
 swimmer.place(4, 20, -32);
 for (let i = 0; i < 180; i++) swimmer.step(TICK_DT, {});
 const floatY = swimmer.position.y;
@@ -595,7 +647,8 @@ swimmer.jump();
 for (let i = 0; i < 10; i++) swimmer.step(TICK_DT, {});
 results.cannotJumpOffWater = {
   floatY, after: swimmer.position.y, armed: swimmer.jumpArmed,
-  rose: swimmer.position.y - floatY,
+  rose: swimmer.position.y - floatY, swimming: swimmer.swimming,
+  gain: SWIM_ACCEL_GAIN,
 };
 // --- thin geometry, and a body that starts inside it -----------------------
 //
