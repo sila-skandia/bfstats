@@ -1,9 +1,9 @@
-// The Custom Game mod list, drawn from the game's own layout - not as a
-// modal the way the real CUSTOM GAME tab opens it, but permanently in the
-// column `menu-screen.js`'s `SHOW_BOT_SETTINGS = false` leaves blank.
-// Clicking a row is the whole interaction: there is no separate confirm
-// step, because a mod here is a filter over the level list below it, not a
-// game to launch.
+// The Custom Game mod list, drawn from the game's own layout. It lived in
+// the Instant Battle screen's left column until the bot settings wanted that
+// column back; `mod-picker-screen.js` is now its own tab, and this is the
+// panel on it. Clicking a row is the whole interaction: there is no separate
+// confirm step, because a mod here is a filter over the level list on the
+// Instant Battle tab, not a game to launch.
 //
 // `custom-game-layout.json` (extract_custom_game_layout.py) is
 // `menu/CustomGameMenu` flattened the same way `menu-screen.js` flattens the
@@ -24,27 +24,6 @@ import { drawBitmapText, inRect, measureText, paintElement } from './menu-screen
 
 const BUTTON_W = 109;
 const BUTTON_H = 25;
-
-/** A copy of the layout with `modlist`'s leaves translated so the content's
- *  own top-left lands at `(x, y)` - the file places this dialog centered
- *  for a modal it is not being used as here. */
-export function placeInColumn(layout, x, y) {
-  const elements = layout.pages.modlist.elements;
-  const minX = Math.min(...elements.map(el => el.rect[0]));
-  const minY = Math.min(...elements.map(el => el.rect[1]));
-  const dx = x - minX, dy = y - minY;
-  return {
-    ...layout,
-    pages: {
-      modlist: {
-        ...layout.pages.modlist,
-        elements: elements.map(el => ({
-          ...el, rect: [el.rect[0] + dx, el.rect[1] + dy, el.rect[2], el.rect[3]],
-        })),
-      },
-    },
-  };
-}
 
 function listbox(layout) {
   return layout.pages.modlist.elements.find(el => el.kind === 'listbox');
@@ -232,15 +211,4 @@ export function hitTestPanel(layout, ui, x, y) {
   const mod = ui.mods.find(m => m.id === ui.activeId);
   if (mod?.url && inRect(footerButton(layout), x, y)) return { kind: 'button', action: 'website' };
   return null;
-}
-
-/** The panel's own bounding box, for hit-testing "is the pointer over this
- *  control at all" separately from "over an interactive part of it". */
-export function panelBounds(layout) {
-  const elements = layout.pages.modlist.elements;
-  const x0 = Math.min(...elements.map(el => el.rect[0]));
-  const y0 = Math.min(...elements.map(el => el.rect[1]));
-  const x1 = Math.max(...elements.map(el => el.rect[0] + el.rect[2]));
-  const y1 = Math.max(...elements.map(el => el.rect[1] + el.rect[3])) + BUTTON_H + 12;
-  return [x0, y0, x1 - x0, y1 - y0];
 }

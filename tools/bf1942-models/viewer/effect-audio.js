@@ -379,7 +379,11 @@ export class EffectAudio {
     }
 
     if (!script.slots.length) {
-      this.#primeScript(script);
+      this.#primeScript(script).then(() => {
+        if (!this.disposed && script.slots.length) {
+          this.#playScript(script, x, y, z, distance, follow, token);
+        }
+      });
       this.dropped += 1;
       return 0;
     }

@@ -372,6 +372,41 @@ export class World {
     this.players.delete(playerId);
   }
 
+  /**
+   * Add a bot player to the world without spawning a soldier. Bots are
+   * placed directly on spawn points and do not go through the deploy flow.
+   * Returns the player record.
+   */
+  addBotPlayer(playerId, { team = null } = {}) {
+    const player = {
+      id: playerId,
+      team: team ?? null,
+      soldier: null,
+      armor: null,
+      spawnIndex: 0,
+      flag: null,
+      spawn: null,
+      occupancy: null,
+      vehicle: null,
+      kind: null,
+      groups: [],
+      manned: [],
+      gate: { blocked: false, rotationalScale: 1 },
+      stick: { roll: 0, pitch: 0 },
+      position: null,
+      supply: { team: null, refillAmmo: null },
+      supplyResult: { gaveAmmo: false, healed: false },
+      buffer: [],
+      pending: null,
+      held: null,
+      lastSeen: -1,
+      last: null,
+      lookApplied: { yaw: 0, pitch: 0 },
+    };
+    this.players.set(playerId, player);
+    return player;
+  }
+
   player(playerId) { return this.players.get(playerId) ?? null; }
   soldierOf(playerId) { return this.players.get(playerId)?.soldier ?? null; }
   armorOf(playerId) { return this.players.get(playerId)?.armor ?? null; }
@@ -401,6 +436,7 @@ export class World {
       world: this.collider,
     });
     if (!spawn) return null;
+    player.soldier ??= new Soldier({ collider: this.collider, worldSize: this.extras?.worldSize || 0 });
     player.soldier.collider = this.collider;
     player.soldier.spawn(
       spawn.position[0], spawn.position[1], spawn.position[2], spawnYaw(spawn));
