@@ -228,6 +228,16 @@ class SoldierBodyTests(unittest.TestCase):
         self.assertEqual("swimFloat", old["onlyFloat"])
         self.assertEqual("swimBackward", old["fullRig"])
 
+    def test_a_swimmer_stows_his_weapon(self) -> None:
+        # `setFlag c_AsmHideWeapon` on all five lower swim states, and
+        # `BFSoldier::enableItem` obeys it (`0x082784af and eax,0x2`). The swim
+        # death is not one of them: `Lb_DieSwim` is an `AnimationStatesDie.con`
+        # state and declares no flags at all.
+        self.assertEqual(
+            ["swimStart", "swimFloat", "swimForward", "swimBackward", "swimEnd"],
+            self.results["hidesWeapon"])
+        self.assertTrue(self.results["hidesWeaponIsSwimOnly"])
+
     def test_a_swimmer_has_no_canopy(self) -> None:
         canopy = self.results["swimCanopy"]
         self.assertIsNone(canopy["float"])
