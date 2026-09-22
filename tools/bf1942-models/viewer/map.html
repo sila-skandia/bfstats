@@ -7446,6 +7446,7 @@ function setPilot(on, node = null, seatId = null) {
       vehicle.setFirstPerson(false);
       vehicle.applyTransform();
       vehicle.applyRig();
+      releaseDrivenBody(vehicle);
     } else {
       // Splices `mannedGuns` out of `guns.groups` too (see `leaveManned`'s
       // own comment on why a bare `setFiring(false)` loop is not enough).
@@ -7455,6 +7456,7 @@ function setPilot(on, node = null, seatId = null) {
     freezeVehicle(occupancy.root);   // parked at its spawn: furniture again
     clearVehicleHud();
     occupancy = null;
+    rebuildVehicleInterp();
   }
   // The world's occupied-vehicle state rides the same seats as the page's:
   // mounted on entry (the gun lists came fresh from `collectGuns` /
@@ -8190,6 +8192,7 @@ function leaveVehicle() {
   occupancy = null;
   world?.clearPlayerVehicle(LOCAL_PLAYER);
   world?.resetStick(LOCAL_PLAYER);
+  rebuildVehicleInterp();
 }
 
 /**
@@ -8385,6 +8388,7 @@ function leaveManned() {
     occupancy = null;
     world?.clearPlayerVehicle(LOCAL_PLAYER);
     world?.resetStick(LOCAL_PLAYER);
+    rebuildVehicleInterp();
     return;
   }
   disposeEngineAudio();
