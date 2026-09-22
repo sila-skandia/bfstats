@@ -115,6 +115,23 @@ export const BODY_ONCE = Object.freeze(new Set([
 ]));
 
 /**
+ * The families whose lower-body state declares `c_AsmHideWeapon` (0x2).
+ *
+ * All five swim states do, and the swim death does not -- `Lb_DieSwim` is in
+ * `AnimationStatesDie.con` and declares no flags at all. The engine acts on the
+ * flag in `BFSoldier::enableItem(char)`, which returns without enabling anything
+ * while it is set (`0x082784a1` reads the flags, `0x082784af and eax,0x2`,
+ * `0x082784b2 jne` to the exit), so a swimming soldier's weapon is put away.
+ *
+ * A renderer has to do the same thing by hand, because the pose `.glb` welds the
+ * weapon into the hand: the clips are from `animations/3P_NoWeapon/` and leave
+ * the hands empty, but the welded rifle rides along on the bones regardless.
+ */
+export const BODY_HIDES_WEAPON = Object.freeze(new Set([
+  'swimStart', 'swimFloat', 'swimForward', 'swimBackward', 'swimEnd',
+]));
+
+/**
  * What to play when the family a state owes is not bound.
  *
  * Every chain falls back toward the posture before it falls back toward

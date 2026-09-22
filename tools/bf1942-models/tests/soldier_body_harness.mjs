@@ -7,7 +7,8 @@
 // agree is made against the real `PARA_CLIPS`, not a transcription of it.
 
 import {
-  BODY_CLIPS, BODY_ONCE, BODY_FALLBACKS, UPPER_STAND_AIM, LOWER_STAND,
+  BODY_CLIPS, BODY_ONCE, BODY_FALLBACKS, BODY_HIDES_WEAPON,
+  UPPER_STAND_AIM, LOWER_STAND,
   bodyClipFamily, bodyFamily, canopyClip, locoFamily, parachuteFamily,
   resolveBodyFamily, swimFamily,
 } from './soldier-body.js';
@@ -130,6 +131,13 @@ results.swimOnAnOldRig = {
   fullRig: bodyClipFamily({ gait: 'run', swim: SWIM_CLIPS.swimBackward },
                           () => true),
 };
+// `c_AsmHideWeapon`: the five swim states declare it, the swim death does not
+// (it is an `AnimationStatesDie.con` state and declares no flags at all), and
+// nothing else in the table does.
+results.hidesWeapon = [...BODY_HIDES_WEAPON];
+results.hidesWeaponIsSwimOnly = [...BODY_HIDES_WEAPON]
+  .every(f => f.startsWith('swim') && f !== 'swimDie');
+
 // A swimmer's canopy is not drawn.
 results.swimCanopy = {
   float: canopyClip('swimFloat'),
