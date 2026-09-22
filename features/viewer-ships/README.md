@@ -912,3 +912,290 @@ hull), `aground2.mjs` (the beaching), `carrier4.mjs` (the carrier spawn),
 `ram.mjs` (ship against ship), `boxes.mjs` (the old box against the new),
 `pier.mjs` (waterline statics), `dis.txt` (the lnxded disassembly the addresses
 above were read from).
+
+---
+
+# W9-A: the defect the owner found in the beaching
+
+> *"in game if you drive a ship onto the beach it doesn't lose health, it just
+> gets grounded. Right now I drive it up and I died."*
+
+## 18. What was dying, and why
+
+**The ship, and the player with her — in that order.** The ship took crash damage
+from the terrain, went to 0 hit points, `wreckVehicle` ran, and
+`killOccupantInWreck` (`map.html:5570`) killed the man at the helm. Nothing bills
+the occupant directly: a seated player never runs `world.js`'s `#soldierTick`
+(`world.js:713` dispatches to `#vehicleTick` instead), so `soldier.landing` is
+never read and HP-14's fall damage cannot reach him. W5-B's
+`lastCollisionHeight` was never in it.
+
+The address: `BodyWorld.#drivenTerrainDamage` (`viewer/body-world.js`) →
+`handlers.onTerrain` → `CrashDamage.onTerrainContact` →
+`terrainCollisionDamage` (`viewer/crash-damage.js`), the port of
+`GameServer::handleCollisionLandOrWater` **`0x08154960`**, reached from
+`ResponsePhysics::checkVsTerrain` **`0x0825a960`**.
+
+### 18.1 The engine DOES bill a ship for touching the ground
+
+Read, not assumed, and it is worth stating plainly because the corpus did not
+have it: **there is no ship exemption anywhere in this path.**
+
+- `checkVsTerrain` `0x0825a960` drops every col0 vertex on the heightfield
+  (`getHeightAndNormal` through `terrainBase` vtable `+0x54`,
+  `PatchTerrain::getHeightAndNormal` `0x083d6f10`) and, whenever the vertex is
+  under the bed and `|getTangentSpeed|² > 0.1`, calls the object's
+  `handleCollision(NULL, speed, N, relPos, vertexMaterial, terrainMaterial)`.
+  The **vertex loop contains no water test**: the `underWater` arm is a separate
+  block after it (`0x0825ac15`–`0x0825acf0`, `setUnderWater` at `0x0825ac60` /
+  `0x0825ad41`), so a keel resting on the sea bed under twenty metres of water is
+  an ordinary *land* contact with the bed's own material.
+- The `n > 10` bounding-box early-out is a real arm but never fires for a hull
+  afloat: `reach = min(1.43·max(|minX|,|maxX|,|minY|,|maxY|), 30)` and both ends
+  of the hull have to be more than `reach` above the terrain under them. A
+  Yamato at y 17.5 over a bed at 0 is 12.5 m short of that.
+- `Armor::isInColList` `0x081744d0` walks head→tail only, so the terrain's `NULL`
+  key is not silently matched against empty ring slots. No free pass there
+  either.
+- `body-statics.js`'s `onStatic` really is unwired — nothing in `viewer/*.js` or
+  `map.html` passes `handlers.onStatic`, confirmed by grep — so the col0 static
+  path bills nothing of its own. The lead's exclusion holds.
+
+### 18.2 The number that makes it lethal for a ship and harmless for a jeep
+
+`damage = |c|³ · speedMod · |v|² · getDamageMod(matTerrain, matSelf) ·
+getDamageForMaterial(matTerrain)`, applied above `1.0`.
+
+No vanilla capital ship, destroyer, carrier or landing craft authors
+`ObjectTemplate.speedMod` (a survey of every `.con` in `Objects.rfa`: only
+`Gato`/`Sub7C` 0.05, `Elco80`/`Type38` 0.7, the two rafts 1.0), so a ship gets
+the template default **0.05**. `materialDamage` is **30** for all sixteen terrain
+materials. The multiplier that differs by three orders of magnitude between hull
+types is `getDamageMod`:
+
+| the struck hull's col0 material | terrain → it | product with `materialDamage` |
+|---|---|---|
+| 45 — `Lcvp`, `Daihatsu`, `Elco80Raft` hulls | 0.01 | 0.3 |
+| 50/51/52 — Sherman | 0.01 | 0.3 |
+| 60 / 61 / 63 — aircraft | 0.01 / 0.1 / 0.1 | 0.3 / 3 / 3 |
+| 72 — `pt_elco`, `type38` | 0.01 | 0.3 |
+| **55, 56, 57, 58, 59 — every ship hull**, against terrain **11 (Wet sand)** | **10.0** | **300** |
+| the same five against terrain 0, 1, 13, 14, 15 | 0.0 | 0 |
+| 86, 87 — a Yamato's own upperworks | 0.0 | 0 |
+
+Those `10.0` cells are authored, deliberately, in
+`Bf1942/Game/Collision_Armor/HeavyArmor.con` — one `rem *** Wet Sand ***` block
+per "Ship Armor" section, each carrying `setEffectTemplate e_Collision_ship`
+(e.g. lines 2366, 2590, 2763 for defGroups 55, 56, 57). They **override** the
+inline `damageMod 0.0` that `materialManagerSettings.con` writes for
+terrain-vs-55..59 at lines 67–83 and again per terrain group, because the
+settings file runs the `Collision_Armor/*` scripts at its tail (lines 4556–4560)
+after its own 1,076 inline cells. Run order is load-bearing, exactly as §9.4
+warns, and it lands on `10.0`. Reproduce:
+
+```bash
+python3 -c "
+import json; d=json.load(open('tools/bf1942-models/viewer/maps/_shared/damage.json'))
+print([d['modifiers']['11'][k] for k in ('55','56','57','58','59')])"     # [10.0]*5
+```
+
+So the product for a ship hull on wet sand is **300**, and the whole bill is
+`15 · |c|³ · |v|²`. Every vanilla sea level's underwater terrain is wet sand:
+3,508 of 3,525 sampled points under Midway's water line read material 11.
+
+### 18.3 On a real beach that comes to nothing. `c³` is the whole story
+
+`c = |unit(v) · unit(N)|`. A beach is a ramp of a few degrees, so `c³` is a few
+times `1e-4`:
+
+| Midway's western beach, z = −2050, Fletcher at 15.0 m/s | |
+|---|---|
+| bank gradient at the contact | ~2 to 4 degrees |
+| `c` | **0.081** |
+| `c³` | 5.35e-4 |
+| bill | `5.35e-4 · 0.05 · 226 · 300` = **1.81 HP** |
+
+Against her authored 300 hit points that is 0.6 per cent, which is the owner's
+"it doesn't lose health" — and it is the *engine's own* answer, not an
+approximation of it. **The engine and the owner do not disagree about beaches.**
+
+### 18.4 What our build got wrong: the contact, not the arithmetic
+
+`c` only reaches 0.8 if part of the hull is allowed to be *inside a wall*. W8-A's
+grounding tested the bed under the hull's **origin** (`groundClearance` vs
+`groundHeight(pos.x, pos.z)`, through `Aircraft.step`'s floor clamp). A 265 m
+Yamato's bow is 133 m ahead of her origin, so nothing stopped her until her
+*midships* reached the bank — by which time her bow had travelled up to half her
+length into the island, and `#drivenTerrainDamage` was billing her against the
+face she was buried in.
+
+Midway has exactly the terrain to punish that. On the z = −1903 line the ocean
+floor is flat at **0.01** for hundreds of metres, then **one 4 m heightfield
+cell** rises to **16.31** — a 63.8 degree wall, the reef ring, with the lagoon
+shelf 3.7 m below the surface behind it. A Fletcher's keel sits at 16.71 and
+clears it by 40 cm; every deeper hull meets it square-on 300 m offshore:
+
+| Midway, driven at the island at full ahead, **before** | bill | outcome |
+|---|---|---|
+| Fletcher (beach, c 0.081) | 1.73 | survives, 126.3 of 128 |
+| Gato | 4,380.63 | **destroyed** at 35.3 s |
+| Enterprise | 2,436.59 | **destroyed** at 38.5 s |
+| PrinceOW | 2,496.88 | **destroyed** at 35.5 s |
+| Shokaku | 2,675.45 | **destroyed** at 37.3 s |
+| Yamato | 2,917.56 | **destroyed** at 34.6 s |
+| Hatsuzuki / Hatsuzuki2 | 2,660.35 / 3,190.97 | **destroyed** |
+
+Seven of ten, and Iwo Jima's Prince of Wales (1,828) and Enterprise (1,712) with
+them. `aground` was still **false** on every one of those runs: they died before
+the grounding they were driving at.
+
+## 19. The fix: a hull grounds on her hull
+
+The engine's response is per-vertex. `checkVsTerrain` calls `impulseOn`
+(`0x08258900`) for **every** contacting col0 vertex — the `if (cStack_1d1 != 0)`
+arm at `0x0825ae1b`, unconditional on speed — and §7's push-out is `|depth|`
+**along the sloped normal** (COL-9). An engine hull is therefore pushed out of
+the ground along her whole length and cannot get her bow inside a hillside.
+
+`viewer/ship.js` now does the same:
+
+| | |
+|---|---|
+| `Ship.deepestContact()` | a grid over the collision box's bottom face, one sample per **4 m** (the vanilla heightfield's own cell) each way and capped at 33, laid out about the box's own **centre** (`hullGeometry` now returns it — a Gato's box reaches 56.6 m aft and 38.4 m forward), at the depth of the **col0 vertex minimum** where the page knows it (`sampleKeel`). Returns the deepest penetration and the bed's normal there. |
+| `Ship.groundHeight` (accessor) | answers the clamp with the footprint's floor; the page's raw heightfield query stays as `bedHeight`, and `__helm().seaBed` reads that. `-Infinity` while the hull is clear, so she does not report `grounded` at sea. |
+| `Ship.hullFloor()` | hands the clamp the push-out's **vertical** component, `depth · N.y`. |
+| `Ship.pushOutOfBed()` | the **horizontal** component and the closing-velocity cancel, then two more passes for a keel straddling two gradients. This is what keeps a hull that meets the *face* of a reef from being lifted up it: before this she ended perched 4 m above the waterline. |
+| `Ship.aground` | `state.grounded` OR a contact anywhere in the tick — the engine's own per-tick latch (`ResponsePhysics+0xd0`, written at `0x0825b03a`), because the push-out clears the penetration inside the sub-step that found it. |
+| `map.html` | `groundNormal` (the heightfield's normal, which is what `impulseOn` pushes along), `hullCollisionKeel(spec)` → `sampleKeel` in `adoptDrivenBody`, and `__helm()` gains `buried`. |
+
+Once no part of the hull is under the bed, `#drivenTerrainDamage` finds no
+penetrating vertex and the crash-damage path is never entered. **Nothing about
+`crash-damage.js`, `vehicle-damage.js`, `body-contact.js` or `body-statics.js`
+was touched.** Ships are not exempted from anything.
+
+## 20. Measured, on the page
+
+`map.html?mod=bf1942&map=midway&shots`, served on :5301 from this worktree.
+
+### 20.1 The owner's run: Midway's Fletcher (owner 261) onto the western beach
+
+W8-A's own reproduction — placed at x 1000 on the z = −2050 line, pointed due
+east, full ahead throughout.
+
+| | before (W8-A) | after |
+|---|---|---|
+| top speed over deep water | 15.17 m/s | **15.17 m/s** |
+| touches the bank | t 52.77 s, x 1685.5 | **t 48.93 s, x 1627.3, 14.93 m/s** |
+| stops at | x 1694.9 | **x 1637.2** |
+| hull left under the bed (`buried`) | — | **0** |
+| **crash events** | **1** | **0** |
+| **ship HP, 128 max** | 128 → **126.19** | **128 → 128** |
+| **occupant** | alive (she did not sink) | **alive** |
+| ten seconds of full ahead | 6.5 cm | **6.2 cm**, still `aground` |
+| thirty seconds of full astern | 6.6 cm | **9.6 cm**, still `aground` |
+
+She stops 58 m earlier because her bow, not her midships, now meets the reef —
+which is the fix, not a regression. W8-A's "ten seconds of full ahead move her
+6.5 cm" survives at 6.2 cm.
+
+### 20.2 Every hull on Midway, driven at the island at full ahead
+
+| hull | before | after |
+|---|---|---|
+| Fletcher, Fletcher2 | 126.3 / 127.0 of 128, 1 event each | **128, 0 events, aground** |
+| Gato, Enterprise, PrinceOW, Shokaku, Yamato, Hatsuzuki, Hatsuzuki2 | **destroyed**, 1 event of 2,436–4,381 | **128, 0 events, aground** |
+| Sub7C | 128, 0 events | **128, 0 events** (her bearing reaches no shore) |
+
+Iwo Jima's PrinceOW and Enterprise, Wake's Hatsuzuki and Shokaku, Guadalcanal's
+six: **zero crash events, zero hit points, all aground.**
+
+### 20.3 The legitimate damage paths still work
+
+| | |
+|---|---|
+| **Sinking** (W7-A's `FloatingHull`) | `__damageVehicle(263, 260)` on Midway's Fletcher2: hp 0, `destroyed`, `sinking: true`, and she goes down **108.75 m** over 20 s of frames — 19.37, 13.69, 8.01, 2.33, −3.35, −9.02 … |
+| **A soldier's fall damage** (HP-14) | teleported to Midway's island at (2000, 30.16, −2050) and dropped: **3 m → 0 HP, 6 m → 10.86 HP, 9 m → lethal**. Exactly `map.html`'s own documented curve ("nothing below 3.97 m, 10.9 at 6 m, lethal at 7.55 m"). |
+| **A soldier's crash damage** | `crash-damage.js` is byte-for-byte unchanged; `tests/test_crash_damage.py` and the rest of the 2,639 are green. |
+
+## 21. Tests
+
+`tests/test_ship.py::ShipReefTests`, four cases, driven by a new block in
+`ship_harness.mjs` that builds a bank out of Midway's own profile (flat floor at
+0.01, one 8 m face rising to 24.0, a 63 degree wall) and computes the crash bill
+**itself** from the hull's footprint — the engine's land arm, `|c|³ · 0.05 ·
+|v|² · 300` over the `> 1.0` gate — so it asserts the ship against the terrain
+rather than against `ship.js`.
+
+| | on `HEAD` before this stream | after |
+|---|---|---|
+| deepest hull under the bed | **7.61 m** | **0** |
+| worst crash bill handed to the damage path | **1,290.92 HP** | **0** |
+| where she ended | perched, keel **4.0 m above** the waterline | keel **3.05 m under** it |
+| stops and stays | yes | yes, 5 mm under ten seconds of full ahead |
+
+W8-A's own two grounding assertions moved from `places=3`/`places=2` to a
+quarter-metre tolerance, with the reason written in: a hull now rests on the
+**lowest corner of her footprint**, and a sixth of a degree of trim moves that
+corner 0.17 m over a 133 m hull.
+
+```bash
+cd tools/bf1942-models && python3 -m unittest tests.test_ship          # 29
+cd <repo root> && python3 -m unittest discover -s tools/bf1942-models/tests   # 2,639, green
+```
+
+## 22. Divergences this stream added
+
+| | |
+|---|---|
+| **The push-out is resolved inside the sub-step that finds it, not a tick later.** | The engine posts `impulseOn`'s velocity change as an acceleration the *next* `updatePhysics` consumes (COL-9, "impulses land one tick late by design"), and it bills `handleCollision` on that first penetrating tick. We resolve the penetration immediately, so the damage pass never sees it. On a shallow beach the difference is the 1.8 HP of §18.3; on a reef wall met head-on it is the difference between 2,900 HP and none. This is the one place where the owner's ruling and the engine's arithmetic have been made to agree in the owner's favour, and it is deliberate. |
+| **The footprint is the collision box's bottom face, not the hull's col0 vertex list.** | `Ship` is built from the node tree's boxes (`hullGeometry`), and only the *depth* of the real vertex set reaches it (`sampleKeel`). A hull with a concave bottom, or one heeled far over, can therefore still have a vertex the footprint does not represent. |
+| **The hull does not pitch onto the bank.** | The engine's per-vertex impulses make a beached hull trim bow-up; ours stays level and rides up on her lowest corner. W8-A's level hull, unchanged. |
+| **`Ship.groundHeight` is now a synthetic number.** | Anything that wants the real bed under a hull must call `bedHeight(x, z)`. `__helm().seaBed` does; `__helm().buried` is the new readout that says whether any of her is inside the bed. |
+
+## 23. What is still open
+
+1. **Every ship in the viewer has 128 max hit points.** The game authors
+   Fletcher 300, Hatsuzuki 300, Gato/Sub7C 200, PrinceOW/Elco80/Type38 500,
+   Enterprise/Shokaku/Yamato 600, Lcvp/Daihatsu 150, the rafts 35 — and
+   `criticalDamage` comes through correctly (Fletcher 50, Enterprise 100), so the
+   `armor` block reaches the page but `maxHitpoints` does not survive. Not this
+   stream's files (the level assembler's), and it made every number above 2.3 to
+   4.7 times harsher than the game's.
+2. **Whether the engine really would destroy a Yamato on Midway's reef.** By its
+   own arithmetic it would (§18.2, §22). Nothing in `checkVsTerrain`,
+   `handleCollisionLandOrWater`, `isInColList` or the material tables gates it,
+   and the reef cell is the map's own data. Settling it needs the game, not the
+   binary.
+3. **The water contact's claim on the `NULL` collision-list slot.** §7's water arm
+   sends a `handleCollision(NULL, …, 1)` every tick a hull vertex is below the
+   sea, and that goes through the same one-per-second `NULL` entry the terrain
+   contact uses (§9.2, COL-5). A floating hull therefore holds that slot almost
+   permanently, which would rate-limit her terrain contacts to one a second.
+   `body-world.js`'s `onWater()` is a no-op, so we do not model it. It changes
+   nothing now that no terrain contact is generated, and it would matter again
+   the moment one is.
+4. **`getSpeedDamageMod` (default 0.1) is still not located as consumed.** It is
+   not in `handleCollisionLandOrWater` `0x08154960`, re-read in full this stream.
+5. W8-A's §16 items 1 to 6 are untouched.
+
+## 24. How to reproduce W9-A
+
+```bash
+python3 -m http.server 5301 --directory tools/bf1942-models/viewer
+# then, headless:
+#   window.__helm().buried    the deepest part of her hull still under the bed
+#   window.__crashLog()       every crash event, with the material cell and the HP
+#   window.__vehicles()       hp / max / destroyed per owner
+#   window.__placeShip(x, z, yaw)  at her draft, pointed somewhere
+```
+
+Scratch is in this session's directory under `W9-A/`: `beach.mjs` (the named
+Fletcher run), `sweep.mjs` (every hull on a map driven at the nearest shore),
+`why.mjs` (the terrain profile at a kill), `prof.mjs` / `mat.mjs` (the reef's
+heights, normals and materials), `gato.mjs` (the last hull to keep dying),
+`berth.mjs` (a moored hull can still get under way), `final.mjs` (beaching,
+sinking), `fall.mjs` (the soldier), `cons/` (the extracted
+`materialManagerSettings.con` and `Collision_Armor/*`), `dec*/` (the lnxded
+decompilations of `checkVsTerrain`, `handleCollisionLandOrWater`,
+`SimpleObject::handleCollision`, `PatchTerrain::getMaterial`,
+`getHeightAndNormal`, `Armor::isInColList`).
