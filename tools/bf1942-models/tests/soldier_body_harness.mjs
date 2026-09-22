@@ -9,9 +9,10 @@
 import {
   BODY_CLIPS, BODY_ONCE, BODY_FALLBACKS, UPPER_STAND_AIM, LOWER_STAND,
   bodyClipFamily, bodyFamily, canopyClip, locoFamily, parachuteFamily,
-  resolveBodyFamily,
+  resolveBodyFamily, swimFamily,
 } from './soldier-body.js';
 import { PARA_CLIPS } from './parachute.js';
+import { SWIM_CLIPS } from './swim.js';
 
 const results = {};
 
@@ -91,6 +92,48 @@ results.endToEnd = {
     { gait: 'run', parachute: PARA_CLIPS.glide }, only('stand', 'run', 'walk')),
   crouchedStillOnAFullRig: bodyClipFamily(
     { gait: 'stand', stance: 'crouch' }, () => true),
+};
+
+// The swim half is keyed off `swim.js`'s own table, so the two cannot drift.
+// Every pair SWIM_CLIPS can answer must resolve to a family, and every family
+// must name the same two states the bundle baked.
+results.swimPairs = Object.fromEntries(
+  Object.entries(SWIM_CLIPS).map(([key, pair]) => [key, swimFamily(pair)]));
+results.swimTableAgrees = Object.entries(SWIM_CLIPS)
+  .every(([key, pair]) => BODY_CLIPS[key]
+    && BODY_CLIPS[key].lower === pair.lower
+    && BODY_CLIPS[key].upper === pair.upper);
+results.swimUnknown = swimFamily({ lower: 'Lb_NoSuchState' });
+results.swimNull = swimFamily(null);
+results.swimCaseInsensitive = swimFamily({ lower: 'lb_SWIMforward' });
+
+// Selection: swimming replaces the gait, and the parachute still outranks it.
+results.swimSelection = {
+  running: bodyFamily({ gait: 'run', stance: 'stand' }),
+  swimmingWhileRunning: bodyFamily({ gait: 'run', stance: 'stand',
+                                     swim: SWIM_CLIPS.swimForward }),
+  swimmingWhileCrouched: bodyFamily({ gait: 'stand', stance: 'crouch',
+                                      swim: SWIM_CLIPS.swimFloat }),
+  deadInTheWater: bodyFamily({ gait: 'stand', stance: 'stand',
+                               swim: SWIM_CLIPS.swimDie }),
+  underACanopyOverWater: bodyFamily({ gait: 'run',
+                                      parachute: PARA_CLIPS.glide,
+                                      swim: SWIM_CLIPS.swimForward }),
+};
+// On a tree published before `swim.gait.glb` existed, the chain lands on
+// `swimFloat` and then on `stand` -- never on `run`.
+results.swimOnAnOldRig = {
+  noSwimBundle: bodyClipFamily({ gait: 'run', swim: SWIM_CLIPS.swimForward },
+                               only('stand', 'run', 'walk')),
+  onlyFloat: bodyClipFamily({ gait: 'run', swim: SWIM_CLIPS.swimBackward },
+                            only('stand', 'swimFloat')),
+  fullRig: bodyClipFamily({ gait: 'run', swim: SWIM_CLIPS.swimBackward },
+                          () => true),
+};
+// A swimmer's canopy is not drawn.
+results.swimCanopy = {
+  float: canopyClip('swimFloat'),
+  die: canopyClip('swimDie'),
 };
 
 // The canopy: shown while the chute carries him, hidden in free fall.
