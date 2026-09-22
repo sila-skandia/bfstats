@@ -9591,11 +9591,37 @@ function slotOf(slots, template) {
   return found ? found.slot : null;
 }
 
+/**
+ * THE ENGINE'S ITEM GATE: is there an active item at all?
+ *
+ * `c_AsmHideWeapon` (bit 0x2 of the LOWER animation machine's state flags) is
+ * declared by all five swim states, and while it is up the engine leaves the
+ * soldier with nothing in his hands. It is not a gate on the *input*: it is a
+ * gate on the item, in three places, and `viewer/swim.js`'s `itemsLocked` has
+ * the full derivation with addresses. The short version:
+ *
+ *   `BFSoldier::handleMessage`     `0x082772ac` — discards **every** message its
+ *                                  jump table dispatches (6..22): Fire (6),
+ *                                  AltFire (7), the MenuSelect slots (13 is
+ *                                  MenuSelect4), everything.
+ *   `selectBestLoadedWeapon`       `0x08273af4` — no automatic switch either.
+ *   `enableItem(char)`             `0x082784b2` — nothing can be enabled.
+ *
+ * So every one of the page's own item verbs consults this, and none of them
+ * special-cases the trigger. That is what the owner means by "locked down".
+ */
+function itemsLocked() {
+  return !!soldier?.itemsLocked;
+}
+
 /** Raise the weapon in `slot` (1..N) — the engine's
  *  `c_PIMenuSelect<slot>` (`c_PIWeaponSelect1..6` on the MemeFile side).
  *  Selecting the slot already in hand is a no-op, like the engine's. */
 function selectKitWeapon(slot) {
   if (!optOnFoot.checked || !soldier || optPilot.checked) return false;
+  // `handleMessage`'s gate: a MenuSelect never reaches the dispatch while
+  // `c_AsmHideWeapon` is up, so a swimmer cannot change weapon.
+  if (itemsLocked()) return false;
   const entry = kitWeaponSlots?.find(w => w.slot === slot);
   if (!entry) return false;
   // `cantSelectWhenNoAmmo 1`: the engine refuses to raise a weapon with
@@ -9707,6 +9733,9 @@ function selectDetonator() {
   if (!detonatorTemplate || !optOnFoot.checked || !soldier || optPilot.checked) {
     return false;
   }
+  // Reached only by AltFire (message 7) or MenuSelect4 (message 13), and both
+  // are on the far side of `handleMessage`'s `c_AsmHideWeapon` gate.
+  if (itemsLocked()) return false;
   if (isDetonator(handWeapon?.name)) return true;
   const slot = slotOf(kitWeaponSlots || [], detonatorTemplate);
   if (slot != null) return selectKitWeapon(slot);
@@ -9718,6 +9747,9 @@ function selectDetonator() {
 /** AltFire on the demolitions pair: pack <-> plunger. True if it took the
  *  press, so the zoom/aim branch does not also see it. */
 function altFireDemolitions() {
+  // Message 7. `handleMessage` drops it while `c_AsmHideWeapon` is up, so a
+  // swimming engineer can neither reach his plunger nor come back off it.
+  if (itemsLocked()) return false;
   const name = handWeapon?.name;
   if (isExplosives(name)) return selectDetonator();
   if (isDetonator(name)) {
@@ -10706,6 +10738,10 @@ function startReload() {
   const hw = handWeapon;
   const magazine = hw?.data?.magazine;
   if (!hw || !magazine || hw.reload > 0 || hw.mags <= 0) return false;
+  // No active item, no magazine change: the ask goes through `handleMessage`
+  // like every other item message and is dropped while `c_AsmHideWeapon` is up.
+  // This also covers the automatic change `footFire` starts on a dry magazine.
+  if (itemsLocked()) return false;
   if (hw.rounds >= magazine.size) return false;
   hw.reload = magazine.reloadTime ?? 2;
   hw.reloadPlayed = false;   // the arms clip plays once per magazine change
@@ -11007,10 +11043,42 @@ function footFire(dt, input = null) {
   if (!hw) return;
   guns.firstPerson = true;   // the 0.4 m `em_1P_*` sprite, not the 1.76 m mesh
 
+  // THE ITEM GATE (`itemsLocked` above has the addresses). While the lower
+  // machine's `c_AsmHideWeapon` is up there is **no active item**, so the
+  // trigger has nothing under it, the reload clock is not his weapon's any
+  // more, the plunger is unreachable, and the first-person rig has nothing to
+  // draw. Deliberately NOT a special case on the trigger: the engine never
+  // blocks `c_PIFire` (index 8 is untouched by `handleSwimAction`), it takes the
+  // item away, and modelling it the other way would leave a swimmer reloading
+  // and zooming a weapon he does not have.
+  //
+  // There is no first-person swim clip to put in the rig's place, and that is
+  // read rather than assumed: not one of the ten swim states declares a
+  // `set1pAnimation` (the five `set1pAnimationSpeed Ub_*Swim*` lines in
+  // `animations/1pAnimationsTweaking.con` tune a clip that was never
+  // registered), so the engine's own first-person view of a swimmer is his
+  // empty hands. The swimming the owner sees is the third-person body, which
+  // `syncFootBody` draws from `swim.gait.glb`.
+  const locked = itemsLocked();
+  if (locked) {
+    // Drop anything the trigger had in flight on the tick he went under, the
+    // way losing the item does: the group stops firing, the Fire Loop's
+    // `stop FinishSample` lets the cycle in flight finish, and no click is
+    // banked for the moment he wades back out.
+    if (hw.group) guns.setFiring(hw.group, false);
+    releaseHandFireLoop();
+    hw.pulse = false;
+    hw.throwWind = 0;
+    clickQueued = false;
+    // `FireArms::Reload` drops zoom; having no item at all certainly does.
+    hw.zoomed = false;
+    hw.rezoom = 0;
+  }
+
   // The sniper bolt-cycle un-zoom window counts down here; when it empties,
   // the still-set toggle latch zooms the view back in on its own.
   if (hw.rezoom > 0) hw.rezoom = Math.max(0, hw.rezoom - dt);
-  const zoomed = isZoomed();
+  const zoomed = !locked && isZoomed();
 
   // Two fields of view, as the engine keeps them. `zoom.soldierFov`
   // (`SoldierZoomFov`, a factor: the Mp40's 0.9 barely leans in, the
@@ -11048,7 +11116,9 @@ function footFire(dt, input = null) {
   hw.rig.position.set(hw.pos.x, hw.pos.y, hw.pos.z);
   // A scoped weapon aims through glass this page does not draw yet; hiding
   // the rifle is the half of the scope view the data can already pay for.
-  hw.rig.visible = !(hw.data?.zoom?.scope && zoomed);
+  // And an item that is not enabled is not drawn at all: that is the whole of
+  // what first person looks like while swimming.
+  hw.rig.visible = !locked && !(hw.data?.zoom?.scope && zoomed);
 
   // The deviation inputs, named for the engine's PlayerInput channels. Note
   // what is NOT fed: zoom — aiming has no effect on deviation, in either
@@ -11067,7 +11137,12 @@ function footFire(dt, input = null) {
   });
 
   const magazine = hw.data?.magazine;
-  if (hw.reload > 0) {
+  if (locked) {
+    // The reload clock is `FireArms::handleUpdate`'s, and that is not running on
+    // an item the soldier does not have: a change begun on the bank finishes
+    // where he left it when he wades out, and a dry magazine is not refilled in
+    // the water either.
+  } else if (hw.reload > 0) {
     hw.reload -= dt;
     if (hw.reload <= 0) {
       hw.reload = 0;
@@ -11084,13 +11159,15 @@ function footFire(dt, input = null) {
   // The plunger has no `projectileTemplate` and so no gun group at all, which
   // is why it needs its own trigger: a click on it is a `detonateProjectiles`
   // call, not a round.
-  if (isDetonator(hw.name)) {
+  // Both triggers are `handleMessage` message 6, so both are gated: a swimming
+  // engineer cannot work the plunger and cannot put a charge down either.
+  if (!locked && isDetonator(hw.name)) {
     hw.cool = Math.max(0, hw.cool - dt);
     if (clickQueued && (captured || params.has('shots')) && hw.cool <= 0) {
       fireDetonator(hw);
     }
   }
-  if (hw.group) {
+  if (!locked && hw.group) {
     hw.cool = Math.max(0, hw.cool - dt);
     // `__setTrigger` stands in for the mouse under ?shots, where headless
     // Chromium never grants pointer lock — the capture gate would otherwise
@@ -11184,8 +11261,11 @@ function footFire(dt, input = null) {
   }
 
   // The arms last, once the reload clock and the trigger have settled what
-  // this frame is: a reload begun above starts its clip this same frame.
-  updateViewmodelAnimation(hw, dt);
+  // this frame is: a reload begun above starts its clip this same frame. Not
+  // while the item gate is shut: the rig is not drawn, and a fire or reload clip
+  // must not run itself out behind the water — the engine's upper machine is in
+  // `Ub_Floating`, which declares no 1P clip at all.
+  if (!locked) updateViewmodelAnimation(hw, dt);
 }
 
 /**
@@ -11232,7 +11312,9 @@ function crosshairAim() {
              deviation: 0, scoped: false };
   }
   const hw = handWeapon;
-  if (!optOnFoot.checked || !soldier || !hw) {
+  // No active item, no `setCrossHairType` to read: the item gate takes the
+  // reticle with the weapon.
+  if (!optOnFoot.checked || !soldier || !hw || itemsLocked()) {
     return { style: null, deviation: 0, scoped: false };
   }
   const floor = (hw.model.floor?.() ?? 0) * DEG_TO_RAD;
@@ -15163,6 +15245,10 @@ if (params.has('shots')) {
     // taking HP. `onWater` above is now the same bit as `swimming`.
     swimming: soldier.swim.swimming, swimDepth: soldier.swim.depth,
     swimState: soldier.swim.family, swimTime: soldier.swim.swimTime,
+    // `getCurrentStateFlags()` of the lower machine, and the item gate it
+    // drives: `itemsLocked` true means the engine has left him nothing to fire,
+    // reload, throw or select. See `itemsLocked()` in this file.
+    stateFlags: soldier.stateFlags, itemsLocked: soldier.itemsLocked,
     drownGrace: soldier.drownGrace, drowned: soldier.drown.lost,
     waterLevel: collider?.waterLevel ?? null,
     // Hit points (verify-r4.md) and the current deploy team (verify-r3.md's
@@ -15184,6 +15270,13 @@ if (params.has('shots')) {
     dropped: soldier.clock.dropped,
   });
   window.__walkState = window.__soldier;
+  // The live soldier, the way `__aircraft` and `__car` are live: a headless
+  // check that has to hold one thing still and change exactly one other thing
+  // needs the object, not a snapshot of it. The A/B the item gate is proved by
+  // is "the same tick, the same camera, the same sea, `swim.family` moved off
+  // the flag table for one frame" — with a snapshot there is no such A/B and the
+  // measurement becomes two different scenes compared to each other.
+  Object.defineProperty(window, '__soldierObject', { get: () => soldier });
   // The weapon in hand, for the same reason as the soldier: the magazine,
   // the cone and the trigger have to be readable to assert a burst emptied
   // what it should and bloomed what it should. `__setTrigger`/`__setAim`
@@ -15229,6 +15322,10 @@ if (params.has('shots')) {
     rezoom: handWeapon.rezoom,
     firing: !!handWeapon.group?.firing,
     shots: handWeapon.group?.shots ?? 0,
+    // The item gate, and whether the rig is drawn at all: a swimmer has no
+    // active item, so `locked` is true and `rigVisible` is false.
+    locked: itemsLocked(),
+    rigVisible: handWeapon.rig.visible,
     crosshairHidden: crosshairEl.hidden,
     crosshairStyle: crosshairAim().style,
     crosshairIcon: crosshairEl.classList.contains('ch-icon'),
@@ -15338,6 +15435,18 @@ if (params.has('shots')) {
     weapon: footBody.weapon,
     want: footBody.want,
     bound: Object.keys(footBody.families),
+    // What the MIXER is actually playing, not what was asked for: every family
+    // whose two actions carry weight, with the lower half's clock. `want` is a
+    // record of the last switch; this is read back off the actions, so a family
+    // that was asked for and never applied shows up as a disagreement between
+    // the two instead of having to be inferred from pixels.
+    playing: Object.entries(footBody.families)
+      .filter(([, actions]) => actions.some(a => a.getEffectiveWeight() > 0))
+      .map(([family, actions]) => ({
+        family,
+        weight: +actions[0].getEffectiveWeight().toFixed(3),
+        time: +actions[0].time.toFixed(4),
+      })),
     weaponNode: footBody.weaponNode?.name ?? null,
     weaponVisible: footBody.weaponNode ? footBody.weaponNode.visible : null,
     visible: footBody.scene.visible,
