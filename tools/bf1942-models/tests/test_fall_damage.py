@@ -31,6 +31,7 @@ def run_harness() -> dict:
         # its own; the `package.json` above is what lets node read a bare `.js`
         # as a module.
         shutil.copy(ROOT / "viewer" / "parachute.js", work / "parachute.js")
+        shutil.copy(ROOT / "viewer" / "swim.js", work / "swim.js")
         shutil.copy(HARNESS, work / "harness.mjs")
         proc = subprocess.run(
             ["node", str(work / "harness.mjs")],

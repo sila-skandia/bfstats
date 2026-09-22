@@ -982,7 +982,7 @@ import { DeviationModel } from './deviation.js';
 import { wantViewmodelClip } from './viewmodel-anim.js';
 import { fireVariantsFor, stanceClip, stanceFor } from './stance-clips.js';
 import {
-  BODY_CLIPS, BODY_ONCE, bodyClipFamily, canopyClip,
+  BODY_CLIPS, BODY_ONCE, BODY_HIDES_WEAPON, bodyClipFamily, canopyClip,
 } from './soldier-body.js';
 import { createReplayController, recordingLevel } from './replay.js';
 import { createRoomClient } from './netcode-client.js';
@@ -8879,7 +8879,11 @@ async function footBodyClips(weapon) {
   }
   const lower = await footBundle(manifest.lower);
   const chute = await footBundle(manifest.parachute);
-  return [...lower, ...upper, ...chute];
+  // The swim bundle is weapon-independent like the parachute's -- every swim
+  // state names a clip under `animations/3P_NoWeapon/`, because every one of them
+  // declares `c_AsmHideWeapon`.
+  const swim = await footBundle(manifest.swim);
+  return [...lower, ...upper, ...chute, ...swim];
 }
 
 function footPosePair(soldierName, weapon) {
@@ -8896,7 +8900,10 @@ function footPosePair(soldierName, weapon) {
           }
           if (obj.isSkinnedMesh) obj.frustumCulled = false;
         });
-        return { scene: gltf.scene, animations: gltf.animations ?? [] };
+        // Document-level extras land on `gltf.userData`. `extras.weapon` is the
+        // name of the welded weapon subtree, which the swim states have to stow.
+        return { scene: gltf.scene, animations: gltf.animations ?? [],
+                 weaponName: gltf.userData?.weapon ?? null };
       }, () => null));
   }
   return footBodyCache.get(key);
@@ -9015,8 +9022,12 @@ async function ensureFootBody(soldierName, weapon) {
   const rig = buildFootBodyRig(body, [...pair.animations, ...clips]);
   body.visible = false;
   scene.add(body);
+  // The welded weapon, so the swim states can stow it. The pose export names
+  // that subtree after the weapon template and records the name in
+  // `extras.weapon`, so this is read out of the file rather than guessed.
+  const weaponNode = body.getObjectByName(pair.weaponName ?? weapon) ?? null;
   footBody = { scene: body, mixer: rig.mixer, families: rig.families,
-               want: null, soldier: soldierName, weapon };
+               want: null, soldier: soldierName, weapon, weaponNode };
   if (canopy) {
     const chute = skeletonClone(canopy.scene);
     bindDynamicShading(chute);
@@ -9055,7 +9066,23 @@ function syncFootBody(dt) {
   // stays true while dead. A standing man under a death cam is the same kind
   // of wrong that gated `?soldier3p=1` in the first place. It wants the
   // `Lb_Die*` families, which this stream did not survey.
-  const visible = optOnFoot.checked && !optPilot.checked && !soldierDead
+  //
+  // ONE EXCEPTION, added by the swim stream: a man who dies in the water has a
+  // real death family. `BFSoldier::handleDamage` tests `c_AsmIsSwimming` before
+  // the pose (`0x08270c51`-`0x08270c8a`) and plays `Lb_DieSwim` / `Ub_DieSwim`,
+  // and those two clips are baked, so the corpse can be drawn instead of a man
+  // standing to attention. The family is resolved first and the gate consults
+  // it, which is the whole of the change; a land death still draws nobody.
+  const want = bodyClipFamily({
+    gait: soldier.gait,
+    stance: soldier.stance,
+    parachute: soldier.chute?.clips(!!soldierDead) ?? null,
+    swim: soldier.swimClips?.(!!soldierDead) ?? null,
+  }, family => !!footBody.families[family]);
+  const deathFamily = want === 'swimDie' || want === 'parachuteDie'
+    || want === 'parachuteDeadLanded';
+  const visible = optOnFoot.checked && !optPilot.checked
+    && (!soldierDead || deathFamily)
     && !footView3p.firstPerson && !footBodyForceHidden;
   // `soldier.y` is the feet and so is the pose rig's root; the body's yaw is
   // the soldier's plus the half turn the export bakes in. The position is this
@@ -9074,15 +9101,18 @@ function syncFootBody(dt) {
   footBodyQuat.setFromEuler(footBodyEuler);
   footBody.scene.quaternion.copy(footBodyQuat);
   footBody.scene.visible = visible;
+  // `c_AsmHideWeapon`: every lower swim state declares it and
+  // `BFSoldier::enableItem` obeys it (`0x082784af`), so a swimming soldier's
+  // weapon is put away. The clips are from `animations/3P_NoWeapon/` and leave
+  // his hands empty; the pose glb welds the rifle to the bones regardless, so
+  // the renderer has to hide that subtree itself.
+  if (footBody.weaponNode) {
+    footBody.weaponNode.visible = !BODY_HIDES_WEAPON.has(want);
+  }
 
-  // The family: the parachute's whole-body state where there is one (the pair
-  // `parachute.js` answers, which is the engine's own table), else the gait and
-  // stance the page already simulates.
-  const want = bodyClipFamily({
-    gait: soldier.gait,
-    stance: soldier.stance,
-    parachute: soldier.chute?.clips(!!soldierDead) ?? null,
-  }, family => !!footBody.families[family]);
+  // The family was resolved above the visibility gate, because the swim death is
+  // the one death this rig can draw. The order inside `bodyFamily` is the
+  // engine's: the parachute's whole-body pair, then the swim's, then the gait.
   if (want !== footBody.want) {
     footBody.want = want;
     for (const [family, actions] of Object.entries(footBody.families)) {
@@ -15128,6 +15158,13 @@ if (params.has('shots')) {
     stance: soldier.stance, gait: soldier.gait, speed: soldier.speed,
     grounded: soldier.grounded, blocked: soldier.blocked, onWater: soldier.onWater,
     steps: soldier.steps, casts: soldier.casts,
+    // The swim state: `c_AsmIsSwimming`, the depth it was decided on, the state
+    // the animation machine is in, and how long the water has before it starts
+    // taking HP. `onWater` above is now the same bit as `swimming`.
+    swimming: soldier.swim.swimming, swimDepth: soldier.swim.depth,
+    swimState: soldier.swim.family, swimTime: soldier.swim.swimTime,
+    drownGrace: soldier.drownGrace, drowned: soldier.drown.lost,
+    waterLevel: collider?.waterLevel ?? null,
     // Hit points (verify-r4.md) and the current deploy team (verify-r3.md's
     // depot team gate reads this) — null hp/maxHp is itself informative: it
     // means `soldierArmor` was never created, not that HP is zero.
@@ -15301,6 +15338,8 @@ if (params.has('shots')) {
     weapon: footBody.weapon,
     want: footBody.want,
     bound: Object.keys(footBody.families),
+    weaponNode: footBody.weaponNode?.name ?? null,
+    weaponVisible: footBody.weaponNode ? footBody.weaponNode.visible : null,
     visible: footBody.scene.visible,
     at: footBody.scene.position.toArray().map(v => +v.toFixed(3)),
     gait: soldier?.gait ?? null,

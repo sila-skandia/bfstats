@@ -769,6 +769,17 @@ export class World {
       const hp = fallDamageFor(soldier.landing, this.damageTables);
       if (hp > 0) player.armor.applyDamage(hp);
     }
+    // Drowning, applied where `Armor::update` applies it and for the same
+    // reason the fall damage is applied here: the `Armor` is the player's, not
+    // the soldier's. `swim.js`'s `DrownTimer` is the engine's water-damage
+    // timer (`Armor::update` `0x08172f40`), armed by `c_AsmIsSwimming` through
+    // the soldier-specific clause in `setLastHitMaterialIndex` (`0x08173700`).
+    // A frame runs whole ticks and the timer can fire on more than one of them,
+    // so the soldier sums it and this drains the sum.
+    if (player.armor) {
+      const drowned = soldier.drainDrowning?.() ?? 0;
+      if (drowned > 0) player.armor.applyDamage(drowned);
+    }
   }
 
   /**

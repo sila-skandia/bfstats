@@ -85,6 +85,17 @@ export const BODY_CLIPS = Object.freeze({
     lower: 'Lb_ParachuteDie', upper: 'Ub_ParachuteDie' }),
   parachuteDeadLanded: Object.freeze({
     lower: 'Lb_ParachuteDeadHitGround', upper: 'Ub_ParachuteDeadHitGround' }),
+  // The swim states. Unlike the parachute's, every one of these has a real
+  // upper half -- `AnimationStatesSwim.con` creates five `Ub_*Swim*` states of
+  // its own -- so none of them borrows `Ub_StandAim`. They are also the only
+  // families whose lower halves declare `c_AsmHideWeapon`, which is why the
+  // clips live under `animations/3P_NoWeapon/`.
+  swimStart: Object.freeze({ lower: 'Lb_StartSwim', upper: 'Ub_StartSwim' }),
+  swimFloat: Object.freeze({ lower: 'Lb_Floating', upper: 'Ub_Floating' }),
+  swimForward: Object.freeze({ lower: 'Lb_SwimForward', upper: 'Ub_SwimForward' }),
+  swimBackward: Object.freeze({ lower: 'Lb_SwimBackward', upper: 'Ub_SwimBackward' }),
+  swimEnd: Object.freeze({ lower: 'Lb_EndSwim', upper: 'Ub_EndSwim' }),
+  swimDie: Object.freeze({ lower: 'Lb_DieSwim', upper: 'Ub_DieSwim' }),
 });
 
 /**
@@ -97,6 +108,27 @@ export const BODY_CLIPS = Object.freeze({
  */
 export const BODY_ONCE = Object.freeze(new Set([
   'parachuteOpen', 'parachuteLanded', 'parachuteDie', 'parachuteDeadLanded',
+  // The swim entry, exit and death: `c_AsmPlayOnce` all three, with
+  // `addTransitionWhenDone Lb_SwimForward` / `Lb_Stand` / nothing. `swim.js`
+  // runs the two transition timers, so nothing here has to.
+  'swimStart', 'swimEnd', 'swimDie',
+]));
+
+/**
+ * The families whose lower-body state declares `c_AsmHideWeapon` (0x2).
+ *
+ * All five swim states do, and the swim death does not -- `Lb_DieSwim` is in
+ * `AnimationStatesDie.con` and declares no flags at all. The engine acts on the
+ * flag in `BFSoldier::enableItem(char)`, which returns without enabling anything
+ * while it is set (`0x082784a1` reads the flags, `0x082784af and eax,0x2`,
+ * `0x082784b2 jne` to the exit), so a swimming soldier's weapon is put away.
+ *
+ * A renderer has to do the same thing by hand, because the pose `.glb` welds the
+ * weapon into the hand: the clips are from `animations/3P_NoWeapon/` and leave
+ * the hands empty, but the welded rifle rides along on the bones regardless.
+ */
+export const BODY_HIDES_WEAPON = Object.freeze(new Set([
+  'swimStart', 'swimFloat', 'swimForward', 'swimBackward', 'swimEnd',
 ]));
 
 /**
@@ -125,6 +157,16 @@ export const BODY_FALLBACKS = Object.freeze({
   parachuteDie: Object.freeze(['parachuteDie', 'parachuteFall', 'stand']),
   parachuteDeadLanded: Object.freeze(['parachuteDeadLanded',
     'parachuteLanded', 'stand']),
+  // Every swim chain falls back through `swimFloat` -- treading water is the
+  // posture, the way `prone` is for a crawl -- and only then to standing, so a
+  // tree published before `swim.gait.glb` existed draws a man upright in the
+  // water rather than drawing nothing.
+  swimStart: Object.freeze(['swimStart', 'swimFloat', 'stand']),
+  swimFloat: Object.freeze(['swimFloat', 'stand']),
+  swimForward: Object.freeze(['swimForward', 'swimFloat', 'stand']),
+  swimBackward: Object.freeze(['swimBackward', 'swimFloat', 'stand']),
+  swimEnd: Object.freeze(['swimEnd', 'swimFloat', 'stand']),
+  swimDie: Object.freeze(['swimDie', 'swimFloat', 'stand']),
 });
 
 /**
@@ -179,16 +221,56 @@ export function locoFamily(gait, stance) {
 }
 
 /**
+ * `swim.js`'s own family name, or `null` when the pair is not a swim one.
+ *
+ * Keyed on the LOWER half for the same reason the parachute's is: the lower body
+ * is the half every swim state declares, and it is the machine
+ * `BFSoldier::isSwimming` and `handleDamage` both read (`this+0x294`).
+ */
+const FAMILY_BY_SWIM_STATE = Object.freeze({
+  lb_startswim: 'swimStart',
+  lb_floating: 'swimFloat',
+  lb_swimforward: 'swimForward',
+  lb_swimbackward: 'swimBackward',
+  lb_endswim: 'swimEnd',
+  lb_dieswim: 'swimDie',
+});
+
+/**
+ * The family for a swim clip pair, or null for a pair this does not know.
+ *
+ * `pair` is whatever `SwimState.clips(dead)` answered -- a `{lower, upper}` of
+ * engine state names, or null when the soldier is not in the water.
+ */
+export function swimFamily(pair) {
+  const lower = pair && pair.lower;
+  if (typeof lower !== 'string') return null;
+  return FAMILY_BY_SWIM_STATE[lower.toLowerCase()] ?? null;
+}
+
+/**
  * The family the local soldier owes this frame, before any fallback.
  *
- * The parachute outranks the gait, because the engine's parachute states are
- * whole-body states that replace the locomotion pair rather than layering over
- * it (`setIsParachuting` sets both halves, PARA-5). A man under a canopy is
- * not also running.
+ * Two whole-body state machines outrank the gait, and both for the engine's own
+ * reason -- they replace the locomotion pair rather than layering over it:
+ *
+ *  * **The parachute**, because `setIsParachuting` sets both halves (PARA-5). A
+ *    man under a canopy is not also running.
+ *  * **Swimming**, because `BFSoldier::updateSwimming` enters the swim states by
+ *    name on both machines (`setAnimationState(0, "Lb_StartSwim")`,
+ *    `setAnimationState(1, "Ub_StartSwim")`, `0x082823f7` / `0x08282426`) and
+ *    every one of them carries `c_AsmIsSwimming`. A swimming man is not also
+ *    crouching: the swim states declare neither `c_AsmIsCrouching` nor
+ *    `c_AsmIsLying`, so `getPose()` answers standing throughout.
+ *
+ * The parachute is tested first because the two cannot both be true in the
+ * engine -- `updateSwimming` runs on a man whose chute has already collapsed --
+ * and because a canopy over water is the parachute's landing, not a swim.
  */
 export function bodyFamily({ gait = 'stand', stance = 'stand',
-                             parachute = null } = {}) {
-  return parachuteFamily(parachute) ?? locoFamily(gait, stance);
+                             parachute = null, swim = null } = {}) {
+  return parachuteFamily(parachute) ?? swimFamily(swim)
+    ?? locoFamily(gait, stance);
 }
 
 /**
