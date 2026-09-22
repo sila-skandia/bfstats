@@ -47,11 +47,36 @@ from extract_models import DEFAULT_GAME_DIR, OBJECT_ARCHIVES, mod_chain
 # layer this asks for the 44 kHz masters first.
 SOLDIER_SOUND_RATES = VEHICLE_RATES
 
-# The three scripts, by the `c_Sst*` trigger the animation states declare.
+# The scripts, by the `c_Sst*` trigger the animation states declare.
 BAIL_OUT_SCRIPTS = (
     ("c_SstFallingHigh", "SoldierFallingHigh.ssc"),
     ("c_SstOpenParachute", "SoldierOpenParachute.ssc"),
     ("c_SstParachuteLand", "SoldierParachuteLand.ssc"),
+)
+
+MOVEMENT_SCRIPTS = (
+    ("c_SstWalk", "SoldierWalk.ssc"),
+    ("c_SstRun", "SoldierRun.ssc"),
+)
+
+INJURY_SCRIPTS = (
+    ("c_SstHitDamage", "SoldierHitDamage.ssc"),
+    ("c_SstFFHitDamage", "SoldierFFHitDamage.ssc"),
+)
+
+ALL_SOLDIER_SCRIPTS = BAIL_OUT_SCRIPTS + MOVEMENT_SCRIPTS + INJURY_SCRIPTS
+
+PATCH_MATERIALS = (
+    "sand",
+    "metal",
+    "wood",
+    "concrete",
+    "grass",
+    "gravel",
+    "ice",
+    "mud",
+    "fabric",
+    "harness",
 )
 
 SOUND_DIR = "Objects/Soldiers/Common/Sounds"
@@ -108,8 +133,12 @@ def script_manifest(text: str, source: str) -> list[dict]:
                 "minDistance": round(sample.min_distance, 4),
             })
         if layers:
-            patches.append({"randomPlay": bool(patch.random_play),
-                            "layers": layers})
+            p_entry = {"randomPlay": bool(patch.random_play),
+                       "layers": layers}
+            patches.append(p_entry)
+    if len(patches) == 10 and any(k in source.lower() for k in ("walk", "run", "crouch", "crawl")):
+        for idx, p in enumerate(patches):
+            p["material"] = PATCH_MATERIALS[idx]
     return patches
 
 
@@ -118,7 +147,14 @@ def find_script(objects: ArchivePool, name: str) -> str | None:
     for candidate in (f"{SOUND_DIR}/{name}", name):
         hit = objects.find(candidate)
         if hit is not None:
-            return objects.read(hit).decode("latin-1")
+            text = objects.read(hit).decode("latin-1")
+            m = re.search(r"#include\s+([^\r\n]+)", text, re.IGNORECASE)
+            if m:
+                inc = m.group(1).strip().replace("\\", "/")
+                inc_text = find_script(objects, inc)
+                if inc_text is not None:
+                    return inc_text
+            return text
     return None
 
 
@@ -139,7 +175,7 @@ def extract(game_dir: Path, mod: str, out: Path,
     manifest: dict = {"mod": mod, "triggers": {}, "missing": []}
     wanted: dict[str, str] = {}
 
-    for trigger, script in BAIL_OUT_SCRIPTS:
+    for trigger, script in ALL_SOLDIER_SCRIPTS:
         text = find_script(objects, script)
         if text is None:
             manifest["missing"].append({"trigger": trigger, "script": script,

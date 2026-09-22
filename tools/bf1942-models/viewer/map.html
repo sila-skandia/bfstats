@@ -972,7 +972,7 @@ import { GunFire } from './gunfire.js';
 import { idleFirePose, idleFireState } from './idle-vehicle.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
-import { buildHeightfield, buildCollisionIndex, buildDrivableMask, WorldCollider } from './collision.js';
+import { buildHeightfield, buildCollisionIndex, buildDrivableMask, WorldCollider, footstepMaterial } from './collision.js';
 import { FOV_DEG as FOOT_FOV, GRAVITY } from './soldier.js';
 import {
   SoldierView, FOOT_VIEW_CYCLE, PARACHUTE_VIEW_CYCLE, PARACHUTE_VIEW_RADIUS,
@@ -981,6 +981,7 @@ import {
 import { DeviationModel } from './deviation.js';
 import { wantViewmodelClip } from './viewmodel-anim.js';
 import { fireVariantsFor, stanceClip, stanceFor } from './stance-clips.js';
+import { activeDeployGroup as activeDeployGroupFor, flagMapSpots } from './deploy-spots.js';
 import {
   BODY_CLIPS, BODY_ONCE, BODY_HIDES_WEAPON, bodyClipFamily, canopyClip,
 } from './soldier-body.js';
@@ -988,7 +989,7 @@ import { createReplayController, recordingLevel } from './replay.js';
 import { createRoomClient } from './netcode-client.js';
 import { createRemoteRenderer } from './netcode-render.js';
 import { createReconciler } from './netcode-reconcile.js';
-import { Hud, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS } from './hud.js';
+import { Hud, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS, calculateHitOctant } from './hud.js';
 import { Armor } from './armor.js';
 import { VehicleDamageSet } from './vehicle-damage.js';
 import { effectNameFor } from './crash-damage.js';
@@ -4445,26 +4446,6 @@ async function setupSounds(report, dir) {
   updateAudio();
 }
 
-/** The retail capture call is a short radio line, not a UI-only notification. */
-function announceCapture(row) {
-  if (AUDIO_OFF || !row || !window.speechSynthesis || !window.SpeechSynthesisUtterance) {
-    return;
-  }
-  const name = row.name || 'the flag';
-  const text = row.type === 'capturing'
-    ? "We've got them on the run."
-    : row.type === 'captured'
-      ? `${row.team === 1 ? 'Axis' : 'Allied'} forces have captured ${name}.`
-      : row.type === 'captureContested'
-        ? `${name} is contested.` : null;
-  if (!text) return;
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.volume = optSound.checked ? Number(optSoundVol.value) || 0 : 0;
-  utterance.rate = 0.92;
-  window.speechSynthesis.speak(utterance);
-}
-
 // --- engine audio -----------------------------------------------------------
 //
 // The flown vehicle's own engine, played from the `.ssc` the extractor shipped
@@ -5616,6 +5597,15 @@ const wreckDeathFwd = new THREE.Vector3();
  */
 function killOccupantInWreck(node) {
   if (!occupancy || occupancy.root !== node || soldierDead) return;
+  // A wreck cuts off engine audio immediately -- crash effect plays, engine stops
+  disposeEngineAudio();
+  hitIndicatorTimer = 0;
+  hitIndicatorDir = 0;
+  if (gameHud?.vars) {
+    gameHud.vars['HitFromDir/HitFromDir'] = 0;
+    gameHud.vars['HitFromDir/HitFromDirAlpha'] = 0;
+  }
+  lastSoldierHp = null;
   node.updateWorldMatrix(true, false);
   node.getWorldPosition(wreckDeathPos);
   node.getWorldQuaternion(wreckDeathQuat);
@@ -6660,6 +6650,9 @@ function applyVehicleHit(record) {
     // has is a figure that should stop standing there. The player's own death
     // is already handled where every other cause of it is.
     if (hit.target?.soldier) {
+      if (hit.target.armor === soldierArmor) {
+        applyDamageToPlayer(hit.damage, { x: record.x, y: record.y, z: record.z }, record.team);
+      }
       if (hit.target.node && hit.vehicle.destroyed) hit.target.node.visible = false;
       continue;
     }
@@ -8670,8 +8663,6 @@ function updateCaptureHud(ticks) {
     }
     if (!localCapture || localCapture.flag !== target) {
       localCapture = { flag: target, elapsed: 0 };
-      announceCapture({ type: 'capturing', team: player?.team ?? deployTeamId,
-        name: target.name });
     }
     localCapture.elapsed += (ticks * (1 / 30));
     const progress = Math.min(100, Math.round(
@@ -8681,7 +8672,6 @@ function updateCaptureHud(ticks) {
     target.team = player?.team ?? deployTeamId;
     syncVehicleSpawnOwnership();
     logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
-    announceCapture({ type: 'captured', team: target.team, name: target.name });
     hud.textContent = `${target.name} captured`;
     clearTimeout(hudViewTimer);
     hudViewTimer = setTimeout(updateHud, 2200);
@@ -11211,6 +11201,153 @@ function playHandFire(fire) {
   try { source.start(ctx.currentTime + (fire.spec.delay || 0)); } catch (_) {}
 }
 
+// --- soldier footsteps, damage direction & hurt audio ------------------------
+
+let soldierSoundsIndex = null;
+let lastHurtSoundTime = 0;
+let hitIndicatorTimer = 0;
+let hitIndicatorDir = 0;
+let lastSoldierHp = null;
+
+function soldierSoundsManifest() {
+  if (!soldierSoundsIndex) {
+    soldierSoundsIndex = fetch(`${MODELS_BASE}/sounds/soldier.json${bust()}`)
+      .then(r => (r.ok ? r.json() : null))
+      .catch(() => null)
+      .then(doc => { if (!doc) soldierSoundsIndex = null; return doc; });
+  }
+  return soldierSoundsIndex;
+}
+
+function playSoldierOneShot(buffer, volume = 1, pitchJitter = 0.03, delay = 0) {
+  if (!buffer || !audioListener || masterVolume() <= 0) return;
+  const ctx = audioListener.context;
+  if (ctx.state === 'suspended') return;
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  if (pitchJitter > 0) {
+    source.playbackRate.value = 1 + (Math.random() * 2 - 1) * pitchJitter;
+  }
+  const gain = ctx.createGain();
+  gain.gain.value = Math.min(Math.max(volume, 0), 1) * masterVolume() * WEAPON_HEADROOM;
+  source.connect(gain);
+  gain.connect(audioListener.getInput());
+  source.onended = () => {
+    try { source.disconnect(); gain.disconnect(); } catch (_) {}
+  };
+  const when = delay > 0 ? ctx.currentTime + delay : 0;
+  try { source.start(when); } catch (_) {}
+}
+
+async function handleSoldierFootstep(step) {
+  if (AUDIO_OFF || masterVolume() <= 0) return;
+  const manifest = await soldierSoundsManifest();
+  if (!manifest) return;
+
+  let matId = 0;
+  const collider = soldier?.collider;
+  if (collider) {
+    let onStatic = false;
+    let best = -Infinity;
+    if (collider.statics) {
+      const record = soldier._hit || (soldier._hit = {
+        t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0,
+        dx: 0, dy: -1, dz: 0, material: 0, kind: '', owner: -1, triangle: -1,
+      });
+      record.dx = 0; record.dy = -1; record.dz = 0;
+      const hit = collider.statics.cast(step.x, step.y + 0.5, step.z, 0, -1, 0, 1.0, -1, record);
+      if (hit) {
+        best = hit.y;
+        matId = hit.material;
+        onStatic = true;
+      }
+    }
+    const ground = collider.surfaceHeight ? collider.surfaceHeight(step.x, step.z) : NaN;
+    if (!onStatic || (Number.isFinite(ground) && ground >= best)) {
+      matId = collider.heightfield?.material ? collider.heightfield.material(step.x, step.z) : 0;
+    }
+  }
+
+  const matName = footstepMaterial(matId);
+  const triggerName = step.gait === 'run' ? 'c_SstRun' : 'c_SstWalk';
+  const trigger = manifest.triggers?.[triggerName];
+  if (!trigger?.patches) return;
+
+  const surfacePatch = trigger.patches.find(p => p.material === matName) || trigger.patches[0];
+  if (surfacePatch?.layers?.length) {
+    const choice = surfacePatch.layers[Math.floor(Math.random() * surfacePatch.layers.length)];
+    const buf = await modelSoundBuffer(`sounds/${choice.sample}.mp3`);
+    if (buf) playSoldierOneShot(buf, choice.volume ?? 1, 0.03, 0);
+  }
+
+  const fabricPatch = trigger.patches.find(p => p.material === 'fabric');
+  if (fabricPatch?.layers?.length) {
+    const choice = fabricPatch.layers[Math.floor(Math.random() * fabricPatch.layers.length)];
+    const buf = await modelSoundBuffer(`sounds/${choice.sample}.mp3`);
+    if (buf) playSoldierOneShot(buf, (choice.volume ?? 1) * 0.5, 0.03, choice.at ?? 0.2);
+  }
+
+  const harnessPatch = trigger.patches.find(p => p.material === 'harness');
+  if (harnessPatch?.layers?.length) {
+    const choice = harnessPatch.layers[Math.floor(Math.random() * harnessPatch.layers.length)];
+    const buf = await modelSoundBuffer(`sounds/${choice.sample}.mp3`);
+    if (buf) playSoldierOneShot(buf, (choice.volume ?? 1) * 0.4, 0.03, choice.at ?? 0.1);
+  }
+}
+
+function triggerHitIndicator(direction, intensity = 1.0) {
+  hitIndicatorDir = direction;
+  hitIndicatorTimer = 1.0;
+  gameHud.vars['HitFromDir/HitFromDir'] = direction;
+  gameHud.vars['HitFromDir/HitFromDirAlpha'] = Math.max(0.1, Math.min(1.0, intensity));
+  gameHud.requestRepaint();
+}
+
+async function playSoldierHurtSound(isFriendlyFire = false) {
+  if (AUDIO_OFF || masterVolume() <= 0) return;
+  const now = performance.now() * 0.001;
+  if (now - lastHurtSoundTime < 0.9) return;
+  lastHurtSoundTime = now;
+
+  const manifest = await soldierSoundsManifest();
+  if (!manifest) return;
+  const triggerName = isFriendlyFire ? 'c_SstFFHitDamage' : 'c_SstHitDamage';
+  const trigger = manifest.triggers?.[triggerName];
+  const patch = trigger?.patches?.[0];
+  if (!patch?.layers?.length) return;
+  const choice = patch.layers[Math.floor(Math.random() * patch.layers.length)];
+  const buf = await modelSoundBuffer(`sounds/${choice.sample}.mp3`);
+  if (buf) playSoldierOneShot(buf, choice.volume ?? 0.7, 0.05, 0);
+}
+
+function applyDamageToPlayer(damage, attackerPos = null, attackerTeam = null) {
+  if (!soldierArmor || soldierDead) return;
+  soldierArmor.applyDamage(damage);
+
+  // If in a vehicle or piloting, vehicle damage handles it -- no on-foot grunts or hit arcs
+  if (optPilot.checked || occupancy) return;
+
+  const isFriendlyFire = attackerTeam != null && attackerTeam === deployTeamId;
+  playSoldierHurtSound(isFriendlyFire);
+
+  let dir = 1;
+  if (attackerPos && soldier) {
+    const dx = attackerPos.x - soldier.x;
+    const dz = attackerPos.z - soldier.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist > 0.01) {
+      const fwdX = Math.sin(soldier.yaw);
+      const fwdZ = Math.cos(soldier.yaw);
+      const rightX = Math.cos(soldier.yaw);
+      const rightZ = -Math.sin(soldier.yaw);
+      const forwardDot = (dx / dist) * fwdX + (dz / dist) * fwdZ;
+      const rightDot = (dx / dist) * rightX + (dz / dist) * rightZ;
+      dir = calculateHitOctant(forwardDot, rightDot);
+    }
+  }
+  triggerHitIndicator(dir, damage / (soldierArmor.maxHitPoints || 100));
+}
+
 // Every round the soldier's own gun fires: the report plays, the magazine
 // empties, the cone blooms, and the view kicks. `onShot` fires for vehicle
 // guns too, so the group is checked first.
@@ -11820,8 +11957,33 @@ const SOLDIER_AMMO_VARS = [
   'Ammo/SoldierAmmo/SoldierAmmoBarSize',
 ];
 
-function updateSoldierHud() {
+function updateSoldierHud(dt = 0.016) {
   const vars = gameHud.vars;
+  const inVehicle = optPilot.checked && !!occupancy;
+
+  if (hitIndicatorTimer > 0) {
+    hitIndicatorTimer = Math.max(0, hitIndicatorTimer - dt);
+    if (hitIndicatorTimer <= 0) {
+      vars['HitFromDir/HitFromDir'] = 0;
+      vars['HitFromDir/HitFromDirAlpha'] = 0;
+    } else {
+      vars['HitFromDir/HitFromDir'] = hitIndicatorDir;
+      vars['HitFromDir/HitFromDirAlpha'] = hitIndicatorTimer;
+    }
+  }
+
+  if (soldierArmor && !soldierDead && !inVehicle) {
+    if (lastSoldierHp !== null && soldierArmor.hitPoints < lastSoldierHp - 0.01) {
+      const drop = lastSoldierHp - soldierArmor.hitPoints;
+      playSoldierHurtSound(false);
+      if (hitIndicatorTimer <= 0) {
+        triggerHitIndicator(1, drop / (soldierArmor.maxHitPoints || 100));
+      }
+    }
+    lastSoldierHp = soldierArmor.hitPoints;
+  } else {
+    lastSoldierHp = soldierArmor?.hitPoints ?? null;
+  }
   // Any seat at all, which `seats.js` answers for: `occupancy` is non-null
   // from the moment `setPilot` seats someone until `leaveVehicle` /
   // `exitManned` clears it, whatever the seat is — a cockpit, a driver's
@@ -11829,7 +11991,6 @@ function updateSoldierHud() {
   // all. This runs after `frame()`'s dispatch has already called
   // `feedVehicleHud`, so testing `aircraft || car` here would blank the
   // vehicle groups that a manned gun had just filled in.
-  const inVehicle = optPilot.checked && !!occupancy;
   // A seated soldier's optOnFoot box is still ticked — he is only suspended,
   // per disposeHandWeapon's own comment on the old #ammo element — so the
   // vehicle check has to be explicit here too.
@@ -12716,15 +12877,8 @@ function drawPlayer(ctx, px, py, sc, rot = 0) {
 
 /** The spawn screen's targets: one `map_circle` per flag the chosen side can
  *  spawn at, never one per spawn entry. The chosen one is drawn larger and
- *  solid; the rest sit back. */
-/** The map spots a flag draws: one per spawn group on a ship (the game draws
- *  one ring per group down the hull), one for the flag itself otherwise. */
-function flagMapSpots(flag) {
-  if (flag?.groups?.length) {
-    return flag.groups.map(g => ({ group: g.group, position: g.position }));
-  }
-  return flag?.position ? [{ group: null, position: flag.position }] : [];
-}
+ *  solid; the rest sit back. `flagMapSpots` is imported from
+ *  `deploy-spots.js`, which pins its land-vs-ship contract under node. */
 
 function drawSpawnRings(ctx, toPx, sc) {
   // -1 while nothing is chosen: every ring sits back and none is filled,
@@ -13786,12 +13940,11 @@ function enterFreeCam() {
 }
 
 /** The group of `flag` the current selection points at: the chosen deck
- *  spot when one was clicked, else the ship's first group. */
+ *  spot when one was clicked, else the ship's first group. The law lives in
+ *  `deploy-spots.js` (node-tested); this is the page's thin wrapper over its
+ *  own `deployGroup` state. */
 function activeDeployGroup(flag) {
-  if (deployGroup != null && flag?.groups?.some(g => g.group === deployGroup)) {
-    return deployGroup;
-  }
-  return flag?.groups?.[0]?.group ?? null;
+  return activeDeployGroupFor(flag, deployGroup);
 }
 
 function selectDeployFlag(index, group = null) {
@@ -14553,8 +14706,6 @@ async function joinRoom() {
     });
     roomClient.onevent = row => {
       if (row?.text) logToConsole(row.text);
-      if (row?.type === 'capturing' || row?.type === 'captureContested'
-          || row?.type === 'captured') announceCapture(row);
       if (row?.type === 'capturing') {
         roomCapture = { name: row.name || 'flag', elapsed: 0,
           duration: Number(row.duration) > 0 ? Number(row.duration) : 8,
@@ -14987,6 +15138,9 @@ function frame(dt) {
     for (const event of soldier.drainParachuteEvents()) parachuteLog.push(event);
     if (parachuteLog.length > 64) parachuteLog.splice(0, parachuteLog.length - 64);
   }
+  if (soldier?.footstepEvents.length) {
+    for (const step of soldier.drainFootstepEvents()) handleSoldierFootstep(step);
+  }
 
   // The room's wire, right on the sim core's edge: one input word per tick
   // the world consumed (the engine's one-buffered-input-per-tick law — the
@@ -15267,7 +15421,7 @@ function frame(dt) {
   // climb into (or out of) this vehicle at any moment, and the feed's own
   // signature memo makes the steady state a single string compare.
   feedSeatDots();
-  updateSoldierHud();
+  updateSoldierHud(dt);
   // Every frame, not just an on-foot one: a seat has a crosshair too, and it
   // is `crosshairAim` that decides whose.
   updateCrosshair();
@@ -15895,7 +16049,7 @@ if (params.has('shots')) {
   // damage's own approximate trigger.
   window.__damage = n => {
     if (!soldierArmor) return false;
-    soldierArmor.applyDamage(Number(n) || 0);
+    applyDamageToPlayer(Number(n) || 0);
     return true;
   };
   // Exercise the fall-damage integration itself (the `onFoot` hook above),

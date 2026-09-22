@@ -168,6 +168,9 @@ function trackedVarsOf(el, out) {
     if (el.posVar.x) out.add(el.posVar.x);
     if (el.posVar.y) out.add(el.posVar.y);
   }
+  if (el.texture === 'ingame_hit_indicator_64x128' || (el.when || []).some(w => w.var === 'HitFromDir/HitFromDir')) {
+    out.add('HitFromDir/HitFromDirAlpha');
+  }
 }
 
 /** The glyph atlas in one colour, made once per (font, colour) -- identical
@@ -495,7 +498,11 @@ export class Hud {
   _drawPicture(ctx, el, x, y, w, h, img) {
     if (!img) return;
     const color = el.color;
-    ctx.globalAlpha = color ? color[3] : 1;
+    let alpha = color ? color[3] : 1;
+    if (this.vars['HitFromDir/HitFromDirAlpha'] != null && el.texture === 'ingame_hit_indicator_64x128') {
+      alpha *= Math.max(0, Math.min(1, Number(this.vars['HitFromDir/HitFromDirAlpha']) || 0));
+    }
+    ctx.globalAlpha = alpha;
     const angle = rotationAngle(el, this.vars);
     if (angle) {
       ctx.save();
@@ -621,8 +628,14 @@ export class Hud {
 
   _drawFill(ctx, el) {
     const [x, y, w, h] = el.rect;
+    // Skip full-screen fills (the 800x600 quad artifact in hitIndicator)
+    if (w >= 800 && h >= 600) return;
     const color = el.color || [1, 1, 1, 1];
-    ctx.globalAlpha = color[3];
+    let alpha = color[3];
+    if (this.vars['HitFromDir/HitFromDirAlpha'] != null && (el.when || []).some(w => w.var === 'HitFromDir/HitFromDir')) {
+      alpha *= Math.max(0, Math.min(1, Number(this.vars['HitFromDir/HitFromDirAlpha']) || 0));
+    }
+    ctx.globalAlpha = alpha;
     ctx.fillStyle = `rgb(${color.slice(0, 3).map(v => Math.round(v * 255)).join(',')})`;
     ctx.fillRect(x, y, w, h);
     ctx.globalAlpha = 1;
@@ -721,3 +734,28 @@ export class Hud {
     ctx.globalAlpha = 1;
   }
 }
+
+/**
+ * Calculate the 1..8 compass octant for directional damage indicator from
+ * forwardDot and rightDot in the player's view frame.
+ *
+ * Ground truth: BF1942.exe at 0x004b0967.
+ * Boundaries: cos(22.5 deg) = 0.9238, cos(67.5 deg) = 0.3826.
+ * Returns:
+ *   1: Front (12:00)
+ *   2: Front-Right (1:30)
+ *   3: Right (3:00)
+ *   4: Rear-Right (4:30)
+ *   5: Rear (6:00)
+ *   6: Rear-Left (7:30)
+ *   7: Left (9:00)
+ *   8: Front-Left (10:30)
+ */
+export function calculateHitOctant(forwardDot, rightDot) {
+  if (forwardDot > 0.9238) return 1;
+  if (forwardDot > 0.3826) return rightDot > 0 ? 2 : 8;
+  if (forwardDot > -0.3826) return rightDot > 0 ? 3 : 7;
+  if (forwardDot > -0.9238) return rightDot > 0 ? 4 : 6;
+  return 5;
+}
+

@@ -403,6 +403,8 @@ export class Soldier {
     this.chute = new Parachute();
     /** Sound and animation events the last `step()` produced, oldest first. */
     this.parachuteEvents = [];
+    /** Footstep cadence events produced by movement, drained with `drainFootstepEvents()`. */
+    this.footstepEvents = [];
     /** The drag `parachute.js` asks for, pre-scaled for this body's radius. */
     this._chuteDrag = effectiveParachuteDrag(this.body.body.boundingRadius);
     this._chuteForward = { x: 0, y: 0, z: 0 };
@@ -445,6 +447,7 @@ export class Soldier {
     this.drown.reset();
     this.drownDamage = 0;
     this.parachuteEvents.length = 0;
+    this.footstepEvents.length = 0;
     this.body.setParachute(false);
     this.settle();
     return this;
@@ -508,6 +511,15 @@ export class Soldier {
   drainParachuteEvents() {
     if (!this.parachuteEvents.length) return EMPTY_EVENTS;
     return this.parachuteEvents.splice(0, this.parachuteEvents.length);
+  }
+
+  /**
+   * Take the footstep sound triggers produced since the last call, oldest first,
+   * and empty the queue.
+   */
+  drainFootstepEvents() {
+    if (!this.footstepEvents.length) return EMPTY_EVENTS;
+    return this.footstepEvents.splice(0, this.footstepEvents.length);
   }
 
   /**
@@ -984,7 +996,20 @@ export class Soldier {
       // says when a boot lands.
       const before = this.stepPhase;
       this.stepPhase = (this.stepPhase + dt / period) % 1;
-      if (this.stepPhase < before) this.steps++;
+      if (this.stepPhase < before) {
+        this.steps++;
+        if (this.grounded && !this.swim.isSwimming && !this.chute.open) {
+          this.footstepEvents.push({
+            gait: this.gait,
+            x: this.x,
+            y: this.y,
+            z: this.z,
+          });
+          if (this.footstepEvents.length > 32) {
+            this.footstepEvents.splice(0, this.footstepEvents.length - 32);
+          }
+        }
+      }
     }
     const amount = this.bobPhase * this.cameraShakeFactor;
     if (amount <= 0) {
@@ -1010,8 +1035,9 @@ export function stanceForPose(pose) { return POSE_STANCE[pose] || 'stand'; }
  * The level's flags, each with the soldier spawns it owns.
  *
  * The join is the one the engine makes: a `SpawnPoint` declares `setGroup <n>`
- * and a `ControlPoint` declares `spawnGroupId <n>`, and the flag's team owns
- * every spawn in its group. Both halves are already in `scene.json` —
+ * and a `ControlPoint` declares `spawnGroupId <n>`. The control point's live
+ * owner gates those spawns; the spawn manager's group side is separate. Both
+ * halves are already in `scene.json` —
  * `controlPoints[].spawnGroupId` and `soldierSpawns[].group` — because
  * `extract_map.py` has emitted them since `spawn-points.md`.
  *
@@ -1042,12 +1068,12 @@ export function spawnFlags(extras) {
     for (const value of groups) claimed.add(value);
     flags.push({
       name: point.displayName || point.name || `flag ${group}`,
-      // The side the spawn screen lists the group under is the engine's own
-      // `spawnPointManager.groupTeam`, which the extractor has already folded
-      // into each spawn's `team`. The control point's start team is only the
-      // fallback for data extracted before that (Wake's landing beach starts
-      // `team 2` but its group is `groupTeam 1` — the Japanese landing).
-      team: owned.find(s => s.team === 1 || s.team === 2)?.team ?? point.team ?? null,
+      // A spawn group's tab team is not the control point's live owner. The
+      // retail ControlPoint starts from its template team and changes that
+      // field only through gotControl/setTeam; neutral points must therefore
+      // stay neutral even when their authored group is listed under a side.
+      team: point.team === 0 || point.team === 1 || point.team === 2
+        ? point.team : owned.find(s => s.team === 1 || s.team === 2)?.team ?? null,
       group,
       groups,
       position: point.position || null,

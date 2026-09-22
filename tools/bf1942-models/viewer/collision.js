@@ -1756,3 +1756,23 @@ export function materialFamily(id) {
       || id === 166) return 'wood';
   return 'stone';
 }
+
+/**
+ * Maps a terrain or static mesh material ID to one of the 8 soldier footstep
+ * sound patches declared in High/SoldierWalk.ssc and High/SoldierRun.ssc:
+ * 'sand', 'metal', 'wood', 'concrete', 'grass', 'gravel', 'ice', 'mud'.
+ *
+ * Derived from materialManagerDefine.con and High/SoldierWalk.ssc.
+ */
+export function footstepMaterial(id) {
+  if (id === 2 || id === 3) return 'grass';
+  if (id === 6) return 'mud';
+  if (id === 8 || id === 13 || id === 14) return 'gravel';
+  if (id === 9) return 'ice';
+  if (id === 12 || id === 15) return 'concrete';
+  if (id <= 15) return 'sand';
+  if ((id >= 79 && id <= 83) || id === 97 || id === 107 || id === 113 || id === 117 || id === 166) return 'wood';
+  if ((id >= 84 && id <= 87) || id === 90 || id === 98 || id === 193 || (id >= 39 && id <= 76)) return 'metal';
+  return 'concrete';
+}
+
