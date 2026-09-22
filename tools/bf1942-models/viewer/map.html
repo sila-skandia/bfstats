@@ -6191,6 +6191,36 @@ function onCrashDamage(owner, result, at, other) {
   if (effect) effects.play(effect, { position: [at[0], at[1], at[2]], normal: [0, 1, 0] });
 }
 
+/**
+ * How far the hull's own col0 collision VERTICES reach below its origin, in the
+ * hull's frame — the same set `BodyWorld.#drivenTerrainDamage` bills and the same
+ * set `checkVsTerrain` (`0x0825a960`) drops on the heightfield.
+ *
+ * `Ship.keel` is the collision BOX's bottom, and on a level whose drawn tree
+ * carries no hull collision node it is the drawn geometry box's bottom (ships
+ * README §15). A Gato's col0 vertices reach 1.06 m below that box, so a hull
+ * grounded on the box would report herself clear of a reef while the damage pass
+ * still had a vertex inside it — the one hull on Midway that kept dying after the
+ * footprint grounding went in. Handing `Ship` this number makes the two agree.
+ */
+function hullCollisionKeel(spec) {
+  let lowest = Infinity;
+  for (const desc of spec?.parts || []) {
+    if (desc.kind !== 'body') continue;
+    const layer = desc.shape?.layers?.[0];
+    const v = layer?.vertices;
+    if (!v) continue;
+    const rot = desc.rot;
+    for (let i = 0; i < v.length; i += 3) {
+      // Part-local -> body frame, `body-contact.js`'s own row convention.
+      const y = desc.offset[1]
+        + v[i] * rot[0][1] + v[i + 1] * rot[1][1] + v[i + 2] * rot[2][1];
+      if (y < lowest) lowest = y;
+    }
+  }
+  return Number.isFinite(lowest) ? lowest : null;
+}
+
 /** The player has taken a vehicle: its drive model now stands in for the body. */
 function adoptDrivenBody(vehicle) {
   if (!bodyWorld || !vehicle) return;
@@ -6204,6 +6234,8 @@ function adoptDrivenBody(vehicle) {
   // re-asks every query in the hull's own frame, and a 1,400-triangle destroyer
   // that probed its own baked triangles for one tick would shove itself.
   if (scene.sea) {
+    // Ground her on the same geometry the crash-damage pass bills.
+    if ('sampleKeel' in vehicle) vehicle.sampleKeel = hullCollisionKeel(scene.spec);
     scene.node.updateWorldMatrix(true, false);
     const e = scene.node.matrixWorld.elements;
     publishMovedHull(owner, scene, scene.node, [e[12], e[13], e[14]]);
