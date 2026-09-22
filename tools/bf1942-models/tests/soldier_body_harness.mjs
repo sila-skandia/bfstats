@@ -13,7 +13,7 @@ import {
   resolveBodyFamily, swimFamily,
 } from './soldier-body.js';
 import { PARA_CLIPS } from './parachute.js';
-import { SWIM_CLIPS } from './swim.js';
+import { SWIM_CLIPS, SWIM_STATE_FLAGS, itemsLocked } from './swim.js';
 
 const results = {};
 
@@ -137,6 +137,11 @@ results.swimOnAnOldRig = {
 results.hidesWeapon = [...BODY_HIDES_WEAPON];
 results.hidesWeaponIsSwimOnly = [...BODY_HIDES_WEAPON]
   .every(f => f.startsWith('swim') && f !== 'swimDie');
+// And it agrees, family by family, with the flag words `swim.js` carries -- the
+// renderer's set and the item gate's set are the same set, because they are the
+// same `setFlag c_AsmHideWeapon`. Two tables that can drift are one bug.
+results.hidesWeaponAgreesWithSwimJs = Object.keys(SWIM_CLIPS)
+  .every(family => BODY_HIDES_WEAPON.has(family) === itemsLocked(SWIM_STATE_FLAGS[family]));
 
 // A swimmer's canopy is not drawn.
 results.swimCanopy = {
