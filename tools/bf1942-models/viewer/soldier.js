@@ -921,6 +921,25 @@ export class Soldier {
   swimClips(dead = false) { return this.swim.clips(dead); }
 
   /**
+   * `getCurrentStateFlags()` of the lower animation machine — the word the
+   * engine's own readers test. Only the swim states contribute one here; every
+   * other state this page models declares no flags.
+   */
+  get stateFlags() { return this.swim.stateFlags; }
+
+  /**
+   * Is there an active item at all? The engine's `c_AsmHideWeapon` gate.
+   *
+   * `swim.js`'s `itemsLocked` carries the three call sites. The short of it: a
+   * swimmer's `BFSoldier::handleMessage` discards Fire, AltFire and every
+   * MenuSelect (`0x082772ac`), `selectBestLoadedWeapon` bails out
+   * (`0x08273af4`) and `enableItem` refuses (`0x082784b2`). So the page must not
+   * special-case the trigger — it must take the weapon out of his hands, which
+   * is what the owner means by "locked down".
+   */
+  get itemsLocked() { return this.swim.itemsLocked; }
+
+  /**
    * View bob, and the footstep clock beside it. Two independent clocks that
    * used to be one.
    *
