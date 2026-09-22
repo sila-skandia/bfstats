@@ -1154,13 +1154,29 @@ cd <repo root> && python3 -m unittest discover -s tools/bf1942-models/tests   # 
 
 ## 23. What is still open
 
-1. **Every ship in the viewer has 128 max hit points.** The game authors
-   Fletcher 300, Hatsuzuki 300, Gato/Sub7C 200, PrinceOW/Elco80/Type38 500,
-   Enterprise/Shokaku/Yamato 600, Lcvp/Daihatsu 150, the rafts 35 — and
-   `criticalDamage` comes through correctly (Fletcher 50, Enterprise 100), so the
-   `armor` block reaches the page but `maxHitpoints` does not survive. Not this
-   stream's files (the level assembler's), and it made every number above 2.3 to
-   4.7 times harsher than the game's.
+1. ~~**Every ship in the viewer has 128 max hit points**, so the level assembler
+   must be dropping `maxHitpoints`.~~ **NOT A DEFECT — closed by the lead,
+   2026-09-22.** The authored values are real (Fletcher 300, Gato/Sub7C 200,
+   PrinceOW/Elco80/Type38 500, Enterprise/Shokaku/Yamato 600, Lcvp/Daihatsu 150,
+   the rafts 35) and the extractor emits them correctly. **The engine itself
+   clamps them.** `Armor::setMaxHitPoints` (lnxded `0x08173680`) is eleven
+   instructions around the 128.0 at `0x086c1fe8`:
+
+       fld [0x86c1fe8]   ; 128.0            st1
+       fld [ebp+0xc]     ; v                st0
+       fucom st(1) / fnstsw ax / test ah,0x45
+       jne  0x81736a0    ; v <= 128 -> fstp st(1) pops the 128, v survives
+       fstp st(0)        ; v  >  128 -> pops v, leaving 128.0
+       fstp [eax+0x3c]   ; store whichever survived
+
+   `test ah,0x45` reads fucom's C0/C2/C3 and is zero **only** when `v > 128`,
+   which is the fall-through that discards `v`. So a Yamato is a 128 HP object in
+   retail too, `R4-5` is confirmed (unlike its sibling R4-13, which this round
+   refuted), and the viewer's `MAX_HITPOINTS_CEILING` is parity rather than a lost
+   field. The numbers in this document are therefore **not** 2.3-4.7x harsh, and
+   "fixing" this by passing the authored value through would have made every ship
+   that much tougher than the game. `viewer/armor.js` now carries the
+   disassembly so the next reader does not re-open it.
 2. **Whether the engine really would destroy a Yamato on Midway's reef.** By its
    own arithmetic it would (§18.2, §22). Nothing in `checkVsTerrain`,
    `handleCollisionLandOrWater`, `isInColList` or the material tables gates it,
