@@ -736,7 +736,9 @@ function bobShape(input, factor) {
       { name: 'a', position: [587, 34, -1122], rotation: [37.44, 0, 0], group: 1, team: 1 },
       { name: 'b', position: [626, 34, -1100], rotation: [90, 0, 0], group: 1, team: 1 },
       { name: 'c', position: [1162, 20, -590], rotation: [0, 0, 0], group: 2, team: 2 },
-      { name: 'd', position: [1020, 21, -810], rotation: [180, 0, 0], group: 6, team: 0 },
+      // The authored spawn group belongs to Axis, but the control point starts
+      // neutral. The live owner comes from the ControlPoint, not this group.
+      { name: 'd', position: [1020, 21, -810], rotation: [180, 0, 0], group: 6, team: 1 },
       // Declared airborne, the way a newly extracted level says it.
       { name: 'para', position: [600, 200, -1100], rotation: [0, 0, 0], group: 1,
         team: 1, paratrooper: true },

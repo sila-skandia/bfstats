@@ -8,7 +8,7 @@
 
 import {
   buildHeightfield, buildCollisionIndex, buildDrivableMask, WorldCollider,
-  impactEffect, materialFamily, WATER_MATERIAL,
+  impactEffect, materialFamily, footstepMaterial, WATER_MATERIAL,
 } from './collision.mjs';
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
@@ -448,6 +448,18 @@ results.effects = {
   noTable: impactEffect(null, 236, 1),
 };
 results.families = [1, 10, 50, 85, 80, 92].map(materialFamily);
+results.footstepMaterials = {
+  grass: footstepMaterial(2),
+  mud: footstepMaterial(6),
+  gravel: footstepMaterial(8),
+  ice: footstepMaterial(9),
+  sand: footstepMaterial(10),
+  rock: footstepMaterial(12),
+  pavedRoad: footstepMaterial(15),
+  wood: footstepMaterial(80),
+  metal: footstepMaterial(85),
+  concrete: footstepMaterial(101),
+};
 
 const cost = all.drainCost();
 results.costShape = {
