@@ -216,6 +216,68 @@ export const SWIM_CLIPS = Object.freeze({
 });
 
 /**
+ * The flag word each family's LOWER state declares, verbatim from
+ * `animations/AnimationStatesSwim.con` and `AnimationStatesDie.con`.
+ *
+ * All five swim states declare `setFlag c_AsmHideWeapon` **and**
+ * `setFlag c_AsmIsSwimming`, in that order, and `Lb_DieSwim` declares neither —
+ * it is in the death file and carries no flags at all. The upper five declare
+ * nothing, which is consistent with every reader in the binary looking at
+ * `this+0x294`, the lower machine.
+ *
+ * The lower machine is the one the engine reads, so this word is the whole of
+ * what a swimming soldier's state contributes to `getCurrentStateFlags()`.
+ */
+export const SWIM_STATE_FLAGS = Object.freeze({
+  swimStart: ASM_HIDE_WEAPON | ASM_IS_SWIMMING,
+  swimFloat: ASM_HIDE_WEAPON | ASM_IS_SWIMMING,
+  swimForward: ASM_HIDE_WEAPON | ASM_IS_SWIMMING,
+  swimBackward: ASM_HIDE_WEAPON | ASM_IS_SWIMMING,
+  swimEnd: ASM_HIDE_WEAPON | ASM_IS_SWIMMING,
+  swimDie: 0,
+});
+
+/**
+ * THE ITEM GATE: what `c_AsmHideWeapon` actually shuts, which is far more than a
+ * weapon's visual.
+ *
+ * The engine does **not** block the fire input. It leaves the swimmer with
+ * nothing to fire, and it does so in three independent places, all reading
+ * `AnimationStateMachineInstance::getCurrentStateFlags(this+0x294)` (lnxded
+ * `0x0832b110`) and testing bit `0x2`:
+ *
+ *  1. **`BFSoldier::handleMessage(TemplateMessage, IPlayer*)`** (`0x08277260`),
+ *     the big one: `0x082772a4` calls `getCurrentStateFlags`, `0x082772ac
+ *     and eax,0x2`, `0x082772af jne` — straight past the **whole** dispatch.
+ *     The dispatch is `lea eax,[edi-0x6]` / `cmp eax,0x10` / `jmp DWORD PTR
+ *     [eax*4+0x86d2748]`, a 17-entry jump table over messages **6 to 22**, so
+ *     while the bit is up the soldier discards every one of them. Two are named
+ *     in this tree already (the demolitions block in `map.html` reads them out
+ *     of this same function): **Fire is message 6** and **AltFire is message 7**,
+ *     and **MenuSelect4 is message 13** — so the MenuSelect family, the weapon
+ *     slots, is in the range too. Messages `0x15` (destruction, HP-13) and
+ *     `0x12` are intercepted *before* the gate at `0x08277275` and `0x0827728e`
+ *     and are the only two that survive it.
+ *  2. **`BFSoldier::selectBestLoadedWeapon()`** (`0x08273a80`): `0x08273ae9`
+ *     reads the flags, `0x08273af1 and eax,0x2`, `0x08273af4 jne 0x08273be5` —
+ *     the automatic switch away from an empty weapon is off as well.
+ *  3. **`BFSoldier::enableItem(char)`** (`0x08278460`): `0x082784a1` reads the
+ *     flags, `0x082784af and eax,0x2`, `0x082784b2 jne 0x082787d1`, the
+ *     function's own `ret`. Nothing can be enabled by any other path either.
+ *
+ * So the honest implementation of "a swimmer cannot fire" is **not** a special
+ * case on the trigger. It is: while this bit is up there is no active item, so
+ * the trigger, the alt-fire, the slot keys, the reload and the plunger all have
+ * nothing to act on. `handleSwimAction` (`0x08282460`) is a separate and much
+ * smaller thing — it zeroes the *jump* axis (`c_PIAction`, index 9) and leaves
+ * `c_PIFire` (index 8) alone, which is why reading that function alone gives the
+ * wrong answer.
+ */
+export function itemsLocked(stateFlags) {
+  return (Number(stateFlags) & ASM_HIDE_WEAPON) !== 0;
+}
+
+/**
  * The throttle band that picks the stroke, out of the states' own
  * `addTransitionOne c_PIThrottle` clauses:
  *
@@ -323,6 +385,25 @@ export class SwimState {
   get oneShot() {
     return this.family === 'swimStart' || this.family === 'swimEnd';
   }
+
+  /**
+   * `getCurrentStateFlags()` of the LOWER machine — the word every reader in the
+   * binary tests (`this+0x294`). 0 when he is dry, because a dry man's state is
+   * `Lb_Stand`, which declares no flags.
+   */
+  get stateFlags() {
+    return this.family ? (SWIM_STATE_FLAGS[this.family] ?? 0) : 0;
+  }
+
+  /**
+   * Is the engine's item gate shut? See `itemsLocked` for the three call sites.
+   *
+   * Keyed off the live lower state, which is what `getCurrentStateFlags` reads.
+   * `Lb_EndSwim` declares `c_AsmHideWeapon` like the other four, so the weapon
+   * stays away for the third of a second the exit clip takes — the same span
+   * over which the drowning clock and the 5.0 gain stay up.
+   */
+  get itemsLocked() { return itemsLocked(this.stateFlags); }
 
   /** The lower/upper clip pair for the current state, or `null` when dry. */
   clips(dead = false) {

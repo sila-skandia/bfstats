@@ -237,6 +237,9 @@ class SoldierBodyTests(unittest.TestCase):
             ["swimStart", "swimFloat", "swimForward", "swimBackward", "swimEnd"],
             self.results["hidesWeapon"])
         self.assertTrue(self.results["hidesWeaponIsSwimOnly"])
+        # The renderer's set and the item gate's set are the same `setFlag`, so
+        # they must agree family by family or one of them is wrong.
+        self.assertTrue(self.results["hidesWeaponAgreesWithSwimJs"])
 
     def test_a_swimmer_has_no_canopy(self) -> None:
         canopy = self.results["swimCanopy"]
