@@ -155,15 +155,17 @@ const SEABED_FRICTION = 0.9;
  * and `BodyWorld.#drivenTerrainDamage` then bills her for a contact with the
  * face of whatever she is buried in. See §18 of `features/viewer-ships/README.md`.
  *
- * Fifteen samples rather than the hull's real vertex list because a `Ship` is
- * built from the node tree's collision BOXES (`hullGeometry`), which is all
- * `keel` and `size` are; the box's bottom face is the same surface those
- * vertices lie on for an upright hull. `[x, z]` in [-0.5, 0.5].
+ * A grid over the box's bottom face rather than the hull's real vertex list,
+ * because a `Ship` is built from the node tree's BOXES (`hullGeometry`), which
+ * is all `keel`, `size` and `hullCentre` are; the box's bottom face is the same
+ * surface those vertices lie on for an upright hull. The step is the vanilla
+ * heightfield's own cell size, so no cell under the hull is stepped over.
  */
-const HULL_SAMPLES = [];
-for (const fz of [-0.5, -0.25, 0, 0.25, 0.5]) {
-  for (const fx of [-0.5, 0, 0.5]) HULL_SAMPLES.push([fx, fz]);
-}
+const HULL_SAMPLE_STEP = 4;
+
+/** Never more than this many samples along or across, whatever the hull's size:
+ *  a Yamato is 265 m long and 47 wide, which at a 4 m step would be 67 x 13. */
+const HULL_SAMPLE_CAP = 33;
 
 /** How many times a sub-step re-resolves the deepest penetration. The push-out
  *  is exact for a locally flat bed; a second and third pass catch a keel that
@@ -293,7 +295,13 @@ export function hullGeometry(root) {
       keel = Math.min(keel, _box.min.y);
     }
   }
-  return { size, bottom, keel: Number.isFinite(keel) ? keel : bottom };
+  // Where that box SITS, in x and z: a hull's geometry is not centred on its
+  // origin (a Gato's reaches 56.6 m aft and 38.4 m forward), so a footprint
+  // laid out symmetrically about the origin misses one end of her and
+  // over-reaches the other. `Ship.deepestContact` needs the centre as well as
+  // the extents.
+  const centre = [(union.min.x + union.max.x) / 2, (union.min.z + union.max.z) / 2];
+  return { size, bottom, centre, keel: Number.isFinite(keel) ? keel : bottom };
 }
 
 /**
@@ -387,6 +395,9 @@ export function shipSpec(root) {
     // origin. `keel` is what `setUnderWater` measures and what grounds her.
     boxBottom: hull.bottom,
     keel: hull.keel,
+    // `[x, z]` of the geometry box's centre in the hull's own frame: where the
+    // footprint the grounding samples actually lies.
+    hullCentre: hull.centre,
     // The engine's own `getGeometryInertia`, `(DY²+DZ²)/3` and friends —
     // FOUR times a solid box's. A 115 m hull on a solid box's inertia turns
     // four times too eagerly, and that is most of "too manoeuvrable".
@@ -465,6 +476,19 @@ export class Ship extends Aircraft {
     /** The deepest footprint contact `hullFloor` found this sub-step, for
      *  `settle` to finish resolving. Never read across sub-steps. */
     this._contact = null;
+    /**
+     * The depth to sample the footprint at, when the page knows better than the
+     * box does.
+     *
+     * `keel` is the hull's collision BOX bottom, and on a level whose drawn
+     * tree carries no hull collision node it is the drawn geometry box's bottom
+     * instead (W8-A §15). `BodyWorld.#drivenTerrainDamage` bills the hull's real
+     * col0 VERTICES, which on a Gato reach 1.06 m below that box — so a
+     * footprint sampled at the box would report her clear while the damage pass
+     * had a vertex under the bed. The page installs the col0 minimum here; the
+     * deeper of the two is what grounds her.
+     */
+    this.sampleKeel = null;
   }
 
   /**
@@ -502,15 +526,25 @@ export class Ship extends Aircraft {
     const s = this.state;
     const dx = this.spec.size?.[0] ?? 0;
     const dz = this.spec.size?.[2] ?? 0;
+    const keelY = Number.isFinite(this.sampleKeel)
+      ? Math.min(this.sampleKeel, this.keel) : this.keel;
+    const cx = this.spec.hullCentre?.[0] ?? 0;
+    const cz = this.spec.hullCentre?.[1] ?? 0;
+    const nx = Math.min(HULL_SAMPLE_CAP, Math.max(3, Math.ceil(dx / HULL_SAMPLE_STEP) + 1));
+    const nz = Math.min(HULL_SAMPLE_CAP, Math.max(5, Math.ceil(dz / HULL_SAMPLE_STEP) + 1));
     let depth = 0, at = null;
-    for (const [fx, fz] of HULL_SAMPLES) {
-      _sample.set(fx * dx, this.keel, fz * dz).applyQuaternion(s.orientation);
-      const x = s.position.x + _sample.x;
-      const z = s.position.z + _sample.z;
-      const h = bed(x, z);
-      if (!Number.isFinite(h)) continue;
-      const under = h - (s.position.y + _sample.y);
-      if (under > depth) { depth = under; at = [x, z]; }
+    for (let iz = 0; iz < nz; iz++) {
+      const lz = cz + dz * (iz / (nz - 1) - 0.5);
+      for (let ix = 0; ix < nx; ix++) {
+        const lx = cx + dx * (ix / (nx - 1) - 0.5);
+        _sample.set(lx, keelY, lz).applyQuaternion(s.orientation);
+        const x = s.position.x + _sample.x;
+        const z = s.position.z + _sample.z;
+        const h = bed(x, z);
+        if (!Number.isFinite(h)) continue;
+        const under = h - (s.position.y + _sample.y);
+        if (under > depth) { depth = under; at = [x, z]; }
+      }
     }
     if (!at) return null;
     (this.groundNormal || flatNormal)(at[0], at[1], _bedN);
@@ -535,8 +569,12 @@ export class Ship extends Aircraft {
     this._contact = contact;
     if (contact) this._touchedBed = true;
     if (!contact) return -Infinity;
-    // `position.y = floor + groundClearance`, and `groundClearance` is `-keel`.
-    return this.state.position.y + this.keel + contact.depth * contact.ny;
+    // The clamp does `position.y = floor + groundClearance`, so a floor of
+    // `y - groundClearance + lift` lifts her by exactly `lift` whatever depth
+    // the footprint was sampled at.
+    const clearance = Number.isFinite(this.spec.groundClearance)
+      ? this.spec.groundClearance : -this.keel;
+    return this.state.position.y - clearance + contact.depth * contact.ny;
   }
 
   /**
