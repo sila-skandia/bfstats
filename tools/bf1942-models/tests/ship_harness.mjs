@@ -318,4 +318,101 @@ out.beached = run(900, { throttle: 1, seaBed: 17.0 });
                   vy: +ship.state.velocity.y.toFixed(5) };
 }
 
+// --- (e) the reef wall: W9-A ---------------------------------------------------
+//
+// Midway's own sea bed, measured on the z = -1903 line: a flat ocean floor at
+// 0.01 for hundreds of metres, then ONE 4 m heightfield cell that rises to
+// 16.31 (a 63.8 degree face), then the lagoon shelf. A hull that is grounded on
+// her ORIGIN's column alone sails over the floor with nothing to stop her, puts
+// her bow up to half her length INSIDE that wall, and is then billed crash
+// damage for a contact with a vertical face --
+// `c^3 * speedMod * V^2 * damageMod(wetSand, shipHull) * materialDamage`, where
+// the middle term is 10.0 (`Bf1942/Game/Collision_Armor/HeavyArmor.con`, the
+// `rem *** Wet Sand ***` blocks) and the last is 30, so the product is 300 and
+// one square-on contact at 15 m/s is thousands of hit points.
+//
+// The bill is computed here from the hull's own footprint rather than from
+// `ship.js`, so this asserts the ship against the terrain and not against
+// itself. `damage` is `handleCollisionLandOrWater`'s land arm
+// (`0x08154960`) for a ship: `|c|^3 * 0.05 * |v|^2 * 300`, gated at > 1.0.
+{
+  const WALL_START = 1500, WALL_END = 1508, WALL_TOP = 24.0;
+  const bed = (x, z) => {
+    const d = -z;
+    if (d <= WALL_START) return 0.01;
+    if (d >= WALL_END) return WALL_TOP;
+    return 0.01 + (WALL_TOP - 0.01) * (d - WALL_START) / (WALL_END - WALL_START);
+  };
+  // The face's own normal, from the gradient: dh/dz over the wall, 0 elsewhere.
+  const slope = (WALL_TOP - 0.01) / (WALL_END - WALL_START);
+  const bedNormal = (x, z, out) => {
+    const d = -z;
+    if (d <= WALL_START || d >= WALL_END) return out.set(0, 1, 0);
+    // h rises with d = -z, so dh/dz = -slope; n = normalize(0, 1, -dh/dz).
+    return out.set(0, 1, slope).normalize();
+  };
+  const { hull, scene } = buildFletcher();
+  const ship = new Ship(hull, scene, { waterLevel: WATER, cockpit: false });
+  ship.autoFirstPerson = false;
+  ship.groundHeight = bed;
+  ship.groundNormal = bedNormal;
+  ship.setInput('c_PIThrottle', 1);
+  // The footprint the engine's `checkVsTerrain` would sample: the collision
+  // box's bottom face, in the hull's own frame. Independent of `ship.js`.
+  const keel = ship.spec.keel;
+  const [dx, , dz] = ship.spec.size;
+  const corners = [];
+  for (const fz of [-0.5, -0.25, 0, 0.25, 0.5]) {
+    for (const fx of [-0.5, 0, 0.5]) corners.push([fx * dx, keel, fz * dz]);
+  }
+  const probe = new THREE.Vector3();
+  const nrm = new THREE.Vector3();
+  const worstOf = () => {
+    const s = ship.state;
+    let worst = 0, dmg = 0;
+    for (const [lx, ly, lz] of corners) {
+      probe.set(lx, ly, lz).applyQuaternion(s.orientation);
+      const x = s.position.x + probe.x, z = s.position.z + probe.z;
+      const under = bed(x, z) - (s.position.y + probe.y);
+      if (!(under > 0)) continue;
+      if (under > worst) worst = under;
+      bedNormal(x, z, nrm);
+      const v = s.velocity.length();
+      if (!(v > 0)) continue;
+      const c = Math.abs(s.velocity.dot(nrm) / (v * nrm.length()));
+      const bill = Math.abs(c) ** 3 * 0.05 * v * v * 300;
+      if (bill > 1.0 && bill > dmg) dmg = bill;
+    }
+    return { worst, dmg };
+  };
+  let buried = 0, worstBill = 0, struck = -1, topSpeed = 0;
+  for (let i = 0; i < 9000; i++) {
+    ship.integrate(1 / 30);
+    const { worst, dmg } = worstOf();
+    if (worst > buried) buried = worst;
+    if (dmg > worstBill) worstBill = dmg;
+    if (ship.state.velocity.length() > topSpeed) topSpeed = ship.state.velocity.length();
+    if (struck < 0 && ship.aground) struck = i;
+  }
+  const zStuck = -ship.state.position.z;
+  for (let i = 0; i < 300; i++) ship.integrate(1 / 30);
+  out.reef = {
+    struckAt: struck < 0 ? null : +(struck / 30).toFixed(2),
+    topSpeed: +topSpeed.toFixed(3),
+    // The deepest any part of the hull ever got under the bed. The whole point.
+    buried: +buried.toFixed(4),
+    // What the crash-damage path would have been handed, in hit points.
+    worstBill: +worstBill.toFixed(2),
+    aground: ship.aground,
+    y: +ship.state.position.y.toFixed(3),
+    z: +(-ship.state.position.z).toFixed(2),
+    speed: +ship.state.velocity.length().toFixed(4),
+    // Ten more seconds of full ahead once she is stuck.
+    heldAhead: +(-ship.state.position.z - zStuck).toFixed(4),
+    // She must not be perched above the waterline: her keel rests on the bed
+    // she actually reached, not on the top of the wall ahead of her.
+    keelAboveWater: +(ship.state.position.y + keel - WATER).toFixed(3),
+  };
+}
+
 console.log(JSON.stringify(out));
