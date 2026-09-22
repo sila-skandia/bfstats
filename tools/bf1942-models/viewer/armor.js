@@ -39,9 +39,28 @@ export const DEATH_EPSILON = 0.001;
 
 /**
  * `setMaxHitPoints(float v)` never raises a max past this (`R4-5`,
- * `0x086c1fe8` = 128.0 exactly). No vanilla soldier (30 HP) or Wake vehicle
- * reaches it; kept here because it is the engine's own rule, not this
- * viewer's, and a mod's Armor should not silently exceed it.
+ * `0x086c1fe8` = 128.0 exactly). **R4-5 re-verified from the bytes 2026-09-22**,
+ * because its sibling R4-13 turned out to be wrong and because SHIPS DO EXCEED
+ * IT — a Fletcher authors `maxhitpoints 300`, a Yamato and an Enterprise 600 —
+ * so the old note here ("no vanilla soldier or Wake vehicle reaches it") was
+ * true only of the cases it had looked at, and reads as if nothing does.
+ *
+ * `Armor::setMaxHitPoints` lnxded `0x08173680` is eleven instructions and it is
+ * a hard clamp:
+ *
+ *     fld [0x86c1fe8]   ; 128.0            st1
+ *     fld [ebp+0xc]     ; v                st0
+ *     fucom st(1) / fnstsw ax / test ah,0x45
+ *     jne  0x81736a0    ; v <= 128 -> fstp st(1) pops the 128, v survives
+ *     fstp st(0)        ; v  >  128 -> pops v, leaving 128.0
+ *     fstp [eax+0x3c]   ; store whichever survived
+ *
+ * `test ah,0x45` reads fucom's C0/C2/C3: zero only when `v > 128`, which is the
+ * fall-through that discards `v`. So a Yamato is a 128 HP object in the real
+ * engine too, and this ceiling is parity rather than a lost field. **Do not
+ * "fix" it by passing the authored value through** — that would make every ship
+ * 2.3x to 4.7x tougher than retail. The extractor is emitting 300 and 600
+ * correctly; the clamp is supposed to eat them.
  */
 export const MAX_HITPOINTS_CEILING = 128;
 
