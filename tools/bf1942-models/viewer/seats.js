@@ -44,6 +44,55 @@ export function hasAimAxes(seat) {
 }
 
 /**
+ * Every node one `TurretAxis` drives for a surveyed axis entry, winner first.
+ *
+ * A `seat.axes[name]` entry is `{ node, spec, peers }` where `peers` already
+ * includes `node` (first bundle per slot seeds `peers: [obj]`; later
+ * same-input bundles append). This unwraps that shape into a de-duplicated
+ * node list so callers never have to know whether `peers` includes the
+ * winner or not, and tolerates a bare `{ node, spec }` entry from older
+ * callers by falling back to `[node]`.
+ *
+ * Coordinator note (Issue 4, `map.html` `cameraRidesTurret`): replace
+ *
+ *   const aimed = Object.values(seat.axes)
+ *     .filter(axis => AIM_INPUTS.includes(axis?.spec?.input))
+ *     .map(axis => axis.node);
+ *
+ * with
+ *
+ *   import { axisPeerNodes } from './seats.js';
+ *   const aimed = Object.values(seat.axes)
+ *     .filter(axis => AIM_INPUTS.includes(axis?.spec?.input))
+ *     .flatMap(axis => axisPeerNodes(axis));
+ *
+ * so a camera hung under a peer turret (Fletcher aft pair) still counts as
+ * riding the turret. Do NOT compare by name: peer nodes are distinct
+ * `Object3D`s. This file is the helper's home; `map.html` itself is owned by
+ * Agent 4 and is not touched here.
+ */
+export function axisPeerNodes(axisEntry) {
+  if (!axisEntry) return [];
+  const raw = axisEntry.peers || (axisEntry.node ? [axisEntry.node] : []);
+  const out = [];
+  if (axisEntry.node) out.push(axisEntry.node);
+  for (const n of raw) {
+    if (n && !out.includes(n)) out.push(n);
+  }
+  return out;
+}
+
+/**
+ * Same as `axisPeerNodes` but looked up by seat + axis name:
+ * `turretPeerNodes(seat, 'yaw')` returns every node the seat's yaw axis
+ * drives. Returns `[]` when the seat has no such axis entry.
+ */
+export function turretPeerNodes(seat, axisName) {
+  if (!seat?.axes || !axisName) return [];
+  return axisPeerNodes(seat.axes[axisName]);
+}
+
+/**
  * Every seat of one vehicle, keyed by the name of the `PlayerControlObject`
  * that owns it -- the root's own name for the root seat, a nested PCO's own
  * name for each of the others.
@@ -158,7 +207,40 @@ export function surveyVehicle(root) {
           const speedUpgrade = isAimAxis(spec) && isAimAxis(held.spec)
             && Math.abs(held.spec.maxSpeed || 0) === 0
             && Math.abs(spec.maxSpeed || 0) > 0;
-          if (!aimUpgrade && !speedUpgrade) continue;
+          // Same-axis-same-input: peering only ever groups bundles driven by
+          // the SAME PlayerInput on the SAME axis name. The V-100's driving
+          // seat declares `V-100FrontWheelR/L` (`c_PIYaw`) beside `V-100Turret`
+          // (`c_PIMouseLookX`) under the same control, and without this guard
+          // the `aimUpgrade` arm peered the steered wheels under the turret —
+          // welding them to the turret angle every `_apply`. A losing bundle
+          // on a different input is left to `Vehicle.collect`/`applyRig`, not
+          // peered. Replacement still happens (the aim axis wins the slot);
+          // only the PEERING is gated. `speedUpgrade` keeps its behaviour
+          // otherwise — its pair already shares the input in practice
+          // (Stationary Browning pitch, both `c_PIMouseLookY`), and the same
+          // guard applies to it.
+          const sameInput = spec.input === held.spec.input;
+          if (aimUpgrade || speedUpgrade) {
+            // The new bundle replaces the winner; the old is kept as a peer
+            // only when it shares the input.
+            const mergedSpec = spec.automaticReset === undefined && data.rig.automaticReset
+              ? { ...spec, automaticReset: true } : spec;
+            const oldPeers = sameInput ? (held.peers || [held.node]) : [];
+            seat.axes[axis] = {
+              node: obj,
+              spec: mergedSpec,
+              peers: [...oldPeers, obj],
+            };
+          } else {
+            // This bundle does not win, but when it shares the winner's input
+            // it is a peer of it — same axis, same seat, same rig. A Fletcher
+            // with two turret bundles under the same PCO needs both to track.
+            // Different input: ignore for peering (steering vs turret).
+            if (!sameInput) continue;
+            if (!held.peers) held.peers = [held.node];
+            held.peers.push(obj);
+          }
+          continue;
         }
         // `automaticReset` is declared once per BUNDLE, not per axis (`con.py`
         // emits it beside `axes`), but it selects the whole control law a
@@ -170,6 +252,7 @@ export function surveyVehicle(root) {
           node: obj,
           spec: spec.automaticReset === undefined && data.rig.automaticReset
             ? { ...spec, automaticReset: true } : spec,
+          peers: [obj],
         };
       }
     } else if (kind === 'FireArms' && data.fireArms) {
@@ -645,11 +728,16 @@ const _quat = new THREE.Quaternion();
  * hand stopped.
  */
 export class TurretAxis {
-  constructor(axisName, node, spec) {
+  constructor(axisName, node, spec, peers) {
     this.axisName = axisName;
     this.node = node;
     this.spec = spec;
-    this.base = node.quaternion.clone();
+    this.peers = peers || [node];
+    // Each peer has its own authored rest quaternion.
+    this.peers = this.peers.map(n => ({
+      node: n,
+      base: n.quaternion.clone(),
+    }));
     this.angle = 0;      // degrees from the authored rest pose (engine +0x104)
     this.speed = 0;      // deg/s, the servo's velocity register (engine +0x110)
     this._input = 0;     // this frame's axis value, held for all of its ticks
@@ -766,7 +854,9 @@ export class TurretAxis {
     _euler.set(0, 0, 0);
     _euler[RIG_AXIS[this.axisName]] = THREE.MathUtils.degToRad(this.angle * RIG_SIGN[this.axisName]);
     _quat.setFromEuler(_euler);
-    this.node.quaternion.copy(this.base).multiply(_quat);
+    for (const peer of this.peers) {
+      peer.node.quaternion.copy(peer.base).multiply(_quat);
+    }
   }
 }
 
@@ -797,7 +887,7 @@ export class TurretRig {
     // second axis would weld its front wheels straight.
     this.axes = AXES
       .filter(name => isAimAxis(seat.axes[name]?.spec))
-      .map(name => new TurretAxis(name, seat.axes[name].node, seat.axes[name].spec));
+      .map(name => new TurretAxis(name, seat.axes[name].node, seat.axes[name].spec, seat.axes[name].peers));
     /**
      * A single multiplier on everything the player asks this rig for, set from
      * outside — **HP-15**, and the one hook the vehicle's damage state needs

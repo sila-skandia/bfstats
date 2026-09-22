@@ -1520,8 +1520,10 @@ def _control_point_report(info: LevelInfo, placed: set[str] | None,
             "radius": tpl.radius if tpl else 0.0,
             "areaValue": tpl.area_value if tpl else 0.0,
             "spawnGroupId": tpl.spawn_group_id if tpl else None,
+            "secondSpawnGroupId": tpl.second_spawn_group_id if tpl else None,
             "objectSpawnerId": tpl.object_spawner_id if tpl else None,
             "unableToChangeTeam": tpl.unable_to_change_team if tpl else False,
+            "timeToGetControl": tpl.time_to_get_control if tpl else None,
             "flagMesh": tpl.flag_mesh() if tpl else None,
             "flagHeight": tpl.flag_offset[1] if tpl else 0.0,
             # False for a capture zone the level deliberately left invisible.
@@ -1799,6 +1801,7 @@ def _object_spawn_report(info: LevelInfo, gameplay=None) -> list[dict]:
     spawner_specs = (info.spawn_templates if gameplay is None
                      else gameplay.object_spawn_templates)
     out: list[dict] = []
+    control_points = gameplay.control_points if gameplay is not None else info.gameplay.control_points
     for inst in spawns:
         vehicle = spawn_vehicle(inst.template, inst.team, spawner_specs)
         if vehicle is None:
@@ -1812,6 +1815,26 @@ def _object_spawn_report(info: LevelInfo, gameplay=None) -> list[dict]:
             "position": _to_gltf_vec(inst.position),
             "rotation": list(inst.rotation),
         }
+        # ObjectSpawner pads do not carry the control-point name in their own
+        # ObjectSpawns record. The authored control point owns the nearest pad
+        # cluster; retaining that relationship lets the viewer hide neutral
+        # vehicles and re-enable them when the flag changes hands.
+        nearest = None
+        nearest_distance = float("inf")
+        for index, point in enumerate(control_points):
+            distance = math.hypot(
+                inst.position[0] - point.position[0],
+                inst.position[2] - point.position[2],
+            )
+            tpl = gameplay.template_for(point) if gameplay is not None else info.gameplay.template_for(point)
+            radius = tpl.radius if tpl is not None else 0.0
+            limit = max(60.0, radius * 4.0)
+            if distance <= limit and distance < nearest_distance:
+                nearest = (index, point.template)
+                nearest_distance = distance
+        if nearest is not None:
+            entry["controlPointIndex"] = nearest[0]
+            entry["controlPointName"] = nearest[1]
         if window is not None:
             entry["minSpawnDelay"] = window[0]
             entry["maxSpawnDelay"] = window[1]
