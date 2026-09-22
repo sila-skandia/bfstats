@@ -51,7 +51,8 @@ HARNESS = Path(__file__).resolve().parent / "world_harness.mjs"
 # flight harness imports `flight.mjs`; every dependency keeps its own name so
 # the unmodified imports resolve.
 _MODULE_NAMES = [
-    "physics", "parachute", "soldier", "spawn-safety", "mouse-input", "fall-damage",
+    "physics", "parachute", "swim", "soldier", "spawn-safety", "mouse-input",
+    "fall-damage",
     "body-world", "body-statics", "vehicle-bodies", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact",
     "body-ground", "body-friction", "crash-damage", "effects-core",

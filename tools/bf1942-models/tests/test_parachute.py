@@ -20,6 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MODULES = [
     ROOT / "viewer" / "parachute.js",
+    ROOT / "viewer" / "swim.js",
     ROOT / "viewer" / "soldier.js",
     ROOT / "viewer" / "physics.js",
     ROOT / "viewer" / "collision.js",
