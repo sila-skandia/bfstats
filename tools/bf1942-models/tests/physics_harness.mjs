@@ -465,6 +465,45 @@ results.wadesOnTheSeabed = {
   y: waded.y, grounded: waded.grounded, swimming: waded.soldier.swimming,
   depth: waded.soldier.swimDepth, travelled: waded.travelled,
 };
+// Swimming into the shallows: the seabed has to be able to end the swim.
+//
+// This is the ordering trap. The pin puts the feet at `surface - 0.4` every
+// tick, so a depth measured BEFORE the resolve is always exactly 0.4 and the
+// 0.35 exit test can never fire -- a man swimming at a beach would never stand
+// up. The engine measures it in `handleUpdate`, after the tick's resolve, where
+// the seabed has already pushed him up. Started over deep water, then the bed is
+// raised to 2.7 (0.3 m of water, inside the exit threshold).
+{
+  const swimmer = new SoldierBody({ world: sea, yaw: Math.PI / 2 });
+  swimmer.swim = new SwimState();
+  swimmer.place(4, 2.5, -32);
+  for (let i = 0; i < 60; i++) swimmer.step(TICK_DT, {});
+  const afloat = { swimming: swimmer.swimming, y: swimmer.position.y,
+                   family: swimmer.swim.family };
+  const shelf = buildHeightfield([flatTile(2.7)], { worldSize: 64, dim: 16 });
+  swimmer.world = new WorldCollider({ heightfield: shelf, waterLevel: 3 });
+  const trace = [];
+  for (let i = 0; i < 90; i++) {
+    swimmer.step(TICK_DT, {});
+    if (i % 10 === 0) {
+      trace.push({ tick: i, family: swimmer.swim.family,
+                   swimming: swimmer.swimming,
+                   depth: +swimmer.swimDepth.toFixed(3),
+                   y: +swimmer.position.y.toFixed(3),
+                   grounded: swimmer.grounded });
+    }
+  }
+  results.swimsIntoTheShallows = {
+    afloat,
+    sawExitClip: trace.some(t => t.family === 'swimEnd'),
+    ended: { swimming: swimmer.swimming, family: swimmer.swim.family,
+             grounded: swimmer.grounded,
+             y: +swimmer.position.y.toFixed(3),
+             depth: +swimmer.swimDepth.toFixed(3) },
+    trace,
+  };
+}
+
 // Swimming forward: the `5.0 * vCmd` acceleration against the water's drag, with
 // no `v = vCmd` assignment anywhere, so the speed is a balance and not a table
 // entry. What matters is that he moves, in the direction he is facing, and slower

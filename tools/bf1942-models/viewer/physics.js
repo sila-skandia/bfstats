@@ -1063,15 +1063,17 @@ export class SoldierBody {
     const strafe = clamp(input.strafe ?? 0, -1, 1);
     const walk = Boolean(input.walk);
 
-    // --- the water, first, because it decides which force moves him --------
-    //
-    // `BFSoldier::updateSwimming` (lnxded `0x08282190`) runs once per tick out
-    // of `handleUpdate` and reads the body's position as it stands at the top of
-    // the tick, which is where this call is. It answers with the y the body is
-    // to be pinned at, or null for "leave it alone"; the pin is applied after
-    // the resolve, because the engine's own write is a `setPosition` on the
-    // object and lands after the integration.
-    const swimPin = this.#updateSwim(dt, forward, input);
+    // The swim state is NOT updated here. It is updated at the bottom of the
+    // tick, after the resolve, because that is where the engine updates it:
+    // `BFSoldier::updateSwimming` (lnxded `0x08282190`) runs out of
+    // `handleUpdate`, and `handlePlayerInput` -- this function -- reads the flag
+    // the PREVIOUS `handleUpdate` left. Getting that order wrong is not
+    // cosmetic: the swim pin puts the feet at `surface - 0.4` every tick, so a
+    // depth measured before the resolve is *always* 0.4 and the 0.35 exit test
+    // can never fire. A man swimming at a beach would never be able to stand up.
+    // Measured after the resolve, the seabed has had its say: `#settle` puts him
+    // on the bottom in the shallows, the depth falls under 0.35 there, and he
+    // wades out. See `#updateSwim`.
 
     // --- the ramp, then the tables it indexes (PHY-6) ----------------------
     this.forwardRamp = applyMovementFactors(forward, this.forwardRamp, dt);
@@ -1232,7 +1234,8 @@ export class SoldierBody {
     this.#resolve();
     this.#refuseSteepGround();
     this.#settle();
-    this.#floatAtDraft(swimPin);
+    // `handleUpdate`'s own place in the tick. The pin lands inside it.
+    this.#updateSwim(dt, forward, input);
 
     // A landing is a tick that ends grounded having not begun so. `F` is the
     // engine's `getLastCollisionHeight() - pos.y` (Armor `+0x28`), which is the
@@ -1502,7 +1505,7 @@ export class SoldierBody {
     if (!swim || typeof swim.update !== 'function') {
       this.swimming = false;
       this.swimDepth = 0;
-      return null;
+      return;
     }
     const level = this.world ? this.world.waterLevel : null;
     const pin = swim.update({
@@ -1517,7 +1520,7 @@ export class SoldierBody {
     });
     this.swimming = Boolean(swim.swimming);
     this.swimDepth = Number.isFinite(swim.depth) ? swim.depth : 0;
-    return pin;
+    this.#floatAtDraft(pin);
   }
 
   /**
