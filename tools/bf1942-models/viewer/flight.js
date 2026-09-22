@@ -951,20 +951,38 @@ export function calculateLift(velocity, surfaceUp, coeff) {
 /**
  * Principal inertia from the mesh bounding box and `inertiaModifier`.
  *
- * The modifier triple is [data] and is yaw/pitch/roll; the solid-box base it
- * multiplies is the one genuinely free quantity left in this file. [free]
+ * The modifier triple is [data] and is yaw/pitch/roll.
+ *
+ * Two laws, chosen by `spec.inertiaLaw`:
+ *
+ *  - `'box'` (the default, and what every aircraft in this file is calibrated
+ *    against) divides by **12**: the textbook solid box. [free]
+ *  - `'geometry'` divides by **3**, which is the engine's own
+ *    `getGeometryInertia` (lnxded `0x08253930`, client `0x0053fc30`,
+ *    collision-response.md §4.2): `Ix = (DY²+DZ²)/3`, `Iy = (DZ²+DX²)/3`,
+ *    `Iz = (DX²+DY²)/3` off the object's geometry bounding box, **four times** a
+ *    solid box's inertia per unit mass, and the only inertia the engine has.
+ *    `rigid-body.js`'s `boxInertia` and `ground.js`'s vehicle tables already use
+ *    it; a ship uses it because a 115 m hull turning on a quarter of its real
+ *    inertia pirouettes.
+ *
+ * Mass cancels out of the rotation either way — the engine's `Δω` divides a
+ * per-mass torque by a per-mass inertia and `mass never enters rotation` —
+ * so it is carried here only to keep `_torque = _moment * mass` unchanged.
  *
  * @param {number} mass kg
  * @param {[number, number, number]} size span (x), height (y), length (z), metres
  * @param {[number, number, number]} modifier `inertiaModifier`, yaw/pitch/roll
+ * @param {'box'|'geometry'} law which divisor
  */
-function boxInertia(mass, size, modifier) {
+function boxInertia(mass, size, modifier, law = 'box') {
   const [w, h, l] = size;
   const [yaw, pitch, roll] = modifier;
+  const divisor = law === 'geometry' ? 3 : 12;
   return {
-    x: mass * (l * l + h * h) / 12 * pitch,
-    y: mass * (w * w + l * l) / 12 * yaw,
-    z: mass * (w * w + h * h) / 12 * roll,
+    x: mass * (l * l + h * h) / divisor * pitch,
+    y: mass * (w * w + l * l) / divisor * yaw,
+    z: mass * (w * w + h * h) / divisor * roll,
   };
 }
 
@@ -1201,9 +1219,16 @@ export class Aircraft extends Vehicle {
       // caller in the whole binary is `feedbackLoop`, which spends it on the
       // RPM accumulator behind the engine sound.
       ratio: ENGINE_RATIO_SCALE * engine.differential / GEAR_RATIO,
+      // `setTorque`, carried for the ONE thing it does to the simulation:
+      // `getCurrentTorque()` divides the gearbox's load by it (TANK-13), so on
+      // a vehicle whose rev state is modelled it sets the top speed. Unused by
+      // an aircraft here, which has no rev state.
+      torque: engine.torque,
+      differential: engine.differential,
       fadeSpeed: engine.noPropellerEffectAtSpeed,
     }));
-    this.inertia = boxInertia(this.spec.mass, this.spec.size, this.spec.inertiaModifier);
+    this.inertia = boxInertia(this.spec.mass, this.spec.size,
+                              this.spec.inertiaModifier, this.spec.inertiaLaw);
     this.groundHeight = () => -Infinity;
     // Below this a surface is in the water and makes ten times the lift.
     // Off by default: the page that knows where the sea is should say so.
@@ -1245,6 +1270,30 @@ export class Aircraft extends Vehicle {
   bodyForces(_accel, _moment, _h) {}
 
   /**
+   * `Engine::handleUpdate` (`0x0823e120`), once per engine tick.
+   *
+   * Nothing for an aircraft. The engine runs the gearbox for every engine type
+   * — the rev filter, its 1.2 clamp and the load feedback are all
+   * type-independent — but `flight.js`'s aircraft model was measured and
+   * calibrated against the pedal reaching the thrust law directly, so putting
+   * the filter in front of it would move every number in `test_flight.py`
+   * without a measurement to move them to. It is a divergence, and it is
+   * written down as one in this file's header rather than fixed here.
+   * `ship.js` implements it, because for a ship the load feedback IS the top
+   * speed.
+   */
+  advanceEngines(_dt) {}
+
+  /**
+   * `PhysicsEngine::feedbackLoop` (`0x0824c850`), once per engine per thrust
+   * evaluation, with `K` before the ratio.
+   *
+   * Nothing for an aircraft, for the same reason `advanceEngines` is nothing:
+   * with no rev state there is no load to accumulate into.
+   */
+  noteThrust(_engine, _k, _throttle) {}
+
+  /**
    * Body drag, added to the accumulator.
    *
    * `-drag * v`, which is what this file has always done and is **not** the
@@ -1256,7 +1305,7 @@ export class Aircraft extends Vehicle {
    * `ship.js` runs the box law, because a ship's terminal speed is nothing at
    * all without the submerged drag multiplier.
    */
-  applyDrag(_accel, _h) {
+  applyDrag(_accel, _h, _moment) {
     _accel.addScaledVector(this.state.velocity, -this.spec.drag);
   }
 
@@ -1337,6 +1386,13 @@ export class Aircraft extends Vehicle {
     const gap = wanted - s.throttle;
     const spool = k.throttleRate * dt;
     s.throttle = Math.abs(gap) <= spool ? wanted : s.throttle + Math.sign(gap) * spool;
+    // `Engine::handleUpdate`'s own slot in the tick: the gearbox runs ONCE per
+    // engine tick, on the load the previous tick's `feedbackLoop` calls left,
+    // and then clears that load — which is why it cannot live in `step()`
+    // beside the sub-steps. Empty for an aircraft, whose throttle this file
+    // has always fed to the thrust law directly; a ship's rev state is
+    // `ship.js`'s (`engine-revs.js`, ledger TANK-12/TANK-13).
+    this.advanceEngines(dt);
     this.advancePropeller(dt);
 
     const steps = Math.max(SUBSTEPS, Math.round(dt * SUBSTEP_RATE));
@@ -1422,7 +1478,13 @@ export class Aircraft extends Vehicle {
       if (throttle === null) continue;
       const rho = 1 - clamp((s.position.y + _r.y) / AIR_DENSITY_ZERO_AT_HEIGHT, 0, 1);
       const e = throttle - rho * along / engine.fadeSpeed;
-      const a = (ENGINE_IDLE * Math.abs(throttle) + e * Math.abs(e)) * engine.ratio;
+      const k = ENGINE_IDLE * Math.abs(throttle) + e * Math.abs(e);
+      const a = k * engine.ratio;
+      // `PhysicsEngine::feedbackLoop(K*fwd, fwd)` at `0x0824cfc1`, whose one
+      // effect that survives the tick is the load the gearbox reads next tick.
+      // Empty for an aircraft: `flight.js` feeds the pedal straight through, so
+      // there is no rev state for a load to pull down.
+      this.noteThrust(engine, k, throttle);
       _force.copy(_fwd).multiplyScalar(a);
       _accel.add(_force);
       // At the engine node, not the centre of mass — a nacelle 0.45 m above the
@@ -1437,7 +1499,7 @@ export class Aircraft extends Vehicle {
     this.bodyForces(_accel, _moment, h);
 
     _accel.y -= k.gravity;
-    this.applyDrag(_accel, h);
+    this.applyDrag(_accel, h, _moment);
 
     // Angular, in the body frame, which is the only one the inertia tensor is
     // diagonal in. The gyroscopic term matters here: a Corsair's yaw inertia is
