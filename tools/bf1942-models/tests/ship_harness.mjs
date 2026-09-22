@@ -197,9 +197,11 @@ const headingOf = ship => {
 /** Degrees turned from the build heading (180), signed and unwrapped. */
 const turnedBy = ship => ((headingOf(ship) - 180 + 540) % 360) - 180;
 
-function run(ticks, { throttle = 0, yaw = 0, seaBed = null } = {}) {
+function run(ticks, { throttle = 0, yaw = 0, seaBed = null, inertiaLaw = null } = {}) {
   const { hull, scene } = buildFletcher();
-  const ship = new Ship(hull, scene, { waterLevel: WATER, cockpit: false });
+  const spec = shipSpec(hull);
+  if (inertiaLaw) spec.inertiaLaw = inertiaLaw;
+  const ship = new Ship(hull, scene, { waterLevel: WATER, cockpit: false, spec });
   ship.autoFirstPerson = false;
   if (seaBed !== null) ship.groundHeight = () => seaBed;
   ship.setInput('c_PIThrottle', throttle);
@@ -249,6 +251,18 @@ out.ahead = run(900, { throttle: 1 });
 out.astern = run(900, { throttle: -1 });
 out.turning = run(900, { throttle: 1, yaw: 1 });
 out.turningOther = run(900, { throttle: 1, yaw: -1 });
+// The same run on a SOLID BOX's inertia -- `/12` rather than the engine's `/3`,
+// which is what this file carried before W8-A. Everything else is identical, so
+// the difference is the inertia and nothing else: it is what the hull does in the
+// first seconds of a turn, and it is NOT the steady rate, which the two `Wing`s
+// set between them.
+out.turningSolidBox = run(900, { throttle: 1, yaw: 1, inertiaLaw: 'box' });
+// ... sampled early, where the difference lives.
+out.helmAnswer = [1, 2, 3, 5].map(seconds => ({
+  seconds,
+  geometry: run(Math.round(seconds * 30) + 1, { throttle: 1, yaw: 1 }).turned,
+  box: run(Math.round(seconds * 30) + 1, { throttle: 1, yaw: 1, inertiaLaw: 'box' }).turned,
+}));
 
 // --- (d) aground --------------------------------------------------------------
 // The sea bed at 17.0: the keel (relative y -4.0) rests on it at a root y of

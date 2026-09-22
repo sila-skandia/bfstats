@@ -329,6 +329,25 @@ class ShipUnderWayTests(unittest.TestCase):
         self.assertLess(abs(ten), abs(self.out["turning"]["turned"]) / 2.5)
 
 
+    def test_the_engines_inertia_is_four_times_a_solid_boxs_where_it_matters(self):
+        """The same hull, the same rudder, the same speed -- only the divisor
+        changes. `(DY²+DZ²)/3` against `/12` is four times the inertia, so it is
+        four times LESS angular acceleration in the first seconds of a turn, and
+        it converges on the same steady rate because that rate is the two
+        `Wing`s' own balance and has no inertia in it at all."""
+        answer = {row["seconds"]: row for row in self.out["helmAnswer"]}
+        # Two seconds in, the ratio is the formula's own 4.
+        two = answer[2]
+        self.assertGreater(abs(two["box"]) / abs(two["geometry"]), 3.0)
+        # ... and it closes as she settles into the turn.
+        five = answer[5]
+        self.assertLess(abs(five["box"]) / abs(five["geometry"]), 3.0)
+        self.assertGreater(abs(five["box"]), abs(five["geometry"]))
+        # The steady rate is the same to a tenth of a degree a second.
+        self.assertAlmostEqual(self.out["turning"]["rate"],
+                               self.out["turningSolidBox"]["rate"], places=1)
+
+
 class ShipAgroundTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
