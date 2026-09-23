@@ -132,6 +132,82 @@ const recipes = {
       fired: eventsOf(match, 'vehicle_fire').map(e => `${e.template}:${e.gun}`), t: round(match.clock),
     };
   },
+
+  /** A landing craft: Wake's Daihatsus are split off their ships at load
+   *  (`detachSpawnedCraft`); a bot at the helm drives the page's `Ship` on
+   *  the level's landing-craft map (`bot-units.js waterNav`). The SAI sends
+   *  no craft to a beach yet (Brief D), so the order is a point by hand, as
+   *  in the live check: open water 150..300 m off the craft's bow. */
+  async ship() {
+    const match = await start('wake');
+    const b = match.bots.find(o => o.team === 1);
+    const cand = mount(match, b, 'Daihatsu');
+    freezeOthers(match, [b.playerId]);
+    const drive = b.vehicle.drive;
+    const from = { ...drive.state.position };
+    const nav = b.vehicle.nav;
+    const h = hullFrame(match, b);
+    let point = null;
+    for (let d = 150; d <= 300 && !point; d += 10) {
+      for (const turn of [0, 0.5, -0.5, 1, -1, 1.5, -1.5]) {
+        const fx = h.fx * Math.cos(turn) - h.fz * Math.sin(turn), fz = h.fx * Math.sin(turn) + h.fz * Math.cos(turn);
+        const x = h.x + fx * d, z = h.z + fz * d;
+        if (M.isWalkable(nav, x, z)) { point = [x, z]; break; }
+      }
+    }
+    if (!point) throw new Error('no open water off the bow');
+    const sai = match.referee.strategy;
+    const waypointsOf = sai.waypointsOf.bind(sai);
+    sai.waypointsOf = id => {
+      const wp = waypointsOf(id);
+      return id === b.playerId && wp ? { ...wp, point, radius: 15 } : wp;
+    };
+    let low = Infinity, high = -Infinity;
+    run(match, 60, () => {
+      const y = drive.state.position.y;
+      low = Math.min(low, y); high = Math.max(high, y);
+      return false;
+    });
+    const s = drive.state.position;
+    return {
+      template: cand.template, driveClass: drive.constructor.name, landingCraft: !!b.vehicle?.landingCraft,
+      navWater: !!nav?.waterMap || nav === match.stage.botUnits.navWater.get('LandingCraft'),
+      waterLevel: match.stage.collider.waterLevel, y: [round(low), round(high)],
+      moved: round(Math.hypot(s.x - from.x, s.z - from.z)), stillMounted: !!b.vehicle,
+      toGo: round(Math.hypot(s.x - point[0], s.z - point[1])),
+      routeFailures: match.stats.get(b.playerId).routeFailures,
+    };
+  },
+
+  /** A bot takes a Spitfire against a frozen soldier 260 m down its nose:
+   *  the airframe is the page's `Aircraft`, it leaves the ground, and its
+   *  guns' rounds are cast against the soldier's body. */
+  async air() {
+    const match = await start('el_alamein');
+    const b = bot(match, 'bot_1');
+    const target = match.bots.find(o => o.team !== b.team);
+    const cand = mount(match, b, 'Spitfire');
+    freezeOthers(match, [b.playerId]);
+    const h = hullFrame(match, b);
+    plant(match, target, h.x + h.fx * 260, h.z + h.fz * 260, Math.atan2(-h.fx, -h.fz));
+    const armor = match.world.armorOf(target.playerId);
+    let bodyHits = 0;
+    const onImpact = match.stage.guns.onImpact;
+    match.stage.guns.onImpact = record => { if (record?.target === target.playerId) bodyHits++; onImpact(record); };
+    let top = -Infinity;
+    const ground = () => {
+      const s = b.vehicle?.drive?.state?.position;
+      if (s) top = Math.max(top, s.y - match.groundAt(s.x, s.z));
+      return false;
+    };
+    run(match, 60, ground);
+    const kill = eventsOf(match, 'kill').find(e => e.victim === target.playerId) ?? null;
+    return {
+      driveClass: b.vehicle?.drive?.constructor.name ?? null, template: cand.template, topAgl: round(top),
+      takeoff: eventsOf(match, 'takeoff').map(e => e.t), killed: armor.destroyed, kill, bodyHits,
+      rounds: match.stats.get(b.playerId).vehicleRounds, stillMounted: !!b.vehicle,
+    };
+  },
 };
 
 const fn = recipes[recipe];

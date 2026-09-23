@@ -38,6 +38,8 @@ import { SimVehicles, SIM_GUN } from './vehicles.mjs';
 import { createStage } from './stage.mjs';
 
 const BEHAVIOURS = ['Avoid', 'MoveTo', 'Idle', 'Fire', 'Special', 'Scout', 'TakeCover', 'Change'];
+/** Metres over the ground a bot's aircraft counts as flying (`takeoff`). */
+const AIRBORNE_AGL = 10;
 
 const r2 = (v) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : v);
 const r4 = (v) => (Number.isFinite(v) ? Math.round(v * 1e4) / 1e4 : v);
@@ -329,6 +331,7 @@ export class Match {
     this.stage?.afterBots();
     this.referee.captureTick(dt);
     this.stage?.afterCapture(report, dt);
+    if (this.stage) this.airTick();
     this.ticketTick(dt);
     for (const e of this.pendingEvents.splice(0)) {
       if (e.type === 'mount') { const s = this.stats.get(e.bot); if (s) s.mounts++; }
@@ -341,6 +344,27 @@ export class Match {
     }
     if (!this.ended && this.clock + 1e-9 >= this.duration) this.ended = { reason: 'time' };
     return !this.ended;
+  }
+
+  /** A bot pilot's hull leaving the ground and coming back to it: a
+   *  `takeoff` event the first time a driven aircraft is `AIRBORNE_AGL` over
+   *  the ground, a `landing` one when its drive reports it grounded again. */
+  airTick() {
+    for (const bot of this.bots) {
+      const m = bot.vehicle;
+      if (!m || m.kind !== 'air' || !m.drives || !m.drive) { bot._simAirborne = false; continue; }
+      const s = m.drive.state;
+      const agl = s.position.y - this.groundAt(s.position.x, s.position.z);
+      if (!bot._simAirborne && agl > AIRBORNE_AGL) {
+        bot._simAirborne = true;
+        this.pendingEvents.push({ type: 'takeoff', bot: bot.playerId, side: bot.team, vehicle: this.vehicleLabel(m),
+                                  template: m.template, agl: r2(agl), speed: r2(s.velocity.length()) });
+      } else if (bot._simAirborne && s.grounded) {
+        bot._simAirborne = false;
+        this.pendingEvents.push({ type: 'landing', bot: bot.playerId, side: bot.team, vehicle: this.vehicleLabel(m),
+                                  template: m.template, speed: r2(s.velocity.length()) });
+      }
+    }
   }
 
   /** A throwing bot tick: counted per bot, an event the first time each
