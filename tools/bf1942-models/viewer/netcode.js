@@ -60,6 +60,11 @@ import { floatToFixed, fixedToFloat } from './mouse-input.js';
 
 export const MAX_PLAYERS = 16;          // the lobby rule, not a scaling limit
 
+/** A join code's shape (the lobby rule; see server/README.md §decisions):
+ *  what the room server takes as a code (`server/room-rules.mjs`) and what
+ *  the MULTIPLAY screen's SERVER NAME field is typed against. */
+export const ROOM_CODE_RE = /^[A-Za-z0-9_-]{3,24}$/;
+
 // Client -> server
 export const MSG_JOIN = 0x01;           // JSON payload: {room, name, team}
 export const MSG_INPUT = 0x02;          // binary: u32le seq + 14-byte action

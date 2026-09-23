@@ -3,11 +3,12 @@
 // clock's frame cadence, the peer contract and the slot pick. Split out of
 // `rooms.mjs`, which re-exports every name it exported before.
 
-import { MAX_PLAYERS } from '../viewer/netcode.js';
+import { MAX_PLAYERS, ROOM_CODE_RE } from '../viewer/netcode.js';
 import { WORLD_TICK_DT } from '../viewer/world.js';
 
-/** A join code's shape (the lobby rule; see server/README.md §decisions). */
-export const ROOM_CODE_RE = /^[A-Za-z0-9_-]{3,24}$/;
+/** A join code's shape: netcode.js's, which the page's MULTIPLAY screen
+ *  types its SERVER NAME field against too. */
+export { ROOM_CODE_RE };
 export const NAME_MAX = 24;
 export const NAME_OK = /^[^\x00-\x1f\x7f]{1,24}$/;
 
