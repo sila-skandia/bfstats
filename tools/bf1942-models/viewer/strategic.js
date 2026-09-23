@@ -28,6 +28,7 @@ export {
 } from './doctrine.js';
 export { SQUAD } from './doctrine-squad.js';
 export {
-  LANDING, landingZonesOf, zoneDistanceSqr, beachTarget, beachLandingOrder, landingTick, craftArea, areaPath,
+  LANDING, landingZonesOf, zoneDistanceSqr, beachTarget, beachLandingOrder, landingTick, craftArea, strategicRoutes,
+  vehicleGroupOf,
   approachPosition, beachPosition,
 } from './doctrine-landing.js';
