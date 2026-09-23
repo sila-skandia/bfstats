@@ -486,7 +486,7 @@ branch of `BBChange::calculateUrgency` **0x0855e0c0**, `BBMoveToFixed::
 calculateUrgency` **0x08575680**, `TankControl::turnTowardsDirection`
 **0x0862d630** and its three `tweak_*` data words, `CommonControls::
 actionStatusDecision` **0x0860fbe0**, `PlaneControl::towardsPoint`
-**0x08629730** / `towardsDirection` **0x0862a2a0**, `EntryPlaneMoveTo::
+**0x08629730** / `towardsDirection` **0x08629fa0** (first cited as 0x0862a2a0, an address inside it), `EntryPlaneMoveTo::
 execute` **0x08620220**, `BBPGotoWaypoint3d::createPlan` **0x085b81e0**,
 `BoatControl::towardsDirection` **0x0860df70** / `speedControl`
 **0x0860e130`, `EntryBoatMoveTo::execute` **0x08613d60** (ledger AI-46..AI-49).
@@ -575,3 +575,44 @@ execute` **0x08620220**, `BBPGotoWaypoint3d::createPlan` **0x085b81e0**,
 - The AI tick rate behind every tick-counted constant.
 - Vehicles: `BBChange`, the plane / tank / boat behaviours and plans, `WP
   AltitudeMoveTo`, `orderAirBot`; the medic's `BBMedicAssist`.
+
+## 12. Strength tables, the seat swap, the fire plans and the flight law
+
+Read 2026-09-23 (ledger AI-50..AI-63); every row is built unless noted.
+
+| What | Where in the binary | Built in |
+|---|---|---|
+| Six battle-strength classes; a unit's table is the max over its `FireArms`' `setStrength` tables | `AISettings::getNBattleStrengths` 0x084843d0, `AITemplateUnit::initFromObject` 0x085e1a90 | `bot-strength.js unitTable` |
+| Each side's enemy tables, `strengths += security x table`, halved per strategic pass | `SAI::updateStrengths` 0x08636c20, `BFEnvironment::getEnemyStrengths/Types` 0x085e4fe0 / 0x085e5030 | `EnemyStrengthTables` |
+| `calculateFireStrength`: own table + 0.4 / 0.9 x each other occupied seat, `max own^2` over the fielded classes minus the enemy's strength vs my class; **the seat the bot would leave counts empty** when it weighs another; a fixed weapon with nothing known or in range scores a flat 5.0 along its strategic direction | 0x08584580 | `fireStrength`, `bot.js _candidateFire / _fixedAimable` (per candidate seat's own traverse) |
+| The seat swap | `BBChangeTeleport::calculateUrgency` 0x085611f0 | `teleportChangeUrgency`, `SwitchSeat` |
+| The seated Change only while bailing is allowed | `BBChange::calculateUrgency` 0x0855e0c0 | `bot.js _urgencyChange` |
+| The box test behind the beam | `CommonControls::actionStatusDecision` 0x0860fbe0, `getBox` 0x08612060 | `driveDecision` |
+| Large-bore and aircraft targeting | `BBFireLargeBore` 0x0856b390, `BBFire3d` 0x085662f0 | `scoreVehicleTargets` |
+| The aircraft fire plan: mode 0 is "inside 0.9 R and seen: aim + trigger, else MoveTo3dObject(target, 50 m)"; modes 1 / 2 add the 10 m half-space and the break; the trigger is distance <= R and the round's miss along the current barrel <= the precision; line of fire is the memory's seen flag; the battle zone is the map less 150 / 200 m | `createPlanInternal` 0x0859b4b0, `createMobileLessAttackPlan` 0x085a0080, `BAPCConPrecision3d` 0x0854baf0, `ObjectInFront` 0x08550e70, `ObjectLineOfFire` 0x08551890, `InsideBattleZone` 0x0854e670 | `attackRunStep`, `roundMiss`, `insideBattleZone` |
+| The flight law, line for line | `towardsDirection` 0x08629fa0, `towardsPoint` 0x08629730, `aimAtDirection` 0x08629cf0, `InformationReal::getAltitude(Vec3)` 0x085e8950 | `towardsDirectionEngine`, `towardsPoint`, `aimAtDirection` |
+| The sense rays skip the bot's own unit and the target's; the vehicle frustums while seated | `BotMain::sense` 0x08521cf0 | `bot-sense.js lineClear`, `BotSenses.selfOwner` |
+| ControlInfo3d: +0x104 maxClimbAngle, +0x108 maxRollAngle, the four channel indices | con setters 0x0850dad0 / 0x0850dec0 / 0x0850e2b0 / 0x0850e6a0 | `PLANE_FIRE` |
+| The water map | level `AIpathFinding.con` | `buildNavMap({ waterMap })` |
+
+**How the flight law was read.** Ghidra's output for 0x08629fa0 starts in
+the middle of the function (register inputs, the head lost). The function was
+read instead by emulating it: a small i386 + x87 emulator
+(`features/bf1942-engine-reference/lnxded/x87emu.py`, numeric with a symbolic shadow; `towards_direction_emu.py` fuzzes the port against it) runs
+the disassembly on concrete inputs and prints the formula along the taken
+path; a Python port was then written from those formulas and the emulator
+compared with it on 1,700 random inputs (every reachable branch taken both
+ways), and the JS port with it on 400 more. The tool is worth reusing for any
+x87-heavy function Ghidra mangles.
+
+**What the viewer shows with it.** A bot's Spitfire takes off tail-up (the
+airspeed's climb limit holds the nose down until about 23 m/s), climbs, sets
+its airborne flag at 50 m and half its top speed, and cruises at 90..110 m;
+it turns through 180 deg in about 12 s at 60..68 deg of bank without losing
+height. The attack approaches at about 45 m (the move's 50 m clearance), and
+the aim's 75 m clearance pulls the nose up when the attack starts, so a
+strafing pass sweeps the nose through the target rather than holding it;
+the precision gate opens (100 ticks against a Stuka at 210..240 m) but no
+soldier was hit from the air in the runs made, and a plane can circle a
+soldier inside its turn circle without ever seeing him (the viewer's frustum
+test is yaw-only; the engine's is a 3D camera frustum).

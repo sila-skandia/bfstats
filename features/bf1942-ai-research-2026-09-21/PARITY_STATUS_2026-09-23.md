@@ -18,7 +18,7 @@ decompiles (addresses given); everything marked INVENTION is a viewer stand-in.
 | Aircraft targeting: `min(1, d / 3R)` ground, `max(0, 1 - d / 1.5R)` air (x2 AA), facing `max(0.5, f.dir + 1) * 0.5`, AA rules, escape term, 600 m unspotted pass | `BBFire3d::calculateUrgency` 0x085662f0 | `scoreVehicleTargets mode 'air'` |
 | Aircraft fire plan: mode by target (0.8 x extent / 5 m / 10 m / fixed seat); loop: inside 0.9 R with a line of fire aim + fire (in front 10 deg, inside 0.8 R) else `MoveTo3dObject(target, radius, maxSpeed, 0.5 maxSpeed, 50 m)`; a vehicle target adds the 200 m break after passing inside 1.3 x turnRadius; > 200 m from the zone fly back | `BBPFire3d::createPlan` 0x0859ad90, `createPlanInternal` 0x0859b4b0, `createMobileLessAttackPlan` 0x085a0080, `EntryPlaneAimAt::execute` 0x0861f610, `PlaneControl::aimAtDirection` 0x08629cf0 | `PLANE_FIRE`, `planeFireMode`, `attackRunStep`, `aimAtDirection`; `bot.js PlaneAttack` action |
 | Plane idle: airborne or rolling > 0.1 m/s -> `MoveTo3d` to its own position under `ConFalse` (an orbit); on the ground still -> reset controls | `BBPIdle3d::createPlan` 0x085be0e0 | `bot.js _planIdle` orbit |
-| ControlInfo3d +0x104 / +0x108 = `maxRollAngle` 0.9999 / `maxClimbAngle` 0.3333 (the last two of the 14 con floats) | `AITemplateControlInfo3d` ctor 0x085defc0 | `PLANE_FIRE.maxRollAngle / maxClimbAngle` (roll clamp; the climb during a takeoff aim) |
+| ControlInfo3d +0x104 / +0x108 = `maxClimbAngle` 0.3333 / `maxRollAngle` 0.9999 (corrected in session 2 from the con setters; first read swapped) | `AITemplateControlInfo3d` ctor 0x085defc0 | `PLANE_FIRE.maxRollAngle / maxClimbAngle` (roll clamp; the climb during a takeoff aim) |
 | The water map: `ai.addSearchMap Boat2 1 5.0 0 125 ...` — free where the water is >= depth deep, no slope test, brush keeps hulls off the shore | level `AIpathFinding.con` (`bf42/ai_level.py` already parsed `waterMap`) | `nav-grid.js buildNavMap({ waterMap })` (chamfer erosion for the 125 m brush); `map.html botWaterNav`; ships now route on it through `_steerToward`'s boat branch |
 | `EntryPlaneRoll::execute` 0x08622540 / `PlaneControl::roll` 0x0862b430 (a roll to a target angle, +-2 pi wrap) | read, NOT built (no behaviour reaches it in the viewer yet) | — |
 | `BAPAMoveTo3d::getFirstPoint` 0x08540de0 and friends | read, trivial | — |
@@ -59,58 +59,49 @@ which the bot tests then covered.
   (AI-59), and a fixed gun's aimability is the candidate seat's own
   traverse. Live: no swaps in 1,200 frames.
 
+- **The plane fires and kills.** The Spitfire recipe (a frozen soldier 260 m
+  down the runway) ends `[bots] bot_4 hit bot_1 for 30 ... (killed) [round
+  SpitfireGuns]`. Why it never fired: the gate was a misread. The engine's
+  mode 0 (a soldier) has no in-front test at all; `ObjectInFront` is a 10 m
+  half-space for modes 1 / 2, not a 10 deg cone; the trigger is the
+  precision test (the round's miss along the current barrel at the lead
+  time), the line of fire is the memory's seen flag (no ray), and the battle
+  zone is the map (AI-61). The sense rays hit the plane's own fuselage
+  0.9 m out, so a plane never saw anything (AI-62).
+- **The flight law is the engine's** (AI-60): `towardsDirection` read at its
+  real address 0x08629fa0 by emulating its x87 code
+  (`features/bf1942-engine-reference/lnxded/x87emu.py`,
+  `towards_direction_emu.py`), plus `towardsPoint` and `aimAtDirection`.
+  `planeControl` (the INVENTION law) is gone. Live: tail-up takeoff, a 180
+  deg turn in 12 s holding height, 240 s of flight without loss, three Axis
+  planes cruising at 98..127 m.
+- **A Spitfire bot left its plane at 66 m** for a Wespe passing below; the
+  seated Change is now gated on bailing (AI-63).
+- Docs: bot-behaviours §12, ledger AI-57 (offsets corrected: +0x104 is
+  maxClimbAngle, +0x108 maxRollAngle) and AI-59..AI-63, the README index
+  line, IMPLEMENTATION_PLAN Follow-up 8.
+
 ## Open, in priority order (the next session starts here)
 
-1. ~~**A bot-driven vehicle's rounds do not damage anyone.**~~ Done, see
-   Session 2. `map.html`
-   `splashTargets()` lists placed objects and the local soldier only, so a
-   Sherman's shell splash never reaches a bot; and `botFireTick` skips mounted
-   bots (`if (bot.vehicle) continue`), so its MG rounds (no splash) have no
-   soldier hit test at all. Fix (all in `map.html`):
-   - add every alive on-foot bot to `splashTargets()` as `{ owner: 'bot:' +
-     id, armor: world.armorOf(id), soldier: true, pose, splashMaterial:
-     SOLDIER_SPLASH_MATERIAL, x, y: soldier.y + CHARACTER_HEIGHT, z, botId }`;
-     in `applyVehicleHit`, for `hit.target.botId` call
-     `applyDamageToBot(botId, hit.damage, firerBotId, [record.x, record.y,
-     record.z])` — `record.firer` is `group.owner`; map it to the bot whose
-     `vehicle.groups`/`manned` holds the group (`botControllers.find(...)`).
-   - in `botFireTick` for a mounted bot: compare each active group's
-     `g.shots` with the last tick's; for every new shot whose
-     `g.stats.projectile.damage.radius` is falsy (MG rounds) run the cone
-     resolver with the gun's ray and `botRoundDamage(g.stats)`. Make
-     `bot.aimRay()` use `_aimOrigin()` and the turret (`_aimReference`) or
-     nose (`_noseReference`) direction when mounted.
-   - the existing `[bots] X hit Y for N` log then proves both paths; re-run
-     the Sherman-at-40 m recipe in `project_bot_fight_verification` memory.
-2. **The plane never pulls the trigger.** In the last run `attackRunStep`
-   reported `attack` while taxiing (d 257 -> 156, LOS true) but `fire` stayed
-   false, and in the air the approach never reached `attack` because the
-   line of sight from 100 m altitude at 400 m failed. Add
-   `this._attackDbg = { dist, cosFront, inFront, los, fire }` in
-   `_execPlaneAttack` and expose it in `__bots()`; the suspects are the
-   10 deg `inFront` cone against the nose reference on the ground and the
-   `lineClear` grazing the terrain at long range (the engine's
-   `ObjectLineOfFire` runs from the camera base; consider testing LOS to the
-   target's chest from `_aimOrigin()` with the hull's own collision skipped).
-   Then verify: a Spitfire fires on a soldier 260 m down the runway and the
-   `hit bot_x` log appears.
-3. **Docs and ledger.** `bot-behaviours.md` needs a §12 with the table above;
-   `features/bf1942-engine-reference/ledger.md` rows AI-50..AI-58 (tables,
-   fire strength, seat swap, box test, large-bore targeting, aircraft
-   targeting and plan, idle orbit, ControlInfo limits, water map); the README
-   index line "Bots and the AI subsystem" should drop `BBFire3d/BBPFire3d`,
-   `BBChangeTeleport`, `BBFireLargeBore`, the ControlInfo limits and the
-   water bitmap from its Open list and add the two items above; the
-   `IMPLEMENTATION_PLAN.md` gets "Follow-up 7". The decompiles are in the
-   session scratchpad only (`scratchpad/decomp/{round3,sai,ctl,unit,unit2}`),
-   so re-run `features/bf1942-engine-reference/lnxded/decompile.sh` with the
-   names in the table if a claim needs re-reading (escape parentheses:
-   `'SAI::update\(float\)'`; the script uses `grep -E`).
+1. **No soldier hit from the air yet.** The attack approaches at ~45 m (the
+   MoveTo3dObject's 50 m clearance) and the aim's 75 m clearance pulls the
+   nose up when the attack starts, so the pass sweeps the nose through the
+   target; the precision gate opened 100 ticks against a Stuka but no
+   soldier was hit. Two viewer-side suspects before blaming the engine:
+   the sense frustum is a yaw-only test (the engine's is a 3D camera
+   frustum; a plane circling a soldier inside its turn circle never sees
+   him), and the AI deviation (5 deg decaying over 10 s) applies to the
+   plane's MG. Also unbuilt: the closest-approach precision variant for
+   non-burst weapons (bombs) and `EntryPlaneAimAt`'s own direction clamps.
+2. **The waypoint move's clearance** is the order's altitude
+   (`BBPGotoWaypoint3d` reads the order +0x14 / +0x10); not read
+   (`PLANE.cruiseClearance` 120, INVENTION). `orderAirBot` / `WP
+   AltitudeMoveTo` would give it.
+3. The airborne flag (bot vt +0x180 / +0x17c): where the engine clears it
+   is not read (the viewer clears it on the ground, INVENTION).
 4. **Remaining INVENTIONs worth reading next**: `AISettings::getArmourClassValues`
    (+0x98, the per-class weighting; 1 here — find the `ai.setArmourClassValue`
-   con handler), `BotMain::getHarmlessThrsh` (+0x2c; 0 here), the exact stall /
-   dive terms of `PlaneControl::towardsDirection` (the viewer's 40 m / 10 m
-   pull-ups and 15 / 45 deg nose limits), `actionStatusDecision` modes 2..5,
+   con handler), `BotMain::getHarmlessThrsh` (+0x2c; 0 here), `actionStatusDecision` modes 2..5,
    a target's information `security` (+0x14; 1 here), and the 20 s
    `getBBPFeedback` veto for vehicles (shared with infantry).
 5. **Boats live**: no vanilla boat drives on El Alamein; load Wake or

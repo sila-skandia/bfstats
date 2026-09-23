@@ -14,7 +14,7 @@ import { BotController } from './bot.js';
 import { buildNavMap, gridAt, traceClear, CELL_OBJECT } from './nav-grid.js';
 import { Armor } from './armor.js';
 import { tankControl, unitUrgency, changeUrgency, orderSplit, teleportChangeUrgency, driveDecision, TANK, TELEPORT, CHANGE } from './bot-vehicle.js';
-import { planeControl, boatControl, rotate, attackRunStep, planeFireMode, aimAtDirection, PLANE_FIRE } from './bot-vehicle-air.js';
+import { towardsPoint, boatControl, rotate, attackRunStep, roundMiss, planeFireMode, aimAtDirection, towardsDirectionEngine, stickShape, PLANE_FIRE } from './bot-vehicle-air.js';
 import { fireStrength, unitTable, EnemyStrengthTables, engineHeatInfluence, STRENGTH } from './bot-strength.js';
 import { scoreVehicleTargets, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
 import { freeRun, freeBox, CELL_LAND, CELL_FREE } from './nav-grid.js';
@@ -322,17 +322,19 @@ function changeScenario() {
   return { foot, sherman, willy, near: near.urgency, nearId: near.best?.id ?? null, far: far.urgency, none: none.urgency, split };
 }
 
-/** The plane law: level flight toward a point ahead and above wants nose
- *  up (a negative stick), a point to the right rolls positive, a plane on
- *  the ground runs straight; the boat's helm turns full rudder past 30 deg. */
+/** The plane law (`towardsPoint` 0x08629730 -> `towardsDirection`): level
+ *  flight toward a point ahead and above wants nose up (a negative stick),
+ *  a point to the right rolls and yaws right, a plane on the ground before
+ *  its airborne flag makes no turn and, slow, holds its nose down (the
+ *  airspeed's climb limit); the boat's helm turns full rudder past 30 deg. */
 function airScenario() {
   const level = { x: 0, y: 0, z: 0, w: 1 };            // nose along -z
-  const ahead = planeControl({ orientation: level, position: [0, 200, 0], velocity: [0, 0, -60],
-                               target: [0, 260, -1000], groundY: 0, targetGroundY: 0, maxSpeed: 60, radius: 10 });
-  const right = planeControl({ orientation: level, position: [0, 200, 0], velocity: [0, 0, -60],
-                               target: [500, 200, -500], groundY: 0, targetGroundY: 0, maxSpeed: 60, radius: 10 });
-  const ground = planeControl({ orientation: level, position: [0, 1, 0], velocity: [0, 0, -5],
-                                target: [0, 200, -1000], groundY: 0, targetGroundY: 0, maxSpeed: 60, radius: 10 });
+  const common = { orientation: level, position: [0, 200, 0], velocity: [0, 0, -60], clearance: 120,
+                   altitudeAlong: () => 200, altitude: 200, airborne: true, maxSpeed: 60, radius: 10 };
+  const ahead = towardsPoint({ ...common, target: [0, 260, -1000] });
+  const right = towardsPoint({ ...common, target: [500, 200, -500] });
+  const ground = towardsPoint({ ...common, position: [0, 1, 0], velocity: [0, 0, -5], target: [300, 200, -1000],
+                                altitudeAlong: () => 1, altitude: 1, airborne: false });
   const boatTurn = boatControl({ forward: [0, 1], velocity: [0, 3], toTarget: [100, 20], radius: 10 });
   const boatAhead = boatControl({ forward: [0, 1], velocity: [0, 3], toTarget: [0, 200], radius: 10 });
   const fwd = rotate(level, [0, 0, -1]);
@@ -438,10 +440,37 @@ function planeFireScenario() {
   const modes = [planeFireMode({ extents: [0.6, 1.8, 0.6] }), planeFireMode({ extents: [3, 3, 6], vehicle: true }),
                  planeFireMode({ extents: [30, 10, 90], vehicle: true, large: true }), planeFireMode({ mobile: false })];
   const level = { x: 0, y: 0, z: 0, w: 1 };
-  const aimUp = aimAtDirection({ orientation: level, position: [0, 200, 0], velocity: [0, 0, -60], dir: [0, 0.5, -0.866], groundY: 0, maxSpeed: 60 });
-  const aimTakeoff = aimAtDirection({ orientation: level, position: [0, 1, 0], velocity: [0, 0, -10], dir: [0, 0, -1], groundY: 0, maxSpeed: 60, onGround: true });
+  const aimUp = aimAtDirection({ orientation: level, velocity: [0, 0, -60], dir: [0, 0.5, -0.866], maxSpeed: 60 });
+  const aimTakeoff = aimAtDirection({ orientation: level, velocity: [0, 0, -10], dir: [0, 0, -1], maxSpeed: 60, airborne: false, altitude: 1 });
+  // A low pass: 30 m over the ground, the probes under the 75 m clearance, so
+  // the pull-up demand lifts the nose even with the target below.
+  const aimLow = aimAtDirection({ orientation: level, velocity: [0, 0, -60], dir: [0, -0.2, -0.98], maxSpeed: 60, altitudeAlong: () => 30 });
+  // `towardsDirection` 0x08629fa0 against its x87 emulation (six random
+  // cases, engine frame; lnxded/x87emu.py produced the outputs).
+  const engineCases = [{"dir": [-0.993692, -0.074491, 0.083831], "R": [-0.561141, 0.255515, -0.787294], "U": [-0.340014, -0.938361, -0.062199], "F": [-0.754659, 0.232789, 0.613432], "omega": [-0.514232, -0.172274, 0.494024], "climbDemand": 14.315476, "clearance": 50.0, "takeoff": false, "throttleFloor": 0.5, "speed": 52.313803, "diveGuard": true, "out": {"throttle": 0.5, "yaw": 0.7752, "roll": 1.0, "pitch": 0.045827}}, {"dir": [-0.829655, 0.191291, 0.524481], "R": [-0.960014, 0.220102, -0.172995], "U": [0.131449, 0.899994, 0.41561], "F": [0.247171, 0.376251, -0.89294], "omega": [-1.214037, -0.89832, -1.089944], "climbDemand": -6.400518, "clearance": 50.0, "takeoff": false, "throttleFloor": 1.0, "speed": 79.655331, "diveGuard": false, "out": {"throttle": 1.0, "yaw": 1.0, "roll": 1.0, "pitch": -0.803188}}, {"dir": [0.266325, -0.383618, 0.884256], "R": [0.878611, -0.286405, -0.382119], "U": [0.400487, 0.006088, 0.916282], "F": [-0.260101, -0.958089, 0.120051], "omega": [-0.606245, 0.823312, 0.002819], "climbDemand": -4.501909, "clearance": 50.0, "takeoff": false, "throttleFloor": 0.5, "speed": 33.583312, "diveGuard": true, "out": {"throttle": 0.5, "yaw": 0.518796, "roll": -0.723797, "pitch": -0.929168}}, {"dir": [0.43917, 0.897749, 0.034316], "R": [-0.661937, 0.418265, 0.622008], "U": [0.684838, 0.000158, 0.728695], "F": [0.304689, 0.908325, -0.286548], "omega": [0.092303, -1.810458, 0.150234], "climbDemand": -7.886268, "clearance": 50.0, "takeoff": true, "throttleFloor": 1.0, "speed": 61.56176, "diveGuard": true, "out": {"throttle": 1.0, "yaw": -0.98549, "roll": 0.789041, "pitch": 0.218963}}, {"dir": [-0.658301, 0.640282, 0.395827], "R": [0.574338, 0.616582, 0.538482], "U": [0.340258, 0.418474, -0.842083], "F": [-0.744554, 0.666863, 0.030549], "omega": [3.668865, -1.261596, -0.941278], "climbDemand": 73.395255, "clearance": 50.0, "takeoff": false, "throttleFloor": 0.5, "speed": 0.766019, "diveGuard": true, "out": {"throttle": 1.0, "yaw": -0.850631, "roll": 0.80369, "pitch": 0.905995}}, {"dir": [-0.221476, -0.21368, -0.951467], "R": [-0.493111, -0.666941, -0.558598], "U": [0.766724, -0.029776, -0.641286], "F": [0.411066, -0.744516, 0.526043], "omega": [-1.182207, 0.779797, 0.892817], "climbDemand": -28.378307, "clearance": 50.0, "takeoff": false, "throttleFloor": 1.0, "speed": 19.959885, "diveGuard": true, "out": {"throttle": 1.0, "yaw": 0.982714, "roll": -0.617742, "pitch": -0.997419}}];
+  const engineMaxErr = Math.max(...engineCases.map(c => {
+    const r = towardsDirectionEngine({ ...c, maxClimb: 0.3333, maxRoll: 0.9999 });
+    return Math.max(...['throttle', 'yaw', 'roll', 'pitch'].map(k => Math.abs(r[k] - c.out[k])));
+  }));
+  // Mode 0 (a soldier): no in-front gate, the trigger is the round's miss
+  // inside the precision; a nose 2 deg off at 200 m misses by ~7 m.
+  const s0 = { phase: 'approach', breakFrom: null };
+  const soldier = (aimDir) => attackRunStep(s0, { position: [0, 100, 0], forward: [0, 0, -1], velocity: [0, 0, -60],
+    target: [0, 100, -200], maxRange: 300, lineOfFire: true, mode: 0, precision: 1.44, aimDir, roundSpeed: 800, gravity: 0 });
+  const onTarget = soldier([0, 0, -1]);
+  const offTarget = soldier([Math.sin(2 * Math.PI / 180), 0, -Math.cos(2 * Math.PI / 180)]);
+  const unseen = attackRunStep({ phase: 'approach' }, { position: [0, 100, 0], forward: [0, 0, -1], velocity: [0, 0, -60],
+    target: [0, 100, -200], maxRange: 300, lineOfFire: false, mode: 0, precision: 1.44, roundSpeed: 800 });
+  // A target 8 m ahead is not "in front" (ObjectInFront's 10 m).
+  const close = attackRunStep({ phase: 'approach' }, { position: [0, 100, 0], forward: [0, 0, -1], velocity: [0, 0, -60],
+    target: [0, 100, -8], maxRange: 300, lineOfFire: true, mode: 1, precision: 5, roundSpeed: 800 });
+  // A moving target: the lead solution puts the miss at 0 for the led aim.
+  const lead = roundMiss({ rel: [0, 0, -300], relVel: [30, 0, 0], dir: [0.1, 0, -0.995], speed: 300, gravity: 0 });
   return { far: far.phase, inRange: inRange.phase, inRangeFire: inRange.fire, passed: passed.phase, breaking: breaking.phase,
-           again: again.phase, modes, aimUpPitch: aimUp.pitch, takeoff: aimTakeoff.takeoff, climb: PLANE_FIRE.maxClimbAngle };
+           again: again.phase, modes, aimUpPitch: aimUp.pitch, climb: PLANE_FIRE.maxClimbAngle,
+           onTarget: [onTarget.phase, onTarget.fire, onTarget.miss], offTarget: [offTarget.fire, offTarget.miss],
+           unseen: unseen.phase, closeInFront: close.inFront, leadMiss: lead.miss, leadT: lead.t,
+           aimLowPitch: aimLow.pitch, takeoffAirborne: aimTakeoff.airborne, engineMaxErr, shape: [stickShape(0.05), stickShape(-1), stickShape(1)] };
 }
 
 /** The water map: a sea 20 m deep around a 40 m island, the boats' map

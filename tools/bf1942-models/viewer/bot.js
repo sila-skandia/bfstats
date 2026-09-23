@@ -46,7 +46,7 @@ import { scoreTargets, scoreVehicleTargets, firingPose, firePlanFor, weaponAiOf,
 import { ScoutState, TakeCoverState, QUADRANTS, quadrantOf, SCOUT, TAKE_COVER, MedicState, MEDIC } from './bot-behaviours.js';
 import { tankControl, unitUrgency, orderSplit, changeUrgency, teleportChangeUrgency, TANK, CHANGE, TELEPORT } from './bot-vehicle.js';
 import { decleiningSlope } from './bot-behaviours.js';
-import { planeControl, boatControl, aimAtDirection, attackRunStep, planeFireMode, PLANE, BOAT, PLANE_FIRE } from './bot-vehicle-air.js';
+import { boatControl, aimAtDirection, towardsPoint, attackRunStep, roundMiss, planeFireMode, insideBattleZone, PLANE, BOAT, PLANE_FIRE } from './bot-vehicle-air.js';
 import { fireStrength, unitTable, STRENGTH } from './bot-strength.js';
 
 /** The 55-channel PlayerInputMap indices, from the research document §1.2. */
@@ -556,7 +556,14 @@ export class BotController {
 
   /** The world's line-of-sight test between two points. */
   _lineClear(from, to) {
-    return lineClear(this.world?.collider, from, to);
+    return lineClear(this.world?.collider, from, to, this._selfOwner());
+  }
+
+  /** The collision owner of the hull the bot sits in, -1 on foot: its own
+   *  rays skip it (`collideLineWithWorld` ignores the bot's unit). */
+  _selfOwner() {
+    const node = this.vehicle?.node;
+    return node ? (this.world?.collider?.statics?.ownerOf?.(node) ?? -1) : -1;
   }
 
   // -----------------------------------------------------------------------
@@ -634,6 +641,15 @@ export class BotController {
     // A seated bot looks where its gun points (the turret's heading), not
     // where the hull does.
     const lookYaw = this.vehicle ? (this._aimReference()?.yaw ?? this.yaw) : this.yaw;
+    this.senses.selfOwner = this._selfOwner();
+    // The vehicle frustums (75 / 45 / 15 deg, AI-33) while seated.
+    this.senses.isMobile = !!this.vehicle;
+    if (!this.senses.unitOwnerOf) {
+      this.senses.unitOwnerOf = (p) => {
+        const node = p?.occupancy?.root ?? p?.vehicle?.node ?? null;
+        return node ? (this.world?.collider?.statics?.ownerOf?.(node) ?? -1) : -1;
+      };
+    }
     this.senses.sense(now, this.world, me, eye, lookYaw);
     this.senses.updateMemory(now, this.world, me, eye, lookYaw);
     // `updateSensingQuads`: every quadrant ages; the one the camera looks
@@ -1713,7 +1729,11 @@ export class BotController {
       }
       let best = null, bestU = 0, bail = false;
       if (bailAllowed && foot > bestU) { best = { id: 'foot', u: foot, dist: 0, cand: null }; bestU = foot; bail = true; }
-      for (const c of cands ?? []) {
+      // The whole seated evaluation, the other units included, sits under
+      // `isBailAllowed` (0x0855e0c0: `if (unit+6 & 0x40 || isBailAllowed)`):
+      // a bot that may not get out may not get out for another hull either.
+      // (A Spitfire bot left its plane at 66 m for a Wespe passing below.)
+      for (const c of bailAllowed ? (cands ?? []) : []) {
         if (c.occupiedBy || c.upright === false || c.id === m.id) continue;
         const d = Math.hypot(c.pos[0] - this.position[0], c.pos[2] - this.position[2]);
         if (d > CHANGE.searchRadius) continue;
@@ -2211,22 +2231,27 @@ export class BotController {
    * `PlaneMoveTo` (`EntryPlaneMoveTo::execute` -> `PlaneControl::towardsPoint`):
    * the point at cruise height, arrival at `4 * radius`.
    */
-  _execPlaneMoveTo(target, action) {
+  _execPlaneMoveTo(target, action, clearance = PLANE.cruiseClearance) {
     const m = this.vehicle;
     const st = m.drive?.state;
     if (!st) return true;
     const collider = this.world?.collider;
-    const gy = collider?.surfaceHeight?.(st.position.x, st.position.z);
+    const position = [st.position.x, st.position.y, st.position.z];
     const tgy = collider?.surfaceHeight?.(target[0], target[2]);
-    const r = planeControl({
-      orientation: st.orientation, position: [st.position.x, st.position.y, st.position.z],
-      velocity: [st.velocity.x, st.velocity.y, st.velocity.z],
+    if (m.drive?.grounded) this._airborne = false;   // INVENTION: where the engine clears vt +0x180 is not read
+    const w = st.angularVelocity;
+    const r = towardsPoint({
+      orientation: st.orientation, position, velocity: [st.velocity.x, st.velocity.y, st.velocity.z],
+      angularVelocity: w ? [w.x, w.y, w.z] : [0, 0, 0],
       target: [target[0], target[1] ?? (Number.isFinite(tgy) ? tgy : st.position.y), target[2]],
-      groundY: gy, targetGroundY: tgy, maxSpeed: m.maxSpeed ?? 100, radius: m.radius ?? 10,
-      onGround: !!m.drive?.grounded,
+      clearance, groundAt: (x, z) => this._groundAt(x, z),
+      altitudeAlong: (off) => this._altitudeAlong(position, off), altitude: this._altitudeAlong(position, [0, 0, 0]),
+      airborne: !!this._airborne, maxSpeed: m.maxSpeed ?? 100, radius: m.radius ?? 10,
     });
+    this._airborne = r.airborne;
+    const cur = m.drive?.input?.('c_PIThrottle') ?? 1;
+    r.power = r.throttle > cur + 0.01 ? 1 : (r.throttle < cur - 0.01 ? -1 : 0);
     this._airInput = r;
-    this._dbgSteerAngle = Math.atan2(r.side, r.ahead);
     this._dbgSteer = [target[0], target[2]];
     if (action?.orbit) return false;                        // `ConFalse`: the idle's orbit never ends
     return r.arrived && !r.takeoff;
@@ -2253,33 +2278,49 @@ export class BotController {
     const tv = p?.vehicle?.state?.velocity ?? p?.soldier?.body?.body?.velocity;
     const targetVel = tv ? [tv.x, tv.y, tv.z] : [0, 0, 0];
     const eye = this._aimOrigin();
-    const lineOfFire = this._lineClear(this._eye(), [pos[0], pos[1] + 1.0, pos[2]]);
+    // `BAPConObjectLineOfFire` 0x08551890: the memory record of the target
+    // is not lost (its +0x14 byte), i.e. the senses see it now. No ray here.
+    const lineOfFire = this.senses.memory.get(action.targetId)?.seen === true;
+    const gun = this._gunBallistics();
     const state = this._attackState ?? (this._attackState = { phase: 'approach', breakFrom: null });
+    const forward = this._unitForward3();
     const step = attackRunStep(state, {
-      position, forward: this._unitForward3(), velocity, target: [pos[0], pos[1] + 1.0, pos[2]], targetVel,
+      position, forward, velocity, target: [pos[0], pos[1] + 1.0, pos[2]], targetVel,
       maxRange: action.maxRange, turnRadius: m.turnRadius ?? 25, lineOfFire, mode: action.mode,
+      precision: action.radius, muzzle: eye, aimDir: this.aimRay().dir, roundSpeed: gun.speed, gravity: gun.gravity,
     });
     this._attackPhase = step.phase;
-    // Outside the battle zone by more than 200 m: back toward it first.
-    const wp = this.waypoints;
-    if (wp?.inside && !wp.inside(position[0], position[2])) {
-      const dz = Math.hypot(wp.point[0] - position[0], wp.point[1] - position[2]) - (wp.area?.radius ?? wp.radius ?? 0);
-      if (dz > PLANE_FIRE.battleZoneReturn) {
-        this._execPlaneMoveTo([wp.point[0], undefined, wp.point[1]], null);
-        this.isFiring = false;
-        return false;
-      }
+    this._attackDbg = { phase: step.phase, dist: Math.round(step.dist), cosFront: +(forward[0] * step.dir[0] + forward[1] * step.dir[1] + forward[2] * step.dir[2]).toFixed(3),
+                        inFront: step.inFront, los: lineOfFire, miss: +step.miss.toFixed(2), precision: action.radius, fire: step.fire,
+                        agl: Number.isFinite(gy) ? Math.round(position[1] - gy) : null };
+    // `If(InsideBattleZone(200), ..., MoveTo3d(map centre, 200 m))`: the
+    // battle zone is the world map less a margin (0x0854e670), not the
+    // ordered area; near an edge the plane heads for the map's centre.
+    const mapSize = this._worldMapSize();
+    if (!insideBattleZone(position[0], position[2], PLANE_FIRE.battleZoneReturn, mapSize)) {
+      this._execPlaneMoveTo([mapSize[0] / 2, PLANE_FIRE.battleZoneHeight, -mapSize[1] / 2], null, PLANE_FIRE.battleZoneHeight);
+      this.isFiring = false;
+      return false;
     }
     if (step.phase === 'attack') {
-      // The weapon's lead: the target's motion over the round's flight.
-      const exitVelocity = this.weaponData?.[this.weaponAi?.name]?.velocity ?? 600;
-      const t = step.dist / Math.max(50, exitVelocity);
-      const lead = [pos[0] + targetVel[0] * t - eye[0], pos[1] + 1.0 + targetVel[1] * t - eye[1], pos[2] + targetVel[2] * t - eye[2]];
-      const len = Math.hypot(lead[0], lead[1], lead[2]) || 1;
-      const r = aimAtDirection({ orientation: st.orientation, position, velocity, dir: [lead[0] / len, lead[1] / len, lead[2] / len],
-                                 groundY: gy, maxSpeed: m.maxSpeed ?? 100, radius: m.radius ?? 10, onGround: !!m.drive?.grounded });
+      // `EntryPlaneAimAt` 0x0861f610: the Aimer's firing direction (the lead
+      // in the relative velocity, the drop taken out), flown through
+      // `aimAtDirection` 0x08629cf0 -> `towardsDirection` 0x08629fa0.
+      const rel = [pos[0] - eye[0], pos[1] + 1.0 - eye[1], pos[2] - eye[2]];
+      const relVel = [targetVel[0] - velocity[0], targetVel[1] - velocity[1], targetVel[2] - velocity[2]];
+      const { aim } = roundMiss({ rel, relVel, speed: gun.speed, gravity: gun.gravity });
+      const w = st.angularVelocity;
+      if (m.drive?.grounded) this._airborne = false;   // INVENTION: where the engine clears vt +0x180 is not read
+      const r = aimAtDirection({
+        orientation: st.orientation, velocity, angularVelocity: w ? [w.x, w.y, w.z] : [0, 0, 0], dir: aim,
+        altitudeAlong: (off) => this._altitudeAlong(position, off), altitude: this._altitudeAlong(position, [0, 0, 0]),
+        clearance: action.mode === 1 ? PLANE_FIRE.aimClearanceVehicle : PLANE_FIRE.aimClearance,
+        airborne: !!this._airborne, throttleFloor: 1, maxSpeed: m.maxSpeed ?? 100,
+      });
+      this._airborne = r.airborne;
+      const cur = m.drive?.input?.('c_PIThrottle') ?? 1;
+      r.power = r.throttle > cur + 0.01 ? 1 : (r.throttle < cur - 0.01 ? -1 : 0);
       this._airInput = r;
-      this._dbgSteerAngle = Math.atan2(r.side, r.ahead);
       this._dbgSteer = [pos[0], pos[2]];
       this.isFiring = step.fire;
       if (step.fire) this.firingTargetTime = Math.min(this.firingTargetTime, now);
@@ -2291,14 +2332,54 @@ export class BotController {
       const f = this._unitForward3();
       const ahead = [position[0] + f[0] * PLANE_FIRE.breakDistance, position[1] + Math.max(0, f[1]) * PLANE_FIRE.breakDistance,
                      position[2] + f[2] * PLANE_FIRE.breakDistance];
-      this._execPlaneMoveTo(ahead, null);
+      this._execPlaneMoveTo(ahead, null, PLANE_FIRE.clearance);   // the MoveTo3dDirection's clearance: INVENTION
       return false;
     }
-    // `MoveTo3dObject(target, radius, maxSpeed, 0.5 maxSpeed, 50 m)`.
-    const tgy = collider?.surfaceHeight?.(pos[0], pos[2]);
-    const base = Number.isFinite(tgy) ? Math.max(tgy, pos[1]) : pos[1];
-    this._execPlaneMoveTo([pos[0], base + PLANE_FIRE.clearance, pos[2]], null);
+    // `MoveTo3dObject(target, radius, maxSpeed, 0.5 maxSpeed, 50 m)`: the
+    // target's own position with a 50 m clearance (+0x44), which
+    // `towardsPoint` turns into the lift near it and the pull-up probe.
+    this._execPlaneMoveTo([pos[0], pos[1], pos[2]], null, PLANE_FIRE.clearance);
     return false;
+  }
+
+  /** `InformationReal::getAltitude(Vec3)` 0x085e8950: the least height over
+   *  the ground (and water) at the position and at 0.2 .. 0.9 of `offset`
+   *  along it (the loop's last sample is computed but not returned). */
+  _altitudeAlong(position, offset) {
+    let best = Infinity;
+    for (const t of [0, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]) {
+      const floor = this._groundAt(position[0] + offset[0] * t, position[2] + offset[2] * t);
+      if (Number.isFinite(floor)) best = Math.min(best, position[1] + offset[1] * t - floor);
+    }
+    return best;
+  }
+
+  /** The higher of the terrain and the water at (x, z) (`IAIEnvironment`
+   *  +0xb4 / +0x9c, the pair `towardsPoint` takes the max of). */
+  _groundAt(x, z) {
+    const col = this.world?.collider;
+    const water = col?.waterLevel ?? this.world?.extras?.waterLevel;
+    const g = col?.surfaceHeight?.(x, z);
+    return Math.max(Number.isFinite(g) ? g : -Infinity, Number.isFinite(water) ? water : -Infinity);
+  }
+
+  /** `AISettings::getWorldMapSizeX / Z` (the level's `worldMapSize`). */
+  _worldMapSize() {
+    const ex = this.world?.extras;
+    const s = ex?.ai?.settings?.worldMapSize;
+    return Array.isArray(s) && s.length >= 2 ? s : [ex?.worldSize ?? 2048, ex?.worldSize ?? 2048];
+  }
+
+  /** The mounted gun's muzzle speed and gravity (`Aimer` +0xc / +0x8), from
+   *  the first gun group's projectile; 600 m/s and none until it loads. */
+  _gunBallistics() {
+    const g = this.vehicle?.groups?.[0] ?? this.vehicle?.manned?.[0] ?? null;
+    const st = g?.stats ?? {};
+    const speed = st.velocity ?? st.projectile?.velocity ?? this.weaponData?.[this.weaponAi?.name]?.velocity ?? 600;
+    // `gravityModifier` as the extractor names it (`projectile.gravity`); a
+    // tracer round's is 0, a shell's defaults to 1 (gunfire.js).
+    const gm = Number.isFinite(st.projectile?.gravity) ? st.projectile.gravity : (st.projectile?.kind === 'shell' ? 1 : 0);
+    return { speed, gravity: -9.81 * gm };
   }
 
   /** `BoatMoveTo`: the helm on a straight line to the point. */
