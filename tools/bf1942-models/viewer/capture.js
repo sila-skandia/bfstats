@@ -11,11 +11,14 @@ import { captureDuration, nearestEnemyFlag as nearestEnemyFlagOf } from './bot-r
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `AUDIO_OFF`, `LOCAL_PLAYER`, `MAPS_BASE`, `bust`, `cull`, `currentRoot`,
- * `deployScreen`, `extras`, `flagMixer`, `flattenCull`, `hud`, `hudFeed`,
- * `levelClips`, `logToConsole`, `mapSurfaces`, `optOnFoot`, `pageAudio`,
- * `room`, `soldier`, `soldierDead`, `spawnFlagSelect`,
- * `syncVehicleSpawnOwnership`, `tagCull`, `thaw`, `updateHud`, `world`.
+ * `AUDIO_OFF`, `audioBufferCache`, `audioListener`, `audioLoader`, `bust`,
+ * `cull`, `currentRoot`, `deployTeamId`, `drawFullMap`, `drawMinimap`,
+ * `ensureAudioContext`, `extras`, `flagMixer`, `flattenCull`, `hud`,
+ * `hudViewTimer`, `levelClips`, `LOCAL_PLAYER`, `localMapTeam`,
+ * `logToConsole`, `MAPS_BASE`, `masterVolume`, `optOnFoot`,
+ * `paintDeployChrome`, `playSoldierOneShot`, `roomJoined`, `soldier`,
+ * `soldierDead`, `spawnFlagSelect`, `syncVehicleSpawnOwnership`, `tagCull`,
+ * `teamNation`, `thaw`, `updateHud`, `world`.
  */
 export function createFlagCapture(page) {
   const flagCapture = {};
@@ -112,7 +115,7 @@ export function createFlagCapture(page) {
     // whose answer is 'unknown' (a `flagpl_m1` the pack has no art for) there
     // is no cell and the point keeps its old colours — the same neutral-plate
     // rule `drawControlPoint` applies on the map.
-    const nation = team === 1 || team === 2 ? page.mapSurfaces.teamNation(team) : null;
+    const nation = team === 1 || team === 2 ? page.teamNation(team) : null;
     return (nation && FLAG_UV_CELLS[nation]) || null;
   }
   /** The stored UV range of a cloth geometry: [u0,v0,u1,v1]. Every baked cloth
@@ -341,9 +344,9 @@ export function createFlagCapture(page) {
     } else if (!cell && nodes.cloth) {
       nodes.cloth.visible = false;
     }
-    page.mapSurfaces.drawMinimap(true);
-    page.mapSurfaces.drawFullMap(true);
-    if (typeof page.deployScreen.paintDeployChrome === 'function') page.deployScreen.paintDeployChrome();
+    page.drawMinimap(true);
+    page.drawFullMap(true);
+    if (typeof page.paintDeployChrome === 'function') page.paintDeployChrome();
   }
 
   function updateCaptureHud(ticks) {
@@ -356,9 +359,9 @@ export function createFlagCapture(page) {
 
     // Solo play has no server authority, so run the same delayed capture law
     // locally. Room play only displays the authoritative lifecycle below.
-    if (!page.room.roomJoined) {
+    if (!page.roomJoined) {
       const player = page.world?.player(page.LOCAL_PLAYER);
-      const target = nearestEnemyFlag(player?.team ?? page.deployScreen.deployTeamId, capturePosition());
+      const target = nearestEnemyFlag(player?.team ?? page.deployTeamId, capturePosition());
       if (!target) {
         if (flagCapture.localCapture) { flagCapture.localCapture = null; page.updateHud(); }
         return;
@@ -372,14 +375,14 @@ export function createFlagCapture(page) {
       page.hud.textContent = `CAPTURING ${target.name} · ${progress}%`;
       if (flagCapture.localCapture.elapsed < captureDuration(target)) return;
       const prevTeam = target.team;
-      target.team = player?.team ?? page.deployScreen.deployTeamId;
+      target.team = player?.team ?? page.deployTeamId;
       hoistCaptureFlag(target);
       page.syncVehicleSpawnOwnership();
       page.logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
       page.hud.textContent = `${target.name} captured`;
       announceCapture(prevTeam, target.team);
-      clearTimeout(page.hudFeed.hudViewTimer);
-      page.hudFeed.hudViewTimer = setTimeout(page.updateHud, 2200);
+      clearTimeout(page.hudViewTimer);
+      page.hudViewTimer = setTimeout(page.updateHud, 2200);
       flagCapture.localCapture = null;
       return;
     }
@@ -438,7 +441,7 @@ export function createFlagCapture(page) {
   }
   /** The folders to try for the side's announcer, most specific first. */
   function captureVoiceDirs(team) {
-    const nation = page.mapSurfaces.teamNation(team);
+    const nation = page.teamNation(team);
     const shared = page.MAPS_BASE === 'maps' ? 'maps/_shared' : `${page.MAPS_BASE}/_shared`;
     const dirs = [];
     if (nation && nation !== 'unknown') {
@@ -454,30 +457,30 @@ export function createFlagCapture(page) {
   async function loadCaptureVoice(dir, stem) {
     const key = `voices:${dir}/${stem}.mp3`;
     if (missingCaptureVoices.has(key)) return null;
-    let pending = page.pageAudio.audioBufferCache.get(key);
+    let pending = page.audioBufferCache.get(key);
     if (!pending) {
-      if (!page.pageAudio.audioLoader) return null;
-      pending = page.pageAudio.audioLoader.loadAsync(`${dir}/${stem}.mp3${page.bust()}`)
+      if (!page.audioLoader) return null;
+      pending = page.audioLoader.loadAsync(`${dir}/${stem}.mp3${page.bust()}`)
         .catch(() => {
           // Remembered, not retried: a folder the tree does not carry would
           // otherwise be fetched again on every take.
           missingCaptureVoices.add(key);
-          page.pageAudio.audioBufferCache.delete(key);
+          page.audioBufferCache.delete(key);
           return null;
         });
-      page.pageAudio.audioBufferCache.set(key, pending);
+      page.audioBufferCache.set(key, pending);
     }
     return pending;
   }
-  async function playCaptureVoice(kind = 'gain', team = page.mapSurfaces.localMapTeam()) {
-    if (page.AUDIO_OFF || page.pageAudio.masterVolume() <= 0) return;
+  async function playCaptureVoice(kind = 'gain', team = page.localMapTeam()) {
+    if (page.AUDIO_OFF || page.masterVolume() <= 0) return;
     const stems = CAPTURE_VOICE_STEMS[kind];
     if (!stems) return;
     // One announcement per take, never stacked.
     const now = performance.now() * 0.001;
     if (now - flagCapture.lastCaptureVoiceTime < 1.0) return;
-    page.pageAudio.ensureAudioContext();
-    if (!page.pageAudio.audioListener || page.pageAudio.audioListener.context.state === 'suspended') return;
+    page.ensureAudioContext();
+    if (!page.audioListener || page.audioListener.context.state === 'suspended') return;
     flagCapture.lastCaptureVoiceTime = now;
     const stem = stems[Math.floor(Math.random() * stems.length)];
     for (const dir of captureVoiceDirs(team)) {
@@ -485,7 +488,7 @@ export function createFlagCapture(page) {
       if (!buf) continue;
       // The one-shot path the footsteps and hurt grunts already use: 2D voice,
       // no pitch wobble (a `randomPlay` pick is the variation), script volume 1.
-      page.pageAudio.playSoldierOneShot(buf, 1, 0, 0);
+      page.playSoldierOneShot(buf, 1, 0, 0);
       flagCapture.lastCaptureVoice = { kind, team, dir, stem };
       return;
     }
@@ -493,7 +496,7 @@ export function createFlagCapture(page) {
   }
   /** A point changed hands: say so if the local side gained or lost it. */
   function announceCapture(prevTeam, newTeam) {
-    const team = page.mapSurfaces.localMapTeam();
+    const team = page.localMapTeam();
     const kind = captureVoiceKind(prevTeam, newTeam, team);
     if (kind) playCaptureVoice(kind, team);
   }
