@@ -28,6 +28,7 @@ import {
 } from './menu-screen.js';
 import { beginStage, pointerToVirtual } from './stage.js';
 import { createNavStrip } from './nav-strip.js';
+import { createMenuPack } from './menu-pack.js';
 import { loadMods, remember, servable, stored, VANILLA, withMod } from '../mods.js';
 import { createLoadingAudioController } from '../audio.js';
 import { loadHudPaths, hudPaths as plainHudPaths } from '../hud-pack.js';
@@ -90,10 +91,6 @@ export function createSkirmishScreen({
 
   const ctx = canvas.getContext('2d');
 
-  const images = new Map();
-  const fonts = new Map();
-  const tints = new Map();
-
   // `disconnect` is the exit page's own switch (`menu-screen.js` `livePages`):
   // the button is drawn, and clickable, only over a running level.
   const state = {
@@ -122,62 +119,26 @@ export function createSkirmishScreen({
    *  loop is only (re)started when the mod actually brings its own. */
   let menuTrack = null;
 
-  const json = url => fetch(url + bust()).then(r => {
-    if (!r.ok) throw new Error(`${r.status} ${url}`);
-    return r.json();
+  // The image, font and tint caches (`menu-pack.js`), with this screen's own
+  // lookups laid over the pack's: the level thumbnail, the mod icon, and the
+  // live level list and hover.
+  const pack = createMenuPack({
+    url: packUrl,
+    bust,
+    onImage: () => paintSoon(),
+    env: {
+      thumbnail: level => {
+        if (level?.thumbnail) return ready(image(packUrl(level.thumbnail)));
+        if (level?.previewBg) return ready(image(`${MAPS}/${level.previewBg}`));
+        return null;
+      },
+      icon: mod => (mod?.icon ? ready(image(`${root}${mod.icon}`)) : null),
+      text: () => '',
+      get levels() { return levels; },
+      get hover() { return hover; },
+    },
   });
-
-  function image(url) {
-    if (images.has(url)) return images.get(url);
-    const img = new Image();
-    img.decoding = 'async';
-    img.onload = () => paintSoon();
-    img.onerror = () => images.set(url, null);
-    img.src = url + bust();
-    images.set(url, img);
-    return img;
-  }
-
-  const ready = img => (img && img.complete && img.naturalWidth ? img : null);
-
-  const loaded = img => (img.complete ? Promise.resolve() : new Promise(resolve => {
-    img.addEventListener('load', resolve, { once: true });
-    img.addEventListener('error', resolve, { once: true });
-  }));
-
-  const env = {
-    texture: name => {
-      const entry = layout?.textures?.[name];
-      return entry ? ready(image(packUrl(entry.file))) : null;
-    },
-    thumbnail: level => {
-      if (level?.thumbnail) return ready(image(packUrl(level.thumbnail)));
-      if (level?.previewBg) return ready(image(`${MAPS}/${level.previewBg}`));
-      return null;
-    },
-    icon: mod => (mod?.icon ? ready(image(`${root}${mod.icon}`)) : null),
-    text: () => '',
-    font: id => fonts.get(id) || null,
-    tint: (font, rgb) => {
-      const key = `${font.id}|${rgb.join(',')}`;
-      let c = tints.get(key);
-      if (c) return c;
-      const img = ready(font.img);
-      if (!img) return null;
-      c = document.createElement('canvas');
-      c.width = img.width;
-      c.height = img.height;
-      const g = c.getContext('2d');
-      g.drawImage(img, 0, 0);
-      g.globalCompositeOperation = 'source-in';
-      g.fillStyle = `rgb(${rgb.map(v => Math.round(v * 255)).join(',')})`;
-      g.fillRect(0, 0, c.width, c.height);
-      tints.set(key, c);
-      return c;
-    },
-    get levels() { return levels; },
-    get hover() { return hover; },
-  };
+  const { env, json, image, ready } = pack;
 
   // --- loading ---------------------------------------------------------------
 
@@ -232,6 +193,7 @@ export function createSkirmishScreen({
       tabs ? json(packUrl('main-menu-layout.json')).catch(() => null) : null,
     ]);
     layout = skirmishLayout;
+    pack.use(layout);
     if (navLayout) {
       layout.textures = { ...layout.textures, ...navLayout.textures };
       layout.fontFiles = { ...layout.fontFiles, ...navLayout.fontFiles };
@@ -245,13 +207,7 @@ export function createSkirmishScreen({
       json(`${MAPS}/maps.json`).catch(() => []),
     ]);
     levels = buildLevels(menuLevels, manifest, hasMenuLevels);
-    await Promise.all(Object.entries(layout.fontFiles || {}).map(async ([id, entry]) => {
-      const meta = await json(packUrl(entry.glyphs));
-      const img = image(packUrl(entry.file));
-      await loaded(img);
-      fonts.set(id, { id, meta, img });
-    }));
-    for (const entry of Object.values(layout.textures || {})) image(packUrl(entry.file));
+    await pack.load(layout);
     state.scroll = 0;
     select(0);
     onStatus(levels.length ? ''

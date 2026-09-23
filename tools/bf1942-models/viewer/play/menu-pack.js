@@ -4,7 +4,9 @@
 // `skirmish.js` grew its own `env` inline before there was a second screen.
 // This is that same env, as a thing a screen can ask for: `multiplay.js` and
 // `nav-strip.js` both need the plates and the bitmap faces out of a layout
-// pack, and neither is the Instant Battle screen.
+// pack, and neither is the Instant Battle screen. `skirmish.js` and
+// `mod-picker-screen.js` now ask for it as well, laying their own lookups
+// (thumbnail, icon, text, the live level list and hover) over its env.
 //
 // Nothing here knows what it is drawing. It is handed a layout (the
 // `textures` / `fontFiles` tables an extractor wrote) and a way to turn a
@@ -16,8 +18,11 @@
  * @param {(rel: string) => string} options.url  pack-relative path -> URL
  * @param {() => string} [options.bust]  cache-buster suffix, if any
  * @param {() => void} [options.onImage] an image finished loading; repaint
+ * @param {object} [options.env]  the screen's own lookups (`thumbnail`,
+ *                                `icon`, `text`, `levels`, `hover`...), laid
+ *                                over the pack's with their getters intact
  */
-export function createMenuPack({ url, bust = () => '', onImage = () => {} }) {
+export function createMenuPack({ url, bust = () => '', onImage = () => {}, env: own = null }) {
   const images = new Map();
   const fonts = new Map();
   const tints = new Map();
@@ -83,6 +88,7 @@ export function createMenuPack({ url, bust = () => '', onImage = () => {} }) {
     levels: [],
     hover: null,
   };
+  if (own) Object.defineProperties(env, Object.getOwnPropertyDescriptors(own));
 
   /** Fetch every face and every plate the layout names. The screens here
    *  are a few dozen small textures and paint once, so nothing is lazy. */
@@ -98,9 +104,16 @@ export function createMenuPack({ url, bust = () => '', onImage = () => {} }) {
     return pack;
   }
 
+  /** Point `env.texture` at a layout now, ahead of `load` fetching its
+   *  faces — a screen that paints in between draws the new layout's plates. */
+  function use(pack) {
+    layout = pack;
+  }
+
   return {
     env,
     load,
+    use,
     json,
     image,
     ready,
