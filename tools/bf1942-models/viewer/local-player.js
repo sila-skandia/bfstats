@@ -17,21 +17,22 @@ import { Armor } from './armor.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `buildSeatView`, `buildSpawnFlags`, `camera`, `captured`,
+ * `applyLook`, `buildSeatView`, `buildSpawnFlags`, `camera`, `captured`,
  * `clampMobileInput`, `clearVehicleHud`, `deployActive`, `deployTeamId`,
  * `disposeHandWeapon`, `disposeSeatPose`, `EMPTY_KEYS`,
- * `feedMobileTurretAim`, `feedVehicleHud`, `footLookPair`,
- * `forgetSeatViews`, `handleSoldierFootstep`, `hud`, `HUD_DRIVE`, `HUD_FLY`,
- * `HUD_FOOT`, `HUD_MANNED`, `HUD_PILOT`, `hudBridge`, `kbLockLeave`, `keys`,
- * `loadSeatPose`, `LOCAL_PLAYER`, `mannedActive`, `mobileJumpHeld`,
- * `mobilePadAxis`, `mobilePadHeld`, `mobilePadVector`, `mouseInput`,
- * `netSeatRow`, `netSendAction`, `netVehicleIdFor`, `noteOccupiedVehicle`,
- * `optOnFoot`, `optPilot`, `pickVehicle`, `playSoldierHurtSound`,
- * `pumpLook`, `rebuildVehicleInterp`, `resetCaptureUi`, `roomJoined`,
- * `seatAltFire`, `seatFire`, `showFlagPicker`, `showHint`, `spawnAtFlag`,
- * `toggleFullMap`, `touchFlying`, `triggerHitIndicator`,
- * `updateMobileControls`, `vehicles`, `view`, `viewFor`, `warmSubtree`,
- * `world`.
+ * `feedMobileTurretAim`, `feedVehicleHud`, `flyFreeCamera`, `followSeat`,
+ * `footLookPair`, `forgetSeatViews`, `handleSoldierFootstep`, `hud`,
+ * `HUD_DRIVE`, `HUD_FLY`, `HUD_FOOT`, `HUD_MANNED`, `HUD_PILOT`,
+ * `hudBridge`, `kbLockLeave`, `keys`, `loadSeatPose`, `LOCAL_PLAYER`,
+ * `mannedActive`, `mobileJumpHeld`, `mobilePadAxis`, `mobilePadHeld`,
+ * `mobilePadVector`, `mouseInput`, `netSeatRow`, `netSendAction`,
+ * `netVehicleIdFor`, `noteOccupiedVehicle`, `onFootCamera`, `optOnFoot`,
+ * `optPilot`, `pickVehicle`, `playSoldierHurtSound`, `pumpLook`,
+ * `rebuildVehicleInterp`, `resetCaptureUi`, `roomJoined`, `seatAltFire`,
+ * `seatedCamera`, `seatFire`, `showFlagPicker`, `showHint`, `spawnAtFlag`,
+ * `stepSeatIk`, `syncFootBody`, `toggleFullMap`, `touchFlying`,
+ * `triggerHitIndicator`, `updateMobileControls`, `vehicles`, `view`,
+ * `viewFor`, `warmSubtree`, `world`.
  */
 export function createLocalPlayer(page) {
   const localPlayer = {
@@ -633,6 +634,68 @@ export function createLocalPlayer(page) {
     }
   };
 
+
+  // --- the frame's phases this module owns (map.html `frame()`) ---------------
+
+  /** The frame's input phase: the human's seat and the word he feeds the
+   *  world this frame. Returns the frame's mode (`seated`, `onFoot`, read once
+   *  here and held for the rest of the frame) and the word and look pair the
+   *  world was handed, which the room sends after the step. */
+  localPlayer.frameInput = dt => {
+    // The human's presentation follows the seat he holds, looked up every frame
+    // (a bot taking the wheel of his hull gives it a drive under him).
+    if (page.optPilot.checked) syncLocalSeat();
+    page.updateMobileControls();
+    // ---- the input stage (page) ----------------------------------------------
+    // The keyboard and the mouse never leave this page. The look stage (the
+    // mouse stage's per-frame pump, mouse-input.js) is pumped here once a frame
+    // in exactly the two cases the old code pumped it — on foot
+    // (`stepSoldierLook(pumpLook(ticks))`) and seated (`stepTurret`'s own pump) —
+    // and never for the free camera. The world owns the tick from there: its
+    // per-tick law consumes one buffered input per player per tick (world.js,
+    // the tick law in its header), which is the engine's own
+    // `InputManager::update` 0x0049cff7 boundary.
+    const seated = page.optPilot.checked && localPlayer.occupancy;
+    const onFoot = page.optOnFoot.checked && localPlayer.soldier;
+    // The world's one clock answers this frame's tick count; the pump reads it
+    // so the look stage and the sim can never drift apart (Fix 5). A frame
+    // before any level has built the world owes no ticks.
+    const lookTicks = page.world?.lookTicks(dt) ?? 0;
+    const { input, look } = localPlayer.sampleInput(seated, onFoot, lookTicks, dt);
+    page.world?.setInput(page.LOCAL_PLAYER, input, look);
+    localPlayer.frameInputLast = input;
+    return { seated, onFoot, input, look };
+  };
+
+  /** The frame's camera phase, after the world has stepped and the drawn
+   *  instant is set (`localLook.present`): the camera of the mode the input
+   *  phase read, then the human's own body placed where that camera draws it. */
+  localPlayer.frameCameras = (dt, seated, onFoot) => {
+    if (seated) {
+      page.seatedCamera(dt);
+    } else if (onFoot) {
+      page.onFootCamera(dt);
+    } else {
+      page.flyFreeCamera(dt);
+      page.applyLook();
+    }
+    // Unconditional: rounds already in the air have to finish their flight even
+    // if the trigger, the pilot mode or the whole aircraft has gone away — the
+    // world's tick runs `guns.advance` after the players and before the bodies,
+    // exactly where frame() used to.
+    page.followSeat(dt);
+    // The player's own body. After `onFootCamera` (which is where `syncFootView`
+    // settled whether the camera is inside the man this frame) and after the
+    // world's tick has moved him, so the rig is placed at the position the frame
+    // is actually drawn at rather than the previous one's.
+    page.syncFootBody(dt);
+    // After the mixer, which has just re-posed the arms from the sit clip, and
+    // after the drivetrain's `applyRig`/`applyTurrets` above, which is where the
+    // steering wheel got this frame's angle. Both orders matter: run it before
+    // the mixer and the clip overwrites the hands, run it before the rig and the
+    // hands chase last frame's wheel.
+    if (page.optPilot.checked) page.stepSeatIk();
+  };
 
   Object.assign(localPlayer, {
     DEATH_CAM,
