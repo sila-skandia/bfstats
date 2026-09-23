@@ -11,11 +11,28 @@ together.
 glb-tree.mjs   the GLB JSON-chunk reader: a vehicle template's Object3D tree
                (seats, entries, extras) with no geometry
 level.mjs      the level load: scene.json + scene.glb -> shared LevelData,
-               per-room LevelInstance, the mount glue
+               per-room LevelInstance, the mount glue (re-exports the pieces)
+  glb-scene.mjs        the level scene.glb: BIN accessors, material map, tree
+  level-bodies.mjs     the body-world glue and the settle pass
+  level-data.mjs       LevelData and its per-room instantiate()
+  level-instance.mjs   LevelInstance and the mount glue
+  vehicle-table.mjs    a LevelInstance's seatable vehicle table
+  level-load.mjs       a maps tree entry, headless (loadRealLevel)
+  level-descriptor.mjs the descriptor levels (the harness's `test`)
 rooms.mjs      the transport-agnostic room core: handshake, the 30 Hz loop,
                the 20 Hz broadcast, the R-1 choke, seat/spawn actions
+               (re-exports the pieces)
+  room-registry.mjs    RoomServerCore: rooms, connections, the join handshake
+  room.mjs             Room: join/leave/sweep, the loop, event rows
+  room-control.mjs     the control channel's seat/spawn actions
+  room-stream.mjs      the R-1 choke and the snapshot stream
+  room-rules.mjs       code/name shapes, choke/heartbeat/fire limits
+  room-wire.mjs        framing and the JSON control record
+authority.mjs  the P3 damage/death/ticket/flag authority
 server.mjs     the network half: GET /netcode/rooms + the WS upgrade on
                /netcode, on node:http — no npm, no deps
+  websocket.mjs        the RFC 6455 codec and the SocketPeer adapter
+  level-table.mjs      the CLI's level table (maps/* + `test`)
 ```
 
 ## Run
