@@ -880,6 +880,50 @@ Deliberately not done, having been measured and found worthless or wrong:
 pausing the ambient flag mixer, gating the lens flare, and guarding
 `updateProjectionMatrix`.
 
+## Fifth pass: the silent freeze
+
+Reported as "periodically freezing, and sometimes it just freezes with no
+details — more likely the longer the player is on the map", alongside the
+`webglcontextlost` card. The context-loss card was already honest; the silent
+freeze was not, and it has a specific mechanism.
+
+**three's animation loop dies on the first throw.** `renderer.setAnimationLoop`
+schedules the next animation frame only *after* its callback returns
+(`vendor/three.module.js`, `onAnimationFrame`: the loop call, then
+`requestAnimationFrame`). An uncaught exception anywhere in `frame()` therefore
+ends the render loop for good: the canvas keeps the last frame, no
+`webglcontextlost` fires, and nothing says why. The longer a session runs, the
+more frame paths it exercises, so the more likely one of them throws — which is
+exactly the "longer on the map" shape of the report.
+
+Measured before the fix: a page whose `frame()` throws three times a second
+stops drawing entirely after the first throw, with the card still hidden. After
+it, the same throw is caught, logged (`map: frame threw` plus the stack), and
+the loop keeps running; a *persistent* throw (three consecutive frames) raises
+the card with the message, and a recovered one takes the card down again.
+
+The card is now shared (`showGraphicsCard`) by three conditions, in precedence
+order:
+
+- `webglcontextlost` — "Graphics context lost", as before.
+- A frame path that keeps throwing — "Render loop error", with the exception
+  message and a reload button. A single throw is a console line only, so a
+  one-off does not flash a card over a page that recovers on the next frame.
+- A frame watchdog — "Page not drawing". An independent `setInterval` (not
+  `requestAnimationFrame`, which the stall itself stops) notices when no frame
+  has completed for four seconds and says so. This is the case a try/catch
+  cannot see: a GPU that hangs without ever firing `webglcontextlost`. Hidden
+  tabs and `?shots` tooling are exempt, since neither drives the rAF loop.
+
+The app-level state was ruled out first, over long stepped runs (up to ~10k
+frames each) on Wake: sustained firing/walking/panning, all four kit weapons,
+vehicle enter/exit cycles, and four bots. `renderer.info.memory`,
+`renderer.info.programs`, scene object counts and JS heap all plateau or
+oscillate; `gl.linkProgram` never fires mid-play (no mid-burst shader link, the
+cause rule 6 was built for); no `webglcontextlost` event. So the freeze is not
+an accumulating page-state leak — it is a throw or a driver-level stall, and
+the page now always says which.
+
 ## Open items
 
 - **A new `Vehicle` takes a parked vehicle's current rig pose for its rest pose.**

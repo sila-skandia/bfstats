@@ -33,7 +33,7 @@ const PLACEHOLDER_WEAPON = 'Colt';
 // The soldier model's root carries a baked 180-degree turn a vehicle's root
 // does not (replay.js §place, measured exactly 180.00 degrees off at spawn
 // instants): the body quaternion multiplies this before the pose rig sits.
-const SOLDIER_YAW_FLIP = new THREE.Quaternion(0, 1, 0, 0);
+export const SOLDIER_YAW_FLIP = new THREE.Quaternion(0, 1, 0, 0);
 
 const rad = d => (d * Math.PI) / 180;
 

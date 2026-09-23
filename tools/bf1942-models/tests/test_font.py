@@ -49,12 +49,13 @@ class DifTests(unittest.TestCase):
 
     def test_ascent_places_the_comma_and_the_dollar(self) -> None:
         font = parse_dif(DIF)
-        # Baseline is the cap height; A sits on it, the comma hangs below
-        # it and the dollar sign overshoots it by one row.
-        self.assertEqual(8, font.baseline)
-        self.assertEqual(0, font.baseline - font.glyphs[65].ascent)
-        self.assertEqual(6, font.baseline - font.glyphs[44].ascent)
-        self.assertEqual(-1, font.baseline - font.glyphs[36].ascent)
+        # Baseline is `line height - 1`, measured off the game (see
+        # `BitmapFont.baseline`): A sits two rows below the line's top, the
+        # comma hangs below that and the dollar sign reaches a row higher.
+        self.assertEqual(10, font.baseline)
+        self.assertEqual(2, font.baseline - font.glyphs[65].ascent)
+        self.assertEqual(8, font.baseline - font.glyphs[44].ascent)
+        self.assertEqual(1, font.baseline - font.glyphs[36].ascent)
 
     def test_measure(self) -> None:
         self.assertEqual(8 + 3, parse_dif(DIF).measure("A "))

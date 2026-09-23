@@ -519,9 +519,21 @@ seen. `<veh>.raw` (e.g. `Car.raw`, 16,392 bytes, header `20 00 00 00
 **0x085f8f60**) are an editor debug dump — square, power-of-two, all-zero in
 every sample; `loadSearchMaps` never asks for them.
 
-**UNVERIFIED**: the precise meaning of fields 4 and 5, the per-row encoding
-beyond "negative selects a special cell", and the world-units-per-cell scale.
-Nothing here decodes a map into a walkable grid yet.
+**SETTLED 2026-09-22** (see `pathfinding-raw-format.md`):
+
+- **Field 4** = `level_index`, always equals field 3 (`level`). Used by
+  `LocalMap::loadRawFile` to iterate over levels and load the correct CellMap.
+- **Field 5** = `reserved`, always 0. Stored in `CellMap+0x24`, validated on
+  load, no other known use.
+- **Per-row encoding**: non-negative = index into the special cell table
+  (`special_cells[val]`). Negative = literal cell value — the engine allocates
+  a new cell from its `MemoryPool` (`CellMap+0x48`) and stores the negative
+  int32 as the cell's data. This is a sparse compression: most cells share one
+  of a few special cell definitions, only differing cells carry their own value.
+- **World-units-per-cell**: from `LocalMap::getLevelPixelSize(int)` @ 0x085ff170:
+  `cell_size = 1 << level`. Combined with world map size W:
+  `grid_width = W / (1 << (max_level - level))`. For Car4 at level 0 with
+  W=2048 and width_bits=5: `units_per_cell = 2048 / 32 = 64`.
 
 ### 3.5 `aiMeshes.rfa` — simplified hulls, bound by name
 
