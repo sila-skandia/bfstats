@@ -50,6 +50,8 @@ MODULES = {
     "heightfield.js": VIEWER / "heightfield.js",
     "effects-core.js": VIEWER / "effects-core.js",
     "physics.js": VIEWER / "physics.js",
+    "point-body.js": VIEWER / "point-body.js",
+    "fixed-step.js": VIEWER / "fixed-step.js",
     "parachute.js": VIEWER / "parachute.js",
     "contact-response.js": VIEWER / "contact-response.js",
     "node_modules/three/three.module.js": VIEWER / "vendor" / "three.module.js",
