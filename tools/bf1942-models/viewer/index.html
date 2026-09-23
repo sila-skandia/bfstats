@@ -213,6 +213,7 @@ import { createArmourInspector } from './model-armour.js';
 import { createEnvReflection } from './model-envmap.js';
 import { createModelDisplay } from './model-display.js';
 import { createModelRig, FREE_RANGE, GEAR_INPUT, keyOf } from './model-rig.js';
+import { createEngineClips } from './model-clips.js';
 
 // Which game's assets this page serves, and the directory they hang off:
 // 'models' for vanilla, 'models/mods/eod' for a mod. Resolved before anything
@@ -375,7 +376,7 @@ function startAnimating() {
     const gearMoving = advanceGear(dt);
     const hasFire = guns.advance(dt);
     const hasPad = advanceTouchpad(dt);
-    if (mixer && (engineRunning || ambientActions.length)) mixer.update(dt);
+    if (engineClips.mixer && (engineClips.engineRunning || engineClips.ambientActions.length)) engineClips.mixer.update(dt);
     // controls.update() returns true while damping or auto-rotate is still
     // moving the camera, false once it has settled.
     const controlsMoving = controls.update();
@@ -387,7 +388,7 @@ function startAnimating() {
         spec.driver === 'rate' && (rig.inputValues.get(keyOf(part.control, spec.input)) ?? 0) !== 0));
     const hasScroll = rig.scrolling.some(part =>
       (rig.inputValues.get(keyOf(part.control, 'c_PIThrottle')) ?? 0) !== 0);
-    const hasClips = Boolean(mixer && (engineRunning || ambientActions.length));
+    const hasClips = Boolean(engineClips.mixer && (engineClips.engineRunning || engineClips.ambientActions.length));
 
     if (hasRates || hasScroll || hasClips || hasFire || gearMoving || cameraGlide || controlsMoving || hasPad) {
       requestAnimationFrame(tick);
@@ -433,91 +434,10 @@ const rig = createModelRig({
   get rememberMap() { return display.rememberMap; },
 });
 
-// --- baked engine clips -----------------------------------------------------
-//
-// The extractor bakes each Engine's throttle-driven spin (and every
-// `setContinousRotationSpeed` ambient rotator) into looping glTF clips named
-// `spin`, `spin.1`, ... — one clip per rotation period so each loops
-// seamlessly. The viewer just plays them all; parts that must not spin (a
-// Corsair's landing gear shares the propeller's Engine parent) were excluded
-// at bake time via their `hasMobilePhysics` flag.
-
-let mixer = null;
-let clipActions = [];
-// `ambient*` clips are the rotation the engine runs off deltaTime alone —
-// a ship's radar dish, a windmill's sails. They are not throttle-gated in the
-// game and must not be here either, so they are held apart from `spin*` and
-// started once, for good.
-let ambientActions = [];
-let engineRunning = false;
-
-// Names of the nodes the baked clips move, for the station that owns them.
-let animatedNodes = [];
-// Each propeller's blade mesh and blurred disc, kept as real siblings by
-// `extras.propellerBlur` (assemble.py's `_propeller_blur`) instead of the
-// export picking one. Neither is animation, so `collectAnimations` finds
-// them itself rather than reading them off a clip.
-let propellerBlurPairs = [];
-
-function collectAnimations(gltf) {
-  mixer = null;
-  clipActions = [];
-  ambientActions = [];
-  engineRunning = false;
-  animatedNodes = [];
-  propellerBlurPairs = [];
-  gltf.scene.traverse(obj => {
-    const blur = obj.userData?.propellerBlur;
-    if (!blur) return;
-    const staticNode = obj.children.find(child => child.name === blur.static);
-    const blurredNode = obj.children.find(child => child.name === blur.blurred);
-    if (staticNode && blurredNode) propellerBlurPairs.push({ static: staticNode, blurred: blurredNode });
-  });
-  setPropellerBlur(false);
-  const clips = gltf.animations || [];
-  if (!clips.length) return;
-  mixer = new THREE.AnimationMixer(gltf.scene);
-  for (const clip of clips) {
-    const action = mixer.clipAction(clip);
-    action.setLoop(THREE.LoopRepeat, Infinity);
-    if (/^spin(\.\d+)?$/.test(clip.name)) {
-      clipActions.push(action);
-    } else {
-      ambientActions.push(action);
-      action.play();
-    }
-  }
-  // Every track name is "<node name>.quaternion" / ".position".
-  animatedNodes = [...new Set(clips.flatMap(clip =>
-    clip.tracks.map(track => track.name.split('.')[0])))];
-}
-
-/** Blades stopped (off) or the blurred disc (on) — same gate as `setEngine`. */
-function setPropellerBlur(on) {
-  for (const pair of propellerBlurPairs) {
-    pair.static.visible = !on;
-    pair.blurred.visible = on;
-  }
-}
-
-function setEngine(on) {
-  engineRunning = Boolean(on);
-  setPropellerBlur(engineRunning);
-  if (!mixer) return;
-  if (engineRunning) {
-    for (const action of clipActions) { action.paused = false; action.play(); }
-    startAnimating();
-  } else {
-    // Rewind to the authored pose rather than freezing mid-turn — but only
-    // the throttle-gated clips. `mixer.setTime(0)` would drag the ambient
-    // rotators back to zero with them and snap a turning radar dish.
-    for (const action of clipActions) action.reset();
-    mixer.update(0);
-    for (const action of clipActions) action.stop();
-    invalidate();
-  }
-  refreshCrew();
-}
+const engineClips = createEngineClips({
+  get invalidate() { return invalidate; }, get refreshCrew() { return refreshCrew; },
+  get startAnimating() { return startAnimating; },
+});
 
 // --- gun fire ----------------------------------------------------------------
 //
@@ -923,7 +843,7 @@ function collectStations(entry) {
   // Driver or pilot first; every other seat in the order it was authored.
   seats.sort((a, b) => Number(b.root) - Number(a.root));
   const stations = seats.filter(seat => seat.inputs.size || seat.guns.length);
-  if (mixer) {
+  if (engineClips.mixer) {
     let home = stations.find(seat => seat.root);
     if (!home) {
       home = seats.find(seat => seat.root) || seatFor('vehicle');
@@ -1269,9 +1189,9 @@ function buildStation(seat, index, entry) {
     if (seat.engine) {
       const engine = make('button', 'crew-btn', 'Engine');
       engine.type = 'button';
-      engine.title = animatedNodes.length ? `Spins ${animatedNodes.join(', ')}` : 'Run the baked engine clips';
-      engine.addEventListener('click', () => setEngine(!engineRunning));
-      crew.refreshers.push(() => engine.setAttribute('aria-pressed', String(engineRunning)));
+      engine.title = engineClips.animatedNodes.length ? `Spins ${engineClips.animatedNodes.join(', ')}` : 'Run the baked engine clips';
+      engine.addEventListener('click', () => engineClips.setEngine(!engineClips.engineRunning));
+      crew.refreshers.push(() => engine.setAttribute('aria-pressed', String(engineClips.engineRunning)));
       const engineWrap = make('div', 'instrument');
       engineWrap.append(make('div', 'instrument-label', 'Engine'), engine);
       extras.append(engineWrap);
@@ -1318,7 +1238,7 @@ function renderCrewKeys() {
   if (has(DRIVE.x) || has(DRIVE.y)) keys.push(['WASD', 'drive']);
   if (has(STICK.x) || has(STICK.y)) keys.push(['Arrows', 'stick']);
   if (has(GEAR_INPUT)) keys.push(['G', 'gear']);
-  if (mixer) keys.push(['E', 'engine']);
+  if (engineClips.mixer) keys.push(['E', 'engine']);
   if (seatViews.length) keys.push(['V', 'seat view'], ['O', 'orbit']);
   document.getElementById('crew-keys').innerHTML =
     keys.map(([key, what]) => `<span><kbd>${key}</kbd>${what}</span>`).join('');
@@ -1423,8 +1343,8 @@ function crewKey(event, down) {
     tweenGear(inputKey, heading < .5 ? 1 : 0);
     return true;
   }
-  if (key === 'e' && mixer) {
-    setEngine(!engineRunning);
+  if (key === 'e' && engineClips.mixer) {
+    engineClips.setEngine(!engineClips.engineRunning);
     return true;
   }
   if (key === 'v') {
@@ -1920,7 +1840,7 @@ async function show(entry, variant) {
   scene.add(current);
   armour.adoptModel(current, report, entry);
   rig.collectScrolling(current);
-  collectAnimations(gltf);
+  engineClips.collectAnimations(gltf);
   guns.collect(current);
   collectViews(current);
   cameraGlide = null;
@@ -2734,14 +2654,14 @@ window.__modelInspector = {
   setView: setCameraView,
   // Baked spin clips and recovered seat cameras, for headless checks.
   getAnimation: () => ({
-    running: engineRunning,
-    clips: clipActions.map(action => ({
+    running: engineClips.engineRunning,
+    clips: engineClips.clipActions.map(action => ({
       name: action.getClip().name,
       duration: action.getClip().duration,
       time: action.time,
       isRunning: action.isRunning(),
     })),
-    nodes: !current ? [] : [...new Set(clipActions.flatMap(action =>
+    nodes: !current ? [] : [...new Set(engineClips.clipActions.flatMap(action =>
       action.getClip().tracks.map(track => track.name.split('.')[0])))]
       .map(name => {
         const node = current.getObjectByName(name);
