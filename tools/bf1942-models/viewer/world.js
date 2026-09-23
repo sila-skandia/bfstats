@@ -373,17 +373,19 @@ export class World {
   }
 
   /**
-   * Add a bot player to the world without spawning a soldier. Bots are
-   * placed directly on spawn points and do not go through the deploy flow.
+   * Add a bot player to the world with a full Soldier, spawned on the given
+   * flag's spawn points. Bots go through the same soldier tick as humans —
+   * the world steps them, they move, they can cap flags.
    * Returns the player record.
    */
-  addBotPlayer(playerId, { team = null } = {}) {
+  addBotPlayer(playerId, { team = null, flag = null, spawnIndex = 0 } = {}) {
+    const soldier = new Soldier({ collider: this.collider, worldSize: this.extras?.worldSize || 0 });
     const player = {
       id: playerId,
       team: team ?? null,
-      soldier: null,
+      soldier,
       armor: null,
-      spawnIndex: 0,
+      spawnIndex,
       flag: null,
       spawn: null,
       occupancy: null,
@@ -404,6 +406,7 @@ export class World {
       lookApplied: { yaw: 0, pitch: 0 },
     };
     this.players.set(playerId, player);
+    if (flag || team !== null) this.spawnPlayer(playerId, { flag, group: team });
     return player;
   }
 
