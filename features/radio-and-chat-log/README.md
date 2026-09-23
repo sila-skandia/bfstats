@@ -100,4 +100,5 @@ MINES, ...).
 | Hand signs on a shout (Freeze, Medic, Shout, Down, Roger, Negative) | not played |
 | Minimap flash for a radio speaker, medic/repair map marker | not built |
 | Player text chat (say all / say team input) | not built; `chat-log.js playerChatLine` has the format |
+| The headings under the radio buttons (`Radio/ShowRadioToolTip`) | off by default, as in the owner's profile (`game.setRadioToolTip 0`; the shipped default profile has 1). `game.setRadioToolTip 1` in the console turns them on |
 | The browser pane never delivers F-keys | test through `window.__comms.press('F4')` under `?shots` |

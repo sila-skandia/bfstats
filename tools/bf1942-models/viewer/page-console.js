@@ -11,8 +11,9 @@ import { createSkirmishScreen } from './play/skirmish.js';
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `bfmap`, `capture`, `extras`, `hudPaths`, `keys`, `launchTeam`,
- * `MENU_URL`, `mouseInput`, `params`, `release`, `releaseButtons`,
- * `scoreboardOpen`, `scoreFromSpawn`, `setScoreboard`, `setSideCollapsed`.
+ * `MENU_URL`, `mouseInput`, `params`, `radioToolTip`, `release`, `releaseButtons`,
+ * `scoreboardOpen`, `scoreFromSpawn`, `setRadioToolTip`, `setScoreboard`,
+ * `setSideCollapsed`.
  */
 export function createPageConsole(page) {
   const pageConsole = {};
@@ -124,6 +125,18 @@ export function createPageConsole(page) {
     run: args => {
       if (args.length) page.bfmap.setStatic(args[0] !== '0' && args[0].toLowerCase() !== 'false');
       return page.bfmap.isStatic ? 1 : 0;
+    },
+  });
+
+  /** `game.setRadioToolTip` is the engine's own word (every stock
+   *  `GeneralOptions.con` calls it): 1 draws the heading under each radio
+   *  button, 0 the icons alone. Read back with no argument. */
+  gameConsole.register({
+    object: 'game', method: 'setRadioToolTip',
+    minArgs: 0, maxArgs: 1, argTypes: ['int'], returns: 'int',
+    run: args => {
+      if (args.length) page.setRadioToolTip(args[0] !== '0' && args[0].toLowerCase() !== 'false');
+      return page.radioToolTip() ? 1 : 0;
     },
   });
 
