@@ -473,10 +473,18 @@ Each piece of state now has one owning module, and the others ask it by name:
 | the hand weapon's presentation | `soldierKit` | `holster`, `drawWeapon`, `addFootLook` |
 | the guns' level inputs | `GunFire` | `useLevel(collider, tables)` |
 
+The footstep sound's ray cast also stopped borrowing the soldier's own
+scratch hit record (`soldier._hit`), which soldier.js fills for its casts.
+
 Some writes into shared page objects remain, on purpose: the three.js
 camera's pose (every view writes it by design), a GunFire's `firstPerson`
 flag and callback slots, the HUD line's text, and the `?shots` test hooks,
 which poke whatever they probe.
+
+The re-export files the splits left (`flight.js`, `collision.js`,
+`physics.js`, `seats.js`, `server/level.mjs`, `server/rooms.mjs`) are kept on
+purpose as index modules: each holds its subsystem's research header and a
+module map, and the sim, the server and the tests import through them.
 
 ### map.html's bags
 
