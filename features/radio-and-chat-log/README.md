@@ -1,7 +1,7 @@
 # Radio commands and the message log
 
 The F1..F8 radio and the top-left message log (kills, game information, chat
-and radio), rebuilt from the retail client. Branch `viewer/radio-chat`.
+and radio), rebuilt from the retail client. Merged to main as `d5135a34`.
 
 Binary: `BF1942.exe` sha256 `60c9452d...cd3699` (client addresses), and the
 symbolled Linux server (`lnxded` addresses). Data: vanilla `menu.rfa`,
