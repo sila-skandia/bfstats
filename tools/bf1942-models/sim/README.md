@@ -2,7 +2,9 @@
 
 Runs a whole match of bots against bots with no renderer, at full speed, on
 the viewer's own AI code (`viewer/world.js`, `bot*.js`, `nav-grid.js`,
-`strategic.js`, `collision.js`), imported unmodified. A seed fixes every
+`strategic.js`, `collision.js`) and, on a real level, the viewer's own
+vehicles (`vehicle-instance.js`, the drive classes, the body world, `GunFire`,
+`vehicle-hits.js`, `vehicle-wrecks.js`, `bot-units.js`), imported unmodified. A seed fixes every
 random draw, so the same seed replays the same match byte for byte. The
 algorithm it runs is specified in
 [`features/bf1942-ai-spec/`](../../../features/bf1942-ai-spec/README.md).
@@ -35,19 +37,25 @@ node sim/run.mjs --why bot_4 312.5 --trace sim/out/el_alamein-s3/trace.jsonl
 | `--skill A` | 0.75 | `botSkill` (the engine's default) |
 | `--trace-every K` | 1 | a tick line every K-th 30 Hz tick (every tick costs about 1 MB a bot-minute) |
 | `--sample-every S` | 1 | the tickets/flags sample period, seconds |
-| `--no-vehicles` | | leave the level's land vehicles out |
+| `--no-vehicles` | | leave the level's vehicles and fixed guns out (the spawners group) |
 | `--no-trace` | | the summary only |
+| `--seat B=T[:S]` | | seat bot B in the nearest free unit of template T (its seat S, else the driver's) before the first tick, the page's `__botMount` law; repeatable; real level |
 | `--doctrine D` | `sai` | each side's doctrine (`viewer/doctrine.js`): `sai` the engine's SAI, `squad` the squad play, or per side `axis=squad,allies=sai`; see [features/bot-doctrines](../../../features/bot-doctrines/README.md) |
 | `--out DIR` | `sim/out/<level>-s<seed>` | writes `trace.jsonl` and `summary.json` |
 | `--maps DIR`, `--models DIR` | `<viewer>/maps`, `<viewer>/models` | the extracted trees |
 | `--viewer DIR` | `../viewer` | the viewer the AI is loaded from |
 
 Speed: the synthetic level with 3 bots a side plays 60 s in about 0.6 s; El
-Alamein with 8 a side plays 600 s in about 30 s tracing every third tick
-(a 60 MB trace), after a load of about a second.
+Alamein with 8 a side and the page's vehicles plays 600 s in 80 to 100 s
+tracing every third tick (longer on a loaded machine), after a load of about
+3 s (the glb, the settle of every parked hull, the two nav maps).
 
-Test: `python3 -m unittest tests.test_sim_match` (a 20 s seeded match on the
-synthetic level, run twice for the same seed and once for another).
+Tests: `python3 -m unittest tests.test_sim_match` (a 20 s seeded match on the
+synthetic level, run twice for the same seed and once for another);
+`python3 -m unittest tests.test_sim_vehicles` (the vehicle recipes of
+`tests/sim_vehicles_harness.mjs` on El Alamein and Wake; it finds the
+untracked maps tree in `$BF42_VIEWER_ASSETS`, this checkout's `viewer/` or
+the main checkout's, and skips without one).
 
 **Doctrines.** `--doctrine` swaps the order source behind the strategic
 interface (`viewer/doctrine.js StrategicCommand`, the one thing the referee
@@ -85,35 +93,74 @@ a Willy and a Sherman at each base, five strategic areas and two strategies
 a side, and three kits a side built from the vanilla K98 / Thompson / Colt /
 MedPack AI templates and fire data (values copied into `level.mjs`).
 
-**A real level** (`level.mjs realLevel`), loaded as `map.html` loads it:
+**A real level** (`level.mjs realLevel`, then `stage.mjs createStage`),
+loaded as `map.html` and `level-load.js show()` load it:
 
-- `scene.json` is the world's `extras` (flags, spawns, tickets, `ai`).
+- `scene.json` through `selectGameMode` (the default layer) is the world's
+  `extras` (flags, spawns, tickets, `ai`).
 - `scene.glb` goes through the viewer's own `GLTFLoader` with its images and
-  textures stripped from the JSON chunk, which gives the page's scene graph
-  (names, `userData`, geometry). The collider is `buildCollider`'s:
-  `buildHeightfield` over the `kind: terrain` meshes, `buildCollisionIndex`
-  over the top-level owners, `buildDrivableMask`, `WorldCollider` with the
-  level's water.
-- kits from `maps/_shared/loadouts.json`, weapon fire data from each weapon's
-  `models/<name>.glb` `extras.weapon`, round damage from `maps/damage.json`,
-  vehicle AI from `maps/_shared/vehicle-ai.json`.
+  textures stripped from the JSON chunk, then `pruneToMode`, which gives the
+  page's scene graph (names, `userData`, geometry).
+- the tables `show()` fetches: `damage.json` (the level's `damage.path`),
+  `collision-meshes.json`, the terrain material ids (`terrain/materials.png`,
+  the room server's decoder) and `_shared/vehicle-ai.json`; kits from
+  `_shared/loadouts.json`, weapon fire data from each weapon's
+  `models/<name>.glb` `extras.weapon`.
 
-Verified on El Alamein (2026-09-23): the glb loads in 0.4 s, 33,911 static
-collision triangles, the heightfield, 26 cover values, 30 land vehicles,
-four strategies a side, and a 600 s match with 8 a side runs in 31 s.
+The stage then builds, in `show()`'s order and with the page's own modules:
+the `World` (with the guns, the crash hook and the per-tick seat positions),
+the landing craft split off their ships (`detachSpawnedCraft`), the statics
+indexed and frozen (`level-statics.js`), the collider (`level-terrain.js
+buildCollider`: every parked hull settled on its springs and every ship
+floated at its draft first, then indexed one owner each, and every Armor
+registered), the body world with a parked body per hull (`hull-bodies.js
+setupVehicleBodies`), the hull registry (`VehicleRegistry` with `Aircraft`,
+`GroundVehicle`, `TrackedVehicle` and `Ship`), a headless `GunFire` (the
+rounds flown against the collider and cast against the soldier bodies,
+every landing through `applyVehicleHit`), the wrecks and their respawn, and
+the bots' units (`bot-units.js` over the registry and `vehicle-entry.js`'s
+doors). So a bot's hull is the page's: its one drive adopted into the body
+world, its seat's gun groups fired by the world from the bot's input word,
+its shells splashing and its MG rounds meeting bodies, its wreck killing its
+crew and coming back off the spawner; an aircraft flies the page's flight
+model, a landing craft sails on the `LandingCraft` water map, a fixed gun is
+a seat with no drive, and a parked hull stops rays and bodies on its pad.
 
-**What it cannot load, and what each would need** (none of it needs a change
-to `bot.js` or the referee; each is a runner-side port of page code):
+Per tick, around the referee, the page frame's order: `world.step`,
+`referee.tick`, `syncVehicleSpawnOwnership`, `referee.captureTick`,
+`stepVehicleBodies`, `stepSinkingHulls`, `stepVehicleDamage`, then the
+renderer's matrix update for each occupied seat's guns.
 
-| missing | what the page uses | what the runner would need |
-|---|---|---|
-| real vehicle physics | the hull's `VehicleInstance` (`vehicle-instance.js`: one per hull, its drive built through `VehicleOccupancy.ensureDrive` over the vehicle's glb node), `adoptDrivenBody`, the body world (`World.setupBodies` with the damage tables and `bodyTerrain`) | the placed vehicles kept in the scene graph, `seats.js VehicleOccupancy`, the drive classes the page passes (`Aircraft`, `GroundVehicle`, `TrackedVehicle`, `Ship`), and `World.setupBodies`; the runner uses `SimDrive` instead (below) |
-| vehicle guns | `guns.collect(node)` (gunfire.js) and the world firing the groups; shells billed by `applyVehicleHit`'s splash, MG rounds by `roundBodyCast` against the soldier bodies | `GunFire` headless (it builds tracer meshes) or a port of its round flight; the runner's mounted guns are hitscan (`SIM_GUN`) |
-| aircraft and ships | the same `ensureDrive`, `botWaterNav` for boats | as above; the runner seats bots in land vehicles only (`class: Land`) |
-| fixed guns | `bot-units.js candidates` lists `gun` roots | the placed gun nodes and their seat surveys (`surveyVehicle`, `seatYawLimits`) |
-| parked vehicles as obstacles | `settlePlacedVehicles`, the body world; the nav map skips body owners | the runner leaves the spawner group out of the static index: parked hulls block neither rays nor bodies |
-| ship deck spawns | `rebaseDeckSpawns` | the carrier's live transform; a deck-spawn level is out of scope |
-| the human | the local player, `resolvePlayerShotOnBots`, his shots heard | nothing: the runner is bots only |
+Departures, labelled SIM in `stage.mjs` (none changes what a hull or a bot
+does): `buildHullDrive` is copied from `map.html` (a page function) with the
+cockpit off; everything presentational is a stub (no effects, no sound, the
+wreck glb never loads so the pad fades the intact hull, the page's own
+fallback, no render interpolation: a driven hull's node keeps the pose its
+drive's `integrate` wrote); a target's description (`bot-units.js unitInfo`, which measures
+the hull's box) is computed once a tick per target instead of once per
+asking bot. A hull's killer is the page's own `killedBy` (the attacker of
+the lethal hit), which also credits its crew's deaths.
+
+Verified on El Alamein (2026-09-24): 38 units the bots can take (30 live at
+the start: 12 tanks, 8 cars, 8 aircraft, 2 AA guns), 27 parked bodies. Seed
+1, 8 a side, 600 s, `--seat bot_0=AA_Allies --trace-every 3` (main at
+`8e174332`): four aircraft take off in the first 35 s (three Spitfires, a
+Bf 109) and a fifth at 415 s; a PanzerIV takes North outpost at 203 s and
+East outpost at 371 s; the Axis bot in the AA gun fires at 0.6 s; 588
+vehicle rounds (530 from PanzerIVs, 56 from aircraft, 2 from the AA gun);
+five hulls destroyed, none by a round (the B17, a pair of Spitfires
+together, a Spitfire and a Bf 109 together on the airfield). The same seed
+twice gives the same trace. Seeds 1..4 without `--seat` (before the rebase
+onto `8e174332`) gave 20 to 26 mounts, 5 to 34 captures (most in tanks), 22
+to 850 vehicle rounds and 3 to 7 hulls destroyed, and no bot took a fixed
+gun. Wall clock for 600 s: 79 to 97 s on the 20-thread development machine
+at a load of about 20, 145 s at a load of 30 (other matches and test runs
+sharing it). On Wake a Daihatsu (split off its ship) sails 231 m on the
+landing-craft map in 60 s under a bot, with a point given by hand: the SAI
+gives craft no orders yet (Brief D).
+
+What stays out: the human (the local player, his shots heard), and
+everything that is only drawn or heard.
 
 ## Trace schema (`trace.jsonl`, one JSON object a line)
 
@@ -146,7 +193,7 @@ nearest enemy flag), `flags` (`name`, `team`, `pos`, `radius`,
 | `ctl` | the input word written: `[forward, strafe/steer, lookX, lookY, fire]` |
 | `stall` | the stalled-tick counter (150 obstructed, 401 route failed) |
 | `target` | the firing target's id |
-| `veh` | `{id, template, seat, drives}` when mounted |
+| `veh` | `{id, template, seat, drives}` when mounted; `id` is the hull's scene node name on a real level (`sherman_2`) |
 | `route` | `{points, failed}` of the followed route |
 | `terms` | the winning behaviour's inputs (`moveTo`: `dist`, `radius`, `factor`, `q` = d²/4(R+r)², `shaped`; `scout`: `dir`, `accum`, `quad`; `takeCover`: `danger`, `cover`, `goal`; `special`: `target`, `arrive`; `change`: `best`, `u`, `bail`, `teleport`; `avoid`: `threat`), plus `fire` (`target`, `score`, `weapon`, `dist`, `visible`) whenever a target is held |
 
@@ -154,14 +201,16 @@ nearest enemy flag), `flags` (`name`, `team`, `pos`, `radius`,
 
 | type | fields |
 |---|---|
-| `capture` | `flag`, `from`, `to`, `by`, `alive` (false: a dead bot's position took it, as the page's capture law allows) |
+| `capture` | `flag`, `from`, `to`, `by`, `alive` (false: a dead bot's position took it, as the page's capture law allows), `veh` (the template he took it in, when mounted) |
 | `kill` | `killer`, `killerSide`, `victim`, `victimSide`, `weapon`, `dist`, `pos` |
 | `respawn` | `bot`, `side`, `flag`, `pos` |
 | `mount` / `dismount` | `bot`, `side`, `vehicle`, `template`, `seat` / `killed`, `driver` |
 | `route_failed` | `bot`, `side`, `count` (the bot's `_pathFailures`), `pos`, `goal`, `mounted` |
 | `redeploy` | `bot`, `side`, `flag`, `pos` (the 12 s no-progress redeploy) |
 | `strategy` | `side`, `from`, `to` |
-| `vehicle_destroyed` / `vehicle_respawn` | `vehicle`, `template` |
+| `vehicle_destroyed` / `vehicle_respawn` | `vehicle`, `template`; `killer`, `killerSide` (the lethal hit's attacker, the page's `killedBy`; null for a crash or a burn-down) |
+| `vehicle_fire` | `bot`, `side`, `vehicle`, `template`, `kind` (`tank`, `ground`, `air`, `ship`, `gun`), `seat`, `gun`: the first pull of a seat's gun in each seating (real level) |
+| `takeoff` / `landing` | `bot`, `side`, `vehicle`, `template`, `agl`, `speed`: a bot's aircraft first 10 m over the ground, and back on its wheels |
 | `bot_error` | `bot`, `side`, `message`, `at` (the top stack frames), `beh`: a bot's tick threw; the first time per bot and message (the count is in `perBot.errors`) |
 
 `{"k":"sample", "t", "tickets":{1,2}, "flags":{0,1,2}, "alive":{1,2},
@@ -179,11 +228,14 @@ in header order (control points only).
 `[t, neutral, axis, allies]`), `timeToFirstCapture`, `captures`, `deaths`,
 `kills`, `deathsPerCapture`, `vehicleUtilisation` (`mountedShare` = mounted
 bot-seconds / alive bot-seconds, `mounts`, `mountsByTemplate`, `destroyed`),
+`vehicleKills` (hulls destroyed: `total`, by the killer's side `1` / `2`,
+`unattributed`, `byTemplate`), `vehicleFire` (projectiles the bots' seats
+fired: `rounds`, `byKind`, `byTemplate`; null on the synthetic level),
 `routeFailures` (total and per bot), `redeploys`, `strategyChanges`,
 `botErrors`, `behaviourShare` (bot-seconds per active behaviour); `perBot`
 (kills, deaths, shots, hits, captures, route failures, redeploys, mounts,
-seconds alive and mounted, seconds per behaviour, errors and their
-messages); `trace` (`lines`, `sha256`); `runtime`.
+seconds alive and mounted, seconds per behaviour, `vehicleRounds`,
+`vehicleKills`, errors and their messages); `trace` (`lines`, `sha256`); `runtime`.
 
 ## What the runner adds around the bots
 
@@ -199,12 +251,15 @@ and `map.html` and `match.mjs` import it (`env.mjs` loads it with the rest).
 A change to the referee lands in both.
 
 What the runner hands the referee in place of the page's (`match.mjs
-refereeEnv`): its stand-in vehicles (`SimVehicles`, the referee's `units`
-layer), an Armor from the kit's hit points, a round's damage from the level's
-fire data, and a hook per event: each becomes a trace line and a statistic
+refereeEnv`): the units (on a real level the page's `bot-units.js` from the
+stage, a seated bot's hand-weapon hit on his hull billed as the page bills
+it; on the synthetic level the stand-ins, `SimVehicles`), an Armor from the
+kit's hit points, a round's damage (the page's `botRoundDamage` on a real
+level), and a hook per event: each becomes a trace line and a statistic
 (`kill`, `respawn`, `redeploy`, `capture`, `mount` / `dismount`,
 `strategy`, shots and hits), `tickBot` wraps each bot's tick in the error
-catch below, and `mountedFire` is the runner's stand-in gun.
+catch below, and, on the synthetic level only, `mountedFire` is the
+runner's stand-in gun.
 
 A seat swap (`BBPChangeTeleport`) moves the bot within the hull without
 stepping out, as the page's does: one `mount` event, no `dismount` (before
@@ -229,6 +284,8 @@ Runner-only, labelled SIM in the code:
   holds more than half the control points
   (`features/bf1942-3d-models/tickets-hud.md`). The viewer's counter does not
   move.
+- The synthetic level's vehicles (it has no vehicle nodes; a real level
+  plays the page's):
 - **`SimDrive`** (`vehicles.mjs`): a kinematic hull driven by the bot's input
   word through `World`'s occupied-vehicle tick: throttle to speed at 4 m/s²,
   a tracked hull pivots at 0.7 rad/s, a wheeled one turns on
@@ -274,3 +331,34 @@ and the synthetic level):
   it in MoveTo.
 - The page's capture law lets a dead bot's body take a flag during its 8 s
   respawn wait; the `capture` event's `alive` says when that happened.
+
+From the page's vehicles in the runner (2026-09-24, El Alamein and Wake;
+all of it is page code, none of it checked live yet):
+
+- **A B17 is destroyed by being taken.** Its parked pose (the body world's
+  settle on its springs) is 1.6 m above where the `Aircraft` drive rests it
+  on its gear; adopted, it falls, lands at 4.4 m/s, takes 112 of its 128 hit
+  points as terrain crash damage, and burns down to a wreck 6 s later. Every
+  seed's first vehicle loss is the B17 at 6.17 s.
+- **Two Spitfires die together**, the same tick, no round behind it (seeds
+  1..3 at 207 to 362 s): the Allied pair flies one order on one flight law.
+- **The Sherman's turret Browning points backwards at rest.** Its `Browning`
+  FireArms node carries a 180 deg local yaw in the level glb; `bot-aim.js
+  aimReference` takes the gun to be the hull's heading plus the rig's
+  traverse, so a bot gunner lays its reference on the target and the rounds
+  leave the other way (194 rounds, no hit, at 30 m). It is at least part of
+  Brief F's "misses a soldier at 40 m".
+- **No bot takes a fixed gun.** Every vanilla gun (`AA_Allies`, `Defgun`,
+  `Flak_38`, the carriers' AA batteries) has `strategicStrength` `0` at index
+  `0`, which is the value `bot-units.js candidates` gives the seat; and the
+  flak38 is not listed at all, its AI record being `Flak_38` against the
+  node's `flak38`. An AA gun seated by hand fires, but El Alamein's sit in
+  sandbag pits whose lip is above the muzzle: a soldier on the flat is out of
+  their reach.
+- **A landing craft with the SAI's order fails its route every tick** (its
+  area is inland), which also makes Wake about three times slower to run.
+- **Tanks trade a flag every 10 s.** Seeds 1 and 4 see 29 and 34 captures in
+  600 s: a PanzerIV and a Sherman (and in seed 4 a Tiger) sit on North outpost
+  and take it from each other every 10 s for minutes, neither killing the
+  other (the solo capture law runs a timer per bot, `bot-referee.js
+  captureTick`).
