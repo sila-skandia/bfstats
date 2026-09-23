@@ -857,6 +857,21 @@ class ObjectTemplate:
     # halving a bomb's vertical reach is how the game keeps a 20 m airburst
     # from killing everything on the floor below it.
     y_mod_on_explosion: float | None = None
+    # The proximity fuse (ledger PROX-1..PROX-6). `explodeNearEnemyDistance`
+    # is `ProjectileTemplate+0x168` (ConsoleClass378, setter lnxded
+    # 0x082dc5f0), default -1 = off (ctor 0x0831f8d0); `ProximityFusePrimer`
+    # is `+0x1a0` (ConsoleClass414, setter 0x082e4a30), default -1, the age a
+    # round must pass before the fuse is live. `Projectile::handleUpdate`
+    # (0x0831e940) detonates the round, end-of-life blast and all, near a
+    # moving vehicle. Vanilla declares it on the three flak shells (10 m),
+    # the landmine (3), the depth charge (50) and three naval rounds.
+    explode_near_enemy_distance: float | None = None
+    proximity_fuse_primer: float | None = None
+    # The whole `timeToLive` CRD (`crd4`), beside `time_to_live`'s first
+    # value. `Projectile::activate` (0x0831e120) draws it per round through
+    # `Random::getContinuousRandom`, so `CRD_UNIFORM/0.8/1.4/0` on the AA gun
+    # bursts anywhere from 240 to 420 m out, not always at 240.
+    time_to_live_crd: list | None = None
     end_effect_template: str | None = None
     # `setEngineType c_ETRocket` marks an Engine that accelerates its parent
     # after launch (the Katyusha rocket's motor), vs. propellers and wheels.
@@ -2460,6 +2475,16 @@ class ObjectLibrary:
                     # redefinition of the template's own lifetime.
                     if obj.time_to_live is None and args:
                         obj.time_to_live = crd(args.split()[0])
+                        obj.time_to_live_crd = crd4(args.split()[0])
+                elif cmd in ("explodenearenemydistance", "proximityfuseprimer"):
+                    try:
+                        value = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                    setattr(obj, {
+                        "explodenearenemydistance": "explode_near_enemy_distance",
+                        "proximityfuseprimer": "proximity_fuse_primer",
+                    }[cmd], value)
                 elif cmd == "template":
                     obj.emitter_template = args.split()[0] if args else None
                 elif cmd == "size":

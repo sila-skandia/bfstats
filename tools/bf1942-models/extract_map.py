@@ -1078,9 +1078,36 @@ def projectile_materials(library) -> dict[str, dict]:
         return {}
     out: dict[str, dict] = {}
     for name, template in library.objects.items():
-        if template.kind.lower() != "projectile" or template.material is None:
+        if template.kind.lower() != "projectile":
             continue
-        out[name] = {"material": template.material}
+        entry: dict = {}
+        if template.material is not None:
+            entry["material"] = template.material
+        # The round's lifetime as the engine draws it, per round
+        # (`Projectile::activate` lnxded 0x0831e120 samples the CRD through
+        # `getContinuousRandom`). The baked `fireArms.projectile.timeToLive`
+        # carries only the first number, so a `CRD_UNIFORM/0.8/1.4/0` flak
+        # shell burst at 240 m every time. Only a real range is written: a
+        # `CRD_NONE` is already exactly what the baked number says.
+        crd_ttl = template.time_to_live_crd
+        if crd_ttl and crd_ttl[0] != "n":
+            entry["timeToLive"] = crd_ttl
+        # The proximity fuse (`Projectile::handleUpdate` 0x0831e940, ledger
+        # PROX-1..PROX-6). Off unless the distance is positive (the engine's
+        # own `0 < +0x168` gate), so the default -1 is never written.
+        distance = template.explode_near_enemy_distance
+        if distance is not None and distance > 0:
+            entry["explodeNearEnemyDistance"] = distance
+            if template.proximity_fuse_primer is not None:
+                entry["proximityFusePrimer"] = template.proximity_fuse_primer
+            # The fuse ignores anything not heavier than the round itself
+            # (0x0831ec65); undeclared is the template default 1.0
+            # (`SimpleObjectTemplate` ctor 0x081dbceb), which the viewer
+            # assumes when this is absent.
+            if template.mass is not None:
+                entry["mass"] = template.mass
+        if entry:
+            out[name] = entry
     return out
 
 
@@ -2425,6 +2452,33 @@ def patch_vehicle_sounds(game_dir: Path, mod: str, level: str, out: Path,
     return before, len(vehicles)
 
 
+def patch_damage_tables(game_dir: Path, mod: str, level: str, out: Path, *,
+                        shared_sounds: Path | None = None,
+                        final_out: Path | None = None) -> dict | None:
+    """Rewrite the mod's `_shared/damage.json` and nothing else.
+
+    The same tables and the same projectile walk a full extraction of `level`
+    writes (`write_damage_tables`, `projectile_materials`), against the same
+    library: the mod chain's objects plus the level's own. It exists so that a
+    change to the projectile table (the proximity fuse, the `timeToLive` CRD)
+    reaches every published tree without re-baking a single level.
+    """
+    chain = mod_chain(game_dir, mod)
+    _files, info, _heightmap, paths = load_level(game_dir, mod, level, chain)
+    fallbacks = _mod_dirs(game_dir, list(TEXTURE_GAP_MODS)) \
+        if not _vanilla_texture_rfa_present(chain) else []
+    _meshes, _textures, objects, game = build_pools(chain, fallbacks)
+    damage_tables = load_damage_tables(game)
+    for path in paths:
+        objects.add_level_objects(path, label=f"{info.name} objects")
+    library = build_library(objects)
+    shared_dir = shared_sounds or (out / "_shared" / "sounds")
+    final_root = final_out or out
+    return write_damage_tables(damage_tables, shared_dir.parent,
+                               final_root / info.name.lower(),
+                               projectile_materials(library))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -2468,6 +2522,13 @@ def main() -> int:
                          "the textures and every other key are left untouched — "
                          "this is how a widened vehicle list reaches a 15 GB "
                          "maps tree without re-extracting levels.")
+    ap.add_argument("--damage-only", action="store_true",
+                    help="rewrite only the mod's shared damage.json "
+                         "(<out>/_shared/damage.json: the MaterialManager "
+                         "tables and the projectile table), exactly as a full "
+                         "extraction of this level would write it. No level "
+                         "file is touched. The table is mod-wide, so one level "
+                         "per mod is enough.")
     args = ap.parse_args()
 
     # Checked before any extraction rather than at the first sample: a level is
@@ -2481,6 +2542,14 @@ def main() -> int:
                  "(roughly 8x the bytes).")
 
     game_dir = args.game_dir.expanduser()
+    if args.damage_only:
+        report = patch_damage_tables(game_dir, args.mod, args.level, args.out,
+                                     shared_sounds=args.shared_sounds,
+                                     final_out=args.final_out)
+        print(f"damage:   {report and report['path']} "
+              f"({report and report['projectiles']} projectiles)",
+              file=sys.stderr)
+        return 0
     if args.sounds_only:
         before, after = patch_vehicle_sounds(
             game_dir, args.mod, args.level, args.out,
