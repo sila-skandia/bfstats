@@ -10,7 +10,8 @@
 
 import * as THREE from 'three';
 import { GunFire } from './gunfire.js';
-import { buildCollisionIndex, WorldCollider } from './collision.js';
+import { buildCollisionIndex } from './static-index.js';
+import { WorldCollider } from './world-collider.js';
 import { fuseArmed, fuseTarget, proximityFuseOf, FUSE_MIN_SPEED_SQ }
   from './proximity-fuse.js';
 
