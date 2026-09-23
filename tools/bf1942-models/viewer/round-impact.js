@@ -82,7 +82,7 @@ export function impact(guns, group, spec, hit, velocity = null, travelled = 0) {
   // 0x08153e79 / 0x08153ea9) — `splashSpec.impact` is that conjunction. A
   // grenade, satchel, explosives pack or landmine reaches this function with
   // `impact` false and gets no area pass here at all; its blast is the
-  // end-of-life one in `#detonate`. The radius is the truncated integer
+  // end-of-life one in `detonate`. The radius is the truncated integer
   // (HP-9), which is what the impact path holds.
   const splash = splashSpec(spec?.damage);
   if (splash?.impact) {
@@ -123,7 +123,7 @@ export function impact(guns, group, spec, hit, velocity = null, travelled = 0) {
  * `Projectile::startEndEffect` (lnxded 0x0831f590) fires it for
  * `damageType == 1` (test at 0x0831f6bb) **or** `damageType == 4`
  * (0x0831f6c0), and tests `hasCollisionEffect` at neither — which is the
- * whole point of HP-9d's two-path rule. Three differences from `#impact`,
+ * whole point of HP-9d's two-path rule. Three differences from `impact`,
  * all read rather than assumed:
  *
  *   - the radius skips the impact path's second truncation (0x0831f73e vs
