@@ -32,6 +32,8 @@ MODULES = [
     ROOT / "viewer" / "gait-select.js",
     ROOT / "viewer" / "soldier.js",
     ROOT / "viewer" / "physics.js",
+    ROOT / "viewer" / "soldier-pose.js",
+    ROOT / "viewer" / "soldier-locomotion.js",
     ROOT / "viewer" / "point-body.js",
     ROOT / "viewer" / "fixed-step.js",
     ROOT / "viewer" / "parachute.js",
