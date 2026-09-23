@@ -33,7 +33,8 @@
 //   bots               the side's alive bots: { id, position, health (0..1),
 //                      unit (the referee's `strategicUnit`: type, mounted,
 //                      air, radius, ...), seat ({ vehicleId, seatId, drives,
-//                      kind, candId } or null), order (the one it holds) }
+//                      kind, candId, driver } or null), order (the one it
+//                      holds) }
 //   areas              every strategic area: { area, name, centre, radius,
 //                      owner (0/1/2), status for the side ('Owned' /
 //                      'Hostile' / 'Neutral'), friendly, enemy (presence) }
@@ -269,6 +270,33 @@ registerOrderKind('WPBoard', {
   },
 });
 
+/**
+ * INVENTION (the squad play): get out of the hull where it stands. The
+ * order asks for no move (urgency 0 at the bot's own position) and its tick
+ * holds the Use key (`actuators.exit`) until the referee has unseated him;
+ * the unit change then drops the order and the next pass gives him another.
+ * A landing craft's passengers at the beach would take the same order.
+ */
+export function leaveOrder(position, inherit = null) {
+  const order = {
+    kind: 'WPLeave',
+    point: [position[0], position[2]],
+    radius: CLOSE_TO.radiusMin,
+    area: inherit?.area ?? null,
+    arrived: true,
+    urgency() { return 0; },
+  };
+  if (inherit?.area && typeof inherit.inside === 'function') order.inside = inherit.inside;
+  return order;
+}
+
+registerOrderKind('WPLeave', {
+  tick(order, { id, actuators }) {
+    actuators?.exit?.(id);
+    return null;
+  },
+});
+
 // ---------------------------------------------------------------------------
 // Doctrines
 // ---------------------------------------------------------------------------
@@ -434,10 +462,11 @@ export class StrategicCommand {
     }
   }
 
-  /** Where a bot sits, from the candidates: `{ vehicleId, seatId, drives, kind, candId }`. */
+  /** Where a bot sits, from the candidates: `{ vehicleId, seatId, drives, kind, candId, driver }`. */
   seatOf(id, cands = this.candidatesOf() ?? []) {
     const c = cands.find(x => x.occupiedBy === id);
-    return c ? { vehicleId: c.vehicleId, seatId: c.seatId, drives: !!c.drives, kind: c.kind, candId: c.id } : null;
+    return c ? { vehicleId: c.vehicleId, seatId: c.seatId, drives: !!c.drives, kind: c.kind, candId: c.id,
+                 driver: c.driver ?? null } : null;
   }
 
   /** The side's picture for its doctrine; every field lazy. */

@@ -121,5 +121,47 @@ class SimMatchTests(unittest.TestCase):
         self.assertIn("mod(", text)
 
 
+class SimDoctrineTests(unittest.TestCase):
+    """`--doctrine` (viewer/doctrine.js): a baseline trace names no doctrine,
+    and a squad run on both sides plays without a bot error and orders its
+    followers with the play's kinds."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        if shutil.which("node") is None:
+            raise unittest.SkipTest("node is not installed")
+        cls.tmp = tempfile.TemporaryDirectory()
+        base = Path(cls.tmp.name)
+        common = ("--synthetic", "--bots", "4", "--time", "60", "--seed", "1", "--quiet")
+        node(*common, "--out", str(base / "sai"))
+        node(*common, "--out", str(base / "squad"), "--doctrine", "squad")
+        read = lambda d: [json.loads(line) for line in (base / d / "trace.jsonl").read_text().splitlines() if line]
+        cls.sai, cls.squad = read("sai"), read("squad")
+        cls.sai_summary = json.loads((base / "sai" / "summary.json").read_text())
+        cls.summary = json.loads((base / "squad" / "summary.json").read_text())
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.tmp.cleanup()
+
+    def test_a_baseline_trace_names_no_doctrine(self) -> None:
+        self.assertNotIn("doctrine", self.sai[0])
+        orders = [r["order"] for r in self.sai if r["k"] == "tick" and r.get("alive") and r.get("order")]
+        self.assertTrue(orders)
+        self.assertTrue(all("kind" not in o for o in orders))
+        self.assertNotIn("doctrine", self.sai[-1])
+        self.assertEqual(self.sai_summary["doctrine"]["sides"], {"1": "sai", "2": "sai"})
+
+    def test_the_squad_play_runs_without_a_bot_error(self) -> None:
+        self.assertEqual(self.squad[0]["doctrine"], {"1": "squad", "2": "squad"})
+        self.assertEqual(self.summary["metrics"]["botErrors"], 0)
+        kinds = {r["order"].get("kind") for r in self.squad if r["k"] == "tick" and r.get("alive") and r.get("order")}
+        self.assertIn("WPMoveTo", kinds)
+        self.assertIn("WPFollow", kinds)
+        stats = self.summary["doctrine"]["stats"]
+        self.assertEqual(stats["1"]["squads"], 1)
+        self.assertEqual(stats["2"]["squads"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -21,6 +21,6 @@ export { INFANTRY_TYPE, areaGeometry, StrategicLayer } from './strategic-layer.j
 export { compareCondition, SAI, StrategicAI } from './strategic-ai.js';
 export {
   StrategicCommand, DOCTRINES, ORDER_KINDS, registerDoctrine, registerOrderKind, checkOrder,
-  parseDoctrineSpec, closeToOrder, boardOrder, CLOSE_TO,
+  parseDoctrineSpec, closeToOrder, boardOrder, leaveOrder, CLOSE_TO,
 } from './doctrine.js';
 export { SQUAD } from './doctrine-squad.js';

@@ -37,6 +37,7 @@ node sim/run.mjs --why bot_4 312.5 --trace sim/out/el_alamein-s3/trace.jsonl
 | `--sample-every S` | 1 | the tickets/flags sample period, seconds |
 | `--no-vehicles` | | leave the level's land vehicles out |
 | `--no-trace` | | the summary only |
+| `--doctrine D` | `sai` | each side's doctrine (`viewer/doctrine.js`): `sai` the engine's SAI, `squad` the squad play, or per side `axis=squad,allies=sai`; see [features/bot-doctrines](../../../features/bot-doctrines/README.md) |
 | `--out DIR` | `sim/out/<level>-s<seed>` | writes `trace.jsonl` and `summary.json` |
 | `--maps DIR`, `--models DIR` | `<viewer>/maps`, `<viewer>/models` | the extracted trees |
 | `--viewer DIR` | `../viewer` | the viewer the AI is loaded from |
@@ -47,6 +48,31 @@ Alamein with 8 a side plays 600 s in about 30 s tracing every third tick
 
 Test: `python3 -m unittest tests.test_sim_match` (a 20 s seeded match on the
 synthetic level, run twice for the same seed and once for another).
+
+**Doctrines.** `--doctrine` swaps the order source behind the strategic
+interface (`viewer/doctrine.js StrategicCommand`, the one thing the referee
+asks for a bot's order). A run with `sai` on both sides (the default) is the
+engine's SAI and its trace is byte for byte the trace from before the
+interface: the header and the tick lines name no doctrine. Any other run
+adds `doctrine` to the header and `kind` / `leader` to each tick's `order`.
+`summary.json` carries a `doctrine` block (both sides' names, each side's
+first capture and time-mean control points held, and what the play counted)
+that the trace's summary line leaves out.
+
+`sim/compare.mjs` runs a doctrine matrix and prints the per-side table:
+
+```sh
+node sim/compare.mjs --maps el_alamein,bocage --seeds 1-10 --time 600 \
+     --configs "sai axis=squad allies=squad" --jobs 8 \
+     --maps-dir $V/maps --models-dir $V/models --out sim/out/compare \
+     --markdown sim/out/compare/table.md
+node sim/compare.mjs --out sim/out/compare --report-only   # re-read, run nothing
+```
+
+Each match goes to `<out>/<map>/<config>/s<seed>` with `--no-trace`; one
+that has a summary is kept (`--force` re-runs). Running the play once per
+side and pairing each seed with the same side's baseline takes the level's
+own asymmetry out of the difference (the second table it prints).
 
 ## What it loads
 
