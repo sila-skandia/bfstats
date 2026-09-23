@@ -114,6 +114,7 @@ import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { OrbitControls } from './vendor/controls/OrbitControls.js';
 import { selectMod } from './mods.js';
 import { disposeModel } from './dispose-model.js';
+import { createCameraGlide } from './camera-glide.js';
 import { installControlsCollapse } from './controls-collapse.js';
 
 // Which game's poses this page serves: 'models/poses' for vanilla,
@@ -142,7 +143,11 @@ const camera = new THREE.PerspectiveCamera(42, 1, 0.02, 500);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.addEventListener('change', () => startAnimating());
-controls.addEventListener('start', () => { cameraMove = null; });   // a drag wins over a glide
+controls.addEventListener('start', () => { cameraGlide.cancel(); });   // a drag wins over a glide
+const cameraGlide = createCameraGlide({
+  get camera() { return camera; }, get controls() { return controls; },
+  get invalidate() { return invalidate; }, get startAnimating() { return startAnimating; },
+});
 
 // Same neutral three-point rig as the model inspector: the point is to see
 // what the pose pipeline actually produced, not to flatter it.
@@ -187,14 +192,12 @@ const GAIT_FOR = {
 // The pose settles first, then the camera glides to the re-fitted framing:
 // moving both at once reads as the figure jumping.
 const STANCE_BLEND_MS = 450;
-const CAMERA_MOVE_MS = 650;
 let stance = 'stand';
 let motion = 'idle';
 let mixer = null;
 let stanceActions = {};
 let gaitActions = {};     // gait key -> { lower: action, upper: action }
 let poseBlend = null;     // { from: { name: weight }, start }
-let cameraMove = null;    // { fromPosition, fromTarget, position, target, start }
 let stanceMetricsHook = null;   // set once the manifest is wired up
 let gaitInfo = {};        // from the glb's own extras: clip paths and rates
 
@@ -358,33 +361,6 @@ function advancePoseBlend(now) {
   return true;
 }
 
-function moveCamera(position, target, animate) {
-  if (!animate) {
-    cameraMove = null;
-    camera.position.copy(position);
-    controls.target.copy(target);
-    controls.update();
-    invalidate();
-    return;
-  }
-  cameraMove = {
-    fromPosition: camera.position.clone(),
-    fromTarget: controls.target.clone(),
-    position,
-    target,
-    start: performance.now(),
-  };
-  startAnimating();
-}
-
-function advanceCamera(now) {
-  if (!cameraMove) return;
-  const t = Math.min((now - cameraMove.start) / CAMERA_MOVE_MS, 1);
-  const eased = t < .5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
-  camera.position.lerpVectors(cameraMove.fromPosition, cameraMove.position, eased);
-  controls.target.lerpVectors(cameraMove.fromTarget, cameraMove.target, eased);
-  if (t === 1) cameraMove = null;
-}
 for (const button of stanceButtons)
   button.addEventListener('click', () => setStance(button.dataset.stance));
 for (const button of motionButtons)
@@ -401,7 +377,7 @@ function applyView(animate = false) {
   const position = gripView()
     ? new THREE.Vector3(target.x + d * .8, target.y + d * .35, target.z + d)
     : new THREE.Vector3(target.x + d * .62, target.y + framing.radius * .5, target.z + d * .78);
-  moveCamera(position, target, animate);
+  cameraGlide.moveCamera(position, target, animate);
 }
 
 // Frame off the posed joints, not Box3.setFromObject: a skinned mesh node
@@ -433,7 +409,7 @@ function refit({ glide = false } = {}) {
   const target = viewTarget();
   const offset = camera.position.clone().sub(controls.target)
     .multiplyScalar(viewDistance(framing) / viewDistance(previous));
-  moveCamera(target.clone().add(offset), target, true);
+  cameraGlide.moveCamera(target.clone().add(offset), target, true);
 }
 
 function applyWireframe() {
@@ -480,7 +456,7 @@ async function loadPair(pair) {
   stanceActions = {};
   gaitActions = {};
   poseBlend = null;
-  cameraMove = null;
+  cameraGlide.cancel();
   gaitInfo = gltf.userData?.gaits ?? {};
   const clips = gltf.animations ?? [];
   for (const key of STANCE_KEYS) {
@@ -565,10 +541,10 @@ function startAnimating() {
     // once-per-landing, not per-frame — the bounds breathe with the stride
     // and a per-frame fit reads as camera jitter.
     if (blendLanded) refit({ glide: true });
-    advanceCamera(now);
+    cameraGlide.advanceCamera(now);
     const controlsMoving = controls.update();
     renderer.render(scene, camera);
-    if (controlsMoving || controls.autoRotate || poseBlend || cameraMove
+    if (controlsMoving || controls.autoRotate || poseBlend || cameraGlide.moving
         || activeGait())
       requestAnimationFrame(tick);
     else animating = false;

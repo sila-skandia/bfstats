@@ -97,6 +97,7 @@ import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { OrbitControls } from './vendor/controls/OrbitControls.js';
 import { selectMod } from './mods.js';
 import { disposeModel } from './dispose-model.js';
+import { createCameraGlide } from './camera-glide.js';
 import { installControlsCollapse } from './controls-collapse.js';
 import { bonePattern, wornGrafts } from './kit-graft.js';
 
@@ -155,7 +156,11 @@ const camera = new THREE.PerspectiveCamera(42, 1, 0.02, 500);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.addEventListener('change', () => startAnimating());
-controls.addEventListener('start', () => { cameraMove = null; });
+controls.addEventListener('start', () => { cameraGlide.cancel(); });
+const cameraGlide = createCameraGlide({
+  get camera() { return camera; }, get controls() { return controls; },
+  get invalidate() { return invalidate; }, get startAnimating() { return startAnimating; },
+});
 
 // The same neutral three-point rig as the model and pose inspectors: the point
 // is to see what the extraction produced, not to flatter it.
@@ -250,11 +255,9 @@ const state = {
 // blend for free, which is the whole reason it is parented rather than welded.
 const STANCE_KEYS = ['stand', 'crouch', 'lie'];
 const STANCE_BLEND_MS = 450;
-const CAMERA_MOVE_MS = 650;
 let mixer = null;
 let stanceActions = {};
 let stanceBlend = null;
-let cameraMove = null;
 let current = null;
 let framing = null;
 let headPoint = null;
@@ -303,32 +306,6 @@ for (const button of stanceButtons)
 
 // --- Camera ----------------------------------------------------------------
 
-function moveCamera(position, target, animate) {
-  if (!animate) {
-    cameraMove = null;
-    camera.position.copy(position);
-    controls.target.copy(target);
-    controls.update();
-    invalidate();
-    return;
-  }
-  cameraMove = {
-    fromPosition: camera.position.clone(),
-    fromTarget: controls.target.clone(),
-    position, target, start: performance.now(),
-  };
-  startAnimating();
-}
-
-function advanceCamera(now) {
-  if (!cameraMove) return;
-  const t = Math.min((now - cameraMove.start) / CAMERA_MOVE_MS, 1);
-  const eased = t < .5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
-  camera.position.lerpVectors(cameraMove.fromPosition, cameraMove.position, eased);
-  controls.target.lerpVectors(cameraMove.fromTarget, cameraMove.target, eased);
-  if (t === 1) cameraMove = null;
-}
-
 const headView = () => state.view === 'head' && headPoint;
 const viewTarget = () => (headView() ? headPoint : framing.centre).clone();
 const viewDistance = ({ radius }) => (headView() ? Math.max(radius * .28, .3) : radius * 2.6);
@@ -340,7 +317,7 @@ function applyView(animate = false) {
   const position = headView()
     ? new THREE.Vector3(target.x + d * .8, target.y + d * .2, target.z + d)
     : new THREE.Vector3(target.x + d * .62, target.y + framing.radius * .5, target.z + d * .78);
-  moveCamera(position, target, animate);
+  cameraGlide.moveCamera(position, target, animate);
 }
 
 // Frame off the posed joints, not Box3.setFromObject: a skinned mesh node sits
@@ -369,7 +346,7 @@ function refit({ glide = false } = {}) {
   const target = viewTarget();
   const offset = camera.position.clone().sub(controls.target)
     .multiplyScalar(viewDistance(framing) / viewDistance(previous));
-  moveCamera(target.clone().add(offset), target, true);
+  cameraGlide.moveCamera(target.clone().add(offset), target, true);
 }
 
 function applyWireframe() {
@@ -504,7 +481,7 @@ async function showKit(kit, { soldier, held, stance } = {}) {
   mixer = null;
   stanceActions = {};
   stanceBlend = null;
-  cameraMove = null;
+  cameraGlide.cancel();
   for (const name of STANCE_KEYS) {
     const clip = THREE.AnimationClip.findByName(gltf.animations ?? [], name);
     if (!clip) continue;
@@ -813,10 +790,10 @@ function startAnimating() {
     const landed = advanceStanceBlend(now);
     if (mixer) mixer.update(delta);
     if (landed) refit({ glide: true });
-    advanceCamera(now);
+    cameraGlide.advanceCamera(now);
     const moving = controls.update();
     renderer.render(scene, camera);
-    if (moving || controls.autoRotate || stanceBlend || cameraMove) requestAnimationFrame(tick);
+    if (moving || controls.autoRotate || stanceBlend || cameraGlide.moving) requestAnimationFrame(tick);
     else animating = false;
   })();
 }
