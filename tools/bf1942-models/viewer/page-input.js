@@ -12,11 +12,21 @@ import { GameConsole } from './console.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `FLY_KEYS`, `FLY_SLOW`, `FLY_SPEED`, `FOOT_KEYS`, `LOCAL_PLAYER`, `camera`,
- * `deployScreen`, `hud`, `isTouchDevice`, `level`, `localPlayer`,
- * `mapSurfaces`, `optOnFoot`, `optPilot`, `pageAudio`, `pageConsole`,
- * `params`, `renderer`, `scoreboard`, `soldierKit`, `soldierView`,
- * `spawning`, `stage`, `uiFocused`, `updateHud`, `vehicleHits`, `world`.
+ * `aimHeld`, `AIR_KEYS`, `aircraft`, `altFireDemolitions`, `bfmap`,
+ * `camera`, `cancelDeploy`, `car`, `clickQueued`, `consoleCaptures`,
+ * `cycleKitWeapon`, `cycleView`, `deployActive`, `deploySpawn`,
+ * `ensureAudioContext`, `enterVehicle`, `escMenu`, `escMenuCaptures`,
+ * `exitSeat`, `extras`, `FLY_KEYS`, `FLY_SLOW`, `FLY_SPEED`, `FOOT_KEYS`,
+ * `footView3p`, `fullmapBox`, `gameConsole`, `getFloorAltitude`,
+ * `groundHeight`, `handWeapon`, `hud`, `HUD_FOOT`, `HUD_FOOT_KBLOCK`,
+ * `HUD_FOOT_PLAIN`, `isTouchDevice`, `itemsLocked`, `lastSeatToggle`,
+ * `LOCAL_PLAYER`, `lookDelta`, `mannedActive`, `mouseInput`, `nearEntry`,
+ * `occupancy`, `openDeploy`, `optOnFoot`, `optPilot`, `params`, `prone`,
+ * `renderer`, `scoreboardOpen`, `scoreFromSpawn`, `SEAT_TOGGLE_COOLDOWN_MS`,
+ * `selectDeployFlag`, `selectKitWeapon`, `setConsoleOpen`, `setEscMenu`,
+ * `setPilot`, `setScoreboard`, `soldier`, `soldierDead`, `spawnAtFlag`,
+ * `stage`, `startReload`, `switchSeat`, `toggleFullMap`, `triggerHeld`,
+ * `uiFocused`, `updateHud`, `view`, `world`.
  */
 export function createPageInput(page) {
   const pageInput = {};
@@ -31,8 +41,8 @@ export function createPageInput(page) {
   pageInput.navMode = 'fly'; // 'fly' or 'pan'
 
   function clampAltitude() {
-    if (page.optPilot.checked && (page.localPlayer.aircraft || page.localPlayer.car)) return;
-    const floor = page.level.getFloorAltitude(page.camera.position.x, page.camera.position.z);
+    if (page.optPilot.checked && (page.aircraft || page.car)) return;
+    const floor = page.getFloorAltitude(page.camera.position.x, page.camera.position.z);
     if (page.camera.position.y < floor) {
       page.camera.position.y = floor;
     }
@@ -42,7 +52,7 @@ export function createPageInput(page) {
     // A body owns the camera while it is on foot; pan and dolly would fight it
     // for one frame and then lose to the next tick anyway.
     if (page.optOnFoot.checked) return;
-    const gh = page.level.groundHeight(page.camera.position.x, page.camera.position.z);
+    const gh = page.groundHeight(page.camera.position.x, page.camera.position.z);
     const alt = Number.isFinite(gh) ? Math.max(page.camera.position.y - gh, 15) : Math.max(page.camera.position.y, 15);
     const panSpeed = alt * 0.0018 * (isSlow() ? 0.35 : 1.0);
 
@@ -62,7 +72,7 @@ export function createPageInput(page) {
   function dollyCamera(delta) {
     if (page.optOnFoot.checked) return;
     const d = lookVector();
-    const gh = page.level.groundHeight(page.camera.position.x, page.camera.position.z);
+    const gh = page.groundHeight(page.camera.position.x, page.camera.position.z);
     const alt = Number.isFinite(gh) ? Math.max(page.camera.position.y - gh, 15) : Math.max(page.camera.position.y, 15);
     const zoomFactor = alt * 0.003 * (isSlow() ? 0.35 : 1.0);
     const step = delta * zoomFactor;
@@ -86,7 +96,7 @@ export function createPageInput(page) {
       pageInput.initialCameraPose = { x: pinned[0], y: pinned[1], z: pinned[2], yaw: pinned[3], pitch: pinned[4] };
       return;
     }
-    const cam = page.level.extras.camera;
+    const cam = page.extras.camera;
     if (cam) {
       page.camera.position.set(cam[0], cam[1] + 55, cam[2]);
     } else {
@@ -101,14 +111,14 @@ export function createPageInput(page) {
   function resetCamera() {
     if (page.optPilot.checked) {
       page.optPilot.checked = false;
-      page.localPlayer.setPilot(false);
+      page.setPilot(false);
     }
     // On foot R respawns rather than resetting the camera — the keydown handler
     // routes it to `spawnAtFlag` before it ever reaches here — but a reset that
     // arrives from the on-screen button must not kick the player out of the mode
     // or move a camera the body owns.
-    if (page.optOnFoot.checked && page.localPlayer.soldier) {
-      page.spawning.spawnAtFlag(true);
+    if (page.optOnFoot.checked && page.soldier) {
+      page.spawnAtFlag(true);
       return;
     }
     if (pageInput.initialCameraPose) {
@@ -219,8 +229,8 @@ export function createPageInput(page) {
    * report down-positive.
    */
   function feedMobileTurretAim(dt) {
-    if (!pageInput.mobilePadHeld || !page.localPlayer.occupancy?.turret) return;
-    page.localPlayer.mouseInput.accumulateDeflection(
+    if (!pageInput.mobilePadHeld || !page.occupancy?.turret) return;
+    page.mouseInput.accumulateDeflection(
       mobilePadVector.x, -mobilePadVector.y, dt, MOBILE_AIM_PIXELS_PER_SECOND);
   }
 
@@ -239,8 +249,8 @@ export function createPageInput(page) {
     pageInput.mobileJumpHeld = false;
     pageInput.mobileThrottle = 0;
     pageInput.mobileThrottleTouched = false;
-    page.soldierKit.triggerHeld = false;
-    page.soldierKit.clickQueued = false;
+    page.triggerHeld = false;
+    page.clickQueued = false;
     pageInput.seatFire = false;
     pageInput.seatAltFire = false;
     mobileFireBtn.classList.remove('is-active');
@@ -248,13 +258,13 @@ export function createPageInput(page) {
     mobilePadPuck.classList.remove('is-firing');
     mobileThrottleInput.value = '0';
     mobileThrottleValue.value = '0';
-    if (page.localPlayer.aircraft) page.localPlayer.aircraft.setInput('c_PIThrottle', 0);
+    if (page.aircraft) page.aircraft.setInput('c_PIThrottle', 0);
     updateMobileControls();
   }
 
   function syncMobileThrottle() {
-    if (!page.localPlayer.aircraft) return;
-    const current = page.localPlayer.aircraft.input('c_PIThrottle');
+    if (!page.aircraft) return;
+    const current = page.aircraft.input('c_PIThrottle');
     if (!pageInput.mobileThrottleTouched || Math.abs(current - pageInput.mobileThrottle) > 0.01) {
       pageInput.mobileThrottle = Math.max(0, Math.min(1, current));
       mobileThrottleInput.value = String(Math.round(pageInput.mobileThrottle * 100));
@@ -265,20 +275,20 @@ export function createPageInput(page) {
   function updateMobileControls() {
     if (!page.isTouchDevice) return;
     const deployOpen = document.getElementById('fullmap')?.classList.contains('deploy');
-    const onFoot = page.optOnFoot.checked && page.localPlayer.soldier && !page.localPlayer.soldierDead;
-    const seated = page.optPilot.checked && page.localPlayer.occupancy;
-    const activeSeat = seated && page.localPlayer.occupancy.isActiveRoot();
-    const manned = seated && page.localPlayer.mannedActive();
-    const aimable = manned && page.localPlayer.occupancy.turret;
-    const driving = activeSeat && page.localPlayer.car;
-    const flying = activeSeat && page.localPlayer.aircraft;
+    const onFoot = page.optOnFoot.checked && page.soldier && !page.soldierDead;
+    const seated = page.optPilot.checked && page.occupancy;
+    const activeSeat = seated && page.occupancy.isActiveRoot();
+    const manned = seated && page.mannedActive();
+    const aimable = manned && page.occupancy.turret;
+    const driving = activeSeat && page.car;
+    const flying = activeSeat && page.aircraft;
     const show = pageInput.captured && !deployOpen && (onFoot || seated);
     const padMode = flying ? 'STICK' : driving ? 'DRIVE' : aimable ? 'AIM' : onFoot ? 'MOVE' : 'SEAT';
     const canFire = onFoot || (seated && (driving || flying || aimable)
-      && page.localPlayer.occupancy.activeFireArmsNodes().length > 0);
+      && page.occupancy.activeFireArmsNodes().length > 0);
     const signature = [
       show, padMode, onFoot, seated, manned, driving, flying, aimable,
-      page.localPlayer.nearEntry?.control || '', pageInput.mobileThrottleTouched,
+      page.nearEntry?.control || '', pageInput.mobileThrottleTouched,
     ].join('|');
     if (signature === pageInput.mobileControlsSignature) return;
     pageInput.mobileControlsSignature = signature;
@@ -292,9 +302,9 @@ export function createPageInput(page) {
     mobileJumpBtn.hidden = !onFoot;
     mobileJumpBtn.classList.toggle('is-active', pageInput.mobileJumpHeld && onFoot);
     mobileUseBtn.hidden = !(onFoot || seated);
-    mobileUseBtn.disabled = onFoot ? !page.localPlayer.nearEntry : !seated;
-    mobileUseBtn.textContent = onFoot ? (page.localPlayer.nearEntry ? `ENTER ${page.localPlayer.nearEntry.control}` : 'ENTER') : 'EXIT';
-    mobileViewBtn.hidden = !((seated && page.localPlayer.view) || (onFoot && page.soldierView.footView3p.modes.length > 1));
+    mobileUseBtn.disabled = onFoot ? !page.nearEntry : !seated;
+    mobileUseBtn.textContent = onFoot ? (page.nearEntry ? `ENTER ${page.nearEntry.control}` : 'ENTER') : 'EXIT';
+    mobileViewBtn.hidden = !((seated && page.view) || (onFoot && page.footView3p.modes.length > 1));
     mobileThrottleWrap.hidden = !flying;
     if (flying) syncMobileThrottle();
     mobileControls.dataset.mode = padMode;
@@ -327,28 +337,28 @@ export function createPageInput(page) {
 
   function setMobileFire(on) {
     pageInput.mobileFireHeld = on;
-    page.soldierKit.triggerHeld = on && page.optOnFoot.checked && !!page.localPlayer.soldier && !page.localPlayer.soldierDead;
-    page.soldierKit.clickQueued = page.soldierKit.triggerHeld;
-    pageInput.seatFire = on && page.optPilot.checked && !!page.localPlayer.occupancy
-      && (page.localPlayer.occupancy.isActiveRoot() || page.localPlayer.mannedActive());
+    page.triggerHeld = on && page.optOnFoot.checked && !!page.soldier && !page.soldierDead;
+    page.clickQueued = page.triggerHeld;
+    pageInput.seatFire = on && page.optPilot.checked && !!page.occupancy
+      && (page.occupancy.isActiveRoot() || page.mannedActive());
     mobileFireBtn.classList.toggle('is-active', on);
     mobilePadPuck.classList.toggle('is-firing', on);
   }
 
   function setMobileJump(on) {
-    pageInput.mobileJumpHeld = on && page.optOnFoot.checked && !!page.localPlayer.soldier && !page.localPlayer.soldierDead;
+    pageInput.mobileJumpHeld = on && page.optOnFoot.checked && !!page.soldier && !page.soldierDead;
     mobileJumpBtn.classList.toggle('is-active', pageInput.mobileJumpHeld);
   }
 
   function mobileSeatToggle() {
-    if (performance.now() - page.localPlayer.lastSeatToggle < page.localPlayer.SEAT_TOGGLE_COOLDOWN_MS) return;
-    if (page.optOnFoot.checked && page.localPlayer.soldier && page.localPlayer.nearEntry) {
+    if (performance.now() - page.lastSeatToggle < page.SEAT_TOGGLE_COOLDOWN_MS) return;
+    if (page.optOnFoot.checked && page.soldier && page.nearEntry) {
       setFly(true);
-      page.localPlayer.enterVehicle(page.localPlayer.nearEntry);
-      page.localPlayer.lastSeatToggle = performance.now();
-    } else if (page.optPilot.checked && page.localPlayer.occupancy) {
-      page.localPlayer.exitSeat();
-      page.localPlayer.lastSeatToggle = performance.now();
+      page.enterVehicle(page.nearEntry);
+      page.lastSeatToggle = performance.now();
+    } else if (page.optPilot.checked && page.occupancy) {
+      page.exitSeat();
+      page.lastSeatToggle = performance.now();
     }
     resetMobileControls();
   }
@@ -358,7 +368,7 @@ export function createPageInput(page) {
     event.preventDefault();
     event.stopPropagation();
     setFly(true);
-    page.pageAudio.ensureAudioContext();
+    page.ensureAudioContext();
     pageInput.mobilePadPointerId = event.pointerId;
     pageInput.mobilePadHeld = true;
     try { mobilePad.setPointerCapture(event.pointerId); } catch {}
@@ -381,7 +391,7 @@ export function createPageInput(page) {
     event.preventDefault();
     event.stopPropagation();
     setFly(true);
-    page.pageAudio.ensureAudioContext();
+    page.ensureAudioContext();
     try { mobileFireBtn.setPointerCapture(event.pointerId); } catch {}
     setMobileFire(true);
   });
@@ -428,7 +438,7 @@ export function createPageInput(page) {
     event.preventDefault();
     event.stopPropagation();
     setFly(true);
-    page.localPlayer.cycleView();
+    page.cycleView();
   });
 
   mobileThrottleWrap.addEventListener('pointerdown', event => event.stopPropagation());
@@ -437,7 +447,7 @@ export function createPageInput(page) {
     pageInput.mobileThrottle = Math.max(0, Math.min(1, Number(mobileThrottleInput.value) / 100 || 0));
     pageInput.mobileThrottleTouched = true;
     mobileThrottleValue.value = String(Math.round(pageInput.mobileThrottle * 100));
-    if (page.localPlayer.aircraft) page.localPlayer.aircraft.setInput('c_PIThrottle', pageInput.mobileThrottle);
+    if (page.aircraft) page.aircraft.setInput('c_PIThrottle', pageInput.mobileThrottle);
   });
 
   window.addEventListener('blur', resetMobileControls);
@@ -453,20 +463,20 @@ export function createPageInput(page) {
     // the same gate the engine puts in front of `Setup`'s input dispatch.
     if (GameConsole.isToggleKey(e)) {
       e.preventDefault();
-      page.pageConsole.setConsoleOpen(!page.pageConsole.gameConsole.open);
+      page.setConsoleOpen(!page.gameConsole.open);
       return;
     }
-    if (page.pageConsole.consoleCaptures()) {
-      if (e.code === 'Escape') { page.pageConsole.setConsoleOpen(false); return; }
-      if (page.pageConsole.gameConsole.keydown(e)) e.preventDefault();
+    if (page.consoleCaptures()) {
+      if (e.code === 'Escape') { page.setConsoleOpen(false); return; }
+      if (page.gameConsole.keydown(e)) e.preventDefault();
       return;
     }
     // Under the Escape menu the keyboard is the menu's, the way it is the
     // console's above: the list and the arrow keys answer, and nothing behind
     // it moves. Escape is the way back to the game.
-    if (page.pageConsole.escMenuCaptures()) {
-      if (e.code === 'Escape') { page.pageConsole.setEscMenu(false); return; }
-      if (page.pageConsole.escMenu?.keydown(e)) e.preventDefault();
+    if (page.escMenuCaptures()) {
+      if (e.code === 'Escape') { page.setEscMenu(false); return; }
+      if (page.escMenu?.keydown(e)) e.preventDefault();
       return;
     }
     if (e.code === 'Escape') {
@@ -482,18 +492,18 @@ export function createPageInput(page) {
       // With all of those away, Escape is the game's own: it brings up the
       // menu, in one press even mid-play, because the browser has already
       // taken the pointer lock off us by the time this runs.
-      if (page.scoreboard.scoreboardOpen()) page.scoreboard.setScoreboard(false);
-      else if (page.deployScreen.deployActive()) page.spawning.cancelDeploy();
-      else if (!page.mapSurfaces.fullmapBox.hidden) page.mapSurfaces.toggleFullMap(false);
+      if (page.scoreboardOpen()) page.setScoreboard(false);
+      else if (page.deployActive()) page.cancelDeploy();
+      else if (!page.fullmapBox.hidden) page.toggleFullMap(false);
       else if (pageInput.kbSession && !pageInput.captured && !e.repeat) kbLockLeave();
-      else if (!e.repeat) page.pageConsole.setEscMenu(true);
+      else if (!e.repeat) page.setEscMenu(true);
       return;
     }
     // Caps Lock toggles the spawn menu even while a sidebar control is focused,
     // matching Escape's privilege over form focus.
     if (e.code === 'CapsLock' && !e.repeat) {
-      if (page.deployScreen.deployActive()) page.spawning.cancelDeploy();
-      else if (!page.optPilot.checked) page.spawning.openDeploy();
+      if (page.deployActive()) page.cancelDeploy();
+      else if (!page.optPilot.checked) page.openDeploy();
       return;
     }
     // Deploy owns Enter and 1-9 even when a sidebar INPUT/SELECT is focused:
@@ -501,17 +511,17 @@ export function createPageInput(page) {
     // either never runs or is immediately undone into fly-through. Not while
     // the score board stands in for the screen: the spawn interface is not up
     // to be driven, and DONE or Escape is the way back to it.
-    if (page.deployScreen.deployActive() && !page.deployScreen.scoreFromSpawn) {
+    if (page.deployActive() && !page.scoreFromSpawn) {
       if (e.code === 'Enter' && !e.repeat) {
         e.preventDefault();
         e.stopPropagation();
-        page.spawning.deploySpawn();
+        page.deploySpawn();
         return;
       }
       const digit = /^Digit([1-9])$/.exec(e.code);
       if (digit) {
         e.preventDefault();
-        page.spawning.selectDeployFlag(Number(digit[1]) - 1);
+        page.selectDeployFlag(Number(digit[1]) - 1);
         return;
       }
     }
@@ -520,13 +530,13 @@ export function createPageInput(page) {
     // On foot the map opens in its deploy state — the game's own map is also
     // its spawn screen — and Escape or M again puts it away without moving you.
     if (e.code === 'KeyM' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      if (page.deployScreen.deployActive()) page.spawning.cancelDeploy();
-      else if (page.mapSurfaces.fullmapBox.hidden && page.optOnFoot.checked && page.localPlayer.soldier
+      if (page.deployActive()) page.cancelDeploy();
+      else if (page.fullmapBox.hidden && page.optOnFoot.checked && page.soldier
                && !page.optPilot.checked) {
         // On foot, but not merely suspended in a seat: a driver's M is the
         // plain map, because his soldier is still ticked and still alive.
-        page.spawning.openDeploy();
-      } else page.mapSurfaces.toggleFullMap();
+        page.openDeploy();
+      } else page.toggleFullMap();
       return;
     }
     // Tab is `c_PIShowScoreBoard`, `c_CMPushAndHold` in every shipped control
@@ -534,24 +544,24 @@ export function createPageInput(page) {
     // screen, whose own SCORE BOARD button is the way in there.
     if (e.code === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
-      if (!e.repeat && !page.deployScreen.deployActive() && !page.scoreboard.scoreboardOpen()) page.scoreboard.setScoreboard(true, false);
+      if (!e.repeat && !page.deployActive() && !page.scoreboardOpen()) page.setScoreboard(true, false);
       return;
     }
     // N is `c_PIZoomMap`: it steps the minimap's three-level zoom counter
     // (bfmap.js). Behind the same gates as M — the console, the Escape menu and
     // a focused form control have all returned above.
     if (e.code === 'KeyN' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      page.mapSurfaces.bfmap.zoomIn();
+      page.bfmap.zoomIn();
       return;
     }
     // Seated in anything, the same row switches seats instead (SEAT-23/24,
     // verify-r5.md's `c_PIMenuSelect1..9`) — checked after the deploy screen's
     // own use of these keys above, since the two are never active together.
-    if (page.optPilot.checked && page.localPlayer.occupancy && !e.repeat
+    if (page.optPilot.checked && page.occupancy && !e.repeat
         && !e.ctrlKey && !e.metaKey && !e.altKey) {
       const seatDigit = /^Digit([1-9])$/.exec(e.code);
       if (seatDigit) {
-        page.localPlayer.switchSeat(Number(seatDigit[1]) - 1);
+        page.switchSeat(Number(seatDigit[1]) - 1);
         return;
       }
     }
@@ -559,7 +569,7 @@ export function createPageInput(page) {
     // the inventory slot and the number key that selects it (1 knife .. 3
     // primary .. 5 special), so a key with no such slot in the spawned kit's
     // inventory does nothing, exactly as in the game.
-    if (page.optOnFoot.checked && page.localPlayer.soldier && !e.repeat
+    if (page.optOnFoot.checked && page.soldier && !e.repeat
         && !e.ctrlKey && !e.metaKey && !e.altKey) {
       const kitDigit = /^Digit([1-9])$/.exec(e.code);
       if (kitDigit) {
@@ -569,7 +579,7 @@ export function createPageInput(page) {
         // the per-frame input word reads `keys`. This branch used to return
         // before `keys.add` and the ripcord never reached it.
         keys.add(e.code);
-        page.soldierKit.selectKitWeapon(Number(kitDigit[1]));
+        page.selectKitWeapon(Number(kitDigit[1]));
         return;
       }
     }
@@ -578,18 +588,18 @@ export function createPageInput(page) {
       // The seat is checked before the soldier: a driver who walked in on foot
       // still has his rifle slung, and R must reset the vehicle he is actually
       // holding the wheel of, not work the bolt.
-      if (page.optPilot.checked && (page.localPlayer.aircraft || page.localPlayer.car)) {
-        (page.localPlayer.aircraft || page.localPlayer.car).reset();
+      if (page.optPilot.checked && (page.aircraft || page.car)) {
+        (page.aircraft || page.car).reset();
         page.world?.resetStick(page.LOCAL_PLAYER);
-      } else if (page.optOnFoot.checked && page.localPlayer.soldier) {
+      } else if (page.optOnFoot.checked && page.soldier) {
         // R is the reload once there is a magazine to reload — the game's own
         // binding — and stays the respawn only for a soldier holding nothing
         // (a weapon glb that failed to load). Shift+R is the deliberate road
         // back: it reopens the deploy screen rather than guessing a flag.
         if (e.shiftKey) {
-          if (!page.deployScreen.deployActive()) page.spawning.openDeploy();
-        } else if (page.soldierKit.handWeapon?.data?.magazine) page.soldierKit.startReload();
-        else page.spawning.spawnAtFlag(true);
+          if (!page.deployActive()) page.openDeploy();
+        } else if (page.handWeapon?.data?.magazine) page.startReload();
+        else page.spawnAtFlag(true);
       } else if (!page.optPilot.checked) {
         resetCamera();
       }
@@ -601,16 +611,16 @@ export function createPageInput(page) {
     // mode first. The 1.0s per-player cooldown (SEAT-6) below gates the whole
     // branch, same as the real `toggleEntryPoint`.
     if (e.code === 'KeyE' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey
-        && performance.now() - page.localPlayer.lastSeatToggle >= page.localPlayer.SEAT_TOGGLE_COOLDOWN_MS) {
+        && performance.now() - page.lastSeatToggle >= page.SEAT_TOGGLE_COOLDOWN_MS) {
       // `exitSeat` picks the exit: the hull's own for a driver or a passenger
       // of a drivetrain, the seat's for a gunner or a seat of a hull with no
       // drive (`mannedActive()` is the check that is right either way).
-      if (page.optPilot.checked && page.localPlayer.occupancy) {
-        page.localPlayer.exitSeat();
-        page.localPlayer.lastSeatToggle = performance.now();
-      } else if (page.optOnFoot.checked && page.localPlayer.soldier && pageInput.captured && page.localPlayer.nearEntry) {
-        page.localPlayer.enterVehicle(page.localPlayer.nearEntry);
-        page.localPlayer.lastSeatToggle = performance.now();
+      if (page.optPilot.checked && page.occupancy) {
+        page.exitSeat();
+        page.lastSeatToggle = performance.now();
+      } else if (page.optOnFoot.checked && page.soldier && pageInput.captured && page.nearEntry) {
+        page.enterVehicle(page.nearEntry);
+        page.lastSeatToggle = performance.now();
       }
     }
     // C cycles the view, which is `c_PIToggleCameraMode` (input channel 26)
@@ -619,21 +629,21 @@ export function createPageInput(page) {
     // own `VehicleCamera` owns the cycle (every seat has one: driver, passenger,
     // gunner, bare gun). On foot `soldier-camera.js` owns it, widened past the
     // engine's set of one by the server's soldier switch (server-settings.js).
-    if (e.code === 'KeyC' && !e.repeat && !e.ctrlKey && !e.metaKey) page.localPlayer.cycleView();
+    if (e.code === 'KeyC' && !e.repeat && !e.ctrlKey && !e.metaKey) page.cycleView();
     // Z is `c_PILie`, a non-repetitive trigger, so it toggles rather than holds.
-    if (e.code === 'KeyZ' && !e.repeat && page.optOnFoot.checked && page.localPlayer.soldier) page.localPlayer.prone = !page.localPlayer.prone;
+    if (e.code === 'KeyZ' && !e.repeat && page.optOnFoot.checked && page.soldier) page.prone = !page.prone;
     if (pageInput.captured && (page.FLY_KEYS.has(e.code)
         || (page.optOnFoot.checked && page.FOOT_KEYS.has(e.code))
-        || (page.optPilot.checked && page.vehicleHits.AIR_KEYS.has(e.code)))) e.preventDefault();
+        || (page.optPilot.checked && page.AIR_KEYS.has(e.code)))) e.preventDefault();
   });
   addEventListener('keyup', e => {
     // Push-and-hold: the board held up on Tab goes with the key, whatever else
     // has the keyboard by then. One opened from the spawn screen stays.
-    if (e.code === 'Tab' && page.scoreboard.scoreboardOpen() && !page.deployScreen.scoreFromSpawn) page.scoreboard.setScoreboard(false);
+    if (e.code === 'Tab' && page.scoreboardOpen() && !page.scoreFromSpawn) page.setScoreboard(false);
     // A key released under an open console must not reach `keys` either: the
     // set is only ever read for movement, and the console has the keyboard.
     // The Escape menu has it on the same terms.
-    if (page.pageConsole.consoleCaptures() || page.pageConsole.escMenuCaptures()) return;
+    if (page.consoleCaptures() || page.escMenuCaptures()) return;
     keys.delete(e.code);
   });
 
@@ -649,7 +659,7 @@ export function createPageInput(page) {
   // Chromium shows the prompt only for a page that has had a real click or key
   // press since it loaded, which mid-play always has.
   addEventListener('beforeunload', e => {
-    if (!(pageInput.captured && page.optOnFoot.checked && page.localPlayer.soldier)) return;
+    if (!(pageInput.captured && page.optOnFoot.checked && page.soldier)) return;
     e.preventDefault();
     e.returnValue = '';
   });
@@ -692,9 +702,9 @@ export function createPageInput(page) {
       pageInput.lockHeld = false;
       // A trigger held across an Escape must not still be firing when the
       // pointer comes back.
-      page.soldierKit.triggerHeld = false;
-      page.soldierKit.clickQueued = false;
-      page.soldierKit.aimHeld = false;
+      page.triggerHeld = false;
+      page.clickQueued = false;
+      page.aimHeld = false;
       pageInput.seatFire = false;
       pageInput.seatAltFire = false;
       if (document.pointerLockElement === page.renderer.domElement) {
@@ -705,7 +715,7 @@ export function createPageInput(page) {
   }
   function capture() {
     setFly(true);
-    page.pageAudio.ensureAudioContext();
+    page.ensureAudioContext();
     // The lock is asked for, not depended on: Chrome refuses one for about a
     // second after the player pressed Escape out of the last one, and it
     // rejects rather than throws. `captured` is already true either way, so
@@ -763,7 +773,7 @@ export function createPageInput(page) {
   pageInput.kbLockState = 'idle';     // what lock() last said; the ?shots hook reads it
 
   function kbLockEnter() {
-    if (!KBLOCK || !(page.optOnFoot.checked && page.localPlayer.soldier)) return;
+    if (!KBLOCK || !(page.optOnFoot.checked && page.soldier)) return;
     if (document.fullscreenElement !== page.stage) page.stage.requestFullscreen().catch(() => {});
     // Asked again on every capture: the session's own `fullscreenchange`
     // handler unlocks when the fullscreen ends, however it ends.
@@ -790,9 +800,9 @@ export function createPageInput(page) {
         navigator.keyboard.unlock();
         pageInput.kbLockState = 'unlocked';
       }
-      const was = page.localPlayer.HUD_FOOT;
-      page.localPlayer.HUD_FOOT = inside ? page.localPlayer.HUD_FOOT_KBLOCK : page.localPlayer.HUD_FOOT_PLAIN;
-      if (page.hud.textContent === was) page.hud.textContent = page.localPlayer.HUD_FOOT;
+      const was = page.HUD_FOOT;
+      page.HUD_FOOT = inside ? page.HUD_FOOT_KBLOCK : page.HUD_FOOT_PLAIN;
+      if (page.hud.textContent === was) page.hud.textContent = page.HUD_FOOT;
     });
   }
   pageInput.touchFlying = false;
@@ -851,11 +861,11 @@ export function createPageInput(page) {
   // `altFireOnce` only toggles on a fresh press.
   function buttonChange(e) {
     // Both triggers are dead under an open console, press and release alike.
-    if (page.pageConsole.consoleCaptures()) return;
+    if (page.consoleCaptures()) return;
     const pressed = !!(e.buttons & BUTTON_BIT[e.button]);
     if (!pressed) {
-      if (e.button === 0) { page.soldierKit.triggerHeld = false; pageInput.seatFire = false; }
-      else if (e.button === 2) { page.soldierKit.aimHeld = false; pageInput.seatAltFire = false; }
+      if (e.button === 0) { page.triggerHeld = false; pageInput.seatFire = false; }
+      else if (e.button === 2) { page.aimHeld = false; pageInput.seatAltFire = false; }
       return;
     }
     if (!(pageInput.captured && pointerLocked())) return;
@@ -865,27 +875,27 @@ export function createPageInput(page) {
     // so with only Space wired to `c_PIFire` the coaxial machine gun had no
     // input at all and could never be fired from the driver's seat — the guns
     // were collected, the FireState existed, and nothing ever pulled it.
-    if (page.optPilot.checked && page.localPlayer.occupancy) {
+    if (page.optPilot.checked && page.occupancy) {
       if (e.button === 0) pageInput.seatFire = true;
       else if (e.button === 2) pageInput.seatAltFire = true;
       return;
     }
-    if (!(page.optOnFoot.checked && page.localPlayer.soldier)) return;
+    if (!(page.optOnFoot.checked && page.soldier)) return;
     // No active item, no mouse. Both buttons are `handleMessage` messages -- Fire
     // is 6 and AltFire is 7 -- and the gate at `0x082772ac` drops the dispatch
     // whole while `c_AsmHideWeapon` is up. `footFire` would refuse the trigger
     // anyway; this is here so a swimmer does not bank a click or toggle a zoom on
     // a weapon he is not holding.
-    if (page.soldierKit.itemsLocked()) return;
+    if (page.itemsLocked()) return;
     if (e.button === 0) {
-      page.soldierKit.triggerHeld = true;
-      page.soldierKit.clickQueued = true;
+      page.triggerHeld = true;
+      page.clickQueued = true;
     } else if (e.button === 2) {
-      const hw = page.soldierKit.handWeapon;
+      const hw = page.handWeapon;
       // The demolitions pair first: AltFire on the pack or the plunger swaps
       // between them and never reaches the zoom latch. Neither weapon declares
       // a `zoomFov`, so nothing is lost by taking the press here.
-      if (page.soldierKit.altFireDemolitions()) return;
+      if (page.altFireDemolitions()) return;
       if (hw?.data?.zoom?.toggle) {
         // `altFireOnce` masks the *held* alt-fire input on the client
         // (0x00500901, mask 0x800000) so only a fresh press reaches the
@@ -894,7 +904,7 @@ export function createPageInput(page) {
         hw.zoomed = !hw.zoomed;
         hw.rezoom = 0;
       } else {
-        page.soldierKit.aimHeld = true;
+        page.aimHeld = true;
       }
     }
   }
@@ -904,7 +914,7 @@ export function createPageInput(page) {
       activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try { page.renderer.domElement.setPointerCapture(e.pointerId); } catch {}
       setFly(true);
-      page.pageAudio.ensureAudioContext();
+      page.ensureAudioContext();
 
       if (activeTouches.size === 1) {
         pageInput.lastPointerX = e.clientX;
@@ -936,8 +946,8 @@ export function createPageInput(page) {
     // click still captures and only the clicks after it pull the trigger.
     // Seated players get the same gate: the buttons are triggers, not a drag,
     // and must not fall through to the orbit/pan branch below.
-    if (pageInput.captured && pointerLocked() && ((page.optPilot.checked && page.localPlayer.occupancy)
-        || (page.optOnFoot.checked && page.localPlayer.soldier))) {
+    if (pageInput.captured && pointerLocked() && ((page.optPilot.checked && page.occupancy)
+        || (page.optOnFoot.checked && page.soldier))) {
       buttonChange(e);
       return;
     }
@@ -955,7 +965,7 @@ export function createPageInput(page) {
       pageInput.lastPointerY = e.clientY;
       try { page.renderer.domElement.setPointerCapture(e.pointerId); } catch {}
       setFly(true);
-      page.pageAudio.ensureAudioContext();
+      page.ensureAudioContext();
     }
   });
 
@@ -1042,7 +1052,7 @@ export function createPageInput(page) {
     // Mouse look is off under an open console. The pointer lock is kept — the
     // console is a keyboard surface and closing it should drop you straight
     // back into play — so the deltas are simply dropped.
-    if (page.pageConsole.consoleCaptures()) return;
+    if (page.consoleCaptures()) return;
     if (pointerLocked()) {
       // `e.button !== -1` means this move is really a chorded button change
       // (see `buttonChange` above), not the cursor moving: `movementX/Y`
@@ -1053,7 +1063,7 @@ export function createPageInput(page) {
         buttonChange(e);
         return;
       }
-      page.localPlayer.lookDelta(e.movementX, e.movementY);
+      page.lookDelta(e.movementX, e.movementY);
       return;
     }
 
@@ -1089,7 +1099,7 @@ export function createPageInput(page) {
       if (pageInput.isPanning) {
         panCamera(dx, dy);
       } else {
-        page.localPlayer.lookDelta(dx, dy);
+        page.lookDelta(dx, dy);
       }
       return;
     }
@@ -1103,7 +1113,7 @@ export function createPageInput(page) {
     if (pageInput.isPanning) {
       panCamera(dx, dy);
     } else {
-      page.localPlayer.lookDelta(dx, dy);
+      page.lookDelta(dx, dy);
     }
   });
   document.addEventListener('wheel', e => {
@@ -1113,7 +1123,7 @@ export function createPageInput(page) {
     // game's own mouse-wheel behaviour — instead of dollying. The free-fly
     // dolly does nothing lasting on foot anyway: the soldier's own eye height
     // sets camera.position.y every frame.
-    if (page.optOnFoot.checked && page.localPlayer.soldier && page.soldierKit.cycleKitWeapon(e.deltaY > 0 ? 1 : -1)) {
+    if (page.optOnFoot.checked && page.soldier && page.cycleKitWeapon(e.deltaY > 0 ? 1 : -1)) {
       return;
     }
     const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 80 : 1;
