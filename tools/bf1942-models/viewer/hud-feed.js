@@ -11,15 +11,19 @@ import { Hud, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS } from './hud.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `DEG_TO_RAD`, `LOCAL_PLAYER`, `WEAPON_ICON_VARS`, `bust`, `camera`,
- * `combatArea`, `combatFrame`, `crosshairEl`, `currentDir`, `deployScreen`,
- * `fireStateFor`, `handSlot`, `handWeapon`, `hitIndicatorDir`,
+ * `aircraft`, `bust`, `camera`, `car`, `combatArea`, `combatFrame`,
+ * `crosshairEl`, `currentDir`, `DEG_TO_RAD`, `deployActive`, `deployKit`,
+ * `deployTeamId`, `drawFullMap`, `feedFlagIconVars`, `feedTicketVars`,
+ * `fireStateFor`, `fullmapBox`, `handSlot`, `handWeapon`, `hitIndicatorDir`,
  * `hitIndicatorTimer`, `hud`, `hudPaths`, `isZoomed`, `itemsLocked`,
- * `kitLoadout`, `kitWeaponSlots`, `lastSoldierHp`, `loadouts`, `localPlayer`,
- * `mannedActive`, `mapSurfaces`, `occupiedVehicleDamage`, `optOnFoot`,
- * `optPilot`, `playSoldierHurtSound`, `renderer`, `room`, `soldier`,
- * `soldierArmor`, `soldierDead`, `triggerHitIndicator`, `updateHud`,
- * `updateSeatPoseVisibility`, `weaponBarUntil`, `world`.
+ * `kitLoadout`, `kitWeaponSlots`, `lastSoldierHp`, `loadouts`,
+ * `LOCAL_PLAYER`, `mannedActive`, `mannedGuns`, `netOccupiedVehicleId`,
+ * `netVehicleIdFor`, `occupancy`, `occupiedVehicleDamage`, `optOnFoot`,
+ * `optPilot`, `paintDeploySoon`, `playSoldierHurtSound`, `renderer`,
+ * `roomClient`, `roomJoined`, `soldier`, `soldierArmor`, `soldierDead`,
+ * `teamNation`, `triggerHitIndicator`, `updateHud`,
+ * `updateSeatPoseVisibility`, `vehicleGuns`, `view`, `WEAPON_ICON_VARS`,
+ * `weaponBarUntil`, `world`.
  */
 export function createHudFeed(page) {
   const hudFeed = {};
@@ -72,7 +76,7 @@ export function createHudFeed(page) {
     // through `leaveSeat`.
     hudFeed.seatDotsFor = null;
     hudFeed.seatDotsSig = null;
-    page.room.netOccupiedVehicleId = null;
+    page.netOccupiedVehicleId = null;
   }
 
   // R2-8 (verify-r2.md's corrected report): the client's own case-sensitive
@@ -97,8 +101,8 @@ export function createHudFeed(page) {
    * sign flip. See `feedVehicleHud`.
    */
   function turretDialAngle() {
-    if (!page.localPlayer.occupancy?.showsTurretIcon(insideView())) return undefined;
-    return page.localPlayer.occupancy.turret?.turretYawRadians();
+    if (!page.occupancy?.showsTurretIcon(insideView())) return undefined;
+    return page.occupancy.turret?.turretYawRadians();
   }
 
   // The seat-dot feed's memo: the vehicle it was last written for and the
@@ -122,15 +126,15 @@ export function createHudFeed(page) {
    *  pose to match against, and a null computed too early would otherwise stay
    *  null for the whole ride. */
   function remoteSeatOccupants() {
-    if (!page.room.roomJoined || !page.room.roomClient || !page.localPlayer.occupancy) return [];
-    if (page.room.netOccupiedVehicleId == null) page.room.netOccupiedVehicleId = page.room.netVehicleIdFor(page.localPlayer.occupancy.root);
-    if (page.room.netOccupiedVehicleId == null) return [];
+    if (!page.roomJoined || !page.roomClient || !page.occupancy) return [];
+    if (page.netOccupiedVehicleId == null) page.netOccupiedVehicleId = page.netVehicleIdFor(page.occupancy.root);
+    if (page.netOccupiedVehicleId == null) return [];
     const out = [];
-    for (const slot of page.room.roomClient.remoteSlots()) {
-      const p = page.room.roomClient.remotePlayer(slot);
-      if (p && p.seated && p.inVehicle && p.vehicleId === page.room.netOccupiedVehicleId
+    for (const slot of page.roomClient.remoteSlots()) {
+      const p = page.roomClient.remotePlayer(slot);
+      if (p && p.seated && p.inVehicle && p.vehicleId === page.netOccupiedVehicleId
           && Number.isInteger(p.seatIndex)) {
-        out.push({ seat: p.seatIndex, team: page.room.roomClient.teamOf(slot) });
+        out.push({ seat: p.seatIndex, team: page.roomClient.teamOf(slot) });
       }
     }
     return out;
@@ -139,7 +143,7 @@ export function createHudFeed(page) {
   /** The other occupants of the hull the human sits in -- bots, on this page --
    *  as the same `{ seat, team }` rows, from the hull's own seat map. */
   function hullSeatOccupants() {
-    const seat = page.localPlayer.occupancy;
+    const seat = page.occupancy;
     if (!seat) return [];
     const out = [];
     for (const [seatId, playerId] of seat.instance.seats) {
@@ -150,12 +154,12 @@ export function createHudFeed(page) {
   }
 
   function feedSeatDots() {
-    if (!page.localPlayer.occupancy) return;
-    const dots = page.localPlayer.occupancy.seatDots([...remoteSeatOccupants(), ...hullSeatOccupants()],
-      page.room.roomClient?.hello?.team ?? page.world?.player(page.LOCAL_PLAYER)?.team ?? 0);
+    if (!page.occupancy) return;
+    const dots = page.occupancy.seatDots([...remoteSeatOccupants(), ...hullSeatOccupants()],
+      page.roomClient?.hello?.team ?? page.world?.player(page.LOCAL_PLAYER)?.team ?? 0);
     const sig = dots.map(d => d.state).join(',');
-    if (hudFeed.seatDotsFor === page.localPlayer.occupancy && sig === hudFeed.seatDotsSig) return;
-    hudFeed.seatDotsFor = page.localPlayer.occupancy;
+    if (hudFeed.seatDotsFor === page.occupancy && sig === hudFeed.seatDotsSig) return;
+    hudFeed.seatDotsFor = page.occupancy;
     hudFeed.seatDotsSig = sig;
     setHudVar('Occupied/OccupiedData', dots.map(d => d.state));
     for (let i = 0; i < 6; i++) {
@@ -174,7 +178,7 @@ export function createHudFeed(page) {
    * inside, which is where every seat opens.
    */
   function insideView() {
-    return page.localPlayer.view ? page.localPlayer.view.inside : !!page.localPlayer.occupancy;
+    return page.view ? page.view.inside : !!page.occupancy;
   }
 
   /**
@@ -184,9 +188,9 @@ export function createHudFeed(page) {
    * live ammo/heat actually moves.
    */
   function feedVehicleHud() {
-    if (!page.localPlayer.occupancy) return;
-    const rootHud = page.localPlayer.occupancy.seatInfo(page.localPlayer.occupancy.rootId)?.hud;
-    const seatHud = page.localPlayer.occupancy.activeHud();
+    if (!page.occupancy) return;
+    const rootHud = page.occupancy.seatInfo(page.occupancy.rootId)?.hud;
+    const seatHud = page.occupancy.activeHud();
     setHudVar('Vehicle/ShowVehicleIcon', true);
     setHudVar('Vehicle/VehicleIcon', seatHud?.vehicleIcon ?? null);
     // The turret dial (`vehicleIcon`'s other three sprites, VHUD-7's rects): a
@@ -267,9 +271,9 @@ export function createHudFeed(page) {
     // cross-check it against.
     let nodes = [];
     if (page.mannedActive()) {
-      nodes = page.localPlayer.occupancy.activeFireArmsNodes();
-    } else if (page.localPlayer.occupancy.isActiveRoot() && (page.localPlayer.aircraft || page.localPlayer.car)) {
-      nodes = page.localPlayer.occupancy.seatInfo(page.localPlayer.occupancy.rootId)?.fireArms || [];
+      nodes = page.occupancy.activeFireArmsNodes();
+    } else if (page.occupancy.isActiveRoot() && (page.aircraft || page.car)) {
+      nodes = page.occupancy.seatInfo(page.occupancy.rootId)?.fireArms || [];
     }
     const primary = nodes[0] ? page.fireStateFor(nodes[0]) : null;
     const secondary = nodes[1] ? page.fireStateFor(nodes[1]) : null;
@@ -330,9 +334,9 @@ export function createHudFeed(page) {
    *  (features/mesh-viewer-performance, rule 5). */
   function fireGroupFor(node) {
     if (!node) return null;
-    const live = page.mannedActive() ? page.localPlayer.mannedGuns : page.localPlayer.vehicleGuns;
+    const live = page.mannedActive() ? page.mannedGuns : page.vehicleGuns;
     for (const group of live) if (group.node === node) return group;
-    const other = live === page.localPlayer.mannedGuns ? page.localPlayer.vehicleGuns : page.localPlayer.mannedGuns;
+    const other = live === page.mannedGuns ? page.vehicleGuns : page.mannedGuns;
     for (const group of other) if (group.node === node) return group;
     return null;
   }
@@ -408,12 +412,12 @@ export function createHudFeed(page) {
     // The seat he holds, not the hull's drive: a drive outlives his seat (a bot
     // may still be driving it), and a soldier who had just stepped out of a
     // Sherman used to be asked what the Sherman draws.
-    if (page.localPlayer.occupancy) {
+    if (page.occupancy) {
       // The CONTROLLED PCO's own `hud` block, which is where `setCrossHairType`
       // is declared — a Sherman's driver and its hull gunner are two PCOs and
       // answer separately. A scene extracted before the word was carried has
       // none, and an absent word draws nothing rather than a guess.
-      return { style: page.localPlayer.occupancy?.activeHud?.()?.crossHairType ?? null,
+      return { style: page.occupancy?.activeHud?.()?.crossHairType ?? null,
                deviation: 0, scoped: false };
     }
     const hw = page.handWeapon;
@@ -465,7 +469,7 @@ export function createHudFeed(page) {
     // only from `footFire`, which the overlay suppresses; it runs every frame
     // now, so a soldier waiting to spawn would otherwise aim at his own map.
     const show = (style === 'CHTCrossHair' || style === 'CHTIcon')
-      && !scoped && page.mapSurfaces.fullmapBox.hidden;
+      && !scoped && page.fullmapBox.hidden;
     // Written only on change, and read back from the element rather than a
     // cache because enterVehicle and disposeHandWeapon hide it behind this
     // function's back: every DOM write here invalidates style, and a frame
@@ -564,7 +568,7 @@ export function createHudFeed(page) {
     if (team !== hudFeed.nationArtTeam || page.currentDir !== hudFeed.nationArtDir) {
       hudFeed.nationArtDir = page.currentDir;
       hudFeed.nationArtTeam = team;
-      hudFeed.nationArtCache = STANCE_NATION[page.mapSurfaces.teamNation(team)] || (team === 1 ? 'ger' : 'us');
+      hudFeed.nationArtCache = STANCE_NATION[page.teamNation(team)] || (team === 1 ? 'ger' : 'us');
     }
     return hudFeed.nationArtCache;
   }
@@ -599,7 +603,7 @@ export function createHudFeed(page) {
 
   function updateSoldierHud(dt = 0.016) {
     const vars = gameHud.vars;
-    const inVehicle = page.optPilot.checked && !!page.localPlayer.occupancy;
+    const inVehicle = page.optPilot.checked && !!page.occupancy;
 
     if (page.hitIndicatorTimer > 0) {
       page.hitIndicatorTimer = Math.max(0, page.hitIndicatorTimer - dt);
@@ -648,7 +652,7 @@ export function createHudFeed(page) {
     // in any seat), which is the same condition that raises the rest of the
     // HUD. Fed before every early return below, because a soldier who has just
     // died leaves `soldier` null while the counter is still up in the game.
-    page.mapSurfaces.feedTicketVars(vars);
+    page.feedTicketVars(vars);
     if (!inWorld && !inVehicle) vars['ShowTicket'] = false;
     // The soldier ammo panel is gated on `Ammo/AmmoType` alone (plus not being
     // in a vehicle), and the live branches below only ever write it, so a
@@ -662,7 +666,7 @@ export function createHudFeed(page) {
     // white flag). Fed from the same capture state `updateCaptureHud` reads, so
     // the disc and the CAPTURING line can never disagree. `AxisFlagIcon` /
     // `AlliedFlagIcon` stay unfed — CTF-only leaves with no conquest meaning.
-    page.mapSurfaces.feedFlagIconVars(vars);
+    page.feedFlagIconVars(vars);
     // The combat-area warning, drawn by the layout's own `outside` group.
     // `stepCombatArea` leaves `combatFrame` null whenever nothing the engine
     // would call a player is in the world, and its countdown is 0 while that
@@ -694,7 +698,7 @@ export function createHudFeed(page) {
       return;
     }
 
-    const iconNation = stanceNation(page.deployScreen.deployTeamId);
+    const iconNation = stanceNation(page.deployTeamId);
     const stanceWord = STANCE_TEXTURE[page.soldier.stance] || 'standing';
     vars['Soldier/SoldierIcon'] = `Soldier/Icon_${iconNation}_soldier_${stanceWord}.tga`;
 
@@ -702,7 +706,7 @@ export function createHudFeed(page) {
     // healthbar_full_scout_64x64.png directly: the scout scope icon sits in the
     // art itself), not a separate layout element — feeding these two is the
     // whole of "the health bar and its kit art".
-    const art = kitHealthArt(page.deployScreen.deployTeamId, page.deployScreen.deployKit);
+    const art = kitHealthArt(page.deployTeamId, page.deployKit);
     vars['Soldier/SoldierHealthBarIcon'] = art?.healthBarIcon;
     vars['Soldier/SoldierHealthBarFullIcon'] = art?.healthBarFullIcon;
 
@@ -915,11 +919,11 @@ export function createHudFeed(page) {
       img.onload = () => {
         hudPack.sprites.set(name, name === 'minimap_icon_ring_32x32'
           ? tintPlayerRing(img) : img);
-        if (page.deployScreen.deployActive()) {
-          page.deployScreen.paintDeploySoon();
+        if (page.deployActive()) {
+          page.paintDeploySoon();
           // The spawn rings draw with these sprites (with a stroked-circle
           // fallback); once the real ring lands, put it on the map at once.
-          page.mapSurfaces.drawFullMap(true);
+          page.drawFullMap(true);
         }
       };
       img.onerror = () => {};
