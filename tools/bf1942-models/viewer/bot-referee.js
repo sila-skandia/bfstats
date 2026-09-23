@@ -835,7 +835,9 @@ export function createBotReferee(env) {
       return { type: 'Infantery', isWalkable: referee.navGrid ? (x, z) => isWalkable(referee.navGrid, x, z) : null,
                radius: 1.0, mounted: false };
     }
-    const type = m.kind === 'tank' ? 'Tank' : m.kind === 'ground' ? 'Car'
+    // The hull's own search type where the level lists them (bot-units.js
+    // `typeNav`: a vanilla jeep is a `Tank` unit), else by drive kind.
+    const type = m.searchType ? m.searchType : m.kind === 'tank' ? 'Tank' : m.kind === 'ground' ? 'Car'
       : m.kind === 'ship' ? (m.landingCraft ? 'LandingCraft' : 'Boat')
       : m.kind === 'air' ? 'Plane' : 'Infantery';
     const nav = m.nav ?? (m.kind === 'tank' || m.kind === 'ground' ? units()?.vehicleNav() ?? null : null);
