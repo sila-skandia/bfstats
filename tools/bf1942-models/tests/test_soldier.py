@@ -503,6 +503,14 @@ class SoldierModuleTests(unittest.TestCase):
         # `setRunFrequency 0.36` over five seconds is 13.9 steps.
         self.assertAlmostEqual(steps["expected"], steps["taken"], delta=1.0)
 
+    def test_a_swimming_soldier_leaves_no_footsteps(self) -> None:
+        wading = self.results["wadingFootsteps"]
+        # The scenario has to reach the overlap, or the zero below is vacuous.
+        self.assertGreater(wading["frames"], 0)
+        # `SwimState` names its flag `swimming`; reading `isSwimming` off it was
+        # always undefined and let 13 of these through.
+        self.assertEqual(0, wading["steps"])
+
     # -- cost --------------------------------------------------------------- #
 
     def test_a_frame_costs_four_collider_queries(self) -> None:

@@ -685,6 +685,29 @@ function bobShape(input, factor) {
   const steps = runway();
   walk(steps, { forward: 1 }, 300);      // five seconds
   results.steps = { taken: steps.steps, expected: 5 / STEP_PERIOD.run };
+
+  // No footfalls in the water. A pinned swimmer is never grounded, so the case
+  // that matters is wading out: `Lb_EndSwim` still carries `c_AsmIsSwimming`
+  // after the boots are back on the bottom. A tide does it on flat ground — up
+  // to 0.5 m (past the 0.43 entry) and back to 0.2 m (under the 0.35 exit) —
+  // and the frame it rises is swept so a stride is mid-phase when he comes out.
+  let wadingFrames = 0, wadingSteps = 0;
+  for (let k = 0; k < 22; k++) {
+    const tide = { level: -5 };
+    const beach = { surfaceHeight: () => 0, get waterLevel() { return tide.level; } };
+    const s = new Soldier({ collider: beach }).spawn(0, 0, 0, 0);
+    for (let i = 0; i < 600; i++) {
+      if (i === 60 + k) tide.level = 0.5;
+      if (i === 240) tide.level = 0.2;
+      const before = s.footstepEvents.length;
+      s.step(DT, { forward: 1 });
+      if (s.grounded && s.swim.swimming) {
+        wadingFrames++;
+        wadingSteps += s.footstepEvents.length - before;
+      }
+    }
+  }
+  results.wadingFootsteps = { frames: wadingFrames, steps: wadingSteps };
 }
 
 // --- cost ------------------------------------------------------------------

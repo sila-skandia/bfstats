@@ -999,7 +999,7 @@ export class Soldier {
       this.stepPhase = (this.stepPhase + dt / period) % 1;
       if (this.stepPhase < before) {
         this.steps++;
-        if (this.grounded && !this.swim.isSwimming && !this.chute.open) {
+        if (this.grounded && !this.swim.swimming && !this.chute.open) {
           this.footstepEvents.push({
             gait: this.gait,
             x: this.x,
