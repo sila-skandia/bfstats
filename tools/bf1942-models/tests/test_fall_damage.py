@@ -33,7 +33,7 @@ def run_harness() -> dict:
         shutil.copy(ROOT / "viewer" / "parachute.js", work / "parachute.js")
         shutil.copy(ROOT / "viewer" / "swim.js", work / "swim.js")
         # The modules `physics.js` re-exports from, under their own names.
-        for name in ("point-body", "fixed-step"):
+        for name in ("point-body", "fixed-step", "soldier-pose", "soldier-locomotion"):
             shutil.copy(ROOT / "viewer" / f"{name}.js", work / f"{name}.js")
         shutil.copy(HARNESS, work / "harness.mjs")
         proc = subprocess.run(
