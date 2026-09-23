@@ -81,7 +81,11 @@
 // A bot re-plans its move when its order is a different object
 // (`planMoveTo` compares identity), so a goal that moves is a new object.
 //
-// To add a kind (Brief D's `WPBeachLanding` is the next one):
+// The SAI's beach orders for a landing craft, `WPBeachLanding` and
+// `WPMoveToBeachLanding`, are built in `strategic-ai.js _orderBeach` from
+// doctrine-landing.js and registered below with its per-tick executor.
+//
+// To add a kind:
 //   1. build the object where it is decided -- in strategic-ai.js when the
 //      SAI issues it (next to `_order` / `_orderAir`), or in the doctrine
 //      that invents it -- meeting the contract above;
@@ -102,6 +106,7 @@
 // bot*.js; that is outside this interface.
 
 import { SAI } from './strategic-ai.js';
+import { landingTick } from './doctrine-landing.js';
 
 // ---------------------------------------------------------------------------
 // Order kinds
@@ -118,6 +123,11 @@ export function registerOrderKind(kind, def = {}) {
 // The SAI's own two (strategic-ai.js `_order`, `_orderAir`): no per-tick part.
 registerOrderKind('WPMoveTo');
 registerOrderKind('WPAltitudeMoveTo');
+// The SAI's beach orders for a landing craft (strategic-ai.js `_orderBeach`,
+// doctrine-landing.js): the tick flips the leg when the craft enters its
+// zone and bails everyone aboard at the beach (`BBChangeLandingCraft`).
+registerOrderKind('WPBeachLanding', { tick: landingTick });
+registerOrderKind('WPMoveToBeachLanding', { tick: landingTick });
 
 /** Refuse an order that is not a registered kind or breaks the contract. */
 export function checkOrder(order) {
@@ -458,7 +468,14 @@ export class StrategicCommand {
       const position = alive.get(id);
       if (!position) continue;
       const next = def.tick(order, { id, position, command: this, candidates, actuators: this.actuators });
-      if (next && next !== order) this.orders.set(id, checkOrder(next));
+      if (next && next !== order) {
+        this.orders.set(id, checkOrder(next));
+        // An order the SAI issued is also the SAI's record of it: the 'sai'
+        // doctrine hands `sai.waypointsOf` back every pass, so the record
+        // follows the replacement (a beach order's other leg).
+        const b = this.sai.bots.get(id);
+        if (b && b.waypoints === order) b.waypoints = next;
+      }
     }
   }
 

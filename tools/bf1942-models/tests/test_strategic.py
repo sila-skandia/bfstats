@@ -30,7 +30,7 @@ def run_harness(scene: Path | None) -> dict:
         work = Path(tmp)
         shutil.copyfile(VIEWER / "strategic.js", work / "strategic.js")
         # `strategic.js` re-exports the layer, the AI and the doctrines.
-        for name in ("strategic-layer.js", "strategic-ai.js", "doctrine.js", "doctrine-squad.js"):
+        for name in ("strategic-layer.js", "strategic-ai.js", "doctrine.js", "doctrine-squad.js", "doctrine-landing.js"):
             shutil.copyfile(VIEWER / name, work / name)
         shutil.copyfile(HARNESS, work / "harness.mjs")
         (work / "package.json").write_text('{"type":"module"}\n')

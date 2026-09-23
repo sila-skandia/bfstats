@@ -74,6 +74,11 @@ export class StrategicLayer {
         side: a.side ?? null,
         takeable: a.takeable ?? {},
         vehicleSearchRadius: a.vehicleSearchRadius ?? null,
+        // The beach orders' data (doctrine-landing.js): the zones attached to
+        // the area, the unit types sent to them, the unit types kept out.
+        landingZones: a.landingZones ?? [],
+        landingZoneUnits: a.landingZoneUnits ?? [],
+        expelledUnits: a.expelledUnits ?? [],
         controlPoints: [],
       };
       this.areas.push(area);

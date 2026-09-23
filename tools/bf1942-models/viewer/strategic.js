@@ -13,6 +13,9 @@
 //                         registries, the engine's SAI as the 'sai' doctrine
 //                         and the `WPCloseTo`-law orders
 //   `doctrine-squad.js`   the first play, 'squad' (registers itself)
+//   `doctrine-landing.js` the SAI's beach orders for a landing craft
+//                         (`WPBeachLanding`, `WPMoveToBeachLanding`) and the
+//                         bail at the beach; doctrine.js registers the kinds
 //
 // A doctrine or an order kind added later registers itself the same way and
 // is imported here (features/bot-doctrines/README.md).
@@ -24,3 +27,7 @@ export {
   parseDoctrineSpec, closeToOrder, boardOrder, leaveOrder, CLOSE_TO,
 } from './doctrine.js';
 export { SQUAD } from './doctrine-squad.js';
+export {
+  LANDING, landingZonesOf, zoneDistanceSqr, beachTarget, beachLandingOrder, landingTick, craftArea, areaPath,
+  approachPosition, beachPosition,
+} from './doctrine-landing.js';
