@@ -49,8 +49,8 @@ HARNESS = Path(__file__).resolve().parent / "room_harness.mjs"
 # the drive models, the netcode codec), kept under their own names so the
 # unmodified `../viewer/...` imports resolve from `server/`.
 _VIEWER_MODULES = [
-    "world", "physics", "parachute", "swim", "soldier", "spawn-safety",
-    "point-body", "fixed-step", "soldier-pose", "soldier-locomotion", "walking-body",
+    "world", "physics", "parachute", "swim", "soldier", "spawn-flags", "spawn-safety",
+    "point-body", "fixed-step", "soldier-pose", "soldier-locomotion", "walking-body", "soldier-resolve",
     "mouse-input", "fall-damage",
     "body-world", "body-statics", "body-pose", "vehicle-bodies", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact",
@@ -59,8 +59,8 @@ _VIEWER_MODULES = [
     # world.js's World delegates to its split modules.
     "world-input", "world-players", "world-snapshot", "world-bodies",
     "world-soldier-tick", "world-vehicle-tick", "world-fields", "world-damage",
-    "body-ground", "body-friction", "crash-damage", "effects-core",
-    "collision", "collision-materials", "heightfield", "static-index",
+    "body-ground", "body-friction", "crash-damage", "effects-core", "projectile-damage",
+    "collision", "collision-materials", "heightfield", "static-index", "collision-meshes",
     "drivable-mask", "world-collider", "flight", "vehicle-camera", "vehicle-discovery", "vehicle-base",
     "aircraft", "ground", "ground-specs", "ground-contact", "ground-engine",
     "tracked-vehicle", "game-modes", "netcode",

@@ -4,7 +4,7 @@
 //
 // Split out of `collision.js`, which re-exports it.
 
-import { isCollisionMesh, isDrivableCollisionMesh } from './static-index.js';
+import { isCollisionMesh, isDrivableCollisionMesh } from './collision-meshes.js';
 
 // The drivable-deck BROADPHASE cell size. This raster is not a height any more
 // (see `buildDrivableMask`): it only answers "is there a deck triangle over this

@@ -31,8 +31,10 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULES = [
     ROOT / "viewer" / "gait-select.js",
     ROOT / "viewer" / "soldier.js",
+    ROOT / "viewer" / "spawn-flags.js",
     ROOT / "viewer" / "physics.js",
     ROOT / "viewer" / "walking-body.js",
+    ROOT / "viewer" / "soldier-resolve.js",
     ROOT / "viewer" / "soldier-pose.js",
     ROOT / "viewer" / "soldier-locomotion.js",
     ROOT / "viewer" / "point-body.js",

@@ -40,8 +40,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 ROOT = Path(__file__).resolve().parents[1]
 MODULES = [
     ROOT / "viewer" / "soldier.js",
+    ROOT / "viewer" / "spawn-flags.js",
     ROOT / "viewer" / "physics.js",
     ROOT / "viewer" / "walking-body.js",
+    ROOT / "viewer" / "soldier-resolve.js",
     ROOT / "viewer" / "soldier-pose.js",
     ROOT / "viewer" / "soldier-locomotion.js",
     ROOT / "viewer" / "point-body.js",
@@ -51,6 +53,7 @@ MODULES = [
     ROOT / "viewer" / "collision.js",
     ROOT / "viewer" / "world-collider.js",
     ROOT / "viewer" / "static-index.js",
+    ROOT / "viewer" / "collision-meshes.js",
     ROOT / "viewer" / "drivable-mask.js",
     ROOT / "viewer" / "collision-materials.js",
     ROOT / "viewer" / "heightfield.js",
