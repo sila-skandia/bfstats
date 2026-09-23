@@ -128,11 +128,109 @@ without are the levels with no `AI.con` (Aberdeen, Coral Sea, Invasion of the
 Philippines, Liberation of Caen, Raid on Agheila, EoD's Operation Linebacker).
 Every declared map loads.
 
-## The other files in `Pathfinding/`
+## The strategic maps: `<type>.raw` and `<type>Info.raw`
 
-`<type>.raw` (16,392 or 65,544 bytes), `<type>Info.raw` and, on Bocage,
-`<name>LandMap.raw` sit beside the level maps. `ai.loadMaps`'s second half,
-`AIPathfinding::loadSearchTypes` 0x0847c6b0, calls `StrategicMap::load` for
-each `ai.addSearchType` from the same folder (with the same
-stop-at-first-failure loop), so the `<type>` pair is INFERRED to be the
-search type's strategic map; not read or decoded here.
+Read 2026-09-24 (Brief O, ledger AI-117).
+
+### Which files load
+
+`ai.addSearchType <name> [map] [level]` (`ConsoleClass343::executeObjectMethod`
+0x084e3c40 passes -1 for a missing map and a missing level) goes through
+`AIConsole::addSearchType` 0x0846dcc0 (refuses a map index past the maps
+declared so far, -1 excepted) to `AIPathfinding::addSearchType` 0x0847ae80,
+which refuses a level below the map's own `minLevel` (the `LocalMapInfo`
++0x144, compared unsigned, so -1 passes) and otherwise appends a
+`VehicleInfo` to +0x20. The first type naming a (map, level) pair also
+creates a `VehicleMapInfo` (+0x14; ctor 0x0847a690): the pathfinding
+`Vehicle` (`Vehicle::Vehicle` 0x0860b2c0: +0xc4a4 the level, +0xc4a8 the
+map's `maxLevel`) and a `StrategicMap` named after that type (ctor
+0x08607bf0). A map of -1 is a type with no map.
+
+`AIPathfinding::loadMaps` 0x0847c580 is `loadSearchMaps() &&
+loadSearchTypes()` (vtable +0x100 / +0x104), so no strategic map loads when a
+search map failed. `loadSearchTypes` 0x0847c6b0 calls `StrategicMap::load`
+0x08609b60 on each `VehicleMapInfo` in order from the same
+`<level>Pathfinding/` folder, and stops at the first failure: the maps after
+it keep the constructor's zeroed cells (no region used, so no route).
+
+A unit names its type by number: `aiTemplatePlugIn.vehicleNumber` is the
+Mobile plug-in's +4 (`AITemplateMobile` ctors 0x085e0b90 / 0x085e0bf0), an
+index into the kept `VehicleInfo` list (`AIObjectMobile::init` 0x085d54b0
+passes it to `isVehicleUsed` 0x0847b150 and `isValidPosition`;
+`BotMain::initPathfinding` 0x0852a0d0 searches with it). Every vanilla land
+vehicle, jeeps included, has 0; the soldier 1; the ships 2; the landing craft
+3; XPack2's LVT4 and Schwimmwagen 4; aircraft -1.
+
+### `<type>.raw`: the cells
+
+`StrategicMap::load` 0x08609b60 (and `save` 0x08609950): `<name>` + `.raw`
+(0x087042ba).
+
+| offset | value |
+|---|---|
+| 0x00 | int32 `w`, checked against the map's `1 << (sizeXBits - 6)` (+0x18) |
+| 0x04 | int32 `h`, against +0x1c |
+| 0x08 | `w x h` cells of 16 bytes, row-major along the engine's z (read into `+0x4 + ((z << +0x10) + x) * 16`) |
+
+A cell is one 64 m square (`getPosition` 0x08480ed0 adds a 0..63 offset to
+`x & ~63`), holding up to four regions:
+
+| bytes | meaning |
+|---|---|
+| 0..3 | uint32 links: bit `4 i + k` joins region i to region k of the cell at +z; bit `16 + 4 i + k` joins it to region k of the cell at +x (`AStarStrategicSearch::newPositionAndCost` 0x085f73b0; the -z and -x steps read the neighbour's bits with i and k swapped, and need the neighbour to use region k) |
+| 4 + 2k, 5 + 2k | region k's point inside the cell, `x & 0x3f`, `z & 0x3f` (`StrategicCell::getPositionX/Z` 0x085f7ab0 / 0x085f7ad0) |
+| 4, bit 6 | the cell has more regions than four: an Info pixel of 3 may belong to none (below) |
+| 12, bits 4..7 | region k is used (`isUsed` 0x08480e30) |
+| 13..15 | not read (0 in every shipped cell but one) |
+
+### `<type>Info.raw`: the regions
+
+`CellMap(name + "Info", level + 1, 1, 6, sizeXBits, sizeZBits)` (the
+`StrategicMap` ctor; `Info` is 0x086d57f3), loaded by `CellMap::loadRawFile`
+0x085f8930 from `<name>Info.raw`: the `CellMap` file above with the bits
+exponent 1 (two bits a pixel), a pixel `2^(level + 1)` m, a block 64 m (256
+bytes when inline). The pixel is the region number. Bocage's `TankInfo.raw`
+header is `5 5 6 1 1`.
+
+`StrategicMap::getStrategicCellInfoNo` 0x08608fa0 for a map position: -1 on
+a pixel the unit's own lowest-level map blocks (`Vehicle::getMinLevelMap`
+0x0860b820); else the Info pixel; a 3 in a cell with the byte-4 bit 6 set
+stands only when a four-connected flood of the free pixels inside the cell
+reaches region 3's point (`flooder<FlooderWrapperRT>` 0x0860a610), else -1.
+
+### How a route uses it
+
+`BotMain::initPathfinding` 0x0852a0d0: the goal must be free on the unit's
+map (`isValidPosition` vt+0x78) and have a region (`getEncodedMapPos`
+vt+0x90 -> `VehicleInfo::getEncodedMapPos` 0x08481430), or there is no path;
+the start likewise, from the last valid position (Information vt+0x20) when
+it stands on a blocked pixel. `BotMain::updateStrategicPath` 0x08526e60:
+start and goal in the same used region of the same cell
+(`isInSameStrategicArea` 0x0847cb10) need no strategic path; otherwise
+`AIPathfinding::strategicSearch` 0x0847dae0 runs `AStarStrategicSearch`:
+nodes are (cell, region) at the region's point (`init` 0x085f6f70), a step
+costs the Manhattan distance between points, the heuristic is the Manhattan
+distance to the goal's point (`distanceEstimateToGoal` 0x085f72f0), the goal
+is the goal's (cell, region) (`isGoal` 0x085f71a0, radius `round(0.01 x 5)`
+= 0), with no box. The path's first node is dropped, and the next too when it
+is the only one left; `updateLocalPath` 0x08527120 refines toward each
+remaining node's point (`getStrategicPositionFromEncMapPos` vt+0x98) and last
+toward the goal.
+
+### Shipped
+
+794 strategic maps on the 271 levels with search maps (vanilla 19, XPack1 6,
+XPack2 8, EoD 238), 41.0 MB, 15 KB .. 2.0 MB a level (median 108 KB). Every
+one loads but Gazala's and Tobruk's `Car` (no `Car.raw`; `Car` is the last
+pair, so nothing after it is lost). The search types by level: `Tank,
+Infantry` alone on 138 (EoD) and `Tank, Infantery` on Santo Croce, with `Boat, LandingCraft` on 105, and a fifth
+type on 27: `Car` on 20, `Amphibius` / `Amphibious` on seven XPack2 levels;
+the infantry type is spelled `Infantery` on Bocage, El Alamein, Wake, Santo
+Croce and Eagle's Nest (Kursk names its water types `Boat2`,
+`LandingCraft3`). `extract_search_maps.py`
+copies both files of each loaded map beside the search maps and lists
+`searchTypes` and `strategic` in `index.json` (`bf42/ai_level.py
+level_strategic_maps`); `viewer/strategic-map.js` reads them.
+
+`<name>LandMap.raw` (Bocage's `Tank0LandMap.raw`, `Infantry1LandMap.raw`)
+is not opened by `loadSearchMaps` or `loadSearchTypes`; not read.

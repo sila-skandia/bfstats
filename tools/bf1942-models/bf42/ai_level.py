@@ -174,6 +174,10 @@ class LevelAi:
     strategies: list[Strategy] = field(default_factory=list)
     sideStrategies: dict[str, list[str]] = field(default_factory=dict)
     searchMaps: list[dict[str, Any]] = field(default_factory=list)
+    # `ai.addSearchType <name> [map] [level]`, the ones the engine keeps, in
+    # order: a unit's `aiTemplatePlugIn.vehicleNumber` indexes this list
+    # (`add_search_type`).
+    searchTypes: list[dict[str, Any]] = field(default_factory=list)
     # Object template (lower-case) -> `aiTemplatePlugIn.coverValue`, for the
     # templates this level places. Filled by `add_cover_values`.
     coverValues: dict[str, float] = field(default_factory=dict)
@@ -232,6 +236,38 @@ def parse_ai_con(text: str, ai: LevelAi) -> None:
 SEARCH_MAP_DEFAULT_LEVELS = (0, 2)
 
 
+def add_search_type(ai: LevelAi, args: list[str]) -> bool:
+    """`ai.addSearchType <name> [map] [level]`, as the engine takes it.
+
+    The console handler (`ConsoleClass343::executeObjectMethod` 0x084e3c40)
+    passes `-1` for a missing map and a missing level (`push $0xffffffff` at
+    0x084e3cf2, 0x084e3d10 / 0x084e3d12). `AIConsole::addSearchType`
+    0x0846dcc0 refuses a map index past the maps declared so far (not -1);
+    `AIPathfinding::addSearchType` 0x0847ae80 refuses a level below the
+    map's own `minLevel` (the `LocalMapInfo` +0x144, the `LocalMap` +0x24,
+    compared unsigned, so -1 passes), and otherwise appends a
+    `VehicleInfo` (+0x20), creating a `VehicleMapInfo` (+0x14) for the first
+    type naming each (map, level) pair: that one owns the `Vehicle` (its
+    +0xc4a4 is the level, `Vehicle::Vehicle` 0x0860b2c0) and the
+    `StrategicMap` named after the type (`VehicleMapInfo::VehicleMapInfo`
+    0x0847a690). A map of -1 is a type with no map (`isVehicleUsed`
+    0x0847b150 is true for it, `isValidPosition` 0x0847ccc0 always true).
+    A unit's `aiTemplatePlugIn.vehicleNumber` (`AITemplateMobile` +4,
+    `AIObjectMobile::init` 0x085d54b0) is its index into what this keeps.
+    Returns whether the type was kept."""
+    name = args[0]
+    mp = int(_num(args[1], -1)) if len(args) >= 2 else -1
+    level = int(_num(args[2], -1)) if len(args) >= 3 else -1
+    if mp != -1:
+        if not (0 <= mp < len(ai.searchMaps)):
+            return False
+        lo = int(ai.searchMaps[mp].get("minLevel", 0))
+        if level != -1 and level < lo:
+            return False
+    ai.searchTypes.append({"name": name, "map": mp, "level": level})
+    return True
+
+
 def parse_pathfinding_con(text: str, ai: LevelAi) -> None:
     """`AIpathFinding.con`: the search maps (name / waterHeight(bool) /
     waterDepth / maxSlope / brush / lowClip / hiClip / considerAITypes /
@@ -260,6 +296,8 @@ def parse_pathfinding_con(text: str, ai: LevelAi) -> None:
                 "minLevel": lo,
                 "maxLevel": hi,
             })
+        elif word == "ai.addsearchtype" and args:
+            add_search_type(ai, args)
         elif word == "ai.setsmoothing" and len(args) >= 2:
             ai.settings.setdefault("smoothing", {})[args[0]] = int(_num(args[1]) or 0)
         elif word == "ai.numastarresources" and args:
@@ -558,6 +596,204 @@ def search_map_header(data: bytes) -> tuple[int, int, int, int, int]:
     return struct.unpack_from("<5i", data, 0)
 
 
+@dataclass
+class CellMapRaw:
+    """Any `CellMap` file, whatever its bits per pixel (`CellMap::loadRawFile`
+    0x085f86a0 reads them all alike). A pixel is `CellMap::getPixel`
+    0x085f9a00: block `(x >> p5, z >> p5)`, inside it column `(x & (2^p5 -
+    1)) >> p3` and row likewise; the pixel's bits start at bit `(row * 2^(p5
+    - p3) + col) << p4` of the block, LSB first, `2^p4` of them."""
+
+    blocks_x: int
+    blocks_z: int
+    block_exp: int
+    level: int
+    bits_exp: int
+    blocks: list[bytes]
+
+    @property
+    def block_pixels(self) -> int:
+        return 1 << (self.block_exp - self.level)
+
+    def pixel(self, px: int, pz: int) -> int:
+        """Pixel `(px, pz)` of this level (in its own pixels); outside is 0."""
+        bw = self.block_pixels
+        if not (0 <= px < self.blocks_x * bw and 0 <= pz < self.blocks_z * bw):
+            return 0
+        block = self.blocks[(pz // bw) * self.blocks_x + px // bw]
+        bit = ((pz % bw) * bw + (px % bw)) << self.bits_exp
+        word = int.from_bytes(block[(bit >> 5) * 4:(bit >> 5) * 4 + 4], "little")
+        return (word >> (bit & 31)) & ((1 << (1 << self.bits_exp)) - 1)
+
+    def value_at(self, x: float, z_engine: float) -> int:
+        """The pixel under map position `(x, z)` (metres, engine z)."""
+        size = 1 << self.level
+        return self.pixel(int(x // size), int(z_engine // size))
+
+
+def read_cell_map_raw(data: bytes) -> CellMapRaw:
+    """Decode any `CellMap` file (`CellMap::loadRawFile` 0x085f86a0): the
+    five header int32 (`log2` blocks across, down, the block exponent `p5`,
+    the level `p3`, the bits exponent `p4`), the special cells, then one
+    int32 per block (`>= 0` a special cell, `< 0` followed by the block's
+    `4 << max(1, p4 - 5 + 2 (p5 - p3))` bytes; `CellMap::CellMap` 0x085f7af0
+    sizes the pool so)."""
+    import struct
+
+    if len(data) < 24:
+        raise ValueError("cell map too short")
+    wb, hb, p5, p3, p4 = struct.unpack_from("<5i", data, 0)
+    off = 20
+    (count,) = struct.unpack_from("<i", data, off)
+    off += 4
+    specials = list(struct.unpack_from(f"<{count}I", data, off))
+    off += 4 * count
+    block_bytes = 4 << max(1, p4 - 5 + 2 * (p5 - p3))
+    fills = [v.to_bytes(4, "little") * (block_bytes // 4) for v in specials]
+    blocks: list[bytes] = []
+    for _ in range((1 << wb) * (1 << hb)):
+        (rec,) = struct.unpack_from("<i", data, off)
+        off += 4
+        if rec < 0:
+            blocks.append(bytes(data[off:off + block_bytes]))
+            off += block_bytes
+        else:
+            if rec >= count:
+                raise ValueError(f"special cell {rec} of {count}")
+            blocks.append(fills[rec])
+    if off != len(data):
+        raise ValueError(f"cell map has {len(data) - off} trailing bytes")
+    return CellMapRaw(1 << wb, 1 << hb, p5, p3, p4, blocks)
+
+
+#: `StrategicMap` cell: 16 bytes (`StrategicMap::load` 0x08609b60 reads
+#: `0x10` a cell).
+STRATEGIC_CELL_BYTES = 16
+#: A strategic cell's side, metres (the map's `sizeXBits - 6` cells across,
+#: `StrategicMap::StrategicMap` 0x08607bf0; `getPosition` 0x08480ed0 adds a
+#: 0..63 offset to `x & ~63`).
+STRATEGIC_CELL_SIZE = 64
+
+
+@dataclass
+class StrategicMapRaw:
+    """`Pathfinding/<type>.raw`, the strategic cells of one search type
+    (`StrategicMap::load` 0x08609b60 / `save` 0x08609950): `int32 w, h`
+    (checked against the map's own `1 << (sizeBits - 6)`), then `w x h`
+    cells of 16 bytes, row-major along the engine's z. A cell (the 64 m
+    square) holds up to four regions ("cell infos"):
+
+    * bytes 4 + 2k, 5 + 2k: region k's point, `x & 0x3f`, `z & 0x3f` inside
+      the cell (`StrategicCell::getPositionX/Z` 0x085f7ab0 / 0x085f7ad0);
+      bit 6 of byte 4 flags that pixels coded 3 in the Info map may belong
+      to no region (`getStrategicCellInfoNo` 0x08608fa0 then floods to
+      region 3's point);
+    * byte 12, bits 4..7: region k is used (`isUsed` 0x08480e30);
+    * word 0: bit `4 i + k` joins region i to region k of the cell at +z
+      (the engine's z), bit `16 + 4 i + k` to region k of the cell at +x
+      (`AStarStrategicSearch::newPositionAndCost` 0x085f73b0; the -z and -x
+      steps read the neighbour's bits the other way round).
+    """
+
+    cells_x: int
+    cells_z: int
+    cells: bytes
+
+    def cell(self, cx: int, cz: int) -> bytes:
+        o = (cz * self.cells_x + cx) * STRATEGIC_CELL_BYTES
+        return self.cells[o:o + STRATEGIC_CELL_BYTES]
+
+    def used(self, cx: int, cz: int) -> list[int]:
+        flags = self.cell(cx, cz)[12]
+        return [k for k in range(4) if (flags >> (4 + k)) & 1]
+
+    def point(self, cx: int, cz: int, k: int) -> tuple[int, int]:
+        c = self.cell(cx, cz)
+        return (cx * STRATEGIC_CELL_SIZE + (c[4 + 2 * k] & 0x3F),
+                cz * STRATEGIC_CELL_SIZE + (c[5 + 2 * k] & 0x3F))
+
+
+def read_strategic_map_raw(data: bytes) -> StrategicMapRaw:
+    """Decode `Pathfinding/<type>.raw` (see `StrategicMapRaw`)."""
+    import struct
+
+    if len(data) < 8:
+        raise ValueError("strategic map too short")
+    w, h = struct.unpack_from("<2i", data, 0)
+    if w <= 0 or h <= 0 or len(data) != 8 + w * h * STRATEGIC_CELL_BYTES:
+        raise ValueError(f"strategic map {w} x {h} in {len(data)} bytes")
+    return StrategicMapRaw(w, h, bytes(data[8:]))
+
+
+def level_strategic_maps(files, ai: LevelAi | None,
+                         search_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """What `ai.loadMaps` loads of the strategic maps, one row per
+    `VehicleMapInfo` (each distinct (map, level) of the search types, in
+    order; named after the first type naming it).
+
+    `AIPathfinding::loadMaps` 0x0847c580 is `loadSearchMaps() &&
+    loadSearchTypes()` (vtable +0x100 / +0x104), so no strategic map loads
+    when a search map failed. `loadSearchTypes` 0x0847c6b0 walks the
+    `VehicleMapInfo`s and calls `StrategicMap::load` 0x08609b60 on each
+    until one fails (the rest keep the ctor's zeroed cells, no region used):
+    `<level>Pathfinding/<name>.raw` (the cells; `w, h` must be the map's
+    `1 << (sizeBits - 6)`), then the region map `<name>Info.raw` through
+    `CellMap::loadRawFile` 0x085f8930, a `CellMap(name + "Info", level + 1,
+    1, 6, sizeXBits, sizeZBits)` (`StrategicMap::StrategicMap` 0x08607bf0):
+    two bits a pixel, a pixel `2^(level + 1)` m, 64 m blocks. Each row:
+    `name`, `map` (the search map's index), `level`, `loaded`, and when
+    loaded `data` / `info` (the two files' bytes); else `reason`."""
+    rows: list[dict[str, Any]] = []
+    if ai is None:
+        return rows
+    seen: set[tuple[int, int]] = set()
+    pairs: list[dict[str, Any]] = []
+    for t in ai.searchTypes:
+        key = (t["map"], t["level"])
+        if t["map"] == -1 or key in seen:
+            continue
+        seen.add(key)
+        pairs.append({"name": t["name"], "map": t["map"], "level": t["level"]})
+    all_maps = bool(search_rows) and all(r.get("loaded") for r in search_rows)
+    size = (ai.settings.get("worldMapSize") or [None])[0]
+    size_bits = int(size).bit_length() - 1 if size else None
+    chain_ok = all_maps
+    for p in pairs:
+        row = dict(p, loaded=False)
+        rows.append(row)
+        if not all_maps:
+            row["reason"] = "a search map failed to load"
+            continue
+        if not chain_ok:
+            row["reason"] = "an earlier strategic map failed to load"
+            continue
+        try:
+            if size_bits is None or (1 << size_bits) != int(size):
+                raise ValueError(f"world map size {size}")
+            hit = files.find(f"Pathfinding/{p['name']}.raw")
+            if not hit:
+                raise ValueError(f"no Pathfinding/{p['name']}.raw")
+            data = files.read(hit)
+            sm = read_strategic_map_raw(data)
+            n = 1 << (size_bits - 6)
+            if (sm.cells_x, sm.cells_z) != (n, n):
+                raise ValueError(f"{sm.cells_x} x {sm.cells_z} cells, the map has {n}")
+            hit = files.find(f"Pathfinding/{p['name']}Info.raw")
+            if not hit:
+                raise ValueError(f"no Pathfinding/{p['name']}Info.raw")
+            info = files.read(hit)
+            want = (size_bits - 6, size_bits - 6, 6, p["level"] + 1, 1)
+            if search_map_header(info) != want:
+                raise ValueError(f"Info header {search_map_header(info)}, want {want}")
+            read_cell_map_raw(info)
+        except ValueError as exc:
+            row["reason"] = str(exc)
+            chain_ok = False
+            continue
+        row.update(loaded=True, data=data, info=info)
+    return rows
+
+
 def level_search_maps(files, ai: LevelAi | None) -> list[dict[str, Any]]:
     """What `ai.loadMaps` loads for this level, map by map.
 
@@ -635,6 +871,24 @@ def write_level_search_maps(files, ai: LevelAi | None, out_dir) -> dict[str, Any
         return None
     dest.mkdir(parents=True, exist_ok=True)
     keep = {"index.json"}
+    strategic = level_strategic_maps(files, ai, rows)
+
+    def put(name: str, data: bytes) -> None:
+        target = dest / name
+        if not target.is_file() or target.read_bytes() != data:
+            tmp = dest / (name + ".tmp")
+            tmp.write_bytes(data)
+            tmp.replace(target)
+
+    for row in strategic:
+        data, info = row.pop("data", None), row.pop("info", None)
+        if not row["loaded"] or data is None or info is None:
+            continue
+        row["file"], row["infoFile"] = f"{row['name']}.raw", f"{row['name']}Info.raw"
+        row["bytes"] = len(data) + len(info)
+        for name, blob in ((row["file"], data), (row["infoFile"], info)):
+            keep.add(name)
+            put(name, blob)
     for row in rows:
         data = row.pop("data", None)
         if not row["loaded"] or data is None:
@@ -653,7 +907,8 @@ def write_level_search_maps(files, ai: LevelAi | None, out_dir) -> dict[str, Any
     for stale in dest.iterdir():
         if stale.name not in keep:
             stale.unlink()
-    index = {"worldMapSize": ai.settings.get("worldMapSize") if ai else None, "maps": rows}
+    index = {"worldMapSize": ai.settings.get("worldMapSize") if ai else None, "maps": rows,
+             "searchTypes": list(ai.searchTypes) if ai else [], "strategic": strategic}
     text = json.dumps(index, indent=1)
     target = dest / "index.json"
     if not target.is_file() or target.read_text() != text:
