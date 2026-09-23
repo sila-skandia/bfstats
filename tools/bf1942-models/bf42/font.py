@@ -15,9 +15,10 @@ A `.dif` is a tab-separated text file:
 `left` / `right` are the side bearings and `width` the inked width, so the
 pen advances `left + width + right` per glyph. `ascent` is the distance from
 the glyph's top row to the baseline (a comma has 2, a dollar sign 9 in the
-8 px face), so `top = baseline - ascent` places every glyph; the face's
-baseline is the largest ascent any glyph has. `(x0, y0)-(x1, y1)` is the
-glyph's rectangle in the atlas, whose `x1 - x0` equals `width`.
+8 px face), so `top = baseline - ascent` places every glyph. The face's
+baseline is `line height - 1` -- measured off the game, see `BitmapFont`.
+`(x0, y0)-(x1, y1)` is the glyph's rectangle in the atlas, whose
+`x1 - x0` equals `width`.
 
 The atlas is an 8-bit greyscale TGA (image type 3) holding coverage only:
 the engine draws the glyph in the current colour and uses the texel as
@@ -59,11 +60,26 @@ class BitmapFont:
 
     @property
     def baseline(self) -> int:
-        """Where the baseline sits below the line's top: the cap height.
-        Accented capitals and the dollar sign reach a row or two above it,
-        exactly as they overshoot the cap line in any typeface."""
-        caps = [g.ascent for c, g in self.glyphs.items() if 48 <= c <= 90]
-        return max(caps or [g.ascent for g in self.glyphs.values()] or [self.line_height])
+        """Where the baseline sits below the line's top: `line_height - 1`.
+
+        The `.dif` carries no baseline of its own -- only the line height --
+        so this is the one number here that had to be measured rather than
+        read, and it is measured off the game, not guessed. Four leaves, two
+        retail captures, four faces, every one of them `line_height - 1`:
+
+        | leaf | rect y | face (line height) | glyph ascent | ink top |
+        |---|---|---|---|---|
+        | `menu/InGame` Axis ticket | 4 | Trebuchet MS14 (19) | 14 | 8 |
+        | `menu/InGame` primary ammo | 527 | Trebuchet MS11 (15) | 11 | 530 |
+        | `menu/InGame` magazine count | 576 | standard6 (8) | 7 | 576 |
+        | `menu/InternetMenu` "INTERNET GAME" | 133 | Trebuchet MS8 (11) | 8 | 135 |
+
+        Each ink top is `rect y + (line_height - 1) - ascent`. The earlier
+        reading -- the largest ascent among `0`-`Z`, i.e. the cap height --
+        happens to agree only for the 8 px faces, where the cap height IS
+        `line_height - 1`; on Trebuchet MS14 it drew the ticket counts four
+        rows high, out through the top of their own plate."""
+        return self.line_height - 1
 
     def measure(self, text: str) -> int:
         return sum(self.glyphs[ord(c)].advance for c in text if ord(c) in self.glyphs)

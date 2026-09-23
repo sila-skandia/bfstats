@@ -150,14 +150,16 @@ export function minimapWindow(here, span) {
 }
 
 /** A point of the unrotated surface turned by the canvas angle `rot` about
- *  the surface's centre `mid` — the same mapping `ctx.rotate(rot)` applies
- *  about that centre (y down, positive clockwise), so a marker placed with
- *  this lands on the art drawn under that transform. */
-export function rotateAbout(x, y, mid, rot) {
+ *  the surface's centre (`midX`, `midY`) — the same mapping `ctx.rotate(rot)`
+ *  applies about that centre (y down, positive clockwise), so a marker placed
+ *  with this lands on the art drawn under that transform. `midY` defaults to
+ *  `midX` for the square surfaces; the HUD widget passes its own backing
+ *  centre (it is wider than tall by the measured frame ratio). */
+export function rotateAbout(x, y, midX, rot, midY = midX) {
   if (!rot) return { x, y };
   const c = Math.cos(rot), s = Math.sin(rot);
-  const dx = x - mid, dy = y - mid;
-  return { x: mid + dx * c - dy * s, y: mid + dx * s + dy * c };
+  const dx = x - midX, dy = y - midY;
+  return { x: midX + dx * c - dy * s, y: midY + dx * s + dy * c };
 }
 
 /** The source rectangle (art fractions) and destination rectangle (surface
