@@ -37,6 +37,8 @@ MODULES = {
     "idle-vehicle.js": VIEWER / "idle-vehicle.js",
     # gunfire.js's own import graph, all of it leaf modules bar three.
     "collision.js": VIEWER / "collision.js",
+    "collision-materials.js": VIEWER / "collision-materials.js",
+    "heightfield.js": VIEWER / "heightfield.js",
     "effects-core.js": VIEWER / "effects-core.js",
     "physics.js": VIEWER / "physics.js",
     "parachute.js": VIEWER / "parachute.js",
