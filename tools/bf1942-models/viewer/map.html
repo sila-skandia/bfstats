@@ -430,13 +430,13 @@ function uiFocused() {
   return t && (t.tagName === 'SELECT' || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA');
 }
 const level = createLevel({
-  get activeMod() { return activeMod; }, get botRoot() { return botBodies.botRoot; },
-  set botRoot(v) { botBodies.botRoot = v; }, get bust() { return bust; },
+  get activeMod() { return activeMod; }, get bust() { return bust; },
   get camera() { return camera; }, get capture() { return pageInput.capture; },
   get capturePresentationTick() { return localPlayer.capturePresentationTick; },
   get cubeLoader() { return cubeLoader; }, get damageVisuals() { return wrecks.damageVisuals; },
   get DEFAULT_DRAW() { return DEFAULT_DRAW; },
   get disposeSounds() { return pageAudio.disposeSounds; }, get effects() { return effects; },
+  get ensureBotRoot() { return botBodies.ensureRoot; },
   get entryPoints() { return localPlayer.entryPoints; },
   set entryPoints(v) { localPlayer.entryPoints = v; }, get fireStates() { return fireStates; },
   get floatPlacedVehicles() { return hullBodies.floatPlacedVehicles; },
@@ -1287,7 +1287,8 @@ const botBodies = createBotVisuals({
   get footBodyClips() { return footBodies.footBodyClips; },
   get footBodyLoader() { return footBodies.footBodyLoader; },
   get MODELS_BASE() { return MODELS_BASE; },
-  get presentAlpha() { return localPlayer.presentAlpha; }, get world() { return level.world; },
+  get presentAlpha() { return localPlayer.presentAlpha; }, get scene() { return scene; },
+  get world() { return level.world; },
 });
 /** The edge of the human's fire input last frame, for the bots' hearing. */
 let frameInputWasFiring = false;
