@@ -11,10 +11,13 @@ import { kitIconCandidates } from './kit-icon.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `bfmap`, `bust`, `cameraHeading`, `drawFullMap`, `feedTicketVars`,
+ * `bfmap`, `bust`, `cameraHeading`, `deployGroup`, `deployHoverBtn`,
+ * `deployHoverVar`, `deployKept`, `deployKit`, `deployRejoin`,
+ * `deployTeamId`, `deployUnchosen`, `drawFullMap`, `feedTicketVars`,
  * `fullmapBox`, `fullmapCanvas`, `hudPack`, `hudPaths`, `KIT_ROW_KEYS`,
- * `kitLoadout`, `kitRowLabelFor`, `loadouts`, `setScoreboard`, `sprite`,
- * `teamNation`, `updateKitAriaLabels`, `worldReady`.
+ * `kitLoadout`, `kitRowLabelFor`, `loadouts`, `scoreFromSpawn`,
+ * `setScoreboard`, `sprite`, `teamNation`, `updateKitAriaLabels`,
+ * `worldReady`.
  */
 export function createDeployScreen(page) {
   const deployScreen = {};
@@ -38,31 +41,6 @@ export function createDeployScreen(page) {
   const deploySuicideBtn = document.getElementById('deploy-suicide');
   const deployScoreBtn = document.getElementById('deploy-score');
   const deployResumeBtn = document.getElementById('deploy-resume');
-  // Whether a live soldier waits behind the screen (M or Shift+R over a life
-  // in progress). Cancelling a redeploy keeps him where he stood; cancelling a
-  // join has nobody to keep and falls back to fly. It is also the game's
-  // `Kit/IsAlive`: SUICIDE / RESUME with a life behind the screen, CLOSE / DONE
-  // without one.
-  deployScreen.deployRejoin = false;
-  // The selection as it stood when the screen opened, so a cancelled redeploy
-  // does not leave the panel's select pointing somewhere nobody went.
-  deployScreen.deployKept = '';
-  // Nothing chosen. `spawnFlagSelect` has no empty value and several things
-  // read it, so "no spawn" is a flag beside it rather than a cleared select:
-  // a click on the map away from every ring sets it, choosing anything clears
-  // it, and while it is set the commit is free roam instead of a spawn.
-  deployScreen.deployUnchosen = false;
-  // The tab: 1 Axis, 2 Allied — the game's `Kit/ShowKit`. Follows the chosen
-  // flag and filters the rings.
-  deployScreen.deployTeamId = 2;
-  // The deck spot chosen on a ship flag, as the spawn group its ring stands
-  // for. Null for an island flag — their single ring carries no group.
-  deployScreen.deployGroup = null;
-  deployScreen.deployKit = 'assault';
-  // The `Kit/MouseOver/*` flag the pointer currently holds true, and the footer
-  // button under it, for the mouse-over plate.
-  deployScreen.deployHoverVar = null;
-  deployScreen.deployHoverBtn = null;
 
   // --- the open/close animation ------------------------------------------------
   //
@@ -87,12 +65,15 @@ export function createDeployScreen(page) {
   // 0.7 (1 - exp(-9*0.134) ~= 0.7). `.deploy-ready` is that threshold.
   const BFMAP_CHROME_Z = 0.7;
 
-  // True while the score board stands in for the spawn interface (opened by its
-  // SCORE BOARD button). Declared here, ahead of the board's own block, because
-  // the deploy close paths below read it and can run before that block has.
-  deployScreen.scoreFromSpawn = false;
   deployScreen.deployZ = 0;        // the eased zoom fraction: 0 minimap, 1 spawn map
   deployScreen.deployZTarget = 0;  // where BfMap__animate is easing it
+  /** Ease the map open; `fresh` when the pane was hidden (reopening mid-close
+   *  just flips the target). */
+  deployScreen.easeOpen = fresh => {
+    if (fresh) deployScreen.deployZ = 0;
+    deployScreen.deployZTarget = 1;
+  };
+  deployScreen.easeClose = () => { deployScreen.deployZTarget = 0; };
 
   function deployTransitionActive() {
     return deployScreen.deployZ !== deployScreen.deployZTarget;
@@ -112,7 +93,7 @@ export function createDeployScreen(page) {
    *  instant close used to do — chrome stripped so a level switch or a plain
    *  Escape can never leave the screen armed behind a hidden overlay. */
   function finishDeployClose() {
-    if (deployScreen.scoreFromSpawn) page.setScoreboard(false);
+    if (page.scoreFromSpawn) page.setScoreboard(false);
     page.fullmapBox.hidden = true;
     page.fullmapBox.classList.remove('deploy', 'deploy-ready');
     fullmapFrame.removeAttribute('style');
@@ -267,13 +248,13 @@ export function createDeployScreen(page) {
    *  under this page's state. */
   function deployVars() {
     const vars = { ...(spawnLayout.data?.variables || {}) };
-    vars['Kit/ShowKit'] = deployScreen.deployTeamId;
-    vars['Kit/SelectedKit'] = Math.max(0, KITS.indexOf(deployScreen.deployKit));
-    vars['Kit/IsAlive'] = deployScreen.deployRejoin;
+    vars['Kit/ShowKit'] = page.deployTeamId;
+    vars['Kit/SelectedKit'] = Math.max(0, KITS.indexOf(page.deployKit));
+    vars['Kit/IsAlive'] = page.deployRejoin;
     vars['ChangeTeam/ShowChangeTeam'] = true;
     page.feedTicketVars(vars);
     for (const k of Object.keys(vars)) if (k.startsWith('Kit/MouseOver/')) vars[k] = false;
-    if (deployScreen.deployHoverVar) vars[deployScreen.deployHoverVar] = true;
+    if (page.deployHoverVar) vars[page.deployHoverVar] = true;
     return vars;
   }
 
@@ -306,12 +287,12 @@ export function createDeployScreen(page) {
    *  flag and the kit photographs, resolved for this level's nations. */
   function deployTexture(el, vars) {
     if (!el.var) return el.texture;
-    const nation = page.teamNation(deployScreen.deployTeamId);
+    const nation = page.teamNation(page.deployTeamId);
     if (el.var === 'ChangeTeam/AxisTeamFlag' || el.var === 'ChangeTeam/AlliedTeamFlag') {
       return `icon_flag_${nation}`;
     }
     const kit = /^Kit\/Icons\/KitIcon(\d)$/.exec(el.var);
-    if (kit) return kitPhoto(KITS[Number(kit[1]) - 1], nation, deployScreen.deployTeamId);
+    if (kit) return kitPhoto(KITS[Number(kit[1]) - 1], nation, page.deployTeamId);
     // Anything else bound to a live variable resolves the way `hud.js` does it:
     // strip the path and the extension, lower-case. This is only reached for
     // leaves nothing above claims — today the two ticket flags. Note that
@@ -451,7 +432,7 @@ export function createDeployScreen(page) {
           // A button plate is drawn at its texture's own size (the 109x25
           // art sits inside a 128x128 sheet); the node's Width/Height is the
           // pointer region, not a scale.
-          const img = page.sprite(deployScreen.deployHoverBtn === buttonHover[el.id] ? el.hover : el.texture);
+          const img = page.sprite(page.deployHoverBtn === buttonHover[el.id] ? el.hover : el.texture);
           if (!img) break;
           ctx.imageSmoothingEnabled = true;
           ctx.drawImage(img, x, y, img.width, img.height);
