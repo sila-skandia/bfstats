@@ -545,9 +545,16 @@ export function createLevel(page) {
     // Both tables are small (damage.json 154 KB shared across every level,
     // materials.png a couple of KB) and both are needed before the first shot,
     // not before the first frame.
-    const [terrainMaterials, damageTables] = await Promise.all([
+    // The level's baked search maps too (`pathfinding/`, under a megabyte a
+    // level), which the bots' nav maps are taken from (`nav-baked.js`).
+    const [terrainMaterials, damageTables, , searchMaps] = await Promise.all([
       terrain.loadTerrainMaterials(dir), terrain.loadDamageTables(dir), page.loadCollisionMeshes(dir),
+      terrain.loadSearchMaps(dir),
     ]);
+    if (page.extras) {
+      Object.defineProperty(page.extras, 'bakedSearchMaps',
+        { value: searchMaps, configurable: true, writable: true, enumerable: false });
+    }
     terrain.setTables(terrainMaterials, damageTables);
     const collision = terrain.buildCollider(level.currentRoot);
     // After the collider: a body is keyed by the owner id the index handed out.

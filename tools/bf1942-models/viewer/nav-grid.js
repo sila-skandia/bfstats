@@ -75,10 +75,23 @@
 //    the map's spawn points and blocks everything it did not reach, which is
 //    what closes a sandbag's top and a walled yard with no door.
 
+// The level's own maps (AI-95). Every level archive ships its search maps
+// baked (`Pathfinding/<name>Level<L>Map.raw`) and the retail server loads
+// them with `ai.loadMaps` (`AIPathfinding::loadSearchMaps` 0x0847c5c0 ->
+// `LocalMap::loadRawFile` 0x085fefb0 -> `CellMap::loadRawFile` 0x085f8930)
+// rather than painting. Everything above is how those files were made; the
+// page and the runner load them (`nav-baked.js`) and `buildNavMap` takes the
+// level's map for the parameters it is asked for, painting only where the
+// level has none (the six vanilla, XPack and EoD levels with no `AI.con`,
+// and a map the engine does not load: the first one whose file is missing
+// ends `loadSearchMaps` and leaves it, and every map declared after it, as
+// `CellMap::CellMap` 0x085f7af0 made it, all free).
+//
 // The map and the searches live in their own modules and this one re-exports
 // them, so every importer keeps reading `./nav-grid.js`:
 //
 //   `nav-map.js`     the cell codes, the brush and `buildNavMap`
+//   `nav-baked.js`   the level's baked maps: fetch, decode, pick
 //   `nav-search.js`  the queries, the traces and the searches
 
 export {
@@ -87,6 +100,9 @@ export {
   CELL_UNREACHABLE, CELL_LAND,
   brushOffsets, buildNavMap,
 } from './nav-map.js';
+export {
+  decodeSearchMap, findSearchMap, loadSearchMaps, readSearchMaps, BakedSearchMap,
+} from './nav-baked.js';
 export {
   LOCAL_SEARCH_MAX_NODES,
   gridAt, isWalkable, freeLevel, navHeight, traceClear, traceValidPoint,
