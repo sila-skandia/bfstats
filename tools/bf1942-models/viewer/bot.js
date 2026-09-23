@@ -42,14 +42,15 @@
 import { DeviationModel } from './deviation.js';
 import { findLocalPath, findStrategicPath, traceClear, traceValidPoint, isWalkable, COARSE_CELL, freeRun, freeBox, freeLevel } from './nav-grid.js';
 import { BotSenses, lineClear, playerPosition, SOLDIER_RADIUS } from './bot-sense.js';
-import { scoreTargets, scoreVehicleTargets, firingPose, firePlanFor, weaponAiOf, FIRE, SOLDIER_BATTLE_STRENGTH, VEHICLE_FIRE } from './bot-fire.js';
-import { ScoutState, TakeCoverState, QUADRANTS, quadrantOf, SCOUT, TAKE_COVER, MedicState, MEDIC } from './bot-behaviours.js';
+import { firingPose, firePlanFor, weaponAiOf, FIRE, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
+import { ScoutState, TakeCoverState, QUADRANTS, SCOUT, TAKE_COVER, MedicState, MEDIC } from './bot-behaviours.js';
 import { tankControl, unitUrgency, orderSplit, changeUrgency, teleportChangeUrgency, TANK, CHANGE, TELEPORT } from './bot-vehicle.js';
 import { decleiningSlope } from './bot-behaviours.js';
 import { boatControl, aimAtDirection, towardsPoint, attackRunStep, roundMiss, planeFireMode, insideBattleZone, PLANE, BOAT, PLANE_FIRE } from './bot-vehicle-air.js';
 import { fireStrength, unitTable, STRENGTH } from './bot-strength.js';
 import * as aiming from './bot-aim.js';
 import { AIM_COUNTS_MAX, wrapAngle, faceTarget } from './bot-aim.js';
+import * as perception from './bot-perception.js';
 
 export { PI } from './bot-aim.js';
 
@@ -476,206 +477,27 @@ export class BotController {
     this.route = null;
   }
 
-  /** The world's line-of-sight test between two points. */
-  _lineClear(from, to) {
-    return lineClear(this.world?.collider, from, to, this._selfOwner());
-  }
+  _lineClear(from, to) { return perception.lineClearSkippingSelf(this, from, to); }
+  _selfOwner() { return perception.selfOwner(this); }
 
-  /** The collision owner of the hull the bot sits in, -1 on foot: its own
-   *  rays skip it (`collideLineWithWorld` ignores the bot's unit). */
-  _selfOwner() {
-    const node = this.vehicle?.node;
-    return node ? (this.world?.collider?.statics?.ownerOf?.(node) ?? -1) : -1;
-  }
-
-  // -----------------------------------------------------------------------
-  // Sensing hooks the page calls
-  // -----------------------------------------------------------------------
-
-  /**
-   * A shot was fired somewhere (the page calls this for the human and for
-   * every bot). Hearing per `soundPerceptionCalculation`: enemy shots inside
-   * the weapon's sound radius within 3 s of firing, else the 15 m sphere.
-   */
-  onShotFired(shooterId, shooterTeam, pos, now, weaponRadius = null) {
-    if (shooterId === this.playerId) { this.senses.onOwnFire(now); return; }
-    const heard = this.senses.hear(now, shooterId, shooterTeam, pos, this.position, this.team,
-                                   { weaponRadius, firedAt: now });
-    if (heard) {
-      this.lastHeardPosition = [...pos];
-      this.timeSinceHeard = 0;
-    }
-  }
-
-  /** A round from `attackerId` at `pos` landed on (or near) this bot. */
-  onIncomingFire(attackerId, pos, now, hit = false, strength = 1) {
-    this.senses.onIncomingFire(now, attackerId, strength, hit, pos);
-    this.isUnderFire = true;
-    this.timeSinceNearbyShot = 0;
-  }
-
-  /** The page's older hook: the human fired near this bot. Counts as a heard
-   *  shot and as incoming fire. */
-  recordNearbyShot(shotPos, now, shooterId = 'local', shooterTeam = null) {
-    this.onShotFired(shooterId, shooterTeam, shotPos, now ?? 0);
-    const d = Math.hypot(shotPos[0] - this.position[0], shotPos[2] - this.position[2]);
-    if (d <= 20) this.onIncomingFire(shooterId, shotPos, now ?? 0, false, 1);
-  }
-
-  /** Older alias. */
-  hearSound(soundPos, now, sourceTeam = null) {
-    this.onShotFired('sound', sourceTeam, soundPos, now);
-  }
-
-  /** The page reports a round this bot fired (for the fire plan's counter). */
-  onShot(now) {
-    this.senses.onOwnFire(now);
-    this._shotsThisPlan = (this._shotsThisPlan ?? 0) + 1;
-    this._tally('shots', this.firingTarget);
-  }
-
-  /** The page: one of this bot's rounds landed on `targetId`. */
-  recordHit(targetId) {
-    this._tally('hits', targetId);
-  }
-
-  /** The memory record's per-weapon-slot tally for a target (+0x34 / +0x54). */
-  _tally(kind, targetId) {
-    const m = targetId ? this.senses.memory.get(targetId) : null;
-    if (!m) return;
-    const list = m[kind] ?? (m[kind] = []);
-    const i = this.weaponIndex ?? 0;
-    list[i] = (list[i] ?? 0) + 1;
-  }
-
-  /** Compatibility: the current firing target as the old `sense()` gave it. */
-  sense(now) {
-    this._sensePass(now ?? 0, 0);
-    const t = this._chooseFiringTarget(now ?? 0);
-    return { targetId: t.targetId, targetPos: t.targetPos };
-  }
-
-  /** One sensing pass plus the memory update. */
-  _sensePass(now, dt) {
-    const me = this._player();
-    if (!me || !this.world?.players) return;
-    const eye = this._eye();
-    // A seated bot looks where its gun points (the turret's heading), not
-    // where the hull does.
-    const lookYaw = this.vehicle ? (this._aimReference()?.yaw ?? this.yaw) : this.yaw;
-    this.senses.selfOwner = this._selfOwner();
-    // The vehicle frustums (75 / 45 / 15 deg, AI-33) while seated.
-    this.senses.isMobile = !!this.vehicle;
-    if (!this.senses.unitOwnerOf) {
-      this.senses.unitOwnerOf = (p) => {
-        const node = p?.occupancy?.root ?? p?.vehicle?.node ?? null;
-        return node ? (this.world?.collider?.statics?.ownerOf?.(node) ?? -1) : -1;
-      };
-    }
-    const basis = this._cameraBasis(lookYaw);
-    this.senses.sense(now, this.world, me, eye, lookYaw, basis);
-    this.senses.updateMemory(now, this.world, me, eye, lookYaw, basis);
-    // `updateSensingQuads`: every quadrant ages; the one the camera looks
-    // into is fresh.
-    for (let q = 0; q < QUADRANTS; q++) this.quadInertia[q] += dt;
-    const fq = quadrantOf(Math.sin(this.yaw), Math.sin(this.pitch), Math.cos(this.yaw));
-    this.quadInertia[fq] = 0;
-  }
-
-  /** `BBFire::calculateUrgency`'s target scoring, shared by Fire and `sense()`. */
-  _chooseFiringTarget(now) {
-    const collider = this.world?.collider;
-    const water = collider?.waterLevel;
-    const waterDepth = Number.isFinite(water) ? Math.max(0, water - this.position[1]) : 0;
-    const me = this._player();
-    const mySpeed = me?.soldier?.speed ?? 0;
-    if (this.vehicle) return this._chooseVehicleTarget(now);
-    return scoreTargets({
-      spotted: this.senses.spottedEnemies(),
-      position: this.position,
-      weapons: this.weapons,
-      now,
-      attackedBy: id => this.senses.attackedBy(id),
-      velocityOf: id => {
-        const p = this.world.players.get(id);
-        const s = p?.soldier;
-        if (!s) return null;
-        const v = s.body?.body?.velocity;
-        return v ? [v.x, v.y, v.z] : [Math.sin(s.yaw) * (s.speed ?? 0), 0, Math.cos(s.yaw) * (s.speed ?? 0)];
-      },
-      typeOf: () => 'Infantry',
-      currentTarget: this.firingTarget,
-      currentScore: this.targetScore,
-      insideOrderedArea: this._insideOrderedArea(),
-      insideArea: this.waypoints?.inside ? (pos) => this.waypoints.inside(pos[0], pos[2]) : null,
-      vetoed: this.vetoedTargets,
-      waterDepth,
-      mySpeed,
-    });
-  }
-
-  _insideOrderedArea() {
-    const wp = this.waypoints;
-    if (!wp?.inside) return true;
-    return wp.inside(this.position[0], this.position[2]);
-  }
+  onShotFired(shooterId, shooterTeam, pos, now, weaponRadius) { return perception.onShotFired(this, shooterId, shooterTeam, pos, now, weaponRadius); }
+  onIncomingFire(attackerId, pos, now, hit, strength) { return perception.onIncomingFire(this, attackerId, pos, now, hit, strength); }
+  recordNearbyShot(shotPos, now, shooterId, shooterTeam) { return perception.recordNearbyShot(this, shotPos, now, shooterId, shooterTeam); }
+  hearSound(soundPos, now, sourceTeam) { return perception.hearSound(this, soundPos, now, sourceTeam); }
+  onShot(now) { return perception.onShot(this, now); }
+  recordHit(targetId) { return perception.recordHit(this, targetId); }
+  _tally(kind, targetId) { return perception.tally(this, kind, targetId); }
+  sense(now) { return perception.sense(this, now); }
+  _sensePass(now, dt) { return perception.sensePass(this, now, dt); }
+  _chooseFiringTarget(now) { return perception.chooseFiringTarget(this, now); }
+  _insideOrderedArea() { return perception.insideOrderedArea(this); }
 
   _unitVelocity() { return aiming.unitVelocity(this); }
   _unitForward3() { return aiming.unitForward3(this); }
 
-  /** The class the bot's unit answers to in the enemy's tables. */
-  _myType() {
-    return this.vehicle ? (this.vehicle.strType ?? 'LightArmour') : 'Infantry';
-  }
-
-  /** `BBFireLargeBore` / `BBFire3d`: the mounted bot's target. */
-  _chooseVehicleTarget(now) {
-    const m = this.vehicle;
-    const air = m.kind === 'air';
-    const spotted = this.senses.spottedEnemies();
-    // `getEnemyObjects`: the enemy objects around that are not spotted.
-    const radius = air ? VEHICLE_FIRE.environmentRadiusAir
-      : (m.kind === 'ship' || m.kind === 'ground' || m.kind === 'tank' || m.kind === 'gun') ? VEHICLE_FIRE.environmentRadius
-      : VEHICLE_FIRE.environmentRadiusGround;
-    const environment = [];
-    for (const [id, p] of this.world?.players ?? []) {
-      if (id === this.playerId || p.team === this.team) continue;
-      if (this.world.armorOf?.(id)?.destroyed) continue;
-      const pos = playerPosition(p);
-      if (!pos) continue;
-      const d = Math.hypot(pos[0] - this.position[0], pos[2] - this.position[2]);
-      if (d <= radius) environment.push({ id, pos });
-    }
-    const aimable = (!m.drives && m.occupancy?.turret) ? (dir) => this._turretCanPoint(dir) : null;
-    return scoreVehicleTargets({
-      spotted, environment, position: this.position, forward: this._unitForward3(), velocity: this._unitVelocity(),
-      weapons: this.weapons, now,
-      attackedBy: id => this.senses.attackedBy(id),
-      velocityOf: id => {
-        const p = this.world.players.get(id);
-        const v = p?.vehicle?.state?.velocity ?? p?.soldier?.body?.body?.velocity;
-        if (v) return [v.x, v.y, v.z];
-        const s = p?.soldier;
-        return s ? [Math.sin(s.yaw) * (s.speed ?? 0), 0, Math.cos(s.yaw) * (s.speed ?? 0)] : null;
-      },
-      infoOf: id => this._unitInfo(id),
-      myType: this._myType(), myTable: unitTable(this.weapons), air, maxSpeed: m.maxSpeed ?? m.hullMaxSpeed ?? 0,
-      isAntiAircraft: this.weapons.some(w => w.isAntiAircraft),
-      currentTarget: this.firingTarget, currentScore: this.targetScore,
-      insideOrderedArea: this._insideOrderedArea(),
-      insideArea: this.waypoints?.inside ? (pos) => this.waypoints.inside(pos[0], pos[2]) : null,
-      vetoed: this.vetoedTargets, aimable, mode: air ? 'air' : 'largeBore',
-    });
-  }
-
-  /** What a target is: the page's description, else an infantryman. */
-  _unitInfo(id) {
-    const info = this.unitInfoOf?.(id);
-    if (info) return info;
-    const p = this.world?.players?.get(id);
-    return { type: p?.vehicleStrType ?? 'Infantry', air: p?.kind === 'air', table: SOLDIER_BATTLE_STRENGTH,
-             maxSpeed: p?.vehicle ? 20 : TANK.soldierMaxSpeed, seats: null, enemyManned: !!p?.vehicle, mobile: true };
-  }
+  _myType() { return perception.myType(this); }
+  _chooseVehicleTarget(now) { return perception.chooseVehicleTarget(this, now); }
+  _unitInfo(id) { return perception.unitInfo(this, id); }
 
   _turretCanPoint(dir) { return aiming.turretCanPoint(this, dir); }
 
