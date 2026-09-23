@@ -16,9 +16,11 @@ import { footstepMaterial } from './collision.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `AUDIO_OFF`, `MAPS_BASE`, `MODELS_BASE`, `bust`, `camera`, `currentDir`,
- * `currentRoot`, `effectAudio`, `extras`, `hudFeed`, `localPlayer`,
- * `optPilot`, `optSound`, `optSoundVol`, `scene`, `soldier`, `soldierKit`.
+ * `aircraft`, `AUDIO_OFF`, `bust`, `camera`, `car`, `currentDir`,
+ * `currentRoot`, `effectAudio`, `ensureHandFireBus`, `extras`, `gameHud`,
+ * `handFireBus`, `mannedGuns`, `MAPS_BASE`, `MODELS_BASE`, `optPilot`,
+ * `optSound`, `optSoundVol`, `scene`, `soldier`, `vehicleGuns`,
+ * `weaponSoundsManifest`.
  */
 export function createPageAudio(page) {
   const pageAudio = {};
@@ -206,7 +208,7 @@ export function createPageAudio(page) {
     if (ctx.state !== 'running' || ctx.currentTime < pageAudio.supplyGive.until) return;
     const source = ctx.createBufferSource();
     source.buffer = pageAudio.supplyGive.buffer;
-    source.connect(page.soldierKit.ensureHandFireBus(ctx));
+    source.connect(page.ensureHandFireBus(ctx));
     source.onended = () => { try { source.disconnect(); } catch (_) {} };
     try { source.start(); } catch (_) { return; }
     pageAudio.supplyGive.until = ctx.currentTime + pageAudio.supplyGive.buffer.duration;
@@ -379,7 +381,7 @@ export function createPageAudio(page) {
   async function ensureWorldFire() {
     if (pageAudio.worldFire && !pageAudio.worldFire.disposed) return pageAudio.worldFire;
     if (page.AUDIO_OFF) return null;
-    const manifest = await page.soldierKit.weaponSoundsManifest();
+    const manifest = await page.weaponSoundsManifest();
     if (!manifest) return null;
     if (pageAudio.worldFire && !pageAudio.worldFire.disposed) return pageAudio.worldFire;
     ensureAudioContext();
@@ -419,23 +421,23 @@ export function createPageAudio(page) {
 
   function updateAudio(dt = 0) {
     const master = masterVolume();
-    const duckTarget = (page.optPilot.checked && (page.localPlayer.aircraft || page.localPlayer.car)) ? AMBIENT_DUCK : 1;
+    const duckTarget = (page.optPilot.checked && (page.aircraft || page.car)) ? AMBIENT_DUCK : 1;
     pageAudio.ambientDuck += (duckTarget - pageAudio.ambientDuck)
       * (dt > 0 ? Math.min(1, dt / AMBIENT_DUCK_TAU) : 1);
     // Every claimed hull at once: the player's own, and every bot-driven one
     // within earshot. The rack holds the far ones at master 0 and evaluates
     // each patch's own `Volume <- Distance` ramps against the camera.
     if (pageAudio.vehicleAudio) {
-      pageAudio.vehicleAudio.playerGroups = [...(page.localPlayer.vehicleGuns ?? []), ...(page.localPlayer.mannedGuns ?? [])];
+      pageAudio.vehicleAudio.playerGroups = [...(page.vehicleGuns ?? []), ...(page.mannedGuns ?? [])];
       pageAudio.vehicleAudio.update(dt, page.camera.position);
     }
-    if (page.soldierKit.handFireBus) {
+    if (page.handFireBus) {
       // The hand-shot bus tracks the master like the engine bus does, and is
       // deliberately not ducked: the duck exists so a cockpit engine drowns the
       // surf, and the weapon at your own shoulder is the one thing louder.
       const target = master * WEAPON_HEADROOM;
-      if (Math.abs(page.soldierKit.handFireBus.gain.value - target) > 1e-4) {
-        page.soldierKit.handFireBus.gain.setTargetAtTime(
+      if (Math.abs(page.handFireBus.gain.value - target) > 1e-4) {
+        page.handFireBus.gain.setTargetAtTime(
           target, pageAudio.audioListener.context.currentTime, 0.05);
       }
     }
@@ -660,9 +662,9 @@ export function createPageAudio(page) {
   function triggerHitIndicator(direction, intensity = 1.0) {
     pageAudio.hitIndicatorDir = direction;
     pageAudio.hitIndicatorTimer = 1.0;
-    page.hudFeed.gameHud.vars['HitFromDir/HitFromDir'] = direction;
-    page.hudFeed.gameHud.vars['HitFromDir/HitFromDirAlpha'] = Math.max(0.1, Math.min(1.0, intensity));
-    page.hudFeed.gameHud.requestRepaint();
+    page.gameHud.vars['HitFromDir/HitFromDir'] = direction;
+    page.gameHud.vars['HitFromDir/HitFromDirAlpha'] = Math.max(0.1, Math.min(1.0, intensity));
+    page.gameHud.requestRepaint();
   }
 
   async function playSoldierHurtSound(isFriendlyFire = false, position = null) {
