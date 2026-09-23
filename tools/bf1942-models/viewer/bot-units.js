@@ -10,7 +10,7 @@
 
 import * as THREE from 'three';
 import { classifyRoot, surveyVehicle, seatYawLimits } from './seats.js';
-import { buildNavMap, isWalkable } from './nav-grid.js';
+import { buildNavMap, isWalkable, searchTypeMaps } from './nav-grid.js';
 import { craftTipped } from './doctrine-landing.js';
 
 /** The body radius a land vehicle keeps on its map, and a plane's or ship's
@@ -36,6 +36,8 @@ export function createBotUnits(env) {
     navVehicle: null,
     /** The boats' and landing craft's maps, by name, built on first use. */
     navWater: new Map(),
+    /** The maps built for a search type (`typeNav`), by search-map index. */
+    navByMap: new Map(),
     candidateCache: { at: -1, list: [] },
     entriesCollectedAt: -Infinity,
   };
@@ -108,6 +110,8 @@ export function createBotUnits(env) {
     if (units.navVehicle || !world) return units.navVehicle;
     const worldSize = world.extras?.worldSize || 2048;
     const sm = (world.extras?.ai?.searchMaps ?? []).find(m => /^Tank/i.test(m.name)) ?? null;
+    const built = [...units.navByMap.values()].find(n => n && sm && n.searchMap === sm.name);
+    if (built) return (units.navVehicle = built);
     const seeds = [];
     for (const spawn of world.extras?.objectSpawns ?? []) {
       if (spawn?.position) seeds.push([spawn.position[0], spawn.position[2]]);
@@ -140,6 +144,8 @@ export function createBotUnits(env) {
     const re = new RegExp('^' + name, 'i');
     const sm = maps.find(m => re.test(m.name) && m.waterMap) ?? maps.find(m => re.test(m.name)) ?? null;
     if (!sm) { units.navWater.set(name, null); return null; }
+    const built = [...units.navByMap.values()].find(n => n && n.searchMap === sm.name);
+    if (built) { units.navWater.set(name, built); return built; }
     const worldSize = world.extras?.worldSize || 2048;
     const seeds = [];
     for (const spawn of world.extras?.objectSpawns ?? []) if (spawn?.position) seeds.push([spawn.position[0], spawn.position[2]]);
@@ -164,14 +170,66 @@ export function createBotUnits(env) {
    * it stands on its own map: a boat's `Boat2`, a landing craft's
    * `LandingCraft3` (the maps `mountRecord` gives a helm). Null for every
    * other kind: the engine applies the test to every mobile root that is not
-   * an aircraft, but the viewer binds every land vehicle to `Tank0` (cars
-   * and jeeps belong on `Car4`, Brief O item 3), and 6 of Wake's Willys and
-   * 3 of El Alamein's land roots park off `Tank0`; the land test waits on
-   * the per-unit map.
+   * an aircraft; every vanilla land root's own map is `Tank0`, jeeps
+   * included (`vehicleNumber 0`, `typeNav` below, AI-118), and 6 of Wake's
+   * Willys and 3 of El Alamein's land roots park off it, so the land test is
+   * not applied yet.
    */
   units.ownMapOf = (node, kind = units.kindOf(node), ai = units.aiOf(node)) => {
     if (kind !== 'ship') return null;
     return units.waterNav(/lcvp|daihatsu|landing/i.test(ai?.name ?? '') ? 'LandingCraft' : 'Boat');
+  };
+
+  /**
+   * The map of search type `vehicleNumber` (`aiTemplatePlugIn.vehicleNumber`,
+   * `AITemplateMobile` +4): the type's own search map and strategic map
+   * (`nav-baked.js searchTypeMaps`). The engine binds a unit to its map by
+   * that number alone: `AIObjectMobile::init` 0x085d54b0 passes it to
+   * `isVehicleUsed` / `isValidPosition`, and `BotMain::initPathfinding`
+   * 0x0852a0d0 searches with it (the Mobile plug-in's template +4). So a
+   * vanilla jeep (`vehicleNumber 0`) routes on the first search type (Tank0
+   * on every vanilla level), not on `Car4`, which no vanilla unit names; the
+   * XPack2 LVT4 and Schwimmwagen (4) route on the level's fifth type
+   * (`Amphibius` where the level has one, `Car` elsewhere). `undefined`
+   * when the level lists no search types (an older tree, or a level with no
+   * `AI.con`): the caller keeps its own choice. Otherwise `{ nav, type }`,
+   * `nav` null for a type with no map (the engine does no pathfinding).
+   */
+  units.typeNav = vehicleNumber => {
+    const world = env.world();
+    const sm = world?.collider?.searchMaps ?? null;
+    if (!Array.isArray(sm?.index?.searchTypes)) return undefined;
+    const t = searchTypeMaps(sm, vehicleNumber);
+    if (!t) return undefined;
+    if (!t.row) return { nav: null, type: t.type, row: null };
+    const key = t.type.map;
+    if (units.navByMap.has(key)) return { nav: units.navByMap.get(key), type: t.type, row: t.row };
+    // The map a name-based builder already made for the same row is shared,
+    // so a hull's map is one object whoever asked for it first.
+    const same = [units.navVehicle, ...units.navWater.values()]
+      .find(n => n && n.searchMap === t.row.name && n.source === 'baked');
+    let nav = same ?? null;
+    if (!nav) {
+      const worldSize = world.extras?.worldSize || 2048;
+      const seeds = [];
+      for (const spawn of world.extras?.objectSpawns ?? []) if (spawn?.position) seeds.push([spawn.position[0], spawn.position[2]]);
+      const r = t.row;
+      const started = performance.now();
+      nav = buildNavMap(world.collider, worldSize, {
+        waterLevel: world.collider?.waterLevel, waterMap: !!r.waterMap,
+        waterDepth: r.waterDepth, maxSlopeDeg: r.maxSlope, brush: r.brush,
+        lowClip: r.lowClip, hiClip: r.hiClip, seeds, strategic: t.strategic ?? undefined,
+      });
+      console.log(`[bots] ${t.type.name} nav map (${r.name}): ${(performance.now() - started).toFixed(0)} ms`);
+    }
+    units.navByMap.set(key, nav);
+    // The water maps are also the name-keyed ones the landing orders and the
+    // test hooks look up (`waterNav('Boat')`, `waterNav('LandingCraft')`).
+    if (t.row.waterMap) {
+      const name = /^LandingCraft/i.test(t.row.name) ? 'LandingCraft' : /^Boat/i.test(t.row.name) ? 'Boat' : null;
+      if (name && !units.navWater.get(name)) units.navWater.set(name, nav);
+    }
+    return { nav, type: t.type, row: t.row };
   };
 
   /** Who holds a seat, human or bot: the hull's instance answers. */
@@ -380,7 +438,13 @@ export function createBotUnits(env) {
     const ai = units.aiOf(node);
     const landingCraft = /lcvp|daihatsu|landing/i.test(ai?.name ?? '');
     const drive = seat.isActiveRoot() ? inst.drive : null;
-    const nav = drive && ['ground', 'tank'].includes(inst.rootKind) ? units.vehicleNav()
+    // The hull's own search type (`typeNav`, AI-118); a level that lists
+    // none keeps the choice by drive kind (the Tank line for land, the
+    // water maps by name).
+    const typed = drive && inst.rootKind !== 'air' && Number.isInteger(ai?.vehicleNumber)
+      ? units.typeNav(ai.vehicleNumber) : undefined;
+    const nav = typed !== undefined ? typed.nav
+      : drive && ['ground', 'tank'].includes(inst.rootKind) ? units.vehicleNav()
       : drive && inst.rootKind === 'ship' ? units.waterNav(landingCraft ? 'LandingCraft' : 'Boat') : null;
     return {
       id: cand.id, vehicleId: cand.vehicleId, node, drive, occupancy: seat, kind: inst.rootKind,
@@ -391,7 +455,13 @@ export function createBotUnits(env) {
       nav,
       // A helm routed on the landing craft's map orders as one (the SAI's
       // `LandingCraft` search type).
-      landingCraft: !!nav && nav === units.navWater.get('LandingCraft'),
+      landingCraft: typed?.type ? /^LandingCraft/i.test(typed.type.name) && !!nav
+        : !!nav && nav === units.navWater.get('LandingCraft'),
+      // The search type's name on a land map (the `setOrderPosition` key the
+      // SAI's `getOrderPos` reads through the unit's map); the water types
+      // keep the landing orders' own names.
+      searchType: typed?.row && !typed.row.waterMap && !/^(Boat|LandingCraft)/i.test(typed.type.name)
+        ? typed.type.name : null,
       turnRadius: ai?.turnRadius ?? null, strType: cand.strType, seats: cand.seats, isRoot: cand.isRoot,
       // The hull's own velocity: its one drive, whoever holds the wheel.
       hullVelocity: () => inst.drive?.state?.velocity ?? null,
@@ -493,6 +563,7 @@ export function createBotUnits(env) {
   units.reset = () => {
     units.navVehicle = null;
     units.navWater.clear();
+    units.navByMap.clear();
     units.candidateCache = { at: -1, list: [] };
     units.entriesCollectedAt = -Infinity;
     kinds.clear();
