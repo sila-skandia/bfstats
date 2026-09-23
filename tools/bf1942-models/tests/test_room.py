@@ -61,7 +61,7 @@ _VIEWER_MODULES = [
     "world-soldier-tick", "world-vehicle-tick", "world-fields", "world-damage",
     "body-ground", "body-friction", "crash-damage", "effects-core", "projectile-damage",
     "collision", "collision-materials", "heightfield", "static-index", "collision-meshes",
-    "drivable-mask", "world-collider", "flight", "vehicle-camera", "vehicle-discovery", "vehicle-base",
+    "drivable-mask", "world-collider", "vehicle-camera", "vehicle-discovery", "vehicle-base",
     "aircraft", "wheeled-vehicle", "suspension", "ground-specs", "ground-contact", "ground-engine",
     "tracked-vehicle", "game-modes", "netcode",
     # Reached through seats.js: the salvo arithmetic and the HUD weapon-slot

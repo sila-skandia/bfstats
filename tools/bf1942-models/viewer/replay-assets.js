@@ -3,7 +3,7 @@
 // onto them. One ReplayAssets lives on the replay controller, so the caches
 // outlast any one recording and are never shared through module state.
 
-import { isPropellerBlurPair } from './flight.js';
+import { isPropellerBlurPair } from './vehicle-base.js';
 
 /**
  * The idle propeller state every replayed aircraft carries, and why.

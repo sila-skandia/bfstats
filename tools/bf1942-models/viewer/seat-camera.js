@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { VehicleCamera, FixedSubject } from './flight.js';
+import { VehicleCamera, FixedSubject } from './vehicle-camera.js';
 import { seatViewModes, noseCamOffset } from './seat-view.js';
 import { ServerSettings, readServerSettings } from './server-settings.js';
 import { readWorldPose, AIM_INPUTS } from './seats.js';

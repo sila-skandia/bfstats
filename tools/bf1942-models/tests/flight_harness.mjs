@@ -1,7 +1,8 @@
-// Flies `viewer/flight.js` outside a browser and prints one JSON blob.
+// Flies the viewer's flight model (`vehicle-base.js`, `aircraft.js`) outside a
+// browser and prints one JSON blob.
 //
 // Same shape as `physics_harness.mjs` and `collision_harness.mjs`, with one
-// difference they do not have: `flight.js` imports three.js, so it cannot just
+// difference they do not have: the flight model imports three.js, so it cannot just
 // be copied next to the harness and run. `tests/test_flight.py` stands the
 // vendored `three.module.js` up as a one-file package under `node_modules` and
 // mirrors `vendor/loaders/` beside the module, which is enough to import it
@@ -24,7 +25,10 @@
 // here starts above 900 m, and the one case that does is the ceiling test.
 
 import * as THREE from 'three';
-import { Aircraft, CORSAIR, GRAVITY, Vehicle, calculateLift, VehicleCamera, findVehicle } from './flight.mjs';
+import { Vehicle } from './vehicle-base.js';
+import { Aircraft, CORSAIR, GRAVITY, calculateLift } from './aircraft.js';
+import { VehicleCamera } from './vehicle-camera.js';
+import { findVehicle } from './vehicle-discovery.js';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 
 const DEG = 180 / Math.PI;
@@ -962,7 +966,7 @@ for (const dt of [1 / 60, 1 / 30, 0.1]) {
 // retaken, and each one used to fetch `<Control>.cockpit.glb` and graft another
 // interior beside the last: 6 geometries and 4 textures per Willys entry, never
 // released. `loadAsync` is stood in for here — the same `GLTFLoader` module
-// instance `flight.mjs` imports — so the real `loadCockpit` path runs with no
+// instance `vehicle-base.js` imports — so the real `loadCockpit` path runs with no
 // network, and a load is a thing that can be counted.
 
 {

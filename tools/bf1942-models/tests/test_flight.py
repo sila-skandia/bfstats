@@ -1,8 +1,9 @@
-"""`viewer/flight.js` under node: a Corsair flown, not a Corsair read.
+"""The flight model (`viewer/aircraft.js` on `vehicle-base.js`) under node: a
+Corsair flown, not a Corsair read.
 
 Same pattern as `test_physics.py` and `test_collision.py` — one node run,
 many assertions, because starting the runtime is the slow part. The one thing
-those two did not have to solve is that `flight.js` imports three.js, so
+those two did not have to solve is that the flight model imports three.js, so
 `run_harness` stands the vendored `three.module.js` up as a one-file package
 under `node_modules` and mirrors `vendor/loaders/` next to the module. That is
 enough to import the viewer's file byte-for-byte, which is the point: a test
@@ -50,10 +51,10 @@ ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).resolve().parent / "flight_harness.mjs"
 
-# `flight.js` copied as `.mjs` next to the harness, plus the two vendored files
-# it reaches for at their own relative paths.
+# The flight model's modules (`vehicle-base.js`, `aircraft.js`, `vehicle-camera.js`,
+# `vehicle-discovery.js`) under their own names next to the harness, plus the
+# two vendored files they reach for at their own relative paths.
 MODULES = {
-    "flight.mjs": VIEWER / "flight.js",
     "vehicle-camera.js": VIEWER / "vehicle-camera.js",
     "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",
     "vehicle-base.js": VIEWER / "vehicle-base.js",

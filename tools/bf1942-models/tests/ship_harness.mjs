@@ -1,7 +1,7 @@
 // Sails `viewer/ship.js` outside a browser and prints one JSON blob.
 //
 // Same arrangement as `flight_harness.mjs`, which `test_ship.py` reuses:
-// `ship.js` imports three and `flight.js`, so both are copied in and the
+// `ship.js` imports three and `aircraft.js`, so both are copied in and the
 // vendored three is published as a one-file package.
 //
 // The hull is built here as an `Object3D` tree carrying exactly the `userData`
@@ -17,7 +17,7 @@
 // negated, exactly as `bf42/gltf.py` writes them.
 import * as THREE from 'three';
 import { Ship, shipSpec, hullGeometry } from './ship.mjs';
-import { GRAVITY } from './flight.mjs';
+import { GRAVITY } from './aircraft.js';
 
 const WATER = 20;
 /** The Fletcher's closed-form draft: 20 + 20 - 9.82*20/(8*2) - 7.5. */
