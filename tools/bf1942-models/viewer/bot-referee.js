@@ -36,6 +36,8 @@ import { spawnBots } from './bot.js';
 import { EnemyStrengthTables } from './bot-strength.js';
 import { playerPosition } from './bot-sense.js';
 import { SAI, StrategicLayer, StrategicAI, StrategicCommand } from './strategic.js';
+import { roundHit } from './soldier-death.js';
+import { meetSoldier } from './skeleton-hit.js';
 
 /** Seconds a downed bot stays out before its side puts it back on a flag. */
 export const BOT_RESPAWN_DELAY = 8;
@@ -310,7 +312,10 @@ export function rollCone(r, spreadRad) {
  *    `damageTarget(hit, bot, at)` (true: the caller billed a non-bot target),
  *    `damageHull(bot, damage, opts)` (true: a mounted bot's hull took it),
  *    `defaultAttackerPos()`, `onHurt(bot, lost)`, `onDeath(bot, attackerId,
- *    opts)`, `onHealed(playerId, armor, before)`, `mountedFire(bot, dt)`,
+ *    opts)` (`opts.seated`: he died in his seat), `seatedBodyAt(playerId)`
+ *    (a seated player's stand-in body, see `referee.bodyAt`),
+ *    `capsulesOf(playerId)` (the drawn body's hit capsules, `rig-capsules.js`,
+ *    or null where nobody draws him), `onHealed(playerId, armor, before)`, `mountedFire(bot, dt)`,
  *    `captureEnabled()`, `onCapture(bot, flag, prevTeam)`, `onMounted(bot,
  *    cand, mount)`, `onDismounted(bot, mount, opts)`, `onSeatSwitched(bot,
  *    cand)`, `onStrategyChange(side, from, to)`, `onBotCreated(bot)`.
@@ -562,7 +567,36 @@ export function createBotReferee(env) {
    * The friendly test is the one `sense()` applies, with no local-player
    * exception: a round never resolves against a soldier on the shooter's side.
    */
-  referee.resolveShot = (bot, damage, aimAt = null) => {
+  /**
+   * Where `playerId`'s stand-in body is: `{ x, y, z }` at the feet, or null
+   * when a round cannot meet him. On foot that is his soldier. In a seat it is
+   * whatever `env.seatedBodyAt` says -- the page draws a seated man only where
+   * the seat declares a SeatObject, and only a man who is drawn can be hit --
+   * and a caller that does not answer for this player (`undefined`) leaves him
+   * on his soldier, which is what every seated target was before.
+   */
+  referee.bodyAt = playerId => {
+    const player = world()?.player(playerId);
+    if (!player) return null;
+    if (player.occupancy?.root) {
+      const seated = env.seatedBodyAt?.(playerId);
+      // Tagged, so the round that meets him is his and not his hull's.
+      if (seated !== undefined) return seated && { ...seated, seated: true };
+    }
+    return player.soldier ?? null;
+  };
+
+  /** `playerId`'s hit capsules this frame, where a body is drawn. */
+  referee.capsulesOf = playerId => env.capsulesOf?.(playerId) ?? null;
+
+  /**
+   * Resolve a round against the world's players. A drawn body is met through
+   * the engine's own capsules (`skeleton-hit.js`), first capsule in
+   * declaration order; one nobody draws through the stand-in sphere.
+   * `damageFor(material)`, when given, re-prices the round for the capsule's
+   * material -- head 40, chest 41, limbs 42, each its own defence group.
+   */
+  referee.resolveShot = (bot, damage, aimAt = null, damageFor = null) => {
     const w = world();
     const { origin, dir } = bot.aimRay();
     let d = dir;
@@ -581,16 +615,20 @@ export function createBotReferee(env) {
       if (id === bot.playerId) continue;
       if (me && player.team === me.team) continue;
       if (w.armorOf(id)?.destroyed) continue;
-      const s = player.soldier;
+      const s = referee.bodyAt(id);
       if (!s) continue;
-      const px0 = s.x - origin[0], py0 = (s.y + BOT_BODY_HEIGHT) - origin[1], pz0 = s.z - origin[2];
-      const t = px0 * cx + py0 * cy + pz0 * cz;
-      if (t < 0 || t > BOT_FIRE_RANGE) continue;
-      const px = px0 - t * cx, py = py0 - t * cy, pz = pz0 - t * cz;
-      if (px * px + py * py + pz * pz > BOT_BODY_RADIUS * BOT_BODY_RADIUS) continue;
-      const at = [origin[0] + t * cx, origin[1] + t * cy, origin[2] + t * cz];
-      if (!lineOfSight(w.collider, origin, at)) continue;
-      if (t < bestT) { bestT = t; best = { targetId: id, damage, dist: t }; }
+      const met = meetSoldier(origin, [cx, cy, cz], BOT_FIRE_RANGE, {
+        capsules: referee.capsulesOf(id),
+        center: [s.x, s.y + BOT_BODY_HEIGHT, s.z], radius: BOT_BODY_RADIUS,
+      });
+      if (!met || met.t >= bestT) continue;
+      if (!lineOfSight(w.collider, origin, met.at)) continue;
+      bestT = met.t;
+      best = {
+        targetId: id, dist: met.t, material: met.material,
+        damage: met.material != null && damageFor ? damageFor(met.material) : damage,
+        hit: roundHit(origin, met.at, s.y, s.seated, met.bone),
+      };
     }
     return best;
   };
@@ -674,7 +712,8 @@ export function createBotReferee(env) {
         if (friend) referee.applyHeal(friend, BOT_HEAL_PER_ROUND);
         continue;
       }
-      const hit = referee.resolveShot(bot, env.roundDamage(stats));
+      const hit = referee.resolveShot(bot, env.roundDamage(stats), null,
+                                      material => env.roundDamage(stats, material));
       if (!hit) continue;
       bot.recordHit(hit.targetId);
       env.onHit?.(bot, hit);
@@ -682,7 +721,7 @@ export function createBotReferee(env) {
       // else (the page's human).
       if (env.damageTarget?.(hit, bot, at)) continue;
       referee.applyDamage(hit.targetId, hit.damage, bot.playerId, at,
-                          { weapon: bot.weaponAi?.name ?? null, dist: hit.dist });
+                          { weapon: bot.weaponAi?.name ?? null, dist: hit.dist, hit: hit.hit });
     }
   };
 
@@ -693,13 +732,18 @@ export function createBotReferee(env) {
    * `damageHull`), except the kill a destroyed hull hands its crew. A killing
    * round parks the bot: `damageLanded` below.
    *
-   * `opts`: `via` (the debug log's tag), `weapon`, `shell`, `dist`.
+   * `opts`: `via` (the debug log's tag), `weapon`, `shell`, `dist`, and `hit`,
+   * the round's meeting with the body (`roundHit`), which becomes his latest
+   * collision -- what `soldier-death.js` falls by. A `hit.seated` round met a
+   * seated man's drawn body (`bodyAt`), not his hull, so it is his.
    */
   referee.applyDamage = (playerId, damage, attackerId = null, attackerPos = null, opts = {}) => {
     const armor = world()?.armorOf(playerId);
     if (!armor || armor.destroyed) return;
     const bot = botOf(playerId);
-    if (bot?.vehicle && damage < 1e5 && env.damageHull?.(bot, damage, { ...opts, attackerId })) return;
+    if (opts.hit) armor.lastHit = opts.hit;
+    if (bot?.vehicle && !opts.hit?.seated && damage < 1e5
+        && env.damageHull?.(bot, damage, { ...opts, attackerId })) return;
     const lost = armor.damage(damage);
     referee.damageLanded(playerId, lost, attackerId, attackerPos, opts);
   };
@@ -724,12 +768,15 @@ export function createBotReferee(env) {
       if (!armor.destroyed && lost > 0) env.onHurt?.(bot, lost);
     }
     if (!armor.destroyed || !bot) return;
+    // Read before the leave below stands him up beside the hull: a man killed
+    // in his seat dies in it (`BFSoldier::handleDamage`'s first branch).
+    const seated = !!bot.vehicle;
     if (bot.vehicle) referee.leaveVehicle(bot, { killed: true });
     bot.isFiring = false;
     bot.firingTarget = null;
     bot._respawnIn = BOT_RESPAWN_DELAY;
     referee.strategy?.botDied(playerId);
-    env.onDeath?.(bot, attackerId, opts);
+    env.onDeath?.(bot, attackerId, { ...opts, seated });
   };
 
   // --- capture ----------------------------------------------------------------

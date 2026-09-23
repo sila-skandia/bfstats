@@ -207,6 +207,41 @@ SWIM_STATES: tuple[str, ...] = (
 )
 SWIM_ASSET = "swim"
 
+# The death body states, baked under the engine's own state names so
+# `viewer/soldier-death.js` names them with no translation table in between.
+#
+# Which one plays is `BFSoldier::handleDamage` (lnxded `0x08270980`), off the
+# state ids `BFSoldierTemplate::init` (`0x0827a730`) caches on the template:
+#
+#   +0x228/+0x22c  Lb_/Ub_DieLie                         getPose() == 2
+#   +0x230..+0x23c Lb_/Ub_Die{Chest,Back}Crouch          getPose() == 1
+#   +0x240..+0x24c Lb_/Ub_Die{Chest,Back}Stand           getPose() == 0, 3 in 4
+#   +0x260/+0x264  Lb_/Ub_DieSlow                        getPose() == 0, 1 in 4
+#   +0x268/+0x26c  Lb_/Ub_DieHead                        standing, head capsule hit
+#   +0x270/+0x274  Lb_/Ub_DieByVehicle                   cached; nothing in lnxded reads it
+#   "Ub_DieInVehicle"  by name, UPPER ONLY, while the soldier has a parent (a seat)
+#   "Lb_/Ub_DieHitGround"  by name, killed in free fall (`Lb_ParachuteFall`)
+#
+# Weapon-independent like the swim and parachute bundles: every clip is under
+# `DieHit/LowerBody/`, `DieHit/3p/EmptyHands/` or `Vehicle/`, and every lower
+# state declares `c_AsmHideWeapon`. `Lb_DieInVehicle` is baked because the
+# script declares it, though the engine never enters it: the seated man keeps
+# his seat's lower state and only the torso slumps. `Lb_DieSwim` stays in the
+# swim bundle, where `swim.js` already finds it.
+DIE_STATES: tuple[str, ...] = (
+    "Lb_DieChestStand", "Ub_DieChestStand",
+    "Lb_DieBackStand", "Ub_DieBackStand",
+    "Lb_DieChestCrouch", "Ub_DieChestCrouch",
+    "Lb_DieBackCrouch", "Ub_DieBackCrouch",
+    "Lb_DieLie", "Ub_DieLie",
+    "Lb_DieHead", "Ub_DieHead",
+    "Lb_DieSlow", "Ub_DieSlow",
+    "Lb_DieByVehicle", "Ub_DieByVehicle",
+    "Lb_DieInVehicle", "Ub_DieInVehicle",
+    "Lb_DieHitGround", "Ub_DieHitGround",
+)
+DIE_ASSET = "die"
+
 # Where the shared gait clips live, relative to the pose directory. The clips
 # are not baked into the 224 pose files because neither half of a gait varies
 # per pose: the lower body is weapon- *and* soldier-independent (one set for
@@ -694,28 +729,20 @@ def write_gaits_manifest(out: Path, changed: dict) -> dict:
     return merged
 
 
-def export_parachute_clips(machine: animstates.StateMachine,
-                           meshes: ArchivePool, skeleton: ske_mod.Skeleton,
-                           out: Path) -> dict:
-    """`gaits/parachute.gait.glb`: the canopy body states, one clip each.
+def _bake_named_states(machine: animstates.StateMachine, meshes: ArchivePool,
+                       skeleton: ske_mod.Skeleton, names: tuple[str, ...],
+                       ) -> tuple[list, dict, dict, dict]:
+    """Bake each named body state's 3P clip as one timeline under its own name.
 
-    Every clip is named after the engine state that declares it, so
-    `viewer/parachute.js`'s `PARA_CLIPS` — which already carries the state
-    names, and already knows the glide's upper half is `Ub_StandAim` — plays
-    them with no translation table in between.
-
-    The states are weapon-independent (`animations/3P_NoWeapon/`, no `<Weapon>`
-    suffix), so this bundle ships once for the whole game. Absences are
-    reported apart from unparseable files, the way the viewmodel exporter
-    reports them, because they mean opposite things: `Ub_ParachuteIdle` is
-    absent because the engine hands the torso back to `Ub_StandAim` when the
-    canopy finishes opening, not because anything is broken.
+    Returns `(clips, meta, absent, errors)`. Absences are reported apart from
+    unparseable files, because they mean opposite things: a state the scripts
+    never declare is data, a clip that will not read is a bug.
     """
     clips: list[tuple[str, list, float, bool]] = []
     meta: dict[str, dict] = {}
     absent: dict[str, str] = {}
     errors: dict[str, str] = {}
-    for name in PARACHUTE_STATES:
+    for name in names:
         state = machine.state(name)
         ref = state.clip_3p() if state else None
         if ref is None:
@@ -734,6 +761,28 @@ def export_parachute_clips(machine: animstates.StateMachine,
                       "frames": animation.frames, "period": round(period, 4),
                       "loop": ref.loops, "returnTo": state.return_to,
                       "morphFactor": state.morph_factor}
+    return clips, meta, absent, errors
+
+
+def export_parachute_clips(machine: animstates.StateMachine,
+                           meshes: ArchivePool, skeleton: ske_mod.Skeleton,
+                           out: Path) -> dict:
+    """`gaits/parachute.gait.glb`: the canopy body states, one clip each.
+
+    Every clip is named after the engine state that declares it, so
+    `viewer/parachute.js`'s `PARA_CLIPS` — which already carries the state
+    names, and already knows the glide's upper half is `Ub_StandAim` — plays
+    them with no translation table in between.
+
+    The states are weapon-independent (`animations/3P_NoWeapon/`, no `<Weapon>`
+    suffix), so this bundle ships once for the whole game. Absences are
+    reported apart from unparseable files, the way the viewmodel exporter
+    reports them, because they mean opposite things: `Ub_ParachuteIdle` is
+    absent because the engine hands the torso back to `Ub_StandAim` when the
+    canopy finishes opening, not because anything is broken.
+    """
+    clips, meta, absent, errors = _bake_named_states(
+        machine, meshes, skeleton, PARACHUTE_STATES)
     result: dict = {"clips": meta, "absent": absent, "errors": errors,
                     "asset": None}
     if not clips:
@@ -769,29 +818,8 @@ def export_swim_clips(machine: animstates.StateMachine, meshes: ArchivePool,
     re-declares `set3pAnimationSpeed Lb_StartSwim 2.60` over the file's 3.6.
     Reading the machine rather than the file is what picks that up.
     """
-    clips: list[tuple[str, list, float, bool]] = []
-    meta: dict[str, dict] = {}
-    absent: dict[str, str] = {}
-    errors: dict[str, str] = {}
-    for name in SWIM_STATES:
-        state = machine.state(name)
-        ref = state.clip_3p() if state else None
-        if ref is None:
-            absent[name] = ("no such animation state"
-                            if state is None else "state declares no 3P clip")
-            continue
-        animation = read_clip(meshes, ref.path)
-        if animation is None:
-            errors[name] = (
-                f"clip {'absent from the archives' if meshes.find(ref.path) is None else 'present but unparseable'}"
-                f": {ref.path}")
-            continue
-        frames, period = clip_timeline(animation, ref.speed, skeleton)
-        clips.append((name, frames, period, ref.loops))
-        meta[name] = {"clip": ref.path, "speed": ref.speed,
-                      "frames": animation.frames, "period": round(period, 4),
-                      "loop": ref.loops, "returnTo": state.return_to,
-                      "morphFactor": state.morph_factor}
+    clips, meta, absent, errors = _bake_named_states(
+        machine, meshes, skeleton, SWIM_STATES)
     result: dict = {"clips": meta, "absent": absent, "errors": errors,
                     "asset": None}
     if not clips:
@@ -829,6 +857,67 @@ def write_swim_assets(machine: animstates.StateMachine, meshes: ArchivePool,
     body = export_swim_clips(machine, meshes, skeleton, out)
     write_gaits_manifest(out, {"swim": body["asset"]})
     return {"body": body}
+
+
+def export_die_clips(machine: animstates.StateMachine, meshes: ArchivePool,
+                     skeleton: ske_mod.Skeleton, out: Path) -> dict:
+    """`gaits/die.gait.glb`: the death body states, one clip each.
+
+    Named after the engine states (`DIE_STATES`), so `viewer/soldier-death.js`
+    is the only table. None of them loops: the stand, crouch, lie, head, slow
+    and by-vehicle states write `0` as `addAnimation`'s third word and the
+    in-vehicle and hit-ground ones `c_AsmPlayOnce`, and neither names a state
+    to go to, so the corpse holds the last frame until the body is removed
+    (`timeToLiveAfterDeath`).
+    """
+    clips, meta, absent, errors = _bake_named_states(
+        machine, meshes, skeleton, DIE_STATES)
+    result: dict = {"clips": meta, "absent": absent, "errors": errors,
+                    "asset": None}
+    if not clips:
+        return result
+    _write_clip_bundle(
+        skeleton, clips, out / GAIT_ASSET_DIR / f"{DIE_ASSET}.gait.glb",
+        {"die": meta, "absent": absent, "skeleton": skeleton.source,
+         # Read off the state file: every lower death state declares
+         # `setFlag c_AsmHideWeapon`.
+         "hidesWeapon": True})
+    result["asset"] = f"{GAIT_ASSET_DIR}/{DIE_ASSET}.gait.glb"
+    return result
+
+
+def write_die_assets(machine: animstates.StateMachine, meshes: ArchivePool,
+                     library: con_mod.ObjectLibrary, soldiers: list[str],
+                     out: Path) -> dict:
+    """The death bundle, merged into `gaits/gaits.json` under one key, `die`,
+    the way `write_swim_assets` merges `swim`."""
+    skeleton = None
+    for soldier in soldiers:
+        template = library.object(soldier)
+        if template is None or not template.skeleton:
+            continue
+        skeleton = read_skeleton(meshes, template.skeleton)
+        if skeleton is not None:
+            break
+    if skeleton is None:
+        return {"body": None}
+    body = export_die_clips(machine, meshes, skeleton, out)
+    changed: dict = {"die": body["asset"]}
+    # The soldier body's hit capsules and its corpse time, off the first
+    # soldier template that declares them (every installed mod declares the
+    # same eight in `CommonSoldierData.inc`). `viewer/skeleton-hit.js` tests
+    # rounds against the capsules; `soldier-death.js` keeps the corpse.
+    for soldier in soldiers:
+        template = library.object(soldier)
+        if template is not None and template.collision_bones:
+            changed["soldierBody"] = {
+                "template": template.name,
+                "collisionBones": template.collision_bones,
+                "timeToLiveAfterDeath": template.time_to_live_after_death,
+            }
+            break
+    write_gaits_manifest(out, changed)
+    return {"body": body, "soldierBody": changed.get("soldierBody")}
 
 
 def export_canopy(machine: animstates.StateMachine, meshes: ArchivePool,
@@ -1645,6 +1734,18 @@ def _export_pose_task(task_args: tuple) -> dict:
 
 # -- CLI -------------------------------------------------------------------- #
 
+def report_body(label: str, body: dict | None) -> dict:
+    """Print a shared body bundle's summary to stderr; return it (or `{}`)."""
+    body = body or {}
+    print(f"{label} body clips: {len(body.get('clips', {}))} "
+          f"-> {body.get('asset')}", file=sys.stderr)
+    for name, why in sorted((body.get("absent") or {}).items()):
+        print(f"  absent: {name}: {why}", file=sys.stderr)
+    for name, why in sorted((body.get("errors") or {}).items()):
+        print(f"  error:  {name}: {why}", file=sys.stderr)
+    return body
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__,
@@ -1705,6 +1806,11 @@ def main() -> int:
                          "gaits/gaits.json. Weapon- and soldier-independent — "
                          "every swim state names a clip under "
                          "animations/3P_NoWeapon/ — so this is the whole of it.")
+    ap.add_argument("--die", action="store_true",
+                    help="write only the death body clips "
+                         "(gaits/die.gait.glb) and merge that one key into "
+                         "gaits/gaits.json. Weapon- and soldier-independent, "
+                         "so this is the whole of it.")
     ap.add_argument("--seat-poses", action="store_true",
                     help="extract every passenger-seat pose (Ub_PassengerInX / "
                          "Lb_PassengerInX) the mod ships, one .glb per soldier per "
@@ -1714,10 +1820,10 @@ def main() -> int:
     args = ap.parse_args()
 
     if not args.matrix and not args.seat_poses and not args.parachute \
-            and not args.swim and not args.shared_assets and (
+            and not args.swim and not args.die and not args.shared_assets and (
             not args.pairs or len(args.pairs) % 2):
         ap.error("give soldier/weapon pairs, or --matrix, or --seat-poses, "
-                 "or --parachute, or --swim, or --shared-assets")
+                 "or --parachute, or --swim, or --die, or --shared-assets")
 
     game_dir = args.game_dir.expanduser()
     chain = mod_chain(game_dir, args.mod)
@@ -1771,9 +1877,18 @@ def main() -> int:
             print(f"  absent: {name}: {why}", file=sys.stderr)
         for name, why in sorted((swim_body.get("errors") or {}).items()):
             print(f"  error:  {name}: {why}", file=sys.stderr)
+        die = write_die_assets(machine, meshes, library, soldiers, args.out)
+        die_body = report_body("death", die["body"])
         return 0 if (shared and body.get("asset")
                      and chute["canopy"].get("asset")
-                     and swim_body.get("asset")) else 1
+                     and swim_body.get("asset")
+                     and die_body.get("asset")) else 1
+
+    if args.die:
+        args.out.mkdir(parents=True, exist_ok=True)
+        summary = write_die_assets(machine, meshes, library,
+                                   soldier_templates(library), args.out)
+        return 0 if report_body("death", summary["body"]).get("asset") else 1
 
     if args.swim:
         args.out.mkdir(parents=True, exist_ok=True)

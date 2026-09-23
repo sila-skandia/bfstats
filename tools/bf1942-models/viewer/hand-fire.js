@@ -10,11 +10,13 @@ import { chainOnShot } from './seats.js';
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
 import { fireVariantsFor, stanceClip, stanceFor } from './stance-clips.js';
 import { BOT_BODY_RADIUS, BOT_BODY_HEIGHT, BOT_FIRE_RANGE } from './bot-referee.js';
+import { roundHit } from './soldier-death.js';
+import { meetSoldier } from './skeleton-hit.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
  * builds, naming what this module reads:
- * `aimHeld`, `applyDamage`, `botRoundDamage`, `bots`, `camera`, `captured`,
+ * `aimHeld`, `applyDamage`, `bodyAt`, `botRoundDamage`, `bots`, `camera`, `capsulesOf`, `captured`,
  * `clickQueued`, `deployTeamId`, `dropClick`, `fireDetonator`, `fireStates`,
  * `guns`, `handWeapon`, `isDetonator`, `isExplosives`, `itemsLocked`,
  * `lineOfSight`, `LOCAL_PLAYER`, `packThrown`, `params`, `playHandFire`,
@@ -66,28 +68,38 @@ export function createHandFire(page) {
     }
 
     const origin = [_shotOrigin.x, _shotOrigin.y, _shotOrigin.z];
+    const dir = [_shotConeDir.x, _shotConeDir.y, _shotConeDir.z];
     let best = null;
     let bestT = Infinity;
+    let bestHit = null;
+    let bestMaterial = null;
     for (const bot of page.bots) {
       if (bot.team === myTeam) continue;                       // never a teammate
-      const player = page.world.player(bot.playerId);
-      const s = player?.soldier;
+      // His body: on foot his soldier, in a seat that draws him the seat's
+      // (`referee.bodyAt`), in one that does not, nothing to hit.
+      const s = page.bodyAt(bot.playerId);
       if (!s || page.world.armorOf(bot.playerId)?.destroyed) continue;
-      const cx = s.x - origin[0];
-      const cy = (s.y + BOT_BODY_HEIGHT) - origin[1];
-      const cz = s.z - origin[2];
-      const t = cx * _shotConeDir.x + cy * _shotConeDir.y + cz * _shotConeDir.z;
-      if (t < 0 || t > BOT_FIRE_RANGE) continue;
-      const px = cx - t * _shotConeDir.x;
-      const py = cy - t * _shotConeDir.y;
-      const pz = cz - t * _shotConeDir.z;
-      if (px * px + py * py + pz * pz > BOT_BODY_RADIUS * BOT_BODY_RADIUS) continue;
-      const at = [origin[0] + t * _shotConeDir.x, origin[1] + t * _shotConeDir.y,
-                  origin[2] + t * _shotConeDir.z];
-      if (!page.lineOfSight(origin, at)) continue;
-      if (t < bestT) { bestT = t; best = bot.playerId; }
+      // The engine's capsules on the drawn body (`skeleton-hit.js`), else the
+      // stand-in sphere.
+      const met = meetSoldier(origin, dir, BOT_FIRE_RANGE, {
+        capsules: page.capsulesOf(bot.playerId),
+        center: [s.x, s.y + BOT_BODY_HEIGHT, s.z], radius: BOT_BODY_RADIUS,
+      });
+      if (!met || met.t >= bestT) continue;
+      if (!page.lineOfSight(origin, met.at)) continue;
+      bestT = met.t;
+      best = bot.playerId;
+      bestHit = roundHit(origin, met.at, s.y, s.seated, met.bone);
+      bestMaterial = met.material;
     }
-    if (best) page.applyDamage(best, page.botRoundDamage(), page.LOCAL_PLAYER, origin);
+    if (best) {
+      // The held weapon's own round (`fireArms.projectile`), priced against the
+      // capsule's material: head, chest and limbs are each their own defence
+      // group.
+      const stats = page.handWeapon?.group?.stats ?? null;
+      page.applyDamage(best, page.botRoundDamage(stats, bestMaterial ?? undefined),
+                       page.LOCAL_PLAYER, origin, { hit: bestHit });
+    }
   }
 
   // The eases are the engine's, both frame-rate dependent by design (no dt in
@@ -170,10 +182,14 @@ export function createHandFire(page) {
       hw.weaponNode.visible = false;
     }
     if (Number.isFinite(hw.rounds)) hw.rounds = Math.max(0, hw.rounds - 1);
-    // A bullet round is resolved against the bots here. A thrown charge is not
-    // (its damage is the explosion's), and neither is a melee swing — both are
-    // weapons whose `onShot` carries no projectile down the view axis.
-    if (hw.group?.stats?.projectile && !page.isExplosives(hw.name)
+    // A bullet round is resolved against the bots here only on a page whose
+    // rounds cannot meet a soldier in flight. Where `guns.bodyCast` is installed
+    // (`vehicle-hits.js`) the round itself meets the man's capsules, and a
+    // hitscan on top billed every trigger pull twice. A thrown charge is never
+    // resolved here (its damage is the explosion's), and neither is a melee
+    // swing — both are weapons whose `onShot` carries no projectile down the
+    // view axis.
+    if (!page.guns?.bodyCast && hw.group?.stats?.projectile && !page.isExplosives(hw.name)
         && !(hw.data?.throw?.fireDelay > 0)) {
       resolvePlayerShotOnBots();
     }

@@ -773,6 +773,12 @@ class ObjectTemplate:
     velocity: float | None = None
     tracer_scaler: float | None = None
     time_to_live: float | None = None
+    # A soldier's hit capsules, `setSkeletonCollisionBone <bone> <distSq>
+    # <stretch> <material>` in declaration order (the engine tests them in
+    # that order and takes the first hit; `viewer/skeleton-hit.js`).
+    collision_bones: list[dict] = field(default_factory=list)
+    # `timeToLiveAfterDeath`: how long a dead soldier's body stays.
+    time_to_live_after_death: float | None = None
     # A projectile's looping in-flight effect (`startEffectTemplate
     # e_KatyushaFume` — the rocket's smoke trail).
     start_effect_template: str | None = None
@@ -1944,6 +1950,28 @@ class ObjectLibrary:
                 elif cmd == "material":
                     try:
                         obj.material = int(float(args.split()[0]))
+                    except (ValueError, IndexError):
+                        continue
+                elif cmd == "setskeletoncollisionbone":
+                    parts = args.split()
+                    try:
+                        entry = {"bone": parts[0], "distSq": float(parts[1]),
+                                 "stretch": float(parts[2]),
+                                 "material": int(float(parts[3]))}
+                    except (ValueError, IndexError):
+                        continue
+                    # A re-declared bone keeps its first place with the new
+                    # numbers: the engine rewrites the bone's three fields and
+                    # pushes its index again, and the walk meets the first.
+                    for i, e in enumerate(obj.collision_bones):
+                        if e["bone"].lower() == entry["bone"].lower():
+                            obj.collision_bones[i] = entry
+                            break
+                    else:
+                        obj.collision_bones.append(entry)
+                elif cmd == "timetoliveafterdeath":
+                    try:
+                        obj.time_to_live_after_death = float(args.split()[0])
                     except (ValueError, IndexError):
                         continue
                 elif cmd in (

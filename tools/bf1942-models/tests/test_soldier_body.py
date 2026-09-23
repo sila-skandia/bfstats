@@ -33,7 +33,9 @@ VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("soldier_body_harness.mjs")
 MODULES = {"soldier-body.js": VIEWER / "soldier-body.js",
            "parachute.js": VIEWER / "parachute.js",
-           "swim.js": VIEWER / "swim.js"}
+           "swim.js": VIEWER / "swim.js",
+           "soldier-death.js": VIEWER / "soldier-death.js",
+           "skeleton-hit.js": VIEWER / "skeleton-hit.js"}
 
 
 def run_harness() -> dict:
@@ -56,6 +58,11 @@ def run_harness() -> dict:
     return json.loads(proc.stdout)
 
 
+# `soldier-death.js` `DIE_CLIPS`, in its order.
+DEATHS = ["dieChestStand", "dieBackStand", "dieChestCrouch", "dieBackCrouch",
+          "dieLie", "dieHead", "dieSlow", "dieHitGround", "dieByVehicle"]
+
+
 class SoldierBodyTests(unittest.TestCase):
     results: dict
 
@@ -63,13 +70,13 @@ class SoldierBodyTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.results = run_harness()
 
-    def test_the_seven_gaits_the_six_parachutes_and_the_six_swims(self) -> None:
+    def test_the_seven_gaits_the_six_parachutes_the_six_swims_and_the_deaths(self) -> None:
         self.assertEqual(
             ["stand", "walk", "run", "crouch", "crouchwalk", "prone", "crawl",
              "parachuteFall", "parachuteOpen", "parachuteGlide",
              "parachuteLanded", "parachuteDie", "parachuteDeadLanded",
              "swimStart", "swimFloat", "swimForward", "swimBackward",
-             "swimEnd", "swimDie"],
+             "swimEnd", "swimDie"] + DEATHS,
             self.results["families"])
 
     def test_every_family_names_both_halves_of_the_body(self) -> None:
@@ -113,9 +120,11 @@ class SoldierBodyTests(unittest.TestCase):
         # death -- `Lb_StartSwim`, `Lb_EndSwim` and `Lb_DieSwim` are all
         # `c_AsmPlayOnce` with an `addTransitionWhenDone` (or, for the death,
         # nothing) after them.
+        # Every `AnimationStatesDie.con` state is a one-shot too: `0` or
+        # `c_AsmPlayOnce`, and nothing to go on to.
         self.assertEqual(
             ["parachuteOpen", "parachuteLanded", "parachuteDie",
-             "parachuteDeadLanded", "swimStart", "swimEnd", "swimDie"],
+             "parachuteDeadLanded", "swimStart", "swimEnd", "swimDie"] + DEATHS,
             self.results["once"])
 
     def test_every_pair_parachute_js_can_answer_resolves_to_a_family(self) -> None:
@@ -163,6 +172,7 @@ class SoldierBodyTests(unittest.TestCase):
         self.assertEqual("walk", fall["runToWalk"])
         self.assertTrue(self.results["everyChainEndsAtStand"])
         self.assertTrue(self.results["everyChainStartsWithItself"])
+        self.assertTrue(self.results["noDeathChainReachesLocomotion"])
 
     def test_a_tree_without_the_parachute_bundle_still_draws_a_body(self) -> None:
         fall = self.results["fallback"]
@@ -228,15 +238,15 @@ class SoldierBodyTests(unittest.TestCase):
         self.assertEqual("swimFloat", old["onlyFloat"])
         self.assertEqual("swimBackward", old["fullRig"])
 
-    def test_a_swimmer_stows_his_weapon(self) -> None:
-        # `setFlag c_AsmHideWeapon` on all five lower swim states, and
-        # `BFSoldier::enableItem` obeys it (`0x082784af and eax,0x2`). The swim
-        # death is not one of them: `Lb_DieSwim` is an `AnimationStatesDie.con`
-        # state and declares no flags at all.
+    def test_a_swimmer_and_a_corpse_stow_the_weapon(self) -> None:
+        # `setFlag c_AsmHideWeapon` on all five lower swim states and on every
+        # lower state in `AnimationStatesDie.con`, `Lb_DieSwim` included, and
+        # `BFSoldier::enableItem` obeys it (`0x082784af and eax,0x2`).
         self.assertEqual(
-            ["swimStart", "swimFloat", "swimForward", "swimBackward", "swimEnd"],
+            ["swimStart", "swimFloat", "swimForward", "swimBackward", "swimEnd",
+             "swimDie"] + DEATHS,
             self.results["hidesWeapon"])
-        self.assertTrue(self.results["hidesWeaponIsSwimOnly"])
+        self.assertTrue(self.results["hidesWeaponIsSwimOrDeath"])
         # The renderer's set and the item gate's set are the same `setFlag`, so
         # they must agree family by family or one of them is wrong.
         self.assertTrue(self.results["hidesWeaponAgreesWithSwimJs"])
@@ -249,3 +259,36 @@ class SoldierBodyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DeathBodyTests(unittest.TestCase):
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+
+    def test_a_death_outranks_the_gait_and_the_chute(self) -> None:
+        sel = self.results["deathSelection"]
+        self.assertEqual("dieBackCrouch", sel["crouchedDeath"])
+        # Killed in free fall: `handleDamage` plays `DieHitGround` while the
+        # chute still reads `Lb_ParachuteFall` (lnxded `0x08270bdc`).
+        self.assertEqual("dieHitGround", sel["freeFallDeath"])
+
+    def test_the_canopy_and_swim_deaths_are_their_own_modules_pairs(self) -> None:
+        sel = self.results["deathSelection"]
+        self.assertEqual("parachuteDie", sel["canopyDeath"])
+        self.assertEqual("swimDie", sel["swimDeath"])
+
+    def test_an_unbound_death_never_stands_the_corpse_up_as_a_gait(self) -> None:
+        sel = self.results["deathSelection"]
+        # Past the end of a death chain `resolveBodyFamily` answers `stand`, and
+        # the renderer hides a dead body whose family is not in `BODY_DEATHS`.
+        self.assertEqual("stand", sel["noDeathBundle"])
+        self.assertNotIn("stand", self.results["deaths"])
+        self.assertEqual("dieChestStand", sel["onlyChest"])
+
+    def test_every_death_is_a_corpse(self) -> None:
+        self.assertEqual(
+            set(DEATHS) | {"parachuteDie", "parachuteDeadLanded", "swimDie"},
+            set(self.results["deaths"]))

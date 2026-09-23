@@ -31,6 +31,13 @@ export function installBotHooks(page) {
     return page.referee.enterVehicle(bot, cands[0]);
   };
   window.__botDismount = id => { const bot = page.referee.bots.find(b => b.playerId === id); if (bot?.vehicle) page.referee.leaveVehicle(bot); return !bot?.vehicle; };
+  // The bots' bodies on the page: each live bot's drawn family and seat, and
+  // every corpse still down (`bot-visuals.js`), so a headless check can tell a
+  // death that played from one that was hidden.
+  window.__botBodies = () => page.botBodies.debug();
+  // A player's hit capsules this frame (`skeleton-hit.js`), as the referee
+  // resolves rounds against them: null where nobody is drawn.
+  window.__capsules = id => page.referee.capsulesOf(id);
   window.__navMap = () => page.referee.navGrid;
   /** Every bot map's size: the infantry map, the land vehicles' and each
    *  water map built so far; `build` builds the vehicle map and the Boat and

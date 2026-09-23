@@ -362,7 +362,7 @@ path.
 |---|---|
 | **A frame of a remote's body** | §7. The state readout is there and the picture is not. `room.mjs` is written and its walk loop needs fixing |
 | **The man on foot is bare-headed** | The kit's helmet is grafted onto a seated occupant only (`dressSeatOccupant`). The same call, on `footBody.scene`, dresses the man on foot and the spawn-pad figures |
-| **The death cam draws nobody** | §6. Needs a death family (`Lb_Die*`, unsurveyed here) and the near pass to stop painting the arms rig while `soldierDead` |
+| ~~**The death cam draws nobody**~~ | Closed 2026-09-24: the corpse plays the engine's death, see [`soldier-death-animations`](../soldier-death-animations/README.md) |
 | **Free fall frames a distant man** | §6. The chase law's velocity lag against PARA-9's runaway free-fall speed |
 | **The landing clips are never seen** | `Lb_ParachuteHitGround` and the two `Dead*` families are baked, bound and selected by `soldier-body.js`, and `parachute.js` emits the states — but no headless run in this stream reached a touchdown under a canopy with an external view up, so **`parachuteLanded`, `parachuteDie` and `parachuteDeadLanded` have not been seen on a frame**. They are in the report's `bound` list and nowhere in its pictures |
 | **Eight of the eighteen parachute clips are named by a state** | §2. `3PParachuteFall*`, `3PParachuteJump*`, `3PParachuteSplat*`, `3PParachuteGlideDie*` and `3PParachuteGlideUpper` are shipped and unreachable. A jump and a splat are obviously *something*; what the engine ever did with them was not chased |
