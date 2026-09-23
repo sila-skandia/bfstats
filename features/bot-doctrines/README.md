@@ -60,7 +60,10 @@ against the bare SAI over 60 s of moving bots with deaths and a unit change.
 
 ### Adding an order kind
 
-Brief D's `WPBeachLanding` is the next one. An order is the object a bot's
+The SAI's beach orders (`WPBeachLanding`, `WPMoveToBeachLanding`: Brief D,
+`doctrine-landing.js`, built in `strategic-ai.js _orderBeach`, registered with
+an executor that flips the leg and bails the crew) are the worked example.
+An order is the object a bot's
 `waypoints` holds, and every kind meets the contract the bots read
 (`doctrine.js` header): `kind`, `point [x, z]`, `radius`, `y` for an air
 order only, `area` with `inside(x, z)` (or no area), `urgency(x, z,

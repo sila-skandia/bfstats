@@ -248,6 +248,57 @@ urgency = 1 outside the radius across or the 120 m band, else (dy² + d²) / (R�
 
 It never reports arrival.
 
+### 8. The beach order (`_orderBeach`, `doctrine-landing.js`; AI-96..AI-99)
+
+**Data.** `extras.ai.landingZones`: `name`, `min` / `max` (a corner box, its
+corners sorted per axis) and `beach`, the edge the con's direction names in
+the viewer's frame (`LZXMin` -> `xMin`, `LZXMax` -> `xMax`, and z flipped:
+`LZZMin` -> `zMax`, `LZZMax` -> `zMin`). An area carries `landingZones`
+(`attachLandingZone`), `landingZoneUnits` (`addLandingZoneUnit`, the unit
+types sent to its beach; `LandingCraft` on every vanilla level) and
+`expelledUnits` (`addExpelledUnit`). Levels with live zones: vanilla Iwo
+Jima (2), Midway (6), Omaha Beach (1), Truk (6), Wake (4); XPack1 Baytown
+(2), Husky (1); XPack2 Essen (4), Mimoyecques (6), Telemark (10).
+
+**Who gets it.** A bot at the helm of a landing craft (the `strategicUnit`
+type `LandingCraft`: a Daihatsu or an LCVP on its `LandingCraft` water map)
+that the SAI orders to an area:
+
+- the area sends `LandingCraft` to a zone: a `WPBeachLanding` on its
+  attached zone nearest the craft (the engine's no-route case);
+- otherwise the first area on the shortest neighbour path from the craft's
+  own area (not a zone user, not expelling it) that is a zone user gives a
+  `WPMoveToBeachLanding` on its nearest zone (the path is INVENTION: the
+  engine's route tables are not read; its intermediate points are not
+  driven);
+- otherwise the ordinary `WPMoveTo`.
+
+A rider or gunner keeps the ordinary order; he does not drive.
+
+**The order.** Radius 10 (`WPBeachLanding`) or 5 (`WPMoveToBeachLanding`),
+urgency 1, never arrived. Outside the zone its point is an approach point,
+uniform along the side opposite the beach and 10 m in, tried 20 times on the
+craft's map; the craft routes there on the water map. Inside the zone
+(distance 0; `d² < 10` for the `MoveTo` form) the order is replaced by one on
+a beach point, uniform along the beach edge, which the helm runs straight at
+(`BoatMoveToDirect`, no route, never done). Leaving the zone flips it back.
+
+**Getting out** (`BBChangeLandingCraft`). Everyone aboard a craft gets out
+when it is inside any zone, under 2 m/s and on a cell of the infantry map,
+or when it has tipped; the order's executor presses Use for the whole crew,
+and each occupant's seated Change makes the same test with urgency 4. The
+crew's Change has no other bail and weighs no other hull. Out, each is a
+soldier with a fresh order.
+
+*Example.* Wake, seed 1, 8 a side, 300 s in the runner (2026-09-24, main
+at `e9f260da` plus this): two Daihatsus taken at 0.1 and 0.2 s from the
+soldier spawns beside them, gunners and riders aboard by 78 s. One lands on
+`SouthLanding` at 143.2 s, its driver and three riders out together at
+(1157, -703); a rider takes `Landing_Beach` 6.5 s later. The other grounds
+off the west shore at (590, -1114) and tips, and its crew of four gets out
+there at 217.8 s. Without the beach orders the same seed crews both craft
+and they hold inland `WPMoveTo` orders to the end: no landing, no capture.
+
 ## The enemy strength tables
 
 With the same cadence (`bot-referee.js tick`, `bot-strength.js
