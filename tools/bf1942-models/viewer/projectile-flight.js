@@ -163,7 +163,7 @@ function gunOwner(guns, group) {
  * is the same call either way). The end-of-life explosion is HP-9d:
  * `damageType` 1 or 4, no `hasCollisionEffect` test, an untruncated radius.
  * This is how a grenade, an explosives pack and a landmine deal every point
- * of damage they ever deal. `#detonate` plays the `endEffectTemplate`
+ * of damage they ever deal. `detonate` plays the `endEffectTemplate`
  * itself; a round with no end-of-life blast still gets its effect through
  * the fallback below.
  */
@@ -203,7 +203,7 @@ function stepFuseRound(guns, shot, dt) {
   if (shot.resting) return 0;
   const collider = guns.collider;
   const before = _fuseFrom.copy(shot.mesh.position);
-  // The contact probe. Same budget as `#sweep`: a round that has already
+  // The contact probe. Same budget as `sweep`: a round that has already
   // spent the frame's casts simply does not move this frame, which is
   // better than one that tunnels through the floor.
   const owner = gunOwner(guns, shot.group);
@@ -390,7 +390,7 @@ export function advanceProjectiles(guns, dt) {
       // ballistic one: buoyancy from its two floaters, levelling from its
       // wings, thrust from its `c_ETTorpedo` engine, drag at PHY-7's
       // submerged 25x. It still sweeps for contact below, so a hull kills a
-      // ship through the ordinary `#impact` with material 250.
+      // ship through the ordinary `impact` with material 250.
       step = shot.torpedo.step(dt, shot.mesh.position, shot.velocity);
       shot.travelled += step;
       if (shot.velocity.lengthSq() > 1e-6) {

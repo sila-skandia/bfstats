@@ -36,7 +36,7 @@
  * stream of invisible rounds spending collision casts on nobody's behalf. The
  * amended test keeps that out and admits exactly the weapons that drop a drawn
  * body: a `shell` or `rocket` projectile spec WITH the baked mesh that
- * `#spawnProjectile` needs. A bomb rack has both (`Stuka.glb`'s
+ * `spawnProjectile` needs. A bomb rack has both (`Stuka.glb`'s
  * `StukaBombRack projectile` node carries `projectileMesh`
  * `{template: DiveBomberBomb, geometry: Big_Bomb_M1}`); a placeholder has
  * neither, and a stale GLB whose body failed to bake still falls back to the

@@ -75,7 +75,7 @@ export function fireBarrel(guns, group, muzzle) {
   } else if (spec && spec.kind === 'bullet') {
     // GUN-10 / V-R2: rifle projectiles are `invisible 1` — retail draws no
     // body. Tracer rounds still get the bright TLight streak. Every other
-    // round still needs a ballistic in `tracers` so `#sweep` / `#impact`
+    // round still needs a ballistic in `tracers` so `sweep` / `impact`
     // run: hand weapons declare no tracer interval, so dropping the dim
     // stand-in without a hidden hit-test round killed every surface FX.
     spawnTracer(guns, muzzle, group, !!tracerRound);
@@ -248,7 +248,7 @@ function spawnProjectile(guns, muzzle, group, spec) {
   // authored value meaning "the round leaves at no speed of its own"; `||`
   // read it as absent and launched a released bomb forward at 100 m/s
   // (ledger BOMB-8). At zero the muzzle transform contributes nothing and
-  // `#muzzleVelocity` returns `group.platformVelocity` alone — the aircraft's
+  // `muzzleVelocity` returns `group.platformVelocity` alone — the aircraft's
   // own motion, which is the whole of a bomb release.
   const authored = releaseSpeed(group.stats);
   const speed = displaySpeed(guns, group, authored);
