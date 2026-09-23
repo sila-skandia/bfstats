@@ -302,3 +302,62 @@ rounds); entering a Sherman; C to chase (8.5 m out); driving 7.8 m; digit 2
 to the second seat and firing it; E out, 2.3 m from the hull; the full map on
 M; the scoreboard; the Esc menu; a wrecked Willys killing its bot crew; and a
 bot Sherman mounting and killing.
+
+## Part 2c: the model browser, `index.html` (2026-09-23)
+
+The same pattern applied to the model browser. `index.html` went from 5,850
+lines to 747: the markup, the stage (renderer, scene, camera, orbit controls,
+lights, portrait framing), the on-demand frame loop, the loader (`show`) and
+the wiring. The stylesheet is `index.css`, which nginx revalidates like
+`map.css`. Code moved verbatim. Each module's header lists what `page` hands
+in. Where a module needs one member of another module, the bag names that
+member (`get isCollisionMesh() { return armour.isCollisionMesh; }`), never the
+module.
+
+| Module | Object | Lines | What it holds |
+|---|---|---|---|
+| `model-armour.js` | `armour` | 930 | collision hulls, damage tables, weapon picker, the placed shot and its readout, the armour hooks |
+| `model-envmap.js` | `envReflection` | 259 | the `envmap true` stage: sky cube, picker, shader patch, readout |
+| `model-display.js` | `display` | 93 | wireframe/untextured/explode/double-side, each material's own texture |
+| `model-rig.js` | `rig` | 242 | RotationalBundles and drivetrains, input values, rate angles, scrolling treads |
+| `model-clips.js` | `engineClips` | 108 | baked spin and ambient clips, the engine switch, propeller blur |
+| `model-guns.js` | `gunTriggers` | 136 | the `GunFire` runtime and the hold-to-fire buttons |
+| `model-seat-cams.js` | `seatCams` | 100 | camera-view nodes and the glide between them |
+| `model-crew.js` | `crewConsole` | 801 | stations, instruments, keys, gear tween |
+| `model-touchpad.js` | `touchpad` | 311 | the touch disk |
+| `model-variants.js` | `variantPicker` | 93 | build/skin pickers, plus the variant helpers as plain exports |
+| `model-browser.js` | `armoury` | 719 | the faceted catalogue, its three layouts, the sidebar card and crumb |
+| `model-test-hooks.js` | (installs) | 144 | `window.__scene`, `__camera`, `__controls`, `__modelInspector` |
+
+Shared state that went away:
+
+- The page-wide `state` object. Its display switches belong to `display`,
+  its collision switches to `armour` (read as `armour.collision`, set
+  through `setCollision`).
+- The loader no longer writes other modules' state. `originalMap.set` is
+  `display.rememberMap`, the envmap sets are cleared by
+  `envReflection.forgetModelMaterials` and filled by `bindModelEnvmap`,
+  `cameraGlide = null` is `seatCams.cancelGlide()`, and `currentReport`
+  plus the weapon and collision setup is `armour.adoptModel`.
+- The rig half of the loader's traversal is `rig.collectRig`. It is a second
+  pass over the same tree in the same order, so the parts are collected
+  exactly as before.
+- The crew console sets a rig input through `rig.setInput`, not by writing
+  the rig's map.
+- Constants and pure helpers other modules need are plain ES exports:
+  `GEAR_INPUT`, `FREE_RANGE` and `keyOf` from the rig; `AIM`, `STICK`,
+  `DRIVE`, `SHORT_LABEL`, `degreesAt` and `inputFor` from the crew console;
+  the variant helpers from `model-variants.js`.
+
+What modules still write of each other is only the stage's three.js objects
+(the orbit controls' `enabled` during an angle drag, the helpers' visibility
+for a portrait, the camera during a glide) and `main.dataset`.
+
+No test pinned `index.html`'s script, so `tests/page_source.py` is unchanged.
+Verified by loading the page headless (Sherman, then Corsair) and driving it
+against the pre-refactor page, served side by side, with the result diffed.
+The run covers the hooks, rig inputs, firing, station keys, the collision
+view by hook and by canvas click, weapon damage, display toggles, the envmap
+picker, the touchpad drag, the variant picker, the catalogue's search, facets
+and layouts, the engine and gear, and seat and orbit views. Both pages
+produced the same output, with no uncaught error.
