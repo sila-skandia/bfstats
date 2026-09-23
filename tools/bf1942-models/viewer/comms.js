@@ -51,6 +51,11 @@ export function createComms(page) {
   let chat = new ChatLog();
   const spam = new RadioSpamLimit();
   const radio = { category: 0, back: true, idle: 0 };
+  /** `game.setRadioToolTip`: the heading under each button (`Radio/
+   *  ShowRadioToolTip`). The shipped default profile turns it on; the owner's
+   *  own profile turns it off, and his game shows the icons alone, so off is
+   *  the page's default. The console word turns it back on. */
+  let showToolTip = false;
   let centre = null;           // { text, until }
   let dirty = true;
   let lastSig = '';
@@ -126,8 +131,16 @@ export function createComms(page) {
       gameMode: gameMode(),
       iconType: page.radioIconType?.() ?? ICON_ON_FOOT,
       controlPointNames: radioPoints().slice(0, 6).map(f => pointLabel(f).toUpperCase()),
+      showToolTip,
     });
   }
+
+  comms.radioToolTip = () => showToolTip;
+  comms.setRadioToolTip = on => {
+    showToolTip = !!on;
+    dirty = true;
+    return showToolTip;
+  };
 
   /** F1..F8. True when the key was the radio's (and was eaten). */
   comms.keydown = event => {
