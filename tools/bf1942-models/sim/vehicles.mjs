@@ -192,8 +192,9 @@ class SimHull {
 
 /** The land vehicles of a level and the page's bot-side vehicle functions. */
 export class SimVehicles {
-  constructor({ M, level, world, groundAt, events, clock }) {
+  constructor({ M, level, world, groundAt, events, clock, onUnitChanged = null }) {
     this.M = M;
+    this.onUnitChanged = onUnitChanged;
     this.level = level;
     this.world = world;
     this.groundAt = groundAt;
@@ -307,6 +308,7 @@ export class SimVehicles {
     const record = this.world.player(bot.playerId);
     if (record) record.vehicleStrType = cand.strType;
     h.seatHolders.set(cand.seatId, bot.playerId);
+    this.onUnitChanged?.(bot.playerId);
     bot.mount({
       id: cand.id, vehicleId: h.id, node: h.node, drive, occupancy, kind: h.kind,
       seatId: cand.seatId, drives: !!drive, groups: [], manned: [],
@@ -346,6 +348,7 @@ export class SimVehicles {
       bot.setPosition(x, y, z);
     }
     bot.dismount(this.clock());
+    this.onUnitChanged?.(bot.playerId);
     this.invalidate();
     this.events.push({ type: 'dismount', bot: bot.playerId, side: bot.team, vehicle: h?.id ?? null,
                        template: h?.template ?? null, killed });

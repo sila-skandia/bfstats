@@ -153,6 +153,10 @@ Senses use the vehicle fields of view from the eye 2 m above the hull.
   AI weapons.
 - **Unseating** (`botLeaveVehicle`): a driven hull parks where it stands; the
   soldier is placed 3.5 m to its side.
+- Both tell the strategic AI the bot's unit changed (`botChangedUnit`): it
+  loses its order and is ordered afresh as a tank, a car, a plane (the air
+  order) or a soldier, on that unit's own map ([strategic.md](strategic.md)).
+  Both clear the airborne flag.
 - **Destroyed hull**: the crew is unseated and killed.
 - **Damage**: a round that finds a seated bot bills the hull.
 
