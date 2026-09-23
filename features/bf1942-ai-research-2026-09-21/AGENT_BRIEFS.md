@@ -264,6 +264,21 @@ re-export shims by updating their importers. Rules as in the README: no new
 behaviour, functions move with their tests, seeded sim traces and node
 harness output byte-identical before and after, full verify.sh with E2E.
 
+Done 2026-09-24 (features/vehicle-instance-refactor/README.md, Part 4).
+`frame()` is 13 lines over named phases. The input and camera phases are in
+`local-player.js` (`frameInput`, `frameCameras`), and `simulate`,
+`presentWorld`, `draw` and `paintHud` are in the page. `ground.js` is now
+`wheeled-vehicle.js` (the wheels), `suspension.js` (the springs, `Wheel`, the
+probe) and `tracked-vehicle.js` (the tracks), with no re-exports.
+
+Nothing in the page, the server or the tests imports `flight.js` or
+`collision.js` any more. One importer each is left, in files other agents
+owned at the time (`vehicle-hits.js`, `sim/env.mjs`). Change those two import
+lines, then delete both shims.
+
+Seeded sim traces and node harness output are byte-identical, and the cadence
+check passes with and without `--bots`.
+
 ## Brief I: the headless runner loads the real vehicles
 
 Depends on: nothing. Touches sim/ only.
