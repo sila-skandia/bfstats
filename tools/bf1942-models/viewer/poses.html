@@ -115,6 +115,7 @@ import { OrbitControls } from './vendor/controls/OrbitControls.js';
 import { selectMod } from './mods.js';
 import { disposeModel } from './dispose-model.js';
 import { createCameraGlide } from './camera-glide.js';
+import { createPoseMotion } from './pose-motion.js';
 import { installControlsCollapse } from './controls-collapse.js';
 
 // Which game's poses this page serves: 'models/poses' for vanilla,
@@ -166,205 +167,14 @@ let framing = null;        // { centre, radius } of the whole figure
 let gripPoint = null;      // world position of Bip01 R Hand
 let viewMode = 'figure';
 let loadSequence = 0;
-
-// Stances are constant animation clips in the glb — one pose each — and the
-// switch blends their weights. Assets extracted before stances exist carry
-// no clips; their buttons disable and the static standing pose renders
-// exactly as before.
-const STANCE_KEYS = ['stand', 'crouch', 'lie'];
-// Locomotion, in contrast, is real motion: each gait is a pair of looping
-// timelines baked straight out of the game's `.baf` clips — `<gait>.lower`
-// (root, pelvis, legs, Spine Root) and `<gait>.upper` (Bip01 Spine out to
-// the fingers). They are two clips rather than one because the engine runs
-// the lower and upper body as two independent state machines with
-// independent phases; the bone sets are disjoint, so playing both at full
-// weight composes exactly, and nothing has to be resampled onto a common
-// period the game does not have.
-const MOTION_KEYS = ['idle', 'walk', 'run'];
-// (stance, motion) -> gait clip pair in the glb. Kneeling and prone have one
-// forward clip each in vanilla — `Lb_CrouchForward` and `Lb_LieForward` —
-// so both speeds resolve to it, which is what the game does too.
-const GAIT_FOR = {
-  stand: { walk: 'walk', run: 'run' },
-  crouch: { walk: 'crouchwalk', run: 'crouchwalk' },
-  lie: { walk: 'crawl', run: 'crawl' },
-};
-// The pose settles first, then the camera glides to the re-fitted framing:
-// moving both at once reads as the figure jumping.
-const STANCE_BLEND_MS = 450;
-let stance = 'stand';
-let motion = 'idle';
-let mixer = null;
-let stanceActions = {};
-let gaitActions = {};     // gait key -> { lower: action, upper: action }
-let poseBlend = null;     // { from: { name: weight }, start }
 let stanceMetricsHook = null;   // set once the manifest is wired up
-let gaitInfo = {};        // from the glb's own extras: clip paths and rates
 
-// The gait clips are not in the pose file. Neither half varies per pose —
-// the lower body takes no weapon and every vanilla soldier declares the same
-// `UsSoldier.ske`, and the upper body depends only on the weapon's grip — so
-// the extractor writes them once, into `gaits/lower.gait.glb` and one
-// `gaits/<Grip>.gait.glb` per grip (23 for vanilla's 28 weapons, because
-// `copyState` has K98/K98Sniper/No4/No4Sniper share a clip set). Every pose
-// names its two in `extras.gaitAssets`.
-//
-// Those files carry the joint hierarchy and nothing else, so the clips'
-// track names are bone names, and three.js binds a clip to whatever root the
-// mixer was built on — the pose's own skeleton instance. That is the whole
-// retargeting mechanism, and it is safe here because all 55 bones a gait
-// touches exist in every pose file under exactly these names and none of
-// them is a duplicated node name (the one duplicate, the `Thompson` prop
-// bone against the weapon node, is not animated by any gait).
-const gaitBundles = new Map();   // relative path -> Promise<AnimationClip[]>
-
-function loadGaitBundle(relative) {
-  let pending = gaitBundles.get(relative);
-  if (!pending) {
-    // A missing or unreadable bundle degrades to "no gait", never to a
-    // broken page: the stance stills still render.
-    pending = loader.loadAsync(`${POSES_BASE}/${relative}${bust()}`)
-      .then(bundle => bundle.animations ?? [])
-      .catch(() => []);
-    gaitBundles.set(relative, pending);
-  }
-  return pending;
-}
-
-function loadGaitClips(assets) {
-  if (!assets?.lower || !assets?.upper) return Promise.resolve([]);
-  return Promise.all([loadGaitBundle(assets.lower), loadGaitBundle(assets.upper)])
-    .then(([lower, upper]) => [...lower, ...upper]);
-}
-
-// The gait actually on screen, or null when this is a still stance — either
-// because the user chose idle, or because the asset predates gait clips.
-function activeGait() {
-  if (motion === 'idle') return null;
-  const key = GAIT_FOR[stance]?.[motion];
-  return key && gaitActions[key] ? key : null;
-}
-
-// Every action's weight for the current (stance, motion), as one flat map.
-// A gait owns the whole body when it is up, so the stance still drops to 0;
-// during a blend the two sum to 1 on every bone, which is what keeps a
-// half-faded figure from collapsing.
-function targetWeights() {
-  const target = {};
-  for (const key of Object.keys(stanceActions)) target[`stance:${key}`] = 0;
-  for (const key of Object.keys(gaitActions))
-    for (const half of ['lower', 'upper']) target[`gait:${key}.${half}`] = 0;
-  const gait = activeGait();
-  if (gait) {
-    for (const half of ['lower', 'upper']) target[`gait:${gait}.${half}`] = 1;
-  } else if (stanceActions[stance]) {
-    target[`stance:${stance}`] = 1;
-  }
-  return target;
-}
-
-function eachAction(visit) {
-  for (const [key, action] of Object.entries(stanceActions))
-    visit(`stance:${key}`, action);
-  for (const [key, halves] of Object.entries(gaitActions))
-    for (const [half, action] of Object.entries(halves))
-      visit(`gait:${key}.${half}`, action);
-}
-
-function applyWeights(weights) {
-  eachAction((name, action) => action.setEffectiveWeight(weights[name] ?? 0));
-}
-
-// Not AnimationAction.crossFadeTo: its fade scales the action's own weight,
-// and the resting clips sit at weight 0, so the incoming pose never showed.
-// Blending from the weights on screen also lets a switch made mid-blend turn
-// around instead of jumping.
-function startPoseBlend() {
-  if (!mixer) return;
-  const from = {};
-  eachAction((name, action) => { from[name] = action.getEffectiveWeight(); });
-  poseBlend = { from, start: performance.now() };
-  startAnimating();
-}
-
-const stanceButtons = [...document.querySelectorAll('.stances button')];
-const motionButtons = [...document.querySelectorAll('.motions button')];
-
-function updateStanceButtons() {
-  for (const button of stanceButtons) {
-    const key = button.dataset.stance;
-    button.disabled = current ? !stanceActions[key] : false;
-    button.classList.toggle('active', key === stance);
-  }
-  for (const button of motionButtons) {
-    const key = button.dataset.motion;
-    button.disabled = current && key !== 'idle'
-      ? !gaitActions[GAIT_FOR[stance]?.[key]]
-      : false;
-    button.classList.toggle('active', key === motion);
-  }
-  showGait();
-}
-
-function showGait() {
-  const readout = document.getElementById('gait');
-  if (!readout) return;
-  const gait = activeGait();
-  if (!gait) {
-    readout.textContent = current && motion !== 'idle'
-      ? 'no locomotion clip in this extract — showing the stance still'
-      : '';
-    return;
-  }
-  const info = gaitInfo[gait];
-  if (!info) { readout.textContent = gait; return; }
-  // Steps, not cycles: a lower-body locomotion clip is a two-step stride, so
-  // the per-step figure is what compares against the engine's step period.
-  const steps = (1 / info.lowerPeriod) * 2;
-  readout.replaceChildren(
-    Object.assign(document.createElement('b'),
-      { textContent: `${info.lowerState} + ${info.upperState}` }),
-    document.createTextNode(
-      `\n${info.lowerFrames} frames over ${info.lowerPeriod.toFixed(3)} s `
-      + `(speed ${info.lowerSpeed}) = ${steps.toFixed(2)} steps/s`
-      + `\n${info.lowerClip}\n${info.upperClip}`));
-}
-
-function setStance(key) {
-  if (!STANCE_KEYS.includes(key) || key === stance) return;
-  if (current && !stanceActions[key]) return;   // asset lacks this stance
-  stance = key;
-  updateStanceButtons();
-  stanceMetricsHook?.();
-  startPoseBlend();
-}
-
-function setMotion(key) {
-  if (!MOTION_KEYS.includes(key) || key === motion) return;
-  if (current && key !== 'idle' && !gaitActions[GAIT_FOR[stance]?.[key]]) return;
-  motion = key;
-  updateStanceButtons();
-  startPoseBlend();
-}
-
-// Returns true on the frame the blend lands, so the caller can re-fit once
-// the mixer has applied the final pose.
-function advancePoseBlend(now) {
-  if (!poseBlend) return false;
-  const t = Math.min((now - poseBlend.start) / STANCE_BLEND_MS, 1);
-  const eased = t * t * (3 - 2 * t);
-  const target = targetWeights();
-  eachAction((name, action) => action.setEffectiveWeight(
-    THREE.MathUtils.lerp(poseBlend.from[name] ?? 0, target[name] ?? 0, eased)));
-  if (t < 1) return false;
-  poseBlend = null;
-  return true;
-}
-
-for (const button of stanceButtons)
-  button.addEventListener('click', () => setStance(button.dataset.stance));
-for (const button of motionButtons)
-  button.addEventListener('click', () => setMotion(button.dataset.motion));
+const poseMotion = createPoseMotion({
+  get bust() { return bust; }, get current() { return current; },
+  get loader() { return loader; }, get POSES_BASE() { return POSES_BASE; },
+  get startAnimating() { return startAnimating; },
+  get stanceMetricsHook() { return stanceMetricsHook; },
+});
 
 const gripView = () => viewMode === 'grip' && gripPoint;
 const viewTarget = () => (gripView() ? gripPoint : framing.centre).clone();
@@ -427,7 +237,7 @@ async function loadPair(pair) {
   // The manifest carries `gaitAssets` too, so the sidecars start downloading
   // beside the pose rather than after it. Both are cached for the session,
   // so this is one round trip on the first pose and none after.
-  let gaitClipsPromise = pair.gaitAssets ? loadGaitClips(pair.gaitAssets) : null;
+  let gaitClipsPromise = pair.gaitAssets ? poseMotion.loadGaitClips(pair.gaitAssets) : null;
   let gltf;
   try {
     gltf = await loader.loadAsync(url);
@@ -438,7 +248,7 @@ async function loadPair(pair) {
   }
   if (sequence !== loadSequence) { disposeModel(gltf.scene); return; }
   // An older manifest without the field still works: the file names its own.
-  gaitClipsPromise ??= loadGaitClips(gltf.userData?.gaitAssets);
+  gaitClipsPromise ??= poseMotion.loadGaitClips(gltf.userData?.gaitAssets);
   const sharedClips = await gaitClipsPromise;
   if (sequence !== loadSequence) { disposeModel(gltf.scene); return; }
 
@@ -452,50 +262,8 @@ async function loadPair(pair) {
   current.traverse(obj => { if (obj.isSkinnedMesh) obj.frustumCulled = false; });
   scene.add(current);
 
-  mixer = null;
-  stanceActions = {};
-  gaitActions = {};
-  poseBlend = null;
   cameraGlide.cancel();
-  gaitInfo = gltf.userData?.gaits ?? {};
-  const clips = gltf.animations ?? [];
-  for (const key of STANCE_KEYS) {
-    const clip = THREE.AnimationClip.findByName(clips, key);
-    if (!clip) continue;
-    mixer ??= new THREE.AnimationMixer(current);
-    const action = mixer.clipAction(clip);
-    action.play();
-    action.setEffectiveWeight(0);
-    stanceActions[key] = action;
-  }
-  // `--gaits embed` still works: a pose carrying its own copy is searched
-  // first, and only a pose that does not falls through to the sidecars. The
-  // extractor never writes both, so in practice one of the two is empty.
-  const gaitClips = [...clips, ...sharedClips];
-  // A gait only counts when both halves are present: half a body walking
-  // while the other half holds a still pose is worse than the still pose.
-  for (const key of gltf.userData?.gaitClips ?? []) {
-    const halves = {};
-    for (const half of ['lower', 'upper']) {
-      const clip = THREE.AnimationClip.findByName(gaitClips, `${key}.${half}`);
-      if (!clip) continue;
-      mixer ??= new THREE.AnimationMixer(current);
-      // The mixer's root is this pose's scene, so a clip that came out of a
-      // sidecar binds to these bones by name — nothing rewrites the tracks.
-      const action = mixer.clipAction(clip);
-      action.setLoop(THREE.LoopRepeat, Infinity);
-      action.play();
-      action.setEffectiveWeight(0);
-      halves[half] = action;
-    }
-    if (halves.lower && halves.upper) gaitActions[key] = halves;
-  }
-  if (!stanceActions[stance]) stance = 'stand';
-  if (motion !== 'idle' && !gaitActions[GAIT_FOR[stance]?.[motion]])
-    motion = 'idle';
-  applyWeights(targetWeights());
-  mixer?.update(0);
-  updateStanceButtons();
+  poseMotion.bindFigure(gltf, sharedClips);
   stanceMetricsHook?.();
   refit();
 
@@ -509,7 +277,7 @@ async function loadPair(pair) {
 
   applyWireframe();
   statusLine.textContent = `${pair.soldier} holding ${pair.weapon}`;
-  if (activeGait()) startAnimating();
+  if (poseMotion.activeGait()) startAnimating();
 }
 
 // --- On-demand rendering: render only when something changed ---------------
@@ -534,8 +302,8 @@ function startAnimating() {
   (function tick(now = performance.now()) {
     const delta = Math.min((now - last) / 1000, 0.1);
     last = now;
-    const blendLanded = advancePoseBlend(now);
-    if (mixer) mixer.update(delta);
+    const blendLanded = poseMotion.advancePoseBlend(now);
+    if (poseMotion.mixer) poseMotion.mixer.update(delta);
     // A gait is motion, so the frame loop has to stay hot while one plays;
     // the still stances leave it on-demand as before. Re-fitting is still
     // once-per-landing, not per-frame — the bounds breathe with the stride
@@ -544,8 +312,8 @@ function startAnimating() {
     cameraGlide.advanceCamera(now);
     const controlsMoving = controls.update();
     renderer.render(scene, camera);
-    if (controlsMoving || controls.autoRotate || poseBlend || cameraGlide.moving
-        || activeGait())
+    if (controlsMoving || controls.autoRotate || poseMotion.blending || cameraGlide.moving
+        || poseMotion.activeGait())
       requestAnimationFrame(tick);
     else animating = false;
   })();
@@ -626,7 +394,7 @@ if (manifest) {
     const naive = document.getElementById('palm-naive');
     // Per-stance metrics when the matrix carries them (stance-aware
     // extracts); the old single-stance shape falls through untouched.
-    const stanceInfo = pair?.stances?.[stance];
+    const stanceInfo = pair?.stances?.[poseMotion.stance];
     const metrics = stanceInfo?.metrics ?? pair?.metrics ?? {};
     palmR.textContent = centimetres(metrics.palmR);
     palmR.className = palmClass(metrics.palmR);
@@ -720,12 +488,12 @@ if (manifest) {
     else if (event.key === 'ArrowRight') { step(weaponSelect, 1); event.preventDefault(); }
     else if (event.key === 'ArrowUp') { step(soldierSelect, -1); event.preventDefault(); }
     else if (event.key === 'ArrowDown') { step(soldierSelect, 1); event.preventDefault(); }
-    else if (event.key === '1') setStance('stand');
-    else if (event.key === '2') setStance('crouch');
-    else if (event.key === '3') setStance('lie');
-    else if (event.key === 'q' || event.key === 'Q') setMotion('idle');
-    else if (event.key === 'w' || event.key === 'W') setMotion('walk');
-    else if (event.key === 'e' || event.key === 'E') setMotion('run');
+    else if (event.key === '1') poseMotion.setStance('stand');
+    else if (event.key === '2') poseMotion.setStance('crouch');
+    else if (event.key === '3') poseMotion.setStance('lie');
+    else if (event.key === 'q' || event.key === 'Q') poseMotion.setMotion('idle');
+    else if (event.key === 'w' || event.key === 'W') poseMotion.setMotion('walk');
+    else if (event.key === 'e' || event.key === 'E') poseMotion.setMotion('run');
   });
 
   document.getElementById('spin').addEventListener('change', event => {
@@ -760,31 +528,29 @@ if (manifest) {
   const params = new URLSearchParams(location.search);
   if (soldiers.includes(params.get('soldier'))) soldierSelect.value = params.get('soldier');
   updateWeaponOptions(params.get('weapon'));
-  if (STANCE_KEYS.includes(params.get('stance'))) {
-    stance = params.get('stance');
-    updateStanceButtons();
+  if (poseMotion.STANCE_KEYS.includes(params.get('stance'))) {
+    poseMotion.presetStance(params.get('stance'));
   }
-  if (MOTION_KEYS.includes(params.get('motion'))) {
-    motion = params.get('motion');
-    updateStanceButtons();
+  if (poseMotion.MOTION_KEYS.includes(params.get('motion'))) {
+    poseMotion.presetMotion(params.get('motion'));
   }
   selectionChanged();
 
   // Deterministic hooks for the headless screenshot harness.
   window.__poseInspector = {
     manifest,
-    get stance() { return stance; },
-    get motion() { return motion; },
-    get gait() { return activeGait(); },
-    get gaitInfo() { return gaitInfo; },
+    get stance() { return poseMotion.stance; },
+    get motion() { return poseMotion.motion; },
+    get gait() { return poseMotion.activeGait(); },
+    get gaitInfo() { return poseMotion.gaitInfo; },
     get status() { return statusLine.textContent; },
-    stances: () => Object.keys(stanceActions),
-    gaits: () => Object.keys(gaitActions),
+    stances: () => Object.keys(poseMotion.stanceActions),
+    gaits: () => Object.keys(poseMotion.gaitActions),
     // What the mixer is actually applying, for a headless check that the
     // gait is playing rather than merely loaded.
     weights: () => {
       const out = {};
-      eachAction((name, action) => {
+      poseMotion.eachAction((name, action) => {
         const w = action.getEffectiveWeight();
         if (w > 0.001) out[name] = +w.toFixed(3);
       });
@@ -805,13 +571,12 @@ if (manifest) {
     // or on a crossfade — so the same call reproduces the same numbers and
     // two builds can be compared against each other rather than eyeballed.
     sampleCycle(bones, steps = 12) {
-      const gait = activeGait();
-      if (!gait || !mixer) return null;
-      poseBlend = null;
-      applyWeights(targetWeights());
-      const halves = Object.values(gaitActions[gait]);
+      const gait = poseMotion.activeGait();
+      if (!gait || !poseMotion.mixer) return null;
+      poseMotion.settleWeights();
+      const halves = Object.values(poseMotion.gaitActions[gait]);
       const wasPaused = halves.map(action => action.paused);
-      const period = gaitActions[gait].lower.getClip().duration;
+      const period = poseMotion.gaitActions[gait].lower.getClip().duration;
       const out = [];
       for (let i = 0; i < steps; i++) {
         const t = (i / steps) * period;
@@ -819,7 +584,7 @@ if (manifest) {
           action.paused = true;
           action.time = t % action.getClip().duration;
         }
-        mixer.update(0);
+        poseMotion.mixer.update(0);
         current.updateMatrixWorld(true);
         const row = { t: +t.toFixed(4) };
         for (const name of bones) row[name] = this.bone(name)?.map(v => +v.toFixed(4));
@@ -829,8 +594,8 @@ if (manifest) {
       startAnimating();
       return { gait, period, samples: out };
     },
-    setStance,
-    setMotion,
+    setStance: poseMotion.setStance,
+    setMotion: poseMotion.setMotion,
     select(soldier, weapon) {
       soldierSelect.value = soldier;
       updateWeaponOptions(weapon);
