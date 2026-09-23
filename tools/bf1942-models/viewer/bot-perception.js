@@ -106,7 +106,7 @@ export function sense(bot, now) {
 
 /**
  * Where a bot's sense rays start: its camera (Brief R item 1, ledger
- * AI-121). `BotMain::sense` 0x08521cf0 and `updateMemory` 0x085244e0 take the
+ * AI-123). `BotMain::sense` 0x08521cf0 and `updateMemory` 0x085244e0 take the
  * ray origin from row 3 of `AIPlayer::getCameraTransformation` 0x085dcdb0,
  * which is `BFPlayer::getCamera` 0x08054ce0 (the player's +0x50); `BFPlayer::
  * _setVehicle` 0x080523d0 sets that to the first camera of the
@@ -259,7 +259,7 @@ export function chooseVehicleTarget(bot, now) {
  * that file gives `BBFireInfantery` (`BBFire::calculateUrgency` 0x08563570)
  * to Tank (0), Fixed (4) and LandingCraftFixed (11), `BBFireLargeBore`
  * (0x0856b390) to Boat (2), BoatFixed (9) and FixedLargeBore (13), and
- * `BBFire3d` to Plane (Brief R item 2, ledger AI-122). The ledger's AI-54
+ * `BBFire3d` to Plane (Brief R item 2, ledger AI-124). The ledger's AI-54
  * had every hull and seat on the large-bore rule. A tree without the field
  * takes a driven tank for a Tank (INFERRED, as `approachesByFinding`) and
  * keeps the large-bore rule for the rest.
