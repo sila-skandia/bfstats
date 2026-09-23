@@ -32,7 +32,7 @@ import { createHandFire } from './hand-fire.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `aimHeld`, `aircraft`, `applyDamage`, `AUDIO_OFF`, `audioListener`,
+ * `aimHeld`, `aircraft`, `applyDamage`, `AUDIO_OFF`, `audioListener`, `bodyAt`, `capsulesOf`,
  * `botRoundDamage`, `bots`, `bust`, `camera`, `captured`, `car`,
  * `clickQueued`, `currentDir`, `deployKit`, `deployTeamId`, `dropClick`,
  * `ensureFootBody`, `fireStates`, `footView3p`, `guns`, `hemi`,
@@ -440,6 +440,7 @@ export function createHandWeapon(page) {
   // the depot's refill, and before the chained hooks it sets up itself.
   const fire = createHandFire({
     get aimHeld() { return page.aimHeld; }, get applyDamage() { return page.applyDamage; },
+    get bodyAt() { return page.bodyAt; }, get capsulesOf() { return page.capsulesOf; },
     get botRoundDamage() { return page.botRoundDamage; }, get bots() { return page.bots; },
     get camera() { return page.camera; }, get captured() { return page.captured; },
     get clickQueued() { return page.clickQueued; },

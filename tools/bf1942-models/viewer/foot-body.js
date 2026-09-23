@@ -7,15 +7,16 @@
 import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
-import { BODY_CLIPS, BODY_ONCE, BODY_HIDES_WEAPON, bodyClipFamily, canopyClip } from './soldier-body.js';
+import { rigCapsules } from './rig-capsules.js';
+import { BODY_CLIPS, BODY_DEATHS, BODY_ONCE, BODY_HIDES_WEAPON, bodyClipFamily, canopyClip } from './soldier-body.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `bindDynamicShading`, `bust`, `footFeetCur`, `footFeetPrev`, `footView`,
- * `footView3p`, `MODELS_BASE`, `optOnFoot`, `optPilot`, `presentAlpha`,
- * `scene`, `soldier`, `soldierDead`.
+ * `bindDynamicShading`, `bust`, `deathFamily`, `deathYaw`, `footFeetCur`,
+ * `footFeetPrev`, `footView`, `footView3p`, `MODELS_BASE`, `optOnFoot`,
+ * `optPilot`, `presentAlpha`, `scene`, `soldier`, `soldierDead`.
  */
 export function createFootBody(page) {
   const footBodies = {};
@@ -74,6 +75,9 @@ export function createFootBody(page) {
   const footBodyCache = new Map();
   const footBundleCache = new Map();
   footBodies.footGaitsManifest = null;
+  /** `gaits.json`'s `soldierBody` -- the hit capsules and the corpse time --
+   *  once the manifest is in; null before, and on a tree that predates it. */
+  footBodies.soldierBody = null;
   const footBodyQuat = new THREE.Quaternion();
   const footBodyEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
@@ -82,6 +86,7 @@ export function createFootBody(page) {
       footBodies.footGaitsManifest =
         fetch(`${page.MODELS_BASE}/poses/gaits/gaits.json${page.bust()}`)
           .then(r => (r.ok ? r.json() : null))
+          .then(json => { footBodies.soldierBody = json?.soldierBody ?? null; return json; })
           .catch(() => null);
     }
     return footBodies.footGaitsManifest;
@@ -117,7 +122,17 @@ export function createFootBody(page) {
     // state names a clip under `animations/3P_NoWeapon/`, because every one of them
     // declares `c_AsmHideWeapon`.
     const swim = await footBundle(manifest.swim);
-    return [...lower, ...upper, ...chute, ...swim];
+    // The deaths, weapon-independent too: `DieHit/LowerBody/`,
+    // `DieHit/3p/EmptyHands/` and `Vehicle/`.
+    const die = await footBundle(manifest.die);
+    return [...lower, ...upper, ...chute, ...swim, ...die];
+  }
+
+  /** The death bundle's clips (`gaits/die.gait.glb`), for a body that is not
+   *  this one -- the human's seat, whose slump is `Ub_DieInVehicle`. */
+  async function dieClips() {
+    const manifest = await footGaits();
+    return footBundle(manifest?.die);
   }
 
   function footPosePair(soldierName, weapon) {
@@ -290,34 +305,27 @@ export function createFootBody(page) {
    *  a chase view does not catch a rig frozen where it was last visible. */
   function syncFootBody(dt) {
     if (!footBodies.footBody || !page.soldier) return;
-    // NOT under the death cam, deliberately. The death cam is an external view --
-    // it parks a couple of metres behind and above the corpse and pitches down
-    // onto it (`DEATH_CAM.foot`) -- so the body would fit there, and it was
-    // wired up and then taken out again on the frame it produced
-    // (`08-death-cam.png`): there is no death family in `soldier-body.js`, so the
-    // man lies dead and the rig plays `stand`, and the near pass still draws the
-    // first-person arms over the top because it gates on `firstPerson`, which
-    // stays true while dead. A standing man under a death cam is the same kind
-    // of wrong that gated `?soldier3p=1` in the first place. It wants the
-    // `Lb_Die*` families, which this stream did not survey.
-    //
-    // ONE EXCEPTION, added by the swim stream: a man who dies in the water has a
-    // real death family. `BFSoldier::handleDamage` tests `c_AsmIsSwimming` before
-    // the pose (`0x08270c51`-`0x08270c8a`) and plays `Lb_DieSwim` / `Ub_DieSwim`,
-    // and those two clips are baked, so the corpse can be drawn instead of a man
-    // standing to attention. The family is resolved first and the gate consults
-    // it, which is the whole of the change; a land death still draws nobody.
+    // Under the death cam too. The death cam parks over the corpse and pitches
+    // down onto it (`DEATH_CAM.foot`), and the corpse plays the death the engine
+    // chose on the blow (`soldier-death.js`, `localPlayer.deathFamily`): chest or
+    // back by the round's direction, a head shot, the slow fall, the crouched
+    // and prone ones, the swim and the chute's. The arms rig stays out of that
+    // frame on its own (`hand-weapon.js` gates the near pass on `soldierDead`).
+    // `footView3p.firstPerson` stays true while dead, and the death cam is an
+    // external view whatever it says, so a corpse ignores it. A death whose
+    // clips did not bind draws nobody, as before: a corpse standing to
+    // attention is the thing this replaces.
+    const dead = !!page.soldierDead;
     const want = bodyClipFamily({
       gait: page.soldier.gait,
       stance: page.soldier.stance,
-      parachute: page.soldier.chute?.clips(!!page.soldierDead) ?? null,
-      swim: page.soldier.swimClips?.(!!page.soldierDead) ?? null,
+      parachute: page.soldier.chute?.clips(dead) ?? null,
+      swim: page.soldier.swimClips?.(dead) ?? null,
+      death: dead ? page.deathFamily : null,
     }, family => !!footBodies.footBody.families[family]);
-    const deathFamily = want === 'swimDie' || want === 'parachuteDie'
-      || want === 'parachuteDeadLanded';
     const visible = page.optOnFoot.checked && !page.optPilot.checked
-      && (!page.soldierDead || deathFamily)
-      && !page.footView3p.firstPerson && !footBodies.footBodyForceHidden;
+      && (dead ? BODY_DEATHS.has(want) : !page.footView3p.firstPerson)
+      && !footBodies.footBodyForceHidden;
     // `soldier.y` is the feet and so is the pose rig's root; the body's yaw is
     // the soldier's plus the half turn the export bakes in. The position is this
     // frame's blend between the last two tick boundaries, the same `presentAlpha`
@@ -331,7 +339,8 @@ export function createFootBody(page) {
     // render-interpolation block beside `footLookPending`): the drawn view is
     // predicted forward from the pending mouse counts, and the body turns with
     // the drawn view, not with the tick's.
-    footBodyEuler.set(0, page.footView.yaw, 0);
+    // A corpse keeps the heading it fell on while the death cam's look turns.
+    footBodyEuler.set(0, dead ? page.deathYaw : page.footView.yaw, 0);
     footBodyQuat.setFromEuler(footBodyEuler);
     footBodies.footBody.scene.quaternion.copy(footBodyQuat);
     footBodies.footBody.scene.visible = visible;
@@ -344,9 +353,9 @@ export function createFootBody(page) {
       footBodies.footBody.weaponNode.visible = !BODY_HIDES_WEAPON.has(want);
     }
 
-    // The family was resolved above the visibility gate, because the swim death is
-    // the one death this rig can draw. The order inside `bodyFamily` is the
-    // engine's: the parachute's whole-body pair, then the swim's, then the gait.
+    // The family was resolved above the visibility gate, because a corpse is
+    // drawn only when its death bound. The order inside `bodyFamily` is the
+    // engine's: the death, the parachute's whole-body pair, the swim's, the gait.
     if (want !== footBodies.footBody.want) {
       footBodies.footBody.want = want;
       for (const [family, actions] of Object.entries(footBodies.footBody.families)) {
@@ -375,8 +384,18 @@ export function createFootBody(page) {
     }
   }
 
+  /** The human's own body's hit capsules on foot (`rig-capsules.js`), or null
+   *  while it has none to offer. */
+  function footCapsules() {
+    const body = footBodies.footBody;
+    if (!body || page.soldierDead) return null;
+    return rigCapsules(body.scene, footBodies.soldierBody?.collisionBones);
+  }
+
   Object.assign(footBodies, {
+    dieClips,
     disposeFootBodyScene,
+    footCapsules,
     ensureFootBody,
     footBodyClips,
     footBodyLoader,

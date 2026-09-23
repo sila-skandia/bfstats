@@ -12,6 +12,8 @@ import * as THREE from 'three';
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
 import { calculateHitOctant } from './hud.js';
 import { Armor } from './armor.js';
+import { deathFamily } from './soldier-death.js';
+import { PARA_FALLING } from './parachute.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -23,7 +25,7 @@ import { Armor } from './armor.js';
  * `feedMobileTurretAim`, `feedVehicleHud`, `flyFreeCamera`, `followSeat`,
  * `footLookPair`, `forgetSeatViews`, `handleSoldierFootstep`, `hud`,
  * `HUD_DRIVE`, `HUD_FLY`, `HUD_FOOT`, `HUD_MANNED`, `HUD_PILOT`,
- * `hudBridge`, `kbLockLeave`, `keys`, `loadSeatPose`, `LOCAL_PLAYER`,
+ * `hudBridge`, `kbLockLeave`, `keys`, `killOccupantInSeat`, `loadSeatPose`, `LOCAL_PLAYER`,
  * `mannedActive`, `mobileJumpHeld`, `mobilePadAxis`, `mobilePadHeld`,
  * `mobilePadVector`, `mouseInput`, `netSeatRow`, `netSendAction`,
  * `netVehicleIdFor`, `noteOccupiedVehicle`, `onFootCamera`, `optOnFoot`,
@@ -387,6 +389,10 @@ export function createLocalPlayer(page) {
   const DEATH_CAM = {
     foot:    { lift: 3.5, back: 0, pitch: -0.9,  beat: DEATH_CAM_BEAT },
     vehicle: { lift: 30,  back: 0, pitch: -Math.PI / 2 + 0.035, beat: 3.0 },
+    // Killed in a seat by a round: a short float behind and above the man
+    // slumped in his seat, pitched straight onto him (atan(3 / 2.5) = 0.876):
+    // the on-foot framing, with no `back`, looks past a point under the camera.
+    seat:    { lift: 3, back: 2.5, pitch: -0.876, beat: DEATH_CAM_BEAT },
   };
   localPlayer.deathCamShot = DEATH_CAM.foot;
   /** What the death cam is framed on: `null` for the corpse's own eye — the
@@ -398,8 +404,26 @@ export function createLocalPlayer(page) {
   // The body's life and the death cam are written here and nowhere else;
   // the modules that see a death or a spawn say which one happened.
 
-  /** The body on foot has died: latch it and float the camera over it. */
+  /** Which death the body plays (`soldier-death.js`), chosen on the blow and
+   *  kept: `null` while alive. */
+  localPlayer.deathFamily = null;
+  /** The body's heading at the blow. The corpse keeps it while the death cam's
+   *  look turns freely. */
+  localPlayer.deathYaw = 0;
+
+  /** The body on foot has died: latch it, pick the death the engine would, and
+   *  float the camera over it. */
   localPlayer.dieOnFoot = () => {
+    const s = localPlayer.soldier;
+    localPlayer.deathYaw = s?.yaw ?? 0;
+    localPlayer.deathFamily = s ? deathFamily({
+      parachuteOpen: !!s.chute?.open,
+      swimming: !!s.swim?.swimming,
+      freeFall: s.chute?.state === PARA_FALLING,
+      stance: s.stance,
+      hit: localPlayer.soldierArmor?.lastHit ?? null,
+      yaw: s.yaw,
+    }) : null;
     localPlayer.soldierDead = true;
     localPlayer.deathCamShot = DEATH_CAM.foot;
     localPlayer.deathCamTarget = null;
@@ -417,11 +441,25 @@ export function createLocalPlayer(page) {
     localPlayer.deathCamTimer = localPlayer.deathCamShot.beat;
     localPlayer.deathCamTarget = target;
   };
+  /** Killed in the seat by a round (the hull is fine): the corpse is the seat's
+   *  own body, slumped over the gun (`seat-pose.js` `detachSeatCorpse`), and
+   *  the shot is of `target`, its `{ x, y, z, yaw }`. The on-foot body plays
+   *  nothing -- `dieInVehicle` is not one of its families -- so it stays out of
+   *  the frame. */
+  localPlayer.dieInSeat = target => {
+    localPlayer.deathFamily = 'dieInVehicle';
+    localPlayer.deathYaw = target?.yaw ?? 0;
+    localPlayer.soldierDead = true;
+    localPlayer.deathCamShot = DEATH_CAM.seat;
+    localPlayer.deathCamTimer = localPlayer.deathCamShot.beat;
+    localPlayer.deathCamTarget = target;
+  };
   /** A fresh body on its feet with `armor`; the death cam lets go of it. */
   localPlayer.revive = armor => {
     localPlayer.prone = false;
     localPlayer.soldierArmor = armor;
     localPlayer.soldierDead = false;
+    localPlayer.deathFamily = null;
     localPlayer.deathCamTimer = 0;
     localPlayer.deathCamShot = DEATH_CAM.foot;
     localPlayer.deathCamTarget = null;
@@ -505,8 +543,11 @@ export function createLocalPlayer(page) {
   }
 
 
-  function applyDamageToPlayer(damage, attackerPos = null, attackerTeam = null) {
+  /** `hit` is the round's meeting with the body (`soldier-death.js`
+   *  `roundHit`), when the damage was a round that met him. */
+  function applyDamageToPlayer(damage, attackerPos = null, attackerTeam = null, hit = null) {
     if (!localPlayer.soldierArmor || localPlayer.soldierDead) return;
+    if (hit) localPlayer.soldierArmor.lastHit = hit;
     localPlayer.soldierArmor.applyDamage(damage);
 
     // If in a vehicle or piloting, vehicle damage handles it -- no on-foot grunts or hit arcs
@@ -695,6 +736,8 @@ export function createLocalPlayer(page) {
     // the mixer and the clip overwrites the hands, run it before the rig and the
     // hands chase last frame's wheel.
     if (page.optPilot.checked) page.stepSeatIk();
+    // Killed in the seat by a round, with the hull whole: slump there.
+    if (page.optPilot.checked) page.killOccupantInSeat();
   };
 
   Object.assign(localPlayer, {

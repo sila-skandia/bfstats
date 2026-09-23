@@ -394,10 +394,12 @@ export function installSoldierHooks(page) {
   // `SimpleObject::handleDamage`'s own sign dispatch (R4-19): positive
   // damages, zero or negative heals — the hook the round-2 briefing asks
   // for, so a test can take the soldier's HP down without waiting on fall
-  // damage's own approximate trigger.
-  window.__damage = n => {
+  // damage's own approximate trigger. `hit` is an optional round meeting
+  // (`soldier-death.js` `roundHit`: `{ travel, height }`), which is what the
+  // death the body then plays is picked by.
+  window.__damage = (n, hit = null) => {
     if (!page.soldierArmor) return false;
-    page.applyDamageToPlayer(Number(n) || 0);
+    page.applyDamageToPlayer(Number(n) || 0, null, null, hit);
     return true;
   };
   // Exercise the fall-damage integration itself (the `onFoot` hook above),

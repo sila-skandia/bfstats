@@ -7,13 +7,14 @@
 // agree is made against the real `PARA_CLIPS`, not a transcription of it.
 
 import {
-  BODY_CLIPS, BODY_ONCE, BODY_FALLBACKS, BODY_HIDES_WEAPON,
+  BODY_CLIPS, BODY_DEATHS, BODY_ONCE, BODY_FALLBACKS, BODY_HIDES_WEAPON,
   UPPER_STAND_AIM, LOWER_STAND,
   bodyClipFamily, bodyFamily, canopyClip, locoFamily, parachuteFamily,
   resolveBodyFamily, swimFamily,
 } from './soldier-body.js';
 import { PARA_CLIPS } from './parachute.js';
 import { SWIM_CLIPS, SWIM_STATE_FLAGS, itemsLocked } from './swim.js';
+import { DIE_CLIPS } from './soldier-death.js';
 
 const results = {};
 
@@ -26,8 +27,14 @@ results.standLower = LOWER_STAND;
 // Every family names both halves, and every fallback chain ends at `stand`.
 results.everyFamilyHasBothHalves = Object.values(BODY_CLIPS)
   .every(spec => typeof spec.lower === 'string' && typeof spec.upper === 'string');
-results.everyChainEndsAtStand = Object.values(BODY_FALLBACKS)
-  .every(chain => chain[chain.length - 1] === 'stand');
+// ...except a death's, which never reaches a locomotion family: a corpse
+// standing to attention is what the death families replace.
+results.everyChainEndsAtStand = Object.entries(BODY_FALLBACKS)
+  .filter(([family]) => !Object.hasOwn(DIE_CLIPS, family))
+  .every(([, chain]) => chain[chain.length - 1] === 'stand');
+results.noDeathChainReachesLocomotion = Object.entries(BODY_FALLBACKS)
+  .filter(([family]) => Object.hasOwn(DIE_CLIPS, family))
+  .every(([, chain]) => chain.every(f => Object.hasOwn(DIE_CLIPS, f)));
 results.everyChainStartsWithItself = Object.entries(BODY_FALLBACKS)
   .every(([family, chain]) => chain[0] === family);
 results.everyFamilyHasAChain = Object.keys(BODY_CLIPS)
@@ -131,12 +138,25 @@ results.swimOnAnOldRig = {
   fullRig: bodyClipFamily({ gait: 'run', swim: SWIM_CLIPS.swimBackward },
                           () => true),
 };
-// `c_AsmHideWeapon`: the five swim states declare it, the swim death does not
-// (it is an `AnimationStatesDie.con` state and declares no flags at all), and
-// nothing else in the table does.
+// `c_AsmHideWeapon`: the five swim states declare it and so does every lower
+// state in `AnimationStatesDie.con`, the swim death among them; nothing else in
+// the table does.
 results.hidesWeapon = [...BODY_HIDES_WEAPON];
-results.hidesWeaponIsSwimOnly = [...BODY_HIDES_WEAPON]
-  .every(f => f.startsWith('swim') && f !== 'swimDie');
+results.hidesWeaponIsSwimOrDeath = [...BODY_HIDES_WEAPON]
+  .every(f => f.startsWith('swim') || Object.hasOwn(DIE_CLIPS, f));
+results.deaths = [...BODY_DEATHS];
+// A death decided on the blow outranks the chute and the gait: a man killed in
+// free fall plays `DieHitGround` while the chute still says `Lb_ParachuteFall`.
+results.deathSelection = {
+  crouchedDeath: bodyFamily({ gait: 'crouch', stance: 'crouch', death: 'dieBackCrouch' }),
+  freeFallDeath: bodyFamily({ gait: 'stand', parachute: PARA_CLIPS.falling,
+                              death: 'dieHitGround' }),
+  // `parachuteDie` and `swimDie` are those modules' own pairs, reached through them.
+  canopyDeath: bodyFamily({ parachute: PARA_CLIPS.dead, death: 'parachuteDie' }),
+  swimDeath: bodyFamily({ swim: SWIM_CLIPS.swimDie, death: 'swimDie' }),
+  noDeathBundle: bodyClipFamily({ death: 'dieBackStand' }, only('stand', 'run')),
+  onlyChest: bodyClipFamily({ death: 'dieBackStand' }, only('stand', 'dieChestStand')),
+};
 // And it agrees, family by family, with the flag words `swim.js` carries -- the
 // renderer's set and the item gate's set are the same set, because they are the
 // same `setFlag c_AsmHideWeapon`. Two tables that can drift are one bug.
