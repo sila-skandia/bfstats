@@ -155,7 +155,10 @@ class SimVehicleTests(unittest.TestCase):
         # Brief N items 1 and 3 on Wake: the SAI's beach order to
         # WesternMainBaseExit's CentreLanding, a helm and a rider aboard.
         r = recipe("beach")
-        self.assertEqual(r["order"], {"kind": "WPBeachLanding", "zone": "CentreLanding"})
+        # Its own zone, as `WPBeachLanding` (no route) or, from the craft's
+        # area over the engine's route, `WPMoveToBeachLanding` (AI-113).
+        self.assertIn(r["order"]["kind"], ("WPBeachLanding", "WPMoveToBeachLanding"))
+        self.assertEqual(r["order"]["zone"], "CentreLanding")
         self.assertIsNotNone(r["beachLegAt"], "the craft enters its zone and takes the beach leg")
         # `BAPATriggerContinously(PIPitch)` on the beach leg: 1.0 in the
         # channel, carried into the word the world consumes.
