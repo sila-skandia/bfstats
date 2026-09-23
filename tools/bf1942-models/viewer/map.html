@@ -8229,7 +8229,7 @@ const entryWorld = new THREE.Vector3();
 function nearestEntry() {
   if (!entryPoints) collectEntryPoints();
   return pickNearest(entryPoints, entry => {
-    if (botMounts.has(entry.vehicle)) return Infinity;
+    if (botSeatHolder(entry.vehicle, entry.seatId)) return Infinity;
     entry.node.getWorldPosition(entryWorld);
     const distance = Math.hypot(entryWorld.x - soldier.x,
       entryWorld.y - (soldier.y + 1), entryWorld.z - soldier.z);
@@ -9711,8 +9711,9 @@ function botMagazineShot(bot, mag) {
   mag.rounds = Math.max(0, mag.rounds - 1);
 }
 
-/** The MedPack's heal per trigger tick (bot-behaviours.js `MEDIC`). */
-const BOT_HEAL_PER_ROUND = 0.5;
+/** The MedPack's heal per trigger tick (bot-behaviours.js `MEDIC`): the
+ *  soldier template's +0x2e0 default 0.1 per `useRepairPack` at 30 Hz. */
+const BOT_HEAL_PER_ROUND = 0.3;
 
 // --- bots in land vehicles ---------------------------------------------------
 // The Change behaviour (bot-vehicle.js) picks a driver's seat; the page seats
@@ -9773,7 +9774,6 @@ function botVehicleNav() {
 }
 
 /** vehicle root node -> the bot driving it. */
-const botMounts = new Map();
 const botVehicleKinds = new Map();
 let botCandidateCache = { at: -1, list: [] };
 const _botEntryWorld = new THREE.Vector3();
@@ -9796,6 +9796,24 @@ function botVehicleKindOf(node) {
  * shared by every bot (the engine's environment query, INVENTION radius).
  */
 let botEntryCollectedAt = -Infinity;
+/** The seats bots hold: vehicle root node -> Map(seatId -> bot playerId). */
+const botSeats = new Map();
+function botSeatHolder(node, seatId) { return botSeats.get(node)?.get(seatId) ?? null; }
+function botDriverOf(node) {
+  const occ = botSeats.get(node);
+  if (!occ) return occupancy?.root === node ? LOCAL_PLAYER : null;
+  const rootId = node.userData?.control || node.name || 'vehicle';
+  return occ.get(rootId) ?? (occupancy?.root === node && occupancy.activeSeatId === rootId ? LOCAL_PLAYER : null);
+}
+
+/**
+ * The seats a bot may take right now (`BBChange`'s environment list): every
+ * door of every enterable unit with AI data — a land vehicle's driver seat,
+ * its gunner and passenger seats, a fixed gun — that no one holds, with the
+ * seat's own AI numbers (`vehicle-ai.json` `seatsAi`): the guns it reaches,
+ * its strategic strength, and the hull's `maxSpeed` when the seat drives or
+ * rides a driven hull. Rebuilt twice a second and shared by every bot.
+ */
 function botVehicleCandidates() {
   if (botClock - botCandidateCache.at < 0.5) return botCandidateCache.list;
   // The vehicles land after the bots do, and respawn later: the door list
@@ -9806,14 +9824,15 @@ function botVehicleCandidates() {
   }
   const list = [];
   if (entryPoints && botVehicleAi) {
-    const seen = new Set();
+    const byNode = new Map();
     for (const e of entryPoints) {
-      const node = e.vehicle;
-      if (seen.has(node)) continue;
-      seen.add(node);
+      if (!byNode.has(e.vehicle)) byNode.set(e.vehicle, []);
+      byNode.get(e.vehicle).push(e);
+    }
+    for (const [node, doors] of byNode) {
       if (!vehicleSpawnActive(node)) continue;
       const kind = botVehicleKindOf(node);
-      if (kind !== 'ground' && kind !== 'tank') continue;
+      if (!['ground', 'tank', 'gun', 'air', 'ship'].includes(kind)) continue;
       const ai = botVehicleAiOf(node);
       if (!ai) continue;
       const owner = collider?.statics?.ownerOf(node) ?? -1;
@@ -9822,120 +9841,205 @@ function botVehicleCandidates() {
       node.getWorldPosition(_botEntryWorld);
       const pos = [_botEntryWorld.x, _botEntryWorld.y, _botEntryWorld.z];
       _botUp.set(0, 1, 0).applyQuaternion(node.getWorldQuaternion(new THREE.Quaternion()));
-      const doors = entryPoints.filter(x => x.vehicle === node);
-      const main = doors.find(x => x.seatId === node.userData?.seatId) ?? doors[0];
-      main.node.getWorldPosition(_botEntryWorld);
-      const gun = Object.values(ai.aiWeapons ?? {})[0] ?? null;
-      list.push({
-        id: node.uuid, node, template: ai.name, kind,
-        pos, entry: [_botEntryWorld.x, _botEntryWorld.z], entryRadius: main.radius, seatId: main.seatId,
-        health: damage?.maxHitPoints > 0 ? damage.hitPoints / damage.maxHitPoints : 1,
-        maxSpeed: ai.maxSpeed ?? 0,
-        strengths: gun?.strength ?? {},
-        value: ai.strategicStrength?.['0'] ?? 0,
-        upright: _botUp.y >= 0.6914,
-        occupiedBy: botMounts.get(node) ?? (occupancy?.root === node ? LOCAL_PLAYER : null),
-        weapons: Object.entries(ai.aiWeapons ?? {}).map(([name, w]) => ({ ...w, name })),
-        strType: ai.strType ?? 'LightArmour',
-      });
+      const upright = _botUp.y >= 0.6914;
+      const rootId = node.userData?.control || node.name || 'vehicle';
+      const driver = botDriverOf(node);
+      const health = damage?.maxHitPoints > 0 ? damage.hitPoints / damage.maxHitPoints : 1;
+      const seen = new Set();
+      for (const door of doors) {
+        if (seen.has(door.seatId)) continue;
+        seen.add(door.seatId);
+        const isRoot = door.seatId === rootId;
+        const seatAi = ai.seatsAi?.[door.seatId] ?? (isRoot ? ai.seatsAi?.[ai.name] : null) ?? null;
+        const weapons = Object.entries(seatAi?.aiWeapons ?? (isRoot ? ai.aiWeapons : {}) ?? {})
+          .map(([name, w]) => ({ ...w, name }));
+        const strengths = {};
+        for (const w of weapons) for (const [k, v] of Object.entries(w.strength ?? {})) strengths[k] = Math.max(strengths[k] ?? 0, v ?? 0);
+        const drives = isRoot && kind !== 'gun';
+        // `modifyForDriver`: a plane's secondary seats x0.5, a ship's x0.77.
+        const seatFactor = isRoot ? 1 : (kind === 'air' ? 0.5 : kind === 'ship' ? 0.77 : 1);
+        const holder = botSeatHolder(node, door.seatId)
+          ?? (occupancy?.root === node && occupancy.activeSeatId === door.seatId ? LOCAL_PLAYER : null);
+        door.node.getWorldPosition(_botEntryWorld);
+        list.push({
+          id: `${node.uuid}:${door.seatId}`, vehicleId: node.uuid, node, template: ai.name, kind,
+          seatId: door.seatId, isRoot, drives,
+          pos, entry: [_botEntryWorld.x, _botEntryWorld.z], entryRadius: door.radius,
+          health, upright,
+          // `calculateVehicleMoveUrgency`: a driver moves the hull; a passenger
+          // moves only when someone drives it (x2.5 of the bot driver's when
+          // its order differs — the driver's order is taken as the same).
+          maxSpeed: drives ? (ai.maxSpeed ?? 0) : (driver ? (ai.maxSpeed ?? 0) : 0),
+          movedByBot: !drives && !!driver && driver !== LOCAL_PLAYER,
+          strengths, weapons,
+          value: ((seatAi?.strategicStrength ?? ai.strategicStrength)?.['0'] ?? 0) * seatFactor,
+          seatFactor,
+          occupiedBy: holder,
+          strType: ai.strType ?? 'LightArmour',
+          driver,
+        });
+      }
     }
   }
   botCandidateCache = { at: botClock, list };
   return list;
 }
 
-/** Seat a bot in a candidate's driver seat. Returns true when it sits. */
+/** The body radius a land vehicle keeps on its map, and a plane's or
+ *  ship's for its arrival circle (INVENTION). */
+const BOT_VEHICLE_RADIUS = 3.0;
+const BOT_VEHICLE_RADIUS_LARGE = 10.0;
+
+/**
+ * Seat a bot: the driver's seat of a land vehicle gets the page's own
+ * drivetrain (as `setPilot` builds it for the human), any other seat — a
+ * gunner's, a passenger's, a fixed gun — is a bare seat whose guns the
+ * world fires from the bot's trigger. Returns true when it sits.
+ */
 function botEnterVehicle(bot, cand) {
   const node = cand.node;
-  if (!node || botMounts.has(node) || occupancy?.root === node) return false;
-  if (!currentRoot) return false;
+  if (!node || !currentRoot) return false;
+  if (botSeatHolder(node, cand.seatId)) return false;
+  if (occupancy?.root === node && occupancy.activeSeatId === cand.seatId) return false;
   const occ = new VehicleOccupancy(node, {
     Aircraft, GroundVehicle, TrackedVehicle: GroundModule.TrackedVehicle, Ship,
   });
-  if (occ.rootKind !== 'ground' && occ.rootKind !== 'tank') return false;
-  const drive = occ.ensureDrive(currentRoot, {
-    groundHeight, surfaceFriction, deckNormal, collider: bodyAwareCollider(),
-    waterLevel: collider?.waterLevel ?? extras?.waterLevel,
-  });
-  if (!drive) return false;
-  drive.autoFirstPerson = false;
-  drive.setFirstPerson?.(false);
-  adoptDrivenBody(drive);
-  thawVehicle(node);
+  const drivesKinds = ['ground', 'tank', 'air', 'ship'];
+  let drive = null;
+  if (cand.drives && drivesKinds.includes(occ.rootKind)) {
+    drive = occ.ensureDrive(currentRoot, {
+      groundHeight, surfaceFriction, deckNormal, collider: bodyAwareCollider(),
+      waterLevel: collider?.waterLevel ?? extras?.waterLevel,
+    });
+    if (!drive) return false;
+    drive.autoFirstPerson = false;
+    drive.setFirstPerson?.(false);
+    if (occ.rootKind === 'air') {
+      // As `setPilot`: the spawn pose puts the aircraft on the deck; lift it
+      // clear of its own wheels.
+      drive.groundHeight = groundHeight;
+      drive.state.position.y += 0.2;
+    } else if (occ.rootKind === 'ship') {
+      drive.groundHeight = (x, z) => {
+        const h = collider?.heightfield?.height(x, z);
+        return Number.isFinite(h) ? h : -Infinity;
+      };
+      drive.groundNormal = (x, z, out) => {
+        const n = collider?.heightfield?.normal;
+        if (!n) { out.set(0, 1, 0); return out; }
+        n.call(collider.heightfield, x, z, _shipNormal);
+        out.set(_shipNormal[0], _shipNormal[1], _shipNormal[2]);
+        return out;
+      };
+      drive.seabedFriction = seabedFriction;
+    }
+    adoptDrivenBody(drive);
+    thawVehicle(node);
+  }
   occ.setActiveSeat(cand.seatId || occ.rootId);
-  const groups = guns.collect(drive.node, {
+  const gunOptions = {
     replace: false, speedScale: 1, maxRange: 1500, roundLifetime: 'data', tracerLength: 'data',
-    platformVelocity: () => drive.state.velocity,
-  });
+    platformVelocity: () => drive?.state?.velocity ?? null,
+  };
+  const groups = drive ? guns.collect(drive.node, gunOptions) : [];
+  const driven = new Set(groups.map(g => g.node));
+  const manned = occ.activeFireArmsNodes().filter(n => !driven.has(n)).flatMap(n => guns.collect(n, gunOptions));
   world.setPlayerVehicle(bot.playerId, {
-    occupancy: occ, vehicle: drive, kind: occ.rootKind, groups, manned: [],
+    occupancy: occ, vehicle: drive, kind: occ.rootKind, groups, manned,
   });
   const record = world.player(bot.playerId);
   if (record) record.vehicleStrType = cand.strType;
-  botMounts.set(node, bot.playerId);
+  if (!botSeats.has(node)) botSeats.set(node, new Map());
+  botSeats.get(node).set(cand.seatId, bot.playerId);
   bot.mount({
-    id: cand.id, node, drive, occupancy: occ, kind: occ.rootKind, groups,
-    nav: botVehicleNav(), radius: BOT_VEHICLE_RADIUS, maxSpeed: cand.maxSpeed,
+    id: cand.id, vehicleId: cand.vehicleId, node, drive, occupancy: occ, kind: occ.rootKind,
+    seatId: cand.seatId, drives: !!drive, groups, manned,
+    nav: drive && ['ground', 'tank'].includes(occ.rootKind) ? botVehicleNav() : null,
+    radius: occ.rootKind === 'air' || occ.rootKind === 'ship' ? BOT_VEHICLE_RADIUS_LARGE : BOT_VEHICLE_RADIUS,
+    maxSpeed: cand.maxSpeed,
     weapons: cand.weapons, template: cand.template,
+    // A rider's move term follows whoever drives the hull right now.
+    hullMaxSpeed: botVehicleAiOf(node)?.maxSpeed ?? 0,
+    driverOf: () => botDriverOf(node),
   }, botClock);
   const vis = botVisuals.get(bot.playerId);
   if (vis) vis.group.visible = false;
-  if (BOT_DEBUG) console.log(`[bots] ${bot.playerId} enters the ${cand.template}`);
+  if (BOT_DEBUG) console.log(`[bots] ${bot.playerId} takes the ${cand.template} ${cand.drives ? 'driver seat' : 'seat ' + cand.seatId}`);
   return true;
 }
 
-/** The body radius a land vehicle keeps on its map (INVENTION). */
-const BOT_VEHICLE_RADIUS = 3.0;
-
-/** Unseat a bot: the hull parks where it stands, the soldier steps out beside it. */
+/** Unseat a bot: a driven hull parks where it stands, the soldier steps out beside it. */
 function botLeaveVehicle(bot, { killed = false } = {}) {
   const m = bot.vehicle;
   if (!m) return;
+  for (const group of [...(m.groups ?? []), ...(m.manned ?? [])]) guns.release(group);
   const drive = m.drive;
-  for (const group of m.groups ?? []) guns.release(group);
-  drive.state.throttle = 0;
-  drive.setInput('c_PIThrottle', 0);
-  drive.setInput('c_PIYaw', 0);
-  drive.setInput('c_PIFire', 0);
-  drive.applyTransform();
-  drive.applyRig?.();
-  freezeVehicle(m.node);
-  releaseDrivenBody(drive);
+  let p;
+  if (drive) {
+    drive.state.throttle = 0;
+    drive.setInput('c_PIThrottle', 0);
+    drive.setInput('c_PIYaw', 0);
+    drive.setInput('c_PIFire', 0);
+    drive.applyTransform();
+    drive.applyRig?.();
+    freezeVehicle(m.node);
+    releaseDrivenBody(drive);
+    p = drive.state.position;
+  } else {
+    m.node.getWorldPosition(_botEntryWorld);
+    p = _botEntryWorld;
+  }
   world.clearPlayerVehicle(bot.playerId);
   const record = world.player(bot.playerId);
-  if (record) record.vehicleStrType = null;
-  botMounts.delete(m.node);
-  const p = drive.state.position;
-  const record2 = world.player(bot.playerId);
-  const soldier = record2?.soldier;
+  if (record) { record.vehicleStrType = null; record.position = null; }
+  botSeats.get(m.node)?.delete(m.seatId);
+  if (botSeats.get(m.node)?.size === 0) botSeats.delete(m.node);
+  const soldier = record?.soldier;
   if (soldier) {
+    // Out through the side: the soldier is re-spawned beside the hull (its
+    // position is the body's, `Soldier.spawn` is the placement API).
     const f = bot._vehicleForward();
     const x = p.x + f[1] * 3.5, z = p.z - f[0] * 3.5;
-    const y = groundHeight(x, z, p.y + 3) ;
-    soldier.x = x; soldier.z = z; soldier.y = Number.isFinite(y) ? y + 0.05 : p.y;
-    if (soldier.body?.body?.position) {
-      soldier.body.body.position.x = soldier.x; soldier.body.body.position.y = soldier.y; soldier.body.body.position.z = soldier.z;
-    }
-    bot.setPosition(soldier.x, soldier.y, soldier.z);
+    const y = groundHeight(x, z, p.y + 3);
+    const yy = Number.isFinite(y) ? y + 0.05 : p.y;
+    soldier.spawn(x, yy, z, Math.atan2(f[0], f[1]));
+    bot.setPosition(x, yy, z);
   }
   bot.dismount(botClock);
+  botCandidateCache.at = -1;
   const vis = botVisuals.get(bot.playerId);
   if (vis) vis.group.visible = !killed;
   if (BOT_DEBUG) console.log(`[bots] ${bot.playerId} leaves the ${m.template}${killed ? ' (killed)' : ''}`);
 }
 
-/** Per tick: seat the bots that asked, unseat those whose hull is gone. */
+const _botSeatWorld = new THREE.Vector3();
+
+/** Per tick: seat the bots that asked, unseat the ones that asked or whose hull is gone. */
 function botVehicleTick() {
   const cands = botVehicleCandidates();
   for (const bot of botControllers) {
     bot.vehicleCandidates = cands;
     if (bot.vehicle) {
-      const owner = collider?.statics?.ownerOf(bot.vehicle.node) ?? -1;
-      const damage = world?.vehicleDamage?.get(owner) ?? null;
+      const m = bot.vehicle;
+      // The hull the world bills damage to for this seat (`nodeOwners`), not
+      // the collider's owner of the node: an aircraft's differs.
+      const damage = world?.occupiedDamageable?.(bot.playerId) ?? null;
       if (damage?.destroyed) {
         // A destroyed hull takes its crew (the engine kills the occupants).
         botLeaveVehicle(bot, { killed: true });
         applyDamageToBot(bot.playerId, 1e6, null, null);
+        continue;
+      }
+      if (!m.drive) {
+        // A rider's position is the hull's: the world's player record and
+        // the controller both read it from the seat node.
+        m.node.getWorldPosition(_botSeatWorld);
+        const record = world.player(bot.playerId);
+        if (record) record.position = [_botSeatWorld.x, _botSeatWorld.y, _botSeatWorld.z];
+      }
+      if (bot.exitRequest) {
+        bot.exitRequest = false;
+        botLeaveVehicle(bot);
       }
       continue;
     }
@@ -17674,10 +17778,11 @@ if (params.has('shots')) {
         kind: botVehicleKindOf(n), active: vehicleSpawnActive(n), ai: botVehicleAiOf(n)?.name ?? null })),
     };
   };
-  window.__botVehicles = () => botVehicleCandidates().map(c => ({ template: c.template, kind: c.kind, pos: c.pos.map(v => +v.toFixed(0)), entry: c.entry.map(v => +v.toFixed(0)), r: c.entryRadius, health: c.health, maxSpeed: c.maxSpeed, occupiedBy: c.occupiedBy, upright: c.upright }));
-  window.__botMount = (id, template = null) => {
+  window.__botVehicles = () => botVehicleCandidates().map(c => ({ template: c.template, seat: c.seatId, root: c.isRoot, kind: c.kind, pos: c.pos.map(v => +v.toFixed(0)), entry: c.entry.map(v => +v.toFixed(0)), r: c.entryRadius, health: c.health, maxSpeed: c.maxSpeed, occupiedBy: c.occupiedBy, driver: c.driver, upright: c.upright, strengths: c.strengths, value: c.value }));
+  window.__botMount = (id, template = null, seat = 'driver') => {
     const bot = botControllers.find(b => b.playerId === id);
-    const cands = botVehicleCandidates().filter(c => !c.occupiedBy && (!template || c.template === template));
+    const cands = botVehicleCandidates().filter(c => !c.occupiedBy && (!template || c.template === template)
+      && (seat === 'any' || (seat === 'driver' ? c.isRoot : c.seatId === seat)));
     if (!bot || !cands.length) return false;
     const p = bot.getPosition();
     cands.sort((a, b) => Math.hypot(a.pos[0] - p[0], a.pos[2] - p[2]) - Math.hypot(b.pos[0] - p[0], b.pos[2] - p[2]));
