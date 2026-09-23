@@ -1,292 +1,119 @@
 #!/usr/bin/env python3
-"""
-BF1942 Pathfinding .raw file decoder
+"""Decode a baked BF1942 search map, `Pathfinding/<name>Level<L>Map.raw`.
 
-Decodes the precomputed navigation maps found in
-Mods/<mod>/levels/<level>/Pathfinding/<VehicleType><N>Level<M>Map.raw
+The format is in
+`features/bf1942-ai-research-2026-09-21/pathfinding-raw-format.md`, read
+from `bf1942_lnxded.static` (`CellMap::loadRawFile` 0x085f8930 /
+0x085f86a0, `CellMap::getPixel` 0x085f9a00, `CellMap::CellMap`
+0x085f7af0). In short:
 
-Binary analysis of bf1942_lnxded.static (CellMap::loadRawFile @ 0x085f86a0,
-CellMap::addSpecialCell @ 0x085f7f20, CellMap::getSpecialCell @ 0x085f7fc0,
-CellMap::getSpecialCellId @ 0x085f8000).
+* five int32: `log2` blocks across, `log2` blocks down, `level + 6` (the
+  block's size exponent in map units), the level, the bits-per-pixel
+  exponent (0: one bit a pixel);
+* the special-cell count and the special cells, each a 32-bit word that
+  fills every word of a block (0 all free, 0xffffffff all blocked);
+* one int32 per block, row-major: `>= 0` an index into the special cells,
+  `< 0` followed INLINE by the block's own 512 bytes (a 64 x 64 one-bit
+  block: bit `col & 31` of word `row * 2 + (col >> 5)`, LSB first, 1
+  blocked).
 
-## File format
+A level-L pixel is `1 << L` metres, x along world x and rows along the
+engine's z. The `<name>Info.raw`, `<name>.raw` and `<name>LandMap.raw` files
+beside the level maps have other layouts and are not decoded here.
 
-### Header (5 × int32, little-endian)
+Usage:
 
-| Field | Offset | Meaning |
-|-------|--------|---------|
-| 1 | 0x00 | width_bits  = log2(grid width) |
-| 2 | 0x04 | height_bits = log2(grid height) |
-| 3 | 0x08 | level       = pyramid depth level (6 + level for vanilla) |
-| 4 | 0x0C | level_index (same as field 3 in every observed file) |
-| 5 | 0x10 | always 0 in every observed file |
-
-Grid dimensions: width = 1 << field1, height = 1 << field2.
-Total rows = (1 << field1) * (1 << field2) = 1 << (field1 + field2).
-
-### Special cell table
-
-| Field | Size |
-|-------|------|
-| special_cell_count | int32 |
-| special_cell_ids   | special_cell_count × u32 |
-
-Each u32 is a "special cell ID" — an externally defined cell handle
-(e.g. a water cell, obstacle, etc.) that multiple grid positions can
-reference.
-
-### Row records
-
-Exactly `width × height` int32 values follow, one per grid cell in
-row-major order (x varies fastest).
-
-For each row record `val`:
-
-| Condition | Meaning |
-|-----------|---------|
-| `val >= 0` | Index into the special cell table. The cell data is `special_cells[val]`. |
-| `val < 0`  | A literal cell value stored directly. The engine allocates a new cell from its memory pool and stores `val` as the cell's data. |
-
-In other words, the grid is a sparse representation: most cells share
-one of a few special cell definitions, and only the cells that differ
-carry their own value (encoded as a negative int32).
-
-## World-units-per-cell
-
-From `LocalMap::getLevelPixelSize(int level)` @ 0x085ff170:
-
-    pixel_size = 1 << level
-
-The world size is set by `aiSettings.setWorldMapSize` in AI.con
-(e.g. 2048 × 2048 for Gazala). At the finest level (level 0), each
-cell covers `1 << 0 = 1` world unit. At level N, each cell covers
-`1 << N` world units.
-
-So for a search map at level L:
-    cell_size_in_world_units = 1 << L
-
-Combined with the world map size W:
-    grid_width_cells  = W / (1 << L)
-    grid_height_cells = W / (1 << L)
-
-which matches the header: field1 = field2 = log2(W) - L.
-
-## Usage
-
-    python3 decode_pathfinding_raw.py <file.raw> [--grid] [--stats] [--world-size N]
-
-Examples:
-    python3 decode_pathfinding_raw.py Car4Level0Map.raw
-    python3 decode_pathfinding_raw.py Car4Level0Map.raw --grid --world-size 2048
-    python3 decode_pathfinding_raw.py Car4Level0Map.raw --stats
+    python3 decode_pathfinding_raw.py Tank0Level0Map.raw
+    python3 decode_pathfinding_raw.py Tank0Level0Map.raw --stats
+    python3 decode_pathfinding_raw.py Tank0Level0Map.raw --grid 64     # ASCII, 64 columns
+    python3 decode_pathfinding_raw.py Tank0Level0Map.raw --pgm out.pgm # one byte a pixel
+    python3 decode_pathfinding_raw.py Tank0Level0Map.raw --json
 """
 
+from __future__ import annotations
+
+import argparse
+import json
 import struct
 import sys
-import argparse
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-def decode_raw(data: bytes):
-    """Parse a .raw file and return structured data."""
-    if len(data) < 20:
-        raise ValueError(f"File too short: {len(data)} bytes (need >= 20)")
-
-    # Header: 5 int32s
-    f1, f2, f3, f4, f5 = struct.unpack_from('<5i', data, 0)
-
-    width_bits = f1
-    height_bits = f2
-    level = f3
-    level_index = f4
-    reserved = f5
-
-    width = 1 << width_bits
-    height = 1 << height_bits
-    total_cells = width * height
-
-    offset = 20
-
-    # Special cell count
-    special_count = struct.unpack_from('<i', data, offset)[0]
-    offset += 4
-
-    # Special cell IDs
-    special_cells = list(struct.unpack_from(f'<{special_count}I', data, offset))
-    offset += special_count * 4
-
-    # Row records
-    remaining = len(data) - offset
-    expected_bytes = total_cells * 4
-    if remaining != expected_bytes:
-        raise ValueError(
-            f"Expected {expected_bytes} bytes for {total_cells} row records, "
-            f"got {remaining}"
-        )
-
-    row_records = list(struct.unpack_from(f'<{total_cells}i', data, offset))
-
-    return {
-        'width_bits': width_bits,
-        'height_bits': height_bits,
-        'level': level,
-        'level_index': level_index,
-        'reserved': reserved,
-        'width': width,
-        'height': height,
-        'total_cells': total_cells,
-        'special_count': special_count,
-        'special_cells': special_cells,
-        'row_records': row_records,
-    }
+from bf42.ai_level import read_search_map_raw, search_map_header  # noqa: E402
 
 
-def print_header(info: dict, world_size: int | None = None):
-    """Print human-readable header summary."""
-    print(f"=== Pathfinding .raw file ===")
-    print(f"Width bits:  {info['width_bits']}  -> width  = {info['width']} cells")
-    print(f"Height bits: {info['height_bits']}  -> height = {info['height']} cells")
-    print(f"Level:       {info['level']}")
-    print(f"Level index: {info['level_index']}")
-    print(f"Reserved:    {info['reserved']}")
-    print(f"Total cells: {info['total_cells']}")
-    print(f"Special cells: {info['special_count']}")
-
-    if world_size is not None:
-        cell_size = 1 << info['level']
-        print(f"\nWorld size: {world_size}")
-        print(f"Cell size: {cell_size} world units")
-        print(f"Grid covers: {info['width'] * cell_size} x {info['height'] * cell_size} world units")
-
-    if info['special_cells']:
-        print(f"\nSpecial cell IDs:")
-        for i, sid in enumerate(info['special_cells']):
-            print(f"  [{i}] = 0x{sid:08X} ({sid})")
+def block_records(data: bytes) -> list[int]:
+    """Each block's record as the file has it (special index, or -1 inline)."""
+    wb, hb = struct.unpack_from("<2i", data, 0)
+    (count,) = struct.unpack_from("<i", data, 20)
+    off = 24 + 4 * count
+    out = []
+    for _ in range((1 << wb) * (1 << hb)):
+        (rec,) = struct.unpack_from("<i", data, off)
+        off += 4
+        if rec < 0:
+            off += 512
+        out.append(rec)
+    return out
 
 
-def print_stats(info: dict):
-    """Print statistics about the grid."""
-    records = info['row_records']
-    total = len(records)
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("file", type=Path)
+    ap.add_argument("--stats", action="store_true", help="block and pixel counts")
+    ap.add_argument("--grid", type=int, metavar="COLS", default=0,
+                    help="ASCII picture COLS characters wide ('#' any blocked pixel in the cell)")
+    ap.add_argument("--pgm", type=Path, help="write the map as a binary PGM (0 blocked, 255 free)")
+    ap.add_argument("--json", action="store_true", help="header, specials and block records as JSON")
+    args = ap.parse_args()
 
-    # Count special cell references vs literal values
-    special_refs = sum(1 for v in records if v >= 0)
-    literal_vals = sum(1 for v in records if v < 0)
-
-    print(f"\n=== Grid Statistics ===")
-    print(f"Total cells: {total}")
-    print(f"Special cell references (>=0): {special_refs} ({100*special_refs/total:.1f}%)")
-    print(f"Literal values (<0): {literal_vals} ({100*literal_vals/total:.1f}%)")
-
-    if special_refs > 0:
-        # Distribution of special cell indices
-        from collections import Counter
-        spec_vals = [v for v in records if v >= 0]
-        counter = Counter(spec_vals)
-        print(f"\nSpecial cell usage:")
-        for idx, count in counter.most_common():
-            sid = info['special_cells'][idx] if idx < len(info['special_cells']) else 'OUT OF RANGE'
-            print(f"  [{idx}] (ID=0x{sid:08X}): {count} cells ({100*count/total:.1f}%)")
-
-    if literal_vals > 0:
-        lit_vals = [v for v in records if v < 0]
-        print(f"\nLiteral value range: {min(lit_vals)} to {max(lit_vals)}")
-        # Show most common literal values
-        from collections import Counter
-        lit_counter = Counter(lit_vals)
-        print(f"Most common literal values:")
-        for val, count in lit_counter.most_common(10):
-            print(f"  {val}: {count} cells")
-
-
-def print_grid(info: dict, max_width: int = 80):
-    """Print an ASCII representation of the grid."""
-    width = info['width']
-    height = info['height']
-    records = info['row_records']
-    special_cells = info['special_cells']
-
-    # Build a mapping from cell value to a character
-    # Collect all unique values
-    unique_vals = set()
-    for v in records:
-        if v >= 0 and v < len(special_cells):
-            unique_vals.add(('S', special_cells[v]))
-        else:
-            unique_vals.add(('L', v))
-
-    # Assign characters
-    chars = {}
-    char_set = ' .:-=+*#%@'
-    for i, key in enumerate(sorted(unique_vals)):
-        chars[key] = char_set[i % len(char_set)]
-
-    # Print grid
-    print(f"\n=== Grid ({width}x{height}) ===")
-    print("Legend:")
-    for key, ch in sorted(chars.items(), key=lambda x: x[1]):
-        if key[0] == 'S':
-            print(f"  '{ch}' = special cell 0x{key[1]:08X}")
-        else:
-            print(f"  '{ch}' = literal {key[1]}")
-
-    print()
-    for y in range(height):
-        row_chars = []
-        for x in range(width):
-            idx = y * width + x
-            v = records[idx]
-            if v >= 0 and v < len(special_cells):
-                key = ('S', special_cells[v])
-            else:
-                key = ('L', v)
-            row_chars.append(chars.get(key, '?'))
-        print(''.join(row_chars))
-
-
-def main():
-    parser = argparse.ArgumentParser(description='Decode BF1942 pathfinding .raw files')
-    parser.add_argument('file', help='Path to .raw file')
-    parser.add_argument('--grid', action='store_true', help='Print ASCII grid')
-    parser.add_argument('--stats', action='store_true', help='Print grid statistics')
-    parser.add_argument('--world-size', type=int, default=None,
-                        help='World map size in units (e.g. 2048)')
-    parser.add_argument('--json', action='store_true', help='Output as JSON')
-    args = parser.parse_args()
-
-    data = Path(args.file).read_bytes()
-    info = decode_raw(data)
+    data = args.file.read_bytes()
+    wb, hb, p5, level, bits = search_map_header(data)
+    m = read_search_map_raw(data)
+    (count,) = struct.unpack_from("<i", data, 20)
+    specials = list(struct.unpack_from(f"<{count}I", data, 24))
+    records = block_records(data)
 
     if args.json:
-        import json
-        # Convert to JSON-safe format
-        output = {
-            'header': {
-                'width_bits': info['width_bits'],
-                'height_bits': info['height_bits'],
-                'level': info['level'],
-                'level_index': info['level_index'],
-                'reserved': info['reserved'],
-            },
-            'dimensions': {
-                'width': info['width'],
-                'height': info['height'],
-                'total_cells': info['total_cells'],
-            },
-            'special_cells': info['special_cells'],
-            'row_records': info['row_records'],
-        }
-        print(json.dumps(output, indent=2))
-        return
+        print(json.dumps({
+            "header": {"blocksXBits": wb, "blocksZBits": hb, "blockBits": p5, "level": level, "bitsExp": bits},
+            "pixels": [m.width, m.height], "pixelMetres": 1 << level,
+            "specialCells": specials, "blocks": records,
+        }))
+        return 0
 
-    print_header(info, world_size=args.world_size)
+    print(f"{args.file.name}: level {level}, {1 << wb} x {1 << hb} blocks of 64 x 64, "
+          f"{m.width} x {m.height} pixels of {1 << level} m ({m.width << level} m square)")
+    print(f"special cells: {', '.join(f'0x{v:08x}' for v in specials)}")
 
     if args.stats:
-        print_stats(info)
+        inline = sum(1 for r in records if r < 0)
+        by_special = {i: sum(1 for r in records if r == i) for i in range(count)}
+        blocked = sum(1 for z in range(m.height) for x in range(m.width) if m.blocked(x, z))
+        print(f"blocks: {len(records)}, inline {inline}, "
+              + ", ".join(f"special {i} (0x{specials[i]:08x}) {n}" for i, n in by_special.items()))
+        print(f"pixels blocked: {blocked} of {m.width * m.height} ({100 * blocked / (m.width * m.height):.1f} %)")
 
     if args.grid:
-        print_grid(info)
+        step = max(1, m.width // args.grid)
+        for z0 in range(0, m.height, step):
+            row = []
+            for x0 in range(0, m.width, step):
+                hit = any(m.blocked(x, z) for z in range(z0, min(z0 + step, m.height))
+                          for x in range(x0, min(x0 + step, m.width)))
+                row.append("#" if hit else ".")
+            print("".join(row))
+
+    if args.pgm:
+        pix = bytearray(m.width * m.height)
+        for z in range(m.height):
+            for x in range(m.width):
+                pix[z * m.width + x] = 0 if m.blocked(x, z) else 255
+        args.pgm.write_bytes(f"P5 {m.width} {m.height} 255\n".encode() + bytes(pix))
+        print(f"wrote {args.pgm}")
+    return 0
 
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    raise SystemExit(main())

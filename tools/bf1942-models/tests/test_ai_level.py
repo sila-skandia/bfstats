@@ -18,7 +18,7 @@ sys.path.insert(0, str(ROOT))
 from bf42.ai_level import (  # noqa: E402
     LevelAi, parse_ai_con, parse_conditions, parse_prerequisites,
     parse_strategic_areas, parse_strategies, parse_pathfinding_con, load_level_ai,
-    read_search_map_raw,
+    read_search_map_raw, level_search_maps,
 )
 
 AREAS = """
@@ -229,6 +229,77 @@ def _raw_map(records) -> bytes:
         else:
             out += struct.pack("<i", -1) + rec
     return out
+
+
+PATHFINDING_LEVELS = """
+ai.addSearchMap Tank0 0 0 25 3.0 0.3 2.5 0
+ai.addSearchMap Infantry1 0 1.5 30 1.0 0.4 2.0 1 0 2
+ai.addSearchMap Boat2 1 5 0 125.0 0.3 2.5 0 2 5
+ai.addSearchMap LandingCraft3 1 1.4 0 4.0 0.3 2.5 0 2
+beginrem
+ai.addSearchMap Car4 0 0 20 4.0 0.3 2.5 0
+endrem
+ai.loadMaps
+"""
+
+
+def _level_file(level: int, blocks_bits: int) -> bytes:
+    """An all-free search-map level: header, special cells, every block the
+    special cell 0."""
+    n = (1 << blocks_bits) ** 2
+    return (struct.pack("<5i", blocks_bits, blocks_bits, level + 6, level, 0)
+            + struct.pack("<i2I", 2, 0, 0xFFFFFFFF) + struct.pack(f"<{n}i", *([0] * n)))
+
+
+class _Files:
+    def __init__(self, files: dict[str, bytes]):
+        self.files = {k.lower(): v for k, v in files.items()}
+
+    def find(self, rel: str):
+        return rel if rel.lower() in self.files else None
+
+    def read(self, rel: str) -> bytes:
+        return self.files[rel.lower()]
+
+
+class SearchMapLoadTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.ai = LevelAi()
+        parse_pathfinding_con(PATHFINDING_LEVELS, self.ai)
+
+    def test_levels_default_to_zero_and_two(self) -> None:
+        # ConsoleClass344 0x084e4880: eight arguments -> 0, 2; nine -> arg, 2.
+        levels = [(m["name"], m["minLevel"], m["maxLevel"]) for m in self.ai.searchMaps]
+        self.assertEqual(levels, [("Tank0", 0, 2), ("Infantry1", 0, 2), ("Boat2", 2, 5), ("LandingCraft3", 2, 2)])
+
+    def test_a_beginrem_block_declares_nothing(self) -> None:
+        self.assertNotIn("Car4", [m["name"] for m in self.ai.searchMaps])
+
+    def test_the_engine_stops_at_the_first_map_it_cannot_load(self) -> None:
+        files = {f"Pathfinding/Tank0Level{lv}Map.raw": _level_file(lv, 5 - lv) for lv in range(3)}
+        files.update({f"Pathfinding/Boat2Level{lv}Map.raw": _level_file(lv, 5 - lv) for lv in range(2, 6)})
+        files.update({"Pathfinding/LandingCraft3Level2Map.raw": _level_file(2, 3)})
+        # Infantry1Level1Map.raw missing: Infantry1 fails, and Boat2 and
+        # LandingCraft3 are never loaded though their files are there.
+        files.update({"Pathfinding/Infantry1Level0Map.raw": _level_file(0, 5),
+                      "Pathfinding/Infantry1Level2Map.raw": _level_file(2, 3)})
+        rows = level_search_maps(_Files(files), self.ai)
+        self.assertEqual([r["loaded"] for r in rows], [True, False, False, False])
+        self.assertEqual(rows[0]["level"], 0)
+        self.assertIn("Infantry1Level1Map.raw", rows[1]["reason"])
+        self.assertEqual(rows[2]["reason"], "an earlier map failed to load")
+        files["Pathfinding/Infantry1Level1Map.raw"] = _level_file(1, 4)
+        rows = level_search_maps(_Files(files), self.ai)
+        self.assertEqual([r["loaded"] for r in rows], [True, True, True, True])
+        self.assertEqual([r["level"] for r in rows], [0, 0, 2, 2])
+        self.assertEqual(rows[2]["data"], files["Pathfinding/Boat2Level2Map.raw"])
+
+    def test_a_header_that_does_not_match_the_level_fails(self) -> None:
+        files = {f"Pathfinding/Tank0Level{lv}Map.raw": _level_file(lv, 5 - lv) for lv in range(3)}
+        files["Pathfinding/Tank0Level1Map.raw"] = _level_file(0, 4)
+        rows = level_search_maps(_Files(files), self.ai)
+        self.assertFalse(rows[0]["loaded"])
+        self.assertIn("header", rows[0]["reason"])
 
 
 class SearchMapRawTests(unittest.TestCase):
