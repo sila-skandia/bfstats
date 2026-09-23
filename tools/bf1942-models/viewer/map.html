@@ -254,6 +254,9 @@ import { bindTreeFoliage } from './tree-foliage.js';
 import { createBotVisuals } from './bot-visuals.js';
 import { installTestHooks } from './test-hooks.js';
 import { createNetRoom } from './net-room.js';
+import { createScoreboardScreen } from './scoreboard-screen.js';
+import { createDeployScreen } from './deploy-screen.js';
+import { createSpawning } from './spawning.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -769,7 +772,7 @@ function resetCamera() {
   // arrives from the on-screen button must not kick the player out of the mode
   // or move a camera the body owns.
   if (optOnFoot.checked && soldier) {
-    spawnAtFlag(true);
+    spawning.spawnAtFlag(true);
     return;
   }
   if (initialCameraPose) {
@@ -1556,8 +1559,8 @@ addEventListener('keydown', e => {
     // With all of those away, Escape is the game's own: it brings up the
     // menu, in one press even mid-play, because the browser has already
     // taken the pointer lock off us by the time this runs.
-    if (scoreboardOpen()) setScoreboard(false);
-    else if (deployActive()) cancelDeploy();
+    if (scoreboard.scoreboardOpen()) scoreboard.setScoreboard(false);
+    else if (deployScreen.deployActive()) spawning.cancelDeploy();
     else if (!fullmapBox.hidden) toggleFullMap(false);
     else if (kbSession && !captured && !e.repeat) kbLockLeave();
     else if (!e.repeat) setEscMenu(true);
@@ -1566,8 +1569,8 @@ addEventListener('keydown', e => {
   // Caps Lock toggles the spawn menu even while a sidebar control is focused,
   // matching Escape's privilege over form focus.
   if (e.code === 'CapsLock' && !e.repeat) {
-    if (deployActive()) cancelDeploy();
-    else if (!optPilot.checked) openDeploy();
+    if (deployScreen.deployActive()) spawning.cancelDeploy();
+    else if (!optPilot.checked) spawning.openDeploy();
     return;
   }
   // Deploy owns Enter and 1-9 even when a sidebar INPUT/SELECT is focused:
@@ -1575,17 +1578,17 @@ addEventListener('keydown', e => {
   // either never runs or is immediately undone into fly-through. Not while
   // the score board stands in for the screen: the spawn interface is not up
   // to be driven, and DONE or Escape is the way back to it.
-  if (deployActive() && !scoreFromSpawn) {
+  if (deployScreen.deployActive() && !deployScreen.scoreFromSpawn) {
     if (e.code === 'Enter' && !e.repeat) {
       e.preventDefault();
       e.stopPropagation();
-      deploySpawn();
+      spawning.deploySpawn();
       return;
     }
     const digit = /^Digit([1-9])$/.exec(e.code);
     if (digit) {
       e.preventDefault();
-      selectDeployFlag(Number(digit[1]) - 1);
+      spawning.selectDeployFlag(Number(digit[1]) - 1);
       return;
     }
   }
@@ -1594,12 +1597,12 @@ addEventListener('keydown', e => {
   // On foot the map opens in its deploy state — the game's own map is also
   // its spawn screen — and Escape or M again puts it away without moving you.
   if (e.code === 'KeyM' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    if (deployActive()) cancelDeploy();
+    if (deployScreen.deployActive()) spawning.cancelDeploy();
     else if (fullmapBox.hidden && optOnFoot.checked && soldier
              && !optPilot.checked) {
       // On foot, but not merely suspended in a seat: a driver's M is the
       // plain map, because his soldier is still ticked and still alive.
-      openDeploy();
+      spawning.openDeploy();
     } else toggleFullMap();
     return;
   }
@@ -1608,7 +1611,7 @@ addEventListener('keydown', e => {
   // screen, whose own SCORE BOARD button is the way in there.
   if (e.code === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
     e.preventDefault();
-    if (!e.repeat && !deployActive() && !scoreboardOpen()) setScoreboard(true, false);
+    if (!e.repeat && !deployScreen.deployActive() && !scoreboard.scoreboardOpen()) scoreboard.setScoreboard(true, false);
     return;
   }
   // N is `c_PIZoomMap`: it steps the minimap's three-level zoom counter
@@ -1661,9 +1664,9 @@ addEventListener('keydown', e => {
       // (a weapon glb that failed to load). Shift+R is the deliberate road
       // back: it reopens the deploy screen rather than guessing a flag.
       if (e.shiftKey) {
-        if (!deployActive()) openDeploy();
+        if (!deployScreen.deployActive()) spawning.openDeploy();
       } else if (handWeapon?.data?.magazine) startReload();
-      else spawnAtFlag(true);
+      else spawning.spawnAtFlag(true);
     } else if (!optPilot.checked) {
       resetCamera();
     }
@@ -1703,7 +1706,7 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => {
   // Push-and-hold: the board held up on Tab goes with the key, whatever else
   // has the keyboard by then. One opened from the spawn screen stays.
-  if (e.code === 'Tab' && scoreboardOpen() && !scoreFromSpawn) setScoreboard(false);
+  if (e.code === 'Tab' && scoreboard.scoreboardOpen() && !deployScreen.scoreFromSpawn) scoreboard.setScoreboard(false);
   // A key released under an open console must not reach `keys` either: the
   // set is only ever read for movement, and the console has the keyboard.
   // The Escape menu has it on the same terms.
@@ -1861,7 +1864,7 @@ function setConsoleOpen(on) {
   if (!gameConsole.setOpen(on)) return;
   consoleCanvas.hidden = !gameConsole.open;
   if (gameConsole.open) {
-    if (scoreboardOpen() && !scoreFromSpawn) setScoreboard(false);
+    if (scoreboard.scoreboardOpen() && !deployScreen.scoreFromSpawn) scoreboard.setScoreboard(false);
     // Whatever was held when the console came up must not still be held
     // under it: the engine stops feeding `PlayerInput` entirely while the
     // flag is set, so a key down at that moment never repeats.
@@ -2024,7 +2027,7 @@ function escMenuScreen() {
     // own default, which is the one the way-in screen shows.
     .then(() => {
       escMenu.selectMap(extras?.level || params.get('map') || '');
-      if (launchTeam) escMenu.setTeam(launchTeam);
+      if (spawning.launchTeam) escMenu.setTeam(spawning.launchTeam);
     })
     .catch(error => {
       console.error('Escape menu unavailable', error);
@@ -7440,7 +7443,7 @@ const referee = createBotReferee({
   // fire when it lands nearby: the edge of his fire input this frame.
   beforeBots: () => {
     botPlayerPos = soldier ? [soldier.x, soldier.y, soldier.z] : null;
-    botPlayerTeam = world?.player(LOCAL_PLAYER)?.team ?? deployTeamId;
+    botPlayerTeam = world?.player(LOCAL_PLAYER)?.team ?? deployScreen.deployTeamId;
     botPlayerFired = !!frameInputLast?.fire && !frameInputWasFiring;
     frameInputWasFiring = !!frameInputLast?.fire;
   },
@@ -7993,7 +7996,7 @@ function hoistCaptureFlag(flag) {
   }
   drawMinimap(true);
   drawFullMap(true);
-  if (typeof paintDeployChrome === 'function') paintDeployChrome();
+  if (typeof deployScreen.paintDeployChrome === 'function') deployScreen.paintDeployChrome();
 }
 
 function updateCaptureHud(ticks) {
@@ -8008,7 +8011,7 @@ function updateCaptureHud(ticks) {
   // locally. Room play only displays the authoritative lifecycle below.
   if (!room.roomJoined) {
     const player = world?.player(LOCAL_PLAYER);
-    const target = nearestEnemyFlag(player?.team ?? deployTeamId, capturePosition());
+    const target = nearestEnemyFlag(player?.team ?? deployScreen.deployTeamId, capturePosition());
     if (!target) {
       if (localCapture) { localCapture = null; updateHud(); }
       return;
@@ -8022,7 +8025,7 @@ function updateCaptureHud(ticks) {
     hud.textContent = `CAPTURING ${target.name} · ${progress}%`;
     if (localCapture.elapsed < captureDuration(target)) return;
     const prevTeam = target.team;
-    target.team = player?.team ?? deployTeamId;
+    target.team = player?.team ?? deployScreen.deployTeamId;
     hoistCaptureFlag(target);
     syncVehicleSpawnOwnership();
     logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
@@ -8052,79 +8055,6 @@ function updateCaptureHud(ticks) {
   }
 }
 
-/** Put the soldier at the selected flag, on the next of its spawn points.
- *  The pick itself is the world's (pickSpawn/spawnYaw inside world.js —
- *  `spawnPlayer` holds the per-player walk of the spawn list, so the page
- *  never carries `spawnIndex`); this half is the kit, the latch resets and
- *  the HUD line that always went with a spawn. */
-function spawnAtFlag(advance = false) {
-  if (!soldier || !flags.length || !world) return false;
-  resetCaptureUi();
-  // `BFSpawnPoint::spawn` (`0x08163d70`) is `soldier->setAbsolutePosition(
-  // this->getAbsolutePosition())` and nothing else, and a deck `SpawnPoint`
-  // reached the ship's tree through `addTemplate` — so its world position is its
-  // ship-local offset through the hull's **live** transform AT THE MOMENT OF THE
-  // SPAWN. Resolving it here is that "at the moment of": drive the carrier two
-  // hundred metres and the deck you spawn on is the deck she is standing on now,
-  // not the patch of ocean she started in.
-  rebaseDeckSpawns();
-  const flag = flags[Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1)];
-  // `BFSpawnPoint::getActive`'s Armor gate: a critically damaged ship offers
-  // nothing. The engine answers this per spawn point every time the screen is
-  // drawn; the viewer answers it at the moment of the spawn, which is the one
-  // that matters.
-  if (shipFlagInactive(flag)) return false;
-  const spawned = world.spawnPlayer(LOCAL_PLAYER, {
-    flag, advance, group: flag.vehicle ? activeDeployGroup(flag) : null });
-  if (!spawned) return false;
-  const spawn = spawned.spawn;
-  prone = false;
-  // A fresh body is full health, from the kit's own template (`soldierMaxHp`,
-  // beside `kitLoadout` below) — every spawn and every redeploy passes
-  // through here, so this is the one reset point. The world owns the Armor
-  // record per player, but this is the same object the HUD has always read.
-  soldierArmor = new Armor(soldierMaxHp(flag));
-  world.setPlayerArmor(LOCAL_PLAYER, soldierArmor);
-  world.setPlayerSupply(LOCAL_PLAYER, { team: deployTeamId, refillAmmo: supplyTarget.refillAmmo });
-  // Respawn clears the death cam: the fresh body is alive, so the latch
-  // must not hold the corpse cam over the new soldier.
-  soldierDead = false;
-  deathCamTimer = 0;
-  deathCamShot = DEATH_CAM.foot;
-  deathCamTarget = null;
-  // The weapon follows the flag: switching to the other side's spawn swaps
-  // the SMG. A no-op when the right one is already in hand.
-  ensureHandWeapon(flag);
-  // A death inside a vehicle leaves the rig holstered (`enterVehicle` hid it
-  // and `killOccupantInWreck` deliberately does not raise it); the fresh body
-  // has his weapon in hand again. `loadHandWeapon` builds a visible rig, so
-  // this only matters on the same-weapon path `ensureHandWeapon` short-cuts.
-  if (handWeapon) handWeapon.rig.visible = true;
-  // A fresh body somewhere else entirely: the eye must not sweep there.
-  snapPresentation();
-  hud.textContent = `${flag.name} · ${spawn.name}`;
-  clearTimeout(hudViewTimer);
-  hudViewTimer = setTimeout(updateHud, 2200);
-  // The room's control channel: the server re-places its own copy of this
-  // player on the same flag (fresh Armor at the kit's max — the spawn row
-  // names the kit so both sides build the same Armor from loadouts.json).
-  if (room.roomJoined) {
-    // The ledger describes a body that no longer exists.
-    room.netReconciler?.reset();
-    room.netTickPoses.length = 0;
-    room.netSendAction({
-      type: 'spawn',
-      flag: Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1),
-      // WHICH of the flag's spawn points, so the authority spawns on the one
-      // the prediction just used. `spawnPlayer` has already walked the index
-      // for this spawn, so this is the point the soldier is standing on.
-      spawnIndex: world.player(LOCAL_PLAYER)?.spawnIndex ?? 0,
-      kit: deployKit,
-    });
-  }
-  return true;
-}
-
 /**
  * Spawn bots on both sides, the way the engine's bot manager tops up each
  * team. Called once per level load, after the world is built.
@@ -8140,7 +8070,7 @@ function spawnBotsForLevel() {
   // the player's team. The referee builds the nav map, the bots, the
   // strategic AI and the covers, and gives each bot its body
   // (bot-referee.js `spawn`); the page loads what each bot draws and holds.
-  const friendly = deployTeamId === 1 ? 1 : 2;
+  const friendly = deployScreen.deployTeamId === 1 ? 1 : 2;
   const enemy = friendly === 1 ? 2 : 1;
   console.log(`[bots] spawning ${BOT_COUNT} bots across teams ${friendly}/${enemy}, skill ${BOT_SKILL}`);
   const navMs = referee.spawn({
@@ -8182,7 +8112,7 @@ const _shotOrigin = new THREE.Vector3();
  */
 function resolvePlayerShotOnBots() {
   if (!referee.bots.length || !world || !soldier) return;
-  const myTeam = world.player(LOCAL_PLAYER)?.team ?? deployTeamId;
+  const myTeam = world.player(LOCAL_PLAYER)?.team ?? deployScreen.deployTeamId;
 
   camera.getWorldPosition(_shotOrigin);
   camera.getWorldDirection(_shotRayDir);
@@ -8465,9 +8395,9 @@ function setOnFoot(on) {
     // fresh Soldier on the collider, spawned at the team's first flag) and
     // the page borrows the instance for the camera, exactly as the world's
     // records are the only ones the HUD reads.
-    let player = world?.addPlayer(LOCAL_PLAYER, { team: deployTeamId });
+    let player = world?.addPlayer(LOCAL_PLAYER, { team: deployScreen.deployTeamId });
     soldier = player?.soldier ?? null;
-    if (!buildSpawnFlags() || !spawnAtFlag()) {
+    if (!buildSpawnFlags() || !spawning.spawnAtFlag()) {
       // A level with no control point that owns a spawn group has nowhere to
       // put a soldier; say so rather than dropping him at the origin.
       world.removePlayer(LOCAL_PLAYER);
@@ -8490,7 +8420,7 @@ function setOnFoot(on) {
     // The deploy screen cannot outlive the mode it selects for: the pilot
     // checkbox's exclusivity and the on-foot box both land here with the
     // overlay possibly still up.
-    if (deployActive()) toggleFullMap(false);
+    if (deployScreen.deployActive()) toggleFullMap(false);
     // The soldier was the world's record; the world stops stepping it (a
     // ghost left in the players map would keep walking on its last input).
     world.removePlayer(LOCAL_PLAYER);
@@ -8592,10 +8522,10 @@ function onFootCamera(dt) {
   }
   if (soldierDead) {
     deathCamTimer -= dt;
-    if (deathCamTimer <= 0 && !deployActive()) {
+    if (deathCamTimer <= 0 && !deployScreen.deployActive()) {
       // The client opens the deploy screen the instant the local player dies;
       // the beat above is the brief float, then the spawn screen takes over.
-      openDeploy();
+      spawning.openDeploy();
     }
   }
 
@@ -8613,7 +8543,7 @@ function onFootCamera(dt) {
     supplyField = world.supplyField;
   }
   supplyTarget.x = soldier.x; supplyTarget.y = soldier.y; supplyTarget.z = soldier.z;
-  supplyTarget.team = deployTeamId;
+  supplyTarget.team = deployScreen.deployTeamId;
   supplyTarget.armor = soldierArmor;
   hudBridge.vars['ShowHealIcon'] = supplyField.canHeal(supplyTarget);
   hudBridge.vars['ShowReloadIcon'] = supplyField.canRearm(supplyTarget);
@@ -9477,10 +9407,10 @@ const KIT_CLASS = {
  *  its `itemIndex 3`, and the soldier template the team wears. Every field
  *  null where `_shared/loadouts.json` is absent or does not name the level;
  *  `weaponTemplateFor` then falls back to the vanilla table by nation. */
-function kitLoadout(team, kitName = deployKit) {
+function kitLoadout(team, kitName = deployScreen.deployKit) {
   const side = loadouts?.levels?.[currentDir]?.[team];
   if (!side) return { kit: null, primary: null, soldier: null };
-  const slot = KITS.indexOf(kitName);
+  const slot = deployScreen.KITS.indexOf(kitName);
   let kit = side.slots?.[String(slot)] || null;
   if (!kit || !loadouts.kits?.[kit]) {
     // A mod may file its classes in other rows; the class label is the
@@ -9513,7 +9443,7 @@ const KIT_ROW_KEYS = {
  *  page's class word. Shared by the canvas text (`deployText`) and the
  *  kit buttons' aria-labels, so both say the same. */
 function kitRowLabelFor(role, layoutText) {
-  const { kit } = kitLoadout(deployTeamId, role);
+  const { kit } = kitLoadout(deployScreen.deployTeamId, role);
   const name = kit ? loadouts?.kits?.[kit]?.kitName : null;
   return kitRowLabel(name, layoutText, KIT_CLASS[role] || role);
 }
@@ -9524,7 +9454,7 @@ function kitRowLabelFor(role, layoutText) {
 function kitRowLayoutText(role) {
   const key = Object.entries(KIT_ROW_KEYS).find(([, r]) => r === role)?.[0];
   if (!key) return null;
-  const el = spawnLayout.data?.groups?.spawn?.elements
+  const el = deployScreen.spawnLayout.data?.groups?.spawn?.elements
     ?.find(e => e.kind === 'text' && e.key === key);
   return el?.text ?? null;
 }
@@ -9534,20 +9464,20 @@ function kitRowLayoutText(role) {
  *  kit, or `SOLDIER_MAX_HP_FALLBACK` when the field or the file is not there
  *  yet (the same fallback shape `weaponTemplateFor` uses for a primary). */
 function soldierMaxHp(flag) {
-  const { kit } = kitLoadout(flag?.team, deployKit);
+  const { kit } = kitLoadout(flag?.team, deployScreen.deployKit);
   const maxHp = loadouts?.kits?.[kit]?.maxHitpoints;
   return Number.isFinite(maxHp) ? maxHp : SOLDIER_MAX_HP_FALLBACK;
 }
 
 /** The template a soldier of `flag`'s team spawns holding, with the kit the
  *  deploy screen chose. `?weapon=` overrides everything, as it always has. */
-function weaponTemplateFor(flag, kitName = deployKit) {
+function weaponTemplateFor(flag, kitName = deployScreen.deployKit) {
   const forced = params.get('weapon');
   if (forced) return forced;
   const team = flag?.team;
   const loadout = kitLoadout(team, kitName);
   if (loadout.primary) return loadout.primary;
-  const slot = Math.max(0, KITS.indexOf(kitName));
+  const slot = Math.max(0, deployScreen.KITS.indexOf(kitName));
   return FALLBACK_PRIMARIES[teamNation(team)]?.[slot]
     || FALLBACK_PRIMARIES[team === 1 ? 'ger' : 'us'][slot];
 }
@@ -9588,7 +9518,7 @@ const WEAPON_ICON_VARS = Array.from({ length: 8 },
  *  `_shared/loadouts.json` is absent, does not know the level, or does not
  *  know the kit — the same "no data, fall back" shape `kitLoadout` has. */
 function kitSlotsFor(flag) {
-  const { kit } = kitLoadout(flag?.team, deployKit);
+  const { kit } = kitLoadout(flag?.team, deployScreen.deployKit);
   const weapons = kit ? loadouts?.kits?.[kit]?.weapons : null;
   return Array.isArray(weapons) && weapons.length ? weapons : null;
 }
@@ -9643,7 +9573,7 @@ function selectKitWeapon(slot) {
   weaponBarUntil = performance.now() + WEAPON_BAR_MS;
   if (entry.slot === handSlot && !isDetonator(handWeapon?.name)) return true;
   handSlot = entry.slot;
-  loadHandWeapon(entry.weapon, soldierTemplateFor({ team: deployTeamId }));
+  loadHandWeapon(entry.weapon, soldierTemplateFor({ team: deployScreen.deployTeamId }));
   return true;
 }
 
@@ -9723,7 +9653,7 @@ function isDetonator(template) {
 /** Re-read which pack/plunger pair this kit carries. Called wherever the kit
  *  is (re)armed, next to `kitWeaponSlots`. */
 function armDemolitions(flag) {
-  const { kit } = kitLoadout(flag?.team, deployKit);
+  const { kit } = kitLoadout(flag?.team, deployScreen.deployKit);
   const items = loadouts?.kits?.[kit]?.items;
   explosivesTemplate = Array.isArray(items)
     ? items.find(isExplosives) || null : null;
@@ -9750,7 +9680,7 @@ function selectDetonator() {
   const slot = slotOf(kitWeaponSlots || [], detonatorTemplate);
   if (slot != null) return selectKitWeapon(slot);
   weaponBarUntil = performance.now() + WEAPON_BAR_MS;
-  loadHandWeapon(detonatorTemplate, soldierTemplateFor({ team: deployTeamId }));
+  loadHandWeapon(detonatorTemplate, soldierTemplateFor({ team: deployScreen.deployTeamId }));
   return true;
 }
 
@@ -9875,7 +9805,7 @@ async function loadSeatPose() {
   if (!body.draw) return;             // no SeatObject: the game draws nobody
   const states = resolveSeatStates(seat.seatObjects);
   const soldierName = soldierTemplateFor(
-    flags.find(f => f.team === deployTeamId) || { team: deployTeamId });
+    flags.find(f => f.team === deployScreen.deployTeamId) || { team: deployScreen.deployTeamId });
   const assetFor = name =>
     `${MODELS_BASE}/poses/${soldierName}__${name}.pose.glb${bust()}`;
   let gltf;
@@ -9984,7 +9914,7 @@ async function loadKitPart(glb) {
  * all three is the same call in three more places once someone wants it. */
 async function dressSeatOccupant(soldierScene, seat) {
   const index = await kitsIndex();
-  const { kit: kitName } = kitLoadout(deployTeamId, deployKit);
+  const { kit: kitName } = kitLoadout(deployScreen.deployTeamId, deployScreen.deployKit);
   const kit = kitName && index.get(String(kitName).toLowerCase());
   if (!kit) return;
   for (const graft of wornGrafts(kit)) {
@@ -11152,7 +11082,7 @@ function applyDamageToPlayer(damage, attackerPos = null, attackerTeam = null) {
   // If in a vehicle or piloting, vehicle damage handles it -- no on-foot grunts or hit arcs
   if (optPilot.checked || localPlayer.occupancy) return;
 
-  const isFriendlyFire = attackerTeam != null && attackerTeam === deployTeamId;
+  const isFriendlyFire = attackerTeam != null && attackerTeam === deployScreen.deployTeamId;
   playSoldierHurtSound(isFriendlyFire);
 
   let dir = 1;
@@ -11872,7 +11802,7 @@ function updateSoldierHud(dt = 0.016) {
     return;
   }
 
-  const iconNation = stanceNation(deployTeamId);
+  const iconNation = stanceNation(deployScreen.deployTeamId);
   const stanceWord = STANCE_TEXTURE[soldier.stance] || 'standing';
   vars['Soldier/SoldierIcon'] = `Soldier/Icon_${iconNation}_soldier_${stanceWord}.tga`;
 
@@ -11880,7 +11810,7 @@ function updateSoldierHud(dt = 0.016) {
   // healthbar_full_scout_64x64.png directly: the scout scope icon sits in the
   // art itself), not a separate layout element — feeding these two is the
   // whole of "the health bar and its kit art".
-  const art = kitHealthArt(deployTeamId, deployKit);
+  const art = kitHealthArt(deployScreen.deployTeamId, deployScreen.deployKit);
   vars['Soldier/SoldierHealthBarIcon'] = art?.healthBarIcon;
   vars['Soldier/SoldierHealthBarFullIcon'] = art?.healthBarFullIcon;
 
@@ -12283,8 +12213,8 @@ async function loadHudPack() {
     img.onload = () => {
       hudPack.sprites.set(name, name === 'minimap_icon_ring_32x32'
         ? tintPlayerRing(img) : img);
-      if (deployActive()) {
-        paintDeploySoon();
+      if (deployScreen.deployActive()) {
+        deployScreen.paintDeploySoon();
         // The spawn rings draw with these sprites (with a stroked-circle
         // fallback); once the real ring lands, put it on the map at once.
         drawFullMap(true);
@@ -12643,7 +12573,7 @@ function feedFlagIconVars(vars) {
     return false;
   }
   const player = world?.player(LOCAL_PLAYER);
-  const team = player?.team ?? deployTeamId;
+  const team = player?.team ?? deployScreen.deployTeamId;
   const target = nearestEnemyFlag(team, capturePosition());
   // Neutral only: an enemy-held point is a take-back, not the white flag —
   // the disc is the "this point belongs to nobody" marker.
@@ -12664,7 +12594,7 @@ function loadMapArt(dir) {
     mapArt = img;
     // The deploy screen may already be up over a half-decoded art: repaint
     // rather than wait for the 250 ms staleness gate.
-    if (deployActive()) drawFullMap(true);
+    if (deployScreen.deployActive()) drawFullMap(true);
   };
   // A level with no art still gets markers on a blank grid, so a failed
   // decode is not worth surfacing.
@@ -12855,7 +12785,7 @@ function drawPlayer(ctx, px, py, sc, rot = 0) {
  *  everything friendly is modulated with. The deploy screen runs before a
  *  soldier exists, so it falls back to the team the player has chosen. */
 function localMapTeam() {
-  return world?.player(LOCAL_PLAYER)?.team ?? deployTeamId;
+  return world?.player(LOCAL_PLAYER)?.team ?? deployScreen.deployTeamId;
 }
 
 /**
@@ -12970,9 +12900,9 @@ function drawSpawnRings(ctx, toPx, sc) {
   // -1 while nothing is chosen: every ring sits back and none is filled,
   // which is what tells the player he is about to free-roam rather than
   // spawn (`deployUnchosen`).
-  const chosen = deployUnchosen ? -1
+  const chosen = deployScreen.deployUnchosen ? -1
     : Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1);
-  for (const index of deployFlagIndices()) {
+  for (const index of spawning.deployFlagIndices()) {
     const flag = flags[index];
     for (const spot of flagMapSpots(flag)) {
       if (!spot.position) continue;
@@ -12980,7 +12910,7 @@ function drawSpawnRings(ctx, toPx, sc) {
       if (!p) continue;
       const q = toPx(p);
       const active = index === chosen
-        && (spot.group == null || spot.group === activeDeployGroup(flag));
+        && (spot.group == null || spot.group === spawning.activeDeployGroup(flag));
       if (!drawSprite(ctx, 'map_circle', q.x, q.y, sc * (active ? 1.4 : 1.05),
                       { alpha: active ? 1 : 0.7 })) {
         ctx.strokeStyle = active ? '#ffffff' : 'rgba(255,255,255,.6)';
@@ -13272,15 +13202,15 @@ function drawMinimap() {
 function drawFullMap(force = false) {
   if (fullmapBox.hidden) return;
   const here = projectToArt(camera.position.x, camera.position.z) || { u: 0, v: 0 };
-  const key = `${mapSurfaceKey(fullmapCanvas, here, 1)},${deployActive()},${deployRejoin},`
-    + `${deployTeamId},${deployUnchosen ? '-' : spawnFlagSelect.value},${flags.length},`
+  const key = `${mapSurfaceKey(fullmapCanvas, here, 1)},${deployScreen.deployActive()},${deployScreen.deployRejoin},`
+    + `${deployScreen.deployTeamId},${deployScreen.deployUnchosen ? '-' : spawnFlagSelect.value},${flags.length},`
     + friendlyMarkerKey();
   if (!mapSurfaceStale(fullmapCanvas, key, force)) return;
   // Bigger sprites than the HUD widget: this surface is several times the
   // size. In the deploy state the art dims to the spawn screen's silhouette
   // and the rings come out; a dead man has no marker, so the player shows
   // only when a life waits behind the screen.
-  const deploy = deployActive();
+  const deploy = deployScreen.deployActive();
   // Sprites grow with the surface, not with the window: the game's spawn map
   // shows a 16 px flag at about a fifth of a grid square, and so does this
   // one whatever the canvas's CSS size came out as.
@@ -13289,7 +13219,7 @@ function drawFullMap(force = false) {
     scale: Math.min(2, Math.max(0.8, css / 610)),
     dim: deploy,
     spawnRings: deploy,
-    player: !deploy || deployRejoin,
+    player: !deploy || deployScreen.deployRejoin,
   });
 }
 
@@ -13300,29 +13230,29 @@ function toggleFullMap(on) {
   // .deploy class stays on through the whole close so the keys and buttons
   // keep working until the pane is actually gone.
   if (want && fullmapBox.classList.contains('deploy')) {
-    if (fullmapBox.hidden) deployZ = 0;   // fresh open; reopening mid-close just flips the target
-    deployZTarget = 1;
+    if (fullmapBox.hidden) deployScreen.deployZ = 0;   // fresh open; reopening mid-close just flips the target
+    deployScreen.deployZTarget = 1;
     fullmapBox.hidden = false;
-    applyDeployFrame();
+    deployScreen.applyDeployFrame();
     // Holding the map is not flying. Releasing the pointer lock also stops the
     // movement keys running under the overlay.
     if (captured) release();
     drawFullMap(true);
     return;
   }
-  if (!want && deployActive()) {
-    deployZTarget = 0;
-    if (deployZ === 0) finishDeployClose();  // a close requested before the first ease tick
-    else applyDeployFrame();
+  if (!want && deployScreen.deployActive()) {
+    deployScreen.deployZTarget = 0;
+    if (deployScreen.deployZ === 0) deployScreen.finishDeployClose();  // a close requested before the first ease tick
+    else deployScreen.applyDeployFrame();
     return;
   }
   fullmapBox.hidden = !want;
   // Closing strips the deploy chrome with it, so a level switch or a plain
   // Escape can never leave the screen armed behind a hidden overlay.
   if (!want) {
-    if (scoreFromSpawn) setScoreboard(false);
+    if (deployScreen.scoreFromSpawn) scoreboard.setScoreboard(false);
     fullmapBox.classList.remove('deploy');
-    fullmapFrame.removeAttribute('style');
+    deployScreen.fullmapFrame.removeAttribute('style');
   }
   // Holding the map is not flying. Releasing the pointer lock also stops the
   // movement keys running under the overlay.
@@ -13332,1053 +13262,70 @@ function toggleFullMap(on) {
 fullmapBox.addEventListener('click', () => {
   // The plain map closes on any click; the deploy state does not — its
   // backdrop is not a button, and the exits are the footer, Escape and M.
-  if (deployActive()) return;
+  if (deployScreen.deployActive()) return;
   toggleFullMap(false);
 });
-
-// --- the deploy screen ------------------------------------------------------
-//
-// The game never drops a joining player straight into the world: the round
-// opens on its spawn screen, and this is that screen — the kit column on the
-// left, the dimmed map with its spawn rings on the right, footer buttons
-// underneath (SUICIDE/SCORE BOARD/RESUME when alive, CLOSE/SCORE BOARD/DONE
-// when dead). Same canvas, same projection as the M map;
-// `.deploy` on #fullmap is the whole of the state, and `toggleFullMap(false)`
-// strips it on any close. The column is the game's, row for row, and so is
-// what a row means: `deployKit` is read at spawn by `weaponTemplateFor`,
-// which resolves the row through the level's `game.setKit` binding to the
-// kit's primary weapon (`kitLoadout`, above).
-const deployChrome = document.getElementById('deploy-chrome');
-const fullmapFrame = fullmapBox.querySelector('.fm-map-frame');
-const deployTabs = [...fullmapBox.querySelectorAll('.fm-tab')];
-const deployKitHits = [...fullmapBox.querySelectorAll('.fm-kit')];
-const deploySuicideBtn = document.getElementById('deploy-suicide');
-const deployScoreBtn = document.getElementById('deploy-score');
-const deployResumeBtn = document.getElementById('deploy-resume');
-// Whether a live soldier waits behind the screen (M or Shift+R over a life
-// in progress). Cancelling a redeploy keeps him where he stood; cancelling a
-// join has nobody to keep and falls back to fly. It is also the game's
-// `Kit/IsAlive`: SUICIDE / RESUME with a life behind the screen, CLOSE / DONE
-// without one.
-let deployRejoin = false;
-// The selection as it stood when the screen opened, so a cancelled redeploy
-// does not leave the panel's select pointing somewhere nobody went.
-let deployKept = '';
-// Nothing chosen. `spawnFlagSelect` has no empty value and several things
-// read it, so "no spawn" is a flag beside it rather than a cleared select:
-// a click on the map away from every ring sets it, choosing anything clears
-// it, and while it is set the commit is free roam instead of a spawn.
-let deployUnchosen = false;
-// The tab: 1 Axis, 2 Allied — the game's `Kit/ShowKit`. Follows the chosen
-// flag and filters the rings.
-let deployTeamId = 2;
-// The deck spot chosen on a ship flag, as the spawn group its ring stands
-// for. Null for an island flag — their single ring carries no group.
-let deployGroup = null;
-let deployKit = 'assault';
-// The `Kit/MouseOver/*` flag the pointer currently holds true, and the footer
-// button under it, for the mouse-over plate.
-let deployHoverVar = null;
-let deployHoverBtn = null;
-
-// --- the open/close animation ------------------------------------------------
-//
-// The spawn map is the HUD minimap in the engine: one BfMap object, and
-// showing the deploy screen eases its zoom fraction z toward 1 as
-//   z += (target - z) * (1 - exp(-9*dt))
-// (BfMap__animate 0x00468fb0; ledger MMAP-1 — pure exponential, ~0.11 s time
-// constant, which is why the whole move reads in about 0.3 s). While z runs,
-// the map quad interpolates from the closed minimap's (620,30) 175x175 to the
-// spawn map's measured (280,33) 512x512 (MEME-13), and the displayed rotation
-// is (1 - z) x the heading (MMAP-2): the art enters turned with the camera
-// and settles north-up, while the quad's own edge stays axis-aligned — the
-// capture's grid is visibly tilted inside a vertical-edged pane. On the way
-// down everything runs in reverse, back onto the minimap corner. The engine
-// fades the open-map quad by the same easing (MEME-10's +0x4c), which here is
-// the pane's opacity: it comes up from nothing because the viewer's pane is
-// not the always-visible minimap widget the game starts from.
-const BFMAP_EASE_RATE = 9;
-const BFMAP_CLOSED_RECT = [620, 30, 175, 175];
-// The chrome is plain CullNode visibility (MEME-4) — the capture pops it in
-// fully formed about 0.13 s after the pane starts moving, which is z crossing
-// 0.7 (1 - exp(-9*0.134) ~= 0.7). `.deploy-ready` is that threshold.
-const BFMAP_CHROME_Z = 0.7;
-
-// True while the score board stands in for the spawn interface (opened by its
-// SCORE BOARD button). Declared here, ahead of the board's own block, because
-// the deploy close paths below read it and can run before that block has.
-let scoreFromSpawn = false;
-let deployZ = 0;        // the eased zoom fraction: 0 minimap, 1 spawn map
-let deployZTarget = 0;  // where BfMap__animate is easing it
-
-function deployTransitionActive() {
-  return deployZ !== deployZTarget;
-}
-
-/** One tick of the ease, then the pane rewritten from it. Runs from the
- *  frame loop; a no-op once the fraction has landed on its target. */
-function deployAnimate(dt) {
-  if (deployZ === deployZTarget) return;
-  deployZ += (deployZTarget - deployZ) * (1 - Math.exp(-BFMAP_EASE_RATE * dt));
-  if (Math.abs(deployZTarget - deployZ) < 0.001) deployZ = deployZTarget;
-  applyDeployFrame();
-  if (deployZ === 0 && deployZTarget === 0) finishDeployClose();
-}
-
-/** Landed back on the minimap corner: gone for real, exactly what the
- *  instant close used to do — chrome stripped so a level switch or a plain
- *  Escape can never leave the screen armed behind a hidden overlay. */
-function finishDeployClose() {
-  if (scoreFromSpawn) setScoreboard(false);
-  fullmapBox.hidden = true;
-  fullmapBox.classList.remove('deploy', 'deploy-ready');
-  fullmapFrame.removeAttribute('style');
-  fullmapCanvas.style.transform = '';
-}
-
-/** The pane this tick: the interpolated rect, the game's (1 - z) x heading
- *  content rotation — negated so the closed map reads with the camera's
- *  forward up — over-scaled by the square's cover factor so the turned art
- *  never shows a corner gap, and the fade. Flips the chrome on past the
- *  threshold. */
-function applyDeployFrame() {
-  const s = deployScale();
-  const rect = spawnLayout.data?.map?.rect || [280, 33, 512, 512];
-  const [x, y, w, h] = BFMAP_CLOSED_RECT.map((c, i) => c + (rect[i] - c) * deployZ);
-  fullmapFrame.style.left = `${s.ox + x * s.sx}px`;
-  fullmapFrame.style.top = `${s.oy + y * s.sy}px`;
-  fullmapFrame.style.width = `${w * s.sx}px`;
-  fullmapFrame.style.height = `${h * s.sy}px`;
-  fullmapFrame.style.opacity = deployZ.toFixed(3);
-  // `bfmap.rotation` is that law with the static byte honoured: north-up all
-  // the way under the shipped `game.setStaticMinimap 1`, turned in with the
-  // camera under 0 (the profile the reference capture was recorded with).
-  const theta = bfmap.rotation(deployZ, cameraHeading());
-  const cover = Math.abs(Math.cos(theta)) + Math.abs(Math.sin(theta));
-  fullmapCanvas.style.transform = `rotate(${theta}rad) scale(${cover.toFixed(4)})`;
-  // The threshold only arms on the way up: a close strips the chrome in the
-  // same breath that flips the target, exactly like the game's culls flip.
-  fullmapBox.classList.toggle('deploy-ready',
-    deployZTarget === 1 && deployZ >= BFMAP_CHROME_Z);
-}
-
-// The five rows in the game's order; the index is its `Kit/SelectedKit`.
-const KITS = ['scout', 'assault', 'antitank', 'medic', 'engineer'];
-
-/** Which photograph a kit row shows: the level's own kit for this row and
- *  team, through `_shared/loadouts.json`'s `kitIcon.icon` (`setKitIcon`'s raw
- *  path -- `kit-icon.js` handles the casing, the extension and the
- *  directory-qualified name a nation collision earns it) resolved against
- *  whichever sprites the pack actually loaded, mod's own first. Falls back
- *  to the vanilla-table guess below whenever the loadout, the icon field or
- *  the sprite itself is not there -- a mod whose pack has not caught up, or
- *  a level `_shared/loadouts.json` does not know. The theatre variants in
- *  that fallback exist only where the game drew them: Japanese assault and
- *  engineer, Soviet and Canadian assault; everything else is the plain
- *  allies/axis picture. */
-function kitPhoto(role, nation, team) {
-  const { kit } = kitLoadout(team, role);
-  const icon = kit && loadouts?.kits?.[kit]?.kitIcon?.icon;
-  if (icon) {
-    for (const candidate of kitIconCandidates(icon)) {
-      if (hudPack.sprites.has(candidate)) return candidate;
-    }
-  }
-  const variants = {
-    jp: { assault: 'jap', engineer: 'jap' },
-    rus: { assault: 'russian' },
-    can: { assault: 'canadian' },
-  };
-  const side = variants[nation]?.[role] || (team === 1 ? 'axis' : 'allies');
-  return `icon_${role}_${side}_selected`;
-}
-
-function deployActive() {
-  return !fullmapBox.hidden && fullmapBox.classList.contains('deploy');
-}
-
-// --- the layout and its fonts -----------------------------------------------
-//
-// `spawn-layout.json`: the spawn interface out of `menu/InGame`, flattened
-// to draw lists in 800x600 virtual units, each leaf with the CullNode
-// conditions the game evaluates before drawing it, and the bitmap fonts its
-// text nodes name. The atlases are white with the glyph as alpha; a tinted
-// copy is made per colour the layout asks for.
-const spawnLayout = { data: null, fonts: new Map(), pending: false };
-
-async function loadSpawnLayout() {
-  let data;
-  try {
-    data = await fetch(`${hudPaths.url('spawn-layout.json')}${bust()}`).then(r => r.json());
-  } catch (error) {
-    console.warn('spawn layout unavailable', error);
-    return;
-  }
-  spawnLayout.data = data;
-  await Promise.all(Object.entries(data.fontFiles || {}).map(async ([id, entry]) => {
-    const meta = await fetch(`${hudPaths.url(entry.glyphs)}${bust()}`).then(r => r.json());
-    const img = new Image();
-    await new Promise(resolve => {
-      img.onload = resolve;
-      img.onerror = resolve;
-      img.src = `${hudPaths.url(entry.file)}${bust()}`;
-    });
-    spawnLayout.fonts.set(id, { meta, img, tinted: new Map() });
-  }));
-  if (deployActive()) layoutDeploy();
-}
-loadSpawnLayout();
-
-/** The glyph atlas in one colour, made once per (font, colour). */
-function tintedAtlas(font, rgb) {
-  const key = rgb.join(',');
-  let c = font.tinted.get(key);
-  if (c) return c;
-  c = document.createElement('canvas');
-  c.width = font.img.width;
-  c.height = font.img.height;
-  const ctx = c.getContext('2d');
-  ctx.drawImage(font.img, 0, 0);
-  ctx.globalCompositeOperation = 'source-in';
-  ctx.fillStyle = `rgb(${rgb.map(v => Math.round(v * 255)).join(',')})`;
-  ctx.fillRect(0, 0, c.width, c.height);
-  font.tinted.set(key, c);
-  return c;
-}
-
-function measureText(font, text) {
-  let w = 0;
-  for (const ch of text) {
-    const g = font.meta.glyphs[ch.charCodeAt(0)];
-    if (g) w += g[0] + g[1] + g[2];
-  }
-  return w;
-}
-
-/** Text in a bitmap font at virtual (x, y), the line's top at y: each glyph
- *  drawn at `left` past the pen and `ascent` above the baseline, the pen
- *  advancing by left + width + right, as `bf42/font.py` reads the `.dif`. */
-function drawBitmapText(ctx, fontId, text, x, y, rgb, fonts = spawnLayout.fonts) {
-  const font = fonts.get(fontId);
-  if (!font) return;
-  const atlas = tintedAtlas(font, rgb);
-  const base = font.meta.baseline;
-  let pen = x;
-  for (const ch of text) {
-    const g = font.meta.glyphs[ch.charCodeAt(0)];
-    if (!g) continue;
-    const [left, width, right, ascent, x0, y0, x1, y1] = g;
-    // The space glyph's rectangle is an opaque corner texel; it only
-    // advances the pen.
-    if (ch !== ' ' && width > 0 && y1 > y0) {
-      ctx.drawImage(atlas, x0, y0, x1 - x0, y1 - y0,
-                    pen + left, y + base - ascent, x1 - x0, y1 - y0);
-    }
-    pen += left + width + right;
-  }
-}
-
-// --- the game's variables and conditions -------------------------------------
-
-/** The variable table the layout's conditions read: the file's defaults
- *  under this page's state. */
-function deployVars() {
-  const vars = { ...(spawnLayout.data?.variables || {}) };
-  vars['Kit/ShowKit'] = deployTeamId;
-  vars['Kit/SelectedKit'] = Math.max(0, KITS.indexOf(deployKit));
-  vars['Kit/IsAlive'] = deployRejoin;
-  vars['ChangeTeam/ShowChangeTeam'] = true;
-  feedTicketVars(vars);
-  for (const k of Object.keys(vars)) if (k.startsWith('Kit/MouseOver/')) vars[k] = false;
-  if (deployHoverVar) vars[deployHoverVar] = true;
-  return vars;
-}
-
-function condOk(c, vars) {
-  if (c.op === 'and') return c.terms.every(t => condOk(t, vars));
-  if (c.op === 'or') return c.terms.some(t => condOk(t, vars));
-  const v = vars[c.var];
-  const want = (c.value && typeof c.value === 'object') ? vars[c.value.var] : c.value;
-  switch (c.op) {
-    case 'eq': return v === want || Number(v) === Number(want);
-    case 'ne': return !(v === want || Number(v) === Number(want));
-    case 'lt': return Number(v) < Number(want);
-    case 'le': return Number(v) <= Number(want);
-    // `gt`/`ge` come out of the extractor's own operand flip (`FLIP_CMP` in
-    // extract_hud_layout.py) whenever the MemeFile puts the literal on the
-    // left, e.g. `0 < Outside/OutsideTime`. Missing here they fell through to
-    // the permissive default and drew a leaf that should have been culled --
-    // the same bug fixed in hud.js's copy of this function. No group in
-    // `spawn-layout.json` uses either today; they are implemented so this
-    // evaluator and hud.js's stay the same function.
-    case 'gt': return Number(v) > Number(want);
-    case 'ge': return Number(v) >= Number(want);
-    default: return true;
-  }
-}
-
-const elementVisible = (el, vars) => (el.when || []).every(c => condOk(c, vars));
-
-/** The sprite a picture leaf shows: the variable pictures are the team's
- *  flag and the kit photographs, resolved for this level's nations. */
-function deployTexture(el, vars) {
-  if (!el.var) return el.texture;
-  const nation = teamNation(deployTeamId);
-  if (el.var === 'ChangeTeam/AxisTeamFlag' || el.var === 'ChangeTeam/AlliedTeamFlag') {
-    return `icon_flag_${nation}`;
-  }
-  const kit = /^Kit\/Icons\/KitIcon(\d)$/.exec(el.var);
-  if (kit) return kitPhoto(KITS[Number(kit[1]) - 1], nation, deployTeamId);
-  // Anything else bound to a live variable resolves the way `hud.js` does it:
-  // strip the path and the extension, lower-case. This is only reached for
-  // leaves nothing above claims — today the two ticket flags. Note that
-  // `deployVars()` seeds the table from the layout's own sample values, so
-  // this must stay BELOW the cases that derive art from the level rather than
-  // from a variable, or a sample literal would win over a real lookup.
-  const live = vars && vars[el.var];
-  if (typeof live === 'string' && live) {
-    const base = live.slice(live.lastIndexOf('/') + 1);
-    const dot = base.lastIndexOf('.');
-    return (dot > 0 ? base.slice(0, dot) : base).toLowerCase();
-  }
-  return el.texture;
-}
-
-/** The string a text leaf shows. The counts are the game's live player
- *  tallies, which are all zero for a man alone on the server; the commit
- *  button reads LOADING while the scene still streams. */
-function deployText(el, vars) {
-  if (el.key === 'RESPAWN_SUICIDE' && !worldReady) return 'LOADING';
-  if (el.var && /^Kit\/NrOf/.test(el.var)) return '0';
-  // The five kit-row labels: the level's kit for the row, its own
-  // `setKitName` resolved through the mod chain's lexicon — not the leaf's
-  // own text, which is the menu's string for the class, and a mod re-points
-  // the row's kit (and its name) without touching the menu.
-  const role = KIT_ROW_KEYS[el.key];
-  if (role) return kitRowLabelFor(role, el.text);
-  // A bound string the page actually feeds wins over the layout's own sample
-  // ("300"/"500" on the ticket counters). Only values this page wrote count:
-  // `deployVars()` seeds the table from those same samples, so an untouched
-  // key would otherwise look fed.
-  if (el.var && TICKET_TEXT_VARS.has(el.var) && vars && vars[el.var] != null) {
-    return String(vars[el.var]);
-  }
-  return el.text || '';
-}
-
-const TICKET_TEXT_VARS = new Set(['AxisTicket', 'AlliedTicket']);
-
-// --- laying out and painting -------------------------------------------------
-
-/** Virtual-to-stage mapping. The game stretches 800x600 to the screen; a
- *  portrait phone gets a uniform, letterboxed scale instead so nothing turns
- *  to a sliver. */
-function deployScale() {
-  const W = fullmapBox.clientWidth || 800;
-  const H = fullmapBox.clientHeight || 600;
-  const [vw, vh] = spawnLayout.data?.virtual || [800, 600];
-  if (W / H < 1) {
-    const s = Math.min(W / vw, H / vh);
-    return { sx: s, sy: s, ox: (W - vw * s) / 2, oy: (H - vh * s) / 2, W, H };
-  }
-  return { sx: W / vw, sy: H / vh, ox: 0, oy: 0, W, H };
-}
-
-function placeHit(btn, rect, s) {
-  const [x, y, w, h] = rect;
-  btn.style.left = `${s.ox + x * s.sx}px`;
-  btn.style.top = `${s.oy + y * s.sy}px`;
-  btn.style.width = `${w * s.sx}px`;
-  btn.style.height = `${h * s.sy}px`;
-}
-
-/** Where everything sits for the stage's current size: the map in its
- *  rectangle, the pointer regions over the game's own, then a paint. */
-function layoutDeploy() {
-  const data = spawnLayout.data;
-  if (!data || !deployActive()) return;
-  const s = deployScale();
-  // While the open/close transition owns the pane (applyDeployFrame), its
-  // rect is the eased interpolation, not the layout's final one.
-  if (!deployTransitionActive()) placeHit(fullmapFrame, data.map.rect, s);
-  const group = data.groups.spawn;
-  const rows = group.elements.filter(el => el.kind === 'hit' && el.hover);
-  for (const el of group.elements) {
-    if (el.kind === 'hit' && el.label === 'RESPAWN_AXIS') placeHit(deployTabs[0], el.rect, s);
-    if (el.kind === 'hit' && el.label === 'RESPAWN_ALLIED') placeHit(deployTabs[1], el.rect, s);
-  }
-  rows.forEach((el, i) => { if (deployKitHits[i]) placeHit(deployKitHits[i], el.rect, s); });
-  const buttons = { RESPAWN_SUICIDE: deploySuicideBtn, RESPAWN_CLOSE: deploySuicideBtn,
-                    RESPAWN_RESUME: deployResumeBtn, RESPAWN_DONE: deployResumeBtn,
-                    RESPAWN_SCOREBOARD: deployScoreBtn };
-  for (const el of group.elements) {
-    if (el.kind === 'button' && buttons[el.id]) placeHit(buttons[el.id], el.rect, s);
-  }
-  updateKitAriaLabels();
-  paintDeployChrome();
-  drawFullMap(true);
-}
-
-/** One frame of the chrome: the layout's leaves in file order, each drawn
- *  only when its conditions hold under `deployVars()`. */
-function paintDeployChrome() {
-  const data = spawnLayout.data;
-  if (!data || !deployActive()) return;
-  const s = deployScale();
-  const dpr = Math.min(window.devicePixelRatio || 1, 3);
-  const cw = Math.round(s.W * dpr);
-  const ch = Math.round(s.H * dpr);
-  if (deployChrome.width !== cw || deployChrome.height !== ch) {
-    deployChrome.width = cw;
-    deployChrome.height = ch;
-  }
-  const ctx = deployChrome.getContext('2d');
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, cw, ch);
-  ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
-  const vars = deployVars();
-  const buttonHover = { RESPAWN_SUICIDE: 'suicide', RESPAWN_CLOSE: 'suicide',
-                        RESPAWN_SCOREBOARD: 'score', RESPAWN_RESUME: 'resume', RESPAWN_DONE: 'resume' };
-  // The ticket counter is its own top-level entry of menu/InGame, gated by
-  // `ShowTicket` rather than by `Kit/ShowKit`, so it is a sibling of the spawn
-  // group in the file and is drawn alongside it here — in the file's own
-  // order, which puts it over the spawn plates the way the game draws it.
-  const chrome = [...data.groups.spawn.elements,
-                  ...(data.groups.tickets?.elements || [])];
-  for (const el of chrome) {
-    if (!elementVisible(el, vars)) continue;
-    const [x, y, w, h] = el.rect;
-    const color = el.color || [1, 1, 1, 1];
-    ctx.globalAlpha = color[3];
-    switch (el.kind) {
-      case 'fill':
-        ctx.fillStyle = `rgb(${color.slice(0, 3).map(v => Math.round(v * 255)).join(',')})`;
-        ctx.fillRect(x, y, w, h);
-        break;
-      case 'picture': {
-        const img = sprite(deployTexture(el, vars));
-        if (!img) break;
-        // Point art at its own size — the 16 px class glyphs — stays crisp;
-        // the plates and photographs get the card's bilinear filtering.
-        ctx.imageSmoothingEnabled = !(img.width <= 16 && img.height <= 16);
-        ctx.drawImage(img, x, y, w, h);
-        break;
-      }
-      case 'button': {
-        // A button plate is drawn at its texture's own size (the 109x25
-        // art sits inside a 128x128 sheet); the node's Width/Height is the
-        // pointer region, not a scale.
-        const img = sprite(deployHoverBtn === buttonHover[el.id] ? el.hover : el.texture);
-        if (!img) break;
-        ctx.imageSmoothingEnabled = true;
-        ctx.drawImage(img, x, y, img.width, img.height);
-        break;
-      }
-      case 'text': {
-        const font = spawnLayout.fonts.get(el.font);
-        if (!font) break;
-        const text = deployText(el, vars);
-        const width = measureText(font, text);
-        const tx = el.align === 'center' ? x + (w - width) / 2
-          : el.align === 'right' ? x + w - width : x;
-        ctx.imageSmoothingEnabled = false;
-        drawBitmapText(ctx, el.font, text, Math.round(tx), y, color.slice(0, 3));
-        break;
-      }
-      default:
-        break;
-    }
-  }
-  ctx.globalAlpha = 1;
-}
-
-/** A repaint on the next frame, coalescing a burst of sprite loads or
- *  pointer moves into one. */
-function paintDeploySoon() {
-  if (spawnLayout.pending || !deployActive()) return;
-  spawnLayout.pending = true;
-  requestAnimationFrame(() => {
-    spawnLayout.pending = false;
-    paintDeployChrome();
-  });
-}
-
-new ResizeObserver(() => { if (deployActive()) layoutDeploy(); }).observe(fullmapBox);
-
-// --- the score board ------------------------------------------------------------
-//
-// `scoreboard/scoreboard-layout.json` is the `Scoreboard/SpawnScoreBoard` group
-// of `menu/InGame` (extract_scoreboard_layout.py): the two team panels, their
-// heading strips and totals, the button frame, the server plate. `scoreboard.js`
-// is what the engine adds at runtime — the variable table and the list rows —
-// and the leaf painter; this is the page's end: the pack, the canvas, who is
-// on the board, and the two ways in (SCORE BOARD on the spawn screen, Tab held).
-const scoreBox = document.getElementById('scoreboard');
-const scoreCanvas = document.getElementById('scoreboard-canvas');
-const scoreDoneBtn = document.getElementById('scoreboard-done');
-const scoreLayout = { data: null, fonts: new Map(), textures: new Map() };
-let scoreHoverDone = false;
-let scorePaintKey = '';
-
-function scoreboardOpen() { return !scoreBox.hidden; }
-
-async function loadScoreLayout() {
-  const url = rel => `${hudPaths.url(`scoreboard/${rel}`)}${bust()}`;
-  let data;
-  try {
-    data = await fetch(url('scoreboard-layout.json')).then(r => r.json());
-  } catch (error) {
-    console.warn('score board layout unavailable', error);
-    return;
-  }
-  const image = src => new Promise(resolve => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
-    img.src = src;
-  });
-  await Promise.all([
-    ...Object.entries(data.fontFiles || {}).map(async ([id, entry]) => {
-      const [meta, img] = await Promise.all([
-        fetch(url(entry.glyphs)).then(r => r.json()), image(url(entry.file))]);
-      if (img) scoreLayout.fonts.set(id, { meta, img, tinted: new Map() });
-    }),
-    ...Object.entries(data.textures || {}).map(async ([name, entry]) => {
-      const img = await image(url(entry.file));
-      if (img) scoreLayout.textures.set(name, img);
-    }),
-  ]);
-  scoreLayout.data = data;
-  if (scoreboardOpen()) paintScoreboard(true);
-}
-loadScoreLayout();
-
-/** Everyone the page really knows about: the local player, the bots this
- *  page spawned (`spawnBotsForLevel`), and in a room the roster the server
- *  sent. Nobody else is ever listed.
- *
- *  Each row's `kit` is what the first column's glyph is drawn from
- *  (`scoreboard.js` `rowIcon`): the local player's is the spawn screen's
- *  chosen row (`deployKit`, already a class key), a bot's is its kit
- *  template's `class` in `_shared/loadouts.json` (`botKitFor` picked the
- *  template). The room protocol carries no kit, so a remote player draws no
- *  glyph rather than a guessed one. `dead` is the skull: the local soldier's
- *  latch (`soldierDead`, or no body at all), a bot's destroyed Armor — the
- *  same reads the death cam and `botRespawnTick` make. */
-function scoreboardPlayers() {
-  const inRoom = room.roomJoined && room.roomClient;
-  const players = [{
-    slot: inRoom ? room.roomClient.slot : null,
-    name: room.roomName,
-    team: inRoom ? (room.roomClient.hello?.team === 1 ? 1 : 2) : deployTeamId,
-    local: true,
-    kit: deployKit,
-    dead: !soldier || !!soldierDead,
-  }];
-  for (const bot of referee.bots) {
-    players.push({
-      slot: null,
-      name: bot.name,
-      team: bot.team,
-      bot: true,
-      kit: loadouts?.kits?.[bot.kit]?.class ?? null,
-      dead: !!world?.armorOf(bot.playerId)?.destroyed,
-    });
-  }
-  if (inRoom) {
-    for (const slot of room.roomClient.remoteSlots()) {
-      players.push({ slot, name: room.roomClient.nameOf(slot), team: room.roomClient.teamOf(slot) });
-    }
-  }
-  return players;
-}
-
-function scoreboardScale() {
-  const W = scoreBox.clientWidth || 800;
-  const H = scoreBox.clientHeight || 600;
-  const [vw, vh] = scoreLayout.data?.virtual || [800, 600];
-  if (W / H < 1) {
-    const s = Math.min(W / vw, H / vh);
-    return { sx: s, sy: s, ox: (W - vw * s) / 2, oy: (H - vh * s) / 2, W, H };
-  }
-  return { sx: W / vw, sy: H / vh, ox: 0, oy: 0, W, H };
-}
-
-const scoreRes = {
-  // The board's own plates first; a bound picture (the two ticket flags) is
-  // one of the HUD pack's sprites.
-  texture: name => scoreLayout.textures.get(name) || sprite(name),
-  measure: (fontId, text) => {
-    const font = scoreLayout.fonts.get(fontId);
-    return font ? measureText(font, text) : 0;
-  },
-  drawText: (ctx, fontId, text, x, y, rgb) =>
-    drawBitmapText(ctx, fontId, text, x, y, rgb, scoreLayout.fonts),
-  lineHeight: fontId => scoreLayout.data?.fontFiles?.[fontId]?.lineHeight || 8,
-  hover: el => scoreHoverDone && el.texture === 'knappext_n',
-  floor: el => listFloor(scoreLayout.data.elements, el),
-};
-
-/** One paint of the board. Cheap to ask for: nothing is drawn unless what it
- *  shows — the roster, the tallies, the size, the hover — has changed. */
-function paintScoreboard(force = false) {
-  const data = scoreLayout.data;
-  if (!data || !scoreboardOpen()) return;
-  const inRoom = !!(room.roomJoined && room.roomClient);
-  const rows = boardRows(scoreboardPlayers(), inRoom ? room.roomClient.feed : []);
-  const s = scoreboardScale();
-  const key = JSON.stringify([rows, s.W, s.H, scoreFromSpawn, scoreHoverDone, inRoom,
-                              currentDir, hudPack.sprites.size]);
-  if (!force && key === scorePaintKey) return;
-  scorePaintKey = key;
-
-  const dpr = Math.min(window.devicePixelRatio || 1, 3);
-  const cw = Math.round(s.W * dpr);
-  const ch = Math.round(s.H * dpr);
-  if (scoreCanvas.width !== cw || scoreCanvas.height !== ch) {
-    scoreCanvas.width = cw;
-    scoreCanvas.height = ch;
-  }
-  const ctx = scoreCanvas.getContext('2d');
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, cw, ch);
-  ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
-
-  const box = data.elements.find(el => el.kind === 'listbox');
-  const visibleRows = box
-    ? listGeometry(box, data.listColumns, scoreRes.lineHeight(box.font),
-                   scoreRes.floor(box)).visibleRows : Infinity;
-  const vars = boardVars(data.variables, {
-    fromSpawn: scoreFromSpawn,
-    inRoom,
-    alive: deployRejoin || (optOnFoot.checked && !!soldier),
-    serverName: inRoom ? String(room.roomClient.hello?.room ?? '') : '',
-    serverIp: inRoom ? location.host : '',
-    mapName: extras.level || currentDir || '',
-    axisFlag: ticketFlagTexture(1),
-    alliedFlag: ticketFlagTexture(2),
-    rows,
-    visibleRows,
-  });
-  paintLeaves(ctx, data, data.elements, vars, scoreRes, {
-    'Scoreboard/AxisScoreboardList': rows[1],
-    'Scoreboard/AlliedScoreboardList': rows[2],
-  });
-  // `ShowTicket` is its own top-level entry of menu/InGame and stays up over
-  // the board. Live, the HUD canvas already has it; over the spawn screen the
-  // deploy chrome drew it, and that chrome is hidden while the board stands in.
-  if (scoreFromSpawn && spawnLayout.data?.groups?.tickets) {
-    const spawnRes = { ...scoreRes,
-      texture: name => sprite(name),
-      measure: (fontId, text) => {
-        const font = spawnLayout.fonts.get(fontId);
-        return font ? measureText(font, text) : 0;
-      },
-      drawText: (c, fontId, text, x, y, rgb) => drawBitmapText(c, fontId, text, x, y, rgb),
-    };
-    paintLeaves(ctx, data, spawnLayout.data.groups.tickets.elements, deployVars(), spawnRes);
-  }
-  const done = data.elements.find(el => el.kind === 'button' && el.texture === 'knappext_n');
-  if (done) placeHit(scoreDoneBtn, done.rect, s);
-}
-
-/** Open or close the board. `fromSpawn` is `Scoreboard/FromSpawnScoreboard`:
- *  true when the spawn screen's SCORE BOARD button opened it (the red button
- *  reads DONE and gives the spawn interface back), false when Tab holds it up
- *  over the live game (the button reads LOCK, which this page does not act
- *  on — there is nothing to lock a pointer for). */
-function setScoreboard(on, fromSpawn = false) {
-  if (on === scoreboardOpen()) return;
-  scoreFromSpawn = on && fromSpawn;
-  scoreHoverDone = false;
-  scoreBox.hidden = !on;
-  scoreBox.classList.toggle('from-spawn', scoreFromSpawn);
-  scoreDoneBtn.hidden = !scoreFromSpawn;
-  fullmapBox.classList.toggle('board-open', scoreFromSpawn);
-  if (on) paintScoreboard(true);
-}
-
-scoreDoneBtn.addEventListener('click', e => {
-  e.stopPropagation();
-  scoreDoneBtn.blur();
-  setScoreboard(false);
+const deployScreen = createDeployScreen({
+  get KIT_ROW_KEYS() { return KIT_ROW_KEYS; }, get bfmap() { return bfmap; },
+  get bust() { return bust; }, get cameraHeading() { return cameraHeading; },
+  get drawFullMap() { return drawFullMap; }, get feedTicketVars() { return feedTicketVars; },
+  get fullmapBox() { return fullmapBox; }, get fullmapCanvas() { return fullmapCanvas; },
+  get hudPack() { return hudPack; }, get hudPaths() { return hudPaths; },
+  get kitLoadout() { return kitLoadout; }, get kitRowLabelFor() { return kitRowLabelFor; },
+  get loadouts() { return loadouts; }, get scoreboard() { return scoreboard; },
+  get sprite() { return sprite; }, get teamNation() { return teamNation; },
+  get updateKitAriaLabels() { return spawning.updateKitAriaLabels; },
+  get worldReady() { return worldReady; },
 });
-for (const [type, over] of [['pointerenter', true], ['pointerleave', false]]) {
-  scoreDoneBtn.addEventListener(type, () => { scoreHoverDone = over; paintScoreboard(); });
-}
-// A held key whose release the page never sees must not leave the board up.
-addEventListener('blur', () => { if (scoreboardOpen() && !scoreFromSpawn) setScoreboard(false); });
-new ResizeObserver(() => paintScoreboard(true)).observe(scoreBox);
-
-// --- the state -----------------------------------------------------------------
-
-/** The flags the current tab may spawn at, as indices into `flags`. A side
- *  with no flag of its own on this level — a one-sided extract — gets them
- *  all rather than an empty map. */
-function deployFlagIndices() {
-  const own = [];
-  flags.forEach((flag, index) => { if (flag.team === deployTeamId) own.push(index); });
-  return own.length ? own : flags.map((_, index) => index);
-}
-
-/** The side the page was launched on, or null.
- *
- *  The Instant Battle screen in `play/` starts the map with `?team=`, which
- *  is the `Campaign/Team` its TEAM list writes: 1 Axis, 2 Allied, the
- *  numbering `menu/SkirmishMenu` itself uses. Names are accepted too so a
- *  hand-typed link reads. The level comes in on `?map=`, which this page
- *  already honoured. */
-const launchTeam = (() => {
-  const raw = (params.get('team') || '').trim().toLowerCase();
-  if (raw === '1' || raw === 'axis') return 1;
-  if (raw === '2' || raw === 'allied' || raw === 'allies') return 2;
-  return null;
-})();
-
-/** Fresh join: pick the side that actually has spawn choices. Liberation of
- *  Caen's Allied tab is a single Canadian_Base in empty fields; Axis owns
- *  the bridge and town. Tobruk is the reverse. A rejoin keeps the life's
- *  own team.
- *
- *  A launch from the Instant Battle screen names the side instead, and it
- *  wins outright. The tally is only a guess at which side has somewhere to
- *  stand, and it is not needed here: `deployFlagIndices` already offers
- *  every flag to a side that owns none. That is how Midway works at all
- *  (its control points all start neutral), and it is what makes Wake
- *  playable from the Japanese side — all five of its flags are Allied at
- *  the start, so a tally-based guard would answer ALLIED to a player who
- *  picked AXIS on the screen before this one. */
-function preferredDeployTeam() {
-  if (launchTeam) return launchTeam;
-  let axis = 0;
-  let allied = 0;
-  for (const flag of flags) {
-    if (flag.team === 1) axis++;
-    else if (flag.team === 2) allied++;
-  }
-  if (axis && !allied) return 1;
-  if (allied && !axis) return 2;
-  if (axis > allied) return 1;
-  if (allied > axis) return 2;
-  return 2;
-}
-
-/** The checkbox's on-edge. Joining became a choice rather than a teleport:
- *  the deploy screen opens when the level has flags to choose between, and
- *  the instant path — with its refusal message for a level that declares no
- *  soldier spawns — stays for the levels that do not. */
-function requestOnFoot() {
-  if (optPilot.checked) {            // the two modes are exclusive
-    optPilot.checked = false;
-    setPilot(false);
-  }
-  if (!buildSpawnFlags()) {
-    setOnFoot(true);
-    return;
-  }
-  openDeploy();
-}
-
-function openDeploy() {
-  // Rebuilt on every open, not only when empty: `flags` otherwise survives a
-  // level switch, and the rings would be drawn from the previous level's
-  // flags — off the current map, or not anywhere at all. Rebuilding is a few
-  // DOM options; the kept choice rides the select through it.
-  if (!buildSpawnFlags()) return false;
-  // A dead body is not a life to go back to: RESUME must not hand the player
-  // a corpse, and `Kit/IsAlive` must say so.
-  deployRejoin = !!soldier && !soldierDead;
-  deployKept = spawnFlagSelect.value;
-  // A fresh screen always opens on a flag, whether the last one was left
-  // unselected for a free roam or not.
-  deployUnchosen = false;
-  // The deck-spot choice belongs to the life it was made on; a fresh screen
-  // starts with whole flags again (the rejoin path re-derives it below).
-  deployGroup = null;
-  // Drop sidebar / footer focus so Enter commits spawn rather than toggling
-  // `#onfoot` or synthesising a RESUME click.
-  if (document.activeElement && document.activeElement !== document.body) {
-    document.activeElement.blur();
-  }
-  if (deployRejoin) {
-    const chosen = flags[Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1)];
-    setDeployTeam(chosen?.team === 1 ? 1 : 2, false);
-  } else {
-    const team = preferredDeployTeam();
-    setDeployTeam(team, false);
-    const first = deployFlagIndices()[0];
-    if (first != null) {
-      spawnFlagSelect.value = String(first);
-      world?.setSpawnIndex(LOCAL_PLAYER, 0);
-    }
-  }
-  fullmapBox.classList.add('deploy');
-  syncDeployReady();
-  toggleFullMap(true);
-  layoutDeploy();
-  return true;
-}
-
-function cancelDeploy() {
-  // deploySpawn closes the overlay first; a focused RESUME button can still
-  // receive the Enter key's synthetic click afterward. Refuse unless the
-  // deploy chrome is actually up, or that click tears down the soldier we
-  // just built and dumps the camera into fly-through.
-  if (!deployActive()) return;
-  const rejoin = deployRejoin;
-  const kept = deployKept;
-  toggleFullMap(false);
-  if (rejoin) {
-    // The life in progress resumes untouched; the flag he never committed
-    // to goes back to the one he is actually standing at.
-    if (kept !== '') spawnFlagSelect.value = kept;
-    return;
-  }
-  enterFreeCam();
-}
-
-/** Free roam: the spawn screen closed with nobody spawned.
- *
- *  The game's own behaviour on a server that allows it — you leave the spawn
- *  menu without taking a spawn and the camera is yours over the level. Caps
- *  Lock brings the screen back, which is how you stop free-roaming.
- *
- *  It takes the pointer with it. The click or the Enter that got here is a
- *  user gesture, which is the only currency pointer lock accepts, and this
- *  is the whole reason the page no longer needs a "click to fly" plate: the
- *  way into the free camera captures the mouse on the way. */
-function enterFreeCam() {
-  deployUnchosen = false;
-  optOnFoot.checked = false;
-  setOnFoot(false);
-  placeCamera();
-  capture();
-}
-
-/** The group of `flag` the current selection points at: the chosen deck
- *  spot when one was clicked, else the ship's first group. The law lives in
- *  `deploy-spots.js` (node-tested); this is the page's thin wrapper over its
- *  own `deployGroup` state. */
-function activeDeployGroup(flag) {
-  return activeDeployGroupFor(flag, deployGroup);
-}
-
-function selectDeployFlag(index, group = null) {
-  if (!Number.isInteger(index) || index < 0 || index >= flags.length) return false;
-  deployUnchosen = false;
-  spawnFlagSelect.value = String(index);
-  // A fresh choice starts at the flag's first spawn, as the select's own
-  // change handler would have it — the world's counter rides the reset.
-  world?.setSpawnIndex(LOCAL_PLAYER, 0);
-  deployGroup = group;
-  // The tab follows the flag: a number key or a harness call naming the
-  // other side's flag switches the column with it.
-  const team = flags[index].team;
-  if ((team === 1 || team === 2) && team !== deployTeamId) setDeployTeam(team, false);
-  if (deployActive()) drawFullMap(true);
-  return true;
-}
-
-/** The AXIS / ALLIED tab. `reselect` moves the chosen flag onto the new
- *  side when it is not already there — a tab click — and leaves it alone
- *  when the flag chose the tab. */
-/** The kit buttons' accessible names say the same as the rows draw: the
- *  level's kit for the row on the current team, its `setKitName` resolved.
- *  Called from `setDeployTeam` (the team changed) and `layoutDeploy` (the
- *  layout — and with it the label's fallback — may have just landed). */
-function updateKitAriaLabels() {
-  for (const hit of deployKitHits) {
-    const role = hit.dataset.kit;
-    if (role) hit.setAttribute('aria-label',
-      kitRowLabelFor(role, kitRowLayoutText(role)));
-  }
-}
-
-function setDeployTeam(team, reselect = true) {
-  deployTeamId = team;
-  for (const tab of deployTabs) {
-    tab.setAttribute('aria-pressed', String(Number(tab.dataset.team) === team));
-  }
-  updateKitAriaLabels();
-  if (reselect) {
-    // Picking a side is picking again: whatever the tab lands on is chosen.
-    deployUnchosen = false;
-    const chosen = Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1);
-    if (flags[chosen]?.team !== team) {
-      const first = deployFlagIndices()[0];
-      if (first != null) {
-        spawnFlagSelect.value = String(first);
-        world?.setSpawnIndex(LOCAL_PLAYER, 0);
-        deployGroup = null;
-      }
-    }
-  }
-  paintDeployChrome();
-  if (deployActive()) drawFullMap(true);
-}
-
-for (const tab of deployTabs) {
-  tab.addEventListener('click', e => {
-    e.stopPropagation();
-    const newTeam = Number(tab.dataset.team);
-    // Switching teams kills the current soldier, matching retail BF1942:
-    // a live player who changes sides on the deploy screen dies and
-    // rejoins from scratch on the new side.
-    if (deployRejoin && newTeam !== deployTeamId && soldier) {
-      soldier = null;
-      soldierArmor = null;
-      soldierDead = false;
-      deathCamTimer = 0;
-      deployRejoin = false;
-      disposeHandWeapon();
-    }
-    setDeployTeam(newTeam);
-    tab.blur();
-  });
-}
-
-// The rows: a click selects, the pointer over one raises its
-// `Kit/MouseOver/*` flag for the game's mouse-over tint.
-deployKitHits.forEach((hit, i) => {
-  const hoverVar = () => spawnLayout.data?.groups.spawn.elements
-    .filter(el => el.kind === 'hit' && el.hover)[i]?.hover || null;
-  hit.addEventListener('click', e => {
-    e.stopPropagation();
-    deployKit = hit.dataset.kit;
-    hit.blur();
-    paintDeployChrome();
-  });
-  hit.addEventListener('pointerenter', () => { deployHoverVar = hoverVar(); paintDeploySoon(); });
-  hit.addEventListener('pointerleave', () => {
-    if (deployHoverVar === hoverVar()) deployHoverVar = null;
-    paintDeploySoon();
-  });
+const scoreboard = createScoreboardScreen({
+  get bust() { return bust; }, get currentDir() { return currentDir; },
+  get deployKit() { return deployScreen.deployKit; }, get deployRejoin() { return deployScreen.deployRejoin; },
+  get deployTeamId() { return deployScreen.deployTeamId; }, get deployVars() { return deployScreen.deployVars; },
+  get drawBitmapText() { return deployScreen.drawBitmapText; }, get extras() { return extras; },
+  get fullmapBox() { return fullmapBox; }, get hudPack() { return hudPack; },
+  get hudPaths() { return hudPaths; }, get loadouts() { return loadouts; },
+  get measureText() { return deployScreen.measureText; }, get optOnFoot() { return optOnFoot; },
+  get placeHit() { return deployScreen.placeHit; }, get referee() { return referee; },
+  get room() { return room; },
+  get scoreFromSpawn() { return deployScreen.scoreFromSpawn; }, set scoreFromSpawn(v) { deployScreen.scoreFromSpawn = v; },
+  get soldier() { return soldier; }, get soldierDead() { return soldierDead; },
+  get spawnLayout() { return deployScreen.spawnLayout; }, get sprite() { return sprite; },
+  get ticketFlagTexture() { return ticketFlagTexture; }, get world() { return world; },
 });
-for (const [btn, id] of [[deploySuicideBtn, 'suicide'], [deployScoreBtn, 'score'],
-                         [deployResumeBtn, 'resume']]) {
-  btn.addEventListener('pointerenter', () => { deployHoverBtn = id; paintDeploySoon(); });
-  btn.addEventListener('pointerleave', () => {
-    if (deployHoverBtn === id) deployHoverBtn = null;
-    paintDeploySoon();
-  });
-}
-
-/** The commit. A join builds the soldier through today's `setOnFoot`, whose
- *  rebuilt select keeps the chosen flag; a redeploy moves the one that
- *  exists. Either way the screen goes first, and pointer capture stays with
- *  the gate, exactly as it does today. */
-// The commit button reads LOADING and refuses while the scene streams.
-function syncDeployReady() {
-  // Only the commit button reads LOADING and refuses while the scene streams;
-  // which button that is depends on the side of the screen the footer puts it
-  // on (left with a life behind the screen, right without).
-  deploySuicideBtn.disabled = deployRejoin && !worldReady;
-  deployResumeBtn.disabled = !deployRejoin && !worldReady;
-  paintDeployChrome();
-}
-
-function deploySpawn() {
-  if (!deployActive() || !worldReady) return false;
-  // Nothing chosen: the commit is the way out to the free camera, not a
-  // spawn. The game's spawn menu closes the same way on a server that
-  // allows it, and there is no flag here to put a soldier at.
-  if (deployUnchosen) {
-    toggleFullMap(false);
-    enterFreeCam();
-    return false;
-  }
-  const rejoin = deployRejoin;
-  // Arm on-foot without firing `change` — that handler calls requestOnFoot
-  // and would reopen this screen. Without the box ticked the frame loop
-  // keeps flying even after setOnFoot builds a soldier (Caps Lock / auto
-  // join never checked it).
-  optOnFoot.checked = true;
-  if (document.activeElement && document.activeElement !== document.body) {
-    document.activeElement.blur();
-  }
-  toggleFullMap(false);
-  const spawned = (rejoin && soldier) ? spawnAtFlag() : (setOnFoot(true), !!soldier);
-  // The click that commits is a user gesture, which is the only currency
-  // pointer lock accepts — capture here and the very first click in the
-  // world is a trigger pull, not a mysterious dead click that only grabs
-  // the mouse.
-  if (spawned) capture();
-  else if (!soldier) optOnFoot.checked = false;
-  return spawned;
-}
-
-// Clicking the art is clicking a ring: the nearest one of the chosen side's
-// within a finger's width, measured in CSS pixels so the target does not
-// shrink on a hidpi display. A click only selects — Enter or DONE/SUICIDE
-// commits, matching the game. Touch arrives here as the same click event.
-//
-// A click on open ground, away from every ring, *unselects* instead. That is
-// how you say "no spawn" on this screen, and with nothing selected the same
-// commit that would have spawned you takes the free camera over the level
-// instead (`enterFreeCam`).
-fullmapCanvas.addEventListener('click', e => {
-  if (!deployActive()) return;       // the plain map still closes, above
-  e.stopPropagation();
-  const rect = fullmapCanvas.getBoundingClientRect();
-  if (!rect.width) return;
-  const u = (e.clientX - rect.left) / rect.width;
-  const v = (e.clientY - rect.top) / rect.height;
-  let best = -1;
-  let bestGroup = null;
-  let bestDist = 26;
-  for (const index of deployFlagIndices()) {
-    for (const spot of flagMapSpots(flags[index])) {
-      if (!spot.position) continue;
-      const p = projectToArt(spot.position[0], spot.position[2]);
-      if (!p) continue;
-      const d = Math.hypot((p.u - u) * rect.width, (p.v - v) * rect.height);
-      if (d < bestDist) {
-        bestDist = d;
-        best = index;
-        bestGroup = spot.group;
-      }
-    }
-  }
-  if (best < 0) {
-    if (deployUnchosen) return;
-    deployUnchosen = true;
-    drawFullMap(true);
-    paintDeployChrome();
-    return;
-  }
-  selectDeployFlag(best, bestGroup);
-});
-
-// The footer. The left and right buttons swap roles depending on whether a
-// life waits behind the screen (`deployRejoin`):
-//   alive (rejoin): SUICIDE (left) commits spawn, RESUME (right) cancels
-//   dead  (join):   CLOSE   (left) cancels,      DONE   (right) commits
-// SCORE BOARD has no board to show and stays a button in name only.
-// Focus must not stay on any of them: Space is the jump the instant the
-// screen closes, and a focused button turns it back into a click.
-deploySuicideBtn.addEventListener('click', e => {
-  e.stopPropagation();
-  deploySuicideBtn.blur();
-  if (deployRejoin) deploySpawn();
-  else cancelDeploy();
-});
-deployResumeBtn.addEventListener('click', e => {
-  e.stopPropagation();
-  deployResumeBtn.blur();
-  if (deployRejoin) cancelDeploy();
-  else deploySpawn();
-});
-deployScoreBtn.addEventListener('click', e => {
-  e.stopPropagation();
-  deployScoreBtn.blur();
-  // `Kit/ScoreboardSpawnInterface`: the board takes the spawn interface's
-  // place until its own DONE (`Kit/DoneSpawnScoreboard`) gives it back.
-  setScoreboard(true, true);
+const spawning = createSpawning({
+  get DEATH_CAM() { return DEATH_CAM; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
+  get buildSpawnFlags() { return buildSpawnFlags; }, get capture() { return capture; },
+  get deathCamShot() { return deathCamShot; }, set deathCamShot(v) { deathCamShot = v; },
+  get deathCamTarget() { return deathCamTarget; }, set deathCamTarget(v) { deathCamTarget = v; },
+  get deathCamTimer() { return deathCamTimer; }, set deathCamTimer(v) { deathCamTimer = v; },
+  get deployScreen() { return deployScreen; },
+  get disposeHandWeapon() { return disposeHandWeapon; }, get drawFullMap() { return drawFullMap; },
+  get ensureHandWeapon() { return ensureHandWeapon; }, get flags() { return flags; },
+  get fullmapBox() { return fullmapBox; }, get fullmapCanvas() { return fullmapCanvas; },
+  get handWeapon() { return handWeapon; }, get hud() { return hud; },
+  get hudViewTimer() { return hudViewTimer; }, set hudViewTimer(v) { hudViewTimer = v; },
+  get kitRowLabelFor() { return kitRowLabelFor; },
+  get kitRowLayoutText() { return kitRowLayoutText; }, get optOnFoot() { return optOnFoot; },
+  get optPilot() { return optPilot; }, get params() { return params; },
+  get placeCamera() { return placeCamera; }, get projectToArt() { return projectToArt; },
+  get prone() { return prone; }, set prone(v) { prone = v; },
+  get rebaseDeckSpawns() { return rebaseDeckSpawns; },
+  get resetCaptureUi() { return resetCaptureUi; }, get room() { return room; },
+  get scoreboard() { return scoreboard; }, get setOnFoot() { return setOnFoot; },
+  get setPilot() { return setPilot; }, get shipFlagInactive() { return shipFlagInactive; },
+  get snapPresentation() { return snapPresentation; },
+  get soldier() { return soldier; }, set soldier(v) { soldier = v; },
+  get soldierArmor() { return soldierArmor; }, set soldierArmor(v) { soldierArmor = v; },
+  get soldierDead() { return soldierDead; }, set soldierDead(v) { soldierDead = v; },
+  get soldierMaxHp() { return soldierMaxHp; }, get spawnFlagSelect() { return spawnFlagSelect; },
+  get supplyTarget() { return supplyTarget; }, get toggleFullMap() { return toggleFullMap; },
+  get updateHud() { return updateHud; }, get world() { return world; },
+  get worldReady() { return worldReady; },
 });
 
 async function show(entry) {
   worldReady = false;
-  syncDeployReady();
+  spawning.syncDeployReady();
   const timing = warmups.timing = { showStart: performance.now() };
   let settleLevelWarmup;
   warmups.level = new Promise(resolve => { settleLevelWarmup = resolve; });
@@ -14729,12 +13676,12 @@ async function show(entry) {
   // be streaming, and the game deploys over those too.
   worldReady = true;
   timing.worldReady = performance.now();
-  syncDeployReady();
+  spawning.syncDeployReady();
   // Direct-to-spawn: skip the briefing dialog and land on the deploy screen.
   // A level that declares no soldier spawn has no screen to open, and with
   // the "click to fly" plate gone there would be nothing to tell the player
   // the controls are live — so free roam starts armed instead.
-  if (!optPilot.checked && !openDeploy()) capture();
+  if (!optPilot.checked && !spawning.openDeploy()) capture();
 
   // Every texture this level needs has been queued by now, so a queue that is
   // already drained (or was never filled) means the load is done — texReport
@@ -14766,18 +13713,18 @@ const room = createNetRoom({
   get applyVisibility() { return applyVisibility; },
   get bindDynamicShading() { return bindDynamicShading; }, get bust() { return bust; },
   get camera() { return camera; }, get captured() { return captured; },
-  get damageVisuals() { return damageVisuals; }, get deployActive() { return deployActive; },
+  get damageVisuals() { return damageVisuals; }, get deployActive() { return deployScreen.deployActive; },
   get enterVehicle() { return enterVehicle; }, get exitSeat() { return exitSeat; },
   get extras() { return extras; }, get flags() { return flags; },
   get hoistCaptureFlag() { return hoistCaptureFlag; }, get loader() { return loader; },
   get localPlayer() { return localPlayer; }, get lockHeld() { return lockHeld; },
   get logToConsole() { return logToConsole; }, get manifest() { return manifest; },
-  get nearEntry() { return nearEntry; }, get openDeploy() { return openDeploy; },
+  get nearEntry() { return nearEntry; }, get openDeploy() { return spawning.openDeploy; },
   get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
-  get paintDeployChrome() { return paintDeployChrome; }, get params() { return params; },
+  get paintDeployChrome() { return deployScreen.paintDeployChrome; }, get params() { return params; },
   get renderer() { return renderer; },
   get roomCapture() { return roomCapture; }, set roomCapture(v) { roomCapture = v; },
-  get scene() { return scene; }, get setDeployTeam() { return setDeployTeam; },
+  get scene() { return scene; }, get setDeployTeam() { return spawning.setDeployTeam; },
   get soldier() { return soldier; }, get soldierArmor() { return soldierArmor; },
   get soldierDead() { return soldierDead; },
   get syncVehicleSpawnOwnership() { return syncVehicleSpawnOwnership; },
@@ -14856,7 +13803,7 @@ optPilot.addEventListener('change', () => {
 });
 optOnFoot.addEventListener('change', () => {
   if (optOnFoot.checked) {
-    requestOnFoot();
+    spawning.requestOnFoot();
     return;
   }
   setOnFoot(false);
@@ -14864,7 +13811,7 @@ optOnFoot.addEventListener('change', () => {
 });
 spawnFlagSelect.addEventListener('change', () => {
   world?.setSpawnIndex(LOCAL_PLAYER, 0);
-  spawnAtFlag();
+  spawning.spawnAtFlag();
 });
 
 const clock = new THREE.Clock();
@@ -15241,8 +14188,8 @@ function frame(dt) {
     renderer.render(vmScene, vmCamera);
     renderer.autoClear = true;
   }
-  deployAnimate(dt);
-  if (scoreboardOpen()) paintScoreboard();
+  deployScreen.deployAnimate(dt);
+  if (scoreboard.scoreboardOpen()) scoreboard.paintScoreboard();
   bfmap.update(dt);
   drawMinimap();
   drawFullMap();
@@ -15353,7 +14300,7 @@ setInterval(() => {
 }, 1000);
 const testHooks = installTestHooks({
   get CHASE_OPTION() { return CHASE_OPTION; }, get KBLOCK() { return KBLOCK; },
-  get KBLOCK_KEYS() { return KBLOCK_KEYS; }, get KITS() { return KITS; },
+  get KBLOCK_KEYS() { return KBLOCK_KEYS; }, get KITS() { return deployScreen.KITS; },
   get LOCAL_PLAYER() { return LOCAL_PLAYER; },
   get MINIMAP_TEAM_TINT() { return MINIMAP_TEAM_TINT; },
   get activeAreaAudios() { return activeAreaAudios; },
@@ -15365,7 +14312,7 @@ const testHooks = installTestHooks({
   get audioListener() { return audioListener; }, get bfmap() { return bfmap; },
   get bodyScene() { return bodyScene; }, get bodyWorld() { return bodyWorld; },
   get botBodies() { return botBodies; }, get botUnits() { return botUnits; },
-  get camera() { return camera; }, get cancelDeploy() { return cancelDeploy; },
+  get camera() { return camera; }, get cancelDeploy() { return spawning.cancelDeploy; },
   get canopySpan() { return canopySpan; }, get captureVoiceDirs() { return captureVoiceDirs; },
   get captureVoiceKind() { return captureVoiceKind; }, get chaseRig() { return chaseRig; },
   get clickQueued() { return clickQueued; }, set clickQueued(v) { clickQueued = v; },
@@ -15377,11 +14324,11 @@ const testHooks = installTestHooks({
   get damageVisuals() { return damageVisuals; },
   get deathCamTimer() { return deathCamTimer; }, set deathCamTimer(v) { deathCamTimer = v; },
   get debugDeployHeld() { return debugDeployHeld; }, set debugDeployHeld(v) { debugDeployHeld = v; },
-  get deployActive() { return deployActive; },
-  get deployKit() { return deployKit; }, set deployKit(v) { deployKit = v; },
-  get deployRejoin() { return deployRejoin; }, set deployRejoin(v) { deployRejoin = v; },
-  get deploySpawn() { return deploySpawn; }, get deployTeamId() { return deployTeamId; },
-  get deployUnchosen() { return deployUnchosen; },
+  get deployActive() { return deployScreen.deployActive; },
+  get deployKit() { return deployScreen.deployKit; }, set deployKit(v) { deployScreen.deployKit = v; },
+  get deployRejoin() { return deployScreen.deployRejoin; }, set deployRejoin(v) { deployScreen.deployRejoin = v; },
+  get deploySpawn() { return spawning.deploySpawn; }, get deployTeamId() { return deployScreen.deployTeamId; },
+  get deployUnchosen() { return deployScreen.deployUnchosen; },
   get detonatorTemplate() { return detonatorTemplate; },
   get disposeHandWeapon() { return disposeHandWeapon; }, get effectAudio() { return effectAudio; },
   get effectSoundsLoad() { return effectSoundsLoad; }, get effects() { return effects; },
@@ -15411,20 +14358,20 @@ const testHooks = installTestHooks({
   get nearEntry() { return nearEntry; },
   get occupiedVehicleDamage() { return occupiedVehicleDamage; },
   get optOnFoot() { return optOnFoot; }, get packAmmo() { return packAmmo; },
-  get packsLeft() { return packsLeft; }, get paintDeployChrome() { return paintDeployChrome; },
-  get paintScoreboard() { return paintScoreboard; }, get parachuteLog() { return parachuteLog; },
+  get packsLeft() { return packsLeft; }, get paintDeployChrome() { return deployScreen.paintDeployChrome; },
+  get paintScoreboard() { return scoreboard.paintScoreboard; }, get parachuteLog() { return parachuteLog; },
   get params() { return params; }, get playCaptureVoice() { return playCaptureVoice; },
   get referee() { return referee; }, get renderer() { return renderer; },
   get roomClient() { return room.roomClient; }, get roomJoined() { return room.roomJoined; },
-  get scene() { return scene; }, get scoreFromSpawn() { return scoreFromSpawn; },
-  get scoreLayout() { return scoreLayout; }, get scoreboardOpen() { return scoreboardOpen; },
-  get scoreboardPlayers() { return scoreboardPlayers; },
+  get scene() { return scene; }, get scoreFromSpawn() { return deployScreen.scoreFromSpawn; },
+  get scoreLayout() { return scoreboard.scoreLayout; }, get scoreboardOpen() { return scoreboard.scoreboardOpen; },
+  get scoreboardPlayers() { return scoreboard.scoreboardPlayers; },
   get seatAltFire() { return seatAltFire; }, set seatAltFire(v) { seatAltFire = v; },
   get seatFire() { return seatFire; }, set seatFire(v) { seatFire = v; },
   get seatIkChains() { return seatIkChains; }, get seatSoldier() { return seatSoldier; },
-  get selectDeployFlag() { return selectDeployFlag; },
-  get selectKitWeapon() { return selectKitWeapon; }, get setDeployTeam() { return setDeployTeam; },
-  get setFly() { return setFly; }, get setScoreboard() { return setScoreboard; },
+  get selectDeployFlag() { return spawning.selectDeployFlag; },
+  get selectKitWeapon() { return selectKitWeapon; }, get setDeployTeam() { return spawning.setDeployTeam; },
+  get setFly() { return setFly; }, get setScoreboard() { return scoreboard.setScoreboard; },
   get shipFlagInactive() { return shipFlagInactive; },
   get showDamageTier() { return showDamageTier; }, get showView() { return showView; },
   get snapPresentation() { return snapPresentation; },
