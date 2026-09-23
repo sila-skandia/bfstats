@@ -418,6 +418,20 @@ bot in that gun fires at soldiers at all).
 Acceptance: pins for 1 to 4, ledger and KNOBS rows for every engine read,
 the doctrine table re-run, PARITY_STATUS_2026-09-23.md's Open list updated.
 
+Done 2026-09-24 (ledger AI-92, AI-95, AI-100, AI-101; PARITY_STATUS item 7).
+1: a seat's value is its `aiTemplate.basicTemp` (`Information+0x14`), not a
+strategic strength (those are the SAI's); records are found by PCO, the
+stationary MGs are units, `modifyForDriver` scales a seat's whole urgency,
+and the reach test is `BBChange`'s; `vehicle-ai.json` re-extracted and
+published. Pin `takeAA`. 2: `runwayClear` and the pilot's `BBAvoid` /
+`BBPAvoidCollision3d`; pins `AirSpacingTests`, `headOn`; seeds 1..4 keep one
+same-tick pair (an enemy Spitfire and Bf 109 head-on). 3: neither suspect:
+the line between the tanks is blocked from the eye and the gun alike; the
+trade was the capture law, now `ControlPoint::handleFrameUpdate`'s; pin
+`test_control_point_law.py`. 4: the engine has no such test; the page's is
+measured per order; pin `RedeployTests`. 5: the doctrine table re-run after
+Brief C (features/bot-doctrines).
+
 ## Brief L: the AA gunner's trigger, and the soldier's count law
 
 Added 2026-09-24 after Brief F. Depends on: F (landed: ledger AI-88..AI-91,
