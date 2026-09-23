@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import { createLevelSky } from './level-sky.js';
 import { createLevelFlare } from './level-flare.js';
 import { createLevelShading } from './level-shading.js';
+import { createLevelStatics, isCollision, kindOf } from './level-statics.js';
 import { bareFireArmsName } from './vehicle-audio.js';
 import { idleFirePose } from './idle-vehicle.js';
 import { buildHeightfield, buildCollisionIndex, buildDrivableMask, WorldCollider } from './collision.js';
@@ -78,15 +79,18 @@ export function createLevel(page) {
     get renderer() { return page.renderer; },
     get texLoader() { return page.texLoader; },
   });
+  // level-statics.js: the scene index, the frozen statics and the distance cull.
+  const statics = createLevelStatics({
+    get camera() { return page.camera; },
+    get drawDistance() { return sky.drawDistance; },
+    get extras() { return level.extras; },
+    get levelClips() { return level.levelClips; },
+    get optEntire() { return page.optEntire; },
+    get optVehicles() { return page.optVehicles; },
+    get templateNameOf() { return page.templateNameOf; },
+    get world() { return page.world; },
+  });
 
-  const cull = [];
-  level.spawnersRoot = null;
-  // The level's vehicles as `indexScene` found them under `spawners`. The live
-  // group is not that list: `Vehicle`'s constructor reparents a hull onto the
-  // level root the moment anyone drives it, and nothing puts it back, so a map
-  // that walked `spawnersRoot.children` lost every jeep a bot had ever taken.
-  // Respawn reuses the same node, so the list holds for the level's lifetime.
-  level.mapVehicles = [];
   level.currentRoot = null;
   // The game never lets you deploy into a level that has not finished loading;
   // the browser must not either. False from the moment show() starts streaming
@@ -285,307 +289,6 @@ export function createLevel(page) {
 
   level.currentDir = '';
 
-  function isCollision(obj) {
-    return Boolean(obj.userData?.collision) || /collision/i.test(obj.name || '');
-  }
-
-  function kindOf(obj) {
-    return obj.userData?.kind || '';
-  }
-
-  const cullBonePos = new THREE.Vector3();
-  function tagCull(obj) {
-    // A skinned flag cloth sits at the scene root carrying no transform of its
-    // own — glTF requires that of any skinned mesh — so its bind-pose geometry
-    // boxes around the world origin and a distance test would hide it
-    // everywhere except there. Its real position is wherever its joints are.
-    if (obj.isSkinnedMesh && obj.skeleton && obj.skeleton.bones.length) {
-      const box = new THREE.Box3();
-      for (const bone of obj.skeleton.bones) {
-        box.expandByPoint(bone.getWorldPosition(cullBonePos));
-      }
-      const sphere = new THREE.Sphere();
-      box.getBoundingSphere(sphere);
-      obj.userData.cullCenter = sphere.center.clone();
-      // The joints are a lattice inside the cloth, not its extent; pad for it.
-      obj.userData.cullRadius = sphere.radius + 2;
-      return;
-    }
-    const box = new THREE.Box3().setFromObject(obj);
-    const sphere = new THREE.Sphere();
-    box.getBoundingSphere(sphere);
-    obj.userData.cullCenter = sphere.center.clone();
-    obj.userData.cullRadius = sphere.radius;
-  }
-
-  function indexScene(root) {
-    cull.length = 0;
-    level.spawnersRoot = null;
-    level.mapVehicles = [];
-    root.traverse(obj => {
-      if (isCollision(obj)) obj.visible = false;
-    });
-    root.updateMatrixWorld(true);
-    root.traverse(obj => {
-      if (obj === root) return;
-      if (kindOf(obj) === 'spawners' || obj.name === 'spawners') {
-        level.spawnersRoot = obj;
-      }
-    });
-    if (level.spawnersRoot) level.mapVehicles = [...level.spawnersRoot.children];
-    for (const child of root.children) {
-      if (child === level.spawnersRoot) {
-        for (const vehicle of child.children) tagCull(vehicle);
-        continue;
-      }
-      if (kindOf(child) === 'water') continue;
-      tagCull(child);
-      cull.push(child);
-    }
-    tagVehicleControlPoints();
-    flattenCull();
-    freezeStatics(root);
-  }
-
-  /** Associate parked hulls with the authored capture zone nearest their pad. */
-  function tagVehicleControlPoints() {
-    if (!level.spawnersRoot || !Array.isArray(level.extras?.controlPoints)) return;
-    const points = level.extras.controlPoints;
-    const spawns = Array.isArray(level.extras.objectSpawns) ? level.extras.objectSpawns : [];
-    const scratch = new THREE.Vector3();
-    for (const vehicle of level.spawnersRoot.children) {
-      vehicle.getWorldPosition(scratch);
-      const want = page.templateNameOf(vehicle).toLowerCase();
-      let best = null;
-      let bestDistance = Infinity;
-      for (const spawn of spawns) {
-        const name = String(spawn.vehicle || '').toLowerCase();
-        if (name !== want && !want.startsWith(name + '_')) continue;
-        const p = spawn.position || [];
-        if (p.length !== 3) continue;
-        const distance = Math.hypot(scratch.x - p[0], scratch.y - p[1], scratch.z - p[2]);
-        if (distance < bestDistance) { best = spawn; bestDistance = distance; }
-      }
-      if (best?.controlPointName) {
-        vehicle.userData.controlPointName = best.controlPointName;
-        continue;
-      }
-      // Older scene.json files predate the association fields. Reconstruct the
-      // same nearest-pad relationship so old extracts gain the gate too.
-      let point = null;
-      let pointDistance = Infinity;
-      for (const candidate of points) {
-        const p = candidate.position || [];
-        if (p.length !== 3) continue;
-        const distance = Math.hypot(scratch.x - p[0], scratch.z - p[2]);
-        const radius = Number(candidate.radius) || 0;
-        if (distance <= Math.max(60, radius * 4) && distance < pointDistance) {
-          point = candidate;
-          pointDistance = distance;
-        }
-      }
-      if (point) vehicle.userData.controlPointName = point.name || null;
-    }
-  }
-
-  function vehicleSpawnActive(vehicle) {
-    const name = vehicle?.userData?.controlPointName;
-    if (!name || !page.world?.flags) return true;
-    const flag = page.world.flags.find(item => item.controlPointName === name);
-    return !flag || flag.team !== 0;
-  }
-
-  /* `cull`'s bounding spheres, as four flat arrays.
-   *
-   * `applyVisibility` runs a distance test per entry per frame — 814 of them on
-   * Wake, before the 32 spawner children — and each one used to chase
-   * `obj.userData.cullCenter` (a `Vector3` behind two property loads and a
-   * dictionary lookup) plus `obj.userData.cullRadius`. The centres and radii are
-   * fixed at `indexScene` time by `tagCull`, so they are hoisted out of the scene
-   * graph once and the per-frame test becomes typed-array arithmetic
-   * (features/mesh-viewer-performance, rule 5's sibling: no per-frame pointer
-   * chase either).
-   *
-   * `Float64Array`, not `Float32Array`: the old test ran in doubles, and this has
-   * to be a behavioural no-op. Rounding a centre to Float32 moves it by up to
-   * ~4e-5 m at Wake's coordinates, which is enough to flip one object at exactly
-   * the range boundary. 26 KB of doubles is not the cost being addressed.
-   *
-   * `userData.cullCenter`/`cullRadius` stay on the objects — `tagCull` is still
-   * their only writer — so any future reader of them is unaffected.
-   *
-   * The SPAWNER children are deliberately NOT flattened. `Vehicle`'s constructor
-   * reparents the driven vehicle out of `spawnersRoot` and its last occupant's exit puts it
-   * back, so that list's membership changes during play; 32 object-based tests a
-   * frame are not worth the invalidation. `cull` itself is written only here.
-   */
-  level.cullFlat = {
-    x: new Float64Array(0), y: new Float64Array(0),
-    z: new Float64Array(0), r: new Float64Array(0),
-  };
-  function flattenCull() {
-    const n = cull.length;
-    const x = new Float64Array(n), y = new Float64Array(n);
-    const z = new Float64Array(n), r = new Float64Array(n);
-    for (let i = 0; i < n; i++) {
-      const c = cull[i].userData.cullCenter;
-      // `tagCull` gives every entry a centre; a `null` here would have meant
-      // "always visible" to the old predicate, so keep that reading exactly.
-      if (!c) { r[i] = Infinity; continue; }
-      x[i] = c.x; y[i] = c.y; z[i] = c.z;
-      r[i] = cull[i].userData.cullRadius || 0;
-    }
-    level.cullFlat = { x, y, z, r };
-  }
-
-  // --- static matrices --------------------------------------------------------
-  //
-  // `WebGLRenderer.render` opens with `scene.updateMatrixWorld()`, and in three
-  // r169 that walk recomposes and multiplies EVERY object's world matrix every
-  // frame: `updateMatrix()` on an auto-updating node flags it changed, and the
-  // `force` that sets cascades down the whole subtree whether or not anything
-  // under it moved. Over ~5,100 nodes, twice a frame, it was 18-21% of the
-  // frame's JS time (features/mesh-viewer-performance, rule 2). The level is
-  // mostly furniture — terrain tiles, buildings, palms, parked vehicles — that
-  // never moves once show() has placed it, so those subtrees leave the walk:
-  // their `updateMatrixWorld` is a no-op unless an ancestor genuinely forces
-  // it, and the nodes above them (`scene`, the level root, the spawners group)
-  // stop re-composing matrices they never change, so no force ever arrives.
-  //
-  // The contract: anything that moves a frozen node calls
-  // `updateMatrixWorld(true)` on it, or thaws it. A driven vehicle is thawed
-  // for the ride (`vehicles.enter`) and frozen again where it is parked (the
-  // last occupant's `vehicles.leave`). `__matrixDrift()` under ?shots checks every world matrix
-  // against a fresh recompute, and the perf harness runs it after a minute of
-  // walking, firing and turning.
-  level.frozenCount = 0;
-  // Vehicles a level clip animates while they are parked — the Hatsuzuki's
-  // radar dish turns under an `ambient` clip — never leave the walk, ride or
-  // no ride. Found by freezeStatics; `__matrixDrift` is what caught the dish
-  // standing still.
-  const neverFrozen = new WeakSet();
-  const staticUpdateMatrixWorld = function (force) {
-    if (force === true) THREE.Object3D.prototype.updateMatrixWorld.call(this, force);
-  };
-  function freeze(obj) {
-    obj.updateMatrixWorld(true);   // commit wherever it was last posed
-    obj.updateMatrixWorld = staticUpdateMatrixWorld;
-  }
-  function thaw(obj) {
-    if (Object.hasOwn(obj, 'updateMatrixWorld')) delete obj.updateMatrixWorld;
-  }
-  /** The spawner child that owns `node`: the vehicle itself, or the one a
-   *  nested seat sits in. Null for a node outside the spawners group. */
-  function spawnerVehicleOf(node) {
-    for (let n = node; n; n = n.parent) if (n.parent === level.spawnersRoot) return n;
-    return null;
-  }
-  // The subtree a ride thaws and a parking freezes. A seat being driven is not
-  // under `spawners` any more: `Vehicle`'s constructor (flight.js; ground.js
-  // extends it) reparents the node onto the level root before setPilot gets to
-  // thaw it. Looked up through `spawners` alone, the driven vehicle was never
-  // thawed and never re-frozen: it kept the frozen `updateMatrixWorld` from
-  // freezeStatics, so everything `applyRig` poses after `applyTransform`'s
-  // forced update (propeller spin, control surfaces) was drawn a frame late,
-  // and the pose `reset()` + `applyRig()` leave on a vehicle setPilot(false)
-  // parks was never committed at all -- `__matrixDrift` read 1.43 on the parked
-  // Corsair's drawn propeller after one such exit (features/mesh-viewer-performance,
-  // rule 2). Once reparented, the node is its own vehicle root.
-  function vehicleRootOf(node) {
-    return spawnerVehicleOf(node) ?? node;
-  }
-  function thawVehicle(node) {
-    const vehicle = vehicleRootOf(node);
-    if (vehicle) thaw(vehicle);
-  }
-  function freezeVehicle(node) {
-    const vehicle = vehicleRootOf(node);
-    if (vehicle && !neverFrozen.has(vehicle)) freeze(vehicle);
-  }
-  /** Take every level subtree that nothing animates out of the per-frame
-   *  matrix walk. Runs once per level, after `root.updateMatrixWorld(true)`
-   *  has composed everything where the extract put it. */
-  function freezeStatics(root) {
-    // What moves: bones and skinned cloth (the flags), input-driven `rig`
-    // parts, and any node an ambient clip targets, with its ancestors.
-    const animated = new Set();
-    for (const clip of level.levelClips) {
-      for (const track of clip.tracks) {
-        const { nodeName } = THREE.PropertyBinding.parseTrackName(track.name);
-        const node = THREE.PropertyBinding.findNode(root, nodeName);
-        for (let n = node; n && n !== root; n = n.parent) animated.add(n);
-      }
-    }
-    const moves = obj => obj.isBone || obj.isSkinnedMesh
-      || !!obj.userData?.rig || animated.has(obj);
-    level.frozenCount = 0;
-    root.matrixAutoUpdate = false;
-    for (const child of root.children) {
-      if (child === level.spawnersRoot) {
-        child.matrixAutoUpdate = false;
-        // Every parked vehicle, rigs and all: none of it moves until someone
-        // climbs in, and setPilot thaws the one they climb into. Except the
-        // ones a clip keeps moving while parked.
-        for (const vehicle of child.children) {
-          if (animated.has(vehicle)) { neverFrozen.add(vehicle); continue; }
-          freeze(vehicle);
-          level.frozenCount++;
-        }
-        continue;
-      }
-      let dynamic = false;
-      child.traverse(obj => { if (moves(obj)) dynamic = true; });
-      if (dynamic) continue;
-      freeze(child);
-      level.frozenCount++;
-    }
-  }
-
-  /** The spawner children's distance test, and theirs alone since `applyVisibility`
-   *  took the static list onto `cullFlat`: that list's membership moves during
-   *  play (a driven vehicle leaves `spawnersRoot` and comes back), and 32 tests a
-   *  frame do not pay for keeping a parallel array in step with it. */
-  function inRange(obj, cam, limit) {
-    const c = obj.userData.cullCenter;
-    const r = obj.userData.cullRadius || 0;
-    if (!c) return true;
-    const dx = c.x - cam.x, dy = c.y - cam.y, dz = c.z - cam.z;
-    const reach = limit + r;
-    return dx * dx + dy * dy + dz * dz <= reach * reach;
-  }
-
-  function applyVisibility() {
-    const entire = page.optEntire.checked;
-    const cam = page.camera.position;
-    const limit = sky.drawDistance();
-    // The static half runs off `cullFlat` (see `flattenCull`): no `userData`
-    // lookup, no `Vector3`, and `.visible` written only when it flips, which on
-    // a walking frame is a handful of the 814 rather than all of them. The test
-    // itself is the old `inRange` arithmetic unchanged, in doubles.
-    // `indexScene` is the only writer of either, and it rebuilds both together;
-    // this is the assertion that says so out loud rather than reading `undefined`
-    // out of a short array and hiding half a level.
-    if (level.cullFlat.x.length !== cull.length) flattenCull();
-    const { x, y, z, r } = level.cullFlat;
-    const cx = cam.x, cy = cam.y, cz = cam.z;
-    for (let i = 0; i < cull.length; i++) {
-      let shown = entire;
-      if (!shown) {
-        const dx = x[i] - cx, dy = y[i] - cy, dz = z[i] - cz;
-        const reach = limit + r[i];
-        shown = dx * dx + dy * dy + dz * dz <= reach * reach;
-      }
-      const obj = cull[i];
-      if (obj.visible !== shown) obj.visible = shown;
-    }
-    if (!level.spawnersRoot) return;
-    level.spawnersRoot.visible = page.optVehicles.checked;
-    if (!page.optVehicles.checked) return;
-    for (const vehicle of level.spawnersRoot.children) {
-      vehicle.visible = vehicleSpawnActive(vehicle)
-        && (entire || inRange(vehicle, cam, limit));
-    }
-  }
   // The ammo/heat bookkeeping this track's `FireState` needs is spliced onto
   // `guns.onShot` in hand-weapon.js (search `chainOnShot(page.guns,` — right
   // after the hand weapon's own `guns.onShot = ...` assignment), not here: a
@@ -1098,7 +801,7 @@ export function createLevel(page) {
     // A ship's landing craft are spawned objects of their own in the engine.
     const craft = detachSpawnedCraft(level.currentRoot);
     if (craft.length) console.log(`[vehicles] ${craft.length} landing craft split from their ships`);
-    indexScene(level.currentRoot);
+    statics.indexScene(level.currentRoot);
     collectTerrain(level.currentRoot);
     // Leaf sprites face the camera and each tree past its billboardDistance
     // becomes the engine's pre-rendered card (`tree-foliage.js`). After the
@@ -1152,7 +855,7 @@ export function createLevel(page) {
     sky.applyFog();
     page.placeCamera();
     wireframe(page.optWire.checked);
-    applyVisibility();
+    statics.applyVisibility();
     // The fog is up, so the programs this links are the ones the frame wants.
     timing.warmStart = performance.now();
     Promise.resolve(page.loadEffectLibrary())
@@ -1169,7 +872,7 @@ export function createLevel(page) {
     const o = level.extras.objects || {};
     // `objects` counts what the glb holds, and the glb holds every mode's
     // vehicles; what is standing in this level is what survived `pruneToMode`.
-    const vehiclesHere = level.spawnersRoot ? level.spawnersRoot.children.length
+    const vehiclesHere = statics.spawnersRoot ? statics.spawnersRoot.children.length
                                       : (o.spawners || 0);
     document.getElementById('stats').innerHTML =
       `<strong>${level.extras.level || entry.name}</strong><br>` +
@@ -1238,38 +941,44 @@ export function createLevel(page) {
 
   page.optGameFog.addEventListener('change', sky.applyFog);
   page.optWire.addEventListener('change', e => wireframe(e.target.checked));
-  page.optVehicles.addEventListener('change', applyVisibility);
+  page.optVehicles.addEventListener('change', statics.applyVisibility);
   page.optEntire.addEventListener('change', () => {
     sky.applyFar();
     sky.applyFog();
-    applyVisibility();
+    statics.applyVisibility();
   });
 
   Object.assign(level, {
     DEFAULT_SURFACE_FRICTION,
     advanceSim,
-    applyVisibility,
+    applyVisibility: statics.applyVisibility,
     bindDynamicShading: shading.bindDynamicShading,
     collectSupplyDepots,
-    cull,
+    cull: statics.cull,
     deckNormal,
-    flattenCull,
-    freezeVehicle,
+    flattenCull: statics.flattenCull,
+    freezeVehicle: statics.freezeVehicle,
     getFloorAltitude,
     groundHeight,
     isCollision,
     paintLensFlare: flare.paintLensFlare,
     show,
     surfaceFriction,
-    tagCull,
-    thaw,
-    thawVehicle,
+    tagCull: statics.tagCull,
+    thaw: statics.thaw,
+    thawVehicle: statics.thawVehicle,
     unlitCockpit: shading.unlitCockpit,
     updateSky: sky.updateSky,
     updateTextureFade: shading.updateTextureFade,
-    vehicleSpawnActive,
+    vehicleSpawnActive: statics.vehicleSpawnActive,
     warmSubtree,
     warmups,
+  });
+  // What the rest of the page reads of the level's parts, read live.
+  Object.defineProperties(level, {
+    frozenCount: { get: () => statics.frozenCount, enumerable: true },
+    mapVehicles: { get: () => statics.mapVehicles, enumerable: true },
+    spawnersRoot: { get: () => statics.spawnersRoot, enumerable: true },
   });
   return level;
 }
