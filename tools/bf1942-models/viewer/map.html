@@ -488,16 +488,21 @@ const pageInput = createPageInput({
   get world() { return world; },
 });
 const pageConsole = createPageConsole({
-  get MENU_URL() { return MENU_URL; }, get capture() { return pageInput.capture; },
-  get deployScreen() { return deployScreen; }, get hudPaths() { return hudPaths; },
-  get keys() { return pageInput.keys; }, get level() { return level; },
-  get localPlayer() { return localPlayer; }, get mapSurfaces() { return mapSurfaces; },
+  get aimHeld() { return soldierKit.aimHeld; }, set aimHeld(v) { soldierKit.aimHeld = v; },
+  get bfmap() { return mapSurfaces.bfmap; }, get capture() { return pageInput.capture; },
+  get extras() { return level.extras; }, get hudPaths() { return hudPaths; },
+  get keys() { return pageInput.keys; }, get launchTeam() { return spawning.launchTeam; },
+  get MENU_URL() { return MENU_URL; }, get mouseInput() { return localPlayer.mouseInput; },
   get params() { return params; }, get release() { return pageInput.release; },
-  get scoreboard() { return scoreboard; },
-  get seatAltFire() { return pageInput.seatAltFire; }, set seatAltFire(v) { pageInput.seatAltFire = v; },
-  get seatFire() { return pageInput.seatFire; }, set seatFire(v) { pageInput.seatFire = v; },
-  get setSideCollapsed() { return pageInput.setSideCollapsed; }, get soldierKit() { return soldierKit; },
-  get spawning() { return spawning; },
+  get scoreboardOpen() { return scoreboard.scoreboardOpen; },
+  get scoreFromSpawn() { return deployScreen.scoreFromSpawn; },
+  get seatAltFire() { return pageInput.seatAltFire; },
+  set seatAltFire(v) { pageInput.seatAltFire = v; }, get seatFire() { return pageInput.seatFire; },
+  set seatFire(v) { pageInput.seatFire = v; },
+  get setScoreboard() { return scoreboard.setScoreboard; },
+  get setSideCollapsed() { return pageInput.setSideCollapsed; },
+  get triggerHeld() { return soldierKit.triggerHeld; },
+  set triggerHeld(v) { soldierKit.triggerHeld = v; },
 });
 
 // The stage's size, taken here and only here. A `clientHeight` read in the
