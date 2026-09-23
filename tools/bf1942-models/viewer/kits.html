@@ -101,6 +101,7 @@ import { createCameraGlide } from './camera-glide.js';
 import { createKitCatalogue } from './kit-catalogue.js';
 import { createKitStance } from './kit-stance.js';
 import { createKitPanels } from './kit-panels.js';
+import { createKitPicker } from './kit-picker.js';
 import { createKitView } from './kit-view.js';
 import { createKitWorn } from './kit-worn.js';
 import { installControlsCollapse } from './controls-collapse.js';
@@ -116,7 +117,6 @@ const bust = () => (NO_CACHE ? `?t=${Date.now()}` : '');
 const stage = document.getElementById('stage');
 const statusLine = document.getElementById('status');
 const crumb = document.getElementById('crumb');
-const kitsEl = document.getElementById('kits');
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -158,6 +158,8 @@ if (!kitData || !(kitData.kits || []).length) {
   crumb.textContent = '';
 }
 
+// The kit on show, who wears it and what he holds. The loader (`showKit`) sets
+// them; the panels and the picker read them.
 const state = {
   kit: null,
   soldier: null,
@@ -169,7 +171,7 @@ let loadSequence = 0;
 
 const kitStance = createKitStance({
   get current() { return current; }, get startAnimating() { return startAnimating; },
-  get writeHash() { return writeHash; },
+  get writeHash() { return kitPicker.writeHash; },
 });
 
 // --- Camera ----------------------------------------------------------------
@@ -267,9 +269,9 @@ async function showKit(kit, { soldier, held, stance } = {}) {
   kitWorn.renderWorn(kit);
   kitPanels.renderRack(kit);
   kitPanels.renderMaps(kit);
-  syncSelects(kit);
-  markKit(kit);
-  writeHash();
+  kitPicker.syncSelects(kit);
+  kitPicker.markKit(kit);
+  kitPicker.writeHash();
 }
 
 // --- Panels -----------------------------------------------------------------
@@ -279,147 +281,13 @@ const kitPanels = createKitPanels({
   get showKit() { return showKit; }, get soldier() { return state.soldier; },
 });
 
-// --- Selects and list -------------------------------------------------------
+// --- Selects, list, hash and keys ------------------------------------------
 
-const nationSelect = document.getElementById('nation');
-const classSelect = document.getElementById('class');
-const soldierSelect = document.getElementById('soldier');
-
-function fillSelect(select, values, chosen) {
-  select.replaceChildren(...values.map(value => {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = value;
-    option.selected = value === chosen;
-    return option;
-  }));
-  select.disabled = values.length < 2;
-}
-
-function nationKey(kit) {
-  // A nation that fields two theatres is two wardrobes, and collapsing them
-  // would hide the entire Afrika Korps behind the European kits.
-  return kit.theatre ? `${kit.nation} (${kit.theatre})` : (kit.nation || '—');
-}
-
-function syncSelects(kit) {
-  const nations = [...new Set(kits.map(nationKey))].sort();
-  fillSelect(nationSelect, nations, nationKey(kit));
-  const siblings = kits.filter(candidate => nationKey(candidate) === nationKey(kit));
-  fillSelect(classSelect, [...new Set(siblings.map(candidate => candidate.class))], kit.class);
-  fillSelect(soldierSelect, kit.soldiers || [], state.soldier);
-}
-
-nationSelect.addEventListener('change', () => {
-  const next = kits.find(kit => nationKey(kit) === nationSelect.value
-    && kit.class === classSelect.value)
-    || kits.find(kit => nationKey(kit) === nationSelect.value);
-  showKit(next);
-});
-classSelect.addEventListener('change', () => {
-  const next = kits.find(kit => nationKey(kit) === nationSelect.value
-    && kit.class === classSelect.value);
-  // Keep his hands on the same slot index across a class change: switching
-  // Medic to Engineer should swap the weapon, not drop back to the pistol.
-  const index = (state.kit?.items || []).findIndex(item => item.template === state.held);
-  if (next) showKit(next, { held: next.items[Math.max(index, 0)]?.template });
-});
-soldierSelect.addEventListener('change', () =>
-  showKit(state.kit, { soldier: soldierSelect.value, held: state.held }));
-
-const filterInput = document.getElementById('filter');
-let visible = kits;
-
-function renderList() {
-  const query = filterInput.value.trim().toLowerCase();
-  visible = query ? kits.filter(kit => kit.haystack.includes(query)) : kits;
-  const nodes = [];
-  let group = null;
-  for (const kit of visible) {
-    if (nationKey(kit) !== group) {
-      group = nationKey(kit);
-      const heading = document.createElement('div');
-      heading.className = 'kit-group';
-      heading.textContent = group;
-      nodes.push(heading);
-    }
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'kit';
-    button.dataset.template = kit.template;
-    button.setAttribute('aria-pressed', String(kit === state.kit));
-    const label = document.createElement('span');
-    label.textContent = kit.class;
-    const maps = document.createElement('span');
-    maps.className = 'maps';
-    maps.textContent = `${(kit.levels || []).length}`;
-    button.append(label, maps);
-    button.addEventListener('click', () => showKit(kit));
-    nodes.push(button);
-  }
-  kitsEl.replaceChildren(...nodes);
-  document.getElementById('kit-count').textContent =
-    visible.length === kits.length
-      ? `${kits.length} kits · number is maps fielded`
-      : `${visible.length} of ${kits.length} kits`;
-}
-
-function markKit(kit) {
-  for (const button of kitsEl.querySelectorAll('button.kit'))
-    button.setAttribute('aria-pressed', String(button.dataset.template === kit.template));
-}
-
-filterInput.addEventListener('input', renderList);
-
-// --- Hash -------------------------------------------------------------------
-// `#German/Medic/GermanSoldier|Mp40/crouch`. Nations with a space survive
-// because the whole string is decoded before it is split, and none contains a
-// slash.
-function writeHash() {
-  if (!state.kit) return;
-  const parts = [encodeURIComponent(state.kit.nation || '-'),
-                 encodeURIComponent(state.kit.class),
-                 `${state.soldier || ''}|${state.held || ''}`];
-  if (kitStance.stance !== 'stand') parts.push(kitStance.stance);
-  location.replace(`#${parts.join('/')}`);
-}
-
-function fromHash() {
-  const raw = decodeURIComponent(location.hash.replace(/^#/, ''));
-  if (!raw) return null;
-  const [nation, className, worn = '', stance] = raw.split('/');
-  const kit = kits.find(candidate => (candidate.nation || '-') === nation
-    && candidate.class === className);
-  if (!kit) return null;
-  const [soldier, held] = worn.split('|');
-  return { kit, soldier: soldier || null, held: held || null, stance };
-}
-
-// --- Keys -------------------------------------------------------------------
-
-addEventListener('keydown', event => {
-  if (event.metaKey || event.ctrlKey || event.altKey) return;
-  if (/^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
-  const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-
-  if (/^[1-9]$/.test(key)) {
-    const item = state.kit?.items[Number(key) - 1];
-    if (item && posed(state.soldier, item.template)) {
-      showKit(state.kit, { held: item.template });
-      event.preventDefault();
-    }
-    return;
-  }
-  // q/w/e rather than 1/2/3: the digits already mean "weapon" here, and a
-  // second meaning for them is how a console becomes unlearnable.
-  const stanceKey = { q: 'stand', w: 'crouch', e: 'lie' }[key];
-  if (stanceKey) { kitStance.setStance(stanceKey); event.preventDefault(); return; }
-
-  if (key === 'ArrowDown' || key === 'ArrowUp') {
-    const index = visible.indexOf(state.kit);
-    const next = visible[index + (key === 'ArrowDown' ? 1 : -1)];
-    if (next) { showKit(next); event.preventDefault(); }
-  }
+const kitPicker = createKitPicker({
+  get held() { return state.held; }, get kit() { return state.kit; },
+  get kits() { return kits; }, get posed() { return posed; },
+  get setStance() { return kitStance.setStance; }, get showKit() { return showKit; },
+  get soldier() { return state.soldier; }, get stance() { return kitStance.stance; },
 });
 
 // --- Render loop ------------------------------------------------------------
@@ -486,8 +354,8 @@ document.getElementById('axes').addEventListener('change', event => {
 
 resize();
 if (kits.length) {
-  renderList();
-  const wanted = fromHash();
+  kitPicker.renderList();
+  const wanted = kitPicker.fromHash();
   await showKit(wanted?.kit || kits[0], wanted || {});
   resize();
 }
