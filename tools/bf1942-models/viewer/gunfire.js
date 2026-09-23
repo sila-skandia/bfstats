@@ -304,6 +304,15 @@ export class GunFire {
     // and a null collider is exactly the old behaviour: rounds end on their
     // `timeToLive` or the range cap and nothing else.
     this.collider = null;
+    // The soldiers a round can meet. `collider` holds the level and the hulls;
+    // a soldier is not in it, so without this a vehicle's round passed through
+    // every man on the map and could only hurt one by splash — which is how an
+    // AA gun, whose flak shell has no impact blast at all, never hurt anyone
+    // on the ground. `(ox, oy, oz, dx, dy, dz, maxDist, group) => hit | null`,
+    // `hit` shaped like a collider hit (`t`, point, normal, `material`,
+    // `owner`) plus the page's own `target`. Only asked inside the collider's
+    // own distance, so a wall still stops the round first.
+    this.bodyCast = null;
     // The `attacker -> defender -> EffectBundle` table out of
     // `_shared/damage.json`, and the `projectileTemplate -> attacker material`
     // table beside it. Both optional; without them a hit still stops the round,
@@ -1114,8 +1123,11 @@ export class GunFire {
     const from = _tip.copy(position)
       .addScaledVector(_step, lead - step);
     this.casts++;
-    return collider.cast(from.x, from.y, from.z, _step.x, _step.y, _step.z,
-                         step, this.#owner(group));
+    const hit = collider.cast(from.x, from.y, from.z, _step.x, _step.y, _step.z,
+                              step, this.#owner(group));
+    const body = this.bodyCast?.(from.x, from.y, from.z, _step.x, _step.y, _step.z,
+                                 hit ? hit.t : step, group);
+    return body ?? hit;
   }
 
   /**
@@ -1177,6 +1189,8 @@ export class GunFire {
       // never be equal; a gun shooting its own hull is the failure mode that
       // would look like "the guns stopped working" rather than like a bug.
       owner: hit.owner,
+      // The soldier `bodyCast` put in the round's way, when that is what it met.
+      target: hit.target ?? null,
       firer: group.owner,
       // The group itself, so a page with more than one seat on a hull can
       // say which seat's gun it was (a bot driver and a bot gunner share the
