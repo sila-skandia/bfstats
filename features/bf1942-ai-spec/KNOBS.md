@@ -113,7 +113,8 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | move | obstacle circle | 1.5 m, 1 m ahead | | `bot.js OBSTACLE_RADIUS`, `OBSTACLE_AHEAD` | INVENTION |
 | move | obstacle drop | 25.5 m (`5 x 5 + 0.5`) | `updatePotentialObstacles` 0x0852d880; `AIPathfinding` ctor 0x0847a780 zeroes max speed / age | `bot.js OBSTACLE_DROP_DISTANCE` | ENGINE |
 | move | contact ticks | 10 | | `bot.js CONTACT_TICKS` | INVENTION |
-| move | hull back-out | 2 s | `actionStatusDecision` modes 2..5 not read | `bot.js VEHICLE_REVERSE_SECONDS` | INVENTION |
+| move | hull never valid | the nearest free cell within 24 m stands in for the last valid position | `CommonControls::getBox` 0x08612060 takes `AIObjectMobile::getValidPosition` 0x085d5bb0 | `bot-route.js HULL_VALID_SEARCH` | INVENTION |
+| move | hull box levels | 0 .. 8 (tank map), 2 .. 8 (water map) | `getLandLevel` 0x085f3f90 between the vehicle's min (+0xc4a4) and the map's max (+0xc4a8); `ai.addSearchType Tank 0 0` read as min 0 | `bot-route.js HULL_BOX_MAX_LEVEL` | INFERRED / INVENTION (max) |
 | map | cell | 1 m | `LocalMap::getLevelPixelSize` 0x085ff170 | `nav-grid.js NAV_CELL` | ENGINE |
 | map | infantry map | water 1.5 m, slope 30 deg, brush 1.0, clip 0.4 .. 2.0 | `AIpathFinding.con ai.addSearchMap Infantry1 0 1.5 30 1.0 0.4 2.0 1` | `nav-grid.js INFANTRY_SEARCH_MAP` | CON |
 | map | vehicle map defaults | depth 0, slope 30, brush 3.0, clip 0.3 .. 2.5 | `AIpathFinding.con ai.addSearchMap Tank0 ...` | `bot-units.js vehicleNav` | CON |
@@ -182,13 +183,14 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | swap | factors root / own / other | driver 1.0 / 1.0 / 0.5; seat under a driver 0.5 / 1.0 / 0.5; ship seat 1.0 / 0.5 / 0.65; land seat 1.0 / 0.5 / 0.7; aircraft seat 1.5 / 0.5 / 0.5 | `BBChangeTeleport::calculateUrgency` 0x085611f0 | `TELEPORT.root`, `seatUnderDriver`, `seatShip`, `seatLand`, `seatAir` | ENGINE |
 | swap | scale, pending, no order | x4; 6.0; 2.0 below a 0.05 attack split | `BBChangeTeleport` | `TELEPORT.urgencyScale`, `pendingUrgency`, `noOrderUrgency`, `noOrderSplit` | ENGINE (6.0 and 2.0 never reach the contest) |
 | swap | order factor | 1 with an order, else the bot's skill | `BBChangeTeleport` | `bot.js _urgencyChangeTeleport` | ENGINE |
-| tank | wanted speed | 20 m/s, floor 2, `/ (10 abs(lateral) + 1)`, cap maxSpeed | `TankControl::controlTowardsDirection` 0x0862c670 | `TANK.wantedSpeed`, `minWantedSpeed`, `lateralDamping` | ENGINE |
+| tank | wanted speed | 20 m/s, floor 2, `/ (10 abs(rollRate) + 1)` (the Mobile's rotational speed . the heading, 0x0862d232), cap maxSpeed, x drive | `TankControl::controlTowardsDirection` 0x0862c670 | `TANK.wantedSpeed`, `minWantedSpeed`, `rollDamping` | ENGINE |
 | tank | damping | 30, cap +-10, gain 2 | `controlTowardsDirection` | `TANK.speedDamping`, `dampingCap`, `throttleGain` | ENGINE |
 | tank | angle limit | 30 deg, 60 deg marked | `EntryTankMoveTo::execute` 0x08622e80 | `TANK.angleLimit`, `angleLimitLastLeg` | ENGINE |
 | tank | slope | probes 20 m ahead (not built), gain 1 | `controlTowardsDirection`; `ControlInfo +0x4c` not read | `TANK.slopeProbe` (unused), `slopeGain` | ENGINE / INVENTION |
-| tank | turn throttle | 1.0 below `min(1, angle² x 0.3)`, else 0.4 | `turnTowardsDirection` 0x0862d630; tweaks 0x08762ca4 / 0x08762ca0 / 0x08762c9c | `TANK.turnHighThrottle`, `turnLowThrottle`, `turnVelocityLimit` | ENGINE |
-| tank | turn hysteresis | 150 deg | | `TANK.turnKeepAngle` | INVENTION |
-| tank | box test | 1.2566 rad, box >= 0.5 turnRadius, run <= turnRadius | `CommonControls::actionStatusDecision` 0x0860fbe0, `getBox` 0x08612060 | `TANK.reverseAngle`, `reverseBoxFraction` | ENGINE |
+| tank | the tail (drive 0, or past the limit) | full lock `sign(angle)`; throttle `drive` (1 for 0) at or under 2 m/s, else 0 | `controlTowardsDirection` 0x0862cad8..0x0862cc3b, 2.0 at 0x086c08c4 (`turnTowardsDirection` 0x0862d630 is `EntryTankTurnTo`'s only) | `TANK.lockSpeed` | ENGINE |
+| tank | angle negation | the angle negated while `drive != 0` and the motion's sign differs | 0x0862c9ae..0x0862c9c2 | `tankControl` | ENGINE |
+| tank | box states | abeam 1.2566371 rad (72 deg), short box side >= 0.5 R, front 0.5235988 rad (30 deg), astern run > 1.1 r, 45 deg turn 0.7071 | `CommonControls::actionStatusDecision` 0x0860fbe0 (AI-85) | `ASD.abeamAngle`, `boxFraction`, `frontAngle`, `backClearance`, `rot45` | ENGINE |
+| tank | search box | the free level's block grown on +z, +x, -z, -x from each start side (32 tries), the largest, widened one block a side | `AStarLocalSearch::getSearchBox` 0x085f4180, `initSearchBox` 0x085f3060 | `searchBox` | ENGINE |
 | tank | turn radius default | 5 m | Sherman `aiTemplatePlugIn.turnRadius` | `TANK.defaultTurnRadius` | CON |
 | tank | soldier max speed | 5 m/s | `Objects/Soldiers/Common/AI/Objects.con maxSpeed 5.0` | `TANK.soldierMaxSpeed` | CON |
 | tank | yaw channel sign | +1 | calibrated on the Kubelwagen | `bot.js VEHICLE_YAW_SIGN` | INVENTION (calibration) |
@@ -213,13 +215,14 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | plane | idle speed | 0.1 m/s | `BBPIdle3d::createPlan` 0x085be0e0 | `PLANE_FIRE.idleSpeed` | ENGINE |
 | plane | round speed fallback | 600 m/s | | `bot-pilot.js gunBallistics` (the chosen weapon's FireArms group, matched on its input) | UNSOURCED |
 | plane | airframe | each plane's own `.con` table off its level tree; box drag for a plane built from data, the fitted `-drag v` for the Corsair's hand table; solid-box inertia (`/12`, the engine's is `/3`) | `PhysicsWing::updatePhysics` 0x0824ed10, `getTangentSpeed` 0x08254b90, `PhysicsNode` box drag (PHY-4) (AI-79, AI-80) | `aircraft.js aircraftSpec`, `applyBoxDrag` | CON / ENGINE / INVENTION (inertia) |
-| boat | turn (state 0, angle past 30 deg) | full rudder toward the target, flipped astern; above 3 m/s throttle against the motion, at or below it a full throttle kept, else the motion's sign; at dead rest ahead | `BoatControl::speedControl` 0x0860cf40 | `boatControl` (`BOAT.fullRudderAngle`, `speedBand`) | ENGINE (rest: INVENTION) |
+| boat | turn (drive 0, or state 0 and the angle past 30 deg) | full rudder toward the target, flipped astern; above 3 m/s throttle against the motion, at or below it a full throttle kept, else the motion's sign; at dead rest ahead | `BoatControl::speedControl` 0x0860cf40; the drive / state from `actionStatusDecision` (`towardsDirection` 0x0860df70) | `boatControl` `decision` (`BOAT.fullRudderAngle`, `speedBand`) | ENGINE (rest: INVENTION) |
 | boat | underway wanted speed | `maxSpeed` x factor: level > base+1: 1 / 0.8 (>30 deg) / 0.6 (>50 deg); level = base+1: 1 (<=15) / 0.6 / 0.4 (>50); level <= base: 0.3 (>30), 0.5 (2..15), else 0.4 | `speedControl` 0x0860cf40, `getLevel` 0x0847ca60, map +0xc4a4 | `boatSpeedControl`, `BOAT.angle50/15/2`, `freeLevel` | ENGINE |
 | boat | underway throttle | `clamp(wanted - last tick's speed, -1, 1)` | `simpleReg` 0x08613c20, BAPAMoveTo +0x54 | `boatSpeedControl` | ENGINE |
 | boat | underway rudder | `sign(x) log10(9 abs(x) + 1)`, `x = sin(angle) - 0.1 yawRate` | `speedControl` 0x0860cf40 | `boatSpeedControl`, `BOAT.yawDamping` | ENGINE |
 | boat | water map base level | 2 (2^2 m blocks) | AI-66 | `BOAT.baseLevel` | INFERRED |
 | boat | aligned / dead band | cos 0.996; 0.03 | `speedControl` | `BOAT.alignedCos`, `rudderDeadBand` | ENGINE |
-| boat | arrival | 4 x radius on the move's own point, not the look-ahead (the helm passes radius 0) | | `BOAT.arriveRadiusFactor`, `bot.js _steerToward` | UNSOURCED |
+| boat | arrival | inside the move's radius: rudder 0, throttle `-sign(v) log10(9 abs(v) + 1)` clamped, until `abs(v) <= 1` m/s, then 0 and done | `EntryBoatMoveTo::execute` 0x08613d60, `BoatControl::resetControls` 0x0860dff0 (AI-87) | `boatResetControls`, `BOAT.brakeDoneSpeed`; `bot-route.js execInfantryMoveTo` | ENGINE |
+| boat | straight-line arrival (no water map) | 4 x radius | | `BOAT.arriveRadiusFactor`, `execBoatMoveTo` | UNSOURCED |
 | strategic | pass period | 2.0 s | `AISettings::reset` 0x0848461a (+0x28), read via vt+0x44 by `SAI::update` 0x086306d0 | `strategic.js SAI.updateFrequency` | ENGINE |
 | strategic | prerequisite sum | each condition's value x weight is summed; a Required (Positive) one below 0, or a RequiredNegative above 0, zeroes the sum; AdvisoryPositive / Negative clip theirs | `StrategyPrerequisite::evaluate` 0x0863aa50 | `strategic.js _evaluatePrerequisite` | ENGINE |
 | strategic | area without a control point | held by presence: a side alone there takes it if it may (`setTakeable`), a side with only enemies there loses it if the enemy may; empty keeps; starts at the authored side | `AIStrategicArea::update` 0x0863d6d0 | `strategic.js updatePresenceOwner` | ENGINE |

@@ -83,46 +83,96 @@ Skill 0.25: 4.69 at acquisition; 1.0: 0.
 
 ## Tank and car
 
-`bot-vehicle.js tankControl` (`TankControl::controlTowardsDirection`,
-AI-45), fed the look-ahead point by `_steerToward`. `angle` is the signed
-angle from the hull's heading to the point, `speed` the forward velocity,
-`lateral` the sideways one.
+`EntryTankMoveTo::execute` 0x08622e80 per tick: inside the move's radius
+`TankControl::resetControls` 0x0862dca0 zeroes the controls; otherwise
+`actionStatusDecision` (below) gives `drive` (+1 ahead, -1 reverse, 0 turn
+in place), `angle` and the motion's `sign`, and `bot-vehicle.js tankControl`
+(`TankControl::controlTowardsDirection` 0x0862c670, AI-45 / AI-86) turns
+them into throttle and steer. `speed` is the hull's speed `|v|`,
+`rollRate` its rotational speed about its heading.
 
-**Aligned** (`|angle| <= 30 deg`; 60 deg on a move marked so, never set):
+First, while `drive != 0` and `sign != drive`, the angle is negated
+(0x0862c9ae..0x0862c9c2). Then:
+
+**Aligned** (`drive != 0` and `|angle| <= 30 deg`; 60 deg on a move marked
+so, never set):
 
 ```
-wanted   = 20 x (1 - SCurve(slope x 1.0)), at least 2, / (10 |lateral| + 1), at most maxSpeed
-throttle = clamp(2 ((wanted - speed) - clamp(speed / (30 |wanted - speed| + 1), +-10)), +-1)
+wanted   = 20 x (1 - SCurve(slope x 1.0)), at least 2, / (10 |rollRate| + 1), at most maxSpeed
+delta    = drive x wanted - speed
+throttle = clamp(2 (delta - clamp(speed / (30 |delta| + 1), +-10)), +-1)
 steer    = clamp(angle - clamp(yawRate / (30 |angle| + 1), +-10), +-1)
 ```
 
-The two slope probes are not built (`slope = 0`, gain 1.0 INVENTION), and
-the yaw rate is 0 when the hull's is not known.
+The two slope probes are not built (`slope = 0`, gain 1.0 INVENTION).
 
 *Example.* A Sherman (maxSpeed 16) with the point dead ahead: from rest
 `wanted = 16`, throttle `clamp(2 x 16) = 1`; at 12 m/s `2 (4 - 12/121) = 7.8
 -> 1`; at 15.5 m/s `2 (0.5 - 15.5/16) = -0.94`: the hull settles near 15.3
-m/s. A point 20 deg to the right at 8 m/s: throttle 1, steer -0.349.
+m/s. Rolling at 1 rad/s at 3 m/s the wanted speed is `20 / 11 = 1.8`: throttle
+-1. A reverse drive wants `-wanted - speed < 0`: full reverse.
 
-**Turn first** (outside the limit, `turnTowardsDirection`, AI-47): full lock
-toward the point (`steer = +-1`), throttle 1.0 while `speed <= min(1, angle² x
-0.3)`, else 0.4; a point near dead astern keeps the last turn direction
-while `|angle| > 150 deg` (INVENTION, stops the flip across the seam).
-
-**The box test** (`driveDecision`, `actionStatusDecision` mode 0, AI-53):
-for a point behind the beam (`forward . dir < 0`), reverse toward it when
-the free run along the heading on the vehicle map (up to `2 turnRadius + 1`)
-is at most `turnRadius`, `|angle| > 72 deg` (1.2566) and the free box around
-the hull is at least `0.5 turnRadius` across; the angle is then flipped by pi
-and the throttle's sign reversed. Modes 2..5 are not built.
-
-*Example.* Point at 160 deg (2.8 rad), turnRadius 5, free run 3 m, box 6 m:
-reverse, angle `pi - 2.8 = 0.34`. With a free run of 12 m it turns instead:
-full lock, throttle 1.0 from rest, 0.4 once past 1 m/s.
+**The tail** (`drive == 0`, or outside the limit; 0x0862cad8..0x0862cc3b):
+full lock toward the angle (`steer = sign(angle)`), throttle `drive` (1 for a
+`drive` of 0) at or under 2 m/s, none above. `turnTowardsDirection`
+0x0862d630 (the 1.0 / 0.4 tweak throttles) is `EntryTankTurnTo`'s (0x086253fc)
+and never runs in a move.
 
 `c_PIYaw` takes the steer as is (`VEHICLE_YAW_SIGN = 1`, calibrated on the
-Kubelwagen). Arrival inside the move's radius stops the hull. After a failed
-route a hull backs out at full reverse and opposite lock for 2 s (INVENTION).
+Kubelwagen).
+
+### The turn in the box (`actionStatusDecision`)
+
+`CommonControls::actionStatusDecision` 0x0860fbe0 (AI-85), a state machine
+on the move (`BAPAMoveTo` +0x60, 0 for a new move), in the engine's x/z
+frame. `dot = forward . dir` (the heading's x/z, not normalised), `side =
+asin(n . dir)` with `n` the heading's normal `(z, -x)`, `full` the full
+angle `sign(side) pi - side` for a point behind the beam. The box is the
+pathfinder's (`getBox` 0x08612060 -> `AIPathfinding::getBox` 0x0847d140 ->
+`AStarLocalSearch::getSearchBox` 0x085f4180): at the free quadtree level
+`L` of the hull's cell (from the last cell it stood valid on when it stands
+on a blocked one), the `2^L` block grown a block at a time on +z, +x, -z, -x
+in turn from each of the four starting sides (32 tries each), the largest
+kept and **widened by one block on every side**. A **run** is the line from
+the hull to the box's edge (`getIntersection` 0x08612210, from the box's own
+point) cut at the first potential obstacle (`checkLineAgainstObjects`
+0x0860f7c0 over `BotMain::getPotentialObstacles`, bot vtable +0x124), and
+fails when shorter than the hull's radius. `R` is the turn radius
+(`aiTemplatePlugIn.turnRadius`, Mobile template +0xc), `r` the hull's
+bounding radius.
+
+| state | while | returns | leaves to |
+|---|---|---|---|
+| 0 plain | point ahead of the beam | drive, `side` | stays |
+| 0 plain | behind: run ahead > R | turn, `full` | 9 |
+| 0 plain | behind: run ahead <= R, `abs(side) > 72 deg`, short box side >= R/2 | turn, `full` | 7 if the hit point and the hull straddle the box centre, else 4 or 2 (the hit point mirrored in x or z, whichever lies nearer the hull's beam line) |
+| 0 plain | behind, otherwise (no box, no run) | turn, `full` | 8 |
+| 1 | (never set) | nothing | stays |
+| 2 / 4 | run along the point, mirrored point `M`, `u = (M - heading) / abs(M - heading)²` (as compiled): `u . heading > 0`, half-diagonal² < reach², `(sign speed + 1)² < reach²` with `reach² = run² + min(R²/4, abs(u)^-2)` | drive, `asin(n . u)` | 3 / 5 when the test fails |
+| 3 / 5 | box diagonal² <= reach², `(sign speed + 1)² <= reach²` | reverse, `-asin(n . w)` along the box centre's line | 0 |
+| 6 / 7 | the box centre less the hit point turned -45 / +45 deg lies astern, `(sign speed + 1)² <= reach²` | reverse, toward it | 0 |
+| 8 | point behind or 30 deg off, run ahead < R, run astern > 1.1 r | reverse, `-side` | 0 |
+| 9 | run along the motion > R | drive, `full` | 0 |
+
+States 2..8 also hold only while the point is behind the beam or at least
+30 deg off the nose; a state that lets go returns a turn in place with
+`full`. Checked against
+the function's own machine code in the x87 emulator
+(`features/bf1942-engine-reference/lnxded/action_status_emu.py`): 150 cases
+over all 25 reachable transitions, in `tests/fixtures/action_status_cases.json`
+(`test_bot_ai.py test_the_turn_in_the_box_answers_as_the_binary_does`). 0 ->
+6 is unreachable (state 0 takes 7 whenever the point is behind).
+
+*Example.* A Sherman (R 5, r 3) nose-on to a wall 3 m ahead, the point dead
+astern: state 8 (turn), then 8 again with `drive -1`: it backs straight out
+until the run ahead passes 5 m, then 0 -> 9 and it turns ahead. Live on
+Bocage (AI-85) a Sherman driven nose-first into a wall backed 2.2 m while
+turning 61 deg, then turned and drove 38 m to its point.
+
+The viewer's map can paint a hull's own pad blocked (El Alamein's nearest
+Allied Sherman sits in a 30 x 25 m blocked patch); a hull that has never
+stood on a valid cell takes the nearest free cell within 24 m as its valid
+position (INVENTION).
 
 ## Aircraft
 
@@ -205,14 +255,22 @@ soldier 260 m down the runway (PARITY_STATUS session 2).
 
 ## Boat
 
-`boatControl` (`BoatControl::towardsDirection` / `speedControl`, AI-49),
-routed on the water map when there is one, else a straight line:
+`boatControl` (`BoatControl::towardsDirection` 0x0860df70, AI-49 / AI-73 /
+AI-85), routed on the water map when there is one: `actionStatusDecision`
+(the tank's, on the water map at its base level 2) then `speedControl`
+0x0860cf40. When `drive == 0`, or in state 0 with the angle past 30 deg, it
+turns (full rudder toward the point, flipped astern; above 3 m/s the
+throttle against the motion, at or below it the motion's sign). Otherwise it
+is underway on the decision's angle (negated when the motion's sign differs
+from the drive), wanting `drive x maxSpeed x` the open-water factor
+(`boatSpeedControl`, KNOBS).
 
-```
-steer    = sign(angle) past 30 deg, else angle / 30 deg (UNSOURCED); |steer| < 0.03 -> 0
-throttle = 1 within cos 0.996 (5.1 deg); else 0.5 past 30 deg, 0.8 between (UNSOURCED)
-arrived  = inside 4 x radius: throttle -0.5 above 3 m/s, else 0
-```
+**Arrival** (`EntryBoatMoveTo::execute` 0x08613d60 inside the move's radius,
+`BoatControl::resetControls` 0x0860dff0, AI-87): the rudder zeroed; `v` the
+speed along the heading; above 1 m/s `throttle = -sign(v) log10(9 |v| + 1)`
+(clamped to +-1) and the move is not done; at or under 1 m/s the throttle is
+zeroed and the move completes. A craft at 15 m/s brakes at full reverse from
+the radius on and needs about 40 m to stop in the viewer.
 
-*Example.* 40 deg off: full rudder, throttle 0.5; 11.5 deg off: rudder -0.38,
-throttle 0.8; 3 deg off: rudder -0.1, throttle 1.
+Without a water map a ship holds a straight line (`execBoatMoveTo`, the
+older helm: full rudder past 30 deg, throttle 1 / 0.8 / 0.5, UNSOURCED).
