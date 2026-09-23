@@ -163,7 +163,7 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | medic | urgency | `Declein(sum) x 4`, x0.75 outside the area | `BBMedicAssist` | `MEDIC.urgencyScale`, `outsideAreaFactor` | ENGINE |
 | medic | approach | `R + 0.9 maxRange` | `BBPMedicAssist::createPlan` 0x085bf350 | `MEDIC.rangeFraction` | ENGINE |
 | medic | friend search | 60 m | not read | `MEDIC.searchRadius` | INVENTION |
-| medic | friend value | 1 | not read (`Information +0x14`) | `MEDIC.unitValue` | INVENTION |
+| medic | friend value | 1 | not read (`Information +0x14`); if it is that field, it is the friend's `aiTemplate.basicTemp` (ledger AI-92), 1 for every soldier (`Objects/Soldiers/Common/AI/Objects.con`) | `MEDIC.unitValue` | INVENTION |
 | medic | heal a round | 0.3 HP (0.1 at 30 Hz, 10 rounds/s) | `BFSoldierTemplate` ctor 0x0827a210 (+0x2e0); the cadence INFERRED | `MEDIC.healPerRound`, `bot-referee.js BOT_HEAL_PER_ROUND` | ENGINE (INFERRED) |
 | medic | heal reach | range + 0.5 m, 20 deg of the aim | | `bot-referee.js resolveHeal` | UNSOURCED |
 | medic | heal plan give-up | 2 m past the approach | | `bot.js _healPlanDone` | UNSOURCED |
@@ -187,7 +187,10 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | change | outside area | x0.75 | `BBChange` | `CHANGE.outsideAreaFactor` | ENGINE |
 | change | approach | 12.5 -> 6.25 m, Use within 12.375 m | `BBPChange::createPlan` 0x0858b5c0 | `CHANGE.approachFrom`, `approachTo`, `useWithin` (unused: the viewer walks to the door) | ENGINE |
 | change | door arrival | the door's radius, at least 2 m (4 when none) | | `bot.js _planChange` | UNSOURCED |
-| change | seat factors | x0.5 an aircraft's seats, x0.77 a ship's | `modifyForDriver` 0x0855f7d0 (0.77 for the 0x20 class) | `bot-units.js candidates seatFactor` | ENGINE |
+| change | seat factors | a secondary seat's whole urgency x0.77 on a ground root (ITGround 0x20), x0.5 on an air root (ITAir 0x10), x1 on a naval root (ITNaval 0x40) or whenever the root is occupied | `modifyForDriver` 0x0855f7d0; the type bits by the enum's parse at 0x084854eb (AI-9); the product in 0x0855e0c0 (ledger AI-92) | `bot-units.js candidates seatFactor`, `bot-mount.js urgencyChange` | ENGINE |
+| change | unit value | the seat's own `aiTemplate.basicTemp` (soldier 1, Willy 6, Sherman 12 and its MG 5, AA gun 9, Spitfire 15, Tiger 30, B17 35) | `calculateVehicleUrgency` 0x08583b10 adds `Information+0x14` (`fadds` at 0x08583c34) = `AITemplate+0x14` (ConsoleClass489 0x084ffe60, via `InformationReal` 0x085e8730); not a strategic strength (ledger AI-92) | `bot-units.js candidates value`, `extract_vehicle_ai.py basic_temp` | ENGINE |
+| change | reach on foot | within 12 m no test; beyond, the unit's position valid on the soldier's map; a `setUseNoPathfindingToGetToObject` unit (AA guns, Flak38, Defgun, stationary MGs) instead needs a valid point on the line 12 m behind it | 0x0855e0c0 (`144.0 < d^2`, `isValidPosition` 0x0847ccc0, `traceValidPoint` 0x0847e500; `AITemplateUnit+0x15`, ConsoleClass557 0x08506040) | `bot-mount.js unitReachable` | ENGINE |
+| change | reach sampling | the line sampled every 0.5 m; the unit's own cell is the nearest free cell within its door radius (the viewer's map paints parked hulls) | `traceValidPoint`'s walk (vt+0x58) not read | `bot-mount.js unitReachable` | INVENTION |
 | change | air bail height | under 6 m | | `bot.js _urgencyChange` | INVENTION |
 | change | `driverFactor` | 1 | | `CHANGE.driverFactor` (unused, stale comment) | UNSOURCED |
 | swap | factors root / own / other | driver 1.0 / 1.0 / 0.5; seat under a driver 0.5 / 1.0 / 0.5; ship seat 1.0 / 0.5 / 0.65; land seat 1.0 / 0.5 / 0.7; aircraft seat 1.5 / 0.5 / 0.5 | `BBChangeTeleport::calculateUrgency` 0x085611f0 | `TELEPORT.root`, `seatUnderDriver`, `seatShip`, `seatLand`, `seatAir` | ENGINE |

@@ -55,14 +55,18 @@ u        = SCurve(health) x (fire x (w1 + 0.15) + move x w2) + value
 u       x= age / 15 within 15 s of leaving that unit, and within 15 s of its spawn
 ```
 
-`value` is the seat's strategic strength for side 0 (x0.5 for a plane's
-secondary seats, x0.77 for a ship's: PAGE), 1 for the foot. `maxSpeed` is the
-AI plug-in's (Sherman 16, Willy 25, Kubelwagen 20, soldier 5); a seat that
-does not drive gets the hull's only while someone drives it.
+`value` is the seat's own `aiTemplate.basicTemp` (`Information+0x14`,
+AI-92): the foot 1, a Willy 6, a Sherman 12 and its MG 5, an AA gun or
+Flak38 9, a stationary Browning 1, a Spitfire or Bf 109 15, a Tiger 30, the
+B17 35. It is not a strategic strength; those are the SAI's. A secondary
+seat's whole `u` is then scaled by `modifyForDriver`: 1 while its root is
+occupied, else 0.77 on a ground hull, 0.5 on an aircraft, 1 on a ship.
+`maxSpeed` is the AI plug-in's (Sherman 16, Willy 25, Kubelwagen 20, soldier
+5); a seat that does not drive gets the hull's only while someone drives it.
 
 *Example.* The foot: `1 x (-16 x 0.65 + 5 x 4 x 0.5) + 1 = 0.6`. The Sherman:
-`1 x (136 x 0.65 + 16 x 4 x 0.5) + 3 = 123.4`; at 25 % health (`SCurve(0.25)
-= 0.087`) `13.5`.
+`1 x (136 x 0.65 + 16 x 4 x 0.5) + 12 = 132.4`; at 25 % health (`SCurve(0.25)
+= 0.087`) `22.5`.
 
 ## Change, on foot
 
@@ -71,7 +75,13 @@ does not drive gets the hull's only while someone drives it.
 - **Candidates**: every seat the page lists (`botVehicleCandidates`: every
   door of every live hull with AI data, a driver's, gunner's or passenger's
   seat or a fixed gun, rebuilt every 0.5 s), not held by anyone, upright,
-  within **50 m** (`getHardware`), its door on a walkable cell.
+  within **50 m** (`getHardware`) and reachable (AI-92): within 12 m always,
+  beyond it when its own position is a walkable cell; a unit flagged
+  `setUseNoPathfindingToGetToObject` (the AA guns, Flak38, Defgun, the
+  stationary MGs) when a walkable cell lies on the line 12 m behind it. A
+  unit is found by its object template (the node `flak38` is the record
+  `Flak_38`'s PCO), and the stationary MGs (`Objects/Stationary_Weapons`)
+  are units too.
 - **Score**: `u x (f + 0.5)`, `f = min(0.5, (50² - d²) / 50²)`.
 - **Urgency**: with `staying = foot u x 1.25`, the best candidate above it
   gives
@@ -87,8 +97,8 @@ does not drive gets the hull's only while someone drives it.
   12.5 m); `EnterVehicle` after the move, which asks the page for the seat.
   Kept while the same seat stays free.
 
-*Example.* The Sherman 20 m away: `f = 0.5`, score 123.4; `x = 0.5 x 123.4 /
-0.75 = 82`, `Declein = 1`, urgency `1.9 x 4 = 7.6`: above a MoveTo order
+*Example.* The Sherman 20 m away: `f = 0.5`, score 132.4; `x = 0.5 x 132.4 /
+0.75 = 88`, `Declein = 1`, urgency `1.9 x 4 = 7.6`: above a MoveTo order
 (3.0) and a saturated Fire (7.5). At 45 m (`f = 0.19`) still 7.6: the
 distance only matters when the ratio is small.
 
