@@ -620,6 +620,7 @@ const localPlayer = createLocalPlayer(bag(
     mobilePadHeld mobilePadVector updateMobileControls`),
   from(() => vehicleHits, `pickVehicle`),
   from(() => vehicleHud, `clearVehicleHud feedVehicleHud`),
+  from(() => wrecks, `killOccupantInSeat`),
   {
     get camera() { return camera; }, get hud() { return hud; }, get HUD_FLY() { return HUD_FLY; },
     get hudBridge() { return hudBridge; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
@@ -761,8 +762,9 @@ const wrecks = createVehicleWrecks(bag(
   from(() => hudFeed, `updateHud`),
   from(() => hullBodies, `respawnVehicleBody retireVehicleBody`),
   from(() => level, `bindDynamicShading collider extras isCollision vehicleDamage world`),
-  from(() => localPlayer, `dieInWreck leaveSeat markPilot occupancy soldier soldierDead standUp
-    useLens`),
+  from(() => localPlayer, `dieInSeat dieInWreck leaveSeat markPilot occupancy soldier soldierArmor
+    soldierDead standUp useLens`),
+  from(() => seatPose, `detachSeatCorpse`),
   from(() => pageAudio, `disposeEngineAudio`),
   from(() => soldierHud, `clearHitIndicator`),
   from(() => touchControls, `resetMobileControls`),
@@ -791,7 +793,7 @@ const hullBodies = createHullBodies(bag(
 const vehicleHits = createVehicleHits(bag(
   from(() => level, `collider currentRoot vehicleDamage world`),
   from(() => localPlayer, `applyDamageToPlayer occupancy soldier soldierArmor soldierDead`),
-  from(() => referee, `applyDamage bots damageLanded`),
+  from(() => referee, `applyDamage bodyAt bots capsulesOf damageLanded`),
   from(() => vehicleHud, `feedVehicleHud`),
   from(() => wrecks, `damageVisuals showDamageTier stepWrecks wreckVehicle`),
   {
@@ -1012,7 +1014,7 @@ const referee = createBotReferee({
   get units() { return botUnits; },
   groundAt: (x, z, fromY) => level.groundHeight(x, z, fromY),
   armorFor: (bot, flag) => new Armor(soldierKit.soldierMaxHp(flag)),
-  roundDamage: stats => vehicleHits.botRoundDamage(stats),
+  roundDamage: (stats, material) => vehicleHits.botRoundDamage(stats, material),
   debug: BOT_DEBUG,
   // The player's shot, heard inside his weapon's sound radius, and incoming
   // fire when it lands nearby: the edge of his fire input this frame.
@@ -1035,7 +1037,7 @@ const referee = createBotReferee({
   damageTarget: (hit, bot) => {
     if (hit.targetId !== LOCAL_PLAYER) return false;
     comms.noteAttack(LOCAL_PLAYER, botSpeaker(bot));
-    localPlayer.applyDamageToPlayer(hit.damage, { x: bot.position[0], y: bot.position[1], z: bot.position[2] }, bot.team);
+    localPlayer.applyDamageToPlayer(hit.damage, { x: bot.position[0], y: bot.position[1], z: bot.position[2] }, bot.team, hit.hit);
     return true;
   },
   damageHull: (bot, damage, { attackerId = null } = {}) => {
@@ -1044,6 +1046,14 @@ const referee = createBotReferee({
     hull.damage(damage, attackerId);
     return true;
   },
+  // A seated body, where the seat draws one: the human's own seat
+  // (`seat-pose.js`) or a bot's (`bot-visuals.js`).
+  seatedBodyAt: playerId => (playerId === LOCAL_PLAYER
+    ? seatPose.seatedBody() : botBodies.seatedBodyAt(playerId)),
+  // The drawn body's hit capsules (`rig-capsules.js`): the engine's own
+  // skeleton test, where the page draws him.
+  capsulesOf: playerId => (playerId !== LOCAL_PLAYER ? botBodies.capsulesOf(playerId)
+    : localPlayer.occupancy ? seatPose.seatCapsules() : footBodies.footCapsules()),
   defaultAttackerPos: () => (localPlayer.soldier ? [localPlayer.soldier.x, localPlayer.soldier.y, localPlayer.soldier.z] : null),
   // The grunt is the soldier's, not the shooter's: positional, so a bot hit
   // across the field is a distant cry rather than a 2D overlay. Same cooldown
@@ -1052,9 +1062,10 @@ const referee = createBotReferee({
     const at = bot.getPosition();
     pageAudio.playSoldierHurtSound(false, { x: at[0], y: at[1] + 1.2, z: at[2] });
   },
-  onDeath: (bot, attackerId) => {
-    const vis = botBodies.botVisuals.get(bot.playerId);
-    if (vis) vis.group.visible = false;
+  onDeath: (bot, attackerId, opts) => {
+    // The corpse: the engine's death for how he was standing, sitting or
+    // swimming and where the round came from (`soldier-death.js`).
+    botBodies.killBot(bot, opts);
     comms.onKill(botSpeaker(bot), speakerOf(attackerId));
   },
   onRespawned: bot => {
@@ -1200,7 +1211,7 @@ const soldierKit = createHandWeapon(bag(
   from(() => mapSurfaces, `teamNation`),
   from(() => pageAudio, `audioListener masterVolume modelSoundBuffer playSupplyGive vehicleAudio`),
   from(() => pageInput, `aimHeld captured clickQueued dropClick triggerHeld`),
-  from(() => referee, `applyDamage bots lineOfSight`),
+  from(() => referee, `applyDamage bodyAt bots capsulesOf lineOfSight`),
   from(() => soldierView, `footView3p`),
   from(() => spawning, `deployKit deployTeamId`),
   from(() => vehicleHits, `botRoundDamage`),
@@ -1260,13 +1271,13 @@ function loadBotWeapons(bot) {
   })));
 }
 const botBodies = createBotVisuals(bag(
-  from(() => footBodies, `disposeFootBodyScene footBodyClips footBodyLoader`),
+  from(() => footBodies, `disposeFootBodyScene footBodyClips footBodyLoader soldierBody`),
   from(() => level, `bindDynamicShading world`),
   from(() => localLook, `presentAlpha`),
   from(() => referee, `bots`),
   {
     get bust() { return bust; }, get MODELS_BASE() { return MODELS_BASE; },
-    get scene() { return scene; },
+    get scene() { return scene; }, get vehicles() { return vehicles; },
   },
 ));
 /** The edge of the human's fire input last frame, for the bots' hearing. */
@@ -1291,7 +1302,7 @@ const soldierView = createSoldierView(bag(
 const footBodies = createFootBody(bag(
   from(() => level, `bindDynamicShading`),
   from(() => localLook, `footFeetCur footFeetPrev footView presentAlpha`),
-  from(() => localPlayer, `soldier soldierDead`),
+  from(() => localPlayer, `deathFamily deathYaw soldier soldierDead`),
   from(() => soldierView, `footView3p`),
   {
     get bust() { return bust; }, get MODELS_BASE() { return MODELS_BASE; },
@@ -1300,7 +1311,9 @@ const footBodies = createFootBody(bag(
   },
 ));
 const seatPose = createSeatPose(bag(
+  from(() => botBodies, `addCorpse`),
   from(() => flagCapture, `flags`),
+  from(() => footBodies, `dieClips soldierBody`),
   from(() => localPlayer, `occupancy`),
   from(() => seatCamera, `view`),
   from(() => soldierKit, `kitLoadout soldierTemplateFor`),

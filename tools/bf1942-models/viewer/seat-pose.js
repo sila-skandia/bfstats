@@ -6,15 +6,20 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
-import { collectIkBindings, defaultSeatPoseName, ikTarget, resolveSeatStates, seatBody, seatPoseName, solveTwoBone } from './seat-ik.js';
+import { defaultSeatPoseName, resolveSeatStates, seatBody, seatPoseName } from './seat-ik.js';
+import { bindSeatIkChains, findBone, hideBelowPelvis, stepSeatIkChains } from './seat-body.js';
 import { bonePattern, kitsByTemplate, wornGrafts } from './kit-graft.js';
+import { rigCapsules } from './rig-capsules.js';
+import { BOT_BODY_HEIGHT } from './bot-referee.js';
+import { DIE_IN_VEHICLE_UPPER, corpseSeconds } from './soldier-death.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `bust`, `deployKit`, `deployTeamId`, `flags`, `kitLoadout`, `MODELS_BASE`,
- * `occupancy`, `optPilot`, `scene`, `soldierTemplateFor`, `view`.
+ * `addCorpse`, `bust`, `deployKit`, `deployTeamId`, `dieClips`, `flags`,
+ * `kitLoadout`, `MODELS_BASE`, `occupancy`, `optPilot`, `scene`,
+ * `soldierBody`, `soldierTemplateFor`, `view`.
  */
 export function createSeatPose(page) {
   const seatPose = {};
@@ -47,6 +52,8 @@ export function createSeatPose(page) {
   seatPose.seatPoseActions = null;
   seatPose.seatPoseTarget = null;   // the seat node whose world pose we follow
   seatPose.seatIkChains = [];       // per-frame arm work, built by `bindSeatIk`
+  seatPose.seatHalfBody = false;    // `c_SeatShowHalfBodySoldier` on this seat
+  seatPose.seatDieUpper = null;     // `Ub_DieInVehicle`, bound for the slump
   seatPose.seatPoseGeneration = 0;  // which load is still the current one
 
   async function loadSeatPose() {
@@ -91,6 +98,7 @@ export function createSeatPose(page) {
       // skinned mesh gets to `disableBoneTree` — `visible = false` on a joint
       // does nothing, because the vertices are drawn by the mesh, not the bone.
       if (body.halfBody) hideBelowPelvis(soldierScene);
+      seatPose.seatHalfBody = body.halfBody;
 
     // The SeatObject node (e.g. `WillyPassengerSeat`) is the *sit* position; an
     // EntryPoint is the door where the soldier spawns on enter. Sync to the
@@ -131,6 +139,21 @@ export function createSeatPose(page) {
       }
     }
     bindSeatIk(seat, soldierScene, clips);
+    // The slump, bound now so a death in the seat can play it on the frame it
+    // happens: `handleDamage` puts `Ub_DieInVehicle` on the torso and leaves the
+    // legs on the seat's clip.
+    page.dieClips?.().then(dieClips => {
+      if (soldierScene !== seatPose.seatSoldier || !seatPose.seatPoseMixer) return;
+      const clip = THREE.AnimationClip.findByName(dieClips || [], DIE_IN_VEHICLE_UPPER);
+      if (!clip) return;
+      const a = seatPose.seatPoseMixer.clipAction(clip);
+      a.setLoop(THREE.LoopOnce, 1);
+      a.clampWhenFinished = true;
+      a.play();
+      a.setEffectiveWeight(0);
+      a.paused = true;
+      seatPose.seatDieUpper = a;
+    });
     } catch (err) {
       console.error('loadSeatPose:', err);
     }
@@ -186,22 +209,6 @@ export function createSeatPose(page) {
     }
   }
 
-  /** `c_SeatShowHalfBodySoldier` — `setUseSeat` hides `Bip01 Pelvis` and its
-   *  subtree. */
-  function hideBelowPelvis(soldierScene) {
-    const pelvis = findBone(soldierScene, 'Bip01 Pelvis');
-    if (pelvis) pelvis.scale.setScalar(1e-4);
-  }
-
-  /** A bone by name, tolerant of the underscore/space spellings the data mixes. */
-  const boneKey = name => String(name).toLowerCase().replace(/[_\s]+/g, ' ').trim();
-  function findBone(root, name) {
-    const want = boneKey(name);
-    let found = null;
-    root.traverse(obj => { if (!found && boneKey(obj.name) === want) found = obj; });
-    return found;
-  }
-
   /** The same, for a bone the kit manifest names (`A`, `backpack`, `HipPack`). */
   function findBoneMatching(root, want) {
     const pattern = bonePattern(want);
@@ -210,127 +217,17 @@ export function createSeatPose(page) {
     return found;
   }
 
-  /** Build the per-frame IK work for one seat: every `extras.skeletonIK` node
-   *  this seat owns, paired with the arm chain it drives.
-   *
-   * Scoped by the same `control` tag `surveyVehicle` buckets seats with, so a
-   * Sherman gunner's Browning does not pull the driver's hands and vice versa.
-   * The chain is the bone's two ancestors — the engine's own `i-1` and `i-2`
-   * (`applyIK2BoneSolver` reads the bone array at negative offsets, 232 bytes
-   * apart), which for `Bip01 R Hand` is the forearm and the upper arm. */
+  /** Build the per-frame IK work for this seat (`seat-body.js`
+   *  `bindSeatIkChains`: the seat's own `skeletonIK` nodes, scoped by
+   *  `control`). */
   function bindSeatIk(seat, soldierScene, clips) {
-    seatPose.seatIkChains = [];
-    if (!seat?.node || !soldierScene) return;
-    // Which bones the seat clips re-pose every frame. Those need no restoring:
-    // the mixer overwrites last frame's IK before this frame's runs. A bone no
-    // clip touches does need it, or the deltas compound (a pose file that
-    // resolved only `seat.lower` would wind the arms off the model in seconds).
-    const driven = new Set();
-    for (const clip of clips || []) {
-      for (const track of clip.tracks || []) {
-        driven.add(boneKey(track.name.slice(0, track.name.lastIndexOf('.'))));
-      }
-    }
-    const owners = [];
-    seat.node.traverse(obj => {
-      if (!obj.userData?.skeletonIK) return;
-      const owner = obj.userData.control || page.occupancy?.rootId;
-      if (owner === seat.id) owners.push(obj);
-    });
-    const resolveChild = (node, index, name) =>
-      (name && node.children.find(c => c.name === name)) || node.children[index] || null;
-    for (const binding of collectIkBindings(owners, resolveChild)) {
-      const end = findBone(soldierScene, binding.bone);
-      const mid = end?.parent;
-      const root = mid?.parent;
-      if (!end || !mid || !root) continue;
-      seatPose.seatIkChains.push({
-        ...binding, end, mid, root,
-        rest: [root, mid, end].map(
-          b => (driven.has(boneKey(b.name)) ? null : b.quaternion.clone())),
-      });
-    }
+    seatPose.seatIkChains = bindSeatIkChains(seat, soldierScene, clips, page.occupancy?.rootId);
   }
 
-  // Scratch, so the three.js half of a frame's IK allocates nothing. The plain
-  // arrays `seat-ik.js` returns are small and short-lived; what used to cost
-  // real work each frame was re-baking the rotation triple, and `collectIkBindings`
-  // now does that once (`prepareIkEntry`).
-  const _ikPos = new THREE.Vector3();
-  const _ikScale = new THREE.Vector3();
-  const _ikQuat = new THREE.Quaternion();
-  const _ikParent = new THREE.Quaternion();
-  const _ikInverse = new THREE.Quaternion();
-  const _ikDelta = new THREE.Quaternion();
-  const _ikRoot = new THREE.Vector3();
-  const _ikMid = new THREE.Vector3();
-  const _ikEnd = new THREE.Vector3();
-  const _ikA = [0, 0, 0];
-  const _ikB = [0, 0, 0];
-  const _ikC = [0, 0, 0];
-  const toArr = (v, out) => { out[0] = v.x; out[1] = v.y; out[2] = v.z; return out; };
-
-  /** Pin each declared bone to its vehicle node's live world pose, once a frame.
-   *
-   * Called after the seat pose's mixer has stepped and after the vehicle's own
-   * rig has been applied, so the wheel is already where this frame put it and
-   * the hands follow it round rather than trailing it by a frame.
-   *
-   * `updateIk` (lnxded `0x08265880`) does the same composition in the soldier's
-   * own frame; world space is the same answer and saves inverting a matrix the
-   * viewer already has. The arm reaches (`applyIK2BoneSolver`) and the hand is
-   * then planted at the declared angle outright (`Skeleton::transform`,
-   * `0x8342233`) — both halves, in that order. */
+  /** Pin the hands to the wheel or the gun, once a frame, after the seat's
+   *  mixer and the vehicle's own rig (`seat-body.js` `stepSeatIkChains`). */
   function stepSeatIk() {
-    if (!seatPose.seatIkChains.length || !seatPose.seatSoldier) return;
-    for (const chain of seatPose.seatIkChains) {
-      if (chain.rest[0]) chain.root.quaternion.copy(chain.rest[0]);
-      if (chain.rest[1]) chain.mid.quaternion.copy(chain.rest[1]);
-      if (chain.rest[2]) chain.end.quaternion.copy(chain.rest[2]);
-    }
-    seatPose.seatSoldier.updateMatrixWorld(true);
-    for (const chain of seatPose.seatIkChains) {
-      chain.target.updateWorldMatrix(true, false);
-      chain.target.matrixWorld.decompose(_ikPos, _ikQuat, _ikScale);
-      const target = ikTarget(
-        chain.entry,
-        [_ikPos.x, _ikPos.y, _ikPos.z],
-        [_ikQuat.x, _ikQuat.y, _ikQuat.z, _ikQuat.w]);
-
-      chain.root.getWorldPosition(_ikRoot);
-      chain.mid.getWorldPosition(_ikMid);
-      chain.end.getWorldPosition(_ikEnd);
-      const solve = solveTwoBone(
-        toArr(_ikRoot, _ikA), toArr(_ikMid, _ikB), toArr(_ikEnd, _ikC),
-        target.position);
-      if (solve.degenerate) continue;
-
-      // A world-space rotation applied to a bone whose parent stays put is
-      // `local' = parentWorld^-1 * q * parentWorld * local`. Bend the forearm
-      // first, then swing the whole arm: the swing was derived from where the
-      // hand sits *after* the bend and carries it along rigidly.
-      applyWorldDelta(chain.mid, solve.bend);
-      applyWorldDelta(chain.root, solve.reach);
-      chain.root.updateMatrixWorld(true);
-
-      // And the hand's own orientation is the declared one, not whatever the
-      // arm's swing left behind.
-      chain.end.parent.getWorldQuaternion(_ikParent);
-      _ikQuat.set(target.quaternion[0], target.quaternion[1],
-                  target.quaternion[2], target.quaternion[3]);
-      chain.end.quaternion.copy(_ikParent.invert()).multiply(_ikQuat);
-      chain.end.updateMatrixWorld(true);
-    }
-  }
-
-  function applyWorldDelta(bone, quat) {
-    if (!bone.parent) return;
-    bone.parent.getWorldQuaternion(_ikParent);
-    _ikInverse.copy(_ikParent).invert();
-    _ikDelta.set(quat[0], quat[1], quat[2], quat[3]);
-    // parentWorld^-1 * delta * parentWorld, then premultiply onto the local.
-    _ikDelta.premultiply(_ikInverse).multiply(_ikParent);
-    bone.quaternion.premultiply(_ikDelta);
+    stepSeatIkChains(seatPose.seatIkChains, seatPose.seatSoldier);
   }
 
   /** Give one loaded seat-pose scene back to the GPU, the same way
@@ -376,6 +273,8 @@ export function createSeatPose(page) {
     seatPose.seatPoseActions = null;
     seatPose.seatPoseTarget = null;
     seatPose.seatIkChains = [];
+    seatPose.seatDieUpper = null;
+    seatPose.seatHalfBody = false;
     if (seatPose.seatSoldier) {
       disposeSeatScene(seatPose.seatSoldier);
       seatPose.seatSoldier = null;
@@ -401,8 +300,69 @@ export function createSeatPose(page) {
     if (seatPose.seatPoseMixer) seatPose.seatPoseMixer.update(dt);
   };
 
+  const _spine = new THREE.Vector3();
+
+  /** The human's seated body as a target (`referee.bodyAt`): feet-equivalent
+   *  `{ x, y, z }` under the spine, the same stand-in a man on foot is; null
+   *  when the seat draws nobody, or half of him down a hatch. */
+  function seatedBody() {
+    const scene = seatPose.seatSoldier;
+    if (!scene || seatPose.seatHalfBody || !page.optPilot.checked) return null;
+    const spine = findBone(scene, 'Bip01 Spine');
+    if (!spine) return null;
+    scene.updateMatrixWorld(true);
+    spine.getWorldPosition(_spine);
+    return { x: _spine.x, y: _spine.y - BOT_BODY_HEIGHT, z: _spine.z };
+  }
+
+  /** The seated body's hit capsules (`rig-capsules.js`), or null. */
+  function seatCapsules() {
+    if (!seatedBody()) return null;
+    return rigCapsules(seatPose.seatSoldier, page.soldierBody?.collisionBones);
+  }
+
+  /**
+   * Killed in the seat: the drawn body becomes a corpse that slumps where it
+   * sat -- the seat's legs, `Ub_DieInVehicle` on the torso -- and follows the
+   * seat for the corpse time, and the seat pose lets go of it so leaving the
+   * seat does not dispose it. Returns the corpse's world position for the
+   * death cam, or null when the seat drew nobody.
+   */
+  function detachSeatCorpse() {
+    const scene = seatPose.seatSoldier;
+    const mixer = seatPose.seatPoseMixer;
+    const anchor = seatPose.seatPoseTarget;
+    if (!scene || !mixer || !anchor) return null;
+    if (seatPose.seatDieUpper) {
+      seatPose.seatPoseActions?.upper?.setEffectiveWeight(0);
+      seatPose.seatDieUpper.paused = false;
+      seatPose.seatDieUpper.reset();
+      seatPose.seatDieUpper.setEffectiveWeight(1);
+      seatPose.seatDieUpper.play();
+    }
+    // The arms stop reaching for the gun: the IK chains belong to the live
+    // occupant, and a dead one lets go.
+    seatPose.seatIkChains = [];
+    seatPose.seatSoldier = null;
+    seatPose.seatPoseMixer = null;
+    seatPose.seatPoseActions = null;
+    seatPose.seatDieUpper = null;
+    // Drawn from outside now, whatever the seat's own camera was.
+    scene.visible = true;
+    const at = anchor.getWorldPosition(new THREE.Vector3());
+    page.addCorpse({
+      name: 'local', family: 'dieInVehicle', scene, mixer, anchor,
+      ttl: corpseSeconds(page.soldierBody),
+      dispose: () => { mixer.stopAllAction(); mixer.uncacheRoot(scene); disposeSeatScene(scene); },
+    });
+    return { x: at.x, y: at.y, z: at.z };
+  }
+
   Object.assign(seatPose, {
+    detachSeatCorpse,
     disposeSeatPose,
+    seatCapsules,
+    seatedBody,
     loadSeatPose,
     stepSeatIk,
     updateSeatPoseVisibility,

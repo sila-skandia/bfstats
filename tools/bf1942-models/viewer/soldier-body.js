@@ -49,8 +49,14 @@
 // `UPPER_STAND_AIM` below is the baked clip that state's timeline was written
 // as.
 //
+// The death families are `soldier-death.js`'s, played from
+// `gaits/die.gait.glb` under the engine's own state names; which one a man
+// owes is decided once, on the killing blow, and handed in as `death`.
+//
 // Free of `three` and of the DOM, so `tests/soldier_body_harness.mjs` runs the
 // real thing under node.
+
+import { DIE_CLIPS } from './soldier-death.js';
 
 /** The baked clip the `Ub_StandAim<W>` state's timeline ships as. */
 export const UPPER_STAND_AIM = 'stand.upper';
@@ -96,7 +102,15 @@ export const BODY_CLIPS = Object.freeze({
   swimBackward: Object.freeze({ lower: 'Lb_SwimBackward', upper: 'Ub_SwimBackward' }),
   swimEnd: Object.freeze({ lower: 'Lb_EndSwim', upper: 'Ub_EndSwim' }),
   swimDie: Object.freeze({ lower: 'Lb_DieSwim', upper: 'Ub_DieSwim' }),
+  // The deaths (`soldier-death.js`), one pair per `AnimationStatesDie.con`
+  // state `handleDamage` can choose.
+  ...DIE_CLIPS,
 });
+
+/** The families that are a corpse: drawn after death rather than hidden. */
+export const BODY_DEATHS = Object.freeze(new Set([
+  ...Object.keys(DIE_CLIPS), 'parachuteDie', 'parachuteDeadLanded', 'swimDie',
+]));
 
 /**
  * Which families a one-shot: the four `c_AsmPlayOnce` parachute states.
@@ -112,13 +126,17 @@ export const BODY_ONCE = Object.freeze(new Set([
   // `addTransitionWhenDone Lb_SwimForward` / `Lb_Stand` / nothing. `swim.js`
   // runs the two transition timers, so nothing here has to.
   'swimStart', 'swimEnd', 'swimDie',
+  // Every death: `addAnimation ... 0` or `c_AsmPlayOnce`, and no state to go
+  // on to, so the corpse holds the last frame.
+  ...Object.keys(DIE_CLIPS),
 ]));
 
 /**
  * The families whose lower-body state declares `c_AsmHideWeapon` (0x2).
  *
- * All five swim states do, and the swim death does not -- `Lb_DieSwim` is in
- * `AnimationStatesDie.con` and declares no flags at all. The engine acts on the
+ * All five swim states do, and so does every lower death state in
+ * `AnimationStatesDie.con`, `Lb_DieSwim` included (`setFlag c_AsmHideWeapon`,
+ * `setFlag c_AsmLockFreeLook`). The engine acts on the
  * flag in `BFSoldier::enableItem(char)`, which returns without enabling anything
  * while it is set (`0x082784a1` reads the flags, `0x082784af and eax,0x2`,
  * `0x082784b2 jne` to the exit), so a swimming soldier's weapon is put away.
@@ -129,6 +147,7 @@ export const BODY_ONCE = Object.freeze(new Set([
  */
 export const BODY_HIDES_WEAPON = Object.freeze(new Set([
   'swimStart', 'swimFloat', 'swimForward', 'swimBackward', 'swimEnd',
+  'swimDie', ...Object.keys(DIE_CLIPS),
 ]));
 
 /**
@@ -167,6 +186,19 @@ export const BODY_FALLBACKS = Object.freeze({
   swimBackward: Object.freeze(['swimBackward', 'swimFloat', 'stand']),
   swimEnd: Object.freeze(['swimEnd', 'swimFloat', 'stand']),
   swimDie: Object.freeze(['swimDie', 'swimFloat', 'stand']),
+  // A death falls back to the plainest death and never to a locomotion family:
+  // a corpse standing to attention is the thing this replaces.
+  // `resolveBodyFamily` still answers `stand` past the end of the chain, so a
+  // caller gates visibility on `BODY_DEATHS`.
+  dieChestStand: Object.freeze(['dieChestStand']),
+  dieBackStand: Object.freeze(['dieBackStand', 'dieChestStand']),
+  dieChestCrouch: Object.freeze(['dieChestCrouch', 'dieChestStand']),
+  dieBackCrouch: Object.freeze(['dieBackCrouch', 'dieChestCrouch', 'dieChestStand']),
+  dieLie: Object.freeze(['dieLie', 'dieChestStand']),
+  dieHead: Object.freeze(['dieHead', 'dieChestStand']),
+  dieSlow: Object.freeze(['dieSlow', 'dieChestStand']),
+  dieHitGround: Object.freeze(['dieHitGround', 'dieChestStand']),
+  dieByVehicle: Object.freeze(['dieByVehicle', 'dieChestStand']),
 });
 
 /**
@@ -268,7 +300,13 @@ export function swimFamily(pair) {
  * and because a canopy over water is the parachute's landing, not a swim.
  */
 export function bodyFamily({ gait = 'stand', stance = 'stand',
-                             parachute = null, swim = null } = {}) {
+                             parachute = null, swim = null,
+                             death = null } = {}) {
+  // A death `soldier-death.js` owns outranks both machines: `handleDamage`
+  // sets it on both halves, and a man killed in free fall plays
+  // `DieHitGround` although the chute still reads `Lb_ParachuteFall`. The
+  // parachute and swim deaths are those modules' own pairs, reached below.
+  if (death && Object.hasOwn(DIE_CLIPS, death)) return death;
   return parachuteFamily(parachute) ?? swimFamily(swim)
     ?? locoFamily(gait, stance);
 }

@@ -77,6 +77,15 @@ export class Armor {
     // otherwise leave `hitPoints > this.maxHitPoints` — clamp here too.
     this.hitPoints = Math.min(hitPoints, this.maxHitPoints);
     this.destroyed = this.hitPoints <= DEATH_EPSILON;
+    /**
+     * The body's latest round, `{ travel, height }` (`soldier-death.js`
+     * `roundHit`), or null. The engine keeps it on the soldier's skeleton
+     * collision mesh (`SkeletonCollisionMesh::getLatestCollision`, lnxded
+     * `0x083aff50`) beside `Armor::setLastHitPlace`; either way it belongs to
+     * the one body and a fresh body starts without one. Only the death pose
+     * reads it.
+     */
+    this.lastHit = null;
   }
 
   /**
@@ -126,5 +135,6 @@ export class Armor {
   reset() {
     this.hitPoints = this.maxHitPoints;
     this.destroyed = false;
+    this.lastHit = null;
   }
 }

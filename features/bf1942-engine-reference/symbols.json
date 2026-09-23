@@ -9069,6 +9069,15 @@
    "note": "lnxded (0x0826bf00 is the second copy gcc emits). Builds the soldier's four AnimationStateMachineInstances, 68 bytes each: a two-pass loop from +0x294 (esi = 1 at 0x0826b4df, calls at 0x0826b5f9), then +0x31c and +0x360. 0 is the lower body, 1 the upper body, 2 the camera-shake triggers (ledger, camera-shake section); updateCameraShake 0x0827dea0 uses only those three. Client ctor 0x004ff440 does the same from +0x2c0."
   },
   {
+   "address": "0x08270980",
+   "name": "BFSoldier::handleDamage(float)",
+   "kind": "function",
+   "subsystem": "soldier",
+   "confidence": "verified",
+   "source": "lnxded",
+   "note": "Picks the death state pair on the killing blow; order and slots in ledger DIE-1..DIE-4."
+  },
+  {
    "address": "0x08271950",
    "name": "BFSoldier::setUseSeat(SeatFlags, string const&, string const&)",
    "kind": "function",
@@ -9130,6 +9139,15 @@
    "confidence": "verified",
    "source": "research-2026-09-21-parachute",
    "note": "lnxded, inside 0x08277260 (dispatch at 0x0827728b, cmp edi,0x12). Takes the message only when animMachine[lower].getCurrentState() == BFSoldierTemplate+0x1e4 (Lb_ParachuteFall), then setIsParachuting(true) at 0x08277ba7. Blocked outright by the dead byte at BFSoldier+0x245. Ledger PARA-4."
+  },
+  {
+   "address": "0x0827a730",
+   "name": "BFSoldierTemplate::init()",
+   "kind": "function",
+   "subsystem": "soldier",
+   "confidence": "verified",
+   "source": "lnxded",
+   "note": "Caches animation state ids on the template: death/hit slots +0x204..+0x274, Bip01 Head bone index +0x290 (ledger DIE-2)."
   },
   {
    "address": "0x0827d3b0",
@@ -10122,6 +10140,15 @@
    "note": "lnxded (client twin 0x00611690). Reads the IK handle index at bone+0xe0, calls applyIK2BoneSolver 0x083418f0 when it is not -1, and AFTER the mult copies the handle's rotation rows over the bone's world matrix at 0x8342233-0x83422a7, keeping the translation the solve produced: a reach followed by an outright rotation override. The only other hook is the post-absolute transform at bone+0x88. Ledger IK-3, ANIM-5."
   },
   {
+   "address": "0x08342570",
+   "name": "anim::Skeleton::setSkeletonCollisionBone(short,float,float,int)",
+   "kind": "function",
+   "subsystem": "soldier",
+   "confidence": "verified",
+   "source": "lnxded",
+   "note": "distSq -> bone+0xd4, stretch -> +0xd0, material -> +0xd8; pushes the bone index (ledger DIE-10)."
+  },
+  {
    "address": "0x08342610",
    "name": "dice::anim::Skeleton::applyIk",
    "kind": "function",
@@ -10257,6 +10284,24 @@
    "note": "lnxded. Returns the template's float at +0x34 -- the value computeBoundingValues wrote. The soldier's own geometry radius: 1.0."
   },
   {
+   "address": "0x083ae510",
+   "name": "geom::checkCapsuleCollision(Vec3,Vec3,Vec3,Vec3)",
+   "kind": "function",
+   "subsystem": "soldier",
+   "confidence": "verified",
+   "source": "lnxded",
+   "note": "Segment-to-segment squared distance (ledger DIE-10)."
+  },
+  {
+   "address": "0x083aeb10",
+   "name": "SkeletonCollisionMesh::getDistanceToGeometry(...)",
+   "kind": "function",
+   "subsystem": "soldier",
+   "confidence": "verified",
+   "source": "lnxded",
+   "note": "Per-bone capsule walk, first hit wins; stores the ray segment and bone for getLatestCollision (ledger DIE-3, DIE-10)."
+  },
+  {
    "address": "0x083afb80",
    "name": "dice::ref2::geom::SkeletonCollisionMeshTemplate::computeBoundingValues()",
    "kind": "function",
@@ -10264,6 +10309,15 @@
    "confidence": "verified",
    "source": "research-2026-09-21-parachute",
    "note": "lnxded. radius = max |v| over the template's vertex array. Called from the ctor at 0x083af64a over a 17-vertex hull the ctor HARD-CODES at 0x083af34a-0x083af660; emulated independently twice, giving max |v| = EXACTLY 1.0, and no .con or file can change it (no bodycollision_m1 exists). Ledger PARA-6."
+  },
+  {
+   "address": "0x083aff50",
+   "name": "SkeletonCollisionMesh::getLatestCollision(int&) const",
+   "kind": "function",
+   "subsystem": "soldier",
+   "confidence": "verified",
+   "source": "lnxded",
+   "note": "Returns this+0x24 (the last hit ray's segment vector), bone index out via this+0x30 (ledger DIE-3)."
   },
   {
    "address": "0x083b4fd0",

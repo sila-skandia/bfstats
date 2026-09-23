@@ -323,11 +323,12 @@ class SwimItemGateTests(unittest.TestCase):
             gate["lockedFamilies"])
         self.assertEqual([None], gate["unlockedFamilies"])
 
-    def test_a_corpse_in_the_water_is_not_holding_a_weapon_away(self) -> None:
-        # `Lb_DieSwim` is an `AnimationStatesDie.con` state and declares no
-        # flags at all, so the gate is not what keeps a dead man from firing.
-        self.assertEqual(0, self.results["deathFlags"]["swimDie"])
-        self.assertFalse(self.results["deathFlags"]["swimDieLocked"])
+    def test_a_corpse_in_the_water_has_put_his_weapon_away(self) -> None:
+        # `Lb_DieSwim` is an `AnimationStatesDie.con` state and declares
+        # `setFlag c_AsmHideWeapon` like every lower death state there (and
+        # `c_AsmLockFreeLook`), but not `c_AsmIsSwimming`.
+        self.assertEqual(0x2, self.results["deathFlags"]["swimDie"])
+        self.assertTrue(self.results["deathFlags"]["swimDieLocked"])
 
 
 class ItemGateWiringTests(unittest.TestCase):

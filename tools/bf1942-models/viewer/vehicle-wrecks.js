@@ -14,11 +14,11 @@ import { spawnerWindow } from './game-modes.js';
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `bindDynamicShading`, `bust`, `clearHitIndicator`, `collider`,
- * `dieInWreck`, `disposeEngineAudio`, `effects`, `exitPoseManned`, `extras`,
+ * `detachSeatCorpse`, `dieInSeat`, `dieInWreck`, `disposeEngineAudio`, `effects`, `exitPoseManned`, `extras`,
  * `fireStates`, `hud`, `isCollision`, `leaveSeat`, `loader`, `markPilot`,
  * `MODELS_BASE`, `noteHullKiller`, `occupancy`, `optOnFoot`, `placeCamera`,
  * `resetMobileControls`, `respawnVehicleBody`, `retireVehicleBody`,
- * `soldier`, `soldierDead`, `standUp`, `updateHud`, `useLens`,
+ * `soldier`, `soldierArmor`, `soldierDead`, `standUp`, `updateHud`, `useLens`,
  * `vehicleDamage`, `vehicles`, `world`.
  */
 export function createVehicleWrecks(page) {
@@ -326,6 +326,52 @@ export function createVehicleWrecks(page) {
   }
 
   /**
+   * The human killed in his seat by a round, with the hull still whole
+   * (`BFSoldier::handleDamage`'s first branch: a soldier with a parent plays
+   * `Ub_DieInVehicle` and stays where he sat). Checked once a frame while
+   * seated; the wreck path above owns a hull that died.
+   *
+   *   1. the seat's drawn body becomes the corpse, slumping where it sat;
+   *   2. the seat empties, so the next man can take it (and the corpse, which
+   *      `bot-visuals.js` clears when anyone sits there, goes with him);
+   *   3. the suspended on-foot body is put down, out of sight, at the exit
+   *      point and the death cam floats over the corpse. `onFoot()` owns the
+   *      rest -- the same countdown and deploy screen as any other death.
+   *
+   * A seat that draws nobody (a tank driver's) cannot be shot, so this does not
+   * reach one; if HP went some other way, the camera frames the seat itself.
+   */
+  function killOccupantInSeat() {
+    if (!page.occupancy || page.soldierDead || !page.soldierArmor?.destroyed) return false;
+    const occupancy = page.occupancy;
+    page.disposeEngineAudio();
+    page.clearHitIndicator();
+    const seatNode = occupancy.seatInfo?.(occupancy.activeSeatId)?.node ?? occupancy.root;
+    seatNode.updateWorldMatrix(true, false);
+    seatNode.getWorldQuaternion(wreckDeathQuat);
+    wreckDeathFwd.set(0, 0, -1).applyQuaternion(wreckDeathQuat);
+    const yaw = Math.atan2(wreckDeathFwd.x, wreckDeathFwd.z);
+    const corpse = page.detachSeatCorpse()
+      ?? (() => { seatNode.getWorldPosition(wreckDeathPos); return { ...wreckDeathPos }; })();
+    const exit = page.exitPoseManned(occupancy);
+    page.leaveSeat();
+    page.markPilot(false);
+    page.resetMobileControls();
+    if (!(page.optOnFoot.checked && page.soldier)) {
+      page.placeCamera();
+      page.updateHud();
+      return true;
+    }
+    page.soldier.collider = page.collider;
+    page.soldier.spawn(exit.x, exit.y, exit.z, yaw);
+    page.standUp();
+    page.useLens('foot');
+    page.dieInSeat({ x: corpse.x, y: corpse.y + 1, z: corpse.z, yaw });
+    page.hud.textContent = 'killed in action';
+    return true;
+  }
+
+  /**
    * Advance the linger-and-fade of every wreck, and remove one once it has gone.
    * Called from `stepVehicleDamage`, so it runs on the same clock as the burn.
    *
@@ -455,6 +501,7 @@ export function createVehicleWrecks(page) {
     damageVisuals,
     registerDamageables,
     showDamageTier,
+    killOccupantInSeat,
     stepWrecks,
     templateNameOf,
     wreckVehicle,
