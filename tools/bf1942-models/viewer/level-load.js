@@ -44,7 +44,7 @@ import { bindTreeFoliage } from './tree-foliage.js';
  * `onCrashDamage`, `openDeploy`, `optEntire`, `optGameFog`, `optPilot`,
  * `optVehicles`, `optWire`, `overlay`, `params`, `placeCamera`,
  * `rebaseDeckSpawns`, `rebuildVehicleInterp`, `registerDamageables`,
- * `renderer`, `scene`, `seatWorldPos`, `setPilot`, `settlePlacedVehicles`,
+ * `renderer`, `resetBots`, `scene`, `seatWorldPos`, `setPilot`, `settlePlacedVehicles`,
  * `setupSounds`, `setupVehicleBodies`, `spawnBotsForLevel`, `sun`,
  * `syncDeployReady`, `templateNameOf`, `texLoader`, `texManager`,
  * `toggleFullMap`, `unitRectOf`, `vehicles`, `vmScene`.
@@ -353,6 +353,10 @@ export function createLevel(page) {
           + `showing ${level.extras.gameplayMode}. Has: ${modeNames(report).join(', ')}`)
       : null;
     if (level.modeNote) console.warn(level.modeNote);
+    // The bot side goes first: its bots, maps and door list are the old
+    // level's, and the frames until `spawnBotsForLevel` below keep ticking the
+    // referee -- against the new World once it is built.
+    page.resetBots();
     // Before the old root is disposed: every gun is indexed off a node in it, and
     // the rounds in the air are clones of nodes it owns.
     // Every hull's seats go with the scene: nobody is carried across a level
