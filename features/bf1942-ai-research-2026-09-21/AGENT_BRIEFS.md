@@ -225,6 +225,19 @@ that switching El Alamein to Bocage rebuilds the maps (log lines
 `[bots] vehicle nav map` and `water nav map` appear again and
 `__navMap().worldSize` changes).
 
+Done 2026-09-23. What outlived a level: the referee's bots, clock, infantry
+map, strategic AI, covers and enemy tables (replaced only when the next level
+spawned, so the frames of the load ticked the old bots against the new World),
+and the units layer's vehicle and water maps, door list and drive kinds (never
+reset: the door list read as fresh off the old level's clock until the new
+clock passed it). `referee.reset()` and `units.reset()` run from `show()`
+through the page's `resetBots`, after the scene has loaded; `spawn` starts
+from `referee.reset()`. El Alamein and Bocage are both 2048 m, so their
+`worldSize` cannot change; live the vehicle map is null after the switch and
+logs again when built, and Wake (2048) to Midway (4096) rebuilds all four
+maps at 4096 with both `water nav map` lines. Pinned by
+`tests/test_bot_level_switch.py`; the seeded synthetic trace is unchanged.
+
 ## Brief H: the last structural work
 
 Depends on: nothing. No behaviour change.

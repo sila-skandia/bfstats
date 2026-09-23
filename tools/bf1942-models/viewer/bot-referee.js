@@ -226,6 +226,26 @@ export function createBotReferee(env) {
   const botOf = id => referee.bots.find(b => b.playerId === id) ?? null;
 
   /**
+   * A level change: the bots, their clock, the infantry map, the strategic AI,
+   * the covers and the enemy tables are the old level's. The page calls this
+   * when a level starts to go (`level-load.js` `show()`, through its
+   * `resetBots`), not when the next one spawns: the frames in between keep
+   * ticking the referee, and from the moment the new World is built an old
+   * bot would be ticked against a world that has no record of him, on the old
+   * level's map. `spawn` starts from here too. The units layer's own maps and
+   * doors are its `reset()`'s.
+   */
+  referee.reset = () => {
+    referee.clock = 0;
+    referee.bots = [];
+    referee.navGrid = null;
+    referee.strategy = null;
+    referee.covers = [];
+    referee.enemyTables = { 1: new EnemyStrengthTables(), 2: new EnemyStrengthTables() };
+    referee.tablesAt = -Infinity;
+  };
+
+  /**
    * Spawn bots on both sides, the way the engine's bot manager tops up each
    * team: the navigation map from the level's collider (the engine's own
    * metre bitmap, flood-seeded from every soldier spawn point), `spawnBots`
@@ -236,10 +256,7 @@ export function createBotReferee(env) {
    */
   referee.spawn = ({ count, botSkill, teams, kitFor, viewDistance = null }) => {
     const w = world();
-    referee.clock = 0;
-    referee.bots = [];
-    referee.enemyTables = { 1: new EnemyStrengthTables(), 2: new EnemyStrengthTables() };
-    referee.tablesAt = -Infinity;
+    referee.reset();
     const worldSize = w.extras?.worldSize || 2048;
     const seeds = [];
     for (const flag of w.flags ?? []) {
