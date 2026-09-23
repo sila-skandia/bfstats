@@ -21,6 +21,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 
 export { CAMERA_MODES, DEFAULT_CAMERA_MODES, FixedSubject, VehicleCamera } from './vehicle-camera.js';
+export { findVehicles, findVehicle } from './vehicle-discovery.js';
 
 // --- Refractor rig ---------------------------------------------------------
 //
@@ -1591,34 +1592,4 @@ export class Aircraft extends Vehicle {
     s.position.copy(this.node.userData.spawnPosition || s.position);
     s.orientation.copy(this.node.userData.spawnOrientation || s.orientation);
   }
-}
-
-// --- discovery -------------------------------------------------------------
-
-/**
- * Vehicles in a loaded map scene that we could plausibly fly or drive.
- *
- * The exporter groups spawned vehicles under a `spawners` node and stamps each
- * with `templateKind: "PlayerControlObject"` and a `control` naming the
- * template, so this needs no per-map table.
- */
-export function findVehicles(root) {
-  const found = [];
-  root.traverse(obj => {
-    if (obj.userData?.templateKind !== 'PlayerControlObject') return;
-    // Only spawner-placed vehicles; the stationary Defguns and Brownings that
-    // share the class are map furniture.
-    let parent = obj.parent;
-    while (parent && parent.name !== 'spawners') parent = parent.parent;
-    if (!parent) return;
-    found.push(obj);
-  });
-  return found;
-}
-
-/** The first vehicle whose control name matches, e.g. `Corsair`. */
-export function findVehicle(root, name) {
-  return findVehicles(root).find(
-    obj => (obj.userData?.control || obj.name || '').toLowerCase() === name.toLowerCase(),
-  ) || null;
 }
