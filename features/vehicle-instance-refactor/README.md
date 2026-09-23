@@ -623,11 +623,11 @@ are index modules of the same kind, and this round did not touch them.
 
 ### How it was checked
 
-The base was `origin/main` at `f8a7ea92`, and the after was this work rebased
+The base was `origin/main` at `8e174332`, and the after was this work rebased
 onto it. Results:
 
-- **Unit suite:** 2,837 tests, 0 failures, 14 skipped, the same on both.
-- **Node harnesses:** all 138 node runs the suite makes were captured. 132
+- **Unit suite:** 2,874 tests, 0 failures, 14 skipped, the same on both.
+- **Node harnesses:** all 143 node runs the suite makes were captured. 137
   have byte-identical stdout. The other 6 differ only in wall-clock fields
   (`perFrameMicroseconds` in the soldier harness, the runtime in milliseconds
   in the four sim-match runs). They differ the same way between two runs of
@@ -644,3 +644,5 @@ onto it. Results:
   moved. The bot scenarios' `cv` depends on what the bot happens to be doing
   under real time: the same build gave a Sherman at 9.4 m/s on one run and
   0.6 m/s on another.
+- **verify.sh:** the full `./scripts/verify.sh` passed: 2,837 Python tests
+  (before the last rebase), 388 API tests and 144 E2E tests.
