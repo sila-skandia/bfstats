@@ -15,14 +15,15 @@ import { spawnerWindow } from './game-modes.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `DEATH_CAM`, `MODELS_BASE`, `SOLDIER_MAX_HP_FALLBACK`,
- * `bindDynamicShading`, `bust`, `camera`, `collider`, `deathCamShot`,
- * `deathCamTarget`, `deathCamTimer`, `effects`, `exitPoseManned`, `extras`,
- * `fireStates`, `hud`, `hudFeed`, `isCollision`, `leaveSeat`, `loader`,
- * `localPlayer`, `optOnFoot`, `optPilot`, `pageAudio`, `placeCamera`,
- * `prone`, `resetMobileControls`, `respawnVehicleBody`, `retireVehicleBody`,
- * `soldier`, `soldierArmor`, `soldierDead`, `updateHud`, `vehicleDamage`,
- * `vehicles`, `world`.
+ * `bindDynamicShading`, `bust`, `camera`, `collider`, `DEATH_CAM`,
+ * `deathCamShot`, `deathCamTarget`, `deathCamTimer`, `disposeEngineAudio`,
+ * `effects`, `exitPoseManned`, `extras`, `fireStates`, `gameHud`,
+ * `hitIndicatorDir`, `hitIndicatorTimer`, `hud`, `isCollision`,
+ * `lastSoldierHp`, `leaveSeat`, `loader`, `MODELS_BASE`, `occupancy`,
+ * `optOnFoot`, `optPilot`, `placeCamera`, `prone`, `resetMobileControls`,
+ * `respawnVehicleBody`, `retireVehicleBody`, `soldier`,
+ * `SOLDIER_MAX_HP_FALLBACK`, `soldierArmor`, `soldierDead`, `updateHud`,
+ * `vehicleDamage`, `vehicles`, `world`.
  */
 export function createVehicleWrecks(page) {
   const wrecks = {};
@@ -292,16 +293,16 @@ export function createVehicleWrecks(page) {
    * lose: the seat still empties, and the camera goes back to the flythrough.
    */
   function killOccupantInWreck(node) {
-    if (!page.localPlayer.occupancy || page.localPlayer.occupancy.root !== node || page.soldierDead) return;
+    if (!page.occupancy || page.occupancy.root !== node || page.soldierDead) return;
     // A wreck cuts off engine audio immediately -- crash effect plays, engine stops
-    page.pageAudio.disposeEngineAudio();
-    page.pageAudio.hitIndicatorTimer = 0;
-    page.pageAudio.hitIndicatorDir = 0;
-    if (page.hudFeed.gameHud?.vars) {
-      page.hudFeed.gameHud.vars['HitFromDir/HitFromDir'] = 0;
-      page.hudFeed.gameHud.vars['HitFromDir/HitFromDirAlpha'] = 0;
+    page.disposeEngineAudio();
+    page.hitIndicatorTimer = 0;
+    page.hitIndicatorDir = 0;
+    if (page.gameHud?.vars) {
+      page.gameHud.vars['HitFromDir/HitFromDir'] = 0;
+      page.gameHud.vars['HitFromDir/HitFromDirAlpha'] = 0;
     }
-    page.pageAudio.lastSoldierHp = null;
+    page.lastSoldierHp = null;
     node.updateWorldMatrix(true, false);
     node.getWorldPosition(wreckDeathPos);
     node.getWorldQuaternion(wreckDeathQuat);
@@ -309,7 +310,7 @@ export function createVehicleWrecks(page) {
     // The hull's own facing, in the soldier's convention (forward is
     // `(sin yaw, 0, cos yaw)`), so the death cam sits behind the wreck's tail.
     const hullYaw = Math.atan2(wreckDeathFwd.x, wreckDeathFwd.z);
-    const exit = page.exitPoseManned(page.localPlayer.occupancy);
+    const exit = page.exitPoseManned(page.occupancy);
     page.leaveSeat();
     page.optPilot.checked = false;
     page.resetMobileControls();
