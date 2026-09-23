@@ -190,6 +190,48 @@ second, and a bot shot at from an unseen position with a quiet order goes
 prone and crawls to lower ground; with a live order far from the objective
 MoveTo (3.0) outranks TakeCover (at most 2.0) as the shipped weights say.
 
+## Follow-up 5 (2026-09-23): the medic and the vehicles
+
+The two behaviours the Infantery rows register that the viewer did not:
+`Special` (`BBMedicAssist`) and `Change` (`BBChange`), plus the driving
+they imply. Ledger AI-42..AI-45, `bot-behaviours.md` s6 and s8.
+
+1. **MedicAssist** (`bot-behaviours.js MedicState`, `bot.js
+   _urgencySpecial / _planSpecial`): a bot with a `weaponTemplate.healing
+   1` weapon (the MedPack; the RepairPack heals armour classes only) scores
+   its side's wounded — health under 95 %, upright, on foot, reachable — by
+   `value / (d * SCurve(health))`, `urgency = Declein(sum) * 4 * k`, walks to
+   `R + 0.9 * 2.5 m`, looks within 5 deg and holds the pack while the friend
+   is under 95 % and in reach. The extractor now ships the `healing` flag
+   in `aiWeapons`; the page heals 0.5 hp a trigger tick (INVENTION: the
+   MedPack has no projectile, its per-round heal lives in the weapon code).
+   Verified live: a medic bot walked 10 m to a friend at 10 / 30 hp, held
+   the pack at 2.2 m and left him at 28.5 (95 %).
+2. **Change** (`bot-vehicle.js`, `bot.js _urgencyChange / _planChange`,
+   `map.html botEnterVehicle`): `calculateVehicleUrgency` per unit
+   (`SCurve(health) * (fire * (w1 + 0.15) + maxSpeed * 4 * w2) + value`),
+   staying on foot x1.25, `Declein(0.5 * best / staying) * 1.9 * 4`, the
+   walk to the door and the seat. The page builds the bot its own
+   `VehicleOccupancy` and drivetrain (adopted into the body world, driven by
+   the bot's input word through the world's seated-player tick, drawn by
+   `stepVehicleBodies`), gives it the Tank map (`ai.addSearchMap Tank0`,
+   built on first use) and the unit's AI weapons (`extract_vehicle_ai.py`
+   -> `_shared/vehicle-ai.json`: `maxSpeed`, `turnRadius`, `strType`,
+   strategic strengths, the guns' ranges and strengths). Verified live: two
+   bots took Willys on their own, a forced Kubelwagen drove its route at up
+   to 17 m/s, a Panzer IV left its compound on the tank map.
+3. **The tank law** (`bot-vehicle.js tankControl`): the throttle and steer
+   arithmetic of `TankControl::controlTowardsDirection`, the 30 / 60 deg
+   angle limit, arrival by the move's radius. Not read, labelled INVENTION:
+   the turn-first branch (full throttle, full lock, the direction kept
+   across the seam behind the hull — the viewer's tracked hull barely
+   pivots on the spot), forward / reverse (`actionStatusDecision`; the
+   viewer backs out for 2 s after an obstruction), the slope gain.
+
+Not built, and said so in the docs: aircraft, boats, fixed guns, passenger
+and gunner seats, voluntary bailing, the environment's class tables behind
+`calculateFireStrength`.
+
 ## Completed
 
 ### 1. AI weapon data extraction (con.py) ✅

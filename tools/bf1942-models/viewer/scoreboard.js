@@ -27,6 +27,12 @@
  *     Each row then advances by the file's own "Row height" (18), and the
  *     text is set from the row's BOTTOM edge up by the glyph metric the font
  *     call returns — taken here as the face's line height.
+ *   - the first column (int 0) is the row's kit glyph, the `Debriefing/
+ *     classes` 16x16 set the layout carries as `rowIcons`: the class icon
+ *     for a live player, in the human or the bot colour, and the skull while
+ *     he is dead. Where it goes was matched from a retail capture (Bocage,
+ *     `leaderboard.webp`: the square left of every name, under the heading
+ *     strip's empty first cell), not read from the row-fill code.
  *   NOT read: how many rows the engine shows (the list data's +0x28), the
  *   rows' text colour, the sort order, and any highlight of the local
  *   player. `ROW_LIMIT_NOTE` below says what stands in for each.
@@ -38,9 +44,39 @@ export const LIST_TOP_INSET = 24;
 
 /** What stands in where the engine was not read. Rows are limited to the ones
  *  that end above the panel's lower olive strip (the next thing the file draws
- *  under the list); text is the leaf's own colour multiplier, white; rows sort
- *  by score, then kills, then fewest deaths, then roster order. */
+ *  under the list); text is the leaf's own colour multiplier, white, except
+ *  that a dead player's row is dimmed to the dark red the capture shows; rows
+ *  sort by score, then kills, then fewest deaths, then roster order. */
 export const ROW_LIMIT_NOTE = 'viewer choice: row count, text colour, sort';
+
+/** The text colour of a dead player's row (the capture's dimmed red), as a
+ *  multiplier on the list leaf's own colour. */
+export const DEAD_ROW_COLOR = [0.62, 0.16, 0.16];
+
+/** The five classes a row's `kit` may name, as the layout's `rowIcons` key
+ *  them; anything else (a mod's `Rocket pack`, an unknown kit) draws nothing. */
+export const KIT_CLASSES = ['scout', 'assault', 'antitank', 'medic', 'engineer'];
+
+/** The `class` label `_shared/loadouts.json` gives a kit (`bf42/kit.py`'s
+ *  TYPE_LABELS: `Anti-tank`, `Assault`, ...) or the viewer's own row key
+ *  (`antitank`, `at`) as a `KIT_CLASSES` entry, or null when it is neither —
+ *  never a guess, so an unknown kit gets no icon rather than a wrong one. */
+export function kitClassKey(label) {
+  if (typeof label !== 'string' || !label) return null;
+  const key = label.toLowerCase().replace(/[^a-z]/g, '');
+  if (key === 'at') return 'antitank';
+  return KIT_CLASSES.includes(key) ? key : null;
+}
+
+/** The glyph a row draws in its first column: the skull while the player is
+ *  dead, else his class icon, each in the human or the bot colour; null when
+ *  the layout has no `rowIcons` or the row's kit is unknown. */
+export function rowIcon(row, icons) {
+  if (!icons || !row) return null;
+  if (row.dead) return (row.bot ? icons.botDead : icons.dead) || null;
+  const set = row.bot ? icons.bot : icons.human;
+  return (row.kit && set && set[row.kit]) || null;
+}
 
 /** Kills and deaths per slot from the room's event feed. A `killed` row names
  *  the victim in `slot` and the killer in `other` (null for a death nobody
@@ -61,8 +97,11 @@ export function tallyFeed(feed) {
 }
 
 /** The two teams' rows. `players` is every real player the page knows:
- *  `{ slot, name, team, local }`, team 1 Axis and 2 Allied; anyone on neither
- *  side (a roster row whose team has not arrived yet) is on no list. */
+ *  `{ slot, name, team, local, kit, bot, dead }`, team 1 Axis and 2 Allied;
+ *  anyone on neither side (a roster row whose team has not arrived yet) is on
+ *  no list. `kit` is the player's class as `kitClassKey` spells it (null when
+ *  the page does not know it: a room's roster carries none), `bot` marks the
+ *  viewer's own bots, `dead` a player currently down. */
 export function boardRows(players, feed) {
   const tally = tallyFeed(feed);
   const rows = { 1: [], 2: [] };
@@ -73,6 +112,9 @@ export function boardRows(players, feed) {
       slot: p.slot ?? null,
       name: String(p.name ?? ''),
       local: !!p.local,
+      kit: kitClassKey(p.kit),
+      bot: !!p.bot,
+      dead: !!p.dead,
       score: 0,
       kills: t.kills,
       deaths: t.deaths,
@@ -137,7 +179,10 @@ export function boardVars(layoutVars, state) {
  *  `lineHeight` the face's, `floor` the y the rows must end above (the top of
  *  the olive strip under the list; see `ROW_LIMIT_NOTE`). Returns
  *  `{ visibleRows, cells(rowIndex, row) }`, each cell `{ x, y, text }` with
- *  `y` the text line's top. */
+ *  `y` the text line's top. `icon(rowIndex)` is the square the row's kit
+ *  glyph fills, `{ x, y, size }`: the `icon` column's x, the row's own top,
+ *  and the row height a side (the capture's square is the row's height, not
+ *  the glyph's 16); null when the columns name no `icon`. */
 export function listGeometry(box, columns, lineHeight, floor) {
   const [bx, by, , bh] = box.rect;
   const pitch = box.rowHeight;
@@ -145,11 +190,16 @@ export function listGeometry(box, columns, lineHeight, floor) {
   const limit = Math.min(floor ?? Infinity, by + bh);
   const visibleRows = Math.max(0, Math.floor((limit - top) / pitch));
   const inset = columns.textInset;
-  const named = columns.columns.filter(c => c.field);
+  const named = columns.columns.filter(c => c.field && c.field !== 'icon');
+  const iconCol = columns.columns.find(c => c.field === 'icon') || null;
   return {
     top,
     pitch,
     visibleRows,
+    icon(index) {
+      if (!iconCol) return null;
+      return { x: bx + inset + iconCol.x, y: top + index * pitch, size: pitch };
+    },
     cells(index, row) {
       const bottom = top + (index + 1) * pitch;
       const y = bottom - lineHeight;
@@ -229,8 +279,10 @@ export function leafText(el, vars) {
  *   lineHeight(fontId)                 -> the face's line height
  *   hover(el)                          -> true when the pointer is over a button
  * `rows` maps a list box's `data` name to its rows; `floor(box)` is the y its
- * rows must end above. Returns the visible-row count per list, for the caller's
- * scroll-bar variables.
+ * rows must end above. A row's kit glyph is `layout.rowIcons` resolved by
+ * `rowIcon` and fetched through `texture` like any plate; one the page has not
+ * loaded (or a row with no known kit) leaves the column empty. Returns the
+ * visible-row count per list, for the caller's scroll-bar variables.
  */
 export function paintLeaves(ctx, layout, elements, vars, res, rows = {}) {
   const visible = {};
@@ -276,8 +328,19 @@ export function paintLeaves(ctx, layout, elements, vars, res, rows = {}) {
                                  res.floor?.(el));
         visible[el.data] = geo.visibleRows;
         const cols = layout.listColumns.columns;
-        ctx.imageSmoothingEnabled = false;
         list.slice(0, geo.visibleRows).forEach((row, index) => {
+          const icon = rowIcon(row, layout.rowIcons);
+          const square = icon ? geo.icon(index) : null;
+          const img = square ? res.texture(icon) : null;
+          if (img) {
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(img, Math.round(square.x), Math.round(square.y),
+                          square.size, square.size);
+          }
+          const rgb = row.dead
+            ? color.slice(0, 3).map((v, i) => v * DEAD_ROW_COLOR[i])
+            : color.slice(0, 3);
+          ctx.imageSmoothingEnabled = false;
           for (const cell of geo.cells(index, row)) {
             let text = cell.text;
             if (cell.field === 'name') {
@@ -287,8 +350,7 @@ export function paintLeaves(ctx, layout, elements, vars, res, rows = {}) {
               const room = cols[at + 1] ? cols[at + 1].x - cols[at].x - 2 : Infinity;
               text = fitText(text, room, t => res.measure(el.font, t));
             }
-            res.drawText(ctx, el.font, text, Math.round(cell.x), Math.round(cell.y),
-                         color.slice(0, 3));
+            res.drawText(ctx, el.font, text, Math.round(cell.x), Math.round(cell.y), rgb);
           }
         });
         break;

@@ -8,15 +8,15 @@
 //
 // What the engine does:
 //
-//  * The target is scored over the spotted list — for an infantry bot the
-//    targets it sees right now and inside its weapons' range (a vehicle keeps
-//    lost and out-of-range ones) — not just the nearest: per weapon
+//  * The target is scored over the whole spotted list (seen and lost, the
+//    lost ones decaying, and out-of-range ones within a grace of five times
+//    the bot's mobile size), not just the nearest: per weapon
 //    `strength[targetType] / (1 + (20 * (shots - hits) + 10) / ammo)` picks
 //    the weapon, with the shots and hits the memory record tallies for that
 //    target and weapon slot; the score multiplies a range term `max(0, 1 -
 //    d / (1.5 * maxRange))`, a range factor `(minRange + 0.1 * (maxRange -
 //    minRange)) / d`, a sighting-age term `1 / (1 + 0.05 * age)` for a lost
-//    target of a vehicle bot (1.0 when seen), a speed term `1 / (1 +
+//    target (1.0 when seen), a speed term `1 / (1 +
 //    0.5 * |v|)` inside range (0.25 beyond it), a `1.5 .. 1.0` bonus for an
 //    attacker of the last 30 s, `0.75` when the bot is outside its ordered
 //    area, and the target's own strength against the bot's armour class.
@@ -76,6 +76,11 @@ export const FIRE = {
   vehicleOccupiedExtra: 10.0,
 };
 
+/** The mobile object's size term (`IPIMobile` +0x14 -> +8): 5.0 for a
+ *  soldier, INFERRED from `updatePotentialObstacles`' `size * 5 + 0.5` being
+ *  the 25.5 m obstacle drop distance. */
+export const MOBILE_SIZE_INFANTRY = 5.0;
+
 /** The soldier's own `setBattleStrength` table (`Objects/Soldiers/Common/AI/
  *  Objects.con`): how much a soldier is worth as a target per class. */
 export const SOLDIER_BATTLE_STRENGTH = {
@@ -103,6 +108,7 @@ export function weaponAiOf(entry) {
     strength: entry?.strength ?? { Infantry: 1.0 },
     soundSphereRadius: entry?.soundSphereRadius ?? null,
     ammo: entry?.ammo ?? -1,
+    healing: !!entry?.healing,
     shotsFired: entry?.shotsFired ?? 0,
     hits: entry?.hits ?? 0,
   };
@@ -137,20 +143,18 @@ function seededUnit(seed) {
  * @param {boolean} p.insideOrderedArea
  * @param {Set<string>} [p.vetoed]  targets given up on, id -> time
  * @param {number} [p.waterDepth]   how deep the bot stands
- * @param {boolean} [p.inVehicle]   the bot is in a vehicle (lost and
- *                                  out-of-range targets stay scored)
+ * @param {number} [p.mobileSize]   the bot's `IPIMobile` size term (5.0 on foot)
  * @returns {{ targetId, targetPos, score, weaponIndex, urgency }}
  */
 export function scoreTargets({
   spotted, position, weapons, now, attackedBy, velocityOf, typeOf,
   currentTarget = null, currentScore = 0, insideOrderedArea = true,
-  vetoed = null, waterDepth = 0, mySpeed = 0, inVehicle = false,
+  vetoed = null, waterDepth = 0, mySpeed = 0, mobileSize = MOBILE_SIZE_INFANTRY,
 }) {
   const none = { targetId: null, targetPos: null, score: 0, weaponIndex: -1, urgency: 0 };
   if (waterDepth > FIRE.waterGate) return none;
   if (!spotted.length || !weapons.length) return none;
-  // The 0.75 outside the ordered area applies to a bot in a vehicle only.
-  const areaFactor = (inVehicle && !insideOrderedArea) ? FIRE.outsideAreaFactor : 1.0;
+  const areaFactor = insideOrderedArea ? 1.0 : FIRE.outsideAreaFactor;
   let best = null, bestScore = 0, bestWeapon = -1;
   let current = null;
   for (const m of spotted) {
@@ -169,16 +173,17 @@ export function scoreTargets({
     const dx = m.pos[0] - position[0], dz = m.pos[2] - position[2];
     const dist = Math.max(FIRE.minDistance, Math.hypot(dx, m.pos[1] - position[1], dz));
     // The memory record's lost flag (+0x14) and the time it was lost (+0x18):
-    // a visible target counts in full; a lost one is skipped by an infantry
-    // bot and decays as `1 / (1 + 0.05 * age)` only for a bot in a vehicle.
-    if (m.lost && !inVehicle) continue;
+    // a visible target counts in full, a lost one decays as
+    // `1 / (1 + 0.05 * (now - lostAt))`. (The null test beside it in the
+    // binary is on the bot's mobile object, which every bot has -- not an
+    // infantry test; ledger AI-40.)
     const sightFactor = m.lost ? 1 / (1 + FIRE.sightAgeDecay * Math.max(0, now - (m.lostAt ?? now))) : 1.0;
     const targetType = typeOf?.(id) ?? 'Infantry';
     // Weapon choice.
     let wBest = -1, wVal = 0, maxRange = 0, minRange = Infinity;
     for (let i = 0; i < weapons.length; i++) {
       const w = weapons[i];
-      const strength = w.strength?.[targetType] ?? 0;
+      const strength = w.healing ? 0 : (w.strength?.[targetType] ?? 0);
       const ammo = w.ammo < 0 ? 0x10000 : w.ammo;
       // Shots and hits are the memory record's tallies for this target and
       // weapon slot, not the weapon's lifetime: a new target starts clean.
@@ -197,15 +202,15 @@ export function scoreTargets({
       strengthScale = 0.5;
       speedFactor = 1 / (1 + FIRE.inRangeSpeedFactor * tSpeed);
     } else {
-      // Beyond the weapon's range an infantry bot skips the target; a vehicle
-      // keeps it while the overshoot is under five times its own extent.
-      if (!inVehicle) continue;
+      // Beyond the weapon's range the target is kept while the overshoot is
+      // under five times the bot's mobile size (`IPIMobile` +0x14 -> +8,
+      // 5.0 for a soldier: the same term makes the 25.5 m obstacle drop).
       strengthScale = 0.5;
       const dy = m.pos[1] - position[1];
       speedFactor = dy > 5.0
         ? FIRE.beyondRangeFactor / (1 + 0.5 * tSpeed + 2)
         : FIRE.beyondRangeFactor;
-      if (dist - maxRange > 5 * Math.max(0, dy)) continue;
+      if (dist - maxRange > 5 * mobileSize) continue;
     }
     const range = Math.max(0, 1 - dist / (FIRE.rangeSlack * maxRange));
     const rangeFactor = (minRange + FIRE.rangeFactorMin * (maxRange - minRange)) / dist;

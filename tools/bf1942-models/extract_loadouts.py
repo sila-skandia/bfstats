@@ -199,6 +199,7 @@ def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
                 "weaponFire": ai.weapon_fire,
                 "strength": dict(ai.strength),
                 "soundSphereRadius": ai.sound_sphere_radius,
+                "healing": ai.healing,
             }
     return {
         "mod": mod,

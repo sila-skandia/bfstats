@@ -1611,6 +1611,7 @@ class AiWeaponTemplate:
     weapon_fire: str | None = None
     strength: dict[str, float] = field(default_factory=dict)
     sound_sphere_radius: float | None = None
+    healing: bool = False
     source: str = ""
 
 
@@ -2580,6 +2581,13 @@ class ObjectLibrary:
                 elif cmd == "maxrange":
                     try:
                         ai_wep.max_range = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        pass
+                elif cmd == "healing":
+                    # `weaponTemplate.healing 1`: the MedPack and RepairPack;
+                    # `BBMedicAssist` runs only with one of these.
+                    try:
+                        ai_wep.healing = int(float(args.split()[0])) != 0
                     except (ValueError, IndexError):
                         pass
                 elif cmd == "weaponactivate":

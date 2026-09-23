@@ -122,14 +122,17 @@ are feedback on the bot's **own** shots.
   speed * attacked * area * strength * rangeFactor` with `range = max(0, 1 -
   d / (1.5 * maxRange))`, `rangeFactor = (minRange + 0.1 * (maxRange -
   minRange)) / d`; `sightAge` is 1.0 for a target the bot sees now (the
-  memory record's lost byte at +0x14 clear) and, **only for a bot in a
-  vehicle**, `1 / (1 + 0.05 * (now - lostAt))` for a lost one (+0x18) — an
-  **infantry bot skips lost targets and targets beyond its weapon's
-  `maxRange`** outright (the vehicle keeps the latter while the overshoot is
-  under 5x its extent), `speed = 1 / (1 + 0.5 * |v|)` inside range and 0.25
+  memory record's lost byte at +0x14 clear) and `1 / (1 + 0.05 * (now -
+  lostAt))` for a lost one (+0x18); beyond `maxRange` the target is kept
+  while `d - maxRange < 5 * size` with `size` the bot's `IPIMobile` +0x14 →
+  +8 term (5.0 for a soldier, the same factor behind the 25.5 m obstacle
+  drop); the null test on `Information+0x2c` beside both is the bot's mobile
+  object, which every bot has (the obstruction detector dereferences it
+  unconditionally) — **not** an infantry test, as a first reading on
+  2026-09-23 had it; `speed = 1 / (1 + 0.5 * |v|)` inside range and 0.25
   beyond, `attacked =
   1.5 .. 1.0` over 30 s for an attacker (`isAttacking`), `area = 0.75` when
-  a **vehicle** bot is outside its ordered area (1.0 for infantry), and `strength` the target's own
+  the bot is outside its ordered area, and `strength` the target's own
   `setBattleStrength` against the bot's class (×0.5), ×0.33 when harmless.
   **UCFire's `x` here is a per-target pseudo-random in [0, 1)** (jitter ×1.08
   .. ×1.30), not a distance. A new target replaces the current one only at
@@ -214,13 +217,45 @@ less than 3 m (1 m for an object). `DecleiningSlopeCurve` **0x08655560** and
 
 `BBIdle::calculateUrgency` **0x08572550** returns its modifier (0.1 with the
 standard personality); `BBPIdleInfantery::createPlan` **0x085bea00** is
-`while (true) ResetControls(1, 1, 1)`. `BBMedicAssist` **0x08573840** needs a
-healing weapon with rounds and a teammate under 95 % health upright within
-range: `urgency = Declein(sum) * 4 * k`, the plan walks to `0.9 × range` and
-holds the trigger while looking at him within 5°. `BBChange` **0x0855e0c0**
-scores nearby enterable vehicles against staying on foot ×1.25 through
-`calculateVehicleUrgency`, `DecleiningSlopeCurve(0.5 * best / current) *
-(mod * 4)`.
+`while (true) ResetControls(1, 1, 1)`.
+
+**MedicAssist (`Special`)** — `BBMedicAssist::calculateUrgency` **0x08573840**
+and `BBPMedicAssist::createPlan` **0x085bf350**, read in full 2026-09-23:
+
+- `isAplicable` **0x085748e0**: the bot carries a weapon whose template has
+  `weaponTemplate.healing 1` (vanilla: `MedPackAI` strength Infantry 2,
+  `RepairPackAI` strength 2 for every armour class; both `maxRange 2.5`).
+- Not while wading deeper than **0.75 m** (the same gate as Fire; the bot is
+  un-inited and its urgency zeroed).
+- Per healing weapon with more than one round, the best `strength[type]` per
+  target type and that weapon's `maxRange²`. The friends come from
+  `IAIEnvironment` +0xc at the bot's position (radius not read); each with
+  the unit flag set, a healing weapon for its type, and health `h` with
+  **0 < h < 0.95** is kept when its up vector against the ground normal is
+  ≥ **0.7071** and its `AIObjectUnit` +0x17 byte is clear (not inside another
+  object); beyond the weapon's range it must stand on a valid cell of the
+  bot's map (`isValidPosition`) — or, for a vehicle-type friend, a valid
+  point along its reverse heading (`traceValidPoint`).
+- Each keeps `term = value / (d × SCurve(h))` with `value` the friend's
+  `Information+0x14` (× the bot's outside-area factor when it stands outside
+  the bot's ordered area); `sum += term`; the largest `term × (1 + radio
+  strength of message 0x28 or 0x36)` is the target. `urgency = Declein(sum)
+  × 4 × k`, the change flag is "target differs from the last", and
+  `BBPMedicAssist::init(target)` is called.
+- The plan: `ResetControls(1,0,1)`; the healing weapon through `BAPIWFire`;
+  when farther than `R_target + 0.9 × maxRange` a `MoveToObjectFinding` there
+  (re-planned when the target moves); `ResetControls(1,1,1)`; then `while
+  (target exists && health < 0.95 && distance ≤ that && magazine has rounds)
+  Parallel { LookAtObject within 5° (0.0873); Trigger PIFire }`.
+- The MedPack itself is a `HandFireArms` with no projectile (`magType 1`,
+  1800 "rounds", `roundOfFire 10`, `reloadtime 1.5`): the heal per round is
+  applied by the weapon, not the AI, and is **not read** — the viewer heals
+  0.5 hp a round (30 hp in 6 s, INVENTION).
+
+**Change** — `BBChange::calculateUrgency` **0x0855e0c0** scores nearby
+enterable vehicles against staying on foot ×1.25 through
+`calculateVehicleUrgency` **0x08583b10**, `DecleiningSlopeCurve(0.5 * best /
+current) * (mod * 4)`; the full read is §8.
 
 ## 7. The strategic AI — `SAI`
 
@@ -351,6 +386,88 @@ s; the enemy-cost term in attack values is 0; unit strength is 1 per
 soldier; `X` is 0 as in the binary; the viewer runs sensing every tick for
 every bot rather than under the engine's time budget; a bot's respawn stays
 the page's timer.
+
+## 8. Vehicles: Change, the tank law, and what the viewer drives
+
+Read 2026-09-23 from `BBChange::calculateUrgency` **0x0855e0c0**,
+`calculateVehicleUrgency` **0x08583b10** and its file-local helpers
+`calculateVehicleMoveUrgency` **0x08584310**, `calculateFireStrength`
+**0x08584580** and `airOverheatBail` **0x08585750**, `BBChange::
+modifyForDriver` **0x0855f7d0**, `getRadioStrength` **0x0855fc10**,
+`isMannedByEnemy` **0x0855fcb0**, `isUpsideDown` **0x0855fcf0**,
+`BBPChange::createPlan` **0x0858b5c0**, `EntryTankMoveTo::execute`
+**0x08622e80** and `TankControl::controlTowardsDirection` **0x0862c670**
+(ledger AI-43..AI-45).
+
+- **The AI plug-ins carry the numbers.** A vehicle's `AI/Objects.con`
+  (`extract_vehicle_ai.py` → `_shared/vehicle-ai.json`) declares its
+  `Mobile` plug-in (`maxSpeed` — the Sherman 16, the Willy 25, a soldier 5;
+  `turnRadius`; `vehicleNumber`, which `ai.addSearchMap` it drives on),
+  `Physical` (`setStrType HeavyArmour` …), `Unit` (`setStrategicStrength`
+  per side), `Cover` (`coverValue`), and its guns' `weaponTemplate`s in
+  `AI/Weapons.con` (the Sherman main gun: range 2..250, strength Infantry 10,
+  LightArmour 7, HeavyArmour 2, Air 1). `IPIMobile` +0x14 → +8, the term the
+  Fire behaviour's range grace and the obstacle drop multiply by five, is
+  this `maxSpeed`.
+- **A unit's urgency** (`calculateVehicleUrgency`): 0 when the unit is
+  occupied and team-locked to another side, or an aircraft's engine heat is
+  at 1 (`airOverheatBail`); else `SCurve(health) × (fireStrength × (w1 +
+  0.15) + moveUrgency × w2) + Information+0x14`, with `w1 / w2` from the
+  bot's order strengths (`Bot` +0x168 / +0x16c: both 0 → 0.5 / 0.5, only the
+  first > 0 → 0 / 1, only the second → 1 / 0, else the normalised split),
+  `moveUrgency = engineHeatInfluence × maxSpeed × 4` (× 2.5 instead when
+  another bot already sits in it), and `fireStrength` the unit's weapon
+  strengths with its manned seats' at 0.4 (0.9 for a plane's) folded against
+  the environment's per-class tables (the exact weighting is **not read**;
+  the viewer uses the classes it has spotted, INVENTION). A unit the bot
+  left within 15 s and a unit spawned within 15 s are scaled by `age / 15`.
+- **The decision** (`BBChange::calculateUrgency`): on foot, `staying` is the
+  bot's own unit urgency × 1.25 (× `modifyForDriver`: 0.77 / 0.5 for a
+  manned unit's secondary seats by class). The environment lists the units
+  around (radius R); each not manned by the enemy, not upside down
+  (`up · ground normal < 0.6914`), and — beyond 12 m — standing on a valid
+  cell of the bot's map (a vehicle-type unit: a valid point 12 m behind it)
+  scores `u × (f + 0.5) × (1 + radio)` with `f = min(0.5, (R² − d²) / R²)`;
+  a plane also needs `runwayClear`; its secondary seats are scored through
+  `modifyForDriver`. The best target calls `BBPChange::init(target, isDriver)`
+  and `urgency = Declein(0.5 × best / staying) × k × 4 × ramp × area` with
+  `ramp = min(1, (now − lastChange) / 10)` and `area` the outside-area
+  factor, doubled inside a vehicle when bailing is wanted (`isBailAllowed`,
+  not read). `k` is 1.9 (StandardWeights). In the viewer a mounted bot never
+  bails on its own (INVENTION); a destroyed hull unseats and kills it.
+- **The plan** (`BBPChange::createPlan`): farther than 12.5 m (156.25 = 12.5²)
+  a `MoveToObjectFinding` to 6.25 m with `size × 0.5` slack, broken when the
+  unit is occupied, enemy-occupied or moved; a vehicle-type unit is
+  approached from 12 m behind it (`MoveToFinding` at `size × 0.75`); then
+  within 12.375 m and with the unit "behind" the bot (`ObjectBehind` −0.8)
+  the Use input (channel 10) is held until `ObjectOccupied`, `UpdateVehicle`
+  swaps the bot's unit and `ChangeVehicle` re-registers its behaviours
+  (`ChangeInhibit` zeroes MoveTo while Change is active). The viewer walks to
+  the door's own radius and asks the page for the seat (`EnterVehicle`).
+- **Driving** (`EntryTankMoveTo::execute`, `TankControl::
+  controlTowardsDirection`): arrival inside the move's radius resets the
+  controls; `CommonControls::actionStatusDecision` picks forward or reverse
+  and the target angle (**not read**: the viewer drives forward and backs
+  out for 2 s after an obstruction, INVENTION); the angle limit is 30°, 60°
+  on a move marked so. Inside the limit the wanted speed is 20 m/s cut by `1
+  − SCurve(slope × ControlInfo+0x4c)` over two terrain probes 20 m ahead
+  (floor 2), divided by `|lateral velocity| × 10 + 1`, capped at `maxSpeed`;
+  `throttle = clamp(2 × ((wanted − speed) − clamp(speed / (30 |wanted −
+  speed| + 1), ±10)), ±1)`, `steer = clamp(angle − clamp(rate / (30 |angle|
+  + 1), ±10), ±1)`. The turn-first branch outside the limit is not read (the
+  viewer: full throttle, full lock, the direction kept across the seam
+  behind the hull). The vehicle map is the level's `Tank0` / `Car4`
+  `addSearchMap` (El Alamein: brush 3.0, clip 0.3..2.5, slope 30 / 20).
+- **What the viewer builds** (`bot-vehicle.js`, `bot.js` mounted mode,
+  `map.html` `botEnterVehicle` / `botLeaveVehicle`): the Change behaviour on
+  foot for `ground` / `tank` roots with AI data, the walk to the door and
+  the seat through the page's own `VehicleOccupancy` + drivetrain (adopted
+  into the body world, driven by the bot's input word through the world's
+  seated-player tick, drawn by `stepVehicleBodies`), the Tank map built on
+  first use, the tank law on the route, the Fire behaviour with the unit's
+  AI weapons through the turret's look and the hull's trigger, damage on a
+  seated bot landing on the hull. Not built: aircraft, boats, fixed guns,
+  passenger and gunner seats, voluntary bailing.
 
 ## 10. Verified
 
