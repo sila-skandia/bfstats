@@ -38,17 +38,16 @@ import { bindTreeFoliage } from './tree-foliage.js';
  * `activeMod`, `bust`, `camera`, `capture`, `capturePresentationTick`,
  * `cubeLoader`, `damageVisuals`, `DEFAULT_DRAW`, `disposeSounds`, `effects`,
  * `ensureBotRoot`, `fireStates`, `floatPlacedVehicles`, `forgetEntryPoints`,
- * `forgetSeatViews`, `forgetSoldier`, `fullmapMeta`, `fullmapName`, `guns`,
- * `hemi`, `loadCollisionMeshes`, `loadEffectLibrary`, `loader`,
- * `loadMapArt`, `logToConsole`, `MAPS_BASE`, `onCrashDamage`, `openDeploy`,
- * `optEntire`, `optGameFog`, `optOnFoot`, `optPilot`, `optVehicles`,
- * `optWire`, `overlay`, `params`, `placeCamera`, `rebaseDeckSpawns`,
- * `rebuildVehicleInterp`, `registerDamageables`, `renderer`, `scene`,
- * `seatWorldPos`, `setOnFoot`, `setPilot`, `settlePlacedVehicles`,
- * `setupSounds`, `setupVehicleBodies`, `spawnBotsForLevel`,
- * `spawnFlagSelect`, `sun`, `syncDeployReady`, `templateNameOf`,
- * `texLoader`, `texManager`, `toggleFullMap`, `unitRectOf`, `vehicles`,
- * `vmScene`.
+ * `forgetFlagChoice`, `forgetSeatViews`, `forgetSoldier`, `fullmapMeta`,
+ * `fullmapName`, `guns`, `hemi`, `leaveOnFoot`, `loadCollisionMeshes`,
+ * `loadEffectLibrary`, `loader`, `loadMapArt`, `logToConsole`, `MAPS_BASE`,
+ * `onCrashDamage`, `openDeploy`, `optEntire`, `optGameFog`, `optPilot`,
+ * `optVehicles`, `optWire`, `overlay`, `params`, `placeCamera`,
+ * `rebaseDeckSpawns`, `rebuildVehicleInterp`, `registerDamageables`,
+ * `renderer`, `scene`, `seatWorldPos`, `setPilot`, `settlePlacedVehicles`,
+ * `setupSounds`, `setupVehicleBodies`, `spawnBotsForLevel`, `sun`,
+ * `syncDeployReady`, `templateNameOf`, `texLoader`, `texManager`,
+ * `toggleFullMap`, `unitRectOf`, `vehicles`, `vmScene`.
  */
 export function createLevel(page) {
   const level = {};
@@ -557,15 +556,12 @@ export function createLevel(page) {
     page.forgetSoldier();
     // A new level starts the flag choice over; without this the rebuilt select
     // would keep the old map's index through `buildSpawnFlags`.
-    page.spawnFlagSelect.selectedIndex = -1;
+    page.forgetFlagChoice();
     page.forgetEntryPoints();
     if (page.optPilot.checked) page.setPilot(true);
     // Joining is the spawn screen, not an instant teleport — clear a leftover
     // on-foot tick from the previous level so openDeploy owns the join.
-    if (page.optOnFoot.checked) {
-      page.optOnFoot.checked = false;
-      page.setOnFoot(false);
-    }
+    page.leaveOnFoot();
     sky.applyFar();
     if (!sky.skyRoot) await sky.loadSky(entry);
     sky.applyFog();

@@ -9,8 +9,8 @@ import { findAllVehicleRoots, listEntryPoints, readWorldPose, pickNearest } from
  * page, as getters (a binding the page reassigns is read live):
  * `aircraft`, `car`, `collider`, `currentRoot`, `drawWeapon`, `driveFwd`,
  * `getTouchHudText`, `holster`, `hud`, `HUD_FOOT`, `isTouchDevice`,
- * `leaveSeat`, `mannedActive`, `netSeatRow`, `netSendAction`, `occupancy`,
- * `optOnFoot`, `optPilot`, `placeCamera`, `releaseButtons`,
+ * `leaveSeat`, `mannedActive`, `markPilot`, `netSeatRow`, `netSendAction`,
+ * `occupancy`, `optOnFoot`, `placeCamera`, `releaseButtons`,
  * `resetMobileControls`, `seatHolder`, `setPilot`, `soldier`, `updateHud`,
  * `updateMobileControls`, `useLens`, `vehicleSpawnActive`, `world`.
  */
@@ -139,7 +139,7 @@ export function createVehicleEntry(page) {
     // Checked without an event on purpose: the change handler would tear the
     // waiting soldier down, and the checkbox is only being told the truth —
     // someone is in a vehicle.
-    page.optPilot.checked = true;
+    page.markPilot(true);
     page.setPilot(true, entry.vehicle, entry.seatId);
     if (!page.occupancy) {
       // The seat refused (a null root; `pickVehicle`-less path). Back on foot
@@ -221,7 +221,7 @@ export function createVehicleEntry(page) {
     const netSeat = page.occupancy ? page.netSeatRow('exit') : null;
     page.leaveSeat();
     if (netSeat) page.netSendAction(netSeat);
-    page.optPilot.checked = false;
+    page.markPilot(false);
     if (page.optOnFoot.checked && page.soldier) {
       page.soldier.collider = page.collider;
       if (bailing) {
@@ -291,7 +291,7 @@ export function createVehicleEntry(page) {
     const netSeat = page.netSeatRow('exit');
     page.leaveSeat();
     if (netSeat) page.netSendAction(netSeat);
-    page.optPilot.checked = false;
+    page.markPilot(false);
     if (page.optOnFoot.checked && page.soldier) {
       page.soldier.collider = page.collider;
       page.soldier.spawn(exit.x, exit.y, exit.z, exit.yaw);
