@@ -69,6 +69,7 @@ PAGE_FILES = [
     "test-hooks-soldier.js",
     "test-hooks-world.js",
     "seat-camera.js",
+    "comms.js",
 ]
 
 

@@ -707,6 +707,7 @@ export function createMapSurfaces(page) {
     fullmapCanvas,
     fullmapMeta,
     fullmapName,
+    gridRef,
     loadMapArt,
     localMapTeam,
     projectToArt,

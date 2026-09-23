@@ -214,6 +214,33 @@ export function createNetRoom(page) {
     () => location.reload());
   document.getElementById('roomIssueSolo').addEventListener('click', roomPlaySolo);
 
+  /** The rows the message log prints: another player's radio, the server's
+   *  kills and captures (comms.js builds the engine's own lines from them). */
+  function roomRowToComms(row) {
+    const comms = page.comms;
+    const client = room.roomClient;
+    if (!comms || !client || !row) return;
+    const who = slot => ({
+      id: slot,
+      name: slot === client.slot ? room.roomName : (client.nameOf(slot) ?? `Player ${slot}`),
+      team: slot === client.slot ? client.hello?.team : client.teamOf(slot),
+      local: slot === client.slot,
+    });
+    if (row.type === 'radio' && Number.isInteger(row.msg) && row.slot != null) {
+      const at = Array.isArray(row.at) ? { x: row.at[0], y: row.at[1], z: row.at[2] } : null;
+      comms.receive(row.msg, { ...who(row.slot), position: at });
+    } else if (row.type === 'killed' && row.slot != null) {
+      comms.onKill(who(row.slot), row.other != null ? who(row.other) : null);
+    } else if (row.type === 'captured' && Number.isInteger(row.flag) && page.flags[row.flag]) {
+      comms.onCapture(page.flags[row.flag], row.team);
+    }
+  }
+
+  /** The local player's radio, to the room. */
+  room.sendRadio = (msg, team) => {
+    if (room.roomJoined) room.roomClient?.radio(msg, team);
+  };
+
   async function joinRoom() {
     if (!roomCode || room.roomClient) return;
     try {
@@ -234,6 +261,7 @@ export function createNetRoom(page) {
       });
       room.roomClient.onevent = row => {
         if (row?.text) page.logToConsole(row.text);
+        roomRowToComms(row);
         if (row?.type === 'capturing') {
           page.roomCaptureStarted(row.name || 'flag',
             Number(row.duration) > 0 ? Number(row.duration) : 8);

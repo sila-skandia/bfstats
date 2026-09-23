@@ -56,7 +56,7 @@ export class Room {
       ownerOf: root => this.instance.ownerOf(root),
       onRow: row => this.broadcast(eventRow(row.type, this.tick, row), null),
     });
-    // The control channel's seat/spawn actions (room-control.mjs).
+    // The control channel's seat, spawn and radio actions (room-control.mjs).
     this.#control = createControlChannel({
       room: this,
       event: (type, connection, extra) => this.#event(type, connection, extra),

@@ -96,6 +96,8 @@
        3D canvas: a lens flare is part of the picture, not part of the HUD. -->
   <canvas id="flare-canvas" aria-hidden="true"></canvas>
   <canvas id="hud-canvas" aria-hidden="true"></canvas>
+  <!-- The radio strip and the message log (comms.js), over the HUD. -->
+  <canvas id="comms-canvas" aria-hidden="true"></canvas>
   <canvas id="console-canvas" aria-hidden="true" hidden></canvas>
   <div id="hud">WASD fly &middot; QE or scroll vertical &middot; mouse look &middot; Shift slow &middot; CapsLock spawn &middot; M map &middot; Esc menu</div>
   <div id="crosshair" hidden><span class="ch-pic"></span><span class="ch-dot"></span><span class="ch-n"></span><span class="ch-s"></span><span class="ch-w"></span><span class="ch-e"></span></div>
@@ -207,6 +209,7 @@ import { createPageInput } from './page-input.js';
 import { createFreeCamera } from './free-camera.js';
 import { createTouchControls } from './touch-controls.js';
 import { bag, from } from './page-bag.js';
+import { createComms } from './comms.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -443,6 +446,7 @@ const level = createLevel(bag(
   },
 ));
 const pageInput = createPageInput(bag(
+  from(() => comms, `keydown:radioKeydown`),
   from(() => deployScreen, `deployActive`),
   from(() => freeCamera, `clampAltitude dollyCamera isSlow navMode panCamera resetCamera`),
   from(() => level, `world`),
@@ -1021,6 +1025,7 @@ const referee = createBotReferee({
   onShot: (bot, at) => pageAudio.playWorldShot(bot.weaponAi?.name ?? bot.kitPrimary ?? null, at[0], at[1] + 1.4, at[2]),
   damageTarget: (hit, bot) => {
     if (hit.targetId !== LOCAL_PLAYER) return false;
+    comms.noteAttack(LOCAL_PLAYER, botSpeaker(bot));
     localPlayer.applyDamageToPlayer(hit.damage, { x: bot.position[0], y: bot.position[1], z: bot.position[2] }, bot.team);
     return true;
   },
@@ -1038,9 +1043,12 @@ const referee = createBotReferee({
     const at = bot.getPosition();
     pageAudio.playSoldierHurtSound(false, { x: at[0], y: at[1] + 1.2, z: at[2] });
   },
-  onDeath: bot => {
+  onDeath: (bot, attackerId) => {
     const vis = botBodies.botVisuals.get(bot.playerId);
     if (vis) vis.group.visible = false;
+    const killer = attackerId === LOCAL_PLAYER ? localSpeaker()
+      : attackerId != null ? botSpeaker(referee.bots.find(b => b.playerId === attackerId)) : null;
+    comms.onKill(botSpeaker(bot), killer);
   },
   onRespawned: bot => {
     const vis = botBodies.botVisuals.get(bot.playerId);
@@ -1052,6 +1060,7 @@ const referee = createBotReferee({
     flagCapture.hoistCaptureFlag(target);
     hullBodies.syncVehicleSpawnOwnership();
     pageConsole.logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
+    comms.onCapture(target, target.team);
     console.log(`[bots] ${bot.playerId} takes ${target.name}${bot.vehicle ? ' in the ' + (bot.vehicle.template ?? bot.vehicle.kind) : ''}`);
     flagCapture.announceCapture(prevTeam, target.team);
   },
@@ -1102,6 +1111,7 @@ const botUnits = createBotUnits({
 const hudBridge = { get vars() { return hudFeed.gameHud.vars; } };
 const flagCapture = createFlagCapture(bag(
   from(() => deployScreen, `paintDeployChrome`),
+  { get comms() { return comms; } },
   from(() => hudFeed, `flashHud updateHud`),
   from(() => hullBodies, `syncVehicleSpawnOwnership`),
   from(() => level, `cull currentRoot ensureFlagMixer extras flattenCull levelClips tagCull thaw
@@ -1378,7 +1388,55 @@ const room = createNetRoom(bag(
     get manifest() { return manifest; }, get MODELS_BASE() { return MODELS_BASE; },
     get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
     get params() { return params; }, get renderer() { return renderer; },
-    get scene() { return scene; },
+    get scene() { return scene; }, get comms() { return comms; },
+  },
+));
+
+/** A player as the message log and the radio name him: `{ id, name, team,
+ *  local, vehicle, position }`, `vehicle` the template he sits in. */
+function localSpeaker() {
+  const seat = localPlayer.occupancy;
+  const s = localPlayer.soldier;
+  const pos = (localPlayer.aircraft || localPlayer.car)?.state?.position ?? (s ? { x: s.x, y: s.y, z: s.z } : null);
+  return {
+    id: LOCAL_PLAYER, name: room.roomName, local: true,
+    team: room.roomJoined ? (room.roomClient?.hello?.team === 1 ? 1 : 2) : spawning.deployTeamId,
+    vehicle: seat ? wrecks.templateNameOf(seat.root) || null : null,
+    position: pos ? { x: pos.x, y: pos.y, z: pos.z } : null,
+  };
+}
+function botSpeaker(bot) {
+  if (!bot) return null;
+  const at = bot.getPosition?.();
+  return {
+    id: bot.playerId, name: bot.name, team: bot.team, local: false,
+    vehicle: bot.vehicle ? (bot.vehicle.template ?? null) : null,
+    position: at ? { x: at[0], y: at[1], z: at[2] } : null,
+  };
+}
+/** The radio menu and the message log (comms.js, radio.js, chat-log.js). */
+const comms = createComms(bag(
+  from(() => flagCapture, `flags`),
+  from(() => hudFeed, `sprite`),
+  from(() => level, `extras`),
+  from(() => mapSurfaces, `gridRef teamNation`),
+  from(() => pageAudio, `audioBufferCache audioListener audioLoader ensureAudioContext
+    masterVolume`),
+  {
+    get AUDIO_OFF() { return AUDIO_OFF; }, get bust() { return bust; },
+    get hudPaths() { return hudPaths; }, get MAPS_BASE() { return MAPS_BASE; },
+    localAlive: () => !!(localPlayer.soldierArmor && !localPlayer.soldierDead
+      && (localPlayer.soldier || localPlayer.occupancy)),
+    localName: () => room.roomName,
+    localTeam: () => localSpeaker().team,
+    localPosition: () => localSpeaker().position,
+    // `Radio/RadioIconType` (0x006AE525..577): 0 on foot, 1 land, 2 air, 3 sea.
+    radioIconType: () => {
+      const kind = localPlayer.occupancy?.rootKind;
+      if (!kind) return 0;
+      return kind === 'air' ? 2 : kind === 'ship' ? 3 : 1;
+    },
+    roomSendRadio: (id, team) => room.sendRadio?.(id, team),
   },
 ));
 
@@ -1467,6 +1525,17 @@ spawnFlagSelect.addEventListener('change', () => {
 
 const clock = new THREE.Clock();
 
+/** The local soldier's death, the frame the page latches it: the message log
+ *  names whoever last hit him in the last few seconds, else it is his own
+ *  `is no more`. In a room the server's own `killed` rows say it instead. */
+let commsWasAlive = false;
+function commsWatchLocalDeath() {
+  const alive = !!(localPlayer.soldierArmor && !localPlayer.soldierDead);
+  if (commsWasAlive && !alive && !room.roomJoined) {
+    comms.onKill(localSpeaker(), comms.lastAttacker(LOCAL_PLAYER));
+  }
+  commsWasAlive = alive;
+}
 function frame(dt) {
   // The human's presentation follows the seat he holds, looked up every frame
   // (a bot taking the wheel of his hull gives it a drive under him).
@@ -1639,6 +1708,9 @@ function frame(dt) {
   // is `crosshairAim` that decides whose.
   vehicleHud.updateCrosshair();
   hudFeed.gameHud.paint(hudW, hudH);
+  comms.tick(dt);
+  commsWatchLocalDeath();
+  comms.paint(hudW, hudH);
   // After the render: the sun's screen position comes from the camera the
   // frame was just drawn with. A no-op on every vanilla level (see
   // `setupLensFlare`).
@@ -1745,7 +1817,7 @@ const testHooks = installTestHooks(bag(
   from(() => wrecks, `damageVisuals showDamageTier wreckVehicle`),
   {
     get botBodies() { return botBodies; }, get botUnits() { return botUnits; },
-    get camera() { return camera; }, get combatFrame() { return combatFrameNow(); },
+    get camera() { return camera; }, get comms() { return comms; }, get combatFrame() { return combatFrameNow(); },
     get effectAudio() { return effectAudio; }, get effects() { return effects; },
     get effectSoundsLoad() { return effectSoundsLoad; },
     get fireStateFor() { return fireStateFor; }, get frame() { return frame; },
