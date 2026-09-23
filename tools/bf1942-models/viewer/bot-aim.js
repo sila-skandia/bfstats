@@ -67,6 +67,23 @@ export const DEFAULT_SEAT_CONTROL = Object.freeze({
   pitchSensitivity: 0.21817, rollSensitivity: -0.21817, pitchScale: 5.0, rollScale: 5.0,
 });
 
+/**
+ * The soldier's own ControlInfo, `SoldierCtrl` in
+ * `Objects/Soldiers/Common/AI/Objects.con` (bf1942 Objects.rfa):
+ * `pitchSensitivity 0.4363323`, `rollSensitivity -0.5235988`, `pitchScale` /
+ * `rollScale` 5.0, the look channels `PIMouseLookY` / `PIMouseLookX`. A soldier
+ * bot aims and steers through the same `mouseControlLookAtDirection`
+ * 0x08627b90 a gunner does: `EntryMouseTurretAimAt::execute` 0x08619ac0 for an
+ * aim, `infanteryControlTowardsDirection` 0x08627000 for a MoveTo (its call at
+ * the end, tolerance 0, the soldier's ControlInfo). Only the signs of the
+ * sensitivities count; the world then turns the soldier 3 deg a yaw count and
+ * 1 deg a pitch count a tick (`BFSoldier::handlePlayerInput` 0x0827457d,
+ * mouse-input.js `soldierLookDegrees`).
+ */
+export const SOLDIER_CONTROL = Object.freeze({
+  pitchSensitivity: 0.4363323, rollSensitivity: -0.5235988, pitchScale: 5.0, rollScale: 5.0,
+});
+
 /** The eye of a mounted bot above the hull's position (INVENTION). */
 const VEHICLE_EYE_HEIGHT = 2.0;
 
@@ -307,11 +324,33 @@ export function aimReference(bot) {
 }
 
 /**
- * Aim at an absolute yaw/pitch by writing the mouse axis pair. `lookX/Y`
- * are mouse counts (`soldierLookDegrees`: 3 deg and 1 deg a count), the
- * world applies them negated, and the axis saturates at 16. A rate cap
- * (`AIM_COUNTS_MAX`, `mouseControlLookAtDirection`'s 4.0) keeps a bot's
- * turn to 12 deg a tick, the engine's own pace.
+ * The soldier's camera as `mouseControlLookAtDirection` reads it: forward
+ * along the look yaw and pitch, right = forward x world up (level), up =
+ * right x forward. The same convention as `barrelFrame`, and the one under
+ * which the soldier's own ControlInfo signs turn him toward the direction
+ * (the world turns him by `-3 x` the yaw count and `-1 x` the pitch count).
+ */
+export function soldierFrame(yaw, pitch) {
+  const cp = Math.cos(pitch);
+  const f = [Math.sin(yaw) * cp, Math.sin(pitch), Math.cos(yaw) * cp];
+  const r = unit3(cross3(f, [0, 1, 0])) ?? [-Math.cos(yaw), 0, Math.sin(yaw)];
+  return { f, r, u: cross3(r, f) };
+}
+
+/**
+ * Aim at an absolute yaw/pitch by writing the mouse axis pair.
+ *
+ * On foot this is the engine's count law (Brief L, 2026-09-24; ledger
+ * AI-108): the direction to the wanted yaw and pitch, taken in the soldier's
+ * camera (`soldierFrame`), through `lookAtCounts` with the soldier's own
+ * ControlInfo (`SOLDIER_CONTROL`). Every soldier look goes through it, the
+ * MoveTo steer (`infanteryControlTowardsDirection` 0x08627000) and the aim
+ * (`EntryMouseTurretAimAt` 0x08619ac0) alike, and the law caps a count at 4
+ * (12 deg of yaw a tick); `maxCounts` below 4 still caps it. A null
+ * `desiredPitch` leaves the pitch alone (no vertical count), as before. The
+ * pull is proportional through the S-curve: about 23 % of a small yaw error
+ * and 8 % of a small pitch error a tick, where the old law (`-dYaw / 3`,
+ * `-dPitch`, up to 16) removed the whole error in one tick.
  */
 export function aimLook(bot, desiredYaw, desiredPitch = null, maxCounts = AXIS_MAX) {
   if (bot.vehicle && bot.vehicle.kind !== 'air') {
@@ -325,6 +364,17 @@ export function aimLook(bot, desiredYaw, desiredPitch = null, maxCounts = AXIS_M
   }
   const s = bot._aimReference();
   if (!s) return;
+  if (!bot.vehicle) {
+    const pitch = s.pitch ?? 0;
+    const want = desiredPitch === null ? pitch : desiredPitch;
+    const cw = Math.cos(want);
+    const dir = [Math.sin(desiredYaw) * cw, Math.sin(want), Math.cos(desiredYaw) * cw];
+    const counts = lookAtCounts(dir, soldierFrame(s.yaw, pitch), SOLDIER_CONTROL, 0);
+    const cap = Math.min(maxCounts, LOOK_COUNTS_MAX);
+    bot.lookX = clamp(counts.x, -cap, cap);
+    bot.lookY = desiredPitch === null ? 0 : clamp(counts.y, -cap, cap);
+    return;
+  }
   const dYaw = wrapAngle(desiredYaw - s.yaw);
   const livePitch = s.pitch ?? 0;
   const targetPitch = desiredPitch === null ? livePitch : desiredPitch;
