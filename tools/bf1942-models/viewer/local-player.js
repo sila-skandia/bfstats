@@ -72,6 +72,12 @@ export function createLocalPlayer(page) {
   /** The flags without their transitions: the deploy flow arms on-foot before
    *  the soldier exists, and a wreck has already emptied the seat. */
   localPlayer.markPilot = on => { page.optPilot.checked = !!on; };
+  /** Off foot, if on it: the box and the transition together. */
+  localPlayer.leaveOnFoot = () => {
+    if (!page.optOnFoot.checked) return;
+    page.optOnFoot.checked = false;
+    setOnFoot(false);
+  };
   localPlayer.markOnFoot = on => { page.optOnFoot.checked = !!on; };
 
   function setPilot(on, node = null, seatId = null) {

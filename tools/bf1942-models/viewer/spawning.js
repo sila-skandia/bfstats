@@ -213,6 +213,12 @@ export function createSpawning(page) {
     return page.flags.length;
   }
 
+  /** A new level: the choice starts over (the rebuilt select must not keep
+   *  the old map's index). */
+  function forgetFlagChoice() {
+    page.spawnFlagSelect.selectedIndex = -1;
+  }
+
   /** The sidebar picker shown or not (`setOnFoot` hides it with no flags). */
   function showFlagPicker(on) {
     page.spawnFlagSelect.hidden = !on;
@@ -522,6 +528,7 @@ export function createSpawning(page) {
 
   Object.assign(spawning, {
     buildSpawnFlags,
+    forgetFlagChoice,
     showFlagPicker,
     activeDeployGroup,
     cancelDeploy,
