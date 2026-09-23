@@ -109,7 +109,10 @@ loaded as `map.html` and `level-load.js show()` load it:
 - the level's baked search maps (`pathfinding/`, `nav-baked.js
   readSearchMaps`), which every bot map is taken from when the level ships
   one (`extract_search_maps.py` writes them; a tree without them paints its
-  maps as before, so an old tree still runs).
+  maps as before, so an old tree still runs), and each search type's
+  strategic map beside them, which every route is planned on
+  (`strategic-map.js`; a tree without them plans on the painted coarse
+  layer).
 
 The stage then builds, in `show()`'s order and with the page's own modules:
 the `World` (with the guns, the crash hook and the per-tick seat positions),
