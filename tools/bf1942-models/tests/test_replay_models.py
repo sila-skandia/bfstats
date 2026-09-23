@@ -34,7 +34,7 @@ VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).resolve().parent / "replay_harness.mjs"
 
 # `replay.js` copied as `.mjs` next to the harness, plus everything its import
-# graph reaches for at their own relative paths (`flight.js` for the pair-kind
+# graph reaches for at their own relative paths (`vehicle-base.js` for the pair-kind
 # gate, `gait-select.js` for the soldier retargeting, `soldier.js` and
 # `physics.js` under that, and the two vendored utilities).
 MODULES = {
@@ -47,7 +47,6 @@ MODULES = {
     "replay-actors.js": VIEWER / "replay-actors.js",
     "replay-camera.js": VIEWER / "replay-camera.js",
     "replay-gunfire.js": VIEWER / "replay-gunfire.js",
-    "flight.js": VIEWER / "flight.js",
     "vehicle-camera.js": VIEWER / "vehicle-camera.js",
     "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",
     "vehicle-base.js": VIEWER / "vehicle-base.js",
