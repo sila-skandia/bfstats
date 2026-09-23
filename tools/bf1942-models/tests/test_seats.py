@@ -53,6 +53,8 @@ MODULES = {
     "collision-materials.js": VIEWER / "collision-materials.js",
     "heightfield.js": VIEWER / "heightfield.js",
     "physics.js": VIEWER / "physics.js",
+    "point-body.js": VIEWER / "point-body.js",
+    "fixed-step.js": VIEWER / "fixed-step.js",
     "parachute.js": VIEWER / "parachute.js",
     "effects-core.js": VIEWER / "effects-core.js",
     "contact-response.js": VIEWER / "contact-response.js",
