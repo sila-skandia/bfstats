@@ -10,37 +10,15 @@ import { BodyWorld } from '../viewer/body-world.js';
 import {
   buildParkedVehicle, describeVehicleParts,
 } from '../viewer/vehicle-bodies.js';
+// The body world's ground and a node's pose as `position` + row `axes`: the
+// page's own two functions (`hull-bodies.js` imports the same module), which
+// this file used to carry as copies named `bodyTerrainOf`/`bodyPoseOf`.
+import { bodyPoseOf, bodyTerrain as bodyTerrainOf } from '../viewer/body-pose.js';
+
+export { bodyPoseOf, bodyTerrainOf };
 
 /** Longest a spawned vehicle is given to come to rest (map.html: 300). */
 export const SETTLE_TICKS = 300;
-
-/** The body world's ground (map.html `bodyTerrain`, glue the page owns). */
-export function bodyTerrainOf(heightfield, waterLevel) {
-  const normal = [0, 1, 0];
-  return {
-    height: (x, z) => {
-      const h = heightfield.height(x, z);
-      return Number.isFinite(h) ? h : -Infinity;
-    },
-    normal: (x, z, out) => {
-      heightfield.normal(x, z, normal);
-      out[0] = normal[0]; out[1] = normal[1]; out[2] = normal[2];
-      return out;
-    },
-    material: (x, z) => heightfield.material(x, z),
-    waterLevel: Number.isFinite(waterLevel) ? waterLevel : null,
-  };
-}
-
-/** A node's world pose as `position` + row `axes` (map.html `bodyPoseOf`). */
-export function bodyPoseOf(node) {
-  node.updateWorldMatrix(true, false);
-  const e = node.matrixWorld.elements;
-  return {
-    position: [e[12], e[13], e[14]],
-    axes: [[e[0], e[1], e[2]], [e[4], e[5], e[6]], [e[8], e[9], e[10]]],
-  };
-}
 
 /** The quaternion's basis as the body modules' row `axes` (the inverse of
  *  `quaternionFromAxes`: the matrix rows are the axes, mirroring `bodyPoseOf`). */
