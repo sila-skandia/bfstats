@@ -320,5 +320,9 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | page | capture radius fallback | 8 m | | `captureRadius` | UNSOURCED (the ctor's is 10) |
 | page | candidate list | rebuilt every 0.5 s; doors recollected every 10 s | engine: the environment query | `bot-units.js candidates` | INVENTION |
 | page | vehicle body radius | 3 m land, 10 m air / ship | | `bot-units.js BOT_VEHICLE_RADIUS`, `BOT_VEHICLE_RADIUS_LARGE` | INVENTION |
+| page | deck aircraft | a nested VCAir hull with mass is its own vehicle, split off its ship at load, world pose kept | `ObjectSpawner::spawnObject` 0x083140a0 (AI-121) | `spawned-craft.js detachSpawnedCraft` | ENGINE |
+| page | spawner hold | pinned to the ship's live pose times its baked pad, with the ship's velocity there, until the pilot's throttle reaches 0.1 or it is destroyed; never taken again | `ObjectSpawner::handleFrameUpdate` 0x083138c0, 0x86b1ca0 (AI-121) | `hull-bodies.js holdSpawnedCraft`, `HOLD_RELEASE_THROTTLE` | ENGINE (throttle for +0xa0 INFERRED) |
+| page | ship deck floor | the ship's own triangles under (x, z), from 0.5 m over an aircraft's origin down 6 m, or `DECK_STEP_UP` over a body vertex down 1.5 m more; a face within 60 deg of flat | object-vs-object contact (AI-122) | `hull-bodies.js shipDeckAt`, `SHIP_DECK_REACH`, `SHIP_DECK_BODY_REACH` | INVENTION |
+| page | hull lift on a deck | the floor rises until every col0 hull vertex is 0.05 m over the deck at the drive's attitude | none (the engine's gear) (AI-122) | `hull-bodies.js hullLift`, `HULL_DECK_MARGIN` | INVENTION |
 | page | soldier hit points | the kit's `maxHitpoints` (30 in vanilla), 30 fallback | `_shared/loadouts.json` | `map.html soldierMaxHp` | CON |
 | page | bot count | 0 .. 32 (`?botCount=`) | | `map.html BOT_COUNT` | UNSOURCED |
