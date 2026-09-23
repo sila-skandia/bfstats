@@ -609,17 +609,19 @@ the tests. `map.html`, `ship.js`, `seat-camera.js`, `replay-assets.js`,
 `collision-materials.js` directly. The collider's research header moved to
 `world-collider.js`.
 
-Each shim still has one importer, in a file another agent was editing when this
-landed. That is why both files are still here:
+Each shim had one importer left, in a file another agent was editing when this
+landed:
 
-- `viewer/vehicle-hits.js` imports `findVehicle` / `findVehicles` from
-  `flight.js`. The fix is to import them from `vehicle-discovery.js`.
+- `viewer/vehicle-hits.js` imported `findVehicle` / `findVehicles` from
+  `flight.js`. Done: it imports `vehicle-discovery.js`, and `flight.js` is
+  deleted.
 - `sim/env.mjs` loads `collision.js` as one namespace. The fix is to load
   `heightfield.js`, `static-index.js`, `drivable-mask.js` and
-  `world-collider.js`.
+  `world-collider.js`, then delete `collision.js`. Pending the runner work
+  (Brief I) that owns `sim/`.
 
-Once those two lines change, delete both files. `physics.js` and `seats.js`
-are index modules of the same kind, and this round did not touch them.
+`physics.js` and `seats.js` are index modules of the same kind, and this round
+did not touch them.
 
 ### How it was checked
 

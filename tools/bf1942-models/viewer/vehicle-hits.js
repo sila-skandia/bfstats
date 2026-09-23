@@ -6,7 +6,7 @@
 // Part 2); `vehicle-damage.js` stays the damage law.
 
 import * as THREE from 'three';
-import { findVehicle, findVehicles } from './flight.js';
+import { findVehicle, findVehicles } from './vehicle-discovery.js';
 import { classifyRoot } from './seats.js';
 import { soldierExposure, worldBlocker } from './soldier-exposure.js';
 import { CHARACTER_HEIGHT } from './physics.js';
