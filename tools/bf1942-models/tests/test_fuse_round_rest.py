@@ -43,6 +43,8 @@ MODULES = {
     "torpedo-run.js": VIEWER / "torpedo-run.js",
     "idle-vehicle.js": VIEWER / "idle-vehicle.js",
     "collision.js": VIEWER / "collision.js",
+    "static-index.js": VIEWER / "static-index.js",
+    "drivable-mask.js": VIEWER / "drivable-mask.js",
     "collision-materials.js": VIEWER / "collision-materials.js",
     "heightfield.js": VIEWER / "heightfield.js",
     "effects-core.js": VIEWER / "effects-core.js",

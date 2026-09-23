@@ -32,6 +32,8 @@ MODULE = ROOT / "viewer" / "collision.js"
 PARTS = [
     ROOT / "viewer" / "collision-materials.js",
     ROOT / "viewer" / "heightfield.js",
+    ROOT / "viewer" / "static-index.js",
+    ROOT / "viewer" / "drivable-mask.js",
 ]
 HARNESS = Path(__file__).resolve().parent / "collision_harness.mjs"
 
