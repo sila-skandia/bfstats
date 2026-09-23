@@ -163,8 +163,27 @@ pass.updatePresenceOwner(pa, 0, 2); presence.push(pass.ownerOf(pa));
 pass.updatePresenceOwner(pa, 0, 0); presence.push(pass.ownerOf(pa));
 pass.updatePresenceOwner(pa, 1, 1); presence.push(pass.ownerOf(pa));
 pass.updatePresenceOwner(ba, 0, 3); presence.push(pass.ownerOf(ba));
+// Brief R item 5 (ledger AI-125): `AIStrategicArea::update` counts an
+// object in an area's hold only when its Information lacks the air bit
+// (0x0863e182 / 0x0863e1e5); a plane's secondary seats count without it. An
+// Allied bot orbiting the Axis pass in a Spitfire's pilot seat takes nothing;
+// one in a gunner seat of an aircraft, or on foot, takes it.
+function passHeldBy(unit) {
+  const lay = new StrategicLayer({ strategicAreas: [
+    { name: 'Pass', min: [0, -10], max: [10, 0], radius: 20, side: 1, takeable: {} },
+  ] }, []);
+  const sai = new StrategicAI(lay, { random: () => 0.5, unitOf: () => unit });
+  sai.addBot('b', 2, () => [5, 60, -5]);
+  sai._updateAreas(new Map([['b', [5, 60, -5]]]));
+  return { owner: lay.ownerOf(lay.areas[0]), present: sai.areaState.get(lay.areas[0])[2].present.length };
+}
+const airHold = {
+  pilot: passHeldBy({ air: true, root: true, mounted: true }),
+  gunner: passHeldBy({ air: true, root: false, mounted: true }),
+  foot: passHeldBy({ mounted: false }),
+};
 const pins = {
-  air, orderInside, prereq, presence,
+  air, orderInside, prereq, presence, airHold,
   corner: ia.corner, centre: ia.centre, min: ia.min, max: ia.max, sideRadius: +ia.sideRadius.toFixed(3),
   cpInside: island.isInside(ia, 838, -722), r0, r1: r1.map(v => +v.toFixed(3)),
   tankRadius: +wpTank.radius.toFixed(3), inR, inRArrived, outU,
