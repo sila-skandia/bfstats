@@ -37,18 +37,18 @@ import { bindTreeFoliage } from './tree-foliage.js';
  * reassigns is read live):
  * `activeMod`, `bust`, `camera`, `capture`, `capturePresentationTick`,
  * `cubeLoader`, `damageVisuals`, `DEFAULT_DRAW`, `disposeSounds`, `effects`,
- * `ensureBotRoot`, `entryPoints`, `fireStates`, `floatPlacedVehicles`,
- * `forgetSoldier`, `fullmapMeta`, `fullmapName`, `guns`, `gunSubject`,
+ * `ensureBotRoot`, `fireStates`, `floatPlacedVehicles`, `forgetEntryPoints`,
+ * `forgetSeatViews`, `forgetSoldier`, `fullmapMeta`, `fullmapName`, `guns`,
  * `hemi`, `loadCollisionMeshes`, `loadEffectLibrary`, `loader`,
- * `loadMapArt`, `logToConsole`, `MAPS_BASE`, `nearEntry`, `onCrashDamage`,
- * `openDeploy`, `optEntire`, `optGameFog`, `optOnFoot`, `optPilot`,
- * `optVehicles`, `optWire`, `overlay`, `params`, `placeCamera`,
- * `rebaseDeckSpawns`, `rebuildVehicleInterp`, `registerDamageables`,
- * `renderer`, `scene`, `seatWorldPos`, `setOnFoot`, `setPilot`,
- * `settlePlacedVehicles`, `setupSounds`, `setupVehicleBodies`,
- * `spawnBotsForLevel`, `spawnFlagSelect`, `sun`, `syncDeployReady`,
- * `templateNameOf`, `texLoader`, `texManager`, `toggleFullMap`,
- * `unitRectOf`, `vehicles`, `view`, `viewFor`, `vmScene`.
+ * `loadMapArt`, `logToConsole`, `MAPS_BASE`, `onCrashDamage`, `openDeploy`,
+ * `optEntire`, `optGameFog`, `optOnFoot`, `optPilot`, `optVehicles`,
+ * `optWire`, `overlay`, `params`, `placeCamera`, `rebaseDeckSpawns`,
+ * `rebuildVehicleInterp`, `registerDamageables`, `renderer`, `scene`,
+ * `seatWorldPos`, `setOnFoot`, `setPilot`, `settlePlacedVehicles`,
+ * `setupSounds`, `setupVehicleBodies`, `spawnBotsForLevel`,
+ * `spawnFlagSelect`, `sun`, `syncDeployReady`, `templateNameOf`,
+ * `texLoader`, `texManager`, `toggleFullMap`, `unitRectOf`, `vehicles`,
+ * `vmScene`.
  */
 export function createLevel(page) {
   const level = {};
@@ -356,9 +356,7 @@ export function createLevel(page) {
     // Every hull's seats go with the scene: nobody is carried across a level
     // switch, and the seat's view rig holds nodes of the old one.
     page.vehicles.clear();
-    page.view = null;
-    page.viewFor = null;
-    page.gunSubject = null;
+    page.forgetSeatViews();
     // A level switch is not surgical, so the rounds in the air go back to their
     // pools here and every group goes with them.
     page.guns.clear();
@@ -557,8 +555,7 @@ export function createLevel(page) {
     // A new level starts the flag choice over; without this the rebuilt select
     // would keep the old map's index through `buildSpawnFlags`.
     page.spawnFlagSelect.selectedIndex = -1;
-    page.entryPoints = null;
-    page.nearEntry = null;
+    page.forgetEntryPoints();
     if (page.optPilot.checked) page.setPilot(true);
     // Joining is the spawn screen, not an instant teleport — clear a leftover
     // on-foot tick from the previous level so openDeploy owns the join.
