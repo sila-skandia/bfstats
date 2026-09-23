@@ -10,10 +10,9 @@ import { createSkirmishScreen } from './play/skirmish.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `aimHeld`, `bfmap`, `capture`, `extras`, `hudPaths`, `keys`, `launchTeam`,
- * `MENU_URL`, `mouseInput`, `params`, `release`, `scoreboardOpen`,
- * `scoreFromSpawn`, `seatAltFire`, `seatFire`, `setScoreboard`,
- * `setSideCollapsed`, `triggerHeld`.
+ * `bfmap`, `capture`, `extras`, `hudPaths`, `keys`, `launchTeam`,
+ * `MENU_URL`, `mouseInput`, `params`, `release`, `releaseButtons`,
+ * `scoreboardOpen`, `scoreFromSpawn`, `setScoreboard`, `setSideCollapsed`.
  */
 export function createPageConsole(page) {
   const pageConsole = {};
@@ -137,10 +136,7 @@ export function createPageConsole(page) {
       // under it: the engine stops feeding `PlayerInput` entirely while the
       // flag is set, so a key down at that moment never repeats.
       page.keys.clear();
-      page.triggerHeld = false;
-      page.seatFire = false;
-      page.seatAltFire = false;
-      page.aimHeld = false;
+      page.releaseButtons();
       if (!pageConsole.consoleFont) {
         // `Font/BF1942.font` out of this mod's own Font.rfa chain where it has
         // one (five of the installed mods do) and vanilla's otherwise.
