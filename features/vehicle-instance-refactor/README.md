@@ -261,8 +261,11 @@ Left:
 - The frame loop is still one 420-line function in `map.html`.
 - Still open from Part 1: the bot gunner's aim gain (it misses at 40 m),
   and the hull rising ~0.6 m after adoption.
-- Found here, not fixed: the bot vehicle-candidate cache and the nav maps
-  are not reset on a level switch (the same on main).
+- ~~Found here, not fixed: the bot vehicle-candidate cache and the nav maps
+  are not reset on a level switch (the same on main).~~ Fixed 2026-09-23
+  (AGENT_BRIEFS Brief G): `referee.reset()` and `units.reset()` run from
+  `show()` through the page's `resetBots` once the new scene has loaded,
+  pinned by `tests/test_bot_level_switch.py`.
 
 ## Part 2b: every module takes the values it reads (2026-09-23)
 

@@ -339,12 +339,22 @@ export function createBotUnits(env) {
     };
   };
 
-  /** A level change: every map and door goes with the old scene. */
+  /**
+   * A level change (`level-load.js` `show()`, through the page's
+   * `resetBots`): every map and door goes with the old scene. The maps are
+   * the old level's ground and would route the next level's hulls on it; the
+   * candidate list holds the old scene's nodes, and its clock is the old
+   * referee's, which starts again at 0, so without this the cache would read
+   * as fresh until the new clock passed the old one. The drive kinds are
+   * keyed by the old nodes. The AI records stay: they are the mod's
+   * (`_shared/vehicle-ai.json`), and the mod is fixed for the page.
+   */
   units.reset = () => {
     units.navVehicle = null;
     units.navWater.clear();
     units.candidateCache = { at: -1, list: [] };
     units.entriesCollectedAt = -Infinity;
+    kinds.clear();
   };
 
   return units;
