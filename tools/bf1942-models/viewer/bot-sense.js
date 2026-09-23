@@ -105,16 +105,33 @@ export function playerPosition(player) {
  * Line of sight through the world: the collider's ray (`WorldCollider.cast`)
  * when it exists, else the terrain-height march the earlier build used.
  * Returns true when nothing solid lies between `from` and `to`.
+ *
+ * `skip` is an owner id or a list of them: the sense rays of `BotMain::sense`
+ * 0x08521cf0 go through `collideLineWithWorld` (environment +0x54) ignoring
+ * the bot's own unit, the target and the target's vehicle. A seated bot's
+ * eye sits inside its own hull's collision, so without the skip every ray
+ * from a plane ended a metre out, on its own fuselage. The collider takes
+ * one owner to skip; a hit on another skipped owner re-casts past it.
  */
-export function lineClear(collider, from, to, skipOwner = -1) {
+export function lineClear(collider, from, to, skip = -1) {
   if (!collider) return true;
   const dx = to[0] - from[0], dy = to[1] - from[1], dz = to[2] - from[2];
   const dist = Math.hypot(dx, dy, dz);
   if (!(dist > 1e-4)) return true;
   if (typeof collider.cast === 'function') {
-    const hit = collider.cast(from[0], from[1], from[2], dx / dist, dy / dist, dz / dist,
-                              dist - 0.05, skipOwner);
-    return !hit;
+    const skips = (Array.isArray(skip) ? skip : [skip]).filter(o => o !== -1 && o !== null && o !== undefined);
+    const first = skips.length ? skips[0] : -1;
+    const ux = dx / dist, uy = dy / dist, uz = dz / dist;
+    let start = 0;
+    for (let i = 0; i < 4; i++) {
+      const hit = collider.cast(from[0] + ux * start, from[1] + uy * start, from[2] + uz * start,
+                                ux, uy, uz, dist - 0.05 - start, first);
+      if (!hit) return true;
+      if (!skips.includes(hit.owner)) return false;
+      start += (hit.t ?? 0) + 0.05;
+      if (start >= dist - 0.05) return true;
+    }
+    return false;
   }
   if (typeof collider.surfaceHeight !== 'function') return true;
   const steps = Math.min(12, Math.max(1, Math.ceil(dist / 2)));
@@ -130,6 +147,10 @@ export function lineClear(collider, from, to, skipOwner = -1) {
 export class BotSenses {
   constructor({ viewDistance = 600, isMobile = false, random = Math.random } = {}) {
     this.viewDistance = viewDistance;
+    /** The collision owner of the unit the bot sits in (-1 on foot) and a
+     *  `player -> owner` lookup for a target's unit: the rays skip both. */
+    this.selfOwner = -1;
+    this.unitOwnerOf = null;
     this.isMobile = isMobile;
     this.random = random;
     /** Vision memory: id -> { id, seen, lastSeen, lost, lostAt, pos, team }. */
@@ -211,7 +232,7 @@ export class BotSenses {
       const jx = (this.random() * 2 - 1) * SENSE_JITTER;
       const jz = (this.random() * 2 - 1) * SENSE_JITTER;
       const point = [pos[0] + jx, pos[1] + h, pos[2] + jz];
-      if (lineClear(collider, eye, point)) return true;
+      if (lineClear(collider, eye, point, [this.selfOwner, this.unitOwnerOf?.(player) ?? -1])) return true;
     }
     return false;
   }

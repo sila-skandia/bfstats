@@ -9638,7 +9638,7 @@ function botLineOfSight(from, to) {
  * Resolve one bot round against the world's players. Returns
  * `{ targetId, damage }` on a hit, else null.
  */
-function resolveBotShot(bot, roundDamage = null) {
+function resolveBotShot(bot, roundDamage = null, flight = null) {
   const { origin, dir } = bot.aimRay();
   _botRayDir.set(dir[0], dir[1], dir[2]).normalize();
   // Roll into the deviation cone, exactly as `gunfire.js` `#wander` does.
@@ -9669,9 +9669,21 @@ function resolveBotShot(bot, roundDamage = null) {
     if (world.armorOf(id)?.destroyed) continue;
     const s = player.soldier;
     if (!s) continue;
-    const cx = s.x - origin[0];
-    const cy = (s.y + BOT_BODY_HEIGHT) - origin[1];
-    const cz = s.z - origin[2];
+    let cx = s.x - origin[0];
+    let cy = (s.y + BOT_BODY_HEIGHT) - origin[1];
+    let cz = s.z - origin[2];
+    if (flight) {
+      // A vehicle gun's round is not a hitscan: it leaves at `speed` along
+      // the barrel and inherits the platform's velocity (gunfire.js
+      // `platformVelocity`), so in the shooter's frame the target has moved
+      // by its relative velocity over the round's flight when the round
+      // arrives (the same frame `roundMiss` and the Aimer lead in).
+      const tv = s.body?.body?.velocity;
+      const t = Math.hypot(cx, cy, cz) / Math.max(1, flight.speed);
+      cx += ((tv?.x ?? 0) - flight.velocity[0]) * t;
+      cy += ((tv?.y ?? 0) - flight.velocity[1]) * t;
+      cz += ((tv?.z ?? 0) - flight.velocity[2]) * t;
+    }
     const t = cx * _botConeDir.x + cy * _botConeDir.y + cz * _botConeDir.z;
     if (t < 0 || t > BOT_FIRE_RANGE) continue;
     const px = cx - t * _botConeDir.x;
@@ -10291,8 +10303,10 @@ function botFireTick(dt) {
         const spec = g.stats?.projectile && typeof g.stats.projectile === 'object' ? g.stats.projectile : null;
         if (splashSpec(spec?.damage)?.impact) continue;   // a shell: `applyVehicleHit`'s splash bills it
         const roundDamage = botSpecDamage(spec);
+        const hv = bot.vehicle.drive?.state?.velocity;
+        const flight = { speed: g.stats?.velocity ?? 600, velocity: hv ? [hv.x, hv.y, hv.z] : [0, 0, 0] };
         for (let k = prev; k < now_; k++) {
-          const hit = resolveBotShot(bot, roundDamage);
+          const hit = resolveBotShot(bot, roundDamage, flight);
           if (!hit) continue;
           bot.recordHit(hit.targetId);
           if (hit.targetId === LOCAL_PLAYER) applyDamageToPlayer(hit.damage, { x: bot.position[0], y: bot.position[1], z: bot.position[2] }, bot.team);
@@ -18042,6 +18056,7 @@ if (params.has('shots')) {
     vehicle: b.vehicle?.template ?? null,
     change: b._changeResult?.best ? { id: b._changeResult.best.cand?.template, seat: b._changeResult.best.cand?.seatId ?? null, u: +b._changeResult.best.u.toFixed(2), d: +b._changeResult.best.dist.toFixed(1), teleport: !!b._changeResult.teleport, bail: !!b._changeResult.bail } : null,
     attackPhase: b._attackPhase ?? null,
+    attack: b._attackDbg ?? null,
     enemyTypes: b.enemyTables ? Object.fromEntries(Object.entries(b.enemyTables.types).filter(([, v]) => v > 0).map(([k, v]) => [k, +v.toFixed(2)])) : null,
     steerAngle: b._dbgSteerAngle ?? null,
     ammo: b.weaponAi?.ammo ?? null, reload: +((b._mags?.get(b.weaponAi?.name)?.reloadLeft) ?? 0).toFixed(2),
