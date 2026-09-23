@@ -222,11 +222,14 @@ class IdleVehicleWiringTests(unittest.TestCase):
         # Four copies of trigger-off-and-splice became one `guns.release`. A
         # fifth copy growing back is the way this defect returns, so no vehicle
         # or manned gun list may splice `guns.groups` by hand again.
+        # The seats' gun lists are the hull's instance's now: it collects a
+        # seat's groups when the seat is taken and releases them, through
+        # `guns.release`, when it is left (`vehicle-instance.js`).
+        instance = (VIEWER / "vehicle-instance.js").read_text(encoding="utf-8")
+        self.assertNotIn("groups.splice", instance)
+        self.assertIn("this.env.guns.release(group)", instance)
         for name in ("collectGuns", "collectMannedGuns", "releaseGuns"):
-            start = self.source.index(f"function {name}(")
-            end = self.source.index("\n}\n", start)
-            body = self.source[start:end]
-            self.assertNotIn("guns.groups.splice", body, name)
+            self.assertNotIn(f"function {name}(", self.source, name)
 
 
 if __name__ == "__main__":
