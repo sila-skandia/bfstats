@@ -11,9 +11,9 @@ import { kitIconCandidates } from './kit-icon.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `KIT_ROW_KEYS`, `bfmap`, `bust`, `cameraHeading`, `drawFullMap`,
- * `feedTicketVars`, `fullmapBox`, `fullmapCanvas`, `hudPack`, `hudPaths`,
- * `kitLoadout`, `kitRowLabelFor`, `loadouts`, `scoreboard`, `sprite`,
+ * `bfmap`, `bust`, `cameraHeading`, `drawFullMap`, `feedTicketVars`,
+ * `fullmapBox`, `fullmapCanvas`, `hudPack`, `hudPaths`, `KIT_ROW_KEYS`,
+ * `kitLoadout`, `kitRowLabelFor`, `loadouts`, `setScoreboard`, `sprite`,
  * `teamNation`, `updateKitAriaLabels`, `worldReady`.
  */
 export function createDeployScreen(page) {
@@ -112,7 +112,7 @@ export function createDeployScreen(page) {
    *  instant close used to do — chrome stripped so a level switch or a plain
    *  Escape can never leave the screen armed behind a hidden overlay. */
   function finishDeployClose() {
-    if (deployScreen.scoreFromSpawn) page.scoreboard.setScoreboard(false);
+    if (deployScreen.scoreFromSpawn) page.setScoreboard(false);
     page.fullmapBox.hidden = true;
     page.fullmapBox.classList.remove('deploy', 'deploy-ready');
     fullmapFrame.removeAttribute('style');
