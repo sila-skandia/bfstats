@@ -81,6 +81,13 @@ MODULES.update({
     "server/level-load.mjs": SERVER / "level-load.mjs",
     "server/level-descriptor.mjs": SERVER / "level-descriptor.mjs",
     "server/rooms.mjs": SERVER / "rooms.mjs",
+    # rooms.mjs's pieces (it re-exports each).
+    "server/room.mjs": SERVER / "room.mjs",
+    "server/room-registry.mjs": SERVER / "room-registry.mjs",
+    "server/room-control.mjs": SERVER / "room-control.mjs",
+    "server/room-stream.mjs": SERVER / "room-stream.mjs",
+    "server/room-rules.mjs": SERVER / "room-rules.mjs",
+    "server/room-wire.mjs": SERVER / "room-wire.mjs",
     "server/authority.mjs": SERVER / "authority.mjs",
     # The real published templates the fake level's table is built from.
     "viewer/models/Willy.glb": VIEWER / "models" / "Willy.glb",
