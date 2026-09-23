@@ -442,3 +442,91 @@ headless with the same script, then diffing the JSON:
 The results matched, including the canvas samples, and neither page raised a
 console error. Both pages also load identically under `?mod=` for xpack1,
 xpack2 and eod.
+
+## Part 3: one owner per piece of state, and the rest of the code base (2026-09-23)
+
+Goal for this round: the whole game code base modular and concise, with as
+little shared state as possible. Part 2 had made every page subsystem a
+module. What was still shared was state: a module's `page` bag could carry
+setters, and 70 of them let one module assign another module's fields.
+
+### No module writes another module's state
+
+Every setter is gone. The last page bag setter was removed in `79cb3e2a`.
+Each piece of state now has one owning module, and the others ask it by name:
+
+| State | Owner | Operations others call |
+|---|---|---|
+| the soldier's life, the death cam | `localPlayer` | `dieOnFoot`, `dieInWreck`, `revive`, `discardSoldier`, `forgetSoldier`, `runDeathCam`, `toggleProne`, `standUp` |
+| the mouse buttons | `pageInput` | `releaseButtons`, `pressTrigger`, `setAim`, `setSeatTriggers`, `setTouchTriggers`, `dropClick` |
+| the seat-toggle cooldown | `pageInput` | `seatToggleReady`, `noteSeatToggle` |
+| the deploy screen's selection | `spawning` | `chooseTeam`, `chooseKit`, `forgetFlagChoice`, `buildSpawnFlags`, `showFlagPicker` |
+| the deploy map's ease | `deployScreen` | `easeOpen`, `easeClose` |
+| the camera lens | `localPlayer` | `useLens('foot'\|'seat'\|'fly')`, `setFov` |
+| the mode boxes | `localPlayer` | `leavePilot`, `leaveOnFoot`, `markPilot`, `markOnFoot` |
+| the camera's look | `freeCamera` | `setLook`, `turnLook` |
+| the HUD line | `hudFeed` | `showHint`, `flashHud`, `updateHud` |
+| the hit indicator | `soldierHud` | `triggerHitIndicator`, `clearHitIndicator` |
+| the room's occupied hull, capture banner | `room`, `flagCapture` | `noteOccupiedVehicle`, `occupiedVehicleIdFor`, `forgetOccupiedVehicle`, `roomCapture*` |
+| the door list | `vehicleEntry` | `dropEntryPoints`, `forgetEntryPoints` |
+| the seat's view rig | `seatCamera` | `forgetSeatViews` |
+| the hand weapon's presentation | `soldierKit` | `holster`, `drawWeapon`, `addFootLook` |
+| the guns' level inputs | `GunFire` | `useLevel(collider, tables)` |
+
+Some writes into shared page objects remain, on purpose: the three.js
+camera's pose (every view writes it by design), a GunFire's `firstPerson`
+flag and callback slots, the HUD line's text, and the `?shots` test hooks,
+which poke whatever they probe.
+
+### map.html's bags
+
+`page-bag.js` (`from(() => owner, 'a b c:alias')`, `bag(...)`) writes a bag
+as its dependencies grouped by owner. About 940 one-line getters became 29
+short lists; the keys are unchanged (every bag parsed before and after).
+
+### What was split
+
+| From | Into |
+|---|---|
+| `local-player.js` (1,916) | `local-player.js` (657): the seat mount, the soldier's life, the lens, the input word; `vehicle-entry.js`: doors, getting in and out; `local-look.js`: the mouse look, render interpolation; `seat-camera.js`: the view rig, the chase law, the seated cameras |
+| `page-input.js` (1,183) | `page-input.js` (780): keyboard, mouse, pointer lock, key lock; `touch-controls.js`; `free-camera.js` |
+| `hud-feed.js` (993) | `hud-feed.js`: the Hud, the sprite pack, the HUD line; `soldier-hud.js`; `vehicle-hud.js` |
+| `map-surfaces.js` | `map-surfaces.js`; `ticket-feed.js` |
+| `test-hooks.js` (1,494) | `test-hooks.js` plus `test-hooks-{bots,vehicles,soldier,world}.js`, the same 114 hooks |
+| `level-load.js` (2,305) | `level-load.js` (700), `level-{sky,shading,flare,statics,terrain,warmup}.js` |
+| `hand-weapon.js` (1,924) | `hand-weapon.js` (504), `kit-loadout.js`, `arms-rig.js`, `hand-fire-sound.js`, `demolitions.js`, `hand-fire.js` |
+| `bot.js` (2,691) | `bot.js` (545), `bot-{aim,perception,route,decision,plans,mount,pilot}.js` |
+| `ground.js` (3,169) | `ground.js` (750), `ground-{specs,contact,engine}.js`, `tracked-vehicle.js` |
+| `flight.js` (2,161) | `vehicle-base.js`, `aircraft.js`, `vehicle-camera.js`, `vehicle-discovery.js` |
+| `gunfire.js` (1,872) | `gunfire.js` (357), `gun-groups.js`, `gun-cycle.js`, `round-launch.js`, `projectile-flight.js`, `round-impact.js`, `round-visuals.js` |
+| `collision.js`, `physics.js` | `collision-materials.js`, `heightfield.js`, `static-index.js`, `drivable-mask.js`, `world-collider.js`, `point-body.js`, `fixed-step.js`, `soldier-pose.js`, `soldier-locomotion.js`, `walking-body.js` |
+| `seats.js` (1,270), `world.js` (1,152) | `seat-survey.js`, `turret-rig.js`, `vehicle-occupancy.js`, `entry-points.js`, `spawned-craft.js`, `fire-state.js`; `world-{input,players,snapshot,bodies,soldier-tick,vehicle-tick,fields,damage}.js` |
+| `replay.js` (1,683) | `replay.js` (320), `replay-{recording,server-log,ui,gait,assets,actors,camera,gunfire}.js` |
+| `server/level.mjs`, `server/rooms.mjs`, `server/server.mjs`, `play/multiplay.js` | one module per concern (see `server/README.md`); `play/lobby.js`, `play/create-game.js`, `play/stage.js`, `play/front-end.js` |
+
+All the splits moved code verbatim; the engine-research comments went with
+their code. Across `viewer/`, `server/` and `sim/`: 131 files became 254 at
+the same ~83,000 lines, the largest file went from 5,850 lines to 1,854
+(`map.html`, now wiring), and files over 1,000 lines from 21 to 3.
+
+### Found on the way
+
+- **The map page did not load on a touch device** (`9e88fb9d`). Part 2 had
+  moved `pageInput` below a load-time `getTouchHudText()` call.
+- **A wrecked hull offered its door** (`e9b7327b`). The E-key scan never
+  asked whether the hull was destroyed, so the player could climb into a
+  burning wreck. The bots' candidate list already skipped wrecks.
+
+### How it was checked
+
+After every step: `python3 -m unittest discover -s tests` (2,824 tests), a
+syntax check of every module and of `map.html`'s inline script, ESLint
+`no-undef` across the viewer, a parse-based check for `obj.member` reads of
+members the object no longer defines, and a live headless pass on El
+Alamein. The pass covered deploying, walking, prone, fire and reload, aim
+zoom, a Sherman (drive, C cycle, seat switch, seat fire, exit), a Willys, a
+manned gun, a Spitfire's throttle, dying on foot and in a wreck, a respawn, a
+team and kit switch, a level switch, the full map, the scoreboard, the touch
+controls under mobile emulation, and a bot Sherman killing a soldier 40 m
+out. The agent-run splits also diffed node harness output and seeded sim
+traces against the base commit; they were byte-identical.
