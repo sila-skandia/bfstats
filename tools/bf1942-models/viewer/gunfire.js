@@ -345,7 +345,7 @@ export class GunFire {
   /** Advance flashes, recoil, firing cadence and rounds. True while active. */
   advance(dt) {
     let active = false;
-    // The per-frame collision budget, spent by `#sweep` and reset here.
+    // The per-frame collision budget, spent by `sweep` and reset here.
     this.casts = 0;
     if (advanceGroups(this, dt)) active = true;
     if (advanceTracers(this, dt)) active = true;
