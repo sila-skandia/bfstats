@@ -578,6 +578,23 @@ export function createHullBodies(page) {
     // owner watching the map sees the spots move with the hull exactly as the
     // game does.
     if (stirred) rebaseDeckSpawns();
+    if (heldCraft.length) presentHeldCraft();
+  }
+
+  /**
+   * The frame's half of the hold: a parked held craft drawn on its ship as
+   * the frame draws her. An occupied ship's node carries the render
+   * interpolation's pose (`local-look.js`), a fraction of a tick behind the
+   * drive state `holdSpawnedCraft` pins to, so a Corsair pinned to the tick
+   * sat up to 0.45 m off its drawn pad on an Enterprise making 12 m/s. The
+   * body and the collider keep the tick's pose; only the node follows.
+   */
+  function presentHeldCraft() {
+    for (const rec of heldCraft) {
+      if (rec.released || page.vehicles?.instanceOf?.(rec.node)?.drive) continue;
+      rec.host.updateWorldMatrix(true, false);
+      setNodeWorld(rec.node, _holdMatrix.multiplyMatrices(rec.host.matrixWorld, rec.local));
+    }
   }
 
   /**
