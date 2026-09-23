@@ -310,7 +310,7 @@ changes while a bot is in MoveTo), then re-run this comparison.
   `node sim/compare.mjs --maps el_alamein,bocage --seeds 1-10 --time 600
   --configs "sai axis=squad allies=squad" ...`.
 - The no-progress redeploy (`bot-decision.js updateObjectiveReadout`)
-  should restart on a new order (the what-if above); not changed here.
+  restarts on a new order since Brief K (ledger AI-101).
 - The page runs the SAI only: nothing passes `env.doctrine` from `map.html`
   yet (a `?doctrine=` parameter would be one line in the page's referee env).
 - `WPCloseTo::modifyMaxSpeed` (a follower matching the leader's speed close

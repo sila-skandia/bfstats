@@ -87,8 +87,15 @@ export const IDLE_FLOOR = 1e-3;
  *  waypoint radius (INVENTION). */
 const FALLBACK_WAYPOINT_RADIUS = 5.0;
 /** How long with no *net* progress toward the goal before the page redeploys
- *  the bot to another spawn point (s). The engine has no such thing; it is
- *  the viewer's safety net for a body wedged in geometry the map cannot see. */
+ *  the bot to another spawn point (s). INVENTION: the engine has no such
+ *  test (ledger AI-101). Its stuck handling is the obstruction counters
+ *  (`ObstructionDetection::update` 0x08532b00, AI-32: the path fails at 401
+ *  ticks), and its one respawn of a living bot, the SAI's teleporter list
+ *  (`registerTeleporter` 0x086369c0 -> `handleTeleportingBot` 0x08631390
+ *  from `prepareUpdate` 0x08635210: a suitable spawn group, the bot handled
+ *  as dead and teleported there), is fed by nothing that measures progress.
+ *  It stays as the viewer's safety net for a body wedged in geometry the map
+ *  cannot see, measured per order. */
 const NO_PROGRESS_RESPAWN = 12.0;
 
 /** The behaviours the bot's current unit registers (AIbehaviours.con rows). */
@@ -109,6 +116,17 @@ export function updateObjectiveReadout(bot, dt) {
     bot.objective = flag;
     bot.objectiveGoal = flag ? [flag.position[0], flag.position[1], flag.position[2]] : null;
     bot.goalReached = !!bot.objectiveGoal && bot._distTo(bot.objectiveGoal) < FALLBACK_WAYPOINT_RADIUS;
+  }
+  // Progress is measured per order: a new order (a new waypoint object, or
+  // the nearest enemy flag changing without one) starts the best distance
+  // again. Kept across orders, a follower keeping pace behind a moving point
+  // never beat the distance it had once reached and was sent back to spawn
+  // (54 redeploys a match for the squad play's Allied side).
+  const order = wp ?? bot.objective ?? null;
+  if (order !== bot._progressOrder) {
+    bot._progressOrder = order;
+    bot._bestGoalDist = null;
+    bot._noProgress = 0;
   }
   if (bot.objectiveGoal && !bot.goalReached && bot.currentBehaviour === BEHAVIOUR.MoveTo) {
     const d = bot._distTo(bot.objectiveGoal);

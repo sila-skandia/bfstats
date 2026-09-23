@@ -310,6 +310,77 @@ const recipes = {
 
   async headOnNoAvoid() { return recipes.headOn(true); },
 
+  /** Brief K item 3: a Sherman and a PanzerIV ordered onto North outpost
+   *  (874, -1816, radius 50) from their bases, every other bot frozen.
+   *  While both are within 250 m of the flag each second samples each
+   *  driver's behaviour, its Fire and MoveTo urgencies, whether it holds the
+   *  other as its target, and the line between them from the eye
+   *  (`_eye()`, the sensing ray) and from the gun (`_aimOrigin()`): blocked
+   *  by the terrain or a static. Reports the captures, the rounds each side
+   *  fired and who died. */
+  async tankDuel() {
+    const match = await start('el_alamein');
+    const axis = match.bots.find(o => o.team === 1);
+    const allied = match.bots.find(o => o.team === 2);
+    mount(match, axis, 'PanzerIV');
+    mount(match, allied, 'Sherman', 'driver', { freePad: true });
+    freezeOthers(match, [axis.playerId, allied.playerId]);
+    const flag = [874.005, 51.59, -1815.98];
+    const sai = match.referee.strategy;
+    const waypointsOf = sai.waypointsOf.bind(sai);
+    sai.waypointsOf = id => {
+      const wp = waypointsOf(id);
+      return (id === axis.playerId || id === allied.playerId) && wp ? { ...wp, point: [flag[0], flag[2]], radius: 20 } : wp;
+    };
+    const collider = match.stage.collider;
+    const blocked = (from, to, self = -1) => {
+      const d = [to[0] - from[0], to[1] - from[1], to[2] - from[2]];
+      const len = Math.hypot(...d);
+      const hit = collider.cast(from[0], from[1], from[2], d[0] / len, d[1] / len, d[2] / len, len - 3, self);
+      return hit ? (collider.statics.ownerNodes?.[hit.owner]?.name ?? (hit.owner < 0 ? 'terrain' : `owner ${hit.owner}`)) : null;
+    };
+    const samples = [];
+    let next = 0;
+    const near = b => b.vehicle && Math.hypot(b.position[0] - flag[0], b.position[2] - flag[2]) < 250;
+    run(match, 240, () => {
+      if (match.clock >= next && near(axis) && near(allied)) {
+        next = match.clock + 1;
+        const row = { t: round(match.clock), d: round(Math.hypot(axis.position[0] - allied.position[0], axis.position[2] - allied.position[2])) };
+        for (const [name, b, o] of [['axis', axis, allied], ['allied', allied, axis]]) {
+          const target = [o.position[0], o.position[1] + 1.5, o.position[2]];
+          row[name] = { beh: b.currentBehaviour, fire: round(b.urgency.Fire), moveTo: round(b.urgency.MoveTo), target: b.firingTarget,
+                        eyeBlocked: blocked(b._eye(), target, b._selfOwner()), gunBlocked: blocked(b._aimOrigin(), target, b._selfOwner()),
+                        seen: b.senses.memory.get(o.playerId)?.seen ?? null };
+        }
+        samples.push(row);
+      }
+      return !axis.vehicle || !allied.vehicle;
+    });
+    const stats = id => match.stats.get(id);
+    return {
+      samples: samples.length, first: samples[0] ?? null, last: samples[samples.length - 1] ?? null,
+      captures: eventsOf(match, 'capture').map(e => `${round(e.t)} ${e.flag} ${e.from}->${e.to} ${e.by}`),
+      rounds: { axis: stats(axis.playerId).vehicleRounds, allied: stats(allied.playerId).vehicleRounds },
+      destroyed: eventsOf(match, 'vehicle_destroyed').map(e => `${round(e.t)} ${e.vehicle} by ${e.killer}`),
+      share: (() => {
+        const out = { axis: {}, allied: {} };
+        for (const r of samples) for (const k of ['axis', 'allied']) out[k][r[k].beh] = (out[k][r[k].beh] ?? 0) + 1;
+        return out;
+      })(),
+      blockedShare: (() => {
+        const out = { axisEye: 0, axisGun: 0, alliedEye: 0, alliedGun: 0, axisSeen: 0, alliedSeen: 0, axisTarget: 0, alliedTarget: 0 };
+        for (const r of samples) {
+          if (r.axis.eyeBlocked) out.axisEye++; if (r.axis.gunBlocked) out.axisGun++;
+          if (r.allied.eyeBlocked) out.alliedEye++; if (r.allied.gunBlocked) out.alliedGun++;
+          if (r.axis.seen) out.axisSeen++; if (r.allied.seen) out.alliedSeen++;
+          if (r.axis.target === allied.playerId) out.axisTarget++; if (r.allied.target === axis.playerId) out.alliedTarget++;
+        }
+        return out;
+      })(),
+      end: { axis: axis.position.map(round), allied: allied.position.map(round), alliedRouteFailures: stats(allied.playerId).routeFailures, alliedBeh: allied.currentBehaviour, alliedMounted: !!allied.vehicle },
+    };
+  },
+
   /** A landing craft: Wake's Daihatsus are split off their ships at load
    *  (`detachSpawnedCraft`); a bot at the helm drives the page's `Ship` on
    *  the level's landing-craft map (`bot-units.js waterNav`). The SAI sends

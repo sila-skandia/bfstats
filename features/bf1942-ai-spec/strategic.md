@@ -350,18 +350,33 @@ spawn loop places it (AI-38). The viewer:
   Armor (PAGE `botRespawnTick`); `onRespawn` forgets its senses, plan,
   route, obstacles and behaviour states. Its order is dropped at death
   (`botDied`).
-- a bot that makes no net progress toward its goal for 12 s while MoveTo
-  is active is redeployed to its flag's next spawn point
-  (`_updateObjectiveReadout`, PAGE `tickBots`; INVENTION).
+- a bot that makes no net progress toward its goal for 12 s under one order
+  while MoveTo is active is redeployed to its flag's next spawn point
+  (`_updateObjectiveReadout`, PAGE `tickBots`; INVENTION, AI-101).
 
 ## Capture
 
-PAGE `botCaptureTick`: a bot within a flag's radius (8 m fallback) of a flag
-its side does not hold, measured in 3D from the unit it controls (the hull
-when mounted: `ControlPoint::handleFrameUpdate`, AI-70), takes it after the
-point's `timeToGetControl` (8 s fallback), straight to its side; the timer
-is per bot, restarts when the bot's nearest such flag changes, and does not
-check that the bot is alive.
+`referee.captureTick` runs the control point's own law
+(`ControlPoint::handleFrameUpdate` 0x08283b00, AI-100) once a frame per flag,
+over every living player (the human included) whose controlled object (the
+hull when mounted) is within the flag's radius in 3D:
+
+- **Held**: a player of the owning side is on it and no enemy is: the
+  timers reset.
+- **Contested**: the owner's player and an enemy both on it: with
+  `loseControlWhenEnemyClose` (the default, and set on 341 of vanilla's 367
+  flags) the point runs down over `timeToLoseControl` to neutral; without it
+  the owner holds. Two enemy sides on a neutral point: nothing moves.
+- **Attacked**: one side alone on an owned point runs it down to neutral,
+  then, alone on the neutral point with at least `minNrToTakeControl`
+  players and nobody else getting it, takes it over `timeToGetControl`.
+- **Empty**: held; with `loseControlWhenNotClose` an owned point runs down.
+
+Where the scene carries no value the `ControlPointTemplate` ctor's stands
+(get 5 s, lose 5 s, lose-when-enemy-close on, minimum 1). The extractor
+carries only `timeToGetControl` and `unableToChangeTeam` so far, so vanilla's
+`timeToLoseControl 10` reads as 5. The human's own capture (`capture.js`)
+still runs the old per-player timer.
 
 ## Without strategic data
 

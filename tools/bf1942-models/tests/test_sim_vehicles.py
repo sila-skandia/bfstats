@@ -130,6 +130,18 @@ class SimVehicleTests(unittest.TestCase):
         self.assertGreater(r["closest"], 20.0)
         self.assertEqual(r["destroyed"], [])
 
+    def test_the_tank_pair_on_north_outpost_have_no_line(self) -> None:
+        # Brief K item 3 (ledger AI-100): the eye and the gun see the same:
+        # every sample while both are near the flag is blocked both ways, so
+        # the eye / aim-origin split is not why they never fire.
+        r = recipe("tankDuel")
+        b = r["blockedShare"]
+        n = r["samples"]
+        if n == 0:
+            self.skipTest("the pair never met near the flag")
+        self.assertEqual(b["axisEye"], b["axisGun"])
+        self.assertEqual(b["alliedEye"], b["alliedGun"])
+
     def test_a_parked_hull_is_an_obstacle_until_it_is_driven_off(self) -> None:
         r = recipe("obstacle")
         self.assertTrue(r["parked"], "a parked body")

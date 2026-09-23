@@ -9,7 +9,7 @@
 //                             seat requests; per bot: the respawn timer, the
 //                             order, `bot.tick`, the no-progress redeploy;
 //                             then the bots' rounds
-//   referee.captureTick       the per-bot capture law
+//   referee.captureTick       the control points' own law, per flag
 //   tickets, trace, samples   the runner's own bookkeeping
 //
 // The referee is the page's own (`viewer/bot-referee.js`, imported, not
@@ -261,11 +261,16 @@ export class Match {
                      pos: v2(bot.position) });
       },
       onCapture: (bot, flag, prevTeam) => {
-        stat(bot.playerId).captures++;
-        this.event({ type: 'capture', flag: flag.name, from: prevTeam ?? 0, to: bot.team, by: bot.playerId,
-                     alive: !this.world.armorOf(bot.playerId)?.destroyed,
+        if (bot) stat(bot.playerId).captures++;
+        this.event({ type: 'capture', flag: flag.name, from: prevTeam ?? 0, to: flag.team, by: bot?.playerId ?? null,
+                     alive: bot ? !this.world.armorOf(bot.playerId)?.destroyed : null,
                      // The unit he took it in (the page logs "in the Sherman").
-                     ...(bot.vehicle ? { veh: bot.vehicle.template ?? bot.vehicle.kind ?? null } : {}) });
+                     ...(bot?.vehicle ? { veh: bot.vehicle.template ?? bot.vehicle.kind ?? null } : {}) });
+      },
+      // `ControlPoint::lostControl`: the owner's point run down to neutral.
+      onNeutralise: (bot, flag, prevTeam) => {
+        this.event({ type: 'neutralise', flag: flag.name, from: prevTeam ?? 0, by: bot?.playerId ?? null,
+                     ...(bot?.vehicle ? { veh: bot.vehicle.template ?? bot.vehicle.kind ?? null } : {}) });
       },
       onMounted: (bot, cand, mount) => {
         this.pendingEvents.push({ type: 'mount', bot: bot.playerId, side: bot.team, vehicle: this.vehicleLabel(mount),
