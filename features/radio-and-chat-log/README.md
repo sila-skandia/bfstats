@@ -102,3 +102,5 @@ MINES, ...).
 | Player text chat (say all / say team input) | not built; `chat-log.js playerChatLine` has the format |
 | The headings under the radio buttons (`Radio/ShowRadioToolTip`) | off by default, as in the owner's profile (`game.setRadioToolTip 0`; the shipped default profile has 1). `game.setRadioToolTip 1` in the console turns them on |
 | The browser pane never delivers F-keys | test through `window.__comms.press('F4')` under `?shots` |
+| A tank kill printed `Hans is no more` | fixed 2026-09-24: a hull's crew dies to the attacker of the lethal hit (`GameServer::_giveDamage`, ledger AI-76), `killer [Sherman] victim`, the human, a bot, or the human killed in his own hull alike; the lines are `chat-log.js deathLines` |
+| A hull that burns out after a hit | `is no more`, as the engine: the critical burn damages with attacker -1 (`Armor::update` 0x0817322a) |
