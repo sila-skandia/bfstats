@@ -170,3 +170,98 @@ Tests: `tests/test_vehicle_instance.py` (the registry with the real World
 and a stub drive: one drive per hull, one integration a tick from the root
 seat, a gunner's word never reaching the drive, a held seat refusing, the
 swap keeping the drive, the last one out parking the hull).
+
+## Part 2: landed (2026-09-23)
+
+`map.html` went from 19,089 lines to 1,977: the loader, the renderer and
+scene setup, the frame loop (`frame`, ~420 lines), `buildHullDrive`, the
+bot and effect loaders, and the wiring below. The stylesheet is `map.css`.
+Each module is a factory, `createX(page)`, that returns one object. The
+module-level state it took with it is now fields on that object. Whatever
+it still needs from the page comes in through `page`, an object of getters
+(and setters for the few bindings a module writes) that the page builds at
+the call site. No module reads the page scope. Code moved verbatim: no new
+behaviour, and no function was rewritten on the way.
+
+| Module | Object | Lines | What it holds |
+|---|---|---|---|
+| `vehicle-instance.js` | `vehicles` | 344 | Part 1's registry |
+| `bot-referee.js` | `referee` | 779 | bot fire, damage, death and respawn, capture, seating, enemy tables; shared with `sim/match.mjs` |
+| `bot-units.js` | `botUnits` | 351 | the page's vehicle layer for the referee (candidates, nav, seats) |
+| `bot-visuals.js` | `botBodies` | 266 | the bots' bodies: pose pairs, gait rigs, interpolation |
+| `local-player.js` | `localPlayer` | 1684 | the human: seat, view, entry and exit, soldier, look, render interpolation |
+| `page-input.js` | `pageInput` | 1173 | keyboard, mouse and pointer lock, touch, key lock, free camera |
+| `page-console.js` | `pageConsole` | 322 | the console's page commands and the Esc menu |
+| `capture.js` | `flagCapture` | 515 | flags, capture, tickets |
+| `spawning.js` | `spawning` | 481 | spawn selection and the deploy flow |
+| `deploy-screen.js` | `deployScreen` | 513 | the deploy screen |
+| `scoreboard-screen.js` | `scoreboard` | 234 | the scoreboard |
+| `hud-feed.js` | `hudFeed` | 959 | what the HUD reads each frame (`hud.js` stays the renderer) |
+| `map-surfaces.js` | `mapSurfaces` | 1043 | minimap, full map, their sprites, ticket variables |
+| `level-load.js` | `level` | 2300 | the level: show, scene binding, sky, water, collider, terrain queries |
+| `hand-weapon.js` | `soldierKit` | 1923 | kits, arms rig, load, fire, reload, demolitions |
+| `seat-pose.js` | `seatPose` | 397 | the seated soldier |
+| `foot-body.js` | `footBodies` | 379 | the body on foot |
+| `soldier-view.js` | `soldierView` | 298 | the on-foot camera |
+| `page-audio.js` | `pageAudio` | 712 | the page's sound |
+| `vehicle-wrecks.js` | `wrecks` | 480 | wrecks |
+| `hull-bodies.js` | `hullBodies` | 757 | the hulls' physics bodies (adoption, parking) |
+| `vehicle-hits.js` | `vehicleHits` | 387 | rounds against hulls |
+| `net-room.js` | `room` | 469 | the room client, replicas, seat rows, error card |
+| `test-hooks.js` | `testHooks` | 1509 | the `?shots` headless hooks |
+
+The referee is one copy. `sim/match.mjs` builds it with
+`createBotReferee(this.refereeEnv())` and deleted its own copy. The page and
+the runner differ only in the `env` they pass it: `units` (`bot-units.js`
+against `SimVehicles`) plus hooks for stats, events and tickets. See
+`sim/README.md`. Two trace differences came from sharing it, and both are
+documented there:
+
+- a seat swap is now one mount event where the old copy logged a dismount
+  and a mount;
+- the redeploy check keeps the runner's `!bot.vehicle` guard.
+
+`mesh/nginx.conf` revalidates the viewer's top-level `*.js` and `map.css`,
+the same as the page. A deploy therefore never pairs a new `map.html` with
+cached old modules.
+
+Tests that pinned page wiring by reading `map.html` now read every page
+file through `tests/page_source.py` (`page_source()`, `file_defining(name)`,
+`function_body(name)`). The changed tests are `test_idle_vehicle`,
+`test_deploy_spots`, `test_hud_layout`, `test_swim` and `test_map_entry`.
+Their regexes now also accept the `obj.` prefix a moved name carries. No
+assertion was loosened beyond that.
+
+Verified live on the final page (El Alamein, 8 bots,
+`?shots&noaudio&botDebug`, the worktree's own server). The page loads with
+no uncaught error. Deploy, walk and fire, bot mount, and the HUD's 39
+variables all work.
+
+- Case 1: bot_0 drives a Sherman and the human takes the Browning. It is
+  one instance with both seats (`TrackedVehicle`). Over 120 frames of
+  driving, the camera-to-hull distance varies by 0.02 m. The Browning fires
+  20 rounds. Exit puts the soldier 2.5 m from the hull's true position.
+- Case 2: the human drives a Sherman at 9.5 m/s with bot_2 in the gunner
+  seat. The seat map reads `{Sherman: local, shermanBrowning_PCO1: bot_2}`.
+- Case 3: the human swaps from the M3A1's driver seat to its Browning at
+  5.5 m/s. The largest per-frame step after the swap is 0.246 m, against
+  0.234 m while driving. The hull coasts on (the released controls), and
+  there is no jump.
+- The recipes:
+  - A bot Sherman kills a soldier 40 m ahead within 75 frames.
+  - A bot Spitfire takes off and holds about 70 m AGL.
+  - Two squads of four placed 35 m apart trade five kills and five
+    respawns in 1,500 frames.
+
+Left:
+
+- `page` is the modules' interface, but a wide one: the factories take
+  9 to 52 of the page's bindings through it (`level` the most). The next
+  step is narrowing each one to the handful it uses, one module at
+  a time. The split of files where two subsystems share one (`ground.js`
+  wheels, tracks and suspension first) is also still to do.
+- The frame loop is still one 420-line function in `map.html`.
+- Still open from Part 1: the bot gunner's aim gain (it misses at 40 m),
+  and the hull rising ~0.6 m after adoption.
+- Found here, not fixed: the bot vehicle-candidate cache and the nav maps
+  are not reset on a level switch (the same on main).
