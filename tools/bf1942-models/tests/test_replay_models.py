@@ -40,6 +40,7 @@ HARNESS = Path(__file__).resolve().parent / "replay_harness.mjs"
 MODULES = {
     "replay.js": VIEWER / "replay.js",
     "flight.js": VIEWER / "flight.js",
+    "vehicle-camera.js": VIEWER / "vehicle-camera.js",
     "gait-select.js": VIEWER / "gait-select.js",
     "soldier.js": VIEWER / "soldier.js",
     "spawn-safety.js": VIEWER / "spawn-safety.js",

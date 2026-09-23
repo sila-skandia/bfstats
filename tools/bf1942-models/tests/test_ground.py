@@ -48,6 +48,7 @@ HARNESS = Path(__file__).resolve().parent / "ground_harness.mjs"
 MODULES = {
     "ground.js": VIEWER / "ground.js",
     "flight.js": VIEWER / "flight.js",
+    "vehicle-camera.js": VIEWER / "vehicle-camera.js",
     "physics.js": VIEWER / "physics.js",
     "parachute.js": VIEWER / "parachute.js",
     "vendor/loaders/GLTFLoader.js": VIEWER / "vendor" / "loaders" / "GLTFLoader.js",
