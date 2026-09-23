@@ -222,7 +222,7 @@ class IdleVehicleWiringTests(unittest.TestCase):
         # And no longer spells out its own three-key copy, which is how it
         # came to miss `tracerMesh` -- 15 streak templates drawing across
         # Battle of Britain at load, measured, 0 after.
-        self.assertIn("idleFirePose(currentRoot);", self.source)
+        self.assertRegex(self.source, r"idleFirePose\((?:\w+\.)*currentRoot\);")
         self.assertNotIn("obj.userData?.projectileTrail) obj.visible = false;",
                          self.source)
 
