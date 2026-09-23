@@ -65,9 +65,11 @@ export function seedMathRandom(seed) {
 export async function loadViewerModules(viewer) {
   installModuleHooks(viewer);
   const imp = (name) => import(pathToFileURL(path.join(viewer, name)).href);
-  const [world, bot, nav, strategic, strength, armor, collision, behaviours, vehicle, three, referee] = await Promise.all([
+  const [world, bot, nav, strategic, strength, armor, heightfield, staticIndex, drivable, collider,
+    behaviours, vehicle, three, referee] = await Promise.all([
     imp('world.js'), imp('bot.js'), imp('nav-grid.js'), imp('strategic.js'), imp('bot-strength.js'),
-    imp('armor.js'), imp('collision.js'), imp('bot-behaviours.js'), imp('bot-vehicle.js'),
+    imp('armor.js'), imp('heightfield.js'), imp('static-index.js'), imp('drivable-mask.js'),
+    imp('world-collider.js'), imp('bot-behaviours.js'), imp('bot-vehicle.js'),
     imp('vendor/three.module.js'), imp('bot-referee.js'),
   ]);
   return {
@@ -79,9 +81,9 @@ export async function loadViewerModules(viewer) {
     parseDoctrineSpec: strategic.parseDoctrineSpec,
     EnemyStrengthTables: strength.EnemyStrengthTables,
     Armor: armor.Armor,
-    Heightfield: collision.Heightfield, buildHeightfield: collision.buildHeightfield,
-    buildCollisionIndex: collision.buildCollisionIndex, buildDrivableMask: collision.buildDrivableMask,
-    WorldCollider: collision.WorldCollider,
+    Heightfield: heightfield.Heightfield, buildHeightfield: heightfield.buildHeightfield,
+    buildCollisionIndex: staticIndex.buildCollisionIndex, buildDrivableMask: drivable.buildDrivableMask,
+    WorldCollider: collider.WorldCollider,
     decleiningSlope: behaviours.decleiningSlope,
     TANK: vehicle.TANK,
     // The page's own bot referee (rounds, damage, respawn, capture, seating).

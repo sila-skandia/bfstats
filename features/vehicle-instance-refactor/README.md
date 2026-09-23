@@ -615,10 +615,9 @@ landed:
 - `viewer/vehicle-hits.js` imported `findVehicle` / `findVehicles` from
   `flight.js`. Done: it imports `vehicle-discovery.js`, and `flight.js` is
   deleted.
-- `sim/env.mjs` loads `collision.js` as one namespace. The fix is to load
+- `sim/env.mjs` loaded `collision.js` as one namespace. Done: it loads
   `heightfield.js`, `static-index.js`, `drivable-mask.js` and
-  `world-collider.js`, then delete `collision.js`. Pending the runner work
-  (Brief I) that owns `sim/`.
+  `world-collider.js`, and `collision.js` is deleted.
 
 `physics.js` and `seats.js` are index modules of the same kind, and this round
 did not touch them.
