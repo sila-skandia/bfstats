@@ -37,7 +37,7 @@ _MODULE_NAMES = [
     "fall-damage",
     "body-world", "body-statics", "vehicle-bodies", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact",
-    "body-ground", "body-friction", "crash-damage", "effects-core",
+    "body-ground", "body-friction", "crash-damage", "effects-core", "projectile-damage",
     "bomb-release", "torpedo-run",
     # bot.js's own imports.
     "deviation", "nav-grid",
