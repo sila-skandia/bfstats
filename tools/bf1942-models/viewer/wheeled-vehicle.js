@@ -1,6 +1,11 @@
-// Driving a Refractor land vehicle that is already standing in an extracted map.
+// Driving a Refractor wheeled land vehicle that is already standing in an
+// extracted map: `GroundVehicle`, the wheels' owner. (Was `ground.js`; the land
+// drive is now one module per owner: this file the wheels, `tracked-vehicle.js`
+// the tracks, `suspension.js` the springs, `ground-contact.js` the tyre's
+// contact, `ground-engine.js` the engine and `ground-specs.js` the tables.)
 //
-// Same seam as `flight.js`, on purpose and to the letter:
+// Same seam as the aircraft's (`vehicle-base.js`, `aircraft.js`), on purpose
+// and to the letter:
 //
 //   input source  ->  VehicleState  ->  presentation (rig, camera, audio)
 //
@@ -27,27 +32,19 @@
 // replaceable without anything outside noticing.
 
 import * as THREE from 'three';
-import { Vehicle } from './flight.js';
+import { Vehicle } from './vehicle-base.js';
 import { GRAVITY } from './physics.js';
 import { WILLYS } from './ground-specs.js';
 import {
   DECK_STEP_UP, DECK_WALL_STEP, DECK_FLOOR_COS, ENGINE_TICK_HZ,
   DEFAULT_MATERIAL_FRICTION, WHEEL_MATERIAL_FRICTION, coulombCaps, coulombClamp,
-  SPRING_AXIS_Y, SPRING_GRAVITY_SCALE, SPRING_AXIS_FLOOR, staticHold,
-  hullContactFriction, Wheel, probeAlongAxis, MAX_OVERRUN, surfaceNormalAt,
-  intoContactPlane,
+  staticHold, hullContactFriction, surfaceNormalAt, intoContactPlane,
 } from './ground-contact.js';
+import {
+  SPRING_AXIS_Y, SPRING_GRAVITY_SCALE, SPRING_AXIS_FLOOR, Wheel, probeAlongAxis,
+  MAX_OVERRUN,
+} from './suspension.js';
 import { clamp, EngineState } from './ground-engine.js';
-
-export { WILLYS, DEFAULT_MATERIAL_FRICTION };
-export { TANK } from './ground-specs.js';
-export { TrackedVehicle } from './tracked-vehicle.js';
-export {
-  ENGINE_TYPES, ENGINE_BIT_THRUST, ENGINE_BIT_LOAD_CLAMP, ENGINE_BIT_DIFFERENTIAL,
-  engineTypeBits, engineRatio, gearLadder, engineTorqueFraction, differentialRPM,
-  currentDifferentialRPM, engineGripTarget, ENGINE_REV_CEILING, ENGINE_REV_FLOOR,
-  EngineState,
-} from './ground-engine.js';
 
 // Same body frame the flight model measured off the extracted scenes: -Z
 // forward, +Y up, +X starboard. The Willy agrees — its front wheels sit at
@@ -119,7 +116,7 @@ export class GroundVehicle extends Vehicle {
      * solver has resolved them and emptied at the top of every body tick.
      *
      * Declaring it is the opt-in: a drive model with no tyre mean to dilute
-     * (`flight.js`) never gets one. `hullContactFriction` is what reads it.
+     * (`aircraft.js`) never gets one. `hullContactFriction` is what reads it.
      */
     this.hullContacts = [];
 

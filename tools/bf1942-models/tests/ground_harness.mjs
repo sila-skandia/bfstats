@@ -1,4 +1,5 @@
-// Drives `viewer/ground.js` outside a browser and prints one JSON blob.
+// Drives `viewer/wheeled-vehicle.js` (and `tracked-vehicle.js`) outside a
+// browser and prints one JSON blob.
 //
 // Same shape as `flight_harness.mjs`, and it borrows that harness's one trick:
 // `tests/test_ground.py` stands the vendored three.js up as a package and
@@ -17,12 +18,14 @@
 // for the drop. No collider, no scene, no GL.
 
 import * as THREE from 'three';
+import { GroundVehicle } from './wheeled-vehicle.js';
+import { TrackedVehicle } from './tracked-vehicle.js';
+import { WILLYS, TANK } from './ground-specs.js';
 import {
-  GroundVehicle, WILLYS, TrackedVehicle, TANK,
   engineRatio, gearLadder, engineTorqueFraction, differentialRPM,
   currentDifferentialRPM, engineGripTarget, engineTypeBits, ENGINE_TYPES,
   EngineState, ENGINE_REV_CEILING, ENGINE_REV_FLOOR,
-} from './ground.js';
+} from './ground-engine.js';
 import { GRAVITY } from './physics.js';
 
 const DEG = 180 / Math.PI;

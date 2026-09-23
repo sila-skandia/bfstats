@@ -1,4 +1,5 @@
-"""`viewer/ground.js` under node: a Willys driven, not a Willys read.
+"""`viewer/wheeled-vehicle.js` (and `tracked-vehicle.js`) under node: a Willys
+driven, not a Willys read.
 
 Same pattern as `test_flight.py` — one node run, many assertions, the vendored
 three.js stood up as a package so the viewer's modules import byte-for-byte.
@@ -42,11 +43,13 @@ ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).resolve().parent / "ground_harness.mjs"
 
-# The modules under their own names — `ground.js` imports `./flight.js` and
-# `./physics.js`, so unlike `test_flight.py` nothing is renamed to `.mjs`;
+# The modules under their own names — `wheeled-vehicle.js` imports
+# `./vehicle-base.js` and `./physics.js`, so unlike `test_flight.py` nothing is
+# renamed to `.mjs`;
 # the work directory's `{"type":"module"}` makes plain `.js` importable.
 MODULES = {
-    "ground.js": VIEWER / "ground.js",
+    "wheeled-vehicle.js": VIEWER / "wheeled-vehicle.js",
+    "suspension.js": VIEWER / "suspension.js",
     "ground-specs.js": VIEWER / "ground-specs.js",
     "ground-contact.js": VIEWER / "ground-contact.js",
     "ground-engine.js": VIEWER / "ground-engine.js",
