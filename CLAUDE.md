@@ -193,8 +193,21 @@ database.
   without asking. Run the extraction scripts, upload through the filebrowser/API pod,
   verify what landed, and report once at the end. New assets a feature needs are part of
   delivering that feature — do not finish with the extraction step handed back as a
-  suggestion. Scaling deployments, applying manifests, and deleting or overwriting
-  existing volume content are still confirm-first.
+  suggestion. Replacing files under the mesh asset tree (`/mnt/assets/mesh/{models,maps}`)
+  with re-baked ones is part of this and needs no confirmation either. Scaling
+  deployments, applying manifests, and deleting volume content are still confirm-first.
+  - **A fix to the exporter is not done until every tree it touches is re-baked and
+    live.** `bf42/gltf.py`, `bf42/assemble.py`, `bf42/rs.py` and the `extract_*.py`
+    scripts feed four trees: `viewer/models`, `viewer/models/mods/<mod>`, the level bakes
+    under `viewer/maps` and `viewer/maps/mods/<mod>` (placed vehicles and statics are baked
+    into every `scene.glb`), and each tree's `_shared/effects.glb`. Measure the blast
+    radius (parse the glb JSON chunks for the material or extras field the fix changes),
+    re-extract every affected file in every tree, publish with
+    `scripts/publish-mesh-delta.py`, and confirm the live sizes. "The models are fixed, the
+    levels still carry the bug, here is the command" is the failure mode — the owner has
+    said, twice, that running that command is the job, not a hand-off (2026-09-15,
+    2026-09-23). Budget for it: a full level pass is ~5 min vanilla, ~15 min for the two
+    expansion packs, ~1.5 h for EoD; the publisher moves ~5 MB/s.
 
 ### Server and player name rendering
 

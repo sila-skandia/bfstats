@@ -160,16 +160,19 @@ export const PARACHUTE_VIEW_CYCLE = Object.freeze([
 ]);
 
 /**
- * The same cycle, offered **on foot** under `?foot3p=1`.
+ * The same cycle, offered **on foot** under the server's soldier switch
+ * (`server-settings.js` `soldierExternalViews`, ON by default; `?foot3p=0`
+ * or the side panel turns it off).
  *
  * **A deliberate departure from CAM-1, not an engine reading**, and separate
  * from `PARACHUTE_VIEW_CYCLE` so the two can never be confused: the engine
  * authorises exactly one view mode for a soldier and `BFSoldier::nextCamera` is
- * an empty function, so pressing C while standing does nothing in retail and
- * does nothing here by default. The flag exists because the page now draws the
- * soldier's own body from the game's own clips and there would otherwise be no
- * way to look at it outside a canopy or a death cam -- it is an inspection
- * view, the same kind of thing `?dev=1` is.
+ * an empty function, so pressing C while standing does nothing in retail.
+ * The owner wants it to work the way it does from a seat, so the page offers
+ * it under a switch labelled as its own -- retail's four `game.server*`
+ * camera words have no soldier one -- and the switch off is the engine's own
+ * behaviour. The body it frames is the soldier's own pose rig, played from the
+ * game's own clips.
  */
 export const FOOT_VIEW_CYCLE = PARACHUTE_VIEW_CYCLE;
 

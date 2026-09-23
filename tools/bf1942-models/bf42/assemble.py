@@ -2508,6 +2508,12 @@ class Assembler:
             extras["cameraView"] = {"control": control or "vehicle"}
             if template.camera_view_modes:
                 extras["cameraView"]["cvm"] = dict(template.camera_view_modes)
+            if template.outside_hud_offset is not None:
+                # The nose cam's stand-off from this Camera, Z-mirrored into
+                # glTF like every other position the exporter writes, so the
+                # viewer adds it to the node's world pose as it is.
+                ox, oy, oz = template.outside_hud_offset
+                extras["cameraView"]["outsideHudOffset"] = [ox, oy, -oz]
             report.cameras.append(f"[{control or 'vehicle'}] {template.name}")
         if is_placement:
             seat = {"control": control or "vehicle"}

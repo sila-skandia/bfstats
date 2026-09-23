@@ -1,5 +1,14 @@
 # BF1942 Pathfinding .raw File Format — Decoded
 
+> **Correction, 2026-09-23** (`bot-movement-and-pathfinding.md` §1, ledger
+> AI-26). Each "row record" below is a **64 x 64-pixel block** of one-bit
+> pixels (`CellMap`'s `MemoryPool` cell is `4 << 7` = 512 bytes), and a
+> level-0 pixel is **one metre** (`getLevelPixelSize(0) = 1`). The 32 x 32
+> records of a 2048 m level are therefore 32 x 32 blocks of 64 m, not "32
+> cells of 64 m"; the world-units-per-cell table at the end of this document
+> is wrong by that factor. The special cells `0` and `0xffffffff` are the
+> all-free and all-blocked blocks. Pixel semantics: 1 = blocked, 0 = free.
+
 **Date:** 2026-09-22
 **Binary:** `bf1942_lnxded.static` (sha256 `60c9452d…cd3699` — interchangeable with corpus copy)
 **Functions analyzed:**
