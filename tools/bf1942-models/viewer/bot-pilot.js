@@ -5,7 +5,8 @@
 // methods here.
 
 import { playerPosition } from './bot-sense.js';
-import { aimAtDirection, towardsPoint, attackRunStep, roundMiss, insideBattleZone, PLANE, PLANE_FIRE } from './bot-vehicle-air.js';
+import { GRAVITY } from './point-body.js';
+import { aimAtDirection, towardsPoint, attackRunStep, planeAimFor, insideBattleZone, PLANE, PLANE_FIRE } from './bot-vehicle-air.js';
 
 /**
  * `PlaneMoveTo` (`EntryPlaneMoveTo::execute` -> `PlaneControl::towardsPoint`):
@@ -56,22 +57,34 @@ export function execPlaneAttack(bot, action, now) {
   const gy = collider?.surfaceHeight?.(position[0], position[2]);
   const tv = p?.vehicle?.state?.velocity ?? p?.soldier?.body?.body?.velocity;
   const targetVel = tv ? [tv.x, tv.y, tv.z] : [0, 0, 0];
-  const eye = bot._aimOrigin();
+  // The Aimer's origin is the chosen weapon's own FireArms (a bomb leaves
+  // the bomb rack, not the gun's muzzle).
+  const gun = bot._gunBallistics();
+  const ge = gun.node?.matrixWorld?.elements;
+  const eye = ge ? [ge[12], ge[13], ge[14]] : bot._aimOrigin();
   // `BAPConObjectLineOfFire` 0x08551890: the memory record of the target
   // is not lost (its +0x14 byte), i.e. the senses see it now. No ray here.
   const lineOfFire = bot.senses.memory.get(action.targetId)?.seen === true;
-  const gun = bot._gunBallistics();
   const state = bot._attackState ?? (bot._attackState = { phase: 'approach', breakFrom: null });
   const forward = bot._unitForward3();
+  // `EntryPlaneAimAt` 0x0861f610: the Aimer the aim and the trigger's
+  // precision test share. Against a ground target the plane's own velocity
+  // is left out of it and its speed added to the round's (`planeAimFor`).
+  const weapon = bot.weapons?.[bot.weaponIndex] ?? bot.weapons?.[0] ?? null;
+  const air = bot._unitInfo(action.targetId)?.air === true || p?.kind === 'air';
+  const rel = [pos[0] - eye[0], pos[1] + 1.0 - eye[1], pos[2] - eye[2]];
+  const aimer = planeAimFor({ rel, targetVel, velocity, roundSpeed: gun.speed, gravity: gun.gravity,
+                              air, indirect: !!weapon?.indirect, forward });
   const step = attackRunStep(state, {
     position, forward, velocity, target: [pos[0], pos[1] + 1.0, pos[2]], targetVel,
     maxRange: action.maxRange, turnRadius: m.turnRadius ?? 25, lineOfFire, mode: action.mode,
-    precision: action.radius, muzzle: eye, aimDir: bot.aimRay().dir, roundSpeed: gun.speed, gravity: gun.gravity,
+    precision: action.radius, muzzle: eye, aimDir: bot.aimRay().dir, roundSpeed: aimer.speed, gravity: gun.gravity,
+    relVel: aimer.relVel, burst: weapon ? !!weapon.burst : true,
   });
   bot._attackPhase = step.phase;
   bot._attackDbg = { phase: step.phase, dist: Math.round(step.dist), cosFront: +(forward[0] * step.dir[0] + forward[1] * step.dir[1] + forward[2] * step.dir[2]).toFixed(3),
                       inFront: step.inFront, los: lineOfFire, miss: +step.miss.toFixed(2), precision: action.radius, fire: step.fire,
-                      agl: Number.isFinite(gy) ? Math.round(position[1] - gy) : null };
+                      agl: Number.isFinite(gy) ? Math.round(position[1] - gy) : null, air, floor: aimer.throttleFloor };
   // `If(InsideBattleZone(200), ..., MoveTo3d(map centre, 200 m))`: the
   // battle zone is the world map less a margin (0x0854e670), not the
   // ordered area; near an edge the plane heads for the map's centre.
@@ -82,18 +95,16 @@ export function execPlaneAttack(bot, action, now) {
     return false;
   }
   if (step.phase === 'attack') {
-    // `EntryPlaneAimAt` 0x0861f610: the Aimer's firing direction (the lead
-    // in the relative velocity, the drop taken out), flown through
+    // `EntryPlaneAimAt` 0x0861f610: the Aimer's firing direction
+    // (`planeAimFor`: the lead, the drop taken out, levelled for an
+    // indirect weapon) and its throttle floor, flown through
     // `aimAtDirection` 0x08629cf0 -> `towardsDirection` 0x08629fa0.
-    const rel = [pos[0] - eye[0], pos[1] + 1.0 - eye[1], pos[2] - eye[2]];
-    const relVel = [targetVel[0] - velocity[0], targetVel[1] - velocity[1], targetVel[2] - velocity[2]];
-    const { aim } = roundMiss({ rel, relVel, speed: gun.speed, gravity: gun.gravity });
     const w = st.angularVelocity;
-      const r = aimAtDirection({
-      orientation: st.orientation, velocity, angularVelocity: w ? [w.x, w.y, w.z] : [0, 0, 0], dir: aim,
+    const r = aimAtDirection({
+      orientation: st.orientation, velocity, angularVelocity: w ? [w.x, w.y, w.z] : [0, 0, 0], dir: aimer.dir,
       altitudeAlong: (off) => bot._altitudeAlong(position, off), altitude: bot._altitudeAlong(position, [0, 0, 0]),
       clearance: action.mode === 1 ? PLANE_FIRE.aimClearanceVehicle : PLANE_FIRE.aimClearance,
-      airborne: !!bot._airborne, throttleFloor: 1, maxSpeed: m.maxSpeed ?? 100,
+      airborne: !!bot._airborne, throttleFloor: aimer.throttleFloor, maxSpeed: m.maxSpeed ?? 100,
     });
     bot._airborne = r.airborne;
     const cur = m.drive?.input?.('c_PIThrottle') ?? 1;
@@ -108,15 +119,20 @@ export function execPlaneAttack(bot, action, now) {
   if (step.phase === 'break') {
     // `MoveTo3dDirection`: 200 m along the heading, level.
     const f = bot._unitForward3();
-    const ahead = [position[0] + f[0] * PLANE_FIRE.breakDistance, position[1] + Math.max(0, f[1]) * PLANE_FIRE.breakDistance,
+    // The point's height is the literal 100.0 written into its y
+    // (0x0859bda5) and the move's clearance the 100.0 pushed at 0x0859beab;
+    // how its x / z are solved (a line-circle construction around
+    // 0x0859bc90) is not ported: 200 m along the heading (INVENTION).
+    const ahead = [position[0] + f[0] * PLANE_FIRE.breakDistance, PLANE_FIRE.breakHeight,
                    position[2] + f[2] * PLANE_FIRE.breakDistance];
-    bot._execPlaneMoveTo(ahead, null, PLANE_FIRE.clearance);   // the MoveTo3dDirection's clearance: INVENTION
+    bot._execPlaneMoveTo(ahead, null, PLANE_FIRE.breakClearance);
     return false;
   }
-  // `MoveTo3dObject(target, radius, maxSpeed, 0.5 maxSpeed, 50 m)`: the
-  // target's own position with a 50 m clearance (+0x44), which
-  // `towardsPoint` turns into the lift near it and the pull-up probe.
-  bot._execPlaneMoveTo([pos[0], pos[1], pos[2]], null, PLANE_FIRE.clearance);
+  // `MoveTo3dObject(target, radius, maxSpeed, maxSpeed, 100 m)`: the
+  // target's own position with the 100.0 clearance (+0x44) pushed at
+  // 0x0859bfbb, which `towardsPoint` turns into the lift near it and the
+  // pull-up probe.
+  bot._execPlaneMoveTo([pos[0], pos[1], pos[2]], null, PLANE_FIRE.approachClearance);
   return false;
 }
 
@@ -148,14 +164,28 @@ export function worldMapSize(bot) {
   return Array.isArray(s) && s.length >= 2 ? s : [ex?.worldSize ?? 2048, ex?.worldSize ?? 2048];
 }
 
-/** The mounted gun's muzzle speed and gravity (`Aimer` +0xc / +0x8), from
- *  the first gun group's projectile; 600 m/s and none until it loads. */
+/** The FireArms group that fires the chosen weapon: the one whose input is
+ *  the AI template's `weaponFire` (`SpitfireGuns` on c_PIFire, the
+ *  `SpitfireBombDummy` on c_PIAltFire), else the first. */
+export function weaponGroup(bot) {
+  const groups = bot.vehicle?.groups?.length ? bot.vehicle.groups : (bot.vehicle?.manned ?? []);
+  const w = bot.weapons?.[bot.weaponIndex] ?? bot.weapons?.[0];
+  const input = w?.weaponFire ? `c_${w.weaponFire}` : null;
+  return (input && groups.find(g => (g.stats?.input ?? g.input) === input)) ?? groups[0] ?? null;
+}
+
+/** The chosen weapon's exit velocity and gravity (`Aimer` +0xc / +0x8,
+ *  `Weapon::getExitVelocity` / `getGravityModifier` x the world's gravity),
+ *  from its FireArms group's projectile; 600 m/s and none until it loads.
+ *  A bomb's `velocity 0` is kept (the plane's own speed is added by
+ *  `planeAimFor`), and the gravity is the engine's 14.73, not 9.81. */
 export function gunBallistics(bot) {
-  const g = bot.vehicle?.groups?.[0] ?? bot.vehicle?.manned?.[0] ?? null;
+  const g = weaponGroup(bot);
   const st = g?.stats ?? {};
-  const speed = st.velocity ?? st.projectile?.velocity ?? bot.weaponData?.[bot.weaponAi?.name]?.velocity ?? 600;
+  const v = st.velocity ?? st.projectile?.velocity;
+  const speed = Number.isFinite(v) ? v : (bot.weaponData?.[bot.weaponAi?.name]?.velocity ?? 600);
   // `gravityModifier` as the extractor names it (`projectile.gravity`); a
   // tracer round's is 0, a shell's defaults to 1 (gunfire.js).
   const gm = Number.isFinite(st.projectile?.gravity) ? st.projectile.gravity : (st.projectile?.kind === 'shell' ? 1 : 0);
-  return { speed, gravity: -9.81 * gm };
+  return { speed, gravity: GRAVITY * gm, node: g?.node ?? null };
 }
