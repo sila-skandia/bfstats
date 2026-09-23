@@ -643,3 +643,15 @@ Do:
 
 Acceptance: every tree re-baked and live, the three live checks, the
 runner pin, ledger and KNOBS rows, PARITY_STATUS_2026-09-23.md updated.
+
+Done 2026-09-24 (ledger AI-115, AI-116; PARITY_STATUS item 7). 1: every
+setting the law reads is exported (setters ConsoleClass635..650, `makeScript`
+0x08284930), null where the level keeps the ctor's; a full extraction of any
+level with `AI.con` had been dying on `info.statics` and is fixed; every tree
+re-baked and published. 2: `capture.js` reads the flag's state and the law
+takes it; the three live checks pass (20 s frozen, taken at 10.5 s, run to
+neutral at 10.5 s). 3: the tank branch of `createPlanInternal` ported
+(`MoveToObjectFinding` beyond mid while S fails); runner pin
+`test_the_tank_pair_close_until_one_can_fire`. Open: the firing point's
+attack-portal case, and the sense rays' soldier heights on a hull (live the
+pair close 158 -> 45 m and hold without a shot).
