@@ -213,6 +213,53 @@ const recipes = {
     };
   },
 
+  /** Brief K item 1: a bot takes a fixed gun by itself. An Allied bot stands
+   *  30 m from the free AA gun by the airfield (the only unit within the
+   *  Change radius); an Axis bot's Bf 109 is held 40 m up, 80 m out,
+   *  crossing at 50 m/s, where the Allied bot sees it (`spottedAt`). Nothing seats him:
+   *  his own Change weighs the gun (`basicTemp` 9 plus its fire strength)
+   *  against staying on foot. Before the fix the gun scored its strategic
+   *  strength 0 and its door, inside its own footprint, failed the map
+   *  test, so no bot ever took one. */
+  async takeAA() {
+    const match = await start('el_alamein');
+    const gunner = match.bots.find(o => o.team === 2);
+    const pilot = match.bots.find(o => o.team === 1);
+    const gun = match.stage.units.candidates().find(c => c.template === 'AA_Allies' && c.isRoot && !c.occupiedBy
+      && Math.hypot(c.pos[0] - 1575, c.pos[2] + 679) < 5);
+    if (!gun) throw new Error('no AA_Allies_1');
+    const plane = mount(match, pilot, 'bf109');
+    freezeOthers(match, [gunner.playerId]);
+    pilot.tick = () => {};
+    const drive = pilot.vehicle.drive;
+    const [gx, gy, gz] = gun.pos;
+    const hold = () => {
+      const t = match.clock;
+      const s = drive.state;
+      s.position.set(gx - 100 + ((t * 50) % 200), gy + 40, gz - 80);
+      s.velocity.set(50, 0, 0);
+    };
+    hold();
+    // The gunner 30 m from the gun, facing the plane's pass.
+    const ax = gx - 30, az = gz;
+    const ay = match.groundAt(ax, az);
+    match.world.player(gunner.playerId).soldier.spawn(ax, ay, az, Math.atan2(30, -80));
+    gunner.setPosition(ax, ay, az);
+    gunner.route = null;
+    gunner.onRespawn();
+    let best = null, took = null, spottedAt = null;
+    run(match, 30, () => {
+      hold();
+      const r = gunner._changeResult;
+      if (r?.best?.cand && !best) best = { template: r.best.cand.template, t: round(match.clock), u: round(r.urgency ?? 0) };
+      if (gunner.vehicle && !took) took = { template: gunner.vehicle.template, seat: gunner.vehicle.seatId, t: round(match.clock) };
+      if (spottedAt === null && gunner.senses.spottedEnemies().some(m => m.id === pilot.playerId)) spottedAt = round(match.clock);
+      return !!took;
+    });
+    return { gunDist: round(Math.hypot(ax - gx, az - gz)), plane: plane.template, best, took, spottedAt,
+             value: gun.value, noPathfinding: gun.noPathfinding };
+  },
+
   /** A landing craft: Wake's Daihatsus are split off their ships at load
    *  (`detachSpawnedCraft`); a bot at the helm drives the page's `Ship` on
    *  the level's landing-craft map (`bot-units.js waterNav`). The SAI sends
