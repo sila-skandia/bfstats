@@ -24,6 +24,14 @@
 // (`LocalMap::getLevelPixelSize` 0x085ff170), so the lowest level of a
 // `Boat2 ... 2 5` map is a 4 m pixel. `x` is world x and `z` the engine's z
 // (the glTF frame's -z): the nav map's rows.
+//
+// The same folder carries each search type's strategic map (`<type>.raw`,
+// `<type>Info.raw`; `strategic-map.js`, ledger AI-117), which `loadMaps`
+// loads after the search maps (`AIPathfinding::loadMaps` 0x0847c580), and
+// the index lists the level's search types in `ai.addSearchType` order, the
+// list a unit's `aiTemplatePlugIn.vehicleNumber` indexes (`searchTypeMaps`).
+
+import { strategicMapFromBytes } from './strategic-map.js';
 
 /**
  * Decode one baked search-map level.
@@ -145,18 +153,30 @@ export async function loadSearchMaps(base, { fetchImpl = globalThis.fetch, suffi
     if (!r.ok) return null;
     index = await r.json();
   } catch { return null; }
-  const rows = (index?.maps ?? []).filter(row => row.loaded && row.file);
-  const maps = await Promise.all(rows.map(async row => {
+  const bytes = async file => {
+    const r = await fetchImpl(`${base}/pathfinding/${file}${suffix}`);
+    return r.ok ? new Uint8Array(await r.arrayBuffer()) : null;
+  };
+  const rows = (index?.maps ?? []).map((row, i) => [row, i]).filter(([row]) => row.loaded && row.file);
+  const maps = await Promise.all(rows.map(async ([row, i]) => {
     try {
-      const r = await fetchImpl(`${base}/pathfinding/${row.file}${suffix}`);
-      if (!r.ok) return null;
-      const map = decodeSearchMap(new Uint8Array(await r.arrayBuffer()));
+      const data = await bytes(row.file);
+      if (!data) return null;
+      const map = decodeSearchMap(data);
       map.params = row;
+      map.mapIndex = i;
       return map;
     } catch { return null; }
   }));
+  const strategic = await Promise.all((index?.strategic ?? []).filter(row => row.loaded && row.file)
+    .map(async row => {
+      try {
+        const [cells, info] = await Promise.all([bytes(row.file), bytes(row.infoFile)]);
+        return cells && info ? strategicMapFromBytes(cells, info, row) : null;
+      } catch { return null; }
+    }));
   const loaded = maps.filter(Boolean);
-  return loaded.length ? { maps: loaded, index } : null;
+  return loaded.length ? { maps: loaded, index, strategic: strategic.filter(Boolean) } : null;
 }
 
 /** The same from a directory on disk (the headless runner): `readFile(path)`
@@ -166,13 +186,55 @@ export function readSearchMaps(dir, readFile) {
   if (!text) return null;
   const index = JSON.parse(new TextDecoder().decode(text));
   const maps = [];
-  for (const row of index?.maps ?? []) {
-    if (!row.loaded || !row.file) continue;
+  (index?.maps ?? []).forEach((row, i) => {
+    if (!row.loaded || !row.file) return;
     const bytes = readFile(`${dir}/pathfinding/${row.file}`);
-    if (!bytes) continue;
+    if (!bytes) return;
     const map = decodeSearchMap(bytes);
     map.params = row;
+    map.mapIndex = i;
     maps.push(map);
+  });
+  const strategic = [];
+  for (const row of index?.strategic ?? []) {
+    if (!row.loaded || !row.file) continue;
+    const cells = readFile(`${dir}/pathfinding/${row.file}`);
+    const info = readFile(`${dir}/pathfinding/${row.infoFile}`);
+    if (cells && info) strategic.push(strategicMapFromBytes(cells, info, row));
   }
-  return maps.length ? { maps, index } : null;
+  return maps.length ? { maps, index, strategic } : null;
+}
+
+/**
+ * The strategic map of a search map (by its index in the level's
+ * `ai.addSearchMap` list) and search level: the one `loadSearchTypes`
+ * loaded for that (map, level) pair, else the first on the map; null when
+ * the level ships none.
+ */
+export function strategicFor(searchMaps, mapIndex, level = null) {
+  const list = searchMaps?.strategic ?? [];
+  const on = list.filter(s => s.params?.map === mapIndex);
+  return on.find(s => s.params?.level === level) ?? on[0] ?? null;
+}
+
+/**
+ * The maps of search type `vehicleNumber` (`aiTemplatePlugIn.vehicleNumber`,
+ * `AITemplateMobile` +4, an index into the level's kept `ai.addSearchType`
+ * list: `AIObjectMobile::init` 0x085d54b0 hands it to `isVehicleUsed` and
+ * `isValidPosition`, `BotMain::initPathfinding` 0x0852a0d0 searches with
+ * it). `{ type, row, map, strategic }`: the type's index row, its search
+ * map's index row and baked map, and its strategic map; `row` null for a
+ * type with no map (`-1`: the engine's `isVehicleUsed` 0x0847b150 is true
+ * and `isValidPosition` 0x0847ccc0 always passes, no pathfinding). Null when
+ * the number names no type (-1, the aircraft, or past the list).
+ */
+export function searchTypeMaps(searchMaps, vehicleNumber) {
+  const types = searchMaps?.index?.searchTypes;
+  if (!Array.isArray(types) || !Number.isInteger(vehicleNumber) || vehicleNumber < 0) return null;
+  const type = types[vehicleNumber];
+  if (!type) return null;
+  if (!(type.map >= 0)) return { type, row: null, map: null, strategic: null };
+  const row = searchMaps.index.maps?.[type.map] ?? null;
+  const map = (searchMaps.maps ?? []).find(m => m.mapIndex === type.map) ?? null;
+  return { type, row, map, strategic: strategicFor(searchMaps, type.map, type.level) };
 }

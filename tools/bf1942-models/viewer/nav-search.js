@@ -1,6 +1,7 @@
 // The searches over the bot navigation map: cell queries, the Bresenham
 // line-of-walk, the local 4-connected A* with the engine's step cost, the
-// strategic search over the coarse level, and the free-run / free-box probes
+// strategic search (the level's own strategic map, `strategic-map.js`, or
+// the painted coarse level where it ships none), and the free-run / free-box probes
 // the drive decision asks. The engine research, with every address, is
 // `nav-grid.js`'s header; the map these run over is `nav-map.js`.
 
@@ -436,13 +437,25 @@ function regionAt(nav, R, gx, gz, radius) {
 }
 
 /**
- * The strategic search (INVENTION, header): A* over the coarse level's
- * regions (`coarseRegions`), a step to a region across a cell side, costed
- * `1 + 2 (1 - free fraction)` so roomier regions are preferred. Returns world
- * `[x, z]` waypoints, the free metre of each region nearest its cell's
- * centre, starting at the start and ending at the exact goal; or null.
+ * The strategic search. On a map that carries the level's own strategic
+ * map (`nav.strategic`, `strategic-map.js`) it is the engine's
+ * (`StrategicMap.route`: the goal and the start must stand on free pixels
+ * with a region, `BotMain::initPathfinding` 0x0852a0d0; the same region
+ * needs no strategic path; else `AStarStrategicSearch` over the regions),
+ * and the path is the start, the region points in between, and the goal.
+ * `fallbackStart` (`[x, z]`) is where the start is taken when the searcher
+ * stands on a blocked pixel: the engine's `getValidPosition` (Information
+ * vt+0x20), the last free position it stood on.
+ *
+ * Otherwise (a level that ships no strategic map) the painted coarse layer
+ * (INVENTION, header): A* over the coarse level's regions (`coarseRegions`),
+ * a step to a region across a cell side, costed `1 + 2 (1 - free fraction)`
+ * so roomier regions are preferred. Returns world `[x, z]` waypoints, the
+ * free metre of each region nearest its cell's centre, starting at the start
+ * and ending at the exact goal; or null.
  */
-export function findStrategicPath(nav, fromX, fromZ, toX, toZ) {
+export function findStrategicPath(nav, fromX, fromZ, toX, toZ, { fallbackStart = null } = {}) {
+  if (nav.strategic) return engineStrategicPath(nav, fromX, fromZ, toX, toZ, fallbackStart);
   const c = nav.coarse;
   const R = coarseRegions(nav);
   const cs = nav.cellSize, per = c.cellsPer;
@@ -495,13 +508,71 @@ export function findStrategicPath(nav, fromX, fromZ, toX, toZ) {
   return path;
 }
 
+/** A map pixel is blocked (the unit's lowest-level map, `getMinLevelMap`),
+ *  at a whole map position in the engine's frame; outside the map is. */
+function pixelBlocked(nav) {
+  const cs = nav.cellSize, W = nav.width, H = nav.height;
+  return (ix, iz) => {
+    const gx = Math.floor(ix / cs), gz = Math.floor(iz / cs);
+    return gx < 0 || gz < 0 || gx >= W || gz >= H || nav.blocked[gz * W + gx] !== CELL_FREE;
+  };
+}
+
+/** A blocked end moved to the nearest free metre within
+ *  `START_RESOLVE_CELLS` (the local search's own resolve), or null. */
+function resolveFree(nav, x, z) {
+  const gx = clampi(Math.floor(x / nav.cellSize), 0, nav.width - 1);
+  const gz = clampi(Math.floor(-z / nav.cellSize), 0, nav.height - 1);
+  const c = nearestFree(nav, gx, gz, START_RESOLVE_CELLS, null, x, z);
+  return c ? [(c[0] + 0.5) * nav.cellSize, -(c[1] + 0.5) * nav.cellSize] : null;
+}
+
+function engineStrategicPath(nav, fromX, fromZ, toX, toZ, fallbackStart) {
+  const sm = nav.strategic;
+  const blocked = pixelBlocked(nav);
+  const at = (x, z) => blocked(Math.floor(x), Math.floor(-z));
+  // The start on a blocked pixel: the last valid position (`getValidPosition`,
+  // Information vt+0x20, in `initPathfinding` 0x0852a0d0); a searcher that
+  // has none (a hull parked on a blocked cell and never moved), or whose
+  // last one is more than the resolve distance away (a soldier who last
+  // stood on free ground at his base before he drove off: the local search
+  // starts from where he is, so a start there leaves the legs unjoined),
+  // takes the nearest free metre, as the local search does (INVENTION: the
+  // engine gives the first no path and starts the second at the old place).
+  let sx = fromX, sz = fromZ;
+  if (at(sx, sz)) {
+    const near = fallbackStart && !at(fallbackStart[0], fallbackStart[1])
+      && Math.hypot(fallbackStart[0] - sx, fallbackStart[1] - sz) <= START_RESOLVE_CELLS * nav.cellSize;
+    const p = near ? fallbackStart : resolveFree(nav, sx, sz);
+    if (p) [sx, sz] = p;
+  }
+  // A goal on a blocked pixel: the engine's `initPathfinding` refuses it
+  // (`isValidPosition` vt+0x78 on the goal); its orders and plans hand it
+  // points its map calls valid (`orderNormalBot` tries 20 random points on
+  // the unit's own map). The viewer's plans do not all check (a vehicle's
+  // door, a cover point), so a blocked goal is moved to the nearest free
+  // metre, as the local search does (INVENTION).
+  let gx = toX, gz = toZ;
+  if (at(gx, gz)) {
+    const p = resolveFree(nav, gx, gz);
+    if (p) [gx, gz] = p;
+  }
+  const r = sm.route(sx, -sz, gx, -gz, blocked);
+  nav._lastStrategic = r;
+  if (!r.legs) return null;
+  const out = [[fromX, fromZ]];
+  for (const [x, z] of r.legs) out.push([x + 0.5, -(z + 0.5)]);
+  out.push([toX, toZ]);
+  return out;
+}
+
 /**
  * Whole-route query, for the page's debug probe and the tests: the strategic
  * path, each leg refined by the local search. Returns world `[x, z]`
  * waypoints or null.
  */
 export function findPath(nav, fromX, fromZ, toX, toZ, { obstacles = null } = {}) {
-  if (Math.hypot(toX - fromX, toZ - fromZ) <= COARSE_CELL * 2) {
+  if (!nav.strategic && Math.hypot(toX - fromX, toZ - fromZ) <= COARSE_CELL * 2) {
     return findLocalPath(nav, fromX, fromZ, toX, toZ, { radius: COARSE_CELL * 2, obstacles });
   }
   const strategic = findStrategicPath(nav, fromX, fromZ, toX, toZ);

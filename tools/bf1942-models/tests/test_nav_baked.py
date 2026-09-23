@@ -49,7 +49,7 @@ ASSETS = find_assets()
 def run_harness() -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
-        for name in ("nav-grid.js", "nav-map.js", "nav-search.js", "nav-baked.js"):
+        for name in ("nav-grid.js", "nav-map.js", "nav-search.js", "nav-baked.js", "strategic-map.js"):
             shutil.copyfile(VIEWER / name, work / name)
         shutil.copyfile(HARNESS, work / "harness.mjs")
         (work / "package.json").write_text('{"type":"module"}\n')
