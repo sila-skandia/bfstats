@@ -185,6 +185,29 @@ which the bot tests then covered.
    the viewer's reverse thrust is weak (15 -> 11 m/s over 15 m), so from full
    speed the craft overshoots any radius under about 40 m; pushed onto the
    shelf at rest, state 8 holds full reverse but the hull does not move and
-   climbs 5 m (hull physics, not the helm); and the SAI's landing-zone orders
-   (`WPBeachLanding`), so the strategic layer never sends a craft to a beach
-   by itself yet.
+   climbs 5 m (hull physics, not the helm). ~~The SAI's landing-zone
+   orders~~ built (AI-96..AI-99, 2026-09-24, Brief D): a craft's helm gets
+   `WPBeachLanding` / `WPMoveToBeachLanding` on the zones the level's
+   `StrategicAreas.con` attaches (now in `extras.ai`), runs to an approach
+   point 10 m in from the seaward side, then straight at the beach once in
+   the zone, and everyone aboard gets out there (`BBChangeLandingCraft`:
+   in a zone, under 2 m/s, on the infantry map, or tipped). Runner, Wake,
+   seed 1, 8 a side, 300 s: a crewed Daihatsu lands on `SouthLanding` at
+   143.2 s, four out together, and a rider takes `Landing_Beach` 6.5 s later;
+   the other grounds and tips off the west shore (without the orders both
+   crews hold inland orders to the end, no landing, no capture). Live: bots take the
+   Daihatsus beside their spawns, riders board, a craft enters its zone,
+   flips to the beach leg, runs up at 15 m/s and its driver and rider get
+   out on the beach. Open: (a) the water map routes craft under Wilkes'
+   wooden bridge at (894, -920) and over the 1 m shelf off the north tip
+   (819, -1413), where the hull grounds, climbs and tips (the crew bails
+   there by the tip rule); (b) a craft that enters its zone side-on turns
+   too slowly at the helm's braking speed to face the beach and can drift
+   out of the zone; (c) the crew climbs back into the beached craft's MG
+   after the 15 s unit ramp and is bailed again at once, a loop every ~8 s
+   (the engine's `BBChange` would do the same for a seat, which carries no
+   own-map test; for the root that test, 0x0855ee25 -> 0x0855f0f0, is not
+   applied because the viewer's water map blocks the Daihatsus' spawn
+   cells); (d) the ramp input is not written; (e) the engine's strategic
+   route (`validateDistances`) is not read, so a routed landing drives no
+   intermediate points.

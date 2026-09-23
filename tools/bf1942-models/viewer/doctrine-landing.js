@@ -2,7 +2,7 @@
 // landing craft (`WPBeachLanding`, `WPMoveToBeachLanding`) over the level's
 // `AILandingZone`s, and the bail at the beach every occupant of a landing
 // craft runs (`BBChangeLandingCraft`). Read 2026-09-24 from the lnxded
-// decompile (ledger AI-92..AI-95, KNOBS.md "beach landing").
+// decompile (ledger AI-96..AI-99, KNOBS.md "beach landing").
 //
 // The SAI builds the order in `strategic-ai.js _order` for a bot whose unit
 // is a `LandingCraft` (the helm of a Daihatsu or an LCVP); `doctrine.js`
@@ -16,13 +16,14 @@
 //  * `AIStrategicArea::orderNormalBot` 0x08640bd0: the bot's unit type is its
 //    Unit plug-in's equipment type (`LandingCraft` = 7 in
 //    `Game/AIbehaviours.con`, the Daihatsu's and LCVP's `equipmentType 7`).
-//    With no route (0x08640cf3) or a route of one area (0x08641428), an area
-//    whose landing-zone users (+0x150, `isLandingZoneUser` 0x086402b0) hold
-//    that type gets a `WPBeachLanding` on its zone closest to the bot
-//    (`getClosestLandingZone(Pos3)` 0x08640250 -> 0x086401e0: least
-//    `getDistanceSqr`). With a longer route, the first route area that is a
-//    user (0x0864104b) ends it in a `WPMoveToBeachLanding` (0x08641133) with
-//    the route's earlier area points and that area's closest zone.
+//    With no route (the test at 0x08640d05) or a route of one area
+//    (0x08641428), an area whose landing-zone users (+0x150,
+//    `isLandingZoneUser` 0x086402b0) hold that type gets a `WPBeachLanding`
+//    on its zone closest to the bot (`getClosestLandingZone(Pos3)`
+//    0x08640250 -> 0x086401e0: least `getDistanceSqr`). With a longer route,
+//    the first route area that is a user (the loop's test at 0x086416dd)
+//    ends it in a `WPMoveToBeachLanding` (0x08641133) with the route's
+//    earlier area points and that area's closest zone.
 //  * `AILandingZone` (ctor 0x0863ac80): a corner box, its corners sorted, and
 //    a beach side (`LZXMin` 0, `LZZMin` 1, `LZXMax` 2, `LZZMax` 3, operator>>
 //    0x08488e80). `getBeachPosition` 0x0863ae40 is a uniform random point on
@@ -70,8 +71,8 @@
 //    directly (`strategic-ai.js _order`), so the engine's no-route case is
 //    the rule -- a target that uses a zone gets a `WPBeachLanding`. A target
 //    that does not (an inland area, or one that expels landing craft) would
-//    be an inland `WPMoveTo` the craft cannot drive; there `landingRoute`
-//    walks the area graph from the craft's area to the target (INVENTION:
+//    be an inland `WPMoveTo` the craft cannot drive; there `beachTarget`
+//    walks the area graph (`areaPath`) from the craft's area to the target (INVENTION:
 //    the engine's route tables, `AIStrategicArea::validateDistances`, are not
 //    read) and the first area on it that uses a zone gives a
 //    `WPMoveToBeachLanding`. Its intermediate route points are not driven:
@@ -298,12 +299,12 @@ export function craftArea(layer, x, z, unitType = LANDING.unitType) {
  * `WPMoveTo`. `from` is the craft's own area (the route's first element).
  *
  *  * `area` uses a zone for the unit: `WPBeachLanding` on its closest zone
- *    (the engine's no-route case, 0x08640cf3).
+ *    (the engine's no-route case, 0x08640d05).
  *  * Otherwise the first zone-using area on `areaPath(from, area)` gives a
  *    `WPMoveToBeachLanding` (0x08641133). Its radius in the engine is the
  *    `0.25 x side radius + 2 x bounding radius` of the last route area
  *    before the landing area whose point the order drives first
- *    (0x08641369), 1.0 when there is none, at least 5. The viewer drives no
+ *    (0x086416be), 1.0 when there is none, at least 5. The viewer drives no
  *    route points, so it takes the no-route value, 5: with a sea area's side
  *    radius (Wake's SeaArea2, 336 m) the engine's figure is 104 m, and a
  *    helm that brakes inside its move's radius would stop 100 m short of the
