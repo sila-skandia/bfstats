@@ -1746,7 +1746,7 @@ results.fleetCeilings = Object.fromEntries(
   const mockCollider = {
     waterLevel: -Infinity,
     statics: { ownerOf: () => -1 },
-    // ground.js's drivable-deck gate asks before it trusts a hit's owner;
+    // wheeled-vehicle.js's drivable-deck gate asks before it trusts a hit's owner;
     // the mock world has no decks, so nothing is one.
     isDrivableOwner: () => false,
     sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner) {
@@ -1812,7 +1812,7 @@ results.fleetCeilings = Object.fromEntries(
 // The deck is analytic here, exactly as the ground under every other scenario
 // in this harness is, but it is analytic in the SHAPE the real query has: a
 // height that only exists at or below the reference the caller passes. That
-// reference is the thing under test — `ground.js` must ask from the axle plus
+// reference is the thing under test — `wheeled-vehicle.js` must ask from the axle plus
 // the step it can mount, so a deck in reach is the floor and a deck overhead
 // (driving under a bridge) is not.
 //

@@ -8,7 +8,8 @@
 // `c_ETRocket`, 0x19 `c_ETTorpedo` — has bit 0 set, so a destroyer's screw
 // runs the same `rho` / signed-square / `getCurrentRatio()` body a Corsair's
 // propeller does. A car and a tank have bit 0 clear and return at the `& 1`
-// gate, which is why they need `ground.js` and a ship does not.
+// gate, which is why they need `wheeled-vehicle.js` / `tracked-vehicle.js` and a ship
+// does not.
 //
 // Bit 3 is the ship's own rule, read at `0x0824cc89`/`0x0824d047`:
 //

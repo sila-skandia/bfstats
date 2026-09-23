@@ -364,7 +364,7 @@ export class WorldCollider {
    * is exactly the buildings, walls, piers and parked scenery a hull can hit,
    * which is what the engine's `checkObjectVsObject` meets on this side.
    *
-   * `deckFloorCos` is `ground.js`'s `DECK_FLOOR_COS`: a drivable triangle
+   * `deckFloorCos` is `ground-contact.js`'s `DECK_FLOOR_COS`: a drivable triangle
    * within 60 degrees of horizontal is a ride surface, and a hull vertex must
    * not find it any more than the old swept sphere could.
    *

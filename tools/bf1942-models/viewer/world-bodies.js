@@ -35,7 +35,7 @@ export function adoptDriven(world, owner, vehicle, spec) {
   world.bodyWorld.addDriven(owner, driven,
     collisionPartsFor(spec, driven, { hullOnly: true }), spec);
   // The solver now owns this hull's contacts with the static world, so the
-  // drive model's own swept sphere stands down (`ground.js` `hullSolved`).
+  // drive model's own swept sphere stands down (`wheeled-vehicle.js` `hullSolved`).
   // Only when there IS a static world to probe: without one a building is
   // still the sweep's business.
   if (world.bodyWorld.statics && 'hullSolved' in vehicle) vehicle.hullSolved = true;

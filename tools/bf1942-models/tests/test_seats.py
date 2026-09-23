@@ -5,7 +5,7 @@ real extracted glb.
 Same pattern as `test_ground.py` — one node run producing a JSON blob, the
 vendored three.js stood up as an importable `three` package so `seats.js`
 imports byte-for-byte (the file under test is the file the page loads).
-`seats.js` has no dependency on `flight.js`/`ground.js`/a GLTFLoader by
+`seats.js` has no dependency on `flight.js`/`wheeled-vehicle.js`/a GLTFLoader by
 design (`VehicleOccupancy`'s `classes` are dependency-injected — see its own
 doc), so unlike `test_ground.py` nothing else needs copying alongside it.
 

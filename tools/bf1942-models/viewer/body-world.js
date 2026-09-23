@@ -10,7 +10,7 @@
 //
 // Two kinds of body live here. A **parked** vehicle is wholly this module's:
 // a `RigidBody` on its own wheel springs (`body-ground.js`). The **driven**
-// vehicle keeps the drive model it has always had (`ground.js`, `flight.js`)
+// vehicle keeps the drive model it has always had (`wheeled-vehicle.js`, `flight.js`)
 // and takes part through `DrivenBody` (`vehicle-bodies.js`), which the contact
 // solver cannot tell from the real thing. The engine draws the same line in
 // the same place — an occupied vehicle leaves the global passes for the

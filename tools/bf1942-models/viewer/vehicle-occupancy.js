@@ -18,7 +18,7 @@ import { TurretRig } from './turret-rig.js';
  *
  * `classes` is dependency-injected (`{Aircraft, GroundVehicle,
  * TrackedVehicle}`) rather than imported here, so this module never needs
- * `flight.js`/`ground.js`'s heavier THREE dependencies just to survey a seat
+ * `flight.js`/`wheeled-vehicle.js`'s heavier THREE dependencies just to survey a seat
  * table, and so `TrackedVehicle`'s absence (P4's track, a parallel worktree)
  * is a plain "falls back to GroundVehicle" rather than an import error --
  * `map.html` resolves that fallback once, this class only ever sees a class

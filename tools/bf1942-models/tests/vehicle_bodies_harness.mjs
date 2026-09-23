@@ -174,7 +174,7 @@ function jeepWithBareSprings(x, y, z, { geometry = 'wheel_geometry' } = {}) {
 
 // --- the hull-contact hand-over to the drive model --------------------------
 //
-// `ground.js` runs the viewer's own friction solver, so a driven vehicle's
+// `wheeled-vehicle.js` runs the viewer's own friction solver, so a driven vehicle's
 // resolved contacts are handed to it rather than answered here
 // (collision-response.md section 8). The hand-over is opt-in — a vehicle that
 // has not declared `hullContacts` gets nothing — and the list is emptied at
