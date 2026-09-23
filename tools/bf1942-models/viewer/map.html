@@ -742,16 +742,22 @@ const hullBodies = createHullBodies({
   get vehicleSpawnActive() { return level.vehicleSpawnActive; }, get world() { return world; },
 });
 const vehicleHits = createVehicleHits({
-  get LOCAL_PLAYER() { return LOCAL_PLAYER; },
-  get applyDamageToPlayer() { return localPlayer.applyDamageToPlayer; }, get camera() { return camera; },
+  get applyDamage() { return referee.applyDamage; },
+  get applyDamageToPlayer() { return localPlayer.applyDamageToPlayer; },
+  get bots() { return referee.bots; }, get camera() { return camera; },
   get collider() { return level.collider; }, get currentRoot() { return level.currentRoot; },
-  get guns() { return guns; }, get hudFeed() { return hudFeed; },
-  get localPlayer() { return localPlayer; }, get optOnFoot() { return optOnFoot; },
-  get optPilot() { return optPilot; }, get referee() { return referee; },
-  get soldier() { return localPlayer.soldier; }, get soldierArmor() { return localPlayer.soldierArmor; },
-  get soldierDead() { return localPlayer.soldierDead; }, get vehicleDamage() { return vehicleDamage; },
+  get damageLanded() { return referee.damageLanded; },
+  get damageVisuals() { return wrecks.damageVisuals; },
+  get feedVehicleHud() { return hudFeed.feedVehicleHud; }, get guns() { return guns; },
+  get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get occupancy() { return localPlayer.occupancy; },
+  get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
+  get showDamageTier() { return wrecks.showDamageTier; },
+  get soldier() { return localPlayer.soldier; },
+  get soldierArmor() { return localPlayer.soldierArmor; },
+  get soldierDead() { return localPlayer.soldierDead; },
+  get stepWrecks() { return wrecks.stepWrecks; }, get vehicleDamage() { return vehicleDamage; },
   get vehicles() { return vehicles; }, get world() { return world; },
-  get wrecks() { return wrecks; },
+  get wreckVehicle() { return wrecks.wreckVehicle; },
 });
 
 // --- the guns ---------------------------------------------------------------
