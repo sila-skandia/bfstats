@@ -46,7 +46,7 @@ _MODULE_NAMES = [
     "body-ground", "body-friction", "crash-damage", "effects-core", "projectile-damage",
     "bomb-release", "torpedo-run",
     # bot.js's own imports.
-    "deviation", "nav-grid", "nav-map", "nav-search", "nav-baked",
+    "deviation", "nav-grid", "nav-map", "nav-search", "nav-baked", "strategic-map",
 ]
 MODULES = {f"{name}.js": VIEWER / f"{name}.js" for name in _MODULE_NAMES}
 MODULES["world.mjs"] = VIEWER / "world.js"

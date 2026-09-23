@@ -6,7 +6,7 @@
 // with every address, is `nav-grid.js`'s header; that module re-exports this
 // one and `nav-search.js`, the searches that run over the map.
 
-import { findSearchMap } from './nav-baked.js';
+import { findSearchMap, strategicFor } from './nav-baked.js';
 
 /** Engine level-0 pixel: one world metre (`getLevelPixelSize(0)`). */
 export const NAV_CELL = 1;
@@ -18,7 +18,8 @@ export const INFANTRY_SEARCH_MAP = {
   lowClip: 0.4,
   hiClip: 2.0,
 };
-/** The coarse strategic level (INVENTION, see the header). */
+/** The painted coarse level (INVENTION, see the header): only a map with no
+ *  strategic map of its own plans on it. */
 export const COARSE_CELL = 16;
 /** `objectClipAndRender` 0x085fbfa0 skips every collision face whose
  *  material is 99 (`*(short *)(face + 6) != 99` in its face loop): such a
@@ -105,6 +106,10 @@ export function buildNavMap(collider, worldSize, options = {}) {
     waterMap = false,
     baked = true,
     searchMap = null,
+    // The strategic map to plan routes on (`strategic-map.js`): by default
+    // the one the level ships for the baked map taken; `false` for none (the
+    // painted coarse layer), or one handed in.
+    strategic = null,
   } = options;
   const bakedMap = baked === false ? null
     : (searchMap ?? bakedFor(collider?.searchMaps, options,
@@ -185,6 +190,10 @@ export function buildNavMap(collider, worldSize, options = {}) {
       // The map's pyramid top (`LocalMap` +0x28), which bounds a hull's
       // box (`getLandLevel` 0x085f3f90 via `Vehicle` +0xc4a8).
       maxLevel: Number.isFinite(bakedMap.params?.maxLevel) ? bakedMap.params.maxLevel : null,
+      // The engine's strategic layer for this map (`loadSearchTypes`
+      // 0x0847c6b0); null keeps the painted coarse layer (`nav-search.js`).
+      strategic: strategic === false ? null
+        : (strategic ?? strategicFor(collider?.searchMaps, bakedMap.mapIndex, bakedMap.level)),
     };
   }
 
@@ -268,6 +277,7 @@ export function buildNavMap(collider, worldSize, options = {}) {
   return {
     blocked, heights, normalY, width, height, cellSize, worldSize, coarse,
     source: 'painted', searchMap: null, level: 0, maxLevel: null,
+    strategic: strategic || null,
   };
 }
 
@@ -535,4 +545,5 @@ function buildCoarse(blocked, width, height, cellSize, coarseSize) {
  * @property {string|null} searchMap     the baked map's name (`Tank0`, ...)
  * @property {number} level              the baked level (a pixel is 2^level m)
  * @property {number|null} maxLevel      the map's pyramid top (`ai.addSearchMap`'s maxLevel)
+ * @property {import('./strategic-map.js').StrategicMap|null} strategic  the engine's strategic map
  */
