@@ -156,8 +156,11 @@ to 850 vehicle rounds and 3 to 7 hulls destroyed, and no bot took a fixed
 gun. Wall clock for 600 s: 79 to 97 s on the 20-thread development machine
 at a load of about 20, 145 s at a load of 30 (other matches and test runs
 sharing it). On Wake a Daihatsu (split off its ship) sails 231 m on the
-landing-craft map in 60 s under a bot, with a point given by hand: the SAI
-gives craft no orders yet (Brief D).
+landing-craft map in 60 s under a bot, with a point given by hand. Since
+Brief D the SAI sends a craft's helm to a beach (`WPBeachLanding`,
+`doctrine-landing.js`) and its crew gets out there: seed 1, 8 a side, 300 s,
+a Daihatsu with three riders lands on `SouthLanding` at 143 s and a rider
+takes `Landing_Beach` 6.5 s later (features/bf1942-ai-spec/strategic.md §8).
 
 What stays out: the human (the local player, his shots heard), and
 everything that is only drawn or heard.
@@ -355,8 +358,10 @@ all of it is page code, none of it checked live yet):
   node's `flak38`. An AA gun seated by hand fires, but El Alamein's sit in
   sandbag pits whose lip is above the muzzle: a soldier on the flat is out of
   their reach.
-- **A landing craft with the SAI's order fails its route every tick** (its
-  area is inland), which also makes Wake about three times slower to run.
+- ~~**A landing craft with the SAI's order fails its route every tick** (its
+  area is inland), which also makes Wake about three times slower to run.~~
+  Fixed by Brief D (the beach orders): the helm gets the beach of its target
+  area, or of the first zone user on the way to it.
 - **Tanks trade a flag every 10 s.** Seeds 1 and 4 see 29 and 34 captures in
   600 s: a PanzerIV and a Sherman (and in seed 4 a Tiger) sit on North outpost
   and take it from each other every 10 s for minutes, neither killing the

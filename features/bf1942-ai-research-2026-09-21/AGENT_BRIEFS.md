@@ -172,6 +172,21 @@ Do:
 Acceptance: the live landing, a sim run on Wake showing craft in the
 trace, the ledger and KNOBS rows, the status file updated.
 
+Done 2026-09-24 (ledger AI-96..AI-99; features/bf1942-ai-spec/strategic.md
+§8). `bf42/ai_level.py` exports the landing zones and the areas' zone data
+(10 extracted levels re-patched and published). `viewer/doctrine-landing.js`
+has the orders and the bail; `strategic-ai.js _orderBeach` issues them,
+`doctrine.js` registers both kinds with their executor, `bot-plans.js`
+drives the beach leg and `bot-mount.js` gives the crew `BBChangeLandingCraft`.
+The runner already split craft off ships (Brief I, `stage.mjs`). Runner,
+Wake, seed 1: a crewed Daihatsu lands on `SouthLanding` and a rider takes
+`Landing_Beach` 6.5 s later.
+Live: natural boarding and riders, the zone flip and the run up the beach
+with driver and rider out, shown with the craft placed at sea off
+`SouthLanding` (the natural voyages ground under Wilkes' bridge and on the
+north-tip shelf, a water-map and hull matter). Open items are in
+PARITY_STATUS_2026-09-23.md item 6.
+
 ## Brief E: a target's information security decay
 
 Depends on: nothing. Small.

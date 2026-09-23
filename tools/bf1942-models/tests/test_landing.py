@@ -1,7 +1,7 @@
 """`viewer/doctrine-landing.js` under node (`tests/landing_harness.mjs`).
 
 The SAI's beach orders for a landing craft and the bail at the beach, read
-from the lnxded decompile on 2026-09-24 (ledger AI-92..AI-95): the zone's
+from the lnxded decompile on 2026-09-24 (ledger AI-96..AI-99): the zone's
 geometry (`AILandingZone` 0x0863ac80..0x0863b130), the order
 `orderNormalBot` 0x08640bd0 gives (`WPBeachLanding` 0x08536350,
 `WPMoveToBeachLanding` 0x08537ce0), the leg flip on entering the zone
