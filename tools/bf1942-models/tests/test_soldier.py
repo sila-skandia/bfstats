@@ -44,6 +44,7 @@ MODULES = [
     ROOT / "viewer" / "parachute.js",
     ROOT / "viewer" / "swim.js",
     ROOT / "viewer" / "collision.js",
+    ROOT / "viewer" / "world-collider.js",
     ROOT / "viewer" / "static-index.js",
     ROOT / "viewer" / "drivable-mask.js",
     ROOT / "viewer" / "collision-materials.js",

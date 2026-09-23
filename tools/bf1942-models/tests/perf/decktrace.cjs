@@ -112,7 +112,7 @@ async function run(browser) {
   }
   await step(30);
 
-  // Every drivable static in the level, by the same name rule `collision.js`
+  // Every drivable static in the level, by the same name rule `static-index.js`
   // uses, with the world box the trace needs to pick a crossing line.
   const decks = await page.evaluate(pattern => {
     const re = new RegExp(pattern, 'i');
@@ -132,7 +132,7 @@ async function run(browser) {
       });
     });
     return out;
-    // Keep this in step with `DRIVABLE_TOP_RE` in `viewer/collision.js`; this
+    // Keep this in step with `DRIVABLE_TOP_RE` in `viewer/static-index.js`; this
     // file cannot import the module the page loads.
   }, String(opts.targets
     || 'bridge|repairpoint|repaircist|reloadbay|repairbay|repairstation|landrep|airrep|supplyde|bay|ramp|overpass|dock|flightdeck|freightdeck|hardsurface|deck'));

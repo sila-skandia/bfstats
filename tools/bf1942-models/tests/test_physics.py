@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULES = {
     "physics.mjs": ROOT / "viewer" / "physics.js",
     "collision.mjs": ROOT / "viewer" / "collision.js",
+    "world-collider.js": ROOT / "viewer" / "world-collider.js",
     "static-index.js": ROOT / "viewer" / "static-index.js",
     "drivable-mask.js": ROOT / "viewer" / "drivable-mask.js",
     "collision-materials.js": ROOT / "viewer" / "collision-materials.js",
