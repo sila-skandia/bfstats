@@ -10,7 +10,7 @@ import * as THREE from 'three';
 import { WEAPON_HEADROOM } from './engine-audio.js';
 import { VehicleAudioRack } from './vehicle-audio.js';
 import { WorldFire } from './world-fire.js';
-import { footstepMaterial } from './collision.js';
+import { footstepMaterial } from './collision-materials.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in

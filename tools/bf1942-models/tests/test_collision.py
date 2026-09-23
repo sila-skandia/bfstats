@@ -1,14 +1,17 @@
-"""`viewer/collision.js` under node, plus the extractor half it reads.
+"""The collider (`viewer/world-collider.js` and the modules it is built from:
+`heightfield.js`, `static-index.js`, `collision-meshes.js`, `drivable-mask.js`,
+`collision-materials.js`) under node, plus the extractor half it reads.
 
-The collision module is deliberately dependency-free — no `three` import, no
-DOM — precisely so it can be run and asserted here rather than only in a
+The collision modules are deliberately dependency-free — no `three` import, no
+DOM — precisely so they can be run and asserted here rather than only in a
 browser. `collision_harness.mjs` builds fake meshes carrying only the four
-fields the module reads (`geometry.attributes.position`, `geometry.index`,
+fields the modules read (`geometry.attributes.position`, `geometry.index`,
 `geometry.userData`, `matrixWorld.elements`), exercises every path, and prints
 one JSON blob.
 
-Node reads a bare `.js` as CommonJS, so the module is copied next to the
-harness as `collision.mjs` for the run; the copy is byte-identical.
+The modules are copied next to the harness under their own names, beside a
+`package.json` that makes node read a bare `.js` as a module; the copies are
+byte-identical.
 """
 
 from __future__ import annotations
@@ -27,8 +30,7 @@ from bf42 import con as con_mod  # noqa: E402
 from extract_map import projectile_materials, write_damage_tables  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE = ROOT / "viewer" / "collision.js"
-# The modules `collision.js` re-exports from, copied under their own names.
+# The collider's modules, copied under their own names.
 PARTS = [
     ROOT / "viewer" / "collision-materials.js",
     ROOT / "viewer" / "heightfield.js",
@@ -46,7 +48,6 @@ def run_harness() -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
         (work / "package.json").write_text('{"type": "module"}')
-        shutil.copyfile(MODULE, work / "collision.mjs")
         for part in PARTS:
             shutil.copyfile(part, work / part.name)
         shutil.copyfile(HARNESS, work / "harness.mjs")

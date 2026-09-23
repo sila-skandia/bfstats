@@ -21,7 +21,8 @@ import { Soldier } from './soldier.js';
 import {
   GRAVITY, SOLDIER_MASS, SOLDIER_BOUNDING_RADIUS, SOLDIER_DRAG, TICK_DT,
 } from './physics.js';
-import { Heightfield, WorldCollider } from './collision.js';
+import { Heightfield } from './heightfield.js';
+import { WorldCollider } from './world-collider.js';
 import { fallDamageFor } from './fall-damage.js';
 
 // What `_shared/damage.json` carries for the pair a falling soldier is: every

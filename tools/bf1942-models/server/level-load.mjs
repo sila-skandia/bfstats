@@ -17,7 +17,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { buildHeightfield } from '../viewer/collision.js';
+import { buildHeightfield } from '../viewer/heightfield.js';
 import { loadVehicleTree, readGlb } from './glb-tree.mjs';
 import { buildSceneTree, decodeMaterialIds } from './glb-scene.mjs';
 import { LevelData } from './level-data.mjs';

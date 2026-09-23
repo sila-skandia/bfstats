@@ -1,8 +1,8 @@
 // The terrain collider: the heightmap lattice rebuilt from the drawn tiles.
 //
-// Split out of `collision.js`, which re-exports it; see that file's header for
-// why the heightmap *is* the terrain collider, and for the coordinate note
-// (the exporter negates Z) every function here depends on.
+// Split out of `collision.js`; see `world-collider.js`'s header for why the
+// heightmap *is* the terrain collider, and for the coordinate note (the
+// exporter negates Z) every function here depends on.
 
 import { DEFAULT_TERRAIN_MATERIAL } from './collision-materials.js';
 
