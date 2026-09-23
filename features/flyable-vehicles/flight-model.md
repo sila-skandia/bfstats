@@ -1018,7 +1018,12 @@ Newly opened by this pass:
    It matters most for the regulator, whose loop gain is high enough that the
    servo's own dynamics are part of the answer.
 8. **`rememberExcessInput`** — 24 uses, all elevators, still unmodelled.
-9. **Drag.** The viewer uses `-drag × v`, which reproduces the shipped top
+9. **Drag.** *(2026-09-24: an aircraft built from its own data now takes
+   `PhysicsNode`'s box law, physics.md §3 / PHY-4; the Corsair's hand table
+   keeps the linear stand-in below. Ledger AI-79 / AI-80: until then every
+   aircraft flew on the Corsair's table, and under `-drag v` the four
+   fighters whose AI `maxSpeed` is 60 topped out at 45..51 m/s.)* The viewer
+   uses `-drag × v`, which reproduces the shipped top
    speeds. `PointPhysicsNode::updatePositionalDragSimple` (`0x00578990`,
    `working`) is wind-relative and scaled by `π r²/mass` with a 25× submersion
    factor, which is linear in v but with a very different constant. Reconciling
