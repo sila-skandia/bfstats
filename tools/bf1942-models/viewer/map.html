@@ -649,7 +649,7 @@ const localLook = createLocalLook(bag(
   from(() => soldierKit, `handWeapon isZoomed`),
   {
     get LOOK_SENS() { return LOOK_SENS; }, get optOnFoot() { return optOnFoot; },
-    get optPilot() { return optPilot; },
+    get optPilot() { return optPilot; }, get vehicles() { return vehicles; },
   },
 ));
 const vehicleEntry = createVehicleEntry(bag(
@@ -775,7 +775,7 @@ const wrecks = createVehicleWrecks(bag(
 const hullBodies = createHullBodies(bag(
   from(() => level, `collider damageTables DEFAULT_SURFACE_FRICTION extras materialFrictionById
     vehicleDamage vehicleSpawnActive world`),
-  from(() => localLook, `vehicleInterp`),
+  from(() => localLook, `drawsHull`),
   from(() => vehicleEntry, `dropEntryPoints forgetEntryPoints`),
   from(() => wrecks, `damageVisuals`),
   {
@@ -1551,6 +1551,10 @@ function commsWatchLocalDeath() {
   commsWasAlive = alive;
 }
 function frame(dt) {
+  // Every drawn hull back on its last tick's pose before any of the frame's
+  // simulation reads it (the bots' AI after the step, on a frame that ran no
+  // tick); `localLook.present` below draws them between ticks again.
+  localLook.restoreTickPose();
   // The human's presentation follows the seat he holds, looked up every frame
   // (a bot taking the wheel of his hull gives it a drive under him).
   if (optPilot.checked) localPlayer.syncLocalSeat();
