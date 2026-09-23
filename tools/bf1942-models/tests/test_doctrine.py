@@ -124,7 +124,9 @@ class DoctrineTests(unittest.TestCase):
 
     def test_followers_board_the_leaders_hull_and_press_use_at_the_door(self) -> None:
         b = self.r["board"]
-        self.assertEqual(b["kinds"], ["WPBoard", "WPBoard", "WPFollow"])
+        # The third is 90 m off, past `boardRange`: on foot behind a hull he
+        # cannot take, he goes to the SAI.
+        self.assertEqual(b["kinds"], ["WPBoard", "WPBoard", "WPMoveTo"])
         self.assertEqual(sorted(b["seats"]), ["H:gunner", "H:mg"])
         self.assertEqual(b["leader"], "WPHold")
         self.assertEqual(len(b["entered"]), 1)
@@ -135,7 +137,11 @@ class DoctrineTests(unittest.TestCase):
         d = self.r["driverLeads"]
         self.assertEqual(d["leader"], "s1_2")
         self.assertEqual(d["kind"], "WPMoveTo")
-        self.assertEqual(d["follows"], "s1_2")
+        # His hull has no other seat: the members on foot go to the SAI.
+        self.assertEqual(d["follows"], "WPMoveTo")
+
+    def test_a_mounted_leaders_followers_on_foot_without_a_seat_go_to_the_sai(self) -> None:
+        self.assertEqual(self.r["driverLeads"]["follows"], "WPMoveTo")
 
     def test_an_aircraft_leaders_followers_go_to_the_sai(self) -> None:
         a = self.r["air"]
