@@ -19,6 +19,7 @@ import { dragAcceleration, entersWater } from './bomb-release.js';
 import { TorpedoRun, runParts } from './torpedo-run.js';
 import { detonate, impact } from './round-impact.js';
 import { spawnPuff } from './round-visuals.js';
+import { fuseArmed, fuseTarget } from './proximity-fuse.js';
 
 // Minimum apparent width of a tracer streak, in pixels.
 //
@@ -171,8 +172,12 @@ export function endRound(guns, shot, index, blast) {
   shot.run?.stop();
   shot.wake?.stop();
   const spec = shot.group.stats.projectile;
-  if (!(blast && detonate(guns, shot.group, spec, shot.mesh.position,
-                                shot.travelled))) {
+  const record = blast
+    ? detonate(guns, shot.group, spec, shot.mesh.position, shot.travelled)
+    : null;
+  // The hull whose proximity set it off, for `guns.hits` readers.
+  if (record && shot.fusedOn != null) record.fusedOn = shot.fusedOn;
+  if (!record) {
     if (guns.effects && spec?.endEffect) {
       const at = shot.mesh.position;
       guns.effects.play(spec.endEffect,
@@ -305,6 +310,32 @@ function throughWater(guns, shot, hit) {
       });
     }
   }
+  return true;
+}
+
+/**
+ * Does a vehicle near `shot` set its proximity fuse off this frame?
+ *
+ * `proximity-fuse.js` is the law; this is the query. The engine runs it once
+ * per `Projectile::handleUpdate` (0x0831e940) against the round's position
+ * then; the viewer runs it once per `advance`, at the position the round has
+ * reached, which samples the path at least as densely. The candidates are
+ * every hull the page reports near the round (`guns.nearObjects`), human- or
+ * bot-driven alike. Records the vehicle that did it on the shot, for the
+ * readout.
+ */
+function proximityDetonates(guns, shot) {
+  if (!guns.nearObjects || !fuseArmed(shot.proximity, shot.age)) return false;
+  const p = shot.mesh.position;
+  const water = guns.collider?.waterLevel;
+  // `getUnderWater` is a float on the round's physics node (+0x8c / +0x44);
+  // reading "below the sea plane" as non-zero is the viewer's, not read.
+  const underWater = Number.isFinite(water) && p.y < water;
+  const near = guns.nearObjects(p.x, p.y, p.z, shot.proximity.distance);
+  const target = fuseTarget(shot.proximity,
+                            { x: p.x, y: p.y, z: p.z, underWater }, near);
+  if (!target) return false;
+  shot.fusedOn = target.owner ?? null;
   return true;
 }
 
@@ -454,6 +485,15 @@ export function advanceProjectiles(guns, dt) {
         recycle(guns, shot, i);
         continue;
       }
+    }
+    // The proximity fuse, after the contact test: a round that met a hull
+    // this frame has already gone through `impact`. Which of the two the
+    // engine runs first within a tick (the physics contact or
+    // `handleUpdate`) was not read; at a 10 m fuse the fuse nearly always
+    // wins by frames, not by order.
+    if (shot.proximity && proximityDetonates(guns, shot)) {
+      endRound(guns, shot, i, true);
+      continue;
     }
     const expired = shot.age > shot.ttl;
     if (expired || shot.travelled > shot.group.maxRange) {

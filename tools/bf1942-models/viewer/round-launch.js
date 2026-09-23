@@ -5,7 +5,8 @@
 // scene, pools and dice it uses.
 
 import * as THREE from 'three';
-import { isFuseRound, roundTimeToLive } from './effects-core.js';
+import { isFuseRound, roundTimeToLive, sampleCrd } from './effects-core.js';
+import { proximityFuseOf } from './proximity-fuse.js';
 import { GRAVITY } from './physics.js';
 // The contact a fuse round gets when it lands — elasticity, friction and
 // resistance off the material pair, at the engine's own 30 Hz. See
@@ -242,6 +243,25 @@ function spawnTracer(guns, muzzle, group, bright) {
   });
 }
 
+/**
+ * This round's `timeToLive`, drawn the way the engine draws it.
+ *
+ * `Projectile::activate` (lnxded 0x0831e120) samples the template's CRD per
+ * round (`Random::getContinuousRandom`) and posts the expiry message at that
+ * delay; `handleMessage` (0x0831e8f0) then detonates a `hasOnTimeEffect`
+ * round and quietly recycles any other. The baked block keeps only the CRD's
+ * first number, so without the table's full CRD every AA shell burst at
+ * exactly 0.8 s, 240 m out, the "same distance every time" of the report.
+ * With it the AA gun's `CRD_UNIFORM/0.8/1.4/0` spreads them over 240-420 m.
+ */
+function launchTimeToLive(guns, spec, entry) {
+  if (Array.isArray(entry?.timeToLive)) {
+    const drawn = sampleCrd(entry.timeToLive, guns.rand);
+    if (drawn > 0) return drawn;
+  }
+  return spec.timeToLive;
+}
+
 function spawnProjectile(guns, muzzle, group, spec) {
   // `releaseSpeed` is `velocity ?? 100`, not `velocity || 100`. Every one of
   // the thirteen vanilla aircraft racks declares `velocity 0`, which is a real
@@ -287,6 +307,7 @@ function spawnProjectile(guns, muzzle, group, spec) {
   // all, which is what this viewer did until now. `isFuseRound` in
   // `effects-core.js` carries the rule and the addresses.
   const fuse = isFuseRound(spec?.damage);
+  const entry = guns.projectileEntry(spec);
   const shot = {
     mesh,
     group,
@@ -323,8 +344,12 @@ function spawnProjectile(guns, muzzle, group, spec) {
     // the ceiling was written when `timeToLive` only recycled a mesh, and
     // clamping an explosives pack's 240 s to 20 s now drops 12 m of real
     // splash on the player twenty seconds after he puts the charge down.
-    ttl: roundTimeToLive(spec.timeToLive, spec?.damage),
+    ttl: roundTimeToLive(launchTimeToLive(guns, spec, entry), spec?.damage),
     trail: group.trailQuad ? spec.trail : null,
+    // The proximity fuse (`proximity-fuse.js`), or null: the flak shells'
+    // `explodeNearEnemyDistance 10` is what bursts them on the aircraft they
+    // pass rather than in the sky behind it.
+    proximity: proximityFuseOf(spec, entry),
     run: null,
     age: 0,
     travelled: 0,
