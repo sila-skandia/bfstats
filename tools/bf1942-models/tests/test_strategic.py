@@ -57,6 +57,46 @@ class StrategicFixtureTests(unittest.TestCase):
         owners = {a["name"]: a["owner"] for a in self.results["areas"]}
         self.assertEqual(owners, {"AxisBase": 1, "Mid": 0, "AlliedBase": 2})
 
+    def test_an_area_is_a_centre_box_about_p2(self) -> None:
+        # `create Island 833/701 846/717 200`: p1 the corner, p2 the centre
+        # (ctor 0x0863c000), inside = p1 <= p <= 2 p2 - p1 (0x08653fa0), each
+        # side's radius |p2 - p1| (0x0863c657).
+        p = self.results["pins"]
+        self.assertEqual(p["corner"], [833, -701])
+        self.assertEqual(p["centre"], [846, -717])
+        self.assertEqual(p["min"], [833, -733])
+        self.assertEqual(p["max"], [859, -701])
+        self.assertAlmostEqual(p["sideRadius"], 20.616, places=3)
+        self.assertTrue(p["cpInside"])
+
+    def test_the_random_point_spans_the_corner_eighty_percent(self) -> None:
+        # `randomizePos(side, 0.8)` 0x086449e0: p2 + rand W f - W/2.
+        p = self.results["pins"]
+        self.assertEqual(p["r0"], [833, -701])
+        self.assertEqual(p["r1"], [853.8, -726.6])
+
+    def test_a_tank_order_uses_the_side_radius_and_its_bounding_radius(self) -> None:
+        # 0.25 x 20.616 + 2 x 3 (orderNormalBot 0x08640bd0).
+        self.assertAlmostEqual(self.results["pins"]["tankRadius"], 11.154, places=3)
+
+    def test_inside_round_r_plus_the_path_radius_the_order_has_arrived(self) -> None:
+        # `WPMoveTo::getUrgency` 0x085374a0: d^2 < R'^2 -> arrived, 0.
+        p = self.results["pins"]
+        self.assertEqual(p["inR"], 0)
+        self.assertTrue(p["inRArrived"])
+        self.assertEqual(p["outU"], 2)
+
+    def test_the_fallback_is_the_units_order_position_when_valid_else_p2(self) -> None:
+        p = self.results["pins"]
+        self.assertEqual(p["tankPosPoint"], [836, -731])
+        self.assertEqual(p["blockedPoint"], [846, -717])
+
+    def test_an_arrived_mounted_bot_is_reordered_after_35_s(self) -> None:
+        # `SAI::updateBotPositions` 0x08635bc0: 20 s on foot, 35 s mounted.
+        p = self.results["pins"]
+        self.assertTrue(p["keptAt30"])
+        self.assertTrue(p["movedAt36"])
+
     def test_each_side_picks_a_strategy_and_attacks_the_middle(self) -> None:
         for side in ("1", "2"):
             s = self.results["sides"][side]

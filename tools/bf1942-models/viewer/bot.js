@@ -1479,7 +1479,10 @@ export class BotController {
   _urgencyMoveTo(mod) {
     const wp = this.waypoints ?? this._fallbackWaypoint();
     if (!wp) return 0;
-    const u = wp.urgency(this.position[0], this.position[2], SOLDIER_RADIUS);
+    // R' adds the unit's `getMaxPathPosRemovalDistance` (BotMain 0x0852b780:
+    // 0.99 x max(0.5, bounding radius - the bounding centre's offset)); the
+    // page's vehicle radius stands in for a hull's.
+    const u = wp.urgency(this.position[0], this.position[2], this._pathRadius());
     this.changedTarget.MoveTo = wp !== this._lastWaypointObject;
     this._lastWaypointObject = wp;
     // `BBMoveToFixed::calculateUrgency` 0x08575680 (the Fixed rows: a seat
@@ -1488,6 +1491,11 @@ export class BotController {
     this._orderUrgency = u > 0 ? u * mod : 0;
     if (this.vehicle && !this.vehicle.drives) return 0;
     return u > 0 ? u * mod : 0;
+  }
+
+  /** `Bot::getMaxPathPosRemovalDistance` for the unit the bot controls. */
+  _pathRadius() {
+    return this.vehicle ? 0.99 * Math.max(0.5, this.vehicle.radius ?? SOLDIER_RADIUS) : SOLDIER_RADIUS;
   }
 
   _fallbackWaypoint() {

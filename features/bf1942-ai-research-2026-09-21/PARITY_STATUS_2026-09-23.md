@@ -94,6 +94,14 @@ which the bot tests then covered.
   (AI-64), the harmless threshold is the 0 every `BotManager` call passes
   (AI-65).
 
+- **Tanks capture on Bocage** (AI-70): the strategic order is the engine's
+  (centre box about p2, the corner-anchored random point on the unit's own
+  map, the per-type order position as fallback, the side radius |p2 - p1| in
+  the WP radius, arrival inside round(R) + the unit's path radius, the 20 s /
+  35 s re-order of an arrived bot) and a vehicle captures by its hull's 3D
+  distance. Before: no capture in 150 s, tanks parked 51..134 m out. After:
+  a Tiger takes the north bridge and an M3A1 the south one inside 160 s.
+
 ## Open, in priority order (the next session starts here)
 
 1. **No soldier hit from the air yet (session 3: still none).** Read since:
@@ -123,7 +131,12 @@ which the bot tests then covered.
 4. **Remaining INVENTIONs worth reading next**: `actionStatusDecision` modes 2..5,
    a target's information `security` (+0x14; 1 here), and the 20 s
    `getBBPFeedback` veto for vehicles (shared with infantry).
-5. **Boats**: split a parent hull's landing craft into their own drivable
+5. **Bocage's Tank0 map has no bridge crossing**: after the bridges fall the
+   next orders cross the river and `findStrategicPath` fails every tick
+   (north bank, south bank and the Sawmill are separate components on the
+   viewer-built map; the Tigers reach 259 path failures). The bridge decks
+   are statics over water; how the engine's map carries them is not read.
+6. **Boats**: split a parent hull's landing craft into their own drivable
    roots (seats.js lists them as seats), then drive an LCVP on Iwo Jima /
    Midway on the `LandingCraft3` map; build the water maps at their base
    level (`2^L` blocks) rather than per metre.
