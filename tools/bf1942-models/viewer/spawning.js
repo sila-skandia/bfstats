@@ -11,21 +11,20 @@ import { Armor } from './armor.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `buildSpawnFlags`, `capture`, `DEATH_CAM`, `deathCamShot`,
- * `deathCamTarget`, `deathCamTimer`, `deployActive`, `deployGroup`,
+ * `buildSpawnFlags`, `capture`, `deployActive`, `deployGroup`,
  * `deployHoverBtn`, `deployHoverVar`, `deployKept`, `deployKit`,
  * `deployKitHits`, `deployRejoin`, `deployResumeBtn`, `deployScoreBtn`,
  * `deploySuicideBtn`, `deployTabs`, `deployTeamId`, `deployUnchosen`,
- * `disposeHandWeapon`, `drawFullMap`, `ensureHandWeapon`, `flags`,
- * `fullmapBox`, `fullmapCanvas`, `handWeapon`, `hud`, `hudViewTimer`,
- * `kitRowLabelFor`, `kitRowLayoutText`, `layoutDeploy`, `LOCAL_PLAYER`,
- * `netReconciler`, `netSendAction`, `netTickPoses`, `optOnFoot`, `optPilot`,
- * `paintDeployChrome`, `paintDeploySoon`, `params`, `placeCamera`,
- * `projectToArt`, `prone`, `rebaseDeckSpawns`, `resetCaptureUi`,
- * `roomJoined`, `setOnFoot`, `setPilot`, `setScoreboard`,
- * `shipFlagInactive`, `snapPresentation`, `soldier`, `soldierArmor`,
- * `soldierDead`, `soldierMaxHp`, `spawnFlagSelect`, `spawnLayout`,
- * `supplyTarget`, `toggleFullMap`, `updateHud`, `world`, `worldReady`.
+ * `discardSoldier`, `disposeHandWeapon`, `drawFullMap`, `ensureHandWeapon`,
+ * `flags`, `fullmapBox`, `fullmapCanvas`, `handWeapon`, `hud`,
+ * `hudViewTimer`, `kitRowLabelFor`, `kitRowLayoutText`, `layoutDeploy`,
+ * `LOCAL_PLAYER`, `netReconciler`, `netSendAction`, `netTickPoses`,
+ * `optOnFoot`, `optPilot`, `paintDeployChrome`, `paintDeploySoon`, `params`,
+ * `placeCamera`, `projectToArt`, `rebaseDeckSpawns`, `resetCaptureUi`,
+ * `revive`, `roomJoined`, `setOnFoot`, `setPilot`, `setScoreboard`,
+ * `shipFlagInactive`, `snapPresentation`, `soldier`, `soldierDead`,
+ * `soldierMaxHp`, `spawnFlagSelect`, `spawnLayout`, `supplyTarget`,
+ * `toggleFullMap`, `updateHud`, `world`, `worldReady`.
  */
 export function createSpawning(page) {
   const spawning = {};
@@ -56,20 +55,16 @@ export function createSpawning(page) {
       flag, advance, group: flag.vehicle ? activeDeployGroup(flag) : null });
     if (!spawned) return false;
     const spawn = spawned.spawn;
-    page.prone = false;
     // A fresh body is full health, from the kit's own template (`soldierMaxHp`,
     // beside `kitLoadout` below) — every spawn and every redeploy passes
     // through here, so this is the one reset point. The world owns the Armor
     // record per player, but this is the same object the HUD has always read.
-    page.soldierArmor = new Armor(page.soldierMaxHp(flag));
-    page.world.setPlayerArmor(page.LOCAL_PLAYER, page.soldierArmor);
-    page.world.setPlayerSupply(page.LOCAL_PLAYER, { team: page.deployTeamId, refillAmmo: page.supplyTarget.refillAmmo });
+    const armor = new Armor(page.soldierMaxHp(flag));
     // Respawn clears the death cam: the fresh body is alive, so the latch
     // must not hold the corpse cam over the new soldier.
-    page.soldierDead = false;
-    page.deathCamTimer = 0;
-    page.deathCamShot = page.DEATH_CAM.foot;
-    page.deathCamTarget = null;
+    page.revive(armor);
+    page.world.setPlayerArmor(page.LOCAL_PLAYER, armor);
+    page.world.setPlayerSupply(page.LOCAL_PLAYER, { team: page.deployTeamId, refillAmmo: page.supplyTarget.refillAmmo });
     // The weapon follows the flag: switching to the other side's spawn swaps
     // the SMG. A no-op when the right one is already in hand.
     page.ensureHandWeapon(flag);
@@ -318,10 +313,7 @@ export function createSpawning(page) {
       // a live player who changes sides on the deploy screen dies and
       // rejoins from scratch on the new side.
       if (page.deployRejoin && newTeam !== page.deployTeamId && page.soldier) {
-        page.soldier = null;
-        page.soldierArmor = null;
-        page.soldierDead = false;
-        page.deathCamTimer = 0;
+        page.discardSoldier();
         page.deployRejoin = false;
         page.disposeHandWeapon();
       }
