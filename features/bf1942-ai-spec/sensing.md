@@ -74,7 +74,7 @@ The spotted list every behaviour scores is every record, seen or lost
 
 ## Hearing (`hear`)
 
-The page reports every shot to every bot (`map.html botFireTick`, and the
+The page reports every shot to every bot (`bot-referee.js fireTick`, and the
 human's). A bot hears a shooter of the other side when
 
 ```

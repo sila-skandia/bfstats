@@ -2,7 +2,7 @@
 
 `bot-strength.js`, `bot-vehicle.js`, `bot.js _urgencyChange /
 _urgencyChangeTeleport / _planChange`, and the page's seat handling
-(`map.html botVehicleCandidates / botEnterVehicle / botLeaveVehicle /
+(`bot-units.js candidates / bot-referee.js enterVehicle / leaveVehicle /
 botVehicleTick`).
 
 ## The class tables

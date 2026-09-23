@@ -5,8 +5,9 @@ Every constant the bot AI runs on. **Kind**: ENGINE (read from
 research says so), CON (read from shipped data), INVENTION (labelled so in
 the code), UNSOURCED (no label in the code and no source in the research:
 treat as INVENTION). Addresses are the research's (ledger AI-1..AI-66).
-Code paths are under `tools/bf1942-models/viewer/`; `map.html` entries are
-the page's referee. "Unused" marks a constant declared and never read.
+Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
+`bot-units.js` entries are the page's referee (the runner imports the same
+`bot-referee.js`), `map.html` entries the page's own wiring. "Unused" marks a constant declared and never read.
 
 | area | constant | value | source | code | kind |
 |---|---|---|---|---|---|
@@ -113,8 +114,8 @@ the page's referee. "Unused" marks a constant declared and never read.
 | move | hull back-out | 2 s | `actionStatusDecision` modes 2..5 not read | `bot.js VEHICLE_REVERSE_SECONDS` | INVENTION |
 | map | cell | 1 m | `LocalMap::getLevelPixelSize` 0x085ff170 | `nav-grid.js NAV_CELL` | ENGINE |
 | map | infantry map | water 1.5 m, slope 30 deg, brush 1.0, clip 0.4 .. 2.0 | `AIpathFinding.con ai.addSearchMap Infantry1 0 1.5 30 1.0 0.4 2.0 1` | `nav-grid.js INFANTRY_SEARCH_MAP` | CON |
-| map | vehicle map defaults | depth 0, slope 30, brush 3.0, clip 0.3 .. 2.5 | `AIpathFinding.con ai.addSearchMap Tank0 ...` | `map.html botVehicleNav` | CON |
-| map | water maps | `Boat2` depth 5.0, brush 125; `LandingCraft3` 1.4, 4 | `AIpathFinding.con` | `map.html botWaterNav` | CON |
+| map | vehicle map defaults | depth 0, slope 30, brush 3.0, clip 0.3 .. 2.5 | `AIpathFinding.con ai.addSearchMap Tank0 ...` | `bot-units.js vehicleNav` | CON |
+| map | water maps | `Boat2` depth 5.0, brush 125; `LandingCraft3` 1.4, 4 | `AIpathFinding.con` | `bot-units.js waterNav` | CON |
 | map | brush | `n = 2 round(b) + 1`, disc `<= b²` | `LocalMapInfo::update` 0x08480f50 | `nav-grid.js brushOffsets` | ENGINE |
 | map | statics per cell | the band filled per cell | engine draws the outline (`objectClipAndRender` 0x085fbfa0) | `nav-grid.js rasteriseTriangle` | INVENTION |
 | map | coarse level | 16 m, any free metre | `StrategicMap` not read | `nav-grid.js COARSE_CELL` | INVENTION |
@@ -150,8 +151,8 @@ the page's referee. "Unused" marks a constant declared and never read.
 | medic | approach | `R + 0.9 maxRange` | `BBPMedicAssist::createPlan` 0x085bf350 | `MEDIC.rangeFraction` | ENGINE |
 | medic | friend search | 60 m | not read | `MEDIC.searchRadius` | INVENTION |
 | medic | friend value | 1 | not read (`Information +0x14`) | `MEDIC.unitValue` | INVENTION |
-| medic | heal a round | 0.3 HP (0.1 at 30 Hz, 10 rounds/s) | `BFSoldierTemplate` ctor 0x0827a210 (+0x2e0); the cadence INFERRED | `MEDIC.healPerRound`, `map.html BOT_HEAL_PER_ROUND` | ENGINE (INFERRED) |
-| medic | heal reach | range + 0.5 m, 20 deg of the aim | | `map.html resolveBotHeal` | UNSOURCED |
+| medic | heal a round | 0.3 HP (0.1 at 30 Hz, 10 rounds/s) | `BFSoldierTemplate` ctor 0x0827a210 (+0x2e0); the cadence INFERRED | `MEDIC.healPerRound`, `bot-referee.js BOT_HEAL_PER_ROUND` | ENGINE (INFERRED) |
+| medic | heal reach | range + 0.5 m, 20 deg of the aim | | `bot-referee.js resolveHeal` | UNSOURCED |
 | medic | heal plan give-up | 2 m past the approach | | `bot.js _healPlanDone` | UNSOURCED |
 | strength | classes | 6 | `AISettings::getNBattleStrengths` 0x084843d0 | `BATTLE_CLASSES` | ENGINE |
 | strength | seat shares | 0.4 seat / aircraft, 0.9 ground root | `calculateFireStrength` 0x08584580 | `STRENGTH.seatShare`, `hullShare` | ENGINE |
@@ -173,7 +174,7 @@ the page's referee. "Unused" marks a constant declared and never read.
 | change | outside area | x0.75 | `BBChange` | `CHANGE.outsideAreaFactor` | ENGINE |
 | change | approach | 12.5 -> 6.25 m, Use within 12.375 m | `BBPChange::createPlan` 0x0858b5c0 | `CHANGE.approachFrom`, `approachTo`, `useWithin` (unused: the viewer walks to the door) | ENGINE |
 | change | door arrival | the door's radius, at least 2 m (4 when none) | | `bot.js _planChange` | UNSOURCED |
-| change | seat factors | x0.5 an aircraft's seats, x0.77 a ship's | `modifyForDriver` 0x0855f7d0 (0.77 for the 0x20 class) | `map.html botVehicleCandidates seatFactor` | ENGINE |
+| change | seat factors | x0.5 an aircraft's seats, x0.77 a ship's | `modifyForDriver` 0x0855f7d0 (0.77 for the 0x20 class) | `bot-units.js candidates seatFactor` | ENGINE |
 | change | air bail height | under 6 m | | `bot.js _urgencyChange` | INVENTION |
 | change | `driverFactor` | 1 | | `CHANGE.driverFactor` (unused, stale comment) | UNSOURCED |
 | swap | factors root / own / other | driver 1.0 / 1.0 / 0.5; seat under a driver 0.5 / 1.0 / 0.5; ship seat 1.0 / 0.5 / 0.65; land seat 1.0 / 0.5 / 0.7; aircraft seat 1.5 / 0.5 / 0.5 | `BBChangeTeleport::calculateUrgency` 0x085611f0 | `TELEPORT.root`, `seatUnderDriver`, `seatShip`, `seatLand`, `seatAir` | ENGINE |
@@ -189,7 +190,7 @@ the page's referee. "Unused" marks a constant declared and never read.
 | tank | turn radius default | 5 m | Sherman `aiTemplatePlugIn.turnRadius` | `TANK.defaultTurnRadius` | CON |
 | tank | soldier max speed | 5 m/s | `Objects/Soldiers/Common/AI/Objects.con maxSpeed 5.0` | `TANK.soldierMaxSpeed` | CON |
 | tank | yaw channel sign | +1 | calibrated on the Kubelwagen | `bot.js VEHICLE_YAW_SIGN` | INVENTION (calibration) |
-| plane | arrival | 4 x radius; radius 10 m | `BBPGotoWaypoint3d::createPlan` 0x085b81e0 (`ConPosition`); the radius not read | `PLANE.arriveRadiusFactor`, `map.html BOT_VEHICLE_RADIUS_LARGE` | ENGINE / INVENTION |
+| plane | arrival | 4 x radius; radius 10 m | `BBPGotoWaypoint3d::createPlan` 0x085b81e0 (`ConPosition`); the radius not read | `PLANE.arriveRadiusFactor`, `bot-units.js BOT_VEHICLE_RADIUS_LARGE` | ENGINE / INVENTION |
 | plane | waypoint clearance | 50 m | `WPAltitudeMoveTo` +0x14 from `orderAirBot` 0x08640982, read by `BBPGotoWaypoint3d::createPlan` 0x085b81e0 (AI-71) | `SAI.airClearance`; `PLANE.cruiseClearance` when a waypoint has none | ENGINE |
 | plane | law constants | 43.0, ln 10, -0.833, 0.333, 0.866 / 0.134, 0.9, 0.1, 18.0, 0.3, 9.0, roll rate 0.5 | `PlaneControl::towardsDirection` 0x08629fa0 (0x087058a8 ..) | `TOWARDS.*` | ENGINE |
 | plane | limits | maxClimb 0.3333, maxRoll 0.9999 | `ControlInfo3d` +0x104 / +0x108 (setters 0x0850dad0 / 0x0850dec0) | `PLANE_FIRE.maxClimbAngle`, `maxRollAngle` | CON |
@@ -226,21 +227,21 @@ the page's referee. "Unused" marks a constant declared and never read.
 | strategic | area geometry | the centre box `p1 .. 2 p2 - p1`; side radius `abs(p2 - p1)` (r for side 0) | `AIStrategicArea` ctor 0x0863c000, `isInside` 0x08641d40 (AI-70) | `strategic.js areaGeometry` | ENGINE |
 | strategic | order point | `randomizePos(0.8)`: per axis `p2 + rand W 0.8 - W / 2`, `W = 2 (p2 - p1)`, 20 tries on the unit's own map; else the unit type's order position if valid; else p2 | `AIStrategicArea::orderNormalBot` 0x08640bd0, `randomizePos` 0x086449e0, `getOrderPos` 0x0863e830 | `SAI.randomizeFraction`, `randomizePos`, `orderPosition` | ENGINE |
 | strategic | order radius | `max(5, 0.25 side radius + 2 bounding radius)` | `orderNormalBot`, `WPMoveTo` ctor 0x08537200 | `SAI.waypointRadiusFraction`, `waypointRadiusMin` | ENGINE |
-| strategic | bounding radius, unit value | 1 on foot (the page's 3 / 10 m mounted), 1 a soldier | not read | `SAI.unitRadius`, `unitValue`; `map.html botStrategicUnit` | INVENTION |
+| strategic | bounding radius, unit value | 1 on foot (the page's 3 / 10 m mounted), 1 a soldier | not read | `SAI.unitRadius`, `unitValue`; `bot-referee.js strategicUnit` | INVENTION |
 | strategic | path radius | 1.0 on foot; `0.99 x max(0.5, radius)` mounted | `getMaxPathPosRemovalDistance` 0x0852b780 (the soldier's radius not read) | `bot.js _pathRadius` | ENGINE; the radii INVENTION |
 | strategic | order urgency | 0 inside `Rr = round(R) + path radius`; else `clamp(d² / 4 Rr², 0.1, 1) x (2 / 1 / 0)`; arrived `d² < 2 Rr²` | `WPMoveTo::getUrgency` 0x085374a0, `getMaxPathPosRemovalDistance` 0x0852b780 | `_order`, `bot.js _pathRadius` | ENGINE |
 | strategic | owned-outside distance | `d² - side radius²` | `WPMoveTo::getUrgency` (AI-70) | `_order` | ENGINE |
 | strategic | air order | p2 at ground + 75 m, radius `min(40, side radius)`, 120 m band, clearance 50; urgency 1 outside, else `(dy² + d²) / (R² + 120²)` | `orderAirBot` 0x08640810, `WPAltitudeMoveTo::getUrgency` 0x08535610 (AI-71) | `SAI.airOrderHeight`, `airRadiusMax`, `airVertical`, `airClearance`; `_orderAir` | ENGINE |
 | strategic | aggression default | 0.5; attacks 1, defences 0 | | `_distribute` | UNSOURCED |
 | strategic | enemy cost | 0 | `EnemyStatistics` not read | `_attackValue` | INVENTION |
-| strategic | security | 1 | not read | `map.html botOccupiedUnits` | INVENTION |
-| page | respawn wait | 8 s | engine: the game's spawn delay | `map.html BOT_RESPAWN_DELAY` | INVENTION |
-| page | fallback rate, damage | 8 rounds/s, 30 | | `map.html BOT_FALLBACK_ROF`, `BOT_FALLBACK_DAMAGE` | UNSOURCED |
-| page | soldier capsule | radius 0.6 m at +1.0 m | the height is `setCharacterHeight -1.00` (`physics.js CHARACTER_HEIGHT`) | `map.html BOT_BODY_RADIUS`, `BOT_BODY_HEIGHT` | INVENTION / CON |
-| page | round range | 600 m | | `map.html BOT_FIRE_RANGE` | UNSOURCED |
-| page | line of sight | a terrain march, at most 10 steps of 0.8 m, 0.5 m margin | | `map.html botLineOfSight` | INVENTION |
-| page | capture | the flag's radius (8 m fallback) in 3D from the controlled object, `timeToGetControl` (8 s fallback), per bot | the level's control points; `ControlPoint::handleFrameUpdate` 0x08283b00 (AI-70) | `map.html botCaptureTick`, `nearestEnemyFlag`, `CAPTURE_FALLBACK_SECONDS` | CON / ENGINE; fallbacks UNSOURCED |
-| page | candidate list | rebuilt every 0.5 s; doors recollected every 10 s | engine: the environment query | `map.html botVehicleCandidates` | INVENTION |
-| page | vehicle body radius | 3 m land, 10 m air / ship | | `map.html BOT_VEHICLE_RADIUS`, `BOT_VEHICLE_RADIUS_LARGE` | INVENTION |
+| strategic | security | 1 | not read | `bot-referee.js occupiedUnits` | INVENTION |
+| page | respawn wait | 8 s | engine: the game's spawn delay | `bot-referee.js BOT_RESPAWN_DELAY` | INVENTION |
+| page | fallback rate, damage | 8 rounds/s, 30 | | `bot-referee.js BOT_FALLBACK_ROF`, `map.html BOT_FALLBACK_DAMAGE` | UNSOURCED |
+| page | soldier capsule | radius 0.6 m at +1.0 m | the height is `setCharacterHeight -1.00` (`physics.js CHARACTER_HEIGHT`) | `bot-referee.js BOT_BODY_RADIUS`, `BOT_BODY_HEIGHT` | INVENTION / CON |
+| page | round range | 600 m | | `bot-referee.js BOT_FIRE_RANGE` | UNSOURCED |
+| page | line of sight | a terrain march, at most 10 steps of 0.8 m, 0.5 m margin | | `bot-referee.js lineOfSight` | INVENTION |
+| page | capture | the flag's radius (8 m fallback) in 3D from the controlled object, `timeToGetControl` (8 s fallback), per bot | the level's control points; `ControlPoint::handleFrameUpdate` 0x08283b00 (AI-70) | `bot-referee.js captureTick`, `nearestEnemyFlag`, `CAPTURE_FALLBACK_SECONDS` | CON / ENGINE; fallbacks UNSOURCED |
+| page | candidate list | rebuilt every 0.5 s; doors recollected every 10 s | engine: the environment query | `bot-units.js candidates` | INVENTION |
+| page | vehicle body radius | 3 m land, 10 m air / ship | | `bot-units.js BOT_VEHICLE_RADIUS`, `BOT_VEHICLE_RADIUS_LARGE` | INVENTION |
 | page | soldier hit points | the kit's `maxHitpoints` (30 in vanilla), 30 fallback | `_shared/loadouts.json` | `map.html soldierMaxHp` | CON |
 | page | bot count | 0 .. 32 (`?botCount=`) | | `map.html BOT_COUNT` | UNSOURCED |

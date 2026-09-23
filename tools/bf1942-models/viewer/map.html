@@ -245,6 +245,11 @@ import { buildNavMap, findPath, gridAt, isWalkable } from './nav-grid.js';
 import { StrategicLayer, StrategicAI } from './strategic.js';
 import { detachSpawnedCraft } from './seats.js';
 import { VehicleRegistry } from './vehicle-instance.js';
+import {
+  createBotReferee, captureRadius, captureDuration, nearestEnemyFlag as nearestEnemyFlagOf,
+  BOT_BODY_RADIUS, BOT_BODY_HEIGHT, BOT_FIRE_RANGE,
+} from './bot-referee.js';
+import { createBotUnits } from './bot-units.js';
 import { bindTreeFoliage } from './tree-foliage.js';
 
 // Which game's levels this page serves, and the directory they hang off:
@@ -4323,7 +4328,7 @@ const vehicles = new VehicleRegistry({
   claimAudio: (playerId, root, drive, groups) => claimVehicleAudio(audioSeatKey(playerId), root, drive, groups),
   releaseAudio: (playerId, root) => releaseVehicleAudio(audioSeatKey(playerId), root),
   // A seat taken or freed changes every bot's candidate list.
-  onChange: () => { botCandidateCache.at = -1; },
+  onChange: () => { botUnits.candidateCache.at = -1; },
 });
 /** Scratch for the per-tick seat position feed (`vehicles.publishSeatPositions`). */
 const seatWorldPos = new THREE.Vector3();
@@ -5726,7 +5731,7 @@ function splashTargets() {
     });
   }
   // The bots on foot are soldiers too: a bot-driven hull's shell reaches them.
-  for (const bot of botControllers ?? []) {
+  for (const bot of referee.bots ?? []) {
     if (bot.vehicle) continue;
     const armor = world?.armorOf(bot.playerId);
     const s = world?.player(bot.playerId)?.soldier;
@@ -5786,7 +5791,7 @@ function applyVehicleHit(record) {
         // what is left is the bot's side of it (the log, the incoming-fire
         // event, a death).
         const at = record.splashPoint ?? record.point ?? null;
-        botDamageLanded(hit.target.botId, hit.lost, botFiringGroup(record) ?? LOCAL_PLAYER, at, `splash ${record.gun ?? ''} d ${hit.distance.toFixed(1)}`);
+        referee.damageLanded(hit.target.botId, hit.lost, botFiringGroup(record) ?? LOCAL_PLAYER, at, { via: `splash ${record.gun ?? ''} d ${hit.distance.toFixed(1)}` });
       }
       if (hit.target.node && hit.vehicle.destroyed) hit.target.node.visible = false;
       continue;
@@ -7142,7 +7147,7 @@ const entryWorld = new THREE.Vector3();
 function nearestEntry() {
   if (!entryPoints) collectEntryPoints();
   return pickNearest(entryPoints, entry => {
-    if (botSeatHolder(entry.vehicle, entry.seatId)) return Infinity;
+    if (botUnits.seatHolder(entry.vehicle, entry.seatId)) return Infinity;
     entry.node.getWorldPosition(entryWorld);
     const distance = Math.hypot(entryWorld.x - soldier.x,
       entryWorld.y - (soldier.y + 1), entryWorld.z - soldier.z);
@@ -7409,18 +7414,118 @@ const BOT_COUNT = Math.max(0, Math.min(32, Number(params.get('botCount')) || 0))
 const BOT_SKILL = Math.max(0.25, Math.min(1.0, Number(params.get('botSkill')) || 0.75));
 /** `?botDebug`: log every hit on a bot. */
 const BOT_DEBUG = params.has('botDebug');
-/** Bot controllers for the current level; cleared on every level switch. */
-let botControllers = [];
-/** Navigation grid for bot pathfinding; built per level. */
-let botNavGrid = null;
-/** Bot AI clock: monotonic seconds since level load. */
-let botClock = 0;
-/** The level's strategic AI (strategic.js), or null without `extras.ai`. */
-let botStrategy = null;
-/** Cover candidates for the TakeCover behaviour: the placed statics whose
- *  template has a `coverValue`, with their footprint. */
-let botCovers = [];
-const CAPTURE_FALLBACK_SECONDS = 8;
+/**
+ * The bots' referee (bot-referee.js, the same copy `sim/match.mjs` runs): the
+ * bots, their clock, nav map, strategic AI and covers, and everything a
+ * server does around them -- rounds, damage, death and respawn, capture,
+ * seating, the enemy tables. What is the page's is handed in: the vehicles
+ * the bots can take (`botUnits`, over the hulls' instances), a body's Armor,
+ * a round's damage, and what the page does with each event -- a sound, a
+ * hoisted flag, a hidden body.
+ */
+let botPlayerFired = false;
+let botPlayerPos = null;
+let botPlayerTeam = null;
+const referee = createBotReferee({
+  world: () => world,
+  get units() { return botUnits; },
+  groundAt: (x, z, fromY) => groundHeight(x, z, fromY),
+  armorFor: (bot, flag) => new Armor(soldierMaxHp(flag)),
+  roundDamage: stats => botRoundDamage(stats),
+  debug: BOT_DEBUG,
+  // The player's shot, heard inside his weapon's sound radius, and incoming
+  // fire when it lands nearby: the edge of his fire input this frame.
+  beforeBots: () => {
+    botPlayerPos = soldier ? [soldier.x, soldier.y, soldier.z] : null;
+    botPlayerTeam = world?.player(LOCAL_PLAYER)?.team ?? deployTeamId;
+    botPlayerFired = !!frameInputLast?.fire && !frameInputWasFiring;
+    frameInputWasFiring = !!frameInputLast?.fire;
+  },
+  afterBotTick: (bot, dt) => {
+    botFootstepTick(bot, dt);
+    if (botPlayerFired && botPlayerPos) {
+      bot.onShotFired(LOCAL_PLAYER, botPlayerTeam, botPlayerPos, referee.clock, localWeaponSoundRadius());
+    }
+  },
+  // ...and the page hears a bot's round from where the shooter stands: the
+  // world path, which plays the fire patch's near/far hand-over rather than
+  // the muzzle pick alone (the player's own keep `playHandFire`).
+  onShot: (bot, at) => playWorldShot(bot.weaponAi?.name ?? bot.kitPrimary ?? null, at[0], at[1] + 1.4, at[2]),
+  damageTarget: (hit, bot) => {
+    if (hit.targetId !== LOCAL_PLAYER) return false;
+    applyDamageToPlayer(hit.damage, { x: bot.position[0], y: bot.position[1], z: bot.position[2] }, bot.team);
+    return true;
+  },
+  damageHull: (bot, damage) => {
+    const hull = world?.occupiedDamageable(bot.playerId);
+    if (!hull) return false;
+    hull.damage(damage);
+    return true;
+  },
+  defaultAttackerPos: () => (soldier ? [soldier.x, soldier.y, soldier.z] : null),
+  // The grunt is the soldier's, not the shooter's: positional, so a bot hit
+  // across the field is a distant cry rather than a 2D overlay. Same cooldown
+  // as the player's own hurt sound so a burst does not stack.
+  onHurt: bot => {
+    const at = bot.getPosition();
+    playSoldierHurtSound(false, { x: at[0], y: at[1] + 1.2, z: at[2] });
+  },
+  onDeath: bot => {
+    const vis = botVisuals.get(bot.playerId);
+    if (vis) vis.group.visible = false;
+  },
+  onRespawned: bot => {
+    const vis = botVisuals.get(bot.playerId);
+    if (vis) vis.lastPos = null;   // no gait smear across the respawn
+  },
+  // Room play stays authoritative: no local bot capture.
+  captureEnabled: () => !roomJoined,
+  onCapture: (bot, target, prevTeam) => {
+    hoistCaptureFlag(target);
+    syncVehicleSpawnOwnership();
+    logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
+    console.log(`[bots] ${bot.playerId} takes ${target.name}${bot.vehicle ? ' in the ' + (bot.vehicle.template ?? bot.vehicle.kind) : ''}`);
+    announceCapture(prevTeam, target.team);
+  },
+  onMounted: (bot, cand, mount) => {
+    const vis = botVisuals.get(bot.playerId);
+    if (vis) vis.group.visible = false;
+    if (BOT_DEBUG) console.log(`[bots] ${bot.playerId} takes the ${cand.template} ${mount.drives ? 'driver seat' : 'seat ' + cand.seatId}`);
+  },
+  onSeatSwitched: bot => {
+    const vis = botVisuals.get(bot.playerId);
+    if (vis) vis.group.visible = false;
+  },
+  onDismounted: (bot, m, { killed, silent }) => {
+    const vis = botVisuals.get(bot.playerId);
+    if (vis) vis.group.visible = !killed;
+    if (BOT_DEBUG && !silent) console.log(`[bots] ${bot.playerId} leaves the ${m.template}${killed ? ' (killed)' : ''}`);
+  },
+  onBotCreated: bot => {
+    // Async: the fire data of every weapon the kit carries, and the bot's
+    // visual, so it appears when ready.
+    loadBotWeapons(bot);
+    ensureBotVisual(bot).then(vis => {
+      if (vis?.rig) console.log(`[bots] visual loaded for ${bot.name}`);
+      else console.warn(`[bots] visual failed for ${bot.name}`);
+    });
+  },
+});
+/** The vehicles the bots can see and take (bot-units.js). */
+const botUnits = createBotUnits({
+  world: () => world,
+  referee: () => referee,
+  vehicles,
+  aiUrl: () => `${activeMod.paths.maps || 'maps'}/_shared/vehicle-ai.json${bust()}`,
+  entryPoints: recollect => {
+    if (recollect) collectEntryPoints();
+    return entryPoints;
+  },
+  currentRoot: () => currentRoot,
+  vehicleSpawnActive: node => vehicleSpawnActive(node),
+  collider: () => collider,
+  localPlayerId: LOCAL_PLAYER,
+});
 let localCapture = null;
 let roomCapture = null;
 // The input object frame() built for this frame — onFootCamera's footFire
@@ -7593,35 +7698,12 @@ function buildSpawnFlags() {
   return flags.length;
 }
 
-function captureRadius(flag) {
-  return Number.isFinite(flag?.radius) && flag.radius > 0 ? flag.radius : 8;
-}
 
-function captureDuration(flag) {
-  return Number.isFinite(flag?.timeToGetControl) && flag.timeToGetControl > 0
-    ? flag.timeToGetControl : CAPTURE_FALLBACK_SECONDS;
-}
 
 function nearestEnemyFlag(team, position) {
-  if (!position) return null;
-  let nearest = null;
-  let distance = Infinity;
-  for (const flag of flags) {
-    if (flag.uncapturable || !flag.position || flag.team === team) continue;
-    // `ControlPoint::handleFrameUpdate` 0x08283b00: the 3D distance from the
-    // point to the player's controlled object (the hull, when mounted)
-    // against the template radius (+0x1dc).
-    const dx = position.x - flag.position[0];
-    const dz = position.z - flag.position[2];
-    const dy = Number.isFinite(position.y) ? position.y - flag.position[1] : 0;
-    const d = Math.hypot(dx, dy, dz);
-    if (d <= captureRadius(flag) && d < distance) {
-      nearest = flag;
-      distance = d;
-    }
-  }
-  return nearest;
+  return position ? nearestEnemyFlagOf(flags, team, [position.x, position.y, position.z]) : null;
 }
+
 
 function capturePosition() {
   const player = world?.player(LOCAL_PLAYER);
@@ -8046,146 +8128,40 @@ function spawnAtFlag(advance = false) {
  */
 function spawnBotsForLevel() {
   disposeBotVisuals();
-  botClock = 0;
+  referee.clock = 0;
   if (BOT_COUNT <= 0 || !world) {
     console.log(`[bots] skipped: BOT_COUNT=${BOT_COUNT}, world=${!!world}`);
     return;
   }
-  botControllers = [];
-  // Build the navigation map from the level's collider: the engine's own
-  // metre bitmap (`LocalMap`, one bit a metre, statics clipped to the
-  // infantry map's 0.4..2.0 m band), not a coarse grid. See nav-grid.js.
-  const worldSize = world.extras?.worldSize || 2048;
-  const navStarted = performance.now();
-  // The flood seeds: the engine's `ai.setMapSpawnPoints`; here every soldier
-  // spawn point the level ships, which is where a bot starts walking from.
-  const seeds = [];
-  for (const flag of world.flags ?? []) {
-    for (const spawn of flag.spawns ?? []) {
-      if (spawn?.position) seeds.push([spawn.position[0], spawn.position[2]]);
-    }
-  }
-  botNavGrid = buildNavMap(world.collider, worldSize, {
-    waterLevel: world.collider?.waterLevel,
-    seeds,
-  });
-  console.log(`[bots] nav map: ${botNavGrid.width}x${botNavGrid.height} at ${botNavGrid.cellSize} m, `
-              + `coarse ${botNavGrid.coarse.width}x${botNavGrid.coarse.height}, `
-              + `${(performance.now() - navStarted).toFixed(0)} ms`);
   // Both sides get bots, alternating so an odd count leaves the extra body on
-  // the player's team. `spawnBots` owns flag filtering and the world's
-  // `spawnPlayer` owns placement — no duplicate spawn logic here.
+  // the player's team. The referee builds the nav map, the bots, the
+  // strategic AI and the covers, and gives each bot its body
+  // (bot-referee.js `spawn`); the page loads what each bot draws and holds.
   const friendly = deployTeamId === 1 ? 1 : 2;
   const enemy = friendly === 1 ? 2 : 1;
   console.log(`[bots] spawning ${BOT_COUNT} bots across teams ${friendly}/${enemy}, skill ${BOT_SKILL}`);
-  botControllers = spawnBots({
-    world,
+  const navMs = referee.spawn({
     count: BOT_COUNT,
     botSkill: BOT_SKILL,
     teams: [friendly, enemy],
-    flags: world.flags,
     // `BotSpawner::findKitDiff` is 1 for every allowed kit in practice, so
     // the kit is uniform among the side's kits; its items' AI weapon
     // templates (`_shared/loadouts.json` `aiWeapons`) are the bot's weapons.
     kitFor: botKitFor,
     viewDistance: world.extras?.ai?.settings?.viewDistance ?? null,
   });
-  console.log(`[bots] created ${botControllers.length} bot controllers`);
-  // The strategic AI, on the level's `AI/*.con` data; without it a bot walks
-  // to the nearest enemy flag (bot.js).
-  botStrategy = world.extras?.ai?.strategicAreas?.length
-    ? new StrategicAI(new StrategicLayer(world.extras.ai, world.flags),
-                      { isWalkable: (x, z) => isWalkable(botNavGrid, x, z),
-                        unitOf: botStrategicUnit,
-                        spottedOf: id => botControllers.find(b => b.playerId === id)?.senses?.memory?.size ?? 0 })
-    : null;
-  botCovers = buildBotCovers();
-  loadBotVehicleAi();
+  const nav = referee.navGrid;
+  console.log(`[bots] nav map: ${nav.width}x${nav.height} at ${nav.cellSize} m, `
+              + `coarse ${nav.coarse.width}x${nav.coarse.height}, ${navMs.toFixed(0)} ms`);
+  console.log(`[bots] created ${referee.bots.length} bot controllers`);
+  botUnits.loadAi();
   if (!entryPoints) collectEntryPoints();
-  console.log(`[bots] strategic AI: ${botStrategy ? botStrategy.layer.areas.length + ' areas' : 'none'}, `
-              + `${botCovers.length} cover objects`);
-  for (const bot of botControllers) {
-    bot.navGrid = botNavGrid;
-    bot.covers = botCovers;
-    bot.unitInfoOf = botUnitInfo;
-    botStrategy?.addBot(bot.playerId, bot.team);
-    // The world steps bots, so each needs the Armor the soldier tick and the
-    // combat area read (`#soldierTick`, `#combatTick`) — the kit's own max HP.
-    const flag = world.player(bot.playerId)?.flag ?? null;
-    world.setPlayerArmor(bot.playerId, new Armor(soldierMaxHp(flag)));
-    // Async: the fire data of every weapon the kit carries.
-    loadBotWeapons(bot);
-    // Async: load the bot's visual so it appears when ready.
-    ensureBotVisual(bot).then(vis => {
-      if (vis?.rig) {
-        console.log(`[bots] visual loaded for ${bot.name}`);
-      } else {
-        console.warn(`[bots] visual failed for ${bot.name}`);
-      }
-    });
-  }
+  console.log(`[bots] strategic AI: ${referee.strategy ? referee.strategy.layer.areas.length + ' areas' : 'none'}, `
+              + `${referee.covers.length} cover objects`);
 }
 
-/**
- * Tick all bot controllers. Called from frame() after the world step.
- */
-function tickBots(dt) {
-  if (!botControllers.length) return;
-  botClock += dt;
-  const playerPos = soldier ? [soldier.x, soldier.y, soldier.z] : null;
-  const myTeam = world?.player(LOCAL_PLAYER)?.team ?? deployTeamId;
-  // The strategic pass (once per `SAI.updateFrequency`), then each bot's
-  // order for this tick.
-  if (botStrategy) {
-    const alive = new Map();
-    for (const bot of botControllers) {
-      if (world.armorOf(bot.playerId)?.destroyed) continue;
-      alive.set(bot.playerId, bot.getPosition());
-    }
-    botStrategy.update(dt, alive);
-  }
-  // `SAI::updateStrengths`: each side's enemy tables, once per strategic pass.
-  if (botClock - botTablesAt >= SAI.updateFrequency) {
-    botTablesAt = botClock;
-    const units = botOccupiedUnits();
-    for (const side of [1, 2]) botEnemyTables[side].update(units.filter(u => u.side !== side));
-  }
-  for (const bot of botControllers) bot.enemyTables = botEnemyTables[bot.team] ?? null;
-  const playerFired = !!frameInputLast?.fire && !frameInputWasFiring;
-  frameInputWasFiring = !!frameInputLast?.fire;
-  botVehicleTick();
-  for (const bot of botControllers) {
-    if (botRespawnTick(bot, dt)) continue;   // dead and waiting out its timer
-    bot.waypoints = botStrategy?.waypointsOf(bot.playerId) ?? null;
-    bot.tick(dt, botClock);
-    botFootstepTick(bot, dt);
-    // The player's shot: heard inside the weapon's sound radius, and
-    // incoming fire when it lands nearby.
-    if (playerFired && playerPos) {
-      bot.onShotFired(LOCAL_PLAYER, myTeam, playerPos, botClock, localWeaponSoundRadius());
-    }
-    // A bot that could not walk out of its spawn after four escapes is
-    // redeployed to the flag's next spawn point — the deploy screen's own
-    // `advance`, not a teleport out of the world. See `bot.js` `_trackStuck`.
-    if (bot._needsRespawn) {
-      bot._needsRespawn = false;
-      bot._stalledTicks = 0;
-      bot._pathFailures = 0;
-      bot.route = null;
-      const record = world.player(bot.playerId);
-      if (record?.flag) {
-        world.spawnPlayer(bot.playerId, { flag: record.flag, advance: true });
-        bot.setPosition(record.soldier.x, record.soldier.y, record.soldier.z);
-        bot._lastX = null;
-        bot._lastZ = null;
-      }
-    }
-  }
-  botFireTick(dt);
-}
 
 /** Seconds a downed bot stays out before its side puts it back on a flag. */
-const BOT_RESPAWN_DELAY = 8;
 
 const _shotRayDir = new THREE.Vector3();
 const _shotConeDir = new THREE.Vector3();
@@ -8202,7 +8178,7 @@ const _shotOrigin = new THREE.Vector3();
  * every bot and only the bots' rounds land.
  */
 function resolvePlayerShotOnBots() {
-  if (!botControllers.length || !world || !soldier) return;
+  if (!referee.bots.length || !world || !soldier) return;
   const myTeam = world.player(LOCAL_PLAYER)?.team ?? deployTeamId;
 
   camera.getWorldPosition(_shotOrigin);
@@ -8228,7 +8204,7 @@ function resolvePlayerShotOnBots() {
   const origin = [_shotOrigin.x, _shotOrigin.y, _shotOrigin.z];
   let best = null;
   let bestT = Infinity;
-  for (const bot of botControllers) {
+  for (const bot of referee.bots) {
     if (bot.team === myTeam) continue;                       // never a teammate
     const player = world.player(bot.playerId);
     const s = player?.soldier;
@@ -8244,90 +8220,10 @@ function resolvePlayerShotOnBots() {
     if (px * px + py * py + pz * pz > BOT_BODY_RADIUS * BOT_BODY_RADIUS) continue;
     const at = [origin[0] + t * _shotConeDir.x, origin[1] + t * _shotConeDir.y,
                 origin[2] + t * _shotConeDir.z];
-    if (!botLineOfSight(origin, at)) continue;
+    if (!referee.lineOfSight(origin, at)) continue;
     if (t < bestT) { bestT = t; best = bot.playerId; }
   }
-  if (best) applyDamageToBot(best, botRoundDamage(), LOCAL_PLAYER, origin);
-}
-
-/**
- * Damage one bot. A killing round parks it: the controller stops firing, the
- * body is hidden, and the respawn timer starts.
- */
-function applyDamageToBot(playerId, damage, attackerId = LOCAL_PLAYER, attackerPos = null, via = '') {
-  const armor = world?.armorOf(playerId);
-  if (!armor || armor.destroyed) return;
-  const mounted = botControllers.find(b => b.playerId === playerId)?.vehicle;
-  if (mounted && damage < 1e5) {
-    const hull = world.occupiedDamageable(playerId);
-    if (hull) { hull.damage(damage); return; }
-  }
-  const lost = armor.damage(damage);
-  botDamageLanded(playerId, lost, attackerId, attackerPos, via);
-}
-
-/**
- * A bot's Armor has just lost `lost` HP (already applied, by `applyDamageToBot`
- * or by a splash): log it, raise the incoming-fire event and handle a death.
- */
-function botDamageLanded(playerId, lost, attackerId = LOCAL_PLAYER, attackerPos = null, via = '') {
-  const armor = world?.armorOf(playerId);
-  if (!armor) return;
-  const bot = botControllers.find(b => b.playerId === playerId);
-  if (BOT_DEBUG) {
-    console.log(`[bots] ${attackerId} hit ${playerId} for ${Math.round(lost * 10) / 10}: ${Math.round(armor.hitPoints * 10) / 10}/${armor.maxHitPoints}`
-                + (armor.destroyed ? ' (killed)' : '') + (via ? ` [${via}]` : ''));
-  }
-  // `event_projectile`: the hit is incoming fire, x10 for having landed.
-  if (bot) {
-    const from = attackerPos ?? (soldier ? [soldier.x, soldier.y, soldier.z] : null);
-    bot.onIncomingFire(attackerId, from, botClock, true, 1);
-    // The grunt is the soldier's, not the shooter's: positional, so a bot
-    // hit across the field is a distant cry rather than a 2D overlay. Same
-    // cooldown as the player's own hurt sound so a burst does not stack.
-    if (!armor.destroyed && lost > 0) {
-      const at = bot.getPosition();
-      playSoldierHurtSound(false, { x: at[0], y: at[1] + 1.2, z: at[2] });
-    }
-  }
-  if (!armor.destroyed) return;
-  if (!bot) return;
-  if (bot.vehicle) botLeaveVehicle(bot, { killed: true });
-  bot.isFiring = false;
-  bot.firingTarget = null;
-  bot._respawnIn = BOT_RESPAWN_DELAY;
-  botStrategy?.botDied(playerId);
-  const vis = botVisuals.get(playerId);
-  if (vis) vis.group.visible = false;
-}
-
-/**
- * Run a dead bot's respawn timer. Returns true while it is still down, so the
- * caller skips its tick. On expiry the side puts it back on one of its own
- * flags with a fresh body — the same `spawnPlayer` + `setPosition` pair the
- * stuck-bot redeploy above uses, not a teleport out of the world.
- */
-function botRespawnTick(bot, dt) {
-  const armor = world?.armorOf(bot.playerId);
-  if (!armor?.destroyed) return false;
-  bot._respawnIn = (bot._respawnIn ?? BOT_RESPAWN_DELAY) - dt;
-  if (bot._respawnIn > 0) return true;
-
-  const teamFlags = world.flags.filter(f => f.team === bot.team);
-  const flag = teamFlags.length
-    ? teamFlags[Math.floor(Math.random() * teamFlags.length)]
-    : (world.player(bot.playerId)?.flag ?? null);
-  world.spawnPlayer(bot.playerId, { flag, advance: true, group: bot.team });
-  const record = world.player(bot.playerId);
-  world.setPlayerArmor(bot.playerId, new Armor(soldierMaxHp(record?.flag ?? flag)));
-  if (record?.soldier) {
-    bot.setPosition(record.soldier.x, record.soldier.y, record.soldier.z);
-  }
-  bot._respawnIn = 0;
-  bot.onRespawn();
-  const vis = botVisuals.get(bot.playerId);
-  if (vis) vis.lastPos = null;   // no gait smear across the respawn
-  return false;
+  if (best) referee.applyDamage(best, botRoundDamage(), LOCAL_PLAYER, origin);
 }
 
 // --- bot weapons -----------------------------------------------------------
@@ -8340,33 +8236,17 @@ function botRespawnTick(bot, dt) {
 // trigger writing a synthetic weapon group would put real tracers in the air
 // and still deal the player no damage.
 //
-// So this keeps the half of parity that is exact and resolves the other half
-// here: the bot's live facing, the engine's deviation cone (the same polar law
-// `gunfire.js` rolls: theta = spread * sqrt(u), azimuth free) and the engine's
-// own direct-hit formula (base material damage x the attacker/defender
-// damageMod pair). Only the hit test against a soldier body is an INVENTION
-// stand-in — a vertical capsule at the world's object origin, which is
-// `setCharacterHeight -1.00` (physics.js CHARACTER_HEIGHT) above the feet.
-//
-// Recorded as a departure in features/bf1942-ai-research-2026-09-21/
-// IMPLEMENTATION_PLAN.md.
+// So the referee (bot-referee.js) keeps the half of parity that is exact and
+// resolves the other half itself: the bot's live facing, the engine's
+// deviation cone and the engine's own direct-hit formula (base material
+// damage x the attacker/defender damageMod pair, `botRoundDamage` below).
+// Only the hit test against a soldier body is an INVENTION stand-in. Recorded
+// as a departure in features/bf1942-ai-research-2026-09-21/IMPLEMENTATION_PLAN.md.
 
-/** Rounds/second when no hand weapon's stats are loaded yet. */
-const BOT_FALLBACK_ROF = 8;
 /** `damage.json`'s default material damage, used until a projectile resolves. */
 const BOT_FALLBACK_DAMAGE = 30;
 /** `MaterialManager.material 40` — the soldier's defending material. */
 const BOT_SOLDIER_MATERIAL = 40;
-/** A soldier body's stand-in radius and origin height (INVENTION). */
-const BOT_BODY_RADIUS = 0.6;
-const BOT_BODY_HEIGHT = CHARACTER_HEIGHT;
-/** A bot's rounds stop after this far, matching the hand weapon's own range. */
-const BOT_FIRE_RANGE = 600;
-
-const _botRayDir = new THREE.Vector3();
-const _botConeDir = new THREE.Vector3();
-const _botFrameU = new THREE.Vector3();
-const _botFrameV = new THREE.Vector3();
 
 /** The damage one bot round does, from the engine's direct-hit formula. */
 function botRoundDamage(stats = null) {
@@ -8440,96 +8320,18 @@ function applyRoundToSoldier(record) {
   const firer = roundFirer(record.firerGroup);
   const firerTeam = firer ? world?.player(firer)?.team ?? null : null;
   const from = firer === LOCAL_PLAYER ? camera.position.toArray()
-    : firer ? botControllers.find(b => b.playerId === firer)?.getPosition() ?? null : null;
+    : firer ? referee.bots.find(b => b.playerId === firer)?.getPosition() ?? null : null;
   if (firer && firer !== LOCAL_PLAYER) {
-    botControllers.find(b => b.playerId === firer)?.recordHit(id);
+    referee.bots.find(b => b.playerId === firer)?.recordHit(id);
   }
   if (id === LOCAL_PLAYER) {
     applyDamageToPlayer(record.damage,
       from ? { x: from[0], y: from[1], z: from[2] } : null, firerTeam);
   } else {
-    applyDamageToBot(id, record.damage, firer ?? LOCAL_PLAYER, from, `round ${record.gun ?? ''}`);
+    referee.applyDamage(id, record.damage, firer ?? LOCAL_PLAYER, from, { via: `round ${record.gun ?? ''}` });
   }
 }
 
-/** Terrain-blocked line of sight (same stand-in as bot.js `checkLOS`). */
-function botLineOfSight(from, to) {
-  const collider = world?.collider;
-  if (!collider?.surfaceHeight) return true;
-  const dx = to[0] - from[0];
-  const dy = to[1] - from[1];
-  const dz = to[2] - from[2];
-  const distance = Math.hypot(dx, dy, dz);
-  const steps = Math.min(10, Math.max(1, Math.ceil(distance / 0.8)));
-  for (let i = 1; i < steps; i++) {
-    const t = i / steps;
-    const surface = collider.surfaceHeight(from[0] + dx * t, from[2] + dz * t);
-    if (!Number.isFinite(surface)) continue;
-    if (surface > from[1] + dy * t + 0.5) return false;
-  }
-  return true;
-}
-
-/**
- * Resolve one bot round against the world's players. Returns
- * `{ targetId, damage }` on a hit, else null.
- */
-function resolveBotShot(bot) {
-  const { origin, dir } = bot.aimRay();
-  _botRayDir.set(dir[0], dir[1], dir[2]).normalize();
-  // Roll into the deviation cone, exactly as `gunfire.js` `#wander` does.
-  const spread = (bot.aimDeviation ?? 0) * DEG_TO_RAD;
-  if (spread > 0) {
-    const theta = spread * Math.sqrt(Math.random());
-    const phi = Math.random() * Math.PI * 2;
-    if (Math.abs(_botRayDir.y) > 0.99) _botFrameU.set(1, 0, 0);
-    else _botFrameU.set(0, 1, 0);
-    _botFrameU.cross(_botRayDir).normalize();
-    _botFrameV.crossVectors(_botRayDir, _botFrameU);
-    _botConeDir.copy(_botRayDir).multiplyScalar(Math.cos(theta))
-      .addScaledVector(_botFrameU, Math.sin(theta) * Math.cos(phi))
-      .addScaledVector(_botFrameV, Math.sin(theta) * Math.sin(phi));
-  } else {
-    _botConeDir.copy(_botRayDir);
-  }
-
-  const botPlayer = world?.player(bot.playerId);
-  const damage = botRoundDamage(botWeaponDataOf(bot));
-  let best = null;
-  let bestT = Infinity;
-  for (const [id, player] of world.players) {
-    if (id === bot.playerId) continue;
-    // The friendly test is the same one `sense()` applies, with no local-player
-    // exception: a round never resolves against a soldier on the shooter's side.
-    if (botPlayer && player.team === botPlayer.team) continue;
-    if (world.armorOf(id)?.destroyed) continue;
-    const s = player.soldier;
-    if (!s) continue;
-    let cx = s.x - origin[0];
-    let cy = (s.y + BOT_BODY_HEIGHT) - origin[1];
-    let cz = s.z - origin[2];
-    const t = cx * _botConeDir.x + cy * _botConeDir.y + cz * _botConeDir.z;
-    if (t < 0 || t > BOT_FIRE_RANGE) continue;
-    const px = cx - t * _botConeDir.x;
-    const py = cy - t * _botConeDir.y;
-    const pz = cz - t * _botConeDir.z;
-    if (px * px + py * py + pz * pz > BOT_BODY_RADIUS * BOT_BODY_RADIUS) continue;
-    const at = [origin[0] + t * _botConeDir.x, origin[1] + t * _botConeDir.y,
-                origin[2] + t * _botConeDir.z];
-    if (!botLineOfSight(origin, at)) continue;
-    if (t < bestT) {
-      bestT = t;
-      best = { targetId: id, damage };
-    }
-  }
-  return best;
-}
-
-/**
- * One frame of bot fire. The trigger, its rate and its report; the round's
- * cone and its damage. Runs after `tickBots`, so `bot.isFiring` is this frame's
- * decision.
- */
 /**
  * A weapon template's `fireArms` block (rate of fire, magazine, projectile,
  * deviation channels) out of its glb's document extras — the same
@@ -8558,11 +8360,6 @@ function botWeaponData(name) {
   return p;
 }
 
-/** The fire data of the weapon a bot holds right now, or null while loading. */
-function botWeaponDataOf(bot) {
-  const name = bot.weaponAi?.name ?? bot.kitPrimary ?? null;
-  return name ? bot.weaponData?.[name] ?? null : null;
-}
 
 /** Load every weapon a bot carries and hand the data to its controller. */
 function loadBotWeapons(bot) {
@@ -8578,523 +8375,6 @@ function loadBotWeapons(bot) {
   return Promise.all([...names].map(name => botWeaponData(name).then(data => {
     if (data) bot.setWeaponData(name, data);
   })));
-}
-
-/**
- * The bot's magazine for the weapon it holds: rounds in the magazine, spare
- * magazines, and the reload in progress (`fireArms.magazine`). The AI weapon
- * entry's `ammo` follows it, so `BBFire` drops a dry weapon and the fire
- * plan ends on an empty magazine (`bot.magazineEmpty`).
- */
-function botMagazineTick(bot, dt) {
-  const stats = botWeaponDataOf(bot);
-  const name = bot.weaponAi?.name ?? null;
-  const size = stats?.magazine?.size > 0 ? stats.magazine.size : 0;
-  if (!bot._mags) bot._mags = new Map();
-  let mag = name ? bot._mags.get(name) : null;
-  if (!mag && name) {
-    mag = { rounds: size || Infinity, spare: size ? Math.max(0, (stats?.magazine?.magazines ?? 1) - 1) : 0,
-            size, reloadTime: stats?.magazine?.reloadTime ?? 0, reloadLeft: 0 };
-    bot._mags.set(name, mag);
-  }
-  if (!mag) return { canFire: true };
-  if (mag.reloadLeft > 0) {
-    mag.reloadLeft = Math.max(0, mag.reloadLeft - dt);
-    if (mag.reloadLeft === 0) { mag.rounds = mag.size; mag.spare -= 1; }
-  } else if (mag.rounds <= 0 && mag.spare > 0) {
-    mag.reloadLeft = mag.reloadTime > 0 ? mag.reloadTime : 1e-6;
-  }
-  const canFire = mag.reloadLeft === 0 && mag.rounds > 0;
-  bot.magazineEmpty = mag.rounds <= 0;
-  if (bot.weaponAi && Number.isFinite(mag.rounds)) {
-    bot.weaponAi.ammo = mag.rounds + mag.spare * mag.size;
-  }
-  mag.canFire = canFire;
-  return mag;
-}
-
-function botMagazineShot(bot, mag) {
-  if (!mag || !Number.isFinite(mag.rounds)) return;
-  mag.rounds = Math.max(0, mag.rounds - 1);
-}
-
-/** The MedPack's heal per trigger tick (bot-behaviours.js `MEDIC`): the
- *  soldier template's +0x2e0 default 0.1 per `useRepairPack` at 30 Hz. */
-const BOT_HEAL_PER_ROUND = 0.3;
-
-// --- bots in land vehicles ---------------------------------------------------
-// The Change behaviour (bot-vehicle.js) picks a driver's seat; the page seats
-// the bot the way `setPilot` seats the human — its own `VehicleOccupancy` and
-// drivetrain, adopted into the body world, fed by the bot's input word
-// through `World.#vehicleTick` — without the camera, the HUD or the audio.
-// `stepVehicleBodies` draws every driven hull, the bot's included.
-
-/** Every vehicle's AI plug-in data (`extract_vehicle_ai.py`), by template. */
-let botVehicleAi = null;
-let botVehicleAiLoading = null;
-function loadBotVehicleAi() {
-  if (botVehicleAi || botVehicleAiLoading) return botVehicleAiLoading;
-  botVehicleAiLoading = fetch(`${activeMod.paths.maps || 'maps'}/_shared/vehicle-ai.json${bust()}`)
-    .then(r => (r.ok ? r.json() : null))
-    .then(json => {
-      botVehicleAi = new Map();
-      for (const [name, info] of Object.entries(json?.vehicles ?? {})) botVehicleAi.set(name.toLowerCase(), { name, ...info });
-      return botVehicleAi;
-    })
-    .catch(() => (botVehicleAi = new Map()));
-  return botVehicleAiLoading;
-}
-
-/** The AI record of a vehicle root node, or null when the game ships none. */
-function botVehicleAiOf(node) {
-  if (!botVehicleAi) return null;
-  const raw = node?.userData?.template ?? node?.userData?.control ?? node?.name ?? '';
-  const key = String(raw).replace(/_\d+$/, '').toLowerCase();
-  return botVehicleAi.get(key) ?? null;
-}
-
-/**
- * The unit a bot controls, for `orderNormalBot`: its search type (the
- * `setOrderPosition` key), the test of its own search map (the Mobile
- * plug-in's map: Tank0 for a tank, the water maps for a hull afloat, the
- * infantry map on foot), its bounding radius, and whether it is mounted.
- * A car routes on the Tank map here (botVehicleNav), so it tests that one.
- */
-function botStrategicUnit(id) {
-  const bot = botControllers.find(b => b.playerId === id);
-  const m = bot?.vehicle;
-  if (!m) {
-    return { type: 'Infantery', isWalkable: botNavGrid ? (x, z) => isWalkable(botNavGrid, x, z) : null,
-             radius: 1.0, mounted: false };
-  }
-  const type = m.kind === 'tank' ? 'Tank' : m.kind === 'ground' ? 'Car'
-    : m.kind === 'ship' ? (m.nav && m.nav === botNavGridWater.get('LandingCraft') ? 'LandingCraft' : 'Boat')
-    : m.kind === 'air' ? 'Plane' : 'Infantery';
-  const nav = m.nav ?? (m.kind === 'tank' || m.kind === 'ground' ? botVehicleNav() : null);
-  // An aircraft is ordered by `orderAirBot` (strategic.js `_orderAir`), at
-  // the area's position over the higher of the ground and the water.
-  return { type, isWalkable: nav ? (x, z) => isWalkable(nav, x, z) : null, radius: m.radius ?? 1.0, mounted: true,
-           air: m.kind === 'air', groundAt: (x, z) => bot._groundAt(x, z) };
-}
-
-/** The land vehicles' map (`ai.addSearchMap Tank0 ...`), built on first use. */
-let botNavGridVehicle = null;
-function botVehicleNav() {
-  if (botNavGridVehicle || !world) return botNavGridVehicle;
-  const worldSize = world.extras?.worldSize || 2048;
-  const sm = (world.extras?.ai?.searchMaps ?? []).find(m => /^Tank/i.test(m.name)) ?? null;
-  const seeds = [];
-  for (const spawn of world.extras?.objectSpawns ?? []) {
-    if (spawn?.position) seeds.push([spawn.position[0], spawn.position[2]]);
-  }
-  for (const flag of world.flags ?? []) {
-    for (const spawn of flag.spawns ?? []) if (spawn?.position) seeds.push([spawn.position[0], spawn.position[2]]);
-  }
-  const started = performance.now();
-  botNavGridVehicle = buildNavMap(world.collider, worldSize, {
-    waterLevel: world.collider?.waterLevel,
-    waterDepth: sm?.waterDepth ?? 0.0,
-    maxSlopeDeg: sm?.maxSlope ?? 30,
-    brush: sm?.brush ?? 3.0,
-    lowClip: sm?.lowClip ?? 0.3,
-    hiClip: sm?.hiClip ?? 2.5,
-    seeds,
-  });
-  console.log(`[bots] vehicle nav map (${sm?.name ?? 'Tank defaults'}): ${(performance.now() - started).toFixed(0)} ms`);
-  return botNavGridVehicle;
-}
-
-/** The boats' and landing craft's maps (`ai.addSearchMap Boat2 1 ...` /
- *  `LandingCraft3`), built on first use: the water at least the map's depth
- *  deep, the shore kept off by the brush. */
-const botNavGridWater = new Map();
-function botWaterNav(name = 'Boat') {
-  if (!world) return null;
-  if (botNavGridWater.has(name)) return botNavGridWater.get(name);
-  const maps = world.extras?.ai?.searchMaps ?? [];
-  const re = new RegExp('^' + name, 'i');
-  const sm = maps.find(m => re.test(m.name) && m.waterMap) ?? maps.find(m => re.test(m.name)) ?? null;
-  if (!sm) { botNavGridWater.set(name, null); return null; }
-  const worldSize = world.extras?.worldSize || 2048;
-  const seeds = [];
-  for (const spawn of world.extras?.objectSpawns ?? []) if (spawn?.position) seeds.push([spawn.position[0], spawn.position[2]]);
-  const started = performance.now();
-  const nav = buildNavMap(world.collider, worldSize, {
-    waterLevel: world.collider?.waterLevel,
-    waterMap: true,
-    waterDepth: sm.waterDepth ?? 5.0,
-    maxSlopeDeg: sm.maxSlope ?? 0,
-    brush: sm.brush ?? 125.0,
-    lowClip: sm.lowClip ?? 0.3,
-    hiClip: sm.hiClip ?? 2.5,
-    seeds,
-  });
-  console.log(`[bots] water nav map (${sm.name}): ${(performance.now() - started).toFixed(0)} ms`);
-  botNavGridWater.set(name, nav);
-  return nav;
-}
-
-/** vehicle root node -> the bot driving it. */
-const botVehicleKinds = new Map();
-let botCandidateCache = { at: -1, list: [] };
-const _botEntryWorld = new THREE.Vector3();
-const _botUp = new THREE.Vector3();
-
-/** A vehicle root's drive kind, surveyed once. */
-function botVehicleKindOf(node) {
-  let kind = botVehicleKinds.get(node);
-  if (kind === undefined) {
-    kind = classifyRoot ? classifyRoot(node) : null;
-    botVehicleKinds.set(node, kind ?? null);
-  }
-  return kind;
-}
-
-/**
- * The driver's seats a bot may take right now: every enterable land vehicle
- * (`ground` / `tank`) with AI data, not seated by the human or a bot, with its
- * health, its AI numbers and its nearest door. Rebuilt twice a second and
- * shared by every bot (the engine's environment query, INVENTION radius).
- */
-let botEntryCollectedAt = -Infinity;
-/** Who holds a seat, human or bot: the hull's instance answers. */
-function botSeatHolder(node, seatId) { return vehicles.holder(node, seatId); }
-function botDriverOf(node) { return vehicles.driverOf(node); }
-
-/**
- * The seats a bot may take right now (`BBChange`'s environment list): every
- * door of every enterable unit with AI data — a land vehicle's driver seat,
- * its gunner and passenger seats, a fixed gun — that no one holds, with the
- * seat's own AI numbers (`vehicle-ai.json` `seatsAi`): the guns it reaches,
- * its strategic strength, and the hull's `maxSpeed` when the seat drives or
- * rides a driven hull. Rebuilt twice a second and shared by every bot.
- */
-/** Each hull's seat survey, for a seat's traverse limits (static per node). */
-const botSeatSurveys = new WeakMap();
-function botSeatYawLimits(node, seatId) {
-  let survey = botSeatSurveys.get(node);
-  if (!survey) { survey = surveyVehicle(node); botSeatSurveys.set(node, survey); }
-  return seatYawLimits(survey.seats.get(seatId));
-}
-
-function botVehicleCandidates() {
-  if (botClock - botCandidateCache.at < 0.5) return botCandidateCache.list;
-  // The vehicles land after the bots do, and respawn later: the door list
-  // is recollected while empty and every ten seconds.
-  if (!entryPoints || ((!entryPoints.length || botClock - botEntryCollectedAt > 10) && currentRoot)) {
-    collectEntryPoints();
-    botEntryCollectedAt = botClock;
-  }
-  const list = [];
-  if (entryPoints && botVehicleAi) {
-    const byNode = new Map();
-    for (const e of entryPoints) {
-      if (!byNode.has(e.vehicle)) byNode.set(e.vehicle, []);
-      byNode.get(e.vehicle).push(e);
-    }
-    for (const [node, doors] of byNode) {
-      if (!vehicleSpawnActive(node)) continue;
-      const kind = botVehicleKindOf(node);
-      if (!['ground', 'tank', 'gun', 'air', 'ship'].includes(kind)) continue;
-      const ai = botVehicleAiOf(node);
-      if (!ai) continue;
-      const owner = collider?.statics?.ownerOf(node) ?? -1;
-      const damage = world?.vehicleDamage?.get(owner) ?? null;
-      if (damage?.destroyed) continue;
-      node.getWorldPosition(_botEntryWorld);
-      const pos = [_botEntryWorld.x, _botEntryWorld.y, _botEntryWorld.z];
-      _botUp.set(0, 1, 0).applyQuaternion(node.getWorldQuaternion(new THREE.Quaternion()));
-      const upright = _botUp.y >= 0.6914;
-      // The hull's heading, for a seat's traverse limits (its -z column).
-      const hullYaw = Math.atan2(-node.matrixWorld.elements[8], -node.matrixWorld.elements[10]);
-      const rootId = node.userData?.control || node.name || 'vehicle';
-      const driver = botDriverOf(node);
-      const health = damage?.maxHitPoints > 0 ? damage.hitPoints / damage.maxHitPoints : 1;
-      const seen = new Set();
-      // Every seat of the hull with its table and occupancy: the shares
-      // `calculateFireStrength` adds and the seat swap's alternatives.
-      const seats = [];
-      const entries = [];
-      for (const door of doors) {
-        if (seen.has(door.seatId)) continue;
-        seen.add(door.seatId);
-        const isRoot = door.seatId === rootId;
-        const seatAi = ai.seatsAi?.[door.seatId] ?? (isRoot ? ai.seatsAi?.[ai.name] : null) ?? null;
-        const weapons = Object.entries(seatAi?.aiWeapons ?? (isRoot ? ai.aiWeapons : {}) ?? {})
-          .map(([name, w]) => ({ ...w, name }));
-        const strengths = {};
-        for (const w of weapons) for (const [k, v] of Object.entries(w.strength ?? {})) strengths[k] = Math.max(strengths[k] ?? 0, v ?? 0);
-        const drives = isRoot && kind !== 'gun';
-        // `modifyForDriver`: a plane's secondary seats x0.5, a ship's x0.77.
-        const seatFactor = isRoot ? 1 : (kind === 'air' ? 0.5 : kind === 'ship' ? 0.77 : 1);
-        const holder = botSeatHolder(node, door.seatId);
-        door.node.getWorldPosition(_botEntryWorld);
-        seats.push({ seatId: door.seatId, table: strengths, occupied: !!holder, strType: ai.strType ?? 'LightArmour', isRoot });
-        entries.push({
-          id: `${node.uuid}:${door.seatId}`, vehicleId: node.uuid, node, template: ai.name, kind,
-          seatId: door.seatId, isRoot, drives, seats, turnRadius: ai.turnRadius ?? null,
-          pos, entry: [_botEntryWorld.x, _botEntryWorld.z], entryRadius: door.radius,
-          health, upright,
-          // `calculateVehicleMoveUrgency`: a driver moves the hull; a passenger
-          // moves only when someone drives it (x2.5 of the bot driver's when
-          // its order differs — the driver's order is taken as the same).
-          maxSpeed: drives ? (ai.maxSpeed ?? 0) : (driver ? (ai.maxSpeed ?? 0) : 0),
-          movedByBot: !drives && !!driver && driver !== LOCAL_PLAYER,
-          strengths, weapons,
-          value: ((seatAi?.strategicStrength ?? ai.strategicStrength)?.['0'] ?? 0) * seatFactor,
-          seatFactor,
-          occupiedBy: holder,
-          strType: ai.strType ?? 'LightArmour',
-          driver,
-          // `validateCameraDirection` for this seat: its own traverse.
-          hullYaw, yawLimits: botSeatYawLimits(node, door.seatId),
-        });
-      }
-      for (const e of entries) list.push(e);
-    }
-  }
-  botCandidateCache = { at: botClock, list };
-  return list;
-}
-
-/** Each side's view of the enemy's strengths (`SAI` +0x174 / +0x18c). */
-const botEnemyTables = { 1: new EnemyStrengthTables(), 2: new EnemyStrengthTables() };
-let botTablesAt = -Infinity;
-
-/** The soldier's `setBattleStrength` table (`Objects/Soldiers/Common/AI/Objects.con`). */
-const BOT_SOLDIER_TABLE = { Infantry: 4.0, LightArmour: 2.0, HeavyArmour: 1.0, NavalArmour: 0.0, Submarine: 0.0, Air: 1.0 };
-
-/**
- * `SAI::updateStrengths`' input: every occupied unit — a seated player's
- * seat with its table and class, a soldier on foot with the soldier's.
- */
-function botOccupiedUnits() {
-  const units = [];
-  if (!world) return units;
-  const cands = botVehicleCandidates();
-  for (const [id, p] of world.players) {
-    if (world.armorOf(id)?.destroyed) continue;
-    const side = p.team;
-    if (p.occupancy?.root) {
-      const c = cands.find(x => x.vehicleId === p.occupancy.root.uuid && x.seatId === p.occupancy.activeSeatId)
-        ?? cands.find(x => x.vehicleId === p.occupancy.root.uuid && x.isRoot) ?? null;
-      units.push({ side, table: c?.strengths ?? {}, type: c?.strType ?? p.vehicleStrType ?? 'LightArmour', security: 1 });
-    } else if (p.soldier) {
-      units.push({ side, table: BOT_SOLDIER_TABLE, type: 'Infantry', security: 1 });
-    }
-  }
-  return units;
-}
-
-/**
- * What a target is, for `scoreVehicleTargets`: a seated player's hull with
- * every seat, else a soldier.
- */
-function botUnitInfo(id) {
-  const p = world?.player(id);
-  if (!p) return null;
-  if (p.occupancy?.root) {
-    const node = p.occupancy.root;
-    const cands = botVehicleCandidates().filter(c => c.vehicleId === node.uuid);
-    const ai = botVehicleAiOf(node);
-    const kind = botVehicleKindOf(node);
-    const c = cands.find(x => x.seatId === p.occupancy.activeSeatId) ?? cands[0] ?? null;
-    const box = new THREE.Box3().setFromObject(node);
-    const ext = box.isEmpty() ? [4, 2, 6] : [box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z];
-    return {
-      type: c?.strType ?? ai?.strType ?? p.vehicleStrType ?? 'LightArmour', air: kind === 'air',
-      table: c?.strengths ?? {}, maxSpeed: ai?.maxSpeed ?? 0,
-      seats: c?.seats ?? cands.map(x => ({ seatId: x.seatId, table: x.strengths, occupied: !!x.occupiedBy, strType: x.strType })),
-      enemyManned: true, mobile: kind !== 'gun', vehicle: true, large: kind === 'ship', extents: ext,
-    };
-  }
-  return { type: 'Infantry', air: false, table: BOT_SOLDIER_TABLE, maxSpeed: 5, seats: null, enemyManned: false,
-           mobile: true, vehicle: false, extents: [0.6, 1.8, 0.6] };
-}
-
-/** The body radius a land vehicle keeps on its map, and a plane's or
- *  ship's for its arrival circle (INVENTION). */
-const BOT_VEHICLE_RADIUS = 3.0;
-const BOT_VEHICLE_RADIUS_LARGE = 10.0;
-
-/**
- * Seat a bot: the driver's seat of a land vehicle gets the page's own
- * drivetrain (as `setPilot` builds it for the human), any other seat — a
- * gunner's, a passenger's, a fixed gun — is a bare seat whose guns the
- * world fires from the bot's trigger. Returns true when it sits.
- */
-function botEnterVehicle(bot, cand) {
-  const node = cand.node;
-  if (!node || !currentRoot) return false;
-  if (vehicles.holder(node, cand.seatId) != null) return false;
-  // The hull's instance seats him: the drive built when he takes the root
-  // seat of a drivable hull (a helm that builds none refuses him), the body
-  // adopted, the seat's guns collected, the world's record mounted and the
-  // hull sounding (`vehicle-instance.js`), exactly as for the human.
-  const seat = vehicles.enter(node, cand.seatId, bot.playerId, { requireDrive: !!cand.drives });
-  if (!seat) return false;
-  botMounted(bot, cand, seat);
-  if (BOT_DEBUG) console.log(`[bots] ${bot.playerId} takes the ${cand.template} ${seat.isActiveRoot() && seat.drive ? 'driver seat' : 'seat ' + cand.seatId}`);
-  return true;
-}
-
-function botMounted(bot, cand, seat) {
-  const inst = seat.instance;
-  const node = inst.root;
-  const record = world.player(bot.playerId);
-  if (record) record.vehicleStrType = cand.strType;
-  const ai = botVehicleAiOf(node);
-  const landingCraft = /lcvp|daihatsu|landing/i.test(ai?.name ?? '');
-  const drive = seat.isActiveRoot() ? inst.drive : null;
-  // `BotMain::decisionMaking` 0x08520742: a bot whose controlled object
-  // changed tells its SAI (`setBotHasChangedEquipment` -> `handleChangingBot`
-  // 0x08631450), which drops its assignment and frees it for a fresh order.
-  botStrategy?.botChangedUnit(bot.playerId);
-  bot.mount({
-    id: cand.id, vehicleId: cand.vehicleId, node, drive, occupancy: seat, kind: inst.rootKind,
-    seatId: seat.seatId, drives: !!drive,
-    // The seat's groups, live: the instance re-collects them on a seat swap.
-    get groups() { return seat.groups.driven; },
-    get manned() { return seat.groups.manned; },
-    nav: drive && ['ground', 'tank'].includes(inst.rootKind) ? botVehicleNav()
-      : drive && inst.rootKind === 'ship' ? botWaterNav(landingCraft ? 'LandingCraft' : 'Boat') : null,
-    turnRadius: ai?.turnRadius ?? null, strType: cand.strType, seats: cand.seats, isRoot: cand.isRoot,
-    // The hull's own velocity: its one drive, whoever holds the wheel.
-    hullVelocity: () => inst.drive?.state?.velocity ?? null,
-    radius: inst.rootKind === 'air' || inst.rootKind === 'ship' ? BOT_VEHICLE_RADIUS_LARGE : BOT_VEHICLE_RADIUS,
-    maxSpeed: cand.maxSpeed,
-    weapons: cand.weapons, template: cand.template,
-    // A rider's move term follows whoever drives the hull right now.
-    hullMaxSpeed: ai?.maxSpeed ?? 0,
-    driverOf: () => vehicles.driverOf(node),
-  }, botClock);
-  const vis = botVisuals.get(bot.playerId);
-  if (vis) vis.group.visible = false;
-}
-
-/** Unseat a bot: a driven hull parks where it stands, the soldier steps out beside it. */
-function botLeaveVehicle(bot, { killed = false, silent = false } = {}) {
-  const m = bot.vehicle;
-  if (!m) return;
-  const seat = vehicles.seatOf(bot.playerId);
-  const drive = seat?.drive ?? null;
-  // Where he steps out from: the hull's own simulated position when it has a
-  // drive, else its node's.
-  let p;
-  if (drive) {
-    const s = drive.state.position;
-    p = { x: s.x, y: s.y, z: s.z };
-  } else {
-    m.node.getWorldPosition(_botEntryWorld);
-    p = _botEntryWorld;
-  }
-  // The seat goes back to the hull: its guns released, the world's record
-  // cleared, the audio claim dropped; the last one out parks the hull where
-  // it stands (`vehicle-instance.js`).
-  vehicles.leave(bot.playerId);
-  const record = world.player(bot.playerId);
-  if (record) { record.vehicleStrType = null; record.position = null; }
-  const soldier = record?.soldier;
-  if (soldier) {
-    // Out through the side: the soldier is re-spawned beside the hull (its
-    // position is the body's, `Soldier.spawn` is the placement API).
-    const f = bot._vehicleForward();
-    const x = p.x + f[1] * 3.5, z = p.z - f[0] * 3.5;
-    const y = groundHeight(x, z, p.y + 3);
-    const yy = Number.isFinite(y) ? y + 0.05 : p.y;
-    soldier.spawn(x, yy, z, Math.atan2(f[0], f[1]));
-    bot.setPosition(x, yy, z);
-  }
-  bot.dismount(botClock);
-  botStrategy?.botChangedUnit(bot.playerId);
-  botCandidateCache.at = -1;
-  const vis = botVisuals.get(bot.playerId);
-  if (vis) vis.group.visible = !killed;
-  if (BOT_DEBUG && !silent) console.log(`[bots] ${bot.playerId} leaves the ${m.template}${killed ? ' (killed)' : ''}`);
-}
-
-function botSwitchSeat(bot, cand) {
-  const seat = vehicles.switchSeat(bot.playerId, cand.seatId);
-  if (!seat) return false;
-  bot.dismount(botClock);
-  botMounted(bot, cand, seat);
-  botCandidateCache.at = -1;
-  return true;
-}
-
-/** Per tick: seat the bots that asked, unseat the ones that asked or whose hull is gone. */
-function botVehicleTick() {
-  const cands = botVehicleCandidates();
-  for (const bot of botControllers) {
-    bot.vehicleCandidates = cands;
-    if (bot.vehicle) {
-      const m = bot.vehicle;
-      // The hull the world bills damage to for this seat (`nodeOwners`), not
-      // the collider's owner of the node: an aircraft's differs.
-      const damage = world?.occupiedDamageable?.(bot.playerId) ?? null;
-      if (damage?.destroyed) {
-        // A destroyed hull takes its crew (the engine kills the occupants).
-        botLeaveVehicle(bot, { killed: true });
-        applyDamageToBot(bot.playerId, 1e6, null, null);
-        continue;
-      }
-      if (bot.exitRequest) {
-        bot.exitRequest = false;
-        botLeaveVehicle(bot);
-      } else if (bot.switchRequest) {
-        const req = bot.switchRequest;
-        bot.switchRequest = null;
-        const cand = cands.find(c => c.vehicleId === req.vehicleId && c.seatId === req.seatId);
-        if (cand && !cand.occupiedBy && cand.vehicleId === m.vehicleId && botSwitchSeat(bot, cand)) {
-          if (BOT_DEBUG) console.log(`[bots] ${bot.playerId} switches to seat ${cand.seatId} of the ${cand.template}`);
-        }
-      }
-      continue;
-    }
-    const req = bot.enterRequest;
-    if (!req) continue;
-    bot.enterRequest = null;
-    const cand = cands.find(c => c.id === req.vehicleId);
-    if (cand && !cand.occupiedBy) {
-      if (botEnterVehicle(bot, cand)) botCandidateCache.at = -1;
-    }
-  }
-}
-
-/**
- * The friend a healing bot's round reaches: the closest player of its own
- * side inside the weapon's `maxRange` of its eye and within 20 deg of its
- * aim (`BAPALookAtObject`'s 5 deg has already lined the bot up).
- */
-function resolveBotHeal(bot) {
-  const { origin, dir } = bot.aimRay();
-  const range = bot.weaponAi?.maxRange ?? 2.5;
-  const botPlayer = world?.player(bot.playerId);
-  let best = null, bestD = Infinity;
-  for (const [id, player] of world.players) {
-    if (id === bot.playerId || !botPlayer || player.team !== botPlayer.team) continue;
-    const armor = world.armorOf(id);
-    if (!armor || armor.destroyed || armor.hitPoints >= armor.maxHitPoints) continue;
-    const s = player.soldier;
-    if (!s) continue;
-    const dx = s.x - origin[0], dy = (s.y + 1.0) - origin[1], dz = s.z - origin[2];
-    const d = Math.hypot(dx, dy, dz);
-    if (d > range + 0.5 || d >= bestD) continue;
-    const cos = (dx * dir[0] + dy * dir[1] + dz * dir[2]) / Math.max(d, 1e-3);
-    if (cos < Math.cos(20 * Math.PI / 180)) continue;
-    best = id; bestD = d;
-  }
-  return best;
-}
-
-function applyHealToPlayer(playerId, amount) {
-  const armor = world?.armorOf(playerId);
-  if (!armor) return;
-  const before = armor.hitPoints;
-  const healed = armor.heal(amount);
-  if (BOT_DEBUG && healed > 0 && Math.floor(armor.hitPoints / 5) !== Math.floor(before / 5)) {
-    console.log(`[bots] ${playerId} healed to ${armor.hitPoints.toFixed(1)}/${armor.maxHitPoints}`);
-  }
 }
 
 /**
@@ -9129,91 +8409,7 @@ function botFootstepTick(bot, dt) {
     { x: at[0], y: at[1], z: at[2] });
 }
 
-function botFireTick(dt) {
-  if (!botControllers.length) return;
 
-  for (const bot of botControllers) {
-    bot._wasFiring = bot.isFiring;
-    // The world fires the hull's guns from its input word, and each round
-    // meets whoever is in its way (`roundBodyCast`) or splashes them.
-    if (bot.vehicle) continue;
-
-    bot._fireCooldown = Math.max(0, (bot._fireCooldown ?? 0) - dt);
-    const mag = botMagazineTick(bot, dt);
-    if (!bot.isFiring || bot._fireCooldown > 0 || !mag.canFire) continue;
-
-    // The bot's own weapon's rate (`fireArms.roundOfFire`), not the human's.
-    const stats = botWeaponDataOf(bot);
-    const rof = stats?.roundOfFire > 0 ? stats.roundOfFire : BOT_FALLBACK_ROF;
-    bot._fireCooldown = 1 / rof;
-    botMagazineShot(bot, mag);
-    bot.deviation.onShot();
-    bot.onShot(botClock);
-    // Every round is a sound (`event_soundEmitter`): each bot hears it inside
-    // the weapon's AI sound radius, and the shooter goes deaf for 3 s.
-    const at = bot.getPosition();
-    // ...and the page hears it too, from where the shooter stands. The
-    // player's own rounds keep `playHandFire`'s first-person ear; a bot's
-    // take the world path, which plays the fire patch's near/far hand-over
-    // rather than the muzzle pick alone.
-    playWorldShot(bot.weaponAi?.name ?? bot.kitPrimary ?? null,
-                  at[0], at[1] + 1.4, at[2]);
-    const radius = bot.weaponAi?.soundSphereRadius ?? null;
-    for (const other of botControllers) {
-      other.onShotFired(bot.playerId, bot.team, at, botClock, radius);
-    }
-    // A healing weapon's round (the MedPack): a friend within its reach and
-    // in front of the pack is healed instead of anything being shot.
-    if (bot.weaponAi?.healing) {
-      const friend = resolveBotHeal(bot);
-      if (friend) applyHealToPlayer(friend, BOT_HEAL_PER_ROUND);
-      continue;
-    }
-    const hit = resolveBotShot(bot);
-    if (!hit) continue;
-    bot.recordHit(hit.targetId);
-    if (hit.targetId === LOCAL_PLAYER) {
-      applyDamageToPlayer(hit.damage,
-        { x: bot.position[0], y: bot.position[1], z: bot.position[2] }, bot.team);
-    } else {
-      // A round that found a bot damages that bot, not the human. Before both
-      // sides existed every hit was billed to the local player, so an enemy
-      // shooting one of your squad killed you instead of him.
-      applyDamageToBot(hit.targetId, hit.damage, bot.playerId, at);
-    }
-  }
-}
-
-/**
- * The solo capture law, run for bots as it is run for the human. The engine's
- * capture is per-player — every soldier on the point contributes — so a bot
- * standing on a flag its team does not hold takes it after the point's own
- * `timeToGetControl`. The HUD line stays the local player's; bot takes are
- * logged. Room play stays authoritative (no local bot capture).
- */
-function botCaptureTick(ticks) {
-  if (!botControllers.length || roomJoined || !(ticks > 0)) return;
-  const dt = ticks * (1 / 30);
-  for (const bot of botControllers) {
-    if (!bot.team) continue;
-    const pos = bot.getPosition();
-    const target = nearestEnemyFlag(bot.team, { x: pos[0], y: pos[1], z: pos[2] });
-    if (!target) { bot._capture = null; continue; }
-    if (!bot._capture || bot._capture.flag !== target) {
-      bot._capture = { flag: target, elapsed: 0 };
-    }
-    bot._capture.elapsed += dt;
-    if (bot._capture.elapsed < captureDuration(target)) continue;
-    const prevTeam = target.team;
-    target.team = bot.team;
-    hoistCaptureFlag(target);
-    syncVehicleSpawnOwnership();
-    logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
-    console.log(`[bots] ${bot.playerId} takes ${target.name}${bot.vehicle ? ' in the ' + (bot.vehicle.template ?? bot.vehicle.kind) : ''}`);
-    announceCapture(prevTeam, target.team);
-    bot._capture = null;
-  }
-}
 
 // --- bot rendering -------------------------------------------------------------
 // Bots get the same pose-pair + gait-rig treatment as remote players
@@ -9253,49 +8449,6 @@ function localWeaponSoundRadius() {
   return loadouts?.aiWeapons?.[template]?.soundSphereRadius ?? null;
 }
 
-/**
- * The cover objects the TakeCover behaviour chooses among: every collider
- * owner whose template carries `aiTemplatePlugIn.coverValue` (`extras.ai.
- * coverValues`), with its footprint from its baked triangles.
- */
-function buildBotCovers() {
-  const values = world?.extras?.ai?.coverValues;
-  const statics = world?.collider?.statics;
-  if (!values || !statics?.tris || !statics.ownerNodes) return [];
-  const byOwner = new Map();
-  const tris = statics.tris, owners = statics.owners;
-  for (let t = 0; t < statics.count; t++) {
-    const owner = owners[t];
-    if (owner < 0) continue;
-    let e = byOwner.get(owner);
-    if (!e) {
-      const name = (statics.ownerNodes[owner]?.name ?? '').toLowerCase();
-      const value = values[name] ?? values[name.replace(/_\d+$/, '')] ?? null;
-      if (value == null) { byOwner.set(owner, null); continue; }
-      e = { id: owner, value, minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity };
-      byOwner.set(owner, e);
-    }
-    if (!e) continue;
-    const o = t * 9;
-    for (let k = 0; k < 3; k++) {
-      const x = tris[o + k * 3], y = tris[o + k * 3 + 1], z = tris[o + k * 3 + 2];
-      if (x < e.minX) e.minX = x; if (x > e.maxX) e.maxX = x;
-      if (y < e.minY) e.minY = y; if (y > e.maxY) e.maxY = y;
-      if (z < e.minZ) e.minZ = z; if (z > e.maxZ) e.maxZ = z;
-    }
-  }
-  const out = [];
-  for (const e of byOwner.values()) {
-    if (!e) continue;
-    const width = Math.max(e.maxX - e.minX, e.maxZ - e.minZ);
-    out.push({
-      id: e.id, value: e.value,
-      pos: [(e.minX + e.maxX) / 2, e.minY, (e.minZ + e.maxZ) / 2],
-      width, height: e.maxY - e.minY, radius: width / 2,
-    });
-  }
-  return out;
-}
 
 /** Bot pose-pair cache: "SoldierName__Colt" -> { scene, animations }. */
 const botPoseCache = new Map();
@@ -9419,8 +8572,8 @@ async function ensureBotVisual(bot) {
 }
 
 function updateBotVisuals(dt) {
-  if (!botControllers.length) return;
-  for (const bot of botControllers) {
+  if (!referee.bots.length) return;
+  for (const bot of referee.bots) {
     const vis = botVisuals.get(bot.playerId);
     if (!vis?.rig) continue;
 
@@ -9495,8 +8648,8 @@ function wrapYaw(a) {
  * position.
  */
 function captureBotPresentationTick(snap) {
-  if (!botControllers?.length) return;
-  for (const bot of botControllers) {
+  if (!referee.bots?.length) return;
+  for (const bot of referee.bots) {
     const vis = botVisuals.get(bot.playerId);
     if (!vis) continue;
     const s = world?.player(bot.playerId)?.soldier;
@@ -14950,7 +14103,7 @@ function scoreboardPlayers() {
     kit: deployKit,
     dead: !soldier || !!soldierDead,
   }];
-  for (const bot of botControllers) {
+  for (const bot of referee.bots) {
     players.push({
       slot: null,
       name: bot.name,
@@ -16456,11 +15609,11 @@ function frame(dt) {
   // `step` is that tick's report; the presentation halves read it back.
   const step = world?.step(dt) ?? { ticks: 0, bodyTicks: 0, alpha: 0, players: {}, damage: [] };
   // Bot AI runs after the world step, so bots read the player's post-step pose.
-  tickBots(dt);
+  referee.tick(dt);
   updateBotVisuals(dt);
   syncVehicleSpawnOwnership();
   updateCaptureHud(step.ticks);
-  botCaptureTick(step.ticks);
+  referee.captureTick(step.ticks / 30);
   // The presentation instant this frame draws, and the drawn vehicle pose that
   // follows from it. Before every camera below, because all of them read it —
   // directly (the on-foot eye) or through the scene graph (every seat).
@@ -16871,42 +16024,42 @@ if (params.has('shots')) {
   window.__worldExtras = () => ({ worldSize: world?.extras?.worldSize, water: world?.collider?.waterLevel });
   // The bot navigation map itself (nav-grid.js), for a headless check to
   // count or draw its cells.
-  window.__botCtl = id => botControllers.find(b => b.playerId === id) ?? null;
+  window.__botCtl = id => referee.bots.find(b => b.playerId === id) ?? null;
   window.__botVehicleDebug = () => {
     if (!entryPoints) collectEntryPoints();
     const roots = [...new Set((entryPoints ?? []).map(e => e.vehicle))];
     return {
-      aiLoaded: botVehicleAi?.size ?? null, entries: entryPoints?.length ?? null, roots: roots.length,
+      aiLoaded: botUnits.ai?.size ?? null, entries: entryPoints?.length ?? null, roots: roots.length,
       sample: roots.slice(0, 12).map(n => ({ name: n.name, template: n.userData?.template ?? null, control: n.userData?.control ?? null,
-        kind: botVehicleKindOf(n), active: vehicleSpawnActive(n), ai: botVehicleAiOf(n)?.name ?? null })),
+        kind: botUnits.kindOf(n), active: vehicleSpawnActive(n), ai: botUnits.aiOf(n)?.name ?? null })),
     };
   };
-  window.__botVehicles = () => botVehicleCandidates().map(c => ({ template: c.template, seat: c.seatId, root: c.isRoot, kind: c.kind, pos: c.pos.map(v => +v.toFixed(0)), entry: c.entry.map(v => +v.toFixed(0)), r: c.entryRadius, health: c.health, maxSpeed: c.maxSpeed, occupiedBy: c.occupiedBy, driver: c.driver, upright: c.upright, strengths: c.strengths, value: c.value }));
+  window.__botVehicles = () => botUnits.candidates().map(c => ({ template: c.template, seat: c.seatId, root: c.isRoot, kind: c.kind, pos: c.pos.map(v => +v.toFixed(0)), entry: c.entry.map(v => +v.toFixed(0)), r: c.entryRadius, health: c.health, maxSpeed: c.maxSpeed, occupiedBy: c.occupiedBy, driver: c.driver, upright: c.upright, strengths: c.strengths, value: c.value }));
   window.__botMount = (id, template = null, seat = 'driver') => {
-    const bot = botControllers.find(b => b.playerId === id);
-    const cands = botVehicleCandidates().filter(c => !c.occupiedBy && (!template || c.template === template)
+    const bot = referee.bots.find(b => b.playerId === id);
+    const cands = botUnits.candidates().filter(c => !c.occupiedBy && (!template || c.template === template)
       && (seat === 'any' || (seat === 'driver' ? c.isRoot : c.seatId === seat)));
     if (!bot || !cands.length) return false;
     const p = bot.getPosition();
     cands.sort((a, b) => Math.hypot(a.pos[0] - p[0], a.pos[2] - p[2]) - Math.hypot(b.pos[0] - p[0], b.pos[2] - p[2]));
-    return botEnterVehicle(bot, cands[0]);
+    return referee.enterVehicle(bot, cands[0]);
   };
-  window.__botDismount = id => { const bot = botControllers.find(b => b.playerId === id); if (bot?.vehicle) botLeaveVehicle(bot); return !bot?.vehicle; };
-  window.__navMap = () => botNavGrid;
+  window.__botDismount = id => { const bot = referee.bots.find(b => b.playerId === id); if (bot?.vehicle) referee.leaveVehicle(bot); return !bot?.vehicle; };
+  window.__navMap = () => referee.navGrid;
   window.__navProbe = (fx, fz, tx, tz) => {
-    if (!botNavGrid) return null;
-    const path = findPath(botNavGrid, fx, fz, tx, tz);
+    if (!referee.navGrid) return null;
+    const path = findPath(referee.navGrid, fx, fz, tx, tz);
     return {
-      startCell: gridAt(botNavGrid, fx, fz),
-      endCell: gridAt(botNavGrid, tx, tz),
+      startCell: gridAt(referee.navGrid, fx, fz),
+      endCell: gridAt(referee.navGrid, tx, tz),
       pathLen: path ? path.length : null,
       path,
-      width: botNavGrid.width,
-      height: botNavGrid.height,
-      cellSize: botNavGrid.cellSize,
+      width: referee.navGrid.width,
+      height: referee.navGrid.height,
+      cellSize: referee.navGrid.cellSize,
     };
   };
-  window.__bots = () => botControllers.map(b => ({
+  window.__bots = () => referee.bots.map(b => ({
     id: b.playerId, name: b.name,
     pos: b.getPosition(), yaw: b.yaw,
     behaviour: b.currentBehaviour, forward: b.moveForward, strafe: b.moveStrafe,
@@ -16937,11 +16090,11 @@ if (params.has('shots')) {
     enemyTypes: b.enemyTables ? Object.fromEntries(Object.entries(b.enemyTables.types).filter(([, v]) => v > 0).map(([k, v]) => [k, +v.toFixed(2)])) : null,
     steerAngle: b._dbgSteerAngle ?? null,
     ammo: b.weaponAi?.ammo ?? null, reload: +((b._mags?.get(b.weaponAi?.name)?.reloadLeft) ?? 0).toFixed(2),
-    aimDev: +(b.aimDeviation ?? 0).toFixed(2), rof: botWeaponDataOf(b)?.roundOfFire ?? null,
+    aimDev: +(b.aimDeviation ?? 0).toFixed(2), rof: referee.weaponDataOf(b)?.roundOfFire ?? null,
     senseSub: b.senses?.substate ?? 0,
     plan: (b.currentPlan ?? []).map(a => `${a.type}${a.done ? '*' : ''}`),
     heard: b.senses?.heard?.size ?? 0,
-    strategy: botStrategy ? (botStrategy.sides[b.team]?.active?.strategy?.name ?? null) : null,
+    strategy: referee.strategy ? (referee.strategy.sides[b.team]?.active?.strategy?.name ?? null) : null,
     speed: +((world?.player(b.playerId)?.soldier?.speed ?? 0)).toFixed(2),
     team: b.team,
     hp: world?.armorOf(b.playerId)?.hitPoints ?? null,
