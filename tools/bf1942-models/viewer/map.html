@@ -270,6 +270,8 @@ import { createHullBodies } from './hull-bodies.js';
 import { createVehicleHits } from './vehicle-hits.js';
 import { createLevel } from './level-load.js';
 import { createLocalPlayer } from './local-player.js';
+import { createPageConsole } from './page-console.js';
+import { createPageInput } from './page-input.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -360,7 +362,7 @@ function showGraphicsCard(title, body) {
 }
 renderer.domElement.addEventListener('webglcontextlost', e => {
   e.preventDefault();
-  release();
+  pageInput.release();
   contextLost = true;
   showGraphicsCard('Graphics context lost',
     'The GPU dropped the WebGL context mid-frame. Waiting to see whether the browser restores it...');
@@ -416,14 +418,6 @@ const hudPaths = await loadHudPaths(activeMod.id, { bust });
 // body is unpositioned, so on the body it would resolve against the viewport
 // and paint over the shared nav bar. #stage is the 3D view's positioned box.
 const overlay = createLoadOverlay(stage, { assetBase: MAPS_BASE });
-
-const keys = new Set();
-const look = { yaw: 0, pitch: -0.15 };
-let captured = false;
-let lockHeld = false;
-let dragging = false;
-let lastPointerX = 0;
-let lastPointerY = 0;
 // `game.setActiveCombatArea` — the warning, its countdown and the damage
 // after it. All the engine reading is in `combat-area.js`; this file only
 // steps it with the body's position and hands the result to the HUD and to
@@ -472,7 +466,6 @@ const spawnFlagSelect = document.getElementById('spawn-flag');
 const hud = document.getElementById('hud');
 const isTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0 || window.matchMedia('(pointer: coarse)').matches || window.innerWidth <= 720);
 const HUD_FLY = hud.textContent;
-let navMode = 'fly'; // 'fly' or 'pan'
 function getTouchHudText() {
   if (optPilot.checked && localPlayer.occupancy) {
     if (localPlayer.mannedActive()) return 'Pad aims · FIRE shoots · ENTER exits';
@@ -482,7 +475,7 @@ function getTouchHudText() {
   if (optOnFoot.checked && localPlayer.soldier) {
     return 'Pad moves · drag scene to look · FIRE shoots · JUMP jumps · ENTER vehicles';
   }
-  return navMode === 'fly'
+  return pageInput.navMode === 'fly'
     ? 'Hold to fly · Drag to steer · 2-finger pan'
     : 'Drag to pan · Pinch to zoom';
 }
@@ -519,7 +512,7 @@ function uiFocused() {
 const level = createLevel({
   get DEFAULT_DRAW() { return DEFAULT_DRAW; }, get MAPS_BASE() { return MAPS_BASE; },
   get activeMod() { return activeMod; }, get botBodies() { return botBodies; },
-  get bust() { return bust; }, get camera() { return camera; }, get capture() { return capture; },
+  get bust() { return bust; }, get camera() { return camera; }, get capture() { return pageInput.capture; },
   get capturePresentationTick() { return localPlayer.capturePresentationTick; },
   get combatArea() { return combatArea; }, set combatArea(v) { combatArea = v; },
   get combatFrame() { return combatFrame; }, set combatFrame(v) { combatFrame = v; },
@@ -528,14 +521,14 @@ const level = createLevel({
   get fireStates() { return fireStates; }, get flagCapture() { return flagCapture; },
   get guns() { return guns; }, get hemi() { return hemi; }, get hullBodies() { return hullBodies; },
   get loadEffectLibrary() { return loadEffectLibrary; }, get loader() { return loader; },
-  get localPlayer() { return localPlayer; }, get logToConsole() { return logToConsole; },
+  get localPlayer() { return localPlayer; }, get logToConsole() { return pageConsole.logToConsole; },
   get mapSurfaces() { return mapSurfaces; },
   get nearEntry() { return localPlayer.nearEntry; }, set nearEntry(v) { localPlayer.nearEntry = v; },
   get optEntire() { return optEntire; }, get optGameFog() { return optGameFog; },
   get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
   get optVehicles() { return optVehicles; }, get optWire() { return optWire; },
   get overlay() { return overlay; }, get pageAudio() { return pageAudio; },
-  get params() { return params; }, get placeCamera() { return placeCamera; },
+  get params() { return params; }, get placeCamera() { return pageInput.placeCamera; },
   get rebuildVehicleInterp() { return localPlayer.rebuildVehicleInterp; }, get renderer() { return renderer; },
   get scene() { return scene; }, get seatWorldPos() { return seatWorldPos; },
   get setOnFoot() { return localPlayer.setOnFoot; }, get setPilot() { return localPlayer.setPilot; },
@@ -548,1416 +541,34 @@ const level = createLevel({
   get vehicles() { return vehicles; }, get world() { return world; }, set world(v) { world = v; },
   get wrecks() { return wrecks; },
 });
-
-function clampAltitude() {
-  if (optPilot.checked && (localPlayer.aircraft || localPlayer.car)) return;
-  const floor = level.getFloorAltitude(camera.position.x, camera.position.z);
-  if (camera.position.y < floor) {
-    camera.position.y = floor;
-  }
-}
-
-function panCamera(dx, dy) {
-  // A body owns the camera while it is on foot; pan and dolly would fight it
-  // for one frame and then lose to the next tick anyway.
-  if (optOnFoot.checked) return;
-  const gh = level.groundHeight(camera.position.x, camera.position.z);
-  const alt = Number.isFinite(gh) ? Math.max(camera.position.y - gh, 15) : Math.max(camera.position.y, 15);
-  const panSpeed = alt * 0.0018 * (isSlow() ? 0.35 : 1.0);
-
-  const cy = Math.cos(look.yaw), sy = Math.sin(look.yaw);
-  const cp = Math.cos(look.pitch), sp = Math.sin(look.pitch);
-
-  const rx = -cy, rz = sy;
-  const ux = -sy * sp, uy = cp, uz = -cy * sp;
-
-  camera.position.x += (-rx * dx - ux * dy) * panSpeed;
-  camera.position.y += (-uy * dy) * panSpeed;
-  camera.position.z += (-rz * dx - uz * dy) * panSpeed;
-
-  clampAltitude();
-}
-
-function dollyCamera(delta) {
-  if (optOnFoot.checked) return;
-  const d = lookVector();
-  const gh = level.groundHeight(camera.position.x, camera.position.z);
-  const alt = Number.isFinite(gh) ? Math.max(camera.position.y - gh, 15) : Math.max(camera.position.y, 15);
-  const zoomFactor = alt * 0.003 * (isSlow() ? 0.35 : 1.0);
-  const step = delta * zoomFactor;
-
-  camera.position.x += d.x * step;
-  camera.position.y += d.y * step;
-  camera.position.z += d.z * step;
-  clampAltitude();
-}
-
-let initialCameraPose = null;
-
-function placeCamera() {
-  // ?cam=x,y,z,yaw,pitch pins the camera for reproducible screenshots.
-  const pinned = (params.get('cam') || '').split(',').map(Number);
-  if (pinned.length === 5 && pinned.every(Number.isFinite)) {
-    camera.position.set(pinned[0], pinned[1], pinned[2]);
-    look.yaw = pinned[3];
-    look.pitch = pinned[4];
-    applyLook();
-    initialCameraPose = { x: pinned[0], y: pinned[1], z: pinned[2], yaw: pinned[3], pitch: pinned[4] };
-    return;
-  }
-  const cam = level.extras.camera;
-  if (cam) {
-    camera.position.set(cam[0], cam[1] + 55, cam[2]);
-  } else {
-    camera.position.set(0, 80, 0);
-  }
-  look.yaw = Math.PI;
-  look.pitch = -0.22;
-  applyLook();
-  initialCameraPose = { x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw: look.yaw, pitch: look.pitch };
-}
-
-function resetCamera() {
-  if (optPilot.checked) {
-    optPilot.checked = false;
-    localPlayer.setPilot(false);
-  }
-  // On foot R respawns rather than resetting the camera — the keydown handler
-  // routes it to `spawnAtFlag` before it ever reaches here — but a reset that
-  // arrives from the on-screen button must not kick the player out of the mode
-  // or move a camera the body owns.
-  if (optOnFoot.checked && localPlayer.soldier) {
-    spawning.spawnAtFlag(true);
-    return;
-  }
-  if (initialCameraPose) {
-    camera.position.set(initialCameraPose.x, initialCameraPose.y, initialCameraPose.z);
-    look.yaw = initialCameraPose.yaw;
-    look.pitch = initialCameraPose.pitch;
-    applyLook();
-  } else {
-    placeCamera();
-  }
-}
-
-let speedMode = 'fast'; // 'fast' or 'slow'
-
-function isSlow() {
-  return keys.has('ShiftLeft') || keys.has('ShiftRight') || speedMode === 'slow';
-}
-
-const speedToggleBtn = document.getElementById('speed-toggle-btn');
-function setSpeedMode(mode) {
-  speedMode = mode;
-  if (speedToggleBtn) {
-    speedToggleBtn.dataset.speed = mode;
-    const badge = speedToggleBtn.querySelector('.speed-badge');
-    const hint = speedToggleBtn.querySelector('.speed-hint');
-    if (badge) badge.textContent = mode.toUpperCase();
-    if (hint) hint.textContent = mode === 'fast' ? 'Tap for slow' : 'Tap for fast';
-  }
-}
-speedToggleBtn?.addEventListener('click', e => {
-  e.stopPropagation();
-  setSpeedMode(speedMode === 'fast' ? 'slow' : 'fast');
+const pageInput = createPageInput({
+  get FLY_KEYS() { return FLY_KEYS; }, get FLY_SLOW() { return FLY_SLOW; },
+  get FLY_SPEED() { return FLY_SPEED; }, get FOOT_KEYS() { return FOOT_KEYS; },
+  get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get camera() { return camera; },
+  get deployScreen() { return deployScreen; }, get hud() { return hud; },
+  get isTouchDevice() { return isTouchDevice; }, get level() { return level; },
+  get localPlayer() { return localPlayer; }, get mapSurfaces() { return mapSurfaces; },
+  get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
+  get pageAudio() { return pageAudio; }, get pageConsole() { return pageConsole; },
+  get params() { return params; }, get renderer() { return renderer; },
+  get scoreboard() { return scoreboard; }, get soldierKit() { return soldierKit; },
+  get soldierView() { return soldierView; }, get spawning() { return spawning; },
+  get stage() { return stage; }, get uiFocused() { return uiFocused; },
+  get updateHud() { return updateHud; }, get vehicleHits() { return vehicleHits; },
+  get world() { return world; },
 });
-
-const modeToggleBtn = document.getElementById('mode-toggle-btn');
-const resetCamBtn = document.getElementById('reset-cam-btn');
-const mapActionsBar = document.getElementById('map-actions');
-
-function setNavMode(mode) {
-  navMode = mode;
-  if (modeToggleBtn) {
-    modeToggleBtn.dataset.mode = mode;
-    const badge = modeToggleBtn.querySelector('.mode-badge') || modeToggleBtn.querySelector('.action-badge');
-    const hint = modeToggleBtn.querySelector('.mode-hint') || modeToggleBtn.querySelector('.action-hint');
-    if (badge) badge.textContent = mode.toUpperCase();
-    if (hint) hint.textContent = mode === 'fly' ? 'Tap for pan' : 'Tap for fly';
-  }
-  updateHud();
-}
-
-modeToggleBtn?.addEventListener('click', e => {
-  e.stopPropagation();
-  setNavMode(navMode === 'fly' ? 'pan' : 'fly');
+const pageConsole = createPageConsole({
+  get MENU_URL() { return MENU_URL; }, get capture() { return pageInput.capture; },
+  get deployScreen() { return deployScreen; }, get hudPaths() { return hudPaths; },
+  get keys() { return pageInput.keys; }, get level() { return level; },
+  get localPlayer() { return localPlayer; }, get mapSurfaces() { return mapSurfaces; },
+  get params() { return params; }, get release() { return pageInput.release; },
+  get scoreboard() { return scoreboard; },
+  get seatAltFire() { return pageInput.seatAltFire; }, set seatAltFire(v) { pageInput.seatAltFire = v; },
+  get seatFire() { return pageInput.seatFire; }, set seatFire(v) { pageInput.seatFire = v; },
+  get setSideCollapsed() { return pageInput.setSideCollapsed; }, get soldierKit() { return soldierKit; },
+  get spawning() { return spawning; },
 });
-
-resetCamBtn?.addEventListener('click', e => {
-  e.stopPropagation();
-  resetCamera();
-});
-
-mapActionsBar?.addEventListener('pointerdown', e => {
-  e.stopPropagation();
-});
-
-const mobileControls = document.getElementById('mobile-controls');
-const mobilePad = document.getElementById('mobile-pad');
-const mobilePadPuck = document.getElementById('mobile-pad-puck');
-const mobilePadLabel = document.getElementById('mobile-pad-label');
-const mobileFireBtn = document.getElementById('mobile-fire-btn');
-const mobileUseBtn = document.getElementById('mobile-use-btn');
-const mobileViewBtn = document.getElementById('mobile-view-btn');
-const mobileJumpBtn = document.getElementById('mobile-jump-btn');
-const mobileThrottleWrap = document.getElementById('mobile-throttle-wrap');
-const mobileThrottleInput = document.getElementById('mobile-throttle');
-const mobileThrottleValue = document.getElementById('mobile-throttle-value');
-const MOBILE_PAD_RADIUS = 48;
-const MOBILE_AIM_PIXELS_PER_SECOND = 720;
-const mobilePadVector = { x: 0, y: 0 };
-let mobilePadPointerId = null;
-let mobilePadHeld = false;
-let mobileFireHeld = false;
-let mobileJumpHeld = false;
-let mobileThrottle = 0;
-let mobileThrottleTouched = false;
-let mobileControlsSignature = '';
-
-function clampMobileInput(value) {
-  return Math.max(-1, Math.min(1, value));
-}
-
-function mobilePadAxis(axis) {
-  return mobilePadHeld ? mobilePadVector[axis] : 0;
-}
-
-/**
- * The touch pad's contribution to the same input stage the mouse feeds.
- *
- * A pad has a deflection, not a count rate, and the engine has no reading to
- * transcribe here: BF1942's own controller support binds a stick through the
- * same `axisToAxis` arm, so a real gamepad arrives already counted. The
- * viewer's own choice, stated rather than transcribed, is that **full
- * deflection is a hand moving `MOBILE_AIM_PIXELS_PER_SECOND` pixels a
- * second** -- which keeps the pad in the same currency as the mouse, so the
- * sensitivity profiles, the +-16 saturation and `countsPerPixel` all reach it
- * unchanged, and one knob moves both.
- *
- * `-y` because the pad reports up-positive and the mouse (and DirectInput)
- * report down-positive.
- */
-function feedMobileTurretAim(dt) {
-  if (!mobilePadHeld || !localPlayer.occupancy?.turret) return;
-  localPlayer.mouseInput.accumulateDeflection(
-    mobilePadVector.x, -mobilePadVector.y, dt, MOBILE_AIM_PIXELS_PER_SECOND);
-}
-
-function resetMobilePad() {
-  mobilePadPointerId = null;
-  mobilePadHeld = false;
-  mobilePadVector.x = 0;
-  mobilePadVector.y = 0;
-  mobilePadPuck.style.transform = 'translate(-50%, -50%)';
-  mobilePad.classList.remove('is-active');
-}
-
-function resetMobileControls() {
-  resetMobilePad();
-  mobileFireHeld = false;
-  mobileJumpHeld = false;
-  mobileThrottle = 0;
-  mobileThrottleTouched = false;
-  soldierKit.triggerHeld = false;
-  soldierKit.clickQueued = false;
-  seatFire = false;
-  seatAltFire = false;
-  mobileFireBtn.classList.remove('is-active');
-  mobileJumpBtn.classList.remove('is-active');
-  mobilePadPuck.classList.remove('is-firing');
-  mobileThrottleInput.value = '0';
-  mobileThrottleValue.value = '0';
-  if (localPlayer.aircraft) localPlayer.aircraft.setInput('c_PIThrottle', 0);
-  updateMobileControls();
-}
-
-function syncMobileThrottle() {
-  if (!localPlayer.aircraft) return;
-  const current = localPlayer.aircraft.input('c_PIThrottle');
-  if (!mobileThrottleTouched || Math.abs(current - mobileThrottle) > 0.01) {
-    mobileThrottle = Math.max(0, Math.min(1, current));
-    mobileThrottleInput.value = String(Math.round(mobileThrottle * 100));
-  }
-  mobileThrottleValue.value = String(Math.round(mobileThrottle * 100));
-}
-
-function updateMobileControls() {
-  if (!isTouchDevice) return;
-  const deployOpen = document.getElementById('fullmap')?.classList.contains('deploy');
-  const onFoot = optOnFoot.checked && localPlayer.soldier && !localPlayer.soldierDead;
-  const seated = optPilot.checked && localPlayer.occupancy;
-  const activeSeat = seated && localPlayer.occupancy.isActiveRoot();
-  const manned = seated && localPlayer.mannedActive();
-  const aimable = manned && localPlayer.occupancy.turret;
-  const driving = activeSeat && localPlayer.car;
-  const flying = activeSeat && localPlayer.aircraft;
-  const show = captured && !deployOpen && (onFoot || seated);
-  const padMode = flying ? 'STICK' : driving ? 'DRIVE' : aimable ? 'AIM' : onFoot ? 'MOVE' : 'SEAT';
-  const canFire = onFoot || (seated && (driving || flying || aimable)
-    && localPlayer.occupancy.activeFireArmsNodes().length > 0);
-  const signature = [
-    show, padMode, onFoot, seated, manned, driving, flying, aimable,
-    localPlayer.nearEntry?.control || '', mobileThrottleTouched,
-  ].join('|');
-  if (signature === mobileControlsSignature) return;
-  mobileControlsSignature = signature;
-
-  mobileControls.hidden = !show;
-  mobilePad.hidden = !(onFoot || driving || flying || aimable);
-  mobilePadLabel.textContent = padMode;
-  mobileFireBtn.hidden = !canFire;
-  mobileFireBtn.disabled = !canFire;
-  mobileFireBtn.classList.toggle('is-active', mobileFireHeld && canFire);
-  mobileJumpBtn.hidden = !onFoot;
-  mobileJumpBtn.classList.toggle('is-active', mobileJumpHeld && onFoot);
-  mobileUseBtn.hidden = !(onFoot || seated);
-  mobileUseBtn.disabled = onFoot ? !localPlayer.nearEntry : !seated;
-  mobileUseBtn.textContent = onFoot ? (localPlayer.nearEntry ? `ENTER ${localPlayer.nearEntry.control}` : 'ENTER') : 'EXIT';
-  mobileViewBtn.hidden = !((seated && localPlayer.view) || (onFoot && soldierView.footView3p.modes.length > 1));
-  mobileThrottleWrap.hidden = !flying;
-  if (flying) syncMobileThrottle();
-  mobileControls.dataset.mode = padMode;
-}
-
-function updateMobilePad(event) {
-  const rect = mobilePad.getBoundingClientRect();
-  const cx = rect.left + rect.width / 2;
-  const cy = rect.top + rect.height / 2;
-  const dx = event.clientX - cx;
-  const dy = event.clientY - cy;
-  const dist = Math.hypot(dx, dy);
-  const clamped = Math.min(dist, MOBILE_PAD_RADIUS);
-  const angle = Math.atan2(dy, dx);
-  const px = Math.cos(angle) * clamped;
-  const py = Math.sin(angle) * clamped;
-  mobilePadVector.x = clampMobileInput(px / MOBILE_PAD_RADIUS);
-  mobilePadVector.y = clampMobileInput(-py / MOBILE_PAD_RADIUS);
-  mobilePadPuck.style.transform = `translate(calc(-50% + ${px.toFixed(1)}px), calc(-50% + ${py.toFixed(1)}px))`;
-  mobilePad.classList.add('is-active');
-}
-
-function releaseMobilePad(event) {
-  if (mobilePadPointerId !== null && event.pointerId !== mobilePadPointerId) return;
-  try {
-    if (mobilePad.hasPointerCapture(event.pointerId)) mobilePad.releasePointerCapture(event.pointerId);
-  } catch {}
-  resetMobilePad();
-}
-
-function setMobileFire(on) {
-  mobileFireHeld = on;
-  soldierKit.triggerHeld = on && optOnFoot.checked && !!localPlayer.soldier && !localPlayer.soldierDead;
-  soldierKit.clickQueued = soldierKit.triggerHeld;
-  seatFire = on && optPilot.checked && !!localPlayer.occupancy
-    && (localPlayer.occupancy.isActiveRoot() || localPlayer.mannedActive());
-  mobileFireBtn.classList.toggle('is-active', on);
-  mobilePadPuck.classList.toggle('is-firing', on);
-}
-
-function setMobileJump(on) {
-  mobileJumpHeld = on && optOnFoot.checked && !!localPlayer.soldier && !localPlayer.soldierDead;
-  mobileJumpBtn.classList.toggle('is-active', mobileJumpHeld);
-}
-
-function mobileSeatToggle() {
-  if (performance.now() - localPlayer.lastSeatToggle < localPlayer.SEAT_TOGGLE_COOLDOWN_MS) return;
-  if (optOnFoot.checked && localPlayer.soldier && localPlayer.nearEntry) {
-    setFly(true);
-    localPlayer.enterVehicle(localPlayer.nearEntry);
-    localPlayer.lastSeatToggle = performance.now();
-  } else if (optPilot.checked && localPlayer.occupancy) {
-    localPlayer.exitSeat();
-    localPlayer.lastSeatToggle = performance.now();
-  }
-  resetMobileControls();
-}
-
-mobilePad.addEventListener('pointerdown', event => {
-  if (mobilePadPointerId !== null) return;
-  event.preventDefault();
-  event.stopPropagation();
-  setFly(true);
-  pageAudio.ensureAudioContext();
-  mobilePadPointerId = event.pointerId;
-  mobilePadHeld = true;
-  try { mobilePad.setPointerCapture(event.pointerId); } catch {}
-  updateMobilePad(event);
-  updateMobileControls();
-});
-
-mobilePad.addEventListener('pointermove', event => {
-  if (!mobilePadHeld || event.pointerId !== mobilePadPointerId) return;
-  event.preventDefault();
-  event.stopPropagation();
-  updateMobilePad(event);
-});
-
-mobilePad.addEventListener('pointerup', releaseMobilePad);
-mobilePad.addEventListener('pointercancel', releaseMobilePad);
-
-mobileFireBtn.addEventListener('pointerdown', event => {
-  if (mobileFireBtn.disabled) return;
-  event.preventDefault();
-  event.stopPropagation();
-  setFly(true);
-  pageAudio.ensureAudioContext();
-  try { mobileFireBtn.setPointerCapture(event.pointerId); } catch {}
-  setMobileFire(true);
-});
-
-function releaseMobileFire(event) {
-  try {
-    if (mobileFireBtn.hasPointerCapture(event.pointerId)) mobileFireBtn.releasePointerCapture(event.pointerId);
-  } catch {}
-  setMobileFire(false);
-}
-
-mobileFireBtn.addEventListener('pointerup', releaseMobileFire);
-mobileFireBtn.addEventListener('pointercancel', releaseMobileFire);
-
-mobileJumpBtn.addEventListener('pointerdown', event => {
-  if (mobileJumpBtn.disabled || mobileJumpBtn.hidden) return;
-  event.preventDefault();
-  event.stopPropagation();
-  setFly(true);
-  try { mobileJumpBtn.setPointerCapture(event.pointerId); } catch {}
-  setMobileJump(true);
-});
-
-function releaseMobileJump(event) {
-  try {
-    if (mobileJumpBtn.hasPointerCapture(event.pointerId)) mobileJumpBtn.releasePointerCapture(event.pointerId);
-  } catch {}
-  setMobileJump(false);
-}
-
-mobileJumpBtn.addEventListener('pointerup', releaseMobileJump);
-mobileJumpBtn.addEventListener('pointercancel', releaseMobileJump);
-
-mobileUseBtn.addEventListener('pointerdown', event => event.stopPropagation());
-mobileUseBtn.addEventListener('click', event => {
-  event.preventDefault();
-  event.stopPropagation();
-  setFly(true);
-  mobileSeatToggle();
-});
-
-mobileViewBtn.addEventListener('pointerdown', event => event.stopPropagation());
-mobileViewBtn.addEventListener('click', event => {
-  event.preventDefault();
-  event.stopPropagation();
-  setFly(true);
-  localPlayer.cycleView();
-});
-
-mobileThrottleWrap.addEventListener('pointerdown', event => event.stopPropagation());
-mobileThrottleInput.addEventListener('pointerdown', event => event.stopPropagation());
-mobileThrottleInput.addEventListener('input', () => {
-  mobileThrottle = Math.max(0, Math.min(1, Number(mobileThrottleInput.value) / 100 || 0));
-  mobileThrottleTouched = true;
-  mobileThrottleValue.value = String(Math.round(mobileThrottle * 100));
-  if (localPlayer.aircraft) localPlayer.aircraft.setInput('c_PIThrottle', mobileThrottle);
-});
-
-window.addEventListener('blur', resetMobileControls);
-
-function flySpeed() {
-  return FLY_SPEED * (isSlow() ? FLY_SLOW : 1);
-}
-
-addEventListener('keydown', e => {
-  // The console gets first refusal on every key. Tilde toggles it (the
-  // game's `c_GIToggleConsole`); while it is up it eats the keyboard, so
-  // movement, fire, the deploy screen and the map never see a keystroke —
-  // the same gate the engine puts in front of `Setup`'s input dispatch.
-  if (GameConsole.isToggleKey(e)) {
-    e.preventDefault();
-    setConsoleOpen(!gameConsole.open);
-    return;
-  }
-  if (consoleCaptures()) {
-    if (e.code === 'Escape') { setConsoleOpen(false); return; }
-    if (gameConsole.keydown(e)) e.preventDefault();
-    return;
-  }
-  // Under the Escape menu the keyboard is the menu's, the way it is the
-  // console's above: the list and the arrow keys answer, and nothing behind
-  // it moves. Escape is the way back to the game.
-  if (escMenuCaptures()) {
-    if (e.code === 'Escape') { setEscMenu(false); return; }
-    if (escMenu?.keydown(e)) e.preventDefault();
-    return;
-  }
-  if (e.code === 'Escape') {
-    // The map is the topmost thing Escape can dismiss. In its deploy state
-    // it is dismissed with intent: a redeploy resumes the life in progress,
-    // and a join nobody committed to leaves for the free camera, which is
-    // what closing the game's own spawn menu does on a server that allows
-    // it. Under `?kblock` Escape is a locked key and reaches the page in
-    // fullscreen too; the browser leaves the fullscreen only on a long
-    // press, and `kbLockLeave` is the page's own way out of a session the
-    // pointer has already left.
-    //
-    // With all of those away, Escape is the game's own: it brings up the
-    // menu, in one press even mid-play, because the browser has already
-    // taken the pointer lock off us by the time this runs.
-    if (scoreboard.scoreboardOpen()) scoreboard.setScoreboard(false);
-    else if (deployScreen.deployActive()) spawning.cancelDeploy();
-    else if (!mapSurfaces.fullmapBox.hidden) mapSurfaces.toggleFullMap(false);
-    else if (kbSession && !captured && !e.repeat) kbLockLeave();
-    else if (!e.repeat) setEscMenu(true);
-    return;
-  }
-  // Caps Lock toggles the spawn menu even while a sidebar control is focused,
-  // matching Escape's privilege over form focus.
-  if (e.code === 'CapsLock' && !e.repeat) {
-    if (deployScreen.deployActive()) spawning.cancelDeploy();
-    else if (!optPilot.checked) spawning.openDeploy();
-    return;
-  }
-  // Deploy owns Enter and 1-9 even when a sidebar INPUT/SELECT is focused:
-  // otherwise Enter toggles `#onfoot` or activates RESUME and the commit
-  // either never runs or is immediately undone into fly-through. Not while
-  // the score board stands in for the screen: the spawn interface is not up
-  // to be driven, and DONE or Escape is the way back to it.
-  if (deployScreen.deployActive() && !deployScreen.scoreFromSpawn) {
-    if (e.code === 'Enter' && !e.repeat) {
-      e.preventDefault();
-      e.stopPropagation();
-      spawning.deploySpawn();
-      return;
-    }
-    const digit = /^Digit([1-9])$/.exec(e.code);
-    if (digit) {
-      e.preventDefault();
-      spawning.selectDeployFlag(Number(digit[1]) - 1);
-      return;
-    }
-  }
-  if (uiFocused()) return;
-  // Caps Lock is also handled above; M is `c_PIMap` in the game's own maps.
-  // On foot the map opens in its deploy state — the game's own map is also
-  // its spawn screen — and Escape or M again puts it away without moving you.
-  if (e.code === 'KeyM' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    if (deployScreen.deployActive()) spawning.cancelDeploy();
-    else if (mapSurfaces.fullmapBox.hidden && optOnFoot.checked && localPlayer.soldier
-             && !optPilot.checked) {
-      // On foot, but not merely suspended in a seat: a driver's M is the
-      // plain map, because his soldier is still ticked and still alive.
-      spawning.openDeploy();
-    } else mapSurfaces.toggleFullMap();
-    return;
-  }
-  // Tab is `c_PIShowScoreBoard`, `c_CMPushAndHold` in every shipped control
-  // map: the board is up for as long as the key is down. Not over the spawn
-  // screen, whose own SCORE BOARD button is the way in there.
-  if (e.code === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    e.preventDefault();
-    if (!e.repeat && !deployScreen.deployActive() && !scoreboard.scoreboardOpen()) scoreboard.setScoreboard(true, false);
-    return;
-  }
-  // N is `c_PIZoomMap`: it steps the minimap's three-level zoom counter
-  // (bfmap.js). Behind the same gates as M — the console, the Escape menu and
-  // a focused form control have all returned above.
-  if (e.code === 'KeyN' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    mapSurfaces.bfmap.zoomIn();
-    return;
-  }
-  // Seated in anything, the same row switches seats instead (SEAT-23/24,
-  // verify-r5.md's `c_PIMenuSelect1..9`) — checked after the deploy screen's
-  // own use of these keys above, since the two are never active together.
-  if (optPilot.checked && localPlayer.occupancy && !e.repeat
-      && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    const seatDigit = /^Digit([1-9])$/.exec(e.code);
-    if (seatDigit) {
-      localPlayer.switchSeat(Number(seatDigit[1]) - 1);
-      return;
-    }
-  }
-  // On foot the row raises kit weapons instead: `ObjectTemplate.itemIndex` is
-  // the inventory slot and the number key that selects it (1 knife .. 3
-  // primary .. 5 special), so a key with no such slot in the spawned kit's
-  // inventory does nothing, exactly as in the game.
-  if (optOnFoot.checked && localPlayer.soldier && !e.repeat
-      && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    const kitDigit = /^Digit([1-9])$/.exec(e.code);
-    if (kitDigit) {
-      // Recorded in `keys` as well as acted on, and the reason is slot 9:
-      // the engine gives `c_PIMenuSelect9` a second job on a falling soldier
-      // (TemplateMessage 18 -> `setIsParachuting(true)`, `parachute.js`), and
-      // the per-frame input word reads `keys`. This branch used to return
-      // before `keys.add` and the ripcord never reached it.
-      keys.add(e.code);
-      soldierKit.selectKitWeapon(Number(kitDigit[1]));
-      return;
-    }
-  }
-  keys.add(e.code);
-  if (e.code === 'KeyR') {
-    // The seat is checked before the soldier: a driver who walked in on foot
-    // still has his rifle slung, and R must reset the vehicle he is actually
-    // holding the wheel of, not work the bolt.
-    if (optPilot.checked && (localPlayer.aircraft || localPlayer.car)) {
-      (localPlayer.aircraft || localPlayer.car).reset();
-      world?.resetStick(LOCAL_PLAYER);
-    } else if (optOnFoot.checked && localPlayer.soldier) {
-      // R is the reload once there is a magazine to reload — the game's own
-      // binding — and stays the respawn only for a soldier holding nothing
-      // (a weapon glb that failed to load). Shift+R is the deliberate road
-      // back: it reopens the deploy screen rather than guessing a flag.
-      if (e.shiftKey) {
-        if (!deployScreen.deployActive()) spawning.openDeploy();
-      } else if (soldierKit.handWeapon?.data?.magazine) soldierKit.startReload();
-      else spawning.spawnAtFlag(true);
-    } else if (!optPilot.checked) {
-      resetCamera();
-    }
-  }
-  // E is `c_PIUse` (SEAT-2, verify-r5.md — the report's own correction: there
-  // is no distinctly-named "enter/exit" enum value, vehicle use shares the
-  // same trigger a real Use-key bind would), mapped to the physical E key.
-  // In free fly E is already the vertical thrust, so both branches ask for a
-  // mode first. The 1.0s per-player cooldown (SEAT-6) below gates the whole
-  // branch, same as the real `toggleEntryPoint`.
-  if (e.code === 'KeyE' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey
-      && performance.now() - localPlayer.lastSeatToggle >= localPlayer.SEAT_TOGGLE_COOLDOWN_MS) {
-    // `exitSeat` picks the exit: the hull's own for a driver or a passenger
-    // of a drivetrain, the seat's for a gunner or a seat of a hull with no
-    // drive (`mannedActive()` is the check that is right either way).
-    if (optPilot.checked && localPlayer.occupancy) {
-      localPlayer.exitSeat();
-      localPlayer.lastSeatToggle = performance.now();
-    } else if (optOnFoot.checked && localPlayer.soldier && captured && localPlayer.nearEntry) {
-      localPlayer.enterVehicle(localPlayer.nearEntry);
-      localPlayer.lastSeatToggle = performance.now();
-    }
-  }
-  // C cycles the view, which is `c_PIToggleCameraMode` (input channel 26)
-  // bound to IDKey_C in every one of the game's own control maps -- Infantry's
-  // included, which is why it reaches a soldier at all. In a seat the seat's
-  // own `VehicleCamera` owns the cycle (every seat has one: driver, passenger,
-  // gunner, bare gun). On foot `soldier-camera.js` owns it, widened past the
-  // engine's set of one by the server's soldier switch (server-settings.js).
-  if (e.code === 'KeyC' && !e.repeat && !e.ctrlKey && !e.metaKey) localPlayer.cycleView();
-  // Z is `c_PILie`, a non-repetitive trigger, so it toggles rather than holds.
-  if (e.code === 'KeyZ' && !e.repeat && optOnFoot.checked && localPlayer.soldier) localPlayer.prone = !localPlayer.prone;
-  if (captured && (FLY_KEYS.has(e.code)
-      || (optOnFoot.checked && FOOT_KEYS.has(e.code))
-      || (optPilot.checked && vehicleHits.AIR_KEYS.has(e.code)))) e.preventDefault();
-});
-addEventListener('keyup', e => {
-  // Push-and-hold: the board held up on Tab goes with the key, whatever else
-  // has the keyboard by then. One opened from the spawn screen stays.
-  if (e.code === 'Tab' && scoreboard.scoreboardOpen() && !deployScreen.scoreFromSpawn) scoreboard.setScoreboard(false);
-  // A key released under an open console must not reach `keys` either: the
-  // set is only ever read for movement, and the console has the keyboard.
-  // The Escape menu has it on the same terms.
-  if (consoleCaptures() || escMenuCaptures()) return;
-  keys.delete(e.code);
-});
-
-// Crouch is left Ctrl, for game parity with `c_PICrouch` -- but the browser
-// owns Ctrl+W outright by default, so firing while crouching still closes
-// the tab. Chromium's Keyboard Lock API (`navigator.keyboard.lock()`) can
-// reserve it, but only inside a fullscreen session the page has to request
-// first; that is prototyped behind `?kblock`, off by default (`kbLockEnter`,
-// below). Without it -- and in Firefox and Safari, which have no Keyboard
-// Lock -- the only lever a page has is asking before the tab actually goes,
-// the way any unsaved-work page does. Scoped to mid-play (captured, on foot,
-// a live soldier) so it never fires over the spawn screen or a fly-by.
-// Chromium shows the prompt only for a page that has had a real click or key
-// press since it loaded, which mid-play always has.
-addEventListener('beforeunload', e => {
-  if (!(captured && optOnFoot.checked && localPlayer.soldier)) return;
-  e.preventDefault();
-  e.returnValue = '';
-});
-
-const sideEl = document.getElementById('side');
-const sideCollapseBtn = document.getElementById('side-collapse-btn');
-const mapFabBtn = document.getElementById('map-controls-fab');
-
-function setSideCollapsed(collapsed) {
-  sideEl.classList.toggle('side-collapsed', collapsed);
-  if (mapFabBtn) mapFabBtn.hidden = !collapsed;
-}
-sideCollapseBtn?.addEventListener('click', e => {
-  e.stopPropagation();
-  setSideCollapsed(true);
-});
-mapFabBtn?.addEventListener('click', e => {
-  e.stopPropagation();
-  setSideCollapsed(false);
-});
-// Debug options start pulled away on every screen size; the fab restores them.
-setSideCollapsed(true);
-
-/* ------------------------------------------------------------------ console
- *
- * The game's own console, on the tilde key. The model, the parser and the
- * drawing rule all live in `./console.js`, reconstructed from
- * `dice::ref2::io::OldConsole` in both binaries; this is only the page's end
- * of it -- the canvas, the key hook, and the one command the viewer needs.
- *
- * `c_GIToggleConsole` is bound to `IDKey_Grave` and `IDKey_Capital` in the
- * shipped `Settings/Default/Controls/Common.con` (lines 26-27) and in the
- * client's own compiled fallback map (0x00927088 / 0x00927020). This page
- * already spends Caps Lock on the spawn menu, so only Grave toggles here.
- */
-const gameConsole = new GameConsole();
-const consoleCanvas = document.getElementById('console-canvas');
-let consoleFont = null;
-let consolePainted = -1;
-let consoleSize = '';
-
-/** True while the console owns the keyboard and the mouse. Every input path
- *  in this file asks this before acting, which is the whole of "it swallows
- *  game input": the engine does the same thing by gating `Setup`'s input
- *  dispatch on the console's own visible flag (`this+0xe3`, read at
- *  0x004429e0, 0x004447fa, 0x00446719 and half a dozen more). */
-function consoleCaptures() { return gameConsole.open; }
-
-/** The debug gate. The panel and its fab are absent for a regular player;
- *  `show.dev 1` brings both back, `show.dev 0` puts them away. Nothing is
- *  removed from the DOM, so `__setOnFoot`, `__deploy`, the `?shots` flow and
- *  every `optOnFoot.checked` in this file are unaffected either way. */
-let devMode = false;
-function setDevMode(on) {
-  devMode = Boolean(on);
-  document.body.classList.toggle('dev-on', devMode);
-  if (devMode) setSideCollapsed(false);
-  return devMode;
-}
-setDevMode(params.get('dev') === '1');
-
-/** `show.dev` is the viewer's own word, not one of the engine's (there is no
- *  `show` object in 1.61). It is shaped like a real one: read/write, one
- *  integer argument, and it answers through the same dispatcher, so
- *  `show.dev`, `show.dev 1`, `show.dev = 1` and `show.dev 0` all behave the
- *  way a registered property does. Later streams add real commands with the
- *  same call -- `gameConsole.register({ object, method, ... })`. */
-gameConsole.register({
-  object: 'show', method: 'dev',
-  minArgs: 0, maxArgs: 1, argTypes: ['int'], returns: 'int',
-  run: args => {
-    if (!args.length) return devMode ? 1 : 0;
-    return setDevMode(args[0] !== '0' && args[0].toLowerCase() !== 'false') ? 1 : 0;
-  },
-});
-
-/** `game.disconnect` is the engine's own word (it sits in the `game` object's
- *  method table beside `toggleGamePause` and `ticketRatio`), and it does what
- *  it does there: leaves the battle for the menu. */
-gameConsole.register({
-  object: 'game', method: 'disconnect',
-  minArgs: 0, maxArgs: 0, argTypes: [],
-  run: () => { location.assign(MENU_URL); },
-});
-
-/**
- * The four mouse-sensitivity words, which are the engine's own: they are what
- * `Settings/Default/Controls/*.con` calls to set the shipped defaults, and
- * they are in the retail client's `game` object's method table
- * (`setInfMouseSensitivity`'s registrar `FUN_006bba90`, name string
- * `0x00920abc`; body at vtable `+0x48` = `0x006bbbe0` -> `0x006c57f0` ->
- * `ControlSettings::setSensitivity` `0x006eb1a0`, a bare `[this+0xc] = v`).
- *
- * One float argument, 0..1 like the menu slider, and read-back with no
- * argument. What the number buys is `5 x s + 0.1` as the mouse axis scale
- * (`applyMouseSensitivity` `0x006c55f0`), so 0.25 is 1.35 and 0.75 is 3.85.
- *
- * `game.setCommonMouseSensitivity` is registered for completeness and is
- * genuinely inert here: the Common profile belongs to
- * `defaultGameControlMap`, which binds `c_GIMouseLookX/Y` — the menu and map
- * cursor, not a player axis — and this page has no surface that reads it.
- */
-const MOUSE_SENSITIVITY_WORDS = {
-  setCommonMouseSensitivity: 'common',
-  setInfMouseSensitivity: 'infantry',
-  setLandSeaMouseSensitivity: 'landSea',
-  setAirMouseSensitivity: 'air',
-};
-for (const [method, profile] of Object.entries(MOUSE_SENSITIVITY_WORDS)) {
-  gameConsole.register({
-    object: 'game', method,
-    minArgs: 0, maxArgs: 1, argTypes: ['float'], returns: 'float',
-    run: args => (args.length
-      ? localPlayer.mouseInput.setSensitivity(profile, args[0])
-      : localPlayer.mouseInput.sensitivityFor(profile)),
-  });
-}
-
-/** `game.setStaticMinimap` is the engine's own word — every stock
- *  `GeneralOptions.con` calls it with 1, which is why the widget is north-up
- *  by default — and it sets `BfMap`'s static byte (+0x58, ledger MMAP-2). 0
- *  lets the closed minimap turn with the player; read back with no argument.
- *  `bfmap` is declared further down this module, so it is only touched when
- *  the word runs, never at registration. */
-gameConsole.register({
-  object: 'game', method: 'setStaticMinimap',
-  minArgs: 0, maxArgs: 1, argTypes: ['int'], returns: 'int',
-  run: args => {
-    if (args.length) mapSurfaces.bfmap.setStatic(args[0] !== '0' && args[0].toLowerCase() !== 'false');
-    return mapSurfaces.bfmap.isStatic ? 1 : 0;
-  },
-});
-
-function setConsoleOpen(on) {
-  if (!gameConsole.setOpen(on)) return;
-  consoleCanvas.hidden = !gameConsole.open;
-  if (gameConsole.open) {
-    if (scoreboard.scoreboardOpen() && !deployScreen.scoreFromSpawn) scoreboard.setScoreboard(false);
-    // Whatever was held when the console came up must not still be held
-    // under it: the engine stops feeding `PlayerInput` entirely while the
-    // flag is set, so a key down at that moment never repeats.
-    keys.clear();
-    soldierKit.triggerHeld = false;
-    seatFire = false;
-    seatAltFire = false;
-    soldierKit.aimHeld = false;
-    if (!consoleFont) {
-      // `Font/BF1942.font` out of this mod's own Font.rfa chain where it has
-      // one (five of the installed mods do) and vanilla's otherwise.
-      loadConsoleFont(hudPaths.consoleFont()).then(f => {
-        consoleFont = f;
-        consolePainted = -1;
-      });
-    }
-  }
-  consolePainted = -1;
-}
-
-function paintGameConsole(stageW, stageH) {
-  if (!gameConsole.open || !stageW || !stageH) return;
-  const size = `${stageW}x${stageH}`;
-  if (gameConsole.version === consolePainted && size === consoleSize) return;
-  const dpr = Math.min(window.devicePixelRatio || 1, 3);
-  const cw = Math.round(stageW * dpr);
-  const ch = Math.round(stageH * dpr);
-  if (consoleCanvas.width !== cw || consoleCanvas.height !== ch) {
-    consoleCanvas.width = cw;
-    consoleCanvas.height = ch;
-  }
-  const ctx = consoleCanvas.getContext('2d');
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.imageSmoothingEnabled = false;   // the atlas is point art, like the HUD
-  // The capture's pitch is 22 px on a 1124 px screen where the installed
-  // font's own Height is 20; the drawer's rule is `lineHeight + 1` per line
-  // (0x00465063), so the text object reports one more than the header does.
-  const pitch = (consoleFont ? consoleFont.height : 20) + 2;
-  paintConsole(ctx, gameConsole, { width: stageW, height: stageH,
-                                   font: consoleFont, pitch });
-  consolePainted = gameConsole.version;
-  consoleSize = size;
-}
-
-/** `OldConsole::output` from the page's side: whatever the viewer wants in
- *  the scrollback, the way the client writes its own loader chatter into
- *  `io::mainConsole` (the string at 0x008d6168, logged all through boot).
- *  It is also what gives the band its height — `getLines(20)` returns what
- *  the scrollback has, so an unwritten console opens as a thin strip. */
-function logToConsole(text) {
-  gameConsole.output(text);
-  consolePainted = -1;
-}
-
-/** Everything the console knows, for headless checks and for later streams:
- *  the same object `register` hangs commands on. */
-window.__console = gameConsole;
-window.__showDev = setDevMode;
-window.__consoleLog = logToConsole;
-
-/** The seated player's two triggers, straight off the mouse: left is the
- *  vehicle's `c_PIFire`, right its `c_PIAltFire`. Which weapon either one
- *  reaches is the weapon's own business — a Sherman's cannon declares the
- *  first and its coaxial machine gun the second, a Corsair's guns the first
- *  and its bombs the second — so nothing here names a gun. Space still works
- *  and still means `c_PIFire`; it was the only binding there was. */
-let seatFire = false;
-let seatAltFire = false;
-
-function setFly(on) {
-  captured = on;
-  if (on && isTouchDevice && !sideEl.classList.contains('side-collapsed')) {
-    setSideCollapsed(true);
-  }
-  if (!on) {
-    dragging = false;
-    lockHeld = false;
-    // A trigger held across an Escape must not still be firing when the
-    // pointer comes back.
-    soldierKit.triggerHeld = false;
-    soldierKit.clickQueued = false;
-    soldierKit.aimHeld = false;
-    seatFire = false;
-    seatAltFire = false;
-    if (document.pointerLockElement === renderer.domElement) {
-      document.exitPointerLock();
-    }
-  }
-  updateMobileControls();
-}
-function capture() {
-  setFly(true);
-  pageAudio.ensureAudioContext();
-  // The lock is asked for, not depended on: Chrome refuses one for about a
-  // second after the player pressed Escape out of the last one, and it
-  // rejects rather than throws. `captured` is already true either way, so
-  // dragging still turns the view and the next click takes the lock.
-  const lock = renderer.domElement.requestPointerLock();
-  if (lock && typeof lock.catch === 'function') lock.catch(() => {});
-  // After the pointer, never before: fullscreen spends the click's user
-  // activation, and Chrome 149 refuses a pointer lock asked for after it.
-  kbLockEnter();
-}
-function release() {
-  setFly(false);
-}
-
-// --- the Escape menu -------------------------------------------------------
-//
-// The game's own way out of a level: Escape puts the front end back up over
-// the battle, and from there you either go back to it, leave it, or start a
-// different one. This is that screen — `play/skirmish.js`, the same
-// controller `play/index.html` is, mounted on a canvas over the stage with
-// its fourth page up: `menu/ExitMenu`'s button, which reads END CURRENT GAME
-// because an Instant Battle is a singleplayer game
-// (`Join/Disconnect/ShowDisconnect` = 2, the engine's own numbering).
-//
-// The level keeps running behind it, untouched, and entirely hidden: the
-// menu is opaque, exactly as the engine's is. The front end paints its black
-// field and its camouflaged plate over the game, and stops the Bink movie
-// while there is a game to go back to — so the battle does not show through,
-// and nothing here dims or blurs the frame to suggest that it does.
-//
-// Three ways out of it, and all three are the game's: Escape again is back to
-// the game, START is a different level (the page navigates, which is this
-// site's "disconnect and load the new map"), and END CURRENT GAME is
-// `game.disconnect` — the same MENU_URL the console word already goes to.
-//
-// There is one Instant Battle screen, and this is it: the same controller,
-// the same bot settings in the left column. The mod list is not here and is
-// not there either — it is the front end's own CUSTOM GAME tab, and there is
-// no front end behind a running level to tab to, nor anything for it to do
-// here: the mod is the one this level is running in.
-const menuCanvas = document.getElementById('menu-canvas');
-let escMenu = null;
-let escMenuUp = false;
-
-/** The screen, built and loading on first need. Warmed once the level is,
- *  so the first Escape is a paint and not a fetch. */
-function escMenuScreen() {
-  if (escMenu) return escMenu;
-  escMenu = createSkirmishScreen({
-    canvas: menuCanvas,
-    // `map.html` sits at the viewer root, where `play/index.html` is one
-    // directory down; every pack and level URL in the controller is built
-    // off this.
-    root: '',
-    params,
-    // No menu loop over a battle: the engine stops the front end's own Bink
-    // movie the moment there is a game behind the menu.
-    music: false,
-    inGame: true,
-    onDisconnect: () => location.assign(MENU_URL),
-    onStatus: text => { if (text) console.warn(text); },
-  });
-  escMenu.load()
-    // The level and the side it opens on are the ones being played, the way
-    // the game's own list sits on what it last started. `launchTeam` is the
-    // `?team=` this page came in on; with no parameter the screen keeps its
-    // own default, which is the one the way-in screen shows.
-    .then(() => {
-      escMenu.selectMap(level.extras?.level || params.get('map') || '');
-      if (spawning.launchTeam) escMenu.setTeam(spawning.launchTeam);
-    })
-    .catch(error => {
-      console.error('Escape menu unavailable', error);
-      // A screen that cannot draw must not swallow Escape: the key goes back
-      // to being the one that frees the pointer.
-      setEscMenu(false);
-      escMenu = null;
-    });
-  return escMenu;
-}
-
-/** Up or down. Down is "back to the game", which leaves the gate showing —
- *  the pointer lock is the player's to take again with a click, because a
- *  browser will not hand it back on the same Escape that took it away. */
-function setEscMenu(on) {
-  if (on === escMenuUp) return;
-  escMenuUp = on;
-  menuCanvas.hidden = !on;
-  if (on) {
-    // A menu you cannot click is no menu: the pointer comes back with it.
-    // (The browser has usually taken the lock off already — this is what
-    // drops what was held and stops the world reading the mouse.)
-    release();
-    // Whatever was held when the menu came up must not still be held under
-    // it — the same rule the console follows.
-    keys.clear();
-    escMenuScreen().paint();
-    menuCanvas.focus();
-    return;
-  }
-  // Down is back to the game, with the mouse: that is what the menu does in
-  // the game, and there is no "click to resume" plate to ask for it any
-  // more. Escape is a user gesture, so the lock is usually granted outright;
-  // Chrome refuses one within about a second of the Escape that dropped it,
-  // and `capture` is written to survive that (the view still drags, and the
-  // next click takes the lock).
-  capture();
-}
-
-/** Whether the menu owns the keyboard and the pointer. */
-function escMenuCaptures() { return escMenuUp; }
-
-// The handle, beside `__console`'s: a headless check drives the screen and
-// reads its state back rather than screen-scraping a canvas, the same shape
-// `play/index.html`'s `__menu` offers.
-window.__escMenu = {
-  get up() { return escMenuUp; },
-  get ready() { return (escMenu?.state?.levels ?? 0) > 0; },
-  get state() { return escMenu?.state ?? null; },
-  get levels() { return escMenu?.levels ?? []; },
-  get mod() { return escMenu?.mod ?? null; },
-  open: () => setEscMenu(true),
-  close: () => setEscMenu(false),
-  select: index => escMenu?.select(index),
-  setTeam: team => escMenu?.setTeam(team),
-  launchUrl: () => escMenu?.launchUrl() ?? null,
-  start: () => escMenu?.start(),
-  paint: () => escMenu?.paint(),
-};
-
-// --- Keyboard Lock, prototype (`?kblock`, off by default) ------------------
-//
-// Crouch-walking is Ctrl+W, and Chrome claims Ctrl+W before the page sees it:
-// IDC_CLOSE_TAB is one of the commands `BrowserCommandController::
-// IsReservedCommandOrKey` reserves, so no preventDefault stops the tab
-// closing. `navigator.keyboard.lock()` is the page's one lever. A locked key
-// reaches the page with every modifier -- locking KeyW sends Control+W and
-// Control+Shift+W to the page (WICG Keyboard Lock) -- because Chromium's view
-// marks it `skip_if_unhandled` and the browser never pre-handles it
-// (render_widget_host_view_event_handler.cc). The lock is live only while
-// the tab is in a fullscreen the page itself requested
-// (`KeyboardLockController::LockKeyboard` checks IsFullscreen(); F11 does not
-// count), so on foot, at capture, this asks for both.
-//
-// Measured headless in Chromium 141 and Chrome 149
-// (features/mesh-viewer-performance, Keyboard Lock):
-//  - requestFullscreen() consumes the click's activation; requestPointerLock()
-//    and keyboard.lock() do not.
-//  - keyboard.lock() needs no activation and resolves once the browser has
-//    registered the request, fullscreen or not -- the promise says nothing
-//    about whether the key is reserved.
-//  - requestFullscreen({ keyboardLock }) is not implemented; the option is
-//    never read.
-//  - With Escape locked, a short Escape reaches the page, so it still releases
-//    capture, cancels the deploy screen and closes the map; the browser leaves
-//    fullscreen only after Escape is held. Unlocked, the first Escape leaves
-//    fullscreen and the page never sees it.
-// Chromium drops the lock while the window is unfocused and re-arms it on
-// focus (`RenderWidgetHostImpl::SetPageFocus`). Firefox and Safari have no
-// navigator.keyboard: there, as without `?kblock`, nothing here runs and the
-// beforeunload prompt above is the only guard.
-const KBLOCK = params.has('kblock') && typeof navigator.keyboard?.lock === 'function'
-  && !isTouchDevice;
-// Every key on-foot play holds Ctrl with -- walking, strafing, a crouched
-// reload (Ctrl+R reloads the page), E, Z, M, jump -- and Escape, so its short
-// press stays the page's. Keys the game does not bind stay the browser's: a
-// deliberate Ctrl+T still opens a tab.
-const KBLOCK_KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'KeyE', 'KeyZ',
-                     'KeyM', 'Space', 'Escape'];
-let kbSession = false;        // inside the fullscreen this page asked for
-let kbLockState = 'idle';     // what lock() last said; the ?shots hook reads it
-
-function kbLockEnter() {
-  if (!KBLOCK || !(optOnFoot.checked && localPlayer.soldier)) return;
-  if (document.fullscreenElement !== stage) stage.requestFullscreen().catch(() => {});
-  // Asked again on every capture: the session's own `fullscreenchange`
-  // handler unlocks when the fullscreen ends, however it ends.
-  navigator.keyboard.lock(KBLOCK_KEYS).then(
-    () => { kbLockState = 'requested'; },
-    error => { kbLockState = `rejected: ${error.name}`; });
-}
-
-// Leaving on-foot play ends the session, and so does the Escape that
-// closes the menu with the pointer already free.
-function kbLockLeave() {
-  if (!kbSession) return;
-  navigator.keyboard.unlock();
-  kbLockState = 'unlocked';
-  document.exitFullscreen().catch(() => {});
-}
-
-if (KBLOCK) {
-  document.addEventListener('fullscreenchange', () => {
-    const inside = document.fullscreenElement === stage;
-    if (inside === kbSession) return;
-    kbSession = inside;
-    if (!inside) {
-      navigator.keyboard.unlock();
-      kbLockState = 'unlocked';
-    }
-    const was = localPlayer.HUD_FOOT;
-    localPlayer.HUD_FOOT = inside ? localPlayer.HUD_FOOT_KBLOCK : localPlayer.HUD_FOOT_PLAIN;
-    if (hud.textContent === was) hud.textContent = localPlayer.HUD_FOOT;
-  });
-}
-let touchFlying = false;
-const activeTouches = new Map();
-let touchPinchDist = 0;
-let touchMidX = 0;
-let touchMidY = 0;
-let isPanning = false;
-
-function getTouchesCenterAndDist() {
-  const pts = Array.from(activeTouches.values());
-  if (pts.length < 2) return null;
-  const dx = pts[1].x - pts[0].x;
-  const dy = pts[1].y - pts[0].y;
-  return {
-    midX: (pts[0].x + pts[1].x) / 2,
-    midY: (pts[0].y + pts[1].y) / 2,
-    dist: Math.hypot(dx, dy)
-  };
-}
-
-// The bit a button sets in `e.buttons`, indexed by its own `e.button` number.
-// The two numberings disagree on middle vs. right: `button` calls middle 1
-// and right 2, `buttons` puts right at bit 2 (0x2) and middle at bit 4 (0x4).
-// Getting this backwards would read a right-click as a middle-click, so it
-// is a lookup table, not an arithmetic guess.
-const BUTTON_BIT = [1, 4, 2, 8, 16];
-
-// Real pointer lock, or -- under `?shots` -- captured and stood in for it,
-// the same way `canFire` (Infantry advance) already treats `?shots` as a
-// substitute for `captured` itself: headless Chromium never grants pointer
-// lock, so a harness has nothing else to gate on.
-function pointerLocked() {
-  return document.pointerLockElement === renderer.domElement || params.has('shots');
-}
-
-// Left is `c_PIFire`, right is `c_PIAltFire` (`Infantry.con`) while captured,
-// on foot and pointer-locked -- the same gate `pointerdown` always checked.
-// A second button pressed while the first is already held never reaches
-// `pointerdown`: the browser reports it as a `pointermove` carrying the
-// button that changed (`e.button`) and the new chord (`e.buttons`), plus a
-// `mousedown` this page does not listen for. Releasing one of two held
-// buttons is the same story on `pointerup`'s side. `pointerdown`, `pointerup`
-// and that chorded `pointermove` all funnel through here so a chord is never
-// silently dropped -- confirmed against real Chromium event order with
-// `scratchpad/chord.cjs` (a held left + a right press/release fires
-// `pointermove button=2 buttons=3` then `buttons=1`, no `pointerdown`/`up`
-// at all for the right button).
-//
-// A release is handled before the gate, not after it: death or a redeploy
-// while the trigger is held nulls `soldier` out from under it (see the
-// `soldier = null` sites), and the pointerup that follows must still clear
-// `triggerHeld`/`aimHeld` or the next life starts with the trigger stuck.
-// A fresh press still needs the full gate -- there is no weapon, no rig and
-// no meaning to "zoomed" without one. Zoom is never touched on a release;
-// `altFireOnce` only toggles on a fresh press.
-function buttonChange(e) {
-  // Both triggers are dead under an open console, press and release alike.
-  if (consoleCaptures()) return;
-  const pressed = !!(e.buttons & BUTTON_BIT[e.button]);
-  if (!pressed) {
-    if (e.button === 0) { soldierKit.triggerHeld = false; seatFire = false; }
-    else if (e.button === 2) { soldierKit.aimHeld = false; seatAltFire = false; }
-    return;
-  }
-  if (!(captured && pointerLocked())) return;
-  // Seated, the two buttons are the vehicle's own two triggers rather than
-  // the soldier's. `Sherman.con` is the case that makes this matter: the
-  // cannon declares `c_PIFire` and `Coaxial_browning` declares `c_PIAltFire`,
-  // so with only Space wired to `c_PIFire` the coaxial machine gun had no
-  // input at all and could never be fired from the driver's seat — the guns
-  // were collected, the FireState existed, and nothing ever pulled it.
-  if (optPilot.checked && localPlayer.occupancy) {
-    if (e.button === 0) seatFire = true;
-    else if (e.button === 2) seatAltFire = true;
-    return;
-  }
-  if (!(optOnFoot.checked && localPlayer.soldier)) return;
-  // No active item, no mouse. Both buttons are `handleMessage` messages -- Fire
-  // is 6 and AltFire is 7 -- and the gate at `0x082772ac` drops the dispatch
-  // whole while `c_AsmHideWeapon` is up. `footFire` would refuse the trigger
-  // anyway; this is here so a swimmer does not bank a click or toggle a zoom on
-  // a weapon he is not holding.
-  if (soldierKit.itemsLocked()) return;
-  if (e.button === 0) {
-    soldierKit.triggerHeld = true;
-    soldierKit.clickQueued = true;
-  } else if (e.button === 2) {
-    const hw = soldierKit.handWeapon;
-    // The demolitions pair first: AltFire on the pack or the plunger swaps
-    // between them and never reaches the zoom latch. Neither weapon declares
-    // a `zoomFov`, so nothing is lost by taking the press here.
-    if (soldierKit.altFireDemolitions()) return;
-    if (hw?.data?.zoom?.toggle) {
-      // `altFireOnce` masks the *held* alt-fire input on the client
-      // (0x00500901, mask 0x800000) so only a fresh press reaches the
-      // weapon -- the button that just transitioned to pressed is a fresh
-      // press whether it arrived alone or as half of a chord.
-      hw.zoomed = !hw.zoomed;
-      hw.rezoom = 0;
-    } else {
-      soldierKit.aimHeld = true;
-    }
-  }
-}
-
-renderer.domElement.addEventListener('pointerdown', e => {
-  if (e.pointerType === 'touch') {
-    activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    try { renderer.domElement.setPointerCapture(e.pointerId); } catch {}
-    setFly(true);
-    pageAudio.ensureAudioContext();
-
-    if (activeTouches.size === 1) {
-      lastPointerX = e.clientX;
-      lastPointerY = e.clientY;
-      dragging = true;
-      if (navMode === 'fly') {
-        touchFlying = true;
-        isPanning = false;
-      } else {
-        touchFlying = false;
-        isPanning = true;
-      }
-    } else if (activeTouches.size === 2) {
-      touchFlying = false;
-      isPanning = true;
-      const geom = getTouchesCenterAndDist();
-      if (geom) {
-        touchMidX = geom.midX;
-        touchMidY = geom.midY;
-        touchPinchDist = geom.dist;
-      }
-    }
-    return;
-  }
-
-  // Desktop mouse. On foot with the pointer already locked, the buttons stop
-  // being a drag and become the game's own bindings — `c_PIFire` on the left,
-  // `c_PIAltFire` (aim) on the right, `Infantry.con` — so the very first
-  // click still captures and only the clicks after it pull the trigger.
-  // Seated players get the same gate: the buttons are triggers, not a drag,
-  // and must not fall through to the orbit/pan branch below.
-  if (captured && pointerLocked() && ((optPilot.checked && localPlayer.occupancy)
-      || (optOnFoot.checked && localPlayer.soldier))) {
-    buttonChange(e);
-    return;
-  }
-  if (e.button === 0) {
-    dragging = true;
-    isPanning = false;
-    lastPointerX = e.clientX;
-    lastPointerY = e.clientY;
-    try { renderer.domElement.setPointerCapture(e.pointerId); } catch {}
-    capture();
-  } else if (e.button === 1 || e.button === 2) {
-    dragging = true;
-    isPanning = true;
-    lastPointerX = e.clientX;
-    lastPointerY = e.clientY;
-    try { renderer.domElement.setPointerCapture(e.pointerId); } catch {}
-    setFly(true);
-    pageAudio.ensureAudioContext();
-  }
-});
-
-renderer.domElement.addEventListener('pointerup', e => {
-  if (e.pointerType === 'touch') {
-    activeTouches.delete(e.pointerId);
-    try {
-      if (renderer.domElement.hasPointerCapture(e.pointerId)) {
-        renderer.domElement.releasePointerCapture(e.pointerId);
-      }
-    } catch {}
-
-    if (activeTouches.size === 0) {
-      touchFlying = false;
-      dragging = false;
-      isPanning = false;
-    } else if (activeTouches.size === 1) {
-      const remaining = activeTouches.values().next().value;
-      lastPointerX = remaining.x;
-      lastPointerY = remaining.y;
-      if (navMode === 'fly') {
-        touchFlying = true;
-        isPanning = false;
-      } else {
-        touchFlying = false;
-        isPanning = true;
-      }
-    } else {
-      const geom = getTouchesCenterAndDist();
-      if (geom) {
-        touchMidX = geom.midX;
-        touchMidY = geom.midY;
-        touchPinchDist = geom.dist;
-      }
-    }
-    return;
-  }
-
-  dragging = false;
-  isPanning = false;
-  // Same gate and the same function as the press: `buttonChange` reads
-  // `pressed` off `e.buttons`, which is already false for the button that
-  // just came up, so this clears the right one without repeating the check.
-  buttonChange(e);
-  try {
-    if (renderer.domElement.hasPointerCapture(e.pointerId)) {
-      renderer.domElement.releasePointerCapture(e.pointerId);
-    }
-  } catch {}
-});
-
-renderer.domElement.addEventListener('pointercancel', e => {
-  if (e.pointerType === 'touch') {
-    activeTouches.delete(e.pointerId);
-  }
-  if (activeTouches.size === 0) {
-    touchFlying = false;
-    dragging = false;
-    isPanning = false;
-  }
-});
-
-renderer.domElement.addEventListener('contextmenu', e => {
-  e.preventDefault();
-});
-document.getElementById('side').addEventListener('pointerdown', e => {
-  e.stopPropagation();
-});
-
-document.addEventListener('pointerlockchange', () => {
-  if (document.pointerLockElement === renderer.domElement) {
-    lockHeld = true;
-    dragging = false;
-    setFly(true);
-    return;
-  }
-  if (lockHeld) {
-    lockHeld = false;
-    setFly(false);
-  }
-});
-document.addEventListener('pointermove', e => {
-  if (!captured) return;
-  // Mouse look is off under an open console. The pointer lock is kept — the
-  // console is a keyboard surface and closing it should drop you straight
-  // back into play — so the deltas are simply dropped.
-  if (consoleCaptures()) return;
-  if (pointerLocked()) {
-    // `e.button !== -1` means this move is really a chorded button change
-    // (see `buttonChange` above), not the cursor moving: `movementX/Y`
-    // on that kind of event can be a large synthetic delta rather than real
-    // mouse travel, and feeding it to `lookDelta` is what snapped the view
-    // ~90 degrees when a second button joined one already held.
-    if (e.button !== -1) {
-      buttonChange(e);
-      return;
-    }
-    localPlayer.lookDelta(e.movementX, e.movementY);
-    return;
-  }
-
-  if (e.pointerType === 'touch') {
-    if (!activeTouches.has(e.pointerId)) return;
-    activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
-    if (activeTouches.size >= 2) {
-      const geom = getTouchesCenterAndDist();
-      if (geom) {
-        const dMidX = geom.midX - touchMidX;
-        const dMidY = geom.midY - touchMidY;
-        touchMidX = geom.midX;
-        touchMidY = geom.midY;
-
-        panCamera(dMidX, dMidY);
-
-        const dDist = geom.dist - touchPinchDist;
-        touchPinchDist = geom.dist;
-        if (Math.abs(dDist) > 1) {
-          dollyCamera(dDist * 0.7);
-        }
-      }
-      return;
-    }
-
-    if (!dragging) return;
-    const dx = e.clientX - lastPointerX;
-    const dy = e.clientY - lastPointerY;
-    lastPointerX = e.clientX;
-    lastPointerY = e.clientY;
-
-    if (isPanning) {
-      panCamera(dx, dy);
-    } else {
-      localPlayer.lookDelta(dx, dy);
-    }
-    return;
-  }
-
-  if (!dragging) return;
-  const dx = e.clientX - lastPointerX;
-  const dy = e.clientY - lastPointerY;
-  lastPointerX = e.clientX;
-  lastPointerY = e.clientY;
-
-  if (isPanning) {
-    panCamera(dx, dy);
-  } else {
-    localPlayer.lookDelta(dx, dy);
-  }
-});
-document.addEventListener('wheel', e => {
-  if (!captured) return;
-  e.preventDefault();
-  // On foot the wheel walks the kit's inventory (slot order, wrapping) — the
-  // game's own mouse-wheel behaviour — instead of dollying. The free-fly
-  // dolly does nothing lasting on foot anyway: the soldier's own eye height
-  // sets camera.position.y every frame.
-  if (optOnFoot.checked && localPlayer.soldier && soldierKit.cycleKitWeapon(e.deltaY > 0 ? 1 : -1)) {
-    return;
-  }
-  const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 80 : 1;
-  camera.position.y -= e.deltaY * scale * 0.12 * (isSlow() ? FLY_SLOW : 1);
-  clampAltitude();
-}, { passive: false });
-
-function lookVector() {
-  const cy = Math.cos(look.yaw), sy = Math.sin(look.yaw);
-  const cp = Math.cos(look.pitch), sp = Math.sin(look.pitch);
-  return { x: sy * cp, y: sp, z: cy * cp, cy, sy };
-}
-
-function applyLook() {
-  const d = lookVector();
-  camera.lookAt(
-    camera.position.x + d.x,
-    camera.position.y + d.y,
-    camera.position.z + d.z,
-  );
-}
-
-function fly(dt) {
-  if (!captured) return;
-  const step = flySpeed() * dt;
-  const fwd = (keys.has('KeyW') || touchFlying ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
-  const strafe = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
-  const vert = (keys.has('KeyE') ? 1 : 0) - (keys.has('KeyQ') ? 1 : 0);
-  const d = lookVector();
-  camera.position.x += (d.x * fwd - d.cy * strafe) * step;
-  camera.position.y += (d.y * fwd + vert) * step;
-  camera.position.z += (d.z * fwd + d.sy * strafe) * step;
-  clampAltitude();
-}
 
 // The stage's size, taken here and only here. A `clientHeight` read in the
 // middle of a frame, after that frame's own DOM writes, forces a synchronous
@@ -2053,18 +664,18 @@ const localPlayer = createLocalPlayer({
   get getTouchHudText() { return getTouchHudText; }, get guns() { return guns; },
   get hud() { return hud; }, get hudBridge() { return hudBridge; },
   get hudFeed() { return hudFeed; }, get isTouchDevice() { return isTouchDevice; },
-  get kbLockLeave() { return kbLockLeave; }, get level() { return level; },
-  get look() { return look; }, get mapSurfaces() { return mapSurfaces; },
+  get kbLockLeave() { return pageInput.kbLockLeave; }, get level() { return level; },
+  get look() { return pageInput.look; }, get mapSurfaces() { return mapSurfaces; },
   get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
   get pageAudio() { return pageAudio; }, get params() { return params; },
-  get placeCamera() { return placeCamera; },
-  get resetMobileControls() { return resetMobileControls; }, get room() { return room; },
-  get seatAltFire() { return seatAltFire; }, set seatAltFire(v) { seatAltFire = v; },
-  get seatFire() { return seatFire; }, set seatFire(v) { seatFire = v; },
+  get placeCamera() { return pageInput.placeCamera; },
+  get resetMobileControls() { return pageInput.resetMobileControls; }, get room() { return room; },
+  get seatAltFire() { return pageInput.seatAltFire; }, set seatAltFire(v) { pageInput.seatAltFire = v; },
+  get seatFire() { return pageInput.seatFire; }, set seatFire(v) { pageInput.seatFire = v; },
   get seatPose() { return seatPose; }, get soldierKit() { return soldierKit; },
   get soldierView() { return soldierView; }, get spawnFlagSelect() { return spawnFlagSelect; },
   get spawning() { return spawning; }, get updateHud() { return updateHud; },
-  get updateMobileControls() { return updateMobileControls; },
+  get updateMobileControls() { return pageInput.updateMobileControls; },
   get vehicleHits() { return vehicleHits; }, get vehicles() { return vehicles; },
   get world() { return world; },
 });
@@ -2172,9 +783,9 @@ const wrecks = createVehicleWrecks({
   get isCollision() { return level.isCollision; }, get leaveSeat() { return localPlayer.leaveSeat; },
   get loader() { return loader; }, get localPlayer() { return localPlayer; },
   get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
-  get pageAudio() { return pageAudio; }, get placeCamera() { return placeCamera; },
+  get pageAudio() { return pageAudio; }, get placeCamera() { return pageInput.placeCamera; },
   get prone() { return localPlayer.prone; }, set prone(v) { localPlayer.prone = v; },
-  get resetMobileControls() { return resetMobileControls; },
+  get resetMobileControls() { return pageInput.resetMobileControls; },
   get respawnVehicleBody() { return hullBodies.respawnVehicleBody; },
   get retireVehicleBody() { return hullBodies.retireVehicleBody; }, get soldier() { return localPlayer.soldier; },
   get soldierArmor() { return localPlayer.soldierArmor; }, set soldierArmor(v) { localPlayer.soldierArmor = v; },
@@ -2449,7 +1060,7 @@ const referee = createBotReferee({
   onCapture: (bot, target, prevTeam) => {
     flagCapture.hoistCaptureFlag(target);
     hullBodies.syncVehicleSpawnOwnership();
-    logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
+    pageConsole.logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
     console.log(`[bots] ${bot.playerId} takes ${target.name}${bot.vehicle ? ' in the ' + (bot.vehicle.template ?? bot.vehicle.kind) : ''}`);
     flagCapture.announceCapture(prevTeam, target.team);
   },
@@ -2506,7 +1117,7 @@ const flagCapture = createFlagCapture({
   get flagMixer() { return level.flagMixer; }, set flagMixer(v) { level.flagMixer = v; },
   get flattenCull() { return level.flattenCull; }, get hud() { return hud; },
   get hudFeed() { return hudFeed; }, get levelClips() { return level.levelClips; },
-  get logToConsole() { return logToConsole; }, get mapSurfaces() { return mapSurfaces; },
+  get logToConsole() { return pageConsole.logToConsole; }, get mapSurfaces() { return mapSurfaces; },
   get optOnFoot() { return optOnFoot; }, get pageAudio() { return pageAudio; },
   get room() { return room; }, get soldier() { return localPlayer.soldier; },
   get soldierDead() { return localPlayer.soldierDead; }, get spawnFlagSelect() { return spawnFlagSelect; },
@@ -2557,7 +1168,7 @@ const soldierKit = createHandWeapon({
   get MAPS_BASE() { return MAPS_BASE; }, get MODELS_BASE() { return MODELS_BASE; },
   get SOLDIER_MAX_HP_FALLBACK() { return localPlayer.SOLDIER_MAX_HP_FALLBACK; },
   get audioListener() { return pageAudio.audioListener; }, get botRoundDamage() { return vehicleHits.botRoundDamage; },
-  get bust() { return bust; }, get camera() { return camera; }, get captured() { return captured; },
+  get bust() { return bust; }, get camera() { return camera; }, get captured() { return pageInput.captured; },
   get currentDir() { return level.currentDir; }, get deployScreen() { return deployScreen; },
   get ensureFootBody() { return footBodies.ensureFootBody; }, get fireStates() { return fireStates; },
   get guns() { return guns; }, get isCollision() { return level.isCollision; },
@@ -2626,7 +1237,7 @@ const botBodies = createBotVisuals({
 /** The edge of the human's fire input last frame, for the bots' hearing. */
 let frameInputWasFiring = false;
 const soldierView = createSoldierView({
-  get DEATH_CAM() { return localPlayer.DEATH_CAM; }, get applyLook() { return applyLook; },
+  get DEATH_CAM() { return localPlayer.DEATH_CAM; }, get applyLook() { return pageInput.applyLook; },
   get camera() { return camera; }, get collectSupplyDepots() { return level.collectSupplyDepots; },
   get collider() { return level.collider; }, get currentRoot() { return level.currentRoot; },
   get deathCamAt() { return localPlayer.deathCamAt; }, get deathCamPos() { return localPlayer.deathCamPos; },
@@ -2637,7 +1248,7 @@ const soldierView = createSoldierView({
   get footEyeCur() { return localPlayer.footEyeCur; }, get footEyePrev() { return localPlayer.footEyePrev; },
   get footLookPending() { return localPlayer.footLookPending; }, get footPending() { return localPlayer.footPending; },
   get footView() { return localPlayer.footView; }, get frameInputLast() { return localPlayer.frameInputLast; },
-  get hudBridge() { return hudBridge; }, get look() { return look; },
+  get hudBridge() { return hudBridge; }, get look() { return pageInput.look; },
   get params() { return params; }, get presentAlpha() { return localPlayer.presentAlpha; },
   get scanForEntry() { return localPlayer.scanForEntry; }, get serverSettings() { return localPlayer.serverSettings; },
   get soldier() { return localPlayer.soldier; }, get soldierArmor() { return localPlayer.soldierArmor; },
@@ -2667,12 +1278,12 @@ const seatPose = createSeatPose({
 const mapSurfaces = createMapSurfaces({
   get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get MAPS_BASE() { return MAPS_BASE; },
   get bust() { return bust; }, get camera() { return camera; },
-  get capturePosition() { return flagCapture.capturePosition; }, get captured() { return captured; },
+  get capturePosition() { return flagCapture.capturePosition; }, get captured() { return pageInput.captured; },
   get currentDir() { return level.currentDir; }, get deployScreen() { return deployScreen; },
   get extras() { return level.extras; }, get flags() { return flagCapture.flags; }, get hudPack() { return hudFeed.hudPack; },
   get localPlayer() { return localPlayer; }, get mapVehicles() { return level.mapVehicles; },
   get nearestEnemyFlag() { return flagCapture.nearestEnemyFlag; }, get optOnFoot() { return optOnFoot; },
-  get release() { return release; }, get scoreboard() { return scoreboard; },
+  get release() { return pageInput.release; }, get scoreboard() { return scoreboard; },
   get soldier() { return localPlayer.soldier; }, get soldierDead() { return localPlayer.soldierDead; },
   get spawnFlagSelect() { return spawnFlagSelect; }, get spawnersRoot() { return level.spawnersRoot; },
   get spawning() { return spawning; }, get sprite() { return hudFeed.sprite; },
@@ -2708,7 +1319,7 @@ const scoreboard = createScoreboardScreen({
 });
 const spawning = createSpawning({
   get DEATH_CAM() { return localPlayer.DEATH_CAM; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
-  get buildSpawnFlags() { return flagCapture.buildSpawnFlags; }, get capture() { return capture; },
+  get buildSpawnFlags() { return flagCapture.buildSpawnFlags; }, get capture() { return pageInput.capture; },
   get deathCamShot() { return localPlayer.deathCamShot; }, set deathCamShot(v) { localPlayer.deathCamShot = v; },
   get deathCamTarget() { return localPlayer.deathCamTarget; }, set deathCamTarget(v) { localPlayer.deathCamTarget = v; },
   get deathCamTimer() { return localPlayer.deathCamTimer; }, set deathCamTimer(v) { localPlayer.deathCamTimer = v; },
@@ -2721,7 +1332,7 @@ const spawning = createSpawning({
   get kitRowLabelFor() { return soldierKit.kitRowLabelFor; },
   get kitRowLayoutText() { return soldierKit.kitRowLayoutText; }, get optOnFoot() { return optOnFoot; },
   get optPilot() { return optPilot; }, get params() { return params; },
-  get placeCamera() { return placeCamera; }, get projectToArt() { return mapSurfaces.projectToArt; },
+  get placeCamera() { return pageInput.placeCamera; }, get projectToArt() { return mapSurfaces.projectToArt; },
   get prone() { return localPlayer.prone; }, set prone(v) { localPlayer.prone = v; },
   get rebaseDeckSpawns() { return hullBodies.rebaseDeckSpawns; },
   get resetCaptureUi() { return flagCapture.resetCaptureUi; }, get room() { return room; },
@@ -2746,13 +1357,13 @@ const room = createNetRoom({
   get MODELS_BASE() { return MODELS_BASE; }, get announceCapture() { return flagCapture.announceCapture; },
   get applyVisibility() { return level.applyVisibility; },
   get bindDynamicShading() { return level.bindDynamicShading; }, get bust() { return bust; },
-  get camera() { return camera; }, get captured() { return captured; },
+  get camera() { return camera; }, get captured() { return pageInput.captured; },
   get damageVisuals() { return wrecks.damageVisuals; }, get deployActive() { return deployScreen.deployActive; },
   get enterVehicle() { return localPlayer.enterVehicle; }, get exitSeat() { return localPlayer.exitSeat; },
   get extras() { return level.extras; }, get flags() { return flagCapture.flags; },
   get hoistCaptureFlag() { return flagCapture.hoistCaptureFlag; }, get loader() { return loader; },
-  get localPlayer() { return localPlayer; }, get lockHeld() { return lockHeld; },
-  get logToConsole() { return logToConsole; }, get manifest() { return manifest; },
+  get localPlayer() { return localPlayer; }, get lockHeld() { return pageInput.lockHeld; },
+  get logToConsole() { return pageConsole.logToConsole; }, get manifest() { return manifest; },
   get nearEntry() { return localPlayer.nearEntry; }, get openDeploy() { return spawning.openDeploy; },
   get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
   get paintDeployChrome() { return deployScreen.paintDeployChrome; }, get params() { return params; },
@@ -2796,7 +1407,7 @@ if (!manifest.length) {
 // for the network: a couple of JSON files and the plates, most of which the
 // screen the player came in through has already cached. Escape before this
 // lands builds it on the spot instead.
-level.warmups.level.finally(() => { escMenuScreen(); });
+level.warmups.level.finally(() => { pageConsole.escMenuScreen(); });
 
 replayController = createReplayController({
   scene, camera, loader, bust,
@@ -2833,7 +1444,7 @@ optPilot.addEventListener('change', () => {
     localPlayer.setOnFoot(false);
   }
   localPlayer.setPilot(optPilot.checked);
-  if (!optPilot.checked) placeCamera();
+  if (!optPilot.checked) pageInput.placeCamera();
 });
 optOnFoot.addEventListener('change', () => {
   if (optOnFoot.checked) {
@@ -2841,7 +1452,7 @@ optOnFoot.addEventListener('change', () => {
     return;
   }
   localPlayer.setOnFoot(false);
-  placeCamera();
+  pageInput.placeCamera();
 });
 spawnFlagSelect.addEventListener('change', () => {
   world?.setSpawnIndex(LOCAL_PLAYER, 0);
@@ -2854,7 +1465,7 @@ function frame(dt) {
   // The human's presentation follows the seat he holds, looked up every frame
   // (a bot taking the wheel of his hull gives it a drive under him).
   if (optPilot.checked) localPlayer.syncLocalSeat();
-  updateMobileControls();
+  pageInput.updateMobileControls();
   // ---- the input stage (page) ----------------------------------------------
   // The keyboard and the mouse never leave this page. The look stage (the
   // mouse stage's per-frame pump, mouse-input.js) is pumped here once a frame
@@ -2876,9 +1487,9 @@ function frame(dt) {
     // The pad's deflection must land in the device stage BEFORE the pump
     // turns the counts into an axis, or this frame's pad aim arrives a
     // frame late (the page's original feed-then-pump order).
-    feedMobileTurretAim(dt);
+    pageInput.feedMobileTurretAim(dt);
     localPlayer.pumpLook(lookTicks);
-    const held = captured ? keys : soldierView.EMPTY_KEYS;
+    const held = pageInput.captured ? pageInput.keys : soldierView.EMPTY_KEYS;
     // The engine's PlayerInput, named by action: the same keys, mouse
     // latches and mobile pad this page has always folded. `forwardKeys` and
     // `rudder` are the raw W/S and A/D pairs the aircraft's stick wants —
@@ -2886,40 +1497,40 @@ function frame(dt) {
     // (`forward`/`strafe`), while the plane's roll and pitch arrive from the
     // pad separately.
     input = {
-      forward: clampMobileInput(
+      forward: pageInput.clampMobileInput(
         ((held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0))
-        + mobilePadAxis('y')),
+        + pageInput.mobilePadAxis('y')),
       forwardKeys: (held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0),
-      strafe: clampMobileInput(
+      strafe: pageInput.clampMobileInput(
         ((held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0))
-        + mobilePadAxis('x')),
+        + pageInput.mobilePadAxis('x')),
       rudder: (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0),
-      fire: held.has('Space') || seatFire,
-      altFire: seatAltFire,
-      roll: mobilePadHeld ? mobilePadVector.x
+      fire: held.has('Space') || pageInput.seatFire,
+      altFire: pageInput.seatAltFire,
+      roll: pageInput.mobilePadHeld ? pageInput.mobilePadVector.x
         : (held.has('ArrowRight') ? 1 : 0) - (held.has('ArrowLeft') ? 1 : 0),
-      pitch: mobilePadHeld ? mobilePadVector.y
+      pitch: pageInput.mobilePadHeld ? pageInput.mobilePadVector.y
         : (held.has('ArrowUp') ? 1 : 0) - (held.has('ArrowDown') ? 1 : 0),
-      pad: mobilePadHeld,
+      pad: pageInput.mobilePadHeld,
     };
     look = { x: localPlayer.mouseInput.x, y: localPlayer.mouseInput.y };
   } else if (onFoot) {
     localPlayer.pumpLook(lookTicks);
-    const held = captured ? keys : soldierView.EMPTY_KEYS;
+    const held = pageInput.captured ? pageInput.keys : soldierView.EMPTY_KEYS;
     // Hoisted so footFire can hand the deviation model the same
     // c_PIThrottle / c_PIYaw values the body integrates — the engine's speed
     // gates read the *input*, not the achieved velocity.
     input = {
-      forward: clampMobileInput(
-        ((held.has('KeyW') || touchFlying ? 1 : 0) - (held.has('KeyS') ? 1 : 0))
-        + mobilePadAxis('y')),
-      strafe: clampMobileInput(
+      forward: pageInput.clampMobileInput(
+        ((held.has('KeyW') || pageInput.touchFlying ? 1 : 0) - (held.has('KeyS') ? 1 : 0))
+        + pageInput.mobilePadAxis('y')),
+      strafe: pageInput.clampMobileInput(
         ((held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0))
-        + mobilePadAxis('x')),
+        + pageInput.mobilePadAxis('x')),
       walk: held.has('ShiftLeft') || held.has('ShiftRight'),
       crouch: held.has('ControlLeft') || held.has('ControlRight'),
       prone: localPlayer.prone,
-      jump: held.has('Space') || mobileJumpHeld,
+      jump: held.has('Space') || pageInput.mobileJumpHeld,
       // `c_PIMenuSelect9`, input bit 22 -> TemplateMessage 18 ->
       // `BFSoldier::setIsParachuting(true)`. It is the kit's ninth item slot
       // and the engine gives it a second job on a falling soldier; see
@@ -2929,7 +1540,7 @@ function frame(dt) {
       // worth nothing in mid-air, and a bail-out is no time to hunt for a
       // control that would otherwise have to be added to the pad.
       deploy: held.has('Digit9') || held.has('Numpad9') || localPlayer.debugDeployHeld
-        || (mobileJumpHeld && localPlayer.soldier?.parachuteState === 'falling'),
+        || (pageInput.mobileJumpHeld && localPlayer.soldier?.parachuteState === 'falling'),
       dead: localPlayer.soldierDead,
     };
     // A dead body holds still: when `soldierDead` latches (death cam active)
@@ -3085,8 +1696,8 @@ function frame(dt) {
   } else if (onFoot) {
     soldierView.onFootCamera(dt);
   } else {
-    fly(dt);
-    applyLook();
+    pageInput.fly(dt);
+    pageInput.applyLook();
   }
   // Unconditional: rounds already in the air have to finish their flight even
   // if the trigger, the pilot mode or the whole aircraft has gone away — the
@@ -3270,7 +1881,7 @@ function frame(dt) {
   // frame was just drawn with. A no-op on every vanilla level (see
   // `setupLensFlare`).
   level.paintLensFlare();
-  paintGameConsole(hudW, hudH);
+  pageConsole.paintGameConsole(hudW, hudH);
 }
 // One uncaught exception in a frame must not end the page. three's
 // `setAnimationLoop` schedules the next animation frame only after its
@@ -3333,8 +1944,8 @@ setInterval(() => {
     'No frame has completed for several seconds. The GPU may be hung. Reload to recover.');
 }, 1000);
 const testHooks = installTestHooks({
-  get CHASE_OPTION() { return localPlayer.CHASE_OPTION; }, get KBLOCK() { return KBLOCK; },
-  get KBLOCK_KEYS() { return KBLOCK_KEYS; }, get KITS() { return deployScreen.KITS; },
+  get CHASE_OPTION() { return localPlayer.CHASE_OPTION; }, get KBLOCK() { return pageInput.KBLOCK; },
+  get KBLOCK_KEYS() { return pageInput.KBLOCK_KEYS; }, get KITS() { return deployScreen.KITS; },
   get LOCAL_PLAYER() { return LOCAL_PLAYER; },
   get MINIMAP_TEAM_TINT() { return mapSurfaces.MINIMAP_TEAM_TINT; },
   get activeAreaAudios() { return pageAudio.activeAreaAudios; },
@@ -3380,12 +1991,12 @@ const testHooks = installTestHooks({
   get groundHeight() { return level.groundHeight; }, get guns() { return guns; },
   get handSlot() { return soldierKit.handSlot; }, get handWeapon() { return soldierKit.handWeapon; },
   get hud() { return hud; }, get isZoomed() { return soldierKit.isZoomed; },
-  get itemsLocked() { return soldierKit.itemsLocked; }, get kbLockState() { return kbLockState; },
-  get kbSession() { return kbSession; }, get keys() { return keys; },
+  get itemsLocked() { return soldierKit.itemsLocked; }, get kbLockState() { return pageInput.kbLockState; },
+  get kbSession() { return pageInput.kbSession; }, get keys() { return pageInput.keys; },
   get kitLoadout() { return soldierKit.kitLoadout; }, get kitWeaponSlots() { return soldierKit.kitWeaponSlots; },
   get lastCaptureVoice() { return flagCapture.lastCaptureVoice; }, get loadouts() { return soldierKit.loadouts; },
   get loadoutsLoad() { return soldierKit.loadoutsLoad; }, get localMapTeam() { return mapSurfaces.localMapTeam; },
-  get localPlayer() { return localPlayer; }, get look() { return look; },
+  get localPlayer() { return localPlayer; }, get look() { return pageInput.look; },
   get lookDelta() { return localPlayer.lookDelta; }, get mannedActive() { return localPlayer.mannedActive; },
   get mapGate() { return mapSurfaces.mapGate; }, set mapGate(v) { mapSurfaces.mapGate = v; },
   get modeNote() { return level.modeNote; }, get mouseInput() { return localPlayer.mouseInput; },
@@ -3400,12 +2011,12 @@ const testHooks = installTestHooks({
   get scene() { return scene; }, get scoreFromSpawn() { return deployScreen.scoreFromSpawn; },
   get scoreLayout() { return scoreboard.scoreLayout; }, get scoreboardOpen() { return scoreboard.scoreboardOpen; },
   get scoreboardPlayers() { return scoreboard.scoreboardPlayers; },
-  get seatAltFire() { return seatAltFire; }, set seatAltFire(v) { seatAltFire = v; },
-  get seatFire() { return seatFire; }, set seatFire(v) { seatFire = v; },
+  get seatAltFire() { return pageInput.seatAltFire; }, set seatAltFire(v) { pageInput.seatAltFire = v; },
+  get seatFire() { return pageInput.seatFire; }, set seatFire(v) { pageInput.seatFire = v; },
   get seatIkChains() { return seatPose.seatIkChains; }, get seatSoldier() { return localPlayer.seatSoldier; },
   get selectDeployFlag() { return spawning.selectDeployFlag; },
   get selectKitWeapon() { return soldierKit.selectKitWeapon; }, get setDeployTeam() { return spawning.setDeployTeam; },
-  get setFly() { return setFly; }, get setScoreboard() { return scoreboard.setScoreboard; },
+  get setFly() { return pageInput.setFly; }, get setScoreboard() { return scoreboard.setScoreboard; },
   get shipFlagInactive() { return hullBodies.shipFlagInactive; },
   get showDamageTier() { return wrecks.showDamageTier; }, get showView() { return hudFeed.showView; },
   get snapPresentation() { return localPlayer.snapPresentation; },
