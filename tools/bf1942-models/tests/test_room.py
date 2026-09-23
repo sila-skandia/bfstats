@@ -72,6 +72,14 @@ MODULES.update({
     # imports (`./glb-tree.mjs`, `../viewer/world.js`) resolve unmodified.
     "server/glb-tree.mjs": SERVER / "glb-tree.mjs",
     "server/level.mjs": SERVER / "level.mjs",
+    # level.mjs's pieces (it re-exports each).
+    "server/glb-scene.mjs": SERVER / "glb-scene.mjs",
+    "server/level-bodies.mjs": SERVER / "level-bodies.mjs",
+    "server/level-data.mjs": SERVER / "level-data.mjs",
+    "server/level-instance.mjs": SERVER / "level-instance.mjs",
+    "server/vehicle-table.mjs": SERVER / "vehicle-table.mjs",
+    "server/level-load.mjs": SERVER / "level-load.mjs",
+    "server/level-descriptor.mjs": SERVER / "level-descriptor.mjs",
     "server/rooms.mjs": SERVER / "rooms.mjs",
     "server/authority.mjs": SERVER / "authority.mjs",
     # The real published templates the fake level's table is built from.
