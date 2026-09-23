@@ -237,16 +237,16 @@
     color: var(--text);
   }
   /* The map art, top right. That corner is free: #side is top left, #hud is
-     bottom centre. Sized in one place so the canvas backing store and the
-     frame agree. No CSS chrome: the game's own `icon_mapbar_small` bezel is
+     bottom centre. No CSS chrome: the game's own `icon_mapbar_small` bezel is
      drawn into the canvas, over the art, the way the engine composes it.
-     Retail geometry (measured off the 2559x1441 capture): the ticket bar is
-     x 622.2..793.7 y 4.6..27.5 and the minimap frame x 621.9..793.4 from
-     y ~30 down to the cpbar strip at y ~206..220 — a 171.5-wide cluster
-     whose map art is 164.9 across, ratio map/ticket 0.962. The widget keeps
-     that ratio: its width is anchored to the painted ticket bar (the layout
-     group's own 256-wide plate), so the two read as the one cluster the
-     game draws. */
+     Retail geometry (measured off the 2559x1441 capture): the ticket plate's
+     LEAF rect is x 620..876 y 4..36, but `icon_ticketbar` only inks the first
+     176x24 of its 256x32 texture, so the bar a player sees is x 620..796
+     y 4..28. The minimap frame is x 620..795.4, y 30..204.9 — flush with the
+     painted bar at both sides, two units of sky below it. `MINIMAP_RECT` and
+     `syncMinimapToTickets` hold exactly that, put through the HUD's own
+     stageW/800 and stageH/600, so the box tracks the bar at any stage size
+     instead of sitting at a fixed corner. */
   #minimap {
     --mm-size: 196px;
     /* Not covered by the `#hud, #side` positioning rule above. */
@@ -260,8 +260,9 @@
     position: static;
     display: block;
     width: 100%;
-    /* Square, so the art is not stretched. */
-    aspect-ratio: 1;
+    /* The box height comes off `MINIMAP_RECT` and the stage
+       (`syncMinimapToTickets`); the canvas fills the box it is given. */
+    height: 100%;
     /* The art is a top-down render with hard grid lines; smoothing it while
        zoomed in just makes it muddy. */
     image-rendering: pixelated;
@@ -897,7 +898,7 @@
   <div id="crosshair" hidden><span class="ch-pic"></span><span class="ch-dot"></span><span class="ch-n"></span><span class="ch-s"></span><span class="ch-w"></span><span class="ch-e"></span></div>
   <div id="gl-lost" hidden>
     <div class="gl-lost-card">
-      <div class="gl-lost-title">Graphics context lost</div>
+      <div class="gl-lost-title" id="gl-lost-title">Graphics context lost</div>
       <div class="gl-lost-body" id="gl-lost-body"></div>
       <button type="button" id="gl-lost-reload">Reload</button>
     </div>
@@ -994,7 +995,8 @@ import {
 } from './soldier-body.js';
 import { createReplayController, recordingLevel } from './replay.js';
 import { createRoomClient } from './netcode-client.js';
-import { createRemoteRenderer } from './netcode-render.js';
+import { createRemoteRenderer, SOLDIER_YAW_FLIP } from './netcode-render.js';
+import { FAMILY_CLIPS, remoteClipFamily } from './remote-gait.js';
 import { createReconciler } from './netcode-reconcile.js';
 import { Hud, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS, calculateHitOctant } from './hud.js';
 import { Armor } from './armor.js';
@@ -1029,6 +1031,7 @@ import { cpNation as cpNationRule, teamNation as teamNationRule } from './nation
 import { BfMap, minimapWindow, rotateAbout, coverRect } from './bfmap.js';
 import { boardRows, boardVars, paintLeaves, listFloor, listGeometry } from './scoreboard.js';
 import { BotController, spawnBots } from './bot.js';
+import { buildNavGrid, findPath, gridAt } from './nav-grid.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -1105,13 +1108,24 @@ stage.appendChild(renderer.domElement);
 // silent black canvas" -- so restore just offers a reload instead of
 // pretending play can continue.
 const glLostEl = document.getElementById('gl-lost');
+const glLostTitle = document.getElementById('gl-lost-title');
 const glLostBody = document.getElementById('gl-lost-body');
 document.getElementById('gl-lost-reload')?.addEventListener('click', () => location.reload());
+// Set while the context is down, so the frame watchdog (below, beside the
+// animation loop) does not overwrite the context card with a stall message
+// for the same event.
+let contextLost = false;
+function showGraphicsCard(title, body) {
+  glLostTitle.textContent = title;
+  glLostBody.textContent = body;
+  glLostEl.hidden = false;
+}
 renderer.domElement.addEventListener('webglcontextlost', e => {
   e.preventDefault();
   release();
-  glLostBody.textContent = 'The GPU dropped the WebGL context mid-frame. Waiting to see whether the browser restores it...';
-  glLostEl.hidden = false;
+  contextLost = true;
+  showGraphicsCard('Graphics context lost',
+    'The GPU dropped the WebGL context mid-frame. Waiting to see whether the browser restores it...');
 }, false);
 renderer.domElement.addEventListener('webglcontextrestored', () => {
   glLostBody.textContent = 'The context came back, but nothing it was holding did -- reload to keep playing.';
@@ -8475,6 +8489,10 @@ const BOT_COUNT = Math.max(0, Math.min(32, Number(params.get('botCount')) || 0))
 const BOT_SKILL = Math.max(0.25, Math.min(1.0, Number(params.get('botSkill')) || 0.75));
 /** Bot controllers for the current level; cleared on every level switch. */
 let botControllers = [];
+/** Navigation grid for bot pathfinding; built per level. */
+let botNavGrid = null;
+/** Bot AI clock: monotonic seconds since level load. */
+let botClock = 0;
 const CAPTURE_FALLBACK_SECONDS = 8;
 let localCapture = null;
 let roomCapture = null;
@@ -8679,6 +8697,266 @@ function resetCaptureUi() {
   roomCapture = null;
 }
 
+/** Hoist the taker's cloth over a captured point: swap the pole's flag-anchor
+ *  skin + cloth UVs to the capturing side's own national mesh, or strip the
+ *  cloth when the point goes neutral (a take-back always names a side).
+ *
+ *  The cloth is a skinned mesh whose baked UVs point at one cell of the
+ *  `flags_o` atlas (surveyed off `standardMesh/flag*_m1.sm`: us/can
+ *  u .003-.425 v -1.0-.75, uk u .001-.422 v -.734-.484, ge
+ *  u .438-.859 v -.734-.484, jp u .434-.856 v -1.0-.75). The take rewrites
+ *  the pole node in place: visitors re-resolve the anchor + cloth each call
+ *  off the point's scene-graph name (no per-flag cache to go stale across a
+ *  level switch), retarget the cloth's skin to the anchor's joint chain and
+ *  overwrite its UV attribute with the taker's cell. The wave animation keeps
+ *  playing — the joints are the pole's own, untouched — only the colours
+ *  change, which is exactly what the retail capture does.
+ *
+  *  A neutral point bakes pole-only (no anchor, no cloth), so there is nothing
+  *  to swap: the team's cloth is built fresh the way the extractor builds one
+  *  (anchor under the pole at the point's flag height, joints + `FlagBlow`
+  *  clip + cloth node), reusing the sibling point's skin/mesh layout. When
+  *  the new owner's nation has no cell above (a `flagpl_m1` the pack cannot
+  *  draw), the point keeps its old colours rather than flying another
+  *  nation's flag — the same neutral-plate rule `drawControlPoint` applies
+  *  on the map. */
+const FLAG_UV_CELLS = {
+  // Surveyed off the baked cloth (`standardMesh/flag*_m1.sm` UV ranges ==
+  // the glb's own baked TEXCOORD_0 ranges): each national mesh samples one
+  // cell of the shared `flags_o` atlas. u0,v0,u1,v1 in the file's own stored
+  // convention (v negative — the bake carries the .sm values through).
+  us: [0.003, -1.000, 0.425, -0.750],
+  can: [0.003, -1.000, 0.425, -0.750],
+  brit: [0.001, -0.734, 0.422, -0.484],
+  ger: [0.438, -0.734, 0.859, -0.484],
+  jp: [0.434, -1.000, 0.856, -0.750],
+  rus: [0.001, -0.469, 0.422, -0.219],
+};
+function flagUvCellFor(team) {
+  // The taker's own national cloth: the nation whose flag that side flies on
+  // THIS level (`nation.js` — most control points that side holds; Bocage
+  // Axis German, Allies American), not a hardcoded us/ge pair. On a level
+  // whose answer is 'unknown' (a `flagpl_m1` the pack has no art for) there
+  // is no cell and the point keeps its old colours — the same neutral-plate
+  // rule `drawControlPoint` applies on the map.
+  const nation = team === 1 || team === 2 ? teamNation(team) : null;
+  return (nation && FLAG_UV_CELLS[nation]) || null;
+}
+/** The stored UV range of a cloth geometry: [u0,v0,u1,v1]. Every baked cloth
+ *  samples exactly one atlas cell, so the min/max is the cell. */
+function unitRectOf(uv) {
+  let u0 = Infinity, v0 = Infinity, u1 = -Infinity, v1 = -Infinity;
+  for (let i = 0; i < uv.count; i++) {
+    const u = uv.getX(i), v = uv.getY(i);
+    if (u < u0) u0 = u;
+    if (u > u1) u1 = u;
+    if (v < v0) v0 = v;
+    if (v > v1) v1 = v;
+  }
+  return [u0, v0, u1, v1];
+}
+function captureSceneNodes(flag) {
+  if (!currentRoot || !flag?.controlPointName) return null;
+  const pole = currentRoot.getObjectByName(flag.controlPointName);
+  if (!pole) return null;
+  let anchor = null, cloth = null;
+  pole.traverse(obj => {
+    if (obj.userData?.kind === 'flagAnchor' && !anchor) anchor = obj;
+  });
+  currentRoot.traverse(obj => {
+    if (obj.userData?.kind === 'flagCloth' && !cloth
+        && typeof obj.name === 'string'
+        && obj.name.startsWith(`${flag.controlPointName} `)) cloth = obj;
+  });
+  return { pole, anchor, cloth };
+}
+/** The taker's cloth, flown over a pole that baked none.
+ *
+ *  A neutral point bakes pole-only (no anchor, no cloth, no `FlagBlow`
+ *  clip), so the UV swap has nothing to repaint. Build the team's cloth
+ *  the way the extractor builds one: an anchor under the pole at the
+ *  point's flag height (flagbase poles hoist at 8.2, the donor's own
+ *  offset), the same 20-bone joint chain posed at the clip's frame 0, and
+ *  a cloth node reusing a sibling point's skinned mesh + skin + material.
+ *  The wave animation comes along because the mixer plays every
+ *  `FlagBlow <name>` clip by node name — and the joints are named for THIS
+ *  point (`<point> Bone01..20`), exactly the nodes a
+ *  `FlagBlow <point>` track list would bind. A `FlagBlow` clip for this
+ *  point exists only when the extractor baked one; when it did not (a
+ *  point the level never flies), the cloth hangs in the skeleton's frame-0
+ *  pose — the same correctly-hung sheet a viewer that ignores animations
+ *  shows, per the extractor's own comment — rather than erroring.
+ *
+ *  Returns the new cloth, or null when this level baked no donor cloth to
+ *  copy (then the point keeps its bare pole). The donor is any same-level
+ *  `flagCloth` (same shared `flags_o` atlas on every level); its mesh,
+ *  skin layout and material are the level's own. */
+function raiseCaptureCloth(pole, pointName, cell) {
+  let donor = null;
+  currentRoot.traverse(obj => {
+    if (!donor && obj.userData?.kind === 'flagCloth') donor = obj;
+  });
+  if (!donor) return null;
+  const anchor = new THREE.Group();
+  anchor.name = `${pointName} flag`;
+  anchor.userData.kind = 'flagAnchor';
+  anchor.position.set(0, 8.2, 0);
+  pole.add(anchor);
+  // The joint chain, named for this point so the mixer's `FlagBlow
+  // <point>` clip — when the level baked one — binds to it. Layout first
+  // (name + local pose per bone off the donor's anchor subtree), then the
+  // bones, then the donor's own hierarchy rebuilt under this anchor.
+  let donorAnchor = null;
+  const donorStem = donor.name.endsWith(' cloth')
+    ? donor.name.slice(0, -' cloth'.length) : null;
+  currentRoot.traverse(obj => {
+    if (!donorAnchor && obj.userData?.kind === 'flagAnchor'
+        && donorStem && obj.name === `${donorStem} flag`) donorAnchor = obj;
+  });
+  const layout = [];
+  if (donorAnchor) donorAnchor.traverse(obj => {
+    if (obj.isBone) layout.push({
+      name: obj.name.slice(donorAnchor.name.length).trim(),
+      pos: obj.position.clone(),
+      quat: obj.quaternion.clone(),
+    });
+  });
+  const bones = layout.map(l => {
+    const b = new THREE.Bone();
+    b.name = `${pointName} ${l.name}`;
+    b.position.copy(l.pos);
+    b.quaternion.copy(l.quat);
+    return b;
+  });
+  const byName = new Map(bones.map(b => [b.name, b]));
+  // Rebuild the hierarchy from the donor's: a bone whose donor parent is
+  // the anchor hangs under this anchor, else under its named parent.
+  if (donorAnchor) {
+    const donorBonesByName = new Map();
+    donorAnchor.traverse(obj => { if (obj.isBone) donorBonesByName.set(obj.name, obj); });
+    for (const l of layout) {
+      const donorBone = donorBonesByName.get(`${donorAnchor.name} ${l.name}`);
+      const parent = donorBone?.parent;
+      const bone = byName.get(`${pointName} ${l.name}`);
+      if (!parent || parent === donorAnchor) anchor.add(bone);
+      else {
+        const pname = parent.name.slice(donorAnchor.name.length).trim();
+        (byName.get(`${pointName} ${pname}`) || anchor).add(bone);
+      }
+    }
+  } else {
+    for (const b of bones) anchor.add(b);
+  }
+  anchor.updateMatrixWorld(true);
+  const skin = new THREE.Skeleton(bones);
+  const cloth = new THREE.SkinnedMesh(
+    donor.geometry, donor.material);
+  cloth.name = `${pointName} cloth`;
+  cloth.userData.kind = 'flagCloth';
+  cloth.bind(skin, anchor.matrixWorld);
+  // The donor geometry is shared: clone it before repainting UVs so the
+  // sibling point keeps its own colours.
+  cloth.geometry = donor.geometry.clone();
+  paintClothCell(cloth, cell);
+  cloth.visible = true;
+  currentRoot.add(cloth);
+  anchor.updateMatrixWorld(true);
+  return cloth;
+}
+/** Repaint a cloth's UVs into an atlas cell, relatively: each vertex keeps
+ *  its fractional position within the geometry's baked cell and takes the
+ *  same fraction of the new one, so the weave direction and the hoist edge
+ *  survive the swap. (Positions are no guide — the us and ge cloths bake
+ *  byte-identical POSITION/NORMAL arrays; only their UVs differ.) */
+function paintClothCell(cloth, cell) {
+  const uv = cloth.geometry?.getAttribute('uv');
+  if (!uv) return;
+  const src = cloth.geometry.userData.flagUvCell
+    || (cloth.geometry.userData.flagUvCell = unitRectOf(uv));
+  const [u0, v0, u1, v1] = cell;
+  const su0 = src[0], sv0 = src[1], su = src[2] - src[0], sv = src[3] - src[1];
+  for (let i = 0; i < uv.count; i++) {
+    const fu = su ? (uv.getX(i) - su0) / su : 0;
+    const fv = sv ? (uv.getY(i) - sv0) / sv : 0;
+    uv.setXY(i, u0 + (u1 - u0) * fu, v0 + (v1 - v0) * fv);
+  }
+  uv.needsUpdate = true;
+  cloth.geometry.userData.flagUvCell = cell.slice();
+}
+function hoistCaptureFlag(flag) {
+  const nodes = captureSceneNodes(flag);
+  if (!nodes) return;
+  // The map surfaces read `extras.controlPoints`, not the world's live flags
+  // — so the team write alone leaves the minimap's marker neutral. Sync the
+  // entry by control-point name (`flags[].controlPointName` is the scene
+  // node's name; the deploy label in `flags[].name` is not);
+  // `drawControlPoint` then resolves the taker's own `conp_<nation>` sprite
+  // (or the neutral plate for `unknown`) and the cpbar strip takes the
+  // holder's colour on the same repaint.
+  const listed = extras.controlPoints || [];
+  const entry = listed.find(e => e.name === flag.controlPointName);
+  if (entry) entry.team = flag.team;
+  const cell = flagUvCellFor(flag.team);
+  if (cell && nodes.anchor && nodes.cloth) {
+    // Retarget the cloth to this pole's own joints (same 20-bone chain every
+    // cloth shares) and repaint its UVs into the taker's atlas cell.
+    const joints = [];
+    nodes.anchor.traverse(obj => { if (obj.isBone) joints.push(obj); });
+    if (joints.length) {
+      const skin = new THREE.Skeleton(joints);
+      nodes.cloth.bind(skin, nodes.cloth.matrixWorld);
+    }
+    paintClothCell(nodes.cloth, cell);
+    nodes.cloth.visible = true;
+    nodes.anchor.visible = true;
+  } else if (cell && nodes.pole && !nodes.cloth) {
+    // A neutral point bakes pole-only: raise the team's cloth fresh (built
+    // the way the extractor builds one) rather than leaving a bare pole.
+    // The mixer was built at level load, so hand the new joints their clip:
+    // a `FlagBlow <point>` track list binds by node name, and these joints
+    // are named for this point — exactly what such a clip targets. Levels
+    // bake that clip only for points they fly, so a neutral point usually
+    // has none and the cloth hangs in the skeleton's frame-0 pose (the
+    // correctly-hung sheet a viewer that ignores animations shows, per the
+    // extractor's own comment) rather than erroring.
+    const cloth = raiseCaptureCloth(nodes.pole, flag.controlPointName, cell);
+    if (cloth) {
+      // Visibility: the new cloth is a scene-root child like every baked
+      // one, so it joins the culled set with its joints' own bounds
+      // (`tagCull` reads those for a skinned mesh, not the bind pose).
+      // Matrices: `freezeStatics` ran at level load, so opt the pole chain
+      // out of the frozen walk explicitly — bones and cloth move every
+      // frame the mixer plays.
+      anchor.updateMatrixWorld(true);
+      tagCull(cloth);
+      cull.push(cloth);
+      flattenCull();
+      if (typeof neverFrozen !== 'undefined' && neverFrozen) {
+        neverFrozen.add(cloth);
+        let n = nodes.pole;
+        while (n && n !== currentRoot) { neverFrozen.add(n); n = n.parent; }
+      }
+      if (flagMixer) {
+        for (const clip of levelClips) {
+          if (clip.name !== `FlagBlow ${flag.controlPointName}`) continue;
+          const live = clip.tracks.filter(track => THREE.PropertyBinding.findNode(
+            currentRoot, THREE.PropertyBinding.parseTrackName(track.name).nodeName));
+          if (!live.length) continue;
+          const action = flagMixer.clipAction(live.length === clip.tracks.length
+            ? clip : Object.assign(clip.clone(), { tracks: live }));
+          action.time = Math.random() * clip.duration;
+          action.play();
+        }
+      }
+    }
+  } else if (!cell && nodes.cloth) {
+    nodes.cloth.visible = false;
+  }
+  drawMinimap(true);
+  drawFullMap(true);
+  if (typeof paintDeployChrome === 'function') paintDeployChrome();
+}
+
 function updateCaptureHud(ticks) {
   if (!optOnFoot.checked || !soldier || soldierDead) {
     if (!roomCapture && !localCapture) return;
@@ -8705,6 +8983,7 @@ function updateCaptureHud(ticks) {
     hud.textContent = `CAPTURING ${target.name} · ${progress}%`;
     if (localCapture.elapsed < captureDuration(target)) return;
     target.team = player?.team ?? deployTeamId;
+    hoistCaptureFlag(target);
     syncVehicleSpawnOwnership();
     logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
     hud.textContent = `${target.name} captured`;
@@ -8806,37 +9085,45 @@ function spawnAtFlag(advance = false) {
 }
 
 /**
- * Spawn bots on the player's team (the engine puts bots on both sides, but
- * for Stage 1 we put them on the player's side so they're visible).
- * Called once per level load, after the world is built.
+ * Spawn bots on both sides, the way the engine's bot manager tops up each
+ * team. Called once per level load, after the world is built.
  */
 function spawnBotsForLevel() {
   disposeBotVisuals();
+  botClock = 0;
   if (BOT_COUNT <= 0 || !world) {
     console.log(`[bots] skipped: BOT_COUNT=${BOT_COUNT}, world=${!!world}`);
     return;
   }
   botControllers = [];
-  // Bots spawn on the same team as the human player.
-  const botTeam = deployTeamId;
-  console.log(`[bots] spawning ${BOT_COUNT} bots on team ${botTeam}, skill ${BOT_SKILL}`);
+  // Build the navigation grid from the level's collider.
+  const worldSize = world.extras?.worldSize || 2048;
+  botNavGrid = buildNavGrid(world.collider, worldSize, {
+    cellSize: 64,
+    waterLevel: world.collider?.waterLevel,
+    maxSlope: 1.0,
+  });
+  console.log(`[bots] nav grid: ${botNavGrid.width}x${botNavGrid.height}, cellSize=${botNavGrid.cellSize}`);
+  // Both sides get bots, alternating so an odd count leaves the extra body on
+  // the player's team. `spawnBots` owns flag filtering and the world's
+  // `spawnPlayer` owns placement — no duplicate spawn logic here.
+  const friendly = deployTeamId === 1 ? 1 : 2;
+  const enemy = friendly === 1 ? 2 : 1;
+  console.log(`[bots] spawning ${BOT_COUNT} bots across teams ${friendly}/${enemy}, skill ${BOT_SKILL}`);
   botControllers = spawnBots({
     world,
     count: BOT_COUNT,
     botSkill: BOT_SKILL,
-    team: botTeam,
+    teams: [friendly, enemy],
     flags: world.flags,
   });
   console.log(`[bots] created ${botControllers.length} bot controllers`);
-  // Place each bot on its spawn point and kick off visual loading.
-  for (let i = 0; i < botControllers.length; i++) {
-    const bot = botControllers[i];
-    const flag = world.flags[i % world.flags.length];
-    if (flag && flag.spawns?.length) {
-      const spawn = flag.spawns[i % flag.spawns.length];
-      bot.setPosition(spawn.position[0], spawn.position[1], spawn.position[2]);
-      console.log(`[bots] ${bot.name} -> ${spawn.position.join(', ')}`);
-    }
+  for (const bot of botControllers) {
+    bot.navGrid = botNavGrid;
+    // The world steps bots, so each needs the Armor the soldier tick and the
+    // combat area read (`#soldierTick`, `#combatTick`) — the kit's own max HP.
+    const flag = world.player(bot.playerId)?.flag ?? null;
+    world.setPlayerArmor(bot.playerId, new Armor(soldierMaxHp(flag)));
     // Async: load the bot's visual so it appears when ready.
     ensureBotVisual(bot).then(vis => {
       if (vis?.rig) {
@@ -8852,10 +9139,339 @@ function spawnBotsForLevel() {
  * Tick all bot controllers. Called from frame() after the world step.
  */
 function tickBots(dt) {
-  if (!botControllers.length || !soldier) return;
-  const playerPos = [soldier.x, soldier.y, soldier.z];
+  if (!botControllers.length) return;
+  botClock += dt;
+  const playerPos = soldier ? [soldier.x, soldier.y, soldier.z] : null;
   for (const bot of botControllers) {
-    bot.tick(dt, playerPos, LOCAL_PLAYER);
+    if (botRespawnTick(bot, dt)) continue;   // dead and waiting out its timer
+    bot.tick(dt, botClock);
+    // Notify bots when the player fires (hearing model).
+    if (frameInputLast?.fire && playerPos) {
+      bot.recordNearbyShot(playerPos, botClock);
+    }
+    // A bot that could not walk out of its spawn after four escapes is
+    // redeployed to the flag's next spawn point — the deploy screen's own
+    // `advance`, not a teleport out of the world. See `bot.js` `_trackStuck`.
+    if (bot._needsRespawn) {
+      bot._needsRespawn = false;
+      bot._unstickCount = 0;
+      bot._stuckTime = 0;
+      bot._unstickTimer = 0;
+      const record = world.player(bot.playerId);
+      if (record?.flag) {
+        world.spawnPlayer(bot.playerId, { flag: record.flag, advance: true });
+        bot.setPosition(record.soldier.x, record.soldier.y, record.soldier.z);
+        bot._lastX = null;
+        bot._lastZ = null;
+      }
+    }
+  }
+  botFireTick(dt);
+}
+
+/** Seconds a downed bot stays out before its side puts it back on a flag. */
+const BOT_RESPAWN_DELAY = 8;
+
+const _shotRayDir = new THREE.Vector3();
+const _shotConeDir = new THREE.Vector3();
+const _shotFrameU = new THREE.Vector3();
+const _shotFrameV = new THREE.Vector3();
+const _shotOrigin = new THREE.Vector3();
+
+/**
+ * The human's half of the same parity departure `resolveBotShot` documents
+ * below: one hitscan round from the eye down the view axis, rolled into the
+ * hand weapon's live deviation cone, against the enemy soldier capsules. The
+ * engine resolves a real projectile against a soldier body the viewer's
+ * collider does not carry, so without this the player's rounds pass through
+ * every bot and only the bots' rounds land.
+ */
+function resolvePlayerShotOnBots() {
+  if (!botControllers.length || !world || !soldier) return;
+  const myTeam = world.player(LOCAL_PLAYER)?.team ?? deployTeamId;
+
+  camera.getWorldPosition(_shotOrigin);
+  camera.getWorldDirection(_shotRayDir);
+  _shotRayDir.normalize();
+
+  // The same polar roll `gunfire.js` `#wander` and `resolveBotShot` use.
+  const spread = (handWeapon?.model?.current?.() ?? 0) * DEG_TO_RAD;
+  if (spread > 0) {
+    const theta = spread * Math.sqrt(Math.random());
+    const phi = Math.random() * Math.PI * 2;
+    if (Math.abs(_shotRayDir.y) > 0.99) _shotFrameU.set(1, 0, 0);
+    else _shotFrameU.set(0, 1, 0);
+    _shotFrameU.cross(_shotRayDir).normalize();
+    _shotFrameV.crossVectors(_shotRayDir, _shotFrameU);
+    _shotConeDir.copy(_shotRayDir).multiplyScalar(Math.cos(theta))
+      .addScaledVector(_shotFrameU, Math.sin(theta) * Math.cos(phi))
+      .addScaledVector(_shotFrameV, Math.sin(theta) * Math.sin(phi));
+  } else {
+    _shotConeDir.copy(_shotRayDir);
+  }
+
+  const origin = [_shotOrigin.x, _shotOrigin.y, _shotOrigin.z];
+  let best = null;
+  let bestT = Infinity;
+  for (const bot of botControllers) {
+    if (bot.team === myTeam) continue;                       // never a teammate
+    const player = world.player(bot.playerId);
+    const s = player?.soldier;
+    if (!s || world.armorOf(bot.playerId)?.destroyed) continue;
+    const cx = s.x - origin[0];
+    const cy = (s.y + BOT_BODY_HEIGHT) - origin[1];
+    const cz = s.z - origin[2];
+    const t = cx * _shotConeDir.x + cy * _shotConeDir.y + cz * _shotConeDir.z;
+    if (t < 0 || t > BOT_FIRE_RANGE) continue;
+    const px = cx - t * _shotConeDir.x;
+    const py = cy - t * _shotConeDir.y;
+    const pz = cz - t * _shotConeDir.z;
+    if (px * px + py * py + pz * pz > BOT_BODY_RADIUS * BOT_BODY_RADIUS) continue;
+    const at = [origin[0] + t * _shotConeDir.x, origin[1] + t * _shotConeDir.y,
+                origin[2] + t * _shotConeDir.z];
+    if (!botLineOfSight(origin, at)) continue;
+    if (t < bestT) { bestT = t; best = bot.playerId; }
+  }
+  if (best) applyDamageToBot(best, botRoundDamage());
+}
+
+/**
+ * Damage one bot. A killing round parks it: the controller stops firing, the
+ * body is hidden, and the respawn timer starts.
+ */
+function applyDamageToBot(playerId, damage) {
+  const armor = world?.armorOf(playerId);
+  if (!armor || armor.destroyed) return;
+  armor.damage(damage);
+  if (!armor.destroyed) return;
+  const bot = botControllers.find(b => b.playerId === playerId);
+  if (!bot) return;
+  bot.isFiring = false;
+  bot.firingTarget = null;
+  bot._respawnIn = BOT_RESPAWN_DELAY;
+  const vis = botVisuals.get(playerId);
+  if (vis) vis.group.visible = false;
+}
+
+/**
+ * Run a dead bot's respawn timer. Returns true while it is still down, so the
+ * caller skips its tick. On expiry the side puts it back on one of its own
+ * flags with a fresh body — the same `spawnPlayer` + `setPosition` pair the
+ * stuck-bot redeploy above uses, not a teleport out of the world.
+ */
+function botRespawnTick(bot, dt) {
+  const armor = world?.armorOf(bot.playerId);
+  if (!armor?.destroyed) return false;
+  bot._respawnIn = (bot._respawnIn ?? BOT_RESPAWN_DELAY) - dt;
+  if (bot._respawnIn > 0) return true;
+
+  const teamFlags = world.flags.filter(f => f.team === bot.team);
+  const flag = teamFlags.length
+    ? teamFlags[Math.floor(Math.random() * teamFlags.length)]
+    : (world.player(bot.playerId)?.flag ?? null);
+  world.spawnPlayer(bot.playerId, { flag, advance: true, group: bot.team });
+  const record = world.player(bot.playerId);
+  world.setPlayerArmor(bot.playerId, new Armor(soldierMaxHp(record?.flag ?? flag)));
+  if (record?.soldier) {
+    bot.setPosition(record.soldier.x, record.soldier.y, record.soldier.z);
+  }
+  bot._respawnIn = 0;
+  bot._lastX = null;
+  bot._lastZ = null;
+  bot.memory.clear();
+  bot.isUnderFire = false;
+  bot.timeSinceNearbyShot = Infinity;
+  const vis = botVisuals.get(bot.playerId);
+  if (vis) vis.lastPos = null;   // no gait smear across the respawn
+  return false;
+}
+
+// --- bot weapons -----------------------------------------------------------
+//
+// PARITY DEPARTURE (BOT_AI_IMPLEMENTATION_PLAN §5). The plan's parity route —
+// give every bot a real Armor and a shared `firePlayerWeapon` through
+// `guns`/`gunfire.js` — cannot land as written: the viewer's collider carries
+// no soldier body, and no projectile-vs-soldier registration exists anywhere
+// (`guns.onImpact` reaches placed objects and vehicle hulls only). A bot's
+// trigger writing a synthetic weapon group would put real tracers in the air
+// and still deal the player no damage.
+//
+// So this keeps the half of parity that is exact and resolves the other half
+// here: the bot's live facing, the engine's deviation cone (the same polar law
+// `gunfire.js` rolls: theta = spread * sqrt(u), azimuth free) and the engine's
+// own direct-hit formula (base material damage x the attacker/defender
+// damageMod pair). Only the hit test against a soldier body is an INVENTION
+// stand-in — a vertical capsule at the world's object origin, which is
+// `setCharacterHeight -1.00` (physics.js CHARACTER_HEIGHT) above the feet.
+//
+// Recorded as a departure in features/bf1942-ai-research-2026-09-21/
+// IMPLEMENTATION_PLAN.md.
+
+/** Rounds/second when no hand weapon's stats are loaded yet. */
+const BOT_FALLBACK_ROF = 8;
+/** `damage.json`'s default material damage, used until a projectile resolves. */
+const BOT_FALLBACK_DAMAGE = 30;
+/** `MaterialManager.material 40` — the soldier's defending material. */
+const BOT_SOLDIER_MATERIAL = 40;
+/** A soldier body's stand-in radius and origin height (INVENTION). */
+const BOT_BODY_RADIUS = 0.6;
+const BOT_BODY_HEIGHT = CHARACTER_HEIGHT;
+/** A bot's rounds stop after this far, matching the hand weapon's own range. */
+const BOT_FIRE_RANGE = 600;
+
+const _botRayDir = new THREE.Vector3();
+const _botConeDir = new THREE.Vector3();
+const _botFrameU = new THREE.Vector3();
+const _botFrameV = new THREE.Vector3();
+
+/** The damage one bot round does, from the engine's direct-hit formula. */
+function botRoundDamage() {
+  const stats = handWeapon?.group?.stats ?? null;
+  const attacker = guns.attackerMaterial(stats?.projectile ?? null);
+  const base = guns.materials?.[attacker]?.damage ?? BOT_FALLBACK_DAMAGE;
+  const attGroup = guns.materials?.[attacker]?.attGroup ?? attacker;
+  const defGroup = guns.materials?.[BOT_SOLDIER_MATERIAL]?.defGroup ?? BOT_SOLDIER_MATERIAL;
+  const mod = guns.modifiers?.[attGroup]?.[defGroup] ?? null;
+  return base * (mod === null ? 1 : mod);
+}
+
+/** Terrain-blocked line of sight (same stand-in as bot.js `checkLOS`). */
+function botLineOfSight(from, to) {
+  const collider = world?.collider;
+  if (!collider?.surfaceHeight) return true;
+  const dx = to[0] - from[0];
+  const dy = to[1] - from[1];
+  const dz = to[2] - from[2];
+  const distance = Math.hypot(dx, dy, dz);
+  const steps = Math.min(10, Math.max(1, Math.ceil(distance / 0.8)));
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const surface = collider.surfaceHeight(from[0] + dx * t, from[2] + dz * t);
+    if (!Number.isFinite(surface)) continue;
+    if (surface > from[1] + dy * t + 0.5) return false;
+  }
+  return true;
+}
+
+/**
+ * Resolve one bot round against the world's players. Returns
+ * `{ targetId, damage }` on a hit, else null.
+ */
+function resolveBotShot(bot) {
+  const { origin, dir } = bot.aimRay();
+  _botRayDir.set(dir[0], dir[1], dir[2]).normalize();
+  // Roll into the deviation cone, exactly as `gunfire.js` `#wander` does.
+  const spread = (bot.aimDeviation ?? 0) * DEG_TO_RAD;
+  if (spread > 0) {
+    const theta = spread * Math.sqrt(Math.random());
+    const phi = Math.random() * Math.PI * 2;
+    if (Math.abs(_botRayDir.y) > 0.99) _botFrameU.set(1, 0, 0);
+    else _botFrameU.set(0, 1, 0);
+    _botFrameU.cross(_botRayDir).normalize();
+    _botFrameV.crossVectors(_botRayDir, _botFrameU);
+    _botConeDir.copy(_botRayDir).multiplyScalar(Math.cos(theta))
+      .addScaledVector(_botFrameU, Math.sin(theta) * Math.cos(phi))
+      .addScaledVector(_botFrameV, Math.sin(theta) * Math.sin(phi));
+  } else {
+    _botConeDir.copy(_botRayDir);
+  }
+
+  const botPlayer = world?.player(bot.playerId);
+  const damage = botRoundDamage();
+  let best = null;
+  let bestT = Infinity;
+  for (const [id, player] of world.players) {
+    if (id === bot.playerId) continue;
+    // The friendly test is the same one `sense()` applies, with no local-player
+    // exception: a round never resolves against a soldier on the shooter's side.
+    if (botPlayer && player.team === botPlayer.team) continue;
+    if (world.armorOf(id)?.destroyed) continue;
+    const s = player.soldier;
+    if (!s) continue;
+    const cx = s.x - origin[0];
+    const cy = (s.y + BOT_BODY_HEIGHT) - origin[1];
+    const cz = s.z - origin[2];
+    const t = cx * _botConeDir.x + cy * _botConeDir.y + cz * _botConeDir.z;
+    if (t < 0 || t > BOT_FIRE_RANGE) continue;
+    const px = cx - t * _botConeDir.x;
+    const py = cy - t * _botConeDir.y;
+    const pz = cz - t * _botConeDir.z;
+    if (px * px + py * py + pz * pz > BOT_BODY_RADIUS * BOT_BODY_RADIUS) continue;
+    const at = [origin[0] + t * _botConeDir.x, origin[1] + t * _botConeDir.y,
+                origin[2] + t * _botConeDir.z];
+    if (!botLineOfSight(origin, at)) continue;
+    if (t < bestT) {
+      bestT = t;
+      best = { targetId: id, damage };
+    }
+  }
+  return best;
+}
+
+/**
+ * One frame of bot fire. The trigger, its rate and its report; the round's
+ * cone and its damage. Runs after `tickBots`, so `bot.isFiring` is this frame's
+ * decision.
+ */
+function botFireTick(dt) {
+  if (!botControllers.length) return;
+  const stats = handWeapon?.group?.stats ?? null;
+  const rof = stats?.roundOfFire > 0 ? stats.roundOfFire : BOT_FALLBACK_ROF;
+
+  for (const bot of botControllers) {
+    // Bots hear each other's first shot of a burst (AI-22 hearing).
+    if (bot.isFiring && !bot._wasFiring) {
+      const at = bot.getPosition();
+      for (const other of botControllers) {
+        if (other !== bot) other.recordNearbyShot(at, botClock);
+      }
+    }
+    bot._wasFiring = bot.isFiring;
+
+    bot._fireCooldown = Math.max(0, (bot._fireCooldown ?? 0) - dt);
+    if (!bot.isFiring || bot._fireCooldown > 0) continue;
+
+    bot._fireCooldown = 1 / rof;
+    bot.deviation.onShot();
+    const hit = resolveBotShot(bot);
+    if (!hit) continue;
+    if (hit.targetId === LOCAL_PLAYER) {
+      applyDamageToPlayer(hit.damage,
+        { x: bot.position[0], y: bot.position[1], z: bot.position[2] }, bot.team);
+    } else {
+      // A round that found a bot damages that bot, not the human. Before both
+      // sides existed every hit was billed to the local player, so an enemy
+      // shooting one of your squad killed you instead of him.
+      applyDamageToBot(hit.targetId, hit.damage);
+    }
+  }
+}
+
+/**
+ * The solo capture law, run for bots as it is run for the human. The engine's
+ * capture is per-player — every soldier on the point contributes — so a bot
+ * standing on a flag its team does not hold takes it after the point's own
+ * `timeToGetControl`. The HUD line stays the local player's; bot takes are
+ * logged. Room play stays authoritative (no local bot capture).
+ */
+function botCaptureTick(ticks) {
+  if (!botControllers.length || roomJoined || !(ticks > 0)) return;
+  const dt = ticks * (1 / 30);
+  for (const bot of botControllers) {
+    if (!bot.team) continue;
+    const pos = bot.getPosition();
+    const target = nearestEnemyFlag(bot.team, { x: pos[0], z: pos[2] });
+    if (!target) { bot._capture = null; continue; }
+    if (!bot._capture || bot._capture.flag !== target) {
+      bot._capture = { flag: target, elapsed: 0 };
+    }
+    bot._capture.elapsed += dt;
+    if (bot._capture.elapsed < captureDuration(target)) continue;
+    target.team = bot.team;
+    hoistCaptureFlag(target);
+    syncVehicleSpawnOwnership();
+    logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
+    bot._capture = null;
   }
 }
 
@@ -8869,9 +9485,6 @@ const BOT_WEAPON = 'Colt';
 
 /** Bot pose-pair cache: "SoldierName__Colt" -> { scene, animations }. */
 const botPoseCache = new Map();
-
-/** Bot gait clips cache: "gaits/Colt.gait.glb" -> AnimationClip[]. */
-const botGaitCache = new Map();
 
 /** The root group all bot visuals hang off. Added to scene in show(). */
 let botRoot = null;
@@ -8896,36 +9509,23 @@ async function botPosePair(soldierName, weapon) {
   return botPoseCache.get(key);
 }
 
+/**
+ * The bot's gait clips: exactly the set the local and remote bodies bind
+ * (`footBodyClips`), so a bot's legs play the same baked walk/run/crouch/crawl
+ * clips a human's do.
+ *
+ * This used to read the manifest as `manifest[weapon].lower`. That is not its
+ * shape — it is `{ lower, grips: { grip: file }, weaponGrip: { weapon: grip } }`
+ * — so the lookup fell to `manifest[Object.keys(manifest)[0]]`, a string, whose
+ * `.lower` is `undefined`. The loader then fetched `poses/undefined`, both
+ * halves came back empty, and `buildBotGaitRig` bound only the static poses:
+ * every bot slid across the level in the standing pose with its legs still.
+ * `footBodyClips` is the resolution the foot body and the remote renderer
+ * already share (`foot-gait.js`).
+ */
 async function botGaitClips(weapon) {
-  const manifest = await footGaits();
-  if (!manifest) return [];
-  const entry = manifest[weapon] ?? manifest[Object.keys(manifest)[0]];
-  if (!entry) return [];
-  const key = entry.lower;
-  if (!botGaitCache.has(key)) {
-    botGaitCache.set(key, footBodyLoader
-      .loadAsync(`${MODELS_BASE}/poses/${key}${bust()}`)
-      .then(g => g.animations ?? []).catch(() => []));
-  }
-  const lower = await botGaitCache.get(key);
-  const upperKey = entry.upper;
-  if (!botGaitCache.has(upperKey)) {
-    botGaitCache.set(upperKey, footBodyLoader
-      .loadAsync(`${MODELS_BASE}/poses/${upperKey}${bust()}`)
-      .then(g => g.animations ?? []).catch(() => []));
-  }
-  const upper = await botGaitCache.get(upperKey);
-  return [...lower, ...upper];
+  return footBodyClips(weapon);
 }
-
-const FAMILY_CLIPS = {
-  stand: { pose: 'stand' },
-  walk: { lower: 'lower', upper: 'upper' },
-  crouch: { pose: 'crouch' },
-  crouchwalk: { lower: 'crouchlower', upper: 'crouchupper' },
-  lie: { pose: 'lie' },
-  crawl: { lower: 'crawllower', upper: 'crawlupper' },
-};
 
 function buildBotGaitRig(scene, poseClips, gaitClips) {
   const mixer = new THREE.AnimationMixer(scene);
@@ -8953,14 +9553,14 @@ function buildBotGaitRig(scene, poseClips, gaitClips) {
   return { mixer, families };
 }
 
-function botClipFamily(speed, stance) {
-  if (stance === 'prone') {
-    return 'lie';
-  }
-  if (stance === 'crouch') {
-    return speed > 0.5 ? 'crouchwalk' : 'crouch';
-  }
-  return speed > 0.5 ? 'walk' : 'stand';
+/** The clip family for a bot's live speed and stance: the engine's own speed
+ *  bands (`remote-gait.js`), resolved against the families the rig actually
+ *  bound, with the same fallback chain a remote soldier gets. */
+function botClipFamily(speed, stance, bound) {
+  return remoteClipFamily(speed, {
+    crouch: stance === 'crouch',
+    prone: stance === 'prone',
+  }, bound);
 }
 
 async function ensureBotVisual(bot) {
@@ -9001,13 +9601,18 @@ function updateBotVisuals(dt) {
     const pos = bot.getPosition();
     if (!pos || !Number.isFinite(pos[0])) continue;
 
+    // A downed bot stays hidden until its respawn timer puts it back.
+    if (world?.armorOf(bot.playerId)?.destroyed) { vis.group.visible = false; continue; }
+
     vis.group.visible = true;
     vis.group.position.set(pos[0], pos[1], pos[2]);
 
-    // Bots face the player when firing.
+    // Bots face their live heading, with the same baked-root correction the
+    // remote renderer applies (`SOLDIER_YAW_FLIP`).
     const yaw = bot.yaw ?? 0;
     const q = vis.group.quaternion;
     q.setFromEuler(new THREE.Euler(0, yaw, 0, 'YXZ'));
+    q.multiply(SOLDIER_YAW_FLIP);
 
     // Estimate speed from position change.
     if (!vis.lastPos) vis.lastPos = [...pos];
@@ -9017,8 +9622,10 @@ function updateBotVisuals(dt) {
     vis.lastSpeed = vis.lastSpeed + (speed - vis.lastSpeed) * Math.min(1, dt * 6);
     vis.lastPos[0] = pos[0]; vis.lastPos[1] = pos[1]; vis.lastPos[2] = pos[2];
 
-    // Stage 1 bots don't move, so they're always standing.
-    const want = 'stand';
+    // The gait family follows the bot's live speed and stance, the same rule
+    // remote soldiers use (`remoteClipFamily`), resolved against what bound.
+    const want = botClipFamily(vis.lastSpeed, bot.stance ?? 'stand',
+                               family => !!vis.rig.families[family]);
     if (want !== vis.want) {
       vis.want = want;
       for (const [family, actions] of Object.entries(vis.rig.families)) {
@@ -11712,6 +12319,13 @@ guns.onShot = group => {
     hw.weaponNode.visible = false;
   }
   if (Number.isFinite(hw.rounds)) hw.rounds = Math.max(0, hw.rounds - 1);
+  // A bullet round is resolved against the bots here. A thrown charge is not
+  // (its damage is the explosion's), and neither is a melee swing — both are
+  // weapons whose `onShot` carries no projectile down the view axis.
+  if (hw.group?.stats?.projectile && !isExplosives(hw.name)
+      && !(hw.data?.throw?.fireDelay > 0)) {
+    resolvePlayerShotOnBots();
+  }
   // A charge just left the hand: remember whose it was, so the plunger knows
   // what to set off after the pack has been swapped out of the hand, and
   // count it, so the pouch does not refill on the way back.
@@ -12908,10 +13522,70 @@ function paintLensFlare() {
 gameHud.load();
 window.__hud = gameHud;
 
-/** Draw a sprite centred on (x, y) at `sc` times its own pixels. Returns
- *  false when the pack has not delivered it yet, so callers can fall back. */
-function drawSprite(ctx, name, x, y, sc, { angle = 0, alpha = 1 } = {}) {
+/** The side's own colour on the map, measured off two retail captures.
+ *
+ *  The unit icons ship white on a black outline (`minimap_icon_soldier_16x16`
+ *  is 14 white texels and 14 black ones) and the engine modulates them with
+ *  the LOCAL player's side — not with friend-or-foe. Both readings paint an
+ *  Allied player's teammates blue, which is why it took an Axis capture to
+ *  tell them apart:
+ *
+ *  | capture | side | purest texel |
+ *  |---|---|---|
+ *  | 2026-09-22 21-01-16 (Bocage, HUD widget) | Allied | (75, 126, 252) |
+ *  | 2026-09-23 10-11-40 (Bocage, spawn map) | Allied | (75, 126, 252) |
+ *  | 2026-09-13 20-53-36 (desert, HUD widget) | Axis | (247, 52, 49) |
+ *
+ *  Two different maps and two different surfaces agree on the blue to the
+ *  texel, so these are the modulate colours themselves and not a blend with
+ *  the art beneath (bilinear filtering only ever pulls a texel TOWARD the
+ *  background, never past the source). They are near — but not — (0.3, 0.5,
+ *  1.0) and (0.97, 0.2, 0.19); the measured values are what is shipped
+ *  because they are what was seen. */
+const MINIMAP_TEAM_TINT = { 1: [247, 52, 49], 2: [75, 126, 252] };
+
+/** A pack sprite modulated by a colour, the way the engine draws its unit
+ *  icons: `out = src * tint`, so white becomes the tint outright, the black
+ *  outline stays black, and the grey antialiasing lands in between. Alpha is
+ *  untouched.
+ *
+ *  Memoised per (sprite, colour). There are two colours and a handful of
+ *  icons, so the cache is a dozen 16x16 canvases at most, built once —
+ *  tinting per marker per frame would be a `getImageData` on the frame path,
+ *  which is the one thing the map surfaces are careful not to do
+ *  (features/mesh-viewer-performance, rule 7). */
+const tintedSprites = new Map();
+function tintedSprite(name, rgb) {
+  const key = `${name}|${rgb}`;
+  const cached = tintedSprites.get(key);
+  if (cached !== undefined) return cached;
   const img = sprite(name);
+  // Not cached as a miss: the pack is still landing and the next frame may
+  // have it.
+  if (!img) return null;
+  const c = document.createElement('canvas');
+  c.width = img.width;
+  c.height = img.height;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  const data = ctx.getImageData(0, 0, c.width, c.height);
+  const px = data.data;
+  for (let i = 0; i < px.length; i += 4) {
+    if (!px[i + 3]) continue;
+    px[i] = (px[i] * rgb[0]) / 255;
+    px[i + 1] = (px[i + 1] * rgb[1]) / 255;
+    px[i + 2] = (px[i + 2] * rgb[2]) / 255;
+  }
+  ctx.putImageData(data, 0, 0);
+  tintedSprites.set(key, c);
+  return c;
+}
+
+/** Draw a sprite centred on (x, y) at `sc` times its own pixels. Returns
+ *  false when the pack has not delivered it yet, so callers can fall back.
+ *  `tint` modulates it by a colour first (`tintedSprite`). */
+function drawSprite(ctx, name, x, y, sc, { angle = 0, alpha = 1, tint = null } = {}) {
+  const img = tint ? tintedSprite(name, tint) : sprite(name);
   if (!img) return false;
   const w = img.width * sc;
   const h = img.height * sc;
@@ -13140,24 +13814,35 @@ const SPAWN_MAP_ALPHA = 0.8 * (1 - 20 / 100);
 
 /** The art, three ways. The spawn screen dims it to a silhouette on
  *  near-black; the HUD widget leaves the world showing through, the game's
- *  own `setMinimapTransparency` default; the plain M map draws it as is. */
+ *  own `setMinimapTransparency` default; the plain M map draws it as is.
+ *
+ *  `size` is the backing width; the backing height comes off the canvas's
+ *  own box (`fitCanvas` keeps the two). The HUD widget is not square — it is
+ *  `MINIMAP_RECT` through the stage's own sx and sy, which differ on any
+ *  window that is not 4:3 — so the window covers `span` of the art across
+ *  the width and `span * height / width` down it: the art's own aspect is
+ *  never stretched, and on a square surface this is exactly the old square
+ *  mapping. */
 function drawArt(ctx, size, u0, v0, span, opts) {
-  ctx.clearRect(0, 0, size, size);
+  const h = ctx.canvas.height;
+  ctx.clearRect(0, 0, size, h);
   ctx.fillStyle = opts.dim ? '#05070b'
     : opts.translucent ? 'rgba(13, 15, 16, .78)' : '#0d0f10';
-  ctx.fillRect(0, 0, size, size);
+  ctx.fillRect(0, 0, size, h);
   if (!mapArt) return;
+  const vSpan = span * h / size;
+  const v0c = v0 + (span - vSpan) / 2;   // the window stays centred on the player
   const sx = u0 * mapArt.width;
-  const sy = v0 * mapArt.height;
+  const sy = v0c * mapArt.height;
   const sw = span * mapArt.width;
-  const sh = span * mapArt.height;
+  const sh = vSpan * mapArt.height;
   ctx.globalAlpha = opts.dim ? SPAWN_MAP_ALPHA : opts.translucent ? 0.85 : 1;
-  if (opts.rot || u0 < 0 || v0 < 0 || u0 + span > 1 || v0 + span > 1) {
+  if (opts.rot || u0 < 0 || v0c < 0 || u0 + span > 1 || v0c + vSpan > 1) {
     // The HUD minimap: the window is centred on the player, so it can hang
     // over the art's edge, and the rotating mode turns it about the surface's
     // centre. The source is grown to cover the turned square's corners and cut
     // to the art; what lies past the art is the backdrop.
-    const cover = coverRect(u0, v0, span, size, opts.rot || 0);
+    const cover = coverRect(u0, v0c, span, size, opts.rot || 0);
     if (cover) {
       const mid = size / 2;
       ctx.save();
@@ -13171,7 +13856,7 @@ function drawArt(ctx, size, u0, v0, span, opts) {
       ctx.restore();
     }
   } else {
-    ctx.drawImage(mapArt, sx, sy, sw, sh, 0, 0, size, size);
+    ctx.drawImage(mapArt, sx, sy, sw, sh, 0, 0, size, h);
   }
   ctx.globalAlpha = 1;
 }
@@ -13198,12 +13883,19 @@ function drawControlPoint(ctx, cp, px, py, sc) {
 /** The vehicles, by template: every `spawners` child in the scene carries its
  *  template name, and `minimap-icons.json` says which silhouette that template
  *  declared. A template with no icon of its own is a vehicle dot, the way the
- *  HUD marks anything it has no picture for. */
+ *  HUD marks anything it has no picture for.
+ *
+ *  A hull a teammate is sitting in is drawn in the side's own colour, which
+ *  is the whole of how retail marks a crewed vehicle — there is no second
+ *  mark for the men inside it (`friendlyMapUnits` skips them for exactly
+ *  this reason). A parked one keeps the archive's white-on-black. */
 const vehiclePos = new THREE.Vector3();
 const vehicleQuat = new THREE.Quaternion();
 const vehicleFwd = new THREE.Vector3();
 function drawVehicles(ctx, toPx, sc, rot = 0) {
   if (!spawnersRoot) return;
+  const crewed = friendlyVehicleNodes();
+  const tint = MINIMAP_TEAM_TINT[localMapTeam()] || MINIMAP_TEAM_TINT[2];
   for (const vehicle of spawnersRoot.children) {
     if (!vehicleSpawnActive(vehicle)) continue;
     vehicle.getWorldPosition(vehiclePos);
@@ -13219,8 +13911,11 @@ function drawVehicles(ctx, toPx, sc, rot = 0) {
     // `rot` is the map's own turn (the rotating minimap): a heading drawn on a
     // turned map turns with it.
     const angle = Math.atan2(vehicleFwd.x, -vehicleFwd.z) + rot;
-    if (!icon || !drawSprite(ctx, icon, q.x, q.y, sc, { angle, alpha: 0.9 })) {
-      drawSprite(ctx, 'icon_vehicledot_empty', q.x, q.y, sc);
+    const manned = crewed.has(vehicle) ? tint : null;
+    if (!icon || !drawSprite(ctx, icon, q.x, q.y, sc,
+                             { angle, alpha: 0.9, tint: manned })) {
+      drawSprite(ctx, 'icon_vehicledot_empty', q.x, q.y, sc,
+                 { tint: manned });
     }
   }
 }
@@ -13252,6 +13947,103 @@ function drawPlayer(ctx, px, py, sc, rot = 0) {
   ctx.beginPath();
   ctx.arc(px, py, 4 * sc, 0, Math.PI * 2);
   ctx.fill();
+}
+
+/** The side the map is drawn for: whose units get an arrow and what colour
+ *  everything friendly is modulated with. The deploy screen runs before a
+ *  soldier exists, so it falls back to the team the player has chosen. */
+function localMapTeam() {
+  return world?.player(LOCAL_PLAYER)?.team ?? deployTeamId;
+}
+
+/**
+ * Friendly units, the way retail marks them: an on-foot teammate is a small
+ * arrow in the side's own colour, pointing where he faces
+ * (`minimap_icon_soldier_16x16`, white in the archive and modulated by the
+ * engine); a seated one is not marked here at all, because his VEHICLE is
+ * the mark and `drawVehicles` tints that instead. The local player is the
+ * disc-and-arrow ring (`drawPlayer`), so he is not doubled.
+ *
+ * The list is the world's own players — bots and, in a room, the other
+ * humans — filtered to the local side; a destroyed body has no arrow.
+ *
+ * The arrow is the whole reason a bot is findable: a squad spawning on a
+ * capped flag and advancing on an objective leaves the player's own corner
+ * of the map within seconds, and the map is the only surface that still
+ * shows them. The heading is what the dot it replaces could not say — which
+ * way the line is moving, and so whether it is coming to help.
+ */
+function friendlyMapUnits() {
+  const out = [];
+  const players = world?.players;
+  if (!players) return out;
+  const localTeam = localMapTeam();
+  for (const [id, player] of players) {
+    if (id === LOCAL_PLAYER) continue;
+    if (player.team !== localTeam) continue;
+    if (player.armor?.destroyed) continue;
+    // Seated: `drawVehicles` paints the hull he is in. Two marks for one man
+    // is what retail does not do.
+    if (player.occupancy?.root) continue;
+    const s = player.soldier;
+    if (!s) continue;
+    out.push({ x: s.x, z: s.z, yaw: s.yaw });
+  }
+  return out;
+}
+
+/** The scene nodes a friendly is riding, so `drawVehicles` can tell an
+ *  occupied hull from a parked one. A Set rather than a walk per vehicle:
+ *  this runs once per surface, not once per spawner. */
+function friendlyVehicleNodes() {
+  const out = new Set();
+  const players = world?.players;
+  if (!players) return out;
+  const localTeam = localMapTeam();
+  for (const [id, player] of players) {
+    if (id === LOCAL_PLAYER) continue;
+    if (player.team !== localTeam) continue;
+    if (player.armor?.destroyed) continue;
+    if (player.occupancy?.root) out.add(player.occupancy.root);
+  }
+  return out;
+}
+
+/** A cheap key that changes as the units move, so a map surface repaints on a
+ *  bot's step and not only on the camera's. The heading is in it to a tenth
+ *  of a radian — the arrow turns visibly at this size well before it moves a
+ *  backing pixel, so a position-only key would freeze a teammate mid-turn. */
+function friendlyMarkerKey() {
+  let key = '';
+  for (const { x, z, yaw } of friendlyMapUnits()) {
+    key += `${Math.round(x)},${Math.round(z)},${Math.round(yaw * 10)};`;
+  }
+  for (const node of friendlyVehicleNodes()) key += `v${node.id};`;
+  return key;
+}
+
+/** `rot` is the map's own turn, as everywhere else here: an arrow drawn on a
+ *  turned map turns with it. */
+function drawFriendlies(ctx, toPx, sc, rot = 0) {
+  const tint = MINIMAP_TEAM_TINT[localMapTeam()] || MINIMAP_TEAM_TINT[2];
+  for (const { x, z, yaw } of friendlyMapUnits()) {
+    const p = projectToArt(x, z);
+    if (!p) continue;
+    const q = toPx(p);
+    // `soldier.yaw` turns a forward of (sin yaw, 0, cos yaw) (soldier.js
+    // `lookVector`); the surface's screen angle is the same `atan2(x, -z)`
+    // the camera and the vehicles go through, so the three agree by
+    // construction rather than by a remembered offset.
+    const angle = Math.atan2(Math.sin(yaw), -Math.cos(yaw)) + rot;
+    if (drawSprite(ctx, 'minimap_icon_soldier_16x16', q.x, q.y, sc,
+                   { angle, tint })) continue;
+    // The pack may not have delivered the sprite yet (or a mod repaints the
+    // HUD without it): the side's own map colour stands in.
+    ctx.fillStyle = `rgb(${tint.join(',')})`;
+    ctx.beginPath();
+    ctx.arc(q.x, q.y, 3 * sc, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 /** The spawn screen's targets: one `map_circle` per flag the chosen side can
@@ -13291,15 +14083,21 @@ function drawSpawnRings(ctx, toPx, sc) {
  *
  *  Returns the device ratio so markers can be sized in CSS pixels. Without
  *  this the HUD widget draws into a 376 px buffer shown at 186 px and every
- *  marker comes out half the size it was asked for. */
+ *  marker comes out half the size it was asked for. The HUD widget's box is
+ *  not square (`MINIMAP_RECT` through the stage's sx and sy), so the height
+ *  follows the box — not the width — and only the fullscreen map stays
+ *  square. */
 function fitCanvas(canvas) {
   const css = cssWidthOf(canvas);
   if (!css) return canvas.__ratio || 1;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const want = Math.round(css * dpr);
-  if (canvas.width !== want) {
+  const boxH = canvas.clientHeight || 0;
+  const wantH = canvas === minimapCanvas && boxH
+    ? Math.round(boxH * dpr) : want;
+  if (canvas.width !== want || canvas.height !== wantH) {
     canvas.width = want;
-    canvas.height = want;
+    canvas.height = wantH;
   }
   canvas.__ratio = dpr;
   return dpr;
@@ -13309,11 +14107,18 @@ function fitCanvas(canvas) {
  *  top-left corner — the fullscreen map passes the whole image, the HUD a
  *  window centred on the camera. Vehicles under flags under spawn rings
  *  under the player, and nothing else: the game prints no names, no capture
- *  radii and no combat-area box on any of its map surfaces. */
+ *  radii and no combat-area box on any of its map surfaces.
+ *
+ *  The HUD widget's box is wider than tall (the measured retail frame
+ *  ratio), while the fullscreen map stays square. `size` below is the
+ *  backing WIDTH; `paintMap` derives the backing height from the canvas's
+ *  own box (`canvas.width / canvas.height`), so the close-cropped art and
+ *  every marker land on the same rectangle the chrome frames. */
 function paintMap(canvas, u0, v0, span, opts) {
   const ctx = canvas.getContext('2d');
   const ratio = fitCanvas(canvas);
   const size = canvas.width;
+  const h = canvas.height;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   drawArt(ctx, size, u0, v0, span, opts);
   if (!extras.minimap?.worldToImage) return ratio;
@@ -13322,10 +14127,16 @@ function paintMap(canvas, u0, v0, span, opts) {
   // flag plates themselves stay upright (a viewer choice — what the engine
   // does to a flag icon on a turned map was not read), and only the icons that
   // show a heading add the turn to their own angle.
+  //
+  // The HUD widget's box is not square (`MINIMAP_RECT` through the stage's
+  // sx and sy) while the fullscreen map stays square. Markers scale with the backing
+  // width on x and the backing height on y about the surface's own centre,
+  // so neither the art's window nor a marker stretches; on the square
+  // surfaces the two scales coincide and this is exactly the old mapping.
   const rot = opts.rot || 0;
-  const mid = size / 2;
+  const midX = size / 2, midY = h / 2;
   const toPx = p => rotateAbout(((p.u - u0) / span) * size,
-                                ((p.v - v0) / span) * size, mid, rot);
+                                ((p.v - v0) / span) * h, midX, rot, midY);
   const sc = MARKER_SCALE * ratio * (opts.scale || 1);
   ctx.imageSmoothingEnabled = false;
 
@@ -13337,6 +14148,10 @@ function paintMap(canvas, u0, v0, span, opts) {
     drawControlPoint(ctx, cp, q.x, q.y, sc);
   }
   if (opts.spawnRings) drawSpawnRings(ctx, toPx, sc);
+
+  // Friendly arrows under the local one: teammates are map furniture in every
+  // mode (deploy map included), so they draw whenever the map does.
+  drawFriendlies(ctx, toPx, sc, rot);
 
   if (opts.player !== false) {
     const here = projectToArt(camera.position.x, camera.position.z);
@@ -13353,30 +14168,50 @@ function paintMap(canvas, u0, v0, span, opts) {
  *  bezel as the nine-patch it is (a four-pixel frame round a transparent
  *  middle), the grid readout in the lower-left corner, and the flag-status
  *  strip along the bottom edge — one `cpbar` segment per control point in
- *  its holder's colour. */
+ *  its holder's colour.
+ *
+ *  The strip is retail's own bottom edge: below the frame the capture has a
+ *  second, shorter plate of its own (y ~207.4..216.9). This widget keeps the
+ *  strip inside the frame rather than painting that second plate — one
+ *  surface, one bezel — so it rides the frame's bottom edge. */
+/** The minimap frame in the HUD's own 800x600 virtual space, measured off
+ *  the retail captures (`MINIMAP_RECT` below is the whole story):
+ *
+ *  | edge | virtual | how |
+ *  |---|---|---|
+ *  | left | 620 | flush with the ticket plate's left edge |
+ *  | right | 795.4 | flush with the ticket plate's painted right edge |
+ *  | top | 30.0 | 2 units of sky below the plate's bottom (28) |
+ *  | bottom | 204.9 | last row of the frame's bezel |
+ *
+ *  So the frame is a 175.4 x 174.9 square of virtual units — square in the
+ *  layout, not on screen, because the HUD stretches by stageW/800 across
+ *  and stageH/600 down and those differ on any window that is not 4:3. */
+const MINIMAP_RECT = { x: 620, y: 30, w: 175.4, h: 174.9 };
 function drawMinimapChrome(ctx, size, ratio) {
+  const h = ctx.canvas.height;
   const bezel = sprite('icon_mapbar_small');
   const edge = 4;
   const d = Math.round(edge * ratio * 1.5);
   if (bezel) {
-    const w = bezel.width, h = bezel.height;
+    const w = bezel.width, bh = bezel.height;
     const cut = (sx, sy, sw, sh, dx, dy, dw, dh) =>
       ctx.drawImage(bezel, sx, sy, sw, sh, dx, dy, dw, dh);
     cut(0, 0, edge, edge, 0, 0, d, d);
     cut(w - edge, 0, edge, edge, size - d, 0, d, d);
-    cut(0, h - edge, edge, edge, 0, size - d, d, d);
-    cut(w - edge, h - edge, edge, edge, size - d, size - d, d, d);
+    cut(0, bh - edge, edge, edge, 0, h - d, d, d);
+    cut(w - edge, bh - edge, edge, edge, size - d, h - d, d, d);
     cut(edge, 0, w - 2 * edge, edge, d, 0, size - 2 * d, d);
-    cut(edge, h - edge, w - 2 * edge, edge, d, size - d, size - 2 * d, d);
-    cut(0, edge, edge, h - 2 * edge, 0, d, d, size - 2 * d);
-    cut(w - edge, edge, edge, h - 2 * edge, size - d, d, d, size - 2 * d);
+    cut(edge, bh - edge, w - 2 * edge, edge, d, h - d, size - 2 * d, d);
+    cut(0, edge, edge, bh - 2 * edge, 0, d, d, h - 2 * d);
+    cut(w - edge, edge, edge, bh - 2 * edge, size - d, d, d, h - 2 * d);
   }
 
   const cps = extras.controlPoints || [];
   const segW = Math.round(12 * ratio), segH = Math.round(6 * ratio);
   const gap = Math.round(2 * ratio);
   let x = d + gap;
-  const y = size - d - segH - gap;
+  const y = h - d - segH - gap;
   for (const cp of cps) {
     if (x + segW > size - d) break;
     const name = cp.team === 1 ? 'cpbar_red_cp_16x8'
@@ -13432,15 +14267,79 @@ function mapSurfaceKey(canvas, here, span) {
     + `${hudPack.sprites.size},${vehicle ? `${Math.round(vehicle.x)},${Math.round(vehicle.z)}` : ''}`;
 }
 
+/** The widget IS `MINIMAP_RECT` put through the HUD's own virtual-to-stage
+ *  scale, so it lands on the pixels the layout would have painted it on: as
+ *  wide as the ticket plate above it, right edge under the plate's right
+ *  edge, and no taller than the layout says.
+ *
+ *  The plate is HUD-canvas paint, not DOM, so there is nothing to measure —
+ *  `Hud._scaleFor` is sx = stageW/800, sy = stageH/600, and the rect goes
+ *  through those. That is the whole sum. The earlier version took the
+ *  plate's LEAF rect (620,4,256,32) for its width, but `icon_ticketbar` is
+ *  a 256x32 texture whose ink stops at x=176: the last 80 columns are
+ *  transparent padding, and the bar a player sees is 176 wide, not 256. The
+ *  widget came out ~1.45x too wide for it.
+ *
+ *  Re-derived when the stage or the level changes (the `--mm-size` write
+ *  resizes the box, which the ResizeObserver reports back into
+ *  `fitCanvas`'s backing store).
+ *
+ *  Mobile is the one place the layout's own answer is not the answer. A
+ *  phone holds the stage in PORTRAIT, which retail never did: sy there is
+ *  two and a half times sx, so `MINIMAP_RECT` put through them honestly
+ *  gives an 82x215 splinter down the side of the screen. So below 720 px of
+ *  stage the widget keeps its own 175.4:174.9 shape, capped at 118 px so it
+ *  cannot cover the bar, and the stylesheet's `@media` rule keeps the
+ *  corner. */
+let minimapSyncKey = '';
+function syncMinimapToTickets() {
+  const canvas = minimapCanvas;
+  const stageW = stage.clientWidth || 0;
+  const stageH = stage.clientHeight || 0;
+  if (!stageW || !stageH) return;
+  const key = `${stageW}x${stageH}:${currentDir}:${!!extras.tickets}`;
+  const small = stageW <= 720;
+  if (key === minimapSyncKey && canvas.dataset.syncSmall === String(small)) return;
+  // No renderer backing math here — those pixels are WebGL's, not the
+  // stage's.
+  const sx = stageW / 800;
+  const sy = stageH / 600;
+  const want = small
+    ? Math.min(118, Math.round(MINIMAP_RECT.w * sx))
+    : Math.max(120, Math.round(MINIMAP_RECT.w * sx));
+  const cur = parseFloat(getComputedStyle(minimapBox).width) || 0;
+  if (Math.abs(cur - want) >= 1) {
+    minimapBox.style.setProperty('--mm-size', `${want}px`);
+  }
+  // Down the stage is sy, not sx: the frame is square in virtual units and
+  // the HUD stretches the two axes independently, so deriving the height
+  // from the width would keep it square on screen and retail does not.
+  // Portrait is the exception above.
+  const wantH = small
+    ? Math.round(want * (MINIMAP_RECT.h / MINIMAP_RECT.w))
+    : Math.round(MINIMAP_RECT.h * sy);
+  if (canvas.style.height !== `${wantH}px`) canvas.style.height = `${wantH}px`;
+  // The corner the layout puts it in, in the same units. Mobile keeps the
+  // stylesheet's.
+  const top = small ? '' : `${Math.round(MINIMAP_RECT.y * sy)}px`;
+  const right = small ? '' : `${Math.round((800 - MINIMAP_RECT.x - MINIMAP_RECT.w) * sx)}px`;
+  if (minimapBox.style.top !== top) minimapBox.style.top = top;
+  if (minimapBox.style.right !== right) minimapBox.style.right = right;
+  canvas.dataset.syncSmall = String(small);
+  minimapSyncKey = key;
+}
+
 function drawMinimap() {
   if (minimapBox.hidden) return;
+  syncMinimapToTickets();
   const here = projectToArt(camera.position.x, camera.position.z);
   if (!here) return;
   // The live span: `N` steps the level and `bfmap.update` eases toward it, so
   // the span is part of what the surface shows and part of its key.
   const span = bfmap.span();
   const key = `${mapSurfaceKey(minimapCanvas, here, span)},`
-    + `${Math.round(span * 1e5)},${bfmap.isStatic ? 1 : 0}`;
+    + `${Math.round(span * 1e5)},${bfmap.isStatic ? 1 : 0},`
+    + friendlyMarkerKey();
   if (!mapSurfaceStale(minimapCanvas, key)) return;
   // North-up with a rotating arrow by default. That is the game's own shipped
   // default — every stock profile sets `game.setStaticMinimap 1` — and it
@@ -13459,7 +14358,8 @@ function drawFullMap(force = false) {
   if (fullmapBox.hidden) return;
   const here = projectToArt(camera.position.x, camera.position.z) || { u: 0, v: 0 };
   const key = `${mapSurfaceKey(fullmapCanvas, here, 1)},${deployActive()},${deployRejoin},`
-    + `${deployTeamId},${deployUnchosen ? '-' : spawnFlagSelect.value},${flags.length}`;
+    + `${deployTeamId},${deployUnchosen ? '-' : spawnFlagSelect.value},${flags.length},`
+    + friendlyMarkerKey();
   if (!mapSurfaceStale(fullmapCanvas, key, force)) return;
   // Bigger sprites than the HUD widget: this surface is several times the
   // size. In the deploy state the art dims to the spawn screen's silhouette
@@ -14731,8 +15631,11 @@ async function show(entry) {
     botRoot.name = 'bot-renderers';
     scene.add(botRoot);
   }
-  // Bots spawn on the player's team once the world is built.
-  spawnBotsForLevel();
+  // Bots spawn on the player's team. The call waits for `buildCollider`
+  // below: `spawnBotsForLevel` builds the nav grid from `world.collider` and
+  // `pickSpawn` runs its spawn-safety probes against it, and both are empty
+  // before the collider lands — which is what left the grid all `-2` (no
+  // terrain) and every bot with no path.
   setupWater(currentRoot, dir);
   setupSounds(extras, dir);
   loadMapArt(dir);
@@ -14759,6 +15662,17 @@ async function show(entry) {
   }
   indexScene(currentRoot);
   collectTerrain(currentRoot);
+  // A fresh extract starts every pole in its authored colours; a capture
+  // rewrites cloth UVs in place, so seed the cache the swap reads (the
+  // geometry's own baked cell) before anything can take a point.
+  currentRoot.traverse(obj => {
+    if (obj.userData?.kind === 'flagCloth') {
+      const uv = obj.geometry?.getAttribute('uv');
+      if (uv && !obj.geometry.userData.flagUvCell) {
+        obj.geometry.userData.flagUvCell = unitRectOf(uv);
+      }
+    }
+  });
   // Both tables are small (damage.json 154 KB shared across every level,
   // materials.png a couple of KB) and both are needed before the first shot,
   // not before the first frame.
@@ -14769,6 +15683,9 @@ async function show(entry) {
   const collision = buildCollider(currentRoot);
   // After the collider: a body is keyed by the owner id the index handed out.
   setupVehicleBodies();
+  // Now that the collider exists, spawn the bots so their nav grid and spawn
+  // probes see it.
+  spawnBotsForLevel();
   // A new level means a new scene graph; the old aircraft's node is gone, and
   // the view rig holds a reference to it. So are every cached door.
   aircraft = null;
@@ -15117,6 +16034,7 @@ async function joinRoom() {
       if (row.type === 'captured' && Number.isInteger(row.flag)
           && flags[row.flag]) {
         flags[row.flag].team = row.team;
+        hoistCaptureFlag(flags[row.flag]);
         roomCapture = { name: row.name || flags[row.flag].name,
           elapsed: 0, duration: 0, contested: false, done: true,
           until: performance.now() + 2200, voiced: false };
@@ -15514,6 +16432,7 @@ function frame(dt) {
   updateBotVisuals(dt);
   syncVehicleSpawnOwnership();
   updateCaptureHud(step.ticks);
+  botCaptureTick(step.ticks);
   // The presentation instant this frame draws, and the drawn vehicle pose that
   // follows from it. Before every camera below, because all of them read it —
   // directly (the on-foot eye) or through the scene graph (every seat).
@@ -15822,7 +16741,66 @@ function frame(dt) {
   paintLensFlare();
   paintGameConsole(hudW, hudH);
 }
-renderer.setAnimationLoop(() => frame(Math.min(clock.getDelta(), 0.1)));
+// One uncaught exception in a frame must not end the page. three's
+// `setAnimationLoop` schedules the next animation frame only after its
+// callback returns (`vendor/three.module.js`, `onAnimationFrame`: the loop
+// call at 13516, `requestAnimationFrame` at 13518), so a throw here stops
+// the loop for good -- the canvas keeps the last frame and nothing says why.
+// That is the "it just freezes with no details" report: a rare throw in a
+// bot, vehicle or effect path kills the whole render loop. Catch it, keep
+// looping, and put the error on the card so a freeze has a reason.
+let lastFrameAt = performance.now();
+let frameErrorShown = false;
+let frameErrorCount = 0;
+let stallShown = false;
+renderer.setAnimationLoop(() => {
+  try {
+    frame(Math.min(clock.getDelta(), 0.1));
+    frameErrorCount = 0;
+    if (frameErrorShown || stallShown) {
+      // A throw (or a stall the loop recovered from) that stopped recurring:
+      // take the card down rather than leave a stale error over a page that is
+      // drawing again.
+      frameErrorShown = false;
+      stallShown = false;
+      if (!contextLost) glLostEl.hidden = true;
+    }
+  } catch (error) {
+    frameErrorCount++;
+    // A one-off throw is a console detail, not a card: most frames that throw
+    // once are fine on the next one. Three in a row is a frame path that is
+    // genuinely broken, which is what the player needs to see.
+    if (frameErrorCount === 1) console.error('map: frame threw', error);
+    if (frameErrorCount >= 3 && !frameErrorShown && !contextLost) {
+      frameErrorShown = true;
+      showGraphicsCard('Render loop error',
+        `The render loop keeps throwing and would otherwise have stopped: ${error?.message ?? error}. The page is still running; reload to recover.`);
+    }
+  } finally {
+    // Stamped after the callback returns, so a single long frame is not read
+    // as a dead loop by the watchdog below.
+    lastFrameAt = performance.now();
+  }
+});
+// The loop above cannot report a stall it is itself blocked inside, and a
+// dead GPU can stop the animation loop without ever firing `webglcontextlost`.
+// This timer is independent of rAF, so it still runs when the loop has
+// stopped: after a few seconds with no completed frame, the page says so
+// instead of sitting silently on a frozen picture. Hidden tabs are exempt
+// (`requestAnimationFrame` is paused there, and `?shots` tooling renders in
+// one), as is a context already reported lost.
+const FRAME_STALL_MS = 4000;
+setInterval(() => {
+  // `?shots` tooling steps `frame()` through `__renderOnce` and never drives
+  // the rAF loop, so a stalled `lastFrameAt` there is the harness working, not
+  // a hung GPU.
+  if (params.has('shots')) return;
+  if (contextLost || document.hidden || !glLostEl.hidden) return;
+  if (performance.now() - lastFrameAt < FRAME_STALL_MS) return;
+  stallShown = true;
+  showGraphicsCard('Page not drawing',
+    'No frame has completed for several seconds. The GPU may be hung. Reload to recover.');
+}, 1000);
 if (params.has('shots')) {
   // Screenshot tooling in a hidden tab gets no requestAnimationFrame ticks
   // and reports a 0x0 window; let it force a sized, deterministic frame
@@ -15852,6 +16830,63 @@ if (params.has('shots')) {
   Object.defineProperty(window, '__stick', {
     get: () => world?.player(LOCAL_PLAYER)?.stick ?? { roll: 0, pitch: 0 },
   });
+  // Bot state for headless checks: one row per controller, with what the plan
+  // chose and what the world last consumed. `__bots()` reads the same objects
+  // the AI tick writes.
+  window.__terrain = (x, z) => world?.collider?.surfaceHeight?.(x, z) ?? null;
+  window.__worldExtras = () => ({ worldSize: world?.extras?.worldSize, water: world?.collider?.waterLevel });
+  window.__navProbe = (fx, fz, tx, tz) => {
+    if (!botNavGrid) return null;
+    const path = findPath(botNavGrid, fx, fz, tx, tz);
+    return {
+      startCell: gridAt(botNavGrid, fx, fz),
+      endCell: gridAt(botNavGrid, tx, tz),
+      pathLen: path ? path.length : null,
+      width: botNavGrid.width,
+      height: botNavGrid.height,
+      cellSize: botNavGrid.cellSize,
+    };
+  };
+  window.__bots = () => botControllers.map(b => ({
+    id: b.playerId, name: b.name,
+    pos: b.getPosition(), yaw: b.yaw,
+    behaviour: b.currentBehaviour, forward: b.moveForward, strafe: b.moveStrafe,
+    firing: b.isFiring, target: b.firingTarget,
+    objective: b.objective?.name ?? null,
+    waypoint: b.waypoint,
+    goal: b.objectiveGoal,
+    goalReached: b.goalReached,
+    navPath: b.navPath?.length ?? 0,
+    navIndex: b.navPathIndex ?? 0,
+    navLen: b._navLen ?? null,
+    unstickPhase: b._unstickPhase,
+    unstickTimer: +((b._unstickTimer ?? 0)).toFixed(2),
+    stuckTime: +(b._stuckTime ?? 0).toFixed(2),
+    desiredYaw: b._dbgDesiredYaw ?? null,
+    clearAhead: b._dbgClear ?? null,
+    team: b.team,
+    hp: world?.armorOf(b.playerId)?.hitPoints ?? null,
+    dead: !!world?.armorOf(b.playerId)?.destroyed,
+    respawnIn: +((b._respawnIn ?? 0)).toFixed(2),
+    lookX: b.lookX, lookY: b.lookY,
+    stuckSeconds: +(b._stuckTime ?? 0).toFixed(2),
+    unsticking: (b._unstickTimer ?? 0) > 0,
+    blockedSpawn: world?.player(b.playerId)?.spawn?.blockedReason ?? null,
+    rigFamilies: Object.keys(botVisuals.get(b.playerId)?.rig?.families ?? {}),
+    clipFamily: botVisuals.get(b.playerId)?.want ?? null,
+    mixerTime: +(botVisuals.get(b.playerId)?.rig?.mixer?.time ?? 0).toFixed(2),
+    lastInput: world?.player(b.playerId)?.last?.input ?? null,
+    lookApplied: world?.player(b.playerId)?.lookApplied ?? null,
+    soldier: world?.player(b.playerId)?.soldier
+      ? {
+          pos: [world.player(b.playerId).soldier.x, world.player(b.playerId).soldier.y,
+                world.player(b.playerId).soldier.z],
+          gait: world.player(b.playerId).soldier.gait,
+          grounded: world.player(b.playerId).soldier.grounded,
+          v: world.player(b.playerId).soldier.body?.velocity ?? null,
+        }
+      : null,
+  }));
   // Free-fly heading. Setting `camera.rotation` directly is pointless here —
   // `applyLook` rewrites it from `look` on every frame — so a headless check
   // that wants to face the camera somewhere has to move this instead.
@@ -16595,6 +17630,16 @@ if (params.has('shots')) {
   // The minimap's zoom and rotation state (bfmap.js), so a headless check can
   // step the level, settle the ease and read the span without a key event.
   window.__bfmap = bfmap;
+  // What the map surfaces mark as friendly this frame: the side they are
+  // drawn for, the on-foot teammates that get an arrow (with the heading it
+  // is drawn at) and the hulls a teammate is riding. A screenshot cannot say
+  // whether a missing arrow is a culled marker or an empty list; this can.
+  window.__mapMarks = () => ({
+    team: localMapTeam(),
+    tint: MINIMAP_TEAM_TINT[localMapTeam()] || null,
+    onFoot: friendlyMapUnits(),
+    crewed: [...friendlyVehicleNodes()].map(node => node.name),
+  });
   // The score board: open/close it, and read back what it lists.
   window.__scoreboard = {
     open: (fromSpawn = false) => setScoreboard(true, fromSpawn),
