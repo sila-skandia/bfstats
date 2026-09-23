@@ -128,7 +128,8 @@ export function urgencyChange(bot, mod, now) {
       const reason = craftBailReason({
         zones: levelZones(world?.extras?.ai), x: bot.position[0], z: bot.position[2],
         speed: v ? Math.hypot(v.x, v.y, v.z) : 0,
-        walkable: !nav || isWalkable(nav, bot.position[0], bot.position[2]), upright: mine?.upright,
+        walkable: !nav || isWalkable(nav, bot.position[0], bot.position[2]),
+        touchingLand: mine?.touchingLand ?? undefined, tipped: mine?.tipped ?? undefined, upright: mine?.upright,
       });
       if (reason) {
         const r = { urgency: LANDING_BAIL_URGENCY * mod, best: { id: 'foot', u: 0, dist: 0, cand: null }, bail: true,
@@ -153,6 +154,8 @@ export function urgencyChange(bot, mod, now) {
     // (A Spitfire bot left its plane at 66 m for a Wespe passing below.)
     for (const c of bailAllowed ? (cands ?? []) : []) {
       if (c.occupiedBy || c.upright === false || c.id === m.id) continue;
+      // The hull's root is off its own map (0x0855ee25 -> 0x0855f0f0).
+      if (c.onOwnMap === false) continue;
       const d = Math.hypot(c.pos[0] - bot.position[0], c.pos[2] - bot.position[2]);
       if (d > CHANGE.searchRadius) continue;
       if (c.vehicleId === m.vehicleId) continue;          // the same hull is the teleport's business
@@ -184,6 +187,10 @@ export function urgencyChange(bot, mod, now) {
   for (const c of cands) {
     if (c.occupiedBy) continue;
     if (c.upright === false) continue;
+    // `BBChange` 0x0855ee25 -> 0x0855f0f0: a mobile root (not an aircraft)
+    // is offered, seats and all, only where its own map holds it
+    // (bot-units.js `onOwnMap`).
+    if (c.onOwnMap === false) continue;
     const d = Math.hypot(c.pos[0] - bot.position[0], c.pos[2] - bot.position[2]);
     if (d > CHANGE.searchRadius) continue;
     if (nav && !unitReachable(nav, c, d)) continue;

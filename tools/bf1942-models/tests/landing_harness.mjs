@@ -10,7 +10,7 @@ import {
   StrategicLayer, StrategicAI, StrategicCommand, LANDING, landingZonesOf, zoneDistanceSqr, approachPosition,
   beachPosition, beachTarget, craftArea, areaPath, ORDER_KINDS,
 } from './strategic.js';
-import { craftBailReason, levelZones } from './doctrine-landing.js';
+import { craftBailReason, craftTipped, levelZones } from './doctrine-landing.js';
 
 // Wake's `AI/StrategicAreas.con` (Wake_003.rfa), three land areas and two of
 // the sea, and two of its four zones, as bf42/ai_level.py exports them.
@@ -146,11 +146,13 @@ const south = zones.get('southlanding');
   // island; the craft's hull is `hull`.
   let craftPos = [1150, 0, -420];
   let upright = true;
+  // The hull touches land beyond z = -645 (bot-units.js `touchingLand`).
+  const touching = () => craftPos[2] <= -645;
   const seats = () => [
-    { id: 'hull:Daihatsu', vehicleId: 'hull', seatId: 'Daihatsu', occupiedBy: 'c', upright, pos: craftPos },
-    { id: 'hull:P3', vehicleId: 'hull', seatId: 'P3', occupiedBy: 'p1', upright, pos: craftPos },
-    { id: 'hull:P4', vehicleId: 'hull', seatId: 'P4', occupiedBy: 'p2', upright, pos: craftPos },
-    { id: 'hull:P5', vehicleId: 'hull', seatId: 'P5', occupiedBy: null, upright, pos: craftPos },
+    { id: 'hull:Daihatsu', vehicleId: 'hull', seatId: 'Daihatsu', occupiedBy: 'c', upright, pos: craftPos, touchingLand: touching() },
+    { id: 'hull:P3', vehicleId: 'hull', seatId: 'P3', occupiedBy: 'p1', upright, pos: craftPos, touchingLand: touching() },
+    { id: 'hull:P4', vehicleId: 'hull', seatId: 'P4', occupiedBy: 'p2', upright, pos: craftPos, touchingLand: touching() },
+    { id: 'hull:P5', vehicleId: 'hull', seatId: 'P5', occupiedBy: null, upright, pos: craftPos, touchingLand: touching() },
   ];
   // Water south of z = -600 (the craft's map), land north of it (the
   // infantry map).
@@ -189,7 +191,12 @@ const south = zones.get('southlanding');
   const beachOrder = cmd.waypointsOf('c');
   const saiFollows = sai.waypointsOf('c') === beachOrder;
   const exitsMoving = exits.length;
-  // Stopped on the beach (walkable, inside the zone): everyone aboard bails.
+  // Stopped in the zone on walkable ground but afloat (not touching land):
+  // nobody gets out (`isTouchingLand`, 0x085606bd).
+  for (let k = 0; k < 10; k++) step(1);
+  const exitsAfloat = exits.length;
+  // Aground on the beach, stopped: everyone aboard bails.
+  craftPos = [1150, 0, -650];
   for (let k = 0; k < 10; k++) step(1);
   const exitsStopped = [...new Set(exits)].sort();
   out.command = {
@@ -198,6 +205,7 @@ const south = zones.get('southlanding');
     beachPointZ: r3(beachOrder.point[1]),
     saiFollows,
     exitsMoving,
+    exitsAfloat,
     exitsStopped,
     kindsRegistered: ['WPBeachLanding', 'WPMoveToBeachLanding'].map(k => !!ORDER_KINDS.get(k)?.tick),
     infantry: cmd.waypointsOf('i')?.kind ?? null,
@@ -220,9 +228,11 @@ const south = zones.get('southlanding');
 
 {
   const zs = levelZones(AI);
-  const at = (x, z, speed, walkable = true, upright = true) => craftBailReason({ zones: zs, x, z, speed, walkable, upright });
+  const at = (x, z, speed, walkable = true, upright = true, touchingLand = true) =>
+    craftBailReason({ zones: zs, x, z, speed, walkable, upright, touchingLand });
   out.bailReason = {
     beached: at(1150, -690, 0.5),
+    afloat: at(1150, -690, 0.5, true, true, false),
     fast: at(1150, -690, 2.5),
     atTwo: at(1150, -690, 2.0),
     wet: at(1150, -690, 0.5, false),
@@ -230,6 +240,24 @@ const south = zones.get('southlanding');
     bay: at(1080, -840, 0),
     tippedAtSea: at(1150, -400, 10, false, false),
     sameZones: levelZones(AI) === zs,
+    tippedFlag: craftBailReason({ zones: zs, x: 900, z: -900, speed: 10, tipped: true }),
+    tippedWins: craftBailReason({ zones: zs, x: 1150, z: -690, speed: 10, tipped: true, touchingLand: false }),
+  };
+  // `craftTipped` (0x8560b84..0x8560c4b): water more than 2 m over the
+  // terrain reads the up axis's y; shallower, the up axis against the
+  // terrain normal; the limit 0.7071, strict.
+  const c45 = Math.SQRT1_2, tilt = (deg) => [Math.sin(deg * Math.PI / 180), Math.cos(deg * Math.PI / 180), 0];
+  const slope = [Math.sin(30 * Math.PI / 180), Math.cos(30 * Math.PI / 180), 0];
+  out.tip = {
+    deepUpright: craftTipped({ up: tilt(40), waterLevel: 95, terrainHeight: 80, terrainNormal: slope }),
+    deepOver: craftTipped({ up: tilt(50), waterLevel: 95, terrainHeight: 80, terrainNormal: slope }),
+    // 50 deg over, but on a 30 deg slope leaning the same way: 20 deg off the normal.
+    shallowOnSlope: craftTipped({ up: tilt(50), waterLevel: 95, terrainHeight: 94, terrainNormal: slope }),
+    // Upright on that slope: 30 deg off its normal, not tipped; 80 deg over: tipped.
+    shallowOver: craftTipped({ up: tilt(80), waterLevel: 95, terrainHeight: 94, terrainNormal: slope }),
+    atTwo: craftTipped({ up: tilt(50), waterLevel: 95, terrainHeight: 93, terrainNormal: [0, 1, 0] }),
+    noSea: craftTipped({ up: tilt(50), waterLevel: null, terrainHeight: 94, terrainNormal: slope }),
+    limit: [craftTipped({ up: [Math.sqrt(1 - 0.7071 ** 2), 0.7071, 0] }), craftTipped({ up: [0.71, 0.7, 0] })],
   };
 }
 

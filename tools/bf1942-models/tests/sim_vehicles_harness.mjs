@@ -427,6 +427,71 @@ const recipes = {
     };
   },
 
+  /** A landing craft to a beach under the SAI's own order: an Axis bot at a
+   *  Daihatsu's helm and one in its passenger seat, every other bot frozen;
+   *  the helm gets the SAI's beach order to WesternMainBaseExit
+   *  (`CentreLanding`) once. The crew bails only aground in the zone
+   *  (`BBChangeLandingCraft` 0x085602b0), the ramp's `PIPitch` is held on the
+   *  beach leg, and the beached craft, off its water map, is offered to
+   *  nobody afterwards (`BBChange` 0x0855ee25 -> 0x0855f0f0): no bot climbs
+   *  back in over the next 30 s. */
+  async beach() {
+    const { pathToFileURL } = await import('node:url');
+    const strat = await import(pathToFileURL(path.join(viewerDir(path.join(HERE, '..', 'viewer')), 'strategic.js')).href);
+    let order = null;
+    strat.registerDoctrine('beachpin', ({ side, sai }) => ({
+      name: 'beachpin',
+      orders(view) {
+        const out = new Map();
+        const drv = view.bots.find(x => x.seat?.drives);
+        if (side !== 1 || order || !drv) return out;
+        sai._alive = view.alive;
+        order = sai._order(sai.bots.get(drv.id), sai.layer.areas.find(a => a.name === 'WesternMainBaseExit'), side);
+        out.set(drv.id, order);
+        return out;
+      },
+    }));
+    seedMathRandom(SEED);
+    const level = await realLevel(M, { maps: path.join(assets, 'maps'), models: path.join(assets, 'models'), map: 'wake' });
+    seedMathRandom(SEED);
+    const match = new Match({ M, level, botsPerSide: 4, duration: 3600, seed: SEED, sink: null, doctrine: 'axis=beachpin' });
+    match.setup();
+    const [helm, rider] = match.bots.filter(o => o.team === 1);
+    const cand = mount(match, helm, 'Daihatsu');
+    const seat = match.stage.units.candidates().find(c => c.vehicleId === cand.vehicleId && !c.isRoot && !c.occupiedBy);
+    if (!match.referee.enterVehicle(rider, seat)) throw new Error('could not seat the rider');
+    freezeOthers(match, [helm.playerId, rider.playerId]);
+    const units = match.stage.units;
+    const root = () => { units.invalidate(); return units.candidates().find(c => c.vehicleId === cand.vehicleId && c.isRoot); };
+    let pitchHeld = 0, pitchSeen = 0, bail = null, beachLegAt = null;
+    run(match, 200, () => {
+      if (helm.waypoints?.insideZone && beachLegAt === null) beachLegAt = match.clock;
+      pitchHeld = Math.max(pitchHeld, helm._heldPitch ?? 0);
+      const pending = match.world.players.get(helm.playerId)?.pending?.input;
+      if (helm.vehicle && pending) pitchSeen = Math.max(pitchSeen, pending.pitch ?? 0);
+      if (!helm.vehicle && !rider.vehicle) {
+        const r = root();
+        bail = { t: round(match.clock), touchingLand: r?.touchingLand ?? null, onOwnMap: r?.onOwnMap ?? null,
+                 pos: helm.position.map(round) };
+        return true;
+      }
+      return false;
+    });
+    const zone = level.extras?.ai?.landingZones?.find(z => z.name === 'CentreLanding');
+    const inZone = (p) => zone && p[0] >= zone.min[0] && p[0] <= zone.max[0] && p[2] >= zone.min[1] && p[2] <= zone.max[1];
+    const mountsBefore = eventsOf(match, 'mount').length;
+    run(match, 30);
+    const remounts = eventsOf(match, 'mount').slice(mountsBefore).filter(e => e.vehicle === cand.template || e.vehicle?.startsWith?.('Daihatsu'));
+    const after = root();
+    return {
+      order: order ? { kind: order.kind, zone: order.zone?.name } : null,
+      beachLegAt: beachLegAt === null ? null : round(beachLegAt), pitchHeld, pitchSeen,
+      bail: bail ? { ...bail, inZone: inZone(bail.pos) } : null,
+      remounts: remounts.map(e => `${e.bot}:${e.seat}`),
+      after: after ? { onOwnMap: after.onOwnMap, touchingLand: after.touchingLand, occupied: !!after.occupiedBy } : null,
+    };
+  },
+
   /** A bot takes a Spitfire against a frozen soldier 260 m down its nose:
    *  the airframe is the page's `Aircraft`, it leaves the ground, and its
    *  guns' rounds are cast against the soldier's body. */
