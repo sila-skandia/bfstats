@@ -834,14 +834,14 @@ The F1..F8 radio and the top-left kill / game-information / chat log, rebuilt
 from the client binary and the game's own menu data. Everything about it -
 what was read, from which addresses, what was built and what is still open -
 is in [`../radio-and-chat-log/README.md`](../radio-and-chat-log/README.md).
-Branch `viewer/radio-chat`, worktree `bfstats-radio-chat`.
+Merged to main as `d5135a34` on 2026-09-23.
 
 | Item | Status |
 |---|---|
-| Radio menu: the strip, the seven pages, the key handler (verified line for line), messages, the vehicle remap, CLOSEST, the spam limit | **built**, not merged |
+| Radio menu: the strip, the seven pages, the key handler (verified line for line), messages, the vehicle remap, CLOSEST, the spam limit | **merged** `d5135a34` |
 | Voices: team radio flat in the listener's language, shouts in 3D in the speaker's (10..55 m ramp, 70 m reach); vanilla, XPack1 (`it`, `fre`), XPack2, EoD | **built**; assets **published** 2026-09-23 |
-| Message log: three sections, per-section 5 s timers, team colours, ticket flags, the outline, kill / team kill / death / capture / all-points lines, the centre kill message | **built**, not merged |
-| Room relay (`GameServer::radioMessage`): team radio to the team, shouts within 70 m | **built**, not merged (`test_room.py` (r)) |
+| Message log: three sections, per-section 5 s timers, team colours, ticket flags, the outline, kill / team kill / death / capture / all-points lines, the centre kill message | **merged** `d5135a34` |
+| Room relay (`GameServer::radioMessage`): team radio to the team, shouts within 70 m | **merged** `d5135a34` (`test_room.py` (r)) |
 | Bots reacting to radio (`AIRadio` strengths feeding MoveTo, Fire, TakeCover, MedicAssist, Change) | **open**: rules read, not wired; bot behaviours still take "no radio" |
 | Hand signs on a shout, minimap flash for the speaker, medic / repair map marker | **open** |
 | Player text chat (say all / say team input) | **open**; `chat-log.js playerChatLine` has the line format |
