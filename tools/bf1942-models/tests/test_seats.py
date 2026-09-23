@@ -55,6 +55,7 @@ MODULES = {
     "collision.js": VIEWER / "collision.js",
     "world-collider.js": VIEWER / "world-collider.js",
     "static-index.js": VIEWER / "static-index.js",
+    "collision-meshes.js": VIEWER / "collision-meshes.js",
     "drivable-mask.js": VIEWER / "drivable-mask.js",
     "collision-materials.js": VIEWER / "collision-materials.js",
     "heightfield.js": VIEWER / "heightfield.js",

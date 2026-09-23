@@ -33,6 +33,7 @@ PARTS = [
     ROOT / "viewer" / "collision-materials.js",
     ROOT / "viewer" / "heightfield.js",
     ROOT / "viewer" / "static-index.js",
+    ROOT / "viewer" / "collision-meshes.js",
     ROOT / "viewer" / "drivable-mask.js",
     ROOT / "viewer" / "world-collider.js",
 ]
