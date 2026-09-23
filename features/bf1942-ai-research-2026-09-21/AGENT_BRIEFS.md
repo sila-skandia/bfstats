@@ -438,3 +438,47 @@ mechanisms were read but not ported or not found:
 
 Acceptance: the two AA recipes with numbers and rounds fired, the pins,
 ledger and KNOBS rows for every read, PARITY_STATUS_2026-09-23.md updated.
+
+## Brief M: load the level's own search maps
+
+Added 2026-09-24 after Brief C. Depends on: C (landed: ledger AI-93, AI-94,
+`bf42/ai_level.py read_search_map_raw`). Conflicts with: nothing running;
+K does not touch the nav modules. Can start now.
+
+Status: C read that every level ships its baked search maps
+(`Pathfinding/<Kind>Level<N>Map.raw`) and the retail server loads those
+with `ai.loadMaps` (`CellMap::loadRawFile` 0x085f86a0, `getPixel`
+0x085f9a00; a negative block record is followed inline by the block's 512
+bytes) instead of painting. The viewer and the runner still paint their
+own from the terrain and the collision meshes, which agrees with the baked
+Bocage tank map 95.2 % of the time and less elsewhere (Omaha and Market
+Garden block everything outside the play area; the viewer's do not;
+Market Garden's `Ironbrdg1` deck is cut because the drivable list matches
+"bridge" and not "brdg"). Parity for the map is the baked map.
+
+Do:
+1. Extract every level's search maps for every mod (vanilla, XPack1,
+   XPack2, EoD; `extract_map.py` is the level extractor, the maps tree is
+   `viewer/maps/<level>/`) into a compact published form (the raw blocks
+   are fine; say what you chose and the size per level), publish with
+   scripts/publish-mesh-delta.py, and confirm the live sizes. Asset
+   publishing needs no confirmation.
+2. `buildNavMap` and the runner load the level's baked map for each kind
+   the level ships (infantry, Tank0, Boat2, LandingCraft3, and every other
+   kind the level has), and paint only when a level has none (say which
+   levels those are). Keep the painted path and its tests; add a test that
+   a baked map loads, that its coarse components match C's numbers on
+   Bocage, and that the runner's Bocage trace with the baked map still has
+   under 100 route failures a match.
+3. Fix `decode_pathfinding_raw.py` for inline blocks and correct
+   `pathfinding-raw-format.md`.
+4. Read what the engine's box test does for a hull that has no valid
+   position (C left this unread), and whether the baked map's blocked
+   spawns (El Alamein's Shermans at (1731, -804) and (888, -1822), three
+   Willys) are handled by that or by the stopgap C kept in `bot-route.js`;
+   replace the stopgap with the engine's rule if there is one.
+
+Acceptance: the maps live for every level, the loader in both the page and
+the runner, the tests, seeded Bocage and El Alamein runner traces before
+and after with the route-failure and capture counts, ledger and KNOBS
+rows, PARITY_STATUS_2026-09-23.md updated.
