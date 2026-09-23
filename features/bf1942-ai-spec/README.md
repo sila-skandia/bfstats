@@ -41,7 +41,10 @@ disagreement is stated where it matters ("Research disagreement").
    `SAI.updateFrequency` seconds it scores the level's strategic areas,
    picks a strategy, splits the side's free bots into attackers and
    defenders and hands each an order: a `WPMoveTo` point and radius inside
-   an area.
+   an area. It sits behind the strategic interface (`doctrine.js
+   StrategicCommand`), which lets another doctrine order a side instead
+   ([features/bot-doctrines](../bot-doctrines/README.md)); by default every
+   side runs the SAI unchanged.
 2. **The behaviour contest** (one per bot, `bot.js BotController`): every
    tick each registered behaviour produces an urgency, the strict maximum
    wins (with hysteresis), and the winner's plan generator emits a short
