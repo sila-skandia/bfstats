@@ -100,6 +100,7 @@ import { disposeModel } from './dispose-model.js';
 import { createCameraGlide } from './camera-glide.js';
 import { createKitCatalogue } from './kit-catalogue.js';
 import { createKitStance } from './kit-stance.js';
+import { createKitPanels } from './kit-panels.js';
 import { createKitView } from './kit-view.js';
 import { createKitWorn } from './kit-worn.js';
 import { installControlsCollapse } from './controls-collapse.js';
@@ -115,7 +116,6 @@ const bust = () => (NO_CACHE ? `?t=${Date.now()}` : '');
 const stage = document.getElementById('stage');
 const statusLine = document.getElementById('status');
 const crumb = document.getElementById('crumb');
-const rackEl = document.getElementById('rack');
 const kitsEl = document.getElementById('kits');
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -265,8 +265,8 @@ async function showKit(kit, { soldier, held, stance } = {}) {
   crumb.innerHTML = `<b>${kit.nation || '&mdash;'} ${kit.class}</b> &middot; ${state.soldier}`
     + (state.held ? ` &middot; ${state.held}` : ' &middot; unposed');
   kitWorn.renderWorn(kit);
-  renderRack(kit);
-  renderMaps(kit);
+  kitPanels.renderRack(kit);
+  kitPanels.renderMaps(kit);
   syncSelects(kit);
   markKit(kit);
   writeHash();
@@ -274,68 +274,10 @@ async function showKit(kit, { soldier, held, stance } = {}) {
 
 // --- Panels -----------------------------------------------------------------
 
-function renderRack(kit) {
-  const slots = (kit.items || []).map((item, index) => {
-    const wearable = posed(state.soldier, item.template);
-    const slot = document.createElement('button');
-    slot.type = 'button';
-    slot.className = 'slot';
-    slot.disabled = !wearable;
-    slot.setAttribute('aria-pressed', String(item.template === state.held));
-    slot.title = wearable ? `put ${item.template} in his hands`
-      : item.entry ? `${item.template} has no pose clip for ${state.soldier}`
-      : `${item.template} was not extracted`;
-
-    const thumb = item.entry?.thumb;
-    const art = document.createElement(thumb ? 'img' : 'div');
-    art.className = thumb ? 'slot-art' : 'slot-art is-absent';
-    if (thumb) { art.src = `${item.entry.base}/${thumb}`; art.alt = ''; art.loading = 'lazy'; }
-
-    const name = document.createElement('div');
-    name.className = 'slot-name';
-    if (index < 9) {
-      const kbd = document.createElement('kbd');
-      kbd.textContent = String(index + 1);
-      name.append(kbd);
-    }
-    const label = document.createElement('span');
-    label.textContent = item.template;
-    name.append(label);
-
-    const meta = document.createElement('div');
-    meta.className = 'slot-meta';
-    meta.textContent = !item.entry ? 'not extracted'
-      : !wearable ? 'no pose clip'
-      : item.entry.dimensions ? `${item.entry.dimensions.maxExtent.toFixed(2)} m`
-      : `${item.entry.triangles.toLocaleString()} tris`;
-
-    slot.append(art, name, meta);
-    slot.addEventListener('click', () => showKit(kit, { held: item.template }));
-    return slot;
-  });
-  rackEl.replaceChildren(...slots);
-}
-
-function renderMaps(kit) {
-  const levels = kit.levels || [];
-  document.getElementById('map-count').textContent = String(levels.length);
-  document.getElementById('maps').textContent =
-    levels.map(level => level.replace(/_/g, ' ')).join(' · ');
-
-  const missing = (kit.worn || []).filter(part => !part.glb);
-  const note = document.getElementById('note');
-  if (!(kit.worn || []).length) {
-    note.hidden = false;
-    note.textContent = 'This kit declares no worn parts at all — it is bare by design, '
-      + 'not by a failed extraction.';
-  } else if (missing.length) {
-    note.hidden = false;
-    note.textContent = `${missing.length} worn part(s) did not extract: `
-      + `${missing.map(part => part.template).join(', ')}. The figure is missing them.`;
-  } else {
-    note.hidden = true;
-  }
-}
+const kitPanels = createKitPanels({
+  get held() { return state.held; }, get posed() { return posed; },
+  get showKit() { return showKit; }, get soldier() { return state.soldier; },
+});
 
 // --- Selects and list -------------------------------------------------------
 
