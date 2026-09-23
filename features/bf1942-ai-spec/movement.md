@@ -177,9 +177,11 @@ R_object` (AI-32).
 away (`AIPathfinding`'s max speed and age are 0 in every shipped level, so
 only distance removes them).
 
-**Redeploy** (`_updateObjectiveReadout`, INVENTION): with MoveTo active and
-no net progress of 0.5 m toward the goal for 12 s, the page moves the bot to
-its flag's next spawn point.
+**Redeploy** (`_updateObjectiveReadout`, INVENTION, AI-101): with MoveTo
+active and no net progress of 0.5 m toward the goal for 12 s under one order,
+the page moves the bot to its flag's next spawn point. A new order (a new
+waypoint object, or a new nearest enemy flag without one) starts the
+measure again. The engine has no such test.
 
 *Example.* A bot 120 m from its order point, a sandbag line across the way:
 the strategic path gives ~8 coarse legs; the first two are refined (each

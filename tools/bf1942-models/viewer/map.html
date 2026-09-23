@@ -1068,8 +1068,14 @@ const referee = createBotReferee({
     hullBodies.syncVehicleSpawnOwnership();
     pageConsole.logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
     comms.onCapture(target, target.team);
-    console.log(`[bots] ${bot.playerId} takes ${target.name}${bot.vehicle ? ' in the ' + (bot.vehicle.template ?? bot.vehicle.kind) : ''}`);
+    if (bot) console.log(`[bots] ${bot.playerId} takes ${target.name}${bot.vehicle ? ' in the ' + (bot.vehicle.template ?? bot.vehicle.kind) : ''}`);
     flagCapture.announceCapture(prevTeam, target.team);
+  },
+  // `ControlPoint::lostControl`: the point run down to neutral (bot-referee.js).
+  onNeutralise: (bot, target, prevTeam) => {
+    flagCapture.hoistCaptureFlag(target);
+    hullBodies.syncVehicleSpawnOwnership();
+    pageConsole.logToConsole(`${target.name} lost by ${prevTeam === 1 ? 'Axis' : 'Allied'}`);
   },
   onMounted: (bot, cand, mount) => {
     const vis = botBodies.botVisuals.get(bot.playerId);

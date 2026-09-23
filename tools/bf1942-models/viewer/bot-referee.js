@@ -10,8 +10,8 @@
 //   fireTick    rate of fire, magazine and reload, the deviation cone, the
 //               hit test against the soldier capsules, heals, damage
 //   damage      HP, incoming fire, death, the order freed, the respawn timer
-//   capture     a bot on a flag its side does not hold takes it after the
-//               point's own `timeToGetControl`
+//   capture     the control point's own law (`ControlPoint::handleFrameUpdate`
+//               0x08283b00), per flag over every living player on it
 //   seating     enter, leave and the seat swap, through the units layer the
 //               caller hands in (the page's vehicle instances, the runner's
 //               kinematic hulls)
@@ -34,6 +34,7 @@
 import { buildNavMap, isWalkable } from './nav-grid.js';
 import { spawnBots } from './bot.js';
 import { EnemyStrengthTables } from './bot-strength.js';
+import { playerPosition } from './bot-sense.js';
 import { SAI, StrategicLayer, StrategicAI, StrategicCommand } from './strategic.js';
 
 /** Seconds a downed bot stays out before its side puts it back on a flag. */
@@ -49,8 +50,9 @@ export const BOT_FIRE_RANGE = 600;
 /** The MedPack's heal per trigger tick (bot-behaviours.js `MEDIC`): the
  *  soldier template's +0x2e0 default 0.1 per `useRepairPack` at 30 Hz. */
 export const BOT_HEAL_PER_ROUND = 0.3;
-/** A flag with no `timeToGetControl` of its own. */
-export const CAPTURE_FALLBACK_SECONDS = 8;
+/** A flag with no `timeToGetControl` of its own: the `ControlPointTemplate`
+ *  ctor's 5.0 (+0x1f4, 0x08284774). */
+export const CAPTURE_FALLBACK_SECONDS = 5;
 /** The soldier's `setBattleStrength` table (`Objects/Soldiers/Common/AI/Objects.con`). */
 export const BOT_SOLDIER_TABLE = { Infantry: 4.0, LightArmour: 2.0, HeavyArmour: 1.0, NavalArmour: 0.0, Submarine: 0.0, Air: 1.0 };
 /** How far to the side of a hull a bot's body stands up (`botLeaveVehicle`). */
@@ -58,7 +60,7 @@ export const BOT_EXIT_OFFSET = 3.5;
 
 const DEG_TO_RAD = Math.PI / 180;
 
-// --- the capture law (the human's and the bots' alike) ---------------------
+// --- the capture law ---------------------------------------------------------
 
 /** A flag's capture radius: its template's, else 8 m. */
 export function captureRadius(flag) {
@@ -69,6 +71,110 @@ export function captureRadius(flag) {
 export function captureDuration(flag) {
   return Number.isFinite(flag?.timeToGetControl) && flag.timeToGetControl > 0
     ? flag.timeToGetControl : CAPTURE_FALLBACK_SECONDS;
+}
+
+/**
+ * A flag's control-point settings: the level's where the scene carries them,
+ * else the `ControlPointTemplate` ctor's (0x082846d0): `timeToGetControl`
+ * +0x1f4 5.0, `timeToLoseControl` +0x1f8 5.0, `disableIfEnemyInsideRadius`
+ * +0x1fc 0, `disableWhenLosingControl` +0x1fd 0, `loseControlWhenEnemyClose`
+ * +0x1fe 1, `loseControlWhenNotClose` +0x1ff 0, `minNrToTakeControl` +0x204
+ * 1, `onlyTakeableByTeam` +0x214 0. The four bytes are written by
+ * ConsoleClass637..640 (0x083064e0, 0x083068f0, 0x08306d00, 0x08307110) in
+ * the order the setters are registered from 0x082a1f62. The extractor
+ * (`bf42/level.py`) carries only `timeToGetControl` and `unableToChangeTeam`
+ * so far: vanilla sets `timeToLoseControl 10` on most flags and
+ * `loseControlWhenEnemyClose 0` on 26 of 367, which fall back to these.
+ */
+export function controlPointSettings(flag) {
+  const num = (v, d) => (Number.isFinite(v) ? v : d);
+  const flagOf = (v, d) => (v === undefined || v === null ? d : !!v);
+  return {
+    timeToGet: captureDuration(flag),
+    timeToLose: num(flag?.timeToLoseControl, 5),
+    disableIfEnemyInside: flagOf(flag?.disableIfEnemyInsideRadius, false),
+    loseWhenEnemyClose: flagOf(flag?.loseControlWhenEnemyClose, true),
+    loseWhenNotClose: flagOf(flag?.loseControlWhenNotClose, false),
+    minNr: num(flag?.minNrToTakeControl, 1),
+    onlyTeam: num(flag?.onlyTakeableByTeam, 0),
+  };
+}
+
+/**
+ * One frame of `ControlPoint::handleFrameUpdate` 0x08283b00 for one flag.
+ * `teams` lists the team of every living player inside its radius (the 3D
+ * distance to the player's controlled object). The point keeps `flag.team`
+ * (+0x174, 0 neutral), a lose timer (+0x168), a get timer (+0x16c), the
+ * team getting it (+0x170) and a state (+0x17c: 1 lost, 2 losing, 3
+ * getting, 4 held) in `flag._cp`. Returns `{ lost: team }` when the owner
+ * loses it (`lostControl` 0x08284090: team 0), `{ got: team }` when a team
+ * takes it (`gotControl` 0x08283f70), else null.
+ *
+ *  - A player of the owning team inside: with an attacker too and
+ *    `loseControlWhenEnemyClose`, the lose timer runs (`losingControl`
+ *    0x08284030) and at 0 the point is lost; else it is held
+ *    (`control` 0x08283fe0 resets both timers).
+ *  - Attackers of two teams and no owner's player: nothing changes.
+ *  - Attackers of one team alone: an owned point runs its lose timer and is
+ *    lost at 0; a neutral one, when no other team is getting it and at
+ *    least `minNrToTakeControl` attackers are in, runs the get timer
+ *    (`gettingControl` 0x08283f20) and is taken at 0; otherwise the timers
+ *    reset (`faildGettingControl` 0x08283ef0).
+ *  - Nobody: a neutral point resets; an owned one is lost over time only
+ *    with `loseControlWhenNotClose`, else held.
+ *  `onlyTakeableByTeam` (+0x214) stops losing, getting and taking by any
+ *  other team. `disableIfEnemyInsideRadius` / `disableWhenLosingControl`
+ *  only disable the point's spawns (`CPDisabled`), not ported.
+ */
+export function controlPointStep(flag, teams, dt) {
+  const cfg = controlPointSettings(flag);
+  const cp = flag._cp ?? (flag._cp = { lose: cfg.timeToLose, get: cfg.timeToGet, getting: 0, state: 4 });
+  const owner = flag.team ?? 0;
+  let defended = false, attacker = 0, count = 0;
+  for (const team of teams) {
+    if (team === owner) { defended = true; continue; }
+    if (attacker && team !== attacker) return null;       // two attacking teams: 0x08283b9d
+    attacker = team;
+    count++;
+  }
+  const allowed = team => !cfg.onlyTeam || cfg.onlyTeam === team;
+  const hold = () => { cp.state = 4; cp.get = cfg.timeToGet; cp.lose = cfg.timeToLose; };
+  const losing = team => {
+    if (!allowed(team)) return null;
+    if (cp.lose > 0) { cp.state = 2; cp.lose -= dt; return null; }
+    if (cp.state !== 2) return null;
+    cp.state = 1;
+    flag.team = 0;
+    return { lost: owner, by: team };
+  };
+  if (defended && owner) {
+    if (attacker && cfg.loseWhenEnemyClose) return losing(attacker);
+    hold();
+    return null;
+  }
+  if (attacker) {
+    if (owner) return losing(attacker);
+    if ((cp.getting === 0 || cp.getting === attacker) && count >= cfg.minNr) {
+      if (!allowed(attacker)) return null;
+      if (cp.get > 0) { cp.state = 3; cp.getting = attacker; cp.get -= dt; return null; }
+      flag.team = attacker;
+      cp.getting = 0;
+      hold();
+      return { got: attacker };
+    }
+    cp.getting = 0; cp.get = cfg.timeToGet; cp.lose = cfg.timeToLose;
+    return null;
+  }
+  if (!owner) { cp.getting = 0; cp.get = cfg.timeToGet; cp.lose = cfg.timeToLose; return null; }
+  if (cfg.loseWhenNotClose) {
+    if (cp.lose > 0) { cp.state = 2; cp.lose -= dt; return null; }
+    if (cp.state !== 2) return null;
+    cp.state = 1;
+    flag.team = 0;
+    return { lost: owner, by: null };
+  }
+  hold();
+  return null;
 }
 
 /**
@@ -626,27 +732,47 @@ export function createBotReferee(env) {
   // --- capture ----------------------------------------------------------------
 
   /**
-   * The solo capture law, run for bots as it is run for the human. The
-   * engine's capture is per-player -- every soldier on the point contributes
-   * -- so a bot standing on a flag its team does not hold takes it after the
-   * point's own `timeToGetControl`, the timer per bot. A dead bot's position
-   * still counts (the corpse stands on the flag until the respawn moves it).
+   * The control points' own law (`controlPointStep`, `ControlPoint::
+   * handleFrameUpdate` 0x08283b00) once a frame for every flag the level can
+   * lose, over every living player (the human included) whose controlled
+   * object is inside its radius. The owner's player on the point keeps it
+   * or, with an enemy there too (`loseControlWhenEnemyClose`, set on most
+   * vanilla flags), lets it run down to neutral; a neutral point is taken
+   * only by one team alone on it. Before, each bot ran its own timer and
+   * took the flag from under its defenders: two enemies on one flag traded
+   * it every `timeToGetControl` for minutes. `onCapture(bot, flag, prevTeam)`
+   * fires for a flag taken (`bot` the taking team's first bot on it, null
+   * when only the human was) and `onNeutralise(bot, flag, prevTeam)` for one
+   * lost to neutral. The engine counts only a player with its +0x79 byte set
+   * (INFERRED: alive); a dead bot's body no longer counts.
    */
   referee.captureTick = dt => {
-    if (!referee.bots.length || !(dt > 0)) return;
+    if (!(dt > 0)) return;
     if (env.captureEnabled && !env.captureEnabled()) return;
     const w = world();
-    for (const bot of referee.bots) {
-      if (!bot.team) continue;
-      const target = nearestEnemyFlag(w.flags, bot.team, bot.getPosition());
-      if (!target) { bot._capture = null; continue; }
-      if (!bot._capture || bot._capture.flag !== target) bot._capture = { flag: target, elapsed: 0 };
-      bot._capture.elapsed += dt;
-      if (bot._capture.elapsed < captureDuration(target)) continue;
-      const prevTeam = target.team;
-      target.team = bot.team;
-      bot._capture = null;
-      env.onCapture?.(bot, target, prevTeam);
+    if (!w?.flags?.length) return;
+    const botById = new Map(referee.bots.map(b => [b.playerId, b]));
+    const players = [];
+    for (const [id, p] of w.players ?? []) {
+      if (!p?.team || w.armorOf?.(id)?.destroyed) continue;
+      const bot = botById.get(id);
+      const pos = bot ? bot.getPosition() : playerPosition(p);
+      if (pos) players.push({ id, team: p.team, pos, bot });
+    }
+    for (const flag of w.flags) {
+      if (flag.uncapturable || !flag.position) continue;
+      const r = captureRadius(flag);
+      const inside = players.filter(q => {
+        const dy = Number.isFinite(q.pos[1]) ? q.pos[1] - flag.position[1] : 0;
+        return Math.hypot(q.pos[0] - flag.position[0], dy, q.pos[2] - flag.position[2]) <= r;
+      });
+      const prevTeam = flag.team ?? 0;
+      const ev = controlPointStep(flag, inside.map(q => q.team), dt);
+      if (!ev) continue;
+      const team = ev.got ?? ev.by;
+      const bot = inside.find(q => q.team === team && q.bot)?.bot ?? null;
+      if (ev.got) env.onCapture?.(bot, flag, prevTeam);
+      else env.onNeutralise?.(bot, flag, prevTeam);
     }
   };
 

@@ -25,6 +25,7 @@ import { freeRun, freeBox, freeLevel, CELL_LAND, CELL_FREE } from './nav-grid.js
 import * as THREE from 'three';
 import { TurretRig } from './turret-rig.js';
 import * as aiming from './bot-aim.js';
+import { updateObjectiveReadout } from './bot-decision.js';
 
 // The level sits in the map's own frame: x in [0, worldSize], z in
 // [-worldSize, 0] (the exporter negates z). Home at (100, -100), the enemy
@@ -889,7 +890,37 @@ function airSpacingScenario() {
            right: right.point.map(v => +v.toFixed(3)), rightUntil: right.until, left: left.point.map(v => +v.toFixed(3)) };
 }
 
+/** Brief K item 4: the page's no-progress redeploy (INVENTION, ledger AI-101)
+ *  measured per order. A follower 20 m behind a point that moves 1 m/s and
+ *  holds pace never gets nearer: with one order object for the whole walk it
+ *  is redeployed after 12 s; with a new order each second (the squad play's
+ *  follow, the SAI's re-order) it never is. A bot that stands still under
+ *  one order is still redeployed. */
+function redeployScenario() {
+  const run = ({ newOrderEvery = null, moving = true, seconds = 40 }) => {
+    const bot = {
+      position: [0, 0, 0], currentBehaviour: 'MoveTo', _bestGoalDist: null, _noProgress: 0, _needsRespawn: false,
+      _distTo(p) { return Math.hypot(p[0] - this.position[0], p[2] - this.position[2]); },
+      _nearestEnemyFlag: () => null,
+    };
+    let wp = { point: [0, 20], radius: 5 };
+    let redeployAt = null;
+    const dt = 1 / 30;
+    for (let i = 0; i < seconds * 30; i++) {
+      const t = i * dt;
+      if (moving) { wp.point = [0, 20 + t]; bot.position = [0, 0, t]; }
+      if (newOrderEvery && i % Math.round(newOrderEvery * 30) === 0) wp = { point: [...wp.point], radius: 5 };
+      bot.waypoints = wp;
+      updateObjectiveReadout(bot, dt);
+      if (bot._needsRespawn && redeployAt === null) redeployAt = +t.toFixed(2);
+    }
+    return redeployAt;
+  };
+  return { oneOrder: run({}), newOrders: run({ newOrderEvery: 1 }), standing: run({ moving: false }) };
+}
+
 const results = {
+  redeploy: redeployScenario(),
   airSpacing: airSpacingScenario(),
   strength: strengthScenario(),
   teleport: teleportScenario(),
