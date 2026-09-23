@@ -162,7 +162,8 @@ Senses use the vehicle fields of view from the eye 2 m above the hull.
 
 ## Known issues
 
-- `bot.js dismount()` stores `_leftVehicle.id = m.id`, the seat candidate's
+- Fixed (ledger AI-74): `dismount()` now keys `_leftVehicle` by the hull.
+  Was: `bot.js dismount()` stored `_leftVehicle.id = m.id`, the seat candidate's
   id (`<vehicle>:<seat>`); `_urgencyChange` compares it with `c.vehicleId`,
   so the 15 s left-unit ramp never applies. With the 10 s change ramp only
   scaling a saturated urgency (`1.9 x 4 x ramp` passes Idle's 0.1 at ramp

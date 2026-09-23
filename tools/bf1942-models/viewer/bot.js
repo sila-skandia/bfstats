@@ -245,10 +245,13 @@ const STEER_CONE = 0.5497787;
  *  `> 0x96` ticks, the path fails (state 3) at `>= 0x191`. A tick counts when
  *  no path point traces clear from the bot, or (`ObstructionDetection::update`
  *  0x08532b00) the bot is inside its removal distance of the goal and is
- *  neither moving at 1.0 m/s nor turning at 0.1 rad/s. The viewer runs the AI
- *  every 30 Hz world tick, so these are 5 s and 13.4 s. */
+ *  neither moving at 1.0 m/s nor turning at 0.1 rad/s. The engine counts its
+ *  30 Hz AI ticks; the page ticks bots once per display frame, so the count
+ *  advances by `dt x 30` (5 s and 13.4 s whatever the frame rate). */
 const OBSTRUCTED_TICKS = 150;
 const PATH_FAIL_TICKS = 401;
+/** The engine's AI tick rate, the unit of the counts above. */
+const AI_TICK_HZ = 30;
 /** `ObstructionDetection::update`: the speed that counts as moving. The viewer
  *  also counts a tick where the throttle is on and the body is under this
  *  speed anywhere on the route (INVENTION: the engine's collision prediction,
@@ -550,7 +553,9 @@ export class BotController {
     const left = this.vehicle;
     this.vehicle = null;
     this._airborne = false;
-    this._leftVehicle = left ? { id: left.id, at: now } : null;
+    // Keyed by the hull, as the candidates are (`vehicleId`): the seat's own
+    // id (`<uuid>:<seat>`) never matched one, so the 15 s ramp never ran.
+    this._leftVehicle = left ? { id: left.vehicleId ?? left.id, at: now } : null;
     this._lastChangeAt = now;
     if (this._footWeapons) this.weapons = this._footWeapons;
     this._footWeapons = null;
@@ -691,6 +696,7 @@ export class BotController {
       currentTarget: this.firingTarget,
       currentScore: this.targetScore,
       insideOrderedArea: this._insideOrderedArea(),
+      insideArea: this.waypoints?.inside ? (pos) => this.waypoints.inside(pos[0], pos[2]) : null,
       vetoed: this.vetoedTargets,
       waterDepth,
       mySpeed,
@@ -1222,15 +1228,16 @@ export class BotController {
    * metre ahead and the route rebuilt around it; at `PATH_FAIL_TICKS` the
    * route is failed.
    */
-  _trackObstruction(speed) {
+  _trackObstruction(speed, dt = 1 / 30) {
     const stalled = this._noVisiblePoint
       || (this.moveForward > 0.1 && speed < MOVING_SPEED);
     if (!stalled) {
       this._stalledTicks = 0;
       return false;
     }
-    this._stalledTicks++;
-    if (this._stalledTicks === OBSTRUCTED_TICKS + 1) this._onObstructed();
+    const before = this._stalledTicks;
+    this._stalledTicks += dt * AI_TICK_HZ;
+    if (before <= OBSTRUCTED_TICKS && this._stalledTicks > OBSTRUCTED_TICKS) this._onObstructed();
     if (this._stalledTicks >= PATH_FAIL_TICKS) {
       this._stalledTicks = 0;
       if (this.route) this.route.failed = true;
@@ -1372,7 +1379,7 @@ export class BotController {
     const bodySpeed = hullV ? Math.hypot(hullV.x, hullV.z) : (soldier?.speed ?? 0);
     this.moveForward = this._lastThrottle ?? 0;
     if (!this.vehicle) this._trackContact(soldier);
-    if (this._trackObstruction(bodySpeed)) {
+    if (this._trackObstruction(bodySpeed, dt)) {
       // The path failed (`+0xc = 3`): next tick rebuilds it around the
       // obstacles, or walks straight at the goal after repeated failures.
       this.route = null;
