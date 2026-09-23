@@ -232,6 +232,27 @@ class Emu:
                     self.w32(ad, self.val(s_), ssym)
             elif mn == 'lea':
                 self.reg[parts[0]] = self.ea(parts[1])
+            elif mn in ('and', 'xor', 'or', 'cmp') and parts and parts[0] == 'ah':
+                # the status-word tests after `fnstsw ax` (action_status_emu.py)
+                x = (self.reg['eax'] >> 8) & 0xff
+                y = self.val(parts[1])
+                if mn == 'cmp':
+                    self.zf = x == y
+                    self.cf = x < y
+                else:
+                    r = {'and': x & y, 'xor': x ^ y, 'or': x | y}[mn]
+                    self.reg['eax'] = (self.reg['eax'] & ~0xff00) | (r << 8)
+                    self.zf = r == 0
+            elif mn in ('sete', 'setne'):
+                r = 'e' + parts[0][0] + 'x'
+                bit = int(self.zf) if mn == 'sete' else int(not self.zf)
+                self.reg[r] = (self.reg[r] & ~0xff) | bit
+            elif mn == 'fsqrt':
+                v, s = self.st[0]
+                self.st[0] = (math.sqrt(v) if v >= 0 else math.nan, 'sqrt(%s)' % s)
+            elif mn == 'fabs':
+                v, s = self.st[0]
+                self.st[0] = (abs(v), 'abs(%s)' % s)
             elif mn in ('add', 'sub', 'and', 'xor', 'or'):
                 d, s_ = parts
                 x = self.val(d)
@@ -272,6 +293,8 @@ class Emu:
                     x = (self.fsw >> 8) & 0xff
                 self.zf = (x & y) == 0
                 self.cf = False
+            elif mn == 'jmp' and parts[0].startswith('DWORD PTR'):
+                nxt = self.r32(self.ea(parts[0]))   # a switch table
             elif mn.startswith('j'):
                 tgt = int(parts[0].split()[0], 16)
                 take = {'jmp': True, 'je': self.zf if mn != 'jmp' else True, 'jne': not getattr(self, 'zf', False),
@@ -297,6 +320,8 @@ class Emu:
                     self.natives[tgt](self)
                     if self._jump is not None:
                         nxt = self._jump
+                elif tgt in self.ins:
+                    nxt = tgt              # a callee in the loaded disassembly runs too
                 else:
                     raise RuntimeError('call %x from %x' % (tgt, a))
             elif mn == 'nop':
