@@ -351,6 +351,90 @@ export function firePlanFor({ position, targetPos, targetId, weapon, pose, now }
   return plan;
 }
 
+/**
+ * The fire plan's move for a unit that drives and aims on separate controls
+ * (every vanilla tank: `driveTurnControl PIYaw`, `aimHorizontalControl
+ * PIMouseLookX`), read 2026-09-24 (ledger AI-115). The Tank row of
+ * `AIbehaviours.con` runs `BBPFireInfantery`; `createPlan` 0x085a3870 sets
+ * the firing state's +0x14 when the bot's information has a Mobile plug-in
+ * (+0x2c) and +0x16 when the ControlInfo plug-in's (type 5, `IPIControlInfo::
+ * getType` 0x085d4a30) `getDriveControls` 0x085de710 and `getAimControls`
+ * 0x085de730 masks do not overlap. A soldier's do (`driveTurnControl` and
+ * `aimHorizontalControl` are both `PIMouseLookX`), so the infantry keep
+ * `firePlanFor`'s walk. With both set, `createPlanInternal` 0x085a74e0
+ * (from 0x085a7c5e) builds, beside the look and the trigger, one statement
+ * re-evaluated every tick (`BAPFlowCIf` 0x08556990 / `execute` 0x08556b80,
+ * its last argument 1):
+ *
+ *   If(S, ResetControls,                                          0x085aa14c
+ *      If(target within `mid`,                                    0x085aa0dc
+ *         If(target within 1.5 minRange + 1 of the firing point,  0x085aa069
+ *            End, MoveToFinding(the firing point)),
+ *         MoveToObjectFinding(target)))                           0x085a9e6b
+ *
+ *  - S (`BAPConSharedCondition` of a `BAPConAnd`, 0x085a9bc5..0x085a9ced):
+ *    `BAPConObjectDistance(target, minRange, 0.9 maxRange)` (3D, the
+ *    target's position estimate: evaluate 0x0854fce0 tests min^2 <= d^2 <=
+ *    max^2), `BAPConObjectValidAiming` 0x08552710 (the aim direction inside
+ *    the seat's camera window, `AIObjectControlInfo::validateCameraDirection`;
+ *    with the Mobile template's +0x30 byte set `BAPConObjectValidPitchAiming`
+ *    at 0x085ab443, the pitch alone, the hull turned by `BAPATurnTowardsObject`)
+ *    and `BAPConObjectLineOfFire` 0x08551890
+ *    (the bot's memory record of the target exists and its +0x14 is clear:
+ *    it is seen).
+ *  - `mid` = minRange + min(50, 0.5 (maxRange - minRange)) (0x085a77df..
+ *    0x085a7817; x87 compare checked by hand: `fucom` then `test $0x45`
+ *    jumps to keep the half-span when it is <= 50).
+ *  - The firing point is the firing state's +0x18 (copied in whole at the
+ *    end of `createPlan`, 14 words from its local): the bot's own position
+ *    unless a case of `createPlan`'s state switch replaces it, with
+ *    `calculateAwayPosition`'s point (2 minRange + 5 away) when the target
+ *    is inside minRange + 1, or with `getPortalLookAtPosition`'s (an attack
+ *    portal of the level's cover data, `getAttackPortal`). The portal case
+ *    is not ported and which case a tank's firing state is in was not
+ *    traced (INVENTION: its own position). Moving to his own position is
+ *    standing: inside `mid` without S the tank holds.
+ *  - `BAPAMoveToObjectFinding` (ctor 0x08545c10: 0.9 maxRange, maxSpeed,
+ *    0.5 maxSpeed arriving, `BAPConFalse`, the drive controls, and
+ *    Not(S) with 1.1 minRange): `initObjectFinding` 0x08545df0 paths to the
+ *    target's own point when it is valid on the unit's map (else its
+ *    `getValidPosition`, else a valid cell toward it) with the goal radius
+ *    min(0.9 maxRange, 1.1 x the target's `IPIPhysical::getRadius`)
+ *    (0x085460ad); `update` 0x08546df0 re-runs that search when Not(S)
+ *    turns true again (its +0xb4 latch) and otherwise follows the path.
+ */
+export const FIRE_APPROACH = {
+  inRangeFraction: 0.9,
+  midCap: 50.0,
+  midFraction: 0.5,
+  nearPointScale: 1.5,
+  nearPointPad: 1.0,
+  arriveTargetScale: 1.1,
+  arriveSpeedFraction: 0.5,
+};
+
+/** `mid`: the distance inside which the fire plan stops closing. */
+export function approachMid(weapon) {
+  const min = weapon?.minRange ?? 0, max = weapon?.maxRange ?? 0;
+  return min + Math.min(FIRE_APPROACH.midCap, FIRE_APPROACH.midFraction * (max - min));
+}
+
+/**
+ * One tick of the statement above. `dist` is the 3D distance to the target,
+ * `holds` S, `nearFiringPoint` whether the target is within 1.5 minRange + 1
+ * of the firing point, `targetRadius` its physical radius. Returns `{ move }`:
+ * `'hold'` (reset the drive, the look and the trigger go on), `'end'` (the
+ * plan ends), `'point'` (to the firing point), or `'find'` with `arrive`,
+ * the path's goal radius.
+ */
+export function fireApproachStep({ dist, holds, weapon, nearFiringPoint = false, targetRadius = 1.0 }) {
+  if (holds) return { move: 'hold' };
+  if (dist <= approachMid(weapon)) return { move: nearFiringPoint ? 'end' : 'point' };
+  const arrive = Math.min(FIRE_APPROACH.inRangeFraction * (weapon?.maxRange ?? 0),
+    FIRE_APPROACH.arriveTargetScale * targetRadius);
+  return { move: 'find', arrive };
+}
+
 /** Per-class weighting `AISettings::getArmourClassValues` 0x084849f0
  *  (+0x98): the constructor 0x08482cf0 stores 1, 3, 8, 15, 1, 6 in the
  *  class order of the `CST*` enum (Infantry, LightArmour, HeavyArmour,
