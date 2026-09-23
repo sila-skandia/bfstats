@@ -116,6 +116,38 @@ class NavGridTests(unittest.TestCase):
         self.assertEqual(self.results["buried"][0], None)
         self.assertIsInstance(self.results["buried"][1], int)
 
+    def test_a_drivable_bridge_joins_the_banks_on_the_tank_map(self) -> None:
+        # Bocage's Tank0 map had the north bank, the south bank and the
+        # Sawmill as separate components: every bridge deck, its ramps and
+        # its abutments were painted as walls. The engine's AI mesh outlines
+        # only the parapets (`objectClipAndRender` 0x085fbfa0) and its
+        # sampling pass frees the deck over the water (`sampleAndRender`
+        # 0x08601390).
+        b = self.results["bridge"]
+        free = self.results["codes"]["CELL_FREE"]
+        self.assertEqual(b["channel"], self.results["codes"]["CELL_WATER"])
+        for cell in ("bank", "ramp", "deckOverBank", "abutment", "deck", "overPier", "farBank"):
+            self.assertEqual(b[cell], free, cell)
+        self.assertIsNotNone(b["across"])
+        self.assertTrue(b["acrossEndsAtGoal"])
+        self.assertTrue(b["deckLineClear"])
+        self.assertFalse(b["channelLineClear"])
+
+    def test_the_bridge_keeps_its_edges(self) -> None:
+        b = self.results["bridge"]
+        # A parapet over the bank is a wall; over the water the channel's own
+        # brush keeps a hull 3 m in from the deck's edge.
+        self.assertEqual(b["parapetOverBank"], self.results["codes"]["CELL_OBJECT"])
+        self.assertEqual(b["deckEdgeOverWater"], self.results["codes"]["CELL_WATER"])
+
+    def test_without_the_drivable_mask_the_bridge_is_a_wall(self) -> None:
+        self.assertIsNone(self.results["bridge"]["acrossPlain"])
+
+    def test_a_material_99_face_draws_no_outline(self) -> None:
+        b = self.results["bridge"]
+        self.assertEqual(b["noOutlineWall"], self.results["codes"]["CELL_FREE"])
+        self.assertEqual(b["outlineWall"], self.results["codes"]["CELL_OBJECT"])
+
 
 if __name__ == "__main__":
     unittest.main()
