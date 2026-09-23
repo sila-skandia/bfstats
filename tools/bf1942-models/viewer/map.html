@@ -253,6 +253,7 @@ import { createBotUnits } from './bot-units.js';
 import { bindTreeFoliage } from './tree-foliage.js';
 import { createBotVisuals } from './bot-visuals.js';
 import { installTestHooks } from './test-hooks.js';
+import { createNetRoom } from './net-room.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -1409,7 +1410,7 @@ function capturePresentationTick() {
   // client can measure its error at. Here rather than beside the send, because
   // a frame that ran three ticks sends three words and this is the only place
   // that sees each tick's own finished pose (netcode-reconcile.js).
-  if (roomJoined && soldier) netTickPoses.push(soldier.x, soldier.y, soldier.z);
+  if (room.roomJoined && soldier) room.netTickPoses.push(soldier.x, soldier.y, soldier.z);
   if (soldier) {
     if (!snap) Object.assign(footEyePrev, footEyeCur);
     // Alpha 1: this tick's own finished pose. See `Soldier.eye`.
@@ -6456,9 +6457,9 @@ function setPilot(on, node = null, seatId = null) {
     if (seat) mountLocalSeat(seat);
   } else if (localPlayer.occupancy) {
     // The seat's gone; tell the server so the others' replicas release it.
-    const netSeat = netSeatRow('exit');
+    const netSeat = room.netSeatRow('exit');
     leaveSeat({ reset: true });
-    if (netSeat) netSendAction(netSeat);
+    if (netSeat) room.netSendAction(netSeat);
   } else {
     world?.clearPlayerVehicle(LOCAL_PLAYER);
   }
@@ -6493,9 +6494,9 @@ function mountLocalSeat(seat) {
   // world the same way (netcode.js MSG_ACTION; the vehicle id is the room
   // table's, matched by template + pose like the renderer's). The seat-dot
   // feed keeps the same id for its every-frame occupant read.
-  netOccupiedVehicleId = netVehicleIdFor(seat.root);
-  const netSeat = netSeatRow('enter');
-  if (netSeat) netSendAction(netSeat);
+  room.netOccupiedVehicleId = room.netVehicleIdFor(seat.root);
+  const netSeat = room.netSeatRow('enter');
+  if (netSeat) room.netSendAction(netSeat);
 }
 
 function syncLocalSeat() {
@@ -6721,9 +6722,9 @@ function switchSeat(position) {
   loadSeatPose();
   updateMobileControls();
   // The room's control channel: seat switches are rows, not input words.
-  const netId = netVehicleIdFor(seat.root);
-  if (roomJoined && netId != null) {
-    netSendAction({ type: 'seat', vehicle: netId, seat: position, action: 'switch' });
+  const netId = room.netVehicleIdFor(seat.root);
+  if (room.roomJoined && netId != null) {
+    room.netSendAction({ type: 'seat', vehicle: netId, seat: position, action: 'switch' });
   }
 }
 
@@ -6775,7 +6776,7 @@ function clearVehicleHud() {
   // through `leaveSeat`.
   seatDotsFor = null;
   seatDotsSig = null;
-  netOccupiedVehicleId = null;
+  room.netOccupiedVehicleId = null;
 }
 
 // R2-8 (verify-r2.md's corrected report): the client's own case-sensitive
@@ -6825,15 +6826,15 @@ let seatDotsSig = null;
  *  pose to match against, and a null computed too early would otherwise stay
  *  null for the whole ride. */
 function remoteSeatOccupants() {
-  if (!roomJoined || !roomClient || !localPlayer.occupancy) return [];
-  if (netOccupiedVehicleId == null) netOccupiedVehicleId = netVehicleIdFor(localPlayer.occupancy.root);
-  if (netOccupiedVehicleId == null) return [];
+  if (!room.roomJoined || !room.roomClient || !localPlayer.occupancy) return [];
+  if (room.netOccupiedVehicleId == null) room.netOccupiedVehicleId = room.netVehicleIdFor(localPlayer.occupancy.root);
+  if (room.netOccupiedVehicleId == null) return [];
   const out = [];
-  for (const slot of roomClient.remoteSlots()) {
-    const p = roomClient.remotePlayer(slot);
-    if (p && p.seated && p.inVehicle && p.vehicleId === netOccupiedVehicleId
+  for (const slot of room.roomClient.remoteSlots()) {
+    const p = room.roomClient.remotePlayer(slot);
+    if (p && p.seated && p.inVehicle && p.vehicleId === room.netOccupiedVehicleId
         && Number.isInteger(p.seatIndex)) {
-      out.push({ seat: p.seatIndex, team: roomClient.teamOf(slot) });
+      out.push({ seat: p.seatIndex, team: room.roomClient.teamOf(slot) });
     }
   }
   return out;
@@ -6855,7 +6856,7 @@ function hullSeatOccupants() {
 function feedSeatDots() {
   if (!localPlayer.occupancy) return;
   const dots = localPlayer.occupancy.seatDots([...remoteSeatOccupants(), ...hullSeatOccupants()],
-    roomClient?.hello?.team ?? world?.player(LOCAL_PLAYER)?.team ?? 0);
+    room.roomClient?.hello?.team ?? world?.player(LOCAL_PLAYER)?.team ?? 0);
   const sig = dots.map(d => d.state).join(',');
   if (seatDotsFor === localPlayer.occupancy && sig === seatDotsSig) return;
   seatDotsFor = localPlayer.occupancy;
@@ -7289,9 +7290,9 @@ function exitVehicle() {
   const hullVelocity = vehicle.state?.velocity;
   // The room's control channel: capture the seat row before the seat is
   // given back.
-  const netSeat = localPlayer.occupancy ? netSeatRow('exit') : null;
+  const netSeat = localPlayer.occupancy ? room.netSeatRow('exit') : null;
   leaveSeat();
-  if (netSeat) netSendAction(netSeat);
+  if (netSeat) room.netSendAction(netSeat);
   optPilot.checked = false;
   if (optOnFoot.checked && soldier) {
     soldier.collider = collider;
@@ -7361,9 +7362,9 @@ function exitPoseManned(occ) {
 function exitManned() {
   if (!localPlayer.occupancy) return;
   const exit = exitPoseManned(localPlayer.occupancy);
-  const netSeat = netSeatRow('exit');
+  const netSeat = room.netSeatRow('exit');
   leaveSeat();
-  if (netSeat) netSendAction(netSeat);
+  if (netSeat) room.netSendAction(netSeat);
   optPilot.checked = false;
   if (optOnFoot.checked && soldier) {
     soldier.collider = collider;
@@ -7481,7 +7482,7 @@ const referee = createBotReferee({
     if (vis) vis.lastPos = null;   // no gait smear across the respawn
   },
   // Room play stays authoritative: no local bot capture.
-  captureEnabled: () => !roomJoined,
+  captureEnabled: () => !room.roomJoined,
   onCapture: (bot, target, prevTeam) => {
     hoistCaptureFlag(target);
     syncVehicleSpawnOwnership();
@@ -8005,7 +8006,7 @@ function updateCaptureHud(ticks) {
 
   // Solo play has no server authority, so run the same delayed capture law
   // locally. Room play only displays the authoritative lifecycle below.
-  if (!roomJoined) {
+  if (!room.roomJoined) {
     const player = world?.player(LOCAL_PLAYER);
     const target = nearestEnemyFlag(player?.team ?? deployTeamId, capturePosition());
     if (!target) {
@@ -8107,11 +8108,11 @@ function spawnAtFlag(advance = false) {
   // The room's control channel: the server re-places its own copy of this
   // player on the same flag (fresh Armor at the kit's max — the spawn row
   // names the kit so both sides build the same Armor from loadouts.json).
-  if (roomJoined) {
+  if (room.roomJoined) {
     // The ledger describes a body that no longer exists.
-    netReconciler?.reset();
-    netTickPoses.length = 0;
-    netSendAction({
+    room.netReconciler?.reset();
+    room.netTickPoses.length = 0;
+    room.netSendAction({
       type: 'spawn',
       flag: Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1),
       // WHICH of the flag's spawn points, so the authority spawns on the one
@@ -13865,11 +13866,11 @@ loadScoreLayout();
  *  latch (`soldierDead`, or no body at all), a bot's destroyed Armor — the
  *  same reads the death cam and `botRespawnTick` make. */
 function scoreboardPlayers() {
-  const inRoom = roomJoined && roomClient;
+  const inRoom = room.roomJoined && room.roomClient;
   const players = [{
-    slot: inRoom ? roomClient.slot : null,
-    name: roomName,
-    team: inRoom ? (roomClient.hello?.team === 1 ? 1 : 2) : deployTeamId,
+    slot: inRoom ? room.roomClient.slot : null,
+    name: room.roomName,
+    team: inRoom ? (room.roomClient.hello?.team === 1 ? 1 : 2) : deployTeamId,
     local: true,
     kit: deployKit,
     dead: !soldier || !!soldierDead,
@@ -13885,8 +13886,8 @@ function scoreboardPlayers() {
     });
   }
   if (inRoom) {
-    for (const slot of roomClient.remoteSlots()) {
-      players.push({ slot, name: roomClient.nameOf(slot), team: roomClient.teamOf(slot) });
+    for (const slot of room.roomClient.remoteSlots()) {
+      players.push({ slot, name: room.roomClient.nameOf(slot), team: room.roomClient.teamOf(slot) });
     }
   }
   return players;
@@ -13923,8 +13924,8 @@ const scoreRes = {
 function paintScoreboard(force = false) {
   const data = scoreLayout.data;
   if (!data || !scoreboardOpen()) return;
-  const inRoom = !!(roomJoined && roomClient);
-  const rows = boardRows(scoreboardPlayers(), inRoom ? roomClient.feed : []);
+  const inRoom = !!(room.roomJoined && room.roomClient);
+  const rows = boardRows(scoreboardPlayers(), inRoom ? room.roomClient.feed : []);
   const s = scoreboardScale();
   const key = JSON.stringify([rows, s.W, s.H, scoreFromSpawn, scoreHoverDone, inRoom,
                               currentDir, hudPack.sprites.size]);
@@ -13951,7 +13952,7 @@ function paintScoreboard(force = false) {
     fromSpawn: scoreFromSpawn,
     inRoom,
     alive: deployRejoin || (optOnFoot.checked && !!soldier),
-    serverName: inRoom ? String(roomClient.hello?.room ?? '') : '',
+    serverName: inRoom ? String(room.roomClient.hello?.room ?? '') : '',
     serverIp: inRoom ? location.host : '',
     mapName: extras.level || currentDir || '',
     axisFlag: ticketFlagTexture(1),
@@ -14760,437 +14761,28 @@ optEntire.addEventListener('change', () => {
 // recording dropped onto the view. See replay.js.
 const replayUrl = params.get('replay');
 let replayController = null;
-// --- the room (netcode-play-multiplayer P2) ----------------------------------
-//
-// `?room=<code>` joins the room server at the same origin (`/netcode` —
-// HAProxy's path-beg ACL rides it through, WS and the JSON lobby both).
-// netcode-client.js owns the wire (the engine's 104-bit input word, the 20 Hz
-// snapshots, the seq law); netcode-render.js draws the server-confirmed
-// remotes the way replay.js draws recordings; this page glues the two onto
-// the local sim's seams and sends the engine's control-channel rows (seat
-// enter/exit/switch, respawn) from the page's own mount/spawn code. Without
-// `?room=` every binding below is a no-op — single-player is untouched.
-const roomCode = params.get('room');
-const roomName = params.get('name') || 'Player';
-let roomClient = null;
-let roomRenderer = null;
-let roomJoined = false;
-let roomPingTimer = null;
-let roomTornDown = false;    // a deliberate teardown; not a join failure
-// P3: HP follows the server's word past this window — a destroyed-Armor decree
-// is a hard event (the page's own death loop latches the cam), but a drop
-// smaller than this is the prediction's own business, so the prediction stays
-// the predictor (netcode.md §4).
-const NET_HP_GRACE = 1.5;
-// P4: the correction law lives in netcode-reconcile.js — the hard-set limit,
-// the smoothing share and the replay of the client's unacknowledged ticks are
-// all its numbers, each justified from the sim in its own header. The page
-// keeps the ledger it needs (one pose per tick, flat xyz triples) and writes
-// the plan the module hands back.
-let netReconciler = null;
-const netTickPoses = [];
-/** The last correction the reconciler asked for, for `?data` and the smoke. */
-let netLastCorrection = null;
-let netCorrectionCount = 0;
-let netHardCorrectionCount = 0;
-
-/** A correction moves the body and touches nothing else.
- *
- *  NOT `Soldier.spawn()`, which is a respawn: it zeroes the velocity and the
- *  PHY-6 ramps, resets the stance, the gait, the bob, the view pitch and the
- *  soldier's own 60 Hz clock, and — called with no yaw — sets the facing to 0.
- *  The rigid body's `setPosition` moves `position` and `previous` together, so
- *  the render interpolation does not draw a smear across the correction
- *  either. */
-function netPlaceSoldier(x, y, z) {
-  soldier.body.body.setPosition(x, Number.isFinite(y) ? y : soldier.y, z);
-}
-const parkedHullCache = new Map();   // room vehicle id -> local scene node
-// The room table id of the vehicle the local player is sitting in, cached on
-// entry: `netVehicleIdFor` is a matrix read over the room table, and the
-// seat-dot feed asks for it every frame while seated.
-let netOccupiedVehicleId = null;
-const netScratchV = new THREE.Vector3();
-
-/** The room table id for a LOCAL vehicle node: template name (the scene
- *  node's `userData.control`), closest to the server pose among the same
- *  template's entries — the `spawnDelayForNode` matching law, over the wire
- *  table instead of the local scene. */
-function netVehicleIdFor(node) {
-  if (!roomJoined || !node) return null;
-  const name = templateNameOf(node).toLowerCase();
-  netScratchV.setFromMatrixPosition(node.matrixWorld);
-  let best = null;
-  let bestD = Infinity;
-  for (const [id, v] of roomClient.vehicles) {
-    if (v.template.toLowerCase() !== name) continue;
-    const pose = roomClient.remoteVehicle(id);
-    if (!pose) continue;
-    const d = (netScratchV.x - pose.x) ** 2
-      + (netScratchV.y - pose.y) ** 2 + (netScratchV.z - pose.z) ** 2;
-    if (d < bestD) { bestD = d; best = id; }
-  }
-  return best;
-}
-
-/** The active seat's position in the occupancy's own survey order, the same
- *  index the server's seat rows and the snapshot records carry (root = 0). */
-function netSeatIndex() {
-  const occ = localPlayer.occupancy;
-  if (!occ) return null;
-  const i = occ.order.indexOf(occ.activeSeatId);
-  return i >= 0 ? i : 0;
-}
-
-function netSeatRow(action) {
-  const occ = localPlayer.occupancy;
-  if (!occ?.root) return null;
-  const id = netVehicleIdFor(occ.root);
-  if (id == null) return null;
-  return { type: 'seat', vehicle: id, seat: netSeatIndex() ?? 0, action };
-}
-
-function netSendAction(row) {
-  if (roomJoined && roomClient) roomClient.action(row);
-  // A seat row moves the body somewhere the soldier sim did not walk it
-  // (a hull pose, an exit point), so every pose in the prediction ledger
-  // describes a different situation from the one the next snapshot will.
-  if (row?.type === 'seat') {
-    netReconciler?.reset();
-    netTickPoses.length = 0;
-  }
-}
-
-/** The local scene's parked hull for a room vehicle id: the level node whose
- *  template matches and whose position is closest to the server pose. The
- *  replica draws a remote driver's vehicle, so the parked hull under it must
- *  not double-draw (and it is asleep either way — `damageVisuals`' own node,
- *  the frozen spawn tree, not the body world). */
-function parkedHullFor(vehicleId) {
-  if (parkedHullCache.has(vehicleId)) return parkedHullCache.get(vehicleId);
-  const v = roomClient?.vehicles.get(vehicleId);
-  let found = null;
-  if (v) {
-    const want = v.template.toLowerCase();
-    const pose = roomClient.remoteVehicle(vehicleId);
-    let bestD = Infinity;
-    for (const visual of damageVisuals.values()) {
-      const node = visual?.node;
-      if (!node || templateNameOf(node).toLowerCase() !== want) continue;
-      const d = pose
-        ? (node.position.x - pose.x) ** 2
-          + (node.position.y - pose.y) ** 2 + (node.position.z - pose.z) ** 2
-        : 0;
-      if (d < bestD) { bestD = d; found = node; }
-    }
-  }
-  parkedHullCache.set(vehicleId, found);
-  return found;
-}
-
-function hideParkedHull(roomId, occupied) {
-  const node = parkedHullFor(roomId);
-  if (node) node.visible = !occupied;
-}
-
-function netTeardownRoom() {
-  roomTornDown = true;
-  if (!roomJoined && !roomClient) return;
-  roomJoined = false;
-  if (roomPingTimer !== null) { clearInterval(roomPingTimer); roomPingTimer = null; }
-  roomRenderer?.reset();
-  roomClient?.close();
-  roomClient = null;
-  netReconciler = null;
-  netTickPoses.length = 0;
-  netLastCorrection = null;
-  parkedHullCache.clear();
-}
-
-// --- the room's trouble modal -------------------------------------------------
-//
-// A room that will not open must say so: the join fails with no feedback
-// today, and a player staring at an empty map navigates away. The modal is
-// the game's own panel (this page's tokens, the deploy family) with the
-// reason, RETRY (one reload — the URL holds the room), and PLAY SOLO.
-const ROOM_CLOSE_MESSAGES = {
-  room_full: 'the room is full',
-  bad_room: 'no room with that code',
-  bad_name: 'that name is no good',
-  no_peer: 'the server lost your connection',
-  handler_error: 'the server had a problem',
-  silent_timeout: 'the server dropped you (silence)',
-};
-const roomIssue = document.getElementById('roomIssue');
-const roomIssueCode = document.getElementById('roomIssueCode');
-const roomIssueMessage = document.getElementById('roomIssueMessage');
-
-function roomIssueShow(code, message) {
-  roomIssueCode.textContent = code ? `· ${code}` : '';
-  roomIssueMessage.textContent = message;
-  roomIssue.hidden = false;
-  (document.getElementById('roomIssueRetry'))?.focus?.();
-}
-
-function roomIssueHide() { roomIssue.hidden = true; }
-
-function roomPlaySolo() {
-  roomIssue.hidden = true;
-  netTeardownRoom();
-  logToConsole('playing solo');
-}
-document.getElementById('roomIssueRetry').addEventListener('click',
-  () => location.reload());
-document.getElementById('roomIssueSolo').addEventListener('click', roomPlaySolo);
-
-async function joinRoom() {
-  if (!roomCode || roomClient) return;
-  try {
-    const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
-    const ws = new WebSocket(`${proto}${location.host}/netcode`);
-    // The server only ever sends binary frames; say so before the first one
-    // lands (the hello follows the join immediately).
-    ws.binaryType = 'arraybuffer';
-    roomClient = createRoomClient({ ws, now: () => performance.now() });
-    netReconciler = createReconciler();
-    roomRenderer = createRemoteRenderer({
-      scene, camera, loader, bust,
-      modelsBase: MODELS_BASE,
-      // The engine's vehicle lighting, as the level's own vehicles get it —
-      // replicas are drawn the way replay.js draws recorded ones.
-      shadeModel: root => bindDynamicShading(root),
-      onOccupyChange: hideParkedHull,
-    });
-    roomClient.onevent = row => {
-      if (row?.text) logToConsole(row.text);
-      if (row?.type === 'capturing') {
-        roomCapture = { name: row.name || 'flag', elapsed: 0,
-          duration: Number(row.duration) > 0 ? Number(row.duration) : 8,
-          contested: false, done: false };
-      } else if (row?.type === 'captureContested' && roomCapture) {
-        roomCapture.contested = true;
-      } else if (row?.type === 'captureCancelled') {
-        roomCapture = null;
-        updateHud();
-      }
-      // P3: death by server decree. The page's own death loop
-      // (`soldierDead` latch on a destroyed Armor) is the cam, the deploy
-      // screen and the spectator work — the decree only has to make the
-      // Armor agree with the server's. The suicide path's own precedent
-      // (`soldierArmor.applyDamage(maxHitPoints)`).
-      if (row.type === 'killed' && row.slot === roomClient.slot
-          && soldierArmor && !soldierDead) {
-        soldierArmor.applyDamage(soldierArmor.maxHitPoints);
-      }
-      // Flags move by decree too: the deploy screen's list and the map's
-      // markers read `flags[]` live, so a team write is the whole repaint.
-      if (row.type === 'captured' && Number.isInteger(row.flag)
-          && flags[row.flag]) {
-        const prevTeam = flags[row.flag].team;
-        flags[row.flag].team = row.team;
-        hoistCaptureFlag(flags[row.flag]);
-        announceCapture(prevTeam, row.team);
-        roomCapture = { name: row.name || flags[row.flag].name,
-          elapsed: 0, duration: 0, contested: false, done: true,
-          until: performance.now() + 2200 };
-        syncVehicleSpawnOwnership();
-        applyVisibility();
-        if (typeof paintDeployChrome === 'function') paintDeployChrome();
-      }
-      // The tickets: the layout's own group reads `extras.tickets` — the
-      // memoised painters re-run when the object CHANGES, so a fresh object
-      // per row is the page's own prescribed live-update path (the comment
-      // at `ticketFlagTexture`: "mutated the counts IN PLACE would have to
-      // bump the key here too" — a replacement bumps it for us).
-      if (row.type === 'ticket' && Number.isFinite(row.count) && extras) {
-        const key = `team${row.team}`;
-        if (extras.tickets?.[key] !== row.count) {
-          extras.tickets = {
-            ...extras.tickets,
-            [key]: row.count,
-          };
-        }
-      }
-    };
-    // P3/P4: the snapshot is the server's word. HP drops apply (never heals —
-    // the supply depots heal both sides, and the server's own count absorbs
-    // the rest), and the position goes through the correction law: the error
-    // is measured at the tick the authority acknowledges, the client's own
-    // unacknowledged ticks are replayed on top, and what is left is closed a
-    // fraction at a time unless it is large enough to be a different event
-    // (netcode-reconcile.js owns every one of those decisions and its own
-    // numbers). Only when the local player is alive and on foot — a seated
-    // player's snapshot position is the hull's.
-    roomClient.onsnapshot = snap => {
-      if (!soldier || soldierDead || !soldierArmor) return;
-      if (optPilot.checked || !optOnFoot.checked) return;
-      let self = null;
-      for (const p of snap.players) {
-        if (p.slot === roomClient.slot) { self = p; break; }
-      }
-      if (!self || !self.alive) return;
-      if (self.hp != null && self.hp < soldierArmor.hitPoints - NET_HP_GRACE) {
-        soldierArmor.applyDamage(soldierArmor.hitPoints - self.hp);
-      }
-      if (self.seated || self.inVehicle) return;
-      const plan = netReconciler?.accept(self, soldier);
-      if (!plan) return;
-      netPlaceSoldier(plan.x, plan.hard ? plan.y : null, plan.z);
-      // The facing, at the same share: the one divergence that grows without
-      // bound if nothing repairs it (netcode-reconcile.js's `yawDeltaOf`).
-      if (plan.yawDelta) soldier.body.yaw += plan.yawDelta;
-      netLastCorrection = { error: plan.error, hard: plan.hard,
-                            replayed: plan.replayed, acked: plan.acked };
-      netCorrectionCount++;
-      if (plan.hard) netHardCorrectionCount++;
-    };
-    roomClient.onclosed = code => {
-      const wasIn = roomJoined;
-      roomJoined = false;
-      if (roomPingTimer !== null) { clearInterval(roomPingTimer); roomPingTimer = null; }
-      roomRenderer?.reset();
-      if (wasIn) logToConsole(`room closed (${code})`);
-      // The reason, on the screen: a dropped round or a refused join both
-      // end in this modal — the message names the failure and the two
-      // ways back in.
-      const message = ROOM_CLOSE_MESSAGES[code]
-        ?? (typeof code === 'string' && code ? `the room closed: ${code}` : null);
-      if (message) roomIssueShow(code, message.toUpperCase());
-    };
-    roomClient.onjoined = async () => {
-      roomJoined = true;
-      roomIssueHide();
-      // (The heartbeat was already running — it starts at open, see above,
-      // so the join's own silence during the page's load is covered.)
-      // The room names the level it runs. When the URL already asked for
-      // that level the page's own load covers it; when it asked for
-      // another (or nothing), the ONE clean way to switch is a reload with
-      // the room's level in the URL — `show()` is not safe to run twice,
-      // and the manifest flow would be mid-flight in the same breath. The
-      // reload re-joins the same room from the URL and loads once.
-      const want = (roomClient.hello.level || '').toLowerCase();
-      const asked = (params.get('map') || '').toLowerCase();
-      if (want && asked !== want && manifest.some(e => e.name.toLowerCase() === want)) {
-        const q = new URLSearchParams(location.search);
-        q.set('map', want);
-        location.replace(`${location.pathname}?${q}`);
-        return;
-      }
-      logToConsole(`room ${roomClient.hello.room} · ${roomClient.hello.level} · slot ${roomClient.slot}`);
-      logToConsole(`you are on team ${roomClient.hello.team === 1 ? 'AXIS' : 'ALLIED'}`);
-      // The room names the team; the deploy screen rides it.
-      setDeployTeam(roomClient.hello.team === 1 ? 1 : 2, false);
-      if (!deployActive()) openDeploy();
-    };
-    ws.addEventListener('message', e => {
-      // Binary frames only (see above); a string would be a server that is
-      // not the room server, and is ignored rather than misparsed.
-      if (typeof e.data === 'string') return;
-      roomClient?.handleMessage(e.data);
-    });
-    ws.addEventListener('error', e => {
-      console.warn('room socket error', e.message ?? e);
-      // The close that follows the error is the one that speaks.
-    });
-    ws.addEventListener('close', e => {
-      // The room server's own close codes ride the wire as MSG_CLOSED rows
-      // (netcode.js); a bare transport close is the silent-timeout law or a
-      // network drop, and the console should say which side ended it.
-      console.log('room socket closed', e.code, e.reason);
-      // A join that never happened must say so: a missing room server
-      // otherwise leaves a silently empty map. A deliberate teardown never
-      // reaches the modal (the guard below reads the teardown flag).
-      const failed = roomCode && !roomJoined && !roomTornDown;
-      netTeardownRoom();
-      if (failed) {
-        roomIssueShow(null,
-          "CAN'T REACH THE ROOM SERVER\n"
-          + 'Make sure it is running, then RETRY — or play solo.');
-      }
-    });
-    // What the other players in the room are drawing: the clip family each
-    // replica settled on, what its rig bound, and the speed that chose it.
-    window.__remotes = () => roomRenderer?.debugSoldiers() ?? [];
-    window.__netDiag = () => ({
-      readyState: ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][ws.readyState],
-      clientState: roomClient?.state ?? null,
-      hello: roomClient?.hello ?? null,
-      captured,
-      lockHeld,
-      pointerLock: document.pointerLockElement === renderer.domElement,
-    });
-    // Send the join when the socket is open (or now, if it already is) —
-    // `send` before the handshake throws, and a silent drop would just look
-    // like a server that never answered.
-    const sendJoin = () => roomClient?.join({
-      room: roomCode,
-      name: roomName,
-      team: 0,
-      // Create-on-join names the level the room was made on (rooms.mjs);
-      // joining an existing room ignores it.
-      level: params.get('map') || undefined,
-    });
-    // Heartbeat from the handshake on: the page's own level load starves
-    // its main thread for seconds at a time (GLB parses), and the server's
-    // silence window (rooms.mjs HEARTBEAT_TIMEOUT_MS) must not end a
-    // connection whose join is still queued behind that burst.
-    const startPing = () => {
-      if (roomPingTimer !== null) clearInterval(roomPingTimer);
-      roomPingTimer = setInterval(() => roomClient?.ping(), 4000);
-    };
-    if (ws.readyState === WebSocket.OPEN) {
-      startPing();
-      sendJoin();
-    } else {
-      ws.addEventListener('open', () => {
-        startPing();
-        sendJoin();
-      });
-    }
-    window.addEventListener('beforeunload', netTeardownRoom);
-    window.__net = () => ({
-      connected: roomJoined,
-      slot: roomClient?.slot ?? null,
-      level: roomClient?.hello?.level ?? null,
-      remoteSlots: roomJoined ? roomClient.remoteSlots() : [],
-      remote: s => roomJoined ? roomClient.remotePlayer(s) : null,
-      snapCount: roomJoined ? roomClient.snapCount() : 0,
-      feed: roomJoined ? [...roomClient.feed] : [],
-      sent: roomJoined ? [...roomClient.sentActions] : [],
-      // The authority's own row for this body, straight off the wire: what
-      // the correction law measured against.
-      self: roomJoined ? roomClient.selfPlayer() : null,
-      // P4's correction ledger: what the last correction measured, how many
-      // have run and how many of those had to be hard-set. A healthy room
-      // walks with `hardCorrections` at 0 and `error` in centimetres.
-      correction: netLastCorrection,
-      corrections: netCorrectionCount,
-      hardCorrections: netHardCorrectionCount,
-      pending: netReconciler?.pending() ?? 0,
-      ack: netReconciler?.lastAck() ?? 0,
-      sentSeq: roomJoined ? roomClient.sentSeq() : 0,
-      close: netTeardownRoom,
-    });
-    // The E-key seat toggle, exposed the way __deploy and __keys are: the
-    // smoke drives this instead of a pointer-lock keypress.
-    window.__seatToggle = () => {
-      if (optPilot.checked && localPlayer.occupancy) exitSeat();
-      else if (optOnFoot.checked && soldier && captured && nearEntry) enterVehicle(nearEntry);
-    };
-    window.__seat = () => ({
-      pilot: optPilot.checked,
-      onboard: !!localPlayer.occupancy,
-      vehicle: localPlayer.occupancy?.root?.userData?.control ?? null,
-      seat: localPlayer.occupancy ? localPlayer.occupancy.order.indexOf(localPlayer.occupancy.activeSeatId) : null,
-    });
-  } catch (err) {
-    console.warn('room unavailable', err);
-    logToConsole('multiplayer unavailable — playing solo');
-    roomClient = null;
-  }
-}
-
-if (roomCode) joinRoom();
+const room = createNetRoom({
+  get MODELS_BASE() { return MODELS_BASE; }, get announceCapture() { return announceCapture; },
+  get applyVisibility() { return applyVisibility; },
+  get bindDynamicShading() { return bindDynamicShading; }, get bust() { return bust; },
+  get camera() { return camera; }, get captured() { return captured; },
+  get damageVisuals() { return damageVisuals; }, get deployActive() { return deployActive; },
+  get enterVehicle() { return enterVehicle; }, get exitSeat() { return exitSeat; },
+  get extras() { return extras; }, get flags() { return flags; },
+  get hoistCaptureFlag() { return hoistCaptureFlag; }, get loader() { return loader; },
+  get localPlayer() { return localPlayer; }, get lockHeld() { return lockHeld; },
+  get logToConsole() { return logToConsole; }, get manifest() { return manifest; },
+  get nearEntry() { return nearEntry; }, get openDeploy() { return openDeploy; },
+  get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
+  get paintDeployChrome() { return paintDeployChrome; }, get params() { return params; },
+  get renderer() { return renderer; },
+  get roomCapture() { return roomCapture; }, set roomCapture(v) { roomCapture = v; },
+  get scene() { return scene; }, get setDeployTeam() { return setDeployTeam; },
+  get soldier() { return soldier; }, get soldierArmor() { return soldierArmor; },
+  get soldierDead() { return soldierDead; },
+  get syncVehicleSpawnOwnership() { return syncVehicleSpawnOwnership; },
+  get templateNameOf() { return templateNameOf; }, get updateHud() { return updateHud; },
+});
 
 const manifest = await fetch(`${MAPS_BASE}/maps.json${bust()}`)
   .then(r => r.ok ? r.json() : [])
@@ -15207,7 +14799,7 @@ if (!manifest.length) {
   select.addEventListener('change', () => {
     // A room is pinned to the level its server created; switching maps
     // leaves it (P2 — the room's own lobby is the place to pick again).
-    netTeardownRoom();
+    room.netTeardownRoom();
     const entry = manifest.find(e => e.name === select.value);
     if (entry) show(entry);
   });
@@ -15412,26 +15004,26 @@ function frame(dt) {
   // which is a held trigger released every frame below 30 fps. Then the
   // renderer draws the server-confirmed remotes after the local world's
   // readbacks.
-  if (roomJoined && input) {
+  if (room.roomJoined && input) {
     // The ledger's tail holds this frame's ticks (capturePresentationTick
     // pushed one triple each); each word is recorded against the pose of the
     // tick it belongs to, so the authority's `ack` lands on the right one.
-    const owed = Math.min(step.ticks, Math.floor(netTickPoses.length / 3));
-    const base = netTickPoses.length - owed * 3;
+    const owed = Math.min(step.ticks, Math.floor(room.netTickPoses.length / 3));
+    const base = room.netTickPoses.length - owed * 3;
     for (let i = 0; i < step.ticks; i++) {
-      const seq = roomClient.sendInput(input, look);
+      const seq = room.roomClient.sendInput(input, look);
       const at = base + i * 3;
       if (seq && i < owed) {
-        netReconciler?.recordTick(seq, netTickPoses[at], netTickPoses[at + 1],
-          netTickPoses[at + 2]);
+        room.netReconciler?.recordTick(seq, room.netTickPoses[at], room.netTickPoses[at + 1],
+          room.netTickPoses[at + 2]);
       }
     }
   }
   // The ledger is per frame: whatever this frame's ticks produced has either
   // been recorded against a seq or belongs to a frame that sent nothing.
-  if (netTickPoses.length) netTickPoses.length = 0;
-  if (roomJoined && roomRenderer) {
-    roomRenderer.update(dt, roomClient, performance.now());
+  if (room.netTickPoses.length) room.netTickPoses.length = 0;
+  if (room.roomJoined && room.roomRenderer) {
+    room.roomRenderer.update(dt, room.roomClient, performance.now());
   }
 
   // The readbacks: the HP-15 gate answer the camera shells and the mobile UI
@@ -15823,7 +15415,7 @@ const testHooks = installTestHooks({
   get paintScoreboard() { return paintScoreboard; }, get parachuteLog() { return parachuteLog; },
   get params() { return params; }, get playCaptureVoice() { return playCaptureVoice; },
   get referee() { return referee; }, get renderer() { return renderer; },
-  get roomClient() { return roomClient; }, get roomJoined() { return roomJoined; },
+  get roomClient() { return room.roomClient; }, get roomJoined() { return room.roomJoined; },
   get scene() { return scene; }, get scoreFromSpawn() { return scoreFromSpawn; },
   get scoreLayout() { return scoreLayout; }, get scoreboardOpen() { return scoreboardOpen; },
   get scoreboardPlayers() { return scoreboardPlayers; },
