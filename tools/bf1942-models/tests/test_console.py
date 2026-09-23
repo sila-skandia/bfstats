@@ -25,7 +25,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("console_harness.mjs")
-MODULES = {"console.js": VIEWER / "console.js"}
+MODULES = {"console.js": VIEWER / "console.js",
+           "console-view.js": VIEWER / "console-view.js"}
 
 
 def run_harness() -> dict:
