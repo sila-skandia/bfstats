@@ -9,11 +9,11 @@ import { boardRows, boardVars, paintLeaves, listFloor, listGeometry } from './sc
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `bust`, `currentDir`, `deployKit`, `deployRejoin`, `deployTeamId`,
+ * `bots`, `bust`, `currentDir`, `deployKit`, `deployRejoin`, `deployTeamId`,
  * `deployVars`, `drawBitmapText`, `extras`, `fullmapBox`, `hudPack`,
- * `hudPaths`, `loadouts`, `measureText`, `optOnFoot`, `placeHit`, `referee`,
- * `room`, `scoreFromSpawn`, `soldier`, `soldierDead`, `spawnLayout`,
- * `sprite`, `ticketFlagTexture`, `world`.
+ * `hudPaths`, `loadouts`, `measureText`, `optOnFoot`, `placeHit`,
+ * `roomClient`, `roomJoined`, `roomName`, `scoreFromSpawn`, `soldier`,
+ * `soldierDead`, `spawnLayout`, `sprite`, `ticketFlagTexture`, `world`.
  */
 export function createScoreboardScreen(page) {
   const scoreboard = {};
@@ -79,16 +79,16 @@ export function createScoreboardScreen(page) {
    *  latch (`soldierDead`, or no body at all), a bot's destroyed Armor — the
    *  same reads the death cam and `botRespawnTick` make. */
   function scoreboardPlayers() {
-    const inRoom = page.room.roomJoined && page.room.roomClient;
+    const inRoom = page.roomJoined && page.roomClient;
     const players = [{
-      slot: inRoom ? page.room.roomClient.slot : null,
-      name: page.room.roomName,
-      team: inRoom ? (page.room.roomClient.hello?.team === 1 ? 1 : 2) : page.deployTeamId,
+      slot: inRoom ? page.roomClient.slot : null,
+      name: page.roomName,
+      team: inRoom ? (page.roomClient.hello?.team === 1 ? 1 : 2) : page.deployTeamId,
       local: true,
       kit: page.deployKit,
       dead: !page.soldier || !!page.soldierDead,
     }];
-    for (const bot of page.referee.bots) {
+    for (const bot of page.bots) {
       players.push({
         slot: null,
         name: bot.name,
@@ -99,8 +99,8 @@ export function createScoreboardScreen(page) {
       });
     }
     if (inRoom) {
-      for (const slot of page.room.roomClient.remoteSlots()) {
-        players.push({ slot, name: page.room.roomClient.nameOf(slot), team: page.room.roomClient.teamOf(slot) });
+      for (const slot of page.roomClient.remoteSlots()) {
+        players.push({ slot, name: page.roomClient.nameOf(slot), team: page.roomClient.teamOf(slot) });
       }
     }
     return players;
@@ -137,8 +137,8 @@ export function createScoreboardScreen(page) {
   function paintScoreboard(force = false) {
     const data = scoreLayout.data;
     if (!data || !scoreboardOpen()) return;
-    const inRoom = !!(page.room.roomJoined && page.room.roomClient);
-    const rows = boardRows(scoreboardPlayers(), inRoom ? page.room.roomClient.feed : []);
+    const inRoom = !!(page.roomJoined && page.roomClient);
+    const rows = boardRows(scoreboardPlayers(), inRoom ? page.roomClient.feed : []);
     const s = scoreboardScale();
     const key = JSON.stringify([rows, s.W, s.H, page.scoreFromSpawn, scoreboard.scoreHoverDone, inRoom,
                                 page.currentDir, page.hudPack.sprites.size]);
@@ -165,7 +165,7 @@ export function createScoreboardScreen(page) {
       fromSpawn: page.scoreFromSpawn,
       inRoom,
       alive: page.deployRejoin || (page.optOnFoot.checked && !!page.soldier),
-      serverName: inRoom ? String(page.room.roomClient.hello?.room ?? '') : '',
+      serverName: inRoom ? String(page.roomClient.hello?.room ?? '') : '',
       serverIp: inRoom ? location.host : '',
       mapName: page.extras.level || page.currentDir || '',
       axisFlag: page.ticketFlagTexture(1),
