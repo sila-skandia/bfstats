@@ -136,6 +136,7 @@ nearest enemy flag), `flags` (`name`, `team`, `pos`, `radius`,
 | `redeploy` | `bot`, `side`, `flag`, `pos` (the 12 s no-progress redeploy) |
 | `strategy` | `side`, `from`, `to` |
 | `vehicle_destroyed` / `vehicle_respawn` | `vehicle`, `template` |
+| `bot_error` | `bot`, `side`, `message`, `at` (the top stack frames), `beh`: a bot's tick threw; the first time per bot and message (the count is in `perBot.errors`) |
 
 `{"k":"sample", "t", "tickets":{1,2}, "flags":{0,1,2}, "alive":{1,2},
 "mounted":{1,2}, "owners":[...]}` — every `--sample-every` seconds; `flags`
@@ -153,9 +154,10 @@ in header order (control points only).
 `kills`, `deathsPerCapture`, `vehicleUtilisation` (`mountedShare` = mounted
 bot-seconds / alive bot-seconds, `mounts`, `mountsByTemplate`, `destroyed`),
 `routeFailures` (total and per bot), `redeploys`, `strategyChanges`,
-`behaviourShare` (bot-seconds per active behaviour); `perBot` (kills, deaths,
-shots, hits, captures, route failures, redeploys, mounts, seconds alive and
-mounted, seconds per behaviour); `trace` (`lines`, `sha256`); `runtime`.
+`botErrors`, `behaviourShare` (bot-seconds per active behaviour); `perBot`
+(kills, deaths, shots, hits, captures, route failures, redeploys, mounts,
+seconds alive and mounted, seconds per behaviour, errors and their
+messages); `trace` (`lines`, `sha256`); `runtime`.
 
 ## What the runner adds around the bots
 
@@ -164,9 +166,14 @@ page-side referee is copied from `map.html` because the page is not a module;
 `match.mjs`'s header lists each function it mirrors (`tickBots`,
 `botRespawnTick`, `botFireTick`, `resolveBotShot`, `botMagazineTick`,
 `applyDamageToBot`, `botDamageLanded`, `resolveBotHeal`, `botCaptureTick`,
-`buildBotCovers`, `botOccupiedUnits`, `botUnitInfo`, `botVehicleTick`,
-`botEnterVehicle`, `botLeaveVehicle`, `botVehicleCandidates`). A change to
-one of those in the page needs the same change here.
+`buildBotCovers`, `botOccupiedUnits`, `botUnitInfo`, `botStrategicUnit`,
+`botVehicleTick`, `botEnterVehicle`, `botLeaveVehicle` with their
+`botChangedUnit` calls, `botVehicleCandidates`). A change to one of those in
+the page needs the same change here.
+
+**A throwing bot tick** ends the page's `frame()`; the runner catches it per
+bot, records a `bot_error` event and carries on with the next bot, so one
+broken path shows up in the trace instead of ending the match.
 
 **Cadence.** The runner ticks every bot once per 30 Hz world tick. The page
 ticks them once per display frame, so the tick-counted constants (the stall
@@ -196,11 +203,22 @@ Runner-only, labelled SIM in the code:
 
 ## First findings
 
-From the runs made while building it (El Alamein, 8 a side, seed 3, 600 s;
-bot_1, t = 166.8 .. 167.9 s):
+From the runs made while building it (El Alamein, 8 a side, seed 3, 600 s,
+and the synthetic level):
+
+- **A medic with a strategic order throws** (`wp.inside is not a function`,
+  `bot.js _urgencySpecial`) as soon as a wounded friend passes the medic's
+  filters: `strategic.js _order` stopped giving its order an `inside` in
+  `ee729113`. Synthetic level, seed 1: 248 throws in 30 s. The same change
+  makes `_insideOrderedArea` always true, so the outside-area factors of
+  Fire and Change no longer apply.
+- El Alamein never changes strategy (0 changes in 600 s): every condition of
+  its prerequisites is Required, and a passing Required condition adds
+  nothing to the score (`strategic.js _evaluatePrerequisite`), so every
+  strategy scores 0 and each side keeps `broad`.
 
 - **A bot cycles in and out of a Willy's passenger seat every 0.37 s** (62
-  mounts in 10 minutes). Seated in the undriven seat, Change's best is
+  mounts in 10 minutes; bot_1, t = 166.8 .. 167.9 s). Seated in the undriven seat, Change's best is
   another Willy's driver seat, so it exits; on foot, the best is the seat it
   just left. Two things in `bot.js` let it: the 15 s left-unit ramp never
   applies, because `dismount()` stores the seat candidate's id
