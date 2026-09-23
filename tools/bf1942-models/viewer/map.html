@@ -980,8 +980,9 @@ import {
   CHASE_BEHIND, CHASE_AHEAD, CHASE_RADIUS_SCALE, boundingRadius, chaseTarget,
   chaseStep, chaseEye, chaseLawFor,
 } from './chase-camera.js';
-import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
-         findWeaponSpecsByFireArms, WEAPON_HEADROOM } from './engine-audio.js';
+import { WEAPON_HEADROOM } from './engine-audio.js';
+import { VehicleAudioRack, bareFireArmsName } from './vehicle-audio.js';
+import { WorldFire } from './world-fire.js';
 import { GunFire } from './gunfire.js';
 import { idleFirePose, idleFireState } from './idle-vehicle.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
@@ -4318,6 +4319,11 @@ async function modelSoundBuffer(relPath) {
 function disposeSounds() {
   soundsGeneration++;
   disposeEngineAudio();
+  // Bots' gunfire goes with the level too, but not with a single wreck:
+  // `killOccupantInWreck` also runs `disposeEngineAudio`, and a bot's rifle
+  // must outlive the player's own hull.
+  worldFire?.dispose();
+  worldFire = null;
   // Every pooled effect voice, armed latch and looping wreck fire, gone —
   // called from both of `show()`'s own teardown points (directly, and again
   // through `setupSounds`), so a level change is the one place the whole
@@ -4489,328 +4495,101 @@ async function setupSounds(report, dir) {
 
 // --- engine audio -----------------------------------------------------------
 //
-// The flown vehicle's own engine, played from the `.ssc` the extractor shipped
-// in `scene.json`. `engine-audio.js` owns the graph and the curve evaluation;
-// everything here is the seam — which node the voices hang off, what the
-// control channels are worth this frame, and the lifecycle rules the ambient
-// path already established (nothing starts inside an async gap, nothing
-// survives a map change).
+// Every occupied hull's own engine and guns, played from the `.ssc` the
+// extractor shipped in `scene.json`. `engine-audio.js` owns the graph and the
+// curve evaluation, `vehicle-audio.js` owns the rack — one entry per vehicle,
+// claimed by the seats occupied on it — and everything here is the seam:
+// which hull is claimed when someone boards, what the control channels are
+// worth this frame, and the lifecycle rules the ambient path already
+// established (nothing starts inside an async gap, nothing survives a map
+// change).
+//
+// The FPOV assumption is gone. A bot in the driver's seat of a Sherman is a
+// claimed hull like the player's own: its Engine `.ssc` runs off its own
+// `state.throttle`, its guns gate on the groups its crew fires, and the
+// listener is the camera wherever it is. Two Shermans are two notes; a
+// driver and a hull gunner in one Sherman are one.
 
-let engineAudio = null;
-// Bumped by disposeEngineAudio, for the same reason soundsGeneration exists: an
-// in-flight load must be able to tell that it has been superseded, or a rapid
-// pilot toggle leaks a running engine that dispose can no longer reach.
-let engineGeneration = 0;
-let engineNode = null;
 let currentDir = '';
-// `Acceleration` is a control source in its own right — the Corsair's right
-// cockpit whine pitches off it — and the flight model publishes velocity, not
-// acceleration, so it is differenced here. Raw frame differences are mostly
-// numerical noise, hence the one-pole smoothing.
-const enginePrevVelocity = new THREE.Vector3();
-const engineScratch = new THREE.Vector3();
-let engineAccel = 0;
-const ACCEL_SMOOTHING = 5;          // 1/s
-const engineWorldPos = new THREE.Vector3();
-const engineWorldQuat = new THREE.Quaternion();
-const weaponWorldPos = new THREE.Vector3();
-const weaponWorldQuat = new THREE.Quaternion();
-// The longest shut-down one-shot in the vanilla set is willyenginestp at
-// 1.94 s; the loops are gone 0.2 s in.
-const ENGINE_RELEASE_MS = 2400;
+/** The rack. Built once at first use; `disposeSounds` disposes it on a level
+ *  change and the next claim rebuilds. */
+let vehicleAudio = null;
 
-// The guns, from the same `.ssc` machinery as the engine.
-//
-// `CorsairMG.ssc` is a six-patch weapon script whose first five patches are
-// `silence.wav`; the extractor ships only the one that is not, the Fire Loop,
-// and its four layers are two pairs that hand over on distance — CAMG1/CAMG2
-// up to 4 m, CAMGdist/BFMGdist from 4 m out to 250. So the cockpit hears the
-// gun and a chase camera hears the same gun from outside, and neither costs
-// this page a decision: the ramps are in the data and `EngineAudio` already
-// evaluates them.
-//
-// The loops run from the moment the patch is built and are muted by gain
-// alone, which is the one-voice-per-role rule the hall-echo postmortem left
-// behind (`map-sounds.md`). Starting and stopping a buffer source per trigger
-// pull would restart its loop phase against the other layer every time and
-// comb; holding it and moving the bus cannot. It also means a held Space adds
-// no voices at all, which is the thing worth asserting headlessly.
-let weaponAudio = [];
+function ensureVehicleAudio() {
+  if (vehicleAudio && !vehicleAudio.disposed) return vehicleAudio;
+  vehicleAudio = new VehicleAudioRack({
+    listener: () => ensureListener(),
+    getBuffer: (dir, relPath) => soundBuffer(dir, relPath),
+    report: () => extras ?? null,
+    dir: () => currentDir,
+    master: () => masterVolume(),
+  });
+  return vehicleAudio;
+}
+
+/** A seat came aboard a hull (the player's mount, or a bot's). */
+function claimVehicleAudio(seatKey, node, drive, groups) {
+  if (AUDIO_OFF || !node) return;
+  ensureAudioContext();
+  const rack = ensureVehicleAudio();
+  rack.claim({
+    seatKey,
+    node,
+    template: node.userData?.control || node.name,
+    drive: drive ?? null,
+    groups: groups ?? [],
+  });
+}
+
+/** A seat left. The hull keeps sounding while anyone remains aboard. */
+function releaseVehicleAudio(seatKey, node) {
+  vehicleAudio?.releaseClaim(seatKey, node);
+}
 
 function disposeEngineAudio() {
-  engineGeneration++;
-  if (engineAudio) {
-    engineAudio.dispose();
-    engineAudio = null;
-  }
-  for (const weapon of weaponAudio) weapon.audio.dispose();
-  weaponAudio = [];
-  engineNode = null;
-  engineAccel = 0;
-  enginePrevVelocity.set(0, 0, 0);
+  vehicleAudio?.dispose();
+  vehicleAudio = null;
 }
 
-async function setupEngineAudio() {
-  disposeEngineAudio();
-  const gen = engineGeneration;
-  const vehicle = aircraft || car;
-  if (!vehicle || AUDIO_OFF) return;
-  const template = vehicle.node.userData?.control || vehicle.node.name;
-  const spec = findEngineSpec(extras, template);
-  if (!spec) {
-    // A stale scene.json, a vehicle with no Engine sound script and an
-    // unpublished wav are otherwise indistinguishable — which is exactly the
-    // failure that made every map but Wake look silent last time.
-    console.info(`no engine sound for ${template}: re-extract this map if it `
-                 + 'predates the vehicle-sound pipeline');
-    // The guns are not the engine's to lose. They hang off the same report
-    // entry, so a template missing from `sounds.vehicles` used to take the
-    // whole seat silent — no engine note *and* no report when you fired,
-    // which is how a Bocage PanzerIV or a Stalingrad Hanomag read as
-    // completely dead. But a gun patch is looked up by FireArms node name,
-    // and the same `.ssc` was almost always extracted next to some other
-    // vehicle on the same map that carries that gun, so the patches are
-    // usually right there in the report under a different template. Try
-    // that before giving up: a map whose data is a re-extraction behind at
-    // least still shoots audibly.
-    const arms = listSeatFireArms(vehicle.node);
-    const byName = findWeaponSpecsByFireArms(extras, arms).map(found => {
-      const local = arms.find(a => a === found.fireArms
-                                   || a === `${found.fireArms}_unlimited`);
-      return local ? { ...found, fireArms: local } : found;
-    });
-    if (byName.length) {
-      await setupWeaponAudio(gen, currentDir, template, vehicle.node, byName);
-    }
-    return;
-  }
-  // The voices hang off the `Engine` node the script is bound to, not the
-  // vehicle origin: on a Corsair that is the propeller hub at z -4.15, four
-  // metres ahead of the pilot's ear, which is where the noise actually is.
-  engineNode = vehicle.node.getObjectByName(spec.engine) || vehicle.node;
-  const dir = currentDir;
-  const built = await loadEngineAudio(spec, {
-    listener: ensureListener(),
-    getBuffer: (relPath) => soundBuffer(dir, relPath),
+/**
+ * Gunfire from anyone who is not the player's own first-person ear.
+ *
+ * `playHandFire` stays the shooter's path (one muzzle pick, 2D, at the
+ * shoulder). A bot across the field needs the whole fire patch — the near and
+ * far layers hand over on `Volume <- Distance` — spatialised at the shooter,
+ * which is what `world-fire.js` plays out of the `layers` the weapon
+ * extractor now ships beside the first-person pick. Built lazily off the same
+ * `weapons.json` the hand path already fetches.
+ */
+let worldFire = null;
+
+async function ensureWorldFire() {
+  if (worldFire && !worldFire.disposed) return worldFire;
+  if (AUDIO_OFF) return null;
+  const manifest = await weaponSoundsManifest();
+  if (!manifest) return null;
+  if (worldFire && !worldFire.disposed) return worldFire;
+  ensureAudioContext();
+  worldFire = new WorldFire({
+    listener: () => ensureListener(),
+    getBuffer: (relPath) => modelSoundBuffer(relPath.startsWith('sounds/')
+      ? relPath : `sounds/${relPath}`),
+    manifest,
+    master: () => masterVolume(),
   });
-  if (!built) return;
-  // Decoding took several awaits; anything could have happened. Nothing has
-  // been started yet, so a superseded load is thrown away silently.
-  if (gen !== engineGeneration || (!aircraft && !car)) {
-    built.dispose();
-    return;
-  }
-  engineAudio = built;
-  engineAudio.setMaster(masterVolume());
-  engineAudio.start();
-  await setupWeaponAudio(gen, dir, template, vehicle.node);
+  return worldFire;
 }
 
-/**
- * Build and start every gun patch this vehicle (or bare manned mount) carries.
- *
- * Shares the engine's generation counter rather than keeping its own: the guns
- * are only ever set up and torn down with the seat they are bolted to, so a
- * second counter would be two names for one fact.
- *
- * `visualRoot` is the drivetrain's node or a furniture gun's occupancy root —
- * the FireArms names hang under either the same way.
- */
-async function setupWeaponAudio(gen, dir, template, visualRoot, specs) {
-  const list = specs ?? findWeaponSpecs(extras, template);
-  if (!list.length || !visualRoot) return;
-  const built = [];
-  for (const spec of list) {
-    const audio = await loadEngineAudio(spec, {
-      listener: ensureListener(),
-      getBuffer: (relPath) => soundBuffer(dir, relPath),
-      // The gun bus keeps its own scale. Measured against the hand weapon it
-      // is already where it should be — a Sherman's coaxial Browning peaks at
-      // 0.654 to the BAR's 0.596 — and the one patch that ran past full scale
-      // through it, the 20-layer cannon at 1.75, is the limiter's business
-      // now rather than a reason to hold every other gun down.
-      headroom: WEAPON_HEADROOM,
-      // A gun patch is the report of one round, so its one-shots wait for
-      // `trigger()` (spliced onto `guns.onShot` below) instead of firing once
-      // at setup and leaving nothing behind to un-mute.
-      oneShotsOnTrigger: true,
-    });
-    if (audio) built.push({ spec, audio, node: null });
-  }
-  // Decoding took several awaits. Nothing has been started, so a superseded
-  // load is dropped without ever having made a sound.
-  if (gen !== engineGeneration || !(aircraft || car || occupancy)) {
-    for (const weapon of built) weapon.audio.dispose();
-    return;
-  }
-  for (const weapon of built) {
-    // The voices belong on the gun, not the vehicle origin: a Corsair's guns
-    // are 2.2 m out each wing, and the panner is what puts the rattle there.
-    // `fireArmsNode`, not `getObjectByName`, for the reason spelled out on
-    // `bareFireArmsName`: the second Corsair in a level is `CorsairGuns_1`.
-    weapon.node = fireArmsNode(visualRoot, weapon.spec.fireArms) || visualRoot;
-    weapon.audio.setMaster(0);   // silent until the trigger is pulled
-    weapon.audio.start();
-  }
-  weaponAudio = built;
-}
-
-/**
- * A FireArms node name with the scene-wide instance suffix taken off.
- *
- * The exporter numbers the second and later copy of a vehicle across the
- * whole level, and the numbering reaches every node inside it: the first
- * BF109 on Kasserine fires `BF109Guns`, the second fires `BF109Guns_1`. The
- * *sound* specs are per template (`findWeaponSpecs` keys on the vehicle's
- * `control`), so they only ever carry the bare name — anything matching a
- * spec against a live node has to strip the suffix or it silently misses
- * every instance but the first.
- *
- * That is not hypothetical: `weaponAudioFor` already stripped it, and the
- * gain gate in `updateAudio` did not, so flying the second BF109 or Stuka on
- * a level ran the whole fire patch at master 0. A gun `.ssc` whose layers are
- * all loops (every aircraft's is — the engine authors a Fire Loop held open
- * by the trigger) has nothing but that gate to un-mute it, so the guns fired
- * tracers in silence.
- */
-function bareFireArmsName(name) {
-  return String(name || '').replace(/_\d+$/, '');
-}
-
-/**
- * Every FireArms node name under `root`, bare of the instance suffix.
- *
- * `findWeaponSpecs` keys on the vehicle's template, so it has nothing to say
- * about a vehicle the report does not list. This is the other way in: the
- * scene itself knows which guns are bolted to the thing you are sitting in,
- * and `findWeaponSpecsByFireArms` can find those patches wherever in the
- * report they were extracted.
- */
-function listSeatFireArms(root) {
-  if (!root) return [];
-  const names = new Set();
-  root.traverse(obj => {
-    if (obj.userData?.fireArms && obj.name) {
-      names.add(bareFireArmsName(obj.name));
-    }
+/** One round from a bot's hand weapon, at the bot. Fire-and-forget. */
+function playWorldShot(weaponName, x, y, z) {
+  if (!weaponName || AUDIO_OFF) return;
+  ensureWorldFire().then(fire => {
+    fire?.play(weaponName, { x, y, z });
   });
-  return [...names];
-}
-
-/** The FireArms node under `root` a spec's bare name refers to. */
-function fireArmsNode(root, fireArms) {
-  if (!root || !fireArms) return null;
-  const exact = root.getObjectByName(fireArms);
-  if (exact) return exact;
-  let found = null;
-  root.traverse(obj => {
-    if (!found && obj.name && bareFireArmsName(obj.name) === fireArms) found = obj;
-  });
-  return found;
-}
-
-/** The live gun group a weapon patch belongs to, tolerating that suffix. */
-function firingGroupFor(fireArms) {
-  const matches = group => bareFireArmsName(group.node.name) === fireArms;
-  return vehicleGuns.find(matches) || mannedGuns.find(matches) || null;
-}
-
-/**
- * Bare furniture mounts (MG42 / Browning) have no Engine `.ssc`, so the map
- * report never lists them under `sounds.vehicles`. Reuse layers already
- * extracted for the same FireArms on a tank/ship, then start them the same
- * way a drivetrain's guns start.
- */
-async function setupMannedWeaponAudio() {
-  if (!occupancy || AUDIO_OFF) return;
-  disposeEngineAudio();
-  const gen = engineGeneration;
-  const root = occupancy.root;
-  const template = root.userData?.control || root.name;
-  let specs = findWeaponSpecs(extras, template);
-  if (!specs.length) {
-    const arms = occupancy.activeFireArmsNodes()
-      .map(n => n.name?.replace(/_\d+$/, ''))
-      .filter(Boolean);
-    // Alias layers (Sherman's `Browning`) onto this mount's real node name
-    // (`Browning_unlimited`) so getObjectByName and the firing lookup agree.
-    specs = findWeaponSpecsByFireArms(extras, arms).map(spec => {
-      const local = arms.find(a =>
-        a === spec.fireArms || a === `${spec.fireArms}_unlimited`);
-      return local ? { ...spec, fireArms: local } : spec;
-    });
-  }
-  if (!specs.length) return;
-  await setupWeaponAudio(gen, currentDir, template, root, specs);
-}
-
-/**
- * Stop the engine the way the script expects: release, then tear down.
- *
- * `trigger Release` layers (the shut-down rattle) only play on release, and
- * every loop carries a `Volume <- TimeRelease` fade, so the graph has to stay
- * alive past the toggle. The generation guard is what stops a re-enable inside
- * the tail from being killed by the pending teardown.
- */
-function stopEngineAudio() {
-  // The release is the engine bus's; the teardown that follows it is every
-  // bus's. `if (!engineAudio) return` skipped both, and the guns are not the
-  // engine's to lose here any more than they are in `setupEngineAudio`, whose
-  // no-spec branch builds weapon patches for a template that has no Engine
-  // sound script at all. Leaving on that branch left those voices started, on
-  // their own panners at the gun nodes of a vehicle nobody is in, until the
-  // next entry's `disposeEngineAudio` happened to come along -- which on a
-  // level where the player never enters another vehicle is never. Silent
-  // (`updateAudio` holds a patch with loops at master 0 once no group of its
-  // is firing) but held, which is the same latch this stream is closing
-  // everywhere else.
-  engineAudio?.release();
-  const gen = engineGeneration;
-  setTimeout(() => {
-    if (gen === engineGeneration) disposeEngineAudio();
-  }, ENGINE_RELEASE_MS);
 }
 
 function masterVolume() {
   return optSound.checked ? parseFloat(optSoundVol.value) : 0;
-}
-
-/** Everything the `.ssc` control sources are worth this frame. */
-function engineControl(dt) {
-  const state = (aircraft || car)?.state;
-  if (engineNode) {
-    engineNode.getWorldPosition(engineWorldPos);
-    engineNode.getWorldQuaternion(engineWorldQuat);
-  }
-  let speed = 0;
-  let diveAngle = 0;
-  if (state) {
-    speed = state.airspeed || state.velocity.length();
-    if (dt > 0) {
-      const a = engineScratch.copy(state.velocity).sub(enginePrevVelocity).length() / dt;
-      engineAccel += (a - engineAccel) * Math.min(1, dt * ACCEL_SMOOTHING);
-      enginePrevVelocity.copy(state.velocity);
-    }
-    // `Engine::DiveAngle` is fed by the engine object and the vanilla ramps
-    // span 0.2..1, so it is read here as the sine of the flight path's descent
-    // angle — 1 straight down, 0.2 about 12 degrees nose-down, which is where
-    // the dive scream starts to come in. Inferred, not read out of the data.
-    if (speed > 1) diveAngle = Math.max(0, -state.velocity.y / speed);
-  }
-  return {
-    dt,
-    // The already-spooled engine value, NOT the stick. Aircraft chase the
-    // pedal at Physics.con's slew rate; cars write gearbox revs (with a
-    // stationary pedal floor); tanks write the feedbackLoop load reading.
-    // Land `.ssc` scripts read the same value as controlSource Default.
-    rpm: state ? state.throttle : 0,
-    speed,
-    acceleration: engineAccel,
-    diveAngle,
-    position: engineWorldPos,
-    quaternion: engineWorldQuat,
-    listenerPosition: camera.position,
-  };
 }
 
 // Sitting in a vehicle, its engine is essentially all you can hear — the map's
@@ -4830,37 +4609,12 @@ function updateAudio(dt = 0) {
   const duckTarget = (optPilot.checked && (aircraft || car)) ? AMBIENT_DUCK : 1;
   ambientDuck += (duckTarget - ambientDuck)
     * (dt > 0 ? Math.min(1, dt / AMBIENT_DUCK_TAU) : 1);
-  if (engineAudio) {
-    engineAudio.setMaster(master);
-    engineAudio.update(engineControl(dt));
-  }
-  for (const weapon of weaponAudio) {
-    // The trigger comes from the gun runtime rather than the key, so a weapon
-    // that has run its magazine dry or is not the seat's gun stays quiet for
-    // the same reason it stops drawing tracers. Nested / bare seats fire from
-    // `mannedGuns`, not `vehicleGuns` — looking only at the latter silenced
-    // every hull Browning and stationary MG. The name match goes through
-    // `bareFireArmsName` for the reason spelled out there: an exact compare
-    // silenced every instance of a vehicle but the first.
-    const group = firingGroupFor(weapon.spec.fireArms);
-    // A gain gate is only meaningful for a patch that has something running to
-    // gate. A gun built entirely out of one-shots — which is every gun on this
-    // map — is silent between rounds on its own, and holding its master at 0
-    // between them would mute the very shot `trigger()` just started.
-    weapon.audio.setMaster(weapon.audio.hasLoops && !group?.firing ? 0 : master);
-    if (weapon.node) {
-      weapon.node.getWorldPosition(weaponWorldPos);
-      weapon.node.getWorldQuaternion(weaponWorldQuat);
-    }
-    // No control channel in a weapon patch reads anything but Distance and
-    // Default, both of which the module derives itself, so the gun needs none
-    // of the engine's rpm/speed/dive plumbing.
-    weapon.audio.update({
-      dt,
-      position: weaponWorldPos,
-      quaternion: weaponWorldQuat,
-      listenerPosition: camera.position,
-    });
+  // Every claimed hull at once: the player's own, and every bot-driven one
+  // within earshot. The rack holds the far ones at master 0 and evaluates
+  // each patch's own `Volume <- Distance` ramps against the camera.
+  if (vehicleAudio) {
+    vehicleAudio.playerGroups = [...(vehicleGuns ?? []), ...(mannedGuns ?? [])];
+    vehicleAudio.update(dt, camera.position);
   }
   if (handFireBus) {
     // The hand-shot bus tracks the master like the engine bus does, and is
@@ -7594,14 +7348,14 @@ function setPilot(on, node = null, seatId = null) {
       // same call on a map load is not one, and resume() there fails
       // harmlessly until the fly gate is clicked. A bare gun/seat root has
       // no engine to loop audio for at all.
-      ensureAudioContext();
-      setupEngineAudio();
+      claimVehicleAudio('local', aircraft?.node ?? car.node, aircraft || car,
+                        [...(vehicleGuns ?? []), ...(mannedGuns ?? [])]);
     } else {
       // Furniture MG / Browning: no drivetrain voice, but the FireArms still
       // have patches (often already extracted next to a tank/ship that
       // carries the same gun).
-      ensureAudioContext();
-      setupMannedWeaponAudio();
+      claimVehicleAudio('local', occupancy.root, null,
+                        [...(vehicleGuns ?? []), ...(mannedGuns ?? [])]);
     }
     // Back into three's matrix walk for the ride (freezeStatics) — the whole
     // vehicle, not just the seat, since a nested seat's own turret is a
@@ -7616,9 +7370,9 @@ function setPilot(on, node = null, seatId = null) {
     }
   }
   if (!on && occupancy) {
+    releaseVehicleAudio('local', occupancy.root);
     if (aircraft || car) {
       const vehicle = aircraft || car;
-      stopEngineAudio();
       releaseGuns();
       disposeSeatPose();
       vehicle.reset();
@@ -7634,8 +7388,9 @@ function setPilot(on, node = null, seatId = null) {
     } else {
       // Splices `mannedGuns` out of `guns.groups` too (see `leaveManned`'s
       // own comment on why a bare `setFiring(false)` loop is not enough).
+      // The player's claim is already released above; the hull stays sounding
+      // for any bot crew that is still aboard.
       releaseGuns();
-      disposeEngineAudio();
     }
     freezeVehicle(occupancy.root);   // parked at its spawn: furniture again
     clearVehicleHud();
@@ -8365,7 +8120,7 @@ function enterVehicle(entry) {
 function leaveVehicle() {
   const vehicle = aircraft || car;
   if (!vehicle) return;
-  stopEngineAudio();
+  releaseVehicleAudio('local', vehicle.node);
   releaseGuns();
   // The seated occupant goes with the seat. This is the E-key exit; the debug
   // pilot toggle's own path disposes him too, and `exitManned` does, but this
@@ -8572,6 +8327,7 @@ function leaveManned() {
     // the hull the gunner never drove — parked where she lies, velocity
     // carried over, never zeroed.
     const vehicle = aircraft || car;
+    releaseVehicleAudio('local', vehicle.node);
     vehicle.state.throttle = 0;
     vehicle.setInput('c_PIThrottle', 0);
     vehicle.setInput('c_PIYaw', 0);
@@ -8585,7 +8341,6 @@ function leaveManned() {
     vehicle.applyRig();
     freezeVehicle(vehicle.node);
     releaseDrivenBody(vehicle);
-    disposeEngineAudio();
     clearVehicleHud();
     occupancy = null;
     view = null;
@@ -8595,7 +8350,7 @@ function leaveManned() {
     rebuildVehicleInterp();
     return;
   }
-  disposeEngineAudio();
+  releaseVehicleAudio('local', occupancy.root);
   freezeVehicle(occupancy.root);
   clearVehicleHud();
   occupancy = null;
@@ -9407,6 +9162,7 @@ function tickBots(dt) {
     if (botRespawnTick(bot, dt)) continue;   // dead and waiting out its timer
     bot.waypoints = botStrategy?.waypointsOf(bot.playerId) ?? null;
     bot.tick(dt, botClock);
+    botFootstepTick(bot, dt);
     // The player's shot: heard inside the weapon's sound radius, and
     // incoming fire when it lands nearby.
     if (playerFired && playerPos) {
@@ -9530,6 +9286,13 @@ function botDamageLanded(playerId, lost, attackerId = LOCAL_PLAYER, attackerPos 
   if (bot) {
     const from = attackerPos ?? (soldier ? [soldier.x, soldier.y, soldier.z] : null);
     bot.onIncomingFire(attackerId, from, botClock, true, 1);
+    // The grunt is the soldier's, not the shooter's: positional, so a bot
+    // hit across the field is a distant cry rather than a 2D overlay. Same
+    // cooldown as the player's own hurt sound so a burst does not stack.
+    if (!armor.destroyed && lost > 0) {
+      const at = bot.getPosition();
+      playSoldierHurtSound(false, { x: at[0], y: at[1] + 1.2, z: at[2] });
+    }
   }
   if (!armor.destroyed) return;
   if (!bot) return;
@@ -9810,6 +9573,13 @@ function botWeaponDataOf(bot) {
 function loadBotWeapons(bot) {
   const names = new Set((bot.weapons ?? []).map(w => w.name).filter(Boolean));
   if (bot.kitPrimary) names.add(bot.kitPrimary);
+  // Warm the world-fire pool for the kit while the glb loads, so the bot's
+  // first shot is not the one that pays for its own decode.
+  if (names.size) {
+    ensureWorldFire().then(fire => {
+      for (const name of names) fire?.prime(name);
+    });
+  }
   return Promise.all([...names].map(name => botWeaponData(name).then(data => {
     if (data) bot.setWeaponData(name, data);
   })));
@@ -10240,6 +10010,13 @@ function botEnterVehicle(bot, cand) {
     hullMaxSpeed: botVehicleAiOf(node)?.maxSpeed ?? 0,
     driverOf: () => botDriverOf(node),
   }, botClock);
+  // The hull sounds now. The driver's claim carries the drivetrain (and so
+  // the Engine `.ssc`); a passenger's carries only its guns, and the rack
+  // keeps one set of patches per hull either way. This is the FPOV gap: a
+  // bot's Sherman used to drive in silence because only the local player's
+  // seat was ever claimed.
+  claimVehicleAudio(`bot:${bot.playerId}`, node, drive,
+                    [...(groups ?? []), ...(manned ?? [])]);
   const vis = botVisuals.get(bot.playerId);
   if (vis) vis.group.visible = false;
   if (BOT_DEBUG) console.log(`[bots] ${bot.playerId} takes the ${cand.template} ${cand.drives ? 'driver seat' : 'seat ' + cand.seatId}`);
@@ -10250,6 +10027,7 @@ function botEnterVehicle(bot, cand) {
 function botLeaveVehicle(bot, { killed = false, silent = false } = {}) {
   const m = bot.vehicle;
   if (!m) return;
+  releaseVehicleAudio(`bot:${bot.playerId}`, m.node);
   for (const group of [...(m.groups ?? []), ...(m.manned ?? [])]) guns.release(group);
   const drive = m.drive;
   let p;
@@ -10378,6 +10156,38 @@ function applyHealToPlayer(playerId, amount) {
   }
 }
 
+/**
+ * A bot's own bootfalls, for a listener who is not wearing them.
+ *
+ * The player's steps come off `soldier.drainFootstepEvents()`, a clock in the
+ * first-person soldier. A bot has no such body, so the cadence is driven here
+ * from how far the controller actually moved. The periods are the engine's,
+ * verbatim from `Objects/Soldiers/Common/Sounds/SoldierSound.inc`:
+ * `setRunFrequency 0.36`, `setWalkFrequency 0.66` (the crawl's 0.6 and the
+ * crouch's 0.50 are not distinguished here — a bot's gait is its speed).
+ * Positional, so a squad crossing a field is a line of small boots rather
+ * than one 2D overlay; `handleSoldierFootstep` does the surface pick.
+ */
+const BOT_GAIT_RUN = 0.36;
+const BOT_GAIT_WALK = 0.66;
+function botFootstepTick(bot, dt) {
+  if (bot.vehicle || AUDIO_OFF || masterVolume() <= 0) return;
+  const at = bot.getPosition();
+  const prev = bot._stepFrom;
+  bot._stepFrom = [at[0], at[1], at[2]];
+  if (!prev) return;
+  const dx = at[0] - prev[0], dy = at[1] - prev[1], dz = at[2] - prev[2];
+  const speed = Math.hypot(dx, dy, dz) / Math.max(dt, 1e-6);
+  if (speed < 0.4) { bot._stepPhase = 0; return; }
+  const period = speed > 3 ? BOT_GAIT_RUN : BOT_GAIT_WALK;
+  bot._stepPhase = (bot._stepPhase ?? Math.random()) + dt / period;
+  if (bot._stepPhase < 1) return;
+  bot._stepPhase -= 1;
+  handleSoldierFootstep(
+    { x: at[0], y: at[1], z: at[2], gait: speed > 3 ? 'run' : 'walk' },
+    { x: at[0], y: at[1], z: at[2] });
+}
+
 function botFireTick(dt) {
   if (!botControllers.length) return;
 
@@ -10401,6 +10211,12 @@ function botFireTick(dt) {
     // Every round is a sound (`event_soundEmitter`): each bot hears it inside
     // the weapon's AI sound radius, and the shooter goes deaf for 3 s.
     const at = bot.getPosition();
+    // ...and the page hears it too, from where the shooter stands. The
+    // player's own rounds keep `playHandFire`'s first-person ear; a bot's
+    // take the world path, which plays the fire patch's near/far hand-over
+    // rather than the muzzle pick alone.
+    playWorldShot(bot.weaponAi?.name ?? bot.kitPrimary ?? null,
+                  at[0], at[1] + 1.4, at[2]);
     const radius = bot.weaponAi?.soundSphereRadius ?? null;
     for (const other of botControllers) {
       other.onShotFired(bot.playerId, bot.team, at, botClock, radius);
@@ -13220,6 +13036,7 @@ function playHandFire(fire) {
 
 let soldierSoundsIndex = null;
 let lastHurtSoundTime = 0;
+let lastWorldHurtSoundTime = 0;
 let hitIndicatorTimer = 0;
 let hitIndicatorDir = 0;
 let lastSoldierHp = null;
@@ -13234,7 +13051,17 @@ function soldierSoundsManifest() {
   return soldierSoundsIndex;
 }
 
-function playSoldierOneShot(buffer, volume = 1, pitchJitter = 0.03, delay = 0) {
+/**
+ * One soldier sample. `position` is world space when the sound belongs to
+ * someone other than the listener's own body — a bot's footstep or his hurt
+ * grunt. Omitted (or null) is the first-person ear: 2D, at the shoulder, the
+ * way the player's own feet have always played. The soldier manifest carries
+ * no `Volume <- Distance` ramps (it is foley, not a sound script), so a
+ * positional voice takes the panner's own inverse curve with a 1 m reference
+ * and a 40 m cut, which is the band a boot actually reaches across.
+ */
+function playSoldierOneShot(buffer, volume = 1, pitchJitter = 0.03, delay = 0,
+                            position = null) {
   if (!buffer || !audioListener || masterVolume() <= 0) return;
   const ctx = audioListener.context;
   if (ctx.state === 'suspended') return;
@@ -13246,15 +13073,32 @@ function playSoldierOneShot(buffer, volume = 1, pitchJitter = 0.03, delay = 0) {
   const gain = ctx.createGain();
   gain.gain.value = Math.min(Math.max(volume, 0), 1) * masterVolume() * WEAPON_HEADROOM;
   source.connect(gain);
-  gain.connect(audioListener.getInput());
+  let panner = null;
+  if (position) {
+    panner = ctx.createPanner();
+    panner.panningModel = 'HRTF';
+    panner.distanceModel = 'inverse';
+    panner.refDistance = 1;
+    panner.maxDistance = 40;
+    panner.rolloffFactor = 1;
+    panner.positionX.value = position.x;
+    panner.positionY.value = position.y;
+    panner.positionZ.value = position.z;
+    gain.connect(panner);
+  }
+  (panner ?? gain).connect(audioListener.getInput());
   source.onended = () => {
-    try { source.disconnect(); gain.disconnect(); } catch (_) {}
+    try {
+      source.disconnect();
+      gain.disconnect();
+      panner?.disconnect();
+    } catch (_) {}
   };
   const when = delay > 0 ? ctx.currentTime + delay : 0;
   try { source.start(when); } catch (_) {}
 }
 
-async function handleSoldierFootstep(step) {
+async function handleSoldierFootstep(step, position = null) {
   if (AUDIO_OFF || masterVolume() <= 0) return;
   const manifest = await soldierSoundsManifest();
   if (!manifest) return;
@@ -13292,21 +13136,21 @@ async function handleSoldierFootstep(step) {
   if (surfacePatch?.layers?.length) {
     const choice = surfacePatch.layers[Math.floor(Math.random() * surfacePatch.layers.length)];
     const buf = await modelSoundBuffer(`sounds/${choice.sample}.mp3`);
-    if (buf) playSoldierOneShot(buf, choice.volume ?? 1, 0.03, 0);
+    if (buf) playSoldierOneShot(buf, choice.volume ?? 1, 0.03, 0, position);
   }
 
   const fabricPatch = trigger.patches.find(p => p.material === 'fabric');
   if (fabricPatch?.layers?.length) {
     const choice = fabricPatch.layers[Math.floor(Math.random() * fabricPatch.layers.length)];
     const buf = await modelSoundBuffer(`sounds/${choice.sample}.mp3`);
-    if (buf) playSoldierOneShot(buf, (choice.volume ?? 1) * 0.5, 0.03, choice.at ?? 0.2);
+    if (buf) playSoldierOneShot(buf, (choice.volume ?? 1) * 0.5, 0.03, choice.at ?? 0.2, position);
   }
 
   const harnessPatch = trigger.patches.find(p => p.material === 'harness');
   if (harnessPatch?.layers?.length) {
     const choice = harnessPatch.layers[Math.floor(Math.random() * harnessPatch.layers.length)];
     const buf = await modelSoundBuffer(`sounds/${choice.sample}.mp3`);
-    if (buf) playSoldierOneShot(buf, (choice.volume ?? 1) * 0.4, 0.03, choice.at ?? 0.1);
+    if (buf) playSoldierOneShot(buf, (choice.volume ?? 1) * 0.4, 0.03, choice.at ?? 0.1, position);
   }
 }
 
@@ -13318,11 +13162,15 @@ function triggerHitIndicator(direction, intensity = 1.0) {
   gameHud.requestRepaint();
 }
 
-async function playSoldierHurtSound(isFriendlyFire = false) {
+async function playSoldierHurtSound(isFriendlyFire = false, position = null) {
   if (AUDIO_OFF || masterVolume() <= 0) return;
   const now = performance.now() * 0.001;
-  if (now - lastHurtSoundTime < 0.9) return;
-  lastHurtSoundTime = now;
+  // Two cooldowns: the listener's own grunt and the world's. A shared one
+  // meant a bot hit a second after the player took a round played nothing.
+  const last = position ? lastWorldHurtSoundTime : lastHurtSoundTime;
+  if (now - last < 0.9) return;
+  if (position) lastWorldHurtSoundTime = now;
+  else lastHurtSoundTime = now;
 
   const manifest = await soldierSoundsManifest();
   if (!manifest) return;
@@ -13332,7 +13180,7 @@ async function playSoldierHurtSound(isFriendlyFire = false) {
   if (!patch?.layers?.length) return;
   const choice = patch.layers[Math.floor(Math.random() * patch.layers.length)];
   const buf = await modelSoundBuffer(`sounds/${choice.sample}.mp3`);
-  if (buf) playSoldierOneShot(buf, choice.volume ?? 0.7, 0.05, 0);
+  if (buf) playSoldierOneShot(buf, choice.volume ?? 0.7, 0.05, 0, position);
 }
 
 // --- control-point capture voice -------------------------------------------
@@ -13591,22 +13439,11 @@ guns.roundsLeft = group => {
 // the casing, the crew reloading, the breech — so the round is what plays it,
 // exactly as a hand weapon's own `playHandFire` works two screens up. Chained
 // rather than assigned, for the reason the block above spells out.
-chainOnShot(guns, group => weaponAudioFor(group)?.audio.trigger());
-
-/** The gun patch bolted to the FireArms node this group fires, or null.
- *  Matched on the node's own name, tolerating the scene-wide `_N` suffix the
- *  exporter gives the second and later instance of a vehicle — `weaponAudio`
- *  is keyed on the template's bare FireArms name. A plain loop, not `find`:
- *  this runs once per round fired. */
-function weaponAudioFor(group) {
-  const name = group?.node?.name;
-  if (!name || !weaponAudio.length) return null;
-  const bare = bareFireArmsName(name);
-  for (const weapon of weaponAudio) {
-    if (weapon.spec.fireArms === name || weapon.spec.fireArms === bare) return weapon;
-  }
-  return null;
-}
+//
+// `vehicleAudio.trigger` reaches every claimed hull's gun patches, so a bot
+// firing a tank's coax is as loud as the player's own — the FPOV assumption
+// stopped at the engine and the guns have the same hole in them.
+chainOnShot(guns, group => vehicleAudio?.trigger(group?.node));
 
 /**
  * One frame of the weapon: aim blend and FOV, deviation state, the reload
@@ -19459,17 +19296,17 @@ if (params.has('shots')) {
     activeAreaAudios,
     // Headless Chromium will not let anyone listen, so the engine crossfade has
     // to be asserted on the graph: per-layer gain and playback rate, and the
-    // voice count, which is the number the hall-echo bug moved.
-    engine: engineAudio ? engineAudio.snapshot() : null,
-    // Same reason as the engine, plus one of its own: a gun patch is gated by
-    // gain per trigger pull, so "no voice was added while Space was held" is
-    // the assertion that keeps the hall-echo bug from coming back through the
-    // weapons.
-    weapons: weaponAudio.map(w => ({
-      fireArms: w.spec.fireArms,
-      node: w.node?.name ?? null,
-      ...w.audio.snapshot(),
-    })),
+    // voice count, which is the number the hall-echo bug moved. One entry per
+    // claimed hull — the player's own and every bot-driven one — so a test can
+    // assert that a bot's Sherman is sounding at all.
+    vehicles: vehicleAudio ? vehicleAudio.snapshot() : null,
+    engine: vehicleAudio?.vehicles.size
+      ? [...vehicleAudio.vehicles.values()].find(v => v.engineAudio)?.engineAudio?.snapshot() ?? null
+      : null,
+    // Bots' gunfire, pooled per weapon. `fallback: true` on a weapon means
+    // the tree's `weapons.json` predates `layers` and is playing the
+    // first-person pick under a stand-in Distance ramp.
+    worldFire: worldFire ? worldFire.snapshot() : null,
   });
 }
 </script>

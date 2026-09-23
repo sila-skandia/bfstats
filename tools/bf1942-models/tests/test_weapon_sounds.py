@@ -275,10 +275,18 @@ class ExtractWeaponSoundTests(unittest.TestCase):
     def _extract(self):
         def fake_transcode(data: bytes, dest: Path) -> None:
             dest.write_bytes(b"mp3" + data[:4])
+        # `_sound_layers` resolves through `extract_map`'s own names (it is
+        # the vehicle-gun path reused), so the stub has to land there too --
+        # patching only `extract_weapon_sounds.resolve_sound` would leave the
+        # layer pass talking to a Mock it cannot treat as an ArchivePool.
         with mock.patch.object(extract_weapon_sounds, "resolve_sound",
                                return_value=("thompmlp.wav", pcm_wav())), \
              mock.patch.object(extract_weapon_sounds, "transcode_to_mp3",
-                               side_effect=fake_transcode):
+                               side_effect=fake_transcode), \
+             mock.patch("extract_map.resolve_sound",
+                        return_value=("thompmlp.wav", pcm_wav())), \
+             mock.patch("extract_map.transcode_to_mp3",
+                        side_effect=fake_transcode):
             return extract_weapon_sound("Thompson", self.library,
                                         self.objects, mock.Mock(), self.out)
 
@@ -298,6 +306,19 @@ class ExtractWeaponSoundTests(unittest.TestCase):
         self.assertEqual("Objects/HandWeapons/Thompson/Sounds/Thompson.ssc",
                          entry["script"])
         self.assertNotIn("delay", entry)
+
+    def test_the_entry_ships_the_whole_firing_patch_for_a_bystander(self) -> None:
+        # The first-person pick is one sample; `world-fire.js` plays the
+        # patch's layers so the near/far `Volume <- Distance` hand-over
+        # survives. This is the field that a pre-layers manifest lacks and
+        # the fallback ramp stands in for.
+        entry, _ = self._extract()
+        self.assertIn("layers", entry)
+        self.assertGreaterEqual(len(entry["layers"]), 1)
+        layer = entry["layers"][0]
+        self.assertIn("file", layer)
+        self.assertIn("modulators", layer)
+        self.assertIn("volume", layer)
 
     def test_an_existing_mp3_is_not_rewritten(self) -> None:
         self.out.mkdir(parents=True)
@@ -340,7 +361,9 @@ class RealTranscodeTests(unittest.TestCase):
                     AUTOMATIC_SCRIPT,
             })
             with mock.patch.object(extract_weapon_sounds, "resolve_sound",
-                                   return_value=("thompmlp.wav", pcm_wav())):
+                                   return_value=("thompmlp.wav", pcm_wav())), \
+                 mock.patch("extract_map.resolve_sound",
+                            return_value=("thompmlp.wav", pcm_wav())):
                 entry, reason = extract_weapon_sound(
                     "Thompson", library, objects, mock.Mock(), out)
             self.assertIsNone(reason)
