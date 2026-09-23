@@ -60,6 +60,7 @@ MODULES = {
     "heightfield.js": VIEWER / "heightfield.js",
     "physics.js": VIEWER / "physics.js",
     "walking-body.js": VIEWER / "walking-body.js",
+    "soldier-resolve.js": VIEWER / "soldier-resolve.js",
     "soldier-pose.js": VIEWER / "soldier-pose.js",
     "soldier-locomotion.js": VIEWER / "soldier-locomotion.js",
     "point-body.js": VIEWER / "point-body.js",
