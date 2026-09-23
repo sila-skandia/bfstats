@@ -14,15 +14,15 @@ import { Armor } from './armor.js';
  * `buildSpawnFlags`, `capture`, `deployActive`, `deployKitHits`,
  * `deployResumeBtn`, `deployScoreBtn`, `deploySuicideBtn`, `deployTabs`,
  * `discardSoldier`, `disposeHandWeapon`, `drawFullMap`, `ensureHandWeapon`,
- * `flags`, `fullmapBox`, `fullmapCanvas`, `handWeapon`, `hud`,
- * `hudViewTimer`, `kitRowLabelFor`, `kitRowLayoutText`, `layoutDeploy`,
- * `LOCAL_PLAYER`, `netReconciler`, `netSendAction`, `netTickPoses`,
- * `optOnFoot`, `optPilot`, `paintDeployChrome`, `paintDeploySoon`, `params`,
- * `placeCamera`, `projectToArt`, `rebaseDeckSpawns`, `resetCaptureUi`,
- * `revive`, `roomJoined`, `setOnFoot`, `setPilot`, `setScoreboard`,
+ * `flags`, `flashHud`, `fullmapBox`, `fullmapCanvas`, `handWeapon`,
+ * `kitRowLabelFor`, `kitRowLayoutText`, `layoutDeploy`, `LOCAL_PLAYER`,
+ * `netReconciler`, `netSendAction`, `netTickPoses`, `optOnFoot`, `optPilot`,
+ * `paintDeployChrome`, `paintDeploySoon`, `params`, `placeCamera`,
+ * `projectToArt`, `rebaseDeckSpawns`, `resetCaptureUi`, `revive`,
+ * `roomJoined`, `setOnFoot`, `setPilot`, `setScoreboard`,
  * `shipFlagInactive`, `snapPresentation`, `soldier`, `soldierDead`,
  * `soldierMaxHp`, `spawnFlagSelect`, `spawnLayout`, `supplyTarget`,
- * `toggleFullMap`, `updateHud`, `world`, `worldReady`.
+ * `toggleFullMap`, `world`, `worldReady`.
  */
 export function createSpawning(page) {
   const spawning = {};
@@ -101,9 +101,7 @@ export function createSpawning(page) {
     if (page.handWeapon) page.handWeapon.rig.visible = true;
     // A fresh body somewhere else entirely: the eye must not sweep there.
     page.snapPresentation();
-    page.hud.textContent = `${flag.name} · ${spawn.name}`;
-    clearTimeout(page.hudViewTimer);
-    page.hudViewTimer = setTimeout(page.updateHud, 2200);
+    page.flashHud(`${flag.name} · ${spawn.name}`);
     // The room's control channel: the server re-places its own copy of this
     // player on the same flag (fresh Armor at the kit's max — the spawn row
     // names the kit so both sides build the same Armor from loadouts.json).
