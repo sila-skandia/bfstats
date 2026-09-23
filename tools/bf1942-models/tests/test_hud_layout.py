@@ -499,10 +499,15 @@ class ConditionOperatorCoverageTests(unittest.TestCase):
                          f"viewer/hud.js condOk falls open on {sorted(missing)}")
 
     def test_map_html_answers_every_one_of_them(self) -> None:
-        missing = self.emittable_operators() - self.implemented_operators(
-            self.VIEWER / "map.html")
+        # The page's copy lives with the deploy screen that paints with it
+        # (`page_source.py` finds whichever page file defines it).
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from page_source import file_defining
+        source = file_defining("condOk")
+        missing = self.emittable_operators() - self.implemented_operators(source)
         self.assertEqual(set(), missing,
-                         f"map.html condOk falls open on {sorted(missing)}")
+                         f"{source.name} condOk falls open on {sorted(missing)}")
 
 
 if __name__ == "__main__":
