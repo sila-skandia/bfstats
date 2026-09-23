@@ -35,6 +35,7 @@ MODULES = {
     "ship.mjs": VIEWER / "ship.js",
     "flight.mjs": VIEWER / "flight.js",
     "vehicle-camera.js": VIEWER / "vehicle-camera.js",
+    "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",
     "body-float.js": VIEWER / "body-float.js",
     # `ship.js`'s own two new imports: the gearbox (`engine-revs.js`, no imports
     # of its own) and the Coulomb constants the beaching friction uses.
