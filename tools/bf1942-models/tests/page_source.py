@@ -38,6 +38,7 @@ PAGE_FILES = [
     "hand-weapon.js",
     "kit-loadout.js",
     "hand-fire-sound.js",
+    "arms-rig.js",
     "page-audio.js",
     "hull-bodies.js",
     "vehicle-wrecks.js",
