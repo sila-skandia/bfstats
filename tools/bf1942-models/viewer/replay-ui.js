@@ -3,6 +3,7 @@
 // ReplayPlayer (replay.js); owns only DOM.
 
 import { roundClock, fmtHp } from './replay-recording.js';
+import { focusLife } from './replay-camera.js';
 
 // Labels further than this from the camera are not drawn.
 const LABEL_RANGE = 450;
@@ -256,7 +257,7 @@ export class ReplayUi {
     camera.updateMatrixWorld();
     const width = this.stage.clientWidth;
     const height = this.stage.clientHeight;
-    const focus = player.followPid !== null ? player.focusLife(t) : null;
+    const focus = player.followPid !== null ? focusLife(player, t) : null;
     const name = player.followPid !== null ? (player.rec.players.get(player.followPid)?.name ?? '') : '';
     const v = player.v2;
     for (const entity of player.entities) {
