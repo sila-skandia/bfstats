@@ -551,8 +551,8 @@ export function createLevel(page) {
       terrain.loadTerrainMaterials(dir), terrain.loadDamageTables(dir), page.loadCollisionMeshes(dir),
       terrain.loadSearchMaps(dir),
     ]);
-    if (page.extras) {
-      Object.defineProperty(page.extras, 'bakedSearchMaps',
+    if (level.extras) {
+      Object.defineProperty(level.extras, 'bakedSearchMaps',
         { value: searchMaps, configurable: true, writable: true, enumerable: false });
     }
     terrain.setTables(terrainMaterials, damageTables);
