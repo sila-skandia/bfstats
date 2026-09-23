@@ -402,3 +402,39 @@ bot in that gun fires at soldiers at all).
 
 Acceptance: pins for 1 to 4, ledger and KNOBS rows for every engine read,
 the doctrine table re-run, PARITY_STATUS_2026-09-23.md's Open list updated.
+
+## Brief L: the AA gunner's trigger, and the soldier's count law
+
+Added 2026-09-24 after Brief F. Depends on: F (landed: ledger AI-88..AI-91,
+features/bot-gunner-aim/README.md). Conflicts with: K (bot-decision.js) if
+run at the same time; start after K reports.
+
+Status: F ported the mounted gunner's aim (`mouseControlLookAtDirection`
+0x08627b90, the lead from `Aimer::getFiringDirection` 0x08538ad0, the
+trigger from `BAPCConPrecision::evaluate` 0x0854b570). A bot in El
+Alamein's AA gun now holds a crossing Spitfire without swinging past, but
+never fires: the AA gun's ControlInfo scale is 1.0, a fifth of the
+Sherman's, so it trails a 55 m/s plane by 15 to 25 m against the trigger's
+11.3 m miss limit, and head-on the closest miss was 11.34 m. Two engine
+mechanisms were read but not ported or not found:
+
+1. `BAPAAimAt::correctAim` 0x0853a6d0 corrects the aim by 0.8 of each
+   observed miss. Where the engine feeds a round's impact back into it was
+   not found. Find the writer (search the callers of `correctAim` and the
+   projectile's death path for the aim statement; `Aimer` and
+   `BAPAAimAtObject` are the classes), port it, and check whether the
+   retail AA bot fires at a crossing plane at all: the retail measure is
+   the game itself (the user can confirm in game), the viewer's is the same
+   two recipes F ran (crossing 150 m out at 55 m/s; head-on 90 m up).
+2. The gunner first saw the plane at about 200 m of the level's 300 m
+   view distance. Read the sense path for aircraft (`BotMain::sense`
+   0x08521cf0 and the view-cone test for objects in the air) and check
+   the viewer's against it.
+3. Soldiers still use the viewer's old count law; the engine runs them
+   through the same law F ported. Port it for soldiers with the soldier's
+   ControlInfo scale, pin it in the harness, and say in the commit that
+   every seeded trace changes. Also port the yaw-limit part of the count
+   law (only the Defgun is affected).
+
+Acceptance: the two AA recipes with numbers and rounds fired, the pins,
+ledger and KNOBS rows for every read, PARITY_STATUS_2026-09-23.md updated.
