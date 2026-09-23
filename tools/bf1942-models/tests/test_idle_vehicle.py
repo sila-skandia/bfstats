@@ -51,6 +51,12 @@ MODULES = {
     "bomb-release.js": VIEWER / "bomb-release.js",
     "torpedo-run.js": VIEWER / "torpedo-run.js",
     "seats.js": VIEWER / "seats.js",
+    "seat-survey.js": VIEWER / "seat-survey.js",
+    "turret-rig.js": VIEWER / "turret-rig.js",
+    "vehicle-occupancy.js": VIEWER / "vehicle-occupancy.js",
+    "entry-points.js": VIEWER / "entry-points.js",
+    "spawned-craft.js": VIEWER / "spawned-craft.js",
+    "fire-state.js": VIEWER / "fire-state.js",
     "seat-dots.js": VIEWER / "seat-dots.js",
     # gunfire.js's own import graph, all of it leaf modules bar three.
     "collision.js": VIEWER / "collision.js",

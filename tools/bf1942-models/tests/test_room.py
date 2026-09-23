@@ -54,6 +54,8 @@ _VIEWER_MODULES = [
     "mouse-input", "fall-damage",
     "body-world", "body-statics", "vehicle-bodies", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact",
+    # seats.js re-exports its split modules.
+    "seat-survey", "turret-rig", "vehicle-occupancy", "entry-points", "spawned-craft", "fire-state",
     "body-ground", "body-friction", "crash-damage", "effects-core",
     "collision", "collision-materials", "heightfield", "static-index",
     "drivable-mask", "world-collider", "flight", "vehicle-camera", "vehicle-discovery", "vehicle-base",
