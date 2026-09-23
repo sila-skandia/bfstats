@@ -50,7 +50,7 @@ HARNESS = Path(__file__).resolve().parent / "room_harness.mjs"
 # unmodified `../viewer/...` imports resolve from `server/`.
 _VIEWER_MODULES = [
     "world", "physics", "parachute", "swim", "soldier", "spawn-safety",
-    "point-body", "fixed-step",
+    "point-body", "fixed-step", "soldier-pose", "soldier-locomotion",
     "mouse-input", "fall-damage",
     "body-world", "body-statics", "vehicle-bodies", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact",
