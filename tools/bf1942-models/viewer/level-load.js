@@ -35,14 +35,14 @@ import { bindTreeFoliage } from './tree-foliage.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `activeMod`, `botRoot`, `bust`, `camera`, `capture`,
- * `capturePresentationTick`, `cubeLoader`, `damageVisuals`, `DEFAULT_DRAW`,
- * `disposeSounds`, `effects`, `entryPoints`, `fireStates`,
- * `floatPlacedVehicles`, `forgetSoldier`, `fullmapMeta`, `fullmapName`,
- * `guns`, `gunSubject`, `hemi`, `loadCollisionMeshes`, `loadEffectLibrary`,
- * `loader`, `loadMapArt`, `logToConsole`, `MAPS_BASE`, `nearEntry`,
- * `onCrashDamage`, `openDeploy`, `optEntire`, `optGameFog`, `optOnFoot`,
- * `optPilot`, `optVehicles`, `optWire`, `overlay`, `params`, `placeCamera`,
+ * `activeMod`, `bust`, `camera`, `capture`, `capturePresentationTick`,
+ * `cubeLoader`, `damageVisuals`, `DEFAULT_DRAW`, `disposeSounds`, `effects`,
+ * `ensureBotRoot`, `entryPoints`, `fireStates`, `floatPlacedVehicles`,
+ * `forgetSoldier`, `fullmapMeta`, `fullmapName`, `guns`, `gunSubject`,
+ * `hemi`, `loadCollisionMeshes`, `loadEffectLibrary`, `loader`,
+ * `loadMapArt`, `logToConsole`, `MAPS_BASE`, `nearEntry`, `onCrashDamage`,
+ * `openDeploy`, `optEntire`, `optGameFog`, `optOnFoot`, `optPilot`,
+ * `optVehicles`, `optWire`, `overlay`, `params`, `placeCamera`,
  * `rebaseDeckSpawns`, `rebuildVehicleInterp`, `registerDamageables`,
  * `renderer`, `scene`, `seatWorldPos`, `setOnFoot`, `setPilot`,
  * `settlePlacedVehicles`, `setupSounds`, `setupVehicleBodies`,
@@ -484,11 +484,7 @@ export function createLevel(page) {
     level.combatArea = level.world.combatArea;
     level.vehicleDamage = level.world.vehicleDamage;
     // Bot visuals: create the root group now that `scene` exists.
-    if (!page.botRoot) {
-      page.botRoot = new THREE.Group();
-      page.botRoot.name = 'bot-renderers';
-      page.scene.add(page.botRoot);
-    }
+    page.ensureBotRoot();
     // Bots spawn on the player's team. The call waits for `buildCollider`
     // below: `spawnBotsForLevel` builds the nav grid from `world.collider` and
     // `pickSpawn` runs its spawn-safety probes against it, and both are empty
