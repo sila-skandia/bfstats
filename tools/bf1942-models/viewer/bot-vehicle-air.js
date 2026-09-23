@@ -18,8 +18,10 @@
 //    motion below. Within 30 deg it is underway: the unit's `maxSpeed`
 //    scaled by how open the water is (`getLevel` against the map's base
 //    level) and the angle, a `simpleReg` throttle on the speed, and a
-//    yaw-damped log rudder (`boatSpeedControl`). `actionStatusDecision`'s
-//    states 1..9 (the turn in the box, reversing off a beach) are not built.
+//    yaw-damped log rudder (`boatSpeedControl`). `actionStatusDecision`
+//    (bot-vehicle.js, the turn in the box and reversing off a beach) feeds it
+//    the drive and angle (`boatControl`'s `decision`), and the move's arrival
+//    brakes to a stop (`boatResetControls`), ledger AI-85 / AI-86.
 
 const DEG = Math.PI / 180;
 
@@ -101,6 +103,10 @@ export const BOAT = {
   yawDamping: 0.1,
   /** A water map's base level, 2^2 m blocks (ledger AI-66, INFERRED). */
   baseLevel: 2,
+  /** `BoatControl::resetControls` 0x0860dff0: the arrival brake holds until
+   *  the speed along the heading is at or under 1 m/s (the `fld1` compare at
+   *  0x0860e29d). */
+  brakeDoneSpeed: 1.0,
 };
 
 /**
@@ -615,7 +621,7 @@ export function towardsPoint({ orientation, position, velocity, angularVelocity 
  * steer in the same sense as the tank law (`-(bearing - yaw)`).
  */
 export function boatControl({ forward, velocity, toTarget, radius = 10, maxSpeed = null, prevSpeed = 0,
-                              yawRate = 0, level = Infinity, prevThrottle = null }) {
+                              yawRate = 0, level = Infinity, prevThrottle = null, decision = null }) {
   const fLen = Math.hypot(forward[0], forward[1]) || 1;
   const fx = forward[0] / fLen, fz = forward[1] / fLen;
   const tLen = Math.hypot(toTarget[0], toTarget[1]);
@@ -628,7 +634,19 @@ export function boatControl({ forward, velocity, toTarget, radius = 10, maxSpeed
   let steer = Math.abs(angle) > BOAT.fullRudderAngle ? Math.sign(angle) : clamp(angle / BOAT.fullRudderAngle, -1, 1);
   if (Math.abs(steer) < BOAT.rudderDeadBand) steer = 0;
   const speed = fx * velocity[0] + fz * velocity[1];
-  if (maxSpeed > 0 && !arrived && Math.abs(angle) <= BOAT.fullRudderAngle) {
+  if (decision && maxSpeed > 0 && !arrived) {
+    // `BoatControl::towardsDirection` 0x0860df70: `actionStatusDecision`
+    // then `speedControl` 0x0860cf40, which turns (below) when the drive is
+    // 0 or, in state 0, the angle passes 30 deg (0x0860cf40's first test);
+    // otherwise it runs underway on the decision's angle, negated when the
+    // motion's sign differs from the drive, and wants `drive x` the speed.
+    const turning = decision.drive === 0 || (decision.state === 0 && Math.abs(decision.angle) > BOAT.fullRudderAngle);
+    if (!turning) {
+      const a = decision.sign !== decision.drive ? -decision.angle : decision.angle;
+      const r = boatSpeedControl({ angle: a, direction: decision.drive, maxSpeed, prevSpeed, yawRate, level });
+      return { throttle: r.throttle, steer: r.rudder, angle: a, arrived, speed, wanted: r.wanted };
+    }
+  } else if (maxSpeed > 0 && !arrived && Math.abs(angle) <= BOAT.fullRudderAngle) {
     // Underway: the engine's regulated speed and damped rudder.
     const r = boatSpeedControl({ angle, maxSpeed, prevSpeed, yawRate, level });
     return { throttle: r.throttle, steer: r.rudder, angle, arrived, speed, wanted: r.wanted };
@@ -649,4 +667,22 @@ export function boatControl({ forward, velocity, toTarget, radius = 10, maxSpeed
   let throttle = dot >= BOAT.alignedCos ? 1 : (Math.abs(angle) > BOAT.fullRudderAngle ? 0.5 : 0.8);
   if (arrived) throttle = speed > BOAT.speedBand ? -0.5 : 0;
   return { throttle, steer, angle, arrived, speed };
+}
+
+/**
+ * `BoatControl::resetControls(bot, true, false, false, done)` 0x0860dff0, as
+ * `EntryBoatMoveTo::execute` 0x08613d60 calls it inside the move's radius:
+ * the rudder and channels 1 / 2 zeroed; `v` the speed along the hull's
+ * heading (velocity . matrix row 2); above 1 m/s the throttle brakes
+ * against it, `-sign(v) log10(9 |v| + 1)` (0x0860e295..0x0860e33f; the
+ * channel takes it clamped), and the move is not done; at or under 1 m/s
+ * the throttle is zeroed and `done` stays true, so the move ends only once
+ * the hull has all but stopped. (The full `-sign(v)` for `|v| <= 0.03` at
+ * 0x0860e450 sits under the `|v| > 1` test and never runs.)
+ */
+export function boatResetControls(speedAlong) {
+  const v = speedAlong;
+  if (!(Math.abs(v) > BOAT.brakeDoneSpeed)) return { throttle: 0, steer: 0, done: true };
+  const throttle = clamp(-Math.sign(v) * Math.log10(9 * Math.abs(v) + 1), -1, 1);
+  return { throttle, steer: 0, done: false };
 }

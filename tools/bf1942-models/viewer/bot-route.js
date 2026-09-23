@@ -25,9 +25,9 @@
 // (the engine's `StrategicMap` was not read); a failed route is retried a
 // few times with the obstacle circles and then walked straight at.
 
-import { findLocalPath, findStrategicPath, traceClear, COARSE_CELL, freeRun, freeBox, freeLevel } from './nav-grid.js';
-import { tankControl, TANK } from './bot-vehicle.js';
-import { boatControl, PLANE } from './bot-vehicle-air.js';
+import { findLocalPath, findStrategicPath, traceClear, COARSE_CELL, freeLevel } from './nav-grid.js';
+import { tankControl, TANK, actionStatusDecision, searchBox, checkLine } from './bot-vehicle.js';
+import { boatControl, boatResetControls, PLANE, BOAT } from './bot-vehicle-air.js';
 import { wrapAngle } from './bot-aim.js';
 
 /** How close to a plain waypoint before it counts as reached. */
@@ -70,8 +70,13 @@ export const VEHICLE_RADIUS = 3.0;
  *  hull toward -yaw (`ground.js`), so the steer passes straight through.
  *  Calibrated on El Alamein's Kubelwagen (2026-09-23). */
 const VEHICLE_YAW_SIGN = 1;
-/** How long a wedged hull reverses before trying again (INVENTION). */
-const VEHICLE_REVERSE_SECONDS = 2.0;
+/** The largest pyramid level a viewer-built map is searched at: the map's
+ *  own maximum (`LocalMap` +0x28) is not read for these maps; `freeLevel`'s
+ *  cap stands in (INVENTION). A tank map's minimum level is 0 (INFERRED from
+ *  `ai.addSearchType Tank 0 0`); a water map's is its base level (AI-66). */
+const HULL_BOX_MAX_LEVEL = 8;
+/** How far a hull that has never stood on a valid cell looks for one (m). */
+const HULL_VALID_SEARCH = 24;
 /** `infanteryControlTowardsDirection` 0x08627000: throttle only when the
  *  target direction is within this angle of the facing (0.5497787 rad,
  *  31.5 deg), else stop and turn; a target behind turns at the full rate. */
@@ -324,6 +329,81 @@ export function onObstructed(bot) {
   if (bot.route) bot.route.failed = true;
 }
 
+/** The nearest cell (ring by ring) whose free level reaches `minLevel`, as
+ *  a viewer x/z point at its centre, or null within `rings`. */
+function nearestFreeCell(levelAt, gx, gz, minLevel, rings, cs) {
+  for (let r = 1; r <= rings; r++) {
+    for (let i = -r; i <= r; i++) {
+      for (const [x, z] of [[gx + i, gz - r], [gx + i, gz + r], [gx - r, gz + i], [gx + r, gz + i]]) {
+        if (levelAt(x, z) >= minLevel) return [(x + 0.5) * cs, -(z + 0.5) * cs];
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * `CommonControls::actionStatusDecision` 0x0860fbe0 for the hull the bot
+ * drives, toward `(dx, dz)` from it, on its own map. The state lives on the
+ * move (`BAPAMoveTo` +0x60, zero for a new one): `bot._asd`, which the move
+ * executor hands over per action. The engine's frame is the viewer's with z
+ * negated; the map's cell rows already run along the engine's z. The box is
+ * `getBox` 0x08612060's: taken at the hull's cell, or at the last cell it
+ * stood on a valid cell when it stands on a blocked one now
+ * (`AIObjectMobile::getValidPosition` 0x085d5bb0, kept by `positionChanged`
+ * 0x085d5b30); a hull that never has takes the nearest free cell
+ * (INVENTION, below). The object check's list is the bot's planted obstacle
+ * circles (INVENTION: the engine's is the bot's nearby-object list, bot
+ * vtable +0x124). `minLevel` is the map's search level floor.
+ */
+export function hullDecision(bot, dx, dz, minLevel = 0) {
+  const nav = bot._nav();
+  const st = bot.vehicle?.drive?.state;
+  const v = st?.velocity;
+  const f = bot._vehicleForward();
+  const px = bot.position[0], pz = bot.position[2];
+  const len = Math.hypot(dx, dz) || 1;
+  const pos = [px, -pz];
+  let box = null;
+  if (nav) {
+    const cs = nav.cellSize;
+    const levelAt = (gx, gz) => freeLevel(nav, (gx + 0.5) * cs, -(gz + 0.5) * cs, HULL_BOX_MAX_LEVEL);
+    let gx = Math.floor(px / cs), gz = Math.floor(-pz / cs);
+    let from = null;
+    if (levelAt(gx, gz) >= minLevel) {
+      bot._validHullPos = [px, pz];
+    } else {
+      // The last valid position; a hull that has never stood on a valid
+      // cell takes the nearest free cell within `HULL_VALID_SEARCH` instead
+      // (INVENTION: the viewer's map can paint a hull's own pad blocked --
+      // El Alamein's camouflage nets -- where the engine's hull would have
+      // stood valid at its spawn).
+      const v = bot._validHullPos ?? nearestFreeCell(levelAt, gx, gz, minLevel, Math.ceil(HULL_VALID_SEARCH / cs), cs);
+      if (v) {
+        from = [v[0], -v[1]];
+        gx = Math.floor(from[0] / cs);
+        gz = Math.floor(from[1] / cs);
+      }
+    }
+    const b = levelAt(gx, gz) >= minLevel ? searchBox(levelAt, gx, gz, { minLevel, maxLevel: HULL_BOX_MAX_LEVEL }) : null;
+    if (b) box = { min: [b.min[0] * cs, b.min[1] * cs], max: [b.max[0] * cs, b.max[1] * cs], from };
+  }
+  const radius = bot._radius();
+  const objects = bot.obstacles.map(o => ({ x: o.x, z: -o.z, r: o.r }));
+  const asd = bot._asd ?? (bot._asd = { state: 0 });
+  const d = actionStatusDecision({
+    state: asd.state, dir: [dx / len, -dz / len], pos, forward: [f[0], -f[1]],
+    velSign: v ? v.x * f[0] + v.z * f[1] : 0,
+    speed: v ? Math.hypot(v.x, v.y, v.z) : 0,
+    radius, turnRadius: bot.vehicle.turnRadius ?? TANK.defaultTurnRadius, box,
+    line: run => checkLine(pos, run, radius, objects),
+  });
+  asd.state = d.state;
+  bot._dbgMoveStatus = d.state;
+  bot._dbgBox = box;
+  return d;
+}
+
 /**
  * `infanteryControlTowardsDirection`: look toward `[x, z]`; throttle
  * `speed` inside the cone, else hold and turn. A target behind turns at
@@ -355,6 +435,9 @@ export function steerToward(bot, x, z, speed = 1) {
       // The channel as `speedControl` reads it: this tick's word, which
       // `_resetInput` has zeroed (the bot's input is rebuilt every tick).
       prevThrottle: 0,
+      // `BoatControl::towardsDirection` 0x0860df70 runs the box state
+      // machine first, on the water map.
+      decision: nav ? hullDecision(bot, dx, dz, BOAT.baseLevel) : null,
     });
     bot._boatPrevSpeed = r.speed ?? 0;
     bot.moveForward = r.throttle * (speed > 0 ? 1 : 0);
@@ -363,45 +446,35 @@ export function steerToward(bot, x, z, speed = 1) {
     return;
   }
   if (bot.vehicle) {
-    // `TankControl::controlTowardsDirection`: throttle and steer for the
-    // hull; the look stays free for the turret. `actionStatusDecision`'s
-    // box test reads the vehicle map: the free run along the heading and
-    // the free box around the hull, against the turn radius.
-    const v = bot.vehicle.drive?.state?.velocity;
+    // `EntryTankMoveTo::execute` 0x08622e80: `actionStatusDecision` on the
+    // vehicle map, then `TankControl::controlTowardsDirection` for the hull;
+    // the look stays free for the turret.
+    const st = bot.vehicle.drive?.state;
+    const v = st?.velocity;
+    const w = st?.angularVelocity;
+    const q = st?.orientation;
     const f = bot._vehicleForward();
-    const turnRadius = bot.vehicle.turnRadius ?? TANK.defaultTurnRadius;
-    const nav = bot._nav();
-    let freeAhead = Infinity, boxShort = Infinity;
-    if (nav && dx * f[0] + dz * f[1] < 0) {
-      freeAhead = freeRun(nav, bot.position[0], bot.position[2], f[0], f[1], turnRadius * 2 + 1, bot.obstacles);
-      boxShort = freeBox(nav, bot.position[0], bot.position[2], Math.ceil(turnRadius * 2 / nav.cellSize)).short;
+    // The rotational speed about the hull's heading (q * (0, 0, -1)): the
+    // law's wanted-speed damping (0x0862d232).
+    let rollRate = 0;
+    if (w && q) {
+      const f3 = [-(2 * (q.x * q.z + q.w * q.y)), -(2 * (q.y * q.z - q.w * q.x)), -(1 - 2 * (q.x * q.x + q.y * q.y))];
+      rollRate = w.x * f3[0] + w.y * f3[1] + w.z * f3[2];
     }
     const r = tankControl({
       forward: f,
       velocity: v ? [v.x, v.z] : [0, 0],
       toTarget: [dx, dz],
       maxSpeed: bot.vehicle.maxSpeed ?? 0,
-      yawRate: bot._hullYawRate ?? 0,
-      lastTurn: bot._lastTurn ?? 0,
-      freeAhead, boxShort, turnRadius,
+      // A THREE yaw rate about +y turns the heading toward a negative angle.
+      yawRate: w ? -w.y : 0,
+      rollRate,
+      decision: bot._nav() ? hullDecision(bot, dx, dz, 0) : null,
     });
-    bot._lastTurn = r.turn;
-    if (r.reverse) {
-      bot.moveForward = r.throttle;
-      bot.moveStrafe = VEHICLE_YAW_SIGN * r.steer;
-      bot._dbgSteerAngle = r.angle;
-      return;
-    }
-    if ((bot._now ?? 0) < (bot._reverseUntil ?? -Infinity)) {
-      // Backing out of the obstruction, the lock away from the target.
-      bot.moveForward = -1;
-      bot.moveStrafe = -VEHICLE_YAW_SIGN * (Math.sign(r.angle) || 1);
-      bot._dbgSteerAngle = r.angle;
-      return;
-    }
     bot.moveForward = r.throttle * (speed > 0 ? 1 : 0);
     bot.moveStrafe = VEHICLE_YAW_SIGN * r.steer;
     bot._dbgSteerAngle = r.angle;
+    bot._dbgDrive = r.drive;
     return;
   }
   const want = Math.atan2(dx, dz);
@@ -436,9 +509,22 @@ export function execInfantryMoveTo(bot, action, dt) {
   const speed = action.crouch ? 0.5 : 1;
   if (action.crouch) bot.stanceInput = 'crouch';
   else if (action.stance) bot.stanceInput = action.stance;
+  // The move's own `actionStatusDecision` state (`BAPAMoveTo` +0x60): each
+  // move starts at 0 (the ctor 0x08540350).
+  if (bot.vehicle) bot._asd = action._asd ?? (action._asd = { state: 0 });
 
   const arrived = Math.hypot(bot.position[0] - target[0], bot.position[2] - target[2])
     < (action.arrive ?? WAYPOINT_REACH_RADIUS);
+  if (arrived && bot.vehicle?.kind === 'ship' && bot.vehicle.drive?.state) {
+    // `EntryBoatMoveTo::execute` 0x08613d60 inside the move's radius:
+    // `BoatControl::resetControls` brakes, and the move is done only once
+    // the hull is at or under 1 m/s along its heading.
+    const v = bot.vehicle.drive.state.velocity;
+    const f = bot._vehicleForward();
+    const r = boatResetControls(v.x * f[0] + v.z * f[1]);
+    bot.moveForward = r.throttle; bot.moveStrafe = 0; bot._lastThrottle = 0;
+    return r.done;
+  }
   if (arrived) { bot.moveForward = 0; bot._lastThrottle = 0; return true; }
 
   // `_resetInput` has zeroed this tick's word; the stall test wants the
@@ -450,11 +536,9 @@ export function execInfantryMoveTo(bot, action, dt) {
   if (!bot.vehicle) bot._trackContact(soldier);
   if (bot._trackObstruction(bodySpeed, dt)) {
     // The path failed (`+0xc = 3`): next tick rebuilds it around the
-    // obstacles, or walks straight at the goal after repeated failures.
+    // obstacles, or walks straight at the goal after repeated failures. A
+    // wedged hull's backing out is `actionStatusDecision`'s, in its move.
     bot.route = null;
-    // A wedged hull backs out first (INVENTION: `CommonControls::
-    // actionStatusDecision`, which picks forward or reverse, is not read).
-    if (bot.vehicle) bot._reverseUntil = (bot._now ?? 0) + VEHICLE_REVERSE_SECONDS;
   }
 
   let route = bot._ensureRoute(target);

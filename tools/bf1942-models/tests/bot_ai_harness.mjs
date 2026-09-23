@@ -14,8 +14,9 @@ import { World, WORLD_TICK_DT } from './world.mjs';
 import { BotController } from './bot.js';
 import { buildNavMap, gridAt, traceClear, CELL_OBJECT } from './nav-grid.js';
 import { Armor } from './armor.js';
-import { tankControl, unitUrgency, changeUrgency, orderSplit, teleportChangeUrgency, driveDecision, TANK, TELEPORT, CHANGE } from './bot-vehicle.js';
-import { towardsPoint, boatControl, boatSpeedControl, BOAT, rotate, attackRunStep, roundMiss, planeFireMode, aimAtDirection, towardsDirectionEngine, stickShape, PLANE_FIRE,
+import { tankControl, unitUrgency, changeUrgency, orderSplit, teleportChangeUrgency, actionStatusDecision, searchBox, checkLine, boxExit, TANK, TELEPORT, CHANGE } from './bot-vehicle.js';
+import { readFileSync } from 'fs';
+import { towardsPoint, boatControl, boatSpeedControl, boatResetControls, BOAT, rotate, attackRunStep, roundMiss, planeFireMode, aimAtDirection, towardsDirectionEngine, stickShape, PLANE_FIRE,
          planeAimFor, precisionGate, nearestMiss } from './bot-vehicle-air.js';
 import { fireStrength, unitTable, EnemyStrengthTables, engineHeatInfluence, STRENGTH } from './bot-strength.js';
 import { scoreVehicleTargets, scoreTargets, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
@@ -298,16 +299,25 @@ function medicScenario() {
   return { chosen, fired, weapon, minDist, firingDist, urgency, arrive: bot._medicResult?.arrive ?? null };
 }
 
-/** The tank law: a target dead ahead wants speed up to `maxSpeed`; one
- *  20 deg to the +yaw side steers negative (the viewer's `c_PIYaw` sense);
- *  one behind turns first and keeps its turn direction across the flip. */
+/** The tank law (`TankControl::controlTowardsDirection` 0x0862c670): a
+ *  target dead ahead wants speed up to `maxSpeed`; one 20 deg to the +yaw
+ *  side steers negative (the viewer's `c_PIYaw` sense); a turn in place
+ *  (drive 0) holds full lock with the throttle on only at or under 2 m/s; a
+ *  reverse drives the throttle negative, its angle negated while the hull
+ *  still rolls forward; a rolling hull wants less speed. */
 function tankLawScenario() {
   const ahead = tankControl({ forward: [0, 1], velocity: [0, 0], toTarget: [0, 50], maxSpeed: 16 });
   const fast = tankControl({ forward: [0, 1], velocity: [0, 16], toTarget: [0, 50], maxSpeed: 16 });
   const right = tankControl({ forward: [0, 1], velocity: [0, 5], toTarget: [Math.sin(0.35) * 50, Math.cos(0.35) * 50], maxSpeed: 16 });
   const behind = tankControl({ forward: [0, 1], velocity: [0, 0], toTarget: [0.01, -50], maxSpeed: 16 });
-  const behindKept = tankControl({ forward: [0, 1], velocity: [0, 0], toTarget: [-0.01, -50], maxSpeed: 16, lastTurn: behind.turn });
-  return { ahead, fast, right, behind, behindKept };
+  const behindFast = tankControl({ forward: [0, 1], velocity: [0, 5], toTarget: [0.01, -50], maxSpeed: 16 });
+  const reverse = tankControl({ forward: [0, 1], velocity: [0, -1], toTarget: [0, -50], maxSpeed: 16,
+                                decision: { drive: -1, angle: 0.2, sign: -1 } });
+  const reverseRolling = tankControl({ forward: [0, 1], velocity: [0, 1], toTarget: [0, -50], maxSpeed: 16,
+                                       decision: { drive: -1, angle: 0.2, sign: 1 } });
+  const rolling = tankControl({ forward: [0, 1], velocity: [0, 3], toTarget: [0, 50], maxSpeed: 16, rollRate: 1 });
+  const steady = tankControl({ forward: [0, 1], velocity: [0, 3], toTarget: [0, 50], maxSpeed: 16 });
+  return { ahead, fast, right, behind, behindFast, reverse, reverseRolling, rolling, steady };
 }
 
 /** The Change scoring: a Sherman near a rifleman outranks staying on foot;
@@ -453,15 +463,94 @@ function teleportScenario() {
   return { gunnerStays, passengerDrives, rootKeeps, pending, factors: TELEPORT.seatAir };
 }
 
-/** The box test: a target behind with no room ahead backs toward it; with
- *  room, or a narrow box, the hull turns. */
-function driveDecisionScenario() {
-  const back = driveDecision({ dot: -0.9, angle: 2.8, freeAhead: 3, boxShort: 6, turnRadius: 5 });
-  const room = driveDecision({ dot: -0.9, angle: 2.8, freeAhead: 12, boxShort: 6, turnRadius: 5 });
-  const narrow = driveDecision({ dot: -0.9, angle: 2.8, freeAhead: 3, boxShort: 2, turnRadius: 5 });
-  const shallow = driveDecision({ dot: -0.2, angle: 1.0, freeAhead: 3, boxShort: 6, turnRadius: 5 });
-  const law = tankControl({ forward: [0, 1], velocity: [0, 0], toTarget: [0.01, -50], maxSpeed: 16, freeAhead: 3, boxShort: 6, turnRadius: 5 });
-  return { back, room, narrow, shallow, lawReverse: law.reverse, lawThrottle: law.throttle };
+/** `CommonControls::actionStatusDecision` 0x0860fbe0 against the binary: every
+ *  case in fixtures/action_status_cases.json was run through the function's
+ *  own machine code in the x87 emulator (features/bf1942-engine-reference/
+ *  lnxded/action_status_emu.py), `getBox` and `checkLineAgainstObjects` fed
+ *  from the case. Per transition `from->to/drive`: cases, and cases the port
+ *  answers differently (state, drive, motion sign, or angle off by 2e-4). */
+function actionStatusFixtureScenario() {
+  const { cases } = JSON.parse(readFileSync(new URL('./action_status_cases.json', import.meta.url)));
+  const byTransition = {};
+  for (const c of cases) {
+    const velSign = c.vel[0] * c.fwd[0] + c.vel[1] * c.fwd[1] + c.vel[2] * c.fwd[2];
+    const line = run => {
+      let len = Math.hypot(run[0], run[1]);
+      if (!(c.radius <= len)) return { ok: false };
+      const ux = run[0] / len, uz = run[1] / len;
+      if (c.cut !== null && c.cut < len) { len = c.cut; if (c.cut < c.radius) return { ok: false }; }
+      return { ok: true, x: len * ux, z: len * uz, dist: len };
+    };
+    const r = actionStatusDecision({ state: c.state, dir: c.dir, pos: c.pos, forward: [c.fwd[0], c.fwd[2]], velSign,
+      speed: c.speed, radius: c.radius, turnRadius: c.turnRadius, box: c.box ? { min: c.box[0], max: c.box[1] } : null, line });
+    const e = c.emu;
+    const key = `${c.state}->${e.state}/${e.drive}`;
+    const t = byTransition[key] ?? (byTransition[key] = { cases: 0, wrong: 0 });
+    t.cases++;
+    if (r.state !== e.state || r.drive !== e.drive || r.sign !== e.sign || !(Math.abs(r.angle - e.angle) < 2e-4)) t.wrong++;
+  }
+  return byTransition;
+}
+
+/** The state machine on a hand-built hull, in the engine's x/z frame: a
+ *  Sherman (turn radius 5, radius 3) heading +z in a box 40 m wide that
+ *  ends 3 m ahead of it (a wall), 30 m of room behind. */
+function actionStatusScenario() {
+  const box = { min: [-20, -30], max: [20, 3] };
+  const common = { pos: [0, 0], forward: [0, 1], radius: 3, turnRadius: 5, box };
+  const step = (state, dir, extra = {}) => actionStatusDecision({ ...common, state, dir, ...extra });
+  const ahead = step(0, [0, 1]);
+  // Dead astern, the wall inside the turn radius: back straight out (8).
+  const astern = step(0, [0, -1]);
+  const astern2 = step(astern.state, [0, -1], { velSign: -1, speed: 1 });
+  // The same with open ground ahead: turn ahead (9), then drive on turning.
+  const open = { min: [-20, -30], max: [20, 30] };
+  const room = step(0, [0, -1], { box: open });
+  const room2 = step(room.state, [0, -1], { box: open });
+  // About abeam behind (80 deg off the tail's side) in a box whose centre
+  // is behind the hull: a mirrored-point drive (2 or 4) or the straddle (7).
+  const a = 100 * Math.PI / 180;
+  const abeam = step(0, [Math.sin(a), Math.cos(a)]);
+  // Backed out far enough (the wall 8 m ahead now): state 8 lets go.
+  const clear = step(8, [0, -1], { box: { min: [-20, -30], max: [20, 8] } });
+  // A hull on a blocked cell and no valid position: no box, turn (8 -> 0).
+  const blind = step(0, [0, -1], { box: null });
+  return { ahead, astern, astern2, room, room2, abeam, clear, blind };
+}
+
+/** `getSearchBox` 0x085f4180 on a 64 x 64 map, all free but a wall along
+ *  gz = 40 and a post at (20, 20): the box around (10, 10) at level 0... */
+function searchBoxScenario() {
+  const size = 64;
+  const blocked = new Uint8Array(size * size).fill(CELL_FREE);
+  for (let x = 0; x < size; x++) blocked[40 * size + x] = CELL_LAND;
+  blocked[20 * size + 20] = CELL_LAND;
+  const nav = { blocked, width: size, height: size, cellSize: 1 };
+  const levelAt = (gx, gz) => freeLevel(nav, gx + 0.5, -(gz + 0.5));
+  const nearWall = searchBox(levelAt, 30, 37);
+  const open = searchBox(levelAt, 8, 8);
+  const onWall = searchBox(levelAt, 30, 40);
+  // `getIntersection` 0x08612210 and `checkLineAgainstObjects` 0x0860f7c0.
+  const exitAhead = boxExit([-20, -30], [20, 3], [0, 1], [0, 0]);
+  const exitDiag = boxExit([-20, -30], [20, 3], [Math.SQRT1_2, Math.SQRT1_2], [0, 0]);
+  const outside = boxExit([-20, -30], [20, 3], [0, 1], [0, 5]);
+  const lineClear = checkLine([0, 0], [0, 20], 3, []);
+  const lineCut = checkLine([0, 0], [0, 20], 3, [{ x: 0, z: 10, r: 2 }]);
+  const lineTight = checkLine([0, 0], [0, 20], 3, [{ x: 0, z: 3, r: 1 }]);
+  return { nearWall, open, onWall, exitAhead, exitDiag, outside, lineClear, lineCut, lineTight };
+}
+
+/** The boat's arrival brake and its drive from the state machine. */
+function boatDecisionScenario() {
+  const brakeFast = boatResetControls(8);
+  const brakeSlow = boatResetControls(3);
+  const brakeAstern = boatResetControls(-4);
+  const stopped = boatResetControls(0.8);
+  const base = { forward: [0, 1], velocity: [0, 2], toTarget: [0, -50], maxSpeed: 10, prevThrottle: 0 };
+  const backing = boatControl({ ...base, velocity: [0, -2], decision: { state: 8, drive: -1, angle: 0.1, sign: -1 } });
+  const turning = boatControl({ ...base, decision: { state: 9, drive: 0, angle: 3.0, sign: 1 } });
+  const onward = boatControl({ ...base, decision: { state: 9, drive: 1, angle: 2.0, sign: 1 } });
+  return { brakeFast, brakeSlow, brakeAstern, stopped, backing, turning, onward };
 }
 
 /** The vehicle targeting: a hull's gun prefers the close infantryman (the
@@ -622,7 +711,10 @@ function waterMapScenario() {
 const results = {
   strength: strengthScenario(),
   teleport: teleportScenario(),
-  drive: driveDecisionScenario(),
+  actionStatusFixture: actionStatusFixtureScenario(),
+  actionStatus: actionStatusScenario(),
+  searchBox: searchBoxScenario(),
+  boatDecision: boatDecisionScenario(),
   vehicleFire: vehicleFireScenario(),
   antiAircraft: antiAircraftScenario(),
   planeFire: planeFireScenario(),

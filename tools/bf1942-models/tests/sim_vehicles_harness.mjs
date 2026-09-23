@@ -35,11 +35,26 @@ async function start(map, botsPerSide = 4) {
 
 const bot = (match, id) => match.bots.find(b => b.playerId === id);
 
-/** `__botMount`: the nearest free seat of `template` (`driver`: its root). */
-function mount(match, b, template, seat = 'driver') {
+/** Whether a hull's pad is a free cell of the vehicle map. The viewer's map
+ *  paints the pad of El Alamein's nearest Allied Sherman (1685, -736) inside
+ *  a 30 x 25 m blocked patch (nav-map.js fills an object's clip band per
+ *  cell, an INVENTION; the engine draws outlines), so a bot seated there has
+ *  never stood on a valid cell, `actionStatusDecision` has no box of its own,
+ *  and its route out ends pressed on a static 1.8 m off the bow that the
+ *  map does not show (ledger AI-85). */
+function padFree(match, cand) {
+  const nav = match.stage.units.vehicleNav();
+  if (!nav) return true;
+  const gx = Math.floor(cand.pos[0] / nav.cellSize), gz = Math.floor(-cand.pos[2] / nav.cellSize);
+  return nav.blocked[gz * nav.width + gx] === 0;
+}
+
+/** `__botMount`: the nearest free seat of `template` (`driver`: its root);
+ *  `freePad` skips a hull whose pad the vehicle map paints blocked. */
+function mount(match, b, template, seat = 'driver', { freePad = false } = {}) {
   const p = b.getPosition();
   const cands = match.stage.units.candidates().filter(c => !c.occupiedBy && c.template === template
-    && (seat === 'driver' ? c.isRoot : c.seatId === seat));
+    && (seat === 'driver' ? c.isRoot : c.seatId === seat) && (!freePad || padFree(match, c)));
   cands.sort((x, y) => Math.hypot(x.pos[0] - p[0], x.pos[2] - p[2]) - Math.hypot(y.pos[0] - p[0], y.pos[2] - p[2]));
   if (!cands.length) throw new Error(`no free ${template} ${seat}`);
   if (!match.referee.enterVehicle(b, cands[0])) throw new Error(`could not seat ${b.playerId} in ${template}`);
@@ -88,7 +103,7 @@ const recipes = {
   async drive() {
     const match = await start('el_alamein');
     const b = bot(match, 'bot_1');
-    const cand = mount(match, b, 'Sherman');
+    const cand = mount(match, b, 'Sherman', 'driver', { freePad: true });
     const drive = b.vehicle.drive;
     const owner = match.stage.ownerOf(b.vehicle.node);
     const from = { ...drive.state.position };
@@ -118,7 +133,7 @@ const recipes = {
   async obstacle() {
     const match = await start('el_alamein');
     const b = bot(match, 'bot_1');
-    const cand = match.stage.units.candidates().filter(c => c.template === 'Sherman' && c.isRoot)
+    const cand = match.stage.units.candidates().filter(c => c.template === 'Sherman' && c.isRoot && padFree(match, c))
       .sort((x, y) => Math.hypot(x.pos[0] - b.position[0], x.pos[2] - b.position[2])
         - Math.hypot(y.pos[0] - b.position[0], y.pos[2] - b.position[2]))[0];
     const owner = match.stage.ownerOf(cand.node);
