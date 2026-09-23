@@ -27,16 +27,16 @@ import { effectNameFor } from './crash-damage.js';
  * `buildSpawnFlags`, `camera`, `captured`, `clampMobileInput`,
  * `clearVehicleHud`, `collider`, `damageTables`, `deployActive`,
  * `deployTeamId`, `disposeHandWeapon`, `disposeSeatPose`, `effects`,
- * `EMPTY_KEYS`, `feedMobileTurretAim`, `feedVehicleHud`, `footView3p`,
- * `getTouchHudText`, `groundHeight`, `guns`, `handleSoldierFootstep`, `hud`,
- * `HUD_FLY`, `HUD_FOOT`, `hudBridge`, `hullCollisionMaterial`,
- * `isCollision`, `isTouchDevice`, `kbLockLeave`, `keys`, `loadSeatPose`,
- * `LOCAL_PLAYER`, `mobileJumpHeld`, `mobilePadAxis`, `mobilePadHeld`,
- * `mobilePadVector`, `mouseInput`, `netSeatRow`, `netSendAction`,
- * `netVehicleIdFor`, `noteOccupiedVehicle`, `optOnFoot`, `optPilot`,
- * `params`, `pickVehicle`, `playSoldierHurtSound`, `rebuildVehicleInterp`,
- * `resetCaptureUi`, `roomJoined`, `seatAltFire`, `seatFire`,
- * `showFlagPicker`, `showView`, `spawnAtFlag`, `syncFootView`,
+ * `EMPTY_KEYS`, `feedMobileTurretAim`, `feedVehicleHud`, `footLookPair`,
+ * `footView3p`, `getTouchHudText`, `groundHeight`, `guns`,
+ * `handleSoldierFootstep`, `hud`, `HUD_FLY`, `HUD_FOOT`, `hudBridge`,
+ * `hullCollisionMaterial`, `isCollision`, `isTouchDevice`, `kbLockLeave`,
+ * `keys`, `loadSeatPose`, `LOCAL_PLAYER`, `mobileJumpHeld`, `mobilePadAxis`,
+ * `mobilePadHeld`, `mobilePadVector`, `mouseInput`, `netSeatRow`,
+ * `netSendAction`, `netVehicleIdFor`, `noteOccupiedVehicle`, `optOnFoot`,
+ * `optPilot`, `params`, `pickVehicle`, `playSoldierHurtSound`, `pumpLook`,
+ * `rebuildVehicleInterp`, `resetCaptureUi`, `roomJoined`, `seatAltFire`,
+ * `seatFire`, `showFlagPicker`, `showView`, `spawnAtFlag`, `syncFootView`,
  * `toggleFullMap`, `touchFlying`, `triggerHitIndicator`,
  * `updateMobileControls`, `updateSeatPoseVisibility`, `vehicleInput`,
  * `vehicles`, `warmSubtree`, `world`.
@@ -997,7 +997,7 @@ export function createLocalPlayer(page) {
       // turns the counts into an axis, or this frame's pad aim arrives a
       // frame late (the page's original feed-then-pump order).
       page.feedMobileTurretAim(dt);
-      localPlayer.pumpLook(lookTicks);
+      page.pumpLook(lookTicks);
       const held = page.captured ? page.keys : page.EMPTY_KEYS;
       // The engine's PlayerInput, named by action: the same keys, mouse
       // latches and mobile pad this page has always folded. `forwardKeys` and
@@ -1022,9 +1022,9 @@ export function createLocalPlayer(page) {
           : (held.has('ArrowUp') ? 1 : 0) - (held.has('ArrowDown') ? 1 : 0),
         pad: page.mobilePadHeld,
       };
-      look = { x: localPlayer.mouseInput.x, y: localPlayer.mouseInput.y };
+      look = { x: page.mouseInput.x, y: page.mouseInput.y };
     } else if (onFoot) {
-      localPlayer.pumpLook(lookTicks);
+      page.pumpLook(lookTicks);
       const held = page.captured ? page.keys : page.EMPTY_KEYS;
       // Hoisted so footFire can hand the deviation model the same
       // c_PIThrottle / c_PIYaw values the body integrates — the engine's speed
@@ -1059,7 +1059,7 @@ export function createLocalPlayer(page) {
         input.jump = false;
         input.crouch = input.prone = false;
       }
-      look = localPlayer.footLookPair();
+      look = page.footLookPair();
     }
     return { input, look };
   };
