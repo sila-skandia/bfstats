@@ -24,22 +24,22 @@ import { effectNameFor } from './crash-damage.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `buildSpawnFlags`, `camera`, `captureBotPresentationTick`, `captured`,
- * `clampMobileInput`, `clearVehicleHud`, `collider`, `damageTables`,
- * `deployActive`, `deployTeamId`, `disposeHandWeapon`, `disposeSeatPose`,
- * `effects`, `EMPTY_KEYS`, `feedMobileTurretAim`, `feedVehicleHud`,
- * `footView3p`, `getTouchHudText`, `groundHeight`, `guns`,
- * `handleSoldierFootstep`, `handWeapon`, `hud`, `HUD_FLY`, `HUD_FOOT`,
- * `hudBridge`, `hullCollisionMaterial`, `isCollision`, `isTouchDevice`,
- * `isZoomed`, `kbLockLeave`, `keys`, `loadSeatPose`, `LOCAL_PLAYER`, `look`,
- * `LOOK_SENS`, `mobileJumpHeld`, `mobilePadAxis`, `mobilePadHeld`,
- * `mobilePadVector`, `netSeatRow`, `netSendAction`, `netTickPoses`,
+ * `buildSpawnFlags`, `camera`, `captured`, `clampMobileInput`,
+ * `clearVehicleHud`, `collider`, `damageTables`, `deployActive`,
+ * `deployTeamId`, `disposeHandWeapon`, `disposeSeatPose`, `effects`,
+ * `EMPTY_KEYS`, `feedMobileTurretAim`, `feedVehicleHud`, `footView3p`,
+ * `getTouchHudText`, `groundHeight`, `guns`, `handleSoldierFootstep`, `hud`,
+ * `HUD_FLY`, `HUD_FOOT`, `hudBridge`, `hullCollisionMaterial`,
+ * `isCollision`, `isTouchDevice`, `kbLockLeave`, `keys`, `loadSeatPose`,
+ * `LOCAL_PLAYER`, `mobileJumpHeld`, `mobilePadAxis`, `mobilePadHeld`,
+ * `mobilePadVector`, `mouseInput`, `netSeatRow`, `netSendAction`,
  * `netVehicleIdFor`, `noteOccupiedVehicle`, `optOnFoot`, `optPilot`,
- * `params`, `pickVehicle`, `playSoldierHurtSound`, `resetCaptureUi`,
- * `roomJoined`, `seatAltFire`, `seatFire`, `showFlagPicker`, `showView`,
- * `spawnAtFlag`, `syncFootView`, `toggleFullMap`, `touchFlying`,
- * `triggerHitIndicator`, `updateMobileControls`, `updateSeatPoseVisibility`,
- * `vehicleInput`, `vehicles`, `warmSubtree`, `world`.
+ * `params`, `pickVehicle`, `playSoldierHurtSound`, `rebuildVehicleInterp`,
+ * `resetCaptureUi`, `roomJoined`, `seatAltFire`, `seatFire`,
+ * `showFlagPicker`, `showView`, `spawnAtFlag`, `syncFootView`,
+ * `toggleFullMap`, `touchFlying`, `triggerHitIndicator`,
+ * `updateMobileControls`, `updateSeatPoseVisibility`, `vehicleInput`,
+ * `vehicles`, `warmSubtree`, `world`.
  */
 export function createLocalPlayer(page) {
   const localPlayer = {
@@ -63,423 +63,6 @@ export function createLocalPlayer(page) {
     get mannedGuns() { return page.vehicles.seatOf(page.LOCAL_PLAYER)?.groups.manned ?? []; },
   };
 
-  // --- the mouse-look input stage, on the engine's own tick -----------------
-  //
-  // LOOP-1 and GUN-2b together. The simulation is a fixed 30 Hz step with
-  // `dt = 1/30` exactly, rendering runs free on top, and a frame produces 0, 1
-  // or several whole ticks; the mouse-look axis is computed ONCE per pumped
-  // frame and every tick of that frame reads the same value. That is what makes
-  // the same hand movement turn a turret the same amount at 30, 60 and 144 fps,
-  // and it is why this page cannot simply hand the render dt to the servo.
-  //
-  // The rest of the page still steps on the render dt -- the soldier body has
-  // its own 60 Hz accumulator in `physics.js`, the drivetrain its own in
-  // `ground.js`. Only the look path is moved here, which is the whole of this
-  // stream: a page-wide fixed step is a bigger change than one branch should
-  // make while four other streams are editing this file.
-  const SIM_TICK_HZ = 30;                 // `g_simulationFps`, lnxded 0x08716b5c
-  const SIM_TICK_DT = 1 / SIM_TICK_HZ;    // `Setup+0xcc` / client `Setup+0x184`
-  const mouseInput = new MouseInput();
-  // The 30 Hz clock itself lives in the world (world.js), one authority per
-  // player; this page reads its frame's tick count back from `world.lookTicks
-  // (dt)` instead of running a second accumulator that could drift out of
-  // phase with the world's (a profile switch used to reset this page's simAccum
-  // and never the world's). The engine's backlog collapse was that page clock's
-  // rule too (`GameClient::update` 0x0048fca8 `cmp ebx,0x9; jle; mov ebx,1`);
-  // the world owns the same law as its FixedStep's MAX_CATCH_UP_TICKS cap.
-
-  /** Which sensitivity profile the player is on right now.
-   *
-   *  The engine reads it off the entered PCO's `getVehicleCategory()` (see
-   *  `mouse-input.js`'s `profileFor`), and in vanilla every stationary weapon
-   *  and every gunner position -- an aircraft's rear gun included -- declares
-   *  `VCLand`, so only an aircraft's own pilot seat is on the Air profile. That
-   *  is exactly `flying` here. */
-  function lookProfile() {
-    if (page.optPilot.checked && localPlayer.occupancy) {
-      return profileFor(localPlayer.aircraft && localPlayer.occupancy.isActiveRoot() ? 'air' : 'land');
-    }
-    return profileFor(null);
-  }
-
-  /**
-   * One frame's pump, driven by the world's own clock.
-   *
-   * The pump's argument is the time the frame's ticks CONSUME (`nTicks / 30`),
-   * not the wall-clock frame time -- `InputManager::update` 0x0049cff7
-   * `fild nTicks; fmul tickDt`. That is what makes the integral exact: the
-   * axis is `0.001 * counts * scale / (n/30)`, each of the n ticks contributes
-   * its own share, and the total comes to `0.001 * counts * scale * 30`
-   * whatever n was. A frame that owes no tick does not pump at all, and its
-   * counts wait. `ticks` is the world's count for this frame (`lookTicks`),
-   * so the pump and the sim share one tick authority.
-   */
-  function pumpLook(ticks) {
-    const profile = lookProfile();
-    if (profile !== mouseInput.profile) {
-      // A different control map has been activated (climbing into a plane, or
-      // out of one). The engine resets the map it leaves, so nothing a player
-      // did on the old profile arrives scaled by the new one. Only the device
-      // stage resets here; the world's clock carries on (it is the one clock).
-      mouseInput.reset();
-      mouseInput.profile = profile;
-    }
-    if (ticks > 0) mouseInput.pump(ticks * SIM_TICK_DT, profile);
-    return ticks;
-  }
-
-  /** A pumped frame's turret ticks: set the held axis pair once, then run the
-   *  servo that many times at the engine's own dt. The world owns this loop now
-   *  (world.js #vehicleTick aims the rig with the latest buffered axis and
-   *  steps it once per 30 Hz tick, which is exactly this servo run); the page
-   *  keeps only the pump — `pumpLook` above — and hands the world the axis
-   *  pair, so `occupancy.turret`'s aim/step moved across unchanged. */
-
-  /** The soldier's own look, per tick.
-   *
-   *  `BFSoldier::handlePlayerInput` (lnxded 0x08273c70) turns the view by
-   *  `input * dt * g_simulationFps` degrees a tick -- so, at the fixed tick,
-   *  `input` degrees -- with a x3.0 on the yaw axis alone (`ds:0x86c08c8`, read
-   *  at 0x0827457d) and none on the pitch (0x08274537). `mouse-input.js` carries
-   *  the addresses. Signs match this page's own convention, which counts yaw the
-   *  other way from the engine. */
-  function footLookPair() {
-    const factor = footZoomFactor();
-    return { x: mouseInput.x * factor, y: mouseInput.y * factor };
-  }
-
-  /**
-   * The zoom half of the law above, split out so the render prediction
-   * (`footLookPending`) runs the pair through the SAME factor the tick will.
-   *
-   * While zoomed the engine scales BOTH mouse-look axes by the weapon's
-   * `zoomFov` — the WORLD field of view, `zoom.fov` here — not by
-   * `SoldierZoomFov`, which is the arms' own factor. Read out of the
-   * authority: `BFSoldier::handlePlayerInput` lnxded `0x08275bdf`
-   * `call [eax+0x114]` (the weapon's zoom state), then
-   *
-   *     0x08275bf2  mov eax,[edi+0x4c]        ; the FireArms TEMPLATE
-   *     0x08275bf5  fld [ebp-0x29c]           ; c_PIMouseLookX
-   *     0x08275bfb  fld [eax+0x270]
-   *     0x08275c01  fmul st(1),st ; 0x08275c03 fmul [ebp-0x2a4]
-   *     0x08275c0b  fstp [ebp-0x29c] ; 0x08275c11 fstp [ebp-0x2a4]
-   *
-   * and `FireArmsTemplate::makeScript` round-trips **`+0x270` as
-   * `ObjectTemplate.zoomFov`** (`0x0828f0e2` pushes `0x086d313b` =
-   * `'ObjectTemplate.zoomFov '` before `fld [ebx+0x270]`) while
-   * **`+0x274` is `ObjectTemplate.SoldierZoomFov`** (`0x0828f0b0` pushes
-   * `0x086d35e0`). The two differ per weapon and by a lot: a K98 is
-   * `zoomFov 0.4 / soldierZoomFov 0.6`, a Colt `0.7 / 0.5`. Using the arms'
-   * factor made a scoped K98 50% too fast and a sighted Colt 29% too slow.
-   *
-   * Why a whole FOV reads as a factor: the hip FOV is 1 radian, so `zoomFov`
-   * IS the ratio. The `-1.0f` template default cannot reach here --
-   * `FireArms::setZoom` `0x082881b7` refuses to zoom at all while
-   * `+0x270 < 0` -- but the guard costs nothing.
-   */
-  function footZoomFactor() {
-    if (!page.isZoomed()) return 1;
-    const zoomFov = page.handWeapon?.data?.zoom?.fov;
-    return Number.isFinite(zoomFov) && zoomFov > 0 ? zoomFov : 1;
-  }
-
-  /** The axis pair the NEXT tick will read, from the counts standing right now.
-   *
-   *  `mouseInput.peek` is `pump` without the consumption (mouse-input.js), asked
-   *  for one tick's worth of time, through the same zoom factor `footLookPair`
-   *  applies to the pumped pair. On a frame that DID pump — every frame that
-   *  runs a tick — the counts were just cleared, so this returns `{0, 0}` and
-   *  the prediction it feeds is exactly zero. That is the whole continuity
-   *  argument for drawing the predicted view: on a tick frame the displayed
-   *  view IS the simulated one, by construction rather than by tuning.
-   *
-   *  Written into `out` — this is a per-frame path (rule 5). */
-  function footLookPending(out) {
-    mouseInput.peek(SIM_TICK_DT, lookProfile(), out);
-    const factor = footZoomFactor();
-    out.x *= factor;
-    out.y *= factor;
-    return out;
-  }
-
-  // --- render interpolation: drawing between the sim's 30 Hz ticks -----------
-  //
-  // THE RULE (features/mesh-viewer-performance, rule 8): the simulation ticks at
-  // 30 Hz and the page never draws a raw tick. At 60 Hz the world steps every
-  // other frame, so a page that drew tick state showed a new pose on half its
-  // frames and the same one on the rest — measured on foot at
-  // `[2.16, 0, 1.08, 0, 2.16, 0, 2.55, 0 ...]` degrees of camera rotation per
-  // frame during a steady pan, which is what "the frame rate feels bad while
-  // aiming" actually was. The renderer was never the problem.
-  //
-  // Two different fixes, because the two quantities want different things:
-  //
-  //   * **Positions and rigged angles are INTERPOLATED.** The previous tick's
-  //     pose is kept beside the current one and the frame draws `lerp(prev, cur,
-  //     alpha)` where `alpha` is `world.step()`'s own report of how far the
-  //     clock has carried past the last tick. That costs one tick of positional
-  //     latency (33 ms), which nobody can see on a body or a hull.
-  //   * **The on-foot VIEW ANGLES are PREDICTED, never lerped.** Thirty-three
-  //     milliseconds on the mouse is something a player feels immediately, so
-  //     instead of trailing the sim the view LEADS it by exactly the rotation
-  //     the next tick is already committed to: the mouse axis is a rate
-  //     computed from the counts pending right now (mouse-input.js), a frame
-  //     that runs no tick does not pump and those counts keep accruing, so the
-  //     pending rotation is a pure function of state the page can read. It is
-  //     read through `MouseInput.peek` and `Soldier.lookPreview` — the pump's
-  //     own conversion and the tick's own clamp — never a re-derived copy. On
-  //     a frame that DID tick the counts were just consumed, the prediction is
-  //     zero and the displayed view equals the simulated one, so the hand-off
-  //     between predicted and simulated is continuous by construction.
-  //
-  // THE TICK-EXACT-POSE CONSTRAINT. Anything the SIMULATION reads out of the
-  // scene graph during a tick — gun muzzle world matrices (gunfire.js's
-  // `updateWorldMatrix` at fire time), seat positions, `setPlayerPosition` —
-  // must see the tick's own pose, never an interpolated one. That holds here
-  // without a restore pass, because every node this file interpolates is
-  // rewritten from exact sim state INSIDE the tick before anything reads it:
-  // `Vehicle.integrate` ends in `applyTransform` + `applyRig` (the root and
-  // every rig part), and `TurretAxis.step` ends in its own `_apply` (every aim
-  // axis), all of which run in world.js's `#vehicleTick`, i.e. before that
-  // tick's `guns.advance`. The interpolated pose is written after `world.step()`
-  // returns and is dead by the next tick. The one scene read that happens
-  // BEFORE the step is `occupancy.root.getWorldPosition` in frame()'s seated
-  // branch, and that feeds the combat-area test for a BARE gun/seat root only
-  // (a root with a drivetrain reports `vehicle.state.position` instead) — a
-  // bare root has no drivetrain, so nothing interpolates its position and the
-  // value is exact either way.
-  //
-  // SNAP, NEVER LERP, ACROSS A DISCONTINUITY. `snapPresentation()` collapses
-  // prev onto cur so a spawn, a teleport, a seat change or a level switch does
-  // not streak the camera across the map for one frame. A `FixedStep` catch-up
-  // collapse needs no entry: `onTick` fires per tick, so prev and cur are
-  // always two ADJACENT ticks however many the frame ran or dropped.
-  //
-  // Rule 5 applies throughout: every vector and quaternion below is allocated
-  // once, at module load or at the moment a vehicle is mounted.
-
-  /** `world.step()`'s alpha for this frame: the fraction of the way from the
-   *  last tick to the next. Zero until a world exists. */
-  localPlayer.presentAlpha = 0;
-  /** Set by `snapPresentation()`, spent by the next capture. */
-  localPlayer.presentSnap = true;
-
-  /** The on-foot eye at the last two world-tick boundaries, plus the frame's
-   *  drawn blend of them. NOT `soldier.eye()`'s own interpolation: the body's
-   *  60 Hz clock is advanced in whole 1/30 increments from inside the world
-   *  tick, so its alpha is always zero and it returns raw tick state. */
-  const footEyePrev = { x: 0, y: 0, z: 0 };
-  const footEyeCur = { x: 0, y: 0, z: 0 };
-  /** And his FEET at the same two boundaries, for the third-person body.
-   *  Interpolated for the same reason the eye is: the body's own clock returns
-   *  raw tick state, and drawing the rig at it while the camera is drawn at an
-   *  interpolated eye makes the man judder against his own chase view at any
-   *  frame rate above the tick. Not derived from the eye, which carries the view
-   *  bob and the stance's eye height. */
-  const footFeetPrev = { x: 0, y: 0, z: 0 };
-  const footFeetCur = { x: 0, y: 0, z: 0 };
-  /** Scratch for the predicted view: the pending axis pair and the pair of
-   *  angles `Soldier.lookPreview` hands back. */
-  const footPending = { x: 0, y: 0 };
-  const footView = { yaw: 0, pitch: 0 };
-
-  /**
-   * The occupied vehicle's drawn pose.
-   *
-   * `vehicle` is the drivetrain whose `state` carries the root pose (null for a
-   * bare gun/seat root, which does not move); `parts` is every node a tick
-   * poses — rig parts, the nodes an Engine spins, and every aim axis of every
-   * seat's `TurretRig` — tracked by node so no module has to hand its internals
-   * over. Quaternions are slerped, the root position is lerped.
-   */
-  const vehicleInterp = {
-    vehicle: null,
-    root: null,
-    parts: [],
-    active: false,
-    posPrev: new THREE.Vector3(),
-    posCur: new THREE.Vector3(),
-    posDraw: new THREE.Vector3(),
-    quatPrev: new THREE.Quaternion(),
-    quatCur: new THREE.Quaternion(),
-  };
-
-  /** Re-collect the nodes a tick poses. Called on every mount, seat change and
-   *  dismount — the only moments the set can change — and never per frame. */
-  function rebuildVehicleInterp() {
-    vehicleInterp.parts.length = 0;
-    vehicleInterp.vehicle = null;
-    vehicleInterp.root = null;
-    vehicleInterp.active = false;
-    if (localPlayer.occupancy) {
-      const drive = localPlayer.aircraft || localPlayer.car || null;
-      vehicleInterp.vehicle = drive;
-      vehicleInterp.root = drive ? drive.node : null;
-      const seen = new Set();
-      const track = node => {
-        if (!node || node === vehicleInterp.root || seen.has(node)) return;
-        seen.add(node);
-        vehicleInterp.parts.push({
-          node,
-          prev: new THREE.Quaternion().copy(node.quaternion),
-          cur: new THREE.Quaternion().copy(node.quaternion),
-        });
-      };
-      for (const part of drive?.parts || []) {
-        track(part.node);
-        for (const spun of part.spun || []) track(spun);
-      }
-      // Every seat's rig, not only the active one: an inactive rig simply never
-      // moves, so its prev and cur stay equal and its slerp is the identity.
-      for (const rig of localPlayer.occupancy.turrets?.values() || []) {
-        for (const axis of rig.axes || []) track(axis.node);
-      }
-    }
-    // A vehicle left behind must stop being drawn between ITS ticks, and a
-    // vehicle just climbed into starts from where it is parked, not from
-    // whatever the last one was doing.
-    if (localPlayer.view) localPlayer.view.drawnPosition = null;
-    snapPresentation();
-  }
-
-  /**
-   * The next capture starts a fresh pair rather than blending out of a pose
-   * that no longer means anything: a spawn, a teleport, entering or leaving a
-   * vehicle, a seat switch, a death or respawn, a level switch, `__plane().
-   * place` / `__placeCar`. Cheap and idempotent, so call it whenever in doubt.
-   */
-  function snapPresentation() {
-    localPlayer.presentSnap = true;
-    capturePresentationTick();
-  }
-
-  /**
-   * One tick boundary's pose, kept beside the previous one. Registered as the
-   * world's `onTick`, so it runs once per tick — including each tick of a frame
-   * that ran several — with every piece of that tick's state final.
-   */
-  function capturePresentationTick() {
-    const snap = localPlayer.presentSnap;
-    localPlayer.presentSnap = false;
-    // The room's prediction ledger: one entry per tick the world ran, in the
-    // order the words go on the wire, so the authority's `ack` names a pose the
-    // client can measure its error at. Here rather than beside the send, because
-    // a frame that ran three ticks sends three words and this is the only place
-    // that sees each tick's own finished pose (netcode-reconcile.js).
-    if (page.roomJoined && localPlayer.soldier) page.netTickPoses.push(localPlayer.soldier.x, localPlayer.soldier.y, localPlayer.soldier.z);
-    if (localPlayer.soldier) {
-      if (!snap) Object.assign(footEyePrev, footEyeCur);
-      // Alpha 1: this tick's own finished pose. See `Soldier.eye`.
-      localPlayer.soldier.eye(footEyeCur, 1);
-      if (snap) Object.assign(footEyePrev, footEyeCur);
-      if (!snap) Object.assign(footFeetPrev, footFeetCur);
-      footFeetCur.x = localPlayer.soldier.x;
-      footFeetCur.y = localPlayer.soldier.y;
-      footFeetCur.z = localPlayer.soldier.z;
-      if (snap) Object.assign(footFeetPrev, footFeetCur);
-    }
-    page.captureBotPresentationTick(snap);
-    const vi = vehicleInterp;
-    if (!vi.vehicle && !vi.parts.length) return;
-    if (vi.vehicle) {
-      if (!snap) { vi.posPrev.copy(vi.posCur); vi.quatPrev.copy(vi.quatCur); }
-      // The drivetrain's state, not the node: the contact solver may have pushed
-      // the hull after `applyTransform` wrote the node, and `stepVehicleBodies`
-      // used to be the only thing that drew that push.
-      vi.posCur.copy(vi.vehicle.state.position);
-      vi.quatCur.copy(vi.vehicle.state.orientation);
-      if (snap) { vi.posPrev.copy(vi.posCur); vi.quatPrev.copy(vi.quatCur); }
-    }
-    for (const part of vi.parts) {
-      if (!snap) part.prev.copy(part.cur);
-      part.cur.copy(part.node.quaternion);
-      if (snap) part.prev.copy(part.cur);
-    }
-    vi.active = true;
-  }
-
-  /**
-   * Draw the occupied vehicle where this FRAME is, not where the last tick left
-   * it. Runs immediately after `world.step()` and before any camera, because
-   * every vehicle camera — the cockpit eye, a gunner's seat camera, the seated
-   * soldier's pose target — derives from these nodes' world matrices.
-   *
-   * `updateMatrixWorld(true)` for the same reason `applyTransform` calls it: the
-   * cameras read world poses before the renderer's own matrix walk gets there.
-   */
-  function applyVehicleInterp(alpha) {
-    const vi = vehicleInterp;
-    if (!vi.active) return;
-    if (vi.vehicle) {
-      vi.posDraw.lerpVectors(vi.posPrev, vi.posCur, alpha);
-      vi.root.position.copy(vi.posDraw);
-      vi.root.quaternion.slerpQuaternions(vi.quatPrev, vi.quatCur, alpha);
-    }
-    for (const part of vi.parts) {
-      part.node.quaternion.slerpQuaternions(part.prev, part.cur, alpha);
-    }
-    if (vi.root) vi.root.updateMatrixWorld(true);
-    // The external camera modes frame the hull from outside and hang off
-    // `state.position`; point them at what was actually drawn (flight.js's
-    // `drawnPosition`). The cockpit mode needs nothing — it reads the camera
-    // node, which the matrix update above has just moved.
-    if (localPlayer.view) localPlayer.view.drawnPosition = vi.vehicle ? vi.posDraw : null;
-  }
-
-  function lookDelta(dx, dy) {
-    if (!dx && !dy) return;
-    // P2's one necessary touch outside its owned-function list (see its final
-    // report): a bare gun/seat root has no `view` (`VehicleCamera`) to turn at
-    // all, and a nested seat of a vehicle that does (the Sherman's hull gunner)
-    // must not steal the *driver's* `view.turn` while manned — neither case
-    // existed before manned guns did, and both need to reach `occupancy.turret`
-    // before the plain aircraft/car branch below ever runs, or a manned-only
-    // seat's mouse motion falls through into the on-foot soldier-look branch
-    // instead (the soldier is merely suspended, not unmounted, while seated).
-    // A turret takes the mouse from whichever seat owns it, driving seat
-    // included. `mannedActive()` alone was enough while only gunners had one;
-    // a tank's driver aims his own main gun in this engine (`ShermanTower` /
-    // `ShermanGunBase` are declared under the Sherman's own control), so the
-    // test is now "is there a turret" rather than "is this a gunner". A
-    // drivetrain seat with no turret — a jeep, an aircraft — still falls
-    // through to `view.turn` below and swings the camera as it always did.
-    if (page.optPilot.checked && localPlayer.occupancy?.turret) {
-      // Not applied here any more: the counts go into the input stage and the
-      // frame's pump turns them into one axis pair that every tick of that frame
-      // reads (`stepTurret`). Several `mousemove` events between two frames
-      // simply add up, which is what DirectInput does between two pumps.
-      mouseInput.accumulate(dx, dy);
-      return;
-    }
-    if (page.optPilot.checked && mannedActive()) {
-      // A manned seat with no aim rig at all: a passenger position. Nothing to
-      // turn, and falling through would hand the mouse to the driver's camera.
-      return;
-    }
-    if (page.optPilot.checked && (localPlayer.aircraft || localPlayer.car)) {
-      // Not a stick: the arrow keys fly the aircraft and A/D steer the car. What
-      // the mouse does depends on the view — a head inside the cockpit, an orbit
-      // outside it, and nothing at all in fly-by, which is a camera standing in
-      // the world. `VehicleCamera` owns that distinction and the per-mode clamps
-      // that go with it.
-      localPlayer.view.turn(-dx * HEAD_SENS, -dy * HEAD_SENS);
-      return;
-    }
-    if (page.optOnFoot.checked && localPlayer.soldier) {
-      // Same as the turret: accumulated here, converted once per pumped frame,
-      // applied per tick in `stepSoldierLook`. The zoom factor and the pitch
-      // clamp moved there with it.
-      mouseInput.accumulate(dx, dy);
-      return;
-    }
-    page.look.yaw -= dx * page.LOOK_SENS;
-    page.look.pitch = Math.max(-1.2, Math.min(1.2, page.look.pitch - dy * page.LOOK_SENS));
-  }
-  // The stick position (-1..1, driven toward a held key's full deflection and
-  // springing back to centre on release) is the world's per-player state now —
-  // world.js owns it beside the aircraft path that spends it, and the page's
-  // resets delegate to `world.resetStick`.
-  const HEAD_SENS = 0.0022;
   // The views C cycles from the ACTIVE SEAT -- one `VehicleCamera` per seat
   // taken (`localPlayer.view`), rebuilt on every mount and seat switch
   // (`buildSeatView`), never one per vehicle. Cockpit and nose are read from data (the seat's own Camera node
@@ -773,7 +356,7 @@ export function createLocalPlayer(page) {
     // Climbing in or out moves the drawn set and the camera both; re-collect
     // the nodes a tick poses and start a fresh pair (the render-interpolation
     // block, beside `footLookPending`).
-    rebuildVehicleInterp();
+    page.rebuildVehicleInterp();
     page.hud.textContent = page.isTouchDevice ? page.getTouchHudText()
       : localPlayer.occupancy
         ? (mannedActive() ? HUD_MANNED : localPlayer.car ? HUD_DRIVE : HUD_PILOT)
@@ -811,7 +394,7 @@ export function createLocalPlayer(page) {
     if (!seat) return;
     if (was && was.seat === seat && was.seatId === seat.seatId && was.drive === seat.drive) return;
     buildSeatView();
-    rebuildVehicleInterp();
+    page.rebuildVehicleInterp();
     page.feedVehicleHud();
     page.updateMobileControls();
   }
@@ -839,7 +422,7 @@ export function createLocalPlayer(page) {
     localPlayer.viewFor = null;
     localPlayer.gunSubject = null;
     page.world?.resetStick(page.LOCAL_PLAYER);
-    rebuildVehicleInterp();
+    page.rebuildVehicleInterp();
   }
 
   function passenger(dt) {
@@ -863,7 +446,7 @@ export function createLocalPlayer(page) {
   // `window.__turretScale()` reads and writes it live.
   if (page.params.has('turret')) {
     const n = Number(page.params.get('turret'));
-    if (Number.isFinite(n) && n > 0) mouseInput.countsPerPixel = n;
+    if (Number.isFinite(n) && n > 0) page.mouseInput.countsPerPixel = n;
   }
 
   const HUD_PILOT = 'W/S throttle · A/D rudder · arrows pitch and roll · LMB guns · RMB bombs · '
@@ -1020,7 +603,7 @@ export function createLocalPlayer(page) {
     buildSeatView();
     // A different seat is a different camera, often in a different rig; snap
     // rather than sweep the view across the hull for a frame.
-    rebuildVehicleInterp();
+    page.rebuildVehicleInterp();
     page.warmSubtree(seat.root);
     page.feedVehicleHud();
     page.hud.textContent = page.isTouchDevice ? page.getTouchHudText()
@@ -1570,41 +1153,25 @@ export function createLocalPlayer(page) {
     MANNED_GUN_FOV,
     SOLDIER_MAX_HP_FALLBACK,
     applyDamageToPlayer,
-    applyVehicleInterp,
-    capturePresentationTick,
     chaseRig,
     cycleView,
     deathCamAt,
     deathCamPos,
     drive,
     driveFwd,
-    footEyeCur,
-    footEyePrev,
-    footFeetCur,
-    footFeetPrev,
-    footLookPair,
-    footLookPending,
-    footPending,
-    footView,
     leavePilot,
     leaveSeat,
-    lookDelta,
     manned,
     mannedActive,
-    mouseInput,
     parachuteLog,
     passenger,
     pilot,
-    pumpLook,
-    rebuildVehicleInterp,
     serverSettings,
     setOnFoot,
     setPilot,
-    snapPresentation,
     supplyTarget,
     switchSeat,
     syncLocalSeat,
-    vehicleInterp,
   });
   return localPlayer;
 }
