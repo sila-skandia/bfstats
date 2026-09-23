@@ -36,6 +36,7 @@ MODULES = {
     "collision.mjs": ROOT / "viewer" / "collision.js",
     "world-collider.js": ROOT / "viewer" / "world-collider.js",
     "static-index.js": ROOT / "viewer" / "static-index.js",
+    "collision-meshes.js": ROOT / "viewer" / "collision-meshes.js",
     "drivable-mask.js": ROOT / "viewer" / "drivable-mask.js",
     "collision-materials.js": ROOT / "viewer" / "collision-materials.js",
     "heightfield.js": ROOT / "viewer" / "heightfield.js",
