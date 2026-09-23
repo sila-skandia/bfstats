@@ -109,6 +109,13 @@ const nav = {
 };
 const p = findStrategicPath(nav, 10, -20, 100, -20);
 out.navPath = p?.map(([x, z]) => [x, z]);
+// A start in a pocket with no region (cell (1,1)'s Info 3, sealed from
+// region 3's point by a wall at z = 84) routes from the nearest pixel that
+// has one (INVENTION: the engine has no path from it).
+const walled = { ...nav, blocked: new Uint8Array(128 * 128) };
+for (let x = 64; x < 128; x++) walled.blocked[84 * 128 + x] = 4;
+const pocket = findStrategicPath(walled, 74, -104, 10, -20);
+out.pocket = { region: sm.regionAt(74, 104, (x, z) => walled.blocked[z * 128 + x] !== 0), path: pocket ? pocket.length : null };
 
 // --- a search type names its map ---
 const index = {

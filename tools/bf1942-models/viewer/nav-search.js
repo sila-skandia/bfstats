@@ -527,6 +527,24 @@ function resolveFree(nav, x, z) {
   return c ? [(c[0] + 0.5) * nav.cellSize, -(c[1] + 0.5) * nav.cellSize] : null;
 }
 
+/** `(x, z)` itself when its pixel has a region, else the nearest free pixel
+ *  within `START_RESOLVE_CELLS` that has one (square rings), else itself. */
+function regionedNear(nav, sm, blocked, x, z) {
+  const ix = Math.floor(x), iz = Math.floor(-z);
+  if (blocked(ix, iz) || sm.regionAt(ix, iz, blocked) >= 0) return [x, z];
+  for (let r = 1; r <= START_RESOLVE_CELLS; r++) {
+    for (let dz = -r; dz <= r; dz++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        const px = ix + dx, pz = iz + dz;
+        if (blocked(px, pz) || sm.regionAt(px, pz, blocked) < 0) continue;
+        return [px + 0.5, -(pz + 0.5)];
+      }
+    }
+  }
+  return [x, z];
+}
+
 function engineStrategicPath(nav, fromX, fromZ, toX, toZ, fallbackStart) {
   const sm = nav.strategic;
   const blocked = pixelBlocked(nav);
@@ -557,6 +575,12 @@ function engineStrategicPath(nav, fromX, fromZ, toX, toZ, fallbackStart) {
     const p = resolveFree(nav, gx, gz);
     if (p) [gx, gz] = p;
   }
+  // A free pixel with no region (a 3 in an overloaded cell that its flood
+  // does not join to region 3's point: a pocket the map's regions left out)
+  // is taken to the nearest free pixel that has one, within the same 20 m
+  // (INVENTION: the engine has no path from or to it).
+  [sx, sz] = regionedNear(nav, sm, blocked, sx, sz);
+  [gx, gz] = regionedNear(nav, sm, blocked, gx, gz);
   const r = sm.route(sx, -sz, gx, -gz, blocked);
   nav._lastStrategic = r;
   if (!r.legs) return null;
