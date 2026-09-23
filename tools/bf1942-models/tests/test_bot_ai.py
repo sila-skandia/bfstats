@@ -53,6 +53,8 @@ MODULES["bot.js"] = VIEWER / "bot.js"
 MODULES["nav-grid.js"] = VIEWER / "nav-grid.js"
 for _m in ("bot-aim.js", "bot-perception.js", "bot-route.js", "bot-pilot.js", "bot-decision.js", "bot-plans.js", "bot-mount.js", "bot-sense.js", "bot-fire.js", "bot-behaviours.js", "bot-vehicle.js", "bot-vehicle-air.js", "bot-strength.js", "strategic.js", "strategic-layer.js", "strategic-ai.js", "doctrine.js", "doctrine-squad.js"):
     MODULES[_m] = VIEWER / _m
+# `actionStatusDecision` against the binary (the x87 emulator's answers).
+MODULES["action_status_cases.json"] = Path(__file__).resolve().parent / "fixtures" / "action_status_cases.json"
 MODULES["node_modules/three/three.module.js"] = VIEWER / "vendor" / "three.module.js"
 THREE_PACKAGE = json.dumps({
     "name": "three", "version": "0.0.0", "type": "module",
@@ -200,9 +202,21 @@ class BotAiTests(unittest.TestCase):
         self.assertLess(t["fast"]["throttle"], 0.0)            # over the wanted speed: back off
         self.assertLess(t["right"]["steer"], 0.0)              # a target to +yaw steers negative
         self.assertTrue(t["right"]["aligned"])
+        # A turn in place (`drive` 0): full lock, the throttle 1 at or under
+        # 2 m/s and none above (the tail, 0x0862cad8).
         self.assertFalse(t["behind"]["aligned"])
         self.assertEqual(abs(t["behind"]["steer"]), 1.0)
-        self.assertEqual(t["behindKept"]["turn"], t["behind"]["turn"])   # no flip across the seam
+        self.assertEqual(t["behind"]["throttle"], 1)
+        self.assertEqual(t["behindFast"]["throttle"], 0)
+        # A reverse drive backs; its angle is negated while the hull still
+        # rolls forward (0x0862c9ae..0x0862c9c2).
+        self.assertEqual(t["reverse"]["throttle"], -1)
+        self.assertAlmostEqual(t["reverse"]["steer"], 0.2, places=6)
+        self.assertAlmostEqual(t["reverseRolling"]["steer"], -0.2, places=6)
+        # A rolling hull wants its speed over `|roll rate| x 10 + 1`: at 3 m/s
+        # and a roll rate of 1 the wanted 20 / 11 is already beaten.
+        self.assertEqual(t["steady"]["throttle"], 1)
+        self.assertEqual(t["rolling"]["throttle"], -1)
 
     def test_a_sherman_close_by_outranks_staying_on_foot(self) -> None:
         c = self.results["change"]
@@ -290,14 +304,67 @@ class BotAiTests(unittest.TestCase):
         self.assertIsNone(t["rootKeeps"]["best"])
         self.assertEqual(t["pending"]["urgency"], 6.0)
 
-    def test_the_box_test_backs_toward_a_target_behind_with_no_room(self) -> None:
-        d = self.results["drive"]
-        self.assertTrue(d["back"]["reverse"])
-        self.assertFalse(d["room"]["reverse"])
-        self.assertFalse(d["narrow"]["reverse"])
-        self.assertFalse(d["shallow"]["reverse"])
-        self.assertTrue(d["lawReverse"])
-        self.assertLess(d["lawThrottle"], 0)
+    def test_the_turn_in_the_box_answers_as_the_binary_does(self) -> None:
+        # `CommonControls::actionStatusDecision` 0x0860fbe0: every transition
+        # the function can make, each against the machine code's own answer
+        # in the x87 emulator (ledger AI-85). 0 -> 6 is not reachable (state
+        # 0 picks 7 whenever `dir . forward < 0`, which it already is), and
+        # nothing sets 1.
+        f = self.results["actionStatusFixture"]
+        want = {"0->0/1", "0->9/0", "0->8/0", "0->2/0", "0->4/0", "0->7/0", "1->1/0",
+                "2->2/1", "2->3/0", "2->0/0", "3->3/-1", "3->0/0", "4->4/1", "4->5/0", "4->0/0",
+                "5->5/-1", "5->0/0", "6->6/-1", "6->0/0", "7->7/-1", "7->0/0",
+                "8->8/-1", "8->0/0", "9->9/1", "9->0/0"}
+        self.assertEqual(set(f), want)
+        for key, t in f.items():
+            self.assertGreater(t["cases"], 0, key)
+            self.assertEqual(t["wrong"], 0, key)
+
+    def test_a_hull_backs_off_a_wall_and_turns_where_there_is_room(self) -> None:
+        a = self.results["actionStatus"]
+        self.assertEqual((a["ahead"]["state"], a["ahead"]["drive"]), (0, 1))
+        # Dead astern with the wall 3 m ahead (inside the turn radius): state
+        # 8, whose next tick backs straight out.
+        self.assertEqual((a["astern"]["state"], a["astern"]["drive"]), (8, 0))
+        self.assertEqual((a["astern2"]["state"], a["astern2"]["drive"]), (8, -1))
+        # Room ahead: 9, then drive on turning (the full angle, pi).
+        self.assertEqual((a["room"]["state"], a["room2"]["state"], a["room2"]["drive"]), (9, 9, 1))
+        self.assertAlmostEqual(abs(a["room2"]["angle"]), 3.1415927, places=5)
+        # About abeam behind: a mirrored-point drive out.
+        self.assertIn(a["abeam"]["state"], (2, 4, 7))
+        # Backed out past the turn radius: back to 0.
+        self.assertEqual(a["clear"]["state"], 0)
+        self.assertEqual(a["blind"]["state"], 8)
+
+    def test_the_search_box_grows_by_free_blocks_and_takes_one_more(self) -> None:
+        # `getSearchBox` 0x085f4180: the free level at the point (3 next to a
+        # wall at gz 40), grown in blocks of that level and widened one block.
+        b = self.results["searchBox"]
+        self.assertEqual(b["nearWall"]["level"], 3)
+        self.assertEqual(b["nearWall"]["max"][1], 48)          # the wall's row 40..47, plus one block
+        self.assertIsNone(b["onWall"])
+        self.assertEqual(b["exitAhead"], [0, 3])
+        self.assertEqual(b["exitDiag"], [3, 3])
+        self.assertIsNone(b["outside"])
+        self.assertEqual(b["lineClear"]["dist"], 20)
+        self.assertEqual(b["lineCut"]["dist"], 8)               # the circle at 10 m, radius 2
+        self.assertFalse(b["lineTight"]["ok"])                  # an object inside the hull's radius
+
+    def test_a_boat_brakes_on_arrival_and_drives_the_decision(self) -> None:
+        # `BoatControl::resetControls` 0x0860dff0: -sign(v) log10(9|v| + 1),
+        # clamped, until 1 m/s; then done.
+        d = self.results["boatDecision"]
+        self.assertEqual(d["brakeFast"], {"throttle": -1, "steer": 0, "done": False})
+        self.assertEqual(d["brakeAstern"]["throttle"], 1)
+        self.assertTrue(d["stopped"]["done"])
+        self.assertEqual(d["stopped"]["throttle"], 0)
+        # A reverse decision wants -maxSpeed; drive 0 turns (full rudder); a
+        # state-9 drive runs underway past 30 deg.
+        self.assertEqual(d["backing"]["wanted"], -10)
+        self.assertLess(d["backing"]["throttle"], 0)
+        self.assertEqual(abs(d["turning"]["steer"]), 1)
+        self.assertNotIn("wanted", d["turning"])
+        self.assertIn("wanted", d["onward"])
 
     def test_a_hull_prefers_the_close_target_and_a_plane_the_far_one(self) -> None:
         v = self.results["vehicleFire"]
