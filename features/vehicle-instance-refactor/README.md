@@ -554,3 +554,93 @@ team and kit switch, a level switch, the full map, the scoreboard, the touch
 controls under mobile emulation, and a bot Sherman killing a soldier 40 m
 out. The agent-run splits also diffed node harness output and seeded sim
 traces against the base commit; they were byte-identical.
+
+## Part 4: the frame's phases, the land drive's owners, the shims (2026-09-24)
+
+AGENT_BRIEFS Brief H. No behaviour change; code moved verbatim.
+
+### `frame()` in named phases
+
+`frame()` in `map.html` went from 185 lines to 13. It now calls six phases in the
+order the old body ran them:
+
+| Phase | Where | What |
+|---|---|---|
+| (restore) | `localLook.restoreTickPose()` | every drawn hull back on its tick pose (the blur fix, unchanged) |
+| input | `localPlayer.frameInput(dt)` | the seat sync, the touch pad, the frame's mode (`seated`, `onFoot`), the input word and look handed to the world |
+| simulation | `simulate(dt, input, look)` (page) | the world step, the referee and bots, capture, `localLook.present`, the room send, the step readbacks |
+| cameras | `localPlayer.frameCameras(dt, seated, onFoot)` | the mode's camera, the seat follow, the foot body, the seat IK |
+| world presentation | `presentWorld(step, dt)` (page) | hull bodies, sinking hulls, vehicle damage, the vehicle HUD feed, effects and their sound, the level's per-frame visuals, audio, sky, replay |
+| draw | `draw(dt)` (page) | the 3D render, the viewmodel, the deploy screen, the scoreboard, the maps |
+| HUD | `paintHud(dt)` (page) | the seat dots, soldier HUD, crosshair, HUD paint, comms, lens flare, console |
+
+The input and camera phases are the local player's state, so they moved into
+`local-player.js`. That also removed the page's last write of another module's
+field (`localPlayer.frameInputLast = input`). The other four phases wire several
+owners each and stay in the page. The HUD phase belongs in `hud-feed.js`. It
+stays in the page for now because another agent was editing that file.
+`vehicleHud.feedVehicleHud()` still runs inside `presentWorld`, between the
+vehicle damage and the effects, where it always ran.
+
+### The land drive, one owner per part
+
+| Module | Owns |
+|---|---|
+| `wheeled-vehicle.js` (was `ground.js`) | `GroundVehicle`, the wheels |
+| `tracked-vehicle.js` | `TrackedVehicle`, the tracks |
+| `suspension.js` (new, out of `ground-contact.js`) | the spring law and axis (PHY-5), `Wheel`, `probeAlongAxis`, `MAX_OVERRUN` |
+| `ground-contact.js` | the deck policy, Coulomb caps and clamp (PHY-2), the parking hold, hull-contact friction, the contact normal and plane |
+| `ground-engine.js`, `ground-specs.js` | unchanged: the engine, the tables |
+
+`ground.js`'s re-exports are gone. Every importer names the owner: `map.html`,
+`server/level-instance.mjs` and `tests/ground_harness.mjs`. The orphaned doc
+comment for `coulombClamp` now sits on `coulombClamp`. Comments that named
+`ground.js` now name the module that holds the code, except in files other
+agents own (`bot-route.js`, `sim/vehicles.mjs`).
+
+### The re-export shims
+
+`flight.js` and `collision.js` now have no importers in the page, the server or
+the tests. `map.html`, `ship.js`, `seat-camera.js`, `replay-assets.js`,
+`page-audio.js`, `round-impact.js`, `level-terrain.js`, `server/level-data.mjs`,
+`server/level-load.mjs`, `server/level-instance.mjs` and every harness import
+`vehicle-base.js`, `aircraft.js`, `vehicle-camera.js`, `vehicle-discovery.js`,
+`world-collider.js`, `heightfield.js`, `static-index.js`, `drivable-mask.js` and
+`collision-materials.js` directly. The collider's research header moved to
+`world-collider.js`.
+
+Each shim still has one importer, in a file another agent was editing when this
+landed. That is why both files are still here:
+
+- `viewer/vehicle-hits.js` imports `findVehicle` / `findVehicles` from
+  `flight.js`. The fix is to import them from `vehicle-discovery.js`.
+- `sim/env.mjs` loads `collision.js` as one namespace. The fix is to load
+  `heightfield.js`, `static-index.js`, `drivable-mask.js` and
+  `world-collider.js`.
+
+Once those two lines change, delete both files. `physics.js` and `seats.js`
+are index modules of the same kind, and this round did not touch them.
+
+### How it was checked
+
+The base was `origin/main` at `f8a7ea92`, and the after was this work rebased
+onto it. Results:
+
+- **Unit suite:** 2,837 tests, 0 failures, 14 skipped, the same on both.
+- **Node harnesses:** all 138 node runs the suite makes were captured. 132
+  have byte-identical stdout. The other 6 differ only in wall-clock fields
+  (`perFrameMicroseconds` in the soldier harness, the runtime in milliseconds
+  in the four sim-match runs). They differ the same way between two runs of
+  the base.
+- **Seeded sim traces:** `trace.jsonl` is byte-identical for the synthetic
+  level (seeds 1 to 3 with 3 a side for 60 s, and seed 7 with no vehicles),
+  El Alamein (8 a side, 180 s, seed 3) and Bocage (6 a side, 120 s, seed 1).
+  The summaries differ only in `loadMs`, `navMs` and `wallMs`.
+- **Lint:** ESLint `no-undef` over the viewer, server and sim, plus
+  `map.html`'s inline script, and a check that every named import resolves.
+  Both are unchanged from the base.
+- **Cadence:** `tests/perf/cadencecheck.cjs`, headed, with and without
+  `--bots`. Every scenario passed on both builds, at 99.4 to 100 % of frames
+  moved. The bot scenarios' `cv` depends on what the bot happens to be doing
+  under real time: the same build gave a Sherman at 9.4 m/s on one run and
+  0.6 m/s on another.
