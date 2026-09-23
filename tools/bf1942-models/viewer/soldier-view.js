@@ -19,9 +19,9 @@ import { SoldierView, FOOT_VIEW_CYCLE, PARACHUTE_VIEW_CYCLE, PARACHUTE_VIEW_RADI
  * `deathCamTimer`, `DEG_TO_RAD`, `deployActive`, `deployTeamId`,
  * `dieOnFoot`, `footBody`, `footCanopy`, `footEyeCur`, `footEyePrev`,
  * `footFire`, `footLookPending`, `footPending`, `footView`,
- * `frameInputLast`, `hudBridge`, `look`, `openDeploy`, `params`,
- * `presentAlpha`, `runDeathCam`, `scanForEntry`, `serverSettings`,
- * `soldier`, `soldierArmor`, `soldierDead`, `supplyTarget`, `world`.
+ * `frameInputLast`, `hudBridge`, `openDeploy`, `params`, `presentAlpha`,
+ * `runDeathCam`, `scanForEntry`, `serverSettings`, `setLook`, `soldier`,
+ * `soldierArmor`, `soldierDead`, `supplyTarget`, `world`.
  */
 export function createSoldierView(page) {
   const soldierView = {};
@@ -139,8 +139,7 @@ export function createSoldierView(page) {
         at.y + page.deathCamShot.lift,
         at.z - Math.cos(camYaw) * page.deathCamShot.back);
       page.camera.position.set(page.deathCamPos.x, page.deathCamPos.y, page.deathCamPos.z);
-      page.look.yaw = camYaw;
-      page.look.pitch = page.deathCamShot.pitch;
+      page.setLook(camYaw, page.deathCamShot.pitch);
     } else if (!footView3p.firstPerson) {
       // C has taken the view outside the man. The offsets, the 0.6 s velocity
       // lag and the `1 - exp(-2 dt)` ease are `chase-camera.js`'s, which are the
@@ -185,12 +184,10 @@ export function createSoldierView(page) {
       const dy = footEye.y - foot3pEye[1];
       const dz = footEye.z - foot3pEye[2];
       const flat = Math.hypot(dx, dz);
-      page.look.yaw = Math.atan2(dx, dz);
-      page.look.pitch = Math.atan2(dy, flat);
+      page.setLook(Math.atan2(dx, dz), Math.atan2(dy, flat));
     } else {
       page.camera.position.set(footEye.x, footEye.y, footEye.z);
-      page.look.yaw = page.footView.yaw;
-      page.look.pitch = page.footView.pitch;
+      page.setLook(page.footView.yaw, page.footView.pitch);
     }
     page.applyLook();
     // After the camera pose is final: the weapon fires down this frame's view

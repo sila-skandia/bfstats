@@ -9,8 +9,8 @@ import { MouseInput, profileFor } from './mouse-input.js';
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
  * `aircraft`, `captureBotPresentationTick`, `car`, `handWeapon`, `isZoomed`,
- * `look`, `LOOK_SENS`, `mannedActive`, `netTickPoses`, `occupancy`,
- * `optOnFoot`, `optPilot`, `roomJoined`, `soldier`, `view`.
+ * `LOOK_SENS`, `mannedActive`, `netTickPoses`, `occupancy`, `optOnFoot`,
+ * `optPilot`, `roomJoined`, `soldier`, `turnLook`, `view`.
  */
 export function createLocalLook(page) {
   const localLook = {};
@@ -431,8 +431,7 @@ export function createLocalLook(page) {
       mouseInput.accumulate(dx, dy);
       return;
     }
-    page.look.yaw -= dx * page.LOOK_SENS;
-    page.look.pitch = Math.max(-1.2, Math.min(1.2, page.look.pitch - dy * page.LOOK_SENS));
+    page.turnLook(dx, dy, page.LOOK_SENS);
   }
   // The stick position (-1..1, driven toward a held key's full deflection and
   // springing back to centre on release) is the world's per-player state now —
