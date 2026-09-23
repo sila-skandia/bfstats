@@ -45,7 +45,7 @@ MODULES = {f"{name}.js": VIEWER / f"{name}.js" for name in _MODULE_NAMES}
 MODULES["world.mjs"] = VIEWER / "world.js"
 MODULES["bot.js"] = VIEWER / "bot.js"
 MODULES["nav-grid.js"] = VIEWER / "nav-grid.js"
-for _m in ("bot-aim.js", "bot-perception.js", "bot-route.js", "bot-pilot.js", "bot-decision.js", "bot-plans.js", "bot-sense.js", "bot-fire.js", "bot-behaviours.js", "bot-vehicle.js", "bot-vehicle-air.js", "bot-strength.js", "strategic.js"):
+for _m in ("bot-aim.js", "bot-perception.js", "bot-route.js", "bot-pilot.js", "bot-decision.js", "bot-plans.js", "bot-mount.js", "bot-sense.js", "bot-fire.js", "bot-behaviours.js", "bot-vehicle.js", "bot-vehicle-air.js", "bot-strength.js", "strategic.js"):
     MODULES[_m] = VIEWER / _m
 MODULES["node_modules/three/three.module.js"] = VIEWER / "vendor" / "three.module.js"
 THREE_PACKAGE = json.dumps({
