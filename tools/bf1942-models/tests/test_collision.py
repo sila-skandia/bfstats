@@ -28,6 +28,11 @@ from extract_map import projectile_materials, write_damage_tables  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULE = ROOT / "viewer" / "collision.js"
+# The modules `collision.js` re-exports from, copied under their own names.
+PARTS = [
+    ROOT / "viewer" / "collision-materials.js",
+    ROOT / "viewer" / "heightfield.js",
+]
 HARNESS = Path(__file__).resolve().parent / "collision_harness.mjs"
 
 
@@ -36,7 +41,10 @@ def run_harness() -> dict:
         raise unittest.SkipTest("node is not installed")
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
+        (work / "package.json").write_text('{"type": "module"}')
         shutil.copyfile(MODULE, work / "collision.mjs")
+        for part in PARTS:
+            shutil.copyfile(part, work / part.name)
         shutil.copyfile(HARNESS, work / "harness.mjs")
         proc = subprocess.run(
             ["node", str(work / "harness.mjs")],
