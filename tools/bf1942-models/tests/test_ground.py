@@ -49,6 +49,7 @@ MODULES = {
     "ground.js": VIEWER / "ground.js",
     "ground-specs.js": VIEWER / "ground-specs.js",
     "ground-contact.js": VIEWER / "ground-contact.js",
+    "ground-engine.js": VIEWER / "ground-engine.js",
     "flight.js": VIEWER / "flight.js",
     "physics.js": VIEWER / "physics.js",
     "parachute.js": VIEWER / "parachute.js",
