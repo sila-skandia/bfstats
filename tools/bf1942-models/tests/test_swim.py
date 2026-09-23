@@ -359,12 +359,15 @@ class ItemGateWiringTests(unittest.TestCase):
         cls.text = cls.MAP.read_text(encoding="utf-8", errors="replace")
 
     def body_of(self, name: str) -> str:
-        """The source of one top-level `function name(...)` in `map.html`."""
-        start = self.text.find(f"\nfunction {name}(")
-        self.assertNotEqual(-1, start, f"no top-level function {name} in map.html")
-        end = self.text.find("\n}\n", start)
-        self.assertNotEqual(-1, end, name)
-        return self.text[start:end]
+        """The source of one page function, in `map.html` or in the module the
+        page was split into that now holds it (`page_source.py`)."""
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from page_source import function_body
+        try:
+            return function_body(name)
+        except LookupError as err:
+            self.fail(str(err))
 
     def test_the_gate_helper_exists_and_reads_the_soldier(self) -> None:
         gate = self.body_of("itemsLocked")
