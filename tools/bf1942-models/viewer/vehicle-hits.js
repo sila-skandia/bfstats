@@ -16,10 +16,11 @@ import { BOT_BODY_RADIUS, BOT_BODY_HEIGHT } from './bot-referee.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `LOCAL_PLAYER`, `applyDamageToPlayer`, `camera`, `collider`, `currentRoot`,
- * `guns`, `hudFeed`, `localPlayer`, `optOnFoot`, `optPilot`, `referee`,
- * `soldier`, `soldierArmor`, `soldierDead`, `vehicleDamage`, `vehicles`,
- * `world`, `wrecks`.
+ * `applyDamage`, `applyDamageToPlayer`, `bots`, `camera`, `collider`,
+ * `currentRoot`, `damageLanded`, `damageVisuals`, `feedVehicleHud`, `guns`,
+ * `LOCAL_PLAYER`, `occupancy`, `optOnFoot`, `optPilot`, `showDamageTier`,
+ * `soldier`, `soldierArmor`, `soldierDead`, `stepWrecks`, `vehicleDamage`,
+ * `vehicles`, `world`, `wreckVehicle`.
  */
 export function createVehicleHits(page) {
   const vehicleHits = {};
@@ -40,12 +41,12 @@ export function createVehicleHits(page) {
    * the fast path exactly the slow one: same node, same owner, same set.
    */
   function occupiedVehicleDamage() {
-    if (!page.localPlayer.occupancy?.root) return null;
-    if (page.world?.player(page.LOCAL_PLAYER)?.occupancy === page.localPlayer.occupancy) {
+    if (!page.occupancy?.root) return null;
+    if (page.world?.player(page.LOCAL_PLAYER)?.occupancy === page.occupancy) {
       return page.world.occupiedDamageable(page.LOCAL_PLAYER);
     }
-    for (const [owner, visual] of page.wrecks.damageVisuals) {
-      if (visual.node === page.localPlayer.occupancy.root) return page.vehicleDamage.get(owner);
+    for (const [owner, visual] of page.damageVisuals) {
+      if (visual.node === page.occupancy.root) return page.vehicleDamage.get(owner);
     }
     return null;
   }
@@ -93,10 +94,10 @@ export function createVehicleHits(page) {
   function stepVehicleDamage(step, dt) {
     if (!page.vehicleDamage.size) return;
     for (const change of step.damage) {
-      if (change.changed) page.wrecks.showDamageTier(change.vehicle, change.tier);
-      if (change.died) page.wrecks.wreckVehicle(change.vehicle);
+      if (change.changed) page.showDamageTier(change.vehicle, change.tier);
+      if (change.died) page.wreckVehicle(change.vehicle);
     }
-    page.wrecks.stepWrecks(dt);
+    page.stepWrecks(dt);
     // `feedVehicleHud` runs on entry and on a seat switch, not per tick for a
     // driver — so without this the bar of the tank you are sitting in would stay
     // where it was when you climbed in while the thing burned down under you.
@@ -104,7 +105,7 @@ export function createVehicleHits(page) {
     const hp = live ? live.hitPoints : null;
     if (hp !== vehicleHits.fedVehicleHp) {
       vehicleHits.fedVehicleHp = hp;
-      if (live) page.hudFeed.feedVehicleHud();
+      if (live) page.feedVehicleHud();
     }
   }
 
@@ -114,8 +115,8 @@ export function createVehicleHits(page) {
     // shot should explode on the frame it lands, not one frame later. A zero dt
     // cannot advance the burn accumulator, so this only re-picks the tier.
     const result = vehicle.update(0);
-    if (result.changed) page.wrecks.showDamageTier(vehicle, result.tier);
-    if (result.died) page.wrecks.wreckVehicle(vehicle);
+    if (result.changed) page.showDamageTier(vehicle, result.tier);
+    if (result.died) page.wreckVehicle(vehicle);
   }
 
   /** Scratch for `splashTargets`' world-position reads. */
@@ -148,7 +149,7 @@ export function createVehicleHits(page) {
    */
   function splashTargets() {
     const targets = [];
-    for (const [owner, visual] of page.wrecks.damageVisuals) {
+    for (const [owner, visual] of page.damageVisuals) {
       if (visual?.wrecked || visual?.removed) continue;
       const pos = visual.node.getWorldPosition(splashPos);
       targets.push({ owner, x: pos.x, y: pos.y, z: pos.z });
@@ -161,7 +162,7 @@ export function createVehicleHits(page) {
       });
     }
     // The bots on foot are soldiers too: a bot-driven hull's shell reaches them.
-    for (const bot of page.referee.bots ?? []) {
+    for (const bot of page.bots ?? []) {
       if (bot.vehicle) continue;
       const armor = page.world?.armorOf(bot.playerId);
       const s = page.world?.player(bot.playerId)?.soldier;
@@ -221,7 +222,7 @@ export function createVehicleHits(page) {
           // what is left is the bot's side of it (the log, the incoming-fire
           // event, a death).
           const at = record.splashPoint ?? record.point ?? null;
-          page.referee.damageLanded(hit.target.botId, hit.lost, botFiringGroup(record) ?? page.LOCAL_PLAYER, at, { via: `splash ${record.gun ?? ''} d ${hit.distance.toFixed(1)}` });
+          page.damageLanded(hit.target.botId, hit.lost, botFiringGroup(record) ?? page.LOCAL_PLAYER, at, { via: `splash ${record.gun ?? ''} d ${hit.distance.toFixed(1)}` });
         }
         if (hit.target.node && hit.vehicle.destroyed) hit.target.node.visible = false;
         continue;
@@ -358,15 +359,15 @@ export function createVehicleHits(page) {
     const firer = roundFirer(record.firerGroup);
     const firerTeam = firer ? page.world?.player(firer)?.team ?? null : null;
     const from = firer === page.LOCAL_PLAYER ? page.camera.position.toArray()
-      : firer ? page.referee.bots.find(b => b.playerId === firer)?.getPosition() ?? null : null;
+      : firer ? page.bots.find(b => b.playerId === firer)?.getPosition() ?? null : null;
     if (firer && firer !== page.LOCAL_PLAYER) {
-      page.referee.bots.find(b => b.playerId === firer)?.recordHit(id);
+      page.bots.find(b => b.playerId === firer)?.recordHit(id);
     }
     if (id === page.LOCAL_PLAYER) {
       page.applyDamageToPlayer(record.damage,
         from ? { x: from[0], y: from[1], z: from[2] } : null, firerTeam);
     } else {
-      page.referee.applyDamage(id, record.damage, firer ?? page.LOCAL_PLAYER, from, { via: `round ${record.gun ?? ''}` });
+      page.applyDamage(id, record.damage, firer ?? page.LOCAL_PLAYER, from, { via: `round ${record.gun ?? ''}` });
     }
   }
 
