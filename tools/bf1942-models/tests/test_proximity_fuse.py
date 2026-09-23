@@ -35,7 +35,7 @@ HARNESS = Path(__file__).resolve().parent / "proximity_fuse_harness.mjs"
 MODULES = {name: VIEWER / name for name in (
     "gunfire.js", "round-visuals.js", "round-impact.js", "projectile-flight.js",
     "round-launch.js", "proximity-fuse.js", "gun-groups.js", "gun-cycle.js",
-    "bomb-release.js", "torpedo-run.js", "idle-vehicle.js", "collision.js",
+    "bomb-release.js", "torpedo-run.js", "idle-vehicle.js",
     "world-collider.js", "static-index.js", "collision-meshes.js",
     "drivable-mask.js", "collision-materials.js", "heightfield.js",
     "effects-core.js", "projectile-damage.js", "physics.js", "walking-body.js",
