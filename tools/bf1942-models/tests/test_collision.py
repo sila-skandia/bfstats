@@ -390,6 +390,38 @@ class ProjectileMaterialTests(unittest.TestCase):
     def test_no_library_is_an_empty_table_not_a_crash(self) -> None:
         self.assertEqual({}, projectile_materials(None))
 
+    def test_the_flak_row_carries_its_fuse_and_its_lifetime_range(self) -> None:
+        # PROX-1..PROX-8: `explodeNearEnemyDistance` / `ProximityFusePrimer`
+        # are the proximity fuse, and the `timeToLive` CRD is drawn per round
+        # (`Projectile::activate` 0x0831e120). The baked projectile block
+        # carries neither, so the table does.
+        library = self.library(
+            "ObjectTemplate.create Projectile AA_Allies_Projectile\n"
+            "ObjectTemplate.timeToLive CRD_UNIFORM/0.8/1.4/0\n"
+            "ObjectTemplate.material 228\n"
+            "ObjectTemplate.explodeNearEnemyDistance 10.0\n"
+            "ObjectTemplate.ProximityFusePrimer 0.1\n"
+            "ObjectTemplate.create Projectile LandmineProjectile\n"
+            "ObjectTemplate.timeToLive CRD_NONE/360/0/0\n"
+            "ObjectTemplate.material 230\n"
+            "ObjectTemplate.mass 130\n"
+            "ObjectTemplate.explodeNearEnemyDistance 3\n"
+            "ObjectTemplate.create Projectile Off\n"
+            "ObjectTemplate.material 1\n"
+            "ObjectTemplate.explodeNearEnemyDistance -1\n")
+
+        table = projectile_materials(library)
+
+        self.assertEqual({"material": 228, "timeToLive": ["u", 0.8, 1.4, 0],
+                          "explodeNearEnemyDistance": 10.0,
+                          "proximityFusePrimer": 0.1},
+                         table["aa_allies_projectile"])
+        # A fixed lifetime is already exactly what the baked number says.
+        self.assertEqual({"material": 230, "explodeNearEnemyDistance": 3.0,
+                          "mass": 130.0}, table["landmineprojectile"])
+        # The engine's own gate is `0 < distance`: -1 is off.
+        self.assertEqual({"material": 1}, table["off"])
+
     def test_the_table_is_written_into_the_shared_damage_json(self) -> None:
         class Tables:
             def as_dict(self):
