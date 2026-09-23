@@ -41,9 +41,28 @@ which the bot tests then covered.
   node) and fires 17 shells.
 - A Spitfire under a bot takes off, flies `approach`, and orbits its idle point.
 
+## Session 2 (2026-09-23, later)
+
+- **Verified live: a bot-driven Sherman's rounds reach soldiers.** Sherman
+  at 40 m (bot_2, frozen bot_1): the hull MG path `[bots] bot_2 hit bot_1
+  for 28 ... [round Browning_2]` kills in ~6 ticks; with the MG groups
+  removed the shell's splash lands `for 30 ... [splash ShermanGunBarrel_2 d
+  2.5]`. Fixed on the way: `applySplash` already takes the HP off a
+  target's own Armor and returns `lost` (there is no `hit.damage`), so the
+  bot side is now `botDamageLanded` (log, incoming fire, death) instead of a
+  second `applyDamageToBot`; the firing seat comes from the record's new
+  `firerGroup` (a driver and a gunner share the hull's owner id); an MG
+  group's damage is its own projectile spec's (`botSpecDamage`), and the
+  shell test is `splashSpec(...).impact`. The debug line now names the path.
+- **The Priest seat swap every tick** (a regression the fight exposed):
+  `calculateFireStrength` vacates the bot's own seat when it weighs another
+  (AI-59), and a fixed gun's aimability is the candidate seat's own
+  traverse. Live: no swaps in 1,200 frames.
+
 ## Open, in priority order (the next session starts here)
 
-1. **A bot-driven vehicle's rounds do not damage anyone.** `map.html`
+1. ~~**A bot-driven vehicle's rounds do not damage anyone.**~~ Done, see
+   Session 2. `map.html`
    `splashTargets()` lists placed objects and the local soldier only, so a
    Sherman's shell splash never reaches a bot; and `botFireTick` skips mounted
    bots (`if (bot.vehicle) continue`), so its MG rounds (no splash) have no
