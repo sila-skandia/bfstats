@@ -72,6 +72,23 @@ def parse_objects_con(text: str) -> dict:
     return {"plugIns": plugins, "templates": templates}
 
 
+def is_anti_aircraft(template: dict | None, plugins: dict[str, dict]) -> bool:
+    """Whether an aiTemplate's Armament plug-in declares `setIsAntiAircraft`.
+
+    The word is the unit's, not a weapon's: ConsoleClass550 (lnxded
+    0x08504dd0) writes it to `AITemplateArmament+0x5`, and
+    `IPIArmamentReal::isAntiAircraft` (0x085e9b00) reads it back through the
+    unit's plug-in 4. The fire scoring's anti-aircraft rules key on it, and no
+    `weaponTemplate` carries it, so a viewer reading it off the AI weapons
+    found none: every AA gun scored as a non-AA one.
+    """
+    for name in (template or {}).get("plugIns", []):
+        p = plugins.get(name.lower())
+        if p and p.get("kind") == "Armament" and p.get("setisantiaircraft"):
+            return True
+    return False
+
+
 def parse_weapons_con(text: str) -> dict[str, dict]:
     weapons: dict[str, dict] = {}
     cur: dict | None = None
@@ -240,6 +257,8 @@ def extract(mod: str) -> dict:
                 p = parsed["plugIns"].get(pname.lower())
                 if p and p.get("kind") == "Unit":
                     seat["strategicStrength"] = p.get("strategicStrength")
+            if is_anti_aircraft(t, parsed["plugIns"]):
+                seat["isAntiAircraft"] = True
             for fa in fire_arms_under(pco.lower(), graph, kinds):
                 w_ai = ai_of.get(fa) or fire_arms.get(fa)
                 w = all_weapons.get((w_ai or "").lower()) or weapons.get((w_ai or "").lower())
@@ -247,6 +266,8 @@ def extract(mod: str) -> dict:
                     seat["aiWeapons"][w["name"]] = {kk: vv for kk, vv in w.items() if kk != "name"}
             seats_ai[pco] = seat
         info["seatsAi"] = seats_ai
+        if is_anti_aircraft(root, parsed["plugIns"]):
+            info["isAntiAircraft"] = True
         for pname in (root["plugIns"] if root else []):
             p = parsed["plugIns"].get(pname.lower())
             if not p:

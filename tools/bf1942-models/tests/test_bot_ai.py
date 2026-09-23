@@ -310,6 +310,17 @@ class BotAiTests(unittest.TestCase):
         self.assertEqual(v["vehicle"], "v")
         self.assertGreater(v["vehicleScore"], 0)
 
+    def test_an_aa_gun_engages_a_plane_in_flight_and_a_plain_gun_does_not(self) -> None:
+        a = self.results["antiAircraft"]
+        self.assertEqual(a["aa"], "pilot")
+        self.assertGreater(a["aaScore"], 0)
+        self.assertIsNone(a["plain"])
+
+    def test_a_seated_player_is_sensed_at_his_seat(self) -> None:
+        a = self.results["antiAircraft"]
+        self.assertEqual(a["seatedAt"], [10, 90, -20])
+        self.assertEqual(a["onFootAt"], [1, 2, 3])
+
     def test_the_sense_frustum_is_square_about_the_camera(self) -> None:
         f = self.results["frustum"]
         self.assertTrue(f["below40inf"])                              # 50 deg half-angle
