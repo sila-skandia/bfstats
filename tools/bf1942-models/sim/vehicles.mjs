@@ -1,14 +1,11 @@
-// Land vehicles in the headless match: a STAND-IN, not the page's vehicles.
+// Land vehicles on the SYNTHETIC level: a STAND-IN, not the page's vehicles.
 //
-// The page seats a bot in a hull's `VehicleInstance` (viewer/vehicle-
-// instance.js, through `viewer/bot-units.js`): the vehicle's glb node with
-// its seat survey and rigs, the drivetrain its root seat builds from the
-// node's physics extras (ground.js / tracked vehicles), the body world, and
-// `guns.collect` for the FireArms groups. None of that is loaded headless
-// (it needs the vehicle's glb node with its rig, and the page's gun and body
-// machinery). This file is the referee's `units` layer (viewer/bot-referee.js)
-// over stand-ins, and keeps everything the BOT sees of a vehicle, which is
-// what the runner is for:
+// A real level plays the page's own vehicles (`stage.mjs`: each hull's
+// `VehicleInstance`, its real drive and body, its guns, `bot-units.js` as the
+// referee's `units`). The synthetic level has no vehicle nodes -- no glb
+// node with a seat survey, a rig or a drivetrain's physics extras -- so it
+// keeps this file: the referee's `units` layer (viewer/bot-referee.js) over
+// stand-ins, keeping everything the BOT sees of a vehicle:
 //
 //  * the Change candidates in the page's own shape (`bot-units.js
 //    candidates`): every seat of every land vehicle the level spawns with AI

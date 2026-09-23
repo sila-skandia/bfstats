@@ -4,23 +4,19 @@
 //
 // A real level is loaded the way `map.html` loads it, minus the renderer:
 //
-//  * `scene.glb` goes through the viewer's own `vendor/loaders/GLTFLoader.js`
-//    with its images, textures and samplers stripped from the JSON chunk (node
-//    has no image decoder). What comes back is the page's scene graph: the
-//    same node names (GLTFLoader's sanitised, uniquified names), the same
-//    `userData` from each node's extras, the same geometry.
-//  * The collider is `map.html buildCollider`'s: `buildHeightfield` over the
-//    `userData.kind === 'terrain'` meshes (`collectTerrain`), the owner roots
-//    are the scene's top-level children with the spawner group's children
-//    listed one by one, `buildCollisionIndex` + `buildDrivableMask`, and a
-//    `WorldCollider` with the level's `waterLevel`.
-//  * Departures, labelled SIM: the spawner group (the placed vehicles) is
-//    left out of the static index, because the page settles those hulls
-//    (`settlePlacedVehicles` / `floatPlacedVehicles`) and hands them to the
-//    body world, which the nav map then skips (`statics._body`); the sim has
-//    no body world, so it drops them up front. Ship deck spawns are not
-//    rebased (`rebaseDeckSpawns`): a level whose soldiers spawn on a moving
-//    deck is out of scope.
+//  * `scene.json` through `selectGameMode` (the default layer), `scene.glb`
+//    through the viewer's own `vendor/loaders/GLTFLoader.js` with its
+//    images, textures and samplers stripped from the JSON chunk (node has no
+//    image decoder), then `pruneToMode`. What comes back is the page's scene
+//    graph: the same node names (GLTFLoader's sanitised, uniquified names),
+//    the same `userData` from each node's extras, the same geometry.
+//  * The tables `show()` fetches beside it: `damage.json` (the level's own
+//    `damage.path`), `collision-meshes.json`, the terrain material ids
+//    (`terrain/materials.png`, decoded by the room server's reader) and
+//    `vehicle-ai.json`.
+//  * The collider, the parked hulls' bodies, the hulls, the guns and the
+//    wrecks are the page's, built by the stage (`stage.mjs`) in the page's
+//    order once the World exists.
 //  * The level's kits come from `_shared/loadouts.json` (`levels[map][team]
 //    .slots`, the page's `botKitFor`), each weapon's fire data from its model
 //    glb's `extras.weapon` (the page's `botWeaponData`), and a round's damage
@@ -310,38 +306,61 @@ function stripTextures({ json, bin }) {
 }
 
 /** Load a real level. `maps` is the maps tree (`viewer/maps`), `models` the
- *  models tree (`viewer/models`), `map` the level's directory name. */
+ *  models tree (`viewer/models`), `map` the level's directory name.
+ *
+ *  The scene is loaded the way `level-load.js show()` loads it: `scene.json`
+ *  through `selectGameMode` (the default layer), the glb through the viewer's
+ *  `GLTFLoader` and `pruneToMode`, the level's ambient clips kept for the
+ *  statics' freeze. The collider, the bodies and the vehicles are built by
+ *  the stage (`stage.mjs`) once the World exists, in the page's order; this
+ *  returns what they are built from (`level.stage`). */
 export async function realLevel(M, { maps, models, map }) {
   const dir = path.join(maps, map);
   const sceneJson = path.join(dir, 'scene.json');
   const sceneGlb = path.join(dir, 'scene.glb');
   if (!existsSync(sceneJson)) throw new Error(`${sceneJson} not found (pass --maps <viewer/maps>)`);
-  const extras = JSON.parse(readFileSync(sceneJson, 'utf8'));
+  if (!existsSync(sceneGlb)) throw new Error(`${sceneGlb} not found`);
+  const S = await M.loadStage();
+  const extras = S.selectGameMode(JSON.parse(readFileSync(sceneJson, 'utf8')), null);
   const started = performance.now();
 
-  let collider = null, statics = null, root = null;
-  if (existsSync(sceneGlb)) {
-    const GLTFLoader = await M.loadGltfLoader();
-    const data = stripTextures(readGlb(sceneGlb));
-    const gltf = await new Promise((resolve, reject) => new GLTFLoader().parse(data, '', resolve, reject));
-    root = gltf.scene;
-    root.updateMatrixWorld(true);
-    // `collectTerrain`: every mesh the exporter tagged `kind: terrain`.
-    const terrain = [];
-    let spawners = null;
-    root.traverse(o => {
-      if (o.isMesh && o.userData?.kind === 'terrain') terrain.push(o);
-      if (o.userData?.kind === 'spawners' && !spawners) spawners = o;
-    });
-    const heightfield = M.buildHeightfield(terrain, {
-      worldSize: extras.worldSize || 0, dim: extras.terrain?.materials?.dim || 0,
-    });
-    // SIM: the placed vehicles are not statics here (see the header).
-    if (spawners?.parent) spawners.parent.remove(spawners);
-    const ownerRoots = [...root.children];
-    statics = M.buildCollisionIndex(root, { ownerRoots });
-    const drivableMask = M.buildDrivableMask(root);
-    collider = new M.WorldCollider({ heightfield, statics, waterLevel: extras.waterLevel, drivableMask });
+  const GLTFLoader = await M.loadGltfLoader();
+  const data = stripTextures(readGlb(sceneGlb));
+  const gltf = await new Promise((resolve, reject) => new GLTFLoader().parse(data, '', resolve, reject));
+  const root = gltf.scene;
+  S.pruneToMode(root, extras.gameplayMode);
+  // The ambient clips `show()` plays (flags, windmills), with the tracks
+  // whose node the prune took dropped: what `freezeStatics` keeps thawed.
+  const { THREE } = M;
+  const levelClips = (gltf.animations || [])
+    .filter(c => !/^spin(\.\d+)?$/.test(c.name))
+    .map(clip => {
+      const live = clip.tracks.filter(track => THREE.PropertyBinding.findNode(
+        root, THREE.PropertyBinding.parseTrackName(track.name).nodeName));
+      if (live.length === clip.tracks.length) return clip;
+      if (!live.length) return null;
+      const trimmed = clip.clone();
+      trimmed.tracks = live;
+      return trimmed;
+    })
+    .filter(Boolean);
+
+  // The tables `show()` fetches: `extras.damage.path` (level-relative) and
+  // `collision-meshes.json` beside it, the terrain material map.
+  const readJson = file => (existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null);
+  const damagePath = extras.damage?.path ? path.join(dir, extras.damage.path) : path.join(maps, '_shared', 'damage.json');
+  const damageTables = readJson(damagePath);
+  const collisionMeshes = extras.damage?.path
+    ? readJson(path.join(dir, extras.damage.path.replace(/damage\.json$/, 'collision-meshes.json'))) : null;
+  const matSpec = extras.terrain?.materials;
+  const matFile = matSpec?.image ? path.join(dir, matSpec.image) : null;
+  // The page decodes it through a canvas; the room server's decoder reads
+  // the same red channel headless (imported once the module hooks resolve
+  // `three`).
+  let terrainMaterials = null;
+  if (matFile && existsSync(matFile)) {
+    const { decodeMaterialIds } = await import('../server/glb-scene.mjs');
+    terrainMaterials = { ids: decodeMaterialIds(readFileSync(matFile)), dim: matSpec.dim, spacing: matSpec.spacing || 0 };
   }
 
   // Kits: `loadouts.levels[map][team].slots` -> `kits[name].items` ->
@@ -386,9 +405,10 @@ export async function realLevel(M, { maps, models, map }) {
   };
 
   // `botRoundDamage`: the projectile's material damage x the soldier's
-  // modifier (material 40), 30 until a projectile resolves.
-  const damageFile = path.join(maps, 'damage.json');
-  const damage = existsSync(damageFile) ? JSON.parse(readFileSync(damageFile, 'utf8')) : null;
+  // modifier (material 40), 30 until a projectile resolves. A match on a
+  // real level bills the stage's copy (`vehicle-hits.js botRoundDamage`, the
+  // page's); this one is the same law over the same tables.
+  const damage = damageTables;
   const roundDamage = (fire) => {
     const proj = fire?.projectile ? damage?.projectiles?.[String(fire.projectile).toLowerCase()] : null;
     const attacker = Number.isFinite(proj?.material) ? proj.material : null;
@@ -407,7 +427,9 @@ export async function realLevel(M, { maps, models, map }) {
   return {
     name: map,
     extras,
-    collider,
+    // Built by the stage, after the World (`stage.mjs`).
+    collider: null,
+    stage: { root, levelClips, damageTables, collisionMeshes, terrainMaterials, vehicleAi: vehicleJson?.vehicles ?? {} },
     kits: { kitFor, maxHp },
     weaponFire,
     roundDamage,
@@ -415,11 +437,11 @@ export async function realLevel(M, { maps, models, map }) {
     info: {
       source: `${dir}`,
       loadMs: Math.round(performance.now() - started),
-      statics: statics?.count ?? 0,
-      heightfield: !!collider?.heightfield,
       kits: !!levelKits,
       models: modelIndex.size,
       damage: !!damage,
+      collisionMeshes: !!collisionMeshes,
+      terrainMaterials: !!terrainMaterials,
     },
   };
 }

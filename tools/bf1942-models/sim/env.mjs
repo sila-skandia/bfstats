@@ -87,6 +87,42 @@ export async function loadViewerModules(viewer) {
     // The page's own bot referee (rounds, damage, respawn, capture, seating).
     createBotReferee: referee.createBotReferee,
     THREE: three,
+    mulberry32,
     loadGltfLoader: async () => (await imp('vendor/loaders/GLTFLoader.js')).GLTFLoader,
+    // A real level's vehicle path (`stage.mjs`), loaded on demand.
+    stage: null,
+    loadStage: async function loadStage() {
+      if (this.stage) return this.stage;
+      const [instance, units, hulls, hits, wrecks, statics, terrain, entry, gunfire, aircraft, wheeled, tracked, ship, modes, seats] =
+        await Promise.all([
+          imp('vehicle-instance.js'), imp('bot-units.js'), imp('hull-bodies.js'), imp('vehicle-hits.js'),
+          imp('vehicle-wrecks.js'), imp('level-statics.js'), imp('level-terrain.js'), imp('vehicle-entry.js'),
+          imp('gunfire.js'), imp('aircraft.js'), imp('wheeled-vehicle.js'), imp('tracked-vehicle.js'), imp('ship.js'),
+          imp('game-modes.js'), imp('seats.js'),
+        ]);
+      this.stage = {
+        VehicleRegistry: instance.VehicleRegistry, createBotUnits: units.createBotUnits,
+        createHullBodies: hulls.createHullBodies, createVehicleHits: hits.createVehicleHits,
+        createVehicleWrecks: wrecks.createVehicleWrecks, createLevelStatics: statics.createLevelStatics,
+        isCollision: statics.isCollision, createLevelTerrain: terrain.createLevelTerrain,
+        createVehicleEntry: entry.createVehicleEntry, GunFire: gunfire.GunFire,
+        // The drive classes map.html hands the registry, from their own modules.
+        Aircraft: aircraft.Aircraft, GroundVehicle: wheeled.GroundVehicle, TrackedVehicle: tracked.TrackedVehicle,
+        Ship: ship.Ship, selectGameMode: modes.selectGameMode, pruneToMode: modes.pruneToMode,
+        detachSpawnedCraft: seats.detachSpawnedCraft, chainOnShot: seats.chainOnShot,
+        findAllVehicleRoots: seats.findAllVehicleRoots,
+      };
+      return this.stage;
+    },
   };
+}
+
+/** The viewer's `console.log` / `console.warn` lines ("[bots] vehicle nav
+ *  map ...") go to stderr, and nowhere under `--quiet`: stdout is the
+ *  runner's summary. */
+export function routeConsole(quiet) {
+  const write = (...args) => { if (!quiet) process.stderr.write(args.map(String).join(' ') + '\n'); };
+  console.log = write;
+  console.info = write;
+  console.warn = write;
 }

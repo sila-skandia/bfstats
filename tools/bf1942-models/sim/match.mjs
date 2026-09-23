@@ -14,11 +14,18 @@
 //
 // The referee is the page's own (`viewer/bot-referee.js`, imported, not
 // copied): rounds, damage, death and respawn, capture, seating and the enemy
-// tables are the code the page runs. What the runner hands it in place of the
-// page's is its stand-in vehicles (`SimVehicles`, the referee's `units`) and
-// its hooks: each event becomes a trace line and a statistic, and a mounted
-// bot's gun is the runner's hitscan stand-in (`SIM_GUN`), where the page's
-// world flies real rounds.
+// tables are the code the page runs. On a real level the vehicles are the
+// page's too (`stage.mjs`: the hulls' instances, their real drives and
+// bodies, the guns flying real rounds, the wrecks, `bot-units.js` as the
+// referee's `units`), stepped in the page frame's order around the referee:
+//
+//   world.step, referee.tick, syncVehicleSpawnOwnership, referee.captureTick,
+//   stepVehicleBodies, stepSinkingHulls, stepVehicleDamage, the matrix walk
+//
+// The synthetic level has no vehicle nodes, so there the runner hands the
+// referee its stand-in vehicles (`SimVehicles`) and a mounted bot's gun is
+// the runner's hitscan stand-in (`SIM_GUN`). Either way each event becomes a
+// trace line and a statistic.
 //
 // Runner-only (the page has no such thing, labelled SIM):
 //   tickets: one per death (`Game.setTicketLosePerDeath`, the Conquest
@@ -28,6 +35,7 @@
 
 import { createHash } from 'node:crypto';
 import { SimVehicles, SIM_GUN } from './vehicles.mjs';
+import { createStage } from './stage.mjs';
 
 const BEHAVIOURS = ['Avoid', 'MoveTo', 'Idle', 'Fire', 'Special', 'Scout', 'TakeCover', 'Change'];
 
@@ -91,11 +99,19 @@ export class Match {
   setup() {
     const { M, level } = this;
     const extras = level.extras;
-    const world = new M.World({ collider: level.collider, extras });
+    // A real level: the page's stage (the World, the collider, the bodies,
+    // the hulls, the guns). The synthetic level: a World over its collider
+    // and the stand-in vehicles.
+    this.stage = level.stage ? createStage(M, level, { vehicles: this.useVehicles, seed: this.seed }) : null;
+    const world = this.stage ? this.stage.world : new M.World({ collider: level.collider, extras });
     this.world = world;
     const worldSize = extras?.worldSize || 2048;
     this.referee = M.createBotReferee(this.refereeEnv());
-    this.vehicles = this.useVehicles
+    if (this.stage) {
+      this.stage.referee = this.referee;
+      this.stageHooks();
+    }
+    this.vehicles = this.useVehicles && !this.stage
       ? new SimVehicles({ M, level, world, groundAt: (x, z) => this.groundAt(x, z),
                           events: this.pendingEvents, clock: () => this.clock })
       : null;
@@ -121,7 +137,7 @@ export class Match {
       flags: world.flags.map(f => ({ name: f.name, team: f.team ?? 0, pos: v2(f.position), radius: f.radius,
                                      uncapturable: !!f.uncapturable, controlPoint: !!f.controlPointName })),
       tickets: { ...this.tickets }, lossPerMin: { ...this.lossPerMin },
-      covers: this.covers.length, vehicles: this.vehicles?.count ?? 0,
+      covers: this.covers.length, vehicles: this.vehicleCount(),
       bots: this.bots.map(b => ({ id: b.playerId, side: b.team, name: b.name, kit: b.kit,
                                   weapons: b.weapons.map(w => w.name) })),
       ...(this.baseline ? {} : { doctrine: { ...this.doctrine } }),
@@ -129,20 +145,23 @@ export class Match {
     this.sample();
   }
 
+
   /** What the referee needs from the runner: the world, the stand-in
    *  vehicles, and a hook per event the trace and the statistics record. */
   refereeEnv() {
     const level = this.level;
     const match = this;
     const stat = id => this.stats.get(id);
+    const stage = this.stage;
     return {
       world: () => this.world,
       doctrine: this.doctrine,
-      // Read live: the vehicles are built after the referee.
-      get units() { return match.vehicles; },
-      groundAt: (x, z) => this.groundAt(x, z),
+      // Read live: the stand-in vehicles are built after the referee.
+      get units() { return stage ? stage.units : match.vehicles; },
+      groundAt: (x, z, fromY) => this.groundAt(x, z, fromY),
       armorFor: (bot) => new this.M.Armor(level.kits.maxHp(bot.kit)),
-      roundDamage: stats => level.roundDamage(stats),
+      // The page's `botRoundDamage` on a real level.
+      roundDamage: stats => (stage ? stage.vehicleHits.botRoundDamage(stats) : level.roundDamage(stats)),
       onBotCreated: bot => {
         const names = new Set((bot.weapons ?? []).map(w => w.name).filter(Boolean));
         if (bot.kitPrimary) names.add(bot.kitPrimary);
@@ -153,6 +172,7 @@ export class Match {
         this.stats.set(bot.playerId, {
           side: bot.team, kit: bot.kit, kills: 0, deaths: 0, shots: 0, hits: 0, captures: 0, routeFailures: 0,
           redeploys: 0, mounts: 0, aliveSeconds: 0, mountedSeconds: 0, behaviourSeconds: {},
+          vehicleKills: 0,
         });
         this.instrument(bot);
       },
@@ -191,10 +211,12 @@ export class Match {
       },
       onShot: bot => { stat(bot.playerId).shots++; },
       onHit: bot => { stat(bot.playerId).hits++; },
-      // SIM: a mounted bot's gun, hitscan from the turret: a `burst` gun 8
-      // rounds a second at 15, any other one round per 4 s at 100.
-      mountedFire: (bot, dt) => this.mountedFire(bot, dt),
+      // SIM, the synthetic level only: a mounted bot's gun, hitscan from the
+      // turret: a `burst` gun 8 rounds a second at 15, any other one round
+      // per 4 s at 100. On a real level the world fires the seat's groups.
+      mountedFire: stage ? undefined : (bot, dt) => this.mountedFire(bot, dt),
       damageHull: (bot, damage, { shell = false, attackerId = null } = {}) => {
+        if (stage) return stage.damageHull(bot, damage, { attackerId });
         if (!this.vehicles?.damageHull(bot, damage, shell)) return false;
         const h = this.vehicles.hullOf(bot.vehicle.vehicleId);
         if (h) h.lastAttacker = attackerId;
@@ -213,18 +235,20 @@ export class Match {
       onCapture: (bot, flag, prevTeam) => {
         stat(bot.playerId).captures++;
         this.event({ type: 'capture', flag: flag.name, from: prevTeam ?? 0, to: bot.team, by: bot.playerId,
-                     alive: !this.world.armorOf(bot.playerId)?.destroyed });
+                     alive: !this.world.armorOf(bot.playerId)?.destroyed,
+                     // The unit he took it in (the page logs "in the Sherman").
+                     ...(bot.vehicle ? { veh: bot.vehicle.template ?? bot.vehicle.kind ?? null } : {}) });
       },
       onMounted: (bot, cand, mount) => {
-        this.pendingEvents.push({ type: 'mount', bot: bot.playerId, side: bot.team, vehicle: mount.vehicleId,
+        this.pendingEvents.push({ type: 'mount', bot: bot.playerId, side: bot.team, vehicle: this.vehicleLabel(mount),
                                   template: mount.template, seat: cand.seatId, driver: !!mount.drives });
       },
       onSeatSwitched: (bot, cand, mount) => {
-        this.pendingEvents.push({ type: 'mount', bot: bot.playerId, side: bot.team, vehicle: mount.vehicleId,
+        this.pendingEvents.push({ type: 'mount', bot: bot.playerId, side: bot.team, vehicle: this.vehicleLabel(mount),
                                   template: mount.template, seat: cand.seatId, driver: !!mount.drives });
       },
       onDismounted: (bot, m, { killed }) => {
-        this.pendingEvents.push({ type: 'dismount', bot: bot.playerId, side: bot.team, vehicle: m.vehicleId ?? null,
+        this.pendingEvents.push({ type: 'dismount', bot: bot.playerId, side: bot.team, vehicle: this.vehicleLabel(m),
                                   template: m.template ?? null, killed });
       },
     };
@@ -241,20 +265,51 @@ export class Match {
     };
   }
 
-  groundAt(x, z) {
+  groundAt(x, z, fromY) {
+    if (this.stage) return this.stage.terrain.groundHeight(x, z, fromY);
     const h = this.world.collider?.surfaceHeight?.(x, z);
     return Number.isFinite(h) ? h : NaN;
+  }
+
+  /** A hull's name in the trace: the scene node's (GLTFLoader's unique
+   *  name, `sherman_2`) on a real level, the stand-in's id otherwise. */
+  vehicleLabel(m) {
+    if (!m) return null;
+    return this.stage ? (m.node?.name ?? m.vehicleId ?? null) : (m.vehicleId ?? null);
+  }
+
+  vehicleCount() {
+    return this.stage ? this.stage.countVehicles() : (this.vehicles?.count ?? 0);
+  }
+
+  /** The stage's events: a wreck (with the player whose round last hurt
+   *  it), a hull back on its pad. */
+  stageHooks() {
+    const stage = this.stage;
+    const templateOf = node => stage.botUnits?.aiOf(node)?.name ?? stage.wrecks.templateNameOf(node);
+    stage.hooks.onWreck = (owner, node, attackerId) => {
+      const killer = attackerId ? this.stats.get(attackerId) : null;
+      if (killer) killer.vehicleKills = (killer.vehicleKills ?? 0) + 1;
+      this.pendingEvents.push({ type: 'vehicle_destroyed', vehicle: node?.name ?? String(owner), template: templateOf(node),
+                                killer: attackerId ?? null, killerSide: killer?.side ?? null });
+    };
+    stage.hooks.onRespawn = owner => {
+      const node = stage.wrecks.damageVisuals.get(owner)?.node ?? null;
+      this.pendingEvents.push({ type: 'vehicle_respawn', vehicle: node?.name ?? String(owner), template: templateOf(node) });
+    };
   }
 
   // --- the per-tick bot work ---------------------------------------------------
 
   step() {
     const dt = this.M.WORLD_TICK_DT;
-    this.world.step(dt);
+    const report = this.world.step(dt);
     this.clock += dt;
     this.tickIndex++;
     this.referee.tick(dt);
+    this.stage?.afterBots();
     this.referee.captureTick(dt);
+    this.stage?.afterCapture(report, dt);
     this.ticketTick(dt);
     for (const e of this.pendingEvents.splice(0)) {
       if (e.type === 'mount') { const s = this.stats.get(e.bot); if (s) s.mounts++; }
@@ -370,7 +425,7 @@ export class Match {
         ctl: [r4(bot.moveForward), r4(bot.moveStrafe), r4(bot.lookX), r4(bot.lookY), bot.isFiring ? 1 : 0],
         stall: bot._stalledTicks ?? 0,
         target: bot.firingTarget ?? null,
-        veh: bot.vehicle ? { id: bot.vehicle.vehicleId, template: bot.vehicle.template, seat: bot.vehicle.seatId,
+        veh: bot.vehicle ? { id: this.vehicleLabel(bot.vehicle), template: bot.vehicle.template, seat: bot.vehicle.seatId,
                              drives: !!bot.vehicle.drives } : null,
         route: bot.route ? { points: bot.route.points?.length ?? 0, failed: !!bot.route.failed } : null,
         terms: this.terms(bot),
@@ -467,6 +522,13 @@ export class Match {
     const first = captureEvents[0] ?? null;
     const totalDeaths = deaths[1] + deaths[2];
     const mounts = this.events.filter(e => e.type === 'mount');
+    const wrecked = this.events.filter(e => e.type === 'vehicle_destroyed');
+    const vehicleKills = { total: wrecked.length, 1: 0, 2: 0, unattributed: 0, byTemplate: {} };
+    for (const e of wrecked) {
+      if (e.killerSide === 1 || e.killerSide === 2) vehicleKills[e.killerSide]++;
+      else vehicleKills.unattributed++;
+      vehicleKills.byTemplate[e.template] = (vehicleKills.byTemplate[e.template] ?? 0) + 1;
+    }
     const byTemplate = {};
     for (const e of mounts) byTemplate[e.template] = (byTemplate[e.template] ?? 0) + 1;
     const behaviourShare = {};
@@ -488,12 +550,15 @@ export class Match {
         deaths, kills,
         deathsPerCapture: captureEvents.length ? r2(totalDeaths / captureEvents.length) : null,
         vehicleUtilisation: {
-          vehicles: this.vehicles?.count ?? 0,
+          vehicles: this.vehicleCount(),
           mountedShare: aliveSeconds > 0 ? r4(mountedSeconds / aliveSeconds) : 0,
           mountedBotSeconds: r2(mountedSeconds), aliveBotSeconds: r2(aliveSeconds),
           mounts: mounts.length, mountsByTemplate: byTemplate,
-          destroyed: this.events.filter(e => e.type === 'vehicle_destroyed').length,
+          destroyed: wrecked.length,
         },
+        // Hulls destroyed, by the side of the lethal hit's attacker (the page's
+        // `killedBy`; a crash or a burn-down has none: unattributed).
+        vehicleKills,
         routeFailures: { total: routeFailures, perBot: Object.fromEntries([...this.stats].map(([id, s]) => [id, s.routeFailures])) },
         redeploys: this.events.filter(e => e.type === 'redeploy').length,
         strategyChanges: this.events.filter(e => e.type === 'strategy').length,
