@@ -388,6 +388,19 @@ export function createSeatPose(page) {
     }
   }
 
+  /** Sync the seated soldier to its seat node's world pose -- the glb is
+   *  parented to `scene` (not the vehicle tree) so it can't disturb
+   *  VehicleCamera's node traversal, so it must chase the seat's matrices
+   *  every frame instead -- and play its sit clip. */
+  seatPose.followSeat = dt => {
+    if (!page.optPilot.checked) return;
+    if (seatPose.seatSoldier && seatPose.seatPoseTarget) {
+      seatPose.seatPoseTarget.getWorldPosition(seatPose.seatSoldier.position);
+      seatPose.seatPoseTarget.getWorldQuaternion(seatPose.seatSoldier.quaternion);
+    }
+    if (seatPose.seatPoseMixer) seatPose.seatPoseMixer.update(dt);
+  };
+
   Object.assign(seatPose, {
     disposeSeatPose,
     loadSeatPose,

@@ -521,6 +521,12 @@ the same ~83,000 lines, the largest file went from 5,850 lines to 1,854
 
 - **The map page did not load on a touch device** (`9e88fb9d`). Part 2 had
   moved `pageInput` below a load-time `getTouchHudText()` call.
+- **Four `?shots` hooks read a field that had moved** (fixed with the
+  frame() moves below): after the seated cameras left local-player.js,
+  `__setView`, `__view`, `__chase().active` and `__seatSoldier().firstPerson`
+  still read `page.localPlayer.view`. A lint cannot see that, and a
+  one-level member check does not either; a check of every
+  `page.<module>.<member>` read against what that module defines does.
 - **A wrecked hull offered its door** (`e9b7327b`). The E-key scan never
   asked whether the hull was destroyed, so the player could climb into a
   burning wreck. The bots' candidate list already skipped wrecks.

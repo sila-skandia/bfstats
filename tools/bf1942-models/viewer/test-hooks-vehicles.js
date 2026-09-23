@@ -140,7 +140,7 @@ export function installVehicleHooks(page) {
   // The seated soldier itself, for the same reason.
   window.__seatSoldier = () => (page.seatSoldier ? {
     visible: page.seatSoldier.visible,
-    firstPerson: !!page.localPlayer.view?.firstPerson,
+    firstPerson: !!page.view?.firstPerson,
   } : null);
   window.__switchSeat = page.switchSeat;
   // Group-index bookkeeping, independent of `occupancy` (which reads null the
