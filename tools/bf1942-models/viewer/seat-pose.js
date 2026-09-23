@@ -13,8 +13,9 @@ import { bonePattern, kitsByTemplate, wornGrafts } from './kit-graft.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `MODELS_BASE`, `bust`, `deployScreen`, `flags`, `localPlayer`, `optPilot`,
- * `scene`, `seatSoldier`, `soldierKit`.
+ * `bust`, `deployKit`, `deployTeamId`, `flags`, `kitLoadout`, `MODELS_BASE`,
+ * `occupancy`, `optPilot`, `scene`, `seatSoldier`, `soldierTemplateFor`,
+ * `view`.
  */
 export function createSeatPose(page) {
   const seatPose = {};
@@ -50,14 +51,14 @@ export function createSeatPose(page) {
 
   async function loadSeatPose() {
     disposeSeatPose();
-    if (!page.localPlayer.occupancy || !page.optPilot.checked) return;
+    if (!page.occupancy || !page.optPilot.checked) return;
     const mine = ++seatPose.seatPoseGeneration;
-    const seat = page.localPlayer.occupancy.seatInfo(page.localPlayer.occupancy.activeSeatId);
+    const seat = page.occupancy.seatInfo(page.occupancy.activeSeatId);
     const body = seatBody(seat?.seatObjects);
     if (!body.draw) return;             // no SeatObject: the game draws nobody
     const states = resolveSeatStates(seat.seatObjects);
-    const soldierName = page.soldierKit.soldierTemplateFor(
-      page.flags.find(f => f.team === page.deployScreen.deployTeamId) || { team: page.deployScreen.deployTeamId });
+    const soldierName = page.soldierTemplateFor(
+      page.flags.find(f => f.team === page.deployTeamId) || { team: page.deployTeamId });
     const assetFor = name =>
       `${page.MODELS_BASE}/poses/${soldierName}__${name}.pose.glb${page.bust()}`;
     let gltf;
@@ -104,7 +105,7 @@ export function createSeatPose(page) {
     }
     page.scene.add(soldierScene);
     page.seatSoldier = soldierScene;
-    page.seatSoldier.visible = !page.localPlayer.view?.firstPerson;
+    page.seatSoldier.visible = !page.view?.firstPerson;
     // The helmet. A BFSoldier template declares a body, a head and two hands and
     // nothing else, so the exported soldier is bare-headed; the helmet belongs
     // to the kit the player deployed with and hangs off bone `A`. The driver in
@@ -166,7 +167,7 @@ export function createSeatPose(page) {
    * all three is the same call in three more places once someone wants it. */
   async function dressSeatOccupant(soldierScene, seat) {
     const index = await kitsIndex();
-    const { kit: kitName } = page.soldierKit.kitLoadout(page.deployScreen.deployTeamId, page.deployScreen.deployKit);
+    const { kit: kitName } = page.kitLoadout(page.deployTeamId, page.deployKit);
     const kit = kitName && index.get(String(kitName).toLowerCase());
     if (!kit) return;
     for (const graft of wornGrafts(kit)) {
@@ -233,7 +234,7 @@ export function createSeatPose(page) {
     const owners = [];
     seat.node.traverse(obj => {
       if (!obj.userData?.skeletonIK) return;
-      const owner = obj.userData.control || page.localPlayer.occupancy?.rootId;
+      const owner = obj.userData.control || page.occupancy?.rootId;
       if (owner === seat.id) owners.push(obj);
     });
     const resolveChild = (node, index, name) =>
@@ -383,7 +384,7 @@ export function createSeatPose(page) {
 
   function updateSeatPoseVisibility() {
     if (page.seatSoldier) {
-      page.seatSoldier.visible = !page.localPlayer.view?.firstPerson;
+      page.seatSoldier.visible = !page.view?.firstPerson;
     }
   }
 

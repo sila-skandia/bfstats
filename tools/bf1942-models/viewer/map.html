@@ -1198,12 +1198,15 @@ const footBodies = createFootBody({
   get soldier() { return localPlayer.soldier; }, get soldierDead() { return localPlayer.soldierDead; },
 });
 const seatPose = createSeatPose({
-  get MODELS_BASE() { return MODELS_BASE; }, get bust() { return bust; },
-  get deployScreen() { return deployScreen; }, get flags() { return flagCapture.flags; },
-  get localPlayer() { return localPlayer; }, get optPilot() { return optPilot; },
-  get scene() { return scene; },
-  get seatSoldier() { return localPlayer.seatSoldier; }, set seatSoldier(v) { localPlayer.seatSoldier = v; },
-  get soldierKit() { return soldierKit; },
+  get bust() { return bust; }, get deployKit() { return deployScreen.deployKit; },
+  get deployTeamId() { return deployScreen.deployTeamId; },
+  get flags() { return flagCapture.flags; }, get kitLoadout() { return soldierKit.kitLoadout; },
+  get MODELS_BASE() { return MODELS_BASE; }, get occupancy() { return localPlayer.occupancy; },
+  get optPilot() { return optPilot; }, get scene() { return scene; },
+  get seatSoldier() { return localPlayer.seatSoldier; },
+  set seatSoldier(v) { localPlayer.seatSoldier = v; },
+  get soldierTemplateFor() { return soldierKit.soldierTemplateFor; },
+  get view() { return localPlayer.view; },
 });
 const mapSurfaces = createMapSurfaces({
   get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get MAPS_BASE() { return MAPS_BASE; },
