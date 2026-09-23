@@ -28,8 +28,8 @@
 
 import {
   drawBitmapText, elementVisible, inRect, measureText, paintElement, rgb,
-  stageScale, toVirtual,
 } from './menu-screen.js';
+import { beginStage, pointerToVirtual } from './stage.js';
 import { createMenuPack } from './menu-pack.js';
 import { createNavStrip } from './nav-strip.js';
 import { createLobby } from './lobby.js';
@@ -367,21 +367,7 @@ export function createMultiplayScreen({
 
   function paint() {
     if (!layout) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    if (!w || !h) return;
-    const cw = Math.round(w * dpr);
-    const chh = Math.round(h * dpr);
-    if (canvas.width !== cw || canvas.height !== chh) {
-      canvas.width = cw;
-      canvas.height = chh;
-    }
-    const s = stageScale(w, h, layout.virtual);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, cw, chh);
-    ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
+    if (!beginStage(canvas, ctx, layout.virtual)) return;
 
     const table = vars();
     pack.values = table;
@@ -410,9 +396,7 @@ export function createMultiplayScreen({
   // --- input -----------------------------------------------------------------
 
   function at(event) {
-    const r = canvas.getBoundingClientRect();
-    const s = stageScale(r.width, r.height, layout.virtual);
-    return toVirtual(s, event.clientX - r.left, event.clientY - r.top);
+    return pointerToVirtual(canvas, event, layout.virtual);
   }
 
   const joinButton = () => page('internetNav').find(

@@ -24,9 +24,9 @@
 // selection and turns a pointer into a choice.
 
 import {
-  AXIS, ALLIED, hitTest, listBox, paintMenu, scrollTo, stageScale,
-  toVirtual, visibleRows,
+  AXIS, ALLIED, hitTest, listBox, paintMenu, scrollTo, visibleRows,
 } from './menu-screen.js';
+import { beginStage, pointerToVirtual } from './stage.js';
 import { createNavStrip } from './nav-strip.js';
 import { loadMods, remember, servable, stored, VANILLA, withMod } from '../mods.js';
 import { createLoadingAudioController } from '../audio.js';
@@ -357,21 +357,7 @@ export function createSkirmishScreen({
 
   function paint() {
     if (!layout) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    if (!w || !h) return;
-    const cw = Math.round(w * dpr);
-    const chh = Math.round(h * dpr);
-    if (canvas.width !== cw || canvas.height !== chh) {
-      canvas.width = cw;
-      canvas.height = chh;
-    }
-    const s = stageScale(w, h, layout.virtual);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, cw, chh);
-    ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
+    if (!beginStage(canvas, ctx, layout.virtual)) return;
     // The left column is the bot settings, which `SHOW_BOT_SETTINGS` has off
     // by default because the retail screen leaves it blank.
     paintMenu(ctx, layout, state, env, true);
@@ -384,9 +370,7 @@ export function createSkirmishScreen({
   // --- input -----------------------------------------------------------------
 
   function at(event) {
-    const r = canvas.getBoundingClientRect();
-    const s = stageScale(r.width, r.height, layout.virtual);
-    return toVirtual(s, event.clientX - r.left, event.clientY - r.top);
+    return pointerToVirtual(canvas, event, layout.virtual);
   }
 
   canvas.addEventListener('pointermove', event => {

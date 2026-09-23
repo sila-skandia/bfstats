@@ -15,7 +15,8 @@
 // is which game you are playing, not a thing to launch.
 
 import { createNavStrip } from './nav-strip.js';
-import { elementVisible, paintElement, stageScale, toVirtual } from './menu-screen.js';
+import { elementVisible, paintElement } from './menu-screen.js';
+import { beginStage, pointerToVirtual } from './stage.js';
 import { loadMods, remember, servable, stored, VANILLA } from '../mods.js';
 import { loadHudPaths, hudPaths as plainHudPaths } from '../hud-pack.js';
 import {
@@ -195,21 +196,7 @@ export function createModPicker({
 
   function paint() {
     if (!layout) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    if (!w || !h) return;
-    const cw = Math.round(w * dpr);
-    const chh = Math.round(h * dpr);
-    if (canvas.width !== cw || canvas.height !== chh) {
-      canvas.width = cw;
-      canvas.height = chh;
-    }
-    const s = stageScale(w, h, layout.virtual);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, cw, chh);
-    ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
+    if (!beginStage(canvas, ctx, layout.virtual)) return;
     // `menu/Background` — the black field and the camouflaged plate every tab
     // of the front end is drawn on.
     const table = navLayout?.variables || {};
@@ -226,9 +213,7 @@ export function createModPicker({
   observer.observe(canvas);
 
   function at(event) {
-    const r = canvas.getBoundingClientRect();
-    const s = stageScale(r.width, r.height, layout.virtual);
-    return toVirtual(s, event.clientX - r.left, event.clientY - r.top);
+    return pointerToVirtual(canvas, event, layout.virtual);
   }
 
   canvas.addEventListener('pointermove', event => {

@@ -20,7 +20,7 @@
 // screen, and there is no second action here to activate - a click already
 // applies.
 
-import { drawBitmapText, inRect, measureText, paintElement } from './menu-screen.js';
+import { drawBitmapText, inRect, measureText, paintElement, rgb } from './menu-screen.js';
 
 const BUTTON_W = 109;
 const BUTTON_H = 25;
@@ -89,8 +89,6 @@ function thumbSpan(layout, box, scroll, count) {
   const offset = (scroll / (count - rows)) * (1 - size);
   return [offset, size];
 }
-
-const rgb = c => `rgb(${c.slice(0, 3).map(v => Math.round(v * 255)).join(',')})`;
 
 function footerButton(layout) {
   const elements = layout.pages.modlist.elements;
