@@ -8,6 +8,8 @@
 import * as THREE from 'three';
 import { inflateSync } from 'node:zlib';
 
+import { objectForNode } from './glb-tree.mjs';
+
 // --- the GLB BIN chunk, exactly as little as the sim needs ------------------
 
 /**
@@ -141,25 +143,7 @@ export function buildSceneTree(gltf, bin) {
   const meshes = gltf.meshes || [];
   const made = new Array(nodes.length);
   const terrainTiles = [];
-  for (let i = 0; i < nodes.length; i++) {
-    const n = nodes[i];
-    const obj = new THREE.Object3D();
-    obj.name = n.name || '';
-    if (Array.isArray(n.translation)) {
-      const [x = 0, y = 0, z = 0] = n.translation;
-      obj.position.set(x, y, z);
-    }
-    if (Array.isArray(n.rotation)) {
-      const [x = 0, y = 0, z = 0, w = 1] = n.rotation;
-      obj.quaternion.set(x, y, z, w);
-    }
-    if (Array.isArray(n.scale)) {
-      const [x = 1, y = 1, z = 1] = n.scale;
-      obj.scale.set(x, y, z);
-    }
-    obj.userData = (n.extras && typeof n.extras === 'object') ? n.extras : {};
-    made[i] = obj;
-  }
+  for (let i = 0; i < nodes.length; i++) made[i] = objectForNode(nodes[i]);
   for (const [i, n] of nodes.entries()) {
     if (!n.children) continue;
     for (const child of n.children) made[i].add(made[child]);
