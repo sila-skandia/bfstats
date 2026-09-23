@@ -1,7 +1,7 @@
 """Runs `test_effect_audio.mjs` under node.
 
 `viewer/effect-audio.js` imports nothing but `engine-audio.js`, and that
-imports nothing at all, so the impact-sound pool runs outside a browser
+imports nothing but its own `ssc-*.js` pieces, so the impact-sound pool runs outside a browser
 against a stubbed Web Audio context. The wrapper exists because a `test_*.mjs`
 without one is invisible to `unittest discover` and to `verify.sh` — the
 lesson `test_engine_audio.py` was written for.
