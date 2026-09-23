@@ -242,17 +242,35 @@ It never reports arrival.
 
 With the same cadence (`bot-referee.js tick`, `bot-strength.js
 EnemyStrengthTables.update`), each side's view of the enemy: for every
-occupied enemy unit (a soldier on foot counts with the soldier's
-`setBattleStrength` table, a seat with its guns' table and its class)
-`strengths[c] += security x table[c]`, `types[class] += security` (security
-1, INVENTION), then every entry is halved. The tables settle at the per-pass
-sum. A bot reads its side's tables for `calculateFireStrength`
+occupied enemy unit the side knows (a soldier on foot counts with the
+soldier's `setBattleStrength` table, a seat with its guns' table and its
+class) `strengths[c] += security x table[c]`, `types[class] += security`,
+then every entry is halved. The tables settle at the per-pass sum. A bot
+reads its side's tables for `calculateFireStrength`
 ([vehicles.md](vehicles.md)); before the first pass it assumes the enemy
 fields infantry only (`bot.js _fireStrengthOf`).
 
-*Example.* 8 enemy soldiers (`Infantry 4, LightArmour 2, HeavyArmour 1,
-Air 1`): `strengths.Infantry` goes 16, 24, 28 ... -> 32, `types.Infantry` ->
-8.
+**Security** (AI-75) is what the side knows ([sensing.md](sensing.md#what-a-side-knows)):
+
+```
+security = 1 - SCurve((now - t0) / D)      t0 the last contact, spot, re-sight or heard shot
+```
+
+`D` is the unit template's `aiTemplate.degeneration`: 15 for a soldier, 5
+for a fighter, 10 a jeep, 15 or 25 a tank, 20 a landing craft or a fixed
+gun, 50 to 180 a ship (`bot-strength.js VEHICLE_DEGENERATION`, by the
+`vehicle-ai.json` name; a vehicle outside it takes 15). An enemy no bot of
+the side has had in its frustum is not summed at all, so at the start of a
+match the tables are empty and every unit scores `0.5 m`. A dead player's
+record is dropped with him. The referee passes each unit's player id and
+the clock (`occupiedUnits`, `tick`); without them (the harness's older
+calls) a unit weighs its own `security`, 1 by default.
+
+*Example.* 8 enemy soldiers in sight all the time (`Infantry 4, LightArmour
+2, HeavyArmour 1, Air 1`): `strengths.Infantry` goes 16, 24, 28 ... -> 32,
+`types.Infantry` -> 8. One soldier last seen at t0: his weight is 1, 0.91,
+0.5, 0.09 and 0 at 0, 3.75, 7.5, 11.25 and 15 s, and his share of the table
+halves away after that.
 
 ## Spawning
 

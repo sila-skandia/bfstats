@@ -9,7 +9,7 @@ decompiles (addresses given); everything marked INVENTION is a viewer stand-in.
 | What | Where in the binary | Built in |
 |---|---|---|
 | The six battle-strength classes; a unit's table is the MAX over its `FireArms`' `setStrength` tables (a soldier's is `setBattleStrength`) | `AISettings::getNBattleStrengths` 0x084843d0, `AITemplateUnit::initFromObject` 0x085e1a90 | `bot-strength.js unitTable` |
-| Each side's enemy tables: per strategic pass `strengths += security * table`, `types[type] += security`, then halved (`SAI::update` 0x086306d0 calls it at `period * 0.95`) | `SAI::updateStrengths` 0x08636c20, `getEnemyStrengths/Types` 0x08631830 / 0x08631840, `BFEnvironment::getEnemyStrengths/Types` 0x085e4fe0 / 0x085e5030 | `EnemyStrengthTables`; `map.html botOccupiedUnits` feeds them every `SAI.updateFrequency` |
+| Each side's enemy tables: per strategic pass `strengths += security * table`, `types[type] += security`, then halved (`SAI::update` 0x086306d0 calls it at `period * 0.95`) | `SAI::updateStrengths` 0x08636c20, `getEnemyStrengths/Types` 0x08631830 / 0x08631840, `BFEnvironment::getEnemyStrengths/Types` 0x085e4fe0 / 0x085e5030 | `EnemyStrengthTables`; `bot-referee.js occupiedUnits` feeds them every `SAI.updateFrequency`, each unit weighed by its side's security (AI-75) |
 | `calculateFireStrength`: own table + 0.4 (seat / aircraft) or 0.9 (ground root) x each other occupied seat; `max own^2` over the classes the enemy fields minus the enemy's strength vs my class; `0.5 max own^2` when the enemy fields nothing known; a fixed weapon with no aimable known enemy scores 0 | 0x08584580, `AIObjectControlInfo::validateCameraDirection` 0x085d4170 | `fireStrength`; `bot.js _fireStrengthOf / _candidateFire / _fixedAimable` |
 | Change candidate radius 50 m, friendly 40 m, enemy objects 75 m (600 m aircraft); `engineHeatInfluence` `1 - (heat - 0.95) * 20` | `BFEnvironment::getHardware` 0x085e2fa0, `getFriendlyUnits` 0x085e2e50, `getEnemyObjects` 0x085e4eb0, 0x08585830 | `CHANGE.searchRadius = 50`, `STRENGTH`, `engineHeatInfluence` |
 | The seat swap: root / own seat / other seat factors by where the bot sits (0.5/1.0/0.5 under a driver; 1.0/0.5/0.65 ship, 0.7 land, 1.5/0.5/0.5 air; root 1.0/—/0.5), x (1 - radio), order factor; `Declein(0.5 best/own) * 4`; 6.0 while a change is pending, 2.0 with no attack order and no plan; plan = the `setSelectKey` trigger | `BBChangeTeleport::calculateUrgency` 0x085611f0, `BBPChangeTeleport::createPlan` 0x08590590 | `TELEPORT`, `teleportChangeUrgency`; `bot.js _urgencyChangeTeleport`, `SwitchSeat` action; `map.html botVehicleTick` reseats |
@@ -131,8 +131,11 @@ which the bot tests then covered.
    ~700 lines; the viewer ports state 0's reverse test only). Read since
    (AI-72): the 20 s feedback veto is dead in retail (its writer is gated on
    a `detectAimingFailure` that returns 0), and a target's security is 1 on
-   its own side and `1 - SCurve(age / decay)` on the other (the decay source
-   is not traced; 1 here).
+   its own side and `1 - SCurve(age / decay)` on the other. ~~The decay
+   source~~ read and built (AI-75): the template's `aiTemplate.degeneration`
+   (15 for a soldier), the record made at a bot's first frustum contact and
+   refreshed by spots, re-sights and heard shots; the enemy tables weigh
+   each unit by it. The Fire scoring still uses 1.
 5. **Bocage's Tank0 map has no bridge crossing**: after the bridges fall the
    next orders cross the river and `findStrategicPath` fails every tick
    (north bank, south bank and the Sawmill are separate components on the
