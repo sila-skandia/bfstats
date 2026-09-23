@@ -479,5 +479,79 @@ class BotAiTests(unittest.TestCase):
         self.assertGreater(move["travelled"], 1.0)
 
 
+
+class GunnerAimTests(unittest.TestCase):
+    """Brief F: a mounted gunner aims the engine's way (bot-aim.js).
+
+    `mouseControlLookAtDirection` 0x08627b90 turns the direction into counts
+    through the seat's ControlInfo, `Aimer::getFiringDirection` 0x08538ad0
+    leads the target, and `BAPCConPrecision::evaluate` 0x0854b570 lets the
+    trigger down. The rig is a real `TurretRig` whose gun node rests turned
+    180 deg on its mount, as the Sherman's turret Browning does.
+    """
+
+    g: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.g = run_harness()["gunner"]
+
+    def test_the_count_law(self) -> None:
+        # SCurve of the log-shaped angle, times the 5.0 scale, capped at 4.
+        counts = {row[0]: (row[1], row[2]) for row in self.g["counts"]}
+        self.assertAlmostEqual(counts[1][0], 0.0484, places=3)
+        self.assertAlmostEqual(counts[5][0], 0.4536, places=3)
+        self.assertAlmostEqual(counts[10][0], 1.6305, places=3)
+        self.assertEqual(counts[30][0], 4)
+        self.assertEqual(counts[90][0], 4)
+        for deg, (x, y) in counts.items():
+            self.assertGreater(x, 0, deg)          # a target to the right: turn right
+            self.assertAlmostEqual(y, -x, places=6, msg=deg)  # a target above: count up (negative)
+        # A target behind turns at the full rate; an AA mount's 1.0 scale is a fifth.
+        self.assertEqual(self.g["behind"], [4, 0])
+        self.assertAlmostEqual(self.g["scaledX"] * 5, 0.5795, places=3)
+
+    def test_the_hull_gunner_converges_within_half_a_degree_in_under_a_second(self) -> None:
+        b = self.g["browning"]
+        self.assertAlmostEqual(abs(b["startYaw"]), 0.0, places=6)   # the barrel rests aft of the rig
+        self.assertGreaterEqual(b["settledTick"], 0)
+        self.assertLess(b["settledSeconds"], 1.0)
+        self.assertLess(b["maxAfterSettle"], 0.5)
+        self.assertLess(b["errAt1s"], 0.05)
+        # The old count law on the same rig swings by degrees.
+        self.assertGreater(self.g["oldLaw"]["maxLastSecond"], 1.5)
+
+    def test_a_slow_tower_settles_too(self) -> None:
+        t = self.g["tower"]
+        self.assertGreaterEqual(t["settledTick"], 0)
+        self.assertLess(t["maxAfterSettle"], 0.5)
+
+    def test_the_lead_and_the_drop(self) -> None:
+        # A 300 m/s round to a plane crossing 150 m out at 55 m/s flies about
+        # half a second; the aim sits well ahead of it.
+        self.assertAlmostEqual(self.g["aa"]["leadTime"], 0.508, places=2)
+        self.assertGreater(self.g["aa"]["leadAhead"], 10)
+        # 100 m/s under -14.73 to 200 m: aim 8.6 deg up, 2 s of flight.
+        self.assertAlmostEqual(self.g["dropUp"], 8.6, places=1)
+        self.assertAlmostEqual(self.g["dropTime"], 2.02, places=2)
+        # Still target, flat round: the straight line.
+        d = self.g["stillDir"]
+        self.assertAlmostEqual(d[0], 30 / (30 ** 2 + 5 ** 2 + 40 ** 2) ** 0.5, places=3)
+
+    def test_the_precision_condition(self) -> None:
+        # 0.25 x the extents (at least 0.4); an air target's largest extent (at least 1).
+        self.assertEqual(self.g["precision"], [0.75, 0.4, 11, 1])
+        # A single-shot weapon fires on the closest approach: the miss grows again.
+        self.assertEqual(self.g["closest"], [False, False, False, True, False])
+
+    def test_an_aa_gun_tracks_a_crossing_plane_with_a_lag(self) -> None:
+        # The AA mount's ControlInfo scale is 1.0: at 55 m/s crossing it trails
+        # the lead by more than the plane's span and does not fire...
+        self.assertEqual(self.g["aa"]["fired"], 0)
+        self.assertLess(self.g["aa"]["bestMiss"], 40)
+        # ...while a plane still far out on its approach is inside it.
+        self.assertGreater(self.g["aaPass"]["fired"], 0)
+        self.assertLess(self.g["aaPass"]["bestMiss"], 11)
+
 if __name__ == "__main__":
     unittest.main()
