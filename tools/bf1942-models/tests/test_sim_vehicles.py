@@ -65,6 +65,14 @@ class SimVehicleTests(unittest.TestCase):
         self.assertTrue(r["stillMounted"])
         self.assertEqual(recipe("drive")["trail"], r["trail"], "the same seed drives the same path")
 
+    def test_a_tank_shell_kills_a_soldier_through_the_page_hit_path(self) -> None:
+        r = recipe("gun")
+        self.assertTrue(r["killed"], r)
+        self.assertEqual(r["kill"]["killer"], "bot_1")
+        self.assertRegex(r["kill"]["weapon"], r"^(round|splash) ShermanGunBarrel")
+        self.assertGreaterEqual(r["rounds"], 1)
+        self.assertTrue(any(f.startswith("Sherman:ShermanGunBarrel") for f in r["fired"]))
+
 
 if __name__ == "__main__":
     unittest.main()
