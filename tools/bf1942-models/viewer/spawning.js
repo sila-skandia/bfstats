@@ -11,14 +11,20 @@ import { Armor } from './armor.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `DEATH_CAM`, `LOCAL_PLAYER`, `buildSpawnFlags`, `capture`, `deathCamShot`,
- * `deathCamTarget`, `deathCamTimer`, `deployScreen`, `disposeHandWeapon`,
- * `drawFullMap`, `ensureHandWeapon`, `flags`, `fullmapBox`, `fullmapCanvas`,
- * `handWeapon`, `hud`, `hudViewTimer`, `kitRowLabelFor`, `kitRowLayoutText`,
- * `optOnFoot`, `optPilot`, `params`, `placeCamera`, `projectToArt`, `prone`,
- * `rebaseDeckSpawns`, `resetCaptureUi`, `room`, `scoreboard`, `setOnFoot`,
- * `setPilot`, `shipFlagInactive`, `snapPresentation`, `soldier`,
- * `soldierArmor`, `soldierDead`, `soldierMaxHp`, `spawnFlagSelect`,
+ * `buildSpawnFlags`, `capture`, `DEATH_CAM`, `deathCamShot`,
+ * `deathCamTarget`, `deathCamTimer`, `deployActive`, `deployGroup`,
+ * `deployHoverBtn`, `deployHoverVar`, `deployKept`, `deployKit`,
+ * `deployKitHits`, `deployRejoin`, `deployResumeBtn`, `deployScoreBtn`,
+ * `deploySuicideBtn`, `deployTabs`, `deployTeamId`, `deployUnchosen`,
+ * `disposeHandWeapon`, `drawFullMap`, `ensureHandWeapon`, `flags`,
+ * `fullmapBox`, `fullmapCanvas`, `handWeapon`, `hud`, `hudViewTimer`,
+ * `kitRowLabelFor`, `kitRowLayoutText`, `layoutDeploy`, `LOCAL_PLAYER`,
+ * `netReconciler`, `netSendAction`, `netTickPoses`, `optOnFoot`, `optPilot`,
+ * `paintDeployChrome`, `paintDeploySoon`, `params`, `placeCamera`,
+ * `projectToArt`, `prone`, `rebaseDeckSpawns`, `resetCaptureUi`,
+ * `roomJoined`, `setOnFoot`, `setPilot`, `setScoreboard`,
+ * `shipFlagInactive`, `snapPresentation`, `soldier`, `soldierArmor`,
+ * `soldierDead`, `soldierMaxHp`, `spawnFlagSelect`, `spawnLayout`,
  * `supplyTarget`, `toggleFullMap`, `updateHud`, `world`, `worldReady`.
  */
 export function createSpawning(page) {
@@ -57,7 +63,7 @@ export function createSpawning(page) {
     // record per player, but this is the same object the HUD has always read.
     page.soldierArmor = new Armor(page.soldierMaxHp(flag));
     page.world.setPlayerArmor(page.LOCAL_PLAYER, page.soldierArmor);
-    page.world.setPlayerSupply(page.LOCAL_PLAYER, { team: page.deployScreen.deployTeamId, refillAmmo: page.supplyTarget.refillAmmo });
+    page.world.setPlayerSupply(page.LOCAL_PLAYER, { team: page.deployTeamId, refillAmmo: page.supplyTarget.refillAmmo });
     // Respawn clears the death cam: the fresh body is alive, so the latch
     // must not hold the corpse cam over the new soldier.
     page.soldierDead = false;
@@ -80,18 +86,18 @@ export function createSpawning(page) {
     // The room's control channel: the server re-places its own copy of this
     // player on the same flag (fresh Armor at the kit's max — the spawn row
     // names the kit so both sides build the same Armor from loadouts.json).
-    if (page.room.roomJoined) {
+    if (page.roomJoined) {
       // The ledger describes a body that no longer exists.
-      page.room.netReconciler?.reset();
-      page.room.netTickPoses.length = 0;
-      page.room.netSendAction({
+      page.netReconciler?.reset();
+      page.netTickPoses.length = 0;
+      page.netSendAction({
         type: 'spawn',
         flag: Math.min(Number(page.spawnFlagSelect.value) || 0, page.flags.length - 1),
         // WHICH of the flag's spawn points, so the authority spawns on the one
         // the prediction just used. `spawnPlayer` has already walked the index
         // for this spawn, so this is the point the soldier is standing on.
         spawnIndex: page.world.player(page.LOCAL_PLAYER)?.spawnIndex ?? 0,
-        kit: page.deployScreen.deployKit,
+        kit: page.deployKit,
       });
     }
     return true;
@@ -104,7 +110,7 @@ export function createSpawning(page) {
    *  all rather than an empty map. */
   function deployFlagIndices() {
     const own = [];
-    page.flags.forEach((flag, index) => { if (flag.team === page.deployScreen.deployTeamId) own.push(index); });
+    page.flags.forEach((flag, index) => { if (flag.team === page.deployTeamId) own.push(index); });
     return own.length ? own : page.flags.map((_, index) => index);
   }
 
@@ -174,20 +180,20 @@ export function createSpawning(page) {
     if (!page.buildSpawnFlags()) return false;
     // A dead body is not a life to go back to: RESUME must not hand the player
     // a corpse, and `Kit/IsAlive` must say so.
-    page.deployScreen.deployRejoin = !!page.soldier && !page.soldierDead;
-    page.deployScreen.deployKept = page.spawnFlagSelect.value;
+    page.deployRejoin = !!page.soldier && !page.soldierDead;
+    page.deployKept = page.spawnFlagSelect.value;
     // A fresh screen always opens on a flag, whether the last one was left
     // unselected for a free roam or not.
-    page.deployScreen.deployUnchosen = false;
+    page.deployUnchosen = false;
     // The deck-spot choice belongs to the life it was made on; a fresh screen
     // starts with whole flags again (the rejoin path re-derives it below).
-    page.deployScreen.deployGroup = null;
+    page.deployGroup = null;
     // Drop sidebar / footer focus so Enter commits spawn rather than toggling
     // `#onfoot` or synthesising a RESUME click.
     if (document.activeElement && document.activeElement !== document.body) {
       document.activeElement.blur();
     }
-    if (page.deployScreen.deployRejoin) {
+    if (page.deployRejoin) {
       const chosen = page.flags[Math.min(Number(page.spawnFlagSelect.value) || 0, page.flags.length - 1)];
       setDeployTeam(chosen?.team === 1 ? 1 : 2, false);
     } else {
@@ -202,7 +208,7 @@ export function createSpawning(page) {
     page.fullmapBox.classList.add('deploy');
     syncDeployReady();
     page.toggleFullMap(true);
-    page.deployScreen.layoutDeploy();
+    page.layoutDeploy();
     return true;
   }
 
@@ -211,9 +217,9 @@ export function createSpawning(page) {
     // receive the Enter key's synthetic click afterward. Refuse unless the
     // deploy chrome is actually up, or that click tears down the soldier we
     // just built and dumps the camera into fly-through.
-    if (!page.deployScreen.deployActive()) return;
-    const rejoin = page.deployScreen.deployRejoin;
-    const kept = page.deployScreen.deployKept;
+    if (!page.deployActive()) return;
+    const rejoin = page.deployRejoin;
+    const kept = page.deployKept;
     page.toggleFullMap(false);
     if (rejoin) {
       // The life in progress resumes untouched; the flag he never committed
@@ -235,7 +241,7 @@ export function createSpawning(page) {
    *  is the whole reason the page no longer needs a "click to fly" plate: the
    *  way into the free camera captures the mouse on the way. */
   function enterFreeCam() {
-    page.deployScreen.deployUnchosen = false;
+    page.deployUnchosen = false;
     page.optOnFoot.checked = false;
     page.setOnFoot(false);
     page.placeCamera();
@@ -247,22 +253,22 @@ export function createSpawning(page) {
    *  `deploy-spots.js` (node-tested); this is the page's thin wrapper over its
    *  own `deployGroup` state. */
   function activeDeployGroup(flag) {
-    return activeDeployGroupFor(flag, page.deployScreen.deployGroup);
+    return activeDeployGroupFor(flag, page.deployGroup);
   }
 
   function selectDeployFlag(index, group = null) {
     if (!Number.isInteger(index) || index < 0 || index >= page.flags.length) return false;
-    page.deployScreen.deployUnchosen = false;
+    page.deployUnchosen = false;
     page.spawnFlagSelect.value = String(index);
     // A fresh choice starts at the flag's first spawn, as the select's own
     // change handler would have it — the world's counter rides the reset.
     page.world?.setSpawnIndex(page.LOCAL_PLAYER, 0);
-    page.deployScreen.deployGroup = group;
+    page.deployGroup = group;
     // The tab follows the flag: a number key or a harness call naming the
     // other side's flag switches the column with it.
     const team = page.flags[index].team;
-    if ((team === 1 || team === 2) && team !== page.deployScreen.deployTeamId) setDeployTeam(team, false);
-    if (page.deployScreen.deployActive()) page.drawFullMap(true);
+    if ((team === 1 || team === 2) && team !== page.deployTeamId) setDeployTeam(team, false);
+    if (page.deployActive()) page.drawFullMap(true);
     return true;
   }
 
@@ -274,7 +280,7 @@ export function createSpawning(page) {
    *  Called from `setDeployTeam` (the team changed) and `layoutDeploy` (the
    *  layout — and with it the label's fallback — may have just landed). */
   function updateKitAriaLabels() {
-    for (const hit of page.deployScreen.deployKitHits) {
+    for (const hit of page.deployKitHits) {
       const role = hit.dataset.kit;
       if (role) hit.setAttribute('aria-label',
         page.kitRowLabelFor(role, page.kitRowLayoutText(role)));
@@ -282,41 +288,41 @@ export function createSpawning(page) {
   }
 
   function setDeployTeam(team, reselect = true) {
-    page.deployScreen.deployTeamId = team;
-    for (const tab of page.deployScreen.deployTabs) {
+    page.deployTeamId = team;
+    for (const tab of page.deployTabs) {
       tab.setAttribute('aria-pressed', String(Number(tab.dataset.team) === team));
     }
     updateKitAriaLabels();
     if (reselect) {
       // Picking a side is picking again: whatever the tab lands on is chosen.
-      page.deployScreen.deployUnchosen = false;
+      page.deployUnchosen = false;
       const chosen = Math.min(Number(page.spawnFlagSelect.value) || 0, page.flags.length - 1);
       if (page.flags[chosen]?.team !== team) {
         const first = deployFlagIndices()[0];
         if (first != null) {
           page.spawnFlagSelect.value = String(first);
           page.world?.setSpawnIndex(page.LOCAL_PLAYER, 0);
-          page.deployScreen.deployGroup = null;
+          page.deployGroup = null;
         }
       }
     }
-    page.deployScreen.paintDeployChrome();
-    if (page.deployScreen.deployActive()) page.drawFullMap(true);
+    page.paintDeployChrome();
+    if (page.deployActive()) page.drawFullMap(true);
   }
 
-  for (const tab of page.deployScreen.deployTabs) {
+  for (const tab of page.deployTabs) {
     tab.addEventListener('click', e => {
       e.stopPropagation();
       const newTeam = Number(tab.dataset.team);
       // Switching teams kills the current soldier, matching retail BF1942:
       // a live player who changes sides on the deploy screen dies and
       // rejoins from scratch on the new side.
-      if (page.deployScreen.deployRejoin && newTeam !== page.deployScreen.deployTeamId && page.soldier) {
+      if (page.deployRejoin && newTeam !== page.deployTeamId && page.soldier) {
         page.soldier = null;
         page.soldierArmor = null;
         page.soldierDead = false;
         page.deathCamTimer = 0;
-        page.deployScreen.deployRejoin = false;
+        page.deployRejoin = false;
         page.disposeHandWeapon();
       }
       setDeployTeam(newTeam);
@@ -326,27 +332,27 @@ export function createSpawning(page) {
 
   // The rows: a click selects, the pointer over one raises its
   // `Kit/MouseOver/*` flag for the game's mouse-over tint.
-  page.deployScreen.deployKitHits.forEach((hit, i) => {
-    const hoverVar = () => page.deployScreen.spawnLayout.data?.groups.spawn.elements
+  page.deployKitHits.forEach((hit, i) => {
+    const hoverVar = () => page.spawnLayout.data?.groups.spawn.elements
       .filter(el => el.kind === 'hit' && el.hover)[i]?.hover || null;
     hit.addEventListener('click', e => {
       e.stopPropagation();
-      page.deployScreen.deployKit = hit.dataset.kit;
+      page.deployKit = hit.dataset.kit;
       hit.blur();
-      page.deployScreen.paintDeployChrome();
+      page.paintDeployChrome();
     });
-    hit.addEventListener('pointerenter', () => { page.deployScreen.deployHoverVar = hoverVar(); page.deployScreen.paintDeploySoon(); });
+    hit.addEventListener('pointerenter', () => { page.deployHoverVar = hoverVar(); page.paintDeploySoon(); });
     hit.addEventListener('pointerleave', () => {
-      if (page.deployScreen.deployHoverVar === hoverVar()) page.deployScreen.deployHoverVar = null;
-      page.deployScreen.paintDeploySoon();
+      if (page.deployHoverVar === hoverVar()) page.deployHoverVar = null;
+      page.paintDeploySoon();
     });
   });
-  for (const [btn, id] of [[page.deployScreen.deploySuicideBtn, 'suicide'], [page.deployScreen.deployScoreBtn, 'score'],
-                           [page.deployScreen.deployResumeBtn, 'resume']]) {
-    btn.addEventListener('pointerenter', () => { page.deployScreen.deployHoverBtn = id; page.deployScreen.paintDeploySoon(); });
+  for (const [btn, id] of [[page.deploySuicideBtn, 'suicide'], [page.deployScoreBtn, 'score'],
+                           [page.deployResumeBtn, 'resume']]) {
+    btn.addEventListener('pointerenter', () => { page.deployHoverBtn = id; page.paintDeploySoon(); });
     btn.addEventListener('pointerleave', () => {
-      if (page.deployScreen.deployHoverBtn === id) page.deployScreen.deployHoverBtn = null;
-      page.deployScreen.paintDeploySoon();
+      if (page.deployHoverBtn === id) page.deployHoverBtn = null;
+      page.paintDeploySoon();
     });
   }
 
@@ -359,22 +365,22 @@ export function createSpawning(page) {
     // Only the commit button reads LOADING and refuses while the scene streams;
     // which button that is depends on the side of the screen the footer puts it
     // on (left with a life behind the screen, right without).
-    page.deployScreen.deploySuicideBtn.disabled = page.deployScreen.deployRejoin && !page.worldReady;
-    page.deployScreen.deployResumeBtn.disabled = !page.deployScreen.deployRejoin && !page.worldReady;
-    page.deployScreen.paintDeployChrome();
+    page.deploySuicideBtn.disabled = page.deployRejoin && !page.worldReady;
+    page.deployResumeBtn.disabled = !page.deployRejoin && !page.worldReady;
+    page.paintDeployChrome();
   }
 
   function deploySpawn() {
-    if (!page.deployScreen.deployActive() || !page.worldReady) return false;
+    if (!page.deployActive() || !page.worldReady) return false;
     // Nothing chosen: the commit is the way out to the free camera, not a
     // spawn. The game's spawn menu closes the same way on a server that
     // allows it, and there is no flag here to put a soldier at.
-    if (page.deployScreen.deployUnchosen) {
+    if (page.deployUnchosen) {
       page.toggleFullMap(false);
       enterFreeCam();
       return false;
     }
-    const rejoin = page.deployScreen.deployRejoin;
+    const rejoin = page.deployRejoin;
     // Arm on-foot without firing `change` — that handler calls requestOnFoot
     // and would reopen this screen. Without the box ticked the frame loop
     // keeps flying even after setOnFoot builds a soldier (Caps Lock / auto
@@ -404,7 +410,7 @@ export function createSpawning(page) {
   // commit that would have spawned you takes the free camera over the level
   // instead (`enterFreeCam`).
   page.fullmapCanvas.addEventListener('click', e => {
-    if (!page.deployScreen.deployActive()) return;       // the plain map still closes, above
+    if (!page.deployActive()) return;       // the plain map still closes, above
     e.stopPropagation();
     const rect = page.fullmapCanvas.getBoundingClientRect();
     if (!rect.width) return;
@@ -427,10 +433,10 @@ export function createSpawning(page) {
       }
     }
     if (best < 0) {
-      if (page.deployScreen.deployUnchosen) return;
-      page.deployScreen.deployUnchosen = true;
+      if (page.deployUnchosen) return;
+      page.deployUnchosen = true;
       page.drawFullMap(true);
-      page.deployScreen.paintDeployChrome();
+      page.paintDeployChrome();
       return;
     }
     selectDeployFlag(best, bestGroup);
@@ -443,24 +449,24 @@ export function createSpawning(page) {
   // SCORE BOARD has no board to show and stays a button in name only.
   // Focus must not stay on any of them: Space is the jump the instant the
   // screen closes, and a focused button turns it back into a click.
-  page.deployScreen.deploySuicideBtn.addEventListener('click', e => {
+  page.deploySuicideBtn.addEventListener('click', e => {
     e.stopPropagation();
-    page.deployScreen.deploySuicideBtn.blur();
-    if (page.deployScreen.deployRejoin) deploySpawn();
+    page.deploySuicideBtn.blur();
+    if (page.deployRejoin) deploySpawn();
     else cancelDeploy();
   });
-  page.deployScreen.deployResumeBtn.addEventListener('click', e => {
+  page.deployResumeBtn.addEventListener('click', e => {
     e.stopPropagation();
-    page.deployScreen.deployResumeBtn.blur();
-    if (page.deployScreen.deployRejoin) cancelDeploy();
+    page.deployResumeBtn.blur();
+    if (page.deployRejoin) cancelDeploy();
     else deploySpawn();
   });
-  page.deployScreen.deployScoreBtn.addEventListener('click', e => {
+  page.deployScoreBtn.addEventListener('click', e => {
     e.stopPropagation();
-    page.deployScreen.deployScoreBtn.blur();
+    page.deployScoreBtn.blur();
     // `Kit/ScoreboardSpawnInterface`: the board takes the spawn interface's
     // place until its own DONE (`Kit/DoneSpawnScoreboard`) gives it back.
-    page.scoreboard.setScoreboard(true, true);
+    page.setScoreboard(true, true);
   });
 
   Object.assign(spawning, {
