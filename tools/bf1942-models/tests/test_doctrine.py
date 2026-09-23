@@ -84,7 +84,7 @@ class DoctrineTests(unittest.TestCase):
         self.assertTrue(c["noUrgency"])
         self.assertTrue(c["areaWithoutInside"])
         self.assertTrue(c["nullIsNoOrder"])
-        self.assertEqual(c["kinds"], ["WPAltitudeMoveTo", "WPBoard", "WPFollow", "WPHold", "WPMoveTo"])
+        self.assertEqual(c["kinds"], ["WPAltitudeMoveTo", "WPBoard", "WPFollow", "WPHold", "WPLeave", "WPMoveTo"])
 
     def test_the_doctrine_spec_names_each_side(self) -> None:
         s = self.r["spec"]
@@ -141,6 +141,17 @@ class DoctrineTests(unittest.TestCase):
         a = self.r["air"]
         self.assertEqual(a["leader"], "WPAltitudeMoveTo")
         self.assertEqual(a["followers"], ["WPMoveTo"] * 3)
+
+    def test_a_follower_riding_another_hull_away_gets_out(self) -> None:
+        v = self.r["leave"]
+        self.assertEqual(v["kind"], "WPLeave")
+        self.assertEqual(v["exited"], ["s1_1"])
+        self.assertEqual(v["leaves"], 1)
+
+    def test_a_driving_follower_far_behind_makes_the_leader_hold(self) -> None:
+        v = self.r["leave"]
+        self.assertEqual(v["leader2"], "s1_4")
+        self.assertEqual(v["leader2Kind"], "WPHold")
 
 
 if __name__ == "__main__":

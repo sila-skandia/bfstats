@@ -76,6 +76,7 @@ export async function loadViewerModules(viewer) {
     STANDARD_WEIGHTS: bot.STANDARD_WEIGHTS, URGENCY_CURVE: bot.URGENCY_CURVE,
     buildNavMap: nav.buildNavMap, isWalkable: nav.isWalkable, gridAt: nav.gridAt, CELL_FREE: nav.CELL_FREE,
     StrategicLayer: strategic.StrategicLayer, StrategicAI: strategic.StrategicAI, SAI: strategic.SAI,
+    parseDoctrineSpec: strategic.parseDoctrineSpec,
     EnemyStrengthTables: strength.EnemyStrengthTables,
     Armor: armor.Armor,
     Heightfield: collision.Heightfield, buildHeightfield: collision.buildHeightfield,

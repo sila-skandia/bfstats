@@ -37,7 +37,7 @@ const v2 = (a) => (a ? a.map(r2) : null);
 
 export class Match {
   constructor({ M, level, botsPerSide = 4, botSkill = 0.75, duration = 120, seed = 1, traceEvery = 1,
-                sampleEvery = 1, vehicles = true, sink = null }) {
+                sampleEvery = 1, vehicles = true, sink = null, doctrine = null }) {
     this.M = M;
     this.level = level;
     this.botsPerSide = botsPerSide;
@@ -48,6 +48,11 @@ export class Match {
     this.sampleEvery = sampleEvery;
     this.useVehicles = vehicles;
     this.sink = sink;
+    // Each side's doctrine (viewer/doctrine.js); 'sai' both sides is the
+    // engine's SAI, and a baseline run's trace names none (it is byte for
+    // byte the trace from before the interface).
+    this.doctrine = M.parseDoctrineSpec(doctrine);
+    this.baseline = this.doctrine[1] === 'sai' && this.doctrine[2] === 'sai';
     this.hash = createHash('sha256');
     this.lines = 0;
     this.clock = 0;
@@ -119,6 +124,7 @@ export class Match {
       covers: this.covers.length, vehicles: this.vehicles?.count ?? 0,
       bots: this.bots.map(b => ({ id: b.playerId, side: b.team, name: b.name, kit: b.kit,
                                   weapons: b.weapons.map(w => w.name) })),
+      ...(this.baseline ? {} : { doctrine: { ...this.doctrine } }),
     });
     this.sample();
   }
@@ -131,6 +137,7 @@ export class Match {
     const stat = id => this.stats.get(id);
     return {
       world: () => this.world,
+      doctrine: this.doctrine,
       // Read live: the vehicles are built after the referee.
       get units() { return match.vehicles; },
       groundAt: (x, z) => this.groundAt(x, z),
@@ -353,7 +360,10 @@ export class Match {
         k: 'tick', t: r2(this.clock), n: this.tickIndex, bot: bot.playerId, side: bot.team, alive: true,
         hp: r2(armor?.hitPoints), pos: v2(bot.position), yaw: r4(bot.yaw), stance: bot.stance,
         area: wp?.area?.name ?? wp?.flag?.name ?? null,
-        order: wp ? { point: v2(wp.point), radius: r2(wp.radius), src: bot.waypoints ? 'order' : 'fallback' } : null,
+        order: wp ? { point: v2(wp.point), radius: r2(wp.radius), src: bot.waypoints ? 'order' : 'fallback',
+                      // A doctrine run names the kind (WPFollow, WPBoard, ...); a
+                      // baseline trace stays as it was.
+                      ...(this.baseline ? {} : { kind: wp.kind ?? null, leader: wp.leaderId ?? undefined }) } : null,
         beh: bot.currentBehaviour, since: r2(this.clock - (bot.behaviourChosenAt ?? 0)),
         u, act, mod,
         plan: head?.type ?? null, planLen: plan.length,
@@ -494,6 +504,28 @@ export class Match {
       trace: { lines: this.lines, sha256: this.hash.copy().digest('hex') },
       level_info: this.level.info,
       runtime: { wallMs: Math.round(runtimeMs), navMs: this.navMs },
+      doctrine: this.doctrineSummary(captureEvents),
+    };
+  }
+
+  /**
+   * The doctrine comparison's per-side numbers (sim/compare.mjs): which
+   * doctrine each side ran, what it counted, each side's first capture and
+   * the control points it held on average. In summary.json only: the trace's
+   * summary line leaves it out, so a baseline trace is unchanged.
+   */
+  doctrineSummary(captureEvents) {
+    const firstCapture = { 1: null, 2: null };
+    for (const e of captureEvents) if (firstCapture[e.to] === null) firstCapture[e.to] = e.t;
+    const held = { 0: 0, 1: 0, 2: 0 };
+    for (const smp of this.samples) for (const k of [0, 1, 2]) held[k] += smp.flags[k];
+    const n = this.samples.length || 1;
+    return {
+      sides: { ...this.doctrine },
+      firstCapture,
+      flagsHeldMean: { 0: r4(held[0] / n), 1: r4(held[1] / n), 2: r4(held[2] / n) },
+      controlPoints: this.controlPoints.length,
+      stats: this.strategy?.stats?.() ?? null,
     };
   }
 }

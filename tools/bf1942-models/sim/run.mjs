@@ -19,7 +19,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 function parseArgs(argv) {
   const a = { level: null, bots: 4, time: 120, seed: 1, skill: 0.75, traceEvery: 1, sampleEvery: 1,
               vehicles: true, out: null, maps: null, models: null, viewer: null, quiet: false,
-              replay: null, why: null, trace: null, step: 30, noTrace: false };
+              replay: null, why: null, trace: null, step: 30, noTrace: false, doctrine: null };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     const next = () => { if (i + 1 >= argv.length) throw new Error(`${k} needs a value`); return argv[++i]; };
@@ -37,6 +37,7 @@ function parseArgs(argv) {
       case '--sample-every': a.sampleEvery = Number(next()); break;
       case '--no-vehicles': a.vehicles = false; break;
       case '--no-trace': a.noTrace = true; break;
+      case '--doctrine': a.doctrine = next(); break;
       case '--out': a.out = next(); break;
       case '--quiet': a.quiet = true; break;
       case '--replay-summary': a.replay = next(); break;
@@ -64,6 +65,8 @@ match options:
   --sample-every S  tickets/flags sample period in seconds (default 1)
   --no-vehicles     leave the level's land vehicles out
   --no-trace        write the summary only
+  --doctrine D      each side's doctrine (viewer/doctrine.js): 'sai' (default,
+                    the engine's SAI), 'squad', or per side 'axis=squad,allies=sai'
   --out DIR         output directory (default sim/out/<level>-s<seed>)
   --maps DIR        the extracted maps tree (default <viewer>/maps)
   --models DIR      the extracted models tree (default <viewer>/models)
@@ -83,7 +86,10 @@ async function runMatch(a) {
   // Re-seed after the level load so a real level's load order cannot move
   // the match's first draw.
   seedMathRandom(a.seed);
-  const outDir = path.resolve(a.out ?? path.join(HERE, 'out', `${level.name}-s${a.seed}`));
+  // The doctrine names, checked before the match is built (an unknown one throws).
+  const doctrine = M.parseDoctrineSpec(a.doctrine);
+  const tag = doctrine[1] === 'sai' && doctrine[2] === 'sai' ? '' : `-${doctrine[1]}-${doctrine[2]}`;
+  const outDir = path.resolve(a.out ?? path.join(HERE, 'out', `${level.name}-s${a.seed}${tag}`));
   mkdirSync(outDir, { recursive: true });
   const traceFile = path.join(outDir, 'trace.jsonl');
   const fd = a.noTrace ? null : openSync(traceFile, 'w');
@@ -91,7 +97,8 @@ async function runMatch(a) {
   const flush = () => { if (fd !== null && buffer.length) { writeSync(fd, buffer.join('\n') + '\n'); } buffer = []; };
   const sink = (line) => { if (fd === null) return; buffer.push(line); if (buffer.length >= 2000) flush(); };
   const match = new Match({ M, level, botsPerSide: a.bots, botSkill: a.skill, duration: a.time, seed: a.seed,
-                            traceEvery: a.traceEvery, sampleEvery: a.sampleEvery, vehicles: a.vehicles, sink });
+                            traceEvery: a.traceEvery, sampleEvery: a.sampleEvery, vehicles: a.vehicles, sink,
+                            doctrine: a.doctrine });
   const started = performance.now();
   match.setup();
   let lastReport = 0;
@@ -105,7 +112,7 @@ async function runMatch(a) {
   const summary = match.summary(performance.now() - started);
   // The trace's last line: the summary without the wall-clock parts, so the
   // file is byte-identical for a seed.
-  match.emit({ k: 'summary', ...summary, trace: undefined, runtime: undefined, level_info: undefined });
+  match.emit({ k: 'summary', ...summary, trace: undefined, runtime: undefined, level_info: undefined, doctrine: undefined });
   flush();
   if (fd !== null) closeSync(fd);
   writeFileSync(path.join(outDir, 'summary.json'), JSON.stringify(summary, null, 2) + '\n');
@@ -119,6 +126,7 @@ async function runMatch(a) {
     `vehicles ${m.vehicleUtilisation.vehicles}, mounts ${m.vehicleUtilisation.mounts}, mounted share ${m.vehicleUtilisation.mountedShare}`,
     `route failures ${m.routeFailures.total}, redeploys ${m.redeploys}, strategy changes ${m.strategyChanges}`
       + `${m.botErrors ? `, BOT ERRORS ${m.botErrors} (see the bot_error events)` : ''}`,
+    `doctrine Axis ${summary.doctrine.sides[1]} / Allies ${summary.doctrine.sides[2]}`,
     `out: ${outDir}`,
   ];
   process.stdout.write(lines.join('\n') + '\n');
