@@ -14,13 +14,13 @@ import { spawnerWindow } from './game-modes.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `bindDynamicShading`, `bust`, `camera`, `collider`, `dieInWreck`,
- * `disposeEngineAudio`, `effects`, `exitPoseManned`, `extras`, `fireStates`,
- * `gameHud`, `hitIndicatorDir`, `hitIndicatorTimer`, `hud`, `isCollision`,
- * `lastSoldierHp`, `leaveSeat`, `loader`, `MODELS_BASE`, `occupancy`,
- * `optOnFoot`, `optPilot`, `placeCamera`, `resetMobileControls`,
- * `respawnVehicleBody`, `retireVehicleBody`, `soldier`, `soldierDead`,
- * `standUp`, `updateHud`, `vehicleDamage`, `vehicles`, `world`.
+ * `bindDynamicShading`, `bust`, `camera`, `clearHitIndicator`, `collider`,
+ * `dieInWreck`, `disposeEngineAudio`, `effects`, `exitPoseManned`, `extras`,
+ * `fireStates`, `hud`, `isCollision`, `leaveSeat`, `loader`, `MODELS_BASE`,
+ * `occupancy`, `optOnFoot`, `optPilot`, `placeCamera`,
+ * `resetMobileControls`, `respawnVehicleBody`, `retireVehicleBody`,
+ * `soldier`, `soldierDead`, `standUp`, `updateHud`, `vehicleDamage`,
+ * `vehicles`, `world`.
  */
 export function createVehicleWrecks(page) {
   const wrecks = {};
@@ -293,13 +293,7 @@ export function createVehicleWrecks(page) {
     if (!page.occupancy || page.occupancy.root !== node || page.soldierDead) return;
     // A wreck cuts off engine audio immediately -- crash effect plays, engine stops
     page.disposeEngineAudio();
-    page.hitIndicatorTimer = 0;
-    page.hitIndicatorDir = 0;
-    if (page.gameHud?.vars) {
-      page.gameHud.vars['HitFromDir/HitFromDir'] = 0;
-      page.gameHud.vars['HitFromDir/HitFromDirAlpha'] = 0;
-    }
-    page.lastSoldierHp = null;
+    page.clearHitIndicator();
     node.updateWorldMatrix(true, false);
     node.getWorldPosition(wreckDeathPos);
     node.getWorldQuaternion(wreckDeathQuat);
