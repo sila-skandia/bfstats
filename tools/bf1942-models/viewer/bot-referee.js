@@ -81,10 +81,13 @@ export function captureDuration(flag) {
  * +0x1fe 1, `loseControlWhenNotClose` +0x1ff 0, `minNrToTakeControl` +0x204
  * 1, `onlyTakeableByTeam` +0x214 0. The four bytes are written by
  * ConsoleClass637..640 (0x083064e0, 0x083068f0, 0x08306d00, 0x08307110) in
- * the order the setters are registered from 0x082a1f62. The extractor
- * (`bf42/level.py`) carries only `timeToGetControl` and `unableToChangeTeam`
- * so far: vanilla sets `timeToLoseControl 10` on most flags and
- * `loseControlWhenEnemyClose 0` on 26 of 367, which fall back to these.
+ * the order the setters are registered from 0x082a1f62; `onlyTakeableByTeam`
+ * +0x214 and `minNrToTakeControl` +0x204 are ConsoleClass649 / 650
+ * (`executeObjectMethod` 0x083093d0, 0x083097e0), `unableToChangeTeam`
+ * +0x200 ConsoleClass648 (0x08308fc0). The level exporter (`bf42/level.py`
+ * `ControlPointTemplate`) carries every one of them, null where the level
+ * keeps the ctor's value: vanilla sets `timeToLoseControl 10` on most flags
+ * and `loseControlWhenEnemyClose 0` on 26 of 367.
  */
 export function controlPointSettings(flag) {
   const num = (v, d) => (Number.isFinite(v) ? v : d);

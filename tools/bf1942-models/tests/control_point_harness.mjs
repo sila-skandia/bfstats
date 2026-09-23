@@ -11,6 +11,7 @@ const { viewerDir, installModuleHooks } = await import(path.join(HERE, '..', 'si
 const viewer = viewerDir(path.join(HERE, '..', 'viewer'));
 installModuleHooks(viewer);
 const { controlPointStep, controlPointSettings } = await import(path.join(viewer, 'bot-referee.js'));
+const { spawnFlags } = await import(path.join(viewer, 'spawn-flags.js'));
 
 const DT = 1 / 30;
 
@@ -47,6 +48,24 @@ const results = {
   // `onlyTakeableByTeam 1`: the Allies cannot take it.
   onlyAxis: run(flag(0, { onlyTakeableByTeam: 1 }), [2], 30),
 };
+
+// A level's own settings through the page's flag list (spawn-flags.js, the
+// scene's `controlPoints` as the exporter writes them): El Alamein's
+// `timeToLoseControl 10`. One Allied soldier alone on the Axis point runs
+// it down over 10 s, not the ctor's 5, then takes it over the next 10.
+{
+  const extras = {
+    controlPoints: [{ name: 'CP', displayName: 'CP', position: [0, 0, 0], team: 1, radius: 50, spawnGroupId: 1,
+                      timeToGetControl: 10, timeToLoseControl: 10, loseControlWhenEnemyClose: true,
+                      loseControlWhenNotClose: false, minNrToTakeControl: null, onlyTakeableByTeam: null }],
+    soldierSpawns: [{ name: 'S', group: 1, team: 1, position: [0, 0, 0] }],
+  };
+  const [f] = spawnFlags(extras);
+  results.levelFlag = { settings: controlPointSettings(f), ...run(f, [2], 21) };
+  // A scene extracted before the exporter carried the field: the default.
+  const old = { ...extras, controlPoints: [{ ...extras.controlPoints[0], timeToLoseControl: undefined }] };
+  results.oldScene = controlPointSettings(spawnFlags(old)[0]);
+}
 
 // The old per-bot law on the contested case: two timers, one a bot, each
 // taking the flag from the other every timeToGetControl.

@@ -1552,6 +1552,17 @@ def _control_point_report(info: LevelInfo, placed: set[str] | None,
             "objectSpawnerId": tpl.object_spawner_id if tpl else None,
             "unableToChangeTeam": tpl.unable_to_change_team if tpl else False,
             "timeToGetControl": tpl.time_to_get_control if tpl else None,
+            # The rest of the control-point law's settings (bf42/level.py
+            # `ControlPointTemplate`); null where the level keeps the
+            # template ctor's default, which the viewer holds
+            # (bot-referee.js `controlPointSettings`).
+            "timeToLoseControl": tpl.time_to_lose_control if tpl else None,
+            "disableIfEnemyInsideRadius": tpl.disable_if_enemy_inside_radius if tpl else None,
+            "disableWhenLosingControl": tpl.disable_when_losing_control if tpl else None,
+            "loseControlWhenEnemyClose": tpl.lose_control_when_enemy_close if tpl else None,
+            "loseControlWhenNotClose": tpl.lose_control_when_not_close if tpl else None,
+            "minNrToTakeControl": tpl.min_nr_to_take_control if tpl else None,
+            "onlyTakeableByTeam": tpl.only_takeable_by_team if tpl else None,
             "flagMesh": tpl.flag_mesh() if tpl else None,
             "flagHeight": tpl.flag_offset[1] if tpl else 0.0,
             # False for a capture zone the level deliberately left invisible.
