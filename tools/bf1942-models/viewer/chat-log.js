@@ -135,6 +135,38 @@ export function deathLine(name, strings) {
   return `${name} ${strings?.DEATH ?? 'is no more'}`;
 }
 
+/**
+ * The kill-section lines one death writes, and the text the victim sees in
+ * the centre of his screen: `[{ text, team, who }]` plus `centre`, `who`
+ * being `'killer'` or `'victim'` (whose buddy colour the line takes).
+ * `victim` and `killer` are `{ id, name, team, vehicle }`, `killer` null for
+ * a death nobody caused.
+ *
+ * A death is the same event whatever killed him: a soldier shot on foot and a
+ * crewman who dies with his hull both come off the server as score event 3
+ * against the killer (`GameServer::_giveDamage`, lnxded 0x0814c122 for a
+ * hull's crew), which the client prints `killer [word] victim`
+ * (0x00494342..0x00494419: the wide `" ["` at 0x008d89a4 and `"] "` at
+ * 0x008d96b0 around the lexicon word). A team kill is 6 then 4, both team 0;
+ * no killer, or his own hand, is 4, `is no more`.
+ */
+export function deathLines(victim, killer, strings, names) {
+  if (killer && killer.id !== victim.id) {
+    if (killer.team && killer.team === victim.team) {
+      const tk = teamKillLine(killer.name, strings);
+      return {
+        lines: [{ text: tk, team: 0, who: 'killer' },
+                { text: deathLine(victim.name, strings), team: 0, who: 'victim' }],
+        centre: tk,
+      };
+    }
+    const text = killLine(killer.name, victim.name, killWord(killer.vehicle, strings, names));
+    return { lines: [{ text, team: killer.team, who: 'killer' }], centre: text };
+  }
+  const text = deathLine(victim.name, strings);
+  return { lines: [{ text, team: 0, who: 'victim' }], centre: text };
+}
+
 /** A control point taken (0x006E4A60): `[name] Axis captured the control
  *  point ` -- with the trailing space the engine appends -- in the capturing
  *  team's colour, under its flag, to everyone. */
