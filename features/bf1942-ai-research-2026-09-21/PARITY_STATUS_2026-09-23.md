@@ -81,6 +81,19 @@ which the bot tests then covered.
   maxClimbAngle, +0x108 maxRollAngle) and AI-59..AI-63, the README index
   line, IMPLEMENTATION_PLAN Follow-up 8.
 
+- **Boats** (AI-66): the water map is built as read (a 125 m brush for
+  `Boat2`), and it is nearly shut: on Truk 0.3 % of the world is free and
+  every big-ship spawn sits in a blocked cell, so a bot in the Yamato or a
+  destroyer takes the seat and never finds a route (Wake: the Hatsuzuki
+  too). Landing craft (`LandingCraft3`, depth 1.4, brush 4) are the boats
+  bots should drive, but the viewer lists a carrier's / destroyer's LCVP /
+  Daihatsu as a seat of the parent hull, so none drives alone yet; the
+  levels with a free LCVP / Elco (`invasion_of_the_philippines`) ship no AI
+  data.
+- **Two INVENTIONs retired**: the armour-class values are 1, 3, 8, 15, 1, 6
+  (AI-64), the harmless threshold is the 0 every `BotManager` call passes
+  (AI-65).
+
 ## Open, in priority order (the next session starts here)
 
 1. **No soldier hit from the air yet.** The attack approaches at ~45 m (the
@@ -99,12 +112,10 @@ which the bot tests then covered.
    AltitudeMoveTo` would give it.
 3. The airborne flag (bot vt +0x180 / +0x17c): where the engine clears it
    is not read (the viewer clears it on the ground, INVENTION).
-4. **Remaining INVENTIONs worth reading next**: `AISettings::getArmourClassValues`
-   (+0x98, the per-class weighting; 1 here — find the `ai.setArmourClassValue`
-   con handler), `BotMain::getHarmlessThrsh` (+0x2c; 0 here), `actionStatusDecision` modes 2..5,
+4. **Remaining INVENTIONs worth reading next**: `actionStatusDecision` modes 2..5,
    a target's information `security` (+0x14; 1 here), and the 20 s
    `getBBPFeedback` veto for vehicles (shared with infantry).
-5. **Boats live**: no vanilla boat drives on El Alamein; load Wake or
-   Guadalcanal (`?map=wake`, water 95 m, `Boat2` depth 5 brush 125) and mount
-   a bot in an Elco80 (`__botMount(id, 'Elco80')`); check the water nav builds
-   (`[bots] water nav map (Boat2): N ms`) and the hull follows a route.
+5. **Boats**: split a parent hull's landing craft into their own drivable
+   roots (seats.js lists them as seats), then drive an LCVP on Iwo Jima /
+   Midway on the `LandingCraft3` map; build the water maps at their base
+   level (`2^L` blocks) rather than per metre.

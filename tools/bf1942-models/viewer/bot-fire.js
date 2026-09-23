@@ -69,8 +69,10 @@
 //    beaten 1.2x, veto a plan's target for 20 s, and shape the result
 //    through `Declein(2 x)` and the radio terms.
 //
-// INVENTION, labelled: the armour-class value vector (`AISettings` +0x98,
-// `getArmourClassValues`) is 1 here; a target's information security is 1.
+// The armour-class value vector (`AISettings` +0x98) is read (1, 3, 8, 15,
+// 1, 6) and the harmless threshold (`BotMain` +0x2c) is the 0 both
+// `BotManager` call sites pass to the `BotMain` constructor (0x08497887,
+// 0x08498194). INVENTION, labelled: a target's information security is 1.
 
 const DEG = Math.PI / 180;
 
@@ -329,8 +331,11 @@ export function firePlanFor({ position, targetPos, targetId, weapon, pose, now }
   return plan;
 }
 
-/** Per-class weighting `AISettings::getArmourClassValues` (INVENTION: 1). */
-export const ARMOUR_CLASS_VALUES = { Infantry: 1, LightArmour: 1, HeavyArmour: 1, NavalArmour: 1, Submarine: 1, Air: 1 };
+/** Per-class weighting `AISettings::getArmourClassValues` 0x084849f0
+ *  (+0x98): the constructor 0x08482cf0 stores 1, 3, 8, 15, 1, 6 in the
+ *  class order of the `CST*` enum (Infantry, LightArmour, HeavyArmour,
+ *  NavalArmour, Submarine, Air); no console command writes it. */
+export const ARMOUR_CLASS_VALUES = { Infantry: 1, LightArmour: 3, HeavyArmour: 8, NavalArmour: 15, Submarine: 1, Air: 6 };
 
 export const VEHICLE_FIRE = {
   largeBoreRangeFactor: 1.5,

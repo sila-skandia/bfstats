@@ -593,7 +593,8 @@ Read 2026-09-23 (ledger AI-50..AI-63); every row is built unless noted.
 | The flight law, line for line | `towardsDirection` 0x08629fa0, `towardsPoint` 0x08629730, `aimAtDirection` 0x08629cf0, `InformationReal::getAltitude(Vec3)` 0x085e8950 | `towardsDirectionEngine`, `towardsPoint`, `aimAtDirection` |
 | The sense rays skip the bot's own unit and the target's; the vehicle frustums while seated | `BotMain::sense` 0x08521cf0 | `bot-sense.js lineClear`, `BotSenses.selfOwner` |
 | ControlInfo3d: +0x104 maxClimbAngle, +0x108 maxRollAngle, the four channel indices | con setters 0x0850dad0 / 0x0850dec0 / 0x0850e2b0 / 0x0850e6a0 | `PLANE_FIRE` |
-| The water map | level `AIpathFinding.con` | `buildNavMap({ waterMap })` |
+| The water map: the terrain sampled in `2^L` m blocks (L = 2 for the boat maps), the brush stamped in metres (125 m for `Boat2`), so big ships' maps are nearly shut | `LocalMap::update` 0x085fe090, `CellMap::setBlob` 0x085f9250, `LocalMapInfo::update` 0x08480f50 | `buildNavMap({ waterMap })` (at 1 m) |
+| The armour-class values 1, 3, 8, 15, 1, 6; the harmless threshold 0 | `AISettings` ctor 0x08482cf0; the `BotMain` ctor calls in `BotManager` | `ARMOUR_CLASS_VALUES`, `harmlessThreshold` |
 
 **How the flight law was read.** Ghidra's output for 0x08629fa0 starts in
 the middle of the function (register inputs, the head lost). The function was
