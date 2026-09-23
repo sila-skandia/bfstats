@@ -397,6 +397,37 @@ which the bot tests then covered.
    parked, and its next publish must restore them first (`extract_search_maps.py`
    on main writes them).
 
+## Brief Q (2026-09-24): a carrier's deck aircraft is a unit of its own
+
+The owner's report: "planes are spawning on carriers now, but when flying
+the plane it flies the entire carrier". The bake nests each deck aircraft
+under its carrier; `detachSpawnedCraft` now splits nested VCAir hulls off as
+it does the landing craft, and the spawner's hold (ledger AI-121) keeps each
+on its pad on the moving ship until the pilot's throttle reaches 0.1. A
+released plane stands on the ship's hull top, lifted so its hull clears the
+deck (AI-122, INVENTION). Commits `29e9c09b`, `809c6f31`, `a00deaa6`.
+
+Live, Midway, `?botCount=8&botSkill=0.75&shots&noaudio&botDebug`:
+
+| check | result |
+|---|---|
+| the human takes the Corsair on the Enterprise and takes off | its own `Aircraft` drive; on its pad (0 m drift) until throttle 0.13 at 1.25 s; 100 m of deck roll to 31 m/s; off the deck at 10 s, 208 m up at 25 s (arrow held back from 30 m/s) |
+| the Enterprise while it does | 0 m moved |
+| a bot (bot_1) takes a Zero on the Shokaku and takes off | released at 4.3 s; 150 m clear of the ship at 15.3 s; 101 m above its pad by 40 s; the Shokaku 0 m moved |
+| bot_0 drives the Enterprise 200 m, the Corsair parked | 200.1 m in 26.7 s; the drawn Corsair 0 m off its drawn pad every frame (0.45 m before the frame's half, `presentHeldCraft`) |
+
+Runner, Midway seed 1 (`tests/test_sim_vehicles.py
+test_deck_planes_take_off_and_the_carriers_stay_put`): the Corsair and the
+Zero released at 1.07 s, off their decks at 14.2 / 12.3 s, 73 / 93 m up;
+both carriers 0 m moved; the Enterprise driven 200 m in 22 s with the SBD
+held on its pad (0 m off, 1.42 m over the deck). El Alamein seed 1, 300 s:
+the trace byte for byte the one before.
+
+Open: a bot rolling on its own carrier draws Avoid against her (the
+engine's law, AI-122) and flies off under it; a released plane parked on a
+ship that then moves is not carried; the landing craft's spawners hold too
+and the viewer floats them instead.
+
 ## Reported unfixed by the owner, 2026-09-24 (site test, live = main)
 
 Not to be worked on until asked; recorded so they are not lost. The live

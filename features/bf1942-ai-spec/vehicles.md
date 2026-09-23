@@ -171,6 +171,13 @@ Senses use the vehicle fields of view from the eye 2 m above the hull.
   loses its order and is ordered afresh as a tank, a car, a plane (the air
   order) or a soldier, on that unit's own map ([strategic.md](strategic.md)).
   Both clear the airborne flag.
+- **Deck aircraft** (Brief Q, AI-121): a carrier's Corsair, SBD, Zero and
+  AichiVal are vehicles of their own (`spawned-craft.js`), held on their pads
+  on the moving ship by the spawner until the pilot's throttle reaches 0.1,
+  then let go with the ship's velocity; a released one stands on the ship's
+  hull top (`hull-bodies.js shipDeckAt`, AI-122). A plane rolling on its own
+  carrier sits inside the carrier's avoid sphere and draws Avoid (the engine's
+  law, AI-122); under it the bot keeps its throttle and flies off the deck.
 - **Destroyed hull**: the crew is unseated and killed.
 - **Damage**: a round that finds a seated bot bills the hull.
 
@@ -188,3 +195,7 @@ Senses use the vehicle fields of view from the eye 2 m above the hull.
   ship spawn blocked), and a carrier's or destroyer's landing craft are
   listed as seats of the parent hull, so no landing craft drives alone
   (AI-66).
+- Deck aircraft: a released plane left parked on a ship that then moves is
+  not carried (the engine's friction carry, collision-response.md 8, is not
+  ported; only the spawner's hold is). The landing craft's spawners hold
+  too (`holdObject 1`); the viewer floats them at their draft instead.
