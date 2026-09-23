@@ -4,9 +4,14 @@ The strategic AI (`ai.createSAI`) reads four plain console scripts per level
 (`features/bf1942-ai-research-2026-09-21/README.md` §3.6):
 
 * `AI/StrategicAreas.con` — `aiStrategicArea.create <name> <x1>/<z1> <x2>/<z2>
-  <radius>` boxes with neighbours, object-type flags (`Base`, `ControlPoint`,
-  `Front`, `Flank`, `Centre`, `Safe`, `Close`, `AirField`, `ChokePoint`, ...),
-  per-vehicle-type order positions, a side, and `setTakeable <side> <0|1>`;
+  <radius> [<category>]` boxes with neighbours, object-type flags (`Base`,
+  `ControlPoint`, `Front`, `Flank`, `Centre`, `Safe`, `Close`, `AirField`,
+  `ChokePoint`, ...), per-vehicle-type order positions, a side, and
+  `setTakeable <side> <0|1>`; and the landing zones a landing craft is sent
+  to (`AILandingZone.createLandingZone <name> <x1>/<z1> <x2>/<z2>
+  <LZXMin|LZZMin|LZXMax|LZZMax>`), attached to an area with
+  `attachLandingZone` for the unit types `addLandingZoneUnit` names, and
+  `addExpelledUnit`, which keeps a unit type out of an area;
 * `AI/conditions.con` — `aiStrategy.createConstantCondition <name>
   <Crisp|Fuzzy> <Equal|EqualSmaller|EqualGreater|...> <Friendly|Enemy>
   <object flag> <value>`, with a strength (`Required`, `AdvisoryNegative`, ...)
@@ -80,6 +85,44 @@ class StrategicArea:
     side: int | None = None
     vehicleSearchRadius: float | None = None
     takeable: dict[str, bool] = field(default_factory=dict)
+    # The fifth word of `aiStrategicArea.create` (`land`, `sea`), when given.
+    category: str | None = None
+    # `AIStrategicArea.attachLandingZone <zone>` (the area's zone list at
+    # +0x144, `attachLandingZone` 0x0863fc90), in the order attached.
+    landingZones: list[str] = field(default_factory=list)
+    # `addLandingZoneUnit <type>` (the +0x150 bit mask, `addToLandingZoneUsers`
+    # 0x08640290 through `AIConsole::addLandingZoneUnit` 0x08471370): the unit
+    # types `orderNormalBot` 0x08640bd0 sends to this area's beach.
+    landingZoneUnits: list[str] = field(default_factory=list)
+    # `addExpelledUnit <type>` (the +0xf4 bit mask, `AIConsole::
+    # addExpelledUnit` 0x08471330, read by `isExpelledUnit` 0x08644da0).
+    expelledUnits: list[str] = field(default_factory=list)
+
+
+# `operator>>(istream&, LandingZoneDirection&)` 0x08488e80: `LZXMin` / `XMin` /
+# `0` is 0, then ZMin 1, XMax 2, ZMax 3; anything else is `LZUndefined` (4).
+LZ_DIRECTIONS = {
+    "lzxmin": 0, "xmin": 0, "0": 0,
+    "lzzmin": 1, "zmin": 1, "1": 1,
+    "lzxmax": 2, "xmax": 2, "2": 2,
+    "lzzmax": 3, "zmax": 3, "3": 3,
+}
+# The beach's edge in the exporter's frame. The engine's z is the exporter's
+# -z, so the engine's ZMin edge is the exporter's zMax edge and vice versa.
+_LZ_EDGE = {0: "xMin", 1: "zMax", 2: "xMax", 3: "zMin"}
+
+
+@dataclass
+class LandingZone:
+    """`AILandingZone` (ctor 0x0863ac80): a corner box, its corners sorted per
+    axis, and the side its beach is on. `min` / `max` are in the exporter's
+    frame; `direction` is the con's word and `beach` the edge it names in the
+    exporter's frame (null for `LZUndefined`)."""
+    name: str
+    min: list[float]
+    max: list[float]
+    direction: str
+    beach: str | None
 
 
 @dataclass
@@ -125,6 +168,8 @@ class LevelAi:
     # Object template (lower-case) -> `aiTemplatePlugIn.coverValue`, for the
     # templates this level places. Filled by `add_cover_values`.
     coverValues: dict[str, float] = field(default_factory=dict)
+    # `AILandingZoneManager::createLandingZone` 0x084741e0, in creation order.
+    landingZones: list[LandingZone] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
         out = asdict(self)
@@ -212,12 +257,26 @@ def parse_strategic_areas(text: str, ai: LevelAi) -> None:
                 min=[min(lo[0], hi[0]), min(lo[1], hi[1])],
                 max=[max(lo[0], hi[0]), max(lo[1], hi[1])],
                 radius=_num(args[3], 0.0) or 0.0,
+                category=args[4] if len(args) >= 5 else None,
             )
             areas[args[0].lower()] = area
             ai.strategicAreas.append(area)
             active = area
         elif word == "aistrategicarea.setactive" and args:
             active = areas.get(args[0].lower())
+        elif word == "ailandingzone.createlandingzone" and len(args) >= 3:
+            lo = _pos(args[1])
+            hi = _pos(args[2])
+            if lo is None or hi is None:
+                continue
+            direction = args[3] if len(args) >= 4 else "LZUndefined"
+            ai.landingZones.append(LandingZone(
+                name=args[0],
+                min=[min(lo[0], hi[0]), min(lo[1], hi[1])],
+                max=[max(lo[0], hi[0]), max(lo[1], hi[1])],
+                direction=direction,
+                beach=_LZ_EDGE.get(LZ_DIRECTIONS.get(direction.lower(), 4)),
+            ))
         elif word == "aistrategicarea.createvehiclegroup" and args:
             group = args[0]
             ai.vehicleGroups.setdefault(group, [])
@@ -241,6 +300,12 @@ def parse_strategic_areas(text: str, ai: LevelAi) -> None:
             active.vehicleSearchRadius = _num(args[0])
         elif word == "aistrategicarea.settakeable" and len(args) >= 2:
             active.takeable[args[0]] = bool(int(_num(args[1]) or 0))
+        elif word == "aistrategicarea.attachlandingzone" and args:
+            active.landingZones.append(args[0])
+        elif word == "aistrategicarea.addlandingzoneunit" and args:
+            active.landingZoneUnits.append(args[0])
+        elif word == "aistrategicarea.addexpelledunit" and args:
+            active.expelledUnits.append(args[0])
 
 
 def parse_conditions(text: str, ai: LevelAi) -> None:
