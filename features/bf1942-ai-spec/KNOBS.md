@@ -117,7 +117,7 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | avoid | aircraft grids | enemy hulls at their true position when the side knows a crewman; soldiers left out | `getInformationGrid` 0x085e5450 (the known record's position not kept) | `bot-pilot.js friendlyHulls` | INVENTION |
 | change | runway | a plane is taken only with no mobile, non-soldier, non-naval object in the box `0.6 dx .. 12 dx` ahead, `1.5 dz` wide, `1.3 dy` high | `BBChange::runwayClear` 0x0855f850, `Frustum::setupOrtho` 0x08441110, `RunwayObstructedPredicate` 0x08560070 (AI-95) | `bot-vehicle-air.js runwayClear`, `bot-pilot.js candidateRunwayClear` | ENGINE |
 | move | fallback waypoint radius | 5 m | | `bot.js FALLBACK_WAYPOINT_RADIUS` | INVENTION |
-| move | no-progress redeploy | 12 s, 0.5 m | | `bot.js NO_PROGRESS_RESPAWN` | INVENTION |
+| move | no-progress redeploy | 12 s, 0.5 m, measured per order | none in the engine: its stuck handling is the obstruction counters (AI-32) and its teleporter list (`registerTeleporter` 0x086369c0 -> `handleTeleportingBot` 0x08631390) measures no progress (AI-101) | `bot-decision.js NO_PROGRESS_RESPAWN`, `updateObjectiveReadout` | INVENTION |
 | move | smoothing | 10 points | `AIpathFinding.con ai.setSmoothing 1 10` (`getSmoothing`, vtable +0x2c) | `bot.js SMOOTHING` | CON |
 | move | local search box | `10 + rand x 14` m, + largest obstacle, + 1 | `BotMain::updateLocalPath` 0x08527120 | `bot.js LOCAL_SEARCH_RADIUS_MIN/RAND` | ENGINE |
 | move | retry and widening | 1.5 s; +16 m per failure (3 max); 6 widenings of 16 m; 20,000 x w nodes | | `bot.js ROUTE_RETRY_AFTER`, `ROUTE_RETRY_WIDEN`, `ROUTE_LEG_WIDENINGS`, `ROUTE_LEG_WIDE_NODES` | INVENTION |
@@ -292,7 +292,9 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | page | soldier capsule | radius 0.6 m at +1.0 m | the height is `setCharacterHeight -1.00` (`physics.js CHARACTER_HEIGHT`) | `bot-referee.js BOT_BODY_RADIUS`, `BOT_BODY_HEIGHT` | INVENTION / CON |
 | page | round range | 600 m | | `bot-referee.js BOT_FIRE_RANGE` | UNSOURCED |
 | page | line of sight | a terrain march, at most 10 steps of 0.8 m, 0.5 m margin | | `bot-referee.js lineOfSight` | INVENTION |
-| page | capture | the flag's radius (8 m fallback) in 3D from the controlled object, `timeToGetControl` (8 s fallback), per bot | the level's control points; `ControlPoint::handleFrameUpdate` 0x08283b00 (AI-70) | `bot-referee.js captureTick`, `nearestEnemyFlag`, `CAPTURE_FALLBACK_SECONDS` | CON / ENGINE; fallbacks UNSOURCED |
+| page | capture | per flag over every living player inside the radius (8 m fallback, 3D from the controlled object): the owner holds, an enemy with the owner runs it down to neutral (`loseControlWhenEnemyClose`), one side alone runs an owned point down and takes a neutral one; two enemy sides freeze it | `ControlPoint::handleFrameUpdate` 0x08283b00, `losingControl` 0x08284030, `lostControl` 0x08284090, `gettingControl` 0x08283f20, `gotControl` 0x08283f70, `control` 0x08283fe0 (AI-100) | `bot-referee.js controlPointStep`, `captureTick` | ENGINE |
+| page | capture settings | get 5 s, lose 5 s, lose-when-enemy-close on, lose-when-not-close off, minimum 1, any team, where the scene carries none (it carries only `timeToGetControl`) | `ControlPointTemplate` ctor 0x082846d0 (AI-100) | `controlPointSettings`, `CAPTURE_FALLBACK_SECONDS` | ENGINE; vanilla's `timeToLoseControl 10` not exported (CON gap) |
+| page | capture radius fallback | 8 m | | `captureRadius` | UNSOURCED (the ctor's is 10) |
 | page | candidate list | rebuilt every 0.5 s; doors recollected every 10 s | engine: the environment query | `bot-units.js candidates` | INVENTION |
 | page | vehicle body radius | 3 m land, 10 m air / ship | | `bot-units.js BOT_VEHICLE_RADIUS`, `BOT_VEHICLE_RADIUS_LARGE` | INVENTION |
 | page | soldier hit points | the kit's `maxHitpoints` (30 in vanilla), 30 fallback | `_shared/loadouts.json` | `map.html soldierMaxHp` | CON |

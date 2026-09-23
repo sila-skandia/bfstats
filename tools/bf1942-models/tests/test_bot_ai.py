@@ -480,6 +480,17 @@ class BotAiTests(unittest.TestCase):
 
 
 
+class RedeployTests(unittest.TestCase):
+    """Brief K item 4 (ledger AI-101): the no-progress redeploy is the page's
+    (INVENTION) and is measured per order."""
+
+    def test_progress_is_measured_per_order(self) -> None:
+        r = BotAiTests.results["redeploy"] if hasattr(BotAiTests, "results") else run_harness()["redeploy"]
+        self.assertAlmostEqual(r["oneOrder"], 12.0, delta=0.1)
+        self.assertIsNone(r["newOrders"], "a follower re-ordered each second keeps its seat")
+        self.assertAlmostEqual(r["standing"], 12.0, delta=0.1)
+
+
 class AirSpacingTests(unittest.TestCase):
     """Brief K item 2 (ledger AI-95): `BBChange::runwayClear` 0x0855f850 and
     `BBAvoid::calculateUrgency` 0x0855c650 with `collisionPredicted`
