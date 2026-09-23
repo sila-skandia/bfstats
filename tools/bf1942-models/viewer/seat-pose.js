@@ -14,11 +14,11 @@ import { bonePattern, kitsByTemplate, wornGrafts } from './kit-graft.js';
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `bust`, `deployKit`, `deployTeamId`, `flags`, `kitLoadout`, `MODELS_BASE`,
- * `occupancy`, `optPilot`, `scene`, `seatSoldier`, `soldierTemplateFor`,
- * `view`.
+ * `occupancy`, `optPilot`, `scene`, `soldierTemplateFor`, `view`.
  */
 export function createSeatPose(page) {
   const seatPose = {};
+  seatPose.seatSoldier = null;   // the seated soldier pose scene, if one is loaded
 
   /** Load the seat-pose glb for the active seat, if the seat draws anybody.
    *
@@ -104,8 +104,8 @@ export function createSeatPose(page) {
       soldierScene.position.set(0, 0, 0);
     }
     page.scene.add(soldierScene);
-    page.seatSoldier = soldierScene;
-    page.seatSoldier.visible = !page.view?.firstPerson;
+    seatPose.seatSoldier = soldierScene;
+    seatPose.seatSoldier.visible = !page.view?.firstPerson;
     // The helmet. A BFSoldier template declares a body, a head and two hands and
     // nothing else, so the exported soldier is bare-headed; the helmet belongs
     // to the kit the player deployed with and hangs off bone `A`. The driver in
@@ -172,9 +172,9 @@ export function createSeatPose(page) {
     if (!kit) return;
     for (const graft of wornGrafts(kit)) {
       // The seat may have been left while the part was in flight.
-      if (soldierScene !== page.seatSoldier) return;
+      if (soldierScene !== seatPose.seatSoldier) return;
       const source = await loadKitPart(graft.glb);
-      if (!source || soldierScene !== page.seatSoldier) return;
+      if (!source || soldierScene !== seatPose.seatSoldier) return;
       const bone = findBoneMatching(soldierScene, graft.bone);
       if (!bone) continue;          // no such bone on this figure: silently bare
       const node = source.clone(true);
@@ -282,13 +282,13 @@ export function createSeatPose(page) {
    * then planted at the declared angle outright (`Skeleton::transform`,
    * `0x8342233`) — both halves, in that order. */
   function stepSeatIk() {
-    if (!seatPose.seatIkChains.length || !page.seatSoldier) return;
+    if (!seatPose.seatIkChains.length || !seatPose.seatSoldier) return;
     for (const chain of seatPose.seatIkChains) {
       if (chain.rest[0]) chain.root.quaternion.copy(chain.rest[0]);
       if (chain.rest[1]) chain.mid.quaternion.copy(chain.rest[1]);
       if (chain.rest[2]) chain.end.quaternion.copy(chain.rest[2]);
     }
-    page.seatSoldier.updateMatrixWorld(true);
+    seatPose.seatSoldier.updateMatrixWorld(true);
     for (const chain of seatPose.seatIkChains) {
       chain.target.updateWorldMatrix(true, false);
       chain.target.matrixWorld.decompose(_ikPos, _ikQuat, _ikScale);
@@ -376,15 +376,15 @@ export function createSeatPose(page) {
     seatPose.seatPoseActions = null;
     seatPose.seatPoseTarget = null;
     seatPose.seatIkChains = [];
-    if (page.seatSoldier) {
-      disposeSeatScene(page.seatSoldier);
-      page.seatSoldier = null;
+    if (seatPose.seatSoldier) {
+      disposeSeatScene(seatPose.seatSoldier);
+      seatPose.seatSoldier = null;
     }
   }
 
   function updateSeatPoseVisibility() {
-    if (page.seatSoldier) {
-      page.seatSoldier.visible = !page.view?.firstPerson;
+    if (seatPose.seatSoldier) {
+      seatPose.seatSoldier.visible = !page.view?.firstPerson;
     }
   }
 

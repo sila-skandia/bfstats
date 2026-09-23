@@ -64,6 +64,13 @@ export function createFootBody(page) {
   // `window.__footBodyHide(true)`: keep the body and the canopy out of the frame
   // so a headless check can read the same pixels with and without them.
   footBodies.footBodyForceHidden = false;
+  /** Keep the body and the canopy out of the frame (`__footBodyHide`). */
+  footBodies.forceHide = on => {
+    footBodies.footBodyForceHidden = !!on;
+    if (footBodies.footBody) footBodies.footBody.scene.visible = footBodies.footBody.scene.visible && !on;
+    if (footBodies.footCanopy) footBodies.footCanopy.scene.visible = footBodies.footCanopy.scene.visible && !on;
+    return footBodies.footBodyForceHidden;
+  };
   const footBodyCache = new Map();
   const footBundleCache = new Map();
   footBodies.footGaitsManifest = null;

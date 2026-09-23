@@ -18,15 +18,13 @@ import { GameConsole } from './console.js';
  * `escMenu`, `escMenuCaptures`, `exitSeat`, `extras`, `FLY_KEYS`,
  * `FLY_SLOW`, `FLY_SPEED`, `FOOT_KEYS`, `footView3p`, `fullmapBox`,
  * `gameConsole`, `getFloorAltitude`, `groundHeight`, `handWeapon`, `hud`,
- * `HUD_FOOT`, `HUD_FOOT_KBLOCK`, `HUD_FOOT_PLAIN`, `isTouchDevice`,
- * `itemsLocked`, `lastSeatToggle`, `LOCAL_PLAYER`, `lookDelta`,
+ * `isTouchDevice`, `itemsLocked`, `LOCAL_PLAYER`, `lookDelta`,
  * `mannedActive`, `mouseInput`, `nearEntry`, `occupancy`, `openDeploy`,
  * `optOnFoot`, `optPilot`, `params`, `renderer`, `scoreboardOpen`,
- * `scoreFromSpawn`, `SEAT_TOGGLE_COOLDOWN_MS`, `selectDeployFlag`,
- * `selectKitWeapon`, `setConsoleOpen`, `setEscMenu`, `setPilot`,
- * `setScoreboard`, `soldier`, `soldierDead`, `spawnAtFlag`, `stage`,
- * `startReload`, `switchSeat`, `toggleFullMap`, `toggleProne`, `uiFocused`,
- * `updateHud`, `view`, `world`.
+ * `scoreFromSpawn`, `selectDeployFlag`, `selectKitWeapon`, `setConsoleOpen`,
+ * `setEscMenu`, `setPilot`, `setScoreboard`, `soldier`, `soldierDead`,
+ * `spawnAtFlag`, `stage`, `startReload`, `switchSeat`, `toggleFullMap`,
+ * `toggleProne`, `uiFocused`, `updateHud`, `view`, `world`.
  */
 export function createPageInput(page) {
   const pageInput = {};
@@ -348,14 +346,14 @@ export function createPageInput(page) {
   }
 
   function mobileSeatToggle() {
-    if (performance.now() - page.lastSeatToggle < page.SEAT_TOGGLE_COOLDOWN_MS) return;
+    if (performance.now() - pageInput.lastSeatToggle < SEAT_TOGGLE_COOLDOWN_MS) return;
     if (page.optOnFoot.checked && page.soldier && page.nearEntry) {
       setFly(true);
       page.enterVehicle(page.nearEntry);
-      page.lastSeatToggle = performance.now();
+      pageInput.lastSeatToggle = performance.now();
     } else if (page.optPilot.checked && page.occupancy) {
       page.exitSeat();
-      page.lastSeatToggle = performance.now();
+      pageInput.lastSeatToggle = performance.now();
     }
     resetMobileControls();
   }
@@ -608,16 +606,16 @@ export function createPageInput(page) {
     // mode first. The 1.0s per-player cooldown (SEAT-6) below gates the whole
     // branch, same as the real `toggleEntryPoint`.
     if (e.code === 'KeyE' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey
-        && performance.now() - page.lastSeatToggle >= page.SEAT_TOGGLE_COOLDOWN_MS) {
+        && performance.now() - pageInput.lastSeatToggle >= SEAT_TOGGLE_COOLDOWN_MS) {
       // `exitSeat` picks the exit: the hull's own for a driver or a passenger
       // of a drivetrain, the seat's for a gunner or a seat of a hull with no
       // drive (`mannedActive()` is the check that is right either way).
       if (page.optPilot.checked && page.occupancy) {
         page.exitSeat();
-        page.lastSeatToggle = performance.now();
+        pageInput.lastSeatToggle = performance.now();
       } else if (page.optOnFoot.checked && page.soldier && pageInput.captured && page.nearEntry) {
         page.enterVehicle(page.nearEntry);
-        page.lastSeatToggle = performance.now();
+        pageInput.lastSeatToggle = performance.now();
       }
     }
     // C cycles the view, which is `c_PIToggleCameraMode` (input channel 26)
@@ -688,6 +686,22 @@ export function createPageInput(page) {
    *  and still means `c_PIFire`; it was the only binding there was. */
   pageInput.seatFire = false;
   pageInput.seatAltFire = false;
+
+  // SEAT-6 (verify-r5.md, confirmed both passes): `toggleEntryPoint` opens with
+  // a hard-coded 1.0s cooldown per player, refreshed on every actual toggle
+  // (both `exitPlayer` and `toggleEntryPoint`'s own success path) — not a
+  // per-vehicle or per-entry-point value. One shared timestamp is therefore
+  // correct for this page's single soldier.
+  const SEAT_TOGGLE_COOLDOWN_MS = 1000;
+  pageInput.lastSeatToggle = -Infinity;
+
+  // Rewritten under `?kblock` the Escape hint changes for as long as the
+  // fullscreen session lasts (kbLockEnter). Without it this never changes.
+  pageInput.HUD_FOOT = 'WASD move · Shift walk · Ctrl crouch · Z prone · Space jump · '
+    + 'LMB fire · RMB aim · R reload · C view · 9 chute · CapsLock / M redeploy · Esc menu';
+  const HUD_FOOT_PLAIN = pageInput.HUD_FOOT;
+  const HUD_FOOT_KBLOCK = `${HUD_FOOT_PLAIN} · hold Esc exits full screen`;
+
   // The soldier's two buttons, while pointer-locked on foot: the left held,
   // one queued semi-auto shot per press (the hand weapon spends it with
   // `dropClick`), and the right held, which zooms only mod weapons without
@@ -823,9 +837,9 @@ export function createPageInput(page) {
         navigator.keyboard.unlock();
         pageInput.kbLockState = 'unlocked';
       }
-      const was = page.HUD_FOOT;
-      page.HUD_FOOT = inside ? page.HUD_FOOT_KBLOCK : page.HUD_FOOT_PLAIN;
-      if (page.hud.textContent === was) page.hud.textContent = page.HUD_FOOT;
+      const was = pageInput.HUD_FOOT;
+      pageInput.HUD_FOOT = inside ? HUD_FOOT_KBLOCK : HUD_FOOT_PLAIN;
+      if (page.hud.textContent === was) page.hud.textContent = pageInput.HUD_FOOT;
     });
   }
   pageInput.touchFlying = false;

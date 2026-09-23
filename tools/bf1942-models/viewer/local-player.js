@@ -27,16 +27,16 @@ import { Armor } from './armor.js';
  * `clearVehicleHud`, `collider`, `currentRoot`, `deployActive`,
  * `deployTeamId`, `disposeHandWeapon`, `disposeSeatPose`, `feedVehicleHud`,
  * `footView3p`, `getTouchHudText`, `groundHeight`, `guns`, `handWeapon`,
- * `hud`, `HUD_FLY`, `hudBridge`, `isCollision`, `isTouchDevice`, `isZoomed`,
- * `kbLockLeave`, `loadSeatPose`, `LOCAL_PLAYER`, `look`, `LOOK_SENS`,
- * `netOccupiedVehicleId`, `netSeatRow`, `netSendAction`, `netTickPoses`,
- * `netVehicleIdFor`, `optOnFoot`, `optPilot`, `params`, `pickVehicle`,
- * `placeCamera`, `playSoldierHurtSound`, `releaseButtons`, `resetCaptureUi`,
- * `resetMobileControls`, `roomJoined`, `seatHolder`, `showView`,
- * `spawnAtFlag`, `spawnFlagSelect`, `syncFootView`, `toggleFullMap`,
- * `triggerHitIndicator`, `updateHud`, `updateMobileControls`,
- * `updateSeatPoseVisibility`, `vehicleInput`, `vehicles`,
- * `vehicleSpawnActive`, `warmSubtree`, `world`.
+ * `hud`, `HUD_FLY`, `HUD_FOOT`, `hudBridge`, `isCollision`, `isTouchDevice`,
+ * `isZoomed`, `kbLockLeave`, `loadSeatPose`, `LOCAL_PLAYER`, `look`,
+ * `LOOK_SENS`, `netSeatRow`, `netSendAction`, `netTickPoses`,
+ * `netVehicleIdFor`, `noteOccupiedVehicle`, `optOnFoot`, `optPilot`,
+ * `params`, `pickVehicle`, `placeCamera`, `playSoldierHurtSound`,
+ * `releaseButtons`, `resetCaptureUi`, `resetMobileControls`, `roomJoined`,
+ * `seatHolder`, `showView`, `spawnAtFlag`, `spawnFlagSelect`,
+ * `syncFootView`, `toggleFullMap`, `triggerHitIndicator`, `updateHud`,
+ * `updateMobileControls`, `updateSeatPoseVisibility`, `vehicleInput`,
+ * `vehicles`, `vehicleSpawnActive`, `warmSubtree`, `world`.
  */
 export function createLocalPlayer(page) {
   const localPlayer = {
@@ -761,7 +761,7 @@ export function createLocalPlayer(page) {
     page.hud.textContent = page.isTouchDevice ? page.getTouchHudText()
       : localPlayer.occupancy
         ? (mannedActive() ? HUD_MANNED : localPlayer.car ? HUD_DRIVE : HUD_PILOT)
-        : (page.optOnFoot.checked && localPlayer.soldier ? localPlayer.HUD_FOOT : page.HUD_FLY);
+        : (page.optOnFoot.checked && localPlayer.soldier ? page.HUD_FOOT : page.HUD_FLY);
     page.updateMobileControls();
   }
 
@@ -784,7 +784,7 @@ export function createLocalPlayer(page) {
     // world the same way (netcode.js MSG_ACTION; the vehicle id is the room
     // table's, matched by template + pose like the renderer's). The seat-dot
     // feed keeps the same id for its every-frame occupant read.
-    page.netOccupiedVehicleId = page.netVehicleIdFor(seat.root);
+    page.noteOccupiedVehicle(seat.root);
     const netSeat = page.netSeatRow('enter');
     if (netSeat) page.netSendAction(netSeat);
   }
@@ -1028,13 +1028,6 @@ export function createLocalPlayer(page) {
   // point that declares none.
   const ENTRY_RADIUS_FALLBACK = 4;
   const ENTRY_SCAN_PERIOD = 0.25;   // seconds between proximity sweeps on foot
-  // SEAT-6 (verify-r5.md, confirmed both passes): `toggleEntryPoint` opens with
-  // a hard-coded 1.0s cooldown per player, refreshed on every actual toggle
-  // (both `exitPlayer` and `toggleEntryPoint`'s own success path) — not a
-  // per-vehicle or per-entry-point value. One shared timestamp is therefore
-  // correct for this page's single soldier.
-  const SEAT_TOGGLE_COOLDOWN_MS = 1000;
-  localPlayer.lastSeatToggle = -Infinity;
   localPlayer.entryPoints = null;           // [{node, vehicle, control, radius}]
   localPlayer.nearEntry = null;             // the seat the HUD is currently offering
   localPlayer.entryScan = 0;
@@ -1110,7 +1103,7 @@ export function createLocalPlayer(page) {
     if (near?.vehicle !== localPlayer.nearEntry?.vehicle) {
       page.hud.textContent = near
         ? page.isTouchDevice ? `ENTER ${near.control}` : `E — enter the ${near.control}`
-        : page.isTouchDevice ? page.getTouchHudText() : localPlayer.HUD_FOOT;
+        : page.isTouchDevice ? page.getTouchHudText() : page.HUD_FOOT;
     }
     localPlayer.nearEntry = near;
     page.updateMobileControls();
@@ -1157,7 +1150,7 @@ export function createLocalPlayer(page) {
       page.camera.near = 0.2;
       page.camera.updateProjectionMatrix();
       if (page.handWeapon) page.handWeapon.rig.visible = true;
-      page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : localPlayer.HUD_FOOT;
+      page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : page.HUD_FOOT;
     }
     page.resetMobileControls();
   }
@@ -1242,7 +1235,7 @@ export function createLocalPlayer(page) {
       page.camera.near = 0.2;
       page.camera.updateProjectionMatrix();
       if (page.handWeapon) page.handWeapon.rig.visible = true;
-      page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : localPlayer.HUD_FOOT;
+      page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : page.HUD_FOOT;
     } else {
       // Nobody was waiting in the seat — the pilot box was ticked from free
       // fly — so E hands back the free camera where the vehicle stopped.
@@ -1309,7 +1302,7 @@ export function createLocalPlayer(page) {
       page.camera.near = 0.2;
       page.camera.updateProjectionMatrix();
       if (page.handWeapon) page.handWeapon.rig.visible = true;
-      page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : localPlayer.HUD_FOOT;
+      page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : page.HUD_FOOT;
     } else {
       page.placeCamera();
       page.updateHud();
@@ -1330,6 +1323,7 @@ export function createLocalPlayer(page) {
   /** `window.__setDeploy(true)`: the ripcord, for a headless check that cannot
    *  hold a key down through Chromium's own focus rules. */
   localPlayer.debugDeployHeld = false;
+  localPlayer.holdDeploy = on => (localPlayer.debugDeployHeld = !!on);
 
   // --- on foot ----------------------------------------------------------------
   //
@@ -1344,7 +1338,6 @@ export function createLocalPlayer(page) {
   // consumed this tick (the engine's speed gates read the *input*, not the
   // achieved velocity).
   localPlayer.frameInputLast = null;
-  localPlayer.seatSoldier = null;   // the seated soldier pose scene, if one is loaded
   localPlayer.prone = false;           // `c_PILie` is a toggle, not a hold
   const FLY_FOV = page.camera.fov;
   const FLY_NEAR = page.camera.near;
@@ -1388,13 +1381,6 @@ export function createLocalPlayer(page) {
    *  `FALLBACK_PRIMARIES` plays for weapons below. */
   const SOLDIER_MAX_HP_FALLBACK = 30;
 
-  /** Wake's 52 `SupplyDepot` nodes, collected once per level (see
-   *  `collectSupplyDepots`) and cached against the `currentRoot` they came
-   *  from, so a map switch — a new root object — rebuilds the field exactly
-   *  once rather than every frame. Built lazily from `onFoot`, this track's
-   *  one hook into the per-frame loop. */
-  localPlayer.supplyField = null;
-  localPlayer.supplyDepotsRoot = null;
 
   /** Reused rather than reallocated every frame, the way `soldier.js`'s own
    *  `_tickInput` is: `onFoot` updates these fields in place and hands the
@@ -1556,7 +1542,7 @@ export function createLocalPlayer(page) {
       page.camera.near = 0.2;
       page.camera.updateProjectionMatrix();
       page.spawnFlagSelect.hidden = false;
-      page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : localPlayer.HUD_FOOT;
+      page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : page.HUD_FOOT;
     } else {
       // The deploy screen cannot outlive the mode it selects for: the pilot
       // checkbox's exclusivity and the on-foot box both land here with the
@@ -1588,12 +1574,6 @@ export function createLocalPlayer(page) {
     page.updateMobileControls();
   }
 
-  // `let`: under `?kblock` the Escape hint changes for as long as the
-  // fullscreen session lasts (kbLockEnter). Without it this never changes.
-  localPlayer.HUD_FOOT = 'WASD move · Shift walk · Ctrl crouch · Z prone · Space jump · '
-    + 'LMB fire · RMB aim · R reload · C view · 9 chute · CapsLock / M redeploy · Esc menu';
-  const HUD_FOOT_PLAIN = localPlayer.HUD_FOOT;
-  const HUD_FOOT_KBLOCK = `${HUD_FOOT_PLAIN} · hold Esc exits full screen`;
 
   function applyDamageToPlayer(damage, attackerPos = null, attackerTeam = null) {
     if (!localPlayer.soldierArmor || localPlayer.soldierDead) return;
@@ -1683,11 +1663,8 @@ export function createLocalPlayer(page) {
     DEATH_CAM,
     FLY_FOV,
     HUD_DRIVE,
-    HUD_FOOT_KBLOCK,
-    HUD_FOOT_PLAIN,
     HUD_PILOT,
     MANNED_GUN_FOV,
-    SEAT_TOGGLE_COOLDOWN_MS,
     SOLDIER_MAX_HP_FALLBACK,
     applyDamageToPlayer,
     applyVehicleInterp,

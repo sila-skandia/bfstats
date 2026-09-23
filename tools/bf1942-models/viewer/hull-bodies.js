@@ -43,6 +43,8 @@ export function createHullBodies(page) {
 
   /** Crash events, kept only when a test asks for them (`window.__crashLog`). */
   hullBodies.crashLog = null;
+  /** Start (or keep) recording crash contacts; the list, live. */
+  hullBodies.recordCrashes = () => (hullBodies.crashLog ??= []);
   /** `_shared/collision-meshes.json`: every collision layer of every vehicle mesh. */
   hullBodies.collisionMeshes = null;
   hullBodies.bodyWorld = null;

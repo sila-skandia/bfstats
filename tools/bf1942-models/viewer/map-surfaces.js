@@ -852,6 +852,7 @@ export function createMapSurfaces(page) {
   // number on what the gate saves sets it against the every-frame repaint it
   // replaced, on the same page.
   mapSurfaces.mapGate = true;
+  mapSurfaces.setMapGate = on => { mapSurfaces.mapGate = !!on; };
   function mapSurfaceStale(canvas, key, force) {
     const last = mapSurfaceLast.get(canvas);
     const now = performance.now();
