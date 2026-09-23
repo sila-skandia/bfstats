@@ -600,6 +600,13 @@ export function createPageAudio(page) {
     try { source.start(when); } catch (_) {}
   }
 
+  // The footstep's own cast record, reused. It used to borrow the soldier's
+  // (`soldier._hit`), which soldier.js fills for its own casts.
+  const footstepHit = {
+    t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0,
+    dx: 0, dy: -1, dz: 0, material: 0, kind: '', owner: -1, triangle: -1,
+  };
+
   async function handleSoldierFootstep(step, position = null) {
     if (page.AUDIO_OFF || masterVolume() <= 0) return;
     const manifest = await soldierSoundsManifest();
@@ -611,10 +618,7 @@ export function createPageAudio(page) {
       let onStatic = false;
       let best = -Infinity;
       if (collider.statics) {
-        const record = page.soldier._hit || (page.soldier._hit = {
-          t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0,
-          dx: 0, dy: -1, dz: 0, material: 0, kind: '', owner: -1, triangle: -1,
-        });
+        const record = footstepHit;
         record.dx = 0; record.dy = -1; record.dz = 0;
         const hit = collider.statics.cast(step.x, step.y + 0.5, step.z, 0, -1, 0, 1.0, -1, record);
         if (hit) {
