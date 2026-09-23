@@ -650,8 +650,9 @@ export class BotController {
         return node ? (this.world?.collider?.statics?.ownerOf?.(node) ?? -1) : -1;
       };
     }
-    this.senses.sense(now, this.world, me, eye, lookYaw);
-    this.senses.updateMemory(now, this.world, me, eye, lookYaw);
+    const basis = this._cameraBasis(lookYaw);
+    this.senses.sense(now, this.world, me, eye, lookYaw, basis);
+    this.senses.updateMemory(now, this.world, me, eye, lookYaw, basis);
     // `updateSensingQuads`: every quadrant ages; the one the camera looks
     // into is fresh.
     for (let q = 0; q < QUADRANTS; q++) this.quadInertia[q] += dt;
@@ -941,6 +942,25 @@ export class BotController {
     this.input[PI.MouseLookY] = this.lookY;
     this.world.setInput(this.playerId, input, { x: this.lookX, y: this.lookY });
     this.jumpRequest = false;
+  }
+
+  /** The camera the senses look through (`AIPlayer::getCameraTransformation`):
+   *  an aircraft's airframe, else the look yaw and the soldier's or turret's
+   *  pitch. `{ f, r, u }` world unit vectors. */
+  _cameraBasis(lookYaw) {
+    const q = this.vehicle?.kind === 'air' ? this.vehicle.drive?.state?.orientation : null;
+    if (q) {
+      const rot = (v) => {
+        const { x, y, z, w } = q;
+        const ix = w * v[0] + y * v[2] - z * v[1], iy = w * v[1] + z * v[0] - x * v[2];
+        const iz = w * v[2] + x * v[1] - y * v[0], iw = -x * v[0] - y * v[1] - z * v[2];
+        return [ix * w + iw * -x + iy * -z - iz * -y, iy * w + iw * -y + iz * -x - ix * -z, iz * w + iw * -z + ix * -y - iy * -x];
+      };
+      return { f: rot([0, 0, -1]), r: rot([1, 0, 0]), u: rot([0, 1, 0]) };
+    }
+    const p = this.vehicle ? (this._aimReference()?.pitch ?? 0) : (this.pitch ?? 0);
+    const cy = Math.cos(lookYaw), sy = Math.sin(lookYaw), cp = Math.cos(p), sp = Math.sin(p);
+    return { f: [sy * cp, sp, cy * cp], r: [cy, 0, -sy], u: [-sy * sp, cp, -cy * sp] };
   }
 
   /** A plane's guns point down the nose. */
