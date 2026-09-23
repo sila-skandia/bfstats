@@ -193,7 +193,7 @@ export function thumbSpan(layout, box, scroll, count) {
   return [offset, size];
 }
 
-const rgb = c => `rgb(${c.slice(0, 3).map(v => Math.round(v * 255)).join(',')})`;
+export const rgb = c => `rgb(${c.slice(0, 3).map(v => Math.round(v * 255)).join(',')})`;
 
 /** Width of a string in a bitmap face, by the `.dif` metrics: each glyph
  *  advances the pen by left + width + right. */
