@@ -15,6 +15,15 @@ import { wrapAngle } from './bot-aim.js';
 import { BEHAVIOUR } from './bot-decision.js';
 import { PLAN_ACTION } from './bot-plans.js';
 import { candidateRunwayClear } from './bot-pilot.js';
+import { craftBailReason, levelZones } from './doctrine-landing.js';
+
+/** The landing craft (the Daihatsu and the LCVP, whose seats are the
+ *  `LandingCraft` / `LandingCraftPassenger` / `LandingCraftFixed` units:
+ *  `equipmentType` 7 / 10 / 11), by AI template name, as bot-units.js
+ *  picks their water map. */
+const LANDING_CRAFT_RE = /lcvp|daihatsu|landing/i;
+/** `BBChangeLandingCraft::calculateUrgency` 0x085608ea: the bail's urgency. */
+const LANDING_BAIL_URGENCY = 4.0;
 
 /**
  * The page seats the bot: `m` is `{ id, node, drive, occupancy, kind, nav,
@@ -103,6 +112,32 @@ export function urgencyChange(bot, mod, now) {
     if (mine && mine.upright === false) staying = 0;
     const nav = bot.navGrid;
     let bailAllowed = !nav || isWalkable(nav, bot.position[0], bot.position[2]);
+    // A landing craft's crew runs `BBChangeLandingCraft` 0x085602b0, not
+    // `BBChange` (`Game/AIbehaviours.con`: the Change row of the
+    // `LandingCraft`, `LandingCraftPassenger` and `LandingCraftFixed` units):
+    // it weighs only the craft's own seats and gets out only at a beach or
+    // when the craft has tipped, which the craft's beach order does
+    // (doctrine-landing.js `landingTick`). No voluntary bail, no other hull.
+    if (LANDING_CRAFT_RE.test(m.template ?? '')) {
+      bailAllowed = false;
+      // Its own bail, for every occupant whatever the driver holds (the
+      // beach order's executor bails the crew it carries the same way): in
+      // a zone, stopped, on the soldier's map, or tipped -> the Use key at
+      // urgency 4.0 (0x085608ea).
+      const v = m.hullVelocity?.();
+      const reason = craftBailReason({
+        zones: levelZones(world?.extras?.ai), x: bot.position[0], z: bot.position[2],
+        speed: v ? Math.hypot(v.x, v.y, v.z) : 0,
+        walkable: !nav || isWalkable(nav, bot.position[0], bot.position[2]), upright: mine?.upright,
+      });
+      if (reason) {
+        const r = { urgency: LANDING_BAIL_URGENCY * mod, best: { id: 'foot', u: 0, dist: 0, cand: null }, bail: true,
+                    teleport: false, landing: reason };
+        bot.changedTarget.Change = (bot._changeResult?.best?.id ?? null) !== 'foot';
+        bot._changeResult = r;
+        return r.urgency;
+      }
+    }
     if (m.kind === 'air') {
       // In the air the engine's bail is a parachute jump; the viewer's
       // soldier has none, so a flying bot stays aboard until it is low
