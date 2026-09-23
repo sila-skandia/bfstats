@@ -547,3 +547,76 @@ rider captures a flag. Left:
 Acceptance: pins for 1 to 3, the Wake runner events with numbers, the live
 sizes for every patched level, ledger and KNOBS rows,
 PARITY_STATUS_2026-09-23.md updated.
+
+## Brief O: the engine's strategic map, and the capture drop after the baked maps
+
+Added 2026-09-24 after Briefs K and M. Depends on: M (landed: ledger
+AI-102..AI-104, `viewer/nav-baked.js`, the coarse route layer rebuilt as
+each cell's connected free patches, labelled INVENTION). Conflicts with:
+nothing running; N owns the landing modules, L owns bot-aim.js, P owns
+capture.js and the fire plan. Can start now.
+
+Status: the engine ships a strategic map beside the search maps
+(`StrategicMap::load` 0x08609b60) and the viewer's coarse 16 m route layer
+is an invention standing in for it. After M's baked maps and the new
+coarse layer, captures fell on both maps (SAI, 8 a side, 600 s, seeds
+1..10: El Alamein 2.7 / 2.4 to 0.8 / 1.4 a side, Bocage 2.4 / 2.1 to
+1.4 / 2.0) and nobody has looked at why. K also read that the Mobile ctors
+give soldiers the same 5 s collision look-ahead as vehicles, not the 0
+`bot-route.js` assumes.
+
+Do:
+1. Read `StrategicMap::load` 0x08609b60 and its readers (the SAI's route
+   between strategic areas, `AIStrategicArea` neighbours, and whatever the
+   pathfinder's top level asks of it), extract the strategic map for every
+   level that ships one, publish it, and replace the invented coarse layer
+   with it. Keep the painted coarse layer only for levels without one.
+2. Find why captures fell. Diff a seed's trace before and after M
+   (`--why` on the first bot whose order or route differs); the suspects
+   are the top level of the box (`maxLevel` 2, AI-104), order points the
+   baked map blocks (Bocage's (753..761, -936)), and the coarse layer.
+   Report the cause with numbers, and fix it if it is the viewer's.
+3. Give each unit kind the map the engine gives it: Car4 for cars and
+   jeeps, Amphibius4 for amphibious hulls, from the unit's `aiTemplate`
+   search-map line (read where the engine binds a unit to its map,
+   `AITemplateUnit` / `ai.addSearchMap` name lookup), instead of every
+   land vehicle on Tank0.
+4. Soldiers' 5 s look-ahead in `bot-route.js`, with a pin.
+5. Re-run the doctrine table (`sim/compare.mjs`, El Alamein and Bocage,
+   seeds 1..10, 600 s) on the result and replace it in
+   features/bot-doctrines/README.md.
+
+Acceptance: the strategic map live for every level, the runner numbers
+before and after for both levels, the capture-drop cause, pins for 3 and
+4, ledger and KNOBS rows, PARITY_STATUS_2026-09-23.md updated.
+
+## Brief P: control point lose time, the human's capture, and the fire plan's approach
+
+Added 2026-09-24 after Brief K. Depends on: K (landed: ledger AI-100, the
+engine's `ControlPoint::handleFrameUpdate` law for bots). Conflicts with:
+N (bot-plans.js); start after N reports.
+
+Do:
+1. The level exporter carries only `timeToGetControl`, so vanilla's 10 s
+   lose time reads as the default 5 s. Export `timeToLoseControl` (and any
+   other ControlPoint template field the engine's law reads: check the
+   template defaults at 0x082846d0 against the exporter), then re-bake
+   every level in every tree (vanilla, XPack1, XPack2, EoD) and publish
+   with scripts/publish-mesh-delta.py. Per CLAUDE.md an exporter fix is
+   not done until every tree is re-baked and live; budget ~5 min vanilla,
+   ~15 min per expansion pack, ~1.5 h EoD. Confirm the live sizes.
+2. The human's capture in `capture.js` still runs the old per-player
+   timer; put the human through the same control-point law as the bots so
+   one flag has one state. Check live: the human and a bot of the other
+   side on one flag freeze it; the human alone takes it in the level's
+   time; a bot standing with the owner runs it to neutral in the lose
+   time.
+3. The engine's fire plan moves toward a target it cannot fire on
+   (`MoveToObjectFinding` at 0x085a9e6b in `BBPFire3d` /
+   `BBPFireLargeBore::createPlan`; K read it in part). Read it in full and
+   port it: a Sherman and a PanzerIV 158 m apart with a blocked line of
+   fire close until one can fire, instead of sitting in Fire. Runner pin
+   on the North outpost pair from K's report, and live on El Alamein.
+
+Acceptance: every tree re-baked and live, the three live checks, the
+runner pin, ledger and KNOBS rows, PARITY_STATUS_2026-09-23.md updated.
