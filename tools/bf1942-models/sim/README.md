@@ -77,14 +77,14 @@ collision triangles, the heightfield, 26 cover values, 30 land vehicles,
 four strategies a side, and a 600 s match with 8 a side runs in 31 s.
 
 **What it cannot load, and what each would need** (none of it needs a change
-to `bot.js` or `map.html`; each is a runner-side port of page code):
+to `bot.js` or the referee; each is a runner-side port of page code):
 
 | missing | what the page uses | what the runner would need |
 |---|---|---|
-| real vehicle physics | `VehicleOccupancy(node).ensureDrive(...)` over the vehicle's glb node, `adoptDrivenBody`, the body world (`World.setupBodies` with the damage tables and `bodyTerrain`) | the placed vehicles kept in the scene graph, `seats.js VehicleOccupancy`, the drive classes the page passes (`Aircraft`, `GroundVehicle`, `TrackedVehicle`, `Ship`), and `World.setupBodies`; the runner uses `SimDrive` instead (below) |
-| vehicle guns | `guns.collect(node)` (gunfire.js) and the world firing the groups; shells billed by `applyVehicleHit`'s splash, MG rounds by `resolveBotShot` from the gun | `GunFire` headless (it builds tracer meshes) or a port of its round flight; the runner's mounted guns are hitscan (`SIM_GUN`) |
+| real vehicle physics | the hull's `VehicleInstance` (`vehicle-instance.js`: one per hull, its drive built through `VehicleOccupancy.ensureDrive` over the vehicle's glb node), `adoptDrivenBody`, the body world (`World.setupBodies` with the damage tables and `bodyTerrain`) | the placed vehicles kept in the scene graph, `seats.js VehicleOccupancy`, the drive classes the page passes (`Aircraft`, `GroundVehicle`, `TrackedVehicle`, `Ship`), and `World.setupBodies`; the runner uses `SimDrive` instead (below) |
+| vehicle guns | `guns.collect(node)` (gunfire.js) and the world firing the groups; shells billed by `applyVehicleHit`'s splash, MG rounds by `roundBodyCast` against the soldier bodies | `GunFire` headless (it builds tracer meshes) or a port of its round flight; the runner's mounted guns are hitscan (`SIM_GUN`) |
 | aircraft and ships | the same `ensureDrive`, `botWaterNav` for boats | as above; the runner seats bots in land vehicles only (`class: Land`) |
-| fixed guns | `botVehicleCandidates` lists `gun` roots | the placed gun nodes and their seat surveys (`surveyVehicle`, `seatYawLimits`) |
+| fixed guns | `bot-units.js candidates` lists `gun` roots | the placed gun nodes and their seat surveys (`surveyVehicle`, `seatYawLimits`) |
 | parked vehicles as obstacles | `settlePlacedVehicles`, the body world; the nav map skips body owners | the runner leaves the spawner group out of the static index: parked hulls block neither rays nor bodies |
 | ship deck spawns | `rebaseDeckSpawns` | the carrier's live transform; a deck-spawn level is out of scope |
 | the human | the local player, `resolvePlayerShotOnBots`, his shots heard | nothing: the runner is bots only |
@@ -161,15 +161,32 @@ messages); `trace` (`lines`, `sha256`); `runtime`.
 
 ## What the runner adds around the bots
 
-The bots, the world, the nav map and the strategic AI are the viewer's. The
-page-side referee is copied from `map.html` because the page is not a module;
-`match.mjs`'s header lists each function it mirrors (`tickBots`,
-`botRespawnTick`, `botFireTick`, `resolveBotShot`, `botMagazineTick`,
-`applyDamageToBot`, `botDamageLanded`, `resolveBotHeal`, `botCaptureTick`,
-`buildBotCovers`, `botOccupiedUnits`, `botUnitInfo`, `botStrategicUnit`,
-`botVehicleTick`, `botEnterVehicle`, `botLeaveVehicle` with their
-`botChangedUnit` calls, `botVehicleCandidates`). A change to one of those in
-the page needs the same change here.
+The bots, the world, the nav map, the strategic AI **and the referee** are the
+viewer's. `viewer/bot-referee.js` is the one copy of everything a server does
+around the bots -- the per-tick bot work (`tick`), the respawn timer, the
+rounds (`fireTick`, `resolveShot`, the magazine), damage and death
+(`applyDamage`, `damageLanded`), heals, the capture law (`captureTick`,
+`nearestEnemyFlag`), the covers, the enemy tables' input (`occupiedUnits`),
+a target's description (`unitInfo`), the SAI's unit (`strategicUnit`) and the
+seating (`vehicleTick`, `enterVehicle`, `leaveVehicle`, `switchSeat`) --
+and `map.html` and `match.mjs` import it (`env.mjs` loads it with the rest).
+A change to the referee lands in both.
+
+What the runner hands the referee in place of the page's (`match.mjs
+refereeEnv`): its stand-in vehicles (`SimVehicles`, the referee's `units`
+layer), an Armor from the kit's hit points, a round's damage from the level's
+fire data, and a hook per event: each becomes a trace line and a statistic
+(`kill`, `respawn`, `redeploy`, `capture`, `mount` / `dismount`,
+`strategy`, shots and hits), `tickBot` wraps each bot's tick in the error
+catch below, and `mountedFire` is the runner's stand-in gun.
+
+A seat swap (`BBPChangeTeleport`) moves the bot within the hull without
+stepping out, as the page's does: one `mount` event, no `dismount` (before
+the referee was shared the runner left and re-entered, which stood the body
+up beside the hull for the tick). Checked when the copy was deleted
+(2026-09-23): the synthetic level, 3 a side, seeds 1..3 for 60 s, trace for
+trace identical to the copied referee's; El Alamein, 8 a side, seed 3, 120 s,
+identical until the first seat swap at 93.67 s and the same summary.
 
 **A throwing bot tick** ends the page's `frame()`; the runner catches it per
 bot, records a `bot_error` event and carries on with the next bot, so one
