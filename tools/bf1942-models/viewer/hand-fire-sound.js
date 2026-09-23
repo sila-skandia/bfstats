@@ -1,7 +1,7 @@
 // The hand weapon's report: the per-round one-shots and the Fire Loop, on one
 // shared bus, from `models/sounds/weapons.json`. Owns the manifest promise,
 // the bus and the loop voice. Lifted out of hand-weapon.js
-// (features/vehicle-instance-refactor Part 2c).
+// (features/vehicle-instance-refactor).
 
 import { WEAPON_HEADROOM } from './engine-audio.js';
 
