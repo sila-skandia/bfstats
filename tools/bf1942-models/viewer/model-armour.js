@@ -258,7 +258,6 @@ export async function createArmourInspector(page) {
 
   weaponSelect.addEventListener('change', () => setWeapon(weaponSelect.value));
 
-
   function clearHit() {
     armour.lastHit = null;
     armour.hitState = null;

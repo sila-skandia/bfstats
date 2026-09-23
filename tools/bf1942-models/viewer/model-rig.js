@@ -40,12 +40,9 @@ export function createModelRig(page) {
   // conjugates rotations about X and Y, and leaves those about Z alone.
   const SIGN = { yaw: -1, pitch: -1, roll: 1 };
 
-
-
   const rigged = [];              // { node, base:Quaternion, axes, driver, key }
   const inputValues = new Map();  // "<control>/<input>" -> -1..1
   const rateAngle = new Map();    // same key -> accumulated degrees, for Engines
-
 
   function applyRig() {
     for (const part of rigged) {
