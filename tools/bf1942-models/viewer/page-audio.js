@@ -17,7 +17,7 @@ import { footstepMaterial } from './collision.js';
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `aircraft`, `AUDIO_OFF`, `bust`, `camera`, `car`, `currentDir`,
- * `currentRoot`, `effectAudio`, `ensureHandFireBus`, `extras`, `gameHud`,
+ * `currentRoot`, `effectAudio`, `ensureHandFireBus`, `extras`,
  * `handFireBus`, `mannedGuns`, `MAPS_BASE`, `MODELS_BASE`, `optPilot`,
  * `optSound`, `optSoundVol`, `scene`, `soldier`, `vehicleGuns`,
  * `weaponSoundsManifest`.
@@ -542,9 +542,6 @@ export function createPageAudio(page) {
   pageAudio.soldierSoundsIndex = null;
   pageAudio.lastHurtSoundTime = 0;
   pageAudio.lastWorldHurtSoundTime = 0;
-  pageAudio.hitIndicatorTimer = 0;
-  pageAudio.hitIndicatorDir = 0;
-  pageAudio.lastSoldierHp = null;
 
   function soldierSoundsManifest() {
     if (!pageAudio.soldierSoundsIndex) {
@@ -659,13 +656,6 @@ export function createPageAudio(page) {
     }
   }
 
-  function triggerHitIndicator(direction, intensity = 1.0) {
-    pageAudio.hitIndicatorDir = direction;
-    pageAudio.hitIndicatorTimer = 1.0;
-    page.gameHud.vars['HitFromDir/HitFromDir'] = direction;
-    page.gameHud.vars['HitFromDir/HitFromDirAlpha'] = Math.max(0.1, Math.min(1.0, intensity));
-    page.gameHud.requestRepaint();
-  }
 
   async function playSoldierHurtSound(isFriendlyFire = false, position = null) {
     if (page.AUDIO_OFF || masterVolume() <= 0) return;
@@ -707,7 +697,6 @@ export function createPageAudio(page) {
     releaseVehicleAudio,
     setupSounds,
     soundBuffer,
-    triggerHitIndicator,
     updateAudio,
   });
   return pageAudio;
