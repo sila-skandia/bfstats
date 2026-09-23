@@ -43,7 +43,6 @@ MODULES = {
     "torpedo-run.js": VIEWER / "torpedo-run.js",
     "idle-vehicle.js": VIEWER / "idle-vehicle.js",
     # gunfire.js's own import graph, all of it leaf modules bar three.
-    "collision.js": VIEWER / "collision.js",
     "world-collider.js": VIEWER / "world-collider.js",
     "static-index.js": VIEWER / "static-index.js",
     "collision-meshes.js": VIEWER / "collision-meshes.js",

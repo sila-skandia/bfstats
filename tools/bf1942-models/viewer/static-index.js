@@ -1,8 +1,8 @@
 // The static collision hulls: every collision triangle in the level, in one
 // XZ grid, and the ray / swept-sphere / box queries against it.
 //
-// Split out of `collision.js`, which re-exports it; see that file's header for
-// why a uniform grid and not a BVH, and for the coordinate note. Which scene
+// Split out of `collision.js`; see `world-collider.js`'s header for why a
+// uniform grid and not a BVH, and for the coordinate note. Which scene
 // nodes are collision hulls, and which of those are drivable decks, is
 // `collision-meshes.js`, re-exported from here.
 

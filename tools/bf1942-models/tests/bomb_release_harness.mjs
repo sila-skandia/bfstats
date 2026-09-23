@@ -18,7 +18,8 @@
 
 import * as THREE from 'three';
 import { GunFire } from './gunfire.js';
-import { WorldCollider, buildHeightfield } from './collision.js';
+import { WorldCollider } from './world-collider.js';
+import { buildHeightfield } from './heightfield.js';
 import { FireState } from './seats.js';
 import { salvo } from './bomb-release.js';
 import { TorpedoRun, runParts } from './torpedo-run.js';

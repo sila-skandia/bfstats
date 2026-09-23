@@ -4,7 +4,7 @@
 // Split out of `gunfire.js`; both take the `GunFire` instance (`guns`) whose
 // tables they read and whose `hits` / `onImpact` they report to.
 
-import { impactEffect, materialFamily } from './collision.js';
+import { impactEffect, materialFamily } from './collision-materials.js';
 import { damageFactor, IMPACT_BLAST_OFFSET, splashSpec } from './effects-core.js';
 import { spawnImpact } from './round-visuals.js';
 

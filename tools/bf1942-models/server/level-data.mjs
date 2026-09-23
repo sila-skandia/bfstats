@@ -5,7 +5,8 @@
 import * as THREE from 'three';
 
 import { World } from '../viewer/world.js';
-import { WorldCollider, buildCollisionIndex } from '../viewer/collision.js';
+import { WorldCollider } from '../viewer/world-collider.js';
+import { buildCollisionIndex } from '../viewer/static-index.js';
 import { bodyPoseOf, bodySpecFor, bodyTerrainOf, settle } from './level-bodies.mjs';
 import { LevelInstance } from './level-instance.mjs';
 
