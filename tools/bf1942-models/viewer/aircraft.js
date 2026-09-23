@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import { Vehicle, keyOf, axisAngle } from './vehicle-base.js';
+import { hullGeometry } from './ship-spec.js';
 
 // --- flight model ----------------------------------------------------------
 //
@@ -82,6 +83,9 @@ const SURFACE_LIFT_CLAMP = 200;
 
 /** A submerged surface makes ten times the lift. Same function. */
 const SUBMERGED_MEDIUM = 10;
+
+/** `(pi/4)`: the box drag law's faces are ellipses inscribed in them. */
+const BOX_AREA = Math.PI / 4;
 
 /** `0.1 * |throttle|`: the part of thrust that does not fade with speed. */
 const ENGINE_IDLE = 0.1;
@@ -411,6 +415,116 @@ export const CORSAIR = {
 /** Physics tables by `control` name. One so far; the survey has 13. */
 const SPECS = { Corsair: CORSAIR };
 
+const _rel = new THREE.Matrix4();
+const _relInv = new THREE.Matrix4();
+const _relPos = new THREE.Vector3();
+const _relQuat = new THREE.Quaternion();
+const _relScale = new THREE.Vector3();
+const _wheelBox = new THREE.Box3();
+
+/**
+ * An aircraft's own physics table, read off its extracted node tree: the
+ * `CORSAIR`-shaped table built from the plane's OWN `.con` numbers.
+ *
+ * Until 2026-09-24 every aircraft in a level flew on `CORSAIR`: `SPECS` has
+ * one entry and nothing passed a spec, so a Spitfire (tail 5.31 m aft, not
+ * 3.54; elevators `0.5/0.7`, not `0.5/0.5`; ailerons `2.4/2.3`, not
+ * `1.85/1.7`; regulators `flapLift 2`, not 4; `drag 0.09`, not `0.0652`;
+ * `inertiaModifier 0.85/0.833/0.84`) flew as a Corsair. Ledger AI-75 has the
+ * measured difference. Everything here comes from the glb, the same reading
+ * `shipSpec` (ship-spec.js) makes for a hull: the root's `mass` / `drag` /
+ * `inertiaModifier`, each `c_ETPlane` `Engine`'s `setDifferential` /
+ * `setNoPropellerEffectAtSpeed` / rev span, each `Wing`'s lift pair, offset,
+ * incidence, regulator and its own rig axis, all in the root's frame.
+ *
+ * Two quantities are not a `.con` field. The inertia box is the root's own
+ * geometry box (`hullGeometry`), under the solid-box law every aircraft here
+ * is calibrated against (the engine's `getGeometryInertia` is `/3`, four times
+ * this; flight-model.md and viewer-ships §12.3 say why it stays). The ride
+ * height is the lowest wheel's bottom: the `Spring`s' own meshes, in the
+ * root's frame (1.39 m for the Spitfire, whose level spawn stands exactly that
+ * high over the strip), else the Corsair's 1.2.
+ *
+ * Returns null for a root that carries no body physics or no plane engine,
+ * which keeps every hand-built test aircraft on `CORSAIR`.
+ */
+export function aircraftSpec(root) {
+  const physics = root?.userData?.physics;
+  if (!physics || !(physics.mass > 0)) return null;
+  root.updateWorldMatrix(true, true);
+  _relInv.copy(root.matrixWorld).invert();
+  const frame = node => {
+    _rel.multiplyMatrices(_relInv, node.matrixWorld).decompose(_relPos, _relQuat, _relScale);
+    return { position: [_relPos.x, _relPos.y, -_relPos.z], quaternion: [_relQuat.x, _relQuat.y, _relQuat.z, _relQuat.w] };
+  };
+  const engines = [];
+  const surfaces = [];
+  let throttleRate = CORSAIR.throttleRate;
+  let wheelBottom = Infinity;
+  root.traverse(node => {
+    const data = node.userData || {};
+    const part = data.physics;
+    if (data.templateKind === 'Engine' && part?.engineType === 'c_ETPlane') {
+      engines.push({
+        id: node.name,
+        engineType: part.engineType,
+        position: frame(node).position,
+        differential: part.differential ?? 1,
+        torque: part.torque,
+        noPropellerEffectAtSpeed: part.noPropellerEffectAtSpeed ?? 70,
+      });
+      // `setMaxSpeed` over the rev span, as `CORSAIR.throttleRate` reads it.
+      const span = Math.abs(part.maxRotation?.[2] ?? 0);
+      const speed = Math.abs(part.maxSpeed?.[2] ?? 0);
+      if (span > 0 && speed > 0) throttleRate = speed / span;
+    } else if (data.templateKind === 'Wing') {
+      const axis = data.rig?.axes?.pitch;
+      const f = frame(node);
+      surfaces.push({
+        id: node.name,
+        node: node.name,
+        attach: f.position,
+        offset: part?.positionOffset ? [...part.positionOffset] : [0, 0, 0],
+        mountQuaternion: f.quaternion,
+        min: axis?.min ?? 0,
+        max: axis?.max ?? 0,
+        maxSpeed: axis?.maxSpeed ?? 0,
+        direction: axis?.direction ?? 1,
+        input: axis?.input,
+        wingLift: part?.wingLift ?? 0,
+        flapLift: part?.flapLift ?? 0,
+        pitchOffset: part?.pitchOffset ?? 0,
+        regulateToLift: part?.regulateToLift ?? 0,
+        wingToRegulatorRatio: part?.wingToRegulatorRatio ?? 1,
+      });
+    } else if (data.templateKind === 'Spring') {
+      // The wheel's own mesh: the node's, or its untagged per-material
+      // children. Not the dust and splash emitters hung beneath it.
+      for (const mesh of [node, ...node.children.filter(c => !c.userData?.templateKind)]) {
+        if (!mesh.isMesh || !mesh.geometry || mesh.userData?.collision || /collision/i.test(mesh.name || '')) continue;
+        mesh.geometry.computeBoundingBox();
+        _wheelBox.copy(mesh.geometry.boundingBox).applyMatrix4(_rel.multiplyMatrices(_relInv, mesh.matrixWorld));
+        wheelBottom = Math.min(wheelBottom, _wheelBox.min.y);
+      }
+    }
+  });
+  if (!engines.length) return null;
+  return {
+    mass: physics.mass,
+    drag: physics.drag ?? CORSAIR.drag,
+    dragLaw: 'box',
+    gravity: GRAVITY,
+    inertiaModifier: physics.inertiaModifier || [1, 1, 1],
+    size: hullGeometry(root).size,
+    groundClearance: Number.isFinite(wheelBottom) && wheelBottom < 0 ? -wheelBottom : CORSAIR.groundClearance,
+    throttleRate,
+    gearUpAltitude: CORSAIR.gearUpAltitude,
+    gearDownAltitude: CORSAIR.gearDownAltitude,
+    engines,
+    surfaces,
+  };
+}
+
 /** An aircraft: a `Vehicle` plus the model that turns inputs into state. */
 export class Aircraft extends Vehicle {
   /**
@@ -418,7 +532,10 @@ export class Aircraft extends Vehicle {
    */
   constructor(node, parent, options = {}) {
     super(node, parent, options);
-    this.spec = options.spec || SPECS[this.control] || CORSAIR;
+    // The hand table first (the Corsair's is this reader's output bar the
+    // inertia box, and every flight test is calibrated on it), then the
+    // aircraft's own data, then the Corsair for a tree that carries none.
+    this.spec = options.spec || SPECS[this.control] || aircraftSpec(node) || CORSAIR;
     this.surfaces = this.spec.surfaces.map(spec => new Surface(spec));
     for (const surface of this.surfaces) {
       surface.key = `${keyOf(this.control, surface.axis.input)}/pitch`;
@@ -526,7 +643,46 @@ export class Aircraft extends Vehicle {
    * all without the submerged drag multiplier.
    */
   applyDrag(_accel, _h, _moment) {
+    if (this.spec.dragLaw === 'box') { this.applyBoxDrag(_accel, _moment); return; }
     _accel.addScaledVector(this.state.velocity, -this.spec.drag);
+  }
+
+  /**
+   * `PhysicsNode`'s box drag, the law every live vehicle root runs (physics.md
+   * §3, ledger PHY-4; lnxded `0x08252f50` / `0x08253280`):
+   *
+   *   accel  += -drag |v| / mass * (Ax proj0(v) + Ay proj1(v) + Az proj2(v))
+   *   angAcc += -drag |w| / mass * ((Ay+Az) proj0(w) + (Ax+Az) proj1(w) + (Ax+Ay) proj2(w))
+   *
+   * with `Ax = (pi/4) DY DZ` and the rest, the ellipses in the geometry box's
+   * faces. The same arithmetic `ship.js` runs for a hull (there with the
+   * submersion scale). An aircraft built from its own data (`aircraftSpec`)
+   * takes it; `CORSAIR` keeps the fitted `-drag v`, because every flight test is
+   * calibrated on it. Under the box law the four vanilla fighters whose AI
+   * `maxSpeed` is 60 (Spitfire, Yak9, Zero, Mustang) top out at 57.4..59.5 m/s
+   * on the deck; under `-drag v` they reached 45.5..51.3 (ledger AI-75).
+   */
+  applyBoxDrag(accel, moment) {
+    const k = this.spec;
+    const [dx, dy, dz] = k.size;
+    if (!(k.drag > 0) || !(k.mass > 0)) return;
+    const ax = BOX_AREA * dy * dz, ay = BOX_AREA * dx * dz, az = BOX_AREA * dx * dy;
+    _qi.copy(this.state.orientation).invert();
+    const v = this.state.velocity;
+    const speed = v.length();
+    if (speed > 1e-9) {
+      _flow.copy(v).applyQuaternion(_qi);
+      _force.set(_flow.x * ax, _flow.y * ay, _flow.z * az).applyQuaternion(this.state.orientation);
+      accel.addScaledVector(_force, -k.drag * speed / k.mass);
+    }
+    if (!moment) return;
+    const w = this.state.angularVelocity;
+    const rate = w.length();
+    if (rate < 1e-9) return;
+    _flow.copy(w).applyQuaternion(_qi);
+    _force.set(_flow.x * (ay + az), _flow.y * (ax + az), _flow.z * (ax + ay))
+      .applyQuaternion(this.state.orientation);
+    moment.addScaledVector(_force, -k.drag * rate / k.mass);
   }
 
   /**

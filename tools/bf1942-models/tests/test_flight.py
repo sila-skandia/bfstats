@@ -59,6 +59,8 @@ MODULES = {
     "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",
     "vehicle-base.js": VIEWER / "vehicle-base.js",
     "aircraft.js": VIEWER / "aircraft.js",
+    "ship-spec.js": VIEWER / "ship-spec.js",
+    "bot-vehicle-air.js": VIEWER / "bot-vehicle-air.js",
     "vendor/loaders/GLTFLoader.js": VIEWER / "vendor" / "loaders" / "GLTFLoader.js",
     "vendor/utils/BufferGeometryUtils.js": VIEWER / "vendor" / "utils" / "BufferGeometryUtils.js",
     # The bare specifier `three` is an import map entry in the page; node needs
@@ -377,6 +379,61 @@ class FlightModelTests(unittest.TestCase):
         ceiling = self.results["serviceCeiling"]
         self.assertLess(ceiling["best"], CEILING)
         self.assertGreater(ceiling["best"], 900.0)
+
+    # --- the Spitfire on its own data (ledger AI-75) -----------------------
+
+    def test_an_aircraft_flies_on_its_own_con_numbers(self) -> None:
+        # `aircraftSpec` reads the plane's own table off its tree: the
+        # Spitfire's elevators 5.3 m aft (the Corsair's 3.5), `0.5 / 0.7`,
+        # `drag 0.09`, the box drag law, and the ride height from its wheel.
+        s = self.results["spitfire"]
+        self.assertEqual(s["mass"], 2500)
+        self.assertEqual(s["drag"], 0.09)
+        self.assertEqual(s["dragLaw"], "box")
+        self.assertEqual(s["inertiaModifier"], [0.85, 0.833, 0.84])
+        self.assertEqual(s["surfaces"], 8)
+        self.assertEqual(s["engines"], 1)
+        self.assertAlmostEqual(s["elevatorArm"], -5.306, places=3)
+        self.assertAlmostEqual(s["elevatorLift"], 1.2, places=6)
+        self.assertAlmostEqual(s["groundClearance"], 1.3855, places=3)
+        self.assertAlmostEqual(s["throttleRate"], 0.1, places=6)
+        self.assertEqual(s["size"], [11.3, 2.28, 9.14])
+        self.assertTrue(s["fallback"])
+
+    def test_the_spitfire_pitch_rate_per_full_stick(self) -> None:
+        # Measured, not fitted: a second after a full stick, from a second of
+        # hands-off flight at the speed. The Spitfire pitches slower than the
+        # Corsair table it used to borrow (its tail is longer, so it damps more).
+        s = self.results["spitfire"]
+        self.assertGreater(s["pitchUp40"], 20.0)
+        self.assertLess(s["pitchUp40"], 40.0)
+        self.assertLess(s["pitchDown40"], -20.0)
+        self.assertGreater(s["pitchUp60"], 30.0)
+        self.assertLess(s["pitchUp60"], 60.0)
+        self.assertLess(s["pitchDown60"], -20.0)
+        self.assertLess(s["pitchUp40"], s["corsairUp40"])
+
+    def test_the_engine_plane_law_closes_on_the_spitfire(self) -> None:
+        # `aimAtDirection` -> `towardsDirection` on the Spitfire's own
+        # airframe: a step of the wanted direction 10 and 25 deg below the
+        # nose settles inside a degree (the 10 deg step within 1 s, the 25 deg
+        # one within 2 s) and overshoots by under 2 (0.72 s / 1.57 s, 0.9 /
+        # 0.7 deg measured).
+        s = self.results["spitfire"]
+        for case, limit in ((s["loopDown"], 1.0), (s["loopDeep"], 2.0)):
+            self.assertIsNotNone(case["settledAt"])
+            self.assertLess(case["settledAt"], limit)
+            self.assertLess(case["overshoot"], 2.0)
+
+    def test_the_box_drag_law_brackets_the_ai_maxspeed(self) -> None:
+        # Under `PhysicsNode`'s box law (physics.md s3) the Spitfire's level
+        # top speed brackets its AI `maxSpeed` of 60, as the Corsair's does its
+        # 55 under the fitted `-drag v`; under `-drag v` it topped out near 47.
+        s = self.results["spitfire"]
+        self.assertLess(s["top40"], 62.0)
+        self.assertGreater(s["top40"], 54.0)
+        self.assertGreater(s["top200"], s["top40"])
+        self.assertGreater(s["top200"], 60.0)
 
     # --- level flight ------------------------------------------------------
 
