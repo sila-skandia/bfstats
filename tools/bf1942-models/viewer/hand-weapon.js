@@ -20,12 +20,13 @@ import { BOT_BODY_RADIUS, BOT_BODY_HEIGHT, BOT_FIRE_RANGE } from './bot-referee.
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `AUDIO_OFF`, `LOCAL_PLAYER`, `MAPS_BASE`, `MODELS_BASE`,
- * `SOLDIER_MAX_HP_FALLBACK`, `audioListener`, `botRoundDamage`, `bust`,
- * `camera`, `captured`, `currentDir`, `deployScreen`, `ensureFootBody`,
- * `fireStates`, `guns`, `isCollision`, `loader`, `localPlayer`,
- * `mapSurfaces`, `masterVolume`, `modelSoundBuffer`, `optOnFoot`, `optPilot`,
- * `params`, `playSupplyGive`, `referee`, `soldier`, `supplyTarget`,
+ * `aircraft`, `applyDamage`, `AUDIO_OFF`, `audioListener`, `botRoundDamage`,
+ * `bots`, `bust`, `camera`, `captured`, `car`, `currentDir`, `deployKit`,
+ * `deployTeamId`, `ensureFootBody`, `fireStates`, `guns`, `isCollision`,
+ * `KITS`, `lineOfSight`, `loader`, `LOCAL_PLAYER`, `MAPS_BASE`,
+ * `masterVolume`, `MODELS_BASE`, `modelSoundBuffer`, `optOnFoot`,
+ * `optPilot`, `params`, `playSupplyGive`, `soldier`,
+ * `SOLDIER_MAX_HP_FALLBACK`, `spawnLayout`, `supplyTarget`, `teamNation`,
  * `vehicleAudio`, `warmSubtree`, `warmups`, `world`.
  */
 export function createHandWeapon(page) {
@@ -48,8 +49,8 @@ export function createHandWeapon(page) {
    * every bot and only the bots' rounds land.
    */
   function resolvePlayerShotOnBots() {
-    if (!page.referee.bots.length || !page.world || !page.soldier) return;
-    const myTeam = page.world.player(page.LOCAL_PLAYER)?.team ?? page.deployScreen.deployTeamId;
+    if (!page.bots.length || !page.world || !page.soldier) return;
+    const myTeam = page.world.player(page.LOCAL_PLAYER)?.team ?? page.deployTeamId;
 
     page.camera.getWorldPosition(_shotOrigin);
     page.camera.getWorldDirection(_shotRayDir);
@@ -74,7 +75,7 @@ export function createHandWeapon(page) {
     const origin = [_shotOrigin.x, _shotOrigin.y, _shotOrigin.z];
     let best = null;
     let bestT = Infinity;
-    for (const bot of page.referee.bots) {
+    for (const bot of page.bots) {
       if (bot.team === myTeam) continue;                       // never a teammate
       const player = page.world.player(bot.playerId);
       const s = player?.soldier;
@@ -90,10 +91,10 @@ export function createHandWeapon(page) {
       if (px * px + py * py + pz * pz > BOT_BODY_RADIUS * BOT_BODY_RADIUS) continue;
       const at = [origin[0] + t * _shotConeDir.x, origin[1] + t * _shotConeDir.y,
                   origin[2] + t * _shotConeDir.z];
-      if (!page.referee.lineOfSight(origin, at)) continue;
+      if (!page.lineOfSight(origin, at)) continue;
       if (t < bestT) { bestT = t; best = bot.playerId; }
     }
-    if (best) page.referee.applyDamage(best, page.botRoundDamage(), page.LOCAL_PLAYER, origin);
+    if (best) page.applyDamage(best, page.botRoundDamage(), page.LOCAL_PLAYER, origin);
   }
 
   /**
@@ -451,10 +452,10 @@ export function createHandWeapon(page) {
    *  its `itemIndex 3`, and the soldier template the team wears. Every field
    *  null where `_shared/loadouts.json` is absent or does not name the level;
    *  `weaponTemplateFor` then falls back to the vanilla table by nation. */
-  function kitLoadout(team, kitName = page.deployScreen.deployKit) {
+  function kitLoadout(team, kitName = page.deployKit) {
     const side = soldierKit.loadouts?.levels?.[page.currentDir]?.[team];
     if (!side) return { kit: null, primary: null, soldier: null };
-    const slot = page.deployScreen.KITS.indexOf(kitName);
+    const slot = page.KITS.indexOf(kitName);
     let kit = side.slots?.[String(slot)] || null;
     if (!kit || !soldierKit.loadouts.kits?.[kit]) {
       // A mod may file its classes in other rows; the class label is the
@@ -487,7 +488,7 @@ export function createHandWeapon(page) {
    *  page's class word. Shared by the canvas text (`deployText`) and the
    *  kit buttons' aria-labels, so both say the same. */
   function kitRowLabelFor(role, layoutText) {
-    const { kit } = kitLoadout(page.deployScreen.deployTeamId, role);
+    const { kit } = kitLoadout(page.deployTeamId, role);
     const name = kit ? soldierKit.loadouts?.kits?.[kit]?.kitName : null;
     return kitRowLabel(name, layoutText, KIT_CLASS[role] || role);
   }
@@ -498,7 +499,7 @@ export function createHandWeapon(page) {
   function kitRowLayoutText(role) {
     const key = Object.entries(KIT_ROW_KEYS).find(([, r]) => r === role)?.[0];
     if (!key) return null;
-    const el = page.deployScreen.spawnLayout.data?.groups?.spawn?.elements
+    const el = page.spawnLayout.data?.groups?.spawn?.elements
       ?.find(e => e.kind === 'text' && e.key === key);
     return el?.text ?? null;
   }
@@ -508,21 +509,21 @@ export function createHandWeapon(page) {
    *  kit, or `SOLDIER_MAX_HP_FALLBACK` when the field or the file is not there
    *  yet (the same fallback shape `weaponTemplateFor` uses for a primary). */
   function soldierMaxHp(flag) {
-    const { kit } = kitLoadout(flag?.team, page.deployScreen.deployKit);
+    const { kit } = kitLoadout(flag?.team, page.deployKit);
     const maxHp = soldierKit.loadouts?.kits?.[kit]?.maxHitpoints;
     return Number.isFinite(maxHp) ? maxHp : page.SOLDIER_MAX_HP_FALLBACK;
   }
 
   /** The template a soldier of `flag`'s team spawns holding, with the kit the
    *  deploy screen chose. `?weapon=` overrides everything, as it always has. */
-  function weaponTemplateFor(flag, kitName = page.deployScreen.deployKit) {
+  function weaponTemplateFor(flag, kitName = page.deployKit) {
     const forced = page.params.get('weapon');
     if (forced) return forced;
     const team = flag?.team;
     const loadout = kitLoadout(team, kitName);
     if (loadout.primary) return loadout.primary;
-    const slot = Math.max(0, page.deployScreen.KITS.indexOf(kitName));
-    return FALLBACK_PRIMARIES[page.mapSurfaces.teamNation(team)]?.[slot]
+    const slot = Math.max(0, page.KITS.indexOf(kitName));
+    return FALLBACK_PRIMARIES[page.teamNation(team)]?.[slot]
       || FALLBACK_PRIMARIES[team === 1 ? 'ger' : 'us'][slot];
   }
 
@@ -531,7 +532,7 @@ export function createHandWeapon(page) {
   function soldierTemplateFor(flag) {
     const team = flag?.team;
     return kitLoadout(team).soldier
-      || FALLBACK_SOLDIERS[page.mapSurfaces.teamNation(team)]
+      || FALLBACK_SOLDIERS[page.teamNation(team)]
       || (team === 1 ? 'GermanSoldier' : 'USSoldier');
   }
 
@@ -562,7 +563,7 @@ export function createHandWeapon(page) {
    *  `_shared/loadouts.json` is absent, does not know the level, or does not
    *  know the kit — the same "no data, fall back" shape `kitLoadout` has. */
   function kitSlotsFor(flag) {
-    const { kit } = kitLoadout(flag?.team, page.deployScreen.deployKit);
+    const { kit } = kitLoadout(flag?.team, page.deployKit);
     const weapons = kit ? soldierKit.loadouts?.kits?.[kit]?.weapons : null;
     return Array.isArray(weapons) && weapons.length ? weapons : null;
   }
@@ -617,7 +618,7 @@ export function createHandWeapon(page) {
     soldierKit.weaponBarUntil = performance.now() + WEAPON_BAR_MS;
     if (entry.slot === soldierKit.handSlot && !isDetonator(soldierKit.handWeapon?.name)) return true;
     soldierKit.handSlot = entry.slot;
-    loadHandWeapon(entry.weapon, soldierTemplateFor({ team: page.deployScreen.deployTeamId }));
+    loadHandWeapon(entry.weapon, soldierTemplateFor({ team: page.deployTeamId }));
     return true;
   }
 
@@ -697,7 +698,7 @@ export function createHandWeapon(page) {
   /** Re-read which pack/plunger pair this kit carries. Called wherever the kit
    *  is (re)armed, next to `kitWeaponSlots`. */
   function armDemolitions(flag) {
-    const { kit } = kitLoadout(flag?.team, page.deployScreen.deployKit);
+    const { kit } = kitLoadout(flag?.team, page.deployKit);
     const items = soldierKit.loadouts?.kits?.[kit]?.items;
     soldierKit.explosivesTemplate = Array.isArray(items)
       ? items.find(isExplosives) || null : null;
@@ -724,7 +725,7 @@ export function createHandWeapon(page) {
     const slot = slotOf(soldierKit.kitWeaponSlots || [], soldierKit.detonatorTemplate);
     if (slot != null) return selectKitWeapon(slot);
     soldierKit.weaponBarUntil = performance.now() + WEAPON_BAR_MS;
-    loadHandWeapon(soldierKit.detonatorTemplate, soldierTemplateFor({ team: page.deployScreen.deployTeamId }));
+    loadHandWeapon(soldierKit.detonatorTemplate, soldierTemplateFor({ team: page.deployTeamId }));
     return true;
   }
 
@@ -944,7 +945,7 @@ export function createHandWeapon(page) {
     // The load can resolve after its owner has already climbed into a seat —
     // spawn beside a jeep and press E inside the fetch — and a viewmodel must
     // not materialise over a windscreen. `exitVehicle` shows it again.
-    rig.visible = !(page.optPilot.checked && (page.localPlayer.aircraft || page.localPlayer.car));
+    rig.visible = !(page.optPilot.checked && (page.aircraft || page.car));
     // Hidden again until its programs are linked, its textures and its bone
     // textures are on the GPU and each program has had its first use: the
     // arms, the flash emitters `collect` clones below and the baked streak all
@@ -957,7 +958,7 @@ export function createHandWeapon(page) {
     rig.visible = false;
     page.warmups.rig = page.warmSubtree(rig, vmCamera, vmScene).then(() => {
       if (token !== soldierKit.weaponToken) return;
-      rig.visible = armsShown && !(page.optPilot.checked && (page.localPlayer.aircraft || page.localPlayer.car));
+      rig.visible = armsShown && !(page.optPilot.checked && (page.aircraft || page.car));
     });
     // The six baked families become mixer actions. Locomotion loops; one-shots
     // clamp on their last frame. Fire follows the ASM loop bit in extras
