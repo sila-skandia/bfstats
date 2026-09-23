@@ -54,7 +54,19 @@ export const PLANE_FIRE = {
    *  `createMobileLessAttackPlan` 0x085a0080: 50 m for mode 1, 75 m else). */
   aimClearance: 75.0,
   aimClearanceVehicle: 50.0,
-  clearance: 50.0,
+  /** `EntryPlaneAimAt::execute` 0x0861f610's throttle floor, handed to
+   *  `towardsDirection` (+0x38): 1.0 against an air target, 0.5 against
+   *  anything else (`0x3f000000` at 0x0861f875). */
+  throttleFloorAir: 1.0,
+  throttleFloorGround: 0.5,
+  /** `createPlanInternal` 0x0859b4b0: the approach's `BAPAMoveTo3dObject`
+   *  clearance (+0x44, the 100.0 pushed at 0x0859bfbb; the ctor 0x08541870
+   *  stores its fourth float there), and the break's `BAPAMoveTo3dDirection`
+   *  clearance (100.0 at 0x0859beab) and point height (100.0 written into the
+   *  point's y at 0x0859bda5). The first reading (AI-56 / AI-69) had 50 m. */
+  approachClearance: 100.0,
+  breakClearance: 100.0,
+  breakHeight: 100.0,
   breakDistance: 200.0,
   breakSpeedFactor: 1.5,
   passRadiusFactor: 1.3,
@@ -204,6 +216,135 @@ export function roundMiss({ rel, relVel = [0, 0, 0], dir, speed, gravity = 0 }) 
 }
 
 /**
+ * The closest approach of a round fired along `dir` now to the target's
+ * path: `Aimer::getNearestImpactPoint` 0x08539490. The engine sets the
+ * derivative of `|Q t + R t^2 - C|^2` to zero (`Q = dir * speed - relVel`,
+ * `R = (0, g/2, 0)`, `C = rel`; the cubic `2 R.R t^3 + 3 Q.R t^2 + (Q.Q -
+ * 2 C.R) t - C.Q`, `Polynom::findRoots`) and keeps the non-negative root
+ * nearest the target. Without drag (every bullet's `Aimer` +0 is 0).
+ * Returns `{ miss, t }`, or `null` when no root is non-negative.
+ */
+export function nearestMiss({ rel, relVel = [0, 0, 0], dir, speed, gravity = 0 }) {
+  const Q = [dir[0] * speed - relVel[0], dir[1] * speed - relVel[1], dir[2] * speed - relVel[2]];
+  const R = [0, 0.5 * gravity, 0];
+  const at = t => Math.hypot(Q[0] * t - rel[0], Q[1] * t + R[1] * t * t - rel[1], Q[2] * t - rel[2]);
+  const a = 2 * R[1] * R[1], b = 3 * Q[1] * R[1];
+  const c = Q[0] ** 2 + Q[1] ** 2 + Q[2] ** 2 - 2 * rel[1] * R[1];
+  const d = -(rel[0] * Q[0] + rel[1] * Q[1] + rel[2] * Q[2]);
+  const roots = cubicRoots(a, b, c, d).filter(t => t >= 0);
+  if (!roots.length) return null;
+  let best = null;
+  for (const t of roots) {
+    const miss = at(t);
+    if (!best || miss < best.miss) best = { miss, t };
+  }
+  return best;
+}
+
+/** Real roots of `a t^3 + b t^2 + c t + d` (any leading zeros). */
+function cubicRoots(a, b, c, d) {
+  if (Math.abs(a) < 1e-12) {
+    if (Math.abs(b) < 1e-12) return Math.abs(c) < 1e-12 ? [] : [-d / c];
+    const disc = c * c - 4 * b * d;
+    if (disc < 0) return [];
+    const s = Math.sqrt(disc);
+    return [(-c - s) / (2 * b), (-c + s) / (2 * b)];
+  }
+  const p = b / a, q = c / a, r = d / a;
+  const A = q - p * p / 3, B = 2 * p ** 3 / 27 - p * q / 3 + r;
+  const disc = B * B / 4 + A ** 3 / 27;
+  const shift = -p / 3;
+  if (disc > 1e-12) {
+    const s = Math.sqrt(disc);
+    return [Math.cbrt(-B / 2 + s) + Math.cbrt(-B / 2 - s) + shift];
+  }
+  if (Math.abs(A) < 1e-12) return [shift];
+  const m = 2 * Math.sqrt(-A / 3);
+  const th = Math.acos(clamp(3 * B / (A * m), -1, 1)) / 3;
+  return [0, 1, 2].map(k => m * Math.cos(th - 2 * Math.PI * k / 3) + shift);
+}
+
+/**
+ * `EntryPlaneAimAt::execute` 0x0861f610: the direction the aim statement
+ * hands `aimAtDirection` 0x08629cf0, and the Aimer state its precision test
+ * reads. Against an AIR target (the target information's +4 & 0x10) the
+ * Aimer is fed the shooter's velocity (`BAPAAimAtObject3d::getAimVec`
+ * 0x0853c7f0 subtracts it from the target's) and the round's own exit
+ * velocity, the 3D firing direction is used as it is (clamped to unit
+ * length) and the throttle floor is 1.0. Against anything else the shooter's
+ * velocity is passed as ZERO and the exit velocity plus the plane's own
+ * speed as the round speed, so the aim is the line to the target (lead only
+ * for the target's own motion, drop at that speed), and the throttle floor
+ * is 0.5 (the `0x3f000000` at 0x0861f875). An `indirect` weapon (template
+ * byte +1, `weaponTemplate.indirect`, ConsoleClass620 0x08510db0) against a
+ * ground target flies the LEVEL bearing of that solution; with no solution
+ * (a level length under 0.001) it holds its own level heading. `rel` is the
+ * target less the muzzle. Returns `{ dir, relVel, speed, throttleFloor }`.
+ */
+export function planeAimFor({ rel, targetVel = [0, 0, 0], velocity = [0, 0, 0], roundSpeed, gravity = 0,
+                              air = false, indirect = false, forward = [0, 0, -1] }) {
+  const own = Math.hypot(velocity[0], velocity[1], velocity[2]);
+  const relVel = air ? [targetVel[0] - velocity[0], targetVel[1] - velocity[1], targetVel[2] - velocity[2]]
+                     : [targetVel[0], targetVel[1], targetVel[2]];
+  const speed = air ? roundSpeed : roundSpeed + own;
+  let dir = roundMiss({ rel, relVel, speed, gravity }).aim;
+  if (!air && indirect) {
+    const l = Math.hypot(dir[0], dir[2]);
+    if (l >= 0.001) dir = [dir[0] / l, 0, dir[2] / l];
+    else {
+      const f = Math.hypot(forward[0], forward[2]) || 1;
+      dir = [forward[0] / f, 0, forward[2] / f];
+    }
+  }
+  return { dir, relVel, speed, throttleFloor: air ? PLANE_FIRE.throttleFloorAir : PLANE_FIRE.throttleFloorGround };
+}
+
+/**
+ * The trigger's precision test, `BAPCConPrecision3d::evaluate` 0x0854baf0
+ * (modes 0 / 3) and `BAPCConBombPrecision3d::evaluate` 0x0854a8c0 (modes 1 /
+ * 2), with their closest-approach variants (read in the disassembly; the
+ * trackers are the ctors' `FLT_MAX` fields). `m2` is the squared miss at the
+ * lead time, `n2` the squared nearest-approach miss (bomb class only; null
+ * when there is none), `p2` the squared precision floored at 0.01. `state`
+ * carries the trackers between ticks.
+ *
+ *  * Direct (`closest` false): fire when `m2 <= p2`; the bomb class also
+ *    fires when `n2 <= p2`.
+ *  * Closest approach: while the miss shrinks (`m2 <= last`, `last > 0.01`)
+ *    store it and hold fire; once it grows, fire when the stored minimum was
+ *    inside the precision. `Precision3d` then resets its tracker either way;
+ *    the bomb class resets it only when it fires, and its first test fires
+ *    only while its second tracker is still outside the precision.
+ */
+export function precisionGate(state, { m2, n2 = null, p2, bomb = false, closest = false }) {
+  const FLT_MAX = 3.4028234663852886e38;
+  if (!bomb) {
+    if (!closest) return m2 <= p2;
+    const last = state.last1 ?? FLT_MAX;
+    if (last <= 0.01 || last < m2) { state.last1 = FLT_MAX; return last <= p2; }
+    state.last1 = m2;
+    return false;
+  }
+  if (!closest) {
+    if (m2 <= p2) return true;
+    return n2 !== null && n2 <= p2;
+  }
+  const last1 = state.last1 ?? FLT_MAX, last2 = state.last2 ?? FLT_MAX;
+  if (last1 <= 0.01 || last1 < m2) {
+    if (last1 <= p2 && !(last2 <= p2)) { state.last1 = FLT_MAX; return true; }
+  } else {
+    state.last1 = m2;
+  }
+  if (n2 === null) return false;
+  if (last2 <= 0.01 || last2 < n2) {
+    if (last2 <= p2) { state.last2 = FLT_MAX; return true; }
+  } else {
+    state.last2 = n2;
+  }
+  return false;
+}
+
+/**
  * One step of the plane's fire plan: `state` is `{ phase, breakFrom }`
  * (`phase` 'approach' | 'attack' | 'break'), advanced in place. `position`
  * / `forward` / `velocity` are the plane's, `target` / `targetVel` the
@@ -217,17 +358,22 @@ export function roundMiss({ rel, relVel = [0, 0, 0], dir, speed, gravity = 0 }) 
  * 0.8 R & LineOfFire))`: no in-front test. Modes 1 / 2 also want the
  * target past `inFrontDistance` along the nose (`ObjectInFront` 10.0) and
  * break after the pass. The trigger (`createMobileLessAttackPlan`
- * 0x085a0080) is `ObjectDistance(R)` and the precision test (mode 0 / 3
- * `BAPCConPrecision3d`, 1 / 2 `BAPCConBombPrecision3d` 0x0854a8c0 alike
- * for a gun): the round's miss within `max(0.1, precision)` m. The
- * precision classes' closest-approach flag (the weapon template's first
- * byte) is not decoded; the direct test is used (INVENTION).
- * Returns `{ phase, fire, inFront, dist, dir, miss }`.
+ * 0x085a0080, read in its disassembly) is a `BAPConAnd` of, by mode:
+ * 0 / 3 `ObjectDistance(R)` & `BAPCConPrecision3d(precision, !burst)`;
+ * 1 `ObjectDistance(R)` & `BAPCConBombPrecision3d(precision, false)`;
+ * 2 `BAPCConBombPrecision3d(precision, true)` alone (no range test). The
+ * closest-approach flag of the first is the weapon template's byte 0
+ * (`weaponTemplate.burst`, ConsoleClass617 0x08510180) inverted: a burst
+ * gun takes the direct test, a non-burst weapon (the bombs) the closest
+ * approach (`precisionGate`). `relVel` / `roundSpeed` are the Aimer's
+ * (`planeAimFor`: the shooter's velocity is left out against a ground
+ * target); `relVel` defaults to the target's velocity less the plane's.
+ * Returns `{ phase, fire, inFront, dist, dir, miss, nearest }`.
  */
 export function attackRunStep(state, { position, forward, velocity, target, targetVel = [0, 0, 0],
                                        maxRange, turnRadius = 25, lineOfFire = true, mode = 1,
                                        precision = 1, muzzle = null, aimDir = null, roundSpeed = 600,
-                                       gravity = 0 }) {
+                                       gravity = 0, relVel = null, burst = true }) {
   const dx = target[0] - position[0], dy = target[1] - position[1], dz = target[2] - position[2];
   const dist = Math.max(0.5, Math.hypot(dx, dy, dz));
   const dir = [dx / dist, dy / dist, dz / dist];
@@ -249,10 +395,19 @@ export function attackRunStep(state, { position, forward, velocity, target, targ
   }
   const from = muzzle ?? position;
   const rel = [target[0] - from[0], target[1] - from[1], target[2] - from[2]];
-  const relVel = [targetVel[0] - velocity[0], targetVel[1] - velocity[1], targetVel[2] - velocity[2]];
-  const { miss } = roundMiss({ rel, relVel, dir: aimDir ?? forward, speed: roundSpeed, gravity });
-  const fire = state.phase === 'attack' && dist <= maxRange && miss <= Math.max(PLANE_FIRE.precisionMin, precision);
-  return { phase: state.phase, fire, inFront, dist, dir, miss };
+  const rv = relVel ?? [targetVel[0] - velocity[0], targetVel[1] - velocity[1], targetVel[2] - velocity[2]];
+  const barrel = aimDir ?? forward;
+  const { miss } = roundMiss({ rel, relVel: rv, dir: barrel, speed: roundSpeed, gravity });
+  const bomb = mode === 1 || mode === 2;
+  const near = bomb ? nearestMiss({ rel, relVel: rv, dir: barrel, speed: roundSpeed, gravity }) : null;
+  const p = Math.max(PLANE_FIRE.precisionMin, precision);
+  let fire = false;
+  if (state.phase === 'attack') {
+    const gate = precisionGate(state, { m2: miss * miss, n2: near ? near.miss * near.miss : null, p2: p * p,
+                                        bomb, closest: bomb ? mode === 2 : !burst });
+    fire = gate && (mode === 2 || dist <= maxRange);
+  }
+  return { phase: state.phase, fire, inFront, dist, dir, miss, nearest: near ? near.miss : null };
 }
 
 /** `PlaneControl::towardsDirection` 0x08629fa0's constants (all read from the

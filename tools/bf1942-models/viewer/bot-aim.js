@@ -141,6 +141,11 @@ export function resetInput(bot) {
 
 /** The single input writer: the named action word plus the mouse pair. */
 export function writeInput(bot) {
+  // The trigger is the chosen weapon's own `weaponTemplate.weaponFire`
+  // (`createMobileLessAttackPlan` 0x085a0080 builds its `BAPATrigger` on the
+  // template's +0x44, which `weaponTemplate.weaponFire` writes, ConsoleClass627
+  // 0x085129e0): a plane's bombs are PIAltFire.
+  const alt = bot.vehicle && bot.weapons?.[bot.weaponIndex]?.weaponFire === 'PIAltFire';
   const input = {
     forward: clamp(bot.moveForward, -1, 1),
     strafe: clamp(bot.moveStrafe, -1, 1),
@@ -148,8 +153,8 @@ export function writeInput(bot) {
     crouch: bot.stanceInput === 'crouch',
     prone: bot.stanceInput === 'prone',
     jump: bot.jumpRequest === true,
-    fire: bot.isFiring,
-    altFire: false,
+    fire: bot.isFiring && !alt,
+    altFire: bot.isFiring && !!alt,
   };
   if (bot.vehicle?.kind === 'air') {
     // The world's air branch: `forwardKeys` ramps the latched throttle,
