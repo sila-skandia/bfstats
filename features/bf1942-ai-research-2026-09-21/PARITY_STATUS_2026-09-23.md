@@ -126,9 +126,13 @@ which the bot tests then covered.
    point at ground + 75 over the area's own position (`orderAirBot`).
 3. ~~The airborne flag~~ read and built (AI-71): cleared only on a change of
    controlled object, so a landed plane keeps it.
-4. **Remaining INVENTIONs worth reading next**: `actionStatusDecision` modes 2..5,
-   a target's information `security` (+0x14; 1 here), and the 20 s
-   `getBBPFeedback` veto for vehicles (shared with infantry).
+4. **Remaining INVENTIONs worth reading next**: `actionStatusDecision`
+   states 1..9 (it is `BAPAMoveTo` +0x60, a turn-in-the-box state machine,
+   ~700 lines; the viewer ports state 0's reverse test only). Read since
+   (AI-72): the 20 s feedback veto is dead in retail (its writer is gated on
+   a `detectAimingFailure` that returns 0), and a target's security is 1 on
+   its own side and `1 - SCurve(age / decay)` on the other (the decay source
+   is not traced; 1 here).
 5. **Bocage's Tank0 map has no bridge crossing**: after the bridges fall the
    next orders cross the river and `findStrategicPath` fails every tick
    (north bank, south bank and the Sawmill are separate components on the
