@@ -33,7 +33,6 @@ import { GRAVITY } from './physics.js';
 // Same body frame the flight model measured off the extracted scenes: -Z
 // forward, +Y up, +X starboard. The Willy agrees — its front wheels sit at
 // z = -0.75 in the glb and its rear springs at z = +1.46.
-const FORWARD = new THREE.Vector3(0, 0, -1);
 const UP = new THREE.Vector3(0, 1, 0);
 
 const DEG = Math.PI / 180;
