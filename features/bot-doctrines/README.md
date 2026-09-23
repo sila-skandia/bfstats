@@ -298,7 +298,12 @@ changes while a bot is in MoveTo), then re-run this comparison.
   in land vehicles only, as kinematic `SimDrive` hulls with hitscan guns;
   planes, ships, fixed guns and parked hulls as obstacles are missing
   (sim/README.md). A squad's vehicle life (boarding, convoys) is the part of
-  the play those stand-ins distort most. The command is the same:
+  the play those stand-ins distort most. Brief I's first commits reached
+  main while this was being written (`9f5dde2f`..`1183ac12`: headless
+  GunFire, aircraft and landing craft on the page's drives, fixed guns,
+  parked hulls). On `db5583b4`, the squad play on both sides ran 600 s on
+  El Alamein and on Bocage (seed 1) with no bot errors. The table above is
+  still the pre-I one. The command is the same:
   `node sim/compare.mjs --maps el_alamein,bocage --seeds 1-10 --time 600
   --configs "sai axis=squad allies=squad" ...`.
 - The no-progress redeploy (`bot-decision.js updateObjectiveReadout`)
