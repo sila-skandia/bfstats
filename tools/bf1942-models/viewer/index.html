@@ -211,14 +211,15 @@ import { selectMod } from './mods.js';
 import { createArmourInspector } from './model-armour.js';
 import { createEnvReflection } from './model-envmap.js';
 import { createModelDisplay } from './model-display.js';
-import { createModelRig, GEAR_INPUT, keyOf } from './model-rig.js';
+import { createModelRig, keyOf } from './model-rig.js';
 import { createEngineClips } from './model-clips.js';
 import { createGunTriggers } from './model-guns.js';
 import { createSeatCams } from './model-seat-cams.js';
-import { createCrewConsole, SHORT_LABEL } from './model-crew.js';
+import { createCrewConsole } from './model-crew.js';
 import { createTouchpad } from './model-touchpad.js';
 import { createVariantPicker, configurationLabel, normalizeVariants, skinLabel, skinValue, variantKey } from './model-variants.js';
 import { createArmouryBrowser } from './model-browser.js';
+import { installTestHooks } from './model-test-hooks.js';
 
 // Which game's assets this page serves, and the directory they hang off:
 // 'models' for vanilla, 'models/mods/eod' for a mod. Resolved before anything
@@ -690,123 +691,29 @@ function setControlsCollapsed(collapsed) {
 collapseBtn?.addEventListener('click', () => setControlsCollapsed(true));
 fabBtn?.addEventListener('click', () => setControlsCollapsed(false));
 
-window.__scene = scene;
-window.__camera = camera;
-window.__controls = controls;
-window.__modelInspector = {
-  manifest,
-  showVariant,
-  getCurrent: () => currentVariant ? {
-    model: currentEntry.name,
-    modelIndex: currentEntry.index,
-    variantIndex: currentVariant.index,
-    configuration: currentVariant.configuration,
-    level: currentVariant.level,
-    lod: currentVariant.lod,
-  } : null,
-  setView: setCameraView,
-  // Baked spin clips and recovered seat cameras, for headless checks.
-  getAnimation: () => ({
-    running: engineClips.engineRunning,
-    clips: engineClips.clipActions.map(action => ({
-      name: action.getClip().name,
-      duration: action.getClip().duration,
-      time: action.time,
-      isRunning: action.isRunning(),
-    })),
-    nodes: !current ? [] : [...new Set(engineClips.clipActions.flatMap(action =>
-      action.getClip().tracks.map(track => track.name.split('.')[0])))]
-      .map(name => {
-        const node = current.getObjectByName(name);
-        return node ? { name, quaternion: node.quaternion.toArray() } : { name };
-      }),
-    views: seatCams.seatViews.map(node => ({
-      name: node.name, control: node.userData.cameraView.control,
-    })),
-  }),
-  // Gun state and a trigger, for headless checks: each group is one FireArms
-  // template with its muzzles, baked flash emitters and firing stats.
-  getFire: () => ({
-    groups: gunTriggers.fireGroups.map(group => ({
-      name: group.node.name,
-      control: group.stats.control,
-      stats: group.stats,
-      firing: group.firing,
-      shots: group.shots,
-      muzzles: group.muzzles.map(node => {
-        node.updateWorldMatrix(true, false);
-        return {
-          name: node.name,
-          world: node.getWorldPosition(new THREE.Vector3()).toArray(),
-        };
-      }),
-      flashes: group.emitters.map(emitter => ({
-        name: emitter.node.name,
-        kind: emitter.spec.kind,
-        visible: emitter.node.visible,
-      })),
-    })),
-    tracers: gunTriggers.guns.tracers.map(tracer => ({
-      position: tracer.mesh.position.toArray(),
-      bright: tracer.bright,
-    })),
-  }),
-  setFiring: (index, firing) => {
-    const group = gunTriggers.fireGroups[index];
-    if (!group) return;
-    if (firing) gunTriggers.startFiring(group); else gunTriggers.stopFiring(group);
-  },
-  // Every player input, per crew station, for shoot.mjs --rig and headless checks.
-  getInputs: () => crewConsole.crew.stations.flatMap(seat => [...seat.inputs.values()].map(input => ({
-    key: input.key,
-    station: seat.name,
-    input: input.input,
-    label: `${seat.name} ${SHORT_LABEL[input.input] || input.input}`,
-    gear: input.input === GEAR_INPUT,
-    rate: input.rate,
-    driven: input.driven,
-  }))),
-  setInput: (key, value) => crewConsole.setCrewInput(key, Number(value)),
-  getCrew: () => crewConsole.crew.stations.map(seat => ({
-    name: seat.name,
-    control: seat.control,
-    role: crewConsole.stationRole(seat),
-    inputs: [...seat.inputs.keys()],
-    guns: seat.guns.map(group => group.node.name),
-    views: seat.views.map(view => view.node.name),
-  })),
-  // Thumbnails are shot through here rather than through setView, because the
-  // scale lineup relies on every one of them being framed to the *same* multiple
-  // of the model's bounding sphere. Anything that reframes per-model — fitting
-  // the box, or trimming empty margin — breaks the common scale.
-  setPortrait: enabled => {
-    helpers.visible = !enabled;
-    // A class rather than `hidden`, because show() re-evaluates the banner on
-    // every load and would paint it straight back into the next thumbnail.
-    document.body.classList.toggle('is-portrait', Boolean(enabled));
-    const portrait = enabled && current ? portraitExtent(current) : null;
-    if (portrait) {
-      const distance = portrait.extent * PORTRAIT_DISTANCE;
-      camera.position.set(
-        portrait.centre.x + distance * PORTRAIT_OFFSET.x,
-        portrait.centre.y + portrait.extent * PORTRAIT_OFFSET.y,
-        portrait.centre.z + distance * PORTRAIT_OFFSET.z,
-      );
-      controls.target.copy(portrait.centre);
-      controls.update();
-    }
-    invalidate();
-  },
-  setCollision: armour.setCollision,
-  setImpactAngle: armour.setHitAngle,
-  setCollisionMaterial: armour.setCollisionMaterial,
-  setWeapon: armour.setWeapon,
-  pickCenterHit: armour.pickCenterHit,
-  getWeapons: () => (armour.damageTables?.weapons || []).map(weapon => weapon.name),
-  getDamageTables: () => armour.damageTables,
-  getDamage: armour.computeHitDamage,
-  getCollision: armour.getCollision,
-};
+const testHooks = installTestHooks({
+  get camera() { return camera; }, get clipActions() { return engineClips.clipActions; },
+  get computeHitDamage() { return armour.computeHitDamage; }, get controls() { return controls; },
+  get crew() { return crewConsole.crew; }, get current() { return current; },
+  get currentEntry() { return currentEntry; }, get currentVariant() { return currentVariant; },
+  get damageTables() { return armour.damageTables; },
+  get engineRunning() { return engineClips.engineRunning; },
+  get fireGroups() { return gunTriggers.fireGroups; },
+  get getCollision() { return armour.getCollision; }, get guns() { return gunTriggers.guns; },
+  get helpers() { return helpers; }, get invalidate() { return invalidate; },
+  get manifest() { return manifest; }, get pickCenterHit() { return armour.pickCenterHit; },
+  get PORTRAIT_DISTANCE() { return PORTRAIT_DISTANCE; },
+  get PORTRAIT_OFFSET() { return PORTRAIT_OFFSET; },
+  get portraitExtent() { return portraitExtent; }, get scene() { return scene; },
+  get seatViews() { return seatCams.seatViews; }, get setCameraView() { return setCameraView; },
+  get setCollision() { return armour.setCollision; },
+  get setCollisionMaterial() { return armour.setCollisionMaterial; },
+  get setCrewInput() { return crewConsole.setCrewInput; },
+  get setHitAngle() { return armour.setHitAngle; }, get setWeapon() { return armour.setWeapon; },
+  get showVariant() { return showVariant; }, get startFiring() { return gunTriggers.startFiring; },
+  get stationRole() { return crewConsole.stationRole; },
+  get stopFiring() { return gunTriggers.stopFiring; },
+});
 
 /** `#Sherman/wreck|Kasserine_Pass` — shareable, and survives a reload. */
 function fromHash() {
