@@ -782,3 +782,68 @@ viewer/body-statics.js or viewer/level-load.js (Brief Q).
 Acceptance: the live tank pair firing with numbers, pins for 1 to 5, the
 El Alamein and Bocage runner numbers before and after (SAI, 8 a side,
 600 s, seeds 1..10), ledger and KNOBS rows, the status file updated.
+
+## Brief S: the level bake in layers
+
+Added 2026-09-24 at the user's request: "I'm surprised we can't layer the
+pieces so that only the layer that is affected needs changing." Depends
+on: nothing. Conflicts with: nothing running (Q and R are in the viewer's
+bot and vehicle modules; keep out of viewer/ except one read-side hook if
+a layer's consumer must change). Can start now.
+
+Status: `extract_map.py` writes `scene.glb` and `scene.json` in one run
+(7 min vanilla, 3 + 14 min the packs, 1.5 h EoD). `scene.json` mixes con-
+parsed data (`controlPoints`, `soldierSpawns`, `vehicleSoldierSpawns`,
+`objectSpawns`, `tickets`, `modes`, `gameTypes`, `ai`, `damage`, `sounds`,
+fog, sun, water level) with glb-derived data (`objects`, `terrain`,
+`minimap`, `envmap`, `lensFlare`). Only the `ai` block has a patch path
+(`patch_ai_extras.py`). Today a five-field control point change (Brief P)
+was delivered by a full re-bake of every tree, and the publisher
+(`scripts/publish-mesh-delta.py`) compares by size, so 2.17 GB of glbs
+went up for a few numbers per level.
+
+Do:
+1. Split `scene.json` into named layers in the extractor, each a pure
+   function of the level's con/archive files with no glb dependency:
+   `controlPoints`, `spawns` (soldier, vehicle soldier, object), `game`
+   (tickets, modes, gameTypes, gameplayMode), `ai`, `damage`, `sounds`,
+   `environment` (fog, sun, water level, draw distance). Keep the glb-
+   derived keys in a `scene` layer that only the full bake writes.
+2. One tool, `patch_scene.py --layer <name>... [--mod M] [--levels ...|
+   --all]`, that re-parses the named layers and rewrites only those keys
+   in each level's `scene.json` (and `_shared/damage.json` for `damage`),
+   preserving every other key byte for byte. Fold `patch_ai_extras.py` and
+   `extract_map.py --damage-only` (if it exists; the flak brief used it)
+   into it, keeping their names as aliases or removing them with the docs
+   updated. The full bake must produce the same layer output as the patch
+   (a test that runs both on one level and diffs the keys).
+3. Make the glb bake deterministic: two runs on one level give a byte-
+   identical `scene.glb` (find and pin the sources of difference, e.g.
+   timestamps, dict order, temp names). Then the publisher can compare by
+   content hash as well as size, and an unchanged glb is never sent.
+   Add `--hash` to the publisher's compare, or a manifest of hashes it
+   reads, whichever is smaller.
+4. Docs: a layer map in tools/bf1942-models/README.md (or the extraction
+   README the repo already has): for each kind of change, the files it
+   reaches, the command, and the time. Replace the CLAUDE.md sentence "A
+   fix to the exporter is not done until every tree it touches is
+   re-baked and live" with one that says the same for *the layers the
+   fix touches*, naming the tool. EoD stays parked: do not run anything
+   against EoD; the layer tool must accept `--mod EoD` but the brief's
+   verification uses vanilla and the packs only.
+5. Prove it: run `patch_scene.py --layer controlPoints --mod bf1942 --all`
+   against the live tree and show it changes nothing (P's bake already
+   carries the fields); then a synthetic change to one level's control
+   point in a scratch copy of the con files shows only that level's
+   `scene.json` differs and the publisher's dry run lists only that file.
+
+Files: tools/bf1942-models/extract_map.py, bf42/*.py, a new
+patch_scene.py, patch_ai_extras.py, extract_maps_all.py, scripts/publish-
+mesh-delta.py, tests, the extraction README, CLAUDE.md (that one
+sentence). Do not write into the shared viewer/maps tree except through
+the patch tool in item 5, and run item 5's no-op patch only after
+checking `ps` for other extractors.
+
+Acceptance: the layer tests, the determinism pin, item 5's two runs with
+their output, the docs and the CLAUDE.md sentence, and a timing table
+(full bake vs each layer) for vanilla.
