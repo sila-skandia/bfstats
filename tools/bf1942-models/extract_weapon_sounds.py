@@ -21,6 +21,14 @@ alongside carries what the viewer needs to play it honestly — the authored
 volume, the `randomStartPitch` jitter, and the `Time` gate on weapons whose
 sound is not at the trigger (the knife's swish lands 0.4 s into the swing).
 
+Alongside that first-person pick, the same entry now also carries `layers`:
+the whole firing patch through `_sound_layers`, exactly as
+`extract_vehicle_sounds` ships a tank's guns. That is what a listener who is
+NOT the shooter needs — a BAR's near and far loops hand over on `Volume <-
+Distance`, and playing only the muzzle pick attenuates to silence where the
+game still has a crackle. `viewer/world-fire.js` plays those layers
+positionally, one cycle per round.
+
 Weapons whose fire slot is foley are shipped as they are authored — a grenade
 throw is a grunt of cloth, a landmine goes down with a rustle — and weapons
 with nothing to play are named in the manifest with the reason, so "the medkit
@@ -43,6 +51,7 @@ from bf42.level import SoundSample, parse_ssc, resolve_ssc_path
 from bf42.rfa import ArchivePool, find_archives_dir
 from extract_map import (
     SOUND_ARCHIVES, VEHICLE_RATES, _SILENCE, TranscodeError,
+    _firing_patch, _sound_layers, sample_writer,
     ffmpeg_available, resolve_sound, transcode_to_mp3,
 )
 from extract_models import (
@@ -199,6 +208,25 @@ def extract_weapon_sound(name: str, library: con_mod.ObjectLibrary,
     delay = fire_delay(sample)
     if delay > 0:
         entry["delay"] = delay
+    # The whole firing patch, near and far, for a listener who is not the
+    # shooter. Same `_sound_layers` the vehicle guns ship through, so a
+    # hand weapon's `Volume <- Distance` hand-over reaches `world-fire.js`
+    # intact. The `_firing_patch` pick (loops, for an automatic) is the held
+    # trigger's own voice; `world-fire` plays each layer as a single cycle,
+    # one report per round, which is what a bystander hears.
+    #
+    # Wrapped, because the first-person pick above is the one the player
+    # fires every round and a layer that cannot resolve (a level-local wav
+    # this pass has no level archive for) must not cost it. `world-fire`
+    # falls back to `FALLBACK_RAMP` over that pick.
+    try:
+        write = sample_writer(out, out)
+        layers = _sound_layers(_firing_patch(patches), sounds, write)
+    except Exception as exc:            # noqa: BLE001 - a sample must not kill the armoury
+        print(f"  {name}: layers skipped ({exc})", file=sys.stderr)
+        layers = []
+    if layers:
+        entry["layers"] = layers
     return entry, None
 
 
