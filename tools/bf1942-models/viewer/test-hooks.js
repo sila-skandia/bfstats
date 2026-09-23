@@ -22,31 +22,31 @@ import { findPath, gridAt } from './nav-grid.js';
  * `audioLimiter`, `audioListener`, `bfmap`, `bodyScene`, `bodyWorld`,
  * `botBodies`, `botUnits`, `camera`, `cancelDeploy`, `canopySpan`,
  * `captureVoiceDirs`, `captureVoiceKind`, `CHASE_OPTION`, `chaseRig`,
- * `collectEntryPoints`, `collider`, `combatArea`, `combatFrame`, `crashLog`,
- * `crosshairAim`, `crosshairEl`, `currentDir`, `cycleKitWeapon`,
- * `damageVisuals`, `debugDeployHeld`, `deployActive`, `deployKit`,
- * `deployRejoin`, `deploySpawn`, `deployTeamId`, `deployUnchosen`,
- * `detonatorTemplate`, `discardSoldier`, `disposeHandWeapon`, `effectAudio`,
- * `effects`, `effectSoundsLoad`, `enterVehicle`, `entryPoints`, `exitSeat`,
- * `exitVehicle`, `explosivesTemplate`, `extras`, `fireStateFor`, `flags`,
- * `floatHosts`, `foot3pRel`, `footBody`, `footBodyForceHidden`,
- * `footCanopy`, `footView3p`, `frame`, `friendlyMapUnits`,
- * `friendlyVehicleNodes`, `frozenCount`, `gameHud`, `groundHeight`, `guns`,
- * `handSlot`, `handWeapon`, `hud`, `isZoomed`, `itemsLocked`, `KBLOCK`,
- * `KBLOCK_KEYS`, `kbLockState`, `kbSession`, `keys`, `kitLoadout`, `KITS`,
+ * `chooseKit`, `chooseTeam`, `collectEntryPoints`, `collider`, `combatArea`,
+ * `combatFrame`, `crashLog`, `crosshairAim`, `crosshairEl`, `currentDir`,
+ * `cycleKitWeapon`, `damageVisuals`, `debugDeployHeld`, `deployActive`,
+ * `deployKit`, `deploySpawn`, `deployTeamId`, `deployUnchosen`,
+ * `detonatorTemplate`, `effectAudio`, `effects`, `effectSoundsLoad`,
+ * `enterVehicle`, `entryPoints`, `exitSeat`, `exitVehicle`,
+ * `explosivesTemplate`, `extras`, `fireStateFor`, `flags`, `floatHosts`,
+ * `foot3pRel`, `footBody`, `footBodyForceHidden`, `footCanopy`,
+ * `footView3p`, `frame`, `friendlyMapUnits`, `friendlyVehicleNodes`,
+ * `frozenCount`, `gameHud`, `groundHeight`, `guns`, `handSlot`,
+ * `handWeapon`, `hud`, `isZoomed`, `itemsLocked`, `KBLOCK`, `KBLOCK_KEYS`,
+ * `kbLockState`, `kbSession`, `keys`, `kitLoadout`, `KITS`,
  * `kitWeaponSlots`, `lastCaptureVoice`, `loadouts`, `loadoutsLoad`,
  * `LOCAL_PLAYER`, `localMapTeam`, `localPlayer`, `look`, `lookDelta`,
  * `mannedActive`, `mapGate`, `MINIMAP_TEAM_TINT`, `modeNote`, `mouseInput`,
  * `nearEntry`, `occupiedVehicleDamage`, `optOnFoot`, `packAmmo`,
- * `packsLeft`, `paintDeployChrome`, `paintScoreboard`, `parachuteLog`,
- * `params`, `playCaptureVoice`, `pressTrigger`, `referee`, `renderer`,
- * `roomClient`, `roomJoined`, `scene`, `scoreboardOpen`,
- * `scoreboardPlayers`, `scoreFromSpawn`, `scoreLayout`, `seatAltFire`,
- * `seatFire`, `seatIkChains`, `seatSoldier`, `selectDeployFlag`,
- * `selectKitWeapon`, `setAim`, `setDeployTeam`, `setFly`, `setScoreboard`,
- * `setSeatTriggers`, `shipFlagInactive`, `showDamageTier`, `showView`,
- * `snapPresentation`, `soldier`, `soldier3pOnFoot`, `soldierArmor`,
- * `soldierDead`, `soldierExposureFor`, `soldierTemplateFor`, `spawnersRoot`,
+ * `packsLeft`, `paintScoreboard`, `parachuteLog`, `params`,
+ * `playCaptureVoice`, `pressTrigger`, `referee`, `renderer`, `roomClient`,
+ * `roomJoined`, `scene`, `scoreboardOpen`, `scoreboardPlayers`,
+ * `scoreFromSpawn`, `scoreLayout`, `seatAltFire`, `seatFire`,
+ * `seatIkChains`, `seatSoldier`, `selectDeployFlag`, `selectKitWeapon`,
+ * `setAim`, `setFly`, `setScoreboard`, `setSeatTriggers`,
+ * `shipFlagInactive`, `showDamageTier`, `showView`, `snapPresentation`,
+ * `soldier`, `soldier3pOnFoot`, `soldierArmor`, `soldierDead`,
+ * `soldierExposureFor`, `soldierTemplateFor`, `spawnersRoot`,
  * `spawnFlagSelect`, `splashPos`, `splashTargets`, `stage`,
  * `stepVehicleBodies`, `supplyField`, `supplyTarget`, `surfaceFriction`,
  * `switchSeat`, `thrownPackGroup`, `triggerHeld`, `vehicleAudio`,
@@ -458,20 +458,14 @@ export function installTestHooks(page) {
       },
       setTeam(team) {
         if (!page.deployActive() || (team !== 1 && team !== 2)) return false;
-        // Mirror the tab click: switching teams kills the current soldier.
-        if (page.deployRejoin && team !== page.deployTeamId && page.soldier) {
-          page.discardSoldier();
-          page.deployRejoin = false;
-          page.disposeHandWeapon();
-        }
-        page.setDeployTeam(team);
+        // The tab click itself: switching teams kills the current soldier.
+        page.chooseTeam(team);
         return true;
       },
       // The click on a kit row, by the row's name (`scout` .. `engineer`).
       setKit(name) {
         if (!page.deployActive() || !page.KITS.includes(name)) return false;
-        page.deployKit = name;
-        page.paintDeployChrome();
+        page.chooseKit(name);
         return true;
       },
       spawn() { return page.deploySpawn(); },
