@@ -5,6 +5,16 @@ builds it only when the level ships strategic areas
 (`bot-referee.js spawn`). Without them each bot walks at the nearest
 flag its side does not hold (the fallback at the end).
 
+The referee does not hold the SAI itself but the strategic interface in
+front of it (`doctrine.js StrategicCommand`, [features/bot-doctrines](../bot-doctrines/README.md)):
+the one place a bot's order comes from. Each pass it runs the SAI's shared
+half (`beginPass`: flags bound, areas counted with every bot) and then asks
+each side's doctrine for that side's orders. The default doctrine, `sai`, is
+the SAI's own side half (`sidePass`: states, strategy, temperatures,
+distribution), so everything below is what a bot gets unless another
+doctrine is chosen (the runner's `--doctrine`); a seeded runner trace is
+byte for byte the same through the interface as it was without it.
+
 ## Data
 
 `extras.ai`, written by the extractor (`bf42/ai_level.py`) from the level's
