@@ -14,16 +14,14 @@ import { Hud, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS } from './hud.js';
  * `aircraft`, `bust`, `camera`, `car`, `combatArea`, `combatFrame`,
  * `crosshairEl`, `currentDir`, `DEG_TO_RAD`, `deployActive`, `deployKit`,
  * `deployTeamId`, `drawFullMap`, `feedFlagIconVars`, `feedTicketVars`,
- * `fireStateFor`, `fullmapBox`, `handSlot`, `handWeapon`, `hitIndicatorDir`,
- * `hitIndicatorTimer`, `hud`, `hudPaths`, `isZoomed`, `itemsLocked`,
- * `kitLoadout`, `kitWeaponSlots`, `lastSoldierHp`, `loadouts`,
+ * `fireStateFor`, `fullmapBox`, `handSlot`, `handWeapon`, `hud`, `hudPaths`,
+ * `isZoomed`, `itemsLocked`, `kitLoadout`, `kitWeaponSlots`, `loadouts`,
  * `LOCAL_PLAYER`, `mannedActive`, `mannedGuns`, `netOccupiedVehicleId`,
  * `netVehicleIdFor`, `occupancy`, `occupiedVehicleDamage`, `optOnFoot`,
  * `optPilot`, `paintDeploySoon`, `playSoldierHurtSound`, `renderer`,
  * `roomClient`, `roomJoined`, `soldier`, `soldierArmor`, `soldierDead`,
- * `teamNation`, `triggerHitIndicator`, `updateHud`,
- * `updateSeatPoseVisibility`, `vehicleGuns`, `view`, `WEAPON_ICON_VARS`,
- * `weaponBarUntil`, `world`.
+ * `teamNation`, `updateHud`, `updateSeatPoseVisibility`, `vehicleGuns`,
+ * `view`, `WEAPON_ICON_VARS`, `weaponBarUntil`, `world`.
  */
 export function createHudFeed(page) {
   const hudFeed = {};
@@ -601,32 +599,57 @@ export function createHudFeed(page) {
     'Ammo/SoldierAmmo/SoldierAmmoBarSize',
   ];
 
+  // The damage-direction arc, and the HP it last saw so a drop can raise it.
+  // Written here and nowhere else.
+  hudFeed.hitIndicatorTimer = 0;
+  hudFeed.hitIndicatorDir = 0;
+  hudFeed.lastSoldierHp = null;
+
+  function triggerHitIndicator(direction, intensity = 1.0) {
+    hudFeed.hitIndicatorDir = direction;
+    hudFeed.hitIndicatorTimer = 1.0;
+    gameHud.vars['HitFromDir/HitFromDir'] = direction;
+    gameHud.vars['HitFromDir/HitFromDirAlpha'] = Math.max(0.1, Math.min(1.0, intensity));
+    gameHud.requestRepaint();
+  }
+
+  /** Put the arc out and forget the HP it was tracking (the body is gone). */
+  function clearHitIndicator() {
+    hudFeed.hitIndicatorTimer = 0;
+    hudFeed.hitIndicatorDir = 0;
+    if (gameHud?.vars) {
+      gameHud.vars['HitFromDir/HitFromDir'] = 0;
+      gameHud.vars['HitFromDir/HitFromDirAlpha'] = 0;
+    }
+    hudFeed.lastSoldierHp = null;
+  }
+
   function updateSoldierHud(dt = 0.016) {
     const vars = gameHud.vars;
     const inVehicle = page.optPilot.checked && !!page.occupancy;
 
-    if (page.hitIndicatorTimer > 0) {
-      page.hitIndicatorTimer = Math.max(0, page.hitIndicatorTimer - dt);
-      if (page.hitIndicatorTimer <= 0) {
+    if (hudFeed.hitIndicatorTimer > 0) {
+      hudFeed.hitIndicatorTimer = Math.max(0, hudFeed.hitIndicatorTimer - dt);
+      if (hudFeed.hitIndicatorTimer <= 0) {
         vars['HitFromDir/HitFromDir'] = 0;
         vars['HitFromDir/HitFromDirAlpha'] = 0;
       } else {
-        vars['HitFromDir/HitFromDir'] = page.hitIndicatorDir;
-        vars['HitFromDir/HitFromDirAlpha'] = page.hitIndicatorTimer;
+        vars['HitFromDir/HitFromDir'] = hudFeed.hitIndicatorDir;
+        vars['HitFromDir/HitFromDirAlpha'] = hudFeed.hitIndicatorTimer;
       }
     }
 
     if (page.soldierArmor && !page.soldierDead && !inVehicle) {
-      if (page.lastSoldierHp !== null && page.soldierArmor.hitPoints < page.lastSoldierHp - 0.01) {
-        const drop = page.lastSoldierHp - page.soldierArmor.hitPoints;
+      if (hudFeed.lastSoldierHp !== null && page.soldierArmor.hitPoints < hudFeed.lastSoldierHp - 0.01) {
+        const drop = hudFeed.lastSoldierHp - page.soldierArmor.hitPoints;
         page.playSoldierHurtSound(false);
-        if (page.hitIndicatorTimer <= 0) {
-          page.triggerHitIndicator(1, drop / (page.soldierArmor.maxHitPoints || 100));
+        if (hudFeed.hitIndicatorTimer <= 0) {
+          triggerHitIndicator(1, drop / (page.soldierArmor.maxHitPoints || 100));
         }
       }
-      page.lastSoldierHp = page.soldierArmor.hitPoints;
+      hudFeed.lastSoldierHp = page.soldierArmor.hitPoints;
     } else {
-      page.lastSoldierHp = page.soldierArmor?.hitPoints ?? null;
+      hudFeed.lastSoldierHp = page.soldierArmor?.hitPoints ?? null;
     }
     // Any seat at all, which `seats.js` answers for: `occupancy` is non-null
     // from the moment `setPilot` seats someone until `leaveVehicle` /
@@ -948,6 +971,7 @@ export function createHudFeed(page) {
   window.__hud = gameHud;
 
   Object.assign(hudFeed, {
+    clearHitIndicator,
     clearVehicleHud,
     crosshairAim,
     feedSeatDots,
@@ -956,6 +980,7 @@ export function createHudFeed(page) {
     hudPack,
     showView,
     sprite,
+    triggerHitIndicator,
     updateCrosshair,
     updateSoldierHud,
   });

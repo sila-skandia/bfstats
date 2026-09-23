@@ -11,13 +11,12 @@ import { kitIconCandidates } from './kit-icon.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `bfmap`, `bust`, `cameraHeading`, `deployGroup`, `deployHoverBtn`,
- * `deployHoverVar`, `deployKept`, `deployKit`, `deployRejoin`,
- * `deployTeamId`, `deployUnchosen`, `drawFullMap`, `feedTicketVars`,
- * `fullmapBox`, `fullmapCanvas`, `hudPack`, `hudPaths`, `KIT_ROW_KEYS`,
- * `kitLoadout`, `kitRowLabelFor`, `loadouts`, `scoreFromSpawn`,
- * `setScoreboard`, `sprite`, `teamNation`, `updateKitAriaLabels`,
- * `worldReady`.
+ * `bfmap`, `bust`, `cameraHeading`, `deployHoverBtn`, `deployHoverVar`,
+ * `deployKit`, `deployRejoin`, `deployTeamId`, `drawFullMap`,
+ * `feedTicketVars`, `fullmapBox`, `fullmapCanvas`, `hudPack`, `hudPaths`,
+ * `KIT_ROW_KEYS`, `kitLoadout`, `kitRowLabelFor`, `loadouts`,
+ * `scoreFromSpawn`, `setScoreboard`, `sprite`, `teamNation`,
+ * `updateKitAriaLabels`, `worldReady`.
  */
 export function createDeployScreen(page) {
   const deployScreen = {};
