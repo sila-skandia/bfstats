@@ -89,6 +89,20 @@ aiStrategicArea.setActive DefGun1
 AIStrategicArea.addExpelledUnit LandingCraft
 """
 
+VEHICLE_GROUPS = """
+aiSettings.createVehicleGroup land
+aiSettings.createVehicleGroup infantry
+aiSettings.createVehicleGroup any
+aiSettings.createVehicleGroup sea
+aiSettings.addVehicleToVehicleGroup 0  land
+aiSettings.addVehicleToVehicleGroup 3  infantry
+aiSettings.addVehicleToVehicleGroup 7  any
+aiSettings.addVehicleToVehicleGroup 12 sea
+aiStrategicArea.create SeaArea1 975/305 1240/452 10 sea
+AIStrategicArea.addAllowedVehicleGroup any
+AIStrategicArea.addAllowedVehicleGroup sea
+"""
+
 PATHFINDING = """
 ai.numAStarResources 12
 ai.addSearchMap Infantry1 0 1.5 30 1.0 0.4 2.0 1
@@ -115,6 +129,17 @@ class AiLevelGrammarTests(unittest.TestCase):
         self.assertEqual(base.vehicleSearchRadius, 190.0)
         self.assertEqual(base.takeable, {"1": False})
         self.assertEqual(self.ai.strategicAreas[1].flags, ["Flank", "ChokePoint"])
+
+    def test_vehicle_groups_are_the_aisettings_words(self) -> None:
+        # Wake's `StrategicAreas.con`: `aiSettings.createVehicleGroup <name>`
+        # and `aiSettings.addVehicleToVehicleGroup <type> <group>`
+        # (`AISettings::addVehicleToVehicleGroup` 0x08484860). The exporter
+        # read `aiStrategicArea.createVehicleGroup` / `addVehicleType`, words
+        # no level uses, and every level exported `vehicleGroups: {}`.
+        parse_strategic_areas(VEHICLE_GROUPS, self.ai)
+        self.assertEqual(self.ai.vehicleGroups, {"land": ["0"], "infantry": ["3"], "any": ["7"], "sea": ["12"]})
+        self.assertEqual(list(self.ai.vehicleGroups), ["land", "infantry", "any", "sea"])   # creation order
+        self.assertEqual(self.ai.strategicAreas[0].allowedVehicleGroups, ["any", "sea"])
 
     def test_landing_zones_and_the_areas_that_use_them(self) -> None:
         # `AILandingZone.createLandingZone` (Wake's lines): the corners sorted

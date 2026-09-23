@@ -34,7 +34,10 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=HERE / "viewer" / "maps")
     ap.add_argument("--all", action="store_true")
     args = ap.parse_args()
-    root = args.out if args.mod == "bf1942" else args.out / "mods" / args.mod
+    # The extracted trees are lower case (`viewer/maps/mods/xpack1`), the
+    # game's mod folders are not (`XPack1`, `EoD`); the archive lookup is
+    # case-blind.
+    root = args.out if args.mod.lower() == "bf1942" else args.out / "mods" / args.mod.lower()
     levels = args.levels
     if args.all:
         levels = [p.name for p in sorted(root.iterdir())
@@ -53,7 +56,10 @@ def main() -> int:
             rc = 1
             continue
         try:
-            paths = find_level_archives(args.game_dir.expanduser(), args.mod, level)
+            # With the mod's parents underneath (`addModPath`): a mod level
+            # that ships no AI scripts of its own runs its parent's, as the
+            # engine mounts them (`find_level_archives` places them first).
+            paths = find_level_archives(args.game_dir.expanduser(), args.mod, level, chain=chain or None)
         except Exception as exc:  # noqa: BLE001
             print(f"{level}: {exc}", file=sys.stderr)
             rc = 1
