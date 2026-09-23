@@ -260,6 +260,56 @@ const recipes = {
              value: gun.value, noPathfinding: gun.noPathfinding };
   },
 
+  /** Brief K item 2: two Allied Spitfires head-on. Both bots' planes are put
+   *  in the air 600 m apart at 150 m, each flying at 55 m/s toward the other
+   *  and ordered to the other's start; every other bot is frozen. The pilots
+   *  see each other's hull as their own side's and `BBAvoid` predicts the
+   *  collision 5 s out; `avoid` counts their ticks in Avoid, `closest` is the
+   *  least distance between the hulls. `headOnNoAvoid` is the control, the
+   *  Avoid behaviour switched off. */
+  async headOn(noAvoid = false) {
+    const match = await start('el_alamein');
+    const allies = match.bots.filter(o => o.team === 2);
+    const [a, b] = allies;
+    mount(match, a, 'Spitfire');
+    mount(match, b, 'Spitfire');
+    freezeOthers(match, [a.playerId, b.playerId]);
+    const cx = 1000, cz = -1000;
+    const gy = match.groundAt(cx, cz) + 150;
+    const place = (bot, x, z, dirX) => {
+      const s = bot.vehicle.drive.state;
+      s.position.set(x, gy, z);
+      s.velocity.set(55 * dirX, 0, 0);
+      // The nose (-z in the model) along +x or -x: a yaw of -90 or +90 deg.
+      s.orientation.setFromAxisAngle({ x: 0, y: 1, z: 0 }, dirX > 0 ? -Math.PI / 2 : Math.PI / 2);
+      s.angularVelocity?.set?.(0, 0, 0);
+      bot._airborne = true;
+    };
+    place(a, cx - 300, cz, 1);
+    place(b, cx + 300, cz, -1);
+    const sai = match.referee.strategy;
+    const waypointsOf = sai.waypointsOf.bind(sai);
+    const goal = { [a.playerId]: [cx + 600, cz], [b.playerId]: [cx - 600, cz] };
+    sai.waypointsOf = id => {
+      const wp = waypointsOf(id);
+      return goal[id] && wp ? { ...wp, point: goal[id], radius: 40 } : wp;
+    };
+    // They fly their orders: nothing to shoot at, no seat to change to.
+    for (const bot of [a, b]) { bot._urgencyFire = () => 0; bot._urgencyChange = () => 0; bot._urgencyScout = () => 0; }
+    if (noAvoid) for (const bot of [a, b]) bot._urgencyAvoid = () => 0;
+    let closest = Infinity, avoid = 0;
+    run(match, 15, () => {
+      const pa = a.vehicle?.drive?.state?.position, pb = b.vehicle?.drive?.state?.position;
+      if (pa && pb) closest = Math.min(closest, Math.hypot(pa.x - pb.x, pa.y - pb.y, pa.z - pb.z));
+      for (const bot of [a, b]) if (bot.currentBehaviour === 'Avoid') avoid++;
+      return !a.vehicle || !b.vehicle;
+    });
+    return { closest: round(closest), avoid, destroyed: eventsOf(match, 'vehicle_destroyed').map(e => e.vehicle),
+             mounted: [!!a.vehicle, !!b.vehicle] };
+  },
+
+  async headOnNoAvoid() { return recipes.headOn(true); },
+
   /** A landing craft: Wake's Daihatsus are split off their ships at load
    *  (`detachSpawnedCraft`); a bot at the helm drives the page's `Ship` on
    *  the level's landing-craft map (`bot-units.js waterNav`). The SAI sends

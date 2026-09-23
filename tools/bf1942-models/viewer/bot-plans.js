@@ -11,6 +11,7 @@ import { SCOUT, TAKE_COVER, MEDIC } from './bot-behaviours.js';
 import { planeFireMode, PLANE_FIRE } from './bot-vehicle-air.js';
 import { AIM_COUNTS_MAX, wrapAngle, faceTarget, turretAimAt, turretMiss, precisionFor, precisionHolds, targetShape } from './bot-aim.js';
 import { BEHAVIOUR } from './bot-decision.js';
+import { planAirAvoid, execPlaneAvoid } from './bot-pilot.js';
 
 /**
  * Plan action types for infantry (§4.2), the interpreter entries the viewer
@@ -27,6 +28,8 @@ export const PLAN_ACTION = {
   SwitchSeat: 'SwitchSeat',
   /** `BBPFire3d`: the aircraft's attack loop (approach, aim and fire, break). */
   PlaneAttack: 'PlaneAttack',
+  /** `BBPAvoidCollision3d`: the aircraft's turn away from a predicted collision. */
+  PlaneAvoid: 'PlaneAvoid',
   MoveToMediumSoldier: 'MoveToMediumSoldier',
   MoveToObjectMediumSoldier: 'MoveToObjectMediumSoldier',
   MouseTurretAimAt: 'MouseTurretAimAt',
@@ -211,6 +214,17 @@ export function planTakeCover(bot, now) {
 
 /** The Avoid sidestep: a diagonal away from the body (header). */
 export function planAvoid(bot, now) {
+  if (bot.vehicle?.kind === 'air' && bot.vehicle.drives) {
+    // `BBPAvoidCollision3d::createPlan` 0x08587420 (bot-pilot.js).
+    const cur = bot.currentPlan;
+    if (bot.planBehaviour === BEHAVIOUR.Avoid && cur.length && cur.otherId === bot._airAvoidBest?.id
+        && !cur.every(a => a.done)) return cur;
+    const r = planAirAvoid(bot, now);
+    if (!r) return bot._planIdle();
+    const plan = [{ type: PLAN_ACTION.PlaneAvoid, point: r.point, until: r.until }];
+    plan.otherId = r.otherId;
+    return plan;
+  }
   const t = bot._avoidThreatDir;
   if (!t) return bot._planIdle();
   const cur = bot.currentPlan;
@@ -318,6 +332,8 @@ export function executeAction(bot, action, dt, now) {
       return bot._execSwitchSeat(action);
     case PLAN_ACTION.PlaneAttack:
       return bot._execPlaneAttack(action, now);
+    case PLAN_ACTION.PlaneAvoid:
+      return execPlaneAvoid(bot, action, now);
     case PLAN_ACTION.Sense:
       return bot._execSense(action);
     case PLAN_ACTION.SoldierPose:

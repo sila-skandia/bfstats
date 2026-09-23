@@ -118,6 +118,18 @@ class SimVehicleTests(unittest.TestCase):
         self.assertEqual(r["took"]["template"], "AA_Allies")
         self.assertLess(r["took"]["t"], 15.0)
 
+    def test_two_planes_head_on_turn_away(self) -> None:
+        # Brief K item 2: `BBAvoid` predicts the collision 5 s out and
+        # `BBPAvoidCollision3d` turns each 45 deg away; without it the same
+        # pair passes within 7 m.
+        r = recipe("headOn")
+        control = recipe("headOnNoAvoid")
+        self.assertEqual(control["avoid"], 0)
+        self.assertLess(control["closest"], 15.0, "the control is a collision course")
+        self.assertGreater(r["avoid"], 0)
+        self.assertGreater(r["closest"], 20.0)
+        self.assertEqual(r["destroyed"], [])
+
     def test_a_parked_hull_is_an_obstacle_until_it_is_driven_off(self) -> None:
         r = recipe("obstacle")
         self.assertTrue(r["parked"], "a parked body")
