@@ -362,6 +362,56 @@ export function createVehicleHits(page) {
     return best;
   }
 
+  /** Scratch for `proximityObjects`' node reads. */
+  const nearPos = new THREE.Vector3();
+
+  /**
+   * `guns.nearObjects`: every hull a proximity-fused round could burst on,
+   * as `proximity-fuse.js`'s `fuseTarget` reads them.
+   *
+   * One list for every hull in the level, driven by the local player, by a
+   * bot, coasting, parked, or no one: the engine's own query
+   * (`objectManager` +0x30 at 0x0831eafb) asks the world for objects, not for
+   * players, so who holds the stick cannot matter. A body in the body world
+   * (a driven hull, human or bot, or a parked one) reports the body's own
+   * position and velocity; anything else stands still at its node. The mass
+   * is the root's authored `ObjectTemplate.mass`, 1.0 when it declares none
+   * (the template default, 0x081dbceb).
+   *
+   * Soldiers are not here: the fuse skips them by class (0x0831eb82).
+   *
+   * The engine's query radius is measured some way this viewer has not read
+   * (origin, or bounding sphere); the prefilter here is the generous one, the
+   * origin within `radius` plus the hull's bounding radius, and the fuse law
+   * applies the engine's exact origin test after it (0x0831ed1f).
+   */
+  function proximityObjects(x, y, z, radius) {
+    const out = [];
+    const bodies = page.world?.bodyWorld ?? null;
+    for (const [owner, visual] of page.damageVisuals) {
+      if (!visual?.node || visual.wrecked || visual.removed) continue;
+      const entry = bodies?.get(owner) ?? null;
+      const body = entry ? (entry.driven ?? entry.parked?.body ?? null) : null;
+      let px, py, pz;
+      if (body) {
+        [px, py, pz] = body.pos;
+      } else {
+        visual.node.getWorldPosition(nearPos);
+        px = nearPos.x; py = nearPos.y; pz = nearPos.z;
+      }
+      const reach = radius + (entry?.spec?.boundingRadius ?? body?.boundingRadius ?? 0);
+      const dx = px - x, dy = py - y, dz = pz - z;
+      if (dx * dx + dy * dy + dz * dz > reach * reach) continue;
+      const mass = Number(visual.node.userData?.physics?.mass);
+      out.push({
+        owner, x: px, y: py, z: pz,
+        mass: Number.isFinite(mass) && mass > 0 ? mass : 1.0,
+        vx: body?.v?.[0] ?? 0, vy: body?.v?.[1] ?? 0, vz: body?.v?.[2] ?? 0,
+      });
+    }
+    return out;
+  }
+
   /** A vehicle round that met a soldier: its direct-hit HP, on him. */
   function applyRoundToSoldier(record) {
     const id = record.target;
@@ -387,6 +437,7 @@ export function createVehicleHits(page) {
     botRoundDamage,
     occupiedVehicleDamage,
     pickVehicle,
+    proximityObjects,
     roundBodyCast,
     soldierExposureFor,
     splashPos,
