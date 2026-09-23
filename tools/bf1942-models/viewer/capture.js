@@ -17,8 +17,8 @@ import { captureDuration, nearestEnemyFlag as nearestEnemyFlagOf } from './bot-r
  * `hud`, `levelClips`, `LOCAL_PLAYER`, `localMapTeam`, `logToConsole`,
  * `MAPS_BASE`, `masterVolume`, `optOnFoot`, `paintDeployChrome`,
  * `playSoldierOneShot`, `roomJoined`, `soldier`, `soldierDead`,
- * `spawnFlagSelect`, `syncVehicleSpawnOwnership`, `tagCull`, `teamNation`,
- * `thaw`, `updateHud`, `world`.
+ * `syncVehicleSpawnOwnership`, `tagCull`, `teamNation`, `thaw`, `updateHud`,
+ * `world`.
  */
 export function createFlagCapture(page) {
   const flagCapture = {};
@@ -40,30 +40,11 @@ export function createFlagCapture(page) {
       until: performance.now() + 2200 };
   };
 
-  /** Fill the flag picker from the level's own control points.
-   *
-   *  Rebuilt whole, but not forgetful: the deploy screen writes its choice into
-   *  this select and `setOnFoot` rebuilds the options before reading it back,
-   *  and an innerHTML wipe resets a select to its first option. A level switch
-   *  clears the value in `show()` first, so the memory never crosses maps. */
-  function buildSpawnFlags() {
-    const kept = page.spawnFlagSelect.value;
-    // The world owns the flags (world.js builds them from the level data the
-    // engine's way); the deploy screen reads the same array it always read.
+  /** The world owns the flags (world.js builds them from the level data the
+   *  engine's way); the deploy screen reads the same array it always read.
+   *  Returns how many there are. */
+  function refreshFlags() {
     flagCapture.flags = page.world?.flags ?? [];
-    page.spawnFlagSelect.innerHTML = '';
-    for (const [index, flag] of flagCapture.flags.entries()) {
-      const option = document.createElement('option');
-      const side = flag.team === 1 ? 'Axis' : flag.team === 2 ? 'Allied' : 'neutral';
-      option.value = String(index);
-      option.textContent = `${flag.name} (${side}, ${flag.spawns.length})`;
-      page.spawnFlagSelect.appendChild(option);
-    }
-    if (kept !== '' && Number(kept) < flagCapture.flags.length) page.spawnFlagSelect.value = kept;
-    // The sidebar picker is a debug aid; the deploy screen is the real join
-    // path (Caps Lock / auto-open). Keep the select populated whenever there
-    // are flags so a later commit can read it, and only hide it when empty.
-    page.spawnFlagSelect.hidden = !flagCapture.flags.length;
     return flagCapture.flags.length;
   }
 
@@ -514,7 +495,7 @@ export function createFlagCapture(page) {
 
   Object.assign(flagCapture, {
     announceCapture,
-    buildSpawnFlags,
+    refreshFlags,
     capturePosition,
     captureVoiceDirs,
     captureVoiceKind,
