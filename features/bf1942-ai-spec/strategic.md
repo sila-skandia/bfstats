@@ -2,7 +2,7 @@
 
 One `StrategicAI` per level drives both sides (`strategic.js`); the page
 builds it only when the level ships strategic areas
-(`map.html spawnBotsForLevel`). Without them each bot walks at the nearest
+(`bot-referee.js spawn`). Without them each bot walks at the nearest
 flag its side does not hold (the fallback at the end).
 
 ## Data
@@ -240,7 +240,7 @@ It never reports arrival.
 
 ## The enemy strength tables
 
-With the same cadence (`map.html tickBots`, `bot-strength.js
+With the same cadence (`bot-referee.js tick`, `bot-strength.js
 EnemyStrengthTables.update`), each side's view of the enemy: for every
 occupied enemy unit (a soldier on foot counts with the soldier's
 `setBattleStrength` table, a seat with its guns' table and its class)
