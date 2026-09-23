@@ -213,8 +213,10 @@ class IdleVehicleWiringTests(unittest.TestCase):
         # (Aberdeen, Sherman, cannon fired twice, destroyed, respawned,
         # re-entered): `Ammo/PrimaryAmmo` 28 of 30 without this, 30 with it.
         self.assertIn("idleFirePose(visual.node);", self.source)
-        self.assertIn("idleFireState(visual.node, [fireStates, world?.fireStates]);",
-                      self.source)
+        # Both FireState maps, the page's and the world's -- named through the
+        # page's handed-in accessors once the respawn moved to vehicle-wrecks.js.
+        self.assertRegex(self.source,
+                         r"idleFireState\(visual\.node, \[(?:\w+\.)*fireStates, (?:\w+\.)*world\?\.fireStates\]\);")
 
     def test_the_level_load_sweep_goes_through_the_same_reset(self) -> None:
         # And no longer spells out its own three-key copy, which is how it
