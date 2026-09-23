@@ -8,7 +8,7 @@
 // Run by `tests/test_strategic.py`. One JSON object on stdout.
 
 import fs from 'node:fs';
-import { StrategicLayer, StrategicAI, compareCondition } from './strategic.js';
+import { StrategicLayer, StrategicAI, compareCondition, SAI } from './strategic.js';
 
 const scenePath = process.argv[2];
 let scene = null;
@@ -84,4 +84,48 @@ const compare = {
   quotientZero: compareCondition({ fuzzy: 'Crisp', op: 'QuotientGreater', value: 1 }, 3, 0),
 };
 
-process.stdout.write(JSON.stringify({ fromScene: !!scenePath && fs.existsSync(scenePath), areas, sides, orders, compare }));
+// Bocage's Island as the exporter writes it (`create Island 833/701 846/717
+// 200`): p1 the corner, p2 the centre, a centre box twice the rectangle.
+const island = new StrategicLayer({
+  strategicAreas: [{ name: 'Island', min: [833, -717], max: [846, -701], radius: 200, neighbours: [], flags: ['ControlPoint'],
+                     orderPositions: { Tank: [836, -731], Infantery: [853, -720] }, side: null, takeable: {} }],
+}, [{ name: 'Lumbermill', position: [838, 33.1, -722], team: 2 }]);
+const ia = island.areas[0];
+const r0 = island.randomizePos(ia, 0.8, () => 0);
+const r1 = island.randomizePos(ia, 0.8, () => 1);
+const unit = { type: 'Tank', isWalkable: null, radius: 3.0, mounted: true };
+const tankSai = new StrategicAI(island, { random: () => 0.5, unitOf: () => unit, spottedOf: () => 0 });
+tankSai.addBot('tank', 1);
+const wpTank = tankSai._order(tankSai.bots.get('tank'), ia, 1);
+const pr = 0.99 * 3.0;
+const Rr = Math.round(wpTank.radius) + pr;
+const inR = wpTank.urgency(wpTank.point[0] + Rr - 0.1, wpTank.point[1], pr);
+const inRArrived = wpTank.arrived;
+const outU = wpTank.urgency(wpTank.point[0] + 100, wpTank.point[1], pr);
+// Nothing valid on the unit's map: the Tank order position, else p2.
+const blocked = new StrategicAI(island, { random: () => 0.5, unitOf: () => ({ ...unit, isWalkable: () => false }) });
+blocked.addBot('b', 1);
+const wpBlocked = blocked._order(blocked.bots.get('b'), ia, 1);
+const onlyTankPos = new StrategicAI(island, { random: () => 0.5,
+  unitOf: () => ({ ...unit, isWalkable: (x, z) => x === 836 && z === -731 }) });
+onlyTankPos.addBot('c', 1);
+const wpTankPos = onlyTankPos._order(onlyTankPos.bots.get('c'), ia, 1);
+// The re-order: arrived, assigned, present, 35 s mounted.
+const re = new StrategicAI(island, { random: () => 0.25, unitOf: () => unit, spottedOf: () => 0 });
+re.addBot('r', 2);
+const rb = re.bots.get('r');
+re._order(rb, ia, 2);
+rb.free = false; rb.assignedTo = ia; rb.area = ia; rb.waypoints.arrived = true;
+const firstPoint = rb.waypoints.point;
+re.time = 30; re._reorderArrived([rb], 2);
+const keptAt30 = rb.waypoints.point === firstPoint;
+re.time = 36; re._reorderArrived([rb], 2);
+const movedAt36 = rb.waypoints.point !== firstPoint;
+const pins = {
+  corner: ia.corner, centre: ia.centre, min: ia.min, max: ia.max, sideRadius: +ia.sideRadius.toFixed(3),
+  cpInside: island.isInside(ia, 838, -722), r0, r1: r1.map(v => +v.toFixed(3)),
+  tankRadius: +wpTank.radius.toFixed(3), inR, inRArrived, outU,
+  blockedPoint: wpBlocked.point, tankPosPoint: wpTankPos.point, keptAt30, movedAt36,
+};
+
+process.stdout.write(JSON.stringify({ fromScene: !!scenePath && fs.existsSync(scenePath), areas, sides, orders, compare, pins }));
