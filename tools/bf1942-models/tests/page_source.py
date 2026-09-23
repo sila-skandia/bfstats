@@ -54,6 +54,17 @@ PAGE_FILES = [
     "level-warmup.js",
     "page-input.js",
     "page-console.js",
+    "touch-controls.js",
+    "free-camera.js",
+    "local-look.js",
+    "vehicle-entry.js",
+    "ticket-feed.js",
+    "soldier-hud.js",
+    "vehicle-hud.js",
+    "test-hooks-bots.js",
+    "test-hooks-vehicles.js",
+    "test-hooks-soldier.js",
+    "test-hooks-world.js",
 ]
 
 
