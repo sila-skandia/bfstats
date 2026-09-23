@@ -191,7 +191,12 @@ export function chooseVehicleTarget(bot, now) {
     },
     infoOf: id => bot._unitInfo(id),
     myType: bot._myType(), myTable: unitTable(bot.weapons), air, maxSpeed: m.maxSpeed ?? m.hullMaxSpeed ?? 0,
-    isAntiAircraft: bot.weapons.some(w => w.isAntiAircraft),
+    // The unit's Armament plug-in (`setIsAntiAircraft`, read back by
+    // `IPIArmamentReal::isAntiAircraft` 0x085e9b00), carried on the mount.
+    // No AI weapon entry has the word, so reading it off the weapons left
+    // every AA gun a non-AA one: blind to an aircraft past 150 m or faster
+    // than 15 m/s, which is every aircraft in flight.
+    isAntiAircraft: !!m.antiAircraft || bot.weapons.some(w => w.isAntiAircraft),
     currentTarget: bot.firingTarget, currentScore: bot.targetScore,
     insideOrderedArea: bot._insideOrderedArea(),
     insideArea: bot.waypoints?.inside ? (pos) => bot.waypoints.inside(pos[0], pos[2]) : null,

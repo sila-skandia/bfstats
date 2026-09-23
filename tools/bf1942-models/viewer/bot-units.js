@@ -221,6 +221,9 @@ export function createBotUnits(env) {
             maxSpeed: drives ? (ai.maxSpeed ?? 0) : (driver ? (ai.maxSpeed ?? 0) : 0),
             movedByBot: !drives && !!driver && driver !== env.localPlayerId,
             strengths, weapons,
+            // The seat's Armament `setIsAntiAircraft` (`IPIArmamentReal::
+            // isAntiAircraft` 0x085e9b00): the fire scoring's AA rules.
+            antiAircraft: !!(seatAi?.isAntiAircraft ?? (isRoot && ai.isAntiAircraft)),
             value: ((seatAi?.strategicStrength ?? ai.strategicStrength)?.['0'] ?? 0) * seatFactor,
             seatFactor,
             occupiedBy: holder,
@@ -263,7 +266,7 @@ export function createBotUnits(env) {
       hullVelocity: () => inst.drive?.state?.velocity ?? null,
       radius: inst.rootKind === 'air' || inst.rootKind === 'ship' ? BOT_VEHICLE_RADIUS_LARGE : BOT_VEHICLE_RADIUS,
       maxSpeed: cand.maxSpeed,
-      weapons: cand.weapons, template: cand.template,
+      weapons: cand.weapons, template: cand.template, antiAircraft: !!cand.antiAircraft,
       // A rider's move term follows whoever drives the hull right now.
       hullMaxSpeed: ai?.maxSpeed ?? 0,
       driverOf: () => env.vehicles.driverOf(node),

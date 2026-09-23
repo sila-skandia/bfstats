@@ -9,7 +9,7 @@
 // Run by `tests/test_bot_ai.py`, which stages the module set the way
 // `test_world.py` does. Output is one JSON object on stdout.
 
-import { inFrustum, sCurveExact, informationSecurity, SideKnowledge, BotSenses } from './bot-sense.js';
+import { inFrustum, sCurveExact, informationSecurity, SideKnowledge, BotSenses, playerPosition } from './bot-sense.js';
 import { World, WORLD_TICK_DT } from './world.mjs';
 import { BotController } from './bot.js';
 import { buildNavMap, gridAt, traceClear, CELL_OBJECT } from './nav-grid.js';
@@ -485,6 +485,27 @@ function vehicleFireScenario() {
            env: env.targetId, envUrgency: env.urgency, vehicle: vehicleTarget.targetId, vehicleScore: vehicleTarget.score };
 }
 
+/** An AA gun against a plane in flight. The gun's `isAntiAircraft` is its
+ *  unit's Armament (`IPIArmamentReal::isAntiAircraft` 0x085e9b00): with it
+ *  the plane scores inside 0.9 of the range at any speed; without it a
+ *  target past 0.5 of the range or above 15 m/s scores nothing. And a
+ *  seated player is sensed at his seat, not where his soldier climbed in. */
+function antiAircraftScenario() {
+  const weapons = [{ name: 'AA_BaseMainGun', strength: { Infantry: 10, LightArmour: 3, HeavyArmour: 2, Air: 5 }, minRange: 5, maxRange: 300, ammo: -1 }];
+  const common = { position: [0, 0, 0], forward: [0, 0, -1], velocity: [0, 0, 0], weapons, now: 100, attackedBy: () => -1000,
+                   spotted: [{ id: 'pilot', pos: [0, 45, -150], seen: true, lost: false }],
+                   velocityOf: () => [0, 0, 55],
+                   infoOf: () => ({ type: 'Air', air: true, table: { Air: 9, LightArmour: 6, Infantry: 9 }, maxSpeed: 60, mobile: true, enemyManned: true,
+                                    seats: [{ type: 'Air', table: { Air: 9, LightArmour: 6, Infantry: 9 }, occupied: true }] }),
+                   myType: 'LightArmour', myTable: unitTable(weapons), mode: 'largeBore' };
+  const aa = scoreVehicleTargets({ ...common, isAntiAircraft: true });
+  const plain = scoreVehicleTargets({ ...common, isAntiAircraft: false });
+  const seated = { occupancy: { root: {} }, position: [10, 90, -20], soldier: { x: 1, y: 2, z: 3 } };
+  const onFoot = { occupancy: null, position: [10, 90, -20], soldier: { x: 1, y: 2, z: 3 } };
+  return { aa: aa.targetId, aaScore: aa.score, plain: plain.targetId,
+           seatedAt: playerPosition(seated), onFootAt: playerPosition(onFoot) };
+}
+
 /** The aircraft's fire plan: approach until inside 0.9 of the range with a
  *  line of fire, attack while the target is in front, break for 200 m after
  *  the pass; a seated unit that cannot move gets mode 3; the aim law holds
@@ -559,6 +580,7 @@ const results = {
   teleport: teleportScenario(),
   drive: driveDecisionScenario(),
   vehicleFire: vehicleFireScenario(),
+  antiAircraft: antiAircraftScenario(),
   planeFire: planeFireScenario(),
   frustum: (() => {
     // 0x08521cf0: a square frustum about the camera (aspect 1.0).
