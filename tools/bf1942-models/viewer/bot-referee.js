@@ -34,7 +34,7 @@
 import { buildNavMap, isWalkable } from './nav-grid.js';
 import { spawnBots } from './bot.js';
 import { EnemyStrengthTables } from './bot-strength.js';
-import { SAI, StrategicLayer, StrategicAI } from './strategic.js';
+import { SAI, StrategicLayer, StrategicAI, StrategicCommand } from './strategic.js';
 
 /** Seconds a downed bot stays out before its side puts it back on a flag. */
 export const BOT_RESPAWN_DELAY = 8;
@@ -266,11 +266,29 @@ export function createBotReferee(env) {
     referee.navGrid = buildNavMap(w.collider, worldSize, { waterLevel: w.collider?.waterLevel, seeds });
     const navMs = performance.now() - navStarted;
     referee.bots = spawnBots({ world: w, count, botSkill, teams, flags: w.flags, kitFor, viewDistance });
+    // The strategic interface (doctrine.js) is the one order source: it runs
+    // the engine's SAI and asks each side's doctrine (`env.doctrine`, default
+    // the SAI itself) for the orders.
     referee.strategy = w.extras?.ai?.strategicAreas?.length
-      ? new StrategicAI(new StrategicLayer(w.extras.ai, w.flags), {
+      ? new StrategicCommand(new StrategicAI(new StrategicLayer(w.extras.ai, w.flags), {
         isWalkable: (x, z) => isWalkable(referee.navGrid, x, z),
         unitOf: id => referee.strategicUnit(id),
         spottedOf: id => botOf(id)?.senses?.memory?.size ?? 0,
+      }), {
+        doctrine: env.doctrine ?? null,
+        isWalkable: (x, z) => isWalkable(referee.navGrid, x, z),
+        unitOf: id => referee.strategicUnit(id),
+        healthOf: id => {
+          const a = w.armorOf(id);
+          return a?.maxHitPoints > 0 ? a.hitPoints / a.maxHitPoints : 1;
+        },
+        enemyTablesOf: side => referee.enemyTables?.[side] ?? null,
+        candidatesOf: () => units()?.candidates() ?? [],
+        // The Use key, as a plan's EnterVehicle / ExitVehicle press it.
+        actuators: {
+          enter: (id, candId) => { const b = botOf(id); if (b && !b.vehicle) b.enterRequest = { vehicleId: candId }; },
+          exit: id => { const b = botOf(id); if (b?.vehicle) b.exitRequest = true; },
+        },
       })
       : null;
     referee.covers = buildBotCovers(w);

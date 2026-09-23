@@ -29,8 +29,8 @@ def run_harness(scene: Path | None) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
         shutil.copyfile(VIEWER / "strategic.js", work / "strategic.js")
-        # `strategic.js` re-exports the layer and the AI from their modules.
-        for name in ("strategic-layer.js", "strategic-ai.js"):
+        # `strategic.js` re-exports the layer, the AI and the doctrines.
+        for name in ("strategic-layer.js", "strategic-ai.js", "doctrine.js", "doctrine-squad.js"):
             shutil.copyfile(VIEWER / name, work / name)
         shutil.copyfile(HARNESS, work / "harness.mjs")
         (work / "package.json").write_text('{"type":"module"}\n')

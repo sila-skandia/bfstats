@@ -198,14 +198,34 @@ export class StrategicAI {
     this.time += dt;
     if (this.time - this.lastPass < SAI.updateFrequency) return;
     this.lastPass = this.time;
+    this.beginPass(alive);
+    for (const side of [1, 2]) this.sidePass(side, alive);
+  }
+
+  /**
+   * The half of a pass both sides share: the flags bound to the areas and
+   * each area's presence, owner, status and temperatures (`_updateAreas`).
+   * `alive` is every alive bot of both sides. The strategic command
+   * (doctrine.js) calls this and then `sidePass` per side, which is what
+   * `update` does.
+   */
+  beginPass(alive) {
     this.layer.bindFlags(this.layer.flags);
     this._updateAreas(alive);
-    for (const side of [1, 2]) {
-      this._updateStates(side);
-      this._chooseStrategy(side);
-      this._updateTemperatures(side);
-      this._distribute(side, alive);
-    }
+  }
+
+  /**
+   * One side's half of a pass: the states, the strategy, the temperatures
+   * and the distribution of the side's bots in `alive`. A doctrine that
+   * hands only some of its bots to the SAI (doctrine-squad.js: the squad
+   * leaders) passes those alone; the areas were counted with everyone in
+   * `beginPass`.
+   */
+  sidePass(side, alive) {
+    this._updateStates(side);
+    this._chooseStrategy(side);
+    this._updateTemperatures(side);
+    this._distribute(side, alive);
   }
 
   // --- the area pass --------------------------------------------------------
