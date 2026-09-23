@@ -41,9 +41,19 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULES = [
     ROOT / "viewer" / "soldier.js",
     ROOT / "viewer" / "physics.js",
+    ROOT / "viewer" / "walking-body.js",
+    ROOT / "viewer" / "soldier-pose.js",
+    ROOT / "viewer" / "soldier-locomotion.js",
+    ROOT / "viewer" / "point-body.js",
+    ROOT / "viewer" / "fixed-step.js",
     ROOT / "viewer" / "parachute.js",
     ROOT / "viewer" / "swim.js",
     ROOT / "viewer" / "collision.js",
+    ROOT / "viewer" / "world-collider.js",
+    ROOT / "viewer" / "static-index.js",
+    ROOT / "viewer" / "drivable-mask.js",
+    ROOT / "viewer" / "collision-materials.js",
+    ROOT / "viewer" / "heightfield.js",
     ROOT / "viewer" / "spawn-safety.js",
 ]
 HARNESS = Path(__file__).resolve().parent / "soldier_harness.mjs"

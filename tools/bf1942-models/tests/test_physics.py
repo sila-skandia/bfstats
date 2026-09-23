@@ -27,7 +27,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 ROOT = Path(__file__).resolve().parents[1]
 MODULES = {
     "physics.mjs": ROOT / "viewer" / "physics.js",
+    "walking-body.js": ROOT / "viewer" / "walking-body.js",
+    "soldier-pose.js": ROOT / "viewer" / "soldier-pose.js",
+    "soldier-locomotion.js": ROOT / "viewer" / "soldier-locomotion.js",
+    "point-body.js": ROOT / "viewer" / "point-body.js",
+    "fixed-step.js": ROOT / "viewer" / "fixed-step.js",
     "collision.mjs": ROOT / "viewer" / "collision.js",
+    "world-collider.js": ROOT / "viewer" / "world-collider.js",
+    "static-index.js": ROOT / "viewer" / "static-index.js",
+    "drivable-mask.js": ROOT / "viewer" / "drivable-mask.js",
+    "collision-materials.js": ROOT / "viewer" / "collision-materials.js",
+    "heightfield.js": ROOT / "viewer" / "heightfield.js",
     # `physics.js` imports `./parachute.js` by that name, so this one cannot be
     # renamed with the others; the `package.json` below is what lets node read
     # a bare `.js` as a module.
