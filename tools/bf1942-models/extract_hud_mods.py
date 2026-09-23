@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Build one mod's interface pack: only the files that differ from vanilla's.
 
-The five interface extractors each take `--mod` and read through the mod's
+The interface extractors each take `--mod` and read through the mod's
 `game.addModPath` chain, so running them against Eve of Destruction already
 produces a *complete* pack -- every sprite, every layout, every font, every
 string, whether EoD changed it or inherited it. Shipping a complete pack per
 mod would mean 240-odd PNGs and four JSON files copied 16 times over for the
 sake of the handful each mod actually changes.
 
-So this runs the five into a scratch directory, compares every file it
+So this runs them all into a scratch directory, compares every file it
 produced against the vanilla pack byte for byte, and keeps only the ones that
 differ. What lands in `viewer/maps/mods/<id>/_shared/hud/` is exactly the
 mod's own chrome, and `pack.json` lists it:
@@ -61,7 +61,11 @@ STEPS: list[tuple[str, str]] = [
     ("extract_hud_layout.py", ""),
     ("extract_menu_layout.py", "menu"),
     ("extract_console_font.py", "console"),
+    ("extract_radio.py", ""),
 ]
+
+#: Arguments a step needs beyond `--mod/--game-dir/--out`.
+EXTRA_ARGS = {"extract_radio.py": ["--layout-only"]}
 
 #: Steps whose failure is survivable: the pack simply does not carry that
 #: file and the viewer falls back to vanilla's. `extract_hud_layout.py` is
@@ -123,12 +127,12 @@ def prune(out: Path, keep: set[str]) -> None:
 
 
 def run_steps(mod: str, game_dir: Path, staging: Path, force: bool) -> list[str]:
-    """Run the five extractors into `staging`. Returns the steps that failed."""
+    """Run the extractors into `staging`. Returns the steps that failed."""
     failed: list[str] = []
     for script, sub in STEPS:
         out = staging / sub if sub else staging
         cmd = [sys.executable, str(HERE / script), "--mod", mod,
-               "--game-dir", str(game_dir), "--out", str(out)]
+               "--game-dir", str(game_dir), "--out", str(out), *EXTRA_ARGS.get(script, [])]
         if force:
             cmd.append("--force")
         result = subprocess.run(cmd)

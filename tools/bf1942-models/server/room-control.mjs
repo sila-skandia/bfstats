@@ -1,10 +1,11 @@
 // A room's control channel: the engine's action rows (netcode.js MSG_ACTION)
-// mirrored on the room's world — the deploy (spawn) and the seat enter/exit/
-// switch (J-1/J-3) — and the unmount the explicit exit, leave and drop paths
-// share. Split out of `rooms.mjs`'s Room, which builds one of these and
+// mirrored on the room's world — the deploy (spawn), the seat enter/exit/
+// switch (J-1/J-3) and the radio relay — and the unmount the explicit exit,
+// leave and drop paths share. Split out of `rooms.mjs`'s Room, which builds one of these and
 // routes MSG_ACTION and its leave path through it.
 
-import { SPAWN_INDEX_MAX } from './room-rules.mjs';
+import { RADIO_LOCAL_RANGE, SPAWN_INDEX_MAX } from './room-rules.mjs';
+import { encodeJsonMsg, eventRow } from './room-wire.mjs';
 
 /**
  * @param {object} options
@@ -18,6 +19,40 @@ export function createControlChannel({ room, event }) {
     if (!row || typeof row !== 'object') return;
     if (row.type === 'spawn') onSpawn(connection, row);
     else if (row.type === 'seat') onSeat(connection, row);
+    else if (row.type === 'radio') onRadio(connection, row);
+  }
+
+  /**
+   * A radio message (`RadioMessageEvent`, 0x3A), relayed the way
+   * `GameServer::radioMessage` (lnxded 0x0813a120) does: dropped from a
+   * player who is not alive; team radio to every other player on the
+   * speaker's team; a shout to every other player, of either team, within
+   * 70 m of the speaker's controlled object. The speaker's own client has
+   * already played it. The row carries the speaker's position so a shout
+   * plays in 3D where he stands.
+   */
+  function onRadio(connection, row) {
+    const slot = connection.slot;
+    const id = row?.msg;
+    if (!Number.isInteger(id) || id < 1 || id > 59) return;
+    if (!room.authority.mayInput(slot)) return;
+    const at = playerPoint(room.world.player(slot));
+    const team = row.team === true;
+    const bytes = encodeJsonMsg(eventRow('radio', room.tick, {
+      slot, msg: id, broadcast: team, team: connection.team,
+      at: at ? [at.x, at.y, at.z] : null,
+    }));
+    for (const [other, listener] of room.players) {
+      if (other === slot) continue;
+      if (team) {
+        if (listener.team !== connection.team) continue;
+      } else {
+        const there = playerPoint(room.world.player(other));
+        if (!at || !there) continue;
+        if (Math.hypot(there.x - at.x, there.y - at.y, there.z - at.z) > RADIO_LOCAL_RANGE) continue;
+      }
+      listener.peer.send(bytes);
+    }
   }
 
   /** The deploy action: place the soldier on the flag the row names (0-based
@@ -119,4 +154,14 @@ export function createControlChannel({ room, event }) {
   }
 
   return { onAction, unmount };
+}
+
+/** A world player's position, whatever holds it: the drive he sits on, the
+ *  position the room feeds, or his soldier. */
+function playerPoint(player) {
+  if (!player) return null;
+  const p = player.vehicle?.state?.position ?? player.position
+    ?? (player.soldier ? { x: player.soldier.x, y: player.soldier.y, z: player.soldier.z } : null);
+  if (!p) return null;
+  return Array.isArray(p) ? { x: p[0], y: p[1], z: p[2] } : { x: p.x, y: p.y, z: p.z };
 }

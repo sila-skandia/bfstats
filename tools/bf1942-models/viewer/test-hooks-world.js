@@ -8,12 +8,12 @@ import { boardRows } from './scoreboard.js';
  * Split out of `test-hooks.js`; installed by it under `?shots`.
  *
  * `page` is the test hooks' own bag; this part reads:
- * `applyVehicleHit`, `bfmap`, `collider`, `combatArea`, `combatFrame`,
+ * `applyVehicleHit`, `bfmap`, `collider`, `combatArea`, `combatFrame`, `comms`,
  * `extras`, `friendlyMapUnits`, `friendlyVehicleNodes`, `gameHud`,
  * `localMapTeam`, `mapGate`, `MINIMAP_TEAM_TINT`, `modeNote`,
  * `paintScoreboard`, `params`, `roomClient`, `roomJoined`, `scoreboardOpen`,
  * `scoreboardPlayers`, `scoreFromSpawn`, `scoreLayout`, `setMapGate`,
- * `setScoreboard`, `spawnersRoot`, `splashTargets`.
+ * `referee`, `setScoreboard`, `spawnersRoot`, `splashTargets`.
  */
 export function installWorldHooks(page) {
   // microseconds-per-query number the feature doc quotes.
@@ -70,6 +70,18 @@ export function installWorldHooks(page) {
     onFoot: page.friendlyMapUnits(),
     crewed: [...page.friendlyVehicleNodes()].map(node => node.name),
   });
+  // The radio and the message log (comms.js): its state, a key press (the
+  // browser pane never delivers a real F-key), and its event entry points.
+  window.__comms = {
+    state: () => page.comms.state(),
+    paint: (w, h) => page.comms.paint(w, h),
+    press: code => page.comms.keydown(new KeyboardEvent('keydown', { code, cancelable: true })),
+    receive: (id, speaker) => page.comms.receive(id, speaker),
+    onKill: (victim, killer) => page.comms.onKill(victim, killer),
+    onCapture: (flag, team) => page.comms.onCapture(flag, team),
+    // The referee's own damage path, so the kill line comes from the real hook.
+    killBot: (id, attackerId = null, opts = {}) => page.referee.applyDamage(id, 1e6, attackerId, null, opts),
+  };
   // The score board: open/close it, and read back what it lists.
   window.__scoreboard = {
     open: (fromSpawn = false) => page.setScoreboard(true, fromSpawn),

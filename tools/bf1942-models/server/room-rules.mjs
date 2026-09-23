@@ -40,6 +40,10 @@ export const FIRE_EVENT_COOLDOWN_S = 0.35;
  *  something that would cost a modulo over a huge number. */
 export const SPAWN_INDEX_MAX = 0xffff;
 
+/** How far a shouted radio message carries: the 70.0 in
+ *  `GameServer::radioMessage` (lnxded 0x0813a120). */
+export const RADIO_LOCAL_RANGE = 70;
+
 /** The room clock's own frame cadence (33.33 ms); the FixedStep interior
  *  means the cadence is a target, not a law. */
 export const FRAME_MS = Math.max(1, Math.round(WORLD_TICK_DT * 1000));
