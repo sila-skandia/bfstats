@@ -396,3 +396,29 @@ which the bot tests then covered.
    Brief P's re-bake (161 of 238 levels; the live copies are intact); EoD is
    parked, and its next publish must restore them first (`extract_search_maps.py`
    on main writes them).
+
+## Reported unfixed by the owner, 2026-09-24 (site test, live = main)
+
+Not to be worked on until asked; recorded so they are not lost. The live
+site was byte-identical to main for every viewer module checked at the
+time of the report, so none of these is a stale deploy.
+
+- **Enemy vehicle markers still on the map.** The client's rule is wired
+  (`map-vehicle-marks.js`, `map-friendlies.js`, MMAP-3) and hides a hull
+  the other side is crewing. What still shows are the other side's
+  unmanned hulls at their base, drawn as grey empty icons: the engine hides
+  those through the `teamOnVehicle` spawner hold (0x0046b6c5..0x0046b6e2),
+  and the page passes `heldTeam` 0 for every hull (noted as not built in
+  that agent's report). The retail distance limit on drawn vehicles is
+  not applied either (the object it reads was not identified).
+- **Soldiers still animate blurrily.** The 2026-09-24 blur fix covered
+  every driven hull (`local-look.js`, one record per occupied hull) and
+  the on-foot player; bot soldiers' draw was reported as interpolated
+  (`bot-visuals.js` header) but the owner still sees it. Measure with
+  `tests/perf/cadencecheck.cjs` on a walking bot before touching it.
+- **Rounds against aircraft.** Firing at a plane misses far more than it
+  should. The flak proximity fuse (2026-09-24) covers flak shells only;
+  the hand-fired and MG round path against a flying hull is unmeasured
+  (`world-fire.js`, `vehicle-hits.js`). Recipe to build first: the human
+  in the AA gun or a Browning, a bot plane on a scripted pass, the round
+  cast's miss distance logged against the hull's live bounds.
