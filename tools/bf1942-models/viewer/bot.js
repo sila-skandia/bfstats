@@ -8,30 +8,7 @@
 //           features/bf1942-ai-research-2026-09-21/bot-movement-and-pathfinding.md
 //           features/bf1942-ai-research-2026-09-21/bot-behaviours.md (2026-09-23)
 //
-// The decision loop (`BotMain::decisionMaking` 0x08520620, read 2026-09-23):
-//
-//  * `currentMods[i] = moral[i] * personality[i] * basic[i]` (`calculateMods`
-//    0x08525b80): `personality` is `StandardWeights` (`setStandardPersonality`
-//    for both sides), `basic` `UnitWeights` (all 1), and the moral mode is
-//    drawn once at construction and never updated in 1.61 (`moralUpdate` has
-//    no caller), so `moral` is 1.
-//  * With no plan, behaviour i is evaluated with `mod = currentMods[i]`; with
-//    a plan, `mod = curve_active(t) * inhibitor_active[i] * currentMods[i]`,
-//    where the curve is the ACTIVE behaviour's `UrgeCurve` over the seconds it
-//    has been active (1 for every other behaviour) and the inhibitor is the
-//    active behaviour's own modifier column (`AvoidInhibit` while Avoid is
-//    active, `UnitWeights` otherwise). A behaviour whose `mod <= 0` is not
-//    evaluated and keeps its old urgency.
-//  * The winner is the strict maximum urgency. With a plan it is re-chosen
-//    only when some behaviour's `urgency / activeUrgency` leaves 0.87 .. 1.15,
-//    appears from zero, drops to zero, or reports a changed target
-//    (`UrgencyMerger::hasChanged` 0x08534f30, `quotientChanged` 0x08583540);
-//    `activeUrgency` is the snapshot taken at selection. The con's
-//    `setPlannedDecisionMakingThreshold` values are stored and never read.
-//  * The winner's plan is regenerated every tick; a plan that comes back as
-//    the same object is kept, a different one resets all controls.
-//  * `prio` only orders evaluation under CPU starvation; the parallel mask
-//    has no consumer. Neither is modelled.
+// The decision loop is described in bot-decision.js.
 //
 // INVENTION, labelled: `Change` (vehicles) and `Special` (medic) are not
 // registered — the viewer's bots are on foot with no healing kit yet; the
@@ -40,8 +17,8 @@
 // at the nearest enemy flag.
 
 import { DeviationModel } from './deviation.js';
-import { traceValidPoint, isWalkable } from './nav-grid.js';
-import { BotSenses, lineClear, playerPosition, SOLDIER_RADIUS } from './bot-sense.js';
+import { isWalkable } from './nav-grid.js';
+import { BotSenses, playerPosition } from './bot-sense.js';
 import { firingPose, firePlanFor, weaponAiOf, FIRE, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
 import { ScoutState, TakeCoverState, QUADRANTS, SCOUT, TAKE_COVER, MedicState, MEDIC } from './bot-behaviours.js';
 import { unitUrgency, orderSplit, changeUrgency, teleportChangeUrgency, TANK, CHANGE, TELEPORT } from './bot-vehicle.js';
@@ -53,9 +30,12 @@ import { AIM_COUNTS_MAX, wrapAngle, faceTarget } from './bot-aim.js';
 import * as perception from './bot-perception.js';
 import * as routing from './bot-route.js';
 import * as piloting from './bot-pilot.js';
+import * as deciding from './bot-decision.js';
+import { BEHAVIOUR, REGISTERED, ACTIVE_URGENCY_INIT } from './bot-decision.js';
 import { BOT_RADIUS, VEHICLE_RADIUS } from './bot-route.js';
 
 export { PI } from './bot-aim.js';
+export { BEHAVIOUR, STANDARD_WEIGHTS, URGENCY_CURVE, IDLE_FLOOR } from './bot-decision.js';
 
 /** Bot name pools, from the research document §2.1. */
 export const BOT_NAMES = {
@@ -74,56 +54,6 @@ const FALLBACK_NAMES = [
 const DEFAULT_BOT_SKILL = 0.75;
 /** Default view distance in metres (§6.1): 600.0; a level's `AI.con` sets its own. */
 const DEFAULT_VIEW_DISTANCE = 600;
-
-/**
- * Behaviour names matching AIbehaviours.con §4.1, in registration order.
- * `Change` and `Special` are not registered (header).
- */
-export const BEHAVIOUR = {
-  Avoid: 'Avoid', MoveTo: 'MoveTo', Idle: 'Idle', Fire: 'Fire',
-  Scout: 'Scout', TakeCover: 'TakeCover', Change: 'Change', Special: 'Special',
-};
-const REGISTERED = ['Avoid', 'MoveTo', 'Idle', 'Fire', 'Special', 'Scout', 'TakeCover', 'Change'];
-/** The Tank rows: no Special. */
-const REGISTERED_VEHICLE = ['Avoid', 'MoveTo', 'Idle', 'Fire', 'Scout', 'TakeCover', 'Change'];
-/** `ChangeInhibit`: the column applied while Change is the active behaviour. */
-const CHANGE_INHIBIT = { Avoid: 1.0, MoveTo: 0.0, Idle: 1.0, Fire: 1.0, Special: 1.0, Scout: 1.0, TakeCover: 1.0, Change: 1.0 };
-
-/** `StandardWeights`, the standard personality of both sides. */
-export const STANDARD_WEIGHTS = {
-  Avoid: 1.0, MoveTo: 1.5, Idle: 0.1, Fire: 7.5, Special: 1.0, Scout: 1.0, TakeCover: 2.0, Change: 1.9,
-};
-/** `UnitWeights`: every column 1. */
-const UNIT_WEIGHTS = { Avoid: 1, MoveTo: 1, Idle: 1, Fire: 1, Special: 1, Scout: 1, TakeCover: 1, Change: 1 };
-/** `AvoidInhibit`: the column applied while Avoid is the active behaviour. */
-const AVOID_INHIBIT = { Avoid: 1.0, MoveTo: 0.3, Idle: 1.0, Fire: 1.0, Special: 0.5, Scout: 1.0, TakeCover: 1.0, Change: 1.0 };
-/** Each infantry row's modifier set (`setVehicleBehaviour Infantery ...`). */
-const INHIBITOR = { Avoid: AVOID_INHIBIT, MoveTo: UNIT_WEIGHTS, Idle: UNIT_WEIGHTS, Fire: UNIT_WEIGHTS, Special: UNIT_WEIGHTS, Scout: UNIT_WEIGHTS, TakeCover: UNIT_WEIGHTS, Change: CHANGE_INHIBIT };
-
-/**
- * The engine's urge curves (assembly, `UCLinear::calculate` 0x085838f0 and
- * `UCXInverse::calculate` 0x08583a50): `x` is the seconds the behaviour has
- * been the active one. `UCFire linear -0.22 1.3` reaches 0 after 5.9 s, which
- * is what re-opens the contest for a bot that has been shooting a while;
- * `UCScout XInverse 2.5 0.9 1.0 0.5` is `2.5 / (x + 0.9) + 0.5`.
- */
-export const URGENCY_CURVE = {
-  union: () => 1.0,
-  fire: t => Math.max(0, -0.22 * t + 1.3),
-  scout: t => Math.max(0, 2.5 / (1.0 * t + 0.9) + 0.5),
-};
-const CURVE_OF = { Avoid: URGENCY_CURVE.union, MoveTo: URGENCY_CURVE.union, Idle: URGENCY_CURVE.union,
-  Fire: URGENCY_CURVE.fire, Special: URGENCY_CURVE.union, Scout: URGENCY_CURVE.scout, TakeCover: URGENCY_CURVE.union,
-  Change: URGENCY_CURVE.union };
-/** `decisionMaking`'s hysteresis band on `urgency / activeUrgency`. */
-const HYSTERESIS_LOW = 0.87;
-const HYSTERESIS_HIGH = 1.15;
-/** `BotBehaviour` ctor: the initial active urgency, non-zero so the ratio
- *  branch is taken. */
-const ACTIVE_URGENCY_INIT = 1e-5;
-/** The engine's own warning: never let Idle's urgency reach 0 — with every
- *  urgency at 0 the merger picks nothing and the server crashes. */
-export const IDLE_FLOOR = 1e-3;
 
 /**
  * Plan action types for infantry (§4.2), the interpreter entries the viewer
@@ -159,13 +89,6 @@ const LOOK_TOLERANCE = 5 * Math.PI / 180;
  *  ended after half a second. */
 const AVOID_STEP = 5.0;
 const AVOID_TIME = 0.5;
-/** No strategic data: a bot walks to the nearest enemy flag with this
- *  waypoint radius (INVENTION). */
-const FALLBACK_WAYPOINT_RADIUS = 5.0;
-/** How long with no *net* progress toward the goal before the page redeploys
- *  the bot to another spawn point (s). The engine has no such thing; it is
- *  the viewer's safety net for a body wedged in geometry the map cannot see. */
-const NO_PROGRESS_RESPAWN = 12.0;
 
 /**
  * One bot's controller. Owns a PlayerInput and writes it once per tick.
@@ -346,10 +269,7 @@ export class BotController {
   _eye() { return aiming.eye(this); }
   _aimOrigin() { return aiming.aimOrigin(this); }
 
-  /** The behaviours the bot's current unit registers (AIbehaviours.con rows). */
-  _registered() {
-    return this.vehicle ? REGISTERED_VEHICLE : REGISTERED;
-  }
+  _registered() { return deciding.registered(this); }
 
   /** The map and body radius of the unit the bot moves as. */
   _nav() { return this.vehicle ? (this.vehicle.nav ?? null) : this.navGrid; }
@@ -509,38 +429,7 @@ export class BotController {
     this.timeSinceTargetAcquired = this.firingTarget ? this.timeSinceTargetAcquired + dt : 0;
   }
 
-  /** The page reads `objective`, `objectiveGoal`, `goalReached`. */
-  _updateObjectiveReadout(dt) {
-    const wp = this.waypoints;
-    if (wp) {
-      this.objective = { name: wp.area?.name ?? 'order' };
-      this.objectiveGoal = [wp.point[0], this.position[1], wp.point[1]];
-      const d = Math.hypot(wp.point[0] - this.position[0], wp.point[1] - this.position[2]);
-      this.goalReached = d < wp.radius;
-    } else {
-      const flag = this._nearestEnemyFlag();
-      this.objective = flag;
-      this.objectiveGoal = flag ? [flag.position[0], flag.position[1], flag.position[2]] : null;
-      this.goalReached = !!this.objectiveGoal && this._distTo(this.objectiveGoal) < FALLBACK_WAYPOINT_RADIUS;
-    }
-    if (this.objectiveGoal && !this.goalReached && this.currentBehaviour === BEHAVIOUR.MoveTo) {
-      const d = this._distTo(this.objectiveGoal);
-      if (this._bestGoalDist === null || d < this._bestGoalDist - 0.5) {
-        this._bestGoalDist = d;
-        this._noProgress = 0;
-      } else {
-        this._noProgress += dt;
-        if (this._noProgress > NO_PROGRESS_RESPAWN) {
-          this._noProgress = 0;
-          this._bestGoalDist = null;
-          this._needsRespawn = true;
-        }
-      }
-    } else {
-      this._bestGoalDist = this.objectiveGoal ? this._distTo(this.objectiveGoal) : null;
-      this._noProgress = 0;
-    }
-  }
+  _updateObjectiveReadout(dt) { return deciding.updateObjectiveReadout(this, dt); }
 
   _resetInput() { return aiming.resetInput(this); }
   _writeInput() { return aiming.writeInput(this); }
@@ -561,279 +450,21 @@ export class BotController {
   _steerToward(x, z, speed) { return routing.steerToward(this, x, z, speed); }
   _execInfantryMoveTo(action, dt) { return routing.execInfantryMoveTo(this, action, dt); }
 
-  // -----------------------------------------------------------------------
-  // The decision loop (`BotMain::decisionMaking`)
-  // -----------------------------------------------------------------------
-
-  /** `currentMods[i]`: moral x personality x basic (header). */
-  _currentMod(name) {
-    return 1.0 * (STANDARD_WEIGHTS[name] ?? 1.0) * (UNIT_WEIGHTS[name] ?? 1.0);
-  }
-
-  _hasPlan() {
-    return this.currentBehaviour !== null && this.currentPlan.length > 0;
-  }
-
-  _decisionMaking(now, dt) {
-    const hasPlan = this._hasPlan();
-    const active = hasPlan ? this.currentBehaviour : null;
-    const activeFor = active ? now - this.behaviourChosenAt : 0;
-    // Phase 1: every registered behaviour, with its modifier.
-    for (const name of this._registered()) {
-      let mod = this._currentMod(name);
-      if (active) {
-        const curve = name === active ? (CURVE_OF[active] ?? URGENCY_CURVE.union)(activeFor) : 1.0;
-        mod *= curve * ((INHIBITOR[active] ?? UNIT_WEIGHTS)[name] ?? 1.0);
-      }
-      if (mod > 0) this.urgency[name] = this._generate(name, mod, now, dt, true);
-      // else: not evaluated, the old urgency stands.
-    }
-    // The winner.
-    let reselect = !hasPlan;
-    if (hasPlan) {
-      for (const name of this._registered()) {
-        if (this._quotientChanged(name) || this.changedTarget[name]) { reselect = true; break; }
-      }
-    }
-    let winner = this.currentBehaviour;
-    if (reselect) {
-      let best = 0;
-      winner = null;
-      for (const name of this._registered()) {
-        const u = this.urgency[name];
-        this.activeUrgency[name] = u;
-        if (u > best) { best = u; winner = name; }
-      }
-      // The engine's crash guard, made safe: nothing wins -> Idle.
-      if (!winner) { winner = BEHAVIOUR.Idle; this.urgency.Idle = IDLE_FLOOR; }
-      if (winner !== this.currentBehaviour) {
-        this.currentBehaviour = winner;
-        this.behaviourChosenAt = now;
-      }
-    }
-    // The winner's plan is regenerated every tick; the same plan is kept.
-    const plan = this._generatePlan(winner, now);
-    if (plan !== this.currentPlan) {
-      if (plan.length) this._execInfantryResetControls();
-      this.currentPlan = plan;
-      this.planBehaviour = winner;
-      this.planTargetId = this.firingTarget;
-    }
-    for (const name of this._registered()) this.changedTarget[name] = false;
-  }
-
-  /** `BotBehaviour::quotientChanged(0.87, 1.15)`. */
-  _quotientChanged(name) {
-    const active = this.activeUrgency[name];
-    const u = this.urgency[name];
-    if (active === 0) return u > 0;
-    if (u === 0) return true;
-    const q = u / active;
-    return !(HYSTERESIS_LOW <= q && q <= HYSTERESIS_HIGH);
-  }
-
-  // -----------------------------------------------------------------------
-  // Urgency generators
-  // -----------------------------------------------------------------------
-
-  _generate(name, mod, now, dt, planned) {
-    switch (name) {
-      case BEHAVIOUR.Idle: return mod;
-      case BEHAVIOUR.MoveTo: return this._urgencyMoveTo(mod);
-      case BEHAVIOUR.Fire: return this._urgencyFire(mod, now);
-      case BEHAVIOUR.Scout: return this._urgencyScout(mod, now, dt);
-      case BEHAVIOUR.TakeCover: return this._urgencyTakeCover(mod, now);
-      case BEHAVIOUR.Special: return this._urgencySpecial(mod, now);
-      case BEHAVIOUR.Change: return this._urgencyChange(mod, now);
-      case BEHAVIOUR.Avoid: return this._urgencyAvoid(mod, now);
-      default: return 0;
-    }
-  }
-
-  /**
-   * `BBMoveTo::calculateUrgency`: the waypoint list's urgency for the bot's
-   * position (`WPMoveTo::getUrgency`), times the modifier. No order and no
-   * strategic data: the nearest enemy flag stands in (INVENTION).
-   */
-  _urgencyMoveTo(mod) {
-    const wp = this.waypoints ?? this._fallbackWaypoint();
-    if (!wp) return 0;
-    // R' adds the unit's `getMaxPathPosRemovalDistance` (BotMain 0x0852b780:
-    // 0.99 x max(0.5, bounding radius - the bounding centre's offset)); the
-    // page's vehicle radius stands in for a hull's.
-    const u = wp.urgency(this.position[0], this.position[2], this._pathRadius(), this.position[1]);
-    this.changedTarget.MoveTo = wp !== this._lastWaypointObject;
-    this._lastWaypointObject = wp;
-    // `BBMoveToFixed::calculateUrgency` 0x08575680 (the Fixed rows: a seat
-    // that does not drive) publishes the order's urgency to the bot and
-    // returns 0: a gunner or a fixed gun never walks.
-    this._orderUrgency = u > 0 ? u * mod : 0;
-    if (this.vehicle && !this.vehicle.drives) return 0;
-    return u > 0 ? u * mod : 0;
-  }
-
-  /** `Bot::getMaxPathPosRemovalDistance` for the unit the bot controls. */
-  _pathRadius() {
-    return this.vehicle ? 0.99 * Math.max(0.5, this.vehicle.radius ?? SOLDIER_RADIUS) : SOLDIER_RADIUS;
-  }
-
-  _fallbackWaypoint() {
-    if (this.world?.extras?.ai?.strategicAreas?.length) return null;
-    const flag = this._nearestEnemyFlag();
-    if (!flag) return null;
-    if (this._fallback?.flag === flag) return this._fallback;
-    const point = [flag.position[0], flag.position[2]];
-    const R = FALLBACK_WAYPOINT_RADIUS;
-    this._fallback = {
-      kind: 'WPMoveTo', flag, area: null, point, radius: R, arrived: false,
-      urgency(x, z, r = SOLDIER_RADIUS) {
-        const Rr = R + r;
-        const d2 = (x - point[0]) ** 2 + (z - point[1]) ** 2;
-        this.arrived = d2 < 2 * Rr * Rr;
-        return Math.min(1, Math.max(0.1, d2 / (4 * Rr * Rr))) * 2.0;
-      },
-    };
-    return this._fallback;
-  }
-
-  /** The nearest flag this bot's team does not hold, or null. */
-  _nearestEnemyFlag() {
-    const flags = this.world?.flags;
-    if (!flags?.length) return null;
-    let best = null, bestDist = Infinity;
-    for (const flag of flags) {
-      if (!flag.position || flag.uncapturable || flag.team === this.team) continue;
-      const d = Math.hypot(flag.position[0] - this.position[0], flag.position[2] - this.position[2]);
-      if (d < bestDist) { bestDist = d; best = flag; }
-    }
-    return best;
-  }
-
-  /** Horizontal distance from the bot to a world point. */
-  _distTo(point) {
-    return Math.hypot(point[0] - this.position[0], point[2] - this.position[2]);
-  }
-
-  /** `BBFire::calculateUrgency`: the scored target, the chosen weapon. */
-  _urgencyFire(mod, now) {
-    const t = this._chooseFiringTarget(now);
-    const changed = t.targetId !== this.firingTarget;
-    if (t.targetId) {
-      if (changed) this.firingTargetTime = now;
-      this.firingTarget = t.targetId;
-      this.targetPosition = t.targetPos;
-      this.targetVisible = !!t.visible;
-      this.targetScore = t.score;
-      this.weaponIndex = t.weaponIndex >= 0 ? t.weaponIndex : 0;
-      this.timeSinceHeard = Infinity;
-    } else {
-      this.firingTarget = null;
-      this.targetPosition = null;
-      this.targetVisible = false;
-      this.targetScore = 0;
-    }
-    this.changedTarget.Fire = changed && !!t.targetId;
-    return t.urgency * mod;
-  }
-
-  /** `BBScout::calculateUrgency` through `ScoutState`. */
-  _urgencyScout(mod, now, dt) {
-    const s = this.senses;
-    const attackers = [];
-    for (const [id, f] of s.attackers) {
-      const p = f.pos ?? playerPosition(this.world.players.get(id));
-      if (p) attackers.push({ id, pos: p, strength: f.strength, time: f.time, rate: f.rate });
-    }
-    const heard = [...s.heard.values()].map(h => ({ ...h, threat: 4, direct: true }));
-    const incoming = s.incoming.filter(f => f.pos);
-    const r = this.scout.evaluate({
-      now, dt,
-      position: this.position, yaw: this.yaw, pitch: this.pitch,
-      quadInertia: this.quadInertia,
-      incoming, heard, spotted: s.spottedEnemies(), attackers,
-      isScouting: this._scoutRan === true,
-      coverActive: this.currentBehaviour === BEHAVIOUR.TakeCover,
-    });
-    this._scoutRan = false;
-    this.changedTarget.Scout = !!r.changed;
-    this._scoutDir = r.dir;
-    // The urge curve is applied by the decision loop (the active behaviour's
-    // seconds), so the generator hands back its own value times the modifier.
-    return r.urgency * mod;
-  }
-
-  /** `BBTakeCoverInfantry::calculateUrgency` through `TakeCoverState`. */
-  _urgencyTakeCover(mod, now) {
-    const s = this.senses;
-    const heard = [...s.heard.values()].map(h => ({ ...h, threat: 4, security: 1 }));
-    const spotted = s.spottedEnemies().map(m => ({ ...m, threat: 4 }));
-    const nav = this._nav();
-    const r = this.cover.evaluate({
-      now, position: this.position,
-      incoming: s.incoming.filter(f => f.pos), heard, spotted,
-      covers: this._coverCandidates(),
-      lineClear: (a, b) => this._lineClear(a, b),
-      traceValidPoint: nav ? (from, to) => {
-        const p = traceValidPoint(nav, from[0], from[1], to[0], to[1], this.obstacles);
-        return p && isWalkable(nav, p[0], p[1]) ? p : null;
-      } : null,
-      mod,
-      myWidth: 0.6, myHeight: 1.8,
-    });
-    this.changedTarget.TakeCover = !!r.changed;
-    this._coverResult = r;
-    return r.urgency ?? 0;
-  }
-
-  /** The cover objects within the soldier's `coverSearchRadius 20`. */
-  _coverCandidates() {
-    const all = this.covers;
-    if (!all?.length) return [];
-    const out = [];
-    for (const c of all) {
-      const d = Math.hypot(c.pos[0] - this.position[0], c.pos[2] - this.position[2]);
-      if (d <= TAKE_COVER.coverSearchRadius) out.push(c);
-    }
-    return out;
-  }
-
-  /**
-   * `BBMedicAssist::calculateUrgency` (bot-behaviours.js `MedicState`): the
-   * wounded friends in reach of a healing weapon. The friends are the
-   * world's players of the bot's own side: their armour's fraction, whether
-   * they sit in a vehicle; a soldier is always upright here.
-   */
-  _urgencySpecial(mod, now) {
-    if (!this.weapons?.some(w => w.healing)) return 0;
-    const world = this.world;
-    const me = this._player();
-    const friends = [];
-    for (const [id, p] of world?.players ?? []) {
-      if (id === this.playerId || !p || p.team !== me?.team) continue;
-      const armor = world.armorOf?.(id);
-      if (!armor || armor.destroyed || !(armor.maxHitPoints > 0)) continue;
-      const pos = playerPosition(p);
-      if (!pos) continue;
-      const d = Math.hypot(pos[0] - this.position[0], pos[2] - this.position[2]);
-      if (d > MEDIC.searchRadius) continue;
-      friends.push({ id, pos, health: armor.hitPoints / armor.maxHitPoints,
-                     upright: true, inVehicle: !!p.vehicle, radius: SOLDIER_RADIUS, type: 'Infantry' });
-    }
-    const collider = world?.collider;
-    const water = collider?.waterLevel;
-    const waterDepth = Number.isFinite(water) ? Math.max(0, water - this.position[1]) : 0;
-    const nav = this._nav();
-    const wp = this.waypoints;
-    const r = this.medic.evaluate({
-      now, position: this.position, waterDepth, weapons: this.weapons, friends,
-      isWalkable: nav ? (x, z) => isWalkable(nav, x, z) : null,
-      insideMyArea: wp?.area ? (x, z) => wp.inside(x, z) : null,
-      mod,
-    });
-    this.changedTarget.Special = !!r.changed;
-    this._medicResult = r;
-    return r.urgency;
-  }
+  _currentMod(name) { return deciding.currentMod(this, name); }
+  _hasPlan() { return deciding.hasPlan(this); }
+  _decisionMaking(now, dt) { return deciding.decisionMaking(this, now, dt); }
+  _quotientChanged(name) { return deciding.quotientChanged(this, name); }
+  _generate(name, mod, now, dt, planned) { return deciding.generate(this, name, mod, now, dt, planned); }
+  _urgencyMoveTo(mod) { return deciding.urgencyMoveTo(this, mod); }
+  _pathRadius() { return deciding.pathRadius(this); }
+  _fallbackWaypoint() { return deciding.fallbackWaypoint(this); }
+  _nearestEnemyFlag() { return deciding.nearestEnemyFlag(this); }
+  _distTo(point) { return deciding.distTo(this, point); }
+  _urgencyFire(mod, now) { return deciding.urgencyFire(this, mod, now); }
+  _urgencyScout(mod, now, dt) { return deciding.urgencyScout(this, mod, now, dt); }
+  _urgencyTakeCover(mod, now) { return deciding.urgencyTakeCover(this, mod, now); }
+  _coverCandidates() { return deciding.coverCandidates(this); }
+  _urgencySpecial(mod, now) { return deciding.urgencySpecial(this, mod, now); }
 
   /**
    * `BBPMedicAssist::createPlan`: the healing weapon, the walk to `R +
@@ -1162,33 +793,7 @@ export class BotController {
     return false;
   }
 
-  /**
-   * `BBAvoid::calculateUrgency` for a soldier (zero look-ahead): a moving
-   * body already overlapping the bot's own radius. Urgency `|relVel| /
-   * |relPos|`; a stationary one is the map's business (`_trackContact`).
-   */
-  _urgencyAvoid(mod, now) {
-    let best = 0, bestDir = null;
-    const me = this._player();
-    for (const [id, p] of this.world?.players ?? []) {
-      if (id === this.playerId || !p?.soldier) continue;
-      const s = p.soldier;
-      const dx = s.x - this.position[0], dz = s.z - this.position[2];
-      const d = Math.hypot(dx, dz);
-      if (d > 2 * SOLDIER_RADIUS * 0.6 || d < 1e-3) continue;
-      const v = s.speed ?? 0;
-      const mv = me?.soldier?.speed ?? 0;
-      const rel = Math.hypot(v * Math.sin(s.yaw) - mv * Math.sin(this.yaw), v * Math.cos(s.yaw) - mv * Math.cos(this.yaw));
-      if (rel < 0.2) continue;
-      const u = rel / d;
-      if (u > best) { best = u; bestDir = [dx / d, dz / d]; }
-    }
-    if (best > 0 && bestDir) {
-      this._avoidThreatDir = bestDir;
-      this.changedTarget.Avoid = true;
-    }
-    return best * mod;
-  }
+  _urgencyAvoid(mod, now) { return deciding.urgencyAvoid(this, mod, now); }
 
   // -----------------------------------------------------------------------
   // Plan generators
