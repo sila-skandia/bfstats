@@ -13,7 +13,6 @@ import { VehicleCamera, FixedSubject } from './flight.js';
 import { seatViewModes, noseCamOffset } from './seat-view.js';
 import { ServerSettings, readServerSettings } from './server-settings.js';
 import { readWorldPose, AIM_INPUTS } from './seats.js';
-import { MouseInput, profileFor } from './mouse-input.js';
 import { CHASE_BEHIND, CHASE_AHEAD, boundingRadius, chaseTarget, chaseStep, chaseEye, chaseLawFor } from './chase-camera.js';
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
 import { calculateHitOctant } from './hud.js';
