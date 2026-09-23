@@ -151,164 +151,131 @@ hull where a follower rode in it.
 
 ## The comparison
 
-Run on main at `b1fe0db9` (2026-09-24), the runner as it is before Brief I:
-land vehicles only, kinematic `SimDrive` hulls, hitscan mounted guns. 8 bots
-a side, 600 s, **seeds 1, 2, 3, 4, 5, 6, 7, 8, 9, 10**, three configs a
-level: `sai` (the engine's SAI on both sides, the baseline), `axis=squad`
-and `allies=squad` (the play on one side against the SAI). 60 matches, 10 at
-a time, 16 minutes wall clock on a loaded 20-core machine.
+Run on main at `363d6dc1` (2026-09-24), **after Brief C** (Bocage's bridges
+join the banks, `900ff25e`), Brief I (the runner loads the page's real
+vehicles: aircraft, landing craft, fixed guns, parked hulls, `GunFire`),
+Brief D (the beach orders) and Brief K items 1..4 (fixed guns scored by
+`basicTemp`, the runway and air-avoid rules, the control point's own capture
+law, the redeploy measured per order); before Brief M's baked search maps
+(`088fe039`, which landed while this ran). 8 bots a side, 600 s, **seeds 1,
+2, 3, 4, 5, 6, 7, 8, 9, 10**, three configs a level: `sai` (the engine's
+SAI on both sides, the baseline), `axis=squad` and `allies=squad` (the play
+on one side against the SAI). 60 matches, 8 at a time, about 75 minutes
+wall clock on a 20-core machine shared with other runs (load 20 to 30).
 
 ```sh
 V=/home/dylan/projects/skandia/bfstats/tools/bf1942-models/viewer
-node sim/compare.mjs --maps el_alamein,bocage --seeds 1-10 --time 600 --bots 8 \
-     --configs "sai axis=squad allies=squad" --jobs 10 \
+node sim/compare.mjs --maps el_alamein,bocage --seeds 1-10 --time 600 \
+     --configs "sai axis=squad allies=squad" --jobs 8 \
      --maps-dir $V/maps --models-dir $V/models --out <dir> --markdown <dir>/table.md
 ```
 
 Every cell is mean ± sd over the ten seeds; "first capture" averages the
 runs that had one. The second table under each level pairs each seed of the
 play with the same seed and side under the SAI, which takes the level's own
-asymmetry out (El Alamein favours the Axis 7 of 10 under the SAI).
+asymmetry out.
 
 #### El Alamein
 
 | metric | sai: Axis (sai) | sai: Allies (sai) | axis=squad: Axis (squad) | axis=squad: Allies (sai) | allies=squad: Axis (sai) | allies=squad: Allies (squad) |
 |---|---:|---:|---:|---:|---:|---:|
 | runs | 10 | 10 | 10 | 10 | 10 | 10 |
-| tickets at the end | 87.4 ± 12.8 | 80.1 ± 13.8 | 72.6 ± 15.2 | 95.3 ± 4.9 | 89.0 ± 17.8 | 79.3 ± 17.5 |
-| ticket margin (side - other) | 7.3 ± 20.3 | -7.3 ± 20.3 | -22.7 ± 18.1 | 22.7 ± 18.1 | 9.8 ± 29.8 | -9.8 ± 29.8 |
-| ahead at the end | 7 / 10 | 3 / 10 | 2 / 10 | 8 / 10 | 7 / 10 | 3 / 10 |
-| control points held (time mean) | 1.85 ± 0.39 | 2.08 ± 0.31 | 1.20 ± 0.26 | 2.56 ± 0.51 | 2.00 ± 0.60 | 2.04 ± 0.38 |
-| first capture, s (runs with one) | 174 ± 67 (10/10) | 104 ± 4 (10/10) | 310 ± 141 (7/10) | 100 ± 2 (10/10) | 143 ± 48 (9/10) | 59 ± 1 (10/10) |
-| captures | 4.4 ± 7.0 | 4.5 ± 7.3 | 2.1 ± 3.7 | 4.1 ± 3.8 | 1.5 ± 0.8 | 1.4 ± 0.5 |
-| deaths | 0.8 ± 1.2 | 10.9 ± 2.2 | 1.8 ± 2.7 | 4.7 ± 4.9 | 1.7 ± 2.1 | 7.5 ± 3.3 |
-| kills | 10.9 ± 2.2 | 0.8 ± 1.2 | 4.7 ± 4.9 | 1.8 ± 2.7 | 7.5 ± 3.3 | 1.7 ± 2.1 |
-| deaths per capture (pooled) | 0.18 | 2.42 | 0.86 | 1.15 | 1.13 | 5.36 |
-| mounted share | 0.85 ± 0.06 | 0.59 ± 0.06 | 0.85 ± 0.10 | 0.49 ± 0.12 | 0.81 ± 0.09 | 0.35 ± 0.15 |
-| route failures | 151 ± 268 | 60 ± 119 | 98 ± 87 | 100 ± 115 | 216 ± 283 | 8 ± 19 |
-| redeploys | 5.5 ± 1.4 | 4.4 ± 3.2 | 3.8 ± 5.7 | 9.3 ± 4.3 | 4.9 ± 0.9 | 54.0 ± 40.2 |
+| tickets at the end | 89.2 ± 13.9 | 83.3 ± 17.5 | 72.7 ± 14.3 | 92.5 ± 6.5 | 81.8 ± 16.3 | 89.2 ± 13.8 |
+| ticket margin (side - other) | 5.9 ± 25.9 | -5.9 ± 25.9 | -19.8 ± 20.4 | 19.8 ± 20.4 | -7.4 ± 26.0 | 7.4 ± 26.0 |
+| ahead at the end | 7 / 10 | 3 / 10 | 2 / 10 | 8 / 10 | 4 / 10 | 5 / 10 |
+| control points held (time mean) | 1.71 ± 0.55 | 1.97 ± 0.55 | 1.49 ± 0.47 | 2.18 ± 0.53 | 1.69 ± 0.62 | 2.09 ± 0.63 |
+| first capture, s (runs with one) | 185 ± 46 (8/10) | 113 ± 51 (9/10) | 201 ± 14 (6/10) | 133 ± 72 (9/10) | 185 ± 26 (8/10) | 152 ± 69 (9/10) |
+| captures | 1.4 ± 1.2 | 1.5 ± 1.0 | 1.0 ± 1.1 | 1.8 ± 0.8 | 1.2 ± 0.9 | 1.8 ± 1.0 |
+| deaths | 1.5 ± 1.6 | 5.4 ± 2.5 | 2.8 ± 1.6 | 4.5 ± 1.6 | 2.5 ± 1.4 | 4.5 ± 1.7 |
+| kills | 3.0 ± 2.4 | 0.7 ± 1.1 | 1.4 ± 2.5 | 2.4 ± 1.6 | 2.8 ± 1.9 | 1.6 ± 1.3 |
+| deaths per capture (pooled) | 1.07 | 3.60 | 2.80 | 2.50 | 2.08 | 2.50 |
+| mounted share | 0.78 ± 0.05 | 0.77 ± 0.08 | 0.87 ± 0.09 | 0.80 ± 0.07 | 0.79 ± 0.06 | 0.78 ± 0.07 |
+| route failures | 52 ± 99 | 32 ± 48 | 80 ± 93 | 32 ± 52 | 13 ± 20 | 47 ± 93 |
+| redeploys | 0.1 ± 0.3 | 0.4 ± 0.5 | 0.0 ± 0.0 | 0.1 ± 0.3 | 0.3 ± 0.9 | 0.0 ± 0.0 |
 | bot errors | 0 | 0 | 0 | 0 | 0 | 0 |
-| play: holds |  |  | 24.1 ± 5.6 |  |  | 13.7 ± 3.9 |
-| play: holdSeconds |  |  | 328 ± 73 |  |  | 156 ± 61 |
-| play: boardOrders |  |  | 3.9 ± 3.3 |  |  | 2.3 ± 2.8 |
-| play: boardings |  |  | 1.6 ± 1.5 |  |  | 1.5 ± 1.1 |
-| play: leaveOrders |  |  | 4.8 ± 14.1 |  |  | 1.2 ± 2.0 |
-| play: leaderChanges |  |  | 2.4 ± 1.0 |  |  | 4.5 ± 1.8 |
-| play: meanFollowerDistance |  |  | 111.1 ± 124.3 |  |  | 298.9 ± 110.5 |
-| play: withinRegroupShare |  |  | 0.22 ± 0.07 |  |  | 0.33 ± 0.10 |
-| play: sharedHullShare |  |  | 0.37 ± 0.42 |  |  | 0.34 ± 0.24 |
+| play: holds |  |  | 24.5 ± 5.4 |  |  | 2.2 ± 0.6 |
+| play: holdSeconds |  |  | 262 ± 67 |  |  | 15 ± 10 |
+| play: boardOrders |  |  | 15.9 ± 17.2 |  |  | 0.0 ± 0.0 |
+| play: boardings |  |  | 5.9 ± 5.6 |  |  | 2.0 ± 0.0 |
+| play: leaveOrders |  |  | 0.0 ± 0.0 |  |  | 0.0 ± 0.0 |
+| play: leaderChanges |  |  | 4.2 ± 2.0 |  |  | 2.0 ± 0.0 |
+| play: meanFollowerDistance |  |  | 53.0 ± 18.5 |  |  | 35.1 ± 0.0 |
+| play: withinRegroupShare |  |  | 0.54 ± 0.23 |  |  | 0.33 ± 0.00 |
+| play: sharedHullShare |  |  | 0.55 ± 0.21 |  |  | 0.08 ± 0.05 |
 
 Against the same side under the SAI, paired by seed (play minus baseline):
 
 | config | side | ticket margin | seeds better | control points held | captures | deaths |
 |---|---|---:|---:|---:|---:|---:|
-| axis=squad | Axis | -29.9 ± 32.4 | 1 / 10 | -0.65 ± 0.52 | -2.3 ± 7.8 | 1.0 ± 2.4 |
-| allies=squad | Allies | -2.5 ± 34.2 | 4 / 10 | -0.04 ± 0.47 | -3.1 ± 7.4 | -3.4 ± 3.2 |
+| axis=squad | Axis | -25.7 ± 26.9 | 2 / 10 | -0.22 ± 0.68 | -0.4 ± 1.5 | 1.3 ± 2.2 |
+| allies=squad | Allies | 13.2 ± 33.5 | 7 / 10 | 0.12 ± 0.70 | 0.3 ± 1.2 | -0.9 ± 3.3 |
 
 #### Bocage
 
 | metric | sai: Axis (sai) | sai: Allies (sai) | axis=squad: Axis (squad) | axis=squad: Allies (sai) | allies=squad: Axis (sai) | allies=squad: Allies (squad) |
 |---|---:|---:|---:|---:|---:|---:|
 | runs | 10 | 10 | 10 | 10 | 10 | 10 |
-| tickets at the end | 99.5 ± 0.8 | 89.1 ± 15.6 | 99.7 ± 0.9 | 96.5 ± 11.0 | 99.4 ± 0.7 | 88.1 ± 12.7 |
-| ticket margin (side - other) | 10.4 ± 16.0 | -10.4 ± 16.0 | 3.2 ± 11.2 | -3.2 ± 11.2 | 11.3 ± 12.7 | -11.3 ± 12.7 |
-| ahead at the end | 4 / 10 | 3 / 10 | 1 / 10 | 1 / 10 | 7 / 10 | 0 / 10 |
-| control points held (time mean) | 2.15 ± 0.31 | 1.30 ± 0.41 | 1.96 ± 0.22 | 1.81 ± 0.14 | 2.22 ± 0.36 | 1.65 ± 0.25 |
-| first capture, s (runs with one) | 36 ± 0 (10/10) | 147 ± 117 (4/10) | 65 ± 4 (10/10) | 111 ± 82 (10/10) | 36 ± 0 (10/10) | 71 ± 7 (10/10) |
-| captures | 1.4 ± 0.5 | 0.4 ± 0.5 | 1.1 ± 0.3 | 1.0 ± 0.0 | 3.7 ± 3.4 | 3.3 ± 3.6 |
-| deaths | 0.5 ± 0.8 | 0.1 ± 0.3 | 0.3 ± 0.9 | 0.0 ± 0.0 | 0.6 ± 0.7 | 0.5 ± 0.7 |
-| kills | 0.1 ± 0.3 | 0.5 ± 0.8 | 0.0 ± 0.0 | 0.3 ± 0.9 | 0.5 ± 0.7 | 0.6 ± 0.7 |
-| deaths per capture (pooled) | 0.36 | 0.25 | 0.27 | 0.00 | 0.16 | 0.15 |
-| mounted share | 0.71 ± 0.12 | 0.84 ± 0.04 | 0.81 ± 0.08 | 0.84 ± 0.09 | 0.73 ± 0.09 | 0.79 ± 0.10 |
-| route failures | 49506 ± 10051 | 32422 ± 14890 | 28110 ± 7002 | 41416 ± 8228 | 43080 ± 10702 | 28296 ± 8086 |
-| redeploys | 8.7 ± 9.5 | 10.9 ± 5.8 | 8.1 ± 14.9 | 4.0 ± 5.3 | 5.7 ± 4.9 | 8.2 ± 4.5 |
+| tickets at the end | 88.3 ± 15.7 | 83.9 ± 19.7 | 87.1 ± 18.3 | 95.8 ± 11.2 | 94.6 ± 9.6 | 88.1 ± 15.6 |
+| ticket margin (side - other) | 4.4 ± 29.6 | -4.4 ± 29.6 | -8.7 ± 23.2 | 8.7 ± 23.2 | 6.5 ± 15.9 | -6.5 ± 15.9 |
+| ahead at the end | 4 / 10 | 5 / 10 | 2 / 10 | 5 / 10 | 4 / 10 | 3 / 10 |
+| control points held (time mean) | 2.28 ± 0.58 | 1.71 ± 0.49 | 1.88 ± 0.25 | 2.03 ± 0.40 | 2.16 ± 0.31 | 1.66 ± 0.37 |
+| first capture, s (runs with one) | 46 ± 1 (10/10) | 150 ± 102 (8/10) | 112 ± 69 (10/10) | 114 ± 67 (10/10) | 45 ± 0 (10/10) | 190 ± 128 (9/10) |
+| captures | 1.8 ± 0.8 | 1.0 ± 0.7 | 1.2 ± 0.4 | 1.5 ± 0.7 | 1.5 ± 0.5 | 1.0 ± 0.5 |
+| deaths | 5.9 ± 6.0 | 1.8 ± 1.9 | 1.9 ± 2.2 | 0.8 ± 1.0 | 3.0 ± 3.5 | 0.2 ± 0.4 |
+| kills | 1.4 ± 1.6 | 5.3 ± 5.7 | 0.7 ± 1.1 | 1.6 ± 2.4 | 0.1 ± 0.3 | 2.5 ± 3.1 |
+| deaths per capture (pooled) | 3.28 | 1.80 | 1.58 | 0.53 | 2.00 | 0.20 |
+| mounted share | 0.84 ± 0.10 | 0.94 ± 0.05 | 0.83 ± 0.06 | 0.95 ± 0.05 | 0.82 ± 0.04 | 0.83 ± 0.10 |
+| route failures | 5 ± 10 | 0 ± 1 | 2 ± 3 | 1 ± 2 | 55 ± 149 | 0 ± 0 |
+| redeploys | 0.1 ± 0.3 | 0.1 ± 0.3 | 0.1 ± 0.3 | 0.0 ± 0.0 | 0.1 ± 0.3 | 0.0 ± 0.0 |
 | bot errors | 0 | 0 | 0 | 0 | 0 | 0 |
-| play: holds |  |  | 17.0 ± 2.5 |  |  | 23.3 ± 4.4 |
-| play: holdSeconds |  |  | 250 ± 56 |  |  | 319 ± 86 |
-| play: boardOrders |  |  | 98.4 ± 125.2 |  |  | 1.0 ± 0.0 |
-| play: boardings |  |  | 1.3 ± 0.8 |  |  | 0.0 ± 0.0 |
-| play: leaveOrders |  |  | 0.4 ± 1.3 |  |  | 2.4 ± 6.3 |
-| play: leaderChanges |  |  | 1.8 ± 0.4 |  |  | 1.0 ± 0.0 |
-| play: meanFollowerDistance |  |  | 17.0 ± 9.3 |  |  | 34.8 ± 0.1 |
-| play: withinRegroupShare |  |  | 0.77 ± 0.14 |  |  | 0.36 ± 0.00 |
-| play: sharedHullShare |  |  | 0.39 ± 0.20 |  |  | 0.00 ± 0.00 |
+| play: holds |  |  | 8.5 ± 2.4 |  |  | 14.4 ± 6.7 |
+| play: holdSeconds |  |  | 83 ± 23 |  |  | 205 ± 108 |
+| play: boardOrders |  |  | 4.7 ± 2.3 |  |  | 0.0 ± 0.0 |
+| play: boardings |  |  | 1.6 ± 1.1 |  |  | 0.0 ± 0.0 |
+| play: leaveOrders |  |  | 12.5 ± 39.5 |  |  | 5.7 ± 18.0 |
+| play: leaderChanges |  |  | 4.7 ± 1.6 |  |  | 0.3 ± 0.5 |
+| play: meanFollowerDistance |  |  | 33.9 ± 13.1 |  |  | 47.0 ± 0.0 |
+| play: withinRegroupShare |  |  | 0.49 ± 0.12 |  |  | 0.11 ± 0.00 |
+| play: sharedHullShare |  |  | 0.03 ± 0.03 |  |  | 0.00 ± 0.00 |
 
 Against the same side under the SAI, paired by seed (play minus baseline):
 
 | config | side | ticket margin | seeds better | control points held | captures | deaths |
 |---|---|---:|---:|---:|---:|---:|
-| axis=squad | Axis | -7.2 ± 21.3 | 4 / 10 | -0.19 ± 0.42 | -0.3 ± 0.7 | -0.2 ± 1.4 |
-| allies=squad | Allies | -0.9 ± 22.6 | 4 / 10 | 0.35 ± 0.57 | 2.9 ± 3.7 | 0.4 ± 0.8 |
+| axis=squad | Axis | -13.1 ± 43.4 | 4 / 10 | -0.41 ± 0.65 | -0.6 ± 1.1 | -4.0 ± 6.6 |
+| allies=squad | Allies | -2.1 ± 32.3 | 5 / 10 | -0.05 ± 0.64 | 0.0 ± 0.8 | -1.6 ± 1.8 |
 
 **Reading it.**
 
-- **No bot errors** in 60 matches. The first matrix threw 9 times on El
-  Alamein seed 6 (`Invalid array length`). That was a latent bug in
-  `nav-search.js findLocalPath` (the search box was sized before a buried
-  start or goal was moved out to open paint). The follow orders' many short
-  legs found it; it is fixed in `58e61c32` with a pin in the nav harness,
-  and the baseline traces did not move.
-- **El Alamein: the play loses.** The Axis under the squad play ends 29.9
-  tickets worse off than the Axis under the SAI (ahead in 1 seed of 10) and
-  holds 0.65 fewer control points on average. It also takes its first
-  capture later (310 s in 7 runs, against 174 s in 10). The Allies under
-  the play come out level within the noise (-2.5 ± 34.2, 4 of 10). The
-  leaders hold for about 330 s a match (Axis) to wait for followers. Two
-  thirds of the followers' samples are more than 25 m from their leader
-  (`withinRegroupShare` 0.22 / 0.33). On a vehicle level with 30 hulls and
-  two-seat stand-ins, a squad of four cannot ride together, so the play
-  mostly slows its leaders.
-- **The Allied side's 54 redeploys a match are an artifact, not the play.**
-  128 of the 145 Allied redeploys in seed 3 were followers on a `WPFollow`
-  keeping pace behind a walking leader. The page's no-progress safety net
-  (`bot-decision.js updateObjectiveReadout`, 12 s, INVENTION) keeps its best
-  distance across a change of order, and a follow goal that moves on every
-  5 m never shows progress at a steady distance. The redeploy then puts the
-  follower back at the spawn. See the what-if below.
-- **Bocage says little.** Both sides lose 28,000 to 50,000 route failures a
-  match to the tank map's missing bridge crossing (Brief C). Almost nobody
-  dies (under one death a side), and the Allied squad's counters are the
-  same in every seed (0 boardings, 1 leader change, follower distance 34.8 ±
-  0.1). The differences (-7.2 and -0.9 tickets; Allies +0.35 control points
-  and +2.9 captures) are inside one sd.
+- **No bot errors** in 60 matches.
+- **The runner's fixes show in the baseline.** Against the pre-I table
+  (land vehicles only, the per-bot capture timer, the redeploy kept across
+  orders): El Alamein's captures fall from 4.4 / 4.5 a side to 1.4 / 1.5
+  (no flag traded every 10 s), redeploys from 5.5 / 4.4 to 0.1 / 0.4, and
+  Bocage's route failures from 49,506 / 32,422 to 5 / 0 (the bridges).
+  Bocage now fights: 5.9 and 1.8 deaths a side under the SAI, against 0.5
+  and 0.1.
+- **El Alamein: the play still loses on the Axis side** (-25.7 ± 26.9
+  tickets against the Axis under the SAI, better in 2 seeds of 10) and is
+  level to slightly ahead on the Allied side (+13.2 ± 33.5, 7 of 10, inside
+  one sd). With real vehicles the Axis squads ride together more (shared
+  hull 0.55, 5.9 boardings a match) and their leaders still hold 262 s a
+  match for followers.
+- **Bocage: no measurable difference** (-13.1 ± 43.4 and -2.1 ± 32.3, 4
+  and 5 seeds of 10); the Allied squad side's counters barely move between
+  seeds (0 boardings, follower distance 47.0 ± 0.0), so its leaders and
+  followers mostly sit.
 
-**What-if: the no-progress test restarted on a new order.** The same El
-Alamein matrix, same seeds, run with `sim/compare.mjs --viewer` on a scratch
-copy of the viewer whose `updateObjectiveReadout` resets `_bestGoalDist`
-and `_noProgress` when `bot.waypoints` is a different object. The change was
-not made on main: `bot-decision.js` is outside this brief, and the change
-moves the baseline trace. The rows that matter:
-
-| | sai: Axis | sai: Allies | axis=squad: Axis (squad) | allies=squad: Allies (squad) |
-|---|---:|---:|---:|---:|
-| redeploys, main | 5.5 ± 1.4 | 4.4 ± 3.2 | 3.8 ± 5.7 | 54.0 ± 40.2 |
-| redeploys, reset | 2.1 ± 0.3 | 1.7 ± 1.8 | 0.3 ± 0.5 | 2.0 ± 1.1 |
-| margin vs same side under the SAI, main | | | -29.9 ± 32.4 (1/10 better) | -2.5 ± 34.2 (4/10) |
-| margin vs same side under the SAI, reset | | | -24.8 ± 16.2 (1/10) | -15.5 ± 43.4 (3/10) |
-| control points held vs SAI, reset | | | -0.64 ± 0.23 | -0.06 ± 0.60 |
-| follower within 25 m of his leader, reset | | | 0.22 | 0.66 |
-
-With the reset, the redeploy storm is gone, and the SAI's own redeploys
-halve too (the net misfires on the SAI's re-orders as well). The play still
-loses on El Alamein: the Axis squad side is worse in 9 seeds of 10, and the
-Allied result is noise around a loss. **Recommended**: make the reset in
-`bot-decision.js` (one line; it changes seeded traces wherever an order
-changes while a bot is in MoveTo), then re-run this comparison.
+The pre-I table (`b1fe0db9`: kinematic `SimDrive` hulls, hitscan guns, land
+vehicles only) had the Axis play at -29.9 ± 32.4 on El Alamein and both
+Bocage differences inside one sd; its what-if (the redeploy restarted on a
+new order) is now main (ledger AI-101).
 
 ## Open
 
-- **Re-run the comparison once Brief I lands.** The runner today seats bots
-  in land vehicles only, as kinematic `SimDrive` hulls with hitscan guns;
-  planes, ships, fixed guns and parked hulls as obstacles are missing
-  (sim/README.md). A squad's vehicle life (boarding, convoys) is the part of
-  the play those stand-ins distort most. Brief I's first commits reached
-  main while this was being written (`9f5dde2f`..`1183ac12`: headless
-  GunFire, aircraft and landing craft on the page's drives, fixed guns,
-  parked hulls). On `db5583b4`, the squad play on both sides ran 600 s on
-  El Alamein and on Bocage (seed 1) with no bot errors. The table above is
-  still the pre-I one. The command is the same:
-  `node sim/compare.mjs --maps el_alamein,bocage --seeds 1-10 --time 600
-  --configs "sai axis=squad allies=squad" ...`.
+- ~~Re-run the comparison once Brief I lands~~ done after Briefs I, C, D
+  and K (the table above). Re-run it once Brief M's baked search maps have
+  settled: they change every route.
 - The no-progress redeploy (`bot-decision.js updateObjectiveReadout`)
   restarts on a new order since Brief K (ledger AI-101).
 - The page runs the SAI only: nothing passes `env.doctrine` from `map.html`
