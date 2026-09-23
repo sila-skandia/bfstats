@@ -363,15 +363,48 @@ export function aimLook(bot, desiredYaw, desiredPitch = null, maxCounts = AXIS_M
  * 0x08658420 is the 101-entry table (`sCurveExact`). The counts are a RATE: a
  * turret's servo turns `count x maxSpeed` deg/s (turret-rig.js), so the pull
  * shrinks with the error and the aim settles instead of swinging through the
- * target. NOT ported: the reachability block for a camera whose yaw limits
- * are not the full circle (0x08627c69..0x086281a0), which past its window
- * zeroes both channels and returns, or forces a full turn the short way
- * round. Of vanilla's guns only the Defgun (+-90) has such a window.
- * Returns `{ x, y, aligned, pitch, yaw }`.
+ * target.
+ *
+ * `window` is the camera's yaw window (Brief L, ledger AI-106), read from
+ * 0x08627c69..0x08627e09 with the two branch tails at 0x08629350 and
+ * 0x086290cd checked in the disassembly: `{ min, max, rel }`, radians, the
+ * ControlInfo's `setCameraRelativeMin/MaxRotationDeg` x (template +0x68 /
+ * +0x74, `AITemplateControlInfo` 0x085de770 / 0x085de870, clamped to +-pi) and
+ * the camera's own yaw from its base now (`getCameraRelativeRotation`
+ * 0x085d4680, x), all positive to the camera's right. Only when the window is
+ * not the full circle (`min > -pi || max < pi`):
+ *
+ *   a = asin-like angle of `right` (`-(acos(right) - pi/2)`); behind
+ *     (ahead < 0): a = sign(a) pi - a
+ *   a + rel inside [min - 0.001, max + 0.001]: the law as below
+ *   a + rel > max + 0.001: unreachable when `rel - 2 pi + a < min`, else
+ *     `right` is taken as -1 (a full turn to the left, the long way round)
+ *   a + rel < min - 0.001: unreachable when `max < rel + 2 pi - a` (the
+ *     engine's own arithmetic, `fsubrp` at 0x08627df8: not `a + rel + 2 pi`),
+ *     else `right` is taken as +1
+ *   unreachable: both channels 0, nothing else (`unreachable: true`)
+ *
+ * Returns `{ x, y, aligned, pitch, yaw, unreachable }`.
  */
-export function lookAtCounts(dir, basis, ctrl = DEFAULT_SEAT_CONTROL, tolerance = 0) {
+export function lookAtCounts(dir, basis, ctrl = DEFAULT_SEAT_CONTROL, tolerance = 0, window = null) {
   const dot = v => clamp(dir[0] * v[0] + dir[1] * v[1] + dir[2] * v[2], -1, 1);
-  const up = dot(basis.u), right = dot(basis.r), ahead = dot(basis.f);
+  const up = dot(basis.u), ahead = dot(basis.f);
+  let right = dot(basis.r);
+  if (window && (window.min > -Math.PI || window.max < Math.PI)) {
+    let a = -(Math.acos(right) - Math.PI / 2);
+    if (ahead < 0) a = Math.sign(a) * Math.PI - a;
+    const rel = window.rel ?? 0;
+    const t = a + rel;
+    if (window.min - 0.001 <= t) {
+      if (window.max + 0.001 < t) {
+        if (rel - 2 * Math.PI + a < window.min) return { x: 0, y: 0, aligned: false, pitch: 0, yaw: 0, unreachable: true };
+        right = -1;
+      }
+    } else {
+      if (window.max < rel + 2 * Math.PI - a) return { x: 0, y: 0, aligned: false, pitch: 0, yaw: 0, unreachable: true };
+      right = 1;
+    }
+  }
   const shape = c => clamp(Math.sign(c) * Math.log10(Math.abs(c) * 9 + 1), -1, 1);
   const pitch = Math.acos(shape(up)) - Math.PI / 2;
   let yaw = Math.acos(shape(right)) - Math.PI / 2;
@@ -384,14 +417,34 @@ export function lookAtCounts(dir, basis, ctrl = DEFAULT_SEAT_CONTROL, tolerance 
     -LOOK_COUNTS_MAX, LOOK_COUNTS_MAX);
   const x = clamp(Math.sign(c.rollSensitivity) * Math.sign(yaw) * sCurveExact(Math.abs(yaw)) * c.rollScale,
     -LOOK_COUNTS_MAX, LOOK_COUNTS_MAX);
-  return { x: x || 0, y: y || 0, aligned: false, pitch, yaw };
+  return { x: x || 0, y: y || 0, aligned: false, pitch, yaw, unreachable: false };
+}
+
+/**
+ * The seat's camera yaw window for `lookAtCounts`, or null: the ControlInfo's
+ * `cameraMinDeg` / `cameraMaxDeg` x (extract_vehicle_ai.py `control_info`),
+ * and the rig's traverse from rest, positive to the right
+ * (`TurretRig.turretYawRadians`, the engine's sign), as the camera's yaw from
+ * its base. A window of zero width (`0` / `0`: the M3A1, Priest and Wespe,
+ * whose look turns the hull, `lookHorizontalControl PIYaw`) is not applied:
+ * read literally it would zero every count off the exact nose, and which
+ * entry aims those three was not read (INVENTION).
+ */
+export function seatYawWindow(bot) {
+  const c = bot.vehicle?.controlInfo;
+  const lo = c?.cameraMinDeg?.[0], hi = c?.cameraMaxDeg?.[0];
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || !(hi > lo)) return null;
+  const min = clamp(lo * Math.PI / 180, -Math.PI, Math.PI), max = clamp(hi * Math.PI / 180, -Math.PI, Math.PI);
+  if (!(min > -Math.PI || max < Math.PI)) return null;
+  const rel = bot.vehicle?.occupancy?.turret?.turretYawRadians?.() ?? 0;
+  return { min, max, rel };
 }
 
 /** Write the seat's look counts toward the world direction `dir`, taken in
- *  the barrel's frame, through the seat's ControlInfo. */
+ *  the barrel's frame, through the seat's ControlInfo and its yaw window. */
 export function aimAlong(bot, dir, frame = barrelFrame(bot)) {
   if (!frame) return null;
-  const counts = lookAtCounts(dir, frame, bot.vehicle?.controlInfo ?? DEFAULT_SEAT_CONTROL, 0);
+  const counts = lookAtCounts(dir, frame, bot.vehicle?.controlInfo ?? DEFAULT_SEAT_CONTROL, 0, seatYawWindow(bot));
   bot.lookX = counts.x;
   bot.lookY = rigHasPitch(bot) ? counts.y : 0;
   bot._aimCounts = counts;
@@ -482,7 +535,15 @@ export function turretAimAt(bot, targetPoint, targetVel = [0, 0, 0]) {
   const frame = barrelFrame(bot);
   if (!frame) return null;
   const origin = frame.origin;
-  const rel = [targetPoint[0] - origin[0], targetPoint[1] - origin[1], targetPoint[2] - origin[2]];
+  const now = bot._now ?? 0;
+  // The fire correction first (ledger AI-105): the tracked round's fate since
+  // the last tick, then `correctAim` as `getAimVec` 0x0853b820 calls it,
+  // before the sample. The correction is added to the target's position
+  // relative to the muzzle.
+  trackOwnRounds(bot, now);
+  const corr = correctAim(bot, now);
+  const rel = [targetPoint[0] - origin[0] + corr[0], targetPoint[1] - origin[1] + corr[1],
+               targetPoint[2] - origin[2] + corr[2]];
   const own = unitVelocity(bot);
   const relVel = [targetVel[0] - own[0], targetVel[1] - own[1], targetVel[2] - own[2]];
   const gun = gunBallistics(bot);
@@ -495,11 +556,262 @@ export function turretAimAt(bot, targetPoint, targetVel = [0, 0, 0]) {
   const aim = {
     valid: !!lead, dir, time: t, speed: gun.speed, gravity: gun.gravity,
     // `Aimer::getPredictedTargetPosition` 0x08539280 at the impact time,
-    // relative to the muzzle (the aim statement's +0x144 less its +0x180).
-    predicted: [rel[0] + relVel[0] * t, rel[1] + relVel[1] * t, rel[2] + relVel[2] * t],
+    // relative to the muzzle, with the correction taken back out: `getAimVec`
+    // writes +0x144 as the muzzle plus the corrected prediction less the
+    // correction, and `getPredictedPosition` 0x0853c2e0 hands that to the
+    // trigger's precision test and the round tracker alike.
+    predicted: [rel[0] + relVel[0] * t - corr[0], rel[1] + relVel[1] * t - corr[1],
+                rel[2] + relVel[2] * t - corr[2]],
+    correction: [...corr],
   };
   bot._turretAim = aim;
+  // `EntryMouseTurretAimAt::execute` 0x08619d2b..0x08619d5b: while the record
+  // is armed (+6) a valid aim writes the predicted position into +0x38 (and
+  // the firing direction into +0x20): the point the next tracked round is
+  // measured against.
+  const rec = fireCorrection(bot);
+  if (lead && rec.armed) {
+    rec.aimPoint = [origin[0] + aim.predicted[0], origin[1] + aim.predicted[1], origin[2] + aim.predicted[2]];
+  }
   return aim;
+}
+
+// --- The fire correction: `FireCorrectionData`, BotMain +0x138 --------------
+//
+// Read 2026-09-24 (Brief L; ledger AI-105). The engine watches one of a
+// bot's rounds at a time and feeds its miss back into the aim:
+//
+//  * `BotMain::event_firing` 0x0852cd90 (vt+0x1b0), from
+//    `AICollisionHandler::handleProjectileFire` 0x08464820 for every round a
+//    bot's player fires: stamps the bot's last-fire time (+0x118). When the
+//    last watched round is resolved (+5) and its miss consumed (+0x50 clear)
+//    it takes this one: +5 cleared, the round's id (+0), armed (+6), the
+//    firing position (+8), and `addBotProjectile` 0x084651c0 starts tracking
+//    it against the record's +0x38 (the predicted target at that moment).
+//    Otherwise it disarms (+6 = 0), which freezes +0x38 until the next take.
+//  * `AICollisionHandler::updateBotProjectiles` 0x084650e0: the round's
+//    highest point, and its position as the pre point (+8) until its
+//    horizontal distance from the start reaches the target's, then the post
+//    point (+0x14) and `passed`.
+//  * `BotMain::planExecution` 0x085202c0 (0x08520560..0x08520608): a passed
+//    round is observed: pre, post and target points, the height, resolved
+//    (+5), fresh (+0x50), passed (+0x51); the tracking dropped.
+//  * `event_shotMissed` 0x08526a90 (vt+0x150): a round that struck the
+//    ground (`GameServer::handleCollisionForProjectile` 0x08153ba0 ->
+//    `handleProjectileMiss` 0x08465080) or anything but the target
+//    (`event_shotHit` 0x08526a40 passes it on) is observed the same way,
+//    `passed` whatever the tracker had. A hit on the target: resolved, not
+//    fresh, no correction. A round that bursts or expires (`Projectile::
+//    detonate` 0x0831e680 -> `handleProjectileTimeout` 0x08464450 ->
+//    `event_shotTimeOut` 0x08526bc0) only drops the tracking: the record
+//    stays unresolved and no further round is watched until the target
+//    changes.
+//  * `BotMain::setFiringTarget` 0x0852ce20 -> `FireCorrectionData::newTarget`
+//    0x08534810 on a new target: resolved, armed, the correction zeroed.
+//  * `BAPAAimAt::correctAim` 0x0853a6d0, first in every `getAimVec`: a fresh
+//    observation adds 0.8 x (target - the round abreast of it) when it passed
+//    (abreast: the start plus the unit shot line to the post point, scaled to
+//    the target's distance over the cosine of their horizontal angle), else
+//    0.1 x its horizontal shortfall to the height; either way consumed. With
+//    nothing fresh and no round fired for 10 s, the sum decays by 0.99 a call.
+//
+// The viewer: rounds are `GunFire`'s (`bot.world.guns`, tracers and
+// projectiles), a bot's own the ones its seat's weapon group fires; a round
+// is taken the tick it is first seen, its fate read off the page's hit list
+// (`guns.hits`, the record nearest its last position). INVENTION: the
+// tracker runs on the bot's tick while it aims (the engine's is a frame
+// update whose caller was not found); a soldier's round is the page's hit
+// scan, so only a mounted gunner is corrected.
+
+/** `correctAim` 0x0853a6d0: the gain on an observed miss. */
+export const CORRECTION_GAIN = 0.8;
+/** ...on a round that came down short: the lift per metre of shortfall. */
+export const CORRECTION_SHORT_LIFT = 0.1;
+/** ...and the decay a call after `CORRECTION_IDLE` s without a round. */
+export const CORRECTION_DECAY = 0.99;
+export const CORRECTION_IDLE = 10.0;
+
+/** The bot's `FireCorrectionData` (its ctor 0x08532690: resolved, all zero). */
+export function fireCorrection(bot) {
+  if (!bot._fireCorrection) {
+    bot._fireCorrection = {
+      targetId: undefined, resolved: true, fresh: false, passed: false, armed: false,
+      origin: null, pre: null, post: null, target: null, maxHeight: 0,
+      sum: [0, 0, 0], lastFire: -Infinity, aimPoint: null,
+      round: null, seen: new WeakSet(), hitsHead: undefined,
+      observed: 0, hits: 0, timeouts: 0,
+    };
+  }
+  return bot._fireCorrection;
+}
+
+/** `FireCorrectionData::newTarget` 0x08534810, as `setFiringTarget` calls it. */
+export function newCorrectionTarget(rec, targetId) {
+  rec.targetId = targetId;
+  rec.resolved = true;
+  rec.armed = true;
+  rec.fresh = false;
+  rec.sum = [0, 0, 0];
+  rec.round = null;
+}
+
+function roundPosition(shot) {
+  const p = shot.mesh?.position;
+  if (!p) return null;
+  const lead = shot.lead ?? 0;
+  if (lead && shot.velocity) {
+    const v = shot.velocity, n = Math.hypot(v.x, v.y, v.z) || 1;
+    return [p.x + v.x / n * lead, p.y + v.y / n * lead, p.z + v.z / n * lead];
+  }
+  return [p.x, p.y, p.z];
+}
+
+function distXZ2(a, b) {
+  const dx = a[0] - b[0], dz = a[2] - b[2];
+  return dx * dx + dz * dz;
+}
+
+/** The observation `planExecution` / `event_shotMissed` record. */
+function observe(rec, round, passed) {
+  rec.pre = round.pre; rec.post = round.post ?? round.pre; rec.target = round.target;
+  rec.maxHeight = round.maxHeight;
+  rec.origin = round.start;
+  rec.resolved = true;
+  rec.fresh = true;
+  rec.passed = passed;
+  rec.round = null;
+  rec.observed++;
+}
+
+/**
+ * One tick of the round watch for a mounted bot: a new target resets the
+ * record; each of the seat's rounds first seen is an `event_firing`; the
+ * watched round is stepped (`updateBotProjectiles`), observed once it has
+ * passed the target (`planExecution`), and resolved by its fate when it is
+ * gone (hit, miss, burst). Returns the record.
+ */
+export function trackOwnRounds(bot, now) {
+  const rec = fireCorrection(bot);
+  const targetId = bot.firingTarget ?? null;
+  if (rec.targetId !== targetId) newCorrectionTarget(rec, targetId);
+  const guns = bot.world?.guns;
+  const group = guns ? weaponGroup(bot) : null;
+  if (!guns || !group) return rec;
+  const live = [];
+  for (const list of [guns.tracers, guns.projectiles]) {
+    for (const shot of list ?? []) if (shot.group === group) live.push(shot);
+  }
+  // New rounds: `event_firing` for each, the first one taken when resolved.
+  // They left during the world step before this tick, so before anything
+  // this tick observes.
+  for (const shot of live) {
+    if (rec.seen.has(shot)) continue;
+    rec.seen.add(shot);
+    rec.lastFire = now;
+    if (!(rec.resolved && !rec.fresh)) { rec.armed = false; continue; }
+    const pos = roundPosition(shot);
+    if (!pos) continue;
+    // The firing position: the round's own, walked back along its flight.
+    const v = shot.velocity, n = v ? Math.hypot(v.x, v.y, v.z) : 0;
+    const back = n > 0 ? (shot.travelled ?? 0) / n : 0;
+    const start = n > 0 ? [pos[0] - v.x * back, pos[1] - v.y * back, pos[2] - v.z * back] : pos;
+    const target = rec.aimPoint ?? pos;
+    rec.resolved = false;
+    rec.armed = true;
+    rec.round = { shot, start, target, dist2: distXZ2(start, target), pre: start, post: null,
+                  passed: false, maxHeight: start[1], last: start };
+  }
+  // The watched round: stepped while it flies, resolved when it is gone.
+  const round = rec.round;
+  if (round) {
+    if (live.includes(round.shot)) {
+      const pos = roundPosition(round.shot);
+      if (pos) {
+        round.maxHeight = Math.max(round.maxHeight, pos[1]);
+        if (distXZ2(round.start, pos) >= round.dist2) { round.passed = true; round.post = pos; }
+        else round.pre = pos;
+        round.last = pos;
+      }
+    } else {
+      const hit = roundFate(bot, guns, group, round, rec.hitsHead);
+      if (!hit || hit.kind === 'endOfLife') {
+        rec.round = null; rec.timeouts++;                 // event_shotTimeOut: stays unresolved
+      } else if (hitsTarget(bot, hit, targetId)) {
+        rec.round = null; rec.resolved = true; rec.fresh = false; rec.hits++;   // event_shotHit on the target
+      } else {
+        observe(rec, round, round.passed);                // event_shotMissed
+      }
+    }
+  }
+  if (rec.round?.passed) observe(rec, rec.round, true);  // planExecution
+  rec.hitsHead = guns.hits?.[0];
+  return rec;
+}
+
+/** The page's record of the watched round's end: the newest hits since the
+ *  last tick from the same gun group, the one nearest the round's last
+ *  position; null when there is none (it expired). */
+function roundFate(bot, guns, group, round, head) {
+  const hits = guns.hits ?? [];
+  let best = null, bestD = Infinity;
+  for (const h of hits) {
+    if (h === head) break;
+    if (h.firerGroup !== group || !h.point) continue;
+    const d = Math.hypot(h.point[0] - round.last[0], h.point[1] - round.last[1], h.point[2] - round.last[2]);
+    if (d < bestD) { bestD = d; best = h; }
+  }
+  return best;
+}
+
+/** `event_shotHit` 0x08526a40 compares the struck object with the record's
+ *  target object (+0x4c): the target soldier, or his unit. */
+function hitsTarget(bot, hit, targetId) {
+  if (targetId === null || targetId === undefined) return false;
+  if (hit.target === targetId) return true;
+  const player = bot.world?.players?.get?.(targetId) ?? null;
+  const owner = player ? bot.senses?.unitOwnerOf?.(player) : null;
+  return owner !== null && owner !== undefined && owner !== -1 && hit.owner === owner;
+}
+
+/**
+ * `BAPAAimAt::correctAim` 0x0853a6d0: consume a fresh observation into the
+ * running correction, or decay it after 10 s without a round. Returns the
+ * correction `[x, y, z]` (the record's +0x2c), metres, added to the target.
+ */
+export function correctAim(bot, now) {
+  const rec = fireCorrection(bot);
+  const c = rec.sum;
+  if (!rec.fresh) {
+    if (now - rec.lastFire > CORRECTION_IDLE) {
+      c[0] *= CORRECTION_DECAY; c[1] *= CORRECTION_DECAY; c[2] *= CORRECTION_DECAY;
+    }
+    return c;
+  }
+  const o = rec.origin, t = rec.target;
+  if (!rec.passed) {
+    c[1] += Math.sqrt(distXZ2(rec.pre, t)) * CORRECTION_SHORT_LIFT;
+  } else {
+    // The shot line (origin -> post) and the target line (origin -> target):
+    // the round abreast of the target is the shot line's unit vector times
+    // |target - origin| / cos(angle between them on the ground).
+    const a = [rec.post[0] - o[0], rec.post[1] - o[1], rec.post[2] - o[2]];
+    const b = [t[0] - o[0], t[1] - o[1], t[2] - o[2]];
+    const bn = Math.hypot(b[0], b[2]);
+    const bx = bn > 0 ? b[0] / bn : 0, bz = bn > 0 ? b[2] / bn : 0;
+    const dotAB = a[0] * bx + a[2] * bz, crossAB = a[2] * bx - a[0] * bz;
+    const cn = Math.hypot(dotAB, crossAB);
+    const cos = cn > 0 ? dotAB / cn : 0;
+    // A shot at right angles to the target line (or with no ground track)
+    // divides by zero in the engine; the viewer skips it (INVENTION).
+    if (cos > 1e-6) {
+      const reach = Math.hypot(b[0], b[1], b[2]) / cos;
+      const an = Math.hypot(a[0], a[1], a[2]);
+      const u = an > 0 ? [a[0] / an, a[1] / an, a[2] / an] : [0, 0, 0];
+      for (let i = 0; i < 3; i++) c[i] += (t[i] - (u[i] * reach + o[i])) * CORRECTION_GAIN;
+    }
+  }
+  rec.fresh = false;
+  return c;
 }
 
 /**
