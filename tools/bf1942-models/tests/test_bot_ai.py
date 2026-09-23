@@ -239,6 +239,14 @@ class BotAiTests(unittest.TestCase):
         self.assertEqual(v["vehicle"], "v")
         self.assertGreater(v["vehicleScore"], 0)
 
+    def test_the_sense_frustum_is_square_about_the_camera(self) -> None:
+        f = self.results["frustum"]
+        self.assertTrue(f["below40inf"])                              # 50 deg half-angle
+        self.assertFalse(f["below40veh"])                             # 37.5 deg half-angle
+        self.assertFalse(f["behind"])
+        self.assertTrue(f["side30"])
+        self.assertTrue(f["yawOnlyBelow"])                            # the old bearing-only test
+
     def test_the_plane_approaches_attacks_and_breaks(self) -> None:
         p = self.results["planeFire"]
         self.assertEqual(p["far"], "approach")

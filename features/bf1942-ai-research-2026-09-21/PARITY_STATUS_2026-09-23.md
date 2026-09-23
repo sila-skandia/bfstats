@@ -96,7 +96,15 @@ which the bot tests then covered.
 
 ## Open, in priority order (the next session starts here)
 
-1. **No soldier hit from the air yet.** The attack approaches at ~45 m (the
+1. **No soldier hit from the air yet (session 3: still none).** Read since:
+   the sense frustum is square and 3D (AI-67, built), the AI spread applies
+   to vehicle guns exactly as the viewer had it (AI-68), and the 50 m
+   approach / 75 m aim clearances are the engine's (AI-69, confirmed in the
+   disassembly). With them, eight passes on El Alamein: the approach lines
+   the nose up (miss 5 m at 289 m) and the attack's pull-up then carries the
+   nose away (the lead sits below the line of sight). What remains to
+   compare is the flight model's pitch response against the engine's, not
+   the AI. Earlier notes: The attack approaches at ~45 m (the
    MoveTo3dObject's 50 m clearance) and the aim's 75 m clearance pulls the
    nose up when the attack starts, so the pass sweeps the nose through the
    target; the precision gate opened 100 ticks against a Stuka but no
