@@ -244,6 +244,44 @@ class BotAiTests(unittest.TestCase):
         self.assertAlmostEqual(s["heat"][1], 0.5, places=6)
         self.assertEqual(s["radius"], 50.0)
 
+    def test_a_side_knows_an_enemy_with_a_security_that_decays(self) -> None:
+        # Ledger AI-75: `InformationKnown::getSecurity` 0x085e8670 is
+        # 1 - SCurve((t - t0) / degeneration); SCurve::calculate 0x08658420
+        # blends its 101-entry table at trunc(100 x).
+        s = self.results["security"]
+        for got, want in zip(s["curve"], [0.0, 0.0011246949, 0.0913624987, 0.5, 0.9997750998, 1.0, 1.0, 0.0]):
+            self.assertAlmostEqual(got, want, places=7)
+        for got, want in zip(s["soldier"], [1.0, 1 - 0.0872564986, 0.5, 1 - 0.912743986, 0.0, 0.0]):
+            self.assertAlmostEqual(got, want, places=7)                  # the soldier's degeneration 15
+        # Hearing: `setTime(now, 0.5)` 0x085e8210.
+        self.assertEqual(s["heardFresh"], 1.0)                           # first contact makes it at security 1
+        self.assertEqual(s["heardKept"], 10)                             # already above 0.5: unchanged
+        self.assertAlmostEqual(s["heardBack"]["t0"], 30 - 1 / (0.5 * 15), places=5)
+        self.assertAlmostEqual(s["heardBack"]["s"], 1 - (2 / 225) * 100 * 0.00224938989, places=6)
+        # The enemy tables: a never-seen unit is not summed, a seen one fades
+        # over its template's degeneration (Spitfire 5 s, soldier 15 s).
+        series = s["series"]
+        self.assertTrue(all(r["b"] == "absent" for r in series))
+        self.assertAlmostEqual(series[0]["inf"], 5.0, places=5)          # (0 + 10 x 1) x 0.5
+        self.assertAlmostEqual(series[1]["p"], 1 - 0.284830987, places=6)  # 2 s of 5
+        self.assertEqual(series[3]["p"], 0.0)                            # 6 s past a 5 s degeneration
+        f = 800 / 15 - 53                                                # 8 s of 15: x = 0.5333
+        self.assertAlmostEqual(series[4]["a"], 1 - ((1 - f) * 0.568435013 + f * 0.590821028), places=6)
+        self.assertEqual(series[8]["a"], 0.0)                            # 16 s: gone
+        self.assertLess(series[8]["inf"], 0.6)                           # the table halves away
+        self.assertLess(series[8]["infType"], series[3]["infType"])
+        self.assertTrue(s["forgot"])                                     # a dead unit's record goes
+        self.assertEqual(s["legacy"], 5.0)                               # no id, no clock: weight 1
+        # The senses write it: a frustum candidate is made known before any
+        # ray (e4, behind a wall, never spotted), a spot refreshes the spotted
+        # hull's other seat too (e2, behind the bot), a re-sight refreshes the
+        # remembered one only, a heard shot makes the unknown e3.
+        self.assertFalse(s["e4InMemory"])
+        self.assertEqual(s["afterSpot"], {"e1": 5, "e2": 5, "e4": 5})
+        self.assertEqual(s["afterResight"], {"e1": 9, "e2": 5, "e4": 5})
+        self.assertEqual(s["afterHear"], {"e1": 9, "e2": 5, "e4": 5, "e3": 9})
+        self.assertIsNone(s["securityOfUnknown"])
+
     def test_the_seat_swap_prefers_the_wheel_of_a_free_jeep(self) -> None:
         t = self.results["teleport"]
         self.assertIsNone(t["gunnerStays"]["best"])                   # 10 x 0.5 < 8 x 1.0

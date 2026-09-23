@@ -41,12 +41,56 @@
 //    `min(60 / n, 5)` s, and keeps an attacker map for `max(300 / n, 10)` s
 //    that `isAttacking` reads.
 //
+//  * What a SIDE knows of an enemy (read 2026-09-24; ledger AI-75): every
+//    AI object holds one `Information` per side. Its own side's is an
+//    `InformationReal` (`getSecurity` 0x085e8d10 is `fld1`); an object whose
+//    template sets `commonKnowledge 1` (`AITemplate` +0x18, console
+//    handler 0x08500260) is an `AIObjectShared` with one `InformationReal`
+//    for everybody (`AIObjectShared::createInformation` 0x085db040). Any
+//    other side gets an `InformationKnown`, made on demand the first time
+//    that side asks for it (`AIObjectReal::getInformation` 0x085d8970 ->
+//    `createInformation(t, side)` 0x085d8ca0, which ends in `setTime(t)`).
+//    A bot asks when it rebuilds its sense candidates: `BotMain::sense`
+//    takes every object of the band's frustum from `getWorldFrustumObjects`
+//    (env vt+0x50) and calls `getInformation(own side)` on it, on an
+//    occupied unit's occupier and on each secondary's occupier
+//    (0x08521cf0, before any ray), so an enemy is known at security 1 the
+//    first time it stands in any bot's frustum band, seen or not, and
+//    nowhere in the side's grid before that. Asking again makes nothing
+//    new and refreshes nothing. The
+//    known one keeps its last refresh time t0 (+0x3c, written by every
+//    `setTime(t)` 0x085e8050) and the template's `aiTemplate.degeneration`
+//    D (+0x40, from `AITemplate` +0xc, console handler 0x084ff660; the ctor
+//    0x085e7f50), and `getSecurity(t)` 0x085e8670 is
+//    `1 - SCurve((t - t0) / D)`: 1 at a refresh, 0 once D seconds pass.
+//    The soldier's template (`Objects/Soldiers/Common/AI/Objects.con`) has
+//    `degeneration 15`.
+//  * What refreshes it: `event_SpottedEnemyObject` 0x08523ae0 calls
+//    `setTime(now)` on the spotted object's information and then on every
+//    secondary object's (the other seats of a spotted hull); `updateMemory`
+//    0x085244e0 calls it on a remembered object each time a re-test sees it
+//    (0x08524b05). Hearing (`event_soundEmitter` 0x085237c0,
+//    `updateHearingMemory` 0x085240e0) calls `setTime(now, 0.5)` 0x085e8210:
+//    the quality is clamped to 0..1 and, only when the current security is
+//    below it, t0 becomes `now - 1 / (q * D)` (the x87 is `fdivrp`,
+//    checked against the bytes: 1 / (q D), not q D) -- an offset in seconds
+//    that the security then divides by D again, so a heard enemy comes back
+//    at `1 - SCurve(2 / D^2)`, 0.998 for a soldier. The engine's arithmetic,
+//    kept as it is.
+//  * `SCurve::calculate` 0x08658420: 0 below 0, 1 from 1, else the linear
+//    blend of the 101-entry `SCurve::init` 0x08658030 table at `trunc(100
+//    x)` (the fistp runs under a truncating control word, 0x08658457;
+//    Ghidra shows ROUND).
+//
 // INVENTION, labelled: the environment grid is a scan of `world.players`;
 // sense points are a fixed spread of heights on the body with a small lateral
 // jitter; a hearing radius for a weapon is its AI template's
 // `setSoundSphereRadius` when the page supplies it, else the soldier's 15 m;
 // the FireObject decay rate is 1.0 (the collision handler's value was not
-// read).
+// read); a side's knowledge is keyed by player, not by AI object, so a
+// soldier who boards a hull stays known as himself (the engine would ask
+// about the seat's own object), and a player's record is dropped when he
+// dies (the engine deletes the dead object's informations with it).
 
 const DEG = Math.PI / 180;
 
@@ -85,6 +129,112 @@ const SENSE_HEIGHTS = [0.3, 0.8, 1.2, 1.55];
 const SENSE_JITTER = 0.25;
 /** The eye above the feet, per stance. */
 const EYE = { stand: 1.6, crouch: 1.1, prone: 0.4, walk: 1.6 };
+
+/** `SCurve::init` 0x08658030: `SCurve::curveValues`, 101 floats. */
+export const SCURVE_TABLE = [
+  0.0, 0.00224938989, 0.00338781998, 0.00463052979, 0.00598675013, 0.00746650994, 0.00908064004,
+  0.0108407997, 0.0127597004, 0.0148508996, 0.0171288997, 0.0196096003, 0.0223098006, 0.0252474006,
+  0.0284416005, 0.0319131017, 0.0356835015, 0.0397756994, 0.0442142002, 0.0490242988, 0.0542327985,
+  0.0598676018, 0.0659573004, 0.0725317001, 0.0796212032, 0.0872564986, 0.0954684988, 0.104287997,
+  0.113744996, 0.123869002, 0.134688005, 0.146227002, 0.158509001, 0.171553999, 0.185376003,
+  0.199987993, 0.215393007, 0.231592, 0.248576, 0.266330004, 0.284830987, 0.304048002, 0.323940992,
+  0.344460994, 0.365550995, 0.387147993, 0.409179002, 0.431564987, 0.45422399, 0.477064997, 0.5,
+  0.52293402, 0.54577601, 0.568435013, 0.590821028, 0.612851977, 0.634449005, 0.655538976,
+  0.676059008, 0.695951998, 0.715167999, 0.733669996, 0.751424015, 0.768408, 0.784606993,
+  0.800011992, 0.814624012, 0.828445971, 0.841490984, 0.853772998, 0.86531198, 0.876130998,
+  0.886255026, 0.895712018, 0.904532015, 0.912743986, 0.920378983, 0.927468002, 0.93404299,
+  0.940132022, 0.945766985, 0.950976014, 0.95578599, 0.960223973, 0.964317024, 0.968087018,
+  0.971557975, 0.974753022, 0.977689981, 0.980390012, 0.982870996, 0.985149026, 0.987240016,
+  0.989158988, 0.990918994, 0.992533982, 0.994013011, 0.995369017, 0.996612012, 0.997750998, 1.0,
+];
+
+/** `SCurve::calculate` 0x08658420: the table at `trunc(100 x)`, blended. */
+export function sCurveExact(x) {
+  if (!(x < 1)) return 1;
+  if (!(x >= 0)) return 0;
+  const s = x * 100;
+  const i = Math.trunc(s);
+  const f = s - i;
+  return (1 - f) * SCURVE_TABLE[i] + f * SCURVE_TABLE[i + 1];
+}
+
+/** A side's knowledge of an enemy object (`InformationKnown`). */
+export const INFORMATION = {
+  /** `aiTemplate.degeneration` of the soldier (`Objects/Soldiers/Common/
+   *  AI/Objects.con`): seconds from a sighting to security 0. */
+  soldierDegeneration: 15.0,
+  /** `setTime(now, 0.5)` from `event_soundEmitter` / `updateHearingMemory`. */
+  heardQuality: 0.5,
+};
+
+/** `InformationKnown::getSecurity(t)` 0x085e8670 for an information last
+ *  refreshed `age` seconds ago with degeneration `D`. */
+export function informationSecurity(age, degeneration = INFORMATION.soldierDegeneration) {
+  return 1 - sCurveExact(age / degeneration);
+}
+
+/**
+ * One side's `InformationKnown` records for the enemy: `id -> t0`. The
+ * `setTime` calls of the spotting, re-sighting and hearing paths write it,
+ * `EnemyStrengthTables` (bot-strength.js) reads it for `SAI::
+ * updateStrengths`. `degenerationOf(id)` is each object's template value,
+ * recorded from the units the strategic pass sees (the soldier's 15 until
+ * then).
+ */
+export class SideKnowledge {
+  constructor() {
+    /** id -> t0 (+0x3c). */
+    this.t0 = new Map();
+    /** id -> `aiTemplate.degeneration` (+0x40). */
+    this.degeneration = new Map();
+  }
+
+  degenerationOf(id) {
+    const d = this.degeneration.get(id);
+    return d > 0 ? d : INFORMATION.soldierDegeneration;
+  }
+
+  /** `getInformation(side)` 0x085d8970: made (at security 1) when missing,
+   *  left alone when present. */
+  contact(id, now) {
+    if (id === null || id === undefined || this.t0.has(id)) return;
+    this.t0.set(id, now);
+  }
+
+  /** `setTime(now)` 0x085e8050: made on first contact, refreshed after. */
+  spotted(id, now) {
+    if (id === null || id === undefined) return;
+    this.t0.set(id, now);
+  }
+
+  /** `setTime(now, q)` 0x085e8210: raise to quality `q` only when below it. */
+  heard(id, now, q = INFORMATION.heardQuality) {
+    if (id === null || id === undefined) return;
+    if (!this.t0.has(id)) { this.t0.set(id, now); return; }   // made at contact: security 1
+    const s = Math.min(1, Math.max(0, q));
+    const d = this.degenerationOf(id);
+    if (!(this.security(id, now) < s)) return;
+    this.t0.set(id, s === 0 ? 0 : now - 1 / (s * d));
+  }
+
+  /** The security the side holds for `id` at `now`, or null when it has no
+   *  information on it (the object is in none of the side's grids). */
+  security(id, now) {
+    const t0 = this.t0.get(id);
+    if (t0 === undefined) return null;
+    return informationSecurity(now - t0, this.degenerationOf(id));
+  }
+
+  forget(id) {
+    this.t0.delete(id);
+    this.degeneration.delete(id);
+  }
+
+  clear() {
+    this.t0.clear();
+    this.degeneration.clear();
+  }
+}
 
 function wrapAngle(a) {
   return Math.atan2(Math.sin(a), Math.cos(a));
@@ -186,6 +336,28 @@ export class BotSenses {
     this._frustumYaw = null;
     /** Scratch: the last sense pass's candidates, for the debug hook. */
     this.lastCandidates = 0;
+    /** The bot's side's `SideKnowledge` (the referee hands it the side's
+     *  `EnemyStrengthTables.knowledge`); null: nobody reads it. */
+    this.knowledge = null;
+  }
+
+  /** `event_SpottedEnemyObject` 0x08523ae0: `setTime(now)` on the object
+   *  and on every other seat of its hull. */
+  _spotted(now, world, id, player) {
+    const k = this.knowledge;
+    if (!k) return;
+    k.spotted(id, now);
+    const owner = this.unitOwnerOf?.(player) ?? -1;
+    if (owner === -1 || owner === null || owner === undefined) return;
+    for (const [pid, p] of world.players) {
+      if (pid !== id && p !== player && this.unitOwnerOf(p) === owner) k.spotted(pid, now);
+    }
+  }
+
+  /** The security the bot's side holds for `id` (1 without a knowledge
+   *  store, null when the side has never spotted or heard it). */
+  securityOf(id, now) {
+    return this.knowledge ? this.knowledge.security(id, now) : 1;
   }
 
   /** The eye position of a soldier record. */
@@ -224,12 +396,14 @@ export class BotSenses {
       if (d < minD || d > maxD) continue;                   // this sub-state's band
       if (!inFrustum(basis, yaw, dx, pos[1] - eye[1], dz, halfFov)) continue;
       candidates++;
+      this.knowledge?.contact(id, now);                     // getInformation(own side), before the rays
       if (this.memory.has(id)) continue;                    // updateMemory re-tests those
       if (this._rays(world.collider, eye, player, pos, d)) {
         // The record also carries the per-weapon shots fired at this target
         // and hits on it (+0x34 / +0x54), the Fire behaviour's miss penalty.
         this.memory.set(id, { id, seen: true, lastSeen: now, lost: false, lostAt: null,
                               pos: [...pos], team: player.team ?? 0, shots: [], hits: [] });
+        this._spotted(now, world, id, player);
       }
     }
     this.lastCandidates = candidates;
@@ -267,6 +441,8 @@ export class BotSenses {
       const pos = playerPosition(player);
       if (!player || !pos || player.team === myTeam || world.armorOf?.(id)?.destroyed) {
         this.memory.delete(id);
+        // A dead object's informations go with it (`deleteAllInformation`).
+        if (!player || world.armorOf?.(id)?.destroyed) this.knowledge?.forget(id);
         continue;
       }
       m.pos[0] = pos[0]; m.pos[1] = pos[1]; m.pos[2] = pos[2];   // the live transform
@@ -276,6 +452,7 @@ export class BotSenses {
       const seen = inView && this._rays(world.collider, eye, player, pos, d);
       if (seen) {
         m.seen = true; m.lost = false; m.lostAt = null; m.lastSeen = now;
+        this.knowledge?.spotted(id, now);     // 0x08524b05: the entry's own information
       } else if (!m.lost) {
         m.seen = false; m.lost = true; m.lostAt = now;
       } else if (now - m.lostAt > MEMORY_EXPIRY) {
@@ -329,6 +506,7 @@ export class BotSenses {
     }
     if (d > radius) return false;
     this.heard.set(shooterId, { id: shooterId, pos: [...pos], time: now });
+    this.knowledge?.heard(shooterId, now);     // `setTime(now, 0.5)`
     return true;
   }
 

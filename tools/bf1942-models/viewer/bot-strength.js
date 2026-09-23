@@ -15,6 +15,13 @@
 //    unit.table[i]` and `types[unit.type] += security` into the side's own
 //    (+0x1a4 / +0x1bc) or the enemy (+0x174 / +0x18c) tables, then all four
 //    are halved: an exponential average that settles at the per-pass sum.
+//    The grid is the SAI's own side's (`getInformationGrid(side)`, env
+//    vt+0xdc), so an enemy unit is in it only once the side has spotted or
+//    heard it, and `security` is that side's `InformationKnown::
+//    getSecurity()` 0x085e86a0: `1 - SCurve((now - t0) / D)` with t0 the
+//    last sighting and D the unit template's `aiTemplate.degeneration`
+//    (bot-sense.js `SideKnowledge`, ledger AI-75). A unit last seen D
+//    seconds ago adds nothing; one never seen is not summed at all.
 //    `BFEnvironment::getEnemyStrengths` / `getEnemyTypes` 0x085e4fe0 /
 //    0x085e5030 hand a bot its side's enemy tables (`SAI::getEnemyStrengths`
 //    0x08631830 ignores its argument).
@@ -33,7 +40,36 @@
 //  * `engineHeatInfluence` 0x08585830: 1 until the engine heat passes 0.95,
 //    then `1 - (heat - 0.95) * 20`.
 
+import { SideKnowledge, INFORMATION } from './bot-sense.js';
+
 export const BATTLE_CLASSES = ['Infantry', 'LightArmour', 'HeavyArmour', 'NavalArmour', 'Submarine', 'Air'];
+
+/**
+ * `aiTemplate.degeneration` of each vanilla vehicle's hull template, keyed by
+ * the `vehicle-ai.json` name (read from `Objects.rfa`
+ * `Objects/Vehicles/<class>/<name>/AI/Objects.con`, 2026-09-24). A seat's
+ * own template mostly carries its hull's value; the exceptions are a
+ * carrier's or destroyer's AA and MG seats (20 against 180 / 50) and the
+ * M3A1's rear passengers (15 against 20), which take the hull's here.
+ */
+export const VEHICLE_DEGENERATION = {
+  aa_allies: 20, aichival: 8, 'aichival-t': 5, b17: 7, bf109: 5, blackmedal: 10, 'chi-ha': 15,
+  corsair: 5, daihatsu: 20, defgun: 60, enterprise: 180, flak_38: 20, fletcher: 50, hanomag: 15,
+  hatsuzuki: 50, ilyushin: 5, katyusha: 15, kettenkrad: 10, kubelwagen: 10, lcvp: 20, lynx: 10,
+  m10: 25, m3a1: 20, mustang: 5, panzeriv: 15, priest: 15, princeow: 90, sbd: 5, 'sbd-t': 5,
+  sexton: 25, sherman: 15, shokaku: 180, spitfire: 5, stuka: 5, t34: 25, 't34-85': 15, tiger: 25,
+  wespe: 15, willy: 10, yak9: 5, yamato: 90, zero: 5,
+};
+
+/** A unit's degeneration: its own `degeneration` when the caller has one,
+ *  else its vehicle template's, else the soldier's 15. A vehicle outside
+ *  the vanilla table (a mod's) takes the soldier's value: INVENTION. */
+export function unitDegeneration(unit) {
+  const d = unit?.degeneration;
+  if (Number.isFinite(d) && d > 0) return d;
+  const t = unit?.template ? VEHICLE_DEGENERATION[String(unit.template).toLowerCase()] : undefined;
+  return t ?? INFORMATION.soldierDegeneration;
+}
 
 export const STRENGTH = {
   seatShare: 0.4,
@@ -80,19 +116,41 @@ export class EnemyStrengthTables {
     this.strengths = zeroTable();
     this.types = zeroTable();
     this.passes = 0;
+    /** What this side knows of the enemy (the bots' senses write it). */
+    this.knowledge = new SideKnowledge();
+    /** The last pass's weight per unit id, for the debug hooks. */
+    this.lastSecurity = new Map();
   }
 
   /**
    * One strategic pass over `units`: every occupied enemy unit (each seat
-   * counts) as `{ table, type, security }`, security 1 when known.
+   * counts) as `{ id, table, type, template?, degeneration? }`. With `now`
+   * and an `id`, the unit weighs the side's security for it (0 and left
+   * out when the side has never spotted or heard it); without them it
+   * weighs its own `security` (1 when absent), the old omniscient input.
+   * A player no longer among the units (dead) is forgotten.
    */
-  update(units) {
+  update(units, now = null) {
+    const k = this.knowledge;
+    const known = now !== null && Number.isFinite(now);
+    const present = new Set();
+    this.lastSecurity.clear();
     for (const u of units ?? []) {
-      const w = u.security ?? 1;
+      let w;
+      if (known && u.id !== undefined && u.id !== null) {
+        present.add(u.id);
+        k.degeneration.set(u.id, unitDegeneration(u));
+        w = k.security(u.id, now);
+        this.lastSecurity.set(u.id, w);
+        if (w === null || !(w > 0)) continue;
+      } else {
+        w = u.security ?? 1;
+      }
       const table = u.table ?? {};
       for (const c of BATTLE_CLASSES) this.strengths[c] += w * (table[c] ?? 0);
       if (u.type in this.types) this.types[u.type] += w;
     }
+    if (known) for (const id of [...k.t0.keys()]) if (!present.has(id)) k.forget(id);
     for (const c of BATTLE_CLASSES) {
       this.strengths[c] *= STRENGTH.decay;
       this.types[c] *= STRENGTH.decay;
