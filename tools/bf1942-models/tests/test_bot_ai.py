@@ -126,8 +126,9 @@ class BotAiTests(unittest.TestCase):
         look = self.results["look"]
         self.assertLessEqual(abs(look["lookX"]), 16)
         self.assertLessEqual(abs(look["lookY"]), 16)
-        # 90 degrees of yaw at a 3x gain is 30 counts, clamped to 16.
-        self.assertAlmostEqual(look["lookX"], -16)
+        # 90 degrees of yaw: the engine's count law (`mouseControlLookAtDirection`
+        # with the soldier's ControlInfo) caps it at 4 counts, 12 deg a tick.
+        self.assertAlmostEqual(look["lookX"], -4)
 
     def test_the_world_applies_the_bot_look(self) -> None:
         self.assertTrue(self.results["look"]["turned"])
@@ -626,6 +627,95 @@ class GunnerAimTests(unittest.TestCase):
         # ...while a plane still far out on its approach is inside it.
         self.assertGreater(self.g["aaPass"]["fired"], 0)
         self.assertLess(self.g["aaPass"]["bestMiss"], 11)
+
+class BriefLTests(unittest.TestCase):
+    """Brief L: the soldier's count law, the camera's yaw window, the fire
+    correction and the sense sweep's reset (ledger AI-105..AI-108)."""
+
+    L: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.L = run_harness()["briefL"]
+
+    def test_the_soldier_turns_through_his_own_control_info(self) -> None:
+        s = self.L["soldier"]
+        # `SoldierCtrl`: pitchScale / rollScale 5.0, the same S-curve counts
+        # a Sherman gunner's are; a target to the soldier's left is a negative
+        # yaw count (the world turns him by -3 x it), one above a negative
+        # pitch count (-1 x it).
+        counts = {row[0]: (row[1], row[2]) for row in s["counts"]}
+        self.assertAlmostEqual(counts[1][0], -0.0484, places=3)
+        self.assertAlmostEqual(counts[5][0], -0.4536, places=3)
+        self.assertEqual(counts[30][0], -4)
+        self.assertEqual(counts[90][0], -4)
+        for deg, (x, y) in counts.items():
+            self.assertAlmostEqual(y, x, places=6, msg=deg)
+        # In the world: 35 deg off, 4 counts the first tick, inside 0.5 deg
+        # within half a second and never past the target; a half turn in
+        # under a second; a 10 deg pitch in 1.5 s.
+        t = s["turn35"]
+        self.assertEqual(t["firstX"], -4)
+        self.assertLessEqual(t["yawWithinHalf"], 16)
+        self.assertFalse(t["overshoot"])
+        self.assertLessEqual(s["turn180"]["yawWithinHalf"], 30)
+        self.assertFalse(s["turn180"]["overshoot"])
+        self.assertLessEqual(s["up10"]["pitchWithinHalf"], 50)
+        self.assertLess(s["up10"]["finalPitchErr"], 0.5)
+
+    def test_the_camera_yaw_window(self) -> None:
+        w = self.L["yawWindow"]
+        # Inside the window the law is unchanged.
+        self.assertEqual(w["inside"], w["free"])
+        # Past it: both counts zero...
+        for k in ("pastMax", "pastMaxTurned", "pastMin"):
+            self.assertTrue(w[k]["unreachable"], k)
+            self.assertEqual((w[k]["x"], w[k]["y"]), (0, 0), k)
+        # ...or, with the camera turned far over, the long way round at the
+        # full rate (a target 30 deg right, reached turning left).
+        self.assertFalse(w["longWay"]["unreachable"])
+        self.assertEqual(w["longWay"]["x"], -4)
+        self.assertFalse(w["full"]["unreachable"])
+        self.assertAlmostEqual(w["seat"]["min"], -1.5707963, places=6)
+        self.assertAlmostEqual(w["seat"]["rel"], 0.25)
+        self.assertIsNone(w["zeroWide"])
+
+    def test_correct_aim_feeds_back_the_observed_miss(self) -> None:
+        c = self.L["correctAim"]
+        # A round abreast of the target 5 m to its right: 0.8 x 5 m back.
+        self.assertAlmostEqual(c["passed"][0], -4.0, places=3)
+        self.assertAlmostEqual(c["passed"][1], 0.0, places=6)
+        self.assertFalse(c["consumed"])
+        # A round 40 m short: lift 0.1 x 40 m.
+        self.assertAlmostEqual(c["short"][1], 4.0, places=3)
+        # No new round: kept for 10 s, then x 0.99 a call.
+        self.assertEqual(c["kept"], c["short"])
+        self.assertAlmostEqual(c["decayed"][0], -3.96, places=3)
+
+    def test_the_aa_gunner_watches_its_rounds(self) -> None:
+        on, off = self.L["aaWithCorrection"], self.L["aaWithout"]
+        # On the approach the gun fires, a round is watched and observed, and
+        # the aim moves by the correction; without rounds to watch it does not.
+        self.assertGreater(on["fired"], 0)
+        self.assertGreaterEqual(on["observed"], 1)
+        self.assertGreater(on["maxCorr"], 1.0)
+        self.assertEqual(off["maxCorr"], 0)
+        # A plane that only crosses: no round is ever fired, so there is
+        # nothing to correct from (the engine's loop needs a round first).
+        self.assertEqual(self.L["aaCrossWithCorrection"]["fired"], 0)
+        self.assertEqual(self.L["aaCrossWithCorrection"]["observed"], 0)
+
+    def test_a_turn_sends_the_sense_sweep_back_to_the_near_band(self) -> None:
+        r = self.L["senseReset"]
+        # The sub-state after each pass: steady, it walks 0, 1, 2, 0...
+        self.assertEqual(r["steady"], [1, 2, 0, 1])
+        # 20 deg between two passes is past band 1's 15 deg: band 0 again.
+        self.assertEqual(r["turn20"], [1, 1, 2, 0])
+        # 10 deg is inside band 1's 15 but past band 2's 7.5.
+        self.assertEqual(r["turn10"], [1, 2, 1, 2])
+        # A vehicle's thresholds are 18.75 / 11.25 / 3.75 deg.
+        self.assertEqual(r["mobileTurn5"], [1, 2, 1])
+
 
 if __name__ == "__main__":
     unittest.main()
