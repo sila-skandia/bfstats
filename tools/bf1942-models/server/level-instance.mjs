@@ -17,7 +17,7 @@
 import * as THREE from 'three';
 
 import { VehicleOccupancy, readWorldPose } from '../viewer/seats.js';
-import { Aircraft } from '../viewer/flight.js';
+import { Aircraft } from '../viewer/aircraft.js';
 import { GroundVehicle } from '../viewer/wheeled-vehicle.js';
 import { TrackedVehicle } from '../viewer/tracked-vehicle.js';
 import { bodySpecFor, quaternionToAxes } from './level-bodies.mjs';

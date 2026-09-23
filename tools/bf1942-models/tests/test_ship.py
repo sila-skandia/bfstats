@@ -35,7 +35,6 @@ MODULES = {
     "ship.mjs": VIEWER / "ship.js",
     # `ship.js` reads the hull out of its node tree through `ship-spec.js`.
     "ship-spec.js": VIEWER / "ship-spec.js",
-    "flight.mjs": VIEWER / "flight.js",
     "vehicle-camera.js": VIEWER / "vehicle-camera.js",
     "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",
     "vehicle-base.js": VIEWER / "vehicle-base.js",
@@ -75,11 +74,7 @@ def run_harness() -> dict:
         for name, source in MODULES.items():
             target = work / name
             target.parent.mkdir(parents=True, exist_ok=True)
-            # `ship.js` imports `./flight.js`; the copy is `flight.mjs`.
-            text = source.read_text(encoding="utf-8")
-            if name == "ship.mjs":
-                text = text.replace("from './flight.js'", "from './flight.mjs'")
-            target.write_text(text, encoding="utf-8")
+            target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
         (work / "node_modules" / "three" / "package.json").write_text(THREE_PACKAGE)
         (work / "package.json").write_text('{"type":"module"}\n')
         shutil.copyfile(HARNESS, work / "harness.mjs")

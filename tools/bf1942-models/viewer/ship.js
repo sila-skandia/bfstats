@@ -106,7 +106,7 @@
 //    Cosmetic, and left alone so the engine audio keeps reading one number.
 
 import * as THREE from 'three';
-import { Aircraft } from './flight.js';
+import { Aircraft } from './aircraft.js';
 import { floatAcceleration, floatNodesOf } from './body-float.js';
 import {
   currentRatio, currentTorque, loadSample, revAdvance,
