@@ -171,7 +171,6 @@ import { FireState } from './seats.js';
 import { GunFire } from './gunfire.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
-import { FOV_DEG as FOOT_FOV } from './soldier.js';
 import { createReplayController, recordingLevel } from './replay.js';
 import { Armor } from './armor.js';
 import { loadHudPaths } from './hud-pack.js';
@@ -1162,20 +1161,22 @@ const soldierKit = createHandWeapon(bag(
   from(() => deployScreen, `KITS spawnLayout`),
   from(() => footBodies, `ensureFootBody`),
   from(() => level, `currentDir isCollision warmSubtree warmups world`),
-  from(() => localPlayer, `aircraft car soldier SOLDIER_MAX_HP_FALLBACK supplyTarget`),
+  from(() => localPlayer, `aircraft car soldier SOLDIER_MAX_HP_FALLBACK soldierDead supplyTarget`),
   from(() => mapSurfaces, `teamNation`),
   from(() => pageAudio, `audioListener masterVolume modelSoundBuffer playSupplyGive vehicleAudio`),
   from(() => pageInput, `aimHeld captured clickQueued dropClick triggerHeld`),
   from(() => referee, `applyDamage bots lineOfSight`),
+  from(() => soldierView, `footView3p`),
   from(() => spawning, `deployKit deployTeamId`),
   from(() => vehicleHits, `botRoundDamage`),
   {
     get AUDIO_OFF() { return AUDIO_OFF; }, get bust() { return bust; },
     get camera() { return camera; }, get fireStates() { return fireStates; },
-    get guns() { return guns; }, get loader() { return loader; },
+    get guns() { return guns; }, get hemi() { return hemi; }, get loader() { return loader; },
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get MAPS_BASE() { return MAPS_BASE; },
     get MODELS_BASE() { return MODELS_BASE; }, get optOnFoot() { return optOnFoot; },
     get optPilot() { return optPilot; }, get params() { return params; },
+    get renderer() { return renderer; }, get scene() { return scene; }, get sun() { return sun; },
   },
 ));
 
@@ -1535,14 +1536,7 @@ function frame(dt) {
   // if the trigger, the pilot mode or the whole aircraft has gone away — the
   // world's tick runs `guns.advance` after the players and before the bodies,
   // exactly where frame() used to.
-  // Sync the seated soldier to its seat node's world pose — the glb is parented
-  // to `scene` (not the vehicle tree) so it can't disturb VehicleCamera's node
-  // traversal, so it must chase the seat's matrices here instead.
-  if (seatPose.seatSoldier && seatPose.seatPoseTarget && optPilot.checked) {
-    seatPose.seatPoseTarget.getWorldPosition(seatPose.seatSoldier.position);
-    seatPose.seatPoseTarget.getWorldQuaternion(seatPose.seatSoldier.quaternion);
-  }
-  if (seatPose.seatPoseMixer && optPilot.checked) seatPose.seatPoseMixer.update(dt);
+  seatPose.followSeat(dt);
   // The player's own body. After `onFootCamera` (which is where `syncFootView`
   // settled whether the camera is inside the man this frame) and after the
   // world's tick has moved him, so the rig is placed at the position the frame
@@ -1600,71 +1594,7 @@ function frame(dt) {
   // After the camera controls: a followed replay places the camera last.
   replayController?.update(dt);
   renderer.render(scene, camera);
-  // The near pass: everything in vmScene — the arms rig and the muzzle
-  // emitters inside it, all on VIEWMODEL_LAYER — drawn over a cleared depth buffer, so
-  // the world can occlude none of it (§11 step 6). Retail does exactly this:
-  // `Renderer_drawView` (0x004662c0) draws the world, clears depth to 1.0,
-  // forces the finest mip and calls `StandardMeshRenderer::drawFov`
-  // (0x0062cb00), where each first-person part is drawn with a projection
-  // baked when its field of view was set (`BStandardMesh::setFieldOfView`
-  // 0x005ad160): the render view's own perspective for `set1pFov` × the
-  // eased `SoldierZoomFov` factor as a whole vertical angle, the window's
-  // aspect, and the world's near plane — 0.1 m, nothing moves it. That is
-  // the code (corpus doc §3, "The drawFov pass"), and retail has now been
-  // caught drawing it: an Engineer's Garand and Type 5, screenshotted at
-  // 2560x1440, reproduce the 0.47 rad framing (forearm only, hand off the
-  // corner) at 1.7-2.1x this rig's old 57.3 degree size. Retail also has a
-  // *smaller* first-person state — Thompson-at-the-hip OBS clips that
-  // measure at the world's 57.3 degrees instead — with the trigger between
-  // the two still open (corpus doc §7). So this pass now defaults to
-  // `set1pFov`, the value the code actually bakes, and keeps the world's
-  // FOV only for `?fov1p=world` and the bare 3P fallback, whose
-  // VIEWMODEL_BASE was eyeballed under it. See first-person-soldier.md's
-  // 2026-09-16 note and handweapon-view-and-deviation.md §3/§7.
-  // `footView3p.firstPerson` is the soldier's `CVMInside`: an arms rig drawn
-  // over a chase view would hang in front of the camera with nothing holding
-  // it. It is true everywhere but under a canopy with C pressed. A dead man
-  // holds no weapon either: the death cam (on foot or over a wreck) is a shot
-  // of the body from outside, and retail draws no first-person rig over it.
-  if (soldierKit.handWeapon?.rig.visible && soldierView.footView3p.firstPerson && !localPlayer.soldierDead) {
-    renderer.autoClear = false;
-    renderer.clearDepth();
-    // Two traps in an overlay pass, both learned the hard way. Three draws
-    // `scene.background` in EVERY render call, autoClear or not — rendered
-    // over the world scene, this pass painted the fog-coloured backdrop over
-    // the entire frame, and every on-foot map read as one wall of colour.
-    // `vmScene` has no background to paint (and nothing to walk but the rig:
-    // the reason it exists, see its declaration). And the pass gets its own
-    // camera rather than flipping the main camera's layer mask, so nothing
-    // the pass does can leak into the world render's view of that camera.
-    // The fog is the world's own object, shared, so the rig's materials
-    // compile and shade against exactly the fog they always did.
-    soldierKit.vmScene.fog = scene.fog;
-    soldierKit.vmHemi.color.copy(hemi.color);
-    soldierKit.vmHemi.groundColor.copy(hemi.groundColor);
-    soldierKit.vmHemi.intensity = hemi.intensity;
-    soldierKit.vmHemi.position.copy(hemi.position);
-    soldierKit.vmSun.color.copy(sun.color);
-    soldierKit.vmSun.intensity = sun.intensity;
-    soldierKit.vmSun.position.copy(sun.position);
-    soldierKit.vmCamera.matrixWorld.copy(camera.matrixWorld);
-    soldierKit.vmCamera.matrixWorldInverse.copy(camera.matrixWorld).invert();
-    // `set1pFov` (handWeapon.fov1p) by default now that retail is confirmed
-    // to draw it; `?fov1p=world` forces the old world-FOV reading (`fov1p=
-    // engine` still works — it is no longer a distinct branch, just not
-    // `world`). A bare 3P fallback (no fov1p) keeps FOOT_FOV unconditionally,
-    // because its VIEWMODEL_BASE was eyeballed under that projection, not
-    // set1pFov.
-    const baseFov = soldierKit.handWeapon.fov1p && params.get('fov1p') !== 'world'
-      ? soldierKit.handWeapon.fov1p / soldierKit.DEG_TO_RAD : FOOT_FOV;
-    soldierKit.vmCamera.fov = baseFov * soldierKit.handWeapon.fovCur;
-    soldierKit.vmCamera.aspect = camera.aspect;
-    soldierKit.vmCamera.near = 0.1;   // the engine's render-view near, baked unchanged
-    soldierKit.vmCamera.far = camera.far;
-    soldierKit.vmCamera.updateProjectionMatrix();
-    renderer.render(soldierKit.vmScene, soldierKit.vmCamera);
-    renderer.autoClear = true;
-  }
+  soldierKit.renderViewmodel();
   deployScreen.deployAnimate(dt);
   if (scoreboard.scoreboardOpen()) scoreboard.paintScoreboard();
   mapSurfaces.bfmap.update(dt);
@@ -1798,7 +1728,7 @@ const testHooks = installTestHooks(bag(
   from(() => room, `roomClient roomJoined`),
   from(() => scoreboard, `paintScoreboard scoreboardOpen scoreboardPlayers scoreFromSpawn
     scoreLayout setScoreboard`),
-  from(() => seatCamera, `CHASE_OPTION chaseRig mannedActive`),
+  from(() => seatCamera, `CHASE_OPTION chaseRig mannedActive view`),
   from(() => seatPose, `seatIkChains seatSoldier`),
   from(() => soldierKit, `altFireDemolitions crosshairEl cycleKitWeapon detonatorTemplate
     explosivesTemplate handSlot handWeapon isZoomed itemsLocked kitLoadout kitWeaponSlots

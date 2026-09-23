@@ -48,9 +48,10 @@ import { installWorldHooks } from './test-hooks-world.js';
  * `spawnFlagSelect`, `splashPos`, `splashTargets`, `stage`,
  * `stepVehicleBodies`, `supplyField`, `supplyTarget`, `surfaceFriction`,
  * `switchSeat`, `thrownPackGroup`, `triggerHeld`, `vehicleAudio`,
- * `vehicleDamage`, `vehicleInput`, `vehicleSpawnActive`, `viewmodelRigFor`,
- * `vmCamera`, `vmRoot`, `vmScene`, `warmups`, `weaponBarUntil`,
- * `weaponTemplateFor`, `world`, `worldFire`, `wreckVehicle`.
+ * `vehicleDamage`, `vehicleInput`, `vehicleSpawnActive`, `view`,
+ * `viewmodelRigFor`, `vmCamera`, `vmRoot`, `vmScene`, `warmups`,
+ * `weaponBarUntil`, `weaponTemplateFor`, `world`, `worldFire`,
+ * `wreckVehicle`.
  */
 export function installTestHooks(page) {
   const testHooks = {};
@@ -101,17 +102,17 @@ export function installTestHooks(page) {
     // `__view.turn()` is the pilot's head in the cockpit — a Corsair's guns sit 40
     // degrees off the nose, so framing them means looking at them — and the orbit
     // outside it. `__setView(mode)` selects a mode without walking the cycle.
-    Object.defineProperty(window, '__view', { get: () => page.localPlayer.view });
+    Object.defineProperty(window, '__view', { get: () => page.view });
     // The external view's law as mounted: which law and frame `?chase=` chose,
     // the root's bounding radius, and the carried offset from the seat Camera.
     window.__chase = () => ({
       option: page.CHASE_OPTION, law: page.chaseRig.law, radius: page.chaseRig.radius,
       rel: [...page.chaseRig.rel], camera: page.chaseRig.camera?.name ?? null,
-      active: !!page.localPlayer.view?.externalLaw,
+      active: !!page.view?.externalLaw,
     });
     window.__setView = mode => {
-      if (!page.localPlayer.view) return null;
-      const set = page.localPlayer.view.setMode(mode);
+      if (!page.view) return null;
+      const set = page.view.setMode(mode);
       page.showView(set);
       return set;
     };
