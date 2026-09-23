@@ -11,8 +11,8 @@
 //  * The plane: `towardsDirectionEngine` is the engine's law line for line
 //    (verified against an x87 emulation of the binary), fed by
 //    `towardsPoint` (moves) and `aimAtDirection` (the guns). The waypoint
-//    move's clearance (the order's altitude, `BBPGotoWaypoint3d` reads it
-//    from the order +0x14) is not read: `PLANE.cruiseClearance` (INVENTION).
+//    move's clearance is the order's +0x14, 50 m from `orderAirBot`
+//    (strategic.js `_orderAir`); the point is the area's own at ground + 75.
 //  * The boat: `actionStatusDecision` gives the angle and drive direction;
 //    `speedControl` holds full rudder outside 30 deg (0.5236) with the
 //    throttle held while the heading is within cos 0.996 of the wanted
@@ -23,9 +23,10 @@ const DEG = Math.PI / 180;
 export const PLANE = {
   /** `ConPosition(point, 4 x unit radius)`, the 3D move's end condition. */
   arriveRadiusFactor: 4.0,
-  /** A waypoint move's clearance (INVENTION: the order's altitude is not
-   *  read). */
-  cruiseClearance: 120.0,
+  /** A waypoint move's clearance: `WPAltitudeMoveTo` +0x14, 50 m from
+   *  `orderAirBot` 0x08640982, read by `BBPGotoWaypoint3d::createPlan`
+   *  0x085b81e0. Used when the waypoint carries none. */
+  cruiseClearance: 50.0,
 };
 
 /** `BBPFire3d` and `BBPIdle3d`. */

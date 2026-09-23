@@ -9846,7 +9846,10 @@ function botStrategicUnit(id) {
     : m.kind === 'ship' ? (m.nav && m.nav === botNavGridWater.get('LandingCraft') ? 'LandingCraft' : 'Boat')
     : m.kind === 'air' ? 'Plane' : 'Infantery';
   const nav = m.nav ?? (m.kind === 'tank' || m.kind === 'ground' ? botVehicleNav() : null);
-  return { type, isWalkable: nav ? (x, z) => isWalkable(nav, x, z) : null, radius: m.radius ?? 1.0, mounted: true };
+  // An aircraft is ordered by `orderAirBot` (strategic.js `_orderAir`), at
+  // the area's position over the higher of the ground and the water.
+  return { type, isWalkable: nav ? (x, z) => isWalkable(nav, x, z) : null, radius: m.radius ?? 1.0, mounted: true,
+           air: m.kind === 'air', groundAt: (x, z) => bot._groundAt(x, z) };
 }
 
 /** The land vehicles' map (`ai.addSearchMap Tank0 ...`), built on first use. */
@@ -10159,6 +10162,10 @@ function botEnterVehicle(bot, cand) {
   botSeats.get(node).set(cand.seatId, bot.playerId);
   const ai = botVehicleAiOf(node);
   const landingCraft = /lcvp|daihatsu|landing/i.test(ai?.name ?? '');
+  // `BotMain::decisionMaking` 0x08520742: a bot whose controlled object
+  // changed tells its SAI (`setBotHasChangedEquipment` -> `handleChangingBot`
+  // 0x08631450), which drops its assignment and frees it for a fresh order.
+  botStrategy?.botChangedUnit(bot.playerId);
   bot.mount({
     id: cand.id, vehicleId: cand.vehicleId, node, drive, occupancy: occ, kind: occ.rootKind,
     seatId: cand.seatId, drives: !!drive, groups, manned,
@@ -10217,6 +10224,7 @@ function botLeaveVehicle(bot, { killed = false, silent = false } = {}) {
     bot.setPosition(x, yy, z);
   }
   bot.dismount(botClock);
+  botStrategy?.botChangedUnit(bot.playerId);
   botCandidateCache.at = -1;
   const vis = botVisuals.get(bot.playerId);
   if (vis) vis.group.visible = !killed;

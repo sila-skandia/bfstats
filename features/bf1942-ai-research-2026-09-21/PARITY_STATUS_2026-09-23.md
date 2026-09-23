@@ -122,12 +122,10 @@ which the bot tests then covered.
    him), and the AI deviation (5 deg decaying over 10 s) applies to the
    plane's MG. Also unbuilt: the closest-approach precision variant for
    non-burst weapons (bombs) and `EntryPlaneAimAt`'s own direction clamps.
-2. **The waypoint move's clearance** is the order's altitude
-   (`BBPGotoWaypoint3d` reads the order +0x14 / +0x10); not read
-   (`PLANE.cruiseClearance` 120, INVENTION). `orderAirBot` / `WP
-   AltitudeMoveTo` would give it.
-3. The airborne flag (bot vt +0x180 / +0x17c): where the engine clears it
-   is not read (the viewer clears it on the ground, INVENTION).
+2. ~~The waypoint move's clearance~~ read and built (AI-71): 50 m, the
+   point at ground + 75 over the area's own position (`orderAirBot`).
+3. ~~The airborne flag~~ read and built (AI-71): cleared only on a change of
+   controlled object, so a landed plane keeps it.
 4. **Remaining INVENTIONs worth reading next**: `actionStatusDecision` modes 2..5,
    a target's information `security` (+0x14; 1 here), and the 20 s
    `getBBPFeedback` veto for vehicles (shared with infantry).
