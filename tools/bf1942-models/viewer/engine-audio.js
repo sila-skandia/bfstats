@@ -32,67 +32,20 @@
 //   3. Nothing starts during an async gap. Loading is inert; `start()` is a
 //      separate, synchronous call the caller makes only after checking that its
 //      own generation counter still holds.
+//
+// The pieces that are not the Web Audio graph live in their own modules:
+//
+//   `ssc-curves.js`    a `.ssc` modulator list evaluated against the controls
+//   `ssc-coherent.js`  the coherent-duplicate (car horn) arbitration
+//   `ssc-specs.js`     finding a vehicle's engine and gun patches in a report,
+//                      re-exported from here
 
-/** Linear interpolation clamped to 0..1, the shape every `.ssc` ramp has. */
-const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+import { clamp01, modulate } from './ssc-curves.js';
+import { coherentSets, resolveCoherent } from './ssc-coherent.js';
 
-/**
- * `Ramp p1 p2 p3 p4`: `p3` at or below p1, `p3 + p4` at or above p2, linear
- * between. `p4` is signed, so a fade-out is a negative delta rather than a
- * reversed pair, and `p1 == p2` is a step. Six-param ramps occur (573 in
- * vanilla); the surplus pair's meaning is unresolved and treating them as
- * four-param reproduces the audible design, so it is ignored here too.
- */
-function rampAt(params, x) {
-  const [a = 0, b = 0, base = 0, delta = 0] = params;
-  if (x <= a) return base;
-  if (x >= b) return base + delta;
-  const span = b - a;
-  return span <= 0 ? base + delta : base + delta * ((x - a) / span);
-}
-
-/** `Linear p1 p2`: `p1 + p2 * x`. With source Default and p2 = 0, a constant. */
-function linearAt(params, x) {
-  return (params[0] ?? 0) + (params[1] ?? 0) * x;
-}
-
-/**
- * The runtime value of a `controlSource`, or null when we cannot supply it.
- *
- * Null matters: an unknown source must leave the destination alone rather than
- * evaluate its ramp at zero, which for a rising volume ramp would silence the
- * layer outright. `TimeRelease` is null until the patch is actually released
- * for the same reason — its ramp is a 1 -> 0 fade that would otherwise be sat
- * at full attenuation the whole time the engine is running.
- */
-function controlValue(source, c) {
-  switch (source) {
-    case 'engine::rpm': return c.rpm;
-    case 'engine::diveangle': return c.diveAngle;
-    case 'speed': return c.speed;
-    case 'acceleration': return c.acceleration;
-    case 'distance': return c.distance;
-    case 'time': return c.time;
-    case 'timerelease': return c.released ? c.timeRelease : null;
-    // Land engines (Willy, Sherman, …) author Pitch/Volume on `Default` instead
-    // of `Extern #map<Engine::Rpm>` — a survey of Objects.rfa puts 257 land
-    // pitch effects on Default vs 206 air pitch effects on Engine::Rpm. The
-    // one-shot idiom `Linear p1 0` is still a constant under either reading,
-    // so feeding the same normalised rpm channel serves both.
-    case 'default': return c.rpm;
-    default: return null;
-  }
-}
-
-function modulate(modulators, c, initial) {
-  let out = initial;
-  for (const m of modulators) {
-    const x = controlValue(m.source, c);
-    if (x === null || x === undefined) continue;
-    out *= m.envelope === 'linear' ? linearAt(m.params, x) : rampAt(m.params, x);
-  }
-  return out;
-}
+export {
+  findEngineSpec, findWeaponSpecs, findWeaponSpecsByFireArms,
+} from './ssc-specs.js';
 
 // The engine bus plays the `.ssc` mix at the volumes it asks for.
 //
@@ -142,39 +95,6 @@ const PITCH_TAU = 0.1;
 // Below this an AudioParam write is not worth an automation event.
 const EPSILON = 1e-4;
 
-// --- coherent duplicates: the car-horn fingerprint --------------------------
-//
-// **Two voices playing the same decoded buffer, at the same point in space, at
-// the same playback rate, are not twice as loud. They are a comb filter.**
-// Their phase relationship is fixed for as long as both run, so a looped
-// sample's harmonic comb (114 ms of `brownmlp` = 8.8 Hz; `MG42_fire` the same)
-// stops being a texture and becomes a pitch. That is the whole of the "the
-// tank's machine gun sounds like a car horn" report, and it has now arrived by
-// three different routes -- a `stereo` layer's Distance channel frozen at 0, a
-// `volume 10` outlier read literally, and (this time) two `Volume <- Distance`
-// ramps whose bands simply overlap where the gunner's head is. Guarding each
-// route in turn is why it keeps coming back; this guards the fingerprint.
-//
-// It is never what a script means. A `.ssc` that loads one sample twice at one
-// offset is writing a **hand-over** -- `Coaxial_Browning/Sounds/Browning.ssc`
-// is `brownmlp` at `Volume <- Distance Ramp 2 2 1 -1` (1 below 2 m) and the
-// same `brownmlp` at `Ramp 1 1 0 1` (1 above 1 m), which leaves 1 m..2 m with
-// both at full. Exactly one is meant to sound; the driver's camera sits at
-// 1.4 m from the coax node, i.e. inside the overlap, every time.
-//
-// What is emphatically NOT this defect is the same sample stacked at
-// *different* pitches, which is how Refractor builds a rich engine: the Willy
-// runs two loads of `WillyHiRPM2` at rates 0.40 and 0.875, the T34 two of
-// `t34eng2` 0.9% apart. Detuned copies beat and smear each other -- that is
-// the authored sound, and the rate test below is what tells the two cases
-// apart. 0.4% is comfortably above exact-match (the coax pair measures 0.000%
-// apart: no pitch modulator, `dopplerOff`, and no `randomStartPitch` to jitter
-// them) and comfortably below the tightest authored detune in vanilla.
-const COHERENT_RATE_TOL = 0.004;
-// A twin quiet enough to be inaudible is left alone rather than arbitrated:
-// -34 dB adds 0.17 dB to its partner and a comb far under the noise floor.
-const COHERENT_FLOOR = 0.02;
-
 /** One `load` from the script: a buffer, a gain, and where it points. */
 class Voice {
   constructor(ctx, layer, buffer, panner) {
@@ -203,25 +123,6 @@ class Voice {
   get playing() {
     return this.source !== null;
   }
-}
-
-/**
- * Which of two coherent twins keeps its gain: `priority`, then loudness, then
- * declaration order.
- *
- * `priority` is the only word a `.ssc` has for arbitrating between samples
- * (observed range -12..11; the engine mixes into a fixed 32-voice pool and
- * steals by it), so a hand-over that names one half louder-ranked than the
- * other has already said which one it means -- the coaxial Browning's near
- * layer is 10 against the far layer's 8. The remaining tiebreaks only exist so
- * that a set of equals resolves the same way every frame.
- */
-function outranks(a, b) {
-  const pa = a.layer.priority ?? 0;
-  const pb = b.layer.priority ?? 0;
-  if (pa !== pb) return pa > pb;
-  if (a.targetGain !== b.targetGain) return a.targetGain > b.targetGain;
-  return a.index < b.index;
 }
 
 /**
@@ -343,31 +244,9 @@ export class EngineAudio {
       this.voices.push(voice);
     }
 
-    // Twin sets: voices that share one decoded buffer *and* one group, i.e.
-    // one sample played from one point in space. Only those can sum
-    // coherently, and only sets of two or more are worth a frame's attention,
-    // so the overwhelming majority of patches end up with an empty list here
-    // and `#resolveCoherent` costs them nothing. See COHERENT_RATE_TOL.
-    //
-    // Keyed on the offset rather than on the group object, because the two
-    // halves of a hand-over deliberately live in *separate* groups at the same
-    // offset -- one `stereo`, one spatialised. That is the pair that honks, so
-    // it is the pair that has to meet here.
-    this.coherent = [];
-    const twins = new Map();
-    for (const voice of this.voices) {
-      const key = `${voice.layer.file}`;
-      let byGroup = twins.get(key);
-      if (!byGroup) twins.set(key, byGroup = new Map());
-      const at = byGroup.get(voice.group.offset.join(',')) || [];
-      at.push(voice);
-      byGroup.set(voice.group.offset.join(','), at);
-    }
-    for (const byGroup of twins.values()) {
-      for (const set of byGroup.values()) {
-        if (set.length > 1) this.coherent.push(set);
-      }
-    }
+    // Twin sets: one sample played from one point in space (`ssc-coherent.js`).
+    this.coherent = coherentSets(this.voices);
+
     // `trigger Volume` fires on the volume's *first* rise, once. An engine
     // patch is armed from the start; a gun patch only by a round, so nothing
     // sounds when the patch is built and its clock runs past the step ramps.
@@ -780,42 +659,7 @@ export class EngineAudio {
     this.#ramp(this.bus.gain, master * this.headroom, now, GAIN_TAU);
   }
 
-  /**
-   * Zero every voice that would sum coherently with a louder twin.
-   *
-   * A twin set is one sample played from one point (built once in the
-   * constructor), and within it the only pairs that matter are the ones at the
-   * same playback rate -- see COHERENT_RATE_TOL for why that test, and not
-   * "same sample", is the line between a hand-over and an authored detune.
-   *
-   * Pairwise rather than clustered: a set is two voices in every case vanilla
-   * ships and five at the very worst (the Sherman cannon's `shrmfire` stack,
-   * whose distance bands are mutually exclusive so nothing ever contests).
-   *
-   * The winner is the one the script itself nominates -- `priority` is the
-   * only word a `.ssc` has for arbitration -- then the louder, then the
-   * earlier-declared, so the outcome is stable frame to frame and does not
-   * depend on iteration order.
-   */
-  #resolveCoherent() {
-    for (const set of this.coherent) {
-      for (let i = 0; i < set.length; i++) {
-        const a = set[i];
-        if (a.targetGain <= COHERENT_FLOOR) continue;
-        for (let j = i + 1; j < set.length; j++) {
-          const b = set[j];
-          if (b.targetGain <= COHERENT_FLOOR) continue;
-          const spread = Math.abs(a.targetRate - b.targetRate);
-          if (spread > COHERENT_RATE_TOL * Math.max(a.targetRate, b.targetRate)) continue;
-          const loser = outranks(a, b) ? b : a;
-          loser.targetGain = 0;
-          loser.suppressed = true;
-          // `a` has just lost; it can contest nothing else in this set.
-          if (loser === a) break;
-        }
-      }
-    }
-  }
+  #resolveCoherent() { resolveCoherent(this.coherent); }
 
   #ramp(param, value, now, tau) {
     if (Math.abs(param.value - value) < EPSILON) return;
@@ -946,88 +790,4 @@ export async function loadEngineAudio(spec, { listener, getBuffer,
   if (!layers.length) return null;
   return new EngineAudio(spec, layers, buffers, listener, headroom,
                          oneShotsOnTrigger, rand);
-}
-
-/**
- * The engine sound for one vehicle out of a level report, by template name.
- *
- * The report keys on the template the spawner actually resolved to, which is
- * how a Wake scene ends up with both `corsair` and `sbd`; the match is
- * case-insensitive because `ObjectSpawnTemplates.con` is.
- */
-export function findEngineSpec(report, template) {
-  const list = report?.sounds?.vehicles;
-  if (!list || !template) return null;
-  const want = template.toLowerCase();
-  return list.find(v => (v.template || '').toLowerCase() === want) || null;
-}
-
-/**
- * The gun patches for one vehicle, in the same shape `loadEngineAudio` takes.
- *
- * The extractor hangs weapons off the vehicle that carries them, so this is the
- * engine lookup plus one hop. `engine` is set to the FireArms name because that
- * is what the field means to every caller — the node the voices belong on — and
- * for a gun that is the gun.
- */
-export function findWeaponSpecs(report, template) {
-  const vehicle = findEngineSpec(report, template);
-  if (!vehicle?.weapons?.length) return [];
-  return vehicle.weapons.map(weapon => ({
-    template,
-    engine: weapon.fireArms,
-    fireArms: weapon.fireArms,
-    script: weapon.script,
-    level: vehicle.level,
-    layers: weapon.layers,
-  }));
-}
-
-/**
- * Look up gun patches by FireArms node name across every vehicle in the
- * report. Bare furniture mounts (Stationary MG42 / Browning) have no Engine
- * entry of their own, so `findWeaponSpecs(template)` is empty — but the same
- * `.ssc` was often extracted next to a tank or ship that carries that gun
- * (Hatsuzuki → `MG42_unlimited`, Sherman → `Browning`).
- *
- * `names` may include `_unlimited` variants; a bare `Browning` layer matches
- * `Browning_unlimited` when the exact name is missing.
- */
-export function findWeaponSpecsByFireArms(report, names) {
-  const list = report?.sounds?.vehicles;
-  if (!list?.length || !names?.length) return [];
-  const want = [...new Set(names)];
-  const byName = new Map();
-  for (const vehicle of list) {
-    for (const weapon of vehicle.weapons || []) {
-      if (!byName.has(weapon.fireArms)) {
-        byName.set(weapon.fireArms, {
-          template: vehicle.template,
-          engine: weapon.fireArms,
-          fireArms: weapon.fireArms,
-          script: weapon.script,
-          level: vehicle.level,
-          layers: weapon.layers,
-        });
-      }
-    }
-  }
-  const found = [];
-  const claimed = new Set();
-  for (const name of want) {
-    const exact = byName.get(name);
-    if (exact) {
-      found.push(exact);
-      claimed.add(name);
-      continue;
-    }
-    if (name.endsWith('_unlimited')) {
-      const bare = byName.get(name.slice(0, -'_unlimited'.length));
-      if (bare && !claimed.has(name)) {
-        found.push(bare);
-        claimed.add(name);
-      }
-    }
-  }
-  return found;
 }

@@ -32,8 +32,8 @@ HARNESS = Path(__file__).resolve().parent / "bot_ai_harness.mjs"
 # bot.js's own imports. Every dependency keeps its own name so the unmodified
 # imports resolve; the world is copied as `world.mjs` for the harness.
 _MODULE_NAMES = [
-    "physics", "parachute", "swim", "soldier", "spawn-safety", "mouse-input",
-    "point-body", "fixed-step", "soldier-pose", "soldier-locomotion", "walking-body",
+    "physics", "parachute", "swim", "soldier", "spawn-flags", "spawn-safety", "mouse-input",
+    "point-body", "fixed-step", "soldier-pose", "soldier-locomotion", "walking-body", "soldier-resolve",
     "fall-damage",
     "body-world", "body-statics", "vehicle-bodies", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact",
@@ -42,16 +42,16 @@ _MODULE_NAMES = [
     # world.js's World delegates to its split modules.
     "world-input", "world-players", "world-snapshot", "world-bodies",
     "world-soldier-tick", "world-vehicle-tick", "world-fields", "world-damage",
-    "body-ground", "body-friction", "crash-damage", "effects-core",
+    "body-ground", "body-friction", "crash-damage", "effects-core", "projectile-damage",
     "bomb-release", "torpedo-run",
     # bot.js's own imports.
-    "deviation", "nav-grid",
+    "deviation", "nav-grid", "nav-map", "nav-search",
 ]
 MODULES = {f"{name}.js": VIEWER / f"{name}.js" for name in _MODULE_NAMES}
 MODULES["world.mjs"] = VIEWER / "world.js"
 MODULES["bot.js"] = VIEWER / "bot.js"
 MODULES["nav-grid.js"] = VIEWER / "nav-grid.js"
-for _m in ("bot-aim.js", "bot-perception.js", "bot-route.js", "bot-pilot.js", "bot-decision.js", "bot-plans.js", "bot-mount.js", "bot-sense.js", "bot-fire.js", "bot-behaviours.js", "bot-vehicle.js", "bot-vehicle-air.js", "bot-strength.js", "strategic.js"):
+for _m in ("bot-aim.js", "bot-perception.js", "bot-route.js", "bot-pilot.js", "bot-decision.js", "bot-plans.js", "bot-mount.js", "bot-sense.js", "bot-fire.js", "bot-behaviours.js", "bot-vehicle.js", "bot-vehicle-air.js", "bot-strength.js", "strategic.js", "strategic-layer.js", "strategic-ai.js"):
     MODULES[_m] = VIEWER / _m
 MODULES["node_modules/three/three.module.js"] = VIEWER / "vendor" / "three.module.js"
 THREE_PACKAGE = json.dumps({

@@ -4,12 +4,18 @@
 // player -- through the `BfMap` open/close animation, and the ticket and
 // flag-icon variables the HUD reads beside them. Lifted out of map.html
 // (features/vehicle-instance-refactor Part 2); `bfmap.js` stays the
-// projection and the animation.
+// projection and the animation. Built inside this factory from their own
+// modules: the canvases' backing-store sizing (`map-canvas-fit.js`), the
+// tinted sprite painter (`map-sprites.js`) and the friendly units the
+// surfaces mark (`map-friendlies.js`).
 
 import * as THREE from 'three';
 import { flagMapSpots } from './deploy-spots.js';
 import { cpNation as cpNationRule, teamNation as teamNationRule } from './nation.js';
 import { BfMap, minimapWindow, rotateAbout, coverRect } from './bfmap.js';
+import { createCanvasFit } from './map-canvas-fit.js';
+import { createMapSprites } from './map-sprites.js';
+import { createMapFriendlies } from './map-friendlies.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -43,43 +49,7 @@ export function createMapSurfaces(page) {
   const minimapCanvas = document.getElementById('minimap-canvas');
   const fullmapBox = document.getElementById('fullmap');
   const fullmapCanvas = document.getElementById('fullmap-canvas');
-  // The CSS widths of the two map canvases, kept by a ResizeObserver so no
-  // frame asks layout for them: `getBoundingClientRect` after the frame's own
-  // DOM writes forces a synchronous layout, 1.4-1.8% of the on-foot frame on
-  // its own (features/mesh-viewer-performance, rule 3). A canvas the observer
-  // has not reported yet — or reports at 0 because it is hidden — falls back
-  // to one measured read, so the first frame after the map opens is right.
-  const canvasCssWidth = new Map();
-  const canvasObserver = new ResizeObserver(entries => {
-    for (const entry of entries) {
-      const width = entry.contentRect.width;
-      // A 0 here means `display: none` — the box the surface lives in is hidden —
-      // and it is reported at the end of the frame that hid it. Dropping the
-      // entry rather than caching the 0 is what lets the frame that UNHIDES the
-      // surface measure it, in that same frame, before this observer has had a
-      // chance to speak: the alternative paints one frame into the previous
-      // backing size (confirmed: 283 px instead of 562). Neither painter reads a
-      // width while its own box is hidden, so nothing else is asking meanwhile.
-      if (width) canvasCssWidth.set(entry.target, width);
-      else canvasCssWidth.delete(entry.target);
-    }
-  });
-  canvasObserver.observe(minimapCanvas);
-  canvasObserver.observe(fullmapCanvas);
-  function cssWidthOf(canvas) {
-    const known = canvasCssWidth.get(canvas);
-    // `!== undefined`, not truthiness, and a measured 0 is cached too: a width
-    // of 0 is an ANSWER, and treating it as a miss meant `getBoundingClientRect`
-    // — a synchronous layout, rule 3 — ran again on every call that got one, for
-    // exactly the surface this cache exists to keep off the frame path. The
-    // observer above never stores a 0 (see there), so the only way to hold one is
-    // to have measured it, and the observer overwrites that the moment the box
-    // has a size.
-    if (known !== undefined) return known;
-    const measured = canvas.getBoundingClientRect().width;
-    canvasCssWidth.set(canvas, measured);
-    return measured;
-  }
+  const { cssWidthOf, fitCanvas } = createCanvasFit(minimapCanvas, fullmapCanvas);
   const fullmapName = document.getElementById('fullmap-name');
   const fullmapMeta = document.getElementById('fullmap-meta');
 
@@ -123,59 +93,9 @@ export function createMapSurfaces(page) {
    *  because they are what was seen. */
   const MINIMAP_TEAM_TINT = { 1: [247, 52, 49], 2: [75, 126, 252] };
 
-  /** A pack sprite modulated by a colour, the way the engine draws its unit
-   *  icons: `out = src * tint`, so white becomes the tint outright, the black
-   *  outline stays black, and the grey antialiasing lands in between. Alpha is
-   *  untouched.
-   *
-   *  Memoised per (sprite, colour). There are two colours and a handful of
-   *  icons, so the cache is a dozen 16x16 canvases at most, built once —
-   *  tinting per marker per frame would be a `getImageData` on the frame path,
-   *  which is the one thing the map surfaces are careful not to do
-   *  (features/mesh-viewer-performance, rule 7). */
-  const tintedSprites = new Map();
-  function tintedSprite(name, rgb) {
-    const key = `${name}|${rgb}`;
-    const cached = tintedSprites.get(key);
-    if (cached !== undefined) return cached;
-    const img = page.sprite(name);
-    // Not cached as a miss: the pack is still landing and the next frame may
-    // have it.
-    if (!img) return null;
-    const c = document.createElement('canvas');
-    c.width = img.width;
-    c.height = img.height;
-    const ctx = c.getContext('2d');
-    ctx.drawImage(img, 0, 0);
-    const data = ctx.getImageData(0, 0, c.width, c.height);
-    const px = data.data;
-    for (let i = 0; i < px.length; i += 4) {
-      if (!px[i + 3]) continue;
-      px[i] = (px[i] * rgb[0]) / 255;
-      px[i + 1] = (px[i + 1] * rgb[1]) / 255;
-      px[i + 2] = (px[i + 2] * rgb[2]) / 255;
-    }
-    ctx.putImageData(data, 0, 0);
-    tintedSprites.set(key, c);
-    return c;
-  }
-
-  /** Draw a sprite centred on (x, y) at `sc` times its own pixels. Returns
-   *  false when the pack has not delivered it yet, so callers can fall back.
-   *  `tint` modulates it by a colour first (`tintedSprite`). */
-  function drawSprite(ctx, name, x, y, sc, { angle = 0, alpha = 1, tint = null } = {}) {
-    const img = tint ? tintedSprite(name, tint) : page.sprite(name);
-    if (!img) return false;
-    const w = img.width * sc;
-    const h = img.height * sc;
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.translate(x, y);
-    if (angle) ctx.rotate(angle);
-    ctx.drawImage(img, -w / 2, -h / 2, w, h);
-    ctx.restore();
-    return true;
-  }
+  const { drawSprite } = createMapSprites({
+    get sprite() { return page.sprite; },
+  });
 
   /** `cpNation`/`teamNation` proper live in `nation.js`, free of this file's
    *  `three` scene state so they can be tested under node
@@ -392,91 +312,13 @@ export function createMapSurfaces(page) {
     ctx.fill();
   }
 
-  /** The side the map is drawn for: whose units get an arrow and what colour
-   *  everything friendly is modulated with. The deploy screen runs before a
-   *  soldier exists, so it falls back to the team the player has chosen. */
-  function localMapTeam() {
-    return page.world?.player(page.LOCAL_PLAYER)?.team ?? page.deployTeamId;
-  }
-
-  /**
-   * Friendly units, the way retail marks them: an on-foot teammate is a small
-   * arrow in the side's own colour, pointing where he faces
-   * (`minimap_icon_soldier_16x16`, white in the archive and modulated by the
-   * engine); a seated one is not marked here at all, because his VEHICLE is
-   * the mark and `drawVehicles` tints that instead. The local player is the
-   * disc-and-arrow ring (`drawPlayer`), so he is not doubled.
-   *
-   * The list is the world's own players — bots and, in a room, the other
-   * humans — filtered to the local side; a destroyed body has no arrow.
-   *
-   * The arrow is the whole reason a bot is findable: a squad spawning on a
-   * capped flag and advancing on an objective leaves the player's own corner
-   * of the map within seconds, and the map is the only surface that still
-   * shows them. The heading is what the dot it replaces could not say — which
-   * way the line is moving, and so whether it is coming to help.
-   */
-  function friendlyMapUnits() {
-    const out = [];
-    const players = page.world?.players;
-    if (!players) return out;
-    const localTeam = localMapTeam();
-    for (const [id, player] of players) {
-      if (id === page.LOCAL_PLAYER) continue;
-      if (player.team !== localTeam) continue;
-      if (player.armor?.destroyed) continue;
-      // Seated: `drawVehicles` paints the hull he is in. Two marks for one man
-      // is what retail does not do.
-      if (player.occupancy?.root) continue;
-      const s = player.soldier;
-      if (!s) continue;
-      out.push({ x: s.x, z: s.z, yaw: s.yaw });
-    }
-    return out;
-  }
-
-  /** The scene nodes a friendly is riding, so `drawVehicles` can tell an
-   *  occupied hull from a parked one. A Set rather than a walk per vehicle:
-   *  this runs once per surface, not once per spawner. */
-  function friendlyVehicleNodes() {
-    const out = new Set();
-    const players = page.world?.players;
-    if (!players) return out;
-    const localTeam = localMapTeam();
-    for (const [id, player] of players) {
-      if (id === page.LOCAL_PLAYER) continue;
-      if (player.team !== localTeam) continue;
-      if (player.armor?.destroyed) continue;
-      const root = player.occupancy?.root;
-      if (!root) continue;
-      // The hull the map draws: a carrier's AA gun is a seat of the carrier.
-      let hull = root;
-      for (let n = root; n; n = n.parent) if (page.mapVehicles.includes(n)) { hull = n; break; }
-      out.add(hull);
-    }
-    return out;
-  }
-
-  /** A cheap key that changes as the units move, so a map surface repaints on a
-   *  bot's step and not only on the camera's. The heading is in it to a tenth
-   *  of a radian — the arrow turns visibly at this size well before it moves a
-   *  backing pixel, so a position-only key would freeze a teammate mid-turn. */
-  function friendlyMarkerKey() {
-    let key = '';
-    for (const { x, z, yaw } of friendlyMapUnits()) {
-      key += `${Math.round(x)},${Math.round(z)},${Math.round(yaw * 10)};`;
-    }
-    // A crewed hull moves and turns under its crew, so its pose is in the key
-    // the way an on-foot arrow's is.
-    for (const node of friendlyVehicleNodes()) {
-      node.getWorldPosition(vehiclePos);
-      node.getWorldQuaternion(vehicleQuat);
-      vehicleFwd.set(0, 0, -1).applyQuaternion(vehicleQuat);
-      key += `v${node.id},${Math.round(vehiclePos.x)},${Math.round(vehiclePos.z)},`
-        + `${Math.round(Math.atan2(vehicleFwd.x, -vehicleFwd.z) * 10)};`;
-    }
-    return key;
-  }
+  const {
+    localMapTeam, friendlyMapUnits, friendlyVehicleNodes, friendlyMarkerKey,
+  } = createMapFriendlies({
+    get deployTeamId() { return page.deployTeamId; },
+    get LOCAL_PLAYER() { return page.LOCAL_PLAYER; },
+    get mapVehicles() { return page.mapVehicles; }, get world() { return page.world; },
+  });
 
   /** `rot` is the map's own turn, as everywhere else here: an arrow drawn on a
    *  turned map turns with it. */
@@ -533,30 +375,6 @@ export function createMapSurfaces(page) {
         if (active) drawSprite(ctx, 'map_dot', q.x, q.y, sc * 0.7);
       }
     }
-  }
-
-  /** Match a canvas's backing store to the box it is displayed in.
-   *
-   *  Returns the device ratio so markers can be sized in CSS pixels. Without
-   *  this the HUD widget draws into a 376 px buffer shown at 186 px and every
-   *  marker comes out half the size it was asked for. The HUD widget's box is
-   *  not square (`MINIMAP_RECT` through the stage's sx and sy), so the height
-   *  follows the box — not the width — and only the fullscreen map stays
-   *  square. */
-  function fitCanvas(canvas) {
-    const css = cssWidthOf(canvas);
-    if (!css) return canvas.__ratio || 1;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const want = Math.round(css * dpr);
-    const boxH = canvas.clientHeight || 0;
-    const wantH = canvas === minimapCanvas && boxH
-      ? Math.round(boxH * dpr) : want;
-    if (canvas.width !== want || canvas.height !== wantH) {
-      canvas.width = want;
-      canvas.height = wantH;
-    }
-    canvas.__ratio = dpr;
-    return dpr;
   }
 
   /** One map surface. `span` is the fraction of the art shown, `u0`/`v0` its

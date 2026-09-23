@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULES = {
     "physics.mjs": ROOT / "viewer" / "physics.js",
     "walking-body.js": ROOT / "viewer" / "walking-body.js",
+    "soldier-resolve.js": ROOT / "viewer" / "soldier-resolve.js",
     "soldier-pose.js": ROOT / "viewer" / "soldier-pose.js",
     "soldier-locomotion.js": ROOT / "viewer" / "soldier-locomotion.js",
     "point-body.js": ROOT / "viewer" / "point-body.js",
@@ -35,6 +36,7 @@ MODULES = {
     "collision.mjs": ROOT / "viewer" / "collision.js",
     "world-collider.js": ROOT / "viewer" / "world-collider.js",
     "static-index.js": ROOT / "viewer" / "static-index.js",
+    "collision-meshes.js": ROOT / "viewer" / "collision-meshes.js",
     "drivable-mask.js": ROOT / "viewer" / "drivable-mask.js",
     "collision-materials.js": ROOT / "viewer" / "collision-materials.js",
     "heightfield.js": ROOT / "viewer" / "heightfield.js",
