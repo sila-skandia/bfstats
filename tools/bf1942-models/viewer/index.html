@@ -221,6 +221,8 @@ import { createVariantPicker, configurationLabel, normalizeVariants, skinLabel, 
          variantKey } from './model-variants.js';
 import { createArmouryBrowser } from './model-browser.js';
 import { installTestHooks } from './model-test-hooks.js';
+import { disposeModel } from './dispose-model.js';
+import { installControlsCollapse } from './controls-collapse.js';
 
 // Which game's assets this page serves, and the directory they hang off:
 // 'models' for vanilla, 'models/mods/eod' for a mod. Resolved before anything
@@ -260,21 +262,6 @@ let currentEntry = null;
 let currentVariant = null;
 let framing = null;
 let loadSequence = 0;
-
-function disposeModel(root) {
-  if (!root) return;
-  const materials = new Set();
-  const textures = new Set();
-  root.traverse(obj => {
-    obj.geometry?.dispose();
-    for (const material of [obj.material].flat().filter(Boolean)) {
-      materials.add(material);
-      if (material.map) textures.add(material.map);
-    }
-  });
-  textures.forEach(texture => texture.dispose());
-  materials.forEach(material => material.dispose());
-}
 
 // Portrait camera distance, as a multiple of the model's longest box side.
 // Fixed on purpose: a constant multiple is what puts every thumbnail on one
@@ -675,22 +662,7 @@ const armoury = createArmouryBrowser({
   get PORTRAIT_EXTENTS() { return PORTRAIT_EXTENTS; }, get showVariant() { return showVariant; },
 });
 
-const collapseBtn = document.getElementById('controls-collapse-btn');
-const fabBtn = document.getElementById('stage-controls-fab');
-
-function setControlsCollapsed(collapsed) {
-  document.body.classList.toggle('controls-collapsed', collapsed);
-  if (collapseBtn) {
-    collapseBtn.setAttribute('aria-expanded', String(!collapsed));
-  }
-  if (fabBtn) {
-    fabBtn.hidden = !collapsed;
-  }
-  resize();
-}
-
-collapseBtn?.addEventListener('click', () => setControlsCollapsed(true));
-fabBtn?.addEventListener('click', () => setControlsCollapsed(false));
+installControlsCollapse({ get resize() { return resize; } });
 
 const testHooks = installTestHooks({
   get camera() { return camera; }, get clipActions() { return engineClips.clipActions; },
