@@ -14,6 +14,7 @@ import { KitAmmo } from './kit-ammo.js';
 import { createKitLoadout } from './kit-loadout.js';
 import { createHandFireSound } from './hand-fire-sound.js';
 import { createArmsRig } from './arms-rig.js';
+import { createDemolitions } from './demolitions.js';
 import { BOT_BODY_RADIUS, BOT_BODY_HEIGHT, BOT_FIRE_RANGE } from './bot-referee.js';
 
 /**
@@ -81,6 +82,31 @@ export function createHandWeapon(page) {
   });
   const { playViewmodelClip, stanceDeployName, updateViewmodelAnimation,
           viewmodelRigFor, vmCamera, vmHemi, vmRoot, vmScene, vmSun } = armsRig;
+
+  // The engineer's pack and plunger (`demolitions.js`): owns which pair the
+  // kit carries and the gun group the plunger reaches.
+  const demolitions = createDemolitions({
+    get beginHandFire() { return beginHandFire; }, get deployKit() { return page.deployKit; },
+    get deployTeamId() { return page.deployTeamId; }, get dropClick() { return page.dropClick; },
+    get guns() { return page.guns; }, get handWeapon() { return soldierKit.handWeapon; },
+    get itemsLocked() { return itemsLocked; }, get kitAmmo() { return kitAmmo; },
+    get kitLoadout() { return kitLoadout; },
+    get kitWeaponSlots() { return soldierKit.kitWeaponSlots; },
+    get loadHandWeapon() { return loadHandWeapon; },
+    get loadouts() { return loadout.loadouts; }, get optOnFoot() { return page.optOnFoot; },
+    get optPilot() { return page.optPilot; },
+    get selectKitWeapon() { return selectKitWeapon; },
+    get showWeaponBar() { return showWeaponBar; }, get slotOf() { return slotOf; },
+    get soldier() { return page.soldier; },
+    get soldierTemplateFor() { return soldierTemplateFor; },
+  });
+  const { altFireDemolitions, fireDetonator, isDetonator, isExplosives, packAmmo, packsLeft,
+          selectDetonator } = demolitions;
+  Object.defineProperties(soldierKit, {
+    explosivesTemplate: { get: () => demolitions.explosivesTemplate, enumerable: true },
+    detonatorTemplate: { get: () => demolitions.detonatorTemplate, enumerable: true },
+    thrownPackGroup: { get: () => demolitions.thrownPackGroup, enumerable: true },
+  });
 
   /** Seconds a downed bot stays out before its side puts it back on a flag. */
 
@@ -273,152 +299,16 @@ export function createHandWeapon(page) {
     // detonator, which is how you reach the plunger after putting all four
     // charges down. See the demolitions block below.
     if (isExplosives(entry.weapon) && !packsLeft()) return selectDetonator();
-    soldierKit.weaponBarUntil = performance.now() + WEAPON_BAR_MS;
+    showWeaponBar();
     if (entry.slot === soldierKit.handSlot && !isDetonator(soldierKit.handWeapon?.name)) return true;
     soldierKit.handSlot = entry.slot;
     loadHandWeapon(entry.weapon, soldierTemplateFor({ team: page.deployTeamId }));
     return true;
   }
 
-  // --- the engineer's plunger --------------------------------------------------
-  //
-  // The explosives pack and the detonator are two weapons on one slot, and the
-  // rule that binds them is the engine's, read out of
-  // `BFSoldier::handleMessage` (lnxded `0x08277260`). `BFSoldierTemplate::init`
-  // (`0x0827a8a2`) resolves five templates BY NAME — `ExpPackProjectile`,
-  // `ExpPack`, `Detonator`, `MedPack`, `RepairPack` — and caches them at
-  // `+0x2a4`..`+0x2b0`; the message handler then compares whatever is in hand
-  // against those pointers:
-  //
-  //   AltFire (message 7) holding **ExpPack**    -> `selectItem(11)`, the
-  //                                                 Detonator's `itemIndex`
-  //                                                 (`0x82779c0`)
-  //   AltFire holding **Detonator**              -> posts message 13 to itself
-  //                                                 (`0x82779a9`), which is
-  //                                                 MenuSelect4 -> `selectItem(4)`
-  //                                                 -> back to the pack
-  //   Fire (message 6) holding **Detonator**     -> `getItemFromIndex(4)`, and
-  //                                                 if that is the ExpPack,
-  //                                                 `FireArms::detonateProjectiles`
-  //   MenuSelect4 (the "4" key)                  -> `selectItem(4)`; if what
-  //                                                 ends up in hand is NOT the
-  //                                                 ExpPack, `selectItem(11)`
-  //
-  // That last rule is why the plunger is reachable at all once the pouch is
-  // empty: `ExpPack` declares `cantSelectWhenNoAmmo 1`, so with four packs
-  // already down `selectItem(4)` refuses and the fallback hands you the
-  // detonator. The debug string the engine keeps for the Fire path is literally
-  // `"ExpPack NotFound!"` (`0x86d2091`).
-  //
-  // The names are hardcoded in the engine and so they are hardcoded here. What
-  // is NOT hardcoded is whether this kit carries them: a kit's `items` list in
-  // `_shared/loadouts.json` is the engine's own `addTemplate` order, and a kit
-  // without a Detonator in it never reaches any of this.
-  const EXPLOSIVES_ITEM = 'exppack';
-  const DETONATOR_ITEM = 'detonator';
-  // The kit's own spelling of each, or null — a mod may case them differently,
-  // and `loadHandWeapon` wants the name the data uses.
-  soldierKit.explosivesTemplate = null;
-  soldierKit.detonatorTemplate = null;
-  // The gun group whose rounds the plunger reaches: the engine keeps the live
-  // list on the ExpPack weapon object itself (`FireArms+0x1d8`), which survives
-  // a weapon switch because the kit owns it. This page destroys a weapon when
-  // it leaves the hand, so the group is remembered here instead — the rounds
-  // already in the air keep their own reference to it, which is what makes
-  // that survivable (`disposeHandWeapon`'s surgical splice). Cleared on every
-  // spawn, because a new life is a new kit and an empty array; packs left over
-  // from the last one run their 240 s fuse out on their own, exactly as they
-  // do in the game.
-  soldierKit.thrownPackGroup = null;
-
-  /** The pouch's own counts (`kitAmmo`), which outlive the pack's rig the way
-   *  every item's do — null until the pack has been raised once this life. */
-  function packAmmo() {
-    return soldierKit.explosivesTemplate ? kitAmmo.peek(soldierKit.explosivesTemplate) : null;
-  }
-
-  /** Charges left in the pouch. 1 (i.e. "some") when the pack has never been
-   *  raised, or declares no magazine, so a mod whose pack has no `magSize` is
-   *  never locked out of it. */
-  function packsLeft() {
-    const pouch = packAmmo();
-    return pouch && Number.isFinite(pouch.size) ? Math.max(0, pouch.rounds) : 1;
-  }
-
-  /** Is `template` the pack, or the plunger? Case-insensitive, like `slotOf`. */
-  function isExplosives(template) {
-    return String(template || '').toLowerCase() === EXPLOSIVES_ITEM;
-  }
-  function isDetonator(template) {
-    return String(template || '').toLowerCase() === DETONATOR_ITEM;
-  }
-
-  /** Re-read which pack/plunger pair this kit carries. Called wherever the kit
-   *  is (re)armed, next to `kitWeaponSlots`. */
-  function armDemolitions(flag) {
-    const { kit } = kitLoadout(flag?.team, page.deployKit);
-    const items = loadout.loadouts?.kits?.[kit]?.items;
-    soldierKit.explosivesTemplate = Array.isArray(items)
-      ? items.find(isExplosives) || null : null;
-    soldierKit.detonatorTemplate = Array.isArray(items)
-      ? items.find(isDetonator) || null : null;
-  }
-
-  /** Raise the plunger.
-   *
-   *  No number key reaches it: its `itemIndex` is 11, past `c_PIMenuSelect9`,
-   *  which is exactly why the engine spends an AltFire branch and a
-   *  MenuSelect4 fallback on getting there. `_shared/loadouts.json` does carry
-   *  it as slot 11, so the ordinary selector can do the work and the weapon bar
-   *  stays honest; a kit table that does not list it still loads by name.
-   *  True if it came up (or was already up). */
-  function selectDetonator() {
-    if (!soldierKit.detonatorTemplate || !page.optOnFoot.checked || !page.soldier || page.optPilot.checked) {
-      return false;
-    }
-    // Reached only by AltFire (message 7) or MenuSelect4 (message 13), and both
-    // are on the far side of `handleMessage`'s `c_AsmHideWeapon` gate.
-    if (itemsLocked()) return false;
-    if (isDetonator(soldierKit.handWeapon?.name)) return true;
-    const slot = slotOf(soldierKit.kitWeaponSlots || [], soldierKit.detonatorTemplate);
-    if (slot != null) return selectKitWeapon(slot);
+  /** Put the weapon bar up: `WEAPON_BAR_MS` from now. */
+  function showWeaponBar() {
     soldierKit.weaponBarUntil = performance.now() + WEAPON_BAR_MS;
-    loadHandWeapon(soldierKit.detonatorTemplate, soldierTemplateFor({ team: page.deployTeamId }));
-    return true;
-  }
-
-  /** AltFire on the demolitions pair: pack <-> plunger. True if it took the
-   *  press, so the zoom/aim branch does not also see it. */
-  function altFireDemolitions() {
-    // Message 7. `handleMessage` drops it while `c_AsmHideWeapon` is up, so a
-    // swimming engineer can neither reach his plunger nor come back off it.
-    if (itemsLocked()) return false;
-    const name = soldierKit.handWeapon?.name;
-    if (isExplosives(name)) return selectDetonator();
-    if (isDetonator(name)) {
-      // The engine posts itself MenuSelect4 here, so this is exactly the "4"
-      // key — including its own fallback, which hands the plunger straight
-      // back when the pouch is empty.
-      selectKitWeapon(slotOf(soldierKit.kitWeaponSlots || [], soldierKit.explosivesTemplate) ?? 4);
-      return true;
-    }
-    return false;
-  }
-
-  /** Work the plunger: every pack this kit's ExpPack put down goes off at once,
-   *  through the same `Projectile::detonate` the end of a fuse calls. */
-  function fireDetonator(hw) {
-    page.dropClick();
-    // The Fire message reaches the held weapon as well as the packs (the
-    // engine leaves its forward flag set on this path), so the plunger plays
-    // its own clip and its own `Detonator.ssc` report whether or not anything
-    // was out there to set off.
-    beginHandFire(hw);
-    hw.cool = Math.max(hw.cool, 1 / (hw.data?.roundOfFire || 1));
-    if (!soldierKit.thrownPackGroup) return 0;
-    const count = page.guns.detonateProjectiles(soldierKit.thrownPackGroup);
-    if (!page.guns.liveProjectiles(soldierKit.thrownPackGroup)) soldierKit.thrownPackGroup = null;
-    return count;
   }
 
   /** Scroll the inventory one entry `dir`(+1/-1) through slot order, wrapping —
@@ -602,8 +492,8 @@ export function createHandWeapon(page) {
     // over from the last life keep running their own 240 s fuse in the world,
     // which is what the game does — the array the plunger walks belongs to the
     // weapon, and the weapon died with the soldier.
-    armDemolitions(flag);
-    soldierKit.thrownPackGroup = null;
+    demolitions.armDemolitions(flag);
+    demolitions.forgetThrownPacks();
     // A new life is a new kit: every item full again. This is the one place
     // ammunition comes back other than a depot — a slot switch rebuilds the
     // rig but never passes through here.
@@ -683,7 +573,7 @@ export function createHandWeapon(page) {
     // what to set off after the pack has been swapped out of the hand. The
     // pouch itself was just charged above, on the kit's own entry, which is
     // what keeps it from refilling on the way back from the plunger.
-    if (isExplosives(hw.name)) soldierKit.thrownPackGroup = group;
+    if (isExplosives(hw.name)) demolitions.packThrown(group);
     hw.model.onShot();
     hw.cool = Math.max(hw.cool, 1 / (hw.data?.roundOfFire || 1));
     finishHandShot(hw);
