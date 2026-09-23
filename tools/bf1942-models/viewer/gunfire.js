@@ -90,6 +90,11 @@ export class GunFire {
     // `owner`) plus the page's own `target`. Only asked inside the collider's
     // own distance, so a wall still stops the round first.
     this.bodyCast = null;
+    // What a proximity-fused round can burst on (`proximity-fuse.js`):
+    // `(x, y, z, radius) => [{ x, y, z, mass, vx, vy, vz, owner }]`, every
+    // vehicle hull whose origin might be within `radius`, whoever drives it.
+    // Null (the model browser) leaves the fuse inert.
+    this.nearObjects = null;
     // The `attacker -> defender -> EffectBundle` table out of
     // `_shared/damage.json`, and the `projectileTemplate -> attacker material`
     // table beside it. Both optional; without them a hit still stops the round,
@@ -150,10 +155,19 @@ export class GunFire {
   attackerMaterial(spec) {
     if (!spec) return null;
     if (Number.isFinite(spec.material)) return spec.material;
-    const table = this.projectileMaterials;
-    if (!table || !spec.template) return null;
-    const entry = table[spec.template.toLowerCase()];
+    const entry = this.projectileEntry(spec);
     return Number.isFinite(entry?.material) ? entry.material : null;
+  }
+
+  /**
+   * The round's row in `damage.json`'s projectile table, or null: its attacker
+   * material, and the words the baked `fireArms.projectile` block does not
+   * carry (the `timeToLive` CRD, the proximity fuse).
+   */
+  projectileEntry(spec) {
+    const table = this.projectileMaterials;
+    if (!table || !spec?.template) return null;
+    return table[spec.template.toLowerCase()] ?? null;
   }
 
   /** Put every round in the air back in its pool. Call on a scene change. */

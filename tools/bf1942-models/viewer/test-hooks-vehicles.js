@@ -441,6 +441,13 @@ export function installVehicleHooks(page) {
       page.localPlayer.aircraft.applyTransform();
       page.snapPresentation();
     },
+    // Nose along a heading, for a pass flown from a script (quaternion xyzw).
+    orient: (x, y, z, w) => {
+      page.localPlayer.aircraft.state.orientation.set(x, y, z, w);
+      page.localPlayer.aircraft.state.angularVelocity?.set?.(0, 0, 0);
+      page.localPlayer.aircraft.applyTransform();
+      page.snapPresentation();
+    },
     integrate: dt => page.localPlayer.aircraft.integrate(dt),
   } : null);
   // The E key. Not the same thing as `__setOnFoot(false)`: the debug toggle

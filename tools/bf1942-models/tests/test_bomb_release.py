@@ -48,6 +48,7 @@ MODULES = {
     "round-impact.js": VIEWER / "round-impact.js",
     "projectile-flight.js": VIEWER / "projectile-flight.js",
     "round-launch.js": VIEWER / "round-launch.js",
+    "proximity-fuse.js": VIEWER / "proximity-fuse.js",
     "gun-groups.js": VIEWER / "gun-groups.js",
     "gun-cycle.js": VIEWER / "gun-cycle.js",
     "bomb-release.js": VIEWER / "bomb-release.js",
