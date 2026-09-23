@@ -26,6 +26,11 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from page_source import page_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
@@ -199,7 +204,8 @@ class IdleVehicleWiringTests(unittest.TestCase):
     the way `test_map_entry` pins its own contracts: on the source text.
     """
 
-    source = (VIEWER / "map.html").read_text(encoding="utf-8")
+    # The page: `map.html` and the modules it was split into (`page_source.py`).
+    source = page_source()
 
     def test_a_respawned_hull_is_reset_where_it_comes_back(self) -> None:
         # Both halves: the pose, and the `FireState` the respawn inherits
