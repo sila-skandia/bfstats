@@ -8,10 +8,10 @@ import { findAllVehicleRoots, listEntryPoints, readWorldPose, pickNearest } from
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
  * `aircraft`, `car`, `collider`, `currentRoot`, `drawWeapon`, `driveFwd`,
- * `getTouchHudText`, `holster`, `hud`, `HUD_FOOT`, `isTouchDevice`,
- * `leaveSeat`, `mannedActive`, `markPilot`, `netSeatRow`, `netSendAction`,
- * `occupancy`, `optOnFoot`, `placeCamera`, `releaseButtons`,
- * `resetMobileControls`, `seatHolder`, `setPilot`, `soldier`, `updateHud`,
+ * `holster`, `hud`, `HUD_FOOT`, `isTouchDevice`, `leaveSeat`,
+ * `mannedActive`, `markPilot`, `netSeatRow`, `netSendAction`, `occupancy`,
+ * `optOnFoot`, `placeCamera`, `releaseButtons`, `resetMobileControls`,
+ * `seatHolder`, `setPilot`, `showHint`, `soldier`, `updateHud`,
  * `updateMobileControls`, `useLens`, `vehicleSpawnActive`, `world`.
  */
 export function createVehicleEntry(page) {
@@ -113,9 +113,8 @@ export function createVehicleEntry(page) {
     vehicleEntry.entryScan = ENTRY_SCAN_PERIOD;
     const near = nearestEntry();
     if (near?.vehicle !== vehicleEntry.nearEntry?.vehicle) {
-      page.hud.textContent = near
-        ? page.isTouchDevice ? `ENTER ${near.control}` : `E — enter the ${near.control}`
-        : page.isTouchDevice ? page.getTouchHudText() : page.HUD_FOOT;
+      if (!near) page.showHint(page.HUD_FOOT);
+      else page.hud.textContent = page.isTouchDevice ? `ENTER ${near.control}` : `E — enter the ${near.control}`;
     }
     vehicleEntry.nearEntry = near;
     page.updateMobileControls();
@@ -149,7 +148,7 @@ export function createVehicleEntry(page) {
       // any of the vehicles this round targets can hit.
       page.useLens('foot');
       page.drawWeapon();
-      page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : page.HUD_FOOT;
+      page.showHint(page.HUD_FOOT);
     }
     page.resetMobileControls();
   }
@@ -232,7 +231,7 @@ export function createVehicleEntry(page) {
       }
       page.useLens('foot');
       page.drawWeapon();
-      page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : page.HUD_FOOT;
+      page.showHint(page.HUD_FOOT);
     } else {
       // Nobody was waiting in the seat — the pilot box was ticked from free
       // fly — so E hands back the free camera where the vehicle stopped.
@@ -297,7 +296,7 @@ export function createVehicleEntry(page) {
       page.soldier.spawn(exit.x, exit.y, exit.z, exit.yaw);
       page.useLens('foot');
       page.drawWeapon();
-      page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : page.HUD_FOOT;
+      page.showHint(page.HUD_FOOT);
     } else {
       page.placeCamera();
       page.updateHud();
