@@ -686,3 +686,147 @@ export function boatResetControls(speedAlong) {
   const throttle = clamp(-Math.sign(v) * Math.log10(9 * Math.abs(v) + 1), -1, 1);
   return { throttle, steer: 0, done: false };
 }
+
+// -----------------------------------------------------------------------
+// Aircraft spacing: the runway test and the collision avoidance
+// -----------------------------------------------------------------------
+
+/**
+ * `BBChange::runwayClear` 0x0855f850. The plane's local box (`getLocalBounding
+ * Box`, vt+0x24) gives `dx dy dz`; an orthographic frustum (`Frustum::
+ * setupOrtho` 0x08441110 with width `1.5 dz`, height `1.3 dy`, near
+ * `-0.6 dx`, far `12 dx`: the pushes at 0x0855f97a..0x0855f9e6, constants
+ * 0x86be4d0 1.5, 0x87023e0 1.3, 0x87023e4 -0.6, 0x87023d8 12.0) is set in
+ * the plane's frame with its z row flattened to the horizontal and
+ * re-orthonormalised (0x0855f8b5..0x0855f960). `setupOrtho`'s planes keep
+ * `|x| <= w / 2`, `|y| <= h / 2` and `-near <= z <= far`, so the box runs
+ * from `0.6 dx` to `12 dx` ahead of the plane's origin, `0.75 dz` either
+ * side and `0.65 dy` above and below. `getObjectsWithinFrustum` 0x085e3b80
+ * asks the side's grid and the neutral one (0) with
+ * `RunwayObstructedPredicate::includeInformation` 0x08560070: not the plane
+ * itself, ITMobile (0x4000) set, ITSoldier (0x400000) and ITNaval (0x40)
+ * clear. The runway is clear when none is inside. (A Spitfire's `dx` is its
+ * 11.2 m span: 134 m ahead, 14 m wide.) The grid's own inside test (vt+0x18)
+ * is not read: an object is inside when its position is (INFERRED).
+ *
+ * `others`: `{ pos: [x, y, z], types: [...] }`, the neutral and own-side
+ * objects; `forward` the hull's nose on x/z.
+ */
+export const RUNWAY = { width: 1.5, height: 1.3, near: -0.6, far: 12.0 };
+
+export function runwayClear({ position, forward, box, others }) {
+  const dx = box.max[0] - box.min[0], dy = box.max[1] - box.min[1], dz = box.max[2] - box.min[2];
+  const fl = Math.hypot(forward[0], forward[1]) || 1;
+  const fx = forward[0] / fl, fz = forward[1] / fl;
+  const halfW = RUNWAY.width * dz / 2, halfH = RUNWAY.height * dy / 2;
+  const from = -RUNWAY.near * dx, to = RUNWAY.far * dx;
+  for (const o of others ?? []) {
+    const t = o.types ?? [];
+    if (!t.includes('ITMobile') || t.includes('ITSoldier') || t.includes('ITNaval')) continue;
+    const rx = o.pos[0] - position[0], ry = o.pos[1] - position[1], rz = o.pos[2] - position[2];
+    const along = rx * fx + rz * fz;
+    const across = rx * fz - rz * fx;
+    if (along >= from && along <= to && Math.abs(across) <= halfW && Math.abs(ry) <= halfH) return false;
+  }
+  return true;
+}
+
+/**
+ * `BBAvoid::collisionPredicted` 0x0855d2f0: `rel` the other's centre less
+ * the bot's, `relVel` the other's velocity less the bot's, `R` the two
+ * radii summed, `lookAhead` the seconds. Already overlapping: `{ t: 0 }`.
+ * Otherwise, when `|relVel| >= 0.2`, the closest approach `tca = -rel .
+ * relVel / |relVel|^2` (none behind, `tca < 0`); inside `R` there the first
+ * contact is `t = tca - sqrt(R^2 - m^2) / |relVel|`, predicted when
+ * `0 <= t <= lookAhead`, with the contact point `rel + relVel t`.
+ * Returns null when none is predicted.
+ */
+export function collisionPredicted(rel, relVel, R, lookAhead) {
+  const R2 = R * R;
+  const d2 = rel[0] * rel[0] + rel[1] * rel[1] + rel[2] * rel[2];
+  if (d2 < R2) return { t: 0, point: [...rel] };
+  const v2 = relVel[0] * relVel[0] + relVel[1] * relVel[1] + relVel[2] * relVel[2];
+  if (!(v2 >= 1e-6)) return null;
+  const v = Math.sqrt(v2);
+  if (v < 0.2) return null;
+  const tca = -(rel[0] * relVel[0] + rel[1] * relVel[1] + rel[2] * relVel[2]) / v2;
+  if (tca < 0) return null;
+  const c = [rel[0] + relVel[0] * tca, rel[1] + relVel[1] * tca, rel[2] + relVel[2] * tca];
+  const m2 = c[0] * c[0] + c[1] * c[1] + c[2] * c[2];
+  if (!(m2 < R2)) return null;
+  const t = tca - Math.sqrt(R2 - m2) / v;
+  if (t > lookAhead || t < 0) return null;
+  return { t, point: [rel[0] + relVel[0] * t, rel[1] + relVel[1] * t, rel[2] + relVel[2] * t] };
+}
+
+/** The air avoid's constants. */
+export const AIR_AVOID = {
+  /** Mobile plug-in +0x2c, `avoidCollisionLookAhead`: 5.0 by both ctors
+   *  (0x085e0bd7, 0x085e0c9b), set only on the big ships (15). */
+  lookAhead: 5.0,
+  /** `BAPConTime(1.1 t)` in `BBPAvoidCollision3d::createPlan`. */
+  timeFactor: 1.1,
+};
+
+/**
+ * `BBAvoid::calculateUrgency` 0x0855c650 for a bot in an aircraft. `self`
+ * and each of `others`: `{ id, centre, velocity, radius, mass }`; the centre
+ * is the position plus the rotated local box centre (`getSphereLocalOffset`
+ * 0x085d6860: half of min + max), the radius the box's half diagonal about
+ * that centre (`getSmallestRadius` 0x085d68f0 -> `LocalBoundingBox::
+ * calcRadius` 0x083809f0, its second loop), the mass the object's physics
+ * mass (`IPIPhysicalReal::getMass` 0x085ebd20 reads `AITemplatePhysical+8`,
+ * which `initFromObject` 0x085e1130 copies from the world object's physics,
+ * interface 0xc422 vt+0xa0). Neighbours are what the side's and the neutral
+ * grid return within `lookAhead x speed + radius` of the centre. Each
+ * predicted collision whose object moves at least the pathfinding's
+ * potential-obstacle speed (`getPotentialObstacleMaxSpeed`, 0 on every
+ * level, so every one) adds `mass x |relVel| / |rel|` (0x0855cf3d); the
+ * largest names the plan's object. The caller multiplies by the modifier.
+ */
+export function airAvoidUrgency({ self, others, lookAhead = AIR_AVOID.lookAhead }) {
+  const speed = Math.hypot(...self.velocity);
+  const reach = lookAhead * speed + self.radius;
+  let sum = 0, best = null, bestTerm = 0;
+  for (const o of others ?? []) {
+    if (o.id === self.id) continue;
+    const rel = [o.centre[0] - self.centre[0], o.centre[1] - self.centre[1], o.centre[2] - self.centre[2]];
+    const dist = Math.hypot(...rel);
+    if (dist > reach + o.radius) continue;
+    const relVel = [o.velocity[0] - self.velocity[0], o.velocity[1] - self.velocity[1], o.velocity[2] - self.velocity[2]];
+    const hit = collisionPredicted(rel, relVel, self.radius + o.radius, lookAhead);
+    if (!hit) continue;
+    const term = (o.mass ?? 0) * Math.hypot(...relVel) / Math.max(dist, 1e-3);
+    sum += term;
+    if (term >= bestTerm) { bestTerm = term; best = { id: o.id, t: hit.t, point: hit.point, rel, relVel, other: o }; }
+  }
+  return { urgency: sum, best };
+}
+
+/**
+ * `BBPAvoidCollision3d::createPlan` 0x08587420: a `MoveTo3d` to a point one
+ * second of the bot's own travel ahead, turned 45 deg (0.7071) away from
+ * the other. `n = getNormal(v) = (v.z, -v.x)` (0x08658780); with the other
+ * on n's side (`n . d > 0`, `d` its x/z offset) the turn is +45 deg
+ * (`((v.x - v.z), (v.x + v.z)) x 0.7071`), else -45 deg. The angle test
+ * before it (`|u . n| - pi/2 > 0.349` at 0x085877f5, no acos) never passes:
+ * that branch is dead. The point's height is the bot's less `2 t` when it is
+ * the lower of the two, else plus `2 t` (the altitudes by Information
+ * vt+0x20, INFERRED getAltitude). The move ends after `1.1 t` (`BAPConTime`)
+ * or at the point (`BAPConPosition`); its speed is the Mobile plug-in's
+ * `maxSpeed`, x0.3 unless the other is behind both diagonals, and the
+ * viewer's `towardsPoint` takes no speed, so that cap is not ported.
+ *
+ * In the viewer's frame (z is the engine's negated); the side test is done
+ * in the engine's.
+ */
+export function airAvoidPoint({ position, velocity, other, t, altitude, otherAltitude }) {
+  const a = velocity[0], b = -velocity[2];
+  const dx = other[0] - position[0], dz = -(other[2] - position[2]);
+  const n = [b, -a];
+  const plus = n[0] * dx + n[1] * dz > 0;
+  const k = Math.SQRT1_2;
+  const off = plus ? [(a - b) * k, (a + b) * k] : [(a + b) * k, (b - a) * k];
+  const dy = altitude <= otherAltitude ? -2 * t : 2 * t;
+  return { point: [position[0] + off[0], position[1] + dy, position[2] - off[1]], until: AIR_AVOID.timeFactor * t };
+}

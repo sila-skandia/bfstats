@@ -480,6 +480,51 @@ class BotAiTests(unittest.TestCase):
 
 
 
+class AirSpacingTests(unittest.TestCase):
+    """Brief K item 2 (ledger AI-95): `BBChange::runwayClear` 0x0855f850 and
+    `BBAvoid::calculateUrgency` 0x0855c650 with `collisionPredicted`
+    0x0855d2f0 and `BBPAvoidCollision3d::createPlan` 0x08587420."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.a = BotAiTests.results["airSpacing"] if hasattr(BotAiTests, "results") else run_harness()["airSpacing"]
+
+    def test_the_runway_box(self) -> None:
+        r = self.a["runway"]
+        self.assertTrue(r["empty"])
+        # 0.6 x 11.2 = 6.7 m to 12 x 11.2 = 134 m ahead, 0.75 x 9.1 = 6.8 m aside.
+        self.assertFalse(r["planeAhead"])
+        self.assertTrue(r["planeFar"])
+        self.assertTrue(r["planeBehind"])
+        self.assertTrue(r["planeBeside"])
+        # Only a mobile, non-soldier, non-naval object blocks it.
+        self.assertTrue(r["soldierAhead"])
+        self.assertTrue(r["shipAhead"])
+        self.assertTrue(r["parkedGun"])
+
+    def test_the_collision_prediction(self) -> None:
+        a = self.a
+        # Head-on at 100 m/s closing, radii summed 15: contact at (200 - 15) / 100.
+        self.assertAlmostEqual(a["headOn"]["t"], 1.85, places=6)
+        self.assertIsNone(a["offset"])
+        self.assertIsNone(a["late"], "beyond the 5 s look-ahead")
+        self.assertIsNone(a["opening"])
+        self.assertEqual(a["touching"]["t"], 0)
+
+    def test_the_urgency_and_the_turn(self) -> None:
+        a = self.a
+        # mass x |relVel| / |rel| of the one predicted: 2500 x 100 / 200.06.
+        self.assertAlmostEqual(a["urgency"], 2500 * 100 / (200 ** 2 + 25) ** 0.5, places=6)
+        self.assertEqual(a["best"], "b")
+        # Flying +x with the other to +z, the point turns 45 deg to -z; lower, it dives by 2 t.
+        self.assertAlmostEqual(a["right"][0], 35.355, places=3)
+        self.assertAlmostEqual(a["right"][2], -35.355, places=3)
+        self.assertAlmostEqual(a["right"][1], 96.0, places=6)
+        self.assertAlmostEqual(a["rightUntil"], 2.2, places=6)
+        self.assertAlmostEqual(a["left"][2], 35.355, places=3)
+        self.assertAlmostEqual(a["left"][1], 104.0, places=6)
+
+
 class GunnerAimTests(unittest.TestCase):
     """Brief F: a mounted gunner aims the engine's way (bot-aim.js).
 

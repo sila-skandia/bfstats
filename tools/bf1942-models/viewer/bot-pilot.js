@@ -6,7 +6,8 @@
 
 import { playerPosition } from './bot-sense.js';
 import { GRAVITY } from './point-body.js';
-import { aimAtDirection, towardsPoint, attackRunStep, planeAimFor, insideBattleZone, PLANE, PLANE_FIRE } from './bot-vehicle-air.js';
+import { aimAtDirection, towardsPoint, attackRunStep, planeAimFor, insideBattleZone, PLANE, PLANE_FIRE,
+         runwayClear, airAvoidUrgency, airAvoidPoint, AIR_AVOID } from './bot-vehicle-air.js';
 
 /**
  * `PlaneMoveTo` (`EntryPlaneMoveTo::execute` -> `PlaneControl::towardsPoint`):
@@ -188,4 +189,127 @@ export function gunBallistics(bot) {
   // tracer round's is 0, a shell's defaults to 1 (gunfire.js).
   const gm = Number.isFinite(st.projectile?.gravity) ? st.projectile.gravity : (st.projectile?.kind === 'shell' ? 1 : 0);
   return { speed, gravity: GRAVITY * gm, node: g?.node ?? null };
+}
+
+/**
+ * The hulls of the grids `BBAvoid` and `runwayClear` query: the side's and
+ * the neutral one (`getObjectsWithinFrustum` 0x085e3b80 asks
+ * `getInformationGrid` 0x085e5450 for side 0 and the bot's; `BBAvoid::
+ * calculateUrgency` asks the same pair). A side's grid holds its own
+ * objects and the enemy ones it knows (`AIObjectReal::createInformation`
+ * 0x085d8ca0 makes an `InformationReal` for the object's own side and an
+ * `InformationKnown` for another, and `BBChange` has to filter the same
+ * query with `isMannedByEnemy` 0x0855fcb0). A hull is neutral while nobody
+ * holds a seat; an enemy-held hull is in when the side knows one of its
+ * crew (`SideKnowledge`), at its true position (the known record's own
+ * position is not kept: INVENTION). One entry per live hull the level's
+ * units list (`bot-units.js candidates`), with its position, local box,
+ * mass, type words and, when someone drives it, its drive.
+ */
+export function friendlyHulls(bot) {
+  const byHull = new Map();
+  for (const c of bot.vehicleCandidates ?? []) {
+    let h = byHull.get(c.vehicleId);
+    if (!h) {
+      h = { id: c.vehicleId, node: c.node, pos: c.pos, box: c.localBox, mass: c.mass, types: c.hullTypes ?? [],
+            kind: c.kind, crew: [], driver: c.driver ?? null };
+      byHull.set(c.vehicleId, h);
+    }
+    if (c.occupiedBy != null) h.crew.push(c.occupiedBy);
+  }
+  const out = [];
+  for (const h of byHull.values()) {
+    const enemies = h.crew.filter(id => {
+      const team = bot.world?.players?.get(id)?.team;
+      return team !== undefined && team !== bot.team;
+    });
+    const known = bot.senses?.knowledge?.t0;
+    if (enemies.length && !enemies.some(id => known?.has(id) || bot.senses?.memory?.has(id))) continue;
+    const drive = h.driver != null ? bot.world?.players?.get(h.driver)?.vehicle ?? null : null;
+    out.push({ ...h, drive });
+  }
+  return out;
+}
+
+/** `runwayClear` for a plane candidate seat (its root): the hull's own nose
+ *  on x/z from `hullYaw`, the other live own-side and neutral hulls. */
+export function candidateRunwayClear(bot, c) {
+  if (c.kind !== 'air' || !c.isRoot || !c.localBox) return true;
+  const yaw = c.hullYaw ?? 0;
+  const others = [];
+  for (const h of friendlyHulls(bot)) {
+    if (h.id === c.vehicleId) continue;
+    const s = h.drive?.state?.position;
+    others.push({ pos: s ? [s.x, s.y, s.z] : h.pos, types: h.types });
+  }
+  return runwayClear({ position: c.pos, forward: [Math.sin(yaw), Math.cos(yaw)], box: c.localBox, others });
+}
+
+function hullCentre(node, box, pos) {
+  const cx = (box.min[0] + box.max[0]) / 2, cy = (box.min[1] + box.max[1]) / 2, cz = (box.min[2] + box.max[2]) / 2;
+  const e = node?.matrixWorld?.elements;
+  if (!e) return [pos[0] + cx, pos[1] + cy, pos[2] + cz];
+  return [pos[0] + e[0] * cx + e[4] * cy + e[8] * cz, pos[1] + e[1] * cx + e[5] * cy + e[9] * cz,
+          pos[2] + e[2] * cx + e[6] * cy + e[10] * cz];
+}
+
+function hullRadius(box) {
+  return 0.5 * Math.hypot(box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]);
+}
+
+/**
+ * `BBAvoid::calculateUrgency` 0x0855c650 for a bot flying an aircraft
+ * (bot-vehicle-air.js `airAvoidUrgency`): its own hull against every other
+ * live own-side or neutral hull. Returns the unscaled urgency and records
+ * the plan's object on the bot (`_airAvoidBest`). Soldiers are not in the
+ * list: a plane is not steered off a soldier (INVENTION by omission).
+ */
+export function airAvoid(bot) {
+  const m = bot.vehicle;
+  const st = m?.drive?.state;
+  if (!st || !m.node) return 0;
+  const hulls = friendlyHulls(bot);
+  const box = hulls.find(h => h.id === m.vehicleId)?.box;
+  if (!box) return 0;
+  const pos = [st.position.x, st.position.y, st.position.z];
+  const self = { id: m.vehicleId, centre: hullCentre(m.node, box, pos),
+                 velocity: [st.velocity.x, st.velocity.y, st.velocity.z], radius: hullRadius(box) };
+  const others = [];
+  for (const h of hulls) {
+    if (h.id === m.vehicleId || !h.box) continue;
+    const s = h.drive?.state;
+    const p = s?.position ? [s.position.x, s.position.y, s.position.z] : h.pos;
+    const v = s?.velocity ? [s.velocity.x, s.velocity.y, s.velocity.z] : [0, 0, 0];
+    others.push({ id: h.id, centre: hullCentre(h.node, h.box, p), velocity: v, radius: hullRadius(h.box),
+                  mass: h.mass ?? 0, pos: p });
+  }
+  const r = airAvoidUrgency({ self, others, lookAhead: AIR_AVOID.lookAhead });
+  const prev = bot._airAvoidBest?.id ?? null;
+  bot._airAvoidBest = r.best ? { id: r.best.id, t: r.best.t, other: r.best.other.centre, otherPos: r.best.other.pos } : null;
+  if (bot._airAvoidBest && bot._airAvoidBest.id !== prev) bot.changedTarget.Avoid = true;
+  return r.urgency;
+}
+
+/** The avoid move's clearance: the 30.0 pushed at 0x08587b63 into the
+ *  `BAPAMoveTo3d` ctor's clearance slot. */
+export const AIR_AVOID_CLEARANCE = 30.0;
+
+/** `BBPAvoidCollision3d::createPlan` 0x08587420 (`airAvoidPoint`). */
+export function planAirAvoid(bot, now) {
+  const b = bot._airAvoidBest;
+  const st = bot.vehicle?.drive?.state;
+  if (!b || !st) return null;
+  const position = [st.position.x, st.position.y, st.position.z];
+  const velocity = [st.velocity.x, st.velocity.y, st.velocity.z];
+  const altitude = bot._altitudeAlong(position, [0, 0, 0]);
+  const otherAltitude = bot._altitudeAlong(b.otherPos ?? b.other, [0, 0, 0]);
+  const r = airAvoidPoint({ position, velocity, other: b.other, t: b.t, altitude, otherAltitude });
+  return { point: r.point, until: now + r.until, otherId: b.id };
+}
+
+/** The avoid move: `MoveTo3d` to the point until `1.1 t` has passed or it
+ *  is reached (`BAPConOr(BAPConTime, BAPConPosition)`). */
+export function execPlaneAvoid(bot, action, now) {
+  if (now >= action.until) return true;
+  return execPlaneMoveTo(bot, action.point, null, AIR_AVOID_CLEARANCE);
 }

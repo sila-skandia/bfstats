@@ -14,6 +14,7 @@ import { fireStrength, unitTable } from './bot-strength.js';
 import { wrapAngle } from './bot-aim.js';
 import { BEHAVIOUR } from './bot-decision.js';
 import { PLAN_ACTION } from './bot-plans.js';
+import { candidateRunwayClear } from './bot-pilot.js';
 
 /**
  * The page seats the bot: `m` is `{ id, node, drive, occupancy, kind, nav,
@@ -120,6 +121,7 @@ export function urgencyChange(bot, mod, now) {
       const d = Math.hypot(c.pos[0] - bot.position[0], c.pos[2] - bot.position[2]);
       if (d > CHANGE.searchRadius) continue;
       if (c.vehicleId === m.vehicleId) continue;          // the same hull is the teleport's business
+      if (c.kind === 'air' && !candidateRunwayClear(bot, c)) continue;
       // `modifyForDriver` 0x0855f7d0 scales a secondary seat's whole urgency.
       const u = unitUrgency({ health: c.health ?? 1, fire: bot._candidateFire(c),
                               maxSpeed: c.maxSpeed ?? 0, value: c.value ?? 0, orderSplit: split }) * (c.seatFactor ?? 1);
@@ -150,6 +152,8 @@ export function urgencyChange(bot, mod, now) {
     const d = Math.hypot(c.pos[0] - bot.position[0], c.pos[2] - bot.position[2]);
     if (d > CHANGE.searchRadius) continue;
     if (nav && !unitReachable(nav, c, d)) continue;
+    // `BBChange::runwayClear` 0x0855f850 on a plane (bot-pilot.js).
+    if (c.kind === 'air' && !candidateRunwayClear(bot, c)) continue;
     const leftAge = bot._leftVehicle?.id === c.vehicleId ? now - bot._leftVehicle.at : Infinity;
     // `modifyForDriver` 0x0855f7d0 scales a secondary seat's whole urgency
     // (0x0855e0c0: `calculateVehicleUrgency(seat) x radio x (f + 0.5) x
