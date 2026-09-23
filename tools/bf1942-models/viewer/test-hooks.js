@@ -23,27 +23,27 @@ import { findPath, gridAt } from './nav-grid.js';
  * `botBodies`, `botUnits`, `camera`, `cancelDeploy`, `canopySpan`,
  * `captureVoiceDirs`, `captureVoiceKind`, `CHASE_OPTION`, `chaseRig`,
  * `chooseKit`, `chooseTeam`, `collectEntryPoints`, `collider`, `combatArea`,
- * `combatFrame`, `crashLog`, `crosshairAim`, `crosshairEl`, `currentDir`,
- * `cycleKitWeapon`, `damageVisuals`, `debugDeployHeld`, `deployActive`,
- * `deployKit`, `deploySpawn`, `deployTeamId`, `deployUnchosen`,
- * `detonatorTemplate`, `effectAudio`, `effects`, `effectSoundsLoad`,
- * `enterVehicle`, `entryPoints`, `exitSeat`, `exitVehicle`,
- * `explosivesTemplate`, `extras`, `fireStateFor`, `flags`, `floatHosts`,
- * `foot3pRel`, `footBody`, `footBodyForceHidden`, `footCanopy`,
- * `footView3p`, `frame`, `friendlyMapUnits`, `friendlyVehicleNodes`,
- * `frozenCount`, `gameHud`, `groundHeight`, `guns`, `handSlot`,
- * `handWeapon`, `hud`, `isZoomed`, `itemsLocked`, `KBLOCK`, `KBLOCK_KEYS`,
- * `kbLockState`, `kbSession`, `keys`, `kitLoadout`, `KITS`,
- * `kitWeaponSlots`, `lastCaptureVoice`, `loadouts`, `loadoutsLoad`,
- * `LOCAL_PLAYER`, `localMapTeam`, `localPlayer`, `look`, `lookDelta`,
- * `mannedActive`, `mapGate`, `MINIMAP_TEAM_TINT`, `modeNote`, `mouseInput`,
- * `nearEntry`, `occupiedVehicleDamage`, `optOnFoot`, `packAmmo`,
- * `packsLeft`, `paintScoreboard`, `parachuteLog`, `params`,
- * `playCaptureVoice`, `pressTrigger`, `referee`, `renderer`, `roomClient`,
+ * `combatFrame`, `crosshairAim`, `crosshairEl`, `currentDir`,
+ * `cycleKitWeapon`, `damageVisuals`, `deployActive`, `deployKit`,
+ * `deploySpawn`, `deployTeamId`, `deployUnchosen`, `detonatorTemplate`,
+ * `effectAudio`, `effects`, `effectSoundsLoad`, `enterVehicle`,
+ * `entryPoints`, `exitSeat`, `exitVehicle`, `explosivesTemplate`, `extras`,
+ * `fireStateFor`, `flags`, `floatHosts`, `foot3pRel`, `footBody`,
+ * `footCanopy`, `footView3p`, `forceHideFootBody`, `frame`,
+ * `friendlyMapUnits`, `friendlyVehicleNodes`, `frozenCount`, `gameHud`,
+ * `groundHeight`, `guns`, `handSlot`, `handWeapon`, `holdDeploy`, `hud`,
+ * `isZoomed`, `itemsLocked`, `KBLOCK`, `KBLOCK_KEYS`, `kbLockState`,
+ * `kbSession`, `keys`, `kitLoadout`, `KITS`, `kitWeaponSlots`,
+ * `lastCaptureVoice`, `loadouts`, `loadoutsLoad`, `LOCAL_PLAYER`,
+ * `localMapTeam`, `localPlayer`, `look`, `lookDelta`, `mannedActive`,
+ * `mapGate`, `MINIMAP_TEAM_TINT`, `modeNote`, `mouseInput`, `nearEntry`,
+ * `occupiedVehicleDamage`, `optOnFoot`, `packAmmo`, `packsLeft`,
+ * `paintScoreboard`, `parachuteLog`, `params`, `playCaptureVoice`,
+ * `pressTrigger`, `recordCrashes`, `referee`, `renderer`, `roomClient`,
  * `roomJoined`, `scene`, `scoreboardOpen`, `scoreboardPlayers`,
  * `scoreFromSpawn`, `scoreLayout`, `seatAltFire`, `seatFire`,
  * `seatIkChains`, `seatSoldier`, `selectDeployFlag`, `selectKitWeapon`,
- * `setAim`, `setFly`, `setScoreboard`, `setSeatTriggers`,
+ * `setAim`, `setFly`, `setMapGate`, `setScoreboard`, `setSeatTriggers`,
  * `shipFlagInactive`, `showDamageTier`, `showView`, `snapPresentation`,
  * `soldier`, `soldier3pOnFoot`, `soldierArmor`, `soldierDead`,
  * `soldierExposureFor`, `soldierTemplateFor`, `spawnersRoot`,
@@ -645,7 +645,7 @@ export function installTestHooks(page) {
         events: drained,
       };
     };
-    window.__setDeploy = on => { page.debugDeployHeld = !!on; return page.debugDeployHeld; };
+    window.__setDeploy = on => page.holdDeploy(on);
     // The soldier's camera view, for a headless check: read it with no argument,
     // press C with `__footView('cycle')`, or name a mode. `modes` is what
     // `soldier-camera.js` allows this frame -- one on foot, three under a canopy.
@@ -678,12 +678,7 @@ export function installTestHooks(page) {
     // headless check can read the same box with and without them and attribute
     // the difference to the body alone. Nothing else in the scene moves between
     // the two reads, which is what makes it evidence rather than a screenshot.
-    window.__footBodyHide = on => {
-      page.footBodyForceHidden = !!on;
-      if (page.footBody) page.footBody.scene.visible = page.footBody.scene.visible && !on;
-      if (page.footCanopy) page.footCanopy.scene.visible = page.footCanopy.scene.visible && !on;
-      return page.footBodyForceHidden;
-    };
+    window.__footBodyHide = on => page.forceHideFootBody(on);
     // The subject height the external view frames itself against: feet to canopy
     // top, measured off the drawn canopy.
     window.__canopySpan = () => +page.canopySpan().toFixed(3);
@@ -921,7 +916,7 @@ export function installTestHooks(page) {
     // 7), switchable so a bench can set every-frame repaints -- the page before
     // dd165c5 -- against it without a reload. No argument reads it back.
     window.__mapGate = on => {
-      if (on !== undefined) page.mapGate = !!on;
+      if (on !== undefined) page.setMapGate(on);
       return page.mapGate;
     };
     // The minimap's zoom and rotation state (bfmap.js), so a headless check can
@@ -1331,7 +1326,7 @@ export function installTestHooks(page) {
       (page.localPlayer.car || page.localPlayer.aircraft)?.applyTransform();
       return page.bodyWorld?.ticks ?? 0;
     };
-    window.__crashLog = () => (page.crashLog ??= []);
+    window.__crashLog = () => page.recordCrashes();
     // The aircraft under the player, for a stepped test: inputs, state, a pose.
     window.__plane = () => (page.localPlayer.aircraft ? {
       setInput: (name, value) => page.localPlayer.aircraft.setInput(name, value),

@@ -14,14 +14,15 @@ import { Hud, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS } from './hud.js';
  * `aircraft`, `bust`, `camera`, `car`, `combatArea`, `combatFrame`,
  * `crosshairEl`, `currentDir`, `DEG_TO_RAD`, `deployActive`, `deployKit`,
  * `deployTeamId`, `drawFullMap`, `feedFlagIconVars`, `feedTicketVars`,
- * `fireStateFor`, `fullmapBox`, `handSlot`, `handWeapon`, `hud`, `hudPaths`,
- * `isZoomed`, `itemsLocked`, `kitLoadout`, `kitWeaponSlots`, `loadouts`,
- * `LOCAL_PLAYER`, `mannedActive`, `mannedGuns`, `netOccupiedVehicleId`,
- * `netVehicleIdFor`, `occupancy`, `occupiedVehicleDamage`, `optOnFoot`,
- * `optPilot`, `paintDeploySoon`, `playSoldierHurtSound`, `renderer`,
- * `roomClient`, `roomJoined`, `soldier`, `soldierArmor`, `soldierDead`,
- * `teamNation`, `updateHud`, `updateSeatPoseVisibility`, `vehicleGuns`,
- * `view`, `WEAPON_ICON_VARS`, `weaponBarUntil`, `world`.
+ * `fireStateFor`, `forgetOccupiedVehicle`, `fullmapBox`, `handSlot`,
+ * `handWeapon`, `hud`, `hudPaths`, `isZoomed`, `itemsLocked`, `kitLoadout`,
+ * `kitWeaponSlots`, `loadouts`, `LOCAL_PLAYER`, `mannedActive`,
+ * `mannedGuns`, `netOccupiedVehicleId`, `occupancy`,
+ * `occupiedVehicleDamage`, `occupiedVehicleIdFor`, `optOnFoot`, `optPilot`,
+ * `paintDeploySoon`, `playSoldierHurtSound`, `renderer`, `roomClient`,
+ * `roomJoined`, `soldier`, `soldierArmor`, `soldierDead`, `teamNation`,
+ * `updateHud`, `updateSeatPoseVisibility`, `vehicleGuns`, `view`,
+ * `WEAPON_ICON_VARS`, `weaponBarUntil`, `world`.
  */
 export function createHudFeed(page) {
   const hudFeed = {};
@@ -74,7 +75,7 @@ export function createHudFeed(page) {
     // through `leaveSeat`.
     hudFeed.seatDotsFor = null;
     hudFeed.seatDotsSig = null;
-    page.netOccupiedVehicleId = null;
+    page.forgetOccupiedVehicle();
   }
 
   // R2-8 (verify-r2.md's corrected report): the client's own case-sensitive
@@ -125,8 +126,7 @@ export function createHudFeed(page) {
    *  null for the whole ride. */
   function remoteSeatOccupants() {
     if (!page.roomJoined || !page.roomClient || !page.occupancy) return [];
-    if (page.netOccupiedVehicleId == null) page.netOccupiedVehicleId = page.netVehicleIdFor(page.occupancy.root);
-    if (page.netOccupiedVehicleId == null) return [];
+    if (page.occupiedVehicleIdFor(page.occupancy.root) == null) return [];
     const out = [];
     for (const slot of page.roomClient.remoteSlots()) {
       const p = page.roomClient.remotePlayer(slot);
@@ -872,11 +872,15 @@ export function createHudFeed(page) {
     // The soldier's own names (`soldier-camera.js`).
     inside: 'first person · through the soldier\'s own eyes',
   };
-  hudFeed.hudViewTimer = 0;
+  let hudViewTimer = 0;
+  /** Put `text` on the HUD line for a beat, then give it back to `updateHud`. */
+  function flashHud(text) {
+    page.hud.textContent = text;
+    clearTimeout(hudViewTimer);
+    hudViewTimer = setTimeout(page.updateHud, 2200);
+  }
   function showView(mode) {
-    page.hud.textContent = `view: ${VIEW_BLURB[mode]}`;
-    clearTimeout(hudFeed.hudViewTimer);
-    hudFeed.hudViewTimer = setTimeout(page.updateHud, 2200);
+    flashHud(`view: ${VIEW_BLURB[mode]}`);
     // Seat poses only draw in external views — hide in the cockpit (CVMInside),
     // since the player is looking out from the pilot's eyes, not at the seat.
     page.updateSeatPoseVisibility();
@@ -971,6 +975,7 @@ export function createHudFeed(page) {
   window.__hud = gameHud;
 
   Object.assign(hudFeed, {
+    flashHud,
     clearHitIndicator,
     clearVehicleHud,
     crosshairAim,

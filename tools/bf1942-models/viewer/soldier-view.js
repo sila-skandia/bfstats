@@ -21,11 +21,17 @@ import { SoldierView, FOOT_VIEW_CYCLE, PARACHUTE_VIEW_CYCLE, PARACHUTE_VIEW_RADI
  * `footFire`, `footLookPending`, `footPending`, `footView`,
  * `frameInputLast`, `hudBridge`, `look`, `openDeploy`, `params`,
  * `presentAlpha`, `runDeathCam`, `scanForEntry`, `serverSettings`,
- * `soldier`, `soldierArmor`, `soldierDead`, `supplyDepotsRoot`,
- * `supplyField`, `supplyTarget`, `world`.
+ * `soldier`, `soldierArmor`, `soldierDead`, `supplyTarget`, `world`.
  */
 export function createSoldierView(page) {
   const soldierView = {};
+  /** Wake's 52 `SupplyDepot` nodes, collected once per level (see
+   *  `collectSupplyDepots`) and cached against the `currentRoot` they came
+   *  from, so a map switch — a new root object — rebuilds the field exactly
+   *  once rather than every frame. Built lazily from `onFoot`, this track's
+   *  one hook into the per-frame loop. */
+  soldierView.supplyField = null;
+  soldierView.supplyDepotsRoot = null;
 
   /**
    * The on-foot camera half of the old `onFoot()` — the sim half went to the
@@ -88,16 +94,16 @@ export function createSoldierView(page) {
     // `ShowHealIcon`/`ShowReloadIcon` HUD vars are un-throttled on purpose
     // (SUP-33/34): they track proximity every frame, the way the engine's own
     // icon predicates do, independent of the depot's own action cadence.
-    if (page.world && page.supplyDepotsRoot !== page.currentRoot) {
-      page.supplyDepotsRoot = page.currentRoot;
+    if (page.world && soldierView.supplyDepotsRoot !== page.currentRoot) {
+      soldierView.supplyDepotsRoot = page.currentRoot;
       page.world.setSupplyDepots(page.collectSupplyDepots(page.currentRoot));
-      page.supplyField = page.world.supplyField;
+      soldierView.supplyField = page.world.supplyField;
     }
     page.supplyTarget.x = page.soldier.x; page.supplyTarget.y = page.soldier.y; page.supplyTarget.z = page.soldier.z;
     page.supplyTarget.team = page.deployTeamId;
     page.supplyTarget.armor = page.soldierArmor;
-    page.hudBridge.vars['ShowHealIcon'] = page.supplyField.canHeal(page.supplyTarget);
-    page.hudBridge.vars['ShowReloadIcon'] = page.supplyField.canRearm(page.supplyTarget);
+    page.hudBridge.vars['ShowHealIcon'] = soldierView.supplyField.canHeal(page.supplyTarget);
+    page.hudBridge.vars['ShowReloadIcon'] = soldierView.supplyField.canRearm(page.supplyTarget);
     if (page.soldierArmor) {
       page.hudBridge.vars['Soldier/SoldierHitPoints'] = page.soldierArmor.hitPoints;
       page.hudBridge.vars['Soldier/SoldierMaxHitPoints'] = page.soldierArmor.maxHitPoints;
