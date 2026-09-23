@@ -28,6 +28,7 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | contest | decision thresholds | `setPlannedDecisionMakingThreshold` 0.5, `setUnplanned...` 0.3 / 0.4 | level `AI.con`; stored, never read (AI-35) | not built | CON |
 | curves | `DecleiningSlopeCurve` samples | 0.05 -> 0.146, 0.1 -> 0.292, 0.2 -> 0.579, 0.3 -> 0.754, 0.5 -> 0.895, 0.7 -> 0.955, 1 -> 1 | `DecleiningSlopeCurve::calculate` 0x08655560 (101 entries) | `bot-behaviours.js DECLEIN_POINTS` | ENGINE; linear in between INVENTION |
 | curves | `SCurve` samples | 0.25 -> 0.087, 0.5 -> 0.5, 0.75 -> 0.913 | `SCurve::calculate` 0x08658420 | `bot-behaviours.js SCURVE_POINTS` | ENGINE; linear in between INVENTION |
+| curves | `SCurve` table | 101 entries, blended at `trunc(100 x)` | `SCurve::init` 0x08658030, `calculate` 0x08658420 (AI-75) | `bot-sense.js SCURVE_TABLE`, `sCurveExact` (the information security only) | ENGINE |
 | sensing | view distance | 600 default; the level's (El Alamein 300) | `AISettings::reset` 0x08484450 (+0x1c); `AI.con aiSettings.setViewDistance` | `bot.js DEFAULT_VIEW_DISTANCE` | ENGINE / CON |
 | sensing | fields of view | 100 / 60 / 30 deg; mounted 75 / 45 / 15; square (aspect 1.0) about the camera | `tweak_frustumUpdateAngle` 0x087d0860; `Frustum::setupFrustum(fov, 1.0, ...)` (AI-67) | `bot-sense.js FRUSTUM_FOV`, `inFrustum`; `bot.js _cameraBasis` | ENGINE |
 | sensing | bands | 0..0.5, 0.5..0.75, 0.75..1 of the view distance | `tweak_frustumUpdateStateMinMaxDistances` 0x086ffed8 | `bot-sense.js FRUSTUM_BANDS` | ENGINE |
@@ -78,7 +79,7 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | fire | weapon template fallbacks | maxRange 60, strength Infantry 1 | | `weaponAiOf` | UNSOURCED |
 | fire | armour class values | 1, 3, 8, 15, 1, 6 | `AISettings` ctor 0x08482cf0 (+0x98) | `ARMOUR_CLASS_VALUES` | ENGINE |
 | fire | harmless threshold | 0 | `BotManager` ctor calls (AI-65) | `scoreVehicleTargets` | ENGINE |
-| fire | information security | 1 | own side `InformationReal` 1 (`getSecurity` 0x085e8d10); an enemy's `1 - SCurve(age / decay)` (0x085e8670), the decay not traced (AI-72) | `scoreVehicleTargets` | INVENTION (the enemy's decay) |
+| fire | information security | 1 | own side `InformationReal` 1 (`getSecurity` 0x085e8d10); an enemy's `1 - SCurve(age / degeneration)` (0x085e8670, AI-72, AI-75) | `scoreVehicleTargets` (not wired to `BotSenses.securityOf`) | INVENTION (the fire's use of 1) |
 | fire | large-bore distance | `1 - clamp(1.5 d / R, 0.1, 1)` | `BBFireLargeBore::calculateUrgency` 0x0856b390 | `VEHICLE_FIRE.largeBoreRangeFactor`, `largeBoreFloor` | ENGINE |
 | fire | aircraft distance | ground `min(1, d / 3R)`, air `max(0, 1 - d / 1.5R)` | `BBFire3d::calculateUrgency` 0x085662f0 | `VEHICLE_FIRE.airGroundRangeFactor`, `airAirRangeFactor` | ENGINE |
 | fire | facing | `max(0.5, f.dir + 1) x 0.5` | `BBFire3d` | `VEHICLE_FIRE.facingFloor`, `facingScale` | ENGINE |
@@ -234,7 +235,10 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | strategic | air order | p2 at ground + 75 m, radius `min(40, side radius)`, 120 m band, clearance 50; urgency 1 outside, else `(dy² + d²) / (R² + 120²)` | `orderAirBot` 0x08640810, `WPAltitudeMoveTo::getUrgency` 0x08535610 (AI-71) | `SAI.airOrderHeight`, `airRadiusMax`, `airVertical`, `airClearance`; `_orderAir` | ENGINE |
 | strategic | aggression default | 0.5; attacks 1, defences 0 | | `_distribute` | UNSOURCED |
 | strategic | enemy cost | 0 | `EnemyStatistics` not read | `_attackValue` | INVENTION |
-| strategic | security | 1 | not read | `bot-referee.js occupiedUnits` | INVENTION |
+| strategic | security | `1 - SCurve((now - t0) / D)`, 0 and not summed before the first contact | `InformationKnown::getSecurity` 0x085e8670, `SAI::updateStrengths` 0x08636c20 (AI-75) | `bot-strength.js EnemyStrengthTables.update`, `bot-sense.js SideKnowledge` | ENGINE |
+| strategic | information made | the first time an enemy is in any bot's frustum band, before the rays; refreshed by a spot (and the hull's other seats), a re-sight, a heard shot | `BotMain::sense` 0x08521cf0 -> `getInformation` 0x085d8970; `event_SpottedEnemyObject` 0x08523ae0; `updateMemory` 0x08524b05 (AI-75) | `bot-sense.js BotSenses` (`knowledge.contact` / `spotted` / `heard`) | ENGINE; keyed by player, not AI object, INVENTION |
+| strategic | degeneration D | soldier 15; vanilla hulls 5 .. 180 | `aiTemplate.degeneration` (`AITemplate` +0xc, handler 0x084ff660), `Objects.rfa` | `INFORMATION.soldierDegeneration`, `bot-strength.js VEHICLE_DEGENERATION`, `unitDegeneration` | CON; a mod vehicle's 15 INVENTION |
+| strategic | heard quality | 0.5: t0 = now - 1 / (0.5 D) when the security is below 0.5 | `event_soundEmitter` 0x085237c0, `updateHearingMemory` 0x085240e0, `setTime(t, s)` 0x085e8210 | `INFORMATION.heardQuality`, `SideKnowledge.heard` | ENGINE |
 | page | respawn wait | 8 s | engine: the game's spawn delay | `bot-referee.js BOT_RESPAWN_DELAY` | INVENTION |
 | page | fallback rate, damage | 8 rounds/s, 30 | | `bot-referee.js BOT_FALLBACK_ROF`, `map.html BOT_FALLBACK_DAMAGE` | UNSOURCED |
 | page | soldier capsule | radius 0.6 m at +1.0 m | the height is `setCharacterHeight -1.00` (`physics.js CHARACTER_HEIGHT`) | `bot-referee.js BOT_BODY_RADIUS`, `BOT_BODY_HEIGHT` | INVENTION / CON |

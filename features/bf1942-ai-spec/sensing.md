@@ -91,6 +91,38 @@ never applies.
 *Example.* A K98 (sound radius 150 m) fired 120 m away is heard; the same
 shot by a bot that fired itself 2 s ago is not.
 
+## What a side knows
+
+Separate from a bot's own memory, each side keeps one record per enemy it
+knows of, which the strategic pass reads (AI-75; `bot-sense.js
+SideKnowledge`, owned by the side's `EnemyStrengthTables` and handed to each
+bot's senses by the referee every tick). A record is a time `t0`:
+
+- **made** the first time the enemy is a candidate of any bot's vision pass
+  (the band and field of the sub-state, the side filter), before any ray is
+  cast: the engine asks for the object's information when it builds the
+  candidate list, and asking creates it. It is made at `t0 = now`, so a
+  candidate behind a wall is known at security 1 and then fades;
+- **refreshed** (`t0 = now`) when a ray spots it, and then for every other
+  player in the same hull (the engine walks the spotted object's
+  secondaries); when a memory re-test sees it (that player only); and by a
+  heard shot, which only lifts a record whose security is below 0.5, to
+  `t0 = now - 1 / (0.5 D)`;
+- **dropped** when the player dies.
+
+```
+security(now) = 1 - SCurve((now - t0) / D)
+```
+
+`D` is the unit template's `aiTemplate.degeneration`, 15 s for a soldier
+(`bot-strength.js unitDegeneration`). `SCurve` is the engine's 101-entry
+table, blended at `trunc(100 x)`.
+
+*Example.* A soldier behind a wall enters a bot's near band at t = 40: the
+side knows him at 1. Nobody sees him; at 47.5 he weighs 0.5 in the enemy
+tables and from 55 nothing. A shot he fires at 60 that a bot hears brings
+him back at 0.998 (`1 - SCurve(2 / 225)`).
+
 ## Incoming fire (`onIncomingFire`)
 
 The page calls it for every round that **lands** on the bot (strength 1,
