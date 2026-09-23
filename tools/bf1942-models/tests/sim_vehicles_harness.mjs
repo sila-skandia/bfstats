@@ -182,7 +182,7 @@ const recipes = {
    *  `gun` roots; it has no drive) and fires at a frozen soldier down its
    *  rest line. The gun sits in a sandbag pit whose lip is above its
    *  muzzle. A Fixed unit's Fire is `BBFireInfantery` (Brief R, ledger
-   *  AI-122): it scores only what its side has spotted, and in range only
+   *  AI-124): it scores only what its side has spotted, and in range only
    *  with a clear line from its camera, so the soldier stands at the first
    *  spot 40 m or more out (and within 30 m of the rest line) that the
    *  seat's camera sees at 0.3 m (the lowest of the page's soldier sense

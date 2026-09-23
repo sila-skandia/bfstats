@@ -623,7 +623,7 @@ export function scoreVehicleTargets({
  * every `AIbehaviours.con` row that runs `BBFireInfantery` (Tank, Fixed,
  * LandingCraftFixed; `BBFireInfantery`'s vtable 0x0875f808 has no
  * `calculateUrgency` of its own, slot +0x28 is `BBFire`'s). Read 2026-09-24
- * (Brief R item 2, ledger AI-122):
+ * (Brief R item 2, ledger AI-124):
  *
  *  * only the spotted list (`vt+0x88`, the loop at 0x08563a2f..): no
  *    `getEnemyObjects` pass, unlike `BBFireLargeBore` 0x0856b390;
