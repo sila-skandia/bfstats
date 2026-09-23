@@ -441,10 +441,11 @@ export function pickNearest(candidates, distanceOf) {
 
 /**
  * Ties one vehicle's seat table to whichever drivetrain class its root
- * classifies to, and tracks which seat is currently manned. `map.html`
- * constructs one on entry and keeps it for as long as any seat is occupied;
- * switching seats (number keys) only changes `activeSeatId` and rebuilds the
- * turret, it never tears the vehicle down.
+ * classifies to, and keeps one aim rig per seat. `vehicle-instance.js` builds
+ * exactly one per hull and keeps it for as long as any seat is occupied; each
+ * occupant's seat is its own `SeatHandle`, which asks the per-seat forms
+ * (`rigFor`, `cameraNodeOf`, `fireArmsNodesOf`, ...). `activeSeatId` and the
+ * methods named after it remain for a single-occupant caller.
  *
  * `classes` is dependency-injected (`{Aircraft, GroundVehicle,
  * TrackedVehicle}`) rather than imported here, so this module never needs
@@ -506,11 +507,18 @@ export class VehicleOccupancy {
    * `hasAimAxes` asks the question the rig itself answers. */
   setActiveSeat(id) {
     this.activeSeatId = id;
+    this.turret = this.rigFor(id);
+    return this.turret;
+  }
+
+  /** The aim rig of seat `id`, built the first time that seat is manned and
+   *  kept for as long as this occupancy lives; null for a seat with no aim
+   *  axes. Every occupant of a hull reads its own seat's rig through this
+   *  (`vehicle-instance.js`), so a gunner and a driver aim two rigs of one
+   *  seat model. */
+  rigFor(id) {
     const seat = this.seatInfo(id);
-    if (!seat || !hasAimAxes(seat)) {
-      this.turret = null;
-      return null;
-    }
+    if (!seat || !hasAimAxes(seat)) return null;
     let rig = this.turrets.get(id);
     if (!rig) {
       rig = new TurretRig(seat);
@@ -520,8 +528,7 @@ export class VehicleOccupancy {
     // seat was empty; put the rig's own angles back on before anything reads
     // a world pose off them this frame.
     rig.apply();
-    this.turret = rig;
-    return this.turret;
+    return rig;
   }
 
   /** Re-assert every seat's aim rig on the scene graph.
@@ -541,8 +548,11 @@ export class VehicleOccupancy {
   /** 1-based position -> seat id, root first (see `surveyVehicle`'s note on `order`). */
   seatIdAt(position) { return this.order[position]; }
 
-  cameraNode() {
-    const seat = this.seatInfo(this.activeSeatId);
+  cameraNode() { return this.cameraNodeOf(this.activeSeatId); }
+
+  /** Seat `id`'s eye: its Camera node, else the seat node, else the root. */
+  cameraNodeOf(id) {
+    const seat = this.seatInfo(id);
     return seat?.camera || seat?.node || this.root;
   }
 
@@ -562,14 +572,20 @@ export class VehicleOccupancy {
    * Firing does not depend on the order (world.js keys each node on its own
    * `input`), so this is the HUD's rule and nothing else changes behind it.
    */
-  activeFireArmsNodes() {
-    return byWeaponSlot(this.seatInfo(this.activeSeatId)?.fireArms || []);
+  activeFireArmsNodes() { return this.fireArmsNodesOf(this.activeSeatId); }
+
+  /** Seat `id`'s FireArms nodes, primary first (see `activeFireArmsNodes`). */
+  fireArmsNodesOf(id) {
+    return byWeaponSlot(this.seatInfo(id)?.fireArms || []);
   }
 
   /** `Vehicle/*` HUD block for the currently manned seat, falling back to the
    *  vehicle's own (a nested seat rarely repeats `setVehicleIcon`). */
-  activeHud() {
-    return this.seatInfo(this.activeSeatId)?.hud || this.seatInfo(this.rootId)?.hud || null;
+  activeHud() { return this.hudOf(this.activeSeatId); }
+
+  /** Seat `id`'s `Vehicle/*` HUD block, else the root's. */
+  hudOf(id) {
+    return this.seatInfo(id)?.hud || this.seatInfo(this.rootId)?.hud || null;
   }
 
   /**
@@ -601,9 +617,12 @@ export class VehicleOccupancy {
    * That is the correct failure: the alternative is keeping the wrong dial on
    * every casemate hull.
    */
-  showsTurretIcon(insideView) {
+  showsTurretIcon(insideView) { return this.showsTurretIconAt(this.activeSeatId, insideView); }
+
+  /** `showsTurretIcon` for seat `id`. */
+  showsTurretIconAt(id, insideView) {
     if (!insideView) return false;
-    return this.seatInfo(this.activeSeatId)?.hud?.hasTurretIcon === true;
+    return this.seatInfo(id)?.hud?.hasTurretIcon === true;
   }
 
   /**
@@ -645,14 +664,18 @@ export class VehicleOccupancy {
    * the vehicle is re-extracted.
    */
   seatDots(occupants = [], localTeam = 0) {
+    return this.seatDotsAt(this.activeSeatId, occupants, localTeam);
+  }
+
+  /** `seatDots` with the local player sitting in seat `id` (null: none). */
+  seatDotsAt(id, occupants = [], localTeam = 0) {
     const iconPos = this.order.slice(0, SEAT_DOT_SLOTS).map(id => {
       const pos = this.seatInfo(id)?.hud?.vehicleIconPos;
       return Array.isArray(pos)
         && typeof pos[0] === 'number' && typeof pos[1] === 'number'
         ? pos : null;
     });
-    const localSeat = this.activeSeatId == null
-      ? null : this.order.indexOf(this.activeSeatId);
+    const localSeat = id == null ? null : this.order.indexOf(id);
     return resolveSeatDots({
       iconPos,
       localSeat: localSeat >= 0 ? localSeat : null,
@@ -663,8 +686,11 @@ export class VehicleOccupancy {
 
   /** The node whose `physics.soldierExitLocation` (if any) should place the
    *  soldier stepping out of the currently manned seat. */
-  exitLocationNode() {
-    const seat = this.seatInfo(this.activeSeatId);
+  exitLocationNode() { return this.exitLocationNodeOf(this.activeSeatId); }
+
+  /** `exitLocationNode` for seat `id`. */
+  exitLocationNodeOf(id) {
+    const seat = this.seatInfo(id);
     return seat?.node?.userData?.physics?.soldierExitLocation ? seat.node : this.root;
   }
 }

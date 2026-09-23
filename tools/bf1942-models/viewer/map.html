@@ -1044,6 +1044,7 @@ import { SAI } from './strategic.js';
 import { buildNavMap, findPath, gridAt, isWalkable } from './nav-grid.js';
 import { StrategicLayer, StrategicAI } from './strategic.js';
 import { detachSpawnedCraft } from './seats.js';
+import { VehicleRegistry } from './vehicle-instance.js';
 import { bindTreeFoliage } from './tree-foliage.js';
 
 // Which game's levels this page serves, and the directory they hang off:
@@ -1291,10 +1292,10 @@ const isTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0 
 const HUD_FLY = hud.textContent;
 let navMode = 'fly'; // 'fly' or 'pan'
 function getTouchHudText() {
-  if (optPilot.checked && occupancy) {
+  if (optPilot.checked && localPlayer.occupancy) {
     if (mannedActive()) return 'Pad aims · FIRE shoots · ENTER exits';
-    if (car) return 'Pad drives · FIRE main gun · ENTER exits';
-    if (aircraft) return 'Pad pitch/roll · THR power · FIRE guns · ENTER exits';
+    if (localPlayer.car) return 'Pad drives · FIRE main gun · ENTER exits';
+    if (localPlayer.aircraft) return 'Pad pitch/roll · THR power · FIRE guns · ENTER exits';
   }
   if (optOnFoot.checked && soldier) {
     return 'Pad moves · drag scene to look · FIRE shoots · JUMP jumps · ENTER vehicles';
@@ -1309,7 +1310,7 @@ function updateHud() {
     return;
   }
   if (optPilot.checked) {
-    hud.textContent = car ? HUD_DRIVE : HUD_PILOT;
+    hud.textContent = localPlayer.car ? HUD_DRIVE : HUD_PILOT;
   } else if (optOnFoot.checked) {
     hud.textContent = HUD_FOOT;
   } else if (isTouchDevice) {
@@ -1483,7 +1484,7 @@ function getFloorAltitude(x, z) {
 }
 
 function clampAltitude() {
-  if (optPilot.checked && (aircraft || car)) return;
+  if (optPilot.checked && (localPlayer.aircraft || localPlayer.car)) return;
   const floor = getFloorAltitude(camera.position.x, camera.position.z);
   if (camera.position.y < floor) {
     camera.position.y = floor;
@@ -1671,7 +1672,7 @@ function mobilePadAxis(axis) {
  * report down-positive.
  */
 function feedMobileTurretAim(dt) {
-  if (!mobilePadHeld || !occupancy?.turret) return;
+  if (!mobilePadHeld || !localPlayer.occupancy?.turret) return;
   mouseInput.accumulateDeflection(
     mobilePadVector.x, -mobilePadVector.y, dt, MOBILE_AIM_PIXELS_PER_SECOND);
 }
@@ -1700,13 +1701,13 @@ function resetMobileControls() {
   mobilePadPuck.classList.remove('is-firing');
   mobileThrottleInput.value = '0';
   mobileThrottleValue.value = '0';
-  if (aircraft) aircraft.setInput('c_PIThrottle', 0);
+  if (localPlayer.aircraft) localPlayer.aircraft.setInput('c_PIThrottle', 0);
   updateMobileControls();
 }
 
 function syncMobileThrottle() {
-  if (!aircraft) return;
-  const current = aircraft.input('c_PIThrottle');
+  if (!localPlayer.aircraft) return;
+  const current = localPlayer.aircraft.input('c_PIThrottle');
   if (!mobileThrottleTouched || Math.abs(current - mobileThrottle) > 0.01) {
     mobileThrottle = Math.max(0, Math.min(1, current));
     mobileThrottleInput.value = String(Math.round(mobileThrottle * 100));
@@ -1718,16 +1719,16 @@ function updateMobileControls() {
   if (!isTouchDevice) return;
   const deployOpen = document.getElementById('fullmap')?.classList.contains('deploy');
   const onFoot = optOnFoot.checked && soldier && !soldierDead;
-  const seated = optPilot.checked && occupancy;
-  const activeSeat = seated && occupancy.isActiveRoot();
+  const seated = optPilot.checked && localPlayer.occupancy;
+  const activeSeat = seated && localPlayer.occupancy.isActiveRoot();
   const manned = seated && mannedActive();
-  const aimable = manned && occupancy.turret;
-  const driving = activeSeat && car;
-  const flying = activeSeat && aircraft;
+  const aimable = manned && localPlayer.occupancy.turret;
+  const driving = activeSeat && localPlayer.car;
+  const flying = activeSeat && localPlayer.aircraft;
   const show = captured && !deployOpen && (onFoot || seated);
   const padMode = flying ? 'STICK' : driving ? 'DRIVE' : aimable ? 'AIM' : onFoot ? 'MOVE' : 'SEAT';
   const canFire = onFoot || (seated && (driving || flying || aimable)
-    && occupancy.activeFireArmsNodes().length > 0);
+    && localPlayer.occupancy.activeFireArmsNodes().length > 0);
   const signature = [
     show, padMode, onFoot, seated, manned, driving, flying, aimable,
     nearEntry?.control || '', mobileThrottleTouched,
@@ -1746,7 +1747,7 @@ function updateMobileControls() {
   mobileUseBtn.hidden = !(onFoot || seated);
   mobileUseBtn.disabled = onFoot ? !nearEntry : !seated;
   mobileUseBtn.textContent = onFoot ? (nearEntry ? `ENTER ${nearEntry.control}` : 'ENTER') : 'EXIT';
-  mobileViewBtn.hidden = !((seated && view) || (onFoot && footView3p.modes.length > 1));
+  mobileViewBtn.hidden = !((seated && localPlayer.view) || (onFoot && footView3p.modes.length > 1));
   mobileThrottleWrap.hidden = !flying;
   if (flying) syncMobileThrottle();
   mobileControls.dataset.mode = padMode;
@@ -1781,8 +1782,8 @@ function setMobileFire(on) {
   mobileFireHeld = on;
   triggerHeld = on && optOnFoot.checked && !!soldier && !soldierDead;
   clickQueued = triggerHeld;
-  seatFire = on && optPilot.checked && !!occupancy
-    && (occupancy.isActiveRoot() || mannedActive());
+  seatFire = on && optPilot.checked && !!localPlayer.occupancy
+    && (localPlayer.occupancy.isActiveRoot() || mannedActive());
   mobileFireBtn.classList.toggle('is-active', on);
   mobilePadPuck.classList.toggle('is-firing', on);
 }
@@ -1798,11 +1799,8 @@ function mobileSeatToggle() {
     setFly(true);
     enterVehicle(nearEntry);
     lastSeatToggle = performance.now();
-  } else if (optPilot.checked && mannedActive()) {
-    exitManned();
-    lastSeatToggle = performance.now();
-  } else if (optPilot.checked && (aircraft || car)) {
-    exitVehicle();
+  } else if (optPilot.checked && localPlayer.occupancy) {
+    exitSeat();
     lastSeatToggle = performance.now();
   }
   resetMobileControls();
@@ -1892,7 +1890,7 @@ mobileThrottleInput.addEventListener('input', () => {
   mobileThrottle = Math.max(0, Math.min(1, Number(mobileThrottleInput.value) / 100 || 0));
   mobileThrottleTouched = true;
   mobileThrottleValue.value = String(Math.round(mobileThrottle * 100));
-  if (aircraft) aircraft.setInput('c_PIThrottle', mobileThrottle);
+  if (localPlayer.aircraft) localPlayer.aircraft.setInput('c_PIThrottle', mobileThrottle);
 });
 
 window.addEventListener('blur', resetMobileControls);
@@ -1934,8 +1932,8 @@ const mouseInput = new MouseInput();
  *  `VCLand`, so only an aircraft's own pilot seat is on the Air profile. That
  *  is exactly `flying` here. */
 function lookProfile() {
-  if (optPilot.checked && occupancy) {
-    return profileFor(aircraft && occupancy.isActiveRoot() ? 'air' : 'land');
+  if (optPilot.checked && localPlayer.occupancy) {
+    return profileFor(localPlayer.aircraft && localPlayer.occupancy.isActiveRoot() ? 'air' : 'land');
   }
   return profileFor(null);
 }
@@ -2149,8 +2147,8 @@ function rebuildVehicleInterp() {
   vehicleInterp.vehicle = null;
   vehicleInterp.root = null;
   vehicleInterp.active = false;
-  if (occupancy) {
-    const drive = aircraft || car || null;
+  if (localPlayer.occupancy) {
+    const drive = localPlayer.aircraft || localPlayer.car || null;
     vehicleInterp.vehicle = drive;
     vehicleInterp.root = drive ? drive.node : null;
     const seen = new Set();
@@ -2169,14 +2167,14 @@ function rebuildVehicleInterp() {
     }
     // Every seat's rig, not only the active one: an inactive rig simply never
     // moves, so its prev and cur stay equal and its slerp is the identity.
-    for (const rig of occupancy.turrets?.values() || []) {
+    for (const rig of localPlayer.occupancy.turrets?.values() || []) {
       for (const axis of rig.axes || []) track(axis.node);
     }
   }
   // A vehicle left behind must stop being drawn between ITS ticks, and a
   // vehicle just climbed into starts from where it is parked, not from
   // whatever the last one was doing.
-  if (view) view.drawnPosition = null;
+  if (localPlayer.view) localPlayer.view.drawnPosition = null;
   snapPresentation();
 }
 
@@ -2261,7 +2259,7 @@ function applyVehicleInterp(alpha) {
   // `state.position`; point them at what was actually drawn (flight.js's
   // `drawnPosition`). The cockpit mode needs nothing — it reads the camera
   // node, which the matrix update above has just moved.
-  if (view) view.drawnPosition = vi.vehicle ? vi.posDraw : null;
+  if (localPlayer.view) localPlayer.view.drawnPosition = vi.vehicle ? vi.posDraw : null;
 }
 
 function lookDelta(dx, dy) {
@@ -2281,7 +2279,7 @@ function lookDelta(dx, dy) {
   // test is now "is there a turret" rather than "is this a gunner". A
   // drivetrain seat with no turret — a jeep, an aircraft — still falls
   // through to `view.turn` below and swings the camera as it always did.
-  if (optPilot.checked && occupancy?.turret) {
+  if (optPilot.checked && localPlayer.occupancy?.turret) {
     // Not applied here any more: the counts go into the input stage and the
     // frame's pump turns them into one axis pair that every tick of that frame
     // reads (`stepTurret`). Several `mousemove` events between two frames
@@ -2294,13 +2292,13 @@ function lookDelta(dx, dy) {
     // turn, and falling through would hand the mouse to the driver's camera.
     return;
   }
-  if (optPilot.checked && (aircraft || car)) {
+  if (optPilot.checked && (localPlayer.aircraft || localPlayer.car)) {
     // Not a stick: the arrow keys fly the aircraft and A/D steer the car. What
     // the mouse does depends on the view — a head inside the cockpit, an orbit
     // outside it, and nothing at all in fly-by, which is a camera standing in
     // the world. `VehicleCamera` owns that distinction and the per-mode clamps
     // that go with it.
-    view.turn(-dx * HEAD_SENS, -dy * HEAD_SENS);
+    localPlayer.view.turn(-dx * HEAD_SENS, -dy * HEAD_SENS);
     return;
   }
   if (optOnFoot.checked && soldier) {
@@ -2415,7 +2413,7 @@ addEventListener('keydown', e => {
   // Seated in anything, the same row switches seats instead (SEAT-23/24,
   // verify-r5.md's `c_PIMenuSelect1..9`) — checked after the deploy screen's
   // own use of these keys above, since the two are never active together.
-  if (optPilot.checked && occupancy && !e.repeat
+  if (optPilot.checked && localPlayer.occupancy && !e.repeat
       && !e.ctrlKey && !e.metaKey && !e.altKey) {
     const seatDigit = /^Digit([1-9])$/.exec(e.code);
     if (seatDigit) {
@@ -2446,8 +2444,8 @@ addEventListener('keydown', e => {
     // The seat is checked before the soldier: a driver who walked in on foot
     // still has his rifle slung, and R must reset the vehicle he is actually
     // holding the wheel of, not work the bolt.
-    if (optPilot.checked && (aircraft || car)) {
-      (aircraft || car).reset();
+    if (optPilot.checked && (localPlayer.aircraft || localPlayer.car)) {
+      (localPlayer.aircraft || localPlayer.car).reset();
       world?.resetStick(LOCAL_PLAYER);
     } else if (optOnFoot.checked && soldier) {
       // R is the reload once there is a magazine to reload — the game's own
@@ -2470,15 +2468,11 @@ addEventListener('keydown', e => {
   // branch, same as the real `toggleEntryPoint`.
   if (e.code === 'KeyE' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey
       && performance.now() - lastSeatToggle >= SEAT_TOGGLE_COOLDOWN_MS) {
-    // Checked before the plain aircraft/car branch: a nested seat (the
-    // Sherman's hull gunner) or a bare gun/seat root both count as
-    // `aircraft || car` truthy *or* falsy depending on the vehicle, so
-    // `mannedActive()` is the one check that is right either way.
-    if (optPilot.checked && mannedActive()) {
-      exitManned();
-      lastSeatToggle = performance.now();
-    } else if (optPilot.checked && (aircraft || car)) {
-      exitVehicle();
+    // `exitSeat` picks the exit: the hull's own for a driver or a passenger
+    // of a drivetrain, the seat's for a gunner or a seat of a hull with no
+    // drive (`mannedActive()` is the check that is right either way).
+    if (optPilot.checked && localPlayer.occupancy) {
+      exitSeat();
       lastSeatToggle = performance.now();
     } else if (optOnFoot.checked && soldier && captured && nearEntry) {
       enterVehicle(nearEntry);
@@ -3028,7 +3022,7 @@ function buttonChange(e) {
   // so with only Space wired to `c_PIFire` the coaxial machine gun had no
   // input at all and could never be fired from the driver's seat — the guns
   // were collected, the FireState existed, and nothing ever pulled it.
-  if (optPilot.checked && occupancy) {
+  if (optPilot.checked && localPlayer.occupancy) {
     if (e.button === 0) seatFire = true;
     else if (e.button === 2) seatAltFire = true;
     return;
@@ -3099,7 +3093,7 @@ renderer.domElement.addEventListener('pointerdown', e => {
   // click still captures and only the clicks after it pull the trigger.
   // Seated players get the same gate: the buttons are triggers, not a drag,
   // and must not fall through to the orbit/pan branch below.
-  if (captured && pointerLocked() && ((optPilot.checked && occupancy)
+  if (captured && pointerLocked() && ((optPilot.checked && localPlayer.occupancy)
       || (optOnFoot.checked && soldier))) {
     buttonChange(e);
     return;
@@ -4606,14 +4600,14 @@ let ambientDuck = 1;
 
 function updateAudio(dt = 0) {
   const master = masterVolume();
-  const duckTarget = (optPilot.checked && (aircraft || car)) ? AMBIENT_DUCK : 1;
+  const duckTarget = (optPilot.checked && (localPlayer.aircraft || localPlayer.car)) ? AMBIENT_DUCK : 1;
   ambientDuck += (duckTarget - ambientDuck)
     * (dt > 0 ? Math.min(1, dt / AMBIENT_DUCK_TAU) : 1);
   // Every claimed hull at once: the player's own, and every bot-driven one
   // within earshot. The rack holds the far ones at master 0 and evaluates
   // each patch's own `Volume <- Distance` ramps against the camera.
   if (vehicleAudio) {
-    vehicleAudio.playerGroups = [...(vehicleGuns ?? []), ...(mannedGuns ?? [])];
+    vehicleAudio.playerGroups = [...(localPlayer.vehicleGuns ?? []), ...(localPlayer.mannedGuns ?? [])];
     vehicleAudio.update(dt, camera.position);
   }
   if (handFireBus) {
@@ -4908,7 +4902,7 @@ function vehicleSpawnActive(vehicle) {
  * their only writer — so any future reader of them is unaffected.
  *
  * The SPAWNER children are deliberately NOT flattened. `Vehicle`'s constructor
- * reparents the driven vehicle out of `spawnersRoot` and `leaveVehicle` puts it
+ * reparents the driven vehicle out of `spawnersRoot` and its last occupant's exit puts it
  * back, so that list's membership changes during play; 32 object-based tests a
  * frame are not worth the invalidation. `cull` itself is written only here.
  */
@@ -4947,8 +4941,8 @@ function flattenCull() {
 //
 // The contract: anything that moves a frozen node calls
 // `updateMatrixWorld(true)` on it, or thaws it. A driven vehicle is thawed
-// for the ride (setPilot) and frozen again where it is parked (leaveVehicle,
-// setPilot(false)). `__matrixDrift()` under ?shots checks every world matrix
+// for the ride (`vehicles.enter`) and frozen again where it is parked (the
+// last occupant's `vehicles.leave`). `__matrixDrift()` under ?shots checks every world matrix
 // against a fresh recompute, and the perf harness runs it after a minute of
 // walking, firing and turning.
 let frozenCount = 0;
@@ -5102,19 +5096,125 @@ function applyVisibility() {
 // owns all four and is explicit about which of them the data actually describes:
 // the cockpit, and only the cockpit. Outside it the mouse orbits instead of
 // swivelling, and fly-by ignores it entirely.
+//
+// Every occupied hull is one `VehicleInstance` in `vehicles` (vehicle-
+// instance.js): its one drivetrain, its seat model and rigs, its gun groups
+// per seat, its body adoption and its seat map. The human and every bot hold
+// a seat of it and nothing else; `vehicles.enter` / `leave` / `switchSeat`
+// are the only ways in, out and across, for both.
+//
+// `localPlayer` is how this page reads the human's side of that, looked up from the
+// registry on every read rather than kept: `localPlayer.occupancy` is his
+// `SeatHandle` (the hull and his seat), `localPlayer.aircraft` the hull's drive
+// when it flies or sails (a `Ship` IS an `Aircraft`), `localPlayer.car` when it
+// drives, `localPlayer.vehicleGuns` / `localPlayer.mannedGuns` his seat's gun groups. What
+// is his alone -- the seat's view rig (`localPlayer.view`, one `VehicleCamera` per
+// seat taken) -- is kept here, keyed by the seat and drive it was built for,
+// and rebuilt when either changes under him (`syncLocalSeat`).
+const vehicles = new VehicleRegistry({
+  classes: { Aircraft, GroundVehicle, TrackedVehicle: GroundModule.TrackedVehicle, Ship },
+  buildDrive: instance => buildHullDrive(instance),
+  world: () => world,
+  guns: null,      // `guns` is built further down; set there
+  adopt: drive => adoptDrivenBody(drive),
+  release: drive => releaseDrivenBody(drive),
+  thaw: root => thawVehicle(root),
+  freeze: root => freezeVehicle(root),
+  claimAudio: (playerId, root, drive, groups) => claimVehicleAudio(audioSeatKey(playerId), root, drive, groups),
+  releaseAudio: (playerId, root) => releaseVehicleAudio(audioSeatKey(playerId), root),
+  // A seat taken or freed changes every bot's candidate list.
+  onChange: () => { botCandidateCache.at = -1; },
+});
+/** Scratch for the per-tick seat position feed (`vehicles.publishSeatPositions`). */
+const seatWorldPos = new THREE.Vector3();
+const audioSeatKey = playerId => (playerId === LOCAL_PLAYER ? 'local' : `bot:${playerId}`);
+const localPlayer = {
+  /** The seat's view rig and the (seat, drive) it was built for. */
+  view: null,
+  viewFor: null,
+  /** The subject `VehicleCamera` frames when the hull has no drivetrain. */
+  gunSubject: null,
+  get occupancy() { return vehicles.seatOf(LOCAL_PLAYER); },
+  get drive() { return vehicles.seatOf(LOCAL_PLAYER)?.instance.drive ?? null; },
+  get aircraft() {
+    const seat = vehicles.seatOf(LOCAL_PLAYER);
+    const drive = seat?.instance.drive;
+    return drive && (seat.rootKind === 'air' || seat.rootKind === 'ship') ? drive : null;
+  },
+  get car() {
+    const seat = vehicles.seatOf(LOCAL_PLAYER);
+    const drive = seat?.instance.drive;
+    return drive && seat.rootKind !== 'air' && seat.rootKind !== 'ship' ? drive : null;
+  },
+  get vehicleGuns() { return vehicles.seatOf(LOCAL_PLAYER)?.groups.driven ?? []; },
+  get mannedGuns() { return vehicles.seatOf(LOCAL_PLAYER)?.groups.manned ?? []; },
+};
 
-let aircraft = null;
-// The driven land vehicle — `ground.js`'s half of the same seam. At most one
-// of `aircraft`/`car` is ever non-null: one seat, one body, one view rig.
-let car = null;
-// The whole of whatever is currently occupied — `seats.js`'s survey of every
-// seat, which seat is active, and (when that seat has one) its `TurretRig`.
-// Set for *any* entered `PlayerControlObject`, including a plain `air`/
-// `ground`/`tank` root: `aircraft`/`car` above still get built and driven
-// exactly as before for those, so every reference to them elsewhere on this
-// page keeps working unchanged; `occupancy` is what is new, and what a bare
-// gun/seat root or a nested seat (a manned gun) runs on alone.
-let occupancy = null;
+/**
+ * `env.buildDrive` for the registry: the hull's drivetrain, built once when
+ * someone takes its root seat, whoever that is. `ensureDrive` picks the class;
+ * `tank` asks for `TrackedVehicle` and falls back to `GroundVehicle`.
+ *
+ * The cockpit interior is a glb of its own, fetched now and swapped in for the
+ * fuselage when it lands (flight.js); relit and then warmed before the swap
+ * shows it, so the first cockpit frame links nothing (rule 6) and is not black
+ * (`unlitCockpit`) -- for a bot's drive too, since the human may climb into it.
+ */
+function buildHullDrive(instance) {
+  const occ = instance.occupancy;
+  const drive = occ.ensureDrive(currentRoot, {
+    groundHeight, surfaceFriction, deckNormal, collider: bodyAwareCollider(),
+    // The flat sea. A ship needs it twice: its `FloatingBundle`s measure
+    // `f` against it, and its two rudders make lift at all only because
+    // `PhysicsWing` gives a submerged surface a medium of 10.
+    waterLevel: collider?.waterLevel ?? extras?.waterLevel,
+    prepareCockpit: root => { unlitCockpit(root); return warmSubtree(root); },
+  });
+  // A helm with no `Ship` built (a tree with no Engine node under the hull)
+  // stays a bare seat rather than pretending to drive.
+  if (!drive) return null;
+  if (occ.rootKind === 'air') {
+    drive.groundHeight = groundHeight;
+    // The spawn pose puts the aircraft on the deck; lift it clear of its
+    // own wheels. The car/tank stays put — its springs are the lift.
+    drive.state.position.y += 0.2;
+  } else if (occ.rootKind === 'ship') {
+    // Run aground on a beach rather than sail through it — but against the
+    // sea BED, not `groundHeight`, which is `surfaceHeight` and therefore
+    // `max(terrain, water)`. Handing a ship that floor clamps every hull
+    // whose draft is below the waterline UP to the sea surface: a Yamato,
+    // which floats at 17.45 against a water level of 20, was pinned at 20
+    // and reported `grounded`. A ship's floor is the ground under the water.
+    drive.groundHeight = (x, z) => {
+      const h = collider?.heightfield?.height(x, z);
+      return Number.isFinite(h) ? h : -Infinity;
+    };
+    // ... and the normal there, because `impulseOn`'s push-out is ALONG it
+    // (`checkVsTerrain` asks for height and normal in one call,
+    // `PatchTerrain::getHeightAndNormal` `0x083d6f10`). Without it a hull
+    // that meets the face of a reef is lifted up it instead of stopped
+    // against it — and a hull left buried in a bank is billed crash damage
+    // for a contact with a wall. See `Ship.pushOutOfBed`.
+    drive.groundNormal = (x, z, out) => {
+      const n = collider?.heightfield?.normal;
+      if (!n) { out.set(0, 1, 0); return out; }
+      n.call(collider.heightfield, x, z, _shipNormal);
+      out.set(_shipNormal[0], _shipNormal[1], _shipNormal[2]);
+      return out;
+    };
+    // ... and once she is on it, what holds her there: the mean of her own
+    // material's friction and the bottom's, which is what `impulseOn` writes
+    // as the Coulomb budget's `A`.
+    drive.seabedFriction = seabedFriction;
+  }
+  // `Vehicle` defaults to forcing first person every step, because a page
+  // with a single view has no other way to say "someone is sitting in it".
+  // This page's views take the decision over: `VehicleCamera` calls
+  // `setFirstPerson` on every mode change, and a bot's hull stays exterior.
+  drive.autoFirstPerson = false;
+  drive.setFirstPerson?.(false);
+  return drive;
+}
 
 // ---------------------------------------------------------------------------
 // Vehicle damage: shoot a tank, watch it smoke, burn and explode.
@@ -5394,8 +5494,7 @@ const wreckDeathFwd = new THREE.Vector3();
  *
  *   1. read the hull's live pose, because the death cam frames the wreck and
  *      the body is left beside it rather than back where he climbed in;
- *   2. empty the seat (`leaveManned` delegates to `leaveVehicle` when the
- *      active seat is the root, so one call covers a jeep, a tank, a plane
+ *   2. empty the seat (`leaveSeat`, which covers a jeep, a tank, a plane
  *      and a bare manned gun alike);
  *   3. put the suspended on-foot body down at the exit point, kill its Armor
  *      and latch the death cam. From there `onFoot()` owns the rest — the same
@@ -5405,7 +5504,7 @@ const wreckDeathFwd = new THREE.Vector3();
  * lose: the seat still empties, and the camera goes back to the flythrough.
  */
 function killOccupantInWreck(node) {
-  if (!occupancy || occupancy.root !== node || soldierDead) return;
+  if (!localPlayer.occupancy || localPlayer.occupancy.root !== node || soldierDead) return;
   // A wreck cuts off engine audio immediately -- crash effect plays, engine stops
   disposeEngineAudio();
   hitIndicatorTimer = 0;
@@ -5422,8 +5521,8 @@ function killOccupantInWreck(node) {
   // The hull's own facing, in the soldier's convention (forward is
   // `(sin yaw, 0, cos yaw)`), so the death cam sits behind the wreck's tail.
   const hullYaw = Math.atan2(wreckDeathFwd.x, wreckDeathFwd.z);
-  const exit = exitPoseManned(occupancy);
-  leaveManned();
+  const exit = exitPoseManned(localPlayer.occupancy);
+  leaveSeat();
   optPilot.checked = false;
   resetMobileControls();
   if (!(optOnFoot.checked && soldier)) {
@@ -5522,7 +5621,7 @@ function respawnVehicle(owner) {
   if (!visual) return;
   // Someone is still sitting in the empty pad — wait a beat rather than
   // materialising a hull around them.
-  if (occupancy?.root === visual.node) {
+  if (vehicles.instanceOf(visual.node)) {
     visual.respawnIn = 1;
     return;
   }
@@ -5869,9 +5968,9 @@ function stepSinkingHulls(step) {
   let stirred = false;
   for (const host of floatHosts) {
     if (!host.sinking) {
-      // The occupied hull is the drive model's, not this pass's — but it is
+      // A driven hull is its drive model's, not this pass's — but it is
       // still a hull that has moved, so its deck points still owe a rebase.
-      if (occupancy?.root === host.node) { stirred = true; continue; }
+      if (vehicles.instanceOf(host.node)?.drive) { stirred = true; continue; }
       const owner = collider?.statics?.ownerOf?.(host.node) ?? -1;
       const record = owner >= 0 ? vehicleDamage?.get(owner) : null;
       if (!record?.critical) continue;
@@ -6306,12 +6405,12 @@ function stepVehicleBodies(step) {
  * the fast path exactly the slow one: same node, same owner, same set.
  */
 function occupiedVehicleDamage() {
-  if (!occupancy?.root) return null;
-  if (world?.player(LOCAL_PLAYER)?.occupancy === occupancy) {
+  if (!localPlayer.occupancy?.root) return null;
+  if (world?.player(LOCAL_PLAYER)?.occupancy === localPlayer.occupancy) {
     return world.occupiedDamageable(LOCAL_PLAYER);
   }
   for (const [owner, visual] of damageVisuals) {
-    if (visual.node === occupancy.root) return vehicleDamage.get(owner);
+    if (visual.node === localPlayer.occupancy.root) return vehicleDamage.get(owner);
   }
   return null;
 }
@@ -6443,14 +6542,7 @@ function splashTargets() {
 
 /** The bot whose seat fired the round behind `record` (`record.firerGroup`). */
 function botFiringGroup(record) {
-  const group = record?.firerGroup;
-  if (!group) return null;
-  for (const bot of botControllers ?? []) {
-    const m = bot.vehicle;
-    if (!m) continue;
-    if (m.groups?.includes(group) || m.manned?.includes(group)) return bot.playerId;
-  }
-  return null;
+  return vehicles.firerOf(record?.firerGroup);
 }
 
 /**
@@ -6582,6 +6674,8 @@ const guns = new GunFire({
 // `_shared/effects.glb` by `effects` below. `?impacts=debug` draws the marker
 // as well, `?effects=off` leaves the library unloaded.
 guns.impactMarkers = params.get('impacts') === 'debug';
+// Every seat's gun groups are collected and released by the hull's instance.
+vehicles.env.guns = guns;
 // Every round that stops anywhere comes through here. Most land on terrain or a
 // building and cost nothing; one that lands on something with an Armor takes
 // hit points off it (ledger HP-6: a projectile is the only thing that damages
@@ -6651,16 +6745,11 @@ function loadEffectSounds() {
     });
   return effectSoundsLoad;
 }
-let vehicleGuns = [];
-// The active seat's own FireArms groups, for a vehicle occupancy is driving
-// that `aircraft`/`car` is not (a bare gun/seat root, or a nested seat of a
-// vehicle whose drivetrain seat you are not currently in). Kept separate from
-// `vehicleGuns` on purpose: `drive()`/`pilot()` (not this track's to edit)
-// iterate `vehicleGuns` and fire every group whose `stats.input` matches the
-// vehicle's own held input, so folding a nested seat's FireArms into that
-// same array would let the driver's Space bar also fire a hull gunner's own
-// gun nobody is manning. `switchSeat()` rebuilds this on every seat change.
-let mannedGuns = [];
+// The seat's gun groups -- the drivetrain root's own FireArms (`driven`,
+// fired from the drive's inputs) and whatever else the seat declares
+// (`manned`) -- are collected by the hull's instance when a seat is taken and
+// released when it is left (`vehicle-instance.js`). The human's are
+// `localPlayer.vehicleGuns` / `localPlayer.mannedGuns`.
 // One `FireState` (GUN-12/verify-r6.md) per FireArms node ever manned this
 // level, so ammo/heat survive a seat switch and come back exactly where they
 // were left. A `WeakMap` rather than a plain object: it needs no explicit
@@ -6681,96 +6770,6 @@ function fireStateFor(node) {
 // plain reassignment there would otherwise clobber whatever a `chainOnShot`
 // called this early had already wrapped, silently dropping every manned-gun
 // shot's ammo/heat update. See that call site's own comment.
-
-function collectGuns() {
-  releaseGuns();
-  const vehicle = aircraft || car;
-  // `replace: false`, the same courtesy `loadHandWeapon` extends the other
-  // way: a soldier who walked into this seat still owns his rifle's group,
-  // and a wholesale `clear()` here would silently disarm him for the walk out.
-  vehicleGuns = vehicle
-    ? guns.collect(vehicle.node, {
-      replace: false,
-      speedScale: 1,
-      maxRange: 1500,
-      roundLifetime: 'data',
-      tracerLength: 'data',
-      platformVelocity: () => (aircraft || car)?.state.velocity ?? null,
-    })
-    : [];
-  // `vehicle.node` is the whole vehicle -- root plus every nested seat -- so
-  // the collect above also builds a group for a nested seat's own FireArms
-  // (the Sherman's hull `Browning`). `mannedGuns`' own doc, just above,
-  // already promises that never happens ("folding a nested seat's FireArms
-  // into that same array would let the driver's Space bar also fire a hull
-  // gunner's own gun nobody is manning"), but nothing enforced it here:
-  // `drive()`/`pilot()` fire every `vehicleGuns` entry whose `stats.input`
-  // matches the vehicle's own held input, and the hull `Browning` binds the
-  // same `c_PIFire` the cannon does, so holding Space while driving fired it
-  // for real (shots incrementing, ammo draining) with nobody in that seat --
-  // reproduced headless, round 3 T2 review. Drop anything here that is not
-  // the root seat's own FireArms; a nested seat's gun gets its real group
-  // from `collectMannedGuns()` once someone actually sits in that seat, the
-  // same as a bare gun/seat root already works. `hideEffects`'s sweep above
-  // still walked the whole vehicle, so nothing above needs to change to keep
-  // hiding baked effects elsewhere in the tree -- this only decides which
-  // collected groups stay live for firing.
-  if (vehicle) {
-    const rootFireArms = new Set(occupancy.seatInfo(occupancy.rootId).fireArms);
-    const foreign = vehicleGuns.filter(group => !rootFireArms.has(group.node));
-    if (foreign.length) {
-      vehicleGuns = vehicleGuns.filter(group => rootFireArms.has(group.node));
-      for (const group of foreign) guns.release(group);
-    }
-  }
-  collectMannedGuns();
-}
-
-/**
- * Re-scope `mannedGuns` to whichever seat `occupancy.activeSeatId` currently
- * names. Called from `collectGuns` (so a bare gun/seat root — no `aircraft`,
- * no `car` — gets its own FireArms the same way the drivetrain path does) and
- * again from `switchSeat` every time the active seat changes: a Sherman's
- * cannon and its hull machine gun are two different `FireArms` nodes on two
- * different seats, and only the one you are actually sitting in should ever
- * answer to the trigger.
- */
-function collectMannedGuns() {
-  for (const group of mannedGuns) guns.release(group);
-  // A driver's own FireArms already have their group in `vehicleGuns`; a
-  // second one on the same node is a second shell per trigger pull.
-  const driven = new Set(vehicleGuns.map(group => group.node));
-  mannedGuns = occupancy
-    ? occupancy.activeFireArmsNodes().filter(node => !driven.has(node)).flatMap(node => guns.collect(node, {
-      replace: false,
-      speedScale: 1,
-      maxRange: 1500,
-      roundLifetime: 'data',
-      tracerLength: 'data',
-      // A bare gun/seat root never moves under its own power (no `Vehicle`
-      // instance backs it, so `aircraft`/`car` both stay null) — but a
-      // nested seat's own vehicle, if it has one, no longer freezes for as
-      // long as that seat is active (round 3's first disclosed gap: it now
-      // coasts, see `drive()`/`pilot()`'s own comments), so its velocity is
-      // real and live exactly like `vehicleGuns`' own copy of this option —
-      // the Sherman's hull machine gun fired while the hull is moving should
-      // inherit the hull's motion the same way its cannon does from the
-      // driver's seat.
-      platformVelocity: () => (aircraft || car)?.state.velocity ?? null,
-    }))
-    : [];
-}
-
-function releaseGuns() {
-  // Surgical, like `disposeHandWeapon`: only this vehicle's groups leave the
-  // index, and rounds already in the air keep their reference and finish
-  // their flight. `guns.release` also puts each gun back to its idle pose —
-  // the vehicle is about to be furniture again, and furniture is not firing.
-  for (const group of vehicleGuns) guns.release(group);
-  vehicleGuns = [];
-  for (const group of mannedGuns) guns.release(group);
-  mannedGuns = [];
-}
 
 // --- what the rounds run into ----------------------------------------------
 //
@@ -6981,17 +6980,15 @@ const warmups = { level: Promise.resolve(null), rig: Promise.resolve(), timing: 
 // resets delegate to `world.resetStick`.
 const HEAD_SENS = 0.0022;
 // The views C cycles from the ACTIVE SEAT -- one `VehicleCamera` per seat
-// taken, rebuilt on every mount and seat switch (`buildSeatView`), never one
-// per vehicle. Cockpit and nose are read from data (the seat's own Camera node
+// taken (`localPlayer.view`), rebuilt on every mount and seat switch
+// (`buildSeatView`), never one per vehicle. Cockpit and nose are read from data (the seat's own Camera node
 // and its `OutsideHudOffset`; the look clamps are `CorsairCamera`'s own
 // setMin/setMaxRotation). Chase, front and fly-by are ours; the engine
 // declares that they exist (`CVMChase`, `CVMFrontChase`, `CVMFlyBy`) and never
 // where they sit. Which of them a seat reaches is `seat-view.js`'s answer from
-// the seat's `CVM*` words and the server switches. See flight.js.
-let view = null;
-// The subject `VehicleCamera` frames when the root has no drivetrain -- a
-// Defgun, an AA gun, a tripod Browning. Built once per mount, dropped with it.
-let gunSubject = null;
+// the seat's `CVM*` words and the server switches. See flight.js. The subject
+// it frames when the hull has no drivetrain -- a Defgun, an AA gun, a tripod
+// Browning, a jeep nobody drives -- is `localPlayer.gunSubject`, built once per mount.
 
 // --- the server's view switches --------------------------------------------
 //
@@ -7032,44 +7029,50 @@ serverSettings.onChange(() => {
  * otherwise the seat opens inside, which is `setViewMode`'s own opening.
  */
 function buildSeatView() {
-  if (!occupancy || !occupancy.activeSeatId) { view = null; return null; }
-  let subject = aircraft || car;
-  if (!subject) {
-    if (!gunSubject || gunSubject.node !== occupancy.root) {
-      gunSubject = new FixedSubject(occupancy.root);
-    }
-    subject = gunSubject;
+  const seat = localPlayer.occupancy;
+  if (!seat) {
+    localPlayer.view = null;
+    localPlayer.viewFor = null;
+    return null;
   }
-  const seat = occupancy.seatInfo(occupancy.activeSeatId);
-  const eyeNode = occupancy.cameraNode();
-  const nose = noseCamOffset(seat?.camera?.name, seat?.camera?.userData?.cameraView);
+  let subject = localPlayer.aircraft || localPlayer.car;
+  if (!subject) {
+    if (!localPlayer.gunSubject || localPlayer.gunSubject.node !== seat.root) {
+      localPlayer.gunSubject = new FixedSubject(seat.root);
+    }
+    subject = localPlayer.gunSubject;
+  }
+  const info = seat.seatInfo(seat.activeSeatId);
+  const eyeNode = seat.cameraNode();
+  const nose = noseCamOffset(info?.camera?.name, info?.camera?.userData?.cameraView);
   const modes = seatViewModes({
-    cvm: seat?.cameraViewModes, nose: !!nose, settings: serverSettings,
+    cvm: info?.cameraViewModes, nose: !!nose, settings: serverSettings,
   });
-  view = new VehicleCamera(subject, {
-    groundHeight, eyeNode, modes, nose, mode: view?.mode,
+  localPlayer.view = new VehicleCamera(subject, {
+    groundHeight, eyeNode, modes, nose, mode: localPlayer.view?.mode,
   });
+  localPlayer.viewFor = { seat, seatId: seat.seatId, drive: seat.drive };
   // The constructor sets the mode without the swap; the interior follows the
   // view from here, exactly as it does on a C press.
-  subject.setFirstPerson(view.firstPerson);
+  subject.setFirstPerson(localPlayer.view.firstPerson);
   mountChaseLaw();
   updateSeatPoseVisibility();
-  return view;
+  return localPlayer.view;
 }
 
 /** A server switch changed under a seated player: re-gate the cycle. */
 function refreshSeatViewModes() {
-  if (!view || !occupancy) return;
-  const seat = occupancy.seatInfo(occupancy.activeSeatId);
-  view.setModes(seatViewModes({
-    cvm: seat?.cameraViewModes, nose: !!view.nose, settings: serverSettings,
+  if (!localPlayer.view || !localPlayer.occupancy) return;
+  const seat = localPlayer.occupancy.seatInfo(localPlayer.occupancy.activeSeatId);
+  localPlayer.view.setModes(seatViewModes({
+    cvm: seat?.cameraViewModes, nose: !!localPlayer.view.nose, settings: serverSettings,
   }));
   updateSeatPoseVisibility();
 }
 
 /** C: the next view of whatever the player is sitting in, or standing as. */
 function cycleView() {
-  if (optPilot.checked && view) showView(view.cycle());
+  if (optPilot.checked && localPlayer.view) showView(localPlayer.view.cycle());
   else if (optOnFoot.checked && soldier && footView3p.modes.length > 1) {
     showView(footView3p.cycle());
   }
@@ -7147,22 +7150,22 @@ function cameraRidesTurret(cameraNode, seat, root) {
  *  Camera's parent per `chaseLawFor`, and the radius the root's. */
 function mountChaseLaw() {
   chaseRig.law = null;
-  chaseRig.camera = occupancy?.cameraNode() || null;
-  chaseRig.root = occupancy?.root || null;
+  chaseRig.camera = localPlayer.occupancy?.cameraNode() || null;
+  chaseRig.root = localPlayer.occupancy?.root || null;
   chaseRig.rel.fill(0);
-  if (!view || !chaseRig.camera || !chaseRig.root) {
-    if (view) view.externalLaw = null;
+  if (!localPlayer.view || !chaseRig.camera || !chaseRig.root) {
+    if (localPlayer.view) localPlayer.view.externalLaw = null;
     return;
   }
   const rides = cameraRidesTurret(
-    chaseRig.camera, occupancy.seatInfo(occupancy.activeSeatId), chaseRig.root);
+    chaseRig.camera, localPlayer.occupancy.seatInfo(localPlayer.occupancy.activeSeatId), chaseRig.root);
   chaseRig.law = chaseLawFor(CHASE_OPTION, rides);
-  if (chaseRig.law.law !== 'engine') { view.externalLaw = null; return; }
+  if (chaseRig.law.law !== 'engine') { localPlayer.view.externalLaw = null; return; }
   if (!chaseRadiusCache.has(chaseRig.root)) {
     chaseRadiusCache.set(chaseRig.root, boundingRadius(chaseRadiusTree(chaseRig.root)));
   }
   chaseRig.radius = chaseRadiusCache.get(chaseRig.root);
-  view.externalLaw = chaseExternalLaw;
+  localPlayer.view.externalLaw = chaseExternalLaw;
 }
 
 /** `VehicleCamera.externalLaw`: true when it wrote `pose`. Every seat: the
@@ -7175,10 +7178,10 @@ function chaseExternalLaw(mode, dt, pose) {
   if (mode !== 'chase' && mode !== 'front') {
     // The engine carries `rel` as (last output - Camera position) in every
     // mode: zero in the cockpit, the tripod's offset in fly-by.
-    if (mode === 'flyby' && view.anchored) {
-      rig.rel[0] = view.anchor.x - rig.anchor.x;
-      rig.rel[1] = view.anchor.y - rig.anchor.y;
-      rig.rel[2] = view.anchor.z - rig.anchor.z;
+    if (mode === 'flyby' && localPlayer.view.anchored) {
+      rig.rel[0] = localPlayer.view.anchor.x - rig.anchor.x;
+      rig.rel[1] = localPlayer.view.anchor.y - rig.anchor.y;
+      rig.rel[2] = localPlayer.view.anchor.z - rig.anchor.z;
     } else {
       rig.rel.fill(0);
     }
@@ -7192,7 +7195,7 @@ function chaseExternalLaw(mode, dt, pose) {
   rig.up.set(0, 1, 0).applyQuaternion(rig.quat);
   const sign = mode === 'front' ? CHASE_AHEAD : CHASE_BEHIND;
   chaseTarget(rig.fwd.toArray(), rig.up.toArray(), rig.radius, sign, rig.target);
-  const v = view.vehicle.state.velocity;
+  const v = localPlayer.view.vehicle.state.velocity;
   chaseStep(rig.rel, rig.target, [v.x, v.y, v.z], sign, dt);
   const ax = rig.anchor.x + rig.rel[0];
   const az = rig.anchor.z + rig.rel[2];
@@ -7216,216 +7219,41 @@ function chaseExternalLaw(mode, dt, pose) {
  * dispatch).
  */
 function setPilot(on, node = null, seatId = null) {
-  if (on && node && occupancy?.root !== node) {
-    // A different vehicle than the one already built. The old one was
-    // already parked by `leaveVehicle`/`leaveManned`; dropping the
-    // references leaves it standing where its driver left it, a fixture of
-    // the level now.
-    aircraft = null;
-    car = null;
-    view = null;
-    occupancy = null;
-  }
-  if (on && !occupancy) {
-    const picked = node || pickVehicle();
-    if (!picked) {
+  if (on) {
+    const current = localPlayer.occupancy;
+    const target = node || current?.root || pickVehicle();
+    if (!target) {
       optPilot.checked = false;
       return;
     }
-    occupancy = new VehicleOccupancy(picked, {
-      Aircraft, GroundVehicle, TrackedVehicle: GroundModule.TrackedVehicle, Ship,
-    });
-    const kind = occupancy.rootKind;
-    if (DRIVE_KINDS.includes(kind)) {
-      // `ensureDrive` picks the class; `tank` asks for P4's `TrackedVehicle`
-      // and falls back to `GroundVehicle` (Willys physics on a Sherman hull)
-      // when that track's class has not landed in this worktree yet — see
-      // `seats.js`'s own doc on `classes`.
-      //
-      // The cockpit interior is a glb of its own, fetched now and swapped in
-      // for the fuselage when it lands (flight.js); relit and then warmed
-      // before the swap shows it, so the first cockpit frame links nothing
-      // (rule 6) and is not black (`unlitCockpit`).
-      const cockpit = {
-        prepareCockpit: root => { unlitCockpit(root); return warmSubtree(root); },
-      };
-      const vehicle = occupancy.ensureDrive(currentRoot,
-        { groundHeight, surfaceFriction, deckNormal, collider: bodyAwareCollider(),
-          // The flat sea. A ship needs it twice: its `FloatingBundle`s measure
-          // `f` against it, and its two rudders make lift at all only because
-          // `PhysicsWing` gives a submerged surface a medium of 10.
-          waterLevel: collider?.waterLevel ?? extras?.waterLevel,
-          ...cockpit });
-      // A helm with no `Ship` built (a tree with no Engine node under the hull)
-      // falls back to being a bare seat rather than pretending to drive.
-      if (!vehicle) {
-        occupancy.setActiveSeat(seatId || occupancy.rootId);
-        collectGuns();
-        warmSubtree(occupancy.root);
-      } else if (kind === 'air') {
-        aircraft = vehicle;
-        aircraft.groundHeight = groundHeight;
-        // The spawn pose puts the aircraft on the deck; lift it clear of its
-        // own wheels. The car/tank stays put — its springs are the lift.
-        aircraft.state.position.y += 0.2;
-      } else if (kind === 'ship') {
-        // `aircraft`, not `car`: a `Ship` IS an `Aircraft` (same thrust law,
-        // same surfaces, same `integrate`), and every consumer of the
-        // `aircraft` reference — the chase law, the engine audio, the HUD's
-        // throttle feed, `syncMobileThrottle` — wants the aircraft interface.
-        // The one place the two must differ is the input mapping, and that is
-        // keyed on `player.kind` in `world.js`, not on this variable: W/S is a
-        // ship's signed ahead/astern, not a plane's latching throttle.
-        aircraft = vehicle;
-        // Run aground on a beach rather than sail through it — but against the
-        // sea BED, not `groundHeight`, which is `surfaceHeight` and therefore
-        // `max(terrain, water)`. Handing a ship that floor clamps every hull
-        // whose draft is below the waterline UP to the sea surface: a Yamato,
-        // which floats at 17.45 against a water level of 20, was pinned at 20
-        // and reported `grounded`. A ship's floor is the ground under the water.
-        aircraft.groundHeight = (x, z) => {
-          const h = collider?.heightfield?.height(x, z);
-          return Number.isFinite(h) ? h : -Infinity;
-        };
-        // ... and the normal there, because `impulseOn`'s push-out is ALONG it
-        // (`checkVsTerrain` asks for height and normal in one call,
-        // `PatchTerrain::getHeightAndNormal` `0x083d6f10`). Without it a hull
-        // that meets the face of a reef is lifted up it instead of stopped
-        // against it — and a hull left buried in a bank is billed crash damage
-        // for a contact with a wall. See `Ship.pushOutOfBed`.
-        aircraft.groundNormal = (x, z, out) => {
-          const n = collider?.heightfield?.normal;
-          if (!n) { out.set(0, 1, 0); return out; }
-          n.call(collider.heightfield, x, z, _shipNormal);
-          out.set(_shipNormal[0], _shipNormal[1], _shipNormal[2]);
-          return out;
-        };
-        // ... and once she is on it, what holds her there: the mean of her own
-        // material's friction and the bottom's, which is what `impulseOn` writes
-        // as the Coulomb budget's `A`.
-        aircraft.seabedFriction = seabedFriction;
-      } else {
-        car = vehicle;
-      }
-      // `Vehicle` defaults to forcing first person every step, because a page
-      // with a single view has no other way to say "someone is sitting in
-      // it". This page now has four (plus the manned-gun eye, which never
-      // touches `autoFirstPerson` at all), so it takes the decision over:
-      // `VehicleCamera` calls `setFirstPerson` on every mode change, and the
-      // swap follows the view rather than the sim.
-      if (vehicle) {
-        vehicle.autoFirstPerson = false;
-        adoptDrivenBody(vehicle);
-      }
-    }
-    // Root seat unless a specific `EntryPoint` said otherwise — walking
-    // straight up to a Sherman's hull-gunner door seats you there directly,
-    // never through the driver's seat first.
-    occupancy.setActiveSeat(seatId || occupancy.rootId);
-    // After the seats exist: this seat's own view rig, and its law -- which
-    // asks whether the seat's Camera rides one of its own aim axes.
-    buildSeatView();
-    collectGuns();
-    // `collect` (called above, for both the drivetrain's own guns and, via
-    // its own `collectMannedGuns()` tail, a bare gun/seat root's FireArms)
-    // has just cloned this seat's flash materials and marked the additive
-    // ones fresh `Material` instances the renderer has never linked a
-    // program for. The level's warm-up compiled the *originals* they were
-    // cloned from, not these; skip this and the clone's first real draw is
-    // the mid-burst link stall rule 6 exists to prevent.
-    warmSubtree(occupancy.root);
-  } else if (on && seatId) {
-    // Re-entering the same vehicle at a specific door (its own EntryPoint
-    // was in reach again) rather than wherever you last sat.
-    occupancy.setActiveSeat(seatId);
-    buildSeatView();
-    collectMannedGuns();
-    warmSubtree(occupancy.root);
-  }
-  if (on && occupancy) {
-    if (aircraft || car) {
-      // Ticking the box is the user gesture the autoplay policy wants; the
-      // same call on a map load is not one, and resume() there fails
-      // harmlessly until the fly gate is clicked. A bare gun/seat root has
-      // no engine to loop audio for at all.
-      claimVehicleAudio('local', aircraft?.node ?? car.node, aircraft || car,
-                        [...(vehicleGuns ?? []), ...(mannedGuns ?? [])]);
+    let seat;
+    if (current && current.root === target) {
+      // Re-entering the same vehicle at a specific door (its own EntryPoint
+      // was in reach again) rather than wherever you last sat.
+      seat = seatId ? vehicles.switchSeat(LOCAL_PLAYER, seatId) : current;
+      if (seat && seatId) disposeSeatPose();
     } else {
-      // Furniture MG / Browning: no drivetrain voice, but the FireArms still
-      // have patches (often already extracted next to a tank/ship that
-      // carries the same gun).
-      claimVehicleAudio('local', occupancy.root, null,
-                        [...(vehicleGuns ?? []), ...(mannedGuns ?? [])]);
+      // A different vehicle than the one already held. Every exit path has
+      // already given the old seat back; this is the defensive case.
+      if (current) leaveSeat();
+      // Root seat unless a specific `EntryPoint` said otherwise — walking
+      // straight up to a Sherman's hull-gunner door seats you there directly,
+      // never through the driver's seat first. The hull's instance builds the
+      // drivetrain when its root seat is taken, adopts it into the body world,
+      // thaws the node, collects this seat's guns, mounts the world's record
+      // and claims the audio (`vehicle-instance.js`).
+      seat = vehicles.enter(target, seatId, LOCAL_PLAYER);
     }
-    // Back into three's matrix walk for the ride (freezeStatics) — the whole
-    // vehicle, not just the seat, since a nested seat's own turret is a
-    // descendant of the same frozen root.
-    thawVehicle(occupancy.root);
-    feedVehicleHud();
-    // Render the seated soldier (passenger seats only — driver seats have no
-    // poseAnimation and skip the load). Awaited here so the cockpit frame the
-    // player sees is never the first external one with an empty seat.
-    if (aircraft || car || occupancy.rootKind === 'gun') {
-      loadSeatPose();
-    }
-  }
-  if (!on && occupancy) {
-    releaseVehicleAudio('local', occupancy.root);
-    if (aircraft || car) {
-      const vehicle = aircraft || car;
-      releaseGuns();
-      disposeSeatPose();
-      vehicle.reset();
-      // `reset()` only restores the exterior when it owns the swap, and it
-      // no longer does. Vacating the seat has to put the fuselage back
-      // explicitly or the parked plane sits on the strip as an open cockpit
-      // tub.
-      view?.setMode('cockpit');
-      vehicle.setFirstPerson(false);
-      vehicle.applyTransform();
-      vehicle.applyRig();
-      releaseDrivenBody(vehicle);
-    } else {
-      // Splices `mannedGuns` out of `guns.groups` too (see `leaveManned`'s
-      // own comment on why a bare `setFiring(false)` loop is not enough).
-      // The player's claim is already released above; the hull stays sounding
-      // for any bot crew that is still aboard.
-      releaseGuns();
-    }
-    freezeVehicle(occupancy.root);   // parked at its spawn: furniture again
-    clearVehicleHud();
-    occupancy = null;
-    // The seat's view rig goes with the seat: the next mount builds its own.
-    view = null;
-    gunSubject = null;
-    rebuildVehicleInterp();
-  }
-  // The world's occupied-vehicle state rides the same seats as the page's:
-  // mounted on entry (the gun lists came fresh from `collectGuns` /
-  // `collectMannedGuns` above), cleared on exit. A seat switch re-scopes the
-  // lists through `switchSeat`'s own `refreshMount` below; the E-key exits
-  // (leaveVehicle/leaveManned) clear it themselves, as they do `occupancy`.
-  if (on && occupancy) {
-    world?.setPlayerVehicle(LOCAL_PLAYER, {
-      occupancy,
-      vehicle: aircraft || car || null,
-      kind: occupancy.rootKind,
-      groups: vehicleGuns,
-      manned: mannedGuns,
-    });
-    // The room's control channel: the server mounts this player in its own
-    // world the same way (netcode.js MSG_ACTION; the vehicle id is the room
-    // table's, matched by template + pose like the renderer's). The seat-dot
-    // feed keeps the same id for its every-frame occupant read.
-    netOccupiedVehicleId = netVehicleIdFor(occupancy.root);
-    const netSeat = netSeatRow('enter');
+    // The seat is held by someone else: nothing happens, as a full seat in
+    // the engine refuses the toggle. The caller reads `localPlayer.occupancy`.
+    if (seat) mountLocalSeat(seat);
+  } else if (localPlayer.occupancy) {
+    // The seat's gone; tell the server so the others' replicas release it.
+    const netSeat = netSeatRow('exit');
+    leaveSeat({ reset: true });
     if (netSeat) netSendAction(netSeat);
-  } else if (!on) {
+  } else {
     world?.clearPlayerVehicle(LOCAL_PLAYER);
-    // The seat's gone; tell the server before the occupancy row is cleared
-    // so the others' replicas release the hull.
-    const netSeat = occupancy ? netSeatRow('exit') : null;
-    if (netSeat) netSendAction(netSeat);
   }
   world?.resetStick(LOCAL_PLAYER);
   // Climbing in or out moves the drawn set and the camera both; re-collect
@@ -7433,10 +7261,79 @@ function setPilot(on, node = null, seatId = null) {
   // block, beside `footLookPending`).
   rebuildVehicleInterp();
   hud.textContent = isTouchDevice ? getTouchHudText()
-    : on
-      ? (mannedActive() ? HUD_MANNED : car ? HUD_DRIVE : HUD_PILOT)
+    : localPlayer.occupancy
+      ? (mannedActive() ? HUD_MANNED : localPlayer.car ? HUD_DRIVE : HUD_PILOT)
       : (optOnFoot.checked && soldier ? HUD_FOOT : HUD_FLY);
   updateMobileControls();
+}
+
+function mountLocalSeat(seat) {
+  // After the seats exist: this seat's own view rig, and its law -- which
+  // asks whether the seat's Camera rides one of its own aim axes.
+  buildSeatView();
+  // The instance's `collect` has just cloned this seat's flash materials and
+  // marked the additive ones fresh `Material` instances the renderer has
+  // never linked a program for. The level's warm-up compiled the originals
+  // they were cloned from, not these; skip this and the clone's first real
+  // draw is the mid-burst link stall rule 6 exists to prevent.
+  warmSubtree(seat.root);
+  feedVehicleHud();
+  // Render the seated soldier (passenger seats only — driver seats have no
+  // poseAnimation and skip the load). Awaited here so the cockpit frame the
+  // player sees is never the first external one with an empty seat.
+  if (seat.instance.drivable || seat.rootKind === 'gun') loadSeatPose();
+  // The room's control channel: the server mounts this player in its own
+  // world the same way (netcode.js MSG_ACTION; the vehicle id is the room
+  // table's, matched by template + pose like the renderer's). The seat-dot
+  // feed keeps the same id for its every-frame occupant read.
+  netOccupiedVehicleId = netVehicleIdFor(seat.root);
+  const netSeat = netSeatRow('enter');
+  if (netSeat) netSendAction(netSeat);
+}
+
+function syncLocalSeat() {
+  const seat = localPlayer.occupancy;
+  const was = localPlayer.viewFor;
+  if (!seat) return;
+  if (was && was.seat === seat && was.seatId === seat.seatId && was.drive === seat.drive) return;
+  buildSeatView();
+  rebuildVehicleInterp();
+  feedVehicleHud();
+  updateMobileControls();
+}
+
+function leaveSeat({ reset = false } = {}) {
+  const seat = localPlayer.occupancy;
+  if (!seat) return;
+  const drive = seat.drive;
+  // The seated occupant goes with the seat, or stepping out of a jeep leaves
+  // a soldier sitting in mid-air where the driver's seat had been.
+  disposeSeatPose();
+  if (drive) {
+    if (reset && seat.instance.seats.size === 1) drive.reset();
+    // `reset()` only restores the exterior when it owns the swap, and it no
+    // longer does. Vacating the seat has to put the fuselage back explicitly
+    // or the parked plane sits on the strip as an open cockpit tub -- and a
+    // hull someone else keeps driving is seen from outside.
+    localPlayer.view?.setMode('cockpit');
+    drive.setFirstPerson(false);
+  }
+  vehicles.leave(LOCAL_PLAYER);
+  clearVehicleHud();
+  // The seat's view rig goes with the seat: the next mount builds its own.
+  localPlayer.view = null;
+  localPlayer.viewFor = null;
+  localPlayer.gunSubject = null;
+  world?.resetStick(LOCAL_PLAYER);
+  rebuildVehicleInterp();
+}
+
+function passenger(dt) {
+  if (!localPlayer.view) return;
+  const pose = localPlayer.view.update(dt);
+  camera.position.copy(pose.position);
+  camera.quaternion.copy(pose.quaternion);
+  guns.firstPerson = localPlayer.view.inside;
 }
 
 // `?turret=<n>` multiplies `countsPerPixel` -- how many DirectInput counts one
@@ -7479,7 +7376,7 @@ const HUD_MANNED = 'Mouse aims · LMB fires · C view · 1-9 seats · E get out 
  * function) owns the camera and the trigger for whichever seat really is.
  */
 function drive(dt) {
-  if (!car) return;
+  if (!localPlayer.car) return;
   // The world has already run this function's old sim half (world.js
   // #vehicleTick): the HP-15 gate (`driving` below reads its answer), the
   // keyboard into c_PIThrottle/c_PIYaw/c_PIFire/c_PIAltFire, `car.integrate`,
@@ -7488,8 +7385,8 @@ function drive(dt) {
   // `vehicleGuns` loop with the unconditional-off `setFiring` semantics. The
   // shell left here is the presentation half: the muzzle flash's 1P choice
   // and the camera, including the passenger-seat pose.
-  const driving = occupancy.isActiveRoot() && !vehicleInput.blocked;
-  guns.firstPerson = car.firstPerson;
+  const driving = localPlayer.occupancy.isActiveRoot() && !vehicleInput.blocked;
+  guns.firstPerson = localPlayer.car.firstPerson;
   // A non-driving seat (the Willy's passenger, a Sherman's hull gunner) still
   // needs the camera — the VehicleCamera owns the C-cycle for every seat of a
   // flyable vehicle, not only the root. The drivetrain step above is gated on
@@ -7499,8 +7396,8 @@ function drive(dt) {
   // exactly the "stuck in the passenger POV" bug SEAT-9 (camera-modes.md §3)
   // describes. Manned guns keep their own camera in `manned()` below, so this
   // only matters for the passenger seat of a drivable vehicle.
-  if (!driving && !mannedActive() && view) {
-    const pose = view.update(dt);
+  if (!driving && !mannedActive() && localPlayer.view) {
+    const pose = localPlayer.view.update(dt);
     camera.position.copy(pose.position);
     camera.quaternion.copy(pose.quaternion);
     return;
@@ -7508,7 +7405,7 @@ function drive(dt) {
   if (!driving) return;
   // Runs after the world integrated, so an external camera hangs off this
   // frame's attitude rather than last frame's.
-  const pose = view.update(dt);
+  const pose = localPlayer.view.update(dt);
   camera.position.copy(pose.position);
   camera.quaternion.copy(pose.quaternion);
   // The dashboard readout this used to write into `#ammo` (road speed, gear)
@@ -7535,13 +7432,13 @@ const driveFwd = new THREE.Vector3();
 // the drivetrain's own momentum has to keep integrating even while `manned()`
 // holds the camera and the trigger for the seat you are actually sitting in.
 function mannedActive() {
-  if (!occupancy || !occupancy.activeSeatId) return false;
-  if (occupancy.isActiveRoot() && (aircraft || car)) return false;
+  if (!localPlayer.occupancy || !localPlayer.occupancy.activeSeatId) return false;
+  if (localPlayer.occupancy.isActiveRoot() && (localPlayer.aircraft || localPlayer.car)) return false;
   // A passenger seat ('seat' kind: no guns, no aim axes) is NOT a manned gun —
   // its camera belongs to VehicleCamera, not `manned()`, and forcing first-
   // person here locks the view to the passenger's eye node. Let drive()'s
   // non-driving branch claim the C-cycle instead (GUN-12).
-  if (occupancy.seatKind(occupancy.activeSeatId) === 'seat') return false;
+  if (localPlayer.occupancy.seatKind(localPlayer.occupancy.activeSeatId) === 'seat') return false;
   return true;
 }
 
@@ -7564,16 +7461,16 @@ const mannedCamQuat = new THREE.Quaternion();
  * artillery seats are the only ones whose Camera says otherwise.
  */
 function manned(dt) {
-  if (view) {
-    const pose = view.update(dt);
+  if (localPlayer.view) {
+    const pose = localPlayer.view.update(dt);
     camera.position.copy(pose.position);
     camera.quaternion.copy(pose.quaternion);
     // Inside: the 1P muzzle emitter, not the mesh-mounted third-person flash
     // that sits metres ahead of the eye. Outside: the reverse. "Inside" is
     // view mode 3, which the nose cam is too -- see `pilot()`.
-    guns.firstPerson = view.inside;
+    guns.firstPerson = localPlayer.view.inside;
   } else {
-    readWorldPose(occupancy.cameraNode(), mannedCamPos, mannedCamQuat);
+    readWorldPose(localPlayer.occupancy.cameraNode(), mannedCamPos, mannedCamQuat);
     camera.position.copy(mannedCamPos);
     camera.quaternion.copy(mannedCamQuat);
     guns.firstPerson = true;
@@ -7592,30 +7489,32 @@ function manned(dt) {
  * `map<int,PCO*>::find()` miss.
  */
 function switchSeat(position) {
-  if (!occupancy) return;
-  const seatId = occupancy.seatIdAt(position);
-  if (seatId === undefined || seatId === occupancy.activeSeatId) return;
+  const seat = localPlayer.occupancy;
+  if (!seat) return;
+  const seatId = seat.seatIdAt(position);
+  if (seatId === undefined || seatId === seat.activeSeatId) return;
+  // Somebody sits there: the engine's own miss, nothing happens.
+  if (seat.instance.holder(seatId) != null) return;
   // Discard the previous seat's soldier pose (if any) before loading the new
   // one — a driver→passenger switch on a Willy, or vice-versa.
   disposeSeatPose();
-  occupancy.setActiveSeat(seatId);
+  // The hull does not move: the instance keeps its drive and body, and re-
+  // scopes the seat's guns and the world's mount.
+  vehicles.switchSeat(LOCAL_PLAYER, seatId);
   // This seat's own view rig: its Camera for the inside view, its `CVM*`
   // words for the cycle, the mode carried over where the seat reaches it.
   buildSeatView();
-  collectMannedGuns();
-  // The world's driver/gunner fire loops read the same scoped lists.
-  world?.refreshMount(LOCAL_PLAYER, { groups: vehicleGuns, manned: mannedGuns });
   // A different seat is a different camera, often in a different rig; snap
   // rather than sweep the view across the hull for a frame.
   rebuildVehicleInterp();
-  warmSubtree(occupancy.root);
+  warmSubtree(seat.root);
   feedVehicleHud();
   hud.textContent = isTouchDevice ? getTouchHudText()
-    : mannedActive() ? HUD_MANNED : car ? HUD_DRIVE : HUD_PILOT;
+    : mannedActive() ? HUD_MANNED : localPlayer.car ? HUD_DRIVE : HUD_PILOT;
   loadSeatPose();
   updateMobileControls();
   // The room's control channel: seat switches are rows, not input words.
-  const netId = netVehicleIdFor(occupancy.root);
+  const netId = netVehicleIdFor(seat.root);
   if (roomJoined && netId != null) {
     netSendAction({ type: 'seat', vehicle: netId, seat: position, action: 'switch' });
   }
@@ -7665,7 +7564,8 @@ function clearVehicleHud() {
   // The dot feed's memo goes with them, or re-entering the same vehicle at
   // the same seat would leave all thirteen variables deleted and never
   // rewritten. The cached room id is the same kind of stale-on-exit state:
-  // every exit path (setPilot off, leaveVehicle, leaveManned) funnels here.
+  // every exit path (setPilot off, exitVehicle, exitManned) funnels here
+  // through `leaveSeat`.
   seatDotsFor = null;
   seatDotsSig = null;
   netOccupiedVehicleId = null;
@@ -7693,8 +7593,8 @@ function ammoBarCode(name) {
  * sign flip. See `feedVehicleHud`.
  */
 function turretDialAngle() {
-  if (!occupancy?.showsTurretIcon(insideView())) return undefined;
-  return occupancy.turret?.turretYawRadians();
+  if (!localPlayer.occupancy?.showsTurretIcon(insideView())) return undefined;
+  return localPlayer.occupancy.turret?.turretYawRadians();
 }
 
 // The seat-dot feed's memo: the vehicle it was last written for and the
@@ -7718,8 +7618,8 @@ let seatDotsSig = null;
  *  pose to match against, and a null computed too early would otherwise stay
  *  null for the whole ride. */
 function remoteSeatOccupants() {
-  if (!roomJoined || !roomClient || !occupancy) return [];
-  if (netOccupiedVehicleId == null) netOccupiedVehicleId = netVehicleIdFor(occupancy.root);
+  if (!roomJoined || !roomClient || !localPlayer.occupancy) return [];
+  if (netOccupiedVehicleId == null) netOccupiedVehicleId = netVehicleIdFor(localPlayer.occupancy.root);
   if (netOccupiedVehicleId == null) return [];
   const out = [];
   for (const slot of roomClient.remoteSlots()) {
@@ -7732,13 +7632,26 @@ function remoteSeatOccupants() {
   return out;
 }
 
+/** The other occupants of the hull the human sits in -- bots, on this page --
+ *  as the same `{ seat, team }` rows, from the hull's own seat map. */
+function hullSeatOccupants() {
+  const seat = localPlayer.occupancy;
+  if (!seat) return [];
+  const out = [];
+  for (const [seatId, playerId] of seat.instance.seats) {
+    if (playerId === LOCAL_PLAYER) continue;
+    out.push({ seat: seat.order.indexOf(seatId), team: world?.player(playerId)?.team ?? 0 });
+  }
+  return out;
+}
+
 function feedSeatDots() {
-  if (!occupancy) return;
-  const dots = occupancy.seatDots(remoteSeatOccupants(),
-                                  roomClient?.hello?.team ?? 0);
+  if (!localPlayer.occupancy) return;
+  const dots = localPlayer.occupancy.seatDots([...remoteSeatOccupants(), ...hullSeatOccupants()],
+    roomClient?.hello?.team ?? world?.player(LOCAL_PLAYER)?.team ?? 0);
   const sig = dots.map(d => d.state).join(',');
-  if (seatDotsFor === occupancy && sig === seatDotsSig) return;
-  seatDotsFor = occupancy;
+  if (seatDotsFor === localPlayer.occupancy && sig === seatDotsSig) return;
+  seatDotsFor = localPlayer.occupancy;
   seatDotsSig = sig;
   setHudVar('Occupied/OccupiedData', dots.map(d => d.state));
   for (let i = 0; i < 6; i++) {
@@ -7757,7 +7670,7 @@ function feedSeatDots() {
  * inside, which is where every seat opens.
  */
 function insideView() {
-  return view ? view.inside : !!occupancy;
+  return localPlayer.view ? localPlayer.view.inside : !!localPlayer.occupancy;
 }
 
 /**
@@ -7767,9 +7680,9 @@ function insideView() {
  * live ammo/heat actually moves.
  */
 function feedVehicleHud() {
-  if (!occupancy) return;
-  const rootHud = occupancy.seatInfo(occupancy.rootId)?.hud;
-  const seatHud = occupancy.activeHud();
+  if (!localPlayer.occupancy) return;
+  const rootHud = localPlayer.occupancy.seatInfo(localPlayer.occupancy.rootId)?.hud;
+  const seatHud = localPlayer.occupancy.activeHud();
   setHudVar('Vehicle/ShowVehicleIcon', true);
   setHudVar('Vehicle/VehicleIcon', seatHud?.vehicleIcon ?? null);
   // The turret dial (`vehicleIcon`'s other three sprites, VHUD-7's rects): a
@@ -7850,9 +7763,9 @@ function feedVehicleHud() {
   // cross-check it against.
   let nodes = [];
   if (mannedActive()) {
-    nodes = occupancy.activeFireArmsNodes();
-  } else if (occupancy.isActiveRoot() && (aircraft || car)) {
-    nodes = occupancy.seatInfo(occupancy.rootId)?.fireArms || [];
+    nodes = localPlayer.occupancy.activeFireArmsNodes();
+  } else if (localPlayer.occupancy.isActiveRoot() && (localPlayer.aircraft || localPlayer.car)) {
+    nodes = localPlayer.occupancy.seatInfo(localPlayer.occupancy.rootId)?.fireArms || [];
   }
   const primary = nodes[0] ? fireStateFor(nodes[0]) : null;
   const secondary = nodes[1] ? fireStateFor(nodes[1]) : null;
@@ -7913,9 +7826,9 @@ function feedVehicleHud() {
  *  (features/mesh-viewer-performance, rule 5). */
 function fireGroupFor(node) {
   if (!node) return null;
-  const live = mannedActive() ? mannedGuns : vehicleGuns;
+  const live = mannedActive() ? localPlayer.mannedGuns : localPlayer.vehicleGuns;
   for (const group of live) if (group.node === node) return group;
-  const other = live === mannedGuns ? vehicleGuns : mannedGuns;
+  const other = live === localPlayer.mannedGuns ? localPlayer.vehicleGuns : localPlayer.mannedGuns;
   for (const group of other) if (group.node === node) return group;
   return null;
 }
@@ -8090,7 +8003,7 @@ function enterVehicle(entry) {
   // someone is in a vehicle.
   optPilot.checked = true;
   setPilot(true, entry.vehicle, entry.seatId);
-  if (!occupancy) {
+  if (!localPlayer.occupancy) {
     // The seat refused (a null root; `pickVehicle`-less path). Back on foot
     // as if nothing happened. Every real `PlayerControlObject` root now
     // classifies to something (`seats.js`'s `classifyRoot` never returns
@@ -8103,53 +8016,6 @@ function enterVehicle(entry) {
     hud.textContent = isTouchDevice ? getTouchHudText() : HUD_FOOT;
   }
   resetMobileControls();
-}
-
-/**
- * Park the vehicle exactly where it stands — engine off, controls centred,
- * exterior restored — without `reset()`'s teleport back to spawn. This is
- * the difference between vacating a seat and returning the vehicle.
- *
- * Only meaningful for a root that actually has a drivetrain; a bare gun/seat
- * exit is `leaveManned`'s job, since there is no `Vehicle` instance here to
- * reset. Whichever one runs, exiting always empties the whole vehicle — this
- * page has exactly one occupant, so a nested seat's own exit ends the
- * driver's occupancy too (`leaveManned` delegates here when the active seat
- * is the root, per the note on `mannedActive()`'s own approximation).
- */
-function leaveVehicle() {
-  const vehicle = aircraft || car;
-  if (!vehicle) return;
-  releaseVehicleAudio('local', vehicle.node);
-  releaseGuns();
-  // The seated occupant goes with the seat. This is the E-key exit; the debug
-  // pilot toggle's own path disposes him too, and `exitManned` does, but this
-  // one did not — so stepping out of a jeep left a soldier sitting in mid-air
-  // where the driver's seat had been, with his IK still being solved every
-  // frame, and only the *next* entry cleaned him up.
-  disposeSeatPose();
-  // Exiting a vehicle does not reset its PhysicsNode. Velocities are left
-  // where they stand (the old code zeroed them, which froze a bailed hull
-  // dead); the parked body inherits them below, and the unoccupied hull
-  // coasts down under drag and wheel friction instead of stopping in place.
-  // Only the controls and engine state are released here.
-  vehicle.state.throttle = 0;
-  vehicle.setInput('c_PIThrottle', 0);
-  vehicle.setInput('c_PIYaw', 0);
-  vehicle.setInput('c_PIFire', 0);
-  view?.setMode('cockpit');
-  vehicle.setFirstPerson(false);
-  vehicle.applyTransform();
-  vehicle.applyRig();
-  freezeVehicle(vehicle.node);   // parked where it stands: furniture again
-  releaseDrivenBody(vehicle);    // ... and a body on its own springs
-  clearVehicleHud();
-  occupancy = null;
-  view = null;
-  gunSubject = null;
-  world?.clearPlayerVehicle(LOCAL_PLAYER);
-  world?.resetStick(LOCAL_PLAYER);
-  rebuildVehicleInterp();
 }
 
 /**
@@ -8206,18 +8072,18 @@ function exitPose(vehicle) {
 const BAIL_OUT_HEIGHT = 9.5;
 
 function exitVehicle() {
-  const vehicle = aircraft || car;
+  const vehicle = localPlayer.aircraft || localPlayer.car;
   if (!vehicle) return;
   const exit = exitPose(vehicle);
   // Height above whatever the collider says is under the exit point, and the
-  // hull's own velocity — both read before `leaveVehicle` lets go of it.
+  // hull's own velocity — both read before `leaveSeat` lets go of it.
   const groundAt = collider?.surfaceHeight ? collider.surfaceHeight(exit.x, exit.z) : NaN;
   const bailing = Number.isFinite(groundAt) && exit.y - groundAt > BAIL_OUT_HEIGHT;
   const hullVelocity = vehicle.state?.velocity;
-  // The room's control channel: capture the seat row before leaveVehicle
-  // clears the occupancy the row is read from.
-  const netSeat = occupancy ? netSeatRow('exit') : null;
-  leaveVehicle();
+  // The room's control channel: capture the seat row before the seat is
+  // given back.
+  const netSeat = localPlayer.occupancy ? netSeatRow('exit') : null;
+  leaveSeat();
   if (netSeat) netSendAction(netSeat);
   optPilot.checked = false;
   if (optOnFoot.checked && soldier) {
@@ -8283,89 +8149,13 @@ function exitPoseManned(occ) {
   };
 }
 
-/**
- * `leaveVehicle`'s twin for a seat with no drivetrain: stop firing, forget
- * the seat table, hand the vehicle's matrix back to the per-frame freeze. The
- * turret is deliberately left aimed where it was — retail furniture keeps
- * whatever pose its last gunner left it in, and nothing in verify-r5/r6
- * describes a return-to-rest on exit.
- *
- * If the active seat IS the root and a drivetrain exists (driver/pilot/helm
- * stepping out), this page still has only one occupant, so the exit empties
- * the whole vehicle — delegate to `leaveVehicle` for the parts only it knows
- * how to reset.
- *
- * The one exception: a nested gunner seat of a vehicle with a drivetrain
- * (the Sherman's hull gunner, a carrier AA gun). The player never took the
- * helm, so the hull is parked where she lies with the same cleanup the root
- * exit runs — stick reset, driven-body release, engine-audio teardown,
- * HUD, view/camera mode — but without touching her carried velocity (she
- * keeps coasting under `releaseDrivenBody`'s handoff, exactly like a helm
- * exit; a nested exit is not a helm exit, so the hull never integrates
- * driverless — see `idle-vehicle.js`: it resets fire pose/state only, and
- * driverless coasting stays a follow-up).
- */
-function leaveManned() {
-  if (!occupancy) return;
-  const isNestedSeat = occupancy.activeSeatId !== occupancy.rootId;
-  if ((aircraft || car) && !isNestedSeat) {
-    // `leaveVehicle` calls `releaseGuns()` itself, which already releases
-    // `mannedGuns` the same way it releases `vehicleGuns` — see there.
-    leaveVehicle();
-    return;
-  }
-  // `releaseGuns()`, not a bare `setFiring(false)` loop: it also splices each
-  // group out of `guns.groups`, or re-entering the same gun later would pile
-  // a second, permanently-inert group onto the first every cycle instead of
-  // replacing it (`collectMannedGuns` on the next entry only clears whatever
-  // is still in `mannedGuns`, which this function is about to empty).
-  releaseGuns();
-  disposeSeatPose();
-  if (isNestedSeat && (aircraft || car)) {
-    // Nested gunner seat of a driven vehicle (Sherman hull gunner, carrier
-    // AA gun): the same cleanup `leaveVehicle` runs, in the same order, on
-    // the hull the gunner never drove — parked where she lies, velocity
-    // carried over, never zeroed.
-    const vehicle = aircraft || car;
-    releaseVehicleAudio('local', vehicle.node);
-    vehicle.state.throttle = 0;
-    vehicle.setInput('c_PIThrottle', 0);
-    vehicle.setInput('c_PIYaw', 0);
-    vehicle.setInput('c_PIFire', 0);
-    vehicle.setInput('c_PIAltFire', 0);
-    if (view) {
-      view.setMode('cockpit');
-      vehicle.setFirstPerson(false);
-    }
-    vehicle.applyTransform();
-    vehicle.applyRig();
-    freezeVehicle(vehicle.node);
-    releaseDrivenBody(vehicle);
-    clearVehicleHud();
-    occupancy = null;
-    view = null;
-    gunSubject = null;
-    world?.clearPlayerVehicle(LOCAL_PLAYER);
-    world?.resetStick(LOCAL_PLAYER);
-    rebuildVehicleInterp();
-    return;
-  }
-  releaseVehicleAudio('local', occupancy.root);
-  freezeVehicle(occupancy.root);
-  clearVehicleHud();
-  occupancy = null;
-  view = null;
-  gunSubject = null;
-  world?.clearPlayerVehicle(LOCAL_PLAYER);
-}
-
 /** E from a manned-only seat: a bare furniture gun, or a nested seat of a
  *  vehicle whose root seat you never drove this time. */
 function exitManned() {
-  if (!occupancy) return;
-  const exit = exitPoseManned(occupancy);
-  const netSeat = occupancy ? netSeatRow('exit') : null;
-  leaveManned();
+  if (!localPlayer.occupancy) return;
+  const exit = exitPoseManned(localPlayer.occupancy);
+  const netSeat = netSeatRow('exit');
+  leaveSeat();
   if (netSeat) netSendAction(netSeat);
   optPilot.checked = false;
   if (optOnFoot.checked && soldier) {
@@ -8381,6 +8171,12 @@ function exitManned() {
     updateHud();
   }
   resetMobileControls();
+}
+
+function exitSeat() {
+  if (!localPlayer.occupancy) return;
+  if (!mannedActive() && (localPlayer.aircraft || localPlayer.car)) exitVehicle();
+  else exitManned();
 }
 
 /** The sound and animation triggers `parachute.js` produced, newest last.
@@ -9387,8 +9183,7 @@ function botRoundDamage(stats = null) {
 /** Who fired `group`: the local player (his drivetrain's or seat's guns) or
  *  the bot whose seat it is. Null for a gun nobody is holding. */
 function roundFirer(group) {
-  if (vehicleGuns.includes(group) || mannedGuns.includes(group)) return LOCAL_PLAYER;
-  return botFiringGroup({ firerGroup: group });
+  return vehicles.firerOf(group);
 }
 
 /**
@@ -9762,15 +9557,9 @@ function botVehicleKindOf(node) {
  * shared by every bot (the engine's environment query, INVENTION radius).
  */
 let botEntryCollectedAt = -Infinity;
-/** The seats bots hold: vehicle root node -> Map(seatId -> bot playerId). */
-const botSeats = new Map();
-function botSeatHolder(node, seatId) { return botSeats.get(node)?.get(seatId) ?? null; }
-function botDriverOf(node) {
-  const occ = botSeats.get(node);
-  if (!occ) return occupancy?.root === node ? LOCAL_PLAYER : null;
-  const rootId = node.userData?.control || node.name || 'vehicle';
-  return occ.get(rootId) ?? (occupancy?.root === node && occupancy.activeSeatId === rootId ? LOCAL_PLAYER : null);
-}
+/** Who holds a seat, human or bot: the hull's instance answers. */
+function botSeatHolder(node, seatId) { return vehicles.holder(node, seatId); }
+function botDriverOf(node) { return vehicles.driverOf(node); }
 
 /**
  * The seats a bot may take right now (`BBChange`'s environment list): every
@@ -9838,8 +9627,7 @@ function botVehicleCandidates() {
         const drives = isRoot && kind !== 'gun';
         // `modifyForDriver`: a plane's secondary seats x0.5, a ship's x0.77.
         const seatFactor = isRoot ? 1 : (kind === 'air' ? 0.5 : kind === 'ship' ? 0.77 : 1);
-        const holder = botSeatHolder(node, door.seatId)
-          ?? (occupancy?.root === node && occupancy.activeSeatId === door.seatId ? LOCAL_PLAYER : null);
+        const holder = botSeatHolder(node, door.seatId);
         door.node.getWorldPosition(_botEntryWorld);
         seats.push({ seatId: door.seatId, table: strengths, occupied: !!holder, strType: ai.strType ?? 'LightArmour', isRoot });
         entries.push({
@@ -9938,118 +9726,74 @@ const BOT_VEHICLE_RADIUS_LARGE = 10.0;
 function botEnterVehicle(bot, cand) {
   const node = cand.node;
   if (!node || !currentRoot) return false;
-  if (botSeatHolder(node, cand.seatId)) return false;
-  if (occupancy?.root === node && occupancy.activeSeatId === cand.seatId) return false;
-  const occ = new VehicleOccupancy(node, {
-    Aircraft, GroundVehicle, TrackedVehicle: GroundModule.TrackedVehicle, Ship,
-  });
-  const drivesKinds = ['ground', 'tank', 'air', 'ship'];
-  let drive = null;
-  if (cand.drives && drivesKinds.includes(occ.rootKind)) {
-    drive = occ.ensureDrive(currentRoot, {
-      groundHeight, surfaceFriction, deckNormal, collider: bodyAwareCollider(),
-      waterLevel: collider?.waterLevel ?? extras?.waterLevel,
-    });
-    if (!drive) return false;
-    drive.autoFirstPerson = false;
-    drive.setFirstPerson?.(false);
-    if (occ.rootKind === 'air') {
-      // As `setPilot`: the spawn pose puts the aircraft on the deck; lift it
-      // clear of its own wheels.
-      drive.groundHeight = groundHeight;
-      drive.state.position.y += 0.2;
-    } else if (occ.rootKind === 'ship') {
-      drive.groundHeight = (x, z) => {
-        const h = collider?.heightfield?.height(x, z);
-        return Number.isFinite(h) ? h : -Infinity;
-      };
-      drive.groundNormal = (x, z, out) => {
-        const n = collider?.heightfield?.normal;
-        if (!n) { out.set(0, 1, 0); return out; }
-        n.call(collider.heightfield, x, z, _shipNormal);
-        out.set(_shipNormal[0], _shipNormal[1], _shipNormal[2]);
-        return out;
-      };
-      drive.seabedFriction = seabedFriction;
-    }
-    adoptDrivenBody(drive);
-    thawVehicle(node);
-  }
-  occ.setActiveSeat(cand.seatId || occ.rootId);
-  const gunOptions = {
-    replace: false, speedScale: 1, maxRange: 1500, roundLifetime: 'data', tracerLength: 'data',
-    platformVelocity: () => drive?.state?.velocity ?? null,
-  };
-  const groups = drive ? guns.collect(drive.node, gunOptions) : [];
-  const driven = new Set(groups.map(g => g.node));
-  const manned = occ.activeFireArmsNodes().filter(n => !driven.has(n)).flatMap(n => guns.collect(n, gunOptions));
-  world.setPlayerVehicle(bot.playerId, {
-    occupancy: occ, vehicle: drive, kind: occ.rootKind, groups, manned,
-  });
+  if (vehicles.holder(node, cand.seatId) != null) return false;
+  // The hull's instance seats him: the drive built when he takes the root
+  // seat of a drivable hull (a helm that builds none refuses him), the body
+  // adopted, the seat's guns collected, the world's record mounted and the
+  // hull sounding (`vehicle-instance.js`), exactly as for the human.
+  const seat = vehicles.enter(node, cand.seatId, bot.playerId, { requireDrive: !!cand.drives });
+  if (!seat) return false;
+  botMounted(bot, cand, seat);
+  if (BOT_DEBUG) console.log(`[bots] ${bot.playerId} takes the ${cand.template} ${seat.isActiveRoot() && seat.drive ? 'driver seat' : 'seat ' + cand.seatId}`);
+  return true;
+}
+
+function botMounted(bot, cand, seat) {
+  const inst = seat.instance;
+  const node = inst.root;
   const record = world.player(bot.playerId);
   if (record) record.vehicleStrType = cand.strType;
-  if (!botSeats.has(node)) botSeats.set(node, new Map());
-  botSeats.get(node).set(cand.seatId, bot.playerId);
   const ai = botVehicleAiOf(node);
   const landingCraft = /lcvp|daihatsu|landing/i.test(ai?.name ?? '');
+  const drive = seat.isActiveRoot() ? inst.drive : null;
   // `BotMain::decisionMaking` 0x08520742: a bot whose controlled object
   // changed tells its SAI (`setBotHasChangedEquipment` -> `handleChangingBot`
   // 0x08631450), which drops its assignment and frees it for a fresh order.
   botStrategy?.botChangedUnit(bot.playerId);
   bot.mount({
-    id: cand.id, vehicleId: cand.vehicleId, node, drive, occupancy: occ, kind: occ.rootKind,
-    seatId: cand.seatId, drives: !!drive, groups, manned,
-    nav: drive && ['ground', 'tank'].includes(occ.rootKind) ? botVehicleNav()
-      : drive && occ.rootKind === 'ship' ? botWaterNav(landingCraft ? 'LandingCraft' : 'Boat') : null,
+    id: cand.id, vehicleId: cand.vehicleId, node, drive, occupancy: seat, kind: inst.rootKind,
+    seatId: seat.seatId, drives: !!drive,
+    // The seat's groups, live: the instance re-collects them on a seat swap.
+    get groups() { return seat.groups.driven; },
+    get manned() { return seat.groups.manned; },
+    nav: drive && ['ground', 'tank'].includes(inst.rootKind) ? botVehicleNav()
+      : drive && inst.rootKind === 'ship' ? botWaterNav(landingCraft ? 'LandingCraft' : 'Boat') : null,
     turnRadius: ai?.turnRadius ?? null, strType: cand.strType, seats: cand.seats, isRoot: cand.isRoot,
-    hullVelocity: () => { const d = botDriverOf(node); return d ? (world.player(d)?.vehicle?.state?.velocity ?? null) : null; },
-    radius: occ.rootKind === 'air' || occ.rootKind === 'ship' ? BOT_VEHICLE_RADIUS_LARGE : BOT_VEHICLE_RADIUS,
+    // The hull's own velocity: its one drive, whoever holds the wheel.
+    hullVelocity: () => inst.drive?.state?.velocity ?? null,
+    radius: inst.rootKind === 'air' || inst.rootKind === 'ship' ? BOT_VEHICLE_RADIUS_LARGE : BOT_VEHICLE_RADIUS,
     maxSpeed: cand.maxSpeed,
     weapons: cand.weapons, template: cand.template,
     // A rider's move term follows whoever drives the hull right now.
-    hullMaxSpeed: botVehicleAiOf(node)?.maxSpeed ?? 0,
-    driverOf: () => botDriverOf(node),
+    hullMaxSpeed: ai?.maxSpeed ?? 0,
+    driverOf: () => vehicles.driverOf(node),
   }, botClock);
-  // The hull sounds now. The driver's claim carries the drivetrain (and so
-  // the Engine `.ssc`); a passenger's carries only its guns, and the rack
-  // keeps one set of patches per hull either way. This is the FPOV gap: a
-  // bot's Sherman used to drive in silence because only the local player's
-  // seat was ever claimed.
-  claimVehicleAudio(`bot:${bot.playerId}`, node, drive,
-                    [...(groups ?? []), ...(manned ?? [])]);
   const vis = botVisuals.get(bot.playerId);
   if (vis) vis.group.visible = false;
-  if (BOT_DEBUG) console.log(`[bots] ${bot.playerId} takes the ${cand.template} ${cand.drives ? 'driver seat' : 'seat ' + cand.seatId}`);
-  return true;
 }
 
 /** Unseat a bot: a driven hull parks where it stands, the soldier steps out beside it. */
 function botLeaveVehicle(bot, { killed = false, silent = false } = {}) {
   const m = bot.vehicle;
   if (!m) return;
-  releaseVehicleAudio(`bot:${bot.playerId}`, m.node);
-  for (const group of [...(m.groups ?? []), ...(m.manned ?? [])]) guns.release(group);
-  const drive = m.drive;
+  const seat = vehicles.seatOf(bot.playerId);
+  const drive = seat?.drive ?? null;
+  // Where he steps out from: the hull's own simulated position when it has a
+  // drive, else its node's.
   let p;
   if (drive) {
-    drive.state.throttle = 0;
-    drive.setInput('c_PIThrottle', 0);
-    drive.setInput('c_PIYaw', 0);
-    drive.setInput('c_PIFire', 0);
-    drive.applyTransform();
-    drive.applyRig?.();
-    freezeVehicle(m.node);
-    releaseDrivenBody(drive);
-    p = drive.state.position;
+    const s = drive.state.position;
+    p = { x: s.x, y: s.y, z: s.z };
   } else {
     m.node.getWorldPosition(_botEntryWorld);
     p = _botEntryWorld;
   }
-  world.clearPlayerVehicle(bot.playerId);
+  // The seat goes back to the hull: its guns released, the world's record
+  // cleared, the audio claim dropped; the last one out parks the hull where
+  // it stands (`vehicle-instance.js`).
+  vehicles.leave(bot.playerId);
   const record = world.player(bot.playerId);
   if (record) { record.vehicleStrType = null; record.position = null; }
-  botSeats.get(m.node)?.delete(m.seatId);
-  if (botSeats.get(m.node)?.size === 0) botSeats.delete(m.node);
   const soldier = record?.soldier;
   if (soldier) {
     // Out through the side: the soldier is re-spawned beside the hull (its
@@ -10069,7 +9813,14 @@ function botLeaveVehicle(bot, { killed = false, silent = false } = {}) {
   if (BOT_DEBUG && !silent) console.log(`[bots] ${bot.playerId} leaves the ${m.template}${killed ? ' (killed)' : ''}`);
 }
 
-const _botSeatWorld = new THREE.Vector3();
+function botSwitchSeat(bot, cand) {
+  const seat = vehicles.switchSeat(bot.playerId, cand.seatId);
+  if (!seat) return false;
+  bot.dismount(botClock);
+  botMounted(bot, cand, seat);
+  botCandidateCache.at = -1;
+  return true;
+}
 
 /** Per tick: seat the bots that asked, unseat the ones that asked or whose hull is gone. */
 function botVehicleTick() {
@@ -10087,24 +9838,14 @@ function botVehicleTick() {
         applyDamageToBot(bot.playerId, 1e6, null, null);
         continue;
       }
-      if (!m.drive) {
-        // A rider's position is the hull's: the world's player record and
-        // the controller both read it from the seat node.
-        m.node.getWorldPosition(_botSeatWorld);
-        const record = world.player(bot.playerId);
-        if (record) record.position = [_botSeatWorld.x, _botSeatWorld.y, _botSeatWorld.z];
-      }
       if (bot.exitRequest) {
         bot.exitRequest = false;
         botLeaveVehicle(bot);
       } else if (bot.switchRequest) {
-        // `BBPChangeTeleport`: the seat-select key moves the bot within the hull.
         const req = bot.switchRequest;
         bot.switchRequest = null;
         const cand = cands.find(c => c.vehicleId === req.vehicleId && c.seatId === req.seatId);
-        if (cand && !cand.occupiedBy && cand.vehicleId === m.vehicleId) {
-          botLeaveVehicle(bot, { silent: true });
-          if (botEnterVehicle(bot, cand)) botCandidateCache.at = -1;
+        if (cand && !cand.occupiedBy && cand.vehicleId === m.vehicleId && botSwitchSeat(bot, cand)) {
           if (BOT_DEBUG) console.log(`[bots] ${bot.playerId} switches to seat ${cand.seatId} of the ${cand.template}`);
         }
       }
@@ -12002,9 +11743,9 @@ let seatPoseGeneration = 0;  // which load is still the current one
 
 async function loadSeatPose() {
   disposeSeatPose();
-  if (!occupancy || !optPilot.checked) return;
+  if (!localPlayer.occupancy || !optPilot.checked) return;
   const mine = ++seatPoseGeneration;
-  const seat = occupancy.seatInfo(occupancy.activeSeatId);
+  const seat = localPlayer.occupancy.seatInfo(localPlayer.occupancy.activeSeatId);
   const body = seatBody(seat?.seatObjects);
   if (!body.draw) return;             // no SeatObject: the game draws nobody
   const states = resolveSeatStates(seat.seatObjects);
@@ -12056,7 +11797,7 @@ async function loadSeatPose() {
   }
   scene.add(soldierScene);
   seatSoldier = soldierScene;
-  seatSoldier.visible = !view?.firstPerson;
+  seatSoldier.visible = !localPlayer.view?.firstPerson;
   // The helmet. A BFSoldier template declares a body, a head and two hands and
   // nothing else, so the exported soldier is bare-headed; the helmet belongs
   // to the kit the player deployed with and hangs off bone `A`. The driver in
@@ -12185,7 +11926,7 @@ function bindSeatIk(seat, soldierScene, clips) {
   const owners = [];
   seat.node.traverse(obj => {
     if (!obj.userData?.skeletonIK) return;
-    const owner = obj.userData.control || occupancy?.rootId;
+    const owner = obj.userData.control || localPlayer.occupancy?.rootId;
     if (owner === seat.id) owners.push(obj);
   });
   const resolveChild = (node, index, name) =>
@@ -12335,7 +12076,7 @@ function disposeSeatPose() {
 
 function updateSeatPoseVisibility() {
   if (seatSoldier) {
-    seatSoldier.visible = !view?.firstPerson;
+    seatSoldier.visible = !localPlayer.view?.firstPerson;
   }
 }
 
@@ -12472,7 +12213,7 @@ async function loadHandWeapon(name, soldierName = null) {
   // The load can resolve after its owner has already climbed into a seat —
   // spawn beside a jeep and press E inside the fetch — and a viewmodel must
   // not materialise over a windscreen. `exitVehicle` shows it again.
-  rig.visible = !(optPilot.checked && (aircraft || car));
+  rig.visible = !(optPilot.checked && (localPlayer.aircraft || localPlayer.car));
   // Hidden again until its programs are linked, its textures and its bone
   // textures are on the GPU and each program has had its first use: the
   // arms, the flash emitters `collect` clones below and the baked streak all
@@ -12485,7 +12226,7 @@ async function loadHandWeapon(name, soldierName = null) {
   rig.visible = false;
   warmups.rig = warmSubtree(rig, vmCamera, vmScene).then(() => {
     if (token !== weaponToken) return;
-    rig.visible = armsShown && !(optPilot.checked && (aircraft || car));
+    rig.visible = armsShown && !(optPilot.checked && (localPlayer.aircraft || localPlayer.car));
   });
   // The six baked families become mixer actions. Locomotion loops; one-shots
   // clamp on their last frame. Fire follows the ASM loop bit in extras
@@ -13284,7 +13025,7 @@ function applyDamageToPlayer(damage, attackerPos = null, attackerTeam = null) {
   soldierArmor.applyDamage(damage);
 
   // If in a vehicle or piloting, vehicle damage handles it -- no on-foot grunts or hit arcs
-  if (optPilot.checked || occupancy) return;
+  if (optPilot.checked || localPlayer.occupancy) return;
 
   const isFriendlyFire = attackerTeam != null && attackerTeam === deployTeamId;
   playSoldierHurtSound(isFriendlyFire);
@@ -13717,16 +13458,15 @@ function footFire(dt, input = null) {
  * deviation model here, and the bars meet at centre the way a tank's do.
  */
 function crosshairAim() {
-  // `occupancy` alone, not `aircraft || car`: those two outlive the seat.
-  // `leaveVehicle` empties the occupancy and parks the vehicle but keeps the
-  // drive model around for whoever climbs back in, so a soldier who had just
-  // stepped out of a Sherman was still being asked what the Sherman draws.
-  if (occupancy) {
+  // The seat he holds, not the hull's drive: a drive outlives his seat (a bot
+  // may still be driving it), and a soldier who had just stepped out of a
+  // Sherman used to be asked what the Sherman draws.
+  if (localPlayer.occupancy) {
     // The CONTROLLED PCO's own `hud` block, which is where `setCrossHairType`
     // is declared — a Sherman's driver and its hull gunner are two PCOs and
     // answer separately. A scene extracted before the word was carried has
     // none, and an absent word draws nothing rather than a guess.
-    return { style: occupancy?.activeHud?.()?.crossHairType ?? null,
+    return { style: localPlayer.occupancy?.activeHud?.()?.crossHairType ?? null,
              deviation: 0, scoped: false };
   }
   const hw = handWeapon;
@@ -13912,7 +13652,7 @@ const SOLDIER_AMMO_VARS = [
 
 function updateSoldierHud(dt = 0.016) {
   const vars = gameHud.vars;
-  const inVehicle = optPilot.checked && !!occupancy;
+  const inVehicle = optPilot.checked && !!localPlayer.occupancy;
 
   if (hitIndicatorTimer > 0) {
     hitIndicatorTimer = Math.max(0, hitIndicatorTimer - dt);
@@ -14185,7 +13925,7 @@ function showView(mode) {
  * below).
  */
 function pilot(dt) {
-  if (!aircraft) return;
+  if (!localPlayer.aircraft) return;
   // The world has already run this function's old sim half (world.js
   // #vehicleTick) with its own copy of every rule and comment above: the
   // HP-15 gate is read and `driving`/`flying` below reads its answer; the
@@ -14196,18 +13936,18 @@ function pilot(dt) {
   // is aimed and stepped once per world tick — the page's own per-tick
   // `stepTurret` loop), and the `vehicleGuns` loop with the unconditional-off
   // `setFiring` semantics. The shell here is the presentation half.
-  const flying = occupancy.isActiveRoot() && !vehicleInput.blocked;
+  const flying = localPlayer.occupancy.isActiveRoot() && !vehicleInput.blocked;
   // The flash's 1P/3P choice is the engine's view mode 3, not whether the
   // cockpit interior is drawn: the nose cam is mode 3 with the interior off,
   // and retail plays the small `em_1P_*` sprite there. Keyed off the interior,
   // the nose cam got the third-person `em_MuzzHeavy` mesh -- a 1.76 m cone
   // ramped toward 9.4x, parked on cowl guns 1.9 m behind the eye, so a held
   // burst (12 rps against a 0.07 s life) was one static shape across the view.
-  guns.firstPerson = view ? view.inside : aircraft.firstPerson;
+  guns.firstPerson = localPlayer.view ? localPlayer.view.inside : localPlayer.aircraft.firstPerson;
   // A non-flying seat with no gun of its own (a transport's passenger) still
   // needs its camera moved, exactly as `drive()`'s passenger branch does.
-  if (!flying && !mannedActive() && view) {
-    const pose = view.update(dt);
+  if (!flying && !mannedActive() && localPlayer.view) {
+    const pose = localPlayer.view.update(dt);
     camera.position.copy(pose.position);
     camera.quaternion.copy(pose.quaternion);
     return;
@@ -14218,7 +13958,7 @@ function pilot(dt) {
   // this frame's attitude rather than last frame's — at 55 m/s that is a metre
   // of lag, and on a chase camera it reads as the aircraft sliding around
   // inside the frame.
-  const pose = view.update(dt);
+  const pose = localPlayer.view.update(dt);
   camera.position.copy(pose.position);
   camera.quaternion.copy(pose.quaternion);
 }
@@ -14929,7 +14669,7 @@ function drawVehicles(ctx, toPx, sc, rot = 0) {
   const crewed = friendlyVehicleNodes();
   const tint = MINIMAP_TEAM_TINT[localMapTeam()] || MINIMAP_TEAM_TINT[2];
   for (const vehicle of mapVehicles) {
-    if (vehicle === occupancy?.root) continue;
+    if (vehicle === localPlayer.occupancy?.root) continue;
     if (!vehicleSpawnActive(vehicle)) continue;
     vehicle.getWorldPosition(vehiclePos);
     const p = projectToArt(vehiclePos.x, vehiclePos.z);
@@ -15311,7 +15051,7 @@ function mapSurfaceStale(canvas, key, force) {
 function mapSurfaceKey(canvas, here, span) {
   const size = Math.round((cssWidthOf(canvas) || 0) * Math.min(window.devicePixelRatio || 1, 2));
   const px = size / span;   // backing pixels per unit of art
-  const vehicle = (aircraft || car)?.state.position;
+  const vehicle = (localPlayer.aircraft || localPlayer.car)?.state.position;
   return `${Math.round(here.u * px)},${Math.round(here.v * px)},`
     + `${Math.round(cameraHeading() * 100)},${size},${mapArt ? mapArtToken : -1},`
     + `${hudPack.sprites.size},${vehicle ? `${Math.round(vehicle.x)},${Math.round(vehicle.z)}` : ''}`;
@@ -16574,12 +16314,16 @@ async function show(entry) {
   if (modeNote) console.warn(modeNote);
   // Before the old root is disposed: every gun is indexed off a node in it, and
   // the rounds in the air are clones of nodes it owns.
-  releaseGuns();
-  // `releaseGuns` is surgical now; a level switch is not, so the rounds in
-  // the air go back to their pools here and every group goes with them.
+  // Every hull's seats go with the scene: nobody is carried across a level
+  // switch, and the seat's view rig holds nodes of the old one.
+  vehicles.clear();
+  localPlayer.view = null;
+  localPlayer.viewFor = null;
+  localPlayer.gunSubject = null;
+  // A level switch is not surgical, so the rounds in the air go back to their
+  // pools here and every group goes with them.
   guns.clear();
   guns.groups.length = 0;
-  vehicleGuns = [];
   dispose(currentRoot);
   disposeSky();
   disposeSounds();
@@ -16688,10 +16432,15 @@ async function show(entry) {
       const visual = damageVisuals.get(owner);
       return !!(visual?.wrecked || visual?.removed);
     },
-    // One snapshot per tick, which is what render interpolation needs and the
-    // only hook the world owes the page (the render-interpolation block,
-    // beside `footLookPending`).
-    onTick: capturePresentationTick,
+    // Per tick, with every piece of the tick final: every seat's world
+    // position into its occupant's record (a rider senses from his seat, the
+    // combat area finds a bare gun's gunner there), then the one snapshot per
+    // tick render interpolation needs (the render-interpolation block, beside
+    // `footLookPending`).
+    onTick: () => {
+      vehicles.publishSeatPositions(seatWorldPos);
+      capturePresentationTick();
+    },
   });
   // A fresh level: none of the old one's nodes or poses survive it.
   rebuildVehicleInterp();
@@ -16769,11 +16518,8 @@ async function show(entry) {
   // Now that the collider exists, spawn the bots so their nav grid and spawn
   // probes see it.
   spawnBotsForLevel();
-  // A new level means a new scene graph; the old aircraft's node is gone, and
-  // the view rig holds a reference to it. So are every cached door.
-  aircraft = null;
-  car = null;
-  view = null;
+  // A new level means a new scene graph (the hulls' instances went with the
+  // old one, above), and so are every cached door.
   soldier = null;
   // A new level starts the flag choice over; without this the rebuilt select
   // would keep the old map's index through `buildSpawnFlags`.
@@ -16966,14 +16712,14 @@ function netVehicleIdFor(node) {
 /** The active seat's position in the occupancy's own survey order, the same
  *  index the server's seat rows and the snapshot records carry (root = 0). */
 function netSeatIndex() {
-  const occ = occupancy;
+  const occ = localPlayer.occupancy;
   if (!occ) return null;
   const i = occ.order.indexOf(occ.activeSeatId);
   return i >= 0 ? i : 0;
 }
 
 function netSeatRow(action) {
-  const occ = occupancy;
+  const occ = localPlayer.occupancy;
   if (!occ?.root) return null;
   const id = netVehicleIdFor(occ.root);
   if (id == null) return null;
@@ -17304,15 +17050,14 @@ async function joinRoom() {
     // The E-key seat toggle, exposed the way __deploy and __keys are: the
     // smoke drives this instead of a pointer-lock keypress.
     window.__seatToggle = () => {
-      if (optPilot.checked && mannedActive()) exitManned();
-      else if (optPilot.checked && (aircraft || car)) exitVehicle();
+      if (optPilot.checked && localPlayer.occupancy) exitSeat();
       else if (optOnFoot.checked && soldier && captured && nearEntry) enterVehicle(nearEntry);
     };
     window.__seat = () => ({
       pilot: optPilot.checked,
-      onboard: !!occupancy,
-      vehicle: occupancy?.root?.userData?.control ?? null,
-      seat: occupancy ? occupancy.order.indexOf(occupancy.activeSeatId) : null,
+      onboard: !!localPlayer.occupancy,
+      vehicle: localPlayer.occupancy?.root?.userData?.control ?? null,
+      seat: localPlayer.occupancy ? localPlayer.occupancy.order.indexOf(localPlayer.occupancy.activeSeatId) : null,
     });
   } catch (err) {
     console.warn('room unavailable', err);
@@ -17407,11 +17152,11 @@ spawnFlagSelect.addEventListener('change', () => {
 });
 
 const clock = new THREE.Clock();
-/** Scratch for the seated branch's world-position feed (world.js's
- *  `setPlayerPosition`, the combat-area test for a bare gun/seat root). */
-const seatWorldPos = new THREE.Vector3();
 
 function frame(dt) {
+  // The human's presentation follows the seat he holds, looked up every frame
+  // (a bot taking the wheel of his hull gives it a drive under him).
+  if (optPilot.checked) syncLocalSeat();
   updateMobileControls();
   // ---- the input stage (page) ----------------------------------------------
   // The keyboard and the mouse never leave this page. The look stage (the
@@ -17422,7 +17167,7 @@ function frame(dt) {
   // per-tick law consumes one buffered input per player per tick (world.js,
   // the tick law in its header), which is the engine's own
   // `InputManager::update` 0x0049cff7 boundary.
-  const seated = optPilot.checked && occupancy;
+  const seated = optPilot.checked && localPlayer.occupancy;
   const onFoot = optOnFoot.checked && soldier;
   // The world's one clock answers this frame's tick count; the pump reads it
   // so the look stage and the sim can never drift apart (Fix 5). A frame
@@ -17461,8 +17206,6 @@ function frame(dt) {
       pad: mobilePadHeld,
     };
     look = { x: mouseInput.x, y: mouseInput.y };
-    const pos = occupancy.root.getWorldPosition(seatWorldPos);
-    world.setPlayerPosition(LOCAL_PLAYER, [pos.x, pos.y, pos.z]);
   } else if (onFoot) {
     pumpLook(lookTicks);
     const held = captured ? keys : EMPTY_KEYS;
@@ -17590,8 +17333,9 @@ function frame(dt) {
     // freezing it. A bare gun/seat root has no drivetrain either way —
     // `aircraft`/`car` both stay null for one — so neither camera call does
     // anything for it.
-    if (aircraft) pilot(dt);
-    else if (car) drive(dt);
+    if (localPlayer.aircraft) pilot(dt);
+    else if (localPlayer.car) drive(dt);
+    else if (!mannedActive()) passenger(dt);
     // Beaching groan: when the ship's keel first touches the seabed, play the
     // collision effect for the seabed's material against the hull's — the
     // same `effects[attGroup][defGroup]` cell `onCrashDamage` reads
@@ -17605,11 +17349,11 @@ function frame(dt) {
     // is the emitter clock, and `EngineAudio` has no `Effect::Speed` channel
     // (an `extern` source it never feeds), so the scrape plays at its
     // authored level with `beachSpeed` as the gate, not the gain.
-    if (aircraft?.beachedThisTick && aircraft.beachSpeed > 0.5) {
-      const p = aircraft.state.position;
+    if (localPlayer.aircraft?.beachedThisTick && localPlayer.aircraft.beachSpeed > 0.5) {
+      const p = localPlayer.aircraft.state.position;
       const terrainId = collider?.heightfield?.material
         ? collider.heightfield.material(p.x, p.z) : 0;
-      const hullId = hullCollisionMaterial(aircraft.node);
+      const hullId = hullCollisionMaterial(localPlayer.aircraft.node);
       const effect = effectNameFor(damageTables, terrainId, hullId);
       if (effect) effects.play(effect, {
         position: [p.x, p.y, p.z],
@@ -17631,7 +17375,7 @@ function frame(dt) {
       // `updateProjectionMatrix()`, every frame.
       // Inside the gun's own FOV; an external view of the same seat is the
       // world's, the same as the driver's chase.
-      const wantFov = view && !view.inside ? FLY_FOV : MANNED_GUN_FOV;
+      const wantFov = localPlayer.view && !localPlayer.view.inside ? FLY_FOV : MANNED_GUN_FOV;
       if (camera.fov !== wantFov) {
         camera.fov = wantFov;
         camera.updateProjectionMatrix();
@@ -17698,7 +17442,7 @@ function frame(dt) {
   // so the added calls just rewrite the same `Vehicle/*` values every tick
   // until a future track wires live vehicle damage; the painter's own rule 7
   // still gates the actual repaint on whether any of it changed.
-  if (occupancy) feedVehicleHud();
+  if (localPlayer.occupancy) feedVehicleHud();
   effects.firstPerson = guns.firstPerson;
   effects.advance(dt);
   // The ear is the camera's, the same listener every other voice on the page
@@ -17912,9 +17656,9 @@ if (params.has('shots')) {
   window.__THREE = THREE;
   // Flight state for headless checks: the sim is deterministic under
   // __renderOnce, so a test can step it frame by frame and read the result.
-  Object.defineProperty(window, '__aircraft', { get: () => aircraft });
+  Object.defineProperty(window, '__aircraft', { get: () => localPlayer.aircraft });
   // The driven car, its dashboard numbers included, for the same reason.
-  Object.defineProperty(window, '__car', { get: () => car });
+  Object.defineProperty(window, '__car', { get: () => localPlayer.car });
   // The stick the world springs in its occupied-vehicle tick (world.js),
   // reported through the local player's record.
   Object.defineProperty(window, '__stick', {
@@ -18028,17 +17772,17 @@ if (params.has('shots')) {
   // `__view.turn()` is the pilot's head in the cockpit — a Corsair's guns sit 40
   // degrees off the nose, so framing them means looking at them — and the orbit
   // outside it. `__setView(mode)` selects a mode without walking the cycle.
-  Object.defineProperty(window, '__view', { get: () => view });
+  Object.defineProperty(window, '__view', { get: () => localPlayer.view });
   // The external view's law as mounted: which law and frame `?chase=` chose,
   // the root's bounding radius, and the carried offset from the seat Camera.
   window.__chase = () => ({
     option: CHASE_OPTION, law: chaseRig.law, radius: chaseRig.radius,
     rel: [...chaseRig.rel], camera: chaseRig.camera?.name ?? null,
-    active: !!view?.externalLaw,
+    active: !!localPlayer.view?.externalLaw,
   });
   window.__setView = mode => {
-    if (!view) return null;
-    const set = view.setMode(mode);
+    if (!localPlayer.view) return null;
+    const set = localPlayer.view.setMode(mode);
     showView(set);
     return set;
   };
@@ -18085,7 +17829,7 @@ if (params.has('shots')) {
     for (const handle of playedEffects.splice(0)) handle.stop();
   };
   window.__getFire = () => ({
-    groups: vehicleGuns.map(group => ({
+    groups: localPlayer.vehicleGuns.map(group => ({
       name: group.node.name,
       input: group.stats.input,
       roundOfFire: group.stats.roundOfFire,
@@ -18151,7 +17895,7 @@ if (params.has('shots')) {
     pooled: guns.tracerPool.length,
     // Baked streaks recycle into their own group's pool, not the shared
     // cylinder pool, so a leak there is invisible to `pooled` alone.
-    meshPooled: vehicleGuns.reduce((n, g) => n + g.tracerMeshPool.length, 0),
+    meshPooled: localPlayer.vehicleGuns.reduce((n, g) => n + g.tracerMeshPool.length, 0),
   });
   // Seat/manned-gun state for headless checks (P2,
   // features/bf1942-3d-models/seats-and-manned-guns.md): which seat is
@@ -18159,15 +17903,15 @@ if (params.has('shots')) {
   // (ammo/heat/mags) -- `__getFire`/`vehicleGuns` above never see these, since
   // a gun/seat occupancy's own FireArms live in `mannedGuns`, not there.
   Object.defineProperty(window, '__occupancy', {
-    get: () => occupancy && {
-      rootId: occupancy.rootId,
-      rootKind: occupancy.rootKind,
-      order: occupancy.order,
-      activeSeatId: occupancy.activeSeatId,
-      activeKind: occupancy.seatKind(occupancy.activeSeatId),
+    get: () => localPlayer.occupancy && {
+      rootId: localPlayer.occupancy.rootId,
+      rootKind: localPlayer.occupancy.rootKind,
+      order: localPlayer.occupancy.order,
+      activeSeatId: localPlayer.occupancy.activeSeatId,
+      activeKind: localPlayer.occupancy.seatKind(localPlayer.occupancy.activeSeatId),
       mannedActive: mannedActive(),
-      turretAxes: occupancy.turret?.axes.map(a => ({ axis: a.axisName, angle: a.angle })) ?? null,
-      fireArms: occupancy.activeFireArmsNodes().map(n => {
+      turretAxes: localPlayer.occupancy.turret?.axes.map(a => ({ axis: a.axisName, angle: a.angle })) ?? null,
+      fireArms: localPlayer.occupancy.activeFireArmsNodes().map(n => {
         const s = fireStateFor(n);
         return {
           name: n.name, ammo: s.unlimited ? -1 : s.ammo, magsLeft: s.magsLeft,
@@ -18205,7 +17949,7 @@ if (params.has('shots')) {
   // The seated soldier itself, for the same reason.
   window.__seatSoldier = () => (seatSoldier ? {
     visible: seatSoldier.visible,
-    firstPerson: !!view?.firstPerson,
+    firstPerson: !!localPlayer.view?.firstPerson,
   } : null);
   window.__switchSeat = switchSeat;
   // Group-index bookkeeping, independent of `occupancy` (which reads null the
@@ -18216,7 +17960,7 @@ if (params.has('shots')) {
   // of it — this is `guns.groups.length` itself, so a leak shows up as soon
   // as the first exit leaves it above 0 with nobody occupying anything.
   window.__gunGroups = () => ({
-    vehicle: vehicleGuns.length, manned: mannedGuns.length, total: guns.groups.length,
+    vehicle: localPlayer.vehicleGuns.length, manned: localPlayer.mannedGuns.length, total: guns.groups.length,
   });
   window.__hudVars = () => (window.__hud && window.__hud.vars) || null;
   // Turning, for the screenshot harness. It calls the same `lookDelta` a
@@ -18951,31 +18695,31 @@ if (params.has('shots')) {
   // goes and whether she is stuck. `throttle` is the pedal, `revs` is
   // `PhysicsEngine+0xa0` — the value the thrust law actually reads.
   window.__helm = () => {
-    if (!aircraft || !('revs' in aircraft)) return null;
-    const s = aircraft.state;
+    if (!localPlayer.aircraft || !('revs' in localPlayer.aircraft)) return null;
+    const s = localPlayer.aircraft.state;
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(s.orientation);
     return {
-      throttle: +s.throttle.toFixed(4), revs: +aircraft.revs.toFixed(4),
-      load: +aircraft.load.toFixed(4),
+      throttle: +s.throttle.toFixed(4), revs: +localPlayer.aircraft.revs.toFixed(4),
+      load: +localPlayer.aircraft.load.toFixed(4),
       speed: +s.velocity.length().toFixed(4),
       along: +s.velocity.dot(fwd).toFixed(4),
       heading: +(Math.atan2(fwd.x, fwd.z) * 180 / Math.PI).toFixed(3),
       yawRate: +(s.angularVelocity.y * 180 / Math.PI).toFixed(4),
       x: +s.position.x.toFixed(3), y: +s.position.y.toFixed(3),
       z: +s.position.z.toFixed(3),
-      keel: +aircraft.keel.toFixed(3), underWater: +aircraft.underWater().toFixed(3),
-      aground: !!aircraft.aground,
+      keel: +localPlayer.aircraft.keel.toFixed(3), underWater: +localPlayer.aircraft.underWater().toFixed(3),
+      aground: !!localPlayer.aircraft.aground,
       // The RAW bed under her origin. `Ship.groundHeight` now answers the
       // footprint's floor (a synthetic number the clamp reads), so a trace that
       // wants "what is under her" has to ask `bedHeight`.
-      seaBed: +(aircraft.bedHeight
-        ? aircraft.bedHeight(s.position.x, s.position.z)
-        : aircraft.groundHeight(s.position.x, s.position.z)).toFixed(3),
+      seaBed: +(localPlayer.aircraft.bedHeight
+        ? localPlayer.aircraft.bedHeight(s.position.x, s.position.z)
+        : localPlayer.aircraft.groundHeight(s.position.x, s.position.z)).toFixed(3),
       // The deepest part of her hull that is still under the bed, which after
       // `pushOutOfBed` should be zero on any grounded hull.
-      buried: +((aircraft.deepestContact?.()?.depth) ?? 0).toFixed(4),
-      size: aircraft.spec.size.map(n => +n.toFixed(3)),
-      inertia: [aircraft.inertia.x, aircraft.inertia.y, aircraft.inertia.z],
+      buried: +((localPlayer.aircraft.deepestContact?.()?.depth) ?? 0).toFixed(4),
+      size: localPlayer.aircraft.spec.size.map(n => +n.toFixed(3)),
+      inertia: [localPlayer.aircraft.inertia.x, localPlayer.aircraft.inertia.y, localPlayer.aircraft.inertia.z],
       staticContacts: bodyWorld?.staticContacts ?? null,
     };
   };
@@ -18992,17 +18736,17 @@ if (params.has('shots')) {
   // active seat; this reports the row the number keys walk, which is what a
   // check of seat cycling has to name -- a gun count that changes says
   // something moved, not which seat it moved to.
-  window.__seatTable = () => occupancy && ({
-    control: occupancy.root?.userData?.control ?? null,
-    rootKind: occupancy.rootKind,
-    drive: occupancy.drive ? occupancy.drive.constructor.name : null,
-    active: occupancy.order.indexOf(occupancy.activeSeatId),
-    seats: occupancy.order.map((id, index) => ({
-      index, kind: occupancy.seatKind(id),
-      node: occupancy.seatInfo(id)?.node?.name ?? null,
-      fireArms: occupancy.seatInfo(id)?.fireArms.length ?? 0,
-      engine: occupancy.seatInfo(id)?.engineType ?? null,
-      axes: Object.keys(occupancy.seatInfo(id)?.axes || {}),
+  window.__seatTable = () => localPlayer.occupancy && ({
+    control: localPlayer.occupancy.root?.userData?.control ?? null,
+    rootKind: localPlayer.occupancy.rootKind,
+    drive: localPlayer.occupancy.drive ? localPlayer.occupancy.drive.constructor.name : null,
+    active: localPlayer.occupancy.order.indexOf(localPlayer.occupancy.activeSeatId),
+    seats: localPlayer.occupancy.order.map((id, index) => ({
+      index, kind: localPlayer.occupancy.seatKind(id),
+      node: localPlayer.occupancy.seatInfo(id)?.node?.name ?? null,
+      fireArms: localPlayer.occupancy.seatInfo(id)?.fireArms.length ?? 0,
+      engine: localPlayer.occupancy.seatInfo(id)?.engineType ?? null,
+      axes: Object.keys(localPlayer.occupancy.seatInfo(id)?.axes || {}),
     })),
   });
   // Every damageable thing in the level and what it is currently showing, for a
@@ -19030,24 +18774,24 @@ if (params.has('shots')) {
   // So this also hands back the two calls `frame()` makes — the same object,
   // the same level collider, the same material map — and a check can step
   // them synchronously at whatever rate it wants.
-  window.__drive = () => (car ? {
+  window.__drive = () => (localPlayer.car ? {
     state: () => ({
-      speed: car.state.velocity.length(),
-      along: car.state.velocity.dot(
-        new THREE.Vector3(0, 0, -1).applyQuaternion(car.state.orientation)),
-      position: { ...car.state.position },
-      velocity: { ...car.state.velocity },
-      grounded: car.state.grounded,
+      speed: localPlayer.car.state.velocity.length(),
+      along: localPlayer.car.state.velocity.dot(
+        new THREE.Vector3(0, 0, -1).applyQuaternion(localPlayer.car.state.orientation)),
+      position: { ...localPlayer.car.state.position },
+      velocity: { ...localPlayer.car.state.velocity },
+      grounded: localPlayer.car.state.grounded,
       // Attitude, in degrees: a deck trace has to see the hull pitch up an
       // incline and level off on the pad, and reading that off the orientation
       // quaternion outside the page is needless work.
       pitch: THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1,
-        new THREE.Vector3(0, 0, -1).applyQuaternion(car.state.orientation).y)))),
+        new THREE.Vector3(0, 0, -1).applyQuaternion(localPlayer.car.state.orientation).y)))),
       roll: THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1,
-        new THREE.Vector3(1, 0, 0).applyQuaternion(car.state.orientation).y)))),
-      gear: car.gear ?? null,
-      revs: car.revs ?? null,
-      wheels: car.wheels.map(w => ({
+        new THREE.Vector3(1, 0, 0).applyQuaternion(localPlayer.car.state.orientation).y)))),
+      gear: localPlayer.car.gear ?? null,
+      revs: localPlayer.car.revs ?? null,
+      wheels: localPlayer.car.wheels.map(w => ({
         compression: w.compression, load: w.load,
         friction: w.friction, latched: w.staticGrip, driven: w.driven,
       })),
@@ -19056,14 +18800,14 @@ if (params.has('shots')) {
       // only observable that says "the building answered as a body" rather
       // than "the sweep stopped me", and `normalY` is the whole of why a
       // side-on one brings no friction.
-      hullSolved: car.hullSolved,
-      hullContacts: car.hullContacts.map(c => ({
+      hullSolved: localPlayer.car.hullSolved,
+      hullContacts: localPlayer.car.hullContacts.map(c => ({
         normalY: c.normalY, friction: c.friction, count: c.count,
         at: [c.x, c.y, c.z],
       })),
     }),
-    setInput: (name, value) => car.setInput(name, value),
-    integrate: dt => car.integrate(dt),
+    setInput: (name, value) => localPlayer.car.setInput(name, value),
+    integrate: dt => localPlayer.car.integrate(dt),
     // Stand it somewhere exact, stopped and pointing at a heading — the same
     // job `__teleport` does for the soldier, and needed for the same reason.
     // A measured top speed or brake distance is only a measurement if the
@@ -19072,11 +18816,11 @@ if (params.has('shots')) {
     // the collision sweep rather than the drivetrain. Drops it a little clear
     // of the ground and lets the springs take it, exactly as a spawn does.
     place: (x, y, z, yaw = 0) => {
-      car.state.position.set(x, y, z);
-      car.state.velocity.set(0, 0, 0);
-      car.state.angularVelocity.set(0, 0, 0);
-      car.state.orientation.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
-      return { ...car.state.position };
+      localPlayer.car.state.position.set(x, y, z);
+      localPlayer.car.state.velocity.set(0, 0, 0);
+      localPlayer.car.state.angularVelocity.set(0, 0, 0);
+      localPlayer.car.state.orientation.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+      return { ...localPlayer.car.state.position };
     },
     // Where the level's heightfield and material map put the ground under a
     // world (x, z): the two functions the drivetrain itself is handed. `fromY`
@@ -19095,9 +18839,9 @@ if (params.has('shots')) {
     sweep: (dx, dy, dz, dist, deckStepTop = -Infinity, deckFloorCos = 2) => {
       if (!collider) return null;
       const len = Math.hypot(dx, dy, dz) || 1;
-      const s = car.state.position;
+      const s = localPlayer.car.state.position;
       const hit = collider.sweepSphere(s.x, s.y, s.z, dx / len, dy / len, dz / len,
-        dist, car._hullRadius, car._collisionOwner, true, deckStepTop, deckFloorCos);
+        dist, localPlayer.car._hullRadius, localPlayer.car._collisionOwner, true, deckStepTop, deckFloorCos);
       if (!hit) return null;
       const tris = collider.statics?.tris;
       const j = hit.triangle * 9;
@@ -19112,7 +18856,7 @@ if (params.has('shots')) {
              [tris[j + 3], tris[j + 4], tris[j + 5]],
              [tris[j + 6], tris[j + 7], tris[j + 8]]]
           : null,
-        radius: car._hullRadius,
+        radius: localPlayer.car._hullRadius,
       };
     },
   } : null);
@@ -19121,7 +18865,7 @@ if (params.has('shots')) {
   window.__inputGate = () => ({
     blocked: vehicleInput.blocked,
     rotationalScale: vehicleInput.rotationalScale,
-    turretInputScale: occupancy?.turret?.inputScale ?? null,
+    turretInputScale: localPlayer.occupancy?.turret?.inputScale ?? null,
     occupied: occupiedVehicleDamage()
       ? { hp: occupiedVehicleDamage().hitPoints,
           critical: occupiedVehicleDamage().critical,
@@ -19150,10 +18894,10 @@ if (params.has('shots')) {
     if (!bodyWorld) return null;
     if (on !== undefined) {
       bodyWorld.statics = on && collider?.statics ? collider.staticProbe() : null;
-      const driven = car || aircraft;
+      const driven = localPlayer.car || localPlayer.aircraft;
       if (driven && 'hullSolved' in driven) driven.hullSolved = !!bodyWorld.statics;
     }
-    return { solver: !!bodyWorld.statics, sweep: !((car || aircraft)?.hullSolved) };
+    return { solver: !!bodyWorld.statics, sweep: !((localPlayer.car || localPlayer.aircraft)?.hullSolved) };
   };
   // Static-world contacts the last body tick found, for any driven vehicle —
   // the one number that says the hull met the level, for an aircraft as well
@@ -19170,34 +18914,34 @@ if (params.has('shots')) {
   // second half actually ran.
   window.__stepSim = (ticks = 1, dt = 1 / 30) => {
     for (let i = 0; i < ticks; i++) {
-      (car || aircraft)?.integrate(dt);
+      (localPlayer.car || localPlayer.aircraft)?.integrate(dt);
       bodyWorld?.tick();
     }
-    (car || aircraft)?.applyTransform();
+    (localPlayer.car || localPlayer.aircraft)?.applyTransform();
     return bodyWorld?.ticks ?? 0;
   };
   window.__crashLog = () => (crashLog ??= []);
   // The aircraft under the player, for a stepped test: inputs, state, a pose.
-  window.__plane = () => (aircraft ? {
-    setInput: (name, value) => aircraft.setInput(name, value),
-    state: () => ({ position: { ...aircraft.state.position }, velocity: { ...aircraft.state.velocity },
-      grounded: aircraft.state.grounded, throttle: aircraft.state.throttle }),
+  window.__plane = () => (localPlayer.aircraft ? {
+    setInput: (name, value) => localPlayer.aircraft.setInput(name, value),
+    state: () => ({ position: { ...localPlayer.aircraft.state.position }, velocity: { ...localPlayer.aircraft.state.velocity },
+      grounded: localPlayer.aircraft.state.grounded, throttle: localPlayer.aircraft.state.throttle }),
     place: (x, y, z, vx, vy, vz) => {
-      aircraft.state.position.set(x, y, z);
-      aircraft.state.velocity.set(vx, vy, vz);
-      aircraft.applyTransform();
+      localPlayer.aircraft.state.position.set(x, y, z);
+      localPlayer.aircraft.state.velocity.set(vx, vy, vz);
+      localPlayer.aircraft.applyTransform();
       snapPresentation();
     },
-    integrate: dt => aircraft.integrate(dt),
+    integrate: dt => localPlayer.aircraft.integrate(dt),
   } : null);
   // The E key. Not the same thing as `__setOnFoot(false)`: the debug toggle
   // calls `Vehicle.reset()`, which teleports the hull back to its spawn pose,
   // while stepping out leaves it standing where its driver left it. A check on
   // anything that depends on where a driven vehicle ENDED UP has to use this.
   window.__exitVehicle = () => {
-    if (!(aircraft || car) || !occupancy) return false;
+    if (!(localPlayer.aircraft || localPlayer.car) || !localPlayer.occupancy) return false;
     exitVehicle();
-    return !occupancy;
+    return !localPlayer.occupancy;
   };
   window.__wakeBody = owner => { const e = bodyWorld?.get(owner); e?.parked?.body.wake(); return !!e?.parked; };
   // Climb into a placed vehicle by owner id, and put the driven one somewhere
@@ -19206,21 +18950,52 @@ if (params.has('shots')) {
     const node = damageVisuals.get(owner)?.node;
     if (!node) return false;
     enterVehicle({ vehicle: node, seatId: null });
-    return !!(car || aircraft);
+    return !!(localPlayer.car || localPlayer.aircraft);
+  };
+  // Into a given seat of a given hull through the page's own `enterVehicle`
+  // (the E key's path): `node` a hull root, `seatId` one of its seats (null:
+  // the root seat). A seat someone holds refuses, as the E key does.
+  window.__enterSeat = (node, seatId = null) => {
+    if (!node) return false;
+    enterVehicle({ vehicle: node, seatId });
+    return localPlayer.occupancy?.root === node
+      && (seatId == null || localPlayer.occupancy.seatId === seatId);
+  };
+  // E from whatever seat the player holds, through the page's own exit.
+  window.__exitSeat = () => {
+    if (!localPlayer.occupancy) return false;
+    exitSeat();
+    return !localPlayer.occupancy;
+  };
+  // The hull the local player rides, as its instance sees it: who holds
+  // which seat, and the one drive's state.
+  window.__hull = () => {
+    const seat = localPlayer.occupancy;
+    if (!seat) return null;
+    const s = seat.drive?.state;
+    return {
+      template: seat.root.userData?.control ?? seat.root.name, seat: seat.seatId,
+      seats: Object.fromEntries(seat.instance.seats),
+      drive: seat.drive ? seat.drive.constructor.name : null,
+      pos: s ? [s.position.x, s.position.y, s.position.z] : null,
+      speed: s ? Math.hypot(s.velocity.x, s.velocity.z) : null,
+      guns: [...seat.groups.driven, ...seat.groups.manned]
+        .map(g => ({ name: g.node.name, firing: g.firing, shots: g.shots })),
+    };
   };
   // The occupied vehicle's interior, settled: true once it is grafted, false
   // for a vehicle that has none. A check counting what an entry costs the GPU
   // has to sample after this, or the glb lands in whichever cycle it likes.
   window.__cockpitReady = () =>
-    ((aircraft || car)?.cockpitReady ?? Promise.resolve(null)).then(Boolean);
+    ((localPlayer.aircraft || localPlayer.car)?.cockpitReady ?? Promise.resolve(null)).then(Boolean);
   // The same for a ship, and it needs its own: a hull is placed at her DRAFT
   // rather than on the ground, and the yaw is what a beaching run needs (thrust
   // runs along the hull's forward axis, so a test that cannot point her cannot
   // aim her at a shore).
   window.__placeShip = (x, z, yaw, speed = 0) => {
-    if (!aircraft || !('revs' in aircraft)) return null;
-    const s = aircraft.state;
-    const floats = floatNodesOf(aircraft.node);
+    if (!localPlayer.aircraft || !('revs' in localPlayer.aircraft)) return null;
+    const s = localPlayer.aircraft.state;
+    const floats = floatNodesOf(localPlayer.aircraft.node);
     const water = collider?.waterLevel ?? extras?.waterLevel;
     const y = floats.length && Number.isFinite(water)
       ? equilibriumRootY(floats, water) : s.position.y;
@@ -19229,22 +19004,22 @@ if (params.has('shots')) {
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(s.orientation);
     s.velocity.copy(fwd).multiplyScalar(speed);
     s.angularVelocity.set(0, 0, 0);
-    aircraft.revs = 0;
-    aircraft.load = 0;
-    aircraft.loadCount = 0;
-    aircraft.applyTransform();
+    localPlayer.aircraft.revs = 0;
+    localPlayer.aircraft.load = 0;
+    localPlayer.aircraft.loadCount = 0;
+    localPlayer.aircraft.applyTransform();
     snapPresentation();
     return window.__helm();
   };
   window.__placeCar = (x, z, yaw, speed = 0) => {
-    if (!car) return null;
-    const s = car.state;
+    if (!localPlayer.car) return null;
+    const s = localPlayer.car.state;
     s.position.set(x, groundHeight(x, z) + 0.6, z);
     s.orientation.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(s.orientation);
     s.velocity.copy(fwd).multiplyScalar(speed);
     s.angularVelocity.set(0, 0, 0);
-    car.applyTransform();
+    localPlayer.car.applyTransform();
     snapPresentation();
     return { forward: [fwd.x, fwd.y, fwd.z] };
   };

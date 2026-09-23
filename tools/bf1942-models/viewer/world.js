@@ -756,6 +756,7 @@ export class World {
   #tick() {
     const dt = WORLD_TICK_DT;
     let combatStepped = false;
+    this.#assignIntegrators();
     for (const player of this.players.values()) {
       const before = { ...player.lookApplied };
       if (player.occupancy) this.#vehicleTick(player, dt);
@@ -784,6 +785,24 @@ export class World {
     // not the mid-tick pose `integrate` left on the scene graph.
     this.onTick?.();
   }
+
+  /**
+   * One drivetrain, one integration a tick. Every occupant of a hull holds the
+   * hull's single drive (`vehicle-instance.js`), so the drive is stepped in
+   * the tick of whoever holds its root seat (their input reaches it first), or
+   * of its first occupant when nobody drives and the hull coasts.
+   */
+  #assignIntegrators() {
+    const owners = this.#integrators;
+    owners.clear();
+    for (const player of this.players.values()) {
+      const vehicle = player.occupancy ? player.vehicle : null;
+      if (!vehicle) continue;
+      if (!owners.has(vehicle) || player.occupancy.isActiveRoot()) owners.set(vehicle, player);
+    }
+  }
+
+  #integrators = new Map();
 
   // --- the per-player steps, in frame()'s own order ------------------------
 
@@ -879,7 +898,6 @@ export class World {
           vehicle.setInput('c_PIFire', input.fire ? 1 : 0);
           vehicle.setInput('c_PIAltFire', input.altFire ? 1 : 0);
         }
-        vehicle.integrate(dt);
       } else {
         // Ground vehicles take keyboard input directly -- the vehicle's own
         // RotationalBundle servo is the only governor (the page's comment on
@@ -904,13 +922,17 @@ export class World {
           vehicle.setInput('c_PIFire', input.fire ? 1 : 0);
           vehicle.setInput('c_PIAltFire', input.altFire ? 1 : 0);
         }
-        vehicle.integrate(dt);
       }
-      // After `integrate`, never before: it ends in `applyRig`, which puts
-      // every declared RotationalBundle back at hull-forward. Stepping the
-      // aim rig afterwards is what leaves the traverse where the player
-      // pointed it.
-      occ.applyTurrets();
+      // Once a tick, by the root seat's holder (or the first occupant of a
+      // hull nobody drives): the drive is the hull's, not the seat's.
+      if (this.#integrators.get(vehicle) === player) {
+        vehicle.integrate(dt);
+        // After `integrate`, never before: it ends in `applyRig`, which puts
+        // every declared RotationalBundle back at hull-forward. Stepping the
+        // aim rig afterwards is what leaves the traverse where the player
+        // pointed it.
+        occ.applyTurrets();
+      }
     }
 
     // The turret is stepped when the seat that owns it is the one active:
