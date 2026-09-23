@@ -92,9 +92,7 @@ class LandingTests(unittest.TestCase):
         # WesternMainBaseExit lists SeaArea3 as a neighbour (Wake's own line).
         self.assertEqual(t["path"], ["SeaArea3", "WesternMainBaseExit", "MainBase"])
         f = t["fromSeaArea3"]
-        self.assertEqual((f["kind"], f["via"]), ("WPMoveToBeachLanding", "CrossRoads"))
-        self.assertEqual(f["radius"], f["expected"])
-        self.assertGreater(f["radius"], 30)
+        self.assertEqual(f, {"kind": "WPMoveToBeachLanding", "via": "CrossRoads", "radius": 5})
         # No zone user on that way (this copy gives WesternMainBaseExit no
         # zone): the ordinary WPMoveTo.
         self.assertIsNone(t["mainBaseFromSeaArea3"])
@@ -131,6 +129,19 @@ class LandingTests(unittest.TestCase):
 
     def test_a_tipped_craft_bails_at_sea(self) -> None:
         self.assertEqual(self.r["tipped"], ["c", "p1", "p2"])
+
+    def test_the_crews_own_bail_test(self) -> None:
+        # BBChangeLandingCraft 0x085602b0: in ANY zone, under 2 m/s (strict,
+        # 0x8560c60), on the soldier's map; or tipped, anywhere.
+        b = self.r["bailReason"]
+        self.assertEqual(b["beached"], "beach")
+        self.assertIsNone(b["fast"])
+        self.assertIsNone(b["atTwo"])
+        self.assertIsNone(b["wet"])
+        self.assertIsNone(b["offZone"])
+        self.assertEqual(b["bay"], "beach")                       # another zone than the order's
+        self.assertEqual(b["tippedAtSea"], "tipped")
+        self.assertTrue(b["sameZones"])
 
 
 if __name__ == "__main__":
