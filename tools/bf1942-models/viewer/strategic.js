@@ -15,6 +15,36 @@
 /** The engine's vehicle-type names used by `setOrderPosition`. */
 export const INFANTRY_TYPE = 'Infantery';
 
+/**
+ * An area's geometry as the engine builds it. `aiStrategicArea.create <name>
+ * p1 p2 r` (`AIStrategicObjectManager::create` 0x08646ad0 passes both points
+ * straight to the ctor 0x0863c000): p1 is the top-left corner (+0x10c/+0x110,
+ * `setTopLeftCorner` 0x0863e7b0), p2 the area's position for both sides
+ * (+0x84/+0x8c, `setPosition` 0x0863e770), and the ctor sets each side's
+ * radius (+0x98/+0x9c) to |p2 - p1| (0x0863c657..0x0863c6d1); `r` is side 0's
+ * radius (+0x94, `AIStrategicObject` ctor 0x08643140). The box is a CENTRE box
+ * (`isInside` 0x08641d40 -> `insideCentreBox` 0x08653fa0): p1 <= p <= 2 p2 - p1
+ * (`getBoxMaxCorner` 0x08654090), so p2 is the middle and the box is twice
+ * the authored rectangle on each axis.
+ *
+ * The exporter keeps min/max, not p1/p2. Every vanilla, XPack1 and XPack2
+ * area (326 + 86 + 69) lists p1 below p2 on both axes, so p1 is the min x and
+ * the min engine z; the viewer's z is the engine's -z, so in the viewer p1 is
+ * (min x, max z) and p2 (max x, min z). An area that carries `corner` and
+ * `position` (a later export) is taken as given.
+ */
+export function areaGeometry(a) {
+  const corner = a.corner ?? [a.min[0], a.max[1]];
+  const position = a.position ?? [a.max[0], a.min[1]];
+  const far = [2 * position[0] - corner[0], 2 * position[1] - corner[1]];
+  return {
+    corner, position,
+    min: [Math.min(corner[0], far[0]), Math.min(corner[1], far[1])],
+    max: [Math.max(corner[0], far[0]), Math.max(corner[1], far[1])],
+    sideRadius: Math.hypot(position[0] - corner[0], position[1] - corner[1]),
+  };
+}
+
 export class StrategicLayer {
   /**
    * @param {object|null} ai   `extras.ai`
@@ -31,10 +61,11 @@ export class StrategicLayer {
     this.sideStrategies = { 1: [], 2: [] };
     if (!ai) return;
     for (const a of ai.strategicAreas ?? []) {
+      const g = areaGeometry(a);
       const area = {
         name: a.name,
-        min: a.min, max: a.max, radius: a.radius ?? 0,
-        centre: [(a.min[0] + a.max[0]) / 2, (a.min[1] + a.max[1]) / 2],
+        min: g.min, max: g.max, radius: a.radius ?? 0,
+        corner: g.corner, centre: g.position, sideRadius: g.sideRadius,
         neighbours: a.neighbours ?? [],
         flags: new Set(a.flags ?? []),
         orderPositions: a.orderPositions ?? {},
@@ -119,15 +150,44 @@ export class StrategicLayer {
     return true;
   }
 
-  /** The point an infantry order to `area` walks to. */
-  orderPosition(area, vehicleType = INFANTRY_TYPE) {
-    const p = area.orderPositions[vehicleType] ?? area.orderPositions[INFANTRY_TYPE];
-    if (p) return [p[0], p[1]];
-    if (area.controlPoints.length) {
-      const f = area.controlPoints[0];
-      return [f.position[0], f.position[2]];
-    }
+  /**
+   * `AIStrategicArea::getOrderPos(map, side)` 0x0863e830: the order position
+   * of the unit's search map. The ctor fills the per-map table with p2
+   * (0x0863c250..0x0863c282); `setOrderPosition <type> x/z` 0x08647880 finds
+   * the map of that search type (IAIPathfinding vt+0x20) and keeps the point
+   * only when that map calls it valid (vt+0x78), so an order position on a
+   * blocked cell leaves p2. `isValid(x, z)` is the unit map's test.
+   */
+  orderPosition(area, vehicleType = INFANTRY_TYPE, isValid = null) {
+    const p = area.orderPositions[vehicleType];
+    if (p && (!isValid || isValid(p[0], p[1]))) return [p[0], p[1]];
     return [area.centre[0], area.centre[1]];
+  }
+
+  /** `AIStrategicArea::isInside` 0x08641d40: inside the centre box. */
+  isInside(area, x, z) {
+    return x >= area.min[0] && x <= area.max[0] && z >= area.min[1] && z <= area.max[1];
+  }
+
+  /** Side `side`'s radius (+0x94 + side*4): r for side 0, |p2 - p1| for 1 and 2. */
+  sideRadius(area, side) {
+    return side === 1 || side === 2 ? area.sideRadius : area.radius;
+  }
+
+  /**
+   * `AIStrategicObject::randomizePos(side, f)` 0x086449e0: p2 + rand * W * f
+   * - W / 2 per axis, W = `getXExtent`/`getYExtent` 0x0863fc50/0x0863fc70 =
+   * 2 (p2 - p1). The span runs from p1 to p1 + 2f (p2 - p1): with f = 0.8 it
+   * covers the corner's 80% of the box, not a disc about the middle. The same
+   * form holds in the viewer frame (z negated on both points).
+   */
+  randomizePos(area, factor, random = Math.random) {
+    const out = [0, 0];
+    for (let k = 0; k < 2; k++) {
+      const w = 2 * (area.centre[k] - area.corner[k]);
+      out[k] = area.centre[k] + random() * w * factor - 0.5 * w;
+    }
+    return out;
   }
 
   /** The area objects adjacent to `area`. */
@@ -238,6 +298,10 @@ export const SAI = {
   wantedNotOwned: 1.25,
   surplusKeep: 1.1,
   reorderIdle: 20.0,
+  /** `SAI::updateBotPositions` 0x08635bc0: an arrived bot is re-ordered after
+   *  20 s on foot, 35 s in a vehicle, while it sees fewer than 2 objects. */
+  reorderMounted: 35.0,
+  reorderSpottedMax: 2,
   randomizeFraction: 0.8,
   waypointRadiusFraction: 0.25,
   waypointRadiusMin: 5.0,
@@ -248,12 +312,18 @@ export const SAI = {
 export class StrategicAI {
   /**
    * @param {StrategicLayer} layer
-   * @param {object} [opt]  `random`, `isWalkable(x, z)`
+   * @param {object} [opt]  `random`, `isWalkable(x, z)` (the infantry map),
+   *   `unitOf(id)` -> `{ type, isWalkable, radius, pathRadius, mounted }`: the
+   *   bot's unit, its search type (`Infantery`/`Tank`/`Car`), the test of its
+   *   own search map, its bounding radius and its `getMaxPathPosRemovalDistance`;
+   *   `spottedOf(id)` -> how many objects the bot sees.
    */
-  constructor(layer, { random = Math.random, isWalkable = null } = {}) {
+  constructor(layer, { random = Math.random, isWalkable = null, unitOf = null, spottedOf = null } = {}) {
     this.layer = layer;
     this.random = random;
     this.isWalkable = isWalkable;
+    this.unitOf = unitOf;
+    this.spottedOf = spottedOf;
     this.time = 0;
     this.lastPass = -Infinity;
     /** Per side: the strategy container list and the active one. */
@@ -562,39 +632,79 @@ export class StrategicAI {
       const area = b.area ?? this.layer.nearestArea(p[0], p[2]);
       if (area) this._order(b, area, side);
     }
+    this._reorderArrived(myBots, side);
   }
 
-  /** `orderNormalBot`: a WPMoveTo at the area's (randomised) position. */
-  _order(bot, area, side) {
-    const st = this.areaState.get(area)[side];
-    const base = this.layer.orderPosition(area);
-    const R = Math.max(SAI.waypointRadiusMin, area.radius * SAI.waypointRadiusFraction + 2 * SAI.unitRadius);
-    let point = base;
-    for (let i = 0; i < 20; i++) {
-      const ang = this.random() * Math.PI * 2;
-      const r = this.random() * area.radius * SAI.randomizeFraction;
-      const cand = [base[0] + Math.cos(ang) * r, base[1] + Math.sin(ang) * r];
-      if (!this.isWalkable || this.isWalkable(cand[0], cand[1])) { point = cand; break; }
+  /**
+   * `SAI::updateBotPositions` 0x08635bc0 (the assigned, attacker and
+   * defender lists alike): a bot whose single-point order has arrived
+   * (WPMoveTo +5) is ordered again into the area it holds once 20 s (on foot)
+   * or 35 s (in a vehicle: `getControlledObject` != the soldier) have passed
+   * since its last order, while it sees fewer than 2 objects and is present
+   * in that area. A new random point moves it on.
+   */
+  _reorderArrived(myBots, side) {
+    for (const b of myBots) {
+      if (b.free || !b.assignedTo || !b.waypoints?.arrived) continue;
+      const mounted = !!this.unitOf?.(b.id)?.mounted;
+      if (this.time - b.orderedAt <= (mounted ? SAI.reorderMounted : SAI.reorderIdle)) continue;
+      if ((this.spottedOf?.(b.id) ?? 0) >= SAI.reorderSpottedMax) continue;
+      if (b.area !== b.assignedTo) continue;
+      this._order(b, b.assignedTo, side);
     }
+  }
+
+  /**
+   * `AIStrategicArea::orderNormalBot` 0x08640bd0 (no route: the bot is
+   * ordered into this area directly). The point is `randomizePos(side, 0.8)`,
+   * tried up to 20 times against the bot's OWN unit map (IAIPathfinding
+   * vt+0x78 on the Mobile plug-in's map), else `getOrderPos(map, side)`. The
+   * WPMoveTo radius is 0.25 x the side's radius + 2 x the unit's bounding
+   * radius, at least 5 (`WPMoveTo` ctor 0x08537200).
+   */
+  _order(bot, area, side) {
+    const unit = this.unitOf?.(bot.id) ?? null;
+    const type = unit?.type ?? INFANTRY_TYPE;
+    const valid = unit?.isWalkable ?? this.isWalkable;
+    const bounding = unit?.radius ?? SAI.unitRadius;
+    const R = Math.max(SAI.waypointRadiusMin,
+                       this.layer.sideRadius(area, side) * SAI.waypointRadiusFraction + 2 * bounding);
+    let point = null;
+    for (let i = 0; i < 20; i++) {
+      const cand = this.layer.randomizePos(area, SAI.randomizeFraction, this.random);
+      if (!valid || valid(cand[0], cand[1])) { point = cand; break; }
+    }
+    if (!point) point = this.layer.orderPosition(area, type, valid);
+    const layer = this.layer;
     bot.orderedAt = this.time;
     bot.waypoints = {
       kind: 'WPMoveTo',
       area,
       point,
       radius: R,
-      owned: () => this.layer.ownerOf(area) === side,
-      inside: (x, z) => this.layer.areaAt(x, z) === area,
-      /** `WPMoveTo::getUrgency`: distance-scaled, x2 for a hostile area,
-       *  0 once inside an owned one; arrived at `d^2 < 2 R^2`. */
-      urgency(x, z, unitRadius = SAI.unitRadius) {
-        const Rr = R + unitRadius;
+      unitType: type,
+      owned: () => layer.ownerOf(area) === side,
+      /**
+       * `WPMoveTo::getUrgency` 0x085374a0 on the last point. R' = round(R)
+       * + the unit's `getMaxPathPosRemovalDistance` (Bot vt+0xf8,
+       * `BotMain` 0x0852b780). Inside R' the order has arrived and asks for
+       * nothing. Otherwise: x2 in an area the side does not hold (area
+       * +0x70[side] is the side's status, 0 Owned / 1 Hostile / 2 Neutral by
+       * `operator<<` 0x08489660); in a held one 0 inside its box, else x1 with the
+       * side's radius taken off d^2. Arrived again when d^2 < 2 R'^2; the
+       * urgency is clamp(d^2 / 4R'^2, 0.1, 1) x the factor.
+       */
+      urgency(x, z, pathRadius = SAI.unitRadius) {
+        const Rr = Math.round(R) + pathRadius;
+        const R2 = Rr * Rr;
         let d2 = (x - point[0]) ** 2 + (z - point[1]) ** 2;
+        if (d2 < R2) { this.arrived = true; return 0; }
         let factor;
         if (!this.owned()) factor = 2.0;
-        else if (this.inside(x, z)) { factor = 0; d2 = 0; }
-        else { factor = 1.0; d2 = Math.max(0, d2 - area.radius * area.radius); }
-        this.arrived = d2 < 2 * Rr * Rr;
-        return Math.min(1, Math.max(0.1, d2 / (4 * Rr * Rr))) * factor;
+        else if (layer.isInside(area, x, z)) { factor = 0; d2 = 0; }
+        else { factor = 1.0; d2 -= layer.sideRadius(area, side) ** 2; }
+        this.arrived = d2 < 2 * R2;
+        return Math.min(1, Math.max(0.1, d2 / (4 * R2))) * factor;
       },
       arrived: false,
     };

@@ -315,14 +315,25 @@ current) * (mod * 4)`; the full read is §8.
   **0x0863eb50** takes available bots from the nearest source areas until
   `present >= wanted`, then the targets round-robin one unit at a time
   (`collectAdditionalResources`); `releaseSurplus` keeps ≈110 % of wanted.
-- `AIStrategicArea::orderNormalBot` **0x08640bd0**: a `WPMoveTo(radius =
-  0.25 * area radius + 2 * unit radius, ...)` (at least **5**) at the area's
-  position randomised inside 0.8 of its radius (20 tries for a valid map
-  point, else the order position), 25 m up for the air bot variant. `WPMoveTo
-  ::getUrgency` **0x085374a0** on the last point: `clamp(d² / (4 R²), 0.1, 1)
-  × 2` for a non-owned area, ×1 owned and outside, 0 owned and inside;
-  arrived when `d² < 2 R²`. `SAI::updateBotPositions` **0x08635bc0** re-orders
-  an idle present bot every **20 s** (35 s in a vehicle). `BBMoveTo::
+- `AIStrategicArea::orderNormalBot` **0x08640bd0** (corrected 2026-09-23,
+  ledger AI-70): a `WPMoveTo(radius = 0.25 * the side's radius + 2 * the
+  unit's bounding radius, ...)` (at least **5**). An area is `create p1 p2
+  r`: p1 a corner, p2 its position for both sides and the middle of a centre
+  box p1..2p2-p1 (`isInside` **0x08641d40**), each side's radius |p2 - p1|
+  (r is side 0's only). The point is `randomizePos(side, 0.8)`
+  **0x086449e0**, p2 + rand W 0.8 - W/2 with W = 2 (p2 - p1), so it spans
+  the corner's 80% of the box; 20 tries on the bot's own unit map, else
+  `getOrderPos(map)` **0x0863e830**: the unit type's `setOrderPosition` if it
+  was valid on that map at load, else p2. 25 m up for the air bot variant.
+  `WPMoveTo::getUrgency` **0x085374a0** on the last point: R' = round(R) +
+  `getMaxPathPosRemovalDistance` (**0x0852b780**); inside R' arrived and 0;
+  else `clamp(d² / (4 R'²), 0.1, 1)` × 2 for an area the side does not hold,
+  ×1 held and outside (the side radius² off d²), 0 held and inside; arrived
+  again when `d² < 2 R'²`. `SAI::updateBotPositions` **0x08635bc0** re-orders
+  an arrived bot present in its area, seeing fewer than 2 objects, after
+  **20 s** (35 s in a vehicle). `ControlPoint::handleFrameUpdate`
+  **0x08283b00** counts a player by the 3D distance of the object he
+  controls, so a tank captures by its hull. `BBMoveTo::
   calculateUrgency` **0x08574f80** is that urgency times the radio messages
   and the modifier. `BotMain::recieveOrder` **0x085211a0** (order multipliers
   of 1.3) has no caller in the dumped SAI: orders travel as waypoints.
