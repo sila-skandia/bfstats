@@ -127,6 +127,15 @@ class SimVehicleTests(unittest.TestCase):
         self.assertEqual(r["fired"], ["gun:AA_Allies:AA_Allies_GunBarrel_1"])
         self.assertGreater(sum(r["landed"].values()), 5, "the rounds fly and land")
 
+    def test_a_fixed_gun_holds_fire_on_what_it_has_not_spotted(self) -> None:
+        # Brief R item 2 (ledger AI-122): a Fixed unit's Fire is
+        # `BBFireInfantery`, which scores only the spotted list; the old
+        # large-bore rule fired on an unseen soldier through
+        # `getEnemyObjects`. Behind the pit's lip he is never spotted.
+        r = recipe("fixedGunHidden")
+        self.assertFalse(r["spotted"])
+        self.assertEqual(r["rounds"], 0)
+
     def test_a_bot_takes_a_free_aa_gun_by_itself(self) -> None:
         # Brief K item 1: the gun's value is its `basicTemp` (9), not its
         # strategic strength (0), and its reach test is the engine's (a trace
@@ -165,17 +174,20 @@ class SimVehicleTests(unittest.TestCase):
         self.assertEqual(b["alliedEye"], b["alliedGun"])
 
     def test_the_tank_pair_close_until_one_can_fire(self) -> None:
-        # Brief P item 3 (ledger AI-116): K's North outpost pair, set down
-        # 158.7 m apart where K's run left them. The engine's fire plan
-        # closes by `BAPAMoveToObjectFinding` while S (in range, a valid
-        # aim, a line of fire) fails and the target is beyond `mid` (52 m
-        # for the 2 .. 250 m main guns); the old plan sat in Fire.
-        control = recipe("tankApproachControl")
-        self.assertGreater(control["closest"], 150.0)
-        self.assertEqual(control["rounds"], {"axis": 0, "allied": 0})
+        # Brief P item 3 (ledger AI-116) and Brief R (AI-121..AI-123): K's
+        # North outpost pair, set down 158.7 m apart where K's run left them.
+        # A tank's Fire is `BBFireInfantery` (the spotted list only), so
+        # neither is in Fire until it has seen the other: both drive on
+        # their order and meet. They see each other from their cameras,
+        # rays to points on the hulls (the old soldier-height rays from 2 m
+        # over the hull origin never cleared the crest); then S holds
+        # (in range, a valid aim, the target not lost) and the trigger,
+        # gated on S alone, lets go. Before Brief R the pair closed to 45 m
+        # on an unspotted target and held there with no round live.
         r = recipe("tankApproach")
-        self.assertGreater(r["moves"]["axis"].get("find", 0), 0)
-        self.assertGreater(r["moves"]["allied"].get("find", 0), 0)
+        self.assertGreater(r["behs"]["axis"].get("MoveTo", 0), 0, "no Fire before the other is spotted")
+        self.assertGreater(r["behs"]["allied"].get("MoveTo", 0), 0, "no Fire before the other is spotted")
+        self.assertGreater(r["moves"]["axis"].get("hold", 0) + r["moves"]["allied"].get("hold", 0), 0)
         self.assertLess(r["closest"], 60.0)
         self.assertGreater(r["rounds"]["axis"] + r["rounds"]["allied"], 0)
         self.assertIsNotNone(r["firstRound"])
