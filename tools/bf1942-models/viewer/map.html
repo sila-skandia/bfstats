@@ -260,6 +260,10 @@ import { createSpawning } from './spawning.js';
 import { createMapSurfaces } from './map-surfaces.js';
 import { createHudFeed } from './hud-feed.js';
 import { createHandWeapon } from './hand-weapon.js';
+import { createSeatPose } from './seat-pose.js';
+import { createFootBody } from './foot-body.js';
+import { createSoldierView } from './soldier-view.js';
+import { createPageAudio } from './page-audio.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -534,16 +538,6 @@ function updateHud() {
   }
 }
 if (isTouchDevice) hud.textContent = getTouchHudText();
-
-let audioListener = null;
-let audioLoader = null;
-let ambientAudio = null;
-let activeAreaAudios = [];
-const audioBufferCache = new Map();
-// Bumped by disposeSounds; an async setupSounds captures the value after its
-// own dispose and bails if a later dispose/setup has superseded it, so a
-// rapid map switch can never leak a loop that dispose can't reach.
-let soundsGeneration = 0;
 // `?shots&noaudio` takes Web Audio out at the source, for the perf harness's
 // audio-on/audio-off A/B: no AudioContext is ever created, so no listener
 // rides the camera, no loop is decoded, no engine or gun patch is built, and
@@ -961,7 +955,7 @@ function updateMobileControls() {
   mobileUseBtn.hidden = !(onFoot || seated);
   mobileUseBtn.disabled = onFoot ? !nearEntry : !seated;
   mobileUseBtn.textContent = onFoot ? (nearEntry ? `ENTER ${nearEntry.control}` : 'ENTER') : 'EXIT';
-  mobileViewBtn.hidden = !((seated && localPlayer.view) || (onFoot && footView3p.modes.length > 1));
+  mobileViewBtn.hidden = !((seated && localPlayer.view) || (onFoot && soldierView.footView3p.modes.length > 1));
   mobileThrottleWrap.hidden = !flying;
   if (flying) syncMobileThrottle();
   mobileControls.dataset.mode = padMode;
@@ -1025,7 +1019,7 @@ mobilePad.addEventListener('pointerdown', event => {
   event.preventDefault();
   event.stopPropagation();
   setFly(true);
-  ensureAudioContext();
+  pageAudio.ensureAudioContext();
   mobilePadPointerId = event.pointerId;
   mobilePadHeld = true;
   try { mobilePad.setPointerCapture(event.pointerId); } catch {}
@@ -1048,7 +1042,7 @@ mobileFireBtn.addEventListener('pointerdown', event => {
   event.preventDefault();
   event.stopPropagation();
   setFly(true);
-  ensureAudioContext();
+  pageAudio.ensureAudioContext();
   try { mobileFireBtn.setPointerCapture(event.pointerId); } catch {}
   setMobileFire(true);
 });
@@ -1960,7 +1954,7 @@ function setFly(on) {
 }
 function capture() {
   setFly(true);
-  ensureAudioContext();
+  pageAudio.ensureAudioContext();
   // The lock is asked for, not depended on: Chrome refuses one for about a
   // second after the player pressed Escape out of the last one, and it
   // rejects rather than throws. `captured` is already true either way, so
@@ -2275,7 +2269,7 @@ renderer.domElement.addEventListener('pointerdown', e => {
     activeTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { renderer.domElement.setPointerCapture(e.pointerId); } catch {}
     setFly(true);
-    ensureAudioContext();
+    pageAudio.ensureAudioContext();
 
     if (activeTouches.size === 1) {
       lastPointerX = e.clientX;
@@ -2326,7 +2320,7 @@ renderer.domElement.addEventListener('pointerdown', e => {
     lastPointerY = e.clientY;
     try { renderer.domElement.setPointerCapture(e.pointerId); } catch {}
     setFly(true);
-    ensureAudioContext();
+    pageAudio.ensureAudioContext();
   }
 });
 
@@ -3408,298 +3402,17 @@ function advanceSim(dt) {
     cloudUniforms.uOffset.value.set(simTime * speed[0], simTime * speed[1]);
   }
 }
-
-/** The master limiter, installed by `ensureListener` below. */
-let audioLimiter = null;
-
-/**
- * The one AudioListener every player on this page hangs off, with a limiter
- * between it and the speakers.
- *
- * The limiter is why the buses can play the `.ssc` mix at the volumes it
- * writes. Web Audio sums into the destination and clips flat there, so before
- * this the engine and weapon buses each carried a fixed divisor to keep the
- * worst case under full scale — and paid for it everywhere else: a Sherman
- * idling, from inside, peaked at 0.089 against the BAR's 0.596 and the map's
- * own wind at 0.0156, while the same tank's cannon still came out at 1.75 and
- * clipped anyway. A single divisor cannot do both jobs; a limiter does the
- * one job it was ever really for, and only when a sound actually asks for
- * more than the output has.
- *
- * Set as a limiter rather than a compressor: `knee 0` and `ratio 20` make it
- * flat below the threshold and a ceiling above it, so nothing under -1 dBFS
- * is touched at all. The 3 ms attack catches a cannon's own transient; the
- * 150 ms release is long enough not to pump the ambient bed between rounds of
- * a machine gun and short enough to let go before the next shot.
- */
-function ensureListener() {
-  if (AUDIO_OFF) return null;
-  if (!audioListener) {
-    audioListener = new THREE.AudioListener();
-    camera.add(audioListener);
-    audioLoader = new THREE.AudioLoader();
-    const ctx = audioListener.context;
-    try {
-      const limiter = ctx.createDynamicsCompressor();
-      limiter.threshold.value = -1;
-      limiter.knee.value = 0;
-      limiter.ratio.value = 20;
-      limiter.attack.value = 0.003;
-      limiter.release.value = 0.15;
-      // three parents the listener's gain straight onto the destination in
-      // its constructor; this re-routes that one edge and nothing else, so
-      // every player that asks for `getInput()` still finds the same node.
-      audioListener.gain.disconnect();
-      audioListener.gain.connect(limiter);
-      limiter.connect(ctx.destination);
-      audioLimiter = limiter;
-    } catch {
-      // A context with no compressor node is still a context: the graph keeps
-      // its direct edge and the mix simply clips the way it used to.
-      audioListener.gain.connect(ctx.destination);
-    }
-  }
-  return audioListener;
-}
-
-function ensureAudioContext() {
-  if (!ensureListener()) return;
-  // Autoplay policy: a context created before any click starts suspended and
-  // stays that way until a gesture resumes it. Every caller of this is a real
-  // user gesture; the catch is for the ones that are not.
-  if (audioListener.context && audioListener.context.state === 'suspended') {
-    audioListener.context.resume().catch(() => {});
-  }
-}
-
-/**
- * Decoded wav, cached on the un-busted path.
- *
- * The cache key must not carry `bust()`: with it, the dev origin re-keyed and
- * re-decoded the same wav on every call, and the sequential decode stagger
- * started identical loops 50-200 ms apart — a permanent slapback echo. bust()
- * stays on the fetch URL only. Ambient, area and engine sound all come through
- * here so the one-decode-per-wav rule holds across all three.
- */
-async function soundBuffer(dir, relPath) {
-  if (AUDIO_OFF) return null;
-  const key = `${dir}/${relPath}`;
-  if (audioBufferCache.has(key)) return audioBufferCache.get(key);
-  ensureListener();
-  // The pending decode is what goes in the cache, not just the finished
-  // buffer. Two setups that overlap — the pilot box ticked, unticked and
-  // ticked again while the first load is still awaiting — otherwise both miss
-  // and fetch the same wav twice, which is the one-decode-per-wav rule the
-  // hall-echo postmortem left behind (features/bf1942-3d-models/map-sounds.md).
-  // A failed load drops out of the cache again so a later attempt can retry.
-  const pending = audioLoader.loadAsync(`${MAPS_BASE}/${key}${bust()}`)
-    .catch(e => {
-      console.warn(`Could not load sound ${key}:`, e);
-      audioBufferCache.delete(key);
-      return null;
-    });
-  audioBufferCache.set(key, pending);
-  return pending;
-}
-
-/**
- * Same cache, models tree: the hand-weapon fire samples live under
- * `models/sounds/`, not in any map directory. The `models:` prefix keeps the
- * key out of the `${dir}/${relPath}` namespace above — a map directory cannot
- * contain a colon, so the two families can never collide in the cache.
- */
-async function modelSoundBuffer(relPath) {
-  if (AUDIO_OFF) return null;
-  const key = `models:${relPath}`;
-  if (audioBufferCache.has(key)) return audioBufferCache.get(key);
-  ensureListener();
-  // The pending decode, for the reason soundBuffer gives above.
-  const pending = audioLoader.loadAsync(`${MODELS_BASE}/${relPath}${bust()}`)
-    .catch(e => {
-      console.warn(`Could not load sound ${key}:`, e);
-      audioBufferCache.delete(key);
-      return null;
-    });
-  audioBufferCache.set(key, pending);
-  return pending;
-}
-
-function disposeSounds() {
-  soundsGeneration++;
-  disposeEngineAudio();
-  // Bots' gunfire goes with the level too, but not with a single wreck:
-  // `killOccupantInWreck` also runs `disposeEngineAudio`, and a bot's rifle
-  // must outlive the player's own hull.
-  worldFire?.dispose();
-  worldFire = null;
-  // Every pooled effect voice, armed latch and looping wreck fire, gone —
-  // called from both of `show()`'s own teardown points (directly, and again
-  // through `setupSounds`), so a level change is the one place the whole
-  // pool is guaranteed to hit zero committed voices, whatever handle chain
-  // did or did not run for the level being left. `silence()` keeps the pool
-  // itself — its scripts, its decoded buffers — so the next level's impacts
-  // do not re-decode anything.
-  effectAudio.silence();
-  if (ambientAudio) {
-    try {
-      if (ambientAudio.isPlaying) ambientAudio.stop();
-      ambientAudio.disconnect();
-    } catch (_) {}
-    ambientAudio = null;
-  }
-  for (const item of activeAreaAudios) {
-    try {
-      if (item.sound.isPlaying) item.sound.stop();
-      item.sound.disconnect();
-      if (item.anchor) scene.remove(item.anchor);
-    } catch (_) {}
-  }
-  activeAreaAudios = [];
-}
-
-// A depot's give sound, once `setupSounds` has pulled it out of the ambience:
-// the decoded sample and the context time its last play runs until.
-let supplyGive = null;
-const _depotPos = new THREE.Vector3();
-
-/** Where this level's SupplyDepot nodes stand, for telling a depot's give
- *  sound from real building ambience. One walk per level load. */
-function supplyDepotPositions() {
-  const out = [];
-  currentRoot?.traverse(obj => {
-    if (obj.userData?.templateKind !== 'SupplyDepot') return;
-    obj.getWorldPosition(_depotPos);
-    out.push({ x: _depotPos.x, z: _depotPos.z });
-  });
-  return out;
-}
-
-/** The refill report: one pass of the sample per give that gave something,
- *  never stacked on a pass still sounding. */
-function playSupplyGive() {
-  if (!supplyGive || !audioListener || masterVolume() <= 0) return;
-  const ctx = audioListener.context;
-  if (ctx.state !== 'running' || ctx.currentTime < supplyGive.until) return;
-  const source = ctx.createBufferSource();
-  source.buffer = supplyGive.buffer;
-  source.connect(soldierKit.ensureHandFireBus(ctx));
-  source.onended = () => { try { source.disconnect(); } catch (_) {} };
-  try { source.start(); } catch (_) { return; }
-  supplyGive.until = ctx.currentTime + supplyGive.buffer.duration;
-}
-
-async function setupSounds(report, dir) {
-  disposeSounds();
-  const gen = soundsGeneration;
-  const cfg = report.sounds;
-  if (!cfg || AUDIO_OFF) return;
-
-  ensureListener();
-  const getBuffer = (relPath) => soundBuffer(dir, relPath);
-
-  // Ambient atmospheric sound
-  if (cfg.ambient && cfg.ambient.file) {
-    const buf = await getBuffer(cfg.ambient.file);
-    if (gen !== soundsGeneration) return;
-    if (buf) {
-      ambientAudio = new THREE.Audio(audioListener);
-      ambientAudio.setBuffer(buf);
-      ambientAudio.setLoop(true);
-      const master = optSound.checked ? parseFloat(optSoundVol.value) : 0;
-      ambientAudio.setVolume((cfg.ambient.volume ?? 0.6) * master);
-      try { ambientAudio.play(); } catch (_) {}
-    }
-  }
-
-  // Shorelines and positional area sounds. One looping voice per unique wave
-  // file: several areas sharing Water_waves.wav used to get one loop each, and
-  // two loops of the same sample audible at once through separate HRTF panners
-  // reads as a hall echo, not louder surf. updateAudio moves the single
-  // anchor to the closest point across every polyline in the group.
-  // Flags join the area pool as one-point emitters. They group by file like
-  // everything else, so every flag on the map shares a single looping voice
-  // anchored at whichever one is nearest — which is the same reason the
-  // shorelines do it, and the reason five flags do not phase against each
-  // other. `flag.ssc` supplies the near/far ramp the group already honours.
-  const areaList = [...(cfg.areas || [])];
-  const flags = cfg.flags;
-  if (flags && flags.file && flags.positions?.length) {
-    for (const point of flags.positions) {
-      areaList.push({
-        name: 'flag',
-        file: flags.file,
-        points: [point],
-        volume: flags.volume ?? 1.0,
-        nearDistance: flags.nearDistance ?? flags.minDistance ?? 4.0,
-        farDistance: flags.farDistance ?? 15.0,
-      });
-    }
-  }
-
-  // A SupplyDepot's sound script is its *give* sound — `Ammorefill.wav`, heard
-  // while the depot is actually handing over ammunition — and every scene.json
-  // extracted before the extractor learnt that ships it as building ambience:
-  // one for-ever loop beside each of vanilla's 621 ammo boxes and airfield
-  // depots. Those areas are taken out of the pool here, so published trees are
-  // right without a re-extract, and their sample becomes `supplyGive`, played
-  // from the depot's own give (`supplyTarget.refillAmmo`).
-  supplyGive = null;
-  const depotAt = supplyDepotPositions();
-  const isDepotGive = area => {
-    if (!/_static$/i.test(area.name || '') || area.points?.length !== 1) return false;
-    if (!depotAt.length) return /ammorefill/i.test(area.file || '');
-    const [x, , z] = area.points[0];
-    return depotAt.some(d => (d.x - x) ** 2 + (d.z - z) ** 2 < 36);
-  };
-  let giveFile = null;
-  for (let i = areaList.length - 1; i >= 0; i--) {
-    if (!isDepotGive(areaList[i])) continue;
-    giveFile = giveFile || areaList[i].file;
-    areaList.splice(i, 1);
-  }
-  if (giveFile) {
-    const buffer = await getBuffer(giveFile);
-    if (gen !== soundsGeneration) return;
-    if (buffer) supplyGive = { buffer, until: 0 };
-  }
-
-  if (areaList.length > 0) {
-    const groups = new Map();
-    for (const area of areaList) {
-      if (!area.file || !area.points || area.points.length === 0) continue;
-      const key = area.file.toLowerCase();
-      if (!groups.has(key)) groups.set(key, { file: area.file, areas: [] });
-      groups.get(key).areas.push(area);
-    }
-
-    for (const group of groups.values()) {
-      const buf = await getBuffer(group.file);
-      if (gen !== soundsGeneration) return;
-      if (!buf) continue;
-
-      const first = group.areas[0];
-      const anchor = new THREE.Object3D();
-      anchor.position.set(first.points[0][0], first.points[0][1], first.points[0][2]);
-      scene.add(anchor);
-
-      const sound = new THREE.PositionalAudio(audioListener);
-      sound.setBuffer(buf);
-      sound.setLoop(true);
-      sound.setRefDistance(first.nearDistance || 40.0);
-      // The manual .ssc near/far ramp in updateAudio owns distance volume
-      // exclusively; rolloff 0 disables the panner's own inverse-distance
-      // curve so the two attenuations don't multiply. setMaxDistance is not
-      // called — it only applies to the 'linear' distance model, so it was
-      // inert here anyway. HRTF panning is kept for direction.
-      sound.setRolloffFactor(0);
-      anchor.add(sound);
-
-      activeAreaAudios.push({ anchor, sound, areas: group.areas });
-      try { sound.play(); } catch (_) {}
-    }
-  }
-  updateAudio();
-}
+const pageAudio = createPageAudio({
+  get AUDIO_OFF() { return AUDIO_OFF; }, get MAPS_BASE() { return MAPS_BASE; },
+  get MODELS_BASE() { return MODELS_BASE; }, get bust() { return bust; },
+  get camera() { return camera; }, get currentDir() { return currentDir; },
+  get currentRoot() { return currentRoot; }, get effectAudio() { return effectAudio; },
+  get extras() { return extras; }, get hudFeed() { return hudFeed; },
+  get localPlayer() { return localPlayer; }, get optPilot() { return optPilot; },
+  get optSound() { return optSound; }, get optSoundVol() { return optSoundVol; },
+  get scene() { return scene; }, get soldier() { return soldier; },
+  get soldierKit() { return soldierKit; },
+});
 
 // --- engine audio -----------------------------------------------------------
 //
@@ -3719,184 +3432,6 @@ async function setupSounds(report, dir) {
 // driver and a hull gunner in one Sherman are one.
 
 let currentDir = '';
-/** The rack. Built once at first use; `disposeSounds` disposes it on a level
- *  change and the next claim rebuilds. */
-let vehicleAudio = null;
-
-function ensureVehicleAudio() {
-  if (vehicleAudio && !vehicleAudio.disposed) return vehicleAudio;
-  vehicleAudio = new VehicleAudioRack({
-    listener: () => ensureListener(),
-    getBuffer: (dir, relPath) => soundBuffer(dir, relPath),
-    report: () => extras ?? null,
-    dir: () => currentDir,
-    master: () => masterVolume(),
-  });
-  return vehicleAudio;
-}
-
-/** A seat came aboard a hull (the player's mount, or a bot's). */
-function claimVehicleAudio(seatKey, node, drive, groups) {
-  if (AUDIO_OFF || !node) return;
-  ensureAudioContext();
-  const rack = ensureVehicleAudio();
-  rack.claim({
-    seatKey,
-    node,
-    template: node.userData?.control || node.name,
-    drive: drive ?? null,
-    groups: groups ?? [],
-  });
-}
-
-/** A seat left. The hull keeps sounding while anyone remains aboard. */
-function releaseVehicleAudio(seatKey, node) {
-  vehicleAudio?.releaseClaim(seatKey, node);
-}
-
-function disposeEngineAudio() {
-  vehicleAudio?.dispose();
-  vehicleAudio = null;
-}
-
-/**
- * Gunfire from anyone who is not the player's own first-person ear.
- *
- * `playHandFire` stays the shooter's path (one muzzle pick, 2D, at the
- * shoulder). A bot across the field needs the whole fire patch — the near and
- * far layers hand over on `Volume <- Distance` — spatialised at the shooter,
- * which is what `world-fire.js` plays out of the `layers` the weapon
- * extractor now ships beside the first-person pick. Built lazily off the same
- * `weapons.json` the hand path already fetches.
- */
-let worldFire = null;
-
-async function ensureWorldFire() {
-  if (worldFire && !worldFire.disposed) return worldFire;
-  if (AUDIO_OFF) return null;
-  const manifest = await soldierKit.weaponSoundsManifest();
-  if (!manifest) return null;
-  if (worldFire && !worldFire.disposed) return worldFire;
-  ensureAudioContext();
-  worldFire = new WorldFire({
-    listener: () => ensureListener(),
-    getBuffer: (relPath) => modelSoundBuffer(relPath.startsWith('sounds/')
-      ? relPath : `sounds/${relPath}`),
-    manifest,
-    master: () => masterVolume(),
-  });
-  return worldFire;
-}
-
-/** One round from a bot's hand weapon, at the bot. Fire-and-forget. */
-function playWorldShot(weaponName, x, y, z) {
-  if (!weaponName || AUDIO_OFF) return;
-  ensureWorldFire().then(fire => {
-    fire?.play(weaponName, { x, y, z });
-  });
-}
-
-function masterVolume() {
-  return optSound.checked ? parseFloat(optSoundVol.value) : 0;
-}
-
-// Sitting in a vehicle, its engine is essentially all you can hear — the map's
-// wind and surf do not compete with a radial a metre in front of your knees.
-// Ducking the ambience is how to get there. It used to be the ONLY way to get
-// there, because the engine bus was pinned at a divisor fitted to a Corsair;
-// it no longer is (`engine-audio.js`'s `BUS_HEADROOM`, and the limiter in
-// `ensureListener`), and the duck is now what it says it is rather than a way
-// round a mix that could not be turned up. Eased rather than switched, or
-// entering and leaving the cockpit pops.
-const AMBIENT_DUCK = 0.12;
-const AMBIENT_DUCK_TAU = 0.4;
-let ambientDuck = 1;
-
-function updateAudio(dt = 0) {
-  const master = masterVolume();
-  const duckTarget = (optPilot.checked && (localPlayer.aircraft || localPlayer.car)) ? AMBIENT_DUCK : 1;
-  ambientDuck += (duckTarget - ambientDuck)
-    * (dt > 0 ? Math.min(1, dt / AMBIENT_DUCK_TAU) : 1);
-  // Every claimed hull at once: the player's own, and every bot-driven one
-  // within earshot. The rack holds the far ones at master 0 and evaluates
-  // each patch's own `Volume <- Distance` ramps against the camera.
-  if (vehicleAudio) {
-    vehicleAudio.playerGroups = [...(localPlayer.vehicleGuns ?? []), ...(localPlayer.mannedGuns ?? [])];
-    vehicleAudio.update(dt, camera.position);
-  }
-  if (soldierKit.handFireBus) {
-    // The hand-shot bus tracks the master like the engine bus does, and is
-    // deliberately not ducked: the duck exists so a cockpit engine drowns the
-    // surf, and the weapon at your own shoulder is the one thing louder.
-    const target = master * WEAPON_HEADROOM;
-    if (Math.abs(soldierKit.handFireBus.gain.value - target) > 1e-4) {
-      soldierKit.handFireBus.gain.setTargetAtTime(
-        target, audioListener.context.currentTime, 0.05);
-    }
-  }
-  if (ambientAudio) {
-    const base = extras.sounds?.ambient?.volume ?? 0.6;
-    ambientAudio.setVolume(base * master * ambientDuck);
-  }
-
-  if (activeAreaAudios.length === 0) return;
-
-  const camPos = camera.position;
-  for (const item of activeAreaAudios) {
-    // Closest point to the camera across every polyline in the group; the
-    // area that produced it supplies the near/far ramp and base volume.
-    let bestArea = item.areas[0];
-    let bx = bestArea.points[0][0], by = bestArea.points[0][1], bz = bestArea.points[0][2];
-    let minD2 = Infinity;
-
-    for (const area of item.areas) {
-      const pts = area.points;
-      if (pts.length === 1) {
-        const dist2 = (camPos.x - pts[0][0]) ** 2 + (camPos.y - pts[0][1]) ** 2 + (camPos.z - pts[0][2]) ** 2;
-        if (dist2 < minD2) {
-          minD2 = dist2;
-          bx = pts[0][0]; by = pts[0][1]; bz = pts[0][2];
-          bestArea = area;
-        }
-        continue;
-      }
-      for (let i = 0; i < pts.length - 1; i++) {
-        const p1 = pts[i];
-        const p2 = pts[i + 1];
-        const dx = p2[0] - p1[0];
-        const dy = p2[1] - p1[1];
-        const dz = p2[2] - p1[2];
-        const len2 = dx * dx + dy * dy + dz * dz;
-        let t = len2 > 0 ? ((camPos.x - p1[0]) * dx + (camPos.y - p1[1]) * dy + (camPos.z - p1[2]) * dz) / len2 : 0;
-        if (t < 0) t = 0;
-        else if (t > 1) t = 1;
-        const qx = p1[0] + t * dx;
-        const qy = p1[1] + t * dy;
-        const qz = p1[2] + t * dz;
-        const dist2 = (camPos.x - qx) ** 2 + (camPos.y - qy) ** 2 + (camPos.z - qz) ** 2;
-        if (dist2 < minD2) {
-          minD2 = dist2;
-          bx = qx; by = qy; bz = qz;
-          bestArea = area;
-        }
-      }
-    }
-
-    item.anchor.position.set(bx, by, bz);
-
-    const dist = Math.sqrt(minD2);
-    const near = bestArea.nearDistance || 40.0;
-    const far = bestArea.farDistance || 80.0;
-    let ramp = 0.0;
-    if (dist <= near) {
-      ramp = 1.0;
-    } else if (dist < far) {
-      const denom = Math.max(far - near, 0.001);
-      ramp = 1.0 - (dist - near) / denom;
-    }
-    item.sound.setVolume((bestArea.volume ?? 0.6) * ramp * master * ambientDuck);
-  }
-}
 
 function applyLighting() {
   const light = extras.lighting;
@@ -4334,8 +3869,8 @@ const vehicles = new VehicleRegistry({
   release: drive => releaseDrivenBody(drive),
   thaw: root => thawVehicle(root),
   freeze: root => freezeVehicle(root),
-  claimAudio: (playerId, root, drive, groups) => claimVehicleAudio(audioSeatKey(playerId), root, drive, groups),
-  releaseAudio: (playerId, root) => releaseVehicleAudio(audioSeatKey(playerId), root),
+  claimAudio: (playerId, root, drive, groups) => pageAudio.claimVehicleAudio(audioSeatKey(playerId), root, drive, groups),
+  releaseAudio: (playerId, root) => pageAudio.releaseVehicleAudio(audioSeatKey(playerId), root),
   // A seat taken or freed changes every bot's candidate list.
   onChange: () => { botUnits.candidateCache.at = -1; },
 });
@@ -4720,14 +4255,14 @@ const wreckDeathFwd = new THREE.Vector3();
 function killOccupantInWreck(node) {
   if (!localPlayer.occupancy || localPlayer.occupancy.root !== node || soldierDead) return;
   // A wreck cuts off engine audio immediately -- crash effect plays, engine stops
-  disposeEngineAudio();
-  hitIndicatorTimer = 0;
-  hitIndicatorDir = 0;
+  pageAudio.disposeEngineAudio();
+  pageAudio.hitIndicatorTimer = 0;
+  pageAudio.hitIndicatorDir = 0;
   if (hudFeed.gameHud?.vars) {
     hudFeed.gameHud.vars['HitFromDir/HitFromDir'] = 0;
     hudFeed.gameHud.vars['HitFromDir/HitFromDirAlpha'] = 0;
   }
-  lastSoldierHp = null;
+  pageAudio.lastSoldierHp = null;
   node.updateWorldMatrix(true, false);
   node.getWorldPosition(wreckDeathPos);
   node.getWorldQuaternion(wreckDeathQuat);
@@ -5908,7 +5443,7 @@ guns.bodyCast = roundBodyCast;
 const _effectEar = new THREE.Vector3();
 const effectAudio = new EffectAudio({
   listener: null,
-  getBuffer: relPath => soundBuffer('_shared', relPath),
+  getBuffer: relPath => pageAudio.soundBuffer('_shared', relPath),
 });
 // The hook is one call at the point a bundle plays, which is also the point
 // the engine plays its own — `Game::playCollisionEffect` sounds the bundle
@@ -5941,9 +5476,9 @@ function loadEffectSounds() {
       // `setManifest` on null leaves every lookup a miss and every play a
       // no-op, which is what a missing file should look like.
       if (!manifest) return null;
-      effectAudio.listener = ensureListener();
+      effectAudio.listener = pageAudio.ensureListener();
       effectAudio.setManifest(manifest);
-      effectAudio.setMaster(masterVolume());
+      effectAudio.setMaster(pageAudio.masterVolume());
       for (const name of [
         'e_ExplGas', 'e_ExplArmor', 'e_ExplBoatArmor', 'e_ExplBazooka',
         'e_collision_Other', 'e_collision_metal', 'e_collision_Wood', 'e_collision_Stone',
@@ -6227,7 +5762,7 @@ for (const [id, key] of [
 }
 serverSettings.onChange(() => {
   refreshSeatViewModes();
-  syncFootView();
+  soldierView.syncFootView();
 });
 
 /**
@@ -6270,7 +5805,7 @@ function buildSeatView() {
   // view from here, exactly as it does on a C press.
   subject.setFirstPerson(localPlayer.view.firstPerson);
   mountChaseLaw();
-  updateSeatPoseVisibility();
+  seatPose.updateSeatPoseVisibility();
   return localPlayer.view;
 }
 
@@ -6281,14 +5816,14 @@ function refreshSeatViewModes() {
   localPlayer.view.setModes(seatViewModes({
     cvm: seat?.cameraViewModes, nose: !!localPlayer.view.nose, settings: serverSettings,
   }));
-  updateSeatPoseVisibility();
+  seatPose.updateSeatPoseVisibility();
 }
 
 /** C: the next view of whatever the player is sitting in, or standing as. */
 function cycleView() {
   if (optPilot.checked && localPlayer.view) hudFeed.showView(localPlayer.view.cycle());
-  else if (optOnFoot.checked && soldier && footView3p.modes.length > 1) {
-    hudFeed.showView(footView3p.cycle());
+  else if (optOnFoot.checked && soldier && soldierView.footView3p.modes.length > 1) {
+    hudFeed.showView(soldierView.footView3p.cycle());
   }
 }
 
@@ -6445,7 +5980,7 @@ function setPilot(on, node = null, seatId = null) {
       // Re-entering the same vehicle at a specific door (its own EntryPoint
       // was in reach again) rather than wherever you last sat.
       seat = seatId ? vehicles.switchSeat(LOCAL_PLAYER, seatId) : current;
-      if (seat && seatId) disposeSeatPose();
+      if (seat && seatId) seatPose.disposeSeatPose();
     } else {
       // A different vehicle than the one already held. Every exit path has
       // already given the old seat back; this is the defensive case.
@@ -6495,7 +6030,7 @@ function mountLocalSeat(seat) {
   // Render the seated soldier (passenger seats only — driver seats have no
   // poseAnimation and skip the load). Awaited here so the cockpit frame the
   // player sees is never the first external one with an empty seat.
-  if (seat.instance.drivable || seat.rootKind === 'gun') loadSeatPose();
+  if (seat.instance.drivable || seat.rootKind === 'gun') seatPose.loadSeatPose();
   // The room's control channel: the server mounts this player in its own
   // world the same way (netcode.js MSG_ACTION; the vehicle id is the room
   // table's, matched by template + pose like the renderer's). The seat-dot
@@ -6522,7 +6057,7 @@ function leaveSeat({ reset = false } = {}) {
   const drive = seat.drive;
   // The seated occupant goes with the seat, or stepping out of a jeep leaves
   // a soldier sitting in mid-air where the driver's seat had been.
-  disposeSeatPose();
+  seatPose.disposeSeatPose();
   if (drive) {
     if (reset && seat.instance.seats.size === 1) drive.reset();
     // `reset()` only restores the exterior when it owns the swap, and it no
@@ -6711,7 +6246,7 @@ function switchSeat(position) {
   if (seat.instance.holder(seatId) != null) return;
   // Discard the previous seat's soldier pose (if any) before loading the new
   // one — a driver→passenger switch on a Willy, or vice-versa.
-  disposeSeatPose();
+  seatPose.disposeSeatPose();
   // The hull does not move: the instance keeps its drive and body, and re-
   // scopes the seat's guns and the world's mount.
   vehicles.switchSeat(LOCAL_PLAYER, seatId);
@@ -6725,7 +6260,7 @@ function switchSeat(position) {
   hudFeed.feedVehicleHud();
   hud.textContent = isTouchDevice ? getTouchHudText()
     : mannedActive() ? HUD_MANNED : localPlayer.car ? HUD_DRIVE : HUD_PILOT;
-  loadSeatPose();
+  seatPose.loadSeatPose();
   updateMobileControls();
   // The room's control channel: seat switches are rows, not input words.
   const netId = room.netVehicleIdFor(seat.root);
@@ -6740,21 +6275,21 @@ const hudFeed = createHudFeed({
   get combatFrame() { return combatFrame; }, get crosshairEl() { return soldierKit.crosshairEl; },
   get currentDir() { return currentDir; }, get deployScreen() { return deployScreen; },
   get fireStateFor() { return fireStateFor; }, get handSlot() { return soldierKit.handSlot; },
-  get handWeapon() { return soldierKit.handWeapon; }, get hitIndicatorDir() { return hitIndicatorDir; },
-  get hitIndicatorTimer() { return hitIndicatorTimer; }, set hitIndicatorTimer(v) { hitIndicatorTimer = v; },
+  get handWeapon() { return soldierKit.handWeapon; }, get hitIndicatorDir() { return pageAudio.hitIndicatorDir; },
+  get hitIndicatorTimer() { return pageAudio.hitIndicatorTimer; }, set hitIndicatorTimer(v) { pageAudio.hitIndicatorTimer = v; },
   get hud() { return hud; }, get hudPaths() { return hudPaths; },
   get isZoomed() { return soldierKit.isZoomed; }, get itemsLocked() { return soldierKit.itemsLocked; },
   get kitLoadout() { return soldierKit.kitLoadout; }, get kitWeaponSlots() { return soldierKit.kitWeaponSlots; },
-  get lastSoldierHp() { return lastSoldierHp; }, set lastSoldierHp(v) { lastSoldierHp = v; },
+  get lastSoldierHp() { return pageAudio.lastSoldierHp; }, set lastSoldierHp(v) { pageAudio.lastSoldierHp = v; },
   get loadouts() { return soldierKit.loadouts; }, get localPlayer() { return localPlayer; },
   get mannedActive() { return mannedActive; }, get mapSurfaces() { return mapSurfaces; },
   get occupiedVehicleDamage() { return occupiedVehicleDamage; },
   get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
-  get playSoldierHurtSound() { return playSoldierHurtSound; }, get renderer() { return renderer; },
+  get playSoldierHurtSound() { return pageAudio.playSoldierHurtSound; }, get renderer() { return renderer; },
   get room() { return room; }, get soldier() { return soldier; },
   get soldierArmor() { return soldierArmor; }, get soldierDead() { return soldierDead; },
-  get triggerHitIndicator() { return triggerHitIndicator; }, get updateHud() { return updateHud; },
-  get updateSeatPoseVisibility() { return updateSeatPoseVisibility; },
+  get triggerHitIndicator() { return pageAudio.triggerHitIndicator; }, get updateHud() { return updateHud; },
+  get updateSeatPoseVisibility() { return seatPose.updateSeatPoseVisibility; },
   get weaponBarUntil() { return soldierKit.weaponBarUntil; }, get world() { return world; },
 });
 
@@ -7125,7 +6660,7 @@ const referee = createBotReferee({
     frameInputWasFiring = !!frameInputLast?.fire;
   },
   afterBotTick: (bot, dt) => {
-    botFootstepTick(bot, dt);
+    pageAudio.botFootstepTick(bot, dt);
     if (botPlayerFired && botPlayerPos) {
       bot.onShotFired(LOCAL_PLAYER, botPlayerTeam, botPlayerPos, referee.clock, soldierKit.localWeaponSoundRadius());
     }
@@ -7133,7 +6668,7 @@ const referee = createBotReferee({
   // ...and the page hears a bot's round from where the shooter stands: the
   // world path, which plays the fire patch's near/far hand-over rather than
   // the muzzle pick alone (the player's own keep `playHandFire`).
-  onShot: (bot, at) => playWorldShot(bot.weaponAi?.name ?? bot.kitPrimary ?? null, at[0], at[1] + 1.4, at[2]),
+  onShot: (bot, at) => pageAudio.playWorldShot(bot.weaponAi?.name ?? bot.kitPrimary ?? null, at[0], at[1] + 1.4, at[2]),
   damageTarget: (hit, bot) => {
     if (hit.targetId !== LOCAL_PLAYER) return false;
     applyDamageToPlayer(hit.damage, { x: bot.position[0], y: bot.position[1], z: bot.position[2] }, bot.team);
@@ -7151,7 +6686,7 @@ const referee = createBotReferee({
   // as the player's own hurt sound so a burst does not stack.
   onHurt: bot => {
     const at = bot.getPosition();
-    playSoldierHurtSound(false, { x: at[0], y: at[1] + 1.2, z: at[2] });
+    pageAudio.playSoldierHurtSound(false, { x: at[0], y: at[1] + 1.2, z: at[2] });
   },
   onDeath: bot => {
     const vis = botBodies.botVisuals.get(bot.playerId);
@@ -7773,18 +7308,18 @@ const soldierKit = createHandWeapon({
   get AUDIO_OFF() { return AUDIO_OFF; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
   get MAPS_BASE() { return MAPS_BASE; }, get MODELS_BASE() { return MODELS_BASE; },
   get SOLDIER_MAX_HP_FALLBACK() { return SOLDIER_MAX_HP_FALLBACK; },
-  get audioListener() { return audioListener; }, get botRoundDamage() { return botRoundDamage; },
+  get audioListener() { return pageAudio.audioListener; }, get botRoundDamage() { return botRoundDamage; },
   get bust() { return bust; }, get camera() { return camera; }, get captured() { return captured; },
   get currentDir() { return currentDir; }, get deployScreen() { return deployScreen; },
-  get ensureFootBody() { return ensureFootBody; }, get fireStates() { return fireStates; },
+  get ensureFootBody() { return footBodies.ensureFootBody; }, get fireStates() { return fireStates; },
   get guns() { return guns; }, get isCollision() { return isCollision; },
   get loader() { return loader; }, get localPlayer() { return localPlayer; },
-  get mapSurfaces() { return mapSurfaces; }, get masterVolume() { return masterVolume; },
-  get modelSoundBuffer() { return modelSoundBuffer; }, get optOnFoot() { return optOnFoot; },
+  get mapSurfaces() { return mapSurfaces; }, get masterVolume() { return pageAudio.masterVolume; },
+  get modelSoundBuffer() { return pageAudio.modelSoundBuffer; }, get optOnFoot() { return optOnFoot; },
   get optPilot() { return optPilot; }, get params() { return params; },
-  get playSupplyGive() { return playSupplyGive; }, get referee() { return referee; },
+  get playSupplyGive() { return pageAudio.playSupplyGive; }, get referee() { return referee; },
   get soldier() { return soldier; }, get supplyTarget() { return supplyTarget; },
-  get vehicleAudio() { return vehicleAudio; }, get warmSubtree() { return warmSubtree; },
+  get vehicleAudio() { return pageAudio.vehicleAudio; }, get warmSubtree() { return warmSubtree; },
   get warmups() { return warmups; }, get world() { return world; },
 });
 
@@ -7930,7 +7465,7 @@ function loadBotWeapons(bot) {
   // Warm the world-fire pool for the kit while the glb loads, so the bot's
   // first shot is not the one that pays for its own decode.
   if (names.size) {
-    ensureWorldFire().then(fire => {
+    pageAudio.ensureWorldFire().then(fire => {
       for (const name of names) fire?.prime(name);
     });
   }
@@ -7938,43 +7473,11 @@ function loadBotWeapons(bot) {
     if (data) bot.setWeaponData(name, data);
   })));
 }
-
-/**
- * A bot's own bootfalls, for a listener who is not wearing them.
- *
- * The player's steps come off `soldier.drainFootstepEvents()`, a clock in the
- * first-person soldier. A bot has no such body, so the cadence is driven here
- * from how far the controller actually moved. The periods are the engine's,
- * verbatim from `Objects/Soldiers/Common/Sounds/SoldierSound.inc`:
- * `setRunFrequency 0.36`, `setWalkFrequency 0.66` (the crawl's 0.6 and the
- * crouch's 0.50 are not distinguished here — a bot's gait is its speed).
- * Positional, so a squad crossing a field is a line of small boots rather
- * than one 2D overlay; `handleSoldierFootstep` does the surface pick.
- */
-const BOT_GAIT_RUN = 0.36;
-const BOT_GAIT_WALK = 0.66;
-function botFootstepTick(bot, dt) {
-  if (bot.vehicle || AUDIO_OFF || masterVolume() <= 0) return;
-  const at = bot.getPosition();
-  const prev = bot._stepFrom;
-  bot._stepFrom = [at[0], at[1], at[2]];
-  if (!prev) return;
-  const dx = at[0] - prev[0], dy = at[1] - prev[1], dz = at[2] - prev[2];
-  const speed = Math.hypot(dx, dy, dz) / Math.max(dt, 1e-6);
-  if (speed < 0.4) { bot._stepPhase = 0; return; }
-  const period = speed > 3 ? BOT_GAIT_RUN : BOT_GAIT_WALK;
-  bot._stepPhase = (bot._stepPhase ?? Math.random()) + dt / period;
-  if (bot._stepPhase < 1) return;
-  bot._stepPhase -= 1;
-  handleSoldierFootstep(
-    { x: at[0], y: at[1], z: at[2], gait: speed > 3 ? 'run' : 'walk' },
-    { x: at[0], y: at[1], z: at[2] });
-}
 const botBodies = createBotVisuals({
   get MODELS_BASE() { return MODELS_BASE; },
   get bindDynamicShading() { return bindDynamicShading; }, get bust() { return bust; },
-  get disposeFootBodyScene() { return disposeFootBodyScene; },
-  get footBodyClips() { return footBodyClips; }, get footBodyLoader() { return footBodyLoader; },
+  get disposeFootBodyScene() { return footBodies.disposeFootBodyScene; },
+  get footBodyClips() { return footBodies.footBodyClips; }, get footBodyLoader() { return footBodies.footBodyLoader; },
   get presentAlpha() { return presentAlpha; }, get referee() { return referee; },
   get world() { return world; },
 });
@@ -8073,1132 +7576,45 @@ function collectSupplyDepots(root) {
   });
   return depots;
 }
-
-/**
- * The on-foot camera half of the old `onFoot()` — the sim half went to the
- * world's 30 Hz soldier tick (world.js #soldierTick): the look was applied
- * per tick with the engine's own law (the pumped pair `frame()` handed over,
- *  applied per tick with the engine's own law (the pumped pair `frame()`
- *  handed over, `soldier.look`'s clamp included), the body stepped and the
- *  HP-14 fall damage landed against the world player's Armor — in the old
- *  order, look first because the engine turns the soldier inside the same
- *  `handlePlayerInput` call that reads his movement input. What is left here
- *  is the presentation: the death cam's latch and timer, the supply HUD, the
- *  eye pose, the trigger and the door scan.
- *
- *  The sim runs on fixed ticks inside `step()` above — the world's 30 Hz, the
- *  body's own 60 Hz within it, and since the headless-World refactor the
- *  latter is advanced in whole 1/30 increments from inside the former, so its
- *  alpha is always zero and `soldier.eye()` is raw tick state. This function
- *  therefore does its own interpolation, against the WORLD's clock: the eye
- *  is blended between the last two tick boundaries by `presentAlpha`, and the
- *  view angles are not blended at all but predicted forward from the pending
- *  mouse counts, which costs no latency. The whole argument, and the
- *  tick-exact-pose constraint it has to respect, is in the render-interpolation
- *  block beside `footLookPending`.
- *  The bob's amplitudes are the game's `setCameraShake*`;
- *  `soldier.js` has the citation. A dead body swaps in the death cam: the
- *  same eye base but parked a couple of metres above it and pitched down
- *  onto the corpse, so the view "floats over the dead player" for the beat
- *  before the deploy screen takes over.
- */
-function onFootCamera(dt) {
-  if (!soldier) return;
-  // Which views C may reach this frame -- the engine's one, or the canopy's.
-  syncFootView();
-  // Death cam → deploy. When the on-foot body's Armor dies (fall damage,
-  // `window.__damage(n)`, a future projectile), latch the dead state and hold
-  // a short camera beat over/by the corpse (the game's death cam) before the
-  // deploy screen opens — `hitpoints-and-damage.md` §7 (client `FUN_004933d0`
-  // opens the spawn screen on local death). Latches so a follow-up damage tick
-  // cannot re-fire the flow, and is reset by `spawnAtFlag` on the next spawn.
-  if (soldierArmor && !soldierDead && soldierArmor.destroyed) {
-    soldierDead = true;
-    deathCamShot = DEATH_CAM.foot;
-    deathCamTarget = null;
-    deathCamTimer = deathCamShot.beat;
-    // The corpse cam itself is applied downstream, where the eye pose is
-    // normally written (`soldierDead` branch) — this block only latches the
-    // state and runs the deploy timer.
-  }
-  if (soldierDead) {
-    deathCamTimer -= dt;
-    if (deathCamTimer <= 0 && !deployScreen.deployActive()) {
-      // The client opens the deploy screen the instant the local player dies;
-      // the beat above is the brief float, then the spawn screen takes over.
-      spawning.openDeploy();
-    }
-  }
-
-  // Wake's SupplyDepot instances: collected once per level (a map switch
-  // hands `currentRoot` a new object, caught here by reference), handed to
-  // the world which does the ticking on its 30 Hz cadence —
-  // `SupplyDepot.tick`'s internal 0.5s self-throttle (verify-r3.md SUP-11)
-  // is what actually paces the give/heal, not the tick rate. The
-  // `ShowHealIcon`/`ShowReloadIcon` HUD vars are un-throttled on purpose
-  // (SUP-33/34): they track proximity every frame, the way the engine's own
-  // icon predicates do, independent of the depot's own action cadence.
-  if (world && supplyDepotsRoot !== currentRoot) {
-    supplyDepotsRoot = currentRoot;
-    world.setSupplyDepots(collectSupplyDepots(currentRoot));
-    supplyField = world.supplyField;
-  }
-  supplyTarget.x = soldier.x; supplyTarget.y = soldier.y; supplyTarget.z = soldier.z;
-  supplyTarget.team = deployScreen.deployTeamId;
-  supplyTarget.armor = soldierArmor;
-  hudBridge.vars['ShowHealIcon'] = supplyField.canHeal(supplyTarget);
-  hudBridge.vars['ShowReloadIcon'] = supplyField.canRearm(supplyTarget);
-  if (soldierArmor) {
-    hudBridge.vars['Soldier/SoldierHitPoints'] = soldierArmor.hitPoints;
-    hudBridge.vars['Soldier/SoldierMaxHitPoints'] = soldierArmor.maxHitPoints;
-  }
-
-  // The drawn eye: this frame's instant between the last two tick boundaries.
-  // The bob rides in it — `soldier.eye` adds `bobUp`/`bobSide`, and the bob
-  // advances once per world tick like everything else — so blending the whole
-  // eye smooths the shake as well as the stride.
-  footEye.x = footEyePrev.x + (footEyeCur.x - footEyePrev.x) * presentAlpha;
-  footEye.y = footEyePrev.y + (footEyeCur.y - footEyePrev.y) * presentAlpha;
-  footEye.z = footEyePrev.z + (footEyeCur.z - footEyePrev.z) * presentAlpha;
-  // The drawn view: the simulated view plus the rotation the pending mouse
-  // counts have already bought and the next tick is going to apply. Through
-  // the pump's own conversion (`footLookPending`), the tick's own degrees-
-  // per-axis law (`soldierLookDegrees`, x3 on yaw) and the soldier's own
-  // pitch clamp (`lookPreview`) — no constant is restated here. Zero on any
-  // frame that ran a tick, because that frame's pump consumed the counts.
-  footLookPending(footPending);
-  const per = soldierLookDegrees(footPending.x, footPending.y);
-  soldier.lookPreview(-per.yaw * soldierKit.DEG_TO_RAD, -per.pitch * soldierKit.DEG_TO_RAD, footView);
-  if (soldierDead) {
-    // Behind the subject along its own facing and above it, by `deathCamShot`.
-    // The subject is the corpse's eye for a death on foot and the hull for one
-    // inside a vehicle (`deathCamTarget`). Forward is `(sin yaw, 0, cos yaw)` —
-    // the soldier's convention throughout this file — so "behind" is minus that.
-    const at = deathCamTarget || Object.assign(deathCamAt, {
-      x: footEye.x, y: footEye.y, z: footEye.z, yaw: soldier.viewYaw,
-    });
-    const camYaw = at.yaw;
-    deathCamPos.set(
-      at.x - Math.sin(camYaw) * deathCamShot.back,
-      at.y + deathCamShot.lift,
-      at.z - Math.cos(camYaw) * deathCamShot.back);
-    camera.position.set(deathCamPos.x, deathCamPos.y, deathCamPos.z);
-    look.yaw = camYaw;
-    look.pitch = deathCamShot.pitch;
-  } else if (!footView3p.firstPerson) {
-    // C has taken the view outside the man. The offsets, the 0.6 s velocity
-    // lag and the `1 - exp(-2 dt)` ease are `chase-camera.js`'s, which are the
-    // engine's own (`Camera::getTransformation`, lnxded 0x081aaf90); the frame
-    // is the soldier's facing, the anchor his eye, and the look-at is the
-    // anchor, exactly as the engine's `lookAt(eye, camM.position, worldUp)`.
-    // Only the radius and the fact that a soldier may reach the mode at all
-    // are the viewer's -- see `soldier-camera.js`.
-    const sign = footView3p.mode === VIEW_FRONT ? CHASE_AHEAD : CHASE_BEHIND;
-    const yaw = footView.yaw;
-    foot3pForward[0] = Math.sin(yaw);
-    foot3pForward[1] = 0;
-    foot3pForward[2] = Math.cos(yaw);
-    const v = soldier.body.body.velocity;
-    foot3pVelocity[0] = v.x; foot3pVelocity[1] = v.y; foot3pVelocity[2] = v.z;
-    // How tall the subject is this frame, and therefore how far back and how
-    // high the eye has to sit for all of it to be in shot. A man is
-    // `PARACHUTE_VIEW_RADIUS`, the number W5-E chose and the only one it had;
-    // a man under a canopy is 14 metres of him, and the FIRST frame ever taken
-    // of one showed why that matters -- at 3.0 the soldier hung in the middle
-    // of the picture with his canopy entirely above the top edge. `canopySpan`
-    // is measured off the canopy's own drawn bounding box, not typed in.
-    const span = canopySpan();
-    const radius = span > 0
-      ? (span * CANOPY_VIEW_MARGIN / 2) / Math.tan(FOOT_FOV * 0.5 * soldierKit.DEG_TO_RAD)
-        / CHASE_RADIUS_SCALE
-      : PARACHUTE_VIEW_RADIUS;
-    chaseTarget(foot3pForward, FOOT_3P_UP, radius, sign, foot3pTarget);
-    chaseStep(foot3pRel, foot3pTarget, foot3pVelocity, sign, dt);
-    foot3pAnchor[0] = footEye.x;
-    // Centre the subject rather than the man: the eye is near the top of a
-    // parachutist, so anchoring on it puts the canopy off-screen however far
-    // back the camera goes.
-    foot3pAnchor[1] = span > 0 ? footBodyFeetY() + span / 2 : footEye.y;
-    foot3pAnchor[2] = footEye.z;
-    const floorY = collider?.surfaceHeight
-      ? collider.surfaceHeight(footEye.x + foot3pRel[0], footEye.z + foot3pRel[2])
-      : -Infinity;
-    chaseEye(foot3pAnchor, foot3pRel, floorY, foot3pEye);
-    camera.position.set(foot3pEye[0], foot3pEye[1], foot3pEye[2]);
-    const dx = footEye.x - foot3pEye[0];
-    const dy = footEye.y - foot3pEye[1];
-    const dz = footEye.z - foot3pEye[2];
-    const flat = Math.hypot(dx, dz);
-    look.yaw = Math.atan2(dx, dz);
-    look.pitch = Math.atan2(dy, flat);
-  } else {
-    camera.position.set(footEye.x, footEye.y, footEye.z);
-    look.yaw = footView.yaw;
-    look.pitch = footView.pitch;
-  }
-  applyLook();
-  // After the camera pose is final: the weapon fires down this frame's view
-  // axis, and the crosshair is drawn against this frame's FOV. A dead body
-  // cannot fire. The input object is the one frame() built (the same values
-  // the world consumed this tick).
-  if (!soldierDead) soldierKit.footFire(dt, frameInputLast);
-  // And after everything the frame owed: is there a door within reach.
-  if (!soldierDead) scanForEntry(dt);
-}
-
-const EMPTY_KEYS = new Set();
-const footEye = { x: 0, y: 0, z: 0 };
-
-// The soldier's view mode and the state the external ones carry between
-// frames. `SoldierView` starts on the engine's own set -- `CVMInside` alone,
-// which is all `SoldierCamera` authorises -- so C is a no-op on foot until
-// `setCycle` widens it under an open canopy.
-const footView3p = new SoldierView();
-const foot3pRel = [0, 0, 0];
-const foot3pTarget = [0, 0, 0];
-const foot3pForward = [0, 0, 0];
-const foot3pVelocity = [0, 0, 0];
-const foot3pAnchor = [0, 0, 0];
-const foot3pEye = [0, 0, 0];
-const FOOT_3P_UP = [0, 1, 0];
-// The drawn subject's own height, for the framing above. Measured off the
-// canopy's bounding box the first time it is on screen -- the bundle's six-bone
-// chain rests with `Bone06` 13.68 m up and the mesh spans 13.49 m of that, so
-// the number is the data's and not a guess, and a mod with a different chute
-// gets its own. Zero while no canopy is drawn, which is when the subject is a
-// man and `PARACHUTE_VIEW_RADIUS` is the right distance for him.
-const footCanopyBox = new THREE.Box3();
-let footCanopyTop = 0;
-// Headroom over the exact fit. `chase-camera.js` lifts the eye by 0.3 R above
-// the anchor and looks back down at it (the engine's own offset), so a camera
-// placed at the distance that exactly fits the subject's height still cuts the
-// top of the canopy off -- measured on the frame, at span 13.303 m. 1.35 is a
-// viewer number, chosen on the frame, like `PARACHUTE_VIEW_RADIUS` beside it.
-const CANOPY_VIEW_MARGIN = 1.35;
-
-/** The body's feet, which is where its root sits. */
-function footBodyFeetY() {
-  return footBody ? footBody.scene.position.y : footEye.y;
-}
-
-/** Feet to canopy top, in metres, or 0 when no canopy is drawn. */
-function canopySpan() {
-  if (!footCanopy || !footCanopy.scene.visible) return 0;
-  if (!footCanopyTop) {
-    footCanopyBox.setFromObject(footCanopy.scene);
-    if (!footCanopyBox.isEmpty()) {
-      footCanopyTop = Math.max(0, footCanopyBox.max.y - footBodyFeetY());
-    }
-  }
-  return footCanopyTop;
-}
-
-// The canopy's external views. Held behind `?soldier3p=1` until 2026-09-22,
-// when the body and the canopy they point at were built: the flag is now
-// `?no-soldier3p=1` to put them back behind it, which is the one-line revert if
-// the result is not good enough. What they frame is `footBody` below -- the
-// soldier's own pose rig, played from the game's own clips -- and
-// `footCanopy`, the `Parachute` child the soldier has always carried.
-const SOLDIER_3P_VIEWS = !params.has('no-soldier3p');
-// C outside a standing soldier. CAM-1 is parity: the engine authorises one
-// view mode for a soldier and `BFSoldier::nextCamera` is empty, so retail
-// gives a standing man no second view. The owner wants one anyway, the way a
-// seat has one, so it is a server switch of the page's own
-// (`serverSettings.soldierExternalViews`, default ON, `?foot3p=0` or the side
-// panel to turn it off) -- a departure, labelled, and switchable back to the
-// engine's own behaviour. Read live, so the switch re-gates a standing man.
-function soldier3pOnFoot() {
-  return SOLDIER_3P_VIEWS && serverSettings.soldierExternalViews;
-}
-
-/**
- * Open the canopy's view cycle, close it again on the ground.
- *
- * `setCycle` drops a mode the new cycle cannot reach back to `inside`, so a
- * landing always returns the page to first person however C left it, and the
- * offset is reset with it -- otherwise the next chute would open with the
- * camera still swinging in from the last one.
- */
-function syncFootView() {
-  const open = SOLDIER_3P_VIEWS && soldier?.parachuteState === 'open';
-  const before = footView3p.mode;
-  // On foot the engine's own cycle is a set of one (CAM-1), so C does
-  // nothing -- unless the server's soldier switch widens it, which it does by
-  // default here: a marked departure, not parity, and one the switch takes
-  // back. See `soldier-camera.js` FOOT_VIEW_CYCLE and server-settings.js.
-  footView3p.setCycle(open ? PARACHUTE_VIEW_CYCLE
-    : (soldier3pOnFoot() ? FOOT_VIEW_CYCLE : null));
-  if (footView3p.mode !== before && footView3p.mode === VIEW_INSIDE) {
-    foot3pRel[0] = foot3pRel[1] = foot3pRel[2] = 0;
-  }
-}
-
-// --- the third-person body ---------------------------------------------------
-//
-// The local player's own soldier, drawn in the world. Until this existed the
-// page drew him as a first-person arms rig parented to the camera and nothing
-// else: every external view framed an empty point in space, and so the external
-// views were gated off.
-//
-// The assets are the pose pipeline's, and they already existed for the
-// remotes -- `<Soldier>__<Weapon>.pose.glb` is the body, head, hands and the
-// welded weapon, and the shared sidecars under `poses/gaits/` carry the clips,
-// now seven locomotion families as lower/upper pairs plus the parachute's
-// eleven. `soldier-body.js` picks the family; the two halves are played at full
-// weight together because the engine runs two state machines over disjoint bone
-// sets (11 lower bones, 44 upper), which is the same reason the seat poses play
-// `seat.lower` and `seat.upper` together.
-//
-// Three placement facts, all of them read rather than chosen:
-//
-//  * `soldier.y` is the FEET (`Soldier.spawn`: "place the soldier's feet"), and
-//    a pose glb's root is the skeleton root at the same place, which is why
-//    `netcode-render.js` puts a remote's group straight at his snapshot
-//    position.
-//  * the body's own yaw is the drawn view yaw and NOTHING else. The remote
-//    renderer multiplies a remote's quaternion by a baked half turn
-//    (`SOLDIER_YAW_FLIP`) and this path must not: driven on Wake with the flip
-//    in, the chase view showed the man's FACE -- the camera sits behind him at
-//    `-forward * R` and he had been turned to meet it. The pose export's root
-//    already carries the pitch that stands the bind pose up
-//    (`quat_from_ypr(0, -90, 0)`), and the page's own forward convention,
-//    `(sin yaw, 0, cos yaw)`, is the one that rig is built in.
-//  * the canopy hangs at the soldier template's own `addTemplate Parachute`
-//    offset, which every vanilla soldier writes as `0/0.3/0` and which rides
-//    out in the canopy bundle's `extras.attach` rather than being written here.
-//
-// The rig is hidden whenever the camera is inside the man (`CVMInside`), which
-// is everywhere but under a canopy with C pressed -- drawing a head from the
-// inside is a mouthful of neck.
-const footBodyLoader = new GLTFLoader();
-let footBody = null;        // { scene, mixer, families, want, soldier, weapon }
-let footCanopy = null;      // { scene, mixer, actions, attach, want }
-let footBodyToken = 0;      // which load is still the current one
-// `window.__footBodyHide(true)`: keep the body and the canopy out of the frame
-// so a headless check can read the same pixels with and without them.
-let footBodyForceHidden = false;
-const footBodyCache = new Map();
-const footBundleCache = new Map();
-let footGaitsManifest = null;
-const footBodyQuat = new THREE.Quaternion();
-const footBodyEuler = new THREE.Euler(0, 0, 0, 'YXZ');
-
-function footGaits() {
-  if (!footGaitsManifest) {
-    footGaitsManifest =
-      fetch(`${MODELS_BASE}/poses/gaits/gaits.json${bust()}`)
-        .then(r => (r.ok ? r.json() : null))
-        .catch(() => null);
-  }
-  return footGaitsManifest;
-}
-
-/** One shared clip sidecar's animations, by its path relative to `poses/`. */
-function footBundle(relative) {
-  if (!relative) return Promise.resolve([]);
-  if (!footBundleCache.has(relative)) {
-    footBundleCache.set(relative, footBodyLoader
-      .loadAsync(`${MODELS_BASE}/poses/${relative}${bust()}`)
-      .then(g => g.animations ?? [], () => []));
-  }
-  return footBundleCache.get(relative);
-}
-
-/** Every clip the body can play: the grip's upper half, the shared lower half,
- *  and the parachute bundle. A bundle that is not in the tree contributes
- *  nothing and `soldier-body.js`'s chains fall back past it. */
-async function footBodyClips(weapon) {
-  const manifest = await footGaits();
-  if (!manifest) return [];
-  const grip = manifest.weaponGrip?.[weapon] ?? weapon;
-  let upper = await footBundle(manifest.grips?.[grip]);
-  if (!upper.length && manifest.grips?.Colt) {
-    // The same fallback the remote renderer takes: a weapon whose grip has no
-    // bundle borrows the pistol's rather than sliding along unanimated.
-    upper = await footBundle(manifest.grips.Colt);
-  }
-  const lower = await footBundle(manifest.lower);
-  const chute = await footBundle(manifest.parachute);
-  // The swim bundle is weapon-independent like the parachute's -- every swim
-  // state names a clip under `animations/3P_NoWeapon/`, because every one of them
-  // declares `c_AsmHideWeapon`.
-  const swim = await footBundle(manifest.swim);
-  return [...lower, ...upper, ...chute, ...swim];
-}
-
-function footPosePair(soldierName, weapon) {
-  const key = `${soldierName}|${weapon}`;
-  if (!footBodyCache.has(key)) {
-    footBodyCache.set(key, footBodyLoader
-      .loadAsync(`${MODELS_BASE}/poses/${soldierName}__${weapon}.pose.glb${bust()}`)
-      .then(gltf => {
-        gltf.scene.traverse(obj => {
-          const data = obj.userData || {};
-          if (data.effect || data.projectileMesh || data.projectileTrail
-              || data.collision || /collision/i.test(obj.name || '')) {
-            obj.visible = false;
-          }
-          if (obj.isSkinnedMesh) obj.frustumCulled = false;
-        });
-        // Document-level extras land on `gltf.userData`. `extras.weapon` is the
-        // name of the welded weapon subtree, which the swim states have to stow.
-        return { scene: gltf.scene, animations: gltf.animations ?? [],
-                 weaponName: gltf.userData?.weapon ?? null };
-      }, () => null));
-  }
-  return footBodyCache.get(key);
-}
-
-function footCanopyAsset() {
-  if (!footBodyCache.has('__canopy')) {
-    footBodyCache.set('__canopy', footGaits().then(manifest => {
-      if (!manifest?.canopy) return null;
-      return footBodyLoader
-        .loadAsync(`${MODELS_BASE}/poses/${manifest.canopy}${bust()}`)
-        .then(gltf => {
-          gltf.scene.traverse(obj => {
-            if (obj.isSkinnedMesh) obj.frustumCulled = false;
-          });
-          // Document-level extras land on `gltf.userData`, the same place the
-          // arms rig reads its armoury block from.
-          const doc = (Object.keys(gltf.userData ?? {}).length
-            ? gltf.userData : null) ?? gltf.parser?.json?.extras ?? {};
-          const attach = doc.attach ?? manifest.canopyAttach;
-          return {
-            scene: gltf.scene,
-            animations: gltf.animations ?? [],
-            // The `Parachute` child's own `setPosition`, read out of the
-            // bundle. The literal is the last resort: every vanilla soldier
-            // writes `0/0.3/0`, and a tree published before the bundle carried
-            // the offset has nothing else to say.
-            attach: (Array.isArray(attach) && attach.length === 3)
-              ? attach : [0, 0.3, 0],
-          };
-        }, () => null);
-    }, () => null));
-  }
-  return footBodyCache.get('__canopy');
-}
-
-/** One mixer over the pose rig, with an action per half per family. Actions are
- *  parked at weight 0 and switched by `syncFootBody`, the same discipline the
- *  remote renderer uses; a one-shot (`BODY_ONCE`: the four `c_AsmPlayOnce`
- *  parachute states) clamps at its last frame instead of looping, and the
- *  engine's own `addTransitionWhenDone` — which `parachute.js` already runs —
- *  is what moves it on. */
-function buildFootBodyRig(scene, clips) {
-  const mixer = new THREE.AnimationMixer(scene);
-  const action = (name, once) => {
-    const clip = THREE.AnimationClip.findByName(clips, name);
-    if (!clip) return null;
-    const a = mixer.clipAction(clip);
-    if (once) { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; }
-    else a.setLoop(THREE.LoopRepeat, Infinity);
-    a.play();
-    a.setEffectiveWeight(0);
-    a.paused = true;
-    return a;
-  };
-  const families = {};
-  for (const [family, spec] of Object.entries(BODY_CLIPS)) {
-    const once = BODY_ONCE.has(family);
-    const lower = action(spec.lower, once);
-    const upper = action(spec.upper, once);
-    // A family counts only when both halves resolved, which is the pose
-    // pipeline's own rule: half a body is worse than the family before it.
-    if (lower && upper) families[family] = [lower, upper];
-  }
-  return { mixer, families };
-}
-
-function disposeFootBodyScene(root) {
-  root.traverse(obj => {
-    obj.geometry?.dispose();
-    obj.skeleton?.dispose?.();
-    for (const m of [obj.material].flat().filter(Boolean)) {
-      m.map?.dispose();
-      m.dispose();
-    }
-  });
-}
-
-function disposeFootBody() {
-  for (const held of [footBody, footCanopy]) {
-    if (!held) continue;
-    if (held.mixer) {
-      held.mixer.stopAllAction();
-      held.mixer.uncacheRoot(held.mixer.getRoot());
-    }
-    scene.remove(held.scene);
-    // The scenes are `skeletonClone`s of a cached original, so their GPU
-    // resources are their own and the cache's stay for the next life.
-    disposeFootBodyScene(held.scene);
-  }
-  footBody = null;
-  footCanopy = null;
-}
-
-/** (Re)build the third-person body for `soldierName` holding `weapon`.
- *
- * Called wherever the weapon in hand changes, because the pose glb carries the
- * welded weapon — swapping to the knife has to change the body, not just the
- * arms rig. A repeat call for the pair already loaded is a no-op, so a respawn
- * with the same kit costs nothing. */
-async function ensureFootBody(soldierName, weapon) {
-  if (!soldierName || !weapon) return null;
-  if (footBody && footBody.soldier === soldierName
-      && footBody.weapon === weapon) return footBody;
-  const mine = ++footBodyToken;
-  const [pair, clips, canopy] = await Promise.all([
-    footPosePair(soldierName, weapon),
-    footBodyClips(weapon),
-    footCanopyAsset(),
-  ]);
-  if (mine !== footBodyToken) return null;
-  if (!pair) return null;
-  disposeFootBody();
-  const body = skeletonClone(pair.scene);
-  bindDynamicShading(body);
-  const rig = buildFootBodyRig(body, [...pair.animations, ...clips]);
-  body.visible = false;
-  scene.add(body);
-  // The welded weapon, so the swim states can stow it. The pose export names
-  // that subtree after the weapon template and records the name in
-  // `extras.weapon`, so this is read out of the file rather than guessed.
-  const weaponNode = body.getObjectByName(pair.weaponName ?? weapon) ?? null;
-  footBody = { scene: body, mixer: rig.mixer, families: rig.families,
-               want: null, soldier: soldierName, weapon, weaponNode };
-  if (canopy) {
-    const chute = skeletonClone(canopy.scene);
-    bindDynamicShading(chute);
-    const mixer = new THREE.AnimationMixer(chute);
-    const actions = {};
-    for (const clip of canopy.animations) {
-      const a = mixer.clipAction(clip);
-      const once = clip.name === 'open';
-      if (once) { a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; }
-      else a.setLoop(THREE.LoopRepeat, Infinity);
-      a.play();
-      a.setEffectiveWeight(0);
-      a.paused = true;
-      actions[clip.name] = a;
-    }
-    chute.visible = false;
-    scene.add(chute);
-    footCanopy = { scene: chute, mixer, actions, attach: canopy.attach,
-                   want: null };
-  }
-  return footBody;
-}
-
-/** One display frame of the third-person body: place it, pick its clips, tick
- *  its mixers. Runs whether or not the body is on screen, so that stepping into
- *  a chase view does not catch a rig frozen where it was last visible. */
-function syncFootBody(dt) {
-  if (!footBody || !soldier) return;
-  // NOT under the death cam, deliberately. The death cam is an external view --
-  // it parks a couple of metres behind and above the corpse and pitches down
-  // onto it (`DEATH_CAM.foot`) -- so the body would fit there, and it was
-  // wired up and then taken out again on the frame it produced
-  // (`08-death-cam.png`): there is no death family in `soldier-body.js`, so the
-  // man lies dead and the rig plays `stand`, and the near pass still draws the
-  // first-person arms over the top because it gates on `firstPerson`, which
-  // stays true while dead. A standing man under a death cam is the same kind
-  // of wrong that gated `?soldier3p=1` in the first place. It wants the
-  // `Lb_Die*` families, which this stream did not survey.
-  //
-  // ONE EXCEPTION, added by the swim stream: a man who dies in the water has a
-  // real death family. `BFSoldier::handleDamage` tests `c_AsmIsSwimming` before
-  // the pose (`0x08270c51`-`0x08270c8a`) and plays `Lb_DieSwim` / `Ub_DieSwim`,
-  // and those two clips are baked, so the corpse can be drawn instead of a man
-  // standing to attention. The family is resolved first and the gate consults
-  // it, which is the whole of the change; a land death still draws nobody.
-  const want = bodyClipFamily({
-    gait: soldier.gait,
-    stance: soldier.stance,
-    parachute: soldier.chute?.clips(!!soldierDead) ?? null,
-    swim: soldier.swimClips?.(!!soldierDead) ?? null,
-  }, family => !!footBody.families[family]);
-  const deathFamily = want === 'swimDie' || want === 'parachuteDie'
-    || want === 'parachuteDeadLanded';
-  const visible = optOnFoot.checked && !optPilot.checked
-    && (!soldierDead || deathFamily)
-    && !footView3p.firstPerson && !footBodyForceHidden;
-  // `soldier.y` is the feet and so is the pose rig's root; the body's yaw is
-  // the soldier's plus the half turn the export bakes in. The position is this
-  // frame's blend between the last two tick boundaries, the same `presentAlpha`
-  // the drawn eye uses -- a raw tick position under an interpolated camera is a
-  // man juddering inside his own chase view.
-  const bx = footFeetPrev.x + (footFeetCur.x - footFeetPrev.x) * presentAlpha;
-  const by = footFeetPrev.y + (footFeetCur.y - footFeetPrev.y) * presentAlpha;
-  const bz = footFeetPrev.z + (footFeetCur.z - footFeetPrev.z) * presentAlpha;
-  footBody.scene.position.set(bx, by, bz);
-  // The view angles are not blended anywhere on this path (see the
-  // render-interpolation block beside `footLookPending`): the drawn view is
-  // predicted forward from the pending mouse counts, and the body turns with
-  // the drawn view, not with the tick's.
-  footBodyEuler.set(0, footView.yaw, 0);
-  footBodyQuat.setFromEuler(footBodyEuler);
-  footBody.scene.quaternion.copy(footBodyQuat);
-  footBody.scene.visible = visible;
-  // `c_AsmHideWeapon`: every lower swim state declares it and
-  // `BFSoldier::enableItem` obeys it (`0x082784af`), so a swimming soldier's
-  // weapon is put away. The clips are from `animations/3P_NoWeapon/` and leave
-  // his hands empty; the pose glb welds the rifle to the bones regardless, so
-  // the renderer has to hide that subtree itself.
-  if (footBody.weaponNode) {
-    footBody.weaponNode.visible = !BODY_HIDES_WEAPON.has(want);
-  }
-
-  // The family was resolved above the visibility gate, because the swim death is
-  // the one death this rig can draw. The order inside `bodyFamily` is the
-  // engine's: the parachute's whole-body pair, then the swim's, then the gait.
-  if (want !== footBody.want) {
-    footBody.want = want;
-    for (const [family, actions] of Object.entries(footBody.families)) {
-      for (const a of actions) {
-        a.setEffectiveWeight(family === want ? 1 : 0);
-        if (family === want) { a.paused = false; a.reset(); a.play(); }
-      }
-    }
-  }
-  footBody.mixer.update(dt);
-
-  if (footCanopy) {
-    const clip = canopyClip(want);
-    const [ax, ay, az] = footCanopy.attach;
-    footCanopy.scene.position.set(bx + ax, by + ay, bz + az);
-    footCanopy.scene.quaternion.copy(footBodyQuat);
-    footCanopy.scene.visible = visible && !!clip;
-    if (clip !== footCanopy.want) {
-      footCanopy.want = clip;
-      for (const [name, a] of Object.entries(footCanopy.actions)) {
-        a.setEffectiveWeight(name === clip ? 1 : 0);
-        if (name === clip) { a.paused = false; a.reset(); a.play(); }
-      }
-    }
-    footCanopy.mixer.update(dt);
-  }
-}
-
-/** Load the seat-pose glb for the active seat, if the seat draws anybody.
- *
- * **Whether an occupant is drawn at all is whether the seat reaches a
- * SeatObject**, and `extras.seat.flags` then says how much of him — see
- * `seat-ik.js`'s `seatBody` for the addresses. A Sherman's driving position
- * declares EntryPoints, a Camera and the turret and no SeatObject, so nobody
- * is drawn there; its hull gunner reaches `ShermanBrowningSeat` with
- * `c_SeatShowHalfBodySoldier`, so the legs are hidden and the torso shows.
- *
- * Which pose is `resolveSeatStates`: the seat's own
- * `seatAnimationUpperBody`/`LowerBody` where it declares them (a Willys
- * passenger's `Ub_PassengerInWilly`), the soldier template's `Ub_SitInVehicle`
- * plus `Lb_SitInVehicle`/`Lb_StandInVehicle` where it does not — which is
- * every driver's seat in the game, and the reason this used to return early
- * and draw nothing.
- *
- * The glb is parented to the global `scene` (not to a node inside the vehicle's
- * tree) to avoid disturbing the VehicleCamera's camera-node lookup, and its
- * world position is synced to the seat node every frame. An AnimationMixer plays
- * the `seat.lower`+`seat.upper` clips the extractor baked in. Visibility
- * follows the camera mode: hidden in cockpit (first-person), shown in every
- * external view (C). */
-const seatPoseLoader = new GLTFLoader();
-let seatPoseMixer = null;
-let seatPoseActions = null;
-let seatPoseTarget = null;   // the seat node whose world pose we follow
-let seatIkChains = [];       // per-frame arm work, built by `bindSeatIk`
-let seatPoseGeneration = 0;  // which load is still the current one
-
-async function loadSeatPose() {
-  disposeSeatPose();
-  if (!localPlayer.occupancy || !optPilot.checked) return;
-  const mine = ++seatPoseGeneration;
-  const seat = localPlayer.occupancy.seatInfo(localPlayer.occupancy.activeSeatId);
-  const body = seatBody(seat?.seatObjects);
-  if (!body.draw) return;             // no SeatObject: the game draws nobody
-  const states = resolveSeatStates(seat.seatObjects);
-  const soldierName = soldierKit.soldierTemplateFor(
-    flags.find(f => f.team === deployScreen.deployTeamId) || { team: deployScreen.deployTeamId });
-  const assetFor = name =>
-    `${MODELS_BASE}/poses/${soldierName}__${name}.pose.glb${bust()}`;
-  let gltf;
-  try {
-    gltf = await seatPoseLoader.loadAsync(
-      assetFor(seatPoseName(states.upperBody, states.lowerBody)));
-  } catch {
-    // The seat names a state the game never declared, so no glb was written
-    // for it. The engine still draws the occupant — see `defaultSeatPoseName`.
-    const fallback = defaultSeatPoseName(body.mask);
-    try {
-      gltf = await seatPoseLoader.loadAsync(assetFor(fallback));
-    } catch {
-      return;
-    }
-  }
-  // Leaving the seat, or switching to another, while the glb was in flight:
-  // `disposeSeatPose` has already run and this scene must not be adopted, or
-  // it hangs in the world for ever with nothing left holding a reference.
-  if (mine !== seatPoseGeneration) { disposeSeatScene(gltf.scene); return; }
-  const soldierScene = gltf.scene;
-  try {
-    soldierScene.traverse(obj => {
-      if (obj.isSkinnedMesh) obj.frustumCulled = false;
-    });
-    soldierScene.userData.seatPose = true;
-    // `c_SeatShowHalfBodySoldier`: the engine hides the pelvis and everything
-    // under it rather than swapping in a half model, so the same skinned mesh
-    // simply loses its legs. Scaling the bone to nothing is the closest a
-    // skinned mesh gets to `disableBoneTree` — `visible = false` on a joint
-    // does nothing, because the vertices are drawn by the mesh, not the bone.
-    if (body.halfBody) hideBelowPelvis(soldierScene);
-
-  // The SeatObject node (e.g. `WillyPassengerSeat`) is the *sit* position; an
-  // EntryPoint is the door where the soldier spawns on enter. Sync to the
-  // SeatObject's world pose every frame so the rider moves with the vehicle
-  // without polluting the vehicle's node tree (which VehicleCamera traverses).
-  seatPoseTarget = seat.seatObjects?.[0] || seat.node;
-  if (seatPoseTarget) {
-    seatPoseTarget.getWorldPosition(soldierScene.position);
-    seatPoseTarget.getWorldQuaternion(soldierScene.quaternion);
-  } else {
-    soldierScene.position.set(0, 0, 0);
-  }
-  scene.add(soldierScene);
-  seatSoldier = soldierScene;
-  seatSoldier.visible = !localPlayer.view?.firstPerson;
-  // The helmet. A BFSoldier template declares a body, a head and two hands and
-  // nothing else, so the exported soldier is bare-headed; the helmet belongs
-  // to the kit the player deployed with and hangs off bone `A`. The driver in
-  // `models-work/willy-hands-wheel.png` is wearing one.
-  dressSeatOccupant(soldierScene, seat).catch(err =>
-    console.warn('seat kit:', err));
-
-  // Play the lower + upper seat clips the extractor wrote. They are independent
-  // state machines (like gaits), so two actions at full weight compose.
-  const clips = gltf.animations || [];
-  const lowerClip = THREE.AnimationClip.findByName(clips, 'seat.lower');
-  const upperClip = THREE.AnimationClip.findByName(clips, 'seat.upper');
-  if (lowerClip || upperClip) {
-    seatPoseMixer = new THREE.AnimationMixer(soldierScene);
-    seatPoseActions = {};
-    if (lowerClip) {
-      seatPoseActions.lower = seatPoseMixer.clipAction(lowerClip);
-      seatPoseActions.lower.play();
-    }
-    if (upperClip) {
-      seatPoseActions.upper = seatPoseMixer.clipAction(upperClip);
-      seatPoseActions.upper.play();
-    }
-  }
-  bindSeatIk(seat, soldierScene, clips);
-  } catch (err) {
-    console.error('loadSeatPose:', err);
-  }
-}
-
-// `models/kits.json`, fetched once: which worn meshes each kit hangs off which
-// bone. `kits.html` browses the same file; the graft convention itself lives in
-// `kit-graft.js` so both read it from one place.
-let kitManifest = null;
-const kitPartCache = new Map();
-
-async function kitsIndex() {
-  if (!kitManifest) {
-    kitManifest = fetch(`${MODELS_BASE}/kits.json${bust()}`)
-      .then(r => (r.ok ? r.json() : null))
-      .then(kitsByTemplate, () => new Map());
-  }
-  return kitManifest;
-}
-
-async function loadKitPart(glb) {
-  if (!kitPartCache.has(glb)) {
-    kitPartCache.set(glb, seatPoseLoader
-      .loadAsync(`${MODELS_BASE}/${glb}${bust()}`)
-      .then(g => g.scene, () => null));
-  }
-  return kitPartCache.get(glb);
-}
-
-/** Hang the deploy kit's worn meshes on the seated soldier's own bones.
- *
- * Only the seated occupant for now: the spawn-pad soldiers and the on-foot
- * player load the same bare pose glbs and are bare-headed too, and dressing
- * all three is the same call in three more places once someone wants it. */
-async function dressSeatOccupant(soldierScene, seat) {
-  const index = await kitsIndex();
-  const { kit: kitName } = soldierKit.kitLoadout(deployScreen.deployTeamId, deployScreen.deployKit);
-  const kit = kitName && index.get(String(kitName).toLowerCase());
-  if (!kit) return;
-  for (const graft of wornGrafts(kit)) {
-    // The seat may have been left while the part was in flight.
-    if (soldierScene !== seatSoldier) return;
-    const source = await loadKitPart(graft.glb);
-    if (!source || soldierScene !== seatSoldier) return;
-    const bone = findBoneMatching(soldierScene, graft.bone);
-    if (!bone) continue;          // no such bone on this figure: silently bare
-    const node = source.clone(true);
-    node.quaternion.set(...graft.quaternion);
-    node.position.set(...graft.position);
-    node.userData.seatKitPart = true;
-    node.traverse(obj => { if (obj.isMesh) obj.frustumCulled = false; });
-    bone.add(node);
-  }
-}
-
-/** `c_SeatShowHalfBodySoldier` — `setUseSeat` hides `Bip01 Pelvis` and its
- *  subtree. */
-function hideBelowPelvis(soldierScene) {
-  const pelvis = findBone(soldierScene, 'Bip01 Pelvis');
-  if (pelvis) pelvis.scale.setScalar(1e-4);
-}
-
-/** A bone by name, tolerant of the underscore/space spellings the data mixes. */
-const boneKey = name => String(name).toLowerCase().replace(/[_\s]+/g, ' ').trim();
-function findBone(root, name) {
-  const want = boneKey(name);
-  let found = null;
-  root.traverse(obj => { if (!found && boneKey(obj.name) === want) found = obj; });
-  return found;
-}
-
-/** The same, for a bone the kit manifest names (`A`, `backpack`, `HipPack`). */
-function findBoneMatching(root, want) {
-  const pattern = bonePattern(want);
-  let found = null;
-  root.traverse(obj => { if (!found && pattern.test(obj.name)) found = obj; });
-  return found;
-}
-
-/** Build the per-frame IK work for one seat: every `extras.skeletonIK` node
- *  this seat owns, paired with the arm chain it drives.
- *
- * Scoped by the same `control` tag `surveyVehicle` buckets seats with, so a
- * Sherman gunner's Browning does not pull the driver's hands and vice versa.
- * The chain is the bone's two ancestors — the engine's own `i-1` and `i-2`
- * (`applyIK2BoneSolver` reads the bone array at negative offsets, 232 bytes
- * apart), which for `Bip01 R Hand` is the forearm and the upper arm. */
-function bindSeatIk(seat, soldierScene, clips) {
-  seatIkChains = [];
-  if (!seat?.node || !soldierScene) return;
-  // Which bones the seat clips re-pose every frame. Those need no restoring:
-  // the mixer overwrites last frame's IK before this frame's runs. A bone no
-  // clip touches does need it, or the deltas compound (a pose file that
-  // resolved only `seat.lower` would wind the arms off the model in seconds).
-  const driven = new Set();
-  for (const clip of clips || []) {
-    for (const track of clip.tracks || []) {
-      driven.add(boneKey(track.name.slice(0, track.name.lastIndexOf('.'))));
-    }
-  }
-  const owners = [];
-  seat.node.traverse(obj => {
-    if (!obj.userData?.skeletonIK) return;
-    const owner = obj.userData.control || localPlayer.occupancy?.rootId;
-    if (owner === seat.id) owners.push(obj);
-  });
-  const resolveChild = (node, index, name) =>
-    (name && node.children.find(c => c.name === name)) || node.children[index] || null;
-  for (const binding of collectIkBindings(owners, resolveChild)) {
-    const end = findBone(soldierScene, binding.bone);
-    const mid = end?.parent;
-    const root = mid?.parent;
-    if (!end || !mid || !root) continue;
-    seatIkChains.push({
-      ...binding, end, mid, root,
-      rest: [root, mid, end].map(
-        b => (driven.has(boneKey(b.name)) ? null : b.quaternion.clone())),
-    });
-  }
-}
-
-// Scratch, so the three.js half of a frame's IK allocates nothing. The plain
-// arrays `seat-ik.js` returns are small and short-lived; what used to cost
-// real work each frame was re-baking the rotation triple, and `collectIkBindings`
-// now does that once (`prepareIkEntry`).
-const _ikPos = new THREE.Vector3();
-const _ikScale = new THREE.Vector3();
-const _ikQuat = new THREE.Quaternion();
-const _ikParent = new THREE.Quaternion();
-const _ikInverse = new THREE.Quaternion();
-const _ikDelta = new THREE.Quaternion();
-const _ikRoot = new THREE.Vector3();
-const _ikMid = new THREE.Vector3();
-const _ikEnd = new THREE.Vector3();
-const _ikA = [0, 0, 0];
-const _ikB = [0, 0, 0];
-const _ikC = [0, 0, 0];
-const toArr = (v, out) => { out[0] = v.x; out[1] = v.y; out[2] = v.z; return out; };
-
-/** Pin each declared bone to its vehicle node's live world pose, once a frame.
- *
- * Called after the seat pose's mixer has stepped and after the vehicle's own
- * rig has been applied, so the wheel is already where this frame put it and
- * the hands follow it round rather than trailing it by a frame.
- *
- * `updateIk` (lnxded `0x08265880`) does the same composition in the soldier's
- * own frame; world space is the same answer and saves inverting a matrix the
- * viewer already has. The arm reaches (`applyIK2BoneSolver`) and the hand is
- * then planted at the declared angle outright (`Skeleton::transform`,
- * `0x8342233`) — both halves, in that order. */
-function stepSeatIk() {
-  if (!seatIkChains.length || !seatSoldier) return;
-  for (const chain of seatIkChains) {
-    if (chain.rest[0]) chain.root.quaternion.copy(chain.rest[0]);
-    if (chain.rest[1]) chain.mid.quaternion.copy(chain.rest[1]);
-    if (chain.rest[2]) chain.end.quaternion.copy(chain.rest[2]);
-  }
-  seatSoldier.updateMatrixWorld(true);
-  for (const chain of seatIkChains) {
-    chain.target.updateWorldMatrix(true, false);
-    chain.target.matrixWorld.decompose(_ikPos, _ikQuat, _ikScale);
-    const target = ikTarget(
-      chain.entry,
-      [_ikPos.x, _ikPos.y, _ikPos.z],
-      [_ikQuat.x, _ikQuat.y, _ikQuat.z, _ikQuat.w]);
-
-    chain.root.getWorldPosition(_ikRoot);
-    chain.mid.getWorldPosition(_ikMid);
-    chain.end.getWorldPosition(_ikEnd);
-    const solve = solveTwoBone(
-      toArr(_ikRoot, _ikA), toArr(_ikMid, _ikB), toArr(_ikEnd, _ikC),
-      target.position);
-    if (solve.degenerate) continue;
-
-    // A world-space rotation applied to a bone whose parent stays put is
-    // `local' = parentWorld^-1 * q * parentWorld * local`. Bend the forearm
-    // first, then swing the whole arm: the swing was derived from where the
-    // hand sits *after* the bend and carries it along rigidly.
-    applyWorldDelta(chain.mid, solve.bend);
-    applyWorldDelta(chain.root, solve.reach);
-    chain.root.updateMatrixWorld(true);
-
-    // And the hand's own orientation is the declared one, not whatever the
-    // arm's swing left behind.
-    chain.end.parent.getWorldQuaternion(_ikParent);
-    _ikQuat.set(target.quaternion[0], target.quaternion[1],
-                target.quaternion[2], target.quaternion[3]);
-    chain.end.quaternion.copy(_ikParent.invert()).multiply(_ikQuat);
-    chain.end.updateMatrixWorld(true);
-  }
-}
-
-function applyWorldDelta(bone, quat) {
-  if (!bone.parent) return;
-  bone.parent.getWorldQuaternion(_ikParent);
-  _ikInverse.copy(_ikParent).invert();
-  _ikDelta.set(quat[0], quat[1], quat[2], quat[3]);
-  // parentWorld^-1 * delta * parentWorld, then premultiply onto the local.
-  _ikDelta.premultiply(_ikInverse).multiply(_ikParent);
-  bone.quaternion.premultiply(_ikDelta);
-}
-
-/** Give one loaded seat-pose scene back to the GPU, the same way
- *  `disposeHandWeapon` gives back a weapon rig.
- *
- * A soldier pose is a skinned mesh with its own geometry, materials, textures
- * and bone texture, and entering and leaving a seat loads a fresh one every
- * time. Dropping the reference frees none of that: only `dispose()` does, and
- * a session spent hopping in and out of a jeep used to leak every copy. */
-function disposeSeatScene(root) {
-  if (!root) return;
-  // A grafted kit part is a `clone(true)` of a cached scene, so its geometry
-  // and materials belong to `kitPartCache` and are still wanted by the next
-  // occupant. Unhook those first; only the pose's own meshes are freed.
-  const borrowed = [];
-  root.traverse(obj => { if (obj.userData?.seatKitPart) borrowed.push(obj); });
-  for (const node of borrowed) node.removeFromParent();
-  root.traverse(obj => {
-    obj.geometry?.dispose();
-    obj.skeleton?.dispose?.();
-    for (const m of [obj.material].flat().filter(Boolean)) {
-      m.map?.dispose();
-      m.dispose();
-    }
-  });
-  root.removeFromParent?.();
-  if (root.parent) root.parent.remove(root);
-}
-
-function disposeSeatPose() {
-  // Any load still in flight is now stale. `loadSeatPose` is not awaited at
-  // its call sites, so leaving the vehicle before the glb arrives used to let
-  // the finished load adopt itself into an empty world: a soldier sitting in
-  // mid-air over the spot the jeep was, holding a reference nothing would ever
-  // drop. Bumping the generation here is what makes that load discard itself.
-  seatPoseGeneration++;
-  // The mixer first, while its bindings still resolve, then the GPU half.
-  if (seatPoseMixer) {
-    seatPoseMixer.stopAllAction();
-    seatPoseMixer.uncacheRoot(seatPoseMixer.getRoot());
-    seatPoseMixer = null;
-  }
-  seatPoseActions = null;
-  seatPoseTarget = null;
-  seatIkChains = [];
-  if (seatSoldier) {
-    disposeSeatScene(seatSoldier);
-    seatSoldier = null;
-  }
-}
-
-function updateSeatPoseVisibility() {
-  if (seatSoldier) {
-    seatSoldier.visible = !localPlayer.view?.firstPerson;
-  }
-}
-
-// --- soldier footsteps, damage direction & hurt audio ------------------------
-
-let soldierSoundsIndex = null;
-let lastHurtSoundTime = 0;
-let lastWorldHurtSoundTime = 0;
-let hitIndicatorTimer = 0;
-let hitIndicatorDir = 0;
-let lastSoldierHp = null;
-
-function soldierSoundsManifest() {
-  if (!soldierSoundsIndex) {
-    soldierSoundsIndex = fetch(`${MODELS_BASE}/sounds/soldier.json${bust()}`)
-      .then(r => (r.ok ? r.json() : null))
-      .catch(() => null)
-      .then(doc => { if (!doc) soldierSoundsIndex = null; return doc; });
-  }
-  return soldierSoundsIndex;
-}
-
-/**
- * One soldier sample. `position` is world space when the sound belongs to
- * someone other than the listener's own body — a bot's footstep or his hurt
- * grunt. Omitted (or null) is the first-person ear: 2D, at the shoulder, the
- * way the player's own feet have always played. The soldier manifest carries
- * no `Volume <- Distance` ramps (it is foley, not a sound script), so a
- * positional voice takes the panner's own inverse curve with a 1 m reference
- * and a 40 m cut, which is the band a boot actually reaches across.
- */
-function playSoldierOneShot(buffer, volume = 1, pitchJitter = 0.03, delay = 0,
-                            position = null) {
-  if (!buffer || !audioListener || masterVolume() <= 0) return;
-  const ctx = audioListener.context;
-  if (ctx.state === 'suspended') return;
-  const source = ctx.createBufferSource();
-  source.buffer = buffer;
-  if (pitchJitter > 0) {
-    source.playbackRate.value = 1 + (Math.random() * 2 - 1) * pitchJitter;
-  }
-  const gain = ctx.createGain();
-  gain.gain.value = Math.min(Math.max(volume, 0), 1) * masterVolume() * WEAPON_HEADROOM;
-  source.connect(gain);
-  let panner = null;
-  if (position) {
-    panner = ctx.createPanner();
-    panner.panningModel = 'HRTF';
-    panner.distanceModel = 'inverse';
-    panner.refDistance = 1;
-    panner.maxDistance = 40;
-    panner.rolloffFactor = 1;
-    panner.positionX.value = position.x;
-    panner.positionY.value = position.y;
-    panner.positionZ.value = position.z;
-    gain.connect(panner);
-  }
-  (panner ?? gain).connect(audioListener.getInput());
-  source.onended = () => {
-    try {
-      source.disconnect();
-      gain.disconnect();
-      panner?.disconnect();
-    } catch (_) {}
-  };
-  const when = delay > 0 ? ctx.currentTime + delay : 0;
-  try { source.start(when); } catch (_) {}
-}
-
-async function handleSoldierFootstep(step, position = null) {
-  if (AUDIO_OFF || masterVolume() <= 0) return;
-  const manifest = await soldierSoundsManifest();
-  if (!manifest) return;
-
-  let matId = 0;
-  const collider = soldier?.collider;
-  if (collider) {
-    let onStatic = false;
-    let best = -Infinity;
-    if (collider.statics) {
-      const record = soldier._hit || (soldier._hit = {
-        t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0,
-        dx: 0, dy: -1, dz: 0, material: 0, kind: '', owner: -1, triangle: -1,
-      });
-      record.dx = 0; record.dy = -1; record.dz = 0;
-      const hit = collider.statics.cast(step.x, step.y + 0.5, step.z, 0, -1, 0, 1.0, -1, record);
-      if (hit) {
-        best = hit.y;
-        matId = hit.material;
-        onStatic = true;
-      }
-    }
-    const ground = collider.surfaceHeight ? collider.surfaceHeight(step.x, step.z) : NaN;
-    if (!onStatic || (Number.isFinite(ground) && ground >= best)) {
-      matId = collider.heightfield?.material ? collider.heightfield.material(step.x, step.z) : 0;
-    }
-  }
-
-  const matName = footstepMaterial(matId);
-  const triggerName = step.gait === 'run' ? 'c_SstRun' : 'c_SstWalk';
-  const trigger = manifest.triggers?.[triggerName];
-  if (!trigger?.patches) return;
-
-  const surfacePatch = trigger.patches.find(p => p.material === matName) || trigger.patches[0];
-  if (surfacePatch?.layers?.length) {
-    const choice = surfacePatch.layers[Math.floor(Math.random() * surfacePatch.layers.length)];
-    const buf = await modelSoundBuffer(`sounds/${choice.sample}.mp3`);
-    if (buf) playSoldierOneShot(buf, choice.volume ?? 1, 0.03, 0, position);
-  }
-
-  const fabricPatch = trigger.patches.find(p => p.material === 'fabric');
-  if (fabricPatch?.layers?.length) {
-    const choice = fabricPatch.layers[Math.floor(Math.random() * fabricPatch.layers.length)];
-    const buf = await modelSoundBuffer(`sounds/${choice.sample}.mp3`);
-    if (buf) playSoldierOneShot(buf, (choice.volume ?? 1) * 0.5, 0.03, choice.at ?? 0.2, position);
-  }
-
-  const harnessPatch = trigger.patches.find(p => p.material === 'harness');
-  if (harnessPatch?.layers?.length) {
-    const choice = harnessPatch.layers[Math.floor(Math.random() * harnessPatch.layers.length)];
-    const buf = await modelSoundBuffer(`sounds/${choice.sample}.mp3`);
-    if (buf) playSoldierOneShot(buf, (choice.volume ?? 1) * 0.4, 0.03, choice.at ?? 0.1, position);
-  }
-}
-
-function triggerHitIndicator(direction, intensity = 1.0) {
-  hitIndicatorDir = direction;
-  hitIndicatorTimer = 1.0;
-  hudFeed.gameHud.vars['HitFromDir/HitFromDir'] = direction;
-  hudFeed.gameHud.vars['HitFromDir/HitFromDirAlpha'] = Math.max(0.1, Math.min(1.0, intensity));
-  hudFeed.gameHud.requestRepaint();
-}
-
-async function playSoldierHurtSound(isFriendlyFire = false, position = null) {
-  if (AUDIO_OFF || masterVolume() <= 0) return;
-  const now = performance.now() * 0.001;
-  // Two cooldowns: the listener's own grunt and the world's. A shared one
-  // meant a bot hit a second after the player took a round played nothing.
-  const last = position ? lastWorldHurtSoundTime : lastHurtSoundTime;
-  if (now - last < 0.9) return;
-  if (position) lastWorldHurtSoundTime = now;
-  else lastHurtSoundTime = now;
-
-  const manifest = await soldierSoundsManifest();
-  if (!manifest) return;
-  const triggerName = isFriendlyFire ? 'c_SstFFHitDamage' : 'c_SstHitDamage';
-  const trigger = manifest.triggers?.[triggerName];
-  const patch = trigger?.patches?.[0];
-  if (!patch?.layers?.length) return;
-  const choice = patch.layers[Math.floor(Math.random() * patch.layers.length)];
-  const buf = await modelSoundBuffer(`sounds/${choice.sample}.mp3`);
-  if (buf) playSoldierOneShot(buf, choice.volume ?? 0.7, 0.05, 0, position);
-}
+const soldierView = createSoldierView({
+  get DEATH_CAM() { return DEATH_CAM; }, get applyLook() { return applyLook; },
+  get camera() { return camera; }, get collectSupplyDepots() { return collectSupplyDepots; },
+  get collider() { return collider; }, get currentRoot() { return currentRoot; },
+  get deathCamAt() { return deathCamAt; }, get deathCamPos() { return deathCamPos; },
+  get deathCamShot() { return deathCamShot; }, set deathCamShot(v) { deathCamShot = v; },
+  get deathCamTarget() { return deathCamTarget; }, set deathCamTarget(v) { deathCamTarget = v; },
+  get deathCamTimer() { return deathCamTimer; }, set deathCamTimer(v) { deathCamTimer = v; },
+  get deployScreen() { return deployScreen; }, get footBodies() { return footBodies; },
+  get footEyeCur() { return footEyeCur; }, get footEyePrev() { return footEyePrev; },
+  get footLookPending() { return footLookPending; }, get footPending() { return footPending; },
+  get footView() { return footView; }, get frameInputLast() { return frameInputLast; },
+  get hudBridge() { return hudBridge; }, get look() { return look; },
+  get params() { return params; }, get presentAlpha() { return presentAlpha; },
+  get scanForEntry() { return scanForEntry; }, get serverSettings() { return serverSettings; },
+  get soldier() { return soldier; }, get soldierArmor() { return soldierArmor; },
+  get soldierDead() { return soldierDead; }, set soldierDead(v) { soldierDead = v; },
+  get soldierKit() { return soldierKit; }, get spawning() { return spawning; },
+  get supplyDepotsRoot() { return supplyDepotsRoot; }, set supplyDepotsRoot(v) { supplyDepotsRoot = v; },
+  get supplyField() { return supplyField; }, set supplyField(v) { supplyField = v; },
+  get supplyTarget() { return supplyTarget; }, get world() { return world; },
+});
+const footBodies = createFootBody({
+  get MODELS_BASE() { return MODELS_BASE; },
+  get bindDynamicShading() { return bindDynamicShading; }, get bust() { return bust; },
+  get footFeetCur() { return footFeetCur; }, get footFeetPrev() { return footFeetPrev; },
+  get footView() { return footView; }, get footView3p() { return soldierView.footView3p; },
+  get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
+  get presentAlpha() { return presentAlpha; }, get scene() { return scene; },
+  get soldier() { return soldier; }, get soldierDead() { return soldierDead; },
+});
+const seatPose = createSeatPose({
+  get MODELS_BASE() { return MODELS_BASE; }, get bust() { return bust; },
+  get deployScreen() { return deployScreen; }, get flags() { return flags; },
+  get localPlayer() { return localPlayer; }, get optPilot() { return optPilot; },
+  get scene() { return scene; },
+  get seatSoldier() { return seatSoldier; }, set seatSoldier(v) { seatSoldier = v; },
+  get soldierKit() { return soldierKit; },
+});
 
 // --- control-point capture voice -------------------------------------------
 //
@@ -9252,30 +7668,30 @@ function captureVoiceDirs(team) {
 async function loadCaptureVoice(dir, stem) {
   const key = `voices:${dir}/${stem}.mp3`;
   if (missingCaptureVoices.has(key)) return null;
-  let pending = audioBufferCache.get(key);
+  let pending = pageAudio.audioBufferCache.get(key);
   if (!pending) {
-    if (!audioLoader) return null;
-    pending = audioLoader.loadAsync(`${dir}/${stem}.mp3${bust()}`)
+    if (!pageAudio.audioLoader) return null;
+    pending = pageAudio.audioLoader.loadAsync(`${dir}/${stem}.mp3${bust()}`)
       .catch(() => {
         // Remembered, not retried: a folder the tree does not carry would
         // otherwise be fetched again on every take.
         missingCaptureVoices.add(key);
-        audioBufferCache.delete(key);
+        pageAudio.audioBufferCache.delete(key);
         return null;
       });
-    audioBufferCache.set(key, pending);
+    pageAudio.audioBufferCache.set(key, pending);
   }
   return pending;
 }
 async function playCaptureVoice(kind = 'gain', team = mapSurfaces.localMapTeam()) {
-  if (AUDIO_OFF || masterVolume() <= 0) return;
+  if (AUDIO_OFF || pageAudio.masterVolume() <= 0) return;
   const stems = CAPTURE_VOICE_STEMS[kind];
   if (!stems) return;
   // One announcement per take, never stacked.
   const now = performance.now() * 0.001;
   if (now - lastCaptureVoiceTime < 1.0) return;
-  ensureAudioContext();
-  if (!audioListener || audioListener.context.state === 'suspended') return;
+  pageAudio.ensureAudioContext();
+  if (!pageAudio.audioListener || pageAudio.audioListener.context.state === 'suspended') return;
   lastCaptureVoiceTime = now;
   const stem = stems[Math.floor(Math.random() * stems.length)];
   for (const dir of captureVoiceDirs(team)) {
@@ -9283,7 +7699,7 @@ async function playCaptureVoice(kind = 'gain', team = mapSurfaces.localMapTeam()
     if (!buf) continue;
     // The one-shot path the footsteps and hurt grunts already use: 2D voice,
     // no pitch wobble (a `randomPlay` pick is the variation), script volume 1.
-    playSoldierOneShot(buf, 1, 0, 0);
+    pageAudio.playSoldierOneShot(buf, 1, 0, 0);
     lastCaptureVoice = { kind, team, dir, stem };
     return;
   }
@@ -9304,7 +7720,7 @@ function applyDamageToPlayer(damage, attackerPos = null, attackerTeam = null) {
   if (optPilot.checked || localPlayer.occupancy) return;
 
   const isFriendlyFire = attackerTeam != null && attackerTeam === deployScreen.deployTeamId;
-  playSoldierHurtSound(isFriendlyFire);
+  pageAudio.playSoldierHurtSound(isFriendlyFire);
 
   let dir = 1;
   if (attackerPos && soldier) {
@@ -9321,7 +7737,7 @@ function applyDamageToPlayer(damage, attackerPos = null, attackerTeam = null) {
       dir = calculateHitOctant(forwardDot, rightDot);
     }
   }
-  triggerHitIndicator(dir, damage / (soldierArmor.maxHitPoints || 100));
+  pageAudio.triggerHitIndicator(dir, damage / (soldierArmor.maxHitPoints || 100));
 }
 
 // The stick spring itself lives in world.js next to the aircraft path that
@@ -9692,7 +8108,7 @@ async function show(entry) {
   guns.groups.length = 0;
   dispose(currentRoot);
   disposeSky();
-  disposeSounds();
+  pageAudio.disposeSounds();
   currentRoot = gltf.scene;
   // The glb holds every mode's vehicles and flags; drop the ones this mode
   // does not park. Before anything indexes the scene, so the vehicle list, the
@@ -9824,7 +8240,7 @@ async function show(entry) {
   // before the collider lands — which is what left the grid all `-2` (no
   // terrain) and every bot with no path.
   setupWater(currentRoot, dir);
-  setupSounds(extras, dir);
+  pageAudio.setupSounds(extras, dir);
   mapSurfaces.loadMapArt(dir);
   // A map held open across a level switch would be showing the old level.
   mapSurfaces.toggleFullMap(false);
@@ -10080,12 +8496,12 @@ if (replayUrl) {
 
 
 optSound.addEventListener('change', () => {
-  ensureAudioContext();
-  updateAudio();
+  pageAudio.ensureAudioContext();
+  pageAudio.updateAudio();
 });
 optSoundVol.addEventListener('input', () => {
-  ensureAudioContext();
-  updateAudio();
+  pageAudio.ensureAudioContext();
+  pageAudio.updateAudio();
 });
 optPilot.addEventListener('change', () => {
   if (optPilot.checked && optOnFoot.checked) {
@@ -10138,7 +8554,7 @@ function frame(dt) {
     // frame late (the page's original feed-then-pump order).
     feedMobileTurretAim(dt);
     pumpLook(lookTicks);
-    const held = captured ? keys : EMPTY_KEYS;
+    const held = captured ? keys : soldierView.EMPTY_KEYS;
     // The engine's PlayerInput, named by action: the same keys, mouse
     // latches and mobile pad this page has always folded. `forwardKeys` and
     // `rudder` are the raw W/S and A/D pairs the aircraft's stick wants —
@@ -10165,7 +8581,7 @@ function frame(dt) {
     look = { x: mouseInput.x, y: mouseInput.y };
   } else if (onFoot) {
     pumpLook(lookTicks);
-    const held = captured ? keys : EMPTY_KEYS;
+    const held = captured ? keys : soldierView.EMPTY_KEYS;
     // Hoisted so footFire can hand the deviation model the same
     // c_PIThrottle / c_PIYaw values the body integrates — the engine's speed
     // gates read the *input*, not the achieved velocity.
@@ -10233,7 +8649,7 @@ function frame(dt) {
     if (parachuteLog.length > 64) parachuteLog.splice(0, parachuteLog.length - 64);
   }
   if (soldier?.footstepEvents.length) {
-    for (const step of soldier.drainFootstepEvents()) handleSoldierFootstep(step);
+    for (const step of soldier.drainFootstepEvents()) pageAudio.handleSoldierFootstep(step);
   }
 
   // The room's wire, right on the sim core's edge: one input word per tick
@@ -10343,7 +8759,7 @@ function frame(dt) {
       camera.updateProjectionMatrix();
     }
   } else if (onFoot) {
-    onFootCamera(dt);
+    soldierView.onFootCamera(dt);
   } else {
     fly(dt);
     applyLook();
@@ -10355,22 +8771,22 @@ function frame(dt) {
   // Sync the seated soldier to its seat node's world pose — the glb is parented
   // to `scene` (not the vehicle tree) so it can't disturb VehicleCamera's node
   // traversal, so it must chase the seat's matrices here instead.
-  if (seatSoldier && seatPoseTarget && optPilot.checked) {
-    seatPoseTarget.getWorldPosition(seatSoldier.position);
-    seatPoseTarget.getWorldQuaternion(seatSoldier.quaternion);
+  if (seatSoldier && seatPose.seatPoseTarget && optPilot.checked) {
+    seatPose.seatPoseTarget.getWorldPosition(seatSoldier.position);
+    seatPose.seatPoseTarget.getWorldQuaternion(seatSoldier.quaternion);
   }
-  if (seatPoseMixer && optPilot.checked) seatPoseMixer.update(dt);
+  if (seatPose.seatPoseMixer && optPilot.checked) seatPose.seatPoseMixer.update(dt);
   // The player's own body. After `onFootCamera` (which is where `syncFootView`
   // settled whether the camera is inside the man this frame) and after the
   // world's tick has moved him, so the rig is placed at the position the frame
   // is actually drawn at rather than the previous one's.
-  syncFootBody(dt);
+  footBodies.syncFootBody(dt);
   // After the mixer, which has just re-posed the arms from the sit clip, and
   // after the drivetrain's `applyRig`/`applyTurrets` above, which is where the
   // steering wheel got this frame's angle. Both orders matter: run it before
   // the mixer and the clip overwrites the hands, run it before the rig and the
   // hands chase last frame's wheel.
-  if (optPilot.checked) stepSeatIk();
+  if (optPilot.checked) seatPose.stepSeatIk();
   // After the drive model has moved the player's vehicle and before the damage
   // pass, so a ram's hit points and its smoke tier land on the same frame.
   // The world's tick ran the bodies immediately before its own damage pass,
@@ -10406,13 +8822,13 @@ function frame(dt) {
   // hangs off, so an impact is placed against the head the player is looking
   // out of in every camera mode.
   if (effectAudio.listener) {
-    effectAudio.setMaster(masterVolume());
+    effectAudio.setMaster(pageAudio.masterVolume());
     effectAudio.update(dt, camera.getWorldPosition(_effectEar));
   }
   applyVisibility();
   updateTextureFade();
   advanceSim(dt);
-  updateAudio(dt);
+  pageAudio.updateAudio(dt);
   updateSky();
   // After the camera controls: a followed replay places the camera last.
   replayController?.update(dt);
@@ -10443,7 +8859,7 @@ function frame(dt) {
   // it. It is true everywhere but under a canopy with C pressed. A dead man
   // holds no weapon either: the death cam (on foot or over a wreck) is a shot
   // of the body from outside, and retail draws no first-person rig over it.
-  if (soldierKit.handWeapon?.rig.visible && footView3p.firstPerson && !soldierDead) {
+  if (soldierKit.handWeapon?.rig.visible && soldierView.footView3p.firstPerson && !soldierDead) {
     renderer.autoClear = false;
     renderer.clearDepth();
     // Two traps in an overlay pass, both learned the hard way. Three draws
@@ -10597,17 +9013,17 @@ const testHooks = installTestHooks({
   get KBLOCK_KEYS() { return KBLOCK_KEYS; }, get KITS() { return deployScreen.KITS; },
   get LOCAL_PLAYER() { return LOCAL_PLAYER; },
   get MINIMAP_TEAM_TINT() { return mapSurfaces.MINIMAP_TEAM_TINT; },
-  get activeAreaAudios() { return activeAreaAudios; },
+  get activeAreaAudios() { return pageAudio.activeAreaAudios; },
   get aimHeld() { return soldierKit.aimHeld; }, set aimHeld(v) { soldierKit.aimHeld = v; },
   get altFireDemolitions() { return soldierKit.altFireDemolitions; },
-  get ambientAudio() { return ambientAudio; }, get announceCapture() { return announceCapture; },
+  get ambientAudio() { return pageAudio.ambientAudio; }, get announceCapture() { return announceCapture; },
   get applyDamageToPlayer() { return applyDamageToPlayer; },
-  get applyVehicleHit() { return applyVehicleHit; }, get audioLimiter() { return audioLimiter; },
-  get audioListener() { return audioListener; }, get bfmap() { return mapSurfaces.bfmap; },
+  get applyVehicleHit() { return applyVehicleHit; }, get audioLimiter() { return pageAudio.audioLimiter; },
+  get audioListener() { return pageAudio.audioListener; }, get bfmap() { return mapSurfaces.bfmap; },
   get bodyScene() { return bodyScene; }, get bodyWorld() { return bodyWorld; },
   get botBodies() { return botBodies; }, get botUnits() { return botUnits; },
   get camera() { return camera; }, get cancelDeploy() { return spawning.cancelDeploy; },
-  get canopySpan() { return canopySpan; }, get captureVoiceDirs() { return captureVoiceDirs; },
+  get canopySpan() { return soldierView.canopySpan; }, get captureVoiceDirs() { return captureVoiceDirs; },
   get captureVoiceKind() { return captureVoiceKind; }, get chaseRig() { return chaseRig; },
   get clickQueued() { return soldierKit.clickQueued; }, set clickQueued(v) { soldierKit.clickQueued = v; },
   get collectEntryPoints() { return collectEntryPoints; }, get collider() { return collider; },
@@ -10630,10 +9046,10 @@ const testHooks = installTestHooks({
   get exitSeat() { return exitSeat; }, get exitVehicle() { return exitVehicle; },
   get explosivesTemplate() { return soldierKit.explosivesTemplate; }, get extras() { return extras; },
   get fireStateFor() { return fireStateFor; }, get flags() { return flags; },
-  get floatHosts() { return floatHosts; }, get foot3pRel() { return foot3pRel; },
-  get footBody() { return footBody; },
-  get footBodyForceHidden() { return footBodyForceHidden; }, set footBodyForceHidden(v) { footBodyForceHidden = v; },
-  get footCanopy() { return footCanopy; }, get footView3p() { return footView3p; },
+  get floatHosts() { return floatHosts; }, get foot3pRel() { return soldierView.foot3pRel; },
+  get footBody() { return footBodies.footBody; },
+  get footBodyForceHidden() { return footBodies.footBodyForceHidden; }, set footBodyForceHidden(v) { footBodies.footBodyForceHidden = v; },
+  get footCanopy() { return footBodies.footCanopy; }, get footView3p() { return soldierView.footView3p; },
   get frame() { return frame; }, get friendlyMapUnits() { return mapSurfaces.friendlyMapUnits; },
   get friendlyVehicleNodes() { return mapSurfaces.friendlyVehicleNodes; },
   get frozenCount() { return frozenCount; }, get gameHud() { return hudFeed.gameHud; },
@@ -10662,7 +9078,7 @@ const testHooks = installTestHooks({
   get scoreboardPlayers() { return scoreboard.scoreboardPlayers; },
   get seatAltFire() { return seatAltFire; }, set seatAltFire(v) { seatAltFire = v; },
   get seatFire() { return seatFire; }, set seatFire(v) { seatFire = v; },
-  get seatIkChains() { return seatIkChains; }, get seatSoldier() { return seatSoldier; },
+  get seatIkChains() { return seatPose.seatIkChains; }, get seatSoldier() { return seatSoldier; },
   get selectDeployFlag() { return spawning.selectDeployFlag; },
   get selectKitWeapon() { return soldierKit.selectKitWeapon; }, get setDeployTeam() { return spawning.setDeployTeam; },
   get setFly() { return setFly; }, get setScoreboard() { return scoreboard.setScoreboard; },
@@ -10670,7 +9086,7 @@ const testHooks = installTestHooks({
   get showDamageTier() { return showDamageTier; }, get showView() { return hudFeed.showView; },
   get snapPresentation() { return snapPresentation; },
   get soldier() { return soldier; }, set soldier(v) { soldier = v; },
-  get soldier3pOnFoot() { return soldier3pOnFoot; },
+  get soldier3pOnFoot() { return soldierView.soldier3pOnFoot; },
   get soldierArmor() { return soldierArmor; }, set soldierArmor(v) { soldierArmor = v; },
   get soldierDead() { return soldierDead; }, set soldierDead(v) { soldierDead = v; },
   get soldierExposureFor() { return soldierExposureFor; },
@@ -10682,14 +9098,14 @@ const testHooks = installTestHooks({
   get surfaceFriction() { return surfaceFriction; }, get switchSeat() { return switchSeat; },
   get thrownPackGroup() { return soldierKit.thrownPackGroup; },
   get triggerHeld() { return soldierKit.triggerHeld; }, set triggerHeld(v) { soldierKit.triggerHeld = v; },
-  get vehicleAudio() { return vehicleAudio; }, get vehicleDamage() { return vehicleDamage; },
+  get vehicleAudio() { return pageAudio.vehicleAudio; }, get vehicleDamage() { return vehicleDamage; },
   get vehicleInput() { return vehicleInput; },
   get vehicleSpawnActive() { return vehicleSpawnActive; },
   get viewmodelRigFor() { return soldierKit.viewmodelRigFor; }, get vmCamera() { return soldierKit.vmCamera; },
   get vmRoot() { return soldierKit.vmRoot; }, get vmScene() { return soldierKit.vmScene; },
   get warmups() { return warmups; }, get weaponBarUntil() { return soldierKit.weaponBarUntil; },
   get weaponTemplateFor() { return soldierKit.weaponTemplateFor; }, get world() { return world; },
-  get worldFire() { return worldFire; }, get wreckVehicle() { return wreckVehicle; },
+  get worldFire() { return pageAudio.worldFire; }, get wreckVehicle() { return wreckVehicle; },
 });
 </script>
 </body>
