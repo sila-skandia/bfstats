@@ -21,6 +21,10 @@ import { towardsPoint, boatControl, boatSpeedControl, boatResetControls, BOAT, r
 import { fireStrength, unitTable, EnemyStrengthTables, engineHeatInfluence, STRENGTH } from './bot-strength.js';
 import { scoreVehicleTargets, scoreTargets, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
 import { freeRun, freeBox, freeLevel, CELL_LAND, CELL_FREE } from './nav-grid.js';
+// Brief F: the mounted gunner's aim.
+import * as THREE from 'three';
+import { TurretRig } from './turret-rig.js';
+import * as aiming from './bot-aim.js';
 
 // The level sits in the map's own frame: x in [0, worldSize], z in
 // [-worldSize, 0] (the exporter negates z). Home at (100, -100), the enemy
@@ -708,6 +712,149 @@ function waterMapScenario() {
   return { deep, centre, shelf, run, boxShort: box.short, land: CELL_LAND, free: CELL_FREE, islandWalkable: gridAt(infantry, 64, -64) };
 }
 
+// --- Brief F: a mounted gunner's aim (bot-aim.js), on a real `TurretRig` ---
+//
+// A hull with a yaw axis, a pitch axis and a gun node turned 180 deg on its
+// mount (the Sherman's turret Browning rests facing aft), stepped at the
+// world's 30 Hz: the bot's counts go into `TurretRig.aim`, the servo turns
+// `count x maxSpeed` deg/s, and the next tick aims from where the barrel
+// then points.
+function gunnerRig({ maxSpeed = 90, acceleration = 5000, pitchDirection = -1, gunYaw = Math.PI,
+                     ctrl = null, velocity = 1000, gravity = 0, burst = 1 } = {}) {
+  const hull = new THREE.Object3D();
+  const yawNode = new THREE.Object3D();
+  yawNode.position.set(0, 2, 0);
+  const pitchNode = new THREE.Object3D();
+  const gun = new THREE.Object3D();
+  gun.rotation.y = gunYaw;
+  const muzzle = new THREE.Object3D();
+  muzzle.position.set(0, 0, -1);
+  hull.add(yawNode); yawNode.add(pitchNode); pitchNode.add(gun); gun.add(muzzle);
+  const seat = { axes: {
+    yaw: { node: yawNode, spec: { input: 'c_PIMouseLookX', maxSpeed, acceleration, direction: 1, free: true } },
+    // Elevation is the servo's angle through `direction`: up to 80 deg either way.
+    pitch: { node: pitchNode, spec: { input: 'c_PIMouseLookY', maxSpeed, acceleration, direction: pitchDirection,
+                                      min: pitchDirection < 0 ? -10 : -80, max: pitchDirection < 0 ? 80 : 10, free: false } },
+  } };
+  const rig = new TurretRig(seat);
+  hull.updateMatrixWorld(true);
+  const group = { stats: { input: 'c_PIFire', velocity, projectile: { gravity } }, muzzles: [muzzle], node: gun };
+  const bot = {
+    vehicle: { kind: 'gun', groups: [], manned: [group], occupancy: { turret: rig }, controlInfo: ctrl },
+    weapons: [{ weaponFire: 'PIFire', burst }], weaponIndex: 0, lookX: 0, lookY: 0, weaponData: {},
+    _aimOrigin() { return aiming.aimOrigin(this); },
+  };
+  return { hull, rig, bot };
+}
+
+function barrelError(bot, dir) {
+  const f = aiming.barrelFrame(bot).f;
+  return Math.acos(Math.max(-1, Math.min(1, f[0] * dir[0] + f[1] * dir[1] + f[2] * dir[2]))) * 180 / Math.PI;
+}
+
+/** A fixed target 40 m out, 35 deg off the hull's nose: ticks to settle within
+ *  0.5 deg, and the largest error once settled. */
+function gunnerSettle(opts, target = [40 * Math.sin(0.61), 1.0, 40 * Math.cos(0.61)]) {
+  const { hull, rig, bot } = gunnerRig(opts);
+  const start = aiming.aimReference(bot);
+  const errs = [];
+  for (let tick = 0; tick < 90; tick++) {
+    const aim = aiming.turretAimAt(bot, target, [0, 0, 0]);
+    errs.push(barrelError(bot, aim.dir));
+    rig.aim(bot.lookX, bot.lookY);
+    rig.step(1 / 30);
+    hull.updateMatrixWorld(true);
+  }
+  const settled = errs.findIndex((e, i) => errs.slice(i).every(x => x < 0.5));
+  return { startYaw: start.yaw, settledTick: settled, settledSeconds: settled / 30,
+           maxAfterSettle: Math.max(...errs.slice(Math.max(settled, 0))), errAt1s: errs[30],
+           miss: aiming.turretMiss(bot) };
+}
+
+/** The old count law on the same rig, for the record: `lookX = -dYaw/3`,
+ *  `lookY = -dPitch` (degrees), capped at 4, measured on the barrel. It swings. */
+function oldLawSwing(opts) {
+  const { hull, rig, bot } = gunnerRig(opts);
+  const target = [40 * Math.sin(0.61), 1.0, 40 * Math.cos(0.61)];
+  const errs = [];
+  for (let tick = 0; tick < 90; tick++) {
+    const r = aiming.aimReference(bot);
+    const o = aiming.aimOrigin(bot);
+    const want = aiming.faceTarget(o, target);
+    const dYaw = aiming.wrapAngle(want.yaw - r.yaw) * 180 / Math.PI, dPitch = (want.pitch - r.pitch) * 180 / Math.PI;
+    const clampC = v => Math.max(-4, Math.min(4, v));
+    rig.aim(clampC(-dYaw / 3), clampC(-dPitch));
+    errs.push(Math.hypot(dYaw, dPitch));
+    rig.step(1 / 30);
+    hull.updateMatrixWorld(true);
+  }
+  return { maxLastSecond: Math.max(...errs.slice(60)) };
+}
+
+/** An AA gun (AA_Allies: 100 deg/s, 1000 deg/s^2, ControlInfo scale 1.0, 300
+ *  m/s rounds) against a plane crossing 150 m out at 55 m/s: the lead the
+ *  aim settles on, the miss at the impact time and whether the precision
+ *  condition lets the trigger down. */
+function aaCrossing(start = [-80, 90, 120], vel = [55, 0, 0], ticks = 150) {
+  const ctrl = { pitchSensitivity: 0.21817, rollSensitivity: -0.21817, pitchScale: 1.0, rollScale: 1.0 };
+  const { hull, rig, bot } = gunnerRig({ maxSpeed: 100, acceleration: 1000, pitchDirection: 1, gunYaw: 0,
+                                         ctrl, velocity: 300, gravity: 0 });
+  const precision = aiming.precisionFor([11, 3.5, 9.1], true);
+  const state = {};
+  let fired = 0, firstFire = -1, bestMiss = Infinity;
+  const trace = [];
+  for (let tick = 0; tick < ticks; tick++) {
+    const t = tick / 30;
+    const target = [start[0] + vel[0] * t, start[1] + vel[1] * t, start[2] + vel[2] * t];
+    const aim = aiming.turretAimAt(bot, target, vel);
+    const miss = aiming.turretMiss(bot, aim);
+    bestMiss = Math.min(bestMiss, miss);
+    if (aiming.precisionHolds(miss, precision, true, state)) { fired++; if (firstFire < 0) firstFire = tick; }
+    if (tick % 15 === 0) trace.push([tick, +miss.toFixed(2), +bot.lookX.toFixed(3), +bot.lookY.toFixed(3)]);
+    rig.aim(bot.lookX, bot.lookY);
+    rig.step(1 / 30);
+    hull.updateMatrixWorld(true);
+  }
+  // The lead itself: a 300 m/s round to a 55 m/s crossing target 150 m out
+  // flies about half a second, so the aim is about 27 m ahead.
+  const lead = aiming.firingDirection({ rel: [0, 90, 120], relVel: vel, speed: 300 });
+  return { precision, fired, firstFire, bestMiss, trace, leadTime: lead.time,
+           leadAhead: Math.atan2(lead.dir[0], lead.dir[2]) * 180 / Math.PI };
+}
+
+function gunnerScenarios() {
+  const counts = [0.5, 1, 2, 5, 10, 30, 90].map(deg => {
+    const a = deg * Math.PI / 180;
+    const basis = { f: [0, 0, 1], r: [-1, 0, 0], u: [0, 1, 0] };
+    // A target `deg` to the camera's right, and `deg` above it.
+    const right = aiming.lookAtCounts([-Math.sin(a), 0, Math.cos(a)], basis);
+    const up = aiming.lookAtCounts([0, Math.sin(a), Math.cos(a)], basis);
+    return [deg, +right.x.toFixed(4), +up.y.toFixed(4)];
+  });
+  const behind = aiming.lookAtCounts([-0.1, 0, -1], { f: [0, 0, 1], r: [-1, 0, 0], u: [0, 1, 0] });
+  const scaled = aiming.lookAtCounts([-Math.sin(0.1), 0, Math.cos(0.1)], { f: [0, 0, 1], r: [-1, 0, 0], u: [0, 1, 0] },
+    { pitchSensitivity: 0.21817, rollSensitivity: -0.21817, pitchScale: 1.0, rollScale: 1.0 });
+  // A dropping round: 100 m/s under the world's -14.73 aims above the line.
+  const drop = aiming.firingDirection({ rel: [0, 0, 200], speed: 100, gravity: -14.73 });
+  const still = aiming.firingDirection({ rel: [30, 5, 40], speed: 1000 });
+  return {
+    counts, behind: [behind.x, behind.y], scaledX: scaled.x,
+    browning: gunnerSettle({ maxSpeed: 90, acceleration: 5000 }),
+    tower: gunnerSettle({ maxSpeed: 35, acceleration: 1000, pitchDirection: 1, gunYaw: 0 }),
+    oldLaw: oldLawSwing({ maxSpeed: 90, acceleration: 5000 }),
+    aa: aaCrossing(),
+    aaPass: aaCrossing([150, 90, 600], [0, 0, -55], 450),
+    dropUp: Math.asin(drop.dir[1]) * 180 / Math.PI, dropTime: drop.time,
+    stillDir: still.dir,
+    precision: [aiming.precisionFor([0.6, 1.8, 0.6]), aiming.precisionFor([0.2, 0.3, 0.2]),
+                aiming.precisionFor([11, 3.5, 9.1], true), aiming.precisionFor([0.5, 0.5, 0.5], true)],
+    closest: (() => {
+      const st = {};
+      return [3, 2, 1.5, 1.8, 2.5].map(m => aiming.precisionHolds(m, 2, false, st));
+    })(),
+  };
+}
+
 const results = {
   strength: strengthScenario(),
   teleport: teleportScenario(),
@@ -792,5 +939,7 @@ const results = {
   steer: steerScenario(),
   look: lookScenario(),
 };
+
+results.gunner = gunnerScenarios();
 
 process.stdout.write(JSON.stringify(results));
