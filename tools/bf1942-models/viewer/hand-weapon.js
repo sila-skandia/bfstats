@@ -35,10 +35,11 @@ import { createHandFire } from './hand-fire.js';
  * `aimHeld`, `aircraft`, `applyDamage`, `AUDIO_OFF`, `audioListener`,
  * `botRoundDamage`, `bots`, `bust`, `camera`, `captured`, `car`,
  * `clickQueued`, `currentDir`, `deployKit`, `deployTeamId`, `dropClick`,
- * `ensureFootBody`, `fireStates`, `guns`, `isCollision`, `KITS`,
- * `lineOfSight`, `loader`, `LOCAL_PLAYER`, `MAPS_BASE`, `masterVolume`,
- * `MODELS_BASE`, `modelSoundBuffer`, `optOnFoot`, `optPilot`, `params`,
- * `playSupplyGive`, `soldier`, `SOLDIER_MAX_HP_FALLBACK`, `spawnLayout`,
+ * `ensureFootBody`, `fireStates`, `footView3p`, `guns`, `hemi`,
+ * `isCollision`, `KITS`, `lineOfSight`, `loader`, `LOCAL_PLAYER`,
+ * `MAPS_BASE`, `masterVolume`, `MODELS_BASE`, `modelSoundBuffer`,
+ * `optOnFoot`, `optPilot`, `params`, `playSupplyGive`, `renderer`, `scene`,
+ * `soldier`, `SOLDIER_MAX_HP_FALLBACK`, `soldierDead`, `spawnLayout`, `sun`,
  * `supplyTarget`, `teamNation`, `triggerHeld`, `vehicleAudio`,
  * `warmSubtree`, `warmups`, `world`.
  */
@@ -482,6 +483,75 @@ export function createHandWeapon(page) {
   /** Back on foot (out of a seat, or a fresh body): the weapon in hand again. */
   soldierKit.drawWeapon = () => {
     if (soldierKit.handWeapon) soldierKit.handWeapon.rig.visible = true;
+  };
+
+  /** The near pass: the arms rig and its muzzle emitters, drawn over the
+   *  frame just rendered. */
+  soldierKit.renderViewmodel = () => {
+    // The near pass: everything in vmScene — the arms rig and the muzzle
+    // emitters inside it, all on VIEWMODEL_LAYER — drawn over a cleared depth buffer, so
+    // the world can occlude none of it (§11 step 6). Retail does exactly this:
+    // `Renderer_drawView` (0x004662c0) draws the world, clears depth to 1.0,
+    // forces the finest mip and calls `StandardMeshRenderer::drawFov`
+    // (0x0062cb00), where each first-person part is drawn with a projection
+    // baked when its field of view was set (`BStandardMesh::setFieldOfView`
+    // 0x005ad160): the render view's own perspective for `set1pFov` × the
+    // eased `SoldierZoomFov` factor as a whole vertical angle, the window's
+    // aspect, and the world's near plane — 0.1 m, nothing moves it. That is
+    // the code (corpus doc §3, "The drawFov pass"), and retail has now been
+    // caught drawing it: an Engineer's Garand and Type 5, screenshotted at
+    // 2560x1440, reproduce the 0.47 rad framing (forearm only, hand off the
+    // corner) at 1.7-2.1x this rig's old 57.3 degree size. Retail also has a
+    // *smaller* first-person state — Thompson-at-the-hip OBS clips that
+    // measure at the world's 57.3 degrees instead — with the trigger between
+    // the two still open (corpus doc §7). So this pass now defaults to
+    // `set1pFov`, the value the code actually bakes, and keeps the world's
+    // FOV only for `?fov1p=world` and the bare 3P fallback, whose
+    // VIEWMODEL_BASE was eyeballed under it. See first-person-soldier.md's
+    // 2026-09-16 note and handweapon-view-and-deviation.md §3/§7.
+    // `footView3p.firstPerson` is the soldier's `CVMInside`: an arms rig drawn
+    // over a chase view would hang in front of the camera with nothing holding
+    // it. It is true everywhere but under a canopy with C pressed. A dead man
+    // holds no weapon either: the death cam (on foot or over a wreck) is a shot
+    // of the body from outside, and retail draws no first-person rig over it.
+    if (!(soldierKit.handWeapon?.rig.visible && page.footView3p.firstPerson && !page.soldierDead)) return;
+    page.renderer.autoClear = false;
+    page.renderer.clearDepth();
+    // Two traps in an overlay pass, both learned the hard way. Three draws
+    // `scene.background` in EVERY render call, autoClear or not — rendered
+    // over the world scene, this pass painted the fog-coloured backdrop over
+    // the entire frame, and every on-foot map read as one wall of colour.
+    // `vmScene` has no background to paint (and nothing to walk but the rig:
+    // the reason it exists, see its declaration). And the pass gets its own
+    // camera rather than flipping the main camera's layer mask, so nothing
+    // the pass does can leak into the world render's view of that page.camera.
+    // The fog is the world's own object, shared, so the rig's materials
+    // compile and shade against exactly the fog they always did.
+    soldierKit.vmScene.fog = page.scene.fog;
+    soldierKit.vmHemi.color.copy(page.hemi.color);
+    soldierKit.vmHemi.groundColor.copy(page.hemi.groundColor);
+    soldierKit.vmHemi.intensity = page.hemi.intensity;
+    soldierKit.vmHemi.position.copy(page.hemi.position);
+    soldierKit.vmSun.color.copy(page.sun.color);
+    soldierKit.vmSun.intensity = page.sun.intensity;
+    soldierKit.vmSun.position.copy(page.sun.position);
+    soldierKit.vmCamera.matrixWorld.copy(page.camera.matrixWorld);
+    soldierKit.vmCamera.matrixWorldInverse.copy(page.camera.matrixWorld).invert();
+    // `set1pFov` (handWeapon.fov1p) by default now that retail is confirmed
+    // to draw it; `?fov1p=world` forces the old world-FOV reading (`fov1p=
+    // engine` still works — it is no longer a distinct branch, just not
+    // `world`). A bare 3P fallback (no fov1p) keeps FOOT_FOV unconditionally,
+    // because its VIEWMODEL_BASE was eyeballed under that projection, not
+    // set1pFov.
+    const baseFov = soldierKit.handWeapon.fov1p && page.params.get('fov1p') !== 'world'
+      ? soldierKit.handWeapon.fov1p / soldierKit.DEG_TO_RAD : FOOT_FOV;
+    soldierKit.vmCamera.fov = baseFov * soldierKit.handWeapon.fovCur;
+    soldierKit.vmCamera.aspect = page.camera.aspect;
+    soldierKit.vmCamera.near = 0.1;   // the engine's render-view near, baked unchanged
+    soldierKit.vmCamera.far = page.camera.far;
+    soldierKit.vmCamera.updateProjectionMatrix();
+    page.renderer.render(soldierKit.vmScene, soldierKit.vmCamera);
+    page.renderer.autoClear = true;
   };
 
   Object.assign(soldierKit, {
