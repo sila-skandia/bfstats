@@ -352,7 +352,7 @@ export function aimAtDirection({ orientation, velocity, angularVelocity = [0, 0,
     climbDemand, clearance, takeoff: !airborne, throttleFloor, speed, diveGuard: true, maxClimb, maxRoll,
   });
   return { power: r.throttle >= 1 ? 1 : 0, throttle: r.throttle, roll: r.roll, pitch: r.pitch, rudder: r.yaw,
-           airborne: flying, climbDemand };
+           airborne: flying, climbDemand, dbg: r.dbg, dir: d };
 }
 
 /**

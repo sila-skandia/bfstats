@@ -9,6 +9,7 @@
 // Run by `tests/test_bot_ai.py`, which stages the module set the way
 // `test_world.py` does. Output is one JSON object on stdout.
 
+import { inFrustum } from './bot-sense.js';
 import { World, WORLD_TICK_DT } from './world.mjs';
 import { BotController } from './bot.js';
 import { buildNavMap, gridAt, traceClear, CELL_OBJECT } from './nav-grid.js';
@@ -499,6 +500,16 @@ const results = {
   drive: driveDecisionScenario(),
   vehicleFire: vehicleFireScenario(),
   planeFire: planeFireScenario(),
+  frustum: (() => {
+    // 0x08521cf0: a square frustum about the camera (aspect 1.0).
+    const level = { f: [0, 0, 1], r: [1, 0, 0], u: [0, 1, 0] };
+    const h = (deg) => deg * Math.PI / 360;
+    const dir = (yawDeg, pitchDeg) => [Math.sin(yawDeg * Math.PI / 180) * Math.cos(pitchDeg * Math.PI / 180),
+      Math.sin(pitchDeg * Math.PI / 180), Math.cos(yawDeg * Math.PI / 180) * Math.cos(pitchDeg * Math.PI / 180)];
+    const t = (fov, yawDeg, pitchDeg) => inFrustum(level, 0, ...dir(yawDeg, pitchDeg), h(fov));
+    return { below40inf: t(100, 0, -40), below40veh: t(75, 0, -40), behind: t(100, 180, 0), side30: t(75, 30, 0),
+             yawOnlyBelow: inFrustum(null, 0, ...dir(0, -80), h(75)) };
+  })(),
   water: waterMapScenario(),
   medic: medicScenario(),
   air: airScenario(),

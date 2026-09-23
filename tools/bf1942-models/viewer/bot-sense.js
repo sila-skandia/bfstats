@@ -144,6 +144,23 @@ export function lineClear(collider, from, to, skip = -1) {
   return true;
 }
 
+/**
+ * The frustum test of `BotMain::sense` 0x08521cf0: `Frustum::setupFrustum
+ * (fov, 1.0, 0.01, viewDistance)` 0x08440c70 transformed by
+ * `AIPlayer::getCameraTransformation`, so a SQUARE frustum (aspect 1.0) about
+ * the camera: the same half-angle across and up / down, and nothing behind.
+ * `basis` is the camera's `{ f, r, u }` (world unit vectors); without one
+ * (a caller that only has a yaw) the test is the bearing alone.
+ */
+export function inFrustum(basis, yaw, dx, dy, dz, halfFov) {
+  if (!basis) return Math.abs(wrapAngle(Math.atan2(dx, dz) - yaw)) <= halfFov;
+  const { f, r, u } = basis;
+  const a = dx * f[0] + dy * f[1] + dz * f[2];
+  if (!(a > 0)) return false;
+  const t = Math.tan(halfFov) * a;
+  return Math.abs(dx * r[0] + dy * r[1] + dz * r[2]) <= t && Math.abs(dx * u[0] + dy * u[1] + dz * u[2]) <= t;
+}
+
 export class BotSenses {
   constructor({ viewDistance = 600, isMobile = false, random = Math.random } = {}) {
     this.viewDistance = viewDistance;
@@ -181,7 +198,7 @@ export class BotSenses {
    * fov, the side filter, then the rays. `me` is the bot's player record,
    * `eye` its eye position, `yaw` its facing.
    */
-  sense(now, world, me, eye, yaw) {
+  sense(now, world, me, eye, yaw, basis = null) {
     const fovs = this.isMobile ? FRUSTUM_FOV.mobile : FRUSTUM_FOV.infantry;
     // The engine rebuilds the query frustum when the camera has turned past
     // the sub-state's threshold (25 / 15 / 7.5 deg), otherwise it keeps
@@ -205,8 +222,7 @@ export class BotSenses {
       const d = Math.hypot(dx, pos[1] - eye[1], dz);
       if (d > this.viewDistance) continue;                  // SideFilter: viewDist
       if (d < minD || d > maxD) continue;                   // this sub-state's band
-      const bearing = Math.atan2(dx, dz);
-      if (Math.abs(wrapAngle(bearing - yaw)) > halfFov) continue;
+      if (!inFrustum(basis, yaw, dx, pos[1] - eye[1], dz, halfFov)) continue;
       candidates++;
       if (this.memory.has(id)) continue;                    // updateMemory re-tests those
       if (this._rays(world.collider, eye, player, pos, d)) {
@@ -242,7 +258,7 @@ export class BotSenses {
    * mark the misses lost, erase the expired, drop friendlies and the dead,
    * and keep every entry's position live.
    */
-  updateMemory(now, world, me, eye, yaw) {
+  updateMemory(now, world, me, eye, yaw, basis = null) {
     const fovs = this.isMobile ? FRUSTUM_FOV.mobile : FRUSTUM_FOV.infantry;
     const halfFov = fovs[0] / 2;
     const myTeam = me?.team ?? null;
@@ -256,8 +272,7 @@ export class BotSenses {
       m.pos[0] = pos[0]; m.pos[1] = pos[1]; m.pos[2] = pos[2];   // the live transform
       const dx = pos[0] - eye[0], dz = pos[2] - eye[2];
       const d = Math.hypot(dx, pos[1] - eye[1], dz);
-      const inView = d <= this.viewDistance
-        && Math.abs(wrapAngle(Math.atan2(dx, dz) - yaw)) <= halfFov;
+      const inView = d <= this.viewDistance && inFrustum(basis, yaw, dx, pos[1] - eye[1], dz, halfFov);
       const seen = inView && this._rays(world.collider, eye, player, pos, d);
       if (seen) {
         m.seen = true; m.lost = false; m.lostAt = null; m.lastSeen = now;
