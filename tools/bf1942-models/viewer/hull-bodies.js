@@ -15,8 +15,8 @@ import { equilibriumRootY, floatNodesOf, localiseFloats, FloatingHull } from './
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `bust`, `collider`, `damageTables`, `damageVisuals`,
- * `DEFAULT_SURFACE_FRICTION`, `effects`, `entryPoints`, `extras`,
- * `MAPS_BASE`, `materialFrictionById`, `nearEntry`, `vehicleDamage`,
+ * `DEFAULT_SURFACE_FRICTION`, `dropEntryPoints`, `effects`, `extras`,
+ * `forgetEntryPoints`, `MAPS_BASE`, `materialFrictionById`, `vehicleDamage`,
  * `vehicleInterp`, `vehicles`, `vehicleSpawnActive`, `world`.
  */
 export function createHullBodies(page) {
@@ -479,7 +479,7 @@ export function createHullBodies(page) {
       const active = page.vehicleSpawnActive(scene.node);
       if (scene.spawnActive === active) continue;
       scene.spawnActive = active;
-      page.entryPoints = null;
+      page.dropEntryPoints();
       if (active) {
         page.collider.statics?.enableOwner?.(owner);
         page.collider.statics?.setBodyOwner?.(owner, true);
@@ -666,8 +666,7 @@ export function createHullBodies(page) {
     // EntryPoint world positions are cached between proximity scans. A released
     // vehicle carries those points with it, so discard the cache as soon as its
     // parked body moves rather than leaving an enter prompt at the exit spot.
-    page.entryPoints = null;
-    page.nearEntry = null;
+    page.forgetEntryPoints();
   }
 
   /** A body's world pose, written onto a scene node (which may be frozen). */
