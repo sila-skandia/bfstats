@@ -52,7 +52,7 @@ _VIEWER_MODULES = [
     "world", "physics", "parachute", "swim", "soldier", "spawn-safety",
     "point-body", "fixed-step", "soldier-pose", "soldier-locomotion", "walking-body",
     "mouse-input", "fall-damage",
-    "body-world", "body-statics", "vehicle-bodies", "combat-area", "supply", "armor",
+    "body-world", "body-statics", "body-pose", "vehicle-bodies", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact",
     # seats.js re-exports its split modules.
     "seat-survey", "turret-rig", "vehicle-occupancy", "entry-points", "spawned-craft", "fire-state",
@@ -77,7 +77,22 @@ MODULES.update({
     # imports (`./glb-tree.mjs`, `../viewer/world.js`) resolve unmodified.
     "server/glb-tree.mjs": SERVER / "glb-tree.mjs",
     "server/level.mjs": SERVER / "level.mjs",
+    # level.mjs's pieces (it re-exports each).
+    "server/glb-scene.mjs": SERVER / "glb-scene.mjs",
+    "server/level-bodies.mjs": SERVER / "level-bodies.mjs",
+    "server/level-data.mjs": SERVER / "level-data.mjs",
+    "server/level-instance.mjs": SERVER / "level-instance.mjs",
+    "server/vehicle-table.mjs": SERVER / "vehicle-table.mjs",
+    "server/level-load.mjs": SERVER / "level-load.mjs",
+    "server/level-descriptor.mjs": SERVER / "level-descriptor.mjs",
     "server/rooms.mjs": SERVER / "rooms.mjs",
+    # rooms.mjs's pieces (it re-exports each).
+    "server/room.mjs": SERVER / "room.mjs",
+    "server/room-registry.mjs": SERVER / "room-registry.mjs",
+    "server/room-control.mjs": SERVER / "room-control.mjs",
+    "server/room-stream.mjs": SERVER / "room-stream.mjs",
+    "server/room-rules.mjs": SERVER / "room-rules.mjs",
+    "server/room-wire.mjs": SERVER / "room-wire.mjs",
     "server/authority.mjs": SERVER / "authority.mjs",
     # The real published templates the fake level's table is built from.
     "viewer/models/Willy.glb": VIEWER / "models" / "Willy.glb",
