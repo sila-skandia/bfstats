@@ -122,8 +122,10 @@ class LandingTests(unittest.TestCase):
         self.assertEqual(c["beachPointZ"], -713)
         self.assertTrue(c["saiFollows"])
         # Moving at 12 m/s nobody gets out; stopped on walkable ground in the
-        # zone, the driver and both riders do.
+        # zone but afloat, nobody either (`isTouchingLand` 0x085606bd);
+        # aground there, the driver and both riders do.
         self.assertEqual(c["exitsMoving"], 0)
+        self.assertEqual(c["exitsAfloat"], 0)
         self.assertEqual(c["exitsStopped"], ["c", "p1", "p2"])
         self.assertEqual(c["infantry"], "WPMoveTo")
 
@@ -142,6 +144,24 @@ class LandingTests(unittest.TestCase):
         self.assertEqual(b["bay"], "beach")                       # another zone than the order's
         self.assertEqual(b["tippedAtSea"], "tipped")
         self.assertTrue(b["sameZones"])
+        # In the zone, stopped, walkable, but not touching land: no bail.
+        self.assertIsNone(b["afloat"])
+        self.assertEqual(b["tippedFlag"], "tipped")
+        self.assertEqual(b["tippedWins"], "tipped")
+
+    def test_the_tip_test_has_two_forms(self) -> None:
+        # BBChangeLandingCraft 0x08560b8a..0x08560c4b: water more than 2 m
+        # over the terrain (`getWaterLevel` vt+0xb4 > `getHeight` vt+0x9c +
+        # 2.0) reads the up axis's y; shallower, the up axis against the
+        # terrain normal (`getNormal` vt+0xa8); tipped under 0.7071, strict.
+        t = self.r["tip"]
+        self.assertFalse(t["deepUpright"])
+        self.assertTrue(t["deepOver"])
+        self.assertFalse(t["shallowOnSlope"])
+        self.assertTrue(t["shallowOver"])
+        self.assertTrue(t["atTwo"])          # 2 m exactly is shallow: the normal (flat here)
+        self.assertFalse(t["noSea"])         # no sea: the terrain form
+        self.assertEqual(t["limit"], [False, True])
 
 
 if __name__ == "__main__":

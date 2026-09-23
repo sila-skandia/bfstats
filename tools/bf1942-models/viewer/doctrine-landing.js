@@ -62,8 +62,10 @@
 //    2 m/s (`IPIMobile::getSpeedMagnitude` vt+0x1c, 0x8560c60 against 2.0 at
 //    0x86c08c4), and the soldier's own map is valid where he sits
 //    (0x0856080e); or when the craft has tipped: its up axis under 0.7071 of
-//    the vertical in water 2 m deep or more, under 0.7071 of the terrain
-//    normal in shallower water (0x8560b84..0x8560c4b).
+//    the vertical where the water stands more than 2 m above the terrain,
+//    under 0.7071 of the terrain normal where it does not
+//    (`getWaterLevel` vt+0xb4 against `getHeight` vt+0x9c + 2,
+//    0x8560b84..0x8560c4b).
 //
 // ## What the viewer does differently
 //
@@ -77,19 +79,29 @@
 //    read) and the first area on it that uses a zone gives a
 //    `WPMoveToBeachLanding`. Its intermediate route points are not driven:
 //    the craft's own water-map route goes round the island.
-//  * `isTouchingLand` has no viewer counterpart: the infantry map's test at
-//    the hull (which the engine also makes) stands in for both. The tip test
-//    reads the candidates' `upright` (the hull's up y at least 0.6914), not
-//    the engine's two forms.
+//  * `isTouchingLand` (`IPIPhysicalReal::isTouchingLand` 0x085ebd80 ->
+//    `AIObjectPhysical::isTouchingLand` 0x085d6700): with the AI's physics
+//    enabled, `ResponsePhysics::getIsIntersectingTerrain` 0x0825ce10, the
+//    byte (+0xd0) `checkVsTerrain` 0x0825a960 latches when any collision
+//    vertex met the terrain this tick, which is the Ship's `aground`; with it
+//    disabled (a parked hull, or one whose driver bailed: 0x08560958), NOT
+//    valid on the unit's own map. The viewer takes "enabled" as "someone
+//    drives it" (INFERRED: `EntryBoatMoveTo` 0x08613d60 enables it when a
+//    helm moves the hull). bot-units.js computes it per hull
+//    (`touchingLand`), with the engine's two tip forms (`tipped`,
+//    `craftTipped`).
 //  * The bail runs twice over: this executor presses Use for every bot in
 //    the craft its driver holds the order for, and each occupant's own
 //    seated Change (bot-mount.js, the `BBChangeLandingCraft` rows) makes the
 //    same test through `craftBailReason`, so a crew with no beach-ordered
-//    driver (a gunner who climbed back into a beached craft) gets out too.
-//    That Change also has no voluntary bail and weighs no other hull, as
-//    `BBChangeLandingCraft` weighs only the craft's own seats.
-//  * The ramp input (PIPitch) is not written: the viewer's craft has no
-//    ramp to lower.
+//    driver gets out too. That Change also has no voluntary bail and weighs
+//    no other hull, as `BBChangeLandingCraft` weighs only the craft's own
+//    seats. A beached craft is off its water map, so no soldier on foot is
+//    offered it again (`BBChange` 0x0855ee25 -> 0x0855f0f0, bot-units.js
+//    `onOwnMap`).
+//  * The ramp: the beach leg holds `PIPitch` at 1.0 (`EntryTriggerContinously`
+//    0x08625ff0; bot-plans.js `RAMP_INPUT`, `writeHeldChannels`), which the
+//    page's ship reads for its `DaihatsuLanding1/2` / `Lcvp_Ramp` bundles.
 
 /** The engine's numbers (addresses above). */
 export const LANDING = {
@@ -112,6 +124,13 @@ export const LANDING = {
   moveToInsideD2: 10.0,
   /** `BBChangeLandingCraft` 0x8560c60: the craft is stopped under 2 m/s. */
   bailSpeed: 2.0,
+  /** `BBChangeLandingCraft` 0x08560be3 (`flds 0x8702470`): the tip limit
+   *  on the up axis. */
+  tipCos: 0.7071,
+  /** `BBChangeLandingCraft` 0x08560b8a (`fadds 0x86c08c4`): water more
+   *  than 2 m above the terrain is deep (the vertical tip form), else the
+   *  terrain normal's. */
+  tipDeepWater: 2.0,
 };
 
 /** Every landing zone of the level (`extras.ai.landingZones`), by name. */
@@ -373,17 +392,44 @@ export function beachLandingOrder({ target, area, side, layer, isValid = null, r
 }
 
 /**
- * `BBChangeLandingCraft::calculateUrgency` 0x085602b0's reason to get out of
- * a surface craft, or null: 'beach' when the craft is inside any landing
- * zone (0x08560684), slower than 2 m/s (0x8560c60) and the soldier's map is
- * valid where it stands (0x0856080e; it stands in for `isTouchingLand` too),
- * 'tipped' when its up axis is past the tip limit (the candidates'
- * `upright`). `zones` is an iterable of zones.
+ * `BBChangeLandingCraft::calculateUrgency` 0x085602b0's tip test for a
+ * surface craft that is not a soldier (`Information+4` bits 0x10 and
+ * 0x400000 clear; `testb $0x40, 0x6` at 0x08560829): where the water
+ * stands at most 2 m above the terrain (`BFEnvironment::getWaterLevel` 0x085e5160, vt+0xb4, against
+ * `getHeight` 0x085e5080, vt+0x9c, plus 2.0: `fadds 0x86c08c4` at
+ * 0x08560b8a) the hull's up axis (matrix row
+ * 1, `+0x10..+0x18` of vt+0x28) against the terrain normal (`getNormal`
+ * 0x085e50e0, vt+0xa8); in deeper water its up axis's y alone (`+0x14`);
+ * tipped under 0.7071 (`0x8702470`). `waterLevel` null: no sea, the terrain
+ * form.
  */
-export function craftBailReason({ zones, x, z, speed, walkable = true, upright = true }) {
-  if (upright === false) return 'tipped';
-  if (!(speed < LANDING.bailSpeed) || !walkable) return null;
-  for (const zn of zones ?? []) if (insideZone(zn, x, z)) return 'beach';
+export function craftTipped({ up, waterLevel = null, terrainHeight = NaN, terrainNormal = null }) {
+  if (!up) return false;
+  const deep = Number.isFinite(waterLevel) && Number.isFinite(terrainHeight)
+    && !(waterLevel <= terrainHeight + LANDING.tipDeepWater);
+  if (deep || !terrainNormal) return up[1] < LANDING.tipCos;
+  return up[0] * terrainNormal[0] + up[1] * terrainNormal[1] + up[2] * terrainNormal[2] < LANDING.tipCos;
+}
+
+/**
+ * `BBChangeLandingCraft::calculateUrgency` 0x085602b0's reason to get out of
+ * a surface craft, or null. 'beach': the craft is inside any landing zone
+ * (`AILandingZoneManager::isInsideLandingZone` 0x08560684) AND touching land
+ * (`IPIPhysical::isTouchingLand`, vt+0x4c at 0x085606bd, under the root's
+ * `Information+0x10` bit 0), then slower than 2 m/s (0x8560c60), then the
+ * soldier's own map valid where he sits (0x0856080e). 'tipped': `tipped`
+ * (`craftTipped`, the test at 0x8560b84..0x8560c4b). `touchingLand` is the
+ * hull's (bot-units.js candidates: the hull's terrain contact while it is
+ * driven, off its own map while it is not). `zones` is an iterable of
+ * zones. `upright: false` stands for `tipped` when a caller has only that.
+ */
+export function craftBailReason({ zones, x, z, speed, touchingLand = true, walkable = true,
+                                  tipped = undefined, upright = true }) {
+  let beach = false;
+  for (const zn of zones ?? []) if (insideZone(zn, x, z)) { beach = true; break; }
+  beach = beach && touchingLand !== false && speed < LANDING.bailSpeed && !!walkable;
+  if (beach) return 'beach';
+  if (tipped ?? (upright === false)) return 'tipped';
   return null;
 }
 
@@ -415,7 +461,8 @@ export function landingTick(order, { id, position, command, candidates, actuator
   if (!mine) return null;
   const zones = order.zones ? [...order.zones.values()] : [order.zone];
   const walkable = command?.isWalkable ? !!command.isWalkable(x, z) : true;
-  const reason = craftBailReason({ zones, x, z, speed, walkable, upright: mine.upright });
+  const reason = craftBailReason({ zones, x, z, speed, walkable, touchingLand: mine.touchingLand,
+                                   tipped: mine.tipped, upright: mine.upright });
   if (reason) {
     for (const c of cands) {
       if (c.vehicleId === mine.vehicleId && c.occupiedBy != null) actuators?.exit?.(c.occupiedBy);

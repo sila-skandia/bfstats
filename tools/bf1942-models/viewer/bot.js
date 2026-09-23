@@ -442,7 +442,7 @@ export class BotController {
   _unitForward3() { return aiming.unitForward3(this); }
   _turretCanPoint(dir) { return aiming.turretCanPoint(this, dir); }
   _resetInput() { return aiming.resetInput(this); }
-  _writeInput() { return aiming.writeInput(this); }
+  _writeInput() { aiming.writeInput(this); planning.writeHeldChannels(this); }
   _cameraBasis(lookYaw) { return aiming.cameraBasis(this, lookYaw); }
   _noseReference() { return aiming.noseReference(this); }
   _aimReference() { return aiming.aimReference(this); }
