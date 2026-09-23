@@ -173,7 +173,7 @@ class DeployWiringTests(unittest.TestCase):
     def test_the_painters_call_sites_read_the_module(self) -> None:
         # A call site may name the module that now holds its argument or the
         # function (`spawning.activeDeployGroup`, `capture.flags`).
-        owner = r"(?:\w+\.)?"
+        owner = r"(?:\w+\.)*"
         for call in (r"for \(const spot of flagMapSpots\(flag\)\)",
                      r"for \(const spot of flagMapSpots\(" + owner + r"flags\[index\]\)\)",
                      r"spot\.group === " + owner + r"activeDeployGroup\(flag\)"):
