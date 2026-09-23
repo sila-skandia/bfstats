@@ -50,6 +50,7 @@ MODULES = {
     "flight.js": VIEWER / "flight.js",
     "vehicle-camera.js": VIEWER / "vehicle-camera.js",
     "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",
+    "vehicle-base.js": VIEWER / "vehicle-base.js",
     "physics.js": VIEWER / "physics.js",
     "parachute.js": VIEWER / "parachute.js",
     "vendor/loaders/GLTFLoader.js": VIEWER / "vendor" / "loaders" / "GLTFLoader.js",
