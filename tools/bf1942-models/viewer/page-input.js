@@ -329,10 +329,10 @@ export function createPageInput(page) {
 
   function setMobileFire(on) {
     pageInput.mobileFireHeld = on;
-    pageInput.triggerHeld = on && page.optOnFoot.checked && !!page.soldier && !page.soldierDead;
-    pageInput.clickQueued = pageInput.triggerHeld;
-    pageInput.seatFire = on && page.optPilot.checked && !!page.occupancy
-      && (page.occupancy.isActiveRoot() || page.mannedActive());
+    pageInput.setTouchTriggers(
+      on && page.optOnFoot.checked && !!page.soldier && !page.soldierDead,
+      on && page.optPilot.checked && !!page.occupancy
+        && (page.occupancy.isActiveRoot() || page.mannedActive()));
     mobileFireBtn.classList.toggle('is-active', on);
     mobilePadPuck.classList.toggle('is-firing', on);
   }
@@ -343,14 +343,14 @@ export function createPageInput(page) {
   }
 
   function mobileSeatToggle() {
-    if (performance.now() - pageInput.lastSeatToggle < SEAT_TOGGLE_COOLDOWN_MS) return;
+    if (!pageInput.seatToggleReady()) return;
     if (page.optOnFoot.checked && page.soldier && page.nearEntry) {
       setFly(true);
       page.enterVehicle(page.nearEntry);
-      pageInput.lastSeatToggle = performance.now();
+      pageInput.noteSeatToggle();
     } else if (page.optPilot.checked && page.occupancy) {
       page.exitSeat();
-      pageInput.lastSeatToggle = performance.now();
+      pageInput.noteSeatToggle();
     }
     resetMobileControls();
   }
@@ -603,16 +603,16 @@ export function createPageInput(page) {
     // mode first. The 1.0s per-player cooldown (SEAT-6) below gates the whole
     // branch, same as the real `toggleEntryPoint`.
     if (e.code === 'KeyE' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey
-        && performance.now() - pageInput.lastSeatToggle >= SEAT_TOGGLE_COOLDOWN_MS) {
+        && pageInput.seatToggleReady()) {
       // `exitSeat` picks the exit: the hull's own for a driver or a passenger
       // of a drivetrain, the seat's for a gunner or a seat of a hull with no
       // drive (`mannedActive()` is the check that is right either way).
       if (page.optPilot.checked && page.occupancy) {
         page.exitSeat();
-        pageInput.lastSeatToggle = performance.now();
+        pageInput.noteSeatToggle();
       } else if (page.optOnFoot.checked && page.soldier && pageInput.captured && page.nearEntry) {
         page.enterVehicle(page.nearEntry);
-        pageInput.lastSeatToggle = performance.now();
+        pageInput.noteSeatToggle();
       }
     }
     // C cycles the view, which is `c_PIToggleCameraMode` (input channel 26)
@@ -729,6 +729,16 @@ export function createPageInput(page) {
   };
   /** The hand weapon has spent (or refused) the queued shot. */
   pageInput.dropClick = () => { pageInput.clickQueued = false; };
+  /** The touch FIRE button: the soldier's trigger (a press queues its shot)
+   *  and the seat's `c_PIFire`, whichever the mode lets it reach. */
+  pageInput.setTouchTriggers = (foot, seat) => {
+    pageInput.triggerHeld = foot;
+    pageInput.clickQueued = foot;
+    pageInput.seatFire = seat;
+  };
+  /** SEAT-6's cooldown, shared by the E key and the touch ENTER button. */
+  pageInput.seatToggleReady = () => performance.now() - pageInput.lastSeatToggle >= SEAT_TOGGLE_COOLDOWN_MS;
+  pageInput.noteSeatToggle = () => { pageInput.lastSeatToggle = performance.now(); };
 
   function setFly(on) {
     pageInput.captured = on;
