@@ -69,16 +69,13 @@
 //
 // ## What the viewer does differently
 //
-//  * No strategic route: the viewer's SAI orders a bot into its target
-//    directly (`strategic-ai.js _order`), so the engine's no-route case is
-//    the rule -- a target that uses a zone gets a `WPBeachLanding`. A target
-//    that does not (an inland area, or one that expels landing craft) would
-//    be an inland `WPMoveTo` the craft cannot drive; there `beachTarget`
-//    walks the area graph (`areaPath`) from the craft's area to the target (INVENTION:
-//    the engine's route tables, `AIStrategicArea::validateDistances`, are not
-//    read) and the first area on it that uses a zone gives a
-//    `WPMoveToBeachLanding`. Its intermediate route points are not driven:
-//    the craft's own water-map route goes round the island.
+//  * The strategic route: the viewer's SAI orders every other bot into its
+//    target directly (`strategic-ai.js _order`), but a landing craft's
+//    order takes the engine's route (`strategicRoutes`, `getDistances`
+//    0x0863f530, searched from the target when the order is given rather
+//    than per dirty pass) from the craft's area (`craftArea`), with its
+//    points and radius (`beachTarget`). A route with no zone user is the
+//    engine's routed `WPMoveTo`; the viewer gives the ordinary one.
 //  * `isTouchingLand` (`IPIPhysicalReal::isTouchingLand` 0x085ebd80 ->
 //    `AIObjectPhysical::isTouchingLand` 0x085d6700): with the AI's physics
 //    enabled, `ResponsePhysics::getIsIntersectingTerrain` 0x0825ce10, the
@@ -122,6 +119,13 @@ export const LANDING = {
   moveToRadiusNoRoute: 1.0,
   /** `WPMoveToBeachLanding::getUrgency` 0x08537e89: inside is d^2 < 10. */
   moveToInsideD2: 10.0,
+  /** `Game/AIbehaviours.con` `ai.setVehicle 7 LandingCraft`: the type index
+   *  the level's `addVehicleToVehicleGroup` lines name. */
+  unitTypeIndex: 7,
+  /** `orderNormalBot` 0x08640bd0: a route point is `randomizePos(side,
+   *  0x3f4ccccd = 0.8)`, and the radius `0.25 x side radius + 2 x bounding`. */
+  routeRandomize: 0.8,
+  routeRadiusFraction: 0.25,
   /** `BBChangeLandingCraft` 0x8560c60: the craft is stopped under 2 m/s. */
   bailSpeed: 2.0,
   /** `BBChangeLandingCraft` 0x08560be3 (`flds 0x8702470`): the tip limit
@@ -261,33 +265,66 @@ export function isLandingZoneUser(area, unitType) {
 }
 
 /**
- * INVENTION (the engine's route tables are not read): the shortest path of
- * areas over the neighbour lists, taken both ways, from `start` to `target`;
- * returns the path's areas in order, or null.
+ * The vehicle group of a unit type on this level, or null (every area
+ * allows it): `aiSettings.addVehicleToVehicleGroup <type> <group>` in the
+ * level's `StrategicAreas.con` (`AISettings::getVehicleGroup(int)`
+ * 0x084848b0; `ai.vehicleGroups` is group -> [type index]).
  */
-export function areaPath(layer, start, target) {
-  if (!start || !target) return null;
-  if (start === target) return [start];
-  const adj = new Map(layer.areas.map(a => [a, new Set()]));
-  for (const a of layer.areas) {
-    for (const n of layer.neighboursOf(a)) { adj.get(a).add(n); adj.get(n)?.add(a); }
-  }
-  const prev = new Map([[start, null]]);
-  const queue = [start];
-  while (queue.length) {
-    const a = queue.shift();
-    for (const n of adj.get(a) ?? []) {
-      if (prev.has(n)) continue;
-      prev.set(n, a);
-      if (n === target) {
-        const path = [n];
-        for (let p = a; p; p = prev.get(p)) path.unshift(p);
-        return path;
-      }
-      queue.push(n);
-    }
+export function vehicleGroupOf(ai, typeIndex) {
+  for (const [group, types] of Object.entries(ai?.vehicleGroups ?? {})) {
+    if ((types ?? []).map(String).includes(String(typeIndex))) return group;
   }
   return null;
+}
+
+/**
+ * `AIStrategicArea::getDistances` 0x0863f530 (run by `validateDistances`
+ * 0x08640370 for each vehicle group, from the area a bot is ordered to):
+ * every area's route to `target`, as `Map(area -> [area, ..., target])`.
+ * A label-correcting search over each area's OWN neighbour list (area
+ * +0x118, the con's `addNeighbour` lines, so the edges are directed), its
+ * open list first in first out (0x0863f859 appends): an edge costs the
+ * distance between the two areas' positions for the side (`getPosition`
+ * 0x08642cd0, +0x7c: p2, the layer's `centre`) times 1.1 into a Neutral area
+ * and 5 into a Hostile one (the neighbour's status for the side, +0x70),
+ * plus the cost so far; a node popped at a cost above one it holds is
+ * skipped, and one whose allowed groups (+0xf0, `allowsSomeVehicleGroups`
+ * 0x08644d50; -1, all, until `addAllowedVehicleGroup`) miss the unit's is
+ * never expanded and gets no route. `route[a]` is `a` then its parent's
+ * route: the bot's own area first, the target last (`orderNormalBot`
+ * 0x08640bd0 skips the first element).
+ */
+export function strategicRoutes(layer, target, side, { group = null } = {}) {
+  const routes = new Map();
+  if (!target) return routes;
+  // The layer keeps no allowed groups (strategic-layer.js); the level's own
+  // area records carry them (`addAllowedVehicleGroup`).
+  const raw = new Map((layer.ai?.strategicAreas ?? []).map(a => [String(a.name).toLowerCase(), a]));
+  const groupsOf = a => a.allowedVehicleGroups ?? raw.get(String(a.name).toLowerCase())?.allowedVehicleGroups ?? [];
+  const allowed = a => !group || !groupsOf(a).length || groupsOf(a).includes(group);
+  const status = a => {
+    const owner = layer.ownerOf(a);
+    return owner === side ? 'Owned' : owner === 0 ? 'Neutral' : 'Hostile';
+  };
+  const best = new Map();
+  const open = [{ area: target, cost: 0, via: [] }];
+  while (open.length) {
+    const { area, cost, via } = open.shift();
+    const held = best.get(area);
+    if (held !== undefined && held < cost) continue;
+    if (!allowed(area)) continue;
+    best.set(area, cost);
+    const route = [area, ...via];
+    routes.set(area, route);
+    for (const n of layer.neighboursOf(area)) {
+      let c = Math.hypot(n.centre[0] - area.centre[0], n.centre[1] - area.centre[1]);
+      const st = status(n);
+      if (st === 'Neutral') c *= 1.1;
+      else if (st === 'Hostile') c *= 5.0;
+      open.push({ area: n, cost: cost + c, via: route });
+    }
+  }
+  return routes;
 }
 
 /**
@@ -314,52 +351,87 @@ export function craftArea(layer, x, z, unitType = LANDING.unitType) {
 
 /**
  * `orderNormalBot` 0x08640bd0 for a landing craft ordered to `area`: the
- * zone and kind of its beach order, or null when the order is an ordinary
- * `WPMoveTo`. `from` is the craft's own area (the route's first element).
+ * zone, kind, radius and route points of its beach order, or null when the
+ * order is an ordinary `WPMoveTo`. `from` is the craft's own area (the
+ * route's first element); `ai` the level's AI block (the vehicle groups).
  *
- *  * `area` uses a zone for the unit: `WPBeachLanding` on its closest zone
- *    (the engine's no-route case, 0x08640d05).
- *  * Otherwise the first zone-using area on `areaPath(from, area)` gives a
- *    `WPMoveToBeachLanding` (0x08641133). Its radius in the engine is the
- *    `0.25 x side radius + 2 x bounding radius` of the last route area
- *    before the landing area whose point the order drives first
- *    (0x086416be), 1.0 when there is none, at least 5. The viewer drives no
- *    route points, so it takes the no-route value, 5: with a sea area's side
- *    radius (Wake's SeaArea2, 336 m) the engine's figure is 104 m, and a
- *    helm that brakes inside its move's radius would stop 100 m short of the
- *    approach point, outside the zone.
+ *  * No route to `area` (the test at 0x08640d05): `area` uses a zone for the
+ *    unit -> `WPBeachLanding` on its zone closest to the craft, radius 10.
+ *  * A route of one area (the craft is in it, 0x08641428): the same.
+ *  * A longer route (the loop at 0x086416dd): walking it from the craft's
+ *    own area, the first area that uses a zone for the unit ends it in a
+ *    `WPMoveToBeachLanding` on that area's zone closest to the craft; every
+ *    route area between (not the first) adds a point, `randomizePos(side,
+ *    0.8)` tried 20 times on the craft's map, else the TARGET's order
+ *    position for the map (the engine asks `param_1`, the ordered area), and
+ *    sets the radius to its `0.25 x side radius + 2 x bounding radius`
+ *    (0x086416be; 1.0 with none, at least 5 in the ctor 0x08537ce0). No zone
+ *    user on the route: the engine's routed `WPMoveTo` (null here: the
+ *    viewer's SAI orders that one directly, `strategic-ai.js _order`).
  */
-export function beachTarget({ layer, zones, area, side, unit, x, z, from = null }) {
+export function beachTarget({ layer, zones, area, side, unit, x, z, from = null, ai = null, random = Math.random,
+                              isValid = null }) {
   const type = unit?.type ?? LANDING.unitType;
   if (!zones?.size || !area) return null;
-  if (isLandingZoneUser(area, type)) {
+  const direct = () => {
+    if (!isLandingZoneUser(area, type)) return null;
     const zone = closestZone(area, zones, x, z);
-    return zone ? { kind: 'WPBeachLanding', zone, via: area, radius: LANDING.waypointRadius } : null;
-  }
-  const path = areaPath(layer, from ?? craftArea(layer, x, z, type), area);
-  if (!path) return null;
-  for (const a of path) {
-    if (!isLandingZoneUser(a, type)) continue;
-    const zone = closestZone(a, zones, x, z);
-    if (!zone) return null;
-    return { kind: 'WPMoveToBeachLanding', zone, via: a,
-             radius: Math.max(LANDING.moveToRadiusMin, LANDING.moveToRadiusNoRoute) };
+    return zone ? { kind: 'WPBeachLanding', zone, via: area, radius: LANDING.waypointRadius, route: [] } : null;
+  };
+  const start = from ?? craftArea(layer, x, z, type);
+  const routes = strategicRoutes(layer, area, side, { group: vehicleGroupOf(ai, LANDING.unitTypeIndex) });
+  const route = routes.get(start) ?? [];
+  if (route.length <= 1) return direct();
+  const bounding = unit?.radius ?? 10;
+  const points = [];
+  let radius = LANDING.moveToRadiusNoRoute;
+  for (let i = 0; i < route.length; i++) {
+    const a = route[i];
+    if (isLandingZoneUser(a, type)) {
+      const zone = closestZone(a, zones, x, z);
+      if (!zone) return null;
+      // The engine's radius, `max(5, R)` (ctor 0x08537ce0), is the order's
+      // for the route points (their moves and their pop distance). Past
+      // them, on the approach leg, the move's radius is also the path's goal
+      // tolerance (`BAPAMoveToFinding` ctor 0x085449f0 -> Path +0x5c, the
+      // last leg's local search radius, +0x60, at 0x085271e8): on Wake a
+      // route through SeaArea1 gives R = 0.25 x 303 + 20 = 96 m and the
+      // craft would stop 86 m short of its zone and never take the beach
+      // leg. Retail bots do land there, so something unread stands between;
+      // the approach leg keeps the no-route 5 (INVENTION, D's value).
+      return { kind: 'WPMoveToBeachLanding', zone, via: a, route: points,
+               radius: Math.max(LANDING.moveToRadiusMin, LANDING.moveToRadiusNoRoute),
+               routeRadius: Math.max(LANDING.moveToRadiusMin, radius) };
+    }
+    if (i === 0) continue;
+    let p = null;
+    for (let k = 0; k < LANDING.approachTries && !p; k++) {
+      const c = layer.randomizePos(a, LANDING.routeRandomize, random);
+      if (!isValid || isValid(c[0], c[1])) p = c;
+    }
+    if (!p) p = layer.orderPosition(area, type, isValid);
+    points.push({ point: p, area: a });
+    radius = layer.sideRadius(a, side) * LANDING.routeRadiusFraction + 2 * bounding;
   }
   return null;
 }
 
 /**
  * The order. `target` is `beachTarget`'s; `area` is the SAI's target area
- * (the order is "in" it for Fire and Change, as a `WPMoveTo` is). `inside`
- * picks the leg: the approach point outside the zone, the beach point
- * inside it (`direct`: the straight run). The approach point is drawn once
- * per order object (the engine draws one per plan).
+ * (the order is "in" it for Fire and Change, as a `WPMoveTo` is). While a
+ * `WPMoveToBeachLanding` still holds route points its goal is the first of
+ * them (`getGoalPoint` 0x08538070); then `inside` picks the leg: the
+ * approach point outside the zone, the beach point inside it (`direct`: the
+ * straight run). The approach point is drawn once per order object (the
+ * engine draws one per plan).
  */
 export function beachLandingOrder({ target, area, side, layer, isValid = null, random = Math.random,
-                                    inside = false, zones = null, last = null }) {
-  const { kind, zone, via, radius } = target;
+                                    inside = false, zones = null, last = null, route = target.route ?? [] }) {
+  const { kind, zone, via } = target;
+  const radius = route.length ? (target.routeRadius ?? target.radius) : target.radius;
   let point, valid = true;
-  if (inside) point = beachPosition(zone, random);
+  if (route.length) point = route[0].point;
+  else if (inside) point = beachPosition(zone, random);
   else {
     const a = approachPosition(zone, isValid, random);
     point = a?.point ?? null;
@@ -370,19 +442,29 @@ export function beachLandingOrder({ target, area, side, layer, isValid = null, r
     kind, zone, via, point, radius,
     area: area ?? null,
     insideZone: inside,
+    /** The route points still to drive, `{ point, area }` (`+0x20`). */
+    route,
     /** The beach leg: a straight run, no route (`BAPAMoveToDirect`). */
-    direct: inside,
+    direct: !route.length && inside,
     /** No valid approach point in 20 tries (the engine's createPlan fails). */
     approachValid: valid,
     zones,
     zoneD2: null,
     arrived: false,
     _last: last,
-    /** `WPBeachLanding::getUrgency` 0x085363d0: 1, never arrived. */
-    urgency() { this.arrived = false; return 1; },
-    regoal(nowInside) {
-      return beachLandingOrder({ target, area, side, layer, isValid, random, inside: nowInside, zones, last: this._last });
+    /** `WPBeachLanding::getUrgency` 0x085363d0: 1, never arrived. The
+     *  bot's path radius (`getMaxPathPosRemovalDistance`, the route's pop
+     *  distance) is kept for the tick. */
+    urgency(_x, _z, pathRadius = null) {
+      this.arrived = false;
+      if (Number.isFinite(pathRadius)) this._pathRadius = pathRadius;
+      return 1;
     },
+    regoal(nowInside, nextRoute = this.route) {
+      return beachLandingOrder({ target, area, side, layer, isValid, random, inside: nowInside, zones,
+                                 last: this._last, route: nextRoute });
+    },
+    layer,
   };
   if (area && layer) {
     order.owned = () => layer.ownerOf(area) === side;
@@ -470,9 +552,33 @@ export function landingTick(order, { id, position, command, candidates, actuator
     order.bail = { t, speed, tipped: reason === 'tipped' };
     return null;
   }
-  const d2 = zoneDistanceSqr(order.zone, x, z);
-  order.zoneD2 = d2;
-  const inside = order.kind === 'WPMoveToBeachLanding' ? d2 < LANDING.moveToInsideD2 : d2 === 0;
+  if (order.route?.length) {
+    // `WPMoveToBeachLanding::getUrgency` 0x08537e50 on the route: the first
+    // point is popped (the changed flag +4 set, so the plan is rebuilt) once
+    // the bot is within `round(R) + getMaxPathPosRemovalDistance` of it or
+    // inside its area (`AIStrategicArea::isInside`); until the list is empty
+    // the zone law does not run. (Its re-randomising of a point under the
+    // waypoint's error flag, +6, has no viewer counterpart: no error flag.)
+    const first = order.route[0];
+    const rr = Math.round(order.radius) + (order._pathRadius ?? 0);
+    const d2p = (x - first.point[0]) ** 2 + (z - first.point[1]) ** 2;
+    if (d2p < rr * rr || (first.area && order.layer?.isInside(first.area, x, z))) {
+      const rest = order.route.slice(1);
+      const inside = rest.length ? false : zoneInside(order, x, z);
+      return order.regoal(inside, rest);
+    }
+    return null;
+  }
+  const inside = zoneInside(order, x, z);
   if (inside !== order.insideZone) return order.regoal(inside);
   return null;
+}
+
+/** The zone half of both kinds' `getUrgency`: `WPBeachLanding` 0x085363d0
+ *  inside at a zone distance of 0, `WPMoveToBeachLanding` 0x08537e89 under
+ *  d^2 10. Stores the distance on the order. */
+function zoneInside(order, x, z) {
+  const d2 = zoneDistanceSqr(order.zone, x, z);
+  order.zoneD2 = d2;
+  return order.kind === 'WPMoveToBeachLanding' ? d2 < LANDING.moveToInsideD2 : d2 === 0;
 }
