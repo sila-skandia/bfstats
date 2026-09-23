@@ -5,7 +5,40 @@
 // instance-refactor Part 2).
 
 import * as THREE from 'three';
-import { captureDuration, nearestEnemyFlag as nearestEnemyFlagOf } from './bot-referee.js';
+import { captureRadius, controlPointSettings, nearestEnemyFlag as nearestEnemyFlagOf } from './bot-referee.js';
+import { playerPosition } from './bot-sense.js';
+
+/**
+ * Where the human stands on a flag, read off the flag's one state (the
+ * `flag._cp` bot-referee.js `controlPointStep` keeps: `ControlPoint::
+ * handleFrameUpdate` 0x08283b00, run by `captureTick` over every living
+ * player on the point, the human included). `team` is the human's side;
+ * `others` whether a player of another side is inside the radius too.
+ *  - `capturing`: the point is neutral and `team` is getting it (state 3,
+ *    `gettingControl` 0x08283f20): progress is the get timer's.
+ *  - `neutralising`: another side's point run down under him (state 2,
+ *    `losingControl` 0x08284030): progress is the lose timer's.
+ *  - `contested`: nothing moves for his side while another side is there
+ *    (a defender without `loseControlWhenEnemyClose`, or two attackers).
+ *  - else `capturing` at 0: he has just stepped on, or is short of
+ *    `minNrToTakeControl`.
+ * The phrasing is the page's (the retail HUD has no capture bar).
+ */
+export function captureStateFor(flag, team, others = false) {
+  const cfg = controlPointSettings(flag);
+  const cp = flag?._cp;
+  const frac = (left, total) => Math.min(1, Math.max(0, 1 - left / Math.max(total, 1e-6)));
+  if (cp?.state === 3 && cp.getting === team) return { phase: 'capturing', progress: frac(cp.get, cfg.timeToGet) };
+  if (cp?.state === 2 && flag.team && flag.team !== team) return { phase: 'neutralising', progress: frac(cp.lose, cfg.timeToLose) };
+  return { phase: others ? 'contested' : 'capturing', progress: 0 };
+}
+
+/** The HUD line for `captureStateFor`'s answer. */
+export function captureHudText(name, state) {
+  if (state.phase === 'contested') return `CONTESTED ${name}`;
+  const pct = Math.min(100, Math.round(state.progress * 100));
+  return `${state.phase === 'neutralising' ? 'NEUTRALISING' : 'CAPTURING'} ${name} · ${pct}%`;
+}
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -54,6 +87,22 @@ export function createFlagCapture(page) {
     return position ? nearestEnemyFlagOf(flagCapture.flags, team, [position.x, position.y, position.z]) : null;
   }
 
+
+  /** A living player of a side other than `team` inside the flag's radius:
+   *  the law's own input (bot-referee.js `captureTick`), for the HUD word. */
+  function otherSideInside(flag, team) {
+    const w = page.world;
+    if (!w?.players || !flag.position) return false;
+    const r = captureRadius(flag);
+    for (const [id, p] of w.players) {
+      if (!p?.team || p.team === team || w.armorOf?.(id)?.destroyed) continue;
+      const q = playerPosition(p);
+      if (!q) continue;
+      const dy = Number.isFinite(q[1]) ? q[1] - flag.position[1] : 0;
+      if (Math.hypot(q[0] - flag.position[0], dy, q[2] - flag.position[2]) <= r) return true;
+    }
+    return false;
+  }
 
   function capturePosition() {
     const player = page.world?.player(page.LOCAL_PLAYER);
@@ -350,32 +399,24 @@ export function createFlagCapture(page) {
       return;
     }
 
-    // Solo play has no server authority, so run the same delayed capture law
-    // locally. Room play only displays the authoritative lifecycle below.
+    // Solo play has no server authority: the flag's own law runs locally in
+    // bot-referee.js `captureTick`, over the human and the bots alike, so one
+    // flag has one state and the take (hoist, spawns, radio) is its
+    // `onCapture`. This only shows where the human stands on it. Room play
+    // only displays the authoritative lifecycle below.
     if (!page.roomJoined) {
       const player = page.world?.player(page.LOCAL_PLAYER);
-      const target = nearestEnemyFlag(player?.team ?? page.deployTeamId, capturePosition());
+      const team = player?.team ?? page.deployTeamId;
+      const target = nearestEnemyFlag(team, capturePosition());
+      const prev = flagCapture.localCapture;
+      if (prev && prev.flag !== target && prev.flag.team === team) page.flashHud(`${prev.flag.name} captured`);
       if (!target) {
-        if (flagCapture.localCapture) { flagCapture.localCapture = null; page.updateHud(); }
+        if (prev) { flagCapture.localCapture = null; page.updateHud(); }
         return;
       }
-      if (!flagCapture.localCapture || flagCapture.localCapture.flag !== target) {
-        flagCapture.localCapture = { flag: target, elapsed: 0 };
-      }
-      flagCapture.localCapture.elapsed += (ticks * (1 / 30));
-      const progress = Math.min(100, Math.round(
-        flagCapture.localCapture.elapsed / captureDuration(target) * 100));
-      page.hud.textContent = `CAPTURING ${target.name} · ${progress}%`;
-      if (flagCapture.localCapture.elapsed < captureDuration(target)) return;
-      const prevTeam = target.team;
-      target.team = player?.team ?? page.deployTeamId;
-      hoistCaptureFlag(target);
-      page.syncVehicleSpawnOwnership();
-      page.logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
-      page.comms?.onCapture(target, target.team);
-      page.flashHud(`${target.name} captured`);
-      announceCapture(prevTeam, target.team);
-      flagCapture.localCapture = null;
+      const state = captureStateFor(target, team, otherSideInside(target, team));
+      flagCapture.localCapture = { flag: target, ...state };
+      page.hud.textContent = captureHudText(target.name, state);
       return;
     }
 
