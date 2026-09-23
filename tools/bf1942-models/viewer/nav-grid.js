@@ -39,17 +39,19 @@
 //    diagonal step also tests the two cells it
 //    cuts between.
 //
+//  * The strategic layer is the level's own `StrategicMap` per search type
+//    (`Pathfinding/<type>.raw` + `<type>Info.raw`, loaded by `loadSearchTypes`
+//    0x0847c6b0: 64 m cells of up to four regions, each with a point and
+//    links to the next cells' regions; `strategic-map.js`, AI-117), which
+//    `findStrategicPath` walks as `AStarStrategicSearch` does.
+//
 // INVENTION, labelled:
-//  * The engine's strategic layer is a separate `StrategicMap` of hand-placed
-//    cells; the coarse level here is a 16 m downsample of the bitmap whose
-//    nodes are the 4-connected patches of free metres inside each cell (the
-//    engine's `StrategicCell` holds several cell infos, 0x08608fa0, not
-//    read), joined across a cell side where two free metres touch
-//    (`nav-search.js coarseRegions`). It exists only to hand the local search
-//    a target inside its box. (Until 2026-09-24 a cell was one node, passable
-//    if ANY metre was free, and a cell holding ground either side of a cliff
-//    joined them; on the levels' own maps that sent El Alamein's tanks at
-//    cliffs, AI-104.)
+//  * On a map with no strategic map of its own (a painted map: the six
+//    levels with no `AI.con`) the coarse level is a 16 m downsample of the
+//    bitmap whose nodes are the 4-connected patches of free metres inside
+//    each cell, joined across a cell side where two free metres touch
+//    (`nav-search.js coarseRegions`, AI-104). It exists only to hand the
+//    local search a target inside its box.
 //  * The static-object pass clips the viewer's baked collision triangles to the
 //    clip band per cell and marks the footprint. The engine
 //    (`LocalMap::objectClipAndRender` 0x085fbfa0) intersects the hull with two
@@ -98,6 +100,8 @@
 //
 //   `nav-map.js`     the cell codes, the brush and `buildNavMap`
 //   `nav-baked.js`   the level's baked maps: fetch, decode, pick
+//   `strategic-map.js` the level's strategic maps (AI-117), which the
+//                    strategic search walks where a map has one
 //   `nav-search.js`  the queries, the traces and the searches
 
 export {
@@ -108,6 +112,7 @@ export {
 } from './nav-map.js';
 export {
   decodeSearchMap, findSearchMap, loadSearchMaps, readSearchMaps, BakedSearchMap,
+  strategicFor, searchTypeMaps,
 } from './nav-baked.js';
 export {
   LOCAL_SEARCH_MAX_NODES,
