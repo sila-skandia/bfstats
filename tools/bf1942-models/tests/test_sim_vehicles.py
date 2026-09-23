@@ -75,6 +75,28 @@ class SimVehicleTests(unittest.TestCase):
         self.assertGreaterEqual(r["rounds"], 1)
         self.assertTrue(any(f.startswith("Sherman:") for f in r["fired"]))
 
+    def test_deck_planes_take_off_and_the_carriers_stay_put(self) -> None:
+        # Brief Q, Midway seed 1: the Corsair and the Zero are vehicles of their
+        # own, held on their pads until the throttle reaches 0.1
+        # (`ObjectSpawner::handleFrameUpdate` 0x083138c0), and fly off their
+        # decks without moving the carrier; the SBD left parked rides the
+        # Enterprise 200 m on its pad.
+        r = recipe("deckAir")
+        self.assertEqual({(h["plane"], h["ship"]) for h in r["held"]},
+                         {("Corsair", "Enterprise"), ("SBD", "Enterprise"), ("Zero", "Shokaku"), ("AichiVal", "Shokaku")})
+        for name in ("Corsair", "Zero"):
+            p = r["planes"][name]
+            self.assertIsNotNone(p["releasedAt"], name)
+            self.assertEqual(p["padDriftHeld"], 0, name)
+            self.assertIsNotNone(p["leftDeckAt"], name)
+            self.assertGreater(p["top"], 30.0, name)
+            self.assertEqual(p["shipMoved"], 0, name)
+        e = r["enterprise"]
+        self.assertGreater(e["moved"], 200.0)
+        self.assertTrue(e["sbdHeld"])
+        self.assertLess(e["sbdOffPad"], 0.5)
+        self.assertLess(abs(e["sbdAboveDeck"] - 1.5), 1.0)
+
     def test_a_spitfire_takes_off_on_the_page_flight_model(self) -> None:
         r = recipe("air")
         self.assertEqual(r["driveClass"], "Aircraft")
