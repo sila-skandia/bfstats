@@ -99,6 +99,15 @@ export const FRUSTUM_FOV = {
   infantry: [100 * DEG, 60 * DEG, 30 * DEG],
   mobile: [75 * DEG, 45 * DEG, 15 * DEG],
 };
+/** The turn that sends the sweep back to the near band, per sub-state
+ *  (`tweak_frustumUpdateAngle` 0x087d0860, the second float of each pair:
+ *  the static initialiser at 0x0852f36b..0x0852f41b stores cos of these
+ *  doubles, a quarter of each fov): infantry 25 / 15 / 7.5 deg, a vehicle
+ *  18.75 / 11.25 / 3.75 deg. */
+export const FRUSTUM_RESET = {
+  infantry: [25 * DEG, 15 * DEG, 7.5 * DEG],
+  mobile: [18.75 * DEG, 11.25 * DEG, 3.75 * DEG],
+};
 /** `tweak_frustumUpdateStateMinMaxDistances`: the band of the view distance. */
 export const FRUSTUM_BANDS = [[0, 0.5], [0.5, 0.75], [0.75, 1.0]];
 export const FRUSTUM_NEAR = 0.01;
@@ -350,8 +359,8 @@ export class BotSenses {
     this.lastOwnFire = -Infinity;
     /** `+0x10c`: the frustum sub-state this pass. */
     this.substate = 0;
-    /** The yaw the current sub-state's frustum was built for. */
-    this._frustumYaw = null;
+    /** The camera forward the last sub-state's band frustum was built on. */
+    this._frustumForward = null;
     /** Scratch: the last sense pass's candidates, for the debug hook. */
     this.lastCandidates = 0;
     /** The bot's side's `SideKnowledge` (the referee hands it the side's
@@ -390,11 +399,22 @@ export class BotSenses {
    */
   sense(now, world, me, eye, yaw, basis = null) {
     const fovs = this.isMobile ? FRUSTUM_FOV.mobile : FRUSTUM_FOV.infantry;
-    // The engine rebuilds the query frustum when the camera has turned past
-    // the sub-state's threshold (25 / 15 / 7.5 deg), otherwise it keeps
-    // sweeping the same frustum; a fresh pass each tick is the simpler
-    // reading that sees at least as much.
-    const sub = this.substate;
+    // The sweep moves out a band each pass, but back to the near band when
+    // the camera has turned past the new band's threshold since the last
+    // band's frustum was built (0x08521dee..0x08521e1a: row 2 of the camera
+    // against the stored frustum's forward, `<= cos`, sets +0x10c to 0;
+    // Brief L, ledger AI-107). A bot that keeps turning keeps sensing only
+    // the near half of its view distance. One band a tick, a fresh query
+    // each pass (INVENTION of pacing: the engine spreads a pass over its
+    // states 0..3 inside a time budget).
+    const fwd = basis?.f ?? [Math.sin(yaw), 0, Math.cos(yaw)];
+    let sub = this.substate;
+    const prev = this._frustumForward;
+    if (sub !== 0 && prev) {
+      const turn = (this.isMobile ? FRUSTUM_RESET.mobile : FRUSTUM_RESET.infantry)[sub];
+      if (fwd[0] * prev[0] + fwd[1] * prev[1] + fwd[2] * prev[2] <= Math.cos(turn)) sub = 0;
+    }
+    this._frustumForward = [fwd[0], fwd[1], fwd[2]];
     const [lo, hi] = FRUSTUM_BANDS[sub];
     const halfFov = fovs[sub] / 2;
     const minD = Math.max(FRUSTUM_NEAR, lo * this.viewDistance);
