@@ -150,9 +150,11 @@ and takes the start from the searcher's last valid position when it stands
 on a blocked pixel (`initPathfinding` 0x0852a0d0). The viewer moves a blocked
 goal, and the start of a searcher that never stood on a free pixel (a hull
 parked on a cell its map blocks), to the nearest free metre within 20 m, as
-the local search does (INVENTION: the viewer's plans hand goals the engine's
-would have validated). Every route asks it, however near the goal: the same
-region needs no strategic legs.
+the local search does, and an end on a free pixel with no region (a pocket
+of an overloaded cell) to the nearest pixel with one within 20 m
+(INVENTION: the viewer's plans hand goals the engine's would have
+validated). Every route asks it, however near the goal: the same region
+needs no strategic legs.
 
 *Example.* Bocage, the Axis base (773, -954) to the Allied base (1372, -664)
 on `Tank`: 17 region points across both river branches, 40 to 103 m apart,
@@ -250,7 +252,10 @@ changes). One predicted that stands still (the potential-obstacle speed is 0
 on every level), or that touches now, becomes a circle of `R_bot + R_object`
 at its centre, and so does every other still body within `5 x 5 + R_object`
 of it (`addSlowMovingPathfindingObstacle` 0x0855d550); the route is rebuilt
-around them. The hull the bot is walking to board is left out (INVENTION).
+around them. The hull the bot is walking to board is left out and its
+circles dropped once his plan boards it, his circles go when he mounts, and
+a route's last leg leaves out a predicted circle over its own end
+(INVENTION). A hull with an enemy aboard is not in the two grids read.
 Moving bodies are the Avoid behaviour's (`bot-decision.js urgencyAvoid`,
 still the touching rule).
 

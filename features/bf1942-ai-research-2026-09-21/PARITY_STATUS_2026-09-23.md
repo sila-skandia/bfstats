@@ -183,13 +183,16 @@ which the bot tests then covered.
    Alamein's cliffs). Runner, SAI, 8 a side, 600 s, seeds 1..10, main
    `cd2d3328` -> after: route failures a match Bocage 7.0 -> 26.0, El Alamein
    116.4 -> 0.0; captures (Axis / Allies) Bocage 2.4 / 2.1 -> 1.4 / 2.0, El
-   Alamein 2.7 / 2.4 -> 0.8 / 1.4. Open: the engine's `StrategicMap`
-   (`Pathfinding/<type>.raw`, `<type>Info.raw`, `StrategicMap::load`
-   0x08609b60) is shipped beside the maps and not read; the coarse layer is
-   still an INVENTION. Bocage's remaining failures are tanks within 15 m of
-   order points the baked `Tank0` blocks (753..761, -936). The `Car4` and
-   `Amphibius4` maps are published but no viewer unit searches them (every
-   land vehicle uses `Tank*`).
+   Alamein 2.7 / 2.4 -> 0.8 / 1.4. ~~Open: the engine's `StrategicMap`
+   is shipped beside the maps and not read; the coarse layer is still an
+   INVENTION.~~ read and built (AI-117, Brief O): every route is planned on
+   the level's own strategic map (item 9). ~~Bocage's remaining failures
+   are tanks within 15 m of order points the baked `Tank0` blocks~~ gone
+   with it (22 -> 1 a match). ~~The `Car4` and `Amphibius4` maps are
+   published but no viewer unit searches them~~ settled (AI-118): a unit's
+   map is the search type its `vehicleNumber` names; every vanilla land
+   vehicle, jeeps included, names `Tank0`, so no vanilla unit searches
+   `Car4`, and XPack2's amphibians name the level's fifth type.
 6. **Boats** (AI-73): a ship's Daihatsu / LCVP is split off at load as its
    own unit; the helm runs `speedControl`'s regulated speed and turn. Live
    on Wake a bot drove a Daihatsu 558 m on `LandingCraft3` to a south-shore
@@ -321,9 +324,10 @@ which the bot tests then covered.
    (`getPortalLookAtPosition`) is not ported; and the sense rays aim at a
    soldier's heights on a hull (`bot-sense.js SENSE_HEIGHTS`, INVENTION), so
    live the pair close to 45 m on a slope and never have each other in
-   memory (a crest hides the 1.0 m ray; 1.7 m clears). (d) the Mobile
+   memory (a crest hides the 1.0 m ray; 1.7 m clears). ~~(d) the Mobile
    plug-in's look-ahead is 5 s for soldiers too (both ctors), not the 0
-   `bot-route.js` assumes (Brief O).
+   `bot-route.js` assumes (Brief O)~~ built for the obstacle half (AI-119,
+   item 9); the Avoid behaviour's side step is still the touching rule.
 
 8. **The AA gunner's trigger, the correction, the soldier's count law (Brief
    L, 2026-09-24; AI-105..AI-109; features/bot-gunner-aim).** ~~No AA gunner
@@ -349,3 +353,46 @@ which the bot tests then covered.
    condition, and his correction is not built (the page's soldier round is a
    hit scan); (d) the candidate test's sphere radius (`Frustum::inside`
    0x08532710) is not ported.
+
+9. **The engine's strategic map, the unit's own map, the soldier's look-ahead
+   and the capture drop (Brief O, 2026-09-24; AI-117..AI-120).** ~~The
+   coarse layer is an INVENTION~~ read and built (AI-117): every level's
+   strategic maps (`Pathfinding/<type>.raw`, `<type>Info.raw`, 794 on the
+   271 levels with search maps, 41.0 MB) are extracted beside the search
+   maps and live on mesh.bfstats.io, and every route is planned on them as
+   `initPathfinding` / `updateStrategicPath` / `AStarStrategicSearch` do
+   (regions of 64 m cells, Manhattan costs, the same region needing no
+   legs); the painted patches stay for the six levels with none. ~~Every
+   land vehicle on `Tank*`~~ settled (AI-118): a unit routes on the search
+   type its `vehicleNumber` names, which is `Tank0` for every vanilla land
+   vehicle, jeeps included; `Car4` is searched by no vanilla unit. ~~The
+   soldier's zero look-ahead~~ read and built for the obstacle half
+   (AI-119): 5 s like every Mobile plug-in; a still own-side or neutral
+   body he will meet becomes potential obstacles, one circle a sub-sphere.
+   **The capture drop** (AI-120): AI-104's before predated K's control-point
+   law; against K's commit the drop is El Alamein's Axis alone (45 -> 28
+   captures over seeds 1..30), and its cause is the Allied Willy, which
+   wedged at (1380, -1175) on the painted map in 13 of 30 seeds and now
+   takes East outpost at 87 s in 30 of 30, so the Axis PanzerIV that used
+   to take East, North and South in turn never gets East. Not a fault of M's.
+   Runner, SAI both sides, 8 a side, 600 s, seeds 1..10, on main with
+   Briefs L, N and P (`47353211` before, `0c55ab7f` after), Axis / Allies:
+   El Alamein captures 1.5 / 2.4 -> 1.7 / 1.9, deaths 6.4 / 9.7 -> 3.2 / 7.7, route failures 0 / 0 -> 1 / 67 (one seed, 634: a tank closing on a target where `Tank0` has no free pixel within 20 m); Bocage captures 2.1 / 2.1 -> 1.4 / 2.2, deaths 10.2 / 10.3 -> 8.2 / 6.9, route failures 37 / 0 -> 6 / 11. Staged on `da237ffb` (M's main), the same runs: the strategic map
+   El Alamein captures 0.8 / 1.7 -> 1.1 / 2.2 and Bocage route failures 22 ->
+   1; the unit's map no change on these two levels (every land vehicle names
+   0 there); the look-ahead El Alamein captures 1.1 / 2.2 -> 2.0 / 1.5 and
+   Bocage route failures 1 / 1 -> 8 / 0. The doctrine table is re-run in
+   features/bot-doctrines. Live (the worktree's page): Bocage and El Alamein
+   route every bot on region points with no failure; a Kubelwagen and a
+   Willy drive on `Tank0`. Open: (a) the viewer counts an aircraft in an
+   area's presence (`strategic-ai.js _updateAreas`), so an orbiting Spitfire
+   holds a pass Neutral; `AIStrategicArea::update` 0x0863d6d0 skips, in its
+   outer count, an object whose Information type word has bit 0x10 (INFERRED
+   air), not read to the end; (b) a route to a goal the unit's map blocks
+   with no free pixel within 20 m still fails (a tank's TakeCover point),
+   as the engine's would; (c) a tank wedged against a static keeps failing
+   its legs (El Alamein seed 9, a PanzerIV at (528, -1491)); (d) EoD's local
+   `pathfinding/index.json` lost its `searchTypes` / `strategic` rows in
+   Brief P's re-bake (161 of 238 levels; the live copies are intact); EoD is
+   parked, and its next publish must restore them first (`extract_search_maps.py`
+   on main writes them).
