@@ -10,6 +10,7 @@
 //   node cadencecheck.cjs --base http://localhost:5573
 //   node cadencecheck.cjs --base http://localhost:5573 --only foot-zoom-pan
 //   node cadencecheck.cjs --base http://localhost:5573 --uncap
+//   node cadencecheck.cjs --base http://localhost:5573 --bots
 //
 // WHAT IT IS MEASURING. The world ticks at 30 Hz (world.js, THE TICK LAW).
 // A 60 Hz display therefore ticks on every other frame, and a page that drew
@@ -36,6 +37,13 @@
 // mousemove per frame. Feeding it off a timer instead measures the timer's
 // jitter — under load a `setInterval(4)` misses frames and the check reads
 // the miss as a stall.
+//
+// THE BOTS' HULLS. `--bots` loads El Alamein with eight bots instead and
+// measures a hull a BOT drives, not the camera: the hull's root node, per
+// rendered frame, for a Spitfire placed in level flight and a Sherman under
+// way. Nothing about the human is involved, which is the point: a bot's hull
+// drawn at its raw tick pose alternates two poses at 60 fps and reads as a
+// double image, while every camera scenario above passes.
 //
 // Exit status 0 all scenarios pass, 1 one or more fail, 2 a scenario could
 // not be staged (no such vehicle, the spawn refused, the page threw).
@@ -66,6 +74,7 @@ const opts = {
   frames: 180, settle: 1000, min: 95,
   pan: 3,                 // pixels of pointer motion per rendered frame
   only: null, uncap: false, out: null,
+  bots: false, botMap: 'el_alamein',
 };
 const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i++) {
@@ -84,7 +93,9 @@ class StagingError extends Error {}
 // Injected once and called per scenario. Kept in one string so the page-side
 // half reads as one function rather than as a dozen `page.evaluate` closures.
 const MEASURE = ({ frames, pan, panY, sweep, sample }) => new Promise(resolve => {
-  const cam = window.__camera;
+  // A scenario that stages `__cadenceTarget` measures that node (a bot's
+  // hull) instead of the camera.
+  const cam = window.__cadenceTarget || window.__camera;
   const THREE = window.__THREE;
   const q = new THREE.Quaternion(), lastQ = new THREE.Quaternion();
   const p = new THREE.Vector3(), lastP = new THREE.Vector3();
@@ -345,6 +356,82 @@ const SCENARIOS = [
   },
 ];
 
+// The bots' hulls (`--bots`). Each stages a bot in a hull, sets it moving and
+// hands the hull's root node to the measurement as `__cadenceTarget`.
+async function waitForBots(page) {
+  await page.waitForFunction(() => window.__botCtl && window.__bots?.().length >= 8
+    && window.__botVehicles?.().length > 0, null, { timeout: 300000 });
+  await sleep(3000);
+}
+
+async function mountBot(page, id, template) {
+  const res = await page.evaluate(({ id, template }) => {
+    if (window.__botCtl(id)?.vehicle) window.__botDismount(id);
+    const ok = window.__botMount(id, template);
+    const drive = window.__botCtl(id)?.vehicle?.drive;
+    if (!ok || !drive) {
+      return { err: `${id} could not take a ${template}`,
+        free: window.__botVehicles().filter(v => v.root && !v.occupiedBy).map(v => v.template) };
+    }
+    window.__cadenceTarget = drive.node;
+    return { ok: true };
+  }, { id, template });
+  if (res.err) throw new StagingError(`${res.err} (free: ${res.free.join(', ')})`);
+}
+
+/** The hull's speed and height, so a result can say whether it was moving. */
+async function hullNote(page, id) {
+  return page.evaluate(id => {
+    const s = window.__botCtl(id)?.vehicle?.drive?.state;
+    if (!s) return { speed: null };
+    return { speed: +Math.hypot(s.velocity.x, s.velocity.y, s.velocity.z).toFixed(2),
+      y: +s.position.y.toFixed(1) };
+  }, id);
+}
+
+const BOT_SCENARIOS = [
+  {
+    name: 'bot-plane',
+    what: 'a Spitfire a bot flies, placed in level flight: its hull must move every frame',
+    metric: 'moved',
+    async stage(page) {
+      await mountBot(page, 'bot_4', 'Spitfire');
+      // Airborne at 60 m/s along the nose, 150 m up; the bot flies it from
+      // there, and a few seconds pass before the measurement starts.
+      await page.evaluate(() => {
+        const drive = window.__botCtl('bot_4').vehicle.drive;
+        const s = drive.state;
+        const q = s.orientation;
+        const fx = -(2 * (q.x * q.z + q.w * q.y));
+        const fz = -(1 - 2 * (q.x * q.x + q.y * q.y));
+        const len = Math.hypot(fx, fz) || 1;
+        s.position.y += 150;
+        s.velocity.set(60 * fx / len, 0, 60 * fz / len);
+        s.throttle = 1;
+        drive.applyTransform();
+      });
+      await sleep(2500);
+    },
+    note: page => hullNote(page, 'bot_4'),
+    measure: {},
+  },
+  {
+    name: 'bot-tank',
+    what: 'a Sherman a bot drives: its hull must move every frame',
+    metric: 'moved',
+    async stage(page) {
+      await mountBot(page, 'bot_0', 'Sherman');
+      // A bot takes a few seconds to pick an order and get the hull rolling.
+      await page.waitForFunction(() => {
+        const s = window.__botCtl('bot_0')?.vehicle?.drive?.state;
+        return s && Math.hypot(s.velocity.x, s.velocity.z) > 2;
+      }, null, { timeout: 60000 }).catch(() => {});
+    },
+    note: page => hullNote(page, 'bot_0'),
+    measure: {},
+  },
+];
+
 // --- driving ----------------------------------------------------------------
 
 async function main() {
@@ -368,17 +455,21 @@ async function run(browser) {
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
 
-  const url = `${opts.base}/map.html?mod=${opts.mod}&map=${opts.map}&shots&nopreserve`;
+  const url = opts.bots
+    ? `${opts.base}/map.html?mod=${opts.mod}&map=${opts.botMap}&botCount=8&botSkill=0.75&noaudio&shots&nopreserve`
+    : `${opts.base}/map.html?mod=${opts.mod}&map=${opts.map}&shots&nopreserve`;
   await page.goto(url, { waitUntil: 'load', timeout: 300000 });
   await page.waitForFunction(() => window.__renderOnce && window.__deploy && window.__scene,
     null, { timeout: 300000 });
   await page.waitForLoadState('networkidle').catch(() => {});
   await sleep(3000);
-  await spawnOnFoot(page);
+  if (opts.bots) await waitForBots(page);
+  else await spawnOnFoot(page);
 
+  const catalogue = opts.bots ? BOT_SCENARIOS : SCENARIOS;
   const wanted = opts.only
-    ? SCENARIOS.filter(s => s.name === opts.only)
-    : SCENARIOS;
+    ? catalogue.filter(s => s.name === opts.only)
+    : catalogue;
   if (!wanted.length) throw new StagingError(`no scenario named ${opts.only}`);
 
   const results = [];
@@ -395,6 +486,7 @@ async function run(browser) {
     });
     const note = await scenario.note?.(page);
     await scenario.after?.(page);
+    await page.evaluate(() => { window.__cadenceTarget = null; });
     const steps = scenario.metric === 'rotated' ? raw.rotSteps : raw.posSteps;
     const hit = scenario.metric === 'rotated' ? raw.framesRotated : raw.framesMoved;
     const pct = +(100 * hit / raw.frames).toFixed(1);
