@@ -42,6 +42,7 @@ MODULES = {
     "flight.js": VIEWER / "flight.js",
     "vehicle-camera.js": VIEWER / "vehicle-camera.js",
     "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",
+    "vehicle-base.js": VIEWER / "vehicle-base.js",
     "gait-select.js": VIEWER / "gait-select.js",
     "soldier.js": VIEWER / "soldier.js",
     "spawn-safety.js": VIEWER / "spawn-safety.js",

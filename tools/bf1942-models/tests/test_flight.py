@@ -56,6 +56,7 @@ MODULES = {
     "flight.mjs": VIEWER / "flight.js",
     "vehicle-camera.js": VIEWER / "vehicle-camera.js",
     "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",
+    "vehicle-base.js": VIEWER / "vehicle-base.js",
     "vendor/loaders/GLTFLoader.js": VIEWER / "vendor" / "loaders" / "GLTFLoader.js",
     "vendor/utils/BufferGeometryUtils.js": VIEWER / "vendor" / "utils" / "BufferGeometryUtils.js",
     # The bare specifier `three` is an import map entry in the page; node needs
