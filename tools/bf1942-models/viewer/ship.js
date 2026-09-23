@@ -276,7 +276,21 @@ export function hullGeometry(root) {
   };
   for (const mesh of meshes) add(mesh);
   if (union.isEmpty()) {
-    union.setFromObject(root).applyMatrix4(_inv);
+    // No mesh down the chain (a landing craft's hull is a `SimpleObject`
+    // under its cockpit `LodObject`): every mesh under the root but the
+    // effects', each in the root's own frame. Not `setFromObject`: that is a world AABB, and
+    // a yawed hull inflates it (a Daihatsu lying at 45 deg read 20.8 m square
+    // with its keel 3 m down, and grounded in 2.7 m of water).
+    // Effect emitters (the bow-wave and foam sprites 2..3 m under the
+    // waterline) are no part of the hull.
+    const walk = node => {
+      const kind = node.userData?.templateKind;
+      if (kind === 'EffectBundle' || kind === 'Emitter') return;
+      if (node.isMesh && node.geometry && !isCollisionNode(node)) add(node);
+      for (const child of node.children) walk(child);
+    };
+    walk(root);
+    if (union.isEmpty()) union.setFromObject(root).applyMatrix4(_inv);
   }
   union.getSize(_size);
   const size = [_size.x, _size.y, _size.z];

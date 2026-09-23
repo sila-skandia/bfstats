@@ -86,6 +86,24 @@ class BotAiTests(unittest.TestCase):
 
     # --- the look/input contract --------------------------------------------
 
+    def test_the_boat_regulates_its_speed_by_open_water_and_angle(self) -> None:
+        # `BoatControl::speedControl` 0x0860cf40.
+        b = self.results["boatSpeed"]
+        self.assertEqual(b["open"], [1, 0.8, 0.6])
+        self.assertEqual(b["oneClear"], [1, 0.6, 0.4])
+        self.assertEqual(b["tight"], [0.4, 0.5, 0.4, 0.3])
+        self.assertEqual(b["reg"], [0.5, -0.5, 1])
+        self.assertAlmostEqual(b["rudder"], b["want"], places=6)
+        self.assertEqual(b["turnFast"], [-1, 1])
+        self.assertEqual(b["turnSlow"], [1, 1])
+
+    def test_free_level_is_the_largest_aligned_free_block(self) -> None:
+        f = self.results["freeLevel"]
+        self.assertEqual(f["onIt"], -1)
+        self.assertEqual(f["next"], 0)
+        self.assertEqual(f["far"], 5)
+        self.assertEqual(f["nearish"], 2)
+
     def test_aim_writes_bounded_mouse_counts_not_radians(self) -> None:
         look = self.results["look"]
         self.assertLessEqual(abs(look["lookX"]), 16)

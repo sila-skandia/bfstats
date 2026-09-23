@@ -90,6 +90,11 @@ class ShipSpecTests(unittest.TestCase):
     def setUpClass(cls):
         cls.out = run_harness()
 
+    def test_a_craft_without_a_geometry_chain_is_measured_in_its_own_frame(self):
+        g = self.out["craftGeometry"]
+        self.assertEqual(g["size"], [3.5, 3.4, 14.1])
+        self.assertEqual(g["keel"], -1.83)
+
     def test_the_spec_is_read_off_the_hull_not_guessed(self):
         spec = self.out["spec"]
         self.assertEqual(spec["mass"], 2500000)

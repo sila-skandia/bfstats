@@ -16,7 +16,7 @@ import {
   surveyVehicle, classifySeat, classifyRoot, findAllVehicleRoots,
   listEntryPoints, pickNearest, TIE_EPSILON, VehicleOccupancy, TurretAxis,
   TurretRig, FireState, chainOnShot, readWorldPose, AIM_INPUTS, hasAimAxes,
-  TURRET_ACCELERATION, axisPeerNodes, turretPeerNodes,
+  TURRET_ACCELERATION, axisPeerNodes, turretPeerNodes, detachSpawnedCraft,
 } from './seats.js';
 
 const results = {};
@@ -1110,6 +1110,33 @@ function cadenceRig(stats) {
   const { seats: driverSeats } = surveyVehicle(jeep());
   const driver = driverSeats.get('Willy');
   results.seatPose.driverHasNoPose = driver?.poseAnimation === null;
+}
+
+// A ship's ObjectSpawner craft: a nested PCO with a body (`physics.mass`) in
+// the sea category leaves its carrier for the `spawners` group, world pose
+// kept; a seat PCO (no mass) and a deck aircraft (VCAir) stay.
+{
+  const pco = (name, physics, ...kids) => node(name, { templateKind: 'PlayerControlObject', control: name, physics }, ...kids);
+  const craft = pco('Daihatsu', { mass: 30000, vehicleCategory: 'VCSea' });
+  craft.position.set(10, 2, -30);
+  const seat = pco('HatsuzukiDeckMG42PCO', { vehicleCategory: 'VCSea' });
+  const plane = pco('Zero', { mass: 2500, vehicleCategory: 'VCAir' });
+  const ship = pco('Hatsuzuki', { mass: 1e6, vehicleCategory: 'VCSea' }, craft, seat, plane);
+  ship.position.set(600, 90, -1400);
+  ship.rotation.y = 0.5;
+  const spawners = node('spawners', { kind: 'spawners' }, ship);
+  const root = node('level', {}, spawners);
+  root.updateMatrixWorld(true);
+  const before = craft.getWorldPosition(new THREE.Vector3());
+  const moved = detachSpawnedCraft(root);
+  root.updateMatrixWorld(true);
+  const after = craft.getWorldPosition(new THREE.Vector3());
+  results.spawnedCraft = {
+    moved: moved.map(o => o.name),
+    craftParent: craft.parent?.name, seatParent: seat.parent?.name, planeParent: plane.parent?.name,
+    drift: round(before.distanceTo(after), 6),
+    roots: findAllVehicleRoots(root).map(o => o.name).sort(),
+  };
 }
 
 process.stdout.write(JSON.stringify(results, null, 2));

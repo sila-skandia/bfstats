@@ -1042,6 +1042,7 @@ import { EnemyStrengthTables, STRENGTH } from './bot-strength.js';
 import { SAI } from './strategic.js';
 import { buildNavMap, findPath, gridAt, isWalkable } from './nav-grid.js';
 import { StrategicLayer, StrategicAI } from './strategic.js';
+import { detachSpawnedCraft } from './seats.js';
 import { bindTreeFoliage } from './tree-foliage.js';
 
 // Which game's levels this page serves, and the directory they hang off:
@@ -16894,6 +16895,9 @@ async function show(entry) {
       extras.sunDirection[2] * -400,
     );
   }
+  // A ship's landing craft are spawned objects of their own in the engine.
+  const craft = detachSpawnedCraft(currentRoot);
+  if (craft.length) console.log(`[vehicles] ${craft.length} landing craft split from their ships`);
   indexScene(currentRoot);
   collectTerrain(currentRoot);
   // Leaf sprites face the camera and each tree past its billboardDistance
