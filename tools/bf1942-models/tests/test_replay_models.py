@@ -39,6 +39,7 @@ HARNESS = Path(__file__).resolve().parent / "replay_harness.mjs"
 # `physics.js` under that, and the two vendored utilities).
 MODULES = {
     "replay.js": VIEWER / "replay.js",
+    "replay-recording.js": VIEWER / "replay-recording.js",
     "flight.js": VIEWER / "flight.js",
     "vehicle-camera.js": VIEWER / "vehicle-camera.js",
     "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",
