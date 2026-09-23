@@ -41,6 +41,7 @@ MODULES = {
     "replay.js": VIEWER / "replay.js",
     "replay-recording.js": VIEWER / "replay-recording.js",
     "replay-server-log.js": VIEWER / "replay-server-log.js",
+    "replay-ui.js": VIEWER / "replay-ui.js",
     "flight.js": VIEWER / "flight.js",
     "vehicle-camera.js": VIEWER / "vehicle-camera.js",
     "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",
