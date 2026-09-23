@@ -64,6 +64,7 @@ Browning rests facing aft; the B17 moves when it is adopted).
   0.99 a call after 10 s without a new observation. Its data comes from
   outside the fire callback (`WeaponFireArm::FireCallback::fire` `0x085ee9a0`
   only stamps the time of firing); where the impact is fed back was not found.
+  (Found and ported since: the AI collision handler, Brief L below.)
 
 ### The per-seat numbers
 
@@ -182,17 +183,74 @@ while seated, after):
 
 ## Open
 
-- **Item 4**, above.
-- **A soldier still aims with the old count law.** The engine runs soldiers
-  through the same `mouseControlLookAtDirection` (the `SoldierCtrl` plug-in:
-  `pitchSensitivity 0.436`, `rollSensitivity -0.524`, scales 5.0; and
-  `infanteryControlTowardsDirection` 0x08627000 calls it too), and through the
-  same precision condition. Porting it slows every soldier's aim and moves
-  every seeded trace; it was left for its own change.
-- **The reachability block** of `mouseControlLookAtDirection` for a camera
-  whose yaw window is not the full circle (only the Defgun's, +-90).
+- **Item 4**: see Brief L below. The AA gunner now fires; it still does not
+  hold a 55 m/s crossing plane.
+- ~~A soldier still aims with the old count law~~ ported (Brief L, AI-108).
+  His trigger is still the tolerance test, not the precision condition.
+- ~~The reachability block~~ ported (Brief L, AI-106). Not the Defgun alone:
+  45 of the 92 seat ControlInfos limit the camera's yaw.
 - **`__plane().place` / `orient` snap the presentation**, which re-captures
   every occupied hull's rig from its drawn pose (`local-look.js
   snapPresentation`). Called every tick from a test, it held a bot gunner's
   barrel on a stale pose for a whole pass; the recipe sets the drive's state
   directly instead. `local-look.js` was left alone.
+
+## Brief L (2026-09-24): the AA gunner's trigger, the correction, the soldier's law
+
+Ledger AI-105..AI-109; `viewer/bot-aim.js`, `bot-sense.js`,
+`bot-perception.js`.
+
+### Why the AA gunner never fired
+
+Not the lag alone. The trigger's line test (`bot._lineClear` from the eye to
+the target's +1 m) skipped only the bot's own unit, and a seated player's
++1 m is inside his own hull: every line to a plane ended on the plane. With a
+Spitfire held still 181 m out the gunner's miss came down to 0.19 m against
+the 11.3 m precision and no round left. The sense rays skipped the target's
+hull but re-cast past only four of its faces, and a ray into a Spitfire meets
+four within 1.4 m. Both fixed (AI-109): the line test skips the firing
+target's unit, and re-casts past 32 faces.
+
+### The correction (AI-105)
+
+The writer AI-91 could not find is the AI collision handler: every round a
+bot's player fires reaches `BotMain::event_firing` 0x0852cd90, which takes
+one round at a time (only once the last is resolved and its miss consumed)
+against the predicted target at that moment; `updateBotProjectiles`
+0x084650e0 marks it passed at the target's range, `planExecution`
+0x085202c0 observes it; a round that strikes anything but the target first is
+observed by `event_shotMissed` 0x08526a90; a hit or a burst observes nothing
+(a burst leaves the record waiting until the target changes). `correctAim`
+0x0853a6d0 then adds 0.8 of the miss to the aim point. The trigger still
+measures the barrel against the uncorrected target, so the correction only
+helps once rounds are leaving: a gunner that never fires never corrects.
+
+### Live, El Alamein
+
+`?botCount=8&botSkill=0.75&shots&noaudio&botDebug`, the human in Spitfire
+(owner 974) on the Allied side, the plane's state set every tick, every bot
+but bot_3 frozen far off, bot_3 (Axis) in AA_Allies_1 at (1658, 60, -881).
+K's own take (AI-92) did not fire here: on foot 20 to 60 m from the gun with
+the plane held in view bot_3 took a Willy 35 m away, then fired his rifle at
+the plane; the recipes seat him with `__botMount('bot_3', 'AA_Allies')`.
+
+| recipe | before (line fix off) | now |
+|---|---|---|
+| held still 181 m out, 90 m up | miss 0.19 m, 0 rounds | 21 rounds in 8 s, first at 1.1 s; 8 observed; 2 flak hits, HP 100 -> 88.9; correction within +-8 m |
+| crossing 150 m out, 90 m up, 55 m/s | engaged at 192 m; miss 18..28 m; 0 rounds | engaged at 194 m; 2 rounds at 6.8..7.0 s as the gun swings on (miss 1.0 m), 1 flak hit, HP 100 -> 87.6; then 22..34 m behind, no more; correction after 2 observations (-7.9, -0.8, 1.9) |
+| head-on, 90 m up, 55 m/s | engaged at 184 m; best miss 13.8 m at 114 m; 0 rounds | the same: best 14.7 m, 0 rounds |
+
+The plane is first seen at 180..195 m of the 300 m view distance: the far
+bands are narrow (mounted 15 and 45 deg) and a plane 90 m up stands 17..27
+deg above the level barrel beyond 190 m. The engine senses an aircraft
+through the same banded frustum as anything else (AI-107), so this is its own
+geometry. Whether the retail AA bot fires at a crossing plane is for the game
+itself to say.
+
+### The soldier (AI-108)
+
+A soldier aims and steers through `mouseControlLookAtDirection` with
+`SoldierCtrl` (0.4363323 / -0.5235988, scales 5.0). Harness: 35 deg off,
+inside 0.5 deg in 15 ticks, no overshoot; a half turn in 27 ticks; a 10 deg
+pitch in 45. Every seeded trace changes from the first tick (a steer writes
+at most 4 counts, not 16).

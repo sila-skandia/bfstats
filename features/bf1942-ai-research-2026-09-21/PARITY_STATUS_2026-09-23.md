@@ -279,3 +279,28 @@ which the bot tests then covered.
    read in part and not ported; (d) the Mobile plug-in's look-ahead is 5 s
    for soldiers too (both ctors), not the 0 `bot-route.js` assumes, so the
    soldier's avoid is still the zero look-ahead one.
+
+8. **The AA gunner's trigger, the correction, the soldier's count law (Brief
+   L, 2026-09-24; AI-105..AI-109; features/bot-gunner-aim).** ~~No AA gunner
+   ever fires at a plane~~ fixed (AI-109): the trigger's line to the
+   target's +1 m ended on the target's own hull, and the sense rays re-cast
+   past only 4 of a skipped hull's faces. Live, bot_3 in AA_Allies_1 against
+   the human's Spitfire: held 181 m out, 21 rounds in 8 s and 2 flak hits
+   (0 before); crossing 150 m out at 55 m/s, 2 rounds as the gun swings on
+   and 1 flak hit, then a 22..34 m lag and no more (0 before); head-on 90 m
+   up, best miss 14.7 m, 0 rounds (as before). ~~`correctAim`'s writer~~
+   found and ported (AI-105): the AI collision handler watches one round at
+   a time and the miss is fed back at 0.8; it needs rounds to leave first.
+   ~~The sense path for aircraft~~ read (AI-107): nothing special, the same
+   banded frustum at the level's view distance; the sweep now goes back to
+   the near band when the camera turns past the next band's angle. ~~The
+   soldier's count law~~ ported (AI-108): every seeded trace changes from the
+   first tick. ~~The yaw window~~ ported (AI-106): 45 of 92 seat
+   ControlInfos, not the Defgun alone. Open: (a) whether the retail AA bot
+   fires at a crossing plane at all (the game itself); (b) K's take of the
+   AA gun (AI-92) did not happen live with a plane held in view from 20 to
+   60 m (the bot took a Willy 35 m away, or fired his rifle); (c) the
+   soldier's trigger is still the tolerance test, not the precision
+   condition, and his correction is not built (the page's soldier round is a
+   hit scan); (d) the candidate test's sphere radius (`Frustum::inside`
+   0x08532710) is not ported.
