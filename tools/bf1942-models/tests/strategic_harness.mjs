@@ -121,7 +121,16 @@ re.time = 30; re._reorderArrived([rb], 2);
 const keptAt30 = rb.waypoints.point === firstPoint;
 re.time = 36; re._reorderArrived([rb], 2);
 const movedAt36 = rb.waypoints.point !== firstPoint;
+// An aircraft: `orderAirBot`, the area's own position at ground + 75.
+const airSai = new StrategicAI(island, { random: () => 0.5,
+  unitOf: () => ({ type: 'Plane', air: true, radius: 10, mounted: true, groundAt: () => 10 }) });
+airSai.addBot('air', 1);
+const wpAir = airSai._order(airSai.bots.get('air'), ia, 1);
+const air = { point: wpAir.point, y: wpAir.y, radius: +wpAir.radius.toFixed(3), clearance: wpAir.clearance,
+  far: wpAir.urgency(846 + 100, -717, 0, 85), at: wpAir.urgency(846, -717, 0, 85),
+  ten: +wpAir.urgency(856, -717, 0, 85).toFixed(6), high: wpAir.urgency(846, -717, 0, 85 + 130), arrived: wpAir.arrived };
 const pins = {
+  air,
   corner: ia.corner, centre: ia.centre, min: ia.min, max: ia.max, sideRadius: +ia.sideRadius.toFixed(3),
   cpInside: island.isInside(ia, 838, -722), r0, r1: r1.map(v => +v.toFixed(3)),
   tankRadius: +wpTank.radius.toFixed(3), inR, inRArrived, outU,
