@@ -15,12 +15,13 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
-  parseRecording, roundClock, sampleAt, hpAt, isReplicated, placeholderWeaponFor,
+  parseRecording, roundClock, sampleAt, placeholderWeaponFor,
 } from './replay-recording.js';
 import { parseServerLog, alignServerLog, serverRows } from './replay-server-log.js';
 import { ReplayUi, toast } from './replay-ui.js';
-import { phaseFor, buildGaitRig, setGaitPose } from './replay-gait.js';
+import { phaseFor, buildGaitRig } from './replay-gait.js';
 import { ReplayAssets, setReplayPropellerIdle } from './replay-assets.js';
+import { toViewPosition, place } from './replay-actors.js';
 
 export { parseRecording, roundClock, parseServerLog, alignServerLog, setReplayPropellerIdle };
 
@@ -40,38 +41,7 @@ const FOLLOW_SPECTATOR = { distance: 85, minPitch: 0.7 };
 // Templates a recording names that have nothing to draw.
 const NO_MODEL = new Set(['MultiPlayerFreeCamera']);
 
-// --- coordinates ----------------------------------------------------------------
-//
-// The viewer's frame is BF1942's with z negated. A recorded rotation quaternion
-// (x, y, z, w) is (-x, -y, z, w) here: measured against the vehicles baked into
-// maps/wake/scene.glb at eight different headings, |dot| >= 0.998 for every one,
-// where a pitched SBD rules out the alternatives.
-
-function toViewPosition(p, out) {
-  return out.set(p[0], p[1], -p[2]);
-}
-
-function toViewQuaternion(q, out) {
-  return out.set(-q[0], -q[1], q[2], q[3]);
-}
-
-// The soldier model's root, unlike every vehicle's, is authored facing the
-// opposite way (see place()). Same constant kits.html uses to flip a
-// head-slot attachment 180 degrees.
-const SOLDIER_YAW_FLIP = new THREE.Quaternion(0, 1, 0, 0);
-
 // --- drawing --------------------------------------------------------------------
-
-// Out-of-range objects are drawn in this: announced and placed, but not updated.
-const ghostMaterial = new THREE.MeshBasicMaterial({
-  color: 0x9aa666, transparent: true, opacity: 0.2, depthWrite: false,
-});
-
-function setGhost(entity, ghost) {
-  if (entity.ghost === ghost) return;
-  entity.ghost = ghost;
-  for (const { mesh, material } of entity.meshes) mesh.material = ghost ? ghostMaterial : material;
-}
 
 class ReplayPlayer {
   constructor(ctx, rec, log, alignment, label, assets) {
@@ -300,7 +270,7 @@ class ReplayPlayer {
       if (this.time >= this.rec.duration) this.playing = false;
     }
     const t = this.time;
-    for (const entity of this.entities) this.place(entity, t);
+    for (const entity of this.entities) place(this, entity, t);
     for (const m of this.markers) {
       const age = t - m.row.t;
       const on = this.showServer && age >= -MARKER_LEAD && age <= MARKER_TAIL;
@@ -321,57 +291,6 @@ class ReplayPlayer {
     this.lastFiredTime = t;
     if (this.followPid !== null) this.followCamera(dt, t);
     this.ui.update(t);
-  }
-
-  place(entity, t) {
-    const { life, group } = entity;
-    entity.hp = null;
-    if (t < life.created || t >= life.destroyed) {
-      group.visible = false;
-      return;
-    }
-    const replicated = isReplicated(life, t);
-    // A soldier out of the replicated set is in a vehicle, or out of range:
-    // there is no pose worth holding.
-    if ((life.soldier && !replicated) || (!replicated && !this.showGhosts)) {
-      group.visible = false;
-      return;
-    }
-    const s = sampleAt(life, t);
-    if (!s) {
-      group.visible = false;
-      return;
-    }
-    group.visible = true;
-    toViewPosition(s.a.p, group.position);
-    toViewQuaternion(s.a.q, group.quaternion);
-    if (s.b) {
-      group.position.lerp(toViewPosition(s.b.p, this.v1), s.k);
-      group.quaternion.slerp(toViewQuaternion(s.b.q, this.q1), s.k);
-    }
-    // The soldier glb's own root carries a baked 180-degree turn that a
-    // vehicle's root doesn't (README §12): toViewQuaternion alone was only
-    // ever fitted against vehicles baked into the level scene. Measured
-    // exactly 180.00 degrees off at the spawn instant of both soldier lives
-    // in replay_20260915-213110.ndjson, against spawnYaw()'s convention.
-    if (life.soldier) group.quaternion.multiply(SOLDIER_YAW_FLIP);
-
-    // Aim assist during firing: align soldier model directly towards the target/shot direction
-    if (life.soldier && this.rec.fires) {
-      const activeFire = this.rec.fires.find(f => Math.abs(t - f.t) <= 0.8);
-      if (activeFire && activeFire.dir) {
-        const dirVec = new THREE.Vector3(activeFire.dir[0], 0, -activeFire.dir[2]).normalize();
-        const lookTarget = group.position.clone().add(dirVec);
-        group.lookAt(lookTarget.x, group.position.y, lookTarget.z);
-      }
-    }
-    setGhost(entity, !replicated);
-    const hp = hpAt(life, t);
-    entity.hp = hp;
-    const wrecked = Boolean(entity.wreck) && hp !== null && hp <= 0;
-    entity.normal.visible = !wrecked;
-    if (entity.wreck) entity.wreck.visible = wrecked;
-    if (entity.anim && !wrecked) setGaitPose(entity, t);
   }
 
   /** The followed player's controlled object: their soldier, their vehicle,
