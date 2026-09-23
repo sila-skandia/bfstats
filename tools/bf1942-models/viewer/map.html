@@ -8847,9 +8847,13 @@ function nearestEnemyFlag(team, position) {
   let distance = Infinity;
   for (const flag of flags) {
     if (flag.uncapturable || !flag.position || flag.team === team) continue;
+    // `ControlPoint::handleFrameUpdate` 0x08283b00: the 3D distance from the
+    // point to the player's controlled object (the hull, when mounted)
+    // against the template radius (+0x1dc).
     const dx = position.x - flag.position[0];
     const dz = position.z - flag.position[2];
-    const d = Math.hypot(dx, dz);
+    const dy = Number.isFinite(position.y) ? position.y - flag.position[1] : 0;
+    const d = Math.hypot(dx, dy, dz);
     if (d <= captureRadius(flag) && d < distance) {
       nearest = flag;
       distance = d;
@@ -9330,7 +9334,9 @@ function spawnBotsForLevel() {
   // to the nearest enemy flag (bot.js).
   botStrategy = world.extras?.ai?.strategicAreas?.length
     ? new StrategicAI(new StrategicLayer(world.extras.ai, world.flags),
-                      { isWalkable: (x, z) => isWalkable(botNavGrid, x, z) })
+                      { isWalkable: (x, z) => isWalkable(botNavGrid, x, z),
+                        unitOf: botStrategicUnit,
+                        spottedOf: id => botControllers.find(b => b.playerId === id)?.senses?.memory?.size ?? 0 })
     : null;
   botCovers = buildBotCovers();
   loadBotVehicleAi();
@@ -9820,6 +9826,27 @@ function botVehicleAiOf(node) {
   const raw = node?.userData?.template ?? node?.userData?.control ?? node?.name ?? '';
   const key = String(raw).replace(/_\d+$/, '').toLowerCase();
   return botVehicleAi.get(key) ?? null;
+}
+
+/**
+ * The unit a bot controls, for `orderNormalBot`: its search type (the
+ * `setOrderPosition` key), the test of its own search map (the Mobile
+ * plug-in's map: Tank0 for a tank, the water maps for a hull afloat, the
+ * infantry map on foot), its bounding radius, and whether it is mounted.
+ * A car routes on the Tank map here (botVehicleNav), so it tests that one.
+ */
+function botStrategicUnit(id) {
+  const bot = botControllers.find(b => b.playerId === id);
+  const m = bot?.vehicle;
+  if (!m) {
+    return { type: 'Infantery', isWalkable: botNavGrid ? (x, z) => isWalkable(botNavGrid, x, z) : null,
+             radius: 1.0, mounted: false };
+  }
+  const type = m.kind === 'tank' ? 'Tank' : m.kind === 'ground' ? 'Car'
+    : m.kind === 'ship' ? (m.nav && m.nav === botNavGridWater.get('LandingCraft') ? 'LandingCraft' : 'Boat')
+    : m.kind === 'air' ? 'Plane' : 'Infantery';
+  const nav = m.nav ?? (m.kind === 'tank' || m.kind === 'ground' ? botVehicleNav() : null);
+  return { type, isWalkable: nav ? (x, z) => isWalkable(nav, x, z) : null, radius: m.radius ?? 1.0, mounted: true };
 }
 
 /** The land vehicles' map (`ai.addSearchMap Tank0 ...`), built on first use. */
@@ -10369,7 +10396,7 @@ function botCaptureTick(ticks) {
   for (const bot of botControllers) {
     if (!bot.team) continue;
     const pos = bot.getPosition();
-    const target = nearestEnemyFlag(bot.team, { x: pos[0], z: pos[2] });
+    const target = nearestEnemyFlag(bot.team, { x: pos[0], y: pos[1], z: pos[2] });
     if (!target) { bot._capture = null; continue; }
     if (!bot._capture || bot._capture.flag !== target) {
       bot._capture = { flag: target, elapsed: 0 };
@@ -10381,6 +10408,7 @@ function botCaptureTick(ticks) {
     hoistCaptureFlag(target);
     syncVehicleSpawnOwnership();
     logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
+    console.log(`[bots] ${bot.playerId} takes ${target.name}${bot.vehicle ? ' in the ' + (bot.vehicle.template ?? bot.vehicle.kind) : ''}`);
     announceCapture(prevTeam, target.team);
     bot._capture = null;
   }
