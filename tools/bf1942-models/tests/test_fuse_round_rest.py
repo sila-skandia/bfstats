@@ -49,7 +49,6 @@ MODULES = {
     "bomb-release.js": VIEWER / "bomb-release.js",
     "torpedo-run.js": VIEWER / "torpedo-run.js",
     "idle-vehicle.js": VIEWER / "idle-vehicle.js",
-    "collision.js": VIEWER / "collision.js",
     "world-collider.js": VIEWER / "world-collider.js",
     "static-index.js": VIEWER / "static-index.js",
     "collision-meshes.js": VIEWER / "collision-meshes.js",

@@ -41,9 +41,9 @@
 // that in under seven seconds now, which is worth remembering when reading the
 // frame counts below: a run frame is 0.1 m, not the 0.038 m it used to be.
 
-import {
-  buildHeightfield, buildCollisionIndex, WorldCollider,
-} from './collision.js';
+import { buildHeightfield } from './heightfield.js';
+import { buildCollisionIndex } from './static-index.js';
+import { WorldCollider } from './world-collider.js';
 import {
   Soldier, spawnFlags, pickSpawn, spawnYaw,
   EYE, HEIGHT, GAIT_SPEED, BODY_RADIUS, STEP_HEIGHT, MAX_GROUND_SLOPE,

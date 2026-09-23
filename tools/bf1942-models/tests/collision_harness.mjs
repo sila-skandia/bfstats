@@ -1,19 +1,23 @@
-// Drives `viewer/collision.js` outside a browser and prints one JSON blob.
+// Drives the collider (`viewer/world-collider.js` and the modules it is built
+// from) outside a browser and prints one JSON blob.
 //
-// `tests/test_collision.py` copies this file and the module it tests into a
-// temporary directory (the module keeps its browser-facing `.js` name, which
-// node reads as CommonJS, so the copy is renamed `.mjs`) and asserts on the
-// output. The module imports nothing, which is what makes this possible and is
-// the reason the collision arithmetic lives there rather than in `gunfire.js`.
+// `tests/test_collision.py` copies this file and the modules it tests into a
+// temporary directory (under their own `.js` names, beside a `package.json`
+// that makes node read them as modules) and asserts on the output. The modules
+// import nothing but each other, which is what makes this possible and is the
+// reason the collision arithmetic lives there rather than in `gunfire.js`.
 
+import { buildHeightfield } from './heightfield.js';
+import { buildCollisionIndex } from './static-index.js';
+import { buildDrivableMask } from './drivable-mask.js';
+import { WorldCollider } from './world-collider.js';
 import {
-  buildHeightfield, buildCollisionIndex, buildDrivableMask, WorldCollider,
   impactEffect, materialFamily, footstepMaterial, WATER_MATERIAL,
-} from './collision.mjs';
+} from './collision-materials.js';
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
-/** The four fields of a three.js Mesh that `collision.js` actually reads. */
+/** The four fields of a three.js Mesh that the collider actually reads. */
 function fakeMesh(positions, { index = null, material = 0, matrix = IDENTITY,
                                collision = true, kind = '' } = {}) {
   const node = {

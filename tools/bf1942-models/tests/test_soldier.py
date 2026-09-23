@@ -50,7 +50,6 @@ MODULES = [
     ROOT / "viewer" / "fixed-step.js",
     ROOT / "viewer" / "parachute.js",
     ROOT / "viewer" / "swim.js",
-    ROOT / "viewer" / "collision.js",
     ROOT / "viewer" / "world-collider.js",
     ROOT / "viewer" / "static-index.js",
     ROOT / "viewer" / "collision-meshes.js",

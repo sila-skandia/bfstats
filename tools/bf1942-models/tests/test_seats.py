@@ -59,7 +59,6 @@ MODULES = {
     "gun-groups.js": VIEWER / "gun-groups.js",
     "gun-cycle.js": VIEWER / "gun-cycle.js",
     "idle-vehicle.js": VIEWER / "idle-vehicle.js",
-    "collision.js": VIEWER / "collision.js",
     "world-collider.js": VIEWER / "world-collider.js",
     "static-index.js": VIEWER / "static-index.js",
     "collision-meshes.js": VIEWER / "collision-meshes.js",
