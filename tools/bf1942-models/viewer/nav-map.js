@@ -16,6 +16,10 @@ export const INFANTRY_SEARCH_MAP = {
 };
 /** The coarse strategic level (INVENTION, see the header). */
 export const COARSE_CELL = 16;
+/** `objectClipAndRender` 0x085fbfa0 skips every collision face whose
+ *  material is 99 (`*(short *)(face + 6) != 99` in its face loop): such a
+ *  face draws no outline. */
+const NO_OUTLINE_MATERIAL = 99;
 
 /** A blocked-cell code. The bit is what matters; the value says why. */
 export const CELL_FREE = 0;
@@ -132,6 +136,7 @@ export function buildNavMap(collider, worldSize, {
     const tris = statics.tris;
     const drivable = statics.drivable ?? null;
     const owners = statics.owners ?? null;
+    const materials = statics.materials ?? null;
     // `base` per object: the lowest collision vertex (`objectClipAndRender`
     // takes the mesh's bounding-box minimum). A simulated body (a parked
     // vehicle the world drives) is not part of the static map; the engine
@@ -150,16 +155,17 @@ export function buildNavMap(collider, worldSize, {
       const prev = ownerMin.get(owner);
       if (prev === undefined || lo < prev) ownerMin.set(owner, lo);
     }
-    const poly = new Float64Array(3 * 16);
-    const scratch = new Float64Array(3 * 16);
+    const ctx = {
+      cellSize, width, height, heights, blocked, lowClip, hiClip, water, waterDepth, stamp, deck,
+      poly: new Float64Array(3 * 16), scratch: new Float64Array(3 * 16),
+    };
     for (let t = 0; t < statics.count; t++) {
       const owner = owners ? owners[t] : -1;
       if (skipOwner.has(owner)) continue;
       const base = ownerMin.get(owner) ?? -Infinity;
       const isDeck = drivable ? drivable[t] === 1 : false;
-      rasteriseTriangle(tris, t * 9, cellSize, width, height, heights, base,
-                        lowClip, hiClip, water, waterDepth, stamp, deck, isDeck,
-                        poly, scratch);
+      const noOutline = materials ? materials[t] === NO_OUTLINE_MATERIAL : false;
+      rasteriseTriangle(tris, t * 9, base, isDeck, noOutline, ctx);
     }
     for (let i = 0; i < total; i++) {
       if (deck[i] && !stamp[i]) {
@@ -256,14 +262,52 @@ function finiteOr(v, fallback) {
  * Clip one triangle to every cell of its footprint. The clipped piece's
  * height range decides the cell: inside the band `[base + lowClip, base +
  * hiClip]` it is an obstacle (`stamp`); an upward-facing piece above the
- * band, or any drivable deck, is a surface the bot stands on (`deck`).
- * `base` is the object's lowest vertex raised to the cell's terrain. A
- * vertical wall clips to a segment whose ends still carry their heights, so
- * the test is exact for walls too.
+ * band is a surface the bot stands on (`deck`), unless it is under more
+ * water than the map allows. `base` is the object's lowest vertex raised to
+ * the cell's terrain. A vertical wall clips to a segment whose ends still
+ * carry their heights, so the test is exact for walls too.
+ *
+ * The engine (`LocalMap::update` 0x085fe090) paints in this order: the
+ * terrain pass `setBlob`s every water / slope pixel with the brush into the
+ * level-0 map; `objectClipAndRender` 0x085fbfa0 draws each object's outline
+ * into a separate `MapBuffer` (with the brush, `paintBrush` 0x086011b0) and
+ * queues the object for sampling; `SamplingObjectBuffer::sampleAndRender`
+ * 0x08601390 then FREES every level-0 pixel whose four sub-samples
+ * (x + 0.25 / 0.75, z + 0.25 / 0.75) a downward ray from the top of the
+ * object's bounding sphere finds one of its collision faces under; only then
+ * is the `MapBuffer` ORed in. So an object's surface clears the terrain's
+ * water and slope (and their brush) under it, and nothing its outline drew.
+ * The outline is where a collision face crosses one of two horizontal planes
+ * at `minY + lowClip` and `minY + hiClip` (`clipFaceToPlane`, `minY` the
+ * mesh's lowest vertex) -- or, for an object with an AI mesh in
+ * `aiMeshes.rfa` (`IAIMeshLoader` +0x8), where it crosses that mesh's
+ * triangles (`clipFaceToFace`). Faces of material 99 draw nothing (the
+ * face loop's `*(short *)(face + 6) != 99`).
+ *
+ * Every bridge ships an AI mesh, and so do the repair pads, railways and
+ * many houses. A bridge's is a sheet over its deck (`stonebridge_sml_a1`:
+ * eight faces following the deck's arch 0.7 m above it and wider than it),
+ * so what it outlines is the parapets, and neither the deck, nor its ramps
+ * where they meet the bank, nor the abutments and piers under it draw
+ * anything. The viewer ships no AI meshes; the drivable mask
+ * (`collision-meshes.js DRIVABLE_TOP_RE`: bridges, repair pads, ramps,
+ * docks) stands in for the objects that have one (INVENTION):
+ *
+ * - a flat piece of a drivable object (`|n.y| > 0.5`, either winding: the
+ *   collision export's winding is mixed, Bocage has 2,333 flat faces up and
+ *   5,934 down) is always a surface and never an outline;
+ * - a steep piece of a drivable object over ground the terrain pass blocked
+ *   (the river, the bank under a bridge's end) draws nothing: the cell is
+ *   free only where the object's surface covers it, and the brush of the
+ *   blocked ground either side keeps a hull off the deck's edges (Bocage's
+ *   small stone bridge: a free strip 5 to 6 m wide, the engine's 6).
+ *
+ * Every other object keeps the filled band (INVENTION, see the header) and
+ * the old upward-facing surface test.
  */
-function rasteriseTriangle(tris, o, cellSize, width, height, heights, ownerBase,
-                           lowClip, hiClip, water, waterDepth, stamp, deck, isDeck,
-                           poly, scratch) {
+function rasteriseTriangle(tris, o, ownerBase, isDeck, noOutline, ctx) {
+  const { cellSize, width, height, heights, blocked, lowClip, hiClip, water, waterDepth,
+          stamp, deck, poly, scratch } = ctx;
   const x0 = tris[o], y0 = tris[o + 1], z0 = tris[o + 2];
   const x1 = tris[o + 3], y1 = tris[o + 4], z1 = tris[o + 5];
   const x2 = tris[o + 6], y2 = tris[o + 7], z2 = tris[o + 8];
@@ -271,6 +315,7 @@ function rasteriseTriangle(tris, o, cellSize, width, height, heights, ownerBase,
   const bx = x2 - x0, by = y2 - y0, bz = z2 - z0;
   const ny = az * bx - ax * bz;
   const len = Math.hypot(ay * bz - az * by, ny, ax * by - ay * bx);
+  const flat = len > 0 && Math.abs(ny) / len > 0.5;
   const upward = len > 0 && ny / len > 0.5;
   const minX = Math.min(x0, x1, x2), maxX = Math.max(x0, x1, x2);
   const minZ = Math.min(z0, z1, z2), maxZ = Math.max(z0, z1, z2);
@@ -302,13 +347,14 @@ function rasteriseTriangle(tris, o, cellSize, width, height, heights, ownerBase,
       }
       const idx = gz * width + gx;
       const ground = heights[idx];
+      if (isDeck) {
+        if (flat) { deck[idx] = 1; continue; }
+        if (blocked[idx] !== CELL_FREE) continue;
+      }
       const base = Number.isFinite(ground) ? Math.max(ownerBase, ground) : ownerBase;
       if (!Number.isFinite(base)) continue;
-      if (hi >= base + lowClip && lo <= base + hiClip) stamp[idx] = 1;
-      // An object top outside the band is a surface the bot stands on
-      // (`sampleAndRender` frees every top a ray finds), unless it is under
-      // more water than the map allows.
-      else if (upward && (isDeck || lo >= water - waterDepth)) deck[idx] = 1;
+      if (!noOutline && hi >= base + lowClip && lo <= base + hiClip) stamp[idx] = 1;
+      else if (upward && lo >= water - waterDepth) deck[idx] = 1;
     }
   }
 }

@@ -55,7 +55,22 @@
 //    height so a building on a slope keeps its uphill wall.
 //  * `LocalMap::SamplingObjectBuffer::sampleAndRender` 0x08601390 frees every
 //    cell a downward ray finds an object top under (a pier, a bridge deck, a
-//    ramp). Here a surface above the band, or a drivable deck, frees the cell.
+//    ramp), and `LocalMap::update` 0x085fe090 runs it after the terrain pass
+//    and before it ORs the object outlines in, so it clears water and slope
+//    (with their brush) and never an outline. Here an upward-facing surface
+//    above the band, or any flat face of a drivable object, frees the cell.
+//  * An object with an AI mesh (`aiMeshes.rfa`: every bridge, the repair
+//    pads, railways, many houses) is outlined against that mesh, not the two
+//    planes; a bridge's is a sheet over the deck, so only its parapets are
+//    drawn. The viewer has no AI meshes: a drivable object (the drivable
+//    mask) stands in, its flat faces never an outline and its steep faces
+//    drawing nothing over ground the terrain pass blocked. Checked against
+//    the levels' own baked maps (`Pathfinding/Tank0Level0Map.raw`, which the
+//    engine loads with `ai.loadMaps`): Bocage's tank map agrees on 95.2 % of
+//    its cells (60.8 % before; every bridge was a wall) and its infantry map
+//    on 98.2 % (56.4 %); nine other levels are unchanged or better.
+//  * Faces of collision material 99 draw no outline (`objectClipAndRender`
+//    0x085fbfa0's face loop).
 //  * `floodLevelZeroMap` 0x085fbae0 (`flags & 2`) floods the free cells from
 //    the map's spawn points and blocks everything it did not reach, which is
 //    what closes a sandbag's top and a walled yard with no door.

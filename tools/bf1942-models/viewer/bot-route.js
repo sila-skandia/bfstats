@@ -376,9 +376,14 @@ export function hullDecision(bot, dx, dz, minLevel = 0) {
     } else {
       // The last valid position; a hull that has never stood on a valid
       // cell takes the nearest free cell within `HULL_VALID_SEARCH` instead
-      // (INVENTION: the viewer's map can paint a hull's own pad blocked --
-      // El Alamein's camouflage nets -- where the engine's hull would have
-      // stood valid at its spawn).
+      // (INVENTION). The engine keeps no fallback: `AIObjectMobile::init`
+      // 0x085d54b0 sets the valid flag (+0x2c) from `isValidPosition` at the
+      // spawn and only `positionChanged` 0x085d5b30 / `setValidPosition`
+      // 0x085d5be0 set it after, so `getValidPosition` 0x085d5bb0 answers
+      // false for such a hull. Its own baked map paints some spawns blocked
+      // (El Alamein's Tank0: the Shermans at (1731, -804) and (888, -1822),
+      // three Willys); El Alamein's (1685, -736) is no longer one of them
+      // since the repair pad it stands on is a surface (AI-92).
       const v = bot._validHullPos ?? nearestFreeCell(levelAt, gx, gz, minLevel, Math.ceil(HULL_VALID_SEARCH / cs), cs);
       if (v) {
         from = [v[0], -v[1]];
