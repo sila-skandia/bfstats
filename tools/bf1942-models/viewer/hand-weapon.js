@@ -465,6 +465,25 @@ export function createHandWeapon(page) {
   });
   soldierKit.addFootLook = fire.addFootLook;
 
+  /** Climbing into a seat: only the presentation is packed away. The trigger
+   *  lets go and the viewmodel hides; holstering drops zoom
+   *  (`HandFireArms::disable`, lnxded 0x08293da0, calls setZoom(false)) and
+   *  the eased FOV factor goes home with it. */
+  soldierKit.holster = () => {
+    const hw = soldierKit.handWeapon;
+    if (!hw) return;
+    if (hw.group) page.guns.setFiring(hw.group, false);
+    hw.rig.visible = false;
+    hw.zoomed = false;
+    hw.rezoom = 0;
+    hw.fovCur = 1;
+    hw.worldFov = FOOT_FOV;
+  };
+  /** Back on foot (out of a seat, or a fresh body): the weapon in hand again. */
+  soldierKit.drawWeapon = () => {
+    if (soldierKit.handWeapon) soldierKit.handWeapon.rig.visible = true;
+  };
+
   Object.assign(soldierKit, {
     DEG_TO_RAD: fire.DEG_TO_RAD,
     KIT_ROW_KEYS: loadout.KIT_ROW_KEYS,
