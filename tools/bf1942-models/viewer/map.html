@@ -685,13 +685,12 @@ const vehicleEntry = createVehicleEntry(bag(
   from(() => pageInput, `HUD_FOOT releaseButtons`),
   from(() => room, `netSeatRow netSendAction`),
   from(() => seatCamera, `driveFwd mannedActive`),
-  from(() => soldierKit, `handWeapon`),
+  from(() => soldierKit, `drawWeapon holster`),
   from(() => touchControls, `resetMobileControls updateMobileControls`),
   {
-    get getTouchHudText() { return getTouchHudText; }, get guns() { return guns; },
-    get hud() { return hud; }, get isTouchDevice() { return isTouchDevice; },
-    get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
-    get updateHud() { return updateHud; },
+    get getTouchHudText() { return getTouchHudText; }, get hud() { return hud; },
+    get isTouchDevice() { return isTouchDevice; }, get optOnFoot() { return optOnFoot; },
+    get optPilot() { return optPilot; }, get updateHud() { return updateHud; },
   },
 ));
 // The touch HUD's opening line reads the input and the player, so it waits
@@ -1372,7 +1371,7 @@ const spawning = createSpawning(bag(
   from(() => pageInput, `capture`),
   from(() => room, `netReconciler netSendAction netTickPoses roomJoined`),
   from(() => scoreboard, `setScoreboard`),
-  from(() => soldierKit, `disposeHandWeapon ensureHandWeapon handWeapon kitRowLabelFor
+  from(() => soldierKit, `disposeHandWeapon drawWeapon ensureHandWeapon kitRowLabelFor
     kitRowLayoutText soldierMaxHp`),
   {
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get params() { return params; },
