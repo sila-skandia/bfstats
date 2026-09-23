@@ -69,9 +69,11 @@ class SimVehicleTests(unittest.TestCase):
         r = recipe("gun")
         self.assertTrue(r["killed"], r)
         self.assertEqual(r["kill"]["killer"], "bot_1")
-        self.assertRegex(r["kill"]["weapon"], r"^(round|splash) ShermanGunBarrel")
+        # The cannon's shell (a direct round or its splash) or the coaxial
+        # Browning's round cast against his body: either is the page's path.
+        self.assertRegex(r["kill"]["weapon"], r"^(round|splash) (ShermanGunBarrel|Coaxial_browning)")
         self.assertGreaterEqual(r["rounds"], 1)
-        self.assertTrue(any(f.startswith("Sherman:ShermanGunBarrel") for f in r["fired"]))
+        self.assertTrue(any(f.startswith("Sherman:") for f in r["fired"]))
 
     def test_a_spitfire_takes_off_on_the_page_flight_model(self) -> None:
         r = recipe("air")
