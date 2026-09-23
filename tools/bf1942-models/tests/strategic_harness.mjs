@@ -163,7 +163,7 @@ pass.updatePresenceOwner(pa, 0, 2); presence.push(pass.ownerOf(pa));
 pass.updatePresenceOwner(pa, 0, 0); presence.push(pass.ownerOf(pa));
 pass.updatePresenceOwner(pa, 1, 1); presence.push(pass.ownerOf(pa));
 pass.updatePresenceOwner(ba, 0, 3); presence.push(pass.ownerOf(ba));
-// Brief R item 5 (ledger AI-125): `AIStrategicArea::update` counts an
+// Brief R item 5 (ledger AI-127): `AIStrategicArea::update` counts an
 // object in an area's hold only when its Information lacks the air bit
 // (0x0863e182 / 0x0863e1e5); a plane's secondary seats count without it. An
 // Allied bot orbiting the Axis pass in a Spitfire's pilot seat takes nothing;

@@ -322,7 +322,7 @@ export function lineClear(collider, from, to, skip = -1) {
 }
 
 /**
- * A sense point on a hull (Brief R item 1, ledger AI-121).
+ * A sense point on a hull (Brief R item 1, ledger AI-123).
  * `BFEnvironment::pickRandomSensePosition` 0x085e4080 (environment vt+0x5c,
  * called by `BotMain::sense` 0x08521cf0 for every ray but the first on an
  * object whose Information flags lack 0x400000, and by `updateMemory`

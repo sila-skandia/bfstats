@@ -255,7 +255,7 @@ export class StrategicAI {
       // 0x0863db67 and vt+0x78 at 0x0863dc73) with no such test. So a
       // plane's own seat never holds or contests an area, a gunner's seat of
       // it (a B17's) does; the strength sums take both (Brief R item 5,
-      // ledger AI-125). The viewer counts bots: one in an aircraft's root
+      // ledger AI-127). The viewer counts bots: one in an aircraft's root
       // seat is left out of the count.
       const unit = this.unitOf?.(b.id) ?? null;
       if (!(unit?.air && unit?.root)) st[b.side].present.push(b.id);

@@ -128,7 +128,7 @@ class SimVehicleTests(unittest.TestCase):
         self.assertGreater(sum(r["landed"].values()), 5, "the rounds fly and land")
 
     def test_a_fixed_gun_holds_fire_on_what_it_has_not_spotted(self) -> None:
-        # Brief R item 2 (ledger AI-122): a Fixed unit's Fire is
+        # Brief R item 2 (ledger AI-124): a Fixed unit's Fire is
         # `BBFireInfantery`, which scores only the spotted list; the old
         # large-bore rule fired on an unseen soldier through
         # `getEnemyObjects`. Behind the pit's lip he is never spotted.
@@ -174,7 +174,7 @@ class SimVehicleTests(unittest.TestCase):
         self.assertEqual(b["alliedEye"], b["alliedGun"])
 
     def test_the_tank_pair_close_until_one_can_fire(self) -> None:
-        # Brief P item 3 (ledger AI-116) and Brief R (AI-121..AI-123): K's
+        # Brief P item 3 (ledger AI-116) and Brief R (AI-123..AI-125): K's
         # North outpost pair, set down 158.7 m apart where K's run left them.
         # A tank's Fire is `BBFireInfantery` (the spotted list only), so
         # neither is in Fire until it has seen the other: both drive on
