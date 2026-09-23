@@ -19,23 +19,26 @@
 import { DeviationModel } from './deviation.js';
 import { isWalkable } from './nav-grid.js';
 import { BotSenses, playerPosition } from './bot-sense.js';
-import { firingPose, firePlanFor, weaponAiOf, FIRE, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
-import { ScoutState, TakeCoverState, QUADRANTS, SCOUT, TAKE_COVER, MedicState, MEDIC } from './bot-behaviours.js';
+import { weaponAiOf, FIRE, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
+import { ScoutState, TakeCoverState, QUADRANTS, MedicState } from './bot-behaviours.js';
 import { unitUrgency, orderSplit, changeUrgency, teleportChangeUrgency, TANK, CHANGE, TELEPORT } from './bot-vehicle.js';
 import { decleiningSlope } from './bot-behaviours.js';
-import { planeFireMode, BOAT, PLANE_FIRE } from './bot-vehicle-air.js';
+import { BOAT } from './bot-vehicle-air.js';
 import { fireStrength, unitTable, STRENGTH } from './bot-strength.js';
 import * as aiming from './bot-aim.js';
-import { AIM_COUNTS_MAX, wrapAngle, faceTarget } from './bot-aim.js';
+import { wrapAngle } from './bot-aim.js';
 import * as perception from './bot-perception.js';
 import * as routing from './bot-route.js';
 import * as piloting from './bot-pilot.js';
 import * as deciding from './bot-decision.js';
 import { BEHAVIOUR, REGISTERED, ACTIVE_URGENCY_INIT } from './bot-decision.js';
+import * as planning from './bot-plans.js';
+import { PLAN_ACTION } from './bot-plans.js';
 import { BOT_RADIUS, VEHICLE_RADIUS } from './bot-route.js';
 
 export { PI } from './bot-aim.js';
 export { BEHAVIOUR, STANDARD_WEIGHTS, URGENCY_CURVE, IDLE_FLOOR } from './bot-decision.js';
+export { PLAN_ACTION } from './bot-plans.js';
 
 /** Bot name pools, from the research document §2.1. */
 export const BOT_NAMES = {
@@ -54,41 +57,6 @@ const FALLBACK_NAMES = [
 const DEFAULT_BOT_SKILL = 0.75;
 /** Default view distance in metres (§6.1): 600.0; a level's `AI.con` sets its own. */
 const DEFAULT_VIEW_DISTANCE = 600;
-
-/**
- * Plan action types for infantry (§4.2), the interpreter entries the viewer
- * runs. `MouseTurretLookAt` and `Sense` carry a direction, the movers a
- * point or a target id.
- */
-export const PLAN_ACTION = {
-  InfantryMoveTo: 'InfanteryMoveTo',
-  InfantryMoveToObject: 'InfanteryMoveToObject',
-  InfantryMoveToDirection: 'InfanteryMoveToDirection',
-  EnterVehicle: 'EnterVehicle',
-  ExitVehicle: 'ExitVehicle',
-  /** `BBPChangeTeleport`: the seat-select key for another seat of the hull. */
-  SwitchSeat: 'SwitchSeat',
-  /** `BBPFire3d`: the aircraft's attack loop (approach, aim and fire, break). */
-  PlaneAttack: 'PlaneAttack',
-  MoveToMediumSoldier: 'MoveToMediumSoldier',
-  MoveToObjectMediumSoldier: 'MoveToObjectMediumSoldier',
-  MouseTurretAimAt: 'MouseTurretAimAt',
-  MouseTurretLookAt: 'MouseTurretLookAt',
-  Trigger: 'Trigger',
-  TriggerContinously: 'TriggerContinously',
-  InfantryResetControls: 'InfanteryResetControls',
-  Sense: 'Sense',
-  SoldierPose: 'SoldierPose',
-  InfoWrapper: 'InfoWrapper',
-};
-
-/** `BAPALookAtObject` in the fire plan: within 5 deg. */
-const LOOK_TOLERANCE = 5 * Math.PI / 180;
-/** A remembered target's plan gets `firingTargetTime` from `setFiringTarget`. */
-/** The Avoid sidestep (INVENTION, header): a diagonal a second of travel long,
- *  ended after half a second. */
-const AVOID_STEP = 5.0;
-const AVOID_TIME = 0.5;
 
 /**
  * One bot's controller. Owns a PlayerInput and writes it once per tick.
@@ -466,50 +434,8 @@ export class BotController {
   _coverCandidates() { return deciding.coverCandidates(this); }
   _urgencySpecial(mod, now) { return deciding.urgencySpecial(this, mod, now); }
 
-  /**
-   * `BBPMedicAssist::createPlan`: the healing weapon, the walk to `R +
-   * 0.9 * range` when farther, then the look within 5 deg and the trigger
-   * held while the friend is under 95 % and in reach.
-   */
-  _planSpecial(now) {
-    const r = this._medicResult;
-    if (!r?.targetId || !(r.urgency > 0)) return this._planIdle();
-    const cur = this.currentPlan;
-    if (this.planBehaviour === BEHAVIOUR.Special && cur.length && cur.targetId === r.targetId
-        && !this._healPlanDone(cur, now)) {
-      this.weaponIndex = cur.weaponIndex;
-      return cur;
-    }
-    this.weaponIndex = r.weaponIndex;
-    const plan = [
-      { type: PLAN_ACTION.SoldierPose, pose: 'stand' },
-      { type: PLAN_ACTION.InfantryMoveToObject, targetId: r.targetId, arrive: r.arrive },
-      { type: PLAN_ACTION.MouseTurretAimAt, targetId: r.targetId, afterMove: true },
-      { type: PLAN_ACTION.TriggerContinously, targetId: r.targetId, tolerance: MEDIC.lookTolerance,
-        afterMove: true, timeout: Infinity, shots: 0, heal: true, startedAt: now },
-    ];
-    plan.targetId = r.targetId;
-    plan.weaponIndex = r.weaponIndex;
-    plan.arrive = r.arrive;
-    plan.startedAt = now;
-    return plan;
-  }
-
-  /** The heal plan's end: the friend gone, healed, out of reach, or the pack dry. */
-  _healPlanDone(plan, now) {
-    const world = this.world;
-    const p = world?.players?.get(plan.targetId);
-    const armor = world?.armorOf?.(plan.targetId);
-    if (!p || !armor || armor.destroyed) return true;
-    if (armor.hitPoints / armor.maxHitPoints >= MEDIC.healthBelow) return true;
-    const pos = playerPosition(p);
-    if (!pos) return true;
-    const d = Math.hypot(pos[0] - this.position[0], pos[2] - this.position[2]);
-    if (d > plan.arrive + 2.0) return true;             // walked out of reach: re-plan
-    const w = this.weapons[plan.weaponIndex];
-    if (w && w.ammo === 0) return true;
-    return false;
-  }
+  _planSpecial(now) { return planning.planSpecial(this, now); }
+  _healPlanDone(plan, now) { return planning.healPlanDone(this, plan, now); }
 
   /**
    * `BBChange::calculateUrgency` (bot-vehicle.js): on foot, the enterable
@@ -795,250 +721,17 @@ export class BotController {
 
   _urgencyAvoid(mod, now) { return deciding.urgencyAvoid(this, mod, now); }
 
-  // -----------------------------------------------------------------------
-  // Plan generators
-  // -----------------------------------------------------------------------
-
-  _generatePlan(behaviour, now) {
-    switch (behaviour) {
-      case BEHAVIOUR.Fire: return this._planFire(now);
-      case BEHAVIOUR.TakeCover: return this._planTakeCover(now);
-      case BEHAVIOUR.Special: return this._planSpecial(now);
-      case BEHAVIOUR.Change: return this._planChange(now);
-      case BEHAVIOUR.MoveTo: return this._planMoveTo(now);
-      case BEHAVIOUR.Scout: return this._planScout(now);
-      case BEHAVIOUR.Avoid: return this._planAvoid(now);
-      case BEHAVIOUR.Idle:
-      default: return this._planIdle();
-    }
-  }
-
-  /** `BBPIdleInfantery`: `while (true) reset controls`. */
-  _planIdle() {
-    if (this.planBehaviour === BEHAVIOUR.Idle && this.currentPlan.length) return this.currentPlan;
-    if (this.vehicle?.kind === 'air' && this.vehicle.drives) {
-      // `BBPIdle3d::createPlan`: flying (or rolling faster than 0.1 m/s) the
-      // plane holds a `MoveTo3d` to where it is under `ConFalse` — an orbit
-      // of that point; on the ground and still it only resets the controls.
-      const st = this.vehicle.drive?.state;
-      const speed = st ? Math.hypot(st.velocity.x, st.velocity.y, st.velocity.z) : 0;
-      if (st && (speed > PLANE_FIRE.idleSpeed || !this.vehicle.drive?.grounded)) {
-        return [{ type: PLAN_ACTION.InfantryMoveTo, waypoint: [st.position.x, st.position.y, st.position.z],
-                  orbit: true, persistent: true }];
-      }
-    }
-    return [{ type: PLAN_ACTION.InfantryResetControls, persistent: true }];
-  }
-
-  /**
-   * `BBPGotoWaypointSoldier::createPlan`: a pose (stand) and a MoveTo to the
-   * waypoint's point with its radius; rebuilt only when the goal moved by
-   * more than `4 * maxSpeed`.
-   */
-  _planMoveTo(now) {
-    const wp = this.waypoints ?? this._fallbackWaypoint();
-    if (!wp) return this._planIdle();
-    // An air order's point carries its height (`orderAirBot`: ground + 75).
-    const goal = [wp.point[0], Number.isFinite(wp.y) ? wp.y : this.position[1], wp.point[1]];
-    const cur = this.currentPlan;
-    if (this.planBehaviour === BEHAVIOUR.MoveTo && cur.length && cur[0].waypointObject === wp) return cur;
-    return [{ type: PLAN_ACTION.InfantryMoveTo, waypoint: goal, arrive: wp.radius, waypointObject: wp,
-              stance: 'stand' }];
-  }
-
-  /** `BBPFireInfantery::createPlan` through `firePlanFor`. */
-  _planFire(now) {
-    if (!this.firingTarget || !this.targetPosition) return this._planIdle();
-    if (this.vehicle?.kind === 'air' && this.vehicle.drives) {
-      // `BBPFire3d::createPlan`: the target's mode and aim radius, then the
-      // loop `createPlanInternal` builds (`attackRunStep`).
-      const cur = this.currentPlan;
-      if (this.planBehaviour === BEHAVIOUR.Fire && cur.length && cur.targetId === this.firingTarget
-          && !this._firePlanDone(cur, now)) return cur;
-      const info = this._unitInfo(this.firingTarget);
-      const fm = planeFireMode({ extents: info.extents ?? [0.6, 1.8, 0.6], vehicle: !!info.seats?.length || !!info.vehicle,
-                                 large: info.large === true, mobile: info.mobile !== false });
-      const weapon = this.weapons[this.weaponIndex] ?? this.weapons[0];
-      this._attackState = { phase: 'approach', breakFrom: null };
-      const plan = [{ type: PLAN_ACTION.PlaneAttack, targetId: this.firingTarget, targetPos: [...this.targetPosition],
-                      mode: fm.mode, radius: fm.radius, maxRange: weapon?.maxRange ?? 300, persistent: true,
-                      heatLimit: fm.mode === 0 ? PLANE_FIRE.weaponHeatSmall : PLANE_FIRE.weaponHeatVehicle }];
-      plan.targetId = this.firingTarget; plan.startedAt = now; this._shotsThisPlan = 0;
-      return plan;
-    }
-    const cur = this.currentPlan;
-    if (this.planBehaviour === BEHAVIOUR.Fire && cur.length && cur.targetId === this.firingTarget
-        && !this._firePlanDone(cur, now)) {
-      return cur;
-    }
-    const weapon = this.weapons[this.weaponIndex] ?? this.weapons[0];
-    const pose = firingPose(this.position, this.targetPosition, (a, b) => this._lineClear(a, b));
-    const plan = firePlanFor({
-      position: this.position, targetPos: this.targetPosition, targetId: this.firingTarget,
-      weapon, pose: pose ?? 'stand', now,
-    });
-    plan.targetId = this.firingTarget;
-    plan.startedAt = now;
-    this._shotsThisPlan = 0;
-    return plan;
-  }
-
-  /** The fire plan's end conditions: target dead, timeout, shots spent. */
-  _firePlanDone(plan, now) {
-    const attack = plan.find(a => a.type === PLAN_ACTION.PlaneAttack);
-    if (attack) {
-      // The loop's conditions: the target exists with health, the magazine
-      // is not dry, and the plane is within the battle zone.
-      if (this.world?.armorOf?.(plan.targetId)?.destroyed) return true;
-      if (!this.world?.players?.get(plan.targetId)) return true;
-      if (this.magazineEmpty) return true;
-      return false;
-    }
-    const trigger = plan.find(a => a.type === PLAN_ACTION.Trigger || a.type === PLAN_ACTION.TriggerContinously);
-    if (!trigger) return true;
-    if (now - plan.startedAt > trigger.timeout) return true;
-    if (trigger.shots > 0 && (this._shotsThisPlan ?? 0) >= trigger.shots) return true;
-    if (this.magazineEmpty) return true;                 // an empty magazine
-    if (this.world?.armorOf?.(plan.targetId)?.destroyed) return true;
-    return false;
-  }
-
-  /** `BBPScoutInfantery::createPlan`: look along the direction, sense, pose. */
-  _planScout(now) {
-    const dir = this._scoutDir;
-    if (!dir) return this._planIdle();
-    const cur = this.currentPlan;
-    if (this.planBehaviour === BEHAVIOUR.Scout && cur.length && cur.dir) {
-      const dot = cur.dir[0] * dir[0] + cur.dir[1] * dir[1] + cur.dir[2] * dir[2];
-      if (dot > SCOUT.planReuseCos) return cur;
-    }
-    const plan = [
-      { type: PLAN_ACTION.SoldierPose, pose: this.isUnderFire ? 'prone' : 'stand' },
-      { type: PLAN_ACTION.MouseTurretLookAt, dir, persistent: true },
-      { type: PLAN_ACTION.Sense, dir, deviation: SCOUT.senseDeviation },
-    ];
-    plan.dir = dir;
-    return plan;
-  }
-
-  /**
-   * `BBPTakeCoverInfantry::createPlan`: walk behind the cover (or to the
-   * lowest ground away from the danger), then the pose ladder and a look at
-   * the danger.
-   */
-  _planTakeCover(now) {
-    const r = this._coverResult;
-    if (!r?.urgency) return this._planIdle();
-    const cur = this.currentPlan;
-    if (this.planBehaviour === BEHAVIOUR.TakeCover && cur.length && cur.danger && r.dangerPos) {
-      const moved = Math.hypot(cur.danger[0] - r.dangerPos[0], cur.danger[2] - r.dangerPos[2]);
-      if (moved < (r.dangerId ? TAKE_COVER.reuseMoveObject : TAKE_COVER.reuseMoveStatic)) return cur;
-    }
-    let goal = r.goal;
-    let arrive = Math.max(TAKE_COVER.arriveMin, 0.5 * 5.0);
-    let prone = false;
-    if (!goal) {
-      const low = this.cover.lowestGround({
-        position: this.position,
-        isWalkable: this.navGrid ? (x, z) => isWalkable(this.navGrid, x, z) : null,
-        heightAt: (x, z) => this.world?.collider?.surfaceHeight?.(x, z) ?? 0,
-      }, r.dangerPos);
-      if (!low) return this._planIdle();
-      goal = low;
-      arrive = TAKE_COVER.arriveMin;
-      prone = true;
-    }
-    const plan = [
-      { type: PLAN_ACTION.InfantryMoveTo, waypoint: [goal[0], this.position[1], goal[1]], arrive, stance: prone ? 'prone' : 'stand' },
-      { type: PLAN_ACTION.SoldierPose, pose: prone ? 'prone' : 'ladder', danger: r.dangerPos, afterMove: true },
-      { type: PLAN_ACTION.MouseTurretLookAt, target: r.dangerPos, afterMove: true, persistent: true },
-    ];
-    plan.danger = r.dangerPos;
-    return plan;
-  }
-
-  /** The Avoid sidestep: a diagonal away from the body (header). */
-  _planAvoid(now) {
-    const t = this._avoidThreatDir;
-    if (!t) return this._planIdle();
-    const cur = this.currentPlan;
-    if (this.planBehaviour === BEHAVIOUR.Avoid && cur.length && now < this.avoidUntil) return cur;
-    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
-    const rx = fz, rz = -fx;
-    const side = (t[0] * rx + t[1] * rz) > 0 ? -1 : 1;
-    const dx = (fx + side * rx) * Math.SQRT1_2, dz = (fz + side * rz) * Math.SQRT1_2;
-    this.avoidUntil = now + AVOID_TIME;
-    return [{ type: PLAN_ACTION.InfantryMoveToDirection, direction: [dx, dz], distance: AVOID_STEP, until: this.avoidUntil }];
-  }
-
-  // -----------------------------------------------------------------------
-  // Plan interpreter (§4.2)
-  // -----------------------------------------------------------------------
-
-  /** Run every action in the plan for this tick. */
-  _runPlan(dt, now) {
-    let allComplete = true;
-    let moved = false;
-    for (const action of this.currentPlan) {
-      if (action.afterMove && this.currentPlan.some(a => (a.type === PLAN_ACTION.InfantryMoveTo
-            || a.type === PLAN_ACTION.InfantryMoveToObject) && !a.done)) {
-        allComplete = false;
-        continue;
-      }
-      const complete = this._executeAction(action, dt, now);
-      if (complete) action.done = true;
-      if (!complete && !action.persistent) allComplete = false;
-      if (action.type === PLAN_ACTION.InfantryMoveTo || action.type === PLAN_ACTION.InfantryMoveToObject) moved = true;
-    }
-    if (allComplete && !this.currentPlan.some(a => a.persistent)) this.currentPlan = [];
-    if (!moved) this._lastThrottle = 0;
-  }
-
-  _executeAction(action, dt, now) {
-    switch (action.type) {
-      case PLAN_ACTION.InfantryMoveTo:
-      case PLAN_ACTION.MoveToMediumSoldier:
-        return this._execInfantryMoveTo(action, dt);
-      case PLAN_ACTION.InfantryMoveToObject:
-      case PLAN_ACTION.MoveToObjectMediumSoldier:
-        return this._execInfantryMoveToObject(action, dt);
-      case PLAN_ACTION.InfantryMoveToDirection:
-        return this._execInfantryMoveToDirection(action, dt, now);
-      case PLAN_ACTION.MouseTurretAimAt:
-        return this._execMouseTurretAimAt(action);
-      case PLAN_ACTION.MouseTurretLookAt:
-        return this._execMouseTurretLookAt(action);
-      case PLAN_ACTION.Trigger:
-      case PLAN_ACTION.TriggerContinously:
-        return this._execTrigger(action, now);
-      case PLAN_ACTION.InfantryResetControls:
-        return this._execInfantryResetControls();
-      case PLAN_ACTION.EnterVehicle:
-        return this._execEnterVehicle(action);
-      case PLAN_ACTION.ExitVehicle:
-        return this._execExitVehicle();
-      case PLAN_ACTION.SwitchSeat:
-        return this._execSwitchSeat(action);
-      case PLAN_ACTION.PlaneAttack:
-        return this._execPlaneAttack(action, now);
-      case PLAN_ACTION.Sense:
-        return this._execSense(action);
-      case PLAN_ACTION.SoldierPose:
-        return this._execSoldierPose(action);
-      case PLAN_ACTION.InfoWrapper:
-      default:
-        return true;
-    }
-  }
-
-  /** `InfanteryMoveToObject`: the target's live position is the goal. */
-  _execInfantryMoveToObject(action, dt) {
-    const p = this.world?.players?.get(action.targetId);
-    const pos = playerPosition(p) ?? action.targetPos;
-    if (!pos) return true;
-    action.waypoint = [pos[0], pos[1], pos[2]];
-    return this._execInfantryMoveTo(action, dt);
-  }
+  _generatePlan(behaviour, now) { return planning.generatePlan(this, behaviour, now); }
+  _planIdle() { return planning.planIdle(this); }
+  _planMoveTo(now) { return planning.planMoveTo(this, now); }
+  _planFire(now) { return planning.planFire(this, now); }
+  _firePlanDone(plan, now) { return planning.firePlanDone(this, plan, now); }
+  _planScout(now) { return planning.planScout(this, now); }
+  _planTakeCover(now) { return planning.planTakeCover(this, now); }
+  _planAvoid(now) { return planning.planAvoid(this, now); }
+  _runPlan(dt, now) { return planning.runPlan(this, dt, now); }
+  _executeAction(action, dt, now) { return planning.executeAction(this, action, dt, now); }
+  _execInfantryMoveToObject(action, dt) { return planning.execInfantryMoveToObject(this, action, dt); }
 
   _execPlaneMoveTo(target, action, clearance) { return piloting.execPlaneMoveTo(this, target, action, clearance); }
   _execPlaneAttack(action, now) { return piloting.execPlaneAttack(this, action, now); }
@@ -1049,111 +742,13 @@ export class BotController {
 
   _execBoatMoveTo(target, action) { return routing.execBoatMoveTo(this, target, action); }
 
-  /** `InfanteryMoveToDirection`: walk a direction for a while. */
-  _execInfantryMoveToDirection(action, dt, now) {
-    if (now >= action.until) return true;
-    const [dx, dz] = action.direction;
-    this._steerToward(this.position[0] + dx * action.distance, this.position[2] + dz * action.distance, 1);
-    this._lastThrottle = this.moveForward;
-    return false;
-  }
-
-  /** `MouseTurretAimAt` (`EntryMouseTurretAimAt`): aim at the target's live
-   *  position, the engine's 4-count rate. */
-  _execMouseTurretAimAt(action) {
-    const p = action.targetId ? this.world?.players?.get(action.targetId) : null;
-    const pos = playerPosition(p) ?? action.targetPos;
-    if (!pos) return true;
-    const aim = faceTarget(this._aimOrigin(), [pos[0], pos[1] + 1.0, pos[2]]);
-    this._aimLook(aim.yaw, aim.pitch, AIM_COUNTS_MAX);
-    return true;
-  }
-
-  /** `MouseTurretLookAt` (`BAPALookInDir` / `LookAtObject`): a direction or a point. */
-  _execMouseTurretLookAt(action) {
-    if (action.target) {
-      const aim = faceTarget(this._eye(), [action.target[0], action.target[1] + 1.0, action.target[2]]);
-      this._aimLook(aim.yaw, aim.pitch, AIM_COUNTS_MAX);
-    } else if (action.dir) {
-      const yaw = Math.atan2(action.dir[0], action.dir[2]);
-      const pitch = Math.atan2(action.dir[1], Math.hypot(action.dir[0], action.dir[2]));
-      this._aimLook(yaw, pitch, AIM_COUNTS_MAX);
-    } else if (action.yaw !== undefined) {
-      this._aimLook(action.yaw, action.pitch ?? null, AIM_COUNTS_MAX);
-    }
-    return true;
-  }
-
-  /**
-   * `EntryTrigger` / `EntryTriggerContinously`: the trigger goes down while
-   * the aim condition holds — the live facing within the plan's tolerance
-   * of the target — and the page fires rounds at the weapon's rate. The
-   * statement ends on the plan's end conditions (`_firePlanDone`).
-   */
-  _execTrigger(action, now) {
-    const p = action.targetId ? this.world?.players?.get(action.targetId) : null;
-    const pos = playerPosition(p) ?? action.targetPos;
-    if (!pos) return true;
-    const s = this.vehicle?.kind === 'air' ? this._noseReference() : this._aimReference();
-    const want = faceTarget(this._aimOrigin(), [pos[0], pos[1] + 1.0, pos[2]]);
-    const dy = wrapAngle(want.yaw - (s?.yaw ?? this.yaw));
-    const dp = s && s.pitch === null ? 0 : want.pitch - (s?.pitch ?? this.pitch);
-    const tol = Math.max(action.tolerance ?? LOOK_TOLERANCE, LOOK_TOLERANCE);
-    const aligned = Math.hypot(dy, dp) < tol;
-    if (aligned && this._lineClear(this._eye(), [pos[0], pos[1] + 1.0, pos[2]])) {
-      this.isFiring = true;
-    }
-    return false;
-  }
-
-  /** `InfanteryResetControls`: clear every movement/aim input. */
-  _execInfantryResetControls() {
-    this.moveForward = 0;
-    this.moveStrafe = 0;
-    this.stanceInput = 'stand';
-    this.isFiring = false;
-    this.lookX = 0;
-    this.lookY = 0;
-    this.waypoint = null;
-    this.route = null;
-    this._lastThrottle = 0;
-    return true;
-  }
-
-  /** `Sense` (`EntrySense`): complete when the look is within the deviation
-   *  of the scout direction; `BAPICScout` marks the tick as scouting. */
-  _execSense(action) {
-    this._scoutRan = true;
-    const dir = action.dir;
-    if (!dir) return true;
-    const fx = Math.sin(this.yaw) * Math.cos(this.pitch), fy = Math.sin(this.pitch), fz = Math.cos(this.yaw) * Math.cos(this.pitch);
-    const dot = fx * dir[0] + fy * dir[1] + fz * dir[2];
-    if (dot >= Math.cos(action.deviation ?? SCOUT.senseDeviation)) {
-      this.scout.senseComplete();
-      return true;
-    }
-    return false;
-  }
-
-  /** `SoldierPose`: a stance, or the TakeCover ladder (stand if the danger is
-   *  in the line of fire, else crouch, else prone). */
-  _execSoldierPose(action) {
-    if (this.vehicle) return true;
-    let pose = action.pose;
-    if (pose === 'ladder') {
-      const danger = action.danger;
-      pose = 'prone';
-      if (danger) {
-        const to = [danger[0], danger[1] + 1.0, danger[2]];
-        for (const [name, eye] of [['stand', 1.6], ['crouch', 1.1]]) {
-          if (this._lineClear([this.position[0], this.position[1] + eye, this.position[2]], to)) { pose = name; break; }
-        }
-      }
-    }
-    if (pose === 'walk' || pose === 'stand' || pose === 'crouch' || pose === 'prone') this.stanceInput = pose;
-    action.persistent = true;
-    return true;
-  }
+  _execInfantryMoveToDirection(action, dt, now) { return planning.execInfantryMoveToDirection(this, action, dt, now); }
+  _execMouseTurretAimAt(action) { return planning.execMouseTurretAimAt(this, action); }
+  _execMouseTurretLookAt(action) { return planning.execMouseTurretLookAt(this, action); }
+  _execTrigger(action, now) { return planning.execTrigger(this, action, now); }
+  _execInfantryResetControls() { return planning.execInfantryResetControls(this); }
+  _execSense(action) { return planning.execSense(this, action); }
+  _execSoldierPose(action) { return planning.execSoldierPose(this, action); }
 
   // -----------------------------------------------------------------------
   // Queries used by the page
