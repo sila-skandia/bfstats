@@ -5,6 +5,7 @@
 // index.html (features/vehicle-instance-refactor, Part 2c).
 
 import * as THREE from 'three';
+import { damageMath, distanceMod, hasDistanceFalloff, shotsFor, formatHp, weaponLabel } from './armour-damage.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -108,47 +109,7 @@ export async function createArmourInspector(page) {
 
   armour.currentReport = null;
   const damageState = { weapon: null, distance: 0 };
-
-  function attGroup(material) {
-    return damageTables?.materials?.[material]?.attGroup ?? material;
-  }
-
-  function defGroup(material) {
-    return damageTables?.materials?.[material]?.defGroup ?? material;
-  }
-
-  function baseDamage(material) {
-    const defined = damageTables?.materials?.[material];
-    return defined ? defined.damage : null;
-  }
-
-  function damageMod(attMaterial, defMaterial) {
-    if (attMaterial == null || defMaterial == null) return null;
-    const value = damageTables?.modifiers?.[attGroup(attMaterial)]?.[defGroup(defMaterial)];
-    return value === undefined ? null : value;
-  }
-
-  function distanceMod(weapon, distance) {
-    if (!weapon || weapon.minDamage == null || weapon.distToStartLoseDamage == null
-        || weapon.distToMinDamage == null) return 1;
-    if (distance <= weapon.distToStartLoseDamage) return 1;
-    if (distance >= weapon.distToMinDamage
-        || weapon.distToMinDamage <= weapon.distToStartLoseDamage) return weapon.minDamage;
-    const span = weapon.distToMinDamage - weapon.distToStartLoseDamage;
-    return weapon.minDamage + (1 - weapon.minDamage) * (weapon.distToMinDamage - distance) / span;
-  }
-
-  function hasDistanceFalloff(weapon) {
-    return Boolean(weapon && weapon.minDamage != null && weapon.distToMinDamage != null);
-  }
-
-  function headOnFor(weapon, material) {
-    if (!weapon || weapon.material == null || material == null) return null;
-    const base = baseDamage(weapon.material);
-    const mod = damageMod(weapon.material, material);
-    if (base == null || mod == null) return null;
-    return base * mod;
-  }
+  const { attGroup, defGroup, baseDamage, damageMod, headOnFor } = damageMath(damageTables);
 
   // Head-on direct damage of the selected weapon against a collision material,
   // or null when the table has no entry (the round does nothing to that face).
@@ -164,21 +125,6 @@ export async function createArmourInspector(page) {
     const mod = damageMod(weapon.material2, splashMaterial);
     if (base == null || mod == null) return null;
     return base * mod;
-  }
-
-  function shotsFor(hitpoints, perShot) {
-    if (!(perShot > 0) || !(hitpoints > 0)) return null;
-    return Math.ceil(hitpoints / perShot - 1e-9);
-  }
-
-  function formatHp(value) {
-    return Number.isInteger(value) ? String(value) : value.toFixed(1);
-  }
-
-  function weaponLabel(weapon) {
-    return weapon.owner && weapon.owner.toLowerCase() !== weapon.name.toLowerCase()
-      ? `${weapon.owner} · ${weapon.name}`
-      : weapon.name;
   }
 
   function buildWeaponSelect(entry) {

@@ -511,11 +511,18 @@ short lists; the keys are unchanged (every bag parsed before and after).
 | `seats.js` (1,270), `world.js` (1,152) | `seat-survey.js`, `turret-rig.js`, `vehicle-occupancy.js`, `entry-points.js`, `spawned-craft.js`, `fire-state.js`; `world-{input,players,snapshot,bodies,soldier-tick,vehicle-tick,fields,damage}.js` |
 | `replay.js` (1,683) | `replay.js` (320), `replay-{recording,server-log,ui,gait,assets,actors,camera,gunfire}.js` |
 | `server/level.mjs`, `server/rooms.mjs`, `server/server.mjs`, `play/multiplay.js` | one module per concern (see `server/README.md`); `play/lobby.js`, `play/create-game.js`, `play/stage.js`, `play/front-end.js` |
+| `map-surfaces.js` (again) | `map-canvas-fit.js`, `map-sprites.js`, `map-friendlies.js` |
+| `soldier.js`, `engine-audio.js`, `audio.js` | `spawn-flags.js`; `ssc-curves.js`, `ssc-coherent.js`, `ssc-specs.js`; `loading-audio-ui.js` |
+| `effects-core.js`, `console.js`, `ship.js` | `projectile-damage.js`; `console-view.js`; `ship-spec.js` |
+| `nav-grid.js`, `strategic.js` | `nav-map.js`, `nav-search.js`; `strategic-layer.js`, `strategic-ai.js` |
+| `walking-body.js`, `static-index.js` | `soldier-resolve.js`; `collision-meshes.js` |
+| `model-armour.js`, `model-crew.js` (the model browser) | `armour-damage.js`: the damage arithmetic; `crew-instruments.js`: the dials, levers and gear switch, and the gear's tween state |
 
 All the splits moved code verbatim; the engine-research comments went with
-their code. Across `viewer/`, `server/` and `sim/`: 131 files became 254 at
-the same ~83,000 lines, the largest file went from 5,850 lines to 1,854
-(`map.html`, now wiring), and files over 1,000 lines from 21 to 3.
+their code. Across `viewer/`, `server/` and `sim/`: 131 files became 273 at
+the same ~83,000 lines, the largest file went from 5,850 lines to 1,762
+(`map.html`, now wiring), and files over 1,000 lines from 21 to 2 (`map.html`
+and `soldier.js` at 1,031).
 
 ### Found on the way
 
