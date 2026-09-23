@@ -15,11 +15,14 @@ import { BfMap, minimapWindow, rotateAbout, coverRect } from './bfmap.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `LOCAL_PLAYER`, `MAPS_BASE`, `bust`, `camera`, `capturePosition`,
- * `captured`, `currentDir`, `deployScreen`, `extras`, `flags`, `hudPack`,
- * `localPlayer`, `mapVehicles`, `nearestEnemyFlag`, `optOnFoot`, `release`,
- * `scoreboard`, `soldier`, `soldierDead`, `spawnFlagSelect`, `spawnersRoot`,
- * `spawning`, `sprite`, `stage`, `vehicleSpawnActive`, `world`.
+ * `activeDeployGroup`, `aircraft`, `applyDeployFrame`, `bust`, `camera`,
+ * `captured`, `capturePosition`, `car`, `currentDir`, `deployActive`,
+ * `deployFlagIndices`, `deployRejoin`, `deployTeamId`, `deployUnchosen`,
+ * `deployZ`, `deployZTarget`, `extras`, `finishDeployClose`, `flags`,
+ * `fullmapFrame`, `hudPack`, `LOCAL_PLAYER`, `MAPS_BASE`, `mapVehicles`,
+ * `nearestEnemyFlag`, `occupancy`, `optOnFoot`, `release`, `scoreFromSpawn`,
+ * `setScoreboard`, `soldier`, `soldierDead`, `spawnersRoot`,
+ * `spawnFlagSelect`, `sprite`, `stage`, `vehicleSpawnActive`, `world`.
  */
 export function createMapSurfaces(page) {
   const mapSurfaces = {};
@@ -325,7 +328,7 @@ export function createMapSurfaces(page) {
       return false;
     }
     const player = page.world?.player(page.LOCAL_PLAYER);
-    const team = player?.team ?? page.deployScreen.deployTeamId;
+    const team = player?.team ?? page.deployTeamId;
     const target = page.nearestEnemyFlag(team, page.capturePosition());
     // Neutral only: an enemy-held point is a take-back, not the white flag —
     // the disc is the "this point belongs to nobody" marker.
@@ -346,7 +349,7 @@ export function createMapSurfaces(page) {
       mapSurfaces.mapArt = img;
       // The deploy screen may already be up over a half-decoded art: repaint
       // rather than wait for the 250 ms staleness gate.
-      if (page.deployScreen.deployActive()) drawFullMap(true);
+      if (page.deployActive()) drawFullMap(true);
     };
     // A level with no art still gets markers on a blank grid, so a failed
     // decode is not worth surfacing.
@@ -476,7 +479,7 @@ export function createMapSurfaces(page) {
     const crewed = friendlyVehicleNodes();
     const tint = MINIMAP_TEAM_TINT[localMapTeam()] || MINIMAP_TEAM_TINT[2];
     for (const vehicle of page.mapVehicles) {
-      if (vehicle === page.localPlayer.occupancy?.root) continue;
+      if (vehicle === page.occupancy?.root) continue;
       if (!page.vehicleSpawnActive(vehicle)) continue;
       vehicle.getWorldPosition(vehiclePos);
       const p = projectToArt(vehiclePos.x, vehiclePos.z);
@@ -537,7 +540,7 @@ export function createMapSurfaces(page) {
    *  everything friendly is modulated with. The deploy screen runs before a
    *  soldier exists, so it falls back to the team the player has chosen. */
   function localMapTeam() {
-    return page.world?.player(page.LOCAL_PLAYER)?.team ?? page.deployScreen.deployTeamId;
+    return page.world?.player(page.LOCAL_PLAYER)?.team ?? page.deployTeamId;
   }
 
   /**
@@ -652,9 +655,9 @@ export function createMapSurfaces(page) {
     // -1 while nothing is chosen: every ring sits back and none is filled,
     // which is what tells the player he is about to free-roam rather than
     // spawn (`deployUnchosen`).
-    const chosen = page.deployScreen.deployUnchosen ? -1
+    const chosen = page.deployUnchosen ? -1
       : Math.min(Number(page.spawnFlagSelect.value) || 0, page.flags.length - 1);
-    for (const index of page.spawning.deployFlagIndices()) {
+    for (const index of page.deployFlagIndices()) {
       const flag = page.flags[index];
       for (const spot of flagMapSpots(flag)) {
         if (!spot.position) continue;
@@ -662,7 +665,7 @@ export function createMapSurfaces(page) {
         if (!p) continue;
         const q = toPx(p);
         const active = index === chosen
-          && (spot.group == null || spot.group === page.spawning.activeDeployGroup(flag));
+          && (spot.group == null || spot.group === page.activeDeployGroup(flag));
         if (!drawSprite(ctx, 'map_circle', q.x, q.y, sc * (active ? 1.4 : 1.05),
                         { alpha: active ? 1 : 0.7 })) {
           ctx.strokeStyle = active ? '#ffffff' : 'rgba(255,255,255,.6)';
@@ -858,7 +861,7 @@ export function createMapSurfaces(page) {
   function mapSurfaceKey(canvas, here, span) {
     const size = Math.round((cssWidthOf(canvas) || 0) * Math.min(window.devicePixelRatio || 1, 2));
     const px = size / span;   // backing pixels per unit of art
-    const vehicle = (page.localPlayer.aircraft || page.localPlayer.car)?.state.position;
+    const vehicle = (page.aircraft || page.car)?.state.position;
     return `${Math.round(here.u * px)},${Math.round(here.v * px)},`
       + `${Math.round(cameraHeading() * 100)},${size},${mapSurfaces.mapArt ? mapSurfaces.mapArtToken : -1},`
       + `${page.hudPack.sprites.size},${vehicle ? `${Math.round(vehicle.x)},${Math.round(vehicle.z)}` : ''}`;
@@ -954,15 +957,15 @@ export function createMapSurfaces(page) {
   function drawFullMap(force = false) {
     if (fullmapBox.hidden) return;
     const here = projectToArt(page.camera.position.x, page.camera.position.z) || { u: 0, v: 0 };
-    const key = `${mapSurfaceKey(fullmapCanvas, here, 1)},${page.deployScreen.deployActive()},${page.deployScreen.deployRejoin},`
-      + `${page.deployScreen.deployTeamId},${page.deployScreen.deployUnchosen ? '-' : page.spawnFlagSelect.value},${page.flags.length},`
+    const key = `${mapSurfaceKey(fullmapCanvas, here, 1)},${page.deployActive()},${page.deployRejoin},`
+      + `${page.deployTeamId},${page.deployUnchosen ? '-' : page.spawnFlagSelect.value},${page.flags.length},`
       + friendlyMarkerKey();
     if (!mapSurfaceStale(fullmapCanvas, key, force)) return;
     // Bigger sprites than the HUD widget: this surface is several times the
     // size. In the deploy state the art dims to the spawn screen's silhouette
     // and the rings come out; a dead man has no marker, so the player shows
     // only when a life waits behind the screen.
-    const deploy = page.deployScreen.deployActive();
+    const deploy = page.deployActive();
     // Sprites grow with the surface, not with the window: the game's spawn map
     // shows a 16 px flag at about a fifth of a grid square, and so does this
     // one whatever the canvas's CSS size came out as.
@@ -971,7 +974,7 @@ export function createMapSurfaces(page) {
       scale: Math.min(2, Math.max(0.8, css / 610)),
       dim: deploy,
       spawnRings: deploy,
-      player: !deploy || page.deployScreen.deployRejoin,
+      player: !deploy || page.deployRejoin,
     });
   }
 
@@ -982,29 +985,29 @@ export function createMapSurfaces(page) {
     // .deploy class stays on through the whole close so the keys and buttons
     // keep working until the pane is actually gone.
     if (want && fullmapBox.classList.contains('deploy')) {
-      if (fullmapBox.hidden) page.deployScreen.deployZ = 0;   // fresh open; reopening mid-close just flips the target
-      page.deployScreen.deployZTarget = 1;
+      if (fullmapBox.hidden) page.deployZ = 0;   // fresh open; reopening mid-close just flips the target
+      page.deployZTarget = 1;
       fullmapBox.hidden = false;
-      page.deployScreen.applyDeployFrame();
+      page.applyDeployFrame();
       // Holding the map is not flying. Releasing the pointer lock also stops the
       // movement keys running under the overlay.
       if (page.captured) page.release();
       drawFullMap(true);
       return;
     }
-    if (!want && page.deployScreen.deployActive()) {
-      page.deployScreen.deployZTarget = 0;
-      if (page.deployScreen.deployZ === 0) page.deployScreen.finishDeployClose();  // a close requested before the first ease tick
-      else page.deployScreen.applyDeployFrame();
+    if (!want && page.deployActive()) {
+      page.deployZTarget = 0;
+      if (page.deployZ === 0) page.finishDeployClose();  // a close requested before the first ease tick
+      else page.applyDeployFrame();
       return;
     }
     fullmapBox.hidden = !want;
     // Closing strips the deploy chrome with it, so a level switch or a plain
     // Escape can never leave the screen armed behind a hidden overlay.
     if (!want) {
-      if (page.deployScreen.scoreFromSpawn) page.scoreboard.setScoreboard(false);
+      if (page.scoreFromSpawn) page.setScoreboard(false);
       fullmapBox.classList.remove('deploy');
-      page.deployScreen.fullmapFrame.removeAttribute('style');
+      page.fullmapFrame.removeAttribute('style');
     }
     // Holding the map is not flying. Releasing the pointer lock also stops the
     // movement keys running under the overlay.
@@ -1014,7 +1017,7 @@ export function createMapSurfaces(page) {
   fullmapBox.addEventListener('click', () => {
     // The plain map closes on any click; the deploy state does not — its
     // backdrop is not a button, and the exits are the footer, Escape and M.
-    if (page.deployScreen.deployActive()) return;
+    if (page.deployActive()) return;
     toggleFullMap(false);
   });
 
