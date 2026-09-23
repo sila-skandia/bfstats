@@ -214,6 +214,7 @@ import { createModelDisplay } from './model-display.js';
 import { createModelRig, FREE_RANGE, GEAR_INPUT, keyOf } from './model-rig.js';
 import { createEngineClips } from './model-clips.js';
 import { createGunTriggers } from './model-guns.js';
+import { createSeatCams } from './model-seat-cams.js';
 
 // Which game's assets this page serves, and the directory they hang off:
 // 'models' for vanilla, 'models/mods/eod' for a mod. Resolved before anything
@@ -372,7 +373,7 @@ function startAnimating() {
     const dt = Math.min(clock.getDelta(), 0.1);
     rig.advanceRates(dt);
     rig.advanceScroll(dt);
-    advanceGlide(dt);
+    seatCams.advanceGlide(dt);
     const gearMoving = advanceGear(dt);
     const hasFire = gunTriggers.guns.advance(dt);
     const hasPad = advanceTouchpad(dt);
@@ -390,7 +391,7 @@ function startAnimating() {
       (rig.inputValues.get(keyOf(part.control, 'c_PIThrottle')) ?? 0) !== 0);
     const hasClips = Boolean(engineClips.mixer && (engineClips.engineRunning || engineClips.ambientActions.length));
 
-    if (hasRates || hasScroll || hasClips || hasFire || gearMoving || cameraGlide || controlsMoving || hasPad) {
+    if (hasRates || hasScroll || hasClips || hasFire || gearMoving || seatCams.cameraGlide || controlsMoving || hasPad) {
       requestAnimationFrame(tick);
     } else {
       animating = false;
@@ -445,73 +446,11 @@ const gunTriggers = createGunTriggers({
   get startAnimating() { return startAnimating; },
 });
 
-// --- seat camera views --------------------------------------------------------
-//
-// Camera templates come out of the extractor as mesh-less nodes tagged
-// `cameraView`, parked exactly where the .con put them — inside the turret or
-// gun bundle they were authored in, so a gunner's view traverses with the rig
-// sliders. Each becomes a button that glides the viewer camera to that seat.
-
-const seatViews = [];
-let cameraGlide = null;
-
-function glideCamera(toPosition, toTarget) {
-  cameraGlide = {
-    fromPosition: camera.position.clone(),
-    fromTarget: controls.target.clone(),
-    toPosition, toTarget, t: 0,
-  };
-  startAnimating();
-}
-
-function advanceGlide(dt) {
-  if (!cameraGlide) return;
-  const glide = cameraGlide;
-  glide.t = Math.min(1, glide.t + dt / 0.55);
-  const eased = glide.t < 0.5
-    ? 2 * glide.t * glide.t
-    : 1 - ((-2 * glide.t + 2) ** 2) / 2;
-  camera.position.lerpVectors(glide.fromPosition, glide.toPosition, eased);
-  controls.target.lerpVectors(glide.fromTarget, glide.toTarget, eased);
-  if (glide.t >= 1) cameraGlide = null;
-}
-
-// The user grabbing the controls takes precedence over an in-flight glide.
-controls.addEventListener('start', () => { cameraGlide = null; });
-
-function goToView(node) {
-  if (!current) return;
-  current.updateMatrixWorld(true);
-  const position = node.getWorldPosition(new THREE.Vector3());
-  // A camera node's forward is the vehicle's forward: Refractor +Z, which the
-  // exporter's handedness mirror turns into glTF -Z.
-  const quaternion = node.getWorldQuaternion(new THREE.Quaternion());
-  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quaternion);
-  const distance = Math.max(framing?.radius ?? 5, 2);
-  glideCamera(position, position.clone().addScaledVector(forward, distance));
-}
-
-function orbitView() {
-  markActiveView(null);
-  if (!framing) return;
-  const angle = -Math.PI * .22;
-  const distance = framing.radius * 1.85;
-  glideCamera(
-    new THREE.Vector3(
-      framing.centre.x + Math.cos(angle) * distance,
-      framing.centre.y + framing.radius * .72,
-      framing.centre.z + Math.sin(angle) * distance,
-    ),
-    framing.centre.clone(),
-  );
-}
-
-function collectViews(root) {
-  seatViews.length = 0;
-  root.traverse(obj => {
-    if (obj.userData?.cameraView) seatViews.push(obj);
-  });
-}
+const seatCams = createSeatCams({
+  get camera() { return camera; }, get controls() { return controls; },
+  get current() { return current; }, get framing() { return framing; },
+  get markActiveView() { return markActiveView; }, get startAnimating() { return startAnimating; },
+});
 
 // --- crew console ------------------------------------------------------------
 //
@@ -724,7 +663,7 @@ function collectStations(entry) {
   }
   for (const group of gunTriggers.fireGroups) seatFor(group.stats.control).guns.push(group);
   const riderLabels = new Map();
-  for (const node of seatViews) {
+  for (const node of seatCams.seatViews) {
     const seat = seatFor(node.userData.cameraView.control);
     seat.views.push({ node });
     riderLabels.set(node, cleanControl(seat.control, entry));
@@ -1020,7 +959,7 @@ function viewButton(view, seat, text) {
   }
   button.addEventListener('click', () => {
     markActiveView(view.node);
-    goToView(view.node);
+    seatCams.goToView(view.node);
   });
   return button;
 }
@@ -1134,7 +1073,7 @@ function renderCrewKeys() {
   if (has(STICK.x) || has(STICK.y)) keys.push(['Arrows', 'stick']);
   if (has(GEAR_INPUT)) keys.push(['G', 'gear']);
   if (engineClips.mixer) keys.push(['E', 'engine']);
-  if (seatViews.length) keys.push(['V', 'seat view'], ['O', 'orbit']);
+  if (seatCams.seatViews.length) keys.push(['V', 'seat view'], ['O', 'orbit']);
   document.getElementById('crew-keys').innerHTML =
     keys.map(([key, what]) => `<span><kbd>${key}</kbd>${what}</span>`).join('');
 }
@@ -1160,7 +1099,7 @@ function buildCrew(entry) {
   setActiveStation(0);
   const count = crew.stations.length;
   document.getElementById('crew-count').textContent = `${count} ${count === 1 ? 'station' : 'stations'}`;
-  document.getElementById('view-orbit').hidden = !seatViews.length;
+  document.getElementById('view-orbit').hidden = !seatCams.seatViews.length;
   markActiveView(null);
   renderCrewKeys();
   refreshCrew();
@@ -1247,11 +1186,11 @@ function crewKey(event, down) {
       || crew.stations.find(seat => seat.views.length)?.views[0];
     if (!view) return false;
     markActiveView(view.node);
-    goToView(view.node);
+    seatCams.goToView(view.node);
     return true;
   }
-  if (key === 'o' && seatViews.length) {
-    orbitView();
+  if (key === 'o' && seatCams.seatViews.length) {
+    seatCams.orbitView();
     return true;
   }
   return false;
@@ -1278,7 +1217,7 @@ try {
 } catch { /* unreadable storage: default expanded */ }
 document.getElementById('crew-collapse').addEventListener('click', () =>
   setCrewCollapsed(crewEl.dataset.collapsed !== 'true'));
-document.getElementById('view-orbit').addEventListener('click', orbitView);
+document.getElementById('view-orbit').addEventListener('click', seatCams.orbitView);
 
 // --- touchpad virtual controller --------------------------------------------
 //
@@ -1737,8 +1676,8 @@ async function show(entry, variant) {
   rig.collectScrolling(current);
   engineClips.collectAnimations(gltf);
   gunTriggers.guns.collect(current);
-  collectViews(current);
-  cameraGlide = null;
+  seatCams.collectViews(current);
+  seatCams.cancelGlide();
   buildCrew(entry);
   display.applyState();
   envReflection.updateEnvSummary();
@@ -2562,7 +2501,7 @@ window.__modelInspector = {
         const node = current.getObjectByName(name);
         return node ? { name, quaternion: node.quaternion.toArray() } : { name };
       }),
-    views: seatViews.map(node => ({
+    views: seatCams.seatViews.map(node => ({
       name: node.name, control: node.userData.cameraView.control,
     })),
   }),
