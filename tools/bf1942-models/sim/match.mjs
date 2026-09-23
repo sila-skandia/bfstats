@@ -27,13 +27,16 @@
 //   [applyDamageToBot] / [botDamageLanded]
 //                        HP, incoming fire (x10 as a hit), death, the order freed
 //   [resolveBotHeal] / [applyHealToPlayer]   0.3 HP a MedPack round
-//   [botCaptureTick]     a bot inside a flag's radius that its side does not
-//                        hold takes it after `timeToGetControl` (8 s fallback),
+//   [botCaptureTick]     a bot inside a flag's radius (3D, from the hull when
+//                        mounted) of a flag its side does not hold takes it
+//                        after `timeToGetControl` (8 s fallback),
 //                        the timer per bot. As on the page, a dead bot's
 //                        position still counts (the corpse stands on the flag
 //                        until the respawn moves it).
 //   [buildBotCovers]     collider owners whose name has a `coverValue`
 //   [botOccupiedUnits] / [botUnitInfo]       the enemy tables' input, a target's info
+//   [botStrategicUnit]   the unit the SAI orders (type, own map, radius, air)
+//   [botEnterVehicle] / [botLeaveVehicle]    `botChangedUnit` on every seat change
 // Runner-only (the page has no such thing, labelled SIM):
 //   tickets: one per death (`Game.setTicketLosePerDeath`, the Conquest
 //   default in features/bf1942-3d-models/tickets-hud.md), and `lossPerMin`
@@ -118,12 +121,19 @@ export class Match {
       viewDistance: extras?.ai?.settings?.viewDistance ?? null,
     });
     this.strategy = extras?.ai?.strategicAreas?.length
-      ? new M.StrategicAI(new M.StrategicLayer(extras.ai, world.flags), { isWalkable: (x, z) => M.isWalkable(this.nav, x, z) })
+      ? new M.StrategicAI(new M.StrategicLayer(extras.ai, world.flags), {
+        isWalkable: (x, z) => M.isWalkable(this.nav, x, z),
+        unitOf: (id) => this.strategicUnit(id),
+        spottedOf: (id) => this.bots.find(b => b.playerId === id)?.senses?.memory?.size ?? 0,
+      })
       : null;
     this.covers = this.buildCovers();
     this.vehicles = this.useVehicles
       ? new SimVehicles({ M, level, world, groundAt: (x, z) => this.groundAt(x, z),
-                          events: this.pendingEvents, clock: () => this.clock })
+                          events: this.pendingEvents, clock: () => this.clock,
+                          // `botEnterVehicle` / `botLeaveVehicle`: the SAI frees a bot
+                          // whose controlled object changed (`handleChangingBot`).
+                          onUnitChanged: (id) => this.strategy?.botChangedUnit?.(id) })
       : null;
     this.enemyTables = { 1: new M.EnemyStrengthTables(), 2: new M.EnemyStrengthTables() };
     this.tablesAt = -Infinity;
@@ -185,6 +195,22 @@ export class Match {
   groundAt(x, z) {
     const h = this.world.collider?.surfaceHeight?.(x, z);
     return Number.isFinite(h) ? h : NaN;
+  }
+
+  /** `botStrategicUnit`: the unit a bot controls, for `orderNormalBot`. */
+  strategicUnit(id) {
+    const M = this.M;
+    const bot = this.bots.find(b => b.playerId === id);
+    const m = bot?.vehicle;
+    if (!m) {
+      return { type: 'Infantery', isWalkable: this.nav ? (x, z) => M.isWalkable(this.nav, x, z) : null,
+               radius: 1.0, mounted: false };
+    }
+    const type = m.kind === 'tank' ? 'Tank' : m.kind === 'ground' ? 'Car'
+      : m.kind === 'ship' ? 'Boat' : m.kind === 'air' ? 'Plane' : 'Infantery';
+    const nav = m.nav ?? ((m.kind === 'tank' || m.kind === 'ground') ? this.vehicles?.vehicleNav() : null);
+    return { type, isWalkable: nav ? (x, z) => M.isWalkable(nav, x, z) : null, radius: m.radius ?? 1.0, mounted: true,
+             air: m.kind === 'air', groundAt: (x, z) => bot._groundAt(x, z) };
   }
 
   /** `buildBotCovers`. */
@@ -303,7 +329,14 @@ export class Match {
       bot.waypoints = this.strategy?.waypointsOf(bot.playerId) ?? null;
       const failuresBefore = bot._pathFailures ?? 0;
       bot._simRec.mods = {};
-      bot.tick(dt, this.clock);
+      // An exception in a bot's tick would stop the page's frame loop; the
+      // runner records it as an event (once per bot and message) and goes on
+      // with the next bot, so one throwing path does not end the match.
+      try {
+        bot.tick(dt, this.clock);
+      } catch (err) {
+        this.botError(bot, err);
+      }
       const failures = bot._pathFailures ?? 0;
       if (failures > failuresBefore) {
         st.routeFailures += failures - failuresBefore;
@@ -329,6 +362,22 @@ export class Match {
       }
     }
     this.fireTick(dt);
+  }
+
+  /** A throwing bot tick: counted per bot, an event the first time each
+   *  message is seen for that bot. */
+  botError(bot, err) {
+    const st = this.stats.get(bot.playerId);
+    st.errors = (st.errors ?? 0) + 1;
+    const message = String(err?.message ?? err);
+    const at = String(err?.stack ?? '').split('\n').slice(1)
+      .map(l => l.match(/([\w.-]+\.(?:m?js)):(\d+)/)).filter(Boolean).slice(0, 3)
+      .map(m => `${m[1]}:${m[2]}`);
+    st.errorMessages ??= new Set();
+    if (st.errorMessages.has(message)) return;
+    st.errorMessages.add(message);
+    this.event({ type: 'bot_error', bot: bot.playerId, side: bot.team, message, at,
+                 beh: bot.currentBehaviour ?? null });
   }
 
   /** `botVehicleTick`. */
@@ -602,12 +651,13 @@ export class Match {
     return Number.isFinite(flag?.timeToGetControl) && flag.timeToGetControl > 0 ? flag.timeToGetControl : CAPTURE_FALLBACK_SECONDS;
   }
 
-  /** `nearestEnemyFlag`. */
+  /** `nearestEnemyFlag`: the 3D distance from the controlled object. */
   nearestEnemyFlag(team, pos) {
     let nearest = null, distance = Infinity;
     for (const flag of this.world.flags) {
       if (flag.uncapturable || !flag.position || flag.team === team) continue;
-      const d = Math.hypot(pos[0] - flag.position[0], pos[2] - flag.position[2]);
+      const dy = Number.isFinite(pos[1]) ? pos[1] - flag.position[1] : 0;
+      const d = Math.hypot(pos[0] - flag.position[0], dy, pos[2] - flag.position[2]);
       if (d <= this.captureRadius(flag) && d < distance) { nearest = flag; distance = d; }
     }
     return nearest;
@@ -711,18 +761,27 @@ export class Match {
         const wp = bot.waypoints ?? bot._fallback;
         if (!wp) break;
         const dist = Math.hypot(wp.point[0] - pos[0], wp.point[1] - pos[2]);
-        let factor = 2;
-        let d2 = dist * dist;
-        if (typeof wp.owned === 'function') {
-          const areaR = wp.area?.radius ?? 0;
-          if (!wp.owned()) factor = 2;
-          else if (wp.inside(pos[0], pos[2])) { factor = 0; d2 = 0; }
-          else { factor = 1; d2 = Math.max(0, d2 - areaR * areaR); }
+        const src = bot.waypoints ? 'order' : 'fallback';
+        const area = wp.area?.name ?? wp.flag?.name ?? null;
+        if (wp.kind === 'WPAltitudeMoveTo') {
+          // `WPAltitudeMoveTo::getUrgency`: 1 outside the radius or the 120 m band.
+          t.moveTo = { src, kind: wp.kind, area, dist: r2(dist), dy: r2(pos[1] - wp.y), radius: r2(wp.radius) };
+          break;
         }
-        const Rr = wp.radius + 1.0;
-        t.moveTo = { src: bot.waypoints ? 'order' : 'fallback', area: wp.area?.name ?? wp.flag?.name ?? null,
-                     dist: r2(dist), radius: r2(wp.radius), unitRadius: 1.0, factor,
-                     q: r4(d2 / (4 * Rr * Rr)), shaped: r4(Math.min(1, Math.max(0.1, d2 / (4 * Rr * Rr)))) };
+        // `WPMoveTo::getUrgency` as strategic.js `_order` computes it; the
+        // fallback (no strategic data) uses R + r and factor 2.
+        const layer = this.strategy?.layer;
+        const pathR = typeof bot._pathRadius === 'function' ? bot._pathRadius() : 1.0;
+        const Rr = src === 'order' ? Math.round(wp.radius) + pathR : wp.radius + 1.0;
+        let d2 = dist * dist, factor = 2, arrived = false;
+        if (src === 'order' && d2 < Rr * Rr) { arrived = true; factor = 0; }
+        else if (src === 'order' && typeof wp.owned === 'function' && wp.owned()) {
+          if (layer?.isInside?.(wp.area, pos[0], pos[2])) { factor = 0; d2 = 0; }
+          else { factor = 1; d2 -= (layer?.sideRadius?.(wp.area, bot.team) ?? 0) ** 2; }
+        }
+        t.moveTo = { src, kind: wp.kind ?? 'WPMoveTo', area, dist: r2(dist), radius: r2(wp.radius), pathRadius: r2(pathR),
+                     Rr: r2(Rr), arrived, factor, q: r4(d2 / (4 * Rr * Rr)),
+                     shaped: r4(arrived ? 0 : Math.min(1, Math.max(0.1, d2 / (4 * Rr * Rr)))) };
         break;
       }
       case 'Scout':
@@ -768,7 +827,8 @@ export class Match {
       routeFailures += s.routeFailures;
       for (const [b, sec] of Object.entries(s.behaviourSeconds)) behaviour[b] = (behaviour[b] ?? 0) + sec;
       perBot[id] = { ...s, aliveSeconds: r2(s.aliveSeconds), mountedSeconds: r2(s.mountedSeconds),
-                     behaviourSeconds: Object.fromEntries(Object.entries(s.behaviourSeconds).map(([k, v]) => [k, r2(v)])) };
+                     behaviourSeconds: Object.fromEntries(Object.entries(s.behaviourSeconds).map(([k, v]) => [k, r2(v)])),
+                     errors: s.errors ?? 0, errorMessages: s.errorMessages ? [...s.errorMessages] : [] };
     }
     const captureEvents = this.events.filter(e => e.type === 'capture');
     for (const e of captureEvents) captures[e.to] = (captures[e.to] ?? 0) + 1;
@@ -805,6 +865,7 @@ export class Match {
         routeFailures: { total: routeFailures, perBot: Object.fromEntries([...this.stats].map(([id, s]) => [id, s.routeFailures])) },
         redeploys: this.events.filter(e => e.type === 'redeploy').length,
         strategyChanges: this.events.filter(e => e.type === 'strategy').length,
+        botErrors: [...this.stats.values()].reduce((a, s) => a + (s.errors ?? 0), 0),
         behaviourShare,
       },
       perBot,

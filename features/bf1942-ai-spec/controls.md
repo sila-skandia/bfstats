@@ -159,11 +159,12 @@ wanted height is lifted toward `max(ground or water + clearance, own height)`
 by `0.0001 d²`; the altitude probe runs 100 m along the velocity (and level,
 when diving steeply); `climbDemand = clearance - altitude`, throttle floor 1,
 no dive guard. Before the **airborne flag** the wanted height is 200 m and
-no turn is made; the flag sets at 50 m up and half the top speed and clears
-on the ground (the clearing rule is INVENTION: where the engine clears it is
-not read). Arrival: `4 x radius` (10 m radius for an aircraft, INVENTION).
-The waypoint clearance is **120 m (INVENTION)**: the order's altitude is not
-read.
+no turn is made; the flag sets at 50 m up and half the top speed and is
+cleared only when the bot's controlled object changes (a mount or a
+dismount; a landed plane keeps it, AI-71). Arrival: `4 x radius` (10 m
+radius for an aircraft, INVENTION). An order's move uses the order's
+clearance, **50 m** from the air order (`WPAltitudeMoveTo` +0x14, AI-71);
+`PLANE.cruiseClearance` (50) stands in when a waypoint carries none.
 
 **`aimAtDirection`** (the guns): two 50 m probes along the velocity and its
 level part, `climbDemand = max(2 (clearance - h1), 2 (clearance - h2))`,

@@ -1,7 +1,7 @@
 # The bot AI, specified
 
 The algorithm the viewer's bots run (`tools/bf1942-models/viewer`, main at
-2026-09-23, `1697c0d8`), written as the algorithm rather than as the research
+2026-09-23, `a2498487`), written as the algorithm rather than as the research
 trail. Every rule cites the code that implements it (`file function`); engine
 addresses and `.con` sources live in [KNOBS.md](KNOBS.md), next to every
 constant. The research the code was built from is
@@ -147,6 +147,7 @@ Each is detailed where it applies; none is fixed here.
 
 | where | what |
 |---|---|
+| `strategic.js _order` (since `ee729113`) | **regression**: the order object lost `inside(x, z)`. `bot.js _insideOrderedArea` falls back to true (the 0.75 outside-area factors never apply) and `_urgencySpecial` throws `wp.inside is not a function` whenever a medic holding an order weighs a wounded friend. In the page the throw ends that `frame()` (the later bots, the bots' rounds, the capture and the draw are skipped; the loop's catch shows the render-loop error card after three frames), every frame the condition holds. |
 | `strategic.js SAI.updateFrequency` | 5 s (INVENTION). Research README §6.1 read `AISettings::reset` writing 2.0 to the SAI update frequency (+0x28); bot-behaviours §7 later calls the default unread. |
 | `bot.js dismount` / `_urgencyChange` | `_leftVehicle.id` is the seat candidate's id (`<vehicle>:<seat>`), compared with `c.vehicleId`: the 15 s left-unit ramp (AI-43) never applies. With the saturating Change urgency this cycles a bot in and out of a seat every 0.37 s (found with the headless runner). |
 | `bot-fire.js scoreTargets` | the outside-area factor multiplies the score twice (once directly, once inside `strengthSum`): 0.5625 where the research has 0.75. The target-strength term reads the soldier table at the target's class, where the research has "the target's strength against the bot's class" (equal for infantry against infantry). |

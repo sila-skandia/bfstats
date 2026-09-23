@@ -102,19 +102,23 @@ MoveTo order at 1.5 .. 3.0 only while it lasts.
 
 - **Inputs**: the order (`waypoints`, [strategic.md](strategic.md)) or the
   nearest-enemy-flag fallback.
-- **Urgency** (`_urgencyMoveTo`): `WPMoveTo.urgency(x, z, 1.0) x mod`, i.e.
-  `clamp(d² / 4(R + 1)², 0.1, 1) x factor x 1.5`. A seat that does not drive
-  publishes that value (`_orderUrgency`) and returns 0 (`BBMoveToFixed`):
-  gunners and fixed guns never walk. A new waypoint object is a changed
-  target.
+- **Urgency** (`_urgencyMoveTo`): `order.urgency(x, z, pathRadius, y) x
+  mod`: for a `WPMoveTo`, 0 inside `round(R) + pathRadius` of its point, else
+  `clamp(d² / 4 (round(R) + pathRadius)², 0.1, 1) x factor`; for an air
+  order the `WPAltitudeMoveTo` form ([strategic.md](strategic.md)); the
+  fallback `clamp(d² / 4 (5 + 1)², 0.1, 1) x 2`. `pathRadius` is 1.0 on foot,
+  `0.99 x max(0.5, radius)` mounted. A seat that does not drive publishes the
+  value (`_orderUrgency`) and returns 0 (`BBMoveToFixed`): gunners and fixed
+  guns never walk. A new waypoint object is a changed target.
 - **Curve** UCUnion.
 - **Plan** (`_planMoveTo`): one `InfanteryMoveTo(point, arrive R, stand)`,
-  kept while the waypoint object is the same.
-- **End**: never by itself; the urgency falls to 0 inside an owned area, and
-  to `0.1 x 2 x 1.5 = 0.3` near a hostile one.
+  the point's height the air order's when it has one; kept while the
+  waypoint object is the same.
+- **End**: never by itself; the urgency is 0 on arrival and inside an owned
+  area's box, and at least `0.1 x 2 x 1.5 = 0.3` short of a hostile one.
 
 *Example* in [strategic.md](strategic.md#6-the-order-_order-wpmoveto): 3.0
-from 60 m, 1.17 from 10 m of a 20 m area's point.
+from 60 m, 2.72 from 40 m of `easternbase`'s point, 0 inside 21 m.
 
 ## Idle
 
@@ -155,7 +159,9 @@ from 60 m, 1.17 from 10 m of a 20 m area's point.
   ```
 
   `maxRange` / `minRange` are the largest / smallest over the bot's weapons.
-  The area factor enters twice (see [README](README.md#divergences-from-the-research-found-while-writing-this)).
+  The area factor enters twice (see [README](README.md#divergences-from-the-research-found-while-writing-this)),
+  and since `ee729113` never applies: the order no longer answers "inside"
+  ([strategic.md](strategic.md#6-the-order-_order-wpmoveto)).
 - **Switch**: the current target keeps its place unless another scores 1.2x
   it. A target change is a changed target (re-runs the contest) and stamps
   `firingTargetTime` (the deviation's settle clock).
@@ -182,8 +188,10 @@ more than 25 m): not scored.
      `atan(max(0.4, 0.25 x 3.0) / d)`.
 - **End** (`_firePlanDone`): 3 s, the shot count, an empty magazine, the
   target destroyed. The next tick builds a fresh plan if Fire still wins.
-  Not built: the overheated-barrel end (`heat < 0.8`) on foot; the 20 s
-  give-up veto (`vetoedTargets` is read and expired but nothing writes it).
+  Not built: the overheated-barrel end (`heat < 0.8`) on foot. The 20 s
+  give-up veto (`vetoedTargets`) is read and expired but nothing writes it,
+  and in retail nothing does either: its only writer runs when
+  `detectAimingFailure` returns true, which it never does (AI-72).
 
 ## Fire (mounted)
 
@@ -198,8 +206,9 @@ more than 25 m): not scored.
   (x0.33 when the seats' `table[myClass]` sum is at most 0, the harmless
   threshold); anything else `myTable[class] x classValue[class]`; x the
   order and area factors. Class values 1, 3, 8, 15, 1, 6 (Infantry,
-  LightArmour, HeavyArmour, NavalArmour, Submarine, Air; AI-64); security 1
-  (INVENTION).
+  LightArmour, HeavyArmour, NavalArmour, Submarine, Air; AI-64). Security is
+  1: an enemy's information decays as `1 - SCurve(age / decay)` from 1 at
+  each sighting, with the decay not traced (INVENTION, AI-72).
 - **Distance**: large bore `1 - clamp(1.5 d / maxRange, 0.1, 1)`; air,
   ground target `min(1, d / (3 maxRange))`, air target `max(0, 1 - d / (1.5
   maxRange))` (x2 base for anti-aircraft guns), times a facing term
@@ -303,7 +312,10 @@ wins; a bot with no order (Idle 0.1) takes cover.
   `0 < health < 0.95`, upright, on a walkable cell when out of reach.
 - **Urgency**: `term = value / (max(0.5, d) x SCurve(health))`, value 1
   (INVENTION), x0.75 outside the ordered area; `Declein(sum term) x 4 x mod`;
-  the target is the largest term. A new target is a changed target.
+  the target is the largest term. A new target is a changed target. Since
+  `ee729113` a medic holding a strategic order throws here as soon as a
+  wounded friend passes the filters (the order has no `inside`); without an
+  order it runs as written.
 - **Curve** UCUnion.
 - **Plan**: stand; `InfanteryMoveToObject` to `R + 0.9 x maxRange` (1 + 2.25
   = 3.25 m); aim; `TriggerContinously` within 5 deg. The page heals 0.3 HP a

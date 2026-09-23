@@ -83,7 +83,7 @@ class SimMatchTests(unittest.TestCase):
         types = {r["type"] for r in self.lines if r["k"] == "ev"}
         self.assertTrue(types, "some event happens in 20 s")
         self.assertTrue(types <= {"capture", "kill", "mount", "dismount", "route_failed", "respawn", "redeploy",
-                                  "strategy", "vehicle_destroyed", "vehicle_respawn"}, types)
+                                  "strategy", "vehicle_destroyed", "vehicle_respawn", "bot_error"}, types)
 
     def test_the_summary_carries_the_metrics(self) -> None:
         m = self.summary["metrics"]

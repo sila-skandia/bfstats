@@ -70,6 +70,9 @@ export async function replaySummary(file, { step = 30, out = console.log } = {})
         case 'vehicle_destroyed':
           timeline.push({ t: r.t, text: `wreck    ${r.template} ${r.vehicle}` });
           break;
+        case 'bot_error':
+          timeline.push({ t: r.t, text: `ERROR    ${r.bot} (${r.beh ?? '-'}): ${r.message} at ${(r.at ?? []).join(' < ')}` });
+          break;
         case 'kill': {
           const w = win(r.t);
           if (r.killerSide) w.kills[r.killerSide]++;
@@ -120,7 +123,7 @@ export async function replaySummary(file, { step = 30, out = console.log } = {})
 
 /** The shape of each behaviour's urgency, for the inspector. */
 const FORMULA = {
-  MoveTo: 'u = clamp(d^2 / (4 (R + r)^2), 0.1, 1) x factor x mod      (WPMoveTo::getUrgency; factor 2 not owned, 1 owned outside, 0 owned inside)',
+  MoveTo: 'u = clamp(d^2 / (4 Rr^2), 0.1, 1) x factor x mod, 0 inside Rr = round(R) + path radius      (WPMoveTo::getUrgency; factor 2 not owned, 1 owned outside, 0 owned inside the box)',
   Fire: 'u = Declein(2 x score) x mod      (BBFire; score = curve x range x weapon x sight x speed x attacked x area x strength x rangeFactor)',
   Scout: 'u = Declein((accum x 0.2 + interest x 0.1) x boost) x mod',
   TakeCover: 'u = Declein(danger) x Declein(clamp(d_threat, 2, 100) x 0.01) x mod',
@@ -195,9 +198,13 @@ export async function why(file, botId, time, { out = console.log } = {}) {
   else if (r.beh && FORMULA[r.beh]) out(`  ${r.beh}: ${FORMULA[r.beh]}`);
   const t = r.terms ?? {};
   const w = r.beh ? t[r.beh.charAt(0).toLowerCase() + r.beh.slice(1)] : null;
-  if (r.beh === 'MoveTo' && w) {
-    out(`    source ${w.src}, area ${w.area}, d = ${w.dist} m, R = ${w.radius}, r = ${w.unitRadius}, `
-        + `d^2/(4(R+r)^2) = ${w.q} -> clamp ${w.shaped}, factor ${w.factor}, mod ${r.mod.MoveTo ?? '-'}: `
+  if (r.beh === 'MoveTo' && w && w.kind === 'WPAltitudeMoveTo') {
+    out(`    air order, area ${w.area}, d = ${w.dist} m across, dy = ${w.dy} m, R = ${w.radius}, band 120 m: `
+        + `u = 1 outside, else (dy^2 + d^2) / (R^2 + 120^2); x mod ${r.mod.MoveTo ?? '-'} = ${r.u.MoveTo}`);
+  } else if (r.beh === 'MoveTo' && w) {
+    out(`    source ${w.src}, area ${w.area}, d = ${w.dist} m, R = ${w.radius}, Rr = ${w.Rr ?? '-'}`
+        + ` (round(R) + path radius ${w.pathRadius ?? '-'})${w.arrived ? ', ARRIVED (urgency 0)' : ''}, `
+        + `d^2/(4 Rr^2) = ${w.q} -> clamp ${w.shaped}, factor ${w.factor}, mod ${r.mod.MoveTo ?? '-'}: `
         + `u = ${Math.round(w.shaped * w.factor * (r.mod.MoveTo ?? 0) * 1e4) / 1e4}`);
   } else if (w) {
     out(`    ${JSON.stringify(w)}`);
