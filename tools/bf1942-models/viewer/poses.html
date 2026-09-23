@@ -8,296 +8,7 @@
 <link rel="icon" href="./favicon.ico">
 <link rel="stylesheet" href="./tokens.css">
 <link rel="stylesheet" href="./shell.css">
-<style>
-  :root {
-    /* Neutral Depth, from tokens.css. */
-    --bg: var(--mm-stage);
-    --panel: var(--mm-bg);
-    --line: var(--mm-rule);
-    --text: var(--mm-ink-soft);
-    --muted: var(--mm-ink-muted);
-    --accent: var(--mm-accent-soft);
-    --warn: var(--mm-load-busy);
-    --bad: var(--mm-danger);
-  }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
-  body {
-    display: grid;
-    grid-template-columns: 320px 1fr;
-    grid-template-rows: var(--nav-h) 1fr;
-    background: var(--bg);
-    color: var(--text);
-    font: 13px/1.5 var(--mm-font-mono);
-  }
-  aside {
-    background: var(--panel);
-    border-right: 1px solid var(--line);
-    overflow-y: auto;
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-  }
-  h1 {
-    font-size: 12px;
-    letter-spacing: .14em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin: 0 0 16px;
-  }
-  h2 {
-    font-size: 10px;
-    letter-spacing: .14em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin: 20px 0 8px;
-    border-top: 1px solid var(--line);
-    padding-top: 12px;
-  }
-  a { color: var(--accent); }
-  .field { display: grid; grid-template-columns: 72px 1fr; align-items: center; gap: 10px; margin-bottom: 8px; }
-  .field span {
-    color: var(--muted);
-    font-size: 10px;
-    letter-spacing: .08em;
-    text-transform: uppercase;
-  }
-  select {
-    min-width: 0;
-    width: 100%;
-    padding: 6px 24px 6px 8px;
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    background: var(--mm-bg-soft);
-    color: var(--text);
-    font: inherit;
-    cursor: pointer;
-  }
-  select:hover, select:focus-visible { border-color: var(--accent); outline: none; }
-  .steppers { display: flex; gap: 6px; margin-bottom: 4px; }
-  .steppers button {
-    flex: 1;
-    padding: 5px 0;
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    background: var(--mm-bg-soft);
-    color: var(--text);
-    font: inherit;
-    font-size: 11px;
-    cursor: pointer;
-  }
-  .steppers button:hover { border-color: var(--accent); }
-  .hint { color: var(--muted); font-size: 10px; line-height: 1.5; margin: 4px 0 0; }
-  label.toggle { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; }
-  .views { display: flex; gap: 6px; margin-top: 8px; }
-  .views button {
-    flex: 1;
-    padding: 5px 0;
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    background: var(--mm-bg-soft);
-    color: var(--text);
-    font: inherit;
-    font-size: 11px;
-    cursor: pointer;
-  }
-  .views button:hover { border-color: var(--accent); }
-  .views button.active { border-color: var(--accent); color: var(--accent); }
-  .views button:disabled {
-    color: var(--muted);
-    opacity: .45;
-    cursor: default;
-  }
-  .views button:disabled:hover { border-color: var(--line); }
-  .views.stances, .views.motions { margin-top: 0; }
-  .gait-readout {
-    margin-top: 6px;
-    color: var(--muted);
-    font-size: 10px;
-    line-height: 1.5;
-    overflow-wrap: anywhere;
-    white-space: pre-line;
-  }
-  .gait-readout b { color: var(--accent); font-weight: inherit; }
-  .stat { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
-  .stat span:last-child { color: var(--accent); }
-  .stat span:last-child.warn { color: var(--warn); }
-  .stat span:last-child.bad { color: var(--bad); }
-  .stat span:last-child.muted { color: var(--muted); }
-  #clip {
-    margin-top: 6px;
-    color: var(--muted);
-    font-size: 10px;
-    line-height: 1.5;
-    overflow-wrap: anywhere;
-    white-space: pre-line;
-  }
-  #note { color: var(--warn); font-size: 10px; line-height: 1.5; margin-top: 4px; }
-  #pairs {
-    margin-top: 8px;
-    border: 1px solid var(--line);
-    background: rgba(0, 0, 0, .12);
-    overflow-y: auto;
-    flex: 1;
-    min-height: 140px;
-  }
-  #pairs button {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-    width: 100%;
-    padding: 3px 8px;
-    border: 0;
-    background: none;
-    color: var(--text);
-    font: inherit;
-    font-size: 11px;
-    text-align: left;
-    cursor: pointer;
-  }
-  #pairs button:hover { background: var(--mm-bg-soft); }
-  #pairs button.current { background: rgba(125, 136, 73, .18); color: var(--accent); }
-  #pairs .palm { color: var(--accent); }
-  #pairs .palm.warn { color: var(--warn); }
-  #pairs .palm.bad { color: var(--bad); }
-  #pair-count { color: var(--muted); font-size: 10px; margin-top: 4px; }
-  #filter {
-    width: 100%;
-    padding: 6px 8px;
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    background: var(--mm-bg-soft);
-    color: var(--text);
-    font: inherit;
-  }
-  #filter:focus-visible { border-color: var(--accent); outline: none; }
-  main { position: relative; min-width: 0; }
-  main canvas { display: block; width: 100%; height: 100%; }
-  #status {
-    position: absolute;
-    top: 12px;
-    left: 14px;
-    color: var(--muted);
-    font-size: 11px;
-    pointer-events: none;
-  }
-
-  .inspector-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 12px;
-  }
-  .inspector-header h1 {
-    margin: 0;
-  }
-  .controls-collapse-btn {
-    display: none;
-    align-items: center;
-    gap: 5px;
-    padding: 4px 8px;
-    background: var(--mm-bg-soft);
-    border: 1px solid var(--line);
-    border-radius: 2px;
-    color: var(--muted);
-    font: 10px var(--mm-font-mono);
-    letter-spacing: .08em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: color .15s ease, border-color .15s ease;
-  }
-  .controls-collapse-btn:hover,
-  .controls-collapse-btn:focus-visible {
-    color: var(--text);
-    border-color: var(--accent);
-    outline: none;
-  }
-
-  .stage-controls-fab {
-    position: absolute;
-    bottom: 16px;
-    right: 16px;
-    z-index: 15;
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    padding: 8px 14px;
-    background: rgba(19, 19, 19, 0.9);
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    color: var(--text);
-    font: 11px var(--mm-font-mono);
-    letter-spacing: .06em;
-    text-transform: uppercase;
-    cursor: pointer;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
-    transition: background-color .15s ease, border-color .15s ease;
-  }
-  .stage-controls-fab:hover,
-  .stage-controls-fab:focus-visible {
-    background: var(--mm-bg-soft);
-    border-color: var(--accent);
-    outline: none;
-  }
-  .stage-controls-fab[hidden] { display: none !important; }
-
-  @media (max-width: 720px) {
-    body {
-      grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: var(--nav-h) minmax(0, 46vh) minmax(0, 1fr);
-      transition: grid-template-rows .2s ease;
-    }
-    body.controls-collapsed {
-      grid-template-rows: var(--nav-h) minmax(0, 1fr) 0px;
-    }
-    body.controls-collapsed aside {
-      display: none;
-    }
-    body.controls-collapsed main {
-      grid-row: 2;
-      height: 100%;
-    }
-    main {
-      grid-row: 2;
-      position: relative;
-    }
-    aside {
-      grid-row: 3;
-      border-right: 0;
-      border-top: 1px solid var(--line);
-      padding: 10px 12px 20px;
-    }
-    .controls-collapse-btn { display: inline-flex; }
-    .hint { display: none; }
-    .field-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
-    .field-grid .field {
-      grid-template-columns: auto minmax(0, 1fr);
-      gap: 6px;
-      margin-bottom: 0;
-    }
-    .display-toggles {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 2px 10px;
-    }
-    #pairs {
-      max-height: 160px;
-      min-height: 90px;
-    }
-    h2 {
-      margin: 12px 0 6px;
-      padding-top: 8px;
-    }
-  }
-</style>
+<link rel="stylesheet" href="./poses.css">
 </head>
 <body>
 <nav class="shell-nav">
@@ -402,6 +113,13 @@ import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { OrbitControls } from './vendor/controls/OrbitControls.js';
 import { selectMod } from './mods.js';
+import { disposeModel } from './dispose-model.js';
+import { createCameraGlide } from './camera-glide.js';
+import { createPoseMotion } from './pose-motion.js';
+import { createPosePairs } from './pose-pairs.js';
+import { createPoseView } from './pose-view.js';
+import { installPoseTestHooks } from './pose-test-hooks.js';
+import { installControlsCollapse } from './controls-collapse.js';
 
 // Which game's poses this page serves: 'models/poses' for vanilla,
 // 'models/mods/eod/poses' for a mod. Resolved before anything is fetched, and
@@ -429,7 +147,11 @@ const camera = new THREE.PerspectiveCamera(42, 1, 0.02, 500);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.addEventListener('change', () => startAnimating());
-controls.addEventListener('start', () => { cameraMove = null; });   // a drag wins over a glide
+controls.addEventListener('start', () => { cameraGlide.cancel(); });   // a drag wins over a glide
+const cameraGlide = createCameraGlide({
+  get camera() { return camera; }, get controls() { return controls; },
+  get invalidate() { return invalidate; }, get startAnimating() { return startAnimating; },
+});
 
 // Same neutral three-point rig as the model inspector: the point is to see
 // what the pose pipeline actually produced, not to flatter it.
@@ -444,299 +166,20 @@ scene.add(helpers);
 const loader = new GLTFLoader();
 let current = null;
 let skeletonHelper = null;
-let framing = null;        // { centre, radius } of the whole figure
-let gripPoint = null;      // world position of Bip01 R Hand
-let viewMode = 'figure';
 let loadSequence = 0;
-
-// Stances are constant animation clips in the glb — one pose each — and the
-// switch blends their weights. Assets extracted before stances exist carry
-// no clips; their buttons disable and the static standing pose renders
-// exactly as before.
-const STANCE_KEYS = ['stand', 'crouch', 'lie'];
-// Locomotion, in contrast, is real motion: each gait is a pair of looping
-// timelines baked straight out of the game's `.baf` clips — `<gait>.lower`
-// (root, pelvis, legs, Spine Root) and `<gait>.upper` (Bip01 Spine out to
-// the fingers). They are two clips rather than one because the engine runs
-// the lower and upper body as two independent state machines with
-// independent phases; the bone sets are disjoint, so playing both at full
-// weight composes exactly, and nothing has to be resampled onto a common
-// period the game does not have.
-const MOTION_KEYS = ['idle', 'walk', 'run'];
-// (stance, motion) -> gait clip pair in the glb. Kneeling and prone have one
-// forward clip each in vanilla — `Lb_CrouchForward` and `Lb_LieForward` —
-// so both speeds resolve to it, which is what the game does too.
-const GAIT_FOR = {
-  stand: { walk: 'walk', run: 'run' },
-  crouch: { walk: 'crouchwalk', run: 'crouchwalk' },
-  lie: { walk: 'crawl', run: 'crawl' },
-};
-// The pose settles first, then the camera glides to the re-fitted framing:
-// moving both at once reads as the figure jumping.
-const STANCE_BLEND_MS = 450;
-const CAMERA_MOVE_MS = 650;
-let stance = 'stand';
-let motion = 'idle';
-let mixer = null;
-let stanceActions = {};
-let gaitActions = {};     // gait key -> { lower: action, upper: action }
-let poseBlend = null;     // { from: { name: weight }, start }
-let cameraMove = null;    // { fromPosition, fromTarget, position, target, start }
 let stanceMetricsHook = null;   // set once the manifest is wired up
-let gaitInfo = {};        // from the glb's own extras: clip paths and rates
 
-// The gait clips are not in the pose file. Neither half varies per pose —
-// the lower body takes no weapon and every vanilla soldier declares the same
-// `UsSoldier.ske`, and the upper body depends only on the weapon's grip — so
-// the extractor writes them once, into `gaits/lower.gait.glb` and one
-// `gaits/<Grip>.gait.glb` per grip (23 for vanilla's 28 weapons, because
-// `copyState` has K98/K98Sniper/No4/No4Sniper share a clip set). Every pose
-// names its two in `extras.gaitAssets`.
-//
-// Those files carry the joint hierarchy and nothing else, so the clips'
-// track names are bone names, and three.js binds a clip to whatever root the
-// mixer was built on — the pose's own skeleton instance. That is the whole
-// retargeting mechanism, and it is safe here because all 55 bones a gait
-// touches exist in every pose file under exactly these names and none of
-// them is a duplicated node name (the one duplicate, the `Thompson` prop
-// bone against the weapon node, is not animated by any gait).
-const gaitBundles = new Map();   // relative path -> Promise<AnimationClip[]>
+const poseMotion = createPoseMotion({
+  get bust() { return bust; }, get current() { return current; },
+  get loader() { return loader; }, get POSES_BASE() { return POSES_BASE; },
+  get startAnimating() { return startAnimating; },
+  get stanceMetricsHook() { return stanceMetricsHook; },
+});
 
-function loadGaitBundle(relative) {
-  let pending = gaitBundles.get(relative);
-  if (!pending) {
-    // A missing or unreadable bundle degrades to "no gait", never to a
-    // broken page: the stance stills still render.
-    pending = loader.loadAsync(`${POSES_BASE}/${relative}${bust()}`)
-      .then(bundle => bundle.animations ?? [])
-      .catch(() => []);
-    gaitBundles.set(relative, pending);
-  }
-  return pending;
-}
-
-function loadGaitClips(assets) {
-  if (!assets?.lower || !assets?.upper) return Promise.resolve([]);
-  return Promise.all([loadGaitBundle(assets.lower), loadGaitBundle(assets.upper)])
-    .then(([lower, upper]) => [...lower, ...upper]);
-}
-
-// The gait actually on screen, or null when this is a still stance — either
-// because the user chose idle, or because the asset predates gait clips.
-function activeGait() {
-  if (motion === 'idle') return null;
-  const key = GAIT_FOR[stance]?.[motion];
-  return key && gaitActions[key] ? key : null;
-}
-
-// Every action's weight for the current (stance, motion), as one flat map.
-// A gait owns the whole body when it is up, so the stance still drops to 0;
-// during a blend the two sum to 1 on every bone, which is what keeps a
-// half-faded figure from collapsing.
-function targetWeights() {
-  const target = {};
-  for (const key of Object.keys(stanceActions)) target[`stance:${key}`] = 0;
-  for (const key of Object.keys(gaitActions))
-    for (const half of ['lower', 'upper']) target[`gait:${key}.${half}`] = 0;
-  const gait = activeGait();
-  if (gait) {
-    for (const half of ['lower', 'upper']) target[`gait:${gait}.${half}`] = 1;
-  } else if (stanceActions[stance]) {
-    target[`stance:${stance}`] = 1;
-  }
-  return target;
-}
-
-function eachAction(visit) {
-  for (const [key, action] of Object.entries(stanceActions))
-    visit(`stance:${key}`, action);
-  for (const [key, halves] of Object.entries(gaitActions))
-    for (const [half, action] of Object.entries(halves))
-      visit(`gait:${key}.${half}`, action);
-}
-
-function applyWeights(weights) {
-  eachAction((name, action) => action.setEffectiveWeight(weights[name] ?? 0));
-}
-
-// Not AnimationAction.crossFadeTo: its fade scales the action's own weight,
-// and the resting clips sit at weight 0, so the incoming pose never showed.
-// Blending from the weights on screen also lets a switch made mid-blend turn
-// around instead of jumping.
-function startPoseBlend() {
-  if (!mixer) return;
-  const from = {};
-  eachAction((name, action) => { from[name] = action.getEffectiveWeight(); });
-  poseBlend = { from, start: performance.now() };
-  startAnimating();
-}
-
-const stanceButtons = [...document.querySelectorAll('.stances button')];
-const motionButtons = [...document.querySelectorAll('.motions button')];
-
-function updateStanceButtons() {
-  for (const button of stanceButtons) {
-    const key = button.dataset.stance;
-    button.disabled = current ? !stanceActions[key] : false;
-    button.classList.toggle('active', key === stance);
-  }
-  for (const button of motionButtons) {
-    const key = button.dataset.motion;
-    button.disabled = current && key !== 'idle'
-      ? !gaitActions[GAIT_FOR[stance]?.[key]]
-      : false;
-    button.classList.toggle('active', key === motion);
-  }
-  showGait();
-}
-
-function showGait() {
-  const readout = document.getElementById('gait');
-  if (!readout) return;
-  const gait = activeGait();
-  if (!gait) {
-    readout.textContent = current && motion !== 'idle'
-      ? 'no locomotion clip in this extract — showing the stance still'
-      : '';
-    return;
-  }
-  const info = gaitInfo[gait];
-  if (!info) { readout.textContent = gait; return; }
-  // Steps, not cycles: a lower-body locomotion clip is a two-step stride, so
-  // the per-step figure is what compares against the engine's step period.
-  const steps = (1 / info.lowerPeriod) * 2;
-  readout.replaceChildren(
-    Object.assign(document.createElement('b'),
-      { textContent: `${info.lowerState} + ${info.upperState}` }),
-    document.createTextNode(
-      `\n${info.lowerFrames} frames over ${info.lowerPeriod.toFixed(3)} s `
-      + `(speed ${info.lowerSpeed}) = ${steps.toFixed(2)} steps/s`
-      + `\n${info.lowerClip}\n${info.upperClip}`));
-}
-
-function setStance(key) {
-  if (!STANCE_KEYS.includes(key) || key === stance) return;
-  if (current && !stanceActions[key]) return;   // asset lacks this stance
-  stance = key;
-  updateStanceButtons();
-  stanceMetricsHook?.();
-  startPoseBlend();
-}
-
-function setMotion(key) {
-  if (!MOTION_KEYS.includes(key) || key === motion) return;
-  if (current && key !== 'idle' && !gaitActions[GAIT_FOR[stance]?.[key]]) return;
-  motion = key;
-  updateStanceButtons();
-  startPoseBlend();
-}
-
-// Returns true on the frame the blend lands, so the caller can re-fit once
-// the mixer has applied the final pose.
-function advancePoseBlend(now) {
-  if (!poseBlend) return false;
-  const t = Math.min((now - poseBlend.start) / STANCE_BLEND_MS, 1);
-  const eased = t * t * (3 - 2 * t);
-  const target = targetWeights();
-  eachAction((name, action) => action.setEffectiveWeight(
-    THREE.MathUtils.lerp(poseBlend.from[name] ?? 0, target[name] ?? 0, eased)));
-  if (t < 1) return false;
-  poseBlend = null;
-  return true;
-}
-
-function moveCamera(position, target, animate) {
-  if (!animate) {
-    cameraMove = null;
-    camera.position.copy(position);
-    controls.target.copy(target);
-    controls.update();
-    invalidate();
-    return;
-  }
-  cameraMove = {
-    fromPosition: camera.position.clone(),
-    fromTarget: controls.target.clone(),
-    position,
-    target,
-    start: performance.now(),
-  };
-  startAnimating();
-}
-
-function advanceCamera(now) {
-  if (!cameraMove) return;
-  const t = Math.min((now - cameraMove.start) / CAMERA_MOVE_MS, 1);
-  const eased = t < .5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
-  camera.position.lerpVectors(cameraMove.fromPosition, cameraMove.position, eased);
-  controls.target.lerpVectors(cameraMove.fromTarget, cameraMove.target, eased);
-  if (t === 1) cameraMove = null;
-}
-for (const button of stanceButtons)
-  button.addEventListener('click', () => setStance(button.dataset.stance));
-for (const button of motionButtons)
-  button.addEventListener('click', () => setMotion(button.dataset.motion));
-
-function disposeModel(root) {
-  if (!root) return;
-  const materials = new Set();
-  const textures = new Set();
-  root.traverse(obj => {
-    obj.geometry?.dispose();
-    for (const material of [obj.material].flat().filter(Boolean)) {
-      materials.add(material);
-      if (material.map) textures.add(material.map);
-    }
-  });
-  textures.forEach(texture => texture.dispose());
-  materials.forEach(material => material.dispose());
-}
-
-const gripView = () => viewMode === 'grip' && gripPoint;
-const viewTarget = () => (gripView() ? gripPoint : framing.centre).clone();
-const viewDistance = ({ radius }) => (gripView() ? Math.max(radius * .45, .35) : radius * 2.6);
-
-function applyView(animate = false) {
-  if (!framing) return;
-  const target = viewTarget();
-  const d = viewDistance(framing);
-  const position = gripView()
-    ? new THREE.Vector3(target.x + d * .8, target.y + d * .35, target.z + d)
-    : new THREE.Vector3(target.x + d * .62, target.y + framing.radius * .5, target.z + d * .78);
-  moveCamera(position, target, animate);
-}
-
-// Frame off the posed joints, not Box3.setFromObject: a skinned mesh node
-// sits at the scene root, so its object-level bounds are the bind-space
-// figure lying along +Z, nowhere near the posed, pitched render. Re-run
-// after a stance blend lands — the joints move, the bounds move. That one
-// glides and keeps the viewer's orbit angle; a fresh load snaps to the preset.
-function refit({ glide = false } = {}) {
-  if (!current) return;
-  const previous = framing;
-  current.updateMatrixWorld(true);
-  const box = new THREE.Box3();
-  gripPoint = null;
-  current.traverse(obj => {
-    if (obj.isBone || obj.userData?.joint)
-      box.expandByPoint(obj.getWorldPosition(new THREE.Vector3()));
-    // GLTFLoader sanitizes node names, so "Bip01 R Hand" arrives with
-    // underscores for spaces.
-    if (!gripPoint && /^Bip01[_ ]R[_ ]Hand$/.test(obj.name))
-      gripPoint = obj.getWorldPosition(new THREE.Vector3());
-  });
-  box.expandByScalar(0.25);        // joints sit inside the flesh and the kit
-  const size = box.getSize(new THREE.Vector3());
-  framing = {
-    centre: box.getCenter(new THREE.Vector3()),
-    radius: Math.max(size.x, size.y, size.z) / 2 || 1,
-  };
-  if (!glide || !previous) { applyView(); return; }
-  const target = viewTarget();
-  const offset = camera.position.clone().sub(controls.target)
-    .multiplyScalar(viewDistance(framing) / viewDistance(previous));
-  moveCamera(target.clone().add(offset), target, true);
-}
+const poseView = createPoseView({
+  get camera() { return camera; }, get controls() { return controls; },
+  get current() { return current; }, get moveCamera() { return cameraGlide.moveCamera; },
+});
 
 function applyWireframe() {
   const on = document.getElementById('wireframe').checked;
@@ -753,7 +196,7 @@ async function loadPair(pair) {
   // The manifest carries `gaitAssets` too, so the sidecars start downloading
   // beside the pose rather than after it. Both are cached for the session,
   // so this is one round trip on the first pose and none after.
-  let gaitClipsPromise = pair.gaitAssets ? loadGaitClips(pair.gaitAssets) : null;
+  let gaitClipsPromise = pair.gaitAssets ? poseMotion.loadGaitClips(pair.gaitAssets) : null;
   let gltf;
   try {
     gltf = await loader.loadAsync(url);
@@ -764,7 +207,7 @@ async function loadPair(pair) {
   }
   if (sequence !== loadSequence) { disposeModel(gltf.scene); return; }
   // An older manifest without the field still works: the file names its own.
-  gaitClipsPromise ??= loadGaitClips(gltf.userData?.gaitAssets);
+  gaitClipsPromise ??= poseMotion.loadGaitClips(gltf.userData?.gaitAssets);
   const sharedClips = await gaitClipsPromise;
   if (sequence !== loadSequence) { disposeModel(gltf.scene); return; }
 
@@ -778,52 +221,10 @@ async function loadPair(pair) {
   current.traverse(obj => { if (obj.isSkinnedMesh) obj.frustumCulled = false; });
   scene.add(current);
 
-  mixer = null;
-  stanceActions = {};
-  gaitActions = {};
-  poseBlend = null;
-  cameraMove = null;
-  gaitInfo = gltf.userData?.gaits ?? {};
-  const clips = gltf.animations ?? [];
-  for (const key of STANCE_KEYS) {
-    const clip = THREE.AnimationClip.findByName(clips, key);
-    if (!clip) continue;
-    mixer ??= new THREE.AnimationMixer(current);
-    const action = mixer.clipAction(clip);
-    action.play();
-    action.setEffectiveWeight(0);
-    stanceActions[key] = action;
-  }
-  // `--gaits embed` still works: a pose carrying its own copy is searched
-  // first, and only a pose that does not falls through to the sidecars. The
-  // extractor never writes both, so in practice one of the two is empty.
-  const gaitClips = [...clips, ...sharedClips];
-  // A gait only counts when both halves are present: half a body walking
-  // while the other half holds a still pose is worse than the still pose.
-  for (const key of gltf.userData?.gaitClips ?? []) {
-    const halves = {};
-    for (const half of ['lower', 'upper']) {
-      const clip = THREE.AnimationClip.findByName(gaitClips, `${key}.${half}`);
-      if (!clip) continue;
-      mixer ??= new THREE.AnimationMixer(current);
-      // The mixer's root is this pose's scene, so a clip that came out of a
-      // sidecar binds to these bones by name — nothing rewrites the tracks.
-      const action = mixer.clipAction(clip);
-      action.setLoop(THREE.LoopRepeat, Infinity);
-      action.play();
-      action.setEffectiveWeight(0);
-      halves[half] = action;
-    }
-    if (halves.lower && halves.upper) gaitActions[key] = halves;
-  }
-  if (!stanceActions[stance]) stance = 'stand';
-  if (motion !== 'idle' && !gaitActions[GAIT_FOR[stance]?.[motion]])
-    motion = 'idle';
-  applyWeights(targetWeights());
-  mixer?.update(0);
-  updateStanceButtons();
+  cameraGlide.cancel();
+  poseMotion.bindFigure(gltf, sharedClips);
   stanceMetricsHook?.();
-  refit();
+  poseView.refit();
 
   const skinned = [];
   current.traverse(obj => { if (obj.isSkinnedMesh) skinned.push(obj); });
@@ -835,7 +236,7 @@ async function loadPair(pair) {
 
   applyWireframe();
   statusLine.textContent = `${pair.soldier} holding ${pair.weapon}`;
-  if (activeGait()) startAnimating();
+  if (poseMotion.activeGait()) startAnimating();
 }
 
 // --- On-demand rendering: render only when something changed ---------------
@@ -860,18 +261,18 @@ function startAnimating() {
   (function tick(now = performance.now()) {
     const delta = Math.min((now - last) / 1000, 0.1);
     last = now;
-    const blendLanded = advancePoseBlend(now);
-    if (mixer) mixer.update(delta);
+    const blendLanded = poseMotion.advancePoseBlend(now);
+    if (poseMotion.mixer) poseMotion.mixer.update(delta);
     // A gait is motion, so the frame loop has to stay hot while one plays;
     // the still stances leave it on-demand as before. Re-fitting is still
     // once-per-landing, not per-frame — the bounds breathe with the stride
     // and a per-frame fit reads as camera jitter.
-    if (blendLanded) refit({ glide: true });
-    advanceCamera(now);
+    if (blendLanded) poseView.refit({ glide: true });
+    cameraGlide.advanceCamera(now);
     const controlsMoving = controls.update();
     renderer.render(scene, camera);
-    if (controlsMoving || controls.autoRotate || poseBlend || cameraMove
-        || activeGait())
+    if (controlsMoving || controls.autoRotate || poseMotion.blending || cameraGlide.moving
+        || poseMotion.activeGait())
       requestAnimationFrame(tick);
     else animating = false;
   })();
@@ -888,22 +289,7 @@ addEventListener('resize', resize);
 new ResizeObserver(() => resize()).observe(main);
 resize();
 
-const collapseBtn = document.getElementById('controls-collapse-btn');
-const fabBtn = document.getElementById('stage-controls-fab');
-
-function setControlsCollapsed(collapsed) {
-  document.body.classList.toggle('controls-collapsed', collapsed);
-  if (collapseBtn) {
-    collapseBtn.setAttribute('aria-expanded', String(!collapsed));
-  }
-  if (fabBtn) {
-    fabBtn.hidden = !collapsed;
-  }
-  resize();
-}
-
-collapseBtn?.addEventListener('click', () => setControlsCollapsed(true));
-fabBtn?.addEventListener('click', () => setControlsCollapsed(false));
+installControlsCollapse({ get resize() { return resize; } });
 
 // --- Matrix + UI wiring -----------------------------------------------------
 
@@ -916,158 +302,12 @@ const manifest = await fetch(`${POSES_BASE}/poses-matrix.json${bust()}`).then(re
 });
 
 if (manifest) {
-  const pairs = manifest.pairs.filter(pair => !pair.error);
-
-  // Group available weapons per soldier so only existing pairs can be selected
-  const weaponsBySoldier = new Map();
-  for (const pair of pairs) {
-    let list = weaponsBySoldier.get(pair.soldier);
-    if (!list) {
-      list = [];
-      weaponsBySoldier.set(pair.soldier, list);
-    }
-    list.push(pair.weapon);
-  }
-  for (const list of weaponsBySoldier.values()) list.sort((a, b) => a.localeCompare(b));
-
-  const soldiersWithPairs = [...weaponsBySoldier.keys()].sort((a, b) => a.localeCompare(b));
-  const soldiers = soldiersWithPairs.length > 0 ? soldiersWithPairs : (manifest.soldiers || []);
-  const byKey = new Map(pairs.map(pair => [`${pair.soldier}|${pair.weapon}`, pair]));
-
-  const soldierSelect = document.getElementById('soldier');
-  const weaponSelect = document.getElementById('weapon');
-  for (const soldier of soldiers)
-    soldierSelect.add(new Option(soldier, soldier));
-
-  function updateWeaponOptions(preferredWeapon = null) {
-    const available = weaponsBySoldier.get(soldierSelect.value) || [];
-    weaponSelect.replaceChildren(...available.map(w => new Option(w, w)));
-    if (preferredWeapon && available.includes(preferredWeapon)) {
-      weaponSelect.value = preferredWeapon;
-    } else if (available.length > 0) {
-      weaponSelect.selectedIndex = 0;
-    }
-    const disabled = available.length <= 1;
-    document.getElementById('prev-weapon').disabled = disabled;
-    document.getElementById('next-weapon').disabled = disabled;
-  }
-
-  const palmClass = metres =>
-    metres == null ? 'muted' : metres <= 0.06 ? '' : metres <= 0.12 ? 'warn' : 'bad';
-  const centimetres = metres =>
-    metres == null ? '—' : `${(metres * 100).toFixed(1)} cm`;
-
-  function currentPair() {
-    return byKey.get(`${soldierSelect.value}|${weaponSelect.value}`) ?? null;
-  }
-
-  function showMetrics(pair) {
-    const palmR = document.getElementById('palm-r');
-    const palmL = document.getElementById('palm-l');
-    const naive = document.getElementById('palm-naive');
-    // Per-stance metrics when the matrix carries them (stance-aware
-    // extracts); the old single-stance shape falls through untouched.
-    const stanceInfo = pair?.stances?.[stance];
-    const metrics = stanceInfo?.metrics ?? pair?.metrics ?? {};
-    palmR.textContent = centimetres(metrics.palmR);
-    palmR.className = palmClass(metrics.palmR);
-    palmL.textContent = centimetres(metrics.palmL);
-    palmL.className = 'muted';
-    naive.textContent = centimetres(metrics.palmRNaive);
-    naive.className = 'muted';
-    document.getElementById('clip').textContent = [
-      stanceInfo?.upperClip ?? pair?.upperClip,
-      stanceInfo?.lowerClip,
-    ].filter(Boolean).join('\n');
-    const note = document.getElementById('note');
-    const warnings = [];
-    if (stanceInfo?.error) warnings.push(stanceInfo.error);
-    if (pair?.weaponSkeleton) warnings.push(`weapon skeleton ${pair.weaponSkeleton}`);
-    if (pair?.texturesMissing?.length)
-      warnings.push(`missing textures: ${pair.texturesMissing.join(', ')}`);
-    note.hidden = !warnings.length;
-    note.textContent = warnings.join(' · ');
-  }
-  stanceMetricsHook = () => showMetrics(currentPair());
-
-  const pairList = document.getElementById('pairs');
-  const pairCount = document.getElementById('pair-count');
-  const filterInput = document.getElementById('filter');
-  const sortWorst = document.getElementById('sort-worst');
-
-  function renderPairList() {
-    const query = filterInput.value.trim().toLowerCase();
-    let entries = pairs.filter(pair =>
-      `${pair.soldier} ${pair.weapon}`.toLowerCase().includes(query));
-    if (sortWorst.checked)
-      entries = entries.toSorted((a, b) =>
-        (b.metrics?.palmR ?? 0) - (a.metrics?.palmR ?? 0));
-    pairList.replaceChildren(...entries.map(pair => {
-      const button = document.createElement('button');
-      button.type = 'button';
-      if (pair.soldier === soldierSelect.value && pair.weapon === weaponSelect.value)
-        button.classList.add('current');
-      const label = document.createElement('span');
-      label.textContent = `${pair.soldier} + ${pair.weapon}`;
-      const palm = document.createElement('span');
-      palm.className = `palm ${palmClass(pair.metrics?.palmR)}`.trim();
-      palm.textContent = centimetres(pair.metrics?.palmR);
-      button.append(label, palm);
-      button.addEventListener('click', () => {
-        soldierSelect.value = pair.soldier;
-        updateWeaponOptions(pair.weapon);
-        selectionChanged();
-      });
-      return button;
-    }));
-    pairCount.textContent = entries.length === pairs.length
-      ? `${pairs.length} pairs`
-      : `${entries.length} of ${pairs.length}`;
-  }
-
-  function selectionChanged() {
-    const pair = currentPair();
-    showMetrics(pair);
-    renderPairList();
-    if (pair) loadPair(pair);
-    else statusLine.textContent =
-      `${soldierSelect.value} + ${weaponSelect.value}: no pose extracted`;
-  }
-
-  function step(select, delta) {
-    const options = [...select.options];
-    if (!options.length) return;
-    const index = (select.selectedIndex + delta + options.length) % options.length;
-    select.selectedIndex = index;
-    if (select === soldierSelect) {
-      updateWeaponOptions(weaponSelect.value);
-    }
-    selectionChanged();
-  }
-
-  soldierSelect.addEventListener('change', () => {
-    updateWeaponOptions(weaponSelect.value);
-    selectionChanged();
+  const posePairs = createPosePairs({
+    get loadPair() { return loadPair; }, get manifest() { return manifest; },
+    get setMotion() { return poseMotion.setMotion; }, get setStance() { return poseMotion.setStance; },
+    get stance() { return poseMotion.stance; }, get statusLine() { return statusLine; },
   });
-  weaponSelect.addEventListener('change', selectionChanged);
-  document.getElementById('prev-weapon').addEventListener('click', () => step(weaponSelect, -1));
-  document.getElementById('next-weapon').addEventListener('click', () => step(weaponSelect, 1));
-  filterInput.addEventListener('input', renderPairList);
-  sortWorst.addEventListener('change', renderPairList);
-
-  addEventListener('keydown', event => {
-    if (event.target.matches('input, select, textarea')) return;
-    if (event.key === 'ArrowLeft') { step(weaponSelect, -1); event.preventDefault(); }
-    else if (event.key === 'ArrowRight') { step(weaponSelect, 1); event.preventDefault(); }
-    else if (event.key === 'ArrowUp') { step(soldierSelect, -1); event.preventDefault(); }
-    else if (event.key === 'ArrowDown') { step(soldierSelect, 1); event.preventDefault(); }
-    else if (event.key === '1') setStance('stand');
-    else if (event.key === '2') setStance('crouch');
-    else if (event.key === '3') setStance('lie');
-    else if (event.key === 'q' || event.key === 'Q') setMotion('idle');
-    else if (event.key === 'w' || event.key === 'W') setMotion('walk');
-    else if (event.key === 'e' || event.key === 'E') setMotion('run');
-  });
+  stanceMetricsHook = () => posePairs.showMetrics(posePairs.currentPair());
 
   document.getElementById('spin').addEventListener('change', event => {
     controls.autoRotate = event.target.checked;
@@ -1083,101 +323,31 @@ if (manifest) {
     helpers.visible = event.target.checked;
     invalidate();
   });
-  const figureButton = document.getElementById('view-figure');
-  const gripButton = document.getElementById('view-grip');
-  figureButton.addEventListener('click', () => {
-    viewMode = 'figure';
-    figureButton.classList.add('active');
-    gripButton.classList.remove('active');
-    applyView(true);
-  });
-  gripButton.addEventListener('click', () => {
-    viewMode = 'grip';
-    gripButton.classList.add('active');
-    figureButton.classList.remove('active');
-    applyView(true);
-  });
+  poseView.installButtons();
 
   const params = new URLSearchParams(location.search);
-  if (soldiers.includes(params.get('soldier'))) soldierSelect.value = params.get('soldier');
-  updateWeaponOptions(params.get('weapon'));
-  if (STANCE_KEYS.includes(params.get('stance'))) {
-    stance = params.get('stance');
-    updateStanceButtons();
+  posePairs.preselect(params);
+  if (poseMotion.STANCE_KEYS.includes(params.get('stance'))) {
+    poseMotion.presetStance(params.get('stance'));
   }
-  if (MOTION_KEYS.includes(params.get('motion'))) {
-    motion = params.get('motion');
-    updateStanceButtons();
+  if (poseMotion.MOTION_KEYS.includes(params.get('motion'))) {
+    poseMotion.presetMotion(params.get('motion'));
   }
-  selectionChanged();
+  posePairs.selectionChanged();
 
-  // Deterministic hooks for the headless screenshot harness.
-  window.__poseInspector = {
-    manifest,
-    get stance() { return stance; },
-    get motion() { return motion; },
-    get gait() { return activeGait(); },
-    get gaitInfo() { return gaitInfo; },
-    get status() { return statusLine.textContent; },
-    stances: () => Object.keys(stanceActions),
-    gaits: () => Object.keys(gaitActions),
-    // What the mixer is actually applying, for a headless check that the
-    // gait is playing rather than merely loaded.
-    weights: () => {
-      const out = {};
-      eachAction((name, action) => {
-        const w = action.getEffectiveWeight();
-        if (w > 0.001) out[name] = +w.toFixed(3);
-      });
-      return out;
-    },
-    // Bone world positions, so a test can assert the figure actually moves
-    // between two samples of the same gait.
-    bone(name) {
-      let found = null;
-      current?.traverse(obj => {
-        if (!found && obj.name === name.replace(/ /g, '_')) found = obj;
-      });
-      return found ? found.getWorldPosition(new THREE.Vector3()).toArray() : null;
-    },
-    // One full lower-body cycle sampled at fixed phases, independent of
-    // frame timing: settle the weights, park both halves at an exact clip
-    // time, apply, read. Deterministic — it never waits on the render loop
-    // or on a crossfade — so the same call reproduces the same numbers and
-    // two builds can be compared against each other rather than eyeballed.
-    sampleCycle(bones, steps = 12) {
-      const gait = activeGait();
-      if (!gait || !mixer) return null;
-      poseBlend = null;
-      applyWeights(targetWeights());
-      const halves = Object.values(gaitActions[gait]);
-      const wasPaused = halves.map(action => action.paused);
-      const period = gaitActions[gait].lower.getClip().duration;
-      const out = [];
-      for (let i = 0; i < steps; i++) {
-        const t = (i / steps) * period;
-        for (const action of halves) {
-          action.paused = true;
-          action.time = t % action.getClip().duration;
-        }
-        mixer.update(0);
-        current.updateMatrixWorld(true);
-        const row = { t: +t.toFixed(4) };
-        for (const name of bones) row[name] = this.bone(name)?.map(v => +v.toFixed(4));
-        out.push(row);
-      }
-      halves.forEach((action, i) => { action.paused = wasPaused[i]; });
-      startAnimating();
-      return { gait, period, samples: out };
-    },
-    setStance,
-    setMotion,
-    select(soldier, weapon) {
-      soldierSelect.value = soldier;
-      updateWeaponOptions(weapon);
-      selectionChanged();
-    },
-  };
+  installPoseTestHooks({
+    get activeGait() { return poseMotion.activeGait; }, get current() { return current; },
+    get eachAction() { return poseMotion.eachAction; },
+    get gaitActions() { return poseMotion.gaitActions; },
+    get gaitInfo() { return poseMotion.gaitInfo; }, get manifest() { return manifest; },
+    get mixer() { return poseMotion.mixer; }, get motion() { return poseMotion.motion; },
+    get select() { return posePairs.select; }, get setMotion() { return poseMotion.setMotion; },
+    get setStance() { return poseMotion.setStance; },
+    get settleWeights() { return poseMotion.settleWeights; },
+    get stance() { return poseMotion.stance; },
+    get stanceActions() { return poseMotion.stanceActions; },
+    get startAnimating() { return startAnimating; }, get statusLine() { return statusLine; },
+  });
 }
 </script>
 </body>
