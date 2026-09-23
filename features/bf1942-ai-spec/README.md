@@ -27,8 +27,10 @@ Labels, used everywhere in these files:
 - **INVENTION**: a viewer stand-in, labelled so in the code.
 - **UNSOURCED**: a constant in the code with no label and no source in the
   research. Treat as INVENTION until read.
-- **PAGE**: lives in `map.html`, not in a module (the bots' referee: fire,
-  damage, capture, respawn, vehicle seating).
+- **PAGE**: the bots' referee (fire, damage, capture, respawn, vehicle
+  seating): `bot-referee.js`, one copy the page and the headless runner
+  (`tools/bf1942-models/sim`) both import, with the page's vehicles behind
+  `bot-units.js`. Once `map.html`'s own code; the name stays.
 
 Where two research documents disagree, the later correction is used and the
 disagreement is stated where it matters ("Research disagreement").

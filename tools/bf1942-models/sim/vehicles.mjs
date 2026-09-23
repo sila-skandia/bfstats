@@ -1,20 +1,23 @@
 // Land vehicles in the headless match: a STAND-IN, not the page's vehicles.
 //
-// The page seats a bot through `botEnterVehicle` (map.html): a real
-// `VehicleOccupancy` over the vehicle's glb node, the drivetrain
-// `occ.ensureDrive` builds from the node's physics extras (ground.js /
-// tracked vehicles), the body world, and `guns.collect` for the FireArms
-// groups. None of that is loaded headless (it needs the vehicle's glb node
-// with its rig, and the page's gun and body machinery). What the sim keeps
-// is everything the BOT sees of a vehicle, which is what the runner is for:
+// The page seats a bot in a hull's `VehicleInstance` (viewer/vehicle-
+// instance.js, through `viewer/bot-units.js`): the vehicle's glb node with
+// its seat survey and rigs, the drivetrain its root seat builds from the
+// node's physics extras (ground.js / tracked vehicles), the body world, and
+// `guns.collect` for the FireArms groups. None of that is loaded headless
+// (it needs the vehicle's glb node with its rig, and the page's gun and body
+// machinery). This file is the referee's `units` layer (viewer/bot-referee.js)
+// over stand-ins, and keeps everything the BOT sees of a vehicle, which is
+// what the runner is for:
 //
-//  * the Change candidates in the page's own shape (`botVehicleCandidates`):
-//    every seat of every land vehicle the level spawns with AI data
-//    (`vehicle-ai.json`), its strengths, value, maxSpeed, the seat list for
-//    the shares, the driver, the door; rebuilt every 0.5 s as the page does;
-//  * the mount and the dismount as `botEnterVehicle` / `botLeaveVehicle` do
-//    them to the bot (`bot.mount(...)`, `world.setPlayerVehicle(...)`,
-//    `bot.dismount(...)`, the soldier placed 3.5 m to the hull's side);
+//  * the Change candidates in the page's own shape (`bot-units.js
+//    candidates`): every seat of every land vehicle the level spawns with AI
+//    data (`vehicle-ai.json`), its strengths, value, maxSpeed, the seat list
+//    for the shares, the driver, the door; rebuilt every 0.5 s as the page does;
+//  * the seat taken, given back and swapped (`enter` / `leave` /
+//    `switchSeat`), with the controller's mount record and the world's
+//    `setPlayerVehicle`; the referee does the rest (`bot.mount` /
+//    `bot.dismount`, the soldier placed 3.5 m to the hull's side);
 //  * the enemy tables' occupied units and a target's unit info.
 //
 // SIM INVENTIONS, all here and all named SIM_*:
@@ -190,11 +193,10 @@ class SimHull {
   driver() { return this.seatHolders.get(this.rootId) ?? null; }
 }
 
-/** The land vehicles of a level and the page's bot-side vehicle functions. */
+/** The land vehicles of a level: the referee's `units` in the runner. */
 export class SimVehicles {
-  constructor({ M, level, world, groundAt, events, clock, onUnitChanged = null }) {
+  constructor({ M, level, world, groundAt, events, clock }) {
     this.M = M;
-    this.onUnitChanged = onUnitChanged;
     this.level = level;
     this.world = world;
     this.groundAt = groundAt;
@@ -291,10 +293,9 @@ export class SimVehicles {
 
   invalidate() { this._cache.at = -Infinity; }
 
-  /** `botEnterVehicle`. */
-  enter(bot, cand) {
-    const h = this.hullOf(cand.vehicleId);
-    if (!h || h.destroyed || h.seatHolders.get(cand.seatId)) return false;
+  /** The controller's record of a seat (`BotController.mount`), and the
+   *  world's mount for it. */
+  _mount(bot, h, cand) {
     const drive = cand.drives ? h.drive : null;
     if (drive) this.vehicleNav();
     const occupancy = {
@@ -305,11 +306,7 @@ export class SimVehicles {
       activeFireArmsNodes: () => [],
     };
     this.world.setPlayerVehicle(bot.playerId, { occupancy, vehicle: drive, kind: h.kind, groups: [], manned: [] });
-    const record = this.world.player(bot.playerId);
-    if (record) record.vehicleStrType = cand.strType;
-    h.seatHolders.set(cand.seatId, bot.playerId);
-    this.onUnitChanged?.(bot.playerId);
-    bot.mount({
+    return {
       id: cand.id, vehicleId: h.id, node: h.node, drive, occupancy, kind: h.kind,
       seatId: cand.seatId, drives: !!drive, groups: [], manned: [],
       nav: drive ? this.nav : null,
@@ -318,44 +315,56 @@ export class SimVehicles {
       radius: 3.0, maxSpeed: cand.maxSpeed, weapons: cand.weapons, template: h.template,
       hullMaxSpeed: h.ai.maxSpeed ?? 0,
       driverOf: () => h.driver(),
-    }, this.clock());
-    this.invalidate();
-    this.events.push({ type: 'mount', bot: bot.playerId, side: bot.team, vehicle: h.id, template: h.template,
-                       seat: cand.seatId, driver: !!drive });
-    return true;
+    };
   }
 
-  /** `botLeaveVehicle`. */
-  leave(bot, { killed = false } = {}) {
+  /** The referee's `units.enter` (bot-referee.js): seat him, return his mount. */
+  enter(bot, cand) {
+    const h = this.hullOf(cand.vehicleId);
+    if (!h || h.destroyed || h.seatHolders.get(cand.seatId)) return null;
+    h.seatHolders.set(cand.seatId, bot.playerId);
+    return this._mount(bot, h, cand);
+  }
+
+  /** `units.leave`: give the seat back; returns where the body stands up. */
+  leave(bot) {
     const m = bot.vehicle;
-    if (!m) return;
-    const h = this.hullOf(m.vehicleId);
+    const h = m ? this.hullOf(m.vehicleId) : null;
     if (h) {
       if (m.drive) m.drive.stop();
       h.seatHolders.delete(m.seatId);
     }
     this.world.clearPlayerVehicle(bot.playerId);
-    const record = this.world.player(bot.playerId);
-    if (record) { record.vehicleStrType = null; record.position = null; }
     const p = h ? h.position : { x: bot.position[0], y: bot.position[1], z: bot.position[2] };
-    const soldier = record?.soldier;
-    if (soldier) {
-      const f = bot._vehicleForward();
-      const x = p.x + f[1] * SIM_EXIT_OFFSET, z = p.z - f[0] * SIM_EXIT_OFFSET;
-      const gy = this.groundAt(x, z);
-      const y = Number.isFinite(gy) ? gy + 0.05 : p.y;
-      soldier.spawn(x, y, z, Math.atan2(f[0], f[1]));
-      bot.setPosition(x, y, z);
-    }
-    bot.dismount(this.clock());
-    this.onUnitChanged?.(bot.playerId);
-    this.invalidate();
-    this.events.push({ type: 'dismount', bot: bot.playerId, side: bot.team, vehicle: h?.id ?? null,
-                       template: h?.template ?? null, killed });
+    return { x: p.x, y: p.y, z: p.z };
+  }
+
+  /** `units.switchSeat`: the seat swap within one hull. */
+  switchSeat(bot, cand) {
+    const m = bot.vehicle;
+    const h = m ? this.hullOf(m.vehicleId) : null;
+    if (!h || h.destroyed || h.seatHolders.get(cand.seatId)) return null;
+    if (m.drive) m.drive.stop();
+    h.seatHolders.delete(m.seatId);
+    h.seatHolders.set(cand.seatId, bot.playerId);
+    return this._mount(bot, h, cand);
+  }
+
+  /** `units.destroyed`: his hull is gone (marked in `tick`). */
+  destroyed(bot) {
+    const h = bot.vehicle ? this.hullOf(bot.vehicle.vehicleId) : null;
+    return !!h?.destroyed;
+  }
+
+  /** Who last damaged his hull. */
+  attackerOf(bot) {
+    const h = bot.vehicle ? this.hullOf(bot.vehicle.vehicleId) : null;
+    return h?.lastAttacker ?? null;
   }
 
   /** Per tick, before the bots: riders and the soldier records follow the
-   *  hulls; destroyed hulls respawn after their spawner's delay. */
+   *  hulls; destroyed hulls respawn after their spawner's delay; a hull whose
+   *  hit points ran out is marked destroyed (its crew is the referee's). */
   tick() {
     const now = this.clock();
     for (const h of this.hulls) {
@@ -387,6 +396,7 @@ export class SimVehicles {
         if (body) { body.x = p.x; body.y = p.y; body.z = p.z; }
       }
     }
+    this.markDestroyed();
   }
 
   /** A round's damage landing on a mounted bot's hull. Returns true when the
@@ -399,28 +409,32 @@ export class SimVehicles {
     return true;
   }
 
-  /** The hulls destroyed this tick: their crews to kill, the hull to respawn. */
-  collectDestroyed() {
-    const out = [];
+  /** The hulls destroyed this tick: marked, their respawn timed. */
+  markDestroyed() {
     for (const h of this.hulls) {
       if (h.destroyed || !h.armor.destroyed) continue;
       h.destroyed = true;
       const lo = h.spawn.minSpawnDelay ?? 30, hi = h.spawn.maxSpawnDelay ?? lo;
       h.respawnAt = this.clock() + lo + Math.random() * Math.max(0, hi - lo);
-      out.push({ hull: h, crew: [...h.seatHolders.values()] });
       this.events.push({ type: 'vehicle_destroyed', vehicle: h.id, template: h.template });
     }
-    return out;
   }
 
-  /** `botOccupiedUnits`' seated half and `botUnitInfo`'s vehicle half. */
-  seatOf(playerId) {
+  /** The seat a player holds, `{ hull, seatId }`. */
+  seatHeld(playerId) {
     for (const h of this.hulls) for (const [seatId, pid] of h.seatHolders) if (pid === playerId) return { hull: h, seatId };
     return null;
   }
 
+  /** `units.seatOf`: the enemy tables' seated half. */
+  seatOf(playerId) {
+    const s = this.seatHeld(playerId);
+    return s ? { vehicleId: s.hull.id, seatId: s.seatId, strType: s.hull.strType } : null;
+  }
+
+  /** `units.unitInfo`: a seated player's hull with every seat. */
   unitInfo(playerId) {
-    const s = this.seatOf(playerId);
+    const s = this.seatHeld(playerId);
     if (!s) return null;
     const cands = this.candidates().filter(c => c.vehicleId === s.hull.id);
     const c = cands.find(x => x.seatId === s.seatId) ?? cands[0] ?? null;

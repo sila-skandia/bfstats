@@ -65,10 +65,10 @@ export function seedMathRandom(seed) {
 export async function loadViewerModules(viewer) {
   installModuleHooks(viewer);
   const imp = (name) => import(pathToFileURL(path.join(viewer, name)).href);
-  const [world, bot, nav, strategic, strength, armor, collision, behaviours, vehicle, three] = await Promise.all([
+  const [world, bot, nav, strategic, strength, armor, collision, behaviours, vehicle, three, referee] = await Promise.all([
     imp('world.js'), imp('bot.js'), imp('nav-grid.js'), imp('strategic.js'), imp('bot-strength.js'),
     imp('armor.js'), imp('collision.js'), imp('bot-behaviours.js'), imp('bot-vehicle.js'),
-    imp('vendor/three.module.js'),
+    imp('vendor/three.module.js'), imp('bot-referee.js'),
   ]);
   return {
     World: world.World, WORLD_TICK_DT: world.WORLD_TICK_DT,
@@ -83,6 +83,8 @@ export async function loadViewerModules(viewer) {
     WorldCollider: collision.WorldCollider,
     decleiningSlope: behaviours.decleiningSlope,
     TANK: vehicle.TANK,
+    // The page's own bot referee (rounds, damage, respawn, capture, seating).
+    createBotReferee: referee.createBotReferee,
     THREE: three,
     loadGltfLoader: async () => (await imp('vendor/loaders/GLTFLoader.js')).GLTFLoader,
   };
