@@ -105,6 +105,12 @@ class StrategicFixtureTests(unittest.TestCase):
         self.assertEqual(a["high"], 1)
         self.assertFalse(a["arrived"])
 
+    def test_every_order_carries_the_area_test(self) -> None:
+        # bot.js calls `wp.inside` for Fire's outside-area factor and the
+        # medic; an order without it threw every frame (ee729113).
+        for inside in self.results["pins"]["orderInside"]:
+            self.assertEqual(inside, [True, True, False, False])
+
     def test_an_arrived_mounted_bot_is_reordered_after_35_s(self) -> None:
         # `SAI::updateBotPositions` 0x08635bc0: 20 s on foot, 35 s mounted.
         p = self.results["pins"]

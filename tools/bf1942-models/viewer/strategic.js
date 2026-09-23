@@ -704,6 +704,10 @@ export class StrategicAI {
       radius: R,
       unitType: type,
       owned: () => layer.ownerOf(area) === side,
+      /** Whether a point is in the ordered area: `AIStrategicArea::isInside`
+       *  0x08641d40, the test `BBFire::calculateUrgency` (0x085639f3) and
+       *  `WPMoveTo::getUrgency` make. */
+      inside: (x, z) => layer.isInside(area, x, z),
       /**
        * `WPMoveTo::getUrgency` 0x085374a0 on the last point. R' = round(R)
        * + the unit's `getMaxPathPosRemovalDistance` (Bot vt+0xf8,
@@ -757,6 +761,7 @@ export class StrategicAI {
       radius: R,
       clearance: SAI.airClearance,
       owned: () => layer.ownerOf(area) === side,
+      inside: (x, z) => layer.isInside(area, x, z),
       urgency(px, pz, _pathRadius, py = y) {
         const d2 = (px - x) ** 2 + (pz - z) ** 2;
         const dy2 = (py - y) ** 2;
