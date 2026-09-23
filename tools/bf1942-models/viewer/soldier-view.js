@@ -14,13 +14,14 @@ import { SoldierView, FOOT_VIEW_CYCLE, PARACHUTE_VIEW_CYCLE, PARACHUTE_VIEW_RADI
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `DEATH_CAM`, `applyLook`, `camera`, `collectSupplyDepots`, `collider`,
- * `currentRoot`, `deathCamAt`, `deathCamPos`, `deathCamShot`,
- * `deathCamTarget`, `deathCamTimer`, `deployScreen`, `footBodies`,
- * `footEyeCur`, `footEyePrev`, `footLookPending`, `footPending`, `footView`,
- * `frameInputLast`, `hudBridge`, `look`, `params`, `presentAlpha`,
- * `scanForEntry`, `serverSettings`, `soldier`, `soldierArmor`, `soldierDead`,
- * `soldierKit`, `spawning`, `supplyDepotsRoot`, `supplyField`,
+ * `applyLook`, `camera`, `collectSupplyDepots`, `collider`, `currentRoot`,
+ * `DEATH_CAM`, `deathCamAt`, `deathCamPos`, `deathCamShot`,
+ * `deathCamTarget`, `deathCamTimer`, `DEG_TO_RAD`, `deployActive`,
+ * `deployTeamId`, `footBody`, `footCanopy`, `footEyeCur`, `footEyePrev`,
+ * `footFire`, `footLookPending`, `footPending`, `footView`,
+ * `frameInputLast`, `hudBridge`, `look`, `openDeploy`, `params`,
+ * `presentAlpha`, `scanForEntry`, `serverSettings`, `soldier`,
+ * `soldierArmor`, `soldierDead`, `supplyDepotsRoot`, `supplyField`,
  * `supplyTarget`, `world`.
  */
 export function createSoldierView(page) {
@@ -75,10 +76,10 @@ export function createSoldierView(page) {
     }
     if (page.soldierDead) {
       page.deathCamTimer -= dt;
-      if (page.deathCamTimer <= 0 && !page.deployScreen.deployActive()) {
+      if (page.deathCamTimer <= 0 && !page.deployActive()) {
         // The client opens the deploy screen the instant the local player dies;
         // the beat above is the brief float, then the spawn screen takes over.
-        page.spawning.openDeploy();
+        page.openDeploy();
       }
     }
 
@@ -96,7 +97,7 @@ export function createSoldierView(page) {
       page.supplyField = page.world.supplyField;
     }
     page.supplyTarget.x = page.soldier.x; page.supplyTarget.y = page.soldier.y; page.supplyTarget.z = page.soldier.z;
-    page.supplyTarget.team = page.deployScreen.deployTeamId;
+    page.supplyTarget.team = page.deployTeamId;
     page.supplyTarget.armor = page.soldierArmor;
     page.hudBridge.vars['ShowHealIcon'] = page.supplyField.canHeal(page.supplyTarget);
     page.hudBridge.vars['ShowReloadIcon'] = page.supplyField.canRearm(page.supplyTarget);
@@ -120,7 +121,7 @@ export function createSoldierView(page) {
     // frame that ran a tick, because that frame's pump consumed the counts.
     page.footLookPending(page.footPending);
     const per = soldierLookDegrees(page.footPending.x, page.footPending.y);
-    page.soldier.lookPreview(-per.yaw * page.soldierKit.DEG_TO_RAD, -per.pitch * page.soldierKit.DEG_TO_RAD, page.footView);
+    page.soldier.lookPreview(-per.yaw * page.DEG_TO_RAD, -per.pitch * page.DEG_TO_RAD, page.footView);
     if (page.soldierDead) {
       // Behind the subject along its own facing and above it, by `deathCamShot`.
       // The subject is the corpse's eye for a death on foot and the hull for one
@@ -161,7 +162,7 @@ export function createSoldierView(page) {
       // is measured off the canopy's own drawn bounding box, not typed in.
       const span = canopySpan();
       const radius = span > 0
-        ? (span * CANOPY_VIEW_MARGIN / 2) / Math.tan(FOOT_FOV * 0.5 * page.soldierKit.DEG_TO_RAD)
+        ? (span * CANOPY_VIEW_MARGIN / 2) / Math.tan(FOOT_FOV * 0.5 * page.DEG_TO_RAD)
           / CHASE_RADIUS_SCALE
         : PARACHUTE_VIEW_RADIUS;
       chaseTarget(foot3pForward, FOOT_3P_UP, radius, sign, foot3pTarget);
@@ -193,7 +194,7 @@ export function createSoldierView(page) {
     // axis, and the crosshair is drawn against this frame's FOV. A dead body
     // cannot fire. The input object is the one frame() built (the same values
     // the world consumed this tick).
-    if (!page.soldierDead) page.soldierKit.footFire(dt, page.frameInputLast);
+    if (!page.soldierDead) page.footFire(dt, page.frameInputLast);
     // And after everything the frame owed: is there a door within reach.
     if (!page.soldierDead) page.scanForEntry(dt);
   }
@@ -230,14 +231,14 @@ export function createSoldierView(page) {
 
   /** The body's feet, which is where its root sits. */
   function footBodyFeetY() {
-    return page.footBodies.footBody ? page.footBodies.footBody.scene.position.y : footEye.y;
+    return page.footBody ? page.footBody.scene.position.y : footEye.y;
   }
 
   /** Feet to canopy top, in metres, or 0 when no canopy is drawn. */
   function canopySpan() {
-    if (!page.footBodies.footCanopy || !page.footBodies.footCanopy.scene.visible) return 0;
+    if (!page.footCanopy || !page.footCanopy.scene.visible) return 0;
     if (!soldierView.footCanopyTop) {
-      footCanopyBox.setFromObject(page.footBodies.footCanopy.scene);
+      footCanopyBox.setFromObject(page.footCanopy.scene);
       if (!footCanopyBox.isEmpty()) {
         soldierView.footCanopyTop = Math.max(0, footCanopyBox.max.y - footBodyFeetY());
       }
