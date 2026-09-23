@@ -48,30 +48,10 @@ import { tankControl, unitUrgency, orderSplit, changeUrgency, teleportChangeUrge
 import { decleiningSlope } from './bot-behaviours.js';
 import { boatControl, aimAtDirection, towardsPoint, attackRunStep, roundMiss, planeFireMode, insideBattleZone, PLANE, BOAT, PLANE_FIRE } from './bot-vehicle-air.js';
 import { fireStrength, unitTable, STRENGTH } from './bot-strength.js';
+import * as aiming from './bot-aim.js';
+import { AIM_COUNTS_MAX, wrapAngle, faceTarget } from './bot-aim.js';
 
-/** The 55-channel PlayerInputMap indices, from the research document §1.2. */
-export const PI = {
-  Yaw: 0, Pitch: 1, Roll: 2, Throttle: 3,
-  MouseLookX: 4, MouseLookY: 5,
-  CameraX: 6, CameraY: 7,
-  Fire: 8, Action: 9, Use: 10,
-  MouseLook: 11, Walk: 12, Run: 13,
-  MenuSelect1: 14, MenuSelect2: 15, MenuSelect3: 16,
-  MenuSelect4: 17, MenuSelect5: 18, MenuSelect6: 19,
-  MenuSelect7: 20, MenuSelect8: 21, MenuSelect9: 22,
-  AltFire: 23, Reload: 24, Drop: 25,
-  ToggleCameraMode: 26, ToggleCamera: 27,
-  Lie: 28, Crouch: 29,
-  CameraMode1: 30, CameraMode2: 31, CameraMode3: 32, CameraMode4: 33,
-  Radio1: 34, Radio2: 35, Radio3: 36, Radio4: 37,
-  Radio5: 38, Radio6: 39, Radio7: 40, Radio8: 41,
-  ScreenShot: 42, ToolHint: 43,
-  SayAll: 44, SayTeam: 45,
-  NextItem: 46, PrevItem: 47,
-  Communication: 48, ShowScoreBoard: 49,
-  Map: 50, ZoomMap: 51,
-  ShowMapVote: 52, VoteYes: 53, VoteNo: 54,
-};
+export { PI } from './bot-aim.js';
 
 /** Bot name pools, from the research document §2.1. */
 export const BOT_NAMES = {
@@ -170,16 +150,6 @@ export const PLAN_ACTION = {
 
 /** How close to a plain waypoint before it counts as reached. */
 const WAYPOINT_REACH_RADIUS = 3.0;
-/** Mouse axis conversion (mouse-input.js `soldierLookDegrees`). */
-const YAW_GAIN = 3.0;
-const PITCH_GAIN = 1.0;
-const AXIS_MAX = 16;
-const RAD2DEG = 180 / Math.PI;
-/** `mouseControlLookAtDirection` caps a tick's mouse counts at 4.0. */
-const AIM_COUNTS_MAX = 4.0;
-/** Head/eye offset above the feet, for LOS and fire origins (standing). */
-const EYE_HEIGHT = 1.6;
-const EYE_BY_STANCE = { stand: 1.6, walk: 1.6, crouch: 1.1, prone: 0.4 };
 /** `BAPALookAtObject` in the fire plan: within 5 deg. */
 const LOOK_TOLERANCE = 5 * Math.PI / 180;
 /** A remembered target's plan gets `firingTargetTime` from `setFiringTarget`. */
@@ -226,8 +196,6 @@ const LOCAL_SEARCH_RADIUS_RAND = 14;
 const BOT_RADIUS = 1.0;
 /** A land vehicle's body radius on its map when the page gives none (INVENTION). */
 const VEHICLE_RADIUS = 3.0;
-/** The eye of a mounted bot above the hull's position (INVENTION). */
-const VEHICLE_EYE_HEIGHT = 2.0;
 /** The sign that maps the driving law's steer onto the viewer's `c_PIYaw`:
  *  the law's angle is `-(bearing - yaw)` and a positive `c_PIYaw` turns the
  *  hull toward -yaw (`ground.js`), so the steer passes straight through.
@@ -235,8 +203,6 @@ const VEHICLE_EYE_HEIGHT = 2.0;
 const VEHICLE_YAW_SIGN = 1;
 /** How long a wedged hull reverses before trying again (INVENTION). */
 const VEHICLE_REVERSE_SECONDS = 2.0;
-/** The sign of `TurretRig.headingRadians()` against the bot's yaw. */
-const VEHICLE_TURRET_SIGN = 1;
 /** `infanteryControlTowardsDirection` 0x08627000: throttle only when the
  *  target direction is within this angle of the facing (0.5497787 rad,
  *  31.5 deg), else stop and turn; a target behind turns at the full rate. */
@@ -279,23 +245,6 @@ const OBSTACLE_RADIUS = 1.5;
 const OBSTACLE_AHEAD = 1.0;
 const OBSTACLE_DROP_DISTANCE = 5 * 5.0 + 0.5;
 const CONTACT_TICKS = 10;
-
-/** Wrap an angle to [-π, π]. */
-function wrapAngle(a) {
-  return Math.atan2(Math.sin(a), Math.cos(a));
-}
-
-function clamp(v, lo, hi) {
-  return v < lo ? lo : v > hi ? hi : v;
-}
-
-/** Yaw and pitch to face `to` from `from`, radians. */
-function faceTarget(from, to) {
-  const dx = to[0] - from[0];
-  const dy = to[1] - from[1];
-  const dz = to[2] - from[2];
-  return { yaw: Math.atan2(dx, dz), pitch: Math.atan2(dy, Math.hypot(dx, dz)) };
-}
 
 /**
  * One bot's controller. Owns a PlayerInput and writes it once per tick.
@@ -473,27 +422,8 @@ export class BotController {
     return this.world?.player?.(this.playerId) ?? this.world?.players?.get(this.playerId) ?? null;
   }
 
-  /** The bot's eye, by stance. */
-  _eye() {
-    if (this.vehicle) return [this.position[0], this.position[1] + VEHICLE_EYE_HEIGHT, this.position[2]];
-    return [this.position[0], this.position[1] + (EYE_BY_STANCE[this.stance] ?? EYE_HEIGHT), this.position[2]];
-  }
-
-  /** Where the aim is taken from: `AIObjectControlInfo::getCameraBasePos`,
-   *  the unit's camera base, which for a gun sits on the gun. The first
-   *  driven or manned group's node is that pivot: aiming from it keeps the
-   *  rounds on the line the aim was taken along instead of a parallel one
-   *  2 m higher. The line of sight still starts at `_eye()`, clear of the
-   *  hull's own collision. */
-  _aimOrigin() {
-    if (this.vehicle) {
-      const g = this.vehicle.groups?.[0] ?? this.vehicle.manned?.[0] ?? null;
-      const e = g?.node?.matrixWorld?.elements;
-      if (e) return [e[12], e[13], e[14]];
-    }
-    return this._eye();
-  }
-
+  _eye() { return aiming.eye(this); }
+  _aimOrigin() { return aiming.aimOrigin(this); }
 
   /** The behaviours the bot's current unit registers (AIbehaviours.con rows). */
   _registered() {
@@ -504,26 +434,7 @@ export class BotController {
   _nav() { return this.vehicle ? (this.vehicle.nav ?? null) : this.navGrid; }
   _radius() { return this.vehicle ? (this.vehicle.radius ?? VEHICLE_RADIUS) : BOT_RADIUS; }
 
-  /** The hull's heading on the ground plane, unit `[x, z]`. */
-  _vehicleForward() {
-    const q = this.vehicle?.drive?.state?.orientation;
-    if (!q) {
-      // A rider: the seat node's world matrix, its -z column.
-      const e = this.vehicle?.node?.matrixWorld?.elements;
-      if (e) {
-        const fx = -e[8], fz = -e[10];
-        const len = Math.hypot(fx, fz) || 1;
-        return [fx / len, fz / len];
-      }
-      return [Math.sin(this.yaw), Math.cos(this.yaw)];
-    }
-    // q * (0, 0, -1)
-    const x = q.x, y = q.y, z = q.z, w = q.w;
-    const fx = -(2 * (x * z + w * y));
-    const fz = -(1 - 2 * (x * x + y * y));
-    const len = Math.hypot(fx, fz) || 1;
-    return [fx / len, fz / len];
-  }
+  _vehicleForward() { return aiming.vehicleForward(this); }
 
   /**
    * The page seats the bot: `m` is `{ id, node, drive, occupancy, kind, nav,
@@ -709,21 +620,8 @@ export class BotController {
     return wp.inside(this.position[0], this.position[2]);
   }
 
-  /** The unit's velocity: the hull's, or the rider's hull's through the page. */
-  _unitVelocity() {
-    const v = this.vehicle?.drive?.state?.velocity ?? this.vehicle?.hullVelocity?.();
-    return v ? [v.x ?? v[0] ?? 0, v.y ?? v[1] ?? 0, v.z ?? v[2] ?? 0] : [0, 0, 0];
-  }
-
-  /** The unit's forward as a 3-vector (the nose for an aircraft). */
-  _unitForward3() {
-    if (this.vehicle?.kind === 'air') {
-      const n = this._noseReference();
-      return [Math.sin(n.yaw) * Math.cos(n.pitch), Math.sin(n.pitch), Math.cos(n.yaw) * Math.cos(n.pitch)];
-    }
-    const f = this._vehicleForward();
-    return [f[0], 0, f[1]];
-  }
+  _unitVelocity() { return aiming.unitVelocity(this); }
+  _unitForward3() { return aiming.unitForward3(this); }
 
   /** The class the bot's unit answers to in the enemy's tables. */
   _myType() {
@@ -779,15 +677,7 @@ export class BotController {
              maxSpeed: p?.vehicle ? 20 : TANK.soldierMaxSpeed, seats: null, enemyManned: !!p?.vehicle, mobile: true };
   }
 
-  /** `validateCameraDirectionYaw` for a fixed weapon: the rig's traverse
-   *  reaches the direction (a rig without limits reaches everything). */
-  _turretCanPoint(dir) {
-    const turret = this.vehicle?.occupancy?.turret;
-    const limits = turret?.yawLimitsRadians?.();
-    if (!limits) return true;
-    const want = wrapAngle(Math.atan2(dir[0], dir[2]) - this.yaw);
-    return want >= limits[0] && want <= limits[1];
-  }
+  _turretCanPoint(dir) { return aiming.turretCanPoint(this, dir); }
 
   // -----------------------------------------------------------------------
   // Tick
@@ -910,133 +800,13 @@ export class BotController {
     }
   }
 
-  _resetInput() {
-    this.moveForward = 0;
-    this.moveStrafe = 0;
-    this.stanceInput = 'stand';
-    this.jumpRequest = false;
-    this.lookX = 0;
-    this.lookY = 0;
-    this.isFiring = false;
-  }
-
-  /** The single input writer: the named action word plus the mouse pair. */
-  _writeInput() {
-    const input = {
-      forward: clamp(this.moveForward, -1, 1),
-      strafe: clamp(this.moveStrafe, -1, 1),
-      walk: this.stanceInput === 'walk',
-      crouch: this.stanceInput === 'crouch',
-      prone: this.stanceInput === 'prone',
-      jump: this.jumpRequest === true,
-      fire: this.isFiring,
-      altFire: false,
-    };
-    if (this.vehicle?.kind === 'air') {
-      // The world's air branch: `forwardKeys` ramps the latched throttle,
-      // `rudder` is the yaw, the pad's `roll` / `pitch` are the stick.
-      const a = this._airInput ?? {};
-      input.forwardKeys = a.power ?? 0;
-      input.rudder = a.rudder ?? 0;
-      input.roll = a.roll ?? 0;
-      input.pitch = a.pitch ?? 0;
-      input.pad = true;
-      input.forward = 0;
-      input.strafe = 0;
-    }
-    this.input[PI.Throttle] = input.forward;
-    this.input[PI.Yaw] = input.strafe;
-    this.input[PI.Walk] = input.walk ? 1 : 0;
-    this.input[PI.Crouch] = input.crouch ? 1 : 0;
-    this.input[PI.Lie] = input.prone ? 1 : 0;
-    this.input[PI.Fire] = input.fire ? 1 : 0;
-    this.input[PI.MouseLookX] = this.lookX;
-    this.input[PI.MouseLookY] = this.lookY;
-    this.world.setInput(this.playerId, input, { x: this.lookX, y: this.lookY });
-    this.jumpRequest = false;
-  }
-
-  /** The camera the senses look through (`AIPlayer::getCameraTransformation`):
-   *  an aircraft's airframe, else the look yaw and the soldier's or turret's
-   *  pitch. `{ f, r, u }` world unit vectors. */
-  _cameraBasis(lookYaw) {
-    const q = this.vehicle?.kind === 'air' ? this.vehicle.drive?.state?.orientation : null;
-    if (q) {
-      const rot = (v) => {
-        const { x, y, z, w } = q;
-        const ix = w * v[0] + y * v[2] - z * v[1], iy = w * v[1] + z * v[0] - x * v[2];
-        const iz = w * v[2] + x * v[1] - y * v[0], iw = -x * v[0] - y * v[1] - z * v[2];
-        return [ix * w + iw * -x + iy * -z - iz * -y, iy * w + iw * -y + iz * -x - ix * -z, iz * w + iw * -z + ix * -y - iy * -x];
-      };
-      return { f: rot([0, 0, -1]), r: rot([1, 0, 0]), u: rot([0, 1, 0]) };
-    }
-    const p = this.vehicle ? (this._aimReference()?.pitch ?? 0) : (this.pitch ?? 0);
-    const cy = Math.cos(lookYaw), sy = Math.sin(lookYaw), cp = Math.cos(p), sp = Math.sin(p);
-    return { f: [sy * cp, sp, cy * cp], r: [cy, 0, -sy], u: [-sy * sp, cp, -cy * sp] };
-  }
-
-  /** A plane's guns point down the nose. */
-  _noseReference() {
-    const q = this.vehicle?.drive?.state?.orientation;
-    if (!q) return { yaw: this.yaw, pitch: 0 };
-    const x = q.x, y = q.y, z = q.z, w = q.w;
-    const fx = -(2 * (x * z + w * y));
-    const fy = -(2 * (y * z - w * x));
-    const fz = -(1 - 2 * (x * x + y * y));
-    return { yaw: Math.atan2(fx, fz), pitch: Math.atan2(fy, Math.hypot(fx, fz)) };
-  }
-
-  /** What the look input turns: the soldier, or the mounted unit's turret
-   *  (hull heading plus the rig's own azimuth). */
-  _aimReference() {
-    if (this.vehicle) {
-      const turret = this.vehicle.occupancy?.turret;
-      const heading = turret?.headingRadians?.() ?? 0;
-      const elevation = turret?.elevationRadians?.() ?? null;
-      // A rig without an elevation axis aims flat: its pitch is taken as
-      // whatever the plan wants (INVENTION), so the trigger's alignment test
-      // is the traverse alone.
-      return { yaw: wrapAngle(this.yaw + VEHICLE_TURRET_SIGN * heading),
-               pitch: elevation === null ? null : VEHICLE_TURRET_SIGN * elevation };
-    }
-    return this._player()?.soldier ?? null;
-  }
-
-  /**
-   * Aim at an absolute yaw/pitch by writing the mouse axis pair. `lookX/Y`
-   * are mouse counts (`soldierLookDegrees`: 3 deg and 1 deg a count), the
-   * world applies them negated, and the axis saturates at 16. A rate cap
-   * (`AIM_COUNTS_MAX`, `mouseControlLookAtDirection`'s 4.0) keeps a bot's
-   * turn to 12 deg a tick, the engine's own pace.
-   */
-  _aimLook(desiredYaw, desiredPitch = null, maxCounts = AXIS_MAX) {
-    const s = this._aimReference();
-    if (!s) return;
-    const dYaw = wrapAngle(desiredYaw - s.yaw);
-    const livePitch = s.pitch ?? 0;
-    const targetPitch = desiredPitch === null ? livePitch : desiredPitch;
-    const dPitch = s.pitch === null ? 0 : targetPitch - livePitch;
-    // A mounted gun's servo multiplies its input by the axis's `direction`
-    // (`sign(acceleration)`, seats.js `TurretAxis.step`), and the reading
-    // above is the axis's angle through the rig's own sign: the command has
-    // to go through the same sign or the loop runs the wrong way. The
-    // Sherman's hull Browning declares a negative elevation acceleration,
-    // and a bot in that seat drove its barrel to the stop and never fired.
-    const sign = this.vehicle ? this._turretInputSigns() : null;
-    this.lookX = clamp(-(dYaw * RAD2DEG) / YAW_GAIN, -maxCounts, maxCounts) * (sign?.yaw ?? 1);
-    this.lookY = clamp(-(dPitch * RAD2DEG) / PITCH_GAIN, -maxCounts, maxCounts) * (sign?.pitch ?? 1);
-  }
-
-  /** The `direction` each aim axis of the seat's rig multiplies its input by. */
-  _turretInputSigns() {
-    const axes = this.vehicle?.occupancy?.turret?.axes;
-    if (!axes) return null;
-    const out = { yaw: 1, pitch: 1 };
-    for (const axis of axes) {
-      if (axis.axisName === 'yaw' || axis.axisName === 'pitch') out[axis.axisName] = axis.spec?.direction < 0 ? -1 : 1;
-    }
-    return out;
-  }
+  _resetInput() { return aiming.resetInput(this); }
+  _writeInput() { return aiming.writeInput(this); }
+  _cameraBasis(lookYaw) { return aiming.cameraBasis(this, lookYaw); }
+  _noseReference() { return aiming.noseReference(this); }
+  _aimReference() { return aiming.aimReference(this); }
+  _aimLook(desiredYaw, desiredPitch, maxCounts) { return aiming.aimLook(this, desiredYaw, desiredPitch, maxCounts); }
+  _turretInputSigns() { return aiming.turretInputSigns(this); }
 
   // -----------------------------------------------------------------------
   // Navigation: the engine's path follower
@@ -2595,21 +2365,7 @@ export class BotController {
     return [...this.position];
   }
 
-  /** The bot's eye pose for the page's fire path. */
-  aimRay() {
-    if (this.vehicle) {
-      // From the gun, along the turret (or the nose for an aircraft).
-      const r = this.vehicle.kind === 'air' ? this._noseReference() : this._aimReference();
-      const yaw = r?.yaw ?? this.yaw, pitch = r?.pitch ?? 0;
-      const cosP = Math.cos(pitch);
-      return { origin: this._aimOrigin(), dir: [Math.sin(yaw) * cosP, Math.sin(pitch), Math.cos(yaw) * cosP] };
-    }
-    const cosP = Math.cos(this.pitch);
-    return {
-      origin: this._eye(),
-      dir: [Math.sin(this.yaw) * cosP, Math.sin(this.pitch), Math.cos(this.yaw) * cosP],
-    };
-  }
+  aimRay() { return aiming.aimRay(this); }
 
   /** The page's respawn hook: forget everything the old body knew. */
   onRespawn() {
