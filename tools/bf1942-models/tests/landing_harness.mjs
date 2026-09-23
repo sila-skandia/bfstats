@@ -8,7 +8,7 @@
 
 import {
   StrategicLayer, StrategicAI, StrategicCommand, LANDING, landingZonesOf, zoneDistanceSqr, approachPosition,
-  beachPosition, beachTarget, craftArea, areaPath, ORDER_KINDS,
+  beachPosition, beachTarget, craftArea, strategicRoutes, ORDER_KINDS, beachLandingOrder, landingTick,
 } from './strategic.js';
 import { craftBailReason, craftTipped, levelZones } from './doctrine-landing.js';
 
@@ -112,12 +112,12 @@ const south = zones.get('southlanding');
   const at = [1100, -380];                       // in SeaArea1, south of the island
   const t = (area, unit = craft) => {
     const x = beachTarget({ layer, zones, area: byName(area), side: 1, unit, x: at[0], z: at[1] });
-    return x ? { kind: x.kind, zone: x.zone.name, via: x.via.name, radius: r3(x.radius) } : null;
+    return x ? { kind: x.kind, zone: x.zone.name, via: x.via.name, radius: r3(x.radius), route: x.route.map(p => p.area.name) } : null;
   };
   out.targets = {
     crossRoads: t('CrossRoads'),
     southernBase: t('SouthernBase'),
-    // MainBase expels landing craft; the way from the sea runs SeaArea1 ->
+    // MainBase expels landing craft; the route from the sea runs SeaArea1 ->
     // CrossRoads, which uses SouthLanding. No intermediate area: radius 5.
     mainBase: t('MainBase'),
     // DefGun1 by SouthernBase: SeaArea1 -> CrossRoads first.
@@ -126,15 +126,32 @@ const south = zones.get('southlanding');
     infantry: t('CrossRoads', { type: 'Infantery', radius: 1 }),
     craftArea: craftArea(layer, at[0], at[1]).name,
     craftAreaOnBeach: craftArea(layer, 1146, -752).name,
-    path: areaPath(layer, byName('SeaArea3'), byName('MainBase'))?.map(a => a.name) ?? null,
+    path: strategicRoutes(layer, byName('MainBase'), 1).get(byName('SeaArea3'))?.map(a => a.name) ?? null,
   };
-  // With an area between: SeaArea3 -> WesternMainBaseExit (no zone here) ->
-  // CrossRoads -> SouthernBase -> DefGun1. The engine's radius would be
-  // 0.25 x WesternMainBaseExit's side radius + 2 x 10; the viewer drives no
-  // route point and keeps the no-route 5.
+  // From SeaArea3 the engine's route to DefGun1 runs SeaArea3 -> SeaArea1 ->
+  // CrossRoads (SeaArea1 lists SeaArea3; the search runs from the target
+  // over each area's own list): one route point in SeaArea1, whose
+  // 0.25 x side radius + 2 x 10 is the route's radius.
   const via3 = beachTarget({ layer, zones, area: byName('DefGun1'), side: 1, unit: craft, x: 200, z: -1150 });
-  out.targets.fromSeaArea3 = via3 ? { kind: via3.kind, via: via3.via.name, radius: r3(via3.radius) } : null;
+  out.targets.fromSeaArea3 = via3 ? { kind: via3.kind, via: via3.via.name, radius: r3(via3.radius), route: via3.route.map(p => p.area.name) } : null;
   out.targets.mainBaseFromSeaArea3 = beachTarget({ layer, zones, area: byName('MainBase'), side: 1, unit: craft, x: 200, z: -1150 });
+  if (via3) out.targets.fromSeaArea3.routeRadius = r3(via3.routeRadius);
+  // The route point is driven first and popped on entering its area
+  // (`WPMoveToBeachLanding::getUrgency` 0x08537e50); then the approach leg.
+  if (via3) {
+    const order = beachLandingOrder({ target: via3, area: byName('DefGun1'), side: 1, layer, random: rng(5), zones });
+    const seat = [{ id: 'h:D', vehicleId: 'h', seatId: 'D', occupiedBy: 'c', upright: true, touchingLand: false, pos: [0, 0, 0] }];
+    const tick = (o, p) => landingTick(o, { id: 'c', position: p, command: { time: 0 }, candidates: () => seat, actuators: {} });
+    order.urgency(0, 0, 9.9);
+    const far = tick(order, [600, 0, -900]);
+    const entered = tick(order, [1100, 0, -400]);            // inside SeaArea1's box
+    out.route = {
+      first: { point: order.point.map(r3), direct: order.direct, radius: order.radius, left: order.route.length },
+      far: far === null,
+      entered: entered ? { left: entered.route.length, radius: entered.radius, direct: entered.direct,
+                           approachZ: r3(entered.point[1]), insideZone: entered.insideZone } : null,
+    };
+  }
 }
 
 // --- 4. the command: the SAI's order, the leg flip, the bail ---------------
