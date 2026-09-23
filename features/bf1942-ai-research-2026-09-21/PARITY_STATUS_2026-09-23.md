@@ -13,7 +13,7 @@ decompiles (addresses given); everything marked INVENTION is a viewer stand-in.
 | `calculateFireStrength`: own table + 0.4 (seat / aircraft) or 0.9 (ground root) x each other occupied seat; `max own^2` over the classes the enemy fields minus the enemy's strength vs my class; `0.5 max own^2` when the enemy fields nothing known; a fixed weapon with no aimable known enemy scores 0 | 0x08584580, `AIObjectControlInfo::validateCameraDirection` 0x085d4170 | `fireStrength`; `bot.js _fireStrengthOf / _candidateFire / _fixedAimable` |
 | Change candidate radius 50 m, friendly 40 m, enemy objects 75 m (600 m aircraft); `engineHeatInfluence` `1 - (heat - 0.95) * 20` | `BFEnvironment::getHardware` 0x085e2fa0, `getFriendlyUnits` 0x085e2e50, `getEnemyObjects` 0x085e4eb0, 0x08585830 | `CHANGE.searchRadius = 50`, `STRENGTH`, `engineHeatInfluence` |
 | The seat swap: root / own seat / other seat factors by where the bot sits (0.5/1.0/0.5 under a driver; 1.0/0.5/0.65 ship, 0.7 land, 1.5/0.5/0.5 air; root 1.0/—/0.5), x (1 - radio), order factor; `Declein(0.5 best/own) * 4`; 6.0 while a change is pending, 2.0 with no attack order and no plan; plan = the `setSelectKey` trigger | `BBChangeTeleport::calculateUrgency` 0x085611f0, `BBPChangeTeleport::createPlan` 0x08590590 | `TELEPORT`, `teleportChangeUrgency`; `bot.js _urgencyChangeTeleport`, `SwitchSeat` action; `map.html botVehicleTick` reseats |
-| The box test: target behind the beam backs toward it when the heading's free run on the map <= turn radius (`aiTemplatePlugIn.turnRadius`), the angle > 1.2566 (72 deg) and the free box's short side >= 0.5 turn radius; else turn. Modes 2..5 (other move kinds) not reproduced | `CommonControls::actionStatusDecision` 0x0860fbe0, `getBox` 0x08612060 | `driveDecision`, `tankControl({freeAhead, boxShort, turnRadius})`, `nav-grid.js freeRun / freeBox` |
+| The box test (superseded 2026-09-24 by AI-85: the whole state machine, states 0..9, on the pathfinder's search box; the 72 deg test is on the side angle) | `CommonControls::actionStatusDecision` 0x0860fbe0, `getBox` 0x08612060, `getSearchBox` 0x085f4180 | `bot-vehicle.js actionStatusDecision`, `searchBox`; `bot-route.js hullDecision` |
 | Tank / seat guns' targeting: large-bore distance term `1 - clamp(1.5 d / R, 0.1, 1)`, `minRange` cut, enemy-manned vehicle scored over every seat, harmless x0.33, fixed weapon needs `validateCameraDirectionYaw`, 850 m unspotted pass at x0.75 | `BBFireLargeBore::calculateUrgency` 0x0856b390 | `bot-fire.js scoreVehicleTargets mode 'largeBore'`; `bot.js _chooseVehicleTarget` |
 | Aircraft targeting: `min(1, d / 3R)` ground, `max(0, 1 - d / 1.5R)` air (x2 AA), facing `max(0.5, f.dir + 1) * 0.5`, AA rules, escape term, 600 m unspotted pass | `BBFire3d::calculateUrgency` 0x085662f0 | `scoreVehicleTargets mode 'air'` |
 | Aircraft fire plan: mode by target (0.8 x extent / 5 m / 10 m / fixed seat); loop: inside 0.9 R with a line of fire aim + fire (in front 10 deg, inside 0.8 R) else `MoveTo3dObject(target, radius, maxSpeed, 0.5 maxSpeed, 50 m)`; a vehicle target adds the 200 m break after passing inside 1.3 x turnRadius; > 200 m from the zone fly back | `BBPFire3d::createPlan` 0x0859ad90, `createPlanInternal` 0x0859b4b0, `createMobileLessAttackPlan` 0x085a0080, `EntryPlaneAimAt::execute` 0x0861f610, `PlaneControl::aimAtDirection` 0x08629cf0 | `PLANE_FIRE`, `planeFireMode`, `attackRunStep`, `aimAtDirection`; `bot.js PlaneAttack` action |
@@ -131,9 +131,19 @@ which the bot tests then covered.
    point at ground + 75 over the area's own position (`orderAirBot`).
 3. ~~The airborne flag~~ read and built (AI-71): cleared only on a change of
    controlled object, so a landed plane keeps it.
-4. **Remaining INVENTIONs worth reading next**: `actionStatusDecision`
-   states 1..9 (it is `BAPAMoveTo` +0x60, a turn-in-the-box state machine,
-   ~700 lines; the viewer ports state 0's reverse test only). Read since
+4. **Remaining INVENTIONs worth reading next**: ~~`actionStatusDecision`
+   states 1..9~~ read, ported and built (AI-85..AI-87, 2026-09-24): the
+   whole state machine (0..9; 1 has no writer, 0 -> 6 is unreachable) with
+   the search box it reads, checked against the function's machine code in
+   the x87 emulator (0 mismatches over 3,155 cases); the tank law's tail is
+   full lock with the drive's throttle at or under 2 m/s
+   (`turnTowardsDirection` is only `EntryTankTurnTo`'s), the angle negated
+   while the hull moves against the drive, the wanted speed damped by the
+   roll rate. Live on Bocage a Sherman driven nose-first into a wall backed
+   2.2 m turning 61 deg, then turned and drove 38 m to its point. Open: a
+   viewer full-lock pivot creeps backward, which flips the steer through the
+   negation; a hull whose pad the viewer's map paints blocked (El Alamein's
+   nearest Allied Sherman) stays on it. Read since
    (AI-72): the 20 s feedback veto is dead in retail (its writer is gated on
    a `detectAimingFailure` that returns 0), and a target's security is 1 on
    its own side and `1 - SCurve(age / decay)` on the other. ~~The decay
@@ -149,8 +159,15 @@ which the bot tests then covered.
 6. **Boats** (AI-73): a ship's Daihatsu / LCVP is split off at load as its
    own unit; the helm runs `speedControl`'s regulated speed and turn. Live
    on Wake a bot drove a Daihatsu 558 m on `LandingCraft3` to a south-shore
-   beach point and beached 23 m past it. Open: `actionStatusDecision`
-   states 1..9 (a beached or wedged hull cannot back off), braking on
-   arrival (`resetControls`), and the SAI's landing-zone orders
+   beach point and beached 23 m past it. ~~`actionStatusDecision` states
+   1..9, braking on arrival~~ built (AI-85, AI-87, 2026-09-24): the helm runs
+   the box state machine on the water map and the move's arrival brakes at
+   full reverse until 1 m/s. Live on Wake, a 20 m radius: the craft braked
+   from 20 m out at 15.1 m/s, ran on 33 m past the point afloat, backed off
+   under state 8 at up to 6.6 m/s and stopped 11.9 m from the point. Open:
+   the viewer's reverse thrust is weak (15 -> 11 m/s over 15 m), so from full
+   speed the craft overshoots any radius under about 40 m; pushed onto the
+   shelf at rest, state 8 holds full reverse but the hull does not move and
+   climbs 5 m (hull physics, not the helm); and the SAI's landing-zone orders
    (`WPBeachLanding`), so the strategic layer never sends a craft to a beach
    by itself yet.

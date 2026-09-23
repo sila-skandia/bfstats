@@ -81,15 +81,20 @@ stands in only blocks the part deeper than the searcher
 also tests the two cells it cuts between), true when every cell is open;
 `traceValidPoint` returns the start when it is free, else the first free
 cell along the line, else null (AI-39: research disagreement, the movement
-doc's "last valid before blocked" is corrected there). `freeRun` /
-`freeBox` answer the drive's box test ([controls.md](controls.md)).
+doc's "last valid before blocked" is corrected there). The drive's box is
+`bot-vehicle.js searchBox` over `freeLevel` (`getSearchBox` 0x085f4180,
+[controls.md](controls.md#the-turn-in-the-box-actionstatusdecision));
+`freeRun` / `freeBox` are no longer read by the bots.
 
 ## The follower
 
 `_execInfantryMoveTo(action)`, for the waypoint `target` with arrive radius
 `arrive` (3 m default):
 
-1. Arrived (horizontal distance < arrive): stop, complete.
+1. Arrived (horizontal distance < arrive): stop, complete. A boat brakes
+   first and completes only at or under 1 m/s (`BoatControl::resetControls`,
+   [controls.md](controls.md#boat)). A hull's move carries its own
+   `actionStatusDecision` state (`action._asd`, 0 for a new move).
 2. The stall bookkeeping (below) on last tick's throttle.
 3. **Route** (`_ensureRoute`): kept while not failed and the goal has moved
    at most `4 x 5.0 = 20 m`; else rebuilt: a goal farther than 32 m first
@@ -121,7 +126,8 @@ hull with a map stops.
 traced clear, or (INVENTION) when the throttle is on and the body is under
 1.0 m/s. At 151 counted ticks an obstacle circle (r 1.5 m, INVENTION) is
 planted 1 m ahead and the route rebuilt around it; at 401 the route fails
-(a hull also backs out for 2 s, INVENTION). Any uncounted tick resets the
+(a hull's backing out is its move's `actionStatusDecision`, which the
+potential obstacles feed through its object check). Any uncounted tick resets the
 count. The counts are bot ticks, so they scale with the page's frame rate
 ([README](README.md#the-tick)).
 

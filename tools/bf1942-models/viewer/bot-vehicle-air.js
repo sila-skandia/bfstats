@@ -21,7 +21,7 @@
 //    yaw-damped log rudder (`boatSpeedControl`). `actionStatusDecision`
 //    (bot-vehicle.js, the turn in the box and reversing off a beach) feeds it
 //    the drive and angle (`boatControl`'s `decision`), and the move's arrival
-//    brakes to a stop (`boatResetControls`), ledger AI-85 / AI-86.
+//    brakes to a stop (`boatResetControls`), ledger AI-85 / AI-87.
 
 const DEG = Math.PI / 180;
 
