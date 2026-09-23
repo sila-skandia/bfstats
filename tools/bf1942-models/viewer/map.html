@@ -521,15 +521,19 @@ addEventListener('resize', resize);
 new ResizeObserver(resize).observe(stage);
 resize();
 const pageAudio = createPageAudio({
-  get AUDIO_OFF() { return AUDIO_OFF; }, get MAPS_BASE() { return MAPS_BASE; },
-  get MODELS_BASE() { return MODELS_BASE; }, get bust() { return bust; },
-  get camera() { return camera; }, get currentDir() { return level.currentDir; },
+  get aircraft() { return localPlayer.aircraft; }, get AUDIO_OFF() { return AUDIO_OFF; },
+  get bust() { return bust; }, get camera() { return camera; },
+  get car() { return localPlayer.car; }, get currentDir() { return level.currentDir; },
   get currentRoot() { return level.currentRoot; }, get effectAudio() { return effectAudio; },
-  get extras() { return level.extras; }, get hudFeed() { return hudFeed; },
-  get localPlayer() { return localPlayer; }, get optPilot() { return optPilot; },
+  get ensureHandFireBus() { return soldierKit.ensureHandFireBus; },
+  get extras() { return level.extras; }, get gameHud() { return hudFeed.gameHud; },
+  get handFireBus() { return soldierKit.handFireBus; },
+  get mannedGuns() { return localPlayer.mannedGuns; }, get MAPS_BASE() { return MAPS_BASE; },
+  get MODELS_BASE() { return MODELS_BASE; }, get optPilot() { return optPilot; },
   get optSound() { return optSound; }, get optSoundVol() { return optSoundVol; },
   get scene() { return scene; }, get soldier() { return localPlayer.soldier; },
-  get soldierKit() { return soldierKit; },
+  get vehicleGuns() { return localPlayer.vehicleGuns; },
+  get weaponSoundsManifest() { return soldierKit.weaponSoundsManifest; },
 });
 
 // --- piloting ---------------------------------------------------------------
