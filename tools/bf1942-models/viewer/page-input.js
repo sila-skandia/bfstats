@@ -18,13 +18,13 @@ import { GameConsole } from './console.js';
  * `escMenu`, `escMenuCaptures`, `exitSeat`, `extras`, `FLY_KEYS`,
  * `FLY_SLOW`, `FLY_SPEED`, `FOOT_KEYS`, `footView3p`, `fullmapBox`,
  * `gameConsole`, `getFloorAltitude`, `groundHeight`, `handWeapon`, `hud`,
- * `isTouchDevice`, `itemsLocked`, `LOCAL_PLAYER`, `lookDelta`,
+ * `isTouchDevice`, `itemsLocked`, `leavePilot`, `LOCAL_PLAYER`, `lookDelta`,
  * `mannedActive`, `mouseInput`, `nearEntry`, `occupancy`, `openDeploy`,
  * `optOnFoot`, `optPilot`, `params`, `renderer`, `scoreboardOpen`,
  * `scoreFromSpawn`, `selectDeployFlag`, `selectKitWeapon`, `setConsoleOpen`,
- * `setEscMenu`, `setPilot`, `setScoreboard`, `soldier`, `soldierDead`,
- * `spawnAtFlag`, `stage`, `startReload`, `switchSeat`, `toggleFullMap`,
- * `toggleProne`, `uiFocused`, `updateHud`, `view`, `world`.
+ * `setEscMenu`, `setScoreboard`, `soldier`, `soldierDead`, `spawnAtFlag`,
+ * `stage`, `startReload`, `switchSeat`, `toggleFullMap`, `toggleProne`,
+ * `uiFocused`, `updateHud`, `view`, `world`.
  */
 export function createPageInput(page) {
   const pageInput = {};
@@ -107,10 +107,7 @@ export function createPageInput(page) {
   }
 
   function resetCamera() {
-    if (page.optPilot.checked) {
-      page.optPilot.checked = false;
-      page.setPilot(false);
-    }
+    page.leavePilot();
     // On foot R respawns rather than resetting the camera — the keydown handler
     // routes it to `spawnAtFlag` before it ever reaches here — but a reset that
     // arrives from the on-screen button must not kick the player out of the mode

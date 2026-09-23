@@ -6,7 +6,6 @@
 
 import * as THREE from 'three';
 import { idleFirePose, idleFireState } from './idle-vehicle.js';
-import { FOV_DEG as FOOT_FOV } from './soldier.js';
 import { deathTier } from './vehicle-damage.js';
 import { spawnerWindow } from './game-modes.js';
 
@@ -14,13 +13,13 @@ import { spawnerWindow } from './game-modes.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `bindDynamicShading`, `bust`, `camera`, `clearHitIndicator`, `collider`,
+ * `bindDynamicShading`, `bust`, `clearHitIndicator`, `collider`,
  * `dieInWreck`, `disposeEngineAudio`, `effects`, `exitPoseManned`, `extras`,
- * `fireStates`, `hud`, `isCollision`, `leaveSeat`, `loader`, `MODELS_BASE`,
- * `occupancy`, `optOnFoot`, `optPilot`, `placeCamera`,
+ * `fireStates`, `hud`, `isCollision`, `leaveSeat`, `loader`, `markPilot`,
+ * `MODELS_BASE`, `occupancy`, `optOnFoot`, `placeCamera`,
  * `resetMobileControls`, `respawnVehicleBody`, `retireVehicleBody`,
- * `soldier`, `soldierDead`, `standUp`, `updateHud`, `vehicleDamage`,
- * `vehicles`, `world`.
+ * `soldier`, `soldierDead`, `standUp`, `updateHud`, `useLens`,
+ * `vehicleDamage`, `vehicles`, `world`.
  */
 export function createVehicleWrecks(page) {
   const wrecks = {};
@@ -303,7 +302,7 @@ export function createVehicleWrecks(page) {
     const hullYaw = Math.atan2(wreckDeathFwd.x, wreckDeathFwd.z);
     const exit = page.exitPoseManned(page.occupancy);
     page.leaveSeat();
-    page.optPilot.checked = false;
+    page.markPilot(false);
     page.resetMobileControls();
     if (!(page.optOnFoot.checked && page.soldier)) {
       page.placeCamera();
@@ -313,9 +312,7 @@ export function createVehicleWrecks(page) {
     page.soldier.collider = page.collider;
     page.soldier.spawn(exit.x, exit.y, exit.z, hullYaw);
     page.standUp();
-    page.camera.fov = FOOT_FOV;
-    page.camera.near = 0.2;
-    page.camera.updateProjectionMatrix();
+    page.useLens('foot');
     // The rig stays holstered (`enterVehicle` hid it): retail's vehicle death
     // cam is an overhead shot of the wreck with no first-person weapon in it,
     // and the near pass is gated on `soldierDead` besides. `spawnAtFlag`
