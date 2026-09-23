@@ -216,7 +216,17 @@ apply to asset work. New assets a feature needs are part of delivering that feat
 extract them, get them on the volume, and confirm the site serves them.
 
 What still deserves a pause: scaling deployments, applying manifests, and deleting
-or overwriting existing content on the volume.
+content on the volume. Overwriting files under `/mnt/assets/mesh/` with re-baked ones
+is not a pause (owner, 2026-09-20).
+
+**An exporter fix reaches four trees.** A change in `bf42/gltf.py`, `bf42/assemble.py`
+or `bf42/rs.py` is in every glb the code writes: `viewer/models`, each
+`viewer/models/mods/<mod>`, every level `scene.glb` (placed vehicles and statics are
+baked in) and every `_shared/effects.glb`. Measure which files still carry the old
+output, re-extract all of them, publish with `scripts/publish-mesh-delta.py`, verify
+live sizes. Handing the level half back as a command to run is the thing the owner
+explicitly refused on 2026-09-23 ("it's your job to do that, not me"). The
+`bfstats-mesh-assets` skill has the table, the scan recipe and the timings.
 
 - **Storage Location**: Kubernetes PVC `bf42-stats-pvc-v2` mounted at `/mnt/assets` on `filebrowser` and `/mnt/data/assets` on `bf42-stats`.
 - **Upload Method**: Streaming tar over `kubectl exec`:

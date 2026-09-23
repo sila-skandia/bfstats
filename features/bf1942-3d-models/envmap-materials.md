@@ -51,6 +51,17 @@ The parser reads the flag exactly as it does for `twosided`, `transparent`, etc.
 
 No change to alpha/blend/cutoff logic — `envmap` is orthogonal to transparency.
 
+> **Correction (2026-09-23, `d0bc467c`).** It was not orthogonal in the code as first
+> landed: `add_material` set `extras` and then took the `elif alpha_cutoff` / `elif blend`
+> branches only when `extras` was empty, so every `transparent true; envmap true;` shader
+> — 57 in vanilla, 734 across all mods: the Willy and Katyusha windscreens
+> (`katy_window_I`), `Yak9_window_m1`, the Zero, Mustang, Corsair and Aichi canopies,
+> `windowWhole_M1` / `windowBroken_M1` on every building — exported with no `alphaMode`
+> and drew as an opaque sheet of dirty-glass texture. Fixed by deciding `alphaMode`
+> before the extras block; `tests/test_gltf.py::test_envmap_keeps_blend` pins it. Models
+> were re-extracted (17 vanilla, 2 XPack1, 9 XPack2, 45 EoD templates). Level bakes still
+> carry the opaque windows until `extract_maps_all.py` is re-run: 13 vanilla `scene.glb`s.
+
 ### 3. glTF Emission (bf42/gltf.py)
 
 Added `envmap: bool = False` parameter to `add_material()` and stamp it into `material.extras`:

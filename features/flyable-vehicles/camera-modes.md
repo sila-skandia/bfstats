@@ -277,3 +277,73 @@ vehicle camera omits the CVM* block and gets the full default cycle — but Finn
 locks 67 cameras to first person with `CVMChase 0 / CVMFrontChase 0 / CVMFlyBy 0 /
 CVMTrace 0` (§3), so the field earns its keep on mods even if vanilla never
 exercises it.
+
+---
+
+## 9. 2026-09-23 — every seat cycles, the nose cam, and the server's switches
+
+Three gaps the owner reported from play, closed together. Work recorded in
+`features/vehicle-camera-toggle-sweep/README.md`; this section carries what
+changed in the reading above.
+
+### 9a. Every seat has the cycle, not only the driver
+
+The `VehicleCamera` used to be built once per *vehicle* on the root seat, and
+`manned()` pinned every gunner and every bare gun to its Camera node. That was a
+viewer shortcut, not a reading: `Camera::setViewMode` gates each mode on the
+**camera's own template byte**, one Camera per seat, and vanilla writes a `CVM*`
+word on ten artillery seats and nowhere else. So the AA gunner, the Sherman's
+hull gunner, the Willy's passenger and a tripod Browning all get the same
+inside → chase → front → fly-by walk the pilot does. The rig is now built per
+*active seat* (`map.html` `buildSeatView`): the inside eye is that seat's own
+Camera node, the external views hang off the root, and the chase law
+(`chase-camera.js`) anchors on the seat Camera as the engine's `camM` does, with
+`cameraRidesTurret` asked of the active seat so a gun position follows its gun.
+A root with no drivetrain frames through `flight.js` `FixedSubject`. The seat's
+`cameraViewModes` (the exporter's `cvm`, upper-case) gate the cycle through
+`seat-view.js` `seatViewModes`; a locked FinnWars camera or `SoldierCamera`'s
+shape collapses to the cockpit alone. `confirmed` for the gate; the placement
+of the external views is unchanged and still ours.
+
+### 9b. §4 was wrong: `OutsideHudOffset` is the nose cam
+
+Retail's aircraft have a second inside view between the cockpit and the chase:
+no cockpit, no airframe, the reticle over open air, the engine heard from ahead
+of the propeller. `game.serverAllowNoseCam` is its switch. §4 dismissed
+`OutsideHudOffset` as "a point a chase camera can never occupy" — true, and
+beside the point, because 0.3 m *past the propeller hub* is exactly where a
+camera has to stand to look forward without the prop disc across the frame, and
+the B17's 2.5 m is the pilot who already sits at the nose. The word is declared
+on **every aircraft Camera and nothing else** — 13 vanilla, 2 Road to Rome, 7
+Secret Weapons, surveyed straight out of `Objects.rfa` and tabled in
+`seat-view.js` `NOSE_CAM_OFFSETS` — which is also the list of vehicles retail
+gives a nose cam to. So `nose` is: the seat's eye plus that offset in the eye's
+own frame (Z-mirrored into glTF), the interior LOD off, the cockpit's own neck
+clamps. `strong inference` on the exact placement (the client's nose-cam code
+was not read); `confirmed` on the availability list.
+
+The exporter now carries the word as `extras.cameraView.outsideHudOffset`
+(`bf42/con.py`, `bf42/assemble.py`), already mirrored, and the viewer prefers
+it over the table, so a mod the table never saw works after a re-extraction
+without a code change. No re-extraction was needed for what ships: the table
+covers every installed mod.
+
+Verified on Wake through the real C key: Corsair cockpit → nose → chase → front
+→ fly-by → cockpit; in `nose` the eye sits **4.47 m** from the Camera node along
+`R(q)·(0, −0.4, −4.45)` to 0.01 m, the interior LOD is off and the fuselage on,
+`guns.firstPerson` is false (the 3P muzzle flash), and the listener at the nose
+gets the exterior mix by distance alone — the `.ssc` layers are placed in
+vehicle space and ramp on distance, there is no inside/outside word to honour.
+
+### 9c. The server's switches
+
+`BF1942.exe` has exactly four `game.server*` words that touch a camera:
+`serverExternalViews`, `serverAllowNoseCam`, `serverFreeCamera`,
+`serverDeathCameraType`; the shipped `ServerSettings.con` writes them
+`1 / 1 / 0 / 1`. `server-settings.js` honours the first two (default on, the
+side panel and `?externalViews=0` / `?noseCam=0` switch them, persisted) and
+adds a third of the page's own, `soldierExternalViews`, for C on foot: **retail
+has no such switch** (CAM-1 stands: `SoldierCamera` is locked and
+`BFSoldier::nextCamera` is empty), the owner wants the view anyway, and turning
+it off is the engine's own behaviour. `?foot3p=0` is its off spelling;
+`?foot3p=1`, the older opt-in, still works.

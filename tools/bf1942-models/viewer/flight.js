@@ -1625,10 +1625,34 @@ export class Aircraft extends Vehicle {
 // can never be. It anchors the outside-view HUD reticle, exactly as its name
 // says, and nothing here uses it.
 //
+// THE NOSE CAM (2026-09-23) is the one correction to the paragraph above.
+// Retail's aircraft have a second inside view between the cockpit and the
+// chase -- no cockpit, no airframe, the reticle over open air, the engine
+// heard from ahead of the propeller -- and `OutsideHudOffset` is where it
+// stands: 0.3 m past the Corsair's propeller hub is exactly where a camera
+// has to be to look forward without the prop disc across the frame, and the
+// B17's 2.5 m is the pilot who already sits at the nose. The word is declared
+// on every aircraft Camera and nothing else, which is also the list of
+// vehicles retail gives a nose cam to. `game.serverAllowNoseCam` switches it.
+// `seat-view.js` carries the survey and the reasoning; here it is `nose`:
+// the seat's eye plus that offset in the eye's own frame, the interior LOD
+// off, the cockpit's own neck clamps.
+//
 // See `features/flyable-vehicles/camera-modes.md`.
 
-/** The cycle order C walks, matching the game's inside -> outside progression. */
-export const CAMERA_MODES = ['cockpit', 'chase', 'front', 'flyby'];
+/**
+ * The whole vocabulary, in the order C walks it: inside -> outside, as the
+ * game's own progression. Which of these one SEAT actually reaches is per
+ * instance (`VehicleCamera.modes`): `seat-view.js` gates the external three on
+ * the seat's `CVM*` words and the server's `externalViews`, and `nose` exists
+ * only where the seat Camera declares `OutsideHudOffset` (every aircraft,
+ * nothing else) and the server allows it. A camera built with no `modes`
+ * option gets the four the page has always had, nose excluded, so the flight
+ * harness and any older caller see no change.
+ */
+export const CAMERA_MODES = ['cockpit', 'nose', 'chase', 'front', 'flyby'];
+/** The default per-instance cycle: the pre-nose-cam four. */
+export const DEFAULT_CAMERA_MODES = ['cockpit', 'chase', 'front', 'flyby'];
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
@@ -1699,6 +1723,9 @@ const FLYBY = {
 const LOOK_LIMITS = {
   // `CorsairCamera`: setMinRotation -70/-40/0, setMaxRotation 70/5/0. [data]
   cockpit: { yaw: Math.PI * 70 / 180, pitchDown: -Math.PI * 40 / 180, pitchUp: Math.PI * 5 / 180 },
+  // The nose cam is the same Camera object with its eye displaced, so it keeps
+  // the same neck.
+  nose: { yaw: Math.PI * 70 / 180, pitchDown: -Math.PI * 40 / 180, pitchUp: Math.PI * 5 / 180 },
   // An external camera orbits rather than swivels a neck, so it gets the full
   // circle and a pitch stopping short of the poles where the frame would flip.
   chase: { yaw: Infinity, pitchDown: -1.2, pitchUp: 1.2 },
@@ -1708,22 +1735,99 @@ const LOOK_LIMITS = {
 };
 
 /**
- * The view rig for a flown vehicle: the four modes, and the state that smooths
+ * A seat root with no drivetrain -- a Defgun, an AA gun, a Browning on its
+ * tripod -- standing in for a `Vehicle` under `VehicleCamera`.
+ *
+ * The camera reads `state.position` / `state.orientation` / `state.velocity`
+ * and calls `setFirstPerson`; a fixed emplacement has the first two in its
+ * node's world pose, no velocity, and nothing to swap (bare guns ship no
+ * interior LOD). `sync()` re-reads the node each frame, because the root of
+ * a gun bolted to a ship's deck is not fixed at all.
+ */
+export class FixedSubject {
+  /** @param {THREE.Object3D} node the seat root */
+  constructor(node) {
+    this.node = node;
+    this.control = node.userData?.control || node.name || 'vehicle';
+    this.state = {
+      position: new THREE.Vector3(),
+      orientation: new THREE.Quaternion(),
+      velocity: new THREE.Vector3(),
+      throttle: 0,
+    };
+    this.cameraNode = null;
+    node.traverse(obj => {
+      if (!this.cameraNode && obj !== node
+          && (obj.userData?.cameraView || obj.userData?.templateKind === 'Camera')) {
+        this.cameraNode = obj;
+      }
+    });
+    this.firstPerson = true;
+    this.sync();
+  }
+
+  /** Read the root's world pose into `state`. */
+  sync() {
+    this.node.updateWorldMatrix(true, false);
+    this.node.getWorldPosition(this.state.position);
+    this.node.getWorldQuaternion(this.state.orientation);
+    return this;
+  }
+
+  setFirstPerson(on) {
+    this.firstPerson = !!on;
+    return this.firstPerson;
+  }
+
+  /** The seat Camera's world pose, or a point behind the root without one. */
+  cameraPose(target = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() }) {
+    if (this.cameraNode) {
+      this.cameraNode.updateWorldMatrix(true, false);
+      this.cameraNode.getWorldPosition(target.position);
+      this.cameraNode.getWorldQuaternion(target.quaternion);
+    } else {
+      target.position.set(0, 2, 4).applyQuaternion(this.state.orientation).add(this.state.position);
+      target.quaternion.copy(this.state.orientation);
+    }
+    return target;
+  }
+}
+
+/**
+ * The view rig for one SEAT: the modes it reaches, and the state that smooths
  * them.
  *
  * Kept out of the page because it needs the vehicle's orientation every frame and
  * nothing else, so a replay viewer or a second page gets it for free. The one
  * thing it cannot know on its own is where the ground is; `groundHeight` is
  * injected the same way `Aircraft.groundHeight` is.
+ *
+ * One per active seat, not per vehicle: a gunner's inside view is his own
+ * Camera node (`eyeNode`), his external views hang off the hull the same as
+ * the driver's, and which of them he reaches is his Camera's own `CVM*` words
+ * (`modes`). The subject is the drivetrain when the root has one and a
+ * `FixedSubject` when it does not.
  */
 export class VehicleCamera {
   /**
-   * @param {Vehicle} vehicle
-   * @param {{mode?: string, groundHeight?: (x: number, z: number) => number}} [options]
+   * @param {Vehicle | FixedSubject} vehicle
+   * @param {{mode?: string, groundHeight?: (x: number, z: number) => number,
+   *   eyeNode?: THREE.Object3D | null, modes?: string[] | null,
+   *   nose?: number[] | null}} [options]
+   *   `eyeNode`: the seat's own Camera node; absent, the subject's `cameraPose`.
+   *   `modes`: the cycle, in order (`seat-view.js` `seatViewModes`); absent,
+   *   the four the page has always had. `nose`: the nose cam's offset from
+   *   the eye in the eye's own frame, glTF axes; absent, no nose view even if
+   *   `modes` names one.
    */
   constructor(vehicle, options = {}) {
     this.vehicle = vehicle;
-    this.mode = options.mode || CAMERA_MODES[0];
+    this.eyeNode = options.eyeNode || null;
+    this.nose = Array.isArray(options.nose) && options.nose.length === 3
+      ? new THREE.Vector3().fromArray(options.nose) : null;
+    this.modes = [...DEFAULT_CAMERA_MODES];
+    this.setModes(options.modes, false);
+    this.mode = this.modes.includes(options.mode) ? options.mode : this.modes[0];
     this.groundHeight = options.groundHeight || (() => -Infinity);
     /** Mouse-look offset, radians, clamped per mode by `look()`. */
     this.look = { yaw: 0, pitch: 0 };
@@ -1785,9 +1889,39 @@ export class VehicleCamera {
     return this.mode === 'cockpit';
   }
 
-  /** Select a mode by name, or fall back to the cockpit. */
+  /**
+   * Is this the engine's view mode 3 -- the eye on the seat's own Camera?
+   * Two of ours are: the cockpit, and the nose cam, which is the same Camera
+   * with its interior LOD off and its eye pushed past the propeller.
+   */
+  get inside() {
+    return this.mode === 'cockpit' || this.mode === 'nose';
+  }
+
+  /** `Camera::setViewMode`'s own id for the current mode. */
+  get modeId() {
+    return this.inside ? 3 : this.mode === 'chase' ? 12 : this.mode === 'front' ? 13 : 14;
+  }
+
+  /**
+   * Replace the cycle. Unknown names and a nose view this seat has no offset
+   * for are dropped; an empty result falls back to the cockpit alone. The
+   * current mode survives if the new cycle still reaches it, otherwise the
+   * view drops back to the cycle's first, which is always the cockpit.
+   */
+  setModes(modes, apply = true) {
+    let next = Array.isArray(modes) ? modes.filter(m => CAMERA_MODES.includes(m)) : null;
+    if (!next || !next.length) next = [...DEFAULT_CAMERA_MODES];
+    if (!this.nose) next = next.filter(m => m !== 'nose');
+    if (!next.includes('cockpit')) next = ['cockpit', ...next];
+    this.modes = next;
+    if (apply && !this.modes.includes(this.mode)) this.setMode(this.modes[0]);
+    return this.modes;
+  }
+
+  /** Select a mode by name, or fall back to the cycle's first. */
   setMode(mode) {
-    if (!CAMERA_MODES.includes(mode)) mode = CAMERA_MODES[0];
+    if (!this.modes.includes(mode)) mode = this.modes[0];
     if (mode === this.mode) return this.mode;
     this.mode = mode;
     // A head turned 70 degrees left in the cockpit should not become an orbit
@@ -1804,8 +1938,24 @@ export class VehicleCamera {
 
   /** What C does: the next view round the cycle. */
   cycle() {
-    const i = CAMERA_MODES.indexOf(this.mode);
-    return this.setMode(CAMERA_MODES[(i + 1) % CAMERA_MODES.length]);
+    const i = this.modes.indexOf(this.mode);
+    return this.setMode(this.modes[(i + 1) % this.modes.length]);
+  }
+
+  /**
+   * The seat's own eye, world space: the injected Camera node when there is
+   * one, else whatever the subject calls its cockpit. The node is walked
+   * first because a gunner's Camera rides the turret the world just stepped.
+   */
+  eyePose(out) {
+    if (this.eyeNode) {
+      this.eyeNode.updateWorldMatrix(true, false);
+      this.eyeNode.getWorldPosition(out.position);
+      this.eyeNode.getWorldQuaternion(out.quaternion);
+    } else {
+      this.vehicle.cameraPose(out);
+    }
+    return out;
   }
 
   /** Feed mouse motion in, already scaled to radians. Clamped per mode. */
@@ -1902,6 +2052,8 @@ export class VehicleCamera {
    * @returns {{position: THREE.Vector3, quaternion: THREE.Quaternion}}
    */
   update(dt) {
+    // A fixed emplacement's pose is its node's, re-read each frame.
+    if (typeof this.vehicle.sync === 'function') this.vehicle.sync();
     const s = this.vehicle.state;
     const out = this.pose;
     // The hull as drawn, for every view that frames it from outside; the
@@ -1917,11 +2069,19 @@ export class VehicleCamera {
       return out;
     }
 
-    if (this.mode === 'cockpit') {
-      // Straight off the `<Vehicle>Camera` node, which is already posed in world
-      // space by `applyTransform`. The head offset goes on in the aircraft's own
-      // frame so the pilot turns with the plane rather than against it.
-      this.vehicle.cameraPose(out);
+    if (this.inside) {
+      // Straight off the seat's Camera node, which is already posed in world
+      // space by `applyTransform` (and the turret step, for a gunner). The
+      // head offset goes on in the aircraft's own frame so the pilot turns
+      // with the plane rather than against it.
+      this.eyePose(out);
+      // The nose cam: the same eye, pushed `OutsideHudOffset` along the
+      // Camera's own axes -- past the propeller, below the eye line -- before
+      // the neck turns, so the head swivels about the nose rather than the
+      // seat.
+      if (this.mode === 'nose' && this.nose) {
+        out.position.add(this._offset.copy(this.nose).applyQuaternion(out.quaternion));
+      }
       if (this.look.yaw || this.look.pitch) {
         out.quaternion.multiply(this._q.setFromEuler(
           new THREE.Euler(this.look.pitch, this.look.yaw, 0, 'YXZ')));

@@ -744,6 +744,11 @@ class ObjectTemplate:
     self_heal_factor: float | None = None
     repair_distance: float | None = None
     repair_factor: float | None = None
+    # `ObjectTemplate.aiTemplate <name>`: the AI template this object is bound
+    # to. For a hand weapon it names the `weaponTemplate.create` block in its
+    # `Ai/Weapons.con` (`Colt` -> `ColtAI`), which is how the bot's fire
+    # behaviour finds the weapon's deviation, ranges and strength table.
+    ai_template: str | None = None
 
     # FireArms. Plane guns are meshless FireArms with one `addFireArmsPosition
     # <pos> <ypr>` per muzzle (the Spitfire's ±1.6° yaw is gun convergence);
@@ -1135,6 +1140,11 @@ class ObjectTemplate:
     # declares none gets the full cycle — so this is null when no flag was ever
     # written, and otherwise a dict of the ones that were, in declaration order.
     camera_view_modes: dict[str, bool] | None = None
+    # `OutsideHudOffset` on a Camera template: where the aircraft's nose cam
+    # stands, as an offset from the Camera in Refractor axes (+Z forward).
+    # Declared on every aircraft camera and nothing else (viewer/seat-view.js
+    # carries the survey); None when the template never wrote it.
+    outside_hud_offset: tuple[float, float, float] | None = None
     # Emitter motion: where particles spawn along the direction of fire
     # (`relativePositionInDof`) and how fast they drift along it
     # (`positionalSpeedInDof`, negative = receding behind the muzzle).
@@ -1657,6 +1667,10 @@ class ObjectLibrary:
         self.geometry_dir: dict[str, str] = {}
         # AI data: keyed by object name (the folder's last component, e.g. "Sherman").
         self.ai_weapons: dict[str, AiWeaponTemplate] = {}
+        # Object folder name -> `aiTemplatePlugIn.coverValue`: how much hiding
+        # behind the object helps (`AITemplateCover`, research README §4.4).
+        # The TakeCover behaviour scores cover as `coverValue / distance`.
+        self.ai_cover: dict[str, float] = {}
         self.ai_control: dict[str, AiControlInfo] = {}
 
     def add_con(self, path: str, text: str) -> None:
@@ -2078,6 +2092,9 @@ class ObjectLibrary:
                 elif cmd == "addweaponicon":
                     if token := args.strip().strip('"'):
                         obj.kit_weapon_icons.append(token)
+                elif cmd == "aitemplate":
+                    if token := args.split()[0] if args.split() else "":
+                        obj.ai_template = token
                 # -- Soldier constants, off `CommonSoldierData.inc`.
                 elif cmd in ("healdistance", "healfactor", "selfhealfactor",
                              "repairdistance", "repairfactor"):
@@ -2156,7 +2173,7 @@ class ObjectLibrary:
                 elif cmd in ("setpositionoffset", "inertiamodifier",
                              "setpivotposition", "soldiercameraposition",
                              "soldierzoomposition", "center1phands",
-                             "rotationalspeed"):
+                             "rotationalspeed", "outsidehudoffset"):
                     try:
                         value = vec3_lenient(args.split()[0])
                     except (ValueError, IndexError):
@@ -2169,6 +2186,7 @@ class ObjectLibrary:
                         "soldierzoomposition": "soldier_zoom_position",
                         "center1phands": "center_1p_hands",
                         "rotationalspeed": "rotational_speed",
+                        "outsidehudoffset": "outside_hud_offset",
                     }[cmd], value)
                 elif cmd in ("rememberexcessinput", "hasrestrictedexit",
                              "damagefromwater"):
@@ -2591,6 +2609,18 @@ class ObjectLibrary:
                     pass  # Type mask not needed for Stage 1
 
             elif ns == "aitemplateplugin":
+                if cmd == "covervalue":
+                    # `Objects/Buildings/Afrhouse/Ai/Objects.con`: the object is
+                    # the folder above the `Ai` one.
+                    parts = folder.split("/") if folder else []
+                    if parts and parts[-1].lower() == "ai":
+                        parts = parts[:-1]
+                    cover_obj = parts[-1] if parts else None
+                    if cover_obj and args.split():
+                        try:
+                            self.ai_cover[cover_obj.lower()] = float(args.split()[0])
+                        except ValueError:
+                            pass
                 if cmd == "create":
                     # `aiTemplatePlugIn.create ControlInfo` — the channel mapping.
                     # We key it by the object name (folder's last component).

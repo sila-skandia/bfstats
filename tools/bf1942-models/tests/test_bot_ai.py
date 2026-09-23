@@ -44,6 +44,9 @@ _MODULE_NAMES = [
 MODULES = {f"{name}.js": VIEWER / f"{name}.js" for name in _MODULE_NAMES}
 MODULES["world.mjs"] = VIEWER / "world.js"
 MODULES["bot.js"] = VIEWER / "bot.js"
+MODULES["nav-grid.js"] = VIEWER / "nav-grid.js"
+for _m in ("bot-sense.js", "bot-fire.js", "bot-behaviours.js", "strategic.js"):
+    MODULES[_m] = VIEWER / _m
 MODULES["node_modules/three/three.module.js"] = VIEWER / "vendor" / "three.module.js"
 THREE_PACKAGE = json.dumps({
     "name": "three", "version": "0.0.0", "type": "module",
@@ -114,13 +117,36 @@ class BotAiTests(unittest.TestCase):
         self.assertFalse(friendly["sawTarget"])
         self.assertFalse(friendly["fired"])
 
-    # --- Avoid: a static dead ahead fans the heading ------------------------
+    # --- Avoid: the map sees the sandbag wall and the route goes round --------
 
-    def test_a_blocked_heading_is_not_clear(self) -> None:
-        self.assertFalse(self.results["avoid"]["clearAhead"])
+    def test_the_map_blocks_the_wall_and_not_the_kerb(self) -> None:
+        avoid = self.results["avoid"]
+        self.assertTrue(avoid["wallBlocked"])
+        self.assertEqual(avoid["kerbCell"], 0)
+        self.assertFalse(avoid["traceThroughWall"])
 
-    def test_the_bot_steers_to_a_clear_side(self) -> None:
-        self.assertTrue(self.results["avoid"]["steered"])
+    def test_the_bot_walks_around_the_wall(self) -> None:
+        avoid = self.results["avoid"]
+        self.assertGreater(avoid["routePoints"], 1)
+        self.assertTrue(avoid["crossedOutsideWall"],
+                        f"crossed the wall line at x={avoid['crossX']}")
+        self.assertLess(avoid["minDistToGoal"], 8.0)
+
+    def test_the_bot_never_stalls_on_the_wall(self) -> None:
+        self.assertLess(self.results["avoid"]["maxStalled"], 30)
+
+    # --- Steering: the engine's 31.5 degree throttle cone -------------------
+
+    def test_a_point_behind_turns_without_throttle(self) -> None:
+        steer = self.results["steer"]
+        self.assertEqual(steer["behind"]["forward"], 0)
+        self.assertNotEqual(steer["behind"]["lookX"], 0)
+
+    def test_a_point_ahead_gets_full_throttle(self) -> None:
+        self.assertEqual(self.results["steer"]["ahead"]["forward"], 1)
+
+    def test_a_point_outside_the_cone_gets_no_throttle(self) -> None:
+        self.assertEqual(self.results["steer"]["side"]["forward"], 0)
 
     # --- MoveTo: no target, walk to the flag --------------------------------
 

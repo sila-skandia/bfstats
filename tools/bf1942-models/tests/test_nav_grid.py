@@ -1,16 +1,11 @@
 """`viewer/nav-grid.js` contract under node (`tests/nav_grid_harness.mjs`).
 
-Two regressions that kept bots from pathing:
-
-* the slope test compared raw height difference, so at the default 64 m cell a
-  gentle hillside (1.28 m per cell, a 2% grade) was marked `-4` too steep and
-  the whole map came out unwalkable;
-* a query whose start or end cell was blocked returned `null`, so a bot whose
-  spawn cell was bad had no path at all and walked straight into the geometry.
-
-The harness feeds the real `buildNavGrid` a slope and one blocked cell and
-asserts the slope stays walkable while a query from inside the blocked cell
-still returns a path.
+The navigation map is the engine's own: one bit a metre (`LocalMap`, level-0
+pixel = 1 m), statics clipped to the infantry map's 0.4..2.0 m band above
+the object's base, the plus-shaped brush, water deeper than 1.5 m and slopes
+over 30 deg blocked, and a flood from the spawn points that closes what they
+cannot reach. The old 64 m grid could not see a sandbag, which is why bots
+walked into them.
 """
 
 from __future__ import annotations
@@ -53,22 +48,64 @@ class NavGridTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.results = run_harness()
 
-    def test_slope_is_a_gradient_not_raw_height(self) -> None:
-        self.assertTrue(self.results["slopeWalkable"],
-                        f"slope cell value {self.results['slopeCellValue']}")
+    def test_the_map_is_one_metre_a_cell(self) -> None:
+        r = self.results
+        self.assertEqual(r["cellSize"], 1)
+        self.assertEqual(r["width"], 128)
 
-    def test_a_gentle_hill_is_not_marked_too_steep(self) -> None:
-        self.assertNotEqual(self.results["slopeCellValue"], -4)
+    def test_the_brush_is_the_engines_plus(self) -> None:
+        self.assertEqual(self.results["brushCells"], 5)
+        self.assertFalse(self.results["brushHasCorner"])
 
-    def test_the_blocked_cell_is_blocked(self) -> None:
-        self.assertLess(self.results["blockedCell"], 0)
+    def test_a_gentle_hill_is_walkable_and_a_steep_one_is_not(self) -> None:
+        r = self.results
+        self.assertEqual(r["gentleHill"], r["codes"]["CELL_FREE"])
+        self.assertEqual(r["steepHill"], r["codes"]["CELL_SLOPE"])
 
-    def test_a_normal_query_finds_a_path(self) -> None:
-        self.assertIsNotNone(self.results["pathAround"])
-        self.assertGreater(self.results["pathAround"], 1)
+    def test_deep_water_is_blocked(self) -> None:
+        self.assertEqual(self.results["lake"], self.results["codes"]["CELL_WATER"])
 
-    def test_a_blocked_start_cell_snaps_and_paths(self) -> None:
-        self.assertIsNotNone(self.results["snapFromBlocked"])
+    def test_a_sandbag_wall_is_blocked_and_a_kerb_is_not(self) -> None:
+        r = self.results
+        self.assertEqual(r["wall"], r["codes"]["CELL_OBJECT"])
+        self.assertEqual(r["kerb"], r["codes"]["CELL_FREE"])
+
+    def test_the_brush_grows_the_wall_by_one_metre(self) -> None:
+        r = self.results
+        self.assertEqual(r["wallBrush"], r["codes"]["CELL_OBJECT"])
+        self.assertEqual(r["besideWall"], r["codes"]["CELL_FREE"])
+
+    def test_a_walled_yard_with_no_door_is_unreachable(self) -> None:
+        r = self.results
+        self.assertEqual(r["yardInside"], r["codes"]["CELL_UNREACHABLE"])
+
+    def test_a_pier_deck_over_deep_water_is_walkable(self) -> None:
+        self.assertEqual(self.results["pierDeck"], self.results["codes"]["CELL_FREE"])
+
+    def test_the_trace_refuses_the_wall(self) -> None:
+        self.assertFalse(self.results["traceThroughWall"])
+        self.assertTrue(self.results["traceClear"])
+
+
+    def test_trace_valid_point_is_the_first_free_cell_along_the_line(self) -> None:
+        r = self.results
+        self.assertEqual(r["validFromFree"], [85, -50])
+        p = r["validFromWall"]
+        self.assertIsNotNone(p)
+        # Past the wall (z = -60) and its one-metre brush, on the far side.
+        self.assertLess(p[1], -61.5)
+        self.assertGreater(p[1], -66)
+        self.assertIsNone(r["validAllBlocked"])
+
+    def test_the_local_search_routes_around_the_wall(self) -> None:
+        r = self.results
+        self.assertIsNotNone(r["pathAround"])
+        self.assertGreater(r["pathAround"], 2)
+        self.assertTrue(r["pathAroundClearsWall"])
+        self.assertTrue(r["pathAroundEndsAtGoal"])
+
+    def test_the_whole_route_query_answers(self) -> None:
+        self.assertIsNotNone(self.results["wholePath"])
 
 
 if __name__ == "__main__":
