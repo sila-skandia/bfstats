@@ -70,13 +70,20 @@ export const VEHICLE_RADIUS = 3.0;
  *  hull toward -yaw (`ground.js`), so the steer passes straight through.
  *  Calibrated on El Alamein's Kubelwagen (2026-09-23). */
 const VEHICLE_YAW_SIGN = 1;
-/** The largest pyramid level a viewer-built map is searched at: the map's
- *  own maximum (`LocalMap` +0x28) is not read for these maps; `freeLevel`'s
- *  cap stands in (INVENTION). A tank map's minimum level is 0 (INFERRED from
- *  `ai.addSearchType Tank 0 0`); a water map's is its base level (AI-66). */
+/** The largest pyramid level a hull's box is taken at. `getLandLevel`
+ *  0x085f3f90 walks from the vehicle's `+0xc4a8` down to its `+0xc4a4`,
+ *  and `Vehicle::Vehicle` 0x0860b2c0 copies `+0xc4a8` from its `LocalMap`'s
+ *  +0x28 (0x0860b41c), the map's `maxLevel` (`LocalMap::LocalMap`
+ *  0x085fb590; `ai.addSearchMap`'s last argument, 2 unless given: `Tank0`
+ *  2, `Boat2` 5). A map that carries it (every level's baked map, AI-95)
+ *  is boxed at its own; this cap stands in only for a painted map of a
+ *  level with no search maps (INVENTION). A tank map's minimum level is 0
+ *  (INFERRED from `ai.addSearchType Tank 0 0`); a water map's is its base
+ *  level (AI-66). */
 const HULL_BOX_MAX_LEVEL = 8;
-/** How far a hull that has never stood on a valid cell looks for one (m). */
-const HULL_VALID_SEARCH = 24;
+/** Each hull's last valid position (`AIObjectMobile` +0x20..+0x2c, AI-94),
+ *  kept on the hull (its scene node), not on the bot that drives it. */
+const hullValid = new WeakMap();
 /** `infanteryControlTowardsDirection` 0x08627000: throttle only when the
  *  target direction is within this angle of the facing (0.5497787 rad,
  *  31.5 deg), else stop and turn; a target behind turns at the full rate. */
@@ -329,19 +336,6 @@ export function onObstructed(bot) {
   if (bot.route) bot.route.failed = true;
 }
 
-/** The nearest cell (ring by ring) whose free level reaches `minLevel`, as
- *  a viewer x/z point at its centre, or null within `rings`. */
-function nearestFreeCell(levelAt, gx, gz, minLevel, rings, cs) {
-  for (let r = 1; r <= rings; r++) {
-    for (let i = -r; i <= r; i++) {
-      for (const [x, z] of [[gx + i, gz - r], [gx + i, gz + r], [gx - r, gz + i], [gx + r, gz + i]]) {
-        if (levelAt(x, z) >= minLevel) return [(x + 0.5) * cs, -(z + 0.5) * cs];
-      }
-    }
-  }
-  return null;
-}
-
 /**
  * `CommonControls::actionStatusDecision` 0x0860fbe0 for the hull the bot
  * drives, toward `(dx, dz)` from it, on its own map. The state lives on the
@@ -351,8 +345,8 @@ function nearestFreeCell(levelAt, gx, gz, minLevel, rings, cs) {
  * `getBox` 0x08612060's: taken at the hull's cell, or at the last cell it
  * stood on a valid cell when it stands on a blocked one now
  * (`AIObjectMobile::getValidPosition` 0x085d5bb0, kept by `positionChanged`
- * 0x085d5b30); a hull that never has takes the nearest free cell
- * (INVENTION, below). The object check's list is the bot's potential
+ * 0x085d5b30); a hull that never has gets no box, and the decision runs
+ * its no-box branches (below). The object check's list is the bot's potential
  * obstacles (`BotMain::getPotentialObstacles` 0x0852d790, bot vtable +0x124,
  * each object's Physical radius): here the circles the follower plants.
  * `minLevel` is the map's search level floor.
@@ -368,30 +362,36 @@ export function hullDecision(bot, dx, dz, minLevel = 0) {
   let box = null;
   if (nav) {
     const cs = nav.cellSize;
-    const levelAt = (gx, gz) => freeLevel(nav, (gx + 0.5) * cs, -(gz + 0.5) * cs, HULL_BOX_MAX_LEVEL);
+    const maxLevel = Number.isFinite(nav.maxLevel) ? nav.maxLevel : HULL_BOX_MAX_LEVEL;
+    const levelAt = (gx, gz) => freeLevel(nav, (gx + 0.5) * cs, -(gz + 0.5) * cs, maxLevel);
     let gx = Math.floor(px / cs), gz = Math.floor(-pz / cs);
     let from = null;
+    const hull = bot.vehicle?.node ?? bot.vehicle;
     if (levelAt(gx, gz) >= minLevel) {
-      bot._validHullPos = [px, pz];
+      if (hull) hullValid.set(hull, [px, pz]);
     } else {
-      // The last valid position; a hull that has never stood on a valid
-      // cell takes the nearest free cell within `HULL_VALID_SEARCH` instead
-      // (INVENTION). The engine keeps no fallback: `AIObjectMobile::init`
-      // 0x085d54b0 sets the valid flag (+0x2c) from `isValidPosition` at the
-      // spawn and only `positionChanged` 0x085d5b30 / `setValidPosition`
-      // 0x085d5be0 set it after, so `getValidPosition` 0x085d5bb0 answers
-      // false for such a hull. Its own baked map paints some spawns blocked
-      // (El Alamein's Tank0: the Shermans at (1731, -804) and (888, -1822),
-      // three Willys); El Alamein's (1685, -736) is no longer one of them
-      // since the repair pad it stands on is a surface (AI-93, AI-94).
-      const v = bot._validHullPos ?? nearestFreeCell(levelAt, gx, gz, minLevel, Math.ceil(HULL_VALID_SEARCH / cs), cs);
+      // The last valid position (`CommonControls::getBox` 0x08612060: when
+      // `isValidPosition`, `IAIPathfinding` vt+0x78, fails at the hull, it
+      // asks the hull's `IPIMobileReal::getValidPosition` 0x085eab10 ->
+      // `AIObjectMobile::getValidPosition` 0x085d5bb0 and takes the box
+      // there). A hull that has never stood on a valid cell has none:
+      // `AIObjectMobile::init` 0x085d54b0 sets the flag (+0x2c) from the
+      // spawn cell, only `positionChanged` 0x085d5b30 / `setValidPosition`
+      // 0x085d5be0 set it after, nothing clears it; `getBox` then returns
+      // false, and `actionStatusDecision` 0x0860fbe0 takes its no-box
+      // branches (state 0 facing away -> 8, every other state -> 0: drive
+      // on when the point is ahead, turn in place when it is not). The
+      // level's own maps paint such spawns (El Alamein's Tank0: the
+      // Shermans at (1731, -804) and (888, -1822), three Willys), and the
+      // engine's hull starts there with no box, as this one now does.
+      const v = hull ? hullValid.get(hull) : null;
       if (v) {
         from = [v[0], -v[1]];
         gx = Math.floor(from[0] / cs);
         gz = Math.floor(from[1] / cs);
       }
     }
-    const b = levelAt(gx, gz) >= minLevel ? searchBox(levelAt, gx, gz, { minLevel, maxLevel: HULL_BOX_MAX_LEVEL }) : null;
+    const b = levelAt(gx, gz) >= minLevel ? searchBox(levelAt, gx, gz, { minLevel, maxLevel }) : null;
     if (b) box = { min: [b.min[0] * cs, b.min[1] * cs], max: [b.max[0] * cs, b.max[1] * cs], from };
   }
   const radius = bot._radius();
