@@ -186,8 +186,10 @@ class BotAiTests(unittest.TestCase):
         self.assertLess(a["ahead"]["pitch"], 0.0)              # nose up is a negative stick
         self.assertFalse(a["ahead"]["takeoff"])
         self.assertGreater(a["right"]["roll"], 0.0)            # a point to the right banks right
+        self.assertGreater(a["right"]["rudder"], 0.0)
         self.assertTrue(a["ground"]["takeoff"])
-        self.assertEqual(a["ground"]["roll"], 0.0)
+        self.assertEqual(a["ground"]["rudder"], 0.0)           # no turn before the airborne flag
+        self.assertGreater(a["ground"]["pitch"], 0.0)          # slow: the climb limit holds the nose down
         self.assertEqual(a["boatTurn"]["steer"], -1.0)         # full rudder past 30 deg, toward +yaw
         self.assertGreater(a["boatAhead"]["throttle"], 0.9)
 
@@ -249,8 +251,19 @@ class BotAiTests(unittest.TestCase):
         self.assertEqual(p["modes"][1]["radius"], 5.0)
         self.assertEqual(p["modes"][2]["radius"], 43.333333333333336)
         self.assertLess(p["aimUpPitch"], 0)                          # nose up is a negative stick
-        self.assertTrue(p["takeoff"])
+        self.assertFalse(p["takeoffAirborne"])                       # 1 m up: still taking off
+        self.assertLess(p["aimLowPitch"], 0)                         # the pull-up demand wins
+        self.assertLess(p["engineMaxErr"], 1e-4)                     # 0x08629fa0 vs its emulation
+        self.assertAlmostEqual(p["shape"][0], 0.1617, places=3)      # log10(9 * 0.05 + 1)
+        self.assertEqual(p["shape"][1:], [-1, 1])
         self.assertEqual(p["climb"], 0.3333)
+        self.assertEqual(p["onTarget"][:2], ["attack", True])         # mode 0: no in-front gate
+        self.assertLess(p["onTarget"][2], 0.01)
+        self.assertFalse(p["offTarget"][0])                           # 0x0854baf0: miss > precision
+        self.assertGreater(p["offTarget"][1], 6)
+        self.assertEqual(p["unseen"], "approach")                     # 0x08551890: not seen, no attack
+        self.assertFalse(p["closeInFront"])                           # 0x08550e70: 10 m half-space
+        self.assertLess(p["leadMiss"], 1.0)
 
     def test_the_water_map_frees_the_deep_water_and_blocks_the_island(self) -> None:
         w = self.results["water"]

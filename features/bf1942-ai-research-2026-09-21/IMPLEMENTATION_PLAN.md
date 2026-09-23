@@ -541,3 +541,18 @@ Read and built: see [`PARITY_STATUS_2026-09-23.md`](PARITY_STATUS_2026-09-23.md)
 for the per-function table, what was verified live, and the ordered list of
 what is still open (a bot-driven vehicle's rounds need a soldier hit path in
 `map.html`, and the plane's trigger gate never opened live).
+
+## Follow-up 8 (2026-09-23, session 2): vehicle rounds, the vacated seat, the flight law
+
+- A bot-driven vehicle's rounds reach soldiers: the MG cone test runs per
+  new group shot from the gun (in the shooter's frame for a moving hull),
+  the shell's splash bills the bot through `botDamageLanded` (the splash has
+  already taken the HP). Verified: Sherman at 40 m, both paths.
+- `calculateFireStrength` vacates the bot's own seat when it weighs another
+  (AI-59); the Priest swap every tick is gone.
+- The aircraft: the flight law is the engine's (AI-60, read by emulating the
+  x87 code), the fire gate is the precision test / seen flag / half-space /
+  map battle zone (AI-61), the sense rays skip the bot's own hull (AI-62), a
+  seated bot only changes vehicle when it may bail (AI-63). Verified: the
+  Spitfire kills a soldier 260 m down the runway; it flies 240 s without
+  loss. Open: no soldier hit from the air yet (see bot-behaviours §12).
