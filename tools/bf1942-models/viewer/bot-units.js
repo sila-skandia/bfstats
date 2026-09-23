@@ -10,7 +10,8 @@
 
 import * as THREE from 'three';
 import { classifyRoot, surveyVehicle, seatYawLimits } from './seats.js';
-import { buildNavMap } from './nav-grid.js';
+import { buildNavMap, isWalkable } from './nav-grid.js';
+import { craftTipped } from './doctrine-landing.js';
 
 /** The body radius a land vehicle keeps on its map, and a plane's or ship's
  *  for its arrival circle (INVENTION). */
@@ -158,6 +159,21 @@ export function createBotUnits(env) {
     return nav;
   };
 
+  /**
+   * The search map a hull's root moves on when the Change test asks whether
+   * it stands on its own map: a boat's `Boat2`, a landing craft's
+   * `LandingCraft3` (the maps `mountRecord` gives a helm). Null for every
+   * other kind: the engine applies the test to every mobile root that is not
+   * an aircraft, but the viewer binds every land vehicle to `Tank0` (cars
+   * and jeeps belong on `Car4`, Brief O item 3), and 6 of Wake's Willys and
+   * 3 of El Alamein's land roots park off `Tank0`; the land test waits on
+   * the per-unit map.
+   */
+  units.ownMapOf = (node, kind = units.kindOf(node), ai = units.aiOf(node)) => {
+    if (kind !== 'ship') return null;
+    return units.waterNav(/lcvp|daihatsu|landing/i.test(ai?.name ?? '') ? 'LandingCraft' : 'Boat');
+  };
+
   /** Who holds a seat, human or bot: the hull's instance answers. */
   units.seatHolder = (node, seatId) => env.vehicles.holder(node, seatId);
   units.driverOf = node => env.vehicles.driverOf(node);
@@ -246,6 +262,34 @@ export function createBotUnits(env) {
         const rootId = node.userData?.control || node.name || 'vehicle';
         const driver = units.driverOf(node);
         const health = damage?.maxHitPoints > 0 ? damage.hitPoints / damage.maxHitPoints : 1;
+        // `BBChange::calculateUrgency` 0x0855e0c0 offers a mobile root that
+        // is not an aircraft (`Information+0x10` bit 2 set, `+4 & 0x10`
+        // clear: 0x0855ee25..0x0855ee36) only where its own map holds it:
+        // `IAIPathfinding` vt+0x78 (`isValidPosition`) at the root, the map
+        // being the unit's Mobile template's search type (vt+0x98(2) +0x14
+        // +4, 0x0855f0a0..0x0855f0f0). Its seats are weighed only after the
+        // root passes (the child loop at 0x0855eee2 sits under the same
+        // test), so a failing root takes every seat of the hull with it. A
+        // beached landing craft is off its water map: its crew does not
+        // climb back in.
+        const ownMap = units.ownMapOf(node, kind, ai);
+        const onOwnMap = ownMap ? isWalkable(ownMap, pos[0], pos[2]) : true;
+        // A surface craft's two bail tests (`BBChangeLandingCraft` 0x085602b0,
+        // doctrine-landing.js): `isTouchingLand` (0x085ebd80 -> 0x085d6700)
+        // is the hull's terrain contact this tick (`Ship.aground`, the
+        // `ResponsePhysics+0xd0` latch) while its AI physics runs, and off its
+        // own map while it does not (parked, or its driver bailed); taken as
+        // "someone drives it" (INFERRED). The tip test's two forms read the
+        // water and the terrain under the hull.
+        let touchingLand = null, tipped = null;
+        if (kind === 'ship') {
+          const drive = driver ? env.vehicles.instanceOf?.(node)?.drive ?? null : null;
+          touchingLand = drive && typeof drive.aground === 'boolean' ? drive.aground : !onOwnMap;
+          const hf = collider?.heightfield ?? null;
+          const terrainNormal = hf ? hf.normal(pos[0], pos[2], [0, 0, 0]) : null;
+          tipped = craftTipped({ up: [_up.x, _up.y, _up.z], waterLevel: collider?.waterLevel ?? null,
+                                 terrainHeight: hf ? hf.height(pos[0], pos[2]) : NaN, terrainNormal });
+        }
         const seen = new Set();
         // Every seat of the hull with its table and occupancy: the shares
         // `calculateFireStrength` adds and the seat swap's alternatives.
@@ -280,7 +324,7 @@ export function createBotUnits(env) {
             id: `${node.uuid}:${door.seatId}`, vehicleId: node.uuid, node, template: ai.name, kind,
             seatId: door.seatId, isRoot, drives, seats, turnRadius: ai.turnRadius ?? null,
             pos, entry: [_entryWorld.x, _entryWorld.z], entryRadius: door.radius,
-            health, upright,
+            health, upright, onOwnMap, touchingLand, tipped,
             // `calculateVehicleMoveUrgency`: a driver moves the hull; a passenger
             // moves only when someone drives it (x2.5 of the bot driver's when
             // its order differs -- the driver's order is taken as the same).

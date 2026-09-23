@@ -151,6 +151,28 @@ class SimVehicleTests(unittest.TestCase):
         self.assertNotEqual(r["atPad"] and r["atPad"]["owner"], r["owner"], "the pad is clear once it is gone")
         self.assertEqual(r["atHull"]["owner"], r["owner"], "the hull answers where it stands")
 
+    def test_a_landing_craft_lands_holding_its_ramp_and_nobody_climbs_back(self) -> None:
+        # Brief N items 1 and 3 on Wake: the SAI's beach order to
+        # WesternMainBaseExit's CentreLanding, a helm and a rider aboard.
+        r = recipe("beach")
+        self.assertEqual(r["order"], {"kind": "WPBeachLanding", "zone": "CentreLanding"})
+        self.assertIsNotNone(r["beachLegAt"], "the craft enters its zone and takes the beach leg")
+        # `BAPATriggerContinously(PIPitch)` on the beach leg: 1.0 in the
+        # channel, carried into the word the world consumes.
+        self.assertEqual(r["pitchHeld"], 1.0)
+        self.assertEqual(r["pitchSeen"], 1.0)
+        # Both out, in the zone and aground (`BBChangeLandingCraft` 0x085602b0).
+        b = r["bail"]
+        self.assertIsNotNone(b, "the crew gets out")
+        self.assertTrue(b["inZone"])
+        self.assertTrue(b["touchingLand"])
+        self.assertLess(b["t"], 150.0)
+        # The beached craft is off its water map, so `BBChange` offers it to
+        # nobody (0x0855ee25 -> 0x0855f0f0): no bot climbs back in for 30 s
+        # (the loop was one boarding every ~8 s after the 15 s ramp).
+        self.assertFalse(r["after"]["onOwnMap"])
+        self.assertEqual(r["remounts"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

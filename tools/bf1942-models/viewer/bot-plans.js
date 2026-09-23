@@ -101,9 +101,11 @@ export function planMoveTo(bot, now) {
   if (bot.planBehaviour === BEHAVIOUR.MoveTo && cur.length && cur[0].waypointObject === wp) return cur;
   if (wp.direct && bot.vehicle?.kind === 'ship' && bot.vehicle.drives) {
     // `BBPGotoWaypointBoat::createPlan` 0x085b8c50, a beach order inside its
-    // zone (doctrine-landing.js): `while (true) BAPAMoveToDirect` to the
-    // beach point, no route and no end.
-    return [{ type: PLAN_ACTION.BoatMoveToDirect, waypoint: goal, waypointObject: wp, persistent: true }];
+    // zone (doctrine-landing.js): `while (true) { BAPAMoveToDirect` to the
+    // beach point, no route and no end (its point removal distance is 0.1,
+    // `getMaxPointRemovalDistance` 0x08543160, and the point is on the
+    // shore), `BAPATriggerContinously(PIPitch) }`: the ramp held.
+    return [{ type: PLAN_ACTION.BoatMoveToDirect, waypoint: goal, waypointObject: wp, persistent: true, ramp: true }];
   }
   return [{ type: PLAN_ACTION.InfantryMoveTo, waypoint: goal, arrive: wp.radius, waypointObject: wp,
             stance: 'stand' }];
@@ -294,10 +296,36 @@ export function healPlanDone(bot, plan, now) {
 // Plan interpreter (§4.2)
 // -----------------------------------------------------------------------
 
+/**
+ * `EntryTriggerContinously::execute` 0x08625ff0 for the beach leg's
+ * `BAPATriggerContinously(1, BAPConTrue, BAPConFalse, BAPConFalse)`
+ * (`BBPGotoWaypointBoat::createPlan` 0x085b8c50): while its start condition
+ * (+0x18, true) holds and its end (+0x20, false) does not, it writes 1.0
+ * (`0x3f800000`) into channel 1, `PIPitch`, every tick. The Daihatsu's
+ * `DaihatsuLanding1/2` and the LCVP's `Lcvp_Ramp` bundles are bound to it.
+ */
+export const RAMP_INPUT = 1.0;
+
+/**
+ * The channels a plan holds that the bot's input word does not carry
+ * (bot-aim.js `writeInput` writes the move, the look and the triggers): the
+ * ramp's `PIPitch` on a ship, into the word the world consumes this tick
+ * (`world-vehicle-tick.js`: a ship reads `c_PIPitch`; `pad` writes it raw,
+ * as the engine's channel is, past the page's stick spring).
+ */
+export function writeHeldChannels(bot) {
+  const pitch = bot._heldPitch ?? 0;
+  if (!pitch || bot.vehicle?.kind !== 'ship') return;
+  const entry = bot.world?.players?.get?.(bot.playerId)?.pending;
+  if (!entry?.input) return;
+  entry.input = { ...entry.input, pitch, pad: true };
+}
+
 /** Run every action in the plan for this tick. */
 export function runPlan(bot, dt, now) {
   let allComplete = true;
   let moved = false;
+  bot._heldPitch = 0;
   for (const action of bot.currentPlan) {
     if (action.afterMove && bot.currentPlan.some(a => (a.type === PLAN_ACTION.InfantryMoveTo
           || a.type === PLAN_ACTION.InfantryMoveToObject) && !a.done)) {
@@ -327,10 +355,12 @@ export function executeAction(bot, action, dt, now) {
       // The boat's own helm (`BoatControl::towardsDirection` with its box
       // state machine, as `_steerToward` runs it on a route leg) straight at
       // the point, with the move's own state; the while loop never
-      // completes, so the plan ends only when the order does.
+      // completes, so the plan ends only when the order does. In parallel,
+      // `BAPATriggerContinously(PIPitch)`: the ramp held down.
       bot._asd = action._asd ?? (action._asd = { state: 0 });
       bot._steerToward(action.waypoint[0], action.waypoint[2], 1);
       bot._dbgSteer = [action.waypoint[0], action.waypoint[2]];
+      if (action.ramp) bot._heldPitch = RAMP_INPUT;
       return false;
     case PLAN_ACTION.MouseTurretAimAt:
       return bot._execMouseTurretAimAt(action);
