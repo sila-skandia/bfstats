@@ -104,24 +104,29 @@ which the bot tests then covered.
 
 ## Open, in priority order (the next session starts here)
 
-1. **No soldier hit from the air yet (session 3: still none).** Read since:
-   the sense frustum is square and 3D (AI-67, built), the AI spread applies
-   to vehicle guns exactly as the viewer had it (AI-68), and the 50 m
-   approach / 75 m aim clearances are the engine's (AI-69, confirmed in the
-   disassembly). With them, eight passes on El Alamein: the approach lines
-   the nose up (miss 5 m at 289 m) and the attack's pull-up then carries the
-   nose away (the lead sits below the line of sight). What remains to
-   compare is the flight model's pitch response against the engine's, not
-   the AI. Earlier notes: The attack approaches at ~45 m (the
-   MoveTo3dObject's 50 m clearance) and the aim's 75 m clearance pulls the
-   nose up when the attack starts, so the pass sweeps the nose through the
-   target; the precision gate opened 100 ticks against a Stuka but no
-   soldier was hit. Two viewer-side suspects before blaming the engine:
-   the sense frustum is a yaw-only test (the engine's is a 3D camera
-   frustum; a plane circling a soldier inside its turn circle never sees
-   him), and the AI deviation (5 deg decaying over 10 s) applies to the
-   plane's MG. Also unbuilt: the closest-approach precision variant for
-   non-burst weapons (bombs) and `EntryPlaneAimAt`'s own direction clamps.
+1. **No soldier kill from the air (2026-09-24, brief A: still none, and
+   now explained).** Built since (AI-79..AI-83): every aircraft flies on its
+   own `.con` table (the Spitfire had been flying the Corsair's) with the
+   box drag law; `EntryPlaneAimAt`'s two Aimer branches (a ground target is
+   aimed on the line of sight with the plane's speed added to the round's,
+   throttle floor 0.5); the precision tests' closest-approach variants and
+   the bomb class's nearest-approach test; the approach and break clearances
+   are 100 m, not 50 (AI-56 / AI-69 misread); bombs fire on PIAltFire. The
+   pitch law is not the problem: on the Spitfire's own airframe
+   `aimAtDirection` settles a 10 deg step in 0.72 s. Live (AI-84): with the
+   soldier 260 m down the runway the climb-out passes over him and the plane
+   then orbits him inside its turn circle (bank ~60 deg, the soldier 80..110
+   deg off the nose) for as long as the Fire behaviour holds him, never
+   seeing him; from 800 m out the attack brings the nose within 2 deg of him
+   at 121 m before the 75 m aim clearance pulls it off, and the wing guns,
+   converging 93 m out while the gate is taken on the centreline, pass 1.6
+   to 4.9 m either side of him between 150 and 270 m. A Stuka flying straight
+   250 m ahead is shot down in 3 s. Not read, and the one thing that could
+   still move the soldier case: whether the engine's Fire behaviour lets go
+   of a target it cannot see sooner than the viewer's does (in the orbit
+   Fire scores 2.96 against MoveTo's 1.5). Not built and not on this path:
+   the break point's construction (0x0859bc90, modes 1 / 2) and the
+   air-target throttle regulation in `EntryPlaneMoveToObject` 0x08621d30.
 2. ~~The waypoint move's clearance~~ read and built (AI-71): 50 m, the
    point at ground + 75 over the area's own position (`orderAirBot`).
 3. ~~The airborne flag~~ read and built (AI-71): cleared only on a change of
