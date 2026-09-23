@@ -24,11 +24,11 @@ const SEED = 7;
 const M = await loadViewerModules(viewerDir(path.join(HERE, '..', 'viewer')));
 routeConsole(true);
 
-async function start(map, botsPerSide = 4) {
-  seedMathRandom(SEED);
+async function start(map, botsPerSide = 4, seed = SEED) {
+  seedMathRandom(seed);
   const level = await realLevel(M, { maps: path.join(assets, 'maps'), models: path.join(assets, 'models'), map });
-  seedMathRandom(SEED);
-  const match = new Match({ M, level, botsPerSide, duration: 3600, seed: SEED, sink: null });
+  seedMathRandom(seed);
+  const match = new Match({ M, level, botsPerSide, duration: 3600, seed, sink: null });
   match.setup();
   return match;
 }
@@ -599,6 +599,69 @@ const recipes = {
       rounds: match.stats.get(b.playerId).vehicleRounds, stillMounted: !!b.vehicle,
     };
   },
+};
+
+/** Brief Q on Midway, seed 1: a bot takes each carrier's first deck plane
+ *  (the Corsair on the Enterprise, the Zero on the Shokaku) and takes off; the
+ *  carriers do not move. Then a frozen bot drives the Enterprise at full
+ *  throttle and the parked SBD the spawner still holds rides her deck. */
+recipes.deckAir = async function deckAir() {
+  const match = await start('midway', 8, 1);
+  const hb = match.stage.hullBodies;
+  const V = () => new M.THREE.Vector3();
+  const held = hb.heldCraft.map(r => ({ plane: r.node.name, ship: r.host.name }));
+  const side = name => match.stage.units.candidates().find(c => c.template === name && c.isRoot);
+  const pilots = {};
+  for (const template of ['Corsair', 'Zero']) {
+    const team = side(template)?.team;
+    const b = match.bots.find(o => !o.vehicle && (team == null || o.team === team)) ?? match.bots.find(o => !o.vehicle);
+    mount(match, b, template);
+    pilots[template] = b;
+  }
+  freezeOthers(match, Object.values(pilots).map(b => b.playerId));
+  const recs = Object.fromEntries(Object.keys(pilots).map(t => [t, hb.heldCraft.find(r => r.node.name === t)]));
+  const shipAt = Object.fromEntries(Object.values(recs).map(r => [r.host.name, r.host.getWorldPosition(V()).clone()]));
+  const pad = Object.fromEntries(Object.entries(recs).map(([t, r]) => [t, r.node.getWorldPosition(V()).clone()]));
+  const out = {};
+  for (const t of Object.keys(recs)) out[t] = { ship: recs[t].host.name, releasedAt: null, leftDeckAt: null, top: -Infinity, padDriftHeld: 0 };
+  run(match, 40, () => {
+    for (const [t, r] of Object.entries(recs)) {
+      const o = out[t];
+      const p = r.node.getWorldPosition(V());
+      if (!r.released) o.padDriftHeld = Math.max(o.padDriftHeld, p.distanceTo(pad[t]));
+      else if (o.releasedAt === null) o.releasedAt = round(match.clock);
+      o.top = Math.max(o.top, p.y - pad[t].y);
+      const e = r.host.matrixWorld.elements;
+      if (o.leftDeckAt === null && Math.hypot(p.x - e[12], p.z - e[14]) > 150) o.leftDeckAt = round(match.clock);
+    }
+    return false;
+  });
+  for (const [t, r] of Object.entries(recs)) {
+    out[t].top = round(out[t].top);
+    out[t].padDriftHeld = round(out[t].padDriftHeld);
+    out[t].shipMoved = round(r.host.getWorldPosition(V()).distanceTo(shipAt[r.host.name]));
+  }
+  // The Enterprise under way with her SBD parked on the deck.
+  const sbd = hb.heldCraft.find(r => r.node.name === 'SBD');
+  const helm = match.bots.find(o => !o.vehicle && !Object.values(pilots).includes(o));
+  mount(match, helm, 'Enterprise');
+  helm.tick = () => {};
+  const shipStart = sbd.host.getWorldPosition(V()).clone();
+  let sbdOff = 0;
+  run(match, 90, () => {
+    match.world.setInput(helm.playerId, { forward: 1, forwardKeys: 1 });
+    const m = sbd.host.matrixWorld.clone().multiply(sbd.local);
+    const want = new M.THREE.Vector3().setFromMatrixPosition(m);
+    sbdOff = Math.max(sbdOff, sbd.node.getWorldPosition(V()).distanceTo(want));
+    return sbd.host.getWorldPosition(V()).distanceTo(shipStart) > 200;
+  });
+  const sp = sbd.node.getWorldPosition(V());
+  const deck = hb.shipDeckAt(sp.x, sp.z, sp.y + 0.5, 6);
+  return {
+    held, planes: out,
+    enterprise: { moved: round(sbd.host.getWorldPosition(V()).distanceTo(shipStart)), seconds: round(match.clock - 40),
+                  sbdHeld: !sbd.released, sbdOffPad: round(sbdOff), sbdAboveDeck: deck ? round(sp.y - deck.y) : null },
+  };
 };
 
 const fn = recipes[recipe];
