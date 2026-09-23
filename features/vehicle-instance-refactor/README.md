@@ -98,3 +98,75 @@ Acceptance for Part 2: `map.html` under 3,000 lines; `sim/` imports the
 referee rather than copying it; the full `./scripts/verify.sh` (E2E included)
 and every `tests/` suite pass; the live recipes in
 `features/bf1942-ai-research-2026-09-21/PARITY_STATUS_2026-09-23.md` still pass.
+
+## Part 1: landed (2026-09-23)
+
+`viewer/vehicle-instance.js`: `VehicleRegistry` (every occupied hull, keyed
+by its root node, and every seated player), `VehicleInstance` (one per hull:
+the seat model `VehicleOccupancy` with one `TurretRig` per seat, the one
+drive, the gun groups per seat, the seat map) and `SeatHandle` (what an
+occupant holds: `{ instance, seatId }`, answering the per-seat questions the
+world, HUD and camera used to ask a per-occupant `VehicleOccupancy`).
+`enter`, `leave` and `switchSeat` are the only mutations; the page's human
+path (`setPilot`, `leaveSeat`, `switchSeat`, `exitVehicle`, `exitManned`)
+and bot path (`botEnterVehicle`, `botLeaveVehicle`, `botSwitchSeat`) call
+them. The page hands the registry its drive options (`buildHullDrive`, one
+function for both), the body world (`adoptDrivenBody` /
+`releaseDrivenBody`), the freeze, the guns and the audio rack.
+
+Rules as built:
+
+- The drive is built when someone takes the root seat of a drivable hull
+  and kept until the last occupant leaves. A gunner alone in a parked hull
+  sits on the parked body; a gunner whose driver leaves rides a hull that
+  coasts. The root seat's controls are released when it is vacated.
+- `world.js #assignIntegrators`: each drive integrates once a tick, in the
+  tick of its root seat's holder (else its first occupant), from that
+  holder's input word. Every occupant's record carries the same drive.
+- A seat's gun groups are collected when it is taken and released when it
+  is left: the root seat's own FireArms from the drive (fired from the
+  drive's inputs), then the seat's own. A bot driver no longer fires the
+  hull gunner's Browning (the old bot path collected the whole hull).
+- Every seat's world position is published each tick from the world's
+  `onTick` (`publishSeatPositions`, the seat node's), replacing the rider
+  feed in `botVehicleTick` and the frame's root read.
+- `localPlayer` (map.html) looks the human's hull up in the registry on
+  every read: `occupancy` (his handle), `aircraft` / `car` (the hull's drive
+  by kind), `vehicleGuns` / `mannedGuns` (his seat's groups); `view` is his
+  seat's `VehicleCamera`, rebuilt by `syncLocalSeat` when his seat or its
+  drive changes under him (a bot taking the wheel). The `aircraft`, `car`,
+  `view`, `occupancy`, `vehicleGuns`, `mannedGuns` globals are gone.
+- Seat dots now show the hull's other occupants (bots) against the local
+  team.
+
+Found on the way (fixed): a bot in the Sherman's hull-gunner seat drove the
+Browning to its elevation stop and never fired: that axis declares a
+negative acceleration (`direction -1`), which the servo applies to its input
+and the bot's aim law did not. `bot.js _aimLook` now puts its command
+through the same sign (`_turretInputSigns`).
+
+Found, not fixed: the same gunner's aim oscillates +-2.4 deg about the
+target (the bot's count law assumes the soldier's gains; the Browning's 90
+deg/s servo moves ~3x per count what the Sherman tower's 20 does), so it
+fires steadily but misses a soldier at 40 m. A hull entered by anyone rises
+~0.6 m on its springs after adoption (60.85 -> 61.49 on El Alamein's
+Sherman), on main too.
+
+Verified live (El Alamein, 8 bots, `?shots&noaudio&botDebug`, the worktree's
+own static server): (1) bot_0 drives a Sherman, the human takes
+`shermanBrowning_PCO1` through `enterVehicle` (`__enterSeat`): one instance,
+both seats, the camera stays within 0.5 m of the hull over 300 frames while
+it drives 10 m, the Browning fires 10 rounds a second, and `__exitSeat`
+puts the soldier 2.3 m from the hull's true position while the hull drives
+on, node and drive state identical frame to frame; (2) the human drives a
+Sherman, bot_2 takes the gunner seat with `__botMount` and fires at a frozen
+soldier 40 m ahead (36 rounds in 4 s); (3) two bots in an M3A1: the driver
+swaps to a passenger seat and back while the hull moves at 4.3 m/s, with no
+discontinuity in its position; (4) the recipes: a bot Sherman kills a soldier
+at 40 m with three shells, a bot Spitfire takes off and climbs to 85 m (the
+same numbers to the decimal as main under the same script).
+
+Tests: `tests/test_vehicle_instance.py` (the registry with the real World
+and a stub drive: one drive per hull, one integration a tick from the root
+seat, a gunner's word never reaching the drive, a held seat refusing, the
+swap keeping the drive, the last one out parking the hull).

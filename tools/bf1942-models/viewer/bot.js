@@ -1016,8 +1016,26 @@ export class BotController {
     const livePitch = s.pitch ?? 0;
     const targetPitch = desiredPitch === null ? livePitch : desiredPitch;
     const dPitch = s.pitch === null ? 0 : targetPitch - livePitch;
-    this.lookX = clamp(-(dYaw * RAD2DEG) / YAW_GAIN, -maxCounts, maxCounts);
-    this.lookY = clamp(-(dPitch * RAD2DEG) / PITCH_GAIN, -maxCounts, maxCounts);
+    // A mounted gun's servo multiplies its input by the axis's `direction`
+    // (`sign(acceleration)`, seats.js `TurretAxis.step`), and the reading
+    // above is the axis's angle through the rig's own sign: the command has
+    // to go through the same sign or the loop runs the wrong way. The
+    // Sherman's hull Browning declares a negative elevation acceleration,
+    // and a bot in that seat drove its barrel to the stop and never fired.
+    const sign = this.vehicle ? this._turretInputSigns() : null;
+    this.lookX = clamp(-(dYaw * RAD2DEG) / YAW_GAIN, -maxCounts, maxCounts) * (sign?.yaw ?? 1);
+    this.lookY = clamp(-(dPitch * RAD2DEG) / PITCH_GAIN, -maxCounts, maxCounts) * (sign?.pitch ?? 1);
+  }
+
+  /** The `direction` each aim axis of the seat's rig multiplies its input by. */
+  _turretInputSigns() {
+    const axes = this.vehicle?.occupancy?.turret?.axes;
+    if (!axes) return null;
+    const out = { yaw: 1, pitch: 1 };
+    for (const axis of axes) {
+      if (axis.axisName === 'yaw' || axis.axisName === 'pitch') out[axis.axisName] = axis.spec?.direction < 0 ? -1 : 1;
+    }
+    return out;
   }
 
   // -----------------------------------------------------------------------
