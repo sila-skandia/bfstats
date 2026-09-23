@@ -28,7 +28,7 @@ the page's referee. "Unused" marks a constant declared and never read.
 | curves | `DecleiningSlopeCurve` samples | 0.05 -> 0.146, 0.1 -> 0.292, 0.2 -> 0.579, 0.3 -> 0.754, 0.5 -> 0.895, 0.7 -> 0.955, 1 -> 1 | `DecleiningSlopeCurve::calculate` 0x08655560 (101 entries) | `bot-behaviours.js DECLEIN_POINTS` | ENGINE; linear in between INVENTION |
 | curves | `SCurve` samples | 0.25 -> 0.087, 0.5 -> 0.5, 0.75 -> 0.913 | `SCurve::calculate` 0x08658420 | `bot-behaviours.js SCURVE_POINTS` | ENGINE; linear in between INVENTION |
 | sensing | view distance | 600 default; the level's (El Alamein 300) | `AISettings::reset` 0x08484450 (+0x1c); `AI.con aiSettings.setViewDistance` | `bot.js DEFAULT_VIEW_DISTANCE` | ENGINE / CON |
-| sensing | fields of view | 100 / 60 / 30 deg; mounted 75 / 45 / 15 | `tweak_frustumUpdateAngle` 0x087d0860 | `bot-sense.js FRUSTUM_FOV` | ENGINE |
+| sensing | fields of view | 100 / 60 / 30 deg; mounted 75 / 45 / 15; square (aspect 1.0) about the camera | `tweak_frustumUpdateAngle` 0x087d0860; `Frustum::setupFrustum(fov, 1.0, ...)` (AI-67) | `bot-sense.js FRUSTUM_FOV`, `inFrustum`; `bot.js _cameraBasis` | ENGINE |
 | sensing | bands | 0..0.5, 0.5..0.75, 0.75..1 of the view distance | `tweak_frustumUpdateStateMinMaxDistances` 0x086ffed8 | `bot-sense.js FRUSTUM_BANDS` | ENGINE |
 | sensing | sub-state restart on turning | 25 / 15 / 7.5 deg (18.75 / 11.25 / 3.75 mounted) | `BotMain::sense` 0x08521cf0 | not built: one sub-state a tick | ENGINE |
 | sensing | near plane | 0.01 m | `Frustum::setupFrustum` 0x08440c70 | `bot-sense.js FRUSTUM_NEAR` | ENGINE |
@@ -49,7 +49,7 @@ the page's referee. "Unused" marks a constant declared and never read.
 | sensing | under-fire window | 1.5 s (Scout's prone pose) | | `bot.js tick` | UNSOURCED |
 | sensing | quadrants | 4 x 90 deg azimuth, split at 25 deg elevation | `computeQuadrants` 0x08579150 (INFERRED from 0.7071 / 0.9063) | `bot-behaviours.js quadrantOf` | ENGINE (INFERRED) |
 | fire | water gate | 0.75 m | `BBFire::calculateUrgency` 0x08563570 | `bot-fire.js FIRE.waterGate` | ENGINE |
-| fire | give-up veto | 20 s, lifted at 2 m/s | `getBBPFeedback` (BBFire) | `FIRE.feedbackVeto`, `movingVetoSpeed` | ENGINE; nothing writes the veto map |
+| fire | give-up veto | 20 s, lifted at 2 m/s | `getBBPFeedback` (BBFire); dead in retail: its writer needs `detectAimingFailure` 0x085a3860, which returns 0 (AI-72) | `FIRE.feedbackVeto`, `movingVetoSpeed` | ENGINE; nothing writes the veto map, as in retail |
 | fire | weapon value | `strength / (1 + (20 missed + 10) / ammo)`, ammo -1 = 65536 | `BBFire::calculateUrgency` | `scoreTargets` | ENGINE |
 | fire | attacker bonus | 1.5 .. 1.0 over 30 s | `BBFire` | `FIRE.attackedWindow` | ENGINE |
 | fire | lost decay | `1 / (1 + 0.05 age)` | `BBFire` (AI-40) | `FIRE.sightAgeDecay` | ENGINE |
@@ -77,7 +77,7 @@ the page's referee. "Unused" marks a constant declared and never read.
 | fire | weapon template fallbacks | maxRange 60, strength Infantry 1 | | `weaponAiOf` | UNSOURCED |
 | fire | armour class values | 1, 3, 8, 15, 1, 6 | `AISettings` ctor 0x08482cf0 (+0x98) | `ARMOUR_CLASS_VALUES` | ENGINE |
 | fire | harmless threshold | 0 | `BotManager` ctor calls (AI-65) | `scoreVehicleTargets` | ENGINE |
-| fire | information security | 1 | not read (+0x14) | `scoreVehicleTargets` | INVENTION |
+| fire | information security | 1 | own side `InformationReal` 1 (`getSecurity` 0x085e8d10); an enemy's `1 - SCurve(age / decay)` (0x085e8670), the decay not traced (AI-72) | `scoreVehicleTargets` | INVENTION (the enemy's decay) |
 | fire | large-bore distance | `1 - clamp(1.5 d / R, 0.1, 1)` | `BBFireLargeBore::calculateUrgency` 0x0856b390 | `VEHICLE_FIRE.largeBoreRangeFactor`, `largeBoreFloor` | ENGINE |
 | fire | aircraft distance | ground `min(1, d / 3R)`, air `max(0, 1 - d / 1.5R)` | `BBFire3d::calculateUrgency` 0x085662f0 | `VEHICLE_FIRE.airGroundRangeFactor`, `airAirRangeFactor` | ENGINE |
 | fire | facing | `max(0.5, f.dir + 1) x 0.5` | `BBFire3d` | `VEHICLE_FIRE.facingFloor`, `facingScale` | ENGINE |
@@ -190,12 +190,12 @@ the page's referee. "Unused" marks a constant declared and never read.
 | tank | soldier max speed | 5 m/s | `Objects/Soldiers/Common/AI/Objects.con maxSpeed 5.0` | `TANK.soldierMaxSpeed` | CON |
 | tank | yaw channel sign | +1 | calibrated on the Kubelwagen | `bot.js VEHICLE_YAW_SIGN` | INVENTION (calibration) |
 | plane | arrival | 4 x radius; radius 10 m | `BBPGotoWaypoint3d::createPlan` 0x085b81e0 (`ConPosition`); the radius not read | `PLANE.arriveRadiusFactor`, `map.html BOT_VEHICLE_RADIUS_LARGE` | ENGINE / INVENTION |
-| plane | waypoint clearance | 120 m | the order's altitude, not read | `PLANE.cruiseClearance` | INVENTION |
+| plane | waypoint clearance | 50 m | `WPAltitudeMoveTo` +0x14 from `orderAirBot` 0x08640982, read by `BBPGotoWaypoint3d::createPlan` 0x085b81e0 (AI-71) | `SAI.airClearance`; `PLANE.cruiseClearance` when a waypoint has none | ENGINE |
 | plane | law constants | 43.0, ln 10, -0.833, 0.333, 0.866 / 0.134, 0.9, 0.1, 18.0, 0.3, 9.0, roll rate 0.5 | `PlaneControl::towardsDirection` 0x08629fa0 (0x087058a8 ..) | `TOWARDS.*` | ENGINE |
 | plane | limits | maxClimb 0.3333, maxRoll 0.9999 | `ControlInfo3d` +0x104 / +0x108 (setters 0x0850dad0 / 0x0850dec0) | `PLANE_FIRE.maxClimbAngle`, `maxRollAngle` | CON |
 | plane | probes | aim 50 m, point 100 m, lift inside 100 m at 0.0001 d² | `aimAtDirection` 0x08629cf0, `towardsPoint` 0x08629730 | `TOWARDS.probe`, `pointProbe`, `pointLiftRange`, `pointLiftRate` | ENGINE |
 | plane | takeoff | aim y 0.3333, flag at 50 m and half top speed, wanted 200 m | `aimAtDirection`, `towardsPoint` | `TOWARDS.takeoffDirY`, `takeoffHeight`, `takeoffSpeedFraction`, `takeoffTargetY` | ENGINE |
-| plane | airborne flag clear | on the ground | not read | `bot.js _execPlaneMoveTo` | INVENTION |
+| plane | airborne flag clear | when the controlled object changes, or the bot is built | `updateBotVehicle` 0x0852c899, ctor 0x0851d475 (AI-71) | `bot.js mount`, `dismount` | ENGINE |
 | plane | altitude probe samples | 0, 0.2 .. 0.9 | `InformationReal::getAltitude` 0x085e8950 | `bot.js _altitudeAlong` | ENGINE |
 | plane | attack ranges | 0.9 R approach; fire inside R | `BBPFire3d::createPlanInternal` 0x0859b4b0 | `PLANE_FIRE.approachRange` (`fireRange` 0.8 unused) | ENGINE |
 | plane | in front | 10 m half-space | `BAPConObjectInFront` 0x08550e70 | `PLANE_FIRE.inFrontDistance` | ENGINE |
@@ -216,12 +216,15 @@ the page's referee. "Unused" marks a constant declared and never read.
 | strategic | keep ratios | 0.8 attack, 0.9 defence, 1.1 surplus | same, `releaseSurplus` | `SAI.attackKeep`, `defenceKeep`, `surplusKeep` (unused) | ENGINE |
 | strategic | neighbour factors | 1.5 hostile, 1.25 neutral | `calculateAttackValue` 0x0863e3f0, `calculateDefenseNeed` 0x0863e360 | `SAI.hostileNeighbour`, `neutralNeighbour` | ENGINE |
 | strategic | wanted | `round(2 max(1, present))`, x1.25 not owned | `AIStrategicArea::update` 0x0863d6d0 (`X` never written) | `SAI.wantedNotOwned` | ENGINE |
-| strategic | idle re-order | 20 s (35 s in a vehicle not built) | `SAI::updateBotPositions` 0x08635bc0 | `SAI.reorderIdle` | ENGINE |
-| strategic | order point | within 0.8 area radius, 20 tries | `AIStrategicArea::orderNormalBot` 0x08640bd0 | `SAI.randomizeFraction` | ENGINE |
-| strategic | order radius | `max(5, 0.25 area radius + 2 unit radius)` | `orderNormalBot`, `WPMoveTo` ctor | `SAI.waypointRadiusFraction`, `waypointRadiusMin` | ENGINE |
-| strategic | unit radius, unit value | 1, 1 | not read | `SAI.unitRadius`, `unitValue` | INVENTION |
-| strategic | order urgency | `clamp(d² / 4 Rr², 0.1, 1) x (2 / 1 / 0)`; arrived `d² < 2 Rr²` | `WPMoveTo::getUrgency` 0x085374a0 | `_order` | ENGINE |
-| strategic | owned-outside distance | `d² - area radius²` | | `_order` | UNSOURCED |
+| strategic | re-order | a free bot every 20 s; an arrived assigned bot after 20 s on foot, 35 s mounted, while it sees fewer than 2 objects | `SAI::updateBotPositions` 0x08635bc0 (AI-70) | `SAI.reorderIdle`, `reorderMounted`, `reorderSpottedMax` | ENGINE |
+| strategic | area geometry | the centre box `p1 .. 2 p2 - p1`; side radius `abs(p2 - p1)` (r for side 0) | `AIStrategicArea` ctor 0x0863c000, `isInside` 0x08641d40 (AI-70) | `strategic.js areaGeometry` | ENGINE |
+| strategic | order point | `randomizePos(0.8)`: per axis `p2 + rand W 0.8 - W / 2`, `W = 2 (p2 - p1)`, 20 tries on the unit's own map; else the unit type's order position if valid; else p2 | `AIStrategicArea::orderNormalBot` 0x08640bd0, `randomizePos` 0x086449e0, `getOrderPos` 0x0863e830 | `SAI.randomizeFraction`, `randomizePos`, `orderPosition` | ENGINE |
+| strategic | order radius | `max(5, 0.25 side radius + 2 bounding radius)` | `orderNormalBot`, `WPMoveTo` ctor 0x08537200 | `SAI.waypointRadiusFraction`, `waypointRadiusMin` | ENGINE |
+| strategic | bounding radius, unit value | 1 on foot (the page's 3 / 10 m mounted), 1 a soldier | not read | `SAI.unitRadius`, `unitValue`; `map.html botStrategicUnit` | INVENTION |
+| strategic | path radius | 1.0 on foot; `0.99 x max(0.5, radius)` mounted | `getMaxPathPosRemovalDistance` 0x0852b780 (the soldier's radius not read) | `bot.js _pathRadius` | ENGINE; the radii INVENTION |
+| strategic | order urgency | 0 inside `Rr = round(R) + path radius`; else `clamp(d² / 4 Rr², 0.1, 1) x (2 / 1 / 0)`; arrived `d² < 2 Rr²` | `WPMoveTo::getUrgency` 0x085374a0, `getMaxPathPosRemovalDistance` 0x0852b780 | `_order`, `bot.js _pathRadius` | ENGINE |
+| strategic | owned-outside distance | `d² - side radius²` | `WPMoveTo::getUrgency` (AI-70) | `_order` | ENGINE |
+| strategic | air order | p2 at ground + 75 m, radius `min(40, side radius)`, 120 m band, clearance 50; urgency 1 outside, else `(dy² + d²) / (R² + 120²)` | `orderAirBot` 0x08640810, `WPAltitudeMoveTo::getUrgency` 0x08535610 (AI-71) | `SAI.airOrderHeight`, `airRadiusMax`, `airVertical`, `airClearance`; `_orderAir` | ENGINE |
 | strategic | aggression default | 0.5; attacks 1, defences 0 | | `_distribute` | UNSOURCED |
 | strategic | enemy cost | 0 | `EnemyStatistics` not read | `_attackValue` | INVENTION |
 | strategic | security | 1 | not read | `map.html botOccupiedUnits` | INVENTION |
@@ -230,7 +233,7 @@ the page's referee. "Unused" marks a constant declared and never read.
 | page | soldier capsule | radius 0.6 m at +1.0 m | the height is `setCharacterHeight -1.00` (`physics.js CHARACTER_HEIGHT`) | `map.html BOT_BODY_RADIUS`, `BOT_BODY_HEIGHT` | INVENTION / CON |
 | page | round range | 600 m | | `map.html BOT_FIRE_RANGE` | UNSOURCED |
 | page | line of sight | a terrain march, at most 10 steps of 0.8 m, 0.5 m margin | | `map.html botLineOfSight` | INVENTION |
-| page | capture | the flag's radius (8 m fallback), `timeToGetControl` (8 s fallback), per bot | the level's control points | `map.html botCaptureTick`, `CAPTURE_FALLBACK_SECONDS` | CON; fallbacks UNSOURCED |
+| page | capture | the flag's radius (8 m fallback) in 3D from the controlled object, `timeToGetControl` (8 s fallback), per bot | the level's control points; `ControlPoint::handleFrameUpdate` 0x08283b00 (AI-70) | `map.html botCaptureTick`, `nearestEnemyFlag`, `CAPTURE_FALLBACK_SECONDS` | CON / ENGINE; fallbacks UNSOURCED |
 | page | candidate list | rebuilt every 0.5 s; doors recollected every 10 s | engine: the environment query | `map.html botVehicleCandidates` | INVENTION |
 | page | vehicle body radius | 3 m land, 10 m air / ship | | `map.html BOT_VEHICLE_RADIUS`, `BOT_VEHICLE_RADIUS_LARGE` | INVENTION |
 | page | soldier hit points | the kit's `maxHitpoints` (30 in vanilla), 30 fallback | `_shared/loadouts.json` | `map.html soldierMaxHp` | CON |

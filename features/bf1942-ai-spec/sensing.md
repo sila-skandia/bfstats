@@ -25,9 +25,14 @@ and a full field of view:
 `V` is the level's `aiSettings.setViewDistance` (El Alamein 300), else 600.
 The engine advances the sub-state per completed pass and restarts it when the
 camera turns past 25 / 15 / 7.5 deg; the viewer takes one sub-state a tick.
-**The test is yaw only** (bearing within half the field of view); the
-engine's is a 3D camera frustum, so a plane circling a soldier inside its
-turn never sees him (PARITY_STATUS open item 1).
+
+**The frustum is square and 3D about the camera** (`inFrustum`,
+`Frustum::setupFrustum(fov, 1.0, ...)` transformed by the camera, AI-67):
+with the camera's forward `f`, right `r` and up `u`, a point at offset `o`
+is inside when `a = o.f > 0`, `|o.r| <= tan(fov / 2) a` and `|o.u| <=
+tan(fov / 2) a`. The camera (`bot.js _cameraBasis`) is an aircraft's
+airframe; otherwise the look yaw (the turret's heading when mounted) with the
+soldier's pitch (the turret's elevation when mounted).
 
 Candidates, over `world.players` (the environment grid is a scan,
 INVENTION): not the bot's side, not a neutral non-unit, not destroyed,
@@ -44,9 +49,13 @@ by stance, the first at 1.0 m, jittered +-0.25 m sideways: INVENTION), each a
 target's (AI-62). One clear ray spots it: a memory record `{seen, lastSeen,
 lost, lostAt, pos, shots[], hits[]}`.
 
-*Example.* View 300 m: sub-state 0 covers 0..150 m inside +-50 deg, 1 covers
-150..225 m inside +-30 deg, 2 covers 225..300 m inside +-15 deg. A soldier at
-10 m gets `round(3) = 3` rays, at 100 m `round(0.3) -> 1`, at 2 m `15 -> 10`.
+*Example.* View 300 m: sub-state 0 covers 0..150 m inside +-50 deg across
+and up / down, 1 covers 150..225 m inside +-30 deg, 2 covers 225..300 m
+inside +-15 deg. A soldier 250 m ahead and 80 m below a bot looking level is
+17.7 deg down: outside sub-state 2's +-15 deg, the only band at that range,
+so he is not seen until the bot looks down or closes inside 225 m (the
+earlier bearing-only test saw him). A soldier at 10 m gets `round(3) = 3`
+rays, at 100 m `round(0.3) -> 1`, at 2 m `15 -> 10`.
 
 ## Memory (`updateMemory`)
 
@@ -55,8 +64,9 @@ Every tick, for every record:
 - dropped when the player is gone, on the bot's side now, or destroyed;
 - its position is the live one (the engine re-projects a body-fixed point
   through the live transform: a bot knows where a lost enemy is);
-- if inside the view distance and the widest field (100 deg, 75 mounted),
-  the rays are cast again: seen refreshes it; the first miss marks it lost at `now`;
+- if inside the view distance and the widest field's frustum (100 deg, 75
+  mounted), the rays are cast again: seen refreshes it; the first miss marks
+  it lost at `now`;
   a lost record is erased **60 s** after it was lost.
 
 The spotted list every behaviour scores is every record, seen or lost

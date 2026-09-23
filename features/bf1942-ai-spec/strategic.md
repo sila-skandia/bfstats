@@ -11,7 +11,9 @@ flag its side does not hold (the fallback at the end).
 `ai/StrategicAreas.con`, `conditions.con`, `prerequisites.con`,
 `Strategies.con` and `AI.con`:
 
-- **area**: `name`, a box `min..max` (x, z), `radius`, `flags` (`Base`,
+- **area**: `name`, the two points of `aiStrategicArea.create p1 p2 r` (kept
+  by the exporter as `min` / `max`: p1 is (min x, max z), p2 (max x, min z)
+  in the viewer's frame), `radius` r, `flags` (`Base`,
   `ControlPoint`, `Centre`, `Flank`, `ChokePoint`, `Close`, `AirField`,
   `StrongPoint`, `North`..., `Safe`), `neighbours` (the adjacency graph),
   `orderPositions` per vehicle type (`Infantery`, `Tank`, `Car`), `side`,
@@ -26,9 +28,18 @@ flag its side does not hold (the fallback at the end).
   `prerequisite`, `modifiers` (`flag`, `factor`, `owner` status or null).
 - `sideStrategies`: each side's strategy list, in `ai.addSAIStrategy` order.
 
+**Geometry** (`areaGeometry`, AI-70): p2 is the area's position (its
+middle) for both sides; the area is the **centre box** `p1 .. 2 p2 - p1`,
+twice the authored rectangle on each axis (`isInside`); a side's radius is
+`|p2 - p1|` for sides 1 and 2 and r for side 0 (`sideRadius`).
+
+*Example.* El Alamein's `easternbase`, r 200, p1 (1310, -1334), p2 (1360,
+-1384): the box is 100 x 100 m about p2, the side radius `hypot(50, 50) =
+70.7` m.
+
 **Ownership** is not authored per area (`StrategicLayer`): each control point
-binds to the area whose box grown by its radius holds it, nearest centre
-first, else the nearest centre (`bindFlags`, `areaAt`). An area's owner is
+binds to the area whose centre box grown by r holds it, nearest middle
+first, else the nearest middle (`bindFlags`, `areaAt`). An area's owner is
 the side holding all its control points, 0 when they are neutral or split,
 and the authored `side` for an area with none (`ownerOf`). Captures change it
 live. A side may not take an area marked `takeable <side> 0` or whose control
@@ -151,6 +162,13 @@ compound.
   bot of its kind (attack / defence) to its order position while it has
   fewer than `wanted`; repeat until no target takes one.
 - A bot left free is re-ordered to the area it stands in every 20 s.
+- **Arrived bots** (`_reorderArrived`, `SAI::updateBotPositions`): an
+  assigned bot whose order has arrived, standing in its assigned area and
+  seeing fewer than 2 objects, gets a fresh order into the same area (a new
+  random point) 20 s after its last order on foot, 35 s mounted.
+- **A new unit** (`botChangedUnit`, `SAI::handleChangingBot`): the page calls
+  it when a bot takes or leaves a seat; the bot loses its assignment and is
+  ordered afresh as the unit it now is at the next pass.
 
 *Example.* El Alamein, the Allies holding `easternbase` (radius 200, flags
 `StrongPoint ControlPoint Centre`), strategy `broad` (ControlPoint x2,
@@ -163,31 +181,60 @@ it gets an attack value only once the Axis holds `NorthBase`: its other
 neighbours are the two passes, which (see Ownership) are never Owned, and
 Allied areas.
 
-### 6. The order (`_order`, `WPMoveTo`)
+### 6. The order (`_order`, `WPMoveTo`; AI-70)
+
+The page describes the bot's unit (`unitOf`, PAGE `botStrategicUnit`): its
+search type (`Infantery`, `Tank`, `Car`, `Boat`, `LandingCraft`, `Plane`),
+the test of its own search map (the infantry map on foot, the vehicle map in
+a land vehicle, the water map afloat), its bounding radius (1 on foot, the
+page's vehicle radius mounted) and whether it is mounted or flying.
 
 ```
-base  = the area's Infantery order position, else its first control point, else its centre
-R     = max(5, 0.25 * area radius + 2 * unit radius)          unit radius 1 (INVENTION)
-point = base + a random offset inside 0.8 * area radius, the first of 20 draws on a walkable cell, else base
+point = randomizePos(area, 0.8): per axis p2 + rand * W * 0.8 - W / 2, W = 2 (p2 - p1)
+        (the corner's 80 % of the box, not a disc), the first of 20 draws on a valid
+        cell of the unit's map; else the unit type's order position when valid; else p2
+R     = max(5, 0.25 * side radius + 2 * bounding radius)
 ```
 
-`WPMoveTo.urgency(x, z, r)` with `Rr = R + r` and `d²` the squared distance
-to the point:
+`WPMoveTo.urgency(x, z, pathRadius)` with `Rr = round(R) + pathRadius` (the
+unit's `getMaxPathPosRemovalDistance`: 1.0 on foot, `0.99 x max(0.5, radius)`
+mounted; `bot.js _pathRadius`) and `d²` the squared distance to the point:
 
 ```
-not Owned:           factor 2
-Owned, inside area:  factor 0, d² = 0
-Owned, outside:      factor 1, d² = max(0, d² - area radius²)
-urgency = clamp(d² / (4 Rr²), 0.1, 1) x factor;   arrived when d² < 2 Rr²
+d² < Rr²:             arrived, urgency 0
+not Owned:            factor 2
+Owned, inside box:    factor 0, d² = 0
+Owned, outside:       factor 1, d² = d² - side radius²
+urgency = clamp(d² / (4 Rr²), 0.1, 1) x factor;   arrived again when d² < 2 Rr²
 ```
 
-The `d² - radius²` reduction for an owned area is the code's own; the
-research has `x1` only.
+*Example.* `easternbase` (side radius 70.7), a soldier of a side that does
+not hold it: `R = 0.25 x 70.7 + 2 = 19.7`, `Rr = 20 + 1 = 21`. From 60 m:
+`3600 / 1764 = 2.04 -> 1`, urgency 2, x1.5 (MoveTo's personality) = 3.0 in
+the contest. From 40 m: `1600 / 1764 = 0.907`, urgency 1.81, contest 2.72.
+Inside 21 m: arrived, 0. `AlliedBase` (p1 50 x 100 m from p2) gives `R =
+29.95`.
 
-*Example.* A 20 m area: `R = max(5, 5 + 2) = 7`, `Rr = 8`. From 60 m, not
-owned: `3600 / 256 = 14.1 -> 1`, urgency 2; x1.5 (MoveTo's personality) = 3.0
-in the contest. From 10 m: `100 / 256 = 0.39`, urgency 0.78, contest 1.17.
-Arrived inside 11.3 m. On El Alamein a 50 m area gives `R = 14.5`.
+**Regression (since `ee729113`).** The order no longer carries the
+`inside(x, z)` the bot reads for "inside the ordered area"
+(`bot.js _insideOrderedArea`, the medic's `insideMyArea`, the vehicle
+targeting's `insideArea`). `_insideOrderedArea` falls back to true, so the
+0.75 outside-area factors of Fire and Change never apply; the medic's call
+throws (`wp.inside is not a function`, `bot.js _urgencySpecial`) whenever a
+medic bot holding an order weighs a wounded friend. The headless runner
+records it as a `bot_error` event (synthetic level, seed 1: 248 in 30 s).
+
+### 7. The air order (`_orderAir`, AI-71)
+
+A flying unit is ordered to the area's own position p2 at the ground (or
+water) + 75 m, a `WPAltitudeMoveTo` of radius `min(40, side radius)`, a 120 m
+vertical band and a 50 m clearance (the move's, [controls.md](controls.md)):
+
+```
+urgency = 1 outside the radius across or the 120 m band, else (dy² + d²) / (R² + 120²)
+```
+
+It never reports arrival.
 
 ## The enemy strength tables
 
@@ -225,6 +272,15 @@ spawn loop places it (AI-38). The viewer:
 - a bot that makes no net progress toward its goal for 12 s while MoveTo
   is active is redeployed to its flag's next spawn point
   (`_updateObjectiveReadout`, PAGE `tickBots`; INVENTION).
+
+## Capture
+
+PAGE `botCaptureTick`: a bot within a flag's radius (8 m fallback) of a flag
+its side does not hold, measured in 3D from the unit it controls (the hull
+when mounted: `ControlPoint::handleFrameUpdate`, AI-70), takes it after the
+point's `timeToGetControl` (8 s fallback), straight to its side; the timer
+is per bot, restarts when the bot's nearest such flag changes, and does not
+check that the bot is alive.
 
 ## Without strategic data
 

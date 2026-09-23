@@ -125,9 +125,16 @@ function box(x0, x1, y0, y1, z0, z1) {
   return out;
 }
 
+/** An area as `aiStrategicArea.create p1 p2 r` makes it: p2 (`position`)
+ *  the area's middle, p1 (`corner`) a corner, the box `p1 .. 2 p2 - p1`
+ *  (strategic.js `areaGeometry`). `min` / `max` are the exporter's form of
+ *  the same two points: p1 = (min x, max z), p2 = (max x, min z). */
 function area(name, centre, half, radius, flags, neighbours, side, takeable = {}) {
+  const corner = [centre[0] - half, centre[2] + half];
+  const position = [centre[0], centre[2]];
   return {
-    name, min: [centre[0] - half, centre[2] - half], max: [centre[0] + half, centre[2] + half], radius,
+    name, corner, position,
+    min: [corner[0], position[1]], max: [position[0], corner[1]], radius,
     neighbours, flags, orderPositions: { Infantery: [centre[0], centre[2]], Tank: [centre[0], centre[2]], Car: [centre[0], centre[2]] },
     allowedVehicleGroups: [], side, vehicleSearchRadius: null, takeable,
   };

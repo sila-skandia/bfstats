@@ -117,7 +117,8 @@ async function runMatch(a) {
     `captures ${m.captures.total} (Axis ${m.captures[1]}, Allies ${m.captures[2]}), first ${m.timeToFirstCapture ? `${m.timeToFirstCapture.flag} at ${m.timeToFirstCapture.t} s` : 'none'}`,
     `kills Axis ${m.kills[1]} / Allies ${m.kills[2]}, deaths per capture ${m.deathsPerCapture ?? '-'}`,
     `vehicles ${m.vehicleUtilisation.vehicles}, mounts ${m.vehicleUtilisation.mounts}, mounted share ${m.vehicleUtilisation.mountedShare}`,
-    `route failures ${m.routeFailures.total}, redeploys ${m.redeploys}, strategy changes ${m.strategyChanges}`,
+    `route failures ${m.routeFailures.total}, redeploys ${m.redeploys}, strategy changes ${m.strategyChanges}`
+      + `${m.botErrors ? `, BOT ERRORS ${m.botErrors} (see the bot_error events)` : ''}`,
     `out: ${outDir}`,
   ];
   process.stdout.write(lines.join('\n') + '\n');
