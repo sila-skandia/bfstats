@@ -406,7 +406,7 @@ export class VehicleDamageSet {
     // (`hitPos + 0.1 * normal`, lnxded 0x08153f5e-0x08153f8f) while playing
     // the collision effect at the raw hit point (0x08153e5b). The end-of-life
     // explosion has no surface and no offset — it stands on the projectile's
-    // own position (0x0831f747) — so `#detonate` sets no `splashPoint` and
+    // own position (0x0831f747) — so `detonate` sets no `splashPoint` and
     // this falls through to `point`, which is right.
     const [bx, by, bz] = record.splashPoint || record.point || [];
     if (![bx, by, bz].every(Number.isFinite)) return [];
