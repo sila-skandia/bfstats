@@ -10,7 +10,7 @@ import { boardRows } from './scoreboard.js';
  * `page` is the test hooks' own bag; this part reads:
  * `applyVehicleHit`, `bfmap`, `collider`, `combatArea`, `combatFrame`, `comms`,
  * `extras`, `friendlyMapUnits`, `friendlyVehicleNodes`, `gameHud`,
- * `localMapTeam`, `mapGate`, `MINIMAP_TEAM_TINT`, `modeNote`,
+ * `localMapTeam`, `mapGate`, `mapVehicleMarks`, `MINIMAP_TEAM_TINT`, `modeNote`,
  * `paintScoreboard`, `params`, `roomClient`, `roomJoined`, `scoreboardOpen`,
  * `scoreboardPlayers`, `scoreFromSpawn`, `scoreLayout`, `setMapGate`,
  * `referee`, `setScoreboard`, `spawnersRoot`, `splashTargets`.
@@ -69,6 +69,12 @@ export function installWorldHooks(page) {
     tint: page.MINIMAP_TEAM_TINT[page.localMapTeam()] || null,
     onFoot: page.friendlyMapUnits(),
     crewed: [...page.friendlyVehicleNodes()].map(node => node.name),
+    // Every hull the surfaces draw this frame, with its mark and where it
+    // stands: the list a wreck or an enemy-crewed hull must be missing from.
+    vehicles: page.mapVehicleMarks().map(({ node, kind }) => {
+      const at = node.getWorldPosition(node.position.clone());
+      return { name: node.name, kind, x: Math.round(at.x), z: Math.round(at.z) };
+    }),
   });
   // The radio and the message log (comms.js): its state, a key press (the
   // browser pane never delivers a real F-key), and its event entry points.

@@ -1,10 +1,12 @@
-// The friendly units the map surfaces mark: the side the map is drawn for, the
-// on-foot teammates that get an arrow, the hulls a teammate is riding, and the
-// repaint key that changes as they move. Built by `map-surfaces.js`, which
-// hands in the four things these read: `world`, `LOCAL_PLAYER`,
-// `deployTeamId` and `mapVehicles`.
+// The units the map surfaces mark: the side the map is drawn for, the on-foot
+// teammates that get an arrow, the hulls it shows (`map-vehicle-marks.js`'s
+// rule) and which of them a teammate is riding, and the repaint key that
+// changes as they move. Built by `map-surfaces.js`, which hands in the things
+// these read: `world`, `LOCAL_PLAYER`, `deployTeamId`, `mapVehicles`,
+// `occupancy` and `vehicleSpawnActive`.
 
 import * as THREE from 'three';
+import { mapVehicleMark } from './map-vehicle-marks.js';
 
 export function createMapFriendlies(page) {
   // Scratch for the crewed hulls' pose in `friendlyMarkerKey`.
@@ -55,9 +57,33 @@ export function createMapFriendlies(page) {
     return out;
   }
 
-  /** The scene nodes a friendly is riding, so `drawVehicles` can tell an
-   *  occupied hull from a parked one. A Set rather than a walk per vehicle:
-   *  this runs once per surface, not once per spawner. */
+  /** The hull the map draws for a seat node: a carrier's AA gun is a seat of
+   *  the carrier. */
+  function hullOf(root) {
+    for (let n = root; n; n = n.parent) if (page.mapVehicles.includes(n)) return n;
+    return root;
+  }
+
+  /** Every living seated player's team, by the hull the map draws, the local
+   *  player included: `mapVehicleMark`'s occupant walk. */
+  function vehicleOccupantTeams() {
+    const out = new Map();
+    const players = page.world?.players;
+    if (!players) return out;
+    for (const [, player] of players) {
+      if (player.armor?.destroyed) continue;
+      const root = player.occupancy?.root;
+      if (!root) continue;
+      const hull = hullOf(root);
+      if (!out.has(hull)) out.set(hull, []);
+      out.get(hull).push(player.team);
+    }
+    return out;
+  }
+
+  /** The scene nodes a friendly (not the local player) is riding. A Set rather
+   *  than a walk per vehicle: this runs once per surface, not once per
+   *  spawner. */
   function friendlyVehicleNodes() {
     const out = new Set();
     const players = page.world?.players;
@@ -69,10 +95,33 @@ export function createMapFriendlies(page) {
       if (player.armor?.destroyed) continue;
       const root = player.occupancy?.root;
       if (!root) continue;
-      // The hull the map draws: a carrier's AA gun is a seat of the carrier.
-      let hull = root;
-      for (let n = root; n; n = n.parent) if (page.mapVehicles.includes(n)) { hull = n; break; }
-      out.add(hull);
+      out.add(hullOf(root));
+    }
+    return out;
+  }
+
+  /**
+   * The hulls the map surfaces draw, each with its mark (`'friendly'` or
+   * `'empty'`), by the client's own rule (`map-vehicle-marks.js`): a wreck,
+   * an unarmoured object and a hull the other side is crewing are not on the
+   * list. The local player's own hull is left out too: the ring is his mark,
+   * in a vehicle as on foot. A spawner whose flag is neutral has no hull.
+   */
+  function mapVehicleMarks() {
+    const out = [];
+    const localTeam = localMapTeam();
+    const crews = vehicleOccupantTeams();
+    const own = page.occupancy?.root ? hullOf(page.occupancy.root) : null;
+    for (const node of page.mapVehicles) {
+      if (node === own) continue;
+      if (!page.vehicleSpawnActive(node)) continue;
+      const armor = page.world?.damageableOf?.(node) ?? null;
+      const kind = mapVehicleMark({
+        hitPoints: armor?.hitPoints ?? 0,
+        occupantTeams: crews.get(node) ?? [],
+        localTeam,
+      });
+      if (kind) out.push({ node, kind });
     }
     return out;
   }
@@ -86,17 +135,24 @@ export function createMapFriendlies(page) {
     for (const { x, z, yaw } of friendlyMapUnits()) {
       key += `${Math.round(x)},${Math.round(z)},${Math.round(yaw * 10)};`;
     }
-    // A crewed hull moves and turns under its crew, so its pose is in the key
-    // the way an on-foot arrow's is.
-    for (const node of friendlyVehicleNodes()) {
-      node.getWorldPosition(vehiclePos);
-      node.getWorldQuaternion(vehicleQuat);
-      vehicleFwd.set(0, 0, -1).applyQuaternion(vehicleQuat);
-      key += `v${node.id},${Math.round(vehiclePos.x)},${Math.round(vehiclePos.z)},`
-        + `${Math.round(Math.atan2(vehicleFwd.x, -vehicleFwd.z) * 10)};`;
+    // Every drawn hull is in the key, so one that dies or comes back on its
+    // pad repaints the map; a crewed one moves and turns under its crew, so
+    // its pose is in the key the way an on-foot arrow's is.
+    for (const { node, kind } of mapVehicleMarks()) {
+      key += `v${node.id}`;
+      if (kind === 'friendly') {
+        node.getWorldPosition(vehiclePos);
+        node.getWorldQuaternion(vehicleQuat);
+        vehicleFwd.set(0, 0, -1).applyQuaternion(vehicleQuat);
+        key += `,${Math.round(vehiclePos.x)},${Math.round(vehiclePos.z)},`
+          + `${Math.round(Math.atan2(vehicleFwd.x, -vehicleFwd.z) * 10)}`;
+      }
+      key += ';';
     }
     return key;
   }
 
-  return { localMapTeam, friendlyMapUnits, friendlyVehicleNodes, friendlyMarkerKey };
+  return {
+    localMapTeam, friendlyMapUnits, friendlyVehicleNodes, mapVehicleMarks, friendlyMarkerKey,
+  };
 }
