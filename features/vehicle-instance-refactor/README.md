@@ -361,3 +361,84 @@ view by hook and by canvas click, weapon damage, display toggles, the envmap
 picker, the touchpad drag, the variant picker, the catalogue's search, facets
 and layouts, the engine and gear, and seat and orbit views. Both pages
 produced the same output, with no uncaught error.
+
+## Part 2d: the kit and grip inspectors, `kits.html` and `poses.html` (2026-09-23)
+
+The same pattern as Part 2c. `kits.html` went from 1,307 lines to 364 (its
+inline script from 800 to 267) and `poses.html` from 1,184 to 354 (782 to
+240). Each page is now its markup, the stage (renderer, scene, camera, orbit
+controls, lights), its loader (`showKit` / `loadPair`), the on-demand frame
+loop and the wiring. The stylesheets are `kits.css` and `poses.css`, and
+nginx revalidates both, plus `kits.html`, like the other pages. Code moved
+verbatim, and each module's header lists what `page` hands in.
+
+Shared by both pages. Each page had the same copy of these:
+
+| Module | Export | Lines | What it holds |
+|---|---|---|---|
+| `camera-glide.js` | `createCameraGlide` | 62 | the eased camera and target move, and its `cameraMove` |
+| `dispose-model.js` | `disposeModel` | 19 | freeing a glb's geometry, materials and textures |
+| `controls-collapse.js` | `installControlsCollapse` | 28 | the panel's collapse button and the stage's Controls button |
+
+`kits.html`:
+
+| Module | Object | Lines | What it holds |
+|---|---|---|---|
+| `kit-catalogue.js` | `catalogue` | 115 | kits.json, the pose matrix and models.json, with vanilla as the floor, and the kits built from them |
+| `kit-stance.js` | `kitStance` | 110 | the stance, its buttons, mixer and blend |
+| `kit-view.js` | `kitView` | 77 | framing off the posed joints, the head point, the figure/head buttons |
+| `kit-worn.js` | `kitWorn` | 139 | grafting worn parts onto bones, the hidden slots, the Worn panel |
+| `kit-panels.js` | `kitPanels` | 84 | the weapon rack and the Fields on panel |
+| `kit-picker.js` | `kitPicker` | 170 | the nation/class/soldier selects, the kit list and filter, the hash, the keys |
+
+`poses.html`:
+
+| Module | Object | Lines | What it holds |
+|---|---|---|---|
+| `pose-motion.js` | `poseMotion` | 301 | stance and motion, the stance and gait actions, the gait sidecars, the weight blend, buttons and gait readout |
+| `pose-view.js` | `poseView` | 91 | framing off the posed joints, the grip point, the figure/grip buttons |
+| `pose-pairs.js` | `posePairs` | 188 | the soldier/weapon selects and steppers, the pair list, the weld readout, the keys |
+| `pose-test-hooks.js` | (installs) | 80 | `window.__poseInspector`, same name and members |
+
+Shared state that went away:
+
+- `kits.html`'s page-wide `state`. The stance belongs to `kitStance`, the
+  hidden worn slots to `kitWorn` and the view to `kitView`. What is left is
+  the loader's own selection (kit, soldier, held), which the panels and the
+  picker read through getters.
+- The loaders no longer write other modules' state. `cameraMove = null` is
+  `cameraGlide.cancel()`. The mixer reset and clip binding is
+  `kitStance.bindFigure` / `poseMotion.bindFigure`, and `grafted = []` is
+  `kitWorn.forgetGrafts()`. A deep link's stance is `presetStance`, and
+  `poses.html`'s URL stance and motion are `presetStance` / `presetMotion`.
+- The `sampleCycle` hook cleared `poseBlend` and re-applied the target
+  weights itself. It now calls `poseMotion.settleWeights()`, which does the
+  same two things.
+
+Not shared, on purpose. The two pages' stance code is not the same code:
+`kits.html` has stills only, and `poses.html` adds gaits and a weight map.
+Their `refit`/`applyView` differ in the target joint and the distances.
+`kit-graft.js` was already shared with `seat-pose.js` and is still imported
+(by `kit-worn.js`). `kit-loadout.js`, `kit-icon.js` and `stance-clips.js`
+answer the map's questions (the deploy row's kit, the icon, the
+`prone`-named clip chains), not these pages', so nothing here duplicated
+them. `index.html` still has its own copy of `disposeModel` and the panel
+collapse. It can import the new modules later.
+
+No test read either page's script. `test_map_entry` reads their nav markup,
+which did not change, so `tests/page_source.py` is unchanged. Verified by
+serving a copy of each original page beside the new one and driving both
+headless with the same script, then diffing the JSON:
+
+- The kit page covers stance buttons and q/w/e, digits 1-3, every rack slot,
+  hiding and showing every worn slot, the nation/class/soldier selects,
+  arrow keys, the filter, list clicks, figure/head view, wireframe, axes,
+  spin, collapse and expand, and a deep link.
+- The grip page covers stance and motion buttons and keys, `sampleCycle`
+  per gait, the weapon steppers, arrow keys, both selects, the filter, sort
+  by worst weld, list clicks, figure/grip view, wireframe, skeleton, axes,
+  spin, collapse and expand, the hooks, and `?soldier&weapon&stance&motion`.
+
+The results matched, including the canvas samples, and neither page raised a
+console error. Both pages also load identically under `?mod=` for xpack1,
+xpack2 and eod.
