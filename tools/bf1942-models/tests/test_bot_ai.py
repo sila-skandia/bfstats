@@ -45,7 +45,7 @@ MODULES = {f"{name}.js": VIEWER / f"{name}.js" for name in _MODULE_NAMES}
 MODULES["world.mjs"] = VIEWER / "world.js"
 MODULES["bot.js"] = VIEWER / "bot.js"
 MODULES["nav-grid.js"] = VIEWER / "nav-grid.js"
-for _m in ("bot-sense.js", "bot-fire.js", "bot-behaviours.js", "bot-vehicle.js", "strategic.js"):
+for _m in ("bot-sense.js", "bot-fire.js", "bot-behaviours.js", "bot-vehicle.js", "bot-vehicle-air.js", "strategic.js"):
     MODULES[_m] = VIEWER / _m
 MODULES["node_modules/three/three.module.js"] = VIEWER / "vendor" / "three.module.js"
 THREE_PACKAGE = json.dumps({
@@ -179,6 +179,17 @@ class BotAiTests(unittest.TestCase):
         self.assertEqual(c["nearId"], "s")
         self.assertLess(c["far"], c["near"])
         self.assertEqual(c["none"], 0.0)
+
+    def test_the_plane_law_climbs_banks_and_runs_straight_on_the_ground(self) -> None:
+        a = self.results["air"]
+        self.assertEqual([round(v, 3) for v in a["fwd"]], [0.0, 0.0, -1.0])
+        self.assertLess(a["ahead"]["pitch"], 0.0)              # nose up is a negative stick
+        self.assertFalse(a["ahead"]["takeoff"])
+        self.assertGreater(a["right"]["roll"], 0.0)            # a point to the right banks right
+        self.assertTrue(a["ground"]["takeoff"])
+        self.assertEqual(a["ground"]["roll"], 0.0)
+        self.assertEqual(a["boatTurn"]["steer"], -1.0)         # full rudder past 30 deg, toward +yaw
+        self.assertGreater(a["boatAhead"]["throttle"], 0.9)
 
     def test_the_winner_is_moveto_with_no_target(self) -> None:
         self.assertEqual(self.results["moveTo"]["behaviour"], "MoveTo")

@@ -248,9 +248,15 @@ and `BBPMedicAssist::createPlan` **0x085bf350**, read in full 2026-09-23:
   (target exists && health < 0.95 && distance ≤ that && magazine has rounds)
   Parallel { LookAtObject within 5° (0.0873); Trigger PIFire }`.
 - The MedPack itself is a `HandFireArms` with no projectile (`magType 1`,
-  1800 "rounds", `roundOfFire 10`, `reloadtime 1.5`): the heal per round is
-  applied by the weapon, not the AI, and is **not read** — the viewer heals
-  0.5 hp a round (30 hp in 6 s, INVENTION).
+  1800 "rounds", `roundOfFire 10`, `reloadtime 1.5`). The heal is the
+  soldier's: `BFSoldier::useRepairPack` **0x08276100** queries the objects
+  within the template's reach radii (+0x2ec / +0x2f0, constructor defaults
+  3.0 and 2.0 m), takes the closest damaged armour whose owner is on the
+  same side, and calls `Armor::heal(+0x2e0)` — the constructor default
+  (`BFSoldierTemplate` **0x0827a210**) is **0.1**; no vanilla soldier con
+  overrides these. The caller's cadence is not read: taken as the 30 Hz
+  tick while the pack fires (INFERRED), so the viewer heals 0.3 a round at
+  10 rounds a second — 3 hp/s, a 30 hp soldier in 10 s.
 
 **Change** — `BBChange::calculateUrgency` **0x0855e0c0** scores nearby
 enterable vehicles against staying on foot ×1.25 through
@@ -472,6 +478,80 @@ modifyForDriver` **0x0855f7d0**, `getRadioStrength` **0x0855fc10**,
   Kubelwagen followed its route at up to 17 m/s; a Panzer IV left its
   compound on the tank map; a Sherman traversed onto a soldier 44 m ahead
   and killed him with the main gun and coaxial.
+
+## 9. Seats, bailing, the turn, aircraft and boats
+
+Read 2026-09-23 from `BBChange::isBailAllowed` **0x0855fd70**, the seated
+branch of `BBChange::calculateUrgency` **0x0855e0c0**, `BBMoveToFixed::
+calculateUrgency` **0x08575680**, `TankControl::turnTowardsDirection`
+**0x0862d630** and its three `tweak_*` data words, `CommonControls::
+actionStatusDecision` **0x0860fbe0**, `PlaneControl::towardsPoint`
+**0x08629730** / `towardsDirection` **0x0862a2a0**, `EntryPlaneMoveTo::
+execute` **0x08620220**, `BBPGotoWaypoint3d::createPlan` **0x085b81e0**,
+`BoatControl::towardsDirection` **0x0860df70** / `speedControl`
+**0x0860e130`, `EntryBoatMoveTo::execute` **0x08613d60** (ledger AI-46..AI-49).
+
+- **Every door is a Change candidate.** The seated branch iterates the
+  root's secondary seats (`+0x80` / `+0x78`) with `modifyForDriver` (0.5 for
+  a plane's seats, 0.77 for the 0x20 class, 1 otherwise); a seat's own
+  `aiTemplate` (the `seatsAi` block of `vehicle-ai.json`: `secondary 1`, its
+  `Unit` strengths, the FireArms it reaches through `addTemplate`) gives its
+  fire strength and value, and `calculateVehicleMoveUrgency` gives a rider
+  the hull's `maxSpeed × 4` only while someone drives it (`× 2.5` under a
+  bot driver whose order differs). A seat that does not drive registers
+  `BBMoveToFixed`, which publishes the order's urgency to the bot
+  (`+0x160`) and **returns 0**: a gunner or a fixed gun never walks.
+- **Bailing.** `isBailAllowed`: the soldier's own map must hold the hull's
+  position (`isValidPosition` on the infantry map; a vehicle-type unit or an
+  unoccupied one is refused when it does not), and no passenger object with
+  the +7 & 8 flag rides along. Seated, `staying = own seat urgency × 1.25
+  × modifyForDriver × radio`, 0 when upside down; the foot alternative is
+  `calculateVehicleUrgency(soldier)`; the environment's other units are
+  weighed only when not bailing; a bail doubles the urgency. The viewer
+  keeps a flying bot aboard until it is under 6 m (no parachute for a bot:
+  INVENTION).
+- **The turn and the reverse.** `turnTowardsDirection`: full lock away from
+  the angle's sign; `tweak_highThrottle` (1.0) while `|v| ≤ min(1, angle² ×
+  tweak_velocityLimitModifier 0.3)` else `tweak_lowThrottle` (0.4), signs
+  following the drive direction. `actionStatusDecision` returns the signed
+  angle (`−(acos(normal · dir) − π/2)`), the velocity's sign along the
+  heading, and the drive direction: forward when the wanted direction is
+  ahead of the beam (`forward · dir ≥ 0`); behind it a box test on the map
+  (`getBox`, `getIntersection`, `checkLineAgainstObjects`, the 1.2566 rad =
+  72° and half-box thresholds) decides between a reverse and a turn. The
+  viewer reverses for a target behind within three hull lengths (that box
+  test's branches are not reproduced: INVENTION).
+- **Aircraft.** The plan for a 3D waypoint is `MoveTo3d(point, point,
+  maxSpeed, ConPosition(point, 4 × unit radius))`; `towardsPoint` within
+  100 m of the point lifts the wanted height to ground / water plus the
+  move's clearance blended by `0.0001 × d²`, frames on the velocity over
+  100 m, and flags a takeoff run under 50 m/s while `speed / maxSpeed <
+  0.5`; `towardsDirection` probes 50 m along the plane's axes, rolls by the
+  wanted direction's right component, pitches by its up component × 0.5
+  plus stall / dive terms, yaws by a tenth of the lateral error, cuts the
+  bank above cos 0.866, levels a nose more than 50 m/s down, and shapes a
+  speed term `((e^(2.3 (1 − v/43)) − 1) / 9) × −0.833 + 0.333` into the pitch
+  limit (`ControlInfo` +0x104 / +0x108). Not read: the ControlInfo limits,
+  the stall / dive terms, the throttle channel's own write, `BBFire3d` /
+  `BBPFire3d`, `BBPIdle3d`, `BBRoam3d` (commented out in vanilla). The
+  viewer (`bot-vehicle-air.js`): full throttle, rotate at 35 m/s with the
+  stick (negative is nose up in the viewer's drivetrain), a wings-level
+  climb-out to 40 m, then the roll / pitch / yaw terms above with the bank
+  cut; `Fire` from a plane is a run at the target with the trigger held
+  inside a 5° nose cone (INVENTION). Verified live on El Alamein
+  (2026-09-23): a bot's Spitfire took off, climbed out to 60 m, reached its
+  ordered area (`goalReached`) and orbited it at 45..150 m and 32..48 m/s
+  for the whole 160 s run; three bf109s and a Stuka were taken by bots
+  unprompted.
+- **Boats.** `BoatControl::towardsDirection` takes `actionStatusDecision`'s
+  angle and direction into `speedControl`: full rudder past 30° (0.5236),
+  the throttle held while the heading is within cos 0.996, a 3 m/s speed
+  band and a 0.03 rudder dead band; `BBChangeTeleport` (boats) and
+  `BBFireLargeBore` are not read. The viewer's boat holds a straight line to
+  the point (no water bitmap: INVENTION) and fires through the turret plan.
+- **Fixed guns.** A `gun` root (AA, Defgun, a stationary MG) is a seat with
+  no drive: the bot's guns are its `aiWeapons`, MoveTo is 0, Fire through
+  the turret's traverse and elevation, Change against the foot.
 
 ## 10. Verified
 

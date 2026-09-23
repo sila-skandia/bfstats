@@ -14,6 +14,7 @@ import { BotController } from './bot.js';
 import { buildNavMap, gridAt, traceClear, CELL_OBJECT } from './nav-grid.js';
 import { Armor } from './armor.js';
 import { tankControl, unitUrgency, changeUrgency, orderSplit, TANK } from './bot-vehicle.js';
+import { planeControl, boatControl, rotate } from './bot-vehicle-air.js';
 
 // The level sits in the map's own frame: x in [0, worldSize], z in
 // [-worldSize, 0] (the exporter negates z). Home at (100, -100), the enemy
@@ -318,8 +319,26 @@ function changeScenario() {
   return { foot, sherman, willy, near: near.urgency, nearId: near.best?.id ?? null, far: far.urgency, none: none.urgency, split };
 }
 
+/** The plane law: level flight toward a point ahead and above wants nose
+ *  up (a negative stick), a point to the right rolls positive, a plane on
+ *  the ground runs straight; the boat's helm turns full rudder past 30 deg. */
+function airScenario() {
+  const level = { x: 0, y: 0, z: 0, w: 1 };            // nose along -z
+  const ahead = planeControl({ orientation: level, position: [0, 200, 0], velocity: [0, 0, -60],
+                               target: [0, 260, -1000], groundY: 0, targetGroundY: 0, maxSpeed: 60, radius: 10 });
+  const right = planeControl({ orientation: level, position: [0, 200, 0], velocity: [0, 0, -60],
+                               target: [500, 200, -500], groundY: 0, targetGroundY: 0, maxSpeed: 60, radius: 10 });
+  const ground = planeControl({ orientation: level, position: [0, 1, 0], velocity: [0, 0, -5],
+                                target: [0, 200, -1000], groundY: 0, targetGroundY: 0, maxSpeed: 60, radius: 10 });
+  const boatTurn = boatControl({ forward: [0, 1], velocity: [0, 3], toTarget: [100, 20], radius: 10 });
+  const boatAhead = boatControl({ forward: [0, 1], velocity: [0, 3], toTarget: [0, 200], radius: 10 });
+  const fwd = rotate(level, [0, 0, -1]);
+  return { ahead, right, ground, boatTurn, boatAhead, fwd };
+}
+
 const results = {
   medic: medicScenario(),
+  air: airScenario(),
   tankLaw: tankLawScenario(),
   change: changeScenario(),
   tickDt: WORLD_TICK_DT,
