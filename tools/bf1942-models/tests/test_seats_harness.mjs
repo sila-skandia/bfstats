@@ -17,6 +17,7 @@ import {
   listEntryPoints, pickNearest, TIE_EPSILON, VehicleOccupancy, TurretAxis,
   TurretRig, FireState, chainOnShot, readWorldPose, AIM_INPUTS, hasAimAxes,
   TURRET_ACCELERATION, axisPeerNodes, turretPeerNodes, detachSpawnedCraft,
+  spawnHoldOf,
 } from './seats.js';
 
 const results = {};
@@ -1113,29 +1114,51 @@ function cadenceRig(stats) {
 }
 
 // A ship's ObjectSpawner craft: a nested PCO with a body (`physics.mass`) in
-// the sea category leaves its carrier for the `spawners` group, world pose
-// kept; a seat PCO (no mass) and a deck aircraft (VCAir) stay.
+// the sea or the air category leaves its carrier for the `spawners` group,
+// world pose kept; a seat PCO (no mass) stays, and so does a plane's own
+// gunner seat under the plane. A deck aircraft keeps its spawner's hold: its
+// ship and its pose on her.
 {
   const pco = (name, physics, ...kids) => node(name, { templateKind: 'PlayerControlObject', control: name, physics }, ...kids);
   const craft = pco('Daihatsu', { mass: 30000, vehicleCategory: 'VCSea' });
   craft.position.set(10, 2, -30);
   const seat = pco('HatsuzukiDeckMG42PCO', { vehicleCategory: 'VCSea' });
-  const plane = pco('Zero', { mass: 2500, vehicleCategory: 'VCAir' });
-  const ship = pco('Hatsuzuki', { mass: 1e6, vehicleCategory: 'VCSea' }, craft, seat, plane);
+  const gunner = pco('AichiValRearGunControl', { vehicleCategory: 'VCLand' });
+  const plane = pco('Zero', { mass: 2500, vehicleCategory: 'VCAir' }, gunner);
+  plane.position.set(-7.9, 13.6, 47);
+  plane.rotation.x = 0.2;
+  const deck = node('ShokakuComplex', {}, plane);
+  const ship = pco('Hatsuzuki', { mass: 1e6, vehicleCategory: 'VCSea' }, craft, seat, deck);
   ship.position.set(600, 90, -1400);
   ship.rotation.y = 0.5;
   const spawners = node('spawners', { kind: 'spawners' }, ship);
   const root = node('level', {}, spawners);
   root.updateMatrixWorld(true);
   const before = craft.getWorldPosition(new THREE.Vector3());
+  const planeBefore = plane.matrixWorld.clone();
   const moved = detachSpawnedCraft(root);
   root.updateMatrixWorld(true);
   const after = craft.getWorldPosition(new THREE.Vector3());
+  const planeDrift = Math.max(...plane.matrixWorld.elements.map((v, i) => Math.abs(v - planeBefore.elements[i])));
+  const hold = spawnHoldOf(plane);
+  // The ship moves 200 m and turns: the hold's pose follows her.
+  ship.position.x += 200;
+  ship.rotation.y += 0.3;
+  root.updateMatrixWorld(true);
+  const held = ship.matrixWorld.clone().multiply(hold.local);
+  const onDeck = deck.matrixWorld.clone().multiply(new THREE.Matrix4().compose(
+    new THREE.Vector3(-7.9, 13.6, 47), new THREE.Quaternion().setFromEuler(new THREE.Euler(0.2, 0, 0)),
+    new THREE.Vector3(1, 1, 1)));
   results.spawnedCraft = {
     moved: moved.map(o => o.name),
     craftParent: craft.parent?.name, seatParent: seat.parent?.name, planeParent: plane.parent?.name,
+    gunnerParent: gunner.parent?.name,
     drift: round(before.distanceTo(after), 6),
+    planeDrift: round(planeDrift, 6),
     roots: findAllVehicleRoots(root).map(o => o.name).sort(),
+    holdHost: hold?.host?.name ?? null,
+    craftHold: spawnHoldOf(craft),
+    heldOffDeck: round(Math.max(...held.elements.map((v, i) => Math.abs(v - onDeck.elements[i]))), 6),
   };
 }
 

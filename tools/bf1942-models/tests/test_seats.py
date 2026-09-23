@@ -120,12 +120,25 @@ class SeatsModuleTests(unittest.TestCase):
         # `HatsuzukiDaihatsuSpawner` & co.: the engine spawns the craft as an
         # object of its own; the exporter bakes it under the ship.
         c = self.results["spawnedCraft"]
-        self.assertEqual(c["moved"], ["Daihatsu"])
         self.assertEqual(c["craftParent"], "spawners")
         self.assertEqual(c["seatParent"], "Hatsuzuki")
-        self.assertEqual(c["planeParent"], "Hatsuzuki")
         self.assertEqual(c["drift"], 0)
-        self.assertEqual(c["roots"], ["Daihatsu", "Hatsuzuki"])
+        self.assertIsNone(c["craftHold"])
+
+    def test_a_carriers_deck_aircraft_is_split_off_and_held(self) -> None:
+        # Brief Q: `Enterprise_corsairSpawner` / `ShokakuZeroSpawner` spawn the
+        # plane as an object of its own (`ObjectSpawner::spawnObject`
+        # 0x083140a0); a nested VCAir PCO with mass leaves the ship, its own
+        # gunner seat (no mass) goes with it, and the spawner's hold keeps the
+        # ship and the pose on her, which follows her when she moves.
+        c = self.results["spawnedCraft"]
+        self.assertEqual(c["moved"], ["Daihatsu", "Zero"])
+        self.assertEqual(c["planeParent"], "spawners")
+        self.assertEqual(c["gunnerParent"], "Zero")
+        self.assertEqual(c["planeDrift"], 0)
+        self.assertEqual(c["roots"], ["Daihatsu", "Hatsuzuki", "Zero"])
+        self.assertEqual(c["holdHost"], "Hatsuzuki")
+        self.assertLess(c["heldOffDeck"], 1e-9)
 
     def test_defgun_root_is_a_manned_gun(self) -> None:
         self.assertEqual("gun", self.results["classify"]["defgunRoot"])
