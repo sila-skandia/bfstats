@@ -11,8 +11,10 @@ import { Hud } from './hud.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `bust`, `deployActive`, `drawFullMap`, `hud`, `hudPaths`,
- * `paintDeploySoon`, `updateHud`, `updateSeatPoseVisibility`.
+ * `aircraft`, `bust`, `car`, `deployActive`, `drawFullMap`, `hud`,
+ * `HUD_DRIVE`, `HUD_FLY`, `HUD_FOOT`, `HUD_PILOT`, `hudPaths`,
+ * `isTouchDevice`, `mannedActive`, `navMode`, `occupancy`, `optOnFoot`,
+ * `optPilot`, `paintDeploySoon`, `soldier`, `updateSeatPoseVisibility`.
  */
 export function createHudFeed(page) {
   const hudFeed = {};
@@ -41,12 +43,48 @@ export function createHudFeed(page) {
     // The soldier's own names (`soldier-camera.js`).
     inside: 'first person · through the soldier\'s own eyes',
   };
+  // The HUD line: the mode's own hint, the touch hint on a touch device, and
+  // a flash that hands the line back to them (`flashHud`).
+  function getTouchHudText() {
+    if (page.optPilot.checked && page.occupancy) {
+      if (page.mannedActive()) return 'Pad aims · FIRE shoots · ENTER exits';
+      if (page.car) return 'Pad drives · FIRE main gun · ENTER exits';
+      if (page.aircraft) return 'Pad pitch/roll · THR power · FIRE guns · ENTER exits';
+    }
+    if (page.optOnFoot.checked && page.soldier) {
+      return 'Pad moves · drag scene to look · FIRE shoots · JUMP jumps · ENTER vehicles';
+    }
+    return page.navMode === 'fly'
+      ? 'Hold to fly · Drag to steer · 2-finger pan'
+      : 'Drag to pan · Pinch to zoom';
+  }
+  function updateHud() {
+    if (page.isTouchDevice) {
+      page.hud.textContent = getTouchHudText();
+      return;
+    }
+    if (page.optPilot.checked) {
+      page.hud.textContent = page.car ? page.HUD_DRIVE : page.HUD_PILOT;
+    } else if (page.optOnFoot.checked) {
+      page.hud.textContent = page.HUD_FOOT;
+    } else if (page.isTouchDevice) {
+      page.hud.textContent = getTouchHudText();
+    } else {
+      page.hud.textContent = page.HUD_FLY;
+    }
+  }
+  /** The line for a mode whose desktop hint is `text` (the touch hint on a
+   *  touch device). */
+  function showHint(text) {
+    page.hud.textContent = page.isTouchDevice ? getTouchHudText() : text;
+  }
+
   let hudViewTimer = 0;
   /** Put `text` on the HUD line for a beat, then give it back to `updateHud`. */
   function flashHud(text) {
     page.hud.textContent = text;
     clearTimeout(hudViewTimer);
-    hudViewTimer = setTimeout(page.updateHud, 2200);
+    hudViewTimer = setTimeout(updateHud, 2200);
   }
   function showView(mode) {
     flashHud(`view: ${VIEW_BLURB[mode]}`);
@@ -144,6 +182,9 @@ export function createHudFeed(page) {
   window.__hud = gameHud;
 
   Object.assign(hudFeed, {
+    getTouchHudText,
+    showHint,
+    updateHud,
     flashHud,
     gameHud,
     hudPack,
