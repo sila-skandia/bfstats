@@ -69,6 +69,15 @@
    "note": "bf42plus section: Other Functions"
   },
   {
+   "address": "0x00406840",
+   "name": "object_queryPlayerControlObject",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-map-icons",
+   "note": "Walks IID_IPlayerObject (0xc378) up the +0x50 parents and returns the first queryInterface(0xc4c5 IID_IPlayerControlObject), else 0. Used by BfMap__update's vehicle pass (0x0046b6b6) and the client ObjectSpawner (0x0054710c). Ledger MMAP-3."
+  },
+  {
    "address": "0x00406a20",
    "name": "GameClient__func_406A20",
    "kind": "function",
@@ -519,6 +528,24 @@
    "note": "Concatenates '../../' + level path + 'Textures/InGameMap.tga' (string 0x008d56f8) to name the one map texture"
   },
   {
+   "address": "0x0045cff0",
+   "name": "BfMenu__gameModeIs3",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-map-icons",
+   "note": "return BfMenu+0x6dc == 3. With 0x0045d050 (+0x6dc in {0,1,4}) it gates BfMap__update's vehicle range clause (0x0046b50c). Ledger MMAP-3."
+  },
+  {
+   "address": "0x0045d050",
+   "name": "BfMenu__gameModeIs014",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-map-icons",
+   "note": "return BfMenu+0x6dc in {0,1,4}. See 0x0045cff0. Ledger MMAP-3."
+  },
+  {
    "address": "0x0045d110",
    "name": "BfMenu__func_45D110",
    "kind": "function",
@@ -931,6 +958,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Return Address Checks (for context)"
+  },
+  {
+   "address": "0x0046b45f",
+   "name": "BfMap__update_vehiclePass",
+   "kind": "range",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-09-24-map-icons",
+   "note": "0x0046b45f..0x0046bc5f: the pco-map loop of BfMap__update. Root, not destroyed, Armor hp > 0; held team +0x11a; occupant teams; empty grey 0.574. Ledger MMAP-3."
   },
   {
    "address": "0x0046b802",
