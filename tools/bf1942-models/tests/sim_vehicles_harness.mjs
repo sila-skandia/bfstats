@@ -179,11 +179,17 @@ const recipes = {
   },
 
   /** A fixed gun: a bot takes an AA gun (`bot-units.js` lists the level's
-   *  `gun` roots; it has no drive) and fires at a frozen soldier 60 m down
-   *  its rest line. The gun sits in a sandbag pit whose lip is above its
-   *  muzzle, so a soldier on the flat is out of its reach: the rounds fly
-   *  and land on the sandbags, which is the page's flight and impact. */
-  async fixedGun() {
+   *  `gun` roots; it has no drive) and fires at a frozen soldier down its
+   *  rest line. The gun sits in a sandbag pit whose lip is above its
+   *  muzzle. A Fixed unit's Fire is `BBFireInfantery` (Brief R, ledger
+   *  AI-122): it scores only what its side has spotted, and in range only
+   *  with a clear line from its camera, so the soldier stands at the first
+   *  spot 40 m or more out (and within 30 m of the rest line) that the
+   *  seat's camera sees at 0.3 m (the lowest of the page's soldier sense
+   *  heights): the lip hides the flat, a rise 100 m out does not (`hidden`
+   *  plants him 60 m out behind the lip instead: no spot, no round). The
+   *  rounds fly and land, which is the page's flight and impact. */
+  async fixedGun(hidden = false) {
     const match = await start('el_alamein');
     const b = bot(match, 'bot_1');
     const target = match.bots.find(o => o.team !== b.team);
@@ -191,7 +197,26 @@ const recipes = {
     freezeOthers(match, [b.playerId]);
     run(match, 1);
     const h = hullFrame(match, b);
-    plant(match, target, h.x + h.fx * 60, h.z + h.fz * 60, Math.atan2(-h.fx, -h.fz));
+    const seat = b.vehicle.occupancy;
+    const cam = seat.seatInfo(seat.seatId)?.camera;
+    cam.updateWorldMatrix(true, false);
+    const eye = [cam.matrixWorld.elements[12], cam.matrixWorld.elements[13], cam.matrixWorld.elements[14]];
+    const collider = match.stage.collider;
+    const sees = (x, z, up = 0.3) => {
+      const to = [x, match.groundAt(x, z) + up, z];
+      const d = [to[0] - eye[0], to[1] - eye[1], to[2] - eye[2]];
+      const len = Math.hypot(...d);
+      return !collider.cast(eye[0], eye[1], eye[2], d[0] / len, d[1] / len, d[2] / len, len - 0.05, b._selfOwner());
+    };
+    let spot = null;
+    for (let r = 40; !hidden && r <= 200 && !spot; r += 5) {
+      for (const s of [0, 10, -10, 20, -20, 30, -30]) {
+        const x = h.x + h.fx * r - h.fz * s, z = h.z + h.fz * r + h.fx * s;
+        if (sees(x, z)) { spot = [x, z]; break; }
+      }
+    }
+    spot ??= [h.x + h.fx * 60, h.z + h.fz * 60];
+    plant(match, target, spot[0], spot[1], Math.atan2(-h.fx, -h.fz));
     const armor = match.world.armorOf(target.playerId);
     const hp = armor.hitPoints;
     let bodyHits = 0;
@@ -203,15 +228,19 @@ const recipes = {
       if (record?.target === target.playerId) bodyHits++;
       onImpact(record);
     };
-    run(match, 20, () => armor.destroyed);
+    // The gun first finds him by its Scout sweep (about 20 s here).
+    run(match, 45, () => armor.destroyed);
     const kill = eventsOf(match, 'kill').find(e => e.victim === target.playerId) ?? null;
     return {
       kind: cand.kind, seat: b.vehicle?.seatId ?? null, drive: !!b.vehicle?.drive,
       rounds: match.stats.get(b.playerId).vehicleRounds, landed: Object.fromEntries(landed), bodyHits,
       lost: round(hp - armor.hitPoints), killed: armor.destroyed, kill,
       fired: eventsOf(match, 'vehicle_fire').map(e => `${e.kind}:${e.template}:${e.gun}`),
+      spot: round(Math.hypot(spot[0] - h.x, spot[1] - h.z)), spotted: !!b.senses.memory.get(target.playerId),
     };
   },
+
+  async fixedGunHidden() { return recipes.fixedGun(true); },
 
   /** Brief K item 1: a bot takes a fixed gun by itself. An Allied bot stands
    *  30 m from the free AA gun by the airfield (the only unit within the

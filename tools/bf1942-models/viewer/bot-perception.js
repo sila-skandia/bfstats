@@ -4,7 +4,7 @@
 // on foot and mounted. Plain functions of the `BotController` (bot.js),
 // which delegates its methods here.
 
-import { lineClear, playerPosition } from './bot-sense.js';
+import { lineClear, playerPosition, bakedToWorld } from './bot-sense.js';
 import { scoreTargets, scoreVehicleTargets, SOLDIER_BATTLE_STRENGTH, VEHICLE_FIRE } from './bot-fire.js';
 import { QUADRANTS, quadrantOf } from './bot-behaviours.js';
 import { TANK } from './bot-vehicle.js';
@@ -104,11 +104,33 @@ export function sense(bot, now) {
   return { targetId: t.targetId, targetPos: t.targetPos };
 }
 
+/**
+ * Where a bot's sense rays start: its camera (Brief R item 1, ledger
+ * AI-121). `BotMain::sense` 0x08521cf0 and `updateMemory` 0x085244e0 take the
+ * ray origin from row 3 of `AIPlayer::getCameraTransformation` 0x085dcdb0,
+ * which is `BFPlayer::getCamera` 0x08054ce0 (the player's +0x50); `BFPlayer::
+ * _setVehicle` 0x080523d0 sets that to the first camera of the
+ * PlayerControlObject the player sits in (the seat's `Camera` child), so a
+ * mounted bot sees from its seat's camera node, not from a height over the
+ * hull origin. A seat whose survey found no camera keeps the old stand-in
+ * (`_eye()`, 2 m over the origin: INVENTION).
+ */
+export function sensingEye(bot) {
+  const seat = bot.vehicle?.occupancy;
+  const cam = seat?.seatInfo?.(seat.seatId)?.camera ?? null;
+  if (cam?.matrixWorld) {
+    cam.updateWorldMatrix?.(true, false);
+    const e = cam.matrixWorld.elements;
+    return [e[12], e[13], e[14]];
+  }
+  return bot._eye();
+}
+
 /** One sensing pass plus the memory update. */
 export function sensePass(bot, now, dt) {
   const me = bot._player();
   if (!me || !bot.world?.players) return;
-  const eye = bot._eye();
+  const eye = bot.vehicle ? sensingEye(bot) : bot._eye();
   // A seated bot looks where its gun points (the turret's heading), not
   // where the hull does.
   const lookYaw = bot.vehicle ? (bot._aimReference()?.yaw ?? bot.yaw) : bot.yaw;
@@ -215,8 +237,38 @@ export function chooseVehicleTarget(bot, now) {
     currentTarget: bot.firingTarget, currentScore: bot.targetScore,
     insideOrderedArea: bot._insideOrderedArea(),
     insideArea: bot.waypoints?.inside ? (pos) => bot.waypoints.inside(pos[0], pos[2]) : null,
-    vetoed: bot.vetoedTargets, aimable, mode: air ? 'air' : 'largeBore',
+    vetoed: bot.vetoedTargets, aimable, mode: air ? 'air' : fireMode(m),
+    fixed: FIXED_EQUIPMENT.has(m.equipmentType) || !m.drives,
+    lineOfFire: (rec) => {
+      const p = bot.world?.players?.get(rec.id);
+      const owner = p ? bot.senses?.unitOwnerOf?.(p) ?? -1 : -1;
+      // The memory record's sense point (+4..+0xc, the one that saw it),
+      // through the target's live transform; a soldier's as its offset
+      // from his feet (the engine keeps a bone index, +0x10).
+      const off = rec.offset ?? [0, 1.0, 0];
+      const to = rec.local && owner >= 0 ? bakedToWorld(bot.world?.collider, owner, rec.local)
+        : [rec.pos[0] + off[0], rec.pos[1] + off[1], rec.pos[2] + off[2]];
+      return lineClear(bot.world?.collider, sensingEye(bot), to, [bot._selfOwner(), owner]);
+    },
   });
+}
+
+/**
+ * Which Fire behaviour a mounted unit runs: its `aiTemplatePlugIn.
+ * equipmentType` is its row of `AIbehaviours.con`'s `setVehicle` list, and
+ * that file gives `BBFireInfantery` (`BBFire::calculateUrgency` 0x08563570)
+ * to Tank (0), Fixed (4) and LandingCraftFixed (11), `BBFireLargeBore`
+ * (0x0856b390) to Boat (2), BoatFixed (9) and FixedLargeBore (13), and
+ * `BBFire3d` to Plane (Brief R item 2, ledger AI-122). The ledger's AI-54
+ * had every hull and seat on the large-bore rule. A tree without the field
+ * takes a driven tank for a Tank (INFERRED, as `approachesByFinding`) and
+ * keeps the large-bore rule for the rest.
+ */
+const INFANTRY_FIRE_EQUIPMENT = new Set([0, 4, 11]);
+const FIXED_EQUIPMENT = new Set([4, 11]);
+export function fireMode(m) {
+  if (Number.isInteger(m?.equipmentType)) return INFANTRY_FIRE_EQUIPMENT.has(m.equipmentType) ? 'infantry' : 'largeBore';
+  return m?.drives && m?.kind === 'tank' ? 'infantry' : 'largeBore';
 }
 
 /** What a target is: the page's description, else an infantryman. */

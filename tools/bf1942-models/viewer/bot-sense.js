@@ -322,6 +322,94 @@ export function lineClear(collider, from, to, skip = -1) {
 }
 
 /**
+ * A sense point on a hull (Brief R item 1, ledger AI-121).
+ * `BFEnvironment::pickRandomSensePosition` 0x085e4080 (environment vt+0x5c,
+ * called by `BotMain::sense` 0x08521cf0 for every ray but the first on an
+ * object whose Information flags lack 0x400000, and by `updateMemory`
+ * 0x085244e0): the object's highest-LOD children that pass the collision
+ * predicate, one of them at random, its collision mesh, one face at random
+ * (`Rand` over the face count), a uniform point on that triangle (two
+ * draws, folded when their sum passes 1), through the child's world
+ * transform; an object with no collision mesh answers its own position. The
+ * point is also handed back in the object's frame, which `updateMemory`
+ * keeps and re-projects through the live transform. Here the hull's
+ * triangles are the collider's baked world-space ones for its owner, one
+ * pool per hull (the engine's pick of a child first, then a face, is not
+ * kept: INVENTION of weighting), and the "local" frame is the baked one,
+ * taken to the world through the moved owner's matrix.
+ */
+const OWNER_TRIANGLES = new WeakMap();
+
+function ownerTriangles(statics, owner) {
+  if (!statics?.owners || !statics.tris) return null;
+  let byOwner = OWNER_TRIANGLES.get(statics);
+  if (!byOwner) { byOwner = new Map(); OWNER_TRIANGLES.set(statics, byOwner); }
+  let list = byOwner.get(owner);
+  if (list === undefined) {
+    const found = [];
+    const owners = statics.owners;
+    for (let i = 0; i < owners.length; i++) if (owners[i] === owner) found.push(i);
+    list = found.length ? Int32Array.from(found) : null;
+    byOwner.set(owner, list);
+  }
+  return list;
+}
+
+/** The radius the ray count takes for a hull (`BotMain::sense` 0x085220d8:
+ *  the candidate's vt+0x48): half the diagonal of its triangles' box
+ *  (INFERRED: the object's bounding radius). */
+const OWNER_RADIUS = new WeakMap();
+export function hullRadius(collider, owner) {
+  const statics = collider?.statics;
+  const list = ownerTriangles(statics, owner);
+  if (!list) return null;
+  let byOwner = OWNER_RADIUS.get(statics);
+  if (!byOwner) { byOwner = new Map(); OWNER_RADIUS.set(statics, byOwner); }
+  let r = byOwner.get(owner);
+  if (r === undefined) {
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    const v = statics.tris;
+    for (const t of list) {
+      for (let k = 0; k < 9; k++) {
+        const c = k % 3, x = v[t * 9 + k];
+        if (x < lo[c]) lo[c] = x;
+        if (x > hi[c]) hi[c] = x;
+      }
+    }
+    r = 0.5 * Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+    byOwner.set(owner, r);
+  }
+  return r;
+}
+
+/** A random point on `owner`'s collision triangles, in the baked frame, or
+ *  null when the collider holds none for it. */
+export function hullSensePoint(collider, owner, random = Math.random) {
+  if (owner === null || owner === undefined || owner < 0) return null;
+  const statics = collider?.statics;
+  const list = ownerTriangles(statics, owner);
+  if (!list) return null;
+  const t = list[Math.min(list.length - 1, Math.floor(random() * list.length))] * 9;
+  const v = statics.tris;
+  let a = random(), b = random();
+  if (a + b > 1) { a = 1 - a; b = 1 - b; }
+  const p = [0, 0, 0];
+  for (let k = 0; k < 3; k++) p[k] = v[t + k] + a * (v[t + 3 + k] - v[t + k]) + b * (v[t + 6 + k] - v[t + k]);
+  return p;
+}
+
+/** A baked-frame point of `owner` where it is now (the moved owner's
+ *  matrix, `WorldCollider.setMovedOwner`), else as baked. */
+export function bakedToWorld(collider, owner, p) {
+  const m = collider?.moved?.get?.(owner);
+  if (!m) return [p[0], p[1], p[2]];
+  const e = m.fwd;
+  return [e[0] * p[0] + e[4] * p[1] + e[8] * p[2] + e[12],
+          e[1] * p[0] + e[5] * p[1] + e[9] * p[2] + e[13],
+          e[2] * p[0] + e[6] * p[1] + e[10] * p[2] + e[14]];
+}
+
+/**
  * The frustum test of `BotMain::sense` 0x08521cf0: `Frustum::setupFrustum
  * (fov, 1.0, 0.01, viewDistance)` 0x08440c70 transformed by
  * `AIPlayer::getCameraTransformation`, so a SQUARE frustum (aspect 1.0) about
@@ -436,11 +524,15 @@ export class BotSenses {
       candidates++;
       this.knowledge?.contact(id, now);                     // getInformation(own side), before the rays
       if (this.memory.has(id)) continue;                    // updateMemory re-tests those
-      if (this._rays(world.collider, eye, player, pos, d)) {
+      const ray = this._rays(world.collider, eye, player, pos, d);
+      if (ray) {
         // The record also carries the per-weapon shots fired at this target
-        // and hits on it (+0x34 / +0x54), the Fire behaviour's miss penalty.
+        // and hits on it (+0x34 / +0x54), the Fire behaviour's miss penalty,
+        // and the sense point that saw it in the hull's frame (+4..+0xc,
+        // which `updateMemory` 0x085244e0 re-tests second).
         this.memory.set(id, { id, seen: true, lastSeen: now, lost: false, lostAt: null,
-                              pos: [...pos], team: player.team ?? 0, shots: [], hits: [] });
+                              pos: [...pos], team: player.team ?? 0, shots: [], hits: [],
+                              local: ray.local ?? null, offset: ray.offset ?? null });
         this._spotted(now, world, id, player);
       }
     }
@@ -448,8 +540,40 @@ export class BotSenses {
     this.substate = (sub + 1) % 3;
   }
 
-  /** The sense rays against one candidate: any clear ray spots it. */
+  /** The collision owner of the hull a seated player sits in, when the
+   *  collider holds its triangles; else -1 (a soldier, or a test world). */
+  _hullOwner(collider, player) {
+    if (!player?.occupancy?.root) return -1;
+    const owner = this.unitOwnerOf?.(player) ?? -1;
+    return hullRadius(collider, owner) !== null ? owner : -1;
+  }
+
+  /**
+   * The sense rays against one candidate: any clear ray spots it. Returns
+   * null, or `{ local }` (the hull-frame point that saw it, null for the
+   * hull's own position or a soldier).
+   *
+   * A hull (`BotMain::sense` 0x08521cf0, the ray loop 0x085222e0..0x08522384):
+   * `n = clamp(round(30 radius / d), 1, 10)` with the hull's own radius; the
+   * first of several rays at the object's position (vt+0x1c, 0x08522306),
+   * every other at `pickRandomSensePosition` 0x085e4080 (`hullSensePoint`);
+   * each a `collideLineWithWorld` (vt+0x54, 0x08522384) from the camera.
+   */
   _rays(collider, eye, player, pos, dist) {
+    const skip = [this.selfOwner, this.unitOwnerOf?.(player) ?? -1];
+    const hull = this._hullOwner(collider, player);
+    if (hull >= 0) {
+      const n = Math.max(1, Math.min(RAYS_MAX, Math.round(RAYS_PER_METRE_RADIUS * hullRadius(collider, hull) / Math.max(dist, 0.1))));
+      for (let i = 0; i < n; i++) {
+        if (i === 0 && n > 1) {
+          if (lineClear(collider, eye, pos, skip)) return { local: null };
+          continue;
+        }
+        const local = hullSensePoint(collider, hull, this.random);
+        if (lineClear(collider, eye, bakedToWorld(collider, hull, local), skip)) return { local };
+      }
+      return null;
+    }
     const radius = SOLDIER_RADIUS;
     const n = Math.max(1, Math.min(RAYS_MAX, Math.round(RAYS_PER_METRE_RADIUS * radius / Math.max(dist, 0.1))));
     const stance = player.soldier?.stance ?? 'stand';
@@ -460,8 +584,24 @@ export class BotSenses {
       const jx = (this.random() * 2 - 1) * SENSE_JITTER;
       const jz = (this.random() * 2 - 1) * SENSE_JITTER;
       const point = [pos[0] + jx, pos[1] + h, pos[2] + jz];
-      if (lineClear(collider, eye, point, [this.selfOwner, this.unitOwnerOf?.(player) ?? -1])) return true;
+      if (lineClear(collider, eye, point, skip)) return { local: null, offset: [jx, h, jz] };
     }
+    return null;
+  }
+
+  /**
+   * `updateMemory` 0x085244e0's re-test of a remembered hull: a line to the
+   * object's position (0x085248f5..0x08525969), then to the point that saw
+   * it last, re-projected through its live transform (+4..+0xc, 0x08524989),
+   * then to a new `pickRandomSensePosition` point (vt+0x5c, 0x085258a5),
+   * which is kept on success (0x08524b05..: +4 and the world point +0x1c).
+   */
+  _retestHull(collider, eye, player, pos, m, hull) {
+    const skip = [this.selfOwner, this.unitOwnerOf?.(player) ?? -1];
+    if (lineClear(collider, eye, pos, skip)) return true;
+    if (m.local && lineClear(collider, eye, bakedToWorld(collider, hull, m.local), skip)) return true;
+    const local = hullSensePoint(collider, hull, this.random);
+    if (local && lineClear(collider, eye, bakedToWorld(collider, hull, local), skip)) { m.local = local; return true; }
     return false;
   }
 
@@ -487,7 +627,13 @@ export class BotSenses {
       const dx = pos[0] - eye[0], dz = pos[2] - eye[2];
       const d = Math.hypot(dx, pos[1] - eye[1], dz);
       const inView = d <= this.viewDistance && inFrustum(basis, yaw, dx, pos[1] - eye[1], dz, halfFov);
-      const seen = inView && this._rays(world.collider, eye, player, pos, d);
+      const hull = inView ? this._hullOwner(world.collider, player) : -1;
+      let seen = false;
+      if (inView && hull >= 0) seen = this._retestHull(world.collider, eye, player, pos, m, hull);
+      else if (inView) {
+        const ray = this._rays(world.collider, eye, player, pos, d);
+        if (ray) { seen = true; m.offset = ray.offset ?? m.offset ?? null; }
+      }
       if (seen) {
         m.seen = true; m.lost = false; m.lostAt = null; m.lastSeen = now;
         this.knowledge?.spotted(id, now);     // 0x08524b05: the entry's own information

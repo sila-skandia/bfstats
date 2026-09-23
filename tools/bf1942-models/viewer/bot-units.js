@@ -400,6 +400,9 @@ export function createBotUnits(env) {
             // The seat's ControlInfo aim numbers (`mouseControlLookAtDirection`
             // 0x08627b90; bot-aim.js `lookAtCounts`).
             controlInfo: seatAi?.controlInfo ?? (isRoot ? ai.controlInfo : null) ?? null,
+            // `aiTemplatePlugIn.equipmentType`: the seat's `AIbehaviours.con`
+            // vehicle row, which picks its Fire behaviour (bot-perception.js).
+            equipmentType: seatAi?.equipmentType ?? (isRoot ? ai.equipmentType : null) ?? null,
             // `Information+0x14`, which `calculateVehicleUrgency` 0x08583b10
             // adds to the unit's urgency (`fadds 0x14(%esi)` at 0x08583c34):
             // the seat's own `aiTemplate.basicTemp` (ConsoleClass489
@@ -468,7 +471,7 @@ export function createBotUnits(env) {
       radius: inst.rootKind === 'air' || inst.rootKind === 'ship' ? BOT_VEHICLE_RADIUS_LARGE : BOT_VEHICLE_RADIUS,
       maxSpeed: cand.maxSpeed,
       weapons: cand.weapons, template: cand.template, antiAircraft: !!cand.antiAircraft,
-      controlInfo: cand.controlInfo ?? null,
+      controlInfo: cand.controlInfo ?? null, equipmentType: cand.equipmentType ?? null,
       // A rider's move term follows whoever drives the hull right now.
       hullMaxSpeed: ai?.maxSpeed ?? 0,
       driverOf: () => env.vehicles.driverOf(node),
