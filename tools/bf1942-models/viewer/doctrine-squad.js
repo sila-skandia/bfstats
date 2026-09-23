@@ -23,9 +23,14 @@
 //    gunner of a parked hull otherwise sits out the match. A rider of a
 //    driven hull stays (a convoy), and nobody leaves an aircraft (the
 //    viewer's soldier has no parachute).
-//  * An aircraft cannot be followed on foot: while the leader flies, the
-//    followers not aboard go to the SAI as leaders do, and come back when he
-//    lands or dies.
+//  * A hull cannot be followed on foot: while the leader is mounted, a
+//    follower on foot who is not boarding it (no free seat for him, or more
+//    than `boardRange` off) goes to the SAI as the leaders do, and comes
+//    back when the leader is on foot again or a seat is his. So does every
+//    follower not aboard while the leader flies. (Chasing a driven hull on
+//    foot, the goal ran away and the page's 12 s no-progress redeploy sent
+//    the follower back to the spawn over and over: 50 redeploys a match on
+//    El Alamein.)
 //  * Regroup: while a follower on foot is more than `regroupDistance` from
 //    the leader (and less than `strayDistance`: a fresh respawn across the
 //    map is not waited for), a follower at the wheel of his own hull is
@@ -66,7 +71,7 @@ class SquadDoctrine {
     this.counts = {
       passes: 0, holds: 0, holdSeconds: 0, boardOrders: 0, boardings: 0, leaderChanges: 0, leaveOrders: 0,
       followerDistanceSum: 0, followerSamples: 0, withinRegroup: 0, sharedHullPasses: 0, hullPasses: 0,
-      airFreeAgentPasses: 0,
+      freeAgentPasses: 0,
     };
     this.lastPassAt = null;
     /** Followers aboard the squad's hull at the last pass. */
@@ -114,10 +119,19 @@ class SquadDoctrine {
       managed.add(squad.leader);
       const followers = alive.filter(id => id !== squad.leader);
       const plan = { squad, leader, hull, air, followers: [] };
+      // Seats a follower on foot could still take: the hull's free ones.
+      let seatsLeft = hull === null ? 0 : cands.filter(c => c.vehicleId === hull && !c.occupiedBy).length;
+      const lp = view.alive.get(squad.leader);
       for (const id of followers) {
         const b = bots.get(id);
         const aboard = hull !== null && b.seat?.vehicleId === hull;
-        if (air && !aboard) { managed.add(id); this.counts.airFreeAgentPasses++; continue; }
+        if (hull !== null && !aboard && !b.seat) {
+          const d = Math.hypot(b.position[0] - lp[0], b.position[2] - lp[2]);
+          const boards = !air && seatsLeft > 0 && d <= SQUAD.boardRange;
+          if (!boards) { managed.add(id); this.counts.freeAgentPasses++; continue; }
+          seatsLeft--;
+        }
+        if (air && !aboard) { managed.add(id); this.counts.freeAgentPasses++; continue; }
         plan.followers.push({ b, aboard, slot: squad.members.filter(m => m !== squad.leader).indexOf(id) });
       }
       plans.push(plan);
@@ -259,7 +273,7 @@ class SquadDoctrine {
       meanFollowerDistance: c.followerSamples ? Math.round(c.followerDistanceSum / c.followerSamples * 100) / 100 : null,
       withinRegroupShare: c.followerSamples ? Math.round(c.withinRegroup / c.followerSamples * 1e4) / 1e4 : null,
       sharedHullShare: c.hullPasses ? Math.round(c.sharedHullPasses / c.hullPasses * 1e4) / 1e4 : null,
-      airFreeAgentPasses: c.airFreeAgentPasses,
+      freeAgentPasses: c.freeAgentPasses,
     };
   }
 }
