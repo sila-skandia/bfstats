@@ -973,6 +973,7 @@ import { Ship } from './ship.js';
 import {
   VehicleOccupancy, findAllVehicleRoots, listEntryPoints, classifyRoot,
   FireState, chainOnShot, readWorldPose, pickNearest, AIM_INPUTS, DRIVE_KINDS,
+  surveyVehicle, seatYawLimits,
 } from './seats.js';
 import { MouseInput, profileFor, soldierLookDegrees } from './mouse-input.js';
 import {
@@ -982,6 +983,7 @@ import {
 import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
          findWeaponSpecsByFireArms, WEAPON_HEADROOM } from './engine-audio.js';
 import { GunFire } from './gunfire.js';
+import { splashSpec } from './effects-core.js';
 import { idleFirePose, idleFireState } from './idle-vehicle.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
@@ -6677,12 +6679,14 @@ function splashTargets() {
   return targets;
 }
 
-/** The bot whose seat fires `group` (`record.firer` is the group's owner id). */
+/** The bot whose seat fired the round behind `record` (`record.firerGroup`). */
 function botFiringGroup(record) {
+  const group = record?.firerGroup;
+  if (!group) return null;
   for (const bot of botControllers ?? []) {
     const m = bot.vehicle;
     if (!m) continue;
-    if ([...(m.groups ?? []), ...(m.manned ?? [])].some(g => g.owner === record?.firer && g.owner !== undefined)) return bot.playerId;
+    if (m.groups?.includes(group) || m.manned?.includes(group)) return bot.playerId;
   }
   return null;
 }
@@ -6723,7 +6727,11 @@ function applyVehicleHit(record) {
       if (hit.target.armor === soldierArmor) {
         applyDamageToPlayer(hit.damage, { x: record.x, y: record.y, z: record.z }, record.team);
       } else if (hit.target.botId) {
-        applyDamageToBot(hit.target.botId, hit.damage, botFiringGroup(record) ?? LOCAL_PLAYER, [record.x, record.y, record.z]);
+        // `applySplash` has already taken `hit.lost` off the bot's Armor;
+        // what is left is the bot's side of it (the log, the incoming-fire
+        // event, a death).
+        const at = record.splashPoint ?? record.point ?? null;
+        botDamageLanded(hit.target.botId, hit.lost, botFiringGroup(record) ?? LOCAL_PLAYER, at, `splash ${record.gun ?? ''} d ${hit.distance.toFixed(1)}`);
       }
       if (hit.target.node && hit.vehicle.destroyed) hit.target.node.visible = false;
       continue;
@@ -9478,7 +9486,7 @@ function resolvePlayerShotOnBots() {
  * Damage one bot. A killing round parks it: the controller stops firing, the
  * body is hidden, and the respawn timer starts.
  */
-function applyDamageToBot(playerId, damage, attackerId = LOCAL_PLAYER, attackerPos = null) {
+function applyDamageToBot(playerId, damage, attackerId = LOCAL_PLAYER, attackerPos = null, via = '') {
   const armor = world?.armorOf(playerId);
   if (!armor || armor.destroyed) return;
   const mounted = botControllers.find(b => b.playerId === playerId)?.vehicle;
@@ -9486,11 +9494,21 @@ function applyDamageToBot(playerId, damage, attackerId = LOCAL_PLAYER, attackerP
     const hull = world.occupiedDamageable(playerId);
     if (hull) { hull.damage(damage); return; }
   }
-  armor.damage(damage);
+  const lost = armor.damage(damage);
+  botDamageLanded(playerId, lost, attackerId, attackerPos, via);
+}
+
+/**
+ * A bot's Armor has just lost `lost` HP (already applied, by `applyDamageToBot`
+ * or by a splash): log it, raise the incoming-fire event and handle a death.
+ */
+function botDamageLanded(playerId, lost, attackerId = LOCAL_PLAYER, attackerPos = null, via = '') {
+  const armor = world?.armorOf(playerId);
+  if (!armor) return;
   const bot = botControllers.find(b => b.playerId === playerId);
   if (BOT_DEBUG) {
-    console.log(`[bots] ${attackerId} hit ${playerId} for ${damage}: ${armor.hitPoints}/${armor.maxHitPoints}`
-                + (armor.destroyed ? ' (killed)' : ''));
+    console.log(`[bots] ${attackerId} hit ${playerId} for ${Math.round(lost * 10) / 10}: ${Math.round(armor.hitPoints * 10) / 10}/${armor.maxHitPoints}`
+                + (armor.destroyed ? ' (killed)' : '') + (via ? ` [${via}]` : ''));
   }
   // `event_projectile`: the hit is incoming fire, x10 for having landed.
   if (bot) {
@@ -9580,6 +9598,17 @@ function botRoundDamage(stats = null) {
   // `fireArms.projectile` names the round's template; its attacker material
   // comes from `damage.json`'s projectile table, as for the human's rounds.
   const attacker = guns.attackerMaterial(stats?.projectile ? { template: stats.projectile } : null);
+  const base = guns.materials?.[attacker]?.damage ?? BOT_FALLBACK_DAMAGE;
+  const attGroup = guns.materials?.[attacker]?.attGroup ?? attacker;
+  const defGroup = guns.materials?.[BOT_SOLDIER_MATERIAL]?.defGroup ?? BOT_SOLDIER_MATERIAL;
+  const mod = guns.modifiers?.[attGroup]?.[defGroup] ?? null;
+  return base * (mod === null ? 1 : mod);
+}
+
+/** The direct-hit damage of a vehicle gun's round against a soldier, from
+ *  the group's own projectile spec (its `material` or template). */
+function botSpecDamage(spec) {
+  const attacker = guns.attackerMaterial(spec);
   const base = guns.materials?.[attacker]?.damage ?? BOT_FALLBACK_DAMAGE;
   const attGroup = guns.materials?.[attacker]?.attGroup ?? attacker;
   const defGroup = guns.materials?.[BOT_SOLDIER_MATERIAL]?.defGroup ?? BOT_SOLDIER_MATERIAL;
@@ -9879,6 +9908,14 @@ function botDriverOf(node) {
  * its strategic strength, and the hull's `maxSpeed` when the seat drives or
  * rides a driven hull. Rebuilt twice a second and shared by every bot.
  */
+/** Each hull's seat survey, for a seat's traverse limits (static per node). */
+const botSeatSurveys = new WeakMap();
+function botSeatYawLimits(node, seatId) {
+  let survey = botSeatSurveys.get(node);
+  if (!survey) { survey = surveyVehicle(node); botSeatSurveys.set(node, survey); }
+  return seatYawLimits(survey.seats.get(seatId));
+}
+
 function botVehicleCandidates() {
   if (botClock - botCandidateCache.at < 0.5) return botCandidateCache.list;
   // The vehicles land after the bots do, and respawn later: the door list
@@ -9907,6 +9944,8 @@ function botVehicleCandidates() {
       const pos = [_botEntryWorld.x, _botEntryWorld.y, _botEntryWorld.z];
       _botUp.set(0, 1, 0).applyQuaternion(node.getWorldQuaternion(new THREE.Quaternion()));
       const upright = _botUp.y >= 0.6914;
+      // The hull's heading, for a seat's traverse limits (its -z column).
+      const hullYaw = Math.atan2(-node.matrixWorld.elements[8], -node.matrixWorld.elements[10]);
       const rootId = node.userData?.control || node.name || 'vehicle';
       const driver = botDriverOf(node);
       const health = damage?.maxHitPoints > 0 ? damage.hitPoints / damage.maxHitPoints : 1;
@@ -9947,6 +9986,8 @@ function botVehicleCandidates() {
           occupiedBy: holder,
           strType: ai.strType ?? 'LightArmour',
           driver,
+          // `validateCameraDirection` for this seat: its own traverse.
+          hullYaw, yawLimits: botSeatYawLimits(node, door.seatId),
         });
       }
       for (const e of entries) list.push(e);
@@ -10247,13 +10288,15 @@ function botFireTick(dt) {
         const now_ = g.shots ?? 0;
         bot._lastShots.set(g, now_);
         if (now_ <= prev) continue;
-        if (g.stats?.projectile?.damage?.radius > 0) continue;
+        const spec = g.stats?.projectile && typeof g.stats.projectile === 'object' ? g.stats.projectile : null;
+        if (splashSpec(spec?.damage)?.impact) continue;   // a shell: `applyVehicleHit`'s splash bills it
+        const roundDamage = botSpecDamage(spec);
         for (let k = prev; k < now_; k++) {
-          const hit = resolveBotShot(bot, botRoundDamage({ projectile: g.stats?.projectile?.template ?? g.stats?.projectile ?? null }));
+          const hit = resolveBotShot(bot, roundDamage);
           if (!hit) continue;
           bot.recordHit(hit.targetId);
           if (hit.targetId === LOCAL_PLAYER) applyDamageToPlayer(hit.damage, { x: bot.position[0], y: bot.position[1], z: bot.position[2] }, bot.team);
-          else applyDamageToBot(hit.targetId, hit.damage, bot.playerId, bot.getPosition());
+          else applyDamageToBot(hit.targetId, hit.damage, bot.playerId, bot.getPosition(), `round ${g.node?.name ?? ''}`);
         }
       }
       continue;

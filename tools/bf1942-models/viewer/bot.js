@@ -1778,12 +1778,22 @@ export class BotController {
    *  hull's other occupied seats. A fixed gun, or a seat of a hull nobody
    *  drives, is a fixed weapon and needs a known enemy it can point at. */
   _candidateFire(c) {
-    const rootOccupied = !!(c.seats ?? []).find(s => s.isRoot)?.occupied;
+    // Weighing another seat of the hull it sits in, the bot counts its own
+    // seat as empty: it would leave it (0x08584580, `unit != param_7 ||
+    // !param_6` on the root's and every seat's share and on the root's
+    // mobile test). Without this a driver saw the gunner's seat as a seat
+    // under a driver, and the gunner saw the root as a hull with a gunner:
+    // each side of the swap beat the other and the bot changed seats every
+    // tick.
+    const m = this.vehicle;
+    const vacate = m && c.vehicleId === m.vehicleId && c.seatId !== m.seatId ? m.seatId : null;
+    const seats = (c.seats ?? []).map(s => (s.seatId === vacate ? { ...s, occupied: false } : s));
+    const rootOccupied = !!seats.find(s => s.isRoot)?.occupied;
     const fixed = c.kind === 'gun' || (!c.isRoot && !rootOccupied);
     return this._fireStrengthOf({
-      table: c.strengths ?? {}, others: (c.seats ?? []).filter(s => s.seatId !== c.seatId),
+      table: c.strengths ?? {}, others: seats.filter(s => s.seatId !== c.seatId),
       air: c.kind === 'air', isSeat: !c.isRoot, myType: c.strType ?? 'LightArmour',
-      fixed, aimable: fixed ? this._fixedAimable() : true,
+      fixed, aimable: fixed ? this._fixedAimable(c) : true,
     });
   }
 
@@ -1792,30 +1802,43 @@ export class BotController {
     return (mine?.seats ?? this.vehicle?.seats ?? []).filter(s => s.seatId !== this.vehicle?.seatId);
   }
 
-  /** A fixed weapon's `validateCameraDirection` over the known enemies: a
-   *  spotted enemy the traverse reaches; with none spotted, an enemy object
-   *  within the guns' range (`getEnemyObjects`), else the direction of the
-   *  nearest enemy flag (the strategic object the engine falls back to).
-   *  On foot the traverse is the candidate's, unknown here: any direction. */
-  _fixedAimable() {
-    const canPoint = this.vehicle ? (dir) => this._turretCanPoint(dir) : () => true;
+  /** A fixed weapon's `validateCameraDirection` (`calculateFireStrength`
+   *  0x08584580): with enemies spotted, 'enemy' when the traverse reaches
+   *  one of them, else false (the score is 0); with none spotted, 'enemy'
+   *  when any enemy object is within the guns' range (`getEnemyObjects`;
+   *  that branch tests no direction before the normal score), else
+   *  'strategic' when the gun can face the strategic direction (a flat
+   *  5.0), else false. The strategic direction is the engine's strategic
+   *  object's links flagged for the side; here the nearest enemy flag's
+   *  bearing stands in for them (INVENTION). `c` is a candidate seat
+   *  (its own traverse limits on its hull's heading); none means the seat
+   *  the bot holds. */
+  _fixedAimable(c = null) {
+    const limits = c ? c.yawLimits : this.vehicle?.occupancy?.turret?.yawLimitsRadians?.();
+    const hullYaw = c ? (c.hullYaw ?? 0) : this.yaw;
+    const canPoint = (dir) => {
+      if (!limits) return true;
+      const want = wrapAngle(Math.atan2(dir[0], dir[2]) - hullYaw);
+      return want >= limits[0] && want <= limits[1];
+    };
+    const from = c?.pos ?? this.position;
     const dirTo = (pos) => {
-      const dx = pos[0] - this.position[0], dz = pos[2] - this.position[2];
+      const dx = pos[0] - from[0], dz = pos[2] - from[2];
       const d = Math.hypot(dx, dz) || 1;
       return [dx / d, 0, dz / d];
     };
     const spotted = this.senses.spottedEnemies();
-    if (spotted.length) return spotted.some(m => canPoint(dirTo(m.pos)));
+    if (spotted.length) return spotted.some(m => canPoint(dirTo(m.pos))) ? 'enemy' : false;
     let range = 0;
-    for (const w of this.weapons) range = Math.max(range, w.maxRange ?? 0);
+    for (const w of (c ? c.weapons : this.weapons) ?? []) range = Math.max(range, w.maxRange ?? 0);
     for (const [id, p] of this.world?.players ?? []) {
       if (id === this.playerId || p.team === this.team || this.world.armorOf?.(id)?.destroyed) continue;
       const pos = playerPosition(p);
       if (!pos) continue;
-      if (Math.hypot(pos[0] - this.position[0], pos[2] - this.position[2]) <= range && canPoint(dirTo(pos))) return true;
+      if (Math.hypot(pos[0] - from[0], pos[2] - from[2]) <= range) return 'enemy';
     }
     const flag = this._nearestEnemyFlag();
-    return flag?.position ? canPoint(dirTo(flag.position)) : false;
+    return flag?.position && canPoint(dirTo(flag.position)) ? 'strategic' : false;
   }
 
   /**

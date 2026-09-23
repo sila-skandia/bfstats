@@ -1178,6 +1178,10 @@ export class GunFire {
       // would look like "the guns stopped working" rather than like a bug.
       owner: hit.owner,
       firer: group.owner,
+      // The group itself, so a page with more than one seat on a hull can
+      // say which seat's gun it was (a bot driver and a bot gunner share the
+      // hull's owner id).
+      firerGroup: group,
       travelled,
       damageFactor: factor,
       // The attacker/defender group pair and the two new terms, kept beside the
@@ -1283,6 +1287,7 @@ export class GunFire {
       // exclude (`sourceArmor = NULL`, above).
       owner: -1,
       firer: -1,
+      firerGroup: group,
       travelled,
       damageFactor: 1,
       attGroup: this.materials?.[attacker]?.attGroup ?? attacker,
