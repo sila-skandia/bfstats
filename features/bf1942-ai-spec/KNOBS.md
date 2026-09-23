@@ -53,7 +53,7 @@ the page's referee. "Unused" marks a constant declared and never read.
 | fire | weapon value | `strength / (1 + (20 missed + 10) / ammo)`, ammo -1 = 65536 | `BBFire::calculateUrgency` | `scoreTargets` | ENGINE |
 | fire | attacker bonus | 1.5 .. 1.0 over 30 s | `BBFire` | `FIRE.attackedWindow` | ENGINE |
 | fire | lost decay | `1 / (1 + 0.05 age)` | `BBFire` (AI-40) | `FIRE.sightAgeDecay` | ENGINE |
-| fire | outside area | x0.75 (applied twice in the code) | `BBFire` | `FIRE.outsideAreaFactor` | ENGINE |
+| fire | area factor F | F = 0.75 if the bot is outside its ordered area, x0.75 for a target outside it; 0.5 in range; F multiplies each strength term and the score (counted twice, as the engine does) | `BBFire::calculateUrgency` 0x08563570, `isInside` at 0x085639f3 / 0x08564015 | `FIRE.outsideAreaFactor`, `scoreTargets` | ENGINE |
 | fire | minimum distance | 0.5 m | | `FIRE.minDistance` | UNSOURCED |
 | fire | speed term | `1 / (1 + 0.5 abs(v))` in range, 0.25 beyond | `BBFire` | `FIRE.inRangeSpeedFactor`, `beyondRangeFactor` | ENGINE |
 | fire | beyond range and 5 m higher | `0.25 / (3 + 0.5 abs(v))` | | `scoreTargets` | UNSOURCED |
@@ -105,7 +105,7 @@ the page's referee. "Unused" marks a constant declared and never read.
 | move | retry and widening | 1.5 s; +16 m per failure (3 max); 6 widenings of 16 m; 20,000 x w nodes | | `bot.js ROUTE_RETRY_AFTER`, `ROUTE_RETRY_WIDEN`, `ROUTE_LEG_WIDENINGS`, `ROUTE_LEG_WIDE_NODES` | INVENTION |
 | move | body radius (pop) | 1.0 m on foot, 3.0 m in a hull | engine floors the removal distance at 0.5 (`getMaxPathPosRemovalDistance` 0x0852b780) | `bot.js BOT_RADIUS`, `VEHICLE_RADIUS` | INVENTION |
 | move | re-plan on goal move | 20 m (`4 x maxSpeed 5`) | `BBPGotoWaypointSoldier::createPlan` 0x085bb660 | `bot.js REPLAN_GOAL_MOVE` | ENGINE |
-| move | stall counts | 150 obstructed, 401 failed | `getNewIntermediatePathPos` 0x0852ab60 | `bot.js OBSTRUCTED_TICKS`, `PATH_FAIL_TICKS` | ENGINE (counts bot ticks, frame-rate dependent) |
+| move | stall counts | 150 obstructed, 401 failed, in 30 Hz AI ticks (5 s, 13.4 s at any frame rate) | `getNewIntermediatePathPos` 0x0852ab60 | `bot.js OBSTRUCTED_TICKS`, `PATH_FAIL_TICKS`, `AI_TICK_HZ` | ENGINE |
 | move | moving speed | 1.0 m/s; also counts throttle-on and slow | `ObstructionDetection::update` 0x08532b00 | `bot.js MOVING_SPEED` | ENGINE; the throttle-on case INVENTION |
 | move | obstacle circle | 1.5 m, 1 m ahead | | `bot.js OBSTACLE_RADIUS`, `OBSTACLE_AHEAD` | INVENTION |
 | move | obstacle drop | 25.5 m (`5 x 5 + 0.5`) | `updatePotentialObstacles` 0x0852d880; `AIPathfinding` ctor 0x0847a780 zeroes max speed / age | `bot.js OBSTACLE_DROP_DISTANCE` | ENGINE |
@@ -169,7 +169,7 @@ the page's referee. "Unused" marks a constant declared and never read.
 | change | distance factor | `min(0.5, (R² - d²) / R²) + 0.5` | `BBChange` | `changeUrgency` | ENGINE |
 | change | urgency | `Declein(0.5 best / staying) x 4`, x2 bailing | `BBChange` | `CHANGE.urgencyScale` | ENGINE |
 | change | change ramp | 10 s | `BBChange` | `CHANGE.rampSeconds` | ENGINE |
-| change | unit ramps | 15 s after leaving it and after its spawn | `calculateVehicleUrgency` | `CHANGE.unitRampSeconds` | ENGINE (the left-unit ramp never matches: README) |
+| change | unit ramps | 15 s after leaving it (keyed by the hull) and after its spawn | `calculateVehicleUrgency` | `CHANGE.unitRampSeconds`, `bot.js dismount` | ENGINE |
 | change | outside area | x0.75 | `BBChange` | `CHANGE.outsideAreaFactor` | ENGINE |
 | change | approach | 12.5 -> 6.25 m, Use within 12.375 m | `BBPChange::createPlan` 0x0858b5c0 | `CHANGE.approachFrom`, `approachTo`, `useWithin` (unused: the viewer walks to the door) | ENGINE |
 | change | door arrival | the door's radius, at least 2 m (4 when none) | | `bot.js _planChange` | UNSOURCED |
@@ -213,7 +213,9 @@ the page's referee. "Unused" marks a constant declared and never read.
 | boat | water map base level | 2 (2^2 m blocks) | AI-66 | `BOAT.baseLevel` | INFERRED |
 | boat | aligned / dead band | cos 0.996; 0.03 | `speedControl` | `BOAT.alignedCos`, `rudderDeadBand` | ENGINE |
 | boat | arrival | 4 x radius on the move's own point, not the look-ahead (the helm passes radius 0) | | `BOAT.arriveRadiusFactor`, `bot.js _steerToward` | UNSOURCED |
-| strategic | pass period | 5 s | README §6.1 read 2.0 (`AISettings::reset` +0x28) | `strategic.js SAI.updateFrequency` | INVENTION |
+| strategic | pass period | 2.0 s | `AISettings::reset` 0x0848461a (+0x28), read via vt+0x44 by `SAI::update` 0x086306d0 | `strategic.js SAI.updateFrequency` | ENGINE |
+| strategic | prerequisite sum | each condition's value x weight is summed; a Required (Positive) one below 0, or a RequiredNegative above 0, zeroes the sum; AdvisoryPositive / Negative clip theirs | `StrategyPrerequisite::evaluate` 0x0863aa50 | `strategic.js _evaluatePrerequisite` | ENGINE |
+| strategic | area without a control point | held by presence: a side alone there takes it if it may (`setTakeable`), a side with only enemies there loses it if the enemy may; empty keeps; starts at the authored side | `AIStrategicArea::update` 0x0863d6d0 | `strategic.js updatePresenceOwner` | ENGINE |
 | strategic | strategy hysteresis | 0.83 .. 1.2 | `SAI::chooseStrategy` 0x08631cd0 | `SAI.hysteresisLow/High` | ENGINE |
 | strategic | time limit growth | `x (2 - 2^(1 - count))` | `chooseStrategy` | `_chooseStrategy` | ENGINE |
 | strategic | target threshold | 0.1 | `categoryDistributeAttack` 0x08633d00, `...Defence` 0x086333b0 | `SAI.candidateMin` | ENGINE |

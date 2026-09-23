@@ -45,9 +45,11 @@ and the authored `side` for an area with none (`ownerOf`). Captures change it
 live. A side may not take an area marked `takeable <side> 0` or whose control
 points are all uncapturable (`takeableBy`).
 
-Research divergence: `AIStrategicArea::update` makes an area with no
-control point Owned by a side that has units in it and the enemy none, when
-takeable (bot-behaviours §7). The code keeps the authored side, so a pass
+Built since (ledger AI-74, `updatePresenceOwner`): `AIStrategicArea::update`
+0x0863d6d0 makes an area with no control point Owned by a side that has units
+in it and the enemy none, when takeable, and Hostile to a side with only enemy
+units there when the enemy may take it; an empty area keeps its status.
+Before that the code kept the authored side, so a pass
 with `side` unset is Neutral for ever. On El Alamein `SouthBase`'s only
 neighbour is `SouthMountainpass`, which can therefore never be Owned, and
 `SouthBase` never gets an attack value from either side.

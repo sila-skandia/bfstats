@@ -187,7 +187,7 @@ function seededUnit(seed) {
  */
 export function scoreTargets({
   spotted, position, weapons, now, attackedBy, velocityOf, typeOf,
-  currentTarget = null, currentScore = 0, insideOrderedArea = true,
+  currentTarget = null, currentScore = 0, insideOrderedArea = true, insideArea = null,
   vetoed = null, waterDepth = 0, mySpeed = 0, mobileSize = MOBILE_SIZE_INFANTRY,
 }) {
   const none = { targetId: null, targetPos: null, score: 0, weaponIndex: -1, urgency: 0 };
@@ -235,16 +235,22 @@ export function scoreTargets({
     }
     if (wBest < 0 || !(maxRange > 0)) continue;
     if (!Number.isFinite(minRange)) minRange = 0;
-    // Range terms.
-    let speedFactor, strengthScale;
+    // Range terms. `BBFire::calculateUrgency` 0x08563570 carries one factor
+    // F (its fStack_1a4): the bot's own area factor (0.75 outside its
+    // ordered area, `isInside` called at 0x085639f3) times 0.75 for a target
+    // outside that area (the second `isInside`, 0x08564015); in range it is
+    // replaced by 0.5, beyond range it stays. F multiplies every strength
+    // term and then the score again, so it counts twice.
+    let speedFactor;
+    let F = areaFactor;
+    if (insideArea && !insideArea(m.pos)) F *= FIRE.outsideAreaFactor;
     if (dist <= maxRange) {
-      strengthScale = 0.5;
+      F = 0.5;
       speedFactor = 1 / (1 + FIRE.inRangeSpeedFactor * tSpeed);
     } else {
       // Beyond the weapon's range the target is kept while the overshoot is
       // under five times the bot's mobile size (`IPIMobile` +0x14 -> +8,
       // 5.0 for a soldier: the same term makes the 25.5 m obstacle drop).
-      strengthScale = 0.5;
       const dy = m.pos[1] - position[1];
       speedFactor = dy > 5.0
         ? FIRE.beyondRangeFactor / (1 + 0.5 * tSpeed + 2)
@@ -253,10 +259,10 @@ export function scoreTargets({
     }
     const range = Math.max(0, 1 - dist / (FIRE.rangeSlack * maxRange));
     const rangeFactor = (minRange + FIRE.rangeFactorMin * (maxRange - minRange)) / dist;
-    const strengthSum = Math.round(SOLDIER_BATTLE_STRENGTH[targetType] ?? 1) * areaFactor * strengthScale;
+    const strengthSum = Math.round(SOLDIER_BATTLE_STRENGTH[targetType] ?? 1) * F;
     const curve = Math.max(0, -0.22 * seededUnit(hashId(id)) + 1.3);   // UCFire jitter
     let score = curve * range * wVal * sightFactor * speedFactor * attackedBonus
-      * areaFactor * strengthSum * rangeFactor;
+      * F * strengthSum * rangeFactor;
     if (strengthSum <= 0) score *= FIRE.harmlessFactor;
     if (id === currentTarget) current = { score, weapon: wBest, m };
     if (score > bestScore) { bestScore = score; best = m; bestWeapon = wBest; }

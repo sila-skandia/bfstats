@@ -128,11 +128,12 @@ export class StrategicLayer {
 
   /**
    * Who holds an area: the side every control point in it belongs to; 0 when
-   * the points are neutral or split; the authored side for an area with no
-   * control point (a base's spawn area, a pass).
+   * the points are neutral or split. An area with no control point (a base's
+   * spawn area, a pass) is held by presence (`presenceOwner`), starting from
+   * its authored side.
    */
   ownerOf(area) {
-    if (!area.controlPoints.length) return area.side ?? 0;
+    if (!area.controlPoints.length) return area.presenceOwner ?? area.side ?? 0;
     let side = null;
     for (const f of area.controlPoints) {
       const t = f.team === 1 || f.team === 2 ? f.team : 0;
@@ -140,6 +141,35 @@ export class StrategicLayer {
       else if (side !== t) return 0;
     }
     return side ?? 0;
+  }
+
+  /**
+   * `AIStrategicArea::update` 0x0863d6d0 for an area without a control point
+   * (+0x138 is -1): with units about, a side whose units are there and the
+   * enemy's are not holds it when it may take it (`setTakeable`, +0x15f +
+   * side; status 0 at 0x0863df64), and a side with only enemy units there
+   * loses it when the enemy may take it (+0x160 + (side == 1); status 1 at
+   * 0x0863dfaa); an empty area keeps its status. `present` is the side's
+   * units in the area.
+   */
+  updatePresenceOwner(area, present1, present2) {
+    if (area.controlPoints.length) return;
+    if (!area.presenceStatus) {
+      const a = area.side === 1 || area.side === 2 ? area.side : 0;
+      area.presenceStatus = { 1: a === 1 ? 'Owned' : a ? 'Hostile' : 'Neutral',
+                              2: a === 2 ? 'Owned' : a ? 'Hostile' : 'Neutral' };
+    }
+    for (const side of [1, 2]) {
+      const friendly = side === 1 ? present1 : present2;
+      const enemy = side === 1 ? present2 : present1;
+      if (friendly <= 0 && enemy <= 0) continue;
+      if (area.takeable[String(side)] !== false && friendly > 0 && enemy === 0) {
+        area.presenceStatus[side] = 'Owned';
+      } else if (area.takeable[String(side === 1 ? 2 : 1)] !== false && enemy > 0 && friendly === 0) {
+        area.presenceStatus[side] = 'Hostile';
+      }
+    }
+    area.presenceOwner = area.presenceStatus[1] === 'Owned' ? 1 : area.presenceStatus[2] === 'Owned' ? 2 : 0;
   }
 
   /** Whether `side` can take the area (`setTakeable <side> 0` forbids it;
@@ -287,7 +317,10 @@ export function compareCondition(cond, a, b = null) {
 }
 
 export const SAI = {
-  updateFrequency: 5.0,
+  /** Seconds between strategic passes: `AISettings` +0x28 = 2.0 (`reset`
+   *  0x0848461a, no vanilla level sets it), read through vt+0x44 by
+   *  `SAI::update` 0x086306d0 against the last pass (+0x1d8). */
+  updateFrequency: 2.0,
   hysteresisLow: 0.83,
   hysteresisHigh: 1.2,
   candidateMin: 0.1,
@@ -426,6 +459,9 @@ export class StrategicAI {
       st[b.side === 1 ? 2 : 1].enemy += SAI.unitValue;
     }
     for (const [area, st] of this.areaState) {
+      this.layer.updatePresenceOwner(area, st[1].present.length, st[2].present.length);
+    }
+    for (const [area, st] of this.areaState) {
       for (const side of [1, 2]) {
         const s = st[side];
         const owner = this.layer.ownerOf(area);
@@ -496,13 +532,15 @@ export class StrategicAI {
       const arr = cond.subject === 'Enemy' ? S.states.enemy : S.states.friendly;
       const a = arr.get(cond.object) ?? 0;
       const v = compareCondition(cond, a) * (weight ?? 1);
+      // `StrategyPrerequisite::evaluate` 0x0863aa50: a Required condition
+      // that holds adds its value like any other (0x0863aafd); only a failing
+      // one ends the sum at 0. Advisory-positive / -negative clip theirs.
       const strength = cond.strength[0] ?? 'Required';
-      if (strength === 'Required' || strength === 'RequiredPositive') { if (v < 0) return 0; }
-      else if (strength === 'RequiredNegative') { if (v > 0) return 0; }
-      else if (strength === 'Advisory') sum += v;
+      if (strength === 'Required' || strength === 'RequiredPositive') { if (v < 0) return 0; sum += v; }
+      else if (strength === 'RequiredNegative') { if (v > 0) return 0; sum += v; }
       else if (strength === 'AdvisoryPositive') sum += Math.max(0, v);
       else if (strength === 'AdvisoryNegative') sum += Math.min(0, v);
-      else if (v < 0) return 0;
+      else sum += v;
     }
     return sum;
   }
