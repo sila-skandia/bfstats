@@ -1,11 +1,18 @@
-// The level: its scene loaded and bound (terrain detail, lightmaps, the
-// engine's own shading and texture fade, sky, clouds, water, fog and draw
-// distance, lens flare), indexed and frozen for the matrix walk, its collider
-// and material tables, its sounds and textures, the vehicles' bodies and
-// damage sets, the world built on it, the bots spawned onto it -- `show()` --
-// and the terrain queries every other part asks (`groundHeight`,
-// `surfaceFriction`, `deckNormal`). Lifted out of map.html (features/
-// vehicle-instance-refactor Part 2); the rest of the page takes `level`.
+// The level: `show()` loads a level's scene and binds it, builds the world on
+// it and spawns the bots onto it; `level` is what the rest of the page reads
+// of it. Lifted out of map.html (features/vehicle-instance-refactor Part 2),
+// then split along its seams, each part taking only the values it reads:
+//
+//   level-sky.js      sky, clouds, water, envmap, light rig, fog, far plane
+//   level-shading.js  terrain detail, lightmaps, the engine's shading, fade
+//   level-flare.js    the sun's lens flare
+//   level-statics.js  the scene index, the frozen statics, the distance cull
+//   level-terrain.js  `groundHeight`, `surfaceFriction`, `deckNormal`, the
+//                     material and damage tables, the collider
+//   level-warmup.js   programs and textures warmed before they are drawn
+//
+// The world (`level.world`), its combat area and its vehicle damage set are
+// the level's: it builds them, and every other reader gets them from here.
 
 import * as THREE from 'three';
 import { createLevelSky } from './level-sky.js';
@@ -18,6 +25,8 @@ import { bareFireArmsName } from './vehicle-audio.js';
 import { idleFirePose } from './idle-vehicle.js';
 import { SupplyDepot } from './supply.js';
 import { World } from './world.js';
+import { CombatArea } from './combat-area.js';
+import { VehicleDamageSet } from './vehicle-damage.js';
 import { modeNames, modeProblem, pruneToMode, selectGameMode } from './game-modes.js';
 import { detachSpawnedCraft } from './seats.js';
 import { bindTreeFoliage } from './tree-foliage.js';
@@ -27,20 +36,19 @@ import { bindTreeFoliage } from './tree-foliage.js';
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `activeMod`, `botRoot`, `bust`, `camera`, `capture`,
- * `capturePresentationTick`, `combatArea`, `combatFrame`, `cubeLoader`,
- * `damageVisuals`, `DEFAULT_DRAW`, `disposeSounds`, `effects`,
- * `entryPoints`, `fireStates`, `floatPlacedVehicles`, `forgetSoldier`,
- * `fullmapMeta`, `fullmapName`, `guns`, `gunSubject`, `hemi`,
- * `loadCollisionMeshes`, `loadEffectLibrary`, `loader`, `loadMapArt`,
- * `logToConsole`, `MAPS_BASE`, `nearEntry`, `onCrashDamage`, `openDeploy`,
- * `optEntire`, `optGameFog`, `optOnFoot`, `optPilot`, `optVehicles`,
- * `optWire`, `overlay`, `params`, `placeCamera`, `rebaseDeckSpawns`,
- * `rebuildVehicleInterp`, `registerDamageables`, `renderer`, `scene`,
- * `seatWorldPos`, `setOnFoot`, `setPilot`, `settlePlacedVehicles`,
- * `setupSounds`, `setupVehicleBodies`, `spawnBotsForLevel`,
- * `spawnFlagSelect`, `sun`, `syncDeployReady`, `templateNameOf`,
- * `texLoader`, `texManager`, `toggleFullMap`, `unitRectOf`, `vehicleDamage`,
- * `vehicles`, `view`, `viewFor`, `vmScene`, `world`.
+ * `capturePresentationTick`, `cubeLoader`, `damageVisuals`, `DEFAULT_DRAW`,
+ * `disposeSounds`, `effects`, `entryPoints`, `fireStates`,
+ * `floatPlacedVehicles`, `forgetSoldier`, `fullmapMeta`, `fullmapName`,
+ * `guns`, `gunSubject`, `hemi`, `loadCollisionMeshes`, `loadEffectLibrary`,
+ * `loader`, `loadMapArt`, `logToConsole`, `MAPS_BASE`, `nearEntry`,
+ * `onCrashDamage`, `openDeploy`, `optEntire`, `optGameFog`, `optOnFoot`,
+ * `optPilot`, `optVehicles`, `optWire`, `overlay`, `params`, `placeCamera`,
+ * `rebaseDeckSpawns`, `rebuildVehicleInterp`, `registerDamageables`,
+ * `renderer`, `scene`, `seatWorldPos`, `setOnFoot`, `setPilot`,
+ * `settlePlacedVehicles`, `setupSounds`, `setupVehicleBodies`,
+ * `spawnBotsForLevel`, `spawnFlagSelect`, `sun`, `syncDeployReady`,
+ * `templateNameOf`, `texLoader`, `texManager`, `toggleFullMap`,
+ * `unitRectOf`, `vehicles`, `view`, `viewFor`, `vmScene`.
  */
 export function createLevel(page) {
   const level = {};
@@ -89,7 +97,7 @@ export function createLevel(page) {
     get optEntire() { return page.optEntire; },
     get optVehicles() { return page.optVehicles; },
     get templateNameOf() { return page.templateNameOf; },
-    get world() { return page.world; },
+    get world() { return level.world; },
   });
   // level-terrain.js: the terrain queries, the material and damage tables, the collider.
   const terrain = createLevelTerrain({
@@ -104,7 +112,7 @@ export function createLevel(page) {
     get registerDamageables() { return page.registerDamageables; },
     get settlePlacedVehicles() { return page.settlePlacedVehicles; },
     get spawnersRoot() { return statics.spawnersRoot; },
-    get world() { return page.world; },
+    get world() { return level.world; },
   });
   // level-warmup.js: programs linked and textures uploaded before the frame that draws them.
   const warm = createLevelWarmup({
@@ -136,6 +144,32 @@ export function createLevel(page) {
   // whenever the URL got exactly what it asked for, which is every load
   // with no `?mode=` at all.
   level.modeNote = null;
+  // The level's headless simulation core (world.js): N soldiers, the vehicle
+  // bodies, guns, combat area, supply depots, tickets and the collider, stepped
+  // at the engine's 30 Hz from one buffered input per player per tick. Built
+  // once per level in show(); the page feeds it the local player's input every
+  // frame (frame() in map.html) and keeps everything presentational. The one
+  // player the page owns is always `LOCAL_PLAYER`; `world` is the same object a
+  // P2 server would run for every remote one. Null until the first level.
+  level.world = null;
+  // `game.setActiveCombatArea` — the warning, its countdown and the damage
+  // after it. All the engine reading is in `combat-area.js`; the page steps it
+  // with the body's position and hands the result to the HUD and to the
+  // soldier's Armor. The world's own from the first level on (show()); an
+  // inert one before it.
+  //
+  // It has TWO halves, and the second one is why it is no longer inert on the
+  // twelve levels that declare no rectangle: `GameServer::gameStatusPlaying`
+  // also counts you as outside when the terrain material under you equals
+  // `materialToGiveDamage` (CA-5, default 7, "Reserved (Outside map)"). Eleven
+  // of the 23 vanilla levels paint that id, three of them without declaring any
+  // rectangle at all. `heightfield.material(x, z)` is the channel — the same one
+  // `surfaceFriction` already reads per wheel.
+  level.combatArea = new CombatArea(null);
+  // The world's `VehicleDamageSet` from the first level on (show()), so every
+  // HUD feed, splash pass and console hook that reaches `level.vehicleDamage`
+  // reaches the same object the world steps.
+  level.vehicleDamage = new VehicleDamageSet();
 
   function dispose(root) {
     shading.disposeLightmaps();
@@ -415,19 +449,17 @@ export function createLevel(page) {
     // Before setupWater and bindDynamicShading: both read `levelEnvCube`.
     sky.setupEnvCube(dir);
     flare.setupLensFlare(dir);
-    page.combatArea = null;
-    page.combatFrame = null;
+    level.combatArea = null;
     // The world is the simulation core of frame() from here: built from the
     // level data in hand (the collider lands a few lines down via buildCollider,
     // the parked hulls via setupVehicleBodies), fed the local player's input
     // per frame, and stepped at the engine's fixed 30 Hz (world.js, the tick
     // law in its header). The page keeps the scene graph, the cameras, the HUD,
     // the audio, the deploy flow and the effects; the world owns nothing that
-    // paints. `combatArea`, `bodyWorld`, `vehicleDamage` and `supplyField`
-    // below stay page-side aliases of the world's instances, so every HUD feed,
-    // console hook and debug readout that always reached them reaches them
-    // still.
-    page.world = new World({
+    // paints. `level.combatArea` and `level.vehicleDamage` below are aliases of
+    // the world's instances, so every HUD feed, console hook and debug readout
+    // that always reached them reaches them still.
+    level.world = new World({
       extras: level.extras,
       guns: page.guns,
       groundHeight: terrain.groundHeight,
@@ -449,8 +481,8 @@ export function createLevel(page) {
     });
     // A fresh level: none of the old one's nodes or poses survive it.
     page.rebuildVehicleInterp();
-    page.combatArea = page.world.combatArea;
-    page.vehicleDamage = page.world.vehicleDamage;
+    level.combatArea = level.world.combatArea;
+    level.vehicleDamage = level.world.vehicleDamage;
     // Bot visuals: create the root group now that `scene` exists.
     if (!page.botRoot) {
       page.botRoot = new THREE.Group();
