@@ -13,12 +13,12 @@ import { createReconciler } from './netcode-reconcile.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `MODELS_BASE`, `announceCapture`, `applyVisibility`, `bindDynamicShading`,
- * `bust`, `camera`, `captured`, `damageVisuals`, `deployActive`,
- * `enterVehicle`, `exitSeat`, `extras`, `flags`, `hoistCaptureFlag`,
- * `loader`, `localPlayer`, `lockHeld`, `logToConsole`, `manifest`,
- * `nearEntry`, `openDeploy`, `optOnFoot`, `optPilot`, `paintDeployChrome`,
- * `params`, `renderer`, `roomCapture`, `scene`, `setDeployTeam`, `soldier`,
+ * `announceCapture`, `applyVisibility`, `bindDynamicShading`, `bust`,
+ * `camera`, `captured`, `damageVisuals`, `deployActive`, `enterVehicle`,
+ * `exitSeat`, `extras`, `flags`, `hoistCaptureFlag`, `loader`, `lockHeld`,
+ * `logToConsole`, `manifest`, `MODELS_BASE`, `nearEntry`, `occupancy`,
+ * `openDeploy`, `optOnFoot`, `optPilot`, `paintDeployChrome`, `params`,
+ * `renderer`, `roomCapture`, `scene`, `setDeployTeam`, `soldier`,
  * `soldierArmor`, `soldierDead`, `syncVehicleSpawnOwnership`,
  * `templateNameOf`, `updateHud`.
  */
@@ -101,14 +101,14 @@ export function createNetRoom(page) {
   /** The active seat's position in the occupancy's own survey order, the same
    *  index the server's seat rows and the snapshot records carry (root = 0). */
   function netSeatIndex() {
-    const occ = page.localPlayer.occupancy;
+    const occ = page.occupancy;
     if (!occ) return null;
     const i = occ.order.indexOf(occ.activeSeatId);
     return i >= 0 ? i : 0;
   }
 
   function netSeatRow(action) {
-    const occ = page.localPlayer.occupancy;
+    const occ = page.occupancy;
     if (!occ?.root) return null;
     const id = netVehicleIdFor(occ.root);
     if (id == null) return null;
@@ -439,14 +439,14 @@ export function createNetRoom(page) {
       // The E-key seat toggle, exposed the way __deploy and __keys are: the
       // smoke drives this instead of a pointer-lock keypress.
       window.__seatToggle = () => {
-        if (page.optPilot.checked && page.localPlayer.occupancy) page.exitSeat();
+        if (page.optPilot.checked && page.occupancy) page.exitSeat();
         else if (page.optOnFoot.checked && page.soldier && page.captured && page.nearEntry) page.enterVehicle(page.nearEntry);
       };
       window.__seat = () => ({
         pilot: page.optPilot.checked,
-        onboard: !!page.localPlayer.occupancy,
-        vehicle: page.localPlayer.occupancy?.root?.userData?.control ?? null,
-        seat: page.localPlayer.occupancy ? page.localPlayer.occupancy.order.indexOf(page.localPlayer.occupancy.activeSeatId) : null,
+        onboard: !!page.occupancy,
+        vehicle: page.occupancy?.root?.userData?.control ?? null,
+        seat: page.occupancy ? page.occupancy.order.indexOf(page.occupancy.activeSeatId) : null,
       });
     } catch (err) {
       console.warn('room unavailable', err);
