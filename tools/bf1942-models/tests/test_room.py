@@ -49,7 +49,7 @@ HARNESS = Path(__file__).resolve().parent / "room_harness.mjs"
 # the drive models, the netcode codec), kept under their own names so the
 # unmodified `../viewer/...` imports resolve from `server/`.
 _VIEWER_MODULES = [
-    "world", "physics", "parachute", "swim", "soldier", "spawn-safety",
+    "world", "physics", "parachute", "swim", "soldier", "spawn-flags", "spawn-safety",
     "point-body", "fixed-step", "soldier-pose", "soldier-locomotion", "walking-body",
     "mouse-input", "fall-damage",
     "body-world", "body-statics", "vehicle-bodies", "combat-area", "supply", "armor",
