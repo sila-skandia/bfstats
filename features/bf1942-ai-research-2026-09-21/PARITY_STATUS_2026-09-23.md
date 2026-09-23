@@ -266,14 +266,17 @@ which the bot tests then covered.
    craft outside its zone, so something between is unread). The levels'
    vehicle groups were never exported (wrong con words); fixed, and every
    XPack1, XPack2 and EoD level now carries its AI block (live). Runner,
-   Wake, 8 a side, 300 s, first landing in a zone, seeds 1..4: 136, 138,
-   164, 163 s (main `da237ffb`: 213, none, 200, 263 s); boardings of a
-   beached craft within 10 s of leaving it: 0 in every seed (10, 0, 14,
-   20). Seed 1: `Daihatsu_1` reaches `SouthLanding` through the `SeaArea1`
-   route point, its crew out at 136.4 s, a rider neutralises `Landing_Beach`
-   at 138.6 s; the Allies' Defgun takes it back, and no seed has an Axis
-   capture of the beach flag in 300 s (seed 2's Axis take The Airfield at
-   281.9 s in a Willy). Live (worktree viewer, Wake, 8 bots): a Daihatsu
+   Wake, 8 a side, 300 s, on main `be61dd5d` (with Brief L), the first crew
+   out at a beach (within 10 m of a zone), seeds 1..4: 155, 185, 153, 141 s
+   (main `da237ffb`: 213, none, 200, 263 s), `Landing_Beach` neutralised 3
+   to 11 s later in every seed; boardings of a beached craft within 10 s of
+   leaving it: 0 in every seed (10, 0, 14, 20). Seed 1: `Daihatsu_1`
+   reaches `SouthLanding` through the `SeaArea1` route point, driver and
+   rider out at the zone's east edge at 155.3 s, a rider neutralises
+   `Landing_Beach` at 166.5 s, and the Allies' Defgun takes it back at
+   222.9 s (seed 4 the same at 292.4 s); no seed has an Axis capture in
+   300 s. On the Brief N commits before the rebase onto Brief L the same
+   seeds landed at 136, 138, 164 and 163 s. Live (worktree viewer, Wake, 8 bots): a Daihatsu
    taken at the carrier with a rider aboard at 25 s, its `SeaArea1` point
    popped at 119.5 s, the zone entered at 162.9 s with the ramp input at
    1.0, driver and rider out on the beach at (1161, -706) at 173.1 s, nobody
