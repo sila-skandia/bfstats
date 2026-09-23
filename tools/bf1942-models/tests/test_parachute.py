@@ -33,6 +33,7 @@ MODULES = [
     ROOT / "viewer" / "collision.js",
     ROOT / "viewer" / "world-collider.js",
     ROOT / "viewer" / "static-index.js",
+    ROOT / "viewer" / "collision-meshes.js",
     ROOT / "viewer" / "drivable-mask.js",
     ROOT / "viewer" / "collision-materials.js",
     ROOT / "viewer" / "heightfield.js",
