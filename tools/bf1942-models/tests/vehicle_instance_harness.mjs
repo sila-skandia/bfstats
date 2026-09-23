@@ -167,10 +167,17 @@ results.swap = {
 //    and the instance forgotten.
 log.length = 0;
 const transformsBefore = drive.transforms;
+// A wheel the drive has lifted by its compression, as `#applyWheels` leaves it.
+const wheelNode = new THREE.Object3D();
+wheelNode.position.set(1, -0.68, 2);
+drive.wheels = [{ node: wheelNode, basePosition: wheelNode.position.clone(), baseQuaternion: wheelNode.quaternion.clone() }];
+wheelNode.position.y += 0.14;
+wheelNode.quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), 0.7);
 const last = registry.leave('bot');
 results.lastOut = {
   emptied: last.emptied, log: [...log], transformed: drive.transforms - transformsBefore,
   forgotten: registry.instanceOf(tank) === null,
+  wheelY: wheelNode.position.y, wheelTurned: wheelNode.quaternion.w,
 };
 
 // 9. A gunner alone in a parked hull: no drive until someone drives.
