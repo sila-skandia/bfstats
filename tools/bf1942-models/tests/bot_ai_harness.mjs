@@ -9,7 +9,7 @@
 // Run by `tests/test_bot_ai.py`, which stages the module set the way
 // `test_world.py` does. Output is one JSON object on stdout.
 
-import { inFrustum } from './bot-sense.js';
+import { inFrustum, sCurveExact, informationSecurity, SideKnowledge, BotSenses } from './bot-sense.js';
 import { World, WORLD_TICK_DT } from './world.mjs';
 import { BotController } from './bot.js';
 import { buildNavMap, gridAt, traceClear, CELL_OBJECT } from './nav-grid.js';
@@ -342,6 +342,66 @@ function airScenario() {
   return { ahead, right, ground, boatTurn, boatAhead, fwd };
 }
 
+/** A side's information security (ledger AI-75): `SCurve::calculate` on its
+ *  table; `1 - SCurve(age / D)` for a known enemy; hearing's `setTime(now,
+ *  0.5)`; the enemy tables weigh each unit by it, leave out one never seen
+ *  and forget one no longer alive; a bot's spot, re-sight and hearing write
+ *  its side's store, and a spot refreshes the spotted unit's crewmates. */
+function securityScenario() {
+  const curve = [0, 0.005, 0.255, 0.5, 0.999, 1, 1.5, -0.1].map(sCurveExact);
+  const soldier = [0, 3.75, 7.5, 11.25, 15, 20].map(t => informationSecurity(t));
+  const k = new SideKnowledge();
+  k.heard('h', 10);                                  // first contact: made now, security 1
+  const heardFresh = k.security('h', 10);
+  k.heard('h', 12);                                  // 0.99 >= 0.5: unchanged
+  const heardKept = k.t0.get('h');
+  k.heard('h', 30);                                  // 0 < 0.5: t0 = 30 - 1 / (0.5 x 15)
+  const heardBack = { t0: k.t0.get('h'), s: k.security('h', 30) };
+
+  const tables = new EnemyStrengthTables();
+  const units = [
+    { id: 'a', table: { Infantry: 10 }, type: 'Infantry' },
+    { id: 'b', table: { Infantry: 10 }, type: 'Infantry' },
+    { id: 'p', table: { Air: 6 }, type: 'Air', template: 'Spitfire' },
+  ];
+  tables.knowledge.spotted('a', 0);
+  tables.knowledge.spotted('p', 0);
+  const series = [];
+  for (let t = 0; t <= 16; t += 2) {
+    tables.update(units, t);
+    series.push({ t, inf: tables.strengths.Infantry, air: tables.strengths.Air, infType: tables.types.Infantry,
+                  a: tables.lastSecurity.get('a'), b: tables.lastSecurity.get('b') ?? 'absent', p: tables.lastSecurity.get('p') });
+  }
+  tables.update(units.slice(1), 18);                 // 'a' died
+  const forgot = !tables.knowledge.t0.has('a');
+  const legacy = new EnemyStrengthTables();
+  legacy.update([{ table: { Infantry: 10 }, type: 'Infantry' }]);   // no ids, no clock: weight 1
+
+  const players = new Map([
+    ['me', { team: 1, soldier: { x: 0, y: 0, z: 0 } }],
+    ['e1', { team: 2, soldier: { x: 0, y: 0, z: 50 }, hull: 7 }],
+    ['e2', { team: 2, soldier: { x: 0, y: 0, z: -50 }, hull: 7 }],   // behind: seen only as crew
+    ['e3', { team: 2, soldier: { x: 40, y: 0, z: -40 } }],
+    ['e4', { team: 2, soldier: { x: 12, y: 0, z: 40 } }],             // in the frustum, behind a wall
+  ]);
+  // Every ray toward +x (e4) ends on a wall; the rest are clear.
+  const collider = { cast: (ox, oy, oz, dx) => (dx > 0.05 ? { t: 5, owner: 99 } : null) };
+  const world = { players, collider, armorOf: () => null };
+  const senses = new BotSenses({ viewDistance: 600, random: () => 0.5 });
+  senses.knowledge = new SideKnowledge();
+  senses.unitOwnerOf = p => p?.hull ?? -1;
+  const me = { id: 'me', team: 1 };
+  senses.sense(5, world, me, [0, 1.6, 0], 0);
+  const afterSpot = Object.fromEntries(senses.knowledge.t0);
+  const e4InMemory = senses.memory.has('e4');
+  senses.updateMemory(9, world, me, [0, 1.6, 0], 0);
+  const afterResight = Object.fromEntries(senses.knowledge.t0);
+  senses.hear(9, 'e3', 2, [40, 0, -40], [0, 0, 0], 1, { weaponRadius: 100, firedAt: 9 });
+  const afterHear = Object.fromEntries(senses.knowledge.t0);
+  return { curve, soldier, heardFresh, heardKept, heardBack, series, forgot, legacy: legacy.strengths.Infantry,
+           afterSpot, afterResight, afterHear, e4InMemory, securityOfUnknown: senses.securityOf('nobody', 9) };
+}
+
 /** The class tables: a Sherman's unit table is the max over its guns; the
  *  enemy tables settle at the per-pass sum; the fire strength is the best
  *  squared strength against a class the enemy fields, less the enemy's
@@ -561,6 +621,7 @@ const results = {
              nearish: freeLevel(nav, 44.5, -44.5) };
   })(),
   medic: medicScenario(),
+  security: securityScenario(),
   air: airScenario(),
   tankLaw: tankLawScenario(),
   change: changeScenario(),
