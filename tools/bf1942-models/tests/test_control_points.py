@@ -86,6 +86,31 @@ class ControlPointTemplateTests(unittest.TestCase):
         self.assertEqual(tpl.flag_offset, (0.0, 8.2, 0.0))
         self.assertTrue(tpl.visible)
 
+    def test_the_law_settings_parse(self) -> None:
+        """Every template field `ControlPoint::handleFrameUpdate` 0x08283b00
+        reads (setters ConsoleClass636..640, 649, 650); unset is None, the
+        ctor's default (0x082846d0) being the viewer's."""
+        text = WAKE_TEMPLATES + (
+            "ObjectTemplate.timeToLoseControl 10\n"
+            "ObjectTemplate.disableIfEnemyInsideRadius 0\n"
+            "ObjectTemplate.disableWhenLosingControl 1\n"
+            "ObjectTemplate.loseControlWhenEnemyClose 0\n"
+            "ObjectTemplate.loseControlWhenNotClose 1\n"
+            "ObjectTemplate.minNrToTakeControl 2\n"
+            "ObjectTemplate.onlyTakeableByTeam 2\n")
+        tpl = parse_control_point_templates(text)["the_airfield"]
+        self.assertEqual(tpl.time_to_lose_control, 10.0)
+        self.assertIs(tpl.disable_if_enemy_inside_radius, False)
+        self.assertIs(tpl.disable_when_losing_control, True)
+        self.assertIs(tpl.lose_control_when_enemy_close, False)
+        self.assertIs(tpl.lose_control_when_not_close, True)
+        self.assertEqual(tpl.min_nr_to_take_control, 2)
+        self.assertEqual(tpl.only_takeable_by_team, 2)
+        bare = parse_control_point_templates(WAKE_TEMPLATES)["the_airfield"]
+        self.assertIsNone(bare.time_to_lose_control)
+        self.assertIsNone(bare.lose_control_when_enemy_close)
+        self.assertIsNone(bare.min_nr_to_take_control)
+
     def test_remmed_out_property_does_not_apply(self) -> None:
         """`rem ObjectTemplate.unableToChangeTeam 1` is a comment, not a value."""
         self.assertFalse(parse_control_point_templates(WAKE_TEMPLATES)

@@ -60,6 +60,16 @@ export function spawnFlags(extras) {
       radius: Number.isFinite(point.radius) ? point.radius : null,
       timeToGetControl: Number.isFinite(point.timeToGetControl)
         ? point.timeToGetControl : null,
+      // The rest of the template's control-point settings, null where the
+      // level keeps the ctor's default (bot-referee.js
+      // `controlPointSettings` holds those).
+      timeToLoseControl: Number.isFinite(point.timeToLoseControl) ? point.timeToLoseControl : null,
+      disableIfEnemyInsideRadius: point.disableIfEnemyInsideRadius ?? null,
+      disableWhenLosingControl: point.disableWhenLosingControl ?? null,
+      loseControlWhenEnemyClose: point.loseControlWhenEnemyClose ?? null,
+      loseControlWhenNotClose: point.loseControlWhenNotClose ?? null,
+      minNrToTakeControl: Number.isFinite(point.minNrToTakeControl) ? point.minNrToTakeControl : null,
+      onlyTakeableByTeam: Number.isFinite(point.onlyTakeableByTeam) ? point.onlyTakeableByTeam : null,
       controlPointName: point.name || null,
       spawns: owned,
     });
