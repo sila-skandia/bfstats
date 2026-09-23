@@ -201,6 +201,7 @@ import { createLocalLook } from './local-look.js';
 import { createVehicleEntry } from './vehicle-entry.js';
 import { createPageConsole } from './page-console.js';
 import { createPageInput } from './page-input.js';
+import { createFreeCamera } from './free-camera.js';
 import { createTouchControls } from './touch-controls.js';
 
 // Which game's levels this page serves, and the directory they hang off:
@@ -398,7 +399,7 @@ function getTouchHudText() {
   if (optOnFoot.checked && localPlayer.soldier) {
     return 'Pad moves · drag scene to look · FIRE shoots · JUMP jumps · ENTER vehicles';
   }
-  return pageInput.navMode === 'fly'
+  return freeCamera.navMode === 'fly'
     ? 'Hold to fly · Drag to steer · 2-finger pan'
     : 'Drag to pan · Pinch to zoom';
 }
@@ -454,7 +455,7 @@ const level = createLevel({
   get optGameFog() { return optGameFog; }, get optOnFoot() { return optOnFoot; },
   get optPilot() { return optPilot; }, get optVehicles() { return optVehicles; },
   get optWire() { return optWire; }, get overlay() { return overlay; },
-  get params() { return params; }, get placeCamera() { return pageInput.placeCamera; },
+  get params() { return params; }, get placeCamera() { return freeCamera.placeCamera; },
   get rebaseDeckSpawns() { return hullBodies.rebaseDeckSpawns; },
   get rebuildVehicleInterp() { return localLook.rebuildVehicleInterp; },
   get registerDamageables() { return wrecks.registerDamageables; },
@@ -478,32 +479,32 @@ const pageInput = createPageInput({
   get altFireDemolitions() { return soldierKit.altFireDemolitions; },
   get bfmap() { return mapSurfaces.bfmap; }, get camera() { return camera; },
   get cancelDeploy() { return spawning.cancelDeploy; }, get car() { return localPlayer.car; },
+  get clampAltitude() { return freeCamera.clampAltitude; },
   get consoleCaptures() { return pageConsole.consoleCaptures; },
   get cycleKitWeapon() { return soldierKit.cycleKitWeapon; },
   get cycleView() { return localPlayer.cycleView; },
   get deployActive() { return deployScreen.deployActive; },
   get deploySpawn() { return spawning.deploySpawn; },
+  get dollyCamera() { return freeCamera.dollyCamera; },
   get ensureAudioContext() { return pageAudio.ensureAudioContext; },
   get enterVehicle() { return vehicleEntry.enterVehicle; },
   get escMenu() { return pageConsole.escMenu; },
   get escMenuCaptures() { return pageConsole.escMenuCaptures; },
-  get exitSeat() { return vehicleEntry.exitSeat; }, get extras() { return level.extras; },
-  get FLY_KEYS() { return FLY_KEYS; }, get FLY_SLOW() { return FLY_SLOW; },
-  get FLY_SPEED() { return FLY_SPEED; }, get FOOT_KEYS() { return FOOT_KEYS; },
+  get exitSeat() { return vehicleEntry.exitSeat; }, get FLY_KEYS() { return FLY_KEYS; },
+  get FLY_SLOW() { return FLY_SLOW; }, get FOOT_KEYS() { return FOOT_KEYS; },
   get fullmapBox() { return mapSurfaces.fullmapBox; },
   get gameConsole() { return pageConsole.gameConsole; },
-  get getFloorAltitude() { return level.getFloorAltitude; },
-  get groundHeight() { return level.groundHeight; },
   get handWeapon() { return soldierKit.handWeapon; }, get hud() { return hud; },
-  get isTouchDevice() { return isTouchDevice; },
-  get itemsLocked() { return soldierKit.itemsLocked; },
-  get leavePilot() { return localPlayer.leavePilot; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
-  get lookDelta() { return localLook.lookDelta; },
+  get isSlow() { return freeCamera.isSlow; }, get isTouchDevice() { return isTouchDevice; },
+  get itemsLocked() { return soldierKit.itemsLocked; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
+  get lookDelta() { return localLook.lookDelta; }, get navMode() { return freeCamera.navMode; },
   get nearEntry() { return vehicleEntry.nearEntry; },
   get occupancy() { return localPlayer.occupancy; },
   get openDeploy() { return spawning.openDeploy; }, get optOnFoot() { return optOnFoot; },
-  get optPilot() { return optPilot; }, get params() { return params; },
-  get renderer() { return renderer; }, get scoreboardOpen() { return scoreboard.scoreboardOpen; },
+  get optPilot() { return optPilot; }, get panCamera() { return freeCamera.panCamera; },
+  get params() { return params; }, get renderer() { return renderer; },
+  get resetCamera() { return freeCamera.resetCamera; },
+  get scoreboardOpen() { return scoreboard.scoreboardOpen; },
   get scoreFromSpawn() { return scoreboard.scoreFromSpawn; },
   get selectDeployFlag() { return spawning.selectDeployFlag; },
   get selectKitWeapon() { return soldierKit.selectKitWeapon; },
@@ -515,9 +516,20 @@ const pageInput = createPageInput({
   get switchSeat() { return localPlayer.switchSeat; },
   get toggleFullMap() { return mapSurfaces.toggleFullMap; },
   get toggleProne() { return localPlayer.toggleProne; }, get uiFocused() { return uiFocused; },
-  get updateHud() { return updateHud; },
   get updateMobileControls() { return touchControls.updateMobileControls; },
   get world() { return level.world; },
+});
+const freeCamera = createFreeCamera({
+  get aircraft() { return localPlayer.aircraft; }, get camera() { return camera; },
+  get captured() { return pageInput.captured; }, get car() { return localPlayer.car; },
+  get extras() { return level.extras; }, get FLY_SLOW() { return FLY_SLOW; },
+  get FLY_SPEED() { return FLY_SPEED; }, get getFloorAltitude() { return level.getFloorAltitude; },
+  get groundHeight() { return level.groundHeight; }, get keys() { return pageInput.keys; },
+  get leavePilot() { return localPlayer.leavePilot; }, get look() { return pageInput.look; },
+  get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
+  get params() { return params; }, get soldier() { return localPlayer.soldier; },
+  get spawnAtFlag() { return spawning.spawnAtFlag; },
+  get touchFlying() { return pageInput.touchFlying; }, get updateHud() { return updateHud; },
 });
 const touchControls = createTouchControls({
   get aircraft() { return localPlayer.aircraft; }, get captured() { return pageInput.captured; },
@@ -709,7 +721,7 @@ const vehicleEntry = createVehicleEntry({
   get mannedActive() { return localPlayer.mannedActive; },
   get netSeatRow() { return room.netSeatRow; }, get netSendAction() { return room.netSendAction; },
   get occupancy() { return localPlayer.occupancy; }, get optOnFoot() { return optOnFoot; },
-  get optPilot() { return optPilot; }, get placeCamera() { return pageInput.placeCamera; },
+  get optPilot() { return optPilot; }, get placeCamera() { return freeCamera.placeCamera; },
   get releaseButtons() { return pageInput.releaseButtons; },
   get resetMobileControls() { return touchControls.resetMobileControls; },
   get seatHolder() { return botUnits.seatHolder; }, get setPilot() { return localPlayer.setPilot; },
@@ -819,7 +831,7 @@ const wrecks = createVehicleWrecks({
   get leaveSeat() { return localPlayer.leaveSeat; }, get loader() { return loader; },
   get markPilot() { return localPlayer.markPilot; }, get MODELS_BASE() { return MODELS_BASE; },
   get occupancy() { return localPlayer.occupancy; }, get optOnFoot() { return optOnFoot; },
-  get placeCamera() { return pageInput.placeCamera; },
+  get placeCamera() { return freeCamera.placeCamera; },
   get resetMobileControls() { return touchControls.resetMobileControls; },
   get respawnVehicleBody() { return hullBodies.respawnVehicleBody; },
   get retireVehicleBody() { return hullBodies.retireVehicleBody; },
@@ -1317,7 +1329,7 @@ const botBodies = createBotVisuals({
 /** The edge of the human's fire input last frame, for the bots' hearing. */
 let frameInputWasFiring = false;
 const soldierView = createSoldierView({
-  get applyLook() { return pageInput.applyLook; }, get camera() { return camera; },
+  get applyLook() { return freeCamera.applyLook; }, get camera() { return camera; },
   get collectSupplyDepots() { return level.collectSupplyDepots; },
   get collider() { return level.collider; }, get currentRoot() { return level.currentRoot; },
   get deathCamAt() { return localPlayer.deathCamAt; },
@@ -1467,7 +1479,7 @@ const spawning = createSpawning({
   get netTickPoses() { return room.netTickPoses; },
   get paintDeployChrome() { return deployScreen.paintDeployChrome; },
   get paintDeploySoon() { return deployScreen.paintDeploySoon; }, get params() { return params; },
-  get placeCamera() { return pageInput.placeCamera; },
+  get placeCamera() { return freeCamera.placeCamera; },
   get projectToArt() { return mapSurfaces.projectToArt; },
   get rebaseDeckSpawns() { return hullBodies.rebaseDeckSpawns; },
   get refreshFlags() { return flagCapture.refreshFlags; },
@@ -1591,7 +1603,7 @@ optPilot.addEventListener('change', () => {
     localPlayer.setOnFoot(false);
   }
   localPlayer.setPilot(optPilot.checked);
-  if (!optPilot.checked) pageInput.placeCamera();
+  if (!optPilot.checked) freeCamera.placeCamera();
 });
 optOnFoot.addEventListener('change', () => {
   if (optOnFoot.checked) {
@@ -1599,7 +1611,7 @@ optOnFoot.addEventListener('change', () => {
     return;
   }
   localPlayer.setOnFoot(false);
-  pageInput.placeCamera();
+  freeCamera.placeCamera();
 });
 spawnFlagSelect.addEventListener('change', () => {
   level.world?.setSpawnIndex(LOCAL_PLAYER, 0);
@@ -1670,8 +1682,8 @@ function frame(dt) {
   } else if (onFoot) {
     soldierView.onFootCamera(dt);
   } else {
-    pageInput.fly(dt);
-    pageInput.applyLook();
+    freeCamera.fly(dt);
+    freeCamera.applyLook();
   }
   // Unconditional: rounds already in the air have to finish their flight even
   // if the trigger, the pilot mode or the whole aircraft has gone away — the
