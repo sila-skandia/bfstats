@@ -108,6 +108,26 @@ export class VehicleInstance {
 const EMPTY_GROUPS = Object.freeze({ driven: Object.freeze([]), manned: Object.freeze([]) });
 
 /**
+ * Put a released drive's wheels back on the pose it found them in. A land
+ * drive lifts each `Spring` node by its compression every frame
+ * (`#applyWheels`), and the next drive built on the hull reads its axles' rest
+ * off those same nodes (`collectChassis`: the node's matrix against the
+ * root's). Left lifted, every boarding after the first started from axles
+ * 0.14 m higher up the hull, and the Sherman sank that much each time it was
+ * taken: 60.675, 60.539, 60.402 on El Alamein's Sherman_2 (Brief F item 2).
+ * The parked body poses no wheels, so the rest pose is also what a parked hull
+ * shows.
+ */
+function restWheels(drive) {
+  for (const wheel of drive.wheels ?? []) {
+    if (!wheel?.node || !wheel.basePosition || !wheel.baseQuaternion) continue;
+    wheel.node.position.copy(wheel.basePosition);
+    wheel.node.quaternion.copy(wheel.baseQuaternion);
+    wheel.node.updateMatrix?.();
+  }
+}
+
+/**
  * Every occupied hull, keyed by its root node, and every seated player.
  *
  * `env`:
@@ -236,6 +256,7 @@ export class VehicleRegistry {
       if (drive) {
         drive.applyTransform?.();
         drive.applyRig?.();
+        restWheels(drive);
         this.env.release?.(drive);
       }
       this.env.freeze?.(inst.root);
