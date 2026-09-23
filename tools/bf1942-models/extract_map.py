@@ -2725,7 +2725,7 @@ def main() -> int:
     # that ships no `AI.con` (most mods) writes nothing.
     level_ai = load_level_ai(files)
     if level_ai is not None:
-        add_cover_values(level_ai, library, (inst.template for inst in info.statics))
+        add_cover_values(level_ai, library, (inst.template for inst in info.static_objects))
         extras["ai"] = level_ai.to_json()
     # The search maps the level ships baked and `ai.loadMaps` loads
     # (`pathfinding/`), which the bots search instead of painting their own.
