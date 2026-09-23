@@ -12,7 +12,7 @@ the byte says why a cell is blocked). The frame is the exporter's: x in
 
 | map | built by | parameters (`ai.addSearchMap`) |
 |---|---|---|
-| infantry | PAGE `spawnBotsForLevel` | water depth 1.5, slope 30 deg, brush 1.0, clip 0.4 .. 2.0 (the `Infantry1` line; the code uses these defaults, not the level's line) |
+| infantry | PAGE `spawnBotsForLevel` | the level's baked `Infantry1` (below); painted: water depth 1.5, slope 30 deg, brush 1.0, clip 0.4 .. 2.0 (the code's defaults) |
 | land vehicles | PAGE `botVehicleNav`, on first use | the level's `Tank*` line (El Alamein `Tank0`: depth 0, slope 30, brush 3.0, clip 0.3 .. 2.5) |
 | boats, landing craft | PAGE `botWaterNav` | the level's `Boat*` / `LandingCraft*` water map (`Boat2 1 5.0 0 125`: free where the water is at least 5 m deep, no slope test, brush 125 m) |
 
@@ -66,21 +66,40 @@ band) and an abutment stands 2.8 m out of the slope under it. On the tank
 map (brush 3) the deck is free across the river in a strip 5 to 6 m wide,
 the level's baked map's 6.
 
-**The level's own map.** Every level ships its baked maps
-(`Pathfinding/<name>Level<L>Map.raw`, which the server loads with
-`ai.loadMaps` rather than painting its own); `bf42/ai_level.py
-read_search_map_raw` reads one (AI-93). The viewer's tank map agrees with
-Bocage's `Tank0Level0Map` on 95.2 % of cells (60.8 % before the drivable
-rules) and is one component, as the baked one is; the infantry map with
-`Infantry1Level0Map` on 98.2 % (56.4 %). On Bocage most of what remains
-is the slope test (the engine samples its own slope function 4 x 5 times a
-metre and blocks on any sample over the limit, the viewer tests one
-central-difference normal a cell). On Market Garden (58 %) and Omaha (54 %)
-the baked maps block everything outside an oval around the play area
-(INFERRED the combat area; where the engine paints that was not read) and
-the viewer's maps do not. Market Garden's iron bridge (`Ironbrdg1`) is not
-in the drivable mask (`DRIVABLE_TOP_RE` matches `bridge`, not `brdg`), so
-its deck is still cut on the viewer's maps where the baked one is free.
+**The level's own map (AI-102).** Every level with an `AI.con` ships its
+search maps baked (`Pathfinding/<name>Level<L>Map.raw`), and the server loads
+them with `ai.loadMaps` instead of painting: each declared map, levels
+`minLevel .. maxLevel` (the line's 9th and 10th words, 0 and 2 when absent),
+stopping at the first map that fails and leaving it and every later one all
+free (`loadSearchMaps` 0x0847c5c0, `LocalMap::loadRawFile` 0x085fefb0,
+`CellMap::loadRawFile` 0x085f8930, `CellMap::CellMap` 0x085f7af0; the file is
+`features/bf1942-ai-research-2026-09-21/pathfinding-raw-format.md`). The
+viewer does the same: the extractor copies each loaded map's lowest level to
+`<level>/pathfinding/` (`extract_search_maps.py`, `bf42/ai_level.py
+level_search_maps`), the page's `show()` and the runner's `level.mjs` load
+them onto the collider (`nav-baked.js`), and `buildNavMap` takes the map
+whose six parameters are the call's (the referee's call, all defaults, takes
+the level's infantry map). The baked pixels are the map: statics, brush and
+flood are the server's own, only the terrain passes run (for the step costs
+and to say why a blocked cell is blocked). A water map's lowest level is
+usually 2, a 4 m pixel (`Boat2 1 5 0 125.0 0.3 2.5 0 2 5`), which the 1 m
+map repeats. Every declared map on every shipped level loads (796 maps on 271
+levels, 66.8 MB); the six levels with no `AI.con` (Aberdeen, Coral Sea,
+Invasion of the Philippines, Liberation of Caen, Raid on Agheila, EoD's
+Operation Linebacker) are painted as below. Bocage's baked `Tank0` and
+`Infantry1` are one coarse component each, the painted ones' number (AI-93).
+
+**Painted.** On a level with no baked map, the painted map above stands in.
+Against Bocage's `Tank0Level0Map` it agrees on 95.2 % of cells (60.8 % before
+the drivable rules), `Infantry1Level0Map` 98.2 % (56.4 %). On Bocage most of
+what remains is the slope test (the engine samples its own slope function
+4 x 5 times a metre and blocks on any sample over the limit, the viewer tests
+one central-difference normal a cell). On Market Garden (58 %) and Omaha
+(54 %) the baked maps block everything outside an oval around the play area
+(INFERRED the combat area; where the engine paints that was not read), and
+Market Garden's iron bridge (`Ironbrdg1`) is not in the drivable mask
+(`DRIVABLE_TOP_RE` matches `bridge`, not `brdg`); neither matters now that
+those levels load their own maps.
 
 ## The searches
 

@@ -75,7 +75,7 @@ const VEHICLE_YAW_SIGN = 1;
  *  and `Vehicle::Vehicle` 0x0860b2c0 copies `+0xc4a8` from its `LocalMap`'s
  *  +0x28 (0x0860b41c), the map's `maxLevel` (`LocalMap::LocalMap`
  *  0x085fb590; `ai.addSearchMap`'s last argument, 2 unless given: `Tank0`
- *  2, `Boat2` 5). A map that carries it (every level's baked map, AI-95)
+ *  2, `Boat2` 5). A map that carries it (every level's baked map, AI-102, AI-103)
  *  is boxed at its own; this cap stands in only for a painted map of a
  *  level with no search maps (INVENTION). A tank map's minimum level is 0
  *  (INFERRED from `ai.addSearchType Tank 0 0`); a water map's is its base
