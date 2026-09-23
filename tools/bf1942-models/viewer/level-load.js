@@ -23,16 +23,21 @@ import { bindTreeFoliage } from './tree-foliage.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `DEFAULT_DRAW`, `MAPS_BASE`, `activeMod`, `botBodies`, `bust`, `camera`,
- * `capture`, `capturePresentationTick`, `combatArea`, `combatFrame`,
- * `cubeLoader`, `effects`, `entryPoints`, `fireStates`, `flagCapture`,
- * `guns`, `hemi`, `hullBodies`, `loadEffectLibrary`, `loader`, `localPlayer`,
- * `logToConsole`, `mapSurfaces`, `nearEntry`, `optEntire`, `optGameFog`,
- * `optOnFoot`, `optPilot`, `optVehicles`, `optWire`, `overlay`, `pageAudio`,
- * `params`, `placeCamera`, `rebuildVehicleInterp`, `renderer`, `scene`,
- * `seatWorldPos`, `setOnFoot`, `setPilot`, `soldier`, `soldierKit`,
- * `spawnBotsForLevel`, `spawnFlagSelect`, `spawning`, `sun`, `texLoader`,
- * `texManager`, `vehicleDamage`, `vehicles`, `world`, `wrecks`.
+ * `activeMod`, `botRoot`, `bust`, `camera`, `capture`,
+ * `capturePresentationTick`, `combatArea`, `combatFrame`, `cubeLoader`,
+ * `damageVisuals`, `DEFAULT_DRAW`, `disposeSounds`, `effects`,
+ * `entryPoints`, `fireStates`, `floatPlacedVehicles`, `fullmapMeta`,
+ * `fullmapName`, `guns`, `gunSubject`, `hemi`, `loadCollisionMeshes`,
+ * `loadEffectLibrary`, `loader`, `loadMapArt`, `logToConsole`, `MAPS_BASE`,
+ * `nearEntry`, `onCrashDamage`, `openDeploy`, `optEntire`, `optGameFog`,
+ * `optOnFoot`, `optPilot`, `optVehicles`, `optWire`, `overlay`, `params`,
+ * `placeCamera`, `rebaseDeckSpawns`, `rebuildVehicleInterp`,
+ * `registerDamageables`, `renderer`, `scene`, `seatWorldPos`, `setOnFoot`,
+ * `setPilot`, `settlePlacedVehicles`, `setupSounds`, `setupVehicleBodies`,
+ * `soldier`, `spawnBotsForLevel`, `spawnFlagSelect`, `sun`,
+ * `syncDeployReady`, `templateNameOf`, `texLoader`, `texManager`,
+ * `toggleFullMap`, `unitRectOf`, `vehicleDamage`, `vehicles`, `view`,
+ * `viewFor`, `vmScene`, `world`.
  */
 export function createLevel(page) {
   const level = {};
@@ -1188,7 +1193,7 @@ export function createLevel(page) {
     // against the same fog the world does — here, before the rig's warm-up
     // compile, and not per frame, or that compile would be for a fogless
     // program the first drawn frame then replaces.
-    page.soldierKit.vmScene.fog = page.scene.fog;
+    page.vmScene.fog = page.scene.fog;
     page.scene.background = level.skybox || fogColor;
     syncWaterFog();
   }
@@ -1263,7 +1268,7 @@ export function createLevel(page) {
     const scratch = new THREE.Vector3();
     for (const vehicle of level.spawnersRoot.children) {
       vehicle.getWorldPosition(scratch);
-      const want = page.wrecks.templateNameOf(vehicle).toLowerCase();
+      const want = page.templateNameOf(vehicle).toLowerCase();
       let best = null;
       let bestDistance = Infinity;
       for (const spawn of spawns) {
@@ -1579,15 +1584,15 @@ export function createLevel(page) {
     // have to be standing where they will rest. A ship rests at its own draft,
     // which is a closed form rather than a settle, and its deck spawns move with
     // it.
-    page.hullBodies.settlePlacedVehicles(ownerRoots, heightfield);
-    page.hullBodies.floatPlacedVehicles(ownerRoots, level.extras?.waterLevel);
-    page.hullBodies.rebaseDeckSpawns();
+    page.settlePlacedVehicles(ownerRoots, heightfield);
+    page.floatPlacedVehicles(ownerRoots, level.extras?.waterLevel);
+    page.rebaseDeckSpawns();
     const statics = buildCollisionIndex(root, { ownerRoots });
     // Every damageable thing in the level, keyed by the same owner id the
     // collision index just handed out — which is what a hit record names, so a
     // round that lands resolves to the vehicle it landed on with one lookup and
     // no scene walk. `ownerRoots[i]` is owner `i` by construction.
-    page.wrecks.registerDamageables(ownerRoots);
+    page.registerDamageables(ownerRoots);
     // Raised decks a ground vehicle drives on top of (bridges, repair/reload
     // bays). The level's heightfield is the ground under them; their deck tops
     // are static collision meshes. This is only the broadphase gate — the ride
@@ -1892,7 +1897,7 @@ export function createLevel(page) {
 
   async function show(entry) {
     level.worldReady = false;
-    page.spawning.syncDeployReady();
+    page.syncDeployReady();
     const timing = warmups.timing = { showStart: performance.now() };
     let settleLevelWarmup;
     warmups.level = new Promise(resolve => { settleLevelWarmup = resolve; });
@@ -1956,16 +1961,16 @@ export function createLevel(page) {
     // Every hull's seats go with the scene: nobody is carried across a level
     // switch, and the seat's view rig holds nodes of the old one.
     page.vehicles.clear();
-    page.localPlayer.view = null;
-    page.localPlayer.viewFor = null;
-    page.localPlayer.gunSubject = null;
+    page.view = null;
+    page.viewFor = null;
+    page.gunSubject = null;
     // A level switch is not surgical, so the rounds in the air go back to their
     // pools here and every group goes with them.
     page.guns.clear();
     page.guns.groups.length = 0;
     dispose(level.currentRoot);
     disposeSky();
-    page.pageAudio.disposeSounds();
+    page.disposeSounds();
     level.currentRoot = gltf.scene;
     // The glb holds every mode's vehicles and flags; drop the ones this mode
     // does not park. Before anything indexes the scene, so the vehicle list, the
@@ -2066,9 +2071,9 @@ export function createLevel(page) {
       guns: page.guns,
       groundHeight,
       fireStates: page.fireStates,
-      onCrash: page.hullBodies.onCrashDamage,
+      onCrash: page.onCrashDamage,
       isWrecked: owner => {
-        const visual = page.wrecks.damageVisuals.get(owner);
+        const visual = page.damageVisuals.get(owner);
         return !!(visual?.wrecked || visual?.removed);
       },
       // Per tick, with every piece of the tick final: every seat's world
@@ -2086,10 +2091,10 @@ export function createLevel(page) {
     page.combatArea = page.world.combatArea;
     page.vehicleDamage = page.world.vehicleDamage;
     // Bot visuals: create the root group now that `scene` exists.
-    if (!page.botBodies.botRoot) {
-      page.botBodies.botRoot = new THREE.Group();
-      page.botBodies.botRoot.name = 'bot-renderers';
-      page.scene.add(page.botBodies.botRoot);
+    if (!page.botRoot) {
+      page.botRoot = new THREE.Group();
+      page.botRoot.name = 'bot-renderers';
+      page.scene.add(page.botRoot);
     }
     // Bots spawn on the player's team. The call waits for `buildCollider`
     // below: `spawnBotsForLevel` builds the nav grid from `world.collider` and
@@ -2097,13 +2102,13 @@ export function createLevel(page) {
     // before the collider lands — which is what left the grid all `-2` (no
     // terrain) and every bot with no path.
     setupWater(level.currentRoot, dir);
-    page.pageAudio.setupSounds(level.extras, dir);
-    page.mapSurfaces.loadMapArt(dir);
+    page.setupSounds(level.extras, dir);
+    page.loadMapArt(dir);
     // A map held open across a level switch would be showing the old level.
-    page.mapSurfaces.toggleFullMap(false);
-    page.mapSurfaces.fullmapName.textContent = level.extras.level || entry.name;
+    page.toggleFullMap(false);
+    page.fullmapName.textContent = level.extras.level || entry.name;
     const cps = (level.extras.controlPoints || []).length;
-    page.mapSurfaces.fullmapMeta.textContent = cps
+    page.fullmapMeta.textContent = cps
       ? `${cps} control point${cps === 1 ? '' : 's'} · ${(level.extras.soldierSpawns || []).length} spawns`
       : '';
     // After the baked paths and the sky/water shaders have claimed their
@@ -2140,7 +2145,7 @@ export function createLevel(page) {
       if (obj.userData?.kind === 'flagCloth') {
         const uv = obj.geometry?.getAttribute('uv');
         if (uv && !obj.geometry.userData.flagUvCell) {
-          obj.geometry.userData.flagUvCell = page.flagCapture.unitRectOf(uv);
+          obj.geometry.userData.flagUvCell = page.unitRectOf(uv);
         }
       }
     });
@@ -2148,12 +2153,12 @@ export function createLevel(page) {
     // materials.png a couple of KB) and both are needed before the first shot,
     // not before the first frame.
     [level.terrainMaterials, level.damageTables] = await Promise.all([
-      loadTerrainMaterials(dir), loadDamageTables(dir), page.hullBodies.loadCollisionMeshes(dir),
+      loadTerrainMaterials(dir), loadDamageTables(dir), page.loadCollisionMeshes(dir),
     ]);
     level.materialFrictionById = buildMaterialFrictionTable(level.damageTables);
     const collision = buildCollider(level.currentRoot);
     // After the collider: a body is keyed by the owner id the index handed out.
-    page.hullBodies.setupVehicleBodies();
+    page.setupVehicleBodies();
     // Now that the collider exists, spawn the bots so their nav grid and spawn
     // probes see it.
     page.spawnBotsForLevel();
@@ -2243,12 +2248,12 @@ export function createLevel(page) {
     // be streaming, and the game deploys over those too.
     level.worldReady = true;
     timing.worldReady = performance.now();
-    page.spawning.syncDeployReady();
+    page.syncDeployReady();
     // Direct-to-spawn: skip the briefing dialog and land on the deploy screen.
     // A level that declares no soldier spawn has no screen to open, and with
     // the "click to fly" plate gone there would be nothing to tell the player
     // the controls are live — so free roam starts armed instead.
-    if (!page.optPilot.checked && !page.spawning.openDeploy()) page.capture();
+    if (!page.optPilot.checked && !page.openDeploy()) page.capture();
 
     // Every texture this level needs has been queued by now, so a queue that is
     // already drained (or was never filled) means the load is done — texReport
