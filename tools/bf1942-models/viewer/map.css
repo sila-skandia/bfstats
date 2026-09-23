@@ -146,6 +146,12 @@ label.opt {
   z-index: 2;
   pointer-events: none;
 }
+/* The radio strip and the message log (comms.js): the engine draws both in
+   the same overlay pass as the HUD, after it. */
+#comms-canvas {
+  z-index: 3;
+  pointer-events: none;
+}
 /* The in-game console (viewer/console.js). The engine draws its wash and
    its text over everything the 3D view has already put up -- the drawer
    `FUN_00464ee0` runs from the frame's overlay pass, after the HUD -- so

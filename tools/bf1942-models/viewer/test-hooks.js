@@ -20,7 +20,7 @@ import { installWorldHooks } from './test-hooks-world.js';
  * `audioLimiter`, `audioListener`, `bfmap`, `bodyScene`, `bodyWorld`,
  * `botBodies`, `botUnits`, `camera`, `cancelDeploy`, `canopySpan`,
  * `captureVoiceDirs`, `captureVoiceKind`, `CHASE_OPTION`, `chaseRig`,
- * `chooseKit`, `chooseTeam`, `collectEntryPoints`, `collider`, `combatArea`,
+ * `chooseKit`, `chooseTeam`, `collectEntryPoints`, `collider`, `combatArea`, `comms`,
  * `combatFrame`, `crosshairAim`, `crosshairEl`, `currentDir`,
  * `cycleKitWeapon`, `damageVisuals`, `deployActive`, `deployKit`,
  * `deploySpawn`, `deployTeamId`, `deployUnchosen`, `detonatorTemplate`,

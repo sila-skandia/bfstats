@@ -20,7 +20,8 @@ import { GameConsole } from './console.js';
  * `fullmapBox`, `gameConsole`, `handWeapon`, `hud`, `isSlow`,
  * `isTouchDevice`, `itemsLocked`, `LOCAL_PLAYER`, `lookDelta`, `navMode`,
  * `nearEntry`, `occupancy`, `openDeploy`, `optOnFoot`, `optPilot`,
- * `panCamera`, `params`, `renderer`, `resetCamera`, `scoreboardOpen`,
+ * `panCamera`, `params`, `radioKeydown`, `renderer`, `resetCamera`,
+ * `scoreboardOpen`,
  * `scoreFromSpawn`, `selectDeployFlag`, `selectKitWeapon`, `setConsoleOpen`,
  * `setEscMenu`, `setScoreboard`, `soldier`, `spawnAtFlag`, `stage`,
  * `startReload`, `switchSeat`, `toggleFullMap`, `toggleProne`, `uiFocused`,
@@ -106,6 +107,10 @@ export function createPageInput(page) {
       }
     }
     if (page.uiFocused()) return;
+    // F1..F8 are the radio (`c_PIRadio1..8`, input 0x22..0x29, handled by
+    // the menu's key handler 0x006D42A0): comms.js takes them, and they never
+    // reach the browser (F1 help, F5 reload).
+    if (!page.deployActive() && page.radioKeydown?.(e)) return;
     // Caps Lock is also handled above; M is `c_PIMap` in the game's own maps.
     // On foot the map opens in its deploy state — the game's own map is also
     // its spawn screen — and Escape or M again puts it away without moving you.

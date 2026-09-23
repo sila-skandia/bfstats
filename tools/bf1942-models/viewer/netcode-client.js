@@ -75,6 +75,10 @@ export function createRoomClient({ ws, now = null }) {
     ws.send(new Uint8Array([MSG_ACTION, ...textBytes(JSON.stringify(row))]));
   };
 
+  /** A radio message (MSG_ACTION `{type: 'radio', msg, team}`): the server
+   *  relays it to whoever should hear it. */
+  out.radio = (msg, team) => out.action({ type: 'radio', msg, team: !!team });
+
   out.ping = () => {
     if (out.state !== 'joined') return;
     const at = Math.max(0, (now?.() ?? 0)) & 0xffffffff;
@@ -160,6 +164,9 @@ export function createRoomClient({ ws, now = null }) {
       team: row.team ?? null,
       name: row.name ?? null,
       duration: row.duration ?? null,
+      msg: row.msg ?? null,
+      broadcast: row.broadcast ?? null,
+      at: row.at ?? null,
       text: feedText(row),
     };
     out.feed.push(feedRow);
@@ -193,6 +200,8 @@ export function createRoomClient({ ws, now = null }) {
       case 'captureContested': return `${row.name ?? 'A flag'} is contested`;
       case 'captureCancelled': return `Capture of ${row.name ?? 'a flag'} was stopped`;
       case 'closed': return row.text ?? 'the room closed';
+      // The message log prints radio lines itself (comms.js).
+      case 'radio': return '';
       default: return row.text ?? row.type;
     }
   }

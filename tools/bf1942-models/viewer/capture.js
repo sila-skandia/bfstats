@@ -372,6 +372,7 @@ export function createFlagCapture(page) {
       hoistCaptureFlag(target);
       page.syncVehicleSpawnOwnership();
       page.logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
+      page.comms?.onCapture(target, target.team);
       page.flashHud(`${target.name} captured`);
       announceCapture(prevTeam, target.team);
       flagCapture.localCapture = null;

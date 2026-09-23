@@ -361,5 +361,20 @@ class RoomTests(unittest.TestCase):
         self.assertAlmostEqual(m["wireYawDeg"], -72.0, places=3)
 
 
+    # ---- (r) the radio relay ------------------------------------------------
+
+    def test_team_radio_reaches_only_the_speakers_team(self) -> None:
+        r = self.results["r"]
+        self.assertEqual([1, 1, 2], r["teams"])
+        self.assertEqual({"a": 0, "c": 0, "row": {"slot": 1, "msg": 1, "broadcast": True,
+                                                  "hasAt": True}}, r["team"])
+
+    def test_a_shout_reaches_anyone_within_70_m(self) -> None:
+        r = self.results["r"]
+        self.assertEqual({"b": 1, "c": 1}, r["nearShout"])   # the enemy hears it too
+        self.assertEqual({"b": 1, "c": 0}, r["farShout"])
+        self.assertEqual(0, r["badId"])
+
+
 if __name__ == "__main__":
     unittest.main()

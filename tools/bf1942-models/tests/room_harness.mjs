@@ -709,4 +709,51 @@ let nextTag = 1;
   results.m.absurdIndex = mw.player(1).spawnIndex;
 }
 
+// --- (r) radio relay: GameServer::radioMessage -----------------------------------
+// Team radio to the speaker's team only; a shout to anyone, of either team,
+// within 70 m of the speaker; never back to the speaker.
+{
+  const rA = attachPeer(core, String(nextTag++));
+  const rB = attachPeer(core, String(nextTag++));
+  const rC = attachPeer(core, String(nextTag++));
+  const hA = joinPeer(core, rA, 'RRR', 'Speaker', 1);
+  const hB = joinPeer(core, rB, 'RRR', 'Mate', 1);
+  const hC = joinPeer(core, rC, 'RRR', 'Enemy', 2);
+  const rRoom = core.room('RRR');
+  for (const p of [rA, rB, rC]) sendJson(p, MSG_ACTION, { type: 'spawn', flag: 0 });
+  rRoom.frame(FRAME_MS); clock.ms += FRAME_MS;
+  const radioRows = peer => ofType(peer, MSG_EVENT).map(jsonRow).filter(r => r.type === 'radio');
+  const clear = () => { for (const p of [rA, rB, rC]) p.sent.length = 0; };
+  const place = (slot, dx) => {
+    const pl = rRoom.world.player(slot);
+    const s0 = rRoom.world.player(hA.slot).soldier;
+    pl.position = null;
+    pl.soldier.body.position.x = s0.x + dx;
+    pl.soldier.body.position.y = s0.y;
+    pl.soldier.body.position.z = s0.z;
+  };
+  place(hB.slot, 20);
+  place(hC.slot, 30);
+  clear();
+  sendJson(rA, MSG_ACTION, { type: 'radio', msg: 1, team: true });
+  const team = { a: radioRows(rA).length, b: radioRows(rB), c: radioRows(rC).length };
+  clear();
+  sendJson(rA, MSG_ACTION, { type: 'radio', msg: 49, team: false });
+  const nearShout = { b: radioRows(rB).length, c: radioRows(rC).length };
+  place(hC.slot, 90);
+  clear();
+  sendJson(rA, MSG_ACTION, { type: 'radio', msg: 49, team: false });
+  const farShout = { b: radioRows(rB).length, c: radioRows(rC).length };
+  clear();
+  sendJson(rA, MSG_ACTION, { type: 'radio', msg: 99, team: true });
+  results.r = {
+    teams: [hA.team, hB.team, hC.team],
+    team: { a: team.a, c: team.c, row: team.b[0] && { slot: team.b[0].slot, msg: team.b[0].msg,
+      broadcast: team.b[0].broadcast, hasAt: Array.isArray(team.b[0].at) } },
+    nearShout,
+    farShout,
+    badId: radioRows(rB).length,
+  };
+}
+
 console.log(JSON.stringify(results));
