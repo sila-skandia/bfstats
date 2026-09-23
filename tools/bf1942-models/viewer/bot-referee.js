@@ -334,9 +334,13 @@ export function createBotReferee(env) {
     if (referee.clock - referee.tablesAt >= SAI.updateFrequency) {
       referee.tablesAt = referee.clock;
       const occupied = referee.occupiedUnits();
-      for (const side of [1, 2]) referee.enemyTables[side].update(occupied.filter(u => u.side !== side));
+      for (const side of [1, 2]) referee.enemyTables[side].update(occupied.filter(u => u.side !== side), referee.clock);
     }
-    for (const bot of referee.bots) bot.enemyTables = referee.enemyTables[bot.team] ?? null;
+    for (const bot of referee.bots) {
+      bot.enemyTables = referee.enemyTables[bot.team] ?? null;
+      // The side's knowledge of the enemy the bot's sightings refresh.
+      if (bot.senses) bot.senses.knowledge = bot.enemyTables?.knowledge ?? null;
+    }
     env.beforeBots?.();
     referee.vehicleTick();
     for (const bot of referee.bots) {
@@ -650,7 +654,8 @@ export function createBotReferee(env) {
 
   /**
    * `SAI::updateStrengths`' input: every occupied unit -- a seated player's
-   * seat with its table and class, a soldier on foot with the soldier's.
+   * seat with its table and class, a soldier on foot with the soldier's --
+   * by player id, for the side's security of it (bot-strength.js).
    */
   referee.occupiedUnits = () => {
     const out = [];
@@ -665,9 +670,10 @@ export function createBotReferee(env) {
       if (seat) {
         const c = cands.find(x => x.vehicleId === seat.vehicleId && x.seatId === seat.seatId)
           ?? cands.find(x => x.vehicleId === seat.vehicleId && x.isRoot) ?? null;
-        out.push({ side, table: c?.strengths ?? {}, type: c?.strType ?? seat.strType ?? p.vehicleStrType ?? 'LightArmour', security: 1 });
+        out.push({ id, side, table: c?.strengths ?? {}, type: c?.strType ?? seat.strType ?? p.vehicleStrType ?? 'LightArmour',
+                   template: c?.template ?? null });
       } else if (p.soldier) {
-        out.push({ side, table: BOT_SOLDIER_TABLE, type: 'Infantry', security: 1 });
+        out.push({ id, side, table: BOT_SOLDIER_TABLE, type: 'Infantry' });
       }
     }
     return out;
