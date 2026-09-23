@@ -204,7 +204,8 @@ nearest enemy flag), `flags` (`name`, `team`, `pos`, `radius`,
 
 | type | fields |
 |---|---|
-| `capture` | `flag`, `from`, `to`, `by`, `alive` (false: a dead bot's position took it, as the page's capture law allows), `veh` (the template he took it in, when mounted) |
+| `capture` | `flag`, `from`, `to`, `by` (the taking side's first bot on the point), `alive`, `veh` (the template he took it in, when mounted) |
+| `neutralise` | `flag`, `from`, `by`, `veh`: the owner's point run down to neutral (`ControlPoint::lostControl`, the referee's control-point law) |
 | `kill` | `killer`, `killerSide`, `victim`, `victimSide`, `weapon`, `dist`, `pos` |
 | `respawn` | `bot`, `side`, `flag`, `pos` |
 | `mount` / `dismount` | `bot`, `side`, `vehicle`, `template`, `seat` / `killed`, `driver` |
@@ -332,8 +333,8 @@ and the synthetic level):
   page should show it too.
 - Riders of undriven hulls spend most of the match in Scout; drivers spend
   it in MoveTo.
-- The page's capture law lets a dead bot's body take a flag during its 8 s
-  respawn wait; the `capture` event's `alive` says when that happened.
+- The page's capture law let a dead bot's body take a flag during its 8 s
+  respawn wait. Since the control-point law (AI-100) only the living count.
 
 From the page's vehicles in the runner (2026-09-24, El Alamein and Wake;
 all of it is page code, none of it checked live yet):
@@ -345,6 +346,10 @@ all of it is page code, none of it checked live yet):
   seed's first vehicle loss is the B17 at 6.17 s.
 - **Two Spitfires die together**, the same tick, no round behind it (seeds
   1..3 at 207 to 362 s): the Allied pair flies one order on one flight law.
+  Mostly fixed (ledger AI-95): a pilot predicts collisions 5 s out and turns
+  away (`BBAvoid`), and a plane is taken only with its runway clear; seeds
+  1..4 keep one same-tick pair, an enemy Spitfire and Bf 109 attacking each
+  other head-on.
 - **The Sherman's turret Browning points backwards at rest.** Its `Browning`
   FireArms node carries a 180 deg local yaw in the level glb; `bot-aim.js
   aimReference` takes the gun to be the hull's heading plus the rig's
@@ -357,7 +362,8 @@ all of it is page code, none of it checked live yet):
   flak38 is not listed at all, its AI record being `Flak_38` against the
   node's `flak38`. An AA gun seated by hand fires, but El Alamein's sit in
   sandbag pits whose lip is above the muzzle: a soldier on the flat is out of
-  their reach.
+  their reach. Fixed (ledger AI-92): a seat's value is its `basicTemp`, a
+  record is found by any of its PCOs, and the reach test is the engine's.
 - ~~**A landing craft with the SAI's order fails its route every tick** (its
   area is inland), which also makes Wake about three times slower to run.~~
   Fixed by Brief D (the beach orders): the helm gets the beach of its target
@@ -366,4 +372,6 @@ all of it is page code, none of it checked live yet):
   600 s: a PanzerIV and a Sherman (and in seed 4 a Tiger) sit on North outpost
   and take it from each other every 10 s for minutes, neither killing the
   other (the solo capture law runs a timer per bot, `bot-referee.js
-  captureTick`).
+  captureTick`). Fixed by the control point's own law (ledger AI-100): the
+  owner's player holds the point, an enemy with him runs it down to neutral,
+  and only one side alone takes it.
