@@ -44,6 +44,7 @@ WAKE_MAX_DEPTH = 50
 
 MODULES = {
     "gunfire.js": VIEWER / "gunfire.js",
+    "round-visuals.js": VIEWER / "round-visuals.js",
     "bomb-release.js": VIEWER / "bomb-release.js",
     "torpedo-run.js": VIEWER / "torpedo-run.js",
     "seats.js": VIEWER / "seats.js",
