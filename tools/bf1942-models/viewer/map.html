@@ -724,16 +724,18 @@ const wrecks = createVehicleWrecks({
   get vehicles() { return vehicles; }, get world() { return world; },
 });
 const hullBodies = createHullBodies({
+  get bust() { return bust; }, get collider() { return level.collider; },
+  get damageTables() { return level.damageTables; },
+  get damageVisuals() { return wrecks.damageVisuals; },
   get DEFAULT_SURFACE_FRICTION() { return level.DEFAULT_SURFACE_FRICTION; },
-  get MAPS_BASE() { return MAPS_BASE; }, get bust() { return bust; },
-  get collider() { return level.collider; }, get damageTables() { return level.damageTables; },
-  get effects() { return effects; },
-  get entryPoints() { return localPlayer.entryPoints; }, set entryPoints(v) { localPlayer.entryPoints = v; },
-  get extras() { return level.extras; }, get materialFrictionById() { return level.materialFrictionById; },
-  get nearEntry() { return localPlayer.nearEntry; }, set nearEntry(v) { localPlayer.nearEntry = v; },
-  get vehicleDamage() { return vehicleDamage; }, get vehicleInterp() { return localPlayer.vehicleInterp; },
-  get vehicleSpawnActive() { return level.vehicleSpawnActive; }, get vehicles() { return vehicles; },
-  get world() { return world; }, get wrecks() { return wrecks; },
+  get effects() { return effects; }, get entryPoints() { return localPlayer.entryPoints; },
+  set entryPoints(v) { localPlayer.entryPoints = v; }, get extras() { return level.extras; },
+  get MAPS_BASE() { return MAPS_BASE; },
+  get materialFrictionById() { return level.materialFrictionById; },
+  get nearEntry() { return localPlayer.nearEntry; },
+  set nearEntry(v) { localPlayer.nearEntry = v; }, get vehicleDamage() { return vehicleDamage; },
+  get vehicleInterp() { return localPlayer.vehicleInterp; }, get vehicles() { return vehicles; },
+  get vehicleSpawnActive() { return level.vehicleSpawnActive; }, get world() { return world; },
 });
 const vehicleHits = createVehicleHits({
   get LOCAL_PLAYER() { return LOCAL_PLAYER; },
