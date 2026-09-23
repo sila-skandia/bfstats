@@ -24,6 +24,8 @@ MODULES = [
     ROOT / "viewer" / "soldier.js",
     ROOT / "viewer" / "physics.js",
     ROOT / "viewer" / "collision.js",
+    ROOT / "viewer" / "collision-materials.js",
+    ROOT / "viewer" / "heightfield.js",
     ROOT / "viewer" / "fall-damage.js",
     ROOT / "viewer" / "spawn-safety.js",
 ]
