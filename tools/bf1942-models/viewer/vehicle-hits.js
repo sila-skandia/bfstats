@@ -81,6 +81,12 @@ export function createVehicleHits(page) {
    * that goes through the same rig.
    */
   const vehicleInput = { blocked: false, rotationalScale: 1 };
+  /** The world's HP-15 gate answer for the local player this tick (`gate` is
+   *  the step's readback; none when he has no record). */
+  function readGate(gate) {
+    vehicleInput.blocked = gate?.blocked ?? false;
+    vehicleInput.rotationalScale = gate?.rotationalScale ?? 1;
+  }
 
   // The HP last pushed into the HUD, so a moving bar costs one compare per frame
   // rather than a full `feedVehicleHud()`.
@@ -382,6 +388,7 @@ export function createVehicleHits(page) {
     splashPos,
     splashTargets,
     stepVehicleDamage,
+    readGate,
     vehicleInput,
   });
   return vehicleHits;
