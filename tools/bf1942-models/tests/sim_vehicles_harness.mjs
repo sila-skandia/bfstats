@@ -133,6 +133,41 @@ const recipes = {
     };
   },
 
+  /** A fixed gun: a bot takes an AA gun (`bot-units.js` lists the level's
+   *  `gun` roots; it has no drive) and fires at a frozen soldier 60 m down
+   *  its rest line. The gun sits in a sandbag pit whose lip is above its
+   *  muzzle, so a soldier on the flat is out of its reach: the rounds fly
+   *  and land on the sandbags, which is the page's flight and impact. */
+  async fixedGun() {
+    const match = await start('el_alamein');
+    const b = bot(match, 'bot_1');
+    const target = match.bots.find(o => o.team !== b.team);
+    const cand = mount(match, b, 'AA_Allies');
+    freezeOthers(match, [b.playerId]);
+    run(match, 1);
+    const h = hullFrame(match, b);
+    plant(match, target, h.x + h.fx * 60, h.z + h.fz * 60, Math.atan2(-h.fx, -h.fz));
+    const armor = match.world.armorOf(target.playerId);
+    const hp = armor.hitPoints;
+    let bodyHits = 0;
+    const landed = new Map();
+    const onImpact = match.stage.guns.onImpact;
+    match.stage.guns.onImpact = record => {
+      const name = record?.target ?? match.stage.collider.statics.ownerNodes[record?.owner]?.name ?? 'terrain';
+      landed.set(name, (landed.get(name) ?? 0) + 1);
+      if (record?.target === target.playerId) bodyHits++;
+      onImpact(record);
+    };
+    run(match, 20, () => armor.destroyed);
+    const kill = eventsOf(match, 'kill').find(e => e.victim === target.playerId) ?? null;
+    return {
+      kind: cand.kind, seat: b.vehicle?.seatId ?? null, drive: !!b.vehicle?.drive,
+      rounds: match.stats.get(b.playerId).vehicleRounds, landed: Object.fromEntries(landed), bodyHits,
+      lost: round(hp - armor.hitPoints), killed: armor.destroyed, kill,
+      fired: eventsOf(match, 'vehicle_fire').map(e => `${e.kind}:${e.template}:${e.gun}`),
+    };
+  },
+
   /** A landing craft: Wake's Daihatsus are split off their ships at load
    *  (`detachSpawnedCraft`); a bot at the helm drives the page's `Ship` on
    *  the level's landing-craft map (`bot-units.js waterNav`). The SAI sends
