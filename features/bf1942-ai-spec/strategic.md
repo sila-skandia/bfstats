@@ -309,15 +309,17 @@ stands off its water map, so no soldier is offered it again (`BBChange`'s own
 map test). Out, each is a soldier with a fresh order.
 
 *Example.* Wake, seed 1, 8 a side, 300 s in the runner (2026-09-24, Brief N
-on main `266bd137`): both Daihatsus taken at 0.1 and 0.2 s; one reaches
-`SouthLanding` by the route point in `SeaArea1`, its crew out on the beach
-at 136.4 s, and a rider neutralises `Landing_Beach` 2.2 s later. The same
-seed before Brief N (`da237ffb`): one craft bailed by a tip on the lagoon
-shelf in no zone at 122 s, the other drove out of its zone side-on,
+on main `be61dd5d`, after Brief L): both Daihatsus taken at 0.1 and 0.2 s;
+one reaches `SouthLanding` through the route point in `SeaArea1`, its driver
+and rider out at the zone's east edge at 155.3 s, and a rider neutralises
+`Landing_Beach` at 166.5 s (the Allies' Defgun takes it back at 222.9 s).
+The same seed before Brief N (`da237ffb`): one craft bailed by a tip on the
+lagoon shelf in no zone at 122 s, the other drove out of its zone side-on,
 landed at 212.9 s, and its crew climbed back in and out every 3 to 8 s after.
-Seeds 1..4, the first landing: 136, 138, 164, 163 s (before: 213, none,
-200, 263 s), and no bot back in a beached craft within 10 s (before: 10, 0,
-14 and 20 such boardings).
+Seeds 1..4, the first crew out at a beach (within 10 m of a zone): 155, 185,
+153, 141 s (before: 213, none, 200, 263 s), `Landing_Beach` neutralised
+3 to 11 s later in every seed, and no bot back in a beached craft within
+10 s (before: 10, 0, 14 and 20 such boardings).
 
 ## The enemy strength tables
 
