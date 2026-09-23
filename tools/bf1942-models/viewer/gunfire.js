@@ -133,6 +133,20 @@ export class GunFire {
   }
 
   /** Attacker material for a projectile template, or null. */
+  /**
+   * What a level hands the guns: the collider rounds run into, and the
+   * `_shared/damage.json` tables that name each hit's effect and price it
+   * (`effects`, `projectiles`, `materials`, and the `modifiers` matrix -- the
+   * whole reason small arms do not kill armour). Either may be null.
+   */
+  useLevel(collider, tables) {
+    this.collider = collider;
+    this.damageEffects = tables?.effects || null;
+    this.projectileMaterials = tables?.projectiles || null;
+    this.materials = tables?.materials || null;
+    this.modifiers = tables?.modifiers || null;
+  }
+
   attackerMaterial(spec) {
     if (!spec) return null;
     if (Number.isFinite(spec.material)) return spec.material;
