@@ -251,8 +251,26 @@ base `10 x 1 = 10`, value 10; at 40 m distance `1 - 0.24 = 0.76`, score 76;
 at 100 m 40; from 166.7 m on, 0 (the clamp reaches 1 at `d = maxRange /
 1.5`).
 
-- **Plans**: a hull uses the infantry fire plan through its turret (the
-  approach is a hull move); an aircraft's is the attack loop in
+- **Plans**: a tank runs `BBPFireInfantery` (the Tank row of
+  `AIbehaviours.con`), but a unit that moves and drives on other controls
+  than it aims with takes its own branch (`createPlanInternal` 0x085a74e0
+  from 0x085a7c5e; AI-116): the look (`LookAtObject` 5 deg) and the trigger
+  run beside one statement re-evaluated every tick,
+  `If(S, reset the drive, If(target within mid, If(target within 1.5 minRange
+  + 1 of the firing point, End, go to the firing point), MoveToObjectFinding
+  to the target))`. S is the target within `minRange .. 0.9 maxRange` (3D),
+  a valid aim (the seat's camera window) and a line of fire (the memory
+  record of it seen); mid is `minRange + min(50, 0.5 (maxRange - minRange))`,
+  52 m for the 2 .. 250 m main guns; the finding paths to the target with the
+  goal radius `min(0.9 maxRange, 1.1 x its radius)` and searches again when S
+  is lost. The firing point is the bot's own position (the away point when
+  the target is inside `minRange + 1`; the engine's attack-portal case is not
+  ported), so inside mid without S a tank holds. `bot-plans.js planFire`,
+  `execFireApproach`; `bot-fire.js fireApproachStep`. The runner's North
+  outpost pair (K's, 158.7 m, the line blocked both ways): the old plan sat
+  in Fire 120 s, 0 rounds; the approach closes to 42 m in 15 s and the
+  PanzerIV's 4 rounds put the Sherman at 43 HP before its crew bails at 41 s
+  (`tests/test_sim_vehicles.py`). An aircraft's plan is the attack loop in
   [controls.md](controls.md#the-attack-loop).
 
 ## Scout

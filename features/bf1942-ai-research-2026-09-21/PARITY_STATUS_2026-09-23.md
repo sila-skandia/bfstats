@@ -305,17 +305,25 @@ which the bot tests then covered.
    player holds, an enemy with him runs it down to neutral, one side alone
    takes it). ~~The redeploy keeps its best distance across orders~~ fixed
    (AI-101): the engine has no such test; the page's is measured per order.
-   Open: (a) the extractor exports only `timeToGetControl` and
-   `unableToChangeTeam` of a control point, so vanilla's `timeToLoseControl
-   10` reads as the ctor's 5 and the 26 flags with `loseControlWhenEnemyClose
-   0` run down anyway (an exporter change and a full level re-bake); (b)
-   the human's capture (`capture.js`) still runs the old per-player timer;
-   (c) two tanks out of each other's line of fire sit in Fire indefinitely
-   on an unspotted target (`getEnemyObjects`, 850 m): the engine's fire plan
-   builds a `MoveToObjectFinding` under `Not(canFire)` (0x085a9e6b) that is
-   read in part and not ported; (d) the Mobile plug-in's look-ahead is 5 s
-   for soldiers too (both ctors), not the 0 `bot-route.js` assumes, so the
-   soldier's avoid is still the zero look-ahead one.
+   Brief P (2026-09-24; AI-115, AI-116): ~~(a) the extractor exports only
+   `timeToGetControl`~~ fixed: every setting the law reads is exported (the
+   lose time is 10 s on 85 of vanilla's 115 placed points) and every tree
+   re-baked; ~~(b) the human's capture runs its own timer~~ fixed: the HUD
+   reads the flag's state and the law takes it (live: human + Axis bot on a
+   neutral point hold it 20 s; the human alone takes it in 10 s; an Axis bot
+   with the human on his point runs it to neutral in 10 s); ~~(c) two tanks
+   out of each other's line of fire sit in Fire~~ ported: a tank's fire plan
+   closes by `MoveToObjectFinding` while it cannot shoot and the target is
+   beyond `minRange + min(50, half the span)` (runner: K's pair 158.7 m
+   apart close to 42 m and the PanzerIV fires at 15.9 s; 0 rounds and no
+   move before). Still open from (c): inside that 52 m a tank without a
+   shot holds at its firing point, whose attack-portal case
+   (`getPortalLookAtPosition`) is not ported; and the sense rays aim at a
+   soldier's heights on a hull (`bot-sense.js SENSE_HEIGHTS`, INVENTION), so
+   live the pair close to 45 m on a slope and never have each other in
+   memory (a crest hides the 1.0 m ray; 1.7 m clears). (d) the Mobile
+   plug-in's look-ahead is 5 s for soldiers too (both ctors), not the 0
+   `bot-route.js` assumes (Brief O).
 
 8. **The AA gunner's trigger, the correction, the soldier's count law (Brief
    L, 2026-09-24; AI-105..AI-109; features/bot-gunner-aim).** ~~No AA gunner
