@@ -58,12 +58,37 @@ export function createBotUnits(env) {
     return units.aiLoading;
   };
 
-  /** The AI record of a vehicle root node, or null when the game ships none. */
+  /** Every object template that names a record: the record's own key and
+   *  each seat's PlayerControlObject (`seatsAi` / `seats`), lower case. */
+  let objectIndex = null, indexedFrom = null;
+  const recordsByObject = () => {
+    if (objectIndex && indexedFrom === units.ai) return objectIndex;
+    objectIndex = new Map();
+    indexedFrom = units.ai;
+    for (const [key, rec] of units.ai ?? []) {
+      objectIndex.set(key, rec);
+      for (const pco of Object.keys(rec.seatsAi ?? rec.seats ?? {})) {
+        const k = pco.toLowerCase();
+        if (!objectIndex.has(k)) objectIndex.set(k, rec);
+      }
+    }
+    return objectIndex;
+  };
+
+  /**
+   * The AI record of a vehicle root node, or null when the game ships none.
+   * The engine links an object to its AI by the object template's own
+   * `ObjectTemplate.aiTemplate` line (`SimpleObject::SimpleObject` 0x081da0d0
+   * reads the template's name at +0x10c and asks `AITemplateManager::
+   * getTemplate` 0x0848a470 at 0x081da28f), never by the folder the record
+   * was extracted from: the node `flak38` is the PCO `flak38` of the record
+   * `Flak_38`, whose AI template is `Flak38`.
+   */
   units.aiOf = node => {
     if (!units.ai) return null;
     const raw = node?.userData?.template ?? node?.userData?.control ?? node?.name ?? '';
     const key = String(raw).replace(/_\d+$/, '').toLowerCase();
-    return units.ai.get(key) ?? null;
+    return recordsByObject().get(key) ?? null;
   };
 
   /** A vehicle root's drive kind, surveyed once. */
@@ -205,9 +230,19 @@ export function createBotUnits(env) {
           const strengths = {};
           for (const w of weapons) for (const [k, v] of Object.entries(w.strength ?? {})) strengths[k] = Math.max(strengths[k] ?? 0, v ?? 0);
           const drives = isRoot && kind !== 'gun';
-          // `modifyForDriver`: a plane's secondary seats x0.5, a ship's x0.77.
-          const seatFactor = isRoot ? 1 : (kind === 'air' ? 0.5 : kind === 'ship' ? 0.77 : 1);
+          // `BBChange::modifyForDriver` 0x0855f7d0 over the root's type word
+          // (`Information+4`, the `aiTemplate.addType` bits: ITAir 0x10,
+          // ITGround 0x20, ITNaval 0x40 by the enum's parse at 0x084854eb..):
+          // 1 while the root is occupied; else a naval root's seats 1, a
+          // ground root's 0.77, an air root's 0.5. It scales the seat's whole
+          // `calculateVehicleUrgency` (0x0855e0c0 multiplies the result).
           const holder = units.seatHolder(node, door.seatId);
+          const rootTypes = ai.types ?? [];
+          const seatFactor = isRoot || driver ? 1
+            : rootTypes.includes('ITNaval') ? 1
+            : rootTypes.includes('ITGround') ? 0.77
+            : rootTypes.includes('ITAir') ? 0.5
+            : (kind === 'air' ? 0.5 : kind === 'ship' ? 1 : 0.77);
           door.node.getWorldPosition(_entryWorld);
           seats.push({ seatId: door.seatId, table: strengths, occupied: !!holder, strType: ai.strType ?? 'LightArmour', isRoot });
           entries.push({
@@ -227,8 +262,17 @@ export function createBotUnits(env) {
             // The seat's ControlInfo aim numbers (`mouseControlLookAtDirection`
             // 0x08627b90; bot-aim.js `lookAtCounts`).
             controlInfo: seatAi?.controlInfo ?? (isRoot ? ai.controlInfo : null) ?? null,
-            value: ((seatAi?.strategicStrength ?? ai.strategicStrength)?.['0'] ?? 0) * seatFactor,
+            // `Information+0x14`, which `calculateVehicleUrgency` 0x08583b10
+            // adds to the unit's urgency (`fadds 0x14(%esi)` at 0x08583c34):
+            // the seat's own `aiTemplate.basicTemp` (ConsoleClass489
+            // 0x084ffe60 writes `AITemplate+0x14`; the `InformationReal` ctor
+            // 0x085e8730 copies it). Not a strategic strength: those are the
+            // SAI's (`AISettings::getNStrategicStrengths` 0x084843e0 = 2).
+            value: seatAi?.basicTemp ?? (isRoot ? ai.basicTemp : null) ?? 0,
             seatFactor,
+            // `setUseNoPathfindingToGetToObject` (AITemplateUnit +0x15): the
+            // Change test is a trace 12 m behind the unit, not its own cell.
+            noPathfinding: !!(seatAi?.useNoPathfinding ?? (isRoot && ai.useNoPathfinding)),
             occupiedBy: holder,
             strType: ai.strType ?? 'LightArmour',
             driver,

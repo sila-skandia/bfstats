@@ -89,6 +89,21 @@ def is_anti_aircraft(template: dict | None, plugins: dict[str, dict]) -> bool:
     return False
 
 
+def basic_temp(template: dict | None) -> float | None:
+    """`aiTemplate.basicTemp`: the unit's own term in a bot's urge to take it.
+
+    ConsoleClass489 (lnxded 0x084ffe60) writes it to `AITemplate+0x14`;
+    `AIObjectReal::createInformation` (0x085d8ca0) hands it to the
+    `InformationReal` ctor (0x085e8730), which stores it at `Information+0x14`,
+    and `calculateVehicleUrgency` (0x08583b10) adds that float to the unit's
+    urgency (`fadds 0x14(%esi)` at 0x08583c34). No strategic strength enters
+    the Change score.
+    """
+    if not template:
+        return None
+    return template.get("basictemp")
+
+
 def _deg_vector(value) -> list[float] | None:
     """`setCameraRelativeMin/MaxRotationDeg`'s `x/y/z` argument."""
     if not isinstance(value, str):
@@ -259,12 +274,20 @@ def extract(mod: str) -> dict:
     by_folder: dict[str, dict[str, str]] = {}
     for n in names:
         low = n.lower()
-        if not low.startswith("objects/vehicles/"):
+        # A vehicle is `Objects/Vehicles/<class>/<name>`; a stationary gun
+        # (`Stationary_Browning`, `Stationary_MG42`) is
+        # `Objects/Stationary_Weapons/<name>`, a PlayerControlObject with an
+        # AI template of its own like any vehicle.
+        if low.startswith("objects/vehicles/"):
+            depth = 4
+        elif low.startswith("objects/stationary_weapons/"):
+            depth = 3
+        else:
             continue
         parts = n.split("/")
-        if len(parts) < 4:
+        if len(parts) < depth + 1:
             continue
-        folder = "/".join(parts[:4])
+        folder = "/".join(parts[:depth])
         by_folder.setdefault(folder, {})[low[len(folder) + 1:]] = n
     vehicles: dict[str, dict] = {}
     for folder, files in sorted(by_folder.items()):
@@ -281,8 +304,9 @@ def extract(mod: str) -> dict:
         root_ai = pcos.get(vehicle_name) or next(iter(pcos.values()), None)
         root = parsed["templates"].get((root_ai or "").lower()) or next(iter(parsed["templates"].values()), None)
         info: dict = {
-            "class": folder.split("/")[2],
+            "class": folder.split("/")[2] if folder.lower().startswith("objects/vehicles/") else "Stationary",
             "aiTemplate": root["name"] if root else None,
+            "basicTemp": basic_temp(root), "types": list((root or {}).get("types", [])),
             "maxSpeed": None, "turnRadius": None, "vehicleNumber": None, "strType": None,
             "strategicStrength": None, "coverValue": None, "isTurnable": None,
             "fireArms": {k: v for k, v in fire_arms.items()},
@@ -295,11 +319,18 @@ def extract(mod: str) -> dict:
         for pco, ai_name in pcos.items():
             t = parsed["templates"].get(ai_name.lower())
             seat: dict = {"aiTemplate": ai_name, "secondary": bool(t and t.get("secondary")),
-                          "strategicStrength": None, "aiWeapons": {}}
+                          "strategicStrength": None, "aiWeapons": {},
+                          "basicTemp": basic_temp(t), "types": list((t or {}).get("types", []))}
             for pname in (t["plugIns"] if t else []):
                 p = parsed["plugIns"].get(pname.lower())
                 if p and p.get("kind") == "Unit":
                     seat["strategicStrength"] = p.get("strategicStrength")
+                    # `setUseNoPathfindingToGetToObject` (ConsoleClass557
+                    # 0x08506040 writes `AITemplateUnit+0x15`): BBChange
+                    # 0x0855e0c0 then takes the unit when a valid point lies
+                    # on the line 12 m behind it, not on its own cell.
+                    if p.get("setusenopathfindingtogettoobject"):
+                        seat["useNoPathfinding"] = True
             if is_anti_aircraft(t, parsed["plugIns"]):
                 seat["isAntiAircraft"] = True
             ctrl = control_info(t, parsed["plugIns"])
@@ -331,6 +362,8 @@ def extract(mod: str) -> dict:
                 info["strType"] = p.get("strType")
             elif kind == "Unit":
                 info["strategicStrength"] = p.get("strategicStrength")
+                if p.get("setusenopathfindingtogettoobject"):
+                    info["useNoPathfinding"] = True
             elif kind == "Cover":
                 info["coverValue"] = p.get("covervalue")
         vehicles[vehicle_name] = info

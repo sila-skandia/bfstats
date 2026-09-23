@@ -120,8 +120,9 @@ export function urgencyChange(bot, mod, now) {
       const d = Math.hypot(c.pos[0] - bot.position[0], c.pos[2] - bot.position[2]);
       if (d > CHANGE.searchRadius) continue;
       if (c.vehicleId === m.vehicleId) continue;          // the same hull is the teleport's business
+      // `modifyForDriver` 0x0855f7d0 scales a secondary seat's whole urgency.
       const u = unitUrgency({ health: c.health ?? 1, fire: bot._candidateFire(c),
-                              maxSpeed: c.maxSpeed ?? 0, value: c.value ?? 0, orderSplit: split });
+                              maxSpeed: c.maxSpeed ?? 0, value: c.value ?? 0, orderSplit: split }) * (c.seatFactor ?? 1);
       const f = Math.min(0.5, (CHANGE.searchRadius ** 2 - d * d) / CHANGE.searchRadius ** 2);
       const v = u * (f + 0.5);
       if (v > bestU) { best = { id: c.id, u: v, dist: d, cand: c }; bestU = v; bail = false; }
@@ -148,18 +149,63 @@ export function urgencyChange(bot, mod, now) {
     if (c.upright === false) continue;
     const d = Math.hypot(c.pos[0] - bot.position[0], c.pos[2] - bot.position[2]);
     if (d > CHANGE.searchRadius) continue;
-    if (nav && c.entry && !isWalkable(nav, c.entry[0], c.entry[1])) continue;
+    if (nav && !unitReachable(nav, c, d)) continue;
     const leftAge = bot._leftVehicle?.id === c.vehicleId ? now - bot._leftVehicle.at : Infinity;
+    // `modifyForDriver` 0x0855f7d0 scales a secondary seat's whole urgency
+    // (0x0855e0c0: `calculateVehicleUrgency(seat) x radio x (f + 0.5) x
+    // modifyForDriver(root)`).
     const u = unitUrgency({ health: c.health ?? 1, fire: bot._candidateFire(c),
                             maxSpeed: c.maxSpeed ?? 0, value: c.value ?? 0, orderSplit: split,
                             occupiedByBot: !!c.movedByBot,
-                            spawnAge: c.spawnAge ?? Infinity, leftAge });
+                            spawnAge: c.spawnAge ?? Infinity, leftAge }) * (c.seatFactor ?? 1);
     list.push({ id: c.id, u, dist: d, cand: c });
   }
   const r = changeUrgency({ staying: foot, candidates: list, mod, ramp, areaFactor });
   bot.changedTarget.Change = (r.best?.id ?? null) !== (bot._changeResult?.best?.id ?? null);
   bot._changeResult = r;
   return r.urgency;
+}
+
+/** Beyond 12 m BBChange tests the unit on the bot's own map. */
+const REACH_TEST_BEYOND = 12.0;
+/** The line behind a `setUseNoPathfindingToGetToObject` unit, metres. */
+const REACH_TRACE_BEHIND = 12.0;
+
+/**
+ * `BBChange::calculateUrgency` 0x0855e0c0's reach test for a unit on foot
+ * (the branch on the soldier's map, `uStack_224`): a unit whose
+ * `AITemplateUnit+0x15` (`setUseNoPathfindingToGetToObject`, ConsoleClass557
+ * 0x08506040) is clear passes within 12 m (`144.0 < d^2`) and beyond it
+ * when its own position is a valid cell (`AIPathfinding::isValidPosition`
+ * 0x0847ccc0, vt+0x78); with the flag set it passes when
+ * `traceValidPoint` 0x0847e500 (vt+0x54) finds a valid point on the line
+ * from the unit to 12 m behind it (`-forward x 12`). The trace's own walk
+ * (vt+0x58) is not read: here the line is sampled every half metre
+ * (INVENTION). The engine's baked map holds no vehicles; the viewer's
+ * paints a parked hull's footprint, so the unit's "own cell" is the
+ * nearest free cell within its door's radius of its position (INVENTION).
+ * The door (`c.entry`) was tested before, which a gun's seat inside its own
+ * footprint never passed: no bot took a fixed gun.
+ */
+export function unitReachable(nav, c, d) {
+  const [x, , z] = c.pos;
+  if (c.noPathfinding) {
+    const yaw = c.hullYaw ?? 0;
+    const fx = Math.sin(yaw), fz = Math.cos(yaw);
+    for (let s = 0; s <= REACH_TRACE_BEHIND; s += 0.5) if (isWalkable(nav, x - fx * s, z - fz * s)) return true;
+    return false;
+  }
+  if (d <= REACH_TEST_BEYOND) return true;
+  if (isWalkable(nav, x, z)) return true;
+  const r = Math.max(c.entryRadius ?? 0, 1.0);
+  const step = Math.max(nav.cellSize ?? 1, 0.5);
+  for (let rr = step; rr <= r + 1e-6; rr += step) {
+    for (let a = 0; a < 16; a++) {
+      const t = (a / 16) * Math.PI * 2;
+      if (isWalkable(nav, x + rr * Math.cos(t), z + rr * Math.sin(t))) return true;
+    }
+  }
+  return false;
 }
 
 /** The strength table of the seat the bot holds (its guns). */
@@ -258,8 +304,16 @@ export function urgencyChangeTeleport(bot, { mine, selfU, split, driver, health 
   if (!m.drives && !mine?.isRoot) {
     where = rootOccupied ? 'seatUnderDriver' : (m.kind === 'air' ? 'seatAir' : m.kind === 'ship' ? 'seatShip' : 'seatLand');
   }
-  const uOf = (c) => unitUrgency({ health, fire: bot._candidateFire(c), maxSpeed: c.maxSpeed ?? 0,
-                                   occupiedByBot: !c.drives && !!driver, value: c.value ?? 0, orderSplit: split });
+  // The bot weighs each seat as the one it would move to, leaving its own
+  // (the vacate rule `candidateFire` follows, 0x08584580 `unit != param_7`):
+  // a driver weighing a gunner's seat leaves the hull undriven, so that
+  // seat has no move term. Scored with the driver still aboard, a
+  // Hanomag's MG seat outbid the wheel it had just been left for, and the
+  // bot changed seats every two seconds (El Alamein seed 2, 70 swaps).
+  const others_ = driver === bot.playerId ? null : driver;
+  const uOf = (c) => unitUrgency({ health, fire: bot._candidateFire(c),
+                                   maxSpeed: c.drives ? (c.maxSpeed ?? 0) : (others_ ? (m.hullMaxSpeed ?? 0) : 0),
+                                   occupiedByBot: !c.drives && !!others_, value: c.value ?? 0, orderSplit: split });
   const rootU = rootCand && !rootOccupied && where !== 'root' ? uOf(rootCand) : 0;
   const others = [];
   for (const c of cands) {

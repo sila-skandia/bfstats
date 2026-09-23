@@ -105,6 +105,19 @@ class SimVehicleTests(unittest.TestCase):
         self.assertEqual(r["fired"], ["gun:AA_Allies:AA_Allies_GunBarrel_1"])
         self.assertGreater(sum(r["landed"].values()), 5, "the rounds fly and land")
 
+    def test_a_bot_takes_a_free_aa_gun_by_itself(self) -> None:
+        # Brief K item 1: the gun's value is its `basicTemp` (9), not its
+        # strategic strength (0), and its reach test is the engine's (a trace
+        # 12 m behind it), not its seat's own cell.
+        r = recipe("takeAA")
+        self.assertEqual(r["value"], 9)
+        self.assertTrue(r["noPathfinding"])
+        self.assertIsNotNone(r["spottedAt"], "the plane is known")
+        self.assertEqual(r["best"]["template"], "AA_Allies")
+        self.assertIsNotNone(r["took"], r)
+        self.assertEqual(r["took"]["template"], "AA_Allies")
+        self.assertLess(r["took"]["t"], 15.0)
+
     def test_a_parked_hull_is_an_obstacle_until_it_is_driven_off(self) -> None:
         r = recipe("obstacle")
         self.assertTrue(r["parked"], "a parked body")
