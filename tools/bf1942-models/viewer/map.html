@@ -6662,7 +6662,29 @@ function splashTargets() {
       x: soldier.x, y: soldier.y + CHARACTER_HEIGHT, z: soldier.z,
     });
   }
+  // The bots on foot are soldiers too: a bot-driven hull's shell reaches them.
+  for (const bot of botControllers ?? []) {
+    if (bot.vehicle) continue;
+    const armor = world?.armorOf(bot.playerId);
+    const s = world?.player(bot.playerId)?.soldier;
+    if (!armor || armor.destroyed || !s) continue;
+    targets.push({
+      owner: -1, armor, soldier: true, pose: s.pose ?? 0, botId: bot.playerId,
+      splashMaterial: SOLDIER_SPLASH_MATERIAL,
+      x: s.x, y: s.y + CHARACTER_HEIGHT, z: s.z,
+    });
+  }
   return targets;
+}
+
+/** The bot whose seat fires `group` (`record.firer` is the group's owner id). */
+function botFiringGroup(record) {
+  for (const bot of botControllers ?? []) {
+    const m = bot.vehicle;
+    if (!m) continue;
+    if ([...(m.groups ?? []), ...(m.manned ?? [])].some(g => g.owner === record?.firer && g.owner !== undefined)) return bot.playerId;
+  }
+  return null;
 }
 
 /**
@@ -6700,6 +6722,8 @@ function applyVehicleHit(record) {
     if (hit.target?.soldier) {
       if (hit.target.armor === soldierArmor) {
         applyDamageToPlayer(hit.damage, { x: record.x, y: record.y, z: record.z }, record.team);
+      } else if (hit.target.botId) {
+        applyDamageToBot(hit.target.botId, hit.damage, botFiringGroup(record) ?? LOCAL_PLAYER, [record.x, record.y, record.z]);
       }
       if (hit.target.node && hit.vehicle.destroyed) hit.target.node.visible = false;
       continue;
@@ -9585,7 +9609,7 @@ function botLineOfSight(from, to) {
  * Resolve one bot round against the world's players. Returns
  * `{ targetId, damage }` on a hit, else null.
  */
-function resolveBotShot(bot) {
+function resolveBotShot(bot, roundDamage = null) {
   const { origin, dir } = bot.aimRay();
   _botRayDir.set(dir[0], dir[1], dir[2]).normalize();
   // Roll into the deviation cone, exactly as `gunfire.js` `#wander` does.
@@ -9605,7 +9629,7 @@ function resolveBotShot(bot) {
   }
 
   const botPlayer = world?.player(bot.playerId);
-  const damage = botRoundDamage(botWeaponDataOf(bot));
+  const damage = roundDamage ?? botRoundDamage(botWeaponDataOf(bot));
   let best = null;
   let bestT = Infinity;
   for (const [id, player] of world.players) {
@@ -10211,7 +10235,29 @@ function botFireTick(dt) {
 
   for (const bot of botControllers) {
     bot._wasFiring = bot.isFiring;
-    if (bot.vehicle) continue;   // the world fires the hull's guns from its input word
+    if (bot.vehicle) {
+      // The world fires the hull's guns from its input word; a round with a
+      // splash lands through `applyVehicleHit`. A round without one (an MG's)
+      // has no soldier body to meet, so each new shot the group reports runs
+      // the same cone test as a hand weapon's, from the gun.
+      const groups = [...(bot.vehicle.groups ?? []), ...(bot.vehicle.manned ?? [])];
+      if (!bot._lastShots) bot._lastShots = new Map();
+      for (const g of groups) {
+        const prev = bot._lastShots.get(g) ?? g.shots ?? 0;
+        const now_ = g.shots ?? 0;
+        bot._lastShots.set(g, now_);
+        if (now_ <= prev) continue;
+        if (g.stats?.projectile?.damage?.radius > 0) continue;
+        for (let k = prev; k < now_; k++) {
+          const hit = resolveBotShot(bot, botRoundDamage({ projectile: g.stats?.projectile?.template ?? g.stats?.projectile ?? null }));
+          if (!hit) continue;
+          bot.recordHit(hit.targetId);
+          if (hit.targetId === LOCAL_PLAYER) applyDamageToPlayer(hit.damage, { x: bot.position[0], y: bot.position[1], z: bot.position[2] }, bot.team);
+          else applyDamageToBot(hit.targetId, hit.damage, bot.playerId, bot.getPosition());
+        }
+      }
+      continue;
+    }
 
     bot._fireCooldown = Math.max(0, (bot._fireCooldown ?? 0) - dt);
     const mag = botMagazineTick(bot, dt);

@@ -2415,6 +2415,13 @@ export class BotController {
 
   /** The bot's eye pose for the page's fire path. */
   aimRay() {
+    if (this.vehicle) {
+      // From the gun, along the turret (or the nose for an aircraft).
+      const r = this.vehicle.kind === 'air' ? this._noseReference() : this._aimReference();
+      const yaw = r?.yaw ?? this.yaw, pitch = r?.pitch ?? 0;
+      const cosP = Math.cos(pitch);
+      return { origin: this._aimOrigin(), dir: [Math.sin(yaw) * cosP, Math.sin(pitch), Math.cos(yaw) * cosP] };
+    }
     const cosP = Math.cos(this.pitch);
     return {
       origin: this._eye(),
