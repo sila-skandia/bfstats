@@ -84,6 +84,8 @@ export const CELL_SLOPE = 3;
 export const CELL_OBJECT = 4;
 /** Free ground the spawn-point flood never reached (`floodLevelZeroMap`). */
 export const CELL_UNREACHABLE = 5;
+/** A water map's dry or shallow cell (`ai.addSearchMap <name> 1 ...`). */
+export const CELL_LAND = 6;
 
 /** `LocalMapInfo::update` 0x08480f50 builds the brush from its float `b`:
  *  `n = round(|b|) * 2 + 1`, bit set where `(col + 0.5 - c)^2 + (row + 0.5 - c)^2
@@ -126,6 +128,11 @@ export function buildNavMap(collider, worldSize, {
   hiClip = INFANTRY_SEARCH_MAP.hiClip,
   coarseSize = COARSE_CELL,
   seeds = null,
+  // `ai.addSearchMap <name> 1 <depth> ...`: a water map (the boats' and
+  // landing craft's `Boat2` / `LandingCraft3`): a cell is free where the
+  // water is at least `waterDepth` deep, the seabed's slope is not tested,
+  // and the brush (125 m for `Boat2`) keeps the hulls off the shore.
+  waterMap = false,
 } = {}) {
   const width = Math.max(1, Math.ceil(worldSize / cellSize));
   const height = width;
@@ -146,8 +153,10 @@ export function buildNavMap(collider, worldSize, {
       const h = heightAt(gx * cellSize + half, wz);
       heights[idx] = h;
       if (!Number.isFinite(h)) { blocked[idx] = CELL_NO_TERRAIN; continue; }
-      // `LocalMap+0x1c`: deeper than the map's water depth is not walkable.
-      if (water - h > waterDepth) blocked[idx] = CELL_WATER;
+      // `LocalMap+0x1c`: deeper than the map's water depth is not walkable;
+      // on a water map shallower than it is not navigable.
+      if (waterMap) { if (!(water - h >= waterDepth)) blocked[idx] = CELL_LAND; }
+      else if (water - h > waterDepth) blocked[idx] = CELL_WATER;
     }
   }
 
@@ -161,6 +170,7 @@ export function buildNavMap(collider, worldSize, {
       const idx = gz * width + gx;
       const h = heights[idx];
       if (!Number.isFinite(h)) { normalY[idx] = 0; continue; }
+      if (waterMap) { normalY[idx] = 1; continue; }
       const hl = finiteOr(heights[gz * width + Math.max(0, gx - 1)], h);
       const hr = finiteOr(heights[gz * width + Math.min(width - 1, gx + 1)], h);
       const hu = finiteOr(heights[Math.max(0, gz - 1) * width + gx], h);
@@ -219,8 +229,15 @@ export function buildNavMap(collider, worldSize, {
     }
   }
 
-  // The brush: every blocked cell, terrain or object, stamps the plus.
-  const offsets = brushOffsets(brush / cellSize);
+  // The brush: every blocked cell, terrain or object, stamps the plus. A
+  // water map's brush is a hull's width off the shore (125 m on `Boat2`):
+  // the same disc, drawn as a distance transform rather than 50,000
+  // offsets a cell.
+  if (waterMap && brush / cellSize > 8) {
+    for (let i = 0; i < total; i++) if (stamp[i]) blocked[i] = CELL_OBJECT;
+    erodeByDistance(blocked, width, height, brush / cellSize);
+  }
+  const offsets = (waterMap && brush / cellSize > 8) ? [[0, 0]] : brushOffsets(brush / cellSize);
   const dilated = new Uint8Array(total);
   for (let gz = 0; gz < height; gz++) {
     for (let gx = 0; gx < width; gx++) {
@@ -242,6 +259,43 @@ export function buildNavMap(collider, worldSize, {
 
   const coarse = buildCoarse(blocked, width, height, cellSize, coarseSize);
   return { blocked, heights, normalY, width, height, cellSize, worldSize, coarse };
+}
+
+/**
+ * Block every free cell within `radius` cells of a blocked one: a two-pass
+ * chamfer (3-4) distance transform, the disc `brushOffsets` would stamp.
+ */
+function erodeByDistance(blocked, width, height, radius) {
+  const INF = 1 << 28;
+  const d = new Int32Array(width * height);
+  for (let i = 0; i < d.length; i++) d[i] = blocked[i] ? 0 : INF;
+  const at = (x, z) => d[z * width + x];
+  for (let z = 0; z < height; z++) {
+    for (let x = 0; x < width; x++) {
+      let v = d[z * width + x];
+      if (x > 0) v = Math.min(v, at(x - 1, z) + 3);
+      if (z > 0) {
+        v = Math.min(v, at(x, z - 1) + 3);
+        if (x > 0) v = Math.min(v, at(x - 1, z - 1) + 4);
+        if (x < width - 1) v = Math.min(v, at(x + 1, z - 1) + 4);
+      }
+      d[z * width + x] = v;
+    }
+  }
+  for (let z = height - 1; z >= 0; z--) {
+    for (let x = width - 1; x >= 0; x--) {
+      let v = d[z * width + x];
+      if (x < width - 1) v = Math.min(v, at(x + 1, z) + 3);
+      if (z < height - 1) {
+        v = Math.min(v, at(x, z + 1) + 3);
+        if (x < width - 1) v = Math.min(v, at(x + 1, z + 1) + 4);
+        if (x > 0) v = Math.min(v, at(x - 1, z + 1) + 4);
+      }
+      d[z * width + x] = v;
+    }
+  }
+  const limit = radius * 3;
+  for (let i = 0; i < d.length; i++) if (!blocked[i] && d[i] < limit) blocked[i] = CELL_LAND;
 }
 
 /** Prefer the raw heightfield: `surfaceHeight` clamps to the water plane, and
@@ -817,3 +871,47 @@ function clampi(v, lo, hi) {
  * @property {number} worldSize
  * @property {{free: Uint8Array, freeCount: Uint16Array, width: number, height: number, cellsPer: number, cellSize: number}} coarse
  */
+
+/**
+ * `CommonControls::getBox` / `getIntersection` / `checkLineAgainstObjects`
+ * for the drive decision: the free run from `(x, z)` along the unit
+ * direction `(fx, fz)` on the map, in metres, up to `maxDist` (the hull's
+ * own cell counts as free). Blocked at the start returns 0.
+ */
+export function freeRun(nav, x, z, fx, fz, maxDist, obstacles = null) {
+  if (!nav) return maxDist;
+  const cs = nav.cellSize;
+  const len = Math.hypot(fx, fz) || 1;
+  const ux = fx / len, uz = fz / len;
+  const step = cs * 0.5;
+  for (let d = step; d <= maxDist; d += step) {
+    const px = x + ux * d, pz = z + uz * d;
+    const gx = Math.floor(px / cs), gz = Math.floor(-pz / cs);
+    if (gx < 0 || gx >= nav.width || gz < 0 || gz >= nav.height) return d;
+    if (!cellOpen(nav, gx, gz, obstacles, x, z)) return Math.max(0, d - step);
+  }
+  return maxDist;
+}
+
+/**
+ * `IAIPathfinding::getBox`: the largest free axis-aligned box around
+ * `(x, z)` grown a cell at a time on every side until that side meets a
+ * blocked cell, capped at `maxHalf` cells a side. Returns `{ minX, maxX,
+ * minZ, maxZ, short }` in metres, `short` the shorter side.
+ */
+export function freeBox(nav, x, z, maxHalf = 64) {
+  const cs = nav.cellSize;
+  const cx = Math.floor(x / cs), cz = Math.floor(-z / cs);
+  const open = (gx, gz) => gx >= 0 && gx < nav.width && gz >= 0 && gz < nav.height
+    && nav.blocked[gz * nav.width + gx] === CELL_FREE;
+  let x0 = cx, x1 = cx, z0 = cz, z1 = cz;
+  const grow = { l: true, r: true, u: true, d: true };
+  for (let n = 0; n < maxHalf && (grow.l || grow.r || grow.u || grow.d); n++) {
+    if (grow.l) { let ok = true; for (let gz = z0; gz <= z1; gz++) if (!open(x0 - 1, gz)) { ok = false; break; } if (ok) x0--; else grow.l = false; }
+    if (grow.r) { let ok = true; for (let gz = z0; gz <= z1; gz++) if (!open(x1 + 1, gz)) { ok = false; break; } if (ok) x1++; else grow.r = false; }
+    if (grow.u) { let ok = true; for (let gx = x0; gx <= x1; gx++) if (!open(gx, z0 - 1)) { ok = false; break; } if (ok) z0--; else grow.u = false; }
+    if (grow.d) { let ok = true; for (let gx = x0; gx <= x1; gx++) if (!open(gx, z1 + 1)) { ok = false; break; } if (ok) z1++; else grow.d = false; }
+  }
+  const w = (x1 - x0 + 1) * cs, h = (z1 - z0 + 1) * cs;
+  return { minX: x0 * cs, maxX: (x1 + 1) * cs, minZ: -(z1 + 1) * cs, maxZ: -z0 * cs, short: Math.min(w, h) };
+}

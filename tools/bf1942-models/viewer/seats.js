@@ -989,6 +989,21 @@ export class TurretRig {
     return 0;
   }
 
+  /** The traverse's limits `[min, max]` in radians from the rest pose, or
+   *  null for a rig that wraps (`minRotation == 0 && maxRotation == 0`) or
+   *  has no yaw axis: a bot's `validateCameraDirectionYaw` for a fixed gun. */
+  yawLimitsRadians() {
+    for (const axis of this.axes) {
+      if (axis.axisName !== 'yaw') continue;
+      const lo = Number(axis.spec?.min ?? 0), hi = Number(axis.spec?.max ?? 0);
+      if (lo === 0 && hi === 0) return null;
+      if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
+      const a = THREE.MathUtils.degToRad(lo * RIG_SIGN.yaw), b = THREE.MathUtils.degToRad(hi * RIG_SIGN.yaw);
+      return [Math.min(a, b), Math.max(a, b)];
+    }
+    return null;
+  }
+
   /** The elevation axis's angle, radians (0 when the rig has none); a bot's
    *  aim reference beside `headingRadians`. */
   elevationRadians() {

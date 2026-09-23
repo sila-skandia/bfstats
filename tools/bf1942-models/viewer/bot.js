@@ -40,13 +40,14 @@
 // at the nearest enemy flag.
 
 import { DeviationModel } from './deviation.js';
-import { findLocalPath, findStrategicPath, traceClear, traceValidPoint, isWalkable, COARSE_CELL } from './nav-grid.js';
+import { findLocalPath, findStrategicPath, traceClear, traceValidPoint, isWalkable, COARSE_CELL, freeRun, freeBox } from './nav-grid.js';
 import { BotSenses, lineClear, playerPosition, SOLDIER_RADIUS } from './bot-sense.js';
-import { scoreTargets, firingPose, firePlanFor, weaponAiOf, FIRE } from './bot-fire.js';
+import { scoreTargets, scoreVehicleTargets, firingPose, firePlanFor, weaponAiOf, FIRE, SOLDIER_BATTLE_STRENGTH, VEHICLE_FIRE } from './bot-fire.js';
 import { ScoutState, TakeCoverState, QUADRANTS, quadrantOf, SCOUT, TAKE_COVER, MedicState, MEDIC } from './bot-behaviours.js';
-import { tankControl, unitUrgency, orderSplit, changeUrgency, TANK, CHANGE } from './bot-vehicle.js';
+import { tankControl, unitUrgency, orderSplit, changeUrgency, teleportChangeUrgency, TANK, CHANGE, TELEPORT } from './bot-vehicle.js';
 import { decleiningSlope } from './bot-behaviours.js';
-import { planeControl, boatControl, PLANE, BOAT } from './bot-vehicle-air.js';
+import { planeControl, boatControl, aimAtDirection, attackRunStep, planeFireMode, PLANE, BOAT, PLANE_FIRE } from './bot-vehicle-air.js';
+import { fireStrength, unitTable, STRENGTH } from './bot-strength.js';
 
 /** The 55-channel PlayerInputMap indices, from the research document §1.2. */
 export const PI = {
@@ -151,6 +152,10 @@ export const PLAN_ACTION = {
   InfantryMoveToDirection: 'InfanteryMoveToDirection',
   EnterVehicle: 'EnterVehicle',
   ExitVehicle: 'ExitVehicle',
+  /** `BBPChangeTeleport`: the seat-select key for another seat of the hull. */
+  SwitchSeat: 'SwitchSeat',
+  /** `BBPFire3d`: the aircraft's attack loop (approach, aim and fire, break). */
+  PlaneAttack: 'PlaneAttack',
   MoveToMediumSoldier: 'MoveToMediumSoldier',
   MoveToObjectMediumSoldier: 'MoveToObjectMediumSoldier',
   MouseTurretAimAt: 'MouseTurretAimAt',
@@ -402,6 +407,15 @@ export class BotController {
     this.enterRequest = null;
     /** Set by the Change plan while seated: the page unseats the bot. */
     this.exitRequest = false;
+    /** Set by the seat-swap plan: the page reseats the bot (`{ seatId }`). */
+    this.switchRequest = null;
+    /** The side's enemy strength tables (`{ strengths, types }`), from the
+     *  page's strategic pass (bot-strength.js `EnemyStrengthTables`). */
+    this.enemyTables = null;
+    /** The page's description of a target (`scoreVehicleTargets` `infoOf`). */
+    this.unitInfoOf = null;
+    /** The plane's attack-run state (`attackRunStep`). */
+    this._attackState = null;
     this._lastChangeAt = -Infinity;
     this._leftVehicle = null;
     this._footWeapons = null;
@@ -461,6 +475,22 @@ export class BotController {
     if (this.vehicle) return [this.position[0], this.position[1] + VEHICLE_EYE_HEIGHT, this.position[2]];
     return [this.position[0], this.position[1] + (EYE_BY_STANCE[this.stance] ?? EYE_HEIGHT), this.position[2]];
   }
+
+  /** Where the aim is taken from: `AIObjectControlInfo::getCameraBasePos`,
+   *  the unit's camera base, which for a gun sits on the gun. The first
+   *  driven or manned group's node is that pivot: aiming from it keeps the
+   *  rounds on the line the aim was taken along instead of a parallel one
+   *  2 m higher. The line of sight still starts at `_eye()`, clear of the
+   *  hull's own collision. */
+  _aimOrigin() {
+    if (this.vehicle) {
+      const g = this.vehicle.groups?.[0] ?? this.vehicle.manned?.[0] ?? null;
+      const e = g?.node?.matrixWorld?.elements;
+      if (e) return [e[12], e[13], e[14]];
+    }
+    return this._eye();
+  }
+
 
   /** The behaviours the bot's current unit registers (AIbehaviours.con rows). */
   _registered() {
@@ -620,6 +650,7 @@ export class BotController {
     const waterDepth = Number.isFinite(water) ? Math.max(0, water - this.position[1]) : 0;
     const me = this._player();
     const mySpeed = me?.soldier?.speed ?? 0;
+    if (this.vehicle) return this._chooseVehicleTarget(now);
     return scoreTargets({
       spotted: this.senses.spottedEnemies(),
       position: this.position,
@@ -647,6 +678,86 @@ export class BotController {
     const wp = this.waypoints;
     if (!wp?.inside) return true;
     return wp.inside(this.position[0], this.position[2]);
+  }
+
+  /** The unit's velocity: the hull's, or the rider's hull's through the page. */
+  _unitVelocity() {
+    const v = this.vehicle?.drive?.state?.velocity ?? this.vehicle?.hullVelocity?.();
+    return v ? [v.x ?? v[0] ?? 0, v.y ?? v[1] ?? 0, v.z ?? v[2] ?? 0] : [0, 0, 0];
+  }
+
+  /** The unit's forward as a 3-vector (the nose for an aircraft). */
+  _unitForward3() {
+    if (this.vehicle?.kind === 'air') {
+      const n = this._noseReference();
+      return [Math.sin(n.yaw) * Math.cos(n.pitch), Math.sin(n.pitch), Math.cos(n.yaw) * Math.cos(n.pitch)];
+    }
+    const f = this._vehicleForward();
+    return [f[0], 0, f[1]];
+  }
+
+  /** The class the bot's unit answers to in the enemy's tables. */
+  _myType() {
+    return this.vehicle ? (this.vehicle.strType ?? 'LightArmour') : 'Infantry';
+  }
+
+  /** `BBFireLargeBore` / `BBFire3d`: the mounted bot's target. */
+  _chooseVehicleTarget(now) {
+    const m = this.vehicle;
+    const air = m.kind === 'air';
+    const spotted = this.senses.spottedEnemies();
+    // `getEnemyObjects`: the enemy objects around that are not spotted.
+    const radius = air ? VEHICLE_FIRE.environmentRadiusAir
+      : (m.kind === 'ship' || m.kind === 'ground' || m.kind === 'tank' || m.kind === 'gun') ? VEHICLE_FIRE.environmentRadius
+      : VEHICLE_FIRE.environmentRadiusGround;
+    const environment = [];
+    for (const [id, p] of this.world?.players ?? []) {
+      if (id === this.playerId || p.team === this.team) continue;
+      if (this.world.armorOf?.(id)?.destroyed) continue;
+      const pos = playerPosition(p);
+      if (!pos) continue;
+      const d = Math.hypot(pos[0] - this.position[0], pos[2] - this.position[2]);
+      if (d <= radius) environment.push({ id, pos });
+    }
+    const aimable = (!m.drives && m.occupancy?.turret) ? (dir) => this._turretCanPoint(dir) : null;
+    return scoreVehicleTargets({
+      spotted, environment, position: this.position, forward: this._unitForward3(), velocity: this._unitVelocity(),
+      weapons: this.weapons, now,
+      attackedBy: id => this.senses.attackedBy(id),
+      velocityOf: id => {
+        const p = this.world.players.get(id);
+        const v = p?.vehicle?.state?.velocity ?? p?.soldier?.body?.body?.velocity;
+        if (v) return [v.x, v.y, v.z];
+        const s = p?.soldier;
+        return s ? [Math.sin(s.yaw) * (s.speed ?? 0), 0, Math.cos(s.yaw) * (s.speed ?? 0)] : null;
+      },
+      infoOf: id => this._unitInfo(id),
+      myType: this._myType(), myTable: unitTable(this.weapons), air, maxSpeed: m.maxSpeed ?? m.hullMaxSpeed ?? 0,
+      isAntiAircraft: this.weapons.some(w => w.isAntiAircraft),
+      currentTarget: this.firingTarget, currentScore: this.targetScore,
+      insideOrderedArea: this._insideOrderedArea(),
+      insideArea: this.waypoints?.inside ? (pos) => this.waypoints.inside(pos[0], pos[2]) : null,
+      vetoed: this.vetoedTargets, aimable, mode: air ? 'air' : 'largeBore',
+    });
+  }
+
+  /** What a target is: the page's description, else an infantryman. */
+  _unitInfo(id) {
+    const info = this.unitInfoOf?.(id);
+    if (info) return info;
+    const p = this.world?.players?.get(id);
+    return { type: p?.vehicleStrType ?? 'Infantry', air: p?.kind === 'air', table: SOLDIER_BATTLE_STRENGTH,
+             maxSpeed: p?.vehicle ? 20 : TANK.soldierMaxSpeed, seats: null, enemyManned: !!p?.vehicle, mobile: true };
+  }
+
+  /** `validateCameraDirectionYaw` for a fixed weapon: the rig's traverse
+   *  reaches the direction (a rig without limits reaches everything). */
+  _turretCanPoint(dir) {
+    const turret = this.vehicle?.occupancy?.turret;
+    const limits = turret?.yawLimitsRadians?.();
+    if (!limits) return true;
+    const want = wrapAngle(Math.atan2(dir[0], dir[2]) - this.yaw);
+    return want >= limits[0] && want <= limits[1];
   }
 
   // -----------------------------------------------------------------------
@@ -1105,18 +1216,40 @@ export class BotController {
     const dz = z - this.position[2];
     if (dx * dx + dz * dz < 1e-8) { this.moveForward = 0; return; }
     if (this.vehicle && !this.vehicle.drives) { this.moveForward = 0; this.moveStrafe = 0; return; }
+    if (this.vehicle?.kind === 'ship') {
+      // `BoatControl::towardsDirection` on the water map's route leg.
+      const st = this.vehicle.drive?.state;
+      const r = boatControl({
+        forward: this._vehicleForward(), velocity: st ? [st.velocity.x, st.velocity.z] : [0, 0],
+        toTarget: [dx, dz], radius: this.vehicle.radius ?? 10,
+      });
+      this.moveForward = r.throttle * (speed > 0 ? 1 : 0);
+      this.moveStrafe = VEHICLE_YAW_SIGN * r.steer;
+      this._dbgSteerAngle = r.angle;
+      return;
+    }
     if (this.vehicle) {
       // `TankControl::controlTowardsDirection`: throttle and steer for the
-      // hull; the look stays free for the turret.
+      // hull; the look stays free for the turret. `actionStatusDecision`'s
+      // box test reads the vehicle map: the free run along the heading and
+      // the free box around the hull, against the turn radius.
       const v = this.vehicle.drive?.state?.velocity;
+      const f = this._vehicleForward();
+      const turnRadius = this.vehicle.turnRadius ?? TANK.defaultTurnRadius;
+      const nav = this._nav();
+      let freeAhead = Infinity, boxShort = Infinity;
+      if (nav && dx * f[0] + dz * f[1] < 0) {
+        freeAhead = freeRun(nav, this.position[0], this.position[2], f[0], f[1], turnRadius * 2 + 1, this.obstacles);
+        boxShort = freeBox(nav, this.position[0], this.position[2], Math.ceil(turnRadius * 2 / nav.cellSize)).short;
+      }
       const r = tankControl({
-        forward: this._vehicleForward(),
+        forward: f,
         velocity: v ? [v.x, v.z] : [0, 0],
         toTarget: [dx, dz],
         maxSpeed: this.vehicle.maxSpeed ?? 0,
         yawRate: this._hullYawRate ?? 0,
         lastTurn: this._lastTurn ?? 0,
-        hullLength: this.vehicle.radius ? this.vehicle.radius * 2 : 6,
+        freeAhead, boxShort, turnRadius,
       });
       this._lastTurn = r.turn;
       if (r.reverse) {
@@ -1159,7 +1292,9 @@ export class BotController {
     const target = action.waypoint || this.waypoint;
     if (!target) return true;
     if (this.vehicle?.kind === 'air') return this._execPlaneMoveTo(target, action);
-    if (this.vehicle?.kind === 'ship') return this._execBoatMoveTo(target, action);
+    // A ship without a water map holds a straight line; with one it routes
+    // like a hull, the helm in `_steerToward`.
+    if (this.vehicle?.kind === 'ship' && !this._nav()) return this._execBoatMoveTo(target, action);
     const speed = action.crouch ? 0.5 : 1;
     if (action.crouch) this.stanceInput = 'crouch';
     else if (action.stance) this.stanceInput = action.stance;
@@ -1531,18 +1666,13 @@ export class BotController {
   _urgencyChange(mod, now) {
     const cands = this.vehicleCandidates;
     const world = this.world;
-    const presence = this._enemyPresence();
     const split = orderSplit(this.waypoints?.attack ?? 0, this.waypoints?.defence ?? 0);
     const me = world?.armorOf?.(this.playerId);
     const myHealth = me?.maxHitPoints > 0 ? me.hitPoints / me.maxHitPoints : 1;
-    const footWeapons = this._footWeapons ?? this.weapons;
-    let strengths = {};
-    for (const w of footWeapons) {
-      if (w.healing) continue;
-      for (const [k, v] of Object.entries(w.strength ?? {})) strengths[k] = Math.max(strengths[k] ?? 0, v);
-    }
-    const foot = unitUrgency({ health: myHealth, strengths, presence, maxSpeed: TANK.soldierMaxSpeed,
-                               value: 1, orderSplit: split });
+    // The soldier's own table is `setBattleStrength` (the kit's weapons do
+    // not rewrite it: `AITemplateUnit` +0x14 is set by the con).
+    const foot = unitUrgency({ health: myHealth, fire: this._fireStrengthOf({ table: SOLDIER_BATTLE_STRENGTH, myType: 'Infantry' }),
+                               maxSpeed: TANK.soldierMaxSpeed, value: 1, orderSplit: split });
     const ramp = Math.min(1, Math.max(0, (now - this._lastChangeAt) / CHANGE.rampSeconds));
     const areaFactor = this._insideOrderedArea() ? 1 : CHANGE.outsideAreaFactor;
     if (this.vehicle) {
@@ -1559,9 +1689,18 @@ export class BotController {
       // order differs — taken as the same order here).
       const driver = m.drives ? this.playerId : (m.driverOf?.() ?? null);
       const seatSpeed = m.drives ? (m.maxSpeed ?? 0) : (driver ? (m.hullMaxSpeed ?? 0) : 0);
-      let staying = unitUrgency({ health, strengths: this._seatStrengths(), presence,
+      // A seat has no mobile plug-in of its own: it is a fixed weapon
+      // unless its hull is occupied (`calculateFireStrength` takes the
+      // parent's), and a fixed weapon needs a known enemy it can point at.
+      const rootOccupied = !!(mine?.seats ?? m.seats ?? []).find(s => s.isRoot)?.occupied;
+      const seatFire = this._fireStrengthOf({
+        table: this._seatStrengths(), others: this._otherSeats(mine), air: m.kind === 'air', isSeat: !m.drives,
+        myType: this._myType(), fixed: !m.drives && !rootOccupied, aimable: this._fixedAimable(),
+      });
+      const selfU = unitUrgency({ health, fire: seatFire,
                                   maxSpeed: seatSpeed, occupiedByBot: !m.drives && !!driver,
-                                  value: mine?.value ?? 0, orderSplit: split }) * CHANGE.stayFactor;
+                                  value: mine?.value ?? 0, orderSplit: split });
+      let staying = selfU * CHANGE.stayFactor;
       if (mine && mine.upright === false) staying = 0;
       const nav = this.navGrid;
       let bailAllowed = !nav || isWalkable(nav, this.position[0], this.position[2]);
@@ -1578,19 +1717,26 @@ export class BotController {
         if (c.occupiedBy || c.upright === false || c.id === m.id) continue;
         const d = Math.hypot(c.pos[0] - this.position[0], c.pos[2] - this.position[2]);
         if (d > CHANGE.searchRadius) continue;
-        const u = unitUrgency({ health: c.health ?? 1, strengths: c.strengths ?? {}, presence,
+        if (c.vehicleId === m.vehicleId) continue;          // the same hull is the teleport's business
+        const u = unitUrgency({ health: c.health ?? 1, fire: this._candidateFire(c),
                                 maxSpeed: c.maxSpeed ?? 0, value: c.value ?? 0, orderSplit: split });
         const f = Math.min(0.5, (CHANGE.searchRadius ** 2 - d * d) / CHANGE.searchRadius ** 2);
         const v = u * (f + 0.5);
         if (v > bestU) { best = { id: c.id, u: v, dist: d, cand: c }; bestU = v; bail = false; }
       }
-      if (!best || bestU <= staying) { this._changeResult = null; this.changedTarget.Change = false; return 0; }
-      const x = staying > 0 ? 0.5 * bestU / staying : 0.5 * bestU;
-      const urgency = decleiningSlope(x) * mod * CHANGE.urgencyScale * ramp * areaFactor * (bail ? 2 : 1);
-      const r = { urgency, best, bail };
-      this.changedTarget.Change = (best.id) !== (this._changeResult?.best?.id ?? null);
+      let r = null;
+      if (best && bestU > staying) {
+        const x = staying > 0 ? 0.5 * bestU / staying : 0.5 * bestU;
+        const urgency = decleiningSlope(x) * mod * CHANGE.urgencyScale * ramp * areaFactor * (bail ? 2 : 1);
+        r = { urgency, best, bail, teleport: false };
+      }
+      // `BBChangeTeleport`: the other seats of this hull.
+      const t = this._urgencyChangeTeleport({ mine, selfU, split, driver, health });
+      if (t && (!r || t.urgency > r.urgency)) r = t;
+      if (!r) { this._changeResult = null; this.changedTarget.Change = false; return 0; }
+      this.changedTarget.Change = (r.best?.id ?? null) !== (this._changeResult?.best?.id ?? null);
       this._changeResult = r;
-      return urgency;
+      return r.urgency;
     }
     if (!cands?.length) { this._changeResult = null; return 0; }
     const nav = this.navGrid;
@@ -1602,7 +1748,7 @@ export class BotController {
       if (d > CHANGE.searchRadius) continue;
       if (nav && c.entry && !isWalkable(nav, c.entry[0], c.entry[1])) continue;
       const leftAge = this._leftVehicle?.id === c.vehicleId ? now - this._leftVehicle.at : Infinity;
-      const u = unitUrgency({ health: c.health ?? 1, strengths: c.strengths ?? {}, presence,
+      const u = unitUrgency({ health: c.health ?? 1, fire: this._candidateFire(c),
                               maxSpeed: c.maxSpeed ?? 0, value: c.value ?? 0, orderSplit: split,
                               occupiedByBot: !!c.movedByBot,
                               spawnAge: c.spawnAge ?? Infinity, leftAge });
@@ -1616,23 +1762,92 @@ export class BotController {
 
   /** The strength table of the seat the bot holds (its guns). */
   _seatStrengths() {
-    const out = {};
-    for (const w of this.weapons) {
-      for (const [k, v] of Object.entries(w.strength ?? {})) out[k] = Math.max(out[k] ?? 0, v ?? 0);
-    }
-    return out;
+    return unitTable(this.weapons);
   }
 
-  /** What is around, by class, for the vehicle scoring (INVENTION: the spotted
-   *  enemies' classes, at least one infantryman). */
-  _enemyPresence() {
-    const presence = { Infantry: 1 };
-    for (const m of this.senses.spottedEnemies()) {
-      const p = this.world?.players?.get(m.id);
-      const type = p?.vehicle ? (p.vehicleStrType ?? 'LightArmour') : 'Infantry';
-      presence[type] = (presence[type] ?? 0) + 1;
+  /** `calculateFireStrength` against the side's enemy tables. With no
+   *  strategic pass yet the enemy is taken to field infantry only. */
+  _fireStrengthOf({ table, others = [], air = false, isSeat = false, myType = 'Infantry', fixed = false, aimable = true }) {
+    const t = this.enemyTables;
+    const enemyStrengths = t?.strengths ?? {};
+    const enemyTypes = t && t.passes > 0 ? t.types : { Infantry: 1 };
+    return fireStrength({ table, others, air, isSeat, myType, enemyStrengths, enemyTypes, fixed, aimable });
+  }
+
+  /** A candidate seat's fire strength: its table plus the shares of the
+   *  hull's other occupied seats. A fixed gun, or a seat of a hull nobody
+   *  drives, is a fixed weapon and needs a known enemy it can point at. */
+  _candidateFire(c) {
+    const rootOccupied = !!(c.seats ?? []).find(s => s.isRoot)?.occupied;
+    const fixed = c.kind === 'gun' || (!c.isRoot && !rootOccupied);
+    return this._fireStrengthOf({
+      table: c.strengths ?? {}, others: (c.seats ?? []).filter(s => s.seatId !== c.seatId),
+      air: c.kind === 'air', isSeat: !c.isRoot, myType: c.strType ?? 'LightArmour',
+      fixed, aimable: fixed ? this._fixedAimable() : true,
+    });
+  }
+
+  /** The other seats of the hull the bot sits in, for the share. */
+  _otherSeats(mine) {
+    return (mine?.seats ?? this.vehicle?.seats ?? []).filter(s => s.seatId !== this.vehicle?.seatId);
+  }
+
+  /** A fixed weapon's `validateCameraDirection` over the known enemies: a
+   *  spotted enemy the traverse reaches; with none spotted, an enemy object
+   *  within the guns' range (`getEnemyObjects`), else the direction of the
+   *  nearest enemy flag (the strategic object the engine falls back to).
+   *  On foot the traverse is the candidate's, unknown here: any direction. */
+  _fixedAimable() {
+    const canPoint = this.vehicle ? (dir) => this._turretCanPoint(dir) : () => true;
+    const dirTo = (pos) => {
+      const dx = pos[0] - this.position[0], dz = pos[2] - this.position[2];
+      const d = Math.hypot(dx, dz) || 1;
+      return [dx / d, 0, dz / d];
+    };
+    const spotted = this.senses.spottedEnemies();
+    if (spotted.length) return spotted.some(m => canPoint(dirTo(m.pos)));
+    let range = 0;
+    for (const w of this.weapons) range = Math.max(range, w.maxRange ?? 0);
+    for (const [id, p] of this.world?.players ?? []) {
+      if (id === this.playerId || p.team === this.team || this.world.armorOf?.(id)?.destroyed) continue;
+      const pos = playerPosition(p);
+      if (!pos) continue;
+      if (Math.hypot(pos[0] - this.position[0], pos[2] - this.position[2]) <= range && canPoint(dirTo(pos))) return true;
     }
-    return presence;
+    const flag = this._nearestEnemyFlag();
+    return flag?.position ? canPoint(dirTo(flag.position)) : false;
+  }
+
+  /**
+   * `BBChangeTeleport::calculateUrgency`: the root's and the other seats'
+   * urgencies by where the bot sits, the winner other than its own seat.
+   */
+  _urgencyChangeTeleport({ mine, selfU, split, driver, health }) {
+    const m = this.vehicle;
+    const seats = mine?.seats ?? m.seats ?? [];
+    if (!seats.length) return null;
+    const cands = this.vehicleCandidates ?? [];
+    const rootCand = cands.find(c => c.vehicleId === m.vehicleId && c.isRoot) ?? null;
+    const rootOccupied = !!(rootCand?.occupiedBy) && rootCand.occupiedBy !== this.playerId;
+    let where = 'root';
+    if (!m.drives && !mine?.isRoot) {
+      where = rootOccupied ? 'seatUnderDriver' : (m.kind === 'air' ? 'seatAir' : m.kind === 'ship' ? 'seatShip' : 'seatLand');
+    }
+    const uOf = (c) => unitUrgency({ health, fire: this._candidateFire(c), maxSpeed: c.maxSpeed ?? 0,
+                                     occupiedByBot: !c.drives && !!driver, value: c.value ?? 0, orderSplit: split });
+    const rootU = rootCand && !rootOccupied && where !== 'root' ? uOf(rootCand) : 0;
+    const others = [];
+    for (const c of cands) {
+      if (c.vehicleId !== m.vehicleId || c.seatId === m.seatId || c.isRoot || c.occupiedBy) continue;
+      others.push({ id: c.id, u: uOf(c), cand: c });
+    }
+    const orderFactor = this.waypoints ? 1 : this.botSkill;
+    const r = teleportChangeUrgency({ where, rootU, selfU, seats: others, orderFactor, attackSplit: split[0],
+                                      hasPlan: this._hasPlan(), pending: !!this.enterRequest });
+    if (!r.best) return null;
+    const cand = r.best.id === 'root' ? rootCand : others.find(o => o.id === r.best.id)?.cand;
+    if (!cand) return null;
+    return { urgency: r.urgency, best: { id: cand.id, u: r.best.u, dist: 0, cand }, bail: false, teleport: true };
   }
 
   /**
@@ -1643,8 +1858,15 @@ export class BotController {
   _planChange(now) {
     const r = this._changeResult;
     if (this.vehicle) {
-      // Seated: leave (a bail, or the walk to a better seat starts on foot).
       if (!r?.best) return this._planIdle();
+      if (r.teleport) {
+        // `BBPChangeTeleport::createPlan`: the seat-select key.
+        const plan = [{ type: PLAN_ACTION.SwitchSeat, vehicleId: r.best.cand.vehicleId, seatId: r.best.cand.seatId }];
+        plan.vehicleId = r.best.id;
+        plan.startedAt = now;
+        return plan;
+      }
+      // Seated: leave (a bail, or the walk to a better seat starts on foot).
       const plan = [{ type: PLAN_ACTION.ExitVehicle }];
       plan.vehicleId = r.best.id;
       plan.startedAt = now;
@@ -1670,6 +1892,14 @@ export class BotController {
   _execExitVehicle() {
     if (!this.vehicle) return true;
     this.exitRequest = true;
+    return false;
+  }
+
+  /** `SwitchSeat` (`BAPICChangeVehicle` + the select key): the page reseats. */
+  _execSwitchSeat(action) {
+    if (!this.vehicle) return true;
+    if (this.vehicle.seatId === action.seatId) return true;
+    this.switchRequest = { vehicleId: action.vehicleId, seatId: action.seatId };
     return false;
   }
 
@@ -1731,6 +1961,17 @@ export class BotController {
   /** `BBPIdleInfantery`: `while (true) reset controls`. */
   _planIdle() {
     if (this.planBehaviour === BEHAVIOUR.Idle && this.currentPlan.length) return this.currentPlan;
+    if (this.vehicle?.kind === 'air' && this.vehicle.drives) {
+      // `BBPIdle3d::createPlan`: flying (or rolling faster than 0.1 m/s) the
+      // plane holds a `MoveTo3d` to where it is under `ConFalse` — an orbit
+      // of that point; on the ground and still it only resets the controls.
+      const st = this.vehicle.drive?.state;
+      const speed = st ? Math.hypot(st.velocity.x, st.velocity.y, st.velocity.z) : 0;
+      if (st && (speed > PLANE_FIRE.idleSpeed || !this.vehicle.drive?.grounded)) {
+        return [{ type: PLAN_ACTION.InfantryMoveTo, waypoint: [st.position.x, st.position.y, st.position.z],
+                  orbit: true, persistent: true }];
+      }
+    }
     return [{ type: PLAN_ACTION.InfantryResetControls, persistent: true }];
   }
 
@@ -1752,18 +1993,20 @@ export class BotController {
   /** `BBPFireInfantery::createPlan` through `firePlanFor`. */
   _planFire(now) {
     if (!this.firingTarget || !this.targetPosition) return this._planIdle();
-    if (this.vehicle?.kind === 'air') {
-      // `BBPFire3d` (not read): a run at the target — fly at it and hold the
-      // trigger while it lies inside the nose cone and the guns' range
-      // (INVENTION).
+    if (this.vehicle?.kind === 'air' && this.vehicle.drives) {
+      // `BBPFire3d::createPlan`: the target's mode and aim radius, then the
+      // loop `createPlanInternal` builds (`attackRunStep`).
       const cur = this.currentPlan;
       if (this.planBehaviour === BEHAVIOUR.Fire && cur.length && cur.targetId === this.firingTarget
           && !this._firePlanDone(cur, now)) return cur;
-      const plan = [
-        { type: PLAN_ACTION.InfantryMoveToObject, targetId: this.firingTarget, arrive: 0 },
-        { type: PLAN_ACTION.TriggerContinously, targetId: this.firingTarget, tolerance: 5 * Math.PI / 180,
-          startedAt: now, timeout: 12, shots: 0 },
-      ];
+      const info = this._unitInfo(this.firingTarget);
+      const fm = planeFireMode({ extents: info.extents ?? [0.6, 1.8, 0.6], vehicle: !!info.seats?.length || !!info.vehicle,
+                                 large: info.large === true, mobile: info.mobile !== false });
+      const weapon = this.weapons[this.weaponIndex] ?? this.weapons[0];
+      this._attackState = { phase: 'approach', breakFrom: null };
+      const plan = [{ type: PLAN_ACTION.PlaneAttack, targetId: this.firingTarget, targetPos: [...this.targetPosition],
+                      mode: fm.mode, radius: fm.radius, maxRange: weapon?.maxRange ?? 300, persistent: true,
+                      heatLimit: fm.mode === 0 ? PLANE_FIRE.weaponHeatSmall : PLANE_FIRE.weaponHeatVehicle }];
       plan.targetId = this.firingTarget; plan.startedAt = now; this._shotsThisPlan = 0;
       return plan;
     }
@@ -1786,6 +2029,15 @@ export class BotController {
 
   /** The fire plan's end conditions: target dead, timeout, shots spent. */
   _firePlanDone(plan, now) {
+    const attack = plan.find(a => a.type === PLAN_ACTION.PlaneAttack);
+    if (attack) {
+      // The loop's conditions: the target exists with health, the magazine
+      // is not dry, and the plane is within the battle zone.
+      if (this.world?.armorOf?.(plan.targetId)?.destroyed) return true;
+      if (!this.world?.players?.get(plan.targetId)) return true;
+      if (this.magazineEmpty) return true;
+      return false;
+    }
     const trigger = plan.find(a => a.type === PLAN_ACTION.Trigger || a.type === PLAN_ACTION.TriggerContinously);
     if (!trigger) return true;
     if (now - plan.startedAt > trigger.timeout) return true;
@@ -1909,6 +2161,10 @@ export class BotController {
         return this._execEnterVehicle(action);
       case PLAN_ACTION.ExitVehicle:
         return this._execExitVehicle();
+      case PLAN_ACTION.SwitchSeat:
+        return this._execSwitchSeat(action);
+      case PLAN_ACTION.PlaneAttack:
+        return this._execPlaneAttack(action, now);
       case PLAN_ACTION.Sense:
         return this._execSense(action);
       case PLAN_ACTION.SoldierPose:
@@ -1949,7 +2205,77 @@ export class BotController {
     this._airInput = r;
     this._dbgSteerAngle = Math.atan2(r.side, r.ahead);
     this._dbgSteer = [target[0], target[2]];
+    if (action?.orbit) return false;                        // `ConFalse`: the idle's orbit never ends
     return r.arrived && !r.takeoff;
+  }
+
+  /**
+   * `PlaneAttack`: `BBPFire3d`'s loop. Approach with `MoveTo3dObject` (the
+   * target's live position, 50 m clearance), aim and fire through
+   * `aimAtDirection` inside 0.9 / 0.8 of the guns' range, break 200 m along
+   * the heading after a pass, and turn back toward the ordered area when
+   * more than 200 m outside it.
+   */
+  _execPlaneAttack(action, now) {
+    const m = this.vehicle;
+    const st = m.drive?.state;
+    if (!st) return true;
+    const p = this.world?.players?.get(action.targetId);
+    const pos = playerPosition(p) ?? action.targetPos;
+    if (!pos) return true;
+    const position = [st.position.x, st.position.y, st.position.z];
+    const velocity = [st.velocity.x, st.velocity.y, st.velocity.z];
+    const collider = this.world?.collider;
+    const gy = collider?.surfaceHeight?.(position[0], position[2]);
+    const tv = p?.vehicle?.state?.velocity ?? p?.soldier?.body?.body?.velocity;
+    const targetVel = tv ? [tv.x, tv.y, tv.z] : [0, 0, 0];
+    const eye = this._aimOrigin();
+    const lineOfFire = this._lineClear(this._eye(), [pos[0], pos[1] + 1.0, pos[2]]);
+    const state = this._attackState ?? (this._attackState = { phase: 'approach', breakFrom: null });
+    const step = attackRunStep(state, {
+      position, forward: this._unitForward3(), velocity, target: [pos[0], pos[1] + 1.0, pos[2]], targetVel,
+      maxRange: action.maxRange, turnRadius: m.turnRadius ?? 25, lineOfFire, mode: action.mode,
+    });
+    this._attackPhase = step.phase;
+    // Outside the battle zone by more than 200 m: back toward it first.
+    const wp = this.waypoints;
+    if (wp?.inside && !wp.inside(position[0], position[2])) {
+      const dz = Math.hypot(wp.point[0] - position[0], wp.point[1] - position[2]) - (wp.area?.radius ?? wp.radius ?? 0);
+      if (dz > PLANE_FIRE.battleZoneReturn) {
+        this._execPlaneMoveTo([wp.point[0], undefined, wp.point[1]], null);
+        this.isFiring = false;
+        return false;
+      }
+    }
+    if (step.phase === 'attack') {
+      // The weapon's lead: the target's motion over the round's flight.
+      const exitVelocity = this.weaponData?.[this.weaponAi?.name]?.velocity ?? 600;
+      const t = step.dist / Math.max(50, exitVelocity);
+      const lead = [pos[0] + targetVel[0] * t - eye[0], pos[1] + 1.0 + targetVel[1] * t - eye[1], pos[2] + targetVel[2] * t - eye[2]];
+      const len = Math.hypot(lead[0], lead[1], lead[2]) || 1;
+      const r = aimAtDirection({ orientation: st.orientation, position, velocity, dir: [lead[0] / len, lead[1] / len, lead[2] / len],
+                                 groundY: gy, maxSpeed: m.maxSpeed ?? 100, radius: m.radius ?? 10, onGround: !!m.drive?.grounded });
+      this._airInput = r;
+      this._dbgSteerAngle = Math.atan2(r.side, r.ahead);
+      this._dbgSteer = [pos[0], pos[2]];
+      this.isFiring = step.fire;
+      if (step.fire) this.firingTargetTime = Math.min(this.firingTargetTime, now);
+      return false;
+    }
+    this.isFiring = false;
+    if (step.phase === 'break') {
+      // `MoveTo3dDirection`: 200 m along the heading, level.
+      const f = this._unitForward3();
+      const ahead = [position[0] + f[0] * PLANE_FIRE.breakDistance, position[1] + Math.max(0, f[1]) * PLANE_FIRE.breakDistance,
+                     position[2] + f[2] * PLANE_FIRE.breakDistance];
+      this._execPlaneMoveTo(ahead, null);
+      return false;
+    }
+    // `MoveTo3dObject(target, radius, maxSpeed, 0.5 maxSpeed, 50 m)`.
+    const tgy = collider?.surfaceHeight?.(pos[0], pos[2]);
+    const base = Number.isFinite(tgy) ? Math.max(tgy, pos[1]) : pos[1];
+    this._execPlaneMoveTo([pos[0], base + PLANE_FIRE.clearance, pos[2]], null);
+    return false;
   }
 
   /** `BoatMoveTo`: the helm on a straight line to the point. */
@@ -1984,7 +2310,7 @@ export class BotController {
     const p = action.targetId ? this.world?.players?.get(action.targetId) : null;
     const pos = playerPosition(p) ?? action.targetPos;
     if (!pos) return true;
-    const aim = faceTarget(this._eye(), [pos[0], pos[1] + 1.0, pos[2]]);
+    const aim = faceTarget(this._aimOrigin(), [pos[0], pos[1] + 1.0, pos[2]]);
     this._aimLook(aim.yaw, aim.pitch, AIM_COUNTS_MAX);
     return true;
   }
@@ -2015,7 +2341,7 @@ export class BotController {
     const pos = playerPosition(p) ?? action.targetPos;
     if (!pos) return true;
     const s = this.vehicle?.kind === 'air' ? this._noseReference() : this._aimReference();
-    const want = faceTarget(this._eye(), [pos[0], pos[1] + 1.0, pos[2]]);
+    const want = faceTarget(this._aimOrigin(), [pos[0], pos[1] + 1.0, pos[2]]);
     const dy = wrapAngle(want.yaw - (s?.yaw ?? this.yaw));
     const dp = s && s.pitch === null ? 0 : want.pitch - (s?.pitch ?? this.pitch);
     const tol = Math.max(action.tolerance ?? LOOK_TOLERANCE, LOOK_TOLERANCE);

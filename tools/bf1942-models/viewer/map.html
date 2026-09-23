@@ -1037,6 +1037,8 @@ import { cpNation as cpNationRule, teamNation as teamNationRule } from './nation
 import { BfMap, minimapWindow, rotateAbout, coverRect } from './bfmap.js';
 import { boardRows, boardVars, paintLeaves, listFloor, listGeometry } from './scoreboard.js';
 import { BotController, spawnBots } from './bot.js';
+import { EnemyStrengthTables, STRENGTH } from './bot-strength.js';
+import { SAI } from './strategic.js';
 import { buildNavMap, findPath, gridAt, isWalkable } from './nav-grid.js';
 import { StrategicLayer, StrategicAI } from './strategic.js';
 import { bindTreeFoliage } from './tree-foliage.js';
@@ -7770,8 +7772,9 @@ function manned(dt) {
     camera.position.copy(pose.position);
     camera.quaternion.copy(pose.quaternion);
     // Inside: the 1P muzzle emitter, not the mesh-mounted third-person flash
-    // that sits metres ahead of the eye. Outside: the reverse.
-    guns.firstPerson = view.firstPerson;
+    // that sits metres ahead of the eye. Outside: the reverse. "Inside" is
+    // view mode 3, which the nose cam is too -- see `pilot()`.
+    guns.firstPerson = view.inside;
   } else {
     readWorldPose(occupancy.cameraNode(), mannedCamPos, mannedCamQuat);
     camera.position.copy(mannedCamPos);
@@ -9305,6 +9308,7 @@ function spawnBotsForLevel() {
   for (const bot of botControllers) {
     bot.navGrid = botNavGrid;
     bot.covers = botCovers;
+    bot.unitInfoOf = botUnitInfo;
     botStrategy?.addBot(bot.playerId, bot.team);
     // The world steps bots, so each needs the Armor the soldier tick and the
     // combat area read (`#soldierTick`, `#combatTick`) — the kit's own max HP.
@@ -9341,6 +9345,13 @@ function tickBots(dt) {
     }
     botStrategy.update(dt, alive);
   }
+  // `SAI::updateStrengths`: each side's enemy tables, once per strategic pass.
+  if (botClock - botTablesAt >= SAI.updateFrequency) {
+    botTablesAt = botClock;
+    const units = botOccupiedUnits();
+    for (const side of [1, 2]) botEnemyTables[side].update(units.filter(u => u.side !== side));
+  }
+  for (const bot of botControllers) bot.enemyTables = botEnemyTables[bot.team] ?? null;
   const playerFired = !!frameInputLast?.fire && !frameInputWasFiring;
   frameInputWasFiring = !!frameInputLast?.fire;
   botVehicleTick();
@@ -9773,6 +9784,36 @@ function botVehicleNav() {
   return botNavGridVehicle;
 }
 
+/** The boats' and landing craft's maps (`ai.addSearchMap Boat2 1 ...` /
+ *  `LandingCraft3`), built on first use: the water at least the map's depth
+ *  deep, the shore kept off by the brush. */
+const botNavGridWater = new Map();
+function botWaterNav(name = 'Boat') {
+  if (!world) return null;
+  if (botNavGridWater.has(name)) return botNavGridWater.get(name);
+  const maps = world.extras?.ai?.searchMaps ?? [];
+  const re = new RegExp('^' + name, 'i');
+  const sm = maps.find(m => re.test(m.name) && m.waterMap) ?? maps.find(m => re.test(m.name)) ?? null;
+  if (!sm) { botNavGridWater.set(name, null); return null; }
+  const worldSize = world.extras?.worldSize || 2048;
+  const seeds = [];
+  for (const spawn of world.extras?.objectSpawns ?? []) if (spawn?.position) seeds.push([spawn.position[0], spawn.position[2]]);
+  const started = performance.now();
+  const nav = buildNavMap(world.collider, worldSize, {
+    waterLevel: world.collider?.waterLevel,
+    waterMap: true,
+    waterDepth: sm.waterDepth ?? 5.0,
+    maxSlopeDeg: sm.maxSlope ?? 0,
+    brush: sm.brush ?? 125.0,
+    lowClip: sm.lowClip ?? 0.3,
+    hiClip: sm.hiClip ?? 2.5,
+    seeds,
+  });
+  console.log(`[bots] water nav map (${sm.name}): ${(performance.now() - started).toFixed(0)} ms`);
+  botNavGridWater.set(name, nav);
+  return nav;
+}
+
 /** vehicle root node -> the bot driving it. */
 const botVehicleKinds = new Map();
 let botCandidateCache = { at: -1, list: [] };
@@ -9846,6 +9887,10 @@ function botVehicleCandidates() {
       const driver = botDriverOf(node);
       const health = damage?.maxHitPoints > 0 ? damage.hitPoints / damage.maxHitPoints : 1;
       const seen = new Set();
+      // Every seat of the hull with its table and occupancy: the shares
+      // `calculateFireStrength` adds and the seat swap's alternatives.
+      const seats = [];
+      const entries = [];
       for (const door of doors) {
         if (seen.has(door.seatId)) continue;
         seen.add(door.seatId);
@@ -9861,9 +9906,10 @@ function botVehicleCandidates() {
         const holder = botSeatHolder(node, door.seatId)
           ?? (occupancy?.root === node && occupancy.activeSeatId === door.seatId ? LOCAL_PLAYER : null);
         door.node.getWorldPosition(_botEntryWorld);
-        list.push({
+        seats.push({ seatId: door.seatId, table: strengths, occupied: !!holder, strType: ai.strType ?? 'LightArmour', isRoot });
+        entries.push({
           id: `${node.uuid}:${door.seatId}`, vehicleId: node.uuid, node, template: ai.name, kind,
-          seatId: door.seatId, isRoot, drives,
+          seatId: door.seatId, isRoot, drives, seats, turnRadius: ai.turnRadius ?? null,
           pos, entry: [_botEntryWorld.x, _botEntryWorld.z], entryRadius: door.radius,
           health, upright,
           // `calculateVehicleMoveUrgency`: a driver moves the hull; a passenger
@@ -9879,10 +9925,66 @@ function botVehicleCandidates() {
           driver,
         });
       }
+      for (const e of entries) list.push(e);
     }
   }
   botCandidateCache = { at: botClock, list };
   return list;
+}
+
+/** Each side's view of the enemy's strengths (`SAI` +0x174 / +0x18c). */
+const botEnemyTables = { 1: new EnemyStrengthTables(), 2: new EnemyStrengthTables() };
+let botTablesAt = -Infinity;
+
+/** The soldier's `setBattleStrength` table (`Objects/Soldiers/Common/AI/Objects.con`). */
+const BOT_SOLDIER_TABLE = { Infantry: 4.0, LightArmour: 2.0, HeavyArmour: 1.0, NavalArmour: 0.0, Submarine: 0.0, Air: 1.0 };
+
+/**
+ * `SAI::updateStrengths`' input: every occupied unit — a seated player's
+ * seat with its table and class, a soldier on foot with the soldier's.
+ */
+function botOccupiedUnits() {
+  const units = [];
+  if (!world) return units;
+  const cands = botVehicleCandidates();
+  for (const [id, p] of world.players) {
+    if (world.armorOf(id)?.destroyed) continue;
+    const side = p.team;
+    if (p.occupancy?.root) {
+      const c = cands.find(x => x.vehicleId === p.occupancy.root.uuid && x.seatId === p.occupancy.activeSeatId)
+        ?? cands.find(x => x.vehicleId === p.occupancy.root.uuid && x.isRoot) ?? null;
+      units.push({ side, table: c?.strengths ?? {}, type: c?.strType ?? p.vehicleStrType ?? 'LightArmour', security: 1 });
+    } else if (p.soldier) {
+      units.push({ side, table: BOT_SOLDIER_TABLE, type: 'Infantry', security: 1 });
+    }
+  }
+  return units;
+}
+
+/**
+ * What a target is, for `scoreVehicleTargets`: a seated player's hull with
+ * every seat, else a soldier.
+ */
+function botUnitInfo(id) {
+  const p = world?.player(id);
+  if (!p) return null;
+  if (p.occupancy?.root) {
+    const node = p.occupancy.root;
+    const cands = botVehicleCandidates().filter(c => c.vehicleId === node.uuid);
+    const ai = botVehicleAiOf(node);
+    const kind = botVehicleKindOf(node);
+    const c = cands.find(x => x.seatId === p.occupancy.activeSeatId) ?? cands[0] ?? null;
+    const box = new THREE.Box3().setFromObject(node);
+    const ext = box.isEmpty() ? [4, 2, 6] : [box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z];
+    return {
+      type: c?.strType ?? ai?.strType ?? p.vehicleStrType ?? 'LightArmour', air: kind === 'air',
+      table: c?.strengths ?? {}, maxSpeed: ai?.maxSpeed ?? 0,
+      seats: c?.seats ?? cands.map(x => ({ seatId: x.seatId, table: x.strengths, occupied: !!x.occupiedBy, strType: x.strType })),
+      enemyManned: true, mobile: kind !== 'gun', vehicle: true, large: kind === 'ship', extents: ext,
+    };
+  }
+  return { type: 'Infantry', air: false, table: BOT_SOLDIER_TABLE, maxSpeed: 5, seats: null, enemyManned: false,
+           mobile: true, vehicle: false, extents: [0.6, 1.8, 0.6] };
 }
 
 /** The body radius a land vehicle keeps on its map, and a plane's or
@@ -9951,10 +10053,15 @@ function botEnterVehicle(bot, cand) {
   if (record) record.vehicleStrType = cand.strType;
   if (!botSeats.has(node)) botSeats.set(node, new Map());
   botSeats.get(node).set(cand.seatId, bot.playerId);
+  const ai = botVehicleAiOf(node);
+  const landingCraft = /lcvp|daihatsu|landing/i.test(ai?.name ?? '');
   bot.mount({
     id: cand.id, vehicleId: cand.vehicleId, node, drive, occupancy: occ, kind: occ.rootKind,
     seatId: cand.seatId, drives: !!drive, groups, manned,
-    nav: drive && ['ground', 'tank'].includes(occ.rootKind) ? botVehicleNav() : null,
+    nav: drive && ['ground', 'tank'].includes(occ.rootKind) ? botVehicleNav()
+      : drive && occ.rootKind === 'ship' ? botWaterNav(landingCraft ? 'LandingCraft' : 'Boat') : null,
+    turnRadius: ai?.turnRadius ?? null, strType: cand.strType, seats: cand.seats, isRoot: cand.isRoot,
+    hullVelocity: () => { const d = botDriverOf(node); return d ? (world.player(d)?.vehicle?.state?.velocity ?? null) : null; },
     radius: occ.rootKind === 'air' || occ.rootKind === 'ship' ? BOT_VEHICLE_RADIUS_LARGE : BOT_VEHICLE_RADIUS,
     maxSpeed: cand.maxSpeed,
     weapons: cand.weapons, template: cand.template,
@@ -9969,7 +10076,7 @@ function botEnterVehicle(bot, cand) {
 }
 
 /** Unseat a bot: a driven hull parks where it stands, the soldier steps out beside it. */
-function botLeaveVehicle(bot, { killed = false } = {}) {
+function botLeaveVehicle(bot, { killed = false, silent = false } = {}) {
   const m = bot.vehicle;
   if (!m) return;
   for (const group of [...(m.groups ?? []), ...(m.manned ?? [])]) guns.release(group);
@@ -10009,7 +10116,7 @@ function botLeaveVehicle(bot, { killed = false } = {}) {
   botCandidateCache.at = -1;
   const vis = botVisuals.get(bot.playerId);
   if (vis) vis.group.visible = !killed;
-  if (BOT_DEBUG) console.log(`[bots] ${bot.playerId} leaves the ${m.template}${killed ? ' (killed)' : ''}`);
+  if (BOT_DEBUG && !silent) console.log(`[bots] ${bot.playerId} leaves the ${m.template}${killed ? ' (killed)' : ''}`);
 }
 
 const _botSeatWorld = new THREE.Vector3();
@@ -10040,6 +10147,16 @@ function botVehicleTick() {
       if (bot.exitRequest) {
         bot.exitRequest = false;
         botLeaveVehicle(bot);
+      } else if (bot.switchRequest) {
+        // `BBPChangeTeleport`: the seat-select key moves the bot within the hull.
+        const req = bot.switchRequest;
+        bot.switchRequest = null;
+        const cand = cands.find(c => c.vehicleId === req.vehicleId && c.seatId === req.seatId);
+        if (cand && !cand.occupiedBy && cand.vehicleId === m.vehicleId) {
+          botLeaveVehicle(bot, { silent: true });
+          if (botEnterVehicle(bot, cand)) botCandidateCache.at = -1;
+          if (BOT_DEBUG) console.log(`[bots] ${bot.playerId} switches to seat ${cand.seatId} of the ${cand.template}`);
+        }
       }
       continue;
     }
@@ -14068,7 +14185,13 @@ function pilot(dt) {
   // `stepTurret` loop), and the `vehicleGuns` loop with the unconditional-off
   // `setFiring` semantics. The shell here is the presentation half.
   const flying = occupancy.isActiveRoot() && !vehicleInput.blocked;
-  guns.firstPerson = aircraft.firstPerson;
+  // The flash's 1P/3P choice is the engine's view mode 3, not whether the
+  // cockpit interior is drawn: the nose cam is mode 3 with the interior off,
+  // and retail plays the small `em_1P_*` sprite there. Keyed off the interior,
+  // the nose cam got the third-person `em_MuzzHeavy` mesh -- a 1.76 m cone
+  // ramped toward 9.4x, parked on cowl guns 1.9 m behind the eye, so a held
+  // burst (12 rps against a 0.07 s life) was one static shape across the view.
+  guns.firstPerson = view ? view.inside : aircraft.firstPerson;
   // A non-flying seat with no gun of its own (a transport's passenger) still
   // needs its camera moved, exactly as `drive()`'s passenger branch does.
   if (!flying && !mannedActive() && view) {
@@ -17828,7 +17951,9 @@ if (params.has('shots')) {
     candidates: b.senses?.lastCandidates ?? 0,
     heal: b._medicResult?.targetId ?? null,
     vehicle: b.vehicle?.template ?? null,
-    change: b._changeResult?.best ? { id: b._changeResult.best.cand?.template, u: +b._changeResult.best.u.toFixed(2), d: +b._changeResult.best.dist.toFixed(1) } : null,
+    change: b._changeResult?.best ? { id: b._changeResult.best.cand?.template, seat: b._changeResult.best.cand?.seatId ?? null, u: +b._changeResult.best.u.toFixed(2), d: +b._changeResult.best.dist.toFixed(1), teleport: !!b._changeResult.teleport, bail: !!b._changeResult.bail } : null,
+    attackPhase: b._attackPhase ?? null,
+    enemyTypes: b.enemyTables ? Object.fromEntries(Object.entries(b.enemyTables.types).filter(([, v]) => v > 0).map(([k, v]) => [k, +v.toFixed(2)])) : null,
     steerAngle: b._dbgSteerAngle ?? null,
     ammo: b.weaponAi?.ammo ?? null, reload: +((b._mags?.get(b.weaponAi?.name)?.reloadLeft) ?? 0).toFixed(2),
     aimDev: +(b.aimDeviation ?? 0).toFixed(2), rof: botWeaponDataOf(b)?.roundOfFire ?? null,

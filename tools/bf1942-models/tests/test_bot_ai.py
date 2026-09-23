@@ -45,7 +45,7 @@ MODULES = {f"{name}.js": VIEWER / f"{name}.js" for name in _MODULE_NAMES}
 MODULES["world.mjs"] = VIEWER / "world.js"
 MODULES["bot.js"] = VIEWER / "bot.js"
 MODULES["nav-grid.js"] = VIEWER / "nav-grid.js"
-for _m in ("bot-sense.js", "bot-fire.js", "bot-behaviours.js", "bot-vehicle.js", "bot-vehicle-air.js", "strategic.js"):
+for _m in ("bot-sense.js", "bot-fire.js", "bot-behaviours.js", "bot-vehicle.js", "bot-vehicle-air.js", "bot-strength.js", "strategic.js"):
     MODULES[_m] = VIEWER / _m
 MODULES["node_modules/three/three.module.js"] = VIEWER / "vendor" / "three.module.js"
 THREE_PACKAGE = json.dumps({
@@ -190,6 +190,74 @@ class BotAiTests(unittest.TestCase):
         self.assertEqual(a["ground"]["roll"], 0.0)
         self.assertEqual(a["boatTurn"]["steer"], -1.0)         # full rudder past 30 deg, toward +yaw
         self.assertGreater(a["boatAhead"]["throttle"], 0.9)
+
+    def test_the_class_tables_score_a_unit_against_what_the_enemy_fields(self) -> None:
+        s = self.results["strength"]
+        self.assertEqual(s["sherman"]["Infantry"], 12)               # the max over the guns, the pack ignored
+        self.assertEqual(s["sherman"]["LightArmour"], 7)
+        self.assertAlmostEqual(s["types"]["Infantry"], 2.0, places=2)  # settles at the per-pass sum
+        self.assertAlmostEqual(s["strengths"]["HeavyArmour"], 2.0, places=2)
+        self.assertAlmostEqual(s["vsInfantry"], 144 - 2.0, places=2)   # 12^2 - the enemy's strength vs armour
+        self.assertAlmostEqual(s["unknown"], 0.5 * 144)
+        self.assertGreater(s["withGunner"], s["vsInfantry"])           # the gunner's 0.9 share
+        self.assertEqual(s["fixedBlind"], 0)
+        self.assertGreater(s["tank"], s["foot"] * 1.25)
+        self.assertEqual(s["heat"][0], 1)
+        self.assertAlmostEqual(s["heat"][1], 0.5, places=6)
+        self.assertEqual(s["radius"], 50.0)
+
+    def test_the_seat_swap_prefers_the_wheel_of_a_free_jeep(self) -> None:
+        t = self.results["teleport"]
+        self.assertIsNone(t["gunnerStays"]["best"])                   # 10 x 0.5 < 8 x 1.0
+        self.assertEqual(t["passengerDrives"]["best"]["id"], "root")
+        self.assertGreater(t["passengerDrives"]["urgency"], 3.0)
+        self.assertIsNone(t["rootKeeps"]["best"])
+        self.assertEqual(t["pending"]["urgency"], 6.0)
+
+    def test_the_box_test_backs_toward_a_target_behind_with_no_room(self) -> None:
+        d = self.results["drive"]
+        self.assertTrue(d["back"]["reverse"])
+        self.assertFalse(d["room"]["reverse"])
+        self.assertFalse(d["narrow"]["reverse"])
+        self.assertFalse(d["shallow"]["reverse"])
+        self.assertTrue(d["lawReverse"])
+        self.assertLess(d["lawThrottle"], 0)
+
+    def test_a_hull_prefers_the_close_target_and_a_plane_the_far_one(self) -> None:
+        v = self.results["vehicleFire"]
+        self.assertEqual(v["tank"], "near")
+        self.assertEqual(v["plane"], "far")
+        self.assertIsNone(v["blind"])
+        self.assertIsNone(v["tooClose"])                              # inside the gun's minRange
+        self.assertEqual(v["env"], "e")
+        self.assertGreater(v["envUrgency"], 0)
+        self.assertEqual(v["vehicle"], "v")
+        self.assertGreater(v["vehicleScore"], 0)
+
+    def test_the_plane_approaches_attacks_and_breaks(self) -> None:
+        p = self.results["planeFire"]
+        self.assertEqual(p["far"], "approach")
+        self.assertEqual(p["inRange"], "attack")
+        self.assertTrue(p["inRangeFire"])
+        self.assertEqual(p["passed"], "break")                       # inside 1.3 x the turn radius
+        self.assertEqual(p["breaking"], "break")                     # 100 m into the 200 m run
+        self.assertEqual(p["again"], "approach")
+        self.assertEqual([m["mode"] for m in p["modes"]], [0, 1, 2, 3])
+        self.assertEqual(p["modes"][1]["radius"], 5.0)
+        self.assertEqual(p["modes"][2]["radius"], 43.333333333333336)
+        self.assertLess(p["aimUpPitch"], 0)                          # nose up is a negative stick
+        self.assertTrue(p["takeoff"])
+        self.assertEqual(p["climb"], 0.3333)
+
+    def test_the_water_map_frees_the_deep_water_and_blocks_the_island(self) -> None:
+        w = self.results["water"]
+        self.assertEqual(w["deep"], w["free"])
+        self.assertEqual(w["centre"], w["land"])
+        self.assertEqual(w["shelf"], w["land"])                       # 4 m of water under a 5 m draft
+        self.assertGreater(w["run"], 20)
+        self.assertLess(w["run"], 60)                                # the island stops the run
+        self.assertGreater(w["boxShort"], 20)
+        self.assertNotEqual(w["islandWalkable"], w["land"])          # the infantry map is not a water map
 
     def test_the_winner_is_moveto_with_no_target(self) -> None:
         self.assertEqual(self.results["moveTo"]["behaviour"], "MoveTo")
