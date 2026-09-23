@@ -324,9 +324,13 @@ export function executeAction(bot, action, dt, now) {
     case PLAN_ACTION.InfantryMoveToDirection:
       return bot._execInfantryMoveToDirection(action, dt, now);
     case PLAN_ACTION.BoatMoveToDirect:
-      // The helm on the straight line (`BoatMoveTo`); the while loop never
+      // The boat's own helm (`BoatControl::towardsDirection` with its box
+      // state machine, as `_steerToward` runs it on a route leg) straight at
+      // the point, with the move's own state; the while loop never
       // completes, so the plan ends only when the order does.
-      bot._execBoatMoveTo(action.waypoint, action);
+      bot._asd = action._asd ?? (action._asd = { state: 0 });
+      bot._steerToward(action.waypoint[0], action.waypoint[2], 1);
+      bot._dbgSteer = [action.waypoint[0], action.waypoint[2]];
       return false;
     case PLAN_ACTION.MouseTurretAimAt:
       return bot._execMouseTurretAimAt(action);

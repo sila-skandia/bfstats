@@ -10,6 +10,7 @@ import {
   StrategicLayer, StrategicAI, StrategicCommand, LANDING, landingZonesOf, zoneDistanceSqr, approachPosition,
   beachPosition, beachTarget, craftArea, areaPath, ORDER_KINDS,
 } from './strategic.js';
+import { craftBailReason, levelZones } from './doctrine-landing.js';
 
 // Wake's `AI/StrategicAreas.con` (Wake_003.rfa), three land areas and two of
 // the sea, and two of its four zones, as bf42/ai_level.py exports them.
@@ -128,11 +129,11 @@ const south = zones.get('southlanding');
     path: areaPath(layer, byName('SeaArea3'), byName('MainBase'))?.map(a => a.name) ?? null,
   };
   // With an area between: SeaArea3 -> WesternMainBaseExit (no zone here) ->
-  // CrossRoads -> SouthernBase -> DefGun1; the radius is 0.25 x
-  // WesternMainBaseExit's side radius + 2 x 10.
+  // CrossRoads -> SouthernBase -> DefGun1. The engine's radius would be
+  // 0.25 x WesternMainBaseExit's side radius + 2 x 10; the viewer drives no
+  // route point and keeps the no-route 5.
   const via3 = beachTarget({ layer, zones, area: byName('DefGun1'), side: 1, unit: craft, x: 200, z: -1150 });
-  const sw = layer.sideRadius(byName('WesternMainBaseExit'), 1);
-  out.targets.fromSeaArea3 = via3 ? { kind: via3.kind, via: via3.via.name, radius: r3(via3.radius), expected: r3(Math.max(5, 0.25 * sw + 20)) } : null;
+  out.targets.fromSeaArea3 = via3 ? { kind: via3.kind, via: via3.via.name, radius: r3(via3.radius) } : null;
   out.targets.mainBaseFromSeaArea3 = beachTarget({ layer, zones, area: byName('MainBase'), side: 1, unit: craft, x: 200, z: -1150 });
 }
 
@@ -213,6 +214,23 @@ const south = zones.get('southlanding');
   cmd2.addBot('c', 1); cmd2.addBot('p1', 1); cmd2.addBot('p2', 1);
   for (let k = 0; k < 62; k++) { craftPos = [1150, 0, craftPos[2] - 12 * dt]; cmd2.update(dt, alive()); }
   out.tipped = [...new Set(exits)].sort();
+}
+
+// --- 5. the crew's own bail test (BBChangeLandingCraft), zone by zone -------
+
+{
+  const zs = levelZones(AI);
+  const at = (x, z, speed, walkable = true, upright = true) => craftBailReason({ zones: zs, x, z, speed, walkable, upright });
+  out.bailReason = {
+    beached: at(1150, -690, 0.5),
+    fast: at(1150, -690, 2.5),
+    atTwo: at(1150, -690, 2.0),
+    wet: at(1150, -690, 0.5, false),
+    offZone: at(900, -900, 0),
+    bay: at(1080, -840, 0),
+    tippedAtSea: at(1150, -400, 10, false, false),
+    sameZones: levelZones(AI) === zs,
+  };
 }
 
 out.constants = { ...LANDING };
