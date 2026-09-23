@@ -13,12 +13,12 @@ import { captureDuration, nearestEnemyFlag as nearestEnemyFlagOf } from './bot-r
  * reassigns is read live):
  * `AUDIO_OFF`, `audioBufferCache`, `audioListener`, `audioLoader`, `bust`,
  * `cull`, `currentRoot`, `deployTeamId`, `drawFullMap`, `drawMinimap`,
- * `ensureAudioContext`, `extras`, `flagMixer`, `flattenCull`, `hud`,
- * `hudViewTimer`, `levelClips`, `LOCAL_PLAYER`, `localMapTeam`,
- * `logToConsole`, `MAPS_BASE`, `masterVolume`, `optOnFoot`,
- * `paintDeployChrome`, `playSoldierOneShot`, `roomJoined`, `soldier`,
- * `soldierDead`, `spawnFlagSelect`, `syncVehicleSpawnOwnership`, `tagCull`,
- * `teamNation`, `thaw`, `updateHud`, `world`.
+ * `ensureAudioContext`, `extras`, `flagMixer`, `flashHud`, `flattenCull`,
+ * `hud`, `levelClips`, `LOCAL_PLAYER`, `localMapTeam`, `logToConsole`,
+ * `MAPS_BASE`, `masterVolume`, `optOnFoot`, `paintDeployChrome`,
+ * `playSoldierOneShot`, `roomJoined`, `soldier`, `soldierDead`,
+ * `spawnFlagSelect`, `syncVehicleSpawnOwnership`, `tagCull`, `teamNation`,
+ * `thaw`, `updateHud`, `world`.
  */
 export function createFlagCapture(page) {
   const flagCapture = {};
@@ -26,6 +26,19 @@ export function createFlagCapture(page) {
   flagCapture.localCapture = null;
   flagCapture.roomCapture = null;
   flagCapture.flags = [];
+
+  // The room's capture banner, by decree from the server.
+  flagCapture.roomCaptureStarted = (name, duration) => {
+    flagCapture.roomCapture = { name, elapsed: 0, duration, contested: false, done: false };
+  };
+  flagCapture.roomCaptureContested = () => {
+    if (flagCapture.roomCapture) flagCapture.roomCapture.contested = true;
+  };
+  flagCapture.roomCaptureCancelled = () => { flagCapture.roomCapture = null; };
+  flagCapture.roomCaptureDone = name => {
+    flagCapture.roomCapture = { name, elapsed: 0, duration: 0, contested: false, done: true,
+      until: performance.now() + 2200 };
+  };
 
   /** Fill the flag picker from the level's own control points.
    *
@@ -379,10 +392,8 @@ export function createFlagCapture(page) {
       hoistCaptureFlag(target);
       page.syncVehicleSpawnOwnership();
       page.logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
-      page.hud.textContent = `${target.name} captured`;
+      page.flashHud(`${target.name} captured`);
       announceCapture(prevTeam, target.team);
-      clearTimeout(page.hudViewTimer);
-      page.hudViewTimer = setTimeout(page.updateHud, 2200);
       flagCapture.localCapture = null;
       return;
     }

@@ -18,8 +18,9 @@ import { createReconciler } from './netcode-reconcile.js';
  * `exitSeat`, `extras`, `flags`, `hoistCaptureFlag`, `loader`, `lockHeld`,
  * `logToConsole`, `manifest`, `MODELS_BASE`, `nearEntry`, `occupancy`,
  * `openDeploy`, `optOnFoot`, `optPilot`, `paintDeployChrome`, `params`,
- * `renderer`, `roomCapture`, `scene`, `setDeployTeam`, `soldier`,
- * `soldierArmor`, `soldierDead`, `syncVehicleSpawnOwnership`,
+ * `renderer`, `roomCaptureCancelled`, `roomCaptureContested`,
+ * `roomCaptureDone`, `roomCaptureStarted`, `scene`, `setDeployTeam`,
+ * `soldier`, `soldierArmor`, `soldierDead`, `syncVehicleSpawnOwnership`,
  * `templateNameOf`, `updateHud`.
  */
 export function createNetRoom(page) {
@@ -75,6 +76,11 @@ export function createNetRoom(page) {
   // entry: `netVehicleIdFor` is a matrix read over the room table, and the
   // seat-dot feed asks for it every frame while seated.
   room.netOccupiedVehicleId = null;
+  /** The local player took a seat on `root`: the room's id for that hull. */
+  room.noteOccupiedVehicle = root => { room.netOccupiedVehicleId = netVehicleIdFor(root); };
+  /** The id, resolved late when the replica table was not ready at the entry. */
+  room.occupiedVehicleIdFor = root => (room.netOccupiedVehicleId ??= netVehicleIdFor(root));
+  room.forgetOccupiedVehicle = () => { room.netOccupiedVehicleId = null; };
   const netScratchV = new THREE.Vector3();
 
   /** The room table id for a LOCAL vehicle node: template name (the scene
@@ -229,13 +235,12 @@ export function createNetRoom(page) {
       room.roomClient.onevent = row => {
         if (row?.text) page.logToConsole(row.text);
         if (row?.type === 'capturing') {
-          page.roomCapture = { name: row.name || 'flag', elapsed: 0,
-            duration: Number(row.duration) > 0 ? Number(row.duration) : 8,
-            contested: false, done: false };
-        } else if (row?.type === 'captureContested' && page.roomCapture) {
-          page.roomCapture.contested = true;
+          page.roomCaptureStarted(row.name || 'flag',
+            Number(row.duration) > 0 ? Number(row.duration) : 8);
+        } else if (row?.type === 'captureContested') {
+          page.roomCaptureContested();
         } else if (row?.type === 'captureCancelled') {
-          page.roomCapture = null;
+          page.roomCaptureCancelled();
           page.updateHud();
         }
         // P3: death by server decree. The page's own death loop
@@ -255,9 +260,7 @@ export function createNetRoom(page) {
           page.flags[row.flag].team = row.team;
           page.hoistCaptureFlag(page.flags[row.flag]);
           page.announceCapture(prevTeam, row.team);
-          page.roomCapture = { name: row.name || page.flags[row.flag].name,
-            elapsed: 0, duration: 0, contested: false, done: true,
-            until: performance.now() + 2200 };
+          page.roomCaptureDone(row.name || page.flags[row.flag].name);
           page.syncVehicleSpawnOwnership();
           page.applyVisibility();
           if (typeof page.paintDeployChrome === 'function') page.paintDeployChrome();
