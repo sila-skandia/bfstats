@@ -80,6 +80,10 @@ linearly between them (INVENTION of the in-between values), 0 at or below 0,
 |---|---|---|---|---|
 | SCurve | 0.087 | 0.5 | 0.913 | 1 |
 
+The whole `SCurve` table is read since (`SCurve::init` 0x08658030, AI-75):
+`bot-sense.js SCURVE_TABLE` / `sCurveExact` carry it for the information
+security; the behaviours still use the samples above.
+
 ## Avoid
 
 - **Inputs**: every other player on foot (`_urgencyAvoid`).
@@ -207,8 +211,10 @@ more than 25 m): not scored.
   threshold); anything else `myTable[class] x classValue[class]`; x the
   order and area factors. Class values 1, 3, 8, 15, 1, 6 (Infantry,
   LightArmour, HeavyArmour, NavalArmour, Submarine, Air; AI-64). Security is
-  1: an enemy's information decays as `1 - SCurve(age / decay)` from 1 at
-  each sighting, with the decay not traced (INVENTION, AI-72).
+  1 here: the engine's is the side's `1 - SCurve(age / degeneration)`
+  (AI-72, AI-75; [sensing.md](sensing.md#what-a-side-knows)), which the enemy
+  tables use and this scoring does not yet (`BotSenses.securityOf` holds it;
+  INVENTION).
 - **Distance**: large bore `1 - clamp(1.5 d / maxRange, 0.1, 1)`; air,
   ground target `min(1, d / (3 maxRange))`, air target `max(0, 1 - d / (1.5
   maxRange))` (x2 base for anti-aircraft guns), times a facing term
