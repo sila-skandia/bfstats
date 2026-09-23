@@ -119,6 +119,14 @@ class StrategicFixtureTests(unittest.TestCase):
         # empty or contested; a base Allies may not take stays Axis.
         self.assertEqual(self.results["pins"]["presence"], [1, 2, 2, 2, 1])
 
+    def test_an_aircraft_does_not_hold_an_area_its_gunner_seat_does(self) -> None:
+        # `AIStrategicArea::update` 0x0863d6d0 skips an air object in the
+        # counts (0x0863e182 / 0x0863e1e5) but not a secondary seat of it.
+        h = self.results["pins"]["airHold"]
+        self.assertEqual(h["pilot"], {"owner": 1, "present": 0})
+        self.assertEqual(h["gunner"], {"owner": 2, "present": 1})
+        self.assertEqual(h["foot"], {"owner": 2, "present": 1})
+
     def test_every_order_carries_the_area_test(self) -> None:
         # bot.js calls `wp.inside` for Fire's outside-area factor and the
         # medic; an order without it threw every frame (ee729113).

@@ -245,7 +245,20 @@ export class StrategicAI {
       b.area = area;
       if (!area) continue;
       const st = this.areaState.get(area);
-      st[b.side].present.push(b.id);
+      // `AIStrategicArea::update` 0x0863d6d0 counts the side's and the
+      // enemy's units in the area (the two counts its hold is decided by,
+      // after the loops) over the objects the side and neutral grids return
+      // there, skipping one whose Information type word has the air bit
+      // (+4 & 0x10: the `testb $0x10,0x4(%ecx)` before each `inc`, at
+      // 0x0863e182 and 0x0863e1e5), and then over each object's secondary objects
+      // (`getFirstSecondaryObject` / `getSecondaryObject`, vt+0x80 at
+      // 0x0863db67 and vt+0x78 at 0x0863dc73) with no such test. So a
+      // plane's own seat never holds or contests an area, a gunner's seat of
+      // it (a B17's) does; the strength sums take both (Brief R item 5,
+      // ledger AI-125). The viewer counts bots: one in an aircraft's root
+      // seat is left out of the count.
+      const unit = this.unitOf?.(b.id) ?? null;
+      if (!(unit?.air && unit?.root)) st[b.side].present.push(b.id);
       st[b.side].friendly += SAI.unitValue;
       st[b.side === 1 ? 2 : 1].enemy += SAI.unitValue;
     }
