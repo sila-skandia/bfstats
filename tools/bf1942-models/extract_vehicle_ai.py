@@ -325,6 +325,12 @@ def extract(mod: str) -> dict:
                 p = parsed["plugIns"].get(pname.lower())
                 if p and p.get("kind") == "Unit":
                     seat["strategicStrength"] = p.get("strategicStrength")
+                    # `aiTemplatePlugIn.equipmentType`: the unit's row of
+                    # `AIbehaviours.con`'s `setVehicle` list (0 Tank, 4 Fixed,
+                    # 13 FixedLargeBore, ...), which picks its behaviours: a
+                    # Tank's and a Fixed gun's Fire is `BBFireInfantery`.
+                    if p.get("equipmenttype") is not None:
+                        seat["equipmentType"] = int(p["equipmenttype"])
                     # `setUseNoPathfindingToGetToObject` (ConsoleClass557
                     # 0x08506040 writes `AITemplateUnit+0x15`): BBChange
                     # 0x0855e0c0 then takes the unit when a valid point lies
@@ -362,6 +368,8 @@ def extract(mod: str) -> dict:
                 info["strType"] = p.get("strType")
             elif kind == "Unit":
                 info["strategicStrength"] = p.get("strategicStrength")
+                if p.get("equipmenttype") is not None:
+                    info["equipmentType"] = int(p["equipmenttype"])
                 if p.get("setusenopathfindingtogettoobject"):
                     info["useNoPathfinding"] = True
             elif kind == "Cover":

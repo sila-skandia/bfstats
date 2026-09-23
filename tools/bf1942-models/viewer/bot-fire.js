@@ -475,12 +475,21 @@ export function scoreVehicleTargets({
   isAntiAircraft = false, armourClassValues = ARMOUR_CLASS_VALUES,
   currentTarget = null, currentScore = 0, insideOrderedArea = true, insideArea = null,
   vetoed = null, orderFactor = 1, harmlessThreshold = 0, aimable = null, mode = 'largeBore',
+  fixed = false, lineOfFire = null,
 }) {
   const none = { targetId: null, targetPos: null, score: 0, weaponIndex: -1, urgency: 0 };
   if (!weapons?.length) return none;
   const areaFactor = insideOrderedArea ? 1.0 : FIRE.outsideAreaFactor;
   const mySpeed = Math.hypot(velocity[0], velocity[1], velocity[2]);
   let best = null, bestScore = 0, bestWeapon = -1, current = null;
+
+  if (mode === 'infantry') {
+    return scoreMountedInfantry({
+      spotted, position, weapons, now, attackedBy, velocityOf, infoOf, myType, myTable, maxSpeed,
+      isAntiAircraft, armourClassValues, currentTarget, insideOrderedArea, insideArea, vetoed,
+      orderFactor, harmlessThreshold, aimable, fixed, lineOfFire, airUnit: air,
+    });
+  }
 
   const scoreOne = (id, pos, m, environmental) => {
     if (vetoed?.has(id) && now - vetoed.get(id) < FIRE.feedbackVeto) return null;
@@ -606,5 +615,139 @@ export function scoreVehicleTargets({
   return {
     targetId: best.id, targetPos: [...best.pos], score: bestScore, weaponIndex: bestWeapon,
     urgency: decliningSlope(2 * bestScore), visible: !!best.seen, environmental,
+  };
+}
+
+/**
+ * `BBFire::calculateUrgency` 0x08563570 for a mounted unit: the Fire of
+ * every `AIbehaviours.con` row that runs `BBFireInfantery` (Tank, Fixed,
+ * LandingCraftFixed; `BBFireInfantery`'s vtable 0x0875f808 has no
+ * `calculateUrgency` of its own, slot +0x28 is `BBFire`'s). Read 2026-09-24
+ * (Brief R item 2, ledger AI-122):
+ *
+ *  * only the spotted list (`vt+0x88`, the loop at 0x08563a2f..): no
+ *    `getEnemyObjects` pass, unlike `BBFireLargeBore` 0x0856b390;
+ *  * the weapon value `strength[type] / ((20 (shots - hits) + 10) / ammo + 1)`
+ *    with no minRange cut, `maxRange` the largest of the weapons' (+0x1c),
+ *    the range factor from the chosen weapon's own min / max
+ *    (`((max - min) 0.1 + min) / d`, d at least 0.5);
+ *  * a target in view: a unit with no Mobile plug-in (a fixed gun) must
+ *    `validateCameraDirectionByPos` it; a lost one: a fixed gun skips it,
+ *    anyone else weighs it `1 / (1 + 0.05 (now - lostAt))`;
+ *  * F: the bot's area factor (0.75 outside its ordered area), again 0.75
+ *    for a target outside it when the unit moves and is not an aircraft;
+ *  * an air target: without the Armament's anti-aircraft word, 0 beyond
+ *    half the range or above 5 m/s; with it, 1 inside 0.9 of the range;
+ *    else a still target 1, in range `1 / (0.5 |v| + 1)` (both with F set
+ *    to 0.5), out of range the escape term when the target's top speed
+ *    beats the unit's by 5, else 0.25;
+ *  * in range, a fixed gun needs a clear line from its camera to the
+ *    target's sense point (the `collideLineWithWorld` call after
+ *    `getCameraTransformation`, 0x0856511f..); out of range, a fixed gun
+ *    skips it and a mobile unit keeps it while the overshoot is under
+ *    5 x its own top speed (the Mobile template's +8);
+ *  * the base: over a manned vehicle's seats `(round(seat[myType]) +
+ *    security + own[seatType]) x classValue[seatType] x order x F`, the
+ *    seats' `[myType]` sum under the harmless threshold x 0.33; anything
+ *    else `own[type] x security x classValue[type] x order x F`;
+ *  * the score `jitter x max(0, 1 - d / 1.5 maxRange) x value x sight x
+ *    move x attacked x F x base x rangeFactor`, the current target kept
+ *    unless beaten 1.2x, the urgency `Declein(2 best)`.
+ *
+ * Not ported: the target's security (1, as elsewhere), the order factor
+ * (the caller's), the controlled-object table choice (`cVar13`).
+ */
+export function scoreMountedInfantry({
+  spotted, position, weapons, now, attackedBy, velocityOf, infoOf, myType = 'LightArmour', myTable = {},
+  maxSpeed = 0, isAntiAircraft = false, armourClassValues = ARMOUR_CLASS_VALUES,
+  currentTarget = null, insideOrderedArea = true, insideArea = null, vetoed = null,
+  orderFactor = 1, harmlessThreshold = 0, aimable = null, fixed = false, lineOfFire = null, airUnit = false,
+}) {
+  const none = { targetId: null, targetPos: null, score: 0, weaponIndex: -1, urgency: 0 };
+  if (!weapons?.length || !spotted?.length) return none;
+  const areaFactor = insideOrderedArea ? 1.0 : FIRE.outsideAreaFactor;
+  let best = null, bestScore = 0, bestWeapon = -1, current = null;
+  for (const m of spotted) {
+    const id = m.id, pos = m.pos;
+    if (vetoed?.has(id) && now - vetoed.get(id) < FIRE.feedbackVeto) continue;
+    const info = infoOf?.(id) ?? { type: 'Infantry', air: false, table: {}, maxSpeed: 5, seats: null, mobile: true };
+    const dx = pos[0] - position[0], dy = pos[1] - position[1], dz = pos[2] - position[2];
+    const dist = Math.max(FIRE.minDistance, Math.hypot(dx, dy, dz));
+    const dir = [dx / dist, dy / dist, dz / dist];
+    let sight = 1;
+    if (!m.lost) {
+      if (fixed && aimable && !aimable(dir)) continue;
+    } else {
+      if (fixed) continue;
+      sight = 1 / (1 + FIRE.sightAgeDecay * Math.max(0, now - (m.lostAt ?? now)));
+    }
+    const targetType = info.type ?? 'Infantry';
+    let wBest = -1, wVal = 0, maxRange = 0;
+    for (let i = 0; i < weapons.length; i++) {
+      const w = weapons[i];
+      const strength = w.healing ? 0 : (w.strength?.[targetType] ?? 0);
+      const ammo = w.ammo == null || w.ammo < 0 ? 0x10000 : w.ammo;
+      const missed = (m.shots?.[i] ?? 0) - (m.hits?.[i] ?? 0);
+      const val = ammo < 1 ? 0 : Math.round(strength) / ((20 * missed + 10) / ammo + 1);
+      if (val > wVal) { wVal = val; wBest = i; }
+      maxRange = Math.max(maxRange, w.maxRange ?? 0);
+    }
+    if (wBest < 0 || !(wVal > 0) || !(maxRange > 0)) continue;
+    const chosen = weapons[wBest];
+    let F = areaFactor;
+    if (!fixed && !airUnit && insideArea && !insideArea(pos)) F *= FIRE.outsideAreaFactor;
+    const v = velocityOf?.(id) ?? null;
+    const tSpeed = v ? Math.hypot(v[0], v[1], v[2]) : 0;
+    let move = null;
+    if (info.air) {
+      if (!isAntiAircraft) {
+        if (0.5 * maxRange < dist || tSpeed > 5.0) move = 0;
+      } else if (dist < 0.9 * maxRange) move = 1;
+    }
+    if (move === null) {
+      if (!info.mobile) { move = 1; F = 0.5; }
+      else if (dist <= maxRange) { move = 1 / (0.5 * tSpeed + 1); F = 0.5; }
+      else if ((info.maxSpeed ?? 0) - maxSpeed > VEHICLE_FIRE.escapeSpeedGap && v) {
+        const side = [dir[2], 0, -dir[0]];
+        const along = Math.max(0, v[0] * dir[0] + v[1] * dir[1] + v[2] * dir[2]);
+        const across = Math.max(0, v[0] * side[0] + v[1] * side[1] + v[2] * side[2]);
+        move = 0.25 / (0.5 * tSpeed + 2 * along + 2 * across + 1);
+      } else move = FIRE.beyondRangeFactor;
+    }
+    if (!(move > 0)) continue;
+    if (dist <= maxRange) {
+      if (fixed && lineOfFire && !lineOfFire(m)) continue;
+    } else if (fixed || dist - maxRange > 5 * maxSpeed) continue;
+    let base = 0, threat = 0, harmless = false;
+    if (info.seats?.length && info.enemyManned) {
+      for (const seat of info.seats) {
+        const st = seat.type ?? targetType;
+        const t = seat.table?.[myType] ?? 0;
+        threat += t;
+        base += (Math.round(t) + 1 + (myTable[st] ?? 0)) * (armourClassValues[st] ?? 1) * orderFactor * F;
+      }
+      harmless = threat <= harmlessThreshold;
+    } else {
+      base = (myTable[targetType] ?? 0) * (armourClassValues[targetType] ?? 1) * orderFactor * F;
+    }
+    const attackedAt = attackedBy?.(id) ?? -1000;
+    const attacked = attackedAt > -1000
+      ? 1.5 - 0.5 * Math.min(1, Math.max(0, (now - attackedAt) / FIRE.attackedWindow)) : 1.0;
+    const minR = chosen.minRange ?? 0, maxR = chosen.maxRange ?? maxRange;
+    const rangeFactor = ((maxR - minR) * FIRE.rangeFactorMin + minR) / dist;
+    const range = Math.max(0, 1 - dist / (FIRE.rangeSlack * maxRange));
+    const curve = Math.max(0, -0.22 * seededUnit(hashId(id)) + 1.3);
+    let score = curve * range * wVal * sight * move * attacked * F * base * rangeFactor;
+    if (harmless) score *= FIRE.harmlessFactor;
+    if (id === currentTarget) current = { score, weapon: wBest, m };
+    if (score > bestScore) { bestScore = score; best = m; bestWeapon = wBest; }
+  }
+  if (!best) return none;
+  if (current && current.score > 0 && bestScore < FIRE.switchHysteresis * current.score) {
+    best = current.m; bestScore = current.score; bestWeapon = current.weapon;
+  }
+  return {
+    targetId: best.id, targetPos: [...best.pos], score: bestScore, weaponIndex: bestWeapon,
+    urgency: decliningSlope(2 * bestScore), visible: !!best.seen, environmental: false,
   };
 }

@@ -237,6 +237,7 @@ export function execFireApproach(bot, action, dt) {
   const step = fireApproachStep({ dist, holds, weapon, nearFiringPoint: near,
                                   targetRadius: 0.5 * Math.hypot(ext[0], ext[1], ext[2]) });
   bot._fireApproachDbg = { move: step.move, dist, seen, holds };
+  action.holds = holds;
   if (step.move === 'end') { action.ended = true; return true; }
   if (step.move === 'hold' || (step.move === 'point' && point[0] === x && point[2] === z)) {
     action.held = step.move === 'hold';
@@ -617,6 +618,20 @@ export function execTrigger(bot, action, now) {
     action.precisionState ??= {};
     const holds = precisionHolds(miss, precisionFor(shape.extents, shape.air), !!weapon?.burst, action.precisionState);
     bot._turretMissDbg = miss;
+    // A tank's plan (`createPlanInternal` 0x085a74e0, the tank branch from
+    // 0x085a9b7b) wraps its fire plan in `If(Not(S), LookAtObject, fire plan)`
+    // (`BAPFlowCIf` built at 0x085aa7d3..0x085aa832, the fire plan from
+    // `createFirePlan` at 0x085aaae9): the aim and the trigger run only
+    // while S holds (in range, a valid aim, the memory record of the target
+    // not lost), and `createFirePlan` 0x085ac240 gives the trigger no line
+    // test of its own, only `BAPCConPrecision` (0x085aca1c) and the
+    // magazine. The line of fire is the sensing's (Brief R item 3, ledger
+    // AI-123). Other mounted gunners keep the line test (INVENTION).
+    const approach = bot.currentPlan?.find?.(a => a.type === PLAN_ACTION.FireApproach);
+    if (approach) {
+      if (holds && approach.holds) bot.isFiring = true;
+      return false;
+    }
     if (holds && bot._lineClear(bot._eye(), [pos[0], pos[1] + 1.0, pos[2]])) bot.isFiring = true;
     return false;
   }
