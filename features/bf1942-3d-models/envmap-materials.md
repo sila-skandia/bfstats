@@ -59,8 +59,13 @@ No change to alpha/blend/cutoff logic — `envmap` is orthogonal to transparency
 > `windowWhole_M1` / `windowBroken_M1` on every building — exported with no `alphaMode`
 > and drew as an opaque sheet of dirty-glass texture. Fixed by deciding `alphaMode`
 > before the extras block; `tests/test_gltf.py::test_envmap_keeps_blend` pins it. Models
-> were re-extracted (17 vanilla, 2 XPack1, 9 XPack2, 45 EoD templates). Level bakes still
-> carry the opaque windows until `extract_maps_all.py` is re-run: 13 vanilla `scene.glb`s.
+> were re-extracted (17 vanilla, 2 XPack1, 9 XPack2, 45 EoD templates), and so were the
+> level bakes, because every placed vehicle is baked into its `scene.glb`: 18 vanilla, 6
+> XPack1, 9 XPack2 and 159 EoD levels plus all four `_shared/effects.glb`, from a detached
+> worktree at `d0bc467c`. A rescan of every glb under `viewer/maps` afterwards found no
+> material still opaque whose own mod's shader says `transparent true` (the leftovers —
+> `bf109_Wheel_back_m1`, `c47_fus_m1`, `glasses` — are transparent only in GCMOD, WarFront
+> and Interstate 82, which are not published). Both trees were published the same day.
 
 ### 3. glTF Emission (bf42/gltf.py)
 
