@@ -33,6 +33,7 @@ HARNESS = Path(__file__).resolve().parent / "bot_ai_harness.mjs"
 # imports resolve; the world is copied as `world.mjs` for the harness.
 _MODULE_NAMES = [
     "physics", "parachute", "swim", "soldier", "spawn-safety", "mouse-input",
+    "point-body", "fixed-step", "soldier-pose", "soldier-locomotion", "walking-body",
     "fall-damage",
     "body-world", "body-statics", "vehicle-bodies", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact",
