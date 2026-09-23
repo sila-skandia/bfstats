@@ -212,6 +212,7 @@ import { GunFire } from './gunfire.js';
 import { createArmourInspector } from './model-armour.js';
 import { createEnvReflection } from './model-envmap.js';
 import { createModelDisplay } from './model-display.js';
+import { createModelRig, FREE_RANGE, GEAR_INPUT, keyOf } from './model-rig.js';
 
 // Which game's assets this page serves, and the directory they hang off:
 // 'models' for vanilla, 'models/mods/eod' for a mod. Resolved before anything
@@ -368,8 +369,8 @@ function startAnimating() {
   clock.getDelta();                 // reset the clock so the first dt is clean
   (function tick() {
     const dt = Math.min(clock.getDelta(), 0.1);
-    advanceRates(dt);
-    advanceScroll(dt);
+    rig.advanceRates(dt);
+    rig.advanceScroll(dt);
     advanceGlide(dt);
     const gearMoving = advanceGear(dt);
     const hasFire = guns.advance(dt);
@@ -381,11 +382,11 @@ function startAnimating() {
     renderer.render(scene, camera);
 
     // Keep animating only while at least one continuous source is active.
-    const hasRates = rigged.some(part =>
+    const hasRates = rig.rigged.some(part =>
       Object.entries(part.axes).some(([, spec]) =>
-        spec.driver === 'rate' && (inputValues.get(keyOf(part.control, spec.input)) ?? 0) !== 0));
-    const hasScroll = scrolling.some(part =>
-      (inputValues.get(keyOf(part.control, 'c_PIThrottle')) ?? 0) !== 0);
+        spec.driver === 'rate' && (rig.inputValues.get(keyOf(part.control, spec.input)) ?? 0) !== 0));
+    const hasScroll = rig.scrolling.some(part =>
+      (rig.inputValues.get(keyOf(part.control, 'c_PIThrottle')) ?? 0) !== 0);
     const hasClips = Boolean(mixer && (engineRunning || ambientActions.length));
 
     if (hasRates || hasScroll || hasClips || hasFire || gearMoving || cameraGlide || controlsMoving || hasPad) {
@@ -428,140 +429,9 @@ document.getElementById('spin').addEventListener('change', e => {
   if (e.target.checked) startAnimating(); else invalidate();
 });
 
-// --- Refractor rig ---------------------------------------------------------
-//
-// A RotationalBundle is not an animation clip. It declares an axis, a range and a
-// player input, and the engine drives it every frame. Rebuilding that here is the
-// whole demonstration: one input can drive several parts on different axes.
-
-const AXIS = { yaw: 'y', pitch: 'x', roll: 'z' };
-
-// Same handedness fix the exporter applies to authored rotations: mirroring Z
-// conjugates rotations about X and Y, and leaves those about Z alone.
-const SIGN = { yaw: -1, pitch: -1, roll: 1 };
-
-// The exporter's synthetic axis for LandingGear retraction: not a player input,
-// so its slider runs 0 (deployed, the authored rest pose) to 1 (retracted) and
-// interpolates min..max directly instead of splitting the range about 0.
-const GEAR_INPUT = 'c_PILandingGear';
-
-// An axis with no declared range traverses freely; show it over a full circle.
-const FREE_RANGE = 180;
-
-const rigged = [];              // { node, base:Quaternion, axes, driver, key }
-const inputValues = new Map();  // "<control>/<input>" -> -1..1
-const rateAngle = new Map();    // same key -> accumulated degrees, for Engines
-
-// A player input belongs to a seat. The commander's MG lives inside its own
-// PlayerControlObject, so its c_PIMouseLookY is a different mouse from the
-// gunner's — keying on the bare input name welds the two together.
-const keyOf = (control, input) => `${control}/${input}`;
-
-function applyRig() {
-  for (const part of rigged) {
-    const q = part.base.clone();
-    for (const [axis, spec] of Object.entries(part.axes)) {
-      const key = keyOf(part.control, spec.input);
-      let deg;
-      if (spec.driver === 'rate') {
-        // Throttle sets how fast the drivetrain turns, not where it stops.
-        deg = rateAngle.get(`${key}/${axis}`) ?? 0;
-      } else if (spec.free) {
-        deg = (inputValues.get(key) ?? 0) * FREE_RANGE;
-      } else if (spec.input === GEAR_INPUT) {
-        // min is the deployed angle, max the retracted one — a pose pair,
-        // not an ordered range (a Spitfire leg deploys at 0, retracts to -79).
-        const t = inputValues.get(key) ?? 0;
-        deg = spec.min + t * (spec.max - spec.min);
-      } else {
-        const t = inputValues.get(key) ?? 0;
-        deg = t < 0 ? -t * spec.min : t * spec.max;
-      }
-      const e = new THREE.Euler(0, 0, 0);
-      e[AXIS[axis]] = THREE.MathUtils.degToRad(deg * SIGN[axis]);
-      q.multiply(new THREE.Quaternion().setFromEuler(e));
-    }
-    part.node.quaternion.copy(q);
-  }
-}
-
-// --- scrolling track textures ----------------------------------------------
-//
-// `ObjectTemplate.setAnimatedTextureSpeed -0.006/0` slides a mesh's UVs along U.
-// It is how a Sherman's tread appears to move: the belt geometry itself is static
-// (that needs the .ske/.skn skinned path), only the texture crawls over it.
-//
-// The declared figure is in UV units per engine tick, which is not a unit this
-// viewer has, so it is scaled to per-second at the engine's 60 Hz assumption and
-// multiplied by throttle — a stationary tank has stationary tracks.
-const TICKS_PER_SECOND = 60;
-
-const scrolling = [];   // { maps:[Texture], speed:[u,v], control }
-
-function collectScrolling(root) {
-  scrolling.length = 0;
-  root.traverse(carrier => {
-    const speed = carrier.userData?.animatedTextureSpeed;
-    if (!speed) return;
-    // A multi-material part arrives as a Group of Meshes, and the glTF node extras
-    // land on that Group — so the declaration and the materials are never on the
-    // same object. But the Group's direct children also include the part's *child
-    // nodes*: a Sherman's 11 road wheels hang off its track. Only the Group's own
-    // primitives may scroll, or the whole running gear's texture crawls with it.
-    // Our exporter stamps every real part node with templateKind, so anything
-    // carrying it is a separate part rather than one of this node's primitives.
-    const own = [carrier, ...carrier.children.filter(c => !c.userData?.templateKind)];
-    const maps = [];
-    own.forEach(obj => {
-      if (!obj.isMesh) return;
-      // Materials and textures are shared across parts by the exporter's cache and
-      // the loader's; offsetting one in place would scroll every part using it.
-      const cloned = [obj.material].flat().map(m => {
-        const clone = m.clone();
-        if (clone.map) {
-          clone.map = clone.map.clone();
-          clone.map.needsUpdate = true;
-          maps.push(clone.map);
-        }
-        return clone;
-      });
-      obj.material = cloned.length === 1 ? cloned[0] : cloned;
-      for (const m of cloned) display.rememberMap(m);
-    });
-    if (maps.length) scrolling.push({ maps, speed, control: carrier.userData.control || 'vehicle' });
-  });
-}
-
-function advanceScroll(dt) {
-  for (const part of scrolling) {
-    const throttle = inputValues.get(keyOf(part.control, 'c_PIThrottle')) ?? 0;
-    if (!throttle) continue;
-    const [u, v] = part.speed;
-    for (const map of part.maps) {
-      map.offset.x += u * TICKS_PER_SECOND * throttle * dt;
-      map.offset.y += v * TICKS_PER_SECOND * throttle * dt;
-    }
-  }
-}
-
-// Rate-driven parts keep turning for as long as the input is held.
-function advanceRates(dt) {
-  let moved = false;
-  const advanced = new Set();
-  for (const part of rigged) {
-    for (const [axis, spec] of Object.entries(part.axes)) {
-      if (spec.driver !== 'rate') continue;
-      const t = inputValues.get(keyOf(part.control, spec.input)) ?? 0;
-      if (!t) continue;
-      const k = `${keyOf(part.control, spec.input)}/${axis}`;
-      if (advanced.has(k)) continue;
-      advanced.add(k);
-      rateAngle.set(k, (rateAngle.get(k) ?? 0) + t * 360 * dt);
-      moved = true;
-    }
-  }
-  if (moved) applyRig();
-}
+const rig = createModelRig({
+  get rememberMap() { return display.rememberMap; },
+});
 
 // --- baked engine clips -----------------------------------------------------
 //
@@ -921,8 +791,8 @@ function refreshCrew() {
 }
 
 function setCrewInput(key, value) {
-  inputValues.set(key, Math.max(-1, Math.min(1, value)));
-  applyRig();
+  rig.setInput(key, Math.max(-1, Math.min(1, value)));
+  rig.applyRig();
   refreshCrew();
   startAnimating();
 }
@@ -1023,7 +893,7 @@ function collectStations(entry) {
     }
     return byControl.get(key);
   };
-  for (const part of rigged) {
+  for (const part of rig.rigged) {
     for (const [axis, spec] of Object.entries(part.axes)) {
       const seat = seatFor(part.control);
       if (!seat.inputs.has(spec.input)) {
@@ -1131,7 +1001,7 @@ function traverseDial(input) {
   });
   dial.addEventListener('dblclick', () => setCrewInput(input.key, 0));
   dial.addEventListener('keydown', event => {
-    const degrees = degreesAt(spec, inputValues.get(input.key) ?? 0);
+    const degrees = degreesAt(spec, rig.inputValues.get(input.key) ?? 0);
     const step = event.shiftKey ? 15 : 3;
     if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') setDegrees(degrees - step);
     else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') setDegrees(degrees + step);
@@ -1142,7 +1012,7 @@ function traverseDial(input) {
   });
 
   crew.refreshers.push(() => {
-    const degrees = degreesAt(spec, inputValues.get(input.key) ?? 0);
+    const degrees = degreesAt(spec, rig.inputValues.get(input.key) ?? 0);
     pointer.setAttribute('transform', `rotate(${degrees.toFixed(2)})`);
     read.textContent = spec.free
       ? `${String(Math.round(((degrees % 360) + 360) % 360)).padStart(3, '0')}°`
@@ -1191,7 +1061,7 @@ function elevationScale(input) {
   });
   scale.addEventListener('dblclick', () => setCrewInput(input.key, 0));
   scale.addEventListener('keydown', event => {
-    const elevation = -degreesAt(spec, inputValues.get(input.key) ?? 0);
+    const elevation = -degreesAt(spec, rig.inputValues.get(input.key) ?? 0);
     const step = event.shiftKey ? 5 : 1;
     if (event.key === 'ArrowUp' || event.key === 'ArrowRight') setElevation(elevation + step);
     else if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') setElevation(elevation - step);
@@ -1202,7 +1072,7 @@ function elevationScale(input) {
   });
 
   crew.refreshers.push(() => {
-    const elevation = -degreesAt(spec, inputValues.get(input.key) ?? 0);
+    const elevation = -degreesAt(spec, rig.inputValues.get(input.key) ?? 0);
     const markY = yOf(elevation);
     const zeroY = yOf(0);
     mark.style.top = `${markY}%`;
@@ -1228,9 +1098,9 @@ function xyPad(inputX, inputY, { label, xName, yName, spring }) {
   wrap.append(make('div', 'instrument-label', label), pad, read);
 
   const setBoth = (x, y) => {
-    inputValues.set(inputX.key, x);
-    inputValues.set(inputY.key, y);
-    applyRig();
+    rig.setInput(inputX.key, x);
+    rig.setInput(inputY.key, y);
+    rig.applyRig();
     refreshCrew();
     startAnimating();
   };
@@ -1246,8 +1116,8 @@ function xyPad(inputX, inputY, { label, xName, yName, spring }) {
   pad.addEventListener('dblclick', () => setBoth(0, 0));
 
   crew.refreshers.push(() => {
-    const x = inputValues.get(inputX.key) ?? 0;
-    const y = inputValues.get(inputY.key) ?? 0;
+    const x = rig.inputValues.get(inputX.key) ?? 0;
+    const y = rig.inputValues.get(inputY.key) ?? 0;
     knob.style.left = `${(x + 1) * 50}%`;
     knob.style.top = `${(1 - y) * 50}%`;
     read.textContent = `${xName} ${steady(signedPercent(x), 4)} · ${yName} ${steady(signedPercent(y), 4)}`;
@@ -1272,7 +1142,7 @@ function lever(input, label) {
   slider.addEventListener('input', () => setCrewInput(input.key, Number(slider.value)));
   slider.addEventListener('dblclick', () => setCrewInput(input.key, 0));
   crew.refreshers.push(() => {
-    const value = inputValues.get(input.key) ?? 0;
+    const value = rig.inputValues.get(input.key) ?? 0;
     slider.value = String(value);
     syncRange(slider);
     read.textContent = steady(signedPercent(value), 4);
@@ -1281,7 +1151,7 @@ function lever(input, label) {
 }
 
 function tweenGear(key, target) {
-  crew.gear = { key, from: inputValues.get(key) ?? 0, to: target, t: 0 };
+  crew.gear = { key, from: rig.inputValues.get(key) ?? 0, to: target, t: 0 };
   startAnimating();
 }
 
@@ -1291,8 +1161,8 @@ function advanceGear(dt) {
   if (!gear) return false;
   gear.t = Math.min(1, gear.t + dt / 0.9);
   const eased = gear.t < .5 ? 2 * gear.t * gear.t : 1 - ((-2 * gear.t + 2) ** 2) / 2;
-  inputValues.set(gear.key, gear.from + (gear.to - gear.from) * eased);
-  applyRig();
+  rig.setInput(gear.key, gear.from + (gear.to - gear.from) * eased);
+  rig.applyRig();
   refreshCrew();
   if (gear.t >= 1) crew.gear = null;
   return true;
@@ -1313,7 +1183,7 @@ function gearSwitch(input) {
   }
   wrap.append(make('div', 'instrument-label', 'Gear'), seg);
   crew.refreshers.push(() => {
-    const target = crew.gear?.key === input.key ? crew.gear.to : (inputValues.get(input.key) ?? 0);
+    const target = crew.gear?.key === input.key ? crew.gear.to : (rig.inputValues.get(input.key) ?? 0);
     down.setAttribute('aria-pressed', String(target < .5));
     up.setAttribute('aria-pressed', String(target >= .5));
   });
@@ -1549,7 +1419,7 @@ function crewKey(event, down) {
     const seat = stationWith(GEAR_INPUT);
     if (!seat) return false;
     const inputKey = keyOf(seat.control, GEAR_INPUT);
-    const heading = crew.gear?.key === inputKey ? crew.gear.to : (inputValues.get(inputKey) ?? 0);
+    const heading = crew.gear?.key === inputKey ? crew.gear.to : (rig.inputValues.get(inputKey) ?? 0);
     tweenGear(inputKey, heading < .5 ? 1 : 0);
     return true;
   }
@@ -1727,7 +1597,7 @@ function advanceTouchpad(dt) {
       if (specX) {
         const low = specX.free ? -180 : Math.min(specX.min, specX.max);
         const high = specX.free ? 180 : Math.max(specX.min, specX.max);
-        let deg = degreesAt(specX, inputValues.get(inputX.key) ?? 0);
+        let deg = degreesAt(specX, rig.inputValues.get(inputX.key) ?? 0);
         deg += padVector.x * TURRET_TRAVERSE_SPEED * dt;
         if (specX.free) {
           while (deg > 180) deg -= 360;
@@ -1744,7 +1614,7 @@ function advanceTouchpad(dt) {
       if (specY) {
         const top = specY.free ? 90 : Math.max(-specY.min, -specY.max);
         const bottom = specY.free ? -90 : Math.min(-specY.min, -specY.max);
-        let elev = -degreesAt(specY, inputValues.get(inputY.key) ?? 0);
+        let elev = -degreesAt(specY, rig.inputValues.get(inputY.key) ?? 0);
         elev += padVector.y * TURRET_ELEVATION_SPEED * dt;
         elev = Math.max(bottom, Math.min(top, elev));
         setCrewInput(inputY.key, inputFor(specY, -elev));
@@ -2026,11 +1896,7 @@ async function show(entry, variant) {
     throw error;
   }
 
-  rigged.length = 0;
-  inputValues.clear();
   envReflection.forgetModelMaterials();
-  rateAngle.clear();
-  const drivetrains = [];
   current.traverse(obj => {
     // Remember authored positions so the explode slider can scale them.
     obj.userData.home = obj.position.clone();
@@ -2049,71 +1915,11 @@ async function show(entry, variant) {
       // carries it, so the additive branch above and this one never collide.
       envReflection.bindModelEnvmap(m);
     }
-    const rig = obj.userData?.rig;
-    if (!rig?.axes) return;
-
-    const axes = Object.entries(rig.axes);
-    const rateAxes = Object.fromEntries(
-      axes.filter(([, specification]) => specification.driver === 'rate'));
-    const poseAxes = Object.fromEntries(
-      axes.filter(([, specification]) => specification.driver !== 'rate'));
-    const isDrivetrain = obj.userData.templateKind?.toLowerCase() === 'engine'
-      && Object.keys(rateAxes).length;
-
-    if (isDrivetrain) {
-      drivetrains.push({
-        node: obj,
-        axes: rateAxes,
-        control: rig.control || 'vehicle',
-      });
-      if (Object.keys(poseAxes).length) {
-        rigged.push({
-          node: obj,
-          base: obj.quaternion.clone(),
-          axes: poseAxes,
-          control: rig.control || 'vehicle',
-        });
-      }
-    } else {
-      rigged.push({
-        node: obj,
-        base: obj.quaternion.clone(),
-        axes: rig.axes,
-        control: rig.control || 'vehicle',
-      });
-    }
   });
-  for (const drivetrain of drivetrains) {
-    const springs = [];
-    drivetrain.node.traverse(node => {
-      if (node !== drivetrain.node
-          && node.userData.templateKind?.toLowerCase() === 'spring'
-          && node.userData.geometry) {
-        springs.push(node);
-      }
-    });
-    if (springs.length) {
-      const wheelAxis = Object.values(drivetrain.axes)[0];
-      for (const spring of springs) {
-        rigged.push({
-          node: spring,
-          base: spring.quaternion.clone(),
-          axes: { pitch: wheelAxis },
-          control: drivetrain.control,
-        });
-      }
-    } else if (drivetrain.node.userData.geometry) {
-      rigged.push({
-        node: drivetrain.node,
-        base: drivetrain.node.quaternion.clone(),
-        axes: drivetrain.axes,
-        control: drivetrain.control,
-      });
-    }
-  }
+  rig.collectRig(current);
   scene.add(current);
   armour.adoptModel(current, report, entry);
-  collectScrolling(current);
+  rig.collectScrolling(current);
   collectAnimations(gltf);
   guns.collect(current);
   collectViews(current);
