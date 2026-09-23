@@ -247,6 +247,40 @@ which the bot tests then covered.
    Shokaku's deck (620..660, -1420..-1460): a ship is not on the baked
    infantry map (it was not on the engine's either), so a soldier standing
    on the carrier fails every route; the painted map had the deck.
+   **Brief N (2026-09-24, AI-110..AI-114).** ~~(c) the crew climbs back
+   in~~ fixed: `BBChange`'s own-map test offers a ship only on a valid cell
+   of its water map, so a beached craft is offered to nobody (land roots
+   wait on Brief O's per-unit maps). ~~(d) the ramp~~ built: the beach leg
+   holds `PIPitch` at 1.0 into the world's word. ~~`isTouchingLand` and the
+   tip stand-ins~~ ported: the crew bails in a zone only aground (the Ship's
+   terrain latch while a helm drives it, off its own map once the driver
+   has bailed), and the tip test has the engine's two forms. ~~(b) side-on
+   entry~~ the helm's cause: the engine's throttle channel persists between
+   ticks, so `speedControl`'s turn keeps a full astern at or under 3 m/s and
+   the hull backs and fills round (the viewer rebuilt the word and always
+   drove on); a craft that enters its zone side-on still circles out and back
+   under state 9, as the engine's would. ~~(e) the strategic route~~ built
+   for the beach orders (`getDistances`, the route points and their popping);
+   the approach leg keeps the no-route radius 5 (INVENTION: the engine's
+   route radius, 96 m on Wake, is the path's goal tolerance and would stop the
+   craft outside its zone, so something between is unread). The levels'
+   vehicle groups were never exported (wrong con words); fixed, and every
+   XPack1, XPack2 and EoD level now carries its AI block (live). Runner,
+   Wake, 8 a side, 300 s, first landing in a zone, seeds 1..4: 136, 138,
+   164, 163 s (main `da237ffb`: 213, none, 200, 263 s); boardings of a
+   beached craft within 10 s of leaving it: 0 in every seed (10, 0, 14,
+   20). Seed 1: `Daihatsu_1` reaches `SouthLanding` through the `SeaArea1`
+   route point, its crew out at 136.4 s, a rider neutralises `Landing_Beach`
+   at 138.6 s; the Allies' Defgun takes it back, and no seed has an Axis
+   capture of the beach flag in 300 s (seed 2's Axis take The Airfield at
+   281.9 s in a Willy). Live (worktree viewer, Wake, 8 bots): a Daihatsu
+   taken at the carrier with a rider aboard at 25 s, its `SeaArea1` point
+   popped at 119.5 s, the zone entered at 162.9 s with the ramp input at
+   1.0, driver and rider out on the beach at (1161, -706) at 173.1 s, nobody
+   back in, the driver walking up the beach past the flag. Open: the land
+   roots' own-map test (Brief O item 3), the routed `WPMoveTo` for a craft
+   whose route has no zone user, the waypoint error flag, and the approach
+   radius question above.
 
 7. **What the runner found in the page (Brief K, 2026-09-24).**
    ~~No bot takes a fixed gun~~ fixed (AI-92): a seat's value in the Change
