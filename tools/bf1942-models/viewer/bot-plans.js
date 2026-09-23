@@ -112,8 +112,19 @@ export function planMoveTo(bot, now) {
     // shore), `BAPATriggerContinously(PIPitch) }`: the ramp held.
     return [{ type: PLAN_ACTION.BoatMoveToDirect, waypoint: goal, waypointObject: wp, persistent: true, ramp: true }];
   }
-  return [{ type: PLAN_ACTION.InfantryMoveTo, waypoint: goal, arrive: wp.radius, waypointObject: wp,
-            stance: 'stand' }];
+  const plan = [{ type: PLAN_ACTION.InfantryMoveTo, waypoint: goal, arrive: wp.radius, waypointObject: wp,
+                  stance: 'stand' }];
+  // `BBPGotoWaypoint2d::createPlan` 0x085b5490 runs a `BAPALookAhead(bot,
+  // 5 deg)` beside the move (0x085b5531..) when the unit's ControlInfo looks
+  // on other controls than it drives with (the +0x64 / +0x54 words, 0x085b54fb):
+  // `getLookDirection` 0x0853fa90 is the unit's own facing
+  // (`InformationReal::getFaceing` 0x085e8d60, Information vt+0x2c), so a
+  // tank's turret looks down its hull while it drives and its sense sweep
+  // covers the road ahead. A driven tank stands for the mask test, as in
+  // `approachesByFinding` (Brief R, ledger AI-123). Before, nothing turned
+  // the turret in MoveTo and it kept whatever the last look left it at.
+  if (bot.vehicle?.drives && bot.vehicle.kind === 'tank') plan.push({ type: PLAN_ACTION.MouseTurretLookAt, ahead: true });
+  return plan;
 }
 
 /** `BBPFireInfantery::createPlan` through `firePlanFor`. */
@@ -245,11 +256,52 @@ export function execFireApproach(bot, action, dt) {
     return false;
   }
   if (step.move === 'find' && action.held) { bot.route = null; action.held = false; }
+  let goal = point;
+  if (step.move === 'find') {
+    goal = approachGoal(bot._nav?.(), pos, bot.position, FIRE_APPROACH.inRangeFraction * max);
+    if (!goal) { action.ended = true; action.noGoal = true; return true; }
+  }
   action.move ??= {};
-  action.move.waypoint = step.move === 'find' ? [pos[0], pos[1], pos[2]] : point;
+  action.move.waypoint = goal;
   action.move.arrive = step.move === 'find' ? step.arrive : undefined;
   bot._execInfantryMoveTo(action.move, dt);
   return false;
+}
+
+/**
+ * The approach's goal (Brief R item 4, ledger AI-126):
+ * `BAPAMoveToObjectFinding::initObjectFinding` 0x08545df0 beyond the
+ * away radius takes the target's own point when it is valid on the unit's
+ * map (`AIPathfinding::isValidPosition` vt+0x78); else the target's last
+ * valid position (`IPIMobileReal::getValidPosition` 0x085eab10 ->
+ * `AIObjectMobile::getValidPosition` 0x085d5bb0, +0x20 while +0x2c is set)
+ * when that is valid here and within the finding's radius (+0x68, 0.9
+ * maxRange) of the target; else `traceValidPoint` (vt+0x54 0x0847e500 ->
+ * 0x0847e3a0: the target's point if valid, else a Bresenham line of map
+ * pixels from the target toward the bot, the first valid one) within that
+ * radius; else the same trace toward `getNearStrategicPosition` (vt+0x9c);
+ * else the finding has no goal (+0x6c cleared). Here the target's last valid
+ * position and the strategic fallback are not ported (the target's
+ * controller is not reachable from the plan), and a finding with no goal
+ * ends the plan (INFERRED: what `update` 0x08546df0 does with +0x6c clear
+ * was not read). Before, the route took the target's point and moved a
+ * blocked goal to the nearest free metre within 20 m (INVENTION), failing
+ * every retry when there was none (El Alamein seed 10, 634 failures).
+ */
+export function approachGoal(nav, target, from, radius) {
+  if (!nav) return [target[0], target[1], target[2]];
+  if (isWalkable(nav, target[0], target[2])) return [target[0], target[1], target[2]];
+  const dx = from[0] - target[0], dz = from[2] - target[2];
+  const len = Math.hypot(dx, dz);
+  const step = nav.cellSize ?? 1;
+  const n = Math.max(1, Math.ceil(len / step));
+  for (let i = 1; i <= n; i++) {
+    const t = i / n;
+    const x = target[0] + dx * t, z = target[2] + dz * t;
+    if (Math.hypot(x - target[0], z - target[2]) > radius) break;
+    if (isWalkable(nav, x, z)) return [x, target[1], z];
+  }
+  return null;
 }
 
 /** The fire plan's end conditions: target dead, timeout, shots spent. */
@@ -585,6 +637,11 @@ export function execMouseTurretAimAt(bot, action) {
 
 /** `MouseTurretLookAt` (`BAPALookInDir` / `LookAtObject`): a direction or a point. */
 export function execMouseTurretLookAt(bot, action) {
+  if (action.ahead) {
+    const f = bot._unitForward3?.();
+    if (f) bot._aimLook(Math.atan2(f[0], f[2]), Math.atan2(f[1], Math.hypot(f[0], f[2])), AIM_COUNTS_MAX);
+    return true;
+  }
   if (action.target) {
     const aim = faceTarget(bot._eye(), [action.target[0], action.target[1] + 1.0, action.target[2]]);
     bot._aimLook(aim.yaw, aim.pitch, AIM_COUNTS_MAX);
@@ -626,7 +683,7 @@ export function execTrigger(bot, action, now) {
     // not lost), and `createFirePlan` 0x085ac240 gives the trigger no line
     // test of its own, only `BAPCConPrecision` (0x085aca1c) and the
     // magazine. The line of fire is the sensing's (Brief R item 3, ledger
-    // AI-123). Other mounted gunners keep the line test (INVENTION).
+    // AI-125). Other mounted gunners keep the line test (INVENTION).
     const approach = bot.currentPlan?.find?.(a => a.type === PLAN_ACTION.FireApproach);
     if (approach) {
       if (holds && approach.holds) bot.isFiring = true;
