@@ -8,12 +8,6 @@
 
 const CELL_SIZE = 32;   // metres; 64 x 64 cells over a 2048 m level
 
-// Where `#sweepTriangle` leaves its contact. Module scratch rather than an
-// object, for the same reason the triangles are nine loose floats: the sweep
-// runs over every candidate in the cell and must not allocate once.
-let _sweepNx = 0, _sweepNy = 0, _sweepNz = 0;
-let _sweepPx = 0, _sweepPy = 0, _sweepPz = 0;
-
 /** Smallest root of `a t^2 + b t + c` inside [0, limit], or -1. */
 function lowestRoot(a, b, c, limit) {
   if (a > -1e-12 && a < 1e-12) return -1;
@@ -41,6 +35,12 @@ function lowestRoot(a, b, c, limit) {
  * muzzle; `cast` takes the firing object's owner id and skips it.
  */
 export class CollisionIndex {
+  // Where `#sweepTriangle` leaves its contact. Instance scratch rather than an
+  // object, for the same reason the triangles are nine loose floats: the sweep
+  // runs over every candidate in the cell and must not allocate once.
+  #sweepNx = 0; #sweepNy = 0; #sweepNz = 0;
+  #sweepPx = 0; #sweepPy = 0; #sweepPz = 0;
+
   constructor(tris, materials, owners, ownerNodes, bounds, drivable = null) {
     this.tris = tris;                 // Float32Array, 9 per triangle
     this.materials = materials;       // Uint16Array, 1 per triangle
@@ -390,8 +390,8 @@ export class CollisionIndex {
             best = t;
             found = true;
             out.triangle = tri;
-            out.nx = _sweepNx; out.ny = _sweepNy; out.nz = _sweepNz;
-            out.px = _sweepPx; out.py = _sweepPy; out.pz = _sweepPz;
+            out.nx = this.#sweepNx; out.ny = this.#sweepNy; out.nz = this.#sweepNz;
+            out.px = this.#sweepPx; out.py = this.#sweepPy; out.pz = this.#sweepPz;
           }
         }
       }
@@ -410,7 +410,7 @@ export class CollisionIndex {
   /**
    * A sphere swept against one triangle: the face, then its three edges, then
    * its three corners. Returns the fraction of `v` at first touch, or -1, and
-   * leaves the contact in the module scratch.
+   * leaves the contact in the instance scratch.
    *
    * The face case is a plane crossing; the edge and corner cases are the
    * quadratics from Fauerby's swept-sphere note, written out for a sphere of
@@ -456,8 +456,8 @@ export class CollisionIndex {
       const u = (d22 * dr1 - d12 * dr2) / denom;
       const w = (d11 * dr2 - d12 * dr1) / denom;
       if (u >= 0 && w >= 0 && u + w <= 1) {
-        _sweepNx = nx; _sweepNy = ny; _sweepNz = nz;
-        _sweepPx = px; _sweepPy = py; _sweepPz = pz;
+        this.#sweepNx = nx; this.#sweepNy = ny; this.#sweepNz = nz;
+        this.#sweepPx = px; this.#sweepPy = py; this.#sweepPz = pz;
         return t;
       }
     }
@@ -472,7 +472,7 @@ export class CollisionIndex {
                               hit < 0 ? best : hit);
       if (root < 0) return;
       hit = root;
-      _sweepPx = qx; _sweepPy = qy; _sweepPz = qz;
+      this.#sweepPx = qx; this.#sweepPy = qy; this.#sweepPz = qz;
     };
     const edge = (qx, qy, qz, ex, ey, ez) => {
       const ee = ex * ex + ey * ey + ez * ez;
@@ -490,7 +490,7 @@ export class CollisionIndex {
       const f = (ev * root - ek) / ee;
       if (f < 0 || f > 1) return;
       hit = root;
-      _sweepPx = qx + ex * f; _sweepPy = qy + ey * f; _sweepPz = qz + ez * f;
+      this.#sweepPx = qx + ex * f; this.#sweepPy = qy + ey * f; this.#sweepPz = qz + ez * f;
     };
     corner(ax, ay, az); corner(bx, by, bz); corner(gx, gy, gz);
     edge(ax, ay, az, e1x, e1y, e1z);
@@ -498,13 +498,13 @@ export class CollisionIndex {
     edge(bx, by, bz, gx - bx, gy - by, gz - bz);
     if (hit < 0) return -1;
     // The separating direction is centre-at-contact minus the point touched.
-    let sx = (cx + vx * hit) - _sweepPx;
-    let sy = (cy + vy * hit) - _sweepPy;
-    let sz = (cz + vz * hit) - _sweepPz;
+    let sx = (cx + vx * hit) - this.#sweepPx;
+    let sy = (cy + vy * hit) - this.#sweepPy;
+    let sz = (cz + vz * hit) - this.#sweepPz;
     const len = Math.hypot(sx, sy, sz);
     if (len < 1e-9) { sx = nx; sy = ny; sz = nz; }
     else { sx /= len; sy /= len; sz /= len; }
-    _sweepNx = sx; _sweepNy = sy; _sweepNz = sz;
+    this.#sweepNx = sx; this.#sweepNy = sy; this.#sweepNz = sz;
     return hit;
   }
 
