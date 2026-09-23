@@ -51,24 +51,27 @@
 // and `engineRatio` (TANK-3/6/7/8) themselves — every approximation below is
 // built out from those two, never around them.
 //
-// (Split out of `ground.js`: the module constants and `Wheel` are shared
-// through `ground-contact.js`, the engine through `ground-engine.js`, and
-// `ground.js` re-exports `TrackedVehicle` and `TANK` for existing importers.)
+// (Split out of `ground.js`, now `wheeled-vehicle.js`: the tracks are this
+// module's; the springs and `Wheel` are shared through `suspension.js`, the
+// tyre's contact through `ground-contact.js`, the engine through
+// `ground-engine.js`.)
 
 import * as THREE from 'three';
-import { Vehicle } from './flight.js';
+import { Vehicle } from './vehicle-base.js';
 import { GRAVITY } from './physics.js';
 import { TANK } from './ground-specs.js';
 import {
   DECK_STEP_UP, DECK_WALL_STEP, DECK_FLOOR_COS, ENGINE_TICK_HZ,
   DEFAULT_MATERIAL_FRICTION, WHEEL_MATERIAL_FRICTION, coulombCaps, coulombClamp,
-  SPRING_AXIS_Y, SPRING_GRAVITY_SCALE, SPRING_AXIS_FLOOR, staticHold,
-  hullContactFriction, Wheel, probeAlongAxis, MAX_OVERRUN, surfaceNormalAt,
-  intoContactPlane,
+  staticHold, hullContactFriction, surfaceNormalAt, intoContactPlane,
 } from './ground-contact.js';
+import {
+  SPRING_AXIS_Y, SPRING_GRAVITY_SCALE, SPRING_AXIS_FLOOR, Wheel, probeAlongAxis,
+  MAX_OVERRUN,
+} from './suspension.js';
 import { clamp, EngineState } from './ground-engine.js';
 
-// The body frame `ground.js` documents (-Z forward, +Y up, +X starboard),
+// The body frame `wheeled-vehicle.js` documents (-Z forward, +Y up, +X starboard),
 // declared here rather than shared so no module hands another a live
 // `Vector3`.
 const UP = new THREE.Vector3(0, 1, 0);

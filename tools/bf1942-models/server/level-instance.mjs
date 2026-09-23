@@ -18,12 +18,13 @@ import * as THREE from 'three';
 
 import { VehicleOccupancy, readWorldPose } from '../viewer/seats.js';
 import { Aircraft } from '../viewer/flight.js';
-import { GroundVehicle, TrackedVehicle } from '../viewer/ground.js';
+import { GroundVehicle } from '../viewer/wheeled-vehicle.js';
+import { TrackedVehicle } from '../viewer/tracked-vehicle.js';
 import { bodySpecFor, quaternionToAxes } from './level-bodies.mjs';
 import { buildVehicleTable } from './vehicle-table.mjs';
 
 /** The occupancy classes the page hands `VehicleOccupancy` (map.html's own
- *  pick: `TrackedVehicle` straight out of ground.js). */
+ *  pick: `TrackedVehicle` straight out of tracked-vehicle.js). */
 const DRIVE_CLASSES = { Aircraft, GroundVehicle, TrackedVehicle };
 
 // --- one room's mutable half -------------------------------------------------

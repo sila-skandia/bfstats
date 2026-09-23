@@ -9,7 +9,7 @@ import { ENGINE_TICK_HZ } from './ground-contact.js';
 
 /** `PhysicsEngine::getCurrentRatio`, `0x0057bd90`: `ratio = 3.5 *
  * setDifferential / curve[idx]`. Declared again here (rather than imported)
- * because `flight.js` keeps its own copy private, the same way that file's
+ * because `aircraft.js` keeps its own copy private, the same way that file's
  * own gravity constant is "kept local... until physics.js... grows a shared
  * constants module". */
 const ENGINE_RATIO_SCALE = 3.5;
@@ -267,8 +267,8 @@ export function currentDifferentialRPM(revs, steer, side, bits) {
 // no hull thrust, no `feedbackLoop` from that path, and never reaches
 // `noPropellerEffectAtSpeed` (`tmpl+0x520`, read only at `0x0824cf45` inside
 // `&1` AND `&8`). Ledger TANK-7, refuted; TANK-1's "nothing calls
-// getEngineType" refuted with it. `flight.js` keeps the aircraft's own copy of
-// the propeller law, which is where it belongs.
+// getEngineType" refuted with it. `vehicle-base.js` keeps the aircraft's own
+// copy of the propeller law, which is where it belongs.
 //
 // What propels a ground vehicle — car and tank alike — is the EngineGrip
 // contact-speed target below, on its `c_PGFEngineGrip` springs.
