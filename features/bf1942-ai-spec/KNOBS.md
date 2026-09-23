@@ -91,11 +91,21 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | aim | yaw gain | 3 deg a count | `BFSoldier::handlePlayerInput` 0x0827457d (`ds:0x086c08c8`) | `bot.js YAW_GAIN`, `mouse-input.js SOLDIER_YAW_GAIN` | ENGINE |
 | aim | pitch gain | 1 deg a count | `0x08274537` | `bot.js PITCH_GAIN` | ENGINE |
 | aim | axis saturation | +-16 | `PlayerAction::set` 0x081128a0 (`floatToFixed` range) | `bot.js AXIS_MAX`, `mouse-input.js AXIS_RANGE` | ENGINE |
-| aim | aim rate | 4 counts a tick | `mouseControlLookAtDirection` 0x08627b90 | `bot.js AIM_COUNTS_MAX` | ENGINE |
+| aim | aim rate | 4 counts a tick (a soldier's; a gunner's cap is `LOOK_COUNTS_MAX`) | `mouseControlLookAtDirection` 0x08627b90 | `bot.js AIM_COUNTS_MAX` | ENGINE |
 | aim | bot skill | 0.75 default; slider 0.25 / 0.5 / 0.75 / 1.0 | `AISettings::reset` (+0x24); client `FUN_006dd910` | `bot.js DEFAULT_BOT_SKILL`; `map.html BOT_SKILL` | ENGINE |
 | aim | AI deviation | `(1 - 0.75 A) C + dev (max(0, T (1 - A) - t) / T + 0.25 (1 - A))` | `WeaponFireArm::setBotSkill` 0x085ee580 | `deviation.js setAIDeviation` | ENGINE |
 | aim | deviation clock | 30 Hz | `g_simulationFps` | `deviation.js TICK_HZ` | ENGINE |
 | aim | aim point | the target's +1.0 m | | `bot.js _execTrigger`, `_execMouseTurretAimAt` | UNSOURCED |
+| aim | gunner count law | `SCurve(shaped camera-frame angle) x pitchScale / rollScale`, signed by the sensitivities, +-4 | `mouseControlLookAtDirection` 0x08627b90 (AI-88) | `bot-aim.js lookAtCounts`, `LOOK_COUNTS_MAX` | ENGINE |
+| aim | gunner ControlInfo | the seat's own (`pitchScale` / `rollScale` 5.0 on 53 of vanilla's 78, 1.0 on the AA guns and stationary MGs, 0.1 the Defgun); 5.0 / +-0.21817 without one | ConsoleClass566, 567, 574, 575 (AI-88) | `vehicle-ai.json seatsAi.*.controlInfo` -> `bot-units.js controlInfo`; `bot-aim.js DEFAULT_SEAT_CONTROL` | ENGINE / CON |
+| aim | gunner reference | the barrel: the chosen weapon's muzzle node, right level | engine: `AIPlayer::getCameraTransformation` | `bot-aim.js barrelFrame` | INFERRED |
+| aim | gunner tolerance | 0.0 | `EntryMouseTurretAimAt::execute` 0x08619ac0 (AI-89) | `bot-aim.js aimAlong` | ENGINE |
+| aim | lead | the Aimer's elevation search, precision 0.5 (step `pi / 35`, 6 halvings, +-1.5393804) | `Aimer::getFiringDirection` 0x08538ad0 (AI-89) | `bot-aim.js firingDirection`, `turretAimAt` | ENGINE |
+| aim | lead drag | 0 (engine: `pi r^2 drag / mass` of the projectile) | `WeaponFireArm::init` 0x085ee220 | `firingDirection({ drag })` | INVENTION |
+| aim | aim correction | 0.8 x the last observed miss, x0.99 a call after 10 s without one | `BAPAAimAt::correctAim` 0x0853a6d0 (AI-91) | not built | ENGINE (unported) |
+| fire | ground trigger precision | air target: largest extent, >= 1.0; else 0.25 x the extents' sum, >= 0.4; squared, >= 0.01 | `BBPFireInfantery::createFirePlan` 0x085ac240, `BAPCConPrecision` 0x0854b4c0 (AI-90) | `bot-aim.js precisionFor` | ENGINE |
+| fire | ground trigger condition | burst: miss inside; single shot: the closest approach | `BAPCConPrecision::evaluate` 0x0854b570 (AI-90) | `bot-aim.js precisionHolds`, `bot-plans.js execTrigger` (mounted bots) | ENGINE |
+| fire | a hull target's extents | its drive's geometry box; else 10 x 3 x 9 m (air), 3 x 2.5 x 6 m | engine: the target information's box | `bot-aim.js targetShape` | INVENTION (fallback) |
 | infantry | steering cone | 0.5497787 rad (31.5 deg) | `infanteryControlTowardsDirection` 0x08627000 | `bot.js STEER_CONE` | ENGINE |
 | infantry | waypoint arrival default | 3 m | | `bot.js WAYPOINT_REACH_RADIUS` | UNSOURCED |
 | avoid | contact distance | 1.2 m (`2 x 1.0 x 0.6`) | | `bot.js _urgencyAvoid` | INVENTION |
