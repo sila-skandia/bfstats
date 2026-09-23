@@ -26,9 +26,10 @@
 
 import * as THREE from 'three';
 import { Vehicle } from './vehicle-base.js';
-import { Aircraft, CORSAIR, GRAVITY, calculateLift } from './aircraft.js';
+import { Aircraft, CORSAIR, GRAVITY, calculateLift, aircraftSpec } from './aircraft.js';
 import { VehicleCamera } from './vehicle-camera.js';
 import { findVehicle } from './vehicle-discovery.js';
+import { aimAtDirection } from './bot-vehicle-air.js';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 
 const DEG = 180 / Math.PI;
@@ -1105,6 +1106,150 @@ for (const dt of [1 / 60, 1 / 30, 0.1]) {
     cockpitY: round(cockpit.position.y),
     chaseBehind: round(chase.position.clone().sub(plane.state.position).length()),
     modes: camera.mode,
+  };
+}
+
+
+// --- the Spitfire, on its own data ------------------------------------------
+//
+// Until 2026-09-24 every aircraft flew on `CORSAIR`: nothing passed a spec and
+// `SPECS` has one entry. `aircraftSpec` now reads a plane's own table off its
+// node tree (ledger AI-75). The tree below is the El Alamein Spitfire's, as the
+// level glb carries it: the root's `physics`, each `Wing`'s lift pair, offset
+// and rig axis, the Engine, a wheel and the fuselage box. Positions are glb
+// (z mirrored), rotations the glb quaternions.
+function spitfireNode() {
+  const root = new THREE.Object3D();
+  root.name = 'Spitfire';
+  root.userData = { control: 'Spitfire', templateKind: 'PlayerControlObject',
+                    physics: { mass: 2500, drag: 0.09, inertiaModifier: [0.85, 0.833, 0.84] } };
+  const lod = new THREE.Object3D();
+  lod.userData = { templateKind: 'LodObject' };
+  const complex = new THREE.Object3D();
+  complex.userData = { templateKind: 'Bundle' };
+  root.add(lod); lod.add(complex);
+  const cockpitLod = new THREE.Object3D();
+  cockpitLod.userData = { templateKind: 'LodObject' };
+  const fuselage = new THREE.Mesh(new THREE.BoxGeometry(11.298, 2.283, 9.14));
+  fuselage.name = 'SpitfireCockpitExternal';
+  fuselage.userData = { templateKind: 'Bundle' };
+  complex.add(cockpitLod); cockpitLod.add(fuselage);
+  const wing = (name, t, q, physics, axis) => {
+    const n = new THREE.Object3D();
+    n.name = name;
+    n.position.set(...t);
+    if (q) n.quaternion.set(...q);
+    n.userData = { templateKind: 'Wing', control: 'Spitfire', physics,
+                   ...(axis ? { rig: { control: 'Spitfire', automaticReset: true, axes: { pitch: axis } } } : {}) };
+    complex.add(n);
+  };
+  wing('SpitfireAirbreakLeft', [-1.538, 0.05, 0.882], [0.007997, -0.06052, -0.043527, 0.997185],
+       { flapLift: 2, pitchOffset: 0.5, positionOffset: [1.539, -0.05, 0.883], regulateToLift: 4.91, wingToRegulatorRatio: 1 });
+  wing('SpitfireAirbreakRight', [1.539, 0.05, 0.882], [0.007997, 0.060511, 0.043536, 0.997186],
+       { flapLift: 2, pitchOffset: 0.5, positionOffset: [-1.539, -0.05, 0.883], regulateToLift: 4.91, wingToRegulatorRatio: 1 });
+  wing('SpitfireRudderBackVertical', [0, 1.244, 5.452], [0, 0, -0.707101, 0.707113],
+       { wingLift: 1.5, flapLift: 1.5, positionOffset: [0, -0.5, 0] },
+       { input: 'c_PIYaw', min: -15, max: 15, free: false, driver: 'position', maxSpeed: 60, direction: 1 });
+  wing('SpitfireBodyWingVertical', [0, 0, -0.3], [0, 0, -0.707101, 0.707113],
+       { wingLift: 2, flapLift: 0, positionOffset: [0, 0, -0.6] });
+  for (const [side, x, off] of [['Left', -0.889, 0.5], ['Right', 0.89, -0.5]]) {
+    wing(`SpitfireRudderBack${side}`, [x, 0.89, 5.306], null,
+         { wingLift: 0.5, flapLift: 0.7, positionOffset: [off, 0, 0] },
+         { input: 'c_PIPitch', min: -10, max: 20, free: false, driver: 'position', maxSpeed: 60, direction: -1 });
+  }
+  wing('SpitfireRudderFrontLeft', [-3.814, 0.275, 0.371], [0.011254, -0.078007, -0.047231, 0.99577],
+       { wingLift: 2.4, flapLift: 2.3, pitchOffset: 0.5, positionOffset: [0.5, 0, 0.41] },
+       { input: 'c_PIRoll', min: -30, max: 30, free: false, driver: 'position', maxSpeed: 120, direction: -1 });
+  wing('SpitfireRudderFrontRight', [3.815, 0.275, 0.371], [0.011254, 0.077998, 0.047239, 0.99577],
+       { wingLift: 2.4, flapLift: 2.3, pitchOffset: 0.5, positionOffset: [-0.5, 0, 0.41] },
+       { input: 'c_PIRoll', min: -30, max: 30, free: false, driver: 'position', maxSpeed: 120, direction: 1 });
+  const engine = new THREE.Object3D();
+  engine.name = 'SpitfireEngine';
+  engine.position.set(0, 0.5, -4);
+  engine.userData = { templateKind: 'Engine', control: 'Spitfire',
+                      physics: { engineType: 'c_ETPlane', torque: 15, differential: 5, noPropellerEffectAtSpeed: 70,
+                                 maxRotation: [0.3, 0, 5000], maxSpeed: [1000, 0, 500] } };
+  complex.add(engine);
+  const gear = new THREE.Object3D();
+  gear.position.set(-0.645, -0.45, 3.543);
+  gear.userData = { templateKind: 'LandingGear' };
+  engine.add(gear);
+  const wheel = new THREE.Mesh(new THREE.BoxGeometry(0.215, 0.671, 0.678));
+  wheel.name = 'SpitfireWheel3';
+  wheel.position.set(-0.259, -1.1, -0.3);
+  wheel.userData = { templateKind: 'Spring' };
+  gear.add(wheel);
+  return root;
+}
+
+function spitfire({ speed = 0, altitude = 300, spec = undefined } = {}) {
+  const plane = new Aircraft(spitfireNode(), null, { cockpit: false, ...(spec ? { spec } : {}) });
+  plane.groundHeight = () => -100000;
+  const s = plane.state;
+  s.position.set(0, altitude, 0);
+  s.orientation.identity();
+  s.velocity.set(0, 0, -speed);
+  s.throttle = 1;
+  plane.setInput('c_PIThrottle', 1);
+  return plane;
+}
+
+{
+  const spec = aircraftSpec(spitfireNode());
+  const elevator = spec.surfaces.find(x => x.id === 'SpitfireRudderBackLeft');
+  // The pitch rate a full stick holds, a second after it lands, from a
+  // second of hands-off flight at the speed (the speed held for that second).
+  const rateAfter = (make, speed, stick) => {
+    const plane = make(speed);
+    for (let i = 0; i < 60; i++) { plane.state.velocity.setLength(speed); plane.integrate(DT); }
+    plane.setInput('c_PIPitch', stick);
+    fly(plane, 1);
+    return round(pitchRate(plane) * DEG, 1);
+  };
+  const own = speed => spitfire({ speed });
+  const asCorsair = speed => spitfire({ speed, spec: CORSAIR });
+  // The engine's plane law (`aimAtDirection` 0x08629cf0 ->
+  // `towardsDirection` 0x08629fa0) closed on the airframe: a wanted direction
+  // stepped 10 deg below the nose at 55 m/s.
+  const loop = (step) => {
+    const plane = spitfire({ speed: 55 });
+    for (let i = 0; i < 60; i++) { plane.state.velocity.setLength(55); plane.integrate(DT); }
+    const e = step * Math.PI / 180;
+    const dir = [0, Math.sin(e), -Math.cos(e)];
+    let worst = 0, settledAt = null;
+    for (let i = 1; i <= 180; i++) {
+      const s = plane.state;
+      const r = aimAtDirection({ orientation: s.orientation, velocity: [s.velocity.x, s.velocity.y, s.velocity.z],
+        angularVelocity: [s.angularVelocity.x, s.angularVelocity.y, s.angularVelocity.z], dir,
+        altitudeAlong: () => 1e6, altitude: 300, clearance: 75, airborne: true, throttleFloor: 1, maxSpeed: 60 });
+      plane.setInput('c_PIPitch', r.pitch); plane.setInput('c_PIRoll', r.roll); plane.setInput('c_PIYaw', r.rudder);
+      plane.integrate(DT);
+      const f = forwardOf(plane);
+      const err = Math.acos(Math.max(-1, Math.min(1, f.x * dir[0] + f.y * dir[1] + f.z * dir[2]))) * DEG;
+      const past = step < 0 ? noseDeg(plane) < step : noseDeg(plane) > step;
+      if (past) worst = Math.max(worst, err);
+      if (settledAt === null && err < 1.0) settledAt = i * DT;
+    }
+    return { settledAt: settledAt === null ? null : round(settledAt, 2), overshoot: round(worst, 2) };
+  };
+  // Level top speed under the box drag law, at the deck and at 200 m.
+  const top = altitude => {
+    const plane = spitfire({ speed: 30, altitude });
+    fly(plane, 180, holdingAltitude(altitude, 1));
+    return round(plane.state.velocity.length(), 1);
+  };
+  results.spitfire = {
+    mass: spec.mass, drag: spec.drag, dragLaw: spec.dragLaw, inertiaModifier: spec.inertiaModifier,
+    size: spec.size.map(v => round(v, 2)), groundClearance: round(spec.groundClearance, 3),
+    throttleRate: spec.throttleRate, surfaces: spec.surfaces.length, engines: spec.engines.length,
+    elevatorArm: round(elevator.attach[2], 3), elevatorLift: elevator.wingLift + elevator.flapLift,
+    pitchUp40: rateAfter(own, 40, -1), pitchDown40: rateAfter(own, 40, 1),
+    pitchUp60: rateAfter(own, 60, -1), pitchDown60: rateAfter(own, 60, 1),
+    corsairUp40: rateAfter(asCorsair, 40, -1), corsairUp60: rateAfter(asCorsair, 60, -1),
+    loopDown: loop(-10), loopDeep: loop(-25),
+    top40: top(40), top200: top(200),
+    // A tree with no body physics is still a Corsair.
+    fallback: new Aircraft(corsairNode(), null, { cockpit: false }).spec === CORSAIR,
   };
 }
 
