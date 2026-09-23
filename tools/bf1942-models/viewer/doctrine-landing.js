@@ -80,9 +80,13 @@
 //    the hull (which the engine also makes) stands in for both. The tip test
 //    reads the candidates' `upright` (the hull's up y at least 0.6914), not
 //    the engine's two forms.
-//  * The occupants' bail runs from the driver's order: this executor
-//    presses Use for every bot in the craft. A craft whose driver has left
-//    or died carries its passengers on (the engine's run their own Change).
+//  * The bail runs twice over: this executor presses Use for every bot in
+//    the craft its driver holds the order for, and each occupant's own
+//    seated Change (bot-mount.js, the `BBChangeLandingCraft` rows) makes the
+//    same test through `craftBailReason`, so a crew with no beach-ordered
+//    driver (a gunner who climbed back into a beached craft) gets out too.
+//    That Change also has no voluntary bail and weighs no other hull, as
+//    `BBChangeLandingCraft` weighs only the craft's own seats.
 //  * The ramp input (PIPitch) is not written: the viewer's craft has no
 //    ramp to lower.
 
@@ -296,9 +300,14 @@ export function craftArea(layer, x, z, unitType = LANDING.unitType) {
  *  * `area` uses a zone for the unit: `WPBeachLanding` on its closest zone
  *    (the engine's no-route case, 0x08640cf3).
  *  * Otherwise the first zone-using area on `areaPath(from, area)` gives a
- *    `WPMoveToBeachLanding` (0x08641133); its radius is the engine's
+ *    `WPMoveToBeachLanding` (0x08641133). Its radius in the engine is the
  *    `0.25 x side radius + 2 x bounding radius` of the last route area
- *    before it (0x08641369), 1.0 with none, at least 5.
+ *    before the landing area whose point the order drives first
+ *    (0x08641369), 1.0 when there is none, at least 5. The viewer drives no
+ *    route points, so it takes the no-route value, 5: with a sea area's side
+ *    radius (Wake's SeaArea2, 336 m) the engine's figure is 104 m, and a
+ *    helm that brakes inside its move's radius would stop 100 m short of the
+ *    approach point, outside the zone.
  */
 export function beachTarget({ layer, zones, area, side, unit, x, z, from = null }) {
   const type = unit?.type ?? LANDING.unitType;
@@ -309,15 +318,12 @@ export function beachTarget({ layer, zones, area, side, unit, x, z, from = null 
   }
   const path = areaPath(layer, from ?? craftArea(layer, x, z, type), area);
   if (!path) return null;
-  let r = LANDING.moveToRadiusNoRoute;
-  for (let i = 0; i < path.length; i++) {
-    const a = path[i];
-    if (isLandingZoneUser(a, type)) {
-      const zone = closestZone(a, zones, x, z);
-      if (!zone) return null;
-      return { kind: 'WPMoveToBeachLanding', zone, via: a, radius: Math.max(LANDING.moveToRadiusMin, r) };
-    }
-    if (i > 0) r = layer.sideRadius(a, side) * 0.25 + 2 * (unit?.radius ?? 1.0);
+  for (const a of path) {
+    if (!isLandingZoneUser(a, type)) continue;
+    const zone = closestZone(a, zones, x, z);
+    if (!zone) return null;
+    return { kind: 'WPMoveToBeachLanding', zone, via: a,
+             radius: Math.max(LANDING.moveToRadiusMin, LANDING.moveToRadiusNoRoute) };
   }
   return null;
 }
@@ -366,6 +372,30 @@ export function beachLandingOrder({ target, area, side, layer, isValid = null, r
 }
 
 /**
+ * `BBChangeLandingCraft::calculateUrgency` 0x085602b0's reason to get out of
+ * a surface craft, or null: 'beach' when the craft is inside any landing
+ * zone (0x08560684), slower than 2 m/s (0x8560c60) and the soldier's map is
+ * valid where it stands (0x0856080e; it stands in for `isTouchingLand` too),
+ * 'tipped' when its up axis is past the tip limit (the candidates'
+ * `upright`). `zones` is an iterable of zones.
+ */
+export function craftBailReason({ zones, x, z, speed, walkable = true, upright = true }) {
+  if (upright === false) return 'tipped';
+  if (!(speed < LANDING.bailSpeed) || !walkable) return null;
+  for (const zn of zones ?? []) if (insideZone(zn, x, z)) return 'beach';
+  return null;
+}
+
+/** The level's zones for a world's `extras.ai`, built once per `ai` object. */
+const zonesByAi = new WeakMap();
+export function levelZones(ai) {
+  if (!ai) return [];
+  let z = zonesByAi.get(ai);
+  if (!z) { z = [...landingZonesOf(ai).values()]; zonesByAi.set(ai, z); }
+  return z;
+}
+
+/**
  * The per-tick executor of both kinds (registered in doctrine.js): the
  * `getUrgency` side of the waypoint (the inside flag, a new order on the
  * other leg when it flips) and `BBChangeLandingCraft`'s bail for everyone
@@ -383,15 +413,13 @@ export function landingTick(order, { id, position, command, candidates, actuator
   const mine = cands.find(c => c.occupiedBy === id) ?? null;
   if (!mine) return null;
   const zones = order.zones ? [...order.zones.values()] : [order.zone];
-  const inAnyZone = zones.some(zn => insideZone(zn, x, z));
   const walkable = command?.isWalkable ? !!command.isWalkable(x, z) : true;
-  const beached = inAnyZone && speed < LANDING.bailSpeed && walkable;
-  const tipped = mine.upright === false;
-  if (beached || tipped) {
+  const reason = craftBailReason({ zones, x, z, speed, walkable, upright: mine.upright });
+  if (reason) {
     for (const c of cands) {
       if (c.vehicleId === mine.vehicleId && c.occupiedBy != null) actuators?.exit?.(c.occupiedBy);
     }
-    order.bail = { t, speed, tipped };
+    order.bail = { t, speed, tipped: reason === 'tipped' };
     return null;
   }
   const d2 = zoneDistanceSqr(order.zone, x, z);
