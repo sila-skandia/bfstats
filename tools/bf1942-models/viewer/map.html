@@ -201,6 +201,7 @@ import { createLevel } from './level-load.js';
 import { createLocalPlayer } from './local-player.js';
 import { createPageConsole } from './page-console.js';
 import { createPageInput } from './page-input.js';
+import { createTouchControls } from './touch-controls.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -494,6 +495,7 @@ const pageInput = createPageInput({
   get altFireDemolitions() { return soldierKit.altFireDemolitions; },
   get bfmap() { return mapSurfaces.bfmap; }, get camera() { return camera; },
   get cancelDeploy() { return spawning.cancelDeploy; }, get car() { return localPlayer.car; },
+  get clampMobileInput() { return touchControls.clampMobileInput; },
   get consoleCaptures() { return pageConsole.consoleCaptures; },
   get cycleKitWeapon() { return soldierKit.cycleKitWeapon; },
   get cycleView() { return localPlayer.cycleView; },
@@ -504,9 +506,9 @@ const pageInput = createPageInput({
   get escMenu() { return pageConsole.escMenu; },
   get escMenuCaptures() { return pageConsole.escMenuCaptures; },
   get exitSeat() { return localPlayer.exitSeat; }, get extras() { return level.extras; },
+  get feedMobileTurretAim() { return touchControls.feedMobileTurretAim; },
   get FLY_KEYS() { return FLY_KEYS; }, get FLY_SLOW() { return FLY_SLOW; },
   get FLY_SPEED() { return FLY_SPEED; }, get FOOT_KEYS() { return FOOT_KEYS; },
-  get footView3p() { return soldierView.footView3p; },
   get fullmapBox() { return mapSurfaces.fullmapBox; },
   get gameConsole() { return pageConsole.gameConsole; },
   get getFloorAltitude() { return level.getFloorAltitude; },
@@ -516,28 +518,49 @@ const pageInput = createPageInput({
   get itemsLocked() { return soldierKit.itemsLocked; },
   get leavePilot() { return localPlayer.leavePilot; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
   get lookDelta() { return localPlayer.lookDelta; },
-  get mannedActive() { return localPlayer.mannedActive; },
-  get mouseInput() { return localPlayer.mouseInput; },
+  get mobilePadAxis() { return touchControls.mobilePadAxis; },
+  get mobilePadVector() { return touchControls.mobilePadVector; },
   get nearEntry() { return localPlayer.nearEntry; },
   get occupancy() { return localPlayer.occupancy; },
   get openDeploy() { return spawning.openDeploy; }, get optOnFoot() { return optOnFoot; },
   get optPilot() { return optPilot; }, get params() { return params; },
-  get renderer() { return renderer; }, get scoreboardOpen() { return scoreboard.scoreboardOpen; },
+  get renderer() { return renderer; },
+  get resetMobileControls() { return touchControls.resetMobileControls; },
+  get scoreboardOpen() { return scoreboard.scoreboardOpen; },
   get scoreFromSpawn() { return scoreboard.scoreFromSpawn; },
   get selectDeployFlag() { return spawning.selectDeployFlag; },
   get selectKitWeapon() { return soldierKit.selectKitWeapon; },
   get setConsoleOpen() { return pageConsole.setConsoleOpen; },
   get setEscMenu() { return pageConsole.setEscMenu; },
   get setScoreboard() { return scoreboard.setScoreboard; },
-  get soldier() { return localPlayer.soldier; },
-  get soldierDead() { return localPlayer.soldierDead; },
-  get spawnAtFlag() { return spawning.spawnAtFlag; }, get stage() { return stage; },
-  get startReload() { return soldierKit.startReload; },
+  get soldier() { return localPlayer.soldier; }, get spawnAtFlag() { return spawning.spawnAtFlag; },
+  get stage() { return stage; }, get startReload() { return soldierKit.startReload; },
   get switchSeat() { return localPlayer.switchSeat; },
   get toggleFullMap() { return mapSurfaces.toggleFullMap; },
   get toggleProne() { return localPlayer.toggleProne; }, get uiFocused() { return uiFocused; },
-  get updateHud() { return updateHud; }, get view() { return localPlayer.view; },
+  get updateHud() { return updateHud; },
+  get updateMobileControls() { return touchControls.updateMobileControls; },
   get world() { return world; },
+});
+const touchControls = createTouchControls({
+  get aircraft() { return localPlayer.aircraft; }, get captured() { return pageInput.captured; },
+  get car() { return localPlayer.car; }, get cycleView() { return localPlayer.cycleView; },
+  get ensureAudioContext() { return pageAudio.ensureAudioContext; },
+  get enterVehicle() { return localPlayer.enterVehicle; },
+  get exitSeat() { return localPlayer.exitSeat; },
+  get footView3p() { return soldierView.footView3p; },
+  get isTouchDevice() { return isTouchDevice; },
+  get mannedActive() { return localPlayer.mannedActive; },
+  get mouseInput() { return localPlayer.mouseInput; },
+  get nearEntry() { return localPlayer.nearEntry; },
+  get noteSeatToggle() { return pageInput.noteSeatToggle; },
+  get occupancy() { return localPlayer.occupancy; }, get optOnFoot() { return optOnFoot; },
+  get optPilot() { return optPilot; }, get releaseButtons() { return pageInput.releaseButtons; },
+  get seatToggleReady() { return pageInput.seatToggleReady; },
+  get setFly() { return pageInput.setFly; },
+  get setTouchTriggers() { return pageInput.setTouchTriggers; },
+  get soldier() { return localPlayer.soldier; },
+  get soldierDead() { return localPlayer.soldierDead; }, get view() { return localPlayer.view; },
 });
 const pageConsole = createPageConsole({
   get bfmap() { return mapSurfaces.bfmap; }, get capture() { return pageInput.capture; },
@@ -645,7 +668,7 @@ const localPlayer = createLocalPlayer({
   get buildSpawnFlags() { return spawning.buildSpawnFlags; }, get camera() { return camera; },
   get captureBotPresentationTick() { return botBodies.captureBotPresentationTick; },
   get captured() { return pageInput.captured; },
-  get clampMobileInput() { return pageInput.clampMobileInput; },
+  get clampMobileInput() { return touchControls.clampMobileInput; },
   get clearVehicleHud() { return hudFeed.clearVehicleHud; },
   get collider() { return level.collider; }, get currentRoot() { return level.currentRoot; },
   get damageTables() { return level.damageTables; },
@@ -654,7 +677,7 @@ const localPlayer = createLocalPlayer({
   get disposeHandWeapon() { return soldierKit.disposeHandWeapon; },
   get disposeSeatPose() { return seatPose.disposeSeatPose; }, get effects() { return effects; },
   get EMPTY_KEYS() { return soldierView.EMPTY_KEYS; },
-  get feedMobileTurretAim() { return pageInput.feedMobileTurretAim; },
+  get feedMobileTurretAim() { return touchControls.feedMobileTurretAim; },
   get feedVehicleHud() { return hudFeed.feedVehicleHud; },
   get footView3p() { return soldierView.footView3p; },
   get getTouchHudText() { return getTouchHudText; },
@@ -669,10 +692,10 @@ const localPlayer = createLocalPlayer({
   get kbLockLeave() { return pageInput.kbLockLeave; }, get keys() { return pageInput.keys; },
   get loadSeatPose() { return seatPose.loadSeatPose; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
   get look() { return pageInput.look; }, get LOOK_SENS() { return LOOK_SENS; },
-  get mobileJumpHeld() { return pageInput.mobileJumpHeld; },
-  get mobilePadAxis() { return pageInput.mobilePadAxis; },
-  get mobilePadHeld() { return pageInput.mobilePadHeld; },
-  get mobilePadVector() { return pageInput.mobilePadVector; },
+  get mobileJumpHeld() { return touchControls.mobileJumpHeld; },
+  get mobilePadAxis() { return touchControls.mobilePadAxis; },
+  get mobilePadHeld() { return touchControls.mobilePadHeld; },
+  get mobilePadVector() { return touchControls.mobilePadVector; },
   get netSeatRow() { return room.netSeatRow; }, get netSendAction() { return room.netSendAction; },
   get netTickPoses() { return room.netTickPoses; },
   get netVehicleIdFor() { return room.netVehicleIdFor; },
@@ -683,7 +706,7 @@ const localPlayer = createLocalPlayer({
   get playSoldierHurtSound() { return pageAudio.playSoldierHurtSound; },
   get releaseButtons() { return pageInput.releaseButtons; },
   get resetCaptureUi() { return flagCapture.resetCaptureUi; },
-  get resetMobileControls() { return pageInput.resetMobileControls; },
+  get resetMobileControls() { return touchControls.resetMobileControls; },
   get roomJoined() { return room.roomJoined; }, get seatAltFire() { return pageInput.seatAltFire; },
   get seatFire() { return pageInput.seatFire; }, get seatHolder() { return botUnits.seatHolder; },
   get showFlagPicker() { return spawning.showFlagPicker; },
@@ -693,7 +716,7 @@ const localPlayer = createLocalPlayer({
   get touchFlying() { return pageInput.touchFlying; },
   get triggerHitIndicator() { return hudFeed.triggerHitIndicator; },
   get updateHud() { return updateHud; },
-  get updateMobileControls() { return pageInput.updateMobileControls; },
+  get updateMobileControls() { return touchControls.updateMobileControls; },
   get updateSeatPoseVisibility() { return seatPose.updateSeatPoseVisibility; },
   get vehicleInput() { return vehicleHits.vehicleInput; }, get vehicles() { return vehicles; },
   get vehicleSpawnActive() { return level.vehicleSpawnActive; },
@@ -804,7 +827,7 @@ const wrecks = createVehicleWrecks({
   get markPilot() { return localPlayer.markPilot; }, get MODELS_BASE() { return MODELS_BASE; },
   get occupancy() { return localPlayer.occupancy; }, get optOnFoot() { return optOnFoot; },
   get placeCamera() { return pageInput.placeCamera; },
-  get resetMobileControls() { return pageInput.resetMobileControls; },
+  get resetMobileControls() { return touchControls.resetMobileControls; },
   get respawnVehicleBody() { return hullBodies.respawnVehicleBody; },
   get retireVehicleBody() { return hullBodies.retireVehicleBody; },
   get soldier() { return localPlayer.soldier; },
@@ -1599,7 +1622,7 @@ function frame(dt) {
   // The human's presentation follows the seat he holds, looked up every frame
   // (a bot taking the wheel of his hull gives it a drive under him).
   if (optPilot.checked) localPlayer.syncLocalSeat();
-  pageInput.updateMobileControls();
+  touchControls.updateMobileControls();
   // ---- the input stage (page) ----------------------------------------------
   // The keyboard and the mouse never leave this page. The look stage (the
   // mouse stage's per-frame pump, mouse-input.js) is pumped here once a frame
