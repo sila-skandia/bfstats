@@ -869,6 +869,175 @@ function gunnerScenarios() {
   };
 }
 
+// --- Brief L: the soldier's count law, the yaw window, the fire correction,
+// the sense sweep's reset ---------------------------------------------------
+
+/** A soldier bot in the world turns onto a point `deg` off its facing and
+ *  `up` degrees above: the engine's law with `SoldierCtrl` (bot-aim.js
+ *  `aimLook`), applied by the world at 3 deg / 1 deg a count. */
+function soldierTurn(deg, up = 0, ticks = 60) {
+  const world = makeWorld();
+  world.addBotPlayer('bot_0', { team: 2, flag: world.flags[0] });
+  const bot = new BotController({ playerId: 'bot_0', world, botSkill: 0.75 });
+  const s = world.player('bot_0').soldier;
+  s.spawn(s.x, s.y, s.z, 0);
+  bot.tick(WORLD_TICK_DT, 0);
+  const yaw0 = s.yaw, want = yaw0 + deg * Math.PI / 180, wantPitch = up * Math.PI / 180;
+  const errs = [], pitchErrs = [], xs = [];
+  for (let i = 0; i < ticks; i++) {
+    bot._resetInput();
+    bot._aimLook(want, wantPitch, aiming.AIM_COUNTS_MAX);
+    xs.push(bot.lookX);
+    bot._writeInput();
+    world.step(WORLD_TICK_DT);
+    const p = world.player('bot_0').soldier;
+    errs.push(Math.abs(wrap(want - p.yaw)) * 180 / Math.PI);
+    pitchErrs.push(Math.abs(wantPitch - (p.pitch ?? 0)) * 180 / Math.PI);
+  }
+  const within = (arr, lim) => arr.findIndex((e, i) => arr.slice(i).every(x => x < lim));
+  return { firstX: xs[0], yawWithinHalf: within(errs, 0.5), pitchWithinHalf: within(pitchErrs, 0.5),
+           overshoot: errs.some((e, i) => i > 0 && e > errs[i - 1] + 1e-9), errAt10: errs[9], finalErr: errs.at(-1),
+           finalPitchErr: pitchErrs.at(-1) };
+}
+
+function soldierLawScenario() {
+  const basis = aiming.soldierFrame(0, 0);
+  // The counts at a few offsets to the soldier's left (+yaw in the viewer's
+  // sense), and above.
+  const counts = [1, 5, 10, 30, 90].map(deg => {
+    const a = deg * Math.PI / 180;
+    const left = aiming.lookAtCounts([Math.sin(a), 0, Math.cos(a)], basis, aiming.SOLDIER_CONTROL);
+    const up = aiming.lookAtCounts([0, Math.sin(a), Math.cos(a)], basis, aiming.SOLDIER_CONTROL);
+    return [deg, +left.x.toFixed(4), +up.y.toFixed(4)];
+  });
+  return { basis, counts, turn35: soldierTurn(35), turn180: soldierTurn(179), up10: soldierTurn(0, 10) };
+}
+
+/** `mouseControlLookAtDirection`'s yaw window (0x08627c69..): a target past
+ *  it is out of reach (both counts 0), or reached the long way round. */
+function yawWindowScenario() {
+  const R = Math.PI / 180;
+  const basis = { f: [0, 0, 1], r: [-1, 0, 0], u: [0, 1, 0] };
+  // `deg` to the camera's right (engine right = -x here).
+  const at = deg => [-Math.sin(deg * R), 0, Math.cos(deg * R)];
+  const w = (min, max, rel) => ({ min: min * R, max: max * R, rel: rel * R });
+  const c = (deg, win) => {
+    const r = aiming.lookAtCounts(at(deg), basis, aiming.DEFAULT_SEAT_CONTROL, 0, win);
+    return { x: +r.x.toFixed(4), y: +r.y.toFixed(4), unreachable: r.unreachable };
+  };
+  return {
+    inside: c(45, w(-90, 90, 0)),
+    free: c(45, null),
+    pastMax: c(120, w(-90, 90, 0)),
+    pastMaxTurned: c(45, w(-90, 90, 60)),
+    pastMin: c(-45, w(-90, 90, -60)),
+    longWay: c(30, w(-170, 170, 160)),
+    full: c(120, w(-180, 180, 0)),
+    // A seat's window from its ControlInfo (degrees) and its rig's traverse.
+    seat: aiming.seatYawWindow({ vehicle: { controlInfo: { cameraMinDeg: [-90, -30, 0], cameraMaxDeg: [90, 10, 0] },
+                                            occupancy: { turret: { turretYawRadians: () => 0.25 } } } }),
+    zeroWide: aiming.seatYawWindow({ vehicle: { controlInfo: { cameraMinDeg: [0, 0, 0], cameraMaxDeg: [0, 0, 0] } } }),
+  };
+}
+
+/** `BAPAAimAt::correctAim` 0x0853a6d0 on hand-made observations. */
+function correctAimScenario() {
+  const bot = {};
+  const rec = aiming.fireCorrection(bot);
+  // Passed: the round crossed the target's range 5 m to its right.
+  Object.assign(rec, { fresh: true, passed: true, origin: [0, 0, 0], post: [10, 0, 200], pre: [5, 0, 99],
+                       target: [0, 0, 100], lastFire: 0 });
+  const passed = [...aiming.correctAim(bot, 0.1)];
+  const consumed = rec.fresh;
+  // Short: it came down 40 m before the target's range.
+  Object.assign(rec, { fresh: true, passed: false, pre: [0, 0, 60] });
+  const short = [...aiming.correctAim(bot, 0.2)];
+  // Nothing new, a round 5 s ago: kept; 11 s ago: x 0.99.
+  const kept = [...aiming.correctAim(bot, 5)];
+  const decayed = [...aiming.correctAim(bot, 11)];
+  return { passed, consumed, short, kept, decayed };
+}
+
+/** The whole loop on the AA rig with a stand-in `GunFire`: rounds leave down
+ *  the barrel while the precision holds (one every 0.1 s), fly straight at
+ *  300 m/s, and are watched, observed and fed back (`trackOwnRounds`,
+ *  `correctAim`). A plane on its approach from 600 m, passing 150 m abeam
+ *  and 90 m up at 55 m/s, then going away: rounds fired and the closest
+ *  miss with the correction and without it. */
+function aaCorrectionRun(correct, { start = [150, 90, 600], vel = [0, 0, -55], seconds = 18 } = {}) {
+  const ctrl = { pitchSensitivity: 0.21817, rollSensitivity: -0.21817, pitchScale: 1.0, rollScale: 1.0 };
+  const { hull, rig, bot } = gunnerRig({ maxSpeed: 100, acceleration: 1000, pitchDirection: 1, gunYaw: 0,
+                                         ctrl, velocity: 300, gravity: 0 });
+  const group = bot.vehicle.manned[0];
+  const guns = { tracers: [], projectiles: [], hits: [] };
+  const plane = { id: 'plane' };
+  bot.world = correct ? { guns, players: new Map([['plane', plane]]) } : null;
+  bot.firingTarget = 'plane';
+  bot.senses = { unitOwnerOf: p => (p === plane ? 77 : -1) };
+  const precision = aiming.precisionFor([11, 3.5, 9.1], true);
+  const state = {};
+  let fired = 0, bestMiss = Infinity, cooldown = 0, hits = 0, maxCorr = 0;
+  const dt = 1 / 30;
+  for (let tick = 0; tick < seconds * 30; tick++) {
+    const t = tick * dt;
+    bot._now = t;
+    const target = [start[0] + vel[0] * t, start[1] + vel[1] * t, start[2] + vel[2] * t];
+    const aim = aiming.turretAimAt(bot, target, vel);
+    const miss = aiming.turretMiss(bot, aim);
+    bestMiss = Math.min(bestMiss, miss);
+    maxCorr = Math.max(maxCorr, Math.hypot(...(aim.correction ?? [0, 0, 0])));
+    cooldown -= dt;
+    if (aiming.precisionHolds(miss, precision, true, state) && cooldown <= 0) {
+      cooldown = 0.1;
+      fired++;
+      const f = aiming.barrelFrame(bot);
+      guns.tracers.push({ group, lead: 0, travelled: 0, age: 0,
+                          mesh: { position: new THREE.Vector3(...f.origin) },
+                          velocity: new THREE.Vector3(f.f[0] * 300, f.f[1] * 300, f.f[2] * 300) });
+    }
+    rig.aim(bot.lookX, bot.lookY);
+    rig.step(dt);
+    hull.updateMatrixWorld(true);
+    // The rounds: straight flight; within 5 m of the plane a hit on it, a
+    // 3 s life otherwise.
+    const at = [start[0] + vel[0] * (t + dt), start[1] + vel[1] * (t + dt), start[2] + vel[2] * (t + dt)];
+    for (let i = guns.tracers.length - 1; i >= 0; i--) {
+      const r = guns.tracers[i];
+      r.mesh.position.addScaledVector(r.velocity, dt);
+      r.travelled += 300 * dt; r.age += dt;
+      const p = r.mesh.position;
+      if (Math.hypot(p.x - at[0], p.y - at[1], p.z - at[2]) < 5) {
+        hits++;
+        guns.hits.unshift({ kind: 'mesh', firerGroup: group, point: [p.x, p.y, p.z], owner: 77, target: null });
+        guns.tracers.splice(i, 1);
+      } else if (r.age > 3) guns.tracers.splice(i, 1);
+    }
+  }
+  const rec = bot._fireCorrection;
+  return { fired, hits, bestMiss: +bestMiss.toFixed(2), maxCorr: +maxCorr.toFixed(2),
+           observed: rec?.observed ?? 0, targetHits: rec?.hits ?? 0 };
+}
+
+/** The sense sweep's reset: a camera that turns past the next band's
+ *  threshold since the last band sends it back to the near band. */
+function senseResetScenario() {
+  const world = { players: new Map(), collider: null };
+  const me = { id: 'me', team: 1 };
+  const frame = deg => {
+    const y = deg * Math.PI / 180;
+    return { f: [Math.sin(y), 0, Math.cos(y)], r: [Math.cos(y), 0, -Math.sin(y)], u: [0, 1, 0] };
+  };
+  const run = (turns, isMobile = false) => {
+    const s = new BotSenses({ viewDistance: 300, isMobile });
+    const subs = [];
+    let yaw = 0;
+    for (const t of turns) { yaw += t; s.sense(0, world, me, [0, 1.6, 0], yaw * Math.PI / 180, frame(yaw)); subs.push(s.substate); }
+    return subs;
+  };
+  return { steady: run([0, 0, 0, 0]), turn20: run([0, 20, 0, 0]), turn10: run([0, 10, 10, 0]),
+           mobileTurn5: run([0, 5, 5], true) };
+}
+
 /** Brief K item 2: aircraft spacing. `runwayClear` 0x0855f850 on a
  *  Spitfire-sized box (span 11.2, height 3.5, length 9.1) facing +z;
  *  `collisionPredicted` 0x0855d2f0; the avoid's urgency and its turn away. */
@@ -1020,5 +1189,15 @@ const results = {
 };
 
 results.gunner = gunnerScenarios();
+results.briefL = {
+  soldier: soldierLawScenario(),
+  yawWindow: yawWindowScenario(),
+  correctAim: correctAimScenario(),
+  aaWithCorrection: aaCorrectionRun(true),
+  aaWithout: aaCorrectionRun(false),
+  aaCrossWithCorrection: aaCorrectionRun(true, { start: [-400, 90, 150], vel: [55, 0, 0], seconds: 16 }),
+  aaCrossWithout: aaCorrectionRun(false, { start: [-400, 90, 150], vel: [55, 0, 0], seconds: 16 }),
+  senseReset: senseResetScenario(),
+};
 
 process.stdout.write(JSON.stringify(results));
