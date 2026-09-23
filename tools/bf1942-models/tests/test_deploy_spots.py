@@ -24,6 +24,11 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from page_source import page_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
@@ -145,13 +150,14 @@ class DeployGroupSelectionTests(unittest.TestCase):
 class DeployWiringTests(unittest.TestCase):
     """The page reads the module, not a copy of it.
 
-    `map.html` is one inline module that no node harness can import, so the
-    law above is pinned the way `test_idle_vehicle.py` pins its own call
-    sites: on the source text. A second `flagMapSpots` growing back in the
-    page is the way this defect returns uninoticed.
+    The page (`map.html` and the modules it was split into, `page_source.py`)
+    is wiring no node harness imports whole, so the law above is pinned the
+    way `test_idle_vehicle.py` pins its own call sites: on the source text.
+    A second `flagMapSpots` growing back in the page is the way this defect
+    returns uninoticed.
     """
 
-    source = (VIEWER / "map.html").read_text(encoding="utf-8")
+    source = page_source()
 
     def test_the_page_imports_the_spot_module(self) -> None:
         self.assertIn("from './deploy-spots.js'", self.source)
@@ -165,11 +171,14 @@ class DeployWiringTests(unittest.TestCase):
         self.assertEqual(1, self.source.count("function activeDeployGroup("))
 
     def test_the_painters_call_sites_read_the_module(self) -> None:
-        for call in ("for (const spot of flagMapSpots(flag))",
-                     "for (const spot of flagMapSpots(flags[index]))",
-                     "spot.group === activeDeployGroup(flag)"):
+        # A call site may name the module that now holds its argument or the
+        # function (`spawning.activeDeployGroup`, `capture.flags`).
+        owner = r"(?:\w+\.)?"
+        for call in (r"for \(const spot of flagMapSpots\(flag\)\)",
+                     r"for \(const spot of flagMapSpots\(" + owner + r"flags\[index\]\)\)",
+                     r"spot\.group === " + owner + r"activeDeployGroup\(flag\)"):
             with self.subTest(call=call):
-                self.assertIn(call, self.source)
+                self.assertRegex(self.source, call)
 
 
 if __name__ == "__main__":
