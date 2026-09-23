@@ -46,25 +46,51 @@ flag. The bakes were right and needed no re-extract.
 - `map.html`: one import and one `bindTreeFoliage` call after
   `collectTerrain`.
 
-## Strip frame order
+## Strip frame order and card size
 
-Fitted 2026-09-23 by IoU of each frame's alpha against the trunk and leaf
-sprites projected from eight azimuths (37 vanilla trees, all eight
-direction/phase hypotheses): every tree preferred the same rotation sense;
-phases 180 and 225 tied overall (0.533 mean IoU), and 180 is the one with a
-reason — frame 0 is the default D3D front view (camera on -z looking +z in
-the mesh's left-handed frame), frames then walk the camera toward +x. Frame
-`f` = camera at azimuth `180 + 45 f`. The strip is square per frame in world
-units, spanning the mesh bounding box height, centred on the trunk origin.
-Checked against the geometry at 45 m / card at 55 m from six bearings on
-Bocage's `EU_Birtch2_M1`: same lean and sidedness, card ~20% fuller.
+Frame `f` = camera at azimuth `45 f` (phase 0). The first fit (IoU of each
+frame's alpha against sprites projected from the `.tm`) tied phases 180 and
+225 at 0.533 and shipped 180; scoring the card against the tree's own
+rendered geometry in the viewer instead (eight bearings, 45 m, background
+subtracted, both trees) is unambiguous:
+
+| phase | birch IoU | asp IoU |
+|---|---|---|
+| 0 | 0.80 | 0.68 |
+| 7 | 0.80 | 0.67 |
+| 4 (was shipped) | 0.56 | 0.55 |
+| mirrored, best | 0.71 | 0.61 |
+
+The card is the bounding box height tall and the box's XZ diagonal wide, not
+square: drawn square it came out 1.41x wider than the geometry at every
+bearing while matching its height to 2%, and a frame's alpha spans ~96% of
+its height but only 55..73% of its width. With the diagonal the width ratio
+is 0.96 (birch) and centroids align to within a few pixels.
+
+## Transition
+
+The engine cuts at `billboardDistance`; drawn here that popped, because the
+card is denser than the sprite canopy. The viewer fades instead: over
+`FADE_SPAN` (40% of the distance, 40..60 m for a 50 m tree) the geometry
+stays opaque while the card blends in over it, from clear to solid, and the
+geometry is dropped underneath the solid card at the far edge. Each placed
+tree has its own card material for the opacity; the card's alpha test scales
+with opacity so its outline holds while it fades. An ordered-dither
+cross-fade was tried first and rejected: the 4x4 stipple reads as a screen
+door at mid-band without temporal AA.
+
+Measuring any of this in the viewer: capture every frame of a comparison
+synchronously (no `await` between renders, or the page's own loop renders in
+between), render several settle frames after moving the camera (the static
+cull catches up over frames), and exclude pixels that differ between two
+idle renders before comparing.
 
 ## Not done / open
 
 - Twelve vanilla templates ship no strip (ferns, four jungle trees, four
   Pacific palms) and draw as geometry at every range, as before.
-- The card is the pre-render's own shading (darker than the tinted, unlit
-  near geometry); there is a visible step at 50 m. Retail's far trees are
-  also dark, so it was left as authored.
 - Whether engine sprites are screen-aligned or Y-axis-aligned was not
   settled from the binary; screen-aligned (Ahrkylien's importer) is used.
+- The card is the pre-render's own shading and still a little denser than
+  the sprite canopy, so a faint halo grows in across the band on a bright
+  sky; the geometry-to-card IoU tops out around 0.8.
