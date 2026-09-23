@@ -30,7 +30,6 @@ MODULES = [
     ROOT / "viewer" / "soldier-locomotion.js",
     ROOT / "viewer" / "point-body.js",
     ROOT / "viewer" / "fixed-step.js",
-    ROOT / "viewer" / "collision.js",
     ROOT / "viewer" / "world-collider.js",
     ROOT / "viewer" / "static-index.js",
     ROOT / "viewer" / "collision-meshes.js",

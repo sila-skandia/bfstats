@@ -5,7 +5,10 @@
 // tables and builds the collider once per level.
 
 import * as THREE from 'three';
-import { buildHeightfield, buildCollisionIndex, buildDrivableMask, WorldCollider } from './collision.js';
+import { buildHeightfield } from './heightfield.js';
+import { buildCollisionIndex } from './static-index.js';
+import { buildDrivableMask } from './drivable-mask.js';
+import { WorldCollider } from './world-collider.js';
 import { kindOf } from './level-statics.js';
 
 /**

@@ -2,7 +2,7 @@
 // static triangle over it, so `WorldCollider.deckHeight` can skip its ray
 // over open ground.
 //
-// Split out of `collision.js`, which re-exports it.
+// Split out of `collision.js`; see `world-collider.js`'s header.
 
 import { isCollisionMesh, isDrivableCollisionMesh } from './collision-meshes.js';
 

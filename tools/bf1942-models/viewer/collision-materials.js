@@ -2,8 +2,8 @@
 //
 // The two ids every collider reads, and the three lookups that turn a
 // material id into an impact effect, a stand-in colour family and a footstep
-// patch. Split out of `collision.js`, which re-exports all of it; see that
-// file's header for the collider as a whole.
+// patch. Split out of `collision.js`; see `world-collider.js`'s header for the
+// collider as a whole.
 
 /** Terrain material id when a map ships no `Materialmap.raw` — "Default". */
 export const DEFAULT_TERRAIN_MATERIAL = 0;

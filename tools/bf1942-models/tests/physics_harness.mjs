@@ -19,9 +19,9 @@ import {
   RAMP_TO_FULL_SECONDS, RAMP_TO_STOP_SECONDS,
   applyMovementFactors, rampedDirectionalSpeed, rampedStrafeSpeed,
 } from './physics.mjs';
-import {
-  buildHeightfield, buildCollisionIndex, WorldCollider,
-} from './collision.mjs';
+import { buildHeightfield } from './heightfield.js';
+import { buildCollisionIndex } from './static-index.js';
+import { WorldCollider } from './world-collider.js';
 import { SwimState, SWIM_FLOAT_DRAFT, SWIM_ACCEL_GAIN } from './swim.js';
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
