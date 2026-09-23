@@ -13,8 +13,11 @@ import { World, WORLD_TICK_DT } from './world.mjs';
 import { BotController } from './bot.js';
 import { buildNavMap, gridAt, traceClear, CELL_OBJECT } from './nav-grid.js';
 import { Armor } from './armor.js';
-import { tankControl, unitUrgency, changeUrgency, orderSplit, TANK } from './bot-vehicle.js';
-import { planeControl, boatControl, rotate } from './bot-vehicle-air.js';
+import { tankControl, unitUrgency, changeUrgency, orderSplit, teleportChangeUrgency, driveDecision, TANK, TELEPORT, CHANGE } from './bot-vehicle.js';
+import { planeControl, boatControl, rotate, attackRunStep, planeFireMode, aimAtDirection, PLANE_FIRE } from './bot-vehicle-air.js';
+import { fireStrength, unitTable, EnemyStrengthTables, engineHeatInfluence, STRENGTH } from './bot-strength.js';
+import { scoreVehicleTargets, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
+import { freeRun, freeBox, CELL_LAND, CELL_FREE } from './nav-grid.js';
 
 // The level sits in the map's own frame: x in [0, worldSize], z in
 // [-worldSize, 0] (the exporter negates z). Home at (100, -100), the enemy
@@ -336,7 +339,126 @@ function airScenario() {
   return { ahead, right, ground, boatTurn, boatAhead, fwd };
 }
 
+/** The class tables: a Sherman's unit table is the max over its guns; the
+ *  enemy tables settle at the per-pass sum; the fire strength is the best
+ *  squared strength against a class the enemy fields, less the enemy's
+ *  strength against the unit's class, or half the best squared strength
+ *  when the enemy fields nothing known; a fixed gun that can point at no
+ *  enemy scores 0. */
+function strengthScenario() {
+  const sherman = unitTable([
+    { strength: { Infantry: 10, LightArmour: 7, HeavyArmour: 2, Air: 1 } },
+    { strength: { Infantry: 12, LightArmour: 5, HeavyArmour: 0, Air: 1 } },
+    { strength: { Infantry: 99 }, healing: true },
+  ]);
+  const tables = new EnemyStrengthTables();
+  for (let i = 0; i < 12; i++) tables.update([{ table: SOLDIER_BATTLE_STRENGTH, type: 'Infantry' }, { table: SOLDIER_BATTLE_STRENGTH, type: 'Infantry' }]);
+  const vsInfantry = fireStrength({ table: sherman, myType: 'HeavyArmour', enemyStrengths: tables.strengths, enemyTypes: tables.types });
+  const unknown = fireStrength({ table: sherman, myType: 'HeavyArmour', enemyStrengths: {}, enemyTypes: {} });
+  const withGunner = fireStrength({ table: sherman, others: [{ table: { Infantry: 8, Air: 3 }, occupied: true }], myType: 'HeavyArmour',
+                                    enemyStrengths: tables.strengths, enemyTypes: tables.types });
+  const fixedBlind = fireStrength({ table: { Air: 5, Infantry: 10 }, myType: 'LightArmour', fixed: true, aimable: false,
+                                   enemyStrengths: tables.strengths, enemyTypes: tables.types });
+  const foot = unitUrgency({ health: 1, fire: fireStrength({ table: SOLDIER_BATTLE_STRENGTH, myType: 'Infantry', enemyStrengths: tables.strengths, enemyTypes: tables.types }),
+                             maxSpeed: TANK.soldierMaxSpeed, value: 1, orderSplit: [0.5, 0.5] });
+  const tank = unitUrgency({ health: 1, fire: vsInfantry, maxSpeed: 16, value: 3, orderSplit: [0.5, 0.5] });
+  return { sherman, types: tables.types, strengths: tables.strengths, vsInfantry, unknown, withGunner, fixedBlind, foot, tank,
+           heat: [engineHeatInfluence(0.5), engineHeatInfluence(0.975)], radius: CHANGE.searchRadius };
+}
+
+/** The seat swap: a gunner under a driver keeps a seat worth as much as the
+ *  root's; a passenger of a free jeep takes the wheel; the root never
+ *  swaps down to a weaker seat. */
+function teleportScenario() {
+  const gunnerStays = teleportChangeUrgency({ where: 'seatUnderDriver', rootU: 10, selfU: 8, seats: [{ id: 'mg', u: 6 }] });
+  const passengerDrives = teleportChangeUrgency({ where: 'seatLand', rootU: 10, selfU: 2, seats: [] });
+  const rootKeeps = teleportChangeUrgency({ where: 'root', rootU: 10, selfU: 10, seats: [{ id: 'mg', u: 6 }] });
+  const pending = teleportChangeUrgency({ where: 'root', rootU: 10, selfU: 10, seats: [], pending: true });
+  return { gunnerStays, passengerDrives, rootKeeps, pending, factors: TELEPORT.seatAir };
+}
+
+/** The box test: a target behind with no room ahead backs toward it; with
+ *  room, or a narrow box, the hull turns. */
+function driveDecisionScenario() {
+  const back = driveDecision({ dot: -0.9, angle: 2.8, freeAhead: 3, boxShort: 6, turnRadius: 5 });
+  const room = driveDecision({ dot: -0.9, angle: 2.8, freeAhead: 12, boxShort: 6, turnRadius: 5 });
+  const narrow = driveDecision({ dot: -0.9, angle: 2.8, freeAhead: 3, boxShort: 2, turnRadius: 5 });
+  const shallow = driveDecision({ dot: -0.2, angle: 1.0, freeAhead: 3, boxShort: 6, turnRadius: 5 });
+  const law = tankControl({ forward: [0, 1], velocity: [0, 0], toTarget: [0.01, -50], maxSpeed: 16, freeAhead: 3, boxShort: 6, turnRadius: 5 });
+  return { back, room, narrow, shallow, lawReverse: law.reverse, lawThrottle: law.throttle };
+}
+
+/** The vehicle targeting: a hull's gun prefers the close infantryman (the
+ *  large-bore distance term falls with range), an aircraft the far one
+ *  (its rises to a third of the range), and a fixed gun that cannot point
+ *  at the target skips it. */
+function vehicleFireScenario() {
+  const weapons = [{ name: 'gun', strength: { Infantry: 10, LightArmour: 7, HeavyArmour: 2, Air: 1 }, minRange: 2, maxRange: 250, ammo: -1 }];
+  const spotted = (d) => [{ id: 'near', pos: [0, 0, -d], seen: true, lost: false }, { id: 'far', pos: [0, 0, -200], seen: true, lost: false }];
+  const common = { position: [0, 0, 0], forward: [0, 0, -1], velocity: [0, 0, 0], weapons, now: 100, attackedBy: () => -1000,
+                   velocityOf: () => [0, 0, 0], infoOf: () => ({ type: 'Infantry', air: false, table: SOLDIER_BATTLE_STRENGTH, maxSpeed: 5, seats: null, mobile: true }),
+                   myType: 'HeavyArmour', myTable: unitTable(weapons) };
+  const tank = scoreVehicleTargets({ ...common, spotted: spotted(40), mode: 'largeBore' });
+  const plane = scoreVehicleTargets({ ...common, spotted: spotted(40), mode: 'air', air: true, maxSpeed: 60 });
+  const blind = scoreVehicleTargets({ ...common, spotted: spotted(40), mode: 'largeBore', aimable: () => false });
+  const tooClose = scoreVehicleTargets({ ...common, spotted: [{ id: 'n', pos: [0, 0, -1], seen: true }], mode: 'largeBore' });
+  const env = scoreVehicleTargets({ ...common, spotted: [], environment: [{ id: 'e', pos: [0, 0, -60] }], mode: 'largeBore' });
+  const vehicleTarget = scoreVehicleTargets({ ...common, spotted: [{ id: 'v', pos: [0, 0, -60], seen: true }], mode: 'largeBore',
+    infoOf: () => ({ type: 'LightArmour', air: false, table: {}, maxSpeed: 25, mobile: true, enemyManned: true,
+                     seats: [{ type: 'LightArmour', table: { HeavyArmour: 0 }, occupied: true }, { type: 'LightArmour', table: { HeavyArmour: 0 }, occupied: false }] }) });
+  return { tank: tank.targetId, tankScore: tank.score, plane: plane.targetId, blind: blind.targetId, tooClose: tooClose.targetId,
+           env: env.targetId, envUrgency: env.urgency, vehicle: vehicleTarget.targetId, vehicleScore: vehicleTarget.score };
+}
+
+/** The aircraft's fire plan: approach until inside 0.9 of the range with a
+ *  line of fire, attack while the target is in front, break for 200 m after
+ *  the pass; a seated unit that cannot move gets mode 3; the aim law holds
+ *  the climb angle during a takeoff. */
+function planeFireScenario() {
+  const state = { phase: 'approach', breakFrom: null };
+  const args = (dist, ahead = true) => ({ position: [0, 100, 0], forward: [0, 0, -1], velocity: [0, 0, -60],
+                                          target: [0, 100, ahead ? -dist : dist], maxRange: 300, turnRadius: 25, lineOfFire: true, mode: 1 });
+  const far = attackRunStep(state, args(1000));
+  const inRange = attackRunStep(state, args(200));
+  const passed = attackRunStep(state, args(20));
+  const breaking = attackRunStep(state, { ...args(20), position: [0, 100, -100] });
+  const again = attackRunStep(state, { ...args(20), position: [0, 100, -250] });
+  const modes = [planeFireMode({ extents: [0.6, 1.8, 0.6] }), planeFireMode({ extents: [3, 3, 6], vehicle: true }),
+                 planeFireMode({ extents: [30, 10, 90], vehicle: true, large: true }), planeFireMode({ mobile: false })];
+  const level = { x: 0, y: 0, z: 0, w: 1 };
+  const aimUp = aimAtDirection({ orientation: level, position: [0, 200, 0], velocity: [0, 0, -60], dir: [0, 0.5, -0.866], groundY: 0, maxSpeed: 60 });
+  const aimTakeoff = aimAtDirection({ orientation: level, position: [0, 1, 0], velocity: [0, 0, -10], dir: [0, 0, -1], groundY: 0, maxSpeed: 60, onGround: true });
+  return { far: far.phase, inRange: inRange.phase, inRangeFire: inRange.fire, passed: passed.phase, breaking: breaking.phase,
+           again: again.phase, modes, aimUpPitch: aimUp.pitch, takeoff: aimTakeoff.takeoff, climb: PLANE_FIRE.maxClimbAngle };
+}
+
+/** The water map: a sea 20 m deep around a 40 m island, the boats' map
+ *  free on the deep water and blocked on the island and its 8 m shelf; the
+ *  free run and the free box read the same map. */
+function waterMapScenario() {
+  const size = 128;
+  const island = (x, z) => Math.hypot(x - 64, -z - 64) < 20;
+  const c = {
+    waterLevel: 20,
+    heightfield: { height(x, z) { return island(x, z) ? 25 : (Math.hypot(x - 64, -z - 64) < 28 ? 16 : 0); } },
+    surfaceHeight() { return 20; },
+    statics: null,
+  };
+  const nav = buildNavMap(c, size, { waterMap: true, waterDepth: 5, maxSlopeDeg: 0, brush: 3, lowClip: 0.3, hiClip: 2.5 });
+  const deep = gridAt(nav, 10, -10), centre = gridAt(nav, 64, -64), shelf = gridAt(nav, 64, -64 - 24);
+  const run = freeRun(nav, 10, -64, 1, 0, 100);
+  const box = freeBox(nav, 10, -10, 40);
+  const infantry = buildNavMap(c, size, { waterDepth: 1.5, brush: 1 });
+  return { deep, centre, shelf, run, boxShort: box.short, land: CELL_LAND, free: CELL_FREE, islandWalkable: gridAt(infantry, 64, -64) };
+}
+
 const results = {
+  strength: strengthScenario(),
+  teleport: teleportScenario(),
+  drive: driveDecisionScenario(),
+  vehicleFire: vehicleFireScenario(),
+  planeFire: planeFireScenario(),
+  water: waterMapScenario(),
   medic: medicScenario(),
   air: airScenario(),
   tankLaw: tankLawScenario(),
