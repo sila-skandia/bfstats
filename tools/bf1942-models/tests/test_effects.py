@@ -543,6 +543,10 @@ def run_harness() -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
         shutil.copyfile(MODULE, work / "effects-core.mjs")
+        # `effects-core.js` re-exports the damage-block half from its own file.
+        (work / "package.json").write_text('{"type": "module"}')
+        shutil.copyfile(MODULE.with_name("projectile-damage.js"),
+                        work / "projectile-damage.js")
         shutil.copyfile(HARNESS, work / "harness.mjs")
         proc = subprocess.run(["node", str(work / "harness.mjs")],
                               capture_output=True, text=True, timeout=120)

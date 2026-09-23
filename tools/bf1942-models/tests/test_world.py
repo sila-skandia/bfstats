@@ -56,7 +56,7 @@ _MODULE_NAMES = [
     "fall-damage",
     "body-world", "body-statics", "vehicle-bodies", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact",
-    "body-ground", "body-friction", "crash-damage", "effects-core",
+    "body-ground", "body-friction", "crash-damage", "effects-core", "projectile-damage",
     # Reached through seats.js: the salvo arithmetic and the HUD
     # weapon-slot order, and an aircraft torpedo's water run.
     "bomb-release", "torpedo-run",
