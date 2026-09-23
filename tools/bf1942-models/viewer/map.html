@@ -251,6 +251,7 @@ import {
 } from './bot-referee.js';
 import { createBotUnits } from './bot-units.js';
 import { bindTreeFoliage } from './tree-foliage.js';
+import { createBotVisuals } from './bot-visuals.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -1419,7 +1420,7 @@ function capturePresentationTick() {
     footFeetCur.z = soldier.z;
     if (snap) Object.assign(footFeetPrev, footFeetCur);
   }
-  captureBotPresentationTick(snap);
+  botBodies.captureBotPresentationTick(snap);
   const vi = vehicleInterp;
   if (!vi.vehicle && !vi.parts.length) return;
   if (vi.vehicle) {
@@ -7471,11 +7472,11 @@ const referee = createBotReferee({
     playSoldierHurtSound(false, { x: at[0], y: at[1] + 1.2, z: at[2] });
   },
   onDeath: bot => {
-    const vis = botVisuals.get(bot.playerId);
+    const vis = botBodies.botVisuals.get(bot.playerId);
     if (vis) vis.group.visible = false;
   },
   onRespawned: bot => {
-    const vis = botVisuals.get(bot.playerId);
+    const vis = botBodies.botVisuals.get(bot.playerId);
     if (vis) vis.lastPos = null;   // no gait smear across the respawn
   },
   // Room play stays authoritative: no local bot capture.
@@ -7488,16 +7489,16 @@ const referee = createBotReferee({
     announceCapture(prevTeam, target.team);
   },
   onMounted: (bot, cand, mount) => {
-    const vis = botVisuals.get(bot.playerId);
+    const vis = botBodies.botVisuals.get(bot.playerId);
     if (vis) vis.group.visible = false;
     if (BOT_DEBUG) console.log(`[bots] ${bot.playerId} takes the ${cand.template} ${mount.drives ? 'driver seat' : 'seat ' + cand.seatId}`);
   },
   onSeatSwitched: bot => {
-    const vis = botVisuals.get(bot.playerId);
+    const vis = botBodies.botVisuals.get(bot.playerId);
     if (vis) vis.group.visible = false;
   },
   onDismounted: (bot, m, { killed, silent }) => {
-    const vis = botVisuals.get(bot.playerId);
+    const vis = botBodies.botVisuals.get(bot.playerId);
     if (vis) vis.group.visible = !killed;
     if (BOT_DEBUG && !silent) console.log(`[bots] ${bot.playerId} leaves the ${m.template}${killed ? ' (killed)' : ''}`);
   },
@@ -7505,7 +7506,7 @@ const referee = createBotReferee({
     // Async: the fire data of every weapon the kit carries, and the bot's
     // visual, so it appears when ready.
     loadBotWeapons(bot);
-    ensureBotVisual(bot).then(vis => {
+    botBodies.ensureBotVisual(bot).then(vis => {
       if (vis?.rig) console.log(`[bots] visual loaded for ${bot.name}`);
       else console.warn(`[bots] visual failed for ${bot.name}`);
     });
@@ -8127,7 +8128,7 @@ function spawnAtFlag(advance = false) {
  * team. Called once per level load, after the world is built.
  */
 function spawnBotsForLevel() {
-  disposeBotVisuals();
+  botBodies.disposeBotVisuals();
   referee.clock = 0;
   if (BOT_COUNT <= 0 || !world) {
     console.log(`[bots] skipped: BOT_COUNT=${BOT_COUNT}, world=${!!world}`);
@@ -8408,16 +8409,14 @@ function botFootstepTick(bot, dt) {
     { x: at[0], y: at[1], z: at[2], gait: speed > 3 ? 'run' : 'walk' },
     { x: at[0], y: at[1], z: at[2] });
 }
-
-
-
-// --- bot rendering -------------------------------------------------------------
-// Bots get the same pose-pair + gait-rig treatment as remote players
-// (netcode-render.js). Each bot is a THREE.Group with a cloned skinned mesh
-// and an AnimationMixer, positioned at the bot controller's position.
-
-const BOT_SOLDIER = { 1: 'GermanSoldier', 2: 'USMarineSoldier' };
-const BOT_WEAPON = 'Colt';
+const botBodies = createBotVisuals({
+  get MODELS_BASE() { return MODELS_BASE; },
+  get bindDynamicShading() { return bindDynamicShading; }, get bust() { return bust; },
+  get disposeFootBodyScene() { return disposeFootBodyScene; },
+  get footBodyClips() { return footBodyClips; }, get footBodyLoader() { return footBodyLoader; },
+  get presentAlpha() { return presentAlpha; }, get referee() { return referee; },
+  get world() { return world; },
+});
 /** The edge of the human's fire input last frame, for the bots' hearing. */
 let frameInputWasFiring = false;
 
@@ -8447,235 +8446,6 @@ function botKitFor(team, index) {
 function localWeaponSoundRadius() {
   const template = handWeapon?.template ?? handWeapon?.group?.template ?? null;
   return loadouts?.aiWeapons?.[template]?.soundSphereRadius ?? null;
-}
-
-
-/** Bot pose-pair cache: "SoldierName__Colt" -> { scene, animations }. */
-const botPoseCache = new Map();
-
-/** The root group all bot visuals hang off. Added to scene in show(). */
-let botRoot = null;
-
-/** Per-bot visual state: { group, rig, want, lastSpeed } */
-const botVisuals = new Map();
-
-async function botPosePair(soldierName, weapon) {
-  const key = `${soldierName}__${weapon}`;
-  if (!botPoseCache.has(key)) {
-    botPoseCache.set(key, footBodyLoader
-      .loadAsync(`${MODELS_BASE}/poses/${key}.pose.glb${bust()}`)
-      .then(gltf => {
-        gltf.scene.traverse(obj => {
-          const data = obj.userData || {};
-          if (data.effect || data.projectileMesh || data.projectileTrail
-              || data.collision || /collision/i.test(obj.name || '')) obj.visible = false;
-        });
-        return { scene: gltf.scene, animations: gltf.animations ?? [] };
-      }).catch(() => null));
-  }
-  return botPoseCache.get(key);
-}
-
-/**
- * The bot's gait clips: exactly the set the local and remote bodies bind
- * (`footBodyClips`), so a bot's legs play the same baked walk/run/crouch/crawl
- * clips a human's do.
- *
- * This used to read the manifest as `manifest[weapon].lower`. That is not its
- * shape — it is `{ lower, grips: { grip: file }, weaponGrip: { weapon: grip } }`
- * — so the lookup fell to `manifest[Object.keys(manifest)[0]]`, a string, whose
- * `.lower` is `undefined`. The loader then fetched `poses/undefined`, both
- * halves came back empty, and `buildBotGaitRig` bound only the static poses:
- * every bot slid across the level in the standing pose with its legs still.
- * `footBodyClips` is the resolution the foot body and the remote renderer
- * already share (`foot-gait.js`).
- */
-async function botGaitClips(weapon) {
-  return footBodyClips(weapon);
-}
-
-function buildBotGaitRig(scene, poseClips, gaitClips) {
-  const mixer = new THREE.AnimationMixer(scene);
-  const action = (name, clips) => {
-    const clip = THREE.AnimationClip.findByName(clips, name);
-    if (!clip) return null;
-    const a = mixer.clipAction(clip);
-    a.setLoop(THREE.LoopRepeat, Infinity);
-    a.play();
-    a.setEffectiveWeight(0);
-    a.paused = true;
-    return a;
-  };
-  const families = {};
-  for (const [family, spec] of Object.entries(FAMILY_CLIPS)) {
-    if (spec.pose) {
-      const a = action(spec.pose, poseClips);
-      if (a) families[family] = [a];
-      continue;
-    }
-    const lower = action(spec.lower, gaitClips);
-    const upper = action(spec.upper, gaitClips);
-    if (lower && upper) families[family] = [lower, upper];
-  }
-  return { mixer, families };
-}
-
-/** The clip family for a bot's live speed and stance: the engine's own speed
- *  bands (`remote-gait.js`), resolved against the families the rig actually
- *  bound, with the same fallback chain a remote soldier gets. */
-function botClipFamily(speed, stance, bound) {
-  return remoteClipFamily(speed, {
-    crouch: stance === 'crouch',
-    prone: stance === 'prone',
-  }, bound);
-}
-
-async function ensureBotVisual(bot) {
-  const team = world?.player(bot.playerId)?.team ?? 2;
-  const soldierName = BOT_SOLDIER[team] ?? BOT_SOLDIER[2];
-  let vis = botVisuals.get(bot.playerId);
-  if (vis) return vis;
-
-  const group = new THREE.Group();
-  group.name = `bot ${bot.name}`;
-  group.visible = false;
-  botRoot.add(group);
-
-  // `feetPrev`/`feetCur` and the yaw pair are the bot's pose at the last two
-  // world-tick boundaries (`capturePresentationTick`), which is what the frame
-  // blends between: a raw tick position drawn at a display rate above 30 Hz
-  // is a man stepping four times a metre, and it read as blur.
-  vis = {
-    group, rig: null, want: null, lastSpeed: 0, lastPos: null,
-    feetPrev: { x: 0, y: 0, z: 0 }, feetCur: { x: 0, y: 0, z: 0 },
-    yawPrev: 0, yawCur: 0, snapped: false,
-  };
-  botVisuals.set(bot.playerId, vis);
-
-  const weapon = bot.kitPrimary ?? BOT_WEAPON;
-  let [pair, gaits] = await Promise.all([
-    botPosePair(soldierName, weapon),
-    botGaitClips(weapon),
-  ]);
-  if (!pair && weapon !== BOT_WEAPON) {
-    [pair, gaits] = await Promise.all([botPosePair(soldierName, BOT_WEAPON), botGaitClips(BOT_WEAPON)]);
-  }
-  if (!pair) return vis;
-
-  const scene = skeletonClone(pair.scene);
-  bindDynamicShading(scene);
-  const rig = buildBotGaitRig(scene, pair.animations, gaits);
-  group.add(scene);
-  vis.rig = { scene, mixer: rig.mixer, families: rig.families };
-
-  return vis;
-}
-
-function updateBotVisuals(dt) {
-  if (!referee.bots.length) return;
-  for (const bot of referee.bots) {
-    const vis = botVisuals.get(bot.playerId);
-    if (!vis?.rig) continue;
-
-    const pos = bot.getPosition();
-    if (!pos || !Number.isFinite(pos[0])) continue;
-
-    // A downed bot stays hidden until its respawn timer puts it back; a
-    // seated one rides inside its hull.
-    if (world?.armorOf(bot.playerId)?.destroyed || bot.vehicle) { vis.group.visible = false; continue; }
-
-    vis.group.visible = true;
-    // This frame's blend of the last two tick poses, the same `presentAlpha`
-    // the local body and the driven vehicle draw at (`capturePresentationTick`).
-    const fp = vis.feetPrev, fc = vis.feetCur;
-    const a = vis.snapped ? presentAlpha : 1;
-    vis.group.position.set(
-      fp.x + (fc.x - fp.x) * a,
-      fp.y + (fc.y - fp.y) * a,
-      fp.z + (fc.z - fp.z) * a);
-
-    // The body's yaw is the soldier's yaw and nothing else, exactly as the
-    // local third-person body is drawn (`footBody.scene.quaternion`, the
-    // "three placement facts" comment): the pose glb is built in the page's
-    // own forward convention. The baked half turn the remote renderer applies
-    // to a wire pose does NOT belong here; with it in, a bot walked to its
-    // objective facing the way it had come.
-    const dyaw = wrapYaw(vis.yawCur - vis.yawPrev);
-    const yaw = vis.yawPrev + dyaw * a;
-    const q = vis.group.quaternion;
-    q.setFromEuler(new THREE.Euler(0, yaw, 0, 'YXZ'));
-
-    // The gait speed from the drawn position's change, one pole.
-    const drawn = vis.group.position;
-    if (!vis.lastPos) vis.lastPos = [drawn.x, drawn.y, drawn.z];
-    const dx = drawn.x - vis.lastPos[0];
-    const dz = drawn.z - vis.lastPos[2];
-    const speed = dt > 0 ? Math.hypot(dx, dz) / dt : 0;
-    vis.lastSpeed = vis.lastSpeed + (speed - vis.lastSpeed) * Math.min(1, dt * 6);
-    vis.lastPos[0] = drawn.x; vis.lastPos[1] = drawn.y; vis.lastPos[2] = drawn.z;
-
-    // The gait family follows the bot's live speed and stance, the same rule
-    // remote soldiers use (`remoteClipFamily`), resolved against what bound.
-    const want = botClipFamily(vis.lastSpeed, bot.stance ?? 'stand',
-                               family => !!vis.rig.families[family]);
-    if (want !== vis.want) {
-      vis.want = want;
-      for (const [family, actions] of Object.entries(vis.rig.families)) {
-        for (const a of actions) {
-          a.setEffectiveWeight(family === want ? 1 : 0);
-          if (family === want) {
-            a.paused = false;
-            a.reset();
-            a.play();
-          }
-        }
-      }
-    }
-    vis.rig.mixer.update(dt);
-  }
-}
-
-/** Wrap to [-pi, pi], for the yaw blend between two tick poses. */
-function wrapYaw(a) {
-  return Math.atan2(Math.sin(a), Math.cos(a));
-}
-
-/**
- * Per world tick, from `capturePresentationTick`: every bot's finished tick
- * pose becomes `feetCur`/`yawCur`, and the previous one `feetPrev`/`yawPrev`,
- * so `updateBotVisuals` can blend by the frame's alpha. A bot that has just
- * (re)spawned snaps rather than sliding across the level from its last
- * position.
- */
-function captureBotPresentationTick(snap) {
-  if (!referee.bots?.length) return;
-  for (const bot of referee.bots) {
-    const vis = botVisuals.get(bot.playerId);
-    if (!vis) continue;
-    const s = world?.player(bot.playerId)?.soldier;
-    if (!s) continue;
-    const c = vis.feetCur, p = vis.feetPrev;
-    const jump = vis.snapped && Math.hypot(s.x - c.x, s.z - c.z) > 8;
-    if (vis.snapped && !snap && !jump) {
-      p.x = c.x; p.y = c.y; p.z = c.z;
-      vis.yawPrev = vis.yawCur;
-    }
-    c.x = s.x; c.y = s.y; c.z = s.z;
-    vis.yawCur = s.yaw;
-    if (!vis.snapped || snap || jump) {
-      p.x = c.x; p.y = c.y; p.z = c.z;
-      vis.yawPrev = vis.yawCur;
-    }
-    vis.snapped = true;
-  }
-}
-
-function disposeBotVisuals() {
-  for (const vis of botVisuals.values()) {
-    botRoot.remove(vis.group);
-    if (vis.rig?.scene) disposeFootBodyScene(vis.rig.scene);
-  }
-  botVisuals.clear();
 }
 
 function setOnFoot(on) {
@@ -14800,10 +14570,10 @@ async function show(entry) {
   combatArea = world.combatArea;
   vehicleDamage = world.vehicleDamage;
   // Bot visuals: create the root group now that `scene` exists.
-  if (!botRoot) {
-    botRoot = new THREE.Group();
-    botRoot.name = 'bot-renderers';
-    scene.add(botRoot);
+  if (!botBodies.botRoot) {
+    botBodies.botRoot = new THREE.Group();
+    botBodies.botRoot.name = 'bot-renderers';
+    scene.add(botBodies.botRoot);
   }
   // Bots spawn on the player's team. The call waits for `buildCollider`
   // below: `spawnBotsForLevel` builds the nav grid from `world.collider` and
@@ -15610,7 +15380,7 @@ function frame(dt) {
   const step = world?.step(dt) ?? { ticks: 0, bodyTicks: 0, alpha: 0, players: {}, damage: [] };
   // Bot AI runs after the world step, so bots read the player's post-step pose.
   referee.tick(dt);
-  updateBotVisuals(dt);
+  botBodies.updateBotVisuals(dt);
   syncVehicleSpawnOwnership();
   updateCaptureHud(step.ticks);
   referee.captureTick(step.ticks / 30);
@@ -16102,9 +15872,9 @@ if (params.has('shots')) {
     respawnIn: +((b._respawnIn ?? 0)).toFixed(2),
     lookX: b.lookX, lookY: b.lookY,
     blockedSpawn: world?.player(b.playerId)?.spawn?.blockedReason ?? null,
-    rigFamilies: Object.keys(botVisuals.get(b.playerId)?.rig?.families ?? {}),
-    clipFamily: botVisuals.get(b.playerId)?.want ?? null,
-    mixerTime: +(botVisuals.get(b.playerId)?.rig?.mixer?.time ?? 0).toFixed(2),
+    rigFamilies: Object.keys(botBodies.botVisuals.get(b.playerId)?.rig?.families ?? {}),
+    clipFamily: botBodies.botVisuals.get(b.playerId)?.want ?? null,
+    mixerTime: +(botBodies.botVisuals.get(b.playerId)?.rig?.mixer?.time ?? 0).toFixed(2),
     lastInput: world?.player(b.playerId)?.last?.input ?? null,
     lookApplied: world?.player(b.playerId)?.lookApplied ?? null,
     soldier: world?.player(b.playerId)?.soldier
