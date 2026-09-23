@@ -187,6 +187,8 @@ import { createSpawning } from './spawning.js';
 import { createMapSurfaces } from './map-surfaces.js';
 import { createTicketFeed } from './ticket-feed.js';
 import { createHudFeed } from './hud-feed.js';
+import { createVehicleHud } from './vehicle-hud.js';
+import { createSoldierHud } from './soldier-hud.js';
 import { createHandWeapon } from './hand-weapon.js';
 import { createSeatPose } from './seat-pose.js';
 import { createFootBody } from './foot-body.js';
@@ -653,7 +655,7 @@ const localPlayer = createLocalPlayer({
   get buildSpawnFlags() { return spawning.buildSpawnFlags; }, get camera() { return camera; },
   get captured() { return pageInput.captured; },
   get clampMobileInput() { return touchControls.clampMobileInput; },
-  get clearVehicleHud() { return hudFeed.clearVehicleHud; },
+  get clearVehicleHud() { return vehicleHud.clearVehicleHud; },
   get collider() { return level.collider; }, get damageTables() { return level.damageTables; },
   get deployActive() { return deployScreen.deployActive; },
   get deployTeamId() { return spawning.deployTeamId; },
@@ -661,7 +663,7 @@ const localPlayer = createLocalPlayer({
   get disposeSeatPose() { return seatPose.disposeSeatPose; }, get effects() { return effects; },
   get EMPTY_KEYS() { return soldierView.EMPTY_KEYS; },
   get feedMobileTurretAim() { return touchControls.feedMobileTurretAim; },
-  get feedVehicleHud() { return hudFeed.feedVehicleHud; },
+  get feedVehicleHud() { return vehicleHud.feedVehicleHud; },
   get footLookPair() { return localLook.footLookPair; },
   get footView3p() { return soldierView.footView3p; },
   get getTouchHudText() { return getTouchHudText; },
@@ -694,7 +696,7 @@ const localPlayer = createLocalPlayer({
   get syncFootView() { return soldierView.syncFootView; },
   get toggleFullMap() { return mapSurfaces.toggleFullMap; },
   get touchFlying() { return pageInput.touchFlying; },
-  get triggerHitIndicator() { return hudFeed.triggerHitIndicator; },
+  get triggerHitIndicator() { return soldierHud.triggerHitIndicator; },
   get updateMobileControls() { return touchControls.updateMobileControls; },
   get updateSeatPoseVisibility() { return seatPose.updateSeatPoseVisibility; },
   get vehicleInput() { return vehicleHits.vehicleInput; }, get vehicles() { return vehicles; },
@@ -823,7 +825,7 @@ function buildHullDrive(instance) {
 
 const wrecks = createVehicleWrecks({
   get bindDynamicShading() { return level.bindDynamicShading; }, get bust() { return bust; },
-  get clearHitIndicator() { return hudFeed.clearHitIndicator; },
+  get clearHitIndicator() { return soldierHud.clearHitIndicator; },
   get collider() { return level.collider; }, get dieInWreck() { return localPlayer.dieInWreck; },
   get disposeEngineAudio() { return pageAudio.disposeEngineAudio; },
   get effects() { return effects; }, get exitPoseManned() { return vehicleEntry.exitPoseManned; },
@@ -865,7 +867,7 @@ const vehicleHits = createVehicleHits({
   get collider() { return level.collider; }, get currentRoot() { return level.currentRoot; },
   get damageLanded() { return referee.damageLanded; },
   get damageVisuals() { return wrecks.damageVisuals; },
-  get feedVehicleHud() { return hudFeed.feedVehicleHud; }, get guns() { return guns; },
+  get feedVehicleHud() { return vehicleHud.feedVehicleHud; }, get guns() { return guns; },
   get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get occupancy() { return localPlayer.occupancy; },
   get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
   get showDamageTier() { return wrecks.showDamageTier; },
@@ -1013,45 +1015,55 @@ function fireStateFor(node) {
   return state;
 }
 const hudFeed = createHudFeed({
+  get bust() { return bust; }, get deployActive() { return deployScreen.deployActive; },
+  get drawFullMap() { return mapSurfaces.drawFullMap; }, get hud() { return hud; },
+  get hudPaths() { return hudPaths; },
+  get paintDeploySoon() { return deployScreen.paintDeploySoon; },
+  get updateHud() { return updateHud; },
+  get updateSeatPoseVisibility() { return seatPose.updateSeatPoseVisibility; },
+});
+const vehicleHud = createVehicleHud({
   get aircraft() { return localPlayer.aircraft; }, get bust() { return bust; },
   get camera() { return camera; }, get car() { return localPlayer.car; },
-  get combatArea() { return level.combatArea; }, get combatFrame() { return combatFrameNow(); },
   get crosshairEl() { return soldierKit.crosshairEl; },
-  get currentDir() { return level.currentDir; }, get DEG_TO_RAD() { return soldierKit.DEG_TO_RAD; },
-  get deployActive() { return deployScreen.deployActive; },
-  get deployKit() { return spawning.deployKit; },
-  get deployTeamId() { return spawning.deployTeamId; },
-  get drawFullMap() { return mapSurfaces.drawFullMap; },
-  get feedFlagIconVars() { return ticketFeed.feedFlagIconVars; },
-  get feedTicketVars() { return ticketFeed.feedTicketVars; },
-  get fireStateFor() { return fireStateFor; },
+  get DEG_TO_RAD() { return soldierKit.DEG_TO_RAD; }, get fireStateFor() { return fireStateFor; },
   get forgetOccupiedVehicle() { return room.forgetOccupiedVehicle; },
-  get fullmapBox() { return mapSurfaces.fullmapBox; },
-  get handSlot() { return soldierKit.handSlot; },
-  get handWeapon() { return soldierKit.handWeapon; }, get hud() { return hud; },
-  get hudPaths() { return hudPaths; }, get isZoomed() { return soldierKit.isZoomed; },
-  get itemsLocked() { return soldierKit.itemsLocked; },
-  get kitLoadout() { return soldierKit.kitLoadout; },
-  get kitWeaponSlots() { return soldierKit.kitWeaponSlots; },
-  get loadouts() { return soldierKit.loadouts; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
+  get fullmapBox() { return mapSurfaces.fullmapBox; }, get gameHud() { return hudFeed.gameHud; },
+  get handWeapon() { return soldierKit.handWeapon; }, get hudPaths() { return hudPaths; },
+  get isZoomed() { return soldierKit.isZoomed; },
+  get itemsLocked() { return soldierKit.itemsLocked; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
   get mannedActive() { return localPlayer.mannedActive; },
   get mannedGuns() { return localPlayer.mannedGuns; },
   get netOccupiedVehicleId() { return room.netOccupiedVehicleId; },
   get occupancy() { return localPlayer.occupancy; },
   get occupiedVehicleDamage() { return vehicleHits.occupiedVehicleDamage; },
   get occupiedVehicleIdFor() { return room.occupiedVehicleIdFor; },
+  get optOnFoot() { return optOnFoot; }, get renderer() { return renderer; },
+  get roomClient() { return room.roomClient; }, get roomJoined() { return room.roomJoined; },
+  get soldier() { return localPlayer.soldier; },
+  get vehicleGuns() { return localPlayer.vehicleGuns; }, get view() { return localPlayer.view; },
+  get world() { return level.world; },
+});
+const soldierHud = createSoldierHud({
+  get combatArea() { return level.combatArea; }, get combatFrame() { return combatFrameNow(); },
+  get currentDir() { return level.currentDir; }, get deployKit() { return spawning.deployKit; },
+  get deployTeamId() { return spawning.deployTeamId; },
+  get feedFlagIconVars() { return ticketFeed.feedFlagIconVars; },
+  get feedTicketVars() { return ticketFeed.feedTicketVars; },
+  get gameHud() { return hudFeed.gameHud; }, get handSlot() { return soldierKit.handSlot; },
+  get handWeapon() { return soldierKit.handWeapon; },
+  get isZoomed() { return soldierKit.isZoomed; },
+  get kitLoadout() { return soldierKit.kitLoadout; },
+  get kitWeaponSlots() { return soldierKit.kitWeaponSlots; },
+  get loadouts() { return soldierKit.loadouts; }, get occupancy() { return localPlayer.occupancy; },
   get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
-  get paintDeploySoon() { return deployScreen.paintDeploySoon; },
   get playSoldierHurtSound() { return pageAudio.playSoldierHurtSound; },
-  get renderer() { return renderer; }, get roomClient() { return room.roomClient; },
-  get roomJoined() { return room.roomJoined; }, get soldier() { return localPlayer.soldier; },
+  get soldier() { return localPlayer.soldier; },
   get soldierArmor() { return localPlayer.soldierArmor; },
   get soldierDead() { return localPlayer.soldierDead; },
-  get teamNation() { return mapSurfaces.teamNation; }, get updateHud() { return updateHud; },
-  get updateSeatPoseVisibility() { return seatPose.updateSeatPoseVisibility; },
-  get vehicleGuns() { return localPlayer.vehicleGuns; }, get view() { return localPlayer.view; },
+  get teamNation() { return mapSurfaces.teamNation; },
   get WEAPON_ICON_VARS() { return soldierKit.WEAPON_ICON_VARS; },
-  get weaponBarUntil() { return soldierKit.weaponBarUntil; }, get world() { return level.world; },
+  get weaponBarUntil() { return soldierKit.weaponBarUntil; },
 });
 // The level's headless simulation core is `level.world` (level-load.js); the
 // page feeds it the local player's input every frame (frame() below).
@@ -1743,7 +1755,7 @@ function frame(dt) {
   // so the added calls just rewrite the same `Vehicle/*` values every tick
   // until a future track wires live vehicle damage; the painter's own rule 7
   // still gates the actual repaint on whether any of it changed.
-  if (localPlayer.occupancy) hudFeed.feedVehicleHud();
+  if (localPlayer.occupancy) vehicleHud.feedVehicleHud();
   effects.firstPerson = guns.firstPerson;
   effects.advance(dt);
   // The ear is the camera's, the same listener every other voice on the page
@@ -1864,11 +1876,11 @@ function frame(dt) {
   // The seat dots ask about live occupancy every frame: a room player can
   // climb into (or out of) this vehicle at any moment, and the feed's own
   // signature memo makes the steady state a single string compare.
-  hudFeed.feedSeatDots();
-  hudFeed.updateSoldierHud(dt);
+  vehicleHud.feedSeatDots();
+  soldierHud.updateSoldierHud(dt);
   // Every frame, not just an on-foot one: a seat has a crosshair too, and it
   // is `crosshairAim` that decides whose.
-  hudFeed.updateCrosshair();
+  vehicleHud.updateCrosshair();
   hudFeed.gameHud.paint(hudW, hudH);
   // After the render: the sun's screen position comes from the camera the
   // frame was just drawn with. A no-op on every vanilla level (see
@@ -1959,7 +1971,7 @@ const testHooks = installTestHooks({
   get collectEntryPoints() { return vehicleEntry.collectEntryPoints; },
   get collider() { return level.collider; }, get combatArea() { return level.combatArea; },
   get combatFrame() { return combatFrameNow(); },
-  get crosshairAim() { return hudFeed.crosshairAim; },
+  get crosshairAim() { return vehicleHud.crosshairAim; },
   get crosshairEl() { return soldierKit.crosshairEl; },
   get currentDir() { return level.currentDir; },
   get cycleKitWeapon() { return soldierKit.cycleKitWeapon; },
