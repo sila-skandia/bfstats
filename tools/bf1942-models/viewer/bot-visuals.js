@@ -13,7 +13,8 @@ import { FAMILY_CLIPS, remoteClipFamily } from './remote-gait.js';
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `bindDynamicShading`, `bots`, `bust`, `disposeFootBodyScene`,
- * `footBodyClips`, `footBodyLoader`, `MODELS_BASE`, `presentAlpha`, `world`.
+ * `footBodyClips`, `footBodyLoader`, `MODELS_BASE`, `presentAlpha`, `scene`,
+ * `world`.
  */
 export function createBotVisuals(page) {
   const botBodies = {};
@@ -32,6 +33,15 @@ export function createBotVisuals(page) {
 
   /** The root group all bot visuals hang off. Added to scene in show(). */
   botBodies.botRoot = null;
+  /** Bot visuals: create the root group now that `scene` exists. Every level
+   *  load asks (`show()`); the first one builds it and the rest keep it. */
+  botBodies.ensureRoot = () => {
+    if (!botBodies.botRoot) {
+      botBodies.botRoot = new THREE.Group();
+      botBodies.botRoot.name = 'bot-renderers';
+      page.scene.add(botBodies.botRoot);
+    }
+  };
 
   /** Per-bot visual state: { group, rig, want, lastSpeed } */
   const botVisuals = new Map();
