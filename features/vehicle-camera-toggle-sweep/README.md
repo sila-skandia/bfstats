@@ -49,12 +49,40 @@
   cycle to `[cockpit]`; back on restores the four.
 - **Corsair**: cockpit → **nose** → chase 17.3 m → front 11.0 m → fly-by → cockpit.
   Nose: 4.47 m from the Camera node, offset matches `R(q)·(0, −0.4, −4.45)` to
-  0.01 m, interior off / fuselage on, `guns.firstPerson` false.
+  0.01 m, interior off / fuselage on. (`guns.firstPerson` was false here;
+  corrected below.)
 - **Willy passenger** (seat 2, its own `WillyCamera` at 0.3/0.6/1.0): the full four.
 - Every E exit leaves `view` null; no page errors across the run.
 - `python3 -m unittest tests.test_seat_view tests.test_chase_camera
   tests.test_soldier_camera tests.test_con tests.test_spin tests.test_flight`:
   200 OK.
+
+## The nose cam's muzzle flash (2026-09-23)
+
+Reported from play: firing the SBD in the nose cam drew a large, static,
+washed-out flash across the view; retail's is smaller and a brighter yellow.
+
+Every emitter involved is the game's own `e_MuzzHeavy` bundle
+(`Objects/Effects/e_MuzzHeavy/effects.con`), nothing invented:
+`em_MuzzHeavy` (`showInThirdPerson`, the `MuzzHeavy_m1` mesh ramping
+0.12 -> 9.4), `em_MuzzHeavy_glow` (third person, 0.43 m sprite) and
+`em_1P_MuzzHeavy` (`showInFirstPerson`, a 0.4 m additive `e_MuzzAssult_o`
+sprite). The bug was which set played. `pilot()` took `guns.firstPerson`
+from `aircraft.firstPerson`, i.e. whether the cockpit interior is drawn, so
+the nose cam fired the third-person mesh; at 12 rps against a 0.07 s life a
+held burst keeps it lit continuously, and capped at `FLASH_RAMP_MAX` it is a
+5 m cone reaching past the eye.
+
+The engine's first-person switch is the seat camera's view mode 3 (SEAT-10),
+and the nose cam is mode 3 (`VehicleCamera.modeId`). `pilot()` and `manned()`
+now use `view.inside`. Measured on Midway's SBD-T over a 60-frame burst:
+cockpit and nose both light only `em_1P_MuzzHeavy`; chase lights only the
+third-person pair.
+
+Still open, and it is the placement question below: the SBD's cowl muzzles
+are 1.9 m *behind* the nose-cam eye (`SBDCamera_For_PCO0` + `OutsideHudOffset
+0/-0.1/4`), so the 1P sprite is correctly chosen but not in frame. If retail
+shows it in the nose cam, the retail eye is behind the muzzles.
 
 ## Open
 

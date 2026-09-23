@@ -18,10 +18,18 @@
 //    beyond, the signs following the drive direction.
 //  * `EntryTankMoveTo::execute` 0x08622e80: arrival inside the move's radius
 //    resets the controls; `CommonControls::actionStatusDecision` 0x0860fbe0
-//    drives forward for a target ahead of the beam and runs a map box test
-//    behind it to pick reverse or a turn (the box branches are not read: the
-//    viewer reverses for a target behind within three hull lengths); the
-//    `maxSpeed` handed to the law is the `IPIMobile` +0x14 -> +8 term,
+//    drives forward for a target ahead of the beam (`forward . dir >= 0`);
+//    behind it, for a plain move (mode 0), `CommonControls::getBox`
+//    0x08612060 asks the pathfinder for the free box around the hull on its
+//    map (`IAIPathfinding` +0x3c; +0x78 first checks the position is valid,
+//    else the mobile's nearest valid point), `getIntersection` finds where
+//    the heading leaves that box and `checkLineAgainstObjects` shortens
+//    that run by the first object on it: when the run is no longer than
+//    the mobile template's turn radius (+0xc, `aiTemplatePlugIn.turnRadius`),
+//    the angle exceeds 1.2566 (72 deg) and the box's shorter side is at
+//    least half the turn radius, the wanted angle is flipped by pi (the
+//    hull backs toward the target); otherwise it turns. The `maxSpeed`
+//    handed to the law is the `IPIMobile` +0x14 -> +8 term,
 //    `aiTemplatePlugIn.maxSpeed` (Sherman 16, Willy 25, a soldier 5).
 //  * `BBChange::calculateUrgency` 0x0855e0c0 with `calculateVehicleUrgency`
 //    0x08583b10 and its internals 0x08584310 / 0x08584580 / 0x08585750: a
@@ -68,14 +76,30 @@ export const TANK = {
   turnLowThrottle: 0.4,
   turnVelocityLimit: 0.3,
   turnKeepAngle: 150 * DEG,
-  /** `CommonControls::actionStatusDecision` 0x0860fbe0 drives forward when
-   *  the target is ahead of the hull's beam (`forward . dir >= 0`); behind
-   *  it a box test against the map decides between reversing and turning
-   *  (its inner branches are not read: the viewer reverses while the target
-   *  lies behind within this many hull lengths, INVENTION). */
-  reverseWithin: 3.0,
+  /** `CommonControls::actionStatusDecision` 0x0860fbe0, mode 0: a target
+   *  behind the beam is backed toward when the free run along the heading
+   *  is no longer than the turn radius, the angle passes 72 deg (1.2566)
+   *  and the free box's shorter side is at least half the turn radius. */
+  reverseAngle: 1.2566371,
+  reverseBoxFraction: 0.5,
+  /** `aiTemplatePlugIn.turnRadius` when the page hands none (Sherman 5). */
+  defaultTurnRadius: 5.0,
   /** A soldier's `maxSpeed` term. */
   soldierMaxSpeed: 5.0,
+};
+
+/** `BBChangeTeleport::calculateUrgency` factors, by where the bot sits. */
+export const TELEPORT = {
+  /** A seat under an occupied root: root / own seat / other seats. */
+  seatUnderDriver: { root: 0.5, self: 1.0, other: 0.5 },
+  seatShip: { root: 1.0, self: 0.5, other: 0.65 },
+  seatLand: { root: 1.0, self: 0.5, other: 0.7 },
+  seatAir: { root: 1.5, self: 0.5, other: 0.5 },
+  root: { root: 1.0, self: 1.0, other: 0.5 },
+  urgencyScale: 4.0,
+  pendingUrgency: 6.0,
+  noOrderUrgency: 2.0,
+  noOrderSplit: 0.05,
 };
 
 export const CHANGE = {
@@ -84,8 +108,8 @@ export const CHANGE = {
   moveFactor: 4.0,
   moveFactorOccupied: 2.5,
   upsideDownCos: 0.6914,
-  /** The environment query's radius (INVENTION: not read). */
-  searchRadius: 100.0,
+  /** `BFEnvironment::getHardware` 0x085e2fa0: the 50 m candidate radius. */
+  searchRadius: 50.0,
   approachFrom: 12.5,
   approachTo: 6.25,
   useWithin: 12.375,
@@ -110,7 +134,8 @@ function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
  * maps it onto the vehicle's yaw channel).
  */
 export function tankControl({ forward, velocity, toTarget, maxSpeed, yawRate = 0,
-                              slopeSum = 0, lastLeg = false, lastTurn = 0, hullLength = 6 }) {
+                              slopeSum = 0, lastLeg = false, lastTurn = 0,
+                              freeAhead = Infinity, boxShort = Infinity, turnRadius = TANK.defaultTurnRadius }) {
   const fLen = Math.hypot(forward[0], forward[1]) || 1;
   const fx = forward[0] / fLen, fz = forward[1] / fLen;
   const tLen = Math.hypot(toTarget[0], toTarget[1]);
@@ -125,13 +150,15 @@ export function tankControl({ forward, velocity, toTarget, maxSpeed, yawRate = 0
   const steerDamp = clamp(yawRate / (TANK.speedDamping * Math.abs(angle) + 1), -TANK.dampingCap, TANK.dampingCap);
   const steer = clamp(angle - steerDamp, -1, 1);
   if (Math.abs(angle) > limit) {
-    // `actionStatusDecision`: a close target behind the beam is reversed
-    // toward; otherwise the hull turns first (`turnTowardsDirection`): full
-    // lock, high throttle until it moves, then the low throttle. A target
-    // straight behind flips the angle's sign every tick as the hull turns;
-    // the turn keeps its direction until the angle is well inside the half
-    // circle (INVENTION: that hysteresis).
-    const behind = dot < 0 && tLen < TANK.reverseWithin * hullLength;
+    // `actionStatusDecision`: a target behind the beam is backed toward when
+    // the heading's free run on the map is within the turn radius, the
+    // angle passes 72 deg and the free box is at least half a turn radius
+    // across (`driveDecision`); otherwise the hull turns first
+    // (`turnTowardsDirection`): full lock, high throttle until it moves,
+    // then the low throttle. A target straight behind flips the angle's
+    // sign every tick as the hull turns; the turn keeps its direction until
+    // the angle is well inside the half circle (INVENTION: that hysteresis).
+    const behind = driveDecision({ dot, angle, freeAhead, boxShort, turnRadius }).reverse;
     const drive = behind ? -1 : 1;
     let dir = Math.sign(angle) || 1;
     if (lastTurn && Math.abs(angle) > TANK.turnKeepAngle) dir = lastTurn;
@@ -151,18 +178,39 @@ export function tankControl({ forward, velocity, toTarget, maxSpeed, yawRate = 0
 }
 
 /**
- * `calculateVehicleUrgency` for one unit (a soldier on foot included).
- * `strengths` is the unit's weapon strength table by class, `presence` how
- * much of each class is around (the bot's spotted enemies, at least one
- * infantryman: INVENTION), `orderSplit` `[w1, w2]`.
+ * `CommonControls::actionStatusDecision` mode 0: forward for a target ahead
+ * of the beam; behind it, reverse when the free run along the heading
+ * (`freeAhead`, the box edge or the first object) is within the turn
+ * radius, the angle passes 72 deg and the box's shorter side is at least
+ * half the turn radius. Returns `{ reverse, angle }` with the flipped angle.
  */
-export function unitUrgency({ health = 1, strengths = {}, presence = { Infantry: 1 }, maxSpeed = 0,
+export function driveDecision({ dot, angle, freeAhead = Infinity, boxShort = Infinity,
+                                turnRadius = TANK.defaultTurnRadius }) {
+  if (dot >= 0) return { reverse: false, angle };
+  const reverse = freeAhead <= turnRadius && Math.abs(angle) > TANK.reverseAngle
+    && boxShort >= TANK.reverseBoxFraction * turnRadius;
+  if (!reverse) return { reverse: false, angle };
+  const flipped = (angle < 0 ? -1 : 1) * Math.PI - angle;
+  return { reverse: true, angle: flipped };
+}
+
+/**
+ * `calculateVehicleUrgency` for one unit (a soldier on foot included).
+ * `fire` is the unit's `calculateFireStrength` (bot-strength.js
+ * `fireStrength`); the older `strengths` x `presence` sum stands in only
+ * when no `fire` is given. `orderSplit` is `[w1, w2]`.
+ */
+export function unitUrgency({ health = 1, fire = null, strengths = {}, presence = { Infantry: 1 }, maxSpeed = 0,
                               engineHeat = 1, occupiedByBot = false, value = 0,
                               orderSplit = [0.5, 0.5], spawnAge = Infinity, leftAge = Infinity }) {
-  let fire = 0;
-  for (const [type, s] of Object.entries(strengths)) fire += (s ?? 0) * (presence[type] ?? 0);
+  let fireTerm = fire;
+  if (fireTerm === null || fireTerm === undefined) {
+    fireTerm = 0;
+    for (const [type, s] of Object.entries(strengths)) fireTerm += (s ?? 0) * (presence[type] ?? 0);
+  }
+  const fire_ = fireTerm;
   const move = engineHeat * maxSpeed * (occupiedByBot ? CHANGE.moveFactorOccupied : CHANGE.moveFactor);
-  let u = sCurve(clamp(health, 0, 1)) * (fire * (orderSplit[0] + CHANGE.fireBias) + move * orderSplit[1]) + value;
+  let u = sCurve(clamp(health, 0, 1)) * (fire_ * (orderSplit[0] + CHANGE.fireBias) + move * orderSplit[1]) + value;
   if (leftAge < CHANGE.unitRampSeconds) u *= leftAge / CHANGE.unitRampSeconds;
   if (spawnAge < CHANGE.unitRampSeconds) u *= spawnAge / CHANGE.unitRampSeconds;
   return u;
@@ -194,4 +242,38 @@ export function changeUrgency({ staying, candidates, radius = CHANGE.searchRadiu
   if (bestU <= stay) return { urgency: 0, best: null };
   const x = stay > 0 ? 0.5 * bestU / stay : 0.5 * bestU;
   return { urgency: decleiningSlope(x) * mod * CHANGE.urgencyScale * ramp * areaFactor, best };
+}
+
+/**
+ * `BBChangeTeleport::calculateUrgency`: the seat swap within one hull.
+ * `where` is `'root'` (the bot drives), `'seatUnderDriver'`, `'seatAir'`,
+ * `'seatLand'` or `'seatShip'`; `rootU` / `selfU` the root's and the bot's
+ * own seat's `calculateVehicleUrgency`; `seats` the other seats as `{ id,
+ * u }` (free ones); `radio` the message strength, `orderFactor` the bot's
+ * skill factor for seats other than its own (1 with an order), `pending`
+ * a change into another object still under way, `attackSplit` w1,
+ * `hasPlan` whether a plan runs. Returns `{ urgency, best }`, `best` null
+ * when the bot keeps its seat.
+ */
+export function teleportChangeUrgency({ where = 'root', rootU = 0, selfU = 0, seats = [], radio = 0,
+                                        orderFactor = 1, pending = false, attackSplit = 0.5, hasPlan = true }) {
+  const f = TELEPORT[where] ?? TELEPORT.root;
+  const r = 1 - radio;
+  let best = null, bestU = selfU * f.self * r;
+  const own = bestU;
+  if (where !== 'root') {
+    const u = rootU * f.root * r * orderFactor;
+    if (u > bestU) { bestU = u; best = { id: 'root', u }; }
+  }
+  for (const seat of seats) {
+    const u = (seat.u ?? 0) * f.other * r * orderFactor;
+    if (u > bestU) { bestU = u; best = { id: seat.id, u }; }
+  }
+  if (!best) {
+    if (pending) return { urgency: TELEPORT.pendingUrgency, best: null };
+    if (attackSplit < TELEPORT.noOrderSplit && !hasPlan) return { urgency: TELEPORT.noOrderUrgency, best: null };
+    return { urgency: 0, best: null };
+  }
+  const x = own > 0 ? 0.5 * bestU / own : 0.5 * bestU;
+  return { urgency: decleiningSlope(x) * TELEPORT.urgencyScale, best };
 }
