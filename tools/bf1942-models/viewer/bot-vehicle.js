@@ -276,7 +276,8 @@ export function boxExit(min, max, d, p) {
 /**
  * `checkLineAgainstObjects` 0x0860f7c0: the run `run` (x/z) from `pos`,
  * shortened to the first object circle it enters (`objects` `{x, z, r}`,
- * the bot's nearby list, bot vtable +0x124). False when the run is shorter
+ * the bot's potential obstacles, `BotMain::getPotentialObstacles` 0x0852d790
+ * through bot vtable +0x124, each at its Physical radius). False when the run is shorter
  * than the hull's own `radius`, when an object is entered inside that
  * radius, or when the hull already stands in one. Returns `{ ok, x, z,
  * dist }` (the shortened run and its length).
