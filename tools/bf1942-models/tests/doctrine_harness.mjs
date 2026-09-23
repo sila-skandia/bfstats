@@ -232,4 +232,21 @@ w6.units.set('s1_0', { type: 'Plane', air: true, radius: 10, mounted: true, grou
 w6.cmd.update(2, base({ s1_0: [100, 80, -100] }));
 const air = { leader: w6.cmd.waypointsOf('s1_0')?.kind, followers: ['s1_1', 's1_2', 's1_3'].map(id => w6.cmd.waypointsOf(id)?.kind) };
 
-process.stdout.write(JSON.stringify({ saiEquivalent, closeTo, contract, spec, squad, hold, board, driverLeads, air }));
+// A follower riding another hull 40 m off gets out; one at the wheel of his
+// own hull 300 m behind makes the leader hold.
+const exited = [];
+const w7 = squadWorld({ seats: [
+  { id: 'K:driver', vehicleId: 'K', seatId: 'driver', isRoot: true, drives: true, kind: 'tank', pos: [100, 0, -140], entry: [102, -140], entryRadius: 2.5, occupiedBy: null },
+  { id: 'K:gunner', vehicleId: 'K', seatId: 'gunner', isRoot: false, drives: false, kind: 'tank', pos: [100, 0, -140], entry: [98, -140], entryRadius: 2.5, occupiedBy: 's1_1' },
+  { id: 'L:driver', vehicleId: 'L', seatId: 'driver', isRoot: true, drives: true, kind: 'ground', pos: [100, 0, -400], entry: [102, -400], entryRadius: 2.5, occupiedBy: 's1_4' },
+  { id: 'M:driver', vehicleId: 'M', seatId: 'driver', isRoot: true, drives: true, kind: 'ground', pos: [100, 0, -100], entry: [102, -100], entryRadius: 2.5, occupiedBy: 's1_5' },
+] });
+w7.cmd.actuators.exit = id => exited.push(id);
+w7.cmd.update(2, base({ s1_1: [100, 0, -140], s1_4: [100, 0, -400], s1_5: [100, 0, -100] }));
+const leave = { kind: w7.cmd.waypointsOf('s1_1')?.kind, exited: exited.slice(),
+                // Squad 2: s1_4 and s1_5 both drive; s1_4 leads (first), s1_5
+                // at the wheel 300 m off makes him hold.
+                leader2: w7.cmd.doctrines[1].squads[1].leader, leader2Kind: w7.cmd.waypointsOf('s1_4')?.kind,
+                leaves: w7.cmd.doctrines[1].counts.leaveOrders };
+
+process.stdout.write(JSON.stringify({ saiEquivalent, closeTo, contract, spec, squad, hold, board, driverLeads, air, leave }));
