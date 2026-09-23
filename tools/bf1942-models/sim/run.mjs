@@ -126,7 +126,7 @@ async function runMatch(a) {
     `kills Axis ${m.kills[1]} / Allies ${m.kills[2]}, deaths per capture ${m.deathsPerCapture ?? '-'}`,
     `vehicles ${m.vehicleUtilisation.vehicles}, mounts ${m.vehicleUtilisation.mounts}, mounted share ${m.vehicleUtilisation.mountedShare}`,
     `vehicle kills ${m.vehicleKills.total} (by Axis ${m.vehicleKills[1]}, by Allies ${m.vehicleKills[2]}, `
-      + `unattributed ${m.vehicleKills.unattributed})`,
+      + `unattributed ${m.vehicleKills.unattributed}), vehicle rounds ${m.vehicleFire?.rounds ?? 0}`,
     `route failures ${m.routeFailures.total}, redeploys ${m.redeploys}, strategy changes ${m.strategyChanges}`
       + `${m.botErrors ? `, BOT ERRORS ${m.botErrors} (see the bot_error events)` : ''}`,
     `doctrine Axis ${summary.doctrine.sides[1]} / Allies ${summary.doctrine.sides[2]}`,

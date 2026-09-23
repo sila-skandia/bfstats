@@ -111,6 +111,27 @@ const recipes = {
       stillMounted: !!b.vehicle, trail: trail.digest('hex'),
     };
   },
+
+  /** The same tank against a frozen soldier 40 m ahead: its guns are the
+   *  page's `GunFire` groups, and the round that lands is billed through
+   *  `applyVehicleHit` (the direct hit on a soldier body, or the splash). */
+  async gun() {
+    const match = await start('el_alamein');
+    const b = bot(match, 'bot_1');
+    const target = match.bots.find(o => o.team !== b.team);
+    mount(match, b, 'Sherman');
+    freezeOthers(match, [b.playerId]);
+    run(match, 1);
+    const h = hullFrame(match, b);
+    plant(match, target, h.x + h.fx * 40, h.z + h.fz * 40, Math.atan2(-h.fx, -h.fz));
+    const armor = match.world.armorOf(target.playerId);
+    run(match, 30, () => armor.destroyed);
+    const kill = eventsOf(match, 'kill').find(e => e.victim === target.playerId) ?? null;
+    return {
+      killed: armor.destroyed, kill, rounds: match.stats.get(b.playerId).vehicleRounds,
+      fired: eventsOf(match, 'vehicle_fire').map(e => `${e.template}:${e.gun}`), t: round(match.clock),
+    };
+  },
 };
 
 const fn = recipes[recipe];
