@@ -567,8 +567,9 @@ Brief O's next change there). 3: touching land, the two tip forms, the ramp.
 4: the route, its points and popping for the beach orders; the approach
 radius stays 5 (INVENTION, the engine's would stall the craft). 5: the
 vehicle groups exporter fix; every level with an `AI.con` in every tree
-re-patched and live. Wake seeds 1..4 first landing 136 / 138 / 164 / 163 s
-(before 213 / none / 200 / 263), no re-boarding loop.
+re-patched and live. Wake seeds 1..4, the first crew out at a beach 155 /
+185 / 153 / 141 s (before 213 / none / 200 / 263), `Landing_Beach`
+neutralised in every seed, no re-boarding loop.
 
 ## Brief O: the engine's strategic map, and the capture drop after the baked maps
 
