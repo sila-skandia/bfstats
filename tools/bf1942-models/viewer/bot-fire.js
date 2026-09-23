@@ -72,7 +72,18 @@
 // The armour-class value vector (`AISettings` +0x98) is read (1, 3, 8, 15,
 // 1, 6) and the harmless threshold (`BotMain` +0x2c) is the 0 both
 // `BotManager` call sites pass to the `BotMain` constructor (0x08497887,
-// 0x08498194). INVENTION, labelled: a target's information security is 1.
+// 0x08498194). A target's information security: an object's own side holds
+// an `InformationReal` (`getSecurity` 0x085e8d10 is `fld1`), the other side
+// an `InformationKnown` (`AIObjectReal::createInformation` 0x085d8ca0) whose
+// security is 1 - SCurve((t - t0) / decay) (0x085e8670), 1 at a sighting and
+// refreshed by `setTime(t, s)` 0x085e8210. The decay (the object's info
+// record +0xc) is not traced: INVENTION, labelled, an enemy's stays 1.
+//
+// The 20 s feedback veto is dead in the retail binary: its only writer,
+// `BBPFireInfantery::createPlan` 0x085a6790, is reached only when
+// `detectAimingFailure` 0x085a3860 is true, and that is `xor eax,eax; ret`
+// (the aircraft's `BBFire3d` feedback is never written either). The read
+// below is kept; nothing fills `vetoed`.
 
 const DEG = Math.PI / 180;
 
