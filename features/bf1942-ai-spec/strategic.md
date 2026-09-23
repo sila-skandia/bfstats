@@ -196,10 +196,17 @@ Allied areas.
 ### 6. The order (`_order`, `WPMoveTo`; AI-70)
 
 The page describes the bot's unit (`unitOf`, PAGE `botStrategicUnit`): its
-search type (`Infantery`, `Tank`, `Car`, `Boat`, `LandingCraft`, `Plane`),
-the test of its own search map (the infantry map on foot, the vehicle map in
-a land vehicle, the water map afloat), its bounding radius (1 on foot, the
-page's vehicle radius mounted) and whether it is mounted or flying.
+search type (`Infantery` on foot; mounted, the name of the hull's own search
+type where the level lists them, `vehicleNumber` into `ai.addSearchType`'s
+list (AI-118): `Tank` for every vanilla land vehicle, jeeps included; else by
+drive kind, `Tank`, `Car`, `Boat`, `LandingCraft`, `Plane`), the test of its
+own search map (the infantry map on foot, the hull's search type's map
+mounted, the water map afloat), its bounding radius (1 on foot, the page's
+vehicle radius mounted) and whether it is mounted or flying. The type's
+`setOrderPosition` is found by its name, either spelling for the infantry
+type (`Infantry` on most levels, `Infantery` on five): the engine keys the
+table by the type's map (`getOrderPos(map, side)` 0x0863e830), so the two
+spellings name one map.
 
 ```
 point = randomizePos(area, 0.8): per axis p2 + rand * W * 0.8 - W / 2, W = 2 (p2 - p1)
