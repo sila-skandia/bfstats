@@ -394,11 +394,23 @@ hull when mounted) is within the flag's radius in 3D:
   players and nobody else getting it, takes it over `timeToGetControl`.
 - **Empty**: held; with `loseControlWhenNotClose` an owned point runs down.
 
-Where the scene carries no value the `ControlPointTemplate` ctor's stands
-(get 5 s, lose 5 s, lose-when-enemy-close on, minimum 1). The extractor
-carries only `timeToGetControl` and `unableToChangeTeam` so far, so vanilla's
-`timeToLoseControl 10` reads as 5. The human's own capture (`capture.js`)
-still runs the old per-player timer.
+The level exporter carries every template field the law reads
+(`timeToGetControl`, `timeToLoseControl`, the four bytes
+`disableIfEnemyInsideRadius`, `disableWhenLosingControl`,
+`loseControlWhenEnemyClose`, `loseControlWhenNotClose`, `minNrToTakeControl`,
+`onlyTakeableByTeam`; AI-115), null where the level keeps the
+`ControlPointTemplate` ctor's value (get 5 s, lose 5 s, lose-when-enemy-close
+on, minimum 1), which the viewer holds. Vanilla sets a 10 s lose time on 85 of
+its 115 placed points (9999 on 21 bases, 15 on 5).
+
+The human is one of the players the law counts, and nothing else takes a
+flag: `capture.js` only reads the flag's state for the HUD (`CAPTURING` while
+his side gets a neutral point, `NEUTRALISING` while an enemy point runs down
+under him, `CONTESTED` while another side stands there and nothing moves for
+his), and the take is `captureTick`'s `onCapture`. Live on El Alamein
+(2026-09-24): the human and an Axis bot on neutral North_outpost hold it
+neutral for 20 s; the human alone takes it in 10 s; an Axis bot joining the
+human on the now-Allied point runs it to neutral in 10 s.
 
 ## Without strategic data
 
