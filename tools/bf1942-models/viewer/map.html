@@ -501,6 +501,7 @@ const touchControls = createTouchControls(bag(
   },
 ));
 const pageConsole = createPageConsole(bag(
+  from(() => comms, `radioToolTip setRadioToolTip`),
   from(() => level, `extras`),
   from(() => localLook, `mouseInput`),
   from(() => mapSurfaces, `bfmap`),
