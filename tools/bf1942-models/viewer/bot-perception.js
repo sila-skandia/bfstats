@@ -10,9 +10,24 @@ import { QUADRANTS, quadrantOf } from './bot-behaviours.js';
 import { TANK } from './bot-vehicle.js';
 import { unitTable } from './bot-strength.js';
 
-/** The world's line-of-sight test between two points. */
+/**
+ * The world's line-of-sight test between two points, skipping the bot's own
+ * unit and the unit its firing target sits in: `collideLineWithWorld`
+ * (environment +0x54) ignores both on a sense ray (`BotMain::sense`
+ * 0x08521cf0, `lineClear` in bot-sense.js). The trigger's line to a target
+ * aims at the target's +1 m, which for a player in a hull is inside that
+ * hull's own collision: with only the bot's unit skipped the ray ended on the
+ * target's fuselage and an AA gunner never let the trigger down on a plane,
+ * whatever its miss (Brief L, 2026-09-24; live on El Alamein, a Spitfire held
+ * 180 m out: miss 0.19 m against a precision of 11.3 m, the line blocked by
+ * the Spitfire itself).
+ */
 export function lineClearSkippingSelf(bot, from, to) {
-  return lineClear(bot.world?.collider, from, to, bot._selfOwner());
+  const skip = [bot._selfOwner()];
+  const target = bot.firingTarget != null ? bot.world?.players?.get?.(bot.firingTarget) : null;
+  const owner = target ? bot.senses?.unitOwnerOf?.(target) : null;
+  if (owner !== null && owner !== undefined && owner !== -1) skip.push(owner);
+  return lineClear(bot.world?.collider, from, to, skip);
 }
 
 /** The collision owner of the hull the bot sits in, -1 on foot: its own
