@@ -20,14 +20,15 @@ import { BOT_BODY_RADIUS, BOT_BODY_HEIGHT, BOT_FIRE_RANGE } from './bot-referee.
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `aircraft`, `applyDamage`, `AUDIO_OFF`, `audioListener`, `botRoundDamage`,
- * `bots`, `bust`, `camera`, `captured`, `car`, `currentDir`, `deployKit`,
- * `deployTeamId`, `ensureFootBody`, `fireStates`, `guns`, `isCollision`,
- * `KITS`, `lineOfSight`, `loader`, `LOCAL_PLAYER`, `MAPS_BASE`,
- * `masterVolume`, `MODELS_BASE`, `modelSoundBuffer`, `optOnFoot`,
- * `optPilot`, `params`, `playSupplyGive`, `soldier`,
- * `SOLDIER_MAX_HP_FALLBACK`, `spawnLayout`, `supplyTarget`, `teamNation`,
- * `vehicleAudio`, `warmSubtree`, `warmups`, `world`.
+ * `aimHeld`, `aircraft`, `applyDamage`, `AUDIO_OFF`, `audioListener`,
+ * `botRoundDamage`, `bots`, `bust`, `camera`, `captured`, `car`,
+ * `clickQueued`, `currentDir`, `deployKit`, `deployTeamId`, `dropClick`,
+ * `ensureFootBody`, `fireStates`, `guns`, `isCollision`, `KITS`,
+ * `lineOfSight`, `loader`, `LOCAL_PLAYER`, `MAPS_BASE`, `masterVolume`,
+ * `MODELS_BASE`, `modelSoundBuffer`, `optOnFoot`, `optPilot`, `params`,
+ * `playSupplyGive`, `soldier`, `SOLDIER_MAX_HP_FALLBACK`, `spawnLayout`,
+ * `supplyTarget`, `teamNation`, `triggerHeld`, `vehicleAudio`,
+ * `warmSubtree`, `warmups`, `world`.
  */
 export function createHandWeapon(page) {
   const soldierKit = {};
@@ -413,9 +414,6 @@ export function createHandWeapon(page) {
     page.playSupplyGive();
   };
   soldierKit.weaponToken = 0;      // guards a slow load landing after a mode/map switch
-  soldierKit.triggerHeld = false;  // left button, while pointer-locked on foot
-  soldierKit.clickQueued = false;  // one queued semi-auto shot per press
-  soldierKit.aimHeld = false;      // right button held — zooms only mod weapons without `altFireOnce`
   soldierKit.footLookX = 0;        // |MouseLookX| radians accumulated since last frame
   soldierKit.footLookY = 0;        // |MouseLookY| likewise
 
@@ -430,7 +428,7 @@ export function createHandWeapon(page) {
     const hw = soldierKit.handWeapon;
     if (!hw || !hw.data?.zoom) return false;
     if (hw.data.zoom.toggle) return hw.zoomed && !(hw.rezoom > 0);
-    return soldierKit.aimHeld && page.captured;
+    return page.aimHeld && page.captured;
   }
   const crosshairEl = document.getElementById('crosshair');
   const aimOrigin = new THREE.Vector3();
@@ -750,7 +748,7 @@ export function createHandWeapon(page) {
   /** Work the plunger: every pack this kit's ExpPack put down goes off at once,
    *  through the same `Projectile::detonate` the end of a fuse calls. */
   function fireDetonator(hw) {
-    soldierKit.clickQueued = false;
+    page.dropClick();
     // The Fire message reaches the held weapon as well as the packs (the
     // engine leaves its forward flag set on this path), so the plunger plays
     // its own clip and its own `Detonator.ssc` report whether or not anything
@@ -779,7 +777,7 @@ export function createHandWeapon(page) {
     const hw = soldierKit.handWeapon;
     soldierKit.weaponToken++;
     soldierKit.handWeapon = null;
-    soldierKit.clickQueued = false;
+    page.dropClick();
     crosshairEl.hidden = true;
     if (!hw) return;
     if (hw.group) {
@@ -1685,7 +1683,7 @@ export function createHandWeapon(page) {
       releaseHandFireLoop();
       hw.pulse = false;
       hw.throwWind = 0;
-      soldierKit.clickQueued = false;
+      page.dropClick();
       // `FireArms::Reload` drops zoom; having no item at all certainly does.
       hw.zoomed = false;
       hw.rezoom = 0;
@@ -1779,7 +1777,7 @@ export function createHandWeapon(page) {
     // engineer cannot work the plunger and cannot put a charge down either.
     if (!locked && isDetonator(hw.name)) {
       hw.cool = Math.max(0, hw.cool - dt);
-      if (soldierKit.clickQueued && (page.captured || page.params.has('shots')) && hw.cool <= 0) {
+      if (page.clickQueued && (page.captured || page.params.has('shots')) && hw.cool <= 0) {
         fireDetonator(hw);
       }
     }
@@ -1821,20 +1819,20 @@ export function createHandWeapon(page) {
         // Clicks made during a throw are not banked either: the rifles keep
         // their one queued shot across the bolt cycle, but a grenade mashed
         // through its wind-up would follow itself with a second nobody asked for.
-        if (windUp > 0 && (hw.throwWind > 0 || hw.cool > 0)) soldierKit.clickQueued = false;
+        if (windUp > 0 && (hw.throwWind > 0 || hw.cool > 0)) page.dropClick();
         if (hw.throwWind > 0) {
           hw.throwWind -= dt;
           if (hw.throwWind <= 0) {
             hw.throwWind = 0;
             pullHandTrigger(hw);
           }
-        } else if (soldierKit.clickQueued && !(hw.rounds > 0) && hw.reload <= 0) {
+        } else if (page.clickQueued && !(hw.rounds > 0) && hw.reload <= 0) {
           // Dry, and not mid-reload: the click is spent on nothing. Left queued
           // it was honoured the moment an ammo box refilled the weapon — spam
           // the trigger on an empty grenade pouch and the resupply threw one.
-          soldierKit.clickQueued = false;
-        } else if (soldierKit.clickQueued && canFire && hw.cool <= 0 && !hw.pulse) {
-          soldierKit.clickQueued = false;
+          page.dropClick();
+        } else if (page.clickQueued && canFire && hw.cool <= 0 && !hw.pulse) {
+          page.dropClick();
           if (windUp > 0) {
             hw.throwWind = windUp;
             hw.throwBegun = true;
@@ -1847,7 +1845,7 @@ export function createHandWeapon(page) {
           }
         }
       } else {
-        const firing = soldierKit.triggerHeld && canFire;
+        const firing = page.triggerHeld && canFire;
         page.guns.setFiring(hw.group, firing);
         // The Fire Loop follows the trigger, not the rounds: the .ssc's
         // `stop FinishSample` lets the cycle in flight complete on release,

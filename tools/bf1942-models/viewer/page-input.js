@@ -12,21 +12,21 @@ import { GameConsole } from './console.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `aimHeld`, `AIR_KEYS`, `aircraft`, `altFireDemolitions`, `bfmap`,
- * `camera`, `cancelDeploy`, `car`, `clickQueued`, `consoleCaptures`,
- * `cycleKitWeapon`, `cycleView`, `deployActive`, `deploySpawn`,
- * `ensureAudioContext`, `enterVehicle`, `escMenu`, `escMenuCaptures`,
- * `exitSeat`, `extras`, `FLY_KEYS`, `FLY_SLOW`, `FLY_SPEED`, `FOOT_KEYS`,
- * `footView3p`, `fullmapBox`, `gameConsole`, `getFloorAltitude`,
- * `groundHeight`, `handWeapon`, `hud`, `HUD_FOOT`, `HUD_FOOT_KBLOCK`,
- * `HUD_FOOT_PLAIN`, `isTouchDevice`, `itemsLocked`, `lastSeatToggle`,
- * `LOCAL_PLAYER`, `lookDelta`, `mannedActive`, `mouseInput`, `nearEntry`,
- * `occupancy`, `openDeploy`, `optOnFoot`, `optPilot`, `params`, `renderer`,
- * `scoreboardOpen`, `scoreFromSpawn`, `SEAT_TOGGLE_COOLDOWN_MS`,
- * `selectDeployFlag`, `selectKitWeapon`, `setConsoleOpen`, `setEscMenu`,
- * `setPilot`, `setScoreboard`, `soldier`, `soldierDead`, `spawnAtFlag`,
- * `stage`, `startReload`, `switchSeat`, `toggleFullMap`, `toggleProne`,
- * `triggerHeld`, `uiFocused`, `updateHud`, `view`, `world`.
+ * `AIR_KEYS`, `aircraft`, `altFireDemolitions`, `bfmap`, `camera`,
+ * `cancelDeploy`, `car`, `consoleCaptures`, `cycleKitWeapon`, `cycleView`,
+ * `deployActive`, `deploySpawn`, `ensureAudioContext`, `enterVehicle`,
+ * `escMenu`, `escMenuCaptures`, `exitSeat`, `extras`, `FLY_KEYS`,
+ * `FLY_SLOW`, `FLY_SPEED`, `FOOT_KEYS`, `footView3p`, `fullmapBox`,
+ * `gameConsole`, `getFloorAltitude`, `groundHeight`, `handWeapon`, `hud`,
+ * `HUD_FOOT`, `HUD_FOOT_KBLOCK`, `HUD_FOOT_PLAIN`, `isTouchDevice`,
+ * `itemsLocked`, `lastSeatToggle`, `LOCAL_PLAYER`, `lookDelta`,
+ * `mannedActive`, `mouseInput`, `nearEntry`, `occupancy`, `openDeploy`,
+ * `optOnFoot`, `optPilot`, `params`, `renderer`, `scoreboardOpen`,
+ * `scoreFromSpawn`, `SEAT_TOGGLE_COOLDOWN_MS`, `selectDeployFlag`,
+ * `selectKitWeapon`, `setConsoleOpen`, `setEscMenu`, `setPilot`,
+ * `setScoreboard`, `soldier`, `soldierDead`, `spawnAtFlag`, `stage`,
+ * `startReload`, `switchSeat`, `toggleFullMap`, `toggleProne`, `uiFocused`,
+ * `updateHud`, `view`, `world`.
  */
 export function createPageInput(page) {
   const pageInput = {};
@@ -249,10 +249,7 @@ export function createPageInput(page) {
     pageInput.mobileJumpHeld = false;
     pageInput.mobileThrottle = 0;
     pageInput.mobileThrottleTouched = false;
-    page.triggerHeld = false;
-    page.clickQueued = false;
-    pageInput.seatFire = false;
-    pageInput.seatAltFire = false;
+    pageInput.releaseButtons();
     mobileFireBtn.classList.remove('is-active');
     mobileJumpBtn.classList.remove('is-active');
     mobilePadPuck.classList.remove('is-firing');
@@ -337,8 +334,8 @@ export function createPageInput(page) {
 
   function setMobileFire(on) {
     pageInput.mobileFireHeld = on;
-    page.triggerHeld = on && page.optOnFoot.checked && !!page.soldier && !page.soldierDead;
-    page.clickQueued = page.triggerHeld;
+    pageInput.triggerHeld = on && page.optOnFoot.checked && !!page.soldier && !page.soldierDead;
+    pageInput.clickQueued = pageInput.triggerHeld;
     pageInput.seatFire = on && page.optPilot.checked && !!page.occupancy
       && (page.occupancy.isActiveRoot() || page.mannedActive());
     mobileFireBtn.classList.toggle('is-active', on);
@@ -691,6 +688,36 @@ export function createPageInput(page) {
    *  and still means `c_PIFire`; it was the only binding there was. */
   pageInput.seatFire = false;
   pageInput.seatAltFire = false;
+  // The soldier's two buttons, while pointer-locked on foot: the left held,
+  // one queued semi-auto shot per press (the hand weapon spends it with
+  // `dropClick`), and the right held, which zooms only mod weapons without
+  // `altFireOnce`. These five are written here and nowhere else.
+  pageInput.triggerHeld = false;
+  pageInput.clickQueued = false;
+  pageInput.aimHeld = false;
+
+  /** Every button let go: nothing held across a mode change, an Escape, a
+   *  console or a seat change may still be pulling a trigger afterwards. */
+  pageInput.releaseButtons = () => {
+    pageInput.triggerHeld = false;
+    pageInput.clickQueued = false;
+    pageInput.aimHeld = false;
+    pageInput.seatFire = false;
+    pageInput.seatAltFire = false;
+  };
+  /** The left button on foot: held, and a press queues one shot. */
+  pageInput.pressTrigger = on => {
+    pageInput.triggerHeld = !!on;
+    if (on) pageInput.clickQueued = true;
+  };
+  pageInput.setAim = on => { pageInput.aimHeld = !!on; };
+  /** The seat's `c_PIFire` and `c_PIAltFire`. */
+  pageInput.setSeatTriggers = (main, alt = false) => {
+    pageInput.seatFire = !!main;
+    pageInput.seatAltFire = !!alt;
+  };
+  /** The hand weapon has spent (or refused) the queued shot. */
+  pageInput.dropClick = () => { pageInput.clickQueued = false; };
 
   function setFly(on) {
     pageInput.captured = on;
@@ -702,11 +729,7 @@ export function createPageInput(page) {
       pageInput.lockHeld = false;
       // A trigger held across an Escape must not still be firing when the
       // pointer comes back.
-      page.triggerHeld = false;
-      page.clickQueued = false;
-      page.aimHeld = false;
-      pageInput.seatFire = false;
-      pageInput.seatAltFire = false;
+      pageInput.releaseButtons();
       if (document.pointerLockElement === page.renderer.domElement) {
         document.exitPointerLock();
       }
@@ -864,8 +887,8 @@ export function createPageInput(page) {
     if (page.consoleCaptures()) return;
     const pressed = !!(e.buttons & BUTTON_BIT[e.button]);
     if (!pressed) {
-      if (e.button === 0) { page.triggerHeld = false; pageInput.seatFire = false; }
-      else if (e.button === 2) { page.aimHeld = false; pageInput.seatAltFire = false; }
+      if (e.button === 0) { pageInput.triggerHeld = false; pageInput.seatFire = false; }
+      else if (e.button === 2) { pageInput.aimHeld = false; pageInput.seatAltFire = false; }
       return;
     }
     if (!(pageInput.captured && pointerLocked())) return;
@@ -888,8 +911,8 @@ export function createPageInput(page) {
     // a weapon he is not holding.
     if (page.itemsLocked()) return;
     if (e.button === 0) {
-      page.triggerHeld = true;
-      page.clickQueued = true;
+      pageInput.triggerHeld = true;
+      pageInput.clickQueued = true;
     } else if (e.button === 2) {
       const hw = page.handWeapon;
       // The demolitions pair first: AltFire on the pack or the plunger swaps
@@ -904,7 +927,7 @@ export function createPageInput(page) {
         hw.zoomed = !hw.zoomed;
         hw.rezoom = 0;
       } else {
-        page.aimHeld = true;
+        pageInput.aimHeld = true;
       }
     }
   }

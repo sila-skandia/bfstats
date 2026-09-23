@@ -22,38 +22,37 @@ import { findPath, gridAt } from './nav-grid.js';
  * `audioLimiter`, `audioListener`, `bfmap`, `bodyScene`, `bodyWorld`,
  * `botBodies`, `botUnits`, `camera`, `cancelDeploy`, `canopySpan`,
  * `captureVoiceDirs`, `captureVoiceKind`, `CHASE_OPTION`, `chaseRig`,
- * `clickQueued`, `collectEntryPoints`, `collider`, `combatArea`,
- * `combatFrame`, `crashLog`, `crosshairAim`, `crosshairEl`, `currentDir`,
- * `cycleKitWeapon`, `damageVisuals`, `debugDeployHeld`, `deployActive`,
- * `deployKit`, `deployRejoin`, `deploySpawn`, `deployTeamId`,
- * `deployUnchosen`, `detonatorTemplate`, `discardSoldier`,
- * `disposeHandWeapon`, `effectAudio`, `effects`, `effectSoundsLoad`,
- * `enterVehicle`, `entryPoints`, `exitSeat`, `exitVehicle`,
- * `explosivesTemplate`, `extras`, `fireStateFor`, `flags`, `floatHosts`,
- * `foot3pRel`, `footBody`, `footBodyForceHidden`, `footCanopy`,
- * `footView3p`, `frame`, `friendlyMapUnits`, `friendlyVehicleNodes`,
- * `frozenCount`, `gameHud`, `groundHeight`, `guns`, `handSlot`,
- * `handWeapon`, `hud`, `isZoomed`, `itemsLocked`, `KBLOCK`, `KBLOCK_KEYS`,
- * `kbLockState`, `kbSession`, `keys`, `kitLoadout`, `KITS`,
+ * `collectEntryPoints`, `collider`, `combatArea`, `combatFrame`, `crashLog`,
+ * `crosshairAim`, `crosshairEl`, `currentDir`, `cycleKitWeapon`,
+ * `damageVisuals`, `debugDeployHeld`, `deployActive`, `deployKit`,
+ * `deployRejoin`, `deploySpawn`, `deployTeamId`, `deployUnchosen`,
+ * `detonatorTemplate`, `discardSoldier`, `disposeHandWeapon`, `effectAudio`,
+ * `effects`, `effectSoundsLoad`, `enterVehicle`, `entryPoints`, `exitSeat`,
+ * `exitVehicle`, `explosivesTemplate`, `extras`, `fireStateFor`, `flags`,
+ * `floatHosts`, `foot3pRel`, `footBody`, `footBodyForceHidden`,
+ * `footCanopy`, `footView3p`, `frame`, `friendlyMapUnits`,
+ * `friendlyVehicleNodes`, `frozenCount`, `gameHud`, `groundHeight`, `guns`,
+ * `handSlot`, `handWeapon`, `hud`, `isZoomed`, `itemsLocked`, `KBLOCK`,
+ * `KBLOCK_KEYS`, `kbLockState`, `kbSession`, `keys`, `kitLoadout`, `KITS`,
  * `kitWeaponSlots`, `lastCaptureVoice`, `loadouts`, `loadoutsLoad`,
  * `LOCAL_PLAYER`, `localMapTeam`, `localPlayer`, `look`, `lookDelta`,
  * `mannedActive`, `mapGate`, `MINIMAP_TEAM_TINT`, `modeNote`, `mouseInput`,
  * `nearEntry`, `occupiedVehicleDamage`, `optOnFoot`, `packAmmo`,
  * `packsLeft`, `paintDeployChrome`, `paintScoreboard`, `parachuteLog`,
- * `params`, `playCaptureVoice`, `referee`, `renderer`, `roomClient`,
- * `roomJoined`, `scene`, `scoreboardOpen`, `scoreboardPlayers`,
- * `scoreFromSpawn`, `scoreLayout`, `seatAltFire`, `seatFire`,
- * `seatIkChains`, `seatSoldier`, `selectDeployFlag`, `selectKitWeapon`,
- * `setDeployTeam`, `setFly`, `setScoreboard`, `shipFlagInactive`,
- * `showDamageTier`, `showView`, `snapPresentation`, `soldier`,
- * `soldier3pOnFoot`, `soldierArmor`, `soldierDead`, `soldierExposureFor`,
- * `soldierTemplateFor`, `spawnersRoot`, `spawnFlagSelect`, `splashPos`,
- * `splashTargets`, `stage`, `stepVehicleBodies`, `supplyField`,
- * `supplyTarget`, `surfaceFriction`, `switchSeat`, `thrownPackGroup`,
- * `triggerHeld`, `vehicleAudio`, `vehicleDamage`, `vehicleInput`,
- * `vehicleSpawnActive`, `viewmodelRigFor`, `vmCamera`, `vmRoot`, `vmScene`,
- * `warmups`, `weaponBarUntil`, `weaponTemplateFor`, `world`, `worldFire`,
- * `wreckVehicle`.
+ * `params`, `playCaptureVoice`, `pressTrigger`, `referee`, `renderer`,
+ * `roomClient`, `roomJoined`, `scene`, `scoreboardOpen`,
+ * `scoreboardPlayers`, `scoreFromSpawn`, `scoreLayout`, `seatAltFire`,
+ * `seatFire`, `seatIkChains`, `seatSoldier`, `selectDeployFlag`,
+ * `selectKitWeapon`, `setAim`, `setDeployTeam`, `setFly`, `setScoreboard`,
+ * `setSeatTriggers`, `shipFlagInactive`, `showDamageTier`, `showView`,
+ * `snapPresentation`, `soldier`, `soldier3pOnFoot`, `soldierArmor`,
+ * `soldierDead`, `soldierExposureFor`, `soldierTemplateFor`, `spawnersRoot`,
+ * `spawnFlagSelect`, `splashPos`, `splashTargets`, `stage`,
+ * `stepVehicleBodies`, `supplyField`, `supplyTarget`, `surfaceFriction`,
+ * `switchSeat`, `thrownPackGroup`, `triggerHeld`, `vehicleAudio`,
+ * `vehicleDamage`, `vehicleInput`, `vehicleSpawnActive`, `viewmodelRigFor`,
+ * `vmCamera`, `vmRoot`, `vmScene`, `warmups`, `weaponBarUntil`,
+ * `weaponTemplateFor`, `world`, `worldFire`, `wreckVehicle`.
  */
 export function installTestHooks(page) {
   const testHooks = {};
@@ -614,8 +613,7 @@ export function installTestHooks(page) {
       return true;
     };
     window.__setTrigger = on => {
-      page.triggerHeld = !!on;
-      if (on) page.clickQueued = true;
+      page.pressTrigger(on);
     };
     // Bailing out, for a headless check. `__bailOut` puts the man in the air
     // with a velocity the way stepping out of a flying plane does (no floor
@@ -759,8 +757,7 @@ export function installTestHooks(page) {
       };
     };
     window.__setSeatFire = (main, alt = false) => {
-      page.seatFire = !!main;
-      page.seatAltFire = !!alt;
+      page.setSeatTriggers(main, alt);
       return { seatFire: page.seatFire, seatAltFire: page.seatAltFire };
     };
     // A full pouch again, for the perf harness: a Thompson carries 150 rounds
@@ -860,7 +857,7 @@ export function installTestHooks(page) {
         hw.zoomed = !!on;
         hw.rezoom = 0;
       } else {
-        page.aimHeld = !!on;
+        page.setAim(on);
       }
     };
     // Fires a real pointerdown/pointerup/pointermove at the real listeners --
