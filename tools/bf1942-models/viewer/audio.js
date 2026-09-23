@@ -19,7 +19,14 @@
  *   or fallback volume interpolation, resetting audio.currentTime = 0 and restoring gain to 1.0
  * - AUDIO-STALE-CANCEL: Invariant state guards & generation tracking ensuring post-load / post-fadeout / cancelled
  *   interactions never trigger stale loading music
+ *
+ * The two controls' DOM and stylesheet live in `loading-audio-ui.js`; the
+ * controller keeps one-line delegators so its API is unchanged.
  */
+
+import {
+  attachUnmuteButton, attachMuteToggle, syncAudioUi,
+} from './loading-audio-ui.js';
 
 export const AudioState = Object.freeze({
   IDLE: 'IDLE',
@@ -369,103 +376,14 @@ export class LoadingAudioController {
 
   /**
    * Attaches an authentic Refractor HUD unmute badge/button to the specified container.
-   * Declares pointer-events: auto to ensure clickability inside pointer-events: none containers.
+   * See `loading-audio-ui.js`.
    * @param {HTMLElement} containerElement
    * @returns {HTMLElement | null}
    */
-  attachUnmuteButton(containerElement) {
-    if (!containerElement || !this._document) return null;
+  attachUnmuteButton(containerElement) { return attachUnmuteButton(this, containerElement); }
 
-    if (this._unmuteButton && containerElement.contains && containerElement.contains(this._unmuteButton)) {
-      return this._unmuteButton;
-    }
-
-    this._injectButtonStyles();
-
-    const btn = this._document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'ld-unmute-btn';
-    btn.setAttribute('type', 'button');
-    btn.setAttribute('aria-label', 'Enable loading sound');
-    btn.innerHTML = '<span class="ld-unmute-text">SOUND: CLICK TO ENABLE</span>';
-
-    // CRITICAL: Explicit pointer-events: auto overrides container pointer-events: none
-    btn.style.pointerEvents = 'auto';
-    btn.style.cursor = 'pointer';
-
-    btn.hidden = !this._isAutoplayBlocked;
-    btn.style.display = this._isAutoplayBlocked ? 'inline-flex' : 'none';
-
-    btn.addEventListener('click', (e) => {
-      if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
-      if (e && typeof e.preventDefault === 'function') e.preventDefault();
-      this.unlock();
-    });
-
-    containerElement.appendChild(btn);
-    this._unmuteButton = btn;
-    return btn;
-  }
-
-  /**
-   * A speaker toggle in the corner of a screen that stays up while the music
-   * plays. The badge above is for a loading screen, which is gone in a few
-   * seconds and only ever needs "click to enable"; a menu the player sits on
-   * needs the other direction too.
-   *
-   * Both states are one icon: a speaker, with the waves crossed out when
-   * nothing is coming out of it — whether that is the player's doing or the
-   * autoplay policy's, since from where he is sitting they are the same
-   * thing and one click fixes either.
-   *
-   * @param {HTMLElement} containerElement
-   * @param {Object} [options]
-   * @param {(muted: boolean) => void} [options.onChange] - after a click
-   * @returns {HTMLElement | null}
-   */
-  attachMuteToggle(containerElement, { onChange } = {}) {
-    if (!containerElement || !this._document) return null;
-    if (this._muteToggle && containerElement.contains
-        && containerElement.contains(this._muteToggle)) {
-      return this._muteToggle;
-    }
-
-    this._injectButtonStyles();
-
-    const btn = this._document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'ld-mute-btn';
-    // Two paths, one on top of the other: the cone and its waves, and the
-    // stroke through them that `.ld-mute-off` reveals.
-    btn.innerHTML = `
-      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path class="ld-mute-cone" d="M4 9.5h3.2L12 5.4v13.2L7.2 14.5H4z"/>
-        <path class="ld-mute-wave" d="M15.4 9.2a4 4 0 0 1 0 5.6"/>
-        <path class="ld-mute-wave ld-mute-wave-far" d="M17.9 6.7a7.5 7.5 0 0 1 0 10.6"/>
-        <path class="ld-mute-slash" d="M5 19 19 5"/>
-      </svg>`;
-    btn.style.pointerEvents = 'auto';
-    btn.style.cursor = 'pointer';
-
-    btn.addEventListener('click', (e) => {
-      if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
-      if (e && typeof e.preventDefault === 'function') e.preventDefault();
-      // Three cases, one button. Blocked but not muted is the interesting
-      // one: the click is itself the gesture the autoplay policy wanted, so
-      // turning it "on" from there is an unlock and not an unmute.
-      if (this._muted) this.setMuted(false);
-      else if (this.silent) { this.unlock(); this._syncAudioUi(); }
-      else this.setMuted(true);
-      if (typeof onChange === 'function') {
-        try { onChange(this._muted); } catch (_) {}
-      }
-    });
-
-    containerElement.appendChild(btn);
-    this._muteToggle = btn;
-    this._syncAudioUi();
-    return btn;
-  }
+  /** The speaker toggle; see `loading-audio-ui.js`. */
+  attachMuteToggle(containerElement, options) { return attachMuteToggle(this, containerElement, options); }
 
   /**
    * Triggers gesture unlock explicitly or via user interaction.
@@ -812,109 +730,7 @@ export class LoadingAudioController {
 
   /** The speaker icon, after anything that could have changed what is
    *  coming out of the speakers. */
-  _syncAudioUi() {
-    const btn = this._muteToggle;
-    if (!btn) return;
-    const silent = this.silent;
-    btn.setAttribute('aria-pressed', String(silent));
-    btn.setAttribute('aria-label', silent ? 'Turn menu music on' : 'Turn menu music off');
-    btn.classList.toggle('ld-mute-off', silent);
-  }
-
-  _injectButtonStyles() {
-    if (!this._document || !this._document.head || typeof this._document.createElement !== 'function') return;
-    if (this._document.getElementById && this._document.getElementById('ld-unmute-style')) return;
-
-    try {
-      const style = this._document.createElement('style');
-      style.id = 'ld-unmute-style';
-      style.textContent = `
-        .ld-unmute-btn {
-          position: absolute;
-          top: 16px;
-          right: 16px;
-          z-index: 100;
-          pointer-events: auto;
-          cursor: pointer;
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          padding: 6px 14px;
-          background: rgba(19, 19, 19, 0.9);
-          color: #9aa666;
-          border: 1px solid #3d3d3d;
-          border-radius: 2px;
-          font-family: ui-monospace, 'Geist Mono', monospace;
-          font-size: 11px;
-          font-weight: 600;
-          letter-spacing: 0.1em;
-          text-transform: uppercase;
-          outline: none;
-          user-select: none;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
-          transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
-        }
-        .ld-unmute-btn:hover {
-          background: rgba(35, 35, 35, 0.95);
-          color: #ffffff;
-          border-color: #7d8849;
-        }
-        .ld-unmute-btn[hidden] {
-          display: none !important;
-        }
-        /* The speaker toggle: the badge's plate, square, icon only. */
-        .ld-mute-btn {
-          position: absolute;
-          top: 16px;
-          right: 16px;
-          z-index: 100;
-          pointer-events: auto;
-          cursor: pointer;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          width: 30px;
-          height: 30px;
-          padding: 0;
-          background: rgba(19, 19, 19, 0.9);
-          border: 1px solid #3d3d3d;
-          border-radius: 2px;
-          outline: none;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
-          transition: background 150ms ease, border-color 150ms ease;
-        }
-        .ld-mute-btn:hover { background: rgba(35, 35, 35, 0.95); border-color: #7d8849; }
-        .ld-mute-btn svg { width: 18px; height: 18px; display: block; }
-        .ld-mute-btn .ld-mute-cone {
-          fill: #9aa666;
-          stroke: none;
-        }
-        .ld-mute-btn .ld-mute-wave {
-          fill: none;
-          stroke: #9aa666;
-          stroke-width: 1.6;
-          stroke-linecap: round;
-        }
-        .ld-mute-btn .ld-mute-slash {
-          stroke: #9aa666;
-          stroke-width: 1.8;
-          stroke-linecap: round;
-          opacity: 0;
-        }
-        .ld-mute-btn:hover .ld-mute-cone { fill: #ffffff; }
-        .ld-mute-btn:hover .ld-mute-wave,
-        .ld-mute-btn:hover .ld-mute-slash { stroke: #ffffff; }
-        /* Off: the waves go, the stroke through it comes. */
-        .ld-mute-btn.ld-mute-off .ld-mute-cone { fill: #6f6f6f; }
-        .ld-mute-btn.ld-mute-off .ld-mute-wave { opacity: 0; }
-        .ld-mute-btn.ld-mute-off .ld-mute-slash { opacity: 1; stroke: #6f6f6f; }
-        .ld-mute-btn.ld-mute-off:hover .ld-mute-cone { fill: #cfcfc4; }
-        .ld-mute-btn.ld-mute-off:hover .ld-mute-slash { stroke: #cfcfc4; }
-        .ld-mute-btn[hidden] { display: none !important; }
-      `;
-      this._document.head.appendChild(style);
-    } catch (_) {}
-  }
+  _syncAudioUi() { syncAudioUi(this); }
 }
 
 export function createLoadingAudioController(options) {
