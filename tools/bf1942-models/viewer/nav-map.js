@@ -1,8 +1,12 @@
-// The bot navigation map itself: the metre bitmap built from the world
-// collider (terrain, water, slope, the statics' clip band, the brush, the
-// spawn-point flood) and its coarse level. The engine research it implements,
+// The bot navigation map itself: the metre bitmap and its coarse level,
+// either the level's own baked search map (`nav-baked.js`, what the retail
+// server loads with `ai.loadMaps`) or, for a level that ships none, painted
+// from the world collider (terrain, water, slope, the statics' clip band,
+// the brush, the spawn-point flood). The engine research it implements,
 // with every address, is `nav-grid.js`'s header; that module re-exports this
 // one and `nav-search.js`, the searches that run over the map.
+
+import { findSearchMap } from './nav-baked.js';
 
 /** Engine level-0 pixel: one world metre (`getLevelPixelSize(0)`). */
 export const NAV_CELL = 1;
@@ -54,31 +58,57 @@ export function brushOffsets(brush) {
 }
 
 /**
- * Build the infantry navigation map from the world collider.
+ * The level's baked map a `buildNavMap` call stands for (`nav-baked.js`):
+ * the one whose six `ai.addSearchMap` parameters are the call's, or, for a
+ * call that leaves every parameter at the infantry defaults (the referee's
+ * soldier map), the level's infantry map whatever its parameters.
+ */
+function bakedFor(searchMaps, options, params) {
+  if (!searchMaps?.maps?.length) return null;
+  const exact = findSearchMap(searchMaps, params);
+  if (exact) return exact;
+  const defaults = ['waterMap', 'waterDepth', 'maxSlopeDeg', 'brush', 'lowClip', 'hiClip']
+    .every(k => options[k] === undefined);
+  if (!defaults) return null;
+  return searchMaps.maps.find(m => !m.params?.waterMap && /^infant/i.test(m.params?.name ?? '')) ?? null;
+}
+
+/**
+ * Build a navigation map for the world collider: the level's own baked map
+ * when it ships one for these parameters, else painted from the terrain and
+ * the statics the way the server paints one.
  *
  * `collider` needs `surfaceHeight(x, z)`; it may carry `waterLevel`,
  * `heightfield.height(x, z)` (preferred over `surfaceHeight`, which clamps to
- * the water plane) and `statics` (`collision.js`'s `CollisionIndex`: `tris`
- * as 9 floats a triangle, `count`, optional `drivable`).
+ * the water plane), `statics` (`collision.js`'s `CollisionIndex`: `tris` as 9
+ * floats a triangle, `count`, optional `drivable`) and `searchMaps` (the
+ * level's baked maps, `nav-baked.js loadSearchMaps`). `baked: false` paints
+ * even when a baked map is there; `searchMap` hands one in directly.
  *
  * @returns {NavMap}
  */
-export function buildNavMap(collider, worldSize, {
-  cellSize = NAV_CELL,
-  waterLevel,
-  waterDepth = INFANTRY_SEARCH_MAP.waterDepth,
-  maxSlopeDeg = INFANTRY_SEARCH_MAP.maxSlopeDeg,
-  brush = INFANTRY_SEARCH_MAP.brush,
-  lowClip = INFANTRY_SEARCH_MAP.lowClip,
-  hiClip = INFANTRY_SEARCH_MAP.hiClip,
-  coarseSize = COARSE_CELL,
-  seeds = null,
-  // `ai.addSearchMap <name> 1 <depth> ...`: a water map (the boats' and
-  // landing craft's `Boat2` / `LandingCraft3`): a cell is free where the
-  // water is at least `waterDepth` deep, the seabed's slope is not tested,
-  // and the brush (125 m for `Boat2`) keeps the hulls off the shore.
-  waterMap = false,
-} = {}) {
+export function buildNavMap(collider, worldSize, options = {}) {
+  const {
+    cellSize = NAV_CELL,
+    waterLevel,
+    waterDepth = INFANTRY_SEARCH_MAP.waterDepth,
+    maxSlopeDeg = INFANTRY_SEARCH_MAP.maxSlopeDeg,
+    brush = INFANTRY_SEARCH_MAP.brush,
+    lowClip = INFANTRY_SEARCH_MAP.lowClip,
+    hiClip = INFANTRY_SEARCH_MAP.hiClip,
+    coarseSize = COARSE_CELL,
+    seeds = null,
+    // `ai.addSearchMap <name> 1 <depth> ...`: a water map (the boats' and
+    // landing craft's `Boat2` / `LandingCraft3`): a cell is free where the
+    // water is at least `waterDepth` deep, the seabed's slope is not tested,
+    // and the brush (125 m for `Boat2`) keeps the hulls off the shore.
+    waterMap = false,
+    baked = true,
+    searchMap = null,
+  } = options;
+  const bakedMap = baked === false ? null
+    : (searchMap ?? bakedFor(collider?.searchMaps, options,
+      { waterMap, waterDepth, maxSlopeDeg, brush, lowClip, hiClip }));
   const width = Math.max(1, Math.ceil(worldSize / cellSize));
   const height = width;
   const total = width * height;
@@ -126,6 +156,36 @@ export function buildNavMap(collider, worldSize, {
       normalY[idx] = ny;
       if (blocked[idx] === CELL_FREE && ny < cosMax) blocked[idx] = CELL_SLOPE;
     }
+  }
+
+  // The level's own map, as `ai.loadMaps` loads it: its pixels are the
+  // map, statics, brush and flood included (the server painted them before
+  // it wrote the file). The terrain passes above stay for the step costs
+  // (`heights`, `normalY`) and to name why a blocked cell is blocked.
+  if (bakedMap) {
+    for (let gz = 0; gz < height; gz++) {
+      const pz = Math.floor((gz * cellSize + half) / bakedMap.pixelSize);
+      for (let gx = 0; gx < width; gx++) {
+        const idx = gz * width + gx;
+        const px = Math.floor((gx * cellSize + half) / bakedMap.pixelSize);
+        if (bakedMap.blocked(px, pz)) {
+          if (blocked[idx] === CELL_FREE) blocked[idx] = CELL_OBJECT;
+        } else if (blocked[idx] !== CELL_FREE) {
+          // A surface over water or slope (a deck, a pier, a pad).
+          blocked[idx] = CELL_FREE;
+          if (!Number.isFinite(heights[idx])) heights[idx] = water;
+          normalY[idx] = 1;
+        }
+      }
+    }
+    const coarse = buildCoarse(blocked, width, height, cellSize, coarseSize);
+    return {
+      blocked, heights, normalY, width, height, cellSize, worldSize, coarse,
+      source: 'baked', searchMap: bakedMap.params?.name ?? null, level: bakedMap.level,
+      // The map's pyramid top (`LocalMap` +0x28), which bounds a hull's
+      // box (`getLandLevel` 0x085f3f90 via `Vehicle` +0xc4a8).
+      maxLevel: Number.isFinite(bakedMap.params?.maxLevel) ? bakedMap.params.maxLevel : null,
+    };
   }
 
   // --- statics: the clip band per object, the deck pass, then the brush ---
@@ -205,7 +265,10 @@ export function buildNavMap(collider, worldSize, {
   if (seeds && seeds.length) floodFromSeeds(blocked, width, height, cellSize, seeds);
 
   const coarse = buildCoarse(blocked, width, height, cellSize, coarseSize);
-  return { blocked, heights, normalY, width, height, cellSize, worldSize, coarse };
+  return {
+    blocked, heights, normalY, width, height, cellSize, worldSize, coarse,
+    source: 'painted', searchMap: null, level: 0, maxLevel: null,
+  };
 }
 
 /**
@@ -468,4 +531,8 @@ function buildCoarse(blocked, width, height, cellSize, coarseSize) {
  * @property {number} cellSize
  * @property {number} worldSize
  * @property {{free: Uint8Array, freeCount: Uint16Array, width: number, height: number, cellsPer: number, cellSize: number}} coarse
+ * @property {'baked'|'painted'} source  the level's own map, or painted here
+ * @property {string|null} searchMap     the baked map's name (`Tank0`, ...)
+ * @property {number} level              the baked level (a pixel is 2^level m)
+ * @property {number|null} maxLevel      the map's pyramid top (`ai.addSearchMap`'s maxLevel)
  */
