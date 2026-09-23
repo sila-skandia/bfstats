@@ -11,21 +11,27 @@
 // lacks (hit points and the player's own chat arrived in v3) is simply absent.
 // bfstats features/round-replay-capture/README.md documents the format and how
 // each mapping here was measured.
+//
+// This file is the player and the controller; the rest lives beside it:
+// replay-recording.js (parsing, round clock, sampling), replay-server-log.js,
+// replay-assets.js (models, pose pairs, gait clips), replay-gait.js,
+// replay-actors.js (placing an object at a time), replay-camera.js (follow),
+// replay-gunfire.js and replay-ui.js.
 
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
-import {
-  parseRecording, roundClock, placeholderWeaponFor,
-} from './replay-recording.js';
+import { parseRecording, placeholderWeaponFor } from './replay-recording.js';
 import { parseServerLog, alignServerLog, serverRows } from './replay-server-log.js';
 import { ReplayUi, toast } from './replay-ui.js';
 import { phaseFor, buildGaitRig } from './replay-gait.js';
-import { ReplayAssets, setReplayPropellerIdle } from './replay-assets.js';
+import { ReplayAssets } from './replay-assets.js';
 import { toViewPosition, place } from './replay-actors.js';
 import { followCamera } from './replay-camera.js';
 import { dynamicCast, triggerGunFire } from './replay-gunfire.js';
 
-export { parseRecording, roundClock, parseServerLog, alignServerLog, setReplayPropellerIdle };
+export { parseRecording, parseServerLog, alignServerLog };
+export { roundClock } from './replay-recording.js';
+export { setReplayPropellerIdle } from './replay-assets.js';
 
 // --- conventions --------------------------------------------------------------
 
