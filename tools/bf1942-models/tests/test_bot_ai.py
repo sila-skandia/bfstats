@@ -17,6 +17,7 @@ by `bot_ai_harness.mjs` on the same module set `test_world.py` stages:
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import subprocess
 import sys
@@ -365,6 +366,23 @@ class BotAiTests(unittest.TestCase):
         self.assertEqual(abs(d["turning"]["steer"]), 1)
         self.assertNotIn("wanted", d["turning"])
         self.assertIn("wanted", d["onward"])
+
+    def test_a_boat_turns_on_the_throttle_it_holds(self) -> None:
+        # `speedControl` 0x0860cf40 reads last tick's throttle (the channel
+        # persists: `BotMain::updatePlayerAction` 0x08526430 clears only
+        # channels 8, 23, 24 and 28): a full one is kept at or under 3 m/s,
+        # any other takes the motion's sign; above 3 m/s it brakes against
+        # the motion. The rudder is the motion's sign times the side's.
+        d = self.results["boatDecision"]
+        self.assertEqual(d["heldAstern"]["throttle"], -1)      # backing while still going ahead
+        self.assertEqual(d["heldAhead"]["throttle"], 1)
+        self.assertEqual(d["partHeld"]["throttle"], 1)          # the motion's sign
+        self.assertEqual(d["fastTurn"]["throttle"], -1)         # braking above 3 m/s
+        self.assertEqual(d["heldAstern"]["steer"], -d["backingTurn"]["steer"])
+        # Drive 0, the point dead ahead: no rudder, the brake to rest.
+        self.assertEqual((d["alignedFast"]["throttle"], d["alignedFast"]["steer"]), (-1, 0))
+        self.assertAlmostEqual(d["alignedSlow"]["throttle"], -math.log10(9 * 0.5 + 1), places=6)
+        self.assertEqual(d["alignedStill"]["throttle"], 0)
 
     def test_a_hull_prefers_the_close_target_and_a_plane_the_far_one(self) -> None:
         v = self.results["vehicleFire"]

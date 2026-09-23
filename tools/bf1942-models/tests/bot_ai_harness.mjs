@@ -555,7 +555,20 @@ function boatDecisionScenario() {
   const backing = boatControl({ ...base, velocity: [0, -2], decision: { state: 8, drive: -1, angle: 0.1, sign: -1 } });
   const turning = boatControl({ ...base, decision: { state: 9, drive: 0, angle: 3.0, sign: 1 } });
   const onward = boatControl({ ...base, decision: { state: 9, drive: 1, angle: 2.0, sign: 1 } });
-  return { brakeFast, brakeSlow, brakeAstern, stopped, backing, turning, onward };
+  // The turn at or under 3 m/s with the channel held (bot-plans.js
+  // `steerBoat`): last tick's full astern is kept going ahead at 2 m/s (the
+  // hull backs), a part throttle takes the motion's sign; above 3 m/s it
+  // brakes; the rudder flips with the motion.
+  const turn = (prevThrottle, v) => boatControl({ ...base, velocity: [0, v], prevThrottle, decision: { state: 0, drive: 0, angle: 2.0, sign: Math.sign(v) } });
+  const heldAstern = turn(-1, 2), heldAhead = turn(1, 2), partHeld = turn(0.4, 2), fastTurn = turn(-1, 5), backingTurn = turn(-1, -2);
+  // Drive 0 with the point dead ahead (0x0860cf40's `0.996 < forward . dir`):
+  // no rudder, the brake to rest.
+  const ahead = { ...base, toTarget: [0, 50], decision: { state: 1, drive: 0, angle: 0, sign: 1 } };
+  const alignedFast = boatControl({ ...ahead, velocity: [0, 4] });
+  const alignedSlow = boatControl({ ...ahead, velocity: [0, 0.5] });
+  const alignedStill = boatControl({ ...ahead, velocity: [0, 0.02] });
+  return { brakeFast, brakeSlow, brakeAstern, stopped, backing, turning, onward,
+           heldAstern, heldAhead, partHeld, fastTurn, backingTurn, alignedFast, alignedSlow, alignedStill };
 }
 
 /** The vehicle targeting: a hull's gun prefers the close infantryman (the

@@ -316,6 +316,9 @@ export class BotController {
     });
     this.aimDeviation = this.deviation.current();
 
+    // The throttle channel as the engine keeps it for a boat's helm
+    // (bot-plans.js `steerBoat`): what this tick wrote.
+    this._heldThrottle = this.vehicle?.kind === 'ship' && this.vehicle.drives ? this.moveForward : 0;
     this._writeInput();
     this.timeSinceTargetAcquired = this.firingTarget ? this.timeSinceTargetAcquired + dt : 0;
   }
@@ -427,7 +430,10 @@ export class BotController {
   _popPassed() { return routing.popPassed(this); }
   _trackObstruction(speed, dt) { return routing.trackObstruction(this, speed, dt); }
   _onObstructed() { return routing.onObstructed(this); }
-  _steerToward(x, z, speed) { return routing.steerToward(this, x, z, speed); }
+  _steerToward(x, z, speed) {
+    if (this.vehicle?.kind === 'ship' && this.vehicle.drives) return planning.steerBoat(this, x, z, speed);
+    return routing.steerToward(this, x, z, speed);
+  }
   _execInfantryMoveTo(action, dt) { return routing.execInfantryMoveTo(this, action, dt); }
   _execBoatMoveTo(target, action) { return routing.execBoatMoveTo(this, target, action); }
 

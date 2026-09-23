@@ -651,12 +651,27 @@ export function boatControl({ forward, velocity, toTarget, radius = 10, maxSpeed
     const r = boatSpeedControl({ angle, maxSpeed, prevSpeed, yawRate, level });
     return { throttle: r.throttle, steer: r.rudder, angle, arrived, speed, wanted: r.wanted };
   }
+  if (maxSpeed > 0 && !arrived && prevThrottle !== null && dot > BOAT.alignedCos) {
+    // `speedControl`'s turn branch with the target within 5 deg of the bow
+    // (reached only with no drive, 0x0860cf40's `0.996 < forward . dir`
+    // arm): the rudder stays zeroed and the throttle brakes to rest, full
+    // against the motion above 1 m/s, `-sign(v) log10(9|v| + 1)` down to
+    // 0.03 m/s, then nothing.
+    const a = Math.abs(speed);
+    const t = a > BOAT.brakeDoneSpeed ? -Math.sign(speed)
+      : a <= 0.03 ? 0 : -Math.sign(speed) * Math.log10(9 * a + 1);
+    return { throttle: t, steer: 0, angle, arrived, speed };
+  }
   if (maxSpeed > 0 && !arrived && prevThrottle !== null) {
     // `speedControl`'s turn (state 0, the angle past 30 deg): full rudder
     // toward the target, flipped going astern; above 3 m/s the throttle
     // brakes against the motion, at or below it a full throttle is kept and
-    // any other is set to the motion's sign. A hull at dead rest has no sign
-    // to take: ahead (INVENTION; the engine's never sits at exactly 0).
+    // any other is set to the motion's sign. `prevThrottle` is the channel
+    // as the engine keeps it, last tick's throttle (bot-plans.js
+    // `steerBoat`): after a brake above 3 m/s the full astern is kept below
+    // it, so the hull backs, and the rudder flips with the motion. A hull at
+    // dead rest has no sign to take: ahead (INVENTION; the engine's never
+    // sits at exactly 0).
     const motion = Math.sign(speed) || 1;
     const turn = motion * (Math.sign(angle) || 1);
     let t;

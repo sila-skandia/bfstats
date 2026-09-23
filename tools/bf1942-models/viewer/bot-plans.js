@@ -8,7 +8,9 @@ import { isWalkable } from './nav-grid.js';
 import { playerPosition } from './bot-sense.js';
 import { firingPose, firePlanFor } from './bot-fire.js';
 import { SCOUT, TAKE_COVER, MEDIC } from './bot-behaviours.js';
-import { planeFireMode, PLANE_FIRE } from './bot-vehicle-air.js';
+import { planeFireMode, PLANE_FIRE, boatControl, BOAT } from './bot-vehicle-air.js';
+import { freeLevel } from './nav-grid.js';
+import { hullDecision } from './bot-route.js';
 import { AIM_COUNTS_MAX, wrapAngle, faceTarget, turretAimAt, turretMiss, precisionFor, precisionHolds, targetShape } from './bot-aim.js';
 import { BEHAVIOUR } from './bot-decision.js';
 import { planAirAvoid, execPlaneAvoid } from './bot-pilot.js';
@@ -319,6 +321,54 @@ export function writeHeldChannels(bot) {
   const entry = bot.world?.players?.get?.(bot.playerId)?.pending;
   if (!entry?.input) return;
   entry.input = { ...entry.input, pitch, pad: true };
+}
+
+/**
+ * The boat's helm toward a point, one tick: `BoatControl::towardsDirection`
+ * 0x0860df70 -- `actionStatusDecision` on the water map, then
+ * `speedControl` 0x0860cf40 (bot-vehicle-air.js `boatControl`) -- as
+ * `EntryBoatMoveTo::execute` 0x08613d60 runs it for every boat move. bot.js
+ * `_steerToward` sends a driven ship here; bot-route.js `steerToward` keeps
+ * the land hulls and the soldier.
+ *
+ * Two engine facts the helm needs from the bot:
+ *  * The throttle channel persists. `BotMain::updatePlayerAction` 0x08526430
+ *    clears only channels 8, 23, 24 and 28 of the bot's `PlayerInput` before
+ *    handing it on, so `speedControl`'s turn reads last tick's throttle
+ *    (`param_7[3]`, the channel it writes): full ahead or astern is kept at
+ *    or under 3 m/s, which is how a boat turns in place, backing and filling
+ *    between +-3 m/s with the rudder flipping with the motion. The viewer
+ *    rebuilds the bot's word every tick; `bot._heldThrottle` (bot.js, the
+ *    throttle written last tick) stands for the channel.
+ *  * `EntryBoatMoveTo` enables the hull's AI physics when it is off
+ *    (`hasPhysicsEnabled` at 0x08613e78, `enablePhysics` at 0x08614023): the craft's
+ *    `isTouchingLand` is its terrain contact from then on (bot-units.js
+ *    `touchingLand`), until a driver's bail disables it again.
+ */
+export function steerBoat(bot, x, z, speed = 1) {
+  const dx = x - bot.position[0];
+  const dz = z - bot.position[2];
+  if (dx * dx + dz * dz < 1e-8) { bot.moveForward = 0; return; }
+  const m = bot.vehicle;
+  if (m.drive) m.drive.aiPhysics = true;
+  const st = m.drive?.state;
+  const nav = bot._nav();
+  const w = st?.angularVelocity;
+  const r = boatControl({
+    forward: bot._vehicleForward(), velocity: st ? [st.velocity.x, st.velocity.z] : [0, 0],
+    toTarget: [dx, dz], radius: 0,
+    maxSpeed: m.hullMaxSpeed || m.maxSpeed || null,
+    prevSpeed: bot._boatPrevSpeed ?? 0,
+    // A THREE yaw rate about +y turns the heading toward a negative angle.
+    yawRate: w ? -w.y : 0,
+    level: nav ? freeLevel(nav, bot.position[0], bot.position[2]) : Infinity,
+    prevThrottle: bot._heldThrottle ?? 0,
+    decision: nav ? hullDecision(bot, dx, dz, BOAT.baseLevel) : null,
+  });
+  bot._boatPrevSpeed = r.speed ?? 0;
+  bot.moveForward = r.throttle * (speed > 0 ? 1 : 0);
+  bot.moveStrafe = r.steer;
+  bot._dbgSteerAngle = r.angle;
 }
 
 /** Run every action in the plan for this tick. */
