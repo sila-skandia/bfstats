@@ -29,7 +29,8 @@
 
 import { findLocalPath, findStrategicPath, traceClear, COARSE_CELL, freeLevel, isWalkable } from './nav-grid.js';
 import { tankControl, TANK, actionStatusDecision, searchBox, checkLine } from './bot-vehicle.js';
-import { boatControl, boatResetControls, PLANE, BOAT } from './bot-vehicle-air.js';
+import { boatControl, boatResetControls, PLANE, BOAT, collisionPredicted } from './bot-vehicle-air.js';
+import { friendlyHulls } from './bot-pilot.js';
 import { wrapAngle } from './bot-aim.js';
 
 /** How close to a plain waypoint before it counts as reached. */
@@ -114,28 +115,195 @@ const MOVING_SPEED = 1.0;
 const REPLAN_GOAL_MOVE = 4 * 5.0;
 /** A potential obstacle (`BotMain +0x170` entries `{x, z, r}`). The engine
  *  plants one on the object `BBAvoid::calculateUrgency` 0x0855c650 predicts a
- *  collision with; the soldier template sets no `avoidCollisionLookAhead`
- *  (`AITemplateMobile` ctor 0x085e0b90 zeroes it), so for infantry that is an
- *  object the body is already touching. Its radius is `R_bot + R_object` per
- *  sub-sphere (`updatePotentialObstacles` 0x0852d880); `AIPathfinding`'s ctor
- *  0x0847a780 zeroes `getPotentialObstacleMaxSpeed/MaxAge` and no level sets
- *  them, so only a stationary object qualifies and it is dropped once the bot
- *  is `5 * maxSpeed + R` = 25.5 m away. The viewer's trigger is the body's
- *  own hull contact (`Soldier.blocked`, `SoldierBody.contactNormal`) held
- *  for `CONTACT_TICKS` while the map says the way is clear; the object's
- *  radius is not known, so a sandbag's stands in (INVENTION). */
+ *  collision with inside the Mobile plug-in's `avoidCollisionLookAhead`
+ *  (`predictObstacles` below: 5 s for soldiers too). Its radius is `R_bot +
+ *  R_object` per sub-sphere (`addPotentialObstacle` 0x0852ceb0);
+ *  `AIPathfinding`'s ctor 0x0847a780 zeroes `getPotentialObstacleMaxSpeed/
+ *  MaxAge` and no level sets them, so only a stationary object qualifies and
+ *  it is dropped once the bot is `5 * maxSpeed + R` = 25.5 m away. The
+ *  viewer also plants one on the body's own hull contact (`Soldier.blocked`,
+ *  `SoldierBody.contactNormal`) held for `CONTACT_TICKS` while the map says
+ *  the way is clear, for what no AI object stands for (a static the map
+ *  missed); that object's radius is not known, so a sandbag's stands in
+ *  (INVENTION). */
 const OBSTACLE_RADIUS = 1.5;
 const OBSTACLE_AHEAD = 1.0;
 const OBSTACLE_DROP_DISTANCE = 5 * 5.0 + 0.5;
 const CONTACT_TICKS = 10;
+
+/**
+ * The soldier's collision prediction (`BBAvoid::calculateUrgency` 0x0855c650,
+ * read 2026-09-24). The look-ahead is the Mobile plug-in's +0x2c
+ * (`avoidCollisionLookAhead`, the console setter writes +0x2c at
+ * 0x085039e9), 5.0 from both `AITemplateMobile` ctors (0x085e0bf0,
+ * 0x085e0cb0) and set by no soldier template, so a soldier looks 5 s ahead
+ * as a vehicle does (the viewer took it for 0 until AI-119). Each tick the
+ * bot's own side's and the neutral objects within `lookAhead x speed + R` of
+ * it (IAIEnvironment vt+0xdc for the side, then for 0) are tested with
+ * `collisionPredicted` 0x0855d2f0 (relative position and velocity, the two
+ * radii summed); one predicted to collide that stands still (its speed at
+ * most `getPotentialObstacleMaxSpeed`, 0 on every level), or that touches
+ * now, becomes a potential obstacle through
+ * `addSlowMovingPathfindingObstacle` 0x0855d550, which also adds every
+ * other such still object within `5 x maxSpeed + R_object` of it (the bot's
+ * Mobile `maxSpeed`, 5 for a soldier).
+ */
+export const SOLDIER_AVOID = {
+  lookAhead: 5.0,
+  /** `getPotentialObstacleMaxSpeed`, 0 (`AIPathfinding` ctor 0x0847a780). */
+  potentialObstacleMaxSpeed: 0,
+  /** A body slower than this reads as still: the viewer's bodies drift a
+   *  few mm/s at rest (INVENTION: the engine compares the exact speed). */
+  stillSpeed: 0.05,
+  /** The soldier template's `aiTemplatePlugIn.maxSpeed 5.0`. */
+  maxSpeed: 5.0,
+};
+
+/** The bodies a soldier's prediction tests: own-side soldiers on foot and
+ *  own-side or empty hulls (the bot's side's grid and the neutral one,
+ *  IAIEnvironment vt+0xdc), `{ id, x, z, vx, vz, r }`. */
+function avoidBodies(bot) {
+  const out = [];
+  for (const [id, p] of bot.world?.players ?? []) {
+    if (id === bot.playerId || !p?.soldier || p.vehicle || p.team !== bot.team) continue;
+    const s = p.soldier;
+    if (bot.world?.armorOf?.(id)?.destroyed || !Number.isFinite(s.x)) continue;
+    const v = s.speed ?? 0;
+    out.push({ id: `p:${id}`, x: s.x, z: s.z, vx: v * Math.sin(s.yaw ?? 0), vz: v * Math.cos(s.yaw ?? 0), r: BOT_RADIUS });
+  }
+  // The hull the bot is walking to board is its plan's own target, not an
+  // obstacle (INVENTION: how `BBPChange::createPlan`'s finding move treats
+  // its object was not read).
+  const target = bot.currentPlan?.vehicleId ?? null;
+  for (const h of friendlyHulls(bot)) {
+    if (!h.pos || !h.box) continue;
+    if (target && (target === h.id || String(target).startsWith(`${h.id}:`))) continue;
+    // The side's own grid and the neutral one: a hull with an enemy aboard
+    // is on the enemy's (`friendlyHulls` keeps the known ones for the
+    // pilot's avoid, which reads the same two grids at the plane's side).
+    if (h.crew?.some(id => { const t = bot.world?.players?.get(id)?.team; return t !== undefined && t !== bot.team; })) continue;
+    const st = h.drive?.state;
+    const x = st?.position ? st.position.x : h.pos[0], z = st?.position ? st.position.z : h.pos[2];
+    const b = h.box;
+    // The hull's own heading from its node's quaternion, not its world
+    // matrix: the matrix is refreshed by whatever last asked for it, which
+    // is not always the sim tick, and seeded runs must replay.
+    const q = h.node?.quaternion;
+    const sub = subSpheres2d(b);
+    const spheres = sub.points.map(([lx, lz]) => {
+      if (!q) return [x + lx, z + lz];
+      const [rx, , rz] = rotateByQuaternion(q, lx, 0, lz);
+      return [x + rx, z + rz];
+    });
+    out.push({ id: `h:${h.id}`, x, z, vx: st?.velocity?.x ?? 0, vz: st?.velocity?.z ?? 0,
+               r: 0.5 * Math.hypot(b.max[0] - b.min[0], b.max[2] - b.min[2]),
+               spheres, sphereR: sub.r });
+  }
+  return out;
+}
+
+/** `v` rotated by the unit quaternion `q` (`{x, y, z, w}`). */
+function rotateByQuaternion(q, vx, vy, vz) {
+  const tx = 2 * (q.y * vz - q.z * vy), ty = 2 * (q.z * vx - q.x * vz), tz = 2 * (q.x * vy - q.y * vx);
+  return [vx + q.w * tx + (q.y * tz - q.z * ty), vy + q.w * ty + (q.z * tx - q.x * tz), vz + q.w * tz + (q.x * ty - q.y * tx)];
+}
+
+/**
+ * `AIObjectPhysical::getSubSpheres2d` 0x085d64b0 on a local box: the spheres
+ * a potential obstacle is planted as (`addPotentialObstacle` 0x0852ceb0 adds
+ * one circle a sphere, `R_bot` + the sphere radius). A box whose long side
+ * is `n = round(long / short) > 1` short sides is `n` spheres along it,
+ * `long / (n + 1)` apart and of that radius, on the short side's middle;
+ * any other box one sphere at its centre (`getSphereLocalOffset`
+ * 0x085d6860) of `getSmallestRadius` 0x085d68f0 (half the box's diagonal).
+ * `{ points: [[x, z]], r }` in the box's frame.
+ */
+export function subSpheres2d(box) {
+  const dx = box.max[0] - box.min[0], dz = box.max[2] - box.min[2];
+  if (dz > 0 && dz < dx) {
+    const n = Math.round(dx / dz);
+    if (n > 1) {
+      const step = dx / (n + 1);
+      return { r: step, points: Array.from({ length: n }, (_, k) => [box.min[0] + (k + 1) * step, box.min[2] + dz / 2]) };
+    }
+  } else if (dx > 0 && dx < dz) {
+    const n = Math.round(dz / dx);
+    if (n > 1) {
+      const step = dz / (n + 1);
+      return { r: step, points: Array.from({ length: n }, (_, k) => [box.min[0] + dx / 2, box.min[2] + (k + 1) * step]) };
+    }
+  }
+  return {
+    r: 0.5 * Math.hypot(dx, box.max[1] - box.min[1], dz),
+    points: [[(box.min[0] + box.max[0]) / 2, (box.min[2] + box.max[2]) / 2]],
+  };
+}
+
+/**
+ * `BBAvoid::calculateUrgency`'s obstacle half for a soldier on foot: plant
+ * a potential obstacle on each still body a collision is predicted with
+ * inside `SOLDIER_AVOID.lookAhead`, and on the still bodies around it, and
+ * re-plan the route around them. `bodies` defaults to the world's. Returns
+ * the number of obstacles planted.
+ */
+export function predictObstacles(bot, bodies = null) {
+  if (bot.vehicle) return 0;
+  const soldier = bot._player?.()?.soldier;
+  const speed = soldier?.speed ?? 0;
+  const yaw = soldier?.yaw ?? bot.yaw ?? 0;
+  const me = [bot.position[0], bot.position[2]];
+  const vel = [speed * Math.sin(yaw), speed * Math.cos(yaw)];
+  const R = bot._radius?.() ?? BOT_RADIUS;
+  const reach = SOLDIER_AVOID.lookAhead * speed + R;
+  const list = bodies ?? avoidBodies(bot);
+  const still = o => Math.hypot(o.vx, o.vz) <= SOLDIER_AVOID.potentialObstacleMaxSpeed + SOLDIER_AVOID.stillSpeed;
+  let planted = 0;
+  // One circle a sub-sphere (`addPotentialObstacle` 0x0852ceb0); a soldier
+  // is one sphere at his feet.
+  const plant = o => {
+    if (bot.obstacles.some(ob => ob.id === o.id || ob.id?.startsWith(`${o.id}#`))) return;
+    if (o.spheres?.length) {
+      o.spheres.forEach(([x, z], k) => bot.obstacles.push({ x, z, r: R + o.sphereR, age: 0, id: `${o.id}#${k}`, unit: null }));
+    } else {
+      bot.obstacles.push({ x: o.x, z: o.z, r: R + o.r, age: 0, id: o.id, unit: null });
+    }
+    planted++;
+  };
+  for (const o of list) {
+    const rel = [o.x - me[0], 0, o.z - me[1]];
+    if (Math.hypot(rel[0], rel[2]) > reach + o.r) continue;
+    const hit = collisionPredicted(rel, [o.vx - vel[0], 0, o.vz - vel[1]], R + o.r, SOLDIER_AVOID.lookAhead);
+    if (!hit || !(hit.t === 0 || still(o))) continue;
+    plant(o);
+    const around = SOLDIER_AVOID.maxSpeed * 5 + o.r;
+    for (const q of list) {
+      if (q !== o && still(q) && Math.hypot(q.x - o.x, q.z - o.z) <= around) plant(q);
+    }
+  }
+  // `addPotentialObstacle` 0x0852ceb0 marks the bot's paths stale (+0xc0
+  // |= 4, so `initPathfinding` builds afresh): the route is rebuilt now,
+  // around the new circles.
+  if (planted && bot.route) bot.route = null;
+  return planted;
+}
 
 /** `updatePotentialObstacles`: an obstacle is dropped once the bot is
  *  well away from it (max age 0 in every shipped level). */
 export function ageObstacles(bot, dt) {
   if (!bot.obstacles.length) return;
   for (const ob of bot.obstacles) ob.age += dt;
-  bot.obstacles = bot.obstacles.filter(ob =>
-    Math.hypot(ob.x - bot.position[0], ob.z - bot.position[2]) <= OBSTACLE_DROP_DISTANCE);
+  // A predicted obstacle is sized for the body that predicted it (`R_bot +
+  // R_object`): one a soldier planted goes when he takes a hull, and one a
+  // hull's crewman planted when he leaves it (INVENTION: what the engine's
+  // `BotMain` +0x188 map does on a change of controlled object was not read).
+  const unit = bot.vehicle?.vehicleId ?? null;
+  // Nor does a hull stay an obstacle once the bot's plan is to board it
+  // (the same INVENTION as `avoidBodies`' exclusion): its circles cover the
+  // door the plan walks to.
+  const target = bot.currentPlan?.vehicleId != null ? `h:${String(bot.currentPlan.vehicleId).split(':')[0]}` : null;
+  bot.obstacles = bot.obstacles.filter(ob => (ob.unit === undefined || ob.unit === unit)
+    && !(target && (ob.id === target || ob.id?.startsWith(`${target}#`)))
+    && Math.hypot(ob.x - bot.position[0], ob.z - bot.position[2]) <= OBSTACLE_DROP_DISTANCE);
 }
 
 /**
@@ -546,7 +714,10 @@ export function execInfantryMoveTo(bot, action, dt) {
   const hullV = bot.vehicle?.drive?.state?.velocity;
   const bodySpeed = hullV ? Math.hypot(hullV.x, hullV.z) : (soldier?.speed ?? 0);
   bot.moveForward = bot._lastThrottle ?? 0;
-  if (!bot.vehicle) bot._trackContact(soldier);
+  if (!bot.vehicle) {
+    predictObstacles(bot);
+    bot._trackContact(soldier);
+  }
   if (bot._trackObstruction(bodySpeed, dt)) {
     // The path failed (`+0xc = 3`): next tick rebuilds it around the
     // obstacles, or walks straight at the goal after repeated failures. A
