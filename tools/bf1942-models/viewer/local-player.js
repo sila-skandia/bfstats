@@ -22,13 +22,21 @@ import { calculateHitOctant } from './hud.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `HUD_FLY`, `LOCAL_PLAYER`, `LOOK_SENS`, `botBodies`, `botUnits`, `camera`,
- * `deployScreen`, `flagCapture`, `getTouchHudText`, `guns`, `hud`,
- * `hudBridge`, `hudFeed`, `isTouchDevice`, `kbLockLeave`, `level`, `look`,
- * `mapSurfaces`, `optOnFoot`, `optPilot`, `pageAudio`, `params`,
- * `placeCamera`, `resetMobileControls`, `room`, `seatAltFire`, `seatFire`,
- * `seatPose`, `soldierKit`, `soldierView`, `spawnFlagSelect`, `spawning`,
- * `updateHud`, `updateMobileControls`, `vehicleHits`, `vehicles`, `world`.
+ * `aimHeld`, `buildSpawnFlags`, `camera`, `captureBotPresentationTick`,
+ * `clearVehicleHud`, `clickQueued`, `collider`, `currentRoot`,
+ * `deployActive`, `deployTeamId`, `disposeHandWeapon`, `disposeSeatPose`,
+ * `feedVehicleHud`, `footView3p`, `getTouchHudText`, `groundHeight`, `guns`,
+ * `handWeapon`, `hud`, `HUD_FLY`, `hudBridge`, `isCollision`,
+ * `isTouchDevice`, `isZoomed`, `kbLockLeave`, `loadSeatPose`,
+ * `LOCAL_PLAYER`, `look`, `LOOK_SENS`, `netOccupiedVehicleId`, `netSeatRow`,
+ * `netSendAction`, `netTickPoses`, `netVehicleIdFor`, `optOnFoot`,
+ * `optPilot`, `params`, `pickVehicle`, `placeCamera`,
+ * `playSoldierHurtSound`, `resetCaptureUi`, `resetMobileControls`,
+ * `roomJoined`, `seatAltFire`, `seatFire`, `seatHolder`, `showView`,
+ * `spawnAtFlag`, `spawnFlagSelect`, `syncFootView`, `toggleFullMap`,
+ * `triggerHeld`, `triggerHitIndicator`, `updateHud`, `updateMobileControls`,
+ * `updateSeatPoseVisibility`, `vehicleInput`, `vehicles`,
+ * `vehicleSpawnActive`, `warmSubtree`, `world`.
  */
 export function createLocalPlayer(page) {
   const localPlayer = {
@@ -167,8 +175,8 @@ export function createLocalPlayer(page) {
    * `+0x270 < 0` -- but the guard costs nothing.
    */
   function footZoomFactor() {
-    if (!page.soldierKit.isZoomed()) return 1;
-    const zoomFov = page.soldierKit.handWeapon?.data?.zoom?.fov;
+    if (!page.isZoomed()) return 1;
+    const zoomFov = page.handWeapon?.data?.zoom?.fov;
     return Number.isFinite(zoomFov) && zoomFov > 0 ? zoomFov : 1;
   }
 
@@ -355,7 +363,7 @@ export function createLocalPlayer(page) {
     // client can measure its error at. Here rather than beside the send, because
     // a frame that ran three ticks sends three words and this is the only place
     // that sees each tick's own finished pose (netcode-reconcile.js).
-    if (page.room.roomJoined && localPlayer.soldier) page.room.netTickPoses.push(localPlayer.soldier.x, localPlayer.soldier.y, localPlayer.soldier.z);
+    if (page.roomJoined && localPlayer.soldier) page.netTickPoses.push(localPlayer.soldier.x, localPlayer.soldier.y, localPlayer.soldier.z);
     if (localPlayer.soldier) {
       if (!snap) Object.assign(footEyePrev, footEyeCur);
       // Alpha 1: this tick's own finished pose. See `Soldier.eye`.
@@ -367,7 +375,7 @@ export function createLocalPlayer(page) {
       footFeetCur.z = localPlayer.soldier.z;
       if (snap) Object.assign(footFeetPrev, footFeetCur);
     }
-    page.botBodies.captureBotPresentationTick(snap);
+    page.captureBotPresentationTick(snap);
     const vi = vehicleInterp;
     if (!vi.vehicle && !vi.parts.length) return;
     if (vi.vehicle) {
@@ -503,7 +511,7 @@ export function createLocalPlayer(page) {
   }
   serverSettings.onChange(() => {
     refreshSeatViewModes();
-    page.soldierView.syncFootView();
+    page.syncFootView();
   });
 
   /**
@@ -539,14 +547,14 @@ export function createLocalPlayer(page) {
       cvm: info?.cameraViewModes, nose: !!nose, settings: serverSettings,
     });
     localPlayer.view = new VehicleCamera(subject, {
-      groundHeight: page.level.groundHeight, eyeNode, modes, nose, mode: localPlayer.view?.mode,
+      groundHeight: page.groundHeight, eyeNode, modes, nose, mode: localPlayer.view?.mode,
     });
     localPlayer.viewFor = { seat, seatId: seat.seatId, drive: seat.drive };
     // The constructor sets the mode without the swap; the interior follows the
     // view from here, exactly as it does on a C press.
     subject.setFirstPerson(localPlayer.view.firstPerson);
     mountChaseLaw();
-    page.seatPose.updateSeatPoseVisibility();
+    page.updateSeatPoseVisibility();
     return localPlayer.view;
   }
 
@@ -557,14 +565,14 @@ export function createLocalPlayer(page) {
     localPlayer.view.setModes(seatViewModes({
       cvm: seat?.cameraViewModes, nose: !!localPlayer.view.nose, settings: serverSettings,
     }));
-    page.seatPose.updateSeatPoseVisibility();
+    page.updateSeatPoseVisibility();
   }
 
   /** C: the next view of whatever the player is sitting in, or standing as. */
   function cycleView() {
-    if (page.optPilot.checked && localPlayer.view) page.hudFeed.showView(localPlayer.view.cycle());
-    else if (page.optOnFoot.checked && localPlayer.soldier && page.soldierView.footView3p.modes.length > 1) {
-      page.hudFeed.showView(page.soldierView.footView3p.cycle());
+    if (page.optPilot.checked && localPlayer.view) page.showView(localPlayer.view.cycle());
+    else if (page.optOnFoot.checked && localPlayer.soldier && page.footView3p.modes.length > 1) {
+      page.showView(page.footView3p.cycle());
     }
   }
 
@@ -604,7 +612,7 @@ export function createLocalPlayer(page) {
   /** The plain tree `boundingRadius` walks, from a vehicle's node tree. */
   function chaseRadiusTree(node) {
     let radius = 0;
-    if (node.isMesh && !page.level.isCollision(node) && node.geometry) {
+    if (node.isMesh && !page.isCollision(node) && node.geometry) {
       if (!node.geometry.boundingSphere) node.geometry.computeBoundingSphere();
       const sphere = node.geometry.boundingSphere;
       if (sphere) radius = sphere.center.length() + sphere.radius;
@@ -612,7 +620,7 @@ export function createLocalPlayer(page) {
     return {
       radius,
       offset: node.position.toArray(),
-      children: node.children.filter(c => !page.level.isCollision(c)).map(chaseRadiusTree),
+      children: node.children.filter(c => !page.isCollision(c)).map(chaseRadiusTree),
     };
   }
 
@@ -689,7 +697,7 @@ export function createLocalPlayer(page) {
     chaseStep(rig.rel, rig.target, [v.x, v.y, v.z], sign, dt);
     const ax = rig.anchor.x + rig.rel[0];
     const az = rig.anchor.z + rig.rel[2];
-    chaseEye(rig.anchor.toArray(), rig.rel, page.level.groundHeight(ax, az), rig.eye);
+    chaseEye(rig.anchor.toArray(), rig.rel, page.groundHeight(ax, az), rig.eye);
     rig.eyeV.fromArray(rig.eye);
     pose.position.copy(rig.eyeV);
     rig.basis.lookAt(rig.eyeV, rig.anchor, CHASE_WORLD_UP);
@@ -711,7 +719,7 @@ export function createLocalPlayer(page) {
   function setPilot(on, node = null, seatId = null) {
     if (on) {
       const current = localPlayer.occupancy;
-      const target = node || current?.root || page.vehicleHits.pickVehicle();
+      const target = node || current?.root || page.pickVehicle();
       if (!target) {
         page.optPilot.checked = false;
         return;
@@ -721,7 +729,7 @@ export function createLocalPlayer(page) {
         // Re-entering the same vehicle at a specific door (its own EntryPoint
         // was in reach again) rather than wherever you last sat.
         seat = seatId ? page.vehicles.switchSeat(page.LOCAL_PLAYER, seatId) : current;
-        if (seat && seatId) page.seatPose.disposeSeatPose();
+        if (seat && seatId) page.disposeSeatPose();
       } else {
         // A different vehicle than the one already held. Every exit path has
         // already given the old seat back; this is the defensive case.
@@ -739,9 +747,9 @@ export function createLocalPlayer(page) {
       if (seat) mountLocalSeat(seat);
     } else if (localPlayer.occupancy) {
       // The seat's gone; tell the server so the others' replicas release it.
-      const netSeat = page.room.netSeatRow('exit');
+      const netSeat = page.netSeatRow('exit');
       leaveSeat({ reset: true });
-      if (netSeat) page.room.netSendAction(netSeat);
+      if (netSeat) page.netSendAction(netSeat);
     } else {
       page.world?.clearPlayerVehicle(page.LOCAL_PLAYER);
     }
@@ -766,19 +774,19 @@ export function createLocalPlayer(page) {
     // never linked a program for. The level's warm-up compiled the originals
     // they were cloned from, not these; skip this and the clone's first real
     // draw is the mid-burst link stall rule 6 exists to prevent.
-    page.level.warmSubtree(seat.root);
-    page.hudFeed.feedVehicleHud();
+    page.warmSubtree(seat.root);
+    page.feedVehicleHud();
     // Render the seated soldier (passenger seats only — driver seats have no
     // poseAnimation and skip the load). Awaited here so the cockpit frame the
     // player sees is never the first external one with an empty seat.
-    if (seat.instance.drivable || seat.rootKind === 'gun') page.seatPose.loadSeatPose();
+    if (seat.instance.drivable || seat.rootKind === 'gun') page.loadSeatPose();
     // The room's control channel: the server mounts this player in its own
     // world the same way (netcode.js MSG_ACTION; the vehicle id is the room
     // table's, matched by template + pose like the renderer's). The seat-dot
     // feed keeps the same id for its every-frame occupant read.
-    page.room.netOccupiedVehicleId = page.room.netVehicleIdFor(seat.root);
-    const netSeat = page.room.netSeatRow('enter');
-    if (netSeat) page.room.netSendAction(netSeat);
+    page.netOccupiedVehicleId = page.netVehicleIdFor(seat.root);
+    const netSeat = page.netSeatRow('enter');
+    if (netSeat) page.netSendAction(netSeat);
   }
 
   function syncLocalSeat() {
@@ -788,7 +796,7 @@ export function createLocalPlayer(page) {
     if (was && was.seat === seat && was.seatId === seat.seatId && was.drive === seat.drive) return;
     buildSeatView();
     rebuildVehicleInterp();
-    page.hudFeed.feedVehicleHud();
+    page.feedVehicleHud();
     page.updateMobileControls();
   }
 
@@ -798,7 +806,7 @@ export function createLocalPlayer(page) {
     const drive = seat.drive;
     // The seated occupant goes with the seat, or stepping out of a jeep leaves
     // a soldier sitting in mid-air where the driver's seat had been.
-    page.seatPose.disposeSeatPose();
+    page.disposeSeatPose();
     if (drive) {
       if (reset && seat.instance.seats.size === 1) drive.reset();
       // `reset()` only restores the exterior when it owns the swap, and it no
@@ -809,7 +817,7 @@ export function createLocalPlayer(page) {
       drive.setFirstPerson(false);
     }
     page.vehicles.leave(page.LOCAL_PLAYER);
-    page.hudFeed.clearVehicleHud();
+    page.clearVehicleHud();
     // The seat's view rig goes with the seat: the next mount builds its own.
     localPlayer.view = null;
     localPlayer.viewFor = null;
@@ -875,7 +883,7 @@ export function createLocalPlayer(page) {
     // `vehicleGuns` loop with the unconditional-off `setFiring` semantics. The
     // shell left here is the presentation half: the muzzle flash's 1P choice
     // and the camera, including the passenger-seat pose.
-    const driving = localPlayer.occupancy.isActiveRoot() && !page.vehicleHits.vehicleInput.blocked;
+    const driving = localPlayer.occupancy.isActiveRoot() && !page.vehicleInput.blocked;
     page.guns.firstPerson = localPlayer.car.firstPerson;
     // A non-driving seat (the Willy's passenger, a Sherman's hull gunner) still
     // needs the camera — the VehicleCamera owns the C-cycle for every seat of a
@@ -987,7 +995,7 @@ export function createLocalPlayer(page) {
     if (seat.instance.holder(seatId) != null) return;
     // Discard the previous seat's soldier pose (if any) before loading the new
     // one — a driver→passenger switch on a Willy, or vice-versa.
-    page.seatPose.disposeSeatPose();
+    page.disposeSeatPose();
     // The hull does not move: the instance keeps its drive and body, and re-
     // scopes the seat's guns and the world's mount.
     page.vehicles.switchSeat(page.LOCAL_PLAYER, seatId);
@@ -997,16 +1005,16 @@ export function createLocalPlayer(page) {
     // A different seat is a different camera, often in a different rig; snap
     // rather than sweep the view across the hull for a frame.
     rebuildVehicleInterp();
-    page.level.warmSubtree(seat.root);
-    page.hudFeed.feedVehicleHud();
+    page.warmSubtree(seat.root);
+    page.feedVehicleHud();
     page.hud.textContent = page.isTouchDevice ? page.getTouchHudText()
       : mannedActive() ? HUD_MANNED : localPlayer.car ? HUD_DRIVE : HUD_PILOT;
-    page.seatPose.loadSeatPose();
+    page.loadSeatPose();
     page.updateMobileControls();
     // The room's control channel: seat switches are rows, not input words.
-    const netId = page.room.netVehicleIdFor(seat.root);
-    if (page.room.roomJoined && netId != null) {
-      page.room.netSendAction({ type: 'seat', vehicle: netId, seat: position, action: 'switch' });
+    const netId = page.netVehicleIdFor(seat.root);
+    if (page.roomJoined && netId != null) {
+      page.netSendAction({ type: 'seat', vehicle: netId, seat: position, action: 'switch' });
     }
   }
 
@@ -1043,8 +1051,8 @@ export function createLocalPlayer(page) {
    */
   function collectEntryPoints() {
     localPlayer.entryPoints = [];
-    for (const vehicle of findAllVehicleRoots(page.level.currentRoot)) {
-      if (!page.level.vehicleSpawnActive(vehicle)) continue;
+    for (const vehicle of findAllVehicleRoots(page.currentRoot)) {
+      if (!page.vehicleSpawnActive(vehicle)) continue;
       const control = vehicle.userData?.control || vehicle.name || 'vehicle';
       for (const entry of listEntryPoints(vehicle, ENTRY_RADIUS_FALLBACK)) {
         localPlayer.entryPoints.push({
@@ -1082,7 +1090,7 @@ export function createLocalPlayer(page) {
   function nearestEntry() {
     if (!localPlayer.entryPoints) collectEntryPoints();
     return pickNearest(localPlayer.entryPoints, entry => {
-      if (page.botUnits.seatHolder(entry.vehicle, entry.seatId)) return Infinity;
+      if (page.seatHolder(entry.vehicle, entry.seatId)) return Infinity;
       entry.node.getWorldPosition(entryWorld);
       const distance = Math.hypot(entryWorld.x - localPlayer.soldier.x,
         entryWorld.y - (localPlayer.soldier.y + 1), entryWorld.z - localPlayer.soldier.z);
@@ -1115,19 +1123,19 @@ export function createLocalPlayer(page) {
    * on-foot FOV.
    */
   function enterVehicle(entry) {
-    if (page.soldierKit.handWeapon) {
-      if (page.soldierKit.handWeapon.group) page.guns.setFiring(page.soldierKit.handWeapon.group, false);
-      page.soldierKit.handWeapon.rig.visible = false;
+    if (page.handWeapon) {
+      if (page.handWeapon.group) page.guns.setFiring(page.handWeapon.group, false);
+      page.handWeapon.rig.visible = false;
       // Holstering drops zoom — `HandFireArms::disable` (lnxded 0x08293da0)
       // calls setZoom(false) — and the eased FOV factor goes home with it.
-      page.soldierKit.handWeapon.zoomed = false;
-      page.soldierKit.handWeapon.rezoom = 0;
-      page.soldierKit.handWeapon.fovCur = 1;
-      page.soldierKit.handWeapon.worldFov = FOOT_FOV;
+      page.handWeapon.zoomed = false;
+      page.handWeapon.rezoom = 0;
+      page.handWeapon.fovCur = 1;
+      page.handWeapon.worldFov = FOOT_FOV;
     }
-    page.soldierKit.triggerHeld = false;
-    page.soldierKit.clickQueued = false;
-    page.soldierKit.aimHeld = false;
+    page.triggerHeld = false;
+    page.clickQueued = false;
+    page.aimHeld = false;
     // A button held through the climb in must not arrive already pulling the
     // vehicle's trigger — nor, on the way back out, the soldier's.
     page.seatFire = false;
@@ -1152,7 +1160,7 @@ export function createLocalPlayer(page) {
       page.camera.fov = FOOT_FOV;
       page.camera.near = 0.2;
       page.camera.updateProjectionMatrix();
-      if (page.soldierKit.handWeapon) page.soldierKit.handWeapon.rig.visible = true;
+      if (page.handWeapon) page.handWeapon.rig.visible = true;
       page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : localPlayer.HUD_FOOT;
     }
     page.resetMobileControls();
@@ -1217,17 +1225,17 @@ export function createLocalPlayer(page) {
     const exit = exitPose(vehicle);
     // Height above whatever the collider says is under the exit point, and the
     // hull's own velocity — both read before `leaveSeat` lets go of it.
-    const groundAt = page.level.collider?.surfaceHeight ? page.level.collider.surfaceHeight(exit.x, exit.z) : NaN;
+    const groundAt = page.collider?.surfaceHeight ? page.collider.surfaceHeight(exit.x, exit.z) : NaN;
     const bailing = Number.isFinite(groundAt) && exit.y - groundAt > BAIL_OUT_HEIGHT;
     const hullVelocity = vehicle.state?.velocity;
     // The room's control channel: capture the seat row before the seat is
     // given back.
-    const netSeat = localPlayer.occupancy ? page.room.netSeatRow('exit') : null;
+    const netSeat = localPlayer.occupancy ? page.netSeatRow('exit') : null;
     leaveSeat();
-    if (netSeat) page.room.netSendAction(netSeat);
+    if (netSeat) page.netSendAction(netSeat);
     page.optPilot.checked = false;
     if (page.optOnFoot.checked && localPlayer.soldier) {
-      localPlayer.soldier.collider = page.level.collider;
+      localPlayer.soldier.collider = page.collider;
       if (bailing) {
         localPlayer.soldier.bailOut(exit.x, exit.y, exit.z, exit.yaw,
           hullVelocity?.x ?? 0, hullVelocity?.y ?? 0, hullVelocity?.z ?? 0);
@@ -1237,7 +1245,7 @@ export function createLocalPlayer(page) {
       page.camera.fov = FOOT_FOV;
       page.camera.near = 0.2;
       page.camera.updateProjectionMatrix();
-      if (page.soldierKit.handWeapon) page.soldierKit.handWeapon.rig.visible = true;
+      if (page.handWeapon) page.handWeapon.rig.visible = true;
       page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : localPlayer.HUD_FOOT;
     } else {
       // Nobody was waiting in the seat — the pilot box was ticked from free
@@ -1294,17 +1302,17 @@ export function createLocalPlayer(page) {
   function exitManned() {
     if (!localPlayer.occupancy) return;
     const exit = exitPoseManned(localPlayer.occupancy);
-    const netSeat = page.room.netSeatRow('exit');
+    const netSeat = page.netSeatRow('exit');
     leaveSeat();
-    if (netSeat) page.room.netSendAction(netSeat);
+    if (netSeat) page.netSendAction(netSeat);
     page.optPilot.checked = false;
     if (page.optOnFoot.checked && localPlayer.soldier) {
-      localPlayer.soldier.collider = page.level.collider;
+      localPlayer.soldier.collider = page.collider;
       localPlayer.soldier.spawn(exit.x, exit.y, exit.z, exit.yaw);
       page.camera.fov = FOOT_FOV;
       page.camera.near = 0.2;
       page.camera.updateProjectionMatrix();
-      if (page.soldierKit.handWeapon) page.soldierKit.handWeapon.rig.visible = true;
+      if (page.handWeapon) page.handWeapon.rig.visible = true;
       page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : localPlayer.HUD_FOOT;
     } else {
       page.placeCamera();
@@ -1479,16 +1487,16 @@ export function createLocalPlayer(page) {
     // Either edge tears the old weapon down: entering rebuilds it against the
     // current level's gun index (a map switch has just cleared `guns.groups`),
     // leaving must not park a rifle on the free-fly camera.
-    page.soldierKit.disposeHandWeapon();
-    if (!on) page.flagCapture.resetCaptureUi();
+    page.disposeHandWeapon();
+    if (!on) page.resetCaptureUi();
     if (on) {
       // The soldier is the world's: `addPlayer` builds it the engine's way (a
       // fresh Soldier on the collider, spawned at the team's first flag) and
       // the page borrows the instance for the camera, exactly as the world's
       // records are the only ones the HUD reads.
-      let player = page.world?.addPlayer(page.LOCAL_PLAYER, { team: page.deployScreen.deployTeamId });
+      let player = page.world?.addPlayer(page.LOCAL_PLAYER, { team: page.deployTeamId });
       localPlayer.soldier = player?.soldier ?? null;
-      if (!page.flagCapture.buildSpawnFlags() || !page.spawning.spawnAtFlag()) {
+      if (!page.buildSpawnFlags() || !page.spawnAtFlag()) {
         // A level with no control point that owns a spawn group has nowhere to
         // put a soldier; say so rather than dropping him at the origin.
         page.world.removePlayer(page.LOCAL_PLAYER);
@@ -1511,7 +1519,7 @@ export function createLocalPlayer(page) {
       // The deploy screen cannot outlive the mode it selects for: the pilot
       // checkbox's exclusivity and the on-foot box both land here with the
       // overlay possibly still up.
-      if (page.deployScreen.deployActive()) page.mapSurfaces.toggleFullMap(false);
+      if (page.deployActive()) page.toggleFullMap(false);
       // The soldier was the world's record; the world stops stepping it (a
       // ghost left in the players map would keep walking on its last input).
       page.world.removePlayer(page.LOCAL_PLAYER);
@@ -1552,8 +1560,8 @@ export function createLocalPlayer(page) {
     // If in a vehicle or piloting, vehicle damage handles it -- no on-foot grunts or hit arcs
     if (page.optPilot.checked || localPlayer.occupancy) return;
 
-    const isFriendlyFire = attackerTeam != null && attackerTeam === page.deployScreen.deployTeamId;
-    page.pageAudio.playSoldierHurtSound(isFriendlyFire);
+    const isFriendlyFire = attackerTeam != null && attackerTeam === page.deployTeamId;
+    page.playSoldierHurtSound(isFriendlyFire);
 
     let dir = 1;
     if (attackerPos && localPlayer.soldier) {
@@ -1570,7 +1578,7 @@ export function createLocalPlayer(page) {
         dir = calculateHitOctant(forwardDot, rightDot);
       }
     }
-    page.pageAudio.triggerHitIndicator(dir, damage / (localPlayer.soldierArmor.maxHitPoints || 100));
+    page.triggerHitIndicator(dir, damage / (localPlayer.soldierArmor.maxHitPoints || 100));
   }
 
   // The stick spring itself lives in world.js next to the aircraft path that
@@ -1601,7 +1609,7 @@ export function createLocalPlayer(page) {
     // is aimed and stepped once per world tick — the page's own per-tick
     // `stepTurret` loop), and the `vehicleGuns` loop with the unconditional-off
     // `setFiring` semantics. The shell here is the presentation half.
-    const flying = localPlayer.occupancy.isActiveRoot() && !page.vehicleHits.vehicleInput.blocked;
+    const flying = localPlayer.occupancy.isActiveRoot() && !page.vehicleInput.blocked;
     // The flash's 1P/3P choice is the engine's view mode 3, not whether the
     // cockpit interior is drawn: the nose cam is mode 3 with the interior off,
     // and retail plays the small `em_1P_*` sprite there. Keyed off the interior,
