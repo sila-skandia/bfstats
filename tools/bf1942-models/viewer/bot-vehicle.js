@@ -11,12 +11,16 @@
 //    velocity| * 10 + 1`, capped at the AI template's `maxSpeed`; the
 //    throttle is `2 * ((wanted - speed) - clamp(speed / (30 |wanted -
 //    speed| + 1), +-10))` clamped to +-1, the steer `angle - clamp(rate /
-//    (30 |angle| + 1), +-10)` clamped to +-1. Outside the limit the hull
-//    turns first (that branch is not read: a half throttle with full lock
-//    is the stand-in, INVENTION).
+//    (30 |angle| + 1), +-10)` clamped to +-1. Outside the limit
+//    `TankControl::turnTowardsDirection` 0x0862d630 turns first: full lock
+//    away from the angle's sign, `tweak_highThrottle` 1.0 while the hull's
+//    speed is under `min(1, angle^2 * 0.3)` and `tweak_lowThrottle` 0.4
+//    beyond, the signs following the drive direction.
 //  * `EntryTankMoveTo::execute` 0x08622e80: arrival inside the move's radius
-//    resets the controls; `CommonControls::actionStatusDecision` picks
-//    forward or reverse (not read: forward only here, INVENTION); the
+//    resets the controls; `CommonControls::actionStatusDecision` 0x0860fbe0
+//    drives forward for a target ahead of the beam and runs a map box test
+//    behind it to pick reverse or a turn (the box branches are not read: the
+//    viewer reverses for a target behind within three hull lengths); the
 //    `maxSpeed` handed to the law is the `IPIMobile` +0x14 -> +8 term,
 //    `aiTemplatePlugIn.maxSpeed` (Sherman 16, Willy 25, a soldier 5).
 //  * `BBChange::calculateUrgency` 0x0855e0c0 with `calculateVehicleUrgency`
@@ -55,11 +59,21 @@ export const TANK = {
   slopeProbe: 20.0,
   /** `ControlInfo` +0x4c, the slope-to-SCurve gain (INVENTION: 1). */
   slopeGain: 1.0,
-  /** The turn-first branch (INVENTION): full throttle with full lock, since
-   *  the viewer's tracked hull barely pivots on the spot (0.014 rad/s at
-   *  throttle 0 against 0.15 rad/s under way, measured 2026-09-23). */
-  turnThrottle: 1.0,
+  /** `TankControl::turnTowardsDirection` 0x0862d630: full lock away from
+   *  the angle's sign, and the throttle `tweak_highThrottle` (1.0) while the
+   *  hull's speed is under `min(1, angle^2 * tweak_velocityLimitModifier
+   *  (0.3))`, else `tweak_lowThrottle` (0.4); the sign follows the drive
+   *  direction. The three tweaks are the binary's data at 0x08762c9c..a4. */
+  turnHighThrottle: 1.0,
+  turnLowThrottle: 0.4,
+  turnVelocityLimit: 0.3,
   turnKeepAngle: 150 * DEG,
+  /** `CommonControls::actionStatusDecision` 0x0860fbe0 drives forward when
+   *  the target is ahead of the hull's beam (`forward . dir >= 0`); behind
+   *  it a box test against the map decides between reversing and turning
+   *  (its inner branches are not read: the viewer reverses while the target
+   *  lies behind within this many hull lengths, INVENTION). */
+  reverseWithin: 3.0,
   /** A soldier's `maxSpeed` term. */
   soldierMaxSpeed: 5.0,
 };
@@ -96,7 +110,7 @@ function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
  * maps it onto the vehicle's yaw channel).
  */
 export function tankControl({ forward, velocity, toTarget, maxSpeed, yawRate = 0,
-                              slopeSum = 0, lastLeg = false, lastTurn = 0 }) {
+                              slopeSum = 0, lastLeg = false, lastTurn = 0, hullLength = 6 }) {
   const fLen = Math.hypot(forward[0], forward[1]) || 1;
   const fx = forward[0] / fLen, fz = forward[1] / fLen;
   const tLen = Math.hypot(toTarget[0], toTarget[1]);
@@ -111,12 +125,20 @@ export function tankControl({ forward, velocity, toTarget, maxSpeed, yawRate = 0
   const steerDamp = clamp(yawRate / (TANK.speedDamping * Math.abs(angle) + 1), -TANK.dampingCap, TANK.dampingCap);
   const steer = clamp(angle - steerDamp, -1, 1);
   if (Math.abs(angle) > limit) {
-    // A target straight behind flips the angle's sign every tick as the hull
-    // turns; the turn keeps its direction until the angle is well inside the
-    // half circle (INVENTION: the turn-first branch is not read).
+    // `actionStatusDecision`: a close target behind the beam is reversed
+    // toward; otherwise the hull turns first (`turnTowardsDirection`): full
+    // lock, high throttle until it moves, then the low throttle. A target
+    // straight behind flips the angle's sign every tick as the hull turns;
+    // the turn keeps its direction until the angle is well inside the half
+    // circle (INVENTION: that hysteresis).
+    const behind = dot < 0 && tLen < TANK.reverseWithin * hullLength;
+    const drive = behind ? -1 : 1;
     let dir = Math.sign(angle) || 1;
     if (lastTurn && Math.abs(angle) > TANK.turnKeepAngle) dir = lastTurn;
-    return { throttle: TANK.turnThrottle, steer: dir, angle, aligned: false, turn: dir };
+    const bodySpeed = Math.hypot(velocity[0], velocity[1]);
+    const limitV = Math.min(1, angle * angle * TANK.turnVelocityLimit);
+    const throttle = (bodySpeed <= limitV ? TANK.turnHighThrottle : TANK.turnLowThrottle) * drive;
+    return { throttle, steer: dir * drive, angle, aligned: false, turn: dir, reverse: behind };
   }
   let wanted = TANK.wantedSpeed * (1 - sCurve(slopeSum * TANK.slopeGain));
   if (wanted < TANK.minWantedSpeed) wanted = TANK.minWantedSpeed;
@@ -125,7 +147,7 @@ export function tankControl({ forward, velocity, toTarget, maxSpeed, yawRate = 0
   const delta = wanted - speed;
   const damp = clamp(speed / (Math.abs(delta) * TANK.speedDamping + 1), -TANK.dampingCap, TANK.dampingCap);
   const throttle = clamp(TANK.throttleGain * (delta - damp), -1, 1);
-  return { throttle, steer, angle, aligned: true, turn: 0 };
+  return { throttle, steer, angle, aligned: true, turn: 0, reverse: false };
 }
 
 /**

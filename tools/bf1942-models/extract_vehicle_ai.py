@@ -128,12 +128,74 @@ def parse_vehicle_objects(text: str) -> tuple[dict[str, str], dict[str, str]]:
     return fire_arms, pcos
 
 
+ADD_TEMPLATE_RE = re.compile(r"^\s*ObjectTemplate\.addTemplate\s+(\S+)", re.I)
+CREATE_RE = re.compile(r"^\s*ObjectTemplate\.create\s+(\S+)\s+(\S+)", re.I)
+
+
+def parse_template_graph(text: str, graph: dict[str, list[str]], kinds: dict[str, str],
+                         ai_of: dict[str, str]) -> None:
+    """`addTemplate` children per template, each template's kind, and its
+    `aiTemplate`, across one con file (case-insensitive keys)."""
+    current: str | None = None
+    for raw in text.splitlines():
+        m = CREATE_RE.match(raw)
+        if m:
+            current = m.group(2).lower()
+            kinds[current] = m.group(1)
+            graph.setdefault(current, [])
+            continue
+        if current is None:
+            continue
+        m = ADD_TEMPLATE_RE.match(raw)
+        if m:
+            graph.setdefault(current, []).append(m.group(1).lower())
+            continue
+        m = AI_TEMPLATE_RE.match(raw)
+        if m:
+            ai_of[current] = m.group(1)
+
+
+def fire_arms_under(pco: str, graph: dict[str, list[str]], kinds: dict[str, str]) -> list[str]:
+    """The FireArms reachable from a PlayerControlObject without crossing
+    into a nested PlayerControlObject (that one's own seat)."""
+    out: list[str] = []
+    seen: set[str] = set()
+    stack = list(graph.get(pco, []))
+    while stack:
+        t = stack.pop()
+        if t in seen:
+            continue
+        seen.add(t)
+        kind = kinds.get(t, "")
+        if kind == "PlayerControlObject":
+            continue
+        if kind == "FireArms":
+            out.append(t)
+        stack.extend(graph.get(t, []))
+    return out
+
+
 def extract(mod: str) -> dict:
     archive = GAME / mod / "Archives" / "Objects.rfa"
     if not archive.exists():
         archive = GAME / mod / "Archives" / "objects.rfa"
     rfa = RfaArchive(str(archive))
     names = list(rfa.entries.keys())
+    # Every weapon template the archive declares, and every object's
+    # aiTemplate and addTemplate children: the shared guns (a Browning under
+    # Objects/Weapons) are reached from a vehicle's seat through them.
+    all_weapons: dict[str, dict] = {}
+    graph: dict[str, list[str]] = {}
+    kinds: dict[str, str] = {}
+    ai_of: dict[str, str] = {}
+    for n in names:
+        low = n.lower()
+        if not low.endswith(".con"):
+            continue
+        if low.endswith("/ai/weapons.con") or low.endswith("/ai/weapon.con"):
+            all_weapons.update(parse_weapons_con(rfa.read(n).decode("latin-1")))
+        elif low.startswith("objects/") and "/ai/" not in low:
+            parse_template_graph(rfa.read(n).decode("latin-1"), graph, kinds, ai_of)
     by_folder: dict[str, dict[str, str]] = {}
     for n in names:
         low = n.lower()
@@ -167,6 +229,24 @@ def extract(mod: str) -> dict:
             "seats": {k: v for k, v in pcos.items()},
             "aiWeapons": {w["name"]: {kk: vv for kk, vv in w.items() if kk != "name"} for w in weapons.values()},
         }
+        # Every seat (PlayerControlObject) of the vehicle: its aiTemplate's
+        # Unit plug-in strengths and the AI weapons of the guns it reaches.
+        seats_ai: dict[str, dict] = {}
+        for pco, ai_name in pcos.items():
+            t = parsed["templates"].get(ai_name.lower())
+            seat: dict = {"aiTemplate": ai_name, "secondary": bool(t and t.get("secondary")),
+                          "strategicStrength": None, "aiWeapons": {}}
+            for pname in (t["plugIns"] if t else []):
+                p = parsed["plugIns"].get(pname.lower())
+                if p and p.get("kind") == "Unit":
+                    seat["strategicStrength"] = p.get("strategicStrength")
+            for fa in fire_arms_under(pco.lower(), graph, kinds):
+                w_ai = ai_of.get(fa) or fire_arms.get(fa)
+                w = all_weapons.get((w_ai or "").lower()) or weapons.get((w_ai or "").lower())
+                if w:
+                    seat["aiWeapons"][w["name"]] = {kk: vv for kk, vv in w.items() if kk != "name"}
+            seats_ai[pco] = seat
+        info["seatsAi"] = seats_ai
         for pname in (root["plugIns"] if root else []):
             p = parsed["plugIns"].get(pname.lower())
             if not p:
