@@ -41,9 +41,15 @@
 //
 // INVENTION, labelled:
 //  * The engine's strategic layer is a separate `StrategicMap` of hand-placed
-//    cells; the coarse level here is a 16 m downsample of the bitmap where a
-//    cell is passable if ANY metre inside it is free, searched 8-connected. It
-//    exists only to hand the local search a target inside its box.
+//    cells; the coarse level here is a 16 m downsample of the bitmap whose
+//    nodes are the 4-connected patches of free metres inside each cell (the
+//    engine's `StrategicCell` holds several cell infos, 0x08608fa0, not
+//    read), joined across a cell side where two free metres touch
+//    (`nav-search.js coarseRegions`). It exists only to hand the local search
+//    a target inside its box. (Until 2026-09-24 a cell was one node, passable
+//    if ANY metre was free, and a cell holding ground either side of a cliff
+//    joined them; on the levels' own maps that sent El Alamein's tanks at
+//    cliffs, AI-102.)
 //  * The static-object pass clips the viewer's baked collision triangles to the
 //    clip band per cell and marks the footprint. The engine
 //    (`LocalMap::objectClipAndRender` 0x085fbfa0) intersects the hull with two
@@ -75,7 +81,7 @@
 //    the map's spawn points and blocks everything it did not reach, which is
 //    what closes a sandbag's top and a walled yard with no door.
 
-// The level's own maps (AI-95). Every level archive ships its search maps
+// The level's own maps (AI-100). Every level archive ships its search maps
 // baked (`Pathfinding/<name>Level<L>Map.raw`) and the retail server loads
 // them with `ai.loadMaps` (`AIPathfinding::loadSearchMaps` 0x0847c5c0 ->
 // `LocalMap::loadRawFile` 0x085fefb0 -> `CellMap::loadRawFile` 0x085f8930)
