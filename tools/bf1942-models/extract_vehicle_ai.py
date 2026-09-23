@@ -89,6 +89,49 @@ def is_anti_aircraft(template: dict | None, plugins: dict[str, dict]) -> bool:
     return False
 
 
+def _deg_vector(value) -> list[float] | None:
+    """`setCameraRelativeMin/MaxRotationDeg`'s `x/y/z` argument."""
+    if not isinstance(value, str):
+        return None
+    try:
+        parts = [float(v) for v in value.split("/")]
+    except ValueError:
+        return None
+    return (parts + [0.0, 0.0, 0.0])[:3]
+
+
+def control_info(template: dict | None, plugins: dict[str, dict]) -> dict | None:
+    """The numbers `mouseControlLookAtDirection` (lnxded 0x08627b90) reads off
+    a unit's ControlInfo plug-in to turn an aim direction into mouse counts.
+
+    It shapes the camera-frame angle to the target, puts it through
+    `SCurve::calculate` (0x08658420) and scales it by `pitchScale` (template
+    +0x28) for the vertical count and `rollScale` (+0x2c) for the horizontal,
+    signed by `pitchSensitivity` (+0x08) and `rollSensitivity` (+0x0c); the
+    counts go to `lookVerticalControl` (+0x60) and `lookHorizontalControl`
+    (+0x64). The offsets are the console setters' (ConsoleClass566, 567, 574,
+    575, 588, 589: 0x08507670, 0x08507a60, 0x085095f0, 0x085099e0, 0x0850cd10,
+    0x0850d100). The camera limits are `setCameraRelativeMin/MaxRotationDeg`
+    (`AITemplateControlInfo` 0x085de770 / 0x085de870), degrees as authored.
+    """
+    for name in (template or {}).get("plugIns", []):
+        p = plugins.get(name.lower())
+        if not p or p.get("kind") != "ControlInfo":
+            continue
+        out = {
+            "pitchSensitivity": p.get("pitchsensitivity"),
+            "rollSensitivity": p.get("rollsensitivity"),
+            "pitchScale": p.get("pitchscale"),
+            "rollScale": p.get("rollscale"),
+            "lookVerticalControl": p.get("lookverticalcontrol"),
+            "lookHorizontalControl": p.get("lookhorizontalcontrol"),
+            "cameraMinDeg": _deg_vector(p.get("setcamerarelativeminrotationdeg")),
+            "cameraMaxDeg": _deg_vector(p.get("setcamerarelativemaxrotationdeg")),
+        }
+        return {k: v for k, v in out.items() if v is not None}
+    return None
+
+
 def parse_weapons_con(text: str) -> dict[str, dict]:
     weapons: dict[str, dict] = {}
     cur: dict | None = None
@@ -259,6 +302,9 @@ def extract(mod: str) -> dict:
                     seat["strategicStrength"] = p.get("strategicStrength")
             if is_anti_aircraft(t, parsed["plugIns"]):
                 seat["isAntiAircraft"] = True
+            ctrl = control_info(t, parsed["plugIns"])
+            if ctrl:
+                seat["controlInfo"] = ctrl
             for fa in fire_arms_under(pco.lower(), graph, kinds):
                 w_ai = ai_of.get(fa) or fire_arms.get(fa)
                 w = all_weapons.get((w_ai or "").lower()) or weapons.get((w_ai or "").lower())
@@ -268,6 +314,9 @@ def extract(mod: str) -> dict:
         info["seatsAi"] = seats_ai
         if is_anti_aircraft(root, parsed["plugIns"]):
             info["isAntiAircraft"] = True
+        root_ctrl = control_info(root, parsed["plugIns"])
+        if root_ctrl:
+            info["controlInfo"] = root_ctrl
         for pname in (root["plugIns"] if root else []):
             p = parsed["plugIns"].get(pname.lower())
             if not p:
