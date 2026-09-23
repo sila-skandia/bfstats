@@ -40,6 +40,7 @@ PAGE_FILES = [
     "hand-fire-sound.js",
     "arms-rig.js",
     "demolitions.js",
+    "hand-fire.js",
     "page-audio.js",
     "hull-bodies.js",
     "vehicle-wrecks.js",
