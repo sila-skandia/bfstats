@@ -24,7 +24,7 @@ const SIDE = { 1: 'Axis', 2: 'Allies' };
 function parseArgs(argv) {
   const a = { maps: ['el_alamein', 'bocage'], seeds: range('1-10'), time: 600, bots: 8, jobs: 8,
               configs: ['sai', 'axis=squad', 'allies=squad'], out: path.join(HERE, 'out', 'compare'),
-              mapsDir: null, modelsDir: null, reportOnly: false, force: false, markdown: null, extra: [] };
+              mapsDir: null, modelsDir: null, viewer: null, reportOnly: false, force: false, markdown: null };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     const next = () => { if (i + 1 >= argv.length) throw new Error(`${k} needs a value`); return argv[++i]; };
@@ -38,6 +38,7 @@ function parseArgs(argv) {
       case '--out': a.out = path.resolve(next()); break;
       case '--maps-dir': a.mapsDir = next(); break;
       case '--models-dir': a.modelsDir = next(); break;
+      case '--viewer': a.viewer = next(); break;
       case '--report-only': a.reportOnly = true; break;
       case '--force': a.force = true; break;
       case '--markdown': a.markdown = next(); break;
@@ -70,6 +71,8 @@ const HELP = `usage: node sim/compare.mjs [options]
   --jobs J            matches at once (default 8)
   --out DIR           where the runs go (default sim/out/compare)
   --maps-dir DIR, --models-dir DIR   the extracted trees (run.mjs --maps / --models)
+  --viewer DIR        the viewer the AI is loaded from (run.mjs --viewer; a patched copy
+                      measures a change to the bots before it is made)
   --report-only       read the summaries that are there, run nothing
   --force             re-run matches that already have a summary
   --markdown FILE     also write the table as markdown`;
@@ -83,6 +86,7 @@ function runOne(a, map, config, seed) {
                 '--doctrine', config, '--no-trace', '--quiet', '--out', out];
   if (a.mapsDir) args.push('--maps', a.mapsDir);
   if (a.modelsDir) args.push('--models', a.modelsDir);
+  if (a.viewer) args.push('--viewer', a.viewer);
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
     let err = '';

@@ -326,3 +326,22 @@ Do:
 Acceptance: the SAI trace unchanged behind the interface, the play runs
 without bot errors, the comparison table in a feature doc under
 features/bot-doctrines/ with the seeds listed.
+
+Done 2026-09-24 (built on the runner as it is before Brief I; re-run the
+comparison once I lands). `viewer/doctrine.js StrategicCommand` is the one
+order source the referee holds. The SAI runs behind it as the 'sai'
+doctrine (`beginPass` / `sidePass`), and the seeded synthetic, El Alamein
+and Bocage traces are byte for byte the same as before. An order kind
+registers a per-tick executor with the `enter` / `exit` actuators: that is
+where D's `WPBeachLanding` goes (features/bot-doctrines/README.md, "Adding
+an order kind"). The squad play is `viewer/doctrine-squad.js`; its follow
+and hold orders use the engine's `WPCloseTo` law (read, ledger AI-77; the
+retail server never builds one). `run.mjs --doctrine` and `sim/compare.mjs`
+give the table in features/bot-doctrines (El Alamein and Bocage, seeds 1..10,
+600 s): the play loses on El Alamein (Axis -29.9 tickets against its own
+SAI baseline, better in 1 seed of 10) and makes no measurable difference on
+Bocage. There were no bot errors in 60 matches, after a latent
+`findLocalPath` box bug the follow orders exposed was fixed. Open: the page's
+no-progress redeploy keeps its best distance across a new order
+(`bot-decision.js`), which redeploys followers keeping pace (54 a match for
+the Allied squad side; 2 with the reset, measured on a scratch viewer).
