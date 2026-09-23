@@ -33,6 +33,8 @@ HARNESS = Path(__file__).with_name("ship_harness.mjs")
 
 MODULES = {
     "ship.mjs": VIEWER / "ship.js",
+    # `ship.js` reads the hull out of its node tree through `ship-spec.js`.
+    "ship-spec.js": VIEWER / "ship-spec.js",
     "flight.mjs": VIEWER / "flight.js",
     "vehicle-camera.js": VIEWER / "vehicle-camera.js",
     "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",

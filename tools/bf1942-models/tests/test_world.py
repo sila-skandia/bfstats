@@ -51,8 +51,8 @@ HARNESS = Path(__file__).resolve().parent / "world_harness.mjs"
 # flight harness imports `flight.mjs`; every dependency keeps its own name so
 # the unmodified imports resolve.
 _MODULE_NAMES = [
-    "physics", "parachute", "swim", "soldier", "spawn-safety", "mouse-input",
-    "point-body", "fixed-step", "soldier-pose", "soldier-locomotion", "walking-body",
+    "physics", "parachute", "swim", "soldier", "spawn-flags", "spawn-safety", "mouse-input",
+    "point-body", "fixed-step", "soldier-pose", "soldier-locomotion", "walking-body", "soldier-resolve",
     "fall-damage",
     "body-world", "body-statics", "vehicle-bodies", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact",
@@ -61,7 +61,7 @@ _MODULE_NAMES = [
     # world.js's World delegates to its split modules.
     "world-input", "world-players", "world-snapshot", "world-bodies",
     "world-soldier-tick", "world-vehicle-tick", "world-fields", "world-damage",
-    "body-ground", "body-friction", "crash-damage", "effects-core",
+    "body-ground", "body-friction", "crash-damage", "effects-core", "projectile-damage",
     # Reached through seats.js: the salvo arithmetic and the HUD
     # weapon-slot order, and an aircraft torpedo's water run.
     "bomb-release", "torpedo-run",
