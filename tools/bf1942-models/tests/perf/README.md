@@ -43,7 +43,14 @@ findings and the presentation design they became are in
 node cadencecheck.cjs --base http://localhost:5573
 node cadencecheck.cjs --base http://localhost:5573 --only foot-zoom-pan
 node cadencecheck.cjs --base http://localhost:5573 --uncap --out after.json
+node cadencecheck.cjs --base http://localhost:5573 --bots
 ```
+
+`--bots` loads El Alamein with eight bots and runs two different scenarios,
+`bot-plane` (a Spitfire bot_4 flies, placed in level flight) and `bot-tank`
+(a Sherman bot_0 drives), measuring the hull's root node rather than the
+camera: a bot's hull drawn at its raw tick pose passes every camera scenario
+and still shows a double image.
 
 Eight scenarios — hip / aiming / prone-and-firing pans, walking, a Corsair's
 cockpit, a Willys, a Sherman tower and a Defgun — each panned, walked, flown or
