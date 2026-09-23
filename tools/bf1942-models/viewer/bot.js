@@ -228,43 +228,9 @@ export class BotController {
     return this.world?.player?.(this.playerId) ?? this.world?.players?.get(this.playerId) ?? null;
   }
 
-  _eye() { return aiming.eye(this); }
-  _aimOrigin() { return aiming.aimOrigin(this); }
-
-  _registered() { return deciding.registered(this); }
-
   /** The map and body radius of the unit the bot moves as. */
   _nav() { return this.vehicle ? (this.vehicle.nav ?? null) : this.navGrid; }
   _radius() { return this.vehicle ? (this.vehicle.radius ?? VEHICLE_RADIUS) : BOT_RADIUS; }
-
-  _vehicleForward() { return aiming.vehicleForward(this); }
-
-  mount(m, now) { return mounting.mount(this, m, now); }
-  dismount(now) { return mounting.dismount(this, now); }
-
-  _lineClear(from, to) { return perception.lineClearSkippingSelf(this, from, to); }
-  _selfOwner() { return perception.selfOwner(this); }
-
-  onShotFired(shooterId, shooterTeam, pos, now, weaponRadius) { return perception.onShotFired(this, shooterId, shooterTeam, pos, now, weaponRadius); }
-  onIncomingFire(attackerId, pos, now, hit, strength) { return perception.onIncomingFire(this, attackerId, pos, now, hit, strength); }
-  recordNearbyShot(shotPos, now, shooterId, shooterTeam) { return perception.recordNearbyShot(this, shotPos, now, shooterId, shooterTeam); }
-  hearSound(soundPos, now, sourceTeam) { return perception.hearSound(this, soundPos, now, sourceTeam); }
-  onShot(now) { return perception.onShot(this, now); }
-  recordHit(targetId) { return perception.recordHit(this, targetId); }
-  _tally(kind, targetId) { return perception.tally(this, kind, targetId); }
-  sense(now) { return perception.sense(this, now); }
-  _sensePass(now, dt) { return perception.sensePass(this, now, dt); }
-  _chooseFiringTarget(now) { return perception.chooseFiringTarget(this, now); }
-  _insideOrderedArea() { return perception.insideOrderedArea(this); }
-
-  _unitVelocity() { return aiming.unitVelocity(this); }
-  _unitForward3() { return aiming.unitForward3(this); }
-
-  _myType() { return perception.myType(this); }
-  _chooseVehicleTarget(now) { return perception.chooseVehicleTarget(this, now); }
-  _unitInfo(id) { return perception.unitInfo(this, id); }
-
-  _turretCanPoint(dir) { return aiming.turretCanPoint(this, dir); }
 
   // -----------------------------------------------------------------------
   // Tick
@@ -354,27 +320,59 @@ export class BotController {
     this.timeSinceTargetAcquired = this.firingTarget ? this.timeSinceTargetAcquired + dt : 0;
   }
 
+  // -----------------------------------------------------------------------
+  // Queries used by the page
+  // -----------------------------------------------------------------------
+
+  setPosition(x, y, z) {
+    this.position[0] = x; this.position[1] = y; this.position[2] = z;
+  }
+
+  getPosition() {
+    return [...this.position];
+  }
+
+  /** The page's respawn hook: forget everything the old body knew. */
+  onRespawn() {
+    this.senses = new BotSenses({ viewDistance: this.viewDistance, random: this.random });
+    this.memory = this.senses.memory;
+    this.firingTarget = null; this.targetPosition = null; this.targetScore = 0;
+    this.currentPlan = []; this.currentBehaviour = null; this.planBehaviour = null;
+    this.route = null; this.obstacles = []; this._stalledTicks = 0;
+    this.scout = new ScoutState();
+    this.cover = new TakeCoverState();
+    this.medic = new MedicState();
+    this.isUnderFire = false; this.timeSinceNearbyShot = Infinity;
+    this._bestGoalDist = null; this._noProgress = 0;
+  }
+
+  // -----------------------------------------------------------------------
+  // Senses, memory and target choice: bot-perception.js
+  // -----------------------------------------------------------------------
+
+  _lineClear(from, to) { return perception.lineClearSkippingSelf(this, from, to); }
+  _selfOwner() { return perception.selfOwner(this); }
+  onShotFired(shooterId, shooterTeam, pos, now, weaponRadius) { return perception.onShotFired(this, shooterId, shooterTeam, pos, now, weaponRadius); }
+  onIncomingFire(attackerId, pos, now, hit, strength) { return perception.onIncomingFire(this, attackerId, pos, now, hit, strength); }
+  recordNearbyShot(shotPos, now, shooterId, shooterTeam) { return perception.recordNearbyShot(this, shotPos, now, shooterId, shooterTeam); }
+  hearSound(soundPos, now, sourceTeam) { return perception.hearSound(this, soundPos, now, sourceTeam); }
+  onShot(now) { return perception.onShot(this, now); }
+  recordHit(targetId) { return perception.recordHit(this, targetId); }
+  _tally(kind, targetId) { return perception.tally(this, kind, targetId); }
+  sense(now) { return perception.sense(this, now); }
+  _sensePass(now, dt) { return perception.sensePass(this, now, dt); }
+  _chooseFiringTarget(now) { return perception.chooseFiringTarget(this, now); }
+  _insideOrderedArea() { return perception.insideOrderedArea(this); }
+  _myType() { return perception.myType(this); }
+  _chooseVehicleTarget(now) { return perception.chooseVehicleTarget(this, now); }
+  _unitInfo(id) { return perception.unitInfo(this, id); }
+
+  // -----------------------------------------------------------------------
+  // The decision loop and the urgency generators: bot-decision.js
+  // -----------------------------------------------------------------------
+
+  _registered() { return deciding.registered(this); }
   _updateObjectiveReadout(dt) { return deciding.updateObjectiveReadout(this, dt); }
-
-  _resetInput() { return aiming.resetInput(this); }
-  _writeInput() { return aiming.writeInput(this); }
-  _cameraBasis(lookYaw) { return aiming.cameraBasis(this, lookYaw); }
-  _noseReference() { return aiming.noseReference(this); }
-  _aimReference() { return aiming.aimReference(this); }
-  _aimLook(desiredYaw, desiredPitch, maxCounts) { return aiming.aimLook(this, desiredYaw, desiredPitch, maxCounts); }
-  _turretInputSigns() { return aiming.turretInputSigns(this); }
-
-  _ageObstacles(dt) { return routing.ageObstacles(this, dt); }
-  _trackContact(soldier) { return routing.trackContact(this, soldier); }
-  _ensureRoute(goal) { return routing.ensureRoute(this, goal); }
-  _extendRoute() { return routing.extendRoute(this); }
-  _lookAhead() { return routing.lookAhead(this); }
-  _popPassed() { return routing.popPassed(this); }
-  _trackObstruction(speed, dt) { return routing.trackObstruction(this, speed, dt); }
-  _onObstructed() { return routing.onObstructed(this); }
-  _steerToward(x, z, speed) { return routing.steerToward(this, x, z, speed); }
-  _execInfantryMoveTo(action, dt) { return routing.execInfantryMoveTo(this, action, dt); }
-
   _currentMod(name) { return deciding.currentMod(this, name); }
   _hasPlan() { return deciding.hasPlan(this); }
   _decisionMaking(now, dt) { return deciding.decisionMaking(this, now, dt); }
@@ -390,10 +388,74 @@ export class BotController {
   _urgencyTakeCover(mod, now) { return deciding.urgencyTakeCover(this, mod, now); }
   _coverCandidates() { return deciding.coverCandidates(this); }
   _urgencySpecial(mod, now) { return deciding.urgencySpecial(this, mod, now); }
+  _urgencyAvoid(mod, now) { return deciding.urgencyAvoid(this, mod, now); }
+
+  // -----------------------------------------------------------------------
+  // Plan generators and the plan interpreter: bot-plans.js
+  // -----------------------------------------------------------------------
 
   _planSpecial(now) { return planning.planSpecial(this, now); }
   _healPlanDone(plan, now) { return planning.healPlanDone(this, plan, now); }
+  _generatePlan(behaviour, now) { return planning.generatePlan(this, behaviour, now); }
+  _planIdle() { return planning.planIdle(this); }
+  _planMoveTo(now) { return planning.planMoveTo(this, now); }
+  _planFire(now) { return planning.planFire(this, now); }
+  _firePlanDone(plan, now) { return planning.firePlanDone(this, plan, now); }
+  _planScout(now) { return planning.planScout(this, now); }
+  _planTakeCover(now) { return planning.planTakeCover(this, now); }
+  _planAvoid(now) { return planning.planAvoid(this, now); }
+  _runPlan(dt, now) { return planning.runPlan(this, dt, now); }
+  _executeAction(action, dt, now) { return planning.executeAction(this, action, dt, now); }
+  _execInfantryMoveToObject(action, dt) { return planning.execInfantryMoveToObject(this, action, dt); }
+  _execInfantryMoveToDirection(action, dt, now) { return planning.execInfantryMoveToDirection(this, action, dt, now); }
+  _execMouseTurretAimAt(action) { return planning.execMouseTurretAimAt(this, action); }
+  _execMouseTurretLookAt(action) { return planning.execMouseTurretLookAt(this, action); }
+  _execTrigger(action, now) { return planning.execTrigger(this, action, now); }
+  _execInfantryResetControls() { return planning.execInfantryResetControls(this); }
+  _execSense(action) { return planning.execSense(this, action); }
+  _execSoldierPose(action) { return planning.execSoldierPose(this, action); }
 
+  // -----------------------------------------------------------------------
+  // The path follower, steering and the move executors: bot-route.js
+  // -----------------------------------------------------------------------
+
+  _ageObstacles(dt) { return routing.ageObstacles(this, dt); }
+  _trackContact(soldier) { return routing.trackContact(this, soldier); }
+  _ensureRoute(goal) { return routing.ensureRoute(this, goal); }
+  _extendRoute() { return routing.extendRoute(this); }
+  _lookAhead() { return routing.lookAhead(this); }
+  _popPassed() { return routing.popPassed(this); }
+  _trackObstruction(speed, dt) { return routing.trackObstruction(this, speed, dt); }
+  _onObstructed() { return routing.onObstructed(this); }
+  _steerToward(x, z, speed) { return routing.steerToward(this, x, z, speed); }
+  _execInfantryMoveTo(action, dt) { return routing.execInfantryMoveTo(this, action, dt); }
+  _execBoatMoveTo(target, action) { return routing.execBoatMoveTo(this, target, action); }
+
+  // -----------------------------------------------------------------------
+  // Aim, look and the input writer: bot-aim.js
+  // -----------------------------------------------------------------------
+
+  _eye() { return aiming.eye(this); }
+  _aimOrigin() { return aiming.aimOrigin(this); }
+  _vehicleForward() { return aiming.vehicleForward(this); }
+  _unitVelocity() { return aiming.unitVelocity(this); }
+  _unitForward3() { return aiming.unitForward3(this); }
+  _turretCanPoint(dir) { return aiming.turretCanPoint(this, dir); }
+  _resetInput() { return aiming.resetInput(this); }
+  _writeInput() { return aiming.writeInput(this); }
+  _cameraBasis(lookYaw) { return aiming.cameraBasis(this, lookYaw); }
+  _noseReference() { return aiming.noseReference(this); }
+  _aimReference() { return aiming.aimReference(this); }
+  _aimLook(desiredYaw, desiredPitch, maxCounts) { return aiming.aimLook(this, desiredYaw, desiredPitch, maxCounts); }
+  _turretInputSigns() { return aiming.turretInputSigns(this); }
+  aimRay() { return aiming.aimRay(this); }
+
+  // -----------------------------------------------------------------------
+  // Seats and the Change behaviour: bot-mount.js
+  // -----------------------------------------------------------------------
+
+  mount(m, now) { return mounting.mount(this, m, now); }
+  dismount(now) { return mounting.dismount(this, now); }
   _urgencyChange(mod, now) { return mounting.urgencyChange(this, mod, now); }
   _seatStrengths() { return mounting.seatStrengths(this); }
   _fireStrengthOf(o) { return mounting.fireStrengthOf(this, o); }
@@ -406,19 +468,9 @@ export class BotController {
   _execSwitchSeat(action) { return mounting.execSwitchSeat(this, action); }
   _execEnterVehicle(action) { return mounting.execEnterVehicle(this, action); }
 
-  _urgencyAvoid(mod, now) { return deciding.urgencyAvoid(this, mod, now); }
-
-  _generatePlan(behaviour, now) { return planning.generatePlan(this, behaviour, now); }
-  _planIdle() { return planning.planIdle(this); }
-  _planMoveTo(now) { return planning.planMoveTo(this, now); }
-  _planFire(now) { return planning.planFire(this, now); }
-  _firePlanDone(plan, now) { return planning.firePlanDone(this, plan, now); }
-  _planScout(now) { return planning.planScout(this, now); }
-  _planTakeCover(now) { return planning.planTakeCover(this, now); }
-  _planAvoid(now) { return planning.planAvoid(this, now); }
-  _runPlan(dt, now) { return planning.runPlan(this, dt, now); }
-  _executeAction(action, dt, now) { return planning.executeAction(this, action, dt, now); }
-  _execInfantryMoveToObject(action, dt) { return planning.execInfantryMoveToObject(this, action, dt); }
+  // -----------------------------------------------------------------------
+  // Aircraft executors: bot-pilot.js
+  // -----------------------------------------------------------------------
 
   _execPlaneMoveTo(target, action, clearance) { return piloting.execPlaneMoveTo(this, target, action, clearance); }
   _execPlaneAttack(action, now) { return piloting.execPlaneAttack(this, action, now); }
@@ -426,44 +478,6 @@ export class BotController {
   _groundAt(x, z) { return piloting.groundAt(this, x, z); }
   _worldMapSize() { return piloting.worldMapSize(this); }
   _gunBallistics() { return piloting.gunBallistics(this); }
-
-  _execBoatMoveTo(target, action) { return routing.execBoatMoveTo(this, target, action); }
-
-  _execInfantryMoveToDirection(action, dt, now) { return planning.execInfantryMoveToDirection(this, action, dt, now); }
-  _execMouseTurretAimAt(action) { return planning.execMouseTurretAimAt(this, action); }
-  _execMouseTurretLookAt(action) { return planning.execMouseTurretLookAt(this, action); }
-  _execTrigger(action, now) { return planning.execTrigger(this, action, now); }
-  _execInfantryResetControls() { return planning.execInfantryResetControls(this); }
-  _execSense(action) { return planning.execSense(this, action); }
-  _execSoldierPose(action) { return planning.execSoldierPose(this, action); }
-
-  // -----------------------------------------------------------------------
-  // Queries used by the page
-  // -----------------------------------------------------------------------
-
-  setPosition(x, y, z) {
-    this.position[0] = x; this.position[1] = y; this.position[2] = z;
-  }
-
-  getPosition() {
-    return [...this.position];
-  }
-
-  aimRay() { return aiming.aimRay(this); }
-
-  /** The page's respawn hook: forget everything the old body knew. */
-  onRespawn() {
-    this.senses = new BotSenses({ viewDistance: this.viewDistance, random: this.random });
-    this.memory = this.senses.memory;
-    this.firingTarget = null; this.targetPosition = null; this.targetScore = 0;
-    this.currentPlan = []; this.currentBehaviour = null; this.planBehaviour = null;
-    this.route = null; this.obstacles = []; this._stalledTicks = 0;
-    this.scout = new ScoutState();
-    this.cover = new TakeCoverState();
-    this.medic = new MedicState();
-    this.isUnderFire = false; this.timeSinceNearbyShot = Infinity;
-    this._bestGoalDist = null; this._noProgress = 0;
-  }
 }
 
 /**
