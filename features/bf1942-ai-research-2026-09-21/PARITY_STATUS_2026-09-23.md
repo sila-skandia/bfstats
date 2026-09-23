@@ -307,8 +307,8 @@ which the bot tests then covered.
    (AI-101): the engine has no such test; the page's is measured per order.
    Brief P (2026-09-24; AI-115, AI-116): ~~(a) the extractor exports only
    `timeToGetControl`~~ fixed: every setting the law reads is exported (the
-   lose time is 10 s on 85 of vanilla's 115 placed points) and every tree
-   re-baked; ~~(b) the human's capture runs its own timer~~ fixed: the HUD
+   lose time is 10 s on 85 of vanilla's 115 placed points), vanilla, XPack1
+   and XPack2 re-baked and live; ~~(b) the human's capture runs its own timer~~ fixed: the HUD
    reads the flag's state and the law takes it (live: human + Axis bot on a
    neutral point hold it 20 s; the human alone takes it in 10 s; an Axis bot
    with the human on his point runs it to neutral in 10 s); ~~(c) two tanks
