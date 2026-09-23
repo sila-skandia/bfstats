@@ -283,19 +283,26 @@ class GlbBuilder:
             # the flag and drives opacity from range.
             mat["alphaMode"] = "BLEND"
             extras["textureFade"] = True
-        if envmap:
-            # `envmap true;` — Refractor reflects environment (cubemap) on this
-            # surface. 435 vanilla materials declare it (all aircraft painted
-            # metal, glass canopies, vehicle windows). The viewer binds the
-            # cubemap via THREE.MeshStandardMaterial.envMap when it sees this.
-            extras["envmap"] = True
-        if extras:
-            mat["extras"] = extras
         elif alpha_cutoff is not None:
             mat["alphaMode"] = "MASK"
             mat["alphaCutoff"] = alpha_cutoff
         elif blend:
             mat["alphaMode"] = "BLEND"
+        if envmap:
+            # `envmap true;` — Refractor reflects environment (cubemap) on this
+            # surface. 435 vanilla materials declare it (all aircraft painted
+            # metal, glass canopies, vehicle windows). The viewer binds the
+            # cubemap via THREE.MeshStandardMaterial.envMap when it sees this.
+            #
+            # It is a texture stage, not a blend mode, so it is decided apart
+            # from `alphaMode` above. Folding it into the same chain exported
+            # every `transparent true; envmap true;` window — the Willy and
+            # Katyusha windscreens, the Zero and Mustang canopies, every
+            # building's `windowWhole_M1` — as an opaque sheet: the dirty-glass
+            # texture painted solid where the game shows the world through it.
+            extras["envmap"] = True
+        if extras:
+            mat["extras"] = extras
         if unlit:
             # A leaf sprite is a camera-facing card, and its normals point out
             # along the card rather than at the sky: sampled on this bush they
