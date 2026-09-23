@@ -217,7 +217,8 @@ import { createGunTriggers } from './model-guns.js';
 import { createSeatCams } from './model-seat-cams.js';
 import { createCrewConsole } from './model-crew.js';
 import { createTouchpad } from './model-touchpad.js';
-import { createVariantPicker, configurationLabel, normalizeVariants, skinLabel, skinValue, variantKey } from './model-variants.js';
+import { createVariantPicker, configurationLabel, normalizeVariants, skinLabel, skinValue,
+         variantKey } from './model-variants.js';
 import { createArmouryBrowser } from './model-browser.js';
 import { installTestHooks } from './model-test-hooks.js';
 
@@ -342,6 +343,13 @@ document.addEventListener('input', event => {
   if (event.target.matches?.('input.range')) syncRange(event.target);
 });
 
+function attr(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;');
+}
+
 // --- On-demand rendering ---------------------------------------------------
 //
 // Instead of spinning the GPU every frame, we render only when something has
@@ -416,13 +424,6 @@ const armour = await createArmourInspector({
 const envReflection = await createEnvReflection({
   get activeMod() { return activeMod; }, get startAnimating() { return startAnimating; },
 });
-
-function attr(value) {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;');
-}
 
 const display = createModelDisplay({
   get applyCollisionState() { return armour.applyCollisionState; },
