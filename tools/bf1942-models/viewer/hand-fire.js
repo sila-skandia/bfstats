@@ -106,6 +106,11 @@ export function createHandFire(page) {
 
   fire.footLookX = 0;        // |MouseLookX| radians accumulated since last frame
   fire.footLookY = 0;        // |MouseLookY| likewise
+  /** The look this tick applied, summed until `footFire` drains it. */
+  fire.addFootLook = look => {
+    fire.footLookX += Math.abs(look.yaw);
+    fire.footLookY += Math.abs(look.pitch);
+  };
 
   /**
    * Is the weapon in hand zoomed right now. Toggle weapons (`altFireOnce`,

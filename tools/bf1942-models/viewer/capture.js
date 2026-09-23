@@ -13,12 +13,12 @@ import { captureDuration, nearestEnemyFlag as nearestEnemyFlagOf } from './bot-r
  * reassigns is read live):
  * `AUDIO_OFF`, `audioBufferCache`, `audioListener`, `audioLoader`, `bust`,
  * `cull`, `currentRoot`, `deployTeamId`, `drawFullMap`, `drawMinimap`,
- * `ensureAudioContext`, `extras`, `flagMixer`, `flashHud`, `flattenCull`,
- * `hud`, `levelClips`, `LOCAL_PLAYER`, `localMapTeam`, `logToConsole`,
- * `MAPS_BASE`, `masterVolume`, `optOnFoot`, `paintDeployChrome`,
- * `playSoldierOneShot`, `roomJoined`, `soldier`, `soldierDead`,
- * `syncVehicleSpawnOwnership`, `tagCull`, `teamNation`, `thaw`, `updateHud`,
- * `world`.
+ * `ensureAudioContext`, `ensureFlagMixer`, `extras`, `flashHud`,
+ * `flattenCull`, `hud`, `levelClips`, `LOCAL_PLAYER`, `localMapTeam`,
+ * `logToConsole`, `MAPS_BASE`, `masterVolume`, `optOnFoot`,
+ * `paintDeployChrome`, `playSoldierOneShot`, `roomJoined`, `soldier`,
+ * `soldierDead`, `syncVehicleSpawnOwnership`, `tagCull`, `teamNation`,
+ * `thaw`, `updateHud`, `world`.
  */
 export function createFlagCapture(page) {
   const flagCapture = {};
@@ -268,8 +268,7 @@ export function createFlagCapture(page) {
     if (!tracks.length) return null;
     const clip = source === own
       ? source : new THREE.AnimationClip(`FlagBlow ${pointName}`, source.duration, tracks);
-    page.flagMixer ??= new THREE.AnimationMixer(page.currentRoot);
-    const action = page.flagMixer.clipAction(clip);
+    const action = page.ensureFlagMixer().clipAction(clip);
     action.time = Math.random() * clip.duration;
     action.play();
     return action;
