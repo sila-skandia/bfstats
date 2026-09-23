@@ -664,3 +664,60 @@ neutral at 10.5 s). 3: the tank branch of `createPlanInternal` ported
 `test_the_tank_pair_close_until_one_can_fire`. Open: the firing point's
 attack-portal case, and the sense rays' soldier heights on a hull (live the
 pair close 158 -> 45 m and hold without a shot).
+
+## Brief Q: a carrier's deck aircraft is a unit of its own
+
+Added 2026-09-24 from the user's in-game report: "planes are spawning on
+carriers now, but when flying the plane it flies the entire carrier".
+Depends on: nothing. Conflicts with: O (nav modules, bot-route.js,
+bot-units.js item 3 map binding); keep to the files below. Can start now.
+
+Status, traced in the code: Midway's bake nests each deck aircraft under
+its carrier's node (`Corsair` and `SBD` under `EnterpriseComplex`, `Zero`
+and `AichiVal` under `ShokakuComplex`; each is a `PlayerControlObject`
+with `physics.mass` 2500..3000 and `vehicleCategory` `VCAir`), the same
+way it nests the landing craft. `detachSpawnedCraft` (viewer/seats.js,
+commit 870e6b5c) moves only the `VCSea` nested craft out to the level's
+`spawners` group and says in its comment that deck aircraft stay put. So
+`findAllVehicleRoots` (viewer/entry-points.js) never lists the plane as a
+root (it has an ancestor PCO, the ship), `surveyVehicle` (viewer/
+seat-survey.js) buckets the plane's PCO as a seat named `Corsair` of the
+ship, its `EntryPoint` opens into that seat, and taking it enters the
+carrier's `VehicleInstance`; the drive that gets built moves the carrier's
+node, so the whole ship flies.
+
+Do:
+1. Read how the engine treats a ship's spawned aircraft: the ship
+   template's `ObjectSpawner` children in Objects.rfa (as for the craft),
+   `ObjectSpawner` spawning the object as an object of its own with a world
+   pose, and how a parked plane then rides the moving deck (contact with a
+   drivable deck face: the `ParkedVehicle` / ground response against a
+   moving object; `body-statics.js` already has "riding a drivable
+   object's face"). Cite by address.
+2. Detach nested `VCAir` hulls with mass the way the craft are, world pose
+   kept, before the scene is indexed (`level-load.js` calls
+   `detachSpawnedCraft` once; the runner's `sim/stage.mjs` or `level.mjs`
+   must do the same, check where it loads the scene). A plane parked on a
+   deck that then moves (a bot or the human drives the carrier) must
+   follow the deck: port the engine's contact if it is readable in a
+   session, else carry the parked hull through the host's matrix delta as
+   `rebaseDeckSpawns` does for spawn points and label it INVENTION. K's
+   `runwayClear` (12 spans ahead) and the take-off run must still work on
+   a carrier deck; a plane taken at rest keeps its parked height (F).
+3. Pins: test_seats.py (a nested VCAir PCO with mass is detached, a seat
+   PCO is not), and the runner on Midway seed 1: a plane takes off from
+   each carrier and the carrier's position is unchanged by it.
+4. Live on Midway (8 bots): the human takes the Corsair on the Enterprise
+   and takes off; the Enterprise's position does not change; a bot takes
+   a Zero on the Shokaku and takes off; with a bot driving the Enterprise
+   200 m, a parked Corsair stays on the deck within 0.5 m of its pad.
+
+Files: viewer/seats.js, viewer/entry-points.js, viewer/seat-survey.js,
+viewer/hull-bodies.js, viewer/body-statics.js, viewer/level-load.js,
+sim/stage.mjs or sim/level.mjs (one hunk, rebase often: Brief O edits
+sim/level.mjs), viewer/bot-units.js only if the candidate list needs the
+detached plane (rebase often: Brief O edits it), tests, the ledger, KNOBS,
+the spec's vehicles page, PARITY_STATUS_2026-09-23.md.
+
+Acceptance: the pins, the four live results with numbers, ledger and KNOBS
+rows for every engine read, no change to the seeded El Alamein trace.
