@@ -58,6 +58,37 @@ export const PLANE = {
   /** Below this height above the ground the nose is held up (INVENTION). */
   pullUpHeight: 40.0,
   levelDownSpeed: -50.0,
+  /** The same floor and nose-down limit while the plane aims its guns
+   *  (`aimAtDirection`): a strafing dive runs to 10 m and 45 deg
+   *  (INVENTION: the exact stall / dive terms of `towardsDirection` are
+   *  not read). */
+  aimPullUpHeight: 10.0,
+  aimNoseDownLimit: 45 * DEG,
+};
+
+/** `BBPFire3d` and `BBPIdle3d`. */
+export const PLANE_FIRE = {
+  approachRange: 0.9,
+  fireRange: 0.8,
+  inFrontDeg: 10.0,
+  battleZone: 150.0,
+  battleZoneReturn: 200.0,
+  clearance: 50.0,
+  breakDistance: 200.0,
+  breakSpeedFactor: 1.5,
+  passRadiusFactor: 1.3,
+  arriveSpeedFactor: 0.5,
+  radiusSmallFactor: 0.8,
+  radiusSmallMin: 0.5,
+  radiusVehicle: 5.0,
+  radiusLarge: 10.0,
+  weaponHeatSmall: 0.5,
+  weaponHeatVehicle: 0.8,
+  /** `aiTemplatePlugIn.maxRollAngle` / `maxClimbAngle` (ControlInfo3d
+   *  +0x104 / +0x108), every vanilla aircraft. */
+  maxRollAngle: 0.9999,
+  maxClimbAngle: 0.3333,
+  idleSpeed: 0.1,
 };
 
 export const BOAT = {
@@ -93,7 +124,7 @@ export function rotate(q, v) {
  * the throttle change sign (+1 / -1 / 0: the viewer's throttle latches).
  */
 export function planeControl({ orientation, position, velocity, target, groundY, targetGroundY,
-                               maxSpeed = 100, radius = 10, onGround = false }) {
+                               maxSpeed = 100, radius = 10, onGround = false, direct = false }) {
   const f = rotate(orientation, [0, 0, -1]);
   const u = rotate(orientation, [0, 1, 0]);
   const r = rotate(orientation, [1, 0, 0]);
@@ -104,7 +135,7 @@ export function planeControl({ orientation, position, velocity, target, groundY,
   const d2 = dx * dx + dz * dz;
   let wantY = target[1];
   const floorY = (Number.isFinite(targetGroundY) ? targetGroundY : groundY) + PLANE.cruiseClearance;
-  if (wantY < floorY) wantY = (wantY - floorY) * Math.min(1, d2 * 0.0001) + floorY;
+  if (!direct && wantY < floorY) wantY = (wantY - floorY) * Math.min(1, d2 * 0.0001) + floorY;
   const arrived = Math.hypot(dx, target[1] - position[1], dz) < PLANE.arriveRadiusFactor * radius;
   const dirLen = Math.hypot(dx, wantY - position[1], dz) || 1;
   let d = [dx / dirLen, (wantY - position[1]) / dirLen, dz / dirLen];
@@ -119,13 +150,13 @@ export function planeControl({ orientation, position, velocity, target, groundY,
   }
   // Too close to the ground, or diving hard: wings level, nose up, first.
   const height = position[1] - (Number.isFinite(groundY) ? groundY : position[1]);
-  const climbOut = !takeoff && (height < PLANE.pullUpHeight || velocity[1] < PLANE.levelDownSpeed);
+  const climbOut = !takeoff && (height < (direct ? PLANE.aimPullUpHeight : PLANE.pullUpHeight) || velocity[1] < PLANE.levelDownSpeed);
   const side = d[0] * r[0] + d[1] * r[1] + d[2] * r[2];       // the wanted direction's right component
   const lift = d[0] * u[0] + d[1] * u[1] + d[2] * u[2];       // its up component
   const ahead = d[0] * f[0] + d[1] * f[1] + d[2] * f[2];
   // Bank toward the side, held level once the wings pass 30 deg (`0.866`).
   const upWorld = u[1];
-  let roll = clamp(side * PLANE.rollGain, -1, 1);
+  let roll = clamp(side * PLANE.rollGain, -PLANE_FIRE.maxRollAngle, PLANE_FIRE.maxRollAngle);
   // A positive roll lowers the right wing; `r[1]` is the right wing's height,
   // so the bank grows while the two signs differ. Past 30 deg the bank is
   // held, and past 45 deg it is undone.
@@ -139,7 +170,7 @@ export function planeControl({ orientation, position, velocity, target, groundY,
   const nosePitch = Math.asin(clamp(f[1], -1, 1));
   let pitch = clamp(-(lift * PLANE.pitchGain) + velocity[1] * PLANE.verticalDamping - (ahead < 0 ? 0.5 : 0), -1, 1);
   if (nosePitch > PLANE.noseUpLimit) pitch = Math.max(pitch, 0.15);
-  if (nosePitch < -PLANE.noseDownLimit) pitch = Math.min(pitch, -0.25);
+  if (nosePitch < -(direct ? PLANE.aimNoseDownLimit : PLANE.noseDownLimit)) pitch = Math.min(pitch, -0.25);
   if (takeoff) pitch = speed > PLANE.takeoffSpeed * PLANE.rotateFraction ? PLANE.rotatePitch : 0.0;
   // Wings level: a positive roll input lowers the right wing (`r[1]` is the
   // right wing's height), so the input follows `r[1]`.
@@ -151,6 +182,73 @@ export function planeControl({ orientation, position, velocity, target, groundY,
   // write in that law is not read).
   const power = 1;
   return { power, roll, pitch, rudder, takeoff, climbOut, arrived, side, lift, ahead };
+}
+
+/**
+ * `BBPFire3d::createPlan`'s target mode and aim radius from the target's
+ * extents (`[dx, dy, dz]`), whether it is a vehicle and whether it moves.
+ */
+export function planeFireMode({ extents = [0.6, 1.8, 0.6], vehicle = false, large = false, mobile = true }) {
+  if (!mobile) return { mode: 3, radius: 0 };
+  if (!vehicle) {
+    const r = Math.max(PLANE_FIRE.radiusSmallMin, PLANE_FIRE.radiusSmallFactor * Math.max(extents[0], extents[1], extents[2]));
+    return { mode: 0, radius: r };
+  }
+  const mean = (extents[0] + extents[1] + extents[2]) / 3;
+  return large ? { mode: 2, radius: Math.max(PLANE_FIRE.radiusLarge, mean) }
+               : { mode: 1, radius: Math.max(PLANE_FIRE.radiusVehicle, mean) };
+}
+
+/**
+ * One step of the plane's fire plan: `state` is `{ phase, breakFrom }`
+ * (`phase` 'approach' | 'attack' | 'break'), advanced in place. `position`
+ * / `forward` / `velocity` are the plane's, `target` / `targetVel` the
+ * target's, `maxRange` the chosen weapon's, `turnRadius` the AI template's,
+ * `lineOfFire` whether the guns see the target, `mode` from
+ * `planeFireMode`. Returns `{ phase, fire, inFront, dist }`.
+ */
+export function attackRunStep(state, { position, forward, velocity, target, targetVel = [0, 0, 0],
+                                       maxRange, turnRadius = 25, lineOfFire = true, mode = 1 }) {
+  const dx = target[0] - position[0], dy = target[1] - position[1], dz = target[2] - position[2];
+  const dist = Math.max(0.5, Math.hypot(dx, dy, dz));
+  const dir = [dx / dist, dy / dist, dz / dist];
+  const cosFront = forward[0] * dir[0] + forward[1] * dir[1] + forward[2] * dir[2];
+  const inFront = cosFront >= Math.cos(PLANE_FIRE.inFrontDeg * DEG);
+  if (!state.phase) state.phase = 'approach';
+  if (state.phase === 'break') {
+    const from = state.breakFrom ?? position;
+    const run = Math.hypot(position[0] - from[0], position[2] - from[2]);
+    if (run >= PLANE_FIRE.breakDistance) state.phase = 'approach';
+  } else if (state.phase === 'attack') {
+    const passed = (mode === 1 || mode === 2) && dist < PLANE_FIRE.passRadiusFactor * turnRadius;
+    if (passed || cosFront < 0) { state.phase = 'break'; state.breakFrom = [...position]; }
+    else if (dist > maxRange || !lineOfFire) state.phase = 'approach';
+  } else if (dist <= PLANE_FIRE.approachRange * maxRange && lineOfFire && cosFront > 0) {
+    state.phase = 'attack';
+  }
+  const fire = state.phase === 'attack' && inFront && dist <= PLANE_FIRE.fireRange * maxRange && lineOfFire;
+  return { phase: state.phase, fire, inFront, dist, dir };
+}
+
+/**
+ * `PlaneControl::aimAtDirection`: the plane flies `towardsDirection` of the
+ * wanted direction (a point 100 m along it here, through `planeControl`
+ * with the height floor off); during a takeoff the direction's rise is
+ * `maxClimbAngle`.
+ */
+export function aimAtDirection({ orientation, position, velocity, dir, groundY, maxSpeed = 100,
+                                 radius = 10, onGround = false }) {
+  let d = [dir[0], dir[1], dir[2]];
+  const speed = Math.hypot(velocity[0], velocity[1], velocity[2]);
+  const takeoff = onGround || (speed < PLANE.takeoffSpeed && speed / Math.max(1, maxSpeed) < PLANE.takeoffFraction);
+  if (takeoff) d = [d[0], PLANE_FIRE.maxClimbAngle, d[2]];
+  const len = Math.hypot(d[0], d[1], d[2]) || 1;
+  d = [d[0] / len, d[1] / len, d[2] / len];
+  return planeControl({
+    orientation, position, velocity, groundY, targetGroundY: NaN, maxSpeed, radius, onGround,
+    target: [position[0] + d[0] * 100, position[1] + d[1] * 100, position[2] + d[2] * 100],
+    direct: true,
+  });
 }
 
 /**

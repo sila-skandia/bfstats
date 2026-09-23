@@ -41,10 +41,36 @@
 //    primary/occupied vehicle) against a vehicle — the deviation model
 //    `deviation.js` implements.
 //
-// INVENTION, labelled: `DecleiningSlopeCurve` (the final urgency shaping)
-// was not in the corpus and is `x / (1 + x)` here; target types are the
-// soldier's `setBattleStrength` classes with every soldier `Infantry`; the
-// armour-class value vector is 1.
+// The vehicle and aircraft targeting (`scoreVehicleTargets`, read
+// 2026-09-23; bot-behaviours.md §12, ledger AI-52..AI-53):
+//
+//  * `BBFireLargeBore::calculateUrgency` 0x0856b390 (a hull's or seat's
+//    guns): the same spotted-list scan and weapon choice as the infantry's,
+//    with a weapon whose `minRange` the target is inside scoring 0; the
+//    distance term is `1 - clamp(1.5 d / maxRange, 0.1, 1)` (no range
+//    factor); an enemy-manned vehicle is scored over every seat as
+//    `(seat.table[myType] + security + own.table[seatType]) *
+//    armourClassValue[seatType]`, an infantryman as `own.table[type] *
+//    security * armourClassValue[type]`, both times the order and area
+//    factors; the seats' `table[myType]` sum under `getHarmlessThrsh` cuts
+//    the score to 0.33; a fixed weapon needs `validateCameraDirectionYaw`
+//    toward the target; `getEnemyObjects` within 850 m adds targets the bot
+//    has not spotted at 0.75, weapons scored `strength / (10 / ammo + 1)`.
+//  * `BBFire3d::calculateUrgency` 0x085662f0 (an aircraft): the same
+//    base, with `min(1, d / (3 maxRange))` for a ground target (a plane
+//    lines up on what is far), `max(0, 1 - d / (1.5 maxRange))` for an air
+//    target (doubled when the guns are anti-aircraft), a facing term
+//    `max(0.5, forward . dir + 1) * 0.5`, and against an air target from a
+//    ground unit: non-AA guns score 0 beyond half their range or against
+//    more than 15 m/s, AA guns 1 inside 0.9 of it; an escaping target
+//    (faster by 5 m/s, beyond range) `0.25 / (0.5 |v| + 2 max(0, dv . dir)
+//    + 2 max(0, dv . side) + 1)`; `getEnemyObjects` within 75 m (600 m for
+//    an aircraft) adds the unspotted. Both keep the current target unless
+//    beaten 1.2x, veto a plan's target for 20 s, and shape the result
+//    through `Declein(2 x)` and the radio terms.
+//
+// INVENTION, labelled: the armour-class value vector (`AISettings` +0x98,
+// `getArmourClassValues`) is 1 here; a target's information security is 1.
 
 const DEG = Math.PI / 180;
 
@@ -301,4 +327,175 @@ export function firePlanFor({ position, targetPos, targetId, weapon, pose, now }
     shots: weapon.burst ? 0 : Math.min(FIRE.shotsMax, 1 + Math.floor(Math.random() * FIRE.shotsMax)),
   });
   return plan;
+}
+
+/** Per-class weighting `AISettings::getArmourClassValues` (INVENTION: 1). */
+export const ARMOUR_CLASS_VALUES = { Infantry: 1, LightArmour: 1, HeavyArmour: 1, NavalArmour: 1, Submarine: 1, Air: 1 };
+
+export const VEHICLE_FIRE = {
+  largeBoreRangeFactor: 1.5,
+  largeBoreFloor: 0.1,
+  airGroundRangeFactor: 3.0,
+  airAirRangeFactor: 1.5,
+  facingFloor: 0.5,
+  facingScale: 0.5,
+  aaNonAaRange: 0.5,
+  aaNonAaSpeed: 15.0,
+  aaRange: 0.9,
+  escapeSpeedGap: 5.0,
+  losRange: 0.89,
+  environmentFactor: 0.75,
+  environmentRadius: 850.0,
+  environmentRadiusAir: 600.0,
+  environmentRadiusGround: 75.0,
+};
+
+/**
+ * `BBFireLargeBore` / `BBFire3d`: score the spotted enemies for a mounted
+ * bot. `mode` is `'largeBore'` (a hull's or seat's guns) or `'air'`.
+ * `infoOf(id)` describes a target: `{ type, air, table, maxSpeed, seats:
+ * [{ table, type, occupied }] | null, enemyManned, mobile }`; `forward` /
+ * `velocity` are the bot's unit's; `myTable` / `myType` the unit's own
+ * table and class; `aimable(dir)` the fixed weapon's camera test (null when
+ * the unit moves); `environment` the enemy objects around that are not in
+ * the spotted list (`getEnemyObjects`), as `{ id, pos }`.
+ */
+export function scoreVehicleTargets({
+  spotted, environment = [], position, forward = [0, 0, -1], velocity = [0, 0, 0], weapons, now,
+  attackedBy, velocityOf, infoOf, myType = 'LightArmour', myTable = {}, air = false, maxSpeed = 0,
+  isAntiAircraft = false, armourClassValues = ARMOUR_CLASS_VALUES,
+  currentTarget = null, currentScore = 0, insideOrderedArea = true, insideArea = null,
+  vetoed = null, orderFactor = 1, harmlessThreshold = 0, aimable = null, mode = 'largeBore',
+}) {
+  const none = { targetId: null, targetPos: null, score: 0, weaponIndex: -1, urgency: 0 };
+  if (!weapons?.length) return none;
+  const areaFactor = insideOrderedArea ? 1.0 : FIRE.outsideAreaFactor;
+  const mySpeed = Math.hypot(velocity[0], velocity[1], velocity[2]);
+  let best = null, bestScore = 0, bestWeapon = -1, current = null;
+
+  const scoreOne = (id, pos, m, environmental) => {
+    if (vetoed?.has(id) && now - vetoed.get(id) < FIRE.feedbackVeto) return null;
+    const info = infoOf?.(id) ?? { type: 'Infantry', air: false, table: {}, maxSpeed: 5, seats: null, mobile: true };
+    const attackedAt = attackedBy?.(id) ?? -1000;
+    const attackedBonus = attackedAt > -1000
+      ? 1.5 - 0.5 * Math.min(1, Math.max(0, (now - attackedAt) / FIRE.attackedWindow))
+      : 1.0;
+    const dx = pos[0] - position[0], dy = pos[1] - position[1], dz = pos[2] - position[2];
+    const dist = Math.max(FIRE.minDistance, Math.hypot(dx, dy, dz));
+    const dir = [dx / dist, dy / dist, dz / dist];
+    const targetType = info.type ?? 'Infantry';
+    // Weapon choice: the memory tallies for a spotted target, `10 / ammo`
+    // alone for one the environment handed over.
+    let wBest = -1, wVal = 0, maxRange = 0;
+    for (let i = 0; i < weapons.length; i++) {
+      const w = weapons[i];
+      const strength = w.healing ? 0 : (w.strength?.[targetType] ?? 0);
+      const ammo = w.ammo < 0 ? 0x10000 : w.ammo;
+      let val;
+      if (ammo < 1) val = 0;
+      else if (environmental) val = Math.round(strength) / (10 / ammo + 1);
+      else {
+        const missed = (m?.shots?.[i] ?? 0) - (m?.hits?.[i] ?? 0);
+        val = Math.round(strength) / (1 + (20 * missed + 10) / ammo);
+      }
+      if (mode === 'largeBore' && dist < (w.minRange ?? 0)) val = 0;
+      if (val > wVal) { wVal = val; wBest = i; }
+      maxRange = Math.max(maxRange, w.maxRange ?? 0);
+    }
+    if (wBest < 0 || !(wVal > 0) || !(maxRange > 0)) return null;
+    // A fixed weapon must be able to point at the target.
+    if (aimable && !aimable(dir)) return null;
+    const lostFactor = (!environmental && m?.lost)
+      ? 1 / (1 + FIRE.sightAgeDecay * Math.max(0, now - (m.lostAt ?? now))) : 1.0;
+    const v = velocityOf?.(id) ?? null;
+    const tSpeed = v ? Math.hypot(v[0], v[1], v[2]) : 0;
+    // The movement term.
+    let moveFactor = null;
+    if (!air && info.air) {
+      if (!isAntiAircraft) {
+        if (dist > VEHICLE_FIRE.aaNonAaRange * maxRange || tSpeed > VEHICLE_FIRE.aaNonAaSpeed) moveFactor = 0;
+      } else if (dist < VEHICLE_FIRE.aaRange * maxRange) moveFactor = 1;
+    }
+    if (moveFactor === null) {
+      if (!info.mobile) moveFactor = 1;
+      else if (dist <= maxRange) moveFactor = 1 / (0.5 * tSpeed + 1);
+      else if ((info.maxSpeed ?? 0) - maxSpeed > VEHICLE_FIRE.escapeSpeedGap && v) {
+        const side = [dir[2], 0, -dir[0]];
+        const rel = [v[0] - velocity[0], v[1] - velocity[1], v[2] - velocity[2]];
+        const along = Math.max(0, rel[0] * dir[0] + rel[1] * dir[1] + rel[2] * dir[2]);
+        const across = Math.max(0, rel[0] * side[0] + rel[1] * side[1] + rel[2] * side[2]);
+        moveFactor = 0.25 / (0.5 * tSpeed + 2 * along + 2 * across + 1);
+      } else moveFactor = FIRE.beyondRangeFactor;
+    }
+    if (!(moveFactor > 0)) return null;
+    let area = areaFactor;
+    if (insideArea && info.mobile && !air && !insideArea(pos)) area *= FIRE.outsideAreaFactor;
+    if (environmental) area *= VEHICLE_FIRE.environmentFactor;
+    // The base: an enemy-manned vehicle over every seat, else the unit.
+    let base = 0, threat = 0, harmless = false;
+    if (info.seats?.length && info.enemyManned) {
+      for (const seat of info.seats) {
+        const st = seat.type ?? targetType;
+        threat += seat.table?.[myType] ?? 0;
+        base += ((seat.table?.[myType] ?? 0) + 1 + (myTable[st] ?? 0)) * (armourClassValues[st] ?? 1) * orderFactor * area;
+      }
+      harmless = threat <= harmlessThreshold;
+    } else {
+      base = (myTable[targetType] ?? 0) * 1 * (armourClassValues[targetType] ?? 1) * orderFactor * area;
+    }
+    let distF, facing = 1;
+    if (mode === 'air') {
+      if (!info.air) distF = Math.min(1, dist / (VEHICLE_FIRE.airGroundRangeFactor * maxRange));
+      else {
+        distF = Math.max(0, 1 - dist / (VEHICLE_FIRE.airAirRangeFactor * maxRange));
+        if (isAntiAircraft) base *= 2;
+      }
+      facing = Math.max(VEHICLE_FIRE.facingFloor, forward[0] * dir[0] + forward[1] * dir[1] + forward[2] * dir[2] + 1)
+        * VEHICLE_FIRE.facingScale;
+    } else {
+      distF = 1 - Math.min(1, Math.max(VEHICLE_FIRE.largeBoreFloor, VEHICLE_FIRE.largeBoreRangeFactor * dist / maxRange));
+    }
+    let score = facing * distF * wVal * lostFactor * moveFactor * attackedBonus * base;
+    if (harmless) score *= FIRE.harmlessFactor;
+    return { score, weapon: wBest, pos, mySpeed };
+  };
+
+  for (const m of spotted ?? []) {
+    const r = scoreOne(m.id, m.pos, m, false);
+    if (!r) continue;
+    if (m.id === currentTarget) current = { score: r.score, weapon: r.weapon, m };
+    if (r.score > bestScore) { bestScore = r.score; best = m; bestWeapon = r.weapon; }
+  }
+  let environmental = false;
+  if (!current && environment?.length) {
+    let envBest = null, envScore = 0, envWeapon = -1, envCurrent = null;
+    for (const e of environment) {
+      if (spotted?.some(m => m.id === e.id)) continue;
+      const r = scoreOne(e.id, e.pos, null, true);
+      if (!r) continue;
+      if (e.id === currentTarget) envCurrent = { e, score: r.score, weapon: r.weapon };
+      if (r.score > envScore) { envScore = r.score; envBest = e; envWeapon = r.weapon; }
+    }
+    // The same 1.2x hysteresis over the unspotted list: a target the bot
+    // already flies at is not swapped for one a hair better.
+    if (envCurrent && envCurrent.score > 0 && envScore < FIRE.switchHysteresis * envCurrent.score) {
+      envBest = envCurrent.e; envScore = envCurrent.score; envWeapon = envCurrent.weapon;
+    }
+    if (bestScore <= 0 && envBest) {
+      // `Declein(2 x) * radio * x`: the unspotted target's own score scales it.
+      return {
+        targetId: envBest.id, targetPos: [...envBest.pos], score: envScore, weaponIndex: envWeapon,
+        urgency: decliningSlope(2 * envScore) * envScore, visible: false, environmental: true,
+      };
+    }
+    environmental = false;
+  }
+  if (!best) return none;
+  if (current && current.score > 0 && bestScore < FIRE.switchHysteresis * current.score) {
+    best = current.m; bestScore = current.score; bestWeapon = current.weapon;
+  }
+  return {
+    targetId: best.id, targetPos: [...best.pos], score: bestScore, weaponIndex: bestWeapon,
+    urgency: decliningSlope(2 * bestScore), visible: !!best.seen, environmental,
+  };
 }

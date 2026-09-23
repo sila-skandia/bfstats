@@ -533,3 +533,11 @@ Add query parameters:
 | `Pathfinding/*.raw` format not decoded (AI-13) | Defer to Stage 2; Stage 1 bots don't navigate |
 | Retail AI SKILL slider is inert (§5.3) | Label the wiring as a deliberate departure |
 | Kit selection weights not implemented | Use first kit; add weights in Stage 2 |
+
+
+## Follow-up 7 (2026-09-23): the class tables, the seat swap, the box test, the vehicle and aircraft fire plans, the water map
+
+Read and built: see [`PARITY_STATUS_2026-09-23.md`](PARITY_STATUS_2026-09-23.md)
+for the per-function table, what was verified live, and the ordered list of
+what is still open (a bot-driven vehicle's rounds need a soldier hit path in
+`map.html`, and the plane's trigger gate never opened live).
