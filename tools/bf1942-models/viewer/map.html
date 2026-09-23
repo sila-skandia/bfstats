@@ -185,6 +185,7 @@ import { createScoreboardScreen } from './scoreboard-screen.js';
 import { createDeployScreen } from './deploy-screen.js';
 import { createSpawning } from './spawning.js';
 import { createMapSurfaces } from './map-surfaces.js';
+import { createTicketFeed } from './ticket-feed.js';
 import { createHudFeed } from './hud-feed.js';
 import { createHandWeapon } from './hand-weapon.js';
 import { createSeatPose } from './seat-pose.js';
@@ -1021,8 +1022,8 @@ const hudFeed = createHudFeed({
   get deployKit() { return spawning.deployKit; },
   get deployTeamId() { return spawning.deployTeamId; },
   get drawFullMap() { return mapSurfaces.drawFullMap; },
-  get feedFlagIconVars() { return mapSurfaces.feedFlagIconVars; },
-  get feedTicketVars() { return mapSurfaces.feedTicketVars; },
+  get feedFlagIconVars() { return ticketFeed.feedFlagIconVars; },
+  get feedTicketVars() { return ticketFeed.feedTicketVars; },
   get fireStateFor() { return fireStateFor; },
   get forgetOccupiedVehicle() { return room.forgetOccupiedVehicle; },
   get fullmapBox() { return mapSurfaces.fullmapBox; },
@@ -1384,7 +1385,6 @@ const mapSurfaces = createMapSurfaces({
   get aircraft() { return localPlayer.aircraft; },
   get applyDeployFrame() { return deployScreen.applyDeployFrame; }, get bust() { return bust; },
   get camera() { return camera; }, get captured() { return pageInput.captured; },
-  get capturePosition() { return flagCapture.capturePosition; },
   get car() { return localPlayer.car; }, get currentDir() { return level.currentDir; },
   get deployActive() { return deployScreen.deployActive; },
   get deployFlagIndices() { return spawning.deployFlagIndices; },
@@ -1399,17 +1399,24 @@ const mapSurfaces = createMapSurfaces({
   get fullmapFrame() { return deployScreen.fullmapFrame; },
   get hudPack() { return hudFeed.hudPack; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
   get MAPS_BASE() { return MAPS_BASE; }, get mapVehicles() { return level.mapVehicles; },
-  get nearestEnemyFlag() { return flagCapture.nearestEnemyFlag; },
-  get occupancy() { return localPlayer.occupancy; }, get optOnFoot() { return optOnFoot; },
-  get release() { return pageInput.release; },
+  get occupancy() { return localPlayer.occupancy; }, get release() { return pageInput.release; },
   get scoreFromSpawn() { return scoreboard.scoreFromSpawn; },
   get setScoreboard() { return scoreboard.setScoreboard; },
-  get soldier() { return localPlayer.soldier; },
-  get soldierDead() { return localPlayer.soldierDead; },
   get spawnersRoot() { return level.spawnersRoot; },
   get spawnFlagSelect() { return spawnFlagSelect; }, get sprite() { return hudFeed.sprite; },
   get stage() { return stage; }, get vehicleSpawnActive() { return level.vehicleSpawnActive; },
   get world() { return level.world; },
+});
+const ticketFeed = createTicketFeed({
+  get capturePosition() { return flagCapture.capturePosition; },
+  get currentDir() { return level.currentDir; },
+  get deployTeamId() { return spawning.deployTeamId; }, get extras() { return level.extras; },
+  get hudPack() { return hudFeed.hudPack; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
+  get nearestEnemyFlag() { return flagCapture.nearestEnemyFlag; },
+  get optOnFoot() { return optOnFoot; }, get soldier() { return localPlayer.soldier; },
+  get soldierDead() { return localPlayer.soldierDead; },
+  get spawnersRoot() { return level.spawnersRoot; },
+  get teamNation() { return mapSurfaces.teamNation; }, get world() { return level.world; },
 });
 const deployScreen = createDeployScreen({
   get bfmap() { return mapSurfaces.bfmap; }, get bust() { return bust; },
@@ -1420,7 +1427,7 @@ const deployScreen = createDeployScreen({
   get deployRejoin() { return spawning.deployRejoin; },
   get deployTeamId() { return spawning.deployTeamId; },
   get drawFullMap() { return mapSurfaces.drawFullMap; },
-  get feedTicketVars() { return mapSurfaces.feedTicketVars; },
+  get feedTicketVars() { return ticketFeed.feedTicketVars; },
   get fullmapBox() { return mapSurfaces.fullmapBox; },
   get fullmapCanvas() { return mapSurfaces.fullmapCanvas; },
   get hudPack() { return hudFeed.hudPack; }, get hudPaths() { return hudPaths; },
@@ -1450,7 +1457,7 @@ const scoreboard = createScoreboardScreen({
   get soldier() { return localPlayer.soldier; },
   get soldierDead() { return localPlayer.soldierDead; },
   get spawnLayout() { return deployScreen.spawnLayout; }, get sprite() { return hudFeed.sprite; },
-  get ticketFlagTexture() { return mapSurfaces.ticketFlagTexture; },
+  get ticketFlagTexture() { return ticketFeed.ticketFlagTexture; },
   get world() { return level.world; },
 });
 const spawning = createSpawning({
