@@ -3,7 +3,7 @@
 // the two fields of view, the deviation inputs, the recoil kick, and the
 // `guns.onShot` / `roundsLeft` hooks every gun on the page fires through.
 // Owns the mouse-look accumulators the deviation reads (`footLookX/Y`).
-// Lifted out of hand-weapon.js (features/vehicle-instance-refactor Part 2c).
+// Lifted out of hand-weapon.js (features/vehicle-instance-refactor).
 
 import * as THREE from 'three';
 import { chainOnShot } from './seats.js';

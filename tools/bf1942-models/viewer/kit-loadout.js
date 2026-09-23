@@ -4,7 +4,7 @@
 // bots' kits. All of it read out of `_shared/loadouts.json`, which this
 // module fetches and owns (`loadout.loadouts`), with the frozen vanilla
 // tables standing in where the file is absent. Lifted out of hand-weapon.js
-// (features/vehicle-instance-refactor Part 2c).
+// (features/vehicle-instance-refactor).
 
 import { kitRowLabel } from './kit-icon.js';
 
