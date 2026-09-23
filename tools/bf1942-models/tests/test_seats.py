@@ -46,6 +46,7 @@ MODULES = {
     # the page loads rather than a re-implementation of them in the harness.
     "gunfire.js": VIEWER / "gunfire.js",
     "round-visuals.js": VIEWER / "round-visuals.js",
+    "round-impact.js": VIEWER / "round-impact.js",
     "idle-vehicle.js": VIEWER / "idle-vehicle.js",
     "collision.js": VIEWER / "collision.js",
     "physics.js": VIEWER / "physics.js",
