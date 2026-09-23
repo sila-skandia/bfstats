@@ -440,7 +440,8 @@ const level = createLevel(bag(
     get optWire() { return optWire; }, get overlay() { return overlay; },
     get params() { return params; }, get renderer() { return renderer; },
     get scene() { return scene; }, get seatWorldPos() { return seatWorldPos; },
-    get spawnBotsForLevel() { return spawnBotsForLevel; }, get sun() { return sun; },
+    get resetBots() { return resetBots; }, get spawnBotsForLevel() { return spawnBotsForLevel; },
+    get sun() { return sun; },
     get texLoader() { return texLoader; }, get texManager() { return texManager; },
     get vehicles() { return vehicles; },
   },
@@ -1130,6 +1131,18 @@ const flagCapture = createFlagCapture(bag(
     get optOnFoot() { return optOnFoot; },
   },
 ));
+
+/**
+ * The level is going (`level-load.js` `show()`): the bots, their maps, the
+ * strategic AI and the doors they could take are all the old level's. The
+ * next `spawnBotsForLevel` builds the new level's; the vehicle and water maps
+ * are built again on first use.
+ */
+function resetBots() {
+  referee.reset();
+  botUnits.reset();
+  botBodies.disposeBotVisuals();
+}
 
 /**
  * Spawn bots on both sides, the way the engine's bot manager tops up each

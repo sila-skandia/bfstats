@@ -32,6 +32,20 @@ export function installBotHooks(page) {
   };
   window.__botDismount = id => { const bot = page.referee.bots.find(b => b.playerId === id); if (bot?.vehicle) page.referee.leaveVehicle(bot); return !bot?.vehicle; };
   window.__navMap = () => page.referee.navGrid;
+  /** Every bot map's size: the infantry map, the land vehicles' and each
+   *  water map built so far; `build` builds the vehicle map and the Boat and
+   *  LandingCraft maps first, as a bot taking a hull would. */
+  window.__botNavMaps = (build = false) => {
+    const u = page.botUnits;
+    if (build) { u.vehicleNav(); u.waterNav('Boat'); u.waterNav('LandingCraft'); }
+    const size = nav => (nav ? { worldSize: nav.worldSize, width: nav.width, cellSize: nav.cellSize } : null);
+    return {
+      infantry: size(page.referee.navGrid),
+      vehicle: size(u.navVehicle),
+      water: Object.fromEntries([...u.navWater].map(([name, nav]) => [name, size(nav)])),
+      candidatesAt: u.candidateCache.at,
+    };
+  };
   window.__navProbe = (fx, fz, tx, tz) => {
     if (!page.referee.navGrid) return null;
     const path = findPath(page.referee.navGrid, fx, fz, tx, tz);
