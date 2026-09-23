@@ -40,14 +40,23 @@ _SPLIT = re.compile(r"\s+")
 
 
 def _lines(text: str):
-    """Console lines with `rem` comments, blanks and `if/endIf` scaffolding
-    dropped (the `_003` patch archives wrap every script in `if v_arg1 ==
-    host`)."""
+    """Console lines with `rem` comments, `beginrem .. endrem` blocks, blanks
+    and `if/endIf` scaffolding dropped (the `_003` patch archives wrap every
+    script in `if v_arg1 == host`; Guadalcanal's `AIpathFinding.con` parks a
+    second `ai.addSearchMap Car4` in a `beginrem` block)."""
+    in_block = False
     for raw in text.splitlines():
         line = raw.strip()
-        if not line or line.lower().startswith("rem"):
-            continue
         low = line.lower()
+        if in_block:
+            if low.startswith("endrem"):
+                in_block = False
+            continue
+        if low.startswith("beginrem"):
+            in_block = True
+            continue
+        if not line or low.startswith("rem"):
+            continue
         if low.startswith(("if ", "endif", "else", "endif")):
             continue
         yield _SPLIT.split(line)
@@ -216,13 +225,29 @@ def parse_ai_con(text: str, ai: LevelAi) -> None:
             s["potentialObstacleMaxAge"] = _num(args[0])
 
 
+#: `ai.addSearchMap`'s pyramid levels when the line gives none: the console
+#: handler (`ConsoleClass344::executeObjectMethod` 0x084e4880) passes
+#: `minLevel 0, maxLevel 2` for eight arguments (`push $0x2; push $0x0` at
+#: 0x084e4a02 / 0x084e4a09) and `maxLevel 2` for nine (0x084e499f).
+SEARCH_MAP_DEFAULT_LEVELS = (0, 2)
+
+
 def parse_pathfinding_con(text: str, ai: LevelAi) -> None:
     """`AIpathFinding.con`: the search maps (name / waterHeight(bool) /
-    waterDepth / maxSlope / brush / lowClip / hiClip / considerAITypes)."""
+    waterDepth / maxSlope / brush / lowClip / hiClip / considerAITypes /
+    minLevel / maxLevel). The two levels bound the map's pyramid
+    (`LocalMap::LocalMap` 0x085fb590 stores them at +0x24 / +0x28 and builds
+    one `CellMap` a level between them, named `<name>Level<L>Map`), so they
+    also name the files `ai.loadMaps` reads: `Tank0 ... 0 2` is
+    `Tank0Level0Map.raw` .. `Tank0Level2Map.raw`; `Boat2 ... 2 5` starts at
+    `Boat2Level2Map.raw`, a 4 m pixel."""
+    lo_default, hi_default = SEARCH_MAP_DEFAULT_LEVELS
     for t in _lines(text):
         word = t[0].lower()
         args = t[1:]
         if word == "ai.addsearchmap" and len(args) >= 8:
+            lo = int(_num(args[8], lo_default)) if len(args) >= 9 else lo_default
+            hi = int(_num(args[9], hi_default)) if len(args) >= 10 else hi_default
             ai.searchMaps.append({
                 "name": args[0],
                 "waterMap": bool(int(_num(args[1]) or 0)),
@@ -232,6 +257,8 @@ def parse_pathfinding_con(text: str, ai: LevelAi) -> None:
                 "lowClip": _num(args[5]),
                 "hiClip": _num(args[6]),
                 "considerAITypes": bool(int(_num(args[7]) or 0)),
+                "minLevel": lo,
+                "maxLevel": hi,
             })
         elif word == "ai.setsmoothing" and len(args) >= 2:
             ai.settings.setdefault("smoothing", {})[args[0]] = int(_num(args[1]) or 0)
@@ -505,3 +532,120 @@ def read_search_map_raw(data: bytes) -> SearchMapRaw:
     if off != len(data):
         raise ValueError(f"search map has {len(data) - off} trailing bytes")
     return SearchMapRaw(1 << wb, 1 << hb, p3, p4, block_pixels, blocks)
+
+
+def search_map_header(data: bytes) -> tuple[int, int, int, int, int]:
+    """The five header int32 of a baked search-map level: `log2` blocks
+    across, `log2` blocks down, the block's size exponent (`level + 6`), the
+    level, the bits-per-pixel exponent (`CellMap::loadRawFile` 0x085f8930
+    compares them with the `CellMap`'s +0x18, +0x20, +0x10, +0x2c, +0x24)."""
+    import struct
+
+    if len(data) < 20:
+        raise ValueError("search map too short")
+    return struct.unpack_from("<5i", data, 0)
+
+
+def level_search_maps(files, ai: LevelAi | None) -> list[dict[str, Any]]:
+    """What `ai.loadMaps` loads for this level, map by map.
+
+    `AIPathfinding::loadSearchMaps` 0x0847c5c0 walks the declared maps in
+    order and calls `LocalMap::loadRawFile` 0x085fefb0 on each, which loads
+    every level `minLevel .. maxLevel` from `Pathfinding/<name>Level<L>Map.raw`
+    (`CellMap::loadRawFile` 0x085f8930: false on a missing file or a header
+    that does not match the `CellMap`). Both loops stop loading at the first
+    failure, so every map after a failed one keeps what its constructor gave
+    it: every block the special cell 0, ALL FREE (`CellMap::CellMap`
+    0x085f7af0). `AIConsole::loadMaps` 0x0846e2d0 drops the result; the
+    server carries on with those maps.
+
+    One row per declared map: `name`, the search-map parameters, `loaded`,
+    and when loaded `level` (the minimum, the level the viewer searches at)
+    and `data` (that level's bytes); `reason` says why a map did not load.
+    """
+    rows: list[dict[str, Any]] = []
+    if ai is None:
+        return rows
+    chain_ok = True
+    for sm in ai.searchMaps:
+        row = {k: sm.get(k) for k in ("name", "waterMap", "waterDepth", "maxSlope", "brush",
+                                        "lowClip", "hiClip", "considerAITypes", "minLevel", "maxLevel")}
+        row["loaded"] = False
+        rows.append(row)
+        if not chain_ok:
+            row["reason"] = "an earlier map failed to load"
+            continue
+        lo, hi = int(sm.get("minLevel", 0)), int(sm.get("maxLevel", 2))
+        first: bytes | None = None
+        blocks_bits = None
+        for level in range(lo, hi + 1):
+            rel = f"Pathfinding/{sm['name']}Level{level}Map.raw"
+            hit = files.find(rel)
+            if not hit:
+                row["reason"] = f"no {rel}"
+                break
+            data = files.read(hit)
+            try:
+                wb, hb, p5, p3, p4 = search_map_header(data)
+                if (p3, p5, p4) != (level, level + 6, 0) or wb != hb:
+                    raise ValueError(f"header {(wb, hb, p5, p3, p4)}")
+                if blocks_bits is not None and wb != blocks_bits - (level - lo):
+                    raise ValueError(f"{wb} block bits after {blocks_bits} at level {lo}")
+                if level == lo:
+                    read_search_map_raw(data)
+                    first, blocks_bits = data, wb
+            except ValueError as exc:
+                row["reason"] = f"{rel}: {exc}"
+                break
+        else:
+            row.update(loaded=True, level=lo, data=first)
+        if not row["loaded"]:
+            chain_ok = False
+    return rows
+
+
+def write_level_search_maps(files, ai: LevelAi | None, out_dir) -> dict[str, Any] | None:
+    """Write the level's loaded search maps under `<out_dir>/pathfinding/`:
+    each loaded map's minimum level as the archive has it
+    (`<name>Level<L>Map.raw`) and `index.json`, one row per declared map
+    (its parameters, `loaded`, and `level` / `file` / `bytes` or `reason`).
+    Returns the index, or None (writing nothing and removing a stale folder)
+    for a level that declares no search maps."""
+    import json
+    import shutil
+    from pathlib import Path
+
+    dest = Path(out_dir) / "pathfinding"
+    rows = level_search_maps(files, ai)
+    if not rows:
+        if dest.is_dir():
+            shutil.rmtree(dest)
+        return None
+    dest.mkdir(parents=True, exist_ok=True)
+    keep = {"index.json"}
+    for row in rows:
+        data = row.pop("data", None)
+        if not row["loaded"] or data is None:
+            continue
+        name = f"{row['name']}Level{row['level']}Map.raw"
+        row["file"] = name
+        row["bytes"] = len(data)
+        if name in keep:
+            continue
+        keep.add(name)
+        target = dest / name
+        if not target.is_file() or target.read_bytes() != data:
+            tmp = dest / (name + ".tmp")
+            tmp.write_bytes(data)
+            tmp.replace(target)
+    for stale in dest.iterdir():
+        if stale.name not in keep:
+            stale.unlink()
+    index = {"worldMapSize": ai.settings.get("worldMapSize") if ai else None, "maps": rows}
+    text = json.dumps(index, indent=1)
+    target = dest / "index.json"
+    if not target.is_file() or target.read_text() != text:
+        tmp = dest / "index.json.tmp"
+        tmp.write_text(text)
+        tmp.replace(target)
+    return index
