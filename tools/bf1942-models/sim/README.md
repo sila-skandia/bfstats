@@ -106,6 +106,10 @@ loaded as `map.html` and `level-load.js show()` load it:
   the room server's decoder) and `_shared/vehicle-ai.json`; kits from
   `_shared/loadouts.json`, weapon fire data from each weapon's
   `models/<name>.glb` `extras.weapon`.
+- the level's baked search maps (`pathfinding/`, `nav-baked.js
+  readSearchMaps`), which every bot map is taken from when the level ships
+  one (`extract_search_maps.py` writes them; a tree without them paints its
+  maps as before, so an old tree still runs).
 
 The stage then builds, in `show()`'s order and with the page's own modules:
 the `World` (with the guns, the crash hook and the per-tick seat positions),

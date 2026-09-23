@@ -49,7 +49,7 @@
 //    a target inside its box. (Until 2026-09-24 a cell was one node, passable
 //    if ANY metre was free, and a cell holding ground either side of a cliff
 //    joined them; on the levels' own maps that sent El Alamein's tanks at
-//    cliffs, AI-102.)
+//    cliffs, AI-104.)
 //  * The static-object pass clips the viewer's baked collision triangles to the
 //    clip band per cell and marks the footprint. The engine
 //    (`LocalMap::objectClipAndRender` 0x085fbfa0) intersects the hull with two
@@ -81,7 +81,7 @@
 //    the map's spawn points and blocks everything it did not reach, which is
 //    what closes a sandbag's top and a walled yard with no door.
 
-// The level's own maps (AI-100). Every level archive ships its search maps
+// The level's own maps (AI-102). Every level archive ships its search maps
 // baked (`Pathfinding/<name>Level<L>Map.raw`) and the retail server loads
 // them with `ai.loadMaps` (`AIPathfinding::loadSearchMaps` 0x0847c5c0 ->
 // `LocalMap::loadRawFile` 0x085fefb0 -> `CellMap::loadRawFile` 0x085f8930)

@@ -3,7 +3,7 @@
 Bocage match on them.
 
 The level archives ship their search maps baked and the retail server loads
-them (`ai.loadMaps`, ledger AI-95), so a level that has one is searched on
+them (`ai.loadMaps`, ledger AI-102), so a level that has one is searched on
 the engine's own bitmap and paints nothing. The real-level cases need the
 untracked maps tree with the `pathfinding/` folders `extract_search_maps.py`
 writes; they look in `$BF42_VIEWER_ASSETS`, this checkout's `viewer/`, then
