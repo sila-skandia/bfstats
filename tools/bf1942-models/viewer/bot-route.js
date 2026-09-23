@@ -401,15 +401,22 @@ export function extendRoute(bot) {
     let radius = LOCAL_SEARCH_RADIUS_MIN + Math.random() * LOCAL_SEARCH_RADIUS_RAND;
     for (const ob of bot.obstacles) radius = Math.max(radius, ob.r);
     radius += 1 + ROUTE_RETRY_WIDEN * Math.min(3, bot._pathFailures);
+    // A predicted circle over the route's own end is left out of the last
+    // leg's search: the viewer's plans end at points the engine's would not
+    // pick (a vehicle's door between two parked hulls), and the circle
+    // would wall the goal itself (INVENTION).
+    const last = r.coarse.length === 1;
+    const obstacles = last && bot.obstacles.some(o => o.id && Math.hypot(o.x - tx, o.z - tz) < o.r)
+      ? bot.obstacles.filter(o => !(o.id && Math.hypot(o.x - tx, o.z - tz) < o.r)) : bot.obstacles;
     let leg = findLocalPath(nav, from[0], from[1], tx, tz,
-                            { radius, obstacles: bot.obstacles });
+                            { radius, obstacles });
     r.searches++;
     // A leg the box cannot close is searched again in a wider box (the
     // engine's next decision pass draws a fresh radius; INVENTION: three
     // widenings at once) before the route fails and waits for its retry.
     for (let w = 1; !leg && w <= ROUTE_LEG_WIDENINGS; w++) {
       leg = findLocalPath(nav, from[0], from[1], tx, tz,
-                          { radius: radius + ROUTE_RETRY_WIDEN * w, obstacles: bot.obstacles,
+                          { radius: radius + ROUTE_RETRY_WIDEN * w, obstacles,
                             maxNodes: ROUTE_LEG_WIDE_NODES * w });
       r.searches++;
     }

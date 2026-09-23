@@ -215,6 +215,10 @@ class StrategicMapTests(unittest.TestCase):
         self.assertEqual(self.results["navPath"],
                          [[10, -20], [32.5, -96.5], [96.5, -96.5], [96.5, -32.5], [100, -20]])
 
+    def test_a_pocket_with_no_region_routes_from_the_nearest_one(self) -> None:
+        self.assertEqual(self.results["pocket"]["region"], -1)
+        self.assertIsNotNone(self.results["pocket"]["path"])
+
     def test_a_vehicle_number_names_a_search_type_and_its_maps(self) -> None:
         t = self.results["types"]
         self.assertEqual(t["jeep0"], {"type": "Tank", "map": "Tank0", "strategic": "Tank"})
