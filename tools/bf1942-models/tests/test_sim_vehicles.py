@@ -103,6 +103,15 @@ class SimVehicleTests(unittest.TestCase):
         self.assertEqual(r["fired"], ["gun:AA_Allies:AA_Allies_GunBarrel_1"])
         self.assertGreater(sum(r["landed"].values()), 5, "the rounds fly and land")
 
+    def test_a_parked_hull_is_an_obstacle_until_it_is_driven_off(self) -> None:
+        r = recipe("obstacle")
+        self.assertTrue(r["parked"], "a parked body")
+        self.assertTrue(r["bodyOwner"], "the nav map and the sweeps treat it as a body")
+        self.assertEqual(r["before"]["owner"], r["owner"], "a ray onto the pad stops on the hull")
+        self.assertGreater(r["moved"], 20.0)
+        self.assertNotEqual(r["atPad"] and r["atPad"]["owner"], r["owner"], "the pad is clear once it is gone")
+        self.assertEqual(r["atHull"]["owner"], r["owner"], "the hull answers where it stands")
+
 
 if __name__ == "__main__":
     unittest.main()

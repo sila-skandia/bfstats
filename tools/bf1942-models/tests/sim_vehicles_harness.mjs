@@ -112,6 +112,36 @@ const recipes = {
     };
   },
 
+  /** Parked hulls are obstacles: a Sherman on its pad is in the static
+   *  index (a round's ray stops on it) and is a parked body; driven away, it
+   *  answers where it stands (`setMovedOwner`) and not on its pad. */
+  async obstacle() {
+    const match = await start('el_alamein');
+    const b = bot(match, 'bot_1');
+    const cand = match.stage.units.candidates().filter(c => c.template === 'Sherman' && c.isRoot)
+      .sort((x, y) => Math.hypot(x.pos[0] - b.position[0], x.pos[2] - b.position[2])
+        - Math.hypot(y.pos[0] - b.position[0], y.pos[2] - b.position[2]))[0];
+    const owner = match.stage.ownerOf(cand.node);
+    const collider = match.stage.collider;
+    // A ray straight down onto the hull's origin from 20 m up.
+    const rayAt = (x, y, z) => {
+      const hit = collider.cast(x, y + 20, z, 0, -1, 0, 40, -1);
+      return hit ? { owner: hit.owner, t: round(hit.t) } : null;
+    };
+    const pad = [...cand.pos];
+    const before = rayAt(...pad);
+    const parked = !!match.world.bodyWorld.get(owner)?.parked;
+    const bodyOwner = !!collider.statics._body?.[owner];
+    if (!match.referee.enterVehicle(b, cand)) throw new Error('could not seat the driver');
+    run(match, 40);
+    const s = b.vehicle.drive.state.position;
+    const moved = Math.hypot(s.x - pad[0], s.z - pad[2]);
+    return {
+      owner, parked, bodyOwner, before, moved: round(moved),
+      atPad: rayAt(...pad), atHull: rayAt(s.x, s.y, s.z),
+    };
+  },
+
   /** The same tank against a frozen soldier 40 m ahead: its guns are the
    *  page's `GunFire` groups, and the round that lands is billed through
    *  `applyVehicleHit` (the direct hit on a soldier body, or the splash). */
