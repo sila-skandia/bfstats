@@ -22,9 +22,24 @@ and a full field of view:
 | 1 | 0.5 .. 0.75 V | 60 deg | 45 deg |
 | 2 | 0.75 .. 1.0 V | 30 deg | 15 deg |
 
-`V` is the level's `aiSettings.setViewDistance` (El Alamein 300), else 600.
-The engine advances the sub-state per completed pass and restarts it when the
-camera turns past 25 / 15 / 7.5 deg; the viewer takes one sub-state a tick.
+`V` is the level's `aiSettings.setViewDistance` (El Alamein 300), else 600,
+for every unit and every target: nothing in the sense path treats an object
+in the air differently (AI-107). The sweep moves out a band each pass, but
+goes back to band 0 when the camera has turned, since the last band's
+frustum was built, past the new band's angle: 25 / 15 / 7.5 deg on foot,
+18.75 / 11.25 / 3.75 deg mounted, a quarter of each fov (`FRUSTUM_RESET`,
+AI-107). A bot that keeps turning keeps sensing the near half of its view
+distance only. The viewer takes one band a tick (the engine spreads a pass
+over a time budget: INVENTION of pacing).
+
+*Example.* A soldier turning 12 deg a tick (the count law's cap) resets the
+sweep every tick it turns past band 1's 15 deg or band 2's 7.5 deg between
+passes, so a far target is only picked up once he stops turning. An AA gun
+tracking a plane at 10 deg/s turns 0.33 deg a tick and never resets. A plane
+coming head-on 90 m up stands 17.5 deg above a level barrel at 300 m, 23.6
+deg at 225 m: outside band 2's 7.5 deg and band 1's 22.5 deg half-angles,
+so it is first seen inside band 0 at about 150..190 m (live, El Alamein:
+184 m); the engine's geometry is the same.
 
 **The frustum is square and 3D about the camera** (`inFrustum`,
 `Frustum::setupFrustum(fov, 1.0, ...)` transformed by the camera, AI-67):
@@ -46,8 +61,12 @@ n = clamp(round(30 * radius / distance), 1, 10)      radius 1.0 (INVENTION)
 rays from the eye to points on its body (heights 0.3, 0.8, 1.2, 1.55 m capped
 by stance, the first at 1.0 m, jittered +-0.25 m sideways: INVENTION), each a
 `lineClear` through the collider that skips the bot's own hull and the
-target's (AI-62). One clear ray spots it: a memory record `{seen, lastSeen,
-lost, lostAt, pos, shots[], hits[]}`.
+target's (AI-62), re-casting past up to 32 faces of a skipped hull (a ray to
+a plane's seat meets several of its faces; the limit was 4 and a line to a
+plane never came out clear: AI-109, INVENTION of count). One clear ray spots
+it: a memory record `{seen, lastSeen, lost, lostAt, pos, shots[], hits[]}`.
+The trigger's line to its target (`bot._lineClear`) skips the firing
+target's unit the same way.
 
 *Example.* View 300 m: sub-state 0 covers 0..150 m inside +-50 deg across
 and up / down, 1 covers 150..225 m inside +-30 deg, 2 covers 225..300 m

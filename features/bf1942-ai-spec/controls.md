@@ -15,16 +15,20 @@ human's is.
 | look `x`, `y` | mouse counts (yaw, pitch) | the turret | |
 | `forwardKeys`, `rudder`, `roll`, `pitch`, `pad` | | | throttle ramp, yaw, roll, pitch stick |
 
-**Look counts** (`_aimLook`), on foot: `lookX = -(yaw error in deg) / 3`,
-`lookY = -(pitch error in deg) / 1`, clamped to +-16 (the axis saturation) or
-+-4 for an aim (`mouseControlLookAtDirection`'s 4.0 a tick). A mounted gunner
-uses the engine's own law instead (Mounted guns, below). The world turns a
-soldier `3 deg` a yaw count and `1 deg` a pitch count per tick
+**Look counts** (`_aimLook`), on foot: the engine's count law
+(`mouseControlLookAtDirection`, Mounted guns below) with the soldier's own
+ControlInfo (`SoldierCtrl`: sensitivities 0.4363323 / -0.5235988, scales 5.0;
+AI-108), the camera the look yaw and pitch with a level right. A MoveTo steer
+(`infanteryControlTowardsDirection`) and an aim go through it alike, each
+count at most 4. A null wanted pitch leaves the pitch count at 0. The world
+turns a soldier `3 deg` a yaw count and `1 deg` a pitch count per tick
 (`mouse-input.js soldierLookDegrees`, ENGINE gains).
 
-*Example.* A point 30 deg off the facing: a MoveTo steer writes 10 counts
-and the soldier faces it after the next world tick; an aim writes 4 a tick
-and needs three ticks (12 deg a tick).
+*Example.* A point 30 deg off the facing: 4 counts, 12 deg this tick; at 18
+deg off 3.7 counts (11.2 deg); at 6 deg 0.63 (1.9 deg); the soldier is inside 0.5
+deg after 15 ticks (35 deg start) and never swings past. The old law wrote
+10 counts and faced it after one tick. A point 10 deg above: 1.6 counts
+(1.6 deg) the first tick, inside 0.5 deg after 45 ticks.
 
 ## Infantry
 
@@ -200,13 +204,36 @@ the gunner's hull, the round's exit velocity and gravity; an elevation search
 that drops the round onto the predicted target (6 halvings of a `pi / 35`
 step), the bearing of the predicted position. No solution: the straight line.
 
-**The counts** (`lookAtCounts`, `mouseControlLookAtDirection`): the direction's
+**The counts** (`lookAtCounts`, `mouseControlLookAtDirection`; the soldier's
+too, with his own ControlInfo): the direction's
 up and right components in the barrel's frame, each shaped `sign(c) log10(9
 abs(c) + 1)` and turned into an angle (`asin` of it, sign flipped), through the
 S-curve table, times the seat's `pitchScale` / `rollScale`, signed by its
 sensitivities, clamped to +-4; a target behind turns at the S-curve of 90 deg.
 The servo turns `count x maxSpeed` deg/s, so the pull shrinks with the error
 and the aim settles. Written to `lookY` / `lookX` as a human's mouse would be.
+
+**The yaw window** (`seatYawWindow`, AI-106): a seat whose ControlInfo
+limits the camera's yaw (`setCameraRelativeMin/MaxRotationDeg` x; 45 of
+vanilla's 92 seat ControlInfos, from +-15 to +-120 deg) takes the target's
+angle from the camera's base (the rig's traverse plus the target's angle off
+the barrel): past the window both counts are 0, unless the long way round
+reaches it, when the turn is the full rate that way. A zero-wide window (the
+M3A1, Priest and Wespe, whose look turns the hull) is not applied
+(INVENTION).
+
+**The correction** (`trackOwnRounds`, `correctAim`, AI-105): the bot
+watches one of its rounds at a time, against the predicted target at the
+moment it left (the aim's point, frozen from the first round not taken until
+the next take). Once the round has flown the target's horizontal range it is
+observed; a round that strikes anything but the target first is observed
+where it was; a hit on the target or a burst observes nothing (a burst leaves
+the record waiting until the target changes). The next aim adds `0.8 x
+(target - the round abreast of it)` to the aim point (a short round: `0.1 x`
+its shortfall, upward) and the correction then decays by 0.99 a tick after
+10 s without a round. The trigger still measures the barrel against the
+uncorrected target. A mounted gunner only: a soldier's round is the page's
+hit scan.
 
 *Example.* A Sherman gunner (scale 5.0), target 5 deg to the right and level:
 `right = sin 5 deg = 0.087`, shaped 0.252, angle 0.254 rad, S-curve 0.089, X
@@ -223,8 +250,11 @@ the miss is inside it; a single-shot one waits for the miss to stop falling
 and fires then if its smallest value was inside.
 
 *Example.* A soldier 40 m from the Browning: fire at 0.2 s (miss 0.70 m),
-dead at 0.57 s. An AA mount (scale 1.0) against a Spitfire crossing at 55 m/s
-lags it by 4 to 6 deg: a 24 to 30 m miss against 11.3 m, no fire.
+dead at 0.57 s. An AA mount (scale 1.0) against a Spitfire crossing 150 m
+out at 55 m/s: two rounds as the gun swings onto it (one flak hit), then a
+lag of 4 to 6 deg, a 22 to 34 m miss against 11.3 m, no more fire. Held 181
+m out: 21 rounds in 8 s, two flak hits (AI-109: until then the line to a
+plane ended on the plane and no gunner ever fired at one).
 
 ## Aircraft
 

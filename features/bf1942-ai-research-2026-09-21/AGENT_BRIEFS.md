@@ -468,6 +468,17 @@ mechanisms were read but not ported or not found:
 Acceptance: the two AA recipes with numbers and rounds fired, the pins,
 ledger and KNOBS rows for every read, PARITY_STATUS_2026-09-23.md updated.
 
+Done 2026-09-24 (ledger AI-105..AI-109; PARITY_STATUS item 8;
+features/bot-gunner-aim, "Brief L"). 1: the writer is the AI collision
+handler (`event_firing` 0x0852cd90, `updateBotProjectiles` 0x084650e0,
+`planExecution` 0x085202c0, `event_shotMissed` 0x08526a90); ported for
+mounted gunners. The AA gunner had never fired for another reason: the
+trigger's line to a plane ended on the plane (AI-109). Crossing: 2 rounds, 1
+flak hit, then no more; head-on: 0 rounds, best miss 14.7 m; held still:
+21 rounds in 8 s. 2: an aircraft is sensed like anything else; the sweep's
+turn reset is ported. 3: ported, every seeded trace changes; the yaw window
+too (45 seats, not the Defgun alone). Pins `BriefLTests`.
+
 ## Brief M: load the level's own search maps
 
 Added 2026-09-24 after Brief C. Depends on: C (landed: ledger AI-93, AI-94,
