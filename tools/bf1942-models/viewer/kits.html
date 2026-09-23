@@ -8,417 +8,7 @@
 <link rel="icon" href="./favicon.ico">
 <link rel="stylesheet" href="./tokens.css">
 <link rel="stylesheet" href="./shell.css">
-<style>
-  :root {
-    /* Neutral Depth, from tokens.css — same palette as the other three pages. */
-    --bg: var(--mm-stage);
-    --panel: var(--mm-bg);
-    --line: var(--mm-rule);
-    --text: var(--mm-ink-soft);
-    --muted: var(--mm-ink-muted);
-    --accent: var(--mm-accent-soft);
-    --warn: var(--mm-load-busy);
-    --bad: var(--mm-danger);
-  }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
-  body {
-    display: grid;
-    grid-template-columns: 330px 1fr;
-    grid-template-rows: var(--nav-h) 1fr;
-    background: var(--bg);
-    color: var(--text);
-    font: 13px/1.5 var(--mm-font-mono);
-  }
-  aside {
-    background: var(--panel);
-    border-right: 1px solid var(--line);
-    overflow-y: auto;
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-  }
-  h1 {
-    font-size: 12px;
-    letter-spacing: .14em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin: 0 0 14px;
-  }
-  h2 {
-    font-size: 10px;
-    letter-spacing: .14em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin: 20px 0 8px;
-    border-top: 1px solid var(--line);
-    padding-top: 12px;
-  }
-  a { color: var(--accent); }
-  .field { display: grid; grid-template-columns: 68px 1fr; align-items: center; gap: 10px; margin-bottom: 8px; }
-  .field span {
-    color: var(--muted);
-    font-size: 10px;
-    letter-spacing: .08em;
-    text-transform: uppercase;
-  }
-  select, input[type="search"] {
-    min-width: 0;
-    width: 100%;
-    padding: 6px 8px;
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    background: var(--mm-bg-soft);
-    color: var(--text);
-    font: inherit;
-  }
-  select { padding-right: 24px; cursor: pointer; }
-  select:hover, select:focus-visible,
-  input[type="search"]:focus-visible { border-color: var(--accent); outline: none; }
-  .hint { color: var(--muted); font-size: 10px; line-height: 1.5; margin: 6px 0 0; }
-  label.toggle { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; }
-  .views { display: flex; gap: 6px; }
-  .views button {
-    flex: 1;
-    padding: 5px 0;
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    background: var(--mm-bg-soft);
-    color: var(--text);
-    font: inherit;
-    font-size: 11px;
-    cursor: pointer;
-  }
-  .views button:hover { border-color: var(--accent); }
-  .views button.active { border-color: var(--accent); color: var(--accent); }
-  .views button:disabled { color: var(--muted); opacity: .45; cursor: default; }
-  .views button:disabled:hover { border-color: var(--line); }
-
-  /* --- Worn parts ---------------------------------------------------------
-     One row per bone the kit occupies. The engine offers exactly three — `A`
-     under Bip01 Head, `backpack`, `HipPack` — so this list is never long and
-     never needs to scroll. An empty slot is drawn, not omitted: "this kit has
-     no backpack" is information, and a row that vanishes teaches nothing. */
-  .worn { display: flex; flex-direction: column; gap: 1px; }
-  .worn-row {
-    display: grid;
-    grid-template-columns: 44px 1fr auto;
-    align-items: center;
-    gap: 10px;
-    padding: 5px 2px;
-    border: 0;
-    background: none;
-    color: inherit;
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-  }
-  .worn-row:disabled { cursor: default; }
-  .worn-row .slot-label {
-    color: var(--muted);
-    font-size: 9px;
-    letter-spacing: .12em;
-    text-transform: uppercase;
-  }
-  .worn-row .part-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .worn-row .tris { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
-  .worn-row.is-off .part-name { color: var(--muted); text-decoration: line-through; }
-  .worn-row.is-empty .part-name { color: var(--mm-ink-faint, var(--muted)); font-style: italic; }
-  .worn-row:not(:disabled):hover .part-name { color: var(--accent); }
-
-  /* --- Weapon rack --------------------------------------------------------
-     A kit's weapon slots are to infantry what a tank's seats are to armour:
-     the set of things you switch between while looking at one model. Laid out
-     across the bottom of the stage for the same reason the crew console is. */
-  #rack {
-    flex: none;
-    display: flex;
-    overflow-x: auto;
-    border-top: 1px solid var(--line);
-    background: var(--panel);
-  }
-  #rack:empty { display: none; }
-  button.slot {
-    position: relative;
-    display: grid;
-    grid-template-columns: 40px minmax(0, 1fr);
-    grid-template-rows: auto auto;
-    align-items: center;
-    flex: 0 0 auto;
-    gap: 1px 10px;
-    width: 186px;
-    padding: 10px 14px 11px;
-    border: 0;
-    border-right: 1px solid var(--line);
-    background: transparent;
-    color: var(--text);
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-  }
-  button.slot::before {
-    content: '';
-    position: absolute;
-    inset: 0 0 auto;
-    height: 2px;
-    background: transparent;
-    transition: background-color .15s ease;
-  }
-  button.slot[aria-pressed="true"]::before { background: var(--mm-accent); }
-  button.slot:disabled { cursor: default; }
-  button.slot:not(:disabled):hover .slot-name { color: var(--accent); }
-  button.slot:focus-visible { outline: 1px solid var(--muted); outline-offset: -2px; }
-  .slot-art {
-    grid-row: span 2;
-    width: 40px;
-    height: 40px;
-    object-fit: contain;
-    background: var(--mm-stage);
-  }
-  .slot-art.is-absent { border: 1px dashed var(--line); background: transparent; }
-  .slot-name {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-    font-size: 12px;
-  }
-  .slot-name span {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .slot-name kbd {
-    padding: 0 3px;
-    border: 1px solid var(--line);
-    border-radius: 2px;
-    color: var(--muted);
-    font: inherit;
-    font-size: 9px;
-  }
-  .slot-meta { color: var(--muted); font-size: 9.5px; font-variant-numeric: tabular-nums; }
-  button.slot:disabled .slot-name span,
-  button.slot:disabled .slot-meta { color: var(--muted); opacity: .55; }
-
-  /* --- Kit list ----------------------------------------------------------- */
-  #kits { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
-  .kit-group {
-    color: var(--muted);
-    font-size: 9px;
-    letter-spacing: .12em;
-    text-transform: uppercase;
-    margin: 10px 0 2px;
-  }
-  button.kit {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 8px;
-    padding: 4px 6px;
-    border: 0;
-    border-left: 2px solid transparent;
-    background: none;
-    color: var(--text);
-    font: inherit;
-    font-size: 12px;
-    text-align: left;
-    cursor: pointer;
-  }
-  button.kit:hover { color: var(--accent); }
-  button.kit[aria-pressed="true"] {
-    border-left-color: var(--mm-accent);
-    background: var(--mm-bg-soft);
-    color: var(--accent);
-  }
-  button.kit .maps { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
-
-  .stat { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
-  .stat span:last-child { color: var(--accent); }
-  .stat span:last-child.muted { color: var(--muted); }
-  #maps { color: var(--muted); font-size: 10px; line-height: 1.6; }
-  #note {
-    margin-top: 8px;
-    padding: 7px 9px;
-    border-left: 2px solid var(--warn);
-    background: var(--mm-bg-soft);
-    color: var(--muted);
-    font-size: 10px;
-    line-height: 1.5;
-  }
-
-  main {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    overflow: hidden;
-  }
-  #stage { position: relative; flex: 1; min-height: 0; }
-  #stage canvas { display: block; width: 100%; height: 100%; }
-  #status {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    color: var(--muted);
-    pointer-events: none;
-  }
-  #crumb {
-    position: absolute;
-    top: 14px;
-    left: 18px;
-    color: var(--muted);
-    font-size: 11px;
-    pointer-events: none;
-  }
-  #crumb b { color: var(--text); font-weight: 500; }
-  #hints {
-    flex: none;
-    padding: 7px 14px;
-    border-top: 1px solid var(--line);
-    color: var(--muted);
-    font-size: 10px;
-  }
-  #hints kbd {
-    padding: 0 3px;
-    border: 1px solid var(--line);
-    border-radius: 2px;
-    font: inherit;
-  }
-
-  .inspector-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 12px;
-  }
-  .inspector-header h1 {
-    margin: 0;
-  }
-  .controls-collapse-btn {
-    display: none;
-    align-items: center;
-    gap: 5px;
-    padding: 4px 8px;
-    background: var(--mm-bg-soft);
-    border: 1px solid var(--line);
-    border-radius: 2px;
-    color: var(--muted);
-    font: 10px var(--mm-font-mono);
-    letter-spacing: .08em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: color .15s ease, border-color .15s ease;
-  }
-  .controls-collapse-btn:hover,
-  .controls-collapse-btn:focus-visible {
-    color: var(--text);
-    border-color: var(--accent);
-    outline: none;
-  }
-
-  .stage-controls-fab {
-    position: absolute;
-    bottom: 16px;
-    right: 16px;
-    z-index: 15;
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    padding: 8px 14px;
-    background: rgba(19, 19, 19, 0.9);
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    color: var(--text);
-    font: 11px var(--mm-font-mono);
-    letter-spacing: .06em;
-    text-transform: uppercase;
-    cursor: pointer;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
-    transition: background-color .15s ease, border-color .15s ease;
-  }
-  .stage-controls-fab:hover,
-  .stage-controls-fab:focus-visible {
-    background: var(--mm-bg-soft);
-    border-color: var(--accent);
-    outline: none;
-  }
-  .stage-controls-fab[hidden] { display: none !important; }
-
-  @media (max-width: 720px) {
-    body {
-      grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: var(--nav-h) minmax(0, 48vh) minmax(0, 1fr);
-      transition: grid-template-rows .2s ease;
-    }
-    body.controls-collapsed {
-      grid-template-rows: var(--nav-h) minmax(0, 1fr) 0px;
-    }
-    body.controls-collapsed aside {
-      display: none;
-    }
-    body.controls-collapsed main {
-      grid-row: 2;
-      height: 100%;
-    }
-    main {
-      grid-row: 2;
-      position: relative;
-    }
-    aside {
-      grid-row: 3;
-      border-right: 0;
-      border-top: 1px solid var(--line);
-      padding: 10px 12px 20px;
-    }
-    .controls-collapse-btn { display: inline-flex; }
-    .hint, #hints { display: none !important; }
-    .field-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
-    .field-grid .field {
-      grid-template-columns: auto minmax(0, 1fr);
-      gap: 6px;
-      margin-bottom: 0;
-    }
-    .field-grid .field.span-full {
-      grid-column: 1 / -1;
-    }
-    button.slot {
-      width: 140px;
-      padding: 6px 10px;
-    }
-    .slot-art {
-      width: 32px;
-      height: 32px;
-    }
-    .slot-name {
-      font-size: 11px;
-    }
-    #rack {
-      -webkit-overflow-scrolling: touch;
-    }
-    #kits {
-      max-height: 200px;
-      overflow-y: auto;
-    }
-    h2 {
-      margin: 12px 0 6px;
-      padding-top: 8px;
-    }
-  }
-</style>
+<link rel="stylesheet" href="./kits.css">
 </head>
 <body>
 <nav class="shell-nav">
@@ -506,41 +96,20 @@ import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { OrbitControls } from './vendor/controls/OrbitControls.js';
 import { selectMod } from './mods.js';
-import { bonePattern, wornGrafts } from './kit-graft.js';
+import { disposeModel } from './dispose-model.js';
+import { createCameraGlide } from './camera-glide.js';
+import { createKitCatalogue } from './kit-catalogue.js';
+import { createKitStance } from './kit-stance.js';
+import { createKitPanels } from './kit-panels.js';
+import { createKitPicker } from './kit-picker.js';
+import { createKitView } from './kit-view.js';
+import { createKitWorn } from './kit-worn.js';
+import { installControlsCollapse } from './controls-collapse.js';
 
 // Vanilla reads 'models' + 'models/poses'; a mod reads its own subtree. Same
 // resolution the other three pages do, and it draws the mod picker as a side
 // effect.
 const activeMod = await selectMod('models');
-const MODELS_BASE = activeMod.paths.models;
-const POSES_BASE = activeMod.paths.poses;
-
-// An expansion is extracted with `--own`: only the templates it declares for
-// itself, because Road to Rome's catalogue is 113 templates and 94 of them are
-// vanilla's. Its *kits* are not filtered the same way — a Road to Rome map
-// fields British riflemen, and a roster that hid them would misrepresent the
-// pack — so the page has to reach assets the mod's own subtree does not hold.
-//
-// Vanilla is the floor for exactly the reason inheritance works in the engine:
-// a Road to Rome British rifleman IS a vanilla British rifleman. Falling back to
-// it costs one extra fetch only on a miss, and only for mods.
-const VANILLA_MODELS = 'models';
-const VANILLA_POSES = 'models/poses';
-const isVanilla = activeMod.id === 'bf1942';
-
-/** Fetch from the mod's subtree, then vanilla. Null if neither has it. */
-async function fetchJson(relative, bases) {
-  for (const base of bases) {
-    try {
-      const response = await fetch(`${base}/${relative}${bust()}`);
-      if (response.ok) return await response.json();
-    } catch { /* try the next base */ }
-  }
-  return null;
-}
-
-const MODEL_BASES = isVanilla ? [MODELS_BASE] : [MODELS_BASE, VANILLA_MODELS];
-const POSE_BASES = isVanilla ? [POSES_BASE] : [POSES_BASE, VANILLA_POSES];
 const DEV_ORIGIN = ['localhost', '127.0.0.1', '[::1]', ''].includes(location.hostname);
 const NO_CACHE = DEV_ORIGIN || new URLSearchParams(location.search).has('nocache');
 const bust = () => (NO_CACHE ? `?t=${Date.now()}` : '');
@@ -548,9 +117,6 @@ const bust = () => (NO_CACHE ? `?t=${Date.now()}` : '');
 const stage = document.getElementById('stage');
 const statusLine = document.getElementById('status');
 const crumb = document.getElementById('crumb');
-const rackEl = document.getElementById('rack');
-const wornEl = document.getElementById('worn');
-const kitsEl = document.getElementById('kits');
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -563,7 +129,11 @@ const camera = new THREE.PerspectiveCamera(42, 1, 0.02, 500);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.addEventListener('change', () => startAnimating());
-controls.addEventListener('start', () => { cameraMove = null; });
+controls.addEventListener('start', () => { cameraGlide.cancel(); });
+const cameraGlide = createCameraGlide({
+  get camera() { return camera; }, get controls() { return controls; },
+  get invalidate() { return invalidate; }, get startAnimating() { return startAnimating; },
+});
 
 // The same neutral three-point rig as the model and pose inspectors: the point
 // is to see what the extraction produced, not to flatter it.
@@ -578,222 +148,38 @@ scene.add(helpers);
 const loader = new GLTFLoader();
 
 // --- Manifests --------------------------------------------------------------
-//
-// kits.json is written by extract_kits.py and carries one row per kit a level
-// actually binds. A tree published before kits existed simply has no such file;
-// the page then says so rather than erroring, the same contract mods.js already
-// honours for a missing mods.json.
-const kitData = await fetchJson('kits.json', [MODELS_BASE]);
-
-// Whether a soldier can be shown *holding* a weapon is already recorded, per
-// pair, in the pose matrix. Joining against it beats having extract_kits.py
-// restate the fact: one source of truth, and a pose extraction that has not run
-// yet degrades on its own instead of making the manifest a liar.
-// Keyed lowercased, valued with the matrix's own spelling AND the base it came
-// from. The two halves of the key are not the same string: a `.con` file spells
-// its templates however the author felt that day — vanilla kits carry `MP40`,
-// `walterp38` and `k98Sniper` while the pose extraction wrote `Mp40`,
-// `WalterP38` and `K98Sniper` — so a URL built from the kit's spelling 404s on
-// any case-sensitive server. Match case-insensitively, then build the URL from
-// what the matrix says.
-//
-// The mod's own matrix wins; vanilla fills the gaps `--own` left behind.
-const posedPairs = new Map();
-for (const base of [...POSE_BASES].reverse()) {
-  const matrix = await fetchJson('poses-matrix.json', [base]);
-  for (const pair of matrix?.pairs || []) {
-    if (pair.error) continue;
-    posedPairs.set(`${pair.soldier}|${pair.weapon}`.toLowerCase(), { ...pair, base });
-  }
-}
-
-// models.json gives the rack its thumbnails and its true-scale numbers. Absent
-// (or a weapon that was never extracted) is a visible gap, never a hidden one.
-// Same shape: the mod's entries win, vanilla's fill the gaps, and each carries
-// the base its `glb`/`thumb` paths are relative to.
-const modelByName = new Map();
-for (const base of [...MODEL_BASES].reverse()) {
-  for (const entry of (await fetchJson('models.json', [base])) || [])
-    modelByName.set(entry.name.toLowerCase(), { ...entry, base });
-}
+const catalogue = await createKitCatalogue({
+  get activeMod() { return activeMod; }, get bust() { return bust; },
+});
+const { kitData, kits, MODEL_BASES, modelByName, posed, posedPair } = catalogue;
 
 if (!kitData || !(kitData.kits || []).length) {
   statusLine.textContent = 'no kits extracted — run extract_kits.py';
   crumb.textContent = '';
 }
 
-const kits = (kitData?.kits || []).map((kit, index) => ({
-  ...kit,
-  index,
-  items: (kit.items || []).map(item => ({
-    ...item,
-    entry: modelByName.get(String(item.template).toLowerCase()) || null,
-  })),
-  haystack: [
-    kit.nation, kit.class, kit.side, kit.theatre, kit.template,
-    ...(kit.soldiers || []),
-    ...(kit.items || []).map(item => item.template),
-    ...(kit.worn || []).map(part => part.template),
-    ...(kit.levels || []).map(level => level.replace(/_/g, ' ')),
-  ].filter(Boolean).join(' ').toLowerCase(),
-}));
-
-/** The pose matrix's row for this pairing, whatever either side spelled it. */
-const posedPair = (soldier, weapon) =>
-  (soldier && weapon && posedPairs.get(`${soldier}|${weapon}`.toLowerCase())) || null;
-const posed = (soldier, weapon) => Boolean(posedPair(soldier, weapon));
-
+// The kit on show, who wears it and what he holds. The loader (`showKit`) sets
+// them; the panels and the picker read them.
 const state = {
   kit: null,
   soldier: null,
   held: null,
-  stance: 'stand',
-  hidden: new Set(),      // worn slots the viewer has switched off
-  view: 'figure',
 };
 
-// --- Stances ---------------------------------------------------------------
-// Lifted from poses.html: stances are constant one-pose clips in the glb and
-// the switch blends their weights. A kit part parented to a bone rides the
-// blend for free, which is the whole reason it is parented rather than welded.
-const STANCE_KEYS = ['stand', 'crouch', 'lie'];
-const STANCE_BLEND_MS = 450;
-const CAMERA_MOVE_MS = 650;
-let mixer = null;
-let stanceActions = {};
-let stanceBlend = null;
-let cameraMove = null;
 let current = null;
-let framing = null;
-let headPoint = null;
 let loadSequence = 0;
 
-const stanceButtons = [...document.querySelectorAll('[data-stance]')];
-
-function updateStanceButtons() {
-  for (const button of stanceButtons) {
-    button.disabled = current ? !stanceActions[button.dataset.stance] : true;
-    button.classList.toggle('active', button.dataset.stance === state.stance);
-  }
-}
-
-function setStance(next) {
-  if (!STANCE_KEYS.includes(next) || next === state.stance) return;
-  if (current && !stanceActions[next]) return;
-  state.stance = next;
-  updateStanceButtons();
-  writeHash();
-  if (!mixer || !stanceActions[next]) return;
-  // Not crossFadeTo: its fade scales the action's own weight and these idle
-  // stances sit at weight 0, so the incoming pose would never appear.
-  stanceBlend = {
-    from: Object.fromEntries(Object.entries(stanceActions)
-      .map(([name, action]) => [name, action.getEffectiveWeight()])),
-    start: performance.now(),
-  };
-  startAnimating();
-}
-
-function advanceStanceBlend(now) {
-  if (!stanceBlend) return false;
-  const t = Math.min((now - stanceBlend.start) / STANCE_BLEND_MS, 1);
-  const eased = t * t * (3 - 2 * t);
-  for (const [name, action] of Object.entries(stanceActions))
-    action.setEffectiveWeight(
-      THREE.MathUtils.lerp(stanceBlend.from[name], name === state.stance ? 1 : 0, eased));
-  if (t < 1) return false;
-  stanceBlend = null;
-  return true;
-}
-
-for (const button of stanceButtons)
-  button.addEventListener('click', () => setStance(button.dataset.stance));
+const kitStance = createKitStance({
+  get current() { return current; }, get startAnimating() { return startAnimating; },
+  get writeHash() { return kitPicker.writeHash; },
+});
 
 // --- Camera ----------------------------------------------------------------
 
-function moveCamera(position, target, animate) {
-  if (!animate) {
-    cameraMove = null;
-    camera.position.copy(position);
-    controls.target.copy(target);
-    controls.update();
-    invalidate();
-    return;
-  }
-  cameraMove = {
-    fromPosition: camera.position.clone(),
-    fromTarget: controls.target.clone(),
-    position, target, start: performance.now(),
-  };
-  startAnimating();
-}
-
-function advanceCamera(now) {
-  if (!cameraMove) return;
-  const t = Math.min((now - cameraMove.start) / CAMERA_MOVE_MS, 1);
-  const eased = t < .5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
-  camera.position.lerpVectors(cameraMove.fromPosition, cameraMove.position, eased);
-  controls.target.lerpVectors(cameraMove.fromTarget, cameraMove.target, eased);
-  if (t === 1) cameraMove = null;
-}
-
-const headView = () => state.view === 'head' && headPoint;
-const viewTarget = () => (headView() ? headPoint : framing.centre).clone();
-const viewDistance = ({ radius }) => (headView() ? Math.max(radius * .28, .3) : radius * 2.6);
-
-function applyView(animate = false) {
-  if (!framing) return;
-  const target = viewTarget();
-  const d = viewDistance(framing);
-  const position = headView()
-    ? new THREE.Vector3(target.x + d * .8, target.y + d * .2, target.z + d)
-    : new THREE.Vector3(target.x + d * .62, target.y + framing.radius * .5, target.z + d * .78);
-  moveCamera(position, target, animate);
-}
-
-// Frame off the posed joints, not Box3.setFromObject: a skinned mesh node sits
-// at the scene root, so its object-level bounds describe the bind-space figure
-// lying along +Z, nowhere near the posed render. Same trap poses.html documents.
-function refit({ glide = false } = {}) {
-  if (!current) return;
-  const previous = framing;
-  current.updateMatrixWorld(true);
-  const box = new THREE.Box3();
-  headPoint = null;
-  current.traverse(obj => {
-    if (obj.isBone || obj.userData?.joint)
-      box.expandByPoint(obj.getWorldPosition(new THREE.Vector3()));
-    // GLTFLoader sanitizes node names, so "Bip01 Head" arrives underscored.
-    if (!headPoint && /^Bip01[_ ]Head$/i.test(obj.name))
-      headPoint = obj.getWorldPosition(new THREE.Vector3());
-  });
-  box.expandByScalar(0.25);
-  const size = box.getSize(new THREE.Vector3());
-  framing = {
-    centre: box.getCenter(new THREE.Vector3()),
-    radius: Math.max(size.x, size.y, size.z) / 2 || 1,
-  };
-  if (!glide || !previous) { applyView(); return; }
-  const target = viewTarget();
-  const offset = camera.position.clone().sub(controls.target)
-    .multiplyScalar(viewDistance(framing) / viewDistance(previous));
-  moveCamera(target.clone().add(offset), target, true);
-}
-
-function disposeModel(root) {
-  if (!root) return;
-  const materials = new Set();
-  const textures = new Set();
-  root.traverse(obj => {
-    obj.geometry?.dispose();
-    for (const material of [obj.material].flat().filter(Boolean)) {
-      materials.add(material);
-      if (material.map) textures.add(material.map);
-    }
-  });
-  textures.forEach(texture => texture.dispose());
-  materials.forEach(material => material.dispose());
-}
+const kitView = createKitView({
+  get camera() { return camera; }, get controls() { return controls; },
+  get current() { return current; }, get moveCamera() { return cameraGlide.moveCamera; },
+});
 
 function applyWireframe() {
   const on = document.getElementById('wireframe').checked;
@@ -804,66 +190,12 @@ function applyWireframe() {
 }
 
 // --- Grafting ---------------------------------------------------------------
-//
-// A KitPart is a static mesh bolted to a bone of the *wearer's* skeleton, and
-// every pose glb already carries all three of those bones as nodes — `A` (a
-// child of Bip01 Head), `backpack` and `HipPack`. So a helmet is added to the
-// bone's node and nothing else: no channels, no rebinding, no per-stance
-// variant. The bone is what moves, exactly as the weapon weld relies on.
-//
-// Parenting rather than baking is also what keeps the stance blend free: when
-// the mixer moves Bip01 Head, the helmet on `A` goes with it.
-const partCache = new Map();
-let grafted = [];
 
-async function loadPart(glb) {
-  if (!partCache.has(glb)) {
-    let scene = null;
-    for (const base of MODEL_BASES) {
-      try { scene = (await loader.loadAsync(`${base}/${glb}${bust()}`)).scene; break; }
-      catch { /* a mod that ships only its own worn meshes falls back to vanilla */ }
-    }
-    if (!scene) return null;
-    partCache.set(glb, scene);
-  }
-  return partCache.get(glb);
-}
-
-// The graft's local rotation per slot, and the composition of a KitPart's own
-// `setPosition` / `setRotation` on top of it, live in `kit-graft.js` -- the
-// seated occupant in `map.html` wears the same kits and must graft them the
-// same way, and these constants were settled by eye rather than derived, so
-// there must be exactly one copy of them. See that module for why each slot
-// gets the flip it gets.
-
-function boneNamed(root, want) {
-  // "HipPack" survives sanitization intact, but match loosely anyway — the
-  // manifest spells bones the way the .con files do and those are inconsistent
-  // in case (`hippack` / `HipPack`).
-  const pattern = bonePattern(want);
-  let found = null;
-  root.traverse(obj => { if (!found && pattern.test(obj.name)) found = obj; });
-  return found;
-}
-
-async function applyWorn(kit) {
-  for (const node of grafted) node.removeFromParent();
-  grafted = [];
-  if (!current || !kit) return;
-  for (const graft of wornGrafts(kit, state.hidden)) {
-    const bone = boneNamed(current, graft.bone);
-    if (!bone) continue;                       // no such bone: silently bare, and the row says so
-    const source = await loadPart(graft.glb);
-    if (!source) continue;
-    const node = source.clone(true);
-    node.quaternion.set(...graft.quaternion);
-    node.position.set(...graft.position);
-    bone.add(node);
-    grafted.push(node);
-  }
-  applyWireframe();
-  invalidate();
-}
+const kitWorn = createKitWorn({
+  get applyWireframe() { return applyWireframe; }, get bust() { return bust; },
+  get current() { return current; }, get invalidate() { return invalidate; },
+  get loader() { return loader; }, get MODEL_BASES() { return MODEL_BASES; },
+});
 
 // --- Loading ----------------------------------------------------------------
 
@@ -883,7 +215,7 @@ async function showKit(kit, { soldier, held, stance } = {}) {
   const sequence = ++loadSequence;
   state.kit = kit;
   state.soldier = soldierFor(kit, soldier ?? state.soldier);
-  if (stance) state.stance = stance;
+  if (stance) kitStance.presetStance(stance);
   state.held = (kit.items || []).some(item => item.template === held)
       && posed(state.soldier, held)
     ? held
@@ -917,297 +249,45 @@ async function showKit(kit, { soldier, held, stance } = {}) {
   if (sequence !== loadSequence) { disposeModel(gltf.scene); return; }
 
   if (current) { scene.remove(current); disposeModel(current); }
-  grafted = [];
+  kitWorn.forgetGrafts();
   current = gltf.scene;
   // A posed figure leaves its rest-pose bounds, so culling by them blanks limbs
   // mid-orbit.
   current.traverse(obj => { if (obj.isSkinnedMesh) obj.frustumCulled = false; });
   scene.add(current);
 
-  mixer = null;
-  stanceActions = {};
-  stanceBlend = null;
-  cameraMove = null;
-  for (const name of STANCE_KEYS) {
-    const clip = THREE.AnimationClip.findByName(gltf.animations ?? [], name);
-    if (!clip) continue;
-    mixer ??= new THREE.AnimationMixer(current);
-    const action = mixer.clipAction(clip);
-    action.play();
-    action.setEffectiveWeight(0);
-    stanceActions[name] = action;
-  }
-  if (!stanceActions[state.stance]) state.stance = 'stand';
-  stanceActions[state.stance]?.setEffectiveWeight(1);
-  mixer?.update(0);
-  updateStanceButtons();
+  cameraGlide.cancel();
+  kitStance.bindFigure(gltf.animations);
 
-  await applyWorn(kit);
-  refit();
+  await kitWorn.applyWorn(kit);
+  kitView.refit();
   applyWireframe();
 
   statusLine.hidden = true;
   crumb.innerHTML = `<b>${kit.nation || '&mdash;'} ${kit.class}</b> &middot; ${state.soldier}`
     + (state.held ? ` &middot; ${state.held}` : ' &middot; unposed');
-  renderWorn(kit);
-  renderRack(kit);
-  renderMaps(kit);
-  syncSelects(kit);
-  markKit(kit);
-  writeHash();
+  kitWorn.renderWorn(kit);
+  kitPanels.renderRack(kit);
+  kitPanels.renderMaps(kit);
+  kitPicker.syncSelects(kit);
+  kitPicker.markKit(kit);
+  kitPicker.writeHash();
 }
 
 // --- Panels -----------------------------------------------------------------
 
-const SLOT_ORDER = ['head', 'back', 'hip'];
-const SLOT_LABELS = { head: 'Head', back: 'Back', hip: 'Hip' };
-
-function renderWorn(kit) {
-  const rows = SLOT_ORDER.map(slot => {
-    const part = (kit.worn || []).find(entry => entry.slot === slot);
-    const row = document.createElement('button');
-    row.type = 'button';
-    row.className = 'worn-row';
-    const label = document.createElement('span');
-    label.className = 'slot-label';
-    label.textContent = SLOT_LABELS[slot];
-    const name = document.createElement('span');
-    name.className = 'part-name';
-    const tris = document.createElement('span');
-    tris.className = 'tris';
-
-    if (!part) {
-      row.classList.add('is-empty');
-      row.disabled = true;
-      name.textContent = 'none';
-    } else if (!part.glb) {
-      // Declared by the kit but the mesh did not come out. Say which, rather
-      // than drawing a bare head and letting it read as a weld bug.
-      row.classList.add('is-empty');
-      row.disabled = true;
-      name.textContent = part.template;
-      tris.textContent = 'not extracted';
-    } else {
-      name.textContent = part.template;
-      tris.textContent = `${part.triangles} tris`;
-      row.classList.toggle('is-off', state.hidden.has(slot));
-      row.title = state.hidden.has(slot) ? `show ${part.template}` : `hide ${part.template}`;
-      row.addEventListener('click', () => {
-        state.hidden.has(slot) ? state.hidden.delete(slot) : state.hidden.add(slot);
-        renderWorn(kit);
-        applyWorn(kit);
-      });
-    }
-    row.append(label, name, tris);
-    return row;
-  });
-  wornEl.replaceChildren(...rows);
-}
-
-function renderRack(kit) {
-  const slots = (kit.items || []).map((item, index) => {
-    const wearable = posed(state.soldier, item.template);
-    const slot = document.createElement('button');
-    slot.type = 'button';
-    slot.className = 'slot';
-    slot.disabled = !wearable;
-    slot.setAttribute('aria-pressed', String(item.template === state.held));
-    slot.title = wearable ? `put ${item.template} in his hands`
-      : item.entry ? `${item.template} has no pose clip for ${state.soldier}`
-      : `${item.template} was not extracted`;
-
-    const thumb = item.entry?.thumb;
-    const art = document.createElement(thumb ? 'img' : 'div');
-    art.className = thumb ? 'slot-art' : 'slot-art is-absent';
-    if (thumb) { art.src = `${item.entry.base}/${thumb}`; art.alt = ''; art.loading = 'lazy'; }
-
-    const name = document.createElement('div');
-    name.className = 'slot-name';
-    if (index < 9) {
-      const kbd = document.createElement('kbd');
-      kbd.textContent = String(index + 1);
-      name.append(kbd);
-    }
-    const label = document.createElement('span');
-    label.textContent = item.template;
-    name.append(label);
-
-    const meta = document.createElement('div');
-    meta.className = 'slot-meta';
-    meta.textContent = !item.entry ? 'not extracted'
-      : !wearable ? 'no pose clip'
-      : item.entry.dimensions ? `${item.entry.dimensions.maxExtent.toFixed(2)} m`
-      : `${item.entry.triangles.toLocaleString()} tris`;
-
-    slot.append(art, name, meta);
-    slot.addEventListener('click', () => showKit(kit, { held: item.template }));
-    return slot;
-  });
-  rackEl.replaceChildren(...slots);
-}
-
-function renderMaps(kit) {
-  const levels = kit.levels || [];
-  document.getElementById('map-count').textContent = String(levels.length);
-  document.getElementById('maps').textContent =
-    levels.map(level => level.replace(/_/g, ' ')).join(' · ');
-
-  const missing = (kit.worn || []).filter(part => !part.glb);
-  const note = document.getElementById('note');
-  if (!(kit.worn || []).length) {
-    note.hidden = false;
-    note.textContent = 'This kit declares no worn parts at all — it is bare by design, '
-      + 'not by a failed extraction.';
-  } else if (missing.length) {
-    note.hidden = false;
-    note.textContent = `${missing.length} worn part(s) did not extract: `
-      + `${missing.map(part => part.template).join(', ')}. The figure is missing them.`;
-  } else {
-    note.hidden = true;
-  }
-}
-
-// --- Selects and list -------------------------------------------------------
-
-const nationSelect = document.getElementById('nation');
-const classSelect = document.getElementById('class');
-const soldierSelect = document.getElementById('soldier');
-
-function fillSelect(select, values, chosen) {
-  select.replaceChildren(...values.map(value => {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = value;
-    option.selected = value === chosen;
-    return option;
-  }));
-  select.disabled = values.length < 2;
-}
-
-function nationKey(kit) {
-  // A nation that fields two theatres is two wardrobes, and collapsing them
-  // would hide the entire Afrika Korps behind the European kits.
-  return kit.theatre ? `${kit.nation} (${kit.theatre})` : (kit.nation || '—');
-}
-
-function syncSelects(kit) {
-  const nations = [...new Set(kits.map(nationKey))].sort();
-  fillSelect(nationSelect, nations, nationKey(kit));
-  const siblings = kits.filter(candidate => nationKey(candidate) === nationKey(kit));
-  fillSelect(classSelect, [...new Set(siblings.map(candidate => candidate.class))], kit.class);
-  fillSelect(soldierSelect, kit.soldiers || [], state.soldier);
-}
-
-nationSelect.addEventListener('change', () => {
-  const next = kits.find(kit => nationKey(kit) === nationSelect.value
-    && kit.class === classSelect.value)
-    || kits.find(kit => nationKey(kit) === nationSelect.value);
-  showKit(next);
+const kitPanels = createKitPanels({
+  get held() { return state.held; }, get posed() { return posed; },
+  get showKit() { return showKit; }, get soldier() { return state.soldier; },
 });
-classSelect.addEventListener('change', () => {
-  const next = kits.find(kit => nationKey(kit) === nationSelect.value
-    && kit.class === classSelect.value);
-  // Keep his hands on the same slot index across a class change: switching
-  // Medic to Engineer should swap the weapon, not drop back to the pistol.
-  const index = (state.kit?.items || []).findIndex(item => item.template === state.held);
-  if (next) showKit(next, { held: next.items[Math.max(index, 0)]?.template });
-});
-soldierSelect.addEventListener('change', () =>
-  showKit(state.kit, { soldier: soldierSelect.value, held: state.held }));
 
-const filterInput = document.getElementById('filter');
-let visible = kits;
+// --- Selects, list, hash and keys ------------------------------------------
 
-function renderList() {
-  const query = filterInput.value.trim().toLowerCase();
-  visible = query ? kits.filter(kit => kit.haystack.includes(query)) : kits;
-  const nodes = [];
-  let group = null;
-  for (const kit of visible) {
-    if (nationKey(kit) !== group) {
-      group = nationKey(kit);
-      const heading = document.createElement('div');
-      heading.className = 'kit-group';
-      heading.textContent = group;
-      nodes.push(heading);
-    }
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'kit';
-    button.dataset.template = kit.template;
-    button.setAttribute('aria-pressed', String(kit === state.kit));
-    const label = document.createElement('span');
-    label.textContent = kit.class;
-    const maps = document.createElement('span');
-    maps.className = 'maps';
-    maps.textContent = `${(kit.levels || []).length}`;
-    button.append(label, maps);
-    button.addEventListener('click', () => showKit(kit));
-    nodes.push(button);
-  }
-  kitsEl.replaceChildren(...nodes);
-  document.getElementById('kit-count').textContent =
-    visible.length === kits.length
-      ? `${kits.length} kits · number is maps fielded`
-      : `${visible.length} of ${kits.length} kits`;
-}
-
-function markKit(kit) {
-  for (const button of kitsEl.querySelectorAll('button.kit'))
-    button.setAttribute('aria-pressed', String(button.dataset.template === kit.template));
-}
-
-filterInput.addEventListener('input', renderList);
-
-// --- Hash -------------------------------------------------------------------
-// `#German/Medic/GermanSoldier|Mp40/crouch`. Nations with a space survive
-// because the whole string is decoded before it is split, and none contains a
-// slash.
-function writeHash() {
-  if (!state.kit) return;
-  const parts = [encodeURIComponent(state.kit.nation || '-'),
-                 encodeURIComponent(state.kit.class),
-                 `${state.soldier || ''}|${state.held || ''}`];
-  if (state.stance !== 'stand') parts.push(state.stance);
-  location.replace(`#${parts.join('/')}`);
-}
-
-function fromHash() {
-  const raw = decodeURIComponent(location.hash.replace(/^#/, ''));
-  if (!raw) return null;
-  const [nation, className, worn = '', stance] = raw.split('/');
-  const kit = kits.find(candidate => (candidate.nation || '-') === nation
-    && candidate.class === className);
-  if (!kit) return null;
-  const [soldier, held] = worn.split('|');
-  return { kit, soldier: soldier || null, held: held || null, stance };
-}
-
-// --- Keys -------------------------------------------------------------------
-
-addEventListener('keydown', event => {
-  if (event.metaKey || event.ctrlKey || event.altKey) return;
-  if (/^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
-  const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-
-  if (/^[1-9]$/.test(key)) {
-    const item = state.kit?.items[Number(key) - 1];
-    if (item && posed(state.soldier, item.template)) {
-      showKit(state.kit, { held: item.template });
-      event.preventDefault();
-    }
-    return;
-  }
-  // q/w/e rather than 1/2/3: the digits already mean "weapon" here, and a
-  // second meaning for them is how a console becomes unlearnable.
-  const stanceKey = { q: 'stand', w: 'crouch', e: 'lie' }[key];
-  if (stanceKey) { setStance(stanceKey); event.preventDefault(); return; }
-
-  if (key === 'ArrowDown' || key === 'ArrowUp') {
-    const index = visible.indexOf(state.kit);
-    const next = visible[index + (key === 'ArrowDown' ? 1 : -1)];
-    if (next) { showKit(next); event.preventDefault(); }
-  }
+const kitPicker = createKitPicker({
+  get held() { return state.held; }, get kit() { return state.kit; },
+  get kits() { return kits; }, get posed() { return posed; },
+  get setStance() { return kitStance.setStance; }, get showKit() { return showKit; },
+  get soldier() { return state.soldier; }, get stance() { return kitStance.stance; },
 });
 
 // --- Render loop ------------------------------------------------------------
@@ -1233,13 +313,13 @@ function startAnimating() {
   (function tick(now = performance.now()) {
     const delta = Math.min((now - last) / 1000, 0.1);
     last = now;
-    const landed = advanceStanceBlend(now);
-    if (mixer) mixer.update(delta);
-    if (landed) refit({ glide: true });
-    advanceCamera(now);
+    const landed = kitStance.advanceStanceBlend(now);
+    if (kitStance.mixer) kitStance.mixer.update(delta);
+    if (landed) kitView.refit({ glide: true });
+    cameraGlide.advanceCamera(now);
     const moving = controls.update();
     renderer.render(scene, camera);
-    if (moving || controls.autoRotate || stanceBlend || cameraMove) requestAnimationFrame(tick);
+    if (moving || controls.autoRotate || kitStance.blending || cameraGlide.moving) requestAnimationFrame(tick);
     else animating = false;
   })();
 }
@@ -1255,22 +335,7 @@ function resize() {
 addEventListener('resize', resize);
 new ResizeObserver(() => resize()).observe(stage);
 
-const collapseBtn = document.getElementById('controls-collapse-btn');
-const fabBtn = document.getElementById('stage-controls-fab');
-
-function setControlsCollapsed(collapsed) {
-  document.body.classList.toggle('controls-collapsed', collapsed);
-  if (collapseBtn) {
-    collapseBtn.setAttribute('aria-expanded', String(!collapsed));
-  }
-  if (fabBtn) {
-    fabBtn.hidden = !collapsed;
-  }
-  resize();
-}
-
-collapseBtn?.addEventListener('click', () => setControlsCollapsed(true));
-fabBtn?.addEventListener('click', () => setControlsCollapsed(false));
+installControlsCollapse({ get resize() { return resize; } });
 
 // --- Display toggles --------------------------------------------------------
 
@@ -1284,21 +349,13 @@ document.getElementById('axes').addEventListener('change', event => {
   helpers.visible = event.target.checked;
   invalidate();
 });
-for (const id of ['figure', 'head']) {
-  document.getElementById(`view-${id}`).addEventListener('click', () => {
-    state.view = id;
-    for (const other of ['figure', 'head'])
-      document.getElementById(`view-${other}`).classList.toggle('active', other === id);
-    applyView(true);
-  });
-}
 
 // --- Boot -------------------------------------------------------------------
 
 resize();
 if (kits.length) {
-  renderList();
-  const wanted = fromHash();
+  kitPicker.renderList();
+  const wanted = kitPicker.fromHash();
   await showKit(wanted?.kit || kits[0], wanted || {});
   resize();
 }
