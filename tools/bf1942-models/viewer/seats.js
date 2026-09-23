@@ -21,7 +21,7 @@
 //   turret-rig.js        the manned gun's aim servo (GUN-2 / GUN-2b)
 //   vehicle-occupancy.js one hull's seats, drivetrain and rigs
 //   entry-points.js      vehicle roots, entry points, the nearest pick
-//   spawned-craft.js     a ship's landing craft split off at load
+//   spawned-craft.js     a ship's landing craft and deck aircraft split off at load
 //   fire-state.js        magazine, reload and heat (GUN-12)
 
 export {
@@ -31,7 +31,7 @@ export {
 export { seatYawLimits, TURRET_ACCELERATION, TurretAxis, TurretRig } from './turret-rig.js';
 export { VehicleOccupancy } from './vehicle-occupancy.js';
 export { findAllVehicleRoots, listEntryPoints, TIE_EPSILON, pickNearest } from './entry-points.js';
-export { detachSpawnedCraft } from './spawned-craft.js';
+export { detachSpawnedCraft, spawnHoldOf } from './spawned-craft.js';
 export { FireState, chainOnShot } from './fire-state.js';
 
 // --- world-space camera read ---------------------------------------------
