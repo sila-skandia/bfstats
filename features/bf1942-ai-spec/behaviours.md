@@ -102,6 +102,22 @@ security; the behaviours still use the samples above.
 *Example.* A teammate 1.0 m away crossing at 2 m/s: `2 / 1.0 = 2.0`, beats a
 MoveTo order at 1.5 .. 3.0 only while it lasts.
 
+**In an aircraft** (the pilot; ledger AI-95) the engine's prediction runs in
+full (`bot-pilot.js airAvoid`): every other hull of the bot's side, the
+neutral ones and the enemy ones whose crew the side knows, within `5 x speed
++ r`; the hulls as spheres (the local box's centre and half diagonal); a
+collision within the 5 s look-ahead adds `mass x |relVel| / distance` (a
+Spitfire's 2500 kg: about 1250 head-on at 200 m, far above anything else).
+The plan is `BBPAvoidCollision3d`: fly to the point one second of travel
+ahead turned 45 deg away from the other, `2 t` lower when below it (higher
+when above), for `1.1 t`. Two Spitfires set head-on 600 m apart pass 29 m
+apart (6.9 m without it). The ENGINE's own blind spot is kept: a pair whose
+pursuit curves close late (two planes attacking each other) is predicted
+only a second or so out, and a plane cannot turn in that time.
+
+A soldier's Mobile plug-in has the same 5 s look-ahead (both ctors write
+it, AI-95); the on-foot avoid above still uses none.
+
 ## MoveTo
 
 - **Inputs**: the order (`waypoints`, [strategic.md](strategic.md)) or the

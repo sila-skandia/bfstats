@@ -81,7 +81,11 @@ occupied, else 0.77 on a ground hull, 0.5 on an aircraft, 1 on a ship.
   stationary MGs) when a walkable cell lies on the line 12 m behind it. A
   unit is found by its object template (the node `flak38` is the record
   `Flak_38`'s PCO), and the stationary MGs (`Objects/Stationary_Weapons`)
-  are units too.
+  are units too. A plane also needs its runway clear (`runwayClear`,
+  AI-95): no mobile hull that is not a ship in the box from `0.6 x span` to
+  `12 x span` ahead of it, `1.5 x length` wide (a Spitfire: 7 to 134 m ahead,
+  14 m wide), so a bot waits for the plane taxiing ahead. Seated, the same
+  test applies to the other hulls.
 - **Score**: `u x (f + 0.5)`, `f = min(0.5, (50² - d²) / 50²)`.
 - **Urgency**: with `staying = foot u x 1.25`, the best candidate above it
   gives

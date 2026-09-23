@@ -162,6 +162,37 @@ export function createBotUnits(env) {
   units.seatHolder = (node, seatId) => env.vehicles.holder(node, seatId);
   units.driverOf = node => env.vehicles.driverOf(node);
 
+  /**
+   * A hull's local bounding box, `{ min, max }` in its own frame, measured
+   * once over its meshes (`AIObjectPhysical::getLocalBoundingBox`
+   * 0x085d6820, the box `BBChange::runwayClear` 0x0855f850 and
+   * `BBAvoid::calculateUrgency` 0x0855c650 read). The viewer's node frame
+   * has z negated from the engine's; the extents are the same.
+   */
+  const localBoxes = new WeakMap();
+  const _inv = new THREE.Matrix4();
+  const _m = new THREE.Matrix4();
+  const _b = new THREE.Box3();
+  units.localBox = node => {
+    let box = localBoxes.get(node);
+    if (box) return box;
+    node.updateWorldMatrix(true, true);
+    _inv.copy(node.matrixWorld).invert();
+    const out = new THREE.Box3();
+    node.traverse(o => {
+      const g = o.isMesh ? o.geometry : null;
+      if (!g) return;
+      if (!g.boundingBox) g.computeBoundingBox();
+      if (!g.boundingBox || g.boundingBox.isEmpty()) return;
+      _b.copy(g.boundingBox).applyMatrix4(_m.multiplyMatrices(_inv, o.matrixWorld));
+      out.union(_b);
+    });
+    box = out.isEmpty() ? { min: [-2, 0, -3], max: [2, 2, 3] }
+      : { min: [out.min.x, out.min.y, out.min.z], max: [out.max.x, out.max.y, out.max.z] };
+    localBoxes.set(node, box);
+    return box;
+  };
+
   /** Each hull's seat survey, for a seat's traverse limits (static per node). */
   units.seatYawLimits = (node, seatId) => {
     let survey = seatSurveys.get(node);
@@ -278,6 +309,10 @@ export function createBotUnits(env) {
             driver,
             // `validateCameraDirection` for this seat: its own traverse.
             hullYaw, yawLimits: units.seatYawLimits(node, door.seatId),
+            // The hull's AI type words (`aiTemplate.addType`), its local box
+            // and physics mass: the runway and collision tests read them.
+            types: seatAi?.types ?? (isRoot ? ai.types : null) ?? [], hullTypes: ai.types ?? [],
+            localBox: units.localBox(node), mass: node.userData?.physics?.mass ?? null,
           });
         }
         for (const e of entries) list.push(e);
