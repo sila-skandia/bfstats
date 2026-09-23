@@ -255,13 +255,50 @@ variables all work.
 
 Left:
 
-- `page` is the modules' interface, but a wide one: the factories take
-  9 to 52 of the page's bindings through it (`level` the most). The next
-  step is narrowing each one to the handful it uses, one module at
-  a time. The split of files where two subsystems share one (`ground.js`
-  wheels, tracks and suspension first) is also still to do.
+- ~~`page` is the modules' interface, but a wide one~~ Narrowed, see below.
+  The split of files where two subsystems share one (`ground.js` wheels,
+  tracks and suspension first) is still to do.
 - The frame loop is still one 420-line function in `map.html`.
 - Still open from Part 1: the bot gunner's aim gain (it misses at 40 m),
   and the hull rising ~0.6 m after adoption.
 - Found here, not fixed: the bot vehicle-candidate cache and the nav maps
   are not reset on a level switch (the same on main).
+
+## Part 2b: every module takes the values it reads (2026-09-23)
+
+Nothing in any `page` bag was unused. The width was whole modules handed
+across: `pageInput` got all of `localPlayer` and used 21 of its members,
+`spawning` got all of `deployScreen` and used 18. A module could reach
+anything in the modules it was given, and its header did not say what it
+depended on.
+
+Each whole-module getter is now one getter per member the module reads, plus
+a setter where it writes (`aimHeld`, `triggerHeld`, `deployZ`,
+`hudViewTimer` and so on). `page.localPlayer.occupancy` became
+`page.occupancy`. The page builds the getter from the same expression
+(`get occupancy() { return localPlayer.occupancy; }`), so reads stay live and
+nothing is cached. Where the module used `?.`, the getter does too. Each
+module's header lists exactly what it takes. There is one commit per module,
+done mechanically: the transform refused anything it could not rewrite, and
+it met nothing like that.
+
+Two objects are still handed in whole, on purpose: `world` (the `World`) and
+`vehicles` (the `VehicleRegistry`). They are class instances whose methods use
+`this`, so a getter handing out `world.player` would unbind it, and they are
+the shared simulation every module talks to. `referee` and `botUnits` already
+took a purpose-built `env` and are unchanged.
+
+The bags got longer: `pageInput` went from 27 keys to 70 and `localPlayer`
+from 37 to 61. That is the dependency list made visible, not new coupling.
+The worst offenders are now easy to see. `pageInput` reads 21 of the human's
+members and 9 of the hand weapon's, and it is the next candidate for
+splitting (keyboard/mouse vs. what each key does).
+
+Verified: the full `./scripts/verify.sh` passed on main before the change
+(2,824 Python, 388 API, 144 E2E), and the Python suite passes after it. A
+live smoke pass on El Alamein with 8 bots raised no uncaught error or
+rejection. It covered: deploy; walking 5.4 m; prone on Z; hand fire (6
+rounds); entering a Sherman; C to chase (8.5 m out); driving 7.8 m; digit 2
+to the second seat and firing it; E out, 2.3 m from the hull; the full map on
+M; the scoreboard; the Esc menu; a wrecked Willys killing its bot crew; and a
+bot Sherman mounting and killing.
