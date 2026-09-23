@@ -15,9 +15,10 @@ human's is.
 | look `x`, `y` | mouse counts (yaw, pitch) | the turret | |
 | `forwardKeys`, `rudder`, `roll`, `pitch`, `pad` | | | throttle ramp, yaw, roll, pitch stick |
 
-**Look counts** (`_aimLook`): `lookX = -(yaw error in deg) / 3`, `lookY =
--(pitch error in deg) / 1`, clamped to +-16 (the axis saturation) or +-4 for
-an aim (`mouseControlLookAtDirection`'s 4.0 a tick). The world turns a
+**Look counts** (`_aimLook`), on foot: `lookX = -(yaw error in deg) / 3`,
+`lookY = -(pitch error in deg) / 1`, clamped to +-16 (the axis saturation) or
++-4 for an aim (`mouseControlLookAtDirection`'s 4.0 a tick). A mounted gunner
+uses the engine's own law instead (Mounted guns, below). The world turns a
 soldier `3 deg` a yaw count and `1 deg` a pitch count per tick
 (`mouse-input.js soldierLookDegrees`, ENGINE gains).
 
@@ -39,9 +40,10 @@ next.
 **Pose**: `SoldierPose` sets the stance input; the world's soldier owns the
 transition.
 
-**Trigger** (`_execTrigger`): while the facing (the turret's for a hull, the
-nose for a plane) is within `max(plan tolerance, 5 deg)` of the target's
-+1 m and a line from the eye to it is clear, `isFiring` is true for the tick.
+**Trigger** (`_execTrigger`): while the facing (the nose for a plane) is
+within `max(plan tolerance, 5 deg)` of the target's +1 m and a line from the
+eye to it is clear, `isFiring` is true for the tick. A mounted gunner's is the
+precision condition (Mounted guns, below).
 The page fires at the held weapon's `roundOfFire` while it is (PAGE
 `botFireTick`), from its magazine (size, spare magazines, reload time).
 
@@ -173,6 +175,48 @@ The viewer's map can paint a hull's own pad blocked (El Alamein's nearest
 Allied Sherman sits in a 30 x 25 m blocked patch); a hull that has never
 stood on a valid cell takes the nearest free cell within 24 m as its valid
 position (INVENTION).
+
+## Mounted guns
+
+A bot in a gun seat (a turret, a hull MG, an AA mount; not an aircraft's
+nose guns) aims the engine's way (`bot-aim.js`, AI-88..AI-91):
+
+**The reference** is the barrel: the chosen weapon's muzzle node (the one the
+round leaves from), its `-z` the forward, right level (`barrelFrame`). A gun
+whose node is turned on its mount is aimed by where it points; the Sherman's
+turret Browning rests facing aft.
+
+**The direction** is the lead (`firingDirection`, `Aimer::getFiringDirection`):
+the target point (its +1 m) relative to the muzzle, its velocity relative to
+the gunner's hull, the round's exit velocity and gravity; an elevation search
+that drops the round onto the predicted target (6 halvings of a `pi / 35`
+step), the bearing of the predicted position. No solution: the straight line.
+
+**The counts** (`lookAtCounts`, `mouseControlLookAtDirection`): the direction's
+up and right components in the barrel's frame, each shaped `sign(c) log10(9
+abs(c) + 1)` and turned into an angle (`asin` of it, sign flipped), through the
+S-curve table, times the seat's `pitchScale` / `rollScale`, signed by its
+sensitivities, clamped to +-4; a target behind turns at the S-curve of 90 deg.
+The servo turns `count x maxSpeed` deg/s, so the pull shrinks with the error
+and the aim settles. Written to `lookY` / `lookX` as a human's mouse would be.
+
+*Example.* A Sherman gunner (scale 5.0), target 5 deg to the right and level:
+`right = sin 5 deg = 0.087`, shaped 0.252, angle 0.254 rad, S-curve 0.089, X
+= 0.45 counts: the 90 deg/s Browning turns 41 deg/s, 1.4 deg this tick. At
+1 deg: 0.048 counts, 0.15 deg a tick. From rest 35 deg off it is inside 0.5
+deg in 7 ticks.
+
+**The trigger** (`precisionHolds`, `BAPCConPrecision`): the miss is the
+predicted target at the lead's flight time against where a round fired down
+the barrel now is then (`turretMiss`); the precision is the target's largest
+extent (at least 1 m) for a player in an aircraft, else a quarter of its box's
+three extents (at least 0.4 m; a soldier's 0.75 m). A burst weapon fires while
+the miss is inside it; a single-shot one waits for the miss to stop falling
+and fires then if its smallest value was inside.
+
+*Example.* A soldier 40 m from the Browning: fire at 0.2 s (miss 0.70 m),
+dead at 0.57 s. An AA mount (scale 1.0) against a Spitfire crossing at 55 m/s
+lags it by 4 to 6 deg: a 24 to 30 m miss against 11.3 m, no fire.
 
 ## Aircraft
 
