@@ -19,7 +19,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 function parseArgs(argv) {
   const a = { level: null, bots: 4, time: 120, seed: 1, skill: 0.75, traceEvery: 1, sampleEvery: 1,
               vehicles: true, out: null, maps: null, models: null, viewer: null, quiet: false,
-              replay: null, why: null, trace: null, step: 30, noTrace: false, doctrine: null };
+              replay: null, why: null, trace: null, step: 30, noTrace: false, doctrine: null, seats: [] };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     const next = () => { if (i + 1 >= argv.length) throw new Error(`${k} needs a value`); return argv[++i]; };
@@ -38,6 +38,7 @@ function parseArgs(argv) {
       case '--no-vehicles': a.vehicles = false; break;
       case '--no-trace': a.noTrace = true; break;
       case '--doctrine': a.doctrine = next(); break;
+      case '--seat': a.seats.push(parseSeat(next())); break;
       case '--out': a.out = next(); break;
       case '--quiet': a.quiet = true; break;
       case '--replay-summary': a.replay = next(); break;
@@ -49,6 +50,13 @@ function parseArgs(argv) {
     }
   }
   return a;
+}
+
+/** `--seat bot_1=AA_Allies` or `bot_1=Sherman:shermanBrowning_PCO1`. */
+function parseSeat(spec) {
+  const m = /^([^=]+)=([^:]+)(?::(.+))?$/.exec(spec);
+  if (!m) throw new Error(`--seat ${spec}: expected <bot>=<template>[:<seat>]`);
+  return { bot: m[1], template: m[2], seat: m[3] ?? null };
 }
 
 const HELP = `usage:
@@ -65,6 +73,8 @@ match options:
   --sample-every S  tickets/flags sample period in seconds (default 1)
   --no-vehicles     leave the level's vehicles and fixed guns out
   --no-trace        write the summary only
+  --seat B=T[:S]    seat bot B in the nearest free T (its seat S, else the
+                    driver's) before the first tick; repeatable (real level)
   --doctrine D      each side's doctrine (viewer/doctrine.js): 'sai' (default,
                     the engine's SAI), 'squad', or per side 'axis=squad,allies=sai'
   --out DIR         output directory (default sim/out/<level>-s<seed>)
@@ -99,7 +109,7 @@ async function runMatch(a) {
   const sink = (line) => { if (fd === null) return; buffer.push(line); if (buffer.length >= 2000) flush(); };
   const match = new Match({ M, level, botsPerSide: a.bots, botSkill: a.skill, duration: a.time, seed: a.seed,
                             traceEvery: a.traceEvery, sampleEvery: a.sampleEvery, vehicles: a.vehicles, sink,
-                            doctrine: a.doctrine });
+                            doctrine: a.doctrine, seats: a.seats });
   const started = performance.now();
   match.setup();
   let lastReport = 0;
