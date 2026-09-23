@@ -206,9 +206,13 @@ the page's referee. "Unused" marks a constant declared and never read.
 | plane | weapon heat | 0.5 / 0.8 | `BBPFire3d` | `PLANE_FIRE.weaponHeat*` (stored, not enforced) | ENGINE |
 | plane | idle speed | 0.1 m/s | `BBPIdle3d::createPlan` 0x085be0e0 | `PLANE_FIRE.idleSpeed` | ENGINE |
 | plane | round speed fallback | 600 m/s | | `bot.js _gunBallistics` | UNSOURCED |
-| boat | rudder, throttle | full past 30 deg; hold within cos 0.996; 3 m/s band; 0.03 dead band | `BoatControl::speedControl` 0x0860e130 | `BOAT.fullRudderAngle`, `alignedCos`, `speedBand`, `rudderDeadBand` | ENGINE |
-| boat | in-between values | rudder `angle / 30 deg`; throttle 0.5 / 0.8; -0.5 braking | | `boatControl` | UNSOURCED |
-| boat | arrival | 4 x radius | | `BOAT.arriveRadiusFactor` | UNSOURCED |
+| boat | turn (state 0, angle past 30 deg) | full rudder toward the target, flipped astern; above 3 m/s throttle against the motion, at or below it a full throttle kept, else the motion's sign; at dead rest ahead | `BoatControl::speedControl` 0x0860cf40 | `boatControl` (`BOAT.fullRudderAngle`, `speedBand`) | ENGINE (rest: INVENTION) |
+| boat | underway wanted speed | `maxSpeed` x factor: level > base+1: 1 / 0.8 (>30 deg) / 0.6 (>50 deg); level = base+1: 1 (<=15) / 0.6 / 0.4 (>50); level <= base: 0.3 (>30), 0.5 (2..15), else 0.4 | `speedControl` 0x0860cf40, `getLevel` 0x0847ca60, map +0xc4a4 | `boatSpeedControl`, `BOAT.angle50/15/2`, `freeLevel` | ENGINE |
+| boat | underway throttle | `clamp(wanted - last tick's speed, -1, 1)` | `simpleReg` 0x08613c20, BAPAMoveTo +0x54 | `boatSpeedControl` | ENGINE |
+| boat | underway rudder | `sign(x) log10(9 abs(x) + 1)`, `x = sin(angle) - 0.1 yawRate` | `speedControl` 0x0860cf40 | `boatSpeedControl`, `BOAT.yawDamping` | ENGINE |
+| boat | water map base level | 2 (2^2 m blocks) | AI-66 | `BOAT.baseLevel` | INFERRED |
+| boat | aligned / dead band | cos 0.996; 0.03 | `speedControl` | `BOAT.alignedCos`, `rudderDeadBand` | ENGINE |
+| boat | arrival | 4 x radius on the move's own point, not the look-ahead (the helm passes radius 0) | | `BOAT.arriveRadiusFactor`, `bot.js _steerToward` | UNSOURCED |
 | strategic | pass period | 5 s | README §6.1 read 2.0 (`AISettings::reset` +0x28) | `strategic.js SAI.updateFrequency` | INVENTION |
 | strategic | strategy hysteresis | 0.83 .. 1.2 | `SAI::chooseStrategy` 0x08631cd0 | `SAI.hysteresisLow/High` | ENGINE |
 | strategic | time limit growth | `x (2 - 2^(1 - count))` | `chooseStrategy` | `_chooseStrategy` | ENGINE |

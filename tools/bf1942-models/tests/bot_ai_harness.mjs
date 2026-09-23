@@ -15,10 +15,10 @@ import { BotController } from './bot.js';
 import { buildNavMap, gridAt, traceClear, CELL_OBJECT } from './nav-grid.js';
 import { Armor } from './armor.js';
 import { tankControl, unitUrgency, changeUrgency, orderSplit, teleportChangeUrgency, driveDecision, TANK, TELEPORT, CHANGE } from './bot-vehicle.js';
-import { towardsPoint, boatControl, rotate, attackRunStep, roundMiss, planeFireMode, aimAtDirection, towardsDirectionEngine, stickShape, PLANE_FIRE } from './bot-vehicle-air.js';
+import { towardsPoint, boatControl, boatSpeedControl, BOAT, rotate, attackRunStep, roundMiss, planeFireMode, aimAtDirection, towardsDirectionEngine, stickShape, PLANE_FIRE } from './bot-vehicle-air.js';
 import { fireStrength, unitTable, EnemyStrengthTables, engineHeatInfluence, STRENGTH } from './bot-strength.js';
 import { scoreVehicleTargets, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
-import { freeRun, freeBox, CELL_LAND, CELL_FREE } from './nav-grid.js';
+import { freeRun, freeBox, freeLevel, CELL_LAND, CELL_FREE } from './nav-grid.js';
 
 // The level sits in the map's own frame: x in [0, worldSize], z in
 // [-worldSize, 0] (the exporter negates z). Home at (100, -100), the enemy
@@ -511,6 +511,35 @@ const results = {
              yawOnlyBelow: inFrustum(null, 0, ...dir(0, -80), h(75)) };
   })(),
   water: waterMapScenario(),
+  boatSpeed: (() => {
+    // `BoatControl::speedControl` 0x0860cf40 underway: the factor table by
+    // level (base 2) and angle, `simpleReg` on the speed, the damped rudder.
+    const f = (level, deg) => boatSpeedControl({ angle: deg * Math.PI / 180, maxSpeed: 10, level }).factor;
+    const open = [f(5, 10), f(5, 40), f(5, 60)];
+    const oneClear = [f(3, 10), f(3, 30), f(3, 60)];
+    const tight = [f(2, 1), f(2, 10), f(2, 20), f(2, 40)];
+    const reg = [boatSpeedControl({ angle: 0, maxSpeed: 15.5, prevSpeed: 15 }).throttle,
+                 boatSpeedControl({ angle: 0, maxSpeed: 15.5, prevSpeed: 16 }).throttle,
+                 boatSpeedControl({ angle: 0, maxSpeed: 15.5, prevSpeed: 5 }).throttle];
+    const r = boatSpeedControl({ angle: 0.2, maxSpeed: 10, yawRate: 0.5 });
+    const rudder = +r.rudder.toFixed(6);
+    const want = +(Math.sign(Math.sin(0.2) - 0.05) * Math.log10(9 * Math.abs(Math.sin(0.2) - 0.05) + 1)).toFixed(6);
+    // The turn: above 3 m/s brake against the motion, at or below it push
+    // with the motion; full rudder toward the target.
+    const turnFast = boatControl({ forward: [0, -1], velocity: [0, -8], toTarget: [50, 0], maxSpeed: 10, prevThrottle: 0 });
+    const turnSlow = boatControl({ forward: [0, -1], velocity: [0, -2], toTarget: [50, 0], maxSpeed: 10, prevThrottle: 0 });
+    return { open, oneClear, tight, reg, rudder, want, turnFast: [turnFast.throttle, turnFast.steer],
+             turnSlow: [turnSlow.throttle, turnSlow.steer] };
+  })(),
+  freeLevel: (() => {
+    // `getLevel`: the largest aligned free block holding the point.
+    const size = 64;
+    const blocked = new Uint8Array(size * size).fill(CELL_FREE);
+    blocked[40 * size + 40] = CELL_LAND;             // one blocked cell at (40, -40)
+    const nav = { blocked, width: size, height: size, cellSize: 1 };
+    return { onIt: freeLevel(nav, 40.5, -40.5), next: freeLevel(nav, 41.5, -40.5), far: freeLevel(nav, 5.5, -5.5),
+             nearish: freeLevel(nav, 44.5, -44.5) };
+  })(),
   medic: medicScenario(),
   air: airScenario(),
   tankLaw: tankLawScenario(),

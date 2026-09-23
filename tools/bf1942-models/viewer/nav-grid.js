@@ -487,6 +487,46 @@ export function isWalkable(nav, x, z) {
   return gridAt(nav, x, z) === CELL_FREE;
 }
 
+/**
+ * `AIPathfinding::getLevel` 0x0847ca60 (-> vt+0xb4): the level of the free
+ * quadtree block holding a point, i.e. the largest `k` for which the aligned
+ * 2^k-cell block around it is free throughout; -1 on a blocked cell. The
+ * pyramid is built once per map, on first use.
+ */
+export function freeLevel(nav, x, z, maxLevel = 8) {
+  const gx = Math.floor(x / nav.cellSize);
+  const gz = Math.floor(-z / nav.cellSize);
+  if (gx < 0 || gx >= nav.width || gz < 0 || gz >= nav.height) return -1;
+  if (!nav._levels) {
+    const levels = [];
+    let w = nav.width, h = nav.height;
+    let prev = new Uint8Array(w * h);
+    for (let i = 0; i < prev.length; i++) prev[i] = nav.blocked[i] === CELL_FREE ? 1 : 0;
+    levels.push({ free: prev, w, h });
+    for (let k = 1; k <= 12 && w > 1 && h > 1; k++) {
+      const nw = w >> 1, nh = h >> 1;
+      const next = new Uint8Array(nw * nh);
+      for (let j = 0; j < nh; j++) {
+        for (let i = 0; i < nw; i++) {
+          const a = (2 * j) * w + 2 * i;
+          next[j * nw + i] = prev[a] & prev[a + 1] & prev[a + w] & prev[a + w + 1];
+        }
+      }
+      levels.push({ free: next, w: nw, h: nh });
+      prev = next; w = nw; h = nh;
+    }
+    nav._levels = levels;
+  }
+  let level = -1;
+  for (let k = 0; k < nav._levels.length && k <= maxLevel; k++) {
+    const L = nav._levels[k];
+    const i = gx >> k, j = gz >> k;
+    if (i >= L.w || j >= L.h || !L.free[j * L.w + i]) break;
+    level = k;
+  }
+  return level;
+}
+
 /** Terrain height the map sampled at a world point, or NaN. */
 export function navHeight(nav, x, z) {
   const gx = Math.floor(x / nav.cellSize);
