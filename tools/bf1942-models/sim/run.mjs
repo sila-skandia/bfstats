@@ -9,7 +9,7 @@
 import { mkdirSync, openSync, writeSync, closeSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { viewerDir, loadViewerModules, seedMathRandom } from './env.mjs';
+import { viewerDir, loadViewerModules, seedMathRandom, routeConsole } from './env.mjs';
 import { syntheticLevel, realLevel } from './level.mjs';
 import { Match } from './match.mjs';
 import { replaySummary, why } from './report.mjs';
@@ -63,7 +63,7 @@ match options:
   --skill A         botSkill (default 0.75, the engine's)
   --trace-every K   trace every K-th 30 Hz tick (default 1)
   --sample-every S  tickets/flags sample period in seconds (default 1)
-  --no-vehicles     leave the level's land vehicles out
+  --no-vehicles     leave the level's vehicles and fixed guns out
   --no-trace        write the summary only
   --doctrine D      each side's doctrine (viewer/doctrine.js): 'sai' (default,
                     the engine's SAI), 'squad', or per side 'axis=squad,allies=sai'
@@ -76,6 +76,7 @@ match options:
 async function runMatch(a) {
   const viewer = viewerDir(a.viewer);
   const M = await loadViewerModules(viewer);
+  routeConsole(a.quiet);
   // Seeded before anything is built: the kit draw, the strategic roulette,
   // the sense rays' jitter and every other draw come from this stream.
   seedMathRandom(a.seed);
@@ -124,6 +125,8 @@ async function runMatch(a) {
     `captures ${m.captures.total} (Axis ${m.captures[1]}, Allies ${m.captures[2]}), first ${m.timeToFirstCapture ? `${m.timeToFirstCapture.flag} at ${m.timeToFirstCapture.t} s` : 'none'}`,
     `kills Axis ${m.kills[1]} / Allies ${m.kills[2]}, deaths per capture ${m.deathsPerCapture ?? '-'}`,
     `vehicles ${m.vehicleUtilisation.vehicles}, mounts ${m.vehicleUtilisation.mounts}, mounted share ${m.vehicleUtilisation.mountedShare}`,
+    `vehicle kills ${m.vehicleKills.total} (by Axis ${m.vehicleKills[1]}, by Allies ${m.vehicleKills[2]}, `
+      + `unattributed ${m.vehicleKills.unattributed})`,
     `route failures ${m.routeFailures.total}, redeploys ${m.redeploys}, strategy changes ${m.strategyChanges}`
       + `${m.botErrors ? `, BOT ERRORS ${m.botErrors} (see the bot_error events)` : ''}`,
     `doctrine Axis ${summary.doctrine.sides[1]} / Allies ${summary.doctrine.sides[2]}`,
