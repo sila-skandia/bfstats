@@ -217,6 +217,7 @@ import { createGunTriggers } from './model-guns.js';
 import { createSeatCams } from './model-seat-cams.js';
 import { createCrewConsole, SHORT_LABEL } from './model-crew.js';
 import { createTouchpad } from './model-touchpad.js';
+import { createVariantPicker, configurationLabel, normalizeVariants, skinLabel, skinValue, unique, variantKey } from './model-variants.js';
 
 // Which game's assets this page serves, and the directory they hang off:
 // 'models' for vanilla, 'models/mods/eod' for a mod. Resolved before anything
@@ -499,79 +500,17 @@ const DEV_ORIGIN = ['localhost', '127.0.0.1', '[::1]', ''].includes(location.hos
 const NO_CACHE = DEV_ORIGIN || new URLSearchParams(location.search).has('nocache');
 const bust = () => (NO_CACHE ? `?t=${Date.now()}` : '');
 
-const configurationSelect = document.getElementById('configuration');
-const skinSelect = document.getElementById('skin');
-
-const configurationLabel = value => ({
-  complex: 'Complex',
-  wreck: 'Wreck',
-})[value] || value;
-const skinValue = variant => variant.level || '';
-const skinLabel = value => value || 'Base archives';
-
-function variantKey(variant) {
-  return `${variant.configuration || 'complex'}|${variant.level || ''}`;
-}
-
-function normalizeVariants(entry) {
-  const source = entry.variants?.length ? entry.variants : [entry];
-  return source.map((variant, index) => ({
-    ...variant,
-    configuration: variant.configuration || 'complex',
-    lod: variant.lod ?? 0,
-    level: variant.level || null,
-    index,
-  }));
-}
-
-function unique(values) {
-  return [...new Set(values)];
-}
-
-function setOptions(select, values, selected, label) {
-  select.replaceChildren(...values.map(value => new Option(label(value), String(value))));
-  select.value = String(selected);
-  select.disabled = values.length < 2;
-}
-
-function syncVariantControls(entry, selected) {
-  const variants = entry.variants;
-  const configurationVariants = variants.filter(
-    variant => variant.configuration === selected.configuration);
-  setOptions(
-    configurationSelect,
-    unique(variants.map(variant => variant.configuration)),
-    selected.configuration,
-    configurationLabel,
-  );
-  setOptions(
-    skinSelect,
-    unique(configurationVariants.map(skinValue)),
-    skinValue(selected),
-    skinLabel,
-  );
-  document.getElementById('variant-panel').hidden =
-    entry.variants.length === 1;
-  document.getElementById('variant-summary').innerHTML =
-    `<b>${configurationLabel(selected.configuration)}</b> <span class="sep">/</span> ` +
-    attr(skinLabel(skinValue(selected)));
-}
-
-function selectedFromControls() {
-  if (!currentEntry) return null;
-  const wanted = `${configurationSelect.value}|${skinSelect.value}`;
-  return currentEntry.variants.find(variant => variantKey(variant) === wanted)
-    || currentEntry.variants.find(
-      variant => variant.configuration === configurationSelect.value)
-    || currentEntry.variants[0];
-}
+const variantPicker = createVariantPicker({
+  get attr() { return attr; }, get currentEntry() { return currentEntry; },
+  get show() { return show; },
+});
 
 async function show(entry, variant) {
   const sequence = ++loadSequence;
   let report;
   let gltf;
   main.dataset.loadState = 'loading';
-  syncVariantControls(entry, variant);
+  variantPicker.syncVariantControls(entry, variant);
   const load = overlay.begin(entry.name);
   // Textures are embedded in the .glb here, so the model is the whole transfer
   // and the report is a rounding error beside it.
@@ -724,13 +663,6 @@ async function showVariant(modelIndex, variantIndex = null) {
     : entry.variants[variantIndex];
   if (!selected) throw new Error(`unknown variant index ${variantIndex} for ${entry.name}`);
   return show(entry, selected);
-}
-
-for (const select of [configurationSelect, skinSelect]) {
-  select.addEventListener('change', () => {
-    const selected = selectedFromControls();
-    if (selected) void show(currentEntry, selected);
-  });
 }
 
 // --- Armoury browser -------------------------------------------------------
