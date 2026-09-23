@@ -1013,6 +1013,7 @@ import {
   equilibriumRootY, floatNodesOf, localiseFloats, FloatingHull,
 } from './body-float.js';
 import { SupplyDepot } from './supply.js';
+import { KitAmmo } from './kit-ammo.js';
 import { collectIkBindings, defaultSeatPoseName, ikTarget, resolveSeatStates,
          seatBody, seatPoseName, solveTwoBone } from './seat-ik.js';
 import { GameConsole, paintConsole, loadConsoleFont } from './console.js';
@@ -1038,6 +1039,7 @@ import { boardRows, boardVars, paintLeaves, listFloor, listGeometry } from './sc
 import { BotController, spawnBots } from './bot.js';
 import { buildNavMap, findPath, gridAt, isWalkable } from './nav-grid.js';
 import { StrategicLayer, StrategicAI } from './strategic.js';
+import { bindTreeFoliage } from './tree-foliage.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -5669,7 +5671,10 @@ function killOccupantInWreck(node) {
   camera.fov = FOOT_FOV;
   camera.near = 0.2;
   camera.updateProjectionMatrix();
-  if (handWeapon) handWeapon.rig.visible = true;
+  // The rig stays holstered (`enterVehicle` hid it): retail's vehicle death
+  // cam is an overhead shot of the wreck with no first-person weapon in it,
+  // and the near pass is gated on `soldierDead` besides. `spawnAtFlag`
+  // raises it again with the fresh body.
   // A body that climbed in at full health still has it; take all of it, so
   // the `soldierArmor.destroyed` latch in `onFoot()` is not what fires the
   // flow a second time (it cannot: `soldierDead` is set below first).
@@ -8224,6 +8229,7 @@ const entryWorld = new THREE.Vector3();
 function nearestEntry() {
   if (!entryPoints) collectEntryPoints();
   return pickNearest(entryPoints, entry => {
+    if (botMounts.has(entry.vehicle)) return Infinity;
     entry.node.getWorldPosition(entryWorld);
     const distance = Math.hypot(entryWorld.x - soldier.x,
       entryWorld.y - (soldier.y + 1), entryWorld.z - soldier.z);
@@ -8735,14 +8741,21 @@ const deathCamPos = new THREE.Vector3();
 // How the death cam is framed, and for how long. Two settings, because the two
 // deaths are showing different things: on foot the subject is the body that
 // just fell over, and the camera floats right above it; killed inside a
-// vehicle the subject is the **burning hull**, so the camera pulls back behind
-// and above the wreck and holds longer, which is the shot BF1942 gives you —
-// the crash first, then the spawn screen. Neither the distances nor the beats
-// are engine numbers (the client's own death cam was never decoded past
-// `FUN_004933d0` opening the spawn screen); they are framing.   [HOUSE RULES]
+// vehicle the subject is the **burning hull**, and retail's shot of it (owner's
+// capture, 2026-09-23: a plane crash, a tank kill) is a plain overhead — the
+// camera snaps to a point straight above the wreck and looks straight down,
+// pulled up far enough that the wreck and its smoke column sit small in the
+// middle of the frame, roughly the centre fifth. No pull-back along the
+// hull's facing, no low three-quarter angle. At the on-foot FOV the ground
+// spans ~1.1x the height, so 30 m puts a 7 m tank at about a fifth of the
+// frame. The pitch stops 2 deg short of the pole so the hull's own yaw still
+// decides which way is up on screen (`applyLook` is a `lookAt` with a world
+// up vector, degenerate at exactly -pi/2). The beats are not engine numbers
+// (the client's own death cam was never decoded past `FUN_004933d0` opening
+// the spawn screen); they are framing.   [HOUSE RULES]
 const DEATH_CAM = {
-  foot:    { lift: 3.5, back: 0,   pitch: -0.9,  beat: DEATH_CAM_BEAT },
-  vehicle: { lift: 4.5, back: 7.5, pitch: -0.55, beat: 3.0 },
+  foot:    { lift: 3.5, back: 0, pitch: -0.9,  beat: DEATH_CAM_BEAT },
+  vehicle: { lift: 30,  back: 0, pitch: -Math.PI / 2 + 0.035, beat: 3.0 },
 };
 let deathCamShot = DEATH_CAM.foot;
 /** What the death cam is framed on: `null` for the corpse's own eye — the
@@ -9197,6 +9210,11 @@ function spawnAtFlag(advance = false) {
   // The weapon follows the flag: switching to the other side's spawn swaps
   // the SMG. A no-op when the right one is already in hand.
   ensureHandWeapon(flag);
+  // A death inside a vehicle leaves the rig holstered (`enterVehicle` hid it
+  // and `killOccupantInWreck` deliberately does not raise it); the fresh body
+  // has his weapon in hand again. `loadHandWeapon` builds a visible rig, so
+  // this only matters on the same-weapon path `ensureHandWeapon` short-cuts.
+  if (handWeapon) handWeapon.rig.visible = true;
   // A fresh body somewhere else entirely: the eye must not sweep there.
   snapPresentation();
   hud.textContent = `${flag.name} · ${spawn.name}`;
@@ -9280,6 +9298,8 @@ function spawnBotsForLevel() {
                       { isWalkable: (x, z) => isWalkable(botNavGrid, x, z) })
     : null;
   botCovers = buildBotCovers();
+  loadBotVehicleAi();
+  if (!entryPoints) collectEntryPoints();
   console.log(`[bots] strategic AI: ${botStrategy ? botStrategy.layer.areas.length + ' areas' : 'none'}, `
               + `${botCovers.length} cover objects`);
   for (const bot of botControllers) {
@@ -9323,6 +9343,7 @@ function tickBots(dt) {
   }
   const playerFired = !!frameInputLast?.fire && !frameInputWasFiring;
   frameInputWasFiring = !!frameInputLast?.fire;
+  botVehicleTick();
   for (const bot of botControllers) {
     if (botRespawnTick(bot, dt)) continue;   // dead and waiting out its timer
     bot.waypoints = botStrategy?.waypointsOf(bot.playerId) ?? null;
@@ -9425,6 +9446,11 @@ function resolvePlayerShotOnBots() {
 function applyDamageToBot(playerId, damage, attackerId = LOCAL_PLAYER, attackerPos = null) {
   const armor = world?.armorOf(playerId);
   if (!armor || armor.destroyed) return;
+  const mounted = botControllers.find(b => b.playerId === playerId)?.vehicle;
+  if (mounted && damage < 1e5) {
+    const hull = world.occupiedDamageable(playerId);
+    if (hull) { hull.damage(damage); return; }
+  }
   armor.damage(damage);
   const bot = botControllers.find(b => b.playerId === playerId);
   if (BOT_DEBUG) {
@@ -9438,6 +9464,7 @@ function applyDamageToBot(playerId, damage, attackerId = LOCAL_PLAYER, attackerP
   }
   if (!armor.destroyed) return;
   if (!bot) return;
+  if (bot.vehicle) botLeaveVehicle(bot, { killed: true });
   bot.isFiring = false;
   bot.firingTarget = null;
   bot._respawnIn = BOT_RESPAWN_DELAY;
@@ -9684,11 +9711,286 @@ function botMagazineShot(bot, mag) {
   mag.rounds = Math.max(0, mag.rounds - 1);
 }
 
+/** The MedPack's heal per trigger tick (bot-behaviours.js `MEDIC`). */
+const BOT_HEAL_PER_ROUND = 0.5;
+
+// --- bots in land vehicles ---------------------------------------------------
+// The Change behaviour (bot-vehicle.js) picks a driver's seat; the page seats
+// the bot the way `setPilot` seats the human — its own `VehicleOccupancy` and
+// drivetrain, adopted into the body world, fed by the bot's input word
+// through `World.#vehicleTick` — without the camera, the HUD or the audio.
+// `stepVehicleBodies` draws every driven hull, the bot's included.
+
+/** Every vehicle's AI plug-in data (`extract_vehicle_ai.py`), by template. */
+let botVehicleAi = null;
+let botVehicleAiLoading = null;
+function loadBotVehicleAi() {
+  if (botVehicleAi || botVehicleAiLoading) return botVehicleAiLoading;
+  botVehicleAiLoading = fetch(`${activeMod.paths.maps || 'maps'}/_shared/vehicle-ai.json${bust()}`)
+    .then(r => (r.ok ? r.json() : null))
+    .then(json => {
+      botVehicleAi = new Map();
+      for (const [name, info] of Object.entries(json?.vehicles ?? {})) botVehicleAi.set(name.toLowerCase(), { name, ...info });
+      return botVehicleAi;
+    })
+    .catch(() => (botVehicleAi = new Map()));
+  return botVehicleAiLoading;
+}
+
+/** The AI record of a vehicle root node, or null when the game ships none. */
+function botVehicleAiOf(node) {
+  if (!botVehicleAi) return null;
+  const raw = node?.userData?.template ?? node?.userData?.control ?? node?.name ?? '';
+  const key = String(raw).replace(/_\d+$/, '').toLowerCase();
+  return botVehicleAi.get(key) ?? null;
+}
+
+/** The land vehicles' map (`ai.addSearchMap Tank0 ...`), built on first use. */
+let botNavGridVehicle = null;
+function botVehicleNav() {
+  if (botNavGridVehicle || !world) return botNavGridVehicle;
+  const worldSize = world.extras?.worldSize || 2048;
+  const sm = (world.extras?.ai?.searchMaps ?? []).find(m => /^Tank/i.test(m.name)) ?? null;
+  const seeds = [];
+  for (const spawn of world.extras?.objectSpawns ?? []) {
+    if (spawn?.position) seeds.push([spawn.position[0], spawn.position[2]]);
+  }
+  for (const flag of world.flags ?? []) {
+    for (const spawn of flag.spawns ?? []) if (spawn?.position) seeds.push([spawn.position[0], spawn.position[2]]);
+  }
+  const started = performance.now();
+  botNavGridVehicle = buildNavMap(world.collider, worldSize, {
+    waterLevel: world.collider?.waterLevel,
+    waterDepth: sm?.waterDepth ?? 0.0,
+    maxSlopeDeg: sm?.maxSlope ?? 30,
+    brush: sm?.brush ?? 3.0,
+    lowClip: sm?.lowClip ?? 0.3,
+    hiClip: sm?.hiClip ?? 2.5,
+    seeds,
+  });
+  console.log(`[bots] vehicle nav map (${sm?.name ?? 'Tank defaults'}): ${(performance.now() - started).toFixed(0)} ms`);
+  return botNavGridVehicle;
+}
+
+/** vehicle root node -> the bot driving it. */
+const botMounts = new Map();
+const botVehicleKinds = new Map();
+let botCandidateCache = { at: -1, list: [] };
+const _botEntryWorld = new THREE.Vector3();
+const _botUp = new THREE.Vector3();
+
+/** A vehicle root's drive kind, surveyed once. */
+function botVehicleKindOf(node) {
+  let kind = botVehicleKinds.get(node);
+  if (kind === undefined) {
+    kind = classifyRoot ? classifyRoot(node) : null;
+    botVehicleKinds.set(node, kind ?? null);
+  }
+  return kind;
+}
+
+/**
+ * The driver's seats a bot may take right now: every enterable land vehicle
+ * (`ground` / `tank`) with AI data, not seated by the human or a bot, with its
+ * health, its AI numbers and its nearest door. Rebuilt twice a second and
+ * shared by every bot (the engine's environment query, INVENTION radius).
+ */
+let botEntryCollectedAt = -Infinity;
+function botVehicleCandidates() {
+  if (botClock - botCandidateCache.at < 0.5) return botCandidateCache.list;
+  // The vehicles land after the bots do, and respawn later: the door list
+  // is recollected while empty and every ten seconds.
+  if (!entryPoints || ((!entryPoints.length || botClock - botEntryCollectedAt > 10) && currentRoot)) {
+    collectEntryPoints();
+    botEntryCollectedAt = botClock;
+  }
+  const list = [];
+  if (entryPoints && botVehicleAi) {
+    const seen = new Set();
+    for (const e of entryPoints) {
+      const node = e.vehicle;
+      if (seen.has(node)) continue;
+      seen.add(node);
+      if (!vehicleSpawnActive(node)) continue;
+      const kind = botVehicleKindOf(node);
+      if (kind !== 'ground' && kind !== 'tank') continue;
+      const ai = botVehicleAiOf(node);
+      if (!ai) continue;
+      const owner = collider?.statics?.ownerOf(node) ?? -1;
+      const damage = world?.vehicleDamage?.get(owner) ?? null;
+      if (damage?.destroyed) continue;
+      node.getWorldPosition(_botEntryWorld);
+      const pos = [_botEntryWorld.x, _botEntryWorld.y, _botEntryWorld.z];
+      _botUp.set(0, 1, 0).applyQuaternion(node.getWorldQuaternion(new THREE.Quaternion()));
+      const doors = entryPoints.filter(x => x.vehicle === node);
+      const main = doors.find(x => x.seatId === node.userData?.seatId) ?? doors[0];
+      main.node.getWorldPosition(_botEntryWorld);
+      const gun = Object.values(ai.aiWeapons ?? {})[0] ?? null;
+      list.push({
+        id: node.uuid, node, template: ai.name, kind,
+        pos, entry: [_botEntryWorld.x, _botEntryWorld.z], entryRadius: main.radius, seatId: main.seatId,
+        health: damage?.maxHitPoints > 0 ? damage.hitPoints / damage.maxHitPoints : 1,
+        maxSpeed: ai.maxSpeed ?? 0,
+        strengths: gun?.strength ?? {},
+        value: ai.strategicStrength?.['0'] ?? 0,
+        upright: _botUp.y >= 0.6914,
+        occupiedBy: botMounts.get(node) ?? (occupancy?.root === node ? LOCAL_PLAYER : null),
+        weapons: Object.entries(ai.aiWeapons ?? {}).map(([name, w]) => ({ ...w, name })),
+        strType: ai.strType ?? 'LightArmour',
+      });
+    }
+  }
+  botCandidateCache = { at: botClock, list };
+  return list;
+}
+
+/** Seat a bot in a candidate's driver seat. Returns true when it sits. */
+function botEnterVehicle(bot, cand) {
+  const node = cand.node;
+  if (!node || botMounts.has(node) || occupancy?.root === node) return false;
+  if (!currentRoot) return false;
+  const occ = new VehicleOccupancy(node, {
+    Aircraft, GroundVehicle, TrackedVehicle: GroundModule.TrackedVehicle, Ship,
+  });
+  if (occ.rootKind !== 'ground' && occ.rootKind !== 'tank') return false;
+  const drive = occ.ensureDrive(currentRoot, {
+    groundHeight, surfaceFriction, deckNormal, collider: bodyAwareCollider(),
+    waterLevel: collider?.waterLevel ?? extras?.waterLevel,
+  });
+  if (!drive) return false;
+  drive.autoFirstPerson = false;
+  drive.setFirstPerson?.(false);
+  adoptDrivenBody(drive);
+  thawVehicle(node);
+  occ.setActiveSeat(cand.seatId || occ.rootId);
+  const groups = guns.collect(drive.node, {
+    replace: false, speedScale: 1, maxRange: 1500, roundLifetime: 'data', tracerLength: 'data',
+    platformVelocity: () => drive.state.velocity,
+  });
+  world.setPlayerVehicle(bot.playerId, {
+    occupancy: occ, vehicle: drive, kind: occ.rootKind, groups, manned: [],
+  });
+  const record = world.player(bot.playerId);
+  if (record) record.vehicleStrType = cand.strType;
+  botMounts.set(node, bot.playerId);
+  bot.mount({
+    id: cand.id, node, drive, occupancy: occ, kind: occ.rootKind, groups,
+    nav: botVehicleNav(), radius: BOT_VEHICLE_RADIUS, maxSpeed: cand.maxSpeed,
+    weapons: cand.weapons, template: cand.template,
+  }, botClock);
+  const vis = botVisuals.get(bot.playerId);
+  if (vis) vis.group.visible = false;
+  if (BOT_DEBUG) console.log(`[bots] ${bot.playerId} enters the ${cand.template}`);
+  return true;
+}
+
+/** The body radius a land vehicle keeps on its map (INVENTION). */
+const BOT_VEHICLE_RADIUS = 3.0;
+
+/** Unseat a bot: the hull parks where it stands, the soldier steps out beside it. */
+function botLeaveVehicle(bot, { killed = false } = {}) {
+  const m = bot.vehicle;
+  if (!m) return;
+  const drive = m.drive;
+  for (const group of m.groups ?? []) guns.release(group);
+  drive.state.throttle = 0;
+  drive.setInput('c_PIThrottle', 0);
+  drive.setInput('c_PIYaw', 0);
+  drive.setInput('c_PIFire', 0);
+  drive.applyTransform();
+  drive.applyRig?.();
+  freezeVehicle(m.node);
+  releaseDrivenBody(drive);
+  world.clearPlayerVehicle(bot.playerId);
+  const record = world.player(bot.playerId);
+  if (record) record.vehicleStrType = null;
+  botMounts.delete(m.node);
+  const p = drive.state.position;
+  const record2 = world.player(bot.playerId);
+  const soldier = record2?.soldier;
+  if (soldier) {
+    const f = bot._vehicleForward();
+    const x = p.x + f[1] * 3.5, z = p.z - f[0] * 3.5;
+    const y = groundHeight(x, z, p.y + 3) ;
+    soldier.x = x; soldier.z = z; soldier.y = Number.isFinite(y) ? y + 0.05 : p.y;
+    if (soldier.body?.body?.position) {
+      soldier.body.body.position.x = soldier.x; soldier.body.body.position.y = soldier.y; soldier.body.body.position.z = soldier.z;
+    }
+    bot.setPosition(soldier.x, soldier.y, soldier.z);
+  }
+  bot.dismount(botClock);
+  const vis = botVisuals.get(bot.playerId);
+  if (vis) vis.group.visible = !killed;
+  if (BOT_DEBUG) console.log(`[bots] ${bot.playerId} leaves the ${m.template}${killed ? ' (killed)' : ''}`);
+}
+
+/** Per tick: seat the bots that asked, unseat those whose hull is gone. */
+function botVehicleTick() {
+  const cands = botVehicleCandidates();
+  for (const bot of botControllers) {
+    bot.vehicleCandidates = cands;
+    if (bot.vehicle) {
+      const owner = collider?.statics?.ownerOf(bot.vehicle.node) ?? -1;
+      const damage = world?.vehicleDamage?.get(owner) ?? null;
+      if (damage?.destroyed) {
+        // A destroyed hull takes its crew (the engine kills the occupants).
+        botLeaveVehicle(bot, { killed: true });
+        applyDamageToBot(bot.playerId, 1e6, null, null);
+      }
+      continue;
+    }
+    const req = bot.enterRequest;
+    if (!req) continue;
+    bot.enterRequest = null;
+    const cand = cands.find(c => c.id === req.vehicleId);
+    if (cand && !cand.occupiedBy) {
+      if (botEnterVehicle(bot, cand)) botCandidateCache.at = -1;
+    }
+  }
+}
+
+/**
+ * The friend a healing bot's round reaches: the closest player of its own
+ * side inside the weapon's `maxRange` of its eye and within 20 deg of its
+ * aim (`BAPALookAtObject`'s 5 deg has already lined the bot up).
+ */
+function resolveBotHeal(bot) {
+  const { origin, dir } = bot.aimRay();
+  const range = bot.weaponAi?.maxRange ?? 2.5;
+  const botPlayer = world?.player(bot.playerId);
+  let best = null, bestD = Infinity;
+  for (const [id, player] of world.players) {
+    if (id === bot.playerId || !botPlayer || player.team !== botPlayer.team) continue;
+    const armor = world.armorOf(id);
+    if (!armor || armor.destroyed || armor.hitPoints >= armor.maxHitPoints) continue;
+    const s = player.soldier;
+    if (!s) continue;
+    const dx = s.x - origin[0], dy = (s.y + 1.0) - origin[1], dz = s.z - origin[2];
+    const d = Math.hypot(dx, dy, dz);
+    if (d > range + 0.5 || d >= bestD) continue;
+    const cos = (dx * dir[0] + dy * dir[1] + dz * dir[2]) / Math.max(d, 1e-3);
+    if (cos < Math.cos(20 * Math.PI / 180)) continue;
+    best = id; bestD = d;
+  }
+  return best;
+}
+
+function applyHealToPlayer(playerId, amount) {
+  const armor = world?.armorOf(playerId);
+  if (!armor) return;
+  const before = armor.hitPoints;
+  const healed = armor.heal(amount);
+  if (BOT_DEBUG && healed > 0 && Math.floor(armor.hitPoints / 5) !== Math.floor(before / 5)) {
+    console.log(`[bots] ${playerId} healed to ${armor.hitPoints.toFixed(1)}/${armor.maxHitPoints}`);
+  }
+}
+
 function botFireTick(dt) {
   if (!botControllers.length) return;
 
   for (const bot of botControllers) {
     bot._wasFiring = bot.isFiring;
+    if (bot.vehicle) continue;   // the world fires the hull's guns from its input word
 
     bot._fireCooldown = Math.max(0, (bot._fireCooldown ?? 0) - dt);
     const mag = botMagazineTick(bot, dt);
@@ -9707,6 +10009,13 @@ function botFireTick(dt) {
     const radius = bot.weaponAi?.soundSphereRadius ?? null;
     for (const other of botControllers) {
       other.onShotFired(bot.playerId, bot.team, at, botClock, radius);
+    }
+    // A healing weapon's round (the MedPack): a friend within its reach and
+    // in front of the pack is healed instead of anything being shot.
+    if (bot.weaponAi?.healing) {
+      const friend = resolveBotHeal(bot);
+      if (friend) applyHealToPlayer(friend, BOT_HEAL_PER_ROUND);
+      continue;
     }
     const hit = resolveBotShot(bot);
     if (!hit) continue;
@@ -9965,8 +10274,9 @@ function updateBotVisuals(dt) {
     const pos = bot.getPosition();
     if (!pos || !Number.isFinite(pos[0])) continue;
 
-    // A downed bot stays hidden until its respawn timer puts it back.
-    if (world?.armorOf(bot.playerId)?.destroyed) { vis.group.visible = false; continue; }
+    // A downed bot stays hidden until its respawn timer puts it back; a
+    // seated one rides inside its hull.
+    if (world?.armorOf(bot.playerId)?.destroyed || bot.vehicle) { vis.group.visible = false; continue; }
 
     vis.group.visible = true;
     // This frame's blend of the last two tick poses, the same `presentAlpha`
@@ -11023,29 +11333,30 @@ const VIEWMODEL_MORPH_SNAP = 1000;
 const CROSSHAIR_MIN_PX = 4;        // bar gap floor, so the cross never closes
 const DEG_TO_RAD = Math.PI / 180;
 
-let handWeapon = null;    // { name, data, rig, group, model, rounds, mags, ... }
-// A supply depot's "give ammo" call (`supplyTarget`, above): a closure over
-// `handWeapon` so it always acts on whatever is currently in hand, wired
-// here rather than where `supplyTarget` is declared only because this is
-// where `handWeapon` itself first exists.
+let handWeapon = null;    // { name, data, rig, group, model, ammo, ... }
+// The soldier's ammunition, per kit item, for the life of the soldier
+// (`kit-ammo.js`). The rig in hand is destroyed and rebuilt on every slot
+// switch, so the counts cannot live on it: `hw.rounds` / `hw.mags` are
+// accessors onto this kit's entry for the weapon, which a switch away and
+// back finds exactly as it was left — a pouch thrown empty stays empty
+// until a spawn (`ensureHandWeapon`'s reset) or a depot (`refillAmmo`).
+const kitAmmo = new KitAmmo();
+// A supply depot's "give ammo" call (`supplyTarget`, above): the whole kit,
+// not just the item in hand — the engine's `reloadAmmo` walks every item
+// the soldier carries. Wired here rather than where `supplyTarget` is
+// declared only because this is where the kit's ammunition first exists.
 supplyTarget.refillAmmo = () => {
-  const hw = handWeapon;
-  const magazine = hw?.data?.magazine;
-  if (!magazine) return;
   // "Refill fully" is this viewer's own approximation of `reloadAmmo` — see
   // `supply.js`'s `SupplyDepot.tick` for why (SUP-8, SUP-23). Restores the
-  // same full loadout `loadHandWeapon` equips fresh with (`magazines - 1`
-  // spares) — one magazine less than the pre-existing `__refill` perf-cheat
-  // below, which is deliberately generous for a stress test rather than
-  // standing in for a real mechanic.
-  const size = magazine.size >= 0 ? magazine.size : Infinity;
-  const spares = Math.max((magazine.magazines ?? 1) - 1, 0);
+  // same full loadout a spawn equips with (`magazines - 1` spares) — one
+  // magazine less than the pre-existing `__refill` perf-cheat below, which
+  // is deliberately generous for a stress test rather than standing in for
+  // a real mechanic.
   // A soldier who is owed nothing gets nothing, and hears nothing: the depot
   // ticks every half second for as long as he stands on it.
-  if (hw.rounds >= size && hw.mags >= spares) return;
-  hw.rounds = size;
-  hw.mags = spares;
-  hw.reload = 0;
+  if (!kitAmmo.refill()) return;
+  // A magazine change in progress was for a magazine the box just filled.
+  if (handWeapon) handWeapon.reload = 0;
   playSupplyGive();
 };
 let weaponToken = 0;      // guards a slow load landing after a mode/map switch
@@ -11308,19 +11619,19 @@ let detonatorTemplate = null;
 // from the last one run their 240 s fuse out on their own, exactly as they
 // do in the game.
 let thrownPackGroup = null;
-// How many charges this life has already put in the world, and how many the
-// pouch holds. The page does not carry ammo across a weapon switch — every
-// `loadHandWeapon` starts a fresh magazine — which for every other weapon is
-// a harmless simplification and for this one is not: swapping to the plunger
-// and back would refill the pouch, and four charges would become as many as
-// you cared to switch for. Counted here instead, and reset with the kit.
-let packsDown = 0;
-let packCapacity = 0;
 
-/** Charges left in the pouch. 1 (i.e. "some") when the capacity is unknown,
- *  so a mod whose pack declares no magazine is never locked out of it. */
+/** The pouch's own counts (`kitAmmo`), which outlive the pack's rig the way
+ *  every item's do — null until the pack has been raised once this life. */
+function packAmmo() {
+  return explosivesTemplate ? kitAmmo.peek(explosivesTemplate) : null;
+}
+
+/** Charges left in the pouch. 1 (i.e. "some") when the pack has never been
+ *  raised, or declares no magazine, so a mod whose pack has no `magSize` is
+ *  never locked out of it. */
 function packsLeft() {
-  return packCapacity > 0 ? Math.max(0, packCapacity - packsDown) : 1;
+  const pouch = packAmmo();
+  return pouch && Number.isFinite(pouch.size) ? Math.max(0, pouch.rounds) : 1;
 }
 
 /** Is `template` the pack, or the plunger? Case-insensitive, like `slotOf`. */
@@ -12001,12 +12312,6 @@ async function loadHandWeapon(name, soldierName = null) {
                     ...fireVariantsFor('proneFire', Object.keys(actions))];
   }
   const magazine = data?.magazine || null;
-  // The pouch's size, learned the first time the pack is picked up: `magSize
-  // 4` x `numOfMag 1`. Kept off `hw`, because `packsLeft` has to answer for a
-  // pack that is not in the hand.
-  if (isExplosives(name) && magazine && magazine.size > 0) {
-    packCapacity = magazine.size * Math.max(magazine.magazines ?? 1, 1);
-  }
   // The idle fidgets this rig baked (`idle1..idleN` — §11's `addIdle`
   // families): the names in slot order, the ANIM-6 dwell clock, and the
   // fidget currently owning the arms.
@@ -12045,14 +12350,19 @@ async function loadHandWeapon(name, soldierName = null) {
     fidget: null,          // the fidget selected/playing, or null
     fidgetTimer: null,     // seconds left of the ANIM-6 dwell, null = parked
     group: null,
-    // The loaded magazine plus the spares. `magazines 5` is read as the
-    // total carried, which is how the game's HUD counts them. A negative
-    // `magSize` is the engine's unlimited ammo (the knife's -1): rounds goes
-    // to Infinity so the trigger gate and the reload checks read it plainly.
-    rounds: isExplosives(name) ? packsLeft()
-      : magazine ? (magazine.size >= 0 ? magazine.size : Infinity) : Infinity,
-    mags: isExplosives(name) ? 0
-      : magazine ? Math.max((magazine.magazines ?? 1) - 1, 0) : 0,
+    // The loaded magazine plus the spares — the KIT's entry for this item
+    // (`kit-ammo.js`), created full the first time the item is raised this
+    // life and found as it was left on every raise after. `magazines 5` is
+    // read as the total carried, which is how the game's HUD counts them. A
+    // negative `magSize` is the engine's unlimited ammo (the knife's -1):
+    // rounds is Infinity so the trigger gate and the reload checks read it
+    // plainly. `rounds` / `mags` below are accessors onto it, so every
+    // reader and writer in this file keeps its plain `hw.rounds`.
+    ammo: kitAmmo.entry(name, magazine),
+    get rounds() { return this.ammo.rounds; },
+    set rounds(n) { this.ammo.rounds = n; },
+    get mags() { return this.ammo.mags; },
+    set mags(n) { this.ammo.mags = n; },
     reload: 0,       // seconds left of a reload in progress
     reloadPlayed: false,  // the arms' reload clip has been started for this magazine
     cool: 0,         // seconds until a semi-auto weapon has cycled
@@ -12133,9 +12443,11 @@ function ensureHandWeapon(flag) {
   // which is what the game does — the array the plunger walks belongs to the
   // weapon, and the weapon died with the soldier.
   armDemolitions(flag);
-  packsDown = 0;
-  packCapacity = 0;
   thrownPackGroup = null;
+  // A new life is a new kit: every item full again. This is the one place
+  // ammunition comes back other than a depot — a slot switch rebuilds the
+  // rig but never passes through here.
+  kitAmmo.reset();
   const name = weaponTemplateFor(flag);
   handSlot = kitWeaponSlots ? slotOf(kitWeaponSlots, name) : null;
   const who = soldierTemplateFor(flag);
@@ -12145,6 +12457,10 @@ function ensureHandWeapon(flag) {
     // Same weapon, new life: the raise plays again on every spawn. The body is
     // already the right one — `ensureFootBody` is a no-op for the pair it holds
     // — but a redeploy across the team line changes soldier, and that it is not.
+    // The rig survived the last life; its counts did not — it is re-pointed at
+    // the new kit's full entry, and a magazine change in progress is dropped.
+    handWeapon.ammo = kitAmmo.entry(name, handWeapon.data?.magazine || null);
+    handWeapon.reload = 0;
     ensureFootBody(who, name).catch(err => console.warn('3P body:', err));
     playViewmodelClip(handWeapon, stanceDeployName(handWeapon), { restart: true });
     return;
@@ -12780,12 +13096,10 @@ guns.onShot = group => {
     resolvePlayerShotOnBots();
   }
   // A charge just left the hand: remember whose it was, so the plunger knows
-  // what to set off after the pack has been swapped out of the hand, and
-  // count it, so the pouch does not refill on the way back.
-  if (isExplosives(hw.name)) {
-    thrownPackGroup = group;
-    packsDown++;
-  }
+  // what to set off after the pack has been swapped out of the hand. The
+  // pouch itself was just charged above, on the kit's own entry, which is
+  // what keeps it from refilling on the way back from the plunger.
+  if (isExplosives(hw.name)) thrownPackGroup = group;
   hw.model.onShot();
   hw.cool = Math.max(hw.cool, 1 / (hw.data?.roundOfFire || 1));
   finishHandShot(hw);
@@ -13400,7 +13714,13 @@ function updateSoldierHud(dt = 0.016) {
   // A seated soldier's optOnFoot box is still ticked — he is only suspended,
   // per disposeHandWeapon's own comment on the old #ammo element — so the
   // vehicle check has to be explicit here too.
-  const onFootActive = optOnFoot.checked && !!soldier && !inVehicle;
+  // A dead body is in the world (his corpse and the ticket counter stay) but
+  // his HUD is not: retail drops the stance/health, weapon and ammo groups
+  // the instant the local player dies -- the death cam shows only the
+  // minimap, the tickets and the spawn chrome -- so everything below the
+  // ticket feed gates on `onFootActive`, which a death clears.
+  const inWorld = optOnFoot.checked && !!soldier && !inVehicle;
+  const onFootActive = inWorld && !soldierDead;
   // The ticket counter is not the soldier's, and its own `when` is only
   // `ShowTicket`, so it would otherwise ride over a free-fly camera — where
   // this viewer deliberately shows no HUD chrome at all and the game would
@@ -13409,7 +13729,13 @@ function updateSoldierHud(dt = 0.016) {
   // HUD. Fed before every early return below, because a soldier who has just
   // died leaves `soldier` null while the counter is still up in the game.
   feedTicketVars(vars);
-  if (!onFootActive && !inVehicle) vars['ShowTicket'] = false;
+  if (!inWorld && !inVehicle) vars['ShowTicket'] = false;
+  // The soldier ammo panel is gated on `Ammo/AmmoType` alone (plus not being
+  // in a vehicle), and the live branches below only ever write it, so a
+  // death would leave the last magazine readout painted over the death cam.
+  // In a seat the shared `Ammo/Primary*` names carry the vehicle's own feed,
+  // hence dead-only here.
+  if (soldierDead) for (const name of SOLDIER_AMMO_VARS) delete vars[name];
   // The flag-status disc beneath the minimap: the layout's own `ShowFlagIcon`
   // leaf at (720,230) 64x64 (the neutral white flag while the local player
   // stands inside a neutral control point's radius; the screenshot's little
@@ -15402,8 +15728,18 @@ async function loadScoreLayout() {
 }
 loadScoreLayout();
 
-/** Everyone the page really knows about: the local player, and in a room the
- *  roster the server sent. Nobody else is ever listed. */
+/** Everyone the page really knows about: the local player, the bots this
+ *  page spawned (`spawnBotsForLevel`), and in a room the roster the server
+ *  sent. Nobody else is ever listed.
+ *
+ *  Each row's `kit` is what the first column's glyph is drawn from
+ *  (`scoreboard.js` `rowIcon`): the local player's is the spawn screen's
+ *  chosen row (`deployKit`, already a class key), a bot's is its kit
+ *  template's `class` in `_shared/loadouts.json` (`botKitFor` picked the
+ *  template). The room protocol carries no kit, so a remote player draws no
+ *  glyph rather than a guessed one. `dead` is the skull: the local soldier's
+ *  latch (`soldierDead`, or no body at all), a bot's destroyed Armor — the
+ *  same reads the death cam and `botRespawnTick` make. */
 function scoreboardPlayers() {
   const inRoom = roomJoined && roomClient;
   const players = [{
@@ -15411,7 +15747,19 @@ function scoreboardPlayers() {
     name: roomName,
     team: inRoom ? (roomClient.hello?.team === 1 ? 1 : 2) : deployTeamId,
     local: true,
+    kit: deployKit,
+    dead: !soldier || !!soldierDead,
   }];
+  for (const bot of botControllers) {
+    players.push({
+      slot: null,
+      name: bot.name,
+      team: bot.team,
+      bot: true,
+      kit: loadouts?.kits?.[bot.kit]?.class ?? null,
+      dead: !!world?.armorOf(bot.playerId)?.destroyed,
+    });
+  }
   if (inRoom) {
     for (const slot of roomClient.remoteSlots()) {
       players.push({ slot, name: roomClient.nameOf(slot), team: roomClient.teamOf(slot) });
@@ -16126,6 +16474,14 @@ async function show(entry) {
   }
   indexScene(currentRoot);
   collectTerrain(currentRoot);
+  // Leaf sprites face the camera and each tree past its billboardDistance
+  // becomes the engine's pre-rendered card (`tree-foliage.js`). After the
+  // material passes above, which rebuild materials, and after `indexScene`
+  // froze the statics.
+  bindTreeFoliage(currentRoot, {
+    scene, mapsBase: MAPS_BASE, bust, texLoader,
+    maxAnisotropy: renderer.capabilities.getMaxAnisotropy(),
+  }).then(r => console.log(`trees: ${r.trees} placed, ${r.sprites} sprite parts, ${r.impostors} billboards`));
   // A fresh extract starts every pole in its authored colours; a capture
   // rewrites cloth UVs in place, so seed the cache the swap reads (the
   // geometry's own baked cell) before anything can take a point.
@@ -17120,8 +17476,10 @@ function frame(dt) {
   // 2026-09-16 note and handweapon-view-and-deviation.md §3/§7.
   // `footView3p.firstPerson` is the soldier's `CVMInside`: an arms rig drawn
   // over a chase view would hang in front of the camera with nothing holding
-  // it. It is true everywhere but under a canopy with C pressed.
-  if (handWeapon?.rig.visible && footView3p.firstPerson) {
+  // it. It is true everywhere but under a canopy with C pressed. A dead man
+  // holds no weapon either: the death cam (on foot or over a wreck) is a shot
+  // of the body from outside, and retail draws no first-person rig over it.
+  if (handWeapon?.rig.visible && footView3p.firstPerson && !soldierDead) {
     renderer.autoClear = false;
     renderer.clearDepth();
     // Two traps in an overlay pass, both learned the hard way. Three draws
@@ -17307,6 +17665,25 @@ if (params.has('shots')) {
   // The bot navigation map itself (nav-grid.js), for a headless check to
   // count or draw its cells.
   window.__botCtl = id => botControllers.find(b => b.playerId === id) ?? null;
+  window.__botVehicleDebug = () => {
+    if (!entryPoints) collectEntryPoints();
+    const roots = [...new Set((entryPoints ?? []).map(e => e.vehicle))];
+    return {
+      aiLoaded: botVehicleAi?.size ?? null, entries: entryPoints?.length ?? null, roots: roots.length,
+      sample: roots.slice(0, 12).map(n => ({ name: n.name, template: n.userData?.template ?? null, control: n.userData?.control ?? null,
+        kind: botVehicleKindOf(n), active: vehicleSpawnActive(n), ai: botVehicleAiOf(n)?.name ?? null })),
+    };
+  };
+  window.__botVehicles = () => botVehicleCandidates().map(c => ({ template: c.template, kind: c.kind, pos: c.pos.map(v => +v.toFixed(0)), entry: c.entry.map(v => +v.toFixed(0)), r: c.entryRadius, health: c.health, maxSpeed: c.maxSpeed, occupiedBy: c.occupiedBy, upright: c.upright }));
+  window.__botMount = (id, template = null) => {
+    const bot = botControllers.find(b => b.playerId === id);
+    const cands = botVehicleCandidates().filter(c => !c.occupiedBy && (!template || c.template === template));
+    if (!bot || !cands.length) return false;
+    const p = bot.getPosition();
+    cands.sort((a, b) => Math.hypot(a.pos[0] - p[0], a.pos[2] - p[2]) - Math.hypot(b.pos[0] - p[0], b.pos[2] - p[2]));
+    return botEnterVehicle(bot, cands[0]);
+  };
+  window.__botDismount = id => { const bot = botControllers.find(b => b.playerId === id); if (bot?.vehicle) botLeaveVehicle(bot); return !bot?.vehicle; };
   window.__navMap = () => botNavGrid;
   window.__navProbe = (fx, fz, tx, tz) => {
     if (!botNavGrid) return null;
@@ -17344,6 +17721,10 @@ if (params.has('shots')) {
     weapon: b.weaponAi?.name ?? null,
     memory: b.senses?.memory?.size ?? 0,
     candidates: b.senses?.lastCandidates ?? 0,
+    heal: b._medicResult?.targetId ?? null,
+    vehicle: b.vehicle?.template ?? null,
+    change: b._changeResult?.best ? { id: b._changeResult.best.cand?.template, u: +b._changeResult.best.u.toFixed(2), d: +b._changeResult.best.dist.toFixed(1) } : null,
+    steerAngle: b._dbgSteerAngle ?? null,
     ammo: b.weaponAi?.ammo ?? null, reload: +((b._mags?.get(b.weaponAi?.name)?.reloadLeft) ?? 0).toFixed(2),
     aimDev: +(b.aimDeviation ?? 0).toFixed(2), rof: botWeaponDataOf(b)?.roundOfFire ?? null,
     senseSub: b.senses?.substate ?? 0,
@@ -17731,15 +18112,19 @@ if (params.has('shots')) {
   // charges are left in the pouch, and how many are live in the world for the
   // plunger to reach. `__altFire` stands in for the right mouse button the
   // way `__setTrigger` stands in for the left.
-  window.__demolitions = () => ({
-    pack: explosivesTemplate,
-    detonator: detonatorTemplate,
-    inHand: handWeapon?.name ?? null,
-    capacity: packCapacity,
-    down: packsDown,
-    left: packsLeft(),
-    live: thrownPackGroup ? guns.liveProjectiles(thrownPackGroup) : 0,
-  });
+  window.__demolitions = () => {
+    const pouch = packAmmo();
+    const sized = Number.isFinite(pouch?.size);
+    return {
+      pack: explosivesTemplate,
+      detonator: detonatorTemplate,
+      inHand: handWeapon?.name ?? null,
+      capacity: sized ? pouch.size : 0,
+      down: sized ? pouch.size - pouch.rounds : 0,
+      left: packsLeft(),
+      live: thrownPackGroup ? guns.liveProjectiles(thrownPackGroup) : 0,
+    };
+  };
   window.__altFire = () => altFireDemolitions();
   window.__handWeapon = () => handWeapon && ({
     name: handWeapon.name,

@@ -41,8 +41,17 @@ starts a cell's text at the box's left edge + 10 + that int. With the box at
 panel x = -5 that puts column 25 at panel x 30 and column 175 at 180, one unit
 right of the heading strip's own label (29) and score icon (179), which is how
 the columns were matched to what they show: 175 score, 210 kills, 245 deaths,
-280 ping, 310 ID, 25 the player's name. What columns 0 and 150 and the ones
-past 310 carry was NOT read and is left unnamed.
+280 ping, 310 ID, 25 the player's name. Column 0 is the kit glyph: the
+client draws each row's class icon there, left of the name under the
+heading strip's empty first cell (a retail Bocage capture, not the row-fill
+code, is the evidence; see `ROW_ICONS`). What column 150 and the ones past
+310 carry was NOT read and is left unnamed.
+
+The row glyphs are the `Debriefing/classes` set in `menu.rfa`: one 16x16 per
+class for a human row (`class_scout_16x16`), a yellow twin for a bot row
+(`class_bot_scout_16x16`), and a skull for a dead player in each colour
+(`dead_16x16`, `bot_dead_16x16`). They are recorded as `rowIcons` and
+packed with the board's other plates.
 
 Artifacts, all under `--out` (default `<hud pack>/scoreboard/`, a directory of
 its own so no other extractor's manifest is touched):
@@ -84,9 +93,10 @@ BOARD_VAR = "Scoreboard/SpawnScoreBoard"
 #: for the two score lists (the runs at 0x006dfa75..0x006dfb13 and
 #: 0x006dfb33..0x006dfbd1) -- the same thirteen for both, each run followed
 #: by one `addColumnNoWidth`. `field` is what the column shows,
-#: named only where the heading strip's own icon sits over it.
+#: named where the heading strip's own icon sits over it -- and, for column
+#: 0, where the retail capture puts the row's kit glyph.
 LIST_COLUMNS = [
-    {"x": 0, "field": None},
+    {"x": 0, "field": "icon"},
     {"x": 25, "field": "name"},
     {"x": 150, "field": None},
     {"x": 175, "field": "score"},
@@ -106,6 +116,26 @@ LIST_COLUMNS = [
 #: column's own int is added (`local_dbc = boxLeft + 10.0` in the list box's
 #: draw, 0x007d1390).
 LIST_TEXT_INSET = 10.0
+
+#: The five classes the engine's `setType` vocabulary names, as the viewer's
+#: own keys (`bf42/kit.py` TYPE_LABELS; `antitank` is the `at` glyph).
+ROW_ICON_CLASSES = {
+    "scout": "scout",
+    "assault": "assault",
+    "antitank": "at",
+    "medic": "medic",
+    "engineer": "engineer",
+}
+
+#: The list rows' glyphs, `menu/Texture/Debriefing/classes/*`: the class
+#: icon a human row and a bot row each get, and the skull that replaces it
+#: while the player is dead. Texture names are the pack's lower-cased stems.
+ROW_ICONS = {
+    "human": {k: f"class_{v}_16x16" for k, v in ROW_ICON_CLASSES.items()},
+    "bot": {k: f"class_bot_{v}_16x16" for k, v in ROW_ICON_CLASSES.items()},
+    "dead": "dead_16x16",
+    "botDead": "bot_dead_16x16",
+}
 
 
 class BoardFlattener(MenuFlattener):
@@ -166,6 +196,7 @@ def decode_layout(ingame: bytes, lexicon: dict[str, str],
             "textInset": LIST_TEXT_INSET,
             "columns": LIST_COLUMNS,
         },
+        "rowIcons": ROW_ICONS,
         "fonts": sorted(fonts),
         "strings": dict(sorted(flat.strings.items())),
         "variables": dict(sorted(flat.variables.items())),
@@ -174,14 +205,21 @@ def decode_layout(ingame: bytes, lexicon: dict[str, str],
 
 
 def layout_textures(layout: dict) -> set[str]:
-    """Every fixed plate the page names. A leaf with a `var` is a slot the
-    engine fills at runtime (the two ticket flags), except that its shipped
-    default is still a real plate and is taken too."""
+    """Every fixed plate the page names, plus the list rows' glyphs. A leaf
+    with a `var` is a slot the engine fills at runtime (the two ticket
+    flags), except that its shipped default is still a real plate and is
+    taken too."""
     names: set[str] = set()
     for el in layout["elements"]:
         for field in ("texture", "hover", "pressed"):
             if el.get(field):
                 names.add(el[field])
+    icons = layout.get("rowIcons") or {}
+    for group in ("human", "bot"):
+        names.update((icons.get(group) or {}).values())
+    for key in ("dead", "botDead"):
+        if icons.get(key):
+            names.add(icons[key])
     return names
 
 

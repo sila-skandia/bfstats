@@ -116,8 +116,30 @@ class ScoreboardLayoutTests(unittest.TestCase):
         self.assertEqual([0, 25, 150, 175, 210, 245, 280, 310, 355, 370, 385, 400, 415, 450], xs)
         self.assertEqual(10.0, self.layout["listColumns"]["textInset"])
         unnamed = [c["x"] for c in self.layout["listColumns"]["columns"] if not c["field"]]
-        self.assertIn(0, unnamed)
+        self.assertNotIn(0, unnamed)
         self.assertIn(150, unnamed)
+
+    def test_the_first_column_is_the_kit_glyph(self) -> None:
+        first = self.layout["listColumns"]["columns"][0]
+        self.assertEqual({"x": 0, "field": "icon"}, first)
+        icons = self.layout["rowIcons"]
+        self.assertEqual(["antitank", "assault", "engineer", "medic", "scout"],
+                         sorted(icons["human"]))
+        self.assertEqual(sorted(icons["human"]), sorted(icons["bot"]))
+        self.assertEqual("class_at_16x16", icons["human"]["antitank"])
+        self.assertEqual("class_bot_scout_16x16", icons["bot"]["scout"])
+        self.assertEqual("dead_16x16", icons["dead"])
+        self.assertEqual("bot_dead_16x16", icons["botDead"])
+
+    def test_the_row_glyphs_are_in_the_menu_chain(self) -> None:
+        # The `Debriefing/classes` set, every one the layout names.
+        wanted = {*self.layout["rowIcons"]["human"].values(),
+                  *self.layout["rowIcons"]["bot"].values(),
+                  self.layout["rowIcons"]["dead"], self.layout["rowIcons"]["botDead"]}
+        with RfaArchive(MENU_RFA) as menu:
+            stems = {e.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower() for e in menu.entries
+                     if "/debriefing/classes/" in e.lower()}
+        self.assertEqual(set(), wanted - stems)
 
     def test_the_totals_row_is_five_bound_numbers_a_side(self) -> None:
         for side in ("Axis", "Allied"):
@@ -173,7 +195,9 @@ class ScoreboardLayoutTests(unittest.TestCase):
         names = esb.layout_textures(self.layout)
         for name in ("scoreboard_512x470", "scoreboard_buttonframe_780x64",
                      "kick_mapmessage_long", "knappext_n", "knappext_mo", "knapp3_n",
-                     "menu_scrollpilupp_16x8", "ingame_serverip_256x32"):
+                     "menu_scrollpilupp_16x8", "ingame_serverip_256x32",
+                     "class_scout_16x16", "class_bot_medic_16x16", "dead_16x16",
+                     "bot_dead_16x16"):
             self.assertIn(name, names)
 
 

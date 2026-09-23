@@ -12,6 +12,8 @@
 import { World, WORLD_TICK_DT } from './world.mjs';
 import { BotController } from './bot.js';
 import { buildNavMap, gridAt, traceClear, CELL_OBJECT } from './nav-grid.js';
+import { Armor } from './armor.js';
+import { tankControl, unitUrgency, changeUrgency, orderSplit, TANK } from './bot-vehicle.js';
 
 // The level sits in the map's own frame: x in [0, worldSize], z in
 // [-worldSize, 0] (the exporter negates z). Home at (100, -100), the enemy
@@ -255,7 +257,71 @@ function lookScenario() {
   return { lookX: look.x, lookY: look.y, yawAfter: yaw, turned: Math.abs(yaw) > 1e-3 };
 }
 
+/** Special: a medic with a MedPack and a wounded friend 12 m away. The
+ *  behaviour wins the contest (Fire has nothing, MoveTo has no map and no
+ *  strategic order so its fallback walks at the enemy flag), the bot walks
+ *  to `R + 0.9 * 2.5` and holds the trigger on the friend within 5 deg. */
+function medicScenario() {
+  const world = makeWorld();
+  world.addBotPlayer('bot_0', { team: 2, flag: world.flags[0] });
+  world.addBotPlayer('mate', { team: 2, flag: world.flags[0] });
+  const mate = world.player('mate').soldier;
+  mate.spawn(HOME[0], 0, HOME[2] - 12, 0);
+  const mateArmor = new Armor(30);
+  mateArmor.applyDamage(20);
+  world.setPlayerArmor('mate', mateArmor);
+  world.setPlayerArmor('bot_0', new Armor(30));
+  const weapons = [
+    { name: 'Colt', burst: 0, minRange: 0, maxRange: 60, strength: { Infantry: 2 }, ammo: -1 },
+    { name: 'MedPack', burst: 0, minRange: 0, maxRange: 2.5, strength: { Infantry: 2 }, ammo: -1, healing: true },
+  ];
+  const bot = new BotController({ playerId: 'bot_0', world, botSkill: 0.75, weapons });
+  bot.navGrid = null;
+  let chosen = false, fired = false, weapon = null, minDist = Infinity, firingDist = null;
+  let urgency = 0;
+  for (let i = 0; i < 240; i++) {
+    bot.tick(WORLD_TICK_DT, i * WORLD_TICK_DT);
+    world.step(WORLD_TICK_DT);
+    const s = world.player('bot_0').soldier;
+    const d = Math.hypot(s.x - mate.x, s.z - mate.z);
+    minDist = Math.min(minDist, d);
+    urgency = Math.max(urgency, bot.urgency.Special ?? 0);
+    if (bot.currentBehaviour === 'Special') chosen = true;
+    if (bot.isFiring) { fired = true; weapon = bot.weaponAi?.name ?? null; firingDist = firingDist ?? d; }
+  }
+  return { chosen, fired, weapon, minDist, firingDist, urgency, arrive: bot._medicResult?.arrive ?? null };
+}
+
+/** The tank law: a target dead ahead wants speed up to `maxSpeed`; one
+ *  20 deg to the +yaw side steers negative (the viewer's `c_PIYaw` sense);
+ *  one behind turns first and keeps its turn direction across the flip. */
+function tankLawScenario() {
+  const ahead = tankControl({ forward: [0, 1], velocity: [0, 0], toTarget: [0, 50], maxSpeed: 16 });
+  const fast = tankControl({ forward: [0, 1], velocity: [0, 16], toTarget: [0, 50], maxSpeed: 16 });
+  const right = tankControl({ forward: [0, 1], velocity: [0, 5], toTarget: [Math.sin(0.35) * 50, Math.cos(0.35) * 50], maxSpeed: 16 });
+  const behind = tankControl({ forward: [0, 1], velocity: [0, 0], toTarget: [0.01, -50], maxSpeed: 16 });
+  const behindKept = tankControl({ forward: [0, 1], velocity: [0, 0], toTarget: [-0.01, -50], maxSpeed: 16, lastTurn: behind.turn });
+  return { ahead, fast, right, behind, behindKept };
+}
+
+/** The Change scoring: a Sherman near a rifleman outranks staying on foot;
+ *  a jeep 95 m away barely does; a unit manned by the enemy is filtered
+ *  before scoring (the caller's business) so only the numbers are pinned. */
+function changeScenario() {
+  const split = orderSplit(0, 0);
+  const foot = unitUrgency({ health: 1, strengths: { Infantry: 4 }, presence: { Infantry: 1 }, maxSpeed: TANK.soldierMaxSpeed, value: 1, orderSplit: split });
+  const sherman = unitUrgency({ health: 1, strengths: { Infantry: 10, LightArmour: 7, HeavyArmour: 2 }, presence: { Infantry: 1 }, maxSpeed: 16, value: 3, orderSplit: split });
+  const willy = unitUrgency({ health: 1, strengths: {}, presence: { Infantry: 1 }, maxSpeed: 25, value: 1, orderSplit: split });
+  const near = changeUrgency({ staying: foot, candidates: [{ id: 's', u: sherman, dist: 10 }], mod: 1.9 });
+  const far = changeUrgency({ staying: foot, candidates: [{ id: 'w', u: willy, dist: 95 }], mod: 1.9 });
+  const none = changeUrgency({ staying: foot, candidates: [], mod: 1.9 });
+  return { foot, sherman, willy, near: near.urgency, nearId: near.best?.id ?? null, far: far.urgency, none: none.urgency, split };
+}
+
 const results = {
+  medic: medicScenario(),
+  tankLaw: tankLawScenario(),
+  change: changeScenario(),
   tickDt: WORLD_TICK_DT,
   aim: aimScenario(),
   friendly: friendlyScenario(),

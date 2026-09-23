@@ -43,7 +43,8 @@ import { DeviationModel } from './deviation.js';
 import { findLocalPath, findStrategicPath, traceClear, traceValidPoint, isWalkable, COARSE_CELL } from './nav-grid.js';
 import { BotSenses, lineClear, playerPosition, SOLDIER_RADIUS } from './bot-sense.js';
 import { scoreTargets, firingPose, firePlanFor, weaponAiOf, FIRE } from './bot-fire.js';
-import { ScoutState, TakeCoverState, QUADRANTS, quadrantOf, SCOUT, TAKE_COVER } from './bot-behaviours.js';
+import { ScoutState, TakeCoverState, QUADRANTS, quadrantOf, SCOUT, TAKE_COVER, MedicState, MEDIC } from './bot-behaviours.js';
+import { tankControl, unitUrgency, orderSplit, changeUrgency, TANK, CHANGE } from './bot-vehicle.js';
 
 /** The 55-channel PlayerInputMap indices, from the research document §1.2. */
 export const PI = {
@@ -95,7 +96,11 @@ export const BEHAVIOUR = {
   Avoid: 'Avoid', MoveTo: 'MoveTo', Idle: 'Idle', Fire: 'Fire',
   Scout: 'Scout', TakeCover: 'TakeCover', Change: 'Change', Special: 'Special',
 };
-const REGISTERED = ['Avoid', 'MoveTo', 'Idle', 'Fire', 'Scout', 'TakeCover'];
+const REGISTERED = ['Avoid', 'MoveTo', 'Idle', 'Fire', 'Special', 'Scout', 'TakeCover', 'Change'];
+/** The Tank rows: no Special. */
+const REGISTERED_VEHICLE = ['Avoid', 'MoveTo', 'Idle', 'Fire', 'Scout', 'TakeCover', 'Change'];
+/** `ChangeInhibit`: the column applied while Change is the active behaviour. */
+const CHANGE_INHIBIT = { Avoid: 1.0, MoveTo: 0.0, Idle: 1.0, Fire: 1.0, Special: 1.0, Scout: 1.0, TakeCover: 1.0, Change: 1.0 };
 
 /** `StandardWeights`, the standard personality of both sides. */
 export const STANDARD_WEIGHTS = {
@@ -106,7 +111,7 @@ const UNIT_WEIGHTS = { Avoid: 1, MoveTo: 1, Idle: 1, Fire: 1, Special: 1, Scout:
 /** `AvoidInhibit`: the column applied while Avoid is the active behaviour. */
 const AVOID_INHIBIT = { Avoid: 1.0, MoveTo: 0.3, Idle: 1.0, Fire: 1.0, Special: 0.5, Scout: 1.0, TakeCover: 1.0, Change: 1.0 };
 /** Each infantry row's modifier set (`setVehicleBehaviour Infantery ...`). */
-const INHIBITOR = { Avoid: AVOID_INHIBIT, MoveTo: UNIT_WEIGHTS, Idle: UNIT_WEIGHTS, Fire: UNIT_WEIGHTS, Scout: UNIT_WEIGHTS, TakeCover: UNIT_WEIGHTS };
+const INHIBITOR = { Avoid: AVOID_INHIBIT, MoveTo: UNIT_WEIGHTS, Idle: UNIT_WEIGHTS, Fire: UNIT_WEIGHTS, Special: UNIT_WEIGHTS, Scout: UNIT_WEIGHTS, TakeCover: UNIT_WEIGHTS, Change: CHANGE_INHIBIT };
 
 /**
  * The engine's urge curves (assembly, `UCLinear::calculate` 0x085838f0 and
@@ -121,7 +126,8 @@ export const URGENCY_CURVE = {
   scout: t => Math.max(0, 2.5 / (1.0 * t + 0.9) + 0.5),
 };
 const CURVE_OF = { Avoid: URGENCY_CURVE.union, MoveTo: URGENCY_CURVE.union, Idle: URGENCY_CURVE.union,
-  Fire: URGENCY_CURVE.fire, Scout: URGENCY_CURVE.scout, TakeCover: URGENCY_CURVE.union };
+  Fire: URGENCY_CURVE.fire, Special: URGENCY_CURVE.union, Scout: URGENCY_CURVE.scout, TakeCover: URGENCY_CURVE.union,
+  Change: URGENCY_CURVE.union };
 /** `decisionMaking`'s hysteresis band on `urgency / activeUrgency`. */
 const HYSTERESIS_LOW = 0.87;
 const HYSTERESIS_HIGH = 1.15;
@@ -141,6 +147,7 @@ export const PLAN_ACTION = {
   InfantryMoveTo: 'InfanteryMoveTo',
   InfantryMoveToObject: 'InfanteryMoveToObject',
   InfantryMoveToDirection: 'InfanteryMoveToDirection',
+  EnterVehicle: 'EnterVehicle',
   MoveToMediumSoldier: 'MoveToMediumSoldier',
   MoveToObjectMediumSoldier: 'MoveToObjectMediumSoldier',
   MouseTurretAimAt: 'MouseTurretAimAt',
@@ -184,6 +191,11 @@ const NO_PROGRESS_RESPAWN = 12.0;
  *  random radius on the next decision pass). */
 const ROUTE_RETRY_AFTER = 1.5;
 const ROUTE_RETRY_WIDEN = 16;
+/** A leg that fails its box is retried this many times, each 16 m wider
+ *  (to 120 m: the coarse legs are an INVENTION and can cross a compound's
+ *  paint, which only a wide box routes around). */
+const ROUTE_LEG_WIDENINGS = 6;
+const ROUTE_LEG_WIDE_NODES = 20000;
 
 /**
  * Path following, from the binary read
@@ -204,6 +216,19 @@ const LOCAL_SEARCH_RADIUS_RAND = 14;
  *  INVENTION: the soldier's value was not read; the engine floors the
  *  removal distance at 0.5 (`getMaxPathPosRemovalDistance` 0x0852b780). */
 const BOT_RADIUS = 1.0;
+/** A land vehicle's body radius on its map when the page gives none (INVENTION). */
+const VEHICLE_RADIUS = 3.0;
+/** The eye of a mounted bot above the hull's position (INVENTION). */
+const VEHICLE_EYE_HEIGHT = 2.0;
+/** The sign that maps the driving law's steer onto the viewer's `c_PIYaw`:
+ *  the law's angle is `-(bearing - yaw)` and a positive `c_PIYaw` turns the
+ *  hull toward -yaw (`ground.js`), so the steer passes straight through.
+ *  Calibrated on El Alamein's Kubelwagen (2026-09-23). */
+const VEHICLE_YAW_SIGN = 1;
+/** How long a wedged hull reverses before trying again (INVENTION). */
+const VEHICLE_REVERSE_SECONDS = 2.0;
+/** The sign of `TurretRig.headingRadians()` against the bot's yaw. */
+const VEHICLE_TURRET_SIGN = 1;
 /** `infanteryControlTowardsDirection` 0x08627000: throttle only when the
  *  target direction is within this angle of the facing (0.5497787 rad,
  *  31.5 deg), else stop and turn; a target behind turns at the full rate. */
@@ -365,6 +390,16 @@ export class BotController {
     /** The behaviour generators' state. */
     this.scout = new ScoutState();
     this.cover = new TakeCoverState();
+    this.medic = new MedicState();
+    /** The land vehicle the bot drives, from the page's `mount` (null on foot). */
+    this.vehicle = null;
+    /** The page's list of enterable driver seats (`botVehicleCandidates`). */
+    this.vehicleCandidates = [];
+    /** Set by the Change plan: the page mounts the bot on this vehicle. */
+    this.enterRequest = null;
+    this._lastChangeAt = -Infinity;
+    this._leftVehicle = null;
+    this._footWeapons = null;
     this.avoidUntil = -Infinity;
     this.avoidDir = null;
     /** Cover candidates the page supplies (`{ id, pos, value, width, height, radius }`). */
@@ -418,7 +453,60 @@ export class BotController {
 
   /** The bot's eye, by stance. */
   _eye() {
+    if (this.vehicle) return [this.position[0], this.position[1] + VEHICLE_EYE_HEIGHT, this.position[2]];
     return [this.position[0], this.position[1] + (EYE_BY_STANCE[this.stance] ?? EYE_HEIGHT), this.position[2]];
+  }
+
+  /** The behaviours the bot's current unit registers (AIbehaviours.con rows). */
+  _registered() {
+    return this.vehicle ? REGISTERED_VEHICLE : REGISTERED;
+  }
+
+  /** The map and body radius of the unit the bot moves as. */
+  _nav() { return this.vehicle ? (this.vehicle.nav ?? null) : this.navGrid; }
+  _radius() { return this.vehicle ? (this.vehicle.radius ?? VEHICLE_RADIUS) : BOT_RADIUS; }
+
+  /** The hull's heading on the ground plane, unit `[x, z]`. */
+  _vehicleForward() {
+    const q = this.vehicle?.drive?.state?.orientation;
+    if (!q) return [Math.sin(this.yaw), Math.cos(this.yaw)];
+    // q * (0, 0, -1)
+    const x = q.x, y = q.y, z = q.z, w = q.w;
+    const fx = -(2 * (x * z + w * y));
+    const fz = -(1 - 2 * (x * x + y * y));
+    const len = Math.hypot(fx, fz) || 1;
+    return [fx / len, fz / len];
+  }
+
+  /**
+   * The page seats the bot: `m` is `{ id, node, drive, occupancy, kind, nav,
+   * radius, maxSpeed, weapons, template }`. The unit's weapons replace the
+   * kit's for the Fire behaviour while mounted.
+   */
+  mount(m, now = this._now ?? 0) {
+    this.vehicle = m;
+    this.enterRequest = null;
+    this._lastChangeAt = now;
+    this._footWeapons = this.weapons;
+    this.weapons = (m.weapons?.length ? m.weapons : [{ name: m.template ?? 'vehicle', maxRange: 0, strength: {} }]).map(weaponAiOf);
+    this.weaponIndex = 0;
+    this._execInfantryResetControls();
+    this.currentPlan = []; this.currentBehaviour = null; this.planBehaviour = null;
+    this.route = null;
+  }
+
+  /** The page unseats the bot (destroyed, or bailed). */
+  dismount(now = this._now ?? 0) {
+    const left = this.vehicle;
+    this.vehicle = null;
+    this._leftVehicle = left ? { id: left.id, at: now } : null;
+    this._lastChangeAt = now;
+    if (this._footWeapons) this.weapons = this._footWeapons;
+    this._footWeapons = null;
+    this.weaponIndex = 0;
+    this._execInfantryResetControls();
+    this.currentPlan = []; this.currentBehaviour = null; this.planBehaviour = null;
+    this.route = null;
   }
 
   /** The world's line-of-sight test between two points. */
@@ -554,7 +642,17 @@ export class BotController {
   tick(dt, now) {
     this._now = now;
     const player = this._player();
-    if (player?.soldier) {
+    if (this.vehicle?.drive) {
+      // Mounted: the hull's pose (flight.js `FORWARD` is the node's -z).
+      const st = this.vehicle.drive.state;
+      this.position[0] = st.position.x;
+      this.position[1] = st.position.y;
+      this.position[2] = st.position.z;
+      const f = this._vehicleForward();
+      this.yaw = Math.atan2(f[0], f[1]);
+      this.pitch = 0;
+      this.stance = 'stand';
+    } else if (player?.soldier) {
       this.position[0] = player.soldier.x;
       this.position[1] = player.soldier.y;
       this.position[2] = player.soldier.z;
@@ -679,6 +777,22 @@ export class BotController {
     this.jumpRequest = false;
   }
 
+  /** What the look input turns: the soldier, or the mounted unit's turret
+   *  (hull heading plus the rig's own azimuth). */
+  _aimReference() {
+    if (this.vehicle) {
+      const turret = this.vehicle.occupancy?.turret;
+      const heading = turret?.headingRadians?.() ?? 0;
+      const elevation = turret?.elevationRadians?.() ?? null;
+      // A rig without an elevation axis aims flat: its pitch is taken as
+      // whatever the plan wants (INVENTION), so the trigger's alignment test
+      // is the traverse alone.
+      return { yaw: wrapAngle(this.yaw + VEHICLE_TURRET_SIGN * heading),
+               pitch: elevation === null ? null : VEHICLE_TURRET_SIGN * elevation };
+    }
+    return this._player()?.soldier ?? null;
+  }
+
   /**
    * Aim at an absolute yaw/pitch by writing the mouse axis pair. `lookX/Y`
    * are mouse counts (`soldierLookDegrees`: 3 deg and 1 deg a count), the
@@ -687,12 +801,12 @@ export class BotController {
    * turn to 12 deg a tick, the engine's own pace.
    */
   _aimLook(desiredYaw, desiredPitch = null, maxCounts = AXIS_MAX) {
-    const s = this._player()?.soldier;
+    const s = this._aimReference();
     if (!s) return;
     const dYaw = wrapAngle(desiredYaw - s.yaw);
     const livePitch = s.pitch ?? 0;
     const targetPitch = desiredPitch === null ? livePitch : desiredPitch;
-    const dPitch = targetPitch - livePitch;
+    const dPitch = s.pitch === null ? 0 : targetPitch - livePitch;
     this.lookX = clamp(-(dYaw * RAD2DEG) / YAW_GAIN, -maxCounts, maxCounts);
     this.lookY = clamp(-(dPitch * RAD2DEG) / PITCH_GAIN, -maxCounts, maxCounts);
   }
@@ -764,7 +878,7 @@ export class BotController {
    * route or null when the map has no answer.
    */
   _ensureRoute(goal) {
-    const nav = this.navGrid;
+    const nav = this._nav();
     const r = this.route;
     if (r && !r.failed
         && Math.hypot(r.goal[0] - goal[0], r.goal[1] - goal[2]) <= REPLAN_GOAL_MOVE) {
@@ -812,7 +926,7 @@ export class BotController {
    */
   _extendRoute() {
     const r = this.route;
-    const nav = this.navGrid;
+    const nav = this._nav();
     if (!r || !nav) return;
     let guard = 4;
     while (r.points.length - r.index < SMOOTHING && r.coarse.length && guard-- > 0) {
@@ -822,14 +936,24 @@ export class BotController {
       let radius = LOCAL_SEARCH_RADIUS_MIN + Math.random() * LOCAL_SEARCH_RADIUS_RAND;
       for (const ob of this.obstacles) radius = Math.max(radius, ob.r);
       radius += 1 + ROUTE_RETRY_WIDEN * Math.min(3, this._pathFailures);
-      const leg = findLocalPath(nav, from[0], from[1], tx, tz,
-                                { radius, obstacles: this.obstacles });
+      let leg = findLocalPath(nav, from[0], from[1], tx, tz,
+                              { radius, obstacles: this.obstacles });
       r.searches++;
-      r.coarse.shift();
-        if (!leg) {
-        if (!r.coarse.length) { r.failed = true; this._pathFailures++; }
-        continue;
+      // A leg the box cannot close is searched again in a wider box (the
+      // engine's next decision pass draws a fresh radius; INVENTION: three
+      // widenings at once) before the route fails and waits for its retry.
+      for (let w = 1; !leg && w <= ROUTE_LEG_WIDENINGS; w++) {
+        leg = findLocalPath(nav, from[0], from[1], tx, tz,
+                            { radius: radius + ROUTE_RETRY_WIDEN * w, obstacles: this.obstacles,
+                              maxNodes: ROUTE_LEG_WIDE_NODES * w });
+        r.searches++;
       }
+      if (!leg) {
+        r.failed = true;
+        this._pathFailures++;
+        return;
+      }
+      r.coarse.shift();
       this._pathFailures = 0;
       for (let i = r.points.length ? 1 : 0; i < leg.length; i++) r.points.push(leg[i]);
     }
@@ -843,7 +967,7 @@ export class BotController {
   _lookAhead() {
     const r = this.route;
     if (!r || !r.points.length) return null;
-    const nav = this.navGrid;
+    const nav = this._nav();
     const [bx, bz] = [this.position[0], this.position[2]];
     const last = Math.min(r.points.length - 1, SMOOTHING - 1);
     let pick = -1;
@@ -876,7 +1000,8 @@ export class BotController {
       const front = r.points[0];
       const dx = this.position[0] - front[0];
       const dz = this.position[2] - front[1];
-      let pop = dx * dx + dz * dz < BOT_RADIUS * BOT_RADIUS;
+      const R = this._radius();
+      let pop = dx * dx + dz * dz < R * R;
       if (!pop && r.index > 0) {
         const next = r.points[r.index];
         pop = (next[0] - front[0]) * dx + (next[1] - front[1]) * dz >= 0;
@@ -929,6 +1054,31 @@ export class BotController {
     const dx = x - this.position[0];
     const dz = z - this.position[2];
     if (dx * dx + dz * dz < 1e-8) { this.moveForward = 0; return; }
+    if (this.vehicle) {
+      // `TankControl::controlTowardsDirection`: throttle and steer for the
+      // hull; the look stays free for the turret.
+      const v = this.vehicle.drive?.state?.velocity;
+      const r = tankControl({
+        forward: this._vehicleForward(),
+        velocity: v ? [v.x, v.z] : [0, 0],
+        toTarget: [dx, dz],
+        maxSpeed: this.vehicle.maxSpeed ?? 0,
+        yawRate: this._hullYawRate ?? 0,
+        lastTurn: this._lastTurn ?? 0,
+      });
+      this._lastTurn = r.turn;
+      if ((this._now ?? 0) < (this._reverseUntil ?? -Infinity)) {
+        // Backing out of the obstruction, the lock away from the target.
+        this.moveForward = -1;
+        this.moveStrafe = -VEHICLE_YAW_SIGN * (Math.sign(r.angle) || 1);
+        this._dbgSteerAngle = r.angle;
+        return;
+      }
+      this.moveForward = r.throttle * (speed > 0 ? 1 : 0);
+      this.moveStrafe = VEHICLE_YAW_SIGN * r.steer;
+      this._dbgSteerAngle = r.angle;
+      return;
+    }
     const want = Math.atan2(dx, dz);
     const rel = wrapAngle(want - this.yaw);
     this._aimLook(want, 0);
@@ -961,13 +1111,17 @@ export class BotController {
     // `_resetInput` has zeroed this tick's word; the stall test wants the
     // throttle the body was given last tick.
     const soldier = this._player()?.soldier;
-    const bodySpeed = soldier?.speed ?? 0;
+    const hullV = this.vehicle?.drive?.state?.velocity;
+    const bodySpeed = hullV ? Math.hypot(hullV.x, hullV.z) : (soldier?.speed ?? 0);
     this.moveForward = this._lastThrottle ?? 0;
-    this._trackContact(soldier);
+    if (!this.vehicle) this._trackContact(soldier);
     if (this._trackObstruction(bodySpeed)) {
       // The path failed (`+0xc = 3`): next tick rebuilds it around the
       // obstacles, or walks straight at the goal after repeated failures.
       this.route = null;
+      // A wedged hull backs out first (INVENTION: `CommonControls::
+      // actionStatusDecision`, which picks forward or reverse, is not read).
+      if (this.vehicle) this._reverseUntil = (this._now ?? 0) + VEHICLE_REVERSE_SECONDS;
     }
 
     let route = this._ensureRoute(target);
@@ -984,8 +1138,13 @@ export class BotController {
       route.failed = true;
     }
     // No route: the map cannot see a way, or the level has no map. The
-    // engine's bot stands still on state 3 until a re-plan; here it walks
-    // straight at the goal so a squad without a map still moves.
+    // engine's bot stands still on state 3 until a re-plan; here a soldier
+    // walks straight at the goal so a squad without a map still moves. A
+    // hull does not: driven blind it wedges itself against the paint's walls.
+    if (this.vehicle && this._nav()) {
+      this.moveForward = 0; this.moveStrafe = 0; this._lastThrottle = 0;
+      return false;
+    }
     this._steerToward(target[0], target[2], speed);
     this._dbgSteer = [target[0], target[2]];
     this._lastThrottle = this.moveForward;
@@ -1010,7 +1169,7 @@ export class BotController {
     const active = hasPlan ? this.currentBehaviour : null;
     const activeFor = active ? now - this.behaviourChosenAt : 0;
     // Phase 1: every registered behaviour, with its modifier.
-    for (const name of REGISTERED) {
+    for (const name of this._registered()) {
       let mod = this._currentMod(name);
       if (active) {
         const curve = name === active ? (CURVE_OF[active] ?? URGENCY_CURVE.union)(activeFor) : 1.0;
@@ -1022,7 +1181,7 @@ export class BotController {
     // The winner.
     let reselect = !hasPlan;
     if (hasPlan) {
-      for (const name of REGISTERED) {
+      for (const name of this._registered()) {
         if (this._quotientChanged(name) || this.changedTarget[name]) { reselect = true; break; }
       }
     }
@@ -1030,7 +1189,7 @@ export class BotController {
     if (reselect) {
       let best = 0;
       winner = null;
-      for (const name of REGISTERED) {
+      for (const name of this._registered()) {
         const u = this.urgency[name];
         this.activeUrgency[name] = u;
         if (u > best) { best = u; winner = name; }
@@ -1050,7 +1209,7 @@ export class BotController {
       this.planBehaviour = winner;
       this.planTargetId = this.firingTarget;
     }
-    for (const name of REGISTERED) this.changedTarget[name] = false;
+    for (const name of this._registered()) this.changedTarget[name] = false;
   }
 
   /** `BotBehaviour::quotientChanged(0.87, 1.15)`. */
@@ -1074,6 +1233,8 @@ export class BotController {
       case BEHAVIOUR.Fire: return this._urgencyFire(mod, now);
       case BEHAVIOUR.Scout: return this._urgencyScout(mod, now, dt);
       case BEHAVIOUR.TakeCover: return this._urgencyTakeCover(mod, now);
+      case BEHAVIOUR.Special: return this._urgencySpecial(mod, now);
+      case BEHAVIOUR.Change: return this._urgencyChange(mod, now);
       case BEHAVIOUR.Avoid: return this._urgencyAvoid(mod, now);
       default: return 0;
     }
@@ -1183,7 +1344,7 @@ export class BotController {
     const s = this.senses;
     const heard = [...s.heard.values()].map(h => ({ ...h, threat: 4, security: 1 }));
     const spotted = s.spottedEnemies().map(m => ({ ...m, threat: 4 }));
-    const nav = this.navGrid;
+    const nav = this._nav();
     const r = this.cover.evaluate({
       now, position: this.position,
       incoming: s.incoming.filter(f => f.pos), heard, spotted,
@@ -1191,7 +1352,7 @@ export class BotController {
       lineClear: (a, b) => this._lineClear(a, b),
       traceValidPoint: nav ? (from, to) => {
         const p = traceValidPoint(nav, from[0], from[1], to[0], to[1], this.obstacles);
-        return isWalkable(nav, p[0], p[1]) ? p : null;
+        return p && isWalkable(nav, p[0], p[1]) ? p : null;
       } : null,
       mod,
       myWidth: 0.6, myHeight: 1.8,
@@ -1211,6 +1372,176 @@ export class BotController {
       if (d <= TAKE_COVER.coverSearchRadius) out.push(c);
     }
     return out;
+  }
+
+  /**
+   * `BBMedicAssist::calculateUrgency` (bot-behaviours.js `MedicState`): the
+   * wounded friends in reach of a healing weapon. The friends are the
+   * world's players of the bot's own side: their armour's fraction, whether
+   * they sit in a vehicle; a soldier is always upright here.
+   */
+  _urgencySpecial(mod, now) {
+    if (!this.weapons?.some(w => w.healing)) return 0;
+    const world = this.world;
+    const me = this._player();
+    const friends = [];
+    for (const [id, p] of world?.players ?? []) {
+      if (id === this.playerId || !p || p.team !== me?.team) continue;
+      const armor = world.armorOf?.(id);
+      if (!armor || armor.destroyed || !(armor.maxHitPoints > 0)) continue;
+      const pos = playerPosition(p);
+      if (!pos) continue;
+      const d = Math.hypot(pos[0] - this.position[0], pos[2] - this.position[2]);
+      if (d > MEDIC.searchRadius) continue;
+      friends.push({ id, pos, health: armor.hitPoints / armor.maxHitPoints,
+                     upright: true, inVehicle: !!p.vehicle, radius: SOLDIER_RADIUS, type: 'Infantry' });
+    }
+    const collider = world?.collider;
+    const water = collider?.waterLevel;
+    const waterDepth = Number.isFinite(water) ? Math.max(0, water - this.position[1]) : 0;
+    const nav = this._nav();
+    const wp = this.waypoints;
+    const r = this.medic.evaluate({
+      now, position: this.position, waterDepth, weapons: this.weapons, friends,
+      isWalkable: nav ? (x, z) => isWalkable(nav, x, z) : null,
+      insideMyArea: wp?.area ? (x, z) => wp.inside(x, z) : null,
+      mod,
+    });
+    this.changedTarget.Special = !!r.changed;
+    this._medicResult = r;
+    return r.urgency;
+  }
+
+  /**
+   * `BBPMedicAssist::createPlan`: the healing weapon, the walk to `R +
+   * 0.9 * range` when farther, then the look within 5 deg and the trigger
+   * held while the friend is under 95 % and in reach.
+   */
+  _planSpecial(now) {
+    const r = this._medicResult;
+    if (!r?.targetId || !(r.urgency > 0)) return this._planIdle();
+    const cur = this.currentPlan;
+    if (this.planBehaviour === BEHAVIOUR.Special && cur.length && cur.targetId === r.targetId
+        && !this._healPlanDone(cur, now)) {
+      this.weaponIndex = cur.weaponIndex;
+      return cur;
+    }
+    this.weaponIndex = r.weaponIndex;
+    const plan = [
+      { type: PLAN_ACTION.SoldierPose, pose: 'stand' },
+      { type: PLAN_ACTION.InfantryMoveToObject, targetId: r.targetId, arrive: r.arrive },
+      { type: PLAN_ACTION.MouseTurretAimAt, targetId: r.targetId, afterMove: true },
+      { type: PLAN_ACTION.TriggerContinously, targetId: r.targetId, tolerance: MEDIC.lookTolerance,
+        afterMove: true, timeout: Infinity, shots: 0, heal: true, startedAt: now },
+    ];
+    plan.targetId = r.targetId;
+    plan.weaponIndex = r.weaponIndex;
+    plan.arrive = r.arrive;
+    plan.startedAt = now;
+    return plan;
+  }
+
+  /** The heal plan's end: the friend gone, healed, out of reach, or the pack dry. */
+  _healPlanDone(plan, now) {
+    const world = this.world;
+    const p = world?.players?.get(plan.targetId);
+    const armor = world?.armorOf?.(plan.targetId);
+    if (!p || !armor || armor.destroyed) return true;
+    if (armor.hitPoints / armor.maxHitPoints >= MEDIC.healthBelow) return true;
+    const pos = playerPosition(p);
+    if (!pos) return true;
+    const d = Math.hypot(pos[0] - this.position[0], pos[2] - this.position[2]);
+    if (d > plan.arrive + 2.0) return true;             // walked out of reach: re-plan
+    const w = this.weapons[plan.weaponIndex];
+    if (w && w.ammo === 0) return true;
+    return false;
+  }
+
+  /**
+   * `BBChange::calculateUrgency` (bot-vehicle.js): on foot, the enterable
+   * land vehicles the page lists against staying on foot; mounted, no
+   * voluntary bail (INVENTION: `isBailAllowed` is not read; the page
+   * unseats a bot whose vehicle is destroyed).
+   */
+  _urgencyChange(mod, now) {
+    if (this.vehicle) return 0;
+    const cands = this.vehicleCandidates;
+    if (!cands?.length) { this._changeResult = null; return 0; }
+    const world = this.world;
+    const presence = this._enemyPresence();
+    const split = orderSplit(this.waypoints?.attack ?? 0, this.waypoints?.defence ?? 0);
+    const me = world?.armorOf?.(this.playerId);
+    const myHealth = me?.maxHitPoints > 0 ? me.hitPoints / me.maxHitPoints : 1;
+    let strengths = {};
+    for (const w of this.weapons) {
+      if (w.healing) continue;
+      for (const [k, v] of Object.entries(w.strength ?? {})) strengths[k] = Math.max(strengths[k] ?? 0, v);
+    }
+    const staying = unitUrgency({ health: myHealth, strengths, presence, maxSpeed: TANK.soldierMaxSpeed,
+                                  value: 1, orderSplit: split });
+    const nav = this.navGrid;
+    const list = [];
+    for (const c of cands) {
+      if (c.occupiedBy) continue;
+      if (c.upright === false) continue;
+      const d = Math.hypot(c.pos[0] - this.position[0], c.pos[2] - this.position[2]);
+      if (d > CHANGE.searchRadius) continue;
+      if (nav && c.entry && !isWalkable(nav, c.entry[0], c.entry[1])) continue;
+      const leftAge = this._leftVehicle?.id === c.id ? now - this._leftVehicle.at : Infinity;
+      const u = unitUrgency({ health: c.health ?? 1, strengths: c.strengths ?? {}, presence,
+                              maxSpeed: c.maxSpeed ?? 0, value: c.value ?? 0, orderSplit: split,
+                              spawnAge: c.spawnAge ?? Infinity, leftAge });
+      list.push({ id: c.id, u, dist: d, cand: c });
+    }
+    const ramp = Math.min(1, Math.max(0, (now - this._lastChangeAt) / CHANGE.rampSeconds));
+    const areaFactor = this._insideOrderedArea() ? 1 : CHANGE.outsideAreaFactor;
+    const r = changeUrgency({ staying, candidates: list, mod, ramp, areaFactor });
+    this.changedTarget.Change = (r.best?.id ?? null) !== (this._changeResult?.best?.id ?? null);
+    this._changeResult = r;
+    return r.urgency;
+  }
+
+  /** What is around, by class, for the vehicle scoring (INVENTION: the spotted
+   *  enemies' classes, at least one infantryman). */
+  _enemyPresence() {
+    const presence = { Infantry: 1 };
+    for (const m of this.senses.spottedEnemies()) {
+      const p = this.world?.players?.get(m.id);
+      const type = p?.vehicle ? (p.vehicleStrType ?? 'LightArmour') : 'Infantry';
+      presence[type] = (presence[type] ?? 0) + 1;
+    }
+    return presence;
+  }
+
+  /**
+   * `BBPChange::createPlan`: walk to the unit's door (12.5 m -> 6.25 m by
+   * the finding move, the door's own radius here), then the Use trigger
+   * until the seat is taken (`EnterVehicle` asks the page to seat the bot).
+   */
+  _planChange(now) {
+    const best = this._changeResult?.best?.cand;
+    if (!best) return this._planIdle();
+    const cur = this.currentPlan;
+    if (this.planBehaviour === BEHAVIOUR.Change && cur.length && cur.vehicleId === best.id && !best.occupiedBy) return cur;
+    const entry = best.entry ?? [best.pos[0], best.pos[2]];
+    const radius = Math.max(best.entryRadius ?? 4, 2.0);
+    const plan = [
+      { type: PLAN_ACTION.SoldierPose, pose: 'stand' },
+      { type: PLAN_ACTION.InfantryMoveTo, waypoint: [entry[0], this.position[1], entry[1]], arrive: radius },
+      { type: PLAN_ACTION.EnterVehicle, vehicleId: best.id, seatId: best.seatId ?? null, entry, radius, afterMove: true },
+    ];
+    plan.vehicleId = best.id;
+    plan.startedAt = now;
+    return plan;
+  }
+
+  /** `EnterVehicle`: inside the door's radius, ask the page for the seat. */
+  _execEnterVehicle(action) {
+    if (this.vehicle) return true;
+    const d = Math.hypot(action.entry[0] - this.position[0], action.entry[1] - this.position[2]);
+    if (d > action.radius + 0.5) return false;
+    this.enterRequest = { vehicleId: action.vehicleId, seatId: action.seatId };
+    return false;
   }
 
   /**
@@ -1249,6 +1580,8 @@ export class BotController {
     switch (behaviour) {
       case BEHAVIOUR.Fire: return this._planFire(now);
       case BEHAVIOUR.TakeCover: return this._planTakeCover(now);
+      case BEHAVIOUR.Special: return this._planSpecial(now);
+      case BEHAVIOUR.Change: return this._planChange(now);
       case BEHAVIOUR.MoveTo: return this._planMoveTo(now);
       case BEHAVIOUR.Scout: return this._planScout(now);
       case BEHAVIOUR.Avoid: return this._planAvoid(now);
@@ -1419,6 +1752,8 @@ export class BotController {
         return this._execTrigger(action, now);
       case PLAN_ACTION.InfantryResetControls:
         return this._execInfantryResetControls();
+      case PLAN_ACTION.EnterVehicle:
+        return this._execEnterVehicle(action);
       case PLAN_ACTION.Sense:
         return this._execSense(action);
       case PLAN_ACTION.SoldierPose:
@@ -1483,10 +1818,10 @@ export class BotController {
     const p = action.targetId ? this.world?.players?.get(action.targetId) : null;
     const pos = playerPosition(p) ?? action.targetPos;
     if (!pos) return true;
-    const s = this._player()?.soldier;
+    const s = this._aimReference();
     const want = faceTarget(this._eye(), [pos[0], pos[1] + 1.0, pos[2]]);
     const dy = wrapAngle(want.yaw - (s?.yaw ?? this.yaw));
-    const dp = want.pitch - (s?.pitch ?? this.pitch);
+    const dp = s && s.pitch === null ? 0 : want.pitch - (s?.pitch ?? this.pitch);
     const tol = Math.max(action.tolerance ?? LOOK_TOLERANCE, LOOK_TOLERANCE);
     const aligned = Math.hypot(dy, dp) < tol;
     if (aligned && this._lineClear(this._eye(), [pos[0], pos[1] + 1.0, pos[2]])) {
@@ -1527,6 +1862,7 @@ export class BotController {
   /** `SoldierPose`: a stance, or the TakeCover ladder (stand if the danger is
    *  in the line of fire, else crouch, else prone). */
   _execSoldierPose(action) {
+    if (this.vehicle) return true;
     let pose = action.pose;
     if (pose === 'ladder') {
       const danger = action.danger;
@@ -1573,6 +1909,7 @@ export class BotController {
     this.route = null; this.obstacles = []; this._stalledTicks = 0;
     this.scout = new ScoutState();
     this.cover = new TakeCoverState();
+    this.medic = new MedicState();
     this.isUnderFire = false; this.timeSinceNearbyShot = Infinity;
     this._bestGoalDist = null; this._noProgress = 0;
   }

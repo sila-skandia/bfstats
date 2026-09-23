@@ -63,8 +63,8 @@ class ScoreboardTests(unittest.TestCase):
 
     def test_players_land_on_their_own_teams_list(self) -> None:
         rows = self.results["rows"]
-        self.assertEqual(["Axis One"], [r["name"] for r in rows["1"]])
-        self.assertEqual(["Local", "Ally Two"], [r["name"] for r in rows["2"]])
+        self.assertEqual(["Axis One", "Axis Bot"], [r["name"] for r in rows["1"]])
+        self.assertEqual(["Local", "Ally Two", "Odd Kit"], [r["name"] for r in rows["2"]])
 
     def test_a_player_on_no_team_is_on_no_list(self) -> None:
         names = [r["name"] for side in self.results["rows"].values() for r in side]
@@ -72,8 +72,53 @@ class ScoreboardTests(unittest.TestCase):
 
     def test_rows_sort_by_kills_when_nobody_has_a_score(self) -> None:
         allied = self.results["rows"]["2"]
-        self.assertEqual([2, 1], [r["kills"] for r in allied])
+        self.assertEqual([2, 1, 0], [r["kills"] for r in allied])
         self.assertTrue(allied[0]["local"])
+        # Fewest deaths next: the Axis bot's three put it under Axis One's two.
+        self.assertEqual([2, 3], [r["deaths"] for r in self.results["rows"]["1"]])
+
+    # ---- the kit glyph -----------------------------------------------------
+
+    def test_a_rows_kit_is_the_loadouts_class_label_as_a_key(self) -> None:
+        k = self.results["kitKeys"]
+        self.assertEqual("antitank", k["label"])     # loadouts.json's "Anti-tank"
+        self.assertEqual("antitank", k["key"])       # the spawn screen's own row key
+        self.assertEqual("antitank", k["at"])        # the glyph's stem
+        self.assertEqual("medic", k["medic"])
+        # Anything outside the five classes is unknown, never a guess.
+        self.assertIsNone(k["other"])
+        self.assertIsNone(k["none"])
+        self.assertIsNone(k["empty"])
+
+    def test_rows_carry_kit_bot_and_dead(self) -> None:
+        by_name = {r["name"]: r for side in self.results["rows"].values() for r in side}
+        self.assertEqual(("engineer", False, False),
+                         tuple(by_name["Local"][k] for k in ("kit", "bot", "dead")))
+        self.assertEqual(("antitank", True, False),
+                         tuple(by_name["Axis One"][k] for k in ("kit", "bot", "dead")))
+        self.assertEqual(("scout", True, True),
+                         tuple(by_name["Axis Bot"][k] for k in ("kit", "bot", "dead")))
+        # A room player carries no kit; a mod's off-vocabulary kit is unknown.
+        self.assertIsNone(by_name["Ally Two"]["kit"])
+        self.assertIsNone(by_name["Odd Kit"]["kit"])
+
+    def test_a_known_kit_resolves_to_its_glyph_and_an_unknown_one_to_none(self) -> None:
+        i = self.results["icons"]
+        self.assertEqual("class_engineer_16x16", i["human"])
+        self.assertEqual("class_bot_at_16x16", i["bot"])
+        self.assertIsNone(i["unknown"])
+        self.assertIsNone(i["noIcons"])
+        rows = i["fromRows"]
+        self.assertEqual("class_engineer_16x16", rows["Local"])
+        self.assertEqual("class_bot_at_16x16", rows["Axis One"])
+        self.assertIsNone(rows["Ally Two"])
+        self.assertIsNone(rows["Odd Kit"])
+
+    def test_a_dead_player_gets_the_skull_in_his_own_colour(self) -> None:
+        i = self.results["icons"]
+        self.assertEqual("dead_16x16", i["dead"])
+        self.assertEqual("bot_dead_16x16", i["botDead"])
+        self.assertEqual("bot_dead_16x16", i["fromRows"]["Axis Bot"])
 
     def test_score_and_ping_are_zero_because_nothing_tracks_them(self) -> None:
         for side in self.results["rows"].values():
@@ -92,12 +137,12 @@ class ScoreboardTests(unittest.TestCase):
 
     def test_the_totals_are_sums_of_the_rows_not_the_files_samples(self) -> None:
         v = self.results["varsRoom"]
-        self.assertEqual(1, v["Scoreboard/AxisPlayerTotal"])
-        self.assertEqual(2, v["Scoreboard/AlliedPlayerTotal"])
+        self.assertEqual(2, v["Scoreboard/AxisPlayerTotal"])
+        self.assertEqual(3, v["Scoreboard/AlliedPlayerTotal"])
         self.assertEqual(0, v["Scoreboard/AxisScoreTotal"])
         self.assertEqual(3, v["Scoreboard/AlliedKillsTotal"])
         self.assertEqual(3, v["Scoreboard/AlliedDeathsTotal"])
-        self.assertEqual(2, v["Scoreboard/AxisDeathsTotal"])
+        self.assertEqual(5, v["Scoreboard/AxisDeathsTotal"])
         self.assertEqual(0, v["Scoreboard/AxisRoundWon"])
         # The layout's own table is not written through.
         self.assertEqual(100, self.results["layoutVarsUntouched"])
@@ -169,8 +214,17 @@ class ScoreboardTests(unittest.TestCase):
         self.assertNotIn("id", fields)
         self.assertIn("name", fields)
 
-    def test_unnamed_columns_draw_nothing(self) -> None:
+    def test_unnamed_columns_draw_nothing_and_the_icon_column_is_no_text_cell(self) -> None:
         self.assertEqual(6, len(self.results["geo"]["row0"]))
+        self.assertNotIn("icon", [c["field"] for c in self.results["geo"]["row0"]])
+
+    def test_the_kit_glyph_fills_a_row_high_square_at_the_icon_column(self) -> None:
+        g = self.results["geo"]
+        # Box left + 10 + column 0, the row's own top, the row height a side.
+        self.assertEqual({"x": 5 + 10 + 0, "y": 89, "size": 18}, g["icon0"])
+        self.assertEqual({"x": 15, "y": 89 + 18, "size": 18}, g["icon1"])
+        # Columns that name no icon column give no square at all.
+        self.assertIsNone(g["iconNoColumn"])
 
     def test_a_long_name_is_cut_glyph_by_glyph(self) -> None:
         f = self.results["fit"]
@@ -206,9 +260,11 @@ class ScoreboardTests(unittest.TestCase):
     def test_the_painter_draws_the_file_order_and_skips_what_is_culled(self) -> None:
         p = self.results["paint"]
         kinds = [c[0] for c in p["calls"]]
-        # fill, flag picture, DONE plate (hovered), scroll track, lower strip;
-        # the faded BAN plate is absent.
-        self.assertEqual(["fillRect", "drawImage", "drawImage", "fillRect", "fillRect"], kinds)
+        # fill, flag picture, DONE plate (hovered), the two Axis rows' glyphs
+        # (the list box is next in file order), scroll track, lower strip; the
+        # faded BAN plate is absent.
+        self.assertEqual(["fillRect", "drawImage", "drawImage", "drawImage", "drawImage",
+                          "fillRect", "fillRect"], kinds)
         self.assertEqual("flag_ticket_jp", p["calls"][1][1])
         self.assertEqual("knappext_mo", p["calls"][2][1])
         # A button draws at its texture's own size, not its pointer region.
@@ -217,6 +273,31 @@ class ScoreboardTests(unittest.TestCase):
         self.assertIn("DONE", texts)
         self.assertNotIn("LOCK", texts)
         self.assertNotIn("9999", texts)
+
+    def test_the_row_glyphs_are_drawn_in_the_first_column_at_row_height(self) -> None:
+        p = self.results["paint"]
+        glyphs = [c for c in p["calls"] if c[0] == "drawImage" and "16x16" in c[1]]
+        # Axis One (a live anti-tank bot) in row 0, the dead Axis bot in row 1.
+        self.assertEqual([["drawImage", "class_bot_at_16x16", 15, 89, 18, 18],
+                          ["drawImage", "bot_dead_16x16", 15, 107, 18, 18]], glyphs)
+
+    def test_a_dead_rows_text_is_dimmed_red_and_a_live_ones_is_not(self) -> None:
+        p = self.results["paint"]
+        dead = ",".join(str(v) for v in p["deadColor"])
+        by_name = {t[0]: t for t in p["texts"]}
+        self.assertEqual(dead, by_name["Axis Bot"][3])
+        self.assertEqual("1,1,1", by_name["Axis One"][3])
+        # Every cell of the dead row, not just the name.
+        row_y = by_name["Axis Bot"][2]
+        self.assertTrue(all(t[3] == dead for t in p["texts"] if t[2] == row_y))
+
+    def test_an_unloaded_glyph_or_no_manifest_leaves_the_column_empty(self) -> None:
+        n = self.results["paintNoIcons"]
+        self.assertEqual(0, n["unloaded"]["icons"])
+        # The text still lands either way: two Axis rows, name + four counters
+        # + ID each.
+        self.assertEqual(12, n["unloaded"]["texts"])
+        self.assertEqual(12, n["noManifest"]["texts"])
 
     def test_right_and_centre_alignment_use_the_faces_advance(self) -> None:
         texts = {t[0]: t for t in self.results["paint"]["texts"]}

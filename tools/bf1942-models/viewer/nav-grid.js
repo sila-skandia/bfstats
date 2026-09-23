@@ -593,6 +593,9 @@ class Heap {
  * @param {Array<{x:number,z:number,r:number}>} [opt.obstacles]
  * @param {number} [opt.maxNodes]
  */
+/** How far a buried start or goal is moved to reach open paint (cells). */
+const START_RESOLVE_CELLS = 20;
+
 export function findLocalPath(nav, fromX, fromZ, toX, toZ, {
   radius = 24, obstacles = null, maxNodes = LOCAL_SEARCH_MAX_NODES,
 } = {}) {
@@ -608,13 +611,16 @@ export function findLocalPath(nav, fromX, fromZ, toX, toZ, {
   const bz0 = Math.max(0, Math.min(sgz - rc, egz - 2));
   const bz1 = Math.min(height - 1, Math.max(sgz + rc, egz + 2));
 
+  // A start (or goal) inside the paint is moved to the nearest free cell,
+  // up to 20 m out (`resolveStartPositionAgainstConstraints`, bot-movement
+  // doc §3): a tank map's 6 m brush can bury a whole base compound.
   if (!cellOpen(nav, sgx, sgz, obstacles, fromX, fromZ)) {
-    const s = nearestFree(nav, sgx, sgz, 6, obstacles, fromX, fromZ);
+    const s = nearestFree(nav, sgx, sgz, START_RESOLVE_CELLS, obstacles, fromX, fromZ);
     if (!s) return null;
     [sgx, sgz] = s;
   }
   if (!cellOpen(nav, egx, egz, obstacles, fromX, fromZ)) {
-    const e = nearestFree(nav, egx, egz, 6, obstacles, fromX, fromZ);
+    const e = nearestFree(nav, egx, egz, START_RESOLVE_CELLS, obstacles, fromX, fromZ);
     if (!e) return null;
     [egx, egz] = e;
   }
