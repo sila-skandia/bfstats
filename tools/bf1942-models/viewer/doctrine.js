@@ -136,7 +136,7 @@ export function checkOrder(order) {
 }
 
 /**
- * `dice::bf::ai::WPCloseTo` (read 2026-09-23, ledger AI-75): the engine's
+ * `dice::bf::ai::WPCloseTo` (read 2026-09-24, ledger AI-77): the engine's
  * waypoint on an object, not a point. Unused by the retail server (no
  * caller of either ctor, and its vtable 0x0875d748 is written only by them),
  * so no bot of the engine ever holds one; it is the engine's own law for an
