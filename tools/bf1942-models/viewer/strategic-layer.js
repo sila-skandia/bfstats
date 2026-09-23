@@ -16,6 +16,8 @@
 
 /** The engine's vehicle-type names used by `setOrderPosition`. */
 export const INFANTRY_TYPE = 'Infantery';
+/** The infantry search type's two spellings in the shipped levels. */
+const INFANTRY_ALIASES = ['Infantery', 'Infantry'];
 
 /**
  * An area's geometry as the engine builds it. `aiStrategicArea.create <name>
@@ -196,7 +198,13 @@ export class StrategicLayer {
    * blocked cell leaves p2. `isValid(x, z)` is the unit map's test.
    */
   orderPosition(area, vehicleType = INFANTRY_TYPE, isValid = null) {
-    const p = area.orderPositions[vehicleType];
+    // The key is the search type's own name, which the level's
+    // `AIpathFinding.con` spells `Infantry` on most levels and `Infantery`
+    // on 26 areas' levels (Bocage among them); the engine keys the table by
+    // the type's map, so either spelling names the infantry map.
+    const p = area.orderPositions[vehicleType]
+      ?? (INFANTRY_ALIASES.includes(vehicleType)
+        ? INFANTRY_ALIASES.map(k => area.orderPositions[k]).find(Boolean) : undefined);
     if (p && (!isValid || isValid(p[0], p[1]))) return [p[0], p[1]];
     return [area.centre[0], area.centre[1]];
   }
