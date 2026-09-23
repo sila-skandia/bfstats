@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).resolve().parent / "doctrine_harness.mjs"
-MODULES = ("strategic.js", "strategic-layer.js", "strategic-ai.js", "doctrine.js", "doctrine-squad.js")
+MODULES = ("strategic.js", "strategic-layer.js", "strategic-ai.js", "doctrine.js", "doctrine-squad.js", "doctrine-landing.js")
 
 
 def run_harness() -> dict:
@@ -84,7 +84,8 @@ class DoctrineTests(unittest.TestCase):
         self.assertTrue(c["noUrgency"])
         self.assertTrue(c["areaWithoutInside"])
         self.assertTrue(c["nullIsNoOrder"])
-        self.assertEqual(c["kinds"], ["WPAltitudeMoveTo", "WPBoard", "WPFollow", "WPHold", "WPLeave", "WPMoveTo"])
+        self.assertEqual(c["kinds"], ["WPAltitudeMoveTo", "WPBeachLanding", "WPBoard", "WPFollow", "WPHold", "WPLeave", "WPMoveTo",
+                                      "WPMoveToBeachLanding"])
 
     def test_the_doctrine_spec_names_each_side(self) -> None:
         s = self.r["spec"]
