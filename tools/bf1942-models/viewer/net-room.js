@@ -460,6 +460,42 @@ export function createNetRoom(page) {
 
   if (roomCode) joinRoom();
 
+
+  /** The room's wire, right on the sim core's edge, once a frame after the
+   *  world has stepped: `ticks` input words owed, then the remotes drawn. */
+  room.sendTickInputs = (ticks, input, look, dt) => {
+    // The room's wire, right on the sim core's edge: one input word per tick
+    // the world consumed (the engine's one-buffered-input-per-tick law — the
+    // same input this page just handed the local sim; an unticked frame sends
+    // nothing). A frame longer than 33 ms ran several local ticks against this
+    // word (world.js `#consume`), so it owes the server that many: one word a
+    // frame would leave the authority's catch-up ticks on its zeroed idle word,
+    // which is a held trigger released every frame below 30 fps. Then the
+    // renderer draws the server-confirmed remotes after the local world's
+    // readbacks.
+    if (room.roomJoined && input) {
+      // The ledger's tail holds this frame's ticks (capturePresentationTick
+      // pushed one triple each); each word is recorded against the pose of the
+      // tick it belongs to, so the authority's `ack` lands on the right one.
+      const owed = Math.min(ticks, Math.floor(room.netTickPoses.length / 3));
+      const base = room.netTickPoses.length - owed * 3;
+      for (let i = 0; i < ticks; i++) {
+        const seq = room.roomClient.sendInput(input, look);
+        const at = base + i * 3;
+        if (seq && i < owed) {
+          room.netReconciler?.recordTick(seq, room.netTickPoses[at], room.netTickPoses[at + 1],
+            room.netTickPoses[at + 2]);
+        }
+      }
+    }
+    // The ledger is per frame: whatever this frame's ticks produced has either
+    // been recorded against a seq or belongs to a frame that sent nothing.
+    if (room.netTickPoses.length) room.netTickPoses.length = 0;
+    if (room.roomJoined && room.roomRenderer) {
+      room.roomRenderer.update(dt, room.roomClient, performance.now());
+    }
+  };
+
   Object.assign(room, {
     netSeatRow,
     netSendAction,
