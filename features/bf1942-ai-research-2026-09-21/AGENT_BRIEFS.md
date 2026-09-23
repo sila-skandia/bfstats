@@ -54,6 +54,14 @@ features/vehicle-instance-refactor/README.md for the module layout (map.html
 is wiring; the vehicle code is vehicle-instance.js, the bot referee
 bot-referee.js and bot-units.js, the human local-player.js).
 
+Scope of assets (decided 2026-09-24): the parity target is BF1942 vanilla
+plus XPack1 and XPack2. EoD (Eve of Destruction, 238 levels) is parked
+until the vanilla issues are fixed: do not extract, re-bake or publish EoD
+for a bot-AI change, and do not count it in a level pass. An exporter
+change that only adds fields to scene.json is published by rewriting those
+files (the patch path, as patch_ai_extras.py does), not by a full level
+re-bake; measure which files the change reaches before choosing the tool.
+
 Report at the end with what is verified live, what is still open, and the
 commit hashes.
 
