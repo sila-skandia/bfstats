@@ -338,14 +338,20 @@ soldier 260 m down the runway (PARITY_STATUS session 2).
 ## Boat
 
 `boatControl` (`BoatControl::towardsDirection` 0x0860df70, AI-49 / AI-73 /
-AI-85), routed on the water map when there is one: `actionStatusDecision`
+AI-85), routed on the water map when there is one, run by `steerBoat`
+(bot-plans.js; bot.js sends a driven ship there): `actionStatusDecision`
 (the tank's, on the water map at its base level 2) then `speedControl`
 0x0860cf40. When `drive == 0`, or in state 0 with the angle past 30 deg, it
-turns (full rudder toward the point, flipped astern; above 3 m/s the
-throttle against the motion, at or below it the motion's sign). Otherwise it
-is underway on the decision's angle (negated when the motion's sign differs
+turns: full rudder toward the point, the motion's sign times the side's;
+above 3 m/s the throttle against the motion; at or below it the throttle it
+held last tick if that was full (+-1), else the motion's sign (AI-112: the
+engine's input channel persists, so after a brake the full astern is kept
+and the hull backs and fills round). With no drive and the point within
+5 deg of the bow it brakes to rest instead, rudder zeroed. Otherwise it is
+underway on the decision's angle (negated when the motion's sign differs
 from the drive), wanting `drive x maxSpeed x` the open-water factor
-(`boatSpeedControl`, KNOBS).
+(`boatSpeedControl`, KNOBS). A helm that moves the hull switches on its AI
+physics (`touchingLand` is then its terrain contact).
 
 **Arrival** (`EntryBoatMoveTo::execute` 0x08613d60 inside the move's radius,
 `BoatControl::resetControls` 0x0860dff0, AI-87): the rudder zeroed; `v` the
@@ -356,3 +362,9 @@ the radius on and needs about 40 m to stop in the viewer.
 
 Without a water map a ship holds a straight line (`execBoatMoveTo`, the
 older helm: full rudder past 30 deg, throttle 1 / 0.8 / 0.5, UNSOURCED).
+
+**The ramp** (AI-111): on a beach order's beach leg the plan holds
+`PIPitch` at 1.0 (`BAPATriggerContinously`, `EntryTriggerContinously::
+execute` 0x08625ff0), written into the word the world consumes with `pad`
+(raw, past the stick spring); the Daihatsu's `DaihatsuLanding1/2` and the
+LCVP's `Lcvp_Ramp` bundles read it.
