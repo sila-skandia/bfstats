@@ -425,7 +425,7 @@ function shermanWithRenamedGunnerNode() {
 {
   // Fake drivetrain classes -- VehicleOccupancy only ever calls
   // `new Cls(root, parent, options)` and expects `.control` back; it never
-  // reaches into flight.js/ground.js itself (that seam is the whole point of
+  // reaches into flight.js/wheeled-vehicle.js itself (that seam is the whole point of
   // dependency-injecting `classes`, per seats.js's own doc).
   class FakeDrive {
     constructor(root, parent, options) { this.root = root; this.parent = parent; this.options = options; this.control = root.name; }

@@ -5,7 +5,7 @@
 // both are probed, pushed and damaged by the same code
 // (`features/bf1942-engine-reference/subsystems/collision-response.md`). The
 // viewer grew the other way round — one elaborate drive model for the vehicle
-// under the player (`ground.js`, `flight.js`) and frozen scenery for everything
+// under the player (`wheeled-vehicle.js`, `flight.js`) and frozen scenery for everything
 // else — so this module is the seam between the two:
 //
 //   - `describeVehicleParts` reads a placed vehicle's node tree and the
@@ -259,7 +259,7 @@ export function describeVehicleParts(root, collisionMeshes) {
 // --- the vehicle under the player, as a body -----------------------------------
 
 /**
- * A driven `Vehicle` (`ground.js`, `flight.js`) seen through the body
+ * A driven `Vehicle` (`wheeled-vehicle.js`, `flight.js`) seen through the body
  * interface.
  *
  * The drive model keeps its own state and integrator; this reads it before a
@@ -301,7 +301,7 @@ export class DrivenBody {
 
   /** Read the drive model's state. Call before every world tick. */
   sync() {
-    // A drive model that reads its hull contacts (`ground.js`) sees one tick's
+    // A drive model that reads its hull contacts (`wheeled-vehicle.js`) sees one tick's
     // worth at a time: the list is emptied here, at the top of the tick, and
     // refilled by `noteContact` when the tick resolves. A tick that finds
     // nothing therefore clears it, which is what "no contact this tick clears
@@ -352,7 +352,7 @@ export class DrivenBody {
    *
    * The engine runs `addFriction` on the same averages `impulseOn` left
    * (spec 8) and there is no second friction solver; this viewer has one,
-   * inside `ground.js`, so the honest seam is to hand the averages over rather
+   * inside `wheeled-vehicle.js`, so the honest seam is to hand the averages over rather
    * than to answer them here. What matters about a hull contact is almost
    * never grip: the Coulomb budget is `mu * N.y * |g|`, so a side-on ram
    * brings **nothing** and — being a sample in a running mean, not a sum —

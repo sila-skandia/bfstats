@@ -182,7 +182,7 @@ export function calculateLift(velocity, surfaceUp, coeff) {
  *    collision-response.md §4.2): `Ix = (DY²+DZ²)/3`, `Iy = (DZ²+DX²)/3`,
  *    `Iz = (DX²+DY²)/3` off the object's geometry bounding box, **four times** a
  *    solid box's inertia per unit mass, and the only inertia the engine has.
- *    `rigid-body.js`'s `boxInertia` and `ground.js`'s vehicle tables already use
+ *    `rigid-body.js`'s `boxInertia` and `ground-specs.js`'s vehicle tables already use
  *    it; a ship uses it because a 115 m hull turning on a quarter of its real
  *    inertia pirouettes.
  *

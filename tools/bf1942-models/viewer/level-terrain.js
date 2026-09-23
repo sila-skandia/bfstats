@@ -63,7 +63,7 @@ export function createLevelTerrain(page) {
 
   /**
    * `MaterialManager.materialFriction` of the ground at a world (x, z) — what
-   * `ground.js` spends its Coulomb budget out of (PHY-2).
+   * `ground-contact.js` spends its Coulomb budget out of (PHY-2).
    *
    * Both halves already existed and were never joined up: the heightfield
    * carries the level's own per-sample material id out of `terrain/materials.png`
@@ -125,7 +125,7 @@ export function createLevelTerrain(page) {
 
   /**
    * The contact normal of a drivable deck under (x, z), when a deck is what the
-   * wheel there is standing on: `ground.js` takes the deck triangle's own normal
+   * wheel there is standing on: `ground-contact.js` takes the deck triangle's own normal
    * rather than a finite difference of the height, so a tank pitches up the repair
    * bay's incline and levels on its pad. False elsewhere, and the vehicle then
    * uses the heightfield gradient it has always used.
