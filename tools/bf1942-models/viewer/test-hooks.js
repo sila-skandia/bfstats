@@ -17,41 +17,43 @@ import { findPath, gridAt } from './nav-grid.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `CHASE_OPTION`, `KBLOCK`, `KBLOCK_KEYS`, `KITS`, `LOCAL_PLAYER`,
- * `MINIMAP_TEAM_TINT`, `activeAreaAudios`, `aimHeld`, `altFireDemolitions`,
- * `ambientAudio`, `announceCapture`, `applyDamageToPlayer`,
- * `applyVehicleHit`, `audioLimiter`, `audioListener`, `bfmap`, `bodyScene`,
- * `bodyWorld`, `botBodies`, `botUnits`, `camera`, `cancelDeploy`,
- * `canopySpan`, `captureVoiceDirs`, `captureVoiceKind`, `chaseRig`,
+ * `activeAreaAudios`, `aimHeld`, `altFireDemolitions`, `ambientAudio`,
+ * `announceCapture`, `applyDamageToPlayer`, `applyVehicleHit`,
+ * `audioLimiter`, `audioListener`, `bfmap`, `bodyScene`, `bodyWorld`,
+ * `botBodies`, `botUnits`, `camera`, `cancelDeploy`, `canopySpan`,
+ * `captureVoiceDirs`, `captureVoiceKind`, `CHASE_OPTION`, `chaseRig`,
  * `clickQueued`, `collectEntryPoints`, `collider`, `combatArea`,
  * `combatFrame`, `crashLog`, `crosshairAim`, `crosshairEl`, `currentDir`,
- * `cycleKitWeapon`, `damageVisuals`, `deathCamTimer`, `debugDeployHeld`,
- * `deployActive`, `deployKit`, `deployRejoin`, `deploySpawn`, `deployTeamId`,
- * `deployUnchosen`, `detonatorTemplate`, `disposeHandWeapon`, `effectAudio`,
- * `effectSoundsLoad`, `effects`, `enterVehicle`, `entryPoints`, `exitSeat`,
- * `exitVehicle`, `explosivesTemplate`, `extras`, `fireStateFor`, `flags`,
- * `floatHosts`, `foot3pRel`, `footBody`, `footBodyForceHidden`, `footCanopy`,
+ * `cycleKitWeapon`, `damageVisuals`, `debugDeployHeld`, `deployActive`,
+ * `deployKit`, `deployRejoin`, `deploySpawn`, `deployTeamId`,
+ * `deployUnchosen`, `detonatorTemplate`, `discardSoldier`,
+ * `disposeHandWeapon`, `effectAudio`, `effects`, `effectSoundsLoad`,
+ * `enterVehicle`, `entryPoints`, `exitSeat`, `exitVehicle`,
+ * `explosivesTemplate`, `extras`, `fireStateFor`, `flags`, `floatHosts`,
+ * `foot3pRel`, `footBody`, `footBodyForceHidden`, `footCanopy`,
  * `footView3p`, `frame`, `friendlyMapUnits`, `friendlyVehicleNodes`,
- * `frozenCount`, `gameHud`, `groundHeight`, `guns`, `handSlot`, `handWeapon`,
- * `hud`, `isZoomed`, `itemsLocked`, `kbLockState`, `kbSession`, `keys`,
- * `kitLoadout`, `kitWeaponSlots`, `lastCaptureVoice`, `loadouts`,
- * `loadoutsLoad`, `localMapTeam`, `localPlayer`, `look`, `lookDelta`,
- * `mannedActive`, `mapGate`, `modeNote`, `mouseInput`, `nearEntry`,
- * `occupiedVehicleDamage`, `optOnFoot`, `packAmmo`, `packsLeft`,
- * `paintDeployChrome`, `paintScoreboard`, `parachuteLog`, `params`,
- * `playCaptureVoice`, `referee`, `renderer`, `roomClient`, `roomJoined`,
- * `scene`, `scoreFromSpawn`, `scoreLayout`, `scoreboardOpen`,
- * `scoreboardPlayers`, `seatAltFire`, `seatFire`, `seatIkChains`,
- * `seatSoldier`, `selectDeployFlag`, `selectKitWeapon`, `setDeployTeam`,
- * `setFly`, `setScoreboard`, `shipFlagInactive`, `showDamageTier`,
- * `showView`, `snapPresentation`, `soldier`, `soldier3pOnFoot`,
- * `soldierArmor`, `soldierDead`, `soldierExposureFor`, `soldierTemplateFor`,
- * `spawnFlagSelect`, `spawnersRoot`, `splashPos`, `splashTargets`, `stage`,
- * `stepVehicleBodies`, `supplyField`, `supplyTarget`, `surfaceFriction`,
- * `switchSeat`, `thrownPackGroup`, `triggerHeld`, `vehicleAudio`,
- * `vehicleDamage`, `vehicleInput`, `vehicleSpawnActive`, `viewmodelRigFor`,
- * `vmCamera`, `vmRoot`, `vmScene`, `warmups`, `weaponBarUntil`,
- * `weaponTemplateFor`, `world`, `worldFire`, `wreckVehicle`.
+ * `frozenCount`, `gameHud`, `groundHeight`, `guns`, `handSlot`,
+ * `handWeapon`, `hud`, `isZoomed`, `itemsLocked`, `KBLOCK`, `KBLOCK_KEYS`,
+ * `kbLockState`, `kbSession`, `keys`, `kitLoadout`, `KITS`,
+ * `kitWeaponSlots`, `lastCaptureVoice`, `loadouts`, `loadoutsLoad`,
+ * `LOCAL_PLAYER`, `localMapTeam`, `localPlayer`, `look`, `lookDelta`,
+ * `mannedActive`, `mapGate`, `MINIMAP_TEAM_TINT`, `modeNote`, `mouseInput`,
+ * `nearEntry`, `occupiedVehicleDamage`, `optOnFoot`, `packAmmo`,
+ * `packsLeft`, `paintDeployChrome`, `paintScoreboard`, `parachuteLog`,
+ * `params`, `playCaptureVoice`, `referee`, `renderer`, `roomClient`,
+ * `roomJoined`, `scene`, `scoreboardOpen`, `scoreboardPlayers`,
+ * `scoreFromSpawn`, `scoreLayout`, `seatAltFire`, `seatFire`,
+ * `seatIkChains`, `seatSoldier`, `selectDeployFlag`, `selectKitWeapon`,
+ * `setDeployTeam`, `setFly`, `setScoreboard`, `shipFlagInactive`,
+ * `showDamageTier`, `showView`, `snapPresentation`, `soldier`,
+ * `soldier3pOnFoot`, `soldierArmor`, `soldierDead`, `soldierExposureFor`,
+ * `soldierTemplateFor`, `spawnersRoot`, `spawnFlagSelect`, `splashPos`,
+ * `splashTargets`, `stage`, `stepVehicleBodies`, `supplyField`,
+ * `supplyTarget`, `surfaceFriction`, `switchSeat`, `thrownPackGroup`,
+ * `triggerHeld`, `vehicleAudio`, `vehicleDamage`, `vehicleInput`,
+ * `vehicleSpawnActive`, `viewmodelRigFor`, `vmCamera`, `vmRoot`, `vmScene`,
+ * `warmups`, `weaponBarUntil`, `weaponTemplateFor`, `world`, `worldFire`,
+ * `wreckVehicle`.
  */
 export function installTestHooks(page) {
   const testHooks = {};
@@ -459,10 +461,7 @@ export function installTestHooks(page) {
         if (!page.deployActive() || (team !== 1 && team !== 2)) return false;
         // Mirror the tab click: switching teams kills the current soldier.
         if (page.deployRejoin && team !== page.deployTeamId && page.soldier) {
-          page.soldier = null;
-          page.soldierArmor = null;
-          page.soldierDead = false;
-          page.deathCamTimer = 0;
+          page.discardSoldier();
           page.deployRejoin = false;
           page.disposeHandWeapon();
         }

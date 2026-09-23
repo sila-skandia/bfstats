@@ -7,7 +7,6 @@
 import * as THREE from 'three';
 import { idleFirePose, idleFireState } from './idle-vehicle.js';
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
-import { Armor } from './armor.js';
 import { deathTier } from './vehicle-damage.js';
 import { spawnerWindow } from './game-modes.js';
 
@@ -15,15 +14,13 @@ import { spawnerWindow } from './game-modes.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `bindDynamicShading`, `bust`, `camera`, `collider`, `DEATH_CAM`,
- * `deathCamShot`, `deathCamTarget`, `deathCamTimer`, `disposeEngineAudio`,
- * `effects`, `exitPoseManned`, `extras`, `fireStates`, `gameHud`,
- * `hitIndicatorDir`, `hitIndicatorTimer`, `hud`, `isCollision`,
+ * `bindDynamicShading`, `bust`, `camera`, `collider`, `dieInWreck`,
+ * `disposeEngineAudio`, `effects`, `exitPoseManned`, `extras`, `fireStates`,
+ * `gameHud`, `hitIndicatorDir`, `hitIndicatorTimer`, `hud`, `isCollision`,
  * `lastSoldierHp`, `leaveSeat`, `loader`, `MODELS_BASE`, `occupancy`,
- * `optOnFoot`, `optPilot`, `placeCamera`, `prone`, `resetMobileControls`,
- * `respawnVehicleBody`, `retireVehicleBody`, `soldier`,
- * `SOLDIER_MAX_HP_FALLBACK`, `soldierArmor`, `soldierDead`, `updateHud`,
- * `vehicleDamage`, `vehicles`, `world`.
+ * `optOnFoot`, `optPilot`, `placeCamera`, `resetMobileControls`,
+ * `respawnVehicleBody`, `retireVehicleBody`, `soldier`, `soldierDead`,
+ * `standUp`, `updateHud`, `vehicleDamage`, `vehicles`, `world`.
  */
 export function createVehicleWrecks(page) {
   const wrecks = {};
@@ -321,7 +318,7 @@ export function createVehicleWrecks(page) {
     }
     page.soldier.collider = page.collider;
     page.soldier.spawn(exit.x, exit.y, exit.z, hullYaw);
-    page.prone = false;
+    page.standUp();
     page.camera.fov = FOOT_FOV;
     page.camera.near = 0.2;
     page.camera.updateProjectionMatrix();
@@ -329,17 +326,8 @@ export function createVehicleWrecks(page) {
     // cam is an overhead shot of the wreck with no first-person weapon in it,
     // and the near pass is gated on `soldierDead` besides. `spawnAtFlag`
     // raises it again with the fresh body.
-    // A body that climbed in at full health still has it; take all of it, so
-    // the `soldierArmor.destroyed` latch in `onFoot()` is not what fires the
-    // flow a second time (it cannot: `soldierDead` is set below first).
-    if (!page.soldierArmor) page.soldierArmor = new Armor(page.SOLDIER_MAX_HP_FALLBACK);
-    page.soldierArmor.applyDamage(page.soldierArmor.maxHitPoints);
-    page.soldierDead = true;
-    page.deathCamShot = page.DEATH_CAM.vehicle;
-    page.deathCamTimer = page.deathCamShot.beat;
     // The wreck, not the corpse, is what this shot is of.
-    page.deathCamTarget = { x: wreckDeathPos.x, y: wreckDeathPos.y, z: wreckDeathPos.z,
-                       yaw: hullYaw };
+    page.dieInWreck({ x: wreckDeathPos.x, y: wreckDeathPos.y, z: wreckDeathPos.z, yaw: hullYaw });
     page.hud.textContent = 'killed in action';
   }
 

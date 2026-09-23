@@ -15,14 +15,14 @@ import { SoldierView, FOOT_VIEW_CYCLE, PARACHUTE_VIEW_CYCLE, PARACHUTE_VIEW_RADI
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `applyLook`, `camera`, `collectSupplyDepots`, `collider`, `currentRoot`,
- * `DEATH_CAM`, `deathCamAt`, `deathCamPos`, `deathCamShot`,
- * `deathCamTarget`, `deathCamTimer`, `DEG_TO_RAD`, `deployActive`,
- * `deployTeamId`, `footBody`, `footCanopy`, `footEyeCur`, `footEyePrev`,
+ * `deathCamAt`, `deathCamPos`, `deathCamShot`, `deathCamTarget`,
+ * `deathCamTimer`, `DEG_TO_RAD`, `deployActive`, `deployTeamId`,
+ * `dieOnFoot`, `footBody`, `footCanopy`, `footEyeCur`, `footEyePrev`,
  * `footFire`, `footLookPending`, `footPending`, `footView`,
  * `frameInputLast`, `hudBridge`, `look`, `openDeploy`, `params`,
- * `presentAlpha`, `scanForEntry`, `serverSettings`, `soldier`,
- * `soldierArmor`, `soldierDead`, `supplyDepotsRoot`, `supplyField`,
- * `supplyTarget`, `world`.
+ * `presentAlpha`, `runDeathCam`, `scanForEntry`, `serverSettings`,
+ * `soldier`, `soldierArmor`, `soldierDead`, `supplyDepotsRoot`,
+ * `supplyField`, `supplyTarget`, `world`.
  */
 export function createSoldierView(page) {
   const soldierView = {};
@@ -66,16 +66,13 @@ export function createSoldierView(page) {
     // opens the spawn screen on local death). Latches so a follow-up damage tick
     // cannot re-fire the flow, and is reset by `spawnAtFlag` on the next spawn.
     if (page.soldierArmor && !page.soldierDead && page.soldierArmor.destroyed) {
-      page.soldierDead = true;
-      page.deathCamShot = page.DEATH_CAM.foot;
-      page.deathCamTarget = null;
-      page.deathCamTimer = page.deathCamShot.beat;
+      page.dieOnFoot();
       // The corpse cam itself is applied downstream, where the eye pose is
       // normally written (`soldierDead` branch) — this block only latches the
       // state and runs the deploy timer.
     }
     if (page.soldierDead) {
-      page.deathCamTimer -= dt;
+      page.runDeathCam(dt);
       if (page.deathCamTimer <= 0 && !page.deployActive()) {
         // The client opens the deploy screen the instant the local player dies;
         // the beat above is the brief float, then the spawn screen takes over.

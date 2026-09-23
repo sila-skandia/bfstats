@@ -21,12 +21,12 @@ import { GameConsole } from './console.js';
  * `groundHeight`, `handWeapon`, `hud`, `HUD_FOOT`, `HUD_FOOT_KBLOCK`,
  * `HUD_FOOT_PLAIN`, `isTouchDevice`, `itemsLocked`, `lastSeatToggle`,
  * `LOCAL_PLAYER`, `lookDelta`, `mannedActive`, `mouseInput`, `nearEntry`,
- * `occupancy`, `openDeploy`, `optOnFoot`, `optPilot`, `params`, `prone`,
- * `renderer`, `scoreboardOpen`, `scoreFromSpawn`, `SEAT_TOGGLE_COOLDOWN_MS`,
+ * `occupancy`, `openDeploy`, `optOnFoot`, `optPilot`, `params`, `renderer`,
+ * `scoreboardOpen`, `scoreFromSpawn`, `SEAT_TOGGLE_COOLDOWN_MS`,
  * `selectDeployFlag`, `selectKitWeapon`, `setConsoleOpen`, `setEscMenu`,
  * `setPilot`, `setScoreboard`, `soldier`, `soldierDead`, `spawnAtFlag`,
- * `stage`, `startReload`, `switchSeat`, `toggleFullMap`, `triggerHeld`,
- * `uiFocused`, `updateHud`, `view`, `world`.
+ * `stage`, `startReload`, `switchSeat`, `toggleFullMap`, `toggleProne`,
+ * `triggerHeld`, `uiFocused`, `updateHud`, `view`, `world`.
  */
 export function createPageInput(page) {
   const pageInput = {};
@@ -631,7 +631,7 @@ export function createPageInput(page) {
     // engine's set of one by the server's soldier switch (server-settings.js).
     if (e.code === 'KeyC' && !e.repeat && !e.ctrlKey && !e.metaKey) page.cycleView();
     // Z is `c_PILie`, a non-repetitive trigger, so it toggles rather than holds.
-    if (e.code === 'KeyZ' && !e.repeat && page.optOnFoot.checked && page.soldier) page.prone = !page.prone;
+    if (e.code === 'KeyZ' && !e.repeat && page.optOnFoot.checked && page.soldier) page.toggleProne();
     if (pageInput.captured && (page.FLY_KEYS.has(e.code)
         || (page.optOnFoot.checked && page.FOOT_KEYS.has(e.code))
         || (page.optPilot.checked && page.AIR_KEYS.has(e.code)))) e.preventDefault();

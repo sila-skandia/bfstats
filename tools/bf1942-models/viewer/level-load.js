@@ -26,18 +26,18 @@ import { bindTreeFoliage } from './tree-foliage.js';
  * `activeMod`, `botRoot`, `bust`, `camera`, `capture`,
  * `capturePresentationTick`, `combatArea`, `combatFrame`, `cubeLoader`,
  * `damageVisuals`, `DEFAULT_DRAW`, `disposeSounds`, `effects`,
- * `entryPoints`, `fireStates`, `floatPlacedVehicles`, `fullmapMeta`,
- * `fullmapName`, `guns`, `gunSubject`, `hemi`, `loadCollisionMeshes`,
- * `loadEffectLibrary`, `loader`, `loadMapArt`, `logToConsole`, `MAPS_BASE`,
- * `nearEntry`, `onCrashDamage`, `openDeploy`, `optEntire`, `optGameFog`,
- * `optOnFoot`, `optPilot`, `optVehicles`, `optWire`, `overlay`, `params`,
- * `placeCamera`, `rebaseDeckSpawns`, `rebuildVehicleInterp`,
- * `registerDamageables`, `renderer`, `scene`, `seatWorldPos`, `setOnFoot`,
- * `setPilot`, `settlePlacedVehicles`, `setupSounds`, `setupVehicleBodies`,
- * `soldier`, `spawnBotsForLevel`, `spawnFlagSelect`, `sun`,
- * `syncDeployReady`, `templateNameOf`, `texLoader`, `texManager`,
- * `toggleFullMap`, `unitRectOf`, `vehicleDamage`, `vehicles`, `view`,
- * `viewFor`, `vmScene`, `world`.
+ * `entryPoints`, `fireStates`, `floatPlacedVehicles`, `forgetSoldier`,
+ * `fullmapMeta`, `fullmapName`, `guns`, `gunSubject`, `hemi`,
+ * `loadCollisionMeshes`, `loadEffectLibrary`, `loader`, `loadMapArt`,
+ * `logToConsole`, `MAPS_BASE`, `nearEntry`, `onCrashDamage`, `openDeploy`,
+ * `optEntire`, `optGameFog`, `optOnFoot`, `optPilot`, `optVehicles`,
+ * `optWire`, `overlay`, `params`, `placeCamera`, `rebaseDeckSpawns`,
+ * `rebuildVehicleInterp`, `registerDamageables`, `renderer`, `scene`,
+ * `seatWorldPos`, `setOnFoot`, `setPilot`, `settlePlacedVehicles`,
+ * `setupSounds`, `setupVehicleBodies`, `spawnBotsForLevel`,
+ * `spawnFlagSelect`, `sun`, `syncDeployReady`, `templateNameOf`,
+ * `texLoader`, `texManager`, `toggleFullMap`, `unitRectOf`, `vehicleDamage`,
+ * `vehicles`, `view`, `viewFor`, `vmScene`, `world`.
  */
 export function createLevel(page) {
   const level = {};
@@ -2164,7 +2164,7 @@ export function createLevel(page) {
     page.spawnBotsForLevel();
     // A new level means a new scene graph (the hulls' instances went with the
     // old one, above), and so are every cached door.
-    page.soldier = null;
+    page.forgetSoldier();
     // A new level starts the flag choice over; without this the rebuilt select
     // would keep the old map's index through `buildSpawnFlags`.
     page.spawnFlagSelect.selectedIndex = -1;

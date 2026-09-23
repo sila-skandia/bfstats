@@ -17,6 +17,7 @@ import { MouseInput, profileFor } from './mouse-input.js';
 import { CHASE_BEHIND, CHASE_AHEAD, boundingRadius, chaseTarget, chaseStep, chaseEye, chaseLawFor } from './chase-camera.js';
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
 import { calculateHitOctant } from './hud.js';
+import { Armor } from './armor.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -1478,6 +1479,52 @@ export function createLocalPlayer(page) {
   localPlayer.deathCamTarget = null;
   /** Reused so the death cam costs no allocation per frame. */
   const deathCamAt = { x: 0, y: 0, z: 0, yaw: 0 };
+
+  // The body's life and the death cam are written here and nowhere else;
+  // the modules that see a death or a spawn say which one happened.
+
+  /** The body on foot has died: latch it and float the camera over it. */
+  localPlayer.dieOnFoot = () => {
+    localPlayer.soldierDead = true;
+    localPlayer.deathCamShot = DEATH_CAM.foot;
+    localPlayer.deathCamTarget = null;
+    localPlayer.deathCamTimer = localPlayer.deathCamShot.beat;
+  };
+  /** Killed inside a hull: all of the body's HP goes (a body that climbed in
+   *  at full health still has it, and the `soldierArmor.destroyed` latch must
+   *  not fire the flow a second time), and the shot is of `target`, the
+   *  wreck's `{ x, y, z, yaw }`. */
+  localPlayer.dieInWreck = target => {
+    if (!localPlayer.soldierArmor) localPlayer.soldierArmor = new Armor(SOLDIER_MAX_HP_FALLBACK);
+    localPlayer.soldierArmor.applyDamage(localPlayer.soldierArmor.maxHitPoints);
+    localPlayer.soldierDead = true;
+    localPlayer.deathCamShot = DEATH_CAM.vehicle;
+    localPlayer.deathCamTimer = localPlayer.deathCamShot.beat;
+    localPlayer.deathCamTarget = target;
+  };
+  /** A fresh body on its feet with `armor`; the death cam lets go of it. */
+  localPlayer.revive = armor => {
+    localPlayer.prone = false;
+    localPlayer.soldierArmor = armor;
+    localPlayer.soldierDead = false;
+    localPlayer.deathCamTimer = 0;
+    localPlayer.deathCamShot = DEATH_CAM.foot;
+    localPlayer.deathCamTarget = null;
+  };
+  /** The soldier is gone without a death (a team switch on the deploy screen). */
+  localPlayer.discardSoldier = () => {
+    localPlayer.soldier = null;
+    localPlayer.soldierArmor = null;
+    localPlayer.soldierDead = false;
+    localPlayer.deathCamTimer = 0;
+  };
+  /** The level went, and the scene graph the soldier stood in with it. */
+  localPlayer.forgetSoldier = () => { localPlayer.soldier = null; };
+  /** Run the death cam's beat down; returns what is left. */
+  localPlayer.runDeathCam = dt => (localPlayer.deathCamTimer -= dt);
+  /** `c_PILie` is a toggle. */
+  localPlayer.toggleProne = () => { localPlayer.prone = !localPlayer.prone; };
+  localPlayer.standUp = () => { localPlayer.prone = false; };
 
   function setOnFoot(on) {
     if (on && page.optPilot.checked) {      // the two modes are exclusive

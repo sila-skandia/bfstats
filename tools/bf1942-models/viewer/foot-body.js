@@ -13,9 +13,9 @@ import { BODY_CLIPS, BODY_ONCE, BODY_HIDES_WEAPON, bodyClipFamily, canopyClip } 
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `MODELS_BASE`, `bindDynamicShading`, `bust`, `footFeetCur`, `footFeetPrev`,
- * `footView`, `footView3p`, `optOnFoot`, `optPilot`, `presentAlpha`, `scene`,
- * `soldier`, `soldierDead`.
+ * `bindDynamicShading`, `bust`, `footFeetCur`, `footFeetPrev`, `footView`,
+ * `footView3p`, `MODELS_BASE`, `optOnFoot`, `optPilot`, `presentAlpha`,
+ * `scene`, `soldier`, `soldierDead`.
  */
 export function createFootBody(page) {
   const footBodies = {};
