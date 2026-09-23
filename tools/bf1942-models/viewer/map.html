@@ -174,8 +174,6 @@ import { EffectAudio } from './effect-audio.js';
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
 import { createReplayController, recordingLevel } from './replay.js';
 import { Armor } from './armor.js';
-import { VehicleDamageSet } from './vehicle-damage.js';
-import { CombatArea } from './combat-area.js';
 import { loadHudPaths } from './hud-pack.js';
 import { VehicleRegistry } from './vehicle-instance.js';
 import { createBotReferee } from './bot-referee.js';
@@ -348,20 +346,13 @@ const hudPaths = await loadHudPaths(activeMod.id, { bust });
 // body is unpositioned, so on the body it would resolve against the viewport
 // and paint over the shared nav bar. #stage is the 3D view's positioned box.
 const overlay = createLoadOverlay(stage, { assetBase: MAPS_BASE });
-// `game.setActiveCombatArea` — the warning, its countdown and the damage
-// after it. All the engine reading is in `combat-area.js`; this file only
-// steps it with the body's position and hands the result to the HUD and to
-// the soldier's Armor. Rebuilt per level.
-//
-// It has TWO halves, and the second one is why it is no longer inert on the
-// twelve levels that declare no rectangle: `GameServer::gameStatusPlaying`
-// also counts you as outside when the terrain material under you equals
-// `materialToGiveDamage` (CA-5, default 7, "Reserved (Outside map)"). Eleven
-// of the 23 vanilla levels paint that id, three of them without declaring any
-// rectangle at all. `heightfield.material(x, z)` is the channel — the same one
-// `surfaceFriction` already reads per wheel.
-let combatArea = new CombatArea(null);
+// The local player's combat-area frame (`level.combatArea`), read back from
+// the last world step in frame() below, and the world that stepped it. A new
+// level's world has stepped nothing yet, so a frame the old one left reads as
+// none until the first step of the new.
 let combatFrame = null;
+let combatFrameWorld = null;
+const combatFrameNow = () => (combatFrameWorld === level.world ? combatFrame : null);
 
 const params = new URLSearchParams(location.search);
 
@@ -439,29 +430,23 @@ function uiFocused() {
   return t && (t.tagName === 'SELECT' || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA');
 }
 const level = createLevel({
-  get activeMod() { return activeMod; }, get botRoot() { return botBodies.botRoot; },
-  set botRoot(v) { botBodies.botRoot = v; }, get bust() { return bust; },
+  get activeMod() { return activeMod; }, get bust() { return bust; },
   get camera() { return camera; }, get capture() { return pageInput.capture; },
   get capturePresentationTick() { return localPlayer.capturePresentationTick; },
-  get combatArea() { return combatArea; }, set combatArea(v) { combatArea = v; },
-  get combatFrame() { return combatFrame; }, set combatFrame(v) { combatFrame = v; },
   get cubeLoader() { return cubeLoader; }, get damageVisuals() { return wrecks.damageVisuals; },
   get DEFAULT_DRAW() { return DEFAULT_DRAW; },
   get disposeSounds() { return pageAudio.disposeSounds; }, get effects() { return effects; },
-  get entryPoints() { return localPlayer.entryPoints; },
-  set entryPoints(v) { localPlayer.entryPoints = v; }, get fireStates() { return fireStates; },
+  get ensureBotRoot() { return botBodies.ensureRoot; }, get fireStates() { return fireStates; },
   get floatPlacedVehicles() { return hullBodies.floatPlacedVehicles; },
+  get forgetEntryPoints() { return localPlayer.forgetEntryPoints; },
+  get forgetSeatViews() { return localPlayer.forgetSeatViews; },
   get forgetSoldier() { return localPlayer.forgetSoldier; },
   get fullmapMeta() { return mapSurfaces.fullmapMeta; },
   get fullmapName() { return mapSurfaces.fullmapName; }, get guns() { return guns; },
-  get gunSubject() { return localPlayer.gunSubject; },
-  set gunSubject(v) { localPlayer.gunSubject = v; }, get hemi() { return hemi; },
-  get loadCollisionMeshes() { return hullBodies.loadCollisionMeshes; },
+  get hemi() { return hemi; }, get loadCollisionMeshes() { return hullBodies.loadCollisionMeshes; },
   get loadEffectLibrary() { return loadEffectLibrary; }, get loader() { return loader; },
   get loadMapArt() { return mapSurfaces.loadMapArt; },
   get logToConsole() { return pageConsole.logToConsole; }, get MAPS_BASE() { return MAPS_BASE; },
-  get nearEntry() { return localPlayer.nearEntry; },
-  set nearEntry(v) { localPlayer.nearEntry = v; },
   get onCrashDamage() { return hullBodies.onCrashDamage; },
   get openDeploy() { return spawning.openDeploy; }, get optEntire() { return optEntire; },
   get optGameFog() { return optGameFog; }, get optOnFoot() { return optOnFoot; },
@@ -483,19 +468,14 @@ const level = createLevel({
   get templateNameOf() { return wrecks.templateNameOf; }, get texLoader() { return texLoader; },
   get texManager() { return texManager; },
   get toggleFullMap() { return mapSurfaces.toggleFullMap; },
-  get unitRectOf() { return flagCapture.unitRectOf; },
-  get vehicleDamage() { return vehicleDamage; }, set vehicleDamage(v) { vehicleDamage = v; },
-  get vehicles() { return vehicles; }, get view() { return localPlayer.view; },
-  set view(v) { localPlayer.view = v; }, get viewFor() { return localPlayer.viewFor; },
-  set viewFor(v) { localPlayer.viewFor = v; }, get vmScene() { return soldierKit.vmScene; },
-  get world() { return world; }, set world(v) { world = v; },
+  get unitRectOf() { return flagCapture.unitRectOf; }, get vehicles() { return vehicles; },
+  get vmScene() { return soldierKit.vmScene; },
 });
 const pageInput = createPageInput({
   get AIR_KEYS() { return vehicleHits.AIR_KEYS; }, get aircraft() { return localPlayer.aircraft; },
   get altFireDemolitions() { return soldierKit.altFireDemolitions; },
   get bfmap() { return mapSurfaces.bfmap; }, get camera() { return camera; },
   get cancelDeploy() { return spawning.cancelDeploy; }, get car() { return localPlayer.car; },
-  get clampMobileInput() { return touchControls.clampMobileInput; },
   get consoleCaptures() { return pageConsole.consoleCaptures; },
   get cycleKitWeapon() { return soldierKit.cycleKitWeapon; },
   get cycleView() { return localPlayer.cycleView; },
@@ -506,7 +486,6 @@ const pageInput = createPageInput({
   get escMenu() { return pageConsole.escMenu; },
   get escMenuCaptures() { return pageConsole.escMenuCaptures; },
   get exitSeat() { return localPlayer.exitSeat; }, get extras() { return level.extras; },
-  get feedMobileTurretAim() { return touchControls.feedMobileTurretAim; },
   get FLY_KEYS() { return FLY_KEYS; }, get FLY_SLOW() { return FLY_SLOW; },
   get FLY_SPEED() { return FLY_SPEED; }, get FOOT_KEYS() { return FOOT_KEYS; },
   get fullmapBox() { return mapSurfaces.fullmapBox; },
@@ -518,15 +497,11 @@ const pageInput = createPageInput({
   get itemsLocked() { return soldierKit.itemsLocked; },
   get leavePilot() { return localPlayer.leavePilot; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
   get lookDelta() { return localPlayer.lookDelta; },
-  get mobilePadAxis() { return touchControls.mobilePadAxis; },
-  get mobilePadVector() { return touchControls.mobilePadVector; },
   get nearEntry() { return localPlayer.nearEntry; },
   get occupancy() { return localPlayer.occupancy; },
   get openDeploy() { return spawning.openDeploy; }, get optOnFoot() { return optOnFoot; },
   get optPilot() { return optPilot; }, get params() { return params; },
-  get renderer() { return renderer; },
-  get resetMobileControls() { return touchControls.resetMobileControls; },
-  get scoreboardOpen() { return scoreboard.scoreboardOpen; },
+  get renderer() { return renderer; }, get scoreboardOpen() { return scoreboard.scoreboardOpen; },
   get scoreFromSpawn() { return scoreboard.scoreFromSpawn; },
   get selectDeployFlag() { return spawning.selectDeployFlag; },
   get selectKitWeapon() { return soldierKit.selectKitWeapon; },
@@ -540,7 +515,7 @@ const pageInput = createPageInput({
   get toggleProne() { return localPlayer.toggleProne; }, get uiFocused() { return uiFocused; },
   get updateHud() { return updateHud; },
   get updateMobileControls() { return touchControls.updateMobileControls; },
-  get world() { return world; },
+  get world() { return level.world; },
 });
 const touchControls = createTouchControls({
   get aircraft() { return localPlayer.aircraft; }, get captured() { return pageInput.captured; },
@@ -650,7 +625,7 @@ const pageAudio = createPageAudio({
 const vehicles = new VehicleRegistry({
   classes: { Aircraft, GroundVehicle, TrackedVehicle: GroundModule.TrackedVehicle, Ship },
   buildDrive: instance => buildHullDrive(instance),
-  world: () => world,
+  world: () => level.world,
   guns: null,      // `guns` is built further down; set there
   adopt: drive => hullBodies.adoptDrivenBody(drive),
   release: drive => hullBodies.releaseDrivenBody(drive),
@@ -720,7 +695,7 @@ const localPlayer = createLocalPlayer({
   get updateSeatPoseVisibility() { return seatPose.updateSeatPoseVisibility; },
   get vehicleInput() { return vehicleHits.vehicleInput; }, get vehicles() { return vehicles; },
   get vehicleSpawnActive() { return level.vehicleSpawnActive; },
-  get warmSubtree() { return level.warmSubtree; }, get world() { return world; },
+  get warmSubtree() { return level.warmSubtree; }, get world() { return level.world; },
 });
 // The touch HUD's opening line reads the input and the player, so it waits
 // until both exist (above this line it threw on every phone).
@@ -811,10 +786,6 @@ function buildHullDrive(instance) {
 //     polls rather than latching, and stops polling once the thing is dead.
 // ---------------------------------------------------------------------------
 
-// `let`: reassigned to the world's own set at level load (show() keeps the
-// alias), so every HUD feed, splash pass and console hook that always reached
-// `vehicleDamage` still reaches the same object the world steps.
-let vehicleDamage = new VehicleDamageSet();
 const wrecks = createVehicleWrecks({
   get bindDynamicShading() { return level.bindDynamicShading; }, get bust() { return bust; },
   get clearHitIndicator() { return hudFeed.clearHitIndicator; },
@@ -833,8 +804,9 @@ const wrecks = createVehicleWrecks({
   get soldier() { return localPlayer.soldier; },
   get soldierDead() { return localPlayer.soldierDead; },
   get standUp() { return localPlayer.standUp; }, get updateHud() { return updateHud; },
-  get useLens() { return localPlayer.useLens; }, get vehicleDamage() { return vehicleDamage; },
-  get vehicles() { return vehicles; }, get world() { return world; },
+  get useLens() { return localPlayer.useLens; },
+  get vehicleDamage() { return level.vehicleDamage; }, get vehicles() { return vehicles; },
+  get world() { return level.world; },
 });
 const hullBodies = createHullBodies({
   get bust() { return bust; }, get collider() { return level.collider; },
@@ -846,9 +818,11 @@ const hullBodies = createHullBodies({
   get MAPS_BASE() { return MAPS_BASE; },
   get materialFrictionById() { return level.materialFrictionById; },
   get nearEntry() { return localPlayer.nearEntry; },
-  set nearEntry(v) { localPlayer.nearEntry = v; }, get vehicleDamage() { return vehicleDamage; },
+  set nearEntry(v) { localPlayer.nearEntry = v; },
+  get vehicleDamage() { return level.vehicleDamage; },
   get vehicleInterp() { return localPlayer.vehicleInterp; }, get vehicles() { return vehicles; },
-  get vehicleSpawnActive() { return level.vehicleSpawnActive; }, get world() { return world; },
+  get vehicleSpawnActive() { return level.vehicleSpawnActive; },
+  get world() { return level.world; },
 });
 const vehicleHits = createVehicleHits({
   get applyDamage() { return referee.applyDamage; },
@@ -864,9 +838,9 @@ const vehicleHits = createVehicleHits({
   get soldier() { return localPlayer.soldier; },
   get soldierArmor() { return localPlayer.soldierArmor; },
   get soldierDead() { return localPlayer.soldierDead; },
-  get stepWrecks() { return wrecks.stepWrecks; }, get vehicleDamage() { return vehicleDamage; },
-  get vehicles() { return vehicles; }, get world() { return world; },
-  get wreckVehicle() { return wrecks.wreckVehicle; },
+  get stepWrecks() { return wrecks.stepWrecks; },
+  get vehicleDamage() { return level.vehicleDamage; }, get vehicles() { return vehicles; },
+  get world() { return level.world; }, get wreckVehicle() { return wrecks.wreckVehicle; },
 });
 
 // --- the guns ---------------------------------------------------------------
@@ -1007,7 +981,7 @@ function fireStateFor(node) {
 const hudFeed = createHudFeed({
   get aircraft() { return localPlayer.aircraft; }, get bust() { return bust; },
   get camera() { return camera; }, get car() { return localPlayer.car; },
-  get combatArea() { return combatArea; }, get combatFrame() { return combatFrame; },
+  get combatArea() { return level.combatArea; }, get combatFrame() { return combatFrameNow(); },
   get crosshairEl() { return soldierKit.crosshairEl; },
   get currentDir() { return level.currentDir; }, get DEG_TO_RAD() { return soldierKit.DEG_TO_RAD; },
   get deployActive() { return deployScreen.deployActive; },
@@ -1043,16 +1017,10 @@ const hudFeed = createHudFeed({
   get updateSeatPoseVisibility() { return seatPose.updateSeatPoseVisibility; },
   get vehicleGuns() { return localPlayer.vehicleGuns; }, get view() { return localPlayer.view; },
   get WEAPON_ICON_VARS() { return soldierKit.WEAPON_ICON_VARS; },
-  get weaponBarUntil() { return soldierKit.weaponBarUntil; }, get world() { return world; },
+  get weaponBarUntil() { return soldierKit.weaponBarUntil; }, get world() { return level.world; },
 });
-// The level's headless simulation core (world.js): N soldiers, the vehicle
-// bodies, guns, combat area, supply depots, tickets and the collider, stepped
-// at the engine's 30 Hz from one buffered input per player per tick. The page
-// builds it once per level in show(), feeds it the local player's input every
-// frame (frame() below) and keeps everything presentational. The one player
-// this page owns is always `LOCAL_PLAYER`; `world` is the same object a P2
-// server would run for every remote one.
-let world = null;
+// The level's headless simulation core is `level.world` (level-load.js); the
+// page feeds it the local player's input every frame (frame() below).
 const LOCAL_PLAYER = 'local';
 /** Bot parameters from the URL (skirmish.js passes ?botCount= and ?botSkill=). */
 const BOT_COUNT = Math.max(0, Math.min(32, Number(params.get('botCount')) || 0));
@@ -1072,7 +1040,7 @@ let botPlayerFired = false;
 let botPlayerPos = null;
 let botPlayerTeam = null;
 const referee = createBotReferee({
-  world: () => world,
+  world: () => level.world,
   get units() { return botUnits; },
   groundAt: (x, z, fromY) => level.groundHeight(x, z, fromY),
   armorFor: (bot, flag) => new Armor(soldierKit.soldierMaxHp(flag)),
@@ -1082,7 +1050,7 @@ const referee = createBotReferee({
   // fire when it lands nearby: the edge of his fire input this frame.
   beforeBots: () => {
     botPlayerPos = localPlayer.soldier ? [localPlayer.soldier.x, localPlayer.soldier.y, localPlayer.soldier.z] : null;
-    botPlayerTeam = world?.player(LOCAL_PLAYER)?.team ?? spawning.deployTeamId;
+    botPlayerTeam = level.world?.player(LOCAL_PLAYER)?.team ?? spawning.deployTeamId;
     botPlayerFired = !!localPlayer.frameInputLast?.fire && !frameInputWasFiring;
     frameInputWasFiring = !!localPlayer.frameInputLast?.fire;
   },
@@ -1102,7 +1070,7 @@ const referee = createBotReferee({
     return true;
   },
   damageHull: (bot, damage) => {
-    const hull = world?.occupiedDamageable(bot.playerId);
+    const hull = level.world?.occupiedDamageable(bot.playerId);
     if (!hull) return false;
     hull.damage(damage);
     return true;
@@ -1158,7 +1126,7 @@ const referee = createBotReferee({
 });
 /** The vehicles the bots can see and take (bot-units.js). */
 const botUnits = createBotUnits({
-  world: () => world,
+  world: () => level.world,
   referee: () => referee,
   vehicles,
   aiUrl: () => `${activeMod.paths.maps || 'maps'}/_shared/vehicle-ai.json${bust()}`,
@@ -1201,7 +1169,7 @@ const flagCapture = createFlagCapture({
   get syncVehicleSpawnOwnership() { return hullBodies.syncVehicleSpawnOwnership; },
   get tagCull() { return level.tagCull; }, get teamNation() { return mapSurfaces.teamNation; },
   get thaw() { return level.thaw; }, get updateHud() { return updateHud; },
-  get world() { return world; },
+  get world() { return level.world; },
 });
 
 /**
@@ -1211,8 +1179,8 @@ const flagCapture = createFlagCapture({
 function spawnBotsForLevel() {
   botBodies.disposeBotVisuals();
   referee.clock = 0;
-  if (BOT_COUNT <= 0 || !world) {
-    console.log(`[bots] skipped: BOT_COUNT=${BOT_COUNT}, world=${!!world}`);
+  if (BOT_COUNT <= 0 || !level.world) {
+    console.log(`[bots] skipped: BOT_COUNT=${BOT_COUNT}, world=${!!level.world}`);
     return;
   }
   // Both sides get bots, alternating so an odd count leaves the extra body on
@@ -1230,7 +1198,7 @@ function spawnBotsForLevel() {
     // the kit is uniform among the side's kits; its items' AI weapon
     // templates (`_shared/loadouts.json` `aiWeapons`) are the bot's weapons.
     kitFor: soldierKit.botKitFor,
-    viewDistance: world.extras?.ai?.settings?.viewDistance ?? null,
+    viewDistance: level.world.extras?.ai?.settings?.viewDistance ?? null,
   });
   const nav = referee.navGrid;
   console.log(`[bots] nav map: ${nav.width}x${nav.height} at ${nav.cellSize} m, `
@@ -1269,7 +1237,7 @@ const soldierKit = createHandWeapon({
   get triggerHeld() { return pageInput.triggerHeld; },
   get vehicleAudio() { return pageAudio.vehicleAudio; },
   get warmSubtree() { return level.warmSubtree; }, get warmups() { return level.warmups; },
-  get world() { return world; },
+  get world() { return level.world; },
 });
 
 /**
@@ -1323,7 +1291,8 @@ const botBodies = createBotVisuals({
   get footBodyClips() { return footBodies.footBodyClips; },
   get footBodyLoader() { return footBodies.footBodyLoader; },
   get MODELS_BASE() { return MODELS_BASE; },
-  get presentAlpha() { return localPlayer.presentAlpha; }, get world() { return world; },
+  get presentAlpha() { return localPlayer.presentAlpha; }, get scene() { return scene; },
+  get world() { return level.world; },
 });
 /** The edge of the human's fire input last frame, for the bots' hearing. */
 let frameInputWasFiring = false;
@@ -1357,7 +1326,7 @@ const soldierView = createSoldierView({
   get soldier() { return localPlayer.soldier; },
   get soldierArmor() { return localPlayer.soldierArmor; },
   get soldierDead() { return localPlayer.soldierDead; },
-  get supplyTarget() { return localPlayer.supplyTarget; }, get world() { return world; },
+  get supplyTarget() { return localPlayer.supplyTarget; }, get world() { return level.world; },
 });
 const footBodies = createFootBody({
   get bindDynamicShading() { return level.bindDynamicShading; }, get bust() { return bust; },
@@ -1408,7 +1377,7 @@ const mapSurfaces = createMapSurfaces({
   get spawnersRoot() { return level.spawnersRoot; },
   get spawnFlagSelect() { return spawnFlagSelect; }, get sprite() { return hudFeed.sprite; },
   get stage() { return stage; }, get vehicleSpawnActive() { return level.vehicleSpawnActive; },
-  get world() { return world; },
+  get world() { return level.world; },
 });
 const deployScreen = createDeployScreen({
   get bfmap() { return mapSurfaces.bfmap; }, get bust() { return bust; },
@@ -1449,7 +1418,8 @@ const scoreboard = createScoreboardScreen({
   get soldier() { return localPlayer.soldier; },
   get soldierDead() { return localPlayer.soldierDead; },
   get spawnLayout() { return deployScreen.spawnLayout; }, get sprite() { return hudFeed.sprite; },
-  get ticketFlagTexture() { return mapSurfaces.ticketFlagTexture; }, get world() { return world; },
+  get ticketFlagTexture() { return mapSurfaces.ticketFlagTexture; },
+  get world() { return level.world; },
 });
 const spawning = createSpawning({
   get capture() { return pageInput.capture; },
@@ -1493,7 +1463,7 @@ const spawning = createSpawning({
   get spawnFlagSelect() { return spawnFlagSelect; },
   get spawnLayout() { return deployScreen.spawnLayout; },
   get supplyTarget() { return localPlayer.supplyTarget; },
-  get toggleFullMap() { return mapSurfaces.toggleFullMap; }, get world() { return world; },
+  get toggleFullMap() { return mapSurfaces.toggleFullMap; }, get world() { return level.world; },
   get worldReady() { return level.worldReady; },
 });
 
@@ -1612,7 +1582,7 @@ optOnFoot.addEventListener('change', () => {
   pageInput.placeCamera();
 });
 spawnFlagSelect.addEventListener('change', () => {
-  world?.setSpawnIndex(LOCAL_PLAYER, 0);
+  level.world?.setSpawnIndex(LOCAL_PLAYER, 0);
   spawning.spawnAtFlag();
 });
 
@@ -1637,9 +1607,9 @@ function frame(dt) {
   // The world's one clock answers this frame's tick count; the pump reads it
   // so the look stage and the sim can never drift apart (Fix 5). A frame
   // before any level has built the world owes no ticks.
-  const lookTicks = world?.lookTicks(dt) ?? 0;
+  const lookTicks = level.world?.lookTicks(dt) ?? 0;
   const { input, look } = localPlayer.sampleInput(seated, onFoot, lookTicks, dt);
-  world?.setInput(LOCAL_PLAYER, input, look);
+  level.world?.setInput(LOCAL_PLAYER, input, look);
   localPlayer.frameInputLast = input;
 
   // ---- the sim core (world) -------------------------------------------------
@@ -1649,7 +1619,7 @@ function frame(dt) {
   // the vehicle bodies and the damage pass — in the exact order, with
   // nothing presentational inside (world.js, the tick law in its header).
   // `step` is that tick's report; the presentation halves read it back.
-  const step = world?.step(dt) ?? { ticks: 0, bodyTicks: 0, alpha: 0, players: {}, damage: [] };
+  const step = level.world?.step(dt) ?? { ticks: 0, bodyTicks: 0, alpha: 0, players: {}, damage: [] };
   // Bot AI runs after the world step, so bots read the player's post-step pose.
   referee.tick(dt);
   botBodies.updateBotVisuals(dt);
@@ -1672,6 +1642,7 @@ function frame(dt) {
   const local = step.players[LOCAL_PLAYER] ?? null;
   vehicleHits.readGate(local?.gate);
   combatFrame = local?.combat ?? null;
+  combatFrameWorld = level.world;
   if (local?.look) {
     soldierKit.footLookX += Math.abs(local.look.yaw);
     soldierKit.footLookY += Math.abs(local.look.pitch);
@@ -1951,8 +1922,9 @@ const testHooks = installTestHooks({
   get chaseRig() { return localPlayer.chaseRig; }, get chooseKit() { return spawning.chooseKit; },
   get chooseTeam() { return spawning.chooseTeam; },
   get collectEntryPoints() { return localPlayer.collectEntryPoints; },
-  get collider() { return level.collider; }, get combatArea() { return combatArea; },
-  get combatFrame() { return combatFrame; }, get crosshairAim() { return hudFeed.crosshairAim; },
+  get collider() { return level.collider; }, get combatArea() { return level.combatArea; },
+  get combatFrame() { return combatFrameNow(); },
+  get crosshairAim() { return hudFeed.crosshairAim; },
   get crosshairEl() { return soldierKit.crosshairEl; },
   get currentDir() { return level.currentDir; },
   get cycleKitWeapon() { return soldierKit.cycleKitWeapon; },
@@ -2048,15 +2020,15 @@ const testHooks = installTestHooks({
   get thrownPackGroup() { return soldierKit.thrownPackGroup; },
   get triggerHeld() { return pageInput.triggerHeld; },
   get vehicleAudio() { return pageAudio.vehicleAudio; },
-  get vehicleDamage() { return vehicleDamage; },
+  get vehicleDamage() { return level.vehicleDamage; },
   get vehicleInput() { return vehicleHits.vehicleInput; },
   get vehicleSpawnActive() { return level.vehicleSpawnActive; },
   get viewmodelRigFor() { return soldierKit.viewmodelRigFor; },
   get vmCamera() { return soldierKit.vmCamera; }, get vmRoot() { return soldierKit.vmRoot; },
   get vmScene() { return soldierKit.vmScene; }, get warmups() { return level.warmups; },
   get weaponBarUntil() { return soldierKit.weaponBarUntil; },
-  get weaponTemplateFor() { return soldierKit.weaponTemplateFor; }, get world() { return world; },
-  get worldFire() { return pageAudio.worldFire; },
+  get weaponTemplateFor() { return soldierKit.weaponTemplateFor; },
+  get world() { return level.world; }, get worldFire() { return pageAudio.worldFire; },
   get wreckVehicle() { return wrecks.wreckVehicle; },
 });
 </script>

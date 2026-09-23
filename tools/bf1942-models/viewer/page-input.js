@@ -13,19 +13,17 @@ import { GameConsole } from './console.js';
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `AIR_KEYS`, `aircraft`, `altFireDemolitions`, `bfmap`, `camera`,
- * `cancelDeploy`, `car`, `clampMobileInput`, `consoleCaptures`,
- * `cycleKitWeapon`, `cycleView`, `deployActive`, `deploySpawn`,
- * `ensureAudioContext`, `enterVehicle`, `escMenu`, `escMenuCaptures`,
- * `exitSeat`, `extras`, `feedMobileTurretAim`, `FLY_KEYS`, `FLY_SLOW`,
- * `FLY_SPEED`, `FOOT_KEYS`, `fullmapBox`, `gameConsole`, `getFloorAltitude`,
- * `groundHeight`, `handWeapon`, `hud`, `isTouchDevice`, `itemsLocked`,
- * `leavePilot`, `LOCAL_PLAYER`, `lookDelta`, `mobilePadAxis`,
- * `mobilePadVector`, `nearEntry`, `occupancy`, `openDeploy`, `optOnFoot`,
- * `optPilot`, `params`, `renderer`, `resetMobileControls`, `scoreboardOpen`,
- * `scoreFromSpawn`, `selectDeployFlag`, `selectKitWeapon`, `setConsoleOpen`,
- * `setEscMenu`, `setScoreboard`, `soldier`, `spawnAtFlag`, `stage`,
- * `startReload`, `switchSeat`, `toggleFullMap`, `toggleProne`, `uiFocused`,
- * `updateHud`, `updateMobileControls`, `world`.
+ * `cancelDeploy`, `car`, `consoleCaptures`, `cycleKitWeapon`, `cycleView`,
+ * `deployActive`, `deploySpawn`, `ensureAudioContext`, `enterVehicle`,
+ * `escMenu`, `escMenuCaptures`, `exitSeat`, `extras`, `FLY_KEYS`,
+ * `FLY_SLOW`, `FLY_SPEED`, `FOOT_KEYS`, `fullmapBox`, `gameConsole`,
+ * `getFloorAltitude`, `groundHeight`, `handWeapon`, `hud`, `isTouchDevice`,
+ * `itemsLocked`, `leavePilot`, `LOCAL_PLAYER`, `lookDelta`, `nearEntry`,
+ * `occupancy`, `openDeploy`, `optOnFoot`, `optPilot`, `params`, `renderer`,
+ * `scoreboardOpen`, `scoreFromSpawn`, `selectDeployFlag`, `selectKitWeapon`,
+ * `setConsoleOpen`, `setEscMenu`, `setScoreboard`, `soldier`, `spawnAtFlag`,
+ * `stage`, `startReload`, `switchSeat`, `toggleFullMap`, `toggleProne`,
+ * `uiFocused`, `updateHud`, `updateMobileControls`, `world`.
  */
 export function createPageInput(page) {
   const pageInput = {};

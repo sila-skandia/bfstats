@@ -1049,6 +1049,12 @@ export function createLocalPlayer(page) {
   localPlayer.entryPoints = null;           // [{node, vehicle, control, radius}]
   localPlayer.nearEntry = null;             // the seat the HUD is currently offering
   localPlayer.entryScan = 0;
+  /** The level went, and every door in it with it: the next scan re-indexes
+   *  the new level's (`show()`, after the bots are spawned). */
+  localPlayer.forgetEntryPoints = () => {
+    localPlayer.entryPoints = null;
+    localPlayer.nearEntry = null;
+  };
 
   /**
    * Index every walkable seat once per level — every `EntryPoint` of every
@@ -1532,6 +1538,13 @@ export function createLocalPlayer(page) {
   };
   /** The level went, and the scene graph the soldier stood in with it. */
   localPlayer.forgetSoldier = () => { localPlayer.soldier = null; };
+  /** The level went, and every hull's seats with it: the seat's view rig holds
+   *  nodes of the old scene (`show()`, as it clears the vehicle registry). */
+  localPlayer.forgetSeatViews = () => {
+    localPlayer.view = null;
+    localPlayer.viewFor = null;
+    localPlayer.gunSubject = null;
+  };
   /** Run the death cam's beat down; returns what is left. */
   localPlayer.runDeathCam = dt => (localPlayer.deathCamTimer -= dt);
   /** `c_PILie` is a toggle. */
