@@ -50,6 +50,9 @@ SERVER_DIR = ROOT / "server"
 MODULES = dict(troom.MODULES)
 MODULES.update({
     "server/server.mjs": SERVER_DIR / "server.mjs",
+    # server.mjs's pieces.
+    "server/websocket.mjs": SERVER_DIR / "websocket.mjs",
+    "server/level-table.mjs": SERVER_DIR / "level-table.mjs",
 })
 DRIVER = Path(__file__).resolve().parent / "room_socket_driver.mjs"
 

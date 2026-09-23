@@ -15,7 +15,9 @@
 // is which game you are playing, not a thing to launch.
 
 import { createNavStrip } from './nav-strip.js';
-import { elementVisible, paintElement, stageScale, toVirtual } from './menu-screen.js';
+import { createMenuPack } from './menu-pack.js';
+import { elementVisible, paintElement } from './menu-screen.js';
+import { beginStage, pointerToVirtual } from './stage.js';
 import { loadMods, remember, servable, stored, VANILLA } from '../mods.js';
 import { loadHudPaths, hudPaths as plainHudPaths } from '../hud-pack.js';
 import {
@@ -49,9 +51,6 @@ export function createModPicker({
   const packUrl = rel => (SCRATCH_PACK ? `${SCRATCH_PACK}/${rel}` : hudPaths.menuUrl(rel));
 
   const ctx = canvas.getContext('2d');
-  const images = new Map();
-  const fonts = new Map();
-  const tints = new Map();
 
   let layout = null;
   let navLayout = null;
@@ -61,63 +60,27 @@ export function createModPicker({
   let picker = { mods: [VANILLA], activeId: VANILLA.id, scroll: 0, hover: null };
   let strip = null;
 
-  const json = url => fetch(url + bust()).then(r => {
-    if (!r.ok) throw new Error(`${r.status} ${url}`);
-    return r.json();
+  // The image, font and tint caches (`menu-pack.js`), with this screen's own
+  // lookups laid over the pack's.
+  const pack = createMenuPack({
+    url: packUrl,
+    bust,
+    onImage: () => paintSoon(),
+    env: {
+      // The dialog has no VariablePictureNode of its own; `paintElement` only
+      // reaches for a thumbnail on the Instant Battle screen's preview slot.
+      thumbnail: () => null,
+      icon: mod => (mod?.icon ? ready(image(`${root}${mod.icon}`)) : null),
+      text: name => {
+        const mod = picker.mods.find(m => m.id === picker.activeId);
+        if (name === 'CustomGame/CustomGameUrl') return mod?.url || '';
+        if (name === 'CustomGame/CustomGameInfo') return mod?.info || 'No description available.';
+        return '';
+      },
+      get hover() { return hover; },
+    },
   });
-
-  function image(url) {
-    if (images.has(url)) return images.get(url);
-    const img = new Image();
-    img.decoding = 'async';
-    img.onload = () => paintSoon();
-    img.onerror = () => images.set(url, null);
-    img.src = url + bust();
-    images.set(url, img);
-    return img;
-  }
-
-  const ready = img => (img && img.complete && img.naturalWidth ? img : null);
-  const loaded = img => (img.complete ? Promise.resolve() : new Promise(resolve => {
-    img.addEventListener('load', resolve, { once: true });
-    img.addEventListener('error', resolve, { once: true });
-  }));
-
-  const env = {
-    texture: name => {
-      const entry = layout?.textures?.[name];
-      return entry ? ready(image(packUrl(entry.file))) : null;
-    },
-    // The dialog has no VariablePictureNode of its own; `paintElement` only
-    // reaches for a thumbnail on the Instant Battle screen's preview slot.
-    thumbnail: () => null,
-    icon: mod => (mod?.icon ? ready(image(`${root}${mod.icon}`)) : null),
-    text: name => {
-      const mod = picker.mods.find(m => m.id === picker.activeId);
-      if (name === 'CustomGame/CustomGameUrl') return mod?.url || '';
-      if (name === 'CustomGame/CustomGameInfo') return mod?.info || 'No description available.';
-      return '';
-    },
-    font: id => fonts.get(id) || null,
-    tint: (font, rgb) => {
-      const key = `${font.id}|${rgb.join(',')}`;
-      let c = tints.get(key);
-      if (c) return c;
-      const img = ready(font.img);
-      if (!img) return null;
-      c = document.createElement('canvas');
-      c.width = img.width;
-      c.height = img.height;
-      const g = c.getContext('2d');
-      g.drawImage(img, 0, 0);
-      g.globalCompositeOperation = 'source-in';
-      g.fillStyle = `rgb(${rgb.map(v => Math.round(v * 255)).join(',')})`;
-      g.fillRect(0, 0, c.width, c.height);
-      tints.set(key, c);
-      return c;
-    },
-    get hover() { return hover; },
-  };
+  const { env, json, image, ready } = pack;
 
   /** The mod list, and the pack the screen paints out of.
    *
@@ -145,17 +108,12 @@ export function createModPicker({
       textures: { ...navLayout.textures, ...modLayout.textures },
       fontFiles: { ...navLayout.fontFiles, ...modLayout.fontFiles },
     };
+    pack.use(layout);
     if (tabs) {
       strip = createNavStrip({ layout: navLayout, env, rows: tabs,
                                active: 'customgame', onPick: onTab });
     }
-    await Promise.all(Object.entries(layout.fontFiles).map(async ([id, entry]) => {
-      const meta = await json(packUrl(entry.glyphs));
-      const img = image(packUrl(entry.file));
-      await loaded(img);
-      fonts.set(id, { id, meta, img });
-    }));
-    for (const entry of Object.values(layout.textures)) image(packUrl(entry.file));
+    await pack.load(layout);
     for (const mod of available) if (mod.icon) image(`${root}${mod.icon}`);
     onStatus('');
     paint();
@@ -195,21 +153,7 @@ export function createModPicker({
 
   function paint() {
     if (!layout) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    if (!w || !h) return;
-    const cw = Math.round(w * dpr);
-    const chh = Math.round(h * dpr);
-    if (canvas.width !== cw || canvas.height !== chh) {
-      canvas.width = cw;
-      canvas.height = chh;
-    }
-    const s = stageScale(w, h, layout.virtual);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, cw, chh);
-    ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
+    if (!beginStage(canvas, ctx, layout.virtual)) return;
     // `menu/Background` — the black field and the camouflaged plate every tab
     // of the front end is drawn on.
     const table = navLayout?.variables || {};
@@ -226,9 +170,7 @@ export function createModPicker({
   observer.observe(canvas);
 
   function at(event) {
-    const r = canvas.getBoundingClientRect();
-    const s = stageScale(r.width, r.height, layout.virtual);
-    return toVirtual(s, event.clientX - r.left, event.clientY - r.top);
+    return pointerToVirtual(canvas, event, layout.virtual);
   }
 
   canvas.addEventListener('pointermove', event => {

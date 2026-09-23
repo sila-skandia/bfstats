@@ -69,6 +69,32 @@ export function readGlb(path) {
 }
 
 /**
+ * One glTF node as a THREE.Object3D: its name, its transform (the glTF
+ * defaults where the JSON omits them) and its `extras` as `userData`. Shared
+ * by the vehicle tree below and the level tree (`glb-scene.mjs`
+ * `buildSceneTree`), which built their nodes with this same code.
+ */
+export function objectForNode(n) {
+  const obj = new THREE.Object3D();
+  obj.name = n.name || '';
+  if (Array.isArray(n.translation)) {
+    const [x = 0, y = 0, z = 0] = n.translation;
+    obj.position.set(x, y, z);
+  }
+  if (Array.isArray(n.rotation)) {
+    const [x = 0, y = 0, z = 0, w = 1] = n.rotation;
+    obj.quaternion.set(x, y, z, w);
+  }
+  if (Array.isArray(n.scale)) {
+    const [x = 1, y = 1, z = 1] = n.scale;
+    obj.scale.set(x, y, z);
+  }
+  // The assembler's extras land in userData the way GLTFLoader lands them.
+  obj.userData = (n.extras && typeof n.extras === 'object') ? n.extras : {};
+  return obj;
+}
+
+/**
  * The JSON chunk's node tree as Object3D nodes, no geometry.
  *
  * @param {string} path  path to a `.glb` file
@@ -78,26 +104,7 @@ export function loadVehicleTree(path) {
   const { json } = readGlb(path);
   const nodes = json.nodes || [];
   const made = new Array(nodes.length);
-  for (let i = 0; i < nodes.length; i++) {
-    const n = nodes[i];
-    const obj = new THREE.Object3D();
-    obj.name = n.name || '';
-    if (Array.isArray(n.translation)) {
-      const [x = 0, y = 0, z = 0] = n.translation;
-      obj.position.set(x, y, z);
-    }
-    if (Array.isArray(n.rotation)) {
-      const [x = 0, y = 0, z = 0, w = 1] = n.rotation;
-      obj.quaternion.set(x, y, z, w);
-    }
-    if (Array.isArray(n.scale)) {
-      const [x = 1, y = 1, z = 1] = n.scale;
-      obj.scale.set(x, y, z);
-    }
-    // The assembler's extras land in userData the way GLTFLoader lands them.
-    obj.userData = (n.extras && typeof n.extras === 'object') ? n.extras : {};
-    made[i] = obj;
-  }
+  for (let i = 0; i < nodes.length; i++) made[i] = objectForNode(nodes[i]);
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i];
     if (!n.children) continue;
