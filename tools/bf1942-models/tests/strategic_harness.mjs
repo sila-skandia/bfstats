@@ -129,8 +129,12 @@ const wpAir = airSai._order(airSai.bots.get('air'), ia, 1);
 const air = { point: wpAir.point, y: wpAir.y, radius: +wpAir.radius.toFixed(3), clearance: wpAir.clearance,
   far: wpAir.urgency(846 + 100, -717, 0, 85), at: wpAir.urgency(846, -717, 0, 85),
   ten: +wpAir.urgency(856, -717, 0, 85).toFixed(6), high: wpAir.urgency(846, -717, 0, 85 + 130), arrived: wpAir.arrived };
+// Every order carries the area test its callers make (bot.js Fire, Change
+// and the medic's `insideMyArea`): `isInside`, the centre box.
+const orderInside = [wpTank, wpBlocked, wpTankPos, wpAir].map(wp => typeof wp.inside === 'function'
+  ? [wp.inside(846, -717), wp.inside(838, -722), wp.inside(900, -717), wp.inside(846, -760)] : null);
 const pins = {
-  air,
+  air, orderInside,
   corner: ia.corner, centre: ia.centre, min: ia.min, max: ia.max, sideRadius: +ia.sideRadius.toFixed(3),
   cpInside: island.isInside(ia, 838, -722), r0, r1: r1.map(v => +v.toFixed(3)),
   tankRadius: +wpTank.radius.toFixed(3), inR, inRArrived, outU,
