@@ -181,7 +181,8 @@ projectile damage through `damage.json` as for the human, and the weapon's
 `deviation` channels rebuilt on a weapon change under the `setBotSkill` term.
 `?botDebug` logs every hit; `__botCtl(id)` returns a controller.
 
-Verification: `tests/test_nav_grid.py` (12), `tests/test_bot_ai.py` (14),
+Verification: `tests/test_nav_grid.py` (12), `tests/test_bot_ai.py` (17:
+medic, tank law and change scoring added later the same day),
 `tests/test_strategic.py` (7) green; `./scripts/verify.sh --skip-e2e` green.
 Headless El Alamein, two squads teleported 40 m apart: both sides trade
 kills with their kit weapons (BAR 22.5 a hit, rifles 32 / 50, SMGs 15 ..
@@ -217,9 +218,13 @@ they imply. Ledger AI-42..AI-45, `bot-behaviours.md` s6 and s8.
    `stepVehicleBodies`), gives it the Tank map (`ai.addSearchMap Tank0`,
    built on first use) and the unit's AI weapons (`extract_vehicle_ai.py`
    -> `_shared/vehicle-ai.json`: `maxSpeed`, `turnRadius`, `strType`,
-   strategic strengths, the guns' ranges and strengths). Verified live: two
-   bots took Willys on their own, a forced Kubelwagen drove its route at up
-   to 17 m/s, a Panzer IV left its compound on the tank map.
+   strategic strengths, the guns' ranges and strengths). Verified live: five of
+   eight bots took vehicles on their own (two Shermans, two Willys, a
+   Kubelwagen), a Kubelwagen drove its route at up to 17 m/s, a Panzer IV
+   left its walled compound on the tank map once a failing leg widened its
+   box to 120 m, and a Sherman with the Fire behaviour traversed its turret
+   onto a soldier 44 m ahead, fired the main gun and the coaxial, and killed
+   him.
 3. **The tank law** (`bot-vehicle.js tankControl`): the throttle and steer
    arithmetic of `TankControl::controlTowardsDirection`, the 30 / 60 deg
    angle limit, arrival by the move's radius. Not read, labelled INVENTION:
