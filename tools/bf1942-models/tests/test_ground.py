@@ -132,7 +132,7 @@ class GroundModelTests(unittest.TestCase):
         # -14.73 the factor is exactly 1.5 — so a Willy's `setStrength 25`
         # springs act at 37.5 and the hull sits 0.098 m in rather than 0.147.
         # `bf42/con.py` exports the authored number on purpose and leaves the
-        # law to the runtime; `ground.js` is that runtime.
+        # law to the runtime; `wheeled-vehicle.js` is that runtime.
         solved = self.results["solved"]
         self.assertAlmostEqual(1.5, solved["springScale"], places=3)
         self.assertAlmostEqual(0.098, solved["staticCompression"], places=3)
@@ -735,7 +735,7 @@ class GroundModelTests(unittest.TestCase):
         # 29.8. `rollingResistance` and `engineBraking` are [free] and this is
         # the clearest place the corrected ceiling says they want re-fitting
         # (or replacing with the engine's own closed-throttle EngineGrip law,
-        # which `ground.js` already describes and deliberately fades out).
+        # which `wheeled-vehicle.js` already describes and deliberately fades out).
         self.assertLess(coast["after15s"], coast["entry"] * 0.7)
         self.assertGreaterEqual(coast["after15s"], 0.0)
 
@@ -772,7 +772,7 @@ class TrackedVehicleTests(unittest.TestCase):
     verify-r7.md's byte-exact claims (TANK-3/6/7/8, TANK-10) and these
     assertions are exact; everything downstream of them — top speed, turn
     rate, how stiff a track resists sliding — is this file's own [free]
-    tuning (`TANK` in `ground.js`), asserted only as a loose, survivable
+    tuning (`TANK` in `ground-specs.js`), asserted only as a loose, survivable
     band, the same convention `GroundModelTests` already uses for Willy's.
     """
 
@@ -939,7 +939,7 @@ class TrackedVehicleTests(unittest.TestCase):
 
     def test_both_tanks_reach_a_tank_scale_not_an_aircraft_scale_top_speed(self) -> None:
         # `TANK.trackResistance` exists rather than trusting the confirmed
-        # thrust law alone (see its own comment in ground.js), and TANK-3's
+        # thrust law alone (see its own comment in ground-specs.js), and TANK-3's
         # correction made its job much easier: it was fitted against a ratio
         # of 17.5 that asymptoted toward ~68 m/s unconstrained, and the real
         # 5.512 is a third of that. Loose bands, since neither figure is a
@@ -1123,7 +1123,7 @@ class TrackedVehicleTests(unittest.TestCase):
         # A 4 m ramp onto a 1 m pad, the repair bay of the bug report. The
         # surface is analytic but it is analytic in the shape the real query
         # has: a height that exists only at or below the reference the caller
-        # passes, so what is under test is the reference `ground.js` asks from.
+        # passes, so what is under test is the reference `wheeled-vehicle.js` asks from.
         for name in ("jeepOntoPad", "tigerOntoPad",
                      "jeepOntoPadSlow", "tigerOntoPadSlow"):
             run = self.results[name]
@@ -1328,7 +1328,7 @@ class DrivetrainConstantTests(unittest.TestCase):
         # TANK-7, refuted: `PhysicsEngine::updatePhysics` returns at its
         # second instruction unless `getEngineType() & 1`
         # (`0x0824cc10`-`0x0824cc20`), so `c_ETCar` (2) and `c_ETTank` (6)
-        # get no hull thrust at all. `bodyThrust` is gone from `ground.js`
+        # get no hull thrust at all. `bodyThrust` is gone from `wheeled-vehicle.js`
         # because of this and must not come back.
         types = self.results["engineTypes"]
         self.assertFalse(types["carHasThrust"])

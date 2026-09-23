@@ -17,7 +17,7 @@
 // one missing arm — the engine's §5.5 probe asked of the grid instead of a
 // mesh — and nothing else. The response, the accumulation and the friction
 // hand-off are `body-contact.js`'s `Response` exactly as they are for a
-// vehicle pair, which is the point: `ground.js`'s old swept sphere was a
+// vehicle pair, which is the point: `wheeled-vehicle.js`'s old swept sphere was a
 // second, parallel physics for one half of the world.
 //
 // Framework-free (only `body-contact.js`, itself import-free), so
@@ -48,7 +48,7 @@
 //       Optional. The height of the surface the body is standing on, terrain
 //       or drivable deck. `stepTop` is that plus `KERB_STEP`: a drivable
 //       triangle below it is a kerb the suspension mounts rather than a wall,
-//       which is the same gate `ground.js`'s sweep has always passed and the
+//       which is the same gate `wheeled-vehicle.js`'s sweep has always passed and the
 //       reason a tank is not welded to the lip of every bridge.
 //
 // --- where this diverges from the engine, and why ----------------------------
@@ -91,7 +91,7 @@ const HANDLER_SPEED_THRESHOLD_SQ = 0.1;
 
 /**
  * How far above the surface a body is riding a drivable object's face may
- * reach and still be a kerb rather than a wall. `ground.js`'s own
+ * reach and still be a kerb rather than a wall. `wheeled-vehicle.js`'s own
  * `DECK_WALL_STEP`, which its swept sphere has always passed to the collider;
  * kept here as its own constant because this pass, not that one, is now what
  * a driven hull meets. [free, numerics]

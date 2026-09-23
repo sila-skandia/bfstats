@@ -27,7 +27,7 @@ export function createLocalLook(page) {
   //
   // The rest of the page still steps on the render dt -- the soldier body has
   // its own 60 Hz accumulator in `physics.js`, the drivetrain its own in
-  // `ground.js`. Only the look path is moved here, which is the whole of this
+  // `wheeled-vehicle.js`. Only the look path is moved here, which is the whole of this
   // stream: a page-wide fixed step is a bigger change than one branch should
   // make while four other streams are editing this file.
   const SIM_TICK_HZ = 30;                 // `g_simulationFps`, lnxded 0x08716b5c

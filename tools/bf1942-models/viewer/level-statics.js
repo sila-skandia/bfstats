@@ -218,7 +218,7 @@ export function createLevelStatics(page) {
     return null;
   }
   // The subtree a ride thaws and a parking freezes. A seat being driven is not
-  // under `spawners` any more: `Vehicle`'s constructor (flight.js; ground.js
+  // under `spawners` any more: `Vehicle`'s constructor (flight.js; wheeled-vehicle.js
   // extends it) reparents the node onto the level root before setPilot gets to
   // thaw it. Looked up through `spawners` alone, the driven vehicle was never
   // thawed and never re-frozen: it kept the frozen `updateMatrixWorld` from
