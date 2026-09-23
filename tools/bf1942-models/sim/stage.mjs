@@ -56,7 +56,7 @@
 //    asking bot (a cache of the same answer; see `units.unitInfo`).
 
 /** The kinds of unit the bots may take (`bot-units.js candidates`' own list). */
-export const STAGE_KINDS = ['ground', 'tank'];
+export const STAGE_KINDS = ['ground', 'tank', 'air', 'ship'];
 
 /** Build the stage. `data` is `realLevel`'s: the scene root and the tables. */
 export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, seed = 1 } = {}) {

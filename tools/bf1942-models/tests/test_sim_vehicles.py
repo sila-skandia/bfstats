@@ -73,6 +73,27 @@ class SimVehicleTests(unittest.TestCase):
         self.assertGreaterEqual(r["rounds"], 1)
         self.assertTrue(any(f.startswith("Sherman:ShermanGunBarrel") for f in r["fired"]))
 
+    def test_a_spitfire_takes_off_on_the_page_flight_model(self) -> None:
+        r = recipe("air")
+        self.assertEqual(r["driveClass"], "Aircraft")
+        self.assertTrue(r["takeoff"], "a takeoff event")
+        self.assertGreater(r["topAgl"], 20.0)
+        self.assertTrue(r["stillMounted"])
+
+    def test_a_landing_craft_sails_on_the_water_map(self) -> None:
+        if not (ASSETS / "maps" / "wake" / "scene.glb").exists():
+            self.skipTest("wake is not extracted")
+        r = recipe("ship")
+        self.assertEqual(r["template"], "Daihatsu")
+        self.assertEqual(r["driveClass"], "Ship")
+        self.assertTrue(r["landingCraft"])
+        self.assertTrue(r["navWater"])
+        self.assertGreater(r["moved"], 50.0)
+        self.assertEqual(r["routeFailures"], 0)
+        low, high = r["y"]
+        self.assertLess(abs(low - r["waterLevel"]), 3.0, "afloat")
+        self.assertLess(abs(high - r["waterLevel"]), 3.0, "afloat")
+
 
 if __name__ == "__main__":
     unittest.main()
