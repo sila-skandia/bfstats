@@ -257,6 +257,7 @@ import { createNetRoom } from './net-room.js';
 import { createScoreboardScreen } from './scoreboard-screen.js';
 import { createDeployScreen } from './deploy-screen.js';
 import { createSpawning } from './spawning.js';
+import { createMapSurfaces } from './map-surfaces.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -1561,7 +1562,7 @@ addEventListener('keydown', e => {
     // taken the pointer lock off us by the time this runs.
     if (scoreboard.scoreboardOpen()) scoreboard.setScoreboard(false);
     else if (deployScreen.deployActive()) spawning.cancelDeploy();
-    else if (!fullmapBox.hidden) toggleFullMap(false);
+    else if (!mapSurfaces.fullmapBox.hidden) mapSurfaces.toggleFullMap(false);
     else if (kbSession && !captured && !e.repeat) kbLockLeave();
     else if (!e.repeat) setEscMenu(true);
     return;
@@ -1598,12 +1599,12 @@ addEventListener('keydown', e => {
   // its spawn screen — and Escape or M again puts it away without moving you.
   if (e.code === 'KeyM' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
     if (deployScreen.deployActive()) spawning.cancelDeploy();
-    else if (fullmapBox.hidden && optOnFoot.checked && soldier
+    else if (mapSurfaces.fullmapBox.hidden && optOnFoot.checked && soldier
              && !optPilot.checked) {
       // On foot, but not merely suspended in a seat: a driver's M is the
       // plain map, because his soldier is still ticked and still alive.
       spawning.openDeploy();
-    } else toggleFullMap();
+    } else mapSurfaces.toggleFullMap();
     return;
   }
   // Tab is `c_PIShowScoreBoard`, `c_CMPushAndHold` in every shipped control
@@ -1618,7 +1619,7 @@ addEventListener('keydown', e => {
   // (bfmap.js). Behind the same gates as M — the console, the Escape menu and
   // a focused form control have all returned above.
   if (e.code === 'KeyN' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    bfmap.zoomIn();
+    mapSurfaces.bfmap.zoomIn();
     return;
   }
   // Seated in anything, the same row switches seats instead (SEAT-23/24,
@@ -1855,8 +1856,8 @@ gameConsole.register({
   object: 'game', method: 'setStaticMinimap',
   minArgs: 0, maxArgs: 1, argTypes: ['int'], returns: 'int',
   run: args => {
-    if (args.length) bfmap.setStatic(args[0] !== '0' && args[0].toLowerCase() !== 'false');
-    return bfmap.isStatic ? 1 : 0;
+    if (args.length) mapSurfaces.bfmap.setStatic(args[0] !== '0' && args[0].toLowerCase() !== 'false');
+    return mapSurfaces.bfmap.isStatic ? 1 : 0;
   },
 });
 
@@ -7765,7 +7766,7 @@ function flagUvCellFor(team) {
   // whose answer is 'unknown' (a `flagpl_m1` the pack has no art for) there
   // is no cell and the point keeps its old colours — the same neutral-plate
   // rule `drawControlPoint` applies on the map.
-  const nation = team === 1 || team === 2 ? teamNation(team) : null;
+  const nation = team === 1 || team === 2 ? mapSurfaces.teamNation(team) : null;
   return (nation && FLAG_UV_CELLS[nation]) || null;
 }
 /** The stored UV range of a cloth geometry: [u0,v0,u1,v1]. Every baked cloth
@@ -7994,8 +7995,8 @@ function hoistCaptureFlag(flag) {
   } else if (!cell && nodes.cloth) {
     nodes.cloth.visible = false;
   }
-  drawMinimap(true);
-  drawFullMap(true);
+  mapSurfaces.drawMinimap(true);
+  mapSurfaces.drawFullMap(true);
   if (typeof deployScreen.paintDeployChrome === 'function') deployScreen.paintDeployChrome();
 }
 
@@ -8420,7 +8421,7 @@ function setOnFoot(on) {
     // The deploy screen cannot outlive the mode it selects for: the pilot
     // checkbox's exclusivity and the on-foot box both land here with the
     // overlay possibly still up.
-    if (deployScreen.deployActive()) toggleFullMap(false);
+    if (deployScreen.deployActive()) mapSurfaces.toggleFullMap(false);
     // The soldier was the world's record; the world stops stepping it (a
     // ghost left in the players map would keep walking on its last input).
     world.removePlayer(LOCAL_PLAYER);
@@ -9478,7 +9479,7 @@ function weaponTemplateFor(flag, kitName = deployScreen.deployKit) {
   const loadout = kitLoadout(team, kitName);
   if (loadout.primary) return loadout.primary;
   const slot = Math.max(0, deployScreen.KITS.indexOf(kitName));
-  return FALLBACK_PRIMARIES[teamNation(team)]?.[slot]
+  return FALLBACK_PRIMARIES[mapSurfaces.teamNation(team)]?.[slot]
     || FALLBACK_PRIMARIES[team === 1 ? 'ger' : 'us'][slot];
 }
 
@@ -9487,7 +9488,7 @@ function weaponTemplateFor(flag, kitName = deployScreen.deployKit) {
 function soldierTemplateFor(flag) {
   const team = flag?.team;
   return kitLoadout(team).soldier
-    || FALLBACK_SOLDIERS[teamNation(team)]
+    || FALLBACK_SOLDIERS[mapSurfaces.teamNation(team)]
     || (team === 1 ? 'GermanSoldier' : 'USSoldier');
 }
 
@@ -11015,7 +11016,7 @@ function captureVoiceKind(prevTeam, newTeam, localTeam) {
 }
 /** The folders to try for the side's announcer, most specific first. */
 function captureVoiceDirs(team) {
-  const nation = teamNation(team);
+  const nation = mapSurfaces.teamNation(team);
   const shared = MAPS_BASE === 'maps' ? 'maps/_shared' : `${MAPS_BASE}/_shared`;
   const dirs = [];
   if (nation && nation !== 'unknown') {
@@ -11046,7 +11047,7 @@ async function loadCaptureVoice(dir, stem) {
   }
   return pending;
 }
-async function playCaptureVoice(kind = 'gain', team = localMapTeam()) {
+async function playCaptureVoice(kind = 'gain', team = mapSurfaces.localMapTeam()) {
   if (AUDIO_OFF || masterVolume() <= 0) return;
   const stems = CAPTURE_VOICE_STEMS[kind];
   if (!stems) return;
@@ -11070,7 +11071,7 @@ async function playCaptureVoice(kind = 'gain', team = localMapTeam()) {
 }
 /** A point changed hands: say so if the local side gained or lost it. */
 function announceCapture(prevTeam, newTeam) {
-  const team = localMapTeam();
+  const team = mapSurfaces.localMapTeam();
   const kind = captureVoiceKind(prevTeam, newTeam, team);
   if (kind) playCaptureVoice(kind, team);
 }
@@ -11573,7 +11574,7 @@ function updateCrosshair() {
   // only from `footFire`, which the overlay suppresses; it runs every frame
   // now, so a soldier waiting to spawn would otherwise aim at his own map.
   const show = (style === 'CHTCrossHair' || style === 'CHTIcon')
-    && !scoped && fullmapBox.hidden;
+    && !scoped && mapSurfaces.fullmapBox.hidden;
   // Written only on change, and read back from the element rather than a
   // cache because enterVehicle and disposeHandWeapon hide it behind this
   // function's back: every DOM write here invalidates style, and a frame
@@ -11672,7 +11673,7 @@ function stanceNation(team) {
   if (team !== nationArtTeam || currentDir !== nationArtDir) {
     nationArtDir = currentDir;
     nationArtTeam = team;
-    nationArtCache = STANCE_NATION[teamNation(team)] || (team === 1 ? 'ger' : 'us');
+    nationArtCache = STANCE_NATION[mapSurfaces.teamNation(team)] || (team === 1 ? 'ger' : 'us');
   }
   return nationArtCache;
 }
@@ -11756,7 +11757,7 @@ function updateSoldierHud(dt = 0.016) {
   // in any seat), which is the same condition that raises the rest of the
   // HUD. Fed before every early return below, because a soldier who has just
   // died leaves `soldier` null while the counter is still up in the game.
-  feedTicketVars(vars);
+  mapSurfaces.feedTicketVars(vars);
   if (!inWorld && !inVehicle) vars['ShowTicket'] = false;
   // The soldier ammo panel is gated on `Ammo/AmmoType` alone (plus not being
   // in a vehicle), and the live branches below only ever write it, so a
@@ -11770,7 +11771,7 @@ function updateSoldierHud(dt = 0.016) {
   // white flag). Fed from the same capture state `updateCaptureHud` reads, so
   // the disc and the CAPTURING line can never disagree. `AxisFlagIcon` /
   // `AlliedFlagIcon` stay unfed — CTF-only leaves with no conquest meaning.
-  feedFlagIconVars(vars);
+  mapSurfaces.feedFlagIconVars(vars);
   // The combat-area warning, drawn by the layout's own `outside` group.
   // `stepCombatArea` leaves `combatFrame` null whenever nothing the engine
   // would call a player is in the world, and its countdown is 0 while that
@@ -12078,80 +12079,21 @@ function textureQueueDrained() {
     ? Promise.resolve()
     : new Promise(resolve => textureQueueWaiters.push(resolve));
 }
-
-// ---------------------------------------------------------------------------
-// The map art. The HUD minimap and the fullscreen map are the same picture at
-// different sizes and zooms — that is what the engine does too: `menu/InGame`
-// hot-swaps one picture node built from a single `Textures/InGameMap.tga`
-// path, and there is no second map asset anywhere in the archives.
-//
-// The art frames the level's *active combat area*, not the world. `scene.json`
-// carries the projection as an affine so the viewer never re-derives it:
-//     u = m[0]*x + m[1]*z + m[2]
-//     v = m[3]*x + m[4]*z + m[5]
-// with (x, z) in glTF world metres and (u, v) in 0..1 from the top left.
-// ---------------------------------------------------------------------------
-const minimapBox = document.getElementById('minimap');
-const minimapCanvas = document.getElementById('minimap-canvas');
-const fullmapBox = document.getElementById('fullmap');
-const fullmapCanvas = document.getElementById('fullmap-canvas');
-// The CSS widths of the two map canvases, kept by a ResizeObserver so no
-// frame asks layout for them: `getBoundingClientRect` after the frame's own
-// DOM writes forces a synchronous layout, 1.4-1.8% of the on-foot frame on
-// its own (features/mesh-viewer-performance, rule 3). A canvas the observer
-// has not reported yet — or reports at 0 because it is hidden — falls back
-// to one measured read, so the first frame after the map opens is right.
-const canvasCssWidth = new Map();
-const canvasObserver = new ResizeObserver(entries => {
-  for (const entry of entries) {
-    const width = entry.contentRect.width;
-    // A 0 here means `display: none` — the box the surface lives in is hidden —
-    // and it is reported at the end of the frame that hid it. Dropping the
-    // entry rather than caching the 0 is what lets the frame that UNHIDES the
-    // surface measure it, in that same frame, before this observer has had a
-    // chance to speak: the alternative paints one frame into the previous
-    // backing size (confirmed: 283 px instead of 562). Neither painter reads a
-    // width while its own box is hidden, so nothing else is asking meanwhile.
-    if (width) canvasCssWidth.set(entry.target, width);
-    else canvasCssWidth.delete(entry.target);
-  }
+const mapSurfaces = createMapSurfaces({
+  get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get MAPS_BASE() { return MAPS_BASE; },
+  get bust() { return bust; }, get camera() { return camera; },
+  get capturePosition() { return capturePosition; }, get captured() { return captured; },
+  get currentDir() { return currentDir; }, get deployScreen() { return deployScreen; },
+  get extras() { return extras; }, get flags() { return flags; }, get hudPack() { return hudPack; },
+  get localPlayer() { return localPlayer; }, get mapVehicles() { return mapVehicles; },
+  get nearestEnemyFlag() { return nearestEnemyFlag; }, get optOnFoot() { return optOnFoot; },
+  get release() { return release; }, get scoreboard() { return scoreboard; },
+  get soldier() { return soldier; }, get soldierDead() { return soldierDead; },
+  get spawnFlagSelect() { return spawnFlagSelect; }, get spawnersRoot() { return spawnersRoot; },
+  get spawning() { return spawning; }, get sprite() { return sprite; },
+  get stage() { return stage; }, get vehicleSpawnActive() { return vehicleSpawnActive; },
+  get world() { return world; },
 });
-canvasObserver.observe(minimapCanvas);
-canvasObserver.observe(fullmapCanvas);
-function cssWidthOf(canvas) {
-  const known = canvasCssWidth.get(canvas);
-  // `!== undefined`, not truthiness, and a measured 0 is cached too: a width
-  // of 0 is an ANSWER, and treating it as a miss meant `getBoundingClientRect`
-  // — a synchronous layout, rule 3 — ran again on every call that got one, for
-  // exactly the surface this cache exists to keep off the frame path. The
-  // observer above never stores a 0 (see there), so the only way to hold one is
-  // to have measured it, and the observer overwrites that the moment the box
-  // has a size.
-  if (known !== undefined) return known;
-  const measured = canvas.getBoundingClientRect().width;
-  canvasCssWidth.set(canvas, measured);
-  return measured;
-}
-const fullmapName = document.getElementById('fullmap-name');
-const fullmapMeta = document.getElementById('fullmap-meta');
-
-// How much of the map the HUD window shows, and how it turns. The engine's
-// `BfMap` law (bfmap.js): three zoom levels stepped by `N`, the closed widget's
-// width covering 2.3^-(level+0.5) of the whole map — 0.659 / 0.287 / 0.125 —
-// centred on the player with no stop at the map's edge, and the displayed
-// rotation following the player's heading unless the map is static
-// (`game.setStaticMinimap 1`, the shipped default, north-up).
-const bfmap = new BfMap();
-// Sprite scale in CSS pixels, multiplied by the canvas's own backing ratio so
-// a flag is the same size on the 196 px HUD widget as on the fullscreen map
-// and stays put on a hidpi display.
-const MARKER_SCALE = 1.25;
-// Only for the moment before the sprite pack lands: a dot in the side's colour
-// so a level opened on a cold cache is not a bare grid.
-const TEAM_FILL = { 1: '#d2564b', 2: '#4f8fd0', 0: '#9a9a9a' };
-
-let mapArt = null;          // HTMLImageElement once the PNG has decoded
-let mapArtToken = 0;        // guards against a slow load landing after a switch
 
 // --- the sprite pack --------------------------------------------------------
 //
@@ -12217,7 +12159,7 @@ async function loadHudPack() {
         deployScreen.paintDeploySoon();
         // The spawn rings draw with these sprites (with a stroked-circle
         // fallback); once the real ring lands, put it on the map at once.
-        drawFullMap(true);
+        mapSurfaces.drawFullMap(true);
       }
     };
     img.onerror = () => {};
@@ -12345,935 +12287,15 @@ function paintLensFlare() {
 }
 gameHud.load();
 window.__hud = gameHud;
-
-/** The side's own colour on the map, measured off two retail captures.
- *
- *  The unit icons ship white on a black outline (`minimap_icon_soldier_16x16`
- *  is 14 white texels and 14 black ones) and the engine modulates them with
- *  the LOCAL player's side — not with friend-or-foe. Both readings paint an
- *  Allied player's teammates blue, which is why it took an Axis capture to
- *  tell them apart:
- *
- *  | capture | side | purest texel |
- *  |---|---|---|
- *  | 2026-09-22 21-01-16 (Bocage, HUD widget) | Allied | (75, 126, 252) |
- *  | 2026-09-23 10-11-40 (Bocage, spawn map) | Allied | (75, 126, 252) |
- *  | 2026-09-13 20-53-36 (desert, HUD widget) | Axis | (247, 52, 49) |
- *
- *  Two different maps and two different surfaces agree on the blue to the
- *  texel, so these are the modulate colours themselves and not a blend with
- *  the art beneath (bilinear filtering only ever pulls a texel TOWARD the
- *  background, never past the source). They are near — but not — (0.3, 0.5,
- *  1.0) and (0.97, 0.2, 0.19); the measured values are what is shipped
- *  because they are what was seen. */
-const MINIMAP_TEAM_TINT = { 1: [247, 52, 49], 2: [75, 126, 252] };
-
-/** A pack sprite modulated by a colour, the way the engine draws its unit
- *  icons: `out = src * tint`, so white becomes the tint outright, the black
- *  outline stays black, and the grey antialiasing lands in between. Alpha is
- *  untouched.
- *
- *  Memoised per (sprite, colour). There are two colours and a handful of
- *  icons, so the cache is a dozen 16x16 canvases at most, built once —
- *  tinting per marker per frame would be a `getImageData` on the frame path,
- *  which is the one thing the map surfaces are careful not to do
- *  (features/mesh-viewer-performance, rule 7). */
-const tintedSprites = new Map();
-function tintedSprite(name, rgb) {
-  const key = `${name}|${rgb}`;
-  const cached = tintedSprites.get(key);
-  if (cached !== undefined) return cached;
-  const img = sprite(name);
-  // Not cached as a miss: the pack is still landing and the next frame may
-  // have it.
-  if (!img) return null;
-  const c = document.createElement('canvas');
-  c.width = img.width;
-  c.height = img.height;
-  const ctx = c.getContext('2d');
-  ctx.drawImage(img, 0, 0);
-  const data = ctx.getImageData(0, 0, c.width, c.height);
-  const px = data.data;
-  for (let i = 0; i < px.length; i += 4) {
-    if (!px[i + 3]) continue;
-    px[i] = (px[i] * rgb[0]) / 255;
-    px[i + 1] = (px[i + 1] * rgb[1]) / 255;
-    px[i + 2] = (px[i + 2] * rgb[2]) / 255;
-  }
-  ctx.putImageData(data, 0, 0);
-  tintedSprites.set(key, c);
-  return c;
-}
-
-/** Draw a sprite centred on (x, y) at `sc` times its own pixels. Returns
- *  false when the pack has not delivered it yet, so callers can fall back.
- *  `tint` modulates it by a colour first (`tintedSprite`). */
-function drawSprite(ctx, name, x, y, sc, { angle = 0, alpha = 1, tint = null } = {}) {
-  const img = tint ? tintedSprite(name, tint) : sprite(name);
-  if (!img) return false;
-  const w = img.width * sc;
-  const h = img.height * sc;
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.translate(x, y);
-  if (angle) ctx.rotate(angle);
-  ctx.drawImage(img, -w / 2, -h / 2, w, h);
-  ctx.restore();
-  return true;
-}
-
-/** `cpNation`/`teamNation` proper live in `nation.js`, free of this file's
- *  `three` scene state so they can be tested under node
- *  (`tests/nation_harness.mjs`) and shared byte-for-byte with the rule
- *  `extract_menu_layout.py` runs when it writes `menu-levels.json`. These
- *  two feed them this page's own state: the mod's flag-mesh table and, for
- *  a side with no control point of its own, the vehicle-based guess. */
-function cpNation(cp) {
-  return cpNationRule(cp, hudPack.nations);
-}
-
-function teamNation(team) {
-  return teamNationRule(extras.controlPoints || [], team, hudPack.nations,
-                        nationFromVehicles(team));
-}
-
-/* The ticket counter.
- *
- * `ShowTicket` gates one top-level entry of `menu/InGame` — a sibling of the
- * spawn screen's `Kit/ShowKit`, not a child of it — so the game draws the same
- * nine leaves over the live world and over the deploy screen. Both painters
- * here read that one group: `hud.js` picks it up from `hud-layout.json`
- * generically (the group is new there this round; `extract_hud_layout.py`),
- * and `paintDeployChrome` draws it beside the spawn group.
- *
- * The counts are `scene.json.tickets`, parsed by `bf42/level.py` out of the
- * level's own `GameTypes/<mode>.con` (`Game.setNumberOfTickets`). Team 1 is
- * Axis and team 2 Allied, the reading this file already uses everywhere else
- * (`flag.team === 1 ? 'Axis' : ...`).
- *
- * These are ROUND-START values and they do not move. What a live bleed would
- * need is in `features/bf1942-3d-models/tickets-hud.md`; the short of it is
- * that a ticket is lost per death and per `Game.setTicketLostPerMin` while the
- * other side holds more than half the flags, neither of which this viewer
- * simulates — so a counting-down number here would be a fiction, and a frozen
- * one is at least the number the round genuinely starts at.
- */
-function ticketFlagTexture(team) {
-  // The layout's own literal is `flag_ticket_ger.tga` and the pack ships
-  // brit/can/ger/jp/rus/us. `teamNation` answers in exactly those codes.
-  return `flag_ticket_${teamNation(team)}.tga`;
-}
-
-/* The four strings the group needs, memoised on the level.
- *
- * `feedTicketVars` runs from `updateSoldierHud` BEFORE every one of its early
- * returns, so it is on the frame path in every mode — and every input it reads
- * is level data that cannot move under it. The counts are the ROUND-START
- * values the comment above describes (nothing in this page writes
- * `extras.tickets`; a future bleed would replace the `extras` object, which is
- * part of the key below, but one that mutated the counts IN PLACE would have to
- * bump the key here too). The two flag textures are `teamNation`, which is the
- * flag a side's control points fly.
- *
- * Unmemoised that cost, twice per frame: `nationFromVehicles` lowercasing all
- * 32 of Wake's spawner names into a Set, spreading that Set into a fresh array
- * once per nation stem inside a `.some`, and building a template literal per
- * name per stem; `teamNationRule` building a Map and re-scanning the control
- * points; and two `String()` conversions. `stanceNation` above already
- * memoises the identical rule for the stance icon for exactly this reason
- * (features/mesh-viewer-performance, rule 5).
- *
- * The key is every input that can move: the level directory; the gameplay-mode
- * `extras` (`show()` assigns `selectGameMode`'s fresh object roughly a hundred
- * lines before `currentDir`, so the dir alone is not enough on its own terms
- * even though no frame runs between the two); the flag-mesh table, which
- * `loadHudPack` fills asynchronously and can land after a level does; and the
- * spawner group, which `indexScene` rebuilds per level.
- *
- * That last one is also why this must NOT be recomputed per frame rather than
- * merely why it can be cached: `Vehicle`'s constructor reparents the driven
- * vehicle OUT of `spawnersRoot`, so a per-frame `nationFromVehicles` would flip
- * Wake's Axis ticket flag from Japanese to German for as long as a player sits
- * in the level's only Zero. Keying on the group's identity — not its contents —
- * holds the round-start answer for the whole round, which is the one the game
- * shows.
- */
-let ticketMemoDir = null;
-let ticketMemoExtras = null;
-let ticketMemoNations = null;
-let ticketMemoSpawners = null;
-const ticketMemo = {
-  show: false, axis: '', allied: '', axisFlag: '', alliedFlag: '',
-};
-function ticketMemoFor() {
-  if (ticketMemoDir === currentDir && ticketMemoExtras === extras
-      && ticketMemoNations === hudPack.nations
-      && ticketMemoSpawners === spawnersRoot) {
-    return ticketMemo;
-  }
-  ticketMemoDir = currentDir;
-  ticketMemoExtras = extras;
-  ticketMemoNations = hudPack.nations;
-  ticketMemoSpawners = spawnersRoot;
-  const t = extras.tickets;
-  // Both counts or none: the group draws two numbers side by side and a lone
-  // one would leave the layout's own sample literal ("300"/"500") showing
-  // next to a real value, which reads as data rather than as a gap.
-  ticketMemo.show = !!t && t.team1 != null && t.team2 != null;
-  ticketMemo.axis = ticketMemo.show ? String(t.team1) : '';
-  ticketMemo.allied = ticketMemo.show ? String(t.team2) : '';
-  ticketMemo.axisFlag = ticketMemo.show ? ticketFlagTexture(1) : '';
-  ticketMemo.alliedFlag = ticketMemo.show ? ticketFlagTexture(2) : '';
-  return ticketMemo;
-}
-
-/** Fill in the `ShowTicket` group's variables on a table. Returns whether the
- *  group will draw. */
-function feedTicketVars(vars) {
-  const memo = ticketMemoFor();
-  if (!memo.show) {
-    vars['ShowTicket'] = false;
-    return false;
-  }
-  vars['ShowTicket'] = true;
-  vars['AxisTicket'] = memo.axis;
-  vars['AlliedTicket'] = memo.allied;
-  vars['AxisTicketFlag'] = memo.axisFlag;
-  vars['AlliedTicketFlag'] = memo.alliedFlag;
-  // The two red 50%-alpha quads over the numbers are the engine's low-ticket
-  // warning, and it is a live-round state on a timer nothing here runs.
-  // Fed false rather than left unfed so the leaves cull deterministically
-  // instead of on whatever happened to be in the table.
-  vars['Ticket/ShowAxisTicketBlink'] = false;
-  vars['Ticket/ShowAlliedTicketBlink'] = false;
-  return true;
-}
-
-/** Fill in the `ShowFlagIcon` group's variables: the neutral white-flag disc
- *  the game paints beneath the minimap while the local player is inside a
- *  neutral control point's capture radius.
- *
- *  The layout's own condition is `ShowFlagIcon && !AxisFlagIcon &&
- *  !AlliedFlagIcon` (the 64x64 `icon_flag` leaf at (720,230)): the disc is up
- *  exactly while no side's CTF flag is up, which in conquest is the whole
- *  round. So the feed is one question — is the player standing in a neutral
- *  point's radius? — answered from the same `nearestEnemyFlag` the capture
- *  loop runs, over the same `flags` it reads. A stale true would leave the
- *  white flag up after walking away or after the take, so every path that
- *  clears capture state (leave radius, take, death, mode switch) clears this
- *  too, through the same `updateSoldierHud` frame path. CTF leaves
- *  (`AxisFlagIcon`, `AlliedFlagIcon`, `ShowNonTakeableFlagIcon`) are fed false
- *  rather than left unfed so they cull deterministically. */
-function feedFlagIconVars(vars) {
-  vars['AxisFlagIcon'] = false;
-  vars['AlliedFlagIcon'] = false;
-  vars['ShowNonTakeableFlagIcon'] = false;
-  if (!optOnFoot.checked || !soldier || soldierDead) {
-    vars['ShowFlagIcon'] = false;
-    return false;
-  }
-  const player = world?.player(LOCAL_PLAYER);
-  const team = player?.team ?? deployScreen.deployTeamId;
-  const target = nearestEnemyFlag(team, capturePosition());
-  // Neutral only: an enemy-held point is a take-back, not the white flag —
-  // the disc is the "this point belongs to nobody" marker.
-  const show = !!target && target.team !== 1 && target.team !== 2;
-  vars['ShowFlagIcon'] = show;
-  return show;
-}
-
-function loadMapArt(dir) {
-  mapArt = null;
-  const token = ++mapArtToken;
-  const rel = extras.minimap?.image;
-  minimapBox.hidden = !extras.minimap;
-  if (!rel) return;
-  const img = new Image();
-  img.onload = () => {
-    if (token !== mapArtToken) return;
-    mapArt = img;
-    // The deploy screen may already be up over a half-decoded art: repaint
-    // rather than wait for the 250 ms staleness gate.
-    if (deployScreen.deployActive()) drawFullMap(true);
-  };
-  // A level with no art still gets markers on a blank grid, so a failed
-  // decode is not worth surfacing.
-  img.onerror = () => {};
-  img.src = `${MAPS_BASE}/${dir}/${rel}${bust()}`;
-}
-
-function projectToArt(x, z) {
-  const m = extras.minimap?.worldToImage;
-  if (!m) return null;
-  return { u: m[0] * x + m[1] * z + m[2], v: m[3] * x + m[4] * z + m[5] };
-}
-
-/** Grid reference under a world position, the way the art is lettered: A-H
- *  across, 1-8 down. The labels are painted into the image, so this only has
- *  to agree with them, not with any engine call. */
-function gridRef(x, z) {
-  const p = projectToArt(x, z);
-  if (!p || p.u < 0 || p.u > 1 || p.v < 0 || p.v > 1) return '—';
-  const col = Math.min(7, Math.max(0, Math.floor(p.u * 8)));
-  const row = Math.min(7, Math.max(0, Math.floor(p.v * 8)));
-  return `${'ABCDEFGH'[col]}${row + 1}`;
-}
-
-/** Camera heading as a screen-space angle, 0 pointing up the image.
- *
- *  Taken from the camera's world direction rather than `look.yaw` so it stays
- *  correct in the pilot and vehicle camera modes, which drive the camera by
- *  quaternion and never touch `look`. The image's V axis grows with glTF +Z,
- *  so "up the image" is -Z. */
-const headingVec = new THREE.Vector3();
-function cameraHeading() {
-  camera.getWorldDirection(headingVec);
-  return Math.atan2(headingVec.x, -headingVec.z);
-}
-
-/** Open-map quad alpha from BfMap__update: (+0x4c)*0.8*(+0x54), with
- *  +0x54 = 1 - setMinimapTransparency/100 (default 20 → 0.80). Steady
- *  visible fade (+0x4c→1) gives 0.64. Ledger MEME-10 / gap-research-meme10. */
-const SPAWN_MAP_ALPHA = 0.8 * (1 - 20 / 100);
-
-/** The art, three ways. The spawn screen dims it to a silhouette on
- *  near-black; the HUD widget leaves the world showing through, the game's
- *  own `setMinimapTransparency` default; the plain M map draws it as is.
- *
- *  `size` is the backing width; the backing height comes off the canvas's
- *  own box (`fitCanvas` keeps the two). The HUD widget is not square — it is
- *  `MINIMAP_RECT` through the stage's own sx and sy, which differ on any
- *  window that is not 4:3 — so the window covers `span` of the art across
- *  the width and `span * height / width` down it: the art's own aspect is
- *  never stretched, and on a square surface this is exactly the old square
- *  mapping. */
-function drawArt(ctx, size, u0, v0, span, opts) {
-  const h = ctx.canvas.height;
-  ctx.clearRect(0, 0, size, h);
-  ctx.fillStyle = opts.dim ? '#05070b'
-    : opts.translucent ? 'rgba(13, 15, 16, .78)' : '#0d0f10';
-  ctx.fillRect(0, 0, size, h);
-  if (!mapArt) return;
-  const vSpan = span * h / size;
-  const v0c = v0 + (span - vSpan) / 2;   // the window stays centred on the player
-  const sx = u0 * mapArt.width;
-  const sy = v0c * mapArt.height;
-  const sw = span * mapArt.width;
-  const sh = vSpan * mapArt.height;
-  ctx.globalAlpha = opts.dim ? SPAWN_MAP_ALPHA : opts.translucent ? 0.85 : 1;
-  if (opts.rot || u0 < 0 || v0c < 0 || u0 + span > 1 || v0c + vSpan > 1) {
-    // The HUD minimap: the window is centred on the player, so it can hang
-    // over the art's edge, and the rotating mode turns it about the surface's
-    // centre. The source is grown to cover the turned square's corners and cut
-    // to the art; what lies past the art is the backdrop.
-    const cover = coverRect(u0, v0c, span, size, opts.rot || 0);
-    if (cover) {
-      const mid = size / 2;
-      ctx.save();
-      ctx.translate(mid, mid);
-      ctx.rotate(opts.rot || 0);
-      ctx.translate(-mid, -mid);
-      ctx.drawImage(mapArt,
-        cover.src.u * mapArt.width, cover.src.v * mapArt.height,
-        cover.src.w * mapArt.width, cover.src.h * mapArt.height,
-        cover.dst.x, cover.dst.y, cover.dst.w, cover.dst.h);
-      ctx.restore();
-    }
-  } else {
-    ctx.drawImage(mapArt, sx, sy, sw, sh, 0, 0, size, h);
-  }
-  ctx.globalAlpha = 1;
-}
-
-/** A control point is its flag sprite: `conp_<nation>` for one that can
- *  change hands, the red-ringed `baseflag_conp_<nation>` for a main base,
- *  `conp_neutral` for one nobody holds. Kasserine's flagless capture zones
- *  get the same icon — the map marks the point, not the cloth. A flag mesh
- *  this pack has no art for (`cpNation` -> `'unknown'`, Pathet Lao's
- *  `flagpl_m1`) gets the same neutral plate rather than another nation's
- *  flag — the pack's own stand-in for a team it cannot draw. */
-function drawControlPoint(ctx, cp, px, py, sc) {
-  const raw = cp.team ? cpNation(cp) : null;
-  const nation = raw && raw !== 'unknown' ? raw : null;
-  const name = !nation ? 'conp_neutral'
-    : cp.unableToChangeTeam ? `baseflag_conp_${nation}` : `conp_${nation}`;
-  if (drawSprite(ctx, name, px, py, sc)) return;
-  ctx.fillStyle = TEAM_FILL[cp.team] || TEAM_FILL[0];
-  ctx.beginPath();
-  ctx.arc(px, py, 4 * sc, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-/** The vehicles, by template: every `spawners` child in the scene carries its
- *  template name, and `minimap-icons.json` says which silhouette that template
- *  declared. A template with no icon of its own is a vehicle dot, the way the
- *  HUD marks anything it has no picture for.
- *
- *  A hull a teammate is sitting in is drawn in the side's own colour, which
- *  is the whole of how retail marks a crewed vehicle — there is no second
- *  mark for the men inside it (`friendlyMapUnits` skips them for exactly
- *  this reason). A parked one keeps the archive's white-on-black.
- *
- *  The list is `mapVehicles`, not the live `spawners` group, which a driven
- *  hull has left. The local player's own hull is skipped: the ring is his
- *  mark, in a vehicle as on foot. */
-const vehiclePos = new THREE.Vector3();
-const vehicleQuat = new THREE.Quaternion();
-const vehicleFwd = new THREE.Vector3();
-function drawVehicles(ctx, toPx, sc, rot = 0) {
-  const crewed = friendlyVehicleNodes();
-  const tint = MINIMAP_TEAM_TINT[localMapTeam()] || MINIMAP_TEAM_TINT[2];
-  for (const vehicle of mapVehicles) {
-    if (vehicle === localPlayer.occupancy?.root) continue;
-    if (!vehicleSpawnActive(vehicle)) continue;
-    vehicle.getWorldPosition(vehiclePos);
-    const p = projectToArt(vehiclePos.x, vehiclePos.z);
-    if (!p) continue;
-    const q = toPx(p);
-    // By template, not node name: GLTFLoader renames the second Kubelwagen
-    // `Kubelwagen_1`, and a name lookup gave every one after the first the
-    // plain vehicle dot.
-    const template = (vehicle.userData?.control || vehicle.name).toLowerCase();
-    const entry = hudPack.icons[template] ?? hudPack.icons[vehicle.name.toLowerCase()];
-    const icon = entry?.icon && !entry.icon.startsWith('flag_') ? entry.icon : null;
-    // The silhouettes point up the sprite and the game turns them with the
-    // vehicle; same forward axis and the same screen angle as the player.
-    vehicle.getWorldQuaternion(vehicleQuat);
-    vehicleFwd.set(0, 0, -1).applyQuaternion(vehicleQuat);
-    // `rot` is the map's own turn (the rotating minimap): a heading drawn on a
-    // turned map turns with it.
-    const angle = Math.atan2(vehicleFwd.x, -vehicleFwd.z) + rot;
-    const manned = crewed.has(vehicle) ? tint : null;
-    if (!icon || !drawSprite(ctx, icon, q.x, q.y, sc,
-                             { angle, alpha: 0.9, tint: manned })) {
-      drawSprite(ctx, 'icon_vehicledot_empty', q.x, q.y, sc,
-                 { tint: manned });
-    }
-  }
-}
-
-/** The vehicles a side fields, for the levels where its flags say nothing:
- *  Wake's Japanese hold no control point at the start and arrive by sea, so
- *  their nation is read off the carrier and the Zeros instead. Only the
- *  templates that belong to one nation alone are listed. */
-const NATION_VEHICLES = {
-  jp: ['zero', 'aichival', 'chi-ha', 'ho-ha', 'type38', 'hatsuzuki', 'yamato', 'shokaku'],
-  rus: ['t34', 'katyusha', 'ilyushin', 'yak9'],
-  brit: ['spitfire', 'sexton', 'blackmedal', 'princeow'],
-};
-function nationFromVehicles(team) {
-  if (!spawnersRoot) return null;
-  const names = new Set(spawnersRoot.children.map(v => v.name.toLowerCase()));
-  const has = nation => NATION_VEHICLES[nation].some(stem =>
-    [...names].some(name => name === stem || name.startsWith(`${stem}_`)));
-  if (team === 1) return has('jp') ? 'jp' : null;
-  return has('rus') ? 'rus' : has('brit') ? 'brit' : null;
-}
-
-function drawPlayer(ctx, px, py, sc, rot = 0) {
-  // On the rotating minimap `rot` is minus the heading, so the arrow reads
-  // straight up and the world turns under it.
-  if (drawSprite(ctx, 'minimap_icon_ring_32x32', px, py, sc * 0.8,
-                 { angle: cameraHeading() + rot })) return;
-  ctx.fillStyle = '#76d65c';
-  ctx.beginPath();
-  ctx.arc(px, py, 4 * sc, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-/** The side the map is drawn for: whose units get an arrow and what colour
- *  everything friendly is modulated with. The deploy screen runs before a
- *  soldier exists, so it falls back to the team the player has chosen. */
-function localMapTeam() {
-  return world?.player(LOCAL_PLAYER)?.team ?? deployScreen.deployTeamId;
-}
-
-/**
- * Friendly units, the way retail marks them: an on-foot teammate is a small
- * arrow in the side's own colour, pointing where he faces
- * (`minimap_icon_soldier_16x16`, white in the archive and modulated by the
- * engine); a seated one is not marked here at all, because his VEHICLE is
- * the mark and `drawVehicles` tints that instead. The local player is the
- * disc-and-arrow ring (`drawPlayer`), so he is not doubled.
- *
- * The list is the world's own players — bots and, in a room, the other
- * humans — filtered to the local side; a destroyed body has no arrow.
- *
- * The arrow is the whole reason a bot is findable: a squad spawning on a
- * capped flag and advancing on an objective leaves the player's own corner
- * of the map within seconds, and the map is the only surface that still
- * shows them. The heading is what the dot it replaces could not say — which
- * way the line is moving, and so whether it is coming to help.
- */
-function friendlyMapUnits() {
-  const out = [];
-  const players = world?.players;
-  if (!players) return out;
-  const localTeam = localMapTeam();
-  for (const [id, player] of players) {
-    if (id === LOCAL_PLAYER) continue;
-    if (player.team !== localTeam) continue;
-    if (player.armor?.destroyed) continue;
-    // Seated: `drawVehicles` paints the hull he is in. Two marks for one man
-    // is what retail does not do.
-    if (player.occupancy?.root) continue;
-    const s = player.soldier;
-    if (!s) continue;
-    out.push({ x: s.x, z: s.z, yaw: s.yaw });
-  }
-  return out;
-}
-
-/** The scene nodes a friendly is riding, so `drawVehicles` can tell an
- *  occupied hull from a parked one. A Set rather than a walk per vehicle:
- *  this runs once per surface, not once per spawner. */
-function friendlyVehicleNodes() {
-  const out = new Set();
-  const players = world?.players;
-  if (!players) return out;
-  const localTeam = localMapTeam();
-  for (const [id, player] of players) {
-    if (id === LOCAL_PLAYER) continue;
-    if (player.team !== localTeam) continue;
-    if (player.armor?.destroyed) continue;
-    const root = player.occupancy?.root;
-    if (!root) continue;
-    // The hull the map draws: a carrier's AA gun is a seat of the carrier.
-    let hull = root;
-    for (let n = root; n; n = n.parent) if (mapVehicles.includes(n)) { hull = n; break; }
-    out.add(hull);
-  }
-  return out;
-}
-
-/** A cheap key that changes as the units move, so a map surface repaints on a
- *  bot's step and not only on the camera's. The heading is in it to a tenth
- *  of a radian — the arrow turns visibly at this size well before it moves a
- *  backing pixel, so a position-only key would freeze a teammate mid-turn. */
-function friendlyMarkerKey() {
-  let key = '';
-  for (const { x, z, yaw } of friendlyMapUnits()) {
-    key += `${Math.round(x)},${Math.round(z)},${Math.round(yaw * 10)};`;
-  }
-  // A crewed hull moves and turns under its crew, so its pose is in the key
-  // the way an on-foot arrow's is.
-  for (const node of friendlyVehicleNodes()) {
-    node.getWorldPosition(vehiclePos);
-    node.getWorldQuaternion(vehicleQuat);
-    vehicleFwd.set(0, 0, -1).applyQuaternion(vehicleQuat);
-    key += `v${node.id},${Math.round(vehiclePos.x)},${Math.round(vehiclePos.z)},`
-      + `${Math.round(Math.atan2(vehicleFwd.x, -vehicleFwd.z) * 10)};`;
-  }
-  return key;
-}
-
-/** `rot` is the map's own turn, as everywhere else here: an arrow drawn on a
- *  turned map turns with it. */
-function drawFriendlies(ctx, toPx, sc, rot = 0) {
-  const tint = MINIMAP_TEAM_TINT[localMapTeam()] || MINIMAP_TEAM_TINT[2];
-  for (const { x, z, yaw } of friendlyMapUnits()) {
-    const p = projectToArt(x, z);
-    if (!p) continue;
-    const q = toPx(p);
-    // `soldier.yaw` turns a forward of (sin yaw, 0, cos yaw) (soldier.js
-    // `lookVector`); the surface's screen angle is the same `atan2(x, -z)`
-    // the camera and the vehicles go through, so the three agree by
-    // construction rather than by a remembered offset.
-    const angle = Math.atan2(Math.sin(yaw), -Math.cos(yaw)) + rot;
-    if (drawSprite(ctx, 'minimap_icon_soldier_16x16', q.x, q.y, sc,
-                   { angle, tint })) continue;
-    // The pack may not have delivered the sprite yet (or a mod repaints the
-    // HUD without it): the side's own map colour stands in.
-    ctx.fillStyle = `rgb(${tint.join(',')})`;
-    ctx.beginPath();
-    ctx.arc(q.x, q.y, 3 * sc, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
-
-/** The spawn screen's targets: one `map_circle` per flag the chosen side can
- *  spawn at, never one per spawn entry. The chosen one is drawn larger and
- *  solid; the rest sit back. `flagMapSpots` is imported from
- *  `deploy-spots.js`, which pins its land-vs-ship contract under node. */
-
-function drawSpawnRings(ctx, toPx, sc) {
-  // -1 while nothing is chosen: every ring sits back and none is filled,
-  // which is what tells the player he is about to free-roam rather than
-  // spawn (`deployUnchosen`).
-  const chosen = deployScreen.deployUnchosen ? -1
-    : Math.min(Number(spawnFlagSelect.value) || 0, flags.length - 1);
-  for (const index of spawning.deployFlagIndices()) {
-    const flag = flags[index];
-    for (const spot of flagMapSpots(flag)) {
-      if (!spot.position) continue;
-      const p = projectToArt(spot.position[0], spot.position[2]);
-      if (!p) continue;
-      const q = toPx(p);
-      const active = index === chosen
-        && (spot.group == null || spot.group === spawning.activeDeployGroup(flag));
-      if (!drawSprite(ctx, 'map_circle', q.x, q.y, sc * (active ? 1.4 : 1.05),
-                      { alpha: active ? 1 : 0.7 })) {
-        ctx.strokeStyle = active ? '#ffffff' : 'rgba(255,255,255,.6)';
-        ctx.lineWidth = Math.max(1, sc);
-        ctx.beginPath();
-        ctx.arc(q.x, q.y, 8 * sc, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      if (active) drawSprite(ctx, 'map_dot', q.x, q.y, sc * 0.7);
-    }
-  }
-}
-
-/** Match a canvas's backing store to the box it is displayed in.
- *
- *  Returns the device ratio so markers can be sized in CSS pixels. Without
- *  this the HUD widget draws into a 376 px buffer shown at 186 px and every
- *  marker comes out half the size it was asked for. The HUD widget's box is
- *  not square (`MINIMAP_RECT` through the stage's sx and sy), so the height
- *  follows the box — not the width — and only the fullscreen map stays
- *  square. */
-function fitCanvas(canvas) {
-  const css = cssWidthOf(canvas);
-  if (!css) return canvas.__ratio || 1;
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const want = Math.round(css * dpr);
-  const boxH = canvas.clientHeight || 0;
-  const wantH = canvas === minimapCanvas && boxH
-    ? Math.round(boxH * dpr) : want;
-  if (canvas.width !== want || canvas.height !== wantH) {
-    canvas.width = want;
-    canvas.height = wantH;
-  }
-  canvas.__ratio = dpr;
-  return dpr;
-}
-
-/** One map surface. `span` is the fraction of the art shown, `u0`/`v0` its
- *  top-left corner — the fullscreen map passes the whole image, the HUD a
- *  window centred on the camera. Vehicles under flags under spawn rings
- *  under the player, and nothing else: the game prints no names, no capture
- *  radii and no combat-area box on any of its map surfaces.
- *
- *  The HUD widget's box is wider than tall (the measured retail frame
- *  ratio), while the fullscreen map stays square. `size` below is the
- *  backing WIDTH; `paintMap` derives the backing height from the canvas's
- *  own box (`canvas.width / canvas.height`), so the close-cropped art and
- *  every marker land on the same rectangle the chrome frames. */
-function paintMap(canvas, u0, v0, span, opts) {
-  const ctx = canvas.getContext('2d');
-  const ratio = fitCanvas(canvas);
-  const size = canvas.width;
-  const h = canvas.height;
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  drawArt(ctx, size, u0, v0, span, opts);
-  if (!extras.minimap?.worldToImage) return ratio;
-
-  // Every marker POSITION turns with the art about the surface's centre; the
-  // flag plates themselves stay upright (a viewer choice — what the engine
-  // does to a flag icon on a turned map was not read), and only the icons that
-  // show a heading add the turn to their own angle.
-  //
-  // The HUD widget's box is not square (`MINIMAP_RECT` through the stage's
-  // sx and sy) while the fullscreen map stays square. Markers scale with the backing
-  // width on x and the backing height on y about the surface's own centre,
-  // so neither the art's window nor a marker stretches; on the square
-  // surfaces the two scales coincide and this is exactly the old mapping.
-  const rot = opts.rot || 0;
-  const midX = size / 2, midY = h / 2;
-  const toPx = p => rotateAbout(((p.u - u0) / span) * size,
-                                ((p.v - v0) / span) * h, midX, rot, midY);
-  const sc = MARKER_SCALE * ratio * (opts.scale || 1);
-  ctx.imageSmoothingEnabled = false;
-
-  drawVehicles(ctx, toPx, sc, rot);
-  for (const cp of extras.controlPoints || []) {
-    const p = projectToArt(cp.position[0], cp.position[2]);
-    if (!p) continue;
-    const q = toPx(p);
-    drawControlPoint(ctx, cp, q.x, q.y, sc);
-  }
-  if (opts.spawnRings) drawSpawnRings(ctx, toPx, sc);
-
-  // Friendly arrows under the local one: teammates are map furniture in every
-  // mode (deploy map included), so they draw whenever the map does.
-  drawFriendlies(ctx, toPx, sc, rot);
-
-  if (opts.player !== false) {
-    const here = projectToArt(camera.position.x, camera.position.z);
-    if (here) {
-      const q = toPx(here);
-      drawPlayer(ctx, q.x, q.y, sc, rot);
-    }
-  }
-  ctx.imageSmoothingEnabled = true;
-  return ratio;
-}
-
-/** The HUD widget's chrome, all of it in the canvas: the `icon_mapbar_small`
- *  bezel as the nine-patch it is (a four-pixel frame round a transparent
- *  middle), the grid readout in the lower-left corner, and the flag-status
- *  strip along the bottom edge — one `cpbar` segment per control point in
- *  its holder's colour.
- *
- *  The strip is retail's own bottom edge: below the frame the capture has a
- *  second, shorter plate of its own (y ~207.4..216.9). This widget keeps the
- *  strip inside the frame rather than painting that second plate — one
- *  surface, one bezel — so it rides the frame's bottom edge. */
-/** The minimap frame in the HUD's own 800x600 virtual space, measured off
- *  the retail captures (`MINIMAP_RECT` below is the whole story):
- *
- *  | edge | virtual | how |
- *  |---|---|---|
- *  | left | 620 | flush with the ticket plate's left edge |
- *  | right | 795.4 | flush with the ticket plate's painted right edge |
- *  | top | 30.0 | 2 units of sky below the plate's bottom (28) |
- *  | bottom | 204.9 | last row of the frame's bezel |
- *
- *  So the frame is a 175.4 x 174.9 square of virtual units — square in the
- *  layout, not on screen, because the HUD stretches by stageW/800 across
- *  and stageH/600 down and those differ on any window that is not 4:3. */
-const MINIMAP_RECT = { x: 620, y: 30, w: 175.4, h: 174.9 };
-function drawMinimapChrome(ctx, size, ratio) {
-  const h = ctx.canvas.height;
-  const bezel = sprite('icon_mapbar_small');
-  const edge = 4;
-  const d = Math.round(edge * ratio * 1.5);
-  if (bezel) {
-    const w = bezel.width, bh = bezel.height;
-    const cut = (sx, sy, sw, sh, dx, dy, dw, dh) =>
-      ctx.drawImage(bezel, sx, sy, sw, sh, dx, dy, dw, dh);
-    cut(0, 0, edge, edge, 0, 0, d, d);
-    cut(w - edge, 0, edge, edge, size - d, 0, d, d);
-    cut(0, bh - edge, edge, edge, 0, h - d, d, d);
-    cut(w - edge, bh - edge, edge, edge, size - d, h - d, d, d);
-    cut(edge, 0, w - 2 * edge, edge, d, 0, size - 2 * d, d);
-    cut(edge, bh - edge, w - 2 * edge, edge, d, h - d, size - 2 * d, d);
-    cut(0, edge, edge, bh - 2 * edge, 0, d, d, h - 2 * d);
-    cut(w - edge, edge, edge, bh - 2 * edge, size - d, d, d, h - 2 * d);
-  }
-
-  const cps = extras.controlPoints || [];
-  const segW = Math.round(12 * ratio), segH = Math.round(6 * ratio);
-  const gap = Math.round(2 * ratio);
-  let x = d + gap;
-  const y = h - d - segH - gap;
-  for (const cp of cps) {
-    if (x + segW > size - d) break;
-    const name = cp.team === 1 ? 'cpbar_red_cp_16x8'
-      : cp.team === 2 ? 'cpbar_blue_cp_16x8' : 'cpbar_gray_cp_16x8';
-    const seg = sprite(name);
-    if (seg) ctx.drawImage(seg, x, y, segW, segH);
-    else {
-      ctx.fillStyle = TEAM_FILL[cp.team] || TEAM_FILL[0];
-      ctx.fillRect(x, y, segW, segH);
-    }
-    x += segW + gap;
-  }
-
-  const text = gridRef(camera.position.x, camera.position.z);
-  ctx.font = `bold ${Math.round(13 * ratio)}px 'Arial Narrow', 'Liberation Sans Narrow', Arial, sans-serif`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-  const tx = d + Math.round(6 * ratio);
-  const ty = y - Math.round(5 * ratio);
-  ctx.fillStyle = 'rgba(0,0,0,.85)';
-  ctx.fillText(text, tx + ratio, ty + ratio);
-  ctx.fillStyle = '#f4f4f0';
-  ctx.fillText(text, tx, ty);
-}
-
-// What each map surface last painted, so a frame in which nothing it shows
-// has moved paints nothing: the art plus every sprite, at DPR 2, was a 2D
-// canvas repaint and a texture upload to the compositor every frame whether
-// the soldier stood still or not (features/mesh-viewer-performance, rule
-// 7). The key is what the surface draws — the player's art position to the
-// backing pixel, the heading to a hundredth of a radian (under a pixel of
-// arrow at this size), the canvas size, the art and sprites having landed,
-// the flown vehicle's position for a camera planted away from it in fly-by
-// — and a 250 ms ceiling catches what has no key, a captured flag's colour.
-const mapSurfaceLast = new Map();   // canvas -> { key, at }
-// Off only through `__mapGate(false)` under ?shots: the bench that puts a
-// number on what the gate saves sets it against the every-frame repaint it
-// replaced, on the same page.
-let mapGate = true;
-function mapSurfaceStale(canvas, key, force) {
-  const last = mapSurfaceLast.get(canvas);
-  const now = performance.now();
-  if (mapGate && !force && last && last.key === key && now - last.at < 250) return false;
-  mapSurfaceLast.set(canvas, { key, at: now });
-  return true;
-}
-function mapSurfaceKey(canvas, here, span) {
-  const size = Math.round((cssWidthOf(canvas) || 0) * Math.min(window.devicePixelRatio || 1, 2));
-  const px = size / span;   // backing pixels per unit of art
-  const vehicle = (localPlayer.aircraft || localPlayer.car)?.state.position;
-  return `${Math.round(here.u * px)},${Math.round(here.v * px)},`
-    + `${Math.round(cameraHeading() * 100)},${size},${mapArt ? mapArtToken : -1},`
-    + `${hudPack.sprites.size},${vehicle ? `${Math.round(vehicle.x)},${Math.round(vehicle.z)}` : ''}`;
-}
-
-/** The widget IS `MINIMAP_RECT` put through the HUD's own virtual-to-stage
- *  scale, so it lands on the pixels the layout would have painted it on: as
- *  wide as the ticket plate above it, right edge under the plate's right
- *  edge, and no taller than the layout says.
- *
- *  The plate is HUD-canvas paint, not DOM, so there is nothing to measure —
- *  `Hud._scaleFor` is sx = stageW/800, sy = stageH/600, and the rect goes
- *  through those. That is the whole sum. The earlier version took the
- *  plate's LEAF rect (620,4,256,32) for its width, but `icon_ticketbar` is
- *  a 256x32 texture whose ink stops at x=176: the last 80 columns are
- *  transparent padding, and the bar a player sees is 176 wide, not 256. The
- *  widget came out ~1.45x too wide for it.
- *
- *  Re-derived when the stage or the level changes (the `--mm-size` write
- *  resizes the box, which the ResizeObserver reports back into
- *  `fitCanvas`'s backing store).
- *
- *  Mobile is the one place the layout's own answer is not the answer. A
- *  phone holds the stage in PORTRAIT, which retail never did: sy there is
- *  two and a half times sx, so `MINIMAP_RECT` put through them honestly
- *  gives an 82x215 splinter down the side of the screen. So below 720 px of
- *  stage the widget keeps its own 175.4:174.9 shape, capped at 118 px so it
- *  cannot cover the bar, and the stylesheet's `@media` rule keeps the
- *  corner. */
-let minimapSyncKey = '';
-function syncMinimapToTickets() {
-  const canvas = minimapCanvas;
-  const stageW = stage.clientWidth || 0;
-  const stageH = stage.clientHeight || 0;
-  if (!stageW || !stageH) return;
-  const key = `${stageW}x${stageH}:${currentDir}:${!!extras.tickets}`;
-  const small = stageW <= 720;
-  if (key === minimapSyncKey && canvas.dataset.syncSmall === String(small)) return;
-  // No renderer backing math here — those pixels are WebGL's, not the
-  // stage's.
-  const sx = stageW / 800;
-  const sy = stageH / 600;
-  const want = small
-    ? Math.min(118, Math.round(MINIMAP_RECT.w * sx))
-    : Math.max(120, Math.round(MINIMAP_RECT.w * sx));
-  const cur = parseFloat(getComputedStyle(minimapBox).width) || 0;
-  if (Math.abs(cur - want) >= 1) {
-    minimapBox.style.setProperty('--mm-size', `${want}px`);
-  }
-  // Down the stage is sy, not sx: the frame is square in virtual units and
-  // the HUD stretches the two axes independently, so deriving the height
-  // from the width would keep it square on screen and retail does not.
-  // Portrait is the exception above.
-  const wantH = small
-    ? Math.round(want * (MINIMAP_RECT.h / MINIMAP_RECT.w))
-    : Math.round(MINIMAP_RECT.h * sy);
-  if (canvas.style.height !== `${wantH}px`) canvas.style.height = `${wantH}px`;
-  // The corner the layout puts it in, in the same units. Mobile keeps the
-  // stylesheet's.
-  const top = small ? '' : `${Math.round(MINIMAP_RECT.y * sy)}px`;
-  const right = small ? '' : `${Math.round((800 - MINIMAP_RECT.x - MINIMAP_RECT.w) * sx)}px`;
-  if (minimapBox.style.top !== top) minimapBox.style.top = top;
-  if (minimapBox.style.right !== right) minimapBox.style.right = right;
-  canvas.dataset.syncSmall = String(small);
-  minimapSyncKey = key;
-}
-
-function drawMinimap() {
-  if (minimapBox.hidden) return;
-  syncMinimapToTickets();
-  const here = projectToArt(camera.position.x, camera.position.z);
-  if (!here) return;
-  // The live span: `N` steps the level and `bfmap.update` eases toward it, so
-  // the span is part of what the surface shows and part of its key.
-  const span = bfmap.span();
-  const key = `${mapSurfaceKey(minimapCanvas, here, span)},`
-    + `${Math.round(span * 1e5)},${bfmap.isStatic ? 1 : 0},`
-    + friendlyMarkerKey();
-  if (!mapSurfaceStale(minimapCanvas, key)) return;
-  // North-up with a rotating arrow by default. That is the game's own shipped
-  // default — every stock profile sets `game.setStaticMinimap 1` — and it
-  // keeps the baked-in grid letters upright. `game.setStaticMinimap 0` turns
-  // the map under a fixed arrow instead: this widget is the closed map, z = 0,
-  // so the turn is the whole heading (the heading is already in the key).
-  const { u0, v0 } = minimapWindow(here, span);
-  const rot = bfmap.rotation(0, cameraHeading());
-  const ratio = paintMap(minimapCanvas, u0, v0, span, { translucent: true, rot });
-  drawMinimapChrome(minimapCanvas.getContext('2d'), minimapCanvas.width, ratio);
-}
-
-/** `force` repaints regardless: the deploy screen's layout and the M key
- *  open the surface at a size or in a state the key has not seen. */
-function drawFullMap(force = false) {
-  if (fullmapBox.hidden) return;
-  const here = projectToArt(camera.position.x, camera.position.z) || { u: 0, v: 0 };
-  const key = `${mapSurfaceKey(fullmapCanvas, here, 1)},${deployScreen.deployActive()},${deployScreen.deployRejoin},`
-    + `${deployScreen.deployTeamId},${deployScreen.deployUnchosen ? '-' : spawnFlagSelect.value},${flags.length},`
-    + friendlyMarkerKey();
-  if (!mapSurfaceStale(fullmapCanvas, key, force)) return;
-  // Bigger sprites than the HUD widget: this surface is several times the
-  // size. In the deploy state the art dims to the spawn screen's silhouette
-  // and the rings come out; a dead man has no marker, so the player shows
-  // only when a life waits behind the screen.
-  const deploy = deployScreen.deployActive();
-  // Sprites grow with the surface, not with the window: the game's spawn map
-  // shows a 16 px flag at about a fifth of a grid square, and so does this
-  // one whatever the canvas's CSS size came out as.
-  const css = cssWidthOf(fullmapCanvas) || 610;
-  paintMap(fullmapCanvas, 0, 0, 1, {
-    scale: Math.min(2, Math.max(0.8, css / 610)),
-    dim: deploy,
-    spawnRings: deploy,
-    player: !deploy || deployScreen.deployRejoin,
-  });
-}
-
-function toggleFullMap(on) {
-  const want = on ?? fullmapBox.hidden;
-  // Deploy state: the game's own open/close — BfMap__animate easing the map
-  // between the minimap corner and the spawn-map rect (block below). The
-  // .deploy class stays on through the whole close so the keys and buttons
-  // keep working until the pane is actually gone.
-  if (want && fullmapBox.classList.contains('deploy')) {
-    if (fullmapBox.hidden) deployScreen.deployZ = 0;   // fresh open; reopening mid-close just flips the target
-    deployScreen.deployZTarget = 1;
-    fullmapBox.hidden = false;
-    deployScreen.applyDeployFrame();
-    // Holding the map is not flying. Releasing the pointer lock also stops the
-    // movement keys running under the overlay.
-    if (captured) release();
-    drawFullMap(true);
-    return;
-  }
-  if (!want && deployScreen.deployActive()) {
-    deployScreen.deployZTarget = 0;
-    if (deployScreen.deployZ === 0) deployScreen.finishDeployClose();  // a close requested before the first ease tick
-    else deployScreen.applyDeployFrame();
-    return;
-  }
-  fullmapBox.hidden = !want;
-  // Closing strips the deploy chrome with it, so a level switch or a plain
-  // Escape can never leave the screen armed behind a hidden overlay.
-  if (!want) {
-    if (deployScreen.scoreFromSpawn) scoreboard.setScoreboard(false);
-    fullmapBox.classList.remove('deploy');
-    deployScreen.fullmapFrame.removeAttribute('style');
-  }
-  // Holding the map is not flying. Releasing the pointer lock also stops the
-  // movement keys running under the overlay.
-  if (want && captured) release();
-  if (want) drawFullMap(true);
-}
-fullmapBox.addEventListener('click', () => {
-  // The plain map closes on any click; the deploy state does not — its
-  // backdrop is not a button, and the exits are the footer, Escape and M.
-  if (deployScreen.deployActive()) return;
-  toggleFullMap(false);
-});
 const deployScreen = createDeployScreen({
-  get KIT_ROW_KEYS() { return KIT_ROW_KEYS; }, get bfmap() { return bfmap; },
-  get bust() { return bust; }, get cameraHeading() { return cameraHeading; },
-  get drawFullMap() { return drawFullMap; }, get feedTicketVars() { return feedTicketVars; },
-  get fullmapBox() { return fullmapBox; }, get fullmapCanvas() { return fullmapCanvas; },
+  get KIT_ROW_KEYS() { return KIT_ROW_KEYS; }, get bfmap() { return mapSurfaces.bfmap; },
+  get bust() { return bust; }, get cameraHeading() { return mapSurfaces.cameraHeading; },
+  get drawFullMap() { return mapSurfaces.drawFullMap; }, get feedTicketVars() { return mapSurfaces.feedTicketVars; },
+  get fullmapBox() { return mapSurfaces.fullmapBox; }, get fullmapCanvas() { return mapSurfaces.fullmapCanvas; },
   get hudPack() { return hudPack; }, get hudPaths() { return hudPaths; },
   get kitLoadout() { return kitLoadout; }, get kitRowLabelFor() { return kitRowLabelFor; },
   get loadouts() { return loadouts; }, get scoreboard() { return scoreboard; },
-  get sprite() { return sprite; }, get teamNation() { return teamNation; },
+  get sprite() { return sprite; }, get teamNation() { return mapSurfaces.teamNation; },
   get updateKitAriaLabels() { return spawning.updateKitAriaLabels; },
   get worldReady() { return worldReady; },
 });
@@ -13282,7 +12304,7 @@ const scoreboard = createScoreboardScreen({
   get deployKit() { return deployScreen.deployKit; }, get deployRejoin() { return deployScreen.deployRejoin; },
   get deployTeamId() { return deployScreen.deployTeamId; }, get deployVars() { return deployScreen.deployVars; },
   get drawBitmapText() { return deployScreen.drawBitmapText; }, get extras() { return extras; },
-  get fullmapBox() { return fullmapBox; }, get hudPack() { return hudPack; },
+  get fullmapBox() { return mapSurfaces.fullmapBox; }, get hudPack() { return hudPack; },
   get hudPaths() { return hudPaths; }, get loadouts() { return loadouts; },
   get measureText() { return deployScreen.measureText; }, get optOnFoot() { return optOnFoot; },
   get placeHit() { return deployScreen.placeHit; }, get referee() { return referee; },
@@ -13290,7 +12312,7 @@ const scoreboard = createScoreboardScreen({
   get scoreFromSpawn() { return deployScreen.scoreFromSpawn; }, set scoreFromSpawn(v) { deployScreen.scoreFromSpawn = v; },
   get soldier() { return soldier; }, get soldierDead() { return soldierDead; },
   get spawnLayout() { return deployScreen.spawnLayout; }, get sprite() { return sprite; },
-  get ticketFlagTexture() { return ticketFlagTexture; }, get world() { return world; },
+  get ticketFlagTexture() { return mapSurfaces.ticketFlagTexture; }, get world() { return world; },
 });
 const spawning = createSpawning({
   get DEATH_CAM() { return DEATH_CAM; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
@@ -13299,15 +12321,15 @@ const spawning = createSpawning({
   get deathCamTarget() { return deathCamTarget; }, set deathCamTarget(v) { deathCamTarget = v; },
   get deathCamTimer() { return deathCamTimer; }, set deathCamTimer(v) { deathCamTimer = v; },
   get deployScreen() { return deployScreen; },
-  get disposeHandWeapon() { return disposeHandWeapon; }, get drawFullMap() { return drawFullMap; },
+  get disposeHandWeapon() { return disposeHandWeapon; }, get drawFullMap() { return mapSurfaces.drawFullMap; },
   get ensureHandWeapon() { return ensureHandWeapon; }, get flags() { return flags; },
-  get fullmapBox() { return fullmapBox; }, get fullmapCanvas() { return fullmapCanvas; },
+  get fullmapBox() { return mapSurfaces.fullmapBox; }, get fullmapCanvas() { return mapSurfaces.fullmapCanvas; },
   get handWeapon() { return handWeapon; }, get hud() { return hud; },
   get hudViewTimer() { return hudViewTimer; }, set hudViewTimer(v) { hudViewTimer = v; },
   get kitRowLabelFor() { return kitRowLabelFor; },
   get kitRowLayoutText() { return kitRowLayoutText; }, get optOnFoot() { return optOnFoot; },
   get optPilot() { return optPilot; }, get params() { return params; },
-  get placeCamera() { return placeCamera; }, get projectToArt() { return projectToArt; },
+  get placeCamera() { return placeCamera; }, get projectToArt() { return mapSurfaces.projectToArt; },
   get prone() { return prone; }, set prone(v) { prone = v; },
   get rebaseDeckSpawns() { return rebaseDeckSpawns; },
   get resetCaptureUi() { return resetCaptureUi; }, get room() { return room; },
@@ -13318,7 +12340,7 @@ const spawning = createSpawning({
   get soldierArmor() { return soldierArmor; }, set soldierArmor(v) { soldierArmor = v; },
   get soldierDead() { return soldierDead; }, set soldierDead(v) { soldierDead = v; },
   get soldierMaxHp() { return soldierMaxHp; }, get spawnFlagSelect() { return spawnFlagSelect; },
-  get supplyTarget() { return supplyTarget; }, get toggleFullMap() { return toggleFullMap; },
+  get supplyTarget() { return supplyTarget; }, get toggleFullMap() { return mapSurfaces.toggleFullMap; },
   get updateHud() { return updateHud; }, get world() { return world; },
   get worldReady() { return worldReady; },
 });
@@ -13531,12 +12553,12 @@ async function show(entry) {
   // terrain) and every bot with no path.
   setupWater(currentRoot, dir);
   setupSounds(extras, dir);
-  loadMapArt(dir);
+  mapSurfaces.loadMapArt(dir);
   // A map held open across a level switch would be showing the old level.
-  toggleFullMap(false);
-  fullmapName.textContent = extras.level || entry.name;
+  mapSurfaces.toggleFullMap(false);
+  mapSurfaces.fullmapName.textContent = extras.level || entry.name;
   const cps = (extras.controlPoints || []).length;
-  fullmapMeta.textContent = cps
+  mapSurfaces.fullmapMeta.textContent = cps
     ? `${cps} control point${cps === 1 ? '' : 's'} · ${(extras.soldierSpawns || []).length} spawns`
     : '';
   // After the baked paths and the sky/water shaders have claimed their
@@ -14190,9 +13212,9 @@ function frame(dt) {
   }
   deployScreen.deployAnimate(dt);
   if (scoreboard.scoreboardOpen()) scoreboard.paintScoreboard();
-  bfmap.update(dt);
-  drawMinimap();
-  drawFullMap();
+  mapSurfaces.bfmap.update(dt);
+  mapSurfaces.drawMinimap();
+  mapSurfaces.drawFullMap();
   // Last, over everything: feed this frame's soldier-side variables, then
   // repaint only if paint() finds one of them (or the stage size) actually
   // changed since the call before (features/mesh-viewer-performance, rule 7).
@@ -14302,14 +13324,14 @@ const testHooks = installTestHooks({
   get CHASE_OPTION() { return CHASE_OPTION; }, get KBLOCK() { return KBLOCK; },
   get KBLOCK_KEYS() { return KBLOCK_KEYS; }, get KITS() { return deployScreen.KITS; },
   get LOCAL_PLAYER() { return LOCAL_PLAYER; },
-  get MINIMAP_TEAM_TINT() { return MINIMAP_TEAM_TINT; },
+  get MINIMAP_TEAM_TINT() { return mapSurfaces.MINIMAP_TEAM_TINT; },
   get activeAreaAudios() { return activeAreaAudios; },
   get aimHeld() { return aimHeld; }, set aimHeld(v) { aimHeld = v; },
   get altFireDemolitions() { return altFireDemolitions; },
   get ambientAudio() { return ambientAudio; }, get announceCapture() { return announceCapture; },
   get applyDamageToPlayer() { return applyDamageToPlayer; },
   get applyVehicleHit() { return applyVehicleHit; }, get audioLimiter() { return audioLimiter; },
-  get audioListener() { return audioListener; }, get bfmap() { return bfmap; },
+  get audioListener() { return audioListener; }, get bfmap() { return mapSurfaces.bfmap; },
   get bodyScene() { return bodyScene; }, get bodyWorld() { return bodyWorld; },
   get botBodies() { return botBodies; }, get botUnits() { return botUnits; },
   get camera() { return camera; }, get cancelDeploy() { return spawning.cancelDeploy; },
@@ -14340,8 +13362,8 @@ const testHooks = installTestHooks({
   get footBody() { return footBody; },
   get footBodyForceHidden() { return footBodyForceHidden; }, set footBodyForceHidden(v) { footBodyForceHidden = v; },
   get footCanopy() { return footCanopy; }, get footView3p() { return footView3p; },
-  get frame() { return frame; }, get friendlyMapUnits() { return friendlyMapUnits; },
-  get friendlyVehicleNodes() { return friendlyVehicleNodes; },
+  get frame() { return frame; }, get friendlyMapUnits() { return mapSurfaces.friendlyMapUnits; },
+  get friendlyVehicleNodes() { return mapSurfaces.friendlyVehicleNodes; },
   get frozenCount() { return frozenCount; }, get gameHud() { return gameHud; },
   get groundHeight() { return groundHeight; }, get guns() { return guns; },
   get handSlot() { return handSlot; }, get handWeapon() { return handWeapon; },
@@ -14350,10 +13372,10 @@ const testHooks = installTestHooks({
   get kbSession() { return kbSession; }, get keys() { return keys; },
   get kitLoadout() { return kitLoadout; }, get kitWeaponSlots() { return kitWeaponSlots; },
   get lastCaptureVoice() { return lastCaptureVoice; }, get loadouts() { return loadouts; },
-  get loadoutsLoad() { return loadoutsLoad; }, get localMapTeam() { return localMapTeam; },
+  get loadoutsLoad() { return loadoutsLoad; }, get localMapTeam() { return mapSurfaces.localMapTeam; },
   get localPlayer() { return localPlayer; }, get look() { return look; },
   get lookDelta() { return lookDelta; }, get mannedActive() { return mannedActive; },
-  get mapGate() { return mapGate; }, set mapGate(v) { mapGate = v; },
+  get mapGate() { return mapSurfaces.mapGate; }, set mapGate(v) { mapSurfaces.mapGate = v; },
   get modeNote() { return modeNote; }, get mouseInput() { return mouseInput; },
   get nearEntry() { return nearEntry; },
   get occupiedVehicleDamage() { return occupiedVehicleDamage; },
