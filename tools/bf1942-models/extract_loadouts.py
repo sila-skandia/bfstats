@@ -172,11 +172,40 @@ def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
                     }
             level_entry[str(team_id)] = {"soldier": team.soldier, "slots": slots}
         levels[level_name.lower()] = level_entry
+    # The AI weapon templates behind every carried item (`ObjectTemplate.
+    # aiTemplate <name>` -> `weaponTemplate.create <name>` in the weapon's
+    # `Ai/Weapons.con`): what a bot's fire behaviour reads for deviation,
+    # ranges, burst, the trigger channel and the strength-per-armour table
+    # (research README §6.2-6.3, bot-behaviours.md §3).
+    ai_weapons: dict[str, dict] = {}
+    for row in rows.values():
+        for item in row["items"]:
+            if item in ai_weapons:
+                continue
+            template = library.object(item)
+            ai_name = template.ai_template if template else None
+            ai = library.ai_weapon(ai_name) if ai_name else None
+            if ai is None:
+                continue
+            ai_weapons[item] = {
+                "aiTemplate": ai.name,
+                "burst": ai.burst,
+                "deviation": ai.deviation,
+                "deviationCorrectionTime": ai.deviation_correction_time,
+                "indirect": ai.indirect,
+                "minRange": ai.min_range,
+                "maxRange": ai.max_range,
+                "weaponActivate": ai.weapon_activate,
+                "weaponFire": ai.weapon_fire,
+                "strength": dict(ai.strength),
+                "soundSphereRadius": ai.sound_sphere_radius,
+            }
     return {
         "mod": mod,
         "primaryItemIndex": kit_mod.PRIMARY_ITEM_INDEX,
         "kits": dict(sorted(rows.items())),
         "levels": levels,
+        "aiWeapons": dict(sorted(ai_weapons.items())),
     }
 
 

@@ -841,6 +841,9 @@
     <label class="opt"><input type="checkbox" id="vehicles" checked> vehicles</label>
     <label class="opt"><input type="checkbox" id="entire-map"> render entire map</label>
     <label class="opt"><input type="checkbox" id="pilot"> pilot the plane</label>
+    <label class="opt" title="game.serverExternalViews: chase, front and fly-by views from every seat"><input type="checkbox" id="srv-external-views" checked> server: external views</label>
+    <label class="opt" title="game.serverAllowNoseCam: the aircraft's second inside view, past the propeller"><input type="checkbox" id="srv-nose-cam" checked> server: nose cam</label>
+    <label class="opt" title="Viewer switch (retail has none): C cycles the soldier's own views on foot"><input type="checkbox" id="srv-soldier-views" checked> server: soldier views</label>
     <label class="opt" hidden><input type="checkbox" id="onfoot"> spawn on foot</label>
     <select id="spawn-flag" aria-label="Spawn point" hidden></select>
     <label class="opt"><input type="checkbox" id="sound" checked> sound</label>
@@ -961,7 +964,9 @@ import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { createLoadOverlay } from './progress.js';
 import { selectMod } from './mods.js';
-import { Aircraft, VehicleCamera, findVehicle, findVehicles } from './flight.js';
+import { Aircraft, VehicleCamera, FixedSubject, findVehicle, findVehicles } from './flight.js';
+import { seatViewModes, noseCamOffset } from './seat-view.js';
+import { ServerSettings, readServerSettings } from './server-settings.js';
 import { GroundVehicle } from './ground.js';
 import * as GroundModule from './ground.js';
 import { Ship } from './ship.js';
@@ -1031,7 +1036,8 @@ import { cpNation as cpNationRule, teamNation as teamNationRule } from './nation
 import { BfMap, minimapWindow, rotateAbout, coverRect } from './bfmap.js';
 import { boardRows, boardVars, paintLeaves, listFloor, listGeometry } from './scoreboard.js';
 import { BotController, spawnBots } from './bot.js';
-import { buildNavGrid, findPath, gridAt } from './nav-grid.js';
+import { buildNavMap, findPath, gridAt, isWalkable } from './nav-grid.js';
+import { StrategicLayer, StrategicAI } from './strategic.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -1727,7 +1733,7 @@ function updateMobileControls() {
   mobileUseBtn.hidden = !(onFoot || seated);
   mobileUseBtn.disabled = onFoot ? !nearEntry : !seated;
   mobileUseBtn.textContent = onFoot ? (nearEntry ? `ENTER ${nearEntry.control}` : 'ENTER') : 'EXIT';
-  mobileViewBtn.hidden = !(seated && view);
+  mobileViewBtn.hidden = !((seated && view) || (onFoot && footView3p.modes.length > 1));
   mobileThrottleWrap.hidden = !flying;
   if (flying) syncMobileThrottle();
   mobileControls.dataset.mode = padMode;
@@ -1864,7 +1870,7 @@ mobileViewBtn.addEventListener('click', event => {
   event.preventDefault();
   event.stopPropagation();
   setFly(true);
-  if (optPilot.checked && view) showView(view.cycle());
+  cycleView();
 });
 
 mobileThrottleWrap.addEventListener('pointerdown', event => event.stopPropagation());
@@ -2197,6 +2203,7 @@ function capturePresentationTick() {
     footFeetCur.z = soldier.z;
     if (snap) Object.assign(footFeetPrev, footFeetCur);
   }
+  captureBotPresentationTick(snap);
   const vi = vehicleInterp;
   if (!vi.vehicle && !vi.parts.length) return;
   if (vi.vehicle) {
@@ -2467,14 +2474,11 @@ addEventListener('keydown', e => {
   }
   // C cycles the view, which is `c_PIToggleCameraMode` (input channel 26)
   // bound to IDKey_C in every one of the game's own control maps -- Infantry's
-  // included, which is why it reaches a soldier at all. `soldier-camera.js`
-  // owns which views a soldier may reach and in what order; on foot that is the
-  // engine's own set of one and this is a no-op, under a canopy it is the three
-  // the owner described. The vehicle side is untouched.
-  if (e.code === 'KeyC' && !e.repeat && !e.ctrlKey && !e.metaKey) {
-    if (optPilot.checked && view) showView(view.cycle());
-    else if (optOnFoot.checked && soldier) footView3p.cycle();
-  }
+  // included, which is why it reaches a soldier at all. In a seat the seat's
+  // own `VehicleCamera` owns the cycle (every seat has one: driver, passenger,
+  // gunner, bare gun). On foot `soldier-camera.js` owns it, widened past the
+  // engine's set of one by the server's soldier switch (server-settings.js).
+  if (e.code === 'KeyC' && !e.repeat && !e.ctrlKey && !e.metaKey) cycleView();
   // Z is `c_PILie`, a non-repetitive trigger, so it toggles rather than holds.
   if (e.code === 'KeyZ' && !e.repeat && optOnFoot.checked && soldier) prone = !prone;
   if (captured && (FLY_KEYS.has(e.code)
@@ -7173,11 +7177,100 @@ const warmups = { level: Promise.resolve(null), rig: Promise.resolve(), timing: 
 // world.js owns it beside the aircraft path that spends it, and the page's
 // resets delegate to `world.resetStick`.
 const HEAD_SENS = 0.0022;
-// The four views C cycles. Only `cockpit` is reconstructed from data — the look
-// clamps it applies are `CorsairCamera`'s own setMin/setMaxRotation. Chase,
-// front and fly-by are ours; the engine declares that they exist (`CVMChase`,
-// `CVMFrontChase`, `CVMFlyBy`) and never where they sit. See flight.js.
+// The views C cycles from the ACTIVE SEAT -- one `VehicleCamera` per seat
+// taken, rebuilt on every mount and seat switch (`buildSeatView`), never one
+// per vehicle. Cockpit and nose are read from data (the seat's own Camera node
+// and its `OutsideHudOffset`; the look clamps are `CorsairCamera`'s own
+// setMin/setMaxRotation). Chase, front and fly-by are ours; the engine
+// declares that they exist (`CVMChase`, `CVMFrontChase`, `CVMFlyBy`) and never
+// where they sit. Which of them a seat reaches is `seat-view.js`'s answer from
+// the seat's `CVM*` words and the server switches. See flight.js.
 let view = null;
+// The subject `VehicleCamera` frames when the root has no drivetrain -- a
+// Defgun, an AA gun, a tripod Browning. Built once per mount, dropped with it.
+let gunSubject = null;
+
+// --- the server's view switches --------------------------------------------
+//
+// `game.serverExternalViews` and `game.serverAllowNoseCam` as the shipped
+// `ServerSettings.con` writes them (both 1), plus the page's own soldier
+// switch; see server-settings.js for what was read. Query string over
+// localStorage over defaults, and the side panel writes them live.
+function pageStorage() {
+  try { return window.localStorage; } catch { return null; }
+}
+const serverSettings = new ServerSettings(
+  readServerSettings(params, pageStorage()), pageStorage());
+for (const [id, key] of [
+  ['srv-external-views', 'externalViews'],
+  ['srv-nose-cam', 'allowNoseCam'],
+  ['srv-soldier-views', 'soldierExternalViews'],
+]) {
+  const el = document.getElementById(id);
+  if (!el) continue;
+  el.checked = serverSettings[key];
+  el.addEventListener('change', () => serverSettings.set(key, el.checked));
+}
+serverSettings.onChange(() => {
+  refreshSeatViewModes();
+  syncFootView();
+});
+
+/**
+ * The active seat's own view rig. Called on every mount and every seat switch:
+ * the inside view is THIS seat's Camera node (a gunner's rides his turret, a
+ * passenger's sits where he sits), the external views hang off the root the
+ * same for every seat, and the cycle is what this seat's Camera declares
+ * under the server's switches. A root with no drivetrain -- the AA gun, the
+ * Defgun, a Browning -- gets a `FixedSubject` for the hull-frame reads.
+ *
+ * The mode carries across a seat switch when the new seat reaches it (a
+ * gunner who was outside stays outside as he climbs to the next gun);
+ * otherwise the seat opens inside, which is `setViewMode`'s own opening.
+ */
+function buildSeatView() {
+  if (!occupancy || !occupancy.activeSeatId) { view = null; return null; }
+  let subject = aircraft || car;
+  if (!subject) {
+    if (!gunSubject || gunSubject.node !== occupancy.root) {
+      gunSubject = new FixedSubject(occupancy.root);
+    }
+    subject = gunSubject;
+  }
+  const seat = occupancy.seatInfo(occupancy.activeSeatId);
+  const eyeNode = occupancy.cameraNode();
+  const nose = noseCamOffset(seat?.camera?.name, seat?.camera?.userData?.cameraView);
+  const modes = seatViewModes({
+    cvm: seat?.cameraViewModes, nose: !!nose, settings: serverSettings,
+  });
+  view = new VehicleCamera(subject, {
+    groundHeight, eyeNode, modes, nose, mode: view?.mode,
+  });
+  // The constructor sets the mode without the swap; the interior follows the
+  // view from here, exactly as it does on a C press.
+  subject.setFirstPerson(view.firstPerson);
+  mountChaseLaw();
+  updateSeatPoseVisibility();
+  return view;
+}
+
+/** A server switch changed under a seated player: re-gate the cycle. */
+function refreshSeatViewModes() {
+  if (!view || !occupancy) return;
+  const seat = occupancy.seatInfo(occupancy.activeSeatId);
+  view.setModes(seatViewModes({
+    cvm: seat?.cameraViewModes, nose: !!view.nose, settings: serverSettings,
+  }));
+  updateSeatPoseVisibility();
+}
+
+/** C: the next view of whatever the player is sitting in, or standing as. */
+function cycleView() {
+  if (optPilot.checked && view) showView(view.cycle());
+  else if (optOnFoot.checked && soldier && footView3p.modes.length > 1) {
+    showView(footView3p.cycle());
+  }
+}
 
 // --- the external view's law (chase-camera.js) -----------------------------
 //
@@ -7245,31 +7338,36 @@ function cameraRidesTurret(cameraNode, seat, root) {
   return false;
 }
 
-/** Decide the law for the vehicle just mounted. Called from `setPilot`, after
- *  the root seat's rig exists. */
-function mountChaseLaw(vehicle) {
+/** Decide the law for the seat just taken. Called from `buildSeatView`, after
+ *  the seat's rig exists: the anchor is THIS seat's Camera (the engine's
+ *  `camM`, which for a gunner rides the gun), the frame the root's or the
+ *  Camera's parent per `chaseLawFor`, and the radius the root's. */
+function mountChaseLaw() {
   chaseRig.law = null;
-  chaseRig.camera = vehicle.cameraNode || null;
-  chaseRig.root = vehicle.node;
+  chaseRig.camera = occupancy?.cameraNode() || null;
+  chaseRig.root = occupancy?.root || null;
   chaseRig.rel.fill(0);
-  if (!view || !chaseRig.camera) { if (view) view.externalLaw = null; return; }
+  if (!view || !chaseRig.camera || !chaseRig.root) {
+    if (view) view.externalLaw = null;
+    return;
+  }
   const rides = cameraRidesTurret(
-    chaseRig.camera, occupancy.seatInfo(occupancy.rootId), vehicle.node);
+    chaseRig.camera, occupancy.seatInfo(occupancy.activeSeatId), chaseRig.root);
   chaseRig.law = chaseLawFor(CHASE_OPTION, rides);
   if (chaseRig.law.law !== 'engine') { view.externalLaw = null; return; }
-  if (!chaseRadiusCache.has(vehicle.node)) {
-    chaseRadiusCache.set(vehicle.node, boundingRadius(chaseRadiusTree(vehicle.node)));
+  if (!chaseRadiusCache.has(chaseRig.root)) {
+    chaseRadiusCache.set(chaseRig.root, boundingRadius(chaseRadiusTree(chaseRig.root)));
   }
-  chaseRig.radius = chaseRadiusCache.get(vehicle.node);
+  chaseRig.radius = chaseRadiusCache.get(chaseRig.root);
   view.externalLaw = chaseExternalLaw;
 }
 
-/** `VehicleCamera.externalLaw`: true when it wrote `pose`. */
+/** `VehicleCamera.externalLaw`: true when it wrote `pose`. Every seat: the
+ *  engine runs one `Camera::getTransformation` per seat Camera, and a
+ *  gunner's anchor is his own Camera the world's turret step just moved. */
 function chaseExternalLaw(mode, dt, pose) {
   const rig = chaseRig;
-  // Only the root seat: a passenger's view stays on the old framing, and a
-  // gunner's belongs to `manned()`.
-  if (!occupancy?.isActiveRoot()) return false;
+  rig.camera.updateWorldMatrix(true, false);
   rig.camera.getWorldPosition(rig.anchor);
   if (mode !== 'chase' && mode !== 'front') {
     // The engine carries `rel` as (last output - Camera position) in every
@@ -7414,7 +7512,6 @@ function setPilot(on, node = null, seatId = null) {
       // swap follows the view rather than the sim.
       if (vehicle) {
         vehicle.autoFirstPerson = false;
-        view = new VehicleCamera(vehicle, { groundHeight });
         adoptDrivenBody(vehicle);
       }
     }
@@ -7422,9 +7519,9 @@ function setPilot(on, node = null, seatId = null) {
     // straight up to a Sherman's hull-gunner door seats you there directly,
     // never through the driver's seat first.
     occupancy.setActiveSeat(seatId || occupancy.rootId);
-    // After the seats exist: the law asks whether the root seat's Camera rides
-    // one of its own aim axes.
-    if (view) mountChaseLaw(aircraft || car);
+    // After the seats exist: this seat's own view rig, and its law -- which
+    // asks whether the seat's Camera rides one of its own aim axes.
+    buildSeatView();
     collectGuns();
     // `collect` (called above, for both the drivetrain's own guns and, via
     // its own `collectMannedGuns()` tail, a bare gun/seat root's FireArms)
@@ -7438,6 +7535,7 @@ function setPilot(on, node = null, seatId = null) {
     // Re-entering the same vehicle at a specific door (its own EntryPoint
     // was in reach again) rather than wherever you last sat.
     occupancy.setActiveSeat(seatId);
+    buildSeatView();
     collectMannedGuns();
     warmSubtree(occupancy.root);
   }
@@ -7479,7 +7577,7 @@ function setPilot(on, node = null, seatId = null) {
       // no longer does. Vacating the seat has to put the fuselage back
       // explicitly or the parked plane sits on the strip as an open cockpit
       // tub.
-      view.setMode('cockpit');
+      view?.setMode('cockpit');
       vehicle.setFirstPerson(false);
       vehicle.applyTransform();
       vehicle.applyRig();
@@ -7493,6 +7591,9 @@ function setPilot(on, node = null, seatId = null) {
     freezeVehicle(occupancy.root);   // parked at its spawn: furniture again
     clearVehicleHud();
     occupancy = null;
+    // The seat's view rig goes with the seat: the next mount builds its own.
+    view = null;
+    gunSubject = null;
     rebuildVehicleInterp();
   }
   // The world's occupied-vehicle state rides the same seats as the page's:
@@ -7554,7 +7655,7 @@ const HUD_PILOT = 'W/S throttle · A/D rudder · arrows pitch and roll · LMB gu
   + 'C view · mouse look around · R reset · 1-9 seats · E out on the ground · Esc';
 const HUD_DRIVE = 'W/S drive and brake · A/D steer · mouse aims · LMB main gun · RMB coax · C view · '
   + 'R reset · 1-9 seats · E get out · Esc';
-const HUD_MANNED = 'Mouse aims · LMB fires · 1-9 seats · E get out · Esc';
+const HUD_MANNED = 'Mouse aims · LMB fires · C view · 1-9 seats · E get out · Esc';
 
 /**
  * Read the keyboard into the car and step the drive model.
@@ -7651,19 +7752,27 @@ const mannedCamQuat = new THREE.Quaternion();
  * remains is the eye and the trigger's muzzle choice.
  *
  * The camera node never aims itself — GUN-5/6 (verify-r6.md), a gunner
- * Camera only ever rides the turret it is parented under — so the eye is just
- * wherever that hierarchy, freshly stepped in the world's tick, puts it. No
- * cockpit/orbit/fly-by modes here; a manned gun only ever has the one view
- * retail gives it.
+ * Camera only ever rides the turret it is parented under — so the inside eye
+ * is just wherever that hierarchy, freshly stepped in the world's tick, puts
+ * it. The seat's `VehicleCamera` reads that same node for its inside view and
+ * hangs the chase, front and fly-by off the root, the way the driver's does:
+ * a gunner cycles C exactly as retail lets him, and the ten `CVMExternTrace`
+ * artillery seats are the only ones whose Camera says otherwise.
  */
 function manned(dt) {
-  readWorldPose(occupancy.cameraNode(), mannedCamPos, mannedCamQuat);
-  camera.position.copy(mannedCamPos);
-  camera.quaternion.copy(mannedCamQuat);
-
-  // Gunner cameras are always first-person — the 1P muzzle emitter, not the
-  // mesh-mounted third-person flash that sits metres ahead of the eye.
-  guns.firstPerson = true;
+  if (view) {
+    const pose = view.update(dt);
+    camera.position.copy(pose.position);
+    camera.quaternion.copy(pose.quaternion);
+    // Inside: the 1P muzzle emitter, not the mesh-mounted third-person flash
+    // that sits metres ahead of the eye. Outside: the reverse.
+    guns.firstPerson = view.firstPerson;
+  } else {
+    readWorldPose(occupancy.cameraNode(), mannedCamPos, mannedCamQuat);
+    camera.position.copy(mannedCamPos);
+    camera.quaternion.copy(mannedCamQuat);
+    guns.firstPerson = true;
+  }
   // The world's occupied-vehicle tick has already written this seat's trigger
   // (`guns.setFiring`, gated on the HP-15 byte exactly as this function's old
   // loop did); the HUD feed for it happens in frame() after guns.advance.
@@ -7685,6 +7794,9 @@ function switchSeat(position) {
   // one — a driver→passenger switch on a Willy, or vice-versa.
   disposeSeatPose();
   occupancy.setActiveSeat(seatId);
+  // This seat's own view rig: its Camera for the inside view, its `CVM*`
+  // words for the cycle, the mode carried over where the seat reaches it.
+  buildSeatView();
   collectMannedGuns();
   // The world's driver/gunner fire loops read the same scoped lists.
   world?.refreshMount(LOCAL_PLAYER, { groups: vehicleGuns, manned: mannedGuns });
@@ -7834,13 +7946,13 @@ function feedSeatDots() {
 /**
  * Is the camera in the engine's view mode 3 — the inside view?
  *
- * A driven vehicle has `VehicleCamera`'s own four-mode cycle and exactly one
- * of them (`cockpit`) is first person. A manned gun has no cycle at all:
- * `manned()` puts the eye on the seat's own Camera node and nothing else,
- * which is the one view retail gives it, so it is always inside.
+ * Every seat has a `VehicleCamera` now and two of its modes are mode 3: the
+ * cockpit and the nose cam, which is the same Camera with its eye displaced.
+ * A seat with no rig yet (the frame between a mount and `buildSeatView`) is
+ * inside, which is where every seat opens.
  */
 function insideView() {
-  return mannedActive() ? true : !!view?.firstPerson;
+  return view ? view.inside : !!occupancy;
 }
 
 /**
@@ -8219,7 +8331,7 @@ function leaveVehicle() {
   vehicle.setInput('c_PIThrottle', 0);
   vehicle.setInput('c_PIYaw', 0);
   vehicle.setInput('c_PIFire', 0);
-  view.setMode('cockpit');
+  view?.setMode('cockpit');
   vehicle.setFirstPerson(false);
   vehicle.applyTransform();
   vehicle.applyRig();
@@ -8227,6 +8339,8 @@ function leaveVehicle() {
   releaseDrivenBody(vehicle);    // ... and a body on its own springs
   clearVehicleHud();
   occupancy = null;
+  view = null;
+  gunSubject = null;
   world?.clearPlayerVehicle(LOCAL_PLAYER);
   world?.resetStick(LOCAL_PLAYER);
   rebuildVehicleInterp();
@@ -8423,6 +8537,8 @@ function leaveManned() {
     disposeEngineAudio();
     clearVehicleHud();
     occupancy = null;
+    view = null;
+    gunSubject = null;
     world?.clearPlayerVehicle(LOCAL_PLAYER);
     world?.resetStick(LOCAL_PLAYER);
     rebuildVehicleInterp();
@@ -8432,6 +8548,8 @@ function leaveManned() {
   freezeVehicle(occupancy.root);
   clearVehicleHud();
   occupancy = null;
+  view = null;
+  gunSubject = null;
   world?.clearPlayerVehicle(LOCAL_PLAYER);
 }
 
@@ -8487,12 +8605,19 @@ const LOCAL_PLAYER = 'local';
 /** Bot parameters from the URL (skirmish.js passes ?botCount= and ?botSkill=). */
 const BOT_COUNT = Math.max(0, Math.min(32, Number(params.get('botCount')) || 0));
 const BOT_SKILL = Math.max(0.25, Math.min(1.0, Number(params.get('botSkill')) || 0.75));
+/** `?botDebug`: log every hit on a bot. */
+const BOT_DEBUG = params.has('botDebug');
 /** Bot controllers for the current level; cleared on every level switch. */
 let botControllers = [];
 /** Navigation grid for bot pathfinding; built per level. */
 let botNavGrid = null;
 /** Bot AI clock: monotonic seconds since level load. */
 let botClock = 0;
+/** The level's strategic AI (strategic.js), or null without `extras.ai`. */
+let botStrategy = null;
+/** Cover candidates for the TakeCover behaviour: the placed statics whose
+ *  template has a `coverValue`, with their footprint. */
+let botCovers = [];
 const CAPTURE_FALLBACK_SECONDS = 8;
 let localCapture = null;
 let roomCapture = null;
@@ -8755,18 +8880,29 @@ function unitRectOf(uv) {
   }
   return [u0, v0, u1, v1];
 }
+/** Scene-graph names are the extractor's `<point> <part>` run through
+ *  `PropertyBinding.sanitizeNodeName` by GLTFLoader (spaces to
+ *  underscores): the cloth is `<point>_cloth`, the anchor `<point>_flag`,
+ *  the joints `<point>_Bone01..20`, and every `FlagBlow` track names the
+ *  joints that way. Raised nodes take the same names so one lookup serves
+ *  baked and raised alike -- a `<point> cloth` test with a space matched
+ *  nothing the loader had renamed. */
+function flagNodeStem(pointName) {
+  return THREE.PropertyBinding.sanitizeNodeName(pointName);
+}
 function captureSceneNodes(flag) {
   if (!currentRoot || !flag?.controlPointName) return null;
-  const pole = currentRoot.getObjectByName(flag.controlPointName);
+  const stem = flagNodeStem(flag.controlPointName);
+  const pole = currentRoot.getObjectByName(flag.controlPointName)
+    || currentRoot.getObjectByName(stem);
   if (!pole) return null;
   let anchor = null, cloth = null;
   pole.traverse(obj => {
     if (obj.userData?.kind === 'flagAnchor' && !anchor) anchor = obj;
   });
+  const clothName = `${stem}_cloth`;
   currentRoot.traverse(obj => {
-    if (obj.userData?.kind === 'flagCloth' && !cloth
-        && typeof obj.name === 'string'
-        && obj.name.startsWith(`${flag.controlPointName} `)) cloth = obj;
+    if (!cloth && obj.userData?.kind === 'flagCloth' && obj.name === clothName) cloth = obj;
   });
   return { pole, anchor, cloth };
 }
@@ -8794,74 +8930,104 @@ function captureSceneNodes(flag) {
 function raiseCaptureCloth(pole, pointName, cell) {
   let donor = null;
   currentRoot.traverse(obj => {
-    if (!donor && obj.userData?.kind === 'flagCloth') donor = obj;
+    if (!donor && obj.userData?.kind === 'flagCloth'
+        && obj.skeleton?.bones?.length) donor = obj;
   });
   if (!donor) return null;
+  const stem = flagNodeStem(pointName);
+  const donorStem = donor.name.replace(/_cloth$/, '');
+  const donorBones = donor.skeleton.bones;
+  // The donor's anchor: the first non-joint ancestor of its root joint.
+  let donorAnchor = donorBones[0];
+  while (donorAnchor && donorAnchor.isBone) donorAnchor = donorAnchor.parent;
   const anchor = new THREE.Group();
-  anchor.name = `${pointName} flag`;
+  anchor.name = `${stem}_flag`;
   anchor.userData.kind = 'flagAnchor';
-  anchor.position.set(0, 8.2, 0);
+  if (donorAnchor?.userData?.kind === 'flagAnchor') {
+    anchor.position.copy(donorAnchor.position);
+  } else {
+    anchor.position.set(0, 8.2, 0);
+  }
   pole.add(anchor);
-  // The joint chain, named for this point so the mixer's `FlagBlow
-  // <point>` clip — when the level baked one — binds to it. Layout first
-  // (name + local pose per bone off the donor's anchor subtree), then the
-  // bones, then the donor's own hierarchy rebuilt under this anchor.
-  let donorAnchor = null;
-  const donorStem = donor.name.endsWith(' cloth')
-    ? donor.name.slice(0, -' cloth'.length) : null;
-  currentRoot.traverse(obj => {
-    if (!donorAnchor && obj.userData?.kind === 'flagAnchor'
-        && donorStem && obj.name === `${donorStem} flag`) donorAnchor = obj;
-  });
-  const layout = [];
-  if (donorAnchor) donorAnchor.traverse(obj => {
-    if (obj.isBone) layout.push({
-      name: obj.name.slice(donorAnchor.name.length).trim(),
-      pos: obj.position.clone(),
-      quat: obj.quaternion.clone(),
-    });
-  });
-  const bones = layout.map(l => {
+  // The joint chain: the donor's, bone for bone in skin order, renamed for
+  // this point (`<point>_Bone01..20`, the names a `FlagBlow <point>` track
+  // list binds) and parented the same way -- a donor root joint hangs off
+  // this anchor. Local poses are the donor's current ones; the clip below
+  // overwrites them every frame.
+  const bones = donorBones.map(src => {
     const b = new THREE.Bone();
-    b.name = `${pointName} ${l.name}`;
-    b.position.copy(l.pos);
-    b.quaternion.copy(l.quat);
+    b.name = src.name.startsWith(`${donorStem}_`)
+      ? `${stem}_${src.name.slice(donorStem.length + 1)}`
+      : `${stem}_${src.name}`;
+    b.position.copy(src.position);
+    b.quaternion.copy(src.quaternion);
+    b.scale.copy(src.scale);
     return b;
   });
-  const byName = new Map(bones.map(b => [b.name, b]));
-  // Rebuild the hierarchy from the donor's: a bone whose donor parent is
-  // the anchor hangs under this anchor, else under its named parent.
-  if (donorAnchor) {
-    const donorBonesByName = new Map();
-    donorAnchor.traverse(obj => { if (obj.isBone) donorBonesByName.set(obj.name, obj); });
-    for (const l of layout) {
-      const donorBone = donorBonesByName.get(`${donorAnchor.name} ${l.name}`);
-      const parent = donorBone?.parent;
-      const bone = byName.get(`${pointName} ${l.name}`);
-      if (!parent || parent === donorAnchor) anchor.add(bone);
-      else {
-        const pname = parent.name.slice(donorAnchor.name.length).trim();
-        (byName.get(`${pointName} ${pname}`) || anchor).add(bone);
-      }
-    }
-  } else {
-    for (const b of bones) anchor.add(b);
-  }
+  const byDonor = new Map(donorBones.map((src, i) => [src, bones[i]]));
+  donorBones.forEach((src, i) => (byDonor.get(src.parent) || anchor).add(bones[i]));
   anchor.updateMatrixWorld(true);
-  const skin = new THREE.Skeleton(bones);
-  const cloth = new THREE.SkinnedMesh(
-    donor.geometry, donor.material);
-  cloth.name = `${pointName} cloth`;
-  cloth.userData.kind = 'flagCloth';
-  cloth.bind(skin, anchor.matrixWorld);
+  // The inverse binds are the donor's own, cloned: the extractor bakes each
+  // as the offset from the flat sheet at the origin into bone space
+  // (`bind = (I, rest - offset)`, extract_map.py), NOT as the inverse of
+  // the joint's world pose. `Skeleton.calculateInverses` -- what a bind
+  // with no explicit matrix runs -- would make every joint cancel to
+  // identity at bind time and draw the sheet where its vertices are: a
+  // metre-wide rectangle at the world origin, nowhere near the pole.
+  const skin = new THREE.Skeleton(
+    bones, donor.skeleton.boneInverses.map(m => m.clone()));
   // The donor geometry is shared: clone it before repainting UVs so the
-  // sibling point keeps its own colours.
-  cloth.geometry = donor.geometry.clone();
+  // sibling point keeps its own colours. `BufferGeometry.copy` shares the
+  // `userData` object, and `paintClothCell` caches the painted cell there,
+  // so give the clone its own.
+  const geometry = donor.geometry.clone();
+  geometry.userData = {
+    flagUvCell: donor.geometry.userData.flagUvCell?.slice() ?? null,
+  };
+  const cloth = new THREE.SkinnedMesh(geometry, donor.material);
+  cloth.name = `${stem}_cloth`;
+  cloth.userData.kind = 'flagCloth';
+  cloth.userData.donorStem = donorStem;
+  cloth.frustumCulled = donor.frustumCulled;
+  // Explicit bind matrix: `bind(skin)` alone recalculates the inverses.
+  cloth.bind(skin, donor.bindMatrix.clone());
   paintClothCell(cloth, cell);
   cloth.visible = true;
   currentRoot.add(cloth);
-  anchor.updateMatrixWorld(true);
   return cloth;
+}
+/** Wave a raised cloth. The level bakes `FlagBlow <point>` only for the
+ *  poles it flies, so a point raised from bare has no clip of its own --
+ *  but the clip is the same `FlagBlow.baf` on every pole, so the donor's
+ *  is retargeted: each track renamed from the donor's joints to this
+ *  point's, which `raiseCaptureCloth` named bone for bone. Falls back to
+ *  the point's own clip when the level did bake one. */
+function playRaisedClothClip(cloth, pointName) {
+  const stem = flagNodeStem(pointName);
+  const donorStem = cloth.userData.donorStem;
+  const own = levelClips.find(c => c.name === `FlagBlow ${pointName}`);
+  // Clip names keep the extractor's spelling; track names carry the
+  // sanitized joint names, so the donor's clip is the one whose tracks
+  // name the donor's joints.
+  const source = own ?? levelClips.find(c => c.name.startsWith('FlagBlow ')
+    && c.tracks.some(t => t.name.startsWith(`${donorStem}_`)));
+  if (!source) return null;
+  const tracks = [];
+  for (const track of source.tracks) {
+    if (source === own) { tracks.push(track); continue; }
+    if (!track.name.startsWith(`${donorStem}_`)) continue;
+    const renamed = track.clone();
+    renamed.name = stem + track.name.slice(donorStem.length);
+    tracks.push(renamed);
+  }
+  if (!tracks.length) return null;
+  const clip = source === own
+    ? source : new THREE.AnimationClip(`FlagBlow ${pointName}`, source.duration, tracks);
+  flagMixer ??= new THREE.AnimationMixer(currentRoot);
+  const action = flagMixer.clipAction(clip);
+  action.time = Math.random() * clip.duration;
+  action.play();
+  return action;
 }
 /** Repaint a cloth's UVs into an atlas cell, relatively: each vertex keeps
  *  its fractional position within the geometry's baked cell and takes the
@@ -8897,57 +9063,32 @@ function hoistCaptureFlag(flag) {
   const entry = listed.find(e => e.name === flag.controlPointName);
   if (entry) entry.team = flag.team;
   const cell = flagUvCellFor(flag.team);
-  if (cell && nodes.anchor && nodes.cloth) {
-    // Retarget the cloth to this pole's own joints (same 20-bone chain every
-    // cloth shares) and repaint its UVs into the taker's atlas cell.
-    const joints = [];
-    nodes.anchor.traverse(obj => { if (obj.isBone) joints.push(obj); });
-    if (joints.length) {
-      const skin = new THREE.Skeleton(joints);
-      nodes.cloth.bind(skin, nodes.cloth.matrixWorld);
-    }
+  if (cell && nodes.cloth) {
+    // The cloth is already skinned to this pole's own joints -- baked for
+    // it, or raised below on an earlier take -- so only the colours change.
+    // Do NOT rebind it: a fresh `Skeleton` recomputes the inverse binds off
+    // the live world pose, which draws the sheet at the world origin (see
+    // `raiseCaptureCloth`), and that is a pole with no flag on it.
     paintClothCell(nodes.cloth, cell);
     nodes.cloth.visible = true;
-    nodes.anchor.visible = true;
-  } else if (cell && nodes.pole && !nodes.cloth) {
+    if (nodes.anchor) nodes.anchor.visible = true;
+  } else if (cell && nodes.pole) {
     // A neutral point bakes pole-only: raise the team's cloth fresh (built
     // the way the extractor builds one) rather than leaving a bare pole.
-    // The mixer was built at level load, so hand the new joints their clip:
-    // a `FlagBlow <point>` track list binds by node name, and these joints
-    // are named for this point — exactly what such a clip targets. Levels
-    // bake that clip only for points they fly, so a neutral point usually
-    // has none and the cloth hangs in the skeleton's frame-0 pose (the
-    // correctly-hung sheet a viewer that ignores animations shows, per the
-    // extractor's own comment) rather than erroring.
     const cloth = raiseCaptureCloth(nodes.pole, flag.controlPointName, cell);
     if (cloth) {
       // Visibility: the new cloth is a scene-root child like every baked
       // one, so it joins the culled set with its joints' own bounds
       // (`tagCull` reads those for a skinned mesh, not the bind pose).
-      // Matrices: `freezeStatics` ran at level load, so opt the pole chain
-      // out of the frozen walk explicitly — bones and cloth move every
-      // frame the mixer plays.
-      anchor.updateMatrixWorld(true);
       tagCull(cloth);
       cull.push(cloth);
       flattenCull();
-      if (typeof neverFrozen !== 'undefined' && neverFrozen) {
-        neverFrozen.add(cloth);
-        let n = nodes.pole;
-        while (n && n !== currentRoot) { neverFrozen.add(n); n = n.parent; }
-      }
-      if (flagMixer) {
-        for (const clip of levelClips) {
-          if (clip.name !== `FlagBlow ${flag.controlPointName}`) continue;
-          const live = clip.tracks.filter(track => THREE.PropertyBinding.findNode(
-            currentRoot, THREE.PropertyBinding.parseTrackName(track.name).nodeName));
-          if (!live.length) continue;
-          const action = flagMixer.clipAction(live.length === clip.tracks.length
-            ? clip : Object.assign(clip.clone(), { tracks: live }));
-          action.time = Math.random() * clip.duration;
-          action.play();
-        }
-      }
+      // Matrices: `freezeStatics` ran at level load, and a pole chain with
+      // nothing moving under it was frozen out of the per-frame matrix
+      // walk. Its joints wave every frame the mixer plays from here on, so
+      // thaw the chain (a no-op on a node that was never frozen).
+      for (let n = nodes.pole; n && n !== currentRoot; n = n.parent) thaw(n);
+      playRaisedClothClip(cloth, flag.controlPointName);
     }
   } else if (!cell && nodes.cloth) {
     nodes.cloth.visible = false;
@@ -8982,12 +9123,13 @@ function updateCaptureHud(ticks) {
       localCapture.elapsed / captureDuration(target) * 100));
     hud.textContent = `CAPTURING ${target.name} · ${progress}%`;
     if (localCapture.elapsed < captureDuration(target)) return;
+    const prevTeam = target.team;
     target.team = player?.team ?? deployTeamId;
     hoistCaptureFlag(target);
     syncVehicleSpawnOwnership();
     logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
     hud.textContent = `${target.name} captured`;
-    playCaptureVoice();
+    announceCapture(prevTeam, target.team);
     clearTimeout(hudViewTimer);
     hudViewTimer = setTimeout(updateHud, 2200);
     localCapture = null;
@@ -9009,10 +9151,6 @@ function updateCaptureHud(ticks) {
     hud.textContent = `CONTESTED ${roomCapture.name}`;
   } else if (roomCapture.done) {
     hud.textContent = `${roomCapture.name} captured`;
-    if (!roomCapture.voiced) {
-      roomCapture.voiced = true;
-      playCaptureVoice();
-    }
   }
 }
 
@@ -9096,14 +9234,26 @@ function spawnBotsForLevel() {
     return;
   }
   botControllers = [];
-  // Build the navigation grid from the level's collider.
+  // Build the navigation map from the level's collider: the engine's own
+  // metre bitmap (`LocalMap`, one bit a metre, statics clipped to the
+  // infantry map's 0.4..2.0 m band), not a coarse grid. See nav-grid.js.
   const worldSize = world.extras?.worldSize || 2048;
-  botNavGrid = buildNavGrid(world.collider, worldSize, {
-    cellSize: 64,
+  const navStarted = performance.now();
+  // The flood seeds: the engine's `ai.setMapSpawnPoints`; here every soldier
+  // spawn point the level ships, which is where a bot starts walking from.
+  const seeds = [];
+  for (const flag of world.flags ?? []) {
+    for (const spawn of flag.spawns ?? []) {
+      if (spawn?.position) seeds.push([spawn.position[0], spawn.position[2]]);
+    }
+  }
+  botNavGrid = buildNavMap(world.collider, worldSize, {
     waterLevel: world.collider?.waterLevel,
-    maxSlope: 1.0,
+    seeds,
   });
-  console.log(`[bots] nav grid: ${botNavGrid.width}x${botNavGrid.height}, cellSize=${botNavGrid.cellSize}`);
+  console.log(`[bots] nav map: ${botNavGrid.width}x${botNavGrid.height} at ${botNavGrid.cellSize} m, `
+              + `coarse ${botNavGrid.coarse.width}x${botNavGrid.coarse.height}, `
+              + `${(performance.now() - navStarted).toFixed(0)} ms`);
   // Both sides get bots, alternating so an odd count leaves the extra body on
   // the player's team. `spawnBots` owns flag filtering and the world's
   // `spawnPlayer` owns placement — no duplicate spawn logic here.
@@ -9116,14 +9266,32 @@ function spawnBotsForLevel() {
     botSkill: BOT_SKILL,
     teams: [friendly, enemy],
     flags: world.flags,
+    // `BotSpawner::findKitDiff` is 1 for every allowed kit in practice, so
+    // the kit is uniform among the side's kits; its items' AI weapon
+    // templates (`_shared/loadouts.json` `aiWeapons`) are the bot's weapons.
+    kitFor: botKitFor,
+    viewDistance: world.extras?.ai?.settings?.viewDistance ?? null,
   });
   console.log(`[bots] created ${botControllers.length} bot controllers`);
+  // The strategic AI, on the level's `AI/*.con` data; without it a bot walks
+  // to the nearest enemy flag (bot.js).
+  botStrategy = world.extras?.ai?.strategicAreas?.length
+    ? new StrategicAI(new StrategicLayer(world.extras.ai, world.flags),
+                      { isWalkable: (x, z) => isWalkable(botNavGrid, x, z) })
+    : null;
+  botCovers = buildBotCovers();
+  console.log(`[bots] strategic AI: ${botStrategy ? botStrategy.layer.areas.length + ' areas' : 'none'}, `
+              + `${botCovers.length} cover objects`);
   for (const bot of botControllers) {
     bot.navGrid = botNavGrid;
+    bot.covers = botCovers;
+    botStrategy?.addBot(bot.playerId, bot.team);
     // The world steps bots, so each needs the Armor the soldier tick and the
     // combat area read (`#soldierTick`, `#combatTick`) — the kit's own max HP.
     const flag = world.player(bot.playerId)?.flag ?? null;
     world.setPlayerArmor(bot.playerId, new Armor(soldierMaxHp(flag)));
+    // Async: the fire data of every weapon the kit carries.
+    loadBotWeapons(bot);
     // Async: load the bot's visual so it appears when ready.
     ensureBotVisual(bot).then(vis => {
       if (vis?.rig) {
@@ -9142,21 +9310,36 @@ function tickBots(dt) {
   if (!botControllers.length) return;
   botClock += dt;
   const playerPos = soldier ? [soldier.x, soldier.y, soldier.z] : null;
+  const myTeam = world?.player(LOCAL_PLAYER)?.team ?? deployTeamId;
+  // The strategic pass (once per `SAI.updateFrequency`), then each bot's
+  // order for this tick.
+  if (botStrategy) {
+    const alive = new Map();
+    for (const bot of botControllers) {
+      if (world.armorOf(bot.playerId)?.destroyed) continue;
+      alive.set(bot.playerId, bot.getPosition());
+    }
+    botStrategy.update(dt, alive);
+  }
+  const playerFired = !!frameInputLast?.fire && !frameInputWasFiring;
+  frameInputWasFiring = !!frameInputLast?.fire;
   for (const bot of botControllers) {
     if (botRespawnTick(bot, dt)) continue;   // dead and waiting out its timer
+    bot.waypoints = botStrategy?.waypointsOf(bot.playerId) ?? null;
     bot.tick(dt, botClock);
-    // Notify bots when the player fires (hearing model).
-    if (frameInputLast?.fire && playerPos) {
-      bot.recordNearbyShot(playerPos, botClock);
+    // The player's shot: heard inside the weapon's sound radius, and
+    // incoming fire when it lands nearby.
+    if (playerFired && playerPos) {
+      bot.onShotFired(LOCAL_PLAYER, myTeam, playerPos, botClock, localWeaponSoundRadius());
     }
     // A bot that could not walk out of its spawn after four escapes is
     // redeployed to the flag's next spawn point — the deploy screen's own
     // `advance`, not a teleport out of the world. See `bot.js` `_trackStuck`.
     if (bot._needsRespawn) {
       bot._needsRespawn = false;
-      bot._unstickCount = 0;
-      bot._stuckTime = 0;
-      bot._unstickTimer = 0;
+      bot._stalledTicks = 0;
+      bot._pathFailures = 0;
+      bot.route = null;
       const record = world.player(bot.playerId);
       if (record?.flag) {
         world.spawnPlayer(bot.playerId, { flag: record.flag, advance: true });
@@ -9232,23 +9415,33 @@ function resolvePlayerShotOnBots() {
     if (!botLineOfSight(origin, at)) continue;
     if (t < bestT) { bestT = t; best = bot.playerId; }
   }
-  if (best) applyDamageToBot(best, botRoundDamage());
+  if (best) applyDamageToBot(best, botRoundDamage(), LOCAL_PLAYER, origin);
 }
 
 /**
  * Damage one bot. A killing round parks it: the controller stops firing, the
  * body is hidden, and the respawn timer starts.
  */
-function applyDamageToBot(playerId, damage) {
+function applyDamageToBot(playerId, damage, attackerId = LOCAL_PLAYER, attackerPos = null) {
   const armor = world?.armorOf(playerId);
   if (!armor || armor.destroyed) return;
   armor.damage(damage);
-  if (!armor.destroyed) return;
   const bot = botControllers.find(b => b.playerId === playerId);
+  if (BOT_DEBUG) {
+    console.log(`[bots] ${attackerId} hit ${playerId} for ${damage}: ${armor.hitPoints}/${armor.maxHitPoints}`
+                + (armor.destroyed ? ' (killed)' : ''));
+  }
+  // `event_projectile`: the hit is incoming fire, x10 for having landed.
+  if (bot) {
+    const from = attackerPos ?? (soldier ? [soldier.x, soldier.y, soldier.z] : null);
+    bot.onIncomingFire(attackerId, from, botClock, true, 1);
+  }
+  if (!armor.destroyed) return;
   if (!bot) return;
   bot.isFiring = false;
   bot.firingTarget = null;
   bot._respawnIn = BOT_RESPAWN_DELAY;
+  botStrategy?.botDied(playerId);
   const vis = botVisuals.get(playerId);
   if (vis) vis.group.visible = false;
 }
@@ -9276,11 +9469,7 @@ function botRespawnTick(bot, dt) {
     bot.setPosition(record.soldier.x, record.soldier.y, record.soldier.z);
   }
   bot._respawnIn = 0;
-  bot._lastX = null;
-  bot._lastZ = null;
-  bot.memory.clear();
-  bot.isUnderFire = false;
-  bot.timeSinceNearbyShot = Infinity;
+  bot.onRespawn();
   const vis = botVisuals.get(bot.playerId);
   if (vis) vis.lastPos = null;   // no gait smear across the respawn
   return false;
@@ -9325,9 +9514,10 @@ const _botFrameU = new THREE.Vector3();
 const _botFrameV = new THREE.Vector3();
 
 /** The damage one bot round does, from the engine's direct-hit formula. */
-function botRoundDamage() {
-  const stats = handWeapon?.group?.stats ?? null;
-  const attacker = guns.attackerMaterial(stats?.projectile ?? null);
+function botRoundDamage(stats = null) {
+  // `fireArms.projectile` names the round's template; its attacker material
+  // comes from `damage.json`'s projectile table, as for the human's rounds.
+  const attacker = guns.attackerMaterial(stats?.projectile ? { template: stats.projectile } : null);
   const base = guns.materials?.[attacker]?.damage ?? BOT_FALLBACK_DAMAGE;
   const attGroup = guns.materials?.[attacker]?.attGroup ?? attacker;
   const defGroup = guns.materials?.[BOT_SOLDIER_MATERIAL]?.defGroup ?? BOT_SOLDIER_MATERIAL;
@@ -9377,7 +9567,7 @@ function resolveBotShot(bot) {
   }
 
   const botPlayer = world?.player(bot.playerId);
-  const damage = botRoundDamage();
+  const damage = botRoundDamage(botWeaponDataOf(bot));
   let best = null;
   let bestT = Infinity;
   for (const [id, player] of world.players) {
@@ -9413,28 +9603,114 @@ function resolveBotShot(bot) {
  * cone and its damage. Runs after `tickBots`, so `bot.isFiring` is this frame's
  * decision.
  */
+/**
+ * A weapon template's `fireArms` block (rate of fire, magazine, projectile,
+ * deviation channels) out of its glb's document extras — the same
+ * `extras.weapon` the hand-weapon path reads through `hw.data`, fetched
+ * once per template and shared by every bot carrying it.
+ */
+const botWeaponDataCache = new Map();
+function botWeaponData(name) {
+  if (!name) return Promise.resolve(null);
+  let p = botWeaponDataCache.get(name);
+  if (p) return p;
+  p = fetch(`${MODELS_BASE}/${name}.glb${bust()}`)
+    .then(r => (r.ok ? r.arrayBuffer() : null))
+    .then(buf => {
+      if (!buf || buf.byteLength < 20) return null;
+      const head = new DataView(buf);
+      if (head.getUint32(0, true) !== 0x46546c67) return null;      // 'glTF'
+      const chunkLen = head.getUint32(12, true);
+      const chunkType = head.getUint32(16, true);
+      if (chunkType !== 0x4e4f534a) return null;                    // 'JSON'
+      const json = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 20, chunkLen)));
+      return json?.extras?.weapon ?? null;
+    })
+    .catch(() => null);
+  botWeaponDataCache.set(name, p);
+  return p;
+}
+
+/** The fire data of the weapon a bot holds right now, or null while loading. */
+function botWeaponDataOf(bot) {
+  const name = bot.weaponAi?.name ?? bot.kitPrimary ?? null;
+  return name ? bot.weaponData?.[name] ?? null : null;
+}
+
+/** Load every weapon a bot carries and hand the data to its controller. */
+function loadBotWeapons(bot) {
+  const names = new Set((bot.weapons ?? []).map(w => w.name).filter(Boolean));
+  if (bot.kitPrimary) names.add(bot.kitPrimary);
+  return Promise.all([...names].map(name => botWeaponData(name).then(data => {
+    if (data) bot.setWeaponData(name, data);
+  })));
+}
+
+/**
+ * The bot's magazine for the weapon it holds: rounds in the magazine, spare
+ * magazines, and the reload in progress (`fireArms.magazine`). The AI weapon
+ * entry's `ammo` follows it, so `BBFire` drops a dry weapon and the fire
+ * plan ends on an empty magazine (`bot.magazineEmpty`).
+ */
+function botMagazineTick(bot, dt) {
+  const stats = botWeaponDataOf(bot);
+  const name = bot.weaponAi?.name ?? null;
+  const size = stats?.magazine?.size > 0 ? stats.magazine.size : 0;
+  if (!bot._mags) bot._mags = new Map();
+  let mag = name ? bot._mags.get(name) : null;
+  if (!mag && name) {
+    mag = { rounds: size || Infinity, spare: size ? Math.max(0, (stats?.magazine?.magazines ?? 1) - 1) : 0,
+            size, reloadTime: stats?.magazine?.reloadTime ?? 0, reloadLeft: 0 };
+    bot._mags.set(name, mag);
+  }
+  if (!mag) return { canFire: true };
+  if (mag.reloadLeft > 0) {
+    mag.reloadLeft = Math.max(0, mag.reloadLeft - dt);
+    if (mag.reloadLeft === 0) { mag.rounds = mag.size; mag.spare -= 1; }
+  } else if (mag.rounds <= 0 && mag.spare > 0) {
+    mag.reloadLeft = mag.reloadTime > 0 ? mag.reloadTime : 1e-6;
+  }
+  const canFire = mag.reloadLeft === 0 && mag.rounds > 0;
+  bot.magazineEmpty = mag.rounds <= 0;
+  if (bot.weaponAi && Number.isFinite(mag.rounds)) {
+    bot.weaponAi.ammo = mag.rounds + mag.spare * mag.size;
+  }
+  mag.canFire = canFire;
+  return mag;
+}
+
+function botMagazineShot(bot, mag) {
+  if (!mag || !Number.isFinite(mag.rounds)) return;
+  mag.rounds = Math.max(0, mag.rounds - 1);
+}
+
 function botFireTick(dt) {
   if (!botControllers.length) return;
-  const stats = handWeapon?.group?.stats ?? null;
-  const rof = stats?.roundOfFire > 0 ? stats.roundOfFire : BOT_FALLBACK_ROF;
 
   for (const bot of botControllers) {
-    // Bots hear each other's first shot of a burst (AI-22 hearing).
-    if (bot.isFiring && !bot._wasFiring) {
-      const at = bot.getPosition();
-      for (const other of botControllers) {
-        if (other !== bot) other.recordNearbyShot(at, botClock);
-      }
-    }
     bot._wasFiring = bot.isFiring;
 
     bot._fireCooldown = Math.max(0, (bot._fireCooldown ?? 0) - dt);
-    if (!bot.isFiring || bot._fireCooldown > 0) continue;
+    const mag = botMagazineTick(bot, dt);
+    if (!bot.isFiring || bot._fireCooldown > 0 || !mag.canFire) continue;
 
+    // The bot's own weapon's rate (`fireArms.roundOfFire`), not the human's.
+    const stats = botWeaponDataOf(bot);
+    const rof = stats?.roundOfFire > 0 ? stats.roundOfFire : BOT_FALLBACK_ROF;
     bot._fireCooldown = 1 / rof;
+    botMagazineShot(bot, mag);
     bot.deviation.onShot();
+    bot.onShot(botClock);
+    // Every round is a sound (`event_soundEmitter`): each bot hears it inside
+    // the weapon's AI sound radius, and the shooter goes deaf for 3 s.
+    const at = bot.getPosition();
+    const radius = bot.weaponAi?.soundSphereRadius ?? null;
+    for (const other of botControllers) {
+      other.onShotFired(bot.playerId, bot.team, at, botClock, radius);
+    }
     const hit = resolveBotShot(bot);
     if (!hit) continue;
+    bot.recordHit(hit.targetId);
     if (hit.targetId === LOCAL_PLAYER) {
       applyDamageToPlayer(hit.damage,
         { x: bot.position[0], y: bot.position[1], z: bot.position[2] }, bot.team);
@@ -9442,7 +9718,7 @@ function botFireTick(dt) {
       // A round that found a bot damages that bot, not the human. Before both
       // sides existed every hit was billed to the local player, so an enemy
       // shooting one of your squad killed you instead of him.
-      applyDamageToBot(hit.targetId, hit.damage);
+      applyDamageToBot(hit.targetId, hit.damage, bot.playerId, at);
     }
   }
 }
@@ -9467,10 +9743,12 @@ function botCaptureTick(ticks) {
     }
     bot._capture.elapsed += dt;
     if (bot._capture.elapsed < captureDuration(target)) continue;
+    const prevTeam = target.team;
     target.team = bot.team;
     hoistCaptureFlag(target);
     syncVehicleSpawnOwnership();
     logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
+    announceCapture(prevTeam, target.team);
     bot._capture = null;
   }
 }
@@ -9482,6 +9760,80 @@ function botCaptureTick(ticks) {
 
 const BOT_SOLDIER = { 1: 'GermanSoldier', 2: 'USMarineSoldier' };
 const BOT_WEAPON = 'Colt';
+/** The edge of the human's fire input last frame, for the bots' hearing. */
+let frameInputWasFiring = false;
+
+/**
+ * A bot's kit: uniform among the side's kits on this level (the engine's
+ * `findKitDiff` weight is 1 for every allowed kit), with the AI weapon
+ * templates of its items (`aiWeapons` in `_shared/loadouts.json`), the
+ * primary first.
+ */
+function botKitFor(team, index) {
+  const slots = loadouts?.levels?.[currentDir]?.[team]?.slots;
+  const names = (Array.isArray(slots) ? slots : Object.values(slots ?? {})).filter(Boolean);
+  if (!names.length) return null;
+  const kitName = names[Math.floor(Math.random() * names.length)];
+  const kit = loadouts?.kits?.[kitName];
+  if (!kit) return null;
+  const items = [...(kit.items ?? [])];
+  if (kit.primary) items.sort((a, b) => (a === kit.primary ? -1 : 0) - (b === kit.primary ? -1 : 0));
+  const weapons = items.map(item => {
+    const ai = loadouts?.aiWeapons?.[item];
+    return ai ? { ...ai, name: item } : null;
+  }).filter(Boolean);
+  return { name: kitName, primary: kit.primary ?? items[0] ?? null, weapons };
+}
+
+/** The human's current weapon's AI sound radius, for the bots' hearing. */
+function localWeaponSoundRadius() {
+  const template = handWeapon?.template ?? handWeapon?.group?.template ?? null;
+  return loadouts?.aiWeapons?.[template]?.soundSphereRadius ?? null;
+}
+
+/**
+ * The cover objects the TakeCover behaviour chooses among: every collider
+ * owner whose template carries `aiTemplatePlugIn.coverValue` (`extras.ai.
+ * coverValues`), with its footprint from its baked triangles.
+ */
+function buildBotCovers() {
+  const values = world?.extras?.ai?.coverValues;
+  const statics = world?.collider?.statics;
+  if (!values || !statics?.tris || !statics.ownerNodes) return [];
+  const byOwner = new Map();
+  const tris = statics.tris, owners = statics.owners;
+  for (let t = 0; t < statics.count; t++) {
+    const owner = owners[t];
+    if (owner < 0) continue;
+    let e = byOwner.get(owner);
+    if (!e) {
+      const name = (statics.ownerNodes[owner]?.name ?? '').toLowerCase();
+      const value = values[name] ?? values[name.replace(/_\d+$/, '')] ?? null;
+      if (value == null) { byOwner.set(owner, null); continue; }
+      e = { id: owner, value, minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity };
+      byOwner.set(owner, e);
+    }
+    if (!e) continue;
+    const o = t * 9;
+    for (let k = 0; k < 3; k++) {
+      const x = tris[o + k * 3], y = tris[o + k * 3 + 1], z = tris[o + k * 3 + 2];
+      if (x < e.minX) e.minX = x; if (x > e.maxX) e.maxX = x;
+      if (y < e.minY) e.minY = y; if (y > e.maxY) e.maxY = y;
+      if (z < e.minZ) e.minZ = z; if (z > e.maxZ) e.maxZ = z;
+    }
+  }
+  const out = [];
+  for (const e of byOwner.values()) {
+    if (!e) continue;
+    const width = Math.max(e.maxX - e.minX, e.maxZ - e.minZ);
+    out.push({
+      id: e.id, value: e.value,
+      pos: [(e.minX + e.maxX) / 2, e.minY, (e.minZ + e.maxZ) / 2],
+      width, height: e.maxY - e.minY, radius: width / 2,
+    });
+  }
+  return out;
+}
 
 /** Bot pose-pair cache: "SoldierName__Colt" -> { scene, animations }. */
 const botPoseCache = new Map();
@@ -9574,13 +9926,25 @@ async function ensureBotVisual(bot) {
   group.visible = false;
   botRoot.add(group);
 
-  vis = { group, rig: null, want: null, lastSpeed: 0, lastPos: null };
+  // `feetPrev`/`feetCur` and the yaw pair are the bot's pose at the last two
+  // world-tick boundaries (`capturePresentationTick`), which is what the frame
+  // blends between: a raw tick position drawn at a display rate above 30 Hz
+  // is a man stepping four times a metre, and it read as blur.
+  vis = {
+    group, rig: null, want: null, lastSpeed: 0, lastPos: null,
+    feetPrev: { x: 0, y: 0, z: 0 }, feetCur: { x: 0, y: 0, z: 0 },
+    yawPrev: 0, yawCur: 0, snapped: false,
+  };
   botVisuals.set(bot.playerId, vis);
 
-  const [pair, gaits] = await Promise.all([
-    botPosePair(soldierName, BOT_WEAPON),
-    botGaitClips(BOT_WEAPON),
+  const weapon = bot.kitPrimary ?? BOT_WEAPON;
+  let [pair, gaits] = await Promise.all([
+    botPosePair(soldierName, weapon),
+    botGaitClips(weapon),
   ]);
+  if (!pair && weapon !== BOT_WEAPON) {
+    [pair, gaits] = await Promise.all([botPosePair(soldierName, BOT_WEAPON), botGaitClips(BOT_WEAPON)]);
+  }
   if (!pair) return vis;
 
   const scene = skeletonClone(pair.scene);
@@ -9605,22 +9969,34 @@ function updateBotVisuals(dt) {
     if (world?.armorOf(bot.playerId)?.destroyed) { vis.group.visible = false; continue; }
 
     vis.group.visible = true;
-    vis.group.position.set(pos[0], pos[1], pos[2]);
+    // This frame's blend of the last two tick poses, the same `presentAlpha`
+    // the local body and the driven vehicle draw at (`capturePresentationTick`).
+    const fp = vis.feetPrev, fc = vis.feetCur;
+    const a = vis.snapped ? presentAlpha : 1;
+    vis.group.position.set(
+      fp.x + (fc.x - fp.x) * a,
+      fp.y + (fc.y - fp.y) * a,
+      fp.z + (fc.z - fp.z) * a);
 
-    // Bots face their live heading, with the same baked-root correction the
-    // remote renderer applies (`SOLDIER_YAW_FLIP`).
-    const yaw = bot.yaw ?? 0;
+    // The body's yaw is the soldier's yaw and nothing else, exactly as the
+    // local third-person body is drawn (`footBody.scene.quaternion`, the
+    // "three placement facts" comment): the pose glb is built in the page's
+    // own forward convention. The baked half turn the remote renderer applies
+    // to a wire pose does NOT belong here; with it in, a bot walked to its
+    // objective facing the way it had come.
+    const dyaw = wrapYaw(vis.yawCur - vis.yawPrev);
+    const yaw = vis.yawPrev + dyaw * a;
     const q = vis.group.quaternion;
     q.setFromEuler(new THREE.Euler(0, yaw, 0, 'YXZ'));
-    q.multiply(SOLDIER_YAW_FLIP);
 
-    // Estimate speed from position change.
-    if (!vis.lastPos) vis.lastPos = [...pos];
-    const dx = pos[0] - vis.lastPos[0];
-    const dz = pos[2] - vis.lastPos[2];
+    // The gait speed from the drawn position's change, one pole.
+    const drawn = vis.group.position;
+    if (!vis.lastPos) vis.lastPos = [drawn.x, drawn.y, drawn.z];
+    const dx = drawn.x - vis.lastPos[0];
+    const dz = drawn.z - vis.lastPos[2];
     const speed = dt > 0 ? Math.hypot(dx, dz) / dt : 0;
     vis.lastSpeed = vis.lastSpeed + (speed - vis.lastSpeed) * Math.min(1, dt * 6);
-    vis.lastPos[0] = pos[0]; vis.lastPos[1] = pos[1]; vis.lastPos[2] = pos[2];
+    vis.lastPos[0] = drawn.x; vis.lastPos[1] = drawn.y; vis.lastPos[2] = drawn.z;
 
     // The gait family follows the bot's live speed and stance, the same rule
     // remote soldiers use (`remoteClipFamily`), resolved against what bound.
@@ -9640,6 +10016,41 @@ function updateBotVisuals(dt) {
       }
     }
     vis.rig.mixer.update(dt);
+  }
+}
+
+/** Wrap to [-pi, pi], for the yaw blend between two tick poses. */
+function wrapYaw(a) {
+  return Math.atan2(Math.sin(a), Math.cos(a));
+}
+
+/**
+ * Per world tick, from `capturePresentationTick`: every bot's finished tick
+ * pose becomes `feetCur`/`yawCur`, and the previous one `feetPrev`/`yawPrev`,
+ * so `updateBotVisuals` can blend by the frame's alpha. A bot that has just
+ * (re)spawned snaps rather than sliding across the level from its last
+ * position.
+ */
+function captureBotPresentationTick(snap) {
+  if (!botControllers?.length) return;
+  for (const bot of botControllers) {
+    const vis = botVisuals.get(bot.playerId);
+    if (!vis) continue;
+    const s = world?.player(bot.playerId)?.soldier;
+    if (!s) continue;
+    const c = vis.feetCur, p = vis.feetPrev;
+    const jump = vis.snapped && Math.hypot(s.x - c.x, s.z - c.z) > 8;
+    if (vis.snapped && !snap && !jump) {
+      p.x = c.x; p.y = c.y; p.z = c.z;
+      vis.yawPrev = vis.yawCur;
+    }
+    c.x = s.x; c.y = s.y; c.z = s.z;
+    vis.yawCur = s.yaw;
+    if (!vis.snapped || snap || jump) {
+      p.x = c.x; p.y = c.y; p.z = c.z;
+      vis.yawPrev = vis.yawCur;
+    }
+    vis.snapped = true;
   }
 }
 
@@ -9721,7 +10132,7 @@ function setOnFoot(on) {
 // `let`: under `?kblock` the Escape hint changes for as long as the
 // fullscreen session lasts (kbLockEnter). Without it this never changes.
 let HUD_FOOT ='WASD move · Shift walk · Ctrl crouch · Z prone · Space jump · '
-  + 'LMB fire · RMB aim · R reload · 9 chute · CapsLock / M redeploy · Esc menu';
+  + 'LMB fire · RMB aim · R reload · C view · 9 chute · CapsLock / M redeploy · Esc menu';
 const HUD_FOOT_PLAIN = HUD_FOOT;
 const HUD_FOOT_KBLOCK = `${HUD_FOOT_PLAIN} · hold Esc exits full screen`;
 
@@ -9970,12 +10381,16 @@ function canopySpan() {
 // soldier's own pose rig, played from the game's own clips -- and
 // `footCanopy`, the `Parachute` child the soldier has always carried.
 const SOLDIER_3P_VIEWS = !params.has('no-soldier3p');
-// C outside a standing soldier. Off by default because CAM-1 is parity: the
-// engine authorises one view mode for a soldier and `BFSoldier::nextCamera` is
-// empty. With the body now drawn there is something to point a camera at, and
-// nowhere else to point one from outside a canopy or the death cam, so this is
-// the inspection view -- a departure, labelled.
-const SOLDIER_3P_ON_FOOT = SOLDIER_3P_VIEWS && params.has('foot3p');
+// C outside a standing soldier. CAM-1 is parity: the engine authorises one
+// view mode for a soldier and `BFSoldier::nextCamera` is empty, so retail
+// gives a standing man no second view. The owner wants one anyway, the way a
+// seat has one, so it is a server switch of the page's own
+// (`serverSettings.soldierExternalViews`, default ON, `?foot3p=0` or the side
+// panel to turn it off) -- a departure, labelled, and switchable back to the
+// engine's own behaviour. Read live, so the switch re-gates a standing man.
+function soldier3pOnFoot() {
+  return SOLDIER_3P_VIEWS && serverSettings.soldierExternalViews;
+}
 
 /**
  * Open the canopy's view cycle, close it again on the ground.
@@ -9988,11 +10403,12 @@ const SOLDIER_3P_ON_FOOT = SOLDIER_3P_VIEWS && params.has('foot3p');
 function syncFootView() {
   const open = SOLDIER_3P_VIEWS && soldier?.parachuteState === 'open';
   const before = footView3p.mode;
-  // On foot the cycle is the engine's own set of one (CAM-1), so C does
-  // nothing -- unless `?foot3p=1` widens it, which is a marked departure and an
-  // inspection view, not parity. See `soldier-camera.js` FOOT_VIEW_CYCLE.
+  // On foot the engine's own cycle is a set of one (CAM-1), so C does
+  // nothing -- unless the server's soldier switch widens it, which it does by
+  // default here: a marked departure, not parity, and one the switch takes
+  // back. See `soldier-camera.js` FOOT_VIEW_CYCLE and server-settings.js.
   footView3p.setCycle(open ? PARACHUTE_VIEW_CYCLE
-    : (SOLDIER_3P_ON_FOOT ? FOOT_VIEW_CYCLE : null));
+    : (soldier3pOnFoot() ? FOOT_VIEW_CYCLE : null));
   if (footView3p.mode !== before && footView3p.mode === VIEW_INSIDE) {
     foot3pRel[0] = foot3pRel[1] = foot3pRel[2] = 0;
   }
@@ -12211,59 +12627,96 @@ async function playSoldierHurtSound(isFriendlyFire = false) {
 //
 // `Bf1942/Game/GamePlay.ssc` (bf1942/Game.rfa): `GainControlPoint` plays one
 // of `WeNowHaveControlOver{,2,3}.wav`, `LoseControlPoint` one of
-// `WeHaveLostControlOf{,2,3}.wav` — both `randomPlay 1`, extracted to
-// `maps/_shared/voices/en/` at 22 kHz the way `extract_soldier_sounds.py`
-// resolves `@Language` (English first, the viewer's own announcer).
-// Only the local player's own side speaks, and only on foot: the two patches
-// are the engine's team-wide announcements for its own gain/loss, and this
-// viewer never mixes the enemy's. Neutral takes and enemy takes-back both
-// land on `GainControlPoint` here — the retail wording ("we now have control
-// over the ...") is what the screenshot's "captured" moment plays.
+// `WeHaveLostControlOf{,2,3}.wav` -- both `randomPlay 1`, both under
+// `Sound/@RTD/@Language/`. `@Language` is the side's own tongue, not a UI
+// setting: every soldier template declares `ObjectTemplate.setRadioLanguage`
+// (`Objects/Soldiers/*/Objects.con` -- USSoldier UsEnglish, BritishSoldier
+// English, RussianSoldier Russian, ...), so the Russians on Kharkov hear
+// Russian and the Marines on Wake hear UsEnglish. `extract_capture_voices.py`
+// lays the lines out per nation code under `_shared/voices/<nation>/`, and
+// the local side's nation (`teamNation`, the same answer the flag cloth and
+// the map sprites use) picks the folder; `en` is the pre-nation English set,
+// the fallback for a tree extracted before the per-nation folders existed.
+//
+// The announcer is team-wide radio: it plays wherever the player is, on foot
+// or in a seat, on every change of ownership the side is party to -- a gain
+// when the side takes a point (the player's own take, a bot's, or the room's
+// word), a loss when a point the side held goes to the enemy. The enemy's
+// gain of a neutral point is nobody's loss and stays silent.
 let lastCaptureVoiceTime = 0;
-function captureVoiceDir() {
-  // Per-mod trees carry their own announcer the way the sprite pack does
-  // (`hudPaths` above picks vanilla vs `maps/mods/<mod>/_shared/` per file);
-  // mods that never extracted voices fall back to the vanilla English set.
-  return MAPS_BASE === 'maps' ? 'maps/_shared/voices/en'
-    : `${MAPS_BASE}/_shared/voices/en`;
+let lastCaptureVoice = null;
+const CAPTURE_VOICE_STEMS = {
+  gain: ['WeNowHaveControlOver', 'WeNowHaveControlOver2', 'WeNowHaveControlOver3'],
+  loss: ['WeHaveLostControlOf', 'WeHaveLostControlOf2', 'WeHaveLostControlOf3'],
+};
+const missingCaptureVoices = new Set();
+/** 'gain', 'loss' or null: what the local side hears when a point goes from
+ *  `prevTeam` to `newTeam`. */
+function captureVoiceKind(prevTeam, newTeam, localTeam) {
+  if (newTeam === localTeam && prevTeam !== localTeam) return 'gain';
+  if (prevTeam === localTeam && newTeam !== localTeam) return 'loss';
+  return null;
 }
-async function playCaptureVoiceSample(stem) {
-  if (AUDIO_OFF || masterVolume() <= 0) return false;
-  ensureAudioContext();
-  if (!audioListener || audioListener.context.state === 'suspended') return false;
-  const dir = captureVoiceDir();
+/** The folders to try for the side's announcer, most specific first. */
+function captureVoiceDirs(team) {
+  const nation = teamNation(team);
+  const shared = MAPS_BASE === 'maps' ? 'maps/_shared' : `${MAPS_BASE}/_shared`;
+  const dirs = [];
+  if (nation && nation !== 'unknown') {
+    dirs.push(`${shared}/voices/${nation}`);
+    // A mod tree that never extracted voices borrows vanilla's, the way
+    // `hudPaths` falls back per file.
+    if (shared !== 'maps/_shared') dirs.push(`maps/_shared/voices/${nation}`);
+  }
+  dirs.push(`${shared}/voices/en`);
+  if (shared !== 'maps/_shared') dirs.push('maps/_shared/voices/en');
+  return dirs;
+}
+async function loadCaptureVoice(dir, stem) {
   const key = `voices:${dir}/${stem}.mp3`;
+  if (missingCaptureVoices.has(key)) return null;
   let pending = audioBufferCache.get(key);
   if (!pending) {
-    if (!audioLoader) return false;
+    if (!audioLoader) return null;
     pending = audioLoader.loadAsync(`${dir}/${stem}.mp3${bust()}`)
-      .catch(e => {
-        console.warn(`Could not load capture voice ${stem}:`, e);
+      .catch(() => {
+        // Remembered, not retried: a folder the tree does not carry would
+        // otherwise be fetched again on every take.
+        missingCaptureVoices.add(key);
         audioBufferCache.delete(key);
         return null;
       });
     audioBufferCache.set(key, pending);
   }
-  const buf = await pending;
-  if (!buf) return false;
-  // The one-shot path the footsteps and hurt grunts already use: 2D voice,
-  // no pitch wobble (a `randomPlay` pick is the variation), script volume 1.
-  playSoldierOneShot(buf, 1, 0, 0);
-  return true;
+  return pending;
 }
-async function playCaptureVoice() {
+async function playCaptureVoice(kind = 'gain', team = localMapTeam()) {
   if (AUDIO_OFF || masterVolume() <= 0) return;
+  const stems = CAPTURE_VOICE_STEMS[kind];
+  if (!stems) return;
   // One announcement per take, never stacked.
   const now = performance.now() * 0.001;
   if (now - lastCaptureVoiceTime < 1.0) return;
-  // The local player's take is a gain for his own side — neutral takes and
-  // enemy takes-back alike. Solo has no enemy ear to hear a loss with, and
-  // room play hears its own side's loss only when the server says the point
-  // changed under it, so only the gain patch plays here.
-  const stems = ['WeNowHaveControlOver', 'WeNowHaveControlOver2', 'WeNowHaveControlOver3'];
+  ensureAudioContext();
+  if (!audioListener || audioListener.context.state === 'suspended') return;
+  lastCaptureVoiceTime = now;
   const stem = stems[Math.floor(Math.random() * stems.length)];
-  const played = await playCaptureVoiceSample(stem);
-  if (played) lastCaptureVoiceTime = now;
+  for (const dir of captureVoiceDirs(team)) {
+    const buf = await loadCaptureVoice(dir, stem);
+    if (!buf) continue;
+    // The one-shot path the footsteps and hurt grunts already use: 2D voice,
+    // no pitch wobble (a `randomPlay` pick is the variation), script volume 1.
+    playSoldierOneShot(buf, 1, 0, 0);
+    lastCaptureVoice = { kind, team, dir, stem };
+    return;
+  }
+  console.warn(`No capture voice for team ${team} (${kind})`);
+}
+/** A point changed hands: say so if the local side gained or lost it. */
+function announceCapture(prevTeam, newTeam) {
+  const team = localMapTeam();
+  const kind = captureVoiceKind(prevTeam, newTeam, team);
+  if (kind) playCaptureVoice(kind, team);
 }
 
 function applyDamageToPlayer(damage, attackerPos = null, attackerTeam = null) {
@@ -13138,10 +13591,13 @@ function updateSoldierHud(dt = 0.016) {
 
 /** Announce the view C just selected, then fall back to the control list. */
 const VIEW_BLURB = {
-  cockpit: 'cockpit · first person, from the pilot\'s eye point',
+  cockpit: 'cockpit · first person, from the seat\'s own eye point',
+  nose: 'nose cam · past the propeller, no cockpit, reticle over open air',
   chase: 'chase · behind and above, horizon held level',
   front: 'front · ahead of the nose, looking back',
   flyby: 'fly-by · planted in the world, re-plants as you pull away',
+  // The soldier's own names (`soldier-camera.js`).
+  inside: 'first person · through the soldier\'s own eyes',
 };
 let hudViewTimer = 0;
 function showView(mode) {
@@ -13183,6 +13639,14 @@ function pilot(dt) {
   // `setFiring` semantics. The shell here is the presentation half.
   const flying = occupancy.isActiveRoot() && !vehicleInput.blocked;
   guns.firstPerson = aircraft.firstPerson;
+  // A non-flying seat with no gun of its own (a transport's passenger) still
+  // needs its camera moved, exactly as `drive()`'s passenger branch does.
+  if (!flying && !mannedActive() && view) {
+    const pose = view.update(dt);
+    camera.position.copy(pose.position);
+    camera.quaternion.copy(pose.quaternion);
+    return;
+  }
   if (!flying) return;
   // The view rig owns all four modes and their smoothing; this just takes the
   // pose. It runs after the world integrated, so an external camera hangs off
@@ -16033,11 +16497,13 @@ async function joinRoom() {
       // markers read `flags[]` live, so a team write is the whole repaint.
       if (row.type === 'captured' && Number.isInteger(row.flag)
           && flags[row.flag]) {
+        const prevTeam = flags[row.flag].team;
         flags[row.flag].team = row.team;
         hoistCaptureFlag(flags[row.flag]);
+        announceCapture(prevTeam, row.team);
         roomCapture = { name: row.name || flags[row.flag].name,
           elapsed: 0, duration: 0, contested: false, done: true,
-          until: performance.now() + 2200, voiced: false };
+          until: performance.now() + 2200 };
         syncVehicleSpawnOwnership();
         applyVisibility();
         if (typeof paintDeployChrome === 'function') paintDeployChrome();
@@ -16544,8 +17010,11 @@ function frame(dt) {
       // last otherwise leaves its FOV behind for the next one. Guarded on an
       // actual change so a held seat costs one float compare, not an
       // `updateProjectionMatrix()`, every frame.
-      if (camera.fov !== MANNED_GUN_FOV) {
-        camera.fov = MANNED_GUN_FOV;
+      // Inside the gun's own FOV; an external view of the same seat is the
+      // world's, the same as the driver's chase.
+      const wantFov = view && !view.inside ? FLY_FOV : MANNED_GUN_FOV;
+      if (camera.fov !== wantFov) {
+        camera.fov = wantFov;
         camera.updateProjectionMatrix();
       }
       manned(dt);
@@ -16835,6 +17304,10 @@ if (params.has('shots')) {
   // the AI tick writes.
   window.__terrain = (x, z) => world?.collider?.surfaceHeight?.(x, z) ?? null;
   window.__worldExtras = () => ({ worldSize: world?.extras?.worldSize, water: world?.collider?.waterLevel });
+  // The bot navigation map itself (nav-grid.js), for a headless check to
+  // count or draw its cells.
+  window.__botCtl = id => botControllers.find(b => b.playerId === id) ?? null;
+  window.__navMap = () => botNavGrid;
   window.__navProbe = (fx, fz, tx, tz) => {
     if (!botNavGrid) return null;
     const path = findPath(botNavGrid, fx, fz, tx, tz);
@@ -16842,6 +17315,7 @@ if (params.has('shots')) {
       startCell: gridAt(botNavGrid, fx, fz),
       endCell: gridAt(botNavGrid, tx, tz),
       pathLen: path ? path.length : null,
+      path,
       width: botNavGrid.width,
       height: botNavGrid.height,
       cellSize: botNavGrid.cellSize,
@@ -16856,21 +17330,32 @@ if (params.has('shots')) {
     waypoint: b.waypoint,
     goal: b.objectiveGoal,
     goalReached: b.goalReached,
-    navPath: b.navPath?.length ?? 0,
-    navIndex: b.navPathIndex ?? 0,
-    navLen: b._navLen ?? null,
-    unstickPhase: b._unstickPhase,
-    unstickTimer: +((b._unstickTimer ?? 0)).toFixed(2),
-    stuckTime: +(b._stuckTime ?? 0).toFixed(2),
-    desiredYaw: b._dbgDesiredYaw ?? null,
-    clearAhead: b._dbgClear ?? null,
+    routePoints: b.route?.points?.length ?? 0,
+    routeIndex: b.route?.index ?? 0,
+    routeCoarse: b.route?.coarse?.length ?? 0,
+    routeFailed: b.route?.failed ?? null,
+    steer: b._dbgSteer ?? null,
+    obstacles: b.obstacles?.length ?? 0,
+    stalledTicks: b._stalledTicks ?? 0,
+    pathFailures: b._pathFailures ?? 0,
+    urgency: Object.fromEntries(Object.entries(b.urgency ?? {}).map(([k, v]) => [k, +v.toFixed(3)])),
+    order: b.waypoints ? { area: b.waypoints.area?.name ?? null, radius: b.waypoints.radius } : null,
+    kit: b.kit ?? null,
+    weapon: b.weaponAi?.name ?? null,
+    memory: b.senses?.memory?.size ?? 0,
+    candidates: b.senses?.lastCandidates ?? 0,
+    ammo: b.weaponAi?.ammo ?? null, reload: +((b._mags?.get(b.weaponAi?.name)?.reloadLeft) ?? 0).toFixed(2),
+    aimDev: +(b.aimDeviation ?? 0).toFixed(2), rof: botWeaponDataOf(b)?.roundOfFire ?? null,
+    senseSub: b.senses?.substate ?? 0,
+    plan: (b.currentPlan ?? []).map(a => `${a.type}${a.done ? '*' : ''}`),
+    heard: b.senses?.heard?.size ?? 0,
+    strategy: botStrategy ? (botStrategy.sides[b.team]?.active?.strategy?.name ?? null) : null,
+    speed: +((world?.player(b.playerId)?.soldier?.speed ?? 0)).toFixed(2),
     team: b.team,
     hp: world?.armorOf(b.playerId)?.hitPoints ?? null,
     dead: !!world?.armorOf(b.playerId)?.destroyed,
     respawnIn: +((b._respawnIn ?? 0)).toFixed(2),
     lookX: b.lookX, lookY: b.lookY,
-    stuckSeconds: +(b._stuckTime ?? 0).toFixed(2),
-    unsticking: (b._unstickTimer ?? 0) > 0,
     blockedSpawn: world?.player(b.playerId)?.spawn?.blockedReason ?? null,
     rigFamilies: Object.keys(botVisuals.get(b.playerId)?.rig?.families ?? {}),
     clipFamily: botVisuals.get(b.playerId)?.want ?? null,
@@ -17113,6 +17598,10 @@ if (params.has('shots')) {
   // press. `select` is the click on a flag marker (by name or by index),
   // `spawn` is the button, and both refuse politely — false — when the
   // screen is not up or the name is not a flag.
+  window.__captureVoice = {
+    kind: captureVoiceKind, dirs: captureVoiceDirs, announce: announceCapture,
+    play: playCaptureVoice, last: () => lastCaptureVoice,
+  };
   window.__deploy = {
     get open() { return deployActive(); },
     // Nothing chosen: a click on open ground unselects, and the commit then
@@ -17360,14 +17849,15 @@ if (params.has('shots')) {
       modeId: footView3p.modeId,
       modes: footView3p.modes,
       firstPerson: footView3p.firstPerson,
-      // Why `setMode('chase')` may have done nothing. On foot the cycle is the
-      // engine's own set of ONE (CAM-1: `SoldierCamera` writes `CVMChase 0` and
-      // `BFSoldier::nextCamera` is empty), and `?foot3p=1` is the marked
-      // departure that widens it. Reported here because a check that asks for a
+      // Why `setMode('chase')` may have done nothing. On foot the engine's
+      // cycle is a set of ONE (CAM-1: `SoldierCamera` writes `CVMChase 0` and
+      // `BFSoldier::nextCamera` is empty), and the server's soldier switch
+      // (on by default, `?foot3p=0` off) is the marked departure that widens
+      // it. Reported here because a check that asks for a
       // chase view and is refused otherwise reads the refusal as "the body is
       // not being drawn" — which is how W8-B's swim body came to be called
       // missing when it was only invisible.
-      cycleOnFoot: SOLDIER_3P_ON_FOOT,
+      cycleOnFoot: soldier3pOnFoot(),
       rel: [...foot3pRel],
       eye: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
     };

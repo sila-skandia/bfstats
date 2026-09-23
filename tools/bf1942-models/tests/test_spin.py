@@ -462,6 +462,40 @@ ObjectTemplate.setInputToYaw c_PIMouseLookX
         plain = by_name["PlainCamera"]["extras"]["cameraView"]
         self.assertNotIn("cvm", plain)
 
+    def test_outside_hud_offset_lands_z_mirrored_on_the_camera_node(self) -> None:
+        # The nose cam's stand-off rides the Camera node as
+        # `extras.cameraView.outsideHudOffset`, Z-mirrored into glTF like the
+        # node's own translation, so the viewer adds it to the world pose as
+        # is. A Camera without one gets no key.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Air/Corsair/Objects.con",
+            """
+ObjectTemplate.create PlayerControlObject Corsair
+ObjectTemplate.addTemplate CorsairCamera
+ObjectTemplate.addTemplate PlainCamera
+
+ObjectTemplate.create Camera CorsairCamera
+ObjectTemplate.setInputToYaw c_PIMouseLookX
+ObjectTemplate.OutsideHudOffset 0/-0.4/4.45
+
+ObjectTemplate.create Camera PlainCamera
+ObjectTemplate.setInputToYaw c_PIMouseLookX
+""",
+        )
+        pool = ArchivePool()
+        assembler = Assembler(pool, pool, pool, library)
+        builder = gltf.GlbBuilder()
+        report = Report(root="Corsair", configuration="complex", lod=0)
+        node = assembler.build_node(builder, "Corsair", report)
+        document = glb_document(builder.build([node], extras=report.as_dict()))
+
+        by_name = {n["name"]: n for n in document["nodes"]}
+        corsair = by_name["CorsairCamera"]["extras"]["cameraView"]
+        self.assertEqual([0.0, -0.4, -4.45], corsair["outsideHudOffset"])
+        self.assertNotIn("outsideHudOffset",
+                         by_name["PlainCamera"]["extras"]["cameraView"])
+
     def test_camera_alone_does_not_resurrect_an_empty_bundle(self) -> None:
         library = ObjectLibrary()
         library.add_con(
