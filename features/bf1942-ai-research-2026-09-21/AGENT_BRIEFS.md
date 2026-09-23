@@ -497,3 +497,39 @@ Acceptance: the maps live for every level, the loader in both the page and
 the runner, the tests, seeded Bocage and El Alamein runner traces before
 and after with the route-failure and capture counts, ledger and KNOBS
 rows, PARITY_STATUS_2026-09-23.md updated.
+
+## Brief N: the landing craft's ramp, route and crew, and the expansion packs' AI data
+
+Added 2026-09-24 after Brief D. Depends on: D (landed: ledger AI-96..AI-99,
+`viewer/doctrine-landing.js`, `bot-mount.js` crew rule), M for items 1
+and 2 (the baked water maps decide whether the grounding and the blocked
+spawn cells remain). Start after M reports.
+
+Status: D built `WPBeachLanding` / `WPMoveToBeachLanding` and
+`BBChangeLandingCraft`; the runner lands a Daihatsu on Wake unaided and a
+rider captures a flag. Left:
+
+1. The engine only offers a craft's helm as a candidate when the craft
+   sits on its own map (read by D, reverted because the painted water map
+   blocked the Daihatsus' spawn cells). With M's baked maps, port it and
+   pin it: after a beaching the crew do not climb back in every 8 s.
+2. A craft entering its zone side-on drifts back out at braking speed and
+   never turns to the beach. Read `BBPGotoWaypointBoat::createPlan`
+   0x085b8c50 again for the in-zone leg's throttle and the helm's turn at
+   low speed, and the boat brake's floor; the viewer's weak reverse
+   thrust (B's report) is suspect too.
+3. The ramp input (`PIPitch` held on the beach leg) and the engine's own
+   "touching land" and tip tests, which D stood in for (labelled
+   INVENTION): read the tests in `BBChangeLandingCraft` 0x085602b0 and
+   port them.
+4. The engine's strategic route for a routed order (no in-between points,
+   arrival radius 5), which D did not build.
+5. XPack1 and XPack2 levels had no AI data extracted at all; D patched the
+   five with landing zones. Extract the AI data (strategic areas, landing
+   zones, search maps if M has not) for every expansion-pack level and
+   for EoD, publish, and confirm the live sizes. Asset publishing needs no
+   confirmation and is not done until every level is live.
+
+Acceptance: pins for 1 to 3, the Wake runner events with numbers, the live
+sizes for every patched level, ledger and KNOBS rows,
+PARITY_STATUS_2026-09-23.md updated.
