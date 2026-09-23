@@ -304,9 +304,21 @@ def parse_strategic_areas(text: str, ai: LevelAi) -> None:
                 direction=direction,
                 beach=_LZ_EDGE.get(LZ_DIRECTIONS.get(direction.lower(), 4)),
             ))
-        elif word == "aistrategicarea.createvehiclegroup" and args:
+        elif word in ("aisettings.createvehiclegroup", "aistrategicarea.createvehiclegroup") and args:
+            # `aiSettings.createVehicleGroup <name>`: a group's index is its
+            # creation order (`AISettings::getVehicleGroup(string)` 0x084848d0
+            # looks the name up; `getVehicleGroupName(int)` 0x08484900).
             group = args[0]
             ai.vehicleGroups.setdefault(group, [])
+        elif word == "aisettings.addvehicletovehiclegroup" and len(args) >= 2:
+            # `aiSettings.addVehicleToVehicleGroup <type> <group>`
+            # (`AISettings::addVehicleToVehicleGroup` 0x08484860): the unit
+            # type (`Game/AIbehaviours.con` `ai.setVehicle <type> <name>`, 7
+            # LandingCraft) belongs to the group; `getVehicleGroup(int)`
+            # 0x084848b0 reads it back, and the SAI's routes and resource
+            # collection test it against an area's `addAllowedVehicleGroup`
+            # mask (`AIStrategicObject::allowsSomeVehicleGroups` 0x08644d50).
+            ai.vehicleGroups.setdefault(args[1], []).append(args[0])
         elif word == "aistrategicarea.addvehicletype" and args and group:
             ai.vehicleGroups[group].append(args[0])
         elif active is None:
