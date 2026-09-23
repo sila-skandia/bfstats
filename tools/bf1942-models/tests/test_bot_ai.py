@@ -201,6 +201,9 @@ class BotAiTests(unittest.TestCase):
         self.assertAlmostEqual(s["unknown"], 0.5 * 144)
         self.assertGreater(s["withGunner"], s["vsInfantry"])           # the gunner's 0.9 share
         self.assertEqual(s["fixedBlind"], 0)
+        self.assertEqual(s["fixedStrategic"], 5.0)                     # 0x08584580 return 5.0
+        self.assertEqual(s["gunnerFromDriver"], 0)                     # root vacated: fixed, blind
+        self.assertLessEqual(s["rootFromGunner"], 0)                   # the gunner's share vacated
         self.assertGreater(s["tank"], s["foot"] * 1.25)
         self.assertEqual(s["heat"][0], 1)
         self.assertAlmostEqual(s["heat"][1], 0.5, places=6)

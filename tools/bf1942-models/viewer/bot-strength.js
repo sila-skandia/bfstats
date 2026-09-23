@@ -47,6 +47,11 @@ export const STRENGTH = {
   heatSlope: 20.0,
   /** The exponential average's factor per strategic pass. */
   decay: 0.5,
+  /** A fixed weapon with no known enemy and no enemy object in range that
+   *  can face along its strategic area's links scores this flat value
+   *  (`calculateFireStrength` 0x08584580, the `return 5.0` after the
+   *  `validateCameraDirection` loop over the strategic object's children). */
+  fixedStrategic: 5.0,
 };
 
 export function zeroTable() {
@@ -102,12 +107,21 @@ export class EnemyStrengthTables {
  * `air` / `isSeat` pick the share (0.4) over a ground root's (0.9),
  * `myType` the unit's armour class, `soldierType` the bot's own class when
  * the unit's template also exposes the soldier, `fixed` a unit without a
- * mobile plug-in and `aimable` whether it can point at a known enemy.
+ * mobile plug-in and `aimable` whether it can point at a known enemy
+ * (true / 'enemy': the normal score; 'strategic': no enemy known or in
+ * range, only the strategic direction, a flat `fixedStrategic`; false: 0).
+ *
+ * The bot's own seat, when it weighs ANOTHER unit, is left out of that
+ * unit's occupied shares (0x08584580: every share tests `unit != param_7 ||
+ * !param_6`, `param_7` the bot's current seat and `param_6` "not my own
+ * seat"): the seat it would leave is counted empty. The caller passes
+ * `others` with that seat already marked unoccupied.
  */
 export function fireStrength({ table, others = [], air = false, isSeat = false, myType = 'Infantry',
                                soldierType = null, enemyStrengths = null, enemyTypes = null,
                                fixed = false, aimable = true }) {
   if (fixed && !aimable) return 0;
+  if (fixed && aimable === 'strategic') return STRENGTH.fixedStrategic;
   const share = (air || isSeat) ? STRENGTH.seatShare : STRENGTH.hullShare;
   const own = zeroTable();
   for (const c of BATTLE_CLASSES) {

@@ -359,10 +359,22 @@ function strengthScenario() {
                                     enemyStrengths: tables.strengths, enemyTypes: tables.types });
   const fixedBlind = fireStrength({ table: { Air: 5, Infantry: 10 }, myType: 'LightArmour', fixed: true, aimable: false,
                                    enemyStrengths: tables.strengths, enemyTypes: tables.types });
+  // 0x08584580's `return 5.0`: a fixed gun with no enemy known or in range
+  // that faces only its strategic direction.
+  const fixedStrategic = fireStrength({ table: { Air: 5, Infantry: 10 }, myType: 'LightArmour', fixed: true, aimable: 'strategic',
+                                        enemyStrengths: tables.strengths, enemyTypes: tables.types });
+  // The bot's own seat is vacated when it weighs another: a driver weighing
+  // the gunner's seat sees no occupied root (so the seat is fixed), and the
+  // gunner weighing the root sees no occupied gunner.
+  const gunnerFromDriver = fireStrength({ table: { Infantry: 15 }, others: [{ table: {}, occupied: false }], isSeat: true,
+                                          myType: 'LightArmour', fixed: true, aimable: false,
+                                          enemyStrengths: tables.strengths, enemyTypes: tables.types });
+  const rootFromGunner = fireStrength({ table: {}, others: [{ table: { Infantry: 15 }, occupied: false }], myType: 'LightArmour',
+                                        enemyStrengths: tables.strengths, enemyTypes: tables.types });
   const foot = unitUrgency({ health: 1, fire: fireStrength({ table: SOLDIER_BATTLE_STRENGTH, myType: 'Infantry', enemyStrengths: tables.strengths, enemyTypes: tables.types }),
                              maxSpeed: TANK.soldierMaxSpeed, value: 1, orderSplit: [0.5, 0.5] });
   const tank = unitUrgency({ health: 1, fire: vsInfantry, maxSpeed: 16, value: 3, orderSplit: [0.5, 0.5] });
-  return { sherman, types: tables.types, strengths: tables.strengths, vsInfantry, unknown, withGunner, fixedBlind, foot, tank,
+  return { sherman, types: tables.types, strengths: tables.strengths, vsInfantry, unknown, withGunner, fixedBlind, fixedStrategic, gunnerFromDriver, rootFromGunner, foot, tank,
            heat: [engineHeatInfluence(0.5), engineHeatInfluence(0.975)], radius: CHANGE.searchRadius };
 }
 

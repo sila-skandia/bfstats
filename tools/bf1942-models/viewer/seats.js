@@ -43,6 +43,20 @@ export function hasAimAxes(seat) {
   return !!seat && AXES.some(name => isAimAxis(seat.axes?.[name]?.spec));
 }
 
+/** A surveyed seat's mouse traverse limits `[min, max]` in radians from the
+ *  rest pose, or null for a traverse that wraps (`minRotation == 0 &&
+ *  maxRotation == 0`) or a seat with no mouse yaw axis. `TurretRig.
+ *  yawLimitsRadians` for a seat nobody sits in yet (a bot weighing it). */
+export function seatYawLimits(seat) {
+  const spec = seat?.axes?.yaw?.spec;
+  if (!isAimAxis(spec)) return null;
+  const lo = Number(spec.min ?? 0), hi = Number(spec.max ?? 0);
+  if (lo === 0 && hi === 0) return null;
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
+  const a = THREE.MathUtils.degToRad(lo * RIG_SIGN.yaw), b = THREE.MathUtils.degToRad(hi * RIG_SIGN.yaw);
+  return [Math.min(a, b), Math.max(a, b)];
+}
+
 /**
  * Every node one `TurretAxis` drives for a surveyed axis entry, winner first.
  *
