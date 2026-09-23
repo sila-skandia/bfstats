@@ -47,6 +47,10 @@ HARNESS = Path(__file__).resolve().parent / "ground_harness.mjs"
 # the work directory's `{"type":"module"}` makes plain `.js` importable.
 MODULES = {
     "ground.js": VIEWER / "ground.js",
+    "ground-specs.js": VIEWER / "ground-specs.js",
+    "ground-contact.js": VIEWER / "ground-contact.js",
+    "ground-engine.js": VIEWER / "ground-engine.js",
+    "tracked-vehicle.js": VIEWER / "tracked-vehicle.js",
     "flight.js": VIEWER / "flight.js",
     "vehicle-camera.js": VIEWER / "vehicle-camera.js",
     "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",
