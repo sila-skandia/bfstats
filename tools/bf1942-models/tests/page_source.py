@@ -33,6 +33,7 @@ PAGE_FILES = [
     "map-canvas-fit.js",
     "map-sprites.js",
     "map-friendlies.js",
+    "map-vehicle-marks.js",
     "hud-feed.js",
     "local-player.js",
     "soldier-view.js",

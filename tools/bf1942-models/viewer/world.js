@@ -336,7 +336,13 @@ export class World {
   occupiedDamageable(playerId) {
     const player = this.players.get(playerId);
     if (!player?.occupancy?.root) return null;
-    const owner = this.nodeOwners.get(player.occupancy.root);
+    return this.damageableOf(player.occupancy.root);
+  }
+
+  /** The DamageableVehicle registered for a hull node, if any (the map
+   *  surfaces' hit-point gate). */
+  damageableOf(node) {
+    const owner = node ? this.nodeOwners.get(node) : undefined;
     return owner === undefined ? null : this.vehicleDamage.get(owner) ?? null;
   }
 

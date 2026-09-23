@@ -16,6 +16,7 @@ import { BfMap, minimapWindow, rotateAbout, coverRect } from './bfmap.js';
 import { createCanvasFit } from './map-canvas-fit.js';
 import { createMapSprites } from './map-sprites.js';
 import { createMapFriendlies } from './map-friendlies.js';
+import { EMPTY_VEHICLE_TINT } from './map-vehicle-marks.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -240,10 +241,12 @@ export function createMapSurfaces(page) {
    *  declared. A template with no icon of its own is a vehicle dot, the way the
    *  HUD marks anything it has no picture for.
    *
-   *  A hull a teammate is sitting in is drawn in the side's own colour, which
-   *  is the whole of how retail marks a crewed vehicle — there is no second
-   *  mark for the men inside it (`friendlyMapUnits` skips them for exactly
-   *  this reason). A parked one keeps the archive's white-on-black.
+   *  Which hulls are drawn is the client's rule (`mapVehicleMarks`,
+   *  `map-vehicle-marks.js`): never a wreck, never one the other side is
+   *  crewing. A hull a teammate is sitting in is drawn in the side's own
+   *  colour, which is the whole of how retail marks a crewed vehicle — there
+   *  is no second mark for the men inside it (`friendlyMapUnits` skips them
+   *  for exactly this reason). An empty one is the client's grey.
    *
    *  The list is `mapVehicles`, not the live `spawners` group, which a driven
    *  hull has left. The local player's own hull is skipped: the ring is his
@@ -252,11 +255,8 @@ export function createMapSurfaces(page) {
   const vehicleQuat = new THREE.Quaternion();
   const vehicleFwd = new THREE.Vector3();
   function drawVehicles(ctx, toPx, sc, rot = 0) {
-    const crewed = friendlyVehicleNodes();
     const tint = MINIMAP_TEAM_TINT[localMapTeam()] || MINIMAP_TEAM_TINT[2];
-    for (const vehicle of page.mapVehicles) {
-      if (vehicle === page.occupancy?.root) continue;
-      if (!page.vehicleSpawnActive(vehicle)) continue;
+    for (const { node: vehicle, kind } of mapVehicleMarks()) {
       vehicle.getWorldPosition(vehiclePos);
       const p = projectToArt(vehiclePos.x, vehiclePos.z);
       if (!p) continue;
@@ -274,11 +274,11 @@ export function createMapSurfaces(page) {
       // `rot` is the map's own turn (the rotating minimap): a heading drawn on a
       // turned map turns with it.
       const angle = Math.atan2(vehicleFwd.x, -vehicleFwd.z) + rot;
-      const manned = crewed.has(vehicle) ? tint : null;
+      const colour = kind === 'friendly' ? tint : EMPTY_VEHICLE_TINT;
       if (!icon || !drawSprite(ctx, icon, q.x, q.y, sc,
-                               { angle, alpha: 0.9, tint: manned })) {
+                               { angle, alpha: 0.9, tint: colour })) {
         drawSprite(ctx, 'icon_vehicledot_empty', q.x, q.y, sc,
-                   { tint: manned });
+                   { tint: colour });
       }
     }
   }
@@ -313,11 +313,13 @@ export function createMapSurfaces(page) {
   }
 
   const {
-    localMapTeam, friendlyMapUnits, friendlyVehicleNodes, friendlyMarkerKey,
+    localMapTeam, friendlyMapUnits, friendlyVehicleNodes, mapVehicleMarks, friendlyMarkerKey,
   } = createMapFriendlies({
     get deployTeamId() { return page.deployTeamId; },
     get LOCAL_PLAYER() { return page.LOCAL_PLAYER; },
     get mapVehicles() { return page.mapVehicles; }, get world() { return page.world; },
+    get occupancy() { return page.occupancy; },
+    vehicleSpawnActive: node => page.vehicleSpawnActive(node),
   });
 
   /** `rot` is the map's own turn, as everywhere else here: an arrow drawn on a
@@ -703,6 +705,7 @@ export function createMapSurfaces(page) {
     drawMinimap,
     friendlyMapUnits,
     friendlyVehicleNodes,
+    mapVehicleMarks,
     fullmapBox,
     fullmapCanvas,
     fullmapMeta,
