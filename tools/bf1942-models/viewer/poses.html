@@ -118,6 +118,7 @@ import { createCameraGlide } from './camera-glide.js';
 import { createPoseMotion } from './pose-motion.js';
 import { createPosePairs } from './pose-pairs.js';
 import { createPoseView } from './pose-view.js';
+import { installPoseTestHooks } from './pose-test-hooks.js';
 import { installControlsCollapse } from './controls-collapse.js';
 
 // Which game's poses this page serves: 'models/poses' for vanilla,
@@ -334,70 +335,19 @@ if (manifest) {
   }
   posePairs.selectionChanged();
 
-  // Deterministic hooks for the headless screenshot harness.
-  window.__poseInspector = {
-    manifest,
+  installPoseTestHooks({
+    get activeGait() { return poseMotion.activeGait; }, get current() { return current; },
+    get eachAction() { return poseMotion.eachAction; },
+    get gaitActions() { return poseMotion.gaitActions; },
+    get gaitInfo() { return poseMotion.gaitInfo; }, get manifest() { return manifest; },
+    get mixer() { return poseMotion.mixer; }, get motion() { return poseMotion.motion; },
+    get select() { return posePairs.select; }, get setMotion() { return poseMotion.setMotion; },
+    get setStance() { return poseMotion.setStance; },
+    get settleWeights() { return poseMotion.settleWeights; },
     get stance() { return poseMotion.stance; },
-    get motion() { return poseMotion.motion; },
-    get gait() { return poseMotion.activeGait(); },
-    get gaitInfo() { return poseMotion.gaitInfo; },
-    get status() { return statusLine.textContent; },
-    stances: () => Object.keys(poseMotion.stanceActions),
-    gaits: () => Object.keys(poseMotion.gaitActions),
-    // What the mixer is actually applying, for a headless check that the
-    // gait is playing rather than merely loaded.
-    weights: () => {
-      const out = {};
-      poseMotion.eachAction((name, action) => {
-        const w = action.getEffectiveWeight();
-        if (w > 0.001) out[name] = +w.toFixed(3);
-      });
-      return out;
-    },
-    // Bone world positions, so a test can assert the figure actually moves
-    // between two samples of the same gait.
-    bone(name) {
-      let found = null;
-      current?.traverse(obj => {
-        if (!found && obj.name === name.replace(/ /g, '_')) found = obj;
-      });
-      return found ? found.getWorldPosition(new THREE.Vector3()).toArray() : null;
-    },
-    // One full lower-body cycle sampled at fixed phases, independent of
-    // frame timing: settle the weights, park both halves at an exact clip
-    // time, apply, read. Deterministic — it never waits on the render loop
-    // or on a crossfade — so the same call reproduces the same numbers and
-    // two builds can be compared against each other rather than eyeballed.
-    sampleCycle(bones, steps = 12) {
-      const gait = poseMotion.activeGait();
-      if (!gait || !poseMotion.mixer) return null;
-      poseMotion.settleWeights();
-      const halves = Object.values(poseMotion.gaitActions[gait]);
-      const wasPaused = halves.map(action => action.paused);
-      const period = poseMotion.gaitActions[gait].lower.getClip().duration;
-      const out = [];
-      for (let i = 0; i < steps; i++) {
-        const t = (i / steps) * period;
-        for (const action of halves) {
-          action.paused = true;
-          action.time = t % action.getClip().duration;
-        }
-        poseMotion.mixer.update(0);
-        current.updateMatrixWorld(true);
-        const row = { t: +t.toFixed(4) };
-        for (const name of bones) row[name] = this.bone(name)?.map(v => +v.toFixed(4));
-        out.push(row);
-      }
-      halves.forEach((action, i) => { action.paused = wasPaused[i]; });
-      startAnimating();
-      return { gait, period, samples: out };
-    },
-    setStance: poseMotion.setStance,
-    setMotion: poseMotion.setMotion,
-    select(soldier, weapon) {
-      posePairs.select(soldier, weapon);
-    },
-  };
+    get stanceActions() { return poseMotion.stanceActions; },
+    get startAnimating() { return startAnimating; }, get statusLine() { return statusLine; },
+  });
 }
 </script>
 </body>
