@@ -424,7 +424,6 @@ function updateHud() {
     hud.textContent = HUD_FLY;
   }
 }
-if (isTouchDevice) hud.textContent = getTouchHudText();
 // `?shots&noaudio` takes Web Audio out at the source, for the perf harness's
 // audio-on/audio-off A/B: no AudioContext is ever created, so no listener
 // rides the camera, no loop is decoded, no engine or gun patch is built, and
@@ -695,6 +694,9 @@ const localPlayer = createLocalPlayer({
   get vehicleSpawnActive() { return level.vehicleSpawnActive; },
   get warmSubtree() { return level.warmSubtree; }, get world() { return world; },
 });
+// The touch HUD's opening line reads the input and the player, so it waits
+// until both exist (above this line it threw on every phone).
+if (isTouchDevice) hud.textContent = getTouchHudText();
 
 /**
  * `env.buildDrive` for the registry: the hull's drivetrain, built once when
