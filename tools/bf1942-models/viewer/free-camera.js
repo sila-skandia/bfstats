@@ -7,11 +7,25 @@
  * page, as getters (a binding the page reassigns is read live):
  * `aircraft`, `camera`, `captured`, `car`, `extras`, `FLY_SLOW`,
  * `FLY_SPEED`, `getFloorAltitude`, `groundHeight`, `keys`, `leavePilot`,
- * `look`, `optOnFoot`, `optPilot`, `params`, `soldier`, `spawnAtFlag`,
+ * `optOnFoot`, `optPilot`, `params`, `soldier`, `spawnAtFlag`,
  * `touchFlying`, `updateHud`.
  */
 export function createFreeCamera(page) {
   const freeCamera = {};
+  // The camera's orientation, which every view but a seat's steers by (the
+  // free camera, the soldier's eye, the death cam). Written here and nowhere
+  // else: the others aim it (`setLook`) or turn it (`turnLook`).
+  const look = { yaw: 0, pitch: -0.15 };
+  freeCamera.look = look;
+  freeCamera.setLook = (yaw, pitch) => {
+    look.yaw = yaw;
+    look.pitch = pitch;
+  };
+  /** A mouse delta at `sens` radians a count, pitch held inside +-1.2. */
+  freeCamera.turnLook = (dx, dy, sens) => {
+    look.yaw -= dx * sens;
+    look.pitch = Math.max(-1.2, Math.min(1.2, look.pitch - dy * sens));
+  };
 
   freeCamera.navMode = 'fly'; // 'fly' or 'pan'
 
@@ -31,8 +45,8 @@ export function createFreeCamera(page) {
     const alt = Number.isFinite(gh) ? Math.max(page.camera.position.y - gh, 15) : Math.max(page.camera.position.y, 15);
     const panSpeed = alt * 0.0018 * (isSlow() ? 0.35 : 1.0);
 
-    const cy = Math.cos(page.look.yaw), sy = Math.sin(page.look.yaw);
-    const cp = Math.cos(page.look.pitch), sp = Math.sin(page.look.pitch);
+    const cy = Math.cos(look.yaw), sy = Math.sin(look.yaw);
+    const cp = Math.cos(look.pitch), sp = Math.sin(look.pitch);
 
     const rx = -cy, rz = sy;
     const ux = -sy * sp, uy = cp, uz = -cy * sp;
@@ -65,8 +79,7 @@ export function createFreeCamera(page) {
     const pinned = (page.params.get('cam') || '').split(',').map(Number);
     if (pinned.length === 5 && pinned.every(Number.isFinite)) {
       page.camera.position.set(pinned[0], pinned[1], pinned[2]);
-      page.look.yaw = pinned[3];
-      page.look.pitch = pinned[4];
+      freeCamera.setLook(pinned[3], pinned[4]);
       applyLook();
       freeCamera.initialCameraPose = { x: pinned[0], y: pinned[1], z: pinned[2], yaw: pinned[3], pitch: pinned[4] };
       return;
@@ -77,10 +90,9 @@ export function createFreeCamera(page) {
     } else {
       page.camera.position.set(0, 80, 0);
     }
-    page.look.yaw = Math.PI;
-    page.look.pitch = -0.22;
+    freeCamera.setLook(Math.PI, -0.22);
     applyLook();
-    freeCamera.initialCameraPose = { x: page.camera.position.x, y: page.camera.position.y, z: page.camera.position.z, yaw: page.look.yaw, pitch: page.look.pitch };
+    freeCamera.initialCameraPose = { x: page.camera.position.x, y: page.camera.position.y, z: page.camera.position.z, yaw: look.yaw, pitch: look.pitch };
   }
 
   function resetCamera() {
@@ -95,8 +107,7 @@ export function createFreeCamera(page) {
     }
     if (freeCamera.initialCameraPose) {
       page.camera.position.set(freeCamera.initialCameraPose.x, freeCamera.initialCameraPose.y, freeCamera.initialCameraPose.z);
-      page.look.yaw = freeCamera.initialCameraPose.yaw;
-      page.look.pitch = freeCamera.initialCameraPose.pitch;
+      freeCamera.setLook(freeCamera.initialCameraPose.yaw, freeCamera.initialCameraPose.pitch);
       applyLook();
     } else {
       placeCamera();
@@ -161,8 +172,8 @@ export function createFreeCamera(page) {
   }
 
   function lookVector() {
-    const cy = Math.cos(page.look.yaw), sy = Math.sin(page.look.yaw);
-    const cp = Math.cos(page.look.pitch), sp = Math.sin(page.look.pitch);
+    const cy = Math.cos(look.yaw), sy = Math.sin(look.yaw);
+    const cp = Math.cos(look.pitch), sp = Math.sin(look.pitch);
     return { x: sy * cp, y: sp, z: cy * cp, cy, sy };
   }
 

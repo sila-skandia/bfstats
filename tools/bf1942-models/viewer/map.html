@@ -504,7 +504,7 @@ const pageInput = createPageInput(bag(
 const freeCamera = createFreeCamera(bag(
   from(() => level, `extras getFloorAltitude groundHeight`),
   from(() => localPlayer, `aircraft car leavePilot soldier`),
-  from(() => pageInput, `captured keys look touchFlying`),
+  from(() => pageInput, `captured keys touchFlying`),
   from(() => spawning, `spawnAtFlag`),
   {
     get camera() { return camera; }, get FLY_SLOW() { return FLY_SLOW; },
@@ -667,8 +667,8 @@ const seatCamera = createSeatCamera(bag(
 ));
 const localLook = createLocalLook(bag(
   from(() => botBodies, `captureBotPresentationTick`),
+  from(() => freeCamera, `turnLook`),
   from(() => localPlayer, `aircraft car occupancy soldier`),
-  from(() => pageInput, `look`),
   from(() => room, `netTickPoses roomJoined`),
   from(() => seatCamera, `mannedActive view`),
   from(() => soldierKit, `handWeapon isZoomed`),
@@ -1264,12 +1264,11 @@ let frameInputWasFiring = false;
 const soldierView = createSoldierView(bag(
   from(() => deployScreen, `deployActive`),
   from(() => footBodies, `footBody footCanopy`),
-  from(() => freeCamera, `applyLook`),
+  from(() => freeCamera, `applyLook setLook`),
   from(() => level, `collectSupplyDepots collider currentRoot world`),
   from(() => localLook, `footEyeCur footEyePrev footLookPending footPending footView presentAlpha`),
   from(() => localPlayer, `deathCamAt deathCamPos deathCamShot deathCamTarget deathCamTimer
     dieOnFoot frameInputLast runDeathCam soldier soldierArmor soldierDead supplyTarget`),
-  from(() => pageInput, `look`),
   from(() => seatCamera, `serverSettings`),
   from(() => soldierKit, `DEG_TO_RAD footFire`),
   from(() => spawning, `deployTeamId openDeploy`),
@@ -1806,6 +1805,7 @@ const testHooks = installTestHooks(bag(
   from(() => flagCapture, `announceCapture captureVoiceDirs captureVoiceKind flags
     lastCaptureVoice playCaptureVoice`),
   from(() => footBodies, `footBody footCanopy forceHide:forceHideFootBody`),
+  from(() => freeCamera, `look`),
   from(() => hudFeed, `gameHud showView`),
   from(() => hullBodies, `bodyScene bodyWorld floatHosts recordCrashes shipFlagInactive
     stepVehicleBodies`),
@@ -1818,7 +1818,7 @@ const testHooks = installTestHooks(bag(
     MINIMAP_TEAM_TINT setMapGate`),
   from(() => pageAudio, `activeAreaAudios ambientAudio audioLimiter audioListener vehicleAudio
     worldFire`),
-  from(() => pageInput, `aimHeld KBLOCK KBLOCK_KEYS kbLockState kbSession keys look pressTrigger
+  from(() => pageInput, `aimHeld KBLOCK KBLOCK_KEYS kbLockState kbSession keys pressTrigger
     seatAltFire seatFire setAim setFly setSeatTriggers triggerHeld`),
   from(() => room, `roomClient roomJoined`),
   from(() => scoreboard, `paintScoreboard scoreboardOpen scoreboardPlayers scoreFromSpawn

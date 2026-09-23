@@ -30,7 +30,6 @@ export function createPageInput(page) {
   const pageInput = {};
 
   const keys = new Set();
-  const look = { yaw: 0, pitch: -0.15 };
   pageInput.captured = false;
   pageInput.lockHeld = false;
   pageInput.dragging = false;
@@ -771,7 +770,6 @@ export function createPageInput(page) {
     capture,
     kbLockLeave,
     keys,
-    look,
     release,
     setFly,
     setSideCollapsed,
