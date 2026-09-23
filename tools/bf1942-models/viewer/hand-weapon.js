@@ -458,11 +458,12 @@ export function createHandWeapon(page) {
     get vehicleAudio() { return page.vehicleAudio; }, get world() { return page.world; },
   });
   const { footFire, isZoomed, startReload } = fire;
-  // Written by the page's look (`+=` per mouse delta), drained by `footFire`.
+  // Summed from the page's look (`addFootLook`), drained by `footFire`.
   Object.defineProperties(soldierKit, {
-    footLookX: { get: () => fire.footLookX, set: v => { fire.footLookX = v; }, enumerable: true },
-    footLookY: { get: () => fire.footLookY, set: v => { fire.footLookY = v; }, enumerable: true },
+    footLookX: { get: () => fire.footLookX, enumerable: true },
+    footLookY: { get: () => fire.footLookY, enumerable: true },
   });
+  soldierKit.addFootLook = fire.addFootLook;
 
   Object.assign(soldierKit, {
     DEG_TO_RAD: fire.DEG_TO_RAD,

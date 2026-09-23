@@ -140,6 +140,9 @@ export function createLevel(page) {
   // every node they drive in three's matrix walk.
   level.levelClips = [];
   level.flagMixer = null;
+  /** The level's flag-cloth mixer, made on first use (a capture that raises a
+   *  flag on a level whose cloths declared no clip). */
+  level.ensureFlagMixer = () => (level.flagMixer ??= new THREE.AnimationMixer(level.currentRoot));
   // What `?mode=` could not give this level, for the console band. Null
   // whenever the URL got exactly what it asked for, which is every load
   // with no `?mode=` at all.
