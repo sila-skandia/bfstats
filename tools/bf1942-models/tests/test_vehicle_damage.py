@@ -49,6 +49,10 @@ def run_harness() -> dict:
         (work / "vehicle-damage.mjs").write_text(module)
         shutil.copyfile(ARMOR, work / "armor.mjs")
         shutil.copyfile(EFFECTS_CORE, work / "effects-core.mjs")
+        # `effects-core.js` re-exports the damage-block half from its own file.
+        (work / "package.json").write_text('{"type": "module"}')
+        shutil.copyfile(EFFECTS_CORE.with_name("projectile-damage.js"),
+                        work / "projectile-damage.js")
         shutil.copyfile(HARNESS, work / "harness.mjs")
         proc = subprocess.run(["node", str(work / "harness.mjs")],
                               capture_output=True, text=True, timeout=60)
