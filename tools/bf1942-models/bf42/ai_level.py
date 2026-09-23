@@ -354,3 +354,89 @@ def add_cover_values(ai: LevelAi, library, templates) -> None:
                 value = cover.get(parts[-1].lower())
         if value is not None:
             ai.coverValues[key] = value
+
+
+
+@dataclass
+class SearchMapRaw:
+    """One level of a baked search map, `Pathfinding/<name>Level<L>Map.raw`.
+
+    The level archives ship them and the server loads them rather than
+    painting its own (`ai.loadMaps` in `AIpathFinding.con`; `LocalMap::
+    loadRawFile` 0x085fefb0 hands each level to `CellMap::loadRawFile`
+    0x085f86a0). The file: five int32 checked against the `CellMap`
+    (`log2` blocks across and down, `level + 6`, `level`, the bits-per-pixel
+    exponent), the special-cell count and ids (0 all free, 0xffffffff all
+    blocked), then one int32 per block, row-major: `>= 0` an index into the
+    special cells, `< 0` followed inline by the block's own `4 << (p4 - 5 +
+    2 * (p5 - p3))` bytes (the stream read at `*(IStream + 0xc)`).
+
+    A pixel is `CellMap::getPixel` 0x085f9a00: block `(x >> p5, z >> p5)`,
+    pixel `(x, z) >> p3` inside it, bit `col & 31` of word `row * (bw / 32) +
+    (col >> 5)`, LSB first; 1 is blocked. `x` is world x and `z` the
+    engine's z (the glTF frame's `-z`).
+    """
+
+    blocks_x: int
+    blocks_z: int
+    level: int
+    bits: int
+    block_pixels: int
+    blocks: list[bytes]
+
+    @property
+    def width(self) -> int:
+        return self.blocks_x * self.block_pixels
+
+    @property
+    def height(self) -> int:
+        return self.blocks_z * self.block_pixels
+
+    def blocked(self, px: int, pz: int) -> bool:
+        """Whether pixel `(px, pz)` of this level is blocked (outside is)."""
+        bw = self.block_pixels
+        if not (0 <= px < self.width and 0 <= pz < self.height):
+            return True
+        block = self.blocks[(pz // bw) * self.blocks_x + px // bw]
+        col, row = px % bw, pz % bw
+        word = row * max(1, bw // 32) + (col >> 5)
+        value = int.from_bytes(block[word * 4:word * 4 + 4], "little")
+        return bool((value >> (col & 31)) & 1)
+
+    def blocked_at(self, x: float, z_engine: float) -> bool:
+        """The pixel under world `(x, z)` (engine z, metres)."""
+        size = 1 << self.level
+        return self.blocked(int(x // size), int(z_engine // size))
+
+
+def read_search_map_raw(data: bytes) -> SearchMapRaw:
+    """Decode one baked search-map level (see `SearchMapRaw`). Only the
+    one-bit maps (`p4 == 0`, the `Level<L>Map` files) are decoded; the
+    `*Info.raw` / `*LandMap.raw` files carry other layouts."""
+    import struct
+
+    if len(data) < 24:
+        raise ValueError("search map too short")
+    wb, hb, p5, p3, p4 = struct.unpack_from("<5i", data, 0)
+    if p4 != 0:
+        raise ValueError(f"not a one-bit map (bits exponent {p4})")
+    off = 20
+    (count,) = struct.unpack_from("<i", data, off)
+    off += 4
+    specials = list(struct.unpack_from(f"<{count}I", data, off))
+    off += 4 * count
+    block_bytes = 4 << max(1, p4 - 5 + 2 * (p5 - p3))
+    block_pixels = 1 << (p5 - p3)
+    fills = [value.to_bytes(4, "little") * (block_bytes // 4) for value in specials]
+    blocks: list[bytes] = []
+    for _ in range((1 << wb) * (1 << hb)):
+        (rec,) = struct.unpack_from("<i", data, off)
+        off += 4
+        if rec < 0:
+            blocks.append(bytes(data[off:off + block_bytes]))
+            off += block_bytes
+        else:
+            blocks.append(fills[rec])
+    if off != len(data):
+        raise ValueError(f"search map has {len(data) - off} trailing bytes")
+    return SearchMapRaw(1 << wb, 1 << hb, p3, p4, block_pixels, blocks)

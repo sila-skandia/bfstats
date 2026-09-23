@@ -123,7 +123,7 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | move | obstacle circle | 1.5 m, 1 m ahead | | `bot.js OBSTACLE_RADIUS`, `OBSTACLE_AHEAD` | INVENTION |
 | move | obstacle drop | 25.5 m (`5 x 5 + 0.5`) | `updatePotentialObstacles` 0x0852d880; `AIPathfinding` ctor 0x0847a780 zeroes max speed / age | `bot.js OBSTACLE_DROP_DISTANCE` | ENGINE |
 | move | contact ticks | 10 | | `bot.js CONTACT_TICKS` | INVENTION |
-| move | hull never valid | the nearest free cell within 24 m stands in for the last valid position | `CommonControls::getBox` 0x08612060 takes `AIObjectMobile::getValidPosition` 0x085d5bb0 | `bot-route.js HULL_VALID_SEARCH` | INVENTION |
+| move | hull never valid | the nearest free cell within 24 m stands in for the last valid position | `CommonControls::getBox` 0x08612060 takes `AIObjectMobile::getValidPosition` 0x085d5bb0, false for a hull that has never been valid (the flag is set at `init` 0x085d54b0 from the spawn cell, then by `positionChanged` 0x085d5b30; AI-94) | `bot-route.js HULL_VALID_SEARCH` | INVENTION (kept: El Alamein's own baked map paints five hull spawns blocked) |
 | move | hull box levels | 0 .. 8 (tank map), 2 .. 8 (water map) | `getLandLevel` 0x085f3f90 between the vehicle's min (+0xc4a4) and the map's max (+0xc4a8); `ai.addSearchType Tank 0 0` read as min 0 | `bot-route.js HULL_BOX_MAX_LEVEL` | INFERRED / INVENTION (max) |
 | map | cell | 1 m | `LocalMap::getLevelPixelSize` 0x085ff170 | `nav-grid.js NAV_CELL` | ENGINE |
 | map | infantry map | water 1.5 m, slope 30 deg, brush 1.0, clip 0.4 .. 2.0 | `AIpathFinding.con ai.addSearchMap Infantry1 0 1.5 30 1.0 0.4 2.0 1` | `nav-grid.js INFANTRY_SEARCH_MAP` | CON |
@@ -131,6 +131,9 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | map | water maps | `Boat2` depth 5.0, brush 125; `LandingCraft3` 1.4, 4 | `AIpathFinding.con` | `bot-units.js waterNav` | CON |
 | map | brush | `n = 2 round(b) + 1`, disc `<= b²` | `LocalMapInfo::update` 0x08480f50 | `nav-grid.js brushOffsets` | ENGINE |
 | map | statics per cell | the band filled per cell | engine draws the outline (`objectClipAndRender` 0x085fbfa0) | `nav-grid.js rasteriseTriangle` | INVENTION |
+| map | surface under an object | an upward face above the band frees a terrain-blocked cell | `sampleAndRender` 0x08601390 frees a pixel whose four sub-samples hit a face, before the outlines are ORed in (`LocalMap::update` 0x085fe090; AI-93) | `nav-map.js rasteriseTriangle` | ENGINE (per piece, not per sub-sample) |
+| map | drivable objects | flat faces (either winding) always a surface; steep faces stamp nothing over a terrain-blocked cell | the engine outlines an object with an AI mesh against it (`clipFaceToFace`, `IAIMeshLoader` +0x8); a bridge's mesh is a sheet over the deck (AI-93) | `nav-map.js rasteriseTriangle` | INVENTION (stand-in for the AI meshes) |
+| map | no-outline material | 99 | `objectClipAndRender` 0x085fbfa0 face loop (`*(short *)(face + 6) != 99`) | `nav-map.js NO_OUTLINE_MATERIAL` | ENGINE |
 | map | coarse level | 16 m, any free metre | `StrategicMap` not read | `nav-grid.js COARSE_CELL` | INVENTION |
 | map | coarse cost | `(1 or sqrt 2)(1 + 2 (1 - free fraction))` | | `findStrategicPath` | INVENTION |
 | map | local step cost | `1 + 3 abs(dh) + 7 (1 - abs(ny))²` | `__checkThisLevel` 0x085f5d20 (x16 and level cost dropped) | `findLocalPath` | ENGINE (simplified) |

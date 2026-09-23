@@ -383,7 +383,7 @@ export function hullDecision(bot, dx, dz, minLevel = 0) {
       // false for such a hull. Its own baked map paints some spawns blocked
       // (El Alamein's Tank0: the Shermans at (1731, -804) and (888, -1822),
       // three Willys); El Alamein's (1685, -736) is no longer one of them
-      // since the repair pad it stands on is a surface (AI-92).
+      // since the repair pad it stands on is a surface (AI-93, AI-94).
       const v = bot._validHullPos ?? nearestFreeCell(levelAt, gx, gz, minLevel, Math.ceil(HULL_VALID_SEARCH / cs), cs);
       if (v) {
         from = [v[0], -v[1]];
