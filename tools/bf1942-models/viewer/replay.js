@@ -15,13 +15,14 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
-  parseRecording, roundClock, sampleAt, placeholderWeaponFor,
+  parseRecording, roundClock, placeholderWeaponFor,
 } from './replay-recording.js';
 import { parseServerLog, alignServerLog, serverRows } from './replay-server-log.js';
 import { ReplayUi, toast } from './replay-ui.js';
 import { phaseFor, buildGaitRig } from './replay-gait.js';
 import { ReplayAssets, setReplayPropellerIdle } from './replay-assets.js';
 import { toViewPosition, place } from './replay-actors.js';
+import { followCamera } from './replay-camera.js';
 
 export { parseRecording, roundClock, parseServerLog, alignServerLog, setReplayPropellerIdle };
 
@@ -30,13 +31,6 @@ export { parseRecording, roundClock, parseServerLog, alignServerLog, setReplayPr
 // How long a server-log marker stays on the level around its event, seconds.
 const MARKER_LEAD = 0.5;
 const MARKER_TAIL = 4;
-
-// Follow-camera distance from the followed object, and the lowest the orbit
-// may go: close over a soldier, further back from a vehicle, and high above
-// the spectator camera, which on the spawn screen is only a viewpoint.
-const FOLLOW_SOLDIER = { distance: 9, minPitch: -0.15 };
-const FOLLOW_VEHICLE = { distance: 20, minPitch: -0.15 };
-const FOLLOW_SPECTATOR = { distance: 85, minPitch: 0.7 };
 
 // Templates a recording names that have nothing to draw.
 const NO_MODEL = new Set(['MultiPlayerFreeCamera']);
@@ -289,47 +283,8 @@ class ReplayPlayer {
       }
     }
     this.lastFiredTime = t;
-    if (this.followPid !== null) this.followCamera(dt, t);
+    if (this.followPid !== null) followCamera(this, dt, t);
     this.ui.update(t);
-  }
-
-  /** The followed player's controlled object: their soldier, their vehicle,
-   *  or before spawning the spectator camera, which has a pose but no model. */
-  focusLife(t) {
-    let nid = null;
-    for (const c of this.rec.control) {
-      if (c.t > t) break;
-      if (c.pid === this.followPid) nid = c.nid;
-    }
-    if (nid === null) return null;
-    return this.rec.lives.find(l => l.nid === nid && t >= l.created && t < l.destroyed) || null;
-  }
-
-  followCamera(dt, t) {
-    const life = this.focusLife(t);
-    const s = life && sampleAt(life, t);
-    if (!s) return;
-    const focus = toViewPosition(s.a.p, this.v1);
-    if (s.b) focus.lerp(toViewPosition(s.b.p, this.v2), s.k);
-    focus.y += life.soldier ? 1.4 : 2.5;
-    const cam = this.ctx.camera;
-    const rig = life.tmpl === 'MultiPlayerFreeCamera' ? FOLLOW_SPECTATOR
-      : life.soldier ? FOLLOW_SOLDIER : FOLLOW_VEHICLE;
-    const pitch = Math.max(this.orbit.pitch, rig.minPitch);
-    const offset = this.v3.set(
-      Math.sin(this.orbit.yaw) * Math.cos(pitch),
-      Math.sin(pitch),
-      Math.cos(this.orbit.yaw) * Math.cos(pitch),
-    ).multiplyScalar(rig.distance * this.orbit.zoom);
-    const desired = this.v2.copy(focus).add(offset);
-    const jump = !this.followReady || desired.distanceTo(cam.position) > 150;
-    cam.position.lerp(desired, jump ? 1 : 1 - Math.exp(-dt * 4));
-    this.followReady = true;
-    cam.lookAt(focus);
-    // lookAt sets the rotation only. The page refreshed the camera's matrices
-    // for its own free-look before this ran, so anything projected through
-    // the camera before the render would otherwise use that stale view.
-    cam.updateMatrixWorld();
   }
 
   dispose() {
