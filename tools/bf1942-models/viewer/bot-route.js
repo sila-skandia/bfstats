@@ -29,7 +29,7 @@
 
 import { findLocalPath, findStrategicPath, traceClear, COARSE_CELL, freeLevel, isWalkable } from './nav-grid.js';
 import { tankControl, TANK, actionStatusDecision, searchBox, checkLine } from './bot-vehicle.js';
-import { boatControl, boatResetControls, PLANE, BOAT, collisionPredicted } from './bot-vehicle-air.js';
+import { boatControl, boatResetControls, PLANE, collisionPredicted } from './bot-vehicle-air.js';
 import { friendlyHulls } from './bot-pilot.js';
 import { wrapAngle } from './bot-aim.js';
 
@@ -595,44 +595,16 @@ export function hullDecision(bot, dx, dz, minLevel = 0) {
 /**
  * `infanteryControlTowardsDirection`: look toward `[x, z]`; throttle
  * `speed` inside the cone, else hold and turn. A target behind turns at
- * the full rate (the engine writes the angle as +-pi/2).
+ * the full rate (the engine writes the angle as +-pi/2). A driven ship
+ * never reaches here: `BotController._steerToward` (bot.js) sends it to
+ * bot-plans.js `steerBoat`, the helm that reads the held throttle channel
+ * (AI-112); a ship seat that does not drive returns below.
  */
 export function steerToward(bot, x, z, speed = 1) {
   const dx = x - bot.position[0];
   const dz = z - bot.position[2];
   if (dx * dx + dz * dz < 1e-8) { bot.moveForward = 0; return; }
   if (bot.vehicle && !bot.vehicle.drives) { bot.moveForward = 0; bot.moveStrafe = 0; return; }
-  if (bot.vehicle?.kind === 'ship') {
-    // `BoatControl::towardsDirection` on the water map's route leg. The
-    // helm steers at the follower's look-ahead point; the move's end
-    // condition (`ConPosition(point, 4 x radius)`) belongs to the move's
-    // own point, which the executor tests, so no arrival here: with it a
-    // look-ahead point 10..40 m off the bow read as arrived and the helm
-    // cut the throttle, leaving a landing craft turning in place.
-    const st = bot.vehicle.drive?.state;
-    const nav = bot._nav();
-    const w = st?.angularVelocity;
-    const r = boatControl({
-      forward: bot._vehicleForward(), velocity: st ? [st.velocity.x, st.velocity.z] : [0, 0],
-      toTarget: [dx, dz], radius: 0,
-      maxSpeed: bot.vehicle.hullMaxSpeed || bot.vehicle.maxSpeed || null,
-      prevSpeed: bot._boatPrevSpeed ?? 0,
-      // A THREE yaw rate about +y turns the heading toward a negative angle.
-      yawRate: w ? -w.y : 0,
-      level: nav ? freeLevel(nav, bot.position[0], bot.position[2]) : Infinity,
-      // The channel as `speedControl` reads it: this tick's word, which
-      // `_resetInput` has zeroed (the bot's input is rebuilt every tick).
-      prevThrottle: 0,
-      // `BoatControl::towardsDirection` 0x0860df70 runs the box state
-      // machine first, on the water map.
-      decision: nav ? hullDecision(bot, dx, dz, BOAT.baseLevel) : null,
-    });
-    bot._boatPrevSpeed = r.speed ?? 0;
-    bot.moveForward = r.throttle * (speed > 0 ? 1 : 0);
-    bot.moveStrafe = VEHICLE_YAW_SIGN * r.steer;
-    bot._dbgSteerAngle = r.angle;
-    return;
-  }
   if (bot.vehicle) {
     // `EntryTankMoveTo::execute` 0x08622e80: `actionStatusDecision` on the
     // vehicle map, then `TankControl::controlTowardsDirection` for the hull;
