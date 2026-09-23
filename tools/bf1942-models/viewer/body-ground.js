@@ -97,16 +97,20 @@ export function terrainContact(part, terrain, handlers, reportTerrainDamage = tr
     part.worldVertex(0, i, _w);
     if (_w[1] < minY) minY = _w[1];
 
-    const h = terrain.height(_w[0], _w[2]);
+    // The vertex's own height rides along: a terrain that knows the level's
+    // drivable decks (`body-pose.js bodyTerrain`) answers the deck the vertex
+    // stands on, as a driven wheel's probe does; the heightfield ignores it.
+    const vy = _w[1];
+    const h = terrain.height(_w[0], _w[2], vy);
     const depth = _w[1] - h;
     if (depth > 0) continue;
 
     _C[0] = _w[0]; _C[1] = h; _C[2] = _w[2];
-    terrain.normal(_w[0], _w[2], _N);
+    terrain.normal(_w[0], _w[2], _N, vy);
     part.body.tangentSpeed(_C, _speed);
 
     const matSelf = layer0.vertexMaterials ? layer0.vertexMaterials[i] : 0;
-    const matTerrain = terrain.material(_w[0], _w[2]);
+    const matTerrain = terrain.material(_w[0], _w[2], vy);
 
     if (reportTerrainDamage && lenSq3(_speed) > HANDLER_SPEED_THRESHOLD_SQ) {
       handlers.onTerrain(part, _speed, _N, _C, matSelf, matTerrain);

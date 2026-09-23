@@ -97,6 +97,13 @@ class VehicleInstanceTests(unittest.TestCase):
         self.assertEqual(r["transformed"], 1)
         self.assertTrue(r["forgotten"])
 
+    def test_the_last_one_out_puts_the_wheels_back_at_rest(self) -> None:
+        # The next drive reads its axles off these nodes; a lifted wheel left
+        # there sank the Sherman 0.14 m on every boarding after the first.
+        r = self.results["lastOut"]
+        self.assertAlmostEqual(r["wheelY"], -0.68, places=6)
+        self.assertAlmostEqual(r["wheelTurned"], 1.0, places=6)
+
     def test_a_gunner_alone_rides_a_parked_hull_until_someone_drives(self) -> None:
         self.assertFalse(self.results["gunnerAlone"]["drive"])
         r = self.results["driverArrives"]

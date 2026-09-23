@@ -452,7 +452,11 @@ export class TrackedVehicle extends Vehicle {
       // One deck reference for the whole probe, exactly as `GroundVehicle` does.
       const fromY = attach.y + DECK_STEP_UP;
       const reach = probeAlongAxis(this.groundHeight, attach, axisWorld, fromY);
-      const raw = Number.isFinite(reach) ? wheel.radius - reach : -Infinity;
+      // How far below the axle the ground meets the wheel: the wheel's own
+      // col0 probe when the body world handed it one (`hull-bodies.js
+      // wheelContactDepths`, the depth `checkVsTerrain` 0x0825a960 tests the
+      // parked body at), else the drawn radius.
+      const raw = Number.isFinite(reach) ? (wheel.contactDepth ?? wheel.radius) - reach : -Infinity;
       if (raw <= 0) {
         wheel.compression = 0;
         wheel.load = 0;

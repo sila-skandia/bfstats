@@ -10,6 +10,7 @@ import { BodyWorld } from './body-world.js';
 import { buildParkedVehicle, describeVehicleParts } from './vehicle-bodies.js';
 import { equilibriumRootY, floatNodesOf, localiseFloats, FloatingHull } from './body-float.js';
 import { bodyPoseOf, bodyTerrain } from './body-pose.js';
+import { DECK_STEP_UP } from './ground-contact.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -403,6 +404,70 @@ export function createHullBodies(page) {
     for (const { node, body } of settling) writeBodyPose(node, body);
   }
 
+  /** The body world's ground: the heightfield, plus the level's drivable
+   *  decks once the collider exists (`body-pose.js bodyTerrain`). */
+  function groundFor(heightfield, waterLevel) {
+    return bodyTerrain(heightfield, waterLevel, page.collider ?? null, DECK_STEP_UP);
+  }
+
+  /** Does a drivable deck lie under the hull's footprint? The pose's origin and
+   *  eight points on a ring of its bounding radius (at most 4 m), each asked
+   *  from 2 m above the origin. */
+  function overDeck(position, radius) {
+    const collider = page.collider;
+    if (!collider?.deckSurface || !collider.drivableMask) return false;
+    const [x, y, z] = position;
+    const r = Math.min(Number.isFinite(radius) ? radius : 3, 4);
+    if (collider.deckSurface(x, z, y + 2)) return true;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      if (collider.deckSurface(x + Math.cos(a) * r, z + Math.sin(a) * r, y + 2)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Settle the parked hulls that stand over a drivable deck again, now that the
+   * collider knows its decks. `settlePlacedVehicles` runs before the collision
+   * index exists (the index bakes each hull where it rests), so it settles on
+   * the heightfield alone and sinks a hull placed on a tank pad or a bay apron
+   * into it. The drive the hull is given on boarding rides the deck
+   * (`surfaceHeight(x, z, axle + DECK_STEP_UP)`), so boarding lifted it: El
+   * Alamein's Sherman_1 from 60.85 to 61.49 through a 2 m bounce (Brief F item
+   * 2). The engine has one body standing on the pad throughout; here the parked
+   * body is settled on the deck the drive will see, and the collider is told the
+   * hull moved (`setMovedOwner`), as for any parked body that moves.
+   *
+   * `owners` are body-scene owners; returns the owners it moved.
+   */
+  function settleOnDecks(owners) {
+    const heightfield = page.collider?.heightfield;
+    if (!heightfield || !page.damageTables || !page.collider?.drivableMask) return [];
+    const world = new BodyWorld({
+      tables: page.damageTables, terrain: groundFor(heightfield, page.collider.waterLevel) });
+    const settling = [];
+    for (const owner of owners) {
+      const scene = bodyScene.get(owner);
+      if (!scene || scene.sea) continue;
+      const pose = bodyPoseOf(scene.node);
+      if (!overDeck(pose.position, scene.spec.boundingRadius)) continue;
+      const parked = buildParkedVehicle(scene.spec, { ...pose, asleep: false });
+      world.addParked(owner, parked, scene.spec);
+      settling.push({ owner, scene, body: parked.body });
+    }
+    if (!settling.length) return [];
+    for (let tick = 0; tick < SETTLE_TICKS; tick++) {
+      world.tick();
+      if (tick > 30 && settling.every(s => s.body.sleeping)) break;
+    }
+    for (const { owner, scene, body } of settling) {
+      writeBodyPose(scene.node, body);
+      publishMovedHull(owner, scene, scene.node, body.pos);
+      scene.moved = true;
+    }
+    return settling.map(s => s.owner);
+  }
+
   /** Rebuild the body world for the level `buildCollider` just indexed. */
   function setupVehicleBodies() {
     bodyScene.clear();
@@ -417,9 +482,10 @@ export function createHullBodies(page) {
     // (`body-statics.js`). Without a `drivableMask` the deck gate inside it has
     // nothing to gate, which is exactly right for a level with no bridge.
     page.world?.setupBodies({ tables: page.damageTables,
-                         terrain: bodyTerrain(heightfield, page.collider.waterLevel),
+                         terrain: groundFor(heightfield, page.collider.waterLevel),
                          statics: page.collider.statics ? page.collider.staticProbe() : null });
     hullBodies.bodyWorld = page.world?.bodyWorld ?? null;
+    const parkedOwners = [];
     for (const [owner, visual] of page.damageVisuals) {
       // A ship gets a scene record and a collision spec but no PARKED body: her
       // hull is described so that the moment a player takes the helm she can enter
@@ -439,7 +505,13 @@ export function createHullBodies(page) {
       });
       if (sea) continue;
       page.collider.statics?.setBodyOwner?.(owner, true);
-      page.world?.addParkedBody(owner, spec, bodyPoseOf(visual.node));
+      parkedOwners.push(owner);
+    }
+    // A hull placed on a deck stands on it before it becomes a body.
+    settleOnDecks(parkedOwners);
+    for (const owner of parkedOwners) {
+      const scene = bodyScene.get(owner);
+      page.world?.addParkedBody(owner, scene.spec, bodyPoseOf(scene.node));
     }
     syncVehicleSpawnOwnership();
   }
@@ -557,12 +629,85 @@ export function createHullBodies(page) {
     return 0;
   }
 
+  /**
+   * An aircraft's drive has no springs: it clamps its origin at the ground plus
+   * `groundClearance`, the lowest wheel mesh's bottom unloaded (`aircraftSpec`),
+   * or the Corsair's 1.2 when no wheel mesh is there to measure (the headless
+   * runner). The parked body stands on the same wheels through
+   * `PhysicsSpring`'s law, sagged under the airframe's weight. The two
+   * disagree, and boarding moved the hull by the difference: El Alamein's B17
+   * rose 0.58 m on the page (42.96 to 43.54), and in the runner it fell 1.6 m
+   * onto the 1.2 fallback, landed at 4.4 m/s and lost 112 of its 128 hit
+   * points (Brief F item 2). The engine has one body on those springs
+   * throughout, so a plane at rest when it is taken keeps the height it rests
+   * at: its drive's clearance becomes the parked height over the ground, and
+   * the page's 0.2 m lift off the wheels is taken back. A plane still moving
+   * (shoved, or falling) keeps its spec.
+   */
+  function standAircraftWhereParked(vehicle, scene, parked) {
+    const spec = vehicle?.spec;
+    if (!spec || !Number.isFinite(spec.groundClearance) || typeof vehicle.groundHeight !== 'function') return;
+    if (!vehicle.state?.position || !parked) return;
+    const v = parked.v;
+    if (!parked.sleeping && Math.hypot(v[0], v[1], v[2]) > 0.5) return;
+    scene.node.updateWorldMatrix(true, false);
+    const e = scene.node.matrixWorld.elements;
+    const floor = vehicle.groundHeight(e[12], e[14]);
+    if (!Number.isFinite(floor)) return;
+    const clearance = e[13] - floor;
+    // On its wheels, not on its belly or up a hangar wall.
+    if (!(clearance > 0.1) || clearance > spec.groundClearance + 3) return;
+    vehicle.spec = { ...spec, groundClearance: clearance };
+    vehicle.state.position.y = e[13];
+  }
+
+  /**
+   * A tracked drive meets the ground at `radius` below each axle, the drawn
+   * wheel's size (`measureWheelRadius`, 0.255 m on a Sherman). The parked body
+   * meets it at the wheel's own collision probe: `checkVsTerrain` (0x0825a960)
+   * drops a spring part's col0 vertices on the ground, vertex 0 alone when the
+   * layer has three or fewer (`body-ground.js terrainContact`), and a Sherman
+   * road wheel's probe sits 0.304 m under its axle. With the same springs the
+   * two rest 0.049 m apart, so a Sherman sank that much when it was boarded
+   * and rose it again when it was left. The drive is handed each wheel's probe
+   * depth (`wheel.contactDepth`), matched to its spring part by the axle's
+   * place in the hull; the drawn radius still turns the wheel.
+   */
+  function wheelContactDepths(vehicle, spec) {
+    if (!vehicle?.wheels?.length || !('radius' in vehicle.wheels[0])) return;
+    const springs = (spec?.parts ?? []).filter(p => p.kind === 'spring' && p.shape?.layers?.[0]?.vertices?.length);
+    for (const wheel of vehicle.wheels) {
+      if (!wheel.rest) continue;
+      let best = null, bestD = Infinity;
+      for (const part of springs) {
+        const d = Math.hypot(part.offset[0] - wheel.rest.x, part.offset[2] - wheel.rest.z);
+        if (d < bestD) { bestD = d; best = part; }
+      }
+      if (!best || bestD > 0.25) continue;
+      const v = best.shape.layers[0].vertices;
+      const count = v.length / 3 <= 3 ? 1 : v.length / 3;
+      const rot = best.rot;
+      let low = Infinity;
+      for (let i = 0; i < count; i++) {
+        const j = i * 3;
+        const y = best.offset[1] + v[j] * rot[0][1] + v[j + 1] * rot[1][1] + v[j + 2] * rot[2][1];
+        if (y < low) low = y;
+      }
+      const depth = wheel.rest.y - low;
+      if (depth > 0.05 && depth < 2) wheel.contactDepth = depth;
+    }
+  }
+
   /** The player has taken a vehicle: its drive model now stands in for the body. */
   function adoptDrivenBody(vehicle) {
     if (!hullBodies.bodyWorld || !vehicle) return;
     const owner = page.collider?.statics?.ownerOf(vehicle.node) ?? -1;
     const scene = bodyScene.get(owner);
     if (!scene) return;
+    if (!scene.sea) {
+      standAircraftWhereParked(vehicle, scene, hullBodies.bodyWorld.get(owner)?.parked?.body);
+      wheelContactDepths(vehicle, scene.spec);
+    }
     page.world.adoptDriven(owner, vehicle, scene.spec);
     scene.moved = true;
     // A hull that has just become a body must leave the static index at once, not
@@ -629,6 +774,8 @@ export function createHullBodies(page) {
       rebaseDeckSpawns();
       return;
     }
+    // Back on its pad is back IN its pad when the pad is a deck.
+    settleOnDecks([owner]);
     page.world.addParkedBody(owner, scene.spec, bodyPoseOf(scene.node));
   }
 
