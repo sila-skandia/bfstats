@@ -1647,8 +1647,7 @@ function frame(dt) {
   // and the on-foot look this tick actually applied, for the deviation
   // model's |MouseLookX/Y| drain (footFire reads the accumulated pair).
   const local = step.players[LOCAL_PLAYER] ?? null;
-  vehicleHits.vehicleInput.blocked = local?.gate.blocked ?? false;
-  vehicleHits.vehicleInput.rotationalScale = local?.gate.rotationalScale ?? 1;
+  vehicleHits.readGate(local?.gate);
   combatFrame = local?.combat ?? null;
   if (local?.look) {
     soldierKit.footLookX += Math.abs(local.look.yaw);
