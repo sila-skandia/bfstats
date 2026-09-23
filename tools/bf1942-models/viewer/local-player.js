@@ -1051,6 +1051,9 @@ export function createLocalPlayer(page) {
   localPlayer.entryScan = 0;
   /** The level went, and every door in it with it: the next scan re-indexes
    *  the new level's (`show()`, after the bots are spawned). */
+  /** The door list is stale (a hull's spawn went live or dark); rebuilt on
+   *  the next scan. */
+  localPlayer.dropEntryPoints = () => { localPlayer.entryPoints = null; };
   localPlayer.forgetEntryPoints = () => {
     localPlayer.entryPoints = null;
     localPlayer.nearEntry = null;

@@ -813,12 +813,11 @@ const hullBodies = createHullBodies({
   get damageTables() { return level.damageTables; },
   get damageVisuals() { return wrecks.damageVisuals; },
   get DEFAULT_SURFACE_FRICTION() { return level.DEFAULT_SURFACE_FRICTION; },
-  get effects() { return effects; }, get entryPoints() { return localPlayer.entryPoints; },
-  set entryPoints(v) { localPlayer.entryPoints = v; }, get extras() { return level.extras; },
+  get dropEntryPoints() { return localPlayer.dropEntryPoints; }, get effects() { return effects; },
+  get extras() { return level.extras; },
+  get forgetEntryPoints() { return localPlayer.forgetEntryPoints; },
   get MAPS_BASE() { return MAPS_BASE; },
   get materialFrictionById() { return level.materialFrictionById; },
-  get nearEntry() { return localPlayer.nearEntry; },
-  set nearEntry(v) { localPlayer.nearEntry = v; },
   get vehicleDamage() { return level.vehicleDamage; },
   get vehicleInterp() { return localPlayer.vehicleInterp; }, get vehicles() { return vehicles; },
   get vehicleSpawnActive() { return level.vehicleSpawnActive; },
@@ -1155,10 +1154,10 @@ const flagCapture = createFlagCapture({
   get drawFullMap() { return mapSurfaces.drawFullMap; },
   get drawMinimap() { return mapSurfaces.drawMinimap; },
   get ensureAudioContext() { return pageAudio.ensureAudioContext; },
-  get extras() { return level.extras; }, get flagMixer() { return level.flagMixer; },
-  set flagMixer(v) { level.flagMixer = v; }, get flashHud() { return hudFeed.flashHud; },
-  get flattenCull() { return level.flattenCull; }, get hud() { return hud; },
-  get levelClips() { return level.levelClips; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
+  get ensureFlagMixer() { return level.ensureFlagMixer; }, get extras() { return level.extras; },
+  get flashHud() { return hudFeed.flashHud; }, get flattenCull() { return level.flattenCull; },
+  get hud() { return hud; }, get levelClips() { return level.levelClips; },
+  get LOCAL_PLAYER() { return LOCAL_PLAYER; },
   get localMapTeam() { return mapSurfaces.localMapTeam; },
   get logToConsole() { return pageConsole.logToConsole; }, get MAPS_BASE() { return MAPS_BASE; },
   get masterVolume() { return pageAudio.masterVolume; }, get optOnFoot() { return optOnFoot; },
@@ -1643,10 +1642,7 @@ function frame(dt) {
   vehicleHits.readGate(local?.gate);
   combatFrame = local?.combat ?? null;
   combatFrameWorld = level.world;
-  if (local?.look) {
-    soldierKit.footLookX += Math.abs(local.look.yaw);
-    soldierKit.footLookY += Math.abs(local.look.pitch);
-  }
+  if (local?.look) soldierKit.addFootLook(local.look);
 
   // ---- the cameras and the rest of the presentation -------------------------
   if (seated) {
