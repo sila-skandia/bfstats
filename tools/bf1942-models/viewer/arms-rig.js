@@ -3,7 +3,7 @@
 // engine mounts it, drawn in its own near pass (the viewmodel scene, camera
 // and light proxies this module owns), and driven by an AnimationMixer off
 // the soldier's gait. Lifted out of hand-weapon.js
-// (features/vehicle-instance-refactor Part 2c).
+// (features/vehicle-instance-refactor).
 
 import * as THREE from 'three';
 import { wantViewmodelClip } from './viewmodel-anim.js';

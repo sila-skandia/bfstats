@@ -1,7 +1,7 @@
 // The weapon in the human's hand: what is in it (`soldierKit.handWeapon`,
 // its load token, the kit's ammunition), the inventory slots and the weapon
 // bar, the item gate, and the load, raise and teardown of a weapon. Lifted out
-// of map.html (features/vehicle-instance-refactor Part 2) and split in Part 2c;
+// of map.html (features/vehicle-instance-refactor Part 2) and split up after it;
 // the rest is composed here from its own modules, each handed only what it
 // reads:
 //

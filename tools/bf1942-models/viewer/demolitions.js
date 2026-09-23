@@ -3,7 +3,7 @@
 // them, the "4" key falls through to the plunger on an empty pouch, Fire on
 // the plunger sets off every pack this kit put down). Owns which pack/plunger
 // pair the kit carries and the gun group the plunger reaches. Lifted out of
-// hand-weapon.js (features/vehicle-instance-refactor Part 2c).
+// hand-weapon.js (features/vehicle-instance-refactor).
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
