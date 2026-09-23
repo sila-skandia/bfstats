@@ -84,6 +84,7 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | fire | aircraft distance | ground `min(1, d / 3R)`, air `max(0, 1 - d / 1.5R)` | `BBFire3d::calculateUrgency` 0x085662f0 | `VEHICLE_FIRE.airGroundRangeFactor`, `airAirRangeFactor` | ENGINE |
 | fire | facing | `max(0.5, f.dir + 1) x 0.5` | `BBFire3d` | `VEHICLE_FIRE.facingFloor`, `facingScale` | ENGINE |
 | fire | anti-aircraft rules | non-AA 0 past 0.5 R or 15 m/s; AA 1 inside 0.9 R | `BBFire3d` | `VEHICLE_FIRE.aaNonAaRange`, `aaNonAaSpeed`, `aaRange` | ENGINE |
+| fire | is the unit anti-aircraft | the seat's Armament plug-in `setIsAntiAircraft` (AI-78) | `IPIArmamentReal::isAntiAircraft` 0x085e9b00, setter 0x08504dd0 | `vehicle-ai.json` `seatsAi.*.isAntiAircraft` -> `bot-units.js` `antiAircraft` -> `bot-perception.js chooseVehicleTarget` | ENGINE / CON |
 | fire | escaping target | faster by 5 m/s beyond range | `BBFire3d` | `VEHICLE_FIRE.escapeSpeedGap` | ENGINE |
 | fire | unspotted enemies | x0.75; 850 m hulls, 600 m aircraft, 75 m else | `getEnemyObjects` 0x085e4eb0 | `VEHICLE_FIRE.environment*` | ENGINE |
 | fire | `losRange` | 0.89 | | `VEHICLE_FIRE.losRange` (unused) | UNSOURCED |

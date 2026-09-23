@@ -193,7 +193,10 @@ export function splashSpec(damage) {
  * runs at 0x08153e5b, before the explosion gate), and that is all. Reading the
  * flag as "dead on a type-4 round" and letting the shell rest where it landed
  * to burst on its fuse hands a 20 m, material2-199 blast to every AA gun
- * firing at the ground.
+ * firing at the ground. What bursts a flak shell on an aircraft is not the
+ * contact at all but its proximity fuse, `explodeNearEnemyDistance 10`,
+ * which sets the end-of-life blast off before the shell reaches the hull
+ * (`proximity-fuse.js`, ledger PROX-1..PROX-6).
  *
  * Only a round with NEITHER word survives contact. In vanilla that is exactly
  * the four fuse weapons — `GrenadeAlliesProjectile`, `GrenadeAxisProjectile`,
