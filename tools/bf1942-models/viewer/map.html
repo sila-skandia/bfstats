@@ -1157,12 +1157,13 @@ function loadBotWeapons(bot) {
   })));
 }
 const botBodies = createBotVisuals({
-  get MODELS_BASE() { return MODELS_BASE; },
-  get bindDynamicShading() { return level.bindDynamicShading; }, get bust() { return bust; },
+  get bindDynamicShading() { return level.bindDynamicShading; },
+  get bots() { return referee.bots; }, get bust() { return bust; },
   get disposeFootBodyScene() { return footBodies.disposeFootBodyScene; },
-  get footBodyClips() { return footBodies.footBodyClips; }, get footBodyLoader() { return footBodies.footBodyLoader; },
-  get presentAlpha() { return localPlayer.presentAlpha; }, get referee() { return referee; },
-  get world() { return world; },
+  get footBodyClips() { return footBodies.footBodyClips; },
+  get footBodyLoader() { return footBodies.footBodyLoader; },
+  get MODELS_BASE() { return MODELS_BASE; },
+  get presentAlpha() { return localPlayer.presentAlpha; }, get world() { return world; },
 });
 /** The edge of the human's fire input last frame, for the bots' hearing. */
 let frameInputWasFiring = false;

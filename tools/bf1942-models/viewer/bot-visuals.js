@@ -12,8 +12,8 @@ import { FAMILY_CLIPS, remoteClipFamily } from './remote-gait.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `MODELS_BASE`, `bindDynamicShading`, `bust`, `disposeFootBodyScene`,
- * `footBodyClips`, `footBodyLoader`, `presentAlpha`, `referee`, `world`.
+ * `bindDynamicShading`, `bots`, `bust`, `disposeFootBodyScene`,
+ * `footBodyClips`, `footBodyLoader`, `MODELS_BASE`, `presentAlpha`, `world`.
  */
 export function createBotVisuals(page) {
   const botBodies = {};
@@ -149,8 +149,8 @@ export function createBotVisuals(page) {
   }
 
   function updateBotVisuals(dt) {
-    if (!page.referee.bots.length) return;
-    for (const bot of page.referee.bots) {
+    if (!page.bots.length) return;
+    for (const bot of page.bots) {
       const vis = botVisuals.get(bot.playerId);
       if (!vis?.rig) continue;
 
@@ -225,8 +225,8 @@ export function createBotVisuals(page) {
    * position.
    */
   function captureBotPresentationTick(snap) {
-    if (!page.referee.bots?.length) return;
-    for (const bot of page.referee.bots) {
+    if (!page.bots?.length) return;
+    for (const bot of page.bots) {
       const vis = botVisuals.get(bot.playerId);
       if (!vis) continue;
       const s = page.world?.player(bot.playerId)?.soldier;
