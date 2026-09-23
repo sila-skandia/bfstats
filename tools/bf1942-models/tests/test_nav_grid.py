@@ -32,7 +32,7 @@ def run_harness() -> dict:
         work = Path(tmp)
         shutil.copyfile(VIEWER / "nav-grid.js", work / "nav-grid.js")
         # `nav-grid.js` re-exports the map and the searches from their modules.
-        for name in ("nav-map.js", "nav-search.js", "nav-baked.js"):
+        for name in ("nav-map.js", "nav-search.js", "nav-baked.js", "strategic-map.js"):
             shutil.copyfile(VIEWER / name, work / name)
         shutil.copyfile(HARNESS, work / "harness.mjs")
         (work / "package.json").write_text('{"type":"module"}\n')

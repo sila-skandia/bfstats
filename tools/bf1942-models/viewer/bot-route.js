@@ -21,11 +21,13 @@
 //  * `infanteryControlTowardsDirection` 0x08627000 turns the mouse toward
 //    the point and throttles only inside a 31.5 deg cone.
 //
-// INVENTION: the coarse legs come from nav-grid.js's `findStrategicPath`
-// (the engine's `StrategicMap` was not read); a failed route is retried a
-// few times with the obstacle circles and then walked straight at.
+// The coarse legs come from nav-grid.js's `findStrategicPath`: the level's
+// own strategic map where it ships one (`strategic-map.js`, AI-117; the
+// engine's `updateStrategicPath` 0x08526e60), else the painted coarse layer
+// (INVENTION). A failed route is retried a few times with the obstacle
+// circles and then walked straight at (INVENTION).
 
-import { findLocalPath, findStrategicPath, traceClear, COARSE_CELL, freeLevel } from './nav-grid.js';
+import { findLocalPath, findStrategicPath, traceClear, COARSE_CELL, freeLevel, isWalkable } from './nav-grid.js';
 import { tankControl, TANK, actionStatusDecision, searchBox, checkLine } from './bot-vehicle.js';
 import { boatControl, boatResetControls, PLANE, BOAT } from './bot-vehicle-air.js';
 import { wrapAngle } from './bot-aim.js';
@@ -186,8 +188,13 @@ export function ensureRoute(bot, goal) {
   }
   const [bx, bz] = [bot.position[0], bot.position[2]];
   let coarse = null;
-  if (Math.hypot(goal[0] - bx, goal[2] - bz) > COARSE_CELL * 2) {
-    coarse = findStrategicPath(nav, bx, bz, goal[0], goal[2]);
+  // On the level's own strategic map every route asks the engine's test
+  // (`updateStrategicPath` 0x08526e60: one region needs no strategic path);
+  // on the painted coarse layer only a goal farther than two coarse cells
+  // does (INVENTION).
+  if (nav.strategic || Math.hypot(goal[0] - bx, goal[2] - bz) > COARSE_CELL * 2) {
+    const valid = bot._validPos?.nav === nav ? bot._validPos.pos : null;
+    coarse = findStrategicPath(nav, bx, bz, goal[0], goal[2], { fallbackStart: valid });
     if (!coarse) {
       bot._pathFailures++;
       return null;
@@ -547,6 +554,14 @@ export function execInfantryMoveTo(bot, action, dt) {
     bot.route = null;
   }
 
+  // The searcher's last free position on its own map (`AIObjectMobile`
+  // +0x20, kept by `positionChanged` 0x085d5b30 whenever the position is
+  // valid), where `initPathfinding` 0x0852a0d0 starts a route from a
+  // blocked cell (`getValidPosition`, Information vt+0x20).
+  const navNow = bot._nav();
+  if (navNow && isWalkable(navNow, bot.position[0], bot.position[2])) {
+    bot._validPos = { nav: navNow, pos: [bot.position[0], bot.position[2]] };
+  }
   let route = bot._ensureRoute(target);
   if (route) {
     bot._extendRoute();
