@@ -75,6 +75,7 @@ Serialised by `ProjectileTemplate::makeScript` (lnxded `0x0831fd40`, client
 | `distToStartLoseDamage` | +0x198 | +0x27c | 0 |
 | `distToMinDamage` | +0x19c | +0x280 | 0 |
 | `explodeNearEnemyDistance` | +0x168 | +0x218 | −1 (off) |
+| `ProximityFusePrimer` | +0x1a0 | — | −1 (live from launch) |
 | `endEffectTemplate` | +0x170 | +0x21c | none |
 | `hasCollisionEffect` / `hasOnTimeEffect` / `dieAfterColl` / `stopAtEndEffect` / `invisible` | +0x1a4.. | +0x284/+0x285/+0x287/+0x289/+0x28a | `dieAfterColl` **1** |
 
@@ -99,7 +100,8 @@ different class and are not what `getDamage` reads.
 body is `hasCollisionPhysics 1` physics, gravity × `gravityModifier`
 (−14.73 × 0.2 = −2.95 m/s² for the bazooka's 50 m/s rocket, which has no
 `c_ETRocket` engine and does not accelerate). The function only runs the
-`explodeNearEnemyDistance` proximity fuse and scales the visible body.
+`explodeNearEnemyDistance` proximity fuse and scales the visible body; the
+fuse is section 5.
 
 ## 3. EffectBundle → Emitter → particle
 
@@ -216,3 +218,43 @@ first second. Against a wall the table names `BazookaCascadesStone` =
 - The client `GameClient::handleCollisionForProjectile` and
   `Particle::handleUpdate` (undefined code; not needed — the server copies are
   named and the client's `playCollisionEffect`/`getDamage` twins matched).
+
+## 5. The proximity fuse, and when a round bursts in the sky
+
+Read 2026-09-24 for the AA guns (ledger PROX-1..PROX-9). A flak shell has
+three ways to end, and the one that matters against aircraft is the fuse.
+
+**The fuse** (`Projectile::handleUpdate` 0x0831e940). Every update, once the
+round is strictly older than `ProximityFusePrimer` (`+0x1a0`, default -1)
+and while `explodeNearEnemyDistance` (`+0x168`, default -1) is positive, the
+object manager is asked for the objects within that distance of the round.
+Soldiers are skipped by template class. The first survivor that passes the
+branch test detonates the round:
+
+```
+round not under water:  ownMass < mass <= 100000  and  |d| <= distance  and  |v| >= 2.5 m/s
+round under water:      mass >= 50000              and  |dy| <= distance
+```
+
+`|d|` is to the object's position; the speed is the object's physics
+node's. No team is tested (the firer's vehicle root is computed and
+dropped). `detonate` (0x0831e680) is the same call the end of the lifetime
+makes, so the burst is the end-of-life explosion: `e_FlakBig` and the
+material-199 splash out to 20 m. The AA gun's shells author 10 m with a
+0.1 s primer, the Flak 38's 10 m with none; a parked vehicle never sets one
+off, a moving one within 10 m of the shell's path always does unless the
+shell's 10 m step (300 m/s at 30 Hz) takes it straight into the hull first.
+
+**Contact** (`Projectile::handleCollision` 0x0831ee80, HP-9e). A flak shell
+that touches anything dies silently: `hasCollisionEffect 1` recycles it
+without an end effect, and `damageType 4` has no impact explosion. What
+reaches the struck hull is the collision effect and the direct hit of
+material 228 (5 x the damage mod, 3.5 against a Spitfire's 60).
+
+**The lifetime** (`Projectile::activate` 0x0831e120). `timeToLive` is drawn
+from its CRD per round and posted as message `0x16`; on it `handleMessage`
+(0x0831e8f0) detonates a `hasOnTimeEffect` round and quietly recycles any
+other. The AA gun's `CRD_UNIFORM/0.8/1.4/0` spreads its bursts from 240 to
+420 m at 300 m/s. A viewer that keeps only the CRD's first number bursts
+every shell at 240 m, which is the "same distance every time" the owner saw.
+
