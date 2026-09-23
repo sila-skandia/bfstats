@@ -75,22 +75,30 @@ one mark per man, and the vehicle is it.
   that same tint, so the multiply is exact and not merely close.
 - `python3 -m unittest` over `tools/bf1942-models/tests` — 2706 tests, OK.
 
-## Not reachable yet: the crewed-vehicle tint
+## The crewed-vehicle tint, and the hull that fell off the map (2026-09-23)
 
-The rule is implemented and correct, but nothing in the viewer can currently
-put a teammate in a vehicle, so it never fires:
+Bots now board, so the tint is reachable, and it exposed a bug: a teammate
+who climbed into a vehicle vanished from both map surfaces. `drawVehicles`
+walked `spawnersRoot.children`, and `Vehicle`'s constructor reparents a hull
+onto the level root the moment anyone drives it. Nothing puts it back, so
+the hull was gone from the map for good, parked or crewed, after its first
+driver.
 
-- **Bots do not board.** `bot.js` has no vehicle behaviour at all.
-- **Remote humans are not in `world.players`.** A room's other players are
-  replicas owned by `netcode-render.js` (its own `soldiers` / `vehicles`
-  maps); `world.players` holds the local player and the bots only. So the
-  map's friendly marks — the arrows included — have always been bots-only,
-  and `player.occupancy.root` is never set for anyone but the local player.
+`indexScene` now keeps the level's vehicle list as it found it
+(`mapVehicles`), and the map draws from that. Respawn reuses the same node,
+so the list holds for the level's lifetime. The local player's own hull is
+skipped, because the ring marks him. `friendlyVehicleNodes` maps a nested
+seat (a carrier's AA battery) to the hull the map draws, and
+`friendlyMarkerKey` carries each crewed hull's position and heading, so a
+moving jeep repaints like an on-foot arrow.
 
-Either of those two would light it up unchanged. Until then the tint is
-reached only by the local player's own hull, which is reparented out of
-`spawnersRoot` while he drives it and is marked by the ring instead — the
-way retail marks it.
+Verified on Kasserine Pass (Axis): `__botMount('bot_1', 'Kubelwagen')`
+draws the Kubelwagen in the Axis red; after `__botDismount` it stays on the
+map as a white parked silhouette. Before the fix it disappeared on the mount
+and never came back.
+
+Remote humans are still not in `world.players` (see `netcode-render.js`), so
+a room's other players get neither arrows nor tinted hulls.
 
 ## An unrelated difference, noted not changed
 

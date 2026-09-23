@@ -983,7 +983,6 @@ import {
 import { loadEngineAudio, findEngineSpec, findWeaponSpecs,
          findWeaponSpecsByFireArms, WEAPON_HEADROOM } from './engine-audio.js';
 import { GunFire } from './gunfire.js';
-import { splashSpec } from './effects-core.js';
 import { idleFirePose, idleFireState } from './idle-vehicle.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
@@ -1196,6 +1195,12 @@ const keys = new Set();
 const look = { yaw: 0, pitch: -0.15 };
 const cull = [];
 let spawnersRoot = null;
+// The level's vehicles as `indexScene` found them under `spawners`. The live
+// group is not that list: `Vehicle`'s constructor reparents a hull onto the
+// level root the moment anyone drives it, and nothing puts it back, so a map
+// that walked `spawnersRoot.children` lost every jeep a bot had ever taken.
+// Respawn reuses the same node, so the list holds for the level's lifetime.
+let mapVehicles = [];
 let captured = false;
 let lockHeld = false;
 let dragging = false;
@@ -5054,6 +5059,7 @@ function tagCull(obj) {
 function indexScene(root) {
   cull.length = 0;
   spawnersRoot = null;
+  mapVehicles = [];
   root.traverse(obj => {
     if (isCollision(obj)) obj.visible = false;
   });
@@ -5064,6 +5070,7 @@ function indexScene(root) {
       spawnersRoot = obj;
     }
   });
+  if (spawnersRoot) mapVehicles = [...spawnersRoot.children];
   for (const child of root.children) {
     if (child === spawnersRoot) {
       for (const vehicle of child.children) tagCull(vehicle);
@@ -6712,6 +6719,7 @@ function soldierExposureFor(target, blast) {
  * every tier that moved on the same frame.
  */
 function applyVehicleHit(record) {
+  if (record?.target != null) applyRoundToSoldier(record);
   const landed = vehicleDamage.applyHit(record);
   if (landed) reconcileDamaged(landed.vehicle);
   if (!(record?.splashRadius > 0)) return;
@@ -6824,6 +6832,7 @@ guns.impactMarkers = params.get('impacts') === 'debug';
 // hit points off it (ledger HP-6: a projectile is the only thing that damages
 // anything in this engine).
 guns.onImpact = record => applyVehicleHit(record);
+guns.bodyCast = roundBodyCast;
 // The game's own impact, trail and explosion bundles. Loaded once per mod
 // beside `damage.json`; a level change keeps it. Until it lands (or when it
 // is absent) a hit is recorded and nothing is drawn at the spot.
@@ -9611,15 +9620,77 @@ function botRoundDamage(stats = null) {
   return base * (mod === null ? 1 : mod);
 }
 
-/** The direct-hit damage of a vehicle gun's round against a soldier, from
- *  the group's own projectile spec (its `material` or template). */
-function botSpecDamage(spec) {
-  const attacker = guns.attackerMaterial(spec);
-  const base = guns.materials?.[attacker]?.damage ?? BOT_FALLBACK_DAMAGE;
-  const attGroup = guns.materials?.[attacker]?.attGroup ?? attacker;
-  const defGroup = guns.materials?.[BOT_SOLDIER_MATERIAL]?.defGroup ?? BOT_SOLDIER_MATERIAL;
-  const mod = guns.modifiers?.[attGroup]?.[defGroup] ?? null;
-  return base * (mod === null ? 1 : mod);
+/** Who fired `group`: the local player (his drivetrain's or seat's guns) or
+ *  the bot whose seat it is. Null for a gun nobody is holding. */
+function roundFirer(group) {
+  if (vehicleGuns.includes(group) || mannedGuns.includes(group)) return LOCAL_PLAYER;
+  return botFiringGroup({ firerGroup: group });
+}
+
+/**
+ * `guns.bodyCast`: the first soldier a round's segment meets inside `maxDist`.
+ * The body is the same stand-in sphere the hand weapons and the bots already
+ * resolve against (`BOT_BODY_RADIUS` about `BOT_BODY_HEIGHT` over the feet),
+ * so a man is exactly as hard to hit with a tank's MG as with a rifle.
+ *
+ * A seated man is not a body here — his hull is, and the collider has it. The
+ * firer's own side is passed through, the rule every other round path in this
+ * file keeps.
+ */
+function roundBodyCast(ox, oy, oz, dx, dy, dz, maxDist, group) {
+  if (!world) return null;
+  const firer = roundFirer(group);
+  const firerTeam = firer ? world.player(firer)?.team ?? null : null;
+  const r2 = BOT_BODY_RADIUS * BOT_BODY_RADIUS;
+  let best = null;
+  let bestT = maxDist;
+  for (const [id, player] of world.players) {
+    if (id === firer) continue;
+    if (firerTeam != null && player.team === firerTeam) continue;
+    if (player.occupancy?.root || world.armorOf(id)?.destroyed) continue;
+    let s = player.soldier;
+    if (id === LOCAL_PLAYER) {
+      if (!optOnFoot.checked || optPilot.checked || soldierDead) continue;
+      s = soldier;
+    }
+    if (!s) continue;
+    // Ray against sphere: the entry point is where the round meets him.
+    const cx = s.x - ox, cy = s.y + BOT_BODY_HEIGHT - oy, cz = s.z - oz;
+    const along = cx * dx + cy * dy + cz * dz;
+    const miss2 = cx * cx + cy * cy + cz * cz - along * along;
+    if (miss2 > r2) continue;
+    const t = along - Math.sqrt(r2 - miss2);
+    if (t < 0 || t >= bestT) continue;
+    bestT = t;
+    const x = ox + dx * t, y = oy + dy * t, z = oz + dz * t;
+    best = {
+      kind: 'soldier', t, x, y, z,
+      nx: (x - s.x) / BOT_BODY_RADIUS,
+      ny: (y - s.y - BOT_BODY_HEIGHT) / BOT_BODY_RADIUS,
+      nz: (z - s.z) / BOT_BODY_RADIUS,
+      material: BOT_SOLDIER_MATERIAL, owner: -1, target: id,
+    };
+  }
+  return best;
+}
+
+/** A vehicle round that met a soldier: its direct-hit HP, on him. */
+function applyRoundToSoldier(record) {
+  const id = record.target;
+  if (!(record.damage > 0)) return;
+  const firer = roundFirer(record.firerGroup);
+  const firerTeam = firer ? world?.player(firer)?.team ?? null : null;
+  const from = firer === LOCAL_PLAYER ? camera.position.toArray()
+    : firer ? botControllers.find(b => b.playerId === firer)?.getPosition() ?? null : null;
+  if (firer && firer !== LOCAL_PLAYER) {
+    botControllers.find(b => b.playerId === firer)?.recordHit(id);
+  }
+  if (id === LOCAL_PLAYER) {
+    applyDamageToPlayer(record.damage,
+      from ? { x: from[0], y: from[1], z: from[2] } : null, firerTeam);
+  } else {
+    applyDamageToBot(id, record.damage, firer ?? LOCAL_PLAYER, from, `round ${record.gun ?? ''}`);
+  }
 }
 
 /** Terrain-blocked line of sight (same stand-in as bot.js `checkLOS`). */
@@ -9644,7 +9715,7 @@ function botLineOfSight(from, to) {
  * Resolve one bot round against the world's players. Returns
  * `{ targetId, damage }` on a hit, else null.
  */
-function resolveBotShot(bot, roundDamage = null, flight = null) {
+function resolveBotShot(bot) {
   const { origin, dir } = bot.aimRay();
   _botRayDir.set(dir[0], dir[1], dir[2]).normalize();
   // Roll into the deviation cone, exactly as `gunfire.js` `#wander` does.
@@ -9664,7 +9735,7 @@ function resolveBotShot(bot, roundDamage = null, flight = null) {
   }
 
   const botPlayer = world?.player(bot.playerId);
-  const damage = roundDamage ?? botRoundDamage(botWeaponDataOf(bot));
+  const damage = botRoundDamage(botWeaponDataOf(bot));
   let best = null;
   let bestT = Infinity;
   for (const [id, player] of world.players) {
@@ -9678,18 +9749,6 @@ function resolveBotShot(bot, roundDamage = null, flight = null) {
     let cx = s.x - origin[0];
     let cy = (s.y + BOT_BODY_HEIGHT) - origin[1];
     let cz = s.z - origin[2];
-    if (flight) {
-      // A vehicle gun's round is not a hitscan: it leaves at `speed` along
-      // the barrel and inherits the platform's velocity (gunfire.js
-      // `platformVelocity`), so in the shooter's frame the target has moved
-      // by its relative velocity over the round's flight when the round
-      // arrives (the same frame `roundMiss` and the Aimer lead in).
-      const tv = s.body?.body?.velocity;
-      const t = Math.hypot(cx, cy, cz) / Math.max(1, flight.speed);
-      cx += ((tv?.x ?? 0) - flight.velocity[0]) * t;
-      cy += ((tv?.y ?? 0) - flight.velocity[1]) * t;
-      cz += ((tv?.z ?? 0) - flight.velocity[2]) * t;
-    }
     const t = cx * _botConeDir.x + cy * _botConeDir.y + cz * _botConeDir.z;
     if (t < 0 || t > BOT_FIRE_RANGE) continue;
     const px = cx - t * _botConeDir.x;
@@ -10323,33 +10382,9 @@ function botFireTick(dt) {
 
   for (const bot of botControllers) {
     bot._wasFiring = bot.isFiring;
-    if (bot.vehicle) {
-      // The world fires the hull's guns from its input word; a round with a
-      // splash lands through `applyVehicleHit`. A round without one (an MG's)
-      // has no soldier body to meet, so each new shot the group reports runs
-      // the same cone test as a hand weapon's, from the gun.
-      const groups = [...(bot.vehicle.groups ?? []), ...(bot.vehicle.manned ?? [])];
-      if (!bot._lastShots) bot._lastShots = new Map();
-      for (const g of groups) {
-        const prev = bot._lastShots.get(g) ?? g.shots ?? 0;
-        const now_ = g.shots ?? 0;
-        bot._lastShots.set(g, now_);
-        if (now_ <= prev) continue;
-        const spec = g.stats?.projectile && typeof g.stats.projectile === 'object' ? g.stats.projectile : null;
-        if (splashSpec(spec?.damage)?.impact) continue;   // a shell: `applyVehicleHit`'s splash bills it
-        const roundDamage = botSpecDamage(spec);
-        const hv = bot.vehicle.drive?.state?.velocity;
-        const flight = { speed: g.stats?.velocity ?? 600, velocity: hv ? [hv.x, hv.y, hv.z] : [0, 0, 0] };
-        for (let k = prev; k < now_; k++) {
-          const hit = resolveBotShot(bot, roundDamage, flight);
-          if (!hit) continue;
-          bot.recordHit(hit.targetId);
-          if (hit.targetId === LOCAL_PLAYER) applyDamageToPlayer(hit.damage, { x: bot.position[0], y: bot.position[1], z: bot.position[2] }, bot.team);
-          else applyDamageToBot(hit.targetId, hit.damage, bot.playerId, bot.getPosition(), `round ${g.node?.name ?? ''}`);
-        }
-      }
-      continue;
-    }
+    // The world fires the hull's guns from its input word, and each round
+    // meets whoever is in its way (`roundBodyCast`) or splashes them.
+    if (bot.vehicle) continue;
 
     bot._fireCooldown = Math.max(0, (bot._fireCooldown ?? 0) - dt);
     const mag = botMagazineTick(bot, dt);
@@ -15044,21 +15079,29 @@ function drawControlPoint(ctx, cp, px, py, sc) {
  *  A hull a teammate is sitting in is drawn in the side's own colour, which
  *  is the whole of how retail marks a crewed vehicle — there is no second
  *  mark for the men inside it (`friendlyMapUnits` skips them for exactly
- *  this reason). A parked one keeps the archive's white-on-black. */
+ *  this reason). A parked one keeps the archive's white-on-black.
+ *
+ *  The list is `mapVehicles`, not the live `spawners` group, which a driven
+ *  hull has left. The local player's own hull is skipped: the ring is his
+ *  mark, in a vehicle as on foot. */
 const vehiclePos = new THREE.Vector3();
 const vehicleQuat = new THREE.Quaternion();
 const vehicleFwd = new THREE.Vector3();
 function drawVehicles(ctx, toPx, sc, rot = 0) {
-  if (!spawnersRoot) return;
   const crewed = friendlyVehicleNodes();
   const tint = MINIMAP_TEAM_TINT[localMapTeam()] || MINIMAP_TEAM_TINT[2];
-  for (const vehicle of spawnersRoot.children) {
+  for (const vehicle of mapVehicles) {
+    if (vehicle === occupancy?.root) continue;
     if (!vehicleSpawnActive(vehicle)) continue;
     vehicle.getWorldPosition(vehiclePos);
     const p = projectToArt(vehiclePos.x, vehiclePos.z);
     if (!p) continue;
     const q = toPx(p);
-    const entry = hudPack.icons[vehicle.name.toLowerCase()];
+    // By template, not node name: GLTFLoader renames the second Kubelwagen
+    // `Kubelwagen_1`, and a name lookup gave every one after the first the
+    // plain vehicle dot.
+    const template = (vehicle.userData?.control || vehicle.name).toLowerCase();
+    const entry = hudPack.icons[template] ?? hudPack.icons[vehicle.name.toLowerCase()];
     const icon = entry?.icon && !entry.icon.startsWith('flag_') ? entry.icon : null;
     // The silhouettes point up the sprite and the game turns them with the
     // vehicle; same forward axis and the same screen angle as the player.
@@ -15160,7 +15203,12 @@ function friendlyVehicleNodes() {
     if (id === LOCAL_PLAYER) continue;
     if (player.team !== localTeam) continue;
     if (player.armor?.destroyed) continue;
-    if (player.occupancy?.root) out.add(player.occupancy.root);
+    const root = player.occupancy?.root;
+    if (!root) continue;
+    // The hull the map draws: a carrier's AA gun is a seat of the carrier.
+    let hull = root;
+    for (let n = root; n; n = n.parent) if (mapVehicles.includes(n)) { hull = n; break; }
+    out.add(hull);
   }
   return out;
 }
@@ -15174,7 +15222,15 @@ function friendlyMarkerKey() {
   for (const { x, z, yaw } of friendlyMapUnits()) {
     key += `${Math.round(x)},${Math.round(z)},${Math.round(yaw * 10)};`;
   }
-  for (const node of friendlyVehicleNodes()) key += `v${node.id};`;
+  // A crewed hull moves and turns under its crew, so its pose is in the key
+  // the way an on-foot arrow's is.
+  for (const node of friendlyVehicleNodes()) {
+    node.getWorldPosition(vehiclePos);
+    node.getWorldQuaternion(vehicleQuat);
+    vehicleFwd.set(0, 0, -1).applyQuaternion(vehicleQuat);
+    key += `v${node.id},${Math.round(vehiclePos.x)},${Math.round(vehiclePos.z)},`
+      + `${Math.round(Math.atan2(vehicleFwd.x, -vehicleFwd.z) * 10)};`;
+  }
   return key;
 }
 
