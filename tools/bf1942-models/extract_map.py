@@ -4,6 +4,13 @@
     python3 extract_map.py Tobruk --out ./viewer/maps
     python3 extract_map.py Tobruk --terrain-only
 
+This is the full bake. `scene.json` is composed of layers (`scene_layers.py`):
+the geometry pass's own `scene` layer, which only this writes, and the
+con-derived ones (`controlPoints`, `spawns`, `game`, `environment`, `damage`,
+`sounds`, `ai`), which `patch_scene.py` rebuilds in a published tree without
+touching a glb. The glb carries none of them, and two bakes of one level are
+byte-identical, so a layer change never re-sends geometry.
+
 Terrain tiles come from the level archive; patches without a shipped tile are
 painted with the level's `terrainDefault.dds` the way the engine paints them.
 Buildings, sandbags and vegetation are the same object templates the vehicle
@@ -1126,7 +1133,13 @@ def write_damage_tables(tables, shared_dir: Path, rel_base: Path,
     target = shared_dir / "damage.json"
     payload = tables.as_dict()
     payload["projectiles"] = projectiles or {}
-    target.write_text(json.dumps(payload, separators=(",", ":")))
+    text = json.dumps(payload, separators=(",", ":"))
+    # Rewritten only when it differs, so a layer patch that changes nothing
+    # leaves the file (and its mtime) alone.
+    if not target.is_file() or target.read_text() != text:
+        tmp = target.with_suffix(f".{os.getpid()}.tmp")
+        tmp.write_text(text)
+        os.replace(tmp, target)
     return {
         "path": os.path.relpath(target, rel_base).replace(os.sep, "/"),
         "materials": len(payload["materials"]),
@@ -2049,12 +2062,18 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
                  out_dir: Path | None = None,
                  lightmaps: dict[tuple[str, int, int, int], str] | None = None,
                  sky_faces: list | None = None,
-                 vehicle_soldier_spawns: list[dict] | None = None,
-                 # Mode -> the same list for that layer's fleet. None means the
-                 # caller did not compute them per mode (a terrain-only run, or
-                 # a test that only passes the default list).
-                 vehicle_soldier_spawns_by_mode: dict[str, list[dict]] | None = None,
                  ) -> tuple[bytes, dict]:
+    """The glb, and the `scene` layer of the report: what the geometry pass
+    itself found (`terrain`, `objects`, `minimap`). Every con-derived key is
+    a layer of its own (`scene_layers.py`), composed by `main`.
+
+    The glb's own document `extras` carry only the level's name. Until
+    2026-09-24 they carried the whole report, so a change to any con value
+    (five control point settings, Brief P) changed every `scene.glb` and sent
+    2.17 GB of unchanged geometry to the volume. Nothing reads a level glb's
+    document extras (`level-load.js` and the headless runner read
+    `scene.json`).
+    """
     builder = gltf.GlbBuilder(generator="bfstats bf1942 level extractor")
     roots: list[int] = []
     tiles = files.tiles()
@@ -2331,163 +2350,25 @@ def build_scene(files, info: LevelInfo, heightmap, assembler: Assembler | None,
                 "fromOtherLod": sorted(set(report.collision_makeup)),
             }
 
-    lighting = {}
-    if info.lighting.ambient_color:
-        lighting["ambient"] = list(info.lighting.ambient_color)
-    if info.lighting.diffuse_color:
-        lighting["diffuse"] = list(info.lighting.diffuse_color)
-    if info.lighting.global_ambient:
-        lighting["globalAmbient"] = list(info.lighting.global_ambient)
-    if info.lighting.shadow_color is not None:
-        lighting["shadowColor"] = info.lighting.shadow_color
-
-    # The engine's draw distance is `Game.setViewDistance` (declared by every
-    # vanilla level; the video slider scales it). `renderer.setViewdistance`
-    # is a raw renderer poke only Tobruk carries — and the game overrides it
-    # there (Game VD 300 vs the stray 700; the in-game haze wall sits at 300).
-    view_distance = info.game_view_distance or info.view_distance or 700.0
-    # A level with no live fogStart/fogEnd still fogs in-game: Setup defaults
-    # are 1/2 m, then Game.setViewDistance (lnxded 0x080c6e20) retunes the
-    # range using a 0.5f factor (0x86b05e8). Derive an undeclared range from
-    # the view distance the same way. Do not honour fogLinearStart/End —
-    # those strings are not in BF1942.exe.
-    fog_end = info.fog_end if info.fog_end is not None else view_distance
-    fog_start = info.fog_start if info.fog_start is not None else view_distance * 0.5
-
-    # Load ticket configuration from GameTypes/*.con if present.
-    tickets = _tickets_report(load_tickets(files, info.gameplay.mode))
-    combat_area = None if info.combat is None else {
-        "min": _to_gltf_vec((info.combat.min_x, 0.0, info.combat.min_z)),
-        "max": _to_gltf_vec((info.combat.max_x, 0.0, info.combat.max_z)),
-    }
-
-    modes_report = _modes_report(
-        info, placed_flags, combat_area,
-        vehicle_soldier_spawns_by_mode
-        if vehicle_soldier_spawns_by_mode is not None
-        else {(info.gameplay.mode or "Conquest"): (vehicle_soldier_spawns or [])})
-    game_types_report = {
-        gt.name: {"mode": gt.mode, "tickets": _tickets_report(gt.tickets)}
-        for gt in info.game_types.values()
-    }
-
+    if placed_flags is not None:
+        # Which flags assembled, so a layer patch can rebuild each control
+        # point's `visible` without the glb (`scene_layers.placed_from_report`).
+        object_report["placedControlPoints"] = sorted(placed_flags)
     extras = {
         "level": info.name,
         "worldSize": info.terrain.world_size,
-        "waterLevel": info.terrain.water_level,
-        "fogColor": list(info.fog_color),
-        "fogStart": fog_start,
-        "fogEnd": fog_end,
-        "sunDirection": _to_gltf_vec(info.sun_direction),
-        "camera": _to_gltf_vec(info.camera) if info.camera else None,
-        "combatArea": combat_area,
         "terrain": terrain_report,
         "objects": object_report,
         "skybox": None,
         "sky": None,
         "water": None,
-        "lighting": lighting or None,
-        "drawDistance": view_distance,
-        "gameplayMode": info.gameplay.mode or None,
-        "controlPoints": _control_point_report(info, placed_flags),
-        "soldierSpawns": _soldier_spawn_report(info),
-        "vehicleSoldierSpawns": vehicle_soldier_spawns or [],
-        "objectSpawns": _object_spawn_report(info),
-        "tickets": tickets,
-        # The other layers this level ships, and the menu's game types.
-        "modes": modes_report,
-        "gameTypes": game_types_report,
         # `image` is filled in by `write_minimap` once the art is decoded; the
         # projection is known from the con files alone and stands on its own.
         "minimap": {"image": None, "worldToImage": _world_to_image(info)},
     }
     if not roots:
         raise ValueError("nothing renderable in this level")
-    return builder.build(roots, extras=extras), extras
-
-
-def patch_vehicle_sounds(game_dir: Path, mod: str, level: str, out: Path,
-                         shared_sounds: Path | None = None,
-                         audio_format: str = "mp3") -> tuple[int, int]:
-    """Recompute `sounds.vehicles` in one published `scene.json`, nothing else.
-
-    The maps tree is 15 GB, shared and untracked, and a level's glb takes
-    minutes to rebuild. Widening the vehicle list
-    (`spawned_vehicle_templates`) changes exactly one key of one file per
-    level, so re-extracting whole levels to deliver it would be hours of work
-    to rewrite bytes that must come out identical anyway — and every one of
-    those bytes is a chance for an unrelated pipeline change to ride along
-    silently.
-
-    So this loads the level's con files and object archives, runs the same
-    `extract_vehicle_sounds` through the same `sample_writer`, and swaps that
-    one key into the JSON already on disk. `ambient`, `areas` and `flags` are
-    left exactly as the level's own extraction wrote them, and the file is
-    re-dumped with the same `indent=2`, so a diff shows the one key and
-    nothing else.
-
-    Returns `(before, after)` entry counts. The glb is never opened.
-    """
-    scene_json = out / level.lower() / "scene.json"
-    if not scene_json.is_file():
-        raise FileNotFoundError(scene_json)
-    extras = json.loads(scene_json.read_text())
-
-    chain = mod_chain(game_dir, mod)
-    files, info, _heightmap, paths = load_level(game_dir, mod, level, chain)
-    fallbacks = _mod_dirs(game_dir, list(TEXTURE_GAP_MODS)) \
-        if not _vanilla_texture_rfa_present(chain) else []
-    meshes, textures, objects, _game = build_pools(chain, fallbacks)
-    for path in paths:
-        objects.add_level_objects(path, label=f"{info.name} objects")
-    library = build_library(objects)
-
-    sounds = ArchivePool()
-    for mod_dir in chain:
-        archives = find_archives_dir(mod_dir)
-        if archives is not None:
-            sounds.add_dir(archives, SOUND_ARCHIVES)
-
-    level_dir = out / info.name.lower()
-    shared_dir = shared_sounds or (out / "_shared" / "sounds")
-    write = sample_writer(shared_dir, level_dir, audio_format)
-    vehicles = extract_vehicle_sounds(
-        library, objects, sounds, spawned_vehicle_templates(info), write,
-        files)
-
-    block = extras.setdefault("sounds", {"ambient": None, "areas": [],
-                                         "vehicles": []})
-    before = len(block.get("vehicles") or [])
-    block["vehicles"] = vehicles
-    scene_json.write_text(json.dumps(extras, indent=2))
-    return before, len(vehicles)
-
-
-def patch_damage_tables(game_dir: Path, mod: str, level: str, out: Path, *,
-                        shared_sounds: Path | None = None,
-                        final_out: Path | None = None) -> dict | None:
-    """Rewrite the mod's `_shared/damage.json` and nothing else.
-
-    The same tables and the same projectile walk a full extraction of `level`
-    writes (`write_damage_tables`, `projectile_materials`), against the same
-    library: the mod chain's objects plus the level's own. It exists so that a
-    change to the projectile table (the proximity fuse, the `timeToLive` CRD)
-    reaches every published tree without re-baking a single level.
-    """
-    chain = mod_chain(game_dir, mod)
-    _files, info, _heightmap, paths = load_level(game_dir, mod, level, chain)
-    fallbacks = _mod_dirs(game_dir, list(TEXTURE_GAP_MODS)) \
-        if not _vanilla_texture_rfa_present(chain) else []
-    _meshes, _textures, objects, game = build_pools(chain, fallbacks)
-    damage_tables = load_damage_tables(game)
-    for path in paths:
-        objects.add_level_objects(path, label=f"{info.name} objects")
-    library = build_library(objects)
-    shared_dir = shared_sounds or (out / "_shared" / "sounds")
-    final_root = final_out or out
-    return write_damage_tables(damage_tables, shared_dir.parent,
-                               final_root / info.name.lower(),
-                               projectile_materials(library))
+    return builder.build(roots, extras={"level": info.name}), extras
 
 
 def main() -> int:
@@ -2527,19 +2408,15 @@ def main() -> int:
                          "engine layers still loop seamlessly; wav keeps the "
                          "raw PCM at roughly 8x the bytes")
     ap.add_argument("--sounds-only", action="store_true",
-                    help="rewrite only the `sounds.vehicles` key of an already "
-                         "published <out>/<level>/scene.json, writing any newly "
-                         "needed samples into the shared directory. The glb, "
-                         "the textures and every other key are left untouched — "
-                         "this is how a widened vehicle list reaches a 15 GB "
-                         "maps tree without re-extracting levels.")
+                    help="alias for `patch_scene.py <level> --layer sounds`: "
+                         "rewrite only the `sounds` key of the published "
+                         "<out>/<level>/scene.json (new samples go to the shared "
+                         "directory). The glb and every other key are untouched.")
     ap.add_argument("--damage-only", action="store_true",
-                    help="rewrite only the mod's shared damage.json "
-                         "(<out>/_shared/damage.json: the MaterialManager "
-                         "tables and the projectile table), exactly as a full "
-                         "extraction of this level would write it. No level "
-                         "file is touched. The table is mod-wide, so one level "
-                         "per mod is enough.")
+                    help="alias for `patch_scene.py <level> --layer damage`: "
+                         "rewrite the mod's <out>/_shared/damage.json (the "
+                         "MaterialManager tables and the projectile table) and "
+                         "the level's `damage` key, exactly as a full bake would.")
     args = ap.parse_args()
 
     # Checked before any extraction rather than at the first sample: a level is
@@ -2553,24 +2430,27 @@ def main() -> int:
                  "(roughly 8x the bytes).")
 
     game_dir = args.game_dir.expanduser()
-    if args.damage_only:
-        report = patch_damage_tables(game_dir, args.mod, args.level, args.out,
-                                     shared_sounds=args.shared_sounds,
-                                     final_out=args.final_out)
-        print(f"damage:   {report and report['path']} "
-              f"({report and report['projectiles']} projectiles)",
-              file=sys.stderr)
-        return 0
-    if args.sounds_only:
-        before, after = patch_vehicle_sounds(
-            game_dir, args.mod, args.level, args.out,
-            shared_sounds=args.shared_sounds, audio_format=args.audio_format)
-        print(f"sounds:   {args.level} vehicles {before} -> {after}",
-              file=sys.stderr)
-        return 0
+    if args.damage_only or args.sounds_only:
+        import patch_scene
+        layer = "damage" if args.damage_only else "sounds"
+        return patch_scene.main([
+            args.level, "--layer", layer, "--mod", args.mod,
+            # This script's --out is the tree the level folders sit in.
+            "--game-dir", str(game_dir), "--tree", str(args.out),
+            "--audio-format", args.audio_format,
+            *(["--shared-sounds", str(args.shared_sounds)] if args.shared_sounds else []),
+        ])
 
-    chain = mod_chain(game_dir, args.mod)
-    files, info, heightmap, paths = load_level(game_dir, args.mod, args.level, chain)
+    import scene_layers
+    # One context for the whole bake: the geometry below uses its pools and
+    # library, and the report's con-derived layers are computed from the same
+    # objects by the same functions `patch_scene.py` runs on a published tree.
+    ctx = scene_layers.LevelContext(
+        game_dir, args.mod, args.level, out=args.out, final_out=args.final_out,
+        shared_sounds=args.shared_sounds, audio_format=args.audio_format,
+        texture_fallback=args.texture_fallback,
+        include_objects=not args.terrain_only)
+    files, info, heightmap, paths = ctx.files, ctx.info, ctx.heightmap, ctx.paths
     print(f"level:    {info.name}  ({', '.join(p.name for p in paths)})", file=sys.stderr)
     print(f"world:    {info.terrain.world_size:g} m, yScale {info.terrain.y_scale}, "
           f"heightmap {heightmap.dim}x{heightmap.dim}", file=sys.stderr)
@@ -2579,57 +2459,31 @@ def main() -> int:
           f"{len(info.spawn_objects)} spawners", file=sys.stderr)
 
     assembler = None
-    library = None
     lightmaps: dict[tuple[str, int, int, int], str] = {}
-    out_dir = args.out / info.name.lower()
+    out_dir = ctx.level_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    extra_names = list(args.texture_fallback)
-    if not _vanilla_texture_rfa_present(chain):
-        extra_names += list(TEXTURE_GAP_MODS)
-    fallbacks = _mod_dirs(game_dir, extra_names)
-    meshes, textures, objects, game = build_pools(chain, fallbacks)
+    meshes, textures, objects, game = ctx.pools
     # `Game.rfa` is the MaterialManager: what every material is worth, what a
-    # round of material X does to a surface of material Y, and — the half the
-    # model browser never needed — which authored EffectBundle the impact
-    # plays. A level that never loads it can collide but cannot show the hit.
-    try:
-        damage_tables = load_damage_tables(game)
-    except Exception as exc:                       # a mod with no Game.rfa
-        print(f"damage:   tables unavailable ({exc})", file=sys.stderr)
-        damage_tables = None
+    # round of material X does to a surface of material Y, and which authored
+    # EffectBundle the impact plays. `terrain.materials` labels by it too.
+    damage_tables = ctx.damage_tables
     textures.absorb_images(meshes)
-    for level_name, level_path in discover_level_textures(chain):
+    for level_name, level_path in discover_level_textures(ctx.chain):
         textures.add_level(level_path, label=level_name)
     for path in paths:
         textures.add_level(path, label=info.name)
     if info.texture_alternative_path:
         textures.set_alternative_paths([info.texture_alternative_path])
-    # A level can declare ObjectTemplates of its own, and they have to be in the
-    # pool before the library is built or the level's own objects resolve to
-    # nothing. See `add_level_objects`.
-    for path in paths:
-        objects.add_level_objects(path, label=f"{info.name} objects")
     # And its own meshes: a level's `StandardMesh/` folder is resolved by the
     # engine exactly like the global archive, and it is where every mesh the
     # vanilla extraction used to report missing actually lives.
     for path in paths:
         meshes.add_level_meshes(path, label=f"{info.name} meshes")
+    # The library carries the level's own templates and its control point
+    # templates with the flag cloth detached (`LevelContext.library`).
+    library = ctx.library
     if not args.terrain_only:
-        library = build_library(objects)
-        # A level's flags are ObjectTemplates like any other, but they live in
-        # `<mode>/ControlPointTemplates.con` rather than under `Objects/`, so
-        # `add_level_objects` does not see them and `build_library` never reads
-        # them. Without this the pole and cloth resolve to nothing and every
-        # control point comes out as a bare zone.
-        if info.gameplay.mode:
-            cpt = files.find(f"{info.gameplay.mode}/ControlPointTemplates.con")
-            if cpt:
-                library.add_con(cpt, files.read(cpt).decode("latin-1", "replace"))
-                detach_flag_cloth(library, info)
-        # Re-discover sounds with library available to harvest building ambience
-        # (windmills, watermills, factories with loadSoundScript in their templates)
-        info.sounds = discover_level_sounds(files, info.static_objects, library, objects)
         lightmaps = write_object_lightmaps(files, out_dir)
         # Collision hulls ride along. They are never drawn — `map.html` hides
         # anything carrying `extras.collision` on load — and they are what a
@@ -2644,23 +2498,10 @@ def main() -> int:
             lightmaps=lightmaps)
 
     sky_faces = prepare_sky(info, meshes, textures)
-    # The fleet's deck spawn points, before the scene builds — `build_scene`
-    # writes them into the report beside the level's own soldier spawns. Each
-    # mode parks its own fleet (Wake's SinglePlayer layout drops the Japanese
-    # destroyers entirely), so the deck points are read per layer.
-    by_mode: dict[str, list[dict]] = {}
-    if not args.terrain_only:
-        for mode_name, layer in info.modes.items():
-            by_mode[mode_name] = _vehicle_soldier_spawn_report(
-                info, objects, game, layer)
-    default_mode = info.gameplay.mode or "Conquest"
-    vehicle_soldier_spawns = by_mode.get(default_mode, [])
     glb, extras = build_scene(
         files, info, heightmap, assembler,
         max_texture=args.max_texture, include_objects=not args.terrain_only,
         lightmaps=lightmaps, sky_faces=sky_faces, out_dir=out_dir,
-        vehicle_soldier_spawns=vehicle_soldier_spawns,
-        vehicle_soldier_spawns_by_mode=by_mode or None,
     )
     if sky_faces:
         extras["sky"] = {
@@ -2690,49 +2531,15 @@ def main() -> int:
     if (minimap := write_minimap(files, out_dir)) is not None:
         extras["minimap"].update(minimap)
 
-    sounds = ArchivePool()
-    for mod_dir in chain:
-        archives = find_archives_dir(mod_dir)
-        if archives is not None:
-            sounds.add_dir(archives, SOUND_ARCHIVES)
-    # Engine sound is per spawned vehicle, deduped by template: a level with
-    # eight Corsair spawners still ships one set of wavs and one script. The
-    # list spans every mode and both teams of each spawner, because the scene
-    # does — see `spawned_vehicle_templates`.
-    spawned = spawned_vehicle_templates(info)
-    # Defaults to a sibling of the level directories so a standalone run and a
-    # batch run put samples in the same place; `extract_maps_all.py` passes the
-    # real destination explicitly, because its workers write to per-level
-    # staging directories that are moved into the tree afterwards.
-    shared_dir = args.shared_sounds or (args.out / "_shared" / "sounds")
-    final_root = args.final_out or args.out
-    # The damage tables are a property of the *mod*, not the level — the same
-    # 158 materials, 5,165 modifiers and 4,099 impact effects answer for every
-    # map in it. 157 KB once beside the sounds, referenced relatively, rather
-    # than 157 KB in each of 23 level directories.
-    extras["damage"] = write_damage_tables(
-        damage_tables, shared_dir.parent, final_root / info.name.lower(),
-        projectile_materials(library))
-    extras["sounds"] = extract_sounds(info, files, sounds, out_dir,
-                                      library=library, objects=objects,
-                                      vehicles=spawned,
-                                      shared_dir=shared_dir,
-                                      audio_format=args.audio_format,
-                                      final_dir=final_root / info.name.lower())
-
-    # The level's strategic AI scripts (`AI.con`, `AI/StrategicAreas.con`,
-    # conditions, prerequisites, strategies), for the viewer's bots. A level
-    # that ships no `AI.con` (most mods) writes nothing.
-    level_ai = load_level_ai(files)
-    if level_ai is not None:
-        add_cover_values(level_ai, library, (inst.template for inst in info.static_objects))
-        extras["ai"] = level_ai.to_json()
-    # The search maps the level ships baked and `ai.loadMaps` loads
-    # (`pathfinding/`), which the bots search instead of painting their own.
-    write_level_search_maps(files, level_ai, out_dir)
+    # Every con-derived key: control points, spawns, game, environment,
+    # damage, sounds and the AI scripts, through `scene_layers`.
+    ctx.placed_flags = (None if args.terrain_only else {
+        name.lower() for name in extras["objects"].get("placedControlPoints", [])})
+    top, modes = scene_layers.compute(ctx, list(scene_layers.LAYERS))
+    extras = scene_layers.compose(extras, top, modes)
 
     (out_dir / "scene.glb").write_bytes(glb)
-    (out_dir / "scene.json").write_text(json.dumps(extras, indent=2))
+    (out_dir / "scene.json").write_text(scene_layers.dump(extras))
     maps_index = args.out / "maps.json"
     listing = []
     if maps_index.is_file():

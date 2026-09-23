@@ -91,6 +91,30 @@ class RfaArchive(_SkillRfaArchive):
         return bytes(out)
 
 
+def write_rfa(path: Path, files: dict[str, bytes]) -> None:
+    """An uncompressed archive holding `files` (archive path -> bytes).
+
+    The layout `RfaArchive` reads: `u32 data_size, u32 compressed = 0`, the
+    payloads back to back, then at `data_size` the count and one entry per
+    file (`u32 name length, name, u32 c_size, u32 uc_size, u32 offset`, three
+    unused dwords), offsets from the start of the file. Written as a numbered
+    patch (`<Level>_999.rfa`) it overlays a level the way the game's own
+    patches do, which is how a test changes one con file in a scratch copy of
+    the install.
+    """
+    body = bytearray()
+    index = bytearray()
+    for name, data in files.items():
+        offset = 8 + len(body)
+        body += data
+        raw = name.replace("/", "\\").encode("latin-1")
+        index += struct.pack("<I", len(raw)) + raw
+        index += struct.pack("<III", len(data), len(data), offset) + bytes(12)
+    blob = struct.pack("<II", 8 + len(body), 0) + bytes(body)
+    blob += struct.pack("<I", len(files)) + bytes(index)
+    Path(path).write_bytes(blob)
+
+
 def _child_dir(parent: Path, name: str) -> Path | None:
     if not parent.is_dir():
         return None

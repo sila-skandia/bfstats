@@ -6,6 +6,11 @@
     python3 extract_maps_all.py --mod EoD --levels A_Shau Hue_Imperial_Palace
     python3 extract_maps_all.py --mod EoD --skip-existing         # resume a run
 
+This is the full bake. A change that only moves con-derived values in
+`scene.json` (control points, spawns, tickets, fog, damage, sounds, AI) is a
+layer, and `patch_scene.py --layer <name> --mod <M> --all` rewrites it in
+seconds without touching a glb; see `features/level-bake-layers/README.md`.
+
 `extract_map.py` takes one level, which is right for iterating on one map and
 useless for a mod that ships 237 of them. This is the map-side counterpart of
 `extract_all.py`: the level list comes from the same `discover_levels` the
