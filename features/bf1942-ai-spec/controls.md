@@ -132,7 +132,7 @@ asin(n . dir)` with `n` the heading's normal `(z, -x)`, `full` the full
 angle `sign(side) pi - side` for a point behind the beam. The box is the
 pathfinder's (`getBox` 0x08612060 -> `AIPathfinding::getBox` 0x0847d140 ->
 `AStarLocalSearch::getSearchBox` 0x085f4180): at the free quadtree level
-`L` of the hull's cell (from the last cell it stood valid on when it stands
+`L` (at most the map's `maxLevel`) of the hull's cell (from the last cell it stood valid on when it stands
 on a blocked one), the `2^L` block grown a block at a time on +z, +x, -z, -x
 in turn from each of the four starting sides (32 tries each), the largest
 kept and **widened by one block on every side**. A **run** is the line from
@@ -171,10 +171,18 @@ until the run ahead passes 5 m, then 0 -> 9 and it turns ahead. Live on
 Bocage (AI-85) a Sherman driven nose-first into a wall backed 2.2 m while
 turning 61 deg, then turned and drove 38 m to its point.
 
-The viewer's map can paint a hull's own pad blocked (El Alamein's nearest
-Allied Sherman sits in a 30 x 25 m blocked patch); a hull that has never
-stood on a valid cell takes the nearest free cell within 24 m as its valid
-position (INVENTION).
+A hull that has never stood on a valid cell has no box: `getBox`
+0x08612060 asks the hull's `getValidPosition` (0x085eab10 -> 0x085d5bb0)
+when its own cell fails and returns false when the hull has none, so the
+state machine takes its no-box rows (0 with the point behind -> 8, and 8
+turns in place). The level's own maps paint such spawns (El Alamein's
+`Tank0`: the Shermans at (1731, -804) and (888, -1822), three Willys), and
+the viewer's hull now starts there the engine's way (AI-103; the
+nearest-free-cell stand-in is gone). The last valid position is the hull's,
+kept on its node, not the driver's. The box's top level is the map's own
+`maxLevel` (`getLandLevel` 0x085f3f90 from the `Vehicle`'s +0xc4a8, copied
+from `LocalMap` +0x28 by `Vehicle::Vehicle` 0x0860b2c0): 2 on `Tank0`, a 4 m
+block, so a tank's box grows in 4 m steps; 5 on the water maps.
 
 ## Mounted guns
 

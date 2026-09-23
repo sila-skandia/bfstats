@@ -1,6 +1,6 @@
 # BF1942 pathfinding `.raw` search maps
 
-**Rewritten 2026-09-24** (Brief M, ledger AI-95). The first version of this
+**Rewritten 2026-09-24** (Brief M, ledger AI-102). The first version of this
 page (2026-09-22) read the block records as "a literal negative cell value"
 with nothing after it, sized a pixel at 64 m, and said the files are not
 shipped. All three were wrong: a negative record is followed inline by the
