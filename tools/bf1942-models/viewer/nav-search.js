@@ -340,81 +340,159 @@ export function smoothPath(nav, path, obstacles = null) {
 }
 
 /**
- * The strategic search (INVENTION, header): 8-connected A* over the coarse
- * level. Returns world `[x, z]` waypoints, one per coarse cell, each snapped
- * to a free metre inside its cell, ending at the exact goal; or null.
+ * The coarse level's regions (INVENTION, after the engine's `StrategicMap`,
+ * whose `StrategicCell`s carry several "cell infos" each,
+ * `getStrategicCellInfoNo` 0x08608fa0; that layer was not read): inside each
+ * 16 m cell, every 4-connected patch of free metres is its own region, and
+ * two regions are joined when a free metre of one touches a free metre of
+ * the other across their cells' shared side. A cell that holds ground either
+ * side of a cliff is then two regions that do not connect, where the plain
+ * "any free metre" cell joined them. Built once per map, on first use.
+ */
+function coarseRegions(nav) {
+  if (nav._regions) return nav._regions;
+  const c = nav.coarse, per = c.cellsPer, W = nav.width, H = nav.height;
+  const open = i => nav.blocked[i] === CELL_FREE;
+  const local = new Uint8Array(W * H);            // 1-based label inside the cell, 0 blocked
+  const base = new Int32Array(c.width * c.height + 1);
+  const size = [], repX = [], repZ = [], cellOf = [];
+  const stack = [];
+  let total = 0;
+  for (let cz = 0; cz < c.height; cz++) {
+    for (let cx = 0; cx < c.width; cx++) {
+      const ci = cz * c.width + cx;
+      base[ci] = total;
+      const x0 = cx * per, z0 = cz * per;
+      const x1 = Math.min(W, x0 + per), z1 = Math.min(H, z0 + per);
+      const mx = x0 + per / 2, mz = z0 + per / 2;
+      let n = 0;
+      for (let z = z0; z < z1; z++) {
+        for (let x = x0; x < x1; x++) {
+          const i = z * W + x;
+          if (local[i] || !open(i) || n >= 255) continue;
+          n++;
+          local[i] = n;
+          stack.push(i);
+          let count = 0, best = Infinity, bx = x, bz = z;
+          while (stack.length) {
+            const j = stack.pop();
+            count++;
+            const jx = j % W, jz = (j - jx) / W;
+            const d = (jx + 0.5 - mx) ** 2 + (jz + 0.5 - mz) ** 2;
+            if (d < best) { best = d; bx = jx; bz = jz; }
+            if (jx > x0 && !local[j - 1] && open(j - 1)) { local[j - 1] = n; stack.push(j - 1); }
+            if (jx < x1 - 1 && !local[j + 1] && open(j + 1)) { local[j + 1] = n; stack.push(j + 1); }
+            if (jz > z0 && !local[j - W] && open(j - W)) { local[j - W] = n; stack.push(j - W); }
+            if (jz < z1 - 1 && !local[j + W] && open(j + W)) { local[j + W] = n; stack.push(j + W); }
+          }
+          size.push(count); repX.push(bx); repZ.push(bz); cellOf.push(ci);
+        }
+      }
+      total += n;
+    }
+  }
+  base[c.width * c.height] = total;
+  const id = (i, x, z) => base[Math.floor(z / per) * c.width + Math.floor(x / per)] + local[i] - 1;
+  const pairs = new Set();
+  for (let z = 0; z < H; z++) {
+    for (let x = 0; x < W; x++) {
+      const i = z * W + x;
+      if (!local[i]) continue;
+      if (x + 1 < W && (x + 1) % per === 0 && local[i + 1]) {
+        const a = id(i, x, z), b = id(i + 1, x + 1, z);
+        pairs.add(a < b ? a * total + b : b * total + a);
+      }
+      if (z + 1 < H && (z + 1) % per === 0 && local[i + W]) {
+        const a = id(i, x, z), b = id(i + W, x, z + 1);
+        pairs.add(a < b ? a * total + b : b * total + a);
+      }
+    }
+  }
+  const degree = new Int32Array(total + 1);
+  for (const p of pairs) { degree[Math.floor(p / total)]++; degree[p % total]++; }
+  const start = new Int32Array(total + 1);
+  for (let r = 0; r < total; r++) start[r + 1] = start[r] + degree[r];
+  const adj = new Int32Array(start[total]);
+  const fill = start.slice(0, total);
+  for (const p of pairs) {
+    const a = Math.floor(p / total), b = p % total;
+    adj[fill[a]++] = b;
+    adj[fill[b]++] = a;
+  }
+  nav._regions = { local, base, id, total, size, repX, repZ, cellOf, start, adj };
+  return nav._regions;
+}
+
+/** The region under a metre, or the region of the nearest free metre within
+ *  `radius` metres; -1 when there is none. */
+function regionAt(nav, R, gx, gz, radius) {
+  let x = gx, z = gz;
+  if (x < 0 || x >= nav.width || z < 0 || z >= nav.height || !R.local[z * nav.width + x]) {
+    const s = nearestFree(nav, clampi(x, 0, nav.width - 1), clampi(z, 0, nav.height - 1), radius, null, 0, 0);
+    if (!s) return -1;
+    [x, z] = s;
+  }
+  return R.id(z * nav.width + x, x, z);
+}
+
+/**
+ * The strategic search (INVENTION, header): A* over the coarse level's
+ * regions (`coarseRegions`), a step to a region across a cell side, costed
+ * `1 + 2 (1 - free fraction)` so roomier regions are preferred. Returns world
+ * `[x, z]` waypoints, the free metre of each region nearest its cell's
+ * centre, starting at the start and ending at the exact goal; or null.
  */
 export function findStrategicPath(nav, fromX, fromZ, toX, toZ) {
   const c = nav.coarse;
-  const cs = c.cellSize;
-  const sx = clampi(Math.floor(fromX / cs), 0, c.width - 1);
-  const sz = clampi(Math.floor(-fromZ / cs), 0, c.height - 1);
-  const ex = clampi(Math.floor(toX / cs), 0, c.width - 1);
-  const ez = clampi(Math.floor(-toZ / cs), 0, c.height - 1);
-  const n = c.width * c.height;
+  const R = coarseRegions(nav);
+  const cs = nav.cellSize, per = c.cellsPer;
+  const s = regionAt(nav, R, Math.floor(fromX / cs), Math.floor(-fromZ / cs), per);
+  const e = regionAt(nav, R, Math.floor(toX / cs), Math.floor(-toZ / cs), per * 2);
+  if (s < 0 || e < 0) return null;
+  const n = R.total;
   const g = new Float32Array(n).fill(Infinity);
   const f = new Float32Array(n).fill(Infinity);
   const came = new Int32Array(n).fill(-1);
   const closed = new Uint8Array(n);
-  const start = sz * c.width + sx, goal = ez * c.width + ex;
-  const heur = (x, z) => {
-    const dx = Math.abs(x - ex), dz = Math.abs(z - ez);
+  const ecx = R.cellOf[e] % c.width, ecz = Math.floor(R.cellOf[e] / c.width);
+  const heur = r => {
+    const cx = R.cellOf[r] % c.width, cz = Math.floor(R.cellOf[r] / c.width);
+    const dx = Math.abs(cx - ecx), dz = Math.abs(cz - ecz);
     return Math.max(dx, dz) + (Math.SQRT2 - 1) * Math.min(dx, dz);
   };
-  g[start] = 0;
-  f[start] = heur(sx, sz);
+  g[s] = 0;
+  f[s] = heur(s);
   const heap = new Heap(f);
-  heap.push(start);
-  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  heap.push(s);
+  const cellArea = per * per;
   while (heap.size) {
     const cur = heap.pop();
     if (closed[cur]) continue;
-    if (cur === goal) break;
+    if (cur === e) break;
     closed[cur] = 1;
-    const cx = cur % c.width, cz = (cur - cx) / c.width;
-    for (const [dx, dz] of dirs) {
-      const nx = cx + dx, nz = cz + dz;
-      if (nx < 0 || nx >= c.width || nz < 0 || nz >= c.height) continue;
-      const ni = nz * c.width + nx;
-      if (!c.free[ni] && ni !== goal) continue;
+    for (let k = R.start[cur]; k < R.start[cur + 1]; k++) {
+      const ni = R.adj[k];
       if (closed[ni]) continue;
-      if (dx && dz && !c.free[cz * c.width + nx] && !c.free[nz * c.width + cx]) continue;
-      // Prefer roomier cells: a cell with one free metre is a needle's eye.
-      const room = c.freeCount[ni] / (c.cellsPer * c.cellsPer);
-      const cost = (dx && dz ? Math.SQRT2 : 1) * (1 + (1 - room) * 2);
-      const tentative = g[cur] + cost;
+      const tentative = g[cur] + 1 + (1 - Math.min(1, R.size[ni] / cellArea)) * 2;
       if (tentative < g[ni]) {
         g[ni] = tentative;
-        f[ni] = tentative + heur(nx, nz);
+        f[ni] = tentative + heur(ni);
         came[ni] = cur;
         heap.push(ni);
       }
     }
   }
-  if (came[goal] === -1 && goal !== start) return null;
-  const cells = [];
-  for (let i = goal; i !== -1; i = came[i]) cells.push(i);
-  cells.reverse();
-  const path = [];
-  for (let k = 0; k < cells.length; k++) {
-    const i = cells[k];
-    const cx = i % c.width, cz = (i - cx) / c.width;
-    if (k === 0) { path.push([fromX, fromZ]); continue; }
-    if (k === cells.length - 1) { path.push([toX, toZ]); continue; }
-    path.push(freePointIn(nav, cx, cz, c.cellsPer));
+  if (came[e] === -1 && e !== s) return null;
+  const regions = [];
+  for (let r = e; r !== -1; r = came[r]) regions.push(r);
+  regions.reverse();
+  const path = [[fromX, fromZ]];
+  for (let k = 1; k < regions.length - 1; k++) {
+    const r = regions[k];
+    path.push([(R.repX[r] + 0.5) * cs, -((R.repZ[r] + 0.5) * cs)]);
   }
+  path.push([toX, toZ]);
   return path;
-}
-
-/** A free metre inside a coarse cell, nearest its centre. */
-function freePointIn(nav, cx, cz, per) {
-  const gx0 = cx * per, gz0 = cz * per;
-  const mid = per / 2;
-  const centre = [(gx0 + mid) * nav.cellSize, -((gz0 + mid) * nav.cellSize)];
-  const s = nearestFree(nav, Math.min(nav.width - 1, gx0 + Math.floor(mid)),
-                        Math.min(nav.height - 1, gz0 + Math.floor(mid)), per, null, 0, 0);
-  if (!s) return centre;
-  return [s[0] * nav.cellSize + nav.cellSize / 2, -(s[1] * nav.cellSize + nav.cellSize / 2)];
 }
 
 /**
