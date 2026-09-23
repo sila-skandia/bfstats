@@ -10,9 +10,10 @@ import { createSkirmishScreen } from './play/skirmish.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `MENU_URL`, `capture`, `deployScreen`, `hudPaths`, `keys`, `level`,
- * `localPlayer`, `mapSurfaces`, `params`, `release`, `scoreboard`,
- * `seatAltFire`, `seatFire`, `setSideCollapsed`, `soldierKit`, `spawning`.
+ * `aimHeld`, `bfmap`, `capture`, `extras`, `hudPaths`, `keys`, `launchTeam`,
+ * `MENU_URL`, `mouseInput`, `params`, `release`, `scoreboardOpen`,
+ * `scoreFromSpawn`, `seatAltFire`, `seatFire`, `setScoreboard`,
+ * `setSideCollapsed`, `triggerHeld`.
  */
 export function createPageConsole(page) {
   const pageConsole = {};
@@ -107,8 +108,8 @@ export function createPageConsole(page) {
       object: 'game', method,
       minArgs: 0, maxArgs: 1, argTypes: ['float'], returns: 'float',
       run: args => (args.length
-        ? page.localPlayer.mouseInput.setSensitivity(profile, args[0])
-        : page.localPlayer.mouseInput.sensitivityFor(profile)),
+        ? page.mouseInput.setSensitivity(profile, args[0])
+        : page.mouseInput.sensitivityFor(profile)),
     });
   }
 
@@ -122,8 +123,8 @@ export function createPageConsole(page) {
     object: 'game', method: 'setStaticMinimap',
     minArgs: 0, maxArgs: 1, argTypes: ['int'], returns: 'int',
     run: args => {
-      if (args.length) page.mapSurfaces.bfmap.setStatic(args[0] !== '0' && args[0].toLowerCase() !== 'false');
-      return page.mapSurfaces.bfmap.isStatic ? 1 : 0;
+      if (args.length) page.bfmap.setStatic(args[0] !== '0' && args[0].toLowerCase() !== 'false');
+      return page.bfmap.isStatic ? 1 : 0;
     },
   });
 
@@ -131,15 +132,15 @@ export function createPageConsole(page) {
     if (!gameConsole.setOpen(on)) return;
     consoleCanvas.hidden = !gameConsole.open;
     if (gameConsole.open) {
-      if (page.scoreboard.scoreboardOpen() && !page.deployScreen.scoreFromSpawn) page.scoreboard.setScoreboard(false);
+      if (page.scoreboardOpen() && !page.scoreFromSpawn) page.setScoreboard(false);
       // Whatever was held when the console came up must not still be held
       // under it: the engine stops feeding `PlayerInput` entirely while the
       // flag is set, so a key down at that moment never repeats.
       page.keys.clear();
-      page.soldierKit.triggerHeld = false;
+      page.triggerHeld = false;
       page.seatFire = false;
       page.seatAltFire = false;
-      page.soldierKit.aimHeld = false;
+      page.aimHeld = false;
       if (!pageConsole.consoleFont) {
         // `Font/BF1942.font` out of this mod's own Font.rfa chain where it has
         // one (five of the installed mods do) and vanilla's otherwise.
@@ -246,8 +247,8 @@ export function createPageConsole(page) {
       // `?team=` this page came in on; with no parameter the screen keeps its
       // own default, which is the one the way-in screen shows.
       .then(() => {
-        pageConsole.escMenu.selectMap(page.level.extras?.level || page.params.get('map') || '');
-        if (page.spawning.launchTeam) pageConsole.escMenu.setTeam(page.spawning.launchTeam);
+        pageConsole.escMenu.selectMap(page.extras?.level || page.params.get('map') || '');
+        if (page.launchTeam) pageConsole.escMenu.setTeam(page.launchTeam);
       })
       .catch(error => {
         console.error('Escape menu unavailable', error);
