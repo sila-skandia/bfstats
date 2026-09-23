@@ -113,6 +113,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { OrbitControls } from './vendor/controls/OrbitControls.js';
 import { selectMod } from './mods.js';
+import { disposeModel } from './dispose-model.js';
+import { installControlsCollapse } from './controls-collapse.js';
 
 // Which game's poses this page serves: 'models/poses' for vanilla,
 // 'models/mods/eod/poses' for a mod. Resolved before anything is fetched, and
@@ -388,21 +390,6 @@ for (const button of stanceButtons)
 for (const button of motionButtons)
   button.addEventListener('click', () => setMotion(button.dataset.motion));
 
-function disposeModel(root) {
-  if (!root) return;
-  const materials = new Set();
-  const textures = new Set();
-  root.traverse(obj => {
-    obj.geometry?.dispose();
-    for (const material of [obj.material].flat().filter(Boolean)) {
-      materials.add(material);
-      if (material.map) textures.add(material.map);
-    }
-  });
-  textures.forEach(texture => texture.dispose());
-  materials.forEach(material => material.dispose());
-}
-
 const gripView = () => viewMode === 'grip' && gripPoint;
 const viewTarget = () => (gripView() ? gripPoint : framing.centre).clone();
 const viewDistance = ({ radius }) => (gripView() ? Math.max(radius * .45, .35) : radius * 2.6);
@@ -599,22 +586,7 @@ addEventListener('resize', resize);
 new ResizeObserver(() => resize()).observe(main);
 resize();
 
-const collapseBtn = document.getElementById('controls-collapse-btn');
-const fabBtn = document.getElementById('stage-controls-fab');
-
-function setControlsCollapsed(collapsed) {
-  document.body.classList.toggle('controls-collapsed', collapsed);
-  if (collapseBtn) {
-    collapseBtn.setAttribute('aria-expanded', String(!collapsed));
-  }
-  if (fabBtn) {
-    fabBtn.hidden = !collapsed;
-  }
-  resize();
-}
-
-collapseBtn?.addEventListener('click', () => setControlsCollapsed(true));
-fabBtn?.addEventListener('click', () => setControlsCollapsed(false));
+installControlsCollapse({ get resize() { return resize; } });
 
 // --- Matrix + UI wiring -----------------------------------------------------
 

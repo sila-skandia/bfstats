@@ -96,6 +96,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { OrbitControls } from './vendor/controls/OrbitControls.js';
 import { selectMod } from './mods.js';
+import { disposeModel } from './dispose-model.js';
+import { installControlsCollapse } from './controls-collapse.js';
 import { bonePattern, wornGrafts } from './kit-graft.js';
 
 // Vanilla reads 'models' + 'models/poses'; a mod reads its own subtree. Same
@@ -368,21 +370,6 @@ function refit({ glide = false } = {}) {
   const offset = camera.position.clone().sub(controls.target)
     .multiplyScalar(viewDistance(framing) / viewDistance(previous));
   moveCamera(target.clone().add(offset), target, true);
-}
-
-function disposeModel(root) {
-  if (!root) return;
-  const materials = new Set();
-  const textures = new Set();
-  root.traverse(obj => {
-    obj.geometry?.dispose();
-    for (const material of [obj.material].flat().filter(Boolean)) {
-      materials.add(material);
-      if (material.map) textures.add(material.map);
-    }
-  });
-  textures.forEach(texture => texture.dispose());
-  materials.forEach(material => material.dispose());
 }
 
 function applyWireframe() {
@@ -845,22 +832,7 @@ function resize() {
 addEventListener('resize', resize);
 new ResizeObserver(() => resize()).observe(stage);
 
-const collapseBtn = document.getElementById('controls-collapse-btn');
-const fabBtn = document.getElementById('stage-controls-fab');
-
-function setControlsCollapsed(collapsed) {
-  document.body.classList.toggle('controls-collapsed', collapsed);
-  if (collapseBtn) {
-    collapseBtn.setAttribute('aria-expanded', String(!collapsed));
-  }
-  if (fabBtn) {
-    fabBtn.hidden = !collapsed;
-  }
-  resize();
-}
-
-collapseBtn?.addEventListener('click', () => setControlsCollapsed(true));
-fabBtn?.addEventListener('click', () => setControlsCollapsed(false));
+installControlsCollapse({ get resize() { return resize; } });
 
 // --- Display toggles --------------------------------------------------------
 
