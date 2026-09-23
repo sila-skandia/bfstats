@@ -36,10 +36,15 @@ class MapEntryTests(unittest.TestCase):
             self.assertIn(stays, guard)
 
     def test_the_console_has_the_engine_s_way_back_to_the_menu(self) -> None:
+        # The console's commands are registered in page-console.js, which the
+        # page hands its MENU_URL (`page.MENU_URL`).
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from page_source import page_source
         self.assertRegex(
-            MAP_HTML,
+            page_source(),
             r"object: 'game', method: 'disconnect',[^}]*?"
-            r"run: \(\) => \{ location\.assign\(MENU_URL\); \}")
+            r"run: \(\) => \{ location\.assign\((?:\w+\.)?MENU_URL\); \}")
 
     def test_the_site_s_maps_tab_opens_the_menu(self) -> None:
         for page in ("index.html", "poses.html", "kits.html", "map.html"):
