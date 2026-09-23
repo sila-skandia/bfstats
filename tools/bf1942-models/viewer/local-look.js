@@ -3,14 +3,15 @@ import { MouseInput, profileFor } from './mouse-input.js';
 
 /**
  * The human's mouse look on the engine's own tick, and the render
- * interpolation that draws his eye and his hull between two 30 Hz ticks.
+ * interpolation that draws his eye, and every occupied hull, between two
+ * 30 Hz ticks.
  * Split out of `local-player.js`.
  *
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
  * `aircraft`, `captureBotPresentationTick`, `car`, `handWeapon`, `isZoomed`,
  * `LOOK_SENS`, `mannedActive`, `netTickPoses`, `occupancy`, `optOnFoot`,
- * `optPilot`, `roomJoined`, `soldier`, `turnLook`, `view`.
+ * `optPilot`, `roomJoined`, `soldier`, `turnLook`, `vehicles`, `view`.
  */
 export function createLocalLook(page) {
   const localLook = {};
@@ -236,57 +237,105 @@ export function createLocalLook(page) {
   const footView = { yaw: 0, pitch: 0 };
 
   /**
-   * The occupied vehicle's drawn pose.
+   * Every occupied hull's drawn pose, whoever drives it.
    *
-   * `vehicle` is the drivetrain whose `state` carries the root pose (null for a
-   * bare gun/seat root, which does not move); `parts` is every node a tick
-   * poses — rig parts, the nodes an Engine spins, and every aim axis of every
-   * seat's `TurretRig` — tracked by node so no module has to hand its internals
-   * over. Quaternions are slerped, the root position is lerped.
+   * One record per `VehicleInstance` in the page's registry (`page.vehicles`),
+   * the local player's hull and every bot's alike. Until 2026-09-23 only the
+   * local player's hull was drawn between ticks, and every other driven hull
+   * was drawn at its raw tick pose: at 60 fps a bot's Spitfire showed a new
+   * pose on half the frames and a repeat on the rest (cadencecheck.cjs
+   * `--bots`: 50.6% of frames moved, steps `[0, 1.92, 0, 1.92, ...]` m), which
+   * reads as a double image or blur on anything fast.
+   *
+   * `vehicle` is the hull's drivetrain, whose `state` carries the root pose
+   * (null for a bare gun/seat root, which does not move); `parts` is every
+   * node a tick poses — rig parts, the nodes an Engine spins, and every aim
+   * axis of every seat's `TurretRig` — tracked by node so no module has to hand
+   * its internals over. Quaternions are slerped, the root position is lerped.
+   * A record is rebuilt (and starts snapped) when its hull's drive or rig set
+   * changes: a drive built when someone takes the wheel, a rig when a seat is
+   * first taken.
    */
-  const vehicleInterp = {
-    vehicle: null,
-    root: null,
-    parts: [],
-    active: false,
-    posPrev: new THREE.Vector3(),
-    posCur: new THREE.Vector3(),
-    posDraw: new THREE.Vector3(),
-    quatPrev: new THREE.Quaternion(),
-    quatCur: new THREE.Quaternion(),
-  };
+  const hullInterps = new Map();
+  /** A hull's root moving further than this in one tick was put somewhere
+   *  (a respawn, a test hook's placement), not flown there: snap it. Twenty
+   *  metres a tick is 600 m/s, three times anything in the game flies. */
+  const HULL_JUMP = 20;
 
-  /** Re-collect the nodes a tick poses. Called on every mount, seat change and
-   *  dismount — the only moments the set can change — and never per frame. */
-  function rebuildVehicleInterp() {
-    vehicleInterp.parts.length = 0;
-    vehicleInterp.vehicle = null;
-    vehicleInterp.root = null;
-    vehicleInterp.active = false;
-    if (page.occupancy) {
-      const drive = page.aircraft || page.car || null;
-      vehicleInterp.vehicle = drive;
-      vehicleInterp.root = drive ? drive.node : null;
-      const seen = new Set();
-      const track = node => {
-        if (!node || node === vehicleInterp.root || seen.has(node)) return;
-        seen.add(node);
-        vehicleInterp.parts.push({
-          node,
-          prev: new THREE.Quaternion().copy(node.quaternion),
-          cur: new THREE.Quaternion().copy(node.quaternion),
-        });
-      };
-      for (const part of drive?.parts || []) {
-        track(part.node);
-        for (const spun of part.spun || []) track(spun);
-      }
-      // Every seat's rig, not only the active one: an inactive rig simply never
-      // moves, so its prev and cur stay equal and its slerp is the identity.
-      for (const rig of page.occupancy.turrets?.values() || []) {
-        for (const axis of rig.axes || []) track(axis.node);
-      }
+  function buildHullInterp(inst) {
+    const drive = inst.drive ?? null;
+    const rec = {
+      instance: inst,
+      vehicle: drive,
+      /** The node whose position and orientation are drawn (the drive's). */
+      root: drive ? drive.node : null,
+      /** The node whose subtree's matrices follow the drawn pose. */
+      matrixRoot: drive ? drive.node : inst.root,
+      rigCount: inst.occupancy.turrets?.size ?? 0,
+      parts: [],
+      snapped: false,
+      active: false,
+      posPrev: new THREE.Vector3(),
+      posCur: new THREE.Vector3(),
+      posDraw: new THREE.Vector3(),
+      quatPrev: new THREE.Quaternion(),
+      quatCur: new THREE.Quaternion(),
+    };
+    const seen = new Set();
+    const track = node => {
+      if (!node || node === rec.root || seen.has(node)) return;
+      seen.add(node);
+      rec.parts.push({
+        node,
+        prev: new THREE.Quaternion().copy(node.quaternion),
+        cur: new THREE.Quaternion().copy(node.quaternion),
+      });
+    };
+    for (const part of drive?.parts || []) {
+      track(part.node);
+      for (const spun of part.spun || []) track(spun);
     }
+    // Every seat's rig, not only the occupied ones: a rig nobody aims simply
+    // never moves, so its prev and cur stay equal and its slerp is the identity.
+    for (const rig of inst.occupancy.turrets?.values() || []) {
+      for (const axis of rig.axes || []) track(axis.node);
+    }
+    return rec;
+  }
+
+  /** Is `rec` still the record of a hull someone sits in, with the drive it
+   *  was built for? A seat change inside a frame (a bot getting out, taking
+   *  the wheel) can leave it stale until the next tick's capture. */
+  function hullInterpLive(rec) {
+    const inst = rec.instance;
+    return page.vehicles?.instances.get(inst.root) === inst && (inst.drive ?? null) === rec.vehicle;
+  }
+
+  /** The registry's hulls, each with a record that matches it. */
+  function syncHullInterps() {
+    const instances = page.vehicles?.instances;
+    for (const inst of hullInterps.keys()) {
+      if (instances?.get(inst.root) !== inst) hullInterps.delete(inst);
+    }
+    if (!instances) return;
+    for (const inst of instances.values()) {
+      const rec = hullInterps.get(inst);
+      if (rec && rec.vehicle === (inst.drive ?? null)
+          && rec.rigCount === (inst.occupancy.turrets?.size ?? 0)) continue;
+      hullInterps.set(inst, buildHullInterp(inst));
+    }
+  }
+
+  /** The drawn record of the local player's hull, or null. */
+  function localHullInterp() {
+    const inst = page.occupancy?.instance;
+    return inst ? hullInterps.get(inst) ?? null : null;
+  }
+
+  /** Re-collect the local player's hull after a mount, a seat change or a
+   *  dismount (every other hull re-collects itself at the next tick from the
+   *  registry), and start every drawn pose from where it stands. */
+  function rebuildVehicleInterp() {
     // A vehicle left behind must stop being drawn between ITS ticks, and a
     // vehicle just climbed into starts from where it is parked, not from
     // whatever the last one was doing.
@@ -331,27 +380,34 @@ export function createLocalLook(page) {
       if (snap) Object.assign(footFeetPrev, footFeetCur);
     }
     page.captureBotPresentationTick(snap);
-    const vi = vehicleInterp;
-    if (!vi.vehicle && !vi.parts.length) return;
-    if (vi.vehicle) {
-      if (!snap) { vi.posPrev.copy(vi.posCur); vi.quatPrev.copy(vi.quatCur); }
+    syncHullInterps();
+    for (const rec of hullInterps.values()) captureHull(rec, snap);
+  }
+
+  function captureHull(rec, snap) {
+    let fresh = snap || !rec.snapped;
+    if (rec.vehicle) {
       // The drivetrain's state, not the node: the contact solver may have pushed
       // the hull after `applyTransform` wrote the node, and `stepVehicleBodies`
       // used to be the only thing that drew that push.
-      vi.posCur.copy(vi.vehicle.state.position);
-      vi.quatCur.copy(vi.vehicle.state.orientation);
-      if (snap) { vi.posPrev.copy(vi.posCur); vi.quatPrev.copy(vi.quatCur); }
+      const s = rec.vehicle.state;
+      if (!fresh && rec.posCur.distanceTo(s.position) > HULL_JUMP) fresh = true;
+      if (!fresh) { rec.posPrev.copy(rec.posCur); rec.quatPrev.copy(rec.quatCur); }
+      rec.posCur.copy(s.position);
+      rec.quatCur.copy(s.orientation);
+      if (fresh) { rec.posPrev.copy(rec.posCur); rec.quatPrev.copy(rec.quatCur); }
     }
-    for (const part of vi.parts) {
-      if (!snap) part.prev.copy(part.cur);
+    for (const part of rec.parts) {
+      if (!fresh) part.prev.copy(part.cur);
       part.cur.copy(part.node.quaternion);
-      if (snap) part.prev.copy(part.cur);
+      if (fresh) part.prev.copy(part.cur);
     }
-    vi.active = true;
+    rec.snapped = true;
+    rec.active = true;
   }
 
   /**
-   * Draw the occupied vehicle where this FRAME is, not where the last tick left
+   * Draw every occupied hull where this FRAME is, not where the last tick left
    * it. Runs immediately after `world.step()` and before any camera, because
    * every vehicle camera — the cockpit eye, a gunner's seat camera, the seated
    * soldier's pose target — derives from these nodes' world matrices.
@@ -367,22 +423,56 @@ export function createLocalLook(page) {
   };
 
   function applyVehicleInterp(alpha) {
-    const vi = vehicleInterp;
-    if (!vi.active) return;
-    if (vi.vehicle) {
-      vi.posDraw.lerpVectors(vi.posPrev, vi.posCur, alpha);
-      vi.root.position.copy(vi.posDraw);
-      vi.root.quaternion.slerpQuaternions(vi.quatPrev, vi.quatCur, alpha);
+    for (const rec of hullInterps.values()) {
+      if (!rec.active || !hullInterpLive(rec)) continue;
+      if (rec.vehicle) {
+        rec.posDraw.lerpVectors(rec.posPrev, rec.posCur, alpha);
+        rec.root.position.copy(rec.posDraw);
+        rec.root.quaternion.slerpQuaternions(rec.quatPrev, rec.quatCur, alpha);
+      }
+      for (const part of rec.parts) {
+        part.node.quaternion.slerpQuaternions(part.prev, part.cur, alpha);
+      }
+      rec.matrixRoot?.updateMatrixWorld(true);
     }
-    for (const part of vi.parts) {
-      part.node.quaternion.slerpQuaternions(part.prev, part.cur, alpha);
-    }
-    if (vi.root) vi.root.updateMatrixWorld(true);
     // The external camera modes frame the hull from outside and hang off
     // `state.position`; point them at what was actually drawn (flight.js's
     // `drawnPosition`). The cockpit mode needs nothing — it reads the camera
     // node, which the matrix update above has just moved.
-    if (page.view) page.view.drawnPosition = vi.vehicle ? vi.posDraw : null;
+    if (page.view) {
+      const local = localHullInterp();
+      page.view.drawnPosition = local?.active && local.vehicle && hullInterpLive(local) ? local.posDraw : null;
+    }
+  }
+
+  /**
+   * Put every drawn hull back on its last tick's pose. Called at the top of
+   * the frame, before anything of the simulation runs: the tick rewrites a
+   * hull it integrates anyway, but a frame that runs no tick would otherwise
+   * hand the bots' AI (`referee.tick`, which reads gun and hull nodes' world
+   * matrices) the previous frame's drawn pose instead of the tick's, and the
+   * AI must see the same state whatever the display rate.
+   */
+  function restoreTickPose() {
+    for (const rec of hullInterps.values()) {
+      if (!rec.active || !hullInterpLive(rec)) continue;
+      if (rec.vehicle) {
+        rec.root.position.copy(rec.posCur);
+        rec.root.quaternion.copy(rec.quatCur);
+      }
+      for (const part of rec.parts) part.node.quaternion.copy(part.cur);
+      rec.matrixRoot?.updateMatrixWorld(true);
+    }
+  }
+
+  /** Does the render interpolation draw `drive`'s node? `stepVehicleBodies`
+   *  asks before writing a hull's raw state onto it. */
+  function drawsHull(drive) {
+    if (!drive) return false;
+    for (const rec of hullInterps.values()) {
+      if (rec.vehicle === drive) return rec.active && hullInterpLive(rec);
+    }
+    return false;
   }
 
   function lookDelta(dx, dy) {
@@ -442,6 +532,7 @@ export function createLocalLook(page) {
   Object.assign(localLook, {
     applyVehicleInterp,
     capturePresentationTick,
+    drawsHull,
     footEyeCur,
     footEyePrev,
     footFeetCur,
@@ -456,8 +547,8 @@ export function createLocalLook(page) {
     mouseInput,
     pumpLook,
     rebuildVehicleInterp,
+    restoreTickPose,
     snapPresentation,
-    vehicleInterp,
   });
   return localLook;
 }

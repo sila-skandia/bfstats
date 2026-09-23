@@ -16,9 +16,9 @@ import { bodyPoseOf, bodyTerrain } from './body-pose.js';
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `bust`, `collider`, `damageTables`, `damageVisuals`,
- * `DEFAULT_SURFACE_FRICTION`, `dropEntryPoints`, `effects`, `extras`,
+ * `DEFAULT_SURFACE_FRICTION`, `drawsHull`, `dropEntryPoints`, `effects`, `extras`,
  * `forgetEntryPoints`, `MAPS_BASE`, `materialFrictionById`, `vehicleDamage`,
- * `vehicleInterp`, `vehicles`, `vehicleSpawnActive`, `world`.
+ * `vehicles`, `vehicleSpawnActive`, `world`.
  */
 export function createHullBodies(page) {
   const hullBodies = {};
@@ -681,11 +681,11 @@ export function createHullBodies(page) {
       if (!scene) continue;
       if (entry.driven) {
         // The contact solver may have pushed the drive model's state; draw it.
-        // Unless the render interpolation owns this node, in which case the push
-        // is already in the pose it captured at the end of the tick, and
-        // re-applying the raw state here would put the hull back on the tick the
-        // cameras have just been placed off.
-        if (entry.driven.vehicle !== page.vehicleInterp.vehicle || !page.vehicleInterp.active) {
+        // Unless the render interpolation owns this node (every occupied hull,
+        // local-look.js), in which case the push is already in the pose it
+        // captured at the end of the tick, and re-applying the raw state here
+        // would put the hull back on the tick the frame has just drawn it off.
+        if (!page.drawsHull(entry.driven.vehicle)) {
           entry.driven.vehicle.applyTransform();
         }
         const s = entry.driven.vehicle.state.position;

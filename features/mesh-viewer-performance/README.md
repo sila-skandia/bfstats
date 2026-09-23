@@ -708,6 +708,36 @@ stating because it would be a bug in a per-frame snapshot: `onTick` fires per
 tick, so `prev` and `cur` are always two *adjacent* ticks however many ticks a
 frame ran or the clock dropped.
 
+### Every occupied hull, not only the player's (2026-09-24)
+
+Until 2026-09-24 the interpolation drew one hull between ticks, the local
+player's (`vehicleInterp.vehicle`), and `stepVehicleBodies` put every other
+driven hull on its raw tick pose. A bot's plane was therefore drawn at two
+poses alternately at 60 fps, which reads as a double image; planes worst,
+because they cover the most ground per tick. `cadencecheck.cjs --bots`
+measured it on El Alamein: a bot Spitfire at 62 m/s and a bot Sherman each
+moved on 91 of 180 frames (50.6%), steps `[0, 1.92, 0, 1.93, ...]` m for the
+plane. A bot plane held still renders sharp (no composer, no TAA, no motion
+blur in this renderer; the propeller disc is its own mesh), so nothing
+about the image was at fault.
+
+`local-look.js` now keeps one record per `VehicleInstance` in the registry,
+synced at every tick capture: the drive's root pose, its rig parts and
+spun nodes, and every seat's aim axes, exactly the set the player's hull
+had. A record is rebuilt (snapped) when its drive or rig set changes, and a
+root moving more than 20 m in one tick snaps rather than streaks (a hull a
+bot's code or a test hook placed). `restoreTickPose()` at the top of
+`frame()` puts every drawn hull back on its tick pose before the frame's
+simulation runs, so the bots' AI, which reads gun and hull nodes after the
+step, sees tick state on a frame that ran no tick. `stepVehicleBodies` asks
+`drawsHull(drive)` instead of comparing with the player's drive.
+
+After: 180 of 180 frames moved for both (plane steps 0.7..1.6 m under a
+load average of 12, the spread being frame-time jitter); the eight camera
+scenarios still pass. The headless runner does not load either module, and
+a seeded 120 s El Alamein match (8 a side, seed 3, every tick traced) wrote
+the same 57,766-line trace, byte for byte, before and after.
+
 ### Not interpolated, and why
 
 - **Projectiles and tracer streaks.** `guns.advance` moves them inside the
@@ -959,7 +989,8 @@ the page now always says which.
 - **`__matrixDrift`'s false positives** want fixing in the hook, so the canary stays
   readable.
 - **Projectiles, tracer streaks and pushed parked hulls still step at 30 Hz.**
-  Everything the player rides or looks out of is interpolated now (third pass);
+  Everything the player rides or looks out of is interpolated now (third pass),
+  and every hull anyone drives (2026-09-24);
   these are not, because they move inside `guns.advance` and `syncBodyNode` and
   interpolating them means per-round state on the collision sweep's own path.
 - **Texture memory**, if this ever runs on a smaller GPU: warm-up now uploads every
