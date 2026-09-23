@@ -99,6 +99,7 @@ import { selectMod } from './mods.js';
 import { disposeModel } from './dispose-model.js';
 import { createCameraGlide } from './camera-glide.js';
 import { createKitCatalogue } from './kit-catalogue.js';
+import { createKitStance } from './kit-stance.js';
 import { installControlsCollapse } from './controls-collapse.js';
 import { bonePattern, wornGrafts } from './kit-graft.js';
 
@@ -161,65 +162,19 @@ const state = {
   kit: null,
   soldier: null,
   held: null,
-  stance: 'stand',
   hidden: new Set(),      // worn slots the viewer has switched off
   view: 'figure',
 };
 
-// --- Stances ---------------------------------------------------------------
-// Lifted from poses.html: stances are constant one-pose clips in the glb and
-// the switch blends their weights. A kit part parented to a bone rides the
-// blend for free, which is the whole reason it is parented rather than welded.
-const STANCE_KEYS = ['stand', 'crouch', 'lie'];
-const STANCE_BLEND_MS = 450;
-let mixer = null;
-let stanceActions = {};
-let stanceBlend = null;
 let current = null;
 let framing = null;
 let headPoint = null;
 let loadSequence = 0;
 
-const stanceButtons = [...document.querySelectorAll('[data-stance]')];
-
-function updateStanceButtons() {
-  for (const button of stanceButtons) {
-    button.disabled = current ? !stanceActions[button.dataset.stance] : true;
-    button.classList.toggle('active', button.dataset.stance === state.stance);
-  }
-}
-
-function setStance(next) {
-  if (!STANCE_KEYS.includes(next) || next === state.stance) return;
-  if (current && !stanceActions[next]) return;
-  state.stance = next;
-  updateStanceButtons();
-  writeHash();
-  if (!mixer || !stanceActions[next]) return;
-  // Not crossFadeTo: its fade scales the action's own weight and these idle
-  // stances sit at weight 0, so the incoming pose would never appear.
-  stanceBlend = {
-    from: Object.fromEntries(Object.entries(stanceActions)
-      .map(([name, action]) => [name, action.getEffectiveWeight()])),
-    start: performance.now(),
-  };
-  startAnimating();
-}
-
-function advanceStanceBlend(now) {
-  if (!stanceBlend) return false;
-  const t = Math.min((now - stanceBlend.start) / STANCE_BLEND_MS, 1);
-  const eased = t * t * (3 - 2 * t);
-  for (const [name, action] of Object.entries(stanceActions))
-    action.setEffectiveWeight(
-      THREE.MathUtils.lerp(stanceBlend.from[name], name === state.stance ? 1 : 0, eased));
-  if (t < 1) return false;
-  stanceBlend = null;
-  return true;
-}
-
-for (const button of stanceButtons)
-  button.addEventListener('click', () => setStance(button.dataset.stance));
+const kitStance = createKitStance({
+  get current() { return current; }, get startAnimating() { return startAnimating; },
+  get writeHash() { return writeHash; },
+});
 
 // --- Camera ----------------------------------------------------------------
 
@@ -354,7 +309,7 @@ async function showKit(kit, { soldier, held, stance } = {}) {
   const sequence = ++loadSequence;
   state.kit = kit;
   state.soldier = soldierFor(kit, soldier ?? state.soldier);
-  if (stance) state.stance = stance;
+  if (stance) kitStance.presetStance(stance);
   state.held = (kit.items || []).some(item => item.template === held)
       && posed(state.soldier, held)
     ? held
@@ -395,23 +350,8 @@ async function showKit(kit, { soldier, held, stance } = {}) {
   current.traverse(obj => { if (obj.isSkinnedMesh) obj.frustumCulled = false; });
   scene.add(current);
 
-  mixer = null;
-  stanceActions = {};
-  stanceBlend = null;
   cameraGlide.cancel();
-  for (const name of STANCE_KEYS) {
-    const clip = THREE.AnimationClip.findByName(gltf.animations ?? [], name);
-    if (!clip) continue;
-    mixer ??= new THREE.AnimationMixer(current);
-    const action = mixer.clipAction(clip);
-    action.play();
-    action.setEffectiveWeight(0);
-    stanceActions[name] = action;
-  }
-  if (!stanceActions[state.stance]) state.stance = 'stand';
-  stanceActions[state.stance]?.setEffectiveWeight(1);
-  mixer?.update(0);
-  updateStanceButtons();
+  kitStance.bindFigure(gltf.animations);
 
   await applyWorn(kit);
   refit();
@@ -639,7 +579,7 @@ function writeHash() {
   const parts = [encodeURIComponent(state.kit.nation || '-'),
                  encodeURIComponent(state.kit.class),
                  `${state.soldier || ''}|${state.held || ''}`];
-  if (state.stance !== 'stand') parts.push(state.stance);
+  if (kitStance.stance !== 'stand') parts.push(kitStance.stance);
   location.replace(`#${parts.join('/')}`);
 }
 
@@ -672,7 +612,7 @@ addEventListener('keydown', event => {
   // q/w/e rather than 1/2/3: the digits already mean "weapon" here, and a
   // second meaning for them is how a console becomes unlearnable.
   const stanceKey = { q: 'stand', w: 'crouch', e: 'lie' }[key];
-  if (stanceKey) { setStance(stanceKey); event.preventDefault(); return; }
+  if (stanceKey) { kitStance.setStance(stanceKey); event.preventDefault(); return; }
 
   if (key === 'ArrowDown' || key === 'ArrowUp') {
     const index = visible.indexOf(state.kit);
@@ -704,13 +644,13 @@ function startAnimating() {
   (function tick(now = performance.now()) {
     const delta = Math.min((now - last) / 1000, 0.1);
     last = now;
-    const landed = advanceStanceBlend(now);
-    if (mixer) mixer.update(delta);
+    const landed = kitStance.advanceStanceBlend(now);
+    if (kitStance.mixer) kitStance.mixer.update(delta);
     if (landed) refit({ glide: true });
     cameraGlide.advanceCamera(now);
     const moving = controls.update();
     renderer.render(scene, camera);
-    if (moving || controls.autoRotate || stanceBlend || cameraGlide.moving) requestAnimationFrame(tick);
+    if (moving || controls.autoRotate || kitStance.blending || cameraGlide.moving) requestAnimationFrame(tick);
     else animating = false;
   })();
 }
