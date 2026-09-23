@@ -7,6 +7,7 @@ test reads the real El Alamein archives when they are installed.
 from __future__ import annotations
 
 import os
+import struct
 import sys
 import unittest
 from pathlib import Path
@@ -17,6 +18,7 @@ sys.path.insert(0, str(ROOT))
 from bf42.ai_level import (  # noqa: E402
     LevelAi, parse_ai_con, parse_conditions, parse_prerequisites,
     parse_strategic_areas, parse_strategies, parse_pathfinding_con, load_level_ai,
+    read_search_map_raw,
 )
 
 AREAS = """
@@ -147,6 +149,65 @@ class AiLevelInstallTests(unittest.TestCase):
         self.assertEqual(len(ai.strategicAreas), 9)
         self.assertEqual(sorted(ai.sideStrategies), ["1", "2"])
         self.assertEqual([s.name for s in ai.strategies], ["flank", "broad", "breakOut", "cleanUp"])
+
+
+def _raw_map(records) -> bytes:
+    """A one-bit level-0 search map of 2 x 2 blocks (128 m square):
+    `records` is four entries, a special-cell index or a 512-byte block."""
+    out = struct.pack("<5i", 1, 1, 6, 0, 0) + struct.pack("<i", 2) + struct.pack("<2I", 0, 0xFFFFFFFF)
+    for rec in records:
+        if isinstance(rec, int):
+            out += struct.pack("<i", rec)
+        else:
+            out += struct.pack("<i", -1) + rec
+    return out
+
+
+class SearchMapRawTests(unittest.TestCase):
+    def test_special_cells_and_an_inline_block(self) -> None:
+        block = bytearray(512)
+        # Pixel (col 5, row 2) and (col 40, row 63) blocked: word row * 2 +
+        # (col >> 5), bit col & 31.
+        block[(2 * 2) * 4] = 1 << 5
+        word = 63 * 2 + 1
+        block[word * 4 + 1] = 1 << (8 - 8)   # bit 8 of the word: col 40
+        m = read_search_map_raw(_raw_map([0, 1, bytes(block), 0]))
+        self.assertEqual((m.width, m.height, m.level, m.block_pixels), (128, 128, 0, 64))
+        self.assertFalse(m.blocked(10, 10))            # block 0: all free
+        self.assertTrue(m.blocked(70, 10))             # block 1: all blocked
+        self.assertTrue(m.blocked(5, 66))              # block 2: row 2, col 5
+        self.assertFalse(m.blocked(6, 66))
+        self.assertTrue(m.blocked(40, 127))            # block 2: row 63, col 40
+        self.assertFalse(m.blocked(100, 100))          # block 3: all free
+        self.assertTrue(m.blocked(-1, 0))              # outside the map
+
+    def test_trailing_bytes_are_refused(self) -> None:
+        with self.assertRaises(ValueError):
+            read_search_map_raw(_raw_map([0, 0, 0, 0]) + b"\0\0\0\0")
+
+    def test_bocage_tank_map_carries_its_bridges(self) -> None:
+        try:
+            from bf42.level import find_level_archives, load_level_files
+            from extract_models import DEFAULT_GAME_DIR
+        except Exception as exc:  # noqa: BLE001
+            raise unittest.SkipTest(str(exc))
+        game_dir = Path(os.path.expanduser(str(DEFAULT_GAME_DIR)))
+        if not game_dir.exists():
+            raise unittest.SkipTest("no game install")
+        try:
+            files = load_level_files(find_level_archives(game_dir, "bf1942", "bocage"), "bocage")
+        except Exception as exc:  # noqa: BLE001
+            raise unittest.SkipTest(str(exc))
+        hit = files.find("Pathfinding/Tank0Level0Map.raw")
+        if not hit:
+            raise unittest.SkipTest("no baked tank map")
+        m = read_search_map_raw(files.read(hit))
+        self.assertEqual((m.width, m.height), (2048, 2048))
+        # The small stone bridge at (812, 1414): its deck is free across the
+        # river, the water either side of it blocked.
+        self.assertTrue(all(not m.blocked(x, 1413) for x in range(790, 846)))
+        self.assertTrue(m.blocked(815, 1395))
+        self.assertTrue(m.blocked(815, 1430))
 
 
 if __name__ == "__main__":

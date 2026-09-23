@@ -151,11 +151,28 @@ which the bot tests then covered.
    (15 for a soldier), the record made at a bot's first frustum contact and
    refreshed by spots, re-sights and heard shots; the enemy tables weigh
    each unit by it. The Fire scoring still uses 1.
-5. **Bocage's Tank0 map has no bridge crossing**: after the bridges fall the
-   next orders cross the river and `findStrategicPath` fails every tick
-   (north bank, south bank and the Sawmill are separate components on the
-   viewer-built map; the Tigers reach 259 path failures). The bridge decks
-   are statics over water; how the engine's map carries them is not read.
+5. ~~**Bocage's Tank0 map has no bridge crossing**~~ read and fixed (AI-93,
+   AI-94, 2026-09-24). The engine frees whatever pixels an object's faces
+   cover (`sampleAndRender` 0x08601390) after the terrain pass and before
+   the outlines go in, and outlines a bridge against its AI mesh (a sheet
+   over the deck), so only the parapets draw. The viewer painted every deck
+   a wall at its ramps and its abutments; the drivable mask now stands in
+   for the AI meshes. Checked against the level's own baked map
+   (`Pathfinding/Tank0Level0Map.raw`, shipped and loaded by `ai.loadMaps`,
+   read by `bf42/ai_level.py read_search_map_raw`): 95.2 % of cells agree
+   (60.8 % before), one component. Live: a bot Tiger ordered from the Axis
+   base to the Allied base crossed both river branches on the decks and
+   arrived with `pathFailures` 0; both bot maps are one coarse component.
+   Runner (SAI, 8 a side, 600 s, seeds 1..10): route failures 67,636 a match
+   before, 86 after. El Alamein's nearest Allied Sherman (item 4's open
+   point) now starts on a free strip through its repair pad; the
+   never-valid-hull stopgap stays for the five hull spawns El Alamein's own
+   baked map paints blocked. Open: the viewer ships no AI meshes (porting
+   them, or loading the baked maps outright, would close the remaining
+   differences: the slope test's sub-sampling; on Omaha and Market Garden
+   the baked maps block everything outside the play area; and Market
+   Garden's `Ironbrdg1` is not in the drivable mask, so its deck is still
+   cut).
 6. **Boats** (AI-73): a ship's Daihatsu / LCVP is split off at load as its
    own unit; the helm runs `speedControl`'s regulated speed and turn. Live
    on Wake a bot drove a Daihatsu 558 m on `LandingCraft3` to a south-shore

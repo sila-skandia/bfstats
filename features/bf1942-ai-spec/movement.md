@@ -25,11 +25,24 @@ Per cell, in order:
 3. **Statics**: each collision triangle is clipped to every cell it covers;
    a piece whose height range meets `[base + lowClip, base + hiClip]` stamps
    the cell, `base` the object's lowest vertex raised to the cell's terrain.
-   An upward face above the band, or any drivable deck, frees the cell
-   (the engine's `sampleAndRender`). INVENTION: the engine draws the band's
-   outline and relies on the flood to close the inside; filling per cell
-   reaches the same cells for a wall. Simulated bodies (parked vehicles) are
-   skipped: the engine meets them through Avoid, not the map.
+   An upward face above the band frees the cell (the engine's
+   `sampleAndRender`, which clears the terrain's water and slope blocks
+   under an object's faces before the outlines go in, AI-93). INVENTION: the
+   engine draws the band's outline and relies on the flood to close the
+   inside; filling per cell reaches the same cells for a wall. Simulated
+   bodies (parked vehicles) are skipped: the engine meets them through
+   Avoid, not the map. Faces of collision material 99 stamp nothing (the
+   engine's outline loop skips them).
+
+   **Drivable objects** (the drivable mask: bridges, repair pads, ramps,
+   docks) stand in for the engine's AI meshes (`aiMeshes.rfa`), against
+   which the engine outlines those objects instead of the two planes; a
+   bridge's AI mesh is a sheet over its deck, so only the parapets draw
+   (AI-93, INVENTION as a stand-in): every flat face (`|ny| > 0.5`, either
+   winding; the export's winding is mixed) is a surface, never a wall, and
+   a steep face over a cell the terrain pass blocked (the river, the bank
+   under the bridge's end) stamps nothing, so the cell is free where the
+   deck covers it and the blocked ground either side keeps its brush.
 4. **Brush**: every blocked cell, terrain or object, stamps
    `n = 2 round(b) + 1`, the cells with `(col + 0.5 - c)² + (row + 0.5 - c)²
    <= b²`, `c = n/2 + 0.5`. A water map's 125 m brush is a chamfer distance
@@ -45,6 +58,29 @@ Per cell, in order:
 each side; a 0.3 m kerb is below the band and free. A 30 deg slope is
 `ny = 0.866`: a hill rising 0.5 m a metre (`ny = 0.894`) is walkable, 0.6 m a
 metre (`ny = 0.857`) is not.
+
+*Example.* Bocage's small stone bridge at (812, -1414): its deck is 26.8 ..
+29.1 m over a river bed at 3.4 m and banks at 14 .. 25 m; at the west end
+the deck is 0.5 .. 2.3 m over the bank (inside the tank map's 0.3 .. 2.5 m
+band) and an abutment stands 2.8 m out of the slope under it. On the tank
+map (brush 3) the deck is free across the river in a strip 5 to 6 m wide,
+the level's baked map's 6.
+
+**The level's own map.** Every level ships its baked maps
+(`Pathfinding/<name>Level<L>Map.raw`, which the server loads with
+`ai.loadMaps` rather than painting its own); `bf42/ai_level.py
+read_search_map_raw` reads one (AI-93). The viewer's tank map agrees with
+Bocage's `Tank0Level0Map` on 95.2 % of cells (60.8 % before the drivable
+rules) and is one component, as the baked one is; the infantry map with
+`Infantry1Level0Map` on 98.2 % (56.4 %). On Bocage most of what remains
+is the slope test (the engine samples its own slope function 4 x 5 times a
+metre and blocks on any sample over the limit, the viewer tests one
+central-difference normal a cell). On Market Garden (58 %) and Omaha (54 %)
+the baked maps block everything outside an oval around the play area
+(INFERRED the combat area; where the engine paints that was not read) and
+the viewer's maps do not. Market Garden's iron bridge (`Ironbrdg1`) is not
+in the drivable mask (`DRIVABLE_TOP_RE` matches `bridge`, not `brdg`), so
+its deck is still cut on the viewer's maps where the baked one is free.
 
 ## The searches
 
