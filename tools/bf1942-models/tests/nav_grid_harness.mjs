@@ -66,6 +66,24 @@ const plus = brushOffsets(1.0);
 const around = findLocalPath(nav, 85, -50, 85, -70, { radius: 24 });
 const whole = findPath(nav, 75, -20, 85, -70);
 
+// Both ends buried in an 8-cell disc: each is moved out to open paint, and
+// the search box must be sized around where they land. Sized before, a
+// start moved out of the box aliased another cell and the walk-back looped
+// until the array overflowed ('Invalid array length').
+const W = 64;
+const discBlocked = new Uint8Array(W * W);
+for (let z = 0; z < W; z++) for (let x = 0; x < W; x++) if (Math.hypot(x - 32, z - 32) <= 8) discBlocked[z * W + x] = 1;
+const disc = { width: W, height: W, cellSize: 1, blocked: discBlocked,
+               heights: new Float32Array(W * W), normalY: new Float32Array(W * W).fill(1) };
+const buried = [2, 20].map(radius => {
+  try {
+    const p = findLocalPath(disc, 32.5, -32.5, 35.5, -32.5, { radius });
+    return p ? p.length : null;
+  } catch (e) {
+    return `throws: ${e.message}`;
+  }
+});
+
 process.stdout.write(JSON.stringify({
   width: nav.width,
   height: nav.height,
@@ -96,5 +114,6 @@ process.stdout.write(JSON.stringify({
     ? Math.hypot(around[around.length - 1][0] - 85, around[around.length - 1][1] + 70) < 1e-6
     : null,
   wholePath: whole ? whole.length : null,
+  buried,
   codes: { CELL_FREE, CELL_WATER, CELL_SLOPE, CELL_OBJECT, CELL_UNREACHABLE },
 }));

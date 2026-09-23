@@ -110,6 +110,12 @@ class NavGridTests(unittest.TestCase):
     def test_the_whole_route_query_answers(self) -> None:
         self.assertIsNotNone(self.results["wholePath"])
 
+    def test_buried_ends_are_searched_in_a_box_around_where_they_land(self) -> None:
+        # A narrow box cannot reach round the disc (null: the caller widens);
+        # a wide one can. Neither throws.
+        self.assertEqual(self.results["buried"][0], None)
+        self.assertIsInstance(self.results["buried"][1], int)
+
 
 if __name__ == "__main__":
     unittest.main()

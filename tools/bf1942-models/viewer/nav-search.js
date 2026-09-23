@@ -238,11 +238,6 @@ export function findLocalPath(nav, fromX, fromZ, toX, toZ, {
   let egx = clampi(Math.floor(toX / cs), 0, width - 1);
   let egz = clampi(Math.floor(-toZ / cs), 0, height - 1);
   const rc = Math.max(1, Math.ceil(radius / cs));
-  // The box: around the start, stretched to include the goal.
-  const bx0 = Math.max(0, Math.min(sgx - rc, egx - 2));
-  const bx1 = Math.min(width - 1, Math.max(sgx + rc, egx + 2));
-  const bz0 = Math.max(0, Math.min(sgz - rc, egz - 2));
-  const bz1 = Math.min(height - 1, Math.max(sgz + rc, egz + 2));
 
   // A start (or goal) inside the paint is moved to the nearest free cell,
   // up to 20 m out (`resolveStartPositionAgainstConstraints`, bot-movement
@@ -258,6 +253,16 @@ export function findLocalPath(nav, fromX, fromZ, toX, toZ, {
     [egx, egz] = e;
   }
   if (sgx === egx && sgz === egz) return [[fromX, fromZ], [toX, toZ]];
+
+  // The box: around the start, stretched to include the goal -- both as
+  // resolved. Sized before the resolve, a start or goal moved out of it
+  // took the local index of another cell and the path walk-back looped
+  // until the array overflowed ("Invalid array length", found by the squad
+  // doctrine's follow orders in the headless runner, 2026-09-24).
+  const bx0 = Math.max(0, Math.min(sgx - rc, egx - 2));
+  const bx1 = Math.min(width - 1, Math.max(sgx + rc, egx + 2));
+  const bz0 = Math.max(0, Math.min(sgz - rc, egz - 2));
+  const bz1 = Math.min(height - 1, Math.max(sgz + rc, egz + 2));
 
   const bw = bx1 - bx0 + 1, bh = bz1 - bz0 + 1;
   const n = bw * bh;
