@@ -94,6 +94,15 @@ class SimVehicleTests(unittest.TestCase):
         self.assertLess(abs(low - r["waterLevel"]), 3.0, "afloat")
         self.assertLess(abs(high - r["waterLevel"]), 3.0, "afloat")
 
+    def test_a_fixed_gun_fires_and_its_rounds_land(self) -> None:
+        r = recipe("fixedGun")
+        self.assertEqual(r["kind"], "gun")
+        self.assertFalse(r["drive"], "a fixed gun is a seat with no drive")
+        self.assertEqual(r["seat"], "AA_Allies")
+        self.assertGreater(r["rounds"], 5)
+        self.assertEqual(r["fired"], ["gun:AA_Allies:AA_Allies_GunBarrel_1"])
+        self.assertGreater(sum(r["landed"].values()), 5, "the rounds fly and land")
+
 
 if __name__ == "__main__":
     unittest.main()
