@@ -52,7 +52,7 @@ _VIEWER_MODULES = [
     "world", "physics", "parachute", "swim", "soldier", "spawn-safety",
     "point-body", "fixed-step", "soldier-pose", "soldier-locomotion", "walking-body",
     "mouse-input", "fall-damage",
-    "body-world", "body-statics", "vehicle-bodies", "combat-area", "supply", "armor",
+    "body-world", "body-statics", "body-pose", "vehicle-bodies", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact",
     "body-ground", "body-friction", "crash-damage", "effects-core",
     "collision", "collision-materials", "heightfield", "static-index",
