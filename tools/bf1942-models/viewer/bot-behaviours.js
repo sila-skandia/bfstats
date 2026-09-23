@@ -76,6 +76,8 @@ export function quadrantDirection(q) {
   return [Math.sin(yaw), up ? 0.6 : 0, Math.cos(yaw)];
 }
 
+const DEG = Math.PI / 180;
+
 export const SCOUT = {
   initialAccum: 100.0,
   accumWeight: 0.2,
@@ -224,6 +226,100 @@ export class ScoutState {
  * The TakeCover generator: threat by quadrant, the cover choice, the point
  * behind it.
  */
+/**
+ * `BBMedicAssist::calculateUrgency` 0x08573840 (read 2026-09-23): the
+ * Special behaviour of a bot carrying a healing weapon (`weaponTemplate.
+ * healing 1`: the MedPack, the RepairPack). Not while wading deeper than
+ * 0.75 m. Per healing weapon with more than one round, the best
+ * `strength[type]` and its `maxRange` per target type; every friendly unit
+ * the environment lists whose health is under 95 % (and above 0), upright
+ * (ground normal . up >= 0.7071), not inside another object, and — when
+ * beyond that weapon's range — standing on a valid cell of the bot's map,
+ * scores `value / (d * SCurve(health))` (x0.75 outside the bot's ordered
+ * area); the sum feeds `Declein(sum) * 4 * k`, the best term (x `1 +
+ * radio`) picks the target, and `BBPMedicAssist::init` gets it. The plan
+ * (`BBPMedicAssist::createPlan` 0x085bf350): reset, the healing weapon,
+ * `MoveToObjectFinding` to `R_target + 0.9 * maxRange` when farther, then
+ * while the target exists, is under 95 % and within that distance and the
+ * magazine has rounds: `LookAtObject` within 5 deg and the trigger held.
+ */
+export const MEDIC = {
+  waterGate: 0.75,
+  healthBelow: 0.95,
+  uprightCos: 0.7071,
+  rangeFraction: 0.9,
+  lookTolerance: 5 * DEG,
+  urgencyScale: 4.0,
+  outsideAreaFactor: 0.75,
+  /** The environment's friendly-unit query radius (INVENTION: not read). */
+  searchRadius: 60.0,
+  /** A unit's `Information+0x14` value term (INVENTION: 1 per soldier). */
+  unitValue: 1.0,
+  /** The healing round: hit points per trigger tick at the MedPack's 10 / s
+   *  (INVENTION: the engine's per-round heal is not read; 30 hp in 6 s). */
+  healPerRound: 0.5,
+};
+
+export class MedicState {
+  constructor() {
+    this.targetId = null;
+    this.weaponIndex = -1;
+    this.arrive = 0;
+    this.lastUrgency = 0;
+  }
+
+  /**
+   * `ctx`: `now`, `position`, `waterDepth`, `weapons` (AI entries with
+   * `healing`, `strength`, `maxRange`, `ammo`), `friends` (`{ id, pos,
+   * health (0..1), upright, inVehicle, radius, type }`), `isWalkable(x, z)`,
+   * `insideMyArea(x, z)` or null, `mod`. Returns `{ urgency, targetId,
+   * weaponIndex, arrive, changed }`.
+   */
+  evaluate(ctx) {
+    const none = { urgency: 0, targetId: null, weaponIndex: -1, arrive: 0, changed: false };
+    if ((ctx.waterDepth ?? 0) > MEDIC.waterGate) { this.targetId = null; return none; }
+    // The best healing weapon per target type, and its range.
+    const best = new Map();
+    (ctx.weapons ?? []).forEach((w, i) => {
+      if (!w?.healing) return;
+      const ammo = w.ammo < 0 ? 0x10000 : w.ammo;
+      if (!(ammo > 1)) return;
+      for (const [type, strength] of Object.entries(w.strength ?? {})) {
+        const cur = best.get(type);
+        if (strength > 0 && (!cur || strength > cur.strength)) {
+          best.set(type, { strength, index: i, range: w.maxRange ?? 0 });
+        }
+      }
+    });
+    if (!best.size) { this.targetId = null; return none; }
+    let sum = 0, top = 0, target = null, weaponIndex = -1, arrive = 0;
+    for (const f of ctx.friends ?? []) {
+      const w = best.get(f.type ?? 'Infantry');
+      if (!w) continue;
+      const h = f.health;
+      if (!(h < MEDIC.healthBelow) || !(h > 0)) continue;
+      if (f.upright === false || f.inVehicle) continue;
+      const dx = f.pos[0] - ctx.position[0], dy = f.pos[1] - ctx.position[1], dz = f.pos[2] - ctx.position[2];
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 > w.range * w.range && ctx.isWalkable && !ctx.isWalkable(f.pos[0], f.pos[2])) continue;
+      let value = MEDIC.unitValue;
+      if (ctx.insideMyArea && !ctx.insideMyArea(f.pos[0], f.pos[2])) value *= MEDIC.outsideAreaFactor;
+      const term = value / (Math.max(0.5, Math.sqrt(d2)) * Math.max(1e-3, sCurve(h)));
+      sum += term;
+      if (term > top) {
+        top = term; target = f.id; weaponIndex = w.index;
+        arrive = (f.radius ?? 1.0) + MEDIC.rangeFraction * w.range;
+      }
+    }
+    if (!target) { this.targetId = null; this.lastUrgency = 0; return none; }
+    const changed = target !== this.targetId;
+    this.targetId = target; this.weaponIndex = weaponIndex; this.arrive = arrive;
+    const urgency = decleiningSlope(sum) * MEDIC.urgencyScale * (ctx.mod ?? 1);
+    this.lastUrgency = urgency;
+    return { urgency, targetId: target, weaponIndex, arrive, changed };
+  }
+}
+
 export class TakeCoverState {
   constructor() {
     this.coverId = null;

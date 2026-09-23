@@ -45,7 +45,7 @@ MODULES = {f"{name}.js": VIEWER / f"{name}.js" for name in _MODULE_NAMES}
 MODULES["world.mjs"] = VIEWER / "world.js"
 MODULES["bot.js"] = VIEWER / "bot.js"
 MODULES["nav-grid.js"] = VIEWER / "nav-grid.js"
-for _m in ("bot-sense.js", "bot-fire.js", "bot-behaviours.js", "strategic.js"):
+for _m in ("bot-sense.js", "bot-fire.js", "bot-behaviours.js", "bot-vehicle.js", "strategic.js"):
     MODULES[_m] = VIEWER / _m
 MODULES["node_modules/three/three.module.js"] = VIEWER / "vendor" / "three.module.js"
 THREE_PACKAGE = json.dumps({
@@ -149,6 +149,36 @@ class BotAiTests(unittest.TestCase):
         self.assertEqual(self.results["steer"]["side"]["forward"], 0)
 
     # --- MoveTo: no target, walk to the flag --------------------------------
+
+    def test_a_medic_walks_to_a_wounded_friend_and_holds_the_pack_on_him(self) -> None:
+        m = self.results["medic"]
+        self.assertTrue(m["chosen"], m)
+        self.assertGreater(m["urgency"], 0.5, m)
+        # `R + 0.9 * maxRange` = 1 + 2.25 m; the trigger goes down inside it.
+        self.assertAlmostEqual(m["arrive"], 3.25, places=2)
+        self.assertTrue(m["fired"], m)
+        self.assertEqual(m["weapon"], "MedPack")
+        self.assertLess(m["firingDist"], 3.25 + 0.5, m)
+
+    def test_the_tank_law_drives_ahead_and_turns_first_when_the_target_is_behind(self) -> None:
+        t = self.results["tankLaw"]
+        self.assertGreater(t["ahead"]["throttle"], 0.9)
+        self.assertAlmostEqual(t["ahead"]["steer"], 0.0, places=3)
+        self.assertLess(t["fast"]["throttle"], 0.0)            # over the wanted speed: back off
+        self.assertLess(t["right"]["steer"], 0.0)              # a target to +yaw steers negative
+        self.assertTrue(t["right"]["aligned"])
+        self.assertFalse(t["behind"]["aligned"])
+        self.assertEqual(abs(t["behind"]["steer"]), 1.0)
+        self.assertEqual(t["behindKept"]["turn"], t["behind"]["turn"])   # no flip across the seam
+
+    def test_a_sherman_close_by_outranks_staying_on_foot(self) -> None:
+        c = self.results["change"]
+        self.assertEqual(c["split"], [0.5, 0.5])
+        self.assertGreater(c["sherman"], c["foot"] * 1.25)
+        self.assertGreater(c["near"], 3.0)                      # beats a MoveTo order (2 x 1.5)
+        self.assertEqual(c["nearId"], "s")
+        self.assertLess(c["far"], c["near"])
+        self.assertEqual(c["none"], 0.0)
 
     def test_the_winner_is_moveto_with_no_target(self) -> None:
         self.assertEqual(self.results["moveTo"]["behaviour"], "MoveTo")

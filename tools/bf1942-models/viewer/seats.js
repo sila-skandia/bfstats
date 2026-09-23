@@ -989,6 +989,17 @@ export class TurretRig {
     return 0;
   }
 
+  /** The elevation axis's angle, radians (0 when the rig has none); a bot's
+   *  aim reference beside `headingRadians`. */
+  elevationRadians() {
+    for (const axis of this.axes) {
+      if (axis.axisName === 'pitch') {
+        return THREE.MathUtils.degToRad(axis.angle * RIG_SIGN.pitch);
+      }
+    }
+    return null;
+  }
+
   /**
    * The same traverse, in the ENGINE's sign rather than three.js's — positive
    * to the controlled PCO's right, which is what VHUD-9's
