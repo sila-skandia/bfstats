@@ -166,8 +166,8 @@ import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { createLoadOverlay } from './progress.js';
 import { selectMod } from './mods.js';
 import { Aircraft } from './flight.js';
-import { GroundVehicle } from './ground.js';
-import * as GroundModule from './ground.js';
+import { GroundVehicle } from './wheeled-vehicle.js';
+import { TrackedVehicle } from './tracked-vehicle.js';
 import { Ship } from './ship.js';
 import { FireState } from './seats.js';
 import { GunFire } from './gunfire.js';
@@ -581,7 +581,7 @@ const pageAudio = createPageAudio(bag(
 // seat taken) -- is kept here, keyed by the seat and drive it was built for,
 // and rebuilt when either changes under him (`syncLocalSeat`).
 const vehicles = new VehicleRegistry({
-  classes: { Aircraft, GroundVehicle, TrackedVehicle: GroundModule.TrackedVehicle, Ship },
+  classes: { Aircraft, GroundVehicle, TrackedVehicle, Ship },
   buildDrive: instance => buildHullDrive(instance),
   world: () => level.world,
   guns: null,      // `guns` is built further down; set there
