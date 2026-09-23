@@ -9,7 +9,7 @@ import { playerPosition } from './bot-sense.js';
 import { firingPose, firePlanFor } from './bot-fire.js';
 import { SCOUT, TAKE_COVER, MEDIC } from './bot-behaviours.js';
 import { planeFireMode, PLANE_FIRE } from './bot-vehicle-air.js';
-import { AIM_COUNTS_MAX, wrapAngle, faceTarget } from './bot-aim.js';
+import { AIM_COUNTS_MAX, wrapAngle, faceTarget, turretAimAt, turretMiss, precisionFor, precisionHolds, targetShape } from './bot-aim.js';
 import { BEHAVIOUR } from './bot-decision.js';
 
 /**
@@ -347,11 +347,18 @@ export function execInfantryMoveToDirection(bot, action, dt, now) {
 }
 
 /** `MouseTurretAimAt` (`EntryMouseTurretAimAt`): aim at the target's live
- *  position, the engine's 4-count rate. */
+ *  position, the engine's 4-count rate. A mounted gunner leads it and turns
+ *  through the seat's ControlInfo (bot-aim.js `turretAimAt`). */
 export function execMouseTurretAimAt(bot, action) {
   const p = action.targetId ? bot.world?.players?.get(action.targetId) : null;
   const pos = playerPosition(p) ?? action.targetPos;
   if (!pos) return true;
+  if (bot.vehicle && bot.vehicle.kind !== 'air') {
+    const tv = p?.vehicle?.state?.velocity ?? p?.soldier?.body?.body?.velocity;
+    const vel = tv ? [tv.x ?? tv[0] ?? 0, tv.y ?? tv[1] ?? 0, tv.z ?? tv[2] ?? 0] : [0, 0, 0];
+    const aim = turretAimAt(bot, [pos[0], pos[1] + 1.0, pos[2]], vel);
+    if (aim) { aim.targetId = action.targetId ?? null; return true; }
+  }
   const aim = faceTarget(bot._aimOrigin(), [pos[0], pos[1] + 1.0, pos[2]]);
   bot._aimLook(aim.yaw, aim.pitch, AIM_COUNTS_MAX);
   return true;
@@ -382,6 +389,19 @@ export function execTrigger(bot, action, now) {
   const p = action.targetId ? bot.world?.players?.get(action.targetId) : null;
   const pos = playerPosition(p) ?? action.targetPos;
   if (!pos) return true;
+  // A mounted gunner's aim condition is `BAPCConPrecision` 0x0854b570: the
+  // lead's miss at the impact time within the plan's precision (bot-aim.js).
+  const aim = bot._turretAim;
+  if (bot.vehicle && bot.vehicle.kind !== 'air' && aim && aim.targetId === (action.targetId ?? null)) {
+    const shape = targetShape(p);
+    const weapon = bot.weapons?.[bot.weaponIndex];
+    const miss = turretMiss(bot, aim);
+    action.precisionState ??= {};
+    const holds = precisionHolds(miss, precisionFor(shape.extents, shape.air), !!weapon?.burst, action.precisionState);
+    bot._turretMissDbg = miss;
+    if (holds && bot._lineClear(bot._eye(), [pos[0], pos[1] + 1.0, pos[2]])) bot.isFiring = true;
+    return false;
+  }
   const s = bot.vehicle?.kind === 'air' ? bot._noseReference() : bot._aimReference();
   const want = faceTarget(bot._aimOrigin(), [pos[0], pos[1] + 1.0, pos[2]]);
   const dy = wrapAngle(want.yaw - (s?.yaw ?? bot.yaw));
