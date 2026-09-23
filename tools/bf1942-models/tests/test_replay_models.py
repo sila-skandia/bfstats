@@ -43,6 +43,7 @@ MODULES = {
     "replay-server-log.js": VIEWER / "replay-server-log.js",
     "replay-ui.js": VIEWER / "replay-ui.js",
     "replay-gait.js": VIEWER / "replay-gait.js",
+    "replay-assets.js": VIEWER / "replay-assets.js",
     "flight.js": VIEWER / "flight.js",
     "vehicle-camera.js": VIEWER / "vehicle-camera.js",
     "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",
@@ -140,7 +141,7 @@ class ReplayPropellerTests(unittest.TestCase):
         # The harness proves the law; this pins the call site, so the loader
         # cannot silently stop calling it. (The loader path itself needs a
         # browser — `model()` fetches a glb — so the source is the contract.)
-        source = (VIEWER / "replay.js").read_text()
+        source = (VIEWER / "replay-assets.js").read_text()
         self.assertIn("setReplayPropellerIdle(gltf.scene)", source)
 
 
