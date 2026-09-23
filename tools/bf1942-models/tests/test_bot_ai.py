@@ -355,6 +355,44 @@ class BotAiTests(unittest.TestCase):
         self.assertFalse(p["closeInFront"])                           # 0x08550e70: 10 m half-space
         self.assertLess(p["leadMiss"], 1.0)
 
+    def test_the_plane_aims_like_entry_plane_aim_at_and_gates_like_the_precision_tests(self) -> None:
+        a = self.results["planeAim"]
+        # 0x0861f610: a ground target's Aimer gets no shooter velocity and the
+        # round speed plus the plane's own; the aim is the line of sight; floor 0.5.
+        self.assertEqual(a["groundRelVel"], [0, 0, 0])
+        self.assertAlmostEqual(a["groundSpeed"], 460.0, places=6)
+        self.assertEqual(a["groundFloor"], 0.5)
+        self.assertGreater(a["groundOnLos"], 0.99999)
+        # An air target keeps the relative velocity and the round's own speed.
+        self.assertEqual(a["airSpeed"], 400)
+        self.assertEqual(a["airFloor"], 1.0)
+        self.assertEqual(a["airRelVel"], [0, 0, 60])
+        self.assertLess(a["airOnLos"], 0.9999)
+        # An indirect weapon flies the level bearing.
+        self.assertAlmostEqual(a["bombDir"][1], 0.0, places=9)
+        self.assertAlmostEqual(a["bombDir"][2], -1.0, places=6)
+        self.assertAlmostEqual(a["bombSpeed"], 60.0, places=6)
+        # 0x0854baf0: direct fires inside the precision; the closest approach
+        # fires the tick after the minimum, and not when the minimum was wide.
+        self.assertEqual(a["direct"], [False, True, True, False])
+        self.assertEqual(a["caFire"], [False, False, False, True, False])
+        self.assertEqual(a["caWide"], [False, False, False, False])
+        # 0x0854a8c0: the bomb class also fires on the nearest approach.
+        self.assertTrue(a["bombDirect"])
+        self.assertFalse(a["bombNeither"])
+        self.assertAlmostEqual(a["near"]["miss"], 3.0, places=6)
+        self.assertAlmostEqual(a["near"]["t"], 0.5, places=6)
+        # Out of range neither fires (mode 2's trigger has no range test, but
+        # its attack still starts inside 0.9 R).
+        self.assertFalse(a["mode1"])
+        self.assertFalse(a["mode2"])
+        # 0x0859bfbb / 0x0859beab: the approach and break clearances are 100 m.
+        self.assertEqual(a["approachClearance"], 100.0)
+        self.assertEqual(a["breakClearance"], 100.0)
+        # A seated player is sensed where his seat is.
+        self.assertEqual(a["seated"], [100, 50, -20])
+        self.assertEqual(a["onFoot"], [1, 2, 3])
+
     def test_the_water_map_frees_the_deep_water_and_blocks_the_island(self) -> None:
         w = self.results["water"]
         self.assertEqual(w["deep"], w["free"])

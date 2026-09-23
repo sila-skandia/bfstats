@@ -15,7 +15,8 @@ import { BotController } from './bot.js';
 import { buildNavMap, gridAt, traceClear, CELL_OBJECT } from './nav-grid.js';
 import { Armor } from './armor.js';
 import { tankControl, unitUrgency, changeUrgency, orderSplit, teleportChangeUrgency, driveDecision, TANK, TELEPORT, CHANGE } from './bot-vehicle.js';
-import { towardsPoint, boatControl, boatSpeedControl, BOAT, rotate, attackRunStep, roundMiss, planeFireMode, aimAtDirection, towardsDirectionEngine, stickShape, PLANE_FIRE } from './bot-vehicle-air.js';
+import { towardsPoint, boatControl, boatSpeedControl, BOAT, rotate, attackRunStep, roundMiss, planeFireMode, aimAtDirection, towardsDirectionEngine, stickShape, PLANE_FIRE,
+         planeAimFor, precisionGate, nearestMiss } from './bot-vehicle-air.js';
 import { fireStrength, unitTable, EnemyStrengthTables, engineHeatInfluence, STRENGTH } from './bot-strength.js';
 import { scoreVehicleTargets, scoreTargets, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
 import { freeRun, freeBox, freeLevel, CELL_LAND, CELL_FREE } from './nav-grid.js';
@@ -555,6 +556,49 @@ function planeFireScenario() {
            aimLowPitch: aimLow.pitch, takeoffAirborne: aimTakeoff.airborne, engineMaxErr, shape: [stickShape(0.05), stickShape(-1), stickShape(1)] };
 }
 
+/** `EntryPlaneAimAt` 0x0861f610's two Aimer branches, the precision tests'
+ *  closest-approach variants (`BAPCConPrecision3d` 0x0854baf0,
+ *  `BAPCConBombPrecision3d` 0x0854a8c0), the nearest approach
+ *  (`Aimer::getNearestImpactPoint` 0x08539490), mode 2's missing range test
+ *  and a seated player's position (ledger AI-75..AI-79). */
+function planeAimScenario() {
+  // A soldier 200 m ahead and 40 m below a plane doing 60 m/s level.
+  const rel = [0, -40, -200];
+  const ground = planeAimFor({ rel, velocity: [0, 0, -60], roundSpeed: 400, air: false });
+  const air = planeAimFor({ rel, velocity: [0, 0, -60], roundSpeed: 400, air: true });
+  const bomb = planeAimFor({ rel, velocity: [0, 0, -60], roundSpeed: 0, gravity: -14.73, air: false, indirect: true });
+  const losDot = (d) => { const l = Math.hypot(...rel); return (d[0] * rel[0] + d[1] * rel[1] + d[2] * rel[2]) / l; };
+  // The direct test fires on the tick the miss is inside; the closest
+  // approach holds while the miss shrinks and fires on the tick after its
+  // minimum (the minimum stored, then compared).
+  const direct = [4, 1, 0.5, 2].map(m => precisionGate({}, { m2: m * m, p2: 1 }));
+  const ca = {};
+  const caFire = [4, 2, 0.8, 1.5, 3].map(m => precisionGate(ca, { m2: m * m, p2: 1, closest: true }));
+  const caMissed = {};
+  const caWide = [4, 2, 1.5, 3].map(m => precisionGate(caMissed, { m2: m * m, p2: 1, closest: true }));
+  // The bomb class also takes the whole trajectory's closest approach.
+  const bombDirect = precisionGate({}, { m2: 9, n2: 0.25, p2: 1, bomb: true });
+  const bombNeither = precisionGate({}, { m2: 9, n2: 4, p2: 1, bomb: true });
+  // A round along -z at 400 m/s past a target 200 m out and 3 m aside:
+  // the nearest approach is the 3 m, at 0.5 s.
+  const near = nearestMiss({ rel: [3, 0, -200], dir: [0, 0, -1], speed: 400 });
+  // Mode 2 has no ObjectDistance in its trigger, but its attack (the If
+  // around it) starts inside 0.9 R: out of range neither mode fires.
+  const big = (mode) => attackRunStep({ phase: 'attack' }, { position: [0, 100, 0], forward: [0, 0, -1], velocity: [0, 0, -60],
+    target: [0, 100, -400], maxRange: 300, lineOfFire: true, mode, precision: 10, roundSpeed: 400, burst: true }).fire;
+  // A seated player is where his seat is, not where he boarded.
+  const seated = playerPosition({ soldier: { x: 1, y: 2, z: 3 }, occupancy: { root: {} }, vehicle: {}, position: [100, 50, -20] });
+  const onFoot = playerPosition({ soldier: { x: 1, y: 2, z: 3 }, occupancy: null, vehicle: null, position: [100, 50, -20] });
+  return {
+    groundRelVel: ground.relVel, groundSpeed: ground.speed, groundFloor: ground.throttleFloor, groundOnLos: losDot(ground.dir),
+    airSpeed: air.speed, airFloor: air.throttleFloor, airRelVel: air.relVel, airOnLos: losDot(air.dir),
+    bombDir: bomb.dir, bombSpeed: bomb.speed,
+    direct, caFire, caWide, bombDirect, bombNeither, near, mode1: big(1), mode2: big(2),
+    approachClearance: PLANE_FIRE.approachClearance, breakClearance: PLANE_FIRE.breakClearance,
+    seated, onFoot,
+  };
+}
+
 /** The water map: a sea 20 m deep around a 40 m island, the boats' map
  *  free on the deep water and blocked on the island and its 8 m shelf; the
  *  free run and the free box read the same map. */
@@ -645,6 +689,7 @@ const results = {
   medic: medicScenario(),
   security: securityScenario(),
   air: airScenario(),
+  planeAim: planeAimScenario(),
   tankLaw: tankLawScenario(),
   change: changeScenario(),
   tickDt: WORLD_TICK_DT,

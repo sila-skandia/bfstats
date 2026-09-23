@@ -139,6 +139,9 @@ export function weaponAiOf(entry) {
   return {
     name: entry?.name ?? entry?.aiTemplate ?? 'weapon',
     burst: entry?.burst ?? 0,
+    /** `weaponTemplate.indirect`, the template's byte +1 (ConsoleClass620
+     *  0x08510db0): `EntryPlaneAimAt` levels an aircraft's aim for it. */
+    indirect: entry?.indirect ?? 0,
     deviation: entry?.deviation ?? 5.0,
     deviationCorrectionTime: entry?.deviationCorrectionTime ?? 10.0,
     minRange: entry?.minRange ?? 0.0,
