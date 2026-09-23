@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { BodyWorld } from './body-world.js';
 import { buildParkedVehicle, describeVehicleParts } from './vehicle-bodies.js';
 import { equilibriumRootY, floatNodesOf, localiseFloats, FloatingHull } from './body-float.js';
+import { bodyPoseOf, bodyTerrain } from './body-pose.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -66,34 +67,6 @@ export function createHullBodies(page) {
         .then(r => r.ok ? r.json() : null);
     } catch { hullBodies.collisionMeshes = null; }
     return hullBodies.collisionMeshes;
-  }
-
-  /** A node's world pose as the body modules' `position` + row `axes`. */
-  function bodyPoseOf(node) {
-    node.updateWorldMatrix(true, false);
-    const e = node.matrixWorld.elements;
-    return {
-      position: [e[12], e[13], e[14]],
-      axes: [[e[0], e[1], e[2]], [e[4], e[5], e[6]], [e[8], e[9], e[10]]],
-    };
-  }
-
-  /** The heightfield as the three functions the body modules ask of the ground. */
-  function bodyTerrain(heightfield, waterLevel) {
-    const normal = [0, 1, 0];
-    return {
-      height: (x, z) => {
-        const h = heightfield.height(x, z);
-        return Number.isFinite(h) ? h : -Infinity;
-      },
-      normal: (x, z, out) => {
-        heightfield.normal(x, z, normal);
-        out[0] = normal[0]; out[1] = normal[1]; out[2] = normal[2];
-        return out;
-      },
-      material: (x, z) => heightfield.material(x, z),
-      waterLevel: Number.isFinite(waterLevel) ? waterLevel : null,
-    };
   }
 
   /**
