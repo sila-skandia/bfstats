@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { findAllVehicleRoots, listEntryPoints, readWorldPose, pickNearest } from './seats.js';
-import { FOV_DEG as FOOT_FOV } from './soldier.js';
 
 /**
  * Walking up to a seat, getting in and getting out: the door list and the
@@ -8,13 +7,12 @@ import { FOV_DEG as FOOT_FOV } from './soldier.js';
  *
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
- * `aircraft`, `car`, `collider`, `currentRoot`, `driveFwd`,
- * `getTouchHudText`, `guns`, `handWeapon`, `hud`, `HUD_FOOT`,
- * `isTouchDevice`, `leaveSeat`, `mannedActive`, `netSeatRow`,
- * `netSendAction`, `occupancy`, `optOnFoot`, `optPilot`, `placeCamera`,
- * `releaseButtons`, `resetMobileControls`, `seatHolder`, `setPilot`,
- * `soldier`, `updateHud`, `updateMobileControls`, `useLens`,
- * `vehicleSpawnActive`, `world`.
+ * `aircraft`, `car`, `collider`, `currentRoot`, `drawWeapon`, `driveFwd`,
+ * `getTouchHudText`, `holster`, `hud`, `HUD_FOOT`, `isTouchDevice`,
+ * `leaveSeat`, `mannedActive`, `netSeatRow`, `netSendAction`, `occupancy`,
+ * `optOnFoot`, `optPilot`, `placeCamera`, `releaseButtons`,
+ * `resetMobileControls`, `seatHolder`, `setPilot`, `soldier`, `updateHud`,
+ * `updateMobileControls`, `useLens`, `vehicleSpawnActive`, `world`.
  */
 export function createVehicleEntry(page) {
   const vehicleEntry = {};
@@ -130,16 +128,7 @@ export function createVehicleEntry(page) {
    * on-foot FOV.
    */
   function enterVehicle(entry) {
-    if (page.handWeapon) {
-      if (page.handWeapon.group) page.guns.setFiring(page.handWeapon.group, false);
-      page.handWeapon.rig.visible = false;
-      // Holstering drops zoom — `HandFireArms::disable` (lnxded 0x08293da0)
-      // calls setZoom(false) — and the eased FOV factor goes home with it.
-      page.handWeapon.zoomed = false;
-      page.handWeapon.rezoom = 0;
-      page.handWeapon.fovCur = 1;
-      page.handWeapon.worldFov = FOOT_FOV;
-    }
+    page.holster();
     // A button held through the climb in must not arrive already pulling the
     // vehicle's trigger — nor, on the way back out, the soldier's.
     page.releaseButtons();
@@ -159,7 +148,7 @@ export function createVehicleEntry(page) {
       // null for one), so this is defensive rather than a real refusal path
       // any of the vehicles this round targets can hit.
       page.useLens('foot');
-      if (page.handWeapon) page.handWeapon.rig.visible = true;
+      page.drawWeapon();
       page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : page.HUD_FOOT;
     }
     page.resetMobileControls();
@@ -242,7 +231,7 @@ export function createVehicleEntry(page) {
         page.soldier.spawn(exit.x, exit.y, exit.z, exit.yaw);
       }
       page.useLens('foot');
-      if (page.handWeapon) page.handWeapon.rig.visible = true;
+      page.drawWeapon();
       page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : page.HUD_FOOT;
     } else {
       // Nobody was waiting in the seat — the pilot box was ticked from free
@@ -307,7 +296,7 @@ export function createVehicleEntry(page) {
       page.soldier.collider = page.collider;
       page.soldier.spawn(exit.x, exit.y, exit.z, exit.yaw);
       page.useLens('foot');
-      if (page.handWeapon) page.handWeapon.rig.visible = true;
+      page.drawWeapon();
       page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : page.HUD_FOOT;
     } else {
       page.placeCamera();

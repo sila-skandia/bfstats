@@ -13,8 +13,8 @@ import { Armor } from './armor.js';
  * reassigns is read live):
  * `capture`, `deployActive`, `deployKitHits`, `deployResumeBtn`,
  * `deployScoreBtn`, `deploySuicideBtn`, `deployTabs`, `discardSoldier`,
- * `disposeHandWeapon`, `drawFullMap`, `ensureHandWeapon`, `flags`,
- * `flashHud`, `fullmapBox`, `fullmapCanvas`, `handWeapon`, `kitRowLabelFor`,
+ * `disposeHandWeapon`, `drawFullMap`, `drawWeapon`, `ensureHandWeapon`,
+ * `flags`, `flashHud`, `fullmapBox`, `fullmapCanvas`, `kitRowLabelFor`,
  * `kitRowLayoutText`, `layoutDeploy`, `leavePilot`, `LOCAL_PLAYER`,
  * `markOnFoot`, `netReconciler`, `netSendAction`, `netTickPoses`,
  * `paintDeployChrome`, `paintDeploySoon`, `params`, `placeCamera`,
@@ -98,7 +98,7 @@ export function createSpawning(page) {
     // and `killOccupantInWreck` deliberately does not raise it); the fresh body
     // has his weapon in hand again. `loadHandWeapon` builds a visible rig, so
     // this only matters on the same-weapon path `ensureHandWeapon` short-cuts.
-    if (page.handWeapon) page.handWeapon.rig.visible = true;
+    page.drawWeapon();
     // A fresh body somewhere else entirely: the eye must not sweep there.
     page.snapPresentation();
     page.flashHud(`${flag.name} · ${spawn.name}`);

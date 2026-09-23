@@ -255,15 +255,10 @@ export function createLevelTerrain(page) {
       : null;
     page.world.setCollider(terrain.collider);
     page.world.damageTables = terrain.damageTables;
-    page.guns.collider = terrain.collider;
-    page.guns.damageEffects = terrain.damageTables?.effects || null;
-    page.guns.projectileMaterials = terrain.damageTables?.projectiles || null;
-    page.guns.materials = terrain.damageTables?.materials || null;
-    // The `damageMod` matrix. Without it a round's damage is only its material's
-    // base times the distance falloff, which is the same number for a rifle
-    // shooting a Tiger as for a Panzerfaust — the modifier is the whole reason
-    // small arms do not kill armour.
-    page.guns.modifiers = terrain.damageTables?.modifiers || null;
+    // The `damageMod` matrix rides in with the tables. Without it a round's
+    // damage is only its material's base times the distance falloff, which is
+    // the same number for a rifle shooting a Tiger as for a Panzerfaust.
+    page.guns.useLevel(terrain.collider, terrain.damageTables);
     // Pools and all: a mesh particle's materials are built under the level's
     // lighting, and show() warms a fresh set once this level's fog is up.
     page.effects.flush();
