@@ -29,6 +29,7 @@ HARNESS = Path(__file__).resolve().parent / "gunfire_layers_harness.mjs"
 
 MODULES = {
     "gunfire.js": VIEWER / "gunfire.js",
+    "round-visuals.js": VIEWER / "round-visuals.js",
     # `bomb-release.js` (the salvo arithmetic, the release speed and the
     # drag law) and `torpedo-run.js` (an aircraft torpedo's water run),
     # both reached through gunfire.js / seats.js.
