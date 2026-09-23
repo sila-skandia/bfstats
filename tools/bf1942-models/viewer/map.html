@@ -175,7 +175,6 @@ import { FOV_DEG as FOOT_FOV } from './soldier.js';
 import { createReplayController, recordingLevel } from './replay.js';
 import { Armor } from './armor.js';
 import { VehicleDamageSet } from './vehicle-damage.js';
-import { effectNameFor } from './crash-damage.js';
 import { CombatArea } from './combat-area.js';
 import { loadHudPaths } from './hud-pack.js';
 import { VehicleRegistry } from './vehicle-instance.js';
@@ -645,23 +644,35 @@ const audioSeatKey = playerId => (playerId === LOCAL_PLAYER ? 'local' : `bot:${p
 const localPlayer = createLocalPlayer({
   get buildSpawnFlags() { return spawning.buildSpawnFlags; }, get camera() { return camera; },
   get captureBotPresentationTick() { return botBodies.captureBotPresentationTick; },
+  get captured() { return pageInput.captured; },
+  get clampMobileInput() { return pageInput.clampMobileInput; },
   get clearVehicleHud() { return hudFeed.clearVehicleHud; },
   get collider() { return level.collider; }, get currentRoot() { return level.currentRoot; },
+  get damageTables() { return level.damageTables; },
   get deployActive() { return deployScreen.deployActive; },
   get deployTeamId() { return spawning.deployTeamId; },
   get disposeHandWeapon() { return soldierKit.disposeHandWeapon; },
-  get disposeSeatPose() { return seatPose.disposeSeatPose; },
+  get disposeSeatPose() { return seatPose.disposeSeatPose; }, get effects() { return effects; },
+  get EMPTY_KEYS() { return soldierView.EMPTY_KEYS; },
+  get feedMobileTurretAim() { return pageInput.feedMobileTurretAim; },
   get feedVehicleHud() { return hudFeed.feedVehicleHud; },
   get footView3p() { return soldierView.footView3p; },
   get getTouchHudText() { return getTouchHudText; },
   get groundHeight() { return level.groundHeight; }, get guns() { return guns; },
+  get handleSoldierFootstep() { return pageAudio.handleSoldierFootstep; },
   get handWeapon() { return soldierKit.handWeapon; }, get hud() { return hud; },
   get HUD_FLY() { return HUD_FLY; }, get HUD_FOOT() { return pageInput.HUD_FOOT; },
-  get hudBridge() { return hudBridge; }, get isCollision() { return level.isCollision; },
-  get isTouchDevice() { return isTouchDevice; }, get isZoomed() { return soldierKit.isZoomed; },
-  get kbLockLeave() { return pageInput.kbLockLeave; },
+  get hudBridge() { return hudBridge; },
+  get hullCollisionMaterial() { return hullBodies.hullCollisionMaterial; },
+  get isCollision() { return level.isCollision; }, get isTouchDevice() { return isTouchDevice; },
+  get isZoomed() { return soldierKit.isZoomed; },
+  get kbLockLeave() { return pageInput.kbLockLeave; }, get keys() { return pageInput.keys; },
   get loadSeatPose() { return seatPose.loadSeatPose; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
   get look() { return pageInput.look; }, get LOOK_SENS() { return LOOK_SENS; },
+  get mobileJumpHeld() { return pageInput.mobileJumpHeld; },
+  get mobilePadAxis() { return pageInput.mobilePadAxis; },
+  get mobilePadHeld() { return pageInput.mobilePadHeld; },
+  get mobilePadVector() { return pageInput.mobilePadVector; },
   get netSeatRow() { return room.netSeatRow; }, get netSendAction() { return room.netSendAction; },
   get netTickPoses() { return room.netTickPoses; },
   get netVehicleIdFor() { return room.netVehicleIdFor; },
@@ -673,11 +684,13 @@ const localPlayer = createLocalPlayer({
   get releaseButtons() { return pageInput.releaseButtons; },
   get resetCaptureUi() { return flagCapture.resetCaptureUi; },
   get resetMobileControls() { return pageInput.resetMobileControls; },
-  get roomJoined() { return room.roomJoined; }, get seatHolder() { return botUnits.seatHolder; },
+  get roomJoined() { return room.roomJoined; }, get seatAltFire() { return pageInput.seatAltFire; },
+  get seatFire() { return pageInput.seatFire; }, get seatHolder() { return botUnits.seatHolder; },
   get showFlagPicker() { return spawning.showFlagPicker; },
   get showView() { return hudFeed.showView; }, get spawnAtFlag() { return spawning.spawnAtFlag; },
   get syncFootView() { return soldierView.syncFootView; },
   get toggleFullMap() { return mapSurfaces.toggleFullMap; },
+  get touchFlying() { return pageInput.touchFlying; },
   get triggerHitIndicator() { return hudFeed.triggerHitIndicator; },
   get updateHud() { return updateHud; },
   get updateMobileControls() { return pageInput.updateMobileControls; },
@@ -1602,77 +1615,7 @@ function frame(dt) {
   // so the look stage and the sim can never drift apart (Fix 5). A frame
   // before any level has built the world owes no ticks.
   const lookTicks = world?.lookTicks(dt) ?? 0;
-  let input = null;
-  let look = null;
-  if (seated) {
-    // The pad's deflection must land in the device stage BEFORE the pump
-    // turns the counts into an axis, or this frame's pad aim arrives a
-    // frame late (the page's original feed-then-pump order).
-    pageInput.feedMobileTurretAim(dt);
-    localPlayer.pumpLook(lookTicks);
-    const held = pageInput.captured ? pageInput.keys : soldierView.EMPTY_KEYS;
-    // The engine's PlayerInput, named by action: the same keys, mouse
-    // latches and mobile pad this page has always folded. `forwardKeys` and
-    // `rudder` are the raw W/S and A/D pairs the aircraft's stick wants —
-    // ground vehicles steer and throttle with the pad folded in
-    // (`forward`/`strafe`), while the plane's roll and pitch arrive from the
-    // pad separately.
-    input = {
-      forward: pageInput.clampMobileInput(
-        ((held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0))
-        + pageInput.mobilePadAxis('y')),
-      forwardKeys: (held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0),
-      strafe: pageInput.clampMobileInput(
-        ((held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0))
-        + pageInput.mobilePadAxis('x')),
-      rudder: (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0),
-      fire: held.has('Space') || pageInput.seatFire,
-      altFire: pageInput.seatAltFire,
-      roll: pageInput.mobilePadHeld ? pageInput.mobilePadVector.x
-        : (held.has('ArrowRight') ? 1 : 0) - (held.has('ArrowLeft') ? 1 : 0),
-      pitch: pageInput.mobilePadHeld ? pageInput.mobilePadVector.y
-        : (held.has('ArrowUp') ? 1 : 0) - (held.has('ArrowDown') ? 1 : 0),
-      pad: pageInput.mobilePadHeld,
-    };
-    look = { x: localPlayer.mouseInput.x, y: localPlayer.mouseInput.y };
-  } else if (onFoot) {
-    localPlayer.pumpLook(lookTicks);
-    const held = pageInput.captured ? pageInput.keys : soldierView.EMPTY_KEYS;
-    // Hoisted so footFire can hand the deviation model the same
-    // c_PIThrottle / c_PIYaw values the body integrates — the engine's speed
-    // gates read the *input*, not the achieved velocity.
-    input = {
-      forward: pageInput.clampMobileInput(
-        ((held.has('KeyW') || pageInput.touchFlying ? 1 : 0) - (held.has('KeyS') ? 1 : 0))
-        + pageInput.mobilePadAxis('y')),
-      strafe: pageInput.clampMobileInput(
-        ((held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0))
-        + pageInput.mobilePadAxis('x')),
-      walk: held.has('ShiftLeft') || held.has('ShiftRight'),
-      crouch: held.has('ControlLeft') || held.has('ControlRight'),
-      prone: localPlayer.prone,
-      jump: held.has('Space') || pageInput.mobileJumpHeld,
-      // `c_PIMenuSelect9`, input bit 22 -> TemplateMessage 18 ->
-      // `BFSoldier::setIsParachuting(true)`. It is the kit's ninth item slot
-      // and the engine gives it a second job on a falling soldier; see
-      // `parachute.js`. Both the digit row and the numpad, because a bail-out
-      // is a two-second window. On a touch device the JUMP button doubles as
-      // the ripcord while the state machine says you are falling — a jump is
-      // worth nothing in mid-air, and a bail-out is no time to hunt for a
-      // control that would otherwise have to be added to the pad.
-      deploy: held.has('Digit9') || held.has('Numpad9') || localPlayer.debugDeployHeld
-        || (pageInput.mobileJumpHeld && localPlayer.soldier?.parachuteState === 'falling'),
-      dead: localPlayer.soldierDead,
-    };
-    // A dead body holds still: when `soldierDead` latches (death cam active)
-    // zero the steering/jump input so the corpse does not keep walking.
-    if (localPlayer.soldierDead) {
-      input.forward = input.strafe = 0;
-      input.jump = false;
-      input.crouch = input.prone = false;
-    }
-    look = localPlayer.footLookPair();
-  }
+  const { input, look } = localPlayer.sampleInput(seated, onFoot, lookTicks, dt);
   world?.setInput(LOCAL_PLAYER, input, look);
   localPlayer.frameInputLast = input;
 
@@ -1695,49 +1638,9 @@ function frame(dt) {
   // directly (the on-foot eye) or through the scene graph (every seat).
   localPlayer.presentAlpha = step.alpha;
   localPlayer.applyVehicleInterp(localPlayer.presentAlpha);
-  // Bail-out triggers for the frame. `parachute.js` names each one by the
-  // engine's own sound trigger (`c_SstFallingHigh`, `c_SstOpenParachute`,
-  // `c_SstParachuteLand`) and animation state; nothing plays them yet — the
-  // samples are not in the published `_shared/sounds` tree — so this keeps
-  // them where a check and a future audio stage can both read them.
-  if (localPlayer.soldier?.parachuteEvents.length) {
-    for (const event of localPlayer.soldier.drainParachuteEvents()) localPlayer.parachuteLog.push(event);
-    if (localPlayer.parachuteLog.length > 64) localPlayer.parachuteLog.splice(0, localPlayer.parachuteLog.length - 64);
-  }
-  if (localPlayer.soldier?.footstepEvents.length) {
-    for (const step of localPlayer.soldier.drainFootstepEvents()) pageAudio.handleSoldierFootstep(step);
-  }
+  localPlayer.drainSoldierEvents();
 
-  // The room's wire, right on the sim core's edge: one input word per tick
-  // the world consumed (the engine's one-buffered-input-per-tick law — the
-  // same input this page just handed the local sim; an unticked frame sends
-  // nothing). A frame longer than 33 ms ran several local ticks against this
-  // word (world.js `#consume`), so it owes the server that many: one word a
-  // frame would leave the authority's catch-up ticks on its zeroed idle word,
-  // which is a held trigger released every frame below 30 fps. Then the
-  // renderer draws the server-confirmed remotes after the local world's
-  // readbacks.
-  if (room.roomJoined && input) {
-    // The ledger's tail holds this frame's ticks (capturePresentationTick
-    // pushed one triple each); each word is recorded against the pose of the
-    // tick it belongs to, so the authority's `ack` lands on the right one.
-    const owed = Math.min(step.ticks, Math.floor(room.netTickPoses.length / 3));
-    const base = room.netTickPoses.length - owed * 3;
-    for (let i = 0; i < step.ticks; i++) {
-      const seq = room.roomClient.sendInput(input, look);
-      const at = base + i * 3;
-      if (seq && i < owed) {
-        room.netReconciler?.recordTick(seq, room.netTickPoses[at], room.netTickPoses[at + 1],
-          room.netTickPoses[at + 2]);
-      }
-    }
-  }
-  // The ledger is per frame: whatever this frame's ticks produced has either
-  // been recorded against a seq or belongs to a frame that sent nothing.
-  if (room.netTickPoses.length) room.netTickPoses.length = 0;
-  if (room.roomJoined && room.roomRenderer) {
-    room.roomRenderer.update(dt, room.roomClient, performance.now());
-  }
+  room.sendTickInputs(step.ticks, input, look, dt);
 
   // The readbacks: the HP-15 gate answer the camera shells and the mobile UI
   // spend, the combat-area frame for the warning group and the `?data` hook,
@@ -1754,66 +1657,7 @@ function frame(dt) {
 
   // ---- the cameras and the rest of the presentation -------------------------
   if (seated) {
-    // Round 3's first disclosed gap: the occupied vehicle's own drivetrain
-    // physics steps every tick it exists, no matter which of its seats is
-    // actually active — the world's occupied-vehicle step runs for the whole
-    // time the player is mounted, so a nested seat (the Sherman's hull
-    // gunner) leaves the hull coasting on its existing momentum rather than
-    // freezing it. A bare gun/seat root has no drivetrain either way —
-    // `aircraft`/`car` both stay null for one — so neither camera call does
-    // anything for it.
-    if (localPlayer.aircraft) localPlayer.pilot(dt);
-    else if (localPlayer.car) localPlayer.drive(dt);
-    else if (!localPlayer.mannedActive()) localPlayer.passenger(dt);
-    // Beaching groan: when the ship's keel first touches the seabed, play the
-    // collision effect for the seabed's material against the hull's — the
-    // same `effects[attGroup][defGroup]` cell `onCrashDamage` reads
-    // (`crash-damage.js` `effectNameFor`), attacker = terrain under the keel,
-    // victim = the hull's own collision material. Fires regardless of the
-    // damage threshold — the real game sounds every ground contact even when
-    // the speed is too low to score damage — and bills nothing (W9-A:
-    // beaching costs no hit points). Single groan on the beach frame only;
-    // the script's layers are one-shots, so a grind loop while sliding would
-    // need new machinery — not built here. No `speed`: the picture's `speed`
-    // is the emitter clock, and `EngineAudio` has no `Effect::Speed` channel
-    // (an `extern` source it never feeds), so the scrape plays at its
-    // authored level with `beachSpeed` as the gate, not the gain.
-    if (localPlayer.aircraft?.beachedThisTick && localPlayer.aircraft.beachSpeed > 0.5) {
-      const p = localPlayer.aircraft.state.position;
-      const terrainId = level.collider?.heightfield?.material
-        ? level.collider.heightfield.material(p.x, p.z) : 0;
-      const hullId = hullBodies.hullCollisionMaterial(localPlayer.aircraft.node);
-      const effect = effectNameFor(level.damageTables, terrainId, hullId);
-      if (effect) effects.play(effect, {
-        position: [p.x, p.y, p.z],
-        normal: [0, 1, 0],
-      });
-    }
-    if (localPlayer.mannedActive()) {
-      // A bare gun/seat root, or a nested seat of a vehicle whose own root
-      // `pilot`/`drive` just took its physics step above — the camera and
-      // the trigger are `manned()`'s alone from here, checked after so the
-      // two paths never both claim the camera the same frame.
-      //
-      // FOV correction lives here, not a one-time set on entry: switching seats
-      // moves between a manned gun and a drivetrain root without ever calling
-      // `enterVehicle` again, and neither `pilot()`/`drive()` nor `VehicleCamera`
-      // (outside this track) touch `camera.fov` at all, so whichever mode ran
-      // last otherwise leaves its FOV behind for the next one. Guarded on an
-      // actual change so a held seat costs one float compare, not an
-      // `updateProjectionMatrix()`, every frame.
-      // Inside the gun's own FOV; an external view of the same seat is the
-      // world's, the same as the driver's chase.
-      const wantFov = localPlayer.view && !localPlayer.view.inside ? localPlayer.FLY_FOV : localPlayer.MANNED_GUN_FOV;
-      if (camera.fov !== wantFov) {
-        camera.fov = wantFov;
-        camera.updateProjectionMatrix();
-      }
-      localPlayer.manned(dt);
-    } else if (camera.fov !== localPlayer.FLY_FOV) {
-      camera.fov = localPlayer.FLY_FOV;
-      camera.updateProjectionMatrix();
-    }
+    localPlayer.seatedCamera(dt);
   } else if (onFoot) {
     soldierView.onFootCamera(dt);
   } else {

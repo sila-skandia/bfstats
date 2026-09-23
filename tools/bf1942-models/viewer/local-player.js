@@ -18,25 +18,30 @@ import { CHASE_BEHIND, CHASE_AHEAD, boundingRadius, chaseTarget, chaseStep, chas
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
 import { calculateHitOctant } from './hud.js';
 import { Armor } from './armor.js';
+import { effectNameFor } from './crash-damage.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `buildSpawnFlags`, `camera`, `captureBotPresentationTick`,
- * `clearVehicleHud`, `collider`, `currentRoot`, `deployActive`,
- * `deployTeamId`, `disposeHandWeapon`, `disposeSeatPose`, `feedVehicleHud`,
- * `footView3p`, `getTouchHudText`, `groundHeight`, `guns`, `handWeapon`,
- * `hud`, `HUD_FLY`, `HUD_FOOT`, `hudBridge`, `isCollision`, `isTouchDevice`,
- * `isZoomed`, `kbLockLeave`, `loadSeatPose`, `LOCAL_PLAYER`, `look`,
- * `LOOK_SENS`, `netSeatRow`, `netSendAction`, `netTickPoses`,
+ * `buildSpawnFlags`, `camera`, `captureBotPresentationTick`, `captured`,
+ * `clampMobileInput`, `clearVehicleHud`, `collider`, `currentRoot`,
+ * `damageTables`, `deployActive`, `deployTeamId`, `disposeHandWeapon`,
+ * `disposeSeatPose`, `effects`, `EMPTY_KEYS`, `feedMobileTurretAim`,
+ * `feedVehicleHud`, `footView3p`, `getTouchHudText`, `groundHeight`, `guns`,
+ * `handleSoldierFootstep`, `handWeapon`, `hud`, `HUD_FLY`, `HUD_FOOT`,
+ * `hudBridge`, `hullCollisionMaterial`, `isCollision`, `isTouchDevice`,
+ * `isZoomed`, `kbLockLeave`, `keys`, `loadSeatPose`, `LOCAL_PLAYER`, `look`,
+ * `LOOK_SENS`, `mobileJumpHeld`, `mobilePadAxis`, `mobilePadHeld`,
+ * `mobilePadVector`, `netSeatRow`, `netSendAction`, `netTickPoses`,
  * `netVehicleIdFor`, `noteOccupiedVehicle`, `optOnFoot`, `optPilot`,
  * `params`, `pickVehicle`, `placeCamera`, `playSoldierHurtSound`,
  * `releaseButtons`, `resetCaptureUi`, `resetMobileControls`, `roomJoined`,
- * `seatHolder`, `showFlagPicker`, `showView`, `spawnAtFlag`, `syncFootView`,
- * `toggleFullMap`, `triggerHitIndicator`, `updateHud`,
- * `updateMobileControls`, `updateSeatPoseVisibility`, `vehicleInput`,
- * `vehicles`, `vehicleSpawnActive`, `warmSubtree`, `world`.
+ * `seatAltFire`, `seatFire`, `seatHolder`, `showFlagPicker`, `showView`,
+ * `spawnAtFlag`, `syncFootView`, `toggleFullMap`, `touchFlying`,
+ * `triggerHitIndicator`, `updateHud`, `updateMobileControls`,
+ * `updateSeatPoseVisibility`, `vehicleInput`, `vehicles`,
+ * `vehicleSpawnActive`, `warmSubtree`, `world`.
  */
 export function createLocalPlayer(page) {
   const localPlayer = {
@@ -1679,6 +1684,166 @@ export function createLocalPlayer(page) {
     page.camera.position.copy(pose.position);
     page.camera.quaternion.copy(pose.quaternion);
   }
+
+
+  /** This frame's input word and look pair for the local player: seated,
+   *  on foot, or nothing (the free camera). The keyboard and the mouse never
+   *  leave the page; this folds them into the engine's PlayerInput, named by
+   *  action. */
+  localPlayer.sampleInput = (seated, onFoot, lookTicks, dt) => {
+    let input = null;
+    let look = null;
+    if (seated) {
+      // The pad's deflection must land in the device stage BEFORE the pump
+      // turns the counts into an axis, or this frame's pad aim arrives a
+      // frame late (the page's original feed-then-pump order).
+      page.feedMobileTurretAim(dt);
+      localPlayer.pumpLook(lookTicks);
+      const held = page.captured ? page.keys : page.EMPTY_KEYS;
+      // The engine's PlayerInput, named by action: the same keys, mouse
+      // latches and mobile pad this page has always folded. `forwardKeys` and
+      // `rudder` are the raw W/S and A/D pairs the aircraft's stick wants —
+      // ground vehicles steer and throttle with the pad folded in
+      // (`forward`/`strafe`), while the plane's roll and pitch arrive from the
+      // pad separately.
+      input = {
+        forward: page.clampMobileInput(
+          ((held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0))
+          + page.mobilePadAxis('y')),
+        forwardKeys: (held.has('KeyW') ? 1 : 0) - (held.has('KeyS') ? 1 : 0),
+        strafe: page.clampMobileInput(
+          ((held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0))
+          + page.mobilePadAxis('x')),
+        rudder: (held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0),
+        fire: held.has('Space') || page.seatFire,
+        altFire: page.seatAltFire,
+        roll: page.mobilePadHeld ? page.mobilePadVector.x
+          : (held.has('ArrowRight') ? 1 : 0) - (held.has('ArrowLeft') ? 1 : 0),
+        pitch: page.mobilePadHeld ? page.mobilePadVector.y
+          : (held.has('ArrowUp') ? 1 : 0) - (held.has('ArrowDown') ? 1 : 0),
+        pad: page.mobilePadHeld,
+      };
+      look = { x: localPlayer.mouseInput.x, y: localPlayer.mouseInput.y };
+    } else if (onFoot) {
+      localPlayer.pumpLook(lookTicks);
+      const held = page.captured ? page.keys : page.EMPTY_KEYS;
+      // Hoisted so footFire can hand the deviation model the same
+      // c_PIThrottle / c_PIYaw values the body integrates — the engine's speed
+      // gates read the *input*, not the achieved velocity.
+      input = {
+        forward: page.clampMobileInput(
+          ((held.has('KeyW') || page.touchFlying ? 1 : 0) - (held.has('KeyS') ? 1 : 0))
+          + page.mobilePadAxis('y')),
+        strafe: page.clampMobileInput(
+          ((held.has('KeyD') ? 1 : 0) - (held.has('KeyA') ? 1 : 0))
+          + page.mobilePadAxis('x')),
+        walk: held.has('ShiftLeft') || held.has('ShiftRight'),
+        crouch: held.has('ControlLeft') || held.has('ControlRight'),
+        prone: localPlayer.prone,
+        jump: held.has('Space') || page.mobileJumpHeld,
+        // `c_PIMenuSelect9`, input bit 22 -> TemplateMessage 18 ->
+        // `BFSoldier::setIsParachuting(true)`. It is the kit's ninth item slot
+        // and the engine gives it a second job on a falling soldier; see
+        // `parachute.js`. Both the digit row and the numpad, because a bail-out
+        // is a two-second window. On a touch device the JUMP button doubles as
+        // the ripcord while the state machine says you are falling — a jump is
+        // worth nothing in mid-air, and a bail-out is no time to hunt for a
+        // control that would otherwise have to be added to the pad.
+        deploy: held.has('Digit9') || held.has('Numpad9') || localPlayer.debugDeployHeld
+          || (page.mobileJumpHeld && localPlayer.soldier?.parachuteState === 'falling'),
+        dead: localPlayer.soldierDead,
+      };
+      // A dead body holds still: when `soldierDead` latches (death cam active)
+      // zero the steering/jump input so the corpse does not keep walking.
+      if (localPlayer.soldierDead) {
+        input.forward = input.strafe = 0;
+        input.jump = false;
+        input.crouch = input.prone = false;
+      }
+      look = localPlayer.footLookPair();
+    }
+    return { input, look };
+  };
+
+  /** The soldier's own event queues, drained once a frame. */
+  localPlayer.drainSoldierEvents = () => {
+    // Bail-out triggers for the frame. `parachute.js` names each one by the
+    // engine's own sound trigger (`c_SstFallingHigh`, `c_SstOpenParachute`,
+    // `c_SstParachuteLand`) and animation state; nothing plays them yet — the
+    // samples are not in the published `_shared/sounds` tree — so this keeps
+    // them where a check and a future audio stage can both read them.
+    if (localPlayer.soldier?.parachuteEvents.length) {
+      for (const event of localPlayer.soldier.drainParachuteEvents()) localPlayer.parachuteLog.push(event);
+      if (localPlayer.parachuteLog.length > 64) localPlayer.parachuteLog.splice(0, localPlayer.parachuteLog.length - 64);
+    }
+    if (localPlayer.soldier?.footstepEvents.length) {
+      for (const step of localPlayer.soldier.drainFootstepEvents()) page.handleSoldierFootstep(step);
+    }
+  };
+
+  /** The seated player's cameras and the rest of the seat's presentation. */
+  localPlayer.seatedCamera = dt => {
+    // Round 3's first disclosed gap: the occupied vehicle's own drivetrain
+    // physics steps every tick it exists, no matter which of its seats is
+    // actually active — the world's occupied-vehicle step runs for the whole
+    // time the player is mounted, so a nested seat (the Sherman's hull
+    // gunner) leaves the hull coasting on its existing momentum rather than
+    // freezing it. A bare gun/seat root has no drivetrain either way —
+    // `aircraft`/`car` both stay null for one — so neither camera call does
+    // anything for it.
+    if (localPlayer.aircraft) localPlayer.pilot(dt);
+    else if (localPlayer.car) localPlayer.drive(dt);
+    else if (!localPlayer.mannedActive()) localPlayer.passenger(dt);
+    // Beaching groan: when the ship's keel first touches the seabed, play the
+    // collision effect for the seabed's material against the hull's — the
+    // same `effects[attGroup][defGroup]` cell `onCrashDamage` reads
+    // (`crash-damage.js` `effectNameFor`), attacker = terrain under the keel,
+    // victim = the hull's own collision material. Fires regardless of the
+    // damage threshold — the real game sounds every ground contact even when
+    // the speed is too low to score damage — and bills nothing (W9-A:
+    // beaching costs no hit points). Single groan on the beach frame only;
+    // the script's layers are one-shots, so a grind loop while sliding would
+    // need new machinery — not built here. No `speed`: the picture's `speed`
+    // is the emitter clock, and `EngineAudio` has no `Effect::Speed` channel
+    // (an `extern` source it never feeds), so the scrape plays at its
+    // authored level with `beachSpeed` as the gate, not the gain.
+    if (localPlayer.aircraft?.beachedThisTick && localPlayer.aircraft.beachSpeed > 0.5) {
+      const p = localPlayer.aircraft.state.position;
+      const terrainId = page.collider?.heightfield?.material
+        ? page.collider.heightfield.material(p.x, p.z) : 0;
+      const hullId = page.hullCollisionMaterial(localPlayer.aircraft.node);
+      const effect = effectNameFor(page.damageTables, terrainId, hullId);
+      if (effect) page.effects.play(effect, {
+        position: [p.x, p.y, p.z],
+        normal: [0, 1, 0],
+      });
+    }
+    if (localPlayer.mannedActive()) {
+      // A bare gun/seat root, or a nested seat of a vehicle whose own root
+      // `pilot`/`drive` just took its physics step above — the camera and
+      // the trigger are `manned()`'s alone from here, checked after so the
+      // two paths never both claim the camera the same frame.
+      //
+      // FOV correction lives here, not a one-time set on entry: switching seats
+      // moves between a manned gun and a drivetrain root without ever calling
+      // `enterVehicle` again, and neither `pilot()`/`drive()` nor `VehicleCamera`
+      // (outside this track) touch `camera.fov` at all, so whichever mode ran
+      // last otherwise leaves its FOV behind for the next one. Guarded on an
+      // actual change so a held seat costs one float compare, not an
+      // `updateProjectionMatrix()`, every frame.
+      // Inside the gun's own FOV; an external view of the same seat is the
+      // world's, the same as the driver's chase.
+      const wantFov = localPlayer.view && !localPlayer.view.inside ? localPlayer.FLY_FOV : localPlayer.MANNED_GUN_FOV;
+      if (page.camera.fov !== wantFov) {
+        page.camera.fov = wantFov;
+        page.camera.updateProjectionMatrix();
+      }
+      localPlayer.manned(dt);
+    } else if (page.camera.fov !== localPlayer.FLY_FOV) {
+      page.camera.fov = localPlayer.FLY_FOV;
+      page.camera.updateProjectionMatrix();
+    }
+  };
 
   Object.assign(localPlayer, {
     leavePilot,
