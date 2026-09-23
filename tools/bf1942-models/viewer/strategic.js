@@ -301,6 +301,12 @@ export const SAI = {
   /** `SAI::updateBotPositions` 0x08635bc0: an arrived bot is re-ordered after
    *  20 s on foot, 35 s in a vehicle, while it sees fewer than 2 objects. */
   reorderMounted: 35.0,
+  /** `orderAirBot` 0x08640810: ground + 75 m, radius at most 40, the
+   *  WPAltitudeMoveTo's 120 m vertical band and 50 m clearance. */
+  airOrderHeight: 75.0,
+  airRadiusMax: 40.0,
+  airVertical: 120.0,
+  airClearance: 50.0,
   reorderSpottedMax: 2,
   randomizeFraction: 0.8,
   waypointRadiusFraction: 0.25,
@@ -365,6 +371,19 @@ export class StrategicAI {
     const b = this.bots.get(id);
     if (!b) return;
     b.assignedTo = null; b.waypoints = null; b.free = true; b.area = null;
+  }
+
+  /**
+   * The bot's controlled object changed (`SAI::handleChangingBot`
+   * 0x08631450 through `setBotHasChangedEquipment` 0x08635990): its
+   * assignment is removed and it is free, so the next distribution orders it
+   * as the unit it now is (`orderBot` 0x08640760 picks the air, fixed or
+   * normal order by the unit).
+   */
+  botChangedUnit(id) {
+    const b = this.bots.get(id);
+    if (!b) return;
+    b.assignedTo = null; b.waypoints = null; b.free = true;
   }
 
   /** The order a bot currently holds, or null. */
@@ -664,6 +683,7 @@ export class StrategicAI {
    */
   _order(bot, area, side) {
     const unit = this.unitOf?.(bot.id) ?? null;
+    if (unit?.air) return this._orderAir(bot, area, side, unit);
     const type = unit?.type ?? INFANTRY_TYPE;
     const valid = unit?.isWalkable ?? this.isWalkable;
     const bounding = unit?.radius ?? SAI.unitRadius;
@@ -705,6 +725,44 @@ export class StrategicAI {
         else { factor = 1.0; d2 -= layer.sideRadius(area, side) ** 2; }
         this.arrived = d2 < 2 * R2;
         return Math.min(1, Math.max(0.1, d2 / (4 * R2))) * factor;
+      },
+      arrived: false,
+    };
+    return bot.waypoints;
+  }
+
+  /**
+   * `AIStrategicArea::orderAirBot` 0x08640810 (`orderBot` 0x08640760 sends
+   * a unit whose information carries the air flag here): no random point,
+   * the area's own position (vt+0xc) at the ground + 75 m, a
+   * `WPAltitudeMoveTo(min(40, side radius), 120, 50, 2)` (0x08640982). Its
+   * +0x14 (50) is the clearance `BBPGotoWaypoint3d::createPlan` 0x085b81e0
+   * hands `BAPAMoveTo3d`. `WPAltitudeMoveTo::getUrgency` 0x08535610 on the
+   * last point: 1 unless within the radius across and 120 m up or down, then
+   * (dy^2 + d^2) / (r^2 + 120^2); it never marks the order arrived.
+   */
+  _orderAir(bot, area, side, unit) {
+    const [x, z] = area.centre;
+    const g = unit.groundAt ? unit.groundAt(x, z) : NaN;
+    const point = [x, z];
+    const y = (Number.isFinite(g) ? g : 0) + SAI.airOrderHeight;
+    const R = Math.min(SAI.airRadiusMax, this.layer.sideRadius(area, side));
+    const layer = this.layer;
+    bot.orderedAt = this.time;
+    bot.waypoints = {
+      kind: 'WPAltitudeMoveTo',
+      area,
+      point,
+      y,
+      radius: R,
+      clearance: SAI.airClearance,
+      owned: () => layer.ownerOf(area) === side,
+      urgency(px, pz, _pathRadius, py = y) {
+        const d2 = (px - x) ** 2 + (pz - z) ** 2;
+        const dy2 = (py - y) ** 2;
+        const V = SAI.airVertical;
+        if (R * R <= d2 || V * V <= dy2) return 1;
+        return (dy2 + d2) / (R * R + V * V);
       },
       arrived: false,
     };

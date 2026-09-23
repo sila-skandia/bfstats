@@ -91,6 +91,20 @@ class StrategicFixtureTests(unittest.TestCase):
         self.assertEqual(p["tankPosPoint"], [836, -731])
         self.assertEqual(p["blockedPoint"], [846, -717])
 
+    def test_an_aircraft_is_ordered_to_the_area_at_75_m_with_a_50_m_clearance(self) -> None:
+        # `orderAirBot` 0x08640810 -> WPAltitudeMoveTo(min(40, r), 120, 50, 2);
+        # `WPAltitudeMoveTo::getUrgency` 0x08535610.
+        a = self.results["pins"]["air"]
+        self.assertEqual(a["point"], [846, -717])
+        self.assertEqual(a["y"], 85)
+        self.assertAlmostEqual(a["radius"], 20.616, places=3)
+        self.assertEqual(a["clearance"], 50)
+        self.assertEqual(a["far"], 1)
+        self.assertEqual(a["at"], 0)
+        self.assertAlmostEqual(a["ten"], 100 / (20.615528 ** 2 + 120 ** 2), places=5)
+        self.assertEqual(a["high"], 1)
+        self.assertFalse(a["arrived"])
+
     def test_an_arrived_mounted_bot_is_reordered_after_35_s(self) -> None:
         # `SAI::updateBotPositions` 0x08635bc0: 20 s on foot, 35 s mounted.
         p = self.results["pins"]

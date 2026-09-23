@@ -529,6 +529,11 @@ export class BotController {
    */
   mount(m, now = this._now ?? 0) {
     this.vehicle = m;
+    // `isAirBorn` (+0x1d5) is cleared only when the controlled object
+    // changes (`updateBotVehicle` 0x0852c899) or the bot is built (ctor
+    // 0x0851d475); `event_airborn` 0x0852eca0 sets it from the flight law.
+    // A landed plane keeps it.
+    this._airborne = false;
     this.enterRequest = null;
     this._lastChangeAt = now;
     this._footWeapons = this.weapons;
@@ -544,6 +549,7 @@ export class BotController {
   dismount(now = this._now ?? 0) {
     const left = this.vehicle;
     this.vehicle = null;
+    this._airborne = false;
     this._leftVehicle = left ? { id: left.id, at: now } : null;
     this._lastChangeAt = now;
     if (this._footWeapons) this.weapons = this._footWeapons;
@@ -1327,7 +1333,11 @@ export class BotController {
   _execInfantryMoveTo(action, dt) {
     const target = action.waypoint || this.waypoint;
     if (!target) return true;
-    if (this.vehicle?.kind === 'air') return this._execPlaneMoveTo(target, action);
+    // `BBPGotoWaypoint3d::createPlan` 0x085b81e0: the move's clearance is
+    // the waypoint's +0x14 (50 m from `orderAirBot`).
+    if (this.vehicle?.kind === 'air') {
+      return this._execPlaneMoveTo(target, action, action.waypointObject?.clearance ?? PLANE.cruiseClearance);
+    }
     // A ship without a water map holds a straight line; with one it routes
     // like a hull, the helm in `_steerToward`.
     if (this.vehicle?.kind === 'ship' && !this._nav()) return this._execBoatMoveTo(target, action);
@@ -1482,7 +1492,7 @@ export class BotController {
     // R' adds the unit's `getMaxPathPosRemovalDistance` (BotMain 0x0852b780:
     // 0.99 x max(0.5, bounding radius - the bounding centre's offset)); the
     // page's vehicle radius stands in for a hull's.
-    const u = wp.urgency(this.position[0], this.position[2], this._pathRadius());
+    const u = wp.urgency(this.position[0], this.position[2], this._pathRadius(), this.position[1]);
     this.changedTarget.MoveTo = wp !== this._lastWaypointObject;
     this._lastWaypointObject = wp;
     // `BBMoveToFixed::calculateUrgency` 0x08575680 (the Fixed rows: a seat
@@ -2054,7 +2064,8 @@ export class BotController {
   _planMoveTo(now) {
     const wp = this.waypoints ?? this._fallbackWaypoint();
     if (!wp) return this._planIdle();
-    const goal = [wp.point[0], this.position[1], wp.point[1]];
+    // An air order's point carries its height (`orderAirBot`: ground + 75).
+    const goal = [wp.point[0], Number.isFinite(wp.y) ? wp.y : this.position[1], wp.point[1]];
     const cur = this.currentPlan;
     if (this.planBehaviour === BEHAVIOUR.MoveTo && cur.length && cur[0].waypointObject === wp) return cur;
     return [{ type: PLAN_ACTION.InfantryMoveTo, waypoint: goal, arrive: wp.radius, waypointObject: wp,
@@ -2266,7 +2277,6 @@ export class BotController {
     const collider = this.world?.collider;
     const position = [st.position.x, st.position.y, st.position.z];
     const tgy = collider?.surfaceHeight?.(target[0], target[2]);
-    if (m.drive?.grounded) this._airborne = false;   // INVENTION: where the engine clears vt +0x180 is not read
     const w = st.angularVelocity;
     const r = towardsPoint({
       orientation: st.orientation, position, velocity: [st.velocity.x, st.velocity.y, st.velocity.z],
@@ -2338,8 +2348,7 @@ export class BotController {
       const relVel = [targetVel[0] - velocity[0], targetVel[1] - velocity[1], targetVel[2] - velocity[2]];
       const { aim } = roundMiss({ rel, relVel, speed: gun.speed, gravity: gun.gravity });
       const w = st.angularVelocity;
-      if (m.drive?.grounded) this._airborne = false;   // INVENTION: where the engine clears vt +0x180 is not read
-      const r = aimAtDirection({
+        const r = aimAtDirection({
         orientation: st.orientation, velocity, angularVelocity: w ? [w.x, w.y, w.z] : [0, 0, 0], dir: aim,
         altitudeAlong: (off) => this._altitudeAlong(position, off), altitude: this._altitudeAlong(position, [0, 0, 0]),
         clearance: action.mode === 1 ? PLANE_FIRE.aimClearanceVehicle : PLANE_FIRE.aimClearance,
