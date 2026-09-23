@@ -23,19 +23,18 @@ import { Armor } from './armor.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `aimHeld`, `buildSpawnFlags`, `camera`, `captureBotPresentationTick`,
- * `clearVehicleHud`, `clickQueued`, `collider`, `currentRoot`,
- * `deployActive`, `deployTeamId`, `disposeHandWeapon`, `disposeSeatPose`,
- * `feedVehicleHud`, `footView3p`, `getTouchHudText`, `groundHeight`, `guns`,
- * `handWeapon`, `hud`, `HUD_FLY`, `hudBridge`, `isCollision`,
- * `isTouchDevice`, `isZoomed`, `kbLockLeave`, `loadSeatPose`,
- * `LOCAL_PLAYER`, `look`, `LOOK_SENS`, `netOccupiedVehicleId`, `netSeatRow`,
- * `netSendAction`, `netTickPoses`, `netVehicleIdFor`, `optOnFoot`,
- * `optPilot`, `params`, `pickVehicle`, `placeCamera`,
- * `playSoldierHurtSound`, `resetCaptureUi`, `resetMobileControls`,
- * `roomJoined`, `seatAltFire`, `seatFire`, `seatHolder`, `showView`,
+ * `buildSpawnFlags`, `camera`, `captureBotPresentationTick`,
+ * `clearVehicleHud`, `collider`, `currentRoot`, `deployActive`,
+ * `deployTeamId`, `disposeHandWeapon`, `disposeSeatPose`, `feedVehicleHud`,
+ * `footView3p`, `getTouchHudText`, `groundHeight`, `guns`, `handWeapon`,
+ * `hud`, `HUD_FLY`, `hudBridge`, `isCollision`, `isTouchDevice`, `isZoomed`,
+ * `kbLockLeave`, `loadSeatPose`, `LOCAL_PLAYER`, `look`, `LOOK_SENS`,
+ * `netOccupiedVehicleId`, `netSeatRow`, `netSendAction`, `netTickPoses`,
+ * `netVehicleIdFor`, `optOnFoot`, `optPilot`, `params`, `pickVehicle`,
+ * `placeCamera`, `playSoldierHurtSound`, `releaseButtons`, `resetCaptureUi`,
+ * `resetMobileControls`, `roomJoined`, `seatHolder`, `showView`,
  * `spawnAtFlag`, `spawnFlagSelect`, `syncFootView`, `toggleFullMap`,
- * `triggerHeld`, `triggerHitIndicator`, `updateHud`, `updateMobileControls`,
+ * `triggerHitIndicator`, `updateHud`, `updateMobileControls`,
  * `updateSeatPoseVisibility`, `vehicleInput`, `vehicles`,
  * `vehicleSpawnActive`, `warmSubtree`, `world`.
  */
@@ -1134,13 +1133,9 @@ export function createLocalPlayer(page) {
       page.handWeapon.fovCur = 1;
       page.handWeapon.worldFov = FOOT_FOV;
     }
-    page.triggerHeld = false;
-    page.clickQueued = false;
-    page.aimHeld = false;
     // A button held through the climb in must not arrive already pulling the
     // vehicle's trigger — nor, on the way back out, the soldier's.
-    page.seatFire = false;
-    page.seatAltFire = false;
+    page.releaseButtons();
     // Not hidden here any more: `updateCrosshair` runs every frame and reads
     // the seat's own `setCrossHairType`, so a tank keeps its cross.
     page.camera.fov = FLY_FOV;
