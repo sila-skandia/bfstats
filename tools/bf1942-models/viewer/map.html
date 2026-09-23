@@ -197,6 +197,7 @@ import { createHullBodies } from './hull-bodies.js';
 import { createVehicleHits } from './vehicle-hits.js';
 import { createLevel } from './level-load.js';
 import { createLocalPlayer } from './local-player.js';
+import { createLocalLook } from './local-look.js';
 import { createVehicleEntry } from './vehicle-entry.js';
 import { createPageConsole } from './page-console.js';
 import { createPageInput } from './page-input.js';
@@ -433,7 +434,7 @@ function uiFocused() {
 const level = createLevel({
   get activeMod() { return activeMod; }, get bust() { return bust; },
   get camera() { return camera; }, get capture() { return pageInput.capture; },
-  get capturePresentationTick() { return localPlayer.capturePresentationTick; },
+  get capturePresentationTick() { return localLook.capturePresentationTick; },
   get cubeLoader() { return cubeLoader; }, get damageVisuals() { return wrecks.damageVisuals; },
   get DEFAULT_DRAW() { return DEFAULT_DRAW; },
   get disposeSounds() { return pageAudio.disposeSounds; }, get effects() { return effects; },
@@ -455,7 +456,7 @@ const level = createLevel({
   get optWire() { return optWire; }, get overlay() { return overlay; },
   get params() { return params; }, get placeCamera() { return pageInput.placeCamera; },
   get rebaseDeckSpawns() { return hullBodies.rebaseDeckSpawns; },
-  get rebuildVehicleInterp() { return localPlayer.rebuildVehicleInterp; },
+  get rebuildVehicleInterp() { return localLook.rebuildVehicleInterp; },
   get registerDamageables() { return wrecks.registerDamageables; },
   get renderer() { return renderer; }, get scene() { return scene; },
   get seatWorldPos() { return seatWorldPos; }, get setOnFoot() { return localPlayer.setOnFoot; },
@@ -497,7 +498,7 @@ const pageInput = createPageInput({
   get isTouchDevice() { return isTouchDevice; },
   get itemsLocked() { return soldierKit.itemsLocked; },
   get leavePilot() { return localPlayer.leavePilot; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
-  get lookDelta() { return localPlayer.lookDelta; },
+  get lookDelta() { return localLook.lookDelta; },
   get nearEntry() { return vehicleEntry.nearEntry; },
   get occupancy() { return localPlayer.occupancy; },
   get openDeploy() { return spawning.openDeploy; }, get optOnFoot() { return optOnFoot; },
@@ -527,7 +528,7 @@ const touchControls = createTouchControls({
   get footView3p() { return soldierView.footView3p; },
   get isTouchDevice() { return isTouchDevice; },
   get mannedActive() { return localPlayer.mannedActive; },
-  get mouseInput() { return localPlayer.mouseInput; },
+  get mouseInput() { return localLook.mouseInput; },
   get nearEntry() { return vehicleEntry.nearEntry; },
   get noteSeatToggle() { return pageInput.noteSeatToggle; },
   get occupancy() { return localPlayer.occupancy; }, get optOnFoot() { return optOnFoot; },
@@ -542,7 +543,7 @@ const pageConsole = createPageConsole({
   get bfmap() { return mapSurfaces.bfmap; }, get capture() { return pageInput.capture; },
   get extras() { return level.extras; }, get hudPaths() { return hudPaths; },
   get keys() { return pageInput.keys; }, get launchTeam() { return spawning.launchTeam; },
-  get MENU_URL() { return MENU_URL; }, get mouseInput() { return localPlayer.mouseInput; },
+  get MENU_URL() { return MENU_URL; }, get mouseInput() { return localLook.mouseInput; },
   get params() { return params; }, get release() { return pageInput.release; },
   get releaseButtons() { return pageInput.releaseButtons; },
   get scoreboardOpen() { return scoreboard.scoreboardOpen; },
@@ -637,7 +638,6 @@ const seatWorldPos = new THREE.Vector3();
 const audioSeatKey = playerId => (playerId === LOCAL_PLAYER ? 'local' : `bot:${playerId}`);
 const localPlayer = createLocalPlayer({
   get buildSpawnFlags() { return spawning.buildSpawnFlags; }, get camera() { return camera; },
-  get captureBotPresentationTick() { return botBodies.captureBotPresentationTick; },
   get captured() { return pageInput.captured; },
   get clampMobileInput() { return touchControls.clampMobileInput; },
   get clearVehicleHud() { return hudFeed.clearVehicleHud; },
@@ -653,26 +653,24 @@ const localPlayer = createLocalPlayer({
   get getTouchHudText() { return getTouchHudText; },
   get groundHeight() { return level.groundHeight; }, get guns() { return guns; },
   get handleSoldierFootstep() { return pageAudio.handleSoldierFootstep; },
-  get handWeapon() { return soldierKit.handWeapon; }, get hud() { return hud; },
-  get HUD_FLY() { return HUD_FLY; }, get HUD_FOOT() { return pageInput.HUD_FOOT; },
-  get hudBridge() { return hudBridge; },
+  get hud() { return hud; }, get HUD_FLY() { return HUD_FLY; },
+  get HUD_FOOT() { return pageInput.HUD_FOOT; }, get hudBridge() { return hudBridge; },
   get hullCollisionMaterial() { return hullBodies.hullCollisionMaterial; },
   get isCollision() { return level.isCollision; }, get isTouchDevice() { return isTouchDevice; },
-  get isZoomed() { return soldierKit.isZoomed; },
   get kbLockLeave() { return pageInput.kbLockLeave; }, get keys() { return pageInput.keys; },
   get loadSeatPose() { return seatPose.loadSeatPose; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
-  get look() { return pageInput.look; }, get LOOK_SENS() { return LOOK_SENS; },
   get mobileJumpHeld() { return touchControls.mobileJumpHeld; },
   get mobilePadAxis() { return touchControls.mobilePadAxis; },
   get mobilePadHeld() { return touchControls.mobilePadHeld; },
   get mobilePadVector() { return touchControls.mobilePadVector; },
-  get netSeatRow() { return room.netSeatRow; }, get netSendAction() { return room.netSendAction; },
-  get netTickPoses() { return room.netTickPoses; },
+  get mouseInput() { return localLook.mouseInput; }, get netSeatRow() { return room.netSeatRow; },
+  get netSendAction() { return room.netSendAction; },
   get netVehicleIdFor() { return room.netVehicleIdFor; },
   get noteOccupiedVehicle() { return room.noteOccupiedVehicle; },
   get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
   get params() { return params; }, get pickVehicle() { return vehicleHits.pickVehicle; },
   get playSoldierHurtSound() { return pageAudio.playSoldierHurtSound; },
+  get rebuildVehicleInterp() { return localLook.rebuildVehicleInterp; },
   get resetCaptureUi() { return flagCapture.resetCaptureUi; },
   get roomJoined() { return room.roomJoined; }, get seatAltFire() { return pageInput.seatAltFire; },
   get seatFire() { return pageInput.seatFire; },
@@ -686,6 +684,17 @@ const localPlayer = createLocalPlayer({
   get updateSeatPoseVisibility() { return seatPose.updateSeatPoseVisibility; },
   get vehicleInput() { return vehicleHits.vehicleInput; }, get vehicles() { return vehicles; },
   get warmSubtree() { return level.warmSubtree; }, get world() { return level.world; },
+});
+const localLook = createLocalLook({
+  get aircraft() { return localPlayer.aircraft; },
+  get captureBotPresentationTick() { return botBodies.captureBotPresentationTick; },
+  get car() { return localPlayer.car; }, get handWeapon() { return soldierKit.handWeapon; },
+  get isZoomed() { return soldierKit.isZoomed; }, get look() { return pageInput.look; },
+  get LOOK_SENS() { return LOOK_SENS; }, get mannedActive() { return localPlayer.mannedActive; },
+  get netTickPoses() { return room.netTickPoses; },
+  get occupancy() { return localPlayer.occupancy; }, get optOnFoot() { return optOnFoot; },
+  get optPilot() { return optPilot; }, get roomJoined() { return room.roomJoined; },
+  get soldier() { return localPlayer.soldier; }, get view() { return localPlayer.view; },
 });
 const vehicleEntry = createVehicleEntry({
   get aircraft() { return localPlayer.aircraft; }, get car() { return localPlayer.car; },
@@ -830,7 +839,7 @@ const hullBodies = createHullBodies({
   get MAPS_BASE() { return MAPS_BASE; },
   get materialFrictionById() { return level.materialFrictionById; },
   get vehicleDamage() { return level.vehicleDamage; },
-  get vehicleInterp() { return localPlayer.vehicleInterp; }, get vehicles() { return vehicles; },
+  get vehicleInterp() { return localLook.vehicleInterp; }, get vehicles() { return vehicles; },
   get vehicleSpawnActive() { return level.vehicleSpawnActive; },
   get world() { return level.world; },
 });
@@ -1300,9 +1309,8 @@ const botBodies = createBotVisuals({
   get disposeFootBodyScene() { return footBodies.disposeFootBodyScene; },
   get footBodyClips() { return footBodies.footBodyClips; },
   get footBodyLoader() { return footBodies.footBodyLoader; },
-  get MODELS_BASE() { return MODELS_BASE; },
-  get presentAlpha() { return localPlayer.presentAlpha; }, get scene() { return scene; },
-  get world() { return level.world; },
+  get MODELS_BASE() { return MODELS_BASE; }, get presentAlpha() { return localLook.presentAlpha; },
+  get scene() { return scene; }, get world() { return level.world; },
 });
 /** The edge of the human's fire input last frame, for the bots' hearing. */
 let frameInputWasFiring = false;
@@ -1320,16 +1328,16 @@ const soldierView = createSoldierView({
   get deployTeamId() { return spawning.deployTeamId; },
   get dieOnFoot() { return localPlayer.dieOnFoot; }, get footBody() { return footBodies.footBody; },
   get footCanopy() { return footBodies.footCanopy; },
-  get footEyeCur() { return localPlayer.footEyeCur; },
-  get footEyePrev() { return localPlayer.footEyePrev; },
+  get footEyeCur() { return localLook.footEyeCur; },
+  get footEyePrev() { return localLook.footEyePrev; },
   get footFire() { return soldierKit.footFire; },
-  get footLookPending() { return localPlayer.footLookPending; },
-  get footPending() { return localPlayer.footPending; },
-  get footView() { return localPlayer.footView; },
+  get footLookPending() { return localLook.footLookPending; },
+  get footPending() { return localLook.footPending; },
+  get footView() { return localLook.footView; },
   get frameInputLast() { return localPlayer.frameInputLast; },
   get hudBridge() { return hudBridge; }, get look() { return pageInput.look; },
   get openDeploy() { return spawning.openDeploy; }, get params() { return params; },
-  get presentAlpha() { return localPlayer.presentAlpha; },
+  get presentAlpha() { return localLook.presentAlpha; },
   get runDeathCam() { return localPlayer.runDeathCam; },
   get scanForEntry() { return vehicleEntry.scanForEntry; },
   get serverSettings() { return localPlayer.serverSettings; },
@@ -1340,12 +1348,12 @@ const soldierView = createSoldierView({
 });
 const footBodies = createFootBody({
   get bindDynamicShading() { return level.bindDynamicShading; }, get bust() { return bust; },
-  get footFeetCur() { return localPlayer.footFeetCur; },
-  get footFeetPrev() { return localPlayer.footFeetPrev; },
-  get footView() { return localPlayer.footView; },
+  get footFeetCur() { return localLook.footFeetCur; },
+  get footFeetPrev() { return localLook.footFeetPrev; },
+  get footView() { return localLook.footView; },
   get footView3p() { return soldierView.footView3p; }, get MODELS_BASE() { return MODELS_BASE; },
   get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
-  get presentAlpha() { return localPlayer.presentAlpha; }, get scene() { return scene; },
+  get presentAlpha() { return localLook.presentAlpha; }, get scene() { return scene; },
   get soldier() { return localPlayer.soldier; },
   get soldierDead() { return localPlayer.soldierDead; },
 });
@@ -1466,7 +1474,7 @@ const spawning = createSpawning({
   get setOnFoot() { return localPlayer.setOnFoot; },
   get setScoreboard() { return scoreboard.setScoreboard; },
   get shipFlagInactive() { return hullBodies.shipFlagInactive; },
-  get snapPresentation() { return localPlayer.snapPresentation; },
+  get snapPresentation() { return localLook.snapPresentation; },
   get soldier() { return localPlayer.soldier; },
   get soldierDead() { return localPlayer.soldierDead; },
   get soldierMaxHp() { return soldierKit.soldierMaxHp; },
@@ -1639,8 +1647,7 @@ function frame(dt) {
   // The presentation instant this frame draws, and the drawn vehicle pose that
   // follows from it. Before every camera below, because all of them read it —
   // directly (the on-foot eye) or through the scene graph (every seat).
-  localPlayer.presentAlpha = step.alpha;
-  localPlayer.applyVehicleInterp(localPlayer.presentAlpha);
+  localLook.present(step.alpha);
   localPlayer.drainSoldierEvents();
 
   room.sendTickInputs(step.ticks, input, look, dt);
@@ -1975,11 +1982,11 @@ const testHooks = installTestHooks({
   get LOCAL_PLAYER() { return LOCAL_PLAYER; },
   get localMapTeam() { return mapSurfaces.localMapTeam; },
   get localPlayer() { return localPlayer; }, get look() { return pageInput.look; },
-  get lookDelta() { return localPlayer.lookDelta; },
+  get lookDelta() { return localLook.lookDelta; },
   get mannedActive() { return localPlayer.mannedActive; },
   get mapGate() { return mapSurfaces.mapGate; },
   get MINIMAP_TEAM_TINT() { return mapSurfaces.MINIMAP_TEAM_TINT; },
-  get modeNote() { return level.modeNote; }, get mouseInput() { return localPlayer.mouseInput; },
+  get modeNote() { return level.modeNote; }, get mouseInput() { return localLook.mouseInput; },
   get nearEntry() { return vehicleEntry.nearEntry; },
   get occupiedVehicleDamage() { return vehicleHits.occupiedVehicleDamage; },
   get optOnFoot() { return optOnFoot; }, get packAmmo() { return soldierKit.packAmmo; },
@@ -2008,7 +2015,7 @@ const testHooks = installTestHooks({
   get shipFlagInactive() { return hullBodies.shipFlagInactive; },
   get showDamageTier() { return wrecks.showDamageTier; },
   get showView() { return hudFeed.showView; },
-  get snapPresentation() { return localPlayer.snapPresentation; },
+  get snapPresentation() { return localLook.snapPresentation; },
   get soldier() { return localPlayer.soldier; },
   get soldier3pOnFoot() { return soldierView.soldier3pOnFoot; },
   get soldierArmor() { return localPlayer.soldierArmor; },
