@@ -1108,6 +1108,10 @@ export function createLocalPlayer(page) {
     if (!localPlayer.entryPoints) collectEntryPoints();
     return pickNearest(localPlayer.entryPoints, entry => {
       if (page.seatHolder(entry.vehicle, entry.seatId)) return Infinity;
+      // A wreck has no doors. The bots' candidate list skips a destroyed hull
+      // (bot-units.js); the human's did not, and E seated him in a burning one.
+      const owner = page.collider?.statics?.ownerOf(entry.vehicle) ?? -1;
+      if (page.world?.vehicleDamage?.get(owner)?.destroyed) return Infinity;
       entry.node.getWorldPosition(entryWorld);
       const distance = Math.hypot(entryWorld.x - localPlayer.soldier.x,
         entryWorld.y - (localPlayer.soldier.y + 1), entryWorld.z - localPlayer.soldier.z);
