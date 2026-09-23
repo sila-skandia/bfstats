@@ -168,6 +168,11 @@ page-side referee is copied from `map.html` because the page is not a module;
 `botEnterVehicle`, `botLeaveVehicle`, `botVehicleCandidates`). A change to
 one of those in the page needs the same change here.
 
+**Cadence.** The runner ticks every bot once per 30 Hz world tick. The page
+ticks them once per display frame, so the tick-counted constants (the stall
+counts 150 / 401, `CONTACT_TICKS` 10) run twice as fast at 60 fps in the
+page as here; everything timed in seconds matches.
+
 Runner-only, labelled SIM in the code:
 
 - **Tickets**: one a death, and `lossPerMin` a minute while the other side
