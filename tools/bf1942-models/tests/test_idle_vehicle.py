@@ -39,6 +39,12 @@ HARNESS = Path(__file__).resolve().parent / "idle_vehicle_harness.mjs"
 MODULES = {
     "idle-vehicle.js": VIEWER / "idle-vehicle.js",
     "gunfire.js": VIEWER / "gunfire.js",
+    "round-visuals.js": VIEWER / "round-visuals.js",
+    "round-impact.js": VIEWER / "round-impact.js",
+    "projectile-flight.js": VIEWER / "projectile-flight.js",
+    "round-launch.js": VIEWER / "round-launch.js",
+    "gun-groups.js": VIEWER / "gun-groups.js",
+    "gun-cycle.js": VIEWER / "gun-cycle.js",
     # `bomb-release.js` (the salvo arithmetic, the release speed and the
     # drag law) and `torpedo-run.js` (an aircraft torpedo's water run),
     # both reached through gunfire.js / seats.js.
