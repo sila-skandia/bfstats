@@ -101,8 +101,8 @@ import { createCameraGlide } from './camera-glide.js';
 import { createKitCatalogue } from './kit-catalogue.js';
 import { createKitStance } from './kit-stance.js';
 import { createKitView } from './kit-view.js';
+import { createKitWorn } from './kit-worn.js';
 import { installControlsCollapse } from './controls-collapse.js';
-import { bonePattern, wornGrafts } from './kit-graft.js';
 
 // Vanilla reads 'models' + 'models/poses'; a mod reads its own subtree. Same
 // resolution the other three pages do, and it draws the mod picker as a side
@@ -116,7 +116,6 @@ const stage = document.getElementById('stage');
 const statusLine = document.getElementById('status');
 const crumb = document.getElementById('crumb');
 const rackEl = document.getElementById('rack');
-const wornEl = document.getElementById('worn');
 const kitsEl = document.getElementById('kits');
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -163,7 +162,6 @@ const state = {
   kit: null,
   soldier: null,
   held: null,
-  hidden: new Set(),      // worn slots the viewer has switched off
 };
 
 let current = null;
@@ -190,66 +188,12 @@ function applyWireframe() {
 }
 
 // --- Grafting ---------------------------------------------------------------
-//
-// A KitPart is a static mesh bolted to a bone of the *wearer's* skeleton, and
-// every pose glb already carries all three of those bones as nodes — `A` (a
-// child of Bip01 Head), `backpack` and `HipPack`. So a helmet is added to the
-// bone's node and nothing else: no channels, no rebinding, no per-stance
-// variant. The bone is what moves, exactly as the weapon weld relies on.
-//
-// Parenting rather than baking is also what keeps the stance blend free: when
-// the mixer moves Bip01 Head, the helmet on `A` goes with it.
-const partCache = new Map();
-let grafted = [];
 
-async function loadPart(glb) {
-  if (!partCache.has(glb)) {
-    let scene = null;
-    for (const base of MODEL_BASES) {
-      try { scene = (await loader.loadAsync(`${base}/${glb}${bust()}`)).scene; break; }
-      catch { /* a mod that ships only its own worn meshes falls back to vanilla */ }
-    }
-    if (!scene) return null;
-    partCache.set(glb, scene);
-  }
-  return partCache.get(glb);
-}
-
-// The graft's local rotation per slot, and the composition of a KitPart's own
-// `setPosition` / `setRotation` on top of it, live in `kit-graft.js` -- the
-// seated occupant in `map.html` wears the same kits and must graft them the
-// same way, and these constants were settled by eye rather than derived, so
-// there must be exactly one copy of them. See that module for why each slot
-// gets the flip it gets.
-
-function boneNamed(root, want) {
-  // "HipPack" survives sanitization intact, but match loosely anyway — the
-  // manifest spells bones the way the .con files do and those are inconsistent
-  // in case (`hippack` / `HipPack`).
-  const pattern = bonePattern(want);
-  let found = null;
-  root.traverse(obj => { if (!found && pattern.test(obj.name)) found = obj; });
-  return found;
-}
-
-async function applyWorn(kit) {
-  for (const node of grafted) node.removeFromParent();
-  grafted = [];
-  if (!current || !kit) return;
-  for (const graft of wornGrafts(kit, state.hidden)) {
-    const bone = boneNamed(current, graft.bone);
-    if (!bone) continue;                       // no such bone: silently bare, and the row says so
-    const source = await loadPart(graft.glb);
-    if (!source) continue;
-    const node = source.clone(true);
-    node.quaternion.set(...graft.quaternion);
-    node.position.set(...graft.position);
-    bone.add(node);
-    grafted.push(node);
-  }
-  applyWireframe();
-  invalidate();
-}
+const kitWorn = createKitWorn({
+  get applyWireframe() { return applyWireframe; }, get bust() { return bust; },
+  get current() { return current; }, get invalidate() { return invalidate; },
+  get loader() { return loader; }, get MODEL_BASES() { return MODEL_BASES; },
+});
 
 // --- Loading ----------------------------------------------------------------
 
@@ -303,7 +247,7 @@ async function showKit(kit, { soldier, held, stance } = {}) {
   if (sequence !== loadSequence) { disposeModel(gltf.scene); return; }
 
   if (current) { scene.remove(current); disposeModel(current); }
-  grafted = [];
+  kitWorn.forgetGrafts();
   current = gltf.scene;
   // A posed figure leaves its rest-pose bounds, so culling by them blanks limbs
   // mid-orbit.
@@ -313,14 +257,14 @@ async function showKit(kit, { soldier, held, stance } = {}) {
   cameraGlide.cancel();
   kitStance.bindFigure(gltf.animations);
 
-  await applyWorn(kit);
+  await kitWorn.applyWorn(kit);
   kitView.refit();
   applyWireframe();
 
   statusLine.hidden = true;
   crumb.innerHTML = `<b>${kit.nation || '&mdash;'} ${kit.class}</b> &middot; ${state.soldier}`
     + (state.held ? ` &middot; ${state.held}` : ' &middot; unposed');
-  renderWorn(kit);
+  kitWorn.renderWorn(kit);
   renderRack(kit);
   renderMaps(kit);
   syncSelects(kit);
@@ -329,51 +273,6 @@ async function showKit(kit, { soldier, held, stance } = {}) {
 }
 
 // --- Panels -----------------------------------------------------------------
-
-const SLOT_ORDER = ['head', 'back', 'hip'];
-const SLOT_LABELS = { head: 'Head', back: 'Back', hip: 'Hip' };
-
-function renderWorn(kit) {
-  const rows = SLOT_ORDER.map(slot => {
-    const part = (kit.worn || []).find(entry => entry.slot === slot);
-    const row = document.createElement('button');
-    row.type = 'button';
-    row.className = 'worn-row';
-    const label = document.createElement('span');
-    label.className = 'slot-label';
-    label.textContent = SLOT_LABELS[slot];
-    const name = document.createElement('span');
-    name.className = 'part-name';
-    const tris = document.createElement('span');
-    tris.className = 'tris';
-
-    if (!part) {
-      row.classList.add('is-empty');
-      row.disabled = true;
-      name.textContent = 'none';
-    } else if (!part.glb) {
-      // Declared by the kit but the mesh did not come out. Say which, rather
-      // than drawing a bare head and letting it read as a weld bug.
-      row.classList.add('is-empty');
-      row.disabled = true;
-      name.textContent = part.template;
-      tris.textContent = 'not extracted';
-    } else {
-      name.textContent = part.template;
-      tris.textContent = `${part.triangles} tris`;
-      row.classList.toggle('is-off', state.hidden.has(slot));
-      row.title = state.hidden.has(slot) ? `show ${part.template}` : `hide ${part.template}`;
-      row.addEventListener('click', () => {
-        state.hidden.has(slot) ? state.hidden.delete(slot) : state.hidden.add(slot);
-        renderWorn(kit);
-        applyWorn(kit);
-      });
-    }
-    row.append(label, name, tris);
-    return row;
-  });
-  wornEl.replaceChildren(...rows);
-}
 
 function renderRack(kit) {
   const slots = (kit.items || []).map((item, index) => {
