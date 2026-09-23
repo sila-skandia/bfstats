@@ -18,11 +18,12 @@ import { BfMap, minimapWindow, rotateAbout, coverRect } from './bfmap.js';
  * `activeDeployGroup`, `aircraft`, `applyDeployFrame`, `bust`, `camera`,
  * `captured`, `capturePosition`, `car`, `currentDir`, `deployActive`,
  * `deployFlagIndices`, `deployRejoin`, `deployTeamId`, `deployUnchosen`,
- * `deployZ`, `deployZTarget`, `extras`, `finishDeployClose`, `flags`,
- * `fullmapFrame`, `hudPack`, `LOCAL_PLAYER`, `MAPS_BASE`, `mapVehicles`,
- * `nearestEnemyFlag`, `occupancy`, `optOnFoot`, `release`, `scoreFromSpawn`,
- * `setScoreboard`, `soldier`, `soldierDead`, `spawnersRoot`,
- * `spawnFlagSelect`, `sprite`, `stage`, `vehicleSpawnActive`, `world`.
+ * `deployZ`, `easeDeployClose`, `easeDeployOpen`, `extras`,
+ * `finishDeployClose`, `flags`, `fullmapFrame`, `hudPack`, `LOCAL_PLAYER`,
+ * `MAPS_BASE`, `mapVehicles`, `nearestEnemyFlag`, `occupancy`, `optOnFoot`,
+ * `release`, `scoreFromSpawn`, `setScoreboard`, `soldier`, `soldierDead`,
+ * `spawnersRoot`, `spawnFlagSelect`, `sprite`, `stage`,
+ * `vehicleSpawnActive`, `world`.
  */
 export function createMapSurfaces(page) {
   const mapSurfaces = {};
@@ -985,8 +986,7 @@ export function createMapSurfaces(page) {
     // .deploy class stays on through the whole close so the keys and buttons
     // keep working until the pane is actually gone.
     if (want && fullmapBox.classList.contains('deploy')) {
-      if (fullmapBox.hidden) page.deployZ = 0;   // fresh open; reopening mid-close just flips the target
-      page.deployZTarget = 1;
+      page.easeDeployOpen(fullmapBox.hidden);
       fullmapBox.hidden = false;
       page.applyDeployFrame();
       // Holding the map is not flying. Releasing the pointer lock also stops the
@@ -996,7 +996,7 @@ export function createMapSurfaces(page) {
       return;
     }
     if (!want && page.deployActive()) {
-      page.deployZTarget = 0;
+      page.easeDeployClose();
       if (page.deployZ === 0) page.finishDeployClose();  // a close requested before the first ease tick
       else page.applyDeployFrame();
       return;

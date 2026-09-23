@@ -12,11 +12,14 @@ import { boardRows, boardVars, paintLeaves, listFloor, listGeometry } from './sc
  * `bots`, `bust`, `currentDir`, `deployKit`, `deployRejoin`, `deployTeamId`,
  * `deployVars`, `drawBitmapText`, `extras`, `fullmapBox`, `hudPack`,
  * `hudPaths`, `loadouts`, `measureText`, `optOnFoot`, `placeHit`,
- * `roomClient`, `roomJoined`, `roomName`, `scoreFromSpawn`, `soldier`,
- * `soldierDead`, `spawnLayout`, `sprite`, `ticketFlagTexture`, `world`.
+ * `roomClient`, `roomJoined`, `roomName`, `soldier`, `soldierDead`,
+ * `spawnLayout`, `sprite`, `ticketFlagTexture`, `world`.
  */
 export function createScoreboardScreen(page) {
   const scoreboard = {};
+  // True while the score board stands in for the spawn interface (opened by
+  // the deploy screen's SCORE BOARD button). Written only by `setScoreboard`.
+  scoreboard.scoreFromSpawn = false;
 
   // --- the score board ------------------------------------------------------------
   //
@@ -140,7 +143,7 @@ export function createScoreboardScreen(page) {
     const inRoom = !!(page.roomJoined && page.roomClient);
     const rows = boardRows(scoreboardPlayers(), inRoom ? page.roomClient.feed : []);
     const s = scoreboardScale();
-    const key = JSON.stringify([rows, s.W, s.H, page.scoreFromSpawn, scoreboard.scoreHoverDone, inRoom,
+    const key = JSON.stringify([rows, s.W, s.H, scoreboard.scoreFromSpawn, scoreboard.scoreHoverDone, inRoom,
                                 page.currentDir, page.hudPack.sprites.size]);
     if (!force && key === scoreboard.scorePaintKey) return;
     scoreboard.scorePaintKey = key;
@@ -162,7 +165,7 @@ export function createScoreboardScreen(page) {
       ? listGeometry(box, data.listColumns, scoreRes.lineHeight(box.font),
                      scoreRes.floor(box)).visibleRows : Infinity;
     const vars = boardVars(data.variables, {
-      fromSpawn: page.scoreFromSpawn,
+      fromSpawn: scoreboard.scoreFromSpawn,
       inRoom,
       alive: page.deployRejoin || (page.optOnFoot.checked && !!page.soldier),
       serverName: inRoom ? String(page.roomClient.hello?.room ?? '') : '',
@@ -180,7 +183,7 @@ export function createScoreboardScreen(page) {
     // `ShowTicket` is its own top-level entry of menu/InGame and stays up over
     // the board. Live, the HUD canvas already has it; over the spawn screen the
     // deploy chrome drew it, and that chrome is hidden while the board stands in.
-    if (page.scoreFromSpawn && page.spawnLayout.data?.groups?.tickets) {
+    if (scoreboard.scoreFromSpawn && page.spawnLayout.data?.groups?.tickets) {
       const spawnRes = { ...scoreRes,
         texture: name => page.sprite(name),
         measure: (fontId, text) => {
@@ -202,12 +205,12 @@ export function createScoreboardScreen(page) {
    *  on — there is nothing to lock a pointer for). */
   function setScoreboard(on, fromSpawn = false) {
     if (on === scoreboardOpen()) return;
-    page.scoreFromSpawn = on && fromSpawn;
+    scoreboard.scoreFromSpawn = on && fromSpawn;
     scoreboard.scoreHoverDone = false;
     scoreBox.hidden = !on;
-    scoreBox.classList.toggle('from-spawn', page.scoreFromSpawn);
-    scoreDoneBtn.hidden = !page.scoreFromSpawn;
-    page.fullmapBox.classList.toggle('board-open', page.scoreFromSpawn);
+    scoreBox.classList.toggle('from-spawn', scoreboard.scoreFromSpawn);
+    scoreDoneBtn.hidden = !scoreboard.scoreFromSpawn;
+    page.fullmapBox.classList.toggle('board-open', scoreboard.scoreFromSpawn);
     if (on) paintScoreboard(true);
   }
 
@@ -220,7 +223,7 @@ export function createScoreboardScreen(page) {
     scoreDoneBtn.addEventListener(type, () => { scoreboard.scoreHoverDone = over; paintScoreboard(); });
   }
   // A held key whose release the page never sees must not leave the board up.
-  addEventListener('blur', () => { if (scoreboardOpen() && !page.scoreFromSpawn) setScoreboard(false); });
+  addEventListener('blur', () => { if (scoreboardOpen() && !scoreboard.scoreFromSpawn) setScoreboard(false); });
   new ResizeObserver(() => paintScoreboard(true)).observe(scoreBox);
 
   Object.assign(scoreboard, {
