@@ -27,6 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 ROOT = Path(__file__).resolve().parents[1]
 MODULES = {
     "physics.mjs": ROOT / "viewer" / "physics.js",
+    "point-body.js": ROOT / "viewer" / "point-body.js",
+    "fixed-step.js": ROOT / "viewer" / "fixed-step.js",
     "collision.mjs": ROOT / "viewer" / "collision.js",
     "world-collider.js": ROOT / "viewer" / "world-collider.js",
     "static-index.js": ROOT / "viewer" / "static-index.js",

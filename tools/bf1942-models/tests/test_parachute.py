@@ -23,6 +23,8 @@ MODULES = [
     ROOT / "viewer" / "swim.js",
     ROOT / "viewer" / "soldier.js",
     ROOT / "viewer" / "physics.js",
+    ROOT / "viewer" / "point-body.js",
+    ROOT / "viewer" / "fixed-step.js",
     ROOT / "viewer" / "collision.js",
     ROOT / "viewer" / "world-collider.js",
     ROOT / "viewer" / "static-index.js",
