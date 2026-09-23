@@ -41,6 +41,14 @@ export default defineConfig({
   // A retry hides a flake and costs a full timeout. Fix the test instead.
   retries: 0,
   workers,
+  // The first assertion a worker makes waits on Vite's cold compile of the
+  // page it opened. With the machine loaded (several worktrees verifying at
+  // once, load average around 30) that takes longer than Playwright's 5 s
+  // default, and the first test per worker fails on a blank, unmounted page:
+  // the redirect specs in data-explorer.spec.ts were the usual casualty, a
+  // different one each run. 15 s covers the cold compile and stays inside the
+  // 30 s test timeout.
+  expect: { timeout: 15_000 },
   // 'list' streams progress; the HTML report must never try to open a browser
   // from inside the container.
   reporter: [['list'], ['html', { open: 'never' }]],
