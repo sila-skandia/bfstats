@@ -467,7 +467,11 @@ modifyForDriver` **0x0855f7d0**, `getRadioStrength` **0x0855fc10**,
   first use, the tank law on the route, the Fire behaviour with the unit's
   AI weapons through the turret's look and the hull's trigger, damage on a
   seated bot landing on the hull. Not built: aircraft, boats, fixed guns,
-  passenger and gunner seats, voluntary bailing.
+  passenger and gunner seats, voluntary bailing. Verified live on El
+  Alamein (2026-09-23): five of eight bots took vehicles unprompted; a
+  Kubelwagen followed its route at up to 17 m/s; a Panzer IV left its
+  compound on the tank map; a Sherman traversed onto a soldier 44 m ahead
+  and killed him with the main gun and coaxial.
 
 ## 10. Verified
 
