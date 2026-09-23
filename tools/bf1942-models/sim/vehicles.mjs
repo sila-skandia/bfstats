@@ -34,6 +34,10 @@ export const SIM_PIVOT_RATE = 0.7;      // rad/s, a tracked hull on the spot
 export const SIM_MIN_TURN_SPEED = 2.0;  // m/s, the least speed a wheeled hull turns on
 export const SIM_DOOR_OFFSET = 2.5;     // m
 export const SIM_DOOR_RADIUS = 3.0;     // m
+/** `aiTemplate.basicTemp` of the synthetic level's seats, from the vanilla
+ *  `AI/Objects.con` (Willy 6, WillyPassenger 6, Sherman 12, ShermanTopMG 5):
+ *  its records (level.mjs) predate the extractor's `basicTemp`. */
+export const SYNTHETIC_BASIC_TEMP = { Willy: 6, WillyPassengerPCO: 6, Sherman: 12, shermanBrowning_PCO1: 5 };
 export const SIM_EXIT_OFFSET = 3.5;     // m, `botLeaveVehicle`'s
 export const SIM_HULL = {
   hitPoints: { HeavyArmour: 400, LightArmour: 100 },
@@ -262,7 +266,9 @@ export class SimVehicles {
         const strengths = {};
         for (const w of weapons) for (const [k, v] of Object.entries(w.strength ?? {})) strengths[k] = Math.max(strengths[k] ?? 0, v ?? 0);
         const drives = isRoot;
-        const seatFactor = 1;
+        // `modifyForDriver` 0x0855f7d0 (bot-units.js): a free ground hull's
+        // secondary seats x0.77, 1 under a driver.
+        const seatFactor = isRoot || driver ? 1 : (h.kind === 'air' ? 0.5 : 0.77);
         const holder = h.seatHolders.get(seatId) ?? null;
         const side = isRoot ? -1 : 1;
         // SIM: the doors, 2.5 m left (driver) and right (other seats) of the
@@ -276,7 +282,10 @@ export class SimVehicles {
           maxSpeed: drives ? (ai.maxSpeed ?? 0) : (driver ? (ai.maxSpeed ?? 0) : 0),
           movedByBot: !drives && !!driver,
           strengths, weapons,
-          value: ((seatAi?.strategicStrength ?? ai.strategicStrength)?.['0'] ?? 0) * seatFactor,
+          // `Information+0x14` = the seat's `aiTemplate.basicTemp`
+          // (bot-units.js); the synthetic records carry none, so the vanilla
+          // con's numbers stand in (SYNTHETIC_BASIC_TEMP).
+          value: seatAi?.basicTemp ?? (isRoot ? ai.basicTemp : null) ?? SYNTHETIC_BASIC_TEMP[seatId] ?? 0,
           seatFactor, occupiedBy: holder, strType: h.strType, driver, hullYaw, yawLimits: null,
           spawnAge: now - h.spawnedAt,
         });
