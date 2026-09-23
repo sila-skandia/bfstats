@@ -34,7 +34,7 @@ import { installWorldHooks } from './test-hooks-world.js';
  * `kbSession`, `keys`, `kitLoadout`, `KITS`, `kitWeaponSlots`,
  * `lastCaptureVoice`, `loadouts`, `loadoutsLoad`, `LOCAL_PLAYER`,
  * `localMapTeam`, `localPlayer`, `look`, `lookDelta`, `mannedActive`,
- * `mapGate`, `MINIMAP_TEAM_TINT`, `modeNote`, `mouseInput`, `nearEntry`,
+ * `mapGate`, `mapVehicleMarks`, `MINIMAP_TEAM_TINT`, `modeNote`, `mouseInput`, `nearEntry`,
  * `occupiedVehicleDamage`, `optOnFoot`, `packAmmo`, `packsLeft`,
  * `paintScoreboard`, `parachuteLog`, `params`, `playCaptureVoice`,
  * `pressTrigger`, `recordCrashes`, `referee`, `renderer`, `roomClient`,
