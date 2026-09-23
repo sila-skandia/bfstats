@@ -162,7 +162,7 @@ export function collectGroups(guns, root, options = {}) {
       shots: 0,
       // Which placed object this gun is part of, so its own rounds ignore its
       // own hull. Resolved lazily against whatever collider is in force —
-      // see `#owner` — because a level switch replaces both.
+      // see `gunOwner` in projectile-flight.js — because a level switch replaces both.
       owner: -1,
       ownerFor: undefined,
       speedScale,

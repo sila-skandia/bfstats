@@ -158,7 +158,7 @@ export function lineOfSight(collider, from, to) {
 
 /**
  * Roll a direction into a deviation cone of half-angle `spreadRad`, exactly as
- * `gunfire.js` `#wander` does: theta = spread * sqrt(u), azimuth free, about
+ * `round-launch.js` `wander` does: theta = spread * sqrt(u), azimuth free, about
  * the frame u = normalize(ref x r), v = r x u. `r` must be unit length.
  */
 export function rollCone(r, spreadRad) {
