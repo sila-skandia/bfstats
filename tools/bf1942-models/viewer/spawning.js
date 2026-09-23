@@ -11,18 +11,18 @@ import { Armor } from './armor.js';
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `buildSpawnFlags`, `capture`, `deployActive`, `deployKitHits`,
- * `deployResumeBtn`, `deployScoreBtn`, `deploySuicideBtn`, `deployTabs`,
- * `discardSoldier`, `disposeHandWeapon`, `drawFullMap`, `ensureHandWeapon`,
- * `flags`, `flashHud`, `fullmapBox`, `fullmapCanvas`, `handWeapon`,
- * `kitRowLabelFor`, `kitRowLayoutText`, `layoutDeploy`, `LOCAL_PLAYER`,
- * `netReconciler`, `netSendAction`, `netTickPoses`, `optOnFoot`, `optPilot`,
+ * `capture`, `deployActive`, `deployKitHits`, `deployResumeBtn`,
+ * `deployScoreBtn`, `deploySuicideBtn`, `deployTabs`, `discardSoldier`,
+ * `disposeHandWeapon`, `drawFullMap`, `ensureHandWeapon`, `flags`,
+ * `flashHud`, `fullmapBox`, `fullmapCanvas`, `handWeapon`, `kitRowLabelFor`,
+ * `kitRowLayoutText`, `layoutDeploy`, `leavePilot`, `LOCAL_PLAYER`,
+ * `markOnFoot`, `netReconciler`, `netSendAction`, `netTickPoses`,
  * `paintDeployChrome`, `paintDeploySoon`, `params`, `placeCamera`,
- * `projectToArt`, `rebaseDeckSpawns`, `resetCaptureUi`, `revive`,
- * `roomJoined`, `setOnFoot`, `setPilot`, `setScoreboard`,
- * `shipFlagInactive`, `snapPresentation`, `soldier`, `soldierDead`,
- * `soldierMaxHp`, `spawnFlagSelect`, `spawnLayout`, `supplyTarget`,
- * `toggleFullMap`, `world`, `worldReady`.
+ * `projectToArt`, `rebaseDeckSpawns`, `refreshFlags`, `resetCaptureUi`,
+ * `revive`, `roomJoined`, `setOnFoot`, `setScoreboard`, `shipFlagInactive`,
+ * `snapPresentation`, `soldier`, `soldierDead`, `soldierMaxHp`,
+ * `spawnFlagSelect`, `spawnLayout`, `supplyTarget`, `toggleFullMap`,
+ * `world`, `worldReady`.
  */
 export function createSpawning(page) {
   const spawning = {};
@@ -180,15 +180,42 @@ export function createSpawning(page) {
    *  the instant path — with its refusal message for a level that declares no
    *  soldier spawns — stays for the levels that do not. */
   function requestOnFoot() {
-    if (page.optPilot.checked) {            // the two modes are exclusive
-      page.optPilot.checked = false;
-      page.setPilot(false);
-    }
-    if (!page.buildSpawnFlags()) {
+    page.leavePilot();                      // the two modes are exclusive
+    if (!buildSpawnFlags()) {
       page.setOnFoot(true);
       return;
     }
     openDeploy();
+  }
+
+  /** Fill the flag picker from the level's own control points.
+   *
+   *  Rebuilt whole, but not forgetful: the deploy screen writes its choice into
+   *  this select and `setOnFoot` rebuilds the options before reading it back,
+   *  and an innerHTML wipe resets a select to its first option. A level switch
+   *  clears the value in `show()` first, so the memory never crosses maps. */
+  function buildSpawnFlags() {
+    const kept = page.spawnFlagSelect.value;
+    page.refreshFlags();
+    page.spawnFlagSelect.innerHTML = '';
+    for (const [index, flag] of page.flags.entries()) {
+      const option = document.createElement('option');
+      const side = flag.team === 1 ? 'Axis' : flag.team === 2 ? 'Allied' : 'neutral';
+      option.value = String(index);
+      option.textContent = `${flag.name} (${side}, ${flag.spawns.length})`;
+      page.spawnFlagSelect.appendChild(option);
+    }
+    if (kept !== '' && Number(kept) < page.flags.length) page.spawnFlagSelect.value = kept;
+    // The sidebar picker is a debug aid; the deploy screen is the real join
+    // path (Caps Lock / auto-open). Keep the select populated whenever there
+    // are flags so a later commit can read it, and only hide it when empty.
+    page.spawnFlagSelect.hidden = !page.flags.length;
+    return page.flags.length;
+  }
+
+  /** The sidebar picker shown or not (`setOnFoot` hides it with no flags). */
+  function showFlagPicker(on) {
+    page.spawnFlagSelect.hidden = !on;
   }
 
   function openDeploy() {
@@ -196,7 +223,7 @@ export function createSpawning(page) {
     // level switch, and the rings would be drawn from the previous level's
     // flags — off the current map, or not anywhere at all. Rebuilding is a few
     // DOM options; the kept choice rides the select through it.
-    if (!page.buildSpawnFlags()) return false;
+    if (!buildSpawnFlags()) return false;
     // A dead body is not a life to go back to: RESUME must not hand the player
     // a corpse, and `Kit/IsAlive` must say so.
     spawning.deployRejoin = !!page.soldier && !page.soldierDead;
@@ -261,7 +288,7 @@ export function createSpawning(page) {
    *  way into the free camera captures the mouse on the way. */
   function enterFreeCam() {
     spawning.deployUnchosen = false;
-    page.optOnFoot.checked = false;
+    page.markOnFoot(false);
     page.setOnFoot(false);
     page.placeCamera();
     page.capture();
@@ -409,7 +436,7 @@ export function createSpawning(page) {
     // and would reopen this screen. Without the box ticked the frame loop
     // keeps flying even after setOnFoot builds a soldier (Caps Lock / auto
     // join never checked it).
-    page.optOnFoot.checked = true;
+    page.markOnFoot(true);
     if (document.activeElement && document.activeElement !== document.body) {
       document.activeElement.blur();
     }
@@ -420,7 +447,7 @@ export function createSpawning(page) {
     // world is a trigger pull, not a mysterious dead click that only grabs
     // the mouse.
     if (spawned) page.capture();
-    else if (!page.soldier) page.optOnFoot.checked = false;
+    else if (!page.soldier) page.markOnFoot(false);
     return spawned;
   }
 
@@ -494,6 +521,8 @@ export function createSpawning(page) {
   });
 
   Object.assign(spawning, {
+    buildSpawnFlags,
+    showFlagPicker,
     activeDeployGroup,
     cancelDeploy,
     chooseKit,

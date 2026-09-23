@@ -33,8 +33,8 @@ import { Armor } from './armor.js';
  * `netVehicleIdFor`, `noteOccupiedVehicle`, `optOnFoot`, `optPilot`,
  * `params`, `pickVehicle`, `placeCamera`, `playSoldierHurtSound`,
  * `releaseButtons`, `resetCaptureUi`, `resetMobileControls`, `roomJoined`,
- * `seatHolder`, `showView`, `spawnAtFlag`, `spawnFlagSelect`,
- * `syncFootView`, `toggleFullMap`, `triggerHitIndicator`, `updateHud`,
+ * `seatHolder`, `showFlagPicker`, `showView`, `spawnAtFlag`, `syncFootView`,
+ * `toggleFullMap`, `triggerHitIndicator`, `updateHud`,
  * `updateMobileControls`, `updateSeatPoseVisibility`, `vehicleInput`,
  * `vehicles`, `vehicleSpawnActive`, `warmSubtree`, `world`.
  */
@@ -716,6 +716,19 @@ export function createLocalPlayer(page) {
    * stepped by `manned()` (`mannedActive()` decides which, in `frame()`'s
    * dispatch).
    */
+  // The two mode boxes are the mode. This module runs the transitions
+  // (`setPilot`, `setOnFoot`); others that need the flag alone mark it here.
+  /** Out of the seat, if in it: the box and the transition together. */
+  function leavePilot() {
+    if (!page.optPilot.checked) return;
+    page.optPilot.checked = false;
+    setPilot(false);
+  }
+  /** The flags without their transitions: the deploy flow arms on-foot before
+   *  the soldier exists, and a wreck has already emptied the seat. */
+  localPlayer.markPilot = on => { page.optPilot.checked = !!on; };
+  localPlayer.markOnFoot = on => { page.optOnFoot.checked = !!on; };
+
   function setPilot(on, node = null, seatId = null) {
     if (on) {
       const current = localPlayer.occupancy;
@@ -1131,9 +1144,7 @@ export function createLocalPlayer(page) {
     page.releaseButtons();
     // Not hidden here any more: `updateCrosshair` runs every frame and reads
     // the seat's own `setCrossHairType`, so a tank keeps its cross.
-    page.camera.fov = FLY_FOV;
-    page.camera.near = SEAT_NEAR;
-    page.camera.updateProjectionMatrix();
+    localPlayer.useLens('seat');
     localPlayer.nearEntry = null;
     // Checked without an event on purpose: the change handler would tear the
     // waiting soldier down, and the checkbox is only being told the truth —
@@ -1146,9 +1157,7 @@ export function createLocalPlayer(page) {
       // classifies to something (`seats.js`'s `classifyRoot` never returns
       // null for one), so this is defensive rather than a real refusal path
       // any of the vehicles this round targets can hit.
-      page.camera.fov = FOOT_FOV;
-      page.camera.near = 0.2;
-      page.camera.updateProjectionMatrix();
+      localPlayer.useLens('foot');
       if (page.handWeapon) page.handWeapon.rig.visible = true;
       page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : page.HUD_FOOT;
     }
@@ -1231,9 +1240,7 @@ export function createLocalPlayer(page) {
       } else {
         localPlayer.soldier.spawn(exit.x, exit.y, exit.z, exit.yaw);
       }
-      page.camera.fov = FOOT_FOV;
-      page.camera.near = 0.2;
-      page.camera.updateProjectionMatrix();
+      localPlayer.useLens('foot');
       if (page.handWeapon) page.handWeapon.rig.visible = true;
       page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : page.HUD_FOOT;
     } else {
@@ -1298,9 +1305,7 @@ export function createLocalPlayer(page) {
     if (page.optOnFoot.checked && localPlayer.soldier) {
       localPlayer.soldier.collider = page.collider;
       localPlayer.soldier.spawn(exit.x, exit.y, exit.z, exit.yaw);
-      page.camera.fov = FOOT_FOV;
-      page.camera.near = 0.2;
-      page.camera.updateProjectionMatrix();
+      localPlayer.useLens('foot');
       if (page.handWeapon) page.handWeapon.rig.visible = true;
       page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : page.HUD_FOOT;
     } else {
@@ -1355,6 +1360,27 @@ export function createLocalPlayer(page) {
   // the screen as a shapeless wedge. At 0.1 the frame draws and occludes the
   // barrel, which is what the wedge always was.
   const SEAT_NEAR = 0.1;
+  // The soldier's near plane. Every on-foot entry has always set it with the
+  // soldier FOV; named so the three lenses below read as the set they are.
+  const FOOT_NEAR = 0.2;
+  const LENS = {
+    foot: [FOOT_FOV, FOOT_NEAR],
+    seat: [FLY_FOV, SEAT_NEAR],
+    fly: [FLY_FOV, FLY_NEAR],
+  };
+  /** The camera's lens for `kind`: 'foot', 'seat' or 'fly'. The one place
+   *  outside the frame's own FOV easing that sets the projection. */
+  localPlayer.useLens = kind => {
+    const [fov, near] = LENS[kind];
+    page.camera.fov = fov;
+    page.camera.near = near;
+    page.camera.updateProjectionMatrix();
+  };
+  /** A field of view alone, near plane kept (the weapon's zoom). */
+  localPlayer.setFov = fov => {
+    page.camera.fov = fov;
+    page.camera.updateProjectionMatrix();
+  };
   // GUN-6 (verify-r6.md): a manned gun's own Camera never sets its own FOV in
   // vanilla (`setVehicleFov` — no vanilla vehicle calls it) and the render
   // view's own default is 57.30 degrees vertical. `enterVehicle` sets
@@ -1530,7 +1556,7 @@ export function createLocalPlayer(page) {
         page.world.removePlayer(page.LOCAL_PLAYER);
         localPlayer.soldier = null;
         page.optOnFoot.checked = false;
-        page.spawnFlagSelect.hidden = true;
+        page.showFlagPicker(false);
         page.hud.textContent = 'this level declares no flag with soldier spawns';
         return;
       }
@@ -1538,10 +1564,8 @@ export function createLocalPlayer(page) {
       // arms rig's near pass picks its own, see frame()), and a near plane
       // that clears the capsule so a wall you are pressed against is drawn
       // rather than clipped through.
-      page.camera.fov = FOOT_FOV;
-      page.camera.near = 0.2;
-      page.camera.updateProjectionMatrix();
-      page.spawnFlagSelect.hidden = false;
+      localPlayer.useLens('foot');
+      page.showFlagPicker(true);
       page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : page.HUD_FOOT;
     } else {
       // The deploy screen cannot outlive the mode it selects for: the pilot
@@ -1561,10 +1585,8 @@ export function createLocalPlayer(page) {
       delete page.hudBridge.vars['ShowHealIcon'];
       delete page.hudBridge.vars['ShowReloadIcon'];
       delete page.hudBridge.vars['ShowFlagIcon'];
-      page.spawnFlagSelect.hidden = true;
-      page.camera.fov = FLY_FOV;
-      page.camera.near = FLY_NEAR;
-      page.camera.updateProjectionMatrix();
+      page.showFlagPicker(false);
+      localPlayer.useLens('fly');
       // `getTouchHudText()`, not the `HUD_TOUCH` this file once believed in —
       // that name was never declared, and reading it would throw on a phone.
       page.hud.textContent = page.isTouchDevice ? page.getTouchHudText() : page.HUD_FLY;
@@ -1659,6 +1681,7 @@ export function createLocalPlayer(page) {
   }
 
   Object.assign(localPlayer, {
+    leavePilot,
     CHASE_OPTION,
     DEATH_CAM,
     FLY_FOV,
