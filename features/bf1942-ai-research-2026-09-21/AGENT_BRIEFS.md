@@ -721,3 +721,64 @@ the spec's vehicles page, PARITY_STATUS_2026-09-23.md.
 
 Acceptance: the pins, the four live results with numbers, ledger and KNOBS
 rows for every engine read, no change to the seeded El Alamein trace.
+
+## Brief R: the tank that sees, scores and fires like the engine's
+
+Added 2026-09-24 after Briefs K, O and P. Depends on: P (landed: the fire
+plan's approach, AI-116), O (landed: the strategic map, AI-117..AI-120).
+Conflicts with: Q (seats.js, hull-bodies.js, body-statics.js); keep to the
+files below. Can start now.
+
+Status: P's live check on El Alamein has a Sherman and a PanzerIV close
+from 158 m to 45 m and then sit for 40 s with no shot. Two causes P found:
+the Sherman sits 11 deg below the PanzerIV's 5 deg gun depression, and
+neither ever gets the other into memory because the viewer's sensing rays
+aim at soldier heights above the hull origin (an INVENTION in
+`bot-sense.js`) and a crest 10 m ahead blocks them where a ray at 1.7 m
+clears. K noted that `AIbehaviours.con` gives tanks the infantry fire
+urgency (`BBFireInfantery`) while the viewer scores a tank's targets with
+the large-bore rule. O found that an orbiting aircraft holds an area
+Neutral in the viewer, that a tank's fire approach can aim at a spot its
+map blocks (El Alamein seed 10, 67 route failures), and that a tank wedged
+against a static keeps failing its route legs (seed 9).
+
+Do:
+1. Sensing from a vehicle. Read where the engine takes a mounted bot's
+   view position and line-of-sight origin (`BotMain::sense` 0x08521cf0's
+   caller chain, the seat's camera or the object's `getViewPosition`, and
+   the line test's target point on a vehicle: the target's position plus
+   what offset). Replace the soldier-height stand-in for mounted bots and
+   pin it: the tank pair at 45 m on El Alamein each hold the other in
+   memory as seen.
+2. Fire urgency for tanks. Read `AIbehaviours.con` (which behaviour each
+   unit kind gets) and `BBFireInfantery::calculateUrgency`; give tanks
+   what the engine gives them and correct any earlier ledger row
+   (AI-52..AI-58 area, `BBFireLargeBore`) that assumed otherwise.
+3. Aim outside the gun's limits. In P's plan the engine goes to a firing
+   point when it cannot aim; read what that point is for a target below the
+   depression limit (`createPlanInternal` 0x085a74e0 branches P cited, the
+   attack-portal case P did not port) and port it; the pair must end up
+   with one of them firing. Live measure: the same pair, rounds fired and
+   the time of the first.
+4. Blocked and wedged. Read what the engine does when the fire approach's
+   goal is a blocked pixel (the closest valid position search P and O
+   referred to; `getValidPosition` at 0x085d54b0.. from C's read) and what
+   its obstruction counters do for a hull that cannot move (B's report:
+   the stuck handling is the obstruction counters, unread). Port both; the
+   El Alamein seed 9 and 10 route failures fall to single digits.
+5. Aircraft and areas. Read `AIStrategicArea::update` 0x0863d6d0 in full;
+   if air units do not count in an area's hold, port it in
+   `strategic-ai.js` / `strategic-layer.js` (an orbiting Spitfire no longer
+   keeps a point Neutral). Pin it.
+
+Files: viewer/bot-sense.js, viewer/bot-perception.js, viewer/bot-fire.js,
+viewer/bot-plans.js, viewer/bot-decision.js, viewer/bot-route.js (item 4
+only; O has landed), viewer/strategic-ai.js, viewer/strategic-layer.js,
+tests, the ledger, KNOBS, the spec's sensing, behaviours and strategic
+pages, PARITY_STATUS_2026-09-23.md. Do not touch viewer/seats.js,
+viewer/entry-points.js, viewer/seat-survey.js, viewer/hull-bodies.js,
+viewer/body-statics.js or viewer/level-load.js (Brief Q).
+
+Acceptance: the live tank pair firing with numbers, pins for 1 to 5, the
+El Alamein and Bocage runner numbers before and after (SAI, 8 a side,
+600 s, seeds 1..10), ledger and KNOBS rows, the status file updated.
