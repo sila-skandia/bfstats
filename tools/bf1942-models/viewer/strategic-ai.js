@@ -3,6 +3,7 @@
 // data this reads.
 
 import { INFANTRY_TYPE } from './strategic-layer.js';
+import { LANDING, landingZonesOf, beachTarget, beachLandingOrder } from './doctrine-landing.js';
 
 // ---------------------------------------------------------------------------
 // The strategic AI itself: `dice::bf::ai::SAI`, read 2026-09-23
@@ -128,6 +129,11 @@ export class StrategicAI {
     this.isWalkable = isWalkable;
     this.unitOf = unitOf;
     this.spottedOf = spottedOf;
+    /** The level's landing zones by name (`extras.ai.landingZones`), for the
+     *  beach orders `_order` gives a landing craft. */
+    this.zones = landingZonesOf(layer.ai);
+    /** The alive map of the pass being distributed, for `_order`. */
+    this._alive = null;
     this.time = 0;
     this.lastPass = -Infinity;
     /** Per side: the strategy container list and the active one. */
@@ -402,6 +408,7 @@ export class StrategicAI {
   }
 
   _distribute(side, alive) {
+    this._alive = alive;
     const S = this.sides[side];
     const strategy = S.active?.strategy;
     const f = S.states.friendly;
@@ -508,6 +515,10 @@ export class StrategicAI {
     const unit = this.unitOf?.(bot.id) ?? null;
     if (unit?.air) return this._orderAir(bot, area, side, unit);
     const type = unit?.type ?? INFANTRY_TYPE;
+    if (type === LANDING.unitType && this.zones.size) {
+      const beach = this._orderBeach(bot, area, side, unit);
+      if (beach) return beach;
+    }
     const valid = unit?.isWalkable ?? this.isWalkable;
     const bounding = unit?.radius ?? SAI.unitRadius;
     const R = Math.max(SAI.waypointRadiusMin,
@@ -556,6 +567,26 @@ export class StrategicAI {
       arrived: false,
     };
     return bot.waypoints;
+  }
+
+  /**
+   * `orderNormalBot` 0x08640bd0 for a landing craft (the unit type
+   * `LandingCraft`): the area's own beach when it uses a zone for the unit
+   * (`WPBeachLanding`), else the beach of the first zone-using area on the
+   * way to it (`WPMoveToBeachLanding`); null when neither applies, and the
+   * order is the ordinary `WPMoveTo`. doctrine-landing.js has the laws.
+   */
+  _orderBeach(bot, area, side, unit) {
+    const p = this._alive?.get(bot.id);
+    if (!p) return null;
+    const target = beachTarget({ layer: this.layer, zones: this.zones, area, side, unit, x: p[0], z: p[2] });
+    if (!target) return null;
+    const order = beachLandingOrder({ target, area, side, layer: this.layer, isValid: unit?.isWalkable ?? null,
+                                      random: this.random, zones: this.zones });
+    if (!order) return null;
+    bot.orderedAt = this.time;
+    bot.waypoints = order;
+    return order;
   }
 
   /**

@@ -22,6 +22,8 @@ export const PLAN_ACTION = {
   InfantryMoveTo: 'InfanteryMoveTo',
   InfantryMoveToObject: 'InfanteryMoveToObject',
   InfantryMoveToDirection: 'InfanteryMoveToDirection',
+  /** `BAPAMoveToDirect` under a boat's helm: a straight run, no route. */
+  BoatMoveToDirect: 'BoatMoveToDirect',
   EnterVehicle: 'EnterVehicle',
   ExitVehicle: 'ExitVehicle',
   /** `BBPChangeTeleport`: the seat-select key for another seat of the hull. */
@@ -97,6 +99,12 @@ export function planMoveTo(bot, now) {
   const goal = [wp.point[0], Number.isFinite(wp.y) ? wp.y : bot.position[1], wp.point[1]];
   const cur = bot.currentPlan;
   if (bot.planBehaviour === BEHAVIOUR.MoveTo && cur.length && cur[0].waypointObject === wp) return cur;
+  if (wp.direct && bot.vehicle?.kind === 'ship' && bot.vehicle.drives) {
+    // `BBPGotoWaypointBoat::createPlan` 0x085b8c50, a beach order inside its
+    // zone (doctrine-landing.js): `while (true) BAPAMoveToDirect` to the
+    // beach point, no route and no end.
+    return [{ type: PLAN_ACTION.BoatMoveToDirect, waypoint: goal, waypointObject: wp, persistent: true }];
+  }
   return [{ type: PLAN_ACTION.InfantryMoveTo, waypoint: goal, arrive: wp.radius, waypointObject: wp,
             stance: 'stand' }];
 }
@@ -315,6 +323,11 @@ export function executeAction(bot, action, dt, now) {
       return bot._execInfantryMoveToObject(action, dt);
     case PLAN_ACTION.InfantryMoveToDirection:
       return bot._execInfantryMoveToDirection(action, dt, now);
+    case PLAN_ACTION.BoatMoveToDirect:
+      // The helm on the straight line (`BoatMoveTo`); the while loop never
+      // completes, so the plan ends only when the order does.
+      bot._execBoatMoveTo(action.waypoint, action);
+      return false;
     case PLAN_ACTION.MouseTurretAimAt:
       return bot._execMouseTurretAimAt(action);
     case PLAN_ACTION.MouseTurretLookAt:
