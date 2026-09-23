@@ -237,6 +237,40 @@ Not built, and said so in the docs: aircraft, boats, fixed guns, passenger
 and gunner seats, voluntary bailing, the environment's class tables behind
 `calculateFireStrength`.
 
+## Follow-up 6 (2026-09-23): seats, bailing, the turn, aircraft and boats
+
+The parity gaps the vehicle stage left, read from the binary (ledger
+AI-46..AI-49, `bot-behaviours.md` s9) and built:
+
+1. **Every door is a seat.** `map.html botVehicleCandidates` lists each
+   `EntryPoint` with its seat's own AI (`extract_vehicle_ai.py` now ships
+   `seatsAi`: the `aiTemplate` per PlayerControlObject, its `Unit`
+   strengths and the guns it reaches through `addTemplate`); a driver's
+   seat gets the drivetrain, a gunner's, a passenger's or a fixed gun is a
+   bare seat whose guns the world fires from the bot's trigger and whose
+   position follows the hull. `BBMoveToFixed` (returns 0) keeps a rider or a
+   gunner from walking. Verified live: a bot took the Sherman's Browning
+   seat behind a bot driver and rode with it.
+2. **Bailing** (`isBailAllowed`, the seated branch of `BBChange`): the seat's
+   urgency x1.25 against the foot and the other seats around, doubled when
+   bailing, allowed where a soldier can stand. Verified live: a bot left a
+   Sherman at 15 % hull.
+3. **The turn and the reverse** from `turnTowardsDirection` and its three
+   tweak words (1.0 / 0.4 / 0.3) and `actionStatusDecision`'s forward test;
+   the reverse box test is stood in for (three hull lengths behind).
+4. **The medpack heal** is the soldier template's +0x2e0 default (0.1 a
+   `useRepairPack`), 0.3 a round here.
+5. **Aircraft** (`bot-vehicle-air.js planeControl`): the read parts of
+   `towardsPoint` / `towardsDirection` (arrival at 4 x radius, the height
+   floor, the 0.866 bank cut, the 0.5 up-component pitch, the tenth-lateral
+   yaw) with full throttle, a rotate at 35 m/s, a wings-level climb-out and
+   a damped, limited pitch as INVENTION; `Fire` from a plane is a nose-cone
+   run (`BBPFire3d` unread). Verified live: a bot's Spitfire took off,
+   climbed to 60 m, reached its ordered area and orbited it for 160 s
+   without crashing; bots took three bf109s and a Stuka unprompted.
+6. **Boats** (`boatControl`): `speedControl`'s rudder and throttle rules on
+   a straight line (no water bitmap; no boat on El Alamein to drive live).
+
 ## Completed
 
 ### 1. AI weapon data extraction (con.py) ✅
