@@ -13,10 +13,13 @@
 //    `towardsPoint` (moves) and `aimAtDirection` (the guns). The waypoint
 //    move's clearance is the order's +0x14, 50 m from `orderAirBot`
 //    (strategic.js `_orderAir`); the point is the area's own at ground + 75.
-//  * The boat: `actionStatusDecision` gives the angle and drive direction;
-//    `speedControl` holds full rudder outside 30 deg (0.5236) with the
-//    throttle held while the heading is within cos 0.996 of the wanted
-//    direction, a 3 m/s speed band and a 0.03 dead band on the rudder.
+//  * The boat: `BoatControl::speedControl` 0x0860cf40. Past 30 deg (state
+//    0) it turns: full rudder, braking above 3 m/s and pushing with the
+//    motion below. Within 30 deg it is underway: the unit's `maxSpeed`
+//    scaled by how open the water is (`getLevel` against the map's base
+//    level) and the angle, a `simpleReg` throttle on the speed, and a
+//    yaw-damped log rudder (`boatSpeedControl`). `actionStatusDecision`'s
+//    states 1..9 (the turn in the box, reversing off a beach) are not built.
 
 const DEG = Math.PI / 180;
 
@@ -75,7 +78,49 @@ export const BOAT = {
   speedBand: 3.0,
   rudderDeadBand: 0.03,
   arriveRadiusFactor: 4.0,
+  /** `speedControl` 0x0860cf40's wanted-speed factors, by the free block's
+   *  level at the hull against the map's base level (+0xc4a4) and the angle:
+   *  2 levels clear, > 50 deg 0.6, > 30 deg 0.8; 1 level clear, > 50 deg
+   *  0.4, 15..50 deg 0.6; not clear, > 30 deg 0.3, 2..15 deg 0.5, else 0.4. */
+  angle50: 0.87266463,
+  angle15: 0.2617994,
+  angle2: 0.034906585,
+  /** The rudder's yaw-rate damping, `sin(angle) - 0.1 x yawRate`. */
+  yawDamping: 0.1,
+  /** A water map's base level, 2^2 m blocks (ledger AI-66, INFERRED). */
+  baseLevel: 2,
 };
+
+/**
+ * `BoatControl::speedControl` 0x0860cf40, underway (a direction to go and the
+ * angle within 30 deg, or past state 0): the wanted speed is the unit's
+ * `maxSpeed` (Mobile plug-in +8) scaled by how open the water is (`getLevel`
+ * 0x0847ca60 against the map's base level) and how far the helm has to turn;
+ * the throttle is `simpleReg` 0x08613c20 of the wanted speed less last
+ * tick's speed (BAPAMoveTo +0x54), clamped to +-1; the rudder is
+ * `sign(x) log10(9|x| + 1)` with `x = sin(angle) - 0.1 x yawRate`, both
+ * clamped. `angle` and `yawRate` share a sense (positive turns toward a
+ * positive angle). EntryBoatMoveTo 0x08613d60 passes no speed cap (1e9).
+ */
+export function boatSpeedControl({ angle, direction = 1, maxSpeed, prevSpeed = 0, yawRate = 0,
+                                   level = Infinity, baseLevel = BOAT.baseLevel }) {
+  const a = Math.abs(angle);
+  let f = 1;
+  if (baseLevel < level) {
+    if (baseLevel + 1 < level) {
+      if (a > BOAT.angle50) f = 0.6;
+      else if (a > BOAT.fullRudderAngle) f = 0.8;
+    } else if (a > BOAT.angle50) f = 0.4;
+    else if (a > BOAT.angle15) f = 0.6;
+  } else if (a > BOAT.fullRudderAngle) f = 0.3;
+  else if (a <= BOAT.angle15 && a > BOAT.angle2) f = 0.5;
+  else f = 0.4;
+  const wanted = direction * maxSpeed * f;
+  const throttle = clamp(wanted - prevSpeed, -1, 1);
+  const x = clamp(Math.sin(clamp(angle, -Math.PI / 2, Math.PI / 2)) - clamp(yawRate, -1, 1) * BOAT.yawDamping, -1, 1);
+  const rudder = Math.sign(x) * Math.log10(9 * Math.abs(x) + 1);
+  return { throttle, rudder, wanted, factor: f };
+}
 
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
@@ -414,7 +459,8 @@ export function towardsPoint({ orientation, position, velocity, angularVelocity 
  * The boat's helm for one tick: `{ throttle, steer, angle, arrived }`, the
  * steer in the same sense as the tank law (`-(bearing - yaw)`).
  */
-export function boatControl({ forward, velocity, toTarget, radius = 10 }) {
+export function boatControl({ forward, velocity, toTarget, radius = 10, maxSpeed = null, prevSpeed = 0,
+                              yawRate = 0, level = Infinity, prevThrottle = null }) {
   const fLen = Math.hypot(forward[0], forward[1]) || 1;
   const fx = forward[0] / fLen, fz = forward[1] / fLen;
   const tLen = Math.hypot(toTarget[0], toTarget[1]);
@@ -427,7 +473,25 @@ export function boatControl({ forward, velocity, toTarget, radius = 10 }) {
   let steer = Math.abs(angle) > BOAT.fullRudderAngle ? Math.sign(angle) : clamp(angle / BOAT.fullRudderAngle, -1, 1);
   if (Math.abs(steer) < BOAT.rudderDeadBand) steer = 0;
   const speed = fx * velocity[0] + fz * velocity[1];
+  if (maxSpeed > 0 && !arrived && Math.abs(angle) <= BOAT.fullRudderAngle) {
+    // Underway: the engine's regulated speed and damped rudder.
+    const r = boatSpeedControl({ angle, maxSpeed, prevSpeed, yawRate, level });
+    return { throttle: r.throttle, steer: r.rudder, angle, arrived, speed, wanted: r.wanted };
+  }
+  if (maxSpeed > 0 && !arrived && prevThrottle !== null) {
+    // `speedControl`'s turn (state 0, the angle past 30 deg): full rudder
+    // toward the target, flipped going astern; above 3 m/s the throttle
+    // brakes against the motion, at or below it a full throttle is kept and
+    // any other is set to the motion's sign. A hull at dead rest has no sign
+    // to take: ahead (INVENTION; the engine's never sits at exactly 0).
+    const motion = Math.sign(speed) || 1;
+    const turn = motion * (Math.sign(angle) || 1);
+    let t;
+    if (Math.abs(speed) > BOAT.speedBand) t = -Math.sign(speed);
+    else t = Math.abs(prevThrottle) === 1 ? prevThrottle : motion;
+    return { throttle: t, steer: turn, angle, arrived, speed };
+  }
   let throttle = dot >= BOAT.alignedCos ? 1 : (Math.abs(angle) > BOAT.fullRudderAngle ? 0.5 : 0.8);
   if (arrived) throttle = speed > BOAT.speedBand ? -0.5 : 0;
-  return { throttle, steer, angle, arrived };
+  return { throttle, steer, angle, arrived, speed };
 }

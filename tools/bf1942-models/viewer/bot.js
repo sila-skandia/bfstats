@@ -40,7 +40,7 @@
 // at the nearest enemy flag.
 
 import { DeviationModel } from './deviation.js';
-import { findLocalPath, findStrategicPath, traceClear, traceValidPoint, isWalkable, COARSE_CELL, freeRun, freeBox } from './nav-grid.js';
+import { findLocalPath, findStrategicPath, traceClear, traceValidPoint, isWalkable, COARSE_CELL, freeRun, freeBox, freeLevel } from './nav-grid.js';
 import { BotSenses, lineClear, playerPosition, SOLDIER_RADIUS } from './bot-sense.js';
 import { scoreTargets, scoreVehicleTargets, firingPose, firePlanFor, weaponAiOf, FIRE, SOLDIER_BATTLE_STRENGTH, VEHICLE_FIRE } from './bot-fire.js';
 import { ScoutState, TakeCoverState, QUADRANTS, quadrantOf, SCOUT, TAKE_COVER, MedicState, MEDIC } from './bot-behaviours.js';
@@ -1259,12 +1259,28 @@ export class BotController {
     if (dx * dx + dz * dz < 1e-8) { this.moveForward = 0; return; }
     if (this.vehicle && !this.vehicle.drives) { this.moveForward = 0; this.moveStrafe = 0; return; }
     if (this.vehicle?.kind === 'ship') {
-      // `BoatControl::towardsDirection` on the water map's route leg.
+      // `BoatControl::towardsDirection` on the water map's route leg. The
+      // helm steers at the follower's look-ahead point; the move's end
+      // condition (`ConPosition(point, 4 x radius)`) belongs to the move's
+      // own point, which the executor tests, so no arrival here: with it a
+      // look-ahead point 10..40 m off the bow read as arrived and the helm
+      // cut the throttle, leaving a landing craft turning in place.
       const st = this.vehicle.drive?.state;
+      const nav = this._nav();
+      const w = st?.angularVelocity;
       const r = boatControl({
         forward: this._vehicleForward(), velocity: st ? [st.velocity.x, st.velocity.z] : [0, 0],
-        toTarget: [dx, dz], radius: this.vehicle.radius ?? 10,
+        toTarget: [dx, dz], radius: 0,
+        maxSpeed: this.vehicle.hullMaxSpeed || this.vehicle.maxSpeed || null,
+        prevSpeed: this._boatPrevSpeed ?? 0,
+        // A THREE yaw rate about +y turns the heading toward a negative angle.
+        yawRate: w ? -w.y : 0,
+        level: nav ? freeLevel(nav, this.position[0], this.position[2]) : Infinity,
+        // The channel as `speedControl` reads it: this tick's word, which
+        // `_resetInput` has zeroed (the bot's input is rebuilt every tick).
+        prevThrottle: 0,
       });
+      this._boatPrevSpeed = r.speed ?? 0;
       this.moveForward = r.throttle * (speed > 0 ? 1 : 0);
       this.moveStrafe = VEHICLE_YAW_SIGN * r.steer;
       this._dbgSteerAngle = r.angle;

@@ -144,6 +144,27 @@ const out = {};
   out.geometryTurned = turned.size.map(n => +n.toFixed(3));
 }
 
+// --- (a3) no mesh down the chain: a landing craft --------------------------------
+// The Daihatsu's hull is a `SimpleObject` under its cockpit `LodObject`, so
+// the chain finds nothing; the fallback measures every mesh but the effects'
+// in the root's own frame (a world AABB of the yawed craft read 20.8 m square).
+{
+  const craft = new THREE.Object3D();
+  craft.userData = { templateKind: 'PlayerControlObject', physics: { mass: 30000, vehicleCategory: 'VCSea' } };
+  const lod = new THREE.Object3D(); lod.userData = { templateKind: 'LodObject' };
+  const simple = new THREE.Mesh(new THREE.BoxGeometry(3.5, 3.4, 14.1));
+  simple.userData = { templateKind: 'SimpleObject' };
+  simple.position.set(0, -0.13, 0);
+  const effects = new THREE.Object3D(); effects.userData = { templateKind: 'EffectBundle' };
+  const foam = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)); foam.position.set(0, -2.5, 6);
+  effects.add(foam);
+  lod.add(simple); craft.add(lod); craft.add(effects);
+  craft.rotation.y = Math.PI / 4;
+  craft.updateMatrixWorld(true);
+  const g = hullGeometry(craft);
+  out.craftGeometry = { size: g.size.map(n => +n.toFixed(3)), keel: +g.keel.toFixed(3) };
+}
+
 // --- (b) the water gate -------------------------------------------------------
 {
   const { hull, scene } = buildFletcher();

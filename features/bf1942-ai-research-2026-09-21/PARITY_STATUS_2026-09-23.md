@@ -138,7 +138,11 @@ which the bot tests then covered.
    (north bank, south bank and the Sawmill are separate components on the
    viewer-built map; the Tigers reach 259 path failures). The bridge decks
    are statics over water; how the engine's map carries them is not read.
-6. **Boats**: split a parent hull's landing craft into their own drivable
-   roots (seats.js lists them as seats), then drive an LCVP on Iwo Jima /
-   Midway on the `LandingCraft3` map; build the water maps at their base
-   level (`2^L` blocks) rather than per metre.
+6. **Boats** (AI-73): a ship's Daihatsu / LCVP is split off at load as its
+   own unit; the helm runs `speedControl`'s regulated speed and turn. Live
+   on Wake a bot drove a Daihatsu 558 m on `LandingCraft3` to a south-shore
+   beach point and beached 23 m past it. Open: `actionStatusDecision`
+   states 1..9 (a beached or wedged hull cannot back off), braking on
+   arrival (`resetControls`), and the SAI's landing-zone orders
+   (`WPBeachLanding`), so the strategic layer never sends a craft to a beach
+   by itself yet.

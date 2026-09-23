@@ -91,6 +91,17 @@ class SeatsModuleTests(unittest.TestCase):
 
     # --- classification (GUN-10, verify-r6.md) ------------------------------
 
+    def test_a_ships_landing_craft_is_split_off_as_its_own_vehicle(self) -> None:
+        # `HatsuzukiDaihatsuSpawner` & co.: the engine spawns the craft as an
+        # object of its own; the exporter bakes it under the ship.
+        c = self.results["spawnedCraft"]
+        self.assertEqual(c["moved"], ["Daihatsu"])
+        self.assertEqual(c["craftParent"], "spawners")
+        self.assertEqual(c["seatParent"], "Hatsuzuki")
+        self.assertEqual(c["planeParent"], "Hatsuzuki")
+        self.assertEqual(c["drift"], 0)
+        self.assertEqual(c["roots"], ["Daihatsu", "Hatsuzuki"])
+
     def test_defgun_root_is_a_manned_gun(self) -> None:
         self.assertEqual("gun", self.results["classify"]["defgunRoot"])
 
