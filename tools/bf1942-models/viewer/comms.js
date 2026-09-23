@@ -20,9 +20,8 @@ import {
   radioPatch, RadioSpamLimit, radioGameMode, radioVars, visibleLeaves, leafText,
 } from './radio.js';
 import {
-  ChatLog, SECTION_CHAT, SECTION_INFO, SECTION_KILL, killWord, killLine,
-  teamKillLine, deathLine, captureLine, allPointsLine, rowGeometry,
-  dividerGeometry, lineColor,
+  ChatLog, SECTION_CHAT, SECTION_INFO, SECTION_KILL, deathLines, captureLine,
+  allPointsLine, rowGeometry, dividerGeometry, lineColor,
 } from './chat-log.js';
 
 const VIRTUAL_W = 800;
@@ -345,23 +344,9 @@ export function createComms(page) {
    * screen (0x006A88E0) when he is the local player.
    */
   comms.onKill = (victim, killer) => {
-    let centreText = null;
-    if (killer && killer.id !== victim.id) {
-      if (killer.team && killer.team === victim.team) {
-        chat.add(SECTION_KILL, { text: teamKillLine(killer.name, strings()), team: 0, buddy: isBuddy(killer) });
-        const death = deathLine(victim.name, strings());
-        chat.add(SECTION_KILL, { text: death, team: 0, buddy: isBuddy(victim) });
-        centreText = teamKillLine(killer.name, strings());
-      } else {
-        const word = killWord(killer.vehicle, strings(), chatLayout?.names);
-        const text = killLine(killer.name, victim.name, word);
-        chat.add(SECTION_KILL, { text, team: killer.team, buddy: isBuddy(killer) });
-        centreText = text;
-      }
-    } else {
-      const text = deathLine(victim.name, strings());
-      chat.add(SECTION_KILL, { text, team: 0, buddy: isBuddy(victim) });
-      centreText = text;
+    const { lines, centre: centreText } = deathLines(victim, killer, strings(), chatLayout?.names);
+    for (const { text, team, who } of lines) {
+      chat.add(SECTION_KILL, { text, team, buddy: isBuddy(who === 'killer' ? killer : victim) });
     }
     if (victim.local && centreText) {
       centre = { text: centreText, until: performance.now() + (chatLayout?.killMessage?.seconds ?? 10) * 1000 };

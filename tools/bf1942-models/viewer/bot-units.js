@@ -313,6 +313,12 @@ export function createBotUnits(env) {
    *  collider's owner of the node: an aircraft's differs. */
   units.destroyed = bot => !!env.world()?.occupiedDamageable?.(bot.playerId)?.destroyed;
 
+  /** Who killed his hull: the attacker of the lethal hit, whom
+   *  `GameServer::_giveDamage` credits with each crewman's death (lnxded
+   *  0x0814c122; `vehicle-damage.js` `killedBy`). Null for a hull that died
+   *  with nobody behind it, which the referee prints as `is no more`. */
+  units.attackerOf = bot => env.world()?.occupiedDamageable?.(bot.playerId)?.killedBy ?? null;
+
   units.seatOf = playerId => {
     const seat = env.vehicles.seatOf(playerId);
     return seat ? { vehicleId: seat.root.uuid, seatId: seat.seatId } : null;

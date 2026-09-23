@@ -143,6 +143,21 @@ export class DamageableVehicle {
     this.upsideDownAccumulator = 0;
     /** Set once the caller has been handed the death tier, so it fires once. */
     this.deathAnnounced = false;
+    /** Who last hit it: `Armor+0x14` (`lastHitPlayer`), which
+     *  `GameServer::_giveDamage` (lnxded 0x0814b870) sets through the Armor's
+     *  vtable +0x74 (0x0814b947) only when the attacker resolves to a player
+     *  (`getBFPlayer`, 0x0814b92c). A player id, or null. */
+    this.lastHitPlayer = null;
+    /** Who dealt the killing damage, or null when nobody did (a burn-down, a
+     *  hit with no player behind it). `_giveDamage` scores the crew's deaths
+     *  on the lethal call itself: it walks the hull's seats (`getPcos`,
+     *  0x0814baea) and, per living occupant, gives that call's attacker an
+     *  ordinary kill (score event 3, then `killPlayer(victim, true)`:
+     *  0x0814c122/0x0814c12f and 0x0814c277/0x0814c284), a team kill (6,
+     *  0x0814c15b / 0x0814c2d0) for his own side, or, when the call had no
+     *  attacker, `killPlayer(victim, false)` (4, `is no more`: 0x0814c224,
+     *  0x0814c399). Ledger AI-76. */
+    this.killedBy = null;
   }
 
   get hitPoints() { return this.armor.hitPoints; }
@@ -160,9 +175,14 @@ export class DamageableVehicle {
       && this.armor.hitPoints <= this.criticalDamage;
   }
 
-  /** A round landed. Returns the HP actually lost. */
-  damage(amount) {
-    return this.armor.damage(amount);
+  /** A round landed. `attacker` is the player behind it (an id), if any.
+   *  Returns the HP actually lost. */
+  damage(amount, attacker = null) {
+    if (this.armor.destroyed) return this.armor.damage(amount);
+    if (attacker != null) this.lastHitPlayer = attacker;
+    const lost = this.armor.damage(amount);
+    if (this.armor.destroyed) this.killedBy = attacker ?? null;
+    return lost;
   }
 
   /** A depot or a repair tool. Returns the HP actually restored. */
@@ -178,6 +198,8 @@ export class DamageableVehicle {
     this.waterAccumulator = 0;
     this.upsideDownAccumulator = 0;
     this.deathAnnounced = false;
+    this.lastHitPlayer = null;
+    this.killedBy = null;
   }
 
   /**
@@ -348,15 +370,15 @@ export class VehicleDamageSet {
   clear() { this.byOwner.clear(); }
 
   /**
-   * Apply a `gunfire.js` hit record. Returns the vehicle and the HP it lost, or
-   * null when the round hit something that cannot be damaged (terrain, a
-   * building, a tree).
+   * Apply a `gunfire.js` hit record. `attacker` is the player who fired it.
+   * Returns the vehicle and the HP it lost, or null when the round hit
+   * something that cannot be damaged (terrain, a building, a tree).
    */
-  applyHit(record) {
+  applyHit(record, attacker = null) {
     if (!record || !(record.damage > 0)) return null;
     const vehicle = this.get(record.owner);
     if (!vehicle || vehicle.destroyed) return null;
-    const lost = vehicle.damage(record.damage);
+    const lost = vehicle.damage(record.damage, attacker);
     return lost > 0 ? { vehicle, lost } : null;
   }
 
@@ -394,7 +416,7 @@ export class VehicleDamageSet {
    * does take the full falloff.
    */
   applySplash(record, targets,
-              { materials = null, modifiers = null, exposure = null } = {}) {
+              { materials = null, modifiers = null, exposure = null, attacker = null } = {}) {
     const material2 = record?.splashMaterial2;
     const radius = record?.splashRadius;
     if (!(Number.isFinite(material2) && material2 >= 0) || !(radius > 0)) {
@@ -445,7 +467,8 @@ export class VehicleDamageSet {
       const amount = splashHp(material2, splashMaterial, distance, radius,
                               materials, modifiers, seen);
       if (!(amount > 0)) continue;
-      const lost = victim.damage(amount);
+      // A soldier's own Armor takes no attacker; a hull records who hit it.
+      const lost = target.armor ? victim.damage(amount) : victim.damage(amount, attacker);
       if (lost > 0) {
         out.push({ vehicle: victim, target, lost, distance, exposure: seen });
       }

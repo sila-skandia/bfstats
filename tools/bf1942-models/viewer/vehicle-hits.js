@@ -209,12 +209,16 @@ export function createVehicleHits(page) {
    */
   function applyVehicleHit(record) {
     if (record?.target != null) applyRoundToSoldier(record);
-    const landed = page.vehicleDamage.applyHit(record);
+    // Whose round it is: the seat's holder, else the human's own hand weapon
+    // (bots resolve their hand weapons in the referee and never fire a
+    // `gunfire.js` round). The hull keeps it, so its crew's deaths name him.
+    const attacker = botFiringGroup(record) ?? page.LOCAL_PLAYER;
+    const landed = page.vehicleDamage.applyHit(record, attacker);
     if (landed) reconcileDamaged(landed.vehicle);
     if (!(record?.splashRadius > 0)) return;
     const splashed = page.vehicleDamage.applySplash(record, splashTargets(), {
       materials: page.guns.materials, modifiers: page.guns.modifiers,
-      exposure: soldierExposureFor,
+      exposure: soldierExposureFor, attacker,
     });
     for (const hit of splashed) {
       // A soldier target has no tier to re-pick and no wreck to build; what it
@@ -228,7 +232,7 @@ export function createVehicleHits(page) {
           // what is left is the bot's side of it (the log, the incoming-fire
           // event, a death).
           const at = record.splashPoint ?? record.point ?? null;
-          page.damageLanded(hit.target.botId, hit.lost, botFiringGroup(record) ?? page.LOCAL_PLAYER, at, { via: `splash ${record.gun ?? ''} d ${hit.distance.toFixed(1)}` });
+          page.damageLanded(hit.target.botId, hit.lost, attacker, at, { via: `splash ${record.gun ?? ''} d ${hit.distance.toFixed(1)}` });
         }
         if (hit.target.node && hit.vehicle.destroyed) hit.target.node.visible = false;
         continue;

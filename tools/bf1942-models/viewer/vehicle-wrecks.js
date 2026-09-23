@@ -16,7 +16,7 @@ import { spawnerWindow } from './game-modes.js';
  * `bindDynamicShading`, `bust`, `clearHitIndicator`, `collider`,
  * `dieInWreck`, `disposeEngineAudio`, `effects`, `exitPoseManned`, `extras`,
  * `fireStates`, `hud`, `isCollision`, `leaveSeat`, `loader`, `markPilot`,
- * `MODELS_BASE`, `occupancy`, `optOnFoot`, `placeCamera`,
+ * `MODELS_BASE`, `noteHullKiller`, `occupancy`, `optOnFoot`, `placeCamera`,
  * `resetMobileControls`, `respawnVehicleBody`, `retireVehicleBody`,
  * `soldier`, `soldierDead`, `standUp`, `updateHud`, `useLens`,
  * `vehicleDamage`, `vehicles`, `world`.
@@ -214,7 +214,7 @@ export function createVehicleWrecks(page) {
     // Whoever was in it dies with it, and that has to happen HERE — before the
     // seat is torn down below — because this is the one place a vehicle dies,
     // whatever killed it (a shell, the burn-down, drowning, the combat area).
-    killOccupantInWreck(visual.node);
+    killOccupantInWreck(visual.node, vehicle.killedBy);
     page.retireVehicleBody(vehicle.owner);
     const template = templateNameOf(visual.node);
     try {
@@ -288,8 +288,11 @@ export function createVehicleWrecks(page) {
    * A free-fly pilot (the debug checkbox, no soldier waiting) has no life to
    * lose: the seat still empties, and the camera goes back to the flythrough.
    */
-  function killOccupantInWreck(node) {
+  function killOccupantInWreck(node, killer = null) {
     if (!page.occupancy || page.occupancy.root !== node || page.soldierDead) return;
+    // The hull's killer is his (`vehicle-damage.js` `killedBy`): the message
+    // log names him when the death latches.
+    page.noteHullKiller?.(killer);
     // A wreck cuts off engine audio immediately -- crash effect plays, engine stops
     page.disposeEngineAudio();
     page.clearHitIndicator();

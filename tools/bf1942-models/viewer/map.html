@@ -770,6 +770,9 @@ const wrecks = createVehicleWrecks(bag(
     get fireStates() { return fireStates; }, get hud() { return hud; },
     get loader() { return loader; }, get MODELS_BASE() { return MODELS_BASE; },
     get optOnFoot() { return optOnFoot; }, get vehicles() { return vehicles; },
+    // The human died in his hull: whoever killed it killed him (the message
+    // log reads it when the death latches, `commsWatchLocalDeath`).
+    noteHullKiller: id => comms.noteAttack(LOCAL_PLAYER, speakerOf(id)),
   },
 ));
 const hullBodies = createHullBodies(bag(
@@ -1031,10 +1034,10 @@ const referee = createBotReferee({
     localPlayer.applyDamageToPlayer(hit.damage, { x: bot.position[0], y: bot.position[1], z: bot.position[2] }, bot.team);
     return true;
   },
-  damageHull: (bot, damage) => {
+  damageHull: (bot, damage, { attackerId = null } = {}) => {
     const hull = level.world?.occupiedDamageable(bot.playerId);
     if (!hull) return false;
-    hull.damage(damage);
+    hull.damage(damage, attackerId);
     return true;
   },
   defaultAttackerPos: () => (localPlayer.soldier ? [localPlayer.soldier.x, localPlayer.soldier.y, localPlayer.soldier.z] : null),
@@ -1048,9 +1051,7 @@ const referee = createBotReferee({
   onDeath: (bot, attackerId) => {
     const vis = botBodies.botVisuals.get(bot.playerId);
     if (vis) vis.group.visible = false;
-    const killer = attackerId === LOCAL_PLAYER ? localSpeaker()
-      : attackerId != null ? botSpeaker(referee.bots.find(b => b.playerId === attackerId)) : null;
-    comms.onKill(botSpeaker(bot), killer);
+    comms.onKill(botSpeaker(bot), speakerOf(attackerId));
   },
   onRespawned: bot => {
     const vis = botBodies.botVisuals.get(bot.playerId);
@@ -1418,6 +1419,11 @@ function localSpeaker() {
     vehicle: seat ? wrecks.templateNameOf(seat.root) || null : null,
     position: pos ? { x: pos.x, y: pos.y, z: pos.z } : null,
   };
+}
+/** The message log's speaker for a player id: the human, a bot, or null. */
+function speakerOf(id) {
+  if (id == null) return null;
+  return id === LOCAL_PLAYER ? localSpeaker() : botSpeaker(referee.bots.find(b => b.playerId === id));
 }
 function botSpeaker(bot) {
   if (!bot) return null;
