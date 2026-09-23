@@ -600,6 +600,8 @@ const audioSeatKey = playerId => (playerId === LOCAL_PLAYER ? 'local' : `bot:${p
 const localPlayer = createLocalPlayer(bag(
   from(() => deployScreen, `deployActive`),
   from(() => flagCapture, `resetCaptureUi`),
+  from(() => footBodies, `syncFootBody`),
+  from(() => freeCamera, `applyLook fly:flyFreeCamera`),
   from(() => hudFeed, `showHint`),
   from(() => level, `warmSubtree world`),
   from(() => localLook, `footLookPair mouseInput pumpLook rebuildVehicleInterp`),
@@ -608,11 +610,11 @@ const localPlayer = createLocalPlayer(bag(
   from(() => pageInput, `captured HUD_FOOT kbLockLeave keys seatAltFire seatFire touchFlying`),
   from(() => room, `netSeatRow netSendAction netVehicleIdFor noteOccupiedVehicle roomJoined`),
   from(() => seatCamera, `buildSeatView forgetSeatViews HUD_DRIVE HUD_MANNED HUD_PILOT
-    mannedActive view viewFor`),
-  from(() => seatPose, `disposeSeatPose loadSeatPose`),
+    mannedActive seatedCamera view viewFor`),
+  from(() => seatPose, `disposeSeatPose followSeat loadSeatPose stepSeatIk`),
   from(() => soldierHud, `triggerHitIndicator`),
   from(() => soldierKit, `disposeHandWeapon`),
-  from(() => soldierView, `EMPTY_KEYS`),
+  from(() => soldierView, `EMPTY_KEYS onFootCamera`),
   from(() => spawning, `buildSpawnFlags deployTeamId showFlagPicker spawnAtFlag`),
   from(() => touchControls, `clampMobileInput feedMobileTurretAim mobileJumpHeld mobilePadAxis
     mobilePadHeld mobilePadVector updateMobileControls`),
@@ -1558,34 +1560,27 @@ function commsWatchLocalDeath() {
   }
   commsWasAlive = alive;
 }
+// The frame, in named phases. Each phase whose state one module owns lives in
+// that module (`localPlayer.frameInput`, `localPlayer.frameCameras`); the rest
+// are this page's wiring of several owners, in the order the page has always
+// run them. The order below is load-bearing: see each phase's own comments.
 function frame(dt) {
   // Every drawn hull back on its last tick's pose before any of the frame's
   // simulation reads it (the bots' AI after the step, on a frame that ran no
   // tick); `localLook.present` below draws them between ticks again.
   localLook.restoreTickPose();
-  // The human's presentation follows the seat he holds, looked up every frame
-  // (a bot taking the wheel of his hull gives it a drive under him).
-  if (optPilot.checked) localPlayer.syncLocalSeat();
-  touchControls.updateMobileControls();
-  // ---- the input stage (page) ----------------------------------------------
-  // The keyboard and the mouse never leave this page. The look stage (the
-  // mouse stage's per-frame pump, mouse-input.js) is pumped here once a frame
-  // in exactly the two cases the old code pumped it — on foot
-  // (`stepSoldierLook(pumpLook(ticks))`) and seated (`stepTurret`'s own pump) —
-  // and never for the free camera. The world owns the tick from there: its
-  // per-tick law consumes one buffered input per player per tick (world.js,
-  // the tick law in its header), which is the engine's own
-  // `InputManager::update` 0x0049cff7 boundary.
-  const seated = optPilot.checked && localPlayer.occupancy;
-  const onFoot = optOnFoot.checked && localPlayer.soldier;
-  // The world's one clock answers this frame's tick count; the pump reads it
-  // so the look stage and the sim can never drift apart (Fix 5). A frame
-  // before any level has built the world owes no ticks.
-  const lookTicks = level.world?.lookTicks(dt) ?? 0;
-  const { input, look } = localPlayer.sampleInput(seated, onFoot, lookTicks, dt);
-  level.world?.setInput(LOCAL_PLAYER, input, look);
-  localPlayer.frameInputLast = input;
+  const { seated, onFoot, input, look } = localPlayer.frameInput(dt);
+  const step = simulate(dt, input, look);
+  // ---- the cameras and the rest of the presentation -------------------------
+  localPlayer.frameCameras(dt, seated, onFoot);
+  presentWorld(step, dt);
+  draw(dt);
+  paintHud(dt);
+}
 
+/** The simulation phase: the world's tick, then the bots, the capture law and
+ *  the drawn instant, the room's send, and the step's readbacks. */
+function simulate(dt, input, look) {
   // ---- the sim core (world) -------------------------------------------------
   // The whole simulation core of the old frame() in one 30 Hz step: the
   // per-player soldiers and occupied drivetrains (the old onFoot +
@@ -1617,32 +1612,12 @@ function frame(dt) {
   combatFrame = local?.combat ?? null;
   combatFrameWorld = level.world;
   if (local?.look) soldierKit.addFootLook(local.look);
+  return step;
+}
 
-  // ---- the cameras and the rest of the presentation -------------------------
-  if (seated) {
-    seatCamera.seatedCamera(dt);
-  } else if (onFoot) {
-    soldierView.onFootCamera(dt);
-  } else {
-    freeCamera.fly(dt);
-    freeCamera.applyLook();
-  }
-  // Unconditional: rounds already in the air have to finish their flight even
-  // if the trigger, the pilot mode or the whole aircraft has gone away — the
-  // world's tick runs `guns.advance` after the players and before the bodies,
-  // exactly where frame() used to.
-  seatPose.followSeat(dt);
-  // The player's own body. After `onFootCamera` (which is where `syncFootView`
-  // settled whether the camera is inside the man this frame) and after the
-  // world's tick has moved him, so the rig is placed at the position the frame
-  // is actually drawn at rather than the previous one's.
-  footBodies.syncFootBody(dt);
-  // After the mixer, which has just re-posed the arms from the sit clip, and
-  // after the drivetrain's `applyRig`/`applyTurrets` above, which is where the
-  // steering wheel got this frame's angle. Both orders matter: run it before
-  // the mixer and the clip overwrites the hands, run it before the rig and the
-  // hands chase last frame's wheel.
-  if (optPilot.checked) seatPose.stepSeatIk();
+/** The world's presentation: hull bodies, damage, effects, their sound, the
+ *  level's own per-frame visuals and the page's audio. */
+function presentWorld(step, dt) {
   // After the drive model has moved the player's vehicle and before the damage
   // pass, so a ram's hit points and its smoke tier land on the same frame.
   // The world's tick ran the bodies immediately before its own damage pass,
@@ -1688,6 +1663,11 @@ function frame(dt) {
   level.updateSky();
   // After the camera controls: a followed replay places the camera last.
   replayController?.update(dt);
+}
+
+/** The draw phase: the 3D frame, the viewmodel over it, and the 2D surfaces
+ *  drawn beside the HUD (the deploy screen, the scoreboard, the maps). */
+function draw(dt) {
   renderer.render(scene, camera);
   soldierKit.renderViewmodel();
   deployScreen.deployAnimate(dt);
@@ -1695,6 +1675,10 @@ function frame(dt) {
   mapSurfaces.bfmap.update(dt);
   mapSurfaces.drawMinimap();
   mapSurfaces.drawFullMap();
+}
+
+/** The HUD feed and paint, last, over everything. */
+function paintHud(dt) {
   // Last, over everything: feed this frame's soldier-side variables, then
   // repaint only if paint() finds one of them (or the stage size) actually
   // changed since the call before (features/mesh-viewer-performance, rule 7).
