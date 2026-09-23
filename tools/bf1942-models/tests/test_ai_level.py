@@ -75,6 +75,20 @@ ai.addSAIStrategy 2 broad
 ai.addSAIStrategy 2 flank
 """
 
+LANDING = """
+aiStrategicArea.create CrossRoads 1140/747 1153/757 150 land
+aiStrategicArea.create DefGun1 614.5/1048.5 640/1074 50 land
+AILandingZone.createLandingZone SouthLanding 1110/593 1196/713 LZZMax
+AILandingZone.createLandingZone EastLanding 1560/1026 1440/938 LZXMin
+rem AILandingZone.createLandingZone NorthTipLanding 744/1353 864/1443 LZXMax
+AILandingZone.createLandingZone Odd 0/0 10/10 Sideways
+aiStrategicArea.setActive CrossRoads
+AIStrategicArea.attachLandingZone SouthLanding
+AIStrategicArea.addLandingZoneUnit LandingCraft
+aiStrategicArea.setActive DefGun1
+AIStrategicArea.addExpelledUnit LandingCraft
+"""
+
 PATHFINDING = """
 ai.numAStarResources 12
 ai.addSearchMap Infantry1 0 1.5 30 1.0 0.4 2.0 1
@@ -101,6 +115,33 @@ class AiLevelGrammarTests(unittest.TestCase):
         self.assertEqual(base.vehicleSearchRadius, 190.0)
         self.assertEqual(base.takeable, {"1": False})
         self.assertEqual(self.ai.strategicAreas[1].flags, ["Flank", "ChokePoint"])
+
+    def test_landing_zones_and_the_areas_that_use_them(self) -> None:
+        # `AILandingZone.createLandingZone` (Wake's lines): the corners sorted
+        # per axis (ctor 0x0863ac80), z negated into the glTF frame, and the
+        # beach edge the direction names in that frame (the engine's ZMax is
+        # the exporter's zMin). A `rem` zone is not created.
+        parse_strategic_areas(LANDING, self.ai)
+        zones = {z.name: z for z in self.ai.landingZones}
+        self.assertEqual(list(zones), ["SouthLanding", "EastLanding", "Odd"])
+        south = zones["SouthLanding"]
+        self.assertEqual(south.min, [1110.0, -713.0])
+        self.assertEqual(south.max, [1196.0, -593.0])
+        self.assertEqual((south.direction, south.beach), ("LZZMax", "zMin"))
+        east = zones["EastLanding"]
+        self.assertEqual(east.min, [1440.0, -1026.0])
+        self.assertEqual(east.max, [1560.0, -938.0])
+        self.assertEqual(east.beach, "xMin")
+        self.assertIsNone(zones["Odd"].beach)
+        cross, defgun = self.ai.strategicAreas
+        self.assertEqual(cross.category, "land")
+        self.assertEqual(cross.landingZones, ["SouthLanding"])
+        self.assertEqual(cross.landingZoneUnits, ["LandingCraft"])
+        self.assertEqual(defgun.expelledUnits, ["LandingCraft"])
+        self.assertEqual(defgun.landingZones, [])
+        out = self.ai.to_json()
+        self.assertEqual(out["landingZones"][0]["beach"], "zMin")
+        self.assertEqual(out["strategicAreas"][0]["landingZoneUnits"], ["LandingCraft"])
 
     def test_conditions_prerequisites_and_strategies(self) -> None:
         parse_conditions(CONDITIONS, self.ai)
@@ -149,6 +190,33 @@ class AiLevelInstallTests(unittest.TestCase):
         self.assertEqual(len(ai.strategicAreas), 9)
         self.assertEqual(sorted(ai.sideStrategies), ["1", "2"])
         self.assertEqual([s.name for s in ai.strategies], ["flank", "broad", "breakOut", "cleanUp"])
+        self.assertEqual(ai.landingZones, [])
+
+    def test_wake_landing_zones_from_the_installed_game(self) -> None:
+        try:
+            from bf42.level import find_level_archives, load_level_files
+            from extract_models import DEFAULT_GAME_DIR
+        except Exception as exc:  # noqa: BLE001
+            raise unittest.SkipTest(str(exc))
+        game_dir = Path(os.path.expanduser(str(DEFAULT_GAME_DIR)))
+        try:
+            paths = find_level_archives(game_dir, "bf1942", "wake")
+        except Exception as exc:  # noqa: BLE001
+            raise unittest.SkipTest(str(exc))
+        ai = load_level_ai(load_level_files(paths, "wake"))
+        self.assertIsNotNone(ai)
+        # Four live zones (two more are `rem`med out), each attached to one
+        # land area whose landing-zone unit is the Daihatsu's `LandingCraft`.
+        self.assertEqual(sorted(z.name for z in ai.landingZones),
+                         ["CentreLanding", "EastLanding", "SouthBayLanding", "SouthLanding"])
+        users = {a.name: a.landingZones for a in ai.strategicAreas if a.landingZones}
+        self.assertEqual(users, {"CrossRoads": ["SouthLanding"], "NorthernMainBaseExit": ["EastLanding"],
+                                 "SouthernBase": ["SouthBayLanding"], "WesternMainBaseExit": ["CentreLanding"]})
+        for a in ai.strategicAreas:
+            if a.landingZones:
+                self.assertEqual(a.landingZoneUnits, ["LandingCraft"])
+        expelled = sorted(a.name for a in ai.strategicAreas if "LandingCraft" in a.expelledUnits)
+        self.assertEqual(expelled, ["DefGun1", "DefGun2", "FirstNorthenBase", "MainBase", "SecondNorthenBase"])
 
 
 def _raw_map(records) -> bytes:
