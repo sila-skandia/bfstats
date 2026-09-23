@@ -111,6 +111,11 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | avoid | contact distance | 1.2 m (`2 x 1.0 x 0.6`) | | `bot.js _urgencyAvoid` | INVENTION |
 | avoid | closing speed | 0.2 m/s | `collisionPredicted` 0x0855d2f0 | `bot.js _urgencyAvoid` | ENGINE |
 | avoid | side step | 5 m, 0.5 s, 45 deg | engine: a second of travel, 1.1 x time to contact, 5 m | `bot.js AVOID_STEP`, `AVOID_TIME` | INVENTION |
+| avoid | look-ahead | 5 s (every Mobile plug-in; the big ships' con sets 15) | `avoidCollisionLookAhead`, Mobile +0x2c (ConsoleClass539 0x085039b0); both ctors write 5.0 (0x085e0bd7, 0x085e0c9b) (ledger AI-95) | `AIR_AVOID.lookAhead` (aircraft only; the soldier's avoid still has none) | ENGINE |
+| avoid | aircraft urgency | the sum over predicted collisions of `mass x |relVel| / |rel|`, neighbours within `5 speed + r` in the side's and the neutral grid, radii the local boxes' half diagonals | `BBAvoid::calculateUrgency` 0x0855c650, `collisionPredicted` 0x0855d2f0, `getSmallestRadius` 0x085d68f0, `getMass` 0x085ebd20 (AI-95) | `bot-vehicle-air.js airAvoidUrgency`, `bot-pilot.js airAvoid` | ENGINE |
+| avoid | aircraft turn | a point one second of travel ahead turned 45 deg away, `-+ 2 t` in height, for `1.1 t`, 30 m clearance | `BBPAvoidCollision3d::createPlan` 0x08587420 (AI-95) | `airAvoidPoint`, `AIR_AVOID_CLEARANCE` | ENGINE |
+| avoid | aircraft grids | enemy hulls at their true position when the side knows a crewman; soldiers left out | `getInformationGrid` 0x085e5450 (the known record's position not kept) | `bot-pilot.js friendlyHulls` | INVENTION |
+| change | runway | a plane is taken only with no mobile, non-soldier, non-naval object in the box `0.6 dx .. 12 dx` ahead, `1.5 dz` wide, `1.3 dy` high | `BBChange::runwayClear` 0x0855f850, `Frustum::setupOrtho` 0x08441110, `RunwayObstructedPredicate` 0x08560070 (AI-95) | `bot-vehicle-air.js runwayClear`, `bot-pilot.js candidateRunwayClear` | ENGINE |
 | move | fallback waypoint radius | 5 m | | `bot.js FALLBACK_WAYPOINT_RADIUS` | INVENTION |
 | move | no-progress redeploy | 12 s, 0.5 m | | `bot.js NO_PROGRESS_RESPAWN` | INVENTION |
 | move | smoothing | 10 points | `AIpathFinding.con ai.setSmoothing 1 10` (`getSmoothing`, vtable +0x2c) | `bot.js SMOOTHING` | CON |

@@ -17,7 +17,7 @@ import { Armor } from './armor.js';
 import { tankControl, unitUrgency, changeUrgency, orderSplit, teleportChangeUrgency, actionStatusDecision, searchBox, checkLine, boxExit, TANK, TELEPORT, CHANGE } from './bot-vehicle.js';
 import { readFileSync } from 'fs';
 import { towardsPoint, boatControl, boatSpeedControl, boatResetControls, BOAT, rotate, attackRunStep, roundMiss, planeFireMode, aimAtDirection, towardsDirectionEngine, stickShape, PLANE_FIRE,
-         planeAimFor, precisionGate, nearestMiss } from './bot-vehicle-air.js';
+         planeAimFor, precisionGate, nearestMiss, runwayClear, collisionPredicted, airAvoidUrgency, airAvoidPoint } from './bot-vehicle-air.js';
 import { fireStrength, unitTable, EnemyStrengthTables, engineHeatInfluence, STRENGTH } from './bot-strength.js';
 import { scoreVehicleTargets, scoreTargets, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
 import { freeRun, freeBox, freeLevel, CELL_LAND, CELL_FREE } from './nav-grid.js';
@@ -855,7 +855,42 @@ function gunnerScenarios() {
   };
 }
 
+/** Brief K item 2: aircraft spacing. `runwayClear` 0x0855f850 on a
+ *  Spitfire-sized box (span 11.2, height 3.5, length 9.1) facing +z;
+ *  `collisionPredicted` 0x0855d2f0; the avoid's urgency and its turn away. */
+function airSpacingScenario() {
+  const box = { min: [-5.6, 0, -4.55], max: [5.6, 3.5, 4.55] };
+  const plane = ['ITUnit', 'ITMobile', 'ITAir'];
+  const at = (x, y, z, types = plane) => ({ pos: [x, y, z], types });
+  const clear = (others) => runwayClear({ position: [0, 0, 0], forward: [0, 1], box, others });
+  const runway = {
+    empty: clear([]),
+    planeAhead: clear([at(0, 0, 50)]),
+    planeFar: clear([at(0, 0, 140)]),
+    planeBehind: clear([at(0, 0, -20)]),
+    planeBeside: clear([at(12, 0, 50)]),
+    soldierAhead: clear([at(0, 0, 50, ['ITUnit', 'ITMobile', 'ITSoldier'])]),
+    shipAhead: clear([at(0, 0, 50, ['ITMobile', 'ITNaval'])]),
+    parkedGun: clear([at(0, 0, 50, ['ITUnit', 'ITGround', 'ITFixed'])]),
+  };
+  const headOn = collisionPredicted([0, 0, 200], [0, 0, -100], 15, 5);
+  const offset = collisionPredicted([30, 0, 200], [0, 0, -100], 15, 5);
+  const late = collisionPredicted([0, 0, 800], [0, 0, -100], 15, 5);
+  const opening = collisionPredicted([0, 0, 200], [0, 0, 100], 15, 5);
+  const touching = collisionPredicted([5, 0, 0], [0, 0, 0], 15, 5);
+  const self = { id: 'a', centre: [0, 100, 0], velocity: [0, 0, 50], radius: 7.5 };
+  const u = airAvoidUrgency({ self, others: [
+    { id: 'b', centre: [5, 100, 200], velocity: [0, 0, -50], radius: 7.5, mass: 2500 },
+    { id: 'c', centre: [300, 100, 0], velocity: [0, 0, 50], radius: 7.5, mass: 2500 },
+  ] });
+  const right = airAvoidPoint({ position: [0, 100, 0], velocity: [50, 0, 0], other: [100, 100, 20], t: 2, altitude: 100, otherAltitude: 110 });
+  const left = airAvoidPoint({ position: [0, 100, 0], velocity: [50, 0, 0], other: [100, 100, -20], t: 2, altitude: 120, otherAltitude: 110 });
+  return { runway, headOn, offset, late, opening, touching, urgency: u.urgency, best: u.best?.id ?? null, bestT: u.best?.t ?? null,
+           right: right.point.map(v => +v.toFixed(3)), rightUntil: right.until, left: left.point.map(v => +v.toFixed(3)) };
+}
+
 const results = {
+  airSpacing: airSpacingScenario(),
   strength: strengthScenario(),
   teleport: teleportScenario(),
   actionStatusFixture: actionStatusFixtureScenario(),
