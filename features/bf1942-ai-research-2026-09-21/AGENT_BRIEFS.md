@@ -209,6 +209,15 @@ Do:
    hull where it stands.
 3. Live: the Sherman hull-gunner bot kills a frozen soldier at 40 m; a
    Sherman's y changes by under 0.05 m across a human boarding.
+4. Added 2026-09-24 from the flak agent's report: a bot in the AA gun now
+   targets the human's plane (AI-78, `258ba377`) but never fires, because
+   the turret swings past a 55 m/s target and never settles. Once the
+   gains are the seat's own, prove it live: a bot in El Alamein's AA gun
+   fires at a Spitfire flying a straight pass 150 m out, and the flak
+   bursts on it (the proximity fuse is on main, see
+   features/flak-proximity-fuse/README.md). The gunner's lead comes from
+   the same aim path; if it still misses, read where the engine leads a
+   moving target before inventing one.
 
 ## Brief G: a level switch resets the bot side
 
