@@ -352,9 +352,10 @@ function nearestFreeCell(levelAt, gx, gz, minLevel, rings, cs) {
  * stood on a valid cell when it stands on a blocked one now
  * (`AIObjectMobile::getValidPosition` 0x085d5bb0, kept by `positionChanged`
  * 0x085d5b30); a hull that never has takes the nearest free cell
- * (INVENTION, below). The object check's list is the bot's planted obstacle
- * circles (INVENTION: the engine's is the bot's nearby-object list, bot
- * vtable +0x124). `minLevel` is the map's search level floor.
+ * (INVENTION, below). The object check's list is the bot's potential
+ * obstacles (`BotMain::getPotentialObstacles` 0x0852d790, bot vtable +0x124,
+ * each object's Physical radius): here the circles the follower plants.
+ * `minLevel` is the map's search level floor.
  */
 export function hullDecision(bot, dx, dz, minLevel = 0) {
   const nav = bot._nav();
