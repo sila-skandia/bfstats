@@ -1,6 +1,6 @@
 // The level's own search maps: the bitmaps the level archive ships baked
 // (`Pathfinding/<name>Level<L>Map.raw`) and the retail server loads with
-// `ai.loadMaps` instead of painting (ledger AI-93, AI-95). The extractor
+// `ai.loadMaps` instead of painting (ledger AI-93, AI-102). The extractor
 // copies each loaded map's lowest level to `<level>/pathfinding/` with an
 // `index.json` (`bf42/ai_level.py write_level_search_maps`); this module
 // fetches and decodes them, and `buildNavMap` (`nav-map.js`) takes a baked

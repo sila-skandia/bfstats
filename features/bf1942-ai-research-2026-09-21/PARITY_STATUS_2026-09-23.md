@@ -142,8 +142,10 @@ which the bot tests then covered.
    roll rate. Live on Bocage a Sherman driven nose-first into a wall backed
    2.2 m turning 61 deg, then turned and drove 38 m to its point. Open: a
    viewer full-lock pivot creeps backward, which flips the steer through the
-   negation; a hull whose pad the viewer's map paints blocked (El Alamein's
-   nearest Allied Sherman) stays on it. Read since
+   negation. ~~A hull whose pad the map paints blocked stays on it~~ settled
+   (AI-103, 2026-09-24): a hull never valid gets no box and runs the state
+   machine's no-box rows, as `getBox` 0x08612060 does; live, El Alamein's
+   Sherman on the blocked (1731, -804) drove off 92 m. Read since
    (AI-72): the 20 s feedback veto is dead in retail (its writer is gated on
    a `detectAimingFailure` that returns 0), and a target's security is 1 on
    its own side and `1 - SCurve(age / decay)` on the other. ~~The decay
@@ -172,7 +174,22 @@ which the bot tests then covered.
    differences: the slope test's sub-sampling; on Omaha and Market Garden
    the baked maps block everything outside the play area; and Market
    Garden's `Ironbrdg1` is not in the drivable mask, so its deck is still
-   cut).
+   cut). **Loaded outright (AI-102..AI-104, 2026-09-24, Brief M):** every
+   level's own maps are extracted (`extract_search_maps.py`, 796 maps on 271
+   levels, 66.8 MB, live on mesh.bfstats.io) and the page and the runner
+   search them; only the six levels with no `AI.con` paint. A hull's box
+   stops at the map's `maxLevel` (2 on `Tank0`), and the coarse layer is each
+   cell's free patches (the old any-free-metre cell joined ground across El
+   Alamein's cliffs). Runner, SAI, 8 a side, 600 s, seeds 1..10, main
+   `cd2d3328` -> after: route failures a match Bocage 7.0 -> 26.0, El Alamein
+   116.4 -> 0.0; captures (Axis / Allies) Bocage 2.4 / 2.1 -> 1.4 / 2.0, El
+   Alamein 2.7 / 2.4 -> 0.8 / 1.4. Open: the engine's `StrategicMap`
+   (`Pathfinding/<type>.raw`, `<type>Info.raw`, `StrategicMap::load`
+   0x08609b60) is shipped beside the maps and not read; the coarse layer is
+   still an INVENTION. Bocage's remaining failures are tanks within 15 m of
+   order points the baked `Tank0` blocks (753..761, -936). The `Car4` and
+   `Amphibius4` maps are published but no viewer unit searches them (every
+   land vehicle uses `Tank*`).
 6. **Boats** (AI-73): a ship's Daihatsu / LCVP is split off at load as its
    own unit; the helm runs `speedControl`'s regulated speed and turn. Live
    on Wake a bot drove a Daihatsu 558 m on `LandingCraft3` to a south-shore
@@ -210,4 +227,23 @@ which the bot tests then covered.
    applied because the viewer's water map blocks the Daihatsus' spawn
    cells); (d) the ramp input is not written; (e) the engine's strategic
    route (`validateDistances`) is not read, so a routed landing drives no
-   intermediate points.
+   intermediate points. **On the baked maps (Brief M, 2026-09-24):** all
+   four Wake Daihatsus' parked cells, (561, -1386), (572, -1374),
+   (460, -1358), (473, -1343), are free on the level's own `LandingCraft3`
+   (level 2), so the root's own-map test (0x0855ee25 -> 0x0855f0f0) is now
+   portable (follow-up, not built here); (a) the baked `LandingCraft3` is
+   free under Wilkes' bridge at (894, -920) too (the engine routes a craft
+   there as well), and blocks the shelf at (819, -1413) (the nearest free
+   cell is 8 m west). Runner, Wake, seed 1, 8 a side, 300 s, main `cd2d3328`
+   -> baked: both Daihatsus taken within 0.27 s either way; painted,
+   `Daihatsu_1` lands on `SouthLanding` at 143.2 s and a rider takes
+   `Landing_Beach` at 149.7 s, `Daihatsu` bails off the west shore at
+   217.8 s; baked, `Daihatsu` (bound for `EastLanding`) bails at 119.5 s at
+   (1133, -836) on the lagoon's north shelf, a pixel off the free water and
+   in no zone, and `Daihatsu_1` reaches the `SouthLanding` approach at 120 s,
+   overshoots (open item (b), the weak reverse) and is re-ordered between
+   `CentreLanding` and `EastLanding` to the end: no capture (2 before).
+   Route failures 17,303 -> 13,736, 13,675 of them on foot at the
+   Shokaku's deck (620..660, -1420..-1460): a ship is not on the baked
+   infantry map (it was not on the engine's either), so a soldier standing
+   on the carrier fails every route; the painted map had the deck.
