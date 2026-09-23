@@ -264,6 +264,10 @@ import { createSeatPose } from './seat-pose.js';
 import { createFootBody } from './foot-body.js';
 import { createSoldierView } from './soldier-view.js';
 import { createPageAudio } from './page-audio.js';
+import { createFlagCapture } from './capture.js';
+import { createVehicleWrecks } from './vehicle-wrecks.js';
+import { createHullBodies } from './hull-bodies.js';
+import { createVehicleHits } from './vehicle-hits.js';
 
 // Which game's levels this page serves, and the directory they hang off:
 // 'maps' for vanilla, 'maps/mods/eod' for a mod. Resolved before anything is
@@ -1698,7 +1702,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyZ' && !e.repeat && optOnFoot.checked && soldier) prone = !prone;
   if (captured && (FLY_KEYS.has(e.code)
       || (optOnFoot.checked && FOOT_KEYS.has(e.code))
-      || (optPilot.checked && AIR_KEYS.has(e.code)))) e.preventDefault();
+      || (optPilot.checked && vehicleHits.AIR_KEYS.has(e.code)))) e.preventDefault();
 });
 addEventListener('keyup', e => {
   // Push-and-hold: the board held up on Tab goes with the key, whatever else
@@ -3591,7 +3595,7 @@ function tagVehicleControlPoints() {
   const scratch = new THREE.Vector3();
   for (const vehicle of spawnersRoot.children) {
     vehicle.getWorldPosition(scratch);
-    const want = templateNameOf(vehicle).toLowerCase();
+    const want = wrecks.templateNameOf(vehicle).toLowerCase();
     let best = null;
     let bestDistance = Infinity;
     for (const spawn of spawns) {
@@ -3865,8 +3869,8 @@ const vehicles = new VehicleRegistry({
   buildDrive: instance => buildHullDrive(instance),
   world: () => world,
   guns: null,      // `guns` is built further down; set there
-  adopt: drive => adoptDrivenBody(drive),
-  release: drive => releaseDrivenBody(drive),
+  adopt: drive => hullBodies.adoptDrivenBody(drive),
+  release: drive => hullBodies.releaseDrivenBody(drive),
   thaw: root => thawVehicle(root),
   freeze: root => freezeVehicle(root),
   claimAudio: (playerId, root, drive, groups) => pageAudio.claimVehicleAudio(audioSeatKey(playerId), root, drive, groups),
@@ -3912,7 +3916,7 @@ const localPlayer = {
 function buildHullDrive(instance) {
   const occ = instance.occupancy;
   const drive = occ.ensureDrive(currentRoot, {
-    groundHeight, surfaceFriction, deckNormal, collider: bodyAwareCollider(),
+    groundHeight, surfaceFriction, deckNormal, collider: hullBodies.bodyAwareCollider(),
     // The flat sea. A ship needs it twice: its `FloatingBundle`s measure
     // `f` against it, and its two rudders make lift at all only because
     // `PhysicsWing` gives a submerged surface a medium of 10.
@@ -3947,14 +3951,14 @@ function buildHullDrive(instance) {
     drive.groundNormal = (x, z, out) => {
       const n = collider?.heightfield?.normal;
       if (!n) { out.set(0, 1, 0); return out; }
-      n.call(collider.heightfield, x, z, _shipNormal);
-      out.set(_shipNormal[0], _shipNormal[1], _shipNormal[2]);
+      n.call(collider.heightfield, x, z, hullBodies._shipNormal);
+      out.set(hullBodies._shipNormal[0], hullBodies._shipNormal[1], hullBodies._shipNormal[2]);
       return out;
     };
     // ... and once she is on it, what holds her there: the mean of her own
     // material's friction and the bottom's, which is what `impulseOn` writes
     // as the Coulomb budget's `A`.
-    drive.seabedFriction = seabedFriction;
+    drive.seabedFriction = hullBodies.seabedFriction;
   }
   // `Vehicle` defaults to forcing first person every step, because a page
   // with a single view has no other way to say "someone is sitting in it".
@@ -3988,1395 +3992,54 @@ function buildHullDrive(instance) {
 // alias), so every HUD feed, splash pass and console hook that always reached
 // `vehicleDamage` still reaches the same object the world steps.
 let vehicleDamage = new VehicleDamageSet();
-// owner id -> { node, anchors: Map<effectName, Object3D>, handles: [] }, the
-// scene-side bookkeeping a tier change needs to undo.
-const damageVisuals = new Map();
-
-/**
- * Register every placed object that carries an `armor` extras block. Most of a
- * level has none — a palm and a sandbag have no Armor at all (ARM-3) — so this
- * is a handful of vehicles and stationary guns out of hundreds of objects.
- */
-function registerDamageables(ownerRoots) {
-  clearDamageVisuals();
-  vehicleDamage.clear();
-  // The world registers its side of every Armored owner (its own
-  // `vehicleDamage` set IS this array — same object, see show()) and takes
-  // the node + a world position for the water pass, so that pass needs no
-  // scene graph. A static root never moves, so its registration pose is
-  // enough; a hull's position is refreshed from the body world every tick.
-  const regPos = new THREE.Vector3();
-  for (let owner = 0; owner < ownerRoots.length; owner++) {
-    const node = ownerRoots[owner];
-    const armorExtras = node?.userData?.armor;
-    const vehicle = world.addDamageable(owner, node, armorExtras, {
-      name: node?.name || null,
-      position: node ? (() => {
-        node.updateWorldMatrix(true, false);
-        node.getWorldPosition(regPos);
-        return [regPos.x, regPos.y, regPos.z];
-      })() : null,
-    });
-    if (vehicle) {
-      damageVisuals.set(owner, {
-        node,
-        anchors: new Map(),
-        handles: [],
-        spawnDelay: spawnDelayForNode(node),
-      });
-    }
-  }
-}
-
-/**
- * Match a placed spawner node to its ObjectSpawner respawn window.
- * Prefer the glb's own `userData.spawner` (stamped at extract); else nearest
- * `objectSpawns` entry in scene.json by vehicle name + position.
- */
-function spawnDelayForNode(node) {
-  // `byMode` on the stamp when two modes time one pad differently.
-  const stamped = spawnerWindow(node?.userData?.spawner, extras?.gameplayMode);
-  if (stamped && (Number.isFinite(stamped.minSpawnDelay)
-                  || Number.isFinite(stamped.maxSpawnDelay))) {
-    const min = stamped.minSpawnDelay ?? stamped.maxSpawnDelay;
-    const max = stamped.maxSpawnDelay ?? min;
-    return { min, max };
-  }
-  const spawns = extras?.objectSpawns;
-  if (!Array.isArray(spawns) || !spawns.length) return null;
-  const want = templateNameOf(node).toLowerCase();
-  const pos = node.getWorldPosition(new THREE.Vector3());
-  let best = null;
-  let bestDist = Infinity;
-  for (const spawn of spawns) {
-    if ((spawn.vehicle || '').toLowerCase() !== want) continue;
-    if (!Number.isFinite(spawn.minSpawnDelay) && !Number.isFinite(spawn.maxSpawnDelay)) {
-      continue;
-    }
-    const [x, y, z] = spawn.position || [];
-    const dist = Number.isFinite(x)
-      ? Math.hypot(pos.x - x, pos.y - (y || 0), pos.z - z)
-      : 0;
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = spawn;
-    }
-  }
-  if (!best) return null;
-  const min = best.minSpawnDelay ?? best.maxSpawnDelay;
-  const max = best.maxSpawnDelay ?? min;
-  return { min, max };
-}
-
-/** Drop every running tier effect. Call on a level change. */
-function clearDamageVisuals() {
-  for (const visual of damageVisuals.values()) {
-    for (const handle of visual.handles) handle.stop?.();
-    visual.handles.length = 0;
-    for (const anchor of visual.anchors.values()) anchor.parent?.remove(anchor);
-    visual.anchors.clear();
-  }
-  damageVisuals.clear();
-}
-
-/**
- * An empty node at an `addArmorEffect` offset, parented to the vehicle so the
- * effect rides with it. `EffectPlayer.play`'s `attach` follows an object's world
- * transform and takes no local offset of its own, so the offset has to be a
- * node — which is also what the engine does with these vectors.
- */
-function damageAnchor(visual, name, offset) {
-  let anchor = visual.anchors.get(name);
-  if (!anchor) {
-    anchor = new THREE.Object3D();
-    anchor.name = `damage:${name}`;
-    visual.node.add(anchor);
-    visual.anchors.set(name, anchor);
-  }
-  anchor.position.set(offset?.[0] || 0, offset?.[1] || 0, offset?.[2] || 0);
-  anchor.updateMatrixWorld(true);
-  return anchor;
-}
-
-/** Start the tier's bundles on this vehicle, having stopped whatever ran before. */
-function showDamageTier(vehicle, tier) {
-  const visual = damageVisuals.get(vehicle.owner);
-  if (!visual) return;
-  for (const handle of visual.handles) handle.stop?.();
-  visual.handles.length = 0;
-  if (!tier) return;
-  for (const name of tier.names) {
-    // Case is not a concern here even though it looks like one: a Sherman
-    // authors `e_scrapmetal` and the bundle bakes as `e_ScrapMetal`, but
-    // `EffectLibrary` keys on the lowercased name and `get` lowercases its
-    // argument — the same case-insensitivity the console language itself has
-    // (ledger HP-4, RFA-1).
-    const entry = vehicle.effects.find(
-      e => e.effect === name && e.hp === tier.threshold);
-    const anchor = damageAnchor(visual, name, entry?.offset);
-    const handle = effects.play(name, { attach: { object: anchor } });
-    if (handle) visual.handles.push(handle);
-  }
-}
-
-// How long a wreck lies there before it fades, and how long the fade takes.
-//
-// **Not engine numbers.** What removes a wreck in Refractor, and when, is one of
-// the corpus's own open items — `subsystems/hitpoints-and-damage.md` lists the
-// wreck lifetime as untraced, and a vanilla level's respawn timing lives in the
-// spawner rather than the vehicle. These two are chosen to read right and are
-// labelled so nobody mistakes them for findings.
-// Linger matches the measured ~10 s wreck lifetime from a live round capture
-// (features/round-replay-capture/README.md); fade is still a house rule.
-const WRECK_LINGER = 10;  // seconds of wreck before the fade starts
-const WRECK_FADE = 2.5;   // seconds of fade                          [HOUSE RULE]
-
-// Wreck glbs, by template name, shared across every vehicle of that type.
-const wreckModels = new Map();
-
-/**
- * The template name behind a placed node. GLTFLoader suffixes duplicate names,
- * so Wake's three Shermans arrive as `Sherman`, `Sherman_1` and `Sherman_2` and
- * all three want `Sherman.wreck.glb`.
- */
-function templateNameOf(node) {
-  // Prefer the control tag: GLTFLoader suffixes duplicate scene names
-  // (`Sherman_1`), while `userData.control` stays the template the wreck URL
-  // was published under.
-  return (node?.userData?.control || node?.name || '').replace(/_\d+$/, '');
-}
-
-/**
- * A vehicle just died: put its wreck in the same place and start the
- * linger-then-fade.
- *
- * The wreck is a glb of its own (`models/<Template>.wreck.glb`) — the same file
- * `replay.js` fetches — not an alternative inside the level scene, which ships
- * only the `complex` configuration. The live mesh stays visible until the
- * wreck is parented (or the load fails), so a slow fetch never blanks the pad.
- * Parked vehicles are frozen for perf — anything added under them must call
- * `updateMatrixWorld(true)` or the wreck draws at the identity.
- */
-async function wreckVehicle(vehicle) {
-  const visual = damageVisuals.get(vehicle.owner);
-  if (!visual?.node || visual.wrecked) return;
-  visual.wrecked = true;
-  visual.wreckAge = 0;
-  visual.hidden = [];
-
-  visual.node.updateWorldMatrix(true, false);
-  visual.node.getWorldPosition(wreckDeathPos);
-  const death = deathTier(vehicle.effects, { inWater: false });
-  if (death?.names?.length) {
-    for (const name of death.names) {
-      effects.play(name, { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
-    }
-  } else {
-    effects.play('e_ExplGas', { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
-  }
-
-  // Whoever was in it dies with it, and that has to happen HERE — before the
-  // seat is torn down below — because this is the one place a vehicle dies,
-  // whatever killed it (a shell, the burn-down, drowning, the combat area).
-  killOccupantInWreck(visual.node);
-  retireVehicleBody(vehicle.owner);
-  const template = templateNameOf(visual.node);
-  try {
-    if (!wreckModels.has(template)) {
-      wreckModels.set(template, loader.loadAsync(
-        `${MODELS_BASE}/${template}.wreck.glb${bust()}`).then(g => g.scene, () => null));
-    }
-    const scene = await wreckModels.get(template);
-    // The vehicle may have been cleared (level change) while the glb was in
-    // flight, and `damageVisuals` is rebuilt per level — so re-check.
-    if (!scene || damageVisuals.get(vehicle.owner) !== visual) return;
-    const wreck = scene.clone(true);
-    wreck.name = `wreck:${template}`;
-    // Wreck GLBs ship the same armour-region collision hulls as the live
-    // model. The models page shows those behind a checkbox; the map always
-    // hides them (see `indexScene`). This load path never hit that walk.
-    wreck.traverse(obj => {
-      if (isCollision(obj)) obj.visible = false;
-    });
-    // `Object3D.clone` shares materials with the source, so every wreck of a
-    // type would fade together — and the source is cached for the next one.
-    // Own them here, once, rather than trying to un-share them mid-fade.
-    wreck.traverse(obj => {
-      if (!obj.material) return;
-      obj.material = Array.isArray(obj.material)
-        ? obj.material.map(m => m.clone()) : obj.material.clone();
-    });
-    bindDynamicShading(wreck);
-    // Hide the intact mesh only once the wreck is ready to replace it.
-    for (const child of visual.node.children) {
-      if (child.name?.startsWith('damage:')) continue;
-      if (child.visible) { child.visible = false; visual.hidden.push(child); }
-    }
-    visual.node.add(wreck);
-    visual.wreck = wreck;
-    // Frozen parked vehicles opt out of the per-frame matrix walk; force one
-    // recompute so the wreck inherits the spawn pose (same contract as
-    // `damageAnchor`).
-    visual.node.updateMatrixWorld(true);
-  } catch {
-    // No wreck for this template: leave the live mesh up for the linger/fade
-    // rather than blanking the pad.
-  }
-}
-
-/** Scratch for `killOccupantInWreck`'s world reads. */
-const wreckDeathPos = new THREE.Vector3();
-const wreckDeathQuat = new THREE.Quaternion();
-const wreckDeathFwd = new THREE.Vector3();
-
-/**
- * The hull the player is sitting in just exploded, so the player dies with it.
- *
- * Retail's shape, and the reason this is not simply "you cannot drive a wreck":
- * a destroyed `PlayerControlObject` kills its occupants, the client opens the
- * spawn screen on local death (`hitpoints-and-damage.md` §7, `FUN_004933d0` →
- * `SpawnScreenStuff::setVisible(true)`), and between the two there is the beat
- * the player spends watching the thing he was driving burn. HP-15's input gate
- * — the part this page already had — is what happens to a wreck *nobody* is in.
- *
- * Three steps, in this order:
- *
- *   1. read the hull's live pose, because the death cam frames the wreck and
- *      the body is left beside it rather than back where he climbed in;
- *   2. empty the seat (`leaveSeat`, which covers a jeep, a tank, a plane
- *      and a bare manned gun alike);
- *   3. put the suspended on-foot body down at the exit point, kill its Armor
- *      and latch the death cam. From there `onFoot()` owns the rest — the same
- *      countdown and the same `openDeploy()` a death on foot runs through.
- *
- * A free-fly pilot (the debug checkbox, no soldier waiting) has no life to
- * lose: the seat still empties, and the camera goes back to the flythrough.
- */
-function killOccupantInWreck(node) {
-  if (!localPlayer.occupancy || localPlayer.occupancy.root !== node || soldierDead) return;
-  // A wreck cuts off engine audio immediately -- crash effect plays, engine stops
-  pageAudio.disposeEngineAudio();
-  pageAudio.hitIndicatorTimer = 0;
-  pageAudio.hitIndicatorDir = 0;
-  if (hudFeed.gameHud?.vars) {
-    hudFeed.gameHud.vars['HitFromDir/HitFromDir'] = 0;
-    hudFeed.gameHud.vars['HitFromDir/HitFromDirAlpha'] = 0;
-  }
-  pageAudio.lastSoldierHp = null;
-  node.updateWorldMatrix(true, false);
-  node.getWorldPosition(wreckDeathPos);
-  node.getWorldQuaternion(wreckDeathQuat);
-  wreckDeathFwd.set(0, 0, -1).applyQuaternion(wreckDeathQuat);
-  // The hull's own facing, in the soldier's convention (forward is
-  // `(sin yaw, 0, cos yaw)`), so the death cam sits behind the wreck's tail.
-  const hullYaw = Math.atan2(wreckDeathFwd.x, wreckDeathFwd.z);
-  const exit = exitPoseManned(localPlayer.occupancy);
-  leaveSeat();
-  optPilot.checked = false;
-  resetMobileControls();
-  if (!(optOnFoot.checked && soldier)) {
-    placeCamera();
-    updateHud();
-    return;
-  }
-  soldier.collider = collider;
-  soldier.spawn(exit.x, exit.y, exit.z, hullYaw);
-  prone = false;
-  camera.fov = FOOT_FOV;
-  camera.near = 0.2;
-  camera.updateProjectionMatrix();
-  // The rig stays holstered (`enterVehicle` hid it): retail's vehicle death
-  // cam is an overhead shot of the wreck with no first-person weapon in it,
-  // and the near pass is gated on `soldierDead` besides. `spawnAtFlag`
-  // raises it again with the fresh body.
-  // A body that climbed in at full health still has it; take all of it, so
-  // the `soldierArmor.destroyed` latch in `onFoot()` is not what fires the
-  // flow a second time (it cannot: `soldierDead` is set below first).
-  if (!soldierArmor) soldierArmor = new Armor(SOLDIER_MAX_HP_FALLBACK);
-  soldierArmor.applyDamage(soldierArmor.maxHitPoints);
-  soldierDead = true;
-  deathCamShot = DEATH_CAM.vehicle;
-  deathCamTimer = deathCamShot.beat;
-  // The wreck, not the corpse, is what this shot is of.
-  deathCamTarget = { x: wreckDeathPos.x, y: wreckDeathPos.y, z: wreckDeathPos.z,
-                     yaw: hullYaw };
-  hud.textContent = 'killed in action';
-}
-
-/**
- * Advance the linger-and-fade of every wreck, and remove one once it has gone.
- * Called from `stepVehicleDamage`, so it runs on the same clock as the burn.
- *
- * When the wreck is gone the pad must be walkable again — the collision index
- * still holds the vehicle's baked hull at the spawn pose — and a respawn timer
- * (ObjectSpawner Min/MaxSpawnDelay) starts so a fresh vehicle returns later.
- */
-function stepWrecks(dt) {
-  for (const [owner, visual] of damageVisuals) {
-    if (visual.respawnIn != null) {
-      visual.respawnIn -= dt;
-      if (visual.respawnIn <= 0) respawnVehicle(owner);
-      continue;
-    }
-    if (!visual.wrecked || visual.removed) continue;
-    visual.wreckAge += dt;
-    const into = visual.wreckAge - WRECK_LINGER;
-    if (into <= 0) continue;
-    const opacity = Math.max(0, 1 - into / WRECK_FADE);
-    if (visual.wreck) fadeNode(visual.wreck, opacity);
-    else {
-      // No wreck GLB: fade the intact mesh that stayed visible instead.
-      for (const child of visual.node.children) {
-        if (child.name?.startsWith('damage:')) continue;
-        fadeNode(child, opacity);
-      }
-    }
-    if (opacity > 0) continue;
-    // Gone: drop the wreck, open the pad for walking, start the respawn clock.
-    visual.removed = true;
-    if (visual.wreck) { visual.node.remove(visual.wreck); visual.wreck = null; }
-    for (const child of visual.hidden) child.visible = false;
-    for (const handle of visual.handles) handle.stop?.();
-    visual.handles.length = 0;
-    // A hull the body world had moved is answered through the moved-owner
-    // path, which ignores the disabled flag; drop that too or the faded wreck
-    // stays solid.
-    collider?.clearMovedOwner?.(owner, { enable: false });
-    collider?.statics?.disableOwner?.(owner);
-    visual.respawnIn = spawnDelayFor(visual);
-  }
-}
-
-/** Seconds until a fresh vehicle replaces this pad, from ObjectSpawner data. */
-function spawnDelayFor(visual) {
-  const d = visual.spawnDelay;
-  if (d) {
-    const min = Number.isFinite(d.min) ? d.min : 30;
-    const max = Number.isFinite(d.max) ? d.max : min;
-    return min + Math.random() * Math.max(0, max - min);
-  }
-  // Maps extracted before objectSpawns landed: a mid-range house rule.
-  return 40;
-}
-
-/**
- * Restore a pad after its respawn timer: full HP, live mesh, collision back on.
- * The vehicle sits at its original spawn pose — the engine replaces the object
- * at the ObjectSpawner, it does not drag a wreck home.
- */
-function respawnVehicle(owner) {
-  const visual = damageVisuals.get(owner);
-  const vehicle = vehicleDamage.get(owner);
-  if (!visual) return;
-  // Someone is still sitting in the empty pad — wait a beat rather than
-  // materialising a hull around them.
-  if (vehicles.instanceOf(visual.node)) {
-    visual.respawnIn = 1;
-    return;
-  }
-  visual.respawnIn = null;
-  visual.wrecked = false;
-  visual.removed = false;
-  visual.wreckAge = 0;
-  if (visual.wreck) {
-    visual.node.remove(visual.wreck);
-    visual.wreck = null;
-  }
-  for (const child of visual.hidden) {
-    child.visible = true;
-    // No-wreck fallthrough fades these in place; undo that.
-    child.traverse(obj => {
-      if (!obj.material) return;
-      const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
-      for (const material of materials) {
-        if (!(material.opacity < 1)) continue;
-        material.opacity = 1;
-        material.transparent = false;
-        material.depthWrite = true;
-      }
-    });
-  }
-  visual.hidden = [];
-  // A fresh object off the ObjectSpawner, not the one that burned. The hull
-  // that just came back on was hidden mid-burst — `wreckVehicle` turns the
-  // intact mesh off with every lit muzzle flash still flagged visible under
-  // it, and the loop above turns the whole subtree back on — so without this
-  // a Spitfire crashed with the trigger down respawns firing. Its guns are
-  // new too: a full magazine, a cold barrel and no reload running, which is
-  // the one moment a vehicle's ammunition is allowed to reset (stepping out
-  // and back in is the same object and keeps what it spent).
-  idleFirePose(visual.node);
-  idleFireState(visual.node, [fireStates, world?.fireStates]);
-  vehicle?.reset();
-  if (vehicle) showDamageTier(vehicle, null);
-  collider?.statics?.enableOwner?.(owner);
-  visual.node.updateMatrixWorld(true);
-  respawnVehicleBody(owner);
-}
-
-/** Fade a subtree. Its materials are this wreck's own — see `wreckVehicle`. */
-function fadeNode(root, opacity) {
-  root.traverse(obj => {
-    if (!obj.material) return;
-    const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
-    for (const material of materials) {
-      material.transparent = true;
-      material.opacity = opacity;
-      // An opaque wreck still writes depth; a fading one must not, or it punches
-      // a hole in whatever is behind it.
-      material.depthWrite = opacity > 0.99;
-    }
-  });
-}
-
-/**
- * The Armor of the vehicle the player is in, or null. Matched by scene node
- * rather than by seat: hit points live on the root object and are shared by
- * every seat (VHUD-8, R2-31), so the driver and the hull gunner read the same
- * number.
- */
-// ---------------------------------------------------------------------------
-// Vehicles as rigid bodies: ram a parked plane and it moves, and both pay.
-//
-// Every placed vehicle with a mass is a body in `bodyWorld` (`body-world.js`):
-// parked ones stand on their own wheel springs, asleep until something touches
-// them; the one under the player takes part through a `DrivenBody` wrapped
-// round its drive model. The engine rules - contact finding, the mass-ratio
-// push, the friction pass, crash damage - are the framework-free modules;
-// everything here is the scene half: which node is which body, writing a
-// body's pose back onto its node, and telling the collider where a hull that
-// has been shoved now stands so that rounds and boots still meet it.
-// ---------------------------------------------------------------------------
-
-/** Crash events, kept only when a test asks for them (`window.__crashLog`). */
-let crashLog = null;
-/** `_shared/collision-meshes.json`: every collision layer of every vehicle mesh. */
-let collisionMeshes = null;
-let bodyWorld = null;
-// owner -> { node, spec, spawnInverse: Matrix4, moved: boolean }
-const bodyScene = new Map();
-const _bodyMatrix = new THREE.Matrix4();
-const _bodyParentInv = new THREE.Matrix4();
-const _bodyFwd = new THREE.Matrix4();
-const _bodyInv = new THREE.Matrix4();
-const _bodyScale = new THREE.Vector3();
-
-async function loadCollisionMeshes(dir) {
-  if (collisionMeshes) return collisionMeshes;
-  const ref = extras?.damage;
-  if (!ref?.path) return null;
-  const path = ref.path.replace(/damage\.json$/, 'collision-meshes.json');
-  try {
-    collisionMeshes = await fetch(`${MAPS_BASE}/${dir}/${path}${bust()}`)
-      .then(r => r.ok ? r.json() : null);
-  } catch { collisionMeshes = null; }
-  return collisionMeshes;
-}
-
-/** A node's world pose as the body modules' `position` + row `axes`. */
-function bodyPoseOf(node) {
-  node.updateWorldMatrix(true, false);
-  const e = node.matrixWorld.elements;
-  return {
-    position: [e[12], e[13], e[14]],
-    axes: [[e[0], e[1], e[2]], [e[4], e[5], e[6]], [e[8], e[9], e[10]]],
-  };
-}
-
-/** The heightfield as the three functions the body modules ask of the ground. */
-function bodyTerrain(heightfield, waterLevel) {
-  const normal = [0, 1, 0];
-  return {
-    height: (x, z) => {
-      const h = heightfield.height(x, z);
-      return Number.isFinite(h) ? h : -Infinity;
-    },
-    normal: (x, z, out) => {
-      heightfield.normal(x, z, normal);
-      out[0] = normal[0]; out[1] = normal[1]; out[2] = normal[2];
-      return out;
-    },
-    material: (x, z) => heightfield.material(x, z),
-    waterLevel: Number.isFinite(waterLevel) ? waterLevel : null,
-  };
-}
-
-/**
- * Whether a placed vehicle becomes a simulated body.
- *
- * Ships stay out of the PARKED body world. `floatPlacedVehicles` puts every hull
- * at its closed-form draft before the collision index bakes it, so a moored ship
- * is correct *scenery* — solid, walkable, at the right waterline — and never
- * wakes. The body world's parked path is gravity plus wheel springs against the
- * heightfield (`body-ground.js`); a destroyer woken into that would sink through
- * the sea, because the float term lives in the drive model (`ship.js`) rather
- * than in `ParkedVehicle`.
- *
- * A ship a player is DRIVING is a different matter and does enter the body world
- * — see `setupVehicleBodies`, which describes her hull anyway so `adoptDriven`
- * has a spec to hand it. Runtime buoyancy for an unoccupied hull — ram a moored
- * Fletcher and watch her rock — is the piece this still leaves open.
- */
-function bodySpecFor(node) {
-  if (isSeaHull(node)) return null;
-  return describeVehicleParts(node, collisionMeshes);
-}
-
-/** A floating hull: the one vehicle category that stays out of the parked body
- *  world and enters the driven one instead. */
-function isSeaHull(node) {
-  return node?.userData?.physics?.vehicleCategory === 'VCSea';
-}
-
-/**
- * The contact friction scalar for the sea bed under (x, z).
- *
- * `impulseOn` (`0x08258900`) writes `A = 0.5*(friction(matA) + friction(matB))`,
- * the mean of the two surfaces' `MaterialManager.materialFriction` (physics.md
- * §10). The hull's own material is the table's default 1.0; the bottom's is the
- * heightfield's own, read RAW rather than through `surfaceFriction`, which
- * answers water's 0.1 for anything under the sea line and would let a beached
- * destroyer slide off a sandbank.
- */
-/** Scratch for the ship's sea-bed normal query; the heightfield writes a plain
- *  array, `Ship` wants a THREE.Vector3. */
-const _shipNormal = [0, 1, 0];
-
-function seabedFriction(x, z) {
-  const table = materialFrictionById;
-  const id = collider?.heightfield?.material(x, z);
-  const bottom = table && Number.isInteger(id) && id >= 0 && id < table.length
-    ? table[id] : DEFAULT_SURFACE_FRICTION;
-  return 0.5 * (DEFAULT_SURFACE_FRICTION + bottom);
-}
-
-/**
- * Put every floating hull at its own draft, before anything is indexed.
- *
- * The engine does this by simulating: a ship is born awake at the spawner's
- * authored pose and its `FloatingBundle`s settle it, which on Midway means
- * lifting a Yamato 4.72 m and dropping a Hatsuzuki 6.08 m from pads the level
- * author placed at the *other* fleet's draft. Doing it by simulation here
- * would cost thousands of ticks — the law is overdamped by a factor of about
- * 15, so a Fletcher's slow pole is 0.036 per second and 300 ticks leaves it
- * 0.147 m high — so the draft is solved in closed form instead
- * (`body-float.js` `equilibriumRootY`, the root of `sum (-f)*lift = 9.82`).
- * It is exact, it is free, and it is the same fixed point the settle would
- * crawl to.
- *
- * Only `y` moves. The force is world-vertical and every vanilla hull hangs its
- * eight float nodes at one height, so there is no couple to find: pitch and
- * roll righting only has anything to do when the nodes sit at different depths,
- * which off a level's own pad they never do.
- *
- * A hull whose float nodes cannot carry it gets `null` and is left where it was
- * authored rather than dropped through the sea bed.
- */
-/**
- * A burning ship stops being a spawn point.
- *
- * `BFSpawnPoint::getActive(bool, int)` (`0x08163dd0`) walks the chain to the
- * nearest `IID_IArmor` (`0xc4a4`) and returns 0 when it reports
- * `isCriticalDamaged()` (Armor vtable `+0xcc`, `0x08174320`) — the same
- * threshold that arms the sink, so the moment a destroyer starts going down it
- * stops offering her decks. Answered per hull here because the world's flag
- * list is built once at load and the state is live.
- */
-function shipFlagInactive(flag) {
-  if (!flag?.vehicle || !flag.position) return false;
-  for (const host of floatHosts) {
-    if (host.sinking) {
-      const p = host.sinking.body.pos;
-      if (Math.hypot(flag.position[0] - p[0], flag.position[2] - p[2])
-          <= host.radius + 40) return true;
-      continue;
-    }
-    // The hull where she is NOW, not where she was authored: a flag whose rings
-    // have been rebased onto a carrier under way has to be matched against the
-    // carrier under way.
-    host.node.updateWorldMatrix(true, false);
-    const e = host.node.matrixWorld.elements;
-    const d = Math.hypot(flag.position[0] - e[12], flag.position[2] - e[14]);
-    if (d > host.radius + 40) continue;
-    const owner = collider?.statics?.ownerOf?.(host.node) ?? -1;
-    return !!(owner >= 0 && vehicleDamage?.get(owner)?.critical);
-  }
-  return false;
-}
-
-function floatPlacedVehicles(ownerRoots, waterLevel) {
-  floatHosts.length = 0;
-  if (!Number.isFinite(waterLevel)) return;
-  for (const node of ownerRoots) {
-    if (node?.userData?.physics?.vehicleCategory !== 'VCSea') continue;
-    const floats = floatNodesOf(node);
-    if (!floats.length) continue;
-    node.updateWorldMatrix(true, false);
-    const authored = node.matrixWorld.elements;
-    const host = {
-      node,
-      // The pose the extractor baked the deck spawns against — this one, right
-      // now, before the hull moves. See `rebaseDeckSpawns`.
-      authored: [authored[12], authored[13], authored[14]],
-      authoredInverse: node.matrixWorld.clone().invert(),
-      radius: 0,
-    };
-    for (const float of floats) {
-      host.radius = Math.max(host.radius,
-        Math.hypot(float.offsetX, float.offsetZ));
-    }
-    floatHosts.push(host);
-    const y = equilibriumRootY(floats, waterLevel);
-    if (!Number.isFinite(y)) continue;
-    node.position.y += y - authored[13];
-    node.updateMatrix();
-    node.updateMatrixWorld(true);
-  }
-}
-
-/**
- * Put one hull back at her closed-form draft, and stop her sinking.
- *
- * The respawn path's half of `floatPlacedVehicles`: an ObjectSpawner replaces
- * the object at its authored pose and the level's pad is not her draft, so the
- * same `equilibriumRootY` has to run again.
- */
-function refloatHull(node) {
-  const waterLevel = collider?.waterLevel ?? extras?.waterLevel;
-  if (!Number.isFinite(waterLevel)) return;
-  const floats = floatNodesOf(node);
-  if (!floats.length) return;
-  node.updateWorldMatrix(true, false);
-  const y = equilibriumRootY(floats, waterLevel);
-  if (Number.isFinite(y)) {
-    node.position.y += y - node.matrixWorld.elements[13];
-    node.updateMatrix();
-    THREE.Object3D.prototype.updateMatrixWorld.call(node, true);
-  }
-  const host = floatHosts.find(h => h.node === node);
-  if (host) host.sinking = null;
-}
-
-/** Placed floating hulls, with the pose their deck spawns were baked against. */
-const floatHosts = [];
-const _deckPoint = new THREE.Vector3();
-
-/**
- * A ship that has taken critical damage is going down.
- *
- * `FloatingBundle::handleMessage` (`0x082402b0`) arms the per-node sink rate on
- * TemplateMessage **`0x14`** — `criticalDamage`, the same threshold that stops
- * a ship being a spawn point (`BFSpawnPoint::getActive` `0x08163dd0` step 2) —
- * not on death. For a Fletcher that is 50 of its 300 hit points.
- *
- * The body world does not carry ships (see `bodySpecFor`), so a hull that
- * starts sinking gets its own `FloatingHull` (`body-float.js`): a `RigidBody`
- * with the float law posted at each node, which is precisely what the engine
- * runs. Each node's rate is its own, so the offsets diverge and she goes down
- * by one end; on a capital ship the spread is about 2:1, and the vanilla hull
- * that actually rolls over is the LCVP.
- *
- * The deck spawns follow, because `rebaseDeckSpawns` resolves them through the
- * hull's live matrix: a burning destroyer carries her spawn points down with
- * her, which is the engine's own arrangement and the reason the critical gate
- * exists at all.
- */
-function armSinkingHull(host) {
-  if (host.sinking) return host.sinking;
-  const floats = floatNodesOf(host.node);
-  if (!floats.length) return null;
-  host.node.updateWorldMatrix(true, false);
-  const e = host.node.matrixWorld.elements;
-  const axes = [[e[0], e[1], e[2]], [e[4], e[5], e[6]], [e[8], e[9], e[10]]];
-  const spec = host.node.userData?.physics || {};
-  const box = new THREE.Box3().setFromObject(host.node);
-  const size = box.getSize(new THREE.Vector3());
-  let radius = 0;
-  for (const float of floats) {
-    radius = Math.max(radius, Math.hypot(float.offsetX, float.offsetY, float.offsetZ));
-  }
-  host.sinking = new FloatingHull({
-    floats: localiseFloats(floats, axes),
-    mass: spec.mass || 1, drag: spec.drag || 0,
-    box: [size.x, size.y, size.z],
-    inertiaModifier: spec.inertiaModifier || [1, 1, 1],
-    waterLevel: collider?.waterLevel ?? extras?.waterLevel ?? 0,
-    boundingRadius: radius,
-    position: [e[12], e[13], e[14]], axes,
-  });
-  host.sinking.arm();
-  return host.sinking;
-}
-
-function stepSinkingHulls(step) {
-  if (!floatHosts.length) return;
-  // A driven hull moves whether or not the body world ticked — a level with no
-  // collision meshes has no body world at all — so the rebase is not gated on
-  // `bodyTicks`; only the sinking integration is.
-  const ticks = step?.bodyTicks ?? 0;
-  let stirred = false;
-  for (const host of floatHosts) {
-    if (!host.sinking) {
-      // A driven hull is its drive model's, not this pass's — but it is
-      // still a hull that has moved, so its deck points still owe a rebase.
-      if (vehicles.instanceOf(host.node)?.drive) { stirred = true; continue; }
-      const owner = collider?.statics?.ownerOf?.(host.node) ?? -1;
-      const record = owner >= 0 ? vehicleDamage?.get(owner) : null;
-      if (!record?.critical) continue;
-      if (!ticks || !armSinkingHull(host)) continue;
-    }
-    for (let tick = 0; tick < ticks; tick++) host.sinking.step();
-    const body = host.sinking.body;
-    writeBodyPose(host.node, body);
-    stirred = true;
-  }
-  // The deck spawns ride whichever hull moved: the same live re-resolution the
-  // level load does, re-evaluated now. Once per tick rather than once per hull —
-  // `rebaseDeckSpawns` walks every point on the level, so calling it inside the
-  // loop did the work once per ship for no gain.
-  //
-  // This is what makes the minimap's rings follow a carrier under way: a ship
-  // flag's `groups[].position` IS the spawn's own array (soldier.js
-  // `spawnFlags`), so `drawSpawnRings` draws wherever this put them, and the
-  // owner watching the map sees the spots move with the hull exactly as the
-  // game does.
-  if (stirred) rebaseDeckSpawns();
-}
-
-/**
- * Move every deck spawn with the hull it belongs to.
- *
- * `BFSpawnPoint::spawn` (`0x08163d70`) is one line —
- * `soldier->setAbsolutePosition(this->getAbsolutePosition())` — and a
- * `SpawnPoint` is an ordinary composite child of the ship, so in the engine a
- * deck spawn is *never* a world position: it is a ship-local offset through the
- * hull's live transform at the moment of the spawn. `extract_map.py` bakes the
- * world position it has at the authored pad, which is right until something
- * moves the hull — and `floatPlacedVehicles`, one line above, has just moved
- * every one of them by up to 6 m.
- *
- * So each baked point is carried through `hull.matrixWorld * authoredInverse`,
- * which is exactly the offset-and-re-resolve the engine does, recovered from
- * the bake rather than from a re-extract: the inverse of the pose it was baked
- * against turns a world point back into the ship-local offset, and the hull's
- * current matrix puts it back. It costs no extractor change and it is right for
- * pitch and roll as well as heave.
- *
- * Rewriting `extras` in place rather than resolving lazily keeps the deploy
- * screen's rings, `spawn-safety.js`'s walk and the spawn itself reading one
- * number — and because a ship flag's `groups[].position` IS the spawn's own
- * array (`soldier.js` `spawnFlags`), moving these moves the minimap's rings for
- * free.
- *
- * Called at load, once per tick for any hull that has moved
- * (`stepSinkingHulls`), and again at the top of `spawnAtFlag` so the spawn
- * itself reads the hull's pose at the instant of the spawn, which is what
- * `BFSpawnPoint::spawn` does.
- */
-function rebaseDeckSpawns() {
-  const spawns = extras?.vehicleSoldierSpawns;
-  if (!spawns?.length || !floatHosts.length) return;
-  for (const spawn of spawns) {
-    if (!spawn.position) continue;
-    // Idempotent: the bake, kept, so a second index pass on the same `extras`
-    // rebases from the authored point rather than from its own output.
-    spawn.deckBake ??= spawn.position.slice();
-    const [x, , z] = spawn.deckBake;
-    let host = null, best = Infinity;
-    for (const candidate of floatHosts) {
-      const d = Math.hypot(x - candidate.authored[0], z - candidate.authored[2]);
-      // Inside the hull's own float-node footprint, generously: a deck point is
-      // on the ship it was authored on, and the fleet's pads are hundreds of
-      // metres apart.
-      if (d < best && d <= candidate.radius + 40) { best = d; host = candidate; }
-    }
-    if (!host) continue;
-    _deckPoint.set(x, spawn.deckBake[1], z)
-      .applyMatrix4(host.authoredInverse).applyMatrix4(host.node.matrixWorld);
-    // In place, not a fresh array: `new World(...)` has already run
-    // `spawnFlags(extras)`, and a flag's own `position` (the ring the deploy
-    // map draws) is a reference to THIS array.
-    spawn.position[0] = +_deckPoint.x.toFixed(3);
-    spawn.position[1] = +_deckPoint.y.toFixed(3);
-    spawn.position[2] = +_deckPoint.z.toFixed(3);
-  }
-}
-
-/** Longest a spawned vehicle is given to come to rest: ten seconds of ticks. */
-const SETTLE_TICKS = 300;
-
-/**
- * Let every placed vehicle drop onto its springs, before anything is indexed.
- *
- * An ObjectSpawner sits a little above the ground - a Willy's wheels hang
- * 0.2 m clear at its authored pose - and the engine's vehicles are born awake:
- * they fall, settle on their springs and go to sleep about three seconds
- * later. Doing the same here, once, at load, puts each one where the game
- * would have it, a third of a metre lower, so the collision index bakes the
- * hull where it rests and a first touch does not make a parked plane drop.
- * No damage is counted: wheels are what land, and wheels cost nothing.
- */
-function settlePlacedVehicles(ownerRoots, heightfield) {
-  if (!collisionMeshes || !damageTables || !heightfield) return;
-  const world = new BodyWorld({
-    tables: damageTables, terrain: bodyTerrain(heightfield, extras?.waterLevel) });
-  const settling = [];
-  ownerRoots.forEach((node, index) => {
-    const spec = node?.userData?.armor ? bodySpecFor(node) : null;
-    if (!spec) return;
-    const parked = buildParkedVehicle(spec, { ...bodyPoseOf(node), asleep: false });
-    world.addParked(index, parked, spec);
-    settling.push({ node, body: parked.body });
-  });
-  for (let tick = 0; tick < SETTLE_TICKS; tick++) {
-    world.tick();
-    if (tick > 30 && settling.every(s => s.body.sleeping)) break;
-  }
-  for (const { node, body } of settling) writeBodyPose(node, body);
-}
-
-/** Rebuild the body world for the level `buildCollider` just indexed. */
-function setupVehicleBodies() {
-  bodyScene.clear();
-  bodyWorld = null;
-  const heightfield = collider?.heightfield;
-  if (!collisionMeshes || !damageTables || !heightfield) return;
-  // The world owns the BodyWorld and its crash-damage accounting; this page
-  // half keeps the scene records and feeds each parked hull in.
-  // `statics` is what turns a building from a wall into a contact: a driven
-  // hull probes its own collision vertices against the level's triangles and
-  // the same solver that shoves a parked plane pushes and spins it
-  // (`body-statics.js`). Without a `drivableMask` the deck gate inside it has
-  // nothing to gate, which is exactly right for a level with no bridge.
-  world?.setupBodies({ tables: damageTables,
-                       terrain: bodyTerrain(heightfield, collider.waterLevel),
-                       statics: collider.statics ? collider.staticProbe() : null });
-  bodyWorld = world?.bodyWorld ?? null;
-  for (const [owner, visual] of damageVisuals) {
-    // A ship gets a scene record and a collision spec but no PARKED body: her
-    // hull is described so that the moment a player takes the helm she can enter
-    // the body world as a DRIVEN one and probe the level's piers and islands
-    // through `body-statics.js`, which is the machinery W6-C built and left
-    // unwired for want of buoyancy. Moored, she stays what `bodySpecFor` says
-    // she is — scenery — because the parked path is gravity plus wheel springs
-    // and would sink her.
-    const sea = isSeaHull(visual.node);
-    const spec = sea ? describeVehicleParts(visual.node, collisionMeshes)
-                     : bodySpecFor(visual.node);
-    if (!spec) continue;
-    visual.node.updateWorldMatrix(true, false);
-    bodyScene.set(owner, {
-      node: visual.node, spec, sea, moved: false, spawnActive: true,
-      spawnInverse: visual.node.matrixWorld.clone().invert(),
-    });
-    if (sea) continue;
-    collider.statics?.setBodyOwner?.(owner, true);
-    world?.addParkedBody(owner, spec, bodyPoseOf(visual.node));
-  }
-  syncVehicleSpawnOwnership();
-}
-
-/** Neutral capture zones have no live parked hulls until their flag changes. */
-function syncVehicleSpawnOwnership() {
-  for (const [owner, visual] of damageVisuals) {
-    const scene = bodyScene.get(owner);
-    if (!scene || scene.sea) continue;
-    const active = vehicleSpawnActive(scene.node);
-    if (scene.spawnActive === active) continue;
-    scene.spawnActive = active;
-    entryPoints = null;
-    if (active) {
-      collider.statics?.enableOwner?.(owner);
-      collider.statics?.setBodyOwner?.(owner, true);
-      world?.addParkedBody(owner, scene.spec, bodyPoseOf(scene.node));
-    } else {
-      world?.removeBody(owner);
-      collider.statics?.disableOwner?.(owner);
-      collider.statics?.setBodyOwner?.(owner, false);
-      scene.node.visible = false;
-    }
-  }
-}
-
-/**
- * The collider a driven vehicle sweeps its hull against: everything the real
- * one holds except other simulated bodies, which the contact solver owns. A
- * swept sphere can only stop dead; the solver pushes, spins and damages.
- */
-function bodyAwareCollider() {
-  if (!collider || !bodyWorld) return collider;
-  const world = collider;
-  return Object.create(world, {
-    sweepSphere: {
-      // The drivable-deck gate is forwarded, not swallowed: this wrapper IS the
-      // collider a driven vehicle is handed, so dropping the last two arguments
-      // would leave a tank welded to every bridge deck it touched.
-      // `skipBodies` stays true whatever the caller says — that is this
-      // wrapper's whole job — but the gate is passed straight through.
-      value: (ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner = -1,
-              _skipBodies = true, deckStepTop = -Infinity, deckFloorCos = 2) =>
-        world.sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner,
-                          true, deckStepTop, deckFloorCos),
-    },
-  });
-}
-
-/** A crash cost `owner` hit points. Called by the world's BodyWorld callback
- *  BEFORE the damage lands (world.js #onBodyDamage), so the console record
- *  reads the same pre-damage hit points it always did; the world applies the
- *  damage itself right after — this half is the presentation: the record a
- *  `window.__crashLog` check wants and the effect bundle where the impact
- *  was. The destroyed guard is the old skip: a wreck has already died, so the
- *  impact stays silent. */
-function onCrashDamage(owner, result, at, other) {
-  const vehicle = vehicleDamage.get(owner);
-  if (crashLog) {
-    crashLog.push({ tick: bodyWorld.ticks, owner, other, damage: result.damage,
-      kill: result.kill, cell: result.effectCell, hp: vehicle?.hitPoints ?? null });
-    if (crashLog.length > 200) crashLog.shift();
-  }
-  const effect = result.effectCell
-    ? damageTables?.effects?.[result.effectCell[0]]?.[result.effectCell[1]] : null;
-  if (effect) effects.play(effect, { position: [at[0], at[1], at[2]], normal: [0, 1, 0] });
-  if (!vehicle) return;
-}
-
-/**
- * How far the hull's own col0 collision VERTICES reach below its origin, in the
- * hull's frame — the same set `BodyWorld.#drivenTerrainDamage` bills and the same
- * set `checkVsTerrain` (`0x0825a960`) drops on the heightfield.
- *
- * `Ship.keel` is the collision BOX's bottom, and on a level whose drawn tree
- * carries no hull collision node it is the drawn geometry box's bottom (ships
- * README §15). A Gato's col0 vertices reach 1.06 m below that box, so a hull
- * grounded on the box would report herself clear of a reef while the damage pass
- * still had a vertex inside it — the one hull on Midway that kept dying after the
- * footprint grounding went in. Handing `Ship` this number makes the two agree.
- */
-function hullCollisionKeel(spec) {
-  let lowest = Infinity;
-  for (const desc of spec?.parts || []) {
-    if (desc.kind !== 'body') continue;
-    const layer = desc.shape?.layers?.[0];
-    const v = layer?.vertices;
-    if (!v) continue;
-    const rot = desc.rot;
-    for (let i = 0; i < v.length; i += 3) {
-      // Part-local -> body frame, `body-contact.js`'s own row convention.
-      const y = desc.offset[1]
-        + v[i] * rot[0][1] + v[i + 1] * rot[1][1] + v[i + 2] * rot[2][1];
-      if (y < lowest) lowest = y;
-    }
-  }
-  return Number.isFinite(lowest) ? lowest : null;
-}
-
-/**
- * The hull's own collision material for the beaching groan: the first hull
- * (`body`, not `spring`) part's layer-0 vertex material — the same vertex
- * set `BodyWorld.#drivenTerrainDamage` bills and `hullCollisionKeel` reads.
- * Falls back to material 0 (the `materialOf` chain resolves it) when the
- * spec has no hull layer, so `effectNameFor` still answers.
- */
-function hullCollisionMaterial(node) {
-  const owner = collider?.statics?.ownerOf?.(node) ?? -1;
-  const scene = bodyScene.get(owner);
-  for (const desc of scene?.spec?.parts || []) {
-    if (desc.kind !== 'body') continue;
-    const vm = desc.shape?.layers?.[0]?.vertexMaterials;
-    if (vm?.length) return vm[0];
-  }
-  return 0;
-}
-
-/** The player has taken a vehicle: its drive model now stands in for the body. */
-function adoptDrivenBody(vehicle) {
-  if (!bodyWorld || !vehicle) return;
-  const owner = collider?.statics?.ownerOf(vehicle.node) ?? -1;
-  const scene = bodyScene.get(owner);
-  if (!scene) return;
-  world.adoptDriven(owner, vehicle, scene.spec);
-  scene.moved = true;
-  // A hull that has just become a body must leave the static index at once, not
-  // at the end of the first tick: `setMovedOwner` disables the baked owner and
-  // re-asks every query in the hull's own frame, and a 1,400-triangle destroyer
-  // that probed its own baked triangles for one tick would shove itself.
-  if (scene.sea) {
-    // Ground her on the same geometry the crash-damage pass bills.
-    if ('sampleKeel' in vehicle) vehicle.sampleKeel = hullCollisionKeel(scene.spec);
-    scene.node.updateWorldMatrix(true, false);
-    const e = scene.node.matrixWorld.elements;
-    publishMovedHull(owner, scene, scene.node, [e[12], e[13], e[14]]);
-  }
-}
-
-/** ... and has left it: it stands on its own springs again, where it was left. */
-function releaseDrivenBody(vehicle) {
-  if (!bodyWorld || !vehicle) return;
-  const owner = collider?.statics?.ownerOf(vehicle.node) ?? -1;
-  const scene = bodyScene.get(owner);
-  if (!scene || !bodyWorld.get(owner)?.driven) return;
-  // A ship left at sea goes back to being scenery where her driver left her:
-  // she has no parked body to fall back on, and building one would put a
-  // destroyer on wheel springs over the sea bed. `setMovedOwner` still holds the
-  // hull's collision at the pose she was abandoned in, so her deck stays
-  // walkable wherever that is.
-  if (scene.sea) {
-    bodyWorld.remove(owner);
-    return;
-  }
-  const wheelState = vehicle.wheels
-    ? new Map(vehicle.wheels.map(wheel => [wheel.node, wheel])) : null;
-  world.releaseDriven(owner, vehicle, scene.spec, bodyPoseOf(vehicle.node), wheelState);
-}
-
-/** A wreck is scenery and a respawn is a fresh vehicle on its pad. */
-function retireVehicleBody(owner) {
-  if (!bodyScene.has(owner)) return;
-  world.retireBody(owner);
-}
-function respawnVehicleBody(owner) {
-  const scene = bodyScene.get(owner);
-  if (!scene || !bodyWorld) return;
-  world.removeBody(owner);
-  scene.moved = false;
-  scene.dirty = false;
-  collider?.clearMovedOwner?.(owner, { enable: false });
-  // Back on its pad: the engine replaces the object at the ObjectSpawner, and
-  // the static index still holds the hull exactly there.
-  const node = scene.node;
-  _bodyMatrix.copy(scene.spawnInverse).invert();
-  if (node.parent) {
-    node.parent.updateWorldMatrix(true, false);
-    _bodyParentInv.copy(node.parent.matrixWorld).invert();
-    _bodyMatrix.premultiply(_bodyParentInv);
-  }
-  _bodyMatrix.decompose(node.position, node.quaternion, _bodyScale);
-  node.updateMatrix();
-  THREE.Object3D.prototype.updateMatrixWorld.call(node, true);
-  // A ship respawned on her pad is put back at her draft rather than on a parked
-  // body's springs — the same closed form `floatPlacedVehicles` used at load.
-  if (scene.sea) {
-    refloatHull(scene.node);
-    rebaseDeckSpawns();
-    return;
-  }
-  world.addParkedBody(owner, scene.spec, bodyPoseOf(scene.node));
-}
-
-/** Write a body's pose onto its node and tell the collider where the hull is. */
-function syncBodyNode(owner, scene, body) {
-  writeBodyPose(scene.node, body);
-  publishMovedHull(owner, scene, scene.node, body.pos);
-  // EntryPoint world positions are cached between proximity scans. A released
-  // vehicle carries those points with it, so discard the cache as soon as its
-  // parked body moves rather than leaving an enter prompt at the exit spot.
-  entryPoints = null;
-  nearEntry = null;
-}
-
-/** A body's world pose, written onto a scene node (which may be frozen). */
-function writeBodyPose(node, body) {
-  const a = body.axes, p = body.pos;
-  _bodyMatrix.set(
-    a[0][0], a[1][0], a[2][0], p[0],
-    a[0][1], a[1][1], a[2][1], p[1],
-    a[0][2], a[1][2], a[2][2], p[2],
-    0, 0, 0, 1);
-  if (node.parent) {
-    _bodyParentInv.copy(node.parent.matrixWorld).invert();
-    _bodyFwd.multiplyMatrices(_bodyParentInv, _bodyMatrix);
-  } else {
-    _bodyFwd.copy(_bodyMatrix);
-  }
-  _bodyFwd.decompose(node.position, node.quaternion, _bodyScale);
-  node.updateMatrix();
-  // The node may be frozen (`freeze` swaps `updateMatrixWorld` for a no-op);
-  // a body that moves has to go round that, and only that node pays for it.
-  THREE.Object3D.prototype.updateMatrixWorld.call(node, true);
-}
-
-function publishMovedHull(owner, scene, node, p) {
-  _bodyFwd.multiplyMatrices(node.matrixWorld, scene.spawnInverse);
-  _bodyInv.copy(_bodyFwd).invert();
-  collider.setMovedOwner(owner, _bodyFwd.elements, _bodyInv.elements,
-    p[0], p[1], p[2], scene.spec.boundingRadius);
-}
-
-/** One body tick of the world, drawn: the world's step() (frame(), above)
- *  already ran the BodyWorld itself — `step.bodyTicks` is the report of it —
- *  and this half only writes the bodies that moved back onto their scene
- *  nodes and tells the collider where a shoved hull now stands. */
-function stepVehicleBodies(step) {
-  if (!step.bodyTicks || !bodyWorld) return;
-  for (const [owner, entry] of bodyWorld.entries) {
-    const scene = bodyScene.get(owner);
-    if (!scene) continue;
-    if (entry.driven) {
-      // The contact solver may have pushed the drive model's state; draw it.
-      // Unless the render interpolation owns this node, in which case the push
-      // is already in the pose it captured at the end of the tick, and
-      // re-applying the raw state here would put the hull back on the tick the
-      // cameras have just been placed off.
-      if (entry.driven.vehicle !== vehicleInterp.vehicle || !vehicleInterp.active) {
-        entry.driven.vehicle.applyTransform();
-      }
-      const s = entry.driven.vehicle.state.position;
-      publishMovedHull(owner, scene, scene.node, [s.x, s.y, s.z]);
-      continue;
-    }
-    const body = entry.parked.body;
-    if (body.sleeping && !scene.dirty) continue;
-    scene.dirty = !body.sleeping;          // one last sync on the tick it falls asleep
-    if (!scene.moved) {
-      const e = scene.node.matrixWorld.elements;
-      const dx = body.pos[0] - e[12], dy = body.pos[1] - e[13], dz = body.pos[2] - e[14];
-      if (dx * dx + dy * dy + dz * dz < 1e-6 && body.sleeping) continue;
-      scene.moved = true;
-    }
-    syncBodyNode(owner, scene, body);
-  }
-}
-
-/* The DamageableVehicle the player is sitting in.
- *
- * `registerDamageables` hands the world the same `(owner, node)` pairs it puts
- * in `damageVisuals`, and the world keeps them in a `nodeOwners` WeakMap — so
- * `World.occupiedDamageable` answers this in one lookup where the loop below
- * walks every Armored object in the level. It is asked twice a frame while
- * seated (the HUD's hit-point bar and the burn-down check in `stepDamage`).
- *
- * The scan is kept for the one state the world cannot answer from: `addPlayer`
- * runs only from `setOnFoot(true)`, so a player who never left free fly and
- * climbed straight into a hull through the pilot checkbox has no world player
- * record, and `setPlayerVehicle` silently did nothing for him. Requiring the
- * world's own `player.occupancy` to BE this page's `occupancy` is what makes
- * the fast path exactly the slow one: same node, same owner, same set.
- */
-function occupiedVehicleDamage() {
-  if (!localPlayer.occupancy?.root) return null;
-  if (world?.player(LOCAL_PLAYER)?.occupancy === localPlayer.occupancy) {
-    return world.occupiedDamageable(LOCAL_PLAYER);
-  }
-  for (const [owner, visual] of damageVisuals) {
-    if (visual.node === localPlayer.occupancy.root) return vehicleDamage.get(owner);
-  }
-  return null;
-}
-
-/**
- * HP-15's gate for the vehicle the player is in, re-read every tick:
- * `{ blocked, rotationalScale }`. The world runs it (world.js #vehicleTick)
- * and frame() copies that tick's answer into this object so the camera shells
- * (pilot/drive/manned below) and the mobile UI read the same values they
- * always read.
- *
- * `vehicle-damage.js`'s `inputGate` is the rule and carries the addresses. The
- * two things this arrangement preserves are WHEN and WHERE:
- *
- *   - **When.** Every tick, against the live Armor, never latched when a
- *     shell landed. The engine's own two bytes (`SimpleObject+0xed`/`+0xee`)
- *     are persistent state cleared only by the wreck-respawn timer, so polling
- *     matches them — and it is also what makes the gate apply to a hull killed
- *     some *other* way. A vehicle burnt down by `hpLostWhileCriticalDamage`,
- *     drowned, or killed by the combat area's own per-tick `giveDamage`
- *     (which damages the occupied hull through this same `Armor`) refuses the
- *     driver exactly as one killed by a shell does, because none of them are
- *     special-cased: all four write hit points and this reads them back.
- *   - **Where.** `occupancy.turret.inputScale` is the single multiplier
- *     `seats.js` spends (its own `TurretRig.inputScale` comment says why it
- *     lands on the input rather than on the servo), which covers the driver's
- *     turret in `drive()` and a gunner's in `manned()` alike. The harder
- *     destroyed gate is `drive()`'s, below.
- *
- * `PlayerControlObject::handlePlayerInput`'s early return is per-PCO and so
- * covers a destroyed plane too. Its turret input IS already scaled, because
- * that goes through the same rig.
- */
-const vehicleInput = { blocked: false, rotationalScale: 1 };
-
-// The HP last pushed into the HUD, so a moving bar costs one compare per frame
-// rather than a full `feedVehicleHud()`.
-let fedVehicleHp = null;
-
-/** Step every damageable thing and reconcile what it is drawing.
- *  The world's step() has already run the drowning (HP-5) and burn passes and
- *  reported every tier/died change in `step.damage`; this half is the scene:
- *  a tier effect, a wreck, the linger-and-fade, and the driver's own HP bar.
- */
-function stepVehicleDamage(step, dt) {
-  if (!vehicleDamage.size) return;
-  for (const change of step.damage) {
-    if (change.changed) showDamageTier(change.vehicle, change.tier);
-    if (change.died) wreckVehicle(change.vehicle);
-  }
-  stepWrecks(dt);
-  // `feedVehicleHud` runs on entry and on a seat switch, not per tick for a
-  // driver — so without this the bar of the tank you are sitting in would stay
-  // where it was when you climbed in while the thing burned down under you.
-  const live = occupiedVehicleDamage();
-  const hp = live ? live.hitPoints : null;
-  if (hp !== fedVehicleHp) {
-    fedVehicleHp = hp;
-    if (live) hudFeed.feedVehicleHud();
-  }
-}
-
-/** Re-pick a just-damaged vehicle's tier on the frame the damage landed. */
-function reconcileDamaged(vehicle) {
-  // Straight to `update(0)` rather than waiting for the next frame: a killing
-  // shot should explode on the frame it lands, not one frame later. A zero dt
-  // cannot advance the burn accumulator, so this only re-picks the tier.
-  const result = vehicle.update(0);
-  if (result.changed) showDamageTier(vehicle, result.tier);
-  if (result.died) wreckVehicle(vehicle);
-}
-
-/** Scratch for `splashTargets`' world-position reads. */
-const splashPos = new THREE.Vector3();
-
-/**
- * `MaterialManager.material 40` — the soldier's own defending material, the
- * one `damageMod(205, 40)` keys a grenade's splash off. Same constant
- * `fall-damage.js` uses for the ground-versus-soldier pair.
- */
-const SOLDIER_SPLASH_MATERIAL = 40;
-
-/**
- * Everything with an Armor that a blast could reach, as `applySplash` wants it:
- * world positions, because `vehicle-damage.js` stays free of three.js. The
- * distance is to the object's origin, which is what the engine measures too
- * (`handleExplosionOnObject`, HP-9) — a tank is not hurt less for being hit on
- * the far corner of its hull.
- *
- * A soldier arrives carrying his own `Armor` and `soldier: true`, which is what
- * earns him HP-10's exposure term. There is one: the player, when he is on foot
- * and alive. He is not a placed object and has no owner id, which is exactly
- * why `applySplash` used to miss him. (The decorative figures that used to
- * stand on the spawn pads were the other kind, and they are gone — see
- * `soldierSpawns` further down for what they actually drew.)
- *
- * A soldier's **object origin** is one metre above his feet
- * (`setCharacterHeight -1.00`, `physics.js`'s `CHARACTER_HEIGHT`), and that is
- * the point both the distance and the exposure samples are measured from.
- */
-function splashTargets() {
-  const targets = [];
-  for (const [owner, visual] of damageVisuals) {
-    if (visual?.wrecked || visual?.removed) continue;
-    const pos = visual.node.getWorldPosition(splashPos);
-    targets.push({ owner, x: pos.x, y: pos.y, z: pos.z });
-  }
-  if (soldier && soldierArmor && !soldierDead && optOnFoot.checked) {
-    targets.push({
-      owner: -1, armor: soldierArmor, soldier: true, pose: soldier.pose,
-      splashMaterial: SOLDIER_SPLASH_MATERIAL,
-      x: soldier.x, y: soldier.y + CHARACTER_HEIGHT, z: soldier.z,
-    });
-  }
-  // The bots on foot are soldiers too: a bot-driven hull's shell reaches them.
-  for (const bot of referee.bots ?? []) {
-    if (bot.vehicle) continue;
-    const armor = world?.armorOf(bot.playerId);
-    const s = world?.player(bot.playerId)?.soldier;
-    if (!armor || armor.destroyed || !s) continue;
-    targets.push({
-      owner: -1, armor, soldier: true, pose: s.pose ?? 0, botId: bot.playerId,
-      splashMaterial: SOLDIER_SPLASH_MATERIAL,
-      x: s.x, y: s.y + CHARACTER_HEIGHT, z: s.z,
-    });
-  }
-  return targets;
-}
-
-/** The bot whose seat fired the round behind `record` (`record.firerGroup`). */
-function botFiringGroup(record) {
-  return vehicles.firerOf(record?.firerGroup);
-}
-
-/**
- * HP-10's exposure for one soldier target: the fraction of
- * `checkForHitOnSoldier`'s samples with a clear line to the blast.
- *
- * `soldier-exposure.js` carries the tables and the addresses; this only hands
- * it the collider. The firer is excluded from the ray the way the engine's own
- * filter holds the source object's root parent (0x0815b616).
- */
-function soldierExposureFor(target, blast) {
-  if (!collider) return 1;
-  const blocked = worldBlocker(collider, { skipOwner: -1 });
-  return soldierExposure({ x: blast[0], y: blast[1], z: blast[2] },
-                         target, target.pose ?? 0, blocked);
-}
-
-/**
- * A round landed. Apply the direct hit, then the area pass if the round has
- * one (`damageType 1`: shells, bombs, grenades, the bazooka), and reconcile
- * every tier that moved on the same frame.
- */
-function applyVehicleHit(record) {
-  if (record?.target != null) applyRoundToSoldier(record);
-  const landed = vehicleDamage.applyHit(record);
-  if (landed) reconcileDamaged(landed.vehicle);
-  if (!(record?.splashRadius > 0)) return;
-  const splashed = vehicleDamage.applySplash(record, splashTargets(), {
-    materials: guns.materials, modifiers: guns.modifiers,
-    exposure: soldierExposureFor,
-  });
-  for (const hit of splashed) {
-    // A soldier target has no tier to re-pick and no wreck to build; what it
-    // has is a figure that should stop standing there. The player's own death
-    // is already handled where every other cause of it is.
-    if (hit.target?.soldier) {
-      if (hit.target.armor === soldierArmor) {
-        applyDamageToPlayer(hit.damage, { x: record.x, y: record.y, z: record.z }, record.team);
-      } else if (hit.target.botId) {
-        // `applySplash` has already taken `hit.lost` off the bot's Armor;
-        // what is left is the bot's side of it (the log, the incoming-fire
-        // event, a death).
-        const at = record.splashPoint ?? record.point ?? null;
-        referee.damageLanded(hit.target.botId, hit.lost, botFiringGroup(record) ?? LOCAL_PLAYER, at, { via: `splash ${record.gun ?? ''} d ${hit.distance.toFixed(1)}` });
-      }
-      if (hit.target.node && hit.vehicle.destroyed) hit.target.node.visible = false;
-      continue;
-    }
-    reconcileDamaged(hit.vehicle);
-  }
-}
-const AIR_KEYS = new Set([
-  'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyR', 'Space',
-  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-]);
-
-/**
- * Whether `node`'s root drivetrain is one `pickVehicle`'s checkbox-triggered
- * auto-possess can use: `air`/`ground`, else null. `seats.js`'s own
- * `classifyRoot` (GUN-10, verify-r6.md) sees the fuller picture — `tank`, a
- * manned `gun`, or a bare `seat` — and drives every one of those through the
- * `E`-key/EntryPoint path (`enterVehicle`/`collectEntryPoints` below); this
- * narrower wrapper only exists because the checkbox has never known how to
- * auto-pick anything but a plane or a car, and a Sherman parked with nobody
- * near it is not what a bare "start piloting" click should mean.
- */
-function classifyVehicle(node) {
-  const kind = classifyRoot(node);
-  return kind === 'air' || kind === 'ground' ? kind : null;
-}
-
-/**
- * The seat the pilot checkbox takes when nobody points at one: the first
- * aircraft the scene spawns, else the first drivable car. The name trio at
- * the end is for scenes extracted before `extras.physics` existed, whose
- * engines cannot say what they are.
- */
-function pickVehicle() {
-  const found = findVehicles(currentRoot);
-  return found.find(node => classifyVehicle(node) === 'air')
-    || found.find(node => classifyVehicle(node) === 'ground')
-    || findVehicle(currentRoot, 'Corsair')
-    || findVehicle(currentRoot, 'Spitfire')
-    || findVehicle(currentRoot, 'Zero');
-}
+const wrecks = createVehicleWrecks({
+  get DEATH_CAM() { return DEATH_CAM; }, get MODELS_BASE() { return MODELS_BASE; },
+  get SOLDIER_MAX_HP_FALLBACK() { return SOLDIER_MAX_HP_FALLBACK; },
+  get bindDynamicShading() { return bindDynamicShading; }, get bust() { return bust; },
+  get camera() { return camera; }, get collider() { return collider; },
+  get deathCamShot() { return deathCamShot; }, set deathCamShot(v) { deathCamShot = v; },
+  get deathCamTarget() { return deathCamTarget; }, set deathCamTarget(v) { deathCamTarget = v; },
+  get deathCamTimer() { return deathCamTimer; }, set deathCamTimer(v) { deathCamTimer = v; },
+  get effects() { return effects; }, get exitPoseManned() { return exitPoseManned; },
+  get extras() { return extras; }, get fireStates() { return fireStates; },
+  get hud() { return hud; }, get hudFeed() { return hudFeed; },
+  get isCollision() { return isCollision; }, get leaveSeat() { return leaveSeat; },
+  get loader() { return loader; }, get localPlayer() { return localPlayer; },
+  get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
+  get pageAudio() { return pageAudio; }, get placeCamera() { return placeCamera; },
+  get prone() { return prone; }, set prone(v) { prone = v; },
+  get resetMobileControls() { return resetMobileControls; },
+  get respawnVehicleBody() { return hullBodies.respawnVehicleBody; },
+  get retireVehicleBody() { return hullBodies.retireVehicleBody; }, get soldier() { return soldier; },
+  get soldierArmor() { return soldierArmor; }, set soldierArmor(v) { soldierArmor = v; },
+  get soldierDead() { return soldierDead; }, set soldierDead(v) { soldierDead = v; },
+  get updateHud() { return updateHud; }, get vehicleDamage() { return vehicleDamage; },
+  get vehicles() { return vehicles; }, get world() { return world; },
+});
+const hullBodies = createHullBodies({
+  get DEFAULT_SURFACE_FRICTION() { return DEFAULT_SURFACE_FRICTION; },
+  get MAPS_BASE() { return MAPS_BASE; }, get bust() { return bust; },
+  get collider() { return collider; }, get damageTables() { return damageTables; },
+  get effects() { return effects; },
+  get entryPoints() { return entryPoints; }, set entryPoints(v) { entryPoints = v; },
+  get extras() { return extras; }, get materialFrictionById() { return materialFrictionById; },
+  get nearEntry() { return nearEntry; }, set nearEntry(v) { nearEntry = v; },
+  get vehicleDamage() { return vehicleDamage; }, get vehicleInterp() { return vehicleInterp; },
+  get vehicleSpawnActive() { return vehicleSpawnActive; }, get vehicles() { return vehicles; },
+  get world() { return world; }, get wrecks() { return wrecks; },
+});
+const vehicleHits = createVehicleHits({
+  get LOCAL_PLAYER() { return LOCAL_PLAYER; },
+  get applyDamageToPlayer() { return applyDamageToPlayer; }, get camera() { return camera; },
+  get collider() { return collider; }, get currentRoot() { return currentRoot; },
+  get guns() { return guns; }, get hudFeed() { return hudFeed; },
+  get localPlayer() { return localPlayer; }, get optOnFoot() { return optOnFoot; },
+  get optPilot() { return optPilot; }, get referee() { return referee; },
+  get soldier() { return soldier; }, get soldierArmor() { return soldierArmor; },
+  get soldierDead() { return soldierDead; }, get vehicleDamage() { return vehicleDamage; },
+  get vehicles() { return vehicles; }, get world() { return world; },
+  get wrecks() { return wrecks; },
+});
 
 // --- the guns ---------------------------------------------------------------
 //
@@ -5429,8 +4092,8 @@ vehicles.env.guns = guns;
 // building and cost nothing; one that lands on something with an Armor takes
 // hit points off it (ledger HP-6: a projectile is the only thing that damages
 // anything in this engine).
-guns.onImpact = record => applyVehicleHit(record);
-guns.bodyCast = roundBodyCast;
+guns.onImpact = record => vehicleHits.applyVehicleHit(record);
+guns.bodyCast = vehicleHits.roundBodyCast;
 // The game's own impact, trail and explosion bundles. Loaded once per mod
 // beside `damage.json`; a level change keeps it. Until it lands (or when it
 // is absent) a hit is recorded and nothing is drawn at the spot.
@@ -5598,15 +4261,15 @@ function buildCollider(root) {
   // have to be standing where they will rest. A ship rests at its own draft,
   // which is a closed form rather than a settle, and its deck spawns move with
   // it.
-  settlePlacedVehicles(ownerRoots, heightfield);
-  floatPlacedVehicles(ownerRoots, extras?.waterLevel);
-  rebaseDeckSpawns();
+  hullBodies.settlePlacedVehicles(ownerRoots, heightfield);
+  hullBodies.floatPlacedVehicles(ownerRoots, extras?.waterLevel);
+  hullBodies.rebaseDeckSpawns();
   const statics = buildCollisionIndex(root, { ownerRoots });
   // Every damageable thing in the level, keyed by the same owner id the
   // collision index just handed out — which is what a hit record names, so a
   // round that lands resolves to the vehicle it landed on with one lookup and
   // no scene walk. `ownerRoots[i]` is owner `i` by construction.
-  registerDamageables(ownerRoots);
+  wrecks.registerDamageables(ownerRoots);
   // Raised decks a ground vehicle drives on top of (bridges, repair/reload
   // bays). The level's heightfield is the ground under them; their deck tops
   // are static collision meshes. This is only the broadphase gate — the ride
@@ -5970,7 +4633,7 @@ function chaseExternalLaw(mode, dt, pose) {
 function setPilot(on, node = null, seatId = null) {
   if (on) {
     const current = localPlayer.occupancy;
-    const target = node || current?.root || pickVehicle();
+    const target = node || current?.root || vehicleHits.pickVehicle();
     if (!target) {
       optPilot.checked = false;
       return;
@@ -6134,7 +4797,7 @@ function drive(dt) {
   // `vehicleGuns` loop with the unconditional-off `setFiring` semantics. The
   // shell left here is the presentation half: the muzzle flash's 1P choice
   // and the camera, including the passenger-seat pose.
-  const driving = localPlayer.occupancy.isActiveRoot() && !vehicleInput.blocked;
+  const driving = localPlayer.occupancy.isActiveRoot() && !vehicleHits.vehicleInput.blocked;
   guns.firstPerson = localPlayer.car.firstPerson;
   // A non-driving seat (the Willy's passenger, a Sherman's hull gunner) still
   // needs the camera — the VehicleCamera owns the C-cycle for every seat of a
@@ -6283,7 +4946,7 @@ const hudFeed = createHudFeed({
   get lastSoldierHp() { return pageAudio.lastSoldierHp; }, set lastSoldierHp(v) { pageAudio.lastSoldierHp = v; },
   get loadouts() { return soldierKit.loadouts; }, get localPlayer() { return localPlayer; },
   get mannedActive() { return mannedActive; }, get mapSurfaces() { return mapSurfaces; },
-  get occupiedVehicleDamage() { return occupiedVehicleDamage; },
+  get occupiedVehicleDamage() { return vehicleHits.occupiedVehicleDamage; },
   get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
   get playSoldierHurtSound() { return pageAudio.playSoldierHurtSound; }, get renderer() { return renderer; },
   get room() { return room; }, get soldier() { return soldier; },
@@ -6649,7 +5312,7 @@ const referee = createBotReferee({
   get units() { return botUnits; },
   groundAt: (x, z, fromY) => groundHeight(x, z, fromY),
   armorFor: (bot, flag) => new Armor(soldierKit.soldierMaxHp(flag)),
-  roundDamage: stats => botRoundDamage(stats),
+  roundDamage: stats => vehicleHits.botRoundDamage(stats),
   debug: BOT_DEBUG,
   // The player's shot, heard inside his weapon's sound radius, and incoming
   // fire when it lands nearby: the edge of his fire input this frame.
@@ -6699,11 +5362,11 @@ const referee = createBotReferee({
   // Room play stays authoritative: no local bot capture.
   captureEnabled: () => !room.roomJoined,
   onCapture: (bot, target, prevTeam) => {
-    hoistCaptureFlag(target);
-    syncVehicleSpawnOwnership();
+    flagCapture.hoistCaptureFlag(target);
+    hullBodies.syncVehicleSpawnOwnership();
     logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
     console.log(`[bots] ${bot.playerId} takes ${target.name}${bot.vehicle ? ' in the ' + (bot.vehicle.template ?? bot.vehicle.kind) : ''}`);
-    announceCapture(prevTeam, target.team);
+    flagCapture.announceCapture(prevTeam, target.team);
   },
   onMounted: (bot, cand, mount) => {
     const vis = botBodies.botVisuals.get(bot.playerId);
@@ -6744,15 +5407,12 @@ const botUnits = createBotUnits({
   collider: () => collider,
   localPlayerId: LOCAL_PLAYER,
 });
-let localCapture = null;
-let roomCapture = null;
 // The input object frame() built for this frame — onFootCamera's footFire
 // hands the deviation model the same c_PIThrottle/c_PIYaw values the world
 // consumed this tick (the engine's speed gates read the *input*, not the
 // achieved velocity).
 let frameInputLast = null;
 let seatSoldier = null;   // the seated soldier pose scene, if one is loaded
-let flags = [];
 let prone = false;           // `c_PILie` is a toggle, not a hold
 const FLY_FOV = camera.fov;
 const FLY_NEAR = camera.near;
@@ -6888,384 +5548,22 @@ const deathCamAt = { x: 0, y: 0, z: 0, yaw: 0 };
  *  `updateSoldierHud` fills; `gameHud` is declared with the painter further
  *  down, and every write below happens inside a call, never at load. */
 const hudBridge = { get vars() { return hudFeed.gameHud.vars; } };
-
-/** Fill the flag picker from the level's own control points.
- *
- *  Rebuilt whole, but not forgetful: the deploy screen writes its choice into
- *  this select and `setOnFoot` rebuilds the options before reading it back,
- *  and an innerHTML wipe resets a select to its first option. A level switch
- *  clears the value in `show()` first, so the memory never crosses maps. */
-function buildSpawnFlags() {
-  const kept = spawnFlagSelect.value;
-  // The world owns the flags (world.js builds them from the level data the
-  // engine's way); the deploy screen reads the same array it always read.
-  flags = world?.flags ?? [];
-  spawnFlagSelect.innerHTML = '';
-  for (const [index, flag] of flags.entries()) {
-    const option = document.createElement('option');
-    const side = flag.team === 1 ? 'Axis' : flag.team === 2 ? 'Allied' : 'neutral';
-    option.value = String(index);
-    option.textContent = `${flag.name} (${side}, ${flag.spawns.length})`;
-    spawnFlagSelect.appendChild(option);
-  }
-  if (kept !== '' && Number(kept) < flags.length) spawnFlagSelect.value = kept;
-  // The sidebar picker is a debug aid; the deploy screen is the real join
-  // path (Caps Lock / auto-open). Keep the select populated whenever there
-  // are flags so a later commit can read it, and only hide it when empty.
-  spawnFlagSelect.hidden = !flags.length;
-  return flags.length;
-}
-
-
-
-function nearestEnemyFlag(team, position) {
-  return position ? nearestEnemyFlagOf(flags, team, [position.x, position.y, position.z]) : null;
-}
-
-
-function capturePosition() {
-  const player = world?.player(LOCAL_PLAYER);
-  if (player?.soldier) return player.soldier;
-  if (player?.vehicle?.state?.position) return player.vehicle.state.position;
-  return null;
-}
-
-function resetCaptureUi() {
-  localCapture = null;
-  roomCapture = null;
-}
-
-/** Hoist the taker's cloth over a captured point: swap the pole's flag-anchor
- *  skin + cloth UVs to the capturing side's own national mesh, or strip the
- *  cloth when the point goes neutral (a take-back always names a side).
- *
- *  The cloth is a skinned mesh whose baked UVs point at one cell of the
- *  `flags_o` atlas (surveyed off `standardMesh/flag*_m1.sm`: us/can
- *  u .003-.425 v -1.0-.75, uk u .001-.422 v -.734-.484, ge
- *  u .438-.859 v -.734-.484, jp u .434-.856 v -1.0-.75). The take rewrites
- *  the pole node in place: visitors re-resolve the anchor + cloth each call
- *  off the point's scene-graph name (no per-flag cache to go stale across a
- *  level switch), retarget the cloth's skin to the anchor's joint chain and
- *  overwrite its UV attribute with the taker's cell. The wave animation keeps
- *  playing — the joints are the pole's own, untouched — only the colours
- *  change, which is exactly what the retail capture does.
- *
-  *  A neutral point bakes pole-only (no anchor, no cloth), so there is nothing
-  *  to swap: the team's cloth is built fresh the way the extractor builds one
-  *  (anchor under the pole at the point's flag height, joints + `FlagBlow`
-  *  clip + cloth node), reusing the sibling point's skin/mesh layout. When
-  *  the new owner's nation has no cell above (a `flagpl_m1` the pack cannot
-  *  draw), the point keeps its old colours rather than flying another
-  *  nation's flag — the same neutral-plate rule `drawControlPoint` applies
-  *  on the map. */
-const FLAG_UV_CELLS = {
-  // Surveyed off the baked cloth (`standardMesh/flag*_m1.sm` UV ranges ==
-  // the glb's own baked TEXCOORD_0 ranges): each national mesh samples one
-  // cell of the shared `flags_o` atlas. u0,v0,u1,v1 in the file's own stored
-  // convention (v negative — the bake carries the .sm values through).
-  us: [0.003, -1.000, 0.425, -0.750],
-  can: [0.003, -1.000, 0.425, -0.750],
-  brit: [0.001, -0.734, 0.422, -0.484],
-  ger: [0.438, -0.734, 0.859, -0.484],
-  jp: [0.434, -1.000, 0.856, -0.750],
-  rus: [0.001, -0.469, 0.422, -0.219],
-};
-function flagUvCellFor(team) {
-  // The taker's own national cloth: the nation whose flag that side flies on
-  // THIS level (`nation.js` — most control points that side holds; Bocage
-  // Axis German, Allies American), not a hardcoded us/ge pair. On a level
-  // whose answer is 'unknown' (a `flagpl_m1` the pack has no art for) there
-  // is no cell and the point keeps its old colours — the same neutral-plate
-  // rule `drawControlPoint` applies on the map.
-  const nation = team === 1 || team === 2 ? mapSurfaces.teamNation(team) : null;
-  return (nation && FLAG_UV_CELLS[nation]) || null;
-}
-/** The stored UV range of a cloth geometry: [u0,v0,u1,v1]. Every baked cloth
- *  samples exactly one atlas cell, so the min/max is the cell. */
-function unitRectOf(uv) {
-  let u0 = Infinity, v0 = Infinity, u1 = -Infinity, v1 = -Infinity;
-  for (let i = 0; i < uv.count; i++) {
-    const u = uv.getX(i), v = uv.getY(i);
-    if (u < u0) u0 = u;
-    if (u > u1) u1 = u;
-    if (v < v0) v0 = v;
-    if (v > v1) v1 = v;
-  }
-  return [u0, v0, u1, v1];
-}
-/** Scene-graph names are the extractor's `<point> <part>` run through
- *  `PropertyBinding.sanitizeNodeName` by GLTFLoader (spaces to
- *  underscores): the cloth is `<point>_cloth`, the anchor `<point>_flag`,
- *  the joints `<point>_Bone01..20`, and every `FlagBlow` track names the
- *  joints that way. Raised nodes take the same names so one lookup serves
- *  baked and raised alike -- a `<point> cloth` test with a space matched
- *  nothing the loader had renamed. */
-function flagNodeStem(pointName) {
-  return THREE.PropertyBinding.sanitizeNodeName(pointName);
-}
-function captureSceneNodes(flag) {
-  if (!currentRoot || !flag?.controlPointName) return null;
-  const stem = flagNodeStem(flag.controlPointName);
-  const pole = currentRoot.getObjectByName(flag.controlPointName)
-    || currentRoot.getObjectByName(stem);
-  if (!pole) return null;
-  let anchor = null, cloth = null;
-  pole.traverse(obj => {
-    if (obj.userData?.kind === 'flagAnchor' && !anchor) anchor = obj;
-  });
-  const clothName = `${stem}_cloth`;
-  currentRoot.traverse(obj => {
-    if (!cloth && obj.userData?.kind === 'flagCloth' && obj.name === clothName) cloth = obj;
-  });
-  return { pole, anchor, cloth };
-}
-/** The taker's cloth, flown over a pole that baked none.
- *
- *  A neutral point bakes pole-only (no anchor, no cloth, no `FlagBlow`
- *  clip), so the UV swap has nothing to repaint. Build the team's cloth
- *  the way the extractor builds one: an anchor under the pole at the
- *  point's flag height (flagbase poles hoist at 8.2, the donor's own
- *  offset), the same 20-bone joint chain posed at the clip's frame 0, and
- *  a cloth node reusing a sibling point's skinned mesh + skin + material.
- *  The wave animation comes along because the mixer plays every
- *  `FlagBlow <name>` clip by node name — and the joints are named for THIS
- *  point (`<point> Bone01..20`), exactly the nodes a
- *  `FlagBlow <point>` track list would bind. A `FlagBlow` clip for this
- *  point exists only when the extractor baked one; when it did not (a
- *  point the level never flies), the cloth hangs in the skeleton's frame-0
- *  pose — the same correctly-hung sheet a viewer that ignores animations
- *  shows, per the extractor's own comment — rather than erroring.
- *
- *  Returns the new cloth, or null when this level baked no donor cloth to
- *  copy (then the point keeps its bare pole). The donor is any same-level
- *  `flagCloth` (same shared `flags_o` atlas on every level); its mesh,
- *  skin layout and material are the level's own. */
-function raiseCaptureCloth(pole, pointName, cell) {
-  let donor = null;
-  currentRoot.traverse(obj => {
-    if (!donor && obj.userData?.kind === 'flagCloth'
-        && obj.skeleton?.bones?.length) donor = obj;
-  });
-  if (!donor) return null;
-  const stem = flagNodeStem(pointName);
-  const donorStem = donor.name.replace(/_cloth$/, '');
-  const donorBones = donor.skeleton.bones;
-  // The donor's anchor: the first non-joint ancestor of its root joint.
-  let donorAnchor = donorBones[0];
-  while (donorAnchor && donorAnchor.isBone) donorAnchor = donorAnchor.parent;
-  const anchor = new THREE.Group();
-  anchor.name = `${stem}_flag`;
-  anchor.userData.kind = 'flagAnchor';
-  if (donorAnchor?.userData?.kind === 'flagAnchor') {
-    anchor.position.copy(donorAnchor.position);
-  } else {
-    anchor.position.set(0, 8.2, 0);
-  }
-  pole.add(anchor);
-  // The joint chain: the donor's, bone for bone in skin order, renamed for
-  // this point (`<point>_Bone01..20`, the names a `FlagBlow <point>` track
-  // list binds) and parented the same way -- a donor root joint hangs off
-  // this anchor. Local poses are the donor's current ones; the clip below
-  // overwrites them every frame.
-  const bones = donorBones.map(src => {
-    const b = new THREE.Bone();
-    b.name = src.name.startsWith(`${donorStem}_`)
-      ? `${stem}_${src.name.slice(donorStem.length + 1)}`
-      : `${stem}_${src.name}`;
-    b.position.copy(src.position);
-    b.quaternion.copy(src.quaternion);
-    b.scale.copy(src.scale);
-    return b;
-  });
-  const byDonor = new Map(donorBones.map((src, i) => [src, bones[i]]));
-  donorBones.forEach((src, i) => (byDonor.get(src.parent) || anchor).add(bones[i]));
-  anchor.updateMatrixWorld(true);
-  // The inverse binds are the donor's own, cloned: the extractor bakes each
-  // as the offset from the flat sheet at the origin into bone space
-  // (`bind = (I, rest - offset)`, extract_map.py), NOT as the inverse of
-  // the joint's world pose. `Skeleton.calculateInverses` -- what a bind
-  // with no explicit matrix runs -- would make every joint cancel to
-  // identity at bind time and draw the sheet where its vertices are: a
-  // metre-wide rectangle at the world origin, nowhere near the pole.
-  const skin = new THREE.Skeleton(
-    bones, donor.skeleton.boneInverses.map(m => m.clone()));
-  // The donor geometry is shared: clone it before repainting UVs so the
-  // sibling point keeps its own colours. `BufferGeometry.copy` shares the
-  // `userData` object, and `paintClothCell` caches the painted cell there,
-  // so give the clone its own.
-  const geometry = donor.geometry.clone();
-  geometry.userData = {
-    flagUvCell: donor.geometry.userData.flagUvCell?.slice() ?? null,
-  };
-  const cloth = new THREE.SkinnedMesh(geometry, donor.material);
-  cloth.name = `${stem}_cloth`;
-  cloth.userData.kind = 'flagCloth';
-  cloth.userData.donorStem = donorStem;
-  cloth.frustumCulled = donor.frustumCulled;
-  // Explicit bind matrix: `bind(skin)` alone recalculates the inverses.
-  cloth.bind(skin, donor.bindMatrix.clone());
-  paintClothCell(cloth, cell);
-  cloth.visible = true;
-  currentRoot.add(cloth);
-  return cloth;
-}
-/** Wave a raised cloth. The level bakes `FlagBlow <point>` only for the
- *  poles it flies, so a point raised from bare has no clip of its own --
- *  but the clip is the same `FlagBlow.baf` on every pole, so the donor's
- *  is retargeted: each track renamed from the donor's joints to this
- *  point's, which `raiseCaptureCloth` named bone for bone. Falls back to
- *  the point's own clip when the level did bake one. */
-function playRaisedClothClip(cloth, pointName) {
-  const stem = flagNodeStem(pointName);
-  const donorStem = cloth.userData.donorStem;
-  const own = levelClips.find(c => c.name === `FlagBlow ${pointName}`);
-  // Clip names keep the extractor's spelling; track names carry the
-  // sanitized joint names, so the donor's clip is the one whose tracks
-  // name the donor's joints.
-  const source = own ?? levelClips.find(c => c.name.startsWith('FlagBlow ')
-    && c.tracks.some(t => t.name.startsWith(`${donorStem}_`)));
-  if (!source) return null;
-  const tracks = [];
-  for (const track of source.tracks) {
-    if (source === own) { tracks.push(track); continue; }
-    if (!track.name.startsWith(`${donorStem}_`)) continue;
-    const renamed = track.clone();
-    renamed.name = stem + track.name.slice(donorStem.length);
-    tracks.push(renamed);
-  }
-  if (!tracks.length) return null;
-  const clip = source === own
-    ? source : new THREE.AnimationClip(`FlagBlow ${pointName}`, source.duration, tracks);
-  flagMixer ??= new THREE.AnimationMixer(currentRoot);
-  const action = flagMixer.clipAction(clip);
-  action.time = Math.random() * clip.duration;
-  action.play();
-  return action;
-}
-/** Repaint a cloth's UVs into an atlas cell, relatively: each vertex keeps
- *  its fractional position within the geometry's baked cell and takes the
- *  same fraction of the new one, so the weave direction and the hoist edge
- *  survive the swap. (Positions are no guide — the us and ge cloths bake
- *  byte-identical POSITION/NORMAL arrays; only their UVs differ.) */
-function paintClothCell(cloth, cell) {
-  const uv = cloth.geometry?.getAttribute('uv');
-  if (!uv) return;
-  const src = cloth.geometry.userData.flagUvCell
-    || (cloth.geometry.userData.flagUvCell = unitRectOf(uv));
-  const [u0, v0, u1, v1] = cell;
-  const su0 = src[0], sv0 = src[1], su = src[2] - src[0], sv = src[3] - src[1];
-  for (let i = 0; i < uv.count; i++) {
-    const fu = su ? (uv.getX(i) - su0) / su : 0;
-    const fv = sv ? (uv.getY(i) - sv0) / sv : 0;
-    uv.setXY(i, u0 + (u1 - u0) * fu, v0 + (v1 - v0) * fv);
-  }
-  uv.needsUpdate = true;
-  cloth.geometry.userData.flagUvCell = cell.slice();
-}
-function hoistCaptureFlag(flag) {
-  const nodes = captureSceneNodes(flag);
-  if (!nodes) return;
-  // The map surfaces read `extras.controlPoints`, not the world's live flags
-  // — so the team write alone leaves the minimap's marker neutral. Sync the
-  // entry by control-point name (`flags[].controlPointName` is the scene
-  // node's name; the deploy label in `flags[].name` is not);
-  // `drawControlPoint` then resolves the taker's own `conp_<nation>` sprite
-  // (or the neutral plate for `unknown`) and the cpbar strip takes the
-  // holder's colour on the same repaint.
-  const listed = extras.controlPoints || [];
-  const entry = listed.find(e => e.name === flag.controlPointName);
-  if (entry) entry.team = flag.team;
-  const cell = flagUvCellFor(flag.team);
-  if (cell && nodes.cloth) {
-    // The cloth is already skinned to this pole's own joints -- baked for
-    // it, or raised below on an earlier take -- so only the colours change.
-    // Do NOT rebind it: a fresh `Skeleton` recomputes the inverse binds off
-    // the live world pose, which draws the sheet at the world origin (see
-    // `raiseCaptureCloth`), and that is a pole with no flag on it.
-    paintClothCell(nodes.cloth, cell);
-    nodes.cloth.visible = true;
-    if (nodes.anchor) nodes.anchor.visible = true;
-  } else if (cell && nodes.pole) {
-    // A neutral point bakes pole-only: raise the team's cloth fresh (built
-    // the way the extractor builds one) rather than leaving a bare pole.
-    const cloth = raiseCaptureCloth(nodes.pole, flag.controlPointName, cell);
-    if (cloth) {
-      // Visibility: the new cloth is a scene-root child like every baked
-      // one, so it joins the culled set with its joints' own bounds
-      // (`tagCull` reads those for a skinned mesh, not the bind pose).
-      tagCull(cloth);
-      cull.push(cloth);
-      flattenCull();
-      // Matrices: `freezeStatics` ran at level load, and a pole chain with
-      // nothing moving under it was frozen out of the per-frame matrix
-      // walk. Its joints wave every frame the mixer plays from here on, so
-      // thaw the chain (a no-op on a node that was never frozen).
-      for (let n = nodes.pole; n && n !== currentRoot; n = n.parent) thaw(n);
-      playRaisedClothClip(cloth, flag.controlPointName);
-    }
-  } else if (!cell && nodes.cloth) {
-    nodes.cloth.visible = false;
-  }
-  mapSurfaces.drawMinimap(true);
-  mapSurfaces.drawFullMap(true);
-  if (typeof deployScreen.paintDeployChrome === 'function') deployScreen.paintDeployChrome();
-}
-
-function updateCaptureHud(ticks) {
-  if (!optOnFoot.checked || !soldier || soldierDead) {
-    if (!roomCapture && !localCapture) return;
-    resetCaptureUi();
-    updateHud();
-    return;
-  }
-
-  // Solo play has no server authority, so run the same delayed capture law
-  // locally. Room play only displays the authoritative lifecycle below.
-  if (!room.roomJoined) {
-    const player = world?.player(LOCAL_PLAYER);
-    const target = nearestEnemyFlag(player?.team ?? deployScreen.deployTeamId, capturePosition());
-    if (!target) {
-      if (localCapture) { localCapture = null; updateHud(); }
-      return;
-    }
-    if (!localCapture || localCapture.flag !== target) {
-      localCapture = { flag: target, elapsed: 0 };
-    }
-    localCapture.elapsed += (ticks * (1 / 30));
-    const progress = Math.min(100, Math.round(
-      localCapture.elapsed / captureDuration(target) * 100));
-    hud.textContent = `CAPTURING ${target.name} · ${progress}%`;
-    if (localCapture.elapsed < captureDuration(target)) return;
-    const prevTeam = target.team;
-    target.team = player?.team ?? deployScreen.deployTeamId;
-    hoistCaptureFlag(target);
-    syncVehicleSpawnOwnership();
-    logToConsole(`${target.name} captured by ${target.team === 1 ? 'Axis' : 'Allied'}`);
-    hud.textContent = `${target.name} captured`;
-    announceCapture(prevTeam, target.team);
-    clearTimeout(hudFeed.hudViewTimer);
-    hudFeed.hudViewTimer = setTimeout(updateHud, 2200);
-    localCapture = null;
-    return;
-  }
-
-  if (!roomCapture) return;
-  if (roomCapture.until && performance.now() >= roomCapture.until) {
-    roomCapture = null;
-    updateHud();
-    return;
-  }
-  if (!roomCapture.contested && !roomCapture.done) {
-    roomCapture.elapsed += ticks * (1 / 30);
-    const progress = Math.min(100, Math.round(
-      roomCapture.elapsed / roomCapture.duration * 100));
-    hud.textContent = `CAPTURING ${roomCapture.name} · ${progress}%`;
-  } else if (roomCapture.contested) {
-    hud.textContent = `CONTESTED ${roomCapture.name}`;
-  } else if (roomCapture.done) {
-    hud.textContent = `${roomCapture.name} captured`;
-  }
-}
+const flagCapture = createFlagCapture({
+  get AUDIO_OFF() { return AUDIO_OFF; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
+  get MAPS_BASE() { return MAPS_BASE; }, get bust() { return bust; }, get cull() { return cull; },
+  get currentRoot() { return currentRoot; }, get deployScreen() { return deployScreen; },
+  get extras() { return extras; },
+  get flagMixer() { return flagMixer; }, set flagMixer(v) { flagMixer = v; },
+  get flattenCull() { return flattenCull; }, get hud() { return hud; },
+  get hudFeed() { return hudFeed; }, get levelClips() { return levelClips; },
+  get logToConsole() { return logToConsole; }, get mapSurfaces() { return mapSurfaces; },
+  get optOnFoot() { return optOnFoot; }, get pageAudio() { return pageAudio; },
+  get room() { return room; }, get soldier() { return soldier; },
+  get soldierDead() { return soldierDead; }, get spawnFlagSelect() { return spawnFlagSelect; },
+  get syncVehicleSpawnOwnership() { return hullBodies.syncVehicleSpawnOwnership; },
+  get tagCull() { return tagCull; }, get thaw() { return thaw; },
+  get updateHud() { return updateHud; }, get world() { return world; },
+});
 
 /**
  * Spawn bots on both sides, the way the engine's bot manager tops up each
@@ -7308,7 +5606,7 @@ const soldierKit = createHandWeapon({
   get AUDIO_OFF() { return AUDIO_OFF; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
   get MAPS_BASE() { return MAPS_BASE; }, get MODELS_BASE() { return MODELS_BASE; },
   get SOLDIER_MAX_HP_FALLBACK() { return SOLDIER_MAX_HP_FALLBACK; },
-  get audioListener() { return pageAudio.audioListener; }, get botRoundDamage() { return botRoundDamage; },
+  get audioListener() { return pageAudio.audioListener; }, get botRoundDamage() { return vehicleHits.botRoundDamage; },
   get bust() { return bust; }, get camera() { return camera; }, get captured() { return captured; },
   get currentDir() { return currentDir; }, get deployScreen() { return deployScreen; },
   get ensureFootBody() { return footBodies.ensureFootBody; }, get fireStates() { return fireStates; },
@@ -7322,112 +5620,6 @@ const soldierKit = createHandWeapon({
   get vehicleAudio() { return pageAudio.vehicleAudio; }, get warmSubtree() { return warmSubtree; },
   get warmups() { return warmups; }, get world() { return world; },
 });
-
-// --- bot weapons -----------------------------------------------------------
-//
-// PARITY DEPARTURE (BOT_AI_IMPLEMENTATION_PLAN §5). The plan's parity route —
-// give every bot a real Armor and a shared `firePlayerWeapon` through
-// `guns`/`gunfire.js` — cannot land as written: the viewer's collider carries
-// no soldier body, and no projectile-vs-soldier registration exists anywhere
-// (`guns.onImpact` reaches placed objects and vehicle hulls only). A bot's
-// trigger writing a synthetic weapon group would put real tracers in the air
-// and still deal the player no damage.
-//
-// So the referee (bot-referee.js) keeps the half of parity that is exact and
-// resolves the other half itself: the bot's live facing, the engine's
-// deviation cone and the engine's own direct-hit formula (base material
-// damage x the attacker/defender damageMod pair, `botRoundDamage` below).
-// Only the hit test against a soldier body is an INVENTION stand-in. Recorded
-// as a departure in features/bf1942-ai-research-2026-09-21/IMPLEMENTATION_PLAN.md.
-
-/** `damage.json`'s default material damage, used until a projectile resolves. */
-const BOT_FALLBACK_DAMAGE = 30;
-/** `MaterialManager.material 40` — the soldier's defending material. */
-const BOT_SOLDIER_MATERIAL = 40;
-
-/** The damage one bot round does, from the engine's direct-hit formula. */
-function botRoundDamage(stats = null) {
-  // `fireArms.projectile` names the round's template; its attacker material
-  // comes from `damage.json`'s projectile table, as for the human's rounds.
-  const attacker = guns.attackerMaterial(stats?.projectile ? { template: stats.projectile } : null);
-  const base = guns.materials?.[attacker]?.damage ?? BOT_FALLBACK_DAMAGE;
-  const attGroup = guns.materials?.[attacker]?.attGroup ?? attacker;
-  const defGroup = guns.materials?.[BOT_SOLDIER_MATERIAL]?.defGroup ?? BOT_SOLDIER_MATERIAL;
-  const mod = guns.modifiers?.[attGroup]?.[defGroup] ?? null;
-  return base * (mod === null ? 1 : mod);
-}
-
-/** Who fired `group`: the local player (his drivetrain's or seat's guns) or
- *  the bot whose seat it is. Null for a gun nobody is holding. */
-function roundFirer(group) {
-  return vehicles.firerOf(group);
-}
-
-/**
- * `guns.bodyCast`: the first soldier a round's segment meets inside `maxDist`.
- * The body is the same stand-in sphere the hand weapons and the bots already
- * resolve against (`BOT_BODY_RADIUS` about `BOT_BODY_HEIGHT` over the feet),
- * so a man is exactly as hard to hit with a tank's MG as with a rifle.
- *
- * A seated man is not a body here — his hull is, and the collider has it. The
- * firer's own side is passed through, the rule every other round path in this
- * file keeps.
- */
-function roundBodyCast(ox, oy, oz, dx, dy, dz, maxDist, group) {
-  if (!world) return null;
-  const firer = roundFirer(group);
-  const firerTeam = firer ? world.player(firer)?.team ?? null : null;
-  const r2 = BOT_BODY_RADIUS * BOT_BODY_RADIUS;
-  let best = null;
-  let bestT = maxDist;
-  for (const [id, player] of world.players) {
-    if (id === firer) continue;
-    if (firerTeam != null && player.team === firerTeam) continue;
-    if (player.occupancy?.root || world.armorOf(id)?.destroyed) continue;
-    let s = player.soldier;
-    if (id === LOCAL_PLAYER) {
-      if (!optOnFoot.checked || optPilot.checked || soldierDead) continue;
-      s = soldier;
-    }
-    if (!s) continue;
-    // Ray against sphere: the entry point is where the round meets him.
-    const cx = s.x - ox, cy = s.y + BOT_BODY_HEIGHT - oy, cz = s.z - oz;
-    const along = cx * dx + cy * dy + cz * dz;
-    const miss2 = cx * cx + cy * cy + cz * cz - along * along;
-    if (miss2 > r2) continue;
-    const t = along - Math.sqrt(r2 - miss2);
-    if (t < 0 || t >= bestT) continue;
-    bestT = t;
-    const x = ox + dx * t, y = oy + dy * t, z = oz + dz * t;
-    best = {
-      kind: 'soldier', t, x, y, z,
-      nx: (x - s.x) / BOT_BODY_RADIUS,
-      ny: (y - s.y - BOT_BODY_HEIGHT) / BOT_BODY_RADIUS,
-      nz: (z - s.z) / BOT_BODY_RADIUS,
-      material: BOT_SOLDIER_MATERIAL, owner: -1, target: id,
-    };
-  }
-  return best;
-}
-
-/** A vehicle round that met a soldier: its direct-hit HP, on him. */
-function applyRoundToSoldier(record) {
-  const id = record.target;
-  if (!(record.damage > 0)) return;
-  const firer = roundFirer(record.firerGroup);
-  const firerTeam = firer ? world?.player(firer)?.team ?? null : null;
-  const from = firer === LOCAL_PLAYER ? camera.position.toArray()
-    : firer ? referee.bots.find(b => b.playerId === firer)?.getPosition() ?? null : null;
-  if (firer && firer !== LOCAL_PLAYER) {
-    referee.bots.find(b => b.playerId === firer)?.recordHit(id);
-  }
-  if (id === LOCAL_PLAYER) {
-    applyDamageToPlayer(record.damage,
-      from ? { x: from[0], y: from[1], z: from[2] } : null, firerTeam);
-  } else {
-    referee.applyDamage(id, record.damage, firer ?? LOCAL_PLAYER, from, { via: `round ${record.gun ?? ''}` });
-  }
-}
 
 /**
  * A weapon template's `fireArms` block (rate of fire, magazine, projectile,
@@ -7493,7 +5685,7 @@ function setOnFoot(on) {
   // current level's gun index (a map switch has just cleared `guns.groups`),
   // leaving must not park a rifle on the free-fly camera.
   soldierKit.disposeHandWeapon();
-  if (!on) resetCaptureUi();
+  if (!on) flagCapture.resetCaptureUi();
   if (on) {
     // The soldier is the world's: `addPlayer` builds it the engine's way (a
     // fresh Soldier on the collider, spawned at the team's first flag) and
@@ -7501,7 +5693,7 @@ function setOnFoot(on) {
     // records are the only ones the HUD reads.
     let player = world?.addPlayer(LOCAL_PLAYER, { team: deployScreen.deployTeamId });
     soldier = player?.soldier ?? null;
-    if (!buildSpawnFlags() || !spawning.spawnAtFlag()) {
+    if (!flagCapture.buildSpawnFlags() || !spawning.spawnAtFlag()) {
       // A level with no control point that owns a spawn group has nowhere to
       // put a soldier; say so rather than dropping him at the origin.
       world.removePlayer(LOCAL_PLAYER);
@@ -7609,108 +5801,12 @@ const footBodies = createFootBody({
 });
 const seatPose = createSeatPose({
   get MODELS_BASE() { return MODELS_BASE; }, get bust() { return bust; },
-  get deployScreen() { return deployScreen; }, get flags() { return flags; },
+  get deployScreen() { return deployScreen; }, get flags() { return flagCapture.flags; },
   get localPlayer() { return localPlayer; }, get optPilot() { return optPilot; },
   get scene() { return scene; },
   get seatSoldier() { return seatSoldier; }, set seatSoldier(v) { seatSoldier = v; },
   get soldierKit() { return soldierKit; },
 });
-
-// --- control-point capture voice -------------------------------------------
-//
-// `Bf1942/Game/GamePlay.ssc` (bf1942/Game.rfa): `GainControlPoint` plays one
-// of `WeNowHaveControlOver{,2,3}.wav`, `LoseControlPoint` one of
-// `WeHaveLostControlOf{,2,3}.wav` -- both `randomPlay 1`, both under
-// `Sound/@RTD/@Language/`. `@Language` is the side's own tongue, not a UI
-// setting: every soldier template declares `ObjectTemplate.setRadioLanguage`
-// (`Objects/Soldiers/*/Objects.con` -- USSoldier UsEnglish, BritishSoldier
-// English, RussianSoldier Russian, ...), so the Russians on Kharkov hear
-// Russian and the Marines on Wake hear UsEnglish. `extract_capture_voices.py`
-// lays the lines out per nation code under `_shared/voices/<nation>/`, and
-// the local side's nation (`teamNation`, the same answer the flag cloth and
-// the map sprites use) picks the folder; `en` is the pre-nation English set,
-// the fallback for a tree extracted before the per-nation folders existed.
-//
-// The announcer is team-wide radio: it plays wherever the player is, on foot
-// or in a seat, on every change of ownership the side is party to -- a gain
-// when the side takes a point (the player's own take, a bot's, or the room's
-// word), a loss when a point the side held goes to the enemy. The enemy's
-// gain of a neutral point is nobody's loss and stays silent.
-let lastCaptureVoiceTime = 0;
-let lastCaptureVoice = null;
-const CAPTURE_VOICE_STEMS = {
-  gain: ['WeNowHaveControlOver', 'WeNowHaveControlOver2', 'WeNowHaveControlOver3'],
-  loss: ['WeHaveLostControlOf', 'WeHaveLostControlOf2', 'WeHaveLostControlOf3'],
-};
-const missingCaptureVoices = new Set();
-/** 'gain', 'loss' or null: what the local side hears when a point goes from
- *  `prevTeam` to `newTeam`. */
-function captureVoiceKind(prevTeam, newTeam, localTeam) {
-  if (newTeam === localTeam && prevTeam !== localTeam) return 'gain';
-  if (prevTeam === localTeam && newTeam !== localTeam) return 'loss';
-  return null;
-}
-/** The folders to try for the side's announcer, most specific first. */
-function captureVoiceDirs(team) {
-  const nation = mapSurfaces.teamNation(team);
-  const shared = MAPS_BASE === 'maps' ? 'maps/_shared' : `${MAPS_BASE}/_shared`;
-  const dirs = [];
-  if (nation && nation !== 'unknown') {
-    dirs.push(`${shared}/voices/${nation}`);
-    // A mod tree that never extracted voices borrows vanilla's, the way
-    // `hudPaths` falls back per file.
-    if (shared !== 'maps/_shared') dirs.push(`maps/_shared/voices/${nation}`);
-  }
-  dirs.push(`${shared}/voices/en`);
-  if (shared !== 'maps/_shared') dirs.push('maps/_shared/voices/en');
-  return dirs;
-}
-async function loadCaptureVoice(dir, stem) {
-  const key = `voices:${dir}/${stem}.mp3`;
-  if (missingCaptureVoices.has(key)) return null;
-  let pending = pageAudio.audioBufferCache.get(key);
-  if (!pending) {
-    if (!pageAudio.audioLoader) return null;
-    pending = pageAudio.audioLoader.loadAsync(`${dir}/${stem}.mp3${bust()}`)
-      .catch(() => {
-        // Remembered, not retried: a folder the tree does not carry would
-        // otherwise be fetched again on every take.
-        missingCaptureVoices.add(key);
-        pageAudio.audioBufferCache.delete(key);
-        return null;
-      });
-    pageAudio.audioBufferCache.set(key, pending);
-  }
-  return pending;
-}
-async function playCaptureVoice(kind = 'gain', team = mapSurfaces.localMapTeam()) {
-  if (AUDIO_OFF || pageAudio.masterVolume() <= 0) return;
-  const stems = CAPTURE_VOICE_STEMS[kind];
-  if (!stems) return;
-  // One announcement per take, never stacked.
-  const now = performance.now() * 0.001;
-  if (now - lastCaptureVoiceTime < 1.0) return;
-  pageAudio.ensureAudioContext();
-  if (!pageAudio.audioListener || pageAudio.audioListener.context.state === 'suspended') return;
-  lastCaptureVoiceTime = now;
-  const stem = stems[Math.floor(Math.random() * stems.length)];
-  for (const dir of captureVoiceDirs(team)) {
-    const buf = await loadCaptureVoice(dir, stem);
-    if (!buf) continue;
-    // The one-shot path the footsteps and hurt grunts already use: 2D voice,
-    // no pitch wobble (a `randomPlay` pick is the variation), script volume 1.
-    pageAudio.playSoldierOneShot(buf, 1, 0, 0);
-    lastCaptureVoice = { kind, team, dir, stem };
-    return;
-  }
-  console.warn(`No capture voice for team ${team} (${kind})`);
-}
-/** A point changed hands: say so if the local side gained or lost it. */
-function announceCapture(prevTeam, newTeam) {
-  const team = mapSurfaces.localMapTeam();
-  const kind = captureVoiceKind(prevTeam, newTeam, team);
-  if (kind) playCaptureVoice(kind, team);
-}
 
 function applyDamageToPlayer(damage, attackerPos = null, attackerTeam = null) {
   if (!soldierArmor || soldierDead) return;
@@ -7768,7 +5864,7 @@ function pilot(dt) {
   // is aimed and stepped once per world tick — the page's own per-tick
   // `stepTurret` loop), and the `vehicleGuns` loop with the unconditional-off
   // `setFiring` semantics. The shell here is the presentation half.
-  const flying = localPlayer.occupancy.isActiveRoot() && !vehicleInput.blocked;
+  const flying = localPlayer.occupancy.isActiveRoot() && !vehicleHits.vehicleInput.blocked;
   // The flash's 1P/3P choice is the engine's view mode 3, not whether the
   // cockpit interior is drawn: the nose cam is mode 3 with the interior off,
   // and retail plays the small `em_1P_*` sprite there. Keyed off the interior,
@@ -7858,11 +5954,11 @@ function textureQueueDrained() {
 const mapSurfaces = createMapSurfaces({
   get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get MAPS_BASE() { return MAPS_BASE; },
   get bust() { return bust; }, get camera() { return camera; },
-  get capturePosition() { return capturePosition; }, get captured() { return captured; },
+  get capturePosition() { return flagCapture.capturePosition; }, get captured() { return captured; },
   get currentDir() { return currentDir; }, get deployScreen() { return deployScreen; },
-  get extras() { return extras; }, get flags() { return flags; }, get hudPack() { return hudFeed.hudPack; },
+  get extras() { return extras; }, get flags() { return flagCapture.flags; }, get hudPack() { return hudFeed.hudPack; },
   get localPlayer() { return localPlayer; }, get mapVehicles() { return mapVehicles; },
-  get nearestEnemyFlag() { return nearestEnemyFlag; }, get optOnFoot() { return optOnFoot; },
+  get nearestEnemyFlag() { return flagCapture.nearestEnemyFlag; }, get optOnFoot() { return optOnFoot; },
   get release() { return release; }, get scoreboard() { return scoreboard; },
   get soldier() { return soldier; }, get soldierDead() { return soldierDead; },
   get spawnFlagSelect() { return spawnFlagSelect; }, get spawnersRoot() { return spawnersRoot; },
@@ -8004,13 +6100,13 @@ const scoreboard = createScoreboardScreen({
 });
 const spawning = createSpawning({
   get DEATH_CAM() { return DEATH_CAM; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
-  get buildSpawnFlags() { return buildSpawnFlags; }, get capture() { return capture; },
+  get buildSpawnFlags() { return flagCapture.buildSpawnFlags; }, get capture() { return capture; },
   get deathCamShot() { return deathCamShot; }, set deathCamShot(v) { deathCamShot = v; },
   get deathCamTarget() { return deathCamTarget; }, set deathCamTarget(v) { deathCamTarget = v; },
   get deathCamTimer() { return deathCamTimer; }, set deathCamTimer(v) { deathCamTimer = v; },
   get deployScreen() { return deployScreen; },
   get disposeHandWeapon() { return soldierKit.disposeHandWeapon; }, get drawFullMap() { return mapSurfaces.drawFullMap; },
-  get ensureHandWeapon() { return soldierKit.ensureHandWeapon; }, get flags() { return flags; },
+  get ensureHandWeapon() { return soldierKit.ensureHandWeapon; }, get flags() { return flagCapture.flags; },
   get fullmapBox() { return mapSurfaces.fullmapBox; }, get fullmapCanvas() { return mapSurfaces.fullmapCanvas; },
   get handWeapon() { return soldierKit.handWeapon; }, get hud() { return hud; },
   get hudViewTimer() { return hudFeed.hudViewTimer; }, set hudViewTimer(v) { hudFeed.hudViewTimer = v; },
@@ -8019,10 +6115,10 @@ const spawning = createSpawning({
   get optPilot() { return optPilot; }, get params() { return params; },
   get placeCamera() { return placeCamera; }, get projectToArt() { return mapSurfaces.projectToArt; },
   get prone() { return prone; }, set prone(v) { prone = v; },
-  get rebaseDeckSpawns() { return rebaseDeckSpawns; },
-  get resetCaptureUi() { return resetCaptureUi; }, get room() { return room; },
+  get rebaseDeckSpawns() { return hullBodies.rebaseDeckSpawns; },
+  get resetCaptureUi() { return flagCapture.resetCaptureUi; }, get room() { return room; },
   get scoreboard() { return scoreboard; }, get setOnFoot() { return setOnFoot; },
-  get setPilot() { return setPilot; }, get shipFlagInactive() { return shipFlagInactive; },
+  get setPilot() { return setPilot; }, get shipFlagInactive() { return hullBodies.shipFlagInactive; },
   get snapPresentation() { return snapPresentation; },
   get soldier() { return soldier; }, set soldier(v) { soldier = v; },
   get soldierArmor() { return soldierArmor; }, set soldierArmor(v) { soldierArmor = v; },
@@ -8209,9 +6305,9 @@ async function show(entry) {
     guns,
     groundHeight,
     fireStates,
-    onCrash: onCrashDamage,
+    onCrash: hullBodies.onCrashDamage,
     isWrecked: owner => {
-      const visual = damageVisuals.get(owner);
+      const visual = wrecks.damageVisuals.get(owner);
       return !!(visual?.wrecked || visual?.removed);
     },
     // Per tick, with every piece of the tick final: every seat's world
@@ -8283,7 +6379,7 @@ async function show(entry) {
     if (obj.userData?.kind === 'flagCloth') {
       const uv = obj.geometry?.getAttribute('uv');
       if (uv && !obj.geometry.userData.flagUvCell) {
-        obj.geometry.userData.flagUvCell = unitRectOf(uv);
+        obj.geometry.userData.flagUvCell = flagCapture.unitRectOf(uv);
       }
     }
   });
@@ -8291,12 +6387,12 @@ async function show(entry) {
   // materials.png a couple of KB) and both are needed before the first shot,
   // not before the first frame.
   [terrainMaterials, damageTables] = await Promise.all([
-    loadTerrainMaterials(dir), loadDamageTables(dir), loadCollisionMeshes(dir),
+    loadTerrainMaterials(dir), loadDamageTables(dir), hullBodies.loadCollisionMeshes(dir),
   ]);
   materialFrictionById = buildMaterialFrictionTable(damageTables);
   const collision = buildCollider(currentRoot);
   // After the collider: a body is keyed by the owner id the index handed out.
-  setupVehicleBodies();
+  hullBodies.setupVehicleBodies();
   // Now that the collider exists, spawn the bots so their nav grid and spawn
   // probes see it.
   spawnBotsForLevel();
@@ -8419,26 +6515,26 @@ optEntire.addEventListener('change', () => {
 const replayUrl = params.get('replay');
 let replayController = null;
 const room = createNetRoom({
-  get MODELS_BASE() { return MODELS_BASE; }, get announceCapture() { return announceCapture; },
+  get MODELS_BASE() { return MODELS_BASE; }, get announceCapture() { return flagCapture.announceCapture; },
   get applyVisibility() { return applyVisibility; },
   get bindDynamicShading() { return bindDynamicShading; }, get bust() { return bust; },
   get camera() { return camera; }, get captured() { return captured; },
-  get damageVisuals() { return damageVisuals; }, get deployActive() { return deployScreen.deployActive; },
+  get damageVisuals() { return wrecks.damageVisuals; }, get deployActive() { return deployScreen.deployActive; },
   get enterVehicle() { return enterVehicle; }, get exitSeat() { return exitSeat; },
-  get extras() { return extras; }, get flags() { return flags; },
-  get hoistCaptureFlag() { return hoistCaptureFlag; }, get loader() { return loader; },
+  get extras() { return extras; }, get flags() { return flagCapture.flags; },
+  get hoistCaptureFlag() { return flagCapture.hoistCaptureFlag; }, get loader() { return loader; },
   get localPlayer() { return localPlayer; }, get lockHeld() { return lockHeld; },
   get logToConsole() { return logToConsole; }, get manifest() { return manifest; },
   get nearEntry() { return nearEntry; }, get openDeploy() { return spawning.openDeploy; },
   get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
   get paintDeployChrome() { return deployScreen.paintDeployChrome; }, get params() { return params; },
   get renderer() { return renderer; },
-  get roomCapture() { return roomCapture; }, set roomCapture(v) { roomCapture = v; },
+  get roomCapture() { return flagCapture.roomCapture; }, set roomCapture(v) { flagCapture.roomCapture = v; },
   get scene() { return scene; }, get setDeployTeam() { return spawning.setDeployTeam; },
   get soldier() { return soldier; }, get soldierArmor() { return soldierArmor; },
   get soldierDead() { return soldierDead; },
-  get syncVehicleSpawnOwnership() { return syncVehicleSpawnOwnership; },
-  get templateNameOf() { return templateNameOf; }, get updateHud() { return updateHud; },
+  get syncVehicleSpawnOwnership() { return hullBodies.syncVehicleSpawnOwnership; },
+  get templateNameOf() { return wrecks.templateNameOf; }, get updateHud() { return updateHud; },
 });
 
 const manifest = await fetch(`${MAPS_BASE}/maps.json${bust()}`)
@@ -8631,8 +6727,8 @@ function frame(dt) {
   // Bot AI runs after the world step, so bots read the player's post-step pose.
   referee.tick(dt);
   botBodies.updateBotVisuals(dt);
-  syncVehicleSpawnOwnership();
-  updateCaptureHud(step.ticks);
+  hullBodies.syncVehicleSpawnOwnership();
+  flagCapture.updateCaptureHud(step.ticks);
   referee.captureTick(step.ticks / 30);
   // The presentation instant this frame draws, and the drawn vehicle pose that
   // follows from it. Before every camera below, because all of them read it —
@@ -8688,8 +6784,8 @@ function frame(dt) {
   // and the on-foot look this tick actually applied, for the deviation
   // model's |MouseLookX/Y| drain (footFire reads the accumulated pair).
   const local = step.players[LOCAL_PLAYER] ?? null;
-  vehicleInput.blocked = local?.gate.blocked ?? false;
-  vehicleInput.rotationalScale = local?.gate.rotationalScale ?? 1;
+  vehicleHits.vehicleInput.blocked = local?.gate.blocked ?? false;
+  vehicleHits.vehicleInput.rotationalScale = local?.gate.rotationalScale ?? 1;
   combatFrame = local?.combat ?? null;
   if (local?.look) {
     soldierKit.footLookX += Math.abs(local.look.yaw);
@@ -8726,7 +6822,7 @@ function frame(dt) {
       const p = localPlayer.aircraft.state.position;
       const terrainId = collider?.heightfield?.material
         ? collider.heightfield.material(p.x, p.z) : 0;
-      const hullId = hullCollisionMaterial(localPlayer.aircraft.node);
+      const hullId = hullBodies.hullCollisionMaterial(localPlayer.aircraft.node);
       const effect = effectNameFor(damageTables, terrainId, hullId);
       if (effect) effects.play(effect, {
         position: [p.x, p.y, p.z],
@@ -8791,15 +6887,15 @@ function frame(dt) {
   // pass, so a ram's hit points and its smoke tier land on the same frame.
   // The world's tick ran the bodies immediately before its own damage pass,
   // in the same frame as the old code; this half only draws the results.
-  stepVehicleBodies(step);
+  hullBodies.stepVehicleBodies(step);
   // ... and beside them, the hulls the body world does not carry: a ship that
   // has taken critical damage is going down, and its deck spawns go with it.
-  stepSinkingHulls(step);
+  hullBodies.stepSinkingHulls(step);
   // After `advance`, so a round that landed this frame is already accounted for
   // when the tier is picked. Unconditional for the same reason `advance` is: a
   // tank set alight before the player climbed out keeps burning down to nothing
   // whatever the camera is doing.
-  stepVehicleDamage(step, dt);
+  vehicleHits.stepVehicleDamage(step, dt);
   // After `advance`, not before: a manned gun's `Ammo/PrimaryAmmo` etc. must
   // reflect whatever `advance` just fired this frame, the same way the
   // on-foot `updateSoldierHud()` below already does for `hw.rounds`. `manned()`
@@ -9016,22 +7112,22 @@ const testHooks = installTestHooks({
   get activeAreaAudios() { return pageAudio.activeAreaAudios; },
   get aimHeld() { return soldierKit.aimHeld; }, set aimHeld(v) { soldierKit.aimHeld = v; },
   get altFireDemolitions() { return soldierKit.altFireDemolitions; },
-  get ambientAudio() { return pageAudio.ambientAudio; }, get announceCapture() { return announceCapture; },
+  get ambientAudio() { return pageAudio.ambientAudio; }, get announceCapture() { return flagCapture.announceCapture; },
   get applyDamageToPlayer() { return applyDamageToPlayer; },
-  get applyVehicleHit() { return applyVehicleHit; }, get audioLimiter() { return pageAudio.audioLimiter; },
+  get applyVehicleHit() { return vehicleHits.applyVehicleHit; }, get audioLimiter() { return pageAudio.audioLimiter; },
   get audioListener() { return pageAudio.audioListener; }, get bfmap() { return mapSurfaces.bfmap; },
-  get bodyScene() { return bodyScene; }, get bodyWorld() { return bodyWorld; },
+  get bodyScene() { return hullBodies.bodyScene; }, get bodyWorld() { return hullBodies.bodyWorld; },
   get botBodies() { return botBodies; }, get botUnits() { return botUnits; },
   get camera() { return camera; }, get cancelDeploy() { return spawning.cancelDeploy; },
-  get canopySpan() { return soldierView.canopySpan; }, get captureVoiceDirs() { return captureVoiceDirs; },
-  get captureVoiceKind() { return captureVoiceKind; }, get chaseRig() { return chaseRig; },
+  get canopySpan() { return soldierView.canopySpan; }, get captureVoiceDirs() { return flagCapture.captureVoiceDirs; },
+  get captureVoiceKind() { return flagCapture.captureVoiceKind; }, get chaseRig() { return chaseRig; },
   get clickQueued() { return soldierKit.clickQueued; }, set clickQueued(v) { soldierKit.clickQueued = v; },
   get collectEntryPoints() { return collectEntryPoints; }, get collider() { return collider; },
   get combatArea() { return combatArea; }, get combatFrame() { return combatFrame; },
-  get crashLog() { return crashLog; }, set crashLog(v) { crashLog = v; },
+  get crashLog() { return hullBodies.crashLog; }, set crashLog(v) { hullBodies.crashLog = v; },
   get crosshairAim() { return hudFeed.crosshairAim; }, get crosshairEl() { return soldierKit.crosshairEl; },
   get currentDir() { return currentDir; }, get cycleKitWeapon() { return soldierKit.cycleKitWeapon; },
-  get damageVisuals() { return damageVisuals; },
+  get damageVisuals() { return wrecks.damageVisuals; },
   get deathCamTimer() { return deathCamTimer; }, set deathCamTimer(v) { deathCamTimer = v; },
   get debugDeployHeld() { return debugDeployHeld; }, set debugDeployHeld(v) { debugDeployHeld = v; },
   get deployActive() { return deployScreen.deployActive; },
@@ -9045,8 +7141,8 @@ const testHooks = installTestHooks({
   get enterVehicle() { return enterVehicle; }, get entryPoints() { return entryPoints; },
   get exitSeat() { return exitSeat; }, get exitVehicle() { return exitVehicle; },
   get explosivesTemplate() { return soldierKit.explosivesTemplate; }, get extras() { return extras; },
-  get fireStateFor() { return fireStateFor; }, get flags() { return flags; },
-  get floatHosts() { return floatHosts; }, get foot3pRel() { return soldierView.foot3pRel; },
+  get fireStateFor() { return fireStateFor; }, get flags() { return flagCapture.flags; },
+  get floatHosts() { return hullBodies.floatHosts; }, get foot3pRel() { return soldierView.foot3pRel; },
   get footBody() { return footBodies.footBody; },
   get footBodyForceHidden() { return footBodies.footBodyForceHidden; }, set footBodyForceHidden(v) { footBodies.footBodyForceHidden = v; },
   get footCanopy() { return footBodies.footCanopy; }, get footView3p() { return soldierView.footView3p; },
@@ -9059,18 +7155,18 @@ const testHooks = installTestHooks({
   get itemsLocked() { return soldierKit.itemsLocked; }, get kbLockState() { return kbLockState; },
   get kbSession() { return kbSession; }, get keys() { return keys; },
   get kitLoadout() { return soldierKit.kitLoadout; }, get kitWeaponSlots() { return soldierKit.kitWeaponSlots; },
-  get lastCaptureVoice() { return lastCaptureVoice; }, get loadouts() { return soldierKit.loadouts; },
+  get lastCaptureVoice() { return flagCapture.lastCaptureVoice; }, get loadouts() { return soldierKit.loadouts; },
   get loadoutsLoad() { return soldierKit.loadoutsLoad; }, get localMapTeam() { return mapSurfaces.localMapTeam; },
   get localPlayer() { return localPlayer; }, get look() { return look; },
   get lookDelta() { return lookDelta; }, get mannedActive() { return mannedActive; },
   get mapGate() { return mapSurfaces.mapGate; }, set mapGate(v) { mapSurfaces.mapGate = v; },
   get modeNote() { return modeNote; }, get mouseInput() { return mouseInput; },
   get nearEntry() { return nearEntry; },
-  get occupiedVehicleDamage() { return occupiedVehicleDamage; },
+  get occupiedVehicleDamage() { return vehicleHits.occupiedVehicleDamage; },
   get optOnFoot() { return optOnFoot; }, get packAmmo() { return soldierKit.packAmmo; },
   get packsLeft() { return soldierKit.packsLeft; }, get paintDeployChrome() { return deployScreen.paintDeployChrome; },
   get paintScoreboard() { return scoreboard.paintScoreboard; }, get parachuteLog() { return parachuteLog; },
-  get params() { return params; }, get playCaptureVoice() { return playCaptureVoice; },
+  get params() { return params; }, get playCaptureVoice() { return flagCapture.playCaptureVoice; },
   get referee() { return referee; }, get renderer() { return renderer; },
   get roomClient() { return room.roomClient; }, get roomJoined() { return room.roomJoined; },
   get scene() { return scene; }, get scoreFromSpawn() { return deployScreen.scoreFromSpawn; },
@@ -9082,30 +7178,30 @@ const testHooks = installTestHooks({
   get selectDeployFlag() { return spawning.selectDeployFlag; },
   get selectKitWeapon() { return soldierKit.selectKitWeapon; }, get setDeployTeam() { return spawning.setDeployTeam; },
   get setFly() { return setFly; }, get setScoreboard() { return scoreboard.setScoreboard; },
-  get shipFlagInactive() { return shipFlagInactive; },
-  get showDamageTier() { return showDamageTier; }, get showView() { return hudFeed.showView; },
+  get shipFlagInactive() { return hullBodies.shipFlagInactive; },
+  get showDamageTier() { return wrecks.showDamageTier; }, get showView() { return hudFeed.showView; },
   get snapPresentation() { return snapPresentation; },
   get soldier() { return soldier; }, set soldier(v) { soldier = v; },
   get soldier3pOnFoot() { return soldierView.soldier3pOnFoot; },
   get soldierArmor() { return soldierArmor; }, set soldierArmor(v) { soldierArmor = v; },
   get soldierDead() { return soldierDead; }, set soldierDead(v) { soldierDead = v; },
-  get soldierExposureFor() { return soldierExposureFor; },
+  get soldierExposureFor() { return vehicleHits.soldierExposureFor; },
   get soldierTemplateFor() { return soldierKit.soldierTemplateFor; },
   get spawnFlagSelect() { return spawnFlagSelect; }, get spawnersRoot() { return spawnersRoot; },
-  get splashPos() { return splashPos; }, get splashTargets() { return splashTargets; },
-  get stage() { return stage; }, get stepVehicleBodies() { return stepVehicleBodies; },
+  get splashPos() { return vehicleHits.splashPos; }, get splashTargets() { return vehicleHits.splashTargets; },
+  get stage() { return stage; }, get stepVehicleBodies() { return hullBodies.stepVehicleBodies; },
   get supplyField() { return supplyField; }, get supplyTarget() { return supplyTarget; },
   get surfaceFriction() { return surfaceFriction; }, get switchSeat() { return switchSeat; },
   get thrownPackGroup() { return soldierKit.thrownPackGroup; },
   get triggerHeld() { return soldierKit.triggerHeld; }, set triggerHeld(v) { soldierKit.triggerHeld = v; },
   get vehicleAudio() { return pageAudio.vehicleAudio; }, get vehicleDamage() { return vehicleDamage; },
-  get vehicleInput() { return vehicleInput; },
+  get vehicleInput() { return vehicleHits.vehicleInput; },
   get vehicleSpawnActive() { return vehicleSpawnActive; },
   get viewmodelRigFor() { return soldierKit.viewmodelRigFor; }, get vmCamera() { return soldierKit.vmCamera; },
   get vmRoot() { return soldierKit.vmRoot; }, get vmScene() { return soldierKit.vmScene; },
   get warmups() { return warmups; }, get weaponBarUntil() { return soldierKit.weaponBarUntil; },
   get weaponTemplateFor() { return soldierKit.weaponTemplateFor; }, get world() { return world; },
-  get worldFire() { return pageAudio.worldFire; }, get wreckVehicle() { return wreckVehicle; },
+  get worldFire() { return pageAudio.worldFire; }, get wreckVehicle() { return wrecks.wreckVehicle; },
 });
 </script>
 </body>
