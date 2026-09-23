@@ -37,6 +37,8 @@ _MODULE_NAMES = [
     "fall-damage",
     "body-world", "body-statics", "vehicle-bodies", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact",
+    # seats.js re-exports its split modules.
+    "seat-survey", "turret-rig", "vehicle-occupancy", "entry-points", "spawned-craft", "fire-state",
     "body-ground", "body-friction", "crash-damage", "effects-core",
     "bomb-release", "torpedo-run",
     # bot.js's own imports.
