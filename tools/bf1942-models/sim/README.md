@@ -162,9 +162,11 @@ at a load of about 20, 145 s at a load of 30 (other matches and test runs
 sharing it). On Wake a Daihatsu (split off its ship) sails 231 m on the
 landing-craft map in 60 s under a bot, with a point given by hand. Since
 Brief D the SAI sends a craft's helm to a beach (`WPBeachLanding`,
-`doctrine-landing.js`) and its crew gets out there: seed 1, 8 a side, 300 s,
-a Daihatsu with three riders lands on `SouthLanding` at 143 s and a rider
-takes `Landing_Beach` 6.5 s later (features/bf1942-ai-spec/strategic.md §8).
+`doctrine-landing.js`) and its crew gets out there: since Brief N (the
+engine's route, the bail aground, the helm's held throttle), seed 1, 8 a
+side, 300 s, a Daihatsu reaches `SouthLanding` through a `SeaArea1` route
+point, its crew out at 155 s, and a rider neutralises `Landing_Beach` at
+166.5 s (features/bf1942-ai-spec/strategic.md §8).
 
 What stays out: the human (the local player, his shots heard), and
 everything that is only drawn or heard.
