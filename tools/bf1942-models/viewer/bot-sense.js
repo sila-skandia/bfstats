@@ -273,8 +273,14 @@ export function playerPosition(player) {
  * the bot's own unit, the target and the target's vehicle. A seated bot's
  * eye sits inside its own hull's collision, so without the skip every ray
  * from a plane ended a metre out, on its own fuselage. The collider takes
- * one owner to skip; a hit on another skipped owner re-casts past it.
+ * one owner to skip; a hit on another skipped owner re-casts past it, face
+ * by face: a ray into a hull meets several of that hull's faces (a Spitfire
+ * held 184 m out showed four within 1.4 m), so the re-cast allows 32 (it
+ * allowed 4, and a line to a plane's seat never came out clear; Brief L).
  */
+/** How many skipped faces a line test re-casts past (INVENTION of count). */
+const LINE_RECASTS = 32;
+
 export function lineClear(collider, from, to, skip = -1) {
   if (!collider) return true;
   const dx = to[0] - from[0], dy = to[1] - from[1], dz = to[2] - from[2];
@@ -285,7 +291,7 @@ export function lineClear(collider, from, to, skip = -1) {
     const first = skips.length ? skips[0] : -1;
     const ux = dx / dist, uy = dy / dist, uz = dz / dist;
     let start = 0;
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < LINE_RECASTS; i++) {
       const hit = collider.cast(from[0] + ux * start, from[1] + uy * start, from[2] + uz * start,
                                 ux, uy, uz, dist - 0.05 - start, first);
       if (!hit) return true;
