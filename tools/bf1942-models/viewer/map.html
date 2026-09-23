@@ -161,96 +161,26 @@
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
-import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { createLoadOverlay } from './progress.js';
 import { selectMod } from './mods.js';
-import { Aircraft, VehicleCamera, FixedSubject, findVehicle, findVehicles } from './flight.js';
-import { seatViewModes, noseCamOffset } from './seat-view.js';
-import { ServerSettings, readServerSettings } from './server-settings.js';
+import { Aircraft } from './flight.js';
 import { GroundVehicle } from './ground.js';
 import * as GroundModule from './ground.js';
 import { Ship } from './ship.js';
-import {
-  VehicleOccupancy, findAllVehicleRoots, listEntryPoints, classifyRoot,
-  FireState, chainOnShot, readWorldPose, pickNearest, AIM_INPUTS, DRIVE_KINDS,
-  surveyVehicle, seatYawLimits,
-} from './seats.js';
-import { MouseInput, profileFor, soldierLookDegrees } from './mouse-input.js';
-import {
-  CHASE_BEHIND, CHASE_AHEAD, CHASE_RADIUS_SCALE, boundingRadius, chaseTarget,
-  chaseStep, chaseEye, chaseLawFor,
-} from './chase-camera.js';
-import { WEAPON_HEADROOM } from './engine-audio.js';
-import { VehicleAudioRack, bareFireArmsName } from './vehicle-audio.js';
-import { WorldFire } from './world-fire.js';
+import { FireState } from './seats.js';
 import { GunFire } from './gunfire.js';
-import { idleFirePose, idleFireState } from './idle-vehicle.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
-import { buildHeightfield, buildCollisionIndex, buildDrivableMask, WorldCollider, footstepMaterial } from './collision.js';
-import { FOV_DEG as FOOT_FOV, GRAVITY } from './soldier.js';
-import {
-  SoldierView, FOOT_VIEW_CYCLE, PARACHUTE_VIEW_CYCLE, PARACHUTE_VIEW_RADIUS,
-  VIEW_INSIDE, VIEW_FRONT,
-} from './soldier-camera.js';
-import { DeviationModel } from './deviation.js';
-import { wantViewmodelClip } from './viewmodel-anim.js';
-import { fireVariantsFor, stanceClip, stanceFor } from './stance-clips.js';
-import { activeDeployGroup as activeDeployGroupFor, flagMapSpots } from './deploy-spots.js';
-import {
-  BODY_CLIPS, BODY_ONCE, BODY_HIDES_WEAPON, bodyClipFamily, canopyClip,
-} from './soldier-body.js';
+import { FOV_DEG as FOOT_FOV } from './soldier.js';
 import { createReplayController, recordingLevel } from './replay.js';
-import { createRoomClient } from './netcode-client.js';
-import { createRemoteRenderer, SOLDIER_YAW_FLIP } from './netcode-render.js';
-import { FAMILY_CLIPS, remoteClipFamily } from './remote-gait.js';
-import { createReconciler } from './netcode-reconcile.js';
-import { Hud, AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS, calculateHitOctant } from './hud.js';
 import { Armor } from './armor.js';
-import { VehicleDamageSet, deathTier } from './vehicle-damage.js';
+import { VehicleDamageSet } from './vehicle-damage.js';
 import { effectNameFor } from './crash-damage.js';
-import { BodyWorld } from './body-world.js';
-import { buildParkedVehicle, describeVehicleParts } from './vehicle-bodies.js';
-import {
-  equilibriumRootY, floatNodesOf, localiseFloats, FloatingHull,
-} from './body-float.js';
-import { SupplyDepot } from './supply.js';
-import { KitAmmo } from './kit-ammo.js';
-import { collectIkBindings, defaultSeatPoseName, ikTarget, resolveSeatStates,
-         seatBody, seatPoseName, solveTwoBone } from './seat-ik.js';
-import { GameConsole, paintConsole, loadConsoleFont } from './console.js';
-import { bonePattern, kitsByTemplate, wornGrafts } from './kit-graft.js';
-import { wantsEnvmap, cubeFaceUrls, envmapVertexPatch, envmapVertexBody,
-         envmapFragmentPatch, envmapFragmentApply } from './envmap.js';
-import { CombatArea, combatAreaRect } from './combat-area.js';
-// HP-10's sampling, and the one metre `setCharacterHeight -1.00` puts between
-// a soldier's feet and his object origin — the point the engine measures a
-// blast to and adds its sample offsets from.
-import { soldierExposure, worldBlocker } from './soldier-exposure.js';
-import { CHARACTER_HEIGHT } from './physics.js';
-import { World } from './world.js';
-import { flareSprites, flareTextureFiles, hasDrawableFlare } from './lens-flare.js';
-import { modeNames, modeProblem, pruneToMode, selectGameMode,
-         spawnerWindow } from './game-modes.js';
+import { CombatArea } from './combat-area.js';
 import { loadHudPaths } from './hud-pack.js';
-import { createSkirmishScreen } from './play/skirmish.js';
-import { kitIconCandidates, kitRowLabel } from './kit-icon.js';
-import { cpNation as cpNationRule, teamNation as teamNationRule } from './nation.js';
-import { BfMap, minimapWindow, rotateAbout, coverRect } from './bfmap.js';
-import { boardRows, boardVars, paintLeaves, listFloor, listGeometry } from './scoreboard.js';
-import { BotController, spawnBots } from './bot.js';
-import { EnemyStrengthTables, STRENGTH } from './bot-strength.js';
-import { SAI } from './strategic.js';
-import { buildNavMap, findPath, gridAt, isWalkable } from './nav-grid.js';
-import { StrategicLayer, StrategicAI } from './strategic.js';
-import { detachSpawnedCraft } from './seats.js';
 import { VehicleRegistry } from './vehicle-instance.js';
-import {
-  createBotReferee, captureRadius, captureDuration, nearestEnemyFlag as nearestEnemyFlagOf,
-  BOT_BODY_RADIUS, BOT_BODY_HEIGHT, BOT_FIRE_RANGE,
-} from './bot-referee.js';
+import { createBotReferee } from './bot-referee.js';
 import { createBotUnits } from './bot-units.js';
-import { bindTreeFoliage } from './tree-foliage.js';
 import { createBotVisuals } from './bot-visuals.js';
 import { installTestHooks } from './test-hooks.js';
 import { createNetRoom } from './net-room.js';
