@@ -111,6 +111,85 @@ the MoveTo urgency so the bot holds while the point is taken. And a
 its goal for 4 s is respawned onto the flag's next spawn point through
 `world.spawnPlayer(advance)`, the deploy screen's own walk of the spawn list.
 
+## Follow-up 3 (2026-09-23): the engine's map and follower replace the invented ones
+
+Two symptoms in play — bots walking to an objective facing backwards, and
+jamming behind sandbags — and one binary read behind both. The read is
+`bot-movement-and-pathfinding.md` (ledger AI-26..AI-32); what it changed:
+
+1. **`nav-grid.js` is the engine's map now.** One bit a metre (the old 64 m
+   grid was a misreading of the `.raw` header, which counts 64 x 64-pixel
+   blocks), the infantry `addSearchMap` parameters (water 1.5 m, slope 30 deg,
+   brush 1.0 as the engine's five-pixel plus, clip 0.4..2.0 m above the
+   object's base), the collision triangles clipped per cell, object tops and
+   drivable decks freed, the spawn-point flood, a 4-connected boxed local A*
+   with the engine's step cost and obstacle circles, the Bresenham trace, and
+   a 16 m coarse level (INVENTION) for the strategic legs.
+2. **`bot.js` follows the route as `BotMain` does.** Legs refined ten points
+   ahead (`ai.setSmoothing 1 10`), the steering point the farthest of the next
+   ten a trace reaches, points popped inside the body radius or past their
+   perpendicular plane, the 31.5 deg throttle cone with no strafing, the
+   150/401 stall counts, and potential obstacles planted on a stall (INVENTION
+   in place of the engine's collision prediction). The probe-and-fan wall
+   follower, the reverse-then-sidestep unstick and the strafing are gone.
+3. **`map.html` draws bots the way it draws the local body**: no
+   `SOLDIER_YAW_FLIP` (that was the backwards facing), and the pose blended
+   between the last two tick boundaries by `presentAlpha` (raw 30 Hz tick
+   positions under a smooth camera were the "blur").
+
+Verification: `tests/test_nav_grid.py` (11) and `tests/test_bot_ai.py` (14)
+rewritten to the new contract, both green; El Alamein with four bots in the
+viewer builds the map in ~320 ms and every bot walks a route.
+
+## Follow-up 4 (2026-09-23): the fight, re-read against the binary
+
+The squads met in the headless El Alamein run and the first engagement was
+wrong in five ways, each traced to a line of `bbfire_urg`, `08580140` or
+`0847e3a0` and corrected (ledger AI-39..AI-41, `bot-behaviours.md` s3 and s5):
+
+1. **`DecleiningSlopeCurve` was a stand-in.** `bot-fire.js` used `x / (1 +
+   x)`; the engine's sampled table (`bot-behaviours.js`) gives 0.94 where the
+   stand-in gave 0.39, which is why a seen enemy at 25 m lost the contest to
+   MoveTo. One function now.
+2. **Infantry scores only what it sees, inside range.** The memory record's
+   lost byte (+0x14) skips the target for a bot on foot; `1 / (1 + 0.05 *
+   age)` is the vehicle branch (and applies to lost targets, the reverse of
+   the first reading). Targets beyond `maxRange` are skipped on foot. A bot no
+   longer stalks a 60 s old memory across the map.
+3. **Misses are tallied per target and weapon** (record +0x34 / +0x54,
+   eight slots), not per weapon for life: a fresh target starts every weapon
+   clean; a string of misses on one target walks the choice down to the
+   pistol and then the knife — the engine's knife charge. The 0.75
+   outside-area factor is a vehicle term.
+4. **The fire plan is a sequence.** Its look and trigger carry `afterMove`
+   and wait for the approach (`InfanteryMoveToObject`) — before, the aim
+   overrode the steering every tick and the bot stood 70 m from a target its
+   pistol could not reach.
+5. **TakeCover needs no cover object**, and its `d` is the distance to the
+   threat (2 .. 100 m), recomputed when the cover id changes or is -1; the
+   standing point behind a cover is `traceValidPoint`, which is the engine's
+   **first valid** cell along the line (the start when free), not the last
+   valid before a block — `nav-grid.js` rewritten, the harness pins it.
+
+`map.html` billed every bot round with the human's weapon: rate of fire
+(8/s fallback when the human held nothing), projectile damage (30 fallback),
+and a deviation model with no weapon channels. Each bot now loads its kit's
+weapon glbs' `extras.weapon` (`botWeaponData`): its own `roundOfFire`,
+`fireOnce`, magazine size / count / reload (tracked per weapon, the AI
+entry's `ammo` follows it and an empty magazine ends the fire plan),
+projectile damage through `damage.json` as for the human, and the weapon's
+`deviation` channels rebuilt on a weapon change under the `setBotSkill` term.
+`?botDebug` logs every hit; `__botCtl(id)` returns a controller.
+
+Verification: `tests/test_nav_grid.py` (12), `tests/test_bot_ai.py` (14),
+`tests/test_strategic.py` (7) green; `./scripts/verify.sh --skip-e2e` green.
+Headless El Alamein, two squads teleported 40 m apart: both sides trade
+kills with their kit weapons (BAR 22.5 a hit, rifles 32 / 50, SMGs 15 ..
+19), a bot that loses sight of its target returns to its order within a
+second, and a bot shot at from an unseen position with a quiet order goes
+prone and crawls to lower ground; with a live order far from the objective
+MoveTo (3.0) outranks TakeCover (at most 2.0) as the shipped weights say.
+
 ## Completed
 
 ### 1. AI weapon data extraction (con.py) ✅

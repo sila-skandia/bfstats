@@ -341,6 +341,12 @@ Recommend leaving as-is for Stage 1 and documenting.
 
 ## 10. Inventions to label (research open)
 
+> **2026-09-23:** the navigation and path-following inventions below are
+> superseded — `bot-movement-and-pathfinding.md` read the engine's map,
+> search and follower, and `nav-grid.js` / `bot.js` now build from it. What
+> is still invented there is listed in that document's §7.
+
+
 - `AIInformationGrid` spatial hash → brute-force candidate scan.
 - `World::rayCast` LOS → `checkLOS` height approximation (`bot.js:223`).
 - Hearing via external `recordNearbyShot` rather than the armament path.

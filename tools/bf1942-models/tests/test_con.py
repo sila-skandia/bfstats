@@ -1771,6 +1771,25 @@ ObjectTemplate.CVMExternTrace 0
                          {k: v for k, v in camera.camera_view_modes.items() if v})
         self.assertFalse(camera.camera_view_modes["CVMCHASE"])
 
+    def test_outside_hud_offset_is_parsed_on_a_camera(self) -> None:
+        # The aircraft's nose cam stand-off (viewer/seat-view.js): declared
+        # on every aircraft Camera, Refractor axes, +Z forward. A camera that
+        # never writes it stays None so the viewer offers no nose view.
+        library = self.library(
+            "Objects/Vehicles/Air/Corsair/Objects.con",
+            """
+ObjectTemplate.create Camera CorsairCamera
+ObjectTemplate.setMinRotation -70/-40/0
+ObjectTemplate.setMaxRotation 70/5/0
+ObjectTemplate.OutsideHudOffset 0/-0.4/4.45
+
+ObjectTemplate.create Camera TankCamera
+ObjectTemplate.setMinRotation -70/-40/0
+""")
+        self.assertEqual((0.0, -0.4, 4.45),
+                         library.object("CorsairCamera").outside_hud_offset)
+        self.assertIsNone(library.object("TankCamera").outside_hud_offset)
+
     def test_camera_without_cvm_flags_has_no_view_modes(self) -> None:
         # A vehicle camera that omits all CVM flags gets the full default cycle
         # — `camera_view_modes` stays None so the viewer knows "all on".

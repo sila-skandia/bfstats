@@ -114,3 +114,66 @@ against the bypass request, not re-transcribed here.
 - `./xref.py check`
 - `./lnxded/decompile.sh /tmp/bf42-capture 'ControlPoint' 'GameServer::.*(simulate|update|trigger|player|capture)' 'ObjectSpawner::setTeam'`
 - `python -m unittest tools.bf1942-models.tests.test_soldier`
+
+## 2026-09-23: Captured pole showed no flag
+
+Symptom — a take marked the point on the map but the pole stayed bare (a
+neutral point) or lost its cloth (an enemy-held one).
+
+Cause — `hoistCaptureFlag` in `viewer/map.html` rebound the cloth to a
+`new THREE.Skeleton(joints)` with no inverse-bind matrices, and
+`raiseCaptureCloth` did the same for a pole the level baked bare. Three then
+runs `calculateInverses()` off the joints' live world pose, so every joint
+cancels to identity at bind time and the cloth is drawn where its vertices
+are: `extract_map.py` bakes the sheet as a flat rectangle within ~1 m of the
+origin with per-bone offset inverse binds (`bind = (I, rest - offset)`), not
+world-pose inverses. The cloth was rendering at the world origin. Two more
+faults hid behind it: the neutral branch then threw `anchor is not defined`
+(a local of `raiseCaptureCloth` referenced from the caller), and every name
+test used the extractor's `<point> cloth` spelling while GLTFLoader had run
+node names through `PropertyBinding.sanitizeNodeName` (`<point>_cloth`,
+`<point>_Bone01`), so a baked cloth was never found and a bare-pole raise
+ran on top of an enemy-held pole too.
+
+Fix — never rebind a cloth already skinned to its own pole; a raise copies
+the donor's `boneInverses` and `bindMatrix` and names its nodes the
+sanitized way (`flagNodeStem`); the donor's `FlagBlow` clip is retargeted
+by track name so a raised cloth waves; the frozen pole chain is `thaw`ed
+rather than added to `neverFrozen` (which only `freezeVehicle` reads).
+
+Verification — Bocage in the viewer (`?mod=bf1942&map=bocage&shots`), Axis
+spawn, `__teleport` onto the Sawmill until captured: the raised
+`Lumbermill_Cpoint_cloth` skins to 7.3 m above the pole base in the `ger`
+atlas cell and its joints move frame to frame; leaving and re-joining as
+Allied and taking it back repaints the same cloth to the `us` cell with no
+second cloth raised; no console errors. `test_hud` and
+`test_gunfire_layers` pass.
+
+## 2026-09-23: Announcer language and team-wide announcements
+
+Reported — the Russians on Kharkov heard the British "we now have control
+over" line, and the announcer only spoke for the local player's own take.
+
+Evidence — `GamePlay.ssc` loads both patches from `Sound/@RTD/@Language/`,
+and `@Language` is per side, not per install: every soldier template in
+`Objects/Soldiers/*/Objects.con` declares `ObjectTemplate.setRadioLanguage`
+(USSoldier and USMarineSoldier `UsEnglish`, BritishSoldier `English`,
+CanadianSoldier `Canadian`, German/GermanDesert `German`, Japanese
+`Japanese`, Russian `Russian`; Road to Rome adds `French` and `Italian`).
+`sound.rfa` / `sound_001.rfa` / XPack1 `Sound.rfa` carry all six stems for
+each. The engine's own announcements are team-wide radio, heard anywhere.
+
+Change — `tools/bf1942-models/extract_capture_voices.py` writes
+`_shared/voices/<nation>/` per viewer nation code (`us`, `brit`, `can`,
+`ger`, `jp`, `rus`, plus `it` and `fre` for xpack1) for vanilla and each
+mod tree; `en` stays as the fallback for an older tree. `map.html` picks the
+folder from `teamNation(localMapTeam())` and announces on every ownership
+change through one `announceCapture(prev, next)`: gain when the local side
+takes a point (own take, bot take, room decree), loss when the enemy takes
+a point the side held, silence for the enemy's neutral takes. The room path
+no longer waits for the on-foot HUD branch to voice it.
+
+Verification — Kharkov, Allied (Soviet) spawn: taking Kharkov_Hills fetched
+and played `maps/_shared/voices/rus/WeNowHaveControlOver2.mp3`; a forced
+`announce(2, 1)` played `voices/rus/WeHaveLostControlOf3.mp3`. Axis on the
+same level resolves to `voices/ger`. `__captureVoice` is the page hook.

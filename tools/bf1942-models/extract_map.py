@@ -92,6 +92,7 @@ from bf42.level import (  # noqa: E402
     spawn_vehicle,
 )
 from bf42.rfa import ArchivePool, find_archives_dir  # noqa: E402
+from bf42.ai_level import load_level_ai, add_cover_values  # noqa: E402
 from bf42.terrain import (  # noqa: E402
     DETAIL_REPEATS,
     default_patches,
@@ -2638,6 +2639,13 @@ def main() -> int:
                                       shared_dir=shared_dir,
                                       audio_format=args.audio_format,
                                       final_dir=final_root / info.name.lower())
+
+    # The level's strategic AI scripts (`AI.con`, `AI/StrategicAreas.con`,
+    # conditions, prerequisites, strategies), for the viewer's bots. A level
+    # that ships no `AI.con` (most mods) writes nothing.
+    if (level_ai := load_level_ai(files)) is not None:
+        add_cover_values(level_ai, library, (inst.template for inst in info.statics))
+        extras["ai"] = level_ai.to_json()
 
     (out_dir / "scene.glb").write_bytes(glb)
     (out_dir / "scene.json").write_text(json.dumps(extras, indent=2))
