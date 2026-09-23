@@ -240,6 +240,8 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | strategic | degeneration D | soldier 15; vanilla hulls 5 .. 180 | `aiTemplate.degeneration` (`AITemplate` +0xc, handler 0x084ff660), `Objects.rfa` | `INFORMATION.soldierDegeneration`, `bot-strength.js VEHICLE_DEGENERATION`, `unitDegeneration` | CON; a mod vehicle's 15 INVENTION |
 | strategic | heard quality | 0.5: t0 = now - 1 / (0.5 D) when the security is below 0.5 | `event_soundEmitter` 0x085237c0, `updateHearingMemory` 0x085240e0, `setTime(t, s)` 0x085e8210 | `INFORMATION.heardQuality`, `SideKnowledge.heard` | ENGINE |
 | page | respawn wait | 8 s | engine: the game's spawn delay | `bot-referee.js BOT_RESPAWN_DELAY` | INVENTION |
+| page | a hull's crew killer | the attacker of the lethal hit; none for a burn-down or a hit with no player behind it | `GameServer::_giveDamage` 0x0814c122 (kill), 0x0814c224 (no attacker); `Armor::update` burn with attacker -1 at 0x0817322a (AI-76) | `vehicle-damage.js killedBy`, `bot-units.js attackerOf` | ENGINE |
+| page | last hitter expiry | countdown `Armor+0x2c`, then +0x14 = -1 | `Armor::update` 0x08172f40 (AI-76) | not built: the viewer never names the last hitter for a death | ENGINE |
 | page | fallback rate, damage | 8 rounds/s, 30 | | `bot-referee.js BOT_FALLBACK_ROF`, `map.html BOT_FALLBACK_DAMAGE` | UNSOURCED |
 | page | soldier capsule | radius 0.6 m at +1.0 m | the height is `setCharacterHeight -1.00` (`physics.js CHARACTER_HEIGHT`) | `bot-referee.js BOT_BODY_RADIUS`, `BOT_BODY_HEIGHT` | INVENTION / CON |
 | page | round range | 600 m | | `bot-referee.js BOT_FIRE_RANGE` | UNSOURCED |
