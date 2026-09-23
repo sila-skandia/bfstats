@@ -18,19 +18,26 @@
 //    `boardRange` of it is given a free seat (the driver's first) with a
 //    `WPBoard`, which walks him to the door and presses Use there. Aboard, he
 //    holds a `WPFollow` on the leader (the hull), which asks nothing.
+//  * A follower in a seat of some other hull nobody drives, more than
+//    `regroupDistance` from the leader, gets out (`WPLeave`) and rejoins: a
+//    gunner of a parked hull otherwise sits out the match. A rider of a
+//    driven hull stays (a convoy), and nobody leaves an aircraft (the
+//    viewer's soldier has no parachute).
 //  * An aircraft cannot be followed on foot: while the leader flies, the
 //    followers not aboard go to the SAI as leaders do, and come back when he
 //    lands or dies.
 //  * Regroup: while a follower on foot is more than `regroupDistance` from
 //    the leader (and less than `strayDistance`: a fresh respawn across the
-//    map is not waited for), or a follower is walking to the squad's hull,
+//    map is not waited for), a follower at the wheel of his own hull is
+//    more than `regroupDistance` behind (at any distance: he closes 100 m
+//    in seconds), or a follower is walking to the squad's hull,
 //    the leader holds where he is (`WPHold`) for at most `holdMax` seconds,
 //    then carries on for at least `holdCooldown` before holding again.
 //  * A bot handed from the SAI to a follower's role is released in the SAI
 //    (`botChangedUnit`: its assignment dropped), so it does not come back
 //    with a stale order when it leads again.
 
-import { registerDoctrine, closeToOrder, boardOrder } from './doctrine.js';
+import { registerDoctrine, closeToOrder, boardOrder, leaveOrder } from './doctrine.js';
 
 export const SQUAD = {
   size: 4,
@@ -57,7 +64,7 @@ class SquadDoctrine {
     this.managed = new Set();
     this.lastPos = new Map();
     this.counts = {
-      passes: 0, holds: 0, holdSeconds: 0, boardOrders: 0, boardings: 0, leaderChanges: 0,
+      passes: 0, holds: 0, holdSeconds: 0, boardOrders: 0, boardings: 0, leaderChanges: 0, leaveOrders: 0,
       followerDistanceSum: 0, followerSamples: 0, withinRegroup: 0, sharedHullPasses: 0, hullPasses: 0,
       airFreeAgentPasses: 0,
     };
@@ -172,7 +179,13 @@ class SquadDoctrine {
         boarding.push(b.id);
         continue;
       }
-      if (!b.seat && d > SQUAD.regroupDistance && d < SQUAD.strayDistance) stray = true;
+      // Sitting in someone else's parked hull away from the squad: out.
+      if (b.seat && !b.seat.drives && !b.seat.driver && !f.aboard && b.seat.kind !== 'air' && d > SQUAD.regroupDistance) {
+        if (b.order?.kind !== 'WPLeave') this.counts.leaveOrders++;
+        out.set(b.id, b.order?.kind === 'WPLeave' ? b.order : leaveOrder(b.position, leaderOrder));
+        continue;
+      }
+      if (d > SQUAD.regroupDistance && ((!b.seat && d < SQUAD.strayDistance) || b.seat?.drives)) stray = true;
       out.set(b.id, this._follow(b, f, squad, leaderRadius, leaderOrder, view));
     }
     // The leader holds while his squad catches up or climbs in.
@@ -241,6 +254,7 @@ class SquadDoctrine {
       holdSeconds: Math.round((c.holdSeconds + open) * 100) / 100,
       boardOrders: c.boardOrders,
       boardings: c.boardings,
+      leaveOrders: c.leaveOrders,
       leaderChanges: c.leaderChanges,
       meanFollowerDistance: c.followerSamples ? Math.round(c.followerDistanceSum / c.followerSamples * 100) / 100 : null,
       withinRegroupShare: c.followerSamples ? Math.round(c.withinRegroup / c.followerSamples * 1e4) / 1e4 : null,
