@@ -381,6 +381,84 @@ const recipes = {
     };
   },
 
+  /** Brief P item 3: K's North outpost pair (`tankDuel`, 2026-09-24 at
+   *  363d6dc1: both in Fire 158.7 m apart for 68 of 75 samples, the line
+   *  blocked by `Stones_Africa_L_M1_4` one way and the terrain the other, 0
+   *  rounds) set down where K's run left them, facing each other, every
+   *  other bot frozen and both ordered onto the flag. Each second: the gap,
+   *  each driver's behaviour and approach move; then the rounds each side
+   *  fired and who died. `noApproach` holds both in the old plan (the
+   *  approach's S forced true) as the control. */
+  async tankApproach(noApproach = false) {
+    const match = await start('el_alamein');
+    const axis = match.bots.find(o => o.team === 1);
+    const allied = match.bots.find(o => o.team === 2);
+    mount(match, axis, 'PanzerIV');
+    mount(match, allied, 'Sherman', 'driver', { freePad: true });
+    freezeOthers(match, [axis.playerId, allied.playerId]);
+    const flag = [874.005, 51.59, -1815.98];
+    const sai = match.referee.strategy;
+    const waypointsOf = sai.waypointsOf.bind(sai);
+    sai.waypointsOf = id => {
+      const wp = waypointsOf(id);
+      return (id === axis.playerId || id === allied.playerId) && wp ? { ...wp, point: [flag[0], flag[2]], radius: 20 } : wp;
+    };
+    const at = { [axis.playerId]: [869.492, -1806.509], [allied.playerId]: [987.678, -1700.602] };
+    const place = (b, other) => {
+      const [x, z] = at[b.playerId], [ox, oz] = at[other.playerId];
+      const s = b.vehicle.drive.state;
+      s.position.set(x, match.groundAt(x, z) + 1.0, z);
+      s.velocity?.set?.(0, 0, 0);
+      s.angularVelocity?.set?.(0, 0, 0);
+      // The nose (-z in the model) toward the other hull.
+      s.orientation.setFromAxisAngle({ x: 0, y: 1, z: 0 }, Math.atan2(-(ox - x), -(oz - z)));
+      b.setPosition(x, match.groundAt(x, z) + 1.0, z);
+      b.route = null;
+    };
+    place(axis, allied);
+    place(allied, axis);
+    if (noApproach) for (const b of [axis, allied]) b._noApproach = true;
+    const gap = () => Math.hypot(axis.position[0] - allied.position[0], axis.position[2] - allied.position[2]);
+    const start0 = gap();
+    let closest = start0, firstRound = null;
+    const moves = { axis: {}, allied: {} };
+    const behs = { axis: {}, allied: {} };
+    const trace = [];
+    let next = 0;
+    const roundsOf = id => match.stats.get(id).vehicleRounds;
+    run(match, 120, () => {
+      closest = Math.min(closest, gap());
+      if (firstRound === null && (roundsOf(axis.playerId) || roundsOf(allied.playerId))) firstRound = round(match.clock);
+      if (match.clock >= next) {
+        next = match.clock + 1;
+        if (Math.round(match.clock) % 5 === 0) {
+          trace.push([round(match.clock), round(gap()), axis._fireApproachDbg?.move ?? axis.currentBehaviour,
+                      allied._fireApproachDbg?.move ?? allied.currentBehaviour,
+                      !!axis._fireApproachDbg?.seen, !!allied._fireApproachDbg?.seen,
+                      ...[axis, allied].map(b => { const a = match.world.occupiedDamageable?.(b.playerId); return a ? round(a.hitPoints) : null; })]);
+        }
+        for (const [k, b] of [['axis', axis], ['allied', allied]]) {
+          const m = b._fireApproachDbg?.move ?? '-';
+          moves[k][m] = (moves[k][m] ?? 0) + 1;
+          behs[k][b.currentBehaviour] = (behs[k][b.currentBehaviour] ?? 0) + 1;
+          b._fireApproachDbg = null;
+        }
+      }
+      return !axis.vehicle || !allied.vehicle;
+    });
+    return {
+      start: round(start0), closest: round(closest), end: round(gap()), firstRound,
+      rounds: { axis: roundsOf(axis.playerId), allied: roundsOf(allied.playerId) },
+      destroyed: eventsOf(match, 'vehicle_destroyed').map(e => `${round(e.t)} ${e.vehicle} by ${e.killer}`),
+      moves, behs, clock: round(match.clock), trace,
+      mounted: [!!axis.vehicle, !!allied.vehicle],
+      hp: [axis, allied].map(b => { const a = match.world.occupiedDamageable?.(b.playerId); return a ? round(a.hitPoints) : null; }),
+      left: eventsOf(match, 'dismount').map(e => `${round(e.t)} ${e.bot ?? e.id} ${e.reason ?? ''}`),
+    };
+  },
+
+  async tankApproachControl() { return recipes.tankApproach(true); },
+
   /** A landing craft: Wake's Daihatsus are split off their ships at load
    *  (`detachSpawnedCraft`); a bot at the helm drives the page's `Ship` on
    *  the level's landing-craft map (`bot-units.js waterNav`). The SAI sends

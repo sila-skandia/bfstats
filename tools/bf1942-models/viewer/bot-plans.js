@@ -6,7 +6,7 @@
 
 import { isWalkable } from './nav-grid.js';
 import { playerPosition } from './bot-sense.js';
-import { firingPose, firePlanFor } from './bot-fire.js';
+import { firingPose, firePlanFor, fireApproachStep, FIRE, FIRE_APPROACH } from './bot-fire.js';
 import { SCOUT, TAKE_COVER, MEDIC } from './bot-behaviours.js';
 import { planeFireMode, PLANE_FIRE, boatControl, BOAT } from './bot-vehicle-air.js';
 import { freeLevel } from './nav-grid.js';
@@ -24,6 +24,9 @@ export const PLAN_ACTION = {
   InfantryMoveTo: 'InfanteryMoveTo',
   InfantryMoveToObject: 'InfanteryMoveToObject',
   InfantryMoveToDirection: 'InfanteryMoveToDirection',
+  /** `BBPFireInfantery`'s move for a tank: hold with a shot, else close by
+   *  `BAPAMoveToObjectFinding` (bot-fire.js `fireApproachStep`). */
+  FireApproach: 'FireApproach',
   /** `BAPAMoveToDirect` under a boat's helm: a straight run, no route. */
   BoatMoveToDirect: 'BoatMoveToDirect',
   EnterVehicle: 'EnterVehicle',
@@ -139,6 +142,21 @@ export function planFire(bot, now) {
     return cur;
   }
   const weapon = bot.weapons[bot.weaponIndex] ?? bot.weapons[0];
+  if (approachesByFinding(bot)) {
+    // `createPlanInternal` 0x085a74e0 from 0x085a7c5e: the approach, the
+    // look and the trigger side by side (bot-fire.js `FIRE_APPROACH`).
+    const plan = [
+      { type: PLAN_ACTION.FireApproach, targetId: bot.firingTarget, targetPos: [...bot.targetPosition], persistent: true },
+      { type: PLAN_ACTION.MouseTurretAimAt, targetId: bot.firingTarget, targetPos: [...bot.targetPosition] },
+      { type: weapon?.burst ? PLAN_ACTION.TriggerContinously : PLAN_ACTION.Trigger,
+        targetId: bot.firingTarget, targetPos: [...bot.targetPosition], startedAt: now, timeout: FIRE.planTimeout,
+        shots: weapon?.burst ? 0 : Math.min(FIRE.shotsMax, 1 + Math.floor(Math.random() * FIRE.shotsMax)) },
+    ];
+    plan.targetId = bot.firingTarget;
+    plan.startedAt = now;
+    bot._shotsThisPlan = 0;
+    return plan;
+  }
   const pose = firingPose(bot.position, bot.targetPosition, (a, b) => bot._lineClear(a, b));
   const plan = firePlanFor({
     position: bot.position, targetPos: bot.targetPosition, targetId: bot.firingTarget,
@@ -150,8 +168,92 @@ export function planFire(bot, now) {
   return plan;
 }
 
+/**
+ * Whether the bot's fire plan takes `BAPAMoveToObjectFinding` (bot-fire.js
+ * `FIRE_APPROACH`): its unit moves (the Mobile plug-in) and drives on other
+ * controls than it aims with, and its vehicle type runs `BBPFireInfantery`
+ * (`AIbehaviours.con`: Tank; a car's Fire is `BBPFireDriveAttack`). The
+ * viewer does not extract the ControlInfo's drive and aim channels; every
+ * vanilla tank declares `driveTurnControl PIYaw` and `aimHorizontalControl
+ * PIMouseLookX` (Objects/Vehicles/Land/<hull>/AI/Objects.con, the Sherman's
+ * lines 25..28), so a driven tank stands for the test (INFERRED for the
+ * mods' hulls).
+ */
+export function approachesByFinding(bot) {
+  // `_noApproach`: the runner's control (tests/sim_vehicles_harness.mjs).
+  return !!(bot.vehicle && bot.vehicle.drives && bot.vehicle.kind === 'tank' && !bot._noApproach);
+}
+
+/**
+ * `BAPConObjectValidPitchAiming` / `ValidAiming` as the approach's S reads
+ * it: the line from the gun to the target inside the seat's camera pitch
+ * window (`cameraMinDeg` / `cameraMaxDeg` y, the engine's pitch negative
+ * up: the Sherman's -20 .. 5 is 20 deg up to 5 deg down). The engine aims
+ * along `internalAiming`'s ballistic lead (0x085527d0); the straight line
+ * stands for it here (INFERRED). No window, no limit.
+ */
+export function approachAimValid(bot, targetPos) {
+  const c = bot.vehicle?.controlInfo;
+  const lo = c?.cameraMinDeg?.[1], hi = c?.cameraMaxDeg?.[1];
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || !(hi > lo)) return true;
+  const o = bot._aimOrigin?.() ?? bot.position;
+  const dx = targetPos[0] - o[0], dy = targetPos[1] + 1.0 - o[1], dz = targetPos[2] - o[2];
+  const up = Math.atan2(dy, Math.hypot(dx, dz)) * 180 / Math.PI;
+  return up >= -hi && up <= -lo;
+}
+
+/**
+ * One tick of the approach (bot-fire.js `fireApproachStep`): S is the
+ * target within minRange .. 0.9 maxRange (3D), a valid aim and a line of
+ * fire (`BAPConObjectLineOfFire` 0x08551890: the memory record of it is
+ * seen). Holding resets the drive only (`BAPAResetControls(1, 0, 0)` at
+ * 0x085aa111): the look and the trigger go on. Closing is the page's route
+ * to the target with the finding's goal radius; the path is searched again
+ * when S is lost after holding (`update` 0x08546df0, its +0xb4 latch).
+ * The finding's 0.5 maxSpeed arrival speed is not ported.
+ */
+export function execFireApproach(bot, action, dt) {
+  const p = bot.world?.players?.get(action.targetId);
+  const pos = playerPosition(p) ?? action.targetPos;
+  if (!pos) return true;
+  const weapon = bot.weapons[bot.weaponIndex] ?? bot.weapons[0];
+  const [x, y, z] = bot.position;
+  const dist = Math.hypot(pos[0] - x, pos[1] - y, pos[2] - z);
+  const min = weapon?.minRange ?? 0, max = weapon?.maxRange ?? 0;
+  const seen = !!bot.senses?.memory?.get(action.targetId)?.seen;
+  const holds = dist >= min && dist <= FIRE_APPROACH.inRangeFraction * max && seen && approachAimValid(bot, pos);
+  // The firing point: here, or `calculateAwayPosition` when the target is
+  // inside minRange + 1 (bot-fire.js `firePlanFor`'s back-off radius).
+  let point = [x, y, z];
+  if (dist < min + FIRE.tooClose) {
+    const r = FIRE.awayRadius(min);
+    const d2 = Math.hypot(pos[0] - x, pos[2] - z);
+    const ux = d2 > 1e-3 ? (pos[0] - x) / d2 : 0, uz = d2 > 1e-3 ? (pos[2] - z) / d2 : 1;
+    point = [pos[0] - ux * r, y, pos[2] - uz * r];
+  }
+  const near = Math.hypot(pos[0] - point[0], pos[1] - point[1], pos[2] - point[2])
+    <= FIRE_APPROACH.nearPointScale * min + FIRE_APPROACH.nearPointPad;
+  const ext = bot._unitInfo?.(action.targetId)?.extents ?? [0.6, 1.8, 0.6];
+  const step = fireApproachStep({ dist, holds, weapon, nearFiringPoint: near,
+                                  targetRadius: 0.5 * Math.hypot(ext[0], ext[1], ext[2]) });
+  bot._fireApproachDbg = { move: step.move, dist, seen, holds };
+  if (step.move === 'end') { action.ended = true; return true; }
+  if (step.move === 'hold' || (step.move === 'point' && point[0] === x && point[2] === z)) {
+    action.held = step.move === 'hold';
+    bot.moveForward = 0; bot.moveStrafe = 0; bot._lastThrottle = 0;
+    return false;
+  }
+  if (step.move === 'find' && action.held) { bot.route = null; action.held = false; }
+  action.move ??= {};
+  action.move.waypoint = step.move === 'find' ? [pos[0], pos[1], pos[2]] : point;
+  action.move.arrive = step.move === 'find' ? step.arrive : undefined;
+  bot._execInfantryMoveTo(action.move, dt);
+  return false;
+}
+
 /** The fire plan's end conditions: target dead, timeout, shots spent. */
 export function firePlanDone(bot, plan, now) {
+  if (plan.some(a => a.type === PLAN_ACTION.FireApproach && a.ended)) return true;
   const attack = plan.find(a => a.type === PLAN_ACTION.PlaneAttack);
   if (attack) {
     // The loop's conditions: the target exists with health, the magazine
@@ -385,7 +487,8 @@ export function runPlan(bot, dt, now) {
     const complete = bot._executeAction(action, dt, now);
     if (complete) action.done = true;
     if (!complete && !action.persistent) allComplete = false;
-    if (action.type === PLAN_ACTION.InfantryMoveTo || action.type === PLAN_ACTION.InfantryMoveToObject) moved = true;
+    if (action.type === PLAN_ACTION.InfantryMoveTo || action.type === PLAN_ACTION.InfantryMoveToObject
+        || action.type === PLAN_ACTION.FireApproach) moved = true;
   }
   if (allComplete && !bot.currentPlan.some(a => a.persistent)) bot.currentPlan = [];
   if (!moved) bot._lastThrottle = 0;
@@ -401,6 +504,8 @@ export function executeAction(bot, action, dt, now) {
       return bot._execInfantryMoveToObject(action, dt);
     case PLAN_ACTION.InfantryMoveToDirection:
       return bot._execInfantryMoveToDirection(action, dt, now);
+    case PLAN_ACTION.FireApproach:
+      return execFireApproach(bot, action, dt);
     case PLAN_ACTION.BoatMoveToDirect:
       // The boat's own helm (`BoatControl::towardsDirection` with its box
       // state machine, as `_steerToward` runs it on a route leg) straight at

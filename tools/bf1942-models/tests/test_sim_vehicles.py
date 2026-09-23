@@ -142,6 +142,22 @@ class SimVehicleTests(unittest.TestCase):
         self.assertEqual(b["axisEye"], b["axisGun"])
         self.assertEqual(b["alliedEye"], b["alliedGun"])
 
+    def test_the_tank_pair_close_until_one_can_fire(self) -> None:
+        # Brief P item 3 (ledger AI-116): K's North outpost pair, set down
+        # 158.7 m apart where K's run left them. The engine's fire plan
+        # closes by `BAPAMoveToObjectFinding` while S (in range, a valid
+        # aim, a line of fire) fails and the target is beyond `mid` (52 m
+        # for the 2 .. 250 m main guns); the old plan sat in Fire.
+        control = recipe("tankApproachControl")
+        self.assertGreater(control["closest"], 150.0)
+        self.assertEqual(control["rounds"], {"axis": 0, "allied": 0})
+        r = recipe("tankApproach")
+        self.assertGreater(r["moves"]["axis"].get("find", 0), 0)
+        self.assertGreater(r["moves"]["allied"].get("find", 0), 0)
+        self.assertLess(r["closest"], 60.0)
+        self.assertGreater(r["rounds"]["axis"] + r["rounds"]["allied"], 0)
+        self.assertIsNotNone(r["firstRound"])
+
     def test_a_parked_hull_is_an_obstacle_until_it_is_driven_off(self) -> None:
         r = recipe("obstacle")
         self.assertTrue(r["parked"], "a parked body")
