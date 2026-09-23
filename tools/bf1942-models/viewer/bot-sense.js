@@ -240,8 +240,20 @@ function wrapAngle(a) {
   return Math.atan2(Math.sin(a), Math.cos(a));
 }
 
-/** The position of a player record, or null. */
+/**
+ * The position of a player record, or null.
+ *
+ * A seated player is where his seat is: `publishSeatPositions`
+ * (`vehicle-instance.js`) writes the seat node's world position into
+ * `position` every tick, for the human and a bot alike. His `soldier` record
+ * is NOT moved while he rides, it stays where he climbed in, so reading it
+ * first had every bot sense a pilot at the spot he boarded: an AA gunner
+ * watched the human's Spitfire parking place while the Spitfire flew over him.
+ */
 export function playerPosition(player) {
+  if (player?.occupancy?.root && player.position) {
+    return [player.position[0], player.position[1], player.position[2]];
+  }
   if (player?.soldier) return [player.soldier.x, player.soldier.y, player.soldier.z];
   if (player?.position) return [player.position[0], player.position[1], player.position[2]];
   if (player?.vehicle?.state?.position) {
