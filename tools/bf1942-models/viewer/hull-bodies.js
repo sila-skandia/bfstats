@@ -290,8 +290,18 @@ export function createHullBodies(page) {
   /** The pose a held craft's spawner puts it at: its ship's live matrix
    *  times its baked pose on her. */
   function holdMatrix(rec) {
-    rec.host.updateWorldMatrix(true, false);
-    return _holdMatrix.multiplyMatrices(rec.host.matrixWorld, rec.local);
+    return _holdMatrix.multiplyMatrices(hostMatrix(rec.host), rec.local);
+  }
+
+  /** A ship's pose this tick: her drive's state when someone drives her (the
+   *  node may still carry the interpolated or mid-tick pose), else her node. */
+  const _hostMatrix = new THREE.Matrix4();
+  const _unitScale = new THREE.Vector3(1, 1, 1);
+  function hostMatrix(host) {
+    const s = page.vehicles?.instanceOf?.(host)?.drive?.state;
+    if (s?.position && s.orientation) return _hostMatrix.compose(s.position, s.orientation, _unitScale);
+    host.updateWorldMatrix(true, false);
+    return _hostMatrix.copy(host.matrixWorld);
   }
 
   /** A world matrix onto a node (which may be frozen). */
@@ -314,7 +324,7 @@ export function createHullBodies(page) {
     for (const rec of heldCraft) {
       if (rec.released) continue;
       setNodeWorld(rec.node, holdMatrix(rec));
-      rec.hostAt = rec.host.matrixWorld.clone();
+      rec.hostAt = _hostMatrix.clone();
     }
   }
 
@@ -357,7 +367,9 @@ export function createHullBodies(page) {
   }
 
   /**
-   * The spawners' hold, once a tick (`stepSinkingHulls`): each held craft is
+   * The spawners' hold, once a tick at the end of the world's tick (before
+   * its `onTick` publishes the seats and the renderer's snapshot, and before
+   * the bots read the tick; `setupVehicleBodies` hooks it): each held craft is
    * put back on its pad on its ship, with the ship's velocity there, until
    * its pilot's throttle reaches 0.1 or it is destroyed. A parked craft is
    * only rewritten when its ship has moved or its body is awake; a driven
@@ -392,13 +404,13 @@ export function createHullBodies(page) {
         s.angularVelocity?.set(0, 0, 0);
         if (!page.drawsHull?.(drive)) drive.applyTransform?.();
         if (scene) publishMovedHull(owner, scene, rec.node, _holdAt);
-        rec.hostAt = (rec.hostAt ?? new THREE.Matrix4()).copy(rec.host.matrixWorld);
+        rec.hostAt = (rec.hostAt ?? new THREE.Matrix4()).copy(_hostMatrix);
         continue;
       }
       const body = hullBodies.bodyWorld?.get(owner)?.parked?.body ?? null;
-      const hostMoved = !rec.hostAt || !rec.hostAt.equals(rec.host.matrixWorld);
+      const hostMoved = !rec.hostAt || !rec.hostAt.equals(_hostMatrix);
       if (!hostMoved && (!body || body.sleeping)) continue;
-      rec.hostAt = (rec.hostAt ?? new THREE.Matrix4()).copy(rec.host.matrixWorld);
+      rec.hostAt = (rec.hostAt ?? new THREE.Matrix4()).copy(_hostMatrix);
       if (body) {
         const e = m.elements;
         body.pos[0] = e[12]; body.pos[1] = e[13]; body.pos[2] = e[14];
@@ -534,7 +546,7 @@ export function createHullBodies(page) {
   }
 
   function stepSinkingHulls(step) {
-    if (!floatHosts.length) { if (heldCraft.length) holdSpawnedCraft(); return; }
+    if (!floatHosts.length) return;
     // A driven hull moves whether or not the body world ticked — a level with no
     // collision meshes has no body world at all — so the rebase is not gated on
     // `bodyTicks`; only the sinking integration is.
@@ -566,9 +578,6 @@ export function createHullBodies(page) {
     // owner watching the map sees the spots move with the hull exactly as the
     // game does.
     if (stirred) rebaseDeckSpawns();
-    // ... and the spawners' hold puts each deck aircraft back on its pad on
-    // whichever ship has moved (`holdSpawnedCraft`).
-    if (heldCraft.length) holdSpawnedCraft();
   }
 
   /**
@@ -759,8 +768,22 @@ export function createHullBodies(page) {
     return settling.map(s => s.owner);
   }
 
+  /** The hold runs at the end of every world tick, ahead of whatever the
+   *  page or the runner hands the world as its `onTick`. Once per World. */
+  function hookHoldIntoTick(world) {
+    if (!world || world.onTick?.holdsSpawnedCraft) return;
+    const next = world.onTick;
+    const tick = () => {
+      if (heldCraft.length) holdSpawnedCraft();
+      next?.();
+    };
+    tick.holdsSpawnedCraft = true;
+    world.onTick = tick;
+  }
+
   /** Rebuild the body world for the level `buildCollider` just indexed. */
   function setupVehicleBodies() {
+    hookHoldIntoTick(page.world);
     bodyScene.clear();
     hullBodies.bodyWorld = null;
     const heightfield = page.collider?.heightfield;
@@ -1003,13 +1026,61 @@ export function createHullBodies(page) {
     if (vehicle.node?.userData?.physics?.vehicleCategory !== 'VCAir') return;
     if (typeof vehicle.groundHeight !== 'function' || !vehicle.state?.position) return;
     const base = vehicle.groundHeight.shipDeckBase ?? vehicle.groundHeight;
+    const owner = page.collider?.statics?.ownerOf?.(vehicle.node) ?? -1;
+    const hull = hullVertices(bodyScene.get(owner)?.spec);
     const floor = (x, z, fromY) => {
       const ground = base(x, z, fromY);
       const deck = shipDeckAt(x, z, vehicle.state.position.y + 0.5, SHIP_DECK_REACH);
-      return deck && !(deck.y <= ground) ? deck.y : ground;
+      if (!deck || deck.y <= ground) return ground;
+      return deck.y + hullLift(vehicle, hull);
     };
     floor.shipDeckBase = base;
     vehicle.groundHeight = floor;
+  }
+
+  /** Air kept under the lowest hull vertex of an aircraft on a ship's deck. */
+  const HULL_DECK_MARGIN = 0.05;
+
+  /** A hull's col0 vertices (its `body` parts, not the springs), in the body
+   *  frame, flat: what `body-statics.js` probes against a static. */
+  function hullVertices(spec) {
+    const out = [];
+    for (const desc of spec?.parts || []) {
+      if (desc.kind !== 'body') continue;
+      const v = desc.shape?.layers?.[0]?.vertices;
+      if (!v) continue;
+      const rot = desc.rot, o = desc.offset;
+      for (let i = 0; i < v.length; i += 3) {
+        out.push(o[0] + v[i] * rot[0][0] + v[i + 1] * rot[1][0] + v[i + 2] * rot[2][0],
+                 o[1] + v[i] * rot[0][1] + v[i + 1] * rot[1][1] + v[i + 2] * rot[2][1],
+                 o[2] + v[i] * rot[0][2] + v[i + 1] * rot[1][2] + v[i + 2] * rot[2][2]);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * How far a deck lifts an aircraft above its clearance so no hull vertex is
+   * under it at the drive's present attitude. The drive stands on a constant
+   * clearance with no gear geometry; ashore a propeller that dips below it
+   * digs into terrain nothing probes, but a ship's deck is a static
+   * `body-statics.js` meets: the Corsair's tail came up on its take-off roll
+   * off the Enterprise, its propeller's lowest col0 vertex (4.4 m ahead of the
+   * origin) went through the deck, and the push-out threw it 5 m up every run
+   * (INVENTION: the engine's plane keeps its propeller clear on its three
+   * spring contacts, which the drive does not model).
+   */
+  function hullLift(vehicle, hull) {
+    if (!hull.length) return 0;
+    const q = vehicle.state.orientation;
+    const clearance = vehicle.spec?.groundClearance ?? 0;
+    const m10 = 2 * (q.x * q.y + q.w * q.z), m11 = 1 - 2 * (q.x * q.x + q.z * q.z), m12 = 2 * (q.y * q.z - q.w * q.x);
+    let lowest = 0;
+    for (let i = 0; i < hull.length; i += 3) {
+      const y = m10 * hull[i] + m11 * hull[i + 1] + m12 * hull[i + 2];
+      if (y < lowest) lowest = y;
+    }
+    return Math.max(0, -lowest + HULL_DECK_MARGIN - clearance);
   }
 
   /** The player has taken a vehicle: its drive model now stands in for the body. */
@@ -1095,7 +1166,7 @@ export function createHullBodies(page) {
     if (held) {
       held.released = false;
       setNodeWorld(node, holdMatrix(held));
-      held.hostAt = held.host.matrixWorld.clone();
+      held.hostAt = _hostMatrix.clone();
       node.updateWorldMatrix(true, false);
       const e = node.matrixWorld.elements;
       publishMovedHull(owner, scene, node, [e[12], e[13], e[14]]);
@@ -1188,6 +1259,7 @@ export function createHullBodies(page) {
     bodyScene,
     floatHosts,
     floatPlacedVehicles,
+    heldCraft,
     hullCollisionMaterial,
     loadCollisionMeshes,
     onCrashDamage,
@@ -1198,6 +1270,7 @@ export function createHullBodies(page) {
     seabedFriction,
     settlePlacedVehicles,
     setupVehicleBodies,
+    shipDeckAt,
     shipFlagInactive,
     stepSinkingHulls,
     stepVehicleBodies,
