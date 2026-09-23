@@ -17,24 +17,18 @@
 // at the nearest enemy flag.
 
 import { DeviationModel } from './deviation.js';
-import { isWalkable } from './nav-grid.js';
-import { BotSenses, playerPosition } from './bot-sense.js';
-import { weaponAiOf, FIRE, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
+import { BotSenses } from './bot-sense.js';
+import { weaponAiOf, FIRE } from './bot-fire.js';
 import { ScoutState, TakeCoverState, QUADRANTS, MedicState } from './bot-behaviours.js';
-import { unitUrgency, orderSplit, changeUrgency, teleportChangeUrgency, TANK, CHANGE, TELEPORT } from './bot-vehicle.js';
-import { decleiningSlope } from './bot-behaviours.js';
-import { BOAT } from './bot-vehicle-air.js';
-import { fireStrength, unitTable, STRENGTH } from './bot-strength.js';
+import { REGISTERED, ACTIVE_URGENCY_INIT } from './bot-decision.js';
+import { BOT_RADIUS, VEHICLE_RADIUS } from './bot-route.js';
 import * as aiming from './bot-aim.js';
-import { wrapAngle } from './bot-aim.js';
 import * as perception from './bot-perception.js';
 import * as routing from './bot-route.js';
-import * as piloting from './bot-pilot.js';
 import * as deciding from './bot-decision.js';
-import { BEHAVIOUR, REGISTERED, ACTIVE_URGENCY_INIT } from './bot-decision.js';
 import * as planning from './bot-plans.js';
-import { PLAN_ACTION } from './bot-plans.js';
-import { BOT_RADIUS, VEHICLE_RADIUS } from './bot-route.js';
+import * as mounting from './bot-mount.js';
+import * as piloting from './bot-pilot.js';
 
 export { PI } from './bot-aim.js';
 export { BEHAVIOUR, STANDARD_WEIGHTS, URGENCY_CURVE, IDLE_FLOOR } from './bot-decision.js';
@@ -245,45 +239,8 @@ export class BotController {
 
   _vehicleForward() { return aiming.vehicleForward(this); }
 
-  /**
-   * The page seats the bot: `m` is `{ id, node, drive, occupancy, kind, nav,
-   * radius, maxSpeed, weapons, template }`. The unit's weapons replace the
-   * kit's for the Fire behaviour while mounted.
-   */
-  mount(m, now = this._now ?? 0) {
-    this.vehicle = m;
-    // `isAirBorn` (+0x1d5) is cleared only when the controlled object
-    // changes (`updateBotVehicle` 0x0852c899) or the bot is built (ctor
-    // 0x0851d475); `event_airborn` 0x0852eca0 sets it from the flight law.
-    // A landed plane keeps it.
-    this._airborne = false;
-    this.enterRequest = null;
-    this._lastChangeAt = now;
-    this._footWeapons = this.weapons;
-    this.weapons = (m.weapons?.length ? m.weapons : [{ name: m.template ?? 'vehicle', maxRange: 0, strength: {} }]).map(weaponAiOf);
-    this.exitRequest = false;
-    this.weaponIndex = 0;
-    this._execInfantryResetControls();
-    this.currentPlan = []; this.currentBehaviour = null; this.planBehaviour = null;
-    this.route = null;
-  }
-
-  /** The page unseats the bot (destroyed, or bailed). */
-  dismount(now = this._now ?? 0) {
-    const left = this.vehicle;
-    this.vehicle = null;
-    this._airborne = false;
-    // Keyed by the hull, as the candidates are (`vehicleId`): the seat's own
-    // id (`<uuid>:<seat>`) never matched one, so the 15 s ramp never ran.
-    this._leftVehicle = left ? { id: left.vehicleId ?? left.id, at: now } : null;
-    this._lastChangeAt = now;
-    if (this._footWeapons) this.weapons = this._footWeapons;
-    this._footWeapons = null;
-    this.weaponIndex = 0;
-    this._execInfantryResetControls();
-    this.currentPlan = []; this.currentBehaviour = null; this.planBehaviour = null;
-    this.route = null;
-  }
+  mount(m, now) { return mounting.mount(this, m, now); }
+  dismount(now) { return mounting.dismount(this, now); }
 
   _lineClear(from, to) { return perception.lineClearSkippingSelf(this, from, to); }
   _selfOwner() { return perception.selfOwner(this); }
@@ -437,287 +394,17 @@ export class BotController {
   _planSpecial(now) { return planning.planSpecial(this, now); }
   _healPlanDone(plan, now) { return planning.healPlanDone(this, plan, now); }
 
-  /**
-   * `BBChange::calculateUrgency` (bot-vehicle.js): on foot, the enterable
-   * land vehicles the page lists against staying on foot; mounted, no
-   * voluntary bail (INVENTION: `isBailAllowed` is not read; the page
-   * unseats a bot whose vehicle is destroyed).
-   */
-  _urgencyChange(mod, now) {
-    const cands = this.vehicleCandidates;
-    const world = this.world;
-    const split = orderSplit(this.waypoints?.attack ?? 0, this.waypoints?.defence ?? 0);
-    const me = world?.armorOf?.(this.playerId);
-    const myHealth = me?.maxHitPoints > 0 ? me.hitPoints / me.maxHitPoints : 1;
-    // The soldier's own table is `setBattleStrength` (the kit's weapons do
-    // not rewrite it: `AITemplateUnit` +0x14 is set by the con).
-    const foot = unitUrgency({ health: myHealth, fire: this._fireStrengthOf({ table: SOLDIER_BATTLE_STRENGTH, myType: 'Infantry' }),
-                               maxSpeed: TANK.soldierMaxSpeed, value: 1, orderSplit: split });
-    const ramp = Math.min(1, Math.max(0, (now - this._lastChangeAt) / CHANGE.rampSeconds));
-    const areaFactor = this._insideOrderedArea() ? 1 : CHANGE.outsideAreaFactor;
-    if (this.vehicle) {
-      // Seated: `staying` is the seat's own urgency x1.25, 0 when the hull
-      // is upside down; the alternatives are the foot (a bail, doubled) and
-      // the other free seats around. `isBailAllowed` 0x0855fd70: a soldier
-      // must be able to stand where the hull is (the infantry map).
-      const m = this.vehicle;
-      const mine = cands?.find(c => c.id === m.id) ?? null;
-      const hull = world?.occupiedDamageable?.(this.playerId);
-      const health = hull?.maxHitPoints > 0 ? hull.hitPoints / hull.maxHitPoints : (mine?.health ?? 1);
-      // `calculateVehicleMoveUrgency`: a driver moves the hull; a rider moves
-      // only while someone drives it (x2.5 of the 4 under a bot driver whose
-      // order differs — taken as the same order here).
-      const driver = m.drives ? this.playerId : (m.driverOf?.() ?? null);
-      const seatSpeed = m.drives ? (m.maxSpeed ?? 0) : (driver ? (m.hullMaxSpeed ?? 0) : 0);
-      // A seat has no mobile plug-in of its own: it is a fixed weapon
-      // unless its hull is occupied (`calculateFireStrength` takes the
-      // parent's), and a fixed weapon needs a known enemy it can point at.
-      const rootOccupied = !!(mine?.seats ?? m.seats ?? []).find(s => s.isRoot)?.occupied;
-      const seatFire = this._fireStrengthOf({
-        table: this._seatStrengths(), others: this._otherSeats(mine), air: m.kind === 'air', isSeat: !m.drives,
-        myType: this._myType(), fixed: !m.drives && !rootOccupied, aimable: this._fixedAimable(),
-      });
-      const selfU = unitUrgency({ health, fire: seatFire,
-                                  maxSpeed: seatSpeed, occupiedByBot: !m.drives && !!driver,
-                                  value: mine?.value ?? 0, orderSplit: split });
-      let staying = selfU * CHANGE.stayFactor;
-      if (mine && mine.upright === false) staying = 0;
-      const nav = this.navGrid;
-      let bailAllowed = !nav || isWalkable(nav, this.position[0], this.position[2]);
-      if (m.kind === 'air') {
-        // In the air the engine's bail is a parachute jump; the viewer's
-        // soldier has none, so a flying bot stays aboard until it is low
-        // (INVENTION).
-        const gy = world?.collider?.surfaceHeight?.(this.position[0], this.position[2]);
-        bailAllowed = bailAllowed && Number.isFinite(gy) && this.position[1] - gy < 6;
-      }
-      let best = null, bestU = 0, bail = false;
-      if (bailAllowed && foot > bestU) { best = { id: 'foot', u: foot, dist: 0, cand: null }; bestU = foot; bail = true; }
-      // The whole seated evaluation, the other units included, sits under
-      // `isBailAllowed` (0x0855e0c0: `if (unit+6 & 0x40 || isBailAllowed)`):
-      // a bot that may not get out may not get out for another hull either.
-      // (A Spitfire bot left its plane at 66 m for a Wespe passing below.)
-      for (const c of bailAllowed ? (cands ?? []) : []) {
-        if (c.occupiedBy || c.upright === false || c.id === m.id) continue;
-        const d = Math.hypot(c.pos[0] - this.position[0], c.pos[2] - this.position[2]);
-        if (d > CHANGE.searchRadius) continue;
-        if (c.vehicleId === m.vehicleId) continue;          // the same hull is the teleport's business
-        const u = unitUrgency({ health: c.health ?? 1, fire: this._candidateFire(c),
-                                maxSpeed: c.maxSpeed ?? 0, value: c.value ?? 0, orderSplit: split });
-        const f = Math.min(0.5, (CHANGE.searchRadius ** 2 - d * d) / CHANGE.searchRadius ** 2);
-        const v = u * (f + 0.5);
-        if (v > bestU) { best = { id: c.id, u: v, dist: d, cand: c }; bestU = v; bail = false; }
-      }
-      let r = null;
-      if (best && bestU > staying) {
-        const x = staying > 0 ? 0.5 * bestU / staying : 0.5 * bestU;
-        const urgency = decleiningSlope(x) * mod * CHANGE.urgencyScale * ramp * areaFactor * (bail ? 2 : 1);
-        r = { urgency, best, bail, teleport: false };
-      }
-      // `BBChangeTeleport`: the other seats of this hull.
-      const t = this._urgencyChangeTeleport({ mine, selfU, split, driver, health });
-      if (t && (!r || t.urgency > r.urgency)) r = t;
-      if (!r) { this._changeResult = null; this.changedTarget.Change = false; return 0; }
-      this.changedTarget.Change = (r.best?.id ?? null) !== (this._changeResult?.best?.id ?? null);
-      this._changeResult = r;
-      return r.urgency;
-    }
-    if (!cands?.length) { this._changeResult = null; return 0; }
-    const nav = this.navGrid;
-    const list = [];
-    for (const c of cands) {
-      if (c.occupiedBy) continue;
-      if (c.upright === false) continue;
-      const d = Math.hypot(c.pos[0] - this.position[0], c.pos[2] - this.position[2]);
-      if (d > CHANGE.searchRadius) continue;
-      if (nav && c.entry && !isWalkable(nav, c.entry[0], c.entry[1])) continue;
-      const leftAge = this._leftVehicle?.id === c.vehicleId ? now - this._leftVehicle.at : Infinity;
-      const u = unitUrgency({ health: c.health ?? 1, fire: this._candidateFire(c),
-                              maxSpeed: c.maxSpeed ?? 0, value: c.value ?? 0, orderSplit: split,
-                              occupiedByBot: !!c.movedByBot,
-                              spawnAge: c.spawnAge ?? Infinity, leftAge });
-      list.push({ id: c.id, u, dist: d, cand: c });
-    }
-    const r = changeUrgency({ staying: foot, candidates: list, mod, ramp, areaFactor });
-    this.changedTarget.Change = (r.best?.id ?? null) !== (this._changeResult?.best?.id ?? null);
-    this._changeResult = r;
-    return r.urgency;
-  }
-
-  /** The strength table of the seat the bot holds (its guns). */
-  _seatStrengths() {
-    return unitTable(this.weapons);
-  }
-
-  /** `calculateFireStrength` against the side's enemy tables. With no
-   *  strategic pass yet the enemy is taken to field infantry only. */
-  _fireStrengthOf({ table, others = [], air = false, isSeat = false, myType = 'Infantry', fixed = false, aimable = true }) {
-    const t = this.enemyTables;
-    const enemyStrengths = t?.strengths ?? {};
-    const enemyTypes = t && t.passes > 0 ? t.types : { Infantry: 1 };
-    return fireStrength({ table, others, air, isSeat, myType, enemyStrengths, enemyTypes, fixed, aimable });
-  }
-
-  /** A candidate seat's fire strength: its table plus the shares of the
-   *  hull's other occupied seats. A fixed gun, or a seat of a hull nobody
-   *  drives, is a fixed weapon and needs a known enemy it can point at. */
-  _candidateFire(c) {
-    // Weighing another seat of the hull it sits in, the bot counts its own
-    // seat as empty: it would leave it (0x08584580, `unit != param_7 ||
-    // !param_6` on the root's and every seat's share and on the root's
-    // mobile test). Without this a driver saw the gunner's seat as a seat
-    // under a driver, and the gunner saw the root as a hull with a gunner:
-    // each side of the swap beat the other and the bot changed seats every
-    // tick.
-    const m = this.vehicle;
-    const vacate = m && c.vehicleId === m.vehicleId && c.seatId !== m.seatId ? m.seatId : null;
-    const seats = (c.seats ?? []).map(s => (s.seatId === vacate ? { ...s, occupied: false } : s));
-    const rootOccupied = !!seats.find(s => s.isRoot)?.occupied;
-    const fixed = c.kind === 'gun' || (!c.isRoot && !rootOccupied);
-    return this._fireStrengthOf({
-      table: c.strengths ?? {}, others: seats.filter(s => s.seatId !== c.seatId),
-      air: c.kind === 'air', isSeat: !c.isRoot, myType: c.strType ?? 'LightArmour',
-      fixed, aimable: fixed ? this._fixedAimable(c) : true,
-    });
-  }
-
-  /** The other seats of the hull the bot sits in, for the share. */
-  _otherSeats(mine) {
-    return (mine?.seats ?? this.vehicle?.seats ?? []).filter(s => s.seatId !== this.vehicle?.seatId);
-  }
-
-  /** A fixed weapon's `validateCameraDirection` (`calculateFireStrength`
-   *  0x08584580): with enemies spotted, 'enemy' when the traverse reaches
-   *  one of them, else false (the score is 0); with none spotted, 'enemy'
-   *  when any enemy object is within the guns' range (`getEnemyObjects`;
-   *  that branch tests no direction before the normal score), else
-   *  'strategic' when the gun can face the strategic direction (a flat
-   *  5.0), else false. The strategic direction is the engine's strategic
-   *  object's links flagged for the side; here the nearest enemy flag's
-   *  bearing stands in for them (INVENTION). `c` is a candidate seat
-   *  (its own traverse limits on its hull's heading); none means the seat
-   *  the bot holds. */
-  _fixedAimable(c = null) {
-    const limits = c ? c.yawLimits : this.vehicle?.occupancy?.turret?.yawLimitsRadians?.();
-    const hullYaw = c ? (c.hullYaw ?? 0) : this.yaw;
-    const canPoint = (dir) => {
-      if (!limits) return true;
-      const want = wrapAngle(Math.atan2(dir[0], dir[2]) - hullYaw);
-      return want >= limits[0] && want <= limits[1];
-    };
-    const from = c?.pos ?? this.position;
-    const dirTo = (pos) => {
-      const dx = pos[0] - from[0], dz = pos[2] - from[2];
-      const d = Math.hypot(dx, dz) || 1;
-      return [dx / d, 0, dz / d];
-    };
-    const spotted = this.senses.spottedEnemies();
-    if (spotted.length) return spotted.some(m => canPoint(dirTo(m.pos))) ? 'enemy' : false;
-    let range = 0;
-    for (const w of (c ? c.weapons : this.weapons) ?? []) range = Math.max(range, w.maxRange ?? 0);
-    for (const [id, p] of this.world?.players ?? []) {
-      if (id === this.playerId || p.team === this.team || this.world.armorOf?.(id)?.destroyed) continue;
-      const pos = playerPosition(p);
-      if (!pos) continue;
-      if (Math.hypot(pos[0] - from[0], pos[2] - from[2]) <= range) return 'enemy';
-    }
-    const flag = this._nearestEnemyFlag();
-    return flag?.position && canPoint(dirTo(flag.position)) ? 'strategic' : false;
-  }
-
-  /**
-   * `BBChangeTeleport::calculateUrgency`: the root's and the other seats'
-   * urgencies by where the bot sits, the winner other than its own seat.
-   */
-  _urgencyChangeTeleport({ mine, selfU, split, driver, health }) {
-    const m = this.vehicle;
-    const seats = mine?.seats ?? m.seats ?? [];
-    if (!seats.length) return null;
-    const cands = this.vehicleCandidates ?? [];
-    const rootCand = cands.find(c => c.vehicleId === m.vehicleId && c.isRoot) ?? null;
-    const rootOccupied = !!(rootCand?.occupiedBy) && rootCand.occupiedBy !== this.playerId;
-    let where = 'root';
-    if (!m.drives && !mine?.isRoot) {
-      where = rootOccupied ? 'seatUnderDriver' : (m.kind === 'air' ? 'seatAir' : m.kind === 'ship' ? 'seatShip' : 'seatLand');
-    }
-    const uOf = (c) => unitUrgency({ health, fire: this._candidateFire(c), maxSpeed: c.maxSpeed ?? 0,
-                                     occupiedByBot: !c.drives && !!driver, value: c.value ?? 0, orderSplit: split });
-    const rootU = rootCand && !rootOccupied && where !== 'root' ? uOf(rootCand) : 0;
-    const others = [];
-    for (const c of cands) {
-      if (c.vehicleId !== m.vehicleId || c.seatId === m.seatId || c.isRoot || c.occupiedBy) continue;
-      others.push({ id: c.id, u: uOf(c), cand: c });
-    }
-    const orderFactor = this.waypoints ? 1 : this.botSkill;
-    const r = teleportChangeUrgency({ where, rootU, selfU, seats: others, orderFactor, attackSplit: split[0],
-                                      hasPlan: this._hasPlan(), pending: !!this.enterRequest });
-    if (!r.best) return null;
-    const cand = r.best.id === 'root' ? rootCand : others.find(o => o.id === r.best.id)?.cand;
-    if (!cand) return null;
-    return { urgency: r.urgency, best: { id: cand.id, u: r.best.u, dist: 0, cand }, bail: false, teleport: true };
-  }
-
-  /**
-   * `BBPChange::createPlan`: walk to the unit's door (12.5 m -> 6.25 m by
-   * the finding move, the door's own radius here), then the Use trigger
-   * until the seat is taken (`EnterVehicle` asks the page to seat the bot).
-   */
-  _planChange(now) {
-    const r = this._changeResult;
-    if (this.vehicle) {
-      if (!r?.best) return this._planIdle();
-      if (r.teleport) {
-        // `BBPChangeTeleport::createPlan`: the seat-select key.
-        const plan = [{ type: PLAN_ACTION.SwitchSeat, vehicleId: r.best.cand.vehicleId, seatId: r.best.cand.seatId }];
-        plan.vehicleId = r.best.id;
-        plan.startedAt = now;
-        return plan;
-      }
-      // Seated: leave (a bail, or the walk to a better seat starts on foot).
-      const plan = [{ type: PLAN_ACTION.ExitVehicle }];
-      plan.vehicleId = r.best.id;
-      plan.startedAt = now;
-      return plan;
-    }
-    const best = r?.best?.cand;
-    if (!best) return this._planIdle();
-    const cur = this.currentPlan;
-    if (this.planBehaviour === BEHAVIOUR.Change && cur.length && cur.vehicleId === best.id && !best.occupiedBy) return cur;
-    const entry = best.entry ?? [best.pos[0], best.pos[2]];
-    const radius = Math.max(best.entryRadius ?? 4, 2.0);
-    const plan = [
-      { type: PLAN_ACTION.SoldierPose, pose: 'stand' },
-      { type: PLAN_ACTION.InfantryMoveTo, waypoint: [entry[0], this.position[1], entry[1]], arrive: radius },
-      { type: PLAN_ACTION.EnterVehicle, vehicleId: best.id, seatId: best.seatId ?? null, entry, radius, afterMove: true },
-    ];
-    plan.vehicleId = best.id;
-    plan.startedAt = now;
-    return plan;
-  }
-
-  /** `ExitVehicle`: ask the page to unseat the bot (the Use key held). */
-  _execExitVehicle() {
-    if (!this.vehicle) return true;
-    this.exitRequest = true;
-    return false;
-  }
-
-  /** `SwitchSeat` (`BAPICChangeVehicle` + the select key): the page reseats. */
-  _execSwitchSeat(action) {
-    if (!this.vehicle) return true;
-    if (this.vehicle.seatId === action.seatId) return true;
-    this.switchRequest = { vehicleId: action.vehicleId, seatId: action.seatId };
-    return false;
-  }
-
-  /** `EnterVehicle`: inside the door's radius, ask the page for the seat. */
-  _execEnterVehicle(action) {
-    if (this.vehicle) return true;
-    const d = Math.hypot(action.entry[0] - this.position[0], action.entry[1] - this.position[2]);
-    if (d > action.radius + 0.5) return false;
-    this.enterRequest = { vehicleId: action.vehicleId, seatId: action.seatId };
-    return false;
-  }
+  _urgencyChange(mod, now) { return mounting.urgencyChange(this, mod, now); }
+  _seatStrengths() { return mounting.seatStrengths(this); }
+  _fireStrengthOf(o) { return mounting.fireStrengthOf(this, o); }
+  _candidateFire(c) { return mounting.candidateFire(this, c); }
+  _otherSeats(mine) { return mounting.otherSeats(this, mine); }
+  _fixedAimable(c) { return mounting.fixedAimable(this, c); }
+  _urgencyChangeTeleport(o) { return mounting.urgencyChangeTeleport(this, o); }
+  _planChange(now) { return mounting.planChange(this, now); }
+  _execExitVehicle() { return mounting.execExitVehicle(this); }
+  _execSwitchSeat(action) { return mounting.execSwitchSeat(this, action); }
+  _execEnterVehicle(action) { return mounting.execEnterVehicle(this, action); }
 
   _urgencyAvoid(mod, now) { return deciding.urgencyAvoid(this, mod, now); }
 
