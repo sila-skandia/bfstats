@@ -345,3 +345,60 @@ Bocage. There were no bot errors in 60 matches, after a latent
 no-progress redeploy keeps its best distance across a new order
 (`bot-decision.js`), which redeploys followers keeping pace (54 a match for
 the Allied squad side; 2 with the reset, measured on a scratch viewer).
+
+## Brief K: what the headless runner found in the page
+
+Added 2026-09-24 after Brief I. Depends on: F (it owns the B17 adoption
+drop and the Sherman's backwards Browning), D (the landing craft's inland
+order). Conflicts with: F (bot-aim.js), B and C (bot-route.js,
+nav-grid.js). Start it after F and B report.
+
+Status: the runner's first real-vehicle matches (El Alamein, 8 a side,
+600 s, seeds 1..4; `tests/test_sim_vehicles.py`) surfaced page bugs none
+of the other briefs cover:
+
+1. No bot ever takes a fixed gun. Every vanilla gun's `strategicStrength`
+   is 0 at index 0, the value `bot-units.js` scores a seat by, and the
+   flak38's AI record is `Flak_38`, so the node `flak38` never matches it.
+   Read `AITemplateUnit` / `AISettings` for which index the engine scores
+   a seat by (the earlier read gave six battle-strength classes, ledger
+   AI-50; the strategic strength per class is `setStrategicStrength`) and
+   how it matches an object to its AI template (`AIObjectUnit`
+   initialisation, the `aiTemplate` line in Objects.con is the link, not
+   the node name). Fix the extractor and the scorer, and pin: a bot within
+   50 m of a free AA gun on El Alamein with an enemy plane known takes it.
+2. Allied Spitfires collide in pairs: two die on the same tick with no
+   round involved, in every seed. Read where the engine spaces aircraft on
+   a shared runway (`BBPTakeOff` / the spawner's `holdObject` timing) and
+   whether a bot waits for the plane ahead; the viewer's take-off run may
+   let two planes start at once. Pin: eight bots, four planes, no two
+   planes destroyed on one tick in seeds 1..4.
+3. A PanzerIV and a Sherman trade North outpost every 10 s for minutes
+   without either killing the other (29 and 34 captures in seeds 1 and 4).
+   Two things to check against the engine: the tank's `Fire` urgency versus
+   `MoveTo` when an enemy tank is inside the capture radius, and whether the
+   main gun's line of fire is blocked by the outpost's own statics (the
+   viewer's LOS is from `_eye()`, the aim from `_aimOrigin()`). Report
+   which, then fix what the engine does differently.
+4. The page's 12 s no-progress redeploy in `bot-decision.js` keeps its best
+   distance across a new order, so a bot keeping pace behind a moving
+   point never shows progress and is sent to spawn (54 redeploys a match
+   for the squad play's Allied side, 2 with the counter reset per order).
+   Read the engine's own stuck test (`BotMain` / `AIObjectUnit` no-progress
+   handling, if any; the redeploy may be INVENTION) and make the viewer
+   match it; if the engine has no such test, keep the viewer's but reset
+   it per order and mark it INVENTION in KNOBS.md. Seeded traces change;
+   say so in the commit.
+5. After 1 to 4 and after C lands, re-run the doctrine comparison
+   (`sim/compare.mjs`, El Alamein and Bocage, seeds 1..10, 600 s) and
+   replace the table in features/bot-doctrines/README.md.
+
+Not for this brief: the B17 losing 112 HP on adoption and the Sherman's
+turret Browning pointing backwards (both handed to F on 2026-09-24), the
+landing craft failing an inland order every tick (D), El Alamein's AA
+guns unable to hit soldiers on flat ground from their sandbag pits (level
+geometry; the engine has the same pits, so first check whether the retail
+bot in that gun fires at soldiers at all).
+
+Acceptance: pins for 1 to 4, ledger and KNOBS rows for every engine read,
+the doctrine table re-run, PARITY_STATUS_2026-09-23.md's Open list updated.
