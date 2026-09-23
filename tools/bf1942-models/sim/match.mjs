@@ -47,8 +47,10 @@ const v2 = (a) => (a ? a.map(r2) : null);
 
 export class Match {
   constructor({ M, level, botsPerSide = 4, botSkill = 0.75, duration = 120, seed = 1, traceEvery = 1,
-                sampleEvery = 1, vehicles = true, sink = null, doctrine = null }) {
+                sampleEvery = 1, vehicles = true, sink = null, doctrine = null, seats = [] }) {
     this.M = M;
+    /** `[{ bot, template, seat }]`: bots seated by hand at t = 0 (`--seat`). */
+    this.seats = seats;
     this.level = level;
     this.botsPerSide = botsPerSide;
     this.botSkill = botSkill;
@@ -143,10 +145,34 @@ export class Match {
       bots: this.bots.map(b => ({ id: b.playerId, side: b.team, name: b.name, kit: b.kit,
                                   weapons: b.weapons.map(w => w.name) })),
       ...(this.baseline ? {} : { doctrine: { ...this.doctrine } }),
+      ...(this.seats.length ? { seats: this.seats } : {}),
     });
     this.sample();
+    this.seatByHand();
   }
 
+  /** `--seat`: each named bot takes the nearest free seat of a template
+   *  before the first tick (the page's `__botMount` law); from there it is
+   *  the bot's own, and its Change may take it out again. A `mount` event
+   *  each, at t = 0. */
+  seatByHand() {
+    for (const { bot: id, template, seat } of this.seats) {
+      const bot = this.bots.find(b => b.playerId === id);
+      if (!bot) throw new Error(`--seat: no ${id}`);
+      const units = this.stage?.units ?? this.vehicles;
+      const p = bot.getPosition();
+      const cands = (units?.candidates() ?? []).filter(c => !c.occupiedBy
+        && String(c.template).toLowerCase() === template.toLowerCase() && (seat ? c.seatId === seat : c.isRoot));
+      cands.sort((a, b) => Math.hypot(a.pos[0] - p[0], a.pos[2] - p[2]) - Math.hypot(b.pos[0] - p[0], b.pos[2] - p[2]));
+      if (!cands.length || !this.referee.enterVehicle(bot, cands[0])) {
+        throw new Error(`--seat: no free ${template}${seat ? ` ${seat}` : ''} for ${id}`);
+      }
+    }
+    for (const e of this.pendingEvents.splice(0)) {
+      if (e.type === 'mount') { const s = this.stats.get(e.bot); if (s) s.mounts++; }
+      this.event(e);
+    }
+  }
 
   /** What the referee needs from the runner: the world, the stand-in
    *  vehicles, and a hook per event the trace and the statistics record. */
