@@ -14,10 +14,10 @@ import { equilibriumRootY, floatNodesOf, localiseFloats, FloatingHull } from './
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `DEFAULT_SURFACE_FRICTION`, `MAPS_BASE`, `bust`, `collider`,
- * `damageTables`, `effects`, `entryPoints`, `extras`, `materialFrictionById`,
- * `nearEntry`, `vehicleDamage`, `vehicleInterp`, `vehicleSpawnActive`,
- * `vehicles`, `world`, `wrecks`.
+ * `bust`, `collider`, `damageTables`, `damageVisuals`,
+ * `DEFAULT_SURFACE_FRICTION`, `effects`, `entryPoints`, `extras`,
+ * `MAPS_BASE`, `materialFrictionById`, `nearEntry`, `vehicleDamage`,
+ * `vehicleInterp`, `vehicles`, `vehicleSpawnActive`, `world`.
  */
 export function createHullBodies(page) {
   const hullBodies = {};
@@ -445,7 +445,7 @@ export function createHullBodies(page) {
                          terrain: bodyTerrain(heightfield, page.collider.waterLevel),
                          statics: page.collider.statics ? page.collider.staticProbe() : null });
     hullBodies.bodyWorld = page.world?.bodyWorld ?? null;
-    for (const [owner, visual] of page.wrecks.damageVisuals) {
+    for (const [owner, visual] of page.damageVisuals) {
       // A ship gets a scene record and a collision spec but no PARKED body: her
       // hull is described so that the moment a player takes the helm she can enter
       // the body world as a DRIVEN one and probe the level's piers and islands
@@ -471,7 +471,7 @@ export function createHullBodies(page) {
 
   /** Neutral capture zones have no live parked hulls until their flag changes. */
   function syncVehicleSpawnOwnership() {
-    for (const [owner, visual] of page.wrecks.damageVisuals) {
+    for (const [owner, visual] of page.damageVisuals) {
       const scene = bodyScene.get(owner);
       if (!scene || scene.sea) continue;
       const active = page.vehicleSpawnActive(scene.node);
