@@ -852,6 +852,8 @@ vehicles.env.guns = guns;
 // anything in this engine).
 guns.onImpact = record => vehicleHits.applyVehicleHit(record);
 guns.bodyCast = vehicleHits.roundBodyCast;
+// The proximity fuse's candidates: every hull, whoever drives it.
+guns.nearObjects = vehicleHits.proximityObjects;
 // The game's own impact, trail and explosion bundles. Loaded once per mod
 // beside `damage.json`; a level change keeps it. Until it lands (or when it
 // is absent) a hit is recorded and nothing is drawn at the spot.
