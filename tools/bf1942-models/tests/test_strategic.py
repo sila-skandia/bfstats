@@ -29,6 +29,9 @@ def run_harness(scene: Path | None) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
         shutil.copyfile(VIEWER / "strategic.js", work / "strategic.js")
+        # `strategic.js` re-exports the layer and the AI from their modules.
+        for name in ("strategic-layer.js", "strategic-ai.js"):
+            shutil.copyfile(VIEWER / name, work / name)
         shutil.copyfile(HARNESS, work / "harness.mjs")
         (work / "package.json").write_text('{"type":"module"}\n')
         cmd = ["node", str(work / "harness.mjs")] + ([str(scene)] if scene else [])
