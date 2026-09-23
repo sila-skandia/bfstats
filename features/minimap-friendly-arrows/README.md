@@ -100,11 +100,31 @@ and never came back.
 Remote humans are still not in `world.players` (see `netcode-render.js`), so
 a room's other players get neither arrows nor tinted hulls.
 
-## An unrelated difference, noted not changed
+## Which hulls are drawn: the client's rule (2026-09-24, ledger MMAP-3)
 
-Retail's minimap does **not** show parked vehicles: in both reference
-captures the only marks are control points, the local ring, and the local
-side's living units. This viewer draws every spawner as a white silhouette.
-That is a deliberate sandbox affordance (it is how you find a plane), not a
-bug, and it is left alone — but it is why our map still reads busier than
-the captures even with the arrows in.
+The map drew every spawner's hull, enemy-crewed ones included, and a wreck
+kept its icon until its spawner put a fresh hull down. The vehicle pass of
+the client's `BfMap::update` (BF1942.exe 0x0046a680) was read and is now
+the rule (`viewer/map-vehicle-marks.js`, listed by `map-friendlies.js
+mapVehicleMarks`):
+
+- a hull is drawn only while its Armor has hit points (a wreck has no
+  icon; neither does an object with no Armor);
+- a hull any enemy sits in is not drawn (the last occupant walked decides);
+- a hull a `teamOnVehicle` spawner holds for the other side is not drawn
+  (the rule takes the held team; the viewer does not model the hold yet);
+- a friendly-crewed hull is the side's colour, an empty one the client's
+  grey, 0.574 (146/255), where the viewer used to draw the archive's white.
+
+An earlier note here said retail's minimap shows no parked vehicles at all.
+The client draws them, grey; the captures' lack of them is probably the one
+clause not built: in `BfMenu+0x6DC` modes 0, 1, 3 and 4 the pass drops a
+hull farther from the player than a float it reads off an object his player
+holds at +0x94, and that object is not identified.
+
+Verified on El Alamein (Allied, 8 bots, `__mapMarks().vehicles`): the two
+bf109s and the Stuka the Axis bots flew were missing from the list while the
+Allied Sherman and M10 were `friendly`; `__botDismount` on the Axis PanzerIV
+brought it back as `empty`; a Sherman destroyed at 1616,-817 left the list
+at once and came back `empty` at its spawner, 1721,-778, when the spawner
+replaced it.
