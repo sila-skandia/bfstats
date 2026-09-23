@@ -55,7 +55,7 @@ _VIEWER_MODULES = [
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact",
     "body-ground", "body-friction", "crash-damage", "effects-core",
     "collision", "flight", "ground", "ground-specs", "ground-contact",
-    "ground-engine", "game-modes", "netcode",
+    "ground-engine", "tracked-vehicle", "game-modes", "netcode",
     # Reached through seats.js: the salvo arithmetic and the HUD weapon-slot
     # order, and an aircraft torpedo's water run.
     "bomb-release", "torpedo-run",
